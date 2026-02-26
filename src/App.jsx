@@ -130,7 +130,7 @@ function App() {
   useEffect(() => { console.log("Jalfern Arcade v1.2 - Games List") }, [])
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/retrogames">
       <Layout>
         <Routes>
           <Route path="/" element={<RandomHome />} />
