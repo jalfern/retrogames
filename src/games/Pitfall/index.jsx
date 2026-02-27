@@ -640,8 +640,8 @@ const PitfallGame = () => {
                 else player.vx = 0
             }
 
-            // Jump
-            if (keys.Space && player.onGround && player.state !== 'climb') {
+            // Jump (not allowed underground - must use ladder)
+            if (keys.Space && player.onGround && player.state !== 'climb' && player.y <= GROUND_Y) {
                 player.vy = JUMP_FORCE
                 player.onGround = false
                 player.state = 'jump'
