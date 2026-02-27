@@ -540,25 +540,31 @@ const PitfallGame = () => {
             // --- COLLISIONS & INTERACTIONS ---
 
             // Ground/Floor
-            // Simple: Ground is always at GROUND_Y unless in a pit
-            let groundLevel = GROUND_Y
-
-            // Pit/Water logic
             const isHole = (roomType === 'water' || roomType === 'pit' || roomType === 'quicksand')
-            const inHoleZone = (player.x > 300 && player.x < 500) // Jumpable hole width
+            const inHoleZone = (player.x > 300 && player.x < 500)
+            const groundMissing = isHole && inHoleZone
 
-            if (isHole && inHoleZone) {
-                // Player walks/falls into the hole
-                if (player.y >= GROUND_Y && player.vy >= 0 && !player.onLadder && player.state !== 'jump' && player.state !== 'swing') {
-                    // Apply gravity — player falls through
-                    player.onGround = false
-                    player.state = 'jump'
+            if (!player.onLadder && player.state !== 'climb') {
+                if (groundMissing) {
+                    // No surface ground here — player falls through
+                    if (player.y >= GROUND_Y && player.onGround) {
+                        player.onGround = false
+                        player.state = 'jump'
+                    }
+                } else {
+                    // Surface ground — only catch player near surface level, not if deep underground
+                    if (player.y > GROUND_Y && player.y < UNDERGROUND_Y - 10 && player.vy >= 0) {
+                        player.y = GROUND_Y
+                        player.vy = 0
+                        player.onGround = true
+                        if (player.vx !== 0) player.state = 'run'
+                        else player.state = 'idle'
+                    }
                 }
-                // If jumping over the hole, don't land — let gravity handle it
-            } else {
-                // Solid ground
-                if (player.y > GROUND_Y && player.vy >= 0 && !player.onLadder) {
-                    player.y = GROUND_Y
+
+                // Underground floor — always catches falling player
+                if (player.y > UNDERGROUND_Y && player.vy >= 0) {
+                    player.y = UNDERGROUND_Y
                     player.vy = 0
                     player.onGround = true
                     if (player.vx !== 0) player.state = 'run'
@@ -623,15 +629,37 @@ const PitfallGame = () => {
 
                 // LADDERS
                 if (obj.type === 'ladder') {
-                    if (Math.abs(player.x - obj.x) < 10) {
-                        if (keys.ArrowUp || keys.ArrowDown) {
+                    if (Math.abs(player.x - obj.x) < 15) {
+                        if (keys.ArrowDown || keys.ArrowUp) {
                             player.state = 'climb'
                             player.onLadder = true
+                            player.onGround = false
                             player.vx = 0
+                            player.vy = 0
                             player.x = obj.x // Snap
                             if (keys.ArrowUp) player.y -= 2
                             if (keys.ArrowDown) player.y += 2
+
+                            // Reached top of ladder — back to surface
+                            if (player.y <= GROUND_Y) {
+                                player.y = GROUND_Y
+                                player.onLadder = false
+                                player.onGround = true
+                                player.state = 'idle'
+                            }
+                            // Reached bottom of ladder — underground level
+                            if (player.y >= UNDERGROUND_Y) {
+                                player.y = UNDERGROUND_Y
+                                player.onLadder = false
+                                player.onGround = true
+                                player.state = 'idle'
+                            }
                         }
+                    } else if (player.onLadder) {
+                        // Moved away from ladder
+                        player.onLadder = false
+                        player.onGround = false
+                        player.state = 'jump'
                     }
                 }
 
