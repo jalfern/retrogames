@@ -79,157 +79,233 @@ const PitfallGame = () => {
             w: '#DDDDDD', // White (Pants)
             s: '#FFCCAA', // Skin
             b: '#000000', // Black
-            r: '#FF4400', // Red (Fire/Scorpion Tail)
+            r: '#FF4400', // Red
             l: '#552200', // Log Brown
             y: '#FFD700', // Gold
             e: '#00AA00', // Snake Green
-            h: '#FFFFFF', // White/Grey (Scorpion Body)
-            n: '#331100', // Dark Brown (Scorpion Legs)
+            h: '#FFFFFF', // White
+            n: '#331100', // Dark Brown
             d: '#004400', // Dark Green (Croc)
-            v: '#C0C0C0'  // Silver
+            v: '#C0C0C0', // Silver
+            o: '#FF8800', // Orange (Fire)
+            k: '#884400', // Bark brown
+            t: '#BBAA44'  // Tan (belt/hat)
         }
 
         const SPRITES = {
             harry_idle: [
-                "  sss  ",
-                "  sss  ",
-                "  ggg  ",
-                " ggggg ",
-                " ggggg ",
-                " ggggg ",
-                "  www  ",
-                "  www  ",
-                "  w w  ",
-                "  w w  "
+                "    tttt    ",
+                "   tttttt   ",
+                "    ssss    ",
+                "   ssssss   ",
+                "   sb  bs   ",
+                "    ssss    ",
+                "    gggg    ",
+                "   gggggg   ",
+                "  sgggggs   ",
+                "  sgggggs   ",
+                "   gggggg   ",
+                "    gggg    ",
+                "    wwww    ",
+                "   wwwwww   ",
+                "   ww  ww   ",
+                "   ww  ww   ",
+                "   bb  bb   ",
+                "   bb  bb   "
             ],
             harry_run_0: [
-                "  sss  ",
-                "  sss  ",
-                "  ggg  ",
-                " ggggg ",
-                " ggggg ",
-                " ggggg ",
-                "  www  ",
-                "  www  ",
-                " w   w ",
-                "w     w"
+                "    tttt    ",
+                "   tttttt   ",
+                "    ssss    ",
+                "   ssssss   ",
+                "   sb  bs   ",
+                "    ssss    ",
+                "    gggg    ",
+                "   gggggg   ",
+                "  sgggggs   ",
+                "  sgggggs   ",
+                "   gggggg   ",
+                "    gggg    ",
+                "    wwww    ",
+                "   wwwwww   ",
+                "  ww    ww  ",
+                " ww      ww ",
+                " bb      bb ",
+                "bb        bb"
             ],
             harry_run_1: [
-                "  sss  ",
-                "  sss  ",
-                "  ggg  ",
-                " ggggg ",
-                " ggggg ",
-                " ggggg ",
-                "  www  ",
-                "  www  ",
-                "  w w  ",
-                "  w w  "
+                "    tttt    ",
+                "   tttttt   ",
+                "    ssss    ",
+                "   ssssss   ",
+                "   sb  bs   ",
+                "    ssss    ",
+                "    gggg    ",
+                "   gggggg   ",
+                "  sgggggs   ",
+                "  sgggggs   ",
+                "   gggggg   ",
+                "    gggg    ",
+                "    wwww    ",
+                "   wwwwww   ",
+                "   ww  ww   ",
+                "   ww  ww   ",
+                "   bb  bb   ",
+                "   bb  bb   "
             ],
             harry_run_2: [
-                "  sss  ",
-                "  sss  ",
-                "  ggg  ",
-                " ggggg ",
-                " ggggg ",
-                " ggggg ",
-                "  www  ",
-                "  www  ",
-                "   w   ",
-                "  w w  "
+                "    tttt    ",
+                "   tttttt   ",
+                "    ssss    ",
+                "   ssssss   ",
+                "   sb  bs   ",
+                "    ssss    ",
+                "    gggg    ",
+                "   gggggg   ",
+                "  sgggggs   ",
+                "  sgggggs   ",
+                "   gggggg   ",
+                "    gggg    ",
+                "    wwww    ",
+                "   wwwwww   ",
+                "    ww ww   ",
+                "   ww  ww   ",
+                "   bb   bb  ",
+                "  bb    bb  "
             ],
             harry_jump: [
-                "  sss  ",
-                "  sss  ",
-                " ggggg ",
-                " g.g.g ",
-                " ggggg ",
-                " ggggg ",
-                "  www  ",
-                " w   w ",
-                "w     w",
-                "w     w"
+                "    tttt    ",
+                "   tttttt   ",
+                "    ssss    ",
+                "   ssssss   ",
+                "   sb  bs   ",
+                "    ssss    ",
+                "  s gggg s  ",
+                " ss gggg ss ",
+                "  sgggggs   ",
+                "  sgggggs   ",
+                "   gggggg   ",
+                "    gggg    ",
+                "    wwww    ",
+                "  ww    ww  ",
+                " ww      ww ",
+                "ww        ww",
+                "bb        bb",
+                "bb        bb"
             ],
             harry_climb: [
-                "  sss  ",
-                "  sss  ",
-                " ggggg ",
-                " ggggg ",
-                " ggggg ",
-                " ggggg ",
-                "  www  ",
-                " w   w ",
-                " w   w ",
-                " w   w "
+                "    tttt    ",
+                "   tttttt   ",
+                "    ssss    ",
+                "   ssssss   ",
+                "   sb  bs   ",
+                "    ssss    ",
+                " s  gggg  s ",
+                " ss gggg ss ",
+                "  sgggggs   ",
+                "  sgggggs   ",
+                "   gggggg   ",
+                "    gggg    ",
+                "    wwww    ",
+                "   wwwwww   ",
+                "  ww    ww  ",
+                "  ww    ww  ",
+                "  bb    bb  ",
+                "  bb    bb  "
             ],
             harry_swing: [
-                "   s   ",
-                " sssss ",
-                " ggggg ",
-                " ggggg ",
-                " ggggg ",
-                "  www  ",
-                "  www  ",
-                "   w   ",
-                "  w    ",
-                " w     "
+                "      ss    ",
+                "    ssssss  ",
+                "   ssssss   ",
+                "   sb  bs   ",
+                "    ssss    ",
+                "    gggg    ",
+                "   gggggg   ",
+                "  sgggggs   ",
+                "  sgggggs   ",
+                "   gggggg   ",
+                "    gggg    ",
+                "    wwww    ",
+                "   wwwwww   ",
+                "    ww      ",
+                "   ww       ",
+                "  ww        ",
+                "  bb        ",
+                " bb         "
             ],
             log: [
-                "  lll  ",
-                " lllll ",
-                "lllllll",
-                " lllll ",
-                "  lll  "
+                "   lllll   ",
+                "  lllllll  ",
+                " lklllllkl ",
+                "lkkllllllkl",
+                "lklllllllkl",
+                " lklllllkl ",
+                "  lllllll  "
             ],
             scorpion: [
-                "h     r",
-                "hh   rr",
-                "nhhhhhr",
-                " n n n "
+                "hh          rr ",
+                "hhh        rrr ",
+                " hhh      rrr  ",
+                "  hhhhhhhhrr   ",
+                " nnhhhhhhhrrrr ",
+                "  nn nn nn n   ",
+                "  n  n  n  n   "
             ],
             snake: [
-                "   e   ",
-                "  e e  ",
-                "  e e  ",
-                " eeeee ",
-                "e e e e"
+                "    rr      ",
+                "   eeee     ",
+                "   eb be    ",
+                "    eeee    ",
+                "   ee  ee   ",
+                "   ee  ee   ",
+                "  eeeeeeee  ",
+                " ee ee ee ee",
+                "ee  ee  ee  "
             ],
             fire: [
-                "  r  ",
-                " rrr ",
-                "rrrrr",
-                " rrr "
-            ],
-            wall: [
-                "bbbbbb",
-                "b....b",
-                "b....b",
-                "b....b",
-                "b....b",
-                "bbbbbb"
+                "    o    ",
+                "   ooo   ",
+                "   ror   ",
+                "  rrrrr  ",
+                "  orror  ",
+                " orrrrro ",
+                " rrrrrrr ",
+                "orrrrrrro",
+                " rrrrrrr ",
+                "  rrrrr  "
             ],
             moneybag: [
-                "  yy  ",
-                " yyyyy ",
-                "yyyyyyy",
-                "yyyyyyy",
-                " yyyyy "
+                "   bbbb  ",
+                "  bbybb  ",
+                " yyyyyyy ",
+                "yyyyyyyyy",
+                "yyyyyyyyy",
+                "yyyyyyyyy",
+                " yyyyyyy ",
+                "  yyyyy  "
             ],
             bar: [
-                "yyyyyy",
-                "yyyyyy",
-                "yyyyyy"
+                " yyyyyyyy ",
+                "yyyyyyyyyy",
+                "yyyyyyyyyy",
+                "yyyyyyyyyy",
+                " yyyyyyyy "
             ],
             ring: [
-                "  yy  ",
-                " y  y ",
-                " y  y ",
-                "  yy  "
+                "   yyy   ",
+                "  y   y  ",
+                " y  h  y ",
+                " y hhh y ",
+                " y  h  y ",
+                "  y   y  ",
+                "   yyy   "
             ],
             silver_bar: [
-                "vvvvvv",
-                "vvvvvv",
-                "vvvvvv"
+                " vvvvvvvv ",
+                "vvvvvvvvvv",
+                "vvvvvvvvvv",
+                "vvvvvvvvvv",
+                " vvvvvvvv "
             ]
         }
 
@@ -846,7 +922,6 @@ const PitfallGame = () => {
             ctx.fillRect(0, 0, SCREEN_WIDTH, 350)
 
             // Trees (4 patterns from roomTreeBits)
-            ctx.fillStyle = '#331100'
             let treePositions
             switch (roomTreeBits) {
                 case 0: treePositions = [120, 600]; break
@@ -856,11 +931,24 @@ const PitfallGame = () => {
                 default: treePositions = [120, 600]
             }
             treePositions.forEach(tx => {
-                const tw = roomTreeBits === 3 ? 24 : 16
-                const bw = roomTreeBits === 3 ? 80 : 64
+                const tw = roomTreeBits === 3 ? 32 : 20
+                const bw = roomTreeBits === 3 ? 100 : 80
+                // Trunk
+                ctx.fillStyle = '#442200'
                 ctx.fillRect(tx, 60, tw, 290)
-                for (let y = 80; y < 250; y += 40) {
-                    ctx.fillRect(tx - bw / 2 + tw / 2, y, bw, 8)
+                // Trunk texture
+                ctx.fillStyle = '#331100'
+                for (let ty = 80; ty < 340; ty += 30) {
+                    ctx.fillRect(tx + 2, ty, tw - 4, 3)
+                }
+                // Branches with leaf clusters
+                for (let by = 80; by < 260; by += 45) {
+                    ctx.fillStyle = '#331100'
+                    ctx.fillRect(tx - bw / 2 + tw / 2, by, bw, 10)
+                    // Leaf clusters
+                    ctx.fillStyle = '#227722'
+                    ctx.fillRect(tx - bw / 2 + tw / 2 - 8, by - 12, 30, 16)
+                    ctx.fillRect(tx + bw / 2 - tw / 2 - 22, by - 10, 30, 14)
                 }
             })
 
@@ -896,36 +984,63 @@ const PitfallGame = () => {
             // Underground wall
             const wallX = undergroundWallSide === 'left' ? 350 : 450
             ctx.fillStyle = '#883311'
-            ctx.fillRect(wallX - 15, 475, 30, 120)
+            ctx.fillRect(wallX - 20, 472, 40, 128)
+            // Brick pattern
             ctx.fillStyle = '#663300'
-            for (let wi = 0; wi < 5; wi++) {
-                ctx.fillRect(wallX - 12, 485 + wi * 22, 24, 2)
+            for (let wi = 0; wi < 6; wi++) {
+                const wy = 478 + wi * 20
+                ctx.fillRect(wallX - 18, wy, 36, 2)
+                const brickOff = wi % 2 === 0 ? 0 : 18
+                ctx.fillRect(wallX - 20 + brickOff, wy + 8, 2, 12)
             }
+            // Edge shadow
+            ctx.fillStyle = '#441100'
+            ctx.fillRect(wallX - 20, 472, 3, 128)
+            ctx.fillRect(wallX + 17, 472, 3, 128)
 
             // Holes / Pits / Tar / Crocs
             if (roomType === 'tar_pit') {
                 const baseW = 140
                 const expandW = baseW + tarPitPhase * 60
                 const cx = 400
-                ctx.fillStyle = '#331100'
+                // Tar body
+                ctx.fillStyle = '#221100'
                 ctx.fillRect(cx - expandW / 2, 352, expandW, 118)
-                // Bubbles
+                // Surface sheen
+                ctx.fillStyle = '#442200'
+                ctx.fillRect(cx - expandW / 2 + 10, 355, expandW - 20, 6)
+                // Bubbles (multiple sizes)
                 ctx.fillStyle = '#553300'
                 const bp = Math.sin(gameTime * 0.1) * 0.5 + 0.5
                 ctx.beginPath()
-                ctx.arc(cx - 20, 390 + bp * 10, 4 + tarPitPhase * 3, 0, Math.PI * 2)
+                ctx.arc(cx - 30, 385 + bp * 12, 6 + tarPitPhase * 4, 0, Math.PI * 2)
                 ctx.fill()
                 ctx.beginPath()
-                ctx.arc(cx + 25, 410 - bp * 5, 3 + tarPitPhase * 2, 0, Math.PI * 2)
+                ctx.arc(cx + 35, 405 - bp * 8, 5 + tarPitPhase * 3, 0, Math.PI * 2)
                 ctx.fill()
+                ctx.beginPath()
+                ctx.arc(cx + 5, 420 + bp * 6, 4 + tarPitPhase * 2, 0, Math.PI * 2)
+                ctx.fill()
+                // Edge highlight
+                ctx.fillStyle = '#664400'
+                ctx.fillRect(cx - expandW / 2, 350, expandW, 3)
             } else if (holePattern !== 'none') {
                 let holeColor = '#000000'
                 if (roomType === 'croc_pond' || roomType === 'croc_pit') holeColor = '#2244CC'
 
                 ctx.fillStyle = holeColor
                 if (holePattern === 'single') {
+                    // Dark edge
+                    ctx.fillStyle = '#111111'
+                    ctx.fillRect(296, 349, 208, 124)
+                    ctx.fillStyle = holeColor
                     ctx.fillRect(300, 352, 200, 118)
                 } else if (holePattern === 'triple') {
+                    ctx.fillStyle = '#111111'
+                    ctx.fillRect(176, 349, 128, 124)
+                    ctx.fillRect(336, 349, 128, 124)
+                    ctx.fillRect(496, 349, 128, 124)
+                    ctx.fillStyle = holeColor
                     ctx.fillRect(180, 352, 120, 118)
                     ctx.fillRect(340, 352, 120, 118)
                     ctx.fillRect(500, 352, 120, 118)
@@ -934,75 +1049,111 @@ const PitfallGame = () => {
                 // Water shine
                 if (roomType === 'croc_pond' || roomType === 'croc_pit') {
                     ctx.fillStyle = '#4466EE'
-                    ctx.fillRect(310, 370, 20, 4)
-                    ctx.fillRect(370, 400, 40, 4)
+                    ctx.fillRect(310, 365, 30, 5)
+                    ctx.fillRect(370, 395, 50, 5)
+                    ctx.fillRect(340, 425, 25, 4)
                 }
             }
 
             // Objects
             activeObjects.forEach(obj => {
                 if (obj.type === 'log') {
-                    drawSprite(ctx, 'log', obj.x - 14, GROUND_Y - 22, 3)
+                    drawSprite(ctx, 'log', obj.x - 16, GROUND_Y - 24, 3)
                     if (!obj.rolling) {
-                        // Stationary log marker (moss)
                         ctx.fillStyle = '#005500'
-                        ctx.fillRect(obj.x - 6, GROUND_Y - 22, 12, 2)
+                        ctx.fillRect(obj.x - 10, GROUND_Y - 24, 20, 3)
                     }
                 }
                 if (obj.type === 'treasure' && !obj.collected) {
                     const tSprite = obj.treasureSprite || 'moneybag'
-                    drawSprite(ctx, tSprite, obj.x - 10, GROUND_Y - 25, 3)
-                    ctx.fillStyle = '#FFFFFF'
-                    ctx.font = '16px monospace'
-                    ctx.fillText('$', obj.x + 5, GROUND_Y - 30)
+                    drawSprite(ctx, tSprite, obj.x - 14, GROUND_Y - 28, 3)
                 }
                 if (obj.type === 'ladder') {
-                    ctx.fillStyle = '#444444'
-                    ctx.fillRect(obj.x - 10, 350, 20, 200)
+                    // Side rails
+                    ctx.fillStyle = '#555555'
+                    ctx.fillRect(obj.x - 15, 348, 6, 206)
+                    ctx.fillRect(obj.x + 9, 348, 6, 206)
+                    // Highlight on left rail
+                    ctx.fillStyle = '#777777'
+                    ctx.fillRect(obj.x - 14, 348, 2, 206)
+                    // Rungs
                     ctx.fillStyle = '#AAAAAA'
-                    for (let y = 360; y < 550; y += 20) ctx.fillRect(obj.x - 8, y, 16, 2)
+                    for (let ly = 358; ly < 550; ly += 18) {
+                        ctx.fillRect(obj.x - 14, ly, 28, 4)
+                        // Rung shadow
+                        ctx.fillStyle = '#888888'
+                        ctx.fillRect(obj.x - 14, ly + 3, 28, 1)
+                        ctx.fillStyle = '#AAAAAA'
+                    }
                 }
                 if (obj.type === 'fire') {
-                    drawSprite(ctx, 'fire', obj.x, GROUND_Y - 20, 3, Math.floor(gameTime / 8) % 2 === 0)
+                    drawSprite(ctx, 'fire', obj.x - 13, GROUND_Y - 33, 3, Math.floor(gameTime / 8) % 2 === 0)
                 }
                 if (obj.type === 'snake') {
-                    drawSprite(ctx, 'snake', obj.x, GROUND_Y - 20, 3)
+                    drawSprite(ctx, 'snake', obj.x - 16, GROUND_Y - 30, 3)
                 }
                 // Scorpion — underground only
                 if (obj.type === 'scorpion' && obj.underground) {
-                    drawSprite(ctx, 'scorpion', obj.x, UNDERGROUND_Y - 18, 3, obj.vx < 0)
+                    drawSprite(ctx, 'scorpion', obj.x - 19, UNDERGROUND_Y - 24, 3, obj.vx < 0)
                 }
-                // Croc heads
+                // Croc heads — larger, more detailed
                 if (obj.type === 'croc') {
-                    ctx.fillStyle = '#006600'
-                    ctx.fillRect(obj.x - 20, GROUND_Y - 15, 40, 12)
-                    // Eyes
+                    // Body/head
+                    ctx.fillStyle = '#00AA00'
+                    ctx.fillRect(obj.x - 30, GROUND_Y - 18, 60, 16)
+                    // Snout
+                    ctx.fillRect(obj.x + 20, GROUND_Y - 20, 16, 12)
+                    // Nostrils
+                    ctx.fillStyle = '#005500'
+                    ctx.fillRect(obj.x + 28, GROUND_Y - 18, 3, 3)
+                    ctx.fillRect(obj.x + 33, GROUND_Y - 18, 3, 3)
+                    // Eyes (raised bumps)
                     ctx.fillStyle = '#FFFF00'
-                    ctx.fillRect(obj.x - 15, GROUND_Y - 18, 4, 4)
-                    ctx.fillRect(obj.x + 11, GROUND_Y - 18, 4, 4)
+                    ctx.fillRect(obj.x - 18, GROUND_Y - 24, 8, 8)
+                    ctx.fillRect(obj.x + 8, GROUND_Y - 24, 8, 8)
+                    // Pupils
+                    ctx.fillStyle = '#000000'
+                    ctx.fillRect(obj.x - 14, GROUND_Y - 22, 4, 4)
+                    ctx.fillRect(obj.x + 12, GROUND_Y - 22, 4, 4)
                     if (obj.mouthOpen) {
-                        // Open jaw
-                        ctx.fillStyle = '#FF0000'
-                        ctx.fillRect(obj.x - 20, GROUND_Y - 25, 40, 10)
+                        // Upper jaw lifts
+                        ctx.fillStyle = '#FF3300'
+                        ctx.fillRect(obj.x - 30, GROUND_Y - 32, 66, 14)
+                        // Inside mouth
+                        ctx.fillStyle = '#CC0000'
+                        ctx.fillRect(obj.x - 26, GROUND_Y - 28, 58, 8)
+                        // Teeth
                         ctx.fillStyle = '#FFFFFF'
-                        for (let t = obj.x - 18; t < obj.x + 18; t += 8) {
-                            ctx.fillRect(t, GROUND_Y - 17, 3, 4)
+                        for (let t = obj.x - 24; t < obj.x + 30; t += 10) {
+                            ctx.fillRect(t, GROUND_Y - 22, 4, 6)
+                            ctx.fillRect(t + 2, GROUND_Y - 4, 4, 6)
                         }
                     } else {
-                        // Closed snout
+                        // Closed jaw line
                         ctx.fillStyle = '#008800'
-                        ctx.fillRect(obj.x - 20, GROUND_Y - 18, 40, 4)
+                        ctx.fillRect(obj.x - 30, GROUND_Y - 20, 66, 3)
                     }
+                    // Scale texture
+                    ctx.fillStyle = '#009900'
+                    ctx.fillRect(obj.x - 24, GROUND_Y - 12, 6, 4)
+                    ctx.fillRect(obj.x - 10, GROUND_Y - 14, 6, 4)
+                    ctx.fillRect(obj.x + 4, GROUND_Y - 12, 6, 4)
                 }
                 if (obj.type === 'vine') {
                     const tipX = obj.pivotX + Math.sin(obj.angle) * obj.length
                     const tipY = obj.pivotY + Math.cos(obj.angle) * obj.length
-                    ctx.strokeStyle = '#DDDDDD'
-                    ctx.lineWidth = 2
+                    ctx.strokeStyle = '#BBBB88'
+                    ctx.lineWidth = 3
                     ctx.beginPath()
                     ctx.moveTo(obj.pivotX, obj.pivotY)
                     ctx.lineTo(tipX, tipY)
                     ctx.stroke()
+                    // Vine leaves
+                    ctx.fillStyle = '#44AA44'
+                    const midX = (obj.pivotX + tipX) / 2
+                    const midY = (obj.pivotY + tipY) / 2
+                    ctx.fillRect(midX - 4, midY - 2, 8, 5)
+                    ctx.fillRect(midX + 6, midY + 20, 6, 4)
                 }
             })
 
@@ -1019,7 +1170,7 @@ const PitfallGame = () => {
                 if (player.state === 'climb') pSprite = 'harry_climb'
                 if (player.state === 'swing') pSprite = 'harry_swing'
 
-                drawSprite(ctx, pSprite, player.x - 10, player.y - 38, 3, flip)
+                drawSprite(ctx, pSprite, player.x - 18, player.y - 54, 3, flip)
             }
 
             // --- UI ---
