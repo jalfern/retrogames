@@ -28,8 +28,8 @@ const PitfallGame = () => {
         const GROUND_Y = 450
         const UNDERGROUND_Y = 550
         const PLAYER_SPEED = 4
-        const JUMP_FORCE = -12
-        const GRAVITY = 0.5
+        const JUMP_FORCE = -10
+        const GRAVITY = 0.65
         const TOTAL_TREASURES = 32
 
         // GAME STATE
@@ -70,168 +70,223 @@ const PitfallGame = () => {
             onLadder: false,
             vine: null,
             vineCooldown: 0,
-            knockbackCooldown: 0
+            knockbackCooldown: 0,
+            deathTimer: 0,
+            deathFlash: false,
+            isFalling: false
         }
 
-        // PALETTE
+        const killPlayer = (penalty = 100) => {
+            if (player.state === 'dead') return
+            player.state = 'dead'
+            player.deathTimer = 90
+            player.vx = 0
+            player.vy = 0
+            score = Math.max(0, score - penalty)
+            // Dragnet-style death motif — descending notes
+            audioController.playTone(440, 0.15, 'square')
+            setTimeout(() => audioController.playTone(415, 0.15, 'square'), 180)
+            setTimeout(() => audioController.playTone(370, 0.15, 'square'), 360)
+            setTimeout(() => audioController.playTone(330, 0.2, 'square'), 540)
+            setTimeout(() => audioController.playTone(262, 0.3, 'square'), 750)
+        }
+
+        // PALETTE — Atari 2600 TIA NTSC colors
         const PALETTE = {
-            g: '#228822', // Green (Shirt)
-            w: '#DDDDDD', // White (Pants)
-            s: '#FFCCAA', // Skin
-            b: '#000000', // Black
-            r: '#FF4400', // Red
-            l: '#552200', // Log Brown
-            y: '#FFD700', // Gold
-            e: '#00AA00', // Snake Green
-            h: '#FFFFFF', // White
-            n: '#331100', // Dark Brown
-            d: '#004400', // Dark Green (Croc)
-            v: '#C0C0C0', // Silver
-            o: '#FF8800', // Orange (Fire)
-            k: '#884400', // Bark brown
-            t: '#BBAA44'  // Tan (belt/hat)
+            g: '#74B474', // $C8 Yellow-green (Harry's shirt)
+            w: '#E08888', // $4A Pink/skin (Harry's legs)
+            s: '#FFCCAA', // Skin tone (face/arms)
+            b: '#000000', // $00 Black
+            r: '#9C2020', // $42 Dark red (ring, accents)
+            l: '#646410', // $12 Olive-brown (logs, trunks)
+            y: '#FCFC68', // $1E Bright yellow
+            e: '#6C9850', // $D6 Green (general)
+            h: '#ECECEC', // $0E Near-white
+            n: '#444400', // $10 Dark olive (BROWN-2)
+            d: '#143800', // $D0 Very dark green (crocs)
+            v: '#909090', // $06 Grey
+            o: '#FCBC94', // $3E Peach-orange (fire)
+            k: '#848424', // $14 Lighter olive (BROWN+2)
+            t: '#345C1C', // $D2 Dark yellow-green (Harry's hat)
+            u: '#386890'  // $A4 Blue/teal (sky, water)
         }
 
         const SPRITES = {
             harry_idle: [
-                "    tttt    ",
-                "   tttttt   ",
-                "    ssss    ",
-                "   ssssss   ",
-                "   sb  bs   ",
-                "    ssss    ",
-                "    gggg    ",
-                "   gggggg   ",
-                "  sgggggs   ",
-                "  sgggggs   ",
-                "   gggggg   ",
-                "    gggg    ",
-                "    wwww    ",
-                "   wwwwww   ",
-                "   ww  ww   ",
-                "   ww  ww   ",
-                "   bb  bb   ",
-                "   bb  bb   "
+                "  tttt  ",
+                " tttttt ",
+                "  ssss  ",
+                " sb  bs ",
+                "  ssss  ",
+                "  gggg  ",
+                " gggggg ",
+                "sggggggs",
+                "sggggggs",
+                " gggggg ",
+                "  gggg  ",
+                "  gggg  ",
+                "  wwww  ",
+                " ww  ww ",
+                " ww  ww ",
+                " ww  ww ",
+                " ww  ww ",
+                " bb  bb ",
+                " bb  bb ",
+                "bb    bb"
             ],
             harry_run_0: [
-                "    tttt    ",
-                "   tttttt   ",
-                "    ssss    ",
-                "   ssssss   ",
-                "   sb  bs   ",
-                "    ssss    ",
-                "    gggg    ",
-                "   gggggg   ",
-                "  sgggggs   ",
-                "  sgggggs   ",
-                "   gggggg   ",
-                "    gggg    ",
-                "    wwww    ",
-                "   wwwwww   ",
-                "  ww    ww  ",
-                " ww      ww ",
-                " bb      bb ",
-                "bb        bb"
+                "  tttt  ",
+                " tttttt ",
+                "  ssss  ",
+                " sb  bs ",
+                "  ssss  ",
+                "  gggg  ",
+                " gggggg ",
+                "sggggggs",
+                "sggggggs",
+                " gggggg ",
+                "  gggg  ",
+                "  gggg  ",
+                "  wwww  ",
+                " ww  ww ",
+                " ww  ww ",
+                " ww  ww ",
+                " bb  bb ",
+                " bb  bb ",
+                "bb    bb",
+                "bb    bb"
             ],
             harry_run_1: [
-                "    tttt    ",
-                "   tttttt   ",
-                "    ssss    ",
-                "   ssssss   ",
-                "   sb  bs   ",
-                "    ssss    ",
-                "    gggg    ",
-                "   gggggg   ",
-                "  sgggggs   ",
-                "  sgggggs   ",
-                "   gggggg   ",
-                "    gggg    ",
-                "    wwww    ",
-                "   wwwwww   ",
-                "   ww  ww   ",
-                "   ww  ww   ",
-                "   bb  bb   ",
-                "   bb  bb   "
+                "  tttt  ",
+                " tttttt ",
+                "  ssss  ",
+                " sb  bs ",
+                "  ssss  ",
+                "  gggg  ",
+                " gggggg ",
+                "sggggggs",
+                "sggggggs",
+                " gggggg ",
+                "  gggg  ",
+                "  gggg  ",
+                " wwwwww ",
+                " ww  ww ",
+                "ww    ww",
+                "ww    ww",
+                "bb    bb",
+                "b      b",
+                "b      b",
+                "b      b"
             ],
             harry_run_2: [
-                "    tttt    ",
-                "   tttttt   ",
-                "    ssss    ",
-                "   ssssss   ",
-                "   sb  bs   ",
-                "    ssss    ",
-                "    gggg    ",
-                "   gggggg   ",
-                "  sgggggs   ",
-                "  sgggggs   ",
-                "   gggggg   ",
-                "    gggg    ",
-                "    wwww    ",
-                "   wwwwww   ",
-                "    ww ww   ",
-                "   ww  ww   ",
-                "   bb   bb  ",
-                "  bb    bb  "
+                "  tttt  ",
+                " tttttt ",
+                "  ssss  ",
+                " sb  bs ",
+                "  ssss  ",
+                "  gggg  ",
+                " gggggg ",
+                "sggggggs",
+                "sggggggs",
+                " gggggg ",
+                "  gggg  ",
+                "  gggg  ",
+                "  wwww  ",
+                " wwwwww ",
+                "ww    ww",
+                "w      w",
+                "b      b",
+                "        ",
+                "        ",
+                "        "
+            ],
+            harry_run_3: [
+                "  tttt  ",
+                " tttttt ",
+                "  ssss  ",
+                " sb  bs ",
+                "  ssss  ",
+                "  gggg  ",
+                " gggggg ",
+                "sggggggs",
+                "sggggggs",
+                " gggggg ",
+                "  gggg  ",
+                "  gggg  ",
+                " wwwwww ",
+                " ww  ww ",
+                "ww    ww",
+                "ww    ww",
+                "bb    bb",
+                "b      b",
+                "b      b",
+                "b      b"
             ],
             harry_jump: [
-                "    tttt    ",
-                "   tttttt   ",
-                "    ssss    ",
-                "   ssssss   ",
-                "   sb  bs   ",
-                "    ssss    ",
-                "  s gggg s  ",
-                " ss gggg ss ",
-                "  sgggggs   ",
-                "  sgggggs   ",
-                "   gggggg   ",
-                "    gggg    ",
-                "    wwww    ",
-                "  ww    ww  ",
-                " ww      ww ",
-                "ww        ww",
-                "bb        bb",
-                "bb        bb"
+                "  tttt  ",
+                " tttttt ",
+                "  ssss  ",
+                " sb  bs ",
+                "  ssss  ",
+                " sggggs ",
+                "ssggggss",
+                "sggggggs",
+                "sggggggs",
+                " gggggg ",
+                "  gggg  ",
+                "  gggg  ",
+                "  wwww  ",
+                " ww  ww ",
+                "ww    ww",
+                "w      w",
+                "b      b",
+                "        ",
+                "        ",
+                "        "
             ],
             harry_climb: [
-                "    tttt    ",
-                "   tttttt   ",
-                "    ssss    ",
-                "   ssssss   ",
-                "   sb  bs   ",
-                "    ssss    ",
-                " s  gggg  s ",
-                " ss gggg ss ",
-                "  sgggggs   ",
-                "  sgggggs   ",
-                "   gggggg   ",
-                "    gggg    ",
-                "    wwww    ",
-                "   wwwwww   ",
-                "  ww    ww  ",
-                "  ww    ww  ",
-                "  bb    bb  ",
-                "  bb    bb  "
+                " ss     ",
+                " sstt   ",
+                "  tttt  ",
+                "  ssss  ",
+                " sb  bs ",
+                "  ssss  ",
+                "  gggg  ",
+                " gggggg ",
+                " ggggggs",
+                " ggggggs",
+                " gggggg ",
+                "  gggg  ",
+                "  gggg  ",
+                "  wwww  ",
+                " ww  ww ",
+                " ww  ww ",
+                " ww  ww ",
+                " bb  bb ",
+                " bb  bb ",
+                "bb    bb"
             ],
             harry_swing: [
-                "      ss    ",
-                "    ssssss  ",
-                "   ssssss   ",
-                "   sb  bs   ",
-                "    ssss    ",
-                "    gggg    ",
-                "   gggggg   ",
-                "  sgggggs   ",
-                "  sgggggs   ",
-                "   gggggg   ",
-                "    gggg    ",
-                "    wwww    ",
-                "   wwwwww   ",
-                "    ww      ",
-                "   ww       ",
-                "  ww        ",
-                "  bb        ",
-                " bb         "
+                "     ss ",
+                "   ssss ",
+                "  ttttss",
+                " tttttt ",
+                "  ssss  ",
+                " sb  bs ",
+                "  ssss  ",
+                "  gggg  ",
+                " gggggg ",
+                "sgggggg ",
+                "sggggg  ",
+                " gggg   ",
+                "  gggg  ",
+                "  wwww  ",
+                "  ww    ",
+                " ww     ",
+                " ww     ",
+                " bb     ",
+                "bb      ",
+                "bb      "
             ],
             log: [
                 "   lllll   ",
@@ -242,25 +297,54 @@ const PitfallGame = () => {
                 " lklllllkl ",
                 "  lllllll  "
             ],
+            log_1: [
+                "   lllll   ",
+                "  lllllll  ",
+                " llllllkll ",
+                "lllllllkkll",
+                "llllllllkll",
+                " llllllkll ",
+                "  lllllll  "
+            ],
             scorpion: [
-                "hh          rr ",
-                "hhh        rrr ",
-                " hhh      rrr  ",
-                "  hhhhhhhhrr   ",
-                " nnhhhhhhhrrrr ",
-                "  nn nn nn n   ",
-                "  n  n  n  n   "
+                "hh          hh ",
+                "hhh        hhh ",
+                " hhh      hhh  ",
+                "  hhhhhhhhhh   ",
+                " hhhhhhhhhhhhh ",
+                "  hh hh hh h   ",
+                "  h  h  h  h   "
+            ],
+            scorpion_1: [
+                " hh         hh ",
+                " hhh       hhh ",
+                "  hhh     hhh  ",
+                "  hhhhhhhhhh   ",
+                " hhhhhhhhhhhhh ",
+                "   h hh hh h   ",
+                "  h  h  h  h   "
             ],
             snake: [
                 "    rr      ",
-                "   eeee     ",
-                "   eb be    ",
-                "    eeee    ",
-                "   ee  ee   ",
-                "   ee  ee   ",
-                "  eeeeeeee  ",
-                " ee ee ee ee",
-                "ee  ee  ee  "
+                "   vvvv     ",
+                "   vb bv    ",
+                "    vvvv    ",
+                "   vv  vv   ",
+                "   bb  bb   ",
+                "  bbbbbbbb  ",
+                " bb bb bb bb",
+                "bb  bb  bb  "
+            ],
+            snake_1: [
+                "   rr       ",
+                "  vvvv      ",
+                "  vb bv     ",
+                "   vvvv     ",
+                "    vv vv   ",
+                "   bb  bb   ",
+                "  bbbbbbbb  ",
+                " bb bb bb bb",
+                "  bb  bb  bb"
             ],
             fire: [
                 "    o    ",
@@ -274,15 +358,27 @@ const PitfallGame = () => {
                 " rrrrrrr ",
                 "  rrrrr  "
             ],
+            fire_1: [
+                "   o     ",
+                "   oo    ",
+                "  oror   ",
+                "  rrrro  ",
+                " orrror  ",
+                " orrrrro ",
+                "orrrrrrr ",
+                "orrrrrrro",
+                " rrrrrrr ",
+                "  rrrrr  "
+            ],
             moneybag: [
                 "   bbbb  ",
-                "  bbybb  ",
-                " yyyyyyy ",
-                "yyyyyyyyy",
-                "yyyyyyyyy",
-                "yyyyyyyyy",
-                " yyyyyyy ",
-                "  yyyyy  "
+                "  bblbb  ",
+                " vvvvvvv ",
+                "vvvvvvvvv",
+                "vvvvvvvvv",
+                "vvvvvvvvv",
+                " vvvvvvv ",
+                "  vvvvv  "
             ],
             bar: [
                 " yyyyyyyy ",
@@ -292,13 +388,13 @@ const PitfallGame = () => {
                 " yyyyyyyy "
             ],
             ring: [
-                "   yyy   ",
-                "  y   y  ",
-                " y  h  y ",
-                " y hhh y ",
-                " y  h  y ",
-                "  y   y  ",
-                "   yyy   "
+                "   rrr   ",
+                "  r   r  ",
+                " r  h  r ",
+                " r hhh r ",
+                " r  h  r ",
+                "  r   r  ",
+                "   rrr   "
             ],
             silver_bar: [
                 " vvvvvvvv ",
@@ -306,6 +402,29 @@ const PitfallGame = () => {
                 "vvvvvvvvvv",
                 "vvvvvvvvvv",
                 " vvvvvvvv "
+            ],
+            croc_closed: [
+                "  dddddddddddddd",
+                " dyddddddddddddyd",
+                " ddddddddddddddd ",
+                "  ddddddddddddd  ",
+                "   ddddddddddd   "
+            ],
+            croc_open: [
+                " ddddddddddddddd ",
+                "dhd d d d d d dhd ",
+                " ddddddddddddddd ",
+                "                  ",
+                " ddddddddddddddd ",
+                "dhd d d d d d dhd ",
+                " ddddddddddddddd "
+            ],
+            harry_head: [
+                "  tttt  ",
+                " tttttt ",
+                "  ssss  ",
+                " sb  bs ",
+                "  ssss  "
             ]
         }
 
@@ -400,9 +519,9 @@ const PitfallGame = () => {
                 case 2: // croc pond
                     roomType = 'croc_pond'
                     holePattern = 'single'
-                    objects.push({ type: 'croc', x: 330, mouthTimer: 0, mouthOpen: false })
-                    objects.push({ type: 'croc', x: 400, mouthTimer: 50, mouthOpen: false })
-                    objects.push({ type: 'croc', x: 470, mouthTimer: 100, mouthOpen: false })
+                    objects.push({ type: 'croc', x: 340, mouthTimer: 0, mouthOpen: false })
+                    objects.push({ type: 'croc', x: 400, mouthTimer: 60, mouthOpen: false })
+                    objects.push({ type: 'croc', x: 460, mouthTimer: 120, mouthOpen: false })
                     break
                 case 3: // tar pit
                     roomType = 'tar_pit'
@@ -412,9 +531,9 @@ const PitfallGame = () => {
                 case 4: // croc pit
                     roomType = 'croc_pit'
                     holePattern = 'single'
-                    objects.push({ type: 'croc', x: 330, mouthTimer: 0, mouthOpen: false })
-                    objects.push({ type: 'croc', x: 400, mouthTimer: 50, mouthOpen: false })
-                    objects.push({ type: 'croc', x: 470, mouthTimer: 100, mouthOpen: false })
+                    objects.push({ type: 'croc', x: 340, mouthTimer: 0, mouthOpen: false })
+                    objects.push({ type: 'croc', x: 400, mouthTimer: 60, mouthOpen: false })
+                    objects.push({ type: 'croc', x: 460, mouthTimer: 120, mouthOpen: false })
                     break
                 case 5: { // treasure
                     roomType = 'ground'
@@ -437,7 +556,12 @@ const PitfallGame = () => {
                     }
                     break
                 }
-                default: // 6, 7 — solid ground
+                case 6: // quicksand
+                    roomType = 'quicksand'
+                    holePattern = 'none'
+                    tarPitPhase = 0
+                    break
+                default: // 7 — solid ground
                     roomType = 'ground'
                     holePattern = 'none'
                     break
@@ -473,7 +597,7 @@ const PitfallGame = () => {
 
             // Vines: present when objBits is 2, 3, 6, or 7
             if (objBits === 2 || objBits === 3 || objBits === 6 || objBits === 7) {
-                objects.push({ type: 'vine', x: 400, pivotX: 400, pivotY: 100, length: 200, angle: Math.PI / 4, vAngle: 0 })
+                objects.push({ type: 'vine', x: 400, pivotX: 400, pivotY: 80, length: 170, angle: Math.PI / 4, vAngle: 0 })
             }
 
             // Underground scorpion (scenes with holes/pits)
@@ -547,6 +671,7 @@ const PitfallGame = () => {
                 gameOver = false
                 lives = 3
                 score = 2000
+                timeLeft = 20 * 60
                 collectedTreasures = new Set()
                 player.x = 50
                 player.y = GROUND_Y
@@ -578,6 +703,29 @@ const PitfallGame = () => {
             if (pausedRef.current) return
             if (gameOver) return
 
+            // Death animation
+            if (player.state === 'dead') {
+                player.deathTimer--
+                player.deathFlash = Math.floor(player.deathTimer / 4) % 2 === 0
+                if (player.deathTimer <= 0) {
+                    lives--
+                    if (lives <= 0) { gameOver = true; return }
+                    // Respawn dropping from trees (left side of screen)
+                    player.x = 80
+                    player.y = 150 // Start from canopy height
+                    player.vy = 0; player.vx = 0
+                    player.onGround = false
+                    player.state = 'jump' // Falling state
+                    player.vine = null
+                    player.deathFlash = false
+                    player.isFalling = false
+                }
+                gameTime++
+                if (gameTime % 60 === 0) timeLeft--
+                if (timeLeft <= 0) gameOver = true
+                return
+            }
+
             const dpr = window.devicePixelRatio || 1
             // Physics Scale for implementation simplification
             // Map 0-800 to canvas width
@@ -587,31 +735,68 @@ const PitfallGame = () => {
 
             // --- AI LOGIC (ATTRACT MODE) ---
             if (isAttractMode) {
-                // Run Right
                 keys.ArrowRight = true
                 keys.ArrowLeft = false
                 keys.ArrowUp = false
                 keys.ArrowDown = false
                 keys.Space = false
 
-                // Jump Hazards
-                if (player.onGround) {
-                    let hazard = false
+                const isUnderground = player.y >= UNDERGROUND_Y - 15
 
-                    // Holes, crocs, tar pits
-                    if (['pit', 'croc_pond', 'croc_pit', 'tar_pit'].includes(roomType)) {
-                        if (player.x > 200 && player.x < 300) hazard = true
-                    }
+                if (isUnderground) {
+                    // Underground: navigate in the direction not blocked by the wall
+                    // Wall on right = go left, wall on left = go right (3-screen shortcut)
+                    const goRight = undergroundWallSide === 'left'
+                    keys.ArrowRight = goRight
+                    keys.ArrowLeft = !goRight
 
-                    // Objects ahead
+                    // Jump over scorpions
                     activeObjects.forEach(obj => {
-                        if (['log', 'fire', 'snake'].includes(obj.type) &&
-                            obj.x > player.x && obj.x - player.x < 100) {
-                            hazard = true
+                        if (obj.type === 'scorpion' && obj.underground) {
+                            const dist = obj.x - player.x
+                            if (goRight && dist > 0 && dist < 80 && player.onGround) {
+                                keys.Space = true
+                            }
+                            if (!goRight && dist < 0 && dist > -80 && player.onGround) {
+                                keys.Space = true
+                            }
                         }
                     })
+                } else {
+                    // Surface: jump hazards, grab vines, navigate forward
+                    const hasPit = ['pit', 'croc_pond', 'croc_pit', 'tar_pit', 'quicksand'].includes(roomType)
+                    const hasVine = activeObjects.some(o => o.type === 'vine')
 
-                    if (hazard) keys.Space = true
+                    // If near a pit with no vine, just run right and fall through
+                    // (underground is a shortcut anyway)
+                    if (player.onGround) {
+                        let hazard = false
+                        let hazardDist = 999
+
+                        // Objects ahead
+                        activeObjects.forEach(obj => {
+                            if (['log', 'fire', 'snake'].includes(obj.type)) {
+                                const dist = obj.x - player.x
+                                if (dist > 0 && dist < 100) {
+                                    hazard = true
+                                    hazardDist = Math.min(hazardDist, dist)
+                                }
+                            }
+                        })
+
+                        // Jump over surface hazards
+                        if (hazard && hazardDist < 80) keys.Space = true
+
+                        // Jump to grab vine when approaching pits with vine
+                        if (hasPit && hasVine && player.x > 250 && player.x < 350) {
+                            keys.Space = true
+                        }
+                    }
+                }
+
+                // Release from vine past the pit
+                if (player.state === 'swing' && player.vine) {
+                    if (player.vine.angle < -0.2 && player.x > 450) keys.Space = true
                 }
             }
 
@@ -619,16 +804,22 @@ const PitfallGame = () => {
             if (player.knockbackCooldown > 0) player.knockbackCooldown--
             activeObjects.forEach(obj => {
                 if (obj.type === 'croc') {
-                    obj.mouthTimer = (obj.mouthTimer + 1) % 150
-                    obj.mouthOpen = obj.mouthTimer >= 90
+                    obj.mouthTimer = (obj.mouthTimer + 1) % 180
+                    obj.mouthOpen = obj.mouthTimer >= 140
                 }
                 if (obj.type === 'scorpion' && obj.underground) {
                     obj.x += obj.vx
                     if (obj.x > SCREEN_WIDTH - 30 || obj.x < 30) obj.vx = -obj.vx
                 }
             })
-            if (roomType === 'tar_pit') {
-                tarPitPhase = (Math.sin(gameTime * 0.03) + 1) / 2
+            if (roomType === 'tar_pit' || roomType === 'quicksand') {
+                // Asymmetric cycle: ~3s expand, ~2s retract, clear safe window
+                const cyclePos = (gameTime % 300) / 300
+                if (cyclePos < 0.6) {
+                    tarPitPhase = cyclePos / 0.6
+                } else {
+                    tarPitPhase = 1.0 - (cyclePos - 0.6) / 0.4
+                }
             }
 
             // --- PLAYER MOVEMENT ---
@@ -688,27 +879,31 @@ const PitfallGame = () => {
                     }
 
                     if (crocDeath) {
-                        lives--
-                        if (lives <= 0) { gameOver = true; return }
-                        player.x = 50; player.y = GROUND_Y; player.vy = 0; player.vx = 0
-                        player.onGround = true; player.state = 'idle'; score -= 100
-                        audioController.playSweep(400, 100, 0.3, 'sawtooth')
+                        killPlayer(100)
                     } else if (onCrocHead && player.vy >= 0 && player.y >= GROUND_Y - 10) {
                         player.y = GROUND_Y; player.vy = 0; player.onGround = true
                         player.state = player.vx !== 0 ? 'run' : 'idle'
                     } else if (!onCrocHead && player.y >= GROUND_Y && player.onGround) {
-                        player.onGround = false; player.state = 'jump'
+                        // Falling into pit — drop to underground
+                        player.onGround = false
+                        player.isFalling = true
+                        player.vx = 0
+                        player.vy = 2
+                        score = Math.max(0, score - 100)
+                        audioController.playSweep(300, 80, 0.2, 'sawtooth')
                     }
                 } else if (roomType === 'tar_pit' && tarPitPhase > 0.5 &&
                            player.x > 300 && player.x < 500 &&
                            Math.abs(player.y - GROUND_Y) < 10 &&
                            player.state !== 'jump' && player.state !== 'swing') {
                     // Tar pit kills when expanded
-                    lives--
-                    if (lives <= 0) { gameOver = true; return }
-                    player.x = 50; player.y = GROUND_Y; player.vy = 0; player.vx = 0
-                    player.onGround = true; player.state = 'idle'; score -= 100
-                    audioController.playSweep(400, 100, 0.3, 'sawtooth')
+                    killPlayer(100)
+                } else if (roomType === 'quicksand' && tarPitPhase > 0.5 &&
+                           player.x > 330 && player.x < 470 &&
+                           Math.abs(player.y - GROUND_Y) < 10 &&
+                           player.state !== 'jump' && player.state !== 'swing') {
+                    // Quicksand kills when expanded
+                    killPlayer(100)
                 } else {
                     // Normal surface ground
                     if (player.y > GROUND_Y && player.y < UNDERGROUND_Y - 10 && player.vy >= 0) {
@@ -721,24 +916,12 @@ const PitfallGame = () => {
                 if (player.y > UNDERGROUND_Y && player.vy >= 0) {
                     player.y = UNDERGROUND_Y; player.vy = 0; player.onGround = true
                     player.state = player.vx !== 0 ? 'run' : 'idle'
+                    player.isFalling = false
                 }
             }
 
             if (player.y > 700) {
-                lives--
-                if (lives <= 0) {
-                    gameOver = true
-                    return
-                }
-                player.x = 50
-                player.y = GROUND_Y
-                player.vy = 0
-                player.vx = 0
-                player.onGround = true
-                player.state = 'idle'
-                player.vine = null
-                score -= 100
-                audioController.playTone(100, 0.3, 'sawtooth')
+                killPlayer(100)
             }
 
 
@@ -750,42 +933,39 @@ const PitfallGame = () => {
                         obj.x += obj.vx
                         if (obj.x < -20) obj.x = SCREEN_WIDTH + 20
                     }
-                    if (player.knockbackCooldown <= 0 && Math.abs(player.x - obj.x) < 20 &&
+                    // Continuous contact damage like original — drain points while touching
+                    if (Math.abs(player.x - obj.x) < 18 &&
                         Math.abs(player.y - GROUND_Y) < 10 && player.state !== 'jump') {
-                        player.x += (player.x > obj.x) ? 30 : -30
-                        player.x = Math.max(10, Math.min(SCREEN_WIDTH - 10, player.x))
-                        score = Math.max(0, score - 100)
-                        player.knockbackCooldown = 30
-                        audioController.playTone(150, 0.1, 'square')
+                        if (gameTime % 8 === 0) {
+                            score = Math.max(0, score - 10)
+                        }
+                        // Slight push but not hard knockback
+                        if (player.knockbackCooldown <= 0) {
+                            player.x += (player.x > obj.x) ? 8 : -8
+                            player.knockbackCooldown = 10
+                            audioController.playTone(120, 0.05, 'square')
+                        }
                     }
                 }
 
                 // FATAL SURFACE HAZARDS — fire and snake only
                 if (['fire', 'snake'].includes(obj.type)) {
                     if (Math.abs(player.x - obj.x) < 15 && Math.abs(player.y - GROUND_Y) < 10 && player.state !== 'jump') {
-                        lives--
-                        if (lives <= 0) { gameOver = true; return }
-                        player.x = 50; player.y = GROUND_Y; player.vy = 0; player.vx = 0
-                        player.onGround = true; player.state = 'idle'; score -= 100
-                        audioController.playSweep(400, 100, 0.3, 'sawtooth')
+                        killPlayer(100)
                     }
                 }
 
                 // UNDERGROUND SCORPIONS
                 if (obj.type === 'scorpion' && obj.underground) {
                     if (player.y >= UNDERGROUND_Y - 10 && Math.abs(player.x - obj.x) < 15) {
-                        lives--
-                        if (lives <= 0) { gameOver = true; return }
-                        player.x = 50; player.y = UNDERGROUND_Y; player.vy = 0; player.vx = 0
-                        player.onGround = true; player.state = 'idle'; score -= 100
-                        audioController.playSweep(400, 100, 0.3, 'sawtooth')
+                        killPlayer(100)
                     }
                 }
 
                 // LADDERS
                 if (obj.type === 'ladder') {
                     if (Math.abs(player.x - obj.x) < 15) {
-                        if (keys.ArrowDown || keys.ArrowUp) {
+                        if (keys.ArrowDown || keys.ArrowUp || player.onLadder) {
                             player.state = 'climb'
                             player.onLadder = true
                             player.onGround = false
@@ -793,10 +973,25 @@ const PitfallGame = () => {
                             player.x = obj.x
                             if (keys.ArrowUp) player.y -= 2
                             if (keys.ArrowDown) player.y += 2
+
+                            // Allow stepping off the ladder with left/right
+                            if (keys.ArrowLeft || keys.ArrowRight) {
+                                const dir = keys.ArrowLeft ? -1 : 1
+                                player.x = obj.x + dir * 50
+                                player.onLadder = false
+                                player.onGround = false
+                                player.state = 'jump'
+                                player.vy = 0
+                            }
+
+                            // Reached top — step off to solid ground beside the pit
                             if (player.y <= GROUND_Y) {
                                 player.y = GROUND_Y; player.onLadder = false
                                 player.onGround = true; player.state = 'idle'
+                                // Move to solid ground (left side of pit)
+                                player.x = 250
                             }
+                            // Reached bottom — step off at underground floor
                             if (player.y >= UNDERGROUND_Y) {
                                 player.y = UNDERGROUND_Y; player.onLadder = false
                                 player.onGround = true; player.state = 'idle'
@@ -809,13 +1004,13 @@ const PitfallGame = () => {
 
                 // VINES
                 if (obj.type === 'vine') {
-                    const g = 0.4
+                    const g = 0.6
                     const L = obj.length
-                    const acc = -g / 10 * Math.sin(obj.angle)
+                    const acc = -g / L * Math.sin(obj.angle)
                     obj.vAngle += acc
                     obj.angle += obj.vAngle
-                    obj.vAngle *= 0.99
-                    if (Math.abs(obj.angle) < 0.1 && Math.abs(obj.vAngle) < 0.001) obj.vAngle = 0.02
+                    obj.vAngle *= 0.995
+                    if (Math.abs(obj.angle) < 0.05 && Math.abs(obj.vAngle) < 0.002) obj.vAngle = 0.03
 
                     const tipX = obj.pivotX + Math.sin(obj.angle) * L
                     const tipY = obj.pivotY + Math.cos(obj.angle) * L
@@ -824,6 +1019,10 @@ const PitfallGame = () => {
                         if (Math.abs(player.x - tipX) < 40 && Math.abs(player.y - tipY) < 60 && !player.onGround) {
                             player.state = 'swing'; player.vine = obj
                             player.onGround = false; player.vy = 0; score += 100
+                            // Tarzan yell — ascending warble
+                            audioController.playSweep(200, 600, 0.15, 'sawtooth')
+                            setTimeout(() => audioController.playSweep(400, 800, 0.12, 'sawtooth'), 150)
+                            setTimeout(() => audioController.playSweep(300, 700, 0.1, 'sawtooth'), 300)
                         }
                     }
                 }
@@ -834,8 +1033,11 @@ const PitfallGame = () => {
                         obj.collected = true
                         collectedTreasures.add(currentScreen)
                         score += obj.value
-                        audioController.playTone(800, 0.1, 'sine')
-                        audioController.playTone(1200, 0.1, 'sine')
+                        // Treasure fanfare — ascending notes
+                        audioController.playTone(523, 0.08, 'square')
+                        setTimeout(() => audioController.playTone(659, 0.08, 'square'), 80)
+                        setTimeout(() => audioController.playTone(784, 0.08, 'square'), 160)
+                        setTimeout(() => audioController.playTone(1047, 0.15, 'square'), 240)
                     }
                 }
             })
@@ -848,19 +1050,17 @@ const PitfallGame = () => {
                 player.x = tipX
                 player.y = tipY
 
-                if (keys.Space) {
-                    // Jump off
+                // Release vine with Down or Space (like original: joystick down to release)
+                if (keys.ArrowDown || keys.Space) {
                     player.state = 'jump'
-                    // Launch with momentum plus a bit of extra kick
-                    player.vx = player.vine.vAngle * 120
+                    player.vx = player.vine.vAngle * 150
                     if (player.vx > 0 && player.vx < 4) player.vx = 4
                     if (player.vx < 0 && player.vx > -4) player.vx = -4
-
                     if (player.vx > 8) player.vx = 8
                     if (player.vx < -8) player.vx = -8
-                    player.vy = -10 // Higher jump off
+                    player.vy = -6
                     player.vine = null
-                    player.vineCooldown = 60 // 1 second cooldown
+                    player.vineCooldown = 45
                     audioController.playTone(200, 0.1, 'square')
                 }
             }
@@ -916,261 +1116,266 @@ const PitfallGame = () => {
             ctx.rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
             ctx.clip()
 
-            // --- BACKGROUND ---
-            // Sky
-            ctx.fillStyle = '#55AA55' // Atari Green (Light)
-            ctx.fillRect(0, 0, SCREEN_WIDTH, 350)
+            // --- BACKGROUND (Atari 2600 horizontal bands) ---
+            // Sky — blue/teal ($A4)
+            ctx.fillStyle = '#386890'
+            ctx.fillRect(0, 50, SCREEN_WIDTH, 300)
 
-            // Trees (4 patterns from roomTreeBits)
-            let treePositions
-            switch (roomTreeBits) {
-                case 0: treePositions = [120, 600]; break
-                case 1: treePositions = [100, 380, 650]; break
-                case 2: treePositions = [60, 250, 480, 700]; break
-                case 3: treePositions = [350]; break
-                default: treePositions = [120, 600]
+            // Canopy — layered green like original playfield graphics
+            // Dark green base ($D2)
+            ctx.fillStyle = '#345C1C'
+            ctx.fillRect(0, 50, SCREEN_WIDTH, 95)
+            // Brighter green overlay ($D6)
+            ctx.fillStyle = '#6C9850'
+            ctx.fillRect(0, 52, SCREEN_WIDTH, 80)
+            // Sky holes in canopy (per roomTreeBits for variety)
+            ctx.fillStyle = '#386890'
+            const holeSeeds = [
+                [[60, 65, 35, 14], [220, 58, 50, 12], [500, 62, 40, 13], [700, 55, 30, 15]],
+                [[130, 60, 45, 10], [370, 55, 55, 14], [620, 64, 35, 11]],
+                [[80, 58, 28, 12], [260, 66, 40, 11], [460, 60, 60, 13], [710, 56, 25, 10]],
+                [[160, 57, 50, 12], [420, 63, 35, 15], [570, 61, 45, 10], [760, 55, 30, 13]]
+            ]
+            const holes = holeSeeds[roomTreeBits] || holeSeeds[0]
+            holes.forEach(([hx, hy, hw, hh]) => {
+                ctx.fillRect(hx, hy, hw, hh)
+            })
+            // Irregular canopy bottom edge — hanging leaves/vines
+            for (let cx = 0; cx < SCREEN_WIDTH; cx += 20) {
+                const hang = 8 + Math.abs(Math.sin(cx * 0.07 + roomTreeBits) * 25)
+                // Dark green hangings
+                ctx.fillStyle = '#345C1C'
+                ctx.fillRect(cx, 128, 20, hang + 6)
+                // Brighter green hangings slightly shorter
+                ctx.fillStyle = '#6C9850'
+                ctx.fillRect(cx + 2, 128, 16, hang)
             }
-            treePositions.forEach(tx => {
-                const tw = roomTreeBits === 3 ? 32 : 20
-                const bw = roomTreeBits === 3 ? 100 : 80
-                // Trunk
-                ctx.fillStyle = '#442200'
-                ctx.fillRect(tx, 60, tw, 290)
-                // Trunk texture
-                ctx.fillStyle = '#331100'
-                for (let ty = 80; ty < 340; ty += 30) {
-                    ctx.fillRect(tx + 2, ty, tw - 4, 3)
-                }
-                // Branches with leaf clusters
-                for (let by = 80; by < 260; by += 45) {
-                    ctx.fillStyle = '#331100'
-                    ctx.fillRect(tx - bw / 2 + tw / 2, by, bw, 10)
-                    // Leaf clusters
-                    ctx.fillStyle = '#227722'
-                    ctx.fillRect(tx - bw / 2 + tw / 2 - 8, by - 12, 30, 16)
-                    ctx.fillRect(tx + bw / 2 - tw / 2 - 22, by - 10, 30, 14)
+            // Extra hanging vines from canopy for depth
+            ctx.fillStyle = '#345C1C'
+            for (let vx = 50; vx < SCREEN_WIDTH; vx += 120 + (roomTreeBits * 30)) {
+                const vLen = 20 + (vx * 3 + roomTreeBits * 7) % 30
+                ctx.fillRect(vx, 145, 3, vLen)
+                ctx.fillRect(vx + 1, 145 + vLen - 4, 5, 4)
+            }
+
+            // Trunks — mirrored columns, olive-brown ($12)
+            let trunkPairs
+            switch (roomTreeBits) {
+                case 0: trunkPairs = [[140, 660]]; break
+                case 1: trunkPairs = [[100, 700], [300, 500]]; break
+                case 2: trunkPairs = [[80, 720], [240, 560]]; break
+                case 3: trunkPairs = [[200, 600]]; break
+                default: trunkPairs = [[140, 660]]
+            }
+            trunkPairs.forEach(([lx, rx]) => {
+                // Main trunks ($12 brown)
+                ctx.fillStyle = '#646410'
+                ctx.fillRect(lx, 100, 14, 260)
+                ctx.fillRect(rx, 100, 14, 260)
+                // Darker trunk edges for depth
+                ctx.fillStyle = '#444400'
+                ctx.fillRect(lx, 100, 3, 260)
+                ctx.fillRect(rx + 11, 100, 3, 260)
+                // Branch stubs from trunks
+                for (let by = 160; by < 310; by += 45) {
+                    ctx.fillStyle = '#646410'
+                    // Left trunk branches extend left and right
+                    ctx.fillRect(lx - 14, by, 42, 4)
+                    ctx.fillRect(lx - 8, by - 2, 6, 3)
+                    // Right trunk branches
+                    ctx.fillRect(rx - 14, by + 15, 42, 4)
+                    ctx.fillRect(rx + 14, by + 13, 6, 3)
                 }
             })
 
-            // Canopy Top
-            ctx.fillStyle = '#115511' // Dark Grid Green
-            ctx.fillRect(0, 0, SCREEN_WIDTH, 80)
-            // Canopy Holes (Sky showing through)
-            ctx.fillStyle = '#55AA55'
-            for (let x = 20; x < SCREEN_WIDTH; x += 100) {
-                ctx.fillRect(x, 40, 40, 20)
+            // Ground surface — thin green strip ($D6) with grass detail
+            ctx.fillStyle = '#6C9850'
+            ctx.fillRect(0, 348, SCREEN_WIDTH, 6)
+            // Grass tufts
+            ctx.fillStyle = '#345C1C'
+            for (let gx = 0; gx < SCREEN_WIDTH; gx += 24) {
+                const gh = 2 + (gx * 7 + roomTreeBits * 13) % 4
+                ctx.fillRect(gx + 4, 348 - gh, 3, gh)
+                ctx.fillRect(gx + 14, 348 - gh + 1, 2, gh - 1)
             }
+            // Ground body — olive/khaki ($14 BROWN+2)
+            ctx.fillStyle = '#848424'
+            ctx.fillRect(0, 354, SCREEN_WIDTH, 116)
+            // Ground dirt texture stripes
+            ctx.fillStyle = '#646410'
+            ctx.fillRect(0, 370, SCREEN_WIDTH, 2)
+            ctx.fillRect(0, 400, SCREEN_WIDTH, 2)
+            ctx.fillRect(0, 435, SCREEN_WIDTH, 2)
 
-            // Ground (Top)
-            ctx.fillStyle = '#C8C800' // Yellowish Green
-            ctx.fillRect(0, 350, SCREEN_WIDTH, 120)
-
-            // Underground
-            ctx.fillStyle = '#905000' // Reddish Brown
-
+            // Underground — black background ($00)
+            ctx.fillStyle = '#000000'
             ctx.fillRect(0, 470, SCREEN_WIDTH, 130)
+            // Underground ceiling — dark grey stripe
+            ctx.fillStyle = '#404040'
+            ctx.fillRect(0, 470, SCREEN_WIDTH, 3)
+            // Underground floor — olive/khaki ($14)
+            ctx.fillStyle = '#848424'
+            ctx.fillRect(0, UNDERGROUND_Y, SCREEN_WIDTH, 6)
+            // Floor detail
+            ctx.fillStyle = '#646410'
+            ctx.fillRect(0, UNDERGROUND_Y + 2, SCREEN_WIDTH, 2)
 
-            // Underground Wall Pattern (Brick)
-            ctx.fillStyle = '#603000'
-            for (let y = 480; y < 600; y += 20) {
-                for (let x = 0; x < SCREEN_WIDTH; x += 40) {
-                    if ((y / 20) % 2 === 0) ctx.fillRect(x, y, 4, 10)
-                    else ctx.fillRect(x + 20, y, 4, 10)
+            // Underground brick pattern — grey ($06) and dark red ($42)
+            for (let y = 476; y < UNDERGROUND_Y; y += 8) {
+                const isEvenRow = ((y - 476) / 8) % 2 === 0
+                for (let x = 0; x < SCREEN_WIDTH; x += 20) {
+                    const bx = isEvenRow ? x : x + 10
+                    ctx.fillStyle = '#808080'
+                    ctx.fillRect(bx, y, 18, 3)
+                    ctx.fillStyle = '#803020'
+                    ctx.fillRect(bx, y + 3, 18, 3)
+                    // Mortar lines
+                    ctx.fillStyle = '#404040'
+                    ctx.fillRect(bx + 18, y, 2, 6)
                 }
             }
 
             // --- CURRENT SCREEN FEATURES ---
 
-            // Underground wall
+            // Underground wall — grey/red brick ($06/$42)
             const wallX = undergroundWallSide === 'left' ? 350 : 450
-            ctx.fillStyle = '#883311'
-            ctx.fillRect(wallX - 20, 472, 40, 128)
-            // Brick pattern
-            ctx.fillStyle = '#663300'
+            ctx.fillStyle = '#909090'
+            ctx.fillRect(wallX - 20, 472, 40, 78)
+            // Brick lines
+            ctx.fillStyle = '#9C2020'
             for (let wi = 0; wi < 6; wi++) {
-                const wy = 478 + wi * 20
-                ctx.fillRect(wallX - 18, wy, 36, 2)
-                const brickOff = wi % 2 === 0 ? 0 : 18
-                ctx.fillRect(wallX - 20 + brickOff, wy + 8, 2, 12)
+                const wy = 478 + wi * 12
+                ctx.fillRect(wallX - 18, wy, 36, 5)
             }
-            // Edge shadow
-            ctx.fillStyle = '#441100'
-            ctx.fillRect(wallX - 20, 472, 3, 128)
-            ctx.fillRect(wallX + 17, 472, 3, 128)
 
-            // Holes / Pits / Tar / Crocs
+            // Holes / Pits / Tar / Crocs / Quicksand
             if (roomType === 'tar_pit') {
+                // Tar pit — flat black ($00), like original
                 const baseW = 140
                 const expandW = baseW + tarPitPhase * 60
                 const cx = 400
-                // Tar body
-                ctx.fillStyle = '#221100'
-                ctx.fillRect(cx - expandW / 2, 352, expandW, 118)
-                // Surface sheen
-                ctx.fillStyle = '#442200'
-                ctx.fillRect(cx - expandW / 2 + 10, 355, expandW - 20, 6)
-                // Bubbles (multiple sizes)
-                ctx.fillStyle = '#553300'
-                const bp = Math.sin(gameTime * 0.1) * 0.5 + 0.5
-                ctx.beginPath()
-                ctx.arc(cx - 30, 385 + bp * 12, 6 + tarPitPhase * 4, 0, Math.PI * 2)
-                ctx.fill()
-                ctx.beginPath()
-                ctx.arc(cx + 35, 405 - bp * 8, 5 + tarPitPhase * 3, 0, Math.PI * 2)
-                ctx.fill()
-                ctx.beginPath()
-                ctx.arc(cx + 5, 420 + bp * 6, 4 + tarPitPhase * 2, 0, Math.PI * 2)
-                ctx.fill()
-                // Edge highlight
-                ctx.fillStyle = '#664400'
-                ctx.fillRect(cx - expandW / 2, 350, expandW, 3)
+                ctx.fillStyle = '#000000'
+                ctx.fillRect(cx - expandW / 2, 354, expandW, 116)
+            } else if (roomType === 'quicksand') {
+                // Quicksand — lighter sand patch that pulses
+                const baseW = 120
+                const expandW = baseW + tarPitPhase * 50
+                const cx = 400
+                ctx.fillStyle = '#BCBC76'
+                ctx.fillRect(cx - expandW / 2, 354, expandW, 116)
+                // Surface shimmer
+                ctx.fillStyle = '#D4D490'
+                ctx.fillRect(cx - expandW / 2 + 5, 356, expandW - 10, 3)
             } else if (holePattern !== 'none') {
-                let holeColor = '#000000'
-                if (roomType === 'croc_pond' || roomType === 'croc_pit') holeColor = '#2244CC'
-
+                const isCrocWater = (roomType === 'croc_pond' || roomType === 'croc_pit')
+                const holeColor = isCrocWater ? '#386890' : '#000000'
                 ctx.fillStyle = holeColor
                 if (holePattern === 'single') {
-                    // Dark edge
-                    ctx.fillStyle = '#111111'
-                    ctx.fillRect(296, 349, 208, 124)
-                    ctx.fillStyle = holeColor
-                    ctx.fillRect(300, 352, 200, 118)
+                    ctx.fillRect(300, 350, 200, 120)
+                    if (isCrocWater) {
+                        // Water wave shimmer
+                        ctx.fillStyle = '#4A7CA8'
+                        for (let wx = 305; wx < 495; wx += 18) {
+                            const wy = 360 + Math.sin((wx + gameTime * 2) * 0.08) * 3
+                            ctx.fillRect(wx, wy, 12, 2)
+                        }
+                    }
                 } else if (holePattern === 'triple') {
-                    ctx.fillStyle = '#111111'
-                    ctx.fillRect(176, 349, 128, 124)
-                    ctx.fillRect(336, 349, 128, 124)
-                    ctx.fillRect(496, 349, 128, 124)
-                    ctx.fillStyle = holeColor
-                    ctx.fillRect(180, 352, 120, 118)
-                    ctx.fillRect(340, 352, 120, 118)
-                    ctx.fillRect(500, 352, 120, 118)
-                }
-
-                // Water shine
-                if (roomType === 'croc_pond' || roomType === 'croc_pit') {
-                    ctx.fillStyle = '#4466EE'
-                    ctx.fillRect(310, 365, 30, 5)
-                    ctx.fillRect(370, 395, 50, 5)
-                    ctx.fillRect(340, 425, 25, 4)
+                    ctx.fillRect(180, 350, 120, 120)
+                    ctx.fillRect(340, 350, 120, 120)
+                    ctx.fillRect(500, 350, 120, 120)
                 }
             }
 
             // Objects
             activeObjects.forEach(obj => {
                 if (obj.type === 'log') {
-                    drawSprite(ctx, 'log', obj.x - 16, GROUND_Y - 24, 3)
-                    if (!obj.rolling) {
-                        ctx.fillStyle = '#005500'
-                        ctx.fillRect(obj.x - 10, GROUND_Y - 24, 20, 3)
-                    }
+                    const logFrame = obj.rolling ? (Math.floor(gameTime / 6) % 2 === 0 ? 'log' : 'log_1') : 'log'
+                    drawSprite(ctx, logFrame, obj.x - 16, GROUND_Y - 24, 3)
                 }
                 if (obj.type === 'treasure' && !obj.collected) {
                     const tSprite = obj.treasureSprite || 'moneybag'
                     drawSprite(ctx, tSprite, obj.x - 14, GROUND_Y - 28, 3)
                 }
                 if (obj.type === 'ladder') {
-                    // Side rails
-                    ctx.fillStyle = '#555555'
-                    ctx.fillRect(obj.x - 15, 348, 6, 206)
-                    ctx.fillRect(obj.x + 9, 348, 6, 206)
-                    // Highlight on left rail
-                    ctx.fillStyle = '#777777'
-                    ctx.fillRect(obj.x - 14, 348, 2, 206)
-                    // Rungs
-                    ctx.fillStyle = '#AAAAAA'
-                    for (let ly = 358; ly < 550; ly += 18) {
-                        ctx.fillRect(obj.x - 14, ly, 28, 4)
-                        // Rung shadow
-                        ctx.fillStyle = '#888888'
-                        ctx.fillRect(obj.x - 14, ly + 3, 28, 1)
-                        ctx.fillStyle = '#AAAAAA'
+                    // Flat ladder — matches playfield color ($D6)
+                    ctx.fillStyle = '#6C9850'
+                    ctx.fillRect(obj.x - 12, 350, 4, 200)
+                    ctx.fillRect(obj.x + 8, 350, 4, 200)
+                    for (let ly = 360; ly < 550; ly += 20) {
+                        ctx.fillRect(obj.x - 12, ly, 24, 3)
                     }
                 }
                 if (obj.type === 'fire') {
-                    drawSprite(ctx, 'fire', obj.x - 13, GROUND_Y - 33, 3, Math.floor(gameTime / 8) % 2 === 0)
+                    const fireFrame = Math.floor(gameTime / 6) % 2 === 0 ? 'fire' : 'fire_1'
+                    drawSprite(ctx, fireFrame, obj.x - 13, GROUND_Y - 33, 3)
                 }
                 if (obj.type === 'snake') {
-                    drawSprite(ctx, 'snake', obj.x - 16, GROUND_Y - 30, 3)
+                    const snakeFrame = Math.floor(gameTime / 12) % 2 === 0 ? 'snake' : 'snake_1'
+                    drawSprite(ctx, snakeFrame, obj.x - 16, GROUND_Y - 30, 3)
                 }
                 // Scorpion — underground only
                 if (obj.type === 'scorpion' && obj.underground) {
-                    drawSprite(ctx, 'scorpion', obj.x - 19, UNDERGROUND_Y - 24, 3, obj.vx < 0)
+                    const scorpFrame = Math.floor(gameTime / 8) % 2 === 0 ? 'scorpion' : 'scorpion_1'
+                    drawSprite(ctx, scorpFrame, obj.x - 19, UNDERGROUND_Y - 24, 3, obj.vx < 0)
                 }
-                // Croc heads — larger, more detailed
+                // Croc heads — sprite-based
                 if (obj.type === 'croc') {
-                    // Body/head
-                    ctx.fillStyle = '#00AA00'
-                    ctx.fillRect(obj.x - 30, GROUND_Y - 18, 60, 16)
-                    // Snout
-                    ctx.fillRect(obj.x + 20, GROUND_Y - 20, 16, 12)
-                    // Nostrils
-                    ctx.fillStyle = '#005500'
-                    ctx.fillRect(obj.x + 28, GROUND_Y - 18, 3, 3)
-                    ctx.fillRect(obj.x + 33, GROUND_Y - 18, 3, 3)
-                    // Eyes (raised bumps)
-                    ctx.fillStyle = '#FFFF00'
-                    ctx.fillRect(obj.x - 18, GROUND_Y - 24, 8, 8)
-                    ctx.fillRect(obj.x + 8, GROUND_Y - 24, 8, 8)
-                    // Pupils
-                    ctx.fillStyle = '#000000'
-                    ctx.fillRect(obj.x - 14, GROUND_Y - 22, 4, 4)
-                    ctx.fillRect(obj.x + 12, GROUND_Y - 22, 4, 4)
                     if (obj.mouthOpen) {
-                        // Upper jaw lifts
-                        ctx.fillStyle = '#FF3300'
-                        ctx.fillRect(obj.x - 30, GROUND_Y - 32, 66, 14)
-                        // Inside mouth
-                        ctx.fillStyle = '#CC0000'
-                        ctx.fillRect(obj.x - 26, GROUND_Y - 28, 58, 8)
-                        // Teeth
-                        ctx.fillStyle = '#FFFFFF'
-                        for (let t = obj.x - 24; t < obj.x + 30; t += 10) {
-                            ctx.fillRect(t, GROUND_Y - 22, 4, 6)
-                            ctx.fillRect(t + 2, GROUND_Y - 4, 4, 6)
-                        }
+                        drawSprite(ctx, 'croc_open', obj.x - 27, GROUND_Y - 24, 3)
                     } else {
-                        // Closed jaw line
-                        ctx.fillStyle = '#008800'
-                        ctx.fillRect(obj.x - 30, GROUND_Y - 20, 66, 3)
+                        drawSprite(ctx, 'croc_closed', obj.x - 27, GROUND_Y - 18, 3)
                     }
-                    // Scale texture
-                    ctx.fillStyle = '#009900'
-                    ctx.fillRect(obj.x - 24, GROUND_Y - 12, 6, 4)
-                    ctx.fillRect(obj.x - 10, GROUND_Y - 14, 6, 4)
-                    ctx.fillRect(obj.x + 4, GROUND_Y - 12, 6, 4)
                 }
                 if (obj.type === 'vine') {
+                    // Vine — thick green rope like original TIA ball sprite
                     const tipX = obj.pivotX + Math.sin(obj.angle) * obj.length
                     const tipY = obj.pivotY + Math.cos(obj.angle) * obj.length
-                    ctx.strokeStyle = '#BBBB88'
-                    ctx.lineWidth = 3
+                    // Draw vine as thick segmented rope with slight curve
+                    ctx.strokeStyle = '#6C9850' // Green, matching canopy ($D6)
+                    ctx.lineWidth = 6
+                    ctx.lineCap = 'round'
+                    ctx.beginPath()
+                    // Slight catenary curve via quadratic bezier
+                    const midX = (obj.pivotX + tipX) / 2 + Math.sin(obj.angle) * 12
+                    const midY = (obj.pivotY + tipY) / 2 + 8
+                    ctx.moveTo(obj.pivotX, obj.pivotY)
+                    ctx.quadraticCurveTo(midX, midY, tipX, tipY)
+                    ctx.stroke()
+                    // Darker vine texture lines
+                    ctx.strokeStyle = '#345C1C'
+                    ctx.lineWidth = 2
                     ctx.beginPath()
                     ctx.moveTo(obj.pivotX, obj.pivotY)
-                    ctx.lineTo(tipX, tipY)
+                    ctx.quadraticCurveTo(midX, midY, tipX, tipY)
                     ctx.stroke()
-                    // Vine leaves
-                    ctx.fillStyle = '#44AA44'
-                    const midX = (obj.pivotX + tipX) / 2
-                    const midY = (obj.pivotY + tipY) / 2
-                    ctx.fillRect(midX - 4, midY - 2, 8, 5)
-                    ctx.fillRect(midX + 6, midY + 20, 6, 4)
+                    // Knot/grip at the tip where Harry grabs
+                    ctx.fillStyle = '#646410'
+                    ctx.beginPath()
+                    ctx.arc(tipX, tipY, 5, 0, Math.PI * 2)
+                    ctx.fill()
                 }
             })
 
             // --- PLAYER ---
-            if (player.state !== 'dead') {
+            if (player.state === 'dead') {
+                // Flash Harry during death animation
+                if (player.deathFlash) {
+                    drawSprite(ctx, 'harry_idle', player.x - 12, player.y - 60, 3, false)
+                }
+            } else {
                 let pSprite = 'harry_idle'
                 let flip = player.vx < 0
 
                 if (player.state === 'run') {
-                    const frame = Math.floor(gameTime / 5) % 3
+                    const frame = Math.floor(gameTime / 4) % 4
                     pSprite = `harry_run_${frame}`
                 }
                 if (player.state === 'jump') pSprite = 'harry_jump'
                 if (player.state === 'climb') pSprite = 'harry_climb'
                 if (player.state === 'swing') pSprite = 'harry_swing'
 
-                drawSprite(ctx, pSprite, player.x - 18, player.y - 54, 3, flip)
+                drawSprite(ctx, pSprite, player.x - 12, player.y - 60, 3, flip)
             }
 
             // --- UI ---
@@ -1178,45 +1383,76 @@ const PitfallGame = () => {
             ctx.fillStyle = '#000000' // Black Bar
             ctx.fillRect(0, 0, SCREEN_WIDTH, 50)
 
-            ctx.fillStyle = '#D0D0D0' // Atari Grey Text
+            ctx.fillStyle = '#ECECEC' // Atari white ($0E)
             ctx.font = '24px monospace'
             ctx.textAlign = 'left'
-            ctx.fillText(`${score}`, 40, 35) // Score
+            ctx.fillText(`${score.toString().padStart(6, '0')}`, 40, 35)
             ctx.textAlign = 'center'
-            // Time bar
-            ctx.fillStyle = '#900000'
-            ctx.fillRect(SCREEN_WIDTH / 2 - 60, 15, 120, 20) // Time bar bg
-            ctx.fillStyle = '#FFFF00'
-            const timeWidth = (timeLeft / (20 * 60)) * 120
-            ctx.fillRect(SCREEN_WIDTH / 2 - 60, 15, timeWidth, 20)
+            // Timer — MM:SS countdown
+            const mins = Math.floor(timeLeft / 60)
+            const secs = timeLeft % 60
+            ctx.fillStyle = '#ECECEC'
+            ctx.font = '20px monospace'
+            ctx.fillText(`${mins}:${secs.toString().padStart(2, '0')}`, SCREEN_WIDTH / 2, 30)
 
-            ctx.fillStyle = '#FFD700'
+            ctx.fillStyle = '#FCFC68' // Atari yellow ($1E)
             ctx.font = '12px monospace'
             ctx.fillText(`${collectedTreasures.size}/${TOTAL_TREASURES}`, SCREEN_WIDTH / 2, 45)
+            // Room number (subtle)
+            ctx.fillStyle = '#404040'
+            ctx.font = '10px monospace'
+            ctx.textAlign = 'left'
+            ctx.fillText(`R${currentScreen}`, 6, 12)
 
+            // Lives — small Harry head icons
             ctx.textAlign = 'right'
-            ctx.fillStyle = '#D0D0D0'
-            ctx.font = '24px monospace'
-            ctx.fillText(`LIVES: ${lives}`, SCREEN_WIDTH - 40, 35)
+            for (let li = 0; li < lives; li++) {
+                drawSprite(ctx, 'harry_head', SCREEN_WIDTH - 100 + li * 28, 10, 2)
+            }
 
             if (gameOver) {
-                ctx.fillStyle = 'rgba(0,0,0,0.7)'
-                ctx.fillRect(0, SCREEN_HEIGHT / 2 - 60, SCREEN_WIDTH, 120)
-                ctx.fillStyle = '#FF0000'
-                ctx.font = '40px monospace'
+                ctx.fillStyle = 'rgba(0,0,0,0.75)'
+                ctx.fillRect(0, SCREEN_HEIGHT / 2 - 80, SCREEN_WIDTH, 160)
+                ctx.fillStyle = '#9C2020'
+                ctx.font = 'bold 36px monospace'
                 ctx.textAlign = 'center'
-                ctx.fillText("GAME OVER", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
-                ctx.fillStyle = '#FFFFFF'
+                ctx.fillText("GAME OVER", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 30)
+                ctx.fillStyle = '#FCFC68'
                 ctx.font = '18px monospace'
-                ctx.fillText("PRESS ANY KEY TO RESTART", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 40)
+                ctx.fillText(`SCORE: ${score.toString().padStart(6, '0')}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 10)
+                ctx.fillStyle = '#6C9850'
+                ctx.font = '14px monospace'
+                ctx.fillText(`TREASURES: ${collectedTreasures.size} / ${TOTAL_TREASURES}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 35)
+                if (Math.floor(gameTime / 30) % 2 === 0) {
+                    ctx.fillStyle = '#ECECEC'
+                    ctx.font = '14px monospace'
+                    ctx.fillText("PRESS ANY KEY TO RESTART", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 65)
+                }
             }
 
             if (isAttractMode) {
-                ctx.fillStyle = '#ffffff'
-                ctx.font = '20px monospace'
+                // Semi-transparent backdrop for readability
+                ctx.fillStyle = 'rgba(0,0,0,0.55)'
+                ctx.fillRect(SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 85, 400, 145)
+                // Title
+                ctx.fillStyle = '#FCFC68'
+                ctx.font = 'bold 42px monospace'
                 ctx.textAlign = 'center'
-                ctx.fillText("PRESS ANY KEY TO START", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
-                ctx.fillText("ATTRACT MODE (UPDATED)", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40)
+                ctx.fillText("PITFALL!", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 42)
+                // Subtitle
+                ctx.fillStyle = '#6C9850'
+                ctx.font = '12px monospace'
+                ctx.fillText("PITFALL HARRY'S JUNGLE ADVENTURE", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 14)
+                // Author credit (like original cartridge)
+                ctx.fillStyle = '#909090'
+                ctx.font = '10px monospace'
+                ctx.fillText("DESIGNED BY DAVID CRANE", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 6)
+                // Start prompt — flash
+                if (Math.floor(gameTime / 30) % 2 === 0) {
+                    ctx.fillStyle = '#ECECEC'
+                    ctx.font = '16px monospace'
+                    ctx.fillText("PRESS ANY KEY", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 40)
+                }
             }
 
             ctx.restore()
