@@ -44,6 +44,7 @@ const PitfallGame = () => {
         let roomTreeBits = 0
         let holePattern = 'none'
         let undergroundWallSide = 'left'
+        let hasUndergroundWall = false
         let tarPitPhase = 0
         let collectedTreasures = new Set()
         const gameConfig = GAMES.find(g => g.label === 'PITFALL')
@@ -492,8 +493,8 @@ const PitfallGame = () => {
         let activeObjects = []
 
         const loadScreen = (index) => {
-            if (index < 0) index = 255
-            if (index > 255) index = 0
+            // Wrap around 255-screen LFSR cycle
+            index = ((index % 255) + 255) % 255
             currentScreen = index
             const roomByte = getRoomByte(index)
 
@@ -501,74 +502,71 @@ const PitfallGame = () => {
             const sceneBits = (roomByte >> 3) & 0x07
             roomTreeBits = (roomByte >> 6) & 0x03
             undergroundWallSide = (roomByte & 0x80) ? 'right' : 'left'
+            hasUndergroundWall = false
 
             let objects = []
 
-            // Scene type (bits 3-5)
+            // Scene type (bits 5-3) — authentic Atari 2600 mapping
             switch (sceneBits) {
-                case 0: // hole + ladder
+                case 0: // Hole with ladder
                     roomType = 'pit'
                     holePattern = 'single'
+                    hasUndergroundWall = true
                     objects.push({ type: 'ladder', x: 400 })
                     break
-                case 1: // triple holes + ladder
+                case 1: // Hole with ladder + 2 extra holes
                     roomType = 'pit'
                     holePattern = 'triple'
+                    hasUndergroundWall = true
                     objects.push({ type: 'ladder', x: 400 })
                     break
-                case 2: // croc pond
-                    roomType = 'croc_pond'
-                    holePattern = 'single'
-                    objects.push({ type: 'croc', x: 340, mouthTimer: 0, mouthOpen: false })
-                    objects.push({ type: 'croc', x: 400, mouthTimer: 60, mouthOpen: false })
-                    objects.push({ type: 'croc', x: 460, mouthTimer: 120, mouthOpen: false })
-                    break
-                case 3: // tar pit
+                case 2: // Tar pit with vine
                     roomType = 'tar_pit'
-                    holePattern = 'single'
+                    holePattern = 'none'
                     tarPitPhase = 0
                     break
-                case 4: // croc pit
+                case 3: // Quicksand with vine
+                    roomType = 'quicksand'
+                    holePattern = 'none'
+                    tarPitPhase = 0
+                    break
+                case 4: // Crocodile pit
                     roomType = 'croc_pit'
                     holePattern = 'single'
                     objects.push({ type: 'croc', x: 340, mouthTimer: 0, mouthOpen: false })
                     objects.push({ type: 'croc', x: 400, mouthTimer: 60, mouthOpen: false })
                     objects.push({ type: 'croc', x: 460, mouthTimer: 120, mouthOpen: false })
                     break
-                case 5: { // treasure
+                case 5: { // Treasure screen
                     roomType = 'ground'
                     holePattern = 'none'
-                    let treasureCount = 0
-                    let b = 0xC4
-                    for (let i = 0; i < index; i++) {
-                        if (((b >> 3) & 0x07) === 5) treasureCount++
-                        b = rightLFSR(b)
-                    }
-                    const tTypes = [
-                        { sprite: 'ring', value: 5000 },
-                        { sprite: 'bar', value: 4000 },
+                    // Treasure type from bits 1-0 of room byte (authentic mapping)
+                    const treasureTypes = [
+                        { sprite: 'moneybag', value: 2000 },
                         { sprite: 'silver_bar', value: 3000 },
-                        { sprite: 'moneybag', value: 2000 }
+                        { sprite: 'bar', value: 4000 },
+                        { sprite: 'ring', value: 5000 }
                     ]
-                    const tt = tTypes[treasureCount % 4]
+                    const tt = treasureTypes[objBits & 0x03]
                     if (!collectedTreasures.has(index)) {
                         objects.push({ type: 'treasure', x: 600, value: tt.value, treasureSprite: tt.sprite })
                     }
                     break
                 }
-                case 6: // quicksand
+                case 6: // Shifting tar pit with vine
+                    roomType = 'tar_pit'
+                    holePattern = 'none'
+                    tarPitPhase = 0
+                    break
+                case 7: // Shifting quicksand
                     roomType = 'quicksand'
                     holePattern = 'none'
                     tarPitPhase = 0
                     break
-                default: // 7 — solid ground
-                    roomType = 'ground'
-                    holePattern = 'none'
-                    break
             }
 
-            // Surface objects (bits 0-2) — only for non-treasure scenes
-            if (sceneBits !== 5) {
+            // Ground objects (bits 2-0) — suppressed for croc (4) and treasure (5) scenes
+            if (sceneBits !== 4 && sceneBits !== 5) {
                 switch (objBits) {
                     case 0: objects.push({ type: 'log', x: 600, vx: -3, rolling: true }); break
                     case 1:
@@ -595,13 +593,15 @@ const PitfallGame = () => {
                 }
             }
 
-            // Vines: present when objBits is 2, 3, 6, or 7
-            if (objBits === 2 || objBits === 3 || objBits === 6 || objBits === 7) {
+            // Vines — scene-based: always for tar (2), quicksand (3), shifting tar (6);
+            // conditional for crocs (4): only if bit 1 of objBits is set
+            if (sceneBits === 2 || sceneBits === 3 || sceneBits === 6 ||
+                (sceneBits === 4 && (objBits & 0x02))) {
                 objects.push({ type: 'vine', x: 400, pivotX: 400, pivotY: 80, length: 170, angle: Math.PI / 4, vAngle: 0 })
             }
 
-            // Underground scorpion (scenes with holes/pits)
-            if (sceneBits <= 4) {
+            // Underground: rooms WITH ladders (0, 1) get a wall; rooms WITHOUT get a scorpion
+            if (sceneBits >= 2) {
                 objects.push({ type: 'scorpion', x: 200 + (index % 4) * 120, vx: 2, underground: true })
             }
 
@@ -764,7 +764,7 @@ const PitfallGame = () => {
                     })
                 } else {
                     // Surface: jump hazards, grab vines, navigate forward
-                    const hasPit = ['pit', 'croc_pond', 'croc_pit', 'tar_pit', 'quicksand'].includes(roomType)
+                    const hasPit = ['pit', 'croc_pit', 'tar_pit', 'quicksand'].includes(roomType)
                     const hasVine = activeObjects.some(o => o.type === 'vine')
 
                     // If near a pit with no vine, just run right and fall through
@@ -851,7 +851,7 @@ const PitfallGame = () => {
             // --- COLLISIONS & INTERACTIONS ---
 
             // Ground/Floor
-            const isHole = ['pit', 'croc_pond', 'croc_pit'].includes(roomType)
+            const isHole = ['pit', 'croc_pit'].includes(roomType)
             let inHoleZone = false
             if (holePattern === 'single') {
                 inHoleZone = (player.x > 300 && player.x < 500)
@@ -867,7 +867,7 @@ const PitfallGame = () => {
                     // Check if standing on a croc head (closed mouth = platform)
                     let onCrocHead = false
                     let crocDeath = false
-                    if (roomType === 'croc_pond' || roomType === 'croc_pit') {
+                    if (roomType === 'croc_pit') {
                         for (const obj of activeObjects) {
                             if (obj.type === 'croc' && Math.abs(player.x - obj.x) < 25) {
                                 if (Math.abs(player.y - GROUND_Y) < 15) {
@@ -1065,8 +1065,8 @@ const PitfallGame = () => {
                 }
             }
 
-            // Underground wall collision
-            if (player.y >= UNDERGROUND_Y - 15) {
+            // Underground wall collision — only in rooms with ladders
+            if (player.y >= UNDERGROUND_Y - 15 && hasUndergroundWall) {
                 const wallX = undergroundWallSide === 'left' ? 350 : 450
                 if (player.x > wallX - 20 && player.x < wallX + 20) {
                     if (player.vx > 0 && player.x < wallX) { player.x = wallX - 20; player.vx = 0 }
@@ -1237,15 +1237,17 @@ const PitfallGame = () => {
 
             // --- CURRENT SCREEN FEATURES ---
 
-            // Underground wall — grey/red brick ($06/$42)
-            const wallX = undergroundWallSide === 'left' ? 350 : 450
-            ctx.fillStyle = '#909090'
-            ctx.fillRect(wallX - 20, 472, 40, 78)
-            // Brick lines
-            ctx.fillStyle = '#9C2020'
-            for (let wi = 0; wi < 6; wi++) {
-                const wy = 478 + wi * 12
-                ctx.fillRect(wallX - 18, wy, 36, 5)
+            // Underground wall — only in rooms with ladders (scenes 0, 1)
+            if (hasUndergroundWall) {
+                const wallX = undergroundWallSide === 'left' ? 350 : 450
+                ctx.fillStyle = '#909090'
+                ctx.fillRect(wallX - 20, 472, 40, 78)
+                // Brick lines
+                ctx.fillStyle = '#9C2020'
+                for (let wi = 0; wi < 6; wi++) {
+                    const wy = 478 + wi * 12
+                    ctx.fillRect(wallX - 18, wy, 36, 5)
+                }
             }
 
             // Holes / Pits / Tar / Crocs / Quicksand
@@ -1267,7 +1269,7 @@ const PitfallGame = () => {
                 ctx.fillStyle = '#D4D490'
                 ctx.fillRect(cx - expandW / 2 + 5, 356, expandW - 10, 3)
             } else if (holePattern !== 'none') {
-                const isCrocWater = (roomType === 'croc_pond' || roomType === 'croc_pit')
+                const isCrocWater = roomType === 'croc_pit'
                 const holeColor = isCrocWater ? '#386890' : '#000000'
                 ctx.fillStyle = holeColor
                 if (holePattern === 'single') {
