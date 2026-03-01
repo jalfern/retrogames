@@ -1271,21 +1271,41 @@ const PitfallGame = () => {
             } else if (holePattern !== 'none') {
                 const isCrocWater = roomType === 'croc_pit'
                 const holeColor = isCrocWater ? '#386890' : '#000000'
-                ctx.fillStyle = holeColor
+
+                // Draw pit with rounded elliptical opening
+                const drawPit = (cx, w) => {
+                    const rx = w / 2
+                    const ry = Math.round(w * 0.15)
+                    const topY = 352
+                    ctx.fillStyle = holeColor
+                    // Elliptical opening at top
+                    ctx.beginPath()
+                    ctx.ellipse(cx, topY + ry, rx, ry, 0, 0, Math.PI * 2)
+                    ctx.fill()
+                    // Shaft below ellipse to underground
+                    ctx.fillRect(cx - rx, topY + ry, w, 470 - topY - ry)
+                    // Rim highlight — ground-colored ellipse slightly above to round the lip
+                    ctx.fillStyle = '#646410'
+                    ctx.beginPath()
+                    ctx.ellipse(cx, topY + ry, rx + 3, ry + 3, 0, Math.PI, 0, false)
+                    ctx.closePath()
+                    ctx.fill()
+                }
+
                 if (holePattern === 'single') {
-                    ctx.fillRect(300, 350, 200, 120)
+                    drawPit(400, 200)
                     if (isCrocWater) {
                         // Water wave shimmer
                         ctx.fillStyle = '#4A7CA8'
-                        for (let wx = 305; wx < 495; wx += 18) {
-                            const wy = 360 + Math.sin((wx + gameTime * 2) * 0.08) * 3
+                        for (let wx = 310; wx < 490; wx += 18) {
+                            const wy = 400 + Math.sin((wx + gameTime * 2) * 0.08) * 3
                             ctx.fillRect(wx, wy, 12, 2)
                         }
                     }
                 } else if (holePattern === 'triple') {
-                    ctx.fillRect(180, 350, 120, 120)
-                    ctx.fillRect(340, 350, 120, 120)
-                    ctx.fillRect(500, 350, 120, 120)
+                    drawPit(240, 120)
+                    drawPit(400, 120)
+                    drawPit(560, 120)
                 }
             }
 
