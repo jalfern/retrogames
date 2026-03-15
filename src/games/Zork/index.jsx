@@ -164,7 +164,7 @@ function ZorkGame({ storyFile, label }) {
     setIsAIPlaying(true)
     setAIStatus('thinking')
     try {
-      const response = await fetch('/api/ai-move', {
+      const response = await fetch('https://retrogames-psi.vercel.app/api/ai-move', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ transcript: linesRef.current.slice(-25) })
