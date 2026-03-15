@@ -10,6 +10,7 @@ import MissileCommandGame from '../games/MissileCommand'
 import AdventureGame from '../games/Adventure'
 import { ZorkI, ZorkII, ZorkIII } from '../games/Zork'
 import KingsQuestGame from '../games/KingsQuest'
+import RogueGame from '../games/Rogue'
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -126,5 +127,13 @@ export const GAMES = [
         theme: 'dark',
         description: "Roberta Williams' groundbreaking graphic adventure. Guide Sir Graham through the kingdom of Daventry to recover three stolen treasures and claim the throne.",
         controls: ['Arrow Keys: Move Sir Graham', 'Type commands: LOOK, TAKE, OPEN, TALK', 'F5: Save Game', 'F7: Restore Game']
+    }    ,
+    {
+        path: '/rogue',
+        component: RogueGame,
+        label: 'ROGUE',
+        theme: 'dark',
+        description: 'The original dungeon crawler. Descend through procedurally generated dungeons, battle monsters, collect treasure, and find the Amulet of Yendor. Permadeath — every run is unique.',
+        controls: ['Arrow Keys / hjkl: Move', ',: Pick up', 'i: Inventory', 'q: Quaff potion', 'r: Read scroll', '>: Descend stairs', '?: Help']
     }
 ]
