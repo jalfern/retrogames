@@ -169,7 +169,11 @@ function ZorkGame({ storyFile, label }) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ transcript: linesRef.current.slice(-25) })
       })
-      const data = await response.json()
+      const rawText = await response.text()
+      let data = {}
+      try { data = JSON.parse(rawText) } catch(parseErr) {
+        throw new Error(`Bad JSON (${response.status}): ${rawText.slice(0,80)}`)
+      }
       const command = data.command
       if (command && inputResolverRef.current) {
         setAIStatus('typing')
