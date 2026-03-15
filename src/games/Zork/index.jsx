@@ -171,6 +171,7 @@ function ZorkGame({ storyFile, label }) {
   const [inputValue, setInputValue] = useState('')
   const [showMap, setShowMap] = useState(false)
   const [currentRoom, setCurrentRoom] = useState(null)
+  const [aiPaused, setAiPaused] = useState(false)
   const outputRef = useRef(null)
   const inputRef = useRef(null)
   const lastTsRef = useRef(0)
@@ -191,6 +192,7 @@ function ZorkGame({ storyFile, label }) {
         setConnected(true)
         setAIStatus(status)
         if (room) setCurrentRoom(room)
+        if (typeof data.aiPaused === 'boolean') setAiPaused(data.aiPaused)
 
         if (since === 0) {
           setLines(newLines)
@@ -212,6 +214,16 @@ function ZorkGame({ storyFile, label }) {
   useEffect(() => {
     if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
   }, [lines])
+
+  // ── Pause/resume ───────────────────────────────────────────────────────────
+  const togglePause = useCallback(async () => {
+    const action = aiPaused ? 'zork-resume' : 'zork-pause'
+    try {
+      const r = await fetch(`${API}/${action}`)
+      const { paused } = await r.json()
+      setAiPaused(paused)
+    } catch {}
+  }, [aiPaused])
 
   // ── Human input ────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (e) => {
@@ -262,7 +274,11 @@ function ZorkGame({ storyFile, label }) {
             </span>
             {currentRoom && <span style={{ color: '#2a6a2a' }}>· {currentRoom}</span>}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={togglePause} disabled={!connected}
+                    style={{ background: aiPaused ? '#14532d' : 'none', border: `1px solid ${aiPaused ? '#22c55e' : '#1a3a1a'}`, borderRadius: 4, color: aiPaused ? '#4ade80' : '#2a6a2a', fontSize: '0.7rem', padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace' }}>
+              {aiPaused ? '▶ resume' : '⏸ pause'}
+            </button>
             <button onClick={() => setShowMap(true)}
                     style={{ background: 'none', border: '1px solid #1a3a1a', borderRadius: 4, color: '#2a6a2a', fontSize: '0.7rem', padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace' }}>
               🗺 map
@@ -285,9 +301,10 @@ function ZorkGame({ storyFile, label }) {
 
         {/* AI status */}
         <div style={{ minHeight: 26, padding: '2px 16px', fontSize: '0.72rem', borderTop: '1px solid #0d200d' }}>
-          {aiStatus === 'thinking' && <span style={{ color: '#60a5fa' }}>🤖 stogabot is thinking<span className="ai-dots">...</span></span>}
-          {aiStatus === 'typing'   && <span style={{ color: '#4ade80' }}>🤖 stogabot is typing<span className="ai-dots">...</span></span>}
-          {aiStatus === 'waiting'  && <span style={{ color: '#444' }}>🤖 stogabot is deciding…</span>}
+          {aiPaused                && <span style={{ color: '#d29922' }}>⏸ AI paused — type a command or press resume</span>}
+          {!aiPaused && aiStatus === 'thinking' && <span style={{ color: '#60a5fa' }}>🤖 stogabot is thinking<span className="ai-dots">...</span></span>}
+          {!aiPaused && aiStatus === 'typing'   && <span style={{ color: '#4ade80' }}>🤖 stogabot is typing<span className="ai-dots">...</span></span>}
+          {!aiPaused && aiStatus === 'waiting'  && <span style={{ color: '#444' }}>🤖 stogabot is deciding…</span>}
         </div>
 
         {/* Human input */}
