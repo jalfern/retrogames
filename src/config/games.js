@@ -8,6 +8,7 @@ import DefenderGame from '../games/Defender'
 import PitfallGame from '../games/Pitfall'
 import MissileCommandGame from '../games/MissileCommand'
 import AdventureGame from '../games/Adventure'
+import { ZorkI, ZorkII, ZorkIII } from '../games/Zork'
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -92,5 +93,29 @@ export const GAMES = [
         theme: 'dark',
         description: 'Explore a world of castles, dungeons, and dragons. Find the enchanted chalice and return it home.',
         controls: ['Arrow Keys: Move', 'Space: Drop Item']
+    },
+    {
+        path: '/zork',
+        component: ZorkI,
+        label: 'ZORK I',
+        theme: 'dark',
+        description: 'The Great Underground Empire. Explore a vast underground world full of treasures, puzzles, and dangers. Watch out for Grues.',
+        controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game']
+    },
+    {
+        path: '/zork2',
+        component: ZorkII,
+        label: 'ZORK II',
+        theme: 'dark',
+        description: 'The Wizard of Frobozz. Continue your underground adventure, but beware the capricious Wizard who haunts these depths.',
+        controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game']
+    },
+    {
+        path: '/zork3',
+        component: ZorkIII,
+        label: 'ZORK III',
+        theme: 'dark',
+        description: 'The Dungeon Master. The final chapter of the Zork trilogy. Prove your worth to become the Dungeon Master.',
+        controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game']
     }
 ]
