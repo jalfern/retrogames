@@ -169,7 +169,8 @@ function ZorkGame({ storyFile, label }) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ transcript: linesRef.current.slice(-25) })
       })
-      const { command } = await response.json()
+      const data = await response.json()
+      const command = data.command
       if (command && inputResolverRef.current) {
         setAIStatus('typing')
         await new Promise(r => setTimeout(r, 600)) // brief "typing" pause
@@ -183,11 +184,14 @@ function ZorkGame({ storyFile, label }) {
           vmRef.current.resume(command.length)
         }
       } else {
+        // AI returned nothing — show brief message and reset timer
         setAIStatus(null)
+        setLines(prev => { const n = [...prev, { type: 'ai-error', text: `[stogabot couldn't decide a move — your turn]` }]; linesRef.current = n; return n })
       }
     } catch(e) {
       console.error('AI move failed:', e)
       setAIStatus(null)
+      setLines(prev => { const n = [...prev, { type: 'ai-error', text: `[AI error: ${e.message}]` }]; linesRef.current = n; return n })
     }
     finally { setIsAIPlaying(false) }
   }, [paused, stopCountdown])
@@ -282,7 +286,7 @@ function ZorkGame({ storyFile, label }) {
           )}
           {lines.map((line, i) => (
             <div key={i}
-                 className={line.type === 'command' ? 'text-amber-400' : line.type === 'error' ? 'text-red-400' : line.type === 'ai-command' ? 'text-gray-600 italic' : ''}
+                 className={line.type === 'command' ? 'text-amber-400' : line.type === 'error' ? 'text-red-400' : line.type === 'ai-command' ? 'text-gray-600 italic' : line.type === 'ai-error' ? 'text-yellow-700 italic' : ''}
                  style={line.type === 'command' ? { textShadow: '0 0 5px rgba(251, 191, 36, 0.5)' } : undefined}>
               {line.text || '\u00A0'}
             </div>
