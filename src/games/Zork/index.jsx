@@ -14,6 +14,7 @@ function ZorkGame({ storyFile, label }) {
   const [isAIPlaying, setIsAIPlaying] = useState(false)
   const [aiStatus, setAIStatus] = useState(null) // null | 'thinking' | 'typing'
   const [countdown, setCountdown] = useState(null) // seconds remaining
+  const [inputRequestCount, setInputRequestCount] = useState(0) // increments every waitForInput call
   const aiTimerRef = useRef(null)
   const countdownIntervalRef = useRef(null)
   const linesRef = useRef([])
@@ -82,6 +83,7 @@ function ZorkGame({ storyFile, label }) {
           waitForInput(callback) {
             inputResolverRef.current = callback
             setInputEnabled(true)
+            setInputRequestCount(c => c + 1) // always triggers timer restart even if inputEnabled was already true
           },
           handleError(msg) {
             setLines(prev => [...prev, { type: 'error', text: `Error: ${msg}` }])
@@ -217,7 +219,7 @@ function ZorkGame({ storyFile, label }) {
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
       stopCountdown()
     }
-  }, [inputEnabled, paused, triggerAIMove, stopCountdown])
+  }, [inputRequestCount, inputEnabled, paused, triggerAIMove, stopCountdown])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'ArrowUp') {
