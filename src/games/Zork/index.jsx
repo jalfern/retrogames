@@ -13,6 +13,7 @@ function ZorkGame({ storyFile, label }) {
   const [error, setError] = useState(null)
   const [isAIPlaying, setIsAIPlaying] = useState(false)
   const aiTimerRef = useRef(null)
+  const linesRef = useRef([])
 
   const vmRef = useRef(null)
   const inputResolverRef = useRef(null)
@@ -68,6 +69,7 @@ function ZorkGame({ storyFile, label }) {
                   newLines.push({ type: 'output', text: part })
                 }
               })
+              linesRef.current = newLines
               return newLines
             })
           },
@@ -150,7 +152,7 @@ function ZorkGame({ storyFile, label }) {
       const response = await fetch('/api/ai-move', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ transcript: lines.slice(-25) })
+        body: JSON.stringify({ transcript: linesRef.current.slice(-25) })
       })
       const { command } = await response.json()
       if (command && inputResolverRef.current) {
@@ -165,7 +167,7 @@ function ZorkGame({ storyFile, label }) {
       }
     } catch(e) { console.error('AI move failed:', e) }
     finally { setIsAIPlaying(false) }
-  }, [paused, lines])
+  }, [paused])
 
   useEffect(() => {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
