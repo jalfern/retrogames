@@ -23,6 +23,7 @@ const gestalt_Unicode = 15
 
 class RefStruct {
   constructor() { this.fields = [0, 0, 0, 0] }
+  push_field(v) { this.fields.push(v) }
   get_field(i) { return this.fields[i] || 0 }
   set_field(i, v) { this.fields[i] = v }
 }
@@ -125,7 +126,7 @@ export function createGlk(terminal, savePrefix) {
     glk_window_get_stream(win) { return win ? win.str : mainStream },
     glk_window_clear(win) { if (win && win.type === wintype_TextBuffer) terminal.clear() },
     glk_set_window(win) { if (win) currentStream = win.str },
-    glk_window_get_size(win, w, h) { if (w) w.set_value(80); if (h) h.set_value(24) },
+    glk_window_get_size(win, w, h) { if (w && w.set_value) w.set_value(80); if (h && h.set_value) h.set_value(24) },
     glk_window_move_cursor() {},
     glk_window_get_parent() { return mainWindow },
     glk_window_set_arrangement() {},
@@ -233,7 +234,9 @@ export function createGlk(terminal, savePrefix) {
     glk_set_style_stream() {},
     glk_stylehint_set() {},
     glk_stylehint_clear() {},
+    garglk_set_reversevideo() {},
     garglk_set_reversevideo_stream() {},
+    garglk_set_zcolors_stream() {},
 
     // Input requests
     glk_request_line_event(win, buf, initlen) { requestLine(win, buf, initlen) },
