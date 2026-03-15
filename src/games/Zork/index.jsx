@@ -20,6 +20,14 @@ function ZorkMap({ onClose }) {
       .then(r => r.json())
       .then(d => { setMapData(d); setLoading(false) })
       .catch(() => setLoading(false))
+    // Refresh map every 5s while open
+    const t = setInterval(() => {
+      fetch(`${API}/zork-map`)
+        .then(r => r.json())
+        .then(d => setMapData(d))
+        .catch(() => {})
+    }, 5000)
+    return () => clearInterval(t)
   }, [])
 
   // Layout: normalize positions to canvas coords
@@ -85,15 +93,16 @@ function ZorkMap({ onClose }) {
                 fill={isCurrent ? '#14532d' : '#0d1f0d'}
                 stroke={isCurrent ? '#22c55e' : '#1a3a1a'}
                 strokeWidth={isCurrent ? 2 : 1} />
-          <text textAnchor="middle" dominantBaseline="middle"
+          <text x={-35} y={-9} fill="#1a4a2a" fontSize={7.5} fontFamily="monospace">#{room.num}</text>
+          <text textAnchor="middle" dominantBaseline="middle" y={3}
                 fill={isCurrent ? '#4ade80' : '#2a6a2a'}
                 fontSize={isCurrent ? 9.5 : 9}
                 fontFamily="monospace"
                 fontWeight={isCurrent ? 'bold' : 'normal'}>
             {shortName}
           </text>
-          {room.visits > 0 && (
-            <text x={34} y={-12} fill="#374151" fontSize={8} fontFamily="monospace">{room.visits}×</text>
+          {room.visits > 1 && (
+            <text x={34} y={-9} fill="#374151" fontSize={7.5} fontFamily="monospace">{room.visits}×</text>
           )}
         </g>
       )
@@ -126,8 +135,26 @@ function ZorkMap({ onClose }) {
           {!loading && !mapData && <div style={{ color: '#555', padding: 40, textAlign: 'center' }}>No map data</div>}
           {!loading && mapData && renderMap(mapData.roomGraph, mapData.currentRoom)}
         </div>
-        <div style={{ fontSize: '0.7rem', color: '#2a6a2a', borderTop: '1px solid #1a3a1a', paddingTop: 8 }}>
-          {Object.keys(mapData?.roomGraph || {}).length} rooms explored
+
+        {/* Visit sequence */}
+        {mapData?.visitSequence?.length > 0 && (
+          <div style={{ borderTop: '1px solid #1a3a1a', paddingTop: 8, maxHeight: 80, overflow: 'auto' }}>
+            <div style={{ fontSize: '0.65rem', color: '#2a6a2a', marginBottom: 4 }}>PATH TAKEN</div>
+            <div style={{ fontSize: '0.65rem', color: '#374151', lineHeight: 1.6, wordBreak: 'break-word' }}>
+              {mapData.visitSequence.map((v, i) => (
+                <span key={i}>
+                  <span style={{ color: v.name === mapData.currentRoom ? '#4ade80' : '#1a4a2a' }}>
+                    #{v.num} {v.name}
+                  </span>
+                  {i < mapData.visitSequence.length - 1 && <span style={{ color: '#1a3a1a' }}> → </span>}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ fontSize: '0.7rem', color: '#2a6a2a', borderTop: '1px solid #1a3a1a', paddingTop: 6 }}>
+          {Object.keys(mapData?.roomGraph || {}).length} rooms discovered · {mapData?.visitSequence?.length || 0} total moves
         </div>
       </div>
     </div>
