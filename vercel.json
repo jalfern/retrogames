@@ -13,7 +13,6 @@
     { "source": "/retrogames/js-dos/:path*", "destination": "/js-dos/:path*" },
     { "source": "/retrogames", "destination": "/index.html" },
     { "source": "/retrogames/:path*", "destination": "/index.html" },
-    { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

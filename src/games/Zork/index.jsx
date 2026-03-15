@@ -150,7 +150,7 @@ function ZorkGame({ storyFile, label }) {
     }
   }, [inputValue])
 
-  const AI_DELAY = 30 // seconds before AI takes over
+  const AI_DELAY = 10 // seconds before AI takes over
 
   const stopCountdown = useCallback(() => {
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
