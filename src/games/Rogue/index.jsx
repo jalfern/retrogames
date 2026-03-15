@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useCallback, useRef } from 'react'
+import { useReducer, useEffect, useCallback, useRef, useState } from 'react'
 
 // ============================================================
 // CONSTANTS
@@ -909,9 +909,89 @@ function buildGrid(state) {
 // ============================================================
 // COMPONENT
 // ============================================================
+// ── Mobile d-pad ──────────────────────────────────────────────────────────────
+function DPad({ onAction }) {
+  const btn = (label, action, style = {}) => {
+    const press = (e) => { e.preventDefault(); onAction(action) }
+    return (
+      <button onPointerDown={press}
+              style={{
+                background: '#111', border: '1px solid #333', color: '#888',
+                fontFamily: 'monospace', fontSize: 18, borderRadius: 6,
+                width: 52, height: 52, cursor: 'pointer', userSelect: 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                WebkitTapHighlightColor: 'transparent', touchAction: 'none',
+                ...style
+              }}>
+        {label}
+      </button>
+    )
+  }
+
+  const ab = (label, action, color = '#446') => {
+    const press = (e) => { e.preventDefault(); onAction(action) }
+    return (
+      <button onPointerDown={press}
+              style={{
+                background: '#0a0a14', border: `1px solid ${color}`, color: color,
+                fontFamily: 'monospace', fontSize: 12, borderRadius: 6,
+                padding: '4px 8px', cursor: 'pointer', userSelect: 'none',
+                WebkitTapHighlightColor: 'transparent', touchAction: 'none',
+              }}>
+        {label}
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ flexShrink: 0, background: '#0a0a0a', borderTop: '1px solid #222', padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {/* Action buttons row */}
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+        {ab('i inv',   { type: 'SHOW_INVENTORY' }, '#446')}
+        {ab(', pick',  { type: 'PICKUP' },          '#464')}
+        {ab('s srch',  { type: 'SEARCH' },           '#664')}
+        {ab('. rest',  { type: 'MOVE', dx:0, dy:0 }, '#644')}
+        {ab('> down',  { type: 'DESCEND' },          '#644')}
+        {ab('q drink', { type: 'SHOW_QUAFF' },       '#446')}
+        {ab('r read',  { type: 'SHOW_READ' },        '#446')}
+      </div>
+      {/* D-pad */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 52px)', gridTemplateRows: 'repeat(3, 52px)', gap: 3 }}>
+          {btn('↖', { type: 'MOVE', dx:-1, dy:-1 })}
+          {btn('↑', { type: 'MOVE', dx: 0, dy:-1 }, { color: '#aaa' })}
+          {btn('↗', { type: 'MOVE', dx: 1, dy:-1 })}
+          {btn('←', { type: 'MOVE', dx:-1, dy: 0 }, { color: '#aaa' })}
+          {btn('·', { type: 'SEARCH' },              { color: '#555' })}
+          {btn('→', { type: 'MOVE', dx: 1, dy: 0 }, { color: '#aaa' })}
+          {btn('↙', { type: 'MOVE', dx:-1, dy: 1 })}
+          {btn('↓', { type: 'MOVE', dx: 0, dy: 1 }, { color: '#aaa' })}
+          {btn('↘', { type: 'MOVE', dx: 1, dy: 1 })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function RogueGame() {
   const [state, dispatch] = useReducer(reducer, null, createInitialState)
   const containerRef = useRef(null)
+  const [isMobile, setIsMobile] = useState(false)
+  const [mapScale, setMapScale] = useState(1)
+  const mapRef = useRef(null)
+  const touchStartRef = useRef(null)
+
+  useEffect(() => {
+    const check = () => {
+      const mobile = window.innerWidth < 768
+      setIsMobile(mobile)
+      // Scale map to fit screen width: map is 80 chars × 9.6px = 768px
+      if (mobile) setMapScale(Math.min(1, window.innerWidth / 768))
+    }
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   useEffect(() => {
     containerRef.current?.focus()
@@ -983,6 +1063,27 @@ export default function RogueGame() {
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [state])
+
+  // Swipe to move on mobile
+  const handleTouchStart = useCallback((e) => {
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  }, [])
+
+  const handleTouchEnd = useCallback((e) => {
+    if (!touchStartRef.current) return
+    const dx = e.changedTouches[0].clientX - touchStartRef.current.x
+    const dy = e.changedTouches[0].clientY - touchStartRef.current.y
+    touchStartRef.current = null
+    if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return // too small
+    const adx = Math.abs(dx), ady = Math.abs(dy)
+    const mx = adx > ady * 2 ? (dx > 0 ? 1 : -1) : (adx > ady * 0.5 ? (dx > 0 ? 1 : -1) : 0)
+    const my = ady > adx * 2 ? (dy > 0 ? 1 : -1) : (ady > adx * 0.5 ? (dy > 0 ? 1 : -1) : 0)
+    if (mx !== 0 || my !== 0) dispatch({ type: 'MOVE', dx: mx, dy: my })
+  }, [])
+
+  const handleMobileAction = useCallback((action) => {
+    dispatch(action)
+  }, [])
 
   const { player, phase, messages, dungeonLevel, finalScore } = state
 
@@ -1148,29 +1249,38 @@ export default function RogueGame() {
   const hungerStr = player.hunger !== 'full' ? ` [${player.hunger.toUpperCase()}]` : ''
   const statusStr = `Dlvl:${dungeonLevel}  Gold:${player.gold}  Hp:${player.hp}(${player.maxHp})  Str:${player.str}(${player.maxStr})  Arm:${playerAC(player)}  Exp:${player.level}/${player.exp}${hungerStr}`
 
+  const charW = isMobile ? 9.6 * mapScale : 9.6
+  const charH = isMobile ? 19 * mapScale : 19
+  const fontSize = isMobile ? 15 * mapScale : 15
+
   return (
-    <div ref={containerRef} style={base} tabIndex={0} onClick={() => containerRef.current?.focus()}>
+    <div ref={containerRef} style={base} tabIndex={0}
+         onClick={() => containerRef.current?.focus()}
+         onTouchStart={handleTouchStart}
+         onTouchEnd={handleTouchEnd}>
+
       {/* Message line */}
       <div style={{
-        height: '20px', padding: '1px 6px', flexShrink: 0,
-        color: '#dddd88', fontSize: '13px', lineHeight: '18px',
+        padding: '1px 6px', flexShrink: 0,
+        color: '#dddd88', fontSize: isMobile ? 11 : 13, lineHeight: '18px',
         overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
       }}>
-        {lastMsg}
+        {lastMsg || '\u00A0'}
       </div>
 
       {/* Map */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div ref={mapRef} style={{ flex: isMobile ? '0 0 auto' : 1, overflow: 'hidden' }}>
         <pre style={{
           margin: 0, padding: 0,
           fontFamily: '"Courier New", Courier, monospace',
-          fontSize: '15px', lineHeight: '19px',
-          letterSpacing: '1px',
+          fontSize, lineHeight: `${charH}px`,
+          letterSpacing: isMobile ? 0 : '1px',
+          transformOrigin: 'top left',
         }}>
           {grid.map((row, y) => (
-            <div key={y} style={{ height: '19px', display: 'flex' }}>
+            <div key={y} style={{ height: charH, display: 'flex' }}>
               {row.map((cell, x) => (
-                <span key={x} style={{ color: cell.color, minWidth: '9.6px', display: 'inline-block', textAlign: 'center' }}>
+                <span key={x} style={{ color: cell.color, minWidth: charW, display: 'inline-block', textAlign: 'center' }}>
                   {cell.char}
                 </span>
               ))}
@@ -1181,12 +1291,15 @@ export default function RogueGame() {
 
       {/* Status bar */}
       <div style={{
-        height: '20px', padding: '1px 6px', flexShrink: 0,
-        color: '#88ee88', fontSize: '12px', lineHeight: '18px',
+        padding: '1px 6px', flexShrink: 0,
+        color: '#88ee88', fontSize: isMobile ? 10 : 12, lineHeight: '18px',
         borderTop: '1px solid #222', overflow: 'hidden', whiteSpace: 'nowrap',
       }}>
         {statusStr}
       </div>
+
+      {/* Mobile controls */}
+      {isMobile && <DPad onAction={handleMobileAction} />}
     </div>
   )
 }
