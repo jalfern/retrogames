@@ -152,7 +152,8 @@ function ZorkGame({ storyFile, label }) {
     }
   }, [inputValue])
 
-  const AI_DELAY = 10 // seconds before AI takes over
+  const AI_DELAY = 10 // seconds before AI first takes over
+  const AI_MOVE_DELAY = 2 // seconds between AI moves once in control
 
   const stopCountdown = useCallback(() => {
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
@@ -206,20 +207,21 @@ function ZorkGame({ storyFile, label }) {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
     stopCountdown()
     if (inputEnabled && !paused) {
-      setCountdown(AI_DELAY)
+      const delay = isAIPlaying ? AI_MOVE_DELAY : AI_DELAY
+      setCountdown(delay)
       countdownIntervalRef.current = setInterval(() => {
         setCountdown(prev => {
           if (prev <= 1) { clearInterval(countdownIntervalRef.current); return null }
           return prev - 1
         })
       }, 1000)
-      aiTimerRef.current = setTimeout(triggerAIMove, AI_DELAY * 1000)
+      aiTimerRef.current = setTimeout(triggerAIMove, delay * 1000)
     }
     return () => {
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
       stopCountdown()
     }
-  }, [inputRequestCount, inputEnabled, paused, triggerAIMove, stopCountdown])
+  }, [inputRequestCount, inputEnabled, paused, isAIPlaying, triggerAIMove, stopCountdown])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'ArrowUp') {
