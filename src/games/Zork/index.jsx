@@ -28,21 +28,20 @@ function ZorkMap({ onClose }) {
     if (rooms.length === 0) return <text fill="#555" x="50%" y="50%" textAnchor="middle">No rooms explored yet</text>
 
     // Assign positions to any null rooms — place them in a row below the main map
-    const positioned = rooms.filter(([, r]) => r.x !== null && r.y !== null)
-    const unpositioned = rooms.filter(([, r]) => r.x === null || r.y === null)
-    const maxY = positioned.length ? Math.max(...positioned.map(([, r]) => r.y)) : 0
-    unpositioned.forEach(([, r], i) => { r.x = i; r.y = maxY + 2 })
+    const posRooms = rooms.filter(([, r]) => r.x !== null && r.y !== null)
+    const unposRooms = rooms.filter(([, r]) => r.x === null || r.y === null)
+    const bottomY = posRooms.length ? Math.max(...posRooms.map(([, r]) => r.y)) : 0
+    unposRooms.forEach(([, r], i) => { r.x = i; r.y = bottomY + 2 })
 
     // Deduplicate positions — if two rooms share coords, nudge duplicates
-    const seen = {}
+    const coordSeen = {}
     for (const [name, r] of rooms) {
       const key = `${r.x},${r.y}`
-      if (seen[key] && seen[key] !== name) {
-        // nudge this room
-        r.x += 0.5
-        r.y += 0.5
+      if (coordSeen[key] && coordSeen[key] !== name) {
+        r.x += 0.6
+        r.y += 0.4
       }
-      seen[key] = name
+      coordSeen[key] = name
     }
 
     // Find bounds
