@@ -9,6 +9,7 @@ import PitfallGame from '../games/Pitfall'
 import MissileCommandGame from '../games/MissileCommand'
 import AdventureGame from '../games/Adventure'
 import { ZorkI, ZorkII, ZorkIII } from '../games/Zork'
+import KingsQuestGame from '../games/KingsQuest'
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -117,5 +118,13 @@ export const GAMES = [
         theme: 'dark',
         description: 'The Dungeon Master. The final chapter of the Zork trilogy. Prove your worth to become the Dungeon Master.',
         controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game']
+    },
+    {
+        path: '/kingsquest',
+        component: KingsQuestGame,
+        label: "KING'S QUEST",
+        theme: 'dark',
+        description: "Roberta Williams' groundbreaking graphic adventure. Guide Sir Graham through the kingdom of Daventry to recover three stolen treasures and claim the throne.",
+        controls: ['Arrow Keys: Move Sir Graham', 'Type commands: LOOK, TAKE, OPEN, TALK', 'F5: Save Game', 'F7: Restore Game']
     }
 ]
