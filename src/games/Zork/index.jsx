@@ -11,6 +11,8 @@ function ZorkGame({ storyFile, label }) {
   const [paused, setPaused] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [isAIPlaying, setIsAIPlaying] = useState(false)
+  const aiTimerRef = useRef(null)
 
   const vmRef = useRef(null)
   const inputResolverRef = useRef(null)
@@ -110,6 +112,8 @@ function ZorkGame({ storyFile, label }) {
 
   const handleSubmit = useCallback((e) => {
     e.preventDefault()
+    if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
+    setIsAIPlaying(false)
     const command = inputValue
     setInputValue('')
     setInputEnabled(false)
@@ -138,6 +142,38 @@ function ZorkGame({ storyFile, label }) {
       }
     }
   }, [inputValue])
+
+  const triggerAIMove = useCallback(async () => {
+    if (!inputResolverRef.current || paused) return
+    setIsAIPlaying(true)
+    try {
+      const response = await fetch('/api/ai-move', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ transcript: lines.slice(-25) })
+      })
+      const { command } = await response.json()
+      if (command && inputResolverRef.current) {
+        setLines(prev => [...prev, { type: 'ai-command', text: `> ${command}` }])
+        const resolver = inputResolverRef.current
+        inputResolverRef.current = null
+        setInputEnabled(false)
+        resolver(command)
+        if (vmRef.current && !vmRef.current.quit) {
+          vmRef.current.resume(command.length)
+        }
+      }
+    } catch(e) { console.error('AI move failed:', e) }
+    finally { setIsAIPlaying(false) }
+  }, [paused, lines])
+
+  useEffect(() => {
+    if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
+    if (inputEnabled && !paused) {
+      aiTimerRef.current = setTimeout(triggerAIMove, 30000)
+    }
+    return () => { if (aiTimerRef.current) clearTimeout(aiTimerRef.current) }
+  }, [inputEnabled, paused, triggerAIMove])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'ArrowUp') {
@@ -204,7 +240,7 @@ function ZorkGame({ storyFile, label }) {
           )}
           {lines.map((line, i) => (
             <div key={i}
-                 className={line.type === 'command' ? 'text-amber-400' : line.type === 'error' ? 'text-red-400' : ''}
+                 className={line.type === 'command' ? 'text-amber-400' : line.type === 'error' ? 'text-red-400' : line.type === 'ai-command' ? 'text-gray-600 italic' : ''}
                  style={line.type === 'command' ? { textShadow: '0 0 5px rgba(251, 191, 36, 0.5)' } : undefined}>
               {line.text || '\u00A0'}
             </div>
@@ -212,6 +248,12 @@ function ZorkGame({ storyFile, label }) {
         </div>
 
         {/* Input line */}
+        {isAIPlaying && (
+          <div style={{padding:'2px 16px',fontSize:'0.72rem',color:'#666',fontFamily:'monospace'}}>🤖 stogabot is playing...</div>
+        )}
+        {inputEnabled && !isAIPlaying && !paused && (
+          <div style={{padding:'2px 16px',fontSize:'0.68rem',color:'#333',fontFamily:'monospace'}}>type to play · AI takes over in 30s</div>
+        )}
         <form onSubmit={handleSubmit} className="flex items-center p-4 pt-2">
           <span className="mr-2 select-none">&gt;</span>
           <input
