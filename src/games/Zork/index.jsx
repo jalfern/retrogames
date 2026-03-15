@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
+import { ZVM } from 'ifvms'
 import { createGlk } from './GlkAdapter'
 import PauseOverlay from '../../components/PauseOverlay'
 import { GAMES } from '../../config/games'
@@ -82,7 +83,6 @@ function ZorkGame({ storyFile, label }) {
 
         const savePrefix = label.toLowerCase().replace(/\s+/g, '-')
         const Glk = createGlk(terminal, savePrefix)
-        const { ZVM } = await import('ifvms')
 
         if (cancelled) return
 
@@ -90,10 +90,17 @@ function ZorkGame({ storyFile, label }) {
         vm.prepare(gameData, { Glk })
         vmRef.current = vm
         setLoading(false)
-        vm.start()
+        try {
+          vm.start()
+        } catch (startErr) {
+          console.error('VM start error:', startErr)
+          console.error('Stack:', startErr.stack)
+          if (!cancelled) setError(`VM start: ${startErr.message}\n${startErr.stack}`)
+        }
       } catch (e) {
         console.error('Failed to load Zork game:', e)
-        if (!cancelled) setError(e.message)
+        console.error('Stack:', e.stack)
+        if (!cancelled) setError(`${e.message}\n${e.stack}`)
       }
     }
 
