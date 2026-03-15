@@ -12,7 +12,10 @@ function ZorkGame({ storyFile, label }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [isAIPlaying, setIsAIPlaying] = useState(false)
+  const [aiStatus, setAIStatus] = useState(null) // null | 'thinking' | 'typing'
+  const [countdown, setCountdown] = useState(null) // seconds remaining
   const aiTimerRef = useRef(null)
+  const countdownIntervalRef = useRef(null)
   const linesRef = useRef([])
 
   const vmRef = useRef(null)
@@ -115,7 +118,9 @@ function ZorkGame({ storyFile, label }) {
   const handleSubmit = useCallback((e) => {
     e.preventDefault()
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
+    stopCountdown()
     setIsAIPlaying(false)
+    setAIStatus(null)
     const command = inputValue
     setInputValue('')
     setInputEnabled(false)
@@ -145,9 +150,19 @@ function ZorkGame({ storyFile, label }) {
     }
   }, [inputValue])
 
+  const AI_DELAY = 30 // seconds before AI takes over
+
+  const stopCountdown = useCallback(() => {
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+    countdownIntervalRef.current = null
+    setCountdown(null)
+  }, [])
+
   const triggerAIMove = useCallback(async () => {
+    stopCountdown()
     if (!inputResolverRef.current || paused) return
     setIsAIPlaying(true)
+    setAIStatus('thinking')
     try {
       const response = await fetch('/api/ai-move', {
         method: 'POST',
@@ -156,26 +171,45 @@ function ZorkGame({ storyFile, label }) {
       })
       const { command } = await response.json()
       if (command && inputResolverRef.current) {
-        setLines(prev => [...prev, { type: 'ai-command', text: `> ${command}` }])
+        setAIStatus('typing')
+        await new Promise(r => setTimeout(r, 600)) // brief "typing" pause
+        setLines(prev => { const n = [...prev, { type: 'ai-command', text: `> ${command}` }]; linesRef.current = n; return n })
         const resolver = inputResolverRef.current
         inputResolverRef.current = null
         setInputEnabled(false)
+        setAIStatus(null)
         resolver(command)
         if (vmRef.current && !vmRef.current.quit) {
           vmRef.current.resume(command.length)
         }
+      } else {
+        setAIStatus(null)
       }
-    } catch(e) { console.error('AI move failed:', e) }
+    } catch(e) {
+      console.error('AI move failed:', e)
+      setAIStatus(null)
+    }
     finally { setIsAIPlaying(false) }
-  }, [paused])
+  }, [paused, stopCountdown])
 
   useEffect(() => {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
+    stopCountdown()
     if (inputEnabled && !paused) {
-      aiTimerRef.current = setTimeout(triggerAIMove, 30000)
+      setCountdown(AI_DELAY)
+      countdownIntervalRef.current = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) { clearInterval(countdownIntervalRef.current); return null }
+          return prev - 1
+        })
+      }, 1000)
+      aiTimerRef.current = setTimeout(triggerAIMove, AI_DELAY * 1000)
     }
-    return () => { if (aiTimerRef.current) clearTimeout(aiTimerRef.current) }
-  }, [inputEnabled, paused, triggerAIMove])
+    return () => {
+      if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
+      stopCountdown()
+    }
+  }, [inputEnabled, paused, triggerAIMove, stopCountdown])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'ArrowUp') {
@@ -226,6 +260,12 @@ function ZorkGame({ storyFile, label }) {
   return (
     <div className="fixed inset-0 bg-black flex items-center justify-center"
          onClick={handleContainerClick}>
+      <style>{`
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        .dots::after { content:''; animation: dotsAnim 1.2s steps(4,end) infinite; }
+        @keyframes dotsAnim { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
+        @keyframes aipulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+      `}</style>
       <div ref={containerRef}
            className="relative w-full h-full max-w-4xl max-h-full flex flex-col font-mono text-sm sm:text-base"
            style={{ color: '#33ff33', textShadow: '0 0 5px rgba(51, 255, 51, 0.5)' }}>
@@ -249,12 +289,24 @@ function ZorkGame({ storyFile, label }) {
           ))}
         </div>
 
-        {/* Input line */}
-        {isAIPlaying && (
-          <div style={{padding:'2px 16px',fontSize:'0.72rem',color:'#666',fontFamily:'monospace'}}>🤖 stogabot is playing...</div>
+        {/* AI status bar */}
+        {isAIPlaying && aiStatus === 'thinking' && (
+          <div style={{padding:'4px 16px',fontSize:'0.75rem',fontFamily:'monospace',color:'#58a6ff',display:'flex',alignItems:'center',gap:'8px'}}>
+            <span style={{animation:'pulse 1s ease-in-out infinite'}}>🤖</span>
+            <span>stogabot is thinking<span className="dots">...</span></span>
+          </div>
         )}
-        {inputEnabled && !isAIPlaying && !paused && (
-          <div style={{padding:'2px 16px',fontSize:'0.68rem',color:'#333',fontFamily:'monospace'}}>type to play · AI takes over in 30s</div>
+        {isAIPlaying && aiStatus === 'typing' && (
+          <div style={{padding:'4px 16px',fontSize:'0.75rem',fontFamily:'monospace',color:'#3fb950',display:'flex',alignItems:'center',gap:'8px'}}>
+            <span>🤖</span>
+            <span>stogabot is typing<span className="dots">...</span></span>
+          </div>
+        )}
+        {!isAIPlaying && inputEnabled && !paused && countdown !== null && (
+          <div style={{padding:'4px 16px',fontSize:'0.72rem',fontFamily:'monospace',color: countdown <= 5 ? '#d29922' : '#444',display:'flex',alignItems:'center',gap:'8px',transition:'color 0.3s'}}>
+            <span style={{opacity:0.6}}>🤖</span>
+            <span>stogabot takes over in <span style={{fontWeight:700,color: countdown <= 5 ? '#d29922' : '#666'}}>{countdown}s</span> · type to play</span>
+          </div>
         )}
         <form onSubmit={handleSubmit} className="flex items-center p-4 pt-2">
           <span className="mr-2 select-none">&gt;</span>
