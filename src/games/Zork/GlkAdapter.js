@@ -97,8 +97,11 @@ export function createGlk(terminal, savePrefix) {
     RefBox,
 
     fatal_error(msg) {
+      const detail = msg instanceof Error
+        ? `${msg.message}\n\nStack:\n${msg.stack}`
+        : String(msg)
       console.error('Glk fatal error:', msg)
-      terminal.handleError(String(msg))
+      terminal.handleError(detail)
     },
 
     glk_exit() {
