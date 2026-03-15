@@ -121,6 +121,7 @@ function ZorkGame({ storyFile, label }) {
     e.preventDefault()
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
     stopCountdown()
+    isAIPlayingRef.current = false
     setIsAIPlaying(false)
     setAIStatus(null)
     const command = inputValue
@@ -154,6 +155,7 @@ function ZorkGame({ storyFile, label }) {
 
   const AI_DELAY = 10 // seconds before AI first takes over
   const AI_MOVE_DELAY = 2 // seconds between AI moves once in control
+  const isAIPlayingRef = useRef(false) // ref so timer effect doesn't re-fire when AI state changes
 
   const stopCountdown = useCallback(() => {
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
@@ -164,6 +166,7 @@ function ZorkGame({ storyFile, label }) {
   const triggerAIMove = useCallback(async () => {
     stopCountdown()
     if (!inputResolverRef.current || paused) return
+    isAIPlayingRef.current = true
     setIsAIPlaying(true)
     setAIStatus('thinking')
     try {
@@ -200,14 +203,14 @@ function ZorkGame({ storyFile, label }) {
       setAIStatus(null)
       setLines(prev => { const n = [...prev, { type: 'ai-error', text: `[AI error: ${e.message}]` }]; linesRef.current = n; return n })
     }
-    finally { setIsAIPlaying(false) }
+    finally { isAIPlayingRef.current = false; setIsAIPlaying(false) }
   }, [paused, stopCountdown])
 
   useEffect(() => {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
     stopCountdown()
     if (inputEnabled && !paused) {
-      const delay = isAIPlaying ? AI_MOVE_DELAY : AI_DELAY
+      const delay = isAIPlayingRef.current ? AI_MOVE_DELAY : AI_DELAY
       setCountdown(delay)
       countdownIntervalRef.current = setInterval(() => {
         setCountdown(prev => {
@@ -221,7 +224,7 @@ function ZorkGame({ storyFile, label }) {
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
       stopCountdown()
     }
-  }, [inputRequestCount, inputEnabled, paused, isAIPlaying, triggerAIMove, stopCountdown])
+  }, [inputRequestCount, inputEnabled, paused, triggerAIMove, stopCountdown])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'ArrowUp') {
