@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/retrogames/assets/:path*", "destination": "/assets/:path*" },
+    { "source": "/retrogames/games/:path*", "destination": "/games/:path*" },
     { "source": "/retrogames", "destination": "/index.html" },
     { "source": "/retrogames/:path*", "destination": "/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
