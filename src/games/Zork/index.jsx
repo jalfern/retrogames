@@ -1,359 +1,218 @@
+/**
+ * Zork I — Live Shared Viewer
+ * One game runs on the server (stogabot plays). All visitors watch the same game.
+ */
 import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { ZVM } from 'ifvms'
-import { createGlk } from './GlkAdapter'
 import PauseOverlay from '../../components/PauseOverlay'
 import { GAMES } from '../../config/games'
 
+const WS_URL = 'ws://5.78.145.117/zork-ws'
+
 function ZorkGame({ storyFile, label }) {
   const [lines, setLines] = useState([])
-  const [inputEnabled, setInputEnabled] = useState(false)
-  const [inputValue, setInputValue] = useState('')
+  const [aiStatus, setAIStatus] = useState(null)   // null | 'thinking' | 'typing' | 'waiting'
+  const [countdown, setCountdown] = useState(null)
+  const [connected, setConnected] = useState(false)
   const [paused, setPaused] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [isAIPlaying, setIsAIPlaying] = useState(false)
-  const [aiStatus, setAIStatus] = useState(null) // null | 'thinking' | 'typing'
-  const [countdown, setCountdown] = useState(null) // seconds remaining
-  const [inputRequestCount, setInputRequestCount] = useState(0) // increments every waitForInput call
-  const aiTimerRef = useRef(null)
-  const countdownIntervalRef = useRef(null)
-  const linesRef = useRef([])
-
-  const vmRef = useRef(null)
-  const inputResolverRef = useRef(null)
-  const historyRef = useRef([])
-  const historyIndexRef = useRef(-1)
+  const [inputValue, setInputValue] = useState('')
+  const [inputEnabled] = useState(true)             // always allow human suggestions
   const outputRef = useRef(null)
+  const wsRef = useRef(null)
+  const countdownRef = useRef(null)
   const inputRef = useRef(null)
-  const containerRef = useRef(null)
+  const game = GAMES.find(g => g.label === label)
 
-  const scrollToBottom = useCallback(() => {
+  // ── WebSocket connection ────────────────────────────────────────────────────
+  useEffect(() => {
+    let ws
+    let reconnectTimer
+
+    function connect() {
+      ws = new WebSocket(WS_URL)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        setConnected(true)
+        setLines(prev => [...prev, { type: 'system', text: '[ Connected to live game ]' }])
+      }
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data)
+        if (msg.type === 'history') {
+          setLines(msg.lines)
+        } else if (msg.type === 'line') {
+          setLines(prev => [...prev, msg.line])
+        } else if (msg.type === 'ai-status') {
+          setAIStatus(msg.status)
+          if (msg.status === 'waiting' && msg.countdown) {
+            startCountdown(msg.countdown)
+          } else {
+            stopCountdown()
+          }
+        }
+      }
+
+      ws.onclose = () => {
+        setConnected(false)
+        setAIStatus(null)
+        stopCountdown()
+        setLines(prev => [...prev, { type: 'system', text: '[ Disconnected — reconnecting... ]' }])
+        reconnectTimer = setTimeout(connect, 3000)
+      }
+
+      ws.onerror = () => ws.close()
+    }
+
+    connect()
+    return () => {
+      clearTimeout(reconnectTimer)
+      stopCountdown()
+      if (ws) ws.close()
+    }
+  }, [])
+
+  // ── Auto-scroll ─────────────────────────────────────────────────────────────
+  useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight
     }
-  }, [])
+  }, [lines])
 
-  useEffect(scrollToBottom, [lines, scrollToBottom])
+  // ── Countdown ───────────────────────────────────────────────────────────────
+  function startCountdown(secs) {
+    stopCountdown()
+    setCountdown(secs)
+    countdownRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) { clearInterval(countdownRef.current); return null }
+        return prev - 1
+      })
+    }, 1000)
+  }
 
-  // Focus input when enabled
-  useEffect(() => {
-    if (inputEnabled && inputRef.current && !paused) {
-      inputRef.current.focus()
-    }
-  }, [inputEnabled, paused])
+  function stopCountdown() {
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null }
+    setCountdown(null)
+  }
 
-  // Initialize VM
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadGame() {
-      try {
-        const base = import.meta.env.BASE_URL
-        const response = await fetch(`${base}${storyFile}`)
-        if (!response.ok) throw new Error(`Failed to load ${storyFile}: ${response.status}`)
-        const arrayBuffer = await response.arrayBuffer()
-        const gameData = new Uint8Array(arrayBuffer)
-
-        if (cancelled) return
-
-        const terminal = {
-          print(text) {
-            if (!text) return
-            setLines(prev => {
-              const newLines = [...prev]
-              const parts = text.split('\n')
-              parts.forEach((part, i) => {
-                if (i === 0 && newLines.length > 0 && newLines[newLines.length - 1].type === 'output') {
-                  // Append to last output line if it didn't end with newline
-                  newLines[newLines.length - 1] = {
-                    type: 'output',
-                    text: newLines[newLines.length - 1].text + part
-                  }
-                } else {
-                  newLines.push({ type: 'output', text: part })
-                }
-              })
-              linesRef.current = newLines
-              return newLines
-            })
-          },
-          clear() {
-            setLines([])
-          },
-          waitForInput(callback) {
-            inputResolverRef.current = callback
-            setInputEnabled(true)
-            setInputRequestCount(c => c + 1) // always triggers timer restart even if inputEnabled was already true
-          },
-          handleError(msg) {
-            setLines(prev => [...prev, { type: 'error', text: `Error: ${msg}` }])
-          }
-        }
-
-        const savePrefix = label.toLowerCase().replace(/\s+/g, '-')
-        const Glk = createGlk(terminal, savePrefix)
-
-        if (cancelled) return
-
-        const vm = new ZVM()
-        vm.prepare(gameData, { Glk })
-        vmRef.current = vm
-        setLoading(false)
-        try {
-          vm.start()
-        } catch (startErr) {
-          console.error('VM start error:', startErr)
-          console.error('Stack:', startErr.stack)
-          if (!cancelled) setError(`VM start: ${startErr.message}\n${startErr.stack}`)
-        }
-      } catch (e) {
-        console.error('Failed to load Zork game:', e)
-        console.error('Stack:', e.stack)
-        if (!cancelled) setError(`${e.message}\n${e.stack}`)
-      }
-    }
-
-    loadGame()
-    return () => { cancelled = true }
-  }, [storyFile, label])
-
+  // ── Human input (suggestion) ────────────────────────────────────────────────
   const handleSubmit = useCallback((e) => {
     e.preventDefault()
-    if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
-    stopCountdown()
-    isAIPlayingRef.current = false
-    setIsAIPlaying(false)
-    setAIStatus(null)
-    const command = inputValue
+    const cmd = inputValue.trim()
+    if (!cmd || !wsRef.current || wsRef.current.readyState !== 1) return
+    wsRef.current.send(JSON.stringify({ type: 'command', text: cmd }))
     setInputValue('')
-    setInputEnabled(false)
-
-    // Add to history
-    if (command.trim()) {
-      historyRef.current.push(command)
-      historyIndexRef.current = historyRef.current.length
-    }
-
-    // Echo command
-    setLines(prev => [...prev, { type: 'command', text: `> ${command}` }])
-
-    // Resolve input and resume VM
-    if (inputResolverRef.current) {
-      const resolver = inputResolverRef.current
-      inputResolverRef.current = null
-      resolver(command)
-      if (vmRef.current && !vmRef.current.quit) {
-        try {
-          vmRef.current.resume(command.length)
-        } catch (err) {
-          console.error('VM resume error:', err)
-          setLines(prev => [...prev, { type: 'error', text: `VM Error: ${err.message}` }])
-        }
-      }
-    }
   }, [inputValue])
 
-  const AI_DELAY = 10 // seconds before AI first takes over
-  const AI_MOVE_DELAY = 2 // seconds between AI moves once in control
-  const isAIPlayingRef = useRef(false) // ref so timer effect doesn't re-fire when AI state changes
-
-  const stopCountdown = useCallback(() => {
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
-    countdownIntervalRef.current = null
-    setCountdown(null)
-  }, [])
-
-  const triggerAIMove = useCallback(async () => {
-    stopCountdown()
-    if (!inputResolverRef.current || paused) return
-    isAIPlayingRef.current = true
-    setIsAIPlaying(true)
-    setAIStatus('thinking')
-    try {
-      const response = await fetch('https://retrogames-psi.vercel.app/api/ai-move', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ transcript: linesRef.current.slice(-25) })
-      })
-      const rawText = await response.text()
-      let data = {}
-      try { data = JSON.parse(rawText) } catch(parseErr) {
-        throw new Error(`Bad JSON (${response.status}): ${rawText.slice(0,80)}`)
-      }
-      const command = data.command
-      if (command && inputResolverRef.current) {
-        setAIStatus('typing')
-        await new Promise(r => setTimeout(r, 600)) // brief "typing" pause
-        setLines(prev => { const n = [...prev, { type: 'ai-command', text: `> ${command}` }]; linesRef.current = n; return n })
-        const resolver = inputResolverRef.current
-        inputResolverRef.current = null
-        setInputEnabled(false)
-        setAIStatus(null)
-        resolver(command)
-        if (vmRef.current && !vmRef.current.quit) {
-          vmRef.current.resume(command.length)
-        }
-      } else {
-        // AI returned nothing — show brief message and reset timer
-        setAIStatus(null)
-        setLines(prev => { const n = [...prev, { type: 'ai-error', text: `[stogabot couldn't decide a move — your turn]` }]; linesRef.current = n; return n })
-      }
-    } catch(e) {
-      console.error('AI move failed:', e)
-      setAIStatus(null)
-      setLines(prev => { const n = [...prev, { type: 'ai-error', text: `[AI error: ${e.message}]` }]; linesRef.current = n; return n })
-    }
-    finally { isAIPlayingRef.current = false; setIsAIPlaying(false) }
-  }, [paused, stopCountdown])
-
-  useEffect(() => {
-    if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
-    stopCountdown()
-    if (inputEnabled && !paused) {
-      const delay = isAIPlayingRef.current ? AI_MOVE_DELAY : AI_DELAY
-      setCountdown(delay)
-      countdownIntervalRef.current = setInterval(() => {
-        setCountdown(prev => {
-          if (prev <= 1) { clearInterval(countdownIntervalRef.current); return null }
-          return prev - 1
-        })
-      }, 1000)
-      aiTimerRef.current = setTimeout(triggerAIMove, delay * 1000)
-    }
-    return () => {
-      if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
-      stopCountdown()
-    }
-  }, [inputRequestCount, inputEnabled, paused, triggerAIMove, stopCountdown])
-
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      if (historyRef.current.length === 0) return
-      historyIndexRef.current = Math.max(0, historyIndexRef.current - 1)
-      setInputValue(historyRef.current[historyIndexRef.current])
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      if (historyIndexRef.current >= historyRef.current.length - 1) {
-        historyIndexRef.current = historyRef.current.length
-        setInputValue('')
-      } else {
-        historyIndexRef.current++
-        setInputValue(historyRef.current[historyIndexRef.current])
-      }
-    }
-  }, [])
-
-  // Pause handler
+  // ── Pause ────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const handlePause = (e) => {
-      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-        // Don't capture if user is typing in the input field
-        if (document.activeElement === inputRef.current && !paused) return
-        e.preventDefault()
-        setPaused(p => !p)
-      }
+      if (e.detail?.gameLabel === label) setPaused(true)
     }
-    window.addEventListener('keydown', handlePause)
-    return () => window.removeEventListener('keydown', handlePause)
-  }, [paused])
-
-  const handleResume = useCallback(() => {
-    setPaused(false)
-    if (inputRef.current) inputRef.current.focus()
-  }, [])
-
-  // Click anywhere to focus input
-  const handleContainerClick = useCallback(() => {
-    if (inputRef.current && inputEnabled && !paused) {
-      inputRef.current.focus()
+    const handleResume = (e) => {
+      if (e.detail?.gameLabel === label) setPaused(false)
     }
-  }, [inputEnabled, paused])
+    window.addEventListener('gamePaused', handlePause)
+    window.addEventListener('gameResumed', handleResume)
+    return () => {
+      window.removeEventListener('gamePaused', handlePause)
+      window.removeEventListener('gameResumed', handleResume)
+    }
+  }, [label])
 
-  const game = GAMES.find(g => g.label === label)
+  // ── Line colors ─────────────────────────────────────────────────────────────
+  function lineStyle(type) {
+    switch(type) {
+      case 'command':    return { color: '#fbbf24', textShadow: '0 0 5px rgba(251,191,36,0.4)' }
+      case 'ai-command': return { color: '#6b7280', fontStyle: 'italic' }
+      case 'system':     return { color: '#374151', fontStyle: 'italic' }
+      case 'ai-error':   return { color: '#92400e', fontStyle: 'italic' }
+      default:           return {}
+    }
+  }
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 bg-black flex items-center justify-center"
-         onClick={handleContainerClick}>
-      <style>{`
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-        .dots::after { content:''; animation: dotsAnim 1.2s steps(4,end) infinite; }
-        @keyframes dotsAnim { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
-        @keyframes aipulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-      `}</style>
-      <div ref={containerRef}
-           className="relative w-full h-full max-w-4xl max-h-full flex flex-col font-mono text-sm sm:text-base"
-           style={{ color: '#33ff33', textShadow: '0 0 5px rgba(51, 255, 51, 0.5)' }}>
+    <div className="fixed inset-0 bg-black flex items-center justify-center">
+      <div className="relative w-full h-full max-w-4xl max-h-full flex flex-col font-mono text-sm sm:text-base"
+           style={{ color: '#33ff33', textShadow: '0 0 5px rgba(51,255,51,0.3)' }}>
+
+        {/* Header bar */}
+        <div style={{ padding: '6px 16px', borderBottom: '1px solid #1a3a1a', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', color: '#2a6a2a' }}>
+          <span style={{ fontWeight: 700, color: '#33ff33' }}>
+            {game?.title || 'ZORK I'} <span style={{ color: '#2a6a2a', fontWeight: 400 }}>— LIVE</span>
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: connected ? '#22c55e' : '#ef4444', display: 'inline-block' }} />
+            <span style={{ color: connected ? '#22c55e' : '#ef4444' }}>{connected ? 'LIVE' : 'RECONNECTING'}</span>
+          </span>
+        </div>
 
         {/* Terminal output */}
         <div ref={outputRef}
-             className="flex-1 overflow-y-auto p-4 pb-0 scrollbar-thin"
-             style={{ scrollbarColor: '#33ff33 #111' }}>
-          {loading && !error && (
-            <div className="animate-pulse">Loading {label}...</div>
-          )}
-          {error && (
-            <div style={{ color: '#ff3333' }}>Failed to load game: {error}</div>
-          )}
+             className="flex-1 overflow-y-auto p-4 pb-2"
+             style={{ scrollbarColor: '#1a3a1a #000' }}>
           {lines.map((line, i) => (
-            <div key={i}
-                 className={line.type === 'command' ? 'text-amber-400' : line.type === 'error' ? 'text-red-400' : line.type === 'ai-command' ? 'text-gray-600 italic' : line.type === 'ai-error' ? 'text-yellow-700 italic' : ''}
-                 style={line.type === 'command' ? { textShadow: '0 0 5px rgba(251, 191, 36, 0.5)' } : undefined}>
+            <div key={i} style={{ lineHeight: '1.6', ...lineStyle(line.type) }}>
               {line.text || '\u00A0'}
             </div>
           ))}
         </div>
 
         {/* AI status bar */}
-        {isAIPlaying && aiStatus === 'thinking' && (
-          <div style={{padding:'4px 16px',fontSize:'0.75rem',fontFamily:'monospace',color:'#58a6ff',display:'flex',alignItems:'center',gap:'8px'}}>
-            <span style={{animation:'pulse 1s ease-in-out infinite'}}>🤖</span>
-            <span>stogabot is thinking<span className="dots">...</span></span>
-          </div>
-        )}
-        {isAIPlaying && aiStatus === 'typing' && (
-          <div style={{padding:'4px 16px',fontSize:'0.75rem',fontFamily:'monospace',color:'#3fb950',display:'flex',alignItems:'center',gap:'8px'}}>
-            <span>🤖</span>
-            <span>stogabot is typing<span className="dots">...</span></span>
-          </div>
-        )}
-        {!isAIPlaying && inputEnabled && !paused && countdown !== null && (
-          <div style={{padding:'4px 16px',fontSize:'0.72rem',fontFamily:'monospace',color: countdown <= 5 ? '#d29922' : '#444',display:'flex',alignItems:'center',gap:'8px',transition:'color 0.3s'}}>
-            <span style={{opacity:0.6}}>🤖</span>
-            <span>stogabot takes over in <span style={{fontWeight:700,color: countdown <= 5 ? '#d29922' : '#666'}}>{countdown}s</span> · type to play</span>
-          </div>
-        )}
-        <form onSubmit={handleSubmit} className="flex items-center p-4 pt-2">
-          <span className="mr-2 select-none">&gt;</span>
+        <div style={{ minHeight: 28, padding: '2px 16px', fontSize: '0.72rem', fontFamily: 'monospace', borderTop: '1px solid #1a3a1a' }}>
+          {aiStatus === 'thinking' && (
+            <span style={{ color: '#60a5fa' }}>
+              🤖 stogabot is thinking
+              <span className="ai-dots">...</span>
+            </span>
+          )}
+          {aiStatus === 'typing' && (
+            <span style={{ color: '#4ade80' }}>
+              🤖 stogabot is typing
+              <span className="ai-dots">...</span>
+            </span>
+          )}
+          {(aiStatus === 'waiting' || aiStatus === null) && countdown !== null && (
+            <span style={{ color: countdown <= 3 ? '#d29922' : '#444' }}>
+              🤖 stogabot moves in <span style={{ fontWeight: 700 }}>{countdown}s</span>
+            </span>
+          )}
+        </div>
+
+        {/* Human input — suggestions */}
+        <form onSubmit={handleSubmit}
+              style={{ display: 'flex', alignItems: 'center', padding: '4px 12px 8px', gap: 8, borderTop: '1px solid #1a3a1a' }}>
+          <span style={{ color: '#2a6a2a', fontSize: '0.75rem' }}>suggest&gt;</span>
           <input
             ref={inputRef}
-            type="text"
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={!inputEnabled || paused}
-            autoCapitalize="none"
-            autoCorrect="off"
-            autoComplete="off"
-            spellCheck={false}
-            className="flex-1 bg-transparent border-none outline-none caret-current"
-            style={{ color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit' }}
+            onChange={e => setInputValue(e.target.value)}
+            placeholder="type a command to take over..."
+            disabled={!connected}
+            style={{
+              flex: 1, background: 'transparent', border: 'none', outline: 'none',
+              color: '#fbbf24', fontFamily: 'monospace', fontSize: '0.9rem',
+              caretColor: '#33ff33',
+            }}
+            autoCorrect="off" autoCapitalize="none" spellCheck={false}
           />
         </form>
 
-        {/* Scanline overlay for CRT effect */}
-        <div className="absolute inset-0 pointer-events-none opacity-[0.03]"
-             style={{
-               background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px)'
-             }} />
-
-        {paused && game && <PauseOverlay game={game} onResume={handleResume} />}
+        {paused && <PauseOverlay label={label} />}
       </div>
+
+      <style>{`
+        .ai-dots { display: inline-block; animation: dots 1.2s steps(4, end) infinite; overflow: hidden; width: 0; }
+        @keyframes dots { 0%{width:0} 25%{width:0.4em} 50%{width:0.8em} 75%{width:1.2em} 100%{width:0} }
+      `}</style>
     </div>
   )
 }
 
-// Export wrapper components for each Zork game
-export const ZorkI = () => <ZorkGame storyFile="games/zork/zork1.z3" label="ZORK I" />
-export const ZorkII = () => <ZorkGame storyFile="games/zork/zork2.z3" label="ZORK II" />
-export const ZorkIII = () => <ZorkGame storyFile="games/zork/zork3.z3" label="ZORK III" />
+export default ZorkGame
+
+// Named exports for each Zork — all share the same live server (Zork I)
+export function ZorkI(props)   { return <ZorkGame {...props} label="Zork I"   storyFile="/games/zork/zork1.z3" /> }
+export function ZorkII(props)  { return <ZorkGame {...props} label="Zork II"  storyFile="/games/zork/zork2.z3" /> }
+export function ZorkIII(props) { return <ZorkGame {...props} label="Zork III" storyFile="/games/zork/zork3.z3" /> }
