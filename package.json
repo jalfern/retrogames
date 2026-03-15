@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "postinstall": "node patches/fix-ifvms.cjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
