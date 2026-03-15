@@ -215,6 +215,17 @@ function ZorkGame({ storyFile, label }) {
     if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
   }, [lines])
 
+  // ── Restart ────────────────────────────────────────────────────────────────
+  const handleRestart = useCallback(async () => {
+    if (!window.confirm('Restart the game from the beginning? This will erase all progress for every visitor.')) return
+    try {
+      await fetch(`${API}/zork-restart`)
+      setLines([])
+      setAiPaused(false)
+      lastTsRef.current = 0
+    } catch {}
+  }, [])
+
   // ── Pause/resume ───────────────────────────────────────────────────────────
   const togglePause = useCallback(async () => {
     const action = aiPaused ? 'zork-resume' : 'zork-pause'
@@ -275,6 +286,10 @@ function ZorkGame({ storyFile, label }) {
             {currentRoom && <span style={{ color: '#2a6a2a' }}>· {currentRoom}</span>}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={handleRestart} disabled={!connected}
+                    style={{ background: 'none', border: '1px solid #1a3a1a', borderRadius: 4, color: '#555', fontSize: '0.7rem', padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace' }}>
+              ↺ restart
+            </button>
             <button onClick={togglePause} disabled={!connected}
                     style={{ background: aiPaused ? '#14532d' : 'none', border: `1px solid ${aiPaused ? '#22c55e' : '#1a3a1a'}`, borderRadius: 4, color: aiPaused ? '#4ade80' : '#2a6a2a', fontSize: '0.7rem', padding: '2px 8px', cursor: 'pointer', fontFamily: 'monospace' }}>
               {aiPaused ? '▶ resume' : '⏸ pause'}
