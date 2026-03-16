@@ -104,14 +104,24 @@ function DosGame({ bundleUrl, label }) {
   // ── Keystroke injection into DOSBox ────────────────────────────────────────
   const typeIntoDos = useCallback((text) => {
     const target = rootRef.current?.querySelector('canvas') || document
-    const fire = (key, keyCode) => {
-      const opts = { key, code: `Key${key.toUpperCase()}`, keyCode, which: keyCode, bubbles: true, cancelable: true }
+    const fire = (key, code, keyCode) => {
+      const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
       target.dispatchEvent(new KeyboardEvent('keydown', opts))
       target.dispatchEvent(new KeyboardEvent('keypress', opts))
       target.dispatchEvent(new KeyboardEvent('keyup', opts))
     }
-    for (const char of text) fire(char, char.charCodeAt(0))
-    fire('Enter', 13)
+    for (const char of text) fire(char, `Key${char.toUpperCase()}`, char.charCodeAt(0))
+    fire('Enter', 'Enter', 13)
+  }, [])
+
+  const pressArrow = useCallback((dir) => {
+    const target = rootRef.current?.querySelector('canvas') || document
+    const MAP = { up: ['ArrowUp', 38], down: ['ArrowDown', 40], left: ['ArrowLeft', 37], right: ['ArrowRight', 39] }
+    const [key, keyCode] = MAP[dir] || MAP.up
+    const opts = { key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true }
+    // Hold for ~200ms to simulate a brief step
+    target.dispatchEvent(new KeyboardEvent('keydown', opts))
+    setTimeout(() => target.dispatchEvent(new KeyboardEvent('keyup', opts)), 200)
   }, [])
 
   // ── AI loop ────────────────────────────────────────────────────────────────
@@ -134,17 +144,22 @@ function DosGame({ bundleUrl, label }) {
           recentCommands: aiCommandHistory.current.slice(-AI_MAX_HISTORY),
         }),
       })
-      const { command } = await r.json()
+      const { command, arrow } = await r.json()
 
-      if (command && aiActiveRef.current) {
+      if ((command || arrow) && aiActiveRef.current) {
         setAiStatus('typing')
-        setLastAiCmd(command)
-        aiCommandHistory.current.push(command)
+        const label = arrow ? `→ arrow ${arrow}` : command
+        setLastAiCmd(label)
+        aiCommandHistory.current.push(label)
         if (aiCommandHistory.current.length > AI_MAX_HISTORY * 2) {
           aiCommandHistory.current = aiCommandHistory.current.slice(-AI_MAX_HISTORY)
         }
-        await new Promise(ok => setTimeout(ok, 600))  // brief pause before typing
-        typeIntoDos(command)
+        await new Promise(ok => setTimeout(ok, 400))
+        if (arrow) {
+          pressArrow(arrow)
+        } else {
+          typeIntoDos(command)
+        }
       }
     } catch (e) {
       console.error('[KQ AI]', e)
@@ -152,7 +167,7 @@ function DosGame({ bundleUrl, label }) {
 
     setAiStatus(null)
     if (aiActiveRef.current) aiTimerRef.current = setTimeout(runAiStep, AI_INTERVAL_MS)
-  }, [captureScreen, typeIntoDos])
+  }, [captureScreen, typeIntoDos, pressArrow])
 
   const toggleAI = useCallback(() => {
     if (aiActiveRef.current) {
