@@ -98,34 +98,44 @@ function DosGame({ bundleUrl, label }) {
   }, [])
 
   // Inject text into DOSBox
-  const typeIntoDos = useCallback((text) => {
-    const canvas = findCanvas()
-    if (canvas?.focus) canvas.focus()
-    const target = canvas || document
-    const fireKey = (key, code, keyCode) => {
-      const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
-      target.dispatchEvent(new KeyboardEvent('keydown', opts))
-      target.dispatchEvent(new KeyboardEvent('keypress', opts))
-      target.dispatchEvent(new KeyboardEvent('keyup', opts))
-    }
-    for (const char of text) {
-      const upper = char.toUpperCase()
-      fireKey(char, `Key${upper}`, char.charCodeAt(0))
-    }
-    fireKey('Enter', 'Enter', 13)
+  // js-dos native scan codes (from Ia map in js-dos.js)
+  const SCAN = {
+    esc: 256, enter: 257, space: 32,
+    arrowLeft: 263, arrowRight: 262, arrowUp: 265, arrowDown: 264,
+  }
+  // charCode A-Z (65-90) and 0-9 (48-57) map 1:1 in js-dos Ia table
+  const charScan = (ch) => {
+    const c = ch.toUpperCase().charCodeAt(0)
+    if (c >= 65 && c <= 90) return c  // A-Z
+    if (c >= 48 && c <= 57) return c  // 0-9
+    if (c === 32) return 32           // space
+    return 0
+  }
+
+  const ciKey = useCallback((scanCode, holdMs = 60) => {
+    const ci = dosRef.current?.ci
+    if (!ci) return
+    ci.sendKeyEvent(scanCode, true)
+    setTimeout(() => ci.sendKeyEvent(scanCode, false), holdMs)
   }, [])
 
-  // Inject arrow key into DOSBox
+  const typeIntoDos = useCallback((text) => {
+    let delay = 0
+    for (const char of text) {
+      const sc = charScan(char)
+      if (sc) {
+        const d = delay
+        setTimeout(() => ciKey(sc), d)
+        delay += 120
+      }
+    }
+    setTimeout(() => ciKey(SCAN.enter), delay + 60)
+  }, [ciKey])
+
   const pressArrow = useCallback((dir) => {
-    const canvas = findCanvas()
-    if (canvas?.focus) canvas.focus()
-    const target = canvas || document
-    const MAP = { up: ['ArrowUp', 38], down: ['ArrowDown', 40], left: ['ArrowLeft', 37], right: ['ArrowRight', 39] }
-    const [key, keyCode] = MAP[dir] || MAP.up
-    const opts = { key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true }
-    target.dispatchEvent(new KeyboardEvent('keydown', opts))
-    setTimeout(() => target.dispatchEvent(new KeyboardEvent('keyup', opts)), 220)
-  }, [])
+    const sc = { up: SCAN.arrowUp, down: SCAN.arrowDown, left: SCAN.arrowLeft, right: SCAN.arrowRight }[dir]
+    if (sc) ciKey(sc, 220)
+  }, [ciKey])
 
   // Capture DOSBox canvas as JPEG
   // Find DOSBox canvas — js-dos may use shadow DOM, nested divs, or iframes
@@ -169,14 +179,9 @@ function DosGame({ bundleUrl, label }) {
     }
   }, [findCanvas])
 
-  const fireKey = useCallback((key, code, keyCode) => {
-    const canvas = findCanvas()
-    if (canvas?.focus) canvas.focus()  // must have focus or DOSBox ignores events
-    const target = canvas || document
-    const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
-    target.dispatchEvent(new KeyboardEvent('keydown', opts))
-    setTimeout(() => target.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
-  }, [findCanvas])
+  const fireKey = useCallback((scanCode) => {
+    ciKey(scanCode)
+  }, [ciKey])
 
   // AI step — runs on a timer when aiActive
   const scheduleAiStep = useRef(null)
@@ -209,8 +214,8 @@ function DosGame({ bundleUrl, label }) {
         setLastAiCmd(label)
         aiHistoryRef.current = [...aiHistoryRef.current.slice(-AI_MAX_HISTORY * 2), label]
         await new Promise(ok => setTimeout(ok, 400))
-        if (escape)      fireKey('Escape', 'Escape', 27)
-        else if (enter)  fireKey('Enter',  'Enter',  13)
+        if (escape)      ciKey(256)   // ESC scan code
+        else if (enter)  ciKey(257)   // Enter scan code
         else if (arrow)  pressArrow(arrow)
         else             typeIntoDos(command)
       }
@@ -245,12 +250,9 @@ function DosGame({ bundleUrl, label }) {
     const text = inputVal.trim()
     if (!text) return
     setInputVal('')
-    // Special: "esc" or "escape" → inject ESC key
     if (text.toLowerCase() === 'esc' || text.toLowerCase() === 'escape') {
-      const t = findCanvas() || document
-      const opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }
-      t.dispatchEvent(new KeyboardEvent('keydown', opts))
-      t.dispatchEvent(new KeyboardEvent('keyup', opts))
+      dosRef.current?.ci?.sendKeyEvent(256, true)
+      setTimeout(() => dosRef.current?.ci?.sendKeyEvent(256, false), 60)
     } else {
       typeIntoDos(text)
     }
@@ -300,15 +302,13 @@ function DosGame({ bundleUrl, label }) {
           }}>
             {/* Startup key buttons — ESC + Enter + Space to get through intro screens */}
             {[
-              { label: 'ESC',   key: 'Escape', code: 'Escape', keyCode: 27 },
-              { label: '↵',     key: 'Enter',  code: 'Enter',  keyCode: 13 },
-              { label: '␣',     key: ' ',      code: 'Space',  keyCode: 32 },
-            ].map(({ label, key, code, keyCode }) => (
+              { label: 'ESC', scan: 256 },
+              { label: '↵',    scan: 257 },
+              { label: '␣',    scan: 32  },
+            ].map(({ label, scan }) => (
               <button key={label} onClick={() => {
-                const t = findCanvas() || document
-                const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
-                t.dispatchEvent(new KeyboardEvent('keydown', opts))
-                setTimeout(() => t.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
+                dosRef.current?.ci?.sendKeyEvent(scan, true)
+                setTimeout(() => dosRef.current?.ci?.sendKeyEvent(scan, false), 80)
               }} style={{
                 flexShrink: 0, background: '#111', border: '1px solid #444',
                 borderRadius: 6, color: '#aaa', fontFamily: 'monospace', fontSize: 13,
