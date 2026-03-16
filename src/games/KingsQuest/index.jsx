@@ -155,23 +155,23 @@ function DosGame({ bundleUrl, label }) {
           recentCommands: aiHistoryRef.current.slice(-AI_MAX_HISTORY),
         }),
       })
-      const { command, arrow, escape } = await r.json()
-      if ((command || arrow || escape) && aiActiveRef.current) {
+      const { command, arrow, escape, enter } = await r.json()
+      if ((command || arrow || escape || enter) && aiActiveRef.current) {
         setAiStatus('typing')
-        const label = escape ? 'ESC' : arrow ? `arrow ${arrow}` : command
+        const label = escape ? 'ESC' : enter ? 'ENTER' : arrow ? `arrow ${arrow}` : command
         setLastAiCmd(label)
         aiHistoryRef.current = [...aiHistoryRef.current.slice(-AI_MAX_HISTORY * 2), label]
         await new Promise(ok => setTimeout(ok, 400))
-        if (escape) {
+        const fireKey = (key, code, keyCode) => {
           const t = rootRef.current?.querySelector('canvas') || document
-          const opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }
+          const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
           t.dispatchEvent(new KeyboardEvent('keydown', opts))
-          t.dispatchEvent(new KeyboardEvent('keyup', opts))
-        } else if (arrow) {
-          pressArrow(arrow)
-        } else {
-          typeIntoDos(command)
+          setTimeout(() => t.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
         }
+        if (escape)      fireKey('Escape', 'Escape', 27)
+        else if (enter)  fireKey('Enter',  'Enter',  13)
+        else if (arrow)  pressArrow(arrow)
+        else             typeIntoDos(command)
       }
     } catch (e) {
       console.error('[KQ AI]', e)
@@ -250,17 +250,23 @@ function DosGame({ bundleUrl, label }) {
             flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8,
             padding: '5px 10px', background: '#0a0a0a', borderTop: '1px solid #222',
           }}>
-            {/* ESC button — needed to dismiss intro/dialog screens */}
-            <button onClick={() => {
-              const t = rootRef.current?.querySelector('canvas') || document
-              const opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }
-              t.dispatchEvent(new KeyboardEvent('keydown', opts))
-              t.dispatchEvent(new KeyboardEvent('keyup', opts))
-            }} style={{
-              flexShrink: 0, background: '#111', border: '1px solid #555',
-              borderRadius: 6, color: '#aaa', fontFamily: 'monospace', fontSize: 12,
-              padding: '4px 10px', cursor: 'pointer',
-            }}>ESC</button>
+            {/* Startup key buttons — ESC + Enter + Space to get through intro screens */}
+            {[
+              { label: 'ESC',   key: 'Escape', code: 'Escape', keyCode: 27 },
+              { label: '↵',     key: 'Enter',  code: 'Enter',  keyCode: 13 },
+              { label: '␣',     key: ' ',      code: 'Space',  keyCode: 32 },
+            ].map(({ label, key, code, keyCode }) => (
+              <button key={label} onClick={() => {
+                const t = rootRef.current?.querySelector('canvas') || document
+                const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
+                t.dispatchEvent(new KeyboardEvent('keydown', opts))
+                setTimeout(() => t.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
+              }} style={{
+                flexShrink: 0, background: '#111', border: '1px solid #444',
+                borderRadius: 6, color: '#aaa', fontFamily: 'monospace', fontSize: 13,
+                padding: '4px 10px', cursor: 'pointer', minWidth: 38, textAlign: 'center',
+              }}>{label}</button>
+            ))}
 
             <button onClick={toggleAI} style={{
               flexShrink: 0,
