@@ -194,7 +194,15 @@ function DosGame({ bundleUrl, label }) {
     const text = inputVal.trim()
     if (!text) return
     setInputVal('')
-    typeIntoDos(text)
+    // Special: "esc" or "escape" → inject ESC key
+    if (text.toLowerCase() === 'esc' || text.toLowerCase() === 'escape') {
+      const t = rootRef.current?.querySelector('canvas') || document
+      const opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }
+      t.dispatchEvent(new KeyboardEvent('keydown', opts))
+      t.dispatchEvent(new KeyboardEvent('keyup', opts))
+    } else {
+      typeIntoDos(text)
+    }
     setTimeout(() => inputRef.current?.focus(), 50)
   }, [inputVal, typeIntoDos])
 
@@ -234,6 +242,18 @@ function DosGame({ bundleUrl, label }) {
             flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8,
             padding: '5px 10px', background: '#0a0a0a', borderTop: '1px solid #222',
           }}>
+            {/* ESC button — needed to dismiss intro/dialog screens */}
+            <button onClick={() => {
+              const t = rootRef.current?.querySelector('canvas') || document
+              const opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }
+              t.dispatchEvent(new KeyboardEvent('keydown', opts))
+              t.dispatchEvent(new KeyboardEvent('keyup', opts))
+            }} style={{
+              flexShrink: 0, background: '#111', border: '1px solid #555',
+              borderRadius: 6, color: '#aaa', fontFamily: 'monospace', fontSize: 12,
+              padding: '4px 10px', cursor: 'pointer',
+            }}>ESC</button>
+
             <button onClick={toggleAI} style={{
               flexShrink: 0,
               background: aiActive ? '#14532d' : '#111',
