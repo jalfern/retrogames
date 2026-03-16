@@ -20,6 +20,7 @@ function DosGame({ bundleUrl, label }) {
   const [aiStatus, setAiStatus] = useState(null)  // null | 'thinking' | 'typing' | 'no-canvas' | 'error'
   const [lastAiCmd, setLastAiCmd] = useState(null)
   const [aiSteps, setAiSteps] = useState(0)
+  const [debugInfo, setDebugInfo] = useState('')
   const aiActiveRef = useRef(false)
   const aiTimerRef = useRef(null)
   const aiHistoryRef = useRef([])
@@ -183,6 +184,28 @@ function DosGame({ bundleUrl, label }) {
     ciKey(scanCode)
   }, [ciKey])
 
+  // Diagnostic: find canvas and test key dispatch
+  const testEsc = useCallback(() => {
+    const allCanvases = document.querySelectorAll('canvas')
+    const testEvt = new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true })
+    const kc = testEvt.keyCode
+    let info = `canvases:${allCanvases.length} kc:${kc}`
+    allCanvases.forEach((c, i) => {
+      info += ` c${i}:${c.width}x${c.height}`
+      c.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true }))
+      c.dispatchEvent(new KeyboardEvent('keyup',   { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true }))
+    })
+    // also try document
+    document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true }))
+    // also try dosRef root
+    if (rootRef.current) {
+      const rc = rootRef.current.querySelectorAll('canvas')
+      info += ` root-c:${rc.length}`
+      rootRef.current.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true }))
+    }
+    setDebugInfo(info)
+  }, [])
+
   // AI step — runs on a timer when aiActive
   const scheduleAiStep = useRef(null)
   scheduleAiStep.current = async () => {
@@ -291,6 +314,7 @@ function DosGame({ bundleUrl, label }) {
             </span>
             <span style={{ color: '#374151', fontSize: 10 }}>step {aiSteps}</span>
             {lastAiCmd && <span style={{ color: '#6b7280' }}>last: <span style={{ color: '#d29922' }}>{lastAiCmd}</span></span>}
+            {debugInfo && <span style={{ color: '#f59e0b', fontSize: 10 }}>{debugInfo}</span>}
           </div>
         )}
 
@@ -307,14 +331,23 @@ function DosGame({ bundleUrl, label }) {
               { label: '␣',    scan: 32  },
             ].map(({ label, scan }) => (
               <button key={label} onClick={() => {
-                dosRef.current?.ci?.sendKeyEvent(scan, true)
-                setTimeout(() => dosRef.current?.ci?.sendKeyEvent(scan, false), 80)
+                // Dispatch to ALL canvases in the DOM
+                document.querySelectorAll('canvas').forEach(c => {
+                  c.dispatchEvent(new KeyboardEvent('keydown', { key:label==='ESC'?'Escape':label==='↵'?'Enter':' ', code:label==='ESC'?'Escape':label==='↵'?'Enter':'Space', keyCode:scan===256?27:scan===257?13:32, which:scan===256?27:scan===257?13:32, bubbles:true, cancelable:true }))
+                  setTimeout(() => c.dispatchEvent(new KeyboardEvent('keyup', { key:label==='ESC'?'Escape':label==='↵'?'Enter':' ', code:label==='ESC'?'Escape':label==='↵'?'Enter':'Space', keyCode:scan===256?27:scan===257?13:32, which:scan===256?27:scan===257?13:32, bubbles:true, cancelable:true })), 80)
+                })
               }} style={{
                 flexShrink: 0, background: '#111', border: '1px solid #444',
                 borderRadius: 6, color: '#aaa', fontFamily: 'monospace', fontSize: 13,
                 padding: '4px 10px', cursor: 'pointer', minWidth: 38, textAlign: 'center',
               }}>{label}</button>
             ))}
+
+            <button onClick={testEsc} style={{
+              flexShrink: 0, background: '#111', border: '1px solid #444',
+              borderRadius: 6, color: '#f59e0b', fontFamily: 'monospace', fontSize: 12,
+              padding: '4px 8px', cursor: 'pointer',
+            }}>🔑</button>
 
             <button onClick={toggleAI} style={{
               flexShrink: 0,
