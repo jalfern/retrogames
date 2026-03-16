@@ -2,9 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import { GAMES } from '../../config/games'
 
-const API = '/api'
-const AI_INTERVAL_MS = 5000   // how often AI acts (ms)
-const AI_MAX_HISTORY = 12     // recent commands tracked for loop detection
+const AI_INTERVAL_MS = 5000
+const AI_MAX_HISTORY = 12
 
 function DosGame({ bundleUrl, label }) {
   const rootRef = useRef(null)
@@ -18,11 +17,11 @@ function DosGame({ bundleUrl, label }) {
 
   // AI state
   const [aiActive, setAiActive] = useState(false)
-  const [aiStatus, setAiStatus] = useState(null)  // null | 'thinking' | 'typing'
+  const [aiStatus, setAiStatus] = useState(null)
   const [lastAiCmd, setLastAiCmd] = useState(null)
   const aiActiveRef = useRef(false)
   const aiTimerRef = useRef(null)
-  const aiCommandHistory = useRef([])
+  const aiHistoryRef = useRef([])
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 900 || 'ontouchstart' in window)
@@ -65,11 +64,14 @@ function DosGame({ bundleUrl, label }) {
 
     return () => {
       stopped = true
-      if (dosRef.current) { dosRef.current.stop(); dosRef.current = null }
+      if (dosRef.current) {
+        dosRef.current.stop()
+        dosRef.current = null
+      }
     }
   }, [bundleUrl])
 
-  // Pause handler (keyboard ?)
+  // Pause handler
   useEffect(() => {
     const handlePause = (e) => {
       if (e.key === '?' || (e.shiftKey && e.key === '/')) {
@@ -81,17 +83,50 @@ function DosGame({ bundleUrl, label }) {
     return () => window.removeEventListener('keydown', handlePause)
   }, [])
 
+  // Cleanup AI on unmount
+  useEffect(() => {
+    return () => {
+      aiActiveRef.current = false
+      clearTimeout(aiTimerRef.current)
+    }
+  }, [])
+
   const handleResume = useCallback(() => {
     setPaused(false)
     if (rootRef.current) rootRef.current.focus()
   }, [])
 
-  // ── Canvas capture ──────────────────────────────────────────────────────────
+  // Inject text into DOSBox
+  const typeIntoDos = useCallback((text) => {
+    const target = rootRef.current?.querySelector('canvas') || document
+    const fireKey = (key, code, keyCode) => {
+      const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
+      target.dispatchEvent(new KeyboardEvent('keydown', opts))
+      target.dispatchEvent(new KeyboardEvent('keypress', opts))
+      target.dispatchEvent(new KeyboardEvent('keyup', opts))
+    }
+    for (const char of text) {
+      const upper = char.toUpperCase()
+      fireKey(char, `Key${upper}`, char.charCodeAt(0))
+    }
+    fireKey('Enter', 'Enter', 13)
+  }, [])
+
+  // Inject arrow key into DOSBox
+  const pressArrow = useCallback((dir) => {
+    const target = rootRef.current?.querySelector('canvas') || document
+    const MAP = { up: ['ArrowUp', 38], down: ['ArrowDown', 40], left: ['ArrowLeft', 37], right: ['ArrowRight', 39] }
+    const [key, keyCode] = MAP[dir] || MAP.up
+    const opts = { key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true }
+    target.dispatchEvent(new KeyboardEvent('keydown', opts))
+    setTimeout(() => target.dispatchEvent(new KeyboardEvent('keyup', opts)), 220)
+  }, [])
+
+  // Capture DOSBox canvas as JPEG
   const captureScreen = useCallback(() => {
     const canvas = rootRef.current?.querySelector('canvas')
     if (!canvas) return null
     try {
-      // Downscale to 320×200 for smaller payload (~30KB JPEG)
       const tmp = document.createElement('canvas')
       tmp.width = 320; tmp.height = 200
       tmp.getContext('2d').drawImage(canvas, 0, 0, 320, 200)
@@ -101,96 +136,59 @@ function DosGame({ bundleUrl, label }) {
     }
   }, [])
 
-  // ── Keystroke injection into DOSBox ────────────────────────────────────────
-  const typeIntoDos = useCallback((text) => {
-    const target = rootRef.current?.querySelector('canvas') || document
-    const fire = (key, code, keyCode) => {
-      const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
-      target.dispatchEvent(new KeyboardEvent('keydown', opts))
-      target.dispatchEvent(new KeyboardEvent('keypress', opts))
-      target.dispatchEvent(new KeyboardEvent('keyup', opts))
-    }
-    for (const char of text) fire(char, `Key${char.toUpperCase()}`, char.charCodeAt(0))
-    fire('Enter', 'Enter', 13)
-  }, [])
-
-  const pressArrow = useCallback((dir) => {
-    const target = rootRef.current?.querySelector('canvas') || document
-    const MAP = { up: ['ArrowUp', 38], down: ['ArrowDown', 40], left: ['ArrowLeft', 37], right: ['ArrowRight', 39] }
-    const [key, keyCode] = MAP[dir] || MAP.up
-    const opts = { key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true }
-    // Hold for ~200ms to simulate a brief step
-    target.dispatchEvent(new KeyboardEvent('keydown', opts))
-    setTimeout(() => target.dispatchEvent(new KeyboardEvent('keyup', opts)), 200)
-  }, [])
-
-  // ── AI loop ────────────────────────────────────────────────────────────────
-  const runAiStep = useCallback(async () => {
+  // AI step — runs on a timer when aiActive
+  const scheduleAiStep = useRef(null)
+  scheduleAiStep.current = async () => {
     if (!aiActiveRef.current) return
-
     const screenshot = captureScreen()
     if (!screenshot) {
-      if (aiActiveRef.current) aiTimerRef.current = setTimeout(runAiStep, AI_INTERVAL_MS)
+      aiTimerRef.current = setTimeout(() => scheduleAiStep.current?.(), AI_INTERVAL_MS)
       return
     }
-
     setAiStatus('thinking')
     try {
-      const r = await fetch(`${API}/kq-ai-move`, {
+      const r = await fetch('/api/kq-ai-move', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           screenshot,
-          recentCommands: aiCommandHistory.current.slice(-AI_MAX_HISTORY),
+          recentCommands: aiHistoryRef.current.slice(-AI_MAX_HISTORY),
         }),
       })
       const { command, arrow } = await r.json()
-
       if ((command || arrow) && aiActiveRef.current) {
         setAiStatus('typing')
-        const label = arrow ? `→ arrow ${arrow}` : command
+        const label = arrow ? `arrow ${arrow}` : command
         setLastAiCmd(label)
-        aiCommandHistory.current.push(label)
-        if (aiCommandHistory.current.length > AI_MAX_HISTORY * 2) {
-          aiCommandHistory.current = aiCommandHistory.current.slice(-AI_MAX_HISTORY)
-        }
+        aiHistoryRef.current = [...aiHistoryRef.current.slice(-AI_MAX_HISTORY * 2), label]
         await new Promise(ok => setTimeout(ok, 400))
-        if (arrow) {
-          pressArrow(arrow)
-        } else {
-          typeIntoDos(command)
-        }
+        if (arrow) pressArrow(arrow)
+        else typeIntoDos(command)
       }
     } catch (e) {
       console.error('[KQ AI]', e)
     }
-
     setAiStatus(null)
-    if (aiActiveRef.current) aiTimerRef.current = setTimeout(runAiStep, AI_INTERVAL_MS)
-  }, [captureScreen, typeIntoDos, pressArrow])
+    if (aiActiveRef.current) {
+      aiTimerRef.current = setTimeout(() => scheduleAiStep.current?.(), AI_INTERVAL_MS)
+    }
+  }
 
   const toggleAI = useCallback(() => {
     if (aiActiveRef.current) {
-      // Stop
       aiActiveRef.current = false
       clearTimeout(aiTimerRef.current)
       setAiActive(false)
       setAiStatus(null)
     } else {
-      // Start
       aiActiveRef.current = true
+      aiHistoryRef.current = []
       setAiActive(true)
-      aiCommandHistory.current = []
-      runAiStep()
+      setLastAiCmd(null)
+      setTimeout(() => scheduleAiStep.current?.(), 500)
     }
-  }, [runAiStep])
-
-  // Cleanup AI on unmount
-  useEffect(() => {
-    return () => { aiActiveRef.current = false; clearTimeout(aiTimerRef.current) }
   }, [])
 
-  // ── Manual text submit ────────────────────────────────────────────────────
   const handleSubmit = useCallback((e) => {
     e.preventDefault()
     const text = inputVal.trim()
@@ -212,57 +210,50 @@ function DosGame({ bundleUrl, label }) {
           </div>
         )}
 
-        {/* DOS canvas */}
+        {/* DOS canvas — takes all remaining space */}
         <div ref={rootRef} style={{ flex: 1, display: error ? 'none' : 'block', minHeight: 0 }} />
 
-        {/* AI status bar — shown when AI is active */}
+        {/* AI status strip — only when AI is active */}
         {aiActive && !error && (
           <div style={{
+            flexShrink: 0, padding: '3px 12px',
+            background: '#050f05', borderTop: '1px solid #1a3a1a',
+            fontFamily: 'monospace', fontSize: 11,
             display: 'flex', alignItems: 'center', gap: 10,
-            padding: '4px 14px', background: '#050f05', borderTop: '1px solid #1a3a1a',
-            flexShrink: 0, fontSize: 12, fontFamily: 'monospace',
           }}>
             <span style={{ color: aiStatus === 'thinking' ? '#60a5fa' : aiStatus === 'typing' ? '#4ade80' : '#2a6a2a' }}>
-              {aiStatus === 'thinking' ? '🤖 stogabot thinking…' :
-               aiStatus === 'typing'   ? '🤖 stogabot typing…' :
-                                         '🤖 stogabot watching…'}
+              {aiStatus === 'thinking' ? '🤖 thinking…' : aiStatus === 'typing' ? '🤖 acting…' : '🤖 watching…'}
             </span>
-            {lastAiCmd && (
-              <span style={{ color: '#374151' }}>
-                last: <span style={{ color: '#d29922' }}>{lastAiCmd}</span>
-              </span>
-            )}
+            {lastAiCmd && <span style={{ color: '#6b7280' }}>last: <span style={{ color: '#d29922' }}>{lastAiCmd}</span></span>}
           </div>
         )}
 
-        {/* Bottom bar: AI toggle + text input */}
+        {/* Bottom bar — text input + AI toggle */}
         {!error && (
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '5px 10px', background: '#0a0a0a', borderTop: '1px solid #222', flexShrink: 0,
+            flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8,
+            padding: '5px 10px', background: '#0a0a0a', borderTop: '1px solid #222',
           }}>
-            {/* AI toggle */}
             <button onClick={toggleAI} style={{
+              flexShrink: 0,
               background: aiActive ? '#14532d' : '#111',
               border: `1px solid ${aiActive ? '#22c55e' : '#333'}`,
               borderRadius: 6, color: aiActive ? '#4ade80' : '#555',
-              fontFamily: 'monospace', fontSize: 12, padding: '4px 10px',
-              cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
+              fontFamily: 'monospace', fontSize: 12, padding: '4px 10px', cursor: 'pointer',
             }}>
-              {aiActive ? '⏸ stop AI' : '🤖 AI play'}
+              {aiActive ? '⏸ stop AI' : '🤖 AI'}
             </button>
 
-            {/* Text input — shown on mobile or when AI is off */}
             <form onSubmit={handleSubmit} style={{
-              display: (isMobile || !aiActive) ? 'flex' : 'none',
-              flex: 1, alignItems: 'center', gap: 6,
+              flex: 1, display: isMobile ? 'flex' : (aiActive ? 'none' : 'flex'),
+              alignItems: 'center', gap: 6,
             }}>
               <span style={{ color: '#555', fontFamily: 'monospace', fontSize: 14 }}>▶</span>
               <input
                 ref={inputRef}
                 value={inputVal}
                 onChange={e => setInputVal(e.target.value)}
-                placeholder={aiActive ? 'intervene — type a command…' : 'type command and tap Send…'}
+                placeholder={aiActive ? 'intervene…' : 'type command, tap Send…'}
                 autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false}
                 style={{
                   flex: 1, background: 'transparent', border: 'none', outline: 'none',
@@ -272,7 +263,7 @@ function DosGame({ bundleUrl, label }) {
               <button type="submit" style={{
                 background: '#1a3a1a', border: '1px solid #2a6a2a', borderRadius: 6,
                 color: '#4ade80', fontFamily: 'monospace', fontSize: 13,
-                padding: '4px 12px', cursor: 'pointer',
+                padding: '5px 14px', cursor: 'pointer',
               }}>
                 Send
               </button>
