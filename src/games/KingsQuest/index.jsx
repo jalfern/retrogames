@@ -17,8 +17,9 @@ function DosGame({ bundleUrl, label }) {
 
   // AI state
   const [aiActive, setAiActive] = useState(false)
-  const [aiStatus, setAiStatus] = useState(null)
+  const [aiStatus, setAiStatus] = useState(null)  // null | 'thinking' | 'typing' | 'no-canvas' | 'error'
   const [lastAiCmd, setLastAiCmd] = useState(null)
+  const [aiSteps, setAiSteps] = useState(0)
   const aiActiveRef = useRef(false)
   const aiTimerRef = useRef(null)
   const aiHistoryRef = useRef([])
@@ -136,15 +137,40 @@ function DosGame({ bundleUrl, label }) {
     }
   }, [])
 
+  const fireKey = useCallback((key, code, keyCode) => {
+    const t = rootRef.current?.querySelector('canvas') || document
+    const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
+    t.dispatchEvent(new KeyboardEvent('keydown', opts))
+    setTimeout(() => t.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
+  }, [])
+
   // AI step — runs on a timer when aiActive
   const scheduleAiStep = useRef(null)
   scheduleAiStep.current = async () => {
     if (!aiActiveRef.current) return
-    const screenshot = captureScreen()
+    setAiSteps(n => n + 1)
+
+    // Try canvas — also look for any canvas in the document as fallback
+    let screenshot = captureScreen()
     if (!screenshot) {
-      aiTimerRef.current = setTimeout(() => scheduleAiStep.current?.(), AI_INTERVAL_MS)
+      // Fallback: try any canvas on the page
+      const anyCanvas = document.querySelector('canvas')
+      if (anyCanvas) {
+        try {
+          const tmp = document.createElement('canvas')
+          tmp.width = 320; tmp.height = 200
+          tmp.getContext('2d').drawImage(anyCanvas, 0, 0, 320, 200)
+          screenshot = tmp.toDataURL('image/jpeg', 0.65)
+        } catch {}
+      }
+    }
+
+    if (!screenshot) {
+      setAiStatus('no-canvas')
+      aiTimerRef.current = setTimeout(() => scheduleAiStep.current?.(), 2000)
       return
     }
+
     setAiStatus('thinking')
     try {
       const r = await fetch('/api/kq-ai-move', {
@@ -155,6 +181,7 @@ function DosGame({ bundleUrl, label }) {
           recentCommands: aiHistoryRef.current.slice(-AI_MAX_HISTORY),
         }),
       })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const { command, arrow, escape, enter } = await r.json()
       if ((command || arrow || escape || enter) && aiActiveRef.current) {
         setAiStatus('typing')
@@ -162,12 +189,6 @@ function DosGame({ bundleUrl, label }) {
         setLastAiCmd(label)
         aiHistoryRef.current = [...aiHistoryRef.current.slice(-AI_MAX_HISTORY * 2), label]
         await new Promise(ok => setTimeout(ok, 400))
-        const fireKey = (key, code, keyCode) => {
-          const t = rootRef.current?.querySelector('canvas') || document
-          const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
-          t.dispatchEvent(new KeyboardEvent('keydown', opts))
-          setTimeout(() => t.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
-        }
         if (escape)      fireKey('Escape', 'Escape', 27)
         else if (enter)  fireKey('Enter',  'Enter',  13)
         else if (arrow)  pressArrow(arrow)
@@ -175,6 +196,7 @@ function DosGame({ bundleUrl, label }) {
       }
     } catch (e) {
       console.error('[KQ AI]', e)
+      setAiStatus('error')
     }
     setAiStatus(null)
     if (aiActiveRef.current) {
@@ -193,6 +215,7 @@ function DosGame({ bundleUrl, label }) {
       aiHistoryRef.current = []
       setAiActive(true)
       setLastAiCmd(null)
+      setAiSteps(0)
       setTimeout(() => scheduleAiStep.current?.(), 500)
     }
   }, [])
@@ -237,9 +260,14 @@ function DosGame({ bundleUrl, label }) {
             fontFamily: 'monospace', fontSize: 11,
             display: 'flex', alignItems: 'center', gap: 10,
           }}>
-            <span style={{ color: aiStatus === 'thinking' ? '#60a5fa' : aiStatus === 'typing' ? '#4ade80' : '#2a6a2a' }}>
-              {aiStatus === 'thinking' ? '🤖 thinking…' : aiStatus === 'typing' ? '🤖 acting…' : '🤖 watching…'}
+            <span style={{ color: aiStatus === 'thinking' ? '#60a5fa' : aiStatus === 'typing' ? '#4ade80' : aiStatus === 'no-canvas' ? '#f59e0b' : aiStatus === 'error' ? '#ef4444' : '#2a6a2a' }}>
+              {aiStatus === 'thinking' ? '🤖 thinking…' :
+               aiStatus === 'typing'   ? '🤖 acting…' :
+               aiStatus === 'no-canvas'? '⚠️ waiting for canvas…' :
+               aiStatus === 'error'    ? '❌ API error' :
+                                         '🤖 watching…'}
             </span>
+            <span style={{ color: '#374151', fontSize: 10 }}>step {aiSteps}</span>
             {lastAiCmd && <span style={{ color: '#6b7280' }}>last: <span style={{ color: '#d29922' }}>{lastAiCmd}</span></span>}
           </div>
         )}
