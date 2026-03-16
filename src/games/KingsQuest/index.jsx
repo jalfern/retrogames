@@ -155,15 +155,23 @@ function DosGame({ bundleUrl, label }) {
           recentCommands: aiHistoryRef.current.slice(-AI_MAX_HISTORY),
         }),
       })
-      const { command, arrow } = await r.json()
-      if ((command || arrow) && aiActiveRef.current) {
+      const { command, arrow, escape } = await r.json()
+      if ((command || arrow || escape) && aiActiveRef.current) {
         setAiStatus('typing')
-        const label = arrow ? `arrow ${arrow}` : command
+        const label = escape ? 'ESC' : arrow ? `arrow ${arrow}` : command
         setLastAiCmd(label)
         aiHistoryRef.current = [...aiHistoryRef.current.slice(-AI_MAX_HISTORY * 2), label]
         await new Promise(ok => setTimeout(ok, 400))
-        if (arrow) pressArrow(arrow)
-        else typeIntoDos(command)
+        if (escape) {
+          const t = rootRef.current?.querySelector('canvas') || document
+          const opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }
+          t.dispatchEvent(new KeyboardEvent('keydown', opts))
+          t.dispatchEvent(new KeyboardEvent('keyup', opts))
+        } else if (arrow) {
+          pressArrow(arrow)
+        } else {
+          typeIntoDos(command)
+        }
       }
     } catch (e) {
       console.error('[KQ AI]', e)
