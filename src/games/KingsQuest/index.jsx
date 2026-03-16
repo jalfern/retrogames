@@ -99,7 +99,9 @@ function DosGame({ bundleUrl, label }) {
 
   // Inject text into DOSBox
   const typeIntoDos = useCallback((text) => {
-    const target = findCanvas() || document
+    const canvas = findCanvas()
+    if (canvas?.focus) canvas.focus()
+    const target = canvas || document
     const fireKey = (key, code, keyCode) => {
       const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
       target.dispatchEvent(new KeyboardEvent('keydown', opts))
@@ -115,7 +117,9 @@ function DosGame({ bundleUrl, label }) {
 
   // Inject arrow key into DOSBox
   const pressArrow = useCallback((dir) => {
-    const target = findCanvas() || document
+    const canvas = findCanvas()
+    if (canvas?.focus) canvas.focus()
+    const target = canvas || document
     const MAP = { up: ['ArrowUp', 38], down: ['ArrowDown', 40], left: ['ArrowLeft', 37], right: ['ArrowRight', 39] }
     const [key, keyCode] = MAP[dir] || MAP.up
     const opts = { key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true }
@@ -166,11 +170,13 @@ function DosGame({ bundleUrl, label }) {
   }, [findCanvas])
 
   const fireKey = useCallback((key, code, keyCode) => {
-    const t = findCanvas() || document
+    const canvas = findCanvas()
+    if (canvas?.focus) canvas.focus()  // must have focus or DOSBox ignores events
+    const target = canvas || document
     const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
-    t.dispatchEvent(new KeyboardEvent('keydown', opts))
-    setTimeout(() => t.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
-  }, [])
+    target.dispatchEvent(new KeyboardEvent('keydown', opts))
+    setTimeout(() => target.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
+  }, [findCanvas])
 
   // AI step — runs on a timer when aiActive
   const scheduleAiStep = useRef(null)
