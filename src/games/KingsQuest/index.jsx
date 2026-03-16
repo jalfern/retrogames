@@ -45,6 +45,7 @@ function DosGame({ bundleUrl, label }) {
 
     try {
       const base = import.meta.env.BASE_URL
+      patchCanvasListeners()
       const instance = window.Dos(rootRef.current, {
         url: `${base}${bundleUrl}`,
         autoStart: true,
@@ -101,33 +102,64 @@ function DosGame({ bundleUrl, label }) {
     if (rootRef.current) rootRef.current.focus()
   }, [])
 
-  // Fire a key directly to all canvases (must be called from user-gesture or rAF context)
-  const fireToCanvases = (keySpec) => {
+  // ── Key Injection ────────────────────────────────────────────────────────────
+  // iOS Safari won't dispatch synthetic KeyboardEvents from async contexts.
+  // Fix: monkey-patch HTMLCanvasElement.prototype.addEventListener BEFORE Dos()
+  // to capture js-dos's internal keydown/keyup handlers, then call them directly.
+  // Direct function call has NO user-gesture requirement.
+  const kqHandlersRef = useRef({ down: null, up: null, canvas: null })
+
+  const patchCanvasListeners = useCallback(() => {
+    const orig = HTMLCanvasElement.prototype.addEventListener
+    const captured = kqHandlersRef.current
+    HTMLCanvasElement.prototype.addEventListener = function(type, handler, opts) {
+      if (type === 'keydown' && !captured.down) {
+        captured.down = handler; captured.canvas = this
+      }
+      if (type === 'keyup' && !captured.up) {
+        captured.up = handler
+      }
+      return orig.call(this, type, handler, opts)
+    }
+    // Restore after 30s (game should be loaded by then)
+    setTimeout(() => { HTMLCanvasElement.prototype.addEventListener = orig }, 30000)
+  }, [])
+
+  // Inject a key directly — works from any context, no user gesture needed
+  const injectKey = useCallback((keyCode, holdMs = 80) => {
+    const { down, up, canvas } = kqHandlersRef.current
+    if (!down) {
+      // Fallback: dispatch to canvas (user-gesture context only)
+      document.querySelectorAll('canvas').forEach(c => {
+        const key = String.fromCharCode(keyCode)
+        c.dispatchEvent(new KeyboardEvent('keydown', { keyCode, which: keyCode, key, bubbles: true, cancelable: true }))
+        c.dispatchEvent(new KeyboardEvent('keyup',   { keyCode, which: keyCode, key, bubbles: true, cancelable: true }))
+      })
+      return
+    }
+    const fakeEvt = {
+      keyCode, location: 0,
+      target: canvas || {},
+      stopPropagation: () => {}, preventDefault: () => {}
+    }
+    down(fakeEvt)
+    if (up) setTimeout(() => up(fakeEvt), holdMs)
+  }, [])
+
+  // Fire to canvas via DOM (for user-gesture buttons — belt-and-suspenders)
+  const fireToCanvases = useCallback((keySpec) => {
     document.querySelectorAll('canvas').forEach(c => {
       c.dispatchEvent(new KeyboardEvent('keydown', { ...keySpec, which: keySpec.keyCode, bubbles: true, cancelable: true }))
       c.dispatchEvent(new KeyboardEvent('keyup',   { ...keySpec, which: keySpec.keyCode, bubbles: true, cancelable: true }))
     })
-  }
+    // Also call handler directly if captured
+    injectKey(keySpec.keyCode)
+  }, [injectKey])
 
-  // Start rAF drain loop — runs every frame, drains key queue
-  const startRaf = useCallback(() => {
-    if (rafRef.current) return
-    const drain = () => {
-      const q = keyQueueRef.current
-      if (q.length > 0) {
-        const spec = q.shift()
-        fireToCanvases(spec)
-      }
-      rafRef.current = requestAnimationFrame(drain)
-    }
-    rafRef.current = requestAnimationFrame(drain)
-  }, [])
-
-  // Queue a key for injection (safe to call from setTimeout/async)
+  // dispatchKey — safe from any context (uses direct handler call)
   const dispatchKey = useCallback((keySpec) => {
-    keyQueueRef.current.push(keySpec)
-    startRaf()
-  }, [startRaf])
+    injectKey(keySpec.keyCode)
+  }, [injectKey])
 
   // Browser keyCode map for key injection
   const KEY = {
