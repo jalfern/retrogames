@@ -98,45 +98,46 @@ function DosGame({ bundleUrl, label }) {
     if (rootRef.current) rootRef.current.focus()
   }, [])
 
-  // Inject text into DOSBox
-  // js-dos native scan codes (from Ia map in js-dos.js)
-  const SCAN = {
-    esc: 256, enter: 257, space: 32,
-    arrowLeft: 263, arrowRight: 262, arrowUp: 265, arrowDown: 264,
-  }
-  // charCode A-Z (65-90) and 0-9 (48-57) map 1:1 in js-dos Ia table
-  const charScan = (ch) => {
-    const c = ch.toUpperCase().charCodeAt(0)
-    if (c >= 65 && c <= 90) return c  // A-Z
-    if (c >= 48 && c <= 57) return c  // 0-9
-    if (c === 32) return 32           // space
-    return 0
-  }
-
-  const ciKey = useCallback((scanCode, holdMs = 60) => {
-    const ci = dosRef.current?.ci
-    if (!ci) return
-    ci.sendKeyEvent(scanCode, true)
-    setTimeout(() => ci.sendKeyEvent(scanCode, false), holdMs)
+  // Dispatch a KeyboardEvent to ALL canvases in the DOM — confirmed working approach
+  const dispatchKey = useCallback((keySpec, holdMs = 80) => {
+    // keySpec: { key, code, keyCode }
+    const canvases = document.querySelectorAll('canvas')
+    canvases.forEach(c => {
+      c.dispatchEvent(new KeyboardEvent('keydown', { ...keySpec, which: keySpec.keyCode, bubbles: true, cancelable: true }))
+      setTimeout(() => c.dispatchEvent(new KeyboardEvent('keyup', { ...keySpec, which: keySpec.keyCode, bubbles: true, cancelable: true })), holdMs)
+    })
   }, [])
+
+  // Browser keyCode map for key injection
+  const KEY = {
+    esc:        { key: 'Escape',    code: 'Escape',      keyCode: 27  },
+    enter:      { key: 'Enter',     code: 'Enter',       keyCode: 13  },
+    space:      { key: ' ',         code: 'Space',       keyCode: 32  },
+    arrowUp:    { key: 'ArrowUp',   code: 'ArrowUp',     keyCode: 38  },
+    arrowDown:  { key: 'ArrowDown', code: 'ArrowDown',   keyCode: 40  },
+    arrowLeft:  { key: 'ArrowLeft', code: 'ArrowLeft',   keyCode: 37  },
+    arrowRight: { key: 'ArrowRight',code: 'ArrowRight',  keyCode: 39  },
+  }
 
   const typeIntoDos = useCallback((text) => {
     let delay = 0
     for (const char of text) {
-      const sc = charScan(char)
-      if (sc) {
+      const upper = char.toUpperCase()
+      const kc = upper.charCodeAt(0)
+      if ((kc >= 65 && kc <= 90) || (kc >= 48 && kc <= 57) || kc === 32) {
+        const spec = { key: char, code: kc === 32 ? 'Space' : `Key${upper}`, keyCode: kc }
         const d = delay
-        setTimeout(() => ciKey(sc), d)
+        setTimeout(() => dispatchKey(spec), d)
         delay += 120
       }
     }
-    setTimeout(() => ciKey(SCAN.enter), delay + 60)
-  }, [ciKey])
+    setTimeout(() => dispatchKey(KEY.enter), delay + 60)
+  }, [dispatchKey])
 
   const pressArrow = useCallback((dir) => {
-    const sc = { up: SCAN.arrowUp, down: SCAN.arrowDown, left: SCAN.arrowLeft, right: SCAN.arrowRight }[dir]
-    if (sc) ciKey(sc, 220)
-  }, [ciKey])
+    const spec = { up: KEY.arrowUp, down: KEY.arrowDown, left: KEY.arrowLeft, right: KEY.arrowRight }[dir]
+    if (spec) dispatchKey(spec, 220)
+  }, [dispatchKey])
 
   // Capture DOSBox canvas as JPEG
   // Find DOSBox canvas — js-dos may use shadow DOM, nested divs, or iframes
@@ -180,9 +181,9 @@ function DosGame({ bundleUrl, label }) {
     }
   }, [findCanvas])
 
-  const fireKey = useCallback((scanCode) => {
-    ciKey(scanCode)
-  }, [ciKey])
+  const fireKey = useCallback((spec) => {
+    if (typeof spec === 'object') dispatchKey(spec)
+  }, [dispatchKey])
 
   // Diagnostic: find canvas and test key dispatch
   const testEsc = useCallback(() => {
@@ -237,8 +238,8 @@ function DosGame({ bundleUrl, label }) {
         setLastAiCmd(label)
         aiHistoryRef.current = [...aiHistoryRef.current.slice(-AI_MAX_HISTORY * 2), label]
         await new Promise(ok => setTimeout(ok, 400))
-        if (escape)      ciKey(256)   // ESC scan code
-        else if (enter)  ciKey(257)   // Enter scan code
+        if (escape)      dispatchKey(KEY.esc)
+        else if (enter)  dispatchKey(KEY.enter)
         else if (arrow)  pressArrow(arrow)
         else             typeIntoDos(command)
       }
@@ -274,8 +275,7 @@ function DosGame({ bundleUrl, label }) {
     if (!text) return
     setInputVal('')
     if (text.toLowerCase() === 'esc' || text.toLowerCase() === 'escape') {
-      dosRef.current?.ci?.sendKeyEvent(256, true)
-      setTimeout(() => dosRef.current?.ci?.sendKeyEvent(256, false), 60)
+      dispatchKey({ key:'Escape', code:'Escape', keyCode:27 })
     } else {
       typeIntoDos(text)
     }
@@ -326,17 +326,11 @@ function DosGame({ bundleUrl, label }) {
           }}>
             {/* Startup key buttons — ESC + Enter + Space to get through intro screens */}
             {[
-              { label: 'ESC', scan: 256 },
-              { label: '↵',    scan: 257 },
-              { label: '␣',    scan: 32  },
-            ].map(({ label, scan }) => (
-              <button key={label} onClick={() => {
-                // Dispatch to ALL canvases in the DOM
-                document.querySelectorAll('canvas').forEach(c => {
-                  c.dispatchEvent(new KeyboardEvent('keydown', { key:label==='ESC'?'Escape':label==='↵'?'Enter':' ', code:label==='ESC'?'Escape':label==='↵'?'Enter':'Space', keyCode:scan===256?27:scan===257?13:32, which:scan===256?27:scan===257?13:32, bubbles:true, cancelable:true }))
-                  setTimeout(() => c.dispatchEvent(new KeyboardEvent('keyup', { key:label==='ESC'?'Escape':label==='↵'?'Enter':' ', code:label==='ESC'?'Escape':label==='↵'?'Enter':'Space', keyCode:scan===256?27:scan===257?13:32, which:scan===256?27:scan===257?13:32, bubbles:true, cancelable:true })), 80)
-                })
-              }} style={{
+              { label: 'ESC', spec: { key:'Escape', code:'Escape', keyCode:27 } },
+              { label: '↵',   spec: { key:'Enter',  code:'Enter',  keyCode:13 } },
+              { label: '␣',   spec: { key:' ',      code:'Space',  keyCode:32 } },
+            ].map(({ label, spec }) => (
+              <button key={label} onClick={() => dispatchKey(spec)} style={{
                 flexShrink: 0, background: '#111', border: '1px solid #444',
                 borderRadius: 6, color: '#aaa', fontFamily: 'monospace', fontSize: 13,
                 padding: '4px 10px', cursor: 'pointer', minWidth: 38, textAlign: 'center',
