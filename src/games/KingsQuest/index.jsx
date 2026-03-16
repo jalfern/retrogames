@@ -99,7 +99,7 @@ function DosGame({ bundleUrl, label }) {
 
   // Inject text into DOSBox
   const typeIntoDos = useCallback((text) => {
-    const target = rootRef.current?.querySelector('canvas') || document
+    const target = findCanvas() || document
     const fireKey = (key, code, keyCode) => {
       const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
       target.dispatchEvent(new KeyboardEvent('keydown', opts))
@@ -115,7 +115,7 @@ function DosGame({ bundleUrl, label }) {
 
   // Inject arrow key into DOSBox
   const pressArrow = useCallback((dir) => {
-    const target = rootRef.current?.querySelector('canvas') || document
+    const target = findCanvas() || document
     const MAP = { up: ['ArrowUp', 38], down: ['ArrowDown', 40], left: ['ArrowLeft', 37], right: ['ArrowRight', 39] }
     const [key, keyCode] = MAP[dir] || MAP.up
     const opts = { key, code: key, keyCode, which: keyCode, bubbles: true, cancelable: true }
@@ -124,8 +124,36 @@ function DosGame({ bundleUrl, label }) {
   }, [])
 
   // Capture DOSBox canvas as JPEG
+  // Find DOSBox canvas — js-dos may use shadow DOM, nested divs, or iframes
+  const findCanvas = useCallback(() => {
+    const root = rootRef.current
+    if (!root) return null
+    // Direct querySelector
+    let c = root.querySelector('canvas')
+    if (c) return c
+    // Pierce shadow roots of all children
+    const walk = (el) => {
+      if (!el) return null
+      if (el.shadowRoot) {
+        const sc = el.shadowRoot.querySelector('canvas')
+        if (sc) return sc
+        for (const child of el.shadowRoot.children) {
+          const r = walk(child); if (r) return r
+        }
+      }
+      for (const child of el.children) {
+        const r = walk(child); if (r) return r
+      }
+      return null
+    }
+    c = walk(root)
+    if (c) return c
+    // Last resort: any canvas in the document
+    return document.querySelector('canvas')
+  }, [])
+
   const captureScreen = useCallback(() => {
-    const canvas = rootRef.current?.querySelector('canvas')
+    const canvas = findCanvas()
     if (!canvas) return null
     try {
       const tmp = document.createElement('canvas')
@@ -135,10 +163,10 @@ function DosGame({ bundleUrl, label }) {
     } catch {
       return null
     }
-  }, [])
+  }, [findCanvas])
 
   const fireKey = useCallback((key, code, keyCode) => {
-    const t = rootRef.current?.querySelector('canvas') || document
+    const t = findCanvas() || document
     const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
     t.dispatchEvent(new KeyboardEvent('keydown', opts))
     setTimeout(() => t.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
@@ -150,21 +178,7 @@ function DosGame({ bundleUrl, label }) {
     if (!aiActiveRef.current) return
     setAiSteps(n => n + 1)
 
-    // Try canvas — also look for any canvas in the document as fallback
-    let screenshot = captureScreen()
-    if (!screenshot) {
-      // Fallback: try any canvas on the page
-      const anyCanvas = document.querySelector('canvas')
-      if (anyCanvas) {
-        try {
-          const tmp = document.createElement('canvas')
-          tmp.width = 320; tmp.height = 200
-          tmp.getContext('2d').drawImage(anyCanvas, 0, 0, 320, 200)
-          screenshot = tmp.toDataURL('image/jpeg', 0.65)
-        } catch {}
-      }
-    }
-
+    const screenshot = captureScreen()
     if (!screenshot) {
       setAiStatus('no-canvas')
       aiTimerRef.current = setTimeout(() => scheduleAiStep.current?.(), 2000)
@@ -227,7 +241,7 @@ function DosGame({ bundleUrl, label }) {
     setInputVal('')
     // Special: "esc" or "escape" → inject ESC key
     if (text.toLowerCase() === 'esc' || text.toLowerCase() === 'escape') {
-      const t = rootRef.current?.querySelector('canvas') || document
+      const t = findCanvas() || document
       const opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }
       t.dispatchEvent(new KeyboardEvent('keydown', opts))
       t.dispatchEvent(new KeyboardEvent('keyup', opts))
@@ -285,7 +299,7 @@ function DosGame({ bundleUrl, label }) {
               { label: '␣',     key: ' ',      code: 'Space',  keyCode: 32 },
             ].map(({ label, key, code, keyCode }) => (
               <button key={label} onClick={() => {
-                const t = rootRef.current?.querySelector('canvas') || document
+                const t = findCanvas() || document
                 const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true }
                 t.dispatchEvent(new KeyboardEvent('keydown', opts))
                 setTimeout(() => t.dispatchEvent(new KeyboardEvent('keyup', opts)), 80)
