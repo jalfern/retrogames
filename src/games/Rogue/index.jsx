@@ -945,15 +945,24 @@ function DPad({ onAction }) {
 
   return (
     <div style={{ flexShrink: 0, background: '#0a0a0a', borderTop: '1px solid #222', padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {/* Action buttons row */}
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+      {/* Action buttons — row 1: items */}
+      <div style={{ display: 'flex', gap: 5, justifyContent: 'center', flexWrap: 'wrap' }}>
         {ab('i inv',   { type: 'SHOW_INVENTORY' }, '#446')}
         {ab(', pick',  { type: 'PICKUP' },          '#464')}
-        {ab('s srch',  { type: 'SEARCH' },           '#664')}
-        {ab('. rest',  { type: 'MOVE', dx:0, dy:0 }, '#644')}
-        {ab('> down',  { type: 'DESCEND' },          '#644')}
-        {ab('q drink', { type: 'SHOW_QUAFF' },       '#446')}
-        {ab('r read',  { type: 'SHOW_READ' },        '#446')}
+        {ab('q drink', { type: 'SHOW_QUAFF' },      '#446')}
+        {ab('r read',  { type: 'SHOW_READ' },       '#446')}
+        {ab('e eat',   { type: 'SHOW_EAT' },        '#464')}
+        {ab('d drop',  { type: 'SHOW_DROP' },       '#644')}
+      </div>
+      {/* Action buttons — row 2: equip / movement */}
+      <div style={{ display: 'flex', gap: 5, justifyContent: 'center', flexWrap: 'wrap' }}>
+        {ab('w wield',  { type: 'SHOW_WIELD' },  '#446')}
+        {ab('W wear',   { type: 'SHOW_WEAR' },   '#446')}
+        {ab('T takeoff',{ type: 'TAKE_OFF' },    '#446')}
+        {ab('s srch',   { type: 'SEARCH' },      '#664')}
+        {ab('. rest',   { type: 'MOVE', dx:0, dy:0 }, '#444')}
+        {ab('> down',   { type: 'DESCEND' },     '#644')}
+        {ab('? help',   { type: 'SHOW_HELP' },   '#444')}
       </div>
       {/* D-pad */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>

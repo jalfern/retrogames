@@ -186,7 +186,8 @@ function ZorkGame({ storyFile, label }) {
         const since = lastTsRef.current
         const r = await fetch(`${API}/zork-state?since=${since}`)
         if (!r.ok) throw new Error(r.status)
-        const { lines: newLines, aiStatus: status, currentRoom: room } = await r.json()
+        const data = await r.json()
+        const { lines: newLines, aiStatus: status, currentRoom: room } = data
         if (dead) return
 
         setConnected(true)
