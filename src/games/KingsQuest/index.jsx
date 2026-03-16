@@ -24,6 +24,8 @@ function DosGame({ bundleUrl, label }) {
   const aiActiveRef = useRef(false)
   const aiTimerRef = useRef(null)
   const aiHistoryRef = useRef([])
+  const keyQueueRef = useRef([])  // pending keys to inject via rAF
+  const rafRef = useRef(null)     // requestAnimationFrame handle
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 900 || 'ontouchstart' in window)
@@ -66,6 +68,7 @@ function DosGame({ bundleUrl, label }) {
 
     return () => {
       stopped = true
+      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
       if (dosRef.current) {
         dosRef.current.stop()
         dosRef.current = null
@@ -98,15 +101,33 @@ function DosGame({ bundleUrl, label }) {
     if (rootRef.current) rootRef.current.focus()
   }, [])
 
-  // Dispatch a KeyboardEvent to ALL canvases in the DOM — confirmed working approach
-  const dispatchKey = useCallback((keySpec, holdMs = 80) => {
-    // keySpec: { key, code, keyCode }
-    const canvases = document.querySelectorAll('canvas')
-    canvases.forEach(c => {
+  // Fire a key directly to all canvases (must be called from user-gesture or rAF context)
+  const fireToCanvases = (keySpec) => {
+    document.querySelectorAll('canvas').forEach(c => {
       c.dispatchEvent(new KeyboardEvent('keydown', { ...keySpec, which: keySpec.keyCode, bubbles: true, cancelable: true }))
-      setTimeout(() => c.dispatchEvent(new KeyboardEvent('keyup', { ...keySpec, which: keySpec.keyCode, bubbles: true, cancelable: true })), holdMs)
+      c.dispatchEvent(new KeyboardEvent('keyup',   { ...keySpec, which: keySpec.keyCode, bubbles: true, cancelable: true }))
     })
+  }
+
+  // Start rAF drain loop — runs every frame, drains key queue
+  const startRaf = useCallback(() => {
+    if (rafRef.current) return
+    const drain = () => {
+      const q = keyQueueRef.current
+      if (q.length > 0) {
+        const spec = q.shift()
+        fireToCanvases(spec)
+      }
+      rafRef.current = requestAnimationFrame(drain)
+    }
+    rafRef.current = requestAnimationFrame(drain)
   }, [])
+
+  // Queue a key for injection (safe to call from setTimeout/async)
+  const dispatchKey = useCallback((keySpec) => {
+    keyQueueRef.current.push(keySpec)
+    startRaf()
+  }, [startRaf])
 
   // Browser keyCode map for key injection
   const KEY = {
@@ -334,6 +355,20 @@ function DosGame({ bundleUrl, label }) {
                 flexShrink: 0, background: '#111', border: '1px solid #444',
                 borderRadius: 6, color: '#aaa', fontFamily: 'monospace', fontSize: 13,
                 padding: '4px 10px', cursor: 'pointer', minWidth: 38, textAlign: 'center',
+              }}>{label}</button>
+            ))}
+
+            {/* Arrow buttons — test if direct key injection works from user gesture */}
+            {[
+              { label: '←', spec: { key:'ArrowLeft',  code:'ArrowLeft',  keyCode:37 } },
+              { label: '↑', spec: { key:'ArrowUp',    code:'ArrowUp',    keyCode:38 } },
+              { label: '↓', spec: { key:'ArrowDown',  code:'ArrowDown',  keyCode:40 } },
+              { label: '→', spec: { key:'ArrowRight', code:'ArrowRight', keyCode:39 } },
+            ].map(({ label, spec }) => (
+              <button key={label} onClick={() => fireToCanvases(spec)} style={{
+                flexShrink: 0, background: '#111', border: '1px solid #444',
+                borderRadius: 6, color: '#60a5fa', fontFamily: 'monospace', fontSize: 13,
+                padding: '4px 8px', cursor: 'pointer',
               }}>{label}</button>
             ))}
 
