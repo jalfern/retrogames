@@ -7,12 +7,14 @@
       ]
     }
   ],
+  "redirects": [
+    { "source": "/", "destination": "/retrogames", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/retrogames/assets/:path*", "destination": "/assets/:path*" },
     { "source": "/retrogames/games/:path*", "destination": "/games/:path*" },
     { "source": "/retrogames/js-dos/:path*", "destination": "/js-dos/:path*" },
     { "source": "/retrogames", "destination": "/index.html" },
-    { "source": "/retrogames/:path*", "destination": "/index.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/retrogames/:path*", "destination": "/index.html" }
   ]
 }
