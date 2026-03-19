@@ -11,6 +11,7 @@ import AdventureGame from '../games/Adventure'
 import { ZorkI, ZorkII, ZorkIII } from '../games/Zork'
 import KingsQuestGame from '../games/KingsQuest'
 import RogueGame from '../games/Rogue'
+import Ultima2Game from '../games/Ultima2'
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -136,4 +137,14 @@ export const GAMES = [
         description: 'The original dungeon crawler. Descend through procedurally generated dungeons, battle monsters, collect treasure, and find the Amulet of Yendor. Permadeath — every run is unique.',
         controls: ['Arrow Keys / hjkl: Move', ',: Pick up', 'i: Inventory', 'q: Quaff potion', 'r: Read scroll', '>: Descend stairs', '?: Help']
     }
+    ,
+    {
+        path: "/ultima2",
+        component: Ultima2Game,
+        label: "ULTIMA II",
+        theme: "dark",
+        description: "Richard Garriott landmark RPG: Revenge of the Enchantress (1982). Travel through time across Earths history to defeat the evil Minax. One of the earliest open-world RPGs.",
+        controls: ["Arrow Keys: Move", "A: Attack", "C: Cast Spell", "G: Get/Pick Up", "T: Transact (buy/sell)", "O: Open", "Q: Quit/Save", "V: View Stats"]
+    }
+
 ]
