@@ -11,6 +11,7 @@ import AdventureGame from '../games/Adventure'
 import { ZorkI, ZorkII, ZorkIII } from '../games/Zork'
 import KingsQuestGame from '../games/KingsQuest'
 import RogueGame from '../games/Rogue'
+import Ultima1Game from '../games/Ultima1'
 import Ultima2Game from '../games/Ultima2'
 import Ultima3Game from '../games/Ultima3'
 import Ultima4Game from '../games/Ultima4'
@@ -139,6 +140,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'The original dungeon crawler. Descend through procedurally generated dungeons, battle monsters, collect treasure, and find the Amulet of Yendor. Permadeath — every run is unique.',
         controls: ['Arrow Keys / hjkl: Move', ',: Pick up', 'i: Inventory', 'q: Quaff potion', 'r: Read scroll', '>: Descend stairs', '?: Help']
+    }
+    ,
+    {
+        path: "/ultima1",
+        component: Ultima1Game,
+        label: "ULTIMA I",
+        theme: "dark",
+        description: "Richard Garriott's The First Age of Darkness (1986 DOS rewrite of the 1981 original). The game that started it all — explore the lands of Sosaria, defeat the evil wizard Mondain, and travel through time and space. Features dungeon crawling, overworld exploration, and even space combat.",
+        controls: ["Arrow Keys: Move", "A: Attack", "C: Cast Spell", "D: Drop", "E: Enter", "F: Fire", "G: Get", "H: Hyper jump (space)", "I: Inform/Search", "O: Open", "R: Ready weapon", "S: Steal", "T: Transact", "U: Unlock", "W: Wear armor", "X: eXit", "Z: Ztats", "Q: Save and quit"]
     }
     ,
     {
