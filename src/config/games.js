@@ -9,6 +9,7 @@ import PitfallGame from '../games/Pitfall'
 import MissileCommandGame from '../games/MissileCommand'
 import AdventureGame from '../games/Adventure'
 import SuperMarioGame from '../games/SuperMario'
+import SuperMarioClassicGame from '../games/SuperMarioClassic'
 import { ZorkI, ZorkII, ZorkIII } from '../games/Zork'
 import KingsQuestGame from '../games/KingsQuest'
 import RogueGame from '../games/Rogue'
@@ -29,6 +30,15 @@ export const GAMES = [
         theme: 'light',
         description: "The platformer that defined a genre. Run, jump and stomp your way through World 1-1 (overworld) and World 1-2 (underground). Grab the fire flower to become Fire Mario and throw fireballs, kick Koopa shells, and raise the flag.",
         controls: ['Arrow Left/Right: Move', 'Arrow Up / Shift / X: Run', 'Space / Z: Jump (hold for higher)', 'F / B: Throw fireball (when Fire Mario)', 'Reach the flagpole to clear 1-1, take the pipe to clear 1-2']
+    },
+    {
+        path: '/mario-classic',
+        component: SuperMarioClassicGame,
+        label: 'SUPER MARIO BROS (ORIGINAL)',
+        theme: 'light',
+        hidden: true,
+        description: "The original 'one-shot' build — the pristine first-pass engine generated in a single prompt by local Qwen 3.8, before any iteration. Reachable from the Options menu on the main Mario title screen (?).",
+        controls: ['Arrow Left/Right: Move', 'Arrow Up / Shift / X: Run', 'Space / Z: Jump', '?: Options menu']
     },
     {
         path: '/pong',

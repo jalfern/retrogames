@@ -116,9 +116,18 @@ npm run audcheck            # PASS/FAIL on the audio engine
 - Options: `--url --out --eval --steps --w --h --settle --prewait --channel`. `--steps` is a
   JSON array of `{down|up, wait}` for real keyboard input.
 
+## Super Mario — Options menu & versions
+The Mario title screen shows `PRESS ? FOR OPTIONS`. `?` at the title (not in-game — in-game
+`?` still pauses) opens an **OPTIONS menu** (keys 1–4 / arrows+Enter / Esc back):
+1. Play latest · 2. Play original one-shot · 3. Watch CPU autoplay · 4. Watch CPU learn (evolve).
+The **original** is the pristine `v1-one-shot` engine vendored as `src/games/SuperMarioClassic/`
+(route `/mario-classic`, `hidden: true` so it's off the arcade grid, reached only via the menu).
+Its `?` returns to the menu (`/mario?menu=1`). Options 3–4 are wired to autopilot /
+neuroevolution controllers (see `mode` in the engine).
+
 ## Super Mario — DEV test hooks
 `src/games/SuperMario/index.jsx` exposes `window.__marioTest` (only under `import.meta.env.DEV`):
-`start() getState() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
+`start() getState() openMenu() choose(i) teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
 startFlag() clearLevel() gotoLevel(i) enterBonus() enterUnder() warpUp() isDetour() musicState() musicPeak()`.
 Use these with the **vendored** screenshot harness (`scripts/shot.mjs`, run via
 `npm run shot`) to drive the game deterministically — see *Self-verifying* above.
