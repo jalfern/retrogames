@@ -15,6 +15,13 @@ const VIEW_W = 256
 const VIEW_H = 240
 const ROWS = 15
 
+const MENU = [
+    { label: 'PLAY  ·  LATEST VERSION', hint: 'the current, polished build' },
+    { label: 'PLAY  ·  ORIGINAL ONE-SHOT', hint: 'pristine first-pass from local Qwen 3.8' },
+    { label: 'WATCH  ·  CPU AUTOPLAY', hint: 'the machine plays it perfectly (normal speed)' },
+    { label: 'WATCH  ·  CPU LEARNS', hint: 'neural AI improves each generation' },
+]
+
 // Tile ids
 const EMPTY = 0
 const GROUND = 1
@@ -214,6 +221,8 @@ const SuperMarioGame = () => {
     const navigate = useNavigate()
     const navigateRef = useRef(navigate)
     navigateRef.current = navigate
+    const apiRef = useRef(null)
+    const [ui, setUi] = React.useState({ screen: 'attract', sel: 0 })
 
     const handleResume = () => {
         setPaused(false)
@@ -360,13 +369,6 @@ const SuperMarioGame = () => {
 
         // ---- input handlers ----
         // ---- options menu ----
-        const MENU = [
-            { label: 'PLAY  ·  LATEST VERSION', hint: 'the current, polished build' },
-            { label: 'PLAY  ·  ORIGINAL ONE-SHOT', hint: 'pristine first-pass from local Qwen 3.8' },
-            { label: 'WATCH  ·  CPU AUTOPLAY', hint: 'the machine plays it perfectly (normal speed)' },
-            { label: 'WATCH  ·  CPU LEARNS', hint: 'neural AI improves each generation' },
-        ]
-        let soonFlash = 0
         const startPlay = (m) => { mode = m; audioController.init(); resetGame() }
         const startAutopilot = () => { apHold = 0; mode = 'autopilot'; audioController.init(); resetGame() }
         const chooseOption = (i) => {
@@ -401,6 +403,8 @@ const SuperMarioGame = () => {
             if (pausedRef.current) return
 
             if (state === 'attract' || state === 'gameover' || state === 'win') {
+                // don't let a lone modifier (e.g. Shift on the way to '?') start the game
+                if (['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(c)) return
                 mode = 'play'; apHold = 0
                 resetGame()
                 audioController.init()
@@ -1337,7 +1341,19 @@ const SuperMarioGame = () => {
             }
         }
 
+        // Mirror the engine's menu/attract screen into React so DOM buttons can render.
+        const syncUi = () => {
+            const s = state === 'attract' ? 'attract' : state === 'menu' ? 'menu' : state === 'gameover' || state === 'win' ? 'end' : 'none'
+            setUi(prev => (prev.screen === s && prev.sel === menuSel) ? prev : { screen: s, sel: menuSel })
+        }
+        apiRef.current = {
+            openMenu: () => { state = 'menu'; menuSel = 0; audioController.init(); syncUi() },
+            choose: (i) => { chooseOption(i); syncUi() },
+            back: () => { state = 'attract'; syncUi() },
+        }
+
         const draw = () => {
+            syncUi()
             const scale = Math.min(viewWidth / VIEW_W, viewHeight / VIEW_H)
             const ox = Math.floor((viewWidth - VIEW_W * scale) / 2)
             const oy = Math.floor((viewHeight - VIEW_H * scale) / 2)
@@ -1475,37 +1491,16 @@ const SuperMarioGame = () => {
                     { t: 'SUPER MARIO BROS', color: C.marioRed, font: 'bold 20px monospace', gap: 26 },
                     { t: 'WORLD 1-1 & 1-2', color: C.white, font: 'bold 10px monospace', gap: 22 },
                     { t: 'PRESS ANY KEY TO START', color: (tick % 60 < 36) ? C.coin : C.white, font: 'bold 9px monospace', gap: 16 },
-                    { t: 'PRESS ? FOR OPTIONS', color: 'rgba(255,255,255,0.7)', font: 'bold 8px monospace' },
+                    { t: 'TAP OPTIONS (TOP-RIGHT) · OR PRESS ?', color: 'rgba(255,255,255,0.7)', font: 'bold 8px monospace' },
                 ])
             } else if (state === 'menu') {
-                if (soonFlash > 0) soonFlash--
-                ctx.fillStyle = 'rgba(0,0,0,0.74)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+                // backdrop + title only; the interactive rows are DOM buttons (touch-friendly)
+                ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
                 ctx.textAlign = 'center'
                 ctx.fillStyle = C.coin; ctx.font = 'bold 16px monospace'
-                ctx.fillText('OPTIONS', VIEW_W / 2, 38)
+                ctx.fillText('OPTIONS', VIEW_W / 2, 34)
                 ctx.fillStyle = C.white; ctx.font = 'bold 8px monospace'
-                ctx.fillText('SUPER MARIO BROS', VIEW_W / 2, 51)
-                const top = 80, rowH = 30
-                for (let i = 0; i < MENU.length; i++) {
-                    const y = top + i * rowH
-                    const sel = i === menuSel
-                    if (sel) { ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(22, y - 12, VIEW_W - 44, 22) }
-                    ctx.textAlign = 'left'
-                    ctx.fillStyle = sel ? C.coin : C.white
-                    ctx.font = 'bold 10px monospace'
-                    ctx.fillText((sel ? '> ' : '  ') + (i + 1) + '. ' + MENU[i].label, 28, y)
-                    ctx.fillStyle = sel ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.55)'
-                    ctx.font = '7px monospace'
-                    ctx.fillText('     ' + MENU[i].hint, 28, y + 9)
-                }
-                ctx.textAlign = 'center'
-                ctx.fillStyle = 'rgba(255,255,255,0.65)'; ctx.font = '7px monospace'
-                ctx.fillText('1-4 / ARROWS+ENTER SELECT   ·   ESC BACK', VIEW_W / 2, VIEW_H - 14)
-                if (soonFlash > 0) {
-                    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(20, VIEW_H - 46, VIEW_W - 40, 20)
-                    ctx.fillStyle = C.coin; ctx.font = 'bold 9px monospace'
-                    ctx.fillText('COMING SOON', VIEW_W / 2, VIEW_H - 32)
-                }
+                ctx.fillText('SUPER MARIO BROS', VIEW_W / 2, 47)
             } else if (state === 'gameover') {
                 ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
                 centerText([
@@ -1602,6 +1597,7 @@ const SuperMarioGame = () => {
         }
 
         return () => {
+            apiRef.current = null
             audioController.stopMusic()
             window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', handleKeyDown)
@@ -1614,9 +1610,41 @@ const SuperMarioGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center p-4">
             <div ref={containerRef} className="relative w-full max-w-[760px] aspect-[16/15] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-[#5c94fc]">
                 <canvas ref={canvasRef} className="block w-full h-full" />
+
+                {ui.screen === 'attract' && (
+                    <button onClick={() => apiRef.current?.openMenu()}
+                        className="absolute top-2 right-2 z-30 px-3 py-1.5 rounded-md bg-black/70 border border-yellow-400 text-yellow-300 font-mono font-bold text-xs tracking-wider active:scale-95 transition">
+                        OPTIONS ▸
+                    </button>
+                )}
+
+                {ui.screen === 'menu' && (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 px-5 pt-16 pb-8">
+                        {MENU.map((m, i) => (
+                            <button key={m.label} onClick={() => apiRef.current?.choose(i)}
+                                className={`w-full max-w-[440px] text-left px-4 py-2 rounded-md border font-mono transition active:scale-[0.98] ${i === ui.sel ? 'bg-yellow-400/20 border-yellow-400' : 'bg-white/5 border-white/20'}`}>
+                                <div className={`text-[13px] font-bold ${i === ui.sel ? 'text-yellow-300' : 'text-white'}`}>{i + 1}. {m.label}</div>
+                                <div className={`text-[10px] ${i === ui.sel ? 'text-yellow-100/90' : 'text-white/55'}`}>{m.hint}</div>
+                            </button>
+                        ))}
+                        <button onClick={() => apiRef.current?.back()}
+                            className="mt-1 px-4 py-1.5 rounded-md bg-white/10 border border-white/25 text-white/80 font-mono text-xs active:scale-95">
+                            ◂ BACK
+                        </button>
+                        <div className="mt-1 text-[9px] font-mono text-white/45">tap an option · or keys 1–4 / arrows · ESC</div>
+                    </div>
+                )}
+
+                {ui.screen === 'end' && (
+                    <button onClick={() => apiRef.current?.choose(0)}
+                        className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 px-5 py-2 rounded-md bg-black/70 border border-yellow-400 text-yellow-300 font-mono font-bold text-sm tracking-wider active:scale-95 transition">
+                        ▶ PLAY AGAIN
+                    </button>
+                )}
+
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SUPER MARIO BROS')} onResume={handleResume} />}
             </div>
-            <VirtualControls secondAction={{ code: 'KeyF', label: 'F' }} />
+            {ui.screen === 'none' && <VirtualControls secondAction={{ code: 'KeyF', label: 'F' }} />}
         </div>
     )
 }
