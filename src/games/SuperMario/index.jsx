@@ -55,6 +55,13 @@ const C = {
     marioSkin: '#f8b888',
     marioBlue: '#3030e0',
     marioShoe: '#6a2800',
+    fireTop: '#ffffff',
+    fireball: '#f83800',
+    fireballCore: '#fcd8a8',
+    flowerPetal: '#f87800',
+    flowerPetal2: '#f8e0a0',
+    flowerCenter: '#f83800',
+    flowerStem: '#00a800',
     white: '#ffffff',
     black: '#000000',
     cloud: '#ffffff',
@@ -85,6 +92,7 @@ function buildLevel(def) {
 // World 1-1 (overworld)
 const LEVEL_1 = buildLevel({
     id: '1-1', cols: 212, bg: 'sky', flagCol: 174, castleCol: 180,
+    flowerCols: [16], shroomCols: [21, 22],
     build(a) {
         a.ground(0, 211)
         // pits
@@ -130,6 +138,7 @@ const LEVEL_1 = buildLevel({
 // World 1-2 (underground)
 const LEVEL_2 = buildLevel({
     id: '1-2', cols: 176, bg: 'under', exitCol: 168,
+    shroomCols: [18, 104], flowerCols: [66],
     build(a) {
         a.ground(0, 175)
         for (const [c1, c2] of [[30, 31], [58, 59], [90, 91], [120, 121]])
@@ -205,6 +214,9 @@ const SuperMarioGame = () => {
         // ---- input ----
         const keys = { left: false, right: false, run: false, down: false, jump: false }
         let jumpLatch = false
+        let fireLatch = false
+        let firePressed = false
+        let fireCooldown = 0
 
         // ---- game state ----
         let state = 'attract' // attract | play | dying | levelclear | gameover | win
@@ -220,40 +232,46 @@ const SuperMarioGame = () => {
         let enemies = []
         let coinsArr = []
         let shrooms = []
+        let fireballs = []
         let particles = []
         let popups = []
 
-        const spawnMario = (big) => ({
-            x: 40, y: (13 * TILE) - (big ? 28 : 16), w: 12, h: big ? 28 : 16,
-            vx: 0, vy: 0, onGround: false, big: !!big,
-            facing: 1, invuln: 0, anim: 0, dead: false, jumpPressed: false,
-        })
+        const spawnMario = (power) => {
+            const big = power && power !== 'small'
+            return {
+                x: 40, y: (13 * TILE) - (big ? 28 : 16), w: 12, h: big ? 28 : 16,
+                vx: 0, vy: 0, onGround: false, big, power: power || 'small',
+                facing: 1, invuln: 0, anim: 0, jumpPressed: false,
+            }
+        }
 
-        const loadLevel = (idx) => {
+        const loadLevel = (idx, keepPower) => {
             levelIndex = idx
             level = LEVELS[idx]
-            const keepBig = mario ? mario.big : false
-            mario = spawnMario(keepBig)
+            const power = keepPower && mario ? mario.power : 'small'
+            mario = spawnMario(power)
             cameraX = 0
             timer = 400; timerAcc = 0
             enemies = (level.enemies || []).map(e => ({
                 type: e.type,
                 x: e.c * TILE, y: (13 * TILE) - (e.type === 'koopa' ? 24 : 16),
                 w: 14, h: e.type === 'koopa' ? 24 : 16,
-                vx: -0.6, vy: 0, alive: true, shell: false, still: false, anim: 0, squash: 0, flip: false,
+                vx: -0.6, vy: 0, alive: true, shell: false, still: false, anim: 0, squash: 0, flip: false, grace: 0,
             }))
             coinsArr = (level.coinArcs || []).map(cc => ({
                 x: cc.c * TILE + 4, y: cc.r * TILE + 4, w: 8, h: 8, taken: false, anim: Math.random() * 6,
             }))
             shrooms = []
+            fireballs = []
             particles = []
             popups = []
+            fireCooldown = 0
             state = 'play'
         }
 
         const resetGame = () => {
             score = 0; coins = 0; lives = 3
-            mario = spawnMario(false)
+            mario = spawnMario('small')
             loadLevel(0)
         }
 
@@ -296,6 +314,7 @@ const SuperMarioGame = () => {
             else if (c === 'ArrowUp' || c === 'ShiftLeft' || c === 'ShiftRight' || c === 'KeyX') keys.run = true
             else if (c === 'ArrowDown' || c === 'KeyS') keys.down = true
             else if (c === 'Space' || c === 'KeyZ' || c === 'ArrowUp') { keys.jump = true; if (!jumpLatch) { jumpLatch = true; mario && (mario.jumpPressed = true) } }
+            else if (c === 'KeyF' || c === 'KeyB' || c === 'ControlLeft' || c === 'ControlRight') { if (!fireLatch) { fireLatch = true; firePressed = true } }
 
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(c)) e.preventDefault()
         }
@@ -306,6 +325,7 @@ const SuperMarioGame = () => {
             else if (c === 'ArrowUp' || c === 'ShiftLeft' || c === 'ShiftRight' || c === 'KeyX') keys.run = false
             else if (c === 'ArrowDown' || c === 'KeyS') keys.down = false
             else if (c === 'Space' || c === 'KeyZ' || c === 'ArrowUp') { keys.jump = false; jumpLatch = false }
+            else if (c === 'KeyF' || c === 'KeyB' || c === 'ControlLeft' || c === 'ControlRight') { fireLatch = false }
         }
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleKeyUp)
@@ -333,16 +353,20 @@ const SuperMarioGame = () => {
             audioController.playNoise(0.12, 0.25)
         }
 
+        const spawnPower = (c, r, kind) => {
+            shrooms.push({ x: c * TILE + 2, y: r * TILE, w: 12, h: 14, vx: 0.8, vy: 0, emerging: 14, kind })
+            audioController.playSweep(300, 900, 0.4, 'square', 0.12)
+        }
+
         const bumpBlock = (c, r) => {
             const t = level.grid[r][c]
             if (t === QUESTION) {
-                const giveShroom = (level.id === '1-1' && c === 21) || (level.id === '1-1' && c === 22 && r === 5) ||
-                    (level.id === '1-2' && (c === 18 || c === 104))
+                const isFlower = level.flowerCols && level.flowerCols.includes(c)
+                const isShroom = level.shroomCols && level.shroomCols.includes(c)
                 level.grid[r][c] = USED
-                if (giveShroom) {
-                    shrooms.push({ x: c * TILE + 2, y: r * TILE, w: 12, h: 14, vx: 0.8, vy: 0, emerging: 14 })
-                    audioController.playSweep(300, 900, 0.4, 'square', 0.12)
-                } else {
+                if (isFlower) spawnPower(c, r, 'flower')
+                else if (isShroom) spawnPower(c, r, 'mushroom')
+                else {
                     coins++; addScore(200, c * TILE, r * TILE - 8, '200')
                     audioController.playTone(988, 0.06, 'square', 0.12)
                     setTimeout(() => audioController.playTone(1319, 0.12, 'square', 0.12), 70)
@@ -356,19 +380,23 @@ const SuperMarioGame = () => {
         }
 
         const grow = () => {
-            if (mario.big) return
-            mario.big = true
-            mario.h = 28
-            mario.y -= 12
-            mario.invuln = 0
+            if (mario.power !== 'small') return
+            mario.power = 'big'; mario.big = true; mario.h = 28; mario.y -= 12; mario.invuln = 0
             audioController.playSweep(400, 1000, 0.5, 'square', 0.14)
+            addScore(1000, mario.x, mario.y - 10, '')
+        }
+
+        const fireUp = () => {
+            if (mario.power === 'small') { mario.y -= 12; mario.h = 28; mario.big = true }
+            mario.power = 'fire'; mario.invuln = 0
+            audioController.playSweep(500, 1200, 0.5, 'square', 0.14)
             addScore(1000, mario.x, mario.y - 10, '')
         }
 
         const hurt = () => {
             if (mario.invuln > 0) return
-            if (mario.big) {
-                mario.big = false; mario.h = 16; mario.y += 12; mario.invuln = 90
+            if (mario.power !== 'small') {
+                mario.power = 'small'; mario.big = false; mario.h = 16; mario.y += 12; mario.invuln = 90
                 audioController.playSweep(600, 200, 0.4, 'sawtooth', 0.16)
             } else {
                 die()
@@ -445,7 +473,7 @@ const SuperMarioGame = () => {
                 transitionTimer--
                 if (transitionTimer <= 0) {
                     lives--
-                    if (lives > 0) loadLevel(levelIndex)
+                    if (lives > 0) loadLevel(levelIndex, false)
                     else state = 'gameover'
                 }
                 return
@@ -454,7 +482,7 @@ const SuperMarioGame = () => {
             if (state === 'levelclear') {
                 transitionTimer--
                 if (transitionTimer <= 0) {
-                    if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1)
+                    if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1, true)
                     else state = 'win'
                 }
                 return
@@ -523,9 +551,41 @@ const SuperMarioGame = () => {
                 const mid = Math.floor((s.y + s.h / 2) / TILE)
                 if (s.vx > 0) { const c = Math.floor((s.x + s.w) / TILE); if (solidAt(c, mid)) { s.x = c * TILE - s.w; s.vx *= -1 } }
                 else { const c = Math.floor(s.x / TILE); if (solidAt(c, mid)) { s.x = (c + 1) * TILE; s.vx *= -1 } }
-                if (overlap(mario, s)) { s.taken = true; grow() }
+                if (overlap(mario, s)) { s.taken = true; if (s.kind === 'flower') fireUp(); else grow() }
             }
             shrooms = shrooms.filter(s => !s.taken && s.y < VIEW_H + 40)
+
+            // ---- Fireballs ----
+            if (mario.power === 'fire' && firePressed && fireCooldown <= 0 && fireballs.length < 2) {
+                fireballs.push({
+                    x: mario.x + (mario.facing > 0 ? mario.w : -6), y: mario.y + (mario.big ? 12 : 6),
+                    w: 8, h: 8, vx: mario.facing * 4.5, vy: -2, life: 150, anim: 0,
+                })
+                fireCooldown = 16
+                audioController.playSweep(880, 240, 0.18, 'square', 0.14)
+            }
+            firePressed = false
+            if (fireCooldown > 0) fireCooldown--
+            for (const f of fireballs) {
+                f.anim += 0.5
+                f.vy = Math.min(f.vy + 0.4, 6)
+                f.x += f.vx
+                const midR = Math.floor((f.y + f.h / 2) / TILE)
+                if (f.vx > 0) { const c = Math.floor((f.x + f.w) / TILE); if (solidAt(c, midR)) f.dead = true }
+                else { const c = Math.floor(f.x / TILE); if (solidAt(c, midR)) f.dead = true }
+                f.y += f.vy
+                const bot = Math.floor((f.y + f.h) / TILE), topR = Math.floor(f.y / TILE)
+                const cl = Math.floor(f.x / TILE), cr = Math.floor((f.x + f.w - 1) / TILE)
+                if (f.vy > 0) { for (let c = cl; c <= cr; c++) if (solidAt(c, bot)) { f.y = bot * TILE - f.h; f.vy = -3.6; break } }
+                else { for (let c = cl; c <= cr; c++) if (solidAt(c, topR)) { f.y = (topR + 1) * TILE; f.vy = 1; break } }
+                if (f.x < cameraX - 24 || f.x > cameraX + VIEW_W + 24 || f.y > VIEW_H + 20) f.dead = true
+                if (--f.life <= 0) f.dead = true
+                for (const e of enemies) {
+                    if (!e.alive || e.flip || e.squash) continue
+                    if (overlap(f, e)) { e.flip = true; e.vy = -6; addScore(200, e.x, e.y - 8, '200'); audioController.playNoise(0.1, 0.18); f.dead = true }
+                }
+            }
+            fireballs = fireballs.filter(f => !f.dead)
 
             // ---- Enemies ----
             for (const e of enemies) {
@@ -718,7 +778,10 @@ const SuperMarioGame = () => {
             ctx.translate(px(x + w / 2), px(y))
             ctx.scale(facing, 1)
             ctx.translate(-w / 2, 0)
-            const skin = C.marioSkin, red = C.marioRed, blue = C.marioBlue, shoe = C.marioShoe
+            const skin = C.marioSkin, shoe = C.marioShoe
+            const fire = mario.power === 'fire'
+            const red = fire ? C.fireTop : C.marioRed      // hat + shirt (top)
+            const blue = fire ? C.marioRed : C.marioBlue    // overalls (bottom)
             if (big) {
                 // hat
                 ctx.fillStyle = red; ctx.fillRect(2, 0, 11, 4); ctx.fillRect(0, 3, 13, 2)
@@ -815,6 +878,32 @@ const SuperMarioGame = () => {
             ctx.fillStyle = C.black; ctx.fillRect(x + 4, y + 10, 1, 2); ctx.fillRect(x + 7, y + 10, 1, 2)
         }
 
+        const drawFlower = (s) => {
+            const x = px(s.x), y = px(s.y)
+            const open = (tick % 20) < 10
+            // stem
+            ctx.fillStyle = C.flowerStem; ctx.fillRect(x + 5, y + 7, 2, 7)
+            ctx.fillRect(x + 2, y + 10, 3, 2); ctx.fillRect(x + 7, y + 12, 3, 2)
+            // petals
+            ctx.fillStyle = C.flowerPetal
+            ctx.fillRect(x + 2, y + 1, 8, 6)
+            ctx.fillRect(x + (open ? 0 : 1), y + 3, 10, 3)
+            ctx.fillStyle = C.flowerPetal2
+            ctx.fillRect(x + 3, y + 2, 6, 4)
+            // center
+            ctx.fillStyle = C.flowerCenter; ctx.fillRect(x + 4, y + 3, 4, 3)
+        }
+
+        const drawFireball = (f) => {
+            const x = px(f.x), y = px(f.y)
+            const q = Math.floor(f.anim) % 4
+            ctx.fillStyle = C.fireball
+            ctx.fillRect(x + 1, y, 6, 8); ctx.fillRect(x, y + 1, 8, 6)
+            ctx.fillStyle = C.fireballCore
+            if (q < 2) { ctx.fillRect(x + 2, y + 2, 4, 4); ctx.fillRect(x + 3, y + 1, 2, 6) }
+            else { ctx.fillRect(x + 2, y + 2, 2, 2); ctx.fillRect(x + 4, y + 4, 2, 2) }
+        }
+
         const drawCoin = (co) => {
             const x = px(co.x), y = px(co.y)
             const f = Math.floor(co.anim) % 4
@@ -877,8 +966,8 @@ const SuperMarioGame = () => {
                 for (const c of level.decor.clouds) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawCloud(sx, 24) }
                 for (const c of level.decor.bushes) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawBush(sx, 12 * TILE) }
             }
-            if (level.flagCol) { const sx = level.flagCol * TILE - cam; if (sx > -20 && sx < VIEW_W + 40) drawFlag() }
-            if (level.castleCol) { const sx = level.castleCol * TILE - cam; if (sx > -80 && sx < VIEW_W + 40) drawCastle() }
+            if (level.flagCol) { const sx = level.flagCol * TILE - cam; if (sx > -20 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawFlag(); ctx.restore() } }
+            if (level.castleCol) { const sx = level.castleCol * TILE - cam; if (sx > -80 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawCastle(); ctx.restore() } }
 
             // tiles
             const c0 = Math.floor(cam / TILE)
@@ -892,7 +981,8 @@ const SuperMarioGame = () => {
 
             // entities
             for (const co of coinsArr) if (!co.taken) drawCoin({ x: co.x - cam, y: co.y, anim: co.anim })
-            for (const s of shrooms) drawShroom({ x: s.x - cam, y: s.y })
+            for (const s of shrooms) { if (s.kind === 'flower') drawFlower({ x: s.x - cam, y: s.y }); else drawShroom({ x: s.x - cam, y: s.y }) }
+            for (const f of fireballs) drawFireball({ x: f.x - cam, y: f.y, anim: f.anim })
             for (const e of enemies) {
                 const sx = e.x - cam
                 if (sx < -20 || sx > VIEW_W + 20) continue
@@ -972,10 +1062,27 @@ const SuperMarioGame = () => {
         }
 
         // init
-        mario = spawnMario(false)
+        mario = spawnMario('small')
         loadLevel(0)
         state = 'attract'
         animationFrameId = requestAnimationFrame(loop)
+
+        // DEV-only visual-test hook (never present in production builds)
+        if (import.meta.env.DEV) {
+            window.__marioTest = {
+                getState: () => ({ state, power: mario && mario.power, score, coins, lives, level: level.id, col: Math.round((mario ? mario.x : 0) / TILE) }),
+                start: () => { if (state === 'attract' || state === 'gameover' || state === 'win') resetGame() },
+                teleport: (col) => { if (!mario) return; mario.x = col * TILE; cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.42, level.cols * TILE - VIEW_W)) },
+                setPower: (p) => {
+                    if (!mario) return
+                    if (p === 'small') { if (mario.power !== 'small') mario.y += 12; mario.power = 'small'; mario.big = false; mario.h = 16 }
+                    else if (p === 'big') { if (mario.power === 'small') mario.y -= 12; mario.power = 'big'; mario.big = true; mario.h = 28 }
+                    else if (p === 'fire') { if (mario.power === 'small') mario.y -= 12; mario.power = 'fire'; mario.big = true; mario.h = 28 }
+                },
+                throwFire: () => { firePressed = true },
+                clearLevel: () => levelClear(),
+            }
+        }
 
         return () => {
             window.removeEventListener('resize', resize)
@@ -991,7 +1098,7 @@ const SuperMarioGame = () => {
                 <canvas ref={canvasRef} className="block w-full h-full" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SUPER MARIO BROS')} onResume={handleResume} />}
             </div>
-            <VirtualControls />
+            <VirtualControls secondAction={{ code: 'KeyF', label: 'F' }} />
         </div>
     )
 }
