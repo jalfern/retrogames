@@ -12,7 +12,7 @@ const GamesList = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
-                {GAMES.map((game) => (
+                {GAMES.filter((g) => !g.hidden).map((game) => (
                     <Link
                         key={game.path}
                         to={game.path}

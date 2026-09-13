@@ -28,7 +28,7 @@ const SOLID_SET = new Set([GROUND, BRICK, QUESTION, SOLID, USED, PIPE])
 // Palette (NES-ish)
 const C = {
     sky: '#5c94fc',
-    skyUnder: '#050a28',
+    skyUnder: '#000000',
     ground: '#c84c0c',
     groundDark: '#88400a',
     groundLight: '#e89058',
@@ -56,13 +56,6 @@ const C = {
     marioSkin: '#f8b888',
     marioBlue: '#3030e0',
     marioShoe: '#6a2800',
-    fireTop: '#ffffff',
-    fireball: '#f83800',
-    fireballCore: '#fcd8a8',
-    flowerPetal: '#f87800',
-    flowerPetal2: '#f8e0a0',
-    flowerCenter: '#f83800',
-    flowerStem: '#00a800',
     white: '#ffffff',
     black: '#000000',
     cloud: '#ffffff',
@@ -92,8 +85,7 @@ function buildLevel(def) {
 
 // World 1-1 (overworld)
 const LEVEL_1 = buildLevel({
-    id: '1-1', cols: 212, bg: 'sky', flagCol: 174, castleCol: 180, warpCol: 57, downCol: 140,
-    flowerCols: [16], shroomCols: [21, 22],
+    id: '1-1', cols: 212, bg: 'sky', flagCol: 174, castleCol: 180,
     build(a) {
         a.ground(0, 211)
         // pits
@@ -113,7 +105,7 @@ const LEVEL_1 = buildLevel({
         a.set(94, 9, BRICK); a.set(95, 9, QUESTION); a.set(96, 9, BRICK)
         a.pipe(101, 4)
         a.row(109, 113, 5, BRICK); a.set(111, 5, QUESTION)
-        a.pipe(118, 2); a.pipe(129, 3); a.pipe(140, 3)
+        a.pipe(118, 2); a.pipe(129, 3)
         a.set(130, 9, BRICK); a.set(131, 9, QUESTION); a.set(132, 9, BRICK)
         a.set(168, 9, QUESTION); a.set(169, 9, BRICK)
         // final staircase
@@ -133,14 +125,12 @@ const LEVEL_1 = buildLevel({
         { type: 'goomba', c: 110 }, { type: 'goomba', c: 124 }, { type: 'goomba', c: 125 },
         { type: 'koopa', c: 134 },
     ],
-    decor: { clouds: [8, 19, 27, 35, 44, 55, 67, 75, 83, 95, 108, 120, 133, 148], bushes: [3, 12, 23, 41, 60, 74, 92, 110, 130, 150],
-        hills: [[1, 1], [15, 0], [24, 1], [40, 0], [52, 1], [70, 0], [82, 1], [100, 0], [118, 1], [138, 0], [150, 1], [168, 0]] },
+    decor: { clouds: [8, 19, 27, 35, 44, 55, 67, 75, 83, 95, 108, 120, 133, 148], bushes: [3, 12, 23, 41, 60, 74, 92, 110, 130, 150] },
 })
 
 // World 1-2 (underground)
 const LEVEL_2 = buildLevel({
-    id: '1-2', cols: 176, bg: 'under', exitCol: 168, detour: true,
-    shroomCols: [18, 104], flowerCols: [66],
+    id: '1-2', cols: 176, bg: 'under', exitCol: 168,
     build(a) {
         a.ground(0, 175)
         for (const [c1, c2] of [[30, 31], [58, 59], [90, 91], [120, 121]])
@@ -178,33 +168,10 @@ const LEVEL_2 = buildLevel({
         { type: 'koopa', c: 112 }, { type: 'goomba', c: 130 }, { type: 'goomba', c: 131 },
         { type: 'koopa', c: 150 },
     ],
-    decor: { clouds: [], bushes: [], torches: [6, 14, 24, 34, 46, 56, 68, 78, 92, 104, 116, 128, 140, 152, 162] },
+    decor: { clouds: [], bushes: [] },
 })
 
-// Hidden coin bonus room (entered via the gold warp pipe in 1-1)
-const BONUS = buildLevel({
-    id: 'BONUS', cols: 28, bg: 'under', bonus: true, exitCol: 24,
-    build(a) {
-        a.ground(0, 27)
-        a.row(0, 27, 2, BRICK)          // ceiling
-        a.wall(0, 3, 12)                // left wall
-        a.wall(27, 3, 12)               // right wall
-        // rows of ? blocks that pay coins when punched
-        for (let c = 4; c <= 18; c += 2) a.set(c, 6, QUESTION)
-        for (let c = 6; c <= 16; c += 2) a.set(c, 9, QUESTION)
-        a.pipe(24, 2)                   // exit pipe
-    },
-    coinArcs: [
-        { c: 5, r: 4 }, { c: 7, r: 4 }, { c: 9, r: 4 }, { c: 11, r: 4 }, { c: 13, r: 4 }, { c: 15, r: 4 },
-        { c: 20, r: 11 }, { c: 21, r: 11 },
-    ],
-    enemies: [],
-    decor: { torches: [3, 10, 17, 22] },
-})
-
-// Linear progression is just 1-1; LEVEL_2 (underground) and BONUS are
-// pipe-reached detour rooms that warp you back into 1-1.
-const LEVELS = [LEVEL_1]
+const LEVELS = [LEVEL_1, LEVEL_2]
 
 const SuperMarioGame = () => {
     const canvasRef = useRef(null)
@@ -242,14 +209,9 @@ const SuperMarioGame = () => {
         // ---- input ----
         const keys = { left: false, right: false, run: false, down: false, jump: false }
         let jumpLatch = false
-        let fireLatch = false
-        let firePressed = false
-        let fireCooldown = 0
 
         // ---- game state ----
-        let state = 'attract' // attract | menu | play | dying | levelclear | gameover | win | intro | flag | warp
-        let menuSel = 0       // highlighted options-menu row
-        let mode = 'play'     // play | autopilot | evolve
+        let state = 'attract' // attract | play | dying | levelclear | gameover | win
         let levelIndex = 0
         let level = LEVELS[0]
         let score = 0, coins = 0, lives = 3
@@ -257,87 +219,45 @@ const SuperMarioGame = () => {
         let tick = 0
         let transitionTimer = 0
         let cameraX = 0
-        let introTimer = 0
-        let flagPhase = ''
-        let flagT = 0
-        let warpT = 0
-        let warpDir = 'in'   // 'in' descending into pipe | 'out' returning
-        let warpDest = null        // room to load after descending
-        let warpReturnDef = null   // room to return to after the detour
-        let warpReturnCol = 0
 
         let mario = null
         let enemies = []
         let coinsArr = []
         let shrooms = []
-        let fireballs = []
         let particles = []
         let popups = []
 
-        const spawnMario = (power) => {
-            const big = power && power !== 'small'
-            return {
-                x: 40, y: (13 * TILE) - (big ? 28 : 16), w: 12, h: big ? 28 : 16,
-                vx: 0, vy: 0, onGround: false, big, power: power || 'small',
-                facing: 1, invuln: 0, anim: 0, jumpPressed: false,
-            }
-        }
+        const spawnMario = (big) => ({
+            x: 40, y: (13 * TILE) - (big ? 28 : 16), w: 12, h: big ? 28 : 16,
+            vx: 0, vy: 0, onGround: false, big: !!big,
+            facing: 1, invuln: 0, anim: 0, dead: false, jumpPressed: false,
+        })
 
-        const loadRoom = (def, keepPower, startX, opts) => {
-            opts = opts || {}
-            if (opts.setIndex !== undefined) levelIndex = opts.setIndex
-            level = def
-            const power = keepPower && mario ? mario.power : 'small'
-            mario = spawnMario(power)
-            if (startX !== undefined) mario.x = startX
+        const loadLevel = (idx) => {
+            levelIndex = idx
+            level = LEVELS[idx]
+            const keepBig = mario ? mario.big : false
+            mario = spawnMario(keepBig)
             cameraX = 0
             timer = 400; timerAcc = 0
-            enemies = (def.enemies || []).map(e => ({
+            enemies = (level.enemies || []).map(e => ({
                 type: e.type,
                 x: e.c * TILE, y: (13 * TILE) - (e.type === 'koopa' ? 24 : 16),
                 w: 14, h: e.type === 'koopa' ? 24 : 16,
-                vx: -0.6, vy: 0, alive: true, shell: false, still: false, anim: 0, squash: 0, flip: false, grace: 0,
+                vx: -0.6, vy: 0, alive: true, shell: false, still: false, anim: 0, squash: 0, flip: false,
             }))
-            coinsArr = (def.coinArcs || []).map(cc => ({
+            coinsArr = (level.coinArcs || []).map(cc => ({
                 x: cc.c * TILE + 4, y: cc.r * TILE + 4, w: 8, h: 8, taken: false, anim: Math.random() * 6,
             }))
             shrooms = []
-            fireballs = []
             particles = []
             popups = []
-            fireCooldown = 0
-            state = opts.state || 'intro'
-            introTimer = 110
-        }
-
-        const loadLevel = (idx, keepPower) => loadRoom(LEVELS[idx], keepPower, undefined, { setIndex: idx })
-
-        // ---- warp pipes <-> detour rooms (bonus room, underground) ----
-        const warpDown = (dest, returnDef, returnCol) => {
-            state = 'warp'; warpDir = 'in'; warpT = 0
-            mario.vx = 0
-            warpDest = dest; warpReturnDef = returnDef; warpReturnCol = returnCol
-            audioController.stopMusic()
-            audioController.playSweep(600, 120, 0.5, 'square', 0.16)  // descend
-        }
-        const warpUp = () => {
-            const idx = LEVELS.indexOf(warpReturnDef)
-            loadRoom(warpReturnDef, true, warpReturnCol * TILE, { state: 'warp', setIndex: idx >= 0 ? idx : levelIndex })
-            mario.y = VIEW_H + 20
-            warpDir = 'out'; warpT = 0
-            audioController.stopMusic()
-            audioController.playSweep(120, 600, 0.5, 'square', 0.16)  // rise
-        }
-        const enterBonus = () => warpDown(BONUS, LEVEL_1, (level.warpCol + 3))
-        const enterUnder = () => warpDown(LEVEL_2, LEVEL_1, 158)
-        const completeLevel = () => {
-            if (level.bonus || level.detour) warpUp()
-            else levelClear()
+            state = 'play'
         }
 
         const resetGame = () => {
             score = 0; coins = 0; lives = 3
-            mario = spawnMario('small')
+            mario = spawnMario(false)
             loadLevel(0)
         }
 
@@ -359,44 +279,10 @@ const SuperMarioGame = () => {
         resize()
 
         // ---- input handlers ----
-        // ---- options menu ----
-        const MENU = [
-            { label: 'PLAY  ·  LATEST VERSION', hint: 'the current, polished build' },
-            { label: 'PLAY  ·  ORIGINAL ONE-SHOT', hint: 'pristine first-pass from local Qwen 3.8' },
-            { label: 'WATCH  ·  CPU AUTOPLAY', hint: 'the machine plays it perfectly (normal speed)' },
-            { label: 'WATCH  ·  CPU LEARNS', hint: 'neural AI improves each generation' },
-        ]
-        let soonFlash = 0
-        const startPlay = (m) => { mode = m; audioController.init(); resetGame() }
-        const startAutopilot = () => { soonFlash = 100 }   // enabled in a later iteration
-        const startEvolve = () => { soonFlash = 100 }      // enabled in a later iteration
-        const chooseOption = (i) => {
-            menuSel = i
-            if (i === 0) startPlay('play')
-            else if (i === 1) navigateRef.current('/mario-classic')
-            else if (i === 2) startAutopilot()
-            else if (i === 3) startEvolve()
-        }
-
         const handleKeyDown = (e) => {
-            const c = e.code
-            // Options menu navigation
-            if (state === 'menu') {
-                if (c === 'Digit1' || c === 'Numpad1') { chooseOption(0); return }
-                if (c === 'Digit2' || c === 'Numpad2') { chooseOption(1); return }
-                if (c === 'Digit3' || c === 'Numpad3') { chooseOption(2); return }
-                if (c === 'Digit4' || c === 'Numpad4') { chooseOption(3); return }
-                if (c === 'ArrowUp') { menuSel = (menuSel + MENU.length - 1) % MENU.length; return }
-                if (c === 'ArrowDown') { menuSel = (menuSel + 1) % MENU.length; return }
-                if (c === 'Space' || c === 'Enter' || c === 'KeyZ') { chooseOption(menuSel); return }
-                if (c === 'Escape' || c === 'Backspace') { state = 'attract'; return }
-                return
-            }
-            // '?' at the title opens the Options menu; in-game it pauses.
+            // On the ORIGINAL build, '?' returns to the Options menu (main Mario title).
             if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-                if (state === 'attract') { state = 'menu'; audioController.init(); return }
-                const s = !pausedRef.current
-                pausedRef.current = s; setPaused(s)
+                navigateRef.current('/mario?menu=1')
                 return
             }
             if (pausedRef.current) return
@@ -408,12 +294,12 @@ const SuperMarioGame = () => {
                 return
             }
 
+            const c = e.code
             if (c === 'ArrowLeft' || c === 'KeyA') keys.left = true
             else if (c === 'ArrowRight' || c === 'KeyD') keys.right = true
             else if (c === 'ArrowUp' || c === 'ShiftLeft' || c === 'ShiftRight' || c === 'KeyX') keys.run = true
             else if (c === 'ArrowDown' || c === 'KeyS') keys.down = true
             else if (c === 'Space' || c === 'KeyZ' || c === 'ArrowUp') { keys.jump = true; if (!jumpLatch) { jumpLatch = true; mario && (mario.jumpPressed = true) } }
-            else if (c === 'KeyF' || c === 'KeyB' || c === 'ControlLeft' || c === 'ControlRight') { if (!fireLatch) { fireLatch = true; firePressed = true } }
 
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(c)) e.preventDefault()
         }
@@ -424,7 +310,6 @@ const SuperMarioGame = () => {
             else if (c === 'ArrowUp' || c === 'ShiftLeft' || c === 'ShiftRight' || c === 'KeyX') keys.run = false
             else if (c === 'ArrowDown' || c === 'KeyS') keys.down = false
             else if (c === 'Space' || c === 'KeyZ' || c === 'ArrowUp') { keys.jump = false; jumpLatch = false }
-            else if (c === 'KeyF' || c === 'KeyB' || c === 'ControlLeft' || c === 'ControlRight') { fireLatch = false }
         }
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleKeyUp)
@@ -452,28 +337,16 @@ const SuperMarioGame = () => {
             audioController.playNoise(0.12, 0.25)
         }
 
-        const spark = (x, y, colors, n, spread) => {
-            for (let i = 0; i < n; i++) {
-                const a = (Math.PI * 2 * i) / n + Math.random() * 0.6
-                const s = (spread || 2) + Math.random() * 1.6
-                particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, life: 18 + Math.random() * 12, max: 30, color: colors[i % colors.length], spark: true, g: 0.12 })
-            }
-        }
-
-        const spawnPower = (c, r, kind) => {
-            shrooms.push({ x: c * TILE + 2, y: r * TILE, w: 12, h: 14, vx: 0.8, vy: 0, emerging: 14, kind })
-            audioController.playSweep(300, 900, 0.4, 'square', 0.12)
-        }
-
         const bumpBlock = (c, r) => {
             const t = level.grid[r][c]
             if (t === QUESTION) {
-                const isFlower = level.flowerCols && level.flowerCols.includes(c)
-                const isShroom = level.shroomCols && level.shroomCols.includes(c)
+                const giveShroom = (level.id === '1-1' && c === 21) || (level.id === '1-1' && c === 22 && r === 5) ||
+                    (level.id === '1-2' && (c === 18 || c === 104))
                 level.grid[r][c] = USED
-                if (isFlower) spawnPower(c, r, 'flower')
-                else if (isShroom) spawnPower(c, r, 'mushroom')
-                else {
+                if (giveShroom) {
+                    shrooms.push({ x: c * TILE + 2, y: r * TILE, w: 12, h: 14, vx: 0.8, vy: 0, emerging: 14 })
+                    audioController.playSweep(300, 900, 0.4, 'square', 0.12)
+                } else {
                     coins++; addScore(200, c * TILE, r * TILE - 8, '200')
                     audioController.playTone(988, 0.06, 'square', 0.12)
                     setTimeout(() => audioController.playTone(1319, 0.12, 'square', 0.12), 70)
@@ -487,26 +360,19 @@ const SuperMarioGame = () => {
         }
 
         const grow = () => {
-            if (mario.power !== 'small') return
-            mario.power = 'big'; mario.big = true; mario.h = 28; mario.y -= 12; mario.invuln = 0
-            spark(mario.x + mario.w / 2, mario.y + mario.h / 2, ['#ffffff', '#fff0a0', '#ffd000'], 12, 1.6)
+            if (mario.big) return
+            mario.big = true
+            mario.h = 28
+            mario.y -= 12
+            mario.invuln = 0
             audioController.playSweep(400, 1000, 0.5, 'square', 0.14)
-            addScore(1000, mario.x, mario.y - 10, '')
-        }
-
-        const fireUp = () => {
-            if (mario.power === 'small') { mario.y -= 12; mario.h = 28; mario.big = true }
-            mario.power = 'fire'; mario.invuln = 0
-            spark(mario.x + mario.w / 2, mario.y + mario.h / 2, ['#ffffff', '#ffe888', '#ff8000', '#ff4000'], 14, 2)
-            audioController.playSweep(500, 1200, 0.5, 'square', 0.14)
             addScore(1000, mario.x, mario.y - 10, '')
         }
 
         const hurt = () => {
             if (mario.invuln > 0) return
-            if (mario.power !== 'small') {
-                mario.power = 'small'; mario.big = false; mario.h = 16; mario.y += 12; mario.invuln = 90
-                spark(mario.x + mario.w / 2, mario.y + mario.h / 2, ['#ffffff', '#a0c0ff'], 10, 1.6)
+            if (mario.big) {
+                mario.big = false; mario.h = 16; mario.y += 12; mario.invuln = 90
                 audioController.playSweep(600, 200, 0.4, 'sawtooth', 0.16)
             } else {
                 die()
@@ -518,7 +384,7 @@ const SuperMarioGame = () => {
             state = 'dying'
             transitionTimer = 120
             mario.vy = -7; mario.vx = 0
-            audioController.playDeath()
+            audioController.playSweep(700, 80, 0.9, 'square', 0.18)
         }
 
         const levelClear = () => {
@@ -526,25 +392,7 @@ const SuperMarioGame = () => {
             state = 'levelclear'
             transitionTimer = 150
             addScore(Math.floor(timer) * 10, mario.x, mario.y - 10, '')
-            audioController.playFanfare()
-        }
-
-        const advanceLevel = () => {
-            addScore(Math.floor(timer) * 10, mario.x, mario.y - 10, '')
-            audioController.playFanfare()
-            if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1, true)
-            else state = 'win'
-        }
-
-        // Iconic flagpole finish: slide down the pole, then walk into the castle.
-        const startFlag = () => {
-            if (state !== 'play') return
-            state = 'flag'; flagPhase = 'slide'; flagT = 0
-            audioController.stopMusic()
-            mario.vx = 0; mario.vy = 0; mario.facing = -1
-            mario.x = level.flagCol * TILE - 2
-            mario.y = 5 * TILE  // grab the pole up high so the slide is visible
-            audioController.playSweep(660, 1046, 0.5, 'square', 0.16)
+            audioController.playSweep(523, 1047, 0.9, 'square', 0.16)
         }
 
         // ---- collision vs grid ----
@@ -593,37 +441,7 @@ const SuperMarioGame = () => {
         // ---- UPDATE ----
         const update = () => {
             tick++
-            if (state === 'attract' || state === 'menu' || state === 'gameover' || state === 'win') return
-
-            if (state === 'intro') { if (--introTimer <= 0) { state = 'play'; audioController.startMusic(level.bg === 'under' ? 'underground' : 'overworld') } return }
-
-            if (state === 'flag') {
-                flagT++
-                cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.45, level.cols * TILE - VIEW_W))
-                const baseY = (13 * TILE) - mario.h
-                if (flagPhase === 'slide') {
-                    if (mario.y < baseY) mario.y = Math.min(baseY, mario.y + 4)
-                    else { flagPhase = 'walk'; flagT = 0; audioController.playTone(880, 0.12, 'square', 0.14) }
-                } else {
-                    mario.facing = 1; mario.x += 1.8; mario.anim += 2
-                    if (flagT > 72 || mario.x > level.castleCol * TILE + 24) advanceLevel()
-                }
-                return
-            }
-
-            if (state === 'warp') {
-                warpT++
-                cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.5, level.cols * TILE - VIEW_W))
-                if (warpDir === 'in') {
-                    mario.y += 4
-                    if (warpT >= 34) { loadRoom(warpDest, true, 40, { state: 'play' }); audioController.startMusic(warpDest.bg === 'under' ? 'underground' : 'overworld') }
-                } else {
-                    const baseY = (13 * TILE) - mario.h
-                    mario.y -= 4
-                    if (mario.y <= baseY) { mario.y = baseY; state = 'play'; audioController.startMusic('overworld') }
-                }
-                return
-            }
+            if (state === 'attract' || state === 'gameover' || state === 'win') return
 
             if (state === 'dying') {
                 mario.vy = Math.min(mario.vy + 0.4, 10)
@@ -631,8 +449,8 @@ const SuperMarioGame = () => {
                 transitionTimer--
                 if (transitionTimer <= 0) {
                     lives--
-                    if (lives > 0) loadRoom(level, false, undefined, { setIndex: levelIndex })
-                    else { state = 'gameover'; audioController.stopMusic() }
+                    if (lives > 0) loadLevel(levelIndex)
+                    else state = 'gameover'
                 }
                 return
             }
@@ -640,7 +458,7 @@ const SuperMarioGame = () => {
             if (state === 'levelclear') {
                 transitionTimer--
                 if (transitionTimer <= 0) {
-                    if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1, true)
+                    if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1)
                     else state = 'win'
                 }
                 return
@@ -683,13 +501,6 @@ const SuperMarioGame = () => {
 
             if (Math.abs(mario.vx) > 0.3 && mario.onGround) mario.anim += Math.abs(mario.vx)
 
-            // skid when input opposes motion on the ground
-            mario.skid = mario.onGround && Math.abs(mario.vx) > 1.2 &&
-                ((keys.left && mario.vx > 0) || (keys.right && mario.vx < 0))
-            if (mario.skid && tick % 4 === 0) {
-                particles.push({ x: mario.x + mario.w / 2, y: mario.y + mario.h - 3, vx: -mario.facing * 0.6, vy: -0.4, life: 14, color: '#e8d8b0' })
-            }
-
             if (mario.invuln > 0) mario.invuln--
 
             // ---- Coins ----
@@ -716,41 +527,9 @@ const SuperMarioGame = () => {
                 const mid = Math.floor((s.y + s.h / 2) / TILE)
                 if (s.vx > 0) { const c = Math.floor((s.x + s.w) / TILE); if (solidAt(c, mid)) { s.x = c * TILE - s.w; s.vx *= -1 } }
                 else { const c = Math.floor(s.x / TILE); if (solidAt(c, mid)) { s.x = (c + 1) * TILE; s.vx *= -1 } }
-                if (overlap(mario, s)) { s.taken = true; if (s.kind === 'flower') fireUp(); else grow() }
+                if (overlap(mario, s)) { s.taken = true; grow() }
             }
             shrooms = shrooms.filter(s => !s.taken && s.y < VIEW_H + 40)
-
-            // ---- Fireballs ----
-            if (mario.power === 'fire' && firePressed && fireCooldown <= 0 && fireballs.length < 2) {
-                fireballs.push({
-                    x: mario.x + (mario.facing > 0 ? mario.w : -6), y: mario.y + (mario.big ? 12 : 6),
-                    w: 8, h: 8, vx: mario.facing * 4.5, vy: -2, life: 150, anim: 0,
-                })
-                fireCooldown = 16
-                audioController.playSweep(880, 240, 0.18, 'square', 0.14)
-            }
-            firePressed = false
-            if (fireCooldown > 0) fireCooldown--
-            for (const f of fireballs) {
-                f.anim += 0.5
-                f.vy = Math.min(f.vy + 0.4, 6)
-                f.x += f.vx
-                const midR = Math.floor((f.y + f.h / 2) / TILE)
-                if (f.vx > 0) { const c = Math.floor((f.x + f.w) / TILE); if (solidAt(c, midR)) f.dead = true }
-                else { const c = Math.floor(f.x / TILE); if (solidAt(c, midR)) f.dead = true }
-                f.y += f.vy
-                const bot = Math.floor((f.y + f.h) / TILE), topR = Math.floor(f.y / TILE)
-                const cl = Math.floor(f.x / TILE), cr = Math.floor((f.x + f.w - 1) / TILE)
-                if (f.vy > 0) { for (let c = cl; c <= cr; c++) if (solidAt(c, bot)) { f.y = bot * TILE - f.h; f.vy = -3.6; break } }
-                else { for (let c = cl; c <= cr; c++) if (solidAt(c, topR)) { f.y = (topR + 1) * TILE; f.vy = 1; break } }
-                if (f.x < cameraX - 24 || f.x > cameraX + VIEW_W + 24 || f.y > VIEW_H + 20) f.dead = true
-                if (--f.life <= 0) f.dead = true
-                for (const e of enemies) {
-                    if (!e.alive || e.flip || e.squash) continue
-                    if (overlap(f, e)) { e.flip = true; e.vy = -6; addScore(200, e.x, e.y - 8, '200'); spark(e.x + e.w / 2, e.y + e.h / 2, ['#fff0a0', '#ff8000', '#ff2000'], 9, 2.2); audioController.playNoise(0.1, 0.18); f.dead = true }
-                }
-            }
-            fireballs = fireballs.filter(f => !f.dead)
 
             // ---- Enemies ----
             for (const e of enemies) {
@@ -814,28 +593,18 @@ const SuperMarioGame = () => {
             enemies = enemies.filter(e => e.alive)
 
             // ---- particles / popups ----
-            for (const p of particles) { p.vy += (p.g != null ? p.g : 0.3); p.x += p.vx; p.y += p.vy; p.life-- }
+            for (const p of particles) { p.vy += 0.3; p.x += p.vx; p.y += p.vy; p.life-- }
             particles = particles.filter(p => p.life > 0)
             for (const p of popups) { p.y -= 0.6; p.life-- }
             popups = popups.filter(p => p.life > 0)
 
             // ---- Level completion ----
-            if (level.warpCol && mario.onGround && keys.down &&
-                Math.abs((mario.x + mario.w / 2) - (level.warpCol * TILE + TILE)) < 18) {
-                enterBonus()
-                return
-            }
-            if (level.downCol && mario.onGround && keys.down &&
-                Math.abs((mario.x + mario.w / 2) - (level.downCol * TILE + TILE)) < 18) {
-                enterUnder()
-                return
-            }
             if (level.flagCol && mario.x + mario.w >= level.flagCol * TILE) {
-                startFlag()
-                return
+                mario.x = level.flagCol * TILE - mario.w + 2
+                levelClear()
             }
-            if (level.exitCol && mario.onGround && mario.x + mario.w >= (level.exitCol - 1) * TILE) {
-                completeLevel()
+            if (level.exitCol && mario.x + mario.w >= level.exitCol * TILE && mario.onGround) {
+                levelClear()
             }
 
             // ---- camera ----
@@ -848,82 +617,57 @@ const SuperMarioGame = () => {
         // =================================================================
         const px = (x) => Math.round(x)
 
-        const PAL_OVER = {
-            ground: C.ground, groundDark: C.groundDark, groundLight: C.groundLight,
-            brick: C.brick, brickLine: C.brickLine, block: C.block, blockDark: C.blockDark, blockLight: C.blockLight,
-            used: C.used, pipe: C.pipe, pipeDark: C.pipeDark, pipeLight: C.pipeLight,
-            solid: '#b06020', solidLight: '#e8a058', solidDark: '#6a2800',
-        }
-        const PAL_UNDER = {
-            ground: '#1f3fae', groundDark: '#122a7a', groundLight: '#4f6fe0',
-            brick: '#2647c0', brickLine: '#0f1f5a', block: C.block, blockDark: C.blockDark, blockLight: C.blockLight,
-            used: '#16308f', pipe: '#0fb0a0', pipeDark: '#0a7d72', pipeLight: '#7ff0e0',
-            solid: '#8a4ad0', solidLight: '#c088f0', solidDark: '#5a2a9a',
-        }
         const drawTile = (t, x, y, c, r) => {
-            const P = level.bg === 'under' ? PAL_UNDER : PAL_OVER
             if (t === GROUND) {
-                ctx.fillStyle = P.ground; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = P.groundLight; ctx.fillRect(x, y, TILE, 3)
-                ctx.fillStyle = P.groundDark
+                ctx.fillStyle = C.ground; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = C.groundLight; ctx.fillRect(x, y, TILE, 3)
+                ctx.fillStyle = C.groundDark
                 ctx.fillRect(x, y + 3, 1, TILE - 3); ctx.fillRect(x + 7, y + 6, 1, TILE - 6)
                 ctx.fillRect(x + 3, y + 8, 4, 1); ctx.fillRect(x + 11, y + 11, 4, 1)
             } else if (t === BRICK) {
-                ctx.fillStyle = P.brick; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = P.brickLine
+                ctx.fillStyle = C.brick; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = C.brickLine
                 ctx.fillRect(x, y + 7, TILE, 1); ctx.fillRect(x, y + 15, TILE, 1)
                 ctx.fillRect(x + 7, y, 1, 7); ctx.fillRect(x + 3, y + 8, 1, 7); ctx.fillRect(x + 11, y + 8, 1, 7)
-                ctx.fillStyle = P.groundLight; ctx.fillRect(x, y, TILE, 1)
+                ctx.fillStyle = C.groundLight; ctx.fillRect(x, y, TILE, 1)
             } else if (t === QUESTION) {
                 const bob = Math.sin(tick * 0.15) > 0 ? 0 : 1
-                ctx.fillStyle = P.block; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = P.blockDark
+                ctx.fillStyle = C.block; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = C.blockDark
                 ctx.fillRect(x, y, TILE, 1); ctx.fillRect(x, y + TILE - 1, TILE, 1)
                 ctx.fillRect(x, y, 1, TILE); ctx.fillRect(x + TILE - 1, y, 1, TILE)
+                // rivets
                 ctx.fillRect(x + 2, y + 2, 1, 1); ctx.fillRect(x + 13, y + 2, 1, 1)
                 ctx.fillRect(x + 2, y + 13, 1, 1); ctx.fillRect(x + 13, y + 13, 1, 1)
-                ctx.fillStyle = P.blockLight
+                ctx.fillStyle = C.blockLight
                 ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
                 ctx.fillText('?', x + 8, y + 12 + bob)
             } else if (t === USED) {
-                ctx.fillStyle = P.used; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = P.brickLine
+                ctx.fillStyle = C.used; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = C.brickLine
                 ctx.fillRect(x, y, TILE, 1); ctx.fillRect(x, y + TILE - 1, TILE, 1)
                 ctx.fillRect(x, y, 1, TILE); ctx.fillRect(x + TILE - 1, y, 1, TILE)
             } else if (t === SOLID) {
-                ctx.fillStyle = P.solid; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = P.solidLight; ctx.fillRect(x, y, TILE, 2); ctx.fillRect(x, y, 2, TILE)
-                ctx.fillStyle = P.solidDark; ctx.fillRect(x, y + TILE - 2, TILE, 2); ctx.fillRect(x + TILE - 2, y, 2, TILE)
+                ctx.fillStyle = '#b06020'; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = '#e8a058'; ctx.fillRect(x, y, TILE, 2); ctx.fillRect(x, y, 2, TILE)
+                ctx.fillStyle = '#6a2800'; ctx.fillRect(x, y + TILE - 2, TILE, 2); ctx.fillRect(x + TILE - 2, y, 2, TILE)
             } else if (t === PIPE) {
-                const isWarp = level.warpCol && (c === level.warpCol || c === level.warpCol + 1)
-                const isUnder = level.downCol && (c === level.downCol || c === level.downCol + 1)
-                const pc = isWarp ? '#e0a000' : isUnder ? '#5030c0' : P.pipe
-                const pl = isWarp ? '#ffe888' : isUnder ? '#b89cff' : P.pipeLight
-                const pd = isWarp ? '#8a5a00' : isUnder ? '#2a1870' : P.pipeDark
                 const up = level.grid[r - 1] && level.grid[r - 1][c] === PIPE
                 const rightIsPipe = level.grid[r][c + 1] === PIPE
                 if (!up) {
-                    ctx.fillStyle = pc; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 8)
-                    ctx.fillStyle = pl; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 2)
-                    ctx.fillStyle = pd; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y + 6, TILE + 2, 2)
-                    ctx.fillStyle = pc; ctx.fillRect(x, y + 8, TILE, TILE - 8)
-                    ctx.fillStyle = pl; ctx.fillRect(x + 2, y + 8, 3, TILE - 8)
-                    ctx.fillStyle = pd; ctx.fillRect(x + TILE - 2, y + 8, 2, TILE - 8)
+                    // pipe top (rim)
+                    ctx.fillStyle = C.pipe; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 8)
+                    ctx.fillStyle = C.pipeLight; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 2)
+                    ctx.fillStyle = C.pipeDark; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y + 6, TILE + 2, 2)
+                    ctx.fillStyle = C.pipe; ctx.fillRect(x, y + 8, TILE, TILE - 8)
+                    ctx.fillStyle = C.pipeLight; ctx.fillRect(x + 2, y + 8, 3, TILE - 8)
+                    ctx.fillStyle = C.pipeDark; ctx.fillRect(x + TILE - 2, y + 8, 2, TILE - 8)
                 } else {
-                    ctx.fillStyle = pc; ctx.fillRect(x, y, TILE, TILE)
-                    ctx.fillStyle = pl; ctx.fillRect(x + 2, y, 3, TILE)
-                    ctx.fillStyle = pd; ctx.fillRect(x + TILE - 2, y, 2, TILE)
+                    ctx.fillStyle = C.pipe; ctx.fillRect(x, y, TILE, TILE)
+                    ctx.fillStyle = C.pipeLight; ctx.fillRect(x + 2, y, 3, TILE)
+                    ctx.fillStyle = C.pipeDark; ctx.fillRect(x + TILE - 2, y, 2, TILE)
                 }
             }
-        }
-
-        // Flickering wall torch (underground ambiance)
-        const drawTorch = (x, y) => {
-            ctx.fillStyle = '#6a3a10'; ctx.fillRect(x + 3, y + 4, 3, 9) // handle
-            const fl = Math.floor(tick / 5) % 2
-            ctx.fillStyle = '#ff8000'; ctx.fillRect(x + 1, y, 7, 5)
-            ctx.fillStyle = '#ffd000'; ctx.fillRect(x + 2 + fl, y + 1, 4, 3)
-            ctx.fillStyle = '#fff0a0'; ctx.fillRect(x + 3, y + 2 + (fl ? 0 : 1), 2, 2)
         }
 
         const drawCloud = (x, y) => {
@@ -941,32 +685,14 @@ const SuperMarioGame = () => {
             ctx.fillRect(x + 8, y + 2, 6, 4); ctx.fillRect(x + 20, y + 2, 6, 4)
         }
 
-        const drawHill = (x, big) => {
-            const g = 13 * TILE
-            ctx.fillStyle = big ? '#00a800' : '#2fbf2f'
-            if (big) {
-                ctx.fillRect(x, g - 16, 64, 16)
-                ctx.fillRect(x + 8, g - 32, 48, 16)
-                ctx.fillRect(x + 20, g - 44, 24, 12)
-                ctx.fillStyle = '#007000'
-                ctx.fillRect(x + 22, g - 26, 4, 4); ctx.fillRect(x + 38, g - 26, 4, 4)
-            } else {
-                ctx.fillRect(x, g - 12, 32, 12)
-                ctx.fillRect(x + 8, g - 22, 16, 10)
-                ctx.fillStyle = '#1f9f1f'
-                ctx.fillRect(x + 12, g - 18, 3, 3); ctx.fillRect(x + 20, g - 18, 3, 3)
-            }
-        }
-
-        const drawFlag = (flagY) => {
-            const fy = flagY == null ? 4 * TILE : flagY
+        const drawFlag = () => {
             const fx = level.flagCol * TILE + 8
             ctx.fillStyle = '#d8d8d8'; ctx.fillRect(fx, 3 * TILE, 2, 10 * TILE)
             ctx.fillStyle = C.white; ctx.fillRect(fx - 2, 3 * TILE - 4, 6, 4)
             // flag
             ctx.fillStyle = C.flag
             ctx.beginPath()
-            ctx.moveTo(fx, fy); ctx.lineTo(fx - 16, fy + 5); ctx.lineTo(fx, fy + 10)
+            ctx.moveTo(fx, 4 * TILE); ctx.lineTo(fx - 16, 4 * TILE + 5); ctx.lineTo(fx, 4 * TILE + 10)
             ctx.closePath(); ctx.fill()
         }
         const drawCastle = () => {
@@ -990,17 +716,13 @@ const SuperMarioGame = () => {
             if (mario.invuln > 0 && Math.floor(tick / 3) % 2 === 0) return
             const { x, y, w, big, facing } = mario
             const run = Math.abs(mario.vx) > 0.4 && mario.onGround
-            const skid = !!mario.skid
-            const frame = skid ? 3 : (run ? Math.floor(mario.anim / 6) % 3 : 0)
+            const frame = run ? Math.floor(mario.anim / 6) % 3 : 0
             const jumping = !mario.onGround
             ctx.save()
             ctx.translate(px(x + w / 2), px(y))
             ctx.scale(facing, 1)
             ctx.translate(-w / 2, 0)
-            const skin = C.marioSkin, shoe = C.marioShoe
-            const fire = mario.power === 'fire'
-            const red = fire ? C.fireTop : C.marioRed      // hat + shirt (top)
-            const blue = fire ? C.marioRed : C.marioBlue    // overalls (bottom)
+            const skin = C.marioSkin, red = C.marioRed, blue = C.marioBlue, shoe = C.marioShoe
             if (big) {
                 // hat
                 ctx.fillStyle = red; ctx.fillRect(2, 0, 11, 4); ctx.fillRect(0, 3, 13, 2)
@@ -1012,21 +734,17 @@ const SuperMarioGame = () => {
                 ctx.fillStyle = red; ctx.fillRect(1, 10, 12, 8)
                 // overalls
                 ctx.fillStyle = blue; ctx.fillRect(3, 14, 8, 8); ctx.fillRect(2, 12, 3, 4); ctx.fillRect(9, 12, 3, 4)
-                // arms (raise front arm when jumping)
-                ctx.fillStyle = skin
-                if (jumping) { ctx.fillRect(0, 12, 2, 5); ctx.fillRect(12, 5, 3, 5) }
-                else { ctx.fillRect(0, 12, 2, 6); ctx.fillRect(12, 12, 2, 6) }
+                // arms
+                ctx.fillStyle = skin; ctx.fillRect(0, 12, 2, 6); ctx.fillRect(12, 12, 2, 6)
                 // legs
                 ctx.fillStyle = blue
                 if (jumping) { ctx.fillRect(1, 20, 5, 4); ctx.fillRect(8, 20, 5, 4) }
-                else if (frame === 3) { ctx.fillRect(1, 22, 6, 4); ctx.fillRect(9, 20, 4, 4) }
                 else if (frame === 1) { ctx.fillRect(2, 22, 5, 4); ctx.fillRect(7, 20, 5, 4) }
                 else if (frame === 2) { ctx.fillRect(1, 20, 5, 4); ctx.fillRect(8, 22, 5, 4) }
                 else { ctx.fillRect(3, 22, 4, 4); ctx.fillRect(7, 22, 4, 4) }
                 // shoes
                 ctx.fillStyle = shoe
                 if (jumping) { ctx.fillRect(0, 24, 6, 3); ctx.fillRect(8, 24, 6, 3) }
-                else if (frame === 3) { ctx.fillRect(0, 25, 7, 3); ctx.fillRect(9, 23, 5, 3) }
                 else if (frame === 1) { ctx.fillRect(1, 25, 7, 3); ctx.fillRect(7, 23, 6, 3) }
                 else if (frame === 2) { ctx.fillRect(0, 23, 6, 3); ctx.fillRect(8, 25, 7, 3) }
                 else { ctx.fillRect(2, 25, 5, 3); ctx.fillRect(7, 25, 5, 3) }
@@ -1037,12 +755,9 @@ const SuperMarioGame = () => {
                 ctx.fillStyle = C.black; ctx.fillRect(6, 5, 1, 1) // eye
                 ctx.fillStyle = red; ctx.fillRect(1, 8, 9, 4) // shirt
                 ctx.fillStyle = blue; ctx.fillRect(2, 11, 7, 3) // shorts
-                ctx.fillStyle = skin
-                if (jumping) { ctx.fillRect(0, 9, 1, 3); ctx.fillRect(10, 6, 2, 3) } // front arm up
-                else { ctx.fillRect(0, 9, 1, 3); ctx.fillRect(10, 9, 1, 3) } // arms
+                ctx.fillStyle = skin; ctx.fillRect(0, 9, 1, 3); ctx.fillRect(10, 9, 1, 3) // arms
                 ctx.fillStyle = shoe
                 if (jumping) { ctx.fillRect(1, 14, 4, 2); ctx.fillRect(7, 14, 4, 2) }
-                else if (frame === 3) { ctx.fillRect(0, 14, 5, 2); ctx.fillRect(8, 13, 4, 2) } // skid
                 else if (frame === 1) { ctx.fillRect(0, 14, 5, 2); ctx.fillRect(8, 13, 4, 2) }
                 else if (frame === 2) { ctx.fillRect(2, 13, 4, 2); ctx.fillRect(7, 14, 5, 2) }
                 else { ctx.fillRect(2, 14, 3, 2); ctx.fillRect(7, 14, 3, 2) }
@@ -1104,32 +819,6 @@ const SuperMarioGame = () => {
             ctx.fillStyle = C.black; ctx.fillRect(x + 4, y + 10, 1, 2); ctx.fillRect(x + 7, y + 10, 1, 2)
         }
 
-        const drawFlower = (s) => {
-            const x = px(s.x), y = px(s.y)
-            const open = (tick % 20) < 10
-            // stem
-            ctx.fillStyle = C.flowerStem; ctx.fillRect(x + 5, y + 7, 2, 7)
-            ctx.fillRect(x + 2, y + 10, 3, 2); ctx.fillRect(x + 7, y + 12, 3, 2)
-            // petals
-            ctx.fillStyle = C.flowerPetal
-            ctx.fillRect(x + 2, y + 1, 8, 6)
-            ctx.fillRect(x + (open ? 0 : 1), y + 3, 10, 3)
-            ctx.fillStyle = C.flowerPetal2
-            ctx.fillRect(x + 3, y + 2, 6, 4)
-            // center
-            ctx.fillStyle = C.flowerCenter; ctx.fillRect(x + 4, y + 3, 4, 3)
-        }
-
-        const drawFireball = (f) => {
-            const x = px(f.x), y = px(f.y)
-            const q = Math.floor(f.anim) % 4
-            ctx.fillStyle = C.fireball
-            ctx.fillRect(x + 1, y, 6, 8); ctx.fillRect(x, y + 1, 8, 6)
-            ctx.fillStyle = C.fireballCore
-            if (q < 2) { ctx.fillRect(x + 2, y + 2, 4, 4); ctx.fillRect(x + 3, y + 1, 2, 6) }
-            else { ctx.fillRect(x + 2, y + 2, 2, 2); ctx.fillRect(x + 4, y + 4, 2, 2) }
-        }
-
         const drawCoin = (co) => {
             const x = px(co.x), y = px(co.y)
             const f = Math.floor(co.anim) % 4
@@ -1173,32 +862,13 @@ const SuperMarioGame = () => {
         }
 
         const draw = () => {
-            const scale = Math.min(viewWidth / VIEW_W, viewHeight / VIEW_H)
-            const ox = Math.floor((viewWidth - VIEW_W * scale) / 2)
-            const oy = Math.floor((viewHeight - VIEW_H * scale) / 2)
-
-            // Level intro card (authentic black "WORLD x-x" transition)
-            if (state === 'intro') {
-                ctx.fillStyle = C.black; ctx.fillRect(0, 0, viewWidth, viewHeight)
-                ctx.save(); ctx.translate(ox, oy); ctx.scale(scale, scale)
-                ctx.beginPath(); ctx.rect(0, 0, VIEW_W, VIEW_H); ctx.clip()
-                ctx.textAlign = 'center'
-                ctx.fillStyle = C.white; ctx.font = 'bold 16px monospace'
-                ctx.fillText('WORLD ' + level.id, VIEW_W * 0.40, VIEW_H / 2 + 6)
-                const hx = VIEW_W * 0.60, hy = VIEW_H / 2 - 9
-                ctx.fillStyle = C.marioRed; ctx.fillRect(hx, hy, 16, 4); ctx.fillRect(hx + 2, hy + 3, 12, 2)
-                ctx.fillStyle = C.marioSkin; ctx.fillRect(hx + 2, hy + 5, 12, 9)
-                ctx.fillStyle = C.black; ctx.fillRect(hx + 10, hy + 7, 2, 2)
-                ctx.fillStyle = C.white; ctx.textAlign = 'left'; ctx.font = 'bold 15px monospace'
-                ctx.fillText('x ' + lives, hx + 22, hy + 11)
-                ctx.restore()
-                return
-            }
-
             // sky
             ctx.fillStyle = level.bg === 'under' ? C.skyUnder : C.sky
             ctx.fillRect(0, 0, viewWidth, viewHeight)
 
+            const scale = Math.min(viewWidth / VIEW_W, viewHeight / VIEW_H)
+            const ox = Math.floor((viewWidth - VIEW_W * scale) / 2)
+            const oy = Math.floor((viewHeight - VIEW_H * scale) / 2)
             ctx.save()
             ctx.translate(ox, oy)
             ctx.scale(scale, scale)
@@ -1206,43 +876,13 @@ const SuperMarioGame = () => {
 
             const cam = Math.floor(cameraX)
 
-            // parallax decor (behind tiles): hills + clouds scroll slower than the ground
+            // decor (behind tiles)
             if (level.decor) {
-                if (level.decor.hills) level.decor.hills.forEach(([c, big]) => { const sx = c * TILE - cam * 0.6; if (sx > -96 && sx < VIEW_W) drawHill(sx, big) })
-                if (level.decor.clouds) level.decor.clouds.forEach((c, i) => { const sx = c * TILE - cam * 0.4; const cy = 16 + (i % 3) * 12; if (sx > -48 && sx < VIEW_W) drawCloud(sx, cy) })
-                for (const c of level.decor.bushes || []) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawBush(sx, 12 * TILE) }
-                if (level.decor.torches) for (const c of level.decor.torches) { const sx = c * TILE - cam; if (sx > -20 && sx < VIEW_W) drawTorch(sx, 3 * TILE) }
+                for (const c of level.decor.clouds) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawCloud(sx, 24) }
+                for (const c of level.decor.bushes) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawBush(sx, 12 * TILE) }
             }
-            if (level.flagCol) {
-                let flagY = 4 * TILE
-                if (state === 'flag') {
-                    const baseY = (13 * TILE) - mario.h
-                    const p = flagPhase === 'slide' ? Math.max(0, Math.min(1, (mario.y - 4 * TILE) / (baseY - 4 * TILE))) : 1
-                    flagY = 4 * TILE + p * ((12 * TILE) - 4 * TILE)
-                }
-                const sx = level.flagCol * TILE - cam
-                if (sx > -20 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawFlag(flagY); ctx.restore() }
-            }
-            if (level.castleCol) { const sx = level.castleCol * TILE - cam; if (sx > -80 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawCastle(); ctx.restore() } }
-
-            // warp pipe hint (bobbing down-arrow above the gold pipe)
-            if (level.warpCol && (state === 'play' || state === 'intro')) {
-                const sx = level.warpCol * TILE + TILE - cam
-                if (sx > -20 && sx < VIEW_W + 40) {
-                    const ay = 9 * TILE - 15 + Math.sin(tick * 0.12) * 3
-                    ctx.fillStyle = '#ffe888'
-                    ctx.beginPath(); ctx.moveTo(sx - 5, ay); ctx.lineTo(sx + 5, ay); ctx.lineTo(sx, ay + 8); ctx.closePath(); ctx.fill()
-                }
-            }
-            // underground pipe hint (bobbing down-arrow above the purple pipe)
-            if (level.downCol && (state === 'play' || state === 'intro')) {
-                const sx = level.downCol * TILE + TILE - cam
-                if (sx > -20 && sx < VIEW_W + 40) {
-                    const ay = 10 * TILE - 15 + Math.sin(tick * 0.12) * 3
-                    ctx.fillStyle = '#c9b3ff'
-                    ctx.beginPath(); ctx.moveTo(sx - 5, ay); ctx.lineTo(sx + 5, ay); ctx.lineTo(sx, ay + 8); ctx.closePath(); ctx.fill()
-                }
-            }
+            if (level.flagCol) { const sx = level.flagCol * TILE - cam; if (sx > -20 && sx < VIEW_W + 40) drawFlag() }
+            if (level.castleCol) { const sx = level.castleCol * TILE - cam; if (sx > -80 && sx < VIEW_W + 40) drawCastle() }
 
             // tiles
             const c0 = Math.floor(cam / TILE)
@@ -1256,8 +896,7 @@ const SuperMarioGame = () => {
 
             // entities
             for (const co of coinsArr) if (!co.taken) drawCoin({ x: co.x - cam, y: co.y, anim: co.anim })
-            for (const s of shrooms) { if (s.kind === 'flower') drawFlower({ x: s.x - cam, y: s.y }); else drawShroom({ x: s.x - cam, y: s.y }) }
-            for (const f of fireballs) drawFireball({ x: f.x - cam, y: f.y, anim: f.anim })
+            for (const s of shrooms) drawShroom({ x: s.x - cam, y: s.y })
             for (const e of enemies) {
                 const sx = e.x - cam
                 if (sx < -20 || sx > VIEW_W + 20) continue
@@ -1265,20 +904,7 @@ const SuperMarioGame = () => {
                 else if (e.type === 'goomba') drawGoomba({ ...e, x: sx })
                 else drawKoopa({ ...e, x: sx })
             }
-            for (const p of particles) {
-                const cx = px(p.x - cam), cy = px(p.y)
-                if (p.spark) {
-                    const s = p.life > 16 ? 4 : p.life > 8 ? 3 : 2
-                    ctx.globalAlpha = Math.min(1, p.life / 9)
-                    ctx.fillStyle = p.color
-                    ctx.fillRect(cx - s / 2, cy - s / 2, s, s)
-                    ctx.fillRect(cx - 0.5, cy - s, 1, s * 2)
-                    ctx.fillRect(cx - s, cy - 0.5, s * 2, 1)
-                    ctx.globalAlpha = 1
-                } else {
-                    ctx.fillStyle = p.color; ctx.fillRect(cx, cy, 4, 4)
-                }
-            }
+            for (const p of particles) { ctx.fillStyle = p.color; ctx.fillRect(px(p.x - cam), px(p.y), 4, 4) }
 
             if (state !== 'gameover') drawMarioAt(mario, cam)
 
@@ -1287,7 +913,7 @@ const SuperMarioGame = () => {
             for (const p of popups) { ctx.fillStyle = C.white; ctx.fillText(p.text, px(p.x - cam), px(p.y)) }
 
             // HUD
-            if (state === 'play' || state === 'levelclear' || state === 'dying' || state === 'flag' || state === 'warp') drawHUD()
+            if (state === 'play' || state === 'levelclear' || state === 'dying') drawHUD()
 
             // overlays
             if (state === 'attract') {
@@ -1295,38 +921,8 @@ const SuperMarioGame = () => {
                 centerText([
                     { t: 'SUPER MARIO BROS', color: C.marioRed, font: 'bold 20px monospace', gap: 26 },
                     { t: 'WORLD 1-1 & 1-2', color: C.white, font: 'bold 10px monospace', gap: 22 },
-                    { t: 'PRESS ANY KEY TO START', color: (tick % 60 < 36) ? C.coin : C.white, font: 'bold 9px monospace', gap: 16 },
-                    { t: 'PRESS ? FOR OPTIONS', color: 'rgba(255,255,255,0.7)', font: 'bold 8px monospace' },
+                    { t: 'PRESS ANY KEY TO START', color: (tick % 60 < 36) ? C.coin : C.white, font: 'bold 9px monospace' },
                 ])
-            } else if (state === 'menu') {
-                if (soonFlash > 0) soonFlash--
-                ctx.fillStyle = 'rgba(0,0,0,0.74)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
-                ctx.textAlign = 'center'
-                ctx.fillStyle = C.coin; ctx.font = 'bold 16px monospace'
-                ctx.fillText('OPTIONS', VIEW_W / 2, 38)
-                ctx.fillStyle = C.white; ctx.font = 'bold 8px monospace'
-                ctx.fillText('SUPER MARIO BROS', VIEW_W / 2, 51)
-                const top = 80, rowH = 30
-                for (let i = 0; i < MENU.length; i++) {
-                    const y = top + i * rowH
-                    const sel = i === menuSel
-                    if (sel) { ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fillRect(22, y - 12, VIEW_W - 44, 22) }
-                    ctx.textAlign = 'left'
-                    ctx.fillStyle = sel ? C.coin : C.white
-                    ctx.font = 'bold 10px monospace'
-                    ctx.fillText((sel ? '> ' : '  ') + (i + 1) + '. ' + MENU[i].label, 28, y)
-                    ctx.fillStyle = sel ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.55)'
-                    ctx.font = '7px monospace'
-                    ctx.fillText('     ' + MENU[i].hint, 28, y + 9)
-                }
-                ctx.textAlign = 'center'
-                ctx.fillStyle = 'rgba(255,255,255,0.65)'; ctx.font = '7px monospace'
-                ctx.fillText('1-4 / ARROWS+ENTER SELECT   ·   ESC BACK', VIEW_W / 2, VIEW_H - 14)
-                if (soonFlash > 0) {
-                    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(20, VIEW_H - 46, VIEW_W - 40, 20)
-                    ctx.fillStyle = C.coin; ctx.font = 'bold 9px monospace'
-                    ctx.fillText('COMING SOON', VIEW_W / 2, VIEW_H - 32)
-                }
             } else if (state === 'gameover') {
                 ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
                 centerText([
@@ -1380,42 +976,12 @@ const SuperMarioGame = () => {
         }
 
         // init
-        mario = spawnMario('small')
+        mario = spawnMario(false)
         loadLevel(0)
         state = 'attract'
-        if (new URLSearchParams(window.location.search).get('menu') === '1') { state = 'menu'; menuSel = 0 }
         animationFrameId = requestAnimationFrame(loop)
 
-        // DEV-only visual-test hook (never present in production builds)
-        if (import.meta.env.DEV) {
-            window.__marioTest = {
-                getState: () => ({ state, power: mario && mario.power, score, coins, lives, level: level.id, col: Math.round((mario ? mario.x : 0) / TILE), mode, menuSel }),
-                start: () => { if (state === 'attract' || state === 'gameover' || state === 'win') resetGame() },
-                openMenu: () => { state = 'menu'; menuSel = 0 },
-                choose: (i) => chooseOption(i),
-                teleport: (col) => { if (!mario) return; mario.x = col * TILE; cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.42, level.cols * TILE - VIEW_W)) },
-                setPower: (p) => {
-                    if (!mario) return
-                    if (p === 'small') { if (mario.power !== 'small') mario.y += 12; mario.power = 'small'; mario.big = false; mario.h = 16 }
-                    else if (p === 'big') { if (mario.power === 'small') mario.y -= 12; mario.power = 'big'; mario.big = true; mario.h = 28 }
-                    else if (p === 'fire') { if (mario.power === 'small') mario.y -= 12; mario.power = 'fire'; mario.big = true; mario.h = 28 }
-                },
-                throwFire: () => { firePressed = true },
-                powerUp: () => { fireUp() },
-                startFlag: () => { if (state === 'intro') { state = 'play' } startFlag() },
-                clearLevel: () => { if (state === 'intro') state = 'play'; levelClear() },
-                gotoLevel: (i) => { if (LEVELS[i]) loadLevel(i, true) },
-                enterBonus: () => { if (state === 'intro') state = 'play'; enterBonus() },
-                enterUnder: () => { if (state === 'intro') state = 'play'; enterUnder() },
-                warpUp: () => { warpUp() },
-                isDetour: () => !!(level && (level.bonus || level.detour)),
-                musicState: () => audioController._musicState(),
-                musicPeak: () => audioController._peak(),
-            }
-        }
-
         return () => {
-            audioController.stopMusic()
             window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
@@ -1427,9 +993,12 @@ const SuperMarioGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center p-4">
             <div ref={containerRef} className="relative w-full max-w-[760px] aspect-[16/15] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-[#5c94fc]">
                 <canvas ref={canvasRef} className="block w-full h-full" />
-                {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SUPER MARIO BROS')} onResume={handleResume} />}
+                {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SUPER MARIO BROS (ORIGINAL)')} onResume={handleResume} />}
+                <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] tracking-widest text-white/80 bg-black/40 px-2 py-1 rounded font-mono">
+                    ORIGINAL ONE-SHOT BUILD &nbsp;·&nbsp; PRESS ? FOR MENU
+                </div>
             </div>
-            <VirtualControls secondAction={{ code: 'KeyF', label: 'F' }} />
+            <VirtualControls />
         </div>
     )
 }
