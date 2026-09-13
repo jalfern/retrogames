@@ -229,6 +229,8 @@ const SuperMarioGame = () => {
         let transitionTimer = 0
         let cameraX = 0
         let introTimer = 0
+        let flagPhase = ''
+        let flagT = 0
 
         let mario = null
         let enemies = []
@@ -422,6 +424,23 @@ const SuperMarioGame = () => {
             audioController.playSweep(523, 1047, 0.9, 'square', 0.16)
         }
 
+        const advanceLevel = () => {
+            addScore(Math.floor(timer) * 10, mario.x, mario.y - 10, '')
+            audioController.playSweep(523, 1047, 0.9, 'square', 0.16)
+            if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1, true)
+            else state = 'win'
+        }
+
+        // Iconic flagpole finish: slide down the pole, then walk into the castle.
+        const startFlag = () => {
+            if (state !== 'play') return
+            state = 'flag'; flagPhase = 'slide'; flagT = 0
+            mario.vx = 0; mario.vy = 0; mario.facing = -1
+            mario.x = level.flagCol * TILE - 2
+            mario.y = 5 * TILE  // grab the pole up high so the slide is visible
+            audioController.playSweep(660, 1046, 0.5, 'square', 0.16)
+        }
+
         // ---- collision vs grid ----
         const collideX = () => {
             const top = Math.floor(mario.y / TILE)
@@ -471,6 +490,20 @@ const SuperMarioGame = () => {
             if (state === 'attract' || state === 'gameover' || state === 'win') return
 
             if (state === 'intro') { if (--introTimer <= 0) state = 'play'; return }
+
+            if (state === 'flag') {
+                flagT++
+                cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.45, level.cols * TILE - VIEW_W))
+                const baseY = (13 * TILE) - mario.h
+                if (flagPhase === 'slide') {
+                    if (mario.y < baseY) mario.y = Math.min(baseY, mario.y + 4)
+                    else { flagPhase = 'walk'; flagT = 0; audioController.playTone(880, 0.12, 'square', 0.14) }
+                } else {
+                    mario.facing = 1; mario.x += 1.8; mario.anim += 2
+                    if (flagT > 72 || mario.x > level.castleCol * TILE + 24) advanceLevel()
+                }
+                return
+            }
 
             if (state === 'dying') {
                 mario.vy = Math.min(mario.vy + 0.4, 10)
@@ -668,8 +701,8 @@ const SuperMarioGame = () => {
 
             // ---- Level completion ----
             if (level.flagCol && mario.x + mario.w >= level.flagCol * TILE) {
-                mario.x = level.flagCol * TILE - mario.w + 2
-                levelClear()
+                startFlag()
+                return
             }
             if (level.exitCol && mario.x + mario.w >= level.exitCol * TILE && mario.onGround) {
                 levelClear()
@@ -770,14 +803,15 @@ const SuperMarioGame = () => {
             }
         }
 
-        const drawFlag = () => {
+        const drawFlag = (flagY) => {
+            const fy = flagY == null ? 4 * TILE : flagY
             const fx = level.flagCol * TILE + 8
             ctx.fillStyle = '#d8d8d8'; ctx.fillRect(fx, 3 * TILE, 2, 10 * TILE)
             ctx.fillStyle = C.white; ctx.fillRect(fx - 2, 3 * TILE - 4, 6, 4)
             // flag
             ctx.fillStyle = C.flag
             ctx.beginPath()
-            ctx.moveTo(fx, 4 * TILE); ctx.lineTo(fx - 16, 4 * TILE + 5); ctx.lineTo(fx, 4 * TILE + 10)
+            ctx.moveTo(fx, fy); ctx.lineTo(fx - 16, fy + 5); ctx.lineTo(fx, fy + 10)
             ctx.closePath(); ctx.fill()
         }
         const drawCastle = () => {
@@ -1023,7 +1057,16 @@ const SuperMarioGame = () => {
                 if (level.decor.clouds) level.decor.clouds.forEach((c, i) => { const sx = c * TILE - cam * 0.4; const cy = 16 + (i % 3) * 12; if (sx > -48 && sx < VIEW_W) drawCloud(sx, cy) })
                 for (const c of level.decor.bushes) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawBush(sx, 12 * TILE) }
             }
-            if (level.flagCol) { const sx = level.flagCol * TILE - cam; if (sx > -20 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawFlag(); ctx.restore() } }
+            if (level.flagCol) {
+                let flagY = 4 * TILE
+                if (state === 'flag') {
+                    const baseY = (13 * TILE) - mario.h
+                    const p = flagPhase === 'slide' ? Math.max(0, Math.min(1, (mario.y - 4 * TILE) / (baseY - 4 * TILE))) : 1
+                    flagY = 4 * TILE + p * ((12 * TILE) - 4 * TILE)
+                }
+                const sx = level.flagCol * TILE - cam
+                if (sx > -20 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawFlag(flagY); ctx.restore() }
+            }
             if (level.castleCol) { const sx = level.castleCol * TILE - cam; if (sx > -80 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawCastle(); ctx.restore() } }
 
             // tiles
@@ -1056,7 +1099,7 @@ const SuperMarioGame = () => {
             for (const p of popups) { ctx.fillStyle = C.white; ctx.fillText(p.text, px(p.x - cam), px(p.y)) }
 
             // HUD
-            if (state === 'play' || state === 'levelclear' || state === 'dying') drawHUD()
+            if (state === 'play' || state === 'levelclear' || state === 'dying' || state === 'flag') drawHUD()
 
             // overlays
             if (state === 'attract') {
@@ -1137,6 +1180,7 @@ const SuperMarioGame = () => {
                     else if (p === 'fire') { if (mario.power === 'small') mario.y -= 12; mario.power = 'fire'; mario.big = true; mario.h = 28 }
                 },
                 throwFire: () => { firePressed = true },
+                startFlag: () => { if (state === 'intro') { state = 'play' } startFlag() },
                 clearLevel: () => levelClear(),
             }
         }
