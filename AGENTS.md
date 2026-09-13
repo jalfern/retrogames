@@ -28,6 +28,8 @@ npm run dev        # dev server -> http://localhost:5173/retrogames/
 npm run build      # production build -> dist/
 npm run lint       # eslint
 npm run preview    # preview the production build
+npm run shot -- --out scripts/.shots/x.png --eval "..."   # visual capture (see Self-verifying)
+npm run audcheck   # assert the chiptune engine is producing signal (exits non-zero on fail)
 ```
 
 ## How the app is structured
@@ -90,12 +92,36 @@ open https://jalfern.com/retrogames/<game>
 - **package-lock churn:** `npm install` may drop optional peer type packages. Commit those
   lockfile updates alongside the change that needs them.
 
+## Self-verifying (vendored test harness)
+The visual + audio verification loop lives **in the repo** under `scripts/` so any
+model/machine can reproduce it (it is not an external tool):
+
+| Script | What it does |
+|--------|--------------|
+| `scripts/shot.mjs` | Drives **system Chrome** (via `playwright-core`) to screenshot the dev server and drive the game through `window.__marioTest`. |
+| `scripts/audcheck.mjs` | Starts the game and asserts the chiptune engine steps + produces an `AnalyserNode` signal; exits **non-zero** on failure (CI-friendly). |
+
+```bash
+npm install                 # installs playwright-core (no browser download)
+npm run dev                 # in another terminal
+npm run shot -- --out scripts/.shots/fire.png --eval "window.__marioTest.setPower('fire');window.__marioTest.teleport(6)"
+npm run audcheck            # PASS/FAIL on the audio engine
+```
+
+- **Prereqs:** Google Chrome installed (harness uses `channel:'chrome'`, no download).
+  Override with `--channel chromium` after `npx playwright install chromium`, or set
+  `SHOT_CHANNEL`. Captured PNGs go to `scripts/.shots/` (gitignored).
+- **DEV-only:** `window.__marioTest` exists only under `import.meta.env.DEV`, so the harness
+  must target the **dev server**, not the production build.
+- Options: `--url --out --eval --steps --w --h --settle --prewait --channel`. `--steps` is a
+  JSON array of `{down|up, wait}` for real keyboard input.
+
 ## Super Mario — DEV test hooks
 `src/games/SuperMario/index.jsx` exposes `window.__marioTest` (only under `import.meta.env.DEV`):
 `start() getState() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
 startFlag() clearLevel() gotoLevel(i) enterBonus() enterUnder() warpUp() isDetour() musicState() musicPeak()`.
-Use these with the screenshot harness (`~/Dev/tools/shot/shot.mjs`, system Chrome via
-playwright-core) to drive the game deterministically.
+Use these with the **vendored** screenshot harness (`scripts/shot.mjs`, run via
+`npm run shot`) to drive the game deterministically — see *Self-verifying* above.
 
 - **Capture-timing gotcha:** in `shot.mjs` the `--eval` runs *first*, then `--prewait`, then
   `--settle`, then the screenshot. So a transient effect (a spark burst, a power-up twinkle)
