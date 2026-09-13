@@ -413,7 +413,7 @@ const SuperMarioGame = () => {
             state = 'dying'
             transitionTimer = 120
             mario.vy = -7; mario.vx = 0
-            audioController.playSweep(700, 80, 0.9, 'square', 0.18)
+            audioController.playDeath()
         }
 
         const levelClear = () => {
@@ -421,12 +421,12 @@ const SuperMarioGame = () => {
             state = 'levelclear'
             transitionTimer = 150
             addScore(Math.floor(timer) * 10, mario.x, mario.y - 10, '')
-            audioController.playSweep(523, 1047, 0.9, 'square', 0.16)
+            audioController.playFanfare()
         }
 
         const advanceLevel = () => {
             addScore(Math.floor(timer) * 10, mario.x, mario.y - 10, '')
-            audioController.playSweep(523, 1047, 0.9, 'square', 0.16)
+            audioController.playFanfare()
             if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1, true)
             else state = 'win'
         }
@@ -435,6 +435,7 @@ const SuperMarioGame = () => {
         const startFlag = () => {
             if (state !== 'play') return
             state = 'flag'; flagPhase = 'slide'; flagT = 0
+            audioController.stopMusic()
             mario.vx = 0; mario.vy = 0; mario.facing = -1
             mario.x = level.flagCol * TILE - 2
             mario.y = 5 * TILE  // grab the pole up high so the slide is visible
@@ -489,7 +490,7 @@ const SuperMarioGame = () => {
             tick++
             if (state === 'attract' || state === 'gameover' || state === 'win') return
 
-            if (state === 'intro') { if (--introTimer <= 0) state = 'play'; return }
+            if (state === 'intro') { if (--introTimer <= 0) { state = 'play'; audioController.startMusic(level.bg === 'under' ? 'underground' : 'overworld') } return }
 
             if (state === 'flag') {
                 flagT++
@@ -512,7 +513,7 @@ const SuperMarioGame = () => {
                 if (transitionTimer <= 0) {
                     lives--
                     if (lives > 0) loadLevel(levelIndex, false)
-                    else state = 'gameover'
+                    else { state = 'gameover'; audioController.stopMusic() }
                 }
                 return
             }
@@ -1182,10 +1183,13 @@ const SuperMarioGame = () => {
                 throwFire: () => { firePressed = true },
                 startFlag: () => { if (state === 'intro') { state = 'play' } startFlag() },
                 clearLevel: () => levelClear(),
+                musicState: () => audioController._musicState(),
+                musicPeak: () => audioController._peak(),
             }
         }
 
         return () => {
+            audioController.stopMusic()
             window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
