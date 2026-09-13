@@ -122,12 +122,14 @@ The Mario title screen shows `PRESS ? FOR OPTIONS`. `?` at the title (not in-gam
 1. Play latest · 2. Play original one-shot · 3. Watch CPU autoplay · 4. Watch CPU learn (evolve).
 The **original** is the pristine `v1-one-shot` engine vendored as `src/games/SuperMarioClassic/`
 (route `/mario-classic`, `hidden: true` so it's off the arcade grid, reached only via the menu).
-Its `?` returns to the menu (`/mario?menu=1`). Options 3–4 are wired to autopilot /
-neuroevolution controllers (see `mode` in the engine).
+Its `?` returns to the menu (`/mario?menu=1`). Option 3 **autopilot** (`mode==='autopilot'`)
+drives a rule-based controller (`autopilot()` in the engine) that clears 1-1 perfectly at
+normal speed (jumps pits/pipes, hops/burns Goombas). Option 4 (neuroevolution) lands next.
+The autopilot is deterministic — it wins 1-1 with all lives.
 
 ## Super Mario — DEV test hooks
 `src/games/SuperMario/index.jsx` exposes `window.__marioTest` (only under `import.meta.env.DEV`):
-`start() getState() openMenu() choose(i) teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
+`start() getState() openMenu() choose(i) autoplay() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
 startFlag() clearLevel() gotoLevel(i) enterBonus() enterUnder() warpUp() isDetour() musicState() musicPeak()`.
 Use these with the **vendored** screenshot harness (`scripts/shot.mjs`, run via
 `npm run shot`) to drive the game deterministically — see *Self-verifying* above.
