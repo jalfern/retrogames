@@ -91,8 +91,19 @@ open https://jalfern.com/retrogames/<game>
 - **Base path:** `vite.config.js` `base` and `App.jsx` `basename` must both be `/retrogames`.
 - **Audio autoplay:** browsers require a user gesture before sound; `App.jsx` unlocks the
   AudioContext on first click/keydown/touch. Don't play audio before that.
+- **npm >= 11 required (node >= 22.9; dev box is node 25, CI is node 24).** `js-dos`
+  bundles `react-redux@8.1.3`, whose peer range caps at React **18** while this app is React
+  **19**. npm 11 tolerates that and prunes the nested tree; npm 10 tries to install a second
+  React and dies on the lockfile:
+  `npm error Missing: react-dom@18.3.1 from lock file` (also `@types/react@18.3.31`,
+  `scheduler@0.23.2`). So `npm ci` is only reproducible on npm >= 11 — if a fresh clone or a
+  CI runner on node 20/22 fails there, that is the cause, not your change. Diagnose with
+  `npx npm@10 ci --dry-run`. The alternative fix (`.npmrc` with `legacy-peer-deps=true`, then
+  regen the lock) would make installs work on any npm but changes how Vercel installs too —
+  do it deliberately, not as a drive-by.
 - **package-lock churn:** `npm install` may drop optional peer type packages. Commit those
-  lockfile updates alongside the change that needs them.
+  lockfile updates alongside the change that needs them, and re-check `npm ci --dry-run`
+  after any dependency bump.
 
 ## Self-verifying (vendored test harness)
 The visual + audio verification loop lives **in the repo** under `scripts/` so any
