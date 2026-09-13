@@ -406,6 +406,14 @@ const SuperMarioGame = () => {
             audioController.playNoise(0.12, 0.25)
         }
 
+        const spark = (x, y, colors, n, spread) => {
+            for (let i = 0; i < n; i++) {
+                const a = (Math.PI * 2 * i) / n + Math.random() * 0.6
+                const s = (spread || 2) + Math.random() * 1.6
+                particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, life: 18 + Math.random() * 12, max: 30, color: colors[i % colors.length], spark: true, g: 0.12 })
+            }
+        }
+
         const spawnPower = (c, r, kind) => {
             shrooms.push({ x: c * TILE + 2, y: r * TILE, w: 12, h: 14, vx: 0.8, vy: 0, emerging: 14, kind })
             audioController.playSweep(300, 900, 0.4, 'square', 0.12)
@@ -435,6 +443,7 @@ const SuperMarioGame = () => {
         const grow = () => {
             if (mario.power !== 'small') return
             mario.power = 'big'; mario.big = true; mario.h = 28; mario.y -= 12; mario.invuln = 0
+            spark(mario.x + mario.w / 2, mario.y + mario.h / 2, ['#ffffff', '#fff0a0', '#ffd000'], 12, 1.6)
             audioController.playSweep(400, 1000, 0.5, 'square', 0.14)
             addScore(1000, mario.x, mario.y - 10, '')
         }
@@ -442,6 +451,7 @@ const SuperMarioGame = () => {
         const fireUp = () => {
             if (mario.power === 'small') { mario.y -= 12; mario.h = 28; mario.big = true }
             mario.power = 'fire'; mario.invuln = 0
+            spark(mario.x + mario.w / 2, mario.y + mario.h / 2, ['#ffffff', '#ffe888', '#ff8000', '#ff4000'], 14, 2)
             audioController.playSweep(500, 1200, 0.5, 'square', 0.14)
             addScore(1000, mario.x, mario.y - 10, '')
         }
@@ -450,6 +460,7 @@ const SuperMarioGame = () => {
             if (mario.invuln > 0) return
             if (mario.power !== 'small') {
                 mario.power = 'small'; mario.big = false; mario.h = 16; mario.y += 12; mario.invuln = 90
+                spark(mario.x + mario.w / 2, mario.y + mario.h / 2, ['#ffffff', '#a0c0ff'], 10, 1.6)
                 audioController.playSweep(600, 200, 0.4, 'sawtooth', 0.16)
             } else {
                 die()
@@ -690,7 +701,7 @@ const SuperMarioGame = () => {
                 if (--f.life <= 0) f.dead = true
                 for (const e of enemies) {
                     if (!e.alive || e.flip || e.squash) continue
-                    if (overlap(f, e)) { e.flip = true; e.vy = -6; addScore(200, e.x, e.y - 8, '200'); audioController.playNoise(0.1, 0.18); f.dead = true }
+                    if (overlap(f, e)) { e.flip = true; e.vy = -6; addScore(200, e.x, e.y - 8, '200'); spark(e.x + e.w / 2, e.y + e.h / 2, ['#fff0a0', '#ff8000', '#ff2000'], 9, 2.2); audioController.playNoise(0.1, 0.18); f.dead = true }
                 }
             }
             fireballs = fireballs.filter(f => !f.dead)
@@ -757,7 +768,7 @@ const SuperMarioGame = () => {
             enemies = enemies.filter(e => e.alive)
 
             // ---- particles / popups ----
-            for (const p of particles) { p.vy += 0.3; p.x += p.vx; p.y += p.vy; p.life-- }
+            for (const p of particles) { p.vy += (p.g != null ? p.g : 0.3); p.x += p.vx; p.y += p.vy; p.life-- }
             particles = particles.filter(p => p.life > 0)
             for (const p of popups) { p.y -= 0.6; p.life-- }
             popups = popups.filter(p => p.life > 0)
@@ -1193,7 +1204,20 @@ const SuperMarioGame = () => {
                 else if (e.type === 'goomba') drawGoomba({ ...e, x: sx })
                 else drawKoopa({ ...e, x: sx })
             }
-            for (const p of particles) { ctx.fillStyle = p.color; ctx.fillRect(px(p.x - cam), px(p.y), 4, 4) }
+            for (const p of particles) {
+                const cx = px(p.x - cam), cy = px(p.y)
+                if (p.spark) {
+                    const s = p.life > 16 ? 4 : p.life > 8 ? 3 : 2
+                    ctx.globalAlpha = Math.min(1, p.life / 9)
+                    ctx.fillStyle = p.color
+                    ctx.fillRect(cx - s / 2, cy - s / 2, s, s)
+                    ctx.fillRect(cx - 0.5, cy - s, 1, s * 2)
+                    ctx.fillRect(cx - s, cy - 0.5, s * 2, 1)
+                    ctx.globalAlpha = 1
+                } else {
+                    ctx.fillStyle = p.color; ctx.fillRect(cx, cy, 4, 4)
+                }
+            }
 
             if (state !== 'gameover') drawMarioAt(mario, cam)
 
@@ -1283,6 +1307,7 @@ const SuperMarioGame = () => {
                     else if (p === 'fire') { if (mario.power === 'small') mario.y -= 12; mario.power = 'fire'; mario.big = true; mario.h = 28 }
                 },
                 throwFire: () => { firePressed = true },
+                powerUp: () => { fireUp() },
                 startFlag: () => { if (state === 'intro') { state = 'play' } startFlag() },
                 clearLevel: () => { if (state === 'intro') state = 'play'; levelClear() },
                 gotoLevel: (i) => { loadLevel(i, true) },
