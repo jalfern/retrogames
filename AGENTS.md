@@ -117,8 +117,14 @@ npm run audcheck            # PASS/FAIL on the audio engine
   JSON array of `{down|up, wait}` for real keyboard input.
 
 ## Super Mario — Options menu & versions
-The Mario title screen shows `PRESS ? FOR OPTIONS`. `?` at the title (not in-game — in-game
-`?` still pauses) opens an **OPTIONS menu** (keys 1–4 / arrows+Enter / Esc back):
+The title screen has a tappable **OPTIONS ▸** button (top-right) *and* accepts `?` at the title
+(in-game `?` still pauses). Both open the **OPTIONS menu**, which is rendered as **DOM buttons**
+over the canvas (touch-friendly; also keys 1–4 / arrows+Enter / Esc). A lone modifier (e.g. Shift
+on the way to `?`) is ignored on the attract/end screens so it can't accidentally start the game.
+The engine mirrors its screen into React via `syncUi()` (called each `draw`) → `ui.screen`
+(`attract|menu|end|none`); DOM overlays read it, and imperative actions go through `apiRef.current`
+(`{ openMenu(), choose(i), back() }`). The virtual gamepad (`VirtualControls`) is hidden unless
+`ui.screen === 'none'` (actual play). Options:
 1. Play latest · 2. Play original one-shot · 3. Watch CPU autoplay · 4. Watch CPU learn (evolve).
 The **original** is the pristine `v1-one-shot` engine vendored as `src/games/SuperMarioClassic/`
 (route `/mario-classic`, `hidden: true` so it's off the arcade grid, reached only via the menu).
