@@ -27,7 +27,7 @@ const SOLID_SET = new Set([GROUND, BRICK, QUESTION, SOLID, USED, PIPE])
 // Palette (NES-ish)
 const C = {
     sky: '#5c94fc',
-    skyUnder: '#000000',
+    skyUnder: '#050a28',
     ground: '#c84c0c',
     groundDark: '#88400a',
     groundLight: '#e89058',
@@ -177,7 +177,7 @@ const LEVEL_2 = buildLevel({
         { type: 'koopa', c: 112 }, { type: 'goomba', c: 130 }, { type: 'goomba', c: 131 },
         { type: 'koopa', c: 150 },
     ],
-    decor: { clouds: [], bushes: [] },
+    decor: { clouds: [], bushes: [], torches: [6, 14, 24, 34, 46, 56, 68, 78, 92, 104, 116, 128, 140, 152, 162] },
 })
 
 const LEVELS = [LEVEL_1, LEVEL_2]
@@ -719,57 +719,77 @@ const SuperMarioGame = () => {
         // =================================================================
         const px = (x) => Math.round(x)
 
+        const PAL_OVER = {
+            ground: C.ground, groundDark: C.groundDark, groundLight: C.groundLight,
+            brick: C.brick, brickLine: C.brickLine, block: C.block, blockDark: C.blockDark, blockLight: C.blockLight,
+            used: C.used, pipe: C.pipe, pipeDark: C.pipeDark, pipeLight: C.pipeLight,
+            solid: '#b06020', solidLight: '#e8a058', solidDark: '#6a2800',
+        }
+        const PAL_UNDER = {
+            ground: '#1f3fae', groundDark: '#122a7a', groundLight: '#4f6fe0',
+            brick: '#2647c0', brickLine: '#0f1f5a', block: C.block, blockDark: C.blockDark, blockLight: C.blockLight,
+            used: '#16308f', pipe: '#0fb0a0', pipeDark: '#0a7d72', pipeLight: '#7ff0e0',
+            solid: '#8a4ad0', solidLight: '#c088f0', solidDark: '#5a2a9a',
+        }
         const drawTile = (t, x, y, c, r) => {
+            const P = level.bg === 'under' ? PAL_UNDER : PAL_OVER
             if (t === GROUND) {
-                ctx.fillStyle = C.ground; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = C.groundLight; ctx.fillRect(x, y, TILE, 3)
-                ctx.fillStyle = C.groundDark
+                ctx.fillStyle = P.ground; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = P.groundLight; ctx.fillRect(x, y, TILE, 3)
+                ctx.fillStyle = P.groundDark
                 ctx.fillRect(x, y + 3, 1, TILE - 3); ctx.fillRect(x + 7, y + 6, 1, TILE - 6)
                 ctx.fillRect(x + 3, y + 8, 4, 1); ctx.fillRect(x + 11, y + 11, 4, 1)
             } else if (t === BRICK) {
-                ctx.fillStyle = C.brick; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = C.brickLine
+                ctx.fillStyle = P.brick; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = P.brickLine
                 ctx.fillRect(x, y + 7, TILE, 1); ctx.fillRect(x, y + 15, TILE, 1)
                 ctx.fillRect(x + 7, y, 1, 7); ctx.fillRect(x + 3, y + 8, 1, 7); ctx.fillRect(x + 11, y + 8, 1, 7)
-                ctx.fillStyle = C.groundLight; ctx.fillRect(x, y, TILE, 1)
+                ctx.fillStyle = P.groundLight; ctx.fillRect(x, y, TILE, 1)
             } else if (t === QUESTION) {
                 const bob = Math.sin(tick * 0.15) > 0 ? 0 : 1
-                ctx.fillStyle = C.block; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = C.blockDark
+                ctx.fillStyle = P.block; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = P.blockDark
                 ctx.fillRect(x, y, TILE, 1); ctx.fillRect(x, y + TILE - 1, TILE, 1)
                 ctx.fillRect(x, y, 1, TILE); ctx.fillRect(x + TILE - 1, y, 1, TILE)
-                // rivets
                 ctx.fillRect(x + 2, y + 2, 1, 1); ctx.fillRect(x + 13, y + 2, 1, 1)
                 ctx.fillRect(x + 2, y + 13, 1, 1); ctx.fillRect(x + 13, y + 13, 1, 1)
-                ctx.fillStyle = C.blockLight
+                ctx.fillStyle = P.blockLight
                 ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'
                 ctx.fillText('?', x + 8, y + 12 + bob)
             } else if (t === USED) {
-                ctx.fillStyle = C.used; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = C.brickLine
+                ctx.fillStyle = P.used; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = P.brickLine
                 ctx.fillRect(x, y, TILE, 1); ctx.fillRect(x, y + TILE - 1, TILE, 1)
                 ctx.fillRect(x, y, 1, TILE); ctx.fillRect(x + TILE - 1, y, 1, TILE)
             } else if (t === SOLID) {
-                ctx.fillStyle = '#b06020'; ctx.fillRect(x, y, TILE, TILE)
-                ctx.fillStyle = '#e8a058'; ctx.fillRect(x, y, TILE, 2); ctx.fillRect(x, y, 2, TILE)
-                ctx.fillStyle = '#6a2800'; ctx.fillRect(x, y + TILE - 2, TILE, 2); ctx.fillRect(x + TILE - 2, y, 2, TILE)
+                ctx.fillStyle = P.solid; ctx.fillRect(x, y, TILE, TILE)
+                ctx.fillStyle = P.solidLight; ctx.fillRect(x, y, TILE, 2); ctx.fillRect(x, y, 2, TILE)
+                ctx.fillStyle = P.solidDark; ctx.fillRect(x, y + TILE - 2, TILE, 2); ctx.fillRect(x + TILE - 2, y, 2, TILE)
             } else if (t === PIPE) {
                 const up = level.grid[r - 1] && level.grid[r - 1][c] === PIPE
                 const rightIsPipe = level.grid[r][c + 1] === PIPE
                 if (!up) {
-                    // pipe top (rim)
-                    ctx.fillStyle = C.pipe; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 8)
-                    ctx.fillStyle = C.pipeLight; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 2)
-                    ctx.fillStyle = C.pipeDark; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y + 6, TILE + 2, 2)
-                    ctx.fillStyle = C.pipe; ctx.fillRect(x, y + 8, TILE, TILE - 8)
-                    ctx.fillStyle = C.pipeLight; ctx.fillRect(x + 2, y + 8, 3, TILE - 8)
-                    ctx.fillStyle = C.pipeDark; ctx.fillRect(x + TILE - 2, y + 8, 2, TILE - 8)
+                    ctx.fillStyle = P.pipe; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 8)
+                    ctx.fillStyle = P.pipeLight; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 2)
+                    ctx.fillStyle = P.pipeDark; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y + 6, TILE + 2, 2)
+                    ctx.fillStyle = P.pipe; ctx.fillRect(x, y + 8, TILE, TILE - 8)
+                    ctx.fillStyle = P.pipeLight; ctx.fillRect(x + 2, y + 8, 3, TILE - 8)
+                    ctx.fillStyle = P.pipeDark; ctx.fillRect(x + TILE - 2, y + 8, 2, TILE - 8)
                 } else {
-                    ctx.fillStyle = C.pipe; ctx.fillRect(x, y, TILE, TILE)
-                    ctx.fillStyle = C.pipeLight; ctx.fillRect(x + 2, y, 3, TILE)
-                    ctx.fillStyle = C.pipeDark; ctx.fillRect(x + TILE - 2, y, 2, TILE)
+                    ctx.fillStyle = P.pipe; ctx.fillRect(x, y, TILE, TILE)
+                    ctx.fillStyle = P.pipeLight; ctx.fillRect(x + 2, y, 3, TILE)
+                    ctx.fillStyle = P.pipeDark; ctx.fillRect(x + TILE - 2, y, 2, TILE)
                 }
             }
+        }
+
+        // Flickering wall torch (underground ambiance)
+        const drawTorch = (x, y) => {
+            ctx.fillStyle = '#6a3a10'; ctx.fillRect(x + 3, y + 4, 3, 9) // handle
+            const fl = Math.floor(tick / 5) % 2
+            ctx.fillStyle = '#ff8000'; ctx.fillRect(x + 1, y, 7, 5)
+            ctx.fillStyle = '#ffd000'; ctx.fillRect(x + 2 + fl, y + 1, 4, 3)
+            ctx.fillStyle = '#fff0a0'; ctx.fillRect(x + 3, y + 2 + (fl ? 0 : 1), 2, 2)
         }
 
         const drawCloud = (x, y) => {
@@ -1057,6 +1077,7 @@ const SuperMarioGame = () => {
                 if (level.decor.hills) level.decor.hills.forEach(([c, big]) => { const sx = c * TILE - cam * 0.6; if (sx > -96 && sx < VIEW_W) drawHill(sx, big) })
                 if (level.decor.clouds) level.decor.clouds.forEach((c, i) => { const sx = c * TILE - cam * 0.4; const cy = 16 + (i % 3) * 12; if (sx > -48 && sx < VIEW_W) drawCloud(sx, cy) })
                 for (const c of level.decor.bushes) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawBush(sx, 12 * TILE) }
+                if (level.decor.torches) for (const c of level.decor.torches) { const sx = c * TILE - cam; if (sx > -20 && sx < VIEW_W) drawTorch(sx, 3 * TILE) }
             }
             if (level.flagCol) {
                 let flagY = 4 * TILE
@@ -1182,7 +1203,8 @@ const SuperMarioGame = () => {
                 },
                 throwFire: () => { firePressed = true },
                 startFlag: () => { if (state === 'intro') { state = 'play' } startFlag() },
-                clearLevel: () => levelClear(),
+                clearLevel: () => { if (state === 'intro') state = 'play'; levelClear() },
+                gotoLevel: (i) => { loadLevel(i, true) },
                 musicState: () => audioController._musicState(),
                 musicPeak: () => audioController._peak(),
             }
