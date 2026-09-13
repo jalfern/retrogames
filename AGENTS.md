@@ -131,22 +131,33 @@ The **original** is the pristine `v1-one-shot` engine vendored as `src/games/Sup
 Its `?` returns to the menu (`/mario?menu=1`). Option 3 **autopilot** (`mode==='autopilot'`)
 drives a rule-based controller (`autopilot()` in the engine) that clears 1-1 perfectly at
 normal speed (jumps pits/pipes, hops/burns Goombas). The autopilot is deterministic — it wins
-1-1 with all lives. Option 4 **evolve** (`mode==='evolve'`) runs a genuine **neuroevolution**
-GA live: a 14→8→5 tanh MLP (`evolveDrive`/`evoSense`/`forwardNN`) senses terrain, enemies and
-coins and outputs [left,right,run,jump,fire]. Each generation `POP=12` genomes play 1-1 (rendered,
-watchable); fitness is distance-reached + coins + a big flag-win bonus; selection is elitism
-(top 2) + tournament + crossover + gaussian mutation. The best genome persists to
-`localStorage['mario-evo-v1']`, so the AI keeps improving across reloads. The top HUD is swapped
-for an `EVOLVE GEN · BEST · [i/POP] · COL` status bar. Verified to learn: `evoTrain(12)` lifts
-best fitness ~116→~300 in one headless run.
+1-1 with all lives. Option 4 **evolve** (`mode==='evolve'`) runs a genuine **neuroevolution** GA
+live: a **recurrent** 21→10→5 tanh MLP (`evolveDrive`/`evoSense`/`forwardNN`) — the 10 hidden
+units feed their previous activations back (`evoH`), giving jump-timing memory. Sensors include
+wide ground/pit lookahead (cols +2/+4/+6/+8), wall height, enemy approach + on-ground-stompability,
+coin/powerup proximity and progress-to-flag. Fitness = distance + coins·10 + stomp/powerup bonuses
++ end-game milestones (cols 145/160/170) + a big flag-win bonus (no death penalty — that created a
+zero-gradient trap). GA: `POP=24`, 3 elites, tournament+crossover, **annealed** gaussian mutation
+with **immigrant injection** on stagnation. The fresh population is **seeded** with a hand-designed
+"jump-on-obstacle" genome so gen-1 already reaches ~col 123; it evolves to ~col 140+ (a hard late
+pipe-corridor caps reliable clears for this size net). `POP` genomes play 1-1 in **turbo** (12
+headless steps/frame — a fast, silent montage); each new record is then **replayed once at normal
+speed with sound** as a showcase. Best genome persists to `localStorage['mario-evo-v2']` so it keeps
+improving across reloads. The top HUD shows `GEN · BEST`, a **distance progress bar** with a red
+best-ever marker, and a `»»` turbo / `▶ SHOWCASE` tag. Verified: `evoTrain(60)` climbs fitness
+~250→~5500. (Gotcha: `forwardNN` index bases must stay `bi=NI*NH, bh=bi+NH*NH, bo=bh+NH,
+ob=bo+NH*NO` — an off-by-`NH` makes the output bias read out of bounds → `NaN` → the agent can never
+jump and every episode dies identically at the first Goomba.)
 
 ## Super Mario — DEV test hooks
 `src/games/SuperMario/index.jsx` exposes `window.__marioTest` (only under `import.meta.env.DEV`):
-`start() getState() openMenu() choose(i) autoplay() evolve() evoTrain(gens) evoState() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
+`start() getState() openMenu() choose(i) autoplay() evolve() evoTrain(gens) evoProbe(weights?) evoBest() evoReset() evoState() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
 startFlag() clearLevel() gotoLevel(i) enterBonus() enterUnder() warpUp() isDetour() musicState() musicPeak()`.
 `evolve()` starts the live GA; `evoTrain(gens)` fast-forwards `gens` generations headlessly
-(returns best-fitness-per-gen history — used to verify learning without watching in real time);
-`evoState()` returns `{ mode, gen, bestFit, epIndex, maxCol, pop }`.
+(returns best-fitness-per-gen history); `evoProbe(weights?)` runs ONE episode with a given (or
+random) genome and returns `{ maxCol, epSteps, state, jumps, trace }` — the key tool for debugging
+the controller; `evoBest()` returns the current best-ever weights; `evoReset()` clears persisted
+evolution and restarts; `evoState()` returns `{ mode, gen, bestFit, bestCol, col, epIndex, showcase, pop, NI, NH, NO, WLEN }`.
 Use these with the **vendored** screenshot harness (`scripts/shot.mjs`, run via
 `npm run shot`) to drive the game deterministically — see *Self-verifying* above.
 

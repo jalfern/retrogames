@@ -512,55 +512,101 @@ const SuperMarioGame = () => {
             else keys.jump = false
         }
 
-        // ---- neuroevolution (option 4): a tiny NN controller + genetic algorithm ----
-        const NI = 14, NH = 8, NO = 5           // inputs, hidden, outputs [left,right,run,jump,fire]
-        const WLEN = NI * NH + NH + NH * NO + NO
-        const POP = 12
-        const EP_CAP = 1600                       // max frames per episode (~27s)
-        const EVO_KEY = 'mario-evo-v1'
+        // ---- neuroevolution (option 4): recurrent MLP controller + GA + turbo showcase ----
+        const NI = 21, NH = 10, NO = 5           // inputs, recurrent hidden, outputs [left,right,run,jump,fire]
+        const WLEN = NI * NH + NH * NH + NH + NH * NO + NO
+        const POP = 24
+        const EP_CAP = 1500
+        const TURBO = 12                          // headless steps/frame while training (fast montage)
+        const SHOWCASE_FROM_GEN = 6               // warm up headlessly, then slow down to show records
+        const EVO_KEY = 'mario-evo-v2'
         let pop = [], fitArr = new Array(POP).fill(0)
         let genome = null, gen = 1, epIndex = 0, maxCol = 0, epSteps = 0, evoJumpHold = 0
-        let bestEverFit = 0, bestEverWeights = null, evoBanner = 0
+        let bestEverFit = 0, bestEverWeights = null, bestCol = 0, evoBanner = 0, lastBestAtGen = 0
+        let evoBonus = 0, evoH = new Float64Array(NH), evoShowcase = false, evoMuted = false
         const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
-        const randWeights = () => { const w = new Float64Array(WLEN); for (let i = 0; i < WLEN; i++) w[i] = (Math.random() * 2 - 1) * 0.9; return w }
+        const randWeights = () => { const w = new Float64Array(WLEN); for (let i = 0; i < WLEN; i++) w[i] = (Math.random() * 2 - 1) * 0.6; return w }
         const crossover = (a, b) => { const c = new Float64Array(WLEN); for (let i = 0; i < WLEN; i++) c[i] = Math.random() < 0.5 ? a[i] : b[i]; return c }
-        const mutate = (w) => { for (let i = 0; i < WLEN; i++) if (Math.random() < 0.18) w[i] += (Math.random() * 2 - 1) * 0.5; return w }
-        const forwardNN = (w, inp) => {
+        const mutate = (w, sigma) => { for (let i = 0; i < WLEN; i++) if (Math.random() < 0.15) w[i] += (Math.random() * 2 - 1) * sigma; return w }
+        const evoSigma = (g) => clamp(0.7 * Math.pow(0.985, g), 0.12, 0.7)
+        const evoFitness = (won) => {
+            let f = maxCol + coins * 10 + evoBonus + (won ? 6000 : 0)
+            if (maxCol >= 145) f += 250        // past the col-140 pipe gauntlet
+            if (maxCol >= 160) f += 500        // reached the staircase
+            if (maxCol >= 170) f += 1000       // at the flag
+            return f
+        }
+        const forwardNN = (w, inp, prevH) => {
+            const bi = NI * NH, bh = bi + NH * NH, bo = bh + NH, ob = bo + NH * NO
             const hid = new Float64Array(NH)
-            for (let i = 0; i < NH; i++) { let s = w[NI * NH + i]; for (let j = 0; j < NI; j++) s += w[i * NI + j] * inp[j]; hid[i] = Math.tanh(s) }
-            const out = new Float64Array(NO); const ob = NI * NH + NH + NH * NO
-            for (let k = 0; k < NO; k++) { let s = w[ob + k]; for (let i = 0; i < NH; i++) s += w[NI * NH + NH + k * NH + i] * hid[i]; out[k] = Math.tanh(s) }
-            return out
+            for (let k = 0; k < NH; k++) {
+                let s = w[bh + k]
+                for (let i = 0; i < NI; i++) s += w[k * NI + i] * inp[i]
+                for (let j = 0; j < NH; j++) s += w[bi + k * NH + j] * prevH[j]
+                hid[k] = Math.tanh(s)
+            }
+            const out = new Float64Array(NO)
+            for (let o = 0; o < NO; o++) {
+                let s = w[ob + o]
+                for (let k = 0; k < NH; k++) s += w[bo + o * NH + k] * hid[k]
+                out[o] = Math.tanh(s)
+            }
+            return { out, hid }
         }
         const evoSense = () => {
             const m = mario, inA = new Float64Array(NI)
             const fc = Math.floor((m.x + m.w) / TILE), fr = Math.floor((m.y + m.h) / TILE)
+            const flagX = (level.flagCol || level.cols) * TILE
             inA[0] = m.onGround ? 1 : 0
             inA[1] = clamp(m.vy / MAX_FALL, -1, 1)
             inA[2] = clamp(m.vx / RUN_MAX, -1, 1)
             inA[3] = m.power === 'fire' ? 1 : m.power === 'big' ? 0.5 : 0
-            inA[4] = groundAt(fc + 1) ? 1 : 0
-            inA[5] = groundAt(fc + 2) ? 1 : 0
-            inA[6] = groundAt(fc + 3) ? 1 : 0
-            inA[7] = (solidAt(fc + 1, fr - 1) || solidAt(fc + 1, fr - 2)) ? 1 : 0
-            inA[8] = (solidAt(fc + 2, fr - 1) || solidAt(fc + 2, fr - 2)) ? 1 : 0
-            let ex = 1e9, ey = 0, ef = 0
-            for (const e of enemies) { if (!e.alive || e.flip) continue; const dx = e.x - m.x; if (dx > -8 && dx < ex) { ex = dx; ey = (e.y + e.h) - (m.y + m.h); ef = 1 } }
-            inA[9] = ef; inA[10] = ef ? clamp(1 - ex / 160, 0, 1) : 0; inA[11] = ef ? clamp(ey / 80, -1, 1) : 0
-            let cf = 0, cdx = 1e9
-            for (const cc of coinsArr) { if (cc.taken) continue; const dx = cc.x - m.x; if (dx > 0 && dx < cdx) { cdx = dx; cf = 1 } }
-            inA[12] = cf ? clamp(1 - cdx / 160, 0, 1) : 0
-            inA[13] = 1
+            inA[4] = groundAt(fc + 2) ? 1 : 0
+            inA[5] = groundAt(fc + 4) ? 1 : 0
+            inA[6] = groundAt(fc + 6) ? 1 : 0
+            inA[7] = groundAt(fc + 8) ? 1 : 0
+            let pit = 0; for (let d = 2; d <= 6; d++) if (!groundAt(fc + d)) { pit = 1; break }
+            inA[8] = pit
+            inA[9] = (solidAt(fc + 1, fr - 1) || solidAt(fc + 1, fr - 2)) ? 1 : 0
+            inA[10] = (solidAt(fc + 2, fr - 1) || solidAt(fc + 2, fr - 2)) ? 1 : 0
+            inA[11] = (solidAt(fc + 4, fr - 1) || solidAt(fc + 4, fr - 2)) ? 1 : 0
+            let wh = 0; for (let r = fr - 1; r >= fr - 5 && solidAt(fc + 1, r); r--) wh++
+            inA[12] = clamp(wh / 4, 0, 1)
+            let ex = 1e9, ey = 0, evx = 0, ef = 0, above = 0
+            for (const e of enemies) {
+                if (!e.alive || e.flip) continue
+                const dx = e.x - m.x
+                if (dx > -10 && dx < ex) { ex = dx; ey = (e.y + e.h) - (m.y + m.h); evx = e.vx; ef = 1 }
+                if (Math.abs(dx) < 12 && (e.y + e.h) <= m.y + 4) above = 1
+            }
+            inA[13] = ef
+            inA[14] = ef ? clamp(1 - ex / 200, 0, 1) : 0
+            inA[15] = ef ? clamp(ey / 80, -1, 1) : 0
+            inA[16] = ef ? (evx < 0 ? 1 : -1) : 0
+            inA[17] = above
+            let cd = 1e9
+            for (const cc of coinsArr) { if (cc.taken) continue; const dx = cc.x - m.x; if (dx > 0 && dx < cd) cd = dx }
+            for (const s of shrooms) { if (s.taken) continue; const dx = s.x - m.x; if (dx > 0 && dx < cd) cd = dx }
+            inA[18] = cd < 1e9 ? clamp(1 - cd / 200, 0, 1) : 0
+            inA[19] = clamp(m.x / flagX, 0, 1)
+            inA[20] = (ef && ex > 0 && ex < 44 && ey > -20 && ey < 24) ? 1 : 0
             return inA
         }
         const evolveDrive = () => {
             const m = mario
-            const out = forwardNN(genome, evoSense())
+            const inp = evoSense()
+            const r = forwardNN(genome, inp, evoH)
+            evoH = r.hid
+            const out = r.out
             keys.left = out[0] > 0.3
             keys.right = out[1] > 0.3 || !keys.left
             keys.run = out[2] > 0
             keys.down = false
-            if (out[3] > 0 && m.onGround) { m.jumpPressed = true; keys.jump = true; evoJumpHold = 12 }
+            if (out[3] > 0 && m.onGround) {
+                m.jumpPressed = true; keys.jump = true; evoJumpHold = 12
+                // discourage pointless jumping (air-locking): only free to jump near a pit/wall/enemy
+                if (inp[8] === 0 && inp[9] === 0 && inp[20] === 0 && inp[17] === 0) evoBonus -= 0.3
+            }
             else if (evoJumpHold > 0) { keys.jump = true; evoJumpHold-- }
             else keys.jump = false
             if (out[4] > 0 && m.power === 'fire') firePressed = true
@@ -568,7 +614,8 @@ const SuperMarioGame = () => {
             epSteps++
         }
         const startEpisode = (i) => {
-            genome = pop[i]; maxCol = 0; epSteps = 0; evoJumpHold = 0
+            genome = pop[i]; maxCol = 0; epSteps = 0; evoJumpHold = 0; evoBonus = 0
+            evoH = new Float64Array(NH); evoShowcase = false
             resetGame(); state = 'play'
         }
         const tournament = () => {
@@ -576,47 +623,74 @@ const SuperMarioGame = () => {
             for (let k = 0; k < 2; k++) { const c = Math.floor(Math.random() * POP); if (fitArr[c] > fitArr[best]) best = c }
             return best
         }
+        const saveEvo = () => { try { localStorage.setItem(EVO_KEY, JSON.stringify({ gen, best: Array.from(bestEverWeights || pop[0]), fit: bestEverFit, col: bestCol })) } catch { /* ignore */ } }
         const evolveGen = () => {
             const order = [...Array(POP).keys()].sort((a, b) => fitArr[b] - fitArr[a])
-            const next = [pop[order[0]].slice(), pop[order[1]].slice()]
-            while (next.length < POP) next.push(mutate(crossover(pop[tournament()], pop[tournament()])))
-            pop = next; gen++; epIndex = 0; evoBanner = 130
-            try { localStorage.setItem(EVO_KEY, JSON.stringify({ gen, best: Array.from(bestEverWeights || pop[0]), fit: bestEverFit })) } catch { /* ignore */ }
+            const next = [pop[order[0]].slice(), pop[order[1]].slice(), pop[order[2]].slice()]
+            const stagn = gen - lastBestAtGen
+            const sig = clamp(evoSigma(gen) + (stagn > 6 ? 0.3 : 0), 0.12, 0.9)
+            const immigrants = stagn > 10 ? 4 : 0
+            for (let k = 0; k < immigrants; k++) next.push(randWeights())
+            while (next.length < POP) next.push(mutate(crossover(pop[tournament()], pop[tournament()]), sig))
+            pop = next; gen++; epIndex = 0; evoBanner = 100
         }
         const endEpisode = () => {
             const won = state === 'win'
-            const fit = maxCol + (won ? 2000 : 0) + coins * 5
+            const fit = evoFitness(won)
             fitArr[epIndex] = fit
-            if (fit > bestEverFit) { bestEverFit = fit; bestEverWeights = Array.from(genome) }
+            if (maxCol > bestCol) bestCol = maxCol
+            const record = fit > bestEverFit
+            if (record) { bestEverFit = fit; bestEverWeights = Array.from(genome); evoBanner = 120; lastBestAtGen = gen }
+            // on a new record (once warm), replay it slowly at normal speed as a showcase
+            if (record && !evoShowcase && gen >= SHOWCASE_FROM_GEN) {
+                startEpisode(epIndex); evoShowcase = true; saveEvo(); return
+            }
+            evoShowcase = false
             epIndex++
             if (epIndex >= POP) evolveGen()
             startEpisode(epIndex)
+            saveEvo()
         }
+        // hand-designed "run right + jump when a pit/wall/enemy is directly ahead" seed,
+        // so a fresh population already plays deep into the level before evolution refines it
+        const seedGenome = (runW, jumpW, wallW) => {
+            const w = new Float64Array(WLEN)
+            const bh = NI * NH + NH * NH, bo = bh + NH, ob = bo + NH * NO
+            w[8] = 3; w[9] = wallW; w[10] = wallW * 0.66; w[17] = 2.5; w[20] = 2.5   // pit, wall, enemy
+            w[bh] = -1.5
+            w[bo + 3 * NH] = jumpW; w[ob + 3] = -1                                    // jump <- danger
+            w[ob + 1] = 2; w[ob + 0] = -2; w[ob + 2] = runW                           // right / no-left / run
+            return w
+        }
+        const seedGenomes = () => [seedGenome(1.5, 3, 3), seedGenome(2, 3.5, 3), seedGenome(1.2, 2.5, 4)]
         const startEvolve = () => {
             mode = 'evolve'; audioController.init(); audioController.startMusic('overworld')
             let saved = null
             try { saved = JSON.parse(localStorage.getItem(EVO_KEY) || 'null') } catch { /* ignore */ }
             if (saved && Array.isArray(saved.best) && saved.best.length === WLEN) {
-                gen = saved.gen || 1; bestEverFit = saved.fit || 0; bestEverWeights = saved.best.slice()
+                gen = saved.gen || 1; bestEverFit = saved.fit || 0; bestCol = saved.col || 0; bestEverWeights = saved.best.slice()
                 pop = [Float64Array.from(saved.best)]
-                while (pop.length < POP) pop.push(mutate(Float64Array.from(saved.best)))
+                while (pop.length < POP) pop.push(mutate(Float64Array.from(saved.best), 0.5))
             } else {
-                gen = 1; bestEverFit = 0; bestEverWeights = null
-                pop = []; for (let i = 0; i < POP; i++) pop.push(randWeights())
+                gen = 1; bestEverFit = 0; bestCol = 0; bestEverWeights = null
+                pop = seedGenomes()
+                while (pop.length < POP) pop.push(randWeights())
             }
-            fitArr = new Array(POP).fill(0); epIndex = 0
+            fitArr = new Array(POP).fill(0); epIndex = 0; evoShowcase = false
             startEpisode(0)
         }
+        const resetEvolve = () => { try { localStorage.removeItem(EVO_KEY) } catch { /* ignore */ }; startEvolve() }
         // fast, non-rendered training used only by the DEV hook to verify learning
         const evoTrain = (gens) => {
             const hist = []
             for (let g = 0; g < gens; g++) {
                 for (let i = 0; i < POP; i++) {
-                    genome = pop[i]; maxCol = 0; epSteps = 0
+                    genome = pop[i]; maxCol = 0; epSteps = 0; evoBonus = 0; evoJumpHold = 0; evoH = new Float64Array(NH)
                     loadRoom(LEVEL_1, false, undefined, { setIndex: 0 }); state = 'play'
                     while (epSteps < EP_CAP && state === 'play') { evolveDrive(); update() }
-                    const fit = maxCol + (state === 'win' ? 2000 : 0) + coins * 5
+                    const fit = evoFitness(state === 'win')
                     fitArr[i] = fit
+                    if (maxCol > bestCol) bestCol = maxCol
                     if (fit > bestEverFit) { bestEverFit = fit; bestEverWeights = Array.from(genome) }
                 }
                 hist.push(Math.round(bestEverFit))
@@ -656,7 +730,7 @@ const SuperMarioGame = () => {
             mario.power = 'big'; mario.big = true; mario.h = 28; mario.y -= 12; mario.invuln = 0
             spark(mario.x + mario.w / 2, mario.y + mario.h / 2, ['#ffffff', '#fff0a0', '#ffd000'], 12, 1.6)
             audioController.playSweep(400, 1000, 0.5, 'square', 0.14)
-            addScore(1000, mario.x, mario.y - 10, '')
+            addScore(1000, mario.x, mario.y - 10, ''); if (mode === 'evolve') evoBonus += 250
         }
 
         const fireUp = () => {
@@ -664,7 +738,7 @@ const SuperMarioGame = () => {
             mario.power = 'fire'; mario.invuln = 0
             spark(mario.x + mario.w / 2, mario.y + mario.h / 2, ['#ffffff', '#ffe888', '#ff8000', '#ff4000'], 14, 2)
             audioController.playSweep(500, 1200, 0.5, 'square', 0.14)
-            addScore(1000, mario.x, mario.y - 10, '')
+            addScore(1000, mario.x, mario.y - 10, ''); if (mode === 'evolve') evoBonus += 250
         }
 
         const hurt = () => {
@@ -916,7 +990,7 @@ const SuperMarioGame = () => {
                 if (--f.life <= 0) f.dead = true
                 for (const e of enemies) {
                     if (!e.alive || e.flip || e.squash) continue
-                    if (overlap(f, e)) { e.flip = true; e.vy = -6; addScore(200, e.x, e.y - 8, '200'); spark(e.x + e.w / 2, e.y + e.h / 2, ['#fff0a0', '#ff8000', '#ff2000'], 9, 2.2); audioController.playNoise(0.1, 0.18); f.dead = true }
+                    if (overlap(f, e)) { e.flip = true; e.vy = -6; addScore(200, e.x, e.y - 8, '200'); if (mode === 'evolve') evoBonus += 40; spark(e.x + e.w / 2, e.y + e.h / 2, ['#fff0a0', '#ff8000', '#ff2000'], 9, 2.2); audioController.playNoise(0.1, 0.18); f.dead = true }
                 }
             }
             fireballs = fireballs.filter(f => !f.dead)
@@ -940,7 +1014,7 @@ const SuperMarioGame = () => {
                         if (stomping) {
                             e.squash = 24; e.vx = 0
                             mario.vy = keys.jump ? -6.5 : -4.5
-                            addScore(100, e.x, e.y - 8, '100')
+                            addScore(100, e.x, e.y - 8, '100'); if (mode === 'evolve') evoBonus += 40
                             audioController.playTone(220, 0.08, 'square', 0.14)
                         } else hurt()
                     } else if (!e.shell) {
@@ -948,14 +1022,14 @@ const SuperMarioGame = () => {
                         if (stomping) {
                             e.shell = true; e.still = true; e.vx = 0; e.h = 14; e.y += 10
                             mario.vy = keys.jump ? -6.5 : -4.5
-                            addScore(100, e.x, e.y - 8, '100')
+                            addScore(100, e.x, e.y - 8, '100'); if (mode === 'evolve') evoBonus += 40
                             audioController.playTone(330, 0.08, 'square', 0.14)
                         } else hurt()
                     } else if (stomping) {
                         // land on a shell -> kick it
                         e.still = false; e.vx = kickDir; e.grace = 14
                         mario.vy = keys.jump ? -6.5 : -4.5
-                        addScore(400, e.x, e.y - 8, '400')
+                        addScore(400, e.x, e.y - 8, '400'); if (mode === 'evolve') evoBonus += 40
                         audioController.playTone(500, 0.08, 'square', 0.14)
                     } else if (!e.still) {
                         // ran into a sliding shell
@@ -963,7 +1037,7 @@ const SuperMarioGame = () => {
                     } else {
                         // bump a stationary shell -> send it sliding
                         e.still = false; e.vx = kickDir; e.grace = 14
-                        addScore(400, e.x, e.y - 8, '400')
+                        addScore(400, e.x, e.y - 8, '400'); if (mode === 'evolve') evoBonus += 40
                         audioController.playTone(500, 0.08, 'square', 0.14)
                     }
                 }
@@ -975,7 +1049,7 @@ const SuperMarioGame = () => {
                 for (const o of enemies) {
                     if (o === s || !o.alive || o.flip || o.squash || o.shell) continue
                     if (overlap(s, o)) {
-                        o.flip = true; o.vy = -6; addScore(200, o.x, o.y - 8, '200')
+                        o.flip = true; o.vy = -6; addScore(200, o.x, o.y - 8, '200'); if (mode === 'evolve') evoBonus += 40
                         audioController.playNoise(0.1, 0.18)
                     }
                 }
@@ -1473,14 +1547,22 @@ const SuperMarioGame = () => {
 
             // evolution HUD
             if (mode === 'evolve') {
-                ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, VIEW_W, 13)
-                ctx.textAlign = 'left'; ctx.fillStyle = C.coin; ctx.font = 'bold 8px monospace'
-                ctx.fillText('EVOLVE  GEN ' + gen + '  BEST ' + Math.round(bestEverFit) + '  [' + (epIndex + 1) + '/' + POP + ']  COL ' + maxCol, 4, 9)
+                ctx.fillStyle = 'rgba(0,0,0,0.68)'; ctx.fillRect(0, 0, VIEW_W, 15)
+                ctx.textAlign = 'left'; ctx.fillStyle = C.coin; ctx.font = 'bold 7px monospace'
+                ctx.fillText('GEN ' + gen, 4, 10)
+                ctx.fillText('BEST ' + Math.round(bestEverFit), 36, 10)
+                const tx = 92, tw = 108, cols = level.cols || 1
+                ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fillRect(tx, 6, tw, 5)
+                ctx.fillStyle = C.coin; ctx.fillRect(tx, 6, Math.min(tw, tw * maxCol / cols), 5)
+                const bx = tx + Math.min(tw, tw * bestCol / cols)
+                ctx.fillStyle = '#ff5a5a'; ctx.fillRect(bx - 1, 3, 2, 11)
+                ctx.textAlign = 'right'; ctx.fillStyle = evoShowcase ? '#7ff07f' : 'rgba(255,255,255,0.7)'
+                ctx.fillText(evoShowcase ? '▶ SHOWCASE' : '»»' + (epIndex + 1) + '/' + POP, VIEW_W - 4, 10)
                 if (evoBanner > 0) {
                     evoBanner--
                     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, VIEW_H / 2 - 14, VIEW_W, 28)
-                    ctx.textAlign = 'center'; ctx.fillStyle = C.coin; ctx.font = 'bold 16px monospace'
-                    ctx.fillText('GENERATION ' + gen, VIEW_W / 2, VIEW_H / 2 + 5)
+                    ctx.textAlign = 'center'; ctx.fillStyle = evoShowcase ? '#7ff07f' : C.coin; ctx.font = 'bold 15px monospace'
+                    ctx.fillText(evoShowcase ? '★ NEW RECORD' : 'GENERATION ' + gen, VIEW_W / 2, VIEW_H / 2 + 5)
                 }
             }
 
@@ -1546,9 +1628,20 @@ const SuperMarioGame = () => {
             const frame = Math.min(ts - lastTime, 100)
             lastTime = ts
             if (!pausedRef.current) {
-                if (mode === 'evolve' && (state === 'dying' || state === 'win' || state === 'gameover' || epSteps > EP_CAP)) {
-                    endEpisode()
+                if (mode === 'evolve') {
+                    const over = () => state === 'dying' || state === 'win' || state === 'gameover' || epSteps > EP_CAP
+                    if (over()) {
+                        endEpisode()
+                    } else {
+                        // fast montage is silent; record showcases play at normal speed with sound
+                        const wantMute = !evoShowcase
+                        if (wantMute && !audioController.muted) { audioController.setMuted(true); evoMuted = true }
+                        else if (!wantMute && evoMuted) { audioController.setMuted(false); evoMuted = false }
+                        const steps = evoShowcase ? 1 : TURBO
+                        for (let s = 0; s < steps; s++) { evolveDrive(); update(); if (over()) break }
+                    }
                 } else {
+                    if (evoMuted) { audioController.setMuted(false); evoMuted = false }
                     accumulator += frame
                     while (accumulator >= FIXED_DT) { update(); accumulator -= FIXED_DT }
                 }
@@ -1574,7 +1667,21 @@ const SuperMarioGame = () => {
                 autoplay: () => startAutopilot(),
                 evolve: () => startEvolve(),
                 evoTrain: (g) => evoTrain(g || 5),
-                evoState: () => ({ mode, gen, bestFit: Math.round(bestEverFit), epIndex, maxCol, pop: pop.length }),
+                evoBest: () => bestEverWeights ? Array.from(bestEverWeights) : null,
+                evoProbe: (w) => {
+                    const savePop = pop, saveGenome = genome
+                    const g = w ? Float64Array.from(w) : randWeights()
+                    pop = [g]; genome = g
+                    maxCol = 0; epSteps = 0; evoBonus = 0; evoJumpHold = 0; evoH = new Float64Array(NH)
+                    loadRoom(LEVEL_1, false, undefined, { setIndex: 0 }); state = 'play'
+                    let jumps = 0; const trace = []
+                    while (epSteps < 1500 && state === 'play') { evolveDrive(); if (mario.jumpPressed && mario.onGround) jumps++; update(); if (epSteps % 12 === 0 && epSteps > 120) trace.push([Math.round(mario.x / TILE), Math.round(mario.y), Math.round(mario.vy), mario.onGround ? 1 : 0]) }
+                    const r = { maxCol, epSteps, state, jumps, trace: trace.slice(-24) }
+                    pop = savePop; genome = saveGenome
+                    return r
+                },
+                evoReset: () => resetEvolve(),
+                evoState: () => ({ mode, gen, bestFit: Math.round(bestEverFit), bestCol, col: maxCol, epIndex, showcase: evoShowcase, pop: pop.length, NI, NH, NO, WLEN }),
                 teleport: (col) => { if (!mario) return; mario.x = col * TILE; cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.42, level.cols * TILE - VIEW_W)) },
                 setPower: (p) => {
                     if (!mario) return
