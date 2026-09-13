@@ -132,7 +132,8 @@ const LEVEL_1 = buildLevel({
         { type: 'goomba', c: 110 }, { type: 'goomba', c: 124 }, { type: 'goomba', c: 125 },
         { type: 'koopa', c: 134 },
     ],
-    decor: { clouds: [8, 19, 27, 35, 44, 55, 67, 75, 83, 95, 108, 120, 133, 148], bushes: [3, 12, 23, 41, 60, 74, 92, 110, 130, 150] },
+    decor: { clouds: [8, 19, 27, 35, 44, 55, 67, 75, 83, 95, 108, 120, 133, 148], bushes: [3, 12, 23, 41, 60, 74, 92, 110, 130, 150],
+        hills: [[1, 1], [15, 0], [24, 1], [40, 0], [52, 1], [70, 0], [82, 1], [100, 0], [118, 1], [138, 0], [150, 1], [168, 0]] },
 })
 
 // World 1-2 (underground)
@@ -227,6 +228,7 @@ const SuperMarioGame = () => {
         let tick = 0
         let transitionTimer = 0
         let cameraX = 0
+        let introTimer = 0
 
         let mario = null
         let enemies = []
@@ -266,7 +268,8 @@ const SuperMarioGame = () => {
             particles = []
             popups = []
             fireCooldown = 0
-            state = 'play'
+            state = 'intro'
+            introTimer = 110
         }
 
         const resetGame = () => {
@@ -467,6 +470,8 @@ const SuperMarioGame = () => {
             tick++
             if (state === 'attract' || state === 'gameover' || state === 'win') return
 
+            if (state === 'intro') { if (--introTimer <= 0) state = 'play'; return }
+
             if (state === 'dying') {
                 mario.vy = Math.min(mario.vy + 0.4, 10)
                 mario.y += mario.vy
@@ -524,6 +529,13 @@ const SuperMarioGame = () => {
             if (mario.x < 0) mario.x = 0
 
             if (Math.abs(mario.vx) > 0.3 && mario.onGround) mario.anim += Math.abs(mario.vx)
+
+            // skid when input opposes motion on the ground
+            mario.skid = mario.onGround && Math.abs(mario.vx) > 1.2 &&
+                ((keys.left && mario.vx > 0) || (keys.right && mario.vx < 0))
+            if (mario.skid && tick % 4 === 0) {
+                particles.push({ x: mario.x + mario.w / 2, y: mario.y + mario.h - 3, vx: -mario.facing * 0.6, vy: -0.4, life: 14, color: '#e8d8b0' })
+            }
 
             if (mario.invuln > 0) mario.invuln--
 
@@ -741,6 +753,23 @@ const SuperMarioGame = () => {
             ctx.fillRect(x + 8, y + 2, 6, 4); ctx.fillRect(x + 20, y + 2, 6, 4)
         }
 
+        const drawHill = (x, big) => {
+            const g = 13 * TILE
+            ctx.fillStyle = big ? '#00a800' : '#2fbf2f'
+            if (big) {
+                ctx.fillRect(x, g - 16, 64, 16)
+                ctx.fillRect(x + 8, g - 32, 48, 16)
+                ctx.fillRect(x + 20, g - 44, 24, 12)
+                ctx.fillStyle = '#007000'
+                ctx.fillRect(x + 22, g - 26, 4, 4); ctx.fillRect(x + 38, g - 26, 4, 4)
+            } else {
+                ctx.fillRect(x, g - 12, 32, 12)
+                ctx.fillRect(x + 8, g - 22, 16, 10)
+                ctx.fillStyle = '#1f9f1f'
+                ctx.fillRect(x + 12, g - 18, 3, 3); ctx.fillRect(x + 20, g - 18, 3, 3)
+            }
+        }
+
         const drawFlag = () => {
             const fx = level.flagCol * TILE + 8
             ctx.fillStyle = '#d8d8d8'; ctx.fillRect(fx, 3 * TILE, 2, 10 * TILE)
@@ -772,7 +801,8 @@ const SuperMarioGame = () => {
             if (mario.invuln > 0 && Math.floor(tick / 3) % 2 === 0) return
             const { x, y, w, big, facing } = mario
             const run = Math.abs(mario.vx) > 0.4 && mario.onGround
-            const frame = run ? Math.floor(mario.anim / 6) % 3 : 0
+            const skid = !!mario.skid
+            const frame = skid ? 3 : (run ? Math.floor(mario.anim / 6) % 3 : 0)
             const jumping = !mario.onGround
             ctx.save()
             ctx.translate(px(x + w / 2), px(y))
@@ -793,17 +823,21 @@ const SuperMarioGame = () => {
                 ctx.fillStyle = red; ctx.fillRect(1, 10, 12, 8)
                 // overalls
                 ctx.fillStyle = blue; ctx.fillRect(3, 14, 8, 8); ctx.fillRect(2, 12, 3, 4); ctx.fillRect(9, 12, 3, 4)
-                // arms
-                ctx.fillStyle = skin; ctx.fillRect(0, 12, 2, 6); ctx.fillRect(12, 12, 2, 6)
+                // arms (raise front arm when jumping)
+                ctx.fillStyle = skin
+                if (jumping) { ctx.fillRect(0, 12, 2, 5); ctx.fillRect(12, 5, 3, 5) }
+                else { ctx.fillRect(0, 12, 2, 6); ctx.fillRect(12, 12, 2, 6) }
                 // legs
                 ctx.fillStyle = blue
                 if (jumping) { ctx.fillRect(1, 20, 5, 4); ctx.fillRect(8, 20, 5, 4) }
+                else if (frame === 3) { ctx.fillRect(1, 22, 6, 4); ctx.fillRect(9, 20, 4, 4) }
                 else if (frame === 1) { ctx.fillRect(2, 22, 5, 4); ctx.fillRect(7, 20, 5, 4) }
                 else if (frame === 2) { ctx.fillRect(1, 20, 5, 4); ctx.fillRect(8, 22, 5, 4) }
                 else { ctx.fillRect(3, 22, 4, 4); ctx.fillRect(7, 22, 4, 4) }
                 // shoes
                 ctx.fillStyle = shoe
                 if (jumping) { ctx.fillRect(0, 24, 6, 3); ctx.fillRect(8, 24, 6, 3) }
+                else if (frame === 3) { ctx.fillRect(0, 25, 7, 3); ctx.fillRect(9, 23, 5, 3) }
                 else if (frame === 1) { ctx.fillRect(1, 25, 7, 3); ctx.fillRect(7, 23, 6, 3) }
                 else if (frame === 2) { ctx.fillRect(0, 23, 6, 3); ctx.fillRect(8, 25, 7, 3) }
                 else { ctx.fillRect(2, 25, 5, 3); ctx.fillRect(7, 25, 5, 3) }
@@ -814,9 +848,12 @@ const SuperMarioGame = () => {
                 ctx.fillStyle = C.black; ctx.fillRect(6, 5, 1, 1) // eye
                 ctx.fillStyle = red; ctx.fillRect(1, 8, 9, 4) // shirt
                 ctx.fillStyle = blue; ctx.fillRect(2, 11, 7, 3) // shorts
-                ctx.fillStyle = skin; ctx.fillRect(0, 9, 1, 3); ctx.fillRect(10, 9, 1, 3) // arms
+                ctx.fillStyle = skin
+                if (jumping) { ctx.fillRect(0, 9, 1, 3); ctx.fillRect(10, 6, 2, 3) } // front arm up
+                else { ctx.fillRect(0, 9, 1, 3); ctx.fillRect(10, 9, 1, 3) } // arms
                 ctx.fillStyle = shoe
                 if (jumping) { ctx.fillRect(1, 14, 4, 2); ctx.fillRect(7, 14, 4, 2) }
+                else if (frame === 3) { ctx.fillRect(0, 14, 5, 2); ctx.fillRect(8, 13, 4, 2) } // skid
                 else if (frame === 1) { ctx.fillRect(0, 14, 5, 2); ctx.fillRect(8, 13, 4, 2) }
                 else if (frame === 2) { ctx.fillRect(2, 13, 4, 2); ctx.fillRect(7, 14, 5, 2) }
                 else { ctx.fillRect(2, 14, 3, 2); ctx.fillRect(7, 14, 3, 2) }
@@ -947,13 +984,32 @@ const SuperMarioGame = () => {
         }
 
         const draw = () => {
+            const scale = Math.min(viewWidth / VIEW_W, viewHeight / VIEW_H)
+            const ox = Math.floor((viewWidth - VIEW_W * scale) / 2)
+            const oy = Math.floor((viewHeight - VIEW_H * scale) / 2)
+
+            // Level intro card (authentic black "WORLD x-x" transition)
+            if (state === 'intro') {
+                ctx.fillStyle = C.black; ctx.fillRect(0, 0, viewWidth, viewHeight)
+                ctx.save(); ctx.translate(ox, oy); ctx.scale(scale, scale)
+                ctx.beginPath(); ctx.rect(0, 0, VIEW_W, VIEW_H); ctx.clip()
+                ctx.textAlign = 'center'
+                ctx.fillStyle = C.white; ctx.font = 'bold 16px monospace'
+                ctx.fillText('WORLD ' + level.id, VIEW_W * 0.40, VIEW_H / 2 + 6)
+                const hx = VIEW_W * 0.60, hy = VIEW_H / 2 - 9
+                ctx.fillStyle = C.marioRed; ctx.fillRect(hx, hy, 16, 4); ctx.fillRect(hx + 2, hy + 3, 12, 2)
+                ctx.fillStyle = C.marioSkin; ctx.fillRect(hx + 2, hy + 5, 12, 9)
+                ctx.fillStyle = C.black; ctx.fillRect(hx + 10, hy + 7, 2, 2)
+                ctx.fillStyle = C.white; ctx.textAlign = 'left'; ctx.font = 'bold 15px monospace'
+                ctx.fillText('x ' + lives, hx + 22, hy + 11)
+                ctx.restore()
+                return
+            }
+
             // sky
             ctx.fillStyle = level.bg === 'under' ? C.skyUnder : C.sky
             ctx.fillRect(0, 0, viewWidth, viewHeight)
 
-            const scale = Math.min(viewWidth / VIEW_W, viewHeight / VIEW_H)
-            const ox = Math.floor((viewWidth - VIEW_W * scale) / 2)
-            const oy = Math.floor((viewHeight - VIEW_H * scale) / 2)
             ctx.save()
             ctx.translate(ox, oy)
             ctx.scale(scale, scale)
@@ -961,9 +1017,10 @@ const SuperMarioGame = () => {
 
             const cam = Math.floor(cameraX)
 
-            // decor (behind tiles)
+            // parallax decor (behind tiles): hills + clouds scroll slower than the ground
             if (level.decor) {
-                for (const c of level.decor.clouds) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawCloud(sx, 24) }
+                if (level.decor.hills) level.decor.hills.forEach(([c, big]) => { const sx = c * TILE - cam * 0.6; if (sx > -96 && sx < VIEW_W) drawHill(sx, big) })
+                if (level.decor.clouds) level.decor.clouds.forEach((c, i) => { const sx = c * TILE - cam * 0.4; const cy = 16 + (i % 3) * 12; if (sx > -48 && sx < VIEW_W) drawCloud(sx, cy) })
                 for (const c of level.decor.bushes) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawBush(sx, 12 * TILE) }
             }
             if (level.flagCol) { const sx = level.flagCol * TILE - cam; if (sx > -20 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawFlag(); ctx.restore() } }
