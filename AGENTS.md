@@ -133,26 +133,30 @@ npm run evoprobe -- --preset pitwide-run --trace
   `--no-start` skips the initial keypress, so attract/menu shots are possible.
 
 ### CI
-There is **no CI yet** — the `gh` token on the dev machine has scopes
-`gist, read:org, repo` and GitHub refuses to push `.github/workflows/*` without the
-`workflow` scope. Unblock with:
+`.github/workflows/ci.yml` has two jobs:
+
+| Job | Trigger | What it does |
+|-----|---------|--------------|
+| `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `build`. No browser, fast, this is the gate. |
+| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + evocheck), uploads `scripts/.shots/` as an artifact, dumps the vite log on failure. |
 
 ```bash
-gh auth refresh -s workflow     # gh >=2.40: 'auth refresh', NOT 'auth refresh-scopes'
-gh auth status                  # scopes should now include 'workflow'
+gh pr checks --watch                      # the static gate on your PR
+gh workflow run ci.yml --ref <branch>     # opt into the browser suite
+gh run download <run-id> -n mario-frames  # grab the captured frames
 ```
 
-It prints a one-time device code and opens https://github.com/login/device — enter the code
-in a browser signed in as `jalfern`. The scope is additive (keeps `repo`, `read:org`, `gist`)
-and reversible with `gh auth refresh --remove-scopes workflow`.
-
-Then `git add .github && git push` lands `.github/workflows/ci.yml`, which runs
-`lint:mario` + `build` on every PR and exposes the browser suite as a manual
-`workflow_dispatch` job. Until then the gate is local: `npm run lint:mario && npm run build`
-before you push, plus `npm run verify` with the dev server up.
+The browser suite is manual on purpose: headless audio on a shared runner is the flaky
+part. Promote it to `pull_request` once it has been green a handful of times.
 
 Repo-wide `npm run lint` is deliberately *not* a gate: ~740 pre-existing errors in the
 DOS/IF adapters would make it permanently red. Widen `lint:mario` as those get fixed.
+
+> **New machine / CI bot:** pushing `.github/workflows/*` needs the `workflow` OAuth
+> scope, which GitHub hard-blocks otherwise. Check with `gh auth status`; add it with
+> `gh auth refresh -s workflow` (gh ≥2.40 — it was renamed from `auth refresh-scopes`),
+> then enter the device code at github.com/login/device. Additive and reversible via
+> `--remove-scopes`.
 
 ## Super Mario
 
