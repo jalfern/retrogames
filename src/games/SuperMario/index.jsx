@@ -91,7 +91,7 @@ function buildLevel(def) {
 
 // World 1-1 (overworld)
 const LEVEL_1 = buildLevel({
-    id: '1-1', cols: 212, bg: 'sky', flagCol: 174, castleCol: 180, warpCol: 57,
+    id: '1-1', cols: 212, bg: 'sky', flagCol: 174, castleCol: 180, warpCol: 57, downCol: 140,
     flowerCols: [16], shroomCols: [21, 22],
     build(a) {
         a.ground(0, 211)
@@ -112,7 +112,7 @@ const LEVEL_1 = buildLevel({
         a.set(94, 9, BRICK); a.set(95, 9, QUESTION); a.set(96, 9, BRICK)
         a.pipe(101, 4)
         a.row(109, 113, 5, BRICK); a.set(111, 5, QUESTION)
-        a.pipe(118, 2); a.pipe(129, 3)
+        a.pipe(118, 2); a.pipe(129, 3); a.pipe(140, 3)
         a.set(130, 9, BRICK); a.set(131, 9, QUESTION); a.set(132, 9, BRICK)
         a.set(168, 9, QUESTION); a.set(169, 9, BRICK)
         // final staircase
@@ -138,7 +138,7 @@ const LEVEL_1 = buildLevel({
 
 // World 1-2 (underground)
 const LEVEL_2 = buildLevel({
-    id: '1-2', cols: 176, bg: 'under', exitCol: 168,
+    id: '1-2', cols: 176, bg: 'under', exitCol: 168, detour: true,
     shroomCols: [18, 104], flowerCols: [66],
     build(a) {
         a.ground(0, 175)
@@ -201,7 +201,9 @@ const BONUS = buildLevel({
     decor: { torches: [3, 10, 17, 22] },
 })
 
-const LEVELS = [LEVEL_1, LEVEL_2]
+// Linear progression is just 1-1; LEVEL_2 (underground) and BONUS are
+// pipe-reached detour rooms that warp you back into 1-1.
+const LEVELS = [LEVEL_1]
 
 const SuperMarioGame = () => {
     const canvasRef = useRef(null)
@@ -254,7 +256,9 @@ const SuperMarioGame = () => {
         let flagT = 0
         let warpT = 0
         let warpDir = 'in'   // 'in' descending into pipe | 'out' returning
-        let returnX = 0
+        let warpDest = null        // room to load after descending
+        let warpReturnDef = null   // room to return to after the detour
+        let warpReturnCol = 0
 
         let mario = null
         let enemies = []
@@ -302,23 +306,26 @@ const SuperMarioGame = () => {
 
         const loadLevel = (idx, keepPower) => loadRoom(LEVELS[idx], keepPower, undefined, { setIndex: idx })
 
-        // ---- warp pipe <-> bonus room ----
-        const enterBonus = () => {
+        // ---- warp pipes <-> detour rooms (bonus room, underground) ----
+        const warpDown = (dest, returnDef, returnCol) => {
             state = 'warp'; warpDir = 'in'; warpT = 0
             mario.vx = 0
-            returnX = (level.warpCol + 3) * TILE
+            warpDest = dest; warpReturnDef = returnDef; warpReturnCol = returnCol
             audioController.stopMusic()
             audioController.playSweep(600, 120, 0.5, 'square', 0.16)  // descend
         }
-        const exitBonus = () => {
-            loadRoom(LEVEL_1, true, returnX, { state: 'warp', setIndex: 0 })
+        const warpUp = () => {
+            const idx = LEVELS.indexOf(warpReturnDef)
+            loadRoom(warpReturnDef, true, warpReturnCol * TILE, { state: 'warp', setIndex: idx >= 0 ? idx : levelIndex })
             mario.y = VIEW_H + 20
             warpDir = 'out'; warpT = 0
             audioController.stopMusic()
             audioController.playSweep(120, 600, 0.5, 'square', 0.16)  // rise
         }
+        const enterBonus = () => warpDown(BONUS, LEVEL_1, (level.warpCol + 3))
+        const enterUnder = () => warpDown(LEVEL_2, LEVEL_1, 158)
         const completeLevel = () => {
-            if (level.bonus) exitBonus()
+            if (level.bonus || level.detour) warpUp()
             else levelClear()
         }
 
@@ -570,7 +577,7 @@ const SuperMarioGame = () => {
                 cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.5, level.cols * TILE - VIEW_W))
                 if (warpDir === 'in') {
                     mario.y += 4
-                    if (warpT >= 34) { loadRoom(BONUS, true, 40, { state: 'play' }); audioController.startMusic('underground') }
+                    if (warpT >= 34) { loadRoom(warpDest, true, 40, { state: 'play' }); audioController.startMusic(warpDest.bg === 'under' ? 'underground' : 'overworld') }
                 } else {
                     const baseY = (13 * TILE) - mario.h
                     mario.y -= 4
@@ -585,7 +592,7 @@ const SuperMarioGame = () => {
                 transitionTimer--
                 if (transitionTimer <= 0) {
                     lives--
-                    if (lives > 0) loadLevel(levelIndex, false)
+                    if (lives > 0) loadRoom(level, false, undefined, { setIndex: levelIndex })
                     else { state = 'gameover'; audioController.stopMusic() }
                 }
                 return
@@ -779,11 +786,16 @@ const SuperMarioGame = () => {
                 enterBonus()
                 return
             }
+            if (level.downCol && mario.onGround && keys.down &&
+                Math.abs((mario.x + mario.w / 2) - (level.downCol * TILE + TILE)) < 18) {
+                enterUnder()
+                return
+            }
             if (level.flagCol && mario.x + mario.w >= level.flagCol * TILE) {
                 startFlag()
                 return
             }
-            if (level.exitCol && mario.x + mario.w >= level.exitCol * TILE && mario.onGround) {
+            if (level.exitCol && mario.onGround && mario.x + mario.w >= (level.exitCol - 1) * TILE) {
                 completeLevel()
             }
 
@@ -845,9 +857,10 @@ const SuperMarioGame = () => {
                 ctx.fillStyle = P.solidDark; ctx.fillRect(x, y + TILE - 2, TILE, 2); ctx.fillRect(x + TILE - 2, y, 2, TILE)
             } else if (t === PIPE) {
                 const isWarp = level.warpCol && (c === level.warpCol || c === level.warpCol + 1)
-                const pc = isWarp ? '#e0a000' : P.pipe
-                const pl = isWarp ? '#ffe888' : P.pipeLight
-                const pd = isWarp ? '#8a5a00' : P.pipeDark
+                const isUnder = level.downCol && (c === level.downCol || c === level.downCol + 1)
+                const pc = isWarp ? '#e0a000' : isUnder ? '#5030c0' : P.pipe
+                const pl = isWarp ? '#ffe888' : isUnder ? '#b89cff' : P.pipeLight
+                const pd = isWarp ? '#8a5a00' : isUnder ? '#2a1870' : P.pipeDark
                 const up = level.grid[r - 1] && level.grid[r - 1][c] === PIPE
                 const rightIsPipe = level.grid[r][c + 1] === PIPE
                 if (!up) {
@@ -1182,6 +1195,15 @@ const SuperMarioGame = () => {
                     ctx.beginPath(); ctx.moveTo(sx - 5, ay); ctx.lineTo(sx + 5, ay); ctx.lineTo(sx, ay + 8); ctx.closePath(); ctx.fill()
                 }
             }
+            // underground pipe hint (bobbing down-arrow above the purple pipe)
+            if (level.downCol && (state === 'play' || state === 'intro')) {
+                const sx = level.downCol * TILE + TILE - cam
+                if (sx > -20 && sx < VIEW_W + 40) {
+                    const ay = 10 * TILE - 15 + Math.sin(tick * 0.12) * 3
+                    ctx.fillStyle = '#c9b3ff'
+                    ctx.beginPath(); ctx.moveTo(sx - 5, ay); ctx.lineTo(sx + 5, ay); ctx.lineTo(sx, ay + 8); ctx.closePath(); ctx.fill()
+                }
+            }
 
             // tiles
             const c0 = Math.floor(cam / TILE)
@@ -1310,10 +1332,11 @@ const SuperMarioGame = () => {
                 powerUp: () => { fireUp() },
                 startFlag: () => { if (state === 'intro') { state = 'play' } startFlag() },
                 clearLevel: () => { if (state === 'intro') state = 'play'; levelClear() },
-                gotoLevel: (i) => { loadLevel(i, true) },
+                gotoLevel: (i) => { if (LEVELS[i]) loadLevel(i, true) },
                 enterBonus: () => { if (state === 'intro') state = 'play'; enterBonus() },
-                exitBonus: () => { exitBonus() },
-                isBonus: () => !!(level && level.bonus),
+                enterUnder: () => { if (state === 'intro') state = 'play'; enterUnder() },
+                warpUp: () => { warpUp() },
+                isDetour: () => !!(level && (level.bonus || level.detour)),
                 musicState: () => audioController._musicState(),
                 musicPeak: () => audioController._peak(),
             }
