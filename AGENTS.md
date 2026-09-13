@@ -93,7 +93,7 @@ open https://jalfern.com/retrogames/<game>
 ## Super Mario — DEV test hooks
 `src/games/SuperMario/index.jsx` exposes `window.__marioTest` (only under `import.meta.env.DEV`):
 `start() getState() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
-startFlag() clearLevel() gotoLevel(i) enterBonus() exitBonus() isBonus() musicState() musicPeak()`.
+startFlag() clearLevel() gotoLevel(i) enterBonus() enterUnder() warpUp() isDetour() musicState() musicPeak()`.
 Use these with the screenshot harness (`~/Dev/tools/shot/shot.mjs`, system Chrome via
 playwright-core) to drive the game deterministically.
 
