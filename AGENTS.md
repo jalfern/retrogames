@@ -124,13 +124,23 @@ The **original** is the pristine `v1-one-shot` engine vendored as `src/games/Sup
 (route `/mario-classic`, `hidden: true` so it's off the arcade grid, reached only via the menu).
 Its `?` returns to the menu (`/mario?menu=1`). Option 3 **autopilot** (`mode==='autopilot'`)
 drives a rule-based controller (`autopilot()` in the engine) that clears 1-1 perfectly at
-normal speed (jumps pits/pipes, hops/burns Goombas). Option 4 (neuroevolution) lands next.
-The autopilot is deterministic — it wins 1-1 with all lives.
+normal speed (jumps pits/pipes, hops/burns Goombas). The autopilot is deterministic — it wins
+1-1 with all lives. Option 4 **evolve** (`mode==='evolve'`) runs a genuine **neuroevolution**
+GA live: a 14→8→5 tanh MLP (`evolveDrive`/`evoSense`/`forwardNN`) senses terrain, enemies and
+coins and outputs [left,right,run,jump,fire]. Each generation `POP=12` genomes play 1-1 (rendered,
+watchable); fitness is distance-reached + coins + a big flag-win bonus; selection is elitism
+(top 2) + tournament + crossover + gaussian mutation. The best genome persists to
+`localStorage['mario-evo-v1']`, so the AI keeps improving across reloads. The top HUD is swapped
+for an `EVOLVE GEN · BEST · [i/POP] · COL` status bar. Verified to learn: `evoTrain(12)` lifts
+best fitness ~116→~300 in one headless run.
 
 ## Super Mario — DEV test hooks
 `src/games/SuperMario/index.jsx` exposes `window.__marioTest` (only under `import.meta.env.DEV`):
-`start() getState() openMenu() choose(i) autoplay() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
+`start() getState() openMenu() choose(i) autoplay() evolve() evoTrain(gens) evoState() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
 startFlag() clearLevel() gotoLevel(i) enterBonus() enterUnder() warpUp() isDetour() musicState() musicPeak()`.
+`evolve()` starts the live GA; `evoTrain(gens)` fast-forwards `gens` generations headlessly
+(returns best-fitness-per-gen history — used to verify learning without watching in real time);
+`evoState()` returns `{ mode, gen, bestFit, epIndex, maxCol, pop }`.
 Use these with the **vendored** screenshot harness (`scripts/shot.mjs`, run via
 `npm run shot`) to drive the game deterministically — see *Self-verifying* above.
 

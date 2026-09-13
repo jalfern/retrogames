@@ -369,7 +369,6 @@ const SuperMarioGame = () => {
         let soonFlash = 0
         const startPlay = (m) => { mode = m; audioController.init(); resetGame() }
         const startAutopilot = () => { apHold = 0; mode = 'autopilot'; audioController.init(); resetGame() }
-        const startEvolve = () => { soonFlash = 100 }      // enabled in a later iteration
         const chooseOption = (i) => {
             menuSel = i
             if (i === 0) startPlay('play')
@@ -507,6 +506,119 @@ const SuperMarioGame = () => {
             if (wantJump && m.onGround && apHold <= 0) { m.jumpPressed = true; keys.jump = true; apHold = 16 }
             else if (apHold > 0) { keys.jump = true; apHold-- }
             else keys.jump = false
+        }
+
+        // ---- neuroevolution (option 4): a tiny NN controller + genetic algorithm ----
+        const NI = 14, NH = 8, NO = 5           // inputs, hidden, outputs [left,right,run,jump,fire]
+        const WLEN = NI * NH + NH + NH * NO + NO
+        const POP = 12
+        const EP_CAP = 1600                       // max frames per episode (~27s)
+        const EVO_KEY = 'mario-evo-v1'
+        let pop = [], fitArr = new Array(POP).fill(0)
+        let genome = null, gen = 1, epIndex = 0, maxCol = 0, epSteps = 0, evoJumpHold = 0
+        let bestEverFit = 0, bestEverWeights = null, evoBanner = 0
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+        const randWeights = () => { const w = new Float64Array(WLEN); for (let i = 0; i < WLEN; i++) w[i] = (Math.random() * 2 - 1) * 0.9; return w }
+        const crossover = (a, b) => { const c = new Float64Array(WLEN); for (let i = 0; i < WLEN; i++) c[i] = Math.random() < 0.5 ? a[i] : b[i]; return c }
+        const mutate = (w) => { for (let i = 0; i < WLEN; i++) if (Math.random() < 0.18) w[i] += (Math.random() * 2 - 1) * 0.5; return w }
+        const forwardNN = (w, inp) => {
+            const hid = new Float64Array(NH)
+            for (let i = 0; i < NH; i++) { let s = w[NI * NH + i]; for (let j = 0; j < NI; j++) s += w[i * NI + j] * inp[j]; hid[i] = Math.tanh(s) }
+            const out = new Float64Array(NO); const ob = NI * NH + NH + NH * NO
+            for (let k = 0; k < NO; k++) { let s = w[ob + k]; for (let i = 0; i < NH; i++) s += w[NI * NH + NH + k * NH + i] * hid[i]; out[k] = Math.tanh(s) }
+            return out
+        }
+        const evoSense = () => {
+            const m = mario, inA = new Float64Array(NI)
+            const fc = Math.floor((m.x + m.w) / TILE), fr = Math.floor((m.y + m.h) / TILE)
+            inA[0] = m.onGround ? 1 : 0
+            inA[1] = clamp(m.vy / MAX_FALL, -1, 1)
+            inA[2] = clamp(m.vx / RUN_MAX, -1, 1)
+            inA[3] = m.power === 'fire' ? 1 : m.power === 'big' ? 0.5 : 0
+            inA[4] = groundAt(fc + 1) ? 1 : 0
+            inA[5] = groundAt(fc + 2) ? 1 : 0
+            inA[6] = groundAt(fc + 3) ? 1 : 0
+            inA[7] = (solidAt(fc + 1, fr - 1) || solidAt(fc + 1, fr - 2)) ? 1 : 0
+            inA[8] = (solidAt(fc + 2, fr - 1) || solidAt(fc + 2, fr - 2)) ? 1 : 0
+            let ex = 1e9, ey = 0, ef = 0
+            for (const e of enemies) { if (!e.alive || e.flip) continue; const dx = e.x - m.x; if (dx > -8 && dx < ex) { ex = dx; ey = (e.y + e.h) - (m.y + m.h); ef = 1 } }
+            inA[9] = ef; inA[10] = ef ? clamp(1 - ex / 160, 0, 1) : 0; inA[11] = ef ? clamp(ey / 80, -1, 1) : 0
+            let cf = 0, cdx = 1e9
+            for (const cc of coinsArr) { if (cc.taken) continue; const dx = cc.x - m.x; if (dx > 0 && dx < cdx) { cdx = dx; cf = 1 } }
+            inA[12] = cf ? clamp(1 - cdx / 160, 0, 1) : 0
+            inA[13] = 1
+            return inA
+        }
+        const evolveDrive = () => {
+            const m = mario
+            const out = forwardNN(genome, evoSense())
+            keys.left = out[0] > 0.3
+            keys.right = out[1] > 0.3 || !keys.left
+            keys.run = out[2] > 0
+            keys.down = false
+            if (out[3] > 0 && m.onGround) { m.jumpPressed = true; keys.jump = true; evoJumpHold = 12 }
+            else if (evoJumpHold > 0) { keys.jump = true; evoJumpHold-- }
+            else keys.jump = false
+            if (out[4] > 0 && m.power === 'fire') firePressed = true
+            maxCol = Math.max(maxCol, Math.round(m.x / TILE))
+            epSteps++
+        }
+        const startEpisode = (i) => {
+            genome = pop[i]; maxCol = 0; epSteps = 0; evoJumpHold = 0
+            resetGame(); state = 'play'
+        }
+        const tournament = () => {
+            let best = Math.floor(Math.random() * POP)
+            for (let k = 0; k < 2; k++) { const c = Math.floor(Math.random() * POP); if (fitArr[c] > fitArr[best]) best = c }
+            return best
+        }
+        const evolveGen = () => {
+            const order = [...Array(POP).keys()].sort((a, b) => fitArr[b] - fitArr[a])
+            const next = [pop[order[0]].slice(), pop[order[1]].slice()]
+            while (next.length < POP) next.push(mutate(crossover(pop[tournament()], pop[tournament()])))
+            pop = next; gen++; epIndex = 0; evoBanner = 130
+            try { localStorage.setItem(EVO_KEY, JSON.stringify({ gen, best: Array.from(bestEverWeights || pop[0]), fit: bestEverFit })) } catch { /* ignore */ }
+        }
+        const endEpisode = () => {
+            const won = state === 'win'
+            const fit = maxCol + (won ? 2000 : 0) + coins * 5
+            fitArr[epIndex] = fit
+            if (fit > bestEverFit) { bestEverFit = fit; bestEverWeights = Array.from(genome) }
+            epIndex++
+            if (epIndex >= POP) evolveGen()
+            startEpisode(epIndex)
+        }
+        const startEvolve = () => {
+            mode = 'evolve'; audioController.init(); audioController.startMusic('overworld')
+            let saved = null
+            try { saved = JSON.parse(localStorage.getItem(EVO_KEY) || 'null') } catch { /* ignore */ }
+            if (saved && Array.isArray(saved.best) && saved.best.length === WLEN) {
+                gen = saved.gen || 1; bestEverFit = saved.fit || 0; bestEverWeights = saved.best.slice()
+                pop = [Float64Array.from(saved.best)]
+                while (pop.length < POP) pop.push(mutate(Float64Array.from(saved.best)))
+            } else {
+                gen = 1; bestEverFit = 0; bestEverWeights = null
+                pop = []; for (let i = 0; i < POP; i++) pop.push(randWeights())
+            }
+            fitArr = new Array(POP).fill(0); epIndex = 0
+            startEpisode(0)
+        }
+        // fast, non-rendered training used only by the DEV hook to verify learning
+        const evoTrain = (gens) => {
+            const hist = []
+            for (let g = 0; g < gens; g++) {
+                for (let i = 0; i < POP; i++) {
+                    genome = pop[i]; maxCol = 0; epSteps = 0
+                    loadRoom(LEVEL_1, false, undefined, { setIndex: 0 }); state = 'play'
+                    while (epSteps < EP_CAP && state === 'play') { evolveDrive(); update() }
+                    const fit = maxCol + (state === 'win' ? 2000 : 0) + coins * 5
+                    fitArr[i] = fit
+                    if (fit > bestEverFit) { bestEverFit = fit; bestEverWeights = Array.from(genome) }
+                }
+                hist.push(Math.round(bestEverFit))
+                evolveGen()
+            }
+            return hist
         }
 
         const spawnPower = (c, r, kind) => {
@@ -699,8 +811,9 @@ const SuperMarioGame = () => {
             timerAcc++
             if (timerAcc >= 24) { timerAcc = 0; timer--; if (timer <= 0) die() }
 
-            // autopilot drives input instead of a human
+            // autopilot / neuroevolution drive input instead of a human
             if (mode === 'autopilot') autopilot()
+            else if (mode === 'evolve') evolveDrive()
 
             // ---- Mario horizontal ----
             const accel = keys.run ? RUN_ACCEL : WALK_ACCEL
@@ -1338,8 +1451,22 @@ const SuperMarioGame = () => {
             ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
             for (const p of popups) { ctx.fillStyle = C.white; ctx.fillText(p.text, px(p.x - cam), px(p.y)) }
 
-            // HUD
-            if (state === 'play' || state === 'levelclear' || state === 'dying' || state === 'flag' || state === 'warp') drawHUD()
+            // HUD (evolve mode swaps the score bar for its own status bar)
+            const showHud = state === 'play' || state === 'levelclear' || state === 'dying' || state === 'flag' || state === 'warp'
+            if (showHud && mode !== 'evolve') drawHUD()
+
+            // evolution HUD
+            if (mode === 'evolve') {
+                ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, VIEW_W, 13)
+                ctx.textAlign = 'left'; ctx.fillStyle = C.coin; ctx.font = 'bold 8px monospace'
+                ctx.fillText('EVOLVE  GEN ' + gen + '  BEST ' + Math.round(bestEverFit) + '  [' + (epIndex + 1) + '/' + POP + ']  COL ' + maxCol, 4, 9)
+                if (evoBanner > 0) {
+                    evoBanner--
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, VIEW_H / 2 - 14, VIEW_W, 28)
+                    ctx.textAlign = 'center'; ctx.fillStyle = C.coin; ctx.font = 'bold 16px monospace'
+                    ctx.fillText('GENERATION ' + gen, VIEW_W / 2, VIEW_H / 2 + 5)
+                }
+            }
 
             // overlays
             if (state === 'attract') {
@@ -1424,8 +1551,12 @@ const SuperMarioGame = () => {
             const frame = Math.min(ts - lastTime, 100)
             lastTime = ts
             if (!pausedRef.current) {
-                accumulator += frame
-                while (accumulator >= FIXED_DT) { update(); accumulator -= FIXED_DT }
+                if (mode === 'evolve' && (state === 'dying' || state === 'win' || state === 'gameover' || epSteps > EP_CAP)) {
+                    endEpisode()
+                } else {
+                    accumulator += frame
+                    while (accumulator >= FIXED_DT) { update(); accumulator -= FIXED_DT }
+                }
                 draw()
             }
             animationFrameId = requestAnimationFrame(loop)
@@ -1446,6 +1577,9 @@ const SuperMarioGame = () => {
                 openMenu: () => { state = 'menu'; menuSel = 0 },
                 choose: (i) => chooseOption(i),
                 autoplay: () => startAutopilot(),
+                evolve: () => startEvolve(),
+                evoTrain: (g) => evoTrain(g || 5),
+                evoState: () => ({ mode, gen, bestFit: Math.round(bestEverFit), epIndex, maxCol, pop: pop.length }),
                 teleport: (col) => { if (!mario) return; mario.x = col * TILE; cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.42, level.cols * TILE - VIEW_W)) },
                 setPower: (p) => {
                     if (!mario) return
