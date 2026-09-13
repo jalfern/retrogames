@@ -8,9 +8,15 @@
     "postinstall": "node patches/fix-ifvms.cjs",
     "build": "vite build",
     "lint": "eslint .",
+    "lint:mario": "eslint src/games/SuperMario src/games/SuperMarioClassic src/components src/utils src/config src/main.jsx scripts",
     "preview": "vite preview",
     "shot": "node scripts/shot.mjs",
-    "audcheck": "node scripts/audcheck.mjs"
+    "audcheck": "node scripts/audcheck.mjs",
+    "mariocheck": "node scripts/mariocheck.mjs",
+    "autopilotcheck": "node scripts/autopilotcheck.mjs",
+    "evocheck": "node scripts/evocheck.mjs",
+    "evoprobe": "node scripts/evoprobe.mjs",
+    "verify": "node scripts/verify.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

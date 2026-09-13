@@ -26,10 +26,12 @@ and `src/App.jsx`). Keep those two in sync if the path ever changes.
 npm install        # runs postinstall -> patches ifvms (see Gotchas)
 npm run dev        # dev server -> http://localhost:5173/retrogames/
 npm run build      # production build -> dist/
-npm run lint       # eslint
+npm run lint       # eslint, whole repo (currently ~740 pre-existing errors in the DOS/IF titles)
+npm run lint:mario # eslint scoped to Mario + shared shell + scripts — this is the gate CI uses
 npm run preview    # preview the production build
 npm run shot -- --out scripts/.shots/x.png --eval "..."   # visual capture (see Self-verifying)
 npm run audcheck   # assert the chiptune engine is producing signal (exits non-zero on fail)
+npm run verify     # the whole Mario self-verifying suite (needs `npm run dev` running)
 ```
 
 ## How the app is structured
@@ -100,74 +102,68 @@ model/machine can reproduce it (it is not an external tool):
 |--------|--------------|
 | `scripts/shot.mjs` | Drives **system Chrome** (via `playwright-core`) to screenshot the dev server and drive the game through `window.__marioTest`. |
 | `scripts/audcheck.mjs` | Starts the game and asserts the chiptune engine steps + produces an `AnalyserNode` signal; exits **non-zero** on failure (CI-friendly). |
+| `scripts/verify.mjs` | Runs the browser suite and summarises; non-zero exit on any failure (`npm run verify [-- --full]`). |
+| `scripts/mariocheck.mjs` | Title/menu/touch regression: lone Shift must not start, `?`/OPTIONS open the menu, keys 1–4, BACK/ESC, gamepad hidden on menus. |
+| `scripts/autopilotcheck.mjs` | Mario option 3 must clear 1-1 with no deaths. |
+| `scripts/evocheck.mjs` | Mario option 4 must learn (cold-start fitness ≥1500 after 60 gens) and its HUD must actually render. |
+| `scripts/evoprobe.mjs` | Per-genome scalpel: one episode with a named/random/evolved controller → `maxCol`, jumps, trace. |
+| `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), `__marioTest` wait, pass/fail `Report`. |
 
 ```bash
 npm install                 # installs playwright-core (no browser download)
 npm run dev                 # in another terminal
 npm run shot -- --out scripts/.shots/fire.png --eval "window.__marioTest.setPower('fire');window.__marioTest.teleport(6)"
 npm run audcheck            # PASS/FAIL on the audio engine
+npm run verify              # the whole browser suite
+npm run evoprobe -- --preset pitwide-run --trace
 ```
 
 - **Prereqs:** Google Chrome installed (harness uses `channel:'chrome'`, no download).
   Override with `--channel chromium` after `npx playwright install chromium`, or set
-  `SHOT_CHANNEL`. Captured PNGs go to `scripts/.shots/` (gitignored).
+  `SHOT_CHANNEL`.
+- **`scripts/.shots/` is for captured images ONLY — never a script.** It used to be
+  gitignored wholesale, which silently swallowed ten driver scripts written during
+  iterations 11–13. The ignore now covers `*.png`/`*.jpg` only, so a stray `.mjs` shows up
+  as untracked instead of vanishing. Harness code is tracked code: put it in `scripts/`
+  and give it an npm alias.
 - **DEV-only:** `window.__marioTest` exists only under `import.meta.env.DEV`, so the harness
   must target the **dev server**, not the production build.
-- Options: `--url --out --eval --steps --w --h --settle --prewait --channel`. `--steps` is a
-  JSON array of `{down|up, wait}` for real keyboard input.
+- Options: `--url --out --eval --steps --w --h --settle --prewait --channel --no-start`.
+  `--steps` is a JSON array of `{down|up, wait}` for real keyboard input.
+  `--no-start` skips the initial keypress, so attract/menu shots are possible.
 
-## Super Mario — Options menu & versions
-The title screen has a tappable **OPTIONS ▸** button (top-right) *and* accepts `?` at the title
-(in-game `?` still pauses). Both open the **OPTIONS menu**, which is rendered as **DOM buttons**
-over the canvas (touch-friendly; also keys 1–4 / arrows+Enter / Esc). A lone modifier (e.g. Shift
-on the way to `?`) is ignored on the attract/end screens so it can't accidentally start the game.
-The engine mirrors its screen into React via `syncUi()` (called each `draw`) → `ui.screen`
-(`attract|menu|end|none`); DOM overlays read it, and imperative actions go through `apiRef.current`
-(`{ openMenu(), choose(i), back() }`). The virtual gamepad (`VirtualControls`) is hidden unless
-`ui.screen === 'none'` (actual play). Options:
-1. Play latest · 2. Play original one-shot · 3. Watch CPU autoplay · 4. Watch CPU learn (evolve).
-The **original** is the pristine `v1-one-shot` engine vendored as `src/games/SuperMarioClassic/`
-(route `/mario-classic`, `hidden: true` so it's off the arcade grid, reached only via the menu).
-Its `?` returns to the menu (`/mario?menu=1`). Option 3 **autopilot** (`mode==='autopilot'`)
-drives a rule-based controller (`autopilot()` in the engine) that clears 1-1 perfectly at
-normal speed (jumps pits/pipes, hops/burns Goombas). The autopilot is deterministic — it wins
-1-1 with all lives. Option 4 **evolve** (`mode==='evolve'`) runs a genuine **neuroevolution** GA
-live: a **recurrent** 21→10→5 tanh MLP (`evolveDrive`/`evoSense`/`forwardNN`) — the 10 hidden
-units feed their previous activations back (`evoH`), giving jump-timing memory. Sensors include
-wide ground/pit lookahead (cols +2/+4/+6/+8), wall height, enemy approach + on-ground-stompability,
-coin/powerup proximity and progress-to-flag. Fitness = distance + coins·10 + stomp/powerup bonuses
-+ end-game milestones (cols 145/160/170) + a big flag-win bonus (no death penalty — that created a
-zero-gradient trap). GA: `POP=24`, 3 elites, tournament+crossover, **annealed** gaussian mutation
-with **immigrant injection** on stagnation. The fresh population is **seeded** with a hand-designed
-"jump-on-obstacle" genome so gen-1 already reaches ~col 123; it evolves to ~col 140+ (a hard late
-pipe-corridor caps reliable clears for this size net). `POP` genomes play 1-1 in **turbo** (12
-headless steps/frame — a fast, silent montage); each new record is then **replayed once at normal
-speed with sound** as a showcase. Best genome persists to `localStorage['mario-evo-v2']` so it keeps
-improving across reloads. The top HUD shows `GEN · BEST`, a **distance progress bar** with a red
-best-ever marker, and a `»»` turbo / `▶ SHOWCASE` tag. Verified: `evoTrain(60)` climbs fitness
-~250→~5500. (Gotcha: `forwardNN` index bases must stay `bi=NI*NH, bh=bi+NH*NH, bo=bh+NH,
-ob=bo+NH*NO` — an off-by-`NH` makes the output bias read out of bounds → `NaN` → the agent can never
-jump and every episode dies identically at the first Goomba.)
+### CI
+There is **no CI yet** — the `gh` token on the dev machine has scopes
+`gist, read:org, repo` and GitHub refuses to push `.github/workflows/*` without the
+`workflow` scope. Unblock with:
 
-## Super Mario — DEV test hooks
-`src/games/SuperMario/index.jsx` exposes `window.__marioTest` (only under `import.meta.env.DEV`):
-`start() getState() openMenu() choose(i) autoplay() evolve() evoTrain(gens) evoProbe(weights?) evoBest() evoReset() evoState() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
-startFlag() clearLevel() gotoLevel(i) enterBonus() enterUnder() warpUp() isDetour() musicState() musicPeak()`.
-`evolve()` starts the live GA; `evoTrain(gens)` fast-forwards `gens` generations headlessly
-(returns best-fitness-per-gen history); `evoProbe(weights?)` runs ONE episode with a given (or
-random) genome and returns `{ maxCol, epSteps, state, jumps, trace }` — the key tool for debugging
-the controller; `evoBest()` returns the current best-ever weights; `evoReset()` clears persisted
-evolution and restarts; `evoState()` returns `{ mode, gen, bestFit, bestCol, col, epIndex, showcase, pop, NI, NH, NO, WLEN }`.
-Use these with the **vendored** screenshot harness (`scripts/shot.mjs`, run via
-`npm run shot`) to drive the game deterministically — see *Self-verifying* above.
+```bash
+gh auth refresh-scopes -s workflow
+```
 
-- **Capture-timing gotcha:** in `shot.mjs` the `--eval` runs *first*, then `--prewait`, then
-  `--settle`, then the screenshot. So a transient effect (a spark burst, a power-up twinkle)
-  spawned directly in `--eval` has already expired by capture time. Fire it *just before* the
-  shot with a timer instead: `--eval "...; setTimeout(()=>window.__marioTest.powerUp(), 2350)"
-  --prewait 2350 --settle 150`.
-- **Teleport-onto-enemy artifact:** `teleport(col)` can drop Mario on a Goomba (→ "OUCH!").
-  Pick a clear column (e.g. 8, 58) for clean beauty shots.
-- **Minified live-verify:** function names don't survive the prod build. Verify a deploy by
-  grepping the served bundle for a unique *string literal* you added (e.g. a color `#e0a000`
-  for the gold warp pipe), not a symbol name.
+then commit `.github/workflows/ci.yml` (drafted, and verified locally) which runs
+`lint:mario` + `build` on every PR and exposes the browser suite as a manual
+`workflow_dispatch` job. Until then the gate is local: `npm run lint:mario && npm run build`
+before you push, plus `npm run verify` with the dev server up.
+
+Repo-wide `npm run lint` is deliberately *not* a gate: ~740 pre-existing errors in the
+DOS/IF adapters would make it permanently red. Widen `lint:mario` as those get fixed.
+
+## Super Mario
+
+Deep engine notes moved to **[`src/games/SuperMario/README.md`](src/games/SuperMario/README.md)**
+— this section had grown to a third of this file. Read that first for:
+
+- the OPTIONS menu / `syncUi()` + `apiRef` contract and the four play modes
+- **option 3 autopilot** (deterministic, clears 1-1 perfectly) and **option 4 neuroevolution**
+  (recurrent 21→10→5 tanh MLP, GA, turbo + showcase replays, `localStorage` persistence)
+- the *honest* cold-start fitness baseline and why the GA still stops at ~col 140 of 212
+- `forwardNN` index-base gotcha (`bi/bh/bo/ob`) that silently produces an unjoppable agent
+- the full `window.__marioTest` DEV hook reference
+- capture-timing, teleport-onto-enemy and minified-live-verify gotchas
+- known gaps / next steps (evolve can't finish 1-1, no piranha plants, no 1-up, no 1-3/1-4)
+
+Quick orientation: `src/games/SuperMario/index.jsx` is the live build, and
+`src/games/SuperMarioClassic/index.jsx` is the vendored pristine v1 (route `/mario-classic`,
+`hidden: true`, reached only from the menu; its `?` returns to `/mario?menu=1`).
+Verify Mario work with `npm run verify` (see *Self-verifying* above).

@@ -2,4 +2,12 @@ node_modules
 dist
 .DS_Store
 .vercel
-scripts/.shots/
+
+# Harness OUTPUT only — captured screenshots from `npm run shot` / the checks.
+# Only images may live here. A .mjs dropped in this folder now shows up as
+# untracked in `git status` instead of vanishing: harness code is tracked code
+# and belongs in scripts/. (The old blanket `scripts/.shots/` rule swallowed 10
+# driver scripts written during iterations 11-13 — see AGENTS.md > Self-verifying.)
+scripts/.shots/*.png
+scripts/.shots/*.jpg
+scripts/.shots/*.jpeg
