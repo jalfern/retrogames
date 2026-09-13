@@ -368,7 +368,7 @@ const SuperMarioGame = () => {
         ]
         let soonFlash = 0
         const startPlay = (m) => { mode = m; audioController.init(); resetGame() }
-        const startAutopilot = () => { soonFlash = 100 }   // enabled in a later iteration
+        const startAutopilot = () => { apHold = 0; mode = 'autopilot'; audioController.init(); resetGame() }
         const startEvolve = () => { soonFlash = 100 }      // enabled in a later iteration
         const chooseOption = (i) => {
             menuSel = i
@@ -402,6 +402,7 @@ const SuperMarioGame = () => {
             if (pausedRef.current) return
 
             if (state === 'attract' || state === 'gameover' || state === 'win') {
+                mode = 'play'; apHold = 0
                 resetGame()
                 audioController.init()
                 e.preventDefault()
@@ -458,6 +459,54 @@ const SuperMarioGame = () => {
                 const s = (spread || 2) + Math.random() * 1.6
                 particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, life: 18 + Math.random() * 12, max: 30, color: colors[i % colors.length], spark: true, g: 0.12 })
             }
+        }
+
+        // ---- autopilot: rule-based perfect-ish runner (drives `keys`) ----
+        const groundAt = (c) => solidAt(c, 13) || solidAt(c, 14)
+        let apHold = 0
+        const autopilot = () => {
+            const m = mario
+            keys.left = false; keys.right = true; keys.run = true; keys.down = false
+            const frontCol = Math.floor((m.x + m.w + 1) / TILE)
+            const feetRow = Math.floor((m.y + m.h) / TILE)
+            let wantJump = false
+
+            // pits / gaps: jump at the edge
+            if (m.onGround && !groundAt(frontCol + 1)) wantJump = true
+            // pipes / walls directly ahead
+            if (solidAt(frontCol + 1, feetRow - 1) || solidAt(frontCol + 1, feetRow - 2)) wantJump = true
+
+            if (m.power !== 'fire') {
+                // seek power-ups: bump ? blocks overhead until we're Fire Mario
+                for (let d = 0; d <= 1; d++) {
+                    const c = frontCol + d
+                    if (level.grid[9] && level.grid[9][c] === QUESTION && m.onGround) { wantJump = true; break }
+                }
+                // grab a nearby power-up sitting above us
+                for (const s of shrooms) {
+                    if (s.taken) continue
+                    const dx = s.x - m.x, dy = (s.y + s.h) - (m.y + m.h)
+                    if (dx > -12 && dx < 40 && dy < -6 && m.onGround) { wantJump = true; break }
+                }
+                // hop over enemies while still small (best effort)
+                for (const e of enemies) {
+                    if (!e.alive || e.flip) continue
+                    const dx = e.x - m.x
+                    if (dx > 4 && dx < 64 && Math.abs((e.y + e.h) - (m.y + m.h)) < 20 && m.onGround) { wantJump = true; break }
+                }
+            } else {
+                // Fire Mario: burn enemies ahead so nothing can touch us
+                for (const e of enemies) {
+                    if (!e.alive || e.flip) continue
+                    const dx = e.x - m.x
+                    if (dx > 22 && dx < 220 && Math.abs((e.y + e.h) - (m.y + m.h)) < 26) { firePressed = true; break }
+                    if (dx > 0 && dx < 28 && m.onGround && Math.abs((e.y + e.h) - (m.y + m.h)) < 20) { wantJump = true }
+                }
+            }
+
+            if (wantJump && m.onGround && apHold <= 0) { m.jumpPressed = true; keys.jump = true; apHold = 16 }
+            else if (apHold > 0) { keys.jump = true; apHold-- }
+            else keys.jump = false
         }
 
         const spawnPower = (c, r, kind) => {
@@ -649,6 +698,9 @@ const SuperMarioGame = () => {
             // timer
             timerAcc++
             if (timerAcc >= 24) { timerAcc = 0; timer--; if (timer <= 0) die() }
+
+            // autopilot drives input instead of a human
+            if (mode === 'autopilot') autopilot()
 
             // ---- Mario horizontal ----
             const accel = keys.run ? RUN_ACCEL : WALK_ACCEL
@@ -1393,6 +1445,7 @@ const SuperMarioGame = () => {
                 start: () => { if (state === 'attract' || state === 'gameover' || state === 'win') resetGame() },
                 openMenu: () => { state = 'menu'; menuSel = 0 },
                 choose: (i) => chooseOption(i),
+                autoplay: () => startAutopilot(),
                 teleport: (col) => { if (!mario) return; mario.x = col * TILE; cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.42, level.cols * TILE - VIEW_W)) },
                 setPower: (p) => {
                     if (!mario) return
