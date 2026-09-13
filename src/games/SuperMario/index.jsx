@@ -91,7 +91,7 @@ function buildLevel(def) {
 
 // World 1-1 (overworld)
 const LEVEL_1 = buildLevel({
-    id: '1-1', cols: 212, bg: 'sky', flagCol: 174, castleCol: 180,
+    id: '1-1', cols: 212, bg: 'sky', flagCol: 174, castleCol: 180, warpCol: 57,
     flowerCols: [16], shroomCols: [21, 22],
     build(a) {
         a.ground(0, 211)
@@ -180,6 +180,27 @@ const LEVEL_2 = buildLevel({
     decor: { clouds: [], bushes: [], torches: [6, 14, 24, 34, 46, 56, 68, 78, 92, 104, 116, 128, 140, 152, 162] },
 })
 
+// Hidden coin bonus room (entered via the gold warp pipe in 1-1)
+const BONUS = buildLevel({
+    id: 'BONUS', cols: 28, bg: 'under', bonus: true, exitCol: 24,
+    build(a) {
+        a.ground(0, 27)
+        a.row(0, 27, 2, BRICK)          // ceiling
+        a.wall(0, 3, 12)                // left wall
+        a.wall(27, 3, 12)               // right wall
+        // rows of ? blocks that pay coins when punched
+        for (let c = 4; c <= 18; c += 2) a.set(c, 6, QUESTION)
+        for (let c = 6; c <= 16; c += 2) a.set(c, 9, QUESTION)
+        a.pipe(24, 2)                   // exit pipe
+    },
+    coinArcs: [
+        { c: 5, r: 4 }, { c: 7, r: 4 }, { c: 9, r: 4 }, { c: 11, r: 4 }, { c: 13, r: 4 }, { c: 15, r: 4 },
+        { c: 20, r: 11 }, { c: 21, r: 11 },
+    ],
+    enemies: [],
+    decor: { torches: [3, 10, 17, 22] },
+})
+
 const LEVELS = [LEVEL_1, LEVEL_2]
 
 const SuperMarioGame = () => {
@@ -231,6 +252,9 @@ const SuperMarioGame = () => {
         let introTimer = 0
         let flagPhase = ''
         let flagT = 0
+        let warpT = 0
+        let warpDir = 'in'   // 'in' descending into pipe | 'out' returning
+        let returnX = 0
 
         let mario = null
         let enemies = []
@@ -249,20 +273,22 @@ const SuperMarioGame = () => {
             }
         }
 
-        const loadLevel = (idx, keepPower) => {
-            levelIndex = idx
-            level = LEVELS[idx]
+        const loadRoom = (def, keepPower, startX, opts) => {
+            opts = opts || {}
+            if (opts.setIndex !== undefined) levelIndex = opts.setIndex
+            level = def
             const power = keepPower && mario ? mario.power : 'small'
             mario = spawnMario(power)
+            if (startX !== undefined) mario.x = startX
             cameraX = 0
             timer = 400; timerAcc = 0
-            enemies = (level.enemies || []).map(e => ({
+            enemies = (def.enemies || []).map(e => ({
                 type: e.type,
                 x: e.c * TILE, y: (13 * TILE) - (e.type === 'koopa' ? 24 : 16),
                 w: 14, h: e.type === 'koopa' ? 24 : 16,
                 vx: -0.6, vy: 0, alive: true, shell: false, still: false, anim: 0, squash: 0, flip: false, grace: 0,
             }))
-            coinsArr = (level.coinArcs || []).map(cc => ({
+            coinsArr = (def.coinArcs || []).map(cc => ({
                 x: cc.c * TILE + 4, y: cc.r * TILE + 4, w: 8, h: 8, taken: false, anim: Math.random() * 6,
             }))
             shrooms = []
@@ -270,8 +296,30 @@ const SuperMarioGame = () => {
             particles = []
             popups = []
             fireCooldown = 0
-            state = 'intro'
+            state = opts.state || 'intro'
             introTimer = 110
+        }
+
+        const loadLevel = (idx, keepPower) => loadRoom(LEVELS[idx], keepPower, undefined, { setIndex: idx })
+
+        // ---- warp pipe <-> bonus room ----
+        const enterBonus = () => {
+            state = 'warp'; warpDir = 'in'; warpT = 0
+            mario.vx = 0
+            returnX = (level.warpCol + 3) * TILE
+            audioController.stopMusic()
+            audioController.playSweep(600, 120, 0.5, 'square', 0.16)  // descend
+        }
+        const exitBonus = () => {
+            loadRoom(LEVEL_1, true, returnX, { state: 'warp', setIndex: 0 })
+            mario.y = VIEW_H + 20
+            warpDir = 'out'; warpT = 0
+            audioController.stopMusic()
+            audioController.playSweep(120, 600, 0.5, 'square', 0.16)  // rise
+        }
+        const completeLevel = () => {
+            if (level.bonus) exitBonus()
+            else levelClear()
         }
 
         const resetGame = () => {
@@ -506,6 +554,20 @@ const SuperMarioGame = () => {
                 return
             }
 
+            if (state === 'warp') {
+                warpT++
+                cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.5, level.cols * TILE - VIEW_W))
+                if (warpDir === 'in') {
+                    mario.y += 4
+                    if (warpT >= 34) { loadRoom(BONUS, true, 40, { state: 'play' }); audioController.startMusic('underground') }
+                } else {
+                    const baseY = (13 * TILE) - mario.h
+                    mario.y -= 4
+                    if (mario.y <= baseY) { mario.y = baseY; state = 'play'; audioController.startMusic('overworld') }
+                }
+                return
+            }
+
             if (state === 'dying') {
                 mario.vy = Math.min(mario.vy + 0.4, 10)
                 mario.y += mario.vy
@@ -701,12 +763,17 @@ const SuperMarioGame = () => {
             popups = popups.filter(p => p.life > 0)
 
             // ---- Level completion ----
+            if (level.warpCol && mario.onGround && keys.down &&
+                Math.abs((mario.x + mario.w / 2) - (level.warpCol * TILE + TILE)) < 18) {
+                enterBonus()
+                return
+            }
             if (level.flagCol && mario.x + mario.w >= level.flagCol * TILE) {
                 startFlag()
                 return
             }
             if (level.exitCol && mario.x + mario.w >= level.exitCol * TILE && mario.onGround) {
-                levelClear()
+                completeLevel()
             }
 
             // ---- camera ----
@@ -766,19 +833,23 @@ const SuperMarioGame = () => {
                 ctx.fillStyle = P.solidLight; ctx.fillRect(x, y, TILE, 2); ctx.fillRect(x, y, 2, TILE)
                 ctx.fillStyle = P.solidDark; ctx.fillRect(x, y + TILE - 2, TILE, 2); ctx.fillRect(x + TILE - 2, y, 2, TILE)
             } else if (t === PIPE) {
+                const isWarp = level.warpCol && (c === level.warpCol || c === level.warpCol + 1)
+                const pc = isWarp ? '#e0a000' : P.pipe
+                const pl = isWarp ? '#ffe888' : P.pipeLight
+                const pd = isWarp ? '#8a5a00' : P.pipeDark
                 const up = level.grid[r - 1] && level.grid[r - 1][c] === PIPE
                 const rightIsPipe = level.grid[r][c + 1] === PIPE
                 if (!up) {
-                    ctx.fillStyle = P.pipe; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 8)
-                    ctx.fillStyle = P.pipeLight; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 2)
-                    ctx.fillStyle = P.pipeDark; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y + 6, TILE + 2, 2)
-                    ctx.fillStyle = P.pipe; ctx.fillRect(x, y + 8, TILE, TILE - 8)
-                    ctx.fillStyle = P.pipeLight; ctx.fillRect(x + 2, y + 8, 3, TILE - 8)
-                    ctx.fillStyle = P.pipeDark; ctx.fillRect(x + TILE - 2, y + 8, 2, TILE - 8)
+                    ctx.fillStyle = pc; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 8)
+                    ctx.fillStyle = pl; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y, TILE + 2, 2)
+                    ctx.fillStyle = pd; ctx.fillRect(x - (rightIsPipe ? 0 : 2), y + 6, TILE + 2, 2)
+                    ctx.fillStyle = pc; ctx.fillRect(x, y + 8, TILE, TILE - 8)
+                    ctx.fillStyle = pl; ctx.fillRect(x + 2, y + 8, 3, TILE - 8)
+                    ctx.fillStyle = pd; ctx.fillRect(x + TILE - 2, y + 8, 2, TILE - 8)
                 } else {
-                    ctx.fillStyle = P.pipe; ctx.fillRect(x, y, TILE, TILE)
-                    ctx.fillStyle = P.pipeLight; ctx.fillRect(x + 2, y, 3, TILE)
-                    ctx.fillStyle = P.pipeDark; ctx.fillRect(x + TILE - 2, y, 2, TILE)
+                    ctx.fillStyle = pc; ctx.fillRect(x, y, TILE, TILE)
+                    ctx.fillStyle = pl; ctx.fillRect(x + 2, y, 3, TILE)
+                    ctx.fillStyle = pd; ctx.fillRect(x + TILE - 2, y, 2, TILE)
                 }
             }
         }
@@ -1076,7 +1147,7 @@ const SuperMarioGame = () => {
             if (level.decor) {
                 if (level.decor.hills) level.decor.hills.forEach(([c, big]) => { const sx = c * TILE - cam * 0.6; if (sx > -96 && sx < VIEW_W) drawHill(sx, big) })
                 if (level.decor.clouds) level.decor.clouds.forEach((c, i) => { const sx = c * TILE - cam * 0.4; const cy = 16 + (i % 3) * 12; if (sx > -48 && sx < VIEW_W) drawCloud(sx, cy) })
-                for (const c of level.decor.bushes) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawBush(sx, 12 * TILE) }
+                for (const c of level.decor.bushes || []) { const sx = c * TILE - cam; if (sx > -40 && sx < VIEW_W) drawBush(sx, 12 * TILE) }
                 if (level.decor.torches) for (const c of level.decor.torches) { const sx = c * TILE - cam; if (sx > -20 && sx < VIEW_W) drawTorch(sx, 3 * TILE) }
             }
             if (level.flagCol) {
@@ -1090,6 +1161,16 @@ const SuperMarioGame = () => {
                 if (sx > -20 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawFlag(flagY); ctx.restore() }
             }
             if (level.castleCol) { const sx = level.castleCol * TILE - cam; if (sx > -80 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawCastle(); ctx.restore() } }
+
+            // warp pipe hint (bobbing down-arrow above the gold pipe)
+            if (level.warpCol && (state === 'play' || state === 'intro')) {
+                const sx = level.warpCol * TILE + TILE - cam
+                if (sx > -20 && sx < VIEW_W + 40) {
+                    const ay = 9 * TILE - 15 + Math.sin(tick * 0.12) * 3
+                    ctx.fillStyle = '#ffe888'
+                    ctx.beginPath(); ctx.moveTo(sx - 5, ay); ctx.lineTo(sx + 5, ay); ctx.lineTo(sx, ay + 8); ctx.closePath(); ctx.fill()
+                }
+            }
 
             // tiles
             const c0 = Math.floor(cam / TILE)
@@ -1121,7 +1202,7 @@ const SuperMarioGame = () => {
             for (const p of popups) { ctx.fillStyle = C.white; ctx.fillText(p.text, px(p.x - cam), px(p.y)) }
 
             // HUD
-            if (state === 'play' || state === 'levelclear' || state === 'dying' || state === 'flag') drawHUD()
+            if (state === 'play' || state === 'levelclear' || state === 'dying' || state === 'flag' || state === 'warp') drawHUD()
 
             // overlays
             if (state === 'attract') {
@@ -1205,6 +1286,9 @@ const SuperMarioGame = () => {
                 startFlag: () => { if (state === 'intro') { state = 'play' } startFlag() },
                 clearLevel: () => { if (state === 'intro') state = 'play'; levelClear() },
                 gotoLevel: (i) => { loadLevel(i, true) },
+                enterBonus: () => { if (state === 'intro') state = 'play'; enterBonus() },
+                exitBonus: () => { exitBonus() },
+                isBonus: () => !!(level && level.bonus),
                 musicState: () => audioController._musicState(),
                 musicPeak: () => audioController._peak(),
             }
