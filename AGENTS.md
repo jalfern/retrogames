@@ -138,10 +138,15 @@ There is **no CI yet** — the `gh` token on the dev machine has scopes
 `workflow` scope. Unblock with:
 
 ```bash
-gh auth refresh-scopes -s workflow
+gh auth refresh -s workflow     # gh >=2.40: 'auth refresh', NOT 'auth refresh-scopes'
+gh auth status                  # scopes should now include 'workflow'
 ```
 
-then commit `.github/workflows/ci.yml` (drafted, and verified locally) which runs
+It prints a one-time device code and opens https://github.com/login/device — enter the code
+in a browser signed in as `jalfern`. The scope is additive (keeps `repo`, `read:org`, `gist`)
+and reversible with `gh auth refresh --remove-scopes workflow`.
+
+Then `git add .github && git push` lands `.github/workflows/ci.yml`, which runs
 `lint:mario` + `build` on every PR and exposes the browser suite as a manual
 `workflow_dispatch` job. Until then the gate is local: `npm run lint:mario && npm run build`
 before you push, plus `npm run verify` with the dev server up.
