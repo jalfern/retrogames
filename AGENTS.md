@@ -89,3 +89,21 @@ open https://jalfern.com/retrogames/<game>
   AudioContext on first click/keydown/touch. Don't play audio before that.
 - **package-lock churn:** `npm install` may drop optional peer type packages. Commit those
   lockfile updates alongside the change that needs them.
+
+## Super Mario — DEV test hooks
+`src/games/SuperMario/index.jsx` exposes `window.__marioTest` (only under `import.meta.env.DEV`):
+`start() getState() teleport(col) setPower('small'|'big'|'fire') throwFire() powerUp()
+startFlag() clearLevel() gotoLevel(i) enterBonus() exitBonus() isBonus() musicState() musicPeak()`.
+Use these with the screenshot harness (`~/Dev/tools/shot/shot.mjs`, system Chrome via
+playwright-core) to drive the game deterministically.
+
+- **Capture-timing gotcha:** in `shot.mjs` the `--eval` runs *first*, then `--prewait`, then
+  `--settle`, then the screenshot. So a transient effect (a spark burst, a power-up twinkle)
+  spawned directly in `--eval` has already expired by capture time. Fire it *just before* the
+  shot with a timer instead: `--eval "...; setTimeout(()=>window.__marioTest.powerUp(), 2350)"
+  --prewait 2350 --settle 150`.
+- **Teleport-onto-enemy artifact:** `teleport(col)` can drop Mario on a Goomba (→ "OUCH!").
+  Pick a clear column (e.g. 8, 58) for clean beauty shots.
+- **Minified live-verify:** function names don't survive the prod build. Verify a deploy by
+  grepping the served bundle for a unique *string literal* you added (e.g. a color `#e0a000`
+  for the gold warp pipe), not a symbol name.
