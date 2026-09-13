@@ -27,8 +27,8 @@ export const GAMES = [
         component: SuperMarioGame,
         label: 'SUPER MARIO BROS',
         theme: 'light',
-        description: "The platformer that defined a genre. Run, jump and stomp your way through World 1-1 (overworld) and World 1-2 (underground). Grab the mushroom to grow, break bricks, kick Koopa shells, and raise the flag.",
-        controls: ['Arrow Left/Right: Move', 'Arrow Up / Shift / X: Run', 'Space / Z: Jump (hold for higher)', 'Arrow Down: (reserved)', 'Reach the flagpole to clear 1-1, take the pipe to clear 1-2']
+        description: "The platformer that defined a genre. Run, jump and stomp your way through World 1-1 (overworld) and World 1-2 (underground). Grab the fire flower to become Fire Mario and throw fireballs, kick Koopa shells, and raise the flag.",
+        controls: ['Arrow Left/Right: Move', 'Arrow Up / Shift / X: Run', 'Space / Z: Jump (hold for higher)', 'F / B: Throw fireball (when Fire Mario)', 'Reach the flagpole to clear 1-1, take the pipe to clear 1-2']
     },
     {
         path: '/pong',

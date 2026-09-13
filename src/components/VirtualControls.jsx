@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
-const VirtualControls = () => {
+const VirtualControls = ({ secondAction }) => {
     // We'll use these to track active states for visual feedback
     const [activeKeys, setActiveKeys] = useState({});
 
@@ -14,7 +14,7 @@ const VirtualControls = () => {
             'action': 'Space' // Jump
         };
 
-        const code = codeMap[key];
+        const code = key === 'action2' ? (secondAction && secondAction.code) : codeMap[key];
         if (!code) return;
 
         // Update visual state
@@ -37,7 +37,7 @@ const VirtualControls = () => {
     const bindEvents = (key) => ({
         onMouseDown: (e) => { e.preventDefault(); handleInput(key, 'down'); },
         onMouseUp: (e) => { e.preventDefault(); handleInput(key, 'up'); },
-        onMouseLeave: (e) => {
+        onMouseLeave: () => {
             // If dragging out, cancel the press
             if (activeKeys[key]) handleInput(key, 'up');
         },
@@ -93,8 +93,16 @@ const VirtualControls = () => {
                 <div />
             </div>
 
-            {/* Action Button */}
-            <div className="pb-2 pr-4">
+            {/* Action Buttons */}
+            <div className="pb-2 pr-4 flex items-end gap-3">
+                {secondAction && (
+                    <button
+                        className={`${actionBtnClass} w-14 h-14 bg-orange-500/50 active:bg-orange-400/80 ${activeKeys.action2 ? 'bg-orange-400/90 scale-95' : ''}`}
+                        {...bindEvents('action2')}
+                    >
+                        <span className="text-white font-bold text-lg">{secondAction.label || 'B'}</span>
+                    </button>
+                )}
                 <button
                     className={`${actionBtnClass} ${activeKeys.action ? 'bg-red-400/90 scale-95' : ''}`}
                     {...bindEvents('action')}
