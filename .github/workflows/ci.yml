@@ -35,6 +35,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint:mario
+      # Second scoped gate: the raycaster shares components/utils/scripts with Mario,
+      # so both scopes are linted instead of the ~740-error DOS/IF tail.
+      - run: npm run lint:fps
       - run: npm run build
 
   # The self-verifying suite: real Chrome driving window.__marioTest.
@@ -57,7 +60,8 @@ jobs:
         run: |
           npm run dev > /tmp/vite.log 2>&1 &
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:5173/retrogames/mario > /dev/null; then
+            if curl -sf http://localhost:5173/retrogames/mario > /dev/null \
+               && curl -sf http://localhost:5173/retrogames/ironkeep > /dev/null; then
               echo "dev server up after ${i}s"; exit 0
             fi
             sleep 1

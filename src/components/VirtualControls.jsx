@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
 
-const VirtualControls = ({ secondAction }) => {
+const VirtualControls = ({ secondAction, visible = true }) => {
     // We'll use these to track active states for visual feedback
     const [activeKeys, setActiveKeys] = useState({});
+
+    // Titles with menus/death screens pass `visible` to withdraw the pad when it
+    // would only cover the canvas (defaults to true — every existing caller is
+    // always-playing, so nothing changes for them).
+    if (!visible) return null;
 
     const handleInput = (key, type) => {
         // Map visual controls to keyboard codes

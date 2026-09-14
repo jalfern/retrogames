@@ -10,6 +10,7 @@ import MissileCommandGame from '../games/MissileCommand'
 import AdventureGame from '../games/Adventure'
 import SuperMarioGame from '../games/SuperMario'
 import SuperMarioClassicGame from '../games/SuperMarioClassic'
+import IronKeepGame from '../games/IronKeep'
 import { ZorkI, ZorkII, ZorkIII } from '../games/Zork'
 import KingsQuestGame from '../games/KingsQuest'
 import RogueGame from '../games/Rogue'
@@ -39,6 +40,14 @@ export const GAMES = [
         hidden: true,
         description: "The original 'one-shot' build — the pristine first-pass engine generated in a single prompt by local Qwen 3.8, before any iteration. Reachable from the Options menu on the main Mario title screen (?).",
         controls: ['Arrow Left/Right: Move', 'Arrow Up / Shift / X: Run', 'Space / Z: Jump', '?: Options menu']
+    },
+    {
+        path: '/ironkeep',
+        component: IronKeepGame,
+        label: 'IRONKEEP',
+        theme: 'dark',
+        description: 'A first-person dungeon shooter on a hand-written raycaster, in the spirit of Wolfenstein 3D. Three halls of a cursed keep stand between you and the open gate — crossbow bolts, repeater, and an occult lancer, against legionaries, hounds, occultists and the Warden. Every texture, sprite and note is generated at runtime; there are no assets.',
+        controls: ['Arrow Keys / W: Move, Left/Right turn', 'A/D or Mouse: Strafe / look', 'Space / Click: Loose a bolt', 'Shift / B: Run', 'E: Open doors (gold + iron keys)', '1 2 3 / Q: Change weapon', '?: Pause and read the controls']
     },
     {
         path: '/pong',
