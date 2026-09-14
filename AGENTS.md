@@ -32,6 +32,7 @@ npm run preview    # preview the production build
 npm run shot -- --out scripts/.shots/x.png --eval "..."   # visual capture (see Self-verifying)
 npm run audcheck   # assert the chiptune engine is producing signal (exits non-zero on fail)
 npm run verify     # the whole Mario self-verifying suite (needs `npm run dev` running)
+npm run mariocheck / autopilotcheck / plantcheck / evocheck / evoprobe   # individual checks
 ```
 
 ## How the app is structured
@@ -115,7 +116,8 @@ model/machine can reproduce it (it is not an external tool):
 | `scripts/audcheck.mjs` | Starts the game and asserts the chiptune engine steps + produces an `AnalyserNode` signal; exits **non-zero** on failure (CI-friendly). |
 | `scripts/verify.mjs` | Runs the browser suite and summarises; non-zero exit on any failure (`npm run verify [-- --full]`). |
 | `scripts/mariocheck.mjs` | Title/menu/touch regression: lone Shift must not start, `?`/OPTIONS open the menu, keys 1–4, BACK/ESC, gamepad hidden on menus. |
-| `scripts/autopilotcheck.mjs` | Mario option 3 must clear 1-1 with no deaths. |
+| `scripts/autopilotcheck.mjs` | Mario option 3 must clear 1-1 with no deaths, and clear each piranha pipe with its feet above the plant's head. |
+| `scripts/plantcheck.mjs` | Piranha plants: cycle, hitbox == emerged part, hurts only when out, safe when retracted, never stompable. |
 | `scripts/evocheck.mjs` | Mario option 4 must learn (cold-start fitness ≥1500 after 60 gens) and its HUD must actually render. |
 | `scripts/evoprobe.mjs` | Per-genome scalpel: one episode with a named/random/evolved controller → `maxCol`, jumps, trace. |
 | `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), `__marioTest` wait, pass/fail `Report`. |
@@ -175,13 +177,16 @@ Deep engine notes moved to **[`src/games/SuperMario/README.md`](src/games/SuperM
 — this section had grown to a third of this file. Read that first for:
 
 - the OPTIONS menu / `syncUi()` + `apiRef` contract and the four play modes
+- **piranha plants**: motion, the hitbox-is-the-emerged-part rule, and why the autopilot must
+  never stall near one
 - **option 3 autopilot** (deterministic, clears 1-1 perfectly) and **option 4 neuroevolution**
-  (recurrent 21→10→5 tanh MLP, GA, turbo + showcase replays, `localStorage` persistence)
+  (recurrent 24→10→5 tanh MLP, GA, turbo + showcase replays, `localStorage` persistence)
 - the *honest* cold-start fitness baseline and why the GA still stops at ~col 140 of 212
 - `forwardNN` index-base gotcha (`bi/bh/bo/ob`) that silently produces an unjoppable agent
 - the full `window.__marioTest` DEV hook reference
 - capture-timing, teleport-onto-enemy and minified-live-verify gotchas
-- known gaps / next steps (evolve can't finish 1-1, no piranha plants, no 1-up, no 1-3/1-4)
+- known gaps / next steps (evolve can't finish 1-1, autopilot never reaches Fire Mario,
+  no 1-up, no moving platforms, no 1-3/1-4)
 
 Quick orientation: `src/games/SuperMario/index.jsx` is the live build, and
 `src/games/SuperMarioClassic/index.jsx` is the vendored pristine v1 (route `/mario-classic`,

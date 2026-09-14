@@ -16,10 +16,12 @@
 // plus 6000 for a flagpole win.
 //
 // Measured baseline on this machine, COLD start (localStorage cleared, seeded
-// population), 60 generations, repeat runs: 1981 / 2202 / 2422 / 2819.
-// So --min-fit 1500 is the regression floor; anything above ~2800 is a win.
-// Note this is *cold*: the engine also persists the best genome to localStorage,
-// so a human watching it reload-to-reload gets further than a clean CI run does.
+// population), 60 generations, repeat runs: fitness 1696 / 2102 / 2513 / 2558 /
+// 2872 / 2912 / 3160 / 4566, bestCol 103-134, champion replay col 94-122.
+// So --min-fit 1500 and col >= 90 are regression floors with headroom, not targets.
+// (Piranha plants cost the GA ~25 columns: the pre-plant baseline was ~1980-2820 at
+// col 141-147. The wall sensors commit the jump ~4 tiles out, so the agent is already
+// descending as it crosses a plant pipe and clips its head — see README.)
 //
 // Prereqs: `npm install`, a running `npm run dev`.
 
@@ -31,7 +33,7 @@ const gens = +opt(args, '--gens', 60)
 const minFit = +opt(args, '--min-fit', 1500)
 const trials = +opt(args, '--trials', 1)
 const hudCheck = !args.includes('--no-hud')
-const WIN_FITNESS = 6000   // flagpole bonus
+const WIN_FITNESS = 6000   // flagpole bonus — reference only; a win is MEASURED by replay, not inferred
 
 await requireDevServer(url)
 const browser = await launch()
@@ -55,7 +57,6 @@ for (let trial = 1; trial <= trials; trial++) {
     const secs = ((Date.now() - t0) / 1000).toFixed(1)
 
     const final = hist[hist.length - 1] ?? 0
-    const winGen = hist.findIndex(v => v >= WIN_FITNESS)
     worstFinal = Math.min(worstFinal, final)
     bestCol = Math.max(bestCol, s.bestCol)
 
@@ -63,7 +64,19 @@ for (let trial = 1; trial <= trials; trial++) {
     console.log(`        fitness/gen: [${hist.join(' ')}]`)
     r.check(`trial ${trial}: fitness climbed past ${minFit}`, final >= minFit, `final=${final}`)
     r.check(`trial ${trial}: learned (fitness at least 1.5x gen-1)`, final > (hist[0] || 1) * 1.5, `${hist[0]} -> ${final}`)
-    if (winGen >= 0) r.info(`trial ${trial}: reached the flagpole at gen`, winGen + 1)
+
+    // Ground truth rather than an inference from the fitness number: replay the
+    // champion for one episode and read the state it actually ends in. Fitness can
+    // be inflated by coins and bonuses, so ">= 6000 therefore it won" is not evidence.
+    const champ = await page.evaluate(() => {
+        const g = window.__marioTest.evoBest()
+        return g ? window.__marioTest.evoProbe(g) : null
+    })
+    if (champ) {
+        console.log(`        champion replay: maxCol=${champ.maxCol} state=${champ.state} jumps=${champ.jumps}`)
+        r.info(`trial ${trial}: flagpole is col 174`,
+            champ.state === 'win' ? 'CLEARED 1-1' : `not cleared (reached col ${champ.maxCol})`)
+    }
 }
 
 // The GA's own HUD is a separate render path from drawHUD(), and it has broken
@@ -96,7 +109,7 @@ if (hudCheck) {
     await page.screenshot({ path: 'scripts/.shots/evocheck.png' }).catch(() => {})
 }
 
-r.check('best-ever distance reached the late game (col >= 120)', bestCol >= 120, `bestCol=${bestCol}`)
+r.check('best-ever distance reached the late game (col >= 90)', bestCol >= 90, `bestCol=${bestCol}`)
 console.log(`  ..    note: reliable clear of 1-1 needs col >= 174; ${bestCol >= 174 ? 'REACHED' : 'not yet — known open item'}`)
 
 r.exit(browser)

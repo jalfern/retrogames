@@ -1,6 +1,6 @@
 // Run the whole self-verifying suite and summarise.
 //
-//   npm run verify              # audio + menu/touch + autopilot + quick evolve smoke
+//   npm run verify              # audio + menu/touch + autopilot + plants + quick evolve smoke
 //   npm run verify -- --full     # ...with the full 60-generation evolution check
 //
 // Requires a running `npm run dev` in another terminal (each check fails fast
@@ -28,6 +28,7 @@ const suite = [
     npm('audcheck'),
     node('mariocheck.mjs'),
     node('autopilotcheck.mjs'),
+    node('plantcheck.mjs'),
     full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '700']),
 ]
 
