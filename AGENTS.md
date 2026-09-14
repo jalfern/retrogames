@@ -76,6 +76,25 @@ gh pr merge --squash --delete-branch
 `gh` is authenticated as `jalfern`. If a `git push` ever prompts for credentials, run
 `gh auth setup-git` once to wire the token into git.
 
+### Don't stack a PR on an unmerged branch
+
+`gh pr merge --squash --delete-branch` deletes the base branch of anything pointed at it,
+and **GitHub closes those child PRs** — then refuses to reopen one ("Could not open the
+pull request"), because its base ref no longer exists. This is not recoverable in the UI.
+
+Recover by re-filing against `main` (the commits are fine, only the PR is dead):
+
+```bash
+git fetch origin
+git rebase --onto origin/main <old-base-tip> <your-branch>   # replays just your commit(s)
+git push --force-with-lease origin <your-branch>
+gh pr create --base main --title "..." --body-file /tmp/body.md
+```
+
+If you genuinely must stack, stack on a *pushed* branch and plan to re-file it after the
+parent merges. Also: pass `gh pr create|comment --body-file` rather than a double-quoted
+`--body` — the shell eats backticks, so your `code spans` silently vanish from the comment.
+
 ## Deployment (automated — do not deploy by hand)
 Both repos use **Vercel Git integration**:
 - Push/merge to **`main` → automatic production deploy** (this repo → `retrogames-psi.vercel.app`).
