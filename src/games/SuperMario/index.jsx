@@ -32,6 +32,14 @@ const USED = 5
 const PIPE = 6
 const SOLID_SET = new Set([GROUND, BRICK, QUESTION, SOLID, USED, PIPE])
 
+// Piranha plant sprite / hitbox. The hitbox is only the part that has actually
+// emerged (h shrinks to 0 when it is fully retracted), which is what makes
+// standing on a pipe lip safe exactly when it should be.
+const PLANT_W = 12
+const PLANT_H = 26
+// rise / glare / sink / hidden, in fixed-step frames (~3.2s full cycle)
+const PLANT_RISE = 22, PLANT_OUT = 72, PLANT_SINK = 22, PLANT_GONE = 64
+
 // Palette (NES-ish)
 const C = {
     sky: '#5c94fc',
@@ -70,6 +78,10 @@ const C = {
     flowerPetal2: '#f8e0a0',
     flowerCenter: '#f83800',
     flowerStem: '#00a800',
+    plant: '#00a800',
+    plantDark: '#006000',
+    plantLight: '#58d854',
+    plantJaw: '#f8b888',
     white: '#ffffff',
     black: '#000000',
     cloud: '#ffffff',
@@ -101,6 +113,10 @@ function buildLevel(def) {
 const LEVEL_1 = buildLevel({
     id: '1-1', cols: 212, bg: 'sky', flagCol: 174, castleCol: 180, warpCol: 57, downCol: 140,
     flowerCols: [16], shroomCols: [21, 22],
+    // Piranha plants ride the pipes. Deliberately NOT on the warp pipe (57) or the
+    // underground pipe (140) - both must stay enterable - nor on 28/38/118, so the
+    // run-in stays forgiving and the pressure lands on the late pipe corridor.
+    plants: [{ c: 46, delay: 0 }, { c: 101, delay: 40 }, { c: 129, delay: 95 }],
     build(a) {
         a.ground(0, 211)
         // pits
@@ -148,6 +164,7 @@ const LEVEL_1 = buildLevel({
 const LEVEL_2 = buildLevel({
     id: '1-2', cols: 176, bg: 'under', exitCol: 168, detour: true,
     shroomCols: [18, 104], flowerCols: [66],
+    plants: [{ c: 35, delay: 20 }, { c: 128, delay: 70 }],   // exit pipe 168 stays clear
     build(a) {
         a.ground(0, 175)
         for (const [c1, c2] of [[30, 31], [58, 59], [90, 91], [120, 121]])
@@ -211,7 +228,132 @@ const BONUS = buildLevel({
 
 // Linear progression is just 1-1; LEVEL_2 (underground) and BONUS are
 // pipe-reached detour rooms that warp you back into 1-1.
-const LEVELS = [LEVEL_1]
+// World 1-3 (athletic). The ground is the exception here rather than the rule: every
+// long gap is crossed on floating platforms, so PITS and PLATFORMS must agree exactly -
+// a gap with no platform over it is not a hard jump, it is an unavoidable death.
+const LEVEL_3 = buildLevel({
+    id: '1-3', cols: 196, bg: 'sky', flagCol: 178, castleCol: 185,
+    shroomCols: [11],
+    build(a) {
+        a.ground(0, 195)
+        const PITS = [[16, 24], [30, 40], [47, 57], [64, 70], [96, 106], [122, 130], [150, 157]]
+        for (const [c1, c2] of PITS) for (let c = c1; c <= c2; c++) { a.set(c, 13, EMPTY); a.set(c, 14, EMPTY) }
+        // Every pit gets a platform chain. Alternating heights give the run a rhythm
+        // instead of one flat catwalk: high-low-high forces a landing, not just a hold.
+        const PLATFORMS = [
+            [17, 19, 9], [21, 23, 8], [24, 24, 10],
+            [31, 33, 9], [35, 37, 7], [38, 40, 9],
+            [48, 50, 8], [52, 54, 9], [55, 57, 7],
+            [65, 67, 9], [68, 70, 8],
+            [97, 99, 9], [101, 103, 8], [104, 106, 9],
+            [123, 125, 8], [127, 129, 9],
+            [151, 153, 9], [155, 157, 8],
+        ]
+        for (const [c1, c2, r] of PLATFORMS) a.row(c1, c2, r, r <= 7 ? BRICK : SOLID)
+        // The opening has to announce "athletic" on the FIRST screen. It didn't: the first
+        // pit sits at col 16 and the viewport is exactly 16 tiles wide, so the whole opening
+        // was flat empty ground under a blue sky - indistinguishable from 1-1 apart from the
+        // HUD number. These overhead platforms (and the coins strung along them) put the
+        // level's actual verb - jumping between floating islands - on screen at x=0. They
+        // sit above the ground path rather than replacing it, so the run stays fair.
+        a.row(3, 5, 8, BRICK)
+        a.row(7, 9, 6, BRICK)
+        a.row(12, 14, 8, SOLID)
+        a.set(11, 9, QUESTION)
+        a.row(78, 84, 5, BRICK); a.set(81, 5, QUESTION)
+        a.row(86, 92, 9, BRICK); a.set(89, 9, QUESTION)
+        a.row(110, 116, 6, BRICK); a.set(113, 6, QUESTION)
+        a.row(136, 142, 9, BRICK)
+        a.stairUp(164, 8)
+        a.set(178, 12, SOLID)
+    },
+    // Coins ride the platform chains - in an athletic level the coin trail IS the route
+    // hint, showing where the next landing is before you have committed to the jump.
+    coinArcs: [
+        { c: 3, r: 5 }, { c: 5, r: 5 }, { c: 7, r: 3 }, { c: 9, r: 3 }, { c: 12, r: 5 }, { c: 14, r: 5 },
+        { c: 17, r: 6 }, { c: 19, r: 6 }, { c: 21, r: 5 }, { c: 23, r: 5 },
+        { c: 31, r: 6 }, { c: 33, r: 6 }, { c: 36, r: 4 }, { c: 39, r: 6 },
+        { c: 48, r: 5 }, { c: 50, r: 5 }, { c: 53, r: 6 }, { c: 56, r: 4 },
+        { c: 65, r: 6 }, { c: 69, r: 5 },
+        { c: 79, r: 3 }, { c: 80, r: 3 }, { c: 82, r: 3 }, { c: 83, r: 3 },
+        { c: 97, r: 6 }, { c: 99, r: 6 }, { c: 102, r: 5 }, { c: 105, r: 6 },
+        { c: 111, r: 3 }, { c: 112, r: 3 }, { c: 114, r: 3 }, { c: 115, r: 3 },
+        { c: 124, r: 5 }, { c: 128, r: 6 },
+        { c: 151, r: 6 }, { c: 153, r: 6 }, { c: 156, r: 5 },
+    ],
+    enemies: [
+        { type: 'koopa', c: 20 }, { type: 'goomba', c: 33 }, { type: 'koopa', c: 39 },
+        { type: 'goomba', c: 50 }, { type: 'koopa', c: 56 }, { type: 'goomba', c: 66 },
+        { type: 'goomba', c: 79 }, { type: 'koopa', c: 88 }, { type: 'goomba', c: 90 },
+        { type: 'koopa', c: 99 }, { type: 'goomba', c: 105 }, { type: 'koopa', c: 112 },
+        { type: 'goomba', c: 124 }, { type: 'koopa', c: 138 }, { type: 'goomba', c: 139 },
+        { type: 'goomba', c: 152 },
+    ],
+    decor: {
+        clouds: [6, 17, 28, 39, 50, 61, 72, 84, 95, 106, 118, 129, 141, 152, 164],
+        bushes: [3, 13, 74, 94, 118, 146], hills: [[1, 1], [12, 0], [45, 1], [76, 0], [110, 1], [140, 0], [166, 1]],
+    },
+})
+
+// World 1-4 (castle). Two hazards the rest of the game does not have:
+//   LAVA   - gaps whose floor is lava. Still lethal on a fall, but drawn, so you can
+//            see the edge instead of guessing it in the dark.
+//   FIREBAR - a pivot with `len` flame balls on an arm, sweeping a full circle. It is
+//            pure rotating geometry: it does not respect the tilemap, so a bar placed
+//            with too little clearance sweeps through a wall. The usable band is narrow
+//            here because 1-4 has a brick ceiling at row 2 (bottom y=48) and a floor at
+//            row 13 (top y=208), so a pivot at y must satisfy 48 + radius < y < 208 -
+//            radius, where radius = len*14 + 6. That leaves rows 6..9 for a len-3 bar and
+//            only rows 7..8 for a len-4 one — a len-4 bar at row 9 reaches the floor.
+//            `npm run levelcheck` proves clearance against the real tilemap.
+const LEVEL_4 = buildLevel({
+    id: '1-4', cols: 176, bg: 'castle', flagCol: 160, castleCol: 167,
+    lava: [[22, 25], [42, 46], [66, 70], [90, 94], [112, 116], [134, 138]],
+    firebars: [
+        { c: 31, r: 6, len: 3, spd: 0.030, phase: 0.0 },
+        { c: 57, r: 7, len: 4, spd: -0.026, phase: 1.2 },
+        { c: 80, r: 7, len: 3, spd: 0.034, phase: 2.4 },
+        { c: 104, r: 7, len: 4, spd: -0.030, phase: 0.6 },
+        { c: 128, r: 6, len: 3, spd: 0.028, phase: 1.8 },
+    ],
+    build(a) {
+        a.ground(0, 175)
+        for (const [c1, c2] of [[22, 25], [42, 46], [66, 70], [90, 94], [112, 116], [134, 138]])
+            for (let c = c1; c <= c2; c++) { a.set(c, 13, EMPTY); a.set(c, 14, EMPTY) }
+        a.row(0, 175, 2, BRICK)                 // low brick ceiling: this is a dungeon
+        // Stalactites / hanging walls you run under, and low walls you hop. Alternating
+        // them squeezes the corridor so the firebars have teeth without being unfair.
+        a.wall(12, 3, 7); a.wall(18, 8, 12)
+        a.wall(36, 3, 6); a.wall(50, 9, 12)
+        a.wall(62, 3, 8); a.wall(74, 9, 12)
+        a.wall(86, 3, 6); a.wall(98, 9, 12)
+        a.wall(120, 3, 7); a.wall(144, 9, 12)
+        a.row(24, 27, 9, BRICK); a.row(48, 52, 6, BRICK)
+        a.row(96, 99, 9, BRICK); a.set(97, 9, QUESTION)
+        a.row(146, 150, 6, BRICK)
+        a.stairUp(148, 8)
+        a.set(160, 12, SOLID)
+    },
+    coinArcs: [
+        { c: 26, r: 6 }, { c: 28, r: 6 }, { c: 49, r: 3 }, { c: 51, r: 3 },
+        { c: 96, r: 6 }, { c: 98, r: 6 }, { c: 147, r: 3 }, { c: 149, r: 3 },
+    ],
+    enemies: [
+        { type: 'goomba', c: 16 }, { type: 'koopa', c: 34 }, { type: 'goomba', c: 39 },
+        { type: 'koopa', c: 55 }, { type: 'goomba', c: 60 }, { type: 'goomba', c: 79 },
+        { type: 'koopa', c: 84 }, { type: 'goomba', c: 101 }, { type: 'koopa', c: 108 },
+        { type: 'goomba', c: 122 }, { type: 'koopa', c: 132 }, { type: 'goomba', c: 142 },
+    ],
+    decor: {
+        clouds: [], bushes: [],
+        torches: [4, 14, 28, 40, 54, 68, 82, 96, 110, 124, 138, 152, 164],
+    },
+})
+
+// The main progression. 1-2 and the bonus room are NOT here on purpose - they are pipe
+// detours that warp back (see warpCol/downCol on LEVEL_1), which is how the original
+// handles them too. Clearing 1-4 is the game: advanceLevel() falls through to state='win'.
+const LEVELS = [LEVEL_1, LEVEL_3, LEVEL_4]
 
 const SuperMarioGame = () => {
     const canvasRef = useRef(null)
@@ -279,6 +421,7 @@ const SuperMarioGame = () => {
         let enemies = []
         let coinsArr = []
         let shrooms = []
+        let bars = []          // firebars (castle): rotating flame arms, see LEVEL_4
         let fireballs = []
         let particles = []
         let popups = []
@@ -307,10 +450,33 @@ const SuperMarioGame = () => {
                 w: 14, h: e.type === 'koopa' ? 24 : 16,
                 vx: -0.6, vy: 0, alive: true, shell: false, still: false, anim: 0, squash: 0, flip: false, grace: 0,
             }))
+            // Piranha plants live in pipes: find the pipe top under each spawn column
+            // rather than hard-coding a height, so moving a pipe cannot desync them.
+            const pipeTopRow = (c) => {
+                for (let r = 0; r < 13; r++) if (def.grid[r] && def.grid[r][c] === PIPE) return r
+                return 13
+            }
+            for (const p of def.plants || []) {
+                const top = pipeTopRow(p.c) * TILE
+                enemies.push({
+                    // centre the 12px plant in the 16px pipe mouth (was `TILE - PLANT_W/2`,
+                    // which hung it 6px off the pipe's right shoulder)
+                    type: 'plant', x: p.c * TILE + (TILE - PLANT_W) / 2, y: top, w: PLANT_W, h: 0,
+                    vx: 0, vy: 0, alive: true, anim: 0, squash: 0, flip: false, grace: 0,
+                    pipeTop: top, pipeCol: p.c, delay: p.delay || 0, t: 0, out: 0,
+                })
+            }
             coinsArr = (def.coinArcs || []).map(cc => ({
                 x: cc.c * TILE + 4, y: cc.r * TILE + 4, w: 8, h: 8, taken: false, anim: Math.random() * 6,
             }))
             shrooms = []
+            // Firebars are pure geometry: a pivot, an angle, and `len` flame balls strung
+            // out along the arm. No gravity, no collision with the level - they sweep
+            // through whatever is there, exactly as they do in the original castle.
+            bars = (def.firebars || []).map(f => ({
+                x: f.c * TILE + TILE / 2, y: f.r * TILE + TILE / 2,
+                len: f.len || 3, ang: f.phase || 0, spd: f.spd || 0.03, c: f.c, r: f.r,
+            }))
             fireballs = []
             particles = []
             popups = []
@@ -473,16 +639,84 @@ const SuperMarioGame = () => {
             const frontCol = Math.floor((m.x + m.w + 1) / TILE)
             const feetRow = Math.floor((m.y + m.h) / TILE)
             let wantJump = false
+            let jumpHold = 16   // frames of held jump; short taps land sooner
 
             // pits / gaps: jump at the edge
             if (m.onGround && !groundAt(frontCol + 1)) wantJump = true
             // pipes / walls directly ahead
             if (solidAt(frontCol + 1, feetRow - 1) || solidAt(frontCol + 1, feetRow - 2)) wantJump = true
 
+            // Piranha plants: do NOT stall. Standing still in 1-1 is a death sentence -
+            // a goomba bounces off an upstream pipe and walks into a parked Mario.
+            //
+            // The commit distance is solved from the jump arc rather than tuned per Mario
+            // size, because a fixed 46px worked while small and jammed Fire Mario face-first
+            // into the pipe wall (his front hit the lip at feet=158, 14px below it, and he
+            // spent the rest of the rise scraping the pipe straight into the plant). Solve
+            // "how long to climb above the plant's head" with the real constants -
+            // v0 = JUMP_VEL + |vx|*0.18, gravity GRAVITY_HOLD while rising - then take off
+            // that many frames early. Taller pipes need a longer run-up, which no single
+            // constant could cover: the 4-tile pipes need ~12 frames, the 2-tile ones ~8.
+            // Burn it when we can, but note a fireball bounces ~1 tile (vy=-3.6, g=0.4) and
+            // dies on the pipe wall, so a plant on a tall pipe is physically NOT burnable
+            // from the ground - the jump is the only answer there.
+            let plant = null
+            let plantNear = false
+            for (const e of enemies) {
+                if (!e.alive || e.type !== 'plant' || e.flip) continue
+                const dx = (e.x + e.w / 2) - (m.x + m.w / 2)
+                if (dx > -12 && dx < 160 && (!plant || dx < plant.dx)) plant = { dx, e }
+            }
+            if (plant) {
+                const e = plant.e
+                if (m.power === 'fire' && plant.dx > 20 && plant.dx < 220) firePressed = true
+                const near = e.pipeCol * TILE
+                const head = e.pipeTop - PLANT_H * 0.9          // assume it is nearly up
+                // rise needed to get the FEET 10px ABOVE that head. Note the sign: writing
+                // `- 8` here asks the arc to stop 8px below the head, which clipped a plant
+                // by 2px at col 101 while still clearing the shorter ones by luck.
+                const climb = Math.max(18, (m.y + m.h) - head + 10)
+                const v0 = 7.7 + Math.abs(m.vx) * 0.18
+                const disc = v0 * v0 - 2 * 0.27 * climb
+                const frames = disc > 0 ? (v0 - Math.sqrt(disc)) / 0.27 : 26
+                const lead = frames * Math.max(2.2, Math.abs(m.vx)) + 2
+                const dist = near - (m.x + m.w)
+                if (dist < 150) plantNear = true
+                // NOTE: walking the last stretch instead of running was tried and reverted.
+                // It does fix col 46 (the 97px climb eats ~32px of runway at walk speed vs
+                // ~54px at run speed, giving +10px clearance) but slowing every approach
+                // re-times the entire level and Mario then dies at col 94 in both passes.
+                // Height-per-pixel is the right lever; applying it globally is not.
+                if (dist > 4 && dist < lead && m.onGround) { wantJump = true; jumpHold = 16 }
+            }
+
+            // Back up into a released power-up. Bumping a ? block while running right at
+            // ~3.3px/frame means outrunning the thing you just released: the flower spends
+            // ~30 frames emerging and then crawls right at 0.8, so it was still at col 18
+            // on the ground when Mario reached col 26. Stopping is not enough either - a
+            // goomba sits at col 18. Walking LEFT closes on the flower (it drifts right at
+            // 0.8) AND retreats from the goomba (it only walks at 0.6), so it is strictly
+            // safer than standing still. Never do this with a pit ahead.
+            let backing = false
+            const pitAhead = !groundAt(frontCol + 1) || !groundAt(frontCol + 2) || !groundAt(frontCol + 3)
+            if (!pitAhead) {
+                for (const s of shrooms) {
+                    if (s.taken) continue
+                    const dx = (s.x + s.w / 2) - (m.x + m.w / 2)
+                    if (dx > -72 && dx < 26) { backing = true; keys.right = false; if (dx < -4) keys.left = true; break }
+                }
+            }
+            if (backing) keys.run = false
+
             if (m.power !== 'fire') {
-                // seek power-ups: bump ? blocks overhead until we're Fire Mario
-                for (let d = 0; d <= 1; d++) {
-                    const c = frontCol + d
+                // seek power-ups: bump the ? block DIRECTLY OVERHEAD. Not the one a tile
+                // ahead - measured, the old `frontCol + 1` rule jumped at x=227, and the
+                // head crossed the block's row at x=244 while the block's column starts at
+                // x=256. Twelve pixels short, every single run, so the autopilot was never
+                // Fire Mario and the "burn enemies" branch below never once executed.
+                const q0 = Math.floor(m.x / TILE)
+                const q1 = Math.floor((m.x + m.w - 1) / TILE)
+                for (let c = q0; c <= q1; c++) {
                     if (level.grid[9] && level.grid[9][c] === QUESTION && m.onGround) { wantJump = true; break }
                 }
                 // grab a nearby power-up sitting above us
@@ -491,11 +725,32 @@ const SuperMarioGame = () => {
                     const dx = s.x - m.x, dy = (s.y + s.h) - (m.y + m.h)
                     if (dx > -12 && dx < 40 && dy < -6 && m.onGround) { wantJump = true; break }
                 }
-                // hop over enemies while still small (best effort)
+                // hop over enemies while still small (best effort). Two constraints that
+                // the original `dx > 4 && dx < 64` lacked, and together they are the whole
+                // reason the autopilot was never Fire Mario: the col-18 goomba (x=288)
+                // satisfied dx < 64 as soon as Mario hit x=224, so he took off four tiles
+                // early and sailed over the ? block at col 16 (x 256..272) at the top of a
+                // jump he never needed to take yet.
+                //   - skip enemies that have not woken up: a goomba offscreen right is
+                //     frozen, so there is no reason to burn a jump on it yet
+                //   - 44px, not 64: still a comfortable stomp, but it now fires at x~249,
+                //     which is exactly where the ? block rule wants to be
                 for (const e of enemies) {
                     if (!e.alive || e.flip) continue
+                    if (e.x > cameraX + VIEW_W) continue
                     const dx = e.x - m.x
-                    if (dx > 4 && dx < 64 && Math.abs((e.y + e.h) - (m.y + m.h)) < 20 && m.onGround) { wantJump = true; break }
+                    if (dx > 4 && dx < 44 && Math.abs((e.y + e.h) - (m.y + m.h)) < 20 && m.onGround) {
+                        wantJump = true
+                        // A full hop travels ~110px. Hopping the goomba at col 41 that way
+                        // landed Mario at x=687 when the col-46 plant pipe needs its take-off
+                        // by x=672 - the hop ate the runway for the pipe jump, and big Mario's
+                        // torso then clipped the plant 15px into the arc. A 4-frame TAP keeps
+                        // the hop low so the landing moves upstream and the pipe keeps its
+                        // run-up. (Taking the hop earlier instead was worse: dx<58 made him
+                        // land on top of the goomba and die at col 45.)
+                        if (plantNear) jumpHold = 1
+                        break
+                    }
                 }
             } else {
                 // Fire Mario: burn enemies ahead so nothing can touch us
@@ -507,19 +762,19 @@ const SuperMarioGame = () => {
                 }
             }
 
-            if (wantJump && m.onGround && apHold <= 0) { m.jumpPressed = true; keys.jump = true; apHold = 16 }
+            if (wantJump && m.onGround && apHold <= 0) { m.jumpPressed = true; keys.jump = true; apHold = jumpHold }
             else if (apHold > 0) { keys.jump = true; apHold-- }
             else keys.jump = false
         }
 
         // ---- neuroevolution (option 4): recurrent MLP controller + GA + turbo showcase ----
-        const NI = 21, NH = 10, NO = 5           // inputs, recurrent hidden, outputs [left,right,run,jump,fire]
+        const NI = 24, NH = 10, NO = 5           // inputs, recurrent hidden, outputs [left,right,run,jump,fire]
         const WLEN = NI * NH + NH * NH + NH + NH * NO + NO
         const POP = 24
         const EP_CAP = 1500
         const TURBO = 12                          // headless steps/frame while training (fast montage)
         const SHOWCASE_FROM_GEN = 6               // warm up headlessly, then slow down to show records
-        const EVO_KEY = 'mario-evo-v2'
+        const EVO_KEY = 'mario-evo-v3'
         let pop = [], fitArr = new Array(POP).fill(0)
         let genome = null, gen = 1, epIndex = 0, maxCol = 0, epSteps = 0, evoJumpHold = 0
         let bestEverFit = 0, bestEverWeights = null, bestCol = 0, evoBanner = 0, lastBestAtGen = 0
@@ -590,6 +845,20 @@ const SuperMarioGame = () => {
             inA[18] = cd < 1e9 ? clamp(1 - cd / 200, 0, 1) : 0
             inA[19] = clamp(m.x / flagX, 0, 1)
             inA[20] = (ef && ex > 0 && ex < 44 && ey > -20 && ey < 24) ? 1 : 0
+            // piranha plants. Three signals, because the useful one is a *window*, not a
+            // distance: a running jump has to peak over the plant's head, so "a plant
+            // exists somewhere within 10 tiles" is nearly useless to a net (it fires far
+            // too early and the agent bounces into the pipe). LEAP peaks at the range
+            // where the autopilot commits, which is hand-buildable AND evolvable.
+            let pdx = 1e9, pout = 0
+            for (const e of enemies) {
+                if (!e.alive || e.type !== 'plant' || e.flip) continue
+                const dx = e.x - m.x
+                if (dx > -14 && dx < pdx) { pdx = dx; pout = e.out }
+            }
+            inA[21] = pdx < 1e9 ? clamp(1 - pdx / 160, 0, 1) : 0                       // presence
+            inA[22] = pout                                                              // how far out of its pipe
+            inA[23] = pdx < 1e9 ? Math.max(0, 1 - Math.abs(pdx - 44) / 40) : 0          // LEAP NOW (~2.75 tiles)
             return inA
         }
         const evolveDrive = () => {
@@ -604,8 +873,8 @@ const SuperMarioGame = () => {
             keys.down = false
             if (out[3] > 0 && m.onGround) {
                 m.jumpPressed = true; keys.jump = true; evoJumpHold = 12
-                // discourage pointless jumping (air-locking): only free to jump near a pit/wall/enemy
-                if (inp[8] === 0 && inp[9] === 0 && inp[20] === 0 && inp[17] === 0) evoBonus -= 0.3
+                // discourage pointless jumping (air-locking): only free to jump near a pit/wall/enemy/plant
+                if (inp[8] === 0 && inp[9] === 0 && inp[20] === 0 && inp[17] === 0 && inp[22] < 0.3 && inp[23] === 0) evoBonus -= 0.3
             }
             else if (evoJumpHold > 0) { keys.jump = true; evoJumpHold-- }
             else keys.jump = false
@@ -653,16 +922,18 @@ const SuperMarioGame = () => {
         }
         // hand-designed "run right + jump when a pit/wall/enemy is directly ahead" seed,
         // so a fresh population already plays deep into the level before evolution refines it
-        const seedGenome = (runW, jumpW, wallW) => {
+        const seedGenome = (runW, jumpW, wallW, plantW) => {
             const w = new Float64Array(WLEN)
             const bh = NI * NH + NH * NH, bo = bh + NH, ob = bo + NH * NO
             w[8] = 3; w[9] = wallW; w[10] = wallW * 0.66; w[17] = 2.5; w[20] = 2.5   // pit, wall, enemy
+            w[11] = wallW * 0.8                                                       // wall ~4 tiles: commit early
+            w[22] = plantW; w[23] = plantW                                            // piranha out + leap window
             w[bh] = -1.5
             w[bo + 3 * NH] = jumpW; w[ob + 3] = -1                                    // jump <- danger
             w[ob + 1] = 2; w[ob + 0] = -2; w[ob + 2] = runW                           // right / no-left / run
             return w
         }
-        const seedGenomes = () => [seedGenome(1.5, 3, 3), seedGenome(2, 3.5, 3), seedGenome(1.2, 2.5, 4)]
+        const seedGenomes = () => [seedGenome(1.5, 3, 3, 3), seedGenome(2, 3.5, 3, 3.5), seedGenome(1.2, 2.5, 4, 2.5)]
         const startEvolve = () => {
             mode = 'evolve'; audioController.init(); audioController.startMusic('overworld')
             let saved = null
@@ -829,12 +1100,30 @@ const SuperMarioGame = () => {
             if (e.x < 0) { e.x = 0; e.vx *= -1 }
         }
 
+        // ---- piranha plant motion ----
+        // No gravity, no walking: it rides its pipe. `out` is 0..1 and drives both the
+        // drawn sprite (clipped at the pipe lip) and the hitbox height, so a fully
+        // retracted plant has h=0 and cannot touch anything standing on the pipe.
+        const plantTick = (e) => {
+            e.t++
+            const CYCLE = PLANT_RISE + PLANT_OUT + PLANT_SINK + PLANT_GONE
+            const cyc = (e.t + e.delay) % CYCLE
+            let f = 0
+            if (cyc < PLANT_RISE) f = cyc / PLANT_RISE
+            else if (cyc < PLANT_RISE + PLANT_OUT) f = 1
+            else if (cyc < PLANT_RISE + PLANT_OUT + PLANT_SINK) f = 1 - (cyc - PLANT_RISE - PLANT_OUT) / PLANT_SINK
+            else f = 0
+            e.out = f
+            e.h = Math.round(PLANT_H * f)
+            e.y = e.pipeTop - e.h
+        }
+
         // ---- UPDATE ----
         const update = () => {
             tick++
             if (state === 'attract' || state === 'menu' || state === 'gameover' || state === 'win') return
 
-            if (state === 'intro') { if (--introTimer <= 0) { state = 'play'; audioController.startMusic(level.bg === 'under' ? 'underground' : 'overworld') } return }
+            if (state === 'intro') { if (--introTimer <= 0) { state = 'play'; audioController.startMusic(bgUnder() ? 'underground' : 'overworld') } return }
 
             if (state === 'flag') {
                 flagT++
@@ -995,6 +1284,28 @@ const SuperMarioGame = () => {
             }
             fireballs = fireballs.filter(f => !f.dead)
 
+            // ---- Firebars (castle) ----
+            // Rotate, then test every ball on the arm. Both the hit test and the draw loop
+            // walk the SAME ball positions, so the flames you see are exactly the flames
+            // that kill you - the classic way to ship an unfair firebar is to draw one set
+            // of positions and collide another.
+            // Fire and lava kill outright, as in the original: no power-up saves you from
+            // the fire, so `die()` rather than `hurt()`.
+            for (const b of bars) {
+                b.ang += b.spd
+                for (let i = 1; i <= b.len; i++) {
+                    const bx = b.x + Math.cos(b.ang) * i * 14
+                    const by = b.y + Math.sin(b.ang) * i * 14
+                    if (bx > mario.x - 96 && bx < mario.x + 96) {
+                        if (overlap(mario, { x: bx - 5, y: by - 5, w: 10, h: 10 })) {
+                            spark(bx, by, ['#fff0a0', '#ff8000', '#ff2000'], 12, 2.6)
+                            if (state === 'play') die()
+                            break
+                        }
+                    }
+                }
+            }
+
             // ---- Enemies ----
             for (const e of enemies) {
                 if (!e.alive) continue
@@ -1003,10 +1314,12 @@ const SuperMarioGame = () => {
                 // activate only when near camera
                 if (e.x > cameraX + VIEW_W + 16) continue
                 e.anim++
-                enemyCollide(e)
+                if (e.type === 'plant') plantTick(e); else enemyCollide(e)
                 if (e.y > VIEW_H + 30) { e.alive = false; continue }
 
                 if (overlap(mario, e)) {
+                    // Piranha plants are never stompable - there is no safe contact.
+                    if (e.type === 'plant') { hurt(); continue }
                     const marioBottom = mario.y + mario.h
                     const stomping = mario.vy > 0 && marioBottom - e.y < 12
                     const kickDir = (mario.x + mario.w / 2 < e.x + e.w / 2) ? 4 : -4
@@ -1047,7 +1360,7 @@ const SuperMarioGame = () => {
                 if (!s.alive || !s.shell || s.still) continue
                 if (s.grace > 0) s.grace--
                 for (const o of enemies) {
-                    if (o === s || !o.alive || o.flip || o.squash || o.shell) continue
+                    if (o === s || !o.alive || o.flip || o.squash || o.shell || o.type === 'plant') continue
                     if (overlap(s, o)) {
                         o.flip = true; o.vy = -6; addScore(200, o.x, o.y - 8, '200'); if (mode === 'evolve') evoBonus += 40
                         audioController.playNoise(0.1, 0.18)
@@ -1097,6 +1410,20 @@ const SuperMarioGame = () => {
             used: C.used, pipe: C.pipe, pipeDark: C.pipeDark, pipeLight: C.pipeLight,
             solid: '#b06020', solidLight: '#e8a058', solidDark: '#6a2800',
         }
+        // Castle palette: the dungeon palette of the original, but the ground is a dull
+        // stone rather than the underground blue, so 1-4 reads as a different place from
+        // 1-2 at a glance and not just a darker one.
+        const PAL_CASTLE = {
+            ground: '#7a5038', groundDark: '#4a2c1c', groundLight: '#c08860',
+            brick: '#8a5a3c', brickLine: '#3a2010', block: C.block, blockDark: C.blockDark, blockLight: C.blockLight,
+            used: '#5a3a26', pipe: '#0fb0a0', pipeDark: '#0a7d72', pipeLight: '#7ff0e0',
+            solid: '#6e6e6e', solidLight: '#a8a8a8', solidDark: '#3c3c3c',
+        }
+        // 'castle' shares every underground affordance (dark sky, white HUD text, the
+        // minor-key track) - it differs only in tile colour. Keeping this one predicate
+        // means a third biome cannot silently fall back to sky-blue text.
+        const bgUnder = () => level.bg === 'under' || level.bg === 'castle'
+        const pal = () => (level.bg === 'castle' ? PAL_CASTLE : level.bg === 'under' ? PAL_UNDER : PAL_OVER)
         const PAL_UNDER = {
             ground: '#1f3fae', groundDark: '#122a7a', groundLight: '#4f6fe0',
             brick: '#2647c0', brickLine: '#0f1f5a', block: C.block, blockDark: C.blockDark, blockLight: C.blockLight,
@@ -1104,7 +1431,7 @@ const SuperMarioGame = () => {
             solid: '#8a4ad0', solidLight: '#c088f0', solidDark: '#5a2a9a',
         }
         const drawTile = (t, x, y, c, r) => {
-            const P = level.bg === 'under' ? PAL_UNDER : PAL_OVER
+            const P = pal()
             if (t === GROUND) {
                 ctx.fillStyle = P.ground; ctx.fillRect(x, y, TILE, TILE)
                 ctx.fillStyle = P.groundLight; ctx.fillRect(x, y, TILE, 3)
@@ -1312,6 +1639,36 @@ const SuperMarioGame = () => {
             else { ctx.fillRect(x + 1, y + 10, 5, 4); ctx.fillRect(x + 8, y + 10, 5, 4) }
         }
 
+        // Piranha plant: 12x26 sprite drawn from its animated top-left, clipped at the
+        // pipe lip so it appears to rise out of the pipe head-first.
+        const drawPlant = (sx, e, clipped) => {
+            const x = px(sx), y = px(e.y)
+            ctx.save()
+            // clip to the pipe's exact column, so a plant can never be drawn overlapping
+            // the pipe wall it is rising through
+            if (clipped) { ctx.beginPath(); ctx.rect(px(e.pipeCol * TILE), 0, TILE, e.pipeTop); ctx.clip() }
+            // stem
+            ctx.fillStyle = C.plant; ctx.fillRect(x + 4, y + 10, 4, 16)
+            ctx.fillStyle = C.plantLight; ctx.fillRect(x + 5, y + 11, 1, 15)
+            ctx.fillStyle = C.plantDark; ctx.fillRect(x + 7, y + 11, 1, 15)
+            // leaves
+            ctx.fillStyle = C.plant
+            ctx.fillRect(x + 1, y + 15, 4, 4); ctx.fillRect(x + 7, y + 19, 4, 4)
+            ctx.fillStyle = C.plantDark
+            ctx.fillRect(x + 1, y + 18, 4, 1); ctx.fillRect(x + 7, y + 22, 4, 1)
+            // head
+            ctx.fillStyle = C.plantDark; ctx.fillRect(x, y + 1, 12, 8)
+            ctx.fillStyle = C.marioRed
+            ctx.fillRect(x + 1, y, 10, 7); ctx.fillRect(x, y + 2, 12, 4)
+            ctx.fillStyle = C.white; ctx.fillRect(x, y + 6, 12, 2)          // upper lip
+            ctx.fillStyle = C.plantJaw; ctx.fillRect(x + 1, y + 8, 10, 3)   // jaw
+            ctx.fillStyle = C.white                                          // teeth
+            ctx.fillRect(x + 2, y + 8, 2, 2); ctx.fillRect(x + 8, y + 8, 2, 2)
+            ctx.fillStyle = C.black                                          // eyes
+            ctx.fillRect(x + 3, y + 3, 1, 2); ctx.fillRect(x + 8, y + 3, 1, 2)
+            ctx.restore()
+        }
+
         const drawKoopa = (e) => {
             const x = px(e.x), y = px(e.y)
             if (e.shell) {
@@ -1451,7 +1808,7 @@ const SuperMarioGame = () => {
             }
 
             // sky
-            ctx.fillStyle = level.bg === 'under' ? C.skyUnder : C.sky
+            ctx.fillStyle = bgUnder() ? C.skyUnder : C.sky
             ctx.fillRect(0, 0, viewWidth, viewHeight)
 
             ctx.save()
@@ -1478,6 +1835,41 @@ const SuperMarioGame = () => {
                 const sx = level.flagCol * TILE - cam
                 if (sx > -20 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawFlag(flagY); ctx.restore() }
             }
+            // Lava: drawn into the gap the pits already leave, so there is no second
+            // collision path to fall out of sync with the tilemap. The kill is the same
+            // fall-death the pits use; the lava is what makes the edge legible.
+            for (const [c1, c2] of level.lava || []) {
+                const x0 = c1 * TILE - cam, w = (c2 - c1 + 1) * TILE
+                if (x0 > VIEW_W || x0 + w < 0) continue
+                ctx.fillStyle = '#8a1800'; ctx.fillRect(x0, 13 * TILE, w, 2 * TILE)
+                ctx.fillStyle = '#ff5000'
+                for (let c = c1; c <= c2; c++) {
+                    const sx = c * TILE - cam
+                    const wob = Math.sin(timer * 0.06 + c * 0.9) * 2
+                    ctx.fillRect(sx, 13 * TILE + 2 + wob, TILE, 4)
+                    ctx.fillStyle = '#ffb000'
+                    ctx.fillRect(sx + 2, 13 * TILE + 3 + wob, TILE - 4, 2)
+                    ctx.fillStyle = '#ff5000'
+                }
+            }
+
+            // Firebars. Same ball positions as the hit test: pivot, then i*14 along the arm.
+            for (const b of bars) {
+                const sx = b.x - cam, sy = b.y
+                if (sx < -90 || sx > VIEW_W + 90) continue
+                ctx.fillStyle = '#8a8a8a'; ctx.fillRect(sx - 6, sy - 6, 12, 12)
+                ctx.fillStyle = '#5a5a5a'; ctx.fillRect(sx - 6, sy + 2, 12, 4)
+                for (let i = 1; i <= b.len; i++) {
+                    const bx = sx + Math.cos(b.ang) * i * 14
+                    const by = sy + Math.sin(b.ang) * i * 14
+                    const flick = (timer + i * 3) % 8 < 4
+                    ctx.fillStyle = '#ff2000'; ctx.fillRect(bx - 6, by - 6, 12, 12)
+                    ctx.fillStyle = flick ? '#ffb000' : '#ff8000'
+                    ctx.fillRect(bx - 4, by - 4, 8, 8)
+                    ctx.fillStyle = '#fff0a0'; ctx.fillRect(bx - 2, by - 2, 4, 4)
+                }
+            }
+
             if (level.castleCol) { const sx = level.castleCol * TILE - cam; if (sx > -80 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawCastle(); ctx.restore() } }
 
             // warp pipe hint (bobbing down-arrow above the gold pipe)
@@ -1516,6 +1908,12 @@ const SuperMarioGame = () => {
             for (const e of enemies) {
                 const sx = e.x - cam
                 if (sx < -20 || sx > VIEW_W + 20) continue
+                if (e.type === 'plant') {
+                    if (e.out <= 0 && !e.flip) continue
+                    if (e.flip) { ctx.save(); ctx.scale(1, -1); drawPlant(sx, { ...e, y: -(e.y + PLANT_H) }, false); ctx.restore() }
+                    else drawPlant(sx, e, true)
+                    continue
+                }
                 if (e.flip) { ctx.save(); ctx.translate(0, 0); ctx.scale(1, -1); drawKoopaOrGoomba(e, sx, -(e.y + e.h)); ctx.restore() }
                 else if (e.type === 'goomba') drawGoomba({ ...e, x: sx })
                 else drawKoopa({ ...e, x: sx })
@@ -1660,7 +2058,7 @@ const SuperMarioGame = () => {
         // DEV-only visual-test hook (never present in production builds)
         if (import.meta.env.DEV) {
             window.__marioTest = {
-                getState: () => ({ state, power: mario && mario.power, score, coins, lives, level: level.id, col: Math.round((mario ? mario.x : 0) / TILE), mode, menuSel }),
+                getState: () => ({ state, power: mario && mario.power, score, coins, lives, level: level.id, col: Math.round((mario ? mario.x : 0) / TILE), x: mario ? Math.round(mario.x) : 0, y: mario ? Math.round(mario.y) : 0, h: mario ? mario.h : 0, w: mario ? mario.w : 0, big: mario ? !!mario.big : false, mode, menuSel }),
                 start: () => { if (state === 'attract' || state === 'gameover' || state === 'win') resetGame() },
                 openMenu: () => { state = 'menu'; menuSel = 0 },
                 choose: (i) => chooseOption(i),
@@ -1682,7 +2080,15 @@ const SuperMarioGame = () => {
                 },
                 evoReset: () => resetEvolve(),
                 evoState: () => ({ mode, gen, bestFit: Math.round(bestEverFit), bestCol, col: maxCol, epIndex, showcase: evoShowcase, pop: pop.length, NI, NH, NO, WLEN }),
-                teleport: (col) => { if (!mario) return; mario.x = col * TILE; cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.42, level.cols * TILE - VIEW_W)) },
+                // teleport(col[, standRow]) - col only keeps the current height (drops
+                // onto whatever is below). Pass standRow = the solid row to stand ON to
+                // place Mario precisely, e.g. on top of a 4-tile pipe at row 9.
+                teleport: (col, standRow) => {
+                    if (!mario) return
+                    mario.x = col * TILE
+                    if (standRow !== undefined) { mario.y = standRow * TILE - mario.h; mario.vy = 0 }
+                    cameraX = Math.max(0, Math.min(mario.x - VIEW_W * 0.42, level.cols * TILE - VIEW_W))
+                },
                 setPower: (p) => {
                     if (!mario) return
                     if (p === 'small') { if (mario.power !== 'small') mario.y += 12; mario.power = 'small'; mario.big = false; mario.h = 16 }
@@ -1693,11 +2099,35 @@ const SuperMarioGame = () => {
                 powerUp: () => { fireUp() },
                 startFlag: () => { if (state === 'intro') { state = 'play' } startFlag() },
                 clearLevel: () => { if (state === 'intro') state = 'play'; levelClear() },
-                gotoLevel: (i) => { if (LEVELS[i]) loadLevel(i, true) },
+                // Skip the 110-frame level intro: checks that load a level want to measure
+                // the level, not wait out a cosmetic freeze.
+                gotoLevel: (i) => { if (LEVELS[i]) { loadLevel(i, true); state = 'play' } },
                 enterBonus: () => { if (state === 'intro') state = 'play'; enterBonus() },
                 enterUnder: () => { if (state === 'intro') state = 'play'; enterUnder() },
                 warpUp: () => { warpUp() },
                 isDetour: () => !!(level && (level.bonus || level.detour)),
+                plants: () => enemies.filter(e => e.type === 'plant').map(e => ({
+                    col: Math.round(e.x / TILE), pipeCol: e.pipeCol, x: Math.round(e.x), w: e.w,
+                    pipeTop: e.pipeTop, out: +e.out.toFixed(3),
+                    h: e.h, y: Math.round(e.y), alive: e.alive, flip: !!e.flip, squash: e.squash,
+                })),
+                // power-ups currently on the field, so a check can prove the fire flower
+                // at col 16 actually got bumped and collected
+                powerups: () => shrooms.map(s => ({
+                    kind: s.kind, col: +(s.x / TILE).toFixed(1), y: Math.round(s.y),
+                    taken: !!s.taken, emerging: s.emerging,
+                })),
+                enemies: () => enemies.filter(e => e.type !== 'plant').map(e => ({
+                    type: e.type, col: +(e.x / TILE).toFixed(1), y: Math.round(e.y),
+                    shell: !!e.shell, still: !!e.still, flip: !!e.flip, squash: e.squash,
+                    active: e.x <= cameraX + VIEW_W + 16,
+                })),
+                // Tilemap probe for the geometry audit (scripts/levelcheck.mjs). A level
+                // built by hand-placing platform gaps can contain a jump that is simply
+                // impossible, and that is invisible in a screenshot taken at x=0.
+                cell: (c, r) => (r >= 0 && r < ROWS && c >= 0 && c < level.cols ? level.grid[r][c] : -1),
+                bars: () => bars.map(b => ({ c: b.c, r: b.r, len: b.len, ang: +b.ang.toFixed(3), spd: b.spd })),
+                levelInfo: () => ({ id: level.id, bg: level.bg, cols: level.cols, flagCol: level.flagCol, castleCol: level.castleCol, lava: level.lava || [], firebars: (level.firebars || []).length }),
                 musicState: () => audioController._musicState(),
                 musicPeak: () => audioController._peak(),
             }

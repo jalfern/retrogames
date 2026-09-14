@@ -32,6 +32,7 @@ npm run preview    # preview the production build
 npm run shot -- --out scripts/.shots/x.png --eval "..."   # visual capture (see Self-verifying)
 npm run audcheck   # assert the chiptune engine is producing signal (exits non-zero on fail)
 npm run verify     # the whole Mario self-verifying suite (needs `npm run dev` running)
+npm run mariocheck / autopilotcheck / plantcheck / levelcheck / evocheck / evoprobe   # individual checks
 ```
 
 ## How the app is structured
@@ -115,8 +116,10 @@ model/machine can reproduce it (it is not an external tool):
 | `scripts/audcheck.mjs` | Starts the game and asserts the chiptune engine steps + produces an `AnalyserNode` signal; exits **non-zero** on failure (CI-friendly). |
 | `scripts/verify.mjs` | Runs the browser suite and summarises; non-zero exit on any failure (`npm run verify [-- --full]`). |
 | `scripts/mariocheck.mjs` | Title/menu/touch regression: lone Shift must not start, `?`/OPTIONS open the menu, keys 1–4, BACK/ESC, gamepad hidden on menus. |
-| `scripts/autopilotcheck.mjs` | Mario option 3 must clear 1-1 with no deaths. |
-| `scripts/evocheck.mjs` | Mario option 4 must learn (cold-start fitness ≥1500 after 60 gens) and its HUD must actually render. |
+| `scripts/autopilotcheck.mjs` | Mario option 3 must clear 1-1 twice: as it plays (must reach Fire Mario) and with fire taken away (must jump the plants). |
+| `scripts/plantcheck.mjs` | Piranha plants: cycle, hitbox == emerged part, hurts only when out, safe when retracted, never stompable. |
+| `scripts/levelcheck.mjs` | Geometry audit of every world in `LEVELS`: no pit wider than a running jump, a landing chain that actually reaches the flagpole, every firebar clear of the tilemap, lava over real holes. Catches the one level bug a screenshot cannot — a jump that is simply impossible. |
+| `scripts/evocheck.mjs` | Mario option 4 must learn (cold-start fitness ≥900 after 60 gens, and ≥1.5x its own gen-1 — the ratio is the real gate, the GA is stochastic) and its HUD must actually render. |
 | `scripts/evoprobe.mjs` | Per-genome scalpel: one episode with a named/random/evolved controller → `maxCol`, jumps, trace. |
 | `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), `__marioTest` wait, pass/fail `Report`. |
 
@@ -149,7 +152,7 @@ npm run evoprobe -- --preset pitwide-run --trace
 | Job | Trigger | What it does |
 |-----|---------|--------------|
 | `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `build`. No browser, fast, this is the gate. |
-| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + evocheck), uploads `scripts/.shots/` as an artifact, dumps the vite log on failure. |
+| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + evocheck), uploads `scripts/.shots/` as an artifact, dumps the vite log on failure. |
 
 ```bash
 gh pr checks --watch                      # the static gate on your PR
@@ -175,13 +178,18 @@ Deep engine notes moved to **[`src/games/SuperMario/README.md`](src/games/SuperM
 — this section had grown to a third of this file. Read that first for:
 
 - the OPTIONS menu / `syncUi()` + `apiRef` contract and the four play modes
+- **worlds**: `LEVELS = [1-1, 1-3, 1-4]` (1-2 and the bonus room are pipe detours that warp
+  back), the level builder API, and the two castle hazards — lava and rotating firebars
+- **piranha plants**: motion, the hitbox-is-the-emerged-part rule, and why the autopilot must
+  never stall near one
 - **option 3 autopilot** (deterministic, clears 1-1 perfectly) and **option 4 neuroevolution**
-  (recurrent 21→10→5 tanh MLP, GA, turbo + showcase replays, `localStorage` persistence)
+  (recurrent 24→10→5 tanh MLP, GA, turbo + showcase replays, `localStorage` persistence)
 - the *honest* cold-start fitness baseline and why the GA still stops at ~col 140 of 212
 - `forwardNN` index-base gotcha (`bi/bh/bo/ob`) that silently produces an unjoppable agent
 - the full `window.__marioTest` DEV hook reference
 - capture-timing, teleport-onto-enemy and minified-live-verify gotchas
-- known gaps / next steps (evolve can't finish 1-1, no piranha plants, no 1-up, no 1-3/1-4)
+- known gaps / next steps (evolve can't finish 1-1, autopilot never reaches Fire Mario,
+  no 1-up, no moving platforms, no 1-3/1-4)
 
 Quick orientation: `src/games/SuperMario/index.jsx` is the live build, and
 `src/games/SuperMarioClassic/index.jsx` is the vendored pristine v1 (route `/mario-classic`,
