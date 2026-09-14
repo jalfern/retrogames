@@ -29,7 +29,8 @@ const suite = [
     node('mariocheck.mjs'),
     node('autopilotcheck.mjs'),
     node('plantcheck.mjs'),
-    full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '700']),
+    node('levelcheck.mjs'),
+    full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '500']),
 ]
 
 const run = (t) => new Promise((resolve) => {

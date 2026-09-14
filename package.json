@@ -15,6 +15,7 @@
     "mariocheck": "node scripts/mariocheck.mjs",
     "autopilotcheck": "node scripts/autopilotcheck.mjs",
     "plantcheck": "node scripts/plantcheck.mjs",
+    "levelcheck": "node scripts/levelcheck.mjs",
     "evocheck": "node scripts/evocheck.mjs",
     "evoprobe": "node scripts/evoprobe.mjs",
     "verify": "node scripts/verify.mjs"

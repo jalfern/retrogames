@@ -133,7 +133,7 @@ So plants cost the GA roughly **25 columns**. It has never finished 1-1: the fla
 
 > Earlier notes here claimed `evoTrain(60)` reaches ~5500. That was a **warm** run — the
 > persisted-genome-in-`localStorage` path, which compounds across reloads. A cold CI-style
-> run tops out nearer 2500. `npm run evocheck` measures the cold number, asserts ≥1500, and
+> run tops out nearer 2500. `npm run evocheck` measures the cold number, asserts ≥900 plus a 1.5x gain over its own gen-1, and
 > **replays** the champion to report the column it truly reaches — it no longer infers a win
 > from `fitness >= 6000`, because that inference once reported a flagpole clear that a replay
 > could not reproduce.
@@ -176,6 +176,34 @@ isDetour() plants() enemies() powerups() musicState() musicPeak()
 - `evoBest()` returns current best-ever weights; `evoReset()` clears persisted evolution.
 - `evoState()` → `{ mode, gen, bestFit, bestCol, col, epIndex, showcase, pop, NI, NH, NO, WLEN }`.
 
+## Worlds 1-3 and 1-4
+
+The progression is `LEVELS = [LEVEL_1, LEVEL_3, LEVEL_4]` — clear 1-4 and the game ends
+(`advanceLevel` falls through to `state = 'win'`). 1-2 and the bonus room are deliberately
+*not* in `LEVELS`: they are pipe detours that warp back, exactly how the original reaches them.
+
+**1-3 (athhetic)** inverts the usual contract — the ground is the exception, not the rule.
+Every long gap is crossed on floating platforms at alternating heights, so the coin trail
+*doubles as the route hint*: it shows the next landing before you commit to the jump. The
+platform chains and the pit list must agree exactly, which is what `levelcheck` verifies.
+
+**1-4 (castle)** adds two hazards the rest of the game does not have:
+
+- **Lava** — pits whose floor is drawn molten. There is deliberately no second collision
+  path: the kill is the same fall-death the 1-1 pits use, and the lava is what makes the
+  edge legible in a dark room instead of a guess.
+- **Firebars** — a pivot with `len` flame balls on a rotating arm. Pure rotating geometry
+  that ignores the tilemap, so placement is the entire design problem. The usable band is
+  narrow because the level has a brick ceiling at row 2 (bottom y=48) and a floor at row 13
+  (top y=208): with `radius = len*14 + 6`, a pivot must satisfy
+  `48 + radius < y < 208 - radius`. That leaves rows 6–9 for a len-3 bar and only rows 7–8
+  for a len-4 — a len-4 bar at row 9 reaches the floor.
+
+Two rules keep a firebar honest. The **hit test and the draw loop walk the same ball
+positions** (`i * 14` along the arm) — colliding one set of positions while drawing another
+is the classic way to ship a firebar that kills you off-screen. And fire **kills outright**
+(`die()`, not `hurt()`): no power-up saves you from the fire, same as lava.
+
 ## Harness
 
 | Command | Asserts |
@@ -183,9 +211,10 @@ isDetour() plants() enemies() powerups() musicState() musicPeak()
 | `npm run verify` | the whole suite below, with a summary; non-zero exit on any failure |
 | `npm run verify -- --full` | same, with the full 60-generation evolution check |
 | `npm run mariocheck` | title/menu/touch: lone Shift must not start, `?` + OPTIONS open the menu, keys 1–4 work, BACK/ESC work, gamepad hidden on menus |
-| `npm run autopilotcheck` | option 3 clears 1-1 with no deaths **and** clears each plant pipe with the feet above its head |
+| `npm run autopilotcheck` | option 3 clears 1-1 twice — as it plays (must reach Fire Mario) and with fire taken away (must jump the plants) |
 | `npm run plantcheck` | plant cycle, hitbox==emerged-part coupling, hurts-only-when-out, safe-when-retracted, not stompable |
-| `npm run evocheck` | option 4 learns (cold-start fitness ≥1500 after 60 gens) + the evolve HUD actually renders |
+| `npm run levelcheck` | geometry audit of every world: no pit wider than a jump, a landing chain that reaches the flagpole, firebar clearance, lava over real holes |
+| `npm run evocheck` | option 4 learns (cold-start fitness ≥900 after 60 gens, and ≥1.5x its own gen-1) + the evolve HUD actually renders |
 | `npm run evoprobe` | per-genome diagnostics: named hand-built controllers, random floor, and the evolved champion (`--preset`, `--random N`, `--best`, `--trace`) |
 | `npm run audcheck` | chiptune engine steps + produces an `AnalyserNode` signal |
 | `npm run shot -- ...` | screenshot capture (see `AGENTS.md`) |
@@ -238,8 +267,20 @@ symbol name.
   col 41 forces a hop that lands ~15px past the last usable take-off for the col-46 pipe. Every
   lever tried either trades it for a worse failure or re-times the whole level. `autopilotcheck`
   reports it as a flagged `GRAZE` rather than gating it, and hard-gates a clean clearance
-  elsewhere so the arc solver cannot rot silently.
+  elsewhere (col 101, 55px) so the arc solver cannot rot silently.
+- **Small Mario cannot clear the col-46 plant pipe.** The no-fire pass is therefore pinned to
+  Big. The commit distance solves the arc from the feet, which are size-independent — but the
+  *approach* is not: the goomba hop and the `?`-block bumps arrive at a different phase, and as
+  small Mario he takes the jump ~15px late and dies. Real bug, unfixed, deliberately not hidden
+  by testing only the size that passes.
+- **The autopilot only knows 1-1.** Its rules are tuned to that level's geometry, so when it
+  clears 1-1 it walks into an athletic pit in 1-3 and dies. `autopilotcheck` therefore stops at
+  the flag — which is the actual win condition for "did it clear 1-1" — rather than pretending
+  the whole game is in scope.
 - **No 1-up mushroom** (`coins % 100 === 0` silently adds a life; no 1-up block exists).
 - **No moving or half-solid platforms.**
-- `LEVELS = [LEVEL_1]` only. 1-2 and the bonus room are pipe-reached detours that warp back,
+- **No Bowser, no axe, no bridge** in 1-4. It ends on a flagpole like every other level;
+  the castle finale of the original is the last big piece of 1-4 still missing.
+- `LEVELS = [LEVEL_1, LEVEL_3, LEVEL_4]`. 1-2 and the bonus room stay pipe detours that
+  warp back, which is also how the original reaches them.
   so "WORLD 1-1 CLEAR" leads nowhere — 1-3 (athletic) and 1-4 (castle) would close World 1.

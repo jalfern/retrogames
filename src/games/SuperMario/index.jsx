@@ -228,7 +228,122 @@ const BONUS = buildLevel({
 
 // Linear progression is just 1-1; LEVEL_2 (underground) and BONUS are
 // pipe-reached detour rooms that warp you back into 1-1.
-const LEVELS = [LEVEL_1]
+// World 1-3 (athletic). The ground is the exception here rather than the rule: every
+// long gap is crossed on floating platforms, so PITS and PLATFORMS must agree exactly -
+// a gap with no platform over it is not a hard jump, it is an unavoidable death.
+const LEVEL_3 = buildLevel({
+    id: '1-3', cols: 196, bg: 'sky', flagCol: 178, castleCol: 185,
+    shroomCols: [11],
+    build(a) {
+        a.ground(0, 195)
+        const PITS = [[16, 24], [30, 40], [47, 57], [64, 70], [96, 106], [122, 130], [150, 157]]
+        for (const [c1, c2] of PITS) for (let c = c1; c <= c2; c++) { a.set(c, 13, EMPTY); a.set(c, 14, EMPTY) }
+        // Every pit gets a platform chain. Alternating heights give the run a rhythm
+        // instead of one flat catwalk: high-low-high forces a landing, not just a hold.
+        const PLATFORMS = [
+            [17, 19, 9], [21, 23, 8], [24, 24, 10],
+            [31, 33, 9], [35, 37, 7], [38, 40, 9],
+            [48, 50, 8], [52, 54, 9], [55, 57, 7],
+            [65, 67, 9], [68, 70, 8],
+            [97, 99, 9], [101, 103, 8], [104, 106, 9],
+            [123, 125, 8], [127, 129, 9],
+            [151, 153, 9], [155, 157, 8],
+        ]
+        for (const [c1, c2, r] of PLATFORMS) a.row(c1, c2, r, r <= 7 ? BRICK : SOLID)
+        a.set(11, 9, QUESTION)
+        a.row(78, 84, 5, BRICK); a.set(81, 5, QUESTION)
+        a.row(86, 92, 9, BRICK); a.set(89, 9, QUESTION)
+        a.row(110, 116, 6, BRICK); a.set(113, 6, QUESTION)
+        a.row(136, 142, 9, BRICK)
+        a.stairUp(164, 8)
+        a.set(178, 12, SOLID)
+    },
+    // Coins ride the platform chains - in an athletic level the coin trail IS the route
+    // hint, showing where the next landing is before you have committed to the jump.
+    coinArcs: [
+        { c: 17, r: 6 }, { c: 19, r: 6 }, { c: 21, r: 5 }, { c: 23, r: 5 },
+        { c: 31, r: 6 }, { c: 33, r: 6 }, { c: 36, r: 4 }, { c: 39, r: 6 },
+        { c: 48, r: 5 }, { c: 50, r: 5 }, { c: 53, r: 6 }, { c: 56, r: 4 },
+        { c: 65, r: 6 }, { c: 69, r: 5 },
+        { c: 79, r: 3 }, { c: 80, r: 3 }, { c: 82, r: 3 }, { c: 83, r: 3 },
+        { c: 97, r: 6 }, { c: 99, r: 6 }, { c: 102, r: 5 }, { c: 105, r: 6 },
+        { c: 111, r: 3 }, { c: 112, r: 3 }, { c: 114, r: 3 }, { c: 115, r: 3 },
+        { c: 124, r: 5 }, { c: 128, r: 6 },
+        { c: 151, r: 6 }, { c: 153, r: 6 }, { c: 156, r: 5 },
+    ],
+    enemies: [
+        { type: 'koopa', c: 20 }, { type: 'goomba', c: 33 }, { type: 'koopa', c: 39 },
+        { type: 'goomba', c: 50 }, { type: 'koopa', c: 56 }, { type: 'goomba', c: 66 },
+        { type: 'goomba', c: 79 }, { type: 'koopa', c: 88 }, { type: 'goomba', c: 90 },
+        { type: 'koopa', c: 99 }, { type: 'goomba', c: 105 }, { type: 'koopa', c: 112 },
+        { type: 'goomba', c: 124 }, { type: 'koopa', c: 138 }, { type: 'goomba', c: 139 },
+        { type: 'goomba', c: 152 },
+    ],
+    decor: {
+        clouds: [6, 17, 28, 39, 50, 61, 72, 84, 95, 106, 118, 129, 141, 152, 164],
+        bushes: [3, 13, 74, 94, 118, 146], hills: [[1, 1], [12, 0], [45, 1], [76, 0], [110, 1], [140, 0], [166, 1]],
+    },
+})
+
+// World 1-4 (castle). Two hazards the rest of the game does not have:
+//   LAVA   - gaps whose floor is lava. Still lethal on a fall, but drawn, so you can
+//            see the edge instead of guessing it in the dark.
+//   FIREBAR - a pivot with `len` flame balls on an arm, sweeping a full circle. It is
+//            pure rotating geometry: it does not respect the tilemap, so a bar placed
+//            with too little clearance sweeps through a wall. The usable band is narrow
+//            here because 1-4 has a brick ceiling at row 2 (bottom y=48) and a floor at
+//            row 13 (top y=208), so a pivot at y must satisfy 48 + radius < y < 208 -
+//            radius, where radius = len*14 + 6. That leaves rows 6..9 for a len-3 bar and
+//            only rows 7..8 for a len-4 one — a len-4 bar at row 9 reaches the floor.
+//            `npm run levelcheck` proves clearance against the real tilemap.
+const LEVEL_4 = buildLevel({
+    id: '1-4', cols: 176, bg: 'castle', flagCol: 160, castleCol: 167,
+    lava: [[22, 25], [42, 46], [66, 70], [90, 94], [112, 116], [134, 138]],
+    firebars: [
+        { c: 31, r: 6, len: 3, spd: 0.030, phase: 0.0 },
+        { c: 57, r: 7, len: 4, spd: -0.026, phase: 1.2 },
+        { c: 80, r: 7, len: 3, spd: 0.034, phase: 2.4 },
+        { c: 104, r: 7, len: 4, spd: -0.030, phase: 0.6 },
+        { c: 128, r: 6, len: 3, spd: 0.028, phase: 1.8 },
+    ],
+    build(a) {
+        a.ground(0, 175)
+        for (const [c1, c2] of [[22, 25], [42, 46], [66, 70], [90, 94], [112, 116], [134, 138]])
+            for (let c = c1; c <= c2; c++) { a.set(c, 13, EMPTY); a.set(c, 14, EMPTY) }
+        a.row(0, 175, 2, BRICK)                 // low brick ceiling: this is a dungeon
+        // Stalactites / hanging walls you run under, and low walls you hop. Alternating
+        // them squeezes the corridor so the firebars have teeth without being unfair.
+        a.wall(12, 3, 7); a.wall(18, 8, 12)
+        a.wall(36, 3, 6); a.wall(50, 9, 12)
+        a.wall(62, 3, 8); a.wall(74, 9, 12)
+        a.wall(86, 3, 6); a.wall(98, 9, 12)
+        a.wall(120, 3, 7); a.wall(144, 9, 12)
+        a.row(24, 27, 9, BRICK); a.row(48, 52, 6, BRICK)
+        a.row(96, 99, 9, BRICK); a.set(97, 9, QUESTION)
+        a.row(146, 150, 6, BRICK)
+        a.stairUp(148, 8)
+        a.set(160, 12, SOLID)
+    },
+    coinArcs: [
+        { c: 26, r: 6 }, { c: 28, r: 6 }, { c: 49, r: 3 }, { c: 51, r: 3 },
+        { c: 96, r: 6 }, { c: 98, r: 6 }, { c: 147, r: 3 }, { c: 149, r: 3 },
+    ],
+    enemies: [
+        { type: 'goomba', c: 16 }, { type: 'koopa', c: 34 }, { type: 'goomba', c: 39 },
+        { type: 'koopa', c: 55 }, { type: 'goomba', c: 60 }, { type: 'goomba', c: 79 },
+        { type: 'koopa', c: 84 }, { type: 'goomba', c: 101 }, { type: 'koopa', c: 108 },
+        { type: 'goomba', c: 122 }, { type: 'koopa', c: 132 }, { type: 'goomba', c: 142 },
+    ],
+    decor: {
+        clouds: [], bushes: [],
+        torches: [4, 14, 28, 40, 54, 68, 82, 96, 110, 124, 138, 152, 164],
+    },
+})
+
+// The main progression. 1-2 and the bonus room are NOT here on purpose - they are pipe
+// detours that warp back (see warpCol/downCol on LEVEL_1), which is how the original
+// handles them too. Clearing 1-4 is the game: advanceLevel() falls through to state='win'.
+const LEVELS = [LEVEL_1, LEVEL_3, LEVEL_4]
 
 const SuperMarioGame = () => {
     const canvasRef = useRef(null)
@@ -296,6 +411,7 @@ const SuperMarioGame = () => {
         let enemies = []
         let coinsArr = []
         let shrooms = []
+        let bars = []          // firebars (castle): rotating flame arms, see LEVEL_4
         let fireballs = []
         let particles = []
         let popups = []
@@ -344,6 +460,13 @@ const SuperMarioGame = () => {
                 x: cc.c * TILE + 4, y: cc.r * TILE + 4, w: 8, h: 8, taken: false, anim: Math.random() * 6,
             }))
             shrooms = []
+            // Firebars are pure geometry: a pivot, an angle, and `len` flame balls strung
+            // out along the arm. No gravity, no collision with the level - they sweep
+            // through whatever is there, exactly as they do in the original castle.
+            bars = (def.firebars || []).map(f => ({
+                x: f.c * TILE + TILE / 2, y: f.r * TILE + TILE / 2,
+                len: f.len || 3, ang: f.phase || 0, spd: f.spd || 0.03, c: f.c, r: f.r,
+            }))
             fireballs = []
             particles = []
             popups = []
@@ -990,7 +1113,7 @@ const SuperMarioGame = () => {
             tick++
             if (state === 'attract' || state === 'menu' || state === 'gameover' || state === 'win') return
 
-            if (state === 'intro') { if (--introTimer <= 0) { state = 'play'; audioController.startMusic(level.bg === 'under' ? 'underground' : 'overworld') } return }
+            if (state === 'intro') { if (--introTimer <= 0) { state = 'play'; audioController.startMusic(bgUnder() ? 'underground' : 'overworld') } return }
 
             if (state === 'flag') {
                 flagT++
@@ -1151,6 +1274,28 @@ const SuperMarioGame = () => {
             }
             fireballs = fireballs.filter(f => !f.dead)
 
+            // ---- Firebars (castle) ----
+            // Rotate, then test every ball on the arm. Both the hit test and the draw loop
+            // walk the SAME ball positions, so the flames you see are exactly the flames
+            // that kill you - the classic way to ship an unfair firebar is to draw one set
+            // of positions and collide another.
+            // Fire and lava kill outright, as in the original: no power-up saves you from
+            // the fire, so `die()` rather than `hurt()`.
+            for (const b of bars) {
+                b.ang += b.spd
+                for (let i = 1; i <= b.len; i++) {
+                    const bx = b.x + Math.cos(b.ang) * i * 14
+                    const by = b.y + Math.sin(b.ang) * i * 14
+                    if (bx > mario.x - 96 && bx < mario.x + 96) {
+                        if (overlap(mario, { x: bx - 5, y: by - 5, w: 10, h: 10 })) {
+                            spark(bx, by, ['#fff0a0', '#ff8000', '#ff2000'], 12, 2.6)
+                            if (state === 'play') die()
+                            break
+                        }
+                    }
+                }
+            }
+
             // ---- Enemies ----
             for (const e of enemies) {
                 if (!e.alive) continue
@@ -1255,6 +1400,20 @@ const SuperMarioGame = () => {
             used: C.used, pipe: C.pipe, pipeDark: C.pipeDark, pipeLight: C.pipeLight,
             solid: '#b06020', solidLight: '#e8a058', solidDark: '#6a2800',
         }
+        // Castle palette: the dungeon palette of the original, but the ground is a dull
+        // stone rather than the underground blue, so 1-4 reads as a different place from
+        // 1-2 at a glance and not just a darker one.
+        const PAL_CASTLE = {
+            ground: '#7a5038', groundDark: '#4a2c1c', groundLight: '#c08860',
+            brick: '#8a5a3c', brickLine: '#3a2010', block: C.block, blockDark: C.blockDark, blockLight: C.blockLight,
+            used: '#5a3a26', pipe: '#0fb0a0', pipeDark: '#0a7d72', pipeLight: '#7ff0e0',
+            solid: '#6e6e6e', solidLight: '#a8a8a8', solidDark: '#3c3c3c',
+        }
+        // 'castle' shares every underground affordance (dark sky, white HUD text, the
+        // minor-key track) - it differs only in tile colour. Keeping this one predicate
+        // means a third biome cannot silently fall back to sky-blue text.
+        const bgUnder = () => level.bg === 'under' || level.bg === 'castle'
+        const pal = () => (level.bg === 'castle' ? PAL_CASTLE : level.bg === 'under' ? PAL_UNDER : PAL_OVER)
         const PAL_UNDER = {
             ground: '#1f3fae', groundDark: '#122a7a', groundLight: '#4f6fe0',
             brick: '#2647c0', brickLine: '#0f1f5a', block: C.block, blockDark: C.blockDark, blockLight: C.blockLight,
@@ -1262,7 +1421,7 @@ const SuperMarioGame = () => {
             solid: '#8a4ad0', solidLight: '#c088f0', solidDark: '#5a2a9a',
         }
         const drawTile = (t, x, y, c, r) => {
-            const P = level.bg === 'under' ? PAL_UNDER : PAL_OVER
+            const P = pal()
             if (t === GROUND) {
                 ctx.fillStyle = P.ground; ctx.fillRect(x, y, TILE, TILE)
                 ctx.fillStyle = P.groundLight; ctx.fillRect(x, y, TILE, 3)
@@ -1639,7 +1798,7 @@ const SuperMarioGame = () => {
             }
 
             // sky
-            ctx.fillStyle = level.bg === 'under' ? C.skyUnder : C.sky
+            ctx.fillStyle = bgUnder() ? C.skyUnder : C.sky
             ctx.fillRect(0, 0, viewWidth, viewHeight)
 
             ctx.save()
@@ -1666,6 +1825,41 @@ const SuperMarioGame = () => {
                 const sx = level.flagCol * TILE - cam
                 if (sx > -20 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawFlag(flagY); ctx.restore() }
             }
+            // Lava: drawn into the gap the pits already leave, so there is no second
+            // collision path to fall out of sync with the tilemap. The kill is the same
+            // fall-death the pits use; the lava is what makes the edge legible.
+            for (const [c1, c2] of level.lava || []) {
+                const x0 = c1 * TILE - cam, w = (c2 - c1 + 1) * TILE
+                if (x0 > VIEW_W || x0 + w < 0) continue
+                ctx.fillStyle = '#8a1800'; ctx.fillRect(x0, 13 * TILE, w, 2 * TILE)
+                ctx.fillStyle = '#ff5000'
+                for (let c = c1; c <= c2; c++) {
+                    const sx = c * TILE - cam
+                    const wob = Math.sin(timer * 0.06 + c * 0.9) * 2
+                    ctx.fillRect(sx, 13 * TILE + 2 + wob, TILE, 4)
+                    ctx.fillStyle = '#ffb000'
+                    ctx.fillRect(sx + 2, 13 * TILE + 3 + wob, TILE - 4, 2)
+                    ctx.fillStyle = '#ff5000'
+                }
+            }
+
+            // Firebars. Same ball positions as the hit test: pivot, then i*14 along the arm.
+            for (const b of bars) {
+                const sx = b.x - cam, sy = b.y
+                if (sx < -90 || sx > VIEW_W + 90) continue
+                ctx.fillStyle = '#8a8a8a'; ctx.fillRect(sx - 6, sy - 6, 12, 12)
+                ctx.fillStyle = '#5a5a5a'; ctx.fillRect(sx - 6, sy + 2, 12, 4)
+                for (let i = 1; i <= b.len; i++) {
+                    const bx = sx + Math.cos(b.ang) * i * 14
+                    const by = sy + Math.sin(b.ang) * i * 14
+                    const flick = (timer + i * 3) % 8 < 4
+                    ctx.fillStyle = '#ff2000'; ctx.fillRect(bx - 6, by - 6, 12, 12)
+                    ctx.fillStyle = flick ? '#ffb000' : '#ff8000'
+                    ctx.fillRect(bx - 4, by - 4, 8, 8)
+                    ctx.fillStyle = '#fff0a0'; ctx.fillRect(bx - 2, by - 2, 4, 4)
+                }
+            }
+
             if (level.castleCol) { const sx = level.castleCol * TILE - cam; if (sx > -80 && sx < VIEW_W + 40) { ctx.save(); ctx.translate(-cam, 0); drawCastle(); ctx.restore() } }
 
             // warp pipe hint (bobbing down-arrow above the gold pipe)
@@ -1895,7 +2089,9 @@ const SuperMarioGame = () => {
                 powerUp: () => { fireUp() },
                 startFlag: () => { if (state === 'intro') { state = 'play' } startFlag() },
                 clearLevel: () => { if (state === 'intro') state = 'play'; levelClear() },
-                gotoLevel: (i) => { if (LEVELS[i]) loadLevel(i, true) },
+                // Skip the 110-frame level intro: checks that load a level want to measure
+                // the level, not wait out a cosmetic freeze.
+                gotoLevel: (i) => { if (LEVELS[i]) { loadLevel(i, true); state = 'play' } },
                 enterBonus: () => { if (state === 'intro') state = 'play'; enterBonus() },
                 enterUnder: () => { if (state === 'intro') state = 'play'; enterUnder() },
                 warpUp: () => { warpUp() },
@@ -1916,6 +2112,12 @@ const SuperMarioGame = () => {
                     shell: !!e.shell, still: !!e.still, flip: !!e.flip, squash: e.squash,
                     active: e.x <= cameraX + VIEW_W + 16,
                 })),
+                // Tilemap probe for the geometry audit (scripts/levelcheck.mjs). A level
+                // built by hand-placing platform gaps can contain a jump that is simply
+                // impossible, and that is invisible in a screenshot taken at x=0.
+                cell: (c, r) => (r >= 0 && r < ROWS && c >= 0 && c < level.cols ? level.grid[r][c] : -1),
+                bars: () => bars.map(b => ({ c: b.c, r: b.r, len: b.len, ang: +b.ang.toFixed(3), spd: b.spd })),
+                levelInfo: () => ({ id: level.id, bg: level.bg, cols: level.cols, flagCol: level.flagCol, castleCol: level.castleCol, lava: level.lava || [], firebars: (level.firebars || []).length }),
                 musicState: () => audioController._musicState(),
                 musicPeak: () => audioController._peak(),
             }
