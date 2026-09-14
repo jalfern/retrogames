@@ -250,6 +250,15 @@ const LEVEL_3 = buildLevel({
             [151, 153, 9], [155, 157, 8],
         ]
         for (const [c1, c2, r] of PLATFORMS) a.row(c1, c2, r, r <= 7 ? BRICK : SOLID)
+        // The opening has to announce "athletic" on the FIRST screen. It didn't: the first
+        // pit sits at col 16 and the viewport is exactly 16 tiles wide, so the whole opening
+        // was flat empty ground under a blue sky - indistinguishable from 1-1 apart from the
+        // HUD number. These overhead platforms (and the coins strung along them) put the
+        // level's actual verb - jumping between floating islands - on screen at x=0. They
+        // sit above the ground path rather than replacing it, so the run stays fair.
+        a.row(3, 5, 8, BRICK)
+        a.row(7, 9, 6, BRICK)
+        a.row(12, 14, 8, SOLID)
         a.set(11, 9, QUESTION)
         a.row(78, 84, 5, BRICK); a.set(81, 5, QUESTION)
         a.row(86, 92, 9, BRICK); a.set(89, 9, QUESTION)
@@ -261,6 +270,7 @@ const LEVEL_3 = buildLevel({
     // Coins ride the platform chains - in an athletic level the coin trail IS the route
     // hint, showing where the next landing is before you have committed to the jump.
     coinArcs: [
+        { c: 3, r: 5 }, { c: 5, r: 5 }, { c: 7, r: 3 }, { c: 9, r: 3 }, { c: 12, r: 5 }, { c: 14, r: 5 },
         { c: 17, r: 6 }, { c: 19, r: 6 }, { c: 21, r: 5 }, { c: 23, r: 5 },
         { c: 31, r: 6 }, { c: 33, r: 6 }, { c: 36, r: 4 }, { c: 39, r: 6 },
         { c: 48, r: 5 }, { c: 50, r: 5 }, { c: 53, r: 6 }, { c: 56, r: 4 },
