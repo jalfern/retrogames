@@ -27,12 +27,15 @@ npm install        # runs postinstall -> patches ifvms (see Gotchas)
 npm run dev        # dev server -> http://localhost:5173/retrogames/
 npm run build      # production build -> dist/
 npm run lint       # eslint, whole repo (currently ~740 pre-existing errors in the DOS/IF titles)
-npm run lint:mario # eslint scoped to Mario + shared shell + scripts — this is the gate CI uses
+npm run lint:mario # eslint scoped to Mario + shared shell + scripts — a CI gate
+npm run lint:fps   # eslint scoped to IronKeep (the raycaster) + shared shell + scripts — the other gate
 npm run preview    # preview the production build
 npm run shot -- --out scripts/.shots/x.png --eval "..."   # visual capture (see Self-verifying)
 npm run audcheck   # assert the chiptune engine is producing signal (exits non-zero on fail)
-npm run verify     # the whole Mario self-verifying suite (needs `npm run dev` running)
-npm run mariocheck / autopilotcheck / plantcheck / levelcheck / evocheck / evoprobe   # individual checks
+npm run verify     # the whole self-verifying suite (needs `npm run dev` running)
+npm run mariocheck / autopilotcheck / plantcheck / levelcheck / evocheck / evoprobe   # Mario checks
+npm run fpscheck   # IronKeep: level audit + raycaster play-through (see its README)
+npm run keepplay   # IronKeep feel probe driven by real key events only (no sim shortcuts)
 ```
 
 ## How the app is structured
@@ -54,8 +57,12 @@ Match the existing game conventions (copy `Defender` or `Adventure` as a templat
 - Fixed internal resolution scaled to fit the container; `imageSmoothingEnabled = false`.
 - Attract mode ("PRESS ANY KEY TO START") first; `'?'` toggles `PauseOverlay`.
 - Render `<VirtualControls />` for mobile — it dispatches `ArrowLeft/Right/Up/Down` + `Space`
-  (`Space` = the "A" action button). Handle those `e.code` values.
+  (`Space` = the "A" action button). Handle those `e.code` values. Pass
+  `secondAction={{ label, code }}` for a "B" button, and `visible={false}` to withdraw the
+  pad on menus/death screens (default `true`, so existing games are unchanged).
 - Look up the pause entry with `GAMES.find(g => g.label === '<LABEL>')`.
+- One `index.jsx` is the convention, but a game folder may grow sibling modules when the
+  engine is big enough to want it — see `src/games/IronKeep/{index,art,levels}.js`.
 
 ## Git workflow
 Feature branch → PR → squash-merge to `main`. **Do not push directly to `main`.**
@@ -121,7 +128,9 @@ model/machine can reproduce it (it is not an external tool):
 | `scripts/levelcheck.mjs` | Geometry audit of every world in `LEVELS`: no pit wider than a running jump, a landing chain that actually reaches the flagpole, every firebar clear of the tilemap, lava over real holes. Catches the one level bug a screenshot cannot — a jump that is simply impossible. |
 | `scripts/evocheck.mjs` | Mario option 4 must learn (cold-start fitness ≥900 after 60 gens, and ≥1.5x its own gen-1 — the ratio is the real gate, the GA is stochastic) and its HUD must actually render. |
 | `scripts/evoprobe.mjs` | Per-genome scalpel: one episode with a named/random/evolved controller → `maxCol`, jumps, trace. |
-| `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), `__marioTest` wait, pass/fail `Report`. |
+| `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), DEV-hook wait (`openMario`, or `openGame(browser, { hook })` for other titles), pass/fail `Report`. |
+| `scripts/fpscheck.mjs` | IronKeep (the FPS): key-gated reachability audit of all three halls, then a driven play-through — collision, doors and keys, hitscan, pathfinding without line of sight, lives, the Warden, reaching `win`, and a frame-time budget. |
+| `scripts/keepplay.mjs` | IronKeep feel probe: real key events only (no frozen-frame shortcuts), so input-path bugs that deterministic stepping cannot see — a quick tap swallowed between two 60Hz samples — still show up. |
 
 ```bash
 npm install                 # installs playwright-core (no browser download)
@@ -130,6 +139,7 @@ npm run shot -- --out scripts/.shots/fire.png --eval "window.__marioTest.setPowe
 npm run audcheck            # PASS/FAIL on the audio engine
 npm run verify              # the whole browser suite
 npm run evoprobe -- --preset pitwide-run --trace
+npm run fpscheck            # IronKeep audit + play-through
 ```
 
 - **Prereqs:** Google Chrome installed (harness uses `channel:'chrome'`, no download).
@@ -151,8 +161,8 @@ npm run evoprobe -- --preset pitwide-run --trace
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
-| `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `build`. No browser, fast, this is the gate. |
-| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + evocheck), uploads `scripts/.shots/` as an artifact, dumps the vite log on failure. |
+| `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `lint:fps` → `build`. No browser, fast, this is the gate. |
+| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + fpscheck + evocheck), uploads `scripts/.shots/` as an artifact, dumps the vite log on failure. |
 
 ```bash
 gh pr checks --watch                      # the static gate on your PR
@@ -171,6 +181,20 @@ DOS/IF adapters would make it permanently red. Widen `lint:mario` as those get f
 > `gh auth refresh -s workflow` (gh ≥2.40 — it was renamed from `auth refresh-scopes`),
 > then enter the device code at github.com/login/device. Additive and reversible via
 > `--remove-scopes`.
+
+## IronKeep
+
+**IRONKEEP** (`/ironkeep`) is the arcade's first-person shooter: a Wolfenstein-3D-style
+software raycaster (320x200 framebuffer, DDA walls, depth-buffered billboards) with a
+fantasy skin — legionaries, hounds, occultists and a Warden across three key-gated halls.
+Every texture, sprite and font glyph is generated at runtime (`art.js`), and levels are
+*carved* out of solid rock rather than typed as ASCII (`levels.js`), which is what makes
+an un-leaky map the default.
+
+Deep notes — the frame pipeline, why Wolf rather than Doom/Quake, the door texel rule,
+BFS pathfinding, the `__keepTest` hook, and the honest known gaps — are in
+**[`src/games/IronKeep/README.md`](src/games/IronKeep/README.md)**. Verify it with
+`npm run fpscheck` (it is part of `npm run verify`).
 
 ## Super Mario
 

@@ -12,6 +12,7 @@
 //   - Checks exit non-zero on failure so npm run verify / CI can gate on them.
 
 export const URL_DEFAULT = process.env.MARIO_URL || 'http://localhost:5173/retrogames/mario'
+export const KEEP_URL_DEFAULT = process.env.KEEP_URL || 'http://localhost:5173/retrogames/ironkeep'
 
 export function opt(args, name, d) {
     const i = args.indexOf(name)
@@ -60,18 +61,24 @@ export async function launch(opts = {}) {
     }
 }
 
-// Open Mario and wait until the DEV hook exists. The hook is import.meta.env.DEV
+// Open a game and wait until its DEV hook exists. The hook is import.meta.env.DEV
 // only, so a production build makes this fail loudly rather than silently no-op.
+// `hook` defaults to Mario's `__marioTest`; other titles pass their own name
+// (IronKeep uses `__keepTest`) — see openGame below.
 export async function openMario(browser, { url = URL_DEFAULT, viewport = { width: 900, height: 760 }, start = false, wait = 400 } = {}) {
+    return openGame(browser, { url, viewport, start, wait, hook: '__marioTest' })
+}
+
+export async function openGame(browser, { url, viewport = { width: 900, height: 760 }, start = false, wait = 400, hook = '__marioTest' } = {}) {
     const page = await browser.newPage({ viewport, deviceScaleFactor: 2 })
     page.setDefaultTimeout(60000)
     page.on('pageerror', e => console.log('[pageerror]', e.message))
     page.on('console', m => { if (m.type() === 'error') console.log('[console.error]', m.text()) })
     await page.goto(url, { waitUntil: 'load' })
     try {
-        await page.waitForFunction(() => !!window.__marioTest, null, { timeout: 15000 })
+        await page.waitForFunction((h) => !!window[h], hook, { timeout: 15000 })
     } catch {
-        console.error('window.__marioTest is missing.')
+        console.error(`window.${hook} is missing.`)
         console.error('That hook only exists on the DEV server — this check must target `npm run dev`, not a built bundle.')
         await browser.close()
         process.exit(1)

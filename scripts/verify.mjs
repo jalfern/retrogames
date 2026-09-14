@@ -3,6 +3,10 @@
 //   npm run verify              # audio + menu/touch + autopilot + plants + quick evolve smoke
 //   npm run verify -- --full     # ...with the full 60-generation evolution check
 //
+// IRONKEEP's check (fpscheck) is not Mario-specific — it audits every IronKeep
+// level and drives the raycaster — but it runs here so one command proves the
+// whole arcade still works.
+//
 // Requires a running `npm run dev` in another terminal (each check fails fast
 // with that instruction if the server is down). Exits non-zero if any check fails.
 
@@ -30,6 +34,7 @@ const suite = [
     node('autopilotcheck.mjs'),
     node('plantcheck.mjs'),
     node('levelcheck.mjs'),
+    node('fpscheck.mjs'),
     full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '500']),
 ]
 
