@@ -24,8 +24,10 @@ const args = process.argv.slice(2)
 const url = opt(args, '--url', URL_DEFAULT)
 const seconds = +opt(args, '--seconds', 14)
 
-const PLANT_COL = 47      // the plant in 1-1 that rides pipe column 46
-const STAND_COL = 47      // centred on the pipe's right tile, fully on the lip
+const PIPE_COL = 46       // the 4-tile pipe in 1-1 that carries a plant
+const STAND_COL = PIPE_COL // stand ON the pipe's own tile — derived, never hand-tuned,
+                           // because the plant's hitbox used to hang 6px off the pipe's
+                           // right shoulder and this constant was quietly tuned to that
 const STAND_ROW = 9       // solid row of the pipe top (13 - pipe height 4)
 const EXPECT_PLANTS_1_1 = 3
 const PLANT_H = 26
@@ -52,7 +54,7 @@ let shotTaken = false
 const t0 = Date.now()
 while ((Date.now() - t0) / 1000 < seconds) {
     const s = await sample()
-    const p = s.plants.find(x => x.col === PLANT_COL) || s.plants[0]
+    const p = s.plants.find(x => (x.pipeCol ?? -1) === PIPE_COL) || s.plants[0]
     if (p) {
         rows.push({
             out: p.out, h: p.h, y: p.y, pipeTop: p.pipeTop, alive: p.alive,

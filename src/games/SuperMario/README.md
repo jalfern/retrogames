@@ -47,17 +47,35 @@ position is derived by scanning the grid for the pipe top (`pipeTopRow`) rather 
 a height, so moving a pipe can't desync a plant.
 
 **Autopilot:** it must *not* stall. Standing still in 1-1 is fatal — a goomba spawned at col 41
-bounces off pipe 38 and walks straight into a parked Mario. The human move is to clear the pipe
-at the top of the jump, so the autopilot leaps at `dx < 46` (≈2.75 tiles). Measured clearance
-through a **fully extended** plant: feet 12px and 4px above its head at pipes 46 and 101.
-`npm run autopilotcheck` asserts this every run.
+bounces off pipe 38 and walks straight into a parked Mario. The commit distance is **solved
+from the jump arc** rather than tuned: `v0 = JUMP_VEL + |vx|·0.18` against `GRAVITY_HOLD` while
+rising, solving how many frames the climb to the plant's head takes and taking off that many
+frames early. A fixed 46px cleared as small Mario and jammed big Mario face-first into the pipe
+wall — a 4-tile pipe needs ~12 frames of climb, a 2-tile pipe ~8. Measured clearance through a
+**fully extended** plant: 49px at pipe 101.
+
+Fireballs bounce about one tile (`vy = -3.6`, `g = 0.4`) and die on the pipe wall, so a plant
+riding a 4-tile pipe is **not** burnable from the ground — the jump is the only answer there.
+(Fire Mario does burn them, but only by throwing from above the lip mid-jump.)
 
 ## Option 3 — autopilot
 
 A rule-based controller (`autopilot()` in the engine) that clears 1-1 **perfectly at normal
-speed** — jumps pits/pipes, clears piranha plants, hops Goombas. Deterministic: it wins 1-1
-with all lives, every time. That determinism is why it can be a regression gate:
-`npm run autopilotcheck`.
+speed** — jumps pits/pipes, clears piranha plants, hops Goombas, and is Fire Mario from col 16
+onward. Deterministic: it wins 1-1 with all lives, every time. That determinism is why it can be
+a regression gate: `npm run autopilotcheck`.
+
+Two rules are load-bearing and were both wrong once:
+
+- **`?` blocks are bumped from directly underneath.** The rule used to aim at `frontCol + 1`,
+  which lifts off a tile early; measured, the head crossed the block's row at x=244 while the
+  block's column starts at x=256. Twelve pixels short, every single run, so the autopilot was
+  *never* Fire Mario and the entire fire branch — every fireball it throws — was dead code that
+  had literally never executed. It now jumps when the block is inside Mario's own span.
+- **Goomba hops near a plant pipe are a 4-frame tap**, not a full hop. A full hop travels
+  ~110px, which lands Mario past the last usable take-off for the next pipe; the pipe then gets
+  eaten mid-climb. Taking the hop *earlier* instead (dx<58) was worse — he landed on the goomba
+  and died at col 45.
 
 > **Known bug (pre-existing, found while adding plants):** the autopilot is *never* Fire Mario.
 > Its `?`-block rule jumps on `frontCol + 1`, so it leaves the ground a tile early and sails
@@ -215,8 +233,12 @@ symbol name.
 - **Evolve never finishes 1-1** (champion replay col 94–122 vs flagpole 174). Plants moved it
   backwards ~25 columns; the seed's +4-tile wall jump is the first thing to attack, and
   `npm run evoprobe -- --preset plant-jumper --trace` is the tool for it.
-- **Autopilot is never Fire Mario** (jumps one tile early and sails over the col-16 flower) —
-  see the note under *Option 3*.
+- **Autopilot grazes one plant in the no-fire pass** (col 46, feet ~12px below the head, costs
+  power not a life). Root cause is a level-level conflict, not a formula bug: the goomba at
+  col 41 forces a hop that lands ~15px past the last usable take-off for the col-46 pipe. Every
+  lever tried either trades it for a worse failure or re-times the whole level. `autopilotcheck`
+  reports it as a flagged `GRAZE` rather than gating it, and hard-gates a clean clearance
+  elsewhere so the arc solver cannot rot silently.
 - **No 1-up mushroom** (`coins % 100 === 0` silently adds a life; no 1-up block exists).
 - **No moving or half-solid platforms.**
 - `LEVELS = [LEVEL_1]` only. 1-2 and the bonus room are pipe-reached detours that warp back,

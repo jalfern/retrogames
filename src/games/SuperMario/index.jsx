@@ -333,9 +333,11 @@ const SuperMarioGame = () => {
             for (const p of def.plants || []) {
                 const top = pipeTopRow(p.c) * TILE
                 enemies.push({
-                    type: 'plant', x: p.c * TILE + TILE - PLANT_W / 2, y: top, w: PLANT_W, h: 0,
+                    // centre the 12px plant in the 16px pipe mouth (was `TILE - PLANT_W/2`,
+                    // which hung it 6px off the pipe's right shoulder)
+                    type: 'plant', x: p.c * TILE + (TILE - PLANT_W) / 2, y: top, w: PLANT_W, h: 0,
                     vx: 0, vy: 0, alive: true, anim: 0, squash: 0, flip: false, grace: 0,
-                    pipeTop: top, delay: p.delay || 0, t: 0, out: 0,
+                    pipeTop: top, pipeCol: p.c, delay: p.delay || 0, t: 0, out: 0,
                 })
             }
             coinsArr = (def.coinArcs || []).map(cc => ({
@@ -504,6 +506,7 @@ const SuperMarioGame = () => {
             const frontCol = Math.floor((m.x + m.w + 1) / TILE)
             const feetRow = Math.floor((m.y + m.h) / TILE)
             let wantJump = false
+            let jumpHold = 16   // frames of held jump; short taps land sooner
 
             // pits / gaps: jump at the edge
             if (m.onGround && !groundAt(frontCol + 1)) wantJump = true
@@ -511,26 +514,76 @@ const SuperMarioGame = () => {
             if (solidAt(frontCol + 1, feetRow - 1) || solidAt(frontCol + 1, feetRow - 2)) wantJump = true
 
             // Piranha plants: do NOT stall. Standing still in 1-1 is a death sentence -
-            // a goomba bounces off an upstream pipe and walks into a parked Mario. The
-            // human move is to clear the pipe at the top of the jump, so leap about two
-            // tiles early: a running jump peaks with the feet above a fully-emerged
-            // plant's head (pipeTop - PLANT_H), whereas the normal wall jump fires at
-            // the lip while still ascending. Burn it when we can.
+            // a goomba bounces off an upstream pipe and walks into a parked Mario.
+            //
+            // The commit distance is solved from the jump arc rather than tuned per Mario
+            // size, because a fixed 46px worked while small and jammed Fire Mario face-first
+            // into the pipe wall (his front hit the lip at feet=158, 14px below it, and he
+            // spent the rest of the rise scraping the pipe straight into the plant). Solve
+            // "how long to climb above the plant's head" with the real constants -
+            // v0 = JUMP_VEL + |vx|*0.18, gravity GRAVITY_HOLD while rising - then take off
+            // that many frames early. Taller pipes need a longer run-up, which no single
+            // constant could cover: the 4-tile pipes need ~12 frames, the 2-tile ones ~8.
+            // Burn it when we can, but note a fireball bounces ~1 tile (vy=-3.6, g=0.4) and
+            // dies on the pipe wall, so a plant on a tall pipe is physically NOT burnable
+            // from the ground - the jump is the only answer there.
             let plant = null
+            let plantNear = false
             for (const e of enemies) {
                 if (!e.alive || e.type !== 'plant' || e.flip) continue
                 const dx = (e.x + e.w / 2) - (m.x + m.w / 2)
-                if (dx > -12 && dx < 120 && (!plant || dx < plant.dx)) plant = { dx, e }
+                if (dx > -12 && dx < 160 && (!plant || dx < plant.dx)) plant = { dx, e }
             }
             if (plant) {
+                const e = plant.e
                 if (m.power === 'fire' && plant.dx > 20 && plant.dx < 220) firePressed = true
-                if (plant.dx < 46 && plant.dx > 10 && m.onGround) wantJump = true
+                const near = e.pipeCol * TILE
+                const head = e.pipeTop - PLANT_H * 0.9          // assume it is nearly up
+                // rise needed to get the FEET 10px ABOVE that head. Note the sign: writing
+                // `- 8` here asks the arc to stop 8px below the head, which clipped a plant
+                // by 2px at col 101 while still clearing the shorter ones by luck.
+                const climb = Math.max(18, (m.y + m.h) - head + 10)
+                const v0 = 7.7 + Math.abs(m.vx) * 0.18
+                const disc = v0 * v0 - 2 * 0.27 * climb
+                const frames = disc > 0 ? (v0 - Math.sqrt(disc)) / 0.27 : 26
+                const lead = frames * Math.max(2.2, Math.abs(m.vx)) + 2
+                const dist = near - (m.x + m.w)
+                if (dist < 150) plantNear = true
+                // NOTE: walking the last stretch instead of running was tried and reverted.
+                // It does fix col 46 (the 97px climb eats ~32px of runway at walk speed vs
+                // ~54px at run speed, giving +10px clearance) but slowing every approach
+                // re-times the entire level and Mario then dies at col 94 in both passes.
+                // Height-per-pixel is the right lever; applying it globally is not.
+                if (dist > 4 && dist < lead && m.onGround) { wantJump = true; jumpHold = 16 }
             }
 
+            // Back up into a released power-up. Bumping a ? block while running right at
+            // ~3.3px/frame means outrunning the thing you just released: the flower spends
+            // ~30 frames emerging and then crawls right at 0.8, so it was still at col 18
+            // on the ground when Mario reached col 26. Stopping is not enough either - a
+            // goomba sits at col 18. Walking LEFT closes on the flower (it drifts right at
+            // 0.8) AND retreats from the goomba (it only walks at 0.6), so it is strictly
+            // safer than standing still. Never do this with a pit ahead.
+            let backing = false
+            const pitAhead = !groundAt(frontCol + 1) || !groundAt(frontCol + 2) || !groundAt(frontCol + 3)
+            if (!pitAhead) {
+                for (const s of shrooms) {
+                    if (s.taken) continue
+                    const dx = (s.x + s.w / 2) - (m.x + m.w / 2)
+                    if (dx > -72 && dx < 26) { backing = true; keys.right = false; if (dx < -4) keys.left = true; break }
+                }
+            }
+            if (backing) keys.run = false
+
             if (m.power !== 'fire') {
-                // seek power-ups: bump ? blocks overhead until we're Fire Mario
-                for (let d = 0; d <= 1; d++) {
-                    const c = frontCol + d
+                // seek power-ups: bump the ? block DIRECTLY OVERHEAD. Not the one a tile
+                // ahead - measured, the old `frontCol + 1` rule jumped at x=227, and the
+                // head crossed the block's row at x=244 while the block's column starts at
+                // x=256. Twelve pixels short, every single run, so the autopilot was never
+                // Fire Mario and the "burn enemies" branch below never once executed.
+                const q0 = Math.floor(m.x / TILE)
+                const q1 = Math.floor((m.x + m.w - 1) / TILE)
+                for (let c = q0; c <= q1; c++) {
                     if (level.grid[9] && level.grid[9][c] === QUESTION && m.onGround) { wantJump = true; break }
                 }
                 // grab a nearby power-up sitting above us
@@ -539,11 +592,32 @@ const SuperMarioGame = () => {
                     const dx = s.x - m.x, dy = (s.y + s.h) - (m.y + m.h)
                     if (dx > -12 && dx < 40 && dy < -6 && m.onGround) { wantJump = true; break }
                 }
-                // hop over enemies while still small (best effort)
+                // hop over enemies while still small (best effort). Two constraints that
+                // the original `dx > 4 && dx < 64` lacked, and together they are the whole
+                // reason the autopilot was never Fire Mario: the col-18 goomba (x=288)
+                // satisfied dx < 64 as soon as Mario hit x=224, so he took off four tiles
+                // early and sailed over the ? block at col 16 (x 256..272) at the top of a
+                // jump he never needed to take yet.
+                //   - skip enemies that have not woken up: a goomba offscreen right is
+                //     frozen, so there is no reason to burn a jump on it yet
+                //   - 44px, not 64: still a comfortable stomp, but it now fires at x~249,
+                //     which is exactly where the ? block rule wants to be
                 for (const e of enemies) {
                     if (!e.alive || e.flip) continue
+                    if (e.x > cameraX + VIEW_W) continue
                     const dx = e.x - m.x
-                    if (dx > 4 && dx < 64 && Math.abs((e.y + e.h) - (m.y + m.h)) < 20 && m.onGround) { wantJump = true; break }
+                    if (dx > 4 && dx < 44 && Math.abs((e.y + e.h) - (m.y + m.h)) < 20 && m.onGround) {
+                        wantJump = true
+                        // A full hop travels ~110px. Hopping the goomba at col 41 that way
+                        // landed Mario at x=687 when the col-46 plant pipe needs its take-off
+                        // by x=672 - the hop ate the runway for the pipe jump, and big Mario's
+                        // torso then clipped the plant 15px into the arc. A 4-frame TAP keeps
+                        // the hop low so the landing moves upstream and the pipe keeps its
+                        // run-up. (Taking the hop earlier instead was worse: dx<58 made him
+                        // land on top of the goomba and die at col 45.)
+                        if (plantNear) jumpHold = 1
+                        break
+                    }
                 }
             } else {
                 // Fire Mario: burn enemies ahead so nothing can touch us
@@ -555,7 +629,7 @@ const SuperMarioGame = () => {
                 }
             }
 
-            if (wantJump && m.onGround && apHold <= 0) { m.jumpPressed = true; keys.jump = true; apHold = 16 }
+            if (wantJump && m.onGround && apHold <= 0) { m.jumpPressed = true; keys.jump = true; apHold = jumpHold }
             else if (apHold > 0) { keys.jump = true; apHold-- }
             else keys.jump = false
         }
@@ -1401,7 +1475,9 @@ const SuperMarioGame = () => {
         const drawPlant = (sx, e, clipped) => {
             const x = px(sx), y = px(e.y)
             ctx.save()
-            if (clipped) { ctx.beginPath(); ctx.rect(x - 4, 0, 24, e.pipeTop); ctx.clip() }
+            // clip to the pipe's exact column, so a plant can never be drawn overlapping
+            // the pipe wall it is rising through
+            if (clipped) { ctx.beginPath(); ctx.rect(px(e.pipeCol * TILE), 0, TILE, e.pipeTop); ctx.clip() }
             // stem
             ctx.fillStyle = C.plant; ctx.fillRect(x + 4, y + 10, 4, 16)
             ctx.fillStyle = C.plantLight; ctx.fillRect(x + 5, y + 11, 1, 15)
@@ -1778,7 +1854,7 @@ const SuperMarioGame = () => {
         // DEV-only visual-test hook (never present in production builds)
         if (import.meta.env.DEV) {
             window.__marioTest = {
-                getState: () => ({ state, power: mario && mario.power, score, coins, lives, level: level.id, col: Math.round((mario ? mario.x : 0) / TILE), x: mario ? Math.round(mario.x) : 0, y: mario ? Math.round(mario.y) : 0, h: mario ? mario.h : 0, mode, menuSel }),
+                getState: () => ({ state, power: mario && mario.power, score, coins, lives, level: level.id, col: Math.round((mario ? mario.x : 0) / TILE), x: mario ? Math.round(mario.x) : 0, y: mario ? Math.round(mario.y) : 0, h: mario ? mario.h : 0, w: mario ? mario.w : 0, big: mario ? !!mario.big : false, mode, menuSel }),
                 start: () => { if (state === 'attract' || state === 'gameover' || state === 'win') resetGame() },
                 openMenu: () => { state = 'menu'; menuSel = 0 },
                 choose: (i) => chooseOption(i),
@@ -1825,7 +1901,7 @@ const SuperMarioGame = () => {
                 warpUp: () => { warpUp() },
                 isDetour: () => !!(level && (level.bonus || level.detour)),
                 plants: () => enemies.filter(e => e.type === 'plant').map(e => ({
-                    col: Math.round(e.x / TILE), x: Math.round(e.x), w: e.w,
+                    col: Math.round(e.x / TILE), pipeCol: e.pipeCol, x: Math.round(e.x), w: e.w,
                     pipeTop: e.pipeTop, out: +e.out.toFixed(3),
                     h: e.h, y: Math.round(e.y), alive: e.alive, flip: !!e.flip, squash: e.squash,
                 })),
