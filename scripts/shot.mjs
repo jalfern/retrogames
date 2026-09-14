@@ -9,10 +9,13 @@
 //   node scripts/shot.mjs [--url <url>] [--out <png>] [--eval "<js>"]
 //                         [--steps '<json>'] [--w 440] [--h 420]
 //                         [--settle 300] [--prewait <ms>] [--channel chrome]
+//                         [--no-start]
 //
 //   --eval   : JS run ONCE after load, BEFORE --prewait/--settle. (See AGENTS.md:
 //              a transient effect must be fired with a setTimeout, not run inline.)
 //   --steps  : JSON array of {down|up, wait} applied in order (keyboard + wait ms).
+//   --no-start : do NOT press a key first. Needed to photograph the attract
+//              screen / OPTIONS menu (the default key press dismisses them).
 //
 // Prereqs: `npm install` (installs playwright-core), a running `npm run dev`,
 // and Google Chrome. Override the browser with --channel / SHOT_CHANNEL.
@@ -36,6 +39,7 @@ const prewait = +opt('--prewait', settle)
 const evalJs = opt('--eval')
 const steps = opt('--steps')
 const channel = opt('--channel', process.env.SHOT_CHANNEL || 'chrome')
+const start = !args.includes('--no-start')
 
 let chromium
 try {
@@ -47,7 +51,11 @@ try {
 
 let browser
 try {
-    browser = await chromium.launch({ channel, headless: true })
+    browser = await chromium.launch({
+        channel,
+        headless: true,
+        args: process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : [],
+    })
 } catch (e) {
     console.error(`Could not launch browser (channel="${channel}").`)
     console.error('Install Google Chrome, or run `npx playwright install chromium` and pass --channel chromium.')
@@ -62,10 +70,13 @@ page.on('pageerror', e => console.log('[pageerror]', e.message))
 await page.goto(url, { waitUntil: 'load' })
 await page.waitForTimeout(500)
 
-// Start the game out of attract mode (press a harmless key).
-await page.keyboard.press('ArrowRight')
-await page.waitForTimeout(120)
-await page.keyboard.up('ArrowRight')
+// Start the game out of attract mode (press a harmless key). --no-start skips
+// this so attract/menu screenshots are possible.
+if (start) {
+    await page.keyboard.press('ArrowRight')
+    await page.waitForTimeout(120)
+    await page.keyboard.up('ArrowRight')
+}
 
 if (evalJs) { await page.evaluate(evalJs); await page.waitForTimeout(prewait) }
 

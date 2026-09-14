@@ -25,7 +25,10 @@ try {
     browser = await chromium.launch({
         channel: process.env.SHOT_CHANNEL || 'chrome',
         headless: true,
-        args: ['--autoplay-policy=no-user-gesture-required'],
+        args: [
+            '--autoplay-policy=no-user-gesture-required',
+            ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
+        ],
     })
 } catch (e) {
     console.error('Could not launch Chrome. Install Google Chrome or set SHOT_CHANNEL.')
