@@ -25,6 +25,31 @@ const MUSIC = {
         lead: [57, 0, 60, 0, 63, 0, 60, 63, 65, 0, 63, 60, 57, 0, 55, 52],
         bass: [45, 0, 0, 0, 45, 0, 0, 0, 43, 0, 0, 0, 41, 0, 0, 0],
     },
+    // IRONKEEP: slow Phrygian drone for the torch-lit halls. Long gaps on purpose —
+    // a busy loop fights the gunfire, and the silences are what read as "dungeon".
+    keep: {
+        step: 0.22,
+        lead: [
+            57, 0, 60, 0, 59, 0, 57, 0, 55, 0, 56, 0, 55, 0, 52, 0,
+            57, 0, 60, 0, 64, 0, 62, 0, 60, 0, 59, 0, 57, 0, 45, 0,
+        ],
+        bass: [
+            33, 0, 33, 0, 0, 0, 33, 0, 33, 0, 33, 0, 0, 0, 28, 0,
+            31, 0, 31, 0, 0, 0, 31, 0, 28, 0, 28, 0, 0, 0, 26, 0,
+        ],
+    },
+    // IRONKEEP boss: driving D-minor ostinato with tritones, ~2x the tempo.
+    siege: {
+        step: 0.125,
+        lead: [
+            62, 0, 65, 62, 0, 68, 65, 0, 63, 0, 66, 63, 0, 69, 66, 0,
+            62, 65, 68, 71, 70, 68, 65, 62, 60, 0, 63, 60, 0, 62, 0, 0,
+        ],
+        bass: [
+            38, 38, 0, 38, 38, 0, 38, 38, 36, 36, 0, 36, 36, 0, 36, 36,
+            38, 38, 0, 38, 38, 0, 38, 38, 33, 33, 0, 33, 33, 0, 31, 31,
+        ],
+    },
 }
 
 class AudioController {
