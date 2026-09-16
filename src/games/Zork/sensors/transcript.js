@@ -215,19 +215,34 @@ export class TranscriptSensor {
    * notice it was standing still.
    */
   describeAfter(text, heading) {
-    const lines = String(text).split('\n').map((l) => l.trim())
-    const at = lines.findIndex((l) => l === String(heading).trim())
+    // SUBSTRING, not line, matching — and that distinction is the whole bug this
+    // fixes. The Node harness hands the sensor a reply string with real newlines,
+    // so splitting on \n isolates the heading line. The BROWSER prints through
+    // Glk in chunks that glue the heading onto the prose after it
+    // ("North of HouseThis is a path winding through..."), so `lines.indexOf(
+    // heading)` found nothing, `description` came back null for nearly every
+    // arrival, and the fingerprint silently fell back to the raw reply — flavour
+    // events and acknowledgements included. Same brain, same sensor code,
+    // different transport, different map: 7 rooms in the browser against 13 in
+    // Node, and every diagnostic I had was about the map. A parser that assumes
+    // the shape of its transport is a parser that works right up until the UI.
+    const raw = String(text)
+    const at = raw.indexOf(String(heading).trim())
     if (at < 0) return null
+    const lines = [raw.slice(at + String(heading).length)]
     const EVENT = /^(you hear|suddenly|a song bird|there is a loud|you have been waiting|too slow|the thief|what a pity|you have better)/i
     const ACK = /^(taken|dropped|ok(?:ay)?|alright|sure|got it|opened|you can'?t|sorry)[.,!]?$/i
-    const out = []
-    for (const line of lines.slice(at + 1)) {
-      if (!line || line.startsWith('>')) continue
-      if (EVENT.test(line) || ACK.test(line)) continue
-      out.push(line)
-      if (/[.!?]["']?$/.test(line)) break
+    // Chunk-glued text means the "first line" may be the whole reply, so cut on
+    // sentences, not newlines, and drop flavour/event sentences as we go.
+    const flat = lines.join('\n').replace(/^\s*[>\s-]+/, '').trim()
+    const sentences = flat.match(/[^.!?]+[.!?]["']?/g) || [flat]
+    for (const sentence of sentences) {
+      const one = sentence.trim()
+      if (!one) continue
+      if (EVENT.test(one) || ACK.test(one)) continue
+      return one
     }
-    return out.join(' ').trim() || null
+    return null
   }
 
   /**

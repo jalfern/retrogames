@@ -121,6 +121,19 @@ export class ZorkExplorer {
     const verdict = p.extra?.verdict || null
     const from = this.map.at
     const move = this.pending
+    // DIAGNOSTIC (stage 5a hunt): the browser symptom is a map that never
+    // advances, and this function is the ONLY writer of the map — so either
+    // `pending` is already gone when sense() runs, or `verdict` is not 'moved'
+    // at the moment of commit. Record the inputs of every settle and print them
+    // from the harness instead of reasoning about which it is.
+    ;(this.commits || (this.commits = [])).push({
+      pending: move ? `${move.kind}${move.dir ? ':' + move.dir : ''}` : null,
+      verdict,
+      room: p.room || null,
+      hadDescription: !!this.sensor.description,
+      from,
+      lastCmd: (this.sensor.exchanges[this.sensor.exchanges.length - 1] || {}).command || null,
+    })
 
     if (move) {
       this.pending = null

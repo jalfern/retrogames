@@ -400,6 +400,7 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
         room: sensorRef.current.room,
       } : null),
       aiDiary: () => (brainRef.current ? brainRef.current.diary || [] : []),
+      aiCommits: () => (brainRef.current ? (brainRef.current.commits || []).slice(-14) : []),
     }
     window.__zorkTest = api
     return () => { if (window.__zorkTest === api) delete window.__zorkTest }
