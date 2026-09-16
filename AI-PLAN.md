@@ -321,6 +321,26 @@ into the PR body, and the artifact uploaded by the manual CI job.
 | **6** | KQ motor macros + first treasure walkthrough, run in all three arms | score increases on camera; `kqcheck` in the manual CI job |
 | **7** (opt) | Zork sensor A/B (transcript vs object tree — the deterministic version); LLM planner behind an opt-in toggle; Rogue autopilot (free once the spine exists) | Zork A/B reproducible byte-for-byte; planner accept/reject counts visible |
 
+**Stage 2a (shipped): read the prose the game already gives us.** The Kitchen
+returned `visible: []` with a bottle, a sack and a cake in it, because the parser
+only understood *"there is X"* while Zork writes *"X is sitting on Y"* / *"On the Y
+is X"*. A sensor wrong toward an empty room is worse than one that hallucinates:
+the agent stops *wanting* things. Now parsed too: `X contains:` colon lists, and
+**exit annotations** — per clause, so the lit passage west is not marked dark
+alongside the dark staircase in the same sentence. Claims live in the **map**, per
+room, forever, because Zork prints a long description once and re-entry is a stub;
+`look` re-reads a room (asserted).
+
+**Stage 1 was partly contaminated.** The brain phase inherited the scripted world —
+mailbox emptied, **window already open** — so "it opened the window" was the
+harness's doing, and the real cause was two rules with no `return` that could not
+act at all. The brain phase now starts with `restart`, and it earns both verbs:
+
+```
+ok > open small window   With great effort, you open the window far enough to allow entry.
+ok > open small window   Have your eyes checked.      <- and never a third time
+```
+
 **Stage 1 honest gaps.** (a) No lamp yet: the Kitchen's contents do not survive
 the sensor's prose parsing (`parseVisible` does not capture "A homemade cake is
 dying slowly on the peg" style furniture), so the agent has never been *told* a
@@ -337,7 +357,27 @@ perception system whose accuracy nobody can state.
 
 Total to "two games play themselves, two sensors measured, in CI": **~6–7 focused days**.
 
-> **Stage 1 honest gaps.** (a) No lamp yet: the Kitchen's contents do not survive
+> **Stage 2a (shipped): read the prose the game already gives us.** The Kitchen
+returned `visible: []` with a bottle, a sack and a cake in it, because the parser
+only understood *"there is X"* while Zork writes *"X is sitting on Y"* / *"On the Y
+is X"*. A sensor wrong toward an empty room is worse than one that hallucinates:
+the agent stops *wanting* things. Now parsed too: `X contains:` colon lists, and
+**exit annotations** — per clause, so the lit passage west is not marked dark
+alongside the dark staircase in the same sentence. Claims live in the **map**, per
+room, forever, because Zork prints a long description once and re-entry is a stub;
+`look` re-reads a room (asserted).
+
+**Stage 1 was partly contaminated.** The brain phase inherited the scripted world —
+mailbox emptied, **window already open** — so "it opened the window" was the
+harness's doing, and the real cause was two rules with no `return` that could not
+act at all. The brain phase now starts with `restart`, and it earns both verbs:
+
+```
+ok > open small window   With great effort, you open the window far enough to allow entry.
+ok > open small window   Have your eyes checked.      <- and never a third time
+```
+
+**Stage 1 honest gaps.** (a) No lamp yet: the Kitchen's contents do not survive
 the sensor's prose parsing (`parseVisible` does not capture "A homemade cake is
 dying slowly on the peg" style furniture), so the agent has never been *told* a
 lamp exists — the dark-room invariant is therefore enforced but unexercised.

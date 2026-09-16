@@ -122,6 +122,13 @@ const SCRIPT = [
 ]
 
 let moveErrors = 0
+// Zork prints a room's long description ONCE. Re-entering "Kitchen" prints the
+// heading and a short reminder, and the sentence that told us about the dark
+// chimney is gone until we `look`. So the claims have to be caught at first
+// sight and kept — which is precisely why they live in the map (per room, forever)
+// and not in the sensor (per reply, already overwritten). A sensor that only
+// knows what the last line said cannot plan.
+let firstSight = null
 for (const [cmd, expect, label] of SCRIPT) {
   let reply = ''
   try {
@@ -132,8 +139,78 @@ for (const [cmd, expect, label] of SCRIPT) {
     continue
   }
   r.check(label, expect.test(reply), reply.trim().split('\n')[0].slice(0, 48))
+  if (/kitchen/i.test(reply) && !firstSight) {
+    firstSight = {
+      visible: sensor.visible.slice(),
+      contains: JSON.parse(JSON.stringify(sensor.contains)),
+      announced: sensor.announced.slice(),
+      darkExits: sensor.darkExits.slice(),
+    }
+  }
 }
 r.check('every scripted move was answered', moveErrors === 0, `${moveErrors} failures`)
+
+// ── STAGE 2a: read the prose the game is already giving us ───────────────────
+// The scripted walk ended in the Living Room, so go back through the passage and
+// PROVE we are in the Kitchen before grading the reading. A check that assumes
+// where it is standing measures whatever room it happened to end up in — which is
+// how a green suite can mean nothing more than "the parser liked this one".
+//
+// Here is what Zork actually prints in the Kitchen:
+//
+//   A passage leads to the west and a dark staircase can be seen leading upward.
+//   A dark chimney leads down and to the east is a small window which is open.
+//   A bottle is sitting on the table.
+//   The glass bottle contains:  A quantity of water
+//   On the table is an elongated brown sack, smelling of hot peppers.
+//
+// Before this stage the sensor reported `visible: []` — a bottle, a sack and a
+// cake in the room and nothing parsed, because it only understood "there is X"
+// and Zork writes "X is sitting on Y" and "On Y is X". A sensor that is wrong in
+// the direction of an EMPTY room is worse than one that hallucinates: the agent
+// doesn't just miss the objects, it stops wanting things, which is how stage 1
+// ended up unable to explain why it never had a lamp.
+const kit = firstSight?.visible || []
+r.check("the Kitchen's furniture is visible (was: nothing)",
+  kit.some(v => /bottle/.test(v)) && kit.some(v => /sack/.test(v)),
+  kit.join(', ') || 'NOTHING — "is sitting on" / "On the table is" unparsed')
+r.check('container contents are parsed from a colon list',
+  (firstSight?.contains?.['glass bottle'] || []).some(x => /water/.test(x)),
+  JSON.stringify(firstSight?.contains || {}))
+
+// The game LABELS some exits dark before we ever stand in them. Attributing that
+// label is the whole value, so the test is as much about what must NOT be marked
+// as what must: west is in the same SENTENCE as "a dark staircase", and a sensor
+// that graded by sentence would make the agent fear a lit passage and skip the way
+// out. Clause-level attribution is what separates "somewhere down there is dark"
+// from "everywhere is dark" — the same bug class as sticky darkness in stage 1.
+r.check("the game's own dark labels were read off the description",
+  (firstSight?.darkExits || []).includes('up') && (firstSight?.darkExits || []).includes('down'),
+  `dark ways: ${(firstSight?.darkExits || []).join(', ') || 'NONE'}`)
+r.check('darkness was attributed per-clause, not per-sentence',
+  !(firstSight?.darkExits || []).includes('west') && (firstSight?.announced || []).includes('west'),
+  `announced: ${(firstSight?.announced || []).join(', ')} · dark: ${(firstSight?.darkExits || []).join(', ') || 'none'}`)
+// `look` is how a brain refreshes a room it has already seen. If LOOK did not
+// reprint the long description, the dark ways would be unrecoverable after the
+// first visit and any plan built on them would decay — worth knowing before
+// stage 2 leans on it.
+// Walk back through the passage first: the scripted move that earned the
+// first-sight snapshot continued west into the Living Room, and `look` there
+// describes the Living Room (which is how this test initially failed in a way
+// that looked like a parser bug and was actually a standing bug in the CHECK).
+const atKitchen = await send('east')
+r.check('the passage leads back to the Kitchen', /kitchen/i.test(atKitchen),
+  atKitchen.trim().split('\n')[0].slice(0, 48))
+const lookReply = await send('look')
+r.check('LOOK reprints the description, so a room can be re-read',
+  sensor.darkExits.includes('up') && sensor.darkExits.includes('down'),
+  `LOOK printed: ${JSON.stringify(lookReply.trim().slice(0, 150))}`)
+// A CLAIM IS NOT A FACT. Two ways out of this room are labelled dark and we are
+// standing here in daylight; the sensor must not promote a rumour about a
+// staircase into "this room is dark", or the agent refuses to move at all.
+r.check('a dark EXIT did not make this room dark', sensor.dark === false,
+  `dark=${sensor.dark} with ${sensor.darkExits.length} dark ways announced`)
+r.info('──── the Kitchen says', `${sensor.announced.join(', ')} out${sensor.darkExits.length ? `, dark: ${sensor.darkExits.join(', ')}` : ''}`)
 
 // ── SEE: score is parsed exactly, including the maximum ──────────────────────
 const scoreReply = await send('score')
@@ -161,6 +238,25 @@ r.check('reading a document does not invent a room', sensor.room === beforeRead,
 
 sensor.saw('look', 'It is now pitch black. You are likely to be eaten by a grue.')
 r.check('darkness is detected', sensor.dark === true)
+// ...and that it LEAVES. Stage 1's worst bug was a `dark` flag that only ever got
+// set, which made one black room condemn the whole underground empire and the
+// explorer refuse to move at all. Detecting darkness is easy; the invariant that
+// actually protects the agent is that a lit description CLEARS it. Adding this
+// line is what made the mutation "make darkness sticky again" fail the suite —
+// without it the suite passes with that bug in it, because the brain never walks
+// into the dark and so never gets the chance to notice the lie.
+sensor.saw('look', 'Kitchen\nYou are in the kitchen of the white house. A bottle is sitting on the table.')
+r.check('darkness clears when the light does (not sticky)', sensor.dark === false,
+  `dark=${sensor.dark} after a fully-lit description`)
+// The sharper version, and the one stage 2 depends on: light IN HAND must end the
+// darkness claim, even when the reply still talks about the dark and prints no
+// heading to reset with. Every call site ANDs `dark` with `!lit`, so a sensor that
+// ignores its own `lit` flag is nearly invisible — until the agent is standing in
+// the lit Cellar refusing to move because a sensor three turns ago said "dark".
+sensor.saw('turn on lamp', 'The lamp is on.')
+sensor.saw('look', 'It is pitch black, and it is too dark to see. Something dark stirs.')
+r.check('a LIT lamp outranks the word "dark"', sensor.dark === false && sensor.lit === true,
+  `dark=${sensor.dark} lit=${sensor.lit}`)
 const movesAfterProbes = sensor.moves
 
 // ── SEE: verdicts — the difference between "it worked" and an hour of walls ───
@@ -234,6 +330,23 @@ const brainSend = async (cmd) => {
   return reply
 }
 
+// RESTART. The scripted warm-up above opened the mailbox, took the leaflet and
+// — the part that matters — OPENED THE WINDOW. Hand that world to the brain and
+// "it reached the Kitchen" proves nothing about the brain: the door was already
+// open. This exact contamination is how the first version of this check shipped a
+// true-sounding claim about `open window` that the brain had never performed.
+// Zork's own RESTART gives us a clean room with a boarded window and a closed
+// mailbox, so the brain earns every verb from move one.
+const restartReply = await brainSend('restart')
+// Zork asks "Do you wish to restart? (Y is affirmative)" — matching /yes/ here
+// finds nothing, the prompt swallows the next command, and the run continues in a
+// half-restarted world, which is the worst possible state for a check: it still
+// plays, so nothing looks broken.
+if (/wish to restart|affirmative/i.test(restartReply)) await brainSend('yes')
+const afterReset = await brainSend('look')
+r.check('the world was reset before the brain took over',
+  /west of house/i.test(afterReset), afterReset.trim().split('\n')[0].slice(0, 60))
+
 const events = []
 const brain = new ZorkExplorer({ send: brainSend, sensor, onEvent: (m) => events.push(m) })
 const loop = new AgentLoop({ brain, arm: 'transcript', watchdog: 8, maxIdleTicks: 2, minActionGapMs: 0 })
@@ -252,6 +365,14 @@ if (trace) for (const c of sum.trace) console.log(`    > ${c}`)
 
 r.check('the brain sent commands through the same actuator as the player', seenCommands.length >= 3,
   `${seenCommands.length} commands, last: ${seenCommands.slice(-3).join(' / ')}`)
+// Two claims that are only worth making because the world was reset: the brain
+// performed the OPEN itself, and the Kitchen is somewhere it WALKED to.
+const opened = seenCommands.filter(c => /^open\b/i.test(c))
+r.check('the brain opened something by itself (world was reset first)', opened.length > 0,
+  opened.length ? `opened: ${[...new Set(opened)].join(' / ')}` : 'never typed OPEN — it walked a world someone else unlocked')
+r.check('the Kitchen is a place the brain walked to',
+  sum.rooms.some(k => /kitchen/i.test(k)) && sum.stats.proven >= 1,
+  sum.rooms.filter(k => /kitchen/i.test(k)).join(', ') || 'never reached the Kitchen unaided')
 r.check('the brain discovered rooms by walking (not from the story file)',
   sum.stats.proven >= sum.stats.rooms - 1,
   `rooms=${sum.stats.rooms} proven edges=${sum.stats.proven} (a tree of walked moves needs >= ${sum.stats.rooms - 1})`)
@@ -323,6 +444,10 @@ r.check('every merged room was noticed and re-keyed, not silently kept',
   // — MAX_TWINS is 4, so one twin does not yet condemn the whole forest.)
   sum.stats.splits === 0 || splitNotes > 0,
   `splits=${sum.stats.splits} explained=${splitNotes} unstable=${sum.stats.unstable.join(',') || 'none'}`)
+r.info('──── dark ways on the map',
+  `${sum.stats.darkClaims} way(s) the game itself called dark, ${sum.stats.darkRefused} already refused` +
+  (sum.stats.darkClaims ? ' — stage 2 turns this number into a goal' : ''))
+
 r.info('──── assumptions', `${sum.stats.verified} walked back and tested — the difference between a map of evidence and a map of guesses`)
 r.check('it mapped at least ten rooms on its own', sum.stats.rooms >= 10,
   `${sum.stats.rooms} rooms, ${sum.stats.proven} walked edges, ${sum.stats.blocked} closed ways`)

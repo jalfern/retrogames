@@ -80,6 +80,16 @@ export class TranscriptSensor {
     this.visible = []
     this.contains = {}       // container -> [contents]
     this.closed = []         // things described as closed/locked
+    // Ways OUT that the description mentions, and the ones it says are DARK.
+    // These are CLAIMS, not edges: the map does not grow from them, because a
+    // description that says "a passage leads west" is not evidence that west
+    // works (the Kitchen says exactly that, and west from the Kitchen is a
+    // chimney you can only climb with a lamp in hand). They are kept so the
+    // brain can have a REASON to want a lamp while it is still in the light —
+    // see the Kitchen comment in map.js. Stage 1 could only react to darkness by
+    // standing in it.
+    this.announced = []
+    this.darkExits = []
     this.lit = false
     this.roomConf = 0
     this.dark = false
@@ -115,7 +125,11 @@ export class TranscriptSensor {
     // So darkness is re-decided from the CURRENT reply: a new heading carries
     // that room's own light, "the lamp is on" clears it, and a description with
     // objects in it cannot be dark by construction.
-    const saysDark = /pitch black|it'?s (too )?dark|can'?t see a thing/i.test(text)
+    // "It is too dark to see" is how Zork writes it, and `it'?s` does not match
+    // "it is" — so until now that sentence was not darkness at all to this sensor.
+    // Found by writing a probe to catch a mutation and having the mutant survive:
+    // the test was not weak, the fixture never entered the branch.
+    const saysDark = /\bpitch black\b|\bit(?:'?s| is)?\s+(?:too|very|so|rather)?\s*dark|\btoo dark to\b|can'?t see a thing/i.test(text)
     if (/the (lamp|lantern|torch) is (on|lit)/i.test(text)) this.lit = true
     if (/the (lamp|lantern|torch) is (off|out)/i.test(text)) this.lit = false
     if (heading) this.dark = saysDark && !this.lit
@@ -159,6 +173,8 @@ export class TranscriptSensor {
       // field that is not cleared on the transition that invalidates it.
       this.visible = []
       this.closed = []
+      this.announced = []
+      this.darkExits = []
     }
     if (heading || /you see|there (is|are)|in the |on the |hanging|mounted/i.test(text)) {
       const seen = parseVisible(text)
@@ -167,6 +183,9 @@ export class TranscriptSensor {
       if (Object.keys(cont).length) this.contains = { ...this.contains, ...cont }
       const shut = parseClosed(text)
       if (shut.length) this.closed = [...new Set([...this.closed, ...shut])]
+      const ways = parseExits(text)
+      if (ways.all.length) this.announced = [...new Set([...this.announced, ...ways.all])]
+      if (ways.dark.length) this.darkExits = [...new Set([...this.darkExits, ...ways.dark])]
     }
     this.lastVerdict = classify(text, heading)
     this.exchanges.push({ command: String(command || ''), output: text, verdict: this.lastVerdict, room: this.room })
@@ -221,6 +240,10 @@ export class TranscriptSensor {
         visible: this.visible.slice(),
         contains: Object.fromEntries(Object.entries(this.contains).map(([k, v]) => [k, v.slice()])),
         closed: this.closed.slice(),
+        // Candidate ways out of here, and the subset the prose called dark.
+        // Never a substitute for a walked edge — see `announced` in reset().
+        announced: this.announced.slice(),
+        darkExits: this.darkExits.slice(),
         exchanges: this.exchanges.length,
       },
       ts: now,
@@ -234,23 +257,88 @@ export class TranscriptSensor {
   }
 }
 
-/** Objects a room description claims are here: "There is a lamp here." */
+/**
+ * Objects a room description claims are here.
+ *
+ * "There is a lamp here" is the easy case, and for a while it was the only case.
+ * Zork rarely writes it. Its Kitchen says "A bottle IS SITTING ON the table" and
+ * "On the table is an elongated brown sack", and a sensor that understands only
+ * "there is" stands in that room reporting NOTHING VISIBLE — which is worse than
+ * wrong, because it is wrong in the direction that looks like an empty room, so
+ * the agent stops looking for things to take and never forms the goal that
+ * eventually leads it underground. Measured: the Kitchen returned `visible: []`
+ * with a bottle, a sack and a cake in it.
+ */
 function parseVisible(text) {
   const out = new Set()
+  const clean = (raw) => String(raw || '').trim()
+    .replace(/^(a|an|some|two|the)\s+/i, '')
+    .replace(/\s+(here|there|inside|nearby)$/i, '')
+    .replace(/\s+that .*$/i, '')
+    .replace(/\s+which\b.*$/i, '')
+    .trim()
+
   const re = /(?:there (?:is|are)|you (?:see|notice)|here (?:is|are))\s+((?:a|an|some|two|the)\s+[a-z][a-z' -]{1,34}?)(?:\.|;|,|$)/gi
   let m
   while ((m = re.exec(text))) {
-    const item = m[1].trim()
-      .replace(/^(a|an|some|two|the)\s+/i, '')
-      .replace(/\s+(here|there|inside|nearby)$/i, '')
-      .replace(/\s+that .*$/i, '')
-      .trim()
+    const item = clean(m[1])
     if (item.length > 2) out.add(item)
   }
+
+  // "A bottle is sitting on the table", "A homemade cake is dying slowly on the
+  // peg", "A sword hangs on the wall". The verb is what makes this a statement
+  // about furniture rather than about us ("you are holding the bottle").
+  const furniture = /(?:^|[.\n])\s*((?:a|an|some|the)\s+[a-z][a-z' -]{1,30}?)\s+(?:is|are)\s+(?:sitting|lying|resting|leaning|hanging|stuck|piled|placed|propped|sleeping|dying|embedded|half[- ]buried|bolted|fastened)\b/gi
+  while ((m = furniture.exec(text))) {
+    const item = clean(m[1])
+    if (item.length > 2) out.add(item)
+  }
+
+  // The inverted form Zork actually prefers: "On the table is an elongated
+  // brown sack", "In the corner is a crude portrait".
+  const inverted = /(?:^|[.\n])\s*(?:on|in|beside|behind|under|atop|before|from)\s+(?:the|a)\s+[a-z][a-z' -]{1,24}?\s+(?:is|are)\s+((?:a|an|some|the)\s+[a-z][a-z' -]{1,30})/gi
+  while ((m = inverted.exec(text))) {
+    const item = clean(m[1])
+    if (item.length > 2) out.add(item)
+  }
+
   // "A trap door is in the floor" / "There's a sword here" (contracted verb)
   const re2 = /(?:there's|there are)\s+((?:a|an|some)\s+[a-z][a-z' -]{1,34})/gi
-  while ((m = re2.exec(text))) out.add(m[1].trim().replace(/^(a|an|some)\s+/i, ''))
+  while ((m = re2.exec(text))) out.add(clean(m[1]))
   return [...out]
+}
+
+/**
+ * Ways the description says lead somewhere, and the ones it says are DARK.
+ *
+ * The Kitchen: "A passage leads to the west and **a dark staircase** can be seen
+ * **leading upward**. **A dark chimney leads down** and to the east is a small
+ * window which is open." Four ways out, two of them labelled dark in the same
+ * breath. That label is the game telling us, before we move, that somewhere in
+ * this graph is ground we cannot walk yet — the only warning any text parser
+ * gives, and the difference between an agent that seeks a lamp and one that
+ * discovers it needs one while a grue is eating it.
+ *
+ * Split by clause, not by sentence: the Kitchen's first sentence carries one
+ * safe way and one dark way, and attributing "dark" to the sentence would make
+ * west look deadly.
+ */
+function parseExits(text) {
+  const all = new Set()
+  const dark = new Set()
+  const DIR = 'north|northeast|northwest|south|southeast|southwest|east|west|upward|downward|up|down'
+  // ", and" is a clause separator here, not a conjunction inside a noun phrase —
+  // that is what lets "a dark chimney leads down AND to the east is a window"
+  // attribute darkness to the chimney alone.
+  for (const clause of String(text).split(/[.;]|,?\s+and\s+/i)) {
+    const m = clause.match(new RegExp(`(?:lead(?:s|ing)?|run(?:s|ning)?|go(?:es|ing)?| descend| open(?:s)? into| continue)\\s+(?:to\\s+the\\s+|toward\\s+the\\s+|up\\s+|down\\s+|straight\\s+)?(${DIR})\\b`, 'i'))
+      || clause.match(new RegExp(`to\\s+the\\s+(${DIR})\\b[^.]{0,24}?\\b(?:is|are)\\b`, 'i'))
+    if (!m) continue
+    const dir = /^(upward|up)$/.test(m[1]) ? 'up' : /^(downward|down)$/.test(m[1]) ? 'down' : m[1].toLowerCase()
+    all.add(dir)
+    if (/\b(dark|black|lightless)\b/i.test(clause)) dark.add(dir)
+  }
+  return { all: [...all], dark: [...dark] }
 }
 
 /** "In the trophy case is a lamp and a bottle." -> { 'trophy case': [...] } */
@@ -259,6 +347,15 @@ function parseContains(text) {
   const re = /in the ([a-z][a-z' -]{1,28}?) (?:is|are) ((?:a|an|some|the)\s+[a-z][a-z' &,()-]{1,80}?)(?:\.|$)/gi
   let m
   while ((m = re.exec(text))) {
+    const host = m[1].trim()
+    const items = m[2].split(/\s*(?:,|and)\s*/i)
+      .map(x => x.trim().replace(/^(a|an|some|the)\s+/i, '')).filter(x => x.length > 2)
+    if (host && items.length) out[host] = [...new Set([...(out[host] || []), ...items])]
+  }
+  // "The glass bottle contains:" followed by an indented list — the Kitchen's
+  // water, the sack's lunch, the egg's jewels. All of it was invisible.
+  const colon = /(?:the|a)\s+([a-z][a-z' -]{1,28}?)\s+contains:?\s*\n?\s*([^\n]+)/gi
+  while ((m = colon.exec(text))) {
     const host = m[1].trim()
     const items = m[2].split(/\s*(?:,|and)\s*/i)
       .map(x => x.trim().replace(/^(a|an|some|the)\s+/i, '')).filter(x => x.length > 2)
