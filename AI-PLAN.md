@@ -1,4 +1,76 @@
-# AI PLAN — making the computer play the hard games
+# AI PLAN — making the computer play the hard games## RESUME HERE — 2026-09-16 (read this first after a context reset)
+
+**Live in production:** `jalfern.com/retrogames/zork` has a `▶ AI` button. A visitor
+clicks it and the agent plays the browser build of the story — reading prose,
+building a map by walking — and **any keypress hands the keyboard back**, permanently
+until the button is pressed again. No backend, no API key, no walkthrough in source.
+
+### Gates (all green as of `d7a7036`)
+
+```bash
+npm run zorkuicheck   # 12/12  browser: real click, real key. Needs `npm run dev`.
+npm run zorkcheck     # 55/55  Node brain + sensor seams. No Chrome.
+npm run aicheck       # 24/24  the spine contract
+npm run doscheck      # 11/11  DOS/js-dos seams (slow: DOSBox-in-wasm boots 40-90s)
+npm run prodsmoke     # 38/38  production bundle via `vite preview` (4173)
+npm run lint:ai / lint:mario / lint:fps / build
+npm run verify        # everything (dev server must be running)
+```
+
+Five mutations must now fail before a Zork change is believed — recipes in
+`AGENTS.md § The harness must be able to fail`. Run them; three of the five
+survived a first attempt and every survival meant *the test never reached the code*.
+
+### Known honest state of the agent
+
+- Maps **13 rooms** in Node, and mapped ground in the browser after the transport
+  fix (`describeAfter` matches headings by substring — Glk chunks arrive glued onto
+  the prose, so line-based matching silently returned `null` and the fingerprint
+  fell back to raw replies: 13 rooms in Node vs 1 in the page).
+- Opens the mailbox and the Kitchen window **itself** on a restarted world; takes
+  portable nouns (greedy hands); revealed a `grating` by disturbing a pile of leaves.
+- Forms `needLight` from exits **the game itself called dark**, with a receipt in
+  CI: `fired at 2 dark way(s), game had mentioned a light: false`.
+- **Has never seen the word "lamp"** — no light source in any live reply it has
+  reached. The dark ways out of the Kitchen are grue-food (measured, not folklore).
+- **Deadlocks in one-exit rooms** — seen live by a human: climbed a tree, could not
+  work out that `down` was the way onward. That is issue **#36**, and it is the
+  next ticket.
+
+### Next steps, ranked (with the reason)
+
+1. **Planner fallback ladder — issue #36.** `nearestFrontier()` returning nothing
+   must not mean idle: walk an unverified `assumed` bearing → backtrack to the
+   nearest room with an untried bearing → `look` → *then* stop, naming which ran
+   out. This belongs to the planner, not the map: the false twins **were** the
+   frontier (see below), so with the fabrication gone and no replacement policy, an
+   empty frontier means it sits down. The rule must print its choice so the HUD
+   distinguishes exploring from stalling.
+2. **The lamp**, once coverage is real. The goal mechanism exists and is lore-free;
+   the evidence chain currently ends at a dark staircase.
+3. **`eye` / `ram` for King's Quest** — the other half of the A/B bet, still
+   honestly `SENSING: NOT IMPLEMENTED`. Stage 4a (DOS RAM base from the exported
+   wasm memory `pa`) is the cheapest go/no-go in the plan.
+4. Zero-UI interaction check (poll `arm`/`action`/`diary` with no DOM clicks) —
+   mariano-style, still owed.
+
+### Hypotheses already falsified — do not re-derive these
+
+| Claim | What killed it |
+|---|---|
+| Path-anchored room identity would fix coverage | Anchors were recursive (`from>dir`, `from` itself anchored) → unbounded keys, non-terminating walk. Reverted; ceiling check added. |
+| Fingerprint churn (flavour prose) caused false twins | Hardened `describeAfter` first; **the map did not move.** Not the cause. |
+| Room identity is the coverage blocker | Removing every false twin **dropped coverage 13 → 7**. Fabricated rooms were load-bearing fuel. Next fix is the planner. |
+| The map was broken in the browser | It was the sensor's transport assumption (line vs chunk). |
+| `WANT = ['lamp',...]` was fine | That was the walkthrough, smuggled in through the *goal*. Deleted; two CI gates now prove every noun came from live prose. |
+
+Three claims I made to the user and were wrong, all later caught by a mutant that
+survived: rules 3/3b had no `return` (the harness had opened the window, not the
+brain); a fixture left `lit = true` and **switched the grue rule off** for every
+run ever reported green; room counts were inflated by phantoms. The standing
+discipline: **measure, then claim — and make a mutant die before believing a gate.**
+
+
 
 > **Status: stage 0 shipped** (branch `ai-stage-0`), and it was not the quiet purge it looked
 > like. Four live bugs surfaced, all invisible because **no check in this repo had ever opened a
