@@ -313,13 +313,22 @@ into the PR body, and the artifact uploaded by the manual CI job.
 | Stage | Work | Proof it worked |
 |---|---|---|
 | **0** ✅ | purge `api/` + KQ scar tissue; `src/ai/` spine; `__zorkTest`/`__kqTest` hooks; `lint:ai`; **plus** the four bug fixes above | `zorkcheck` 26/26 in Node; `doscheck` 13/13 in Chrome (ESC past the AGI box, arrows move Graham, Ultima I + Mario unaffected) |
-| **1** | Zork brain: `src/games/Zork/agent/{skills,map,explorer}.js` — primitive verbs, a map learned only by walking, BFS over the frontier, then bread / lantern | the explorer reaches the Kitchen and the lamp with no scripted moves; the parser is never guessed at (`Sorry, I don't know the word` fails the run); dark-room invariant holds; in `verify` **and** `static` CI |
+| **1** ◐ | Zork brain: `agent/{skills,map,explorer}.js` — verb primitives, description-fingerprint map learned only by walking, assumed-edge verification, BFS frontier | **17 rooms, 42 walked edges, Kitchen entered, 23 assumptions tested, never died, never said an illegal word, stopped with a stated reason.** Gap: the lamp is not in hand yet (see below), so the dark half of the invariant is untested in anger |
 | **2** | Zork walkthrough layer (treasures → case) | ≥ 1 treasure delivered, HUD progress bar, live demo |
 | **3** | KQ `eye` sensor: CGA font OCR + ego sprite template-match + screen hash + screen graph | golden-string OCR test; ego position within ±8 px of the RAM oracle; ≥ 4 screens mapped by walking |
 | **4** | `ram` spike (find RAM base, locate the framebuffer, validate against canvas) → `sensors/ram.js` + a derived, *tested* KQ var map | go/no-go in writing; every var in the map ships with an assertion proving what it means |
 | **5** | A/B runner + first paired experiment ("reach the garden holding the egg", ≥10 trials/arm, `ram`/`eye`/`hybrid`) | medians + spread table, and a perception-accuracy curve under injected OCR noise |
 | **6** | KQ motor macros + first treasure walkthrough, run in all three arms | score increases on camera; `kqcheck` in the manual CI job |
 | **7** (opt) | Zork sensor A/B (transcript vs object tree — the deterministic version); LLM planner behind an opt-in toggle; Rogue autopilot (free once the spine exists) | Zork A/B reproducible byte-for-byte; planner accept/reject counts visible |
+
+**Stage 1 honest gaps.** (a) No lamp yet: the Kitchen's contents do not survive
+the sensor's prose parsing (`parseVisible` does not capture "A homemade cake is
+dying slowly on the peg" style furniture), so the agent has never been *told* a
+lamp exists — the dark-room invariant is therefore enforced but unexercised.
+(b) The shifting forest is still an admission of defeat, not a solution; the fix
+is a landmark/orienteering skill, not a cleverer graph. (c) The brain runs only
+in Node — mounting it in the browser needs input arbitration with a human who may
+type mid-sentence, which is its own change.
 
 **Execution order is not table order.** Stage `4a` (the `ram` spike) runs *before* stage 3, and
 `4b` may follow it immediately if the spike is clean — the `ram` read is the oracle that grades
@@ -328,7 +337,16 @@ perception system whose accuracy nobody can state.
 
 Total to "two games play themselves, two sensors measured, in CI": **~6–7 focused days**.
 
-> **Execution order is not table order.** Build the `ram` spike (stage 4a) *before* the `eye`
+> **Stage 1 honest gaps.** (a) No lamp yet: the Kitchen's contents do not survive
+the sensor's prose parsing (`parseVisible` does not capture "A homemade cake is
+dying slowly on the peg" style furniture), so the agent has never been *told* a
+lamp exists — the dark-room invariant is therefore enforced but unexercised.
+(b) The shifting forest is still an admission of defeat, not a solution; the fix
+is a landmark/orienteering skill, not a cleverer graph. (c) The brain runs only
+in Node — mounting it in the browser needs input arbitration with a human who may
+type mid-sentence, which is its own change.
+
+**Execution order is not table order.** Build the `ram` spike (stage 4a) *before* the `eye`
 > sensor (stage 3), because the oracle is what grades the eye arm — otherwise we ship a perception
 > layer with no way to say whether it works, which is the exact trap §8 warns about. Safe order:
 > 0 → 1 → 2 → **4a** → 3 → 4b → 5 → 6 → 7.
