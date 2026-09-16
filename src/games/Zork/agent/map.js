@@ -92,15 +92,59 @@ export class ZorkMap {
     // walking back to North of House produced `North of House#2`. Identity that
     // is read a beat late is identity that is read wrong.
     if (fp) for (const twin of twins) if (twin.fp === fp) return twin.key
+    const rejected = []
     for (const twin of twins) {
       const known = twin.exits[rev]
       // The way back we would expect to exist either is untried (no evidence
       // against) or already leads to where we came from (positive evidence).
+      //
+      // A BLOCKED reverse with nowhere on the other end is NOT evidence of a
+      // different room, and treating it that way was what put `North of House#2`
+      // and `Behind House#2` on the map — rooms Zork has exactly one of. Read the
+      // twin log this replaced: every false twin said `rejected X: south=null
+      // (blocked)`. `blocked, to=null` means only "we once asked that way and were
+      // refused", and Zork refuses for TRANSIENT reasons — storm-tossed trees,
+      // "the forest becomes impenetrable to the north". Now the game has just
+      // carried us along that same bearing in reverse, which is direct evidence
+      // the refusal was weather, not geography. Contradicting a refusal is fine
+      // when there is proof behind it; `null` is not proof, it is a memory of a
+      // no. The twins that survive are the ones refused against a PROVEN exit
+      // (`Clearing: south=Forest(proven)`), and those are real double-bookings.
+      // TRIED AND REVERTED (attempt 3). `|| (known && known.type === 'blocked' &&
+      // !known.to)` here removed every false twin — `North of House#2`,
+      // `Behind House#2`, all gone, twin log empty — and coverage FELL from 13
+      // rooms to 7, because those twins were the frontier. That is the real
+      // finding: the walk has been surviving on fabricated ground. A wrong map is
+      // not merely untidy, it is load-bearing fuel, and deleting the wrongness
+      // without giving the planner honest ground to chew makes it quit sooner.
+      // So identity stays as shipped, and the next change belongs to the planner,
+      // not the map: when the honest frontier is empty, standing still is not the
+      // answer — backtrack to a room with untried bearings and walk one.
       const agrees = !known || (known.to === from && known.type !== 'blocked')
+      // NOTE what is NOT done here: the refusal is kept. Identity and routing are
+      // two different questions and the first version of this fix answered both by
+      // deleting the blocked record, which merged correctly and then re-offered a
+      // bearing that really is closed (south from North of House does NOT lead to
+      // Behind House — north from Behind House is a one-way asymmetry in this
+      // game), so the walk spent its budget re-knocking and mapped 7 rooms instead
+      // of 13. "We were refused that way once" is weak evidence about WHICH ROOM
+      // this is, and good evidence about whether to walk it again.
       if (agrees) return this.claim(base, twin.key)
+      rejected.push(`${twin.key}: ${rev}=${known.to}(${known.type})`)
     }
     // Every same-named room disagrees with this arrival: it is a different room
     // wearing the same name.
+    //
+    // RECORD WHY. Two hypotheses about what creates false twins (path anchoring,
+    // then fingerprint churn) have already been built and falsified by
+    // measurement, so the next fix has to come with the arrival that produced the
+    // twin, the direction walked, and the exit that contradicted it — printed, not
+    // remembered. `North of House#2` and `Behind House#2` are rooms Zork has
+    // exactly ONE of, so each of these lines is a bug with its name on it.
+    this.twinReasons = this.twinReasons || []
+    if (twins.length && this.twinReasons.length < 24) {
+      this.twinReasons.push({ base, from, dir, rev, rejected })
+    }
     return this.claim(base, null)
   }
 

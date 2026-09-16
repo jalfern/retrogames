@@ -387,6 +387,13 @@ r.check('the brain discovered rooms by walking (not from the story file)',
   `rooms=${sum.stats.rooms} proven edges=${sum.stats.proven} (a tree of walked moves needs >= ${sum.stats.rooms - 1})`)
 r.info('──── its map', sum.rooms.join(' · '))
 r.info('──── map shape', JSON.stringify(sum.stats))
+// WHY EACH TWIN HAPPENED. The arrival, the direction walked, and the proven exit
+// that contradicted it. Written because two confident diagnoses (path anchoring,
+// fingerprint churn) were both falsified by measurement, and the third one only
+// stands a chance if it is reading the game rather than recalling my theory.
+for (const t of (brain.map.twinReasons || [])) {
+  r.info('twin', `new "${t.base}" from ${t.from} via ${t.dir} — rejected ${t.rejected.join(', ')}`)
+}
 
 // The invariant. Not a metric — a hard rule.
 const darkEntered = sum.rooms.filter((k) => (brain.map.rooms.get(k) || {}).dark && (brain.map.rooms.get(k) || {}).visits > 1)
