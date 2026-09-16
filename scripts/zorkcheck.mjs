@@ -343,6 +343,15 @@ const restartReply = await brainSend('restart')
 // half-restarted world, which is the worst possible state for a check: it still
 // plays, so nothing looks broken.
 if (/wish to restart|affirmative/i.test(restartReply)) await brainSend('yes')
+// RESET THE SENSOR TOO, NOT JUST THE WORLD. The golden-string probes above leave
+// state behind — and the one that mattered was `sensor.saw('turn on lamp', 'The
+// lamp is on.')`, which set `lit = true` and never cleared it. So the brain was
+// TOLD, by its own sensor, that it had a lit lamp in hand. That disables the
+// grue rule (every dark check ANDs with `!lit`), which means the repo's headline
+// safety invariant had been switched off for the entire run and nobody noticed,
+// because the agent never wandered into the dark anyway. A fixture that lies to
+// the arm is worse than a fixture that lies to the check.
+sensor.reset()
 const afterReset = await brainSend('look')
 r.check('the world was reset before the brain took over',
   /west of house/i.test(afterReset), afterReset.trim().split('\n')[0].slice(0, 60))
@@ -400,28 +409,73 @@ r.check('it never repeated a direction the game had already refused',
   })(),
   'map records every refusal; step() consults it before moving')
 
+// LIVE ONLY, and that qualifier is the whole point.
+//
+// The first version scanned `sensor.exchanges`, which also contains the golden
+// string fixtures used to pin the sensor's parsing — including
+// `sensor.saw('turn on lamp', 'The lamp is on.')`. So the suite printed
+// "lamp seen in prose: yes" and "known about, not fetched" while the agent had
+// never seen the word in anything the GAME said. A harness that counts its own
+// fixtures as evidence isn't measuring the agent; it is reading its own
+// handwriting back and calling it an observation.
+const sentByBrain = new Set(seenCommands)
+const live = sensor.exchanges.filter((e) => sentByBrain.has(e.command))
+const liveLamp = []
+for (const e of live) {
+  const m = String(e.output).match(/[^\n]*(lamp|lantern|torch|matches)[^\n]*/i)
+  if (m) liveLamp.push(`after "${e.command}" in ${e.room}: ${m[0].trim().slice(0, 90)}`)
+}
+for (const line of liveLamp.slice(0, 4)) r.info('lamp prose (LIVE)', line)
+
+// TWO CLAIMS THAT REPLACE THE WALKTHROUGH.
+//
+// (1) NO INVENTED NOUNS. Every noun the brain put into a command must have been
+// printed by the GAME in an earlier live reply. "Take small window" is allowed
+// because the Kitchen said "a small window"; "take lamp" would NOT be, unless the
+// game had used the word first. This is the check that the deleted WANT list makes
+// honest — a lore leak is now a red build, not a matter of trusting the source.
+const ordered = sensor.exchanges.filter((e) => sentByBrain.has(e.command))
+const corpus = []
+const invented = []
+for (const e of ordered) {
+  const m = /^(?:take|get|turn on|open|light)\s+(.+)$/i.exec(String(e.command).trim())
+  if (m) {
+    const noun = m[1].toLowerCase()
+    if (!corpus.join('\n').toLowerCase().includes(noun)) invented.push(`"${e.command}" — the game never said "${noun}"`)
+  }
+  corpus.push(String(e.output))
+}
+r.check('every noun it asked for came from the game, not from us', invented.length === 0,
+  invented.length ? invented.slice(0, 3).join(' | ') : `${ordered.length} commands, all nouns traceable to live prose`)
+
+// (2) THE GOAL FORMED FROM THE MAP, NOT FROM A HINT. `needLight` fires off
+// `darkClaims` — a word the GAME wrote about an exit — so the receipt must show
+// the goal forming while the game had said nothing about any light source.
+const goal = brain.lightGoal || null
+r.check('the light goal formed from a dark exit, not from a hint',
+  !!goal && goal.gameSaidLight === false && goal.darkClaims > 0,
+  goal ? `fired at ${goal.darkClaims} dark way(s) on the map, game had mentioned a light: ${goal.gameSaidLight}`
+    : 'the goal never fired — it never needed light, so nothing was derived')
+
+const firstProse = ordered.findIndex((e) => /lamp|lantern|torch/i.test(String(e.output)))
+const firstAsk = ordered.findIndex((e) => /^(?:take|get|turn on|light)\b.*(lamp|lantern|torch)/i.test(String(e.command)))
+r.check('if it ever asks for a light, the game mentioned one first',
+  firstAsk === -1 || (firstProse !== -1 && firstAsk > firstProse),
+  `first live light-prose=#${firstProse} first light-ask=#${firstAsk}${firstAsk === -1 ? ' (never asked — it is still holding what it found)' : ''}`)
+
 const carriedLamp = (sensor.inventory || []).some((x) => /lamp|lantern/i.test(x))
-const gameMentionedLamp = sensor.exchanges.some((e) => /lamp|lantern/i.test(e.output))
-// `!carriedLamp || gameMentionedLamp` is an IMPLICATION, and an implication is
-// vacuously true when the agent never picked the lamp up. Saying
-// "prose mentioned a lamp: false" next to a PASS is how a check advertises
-// knowledge the agent does not have, so state both facts plainly and let the
-// stage-2 gate be the one that actually requires the lamp.
+const gameMentionedLamp = liveLamp.length > 0
+r.check("at least the brain's own exchanges were scanned for lamp prose", live.length >= 5,
+  `${live.length}/${sensor.exchanges.length} exchanges came from the brain; the rest are fixtures`)
+// `!carriedLamp || gameMentionedLamp` is an IMPLICATION, vacuously true when the
+// agent never picked one up — which, measured honestly, is exactly where we are.
 r.check('it never took a lamp the game never mentioned',
   !carriedLamp || gameMentionedLamp,
-  `carrying=${sensor.inventory.join(', ') || 'nothing'} · lamp seen in prose: ${gameMentionedLamp ? 'yes' : 'NO — it has no idea a lamp exists yet'}`)
-// Where did the word "lamp" come from? The check claims the prose mentioned one,
-// so the run should show WHERE — the room, the command that got us there, and the
-// sentence. Without this line "it knows about the lamp" and "it can never reach
-// the lamp" look identical in the output.
-for (const e of sensor.exchanges) {
-  const m = String(e.output).match(/[^\n]*lamp[^\n]*/i)
-  if (m) r.info('lamp prose', `after "${e.command}" in ${e.room}: ${m[0].trim().slice(0, 96)}`)
-}
-
-r.info('──── lamp', carriedLamp ? 'IN HAND'
-  : gameMentionedLamp ? 'known about, not fetched'
-    : 'NEVER SEEN — the agent has no evidence a lamp exists, so it cannot want one')
+  `carrying=${sensor.inventory.join(', ') || 'nothing'} · lamp in live prose: ${gameMentionedLamp ? 'yes' : 'NO'}`)
+r.info('──── lamp, actually', carriedLamp && sensor.lit ? 'IN HAND AND LIT'
+  : carriedLamp ? 'in hand, unlit'
+    : gameMentionedLamp ? 'seen in the live game, not fetched'
+      : 'NEVER SEEN — the game has said nothing about a light source to the brain yet, \n       so it cannot want one; stage 2b is about earning that evidence, not assuming it')
 if (sum.report.length) r.info('──── brain said', sum.report.join(' · '))
 
 // Two properties that only hold if room identity works, which is the thing that

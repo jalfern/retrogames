@@ -41,7 +41,23 @@ import { makeSkills } from './skills.js'
 // Things worth a move, in priority order. Stage 2 replaces this list with the
 // treasure set; for now the lamp family is the interesting case because it is
 // the only object the game will kill you for lacking.
-const WANT = ['lamp', 'lantern', 'matches', 'box of matches']
+// THERE IS NO WANT LIST ANYMORE, AND THAT IS THE HEADLINE OF STAGE 2b.
+//
+// This file used to say, in its own source:
+//
+//     const WANT = ['lamp', 'lantern', 'matches', 'box of matches']
+//
+// which is the walkthrough smuggled in through the GOAL instead of the route. The
+// agent could not name a route to the Kitchen it had not walked, and we were right
+// to be proud of that — while handing it a list of nouns to want that it had never
+// heard the game say. "Want a lamp" is a hint, and it is MY hint, not Zork's.
+// Every claim that this agent went looking for a light source was me playing the
+// game and giving it credit.
+//
+// What replaces it is derived and noun-free: the map holds ways out the GAME
+// labelled dark, and nothing in hand burns. The noun "lamp" enters this agent's
+// vocabulary only when the game prints "The lamp is on." — learned from a reply,
+// exactly the way it learned "Kitchen".
 
 const has = (list, needle) => (list || []).some((x) => {
   const a = String(x).toLowerCase()
@@ -71,6 +87,21 @@ export class ZorkExplorer {
     this.pending = null        // the move whose reply we are waiting to classify
     this.asked = null          // the last non-move ask, so a refusal can be blamed on it
     this.refused = new Set()   // "room|verb noun" already declined, so never asked twice
+    // Nouns the game refused to let us pick up ANYWHERE — a passage, a staircase,
+    // the forest. Portability belongs to the noun, not the room, so it is learned
+    // once per noun instead of once per room; without this, greedy hands spends
+    // the whole budget trying to take the scenery.
+    this.unportable = new Set()
+    this.lightNoun = null      // the noun the GAME said burns (read off a reply)
+    this.lightTried = new Set()
+    // PROPRIOCEPTION. The sensor can only read a carry list when the GAME prints
+    // one, and Zork prints it only in reply to INVENTORY — which this brain never
+    // types. So `carrying` was empty forever and the experiment rule ("try the
+    // things in my hands") was unreachable code, which is how mutation 3 —
+    // hardcoding the noun `lamp` — survived the lore check: the line never ran.
+    // The fix is the boring one. We took it, the game said "Taken.", therefore we
+    // have it. No mind-reading, no parser dependency.
+    this.held = new Set()
     this.darkRooms = new Set()
     this.report = []           // honest notes: what it wanted and could not get
   }
@@ -129,6 +160,20 @@ export class ZorkExplorer {
             const a = this.asked
             this.refused.add(`${from}|${a.skill} ${a.args?.what ?? ''}`.trim())
             this.say(`refused${inert ? ' (nothing changed)' : ''}: ${a.skill} ${a.args?.what || ''} in ${from}`)
+            // LEARNED SCENERY. "Take the passage" is a thing a noun-blind agent
+            // does; the game says no once, and that noun is scenery forever
+            // after, everywhere. Without this the greedy-hands policy spends its
+            // whole budget re-attempting the staircase in every room that has one.
+            if (a.skill === 'take' && verdict === 'taken') {
+              // It worked: the noun is in our hands now, and this is the only
+              // honest source for that — we asked, the game said "Taken."
+              const got = String(a.args?.what || '').toLowerCase()
+              if (got) this.held.add(got)
+            }
+            if (a.skill === 'take') {
+              const noun = String(a.args?.what || '').toLowerCase()
+              if (noun) this.unportable.add(noun)
+            }
           }
           this.asked = null
         }
@@ -155,6 +200,17 @@ export class ZorkExplorer {
           this.report.push(`split a merged room after the game refused a way the map swore was open (${key}) — Zork reuses room names, and two rooms were wearing one`)
           this.say(`split: ${key} was two rooms`)
         }
+        // THE GAME TEACHES IT THE WORD. "The lamp is on." is the first moment the
+        // string "lamp" exists for this agent, and it arrives from a reply. The
+        // check now measures whether any light-noun ever entered the brain's
+        // planning before such a sentence — that is a lore leak, and it fails.
+        if (this.sensor.lastOutput) (this.corpus || (this.corpus = [])).push(this.sensor.lastOutput)
+        const burns = String(this.sensor.lastOutput || '').match(/the ([a-z][a-z' -]{1,20}?) is (?:now )?on\b/i)
+        if (burns) {
+          this.lightNoun = burns[1].trim()
+          this.say(`light source: "${this.lightNoun}" — the game used that word, not me`)
+        }
+
         if (this.map.splitsTo && this.map.splitsTo !== key) {
           key = this.map.splitsTo
           this.map.splitsTo = null
@@ -194,6 +250,29 @@ export class ZorkExplorer {
    * This is the narrow question "did doing that change what I know about
    * things?" — which is the only question an `open`/`take` can answer.
    */
+  /**
+   * Does this map contain ground we cannot walk, and nothing to walk it with?
+   *
+   * `darkClaims` is a number the GAME wrote — it called those exits dark in its own
+   * description, before we ever stood in them. So "get a light source" is derived
+   * from evidence rather than from a hint list, and it is what justifies greedy
+   * hands costing a few refusals.
+   */
+  needLight(p) {
+    if (p.extra?.lit || this.lightNoun) return false
+    if (!(this.map.stats().darkClaims > 0)) return false
+    // Record the moment the goal formed, and whether the game had said ANY
+    // light-noun by then. It had not — the trigger is `darkClaims`, a number the
+    // game wrote into a room description — so the goal is evidence and not lore.
+    // Without this receipt the claim "it wanted a lamp on its own" is unfalsifiable,
+    // which is exactly how the deleted WANT list survived this long.
+    if (!this.lightGoal) {
+      const said = (this.corpus || []).join(' ').match(/lamp|lantern|torch|matches/i)
+      this.lightGoal = { darkClaims: this.map.stats().darkClaims, gameSaidLight: !!said }
+    }
+    return true
+  }
+
   snap(p) {
     return [
       (p.inventory || []).slice().sort().join(','),
@@ -213,9 +292,18 @@ export class ZorkExplorer {
   step(p) {
     const here = this.map.at ? this.map.rooms.get(this.map.at) : null
     const dark = !!p.extra?.dark && !p.extra?.lit
-    const carrying = p.inventory || []
-
     if (dark) return this.survive(p, here, carrying)
+
+    // 1b. NEED LIGHT — derived, with no noun in it. The map holds ways out the game
+    //     itself called dark and nothing burning is in hand. Zork volunteered those
+    //     labels ("a dark staircase … leading upward"), so wanting a light costs no
+    //     lore, only the literacy the sensor was given.
+    const needLight = this.needLight(p)
+    // The sensor's carry list plus what we know we picked up. Union, not
+    // replacement: the game's INVENTORY is authoritative when it prints, and our
+    // own memory of "Taken." covers every moment in between.
+    for (const h of p.inventory || []) this.held.add(String(h).toLowerCase())
+    const carrying = [...this.held]
 
     // 2. take what this room's prose said is here, if we want it, are not
     //    carrying it, and have not already been told no about it.
@@ -225,6 +313,22 @@ export class ZorkExplorer {
       this.pending = { kind: 'other' }
       this.asked = { skill: 'take', args: { what: item }, snap: this.snap(p) }
       return { skill: 'take', args: { what: item } }
+    }
+
+    // 2b. EXPERIMENT FOR THE WORD. Holding things, needing light, and having no
+    //     noun to ask for is exactly the position a human is in: you try what is in
+    //     your hands. Whichever one answers "The lamp is on." is the light source,
+    //     and from that sentence the agent owns the word. Every `turn on` the check
+    //     permits must name something it was CARRYING when it typed it.
+    if (needLight) {
+      for (const held of carrying) {
+        const key = String(held).toLowerCase()
+        if (this.lightTried.has(key)) continue
+        this.lightTried.add(key)
+        this.pending = { kind: 'other' }
+        this.asked = { skill: 'turnOn', args: { what: held }, snap: this.snap(p) }
+        return { skill: 'turnOn', args: { what: held } }
+      }
     }
 
     // 3. open what the game told us is shut — a closed container is a wall
@@ -380,7 +484,7 @@ export class ZorkExplorer {
     const want = []
     for (const item of listed) {
       if (!item || want.includes(item)) continue
-      if (!WANT.some((w) => has([item], w))) continue
+      if (this.unportable.has(String(item).toLowerCase())) continue
       if (has(carrying, item)) continue
       want.push(item)
     }
@@ -412,8 +516,11 @@ export class ZorkExplorer {
     const out = []
     for (const host of Object.keys(here.contains || {})) {
       const holds = here.contains[host] || []
-      const wanted = WANT.some((w) => has(holds, w))
-      const stillCarried = wanted && holds.some((h) => has(carryingOf(p), h))
+      // No WANT list: a container is worth opening if it holds anything we are not
+      // already carrying. Which things are worth carrying is not knowledge this
+      // agent is allowed to have before the game says so.
+      const wanted = holds.length > 0
+      const stillCarried = wanted && holds.every((h) => has(carryingOf(p), h))
       if (wanted && !stillCarried && (!shut.size || shut.has(host)) && !out.includes(host)) out.push(host)
     }
     return out
