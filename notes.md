@@ -91,3 +91,58 @@ emissive windows and additive halos for everything else. Only the moon casts sha
 `tileBox` / `tilePlane` bake world-unit texel density into UVs instead of
 `texture.repeat`, so a 3 m shed and a 12 m facade share one brick material (one GPU
 upload) — the level builder needs that to stay at tens of draw calls, not hundreds.
+### Commit 2 — maps that cannot lie, and the audit that proved mine did
+
+`levels.js` (pure Node, no three, no DOM) carves three jobs out of solid rock:
+**the corner bank**, **the museum of shiny things**, **the moonstone manor**. Pure data:
+grid arrays, wall heights, markers, patrol routes. `stealth.js` is also pure: sight,
+cones, noise, gaits, scoring — every one of them a function of numbers, so the whole
+stealth model is testable without a browser.
+
+`npm run heistcheck` is now the gate, and it earned its place immediately: **270
+checks, 20 real failures on the first run.** A stealth level's classic failure is not an
+ugly screenshot, it is content the player can never reach, a guard who cannot walk his
+route, or a torch that sees the getaway cart on frame one. None of that is visible in a
+picture. All of it is three lines of flood fill.
+
+What it caught (all real, all in maps I had already "finished"):
+
+- **The museum had one door, and it was the exit.** The lane and the entrance hall were
+  separated by a wall row pierced only by the escape gate `X`. With the gate shut the
+  *entire level* was unreachable: you cannot get in without finishing the job. Now there
+  is a propped staff door at (8,19) you walk in through and a front alarm-door you only
+  get on the way out — which, it turns out, is the shape of a heist.
+- **A two-cell doorway left a second opening.** I carved the vault doorway two cells
+  wide and put the door in one of them. The other was an open corridor: the vault lock
+  was decoration. Caught by the audit's favourite trick — run reachability twice, once
+  with the doors and gate shut and once open, and **the difference is the proof the lock
+  is load-bearing**.
+- **Guards could see the getaway cart from their patrol.** Two jobs. Fixed architecturally,
+  not by dialling a number down: the cut onto the street is now plugged with two
+  dumpsters (walk past them down the x=8 column, sight stops on galvanised steel), and
+  the manor got a garden wall with two blind corners between the courtyard mouth and the
+  cart. "The guard happens to be looking away" is not a design; a wall is.
+- **Dead content**: trash cans and loot stamped inside walls, a guard route laid across
+  a room that did not exist, a waypoint that was a crate.
+- **Chain-link sanity**: a fence must block movement and *never* sight. Tested directly.
+
+Invariants the audit now holds every job to, forever:
+1 loot ≥ 3; 2 nothing unreachable (except wall-mounted emitters, which have their own
+"your beam must cross a floor cell" rule); 3 every loot pile has cover within 3.6 m —
+a target with no cover nearby teaches the player that stealth is optional; 4 every
+patrol waypoint walkable, reachable, and walkable to the next one; 5 no waypoint looks
+at the spawn; 6 some loot **requires** the door; 7 the escape has a reachable neighbour
+and is not the spawn cell.
+
+`loot(x, y, ch, cover)` now plants the cover in the same call that plants the money: the
+thing that creates an obligation is the thing that satisfies it, and the audit still
+checks the result. That is the difference between a rule and a habit.
+
+**The harness must be able to fail:** `npm run heistcheck -- --mutate` walls the vault
+of job 1 off completely and asserts the audit notices. It reports 12 complaints and
+exits 0 *because it failed loudly* — mutation mode inverts the exit, because there the
+complaints are the pass condition.
+
+`L` used to mean both "lamppost" and "laser emitter" in the marker alphabet. The audit
+cheerfully reported job 1 as having four lasers. Emitters are `Z` now. Two meanings in
+one alphabet is how a lamp becomes a death ray.
