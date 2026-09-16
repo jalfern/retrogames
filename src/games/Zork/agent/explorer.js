@@ -110,11 +110,25 @@ export class ZorkExplorer {
         // same request politely and infinitely; an agent without a memory of
         // refusals cannot tell that from progress.
         if (this.asked) {
-          const no = /already|won'?t|can'?t|don'?t see|impossible|no way|what|but how|you have better things/i.test(this.sensor.lastOutput || '')
-          if (no || verdict === 'blocked') {
+          // DON'T ASK TWICE WITHOUT NEW INFORMATION.
+          //
+          // The first rule here was a regex of refusals — "already", "can't",
+          // "impossible". It worked until the game said "Have your eyes checked."
+          // in reply to opening an already-open window: not a word in the list, so
+          // the agent opened it again, was insulted again, and did that eleven
+          // times. You cannot enumerate a text adventure's sarcasm.
+          //
+          // So stop reading the reply as a verdict and read it as an outcome: if
+          // the ask changed nothing we can PERCEIVE — carry list, visible objects,
+          // known contents — then it has no further use, whatever the prose said.
+          // Phrasing is infinite; state is finite.
+          const now = this.snap(p)
+          const no = /already|won'?t|can'?t|don'?t see|impossible|no way|but how/i.test(this.sensor.lastOutput || '')
+          const inert = now === this.asked.snap
+          if (no || verdict === 'blocked' || inert) {
             const a = this.asked
             this.refused.add(`${from}|${a.skill} ${a.args?.what ?? ''}`.trim())
-            this.say(`refused: ${a.skill} ${a.args?.what || ''} in ${from}`)
+            this.say(`refused${inert ? ' (nothing changed)' : ''}: ${a.skill} ${a.args?.what || ''} in ${from}`)
           }
           this.asked = null
         }
@@ -129,6 +143,8 @@ export class ZorkExplorer {
           dark: !!p.extra?.dark && !p.extra?.lit,
           visible: p.extra?.visible || [],
           contains: p.extra?.contains || {},
+          announced: p.extra?.announced || [],
+          darkExits: p.extra?.darkExits || [],
         })
         // A split is the map admitting it had merged two rooms. Adopt the new
         // key, and SAY SO: an unexplained split leaves the reader with 17 rooms
@@ -163,10 +179,27 @@ export class ZorkExplorer {
         dark: !!p.extra?.dark && !p.extra?.lit,
         visible: p.extra?.visible || [],
         contains: p.extra?.contains || {},
+        announced: p.extra?.announced || [],
+        darkExits: p.extra?.darkExits || [],
       })
     }
 
     return p
+  }
+
+  /**
+   * What the agent can perceive, as a string cheap enough to compare every tick.
+   * Deliberately NOT the room name or the score: an ask that moves us to a new
+   * room is obviously not inert, and score already has its own progress channel.
+   * This is the narrow question "did doing that change what I know about
+   * things?" — which is the only question an `open`/`take` can answer.
+   */
+  snap(p) {
+    return [
+      (p.inventory || []).slice().sort().join(','),
+      (p.extra?.visible || []).slice().sort().join(','),
+      Object.keys(p.extra?.contains || {}).sort().join(','),
+    ].join('|')
   }
 
   progress(p) {
@@ -190,7 +223,7 @@ export class ZorkExplorer {
       const id = `${this.map.at}|take ${item}`
       if (this.refused.has(id)) continue
       this.pending = { kind: 'other' }
-      this.asked = { skill: 'take', args: { what: item } }
+      this.asked = { skill: 'take', args: { what: item }, snap: this.snap(p) }
       return { skill: 'take', args: { what: item } }
     }
 
@@ -200,7 +233,13 @@ export class ZorkExplorer {
       const id = `${this.map.at}|open ${host}`
       if (this.refused.has(id)) continue
       this.pending = { kind: 'other' }
-      this.asked = { skill: 'open', args: { what: host } }
+      this.asked = { skill: 'open', args: { what: host }, snap: this.snap(p) }
+      // MUST return. Rule 3 and 3b were written, commented, and shipped setting
+      // `pending`/`asked` and then FALLING THROUGH to the frontier — so they
+      // could never act, and the run still "proved" it had opened the window
+      // because the scripted warm-up three functions above had already opened it.
+      // A rule that cannot fire is invisible in a passing suite.
+      return { skill: 'open', args: { what: host } }
     }
 
     // 3b. a refused way out usually has a thing in front of it. If this room was
@@ -212,7 +251,8 @@ export class ZorkExplorer {
       const id = `${this.map.at}|open ${thing}`
       if (this.refused.has(id)) continue
       this.pending = { kind: 'other' }
-      this.asked = { skill: 'open', args: { what: thing } }
+      this.asked = { skill: 'open', args: { what: thing }, snap: this.snap(p) }
+      return { skill: 'open', args: { what: thing } }
     }
 
     // 3c. test the assumptions. Every `back the way you came` in the map is an

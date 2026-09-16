@@ -120,6 +120,25 @@ The spine (reasoning and the staged plan in `AI-PLAN.md`):
 - `src/utils/dosKeys.js` is the *only* DOS key path, so the harness, the agent and the player's
   fingers share one codebase (a harness that cheats with frozen frames cannot pass for play).
 
+### The harness must be able to fail
+
+Every suite here was green with bugs in it at first, so two mutations are tried by
+hand before a Zork change is believed:
+
+```bash
+# 1. in agent/explorer.js, drop `|| inert` from the refusal rule
+npm run zorkcheck    # MUST fail: re-opens an open window forever, Kitchen unreached
+# 2. in sensors/transcript.js, make darkness sticky (`this.dark = true`)
+npm run zorkcheck    # MUST fail: "a LIT lamp outranks the word dark"
+```
+
+Mutation 2 survived **twice**, and both reasons are the lesson: first the brain
+never enters the dark, so a sensor lying about global darkness is behaviourally
+invisible; then the probe said *"It is too dark"* while the detector matched only
+*`it's dark`* — the fixture never entered the branch it was testing (and that regex
+is why Zork's actual phrasing had been sailing past the sensor all along). **A
+mutant that survives is usually telling you the test never got near the code.**
+
 ### The Zork brain (`src/games/Zork/agent/`)
 
 `map.js` + `skills.js` + `explorer.js`. Three things about it are load-bearing and
@@ -145,6 +164,19 @@ non-obvious; all three were learned by the map being wrong, not by design:
   stayed on the frontier, and the agent asked twenty times. The map no longer
   consults the prose: **asked to go that way and did not arrive ⇒ the way is
   closed.** Derived from the model, not from the phrasing.
+
+**Two rules shipped dead for a whole stage.** Rules 3 and 3b (`open` what is shut;
+`open` the noun blocking a refused way) set state and **fell through without a
+`return`**, so they could never act — and the suite still "proved" the brain opened
+the Kitchen window, because the scripted warm-up had opened it and the inherited
+world looked like the brain's work. Both fixed, and load-bearing:
+
+- The brain phase begins with Zork's own `restart`. **A check that hands the agent
+  a world its script already unlocked proves nothing.**
+- Refusals are derived from *state*, not prose: an ask that changes nothing
+  perceptible (`snap()`) is finished, whatever the game said. The regex of
+  refusals died to *"Have your eyes checked."* — you cannot enumerate a text
+  adventure's sarcasm.
 
 Assumed edges (the reverse of a walked move) are hypotheses and the brain
 *verifies* them — that is how it got indoors at all: east from North of House
@@ -288,7 +320,8 @@ model/machine can reproduce it (it is not an external tool):
 | `scripts/fpscheck.mjs` | IronKeep (the FPS): key-gated reachability audit of all three halls, then a driven play-through — collision, doors and keys, hitscan, pathfinding without line of sight, lives, the Warden, reaching `win`, and a frame-time budget. |
 | `scripts/keepplay.mjs` | IronKeep feel probe: real key events only (no frozen-frame shortcuts), so input-path bugs that deterministic stepping cannot see — a quick tap swallowed between two 60Hz samples — still show up. |
 | `scripts/aicheck.mjs` | The **spine's own contract**, in Node, ~1 s. No brain exists yet, so `AgentLoop` is driven by fake brains that reproduce the failures this repo has already lived: an unknown skill must be **rejected and counted** (not thrown, not ignored), a brain that stops advancing must trip the watchdog and then stop *with a reason*, a throwing skill must not kill the loop, a brain with no move must stop rather than spin, every `Percept` field must ship a confidence defaulting to 0 (never a hole), and a title that declares no sensors must get no arm to advertise. |
-| `scripts/zorkcheck.mjs` | Zork **in Node** (no Chrome, no dev server), two phases. **Seams:** every command the scripted walk sent was legal, `open window` proved **by prose** (`nailed and boarded` before, absent after — a score bump is not proof, that move is worth 0 points here), a complaint does not invent a room, reading the leaflet does not invent a room, darkness detected, a refused move classified `blocked` not `moved`, no Glk/VM error. **Brain:** mounts the real `ZorkExplorer` in the real `AgentLoop` and asserts its invariants — never re-entered a dark room unlit, never died, never said a word the parser rejected, every merged room noticed (`splits`) and reported, ≥10 rooms mapped, and it stopped **with a reason it states**. `--map` prints the map the agent believes; `--trace` prints `verdict > command > first line of reply`. || `scripts/prodsmoke.mjs` | The same titles against the **production build** (`vite preview`, port 4173). Every other browser check runs against `npm run dev`, where Vite resolves `/retrogames/...` for you and `import.meta.env.DEV` grants the `__*Test` hooks — so the shipping bundle had never been driven. This one has no hooks: it proves the emulator is fetched exactly once under `/retrogames/` (never `retrogames/retrogames`), that non-DOS titles never download js-dos at all, that the canvas survives readback outside dev, and that **real** keyboard input moves Graham and types into the Z-machine. Asserts contracts, not chosen futures: `north` may legally be answered "The way is blocked", so the check requires an echo + a reply + a `LOOK` description. |
+| `scripts/zorkcheck.mjs` | Zork **in Node** (no Chrome, no dev server), two phases. **Seams:** every command the scripted walk sent was legal, `open window` proved **by prose** (`nailed and boarded` before, absent after — a score bump is not proof, that move is worth 0 points here), a complaint does not invent a room, reading the leaflet does not invent a room, darkness detected, a refused move classified `blocked` not `moved`, no Glk/VM error. **Brain:** mounts the real `ZorkExplorer` in the real `AgentLoop` and asserts its invariants — never re-entered a dark room unlit, never died, never said a word the parser rejected, every merged room noticed (`splits`) and reported, ≥10 rooms mapped, and it stopped **with a reason it states**. `--map` prints the map the agent believes; `--trace` prints `verdict > command > first line of reply`. **Prose phase (2a):** grades the **first sight** of a room — Zork prints a long description once and never repeats it, so knowledge must be caught or re-`look`ed — and asserts the game's own exit labels were read: `west, up, down, east out, dark: up, down`, with west **not** dark, which is per-clause attribution (per-sentence would teach the agent to fear the lit way out). Also pinned: darkness **clears** when the light does, and a **lit lamp outranks the word "dark"**.
+| `scripts/prodsmoke.mjs` || The same titles against the **production build** (`vite preview`, port 4173). Every other browser check runs against `npm run dev`, where Vite resolves `/retrogames/...` for you and `import.meta.env.DEV` grants the `__*Test` hooks — so the shipping bundle had never been driven. This one has no hooks: it proves the emulator is fetched exactly once under `/retrogames/` (never `retrogames/retrogames`), that non-DOS titles never download js-dos at all, that the canvas survives readback outside dev, and that **real** keyboard input moves Graham and types into the Z-machine. Asserts contracts, not chosen futures: `north` may legally be answered "The way is blocked", so the check requires an echo + a reply + a `LOOK` description. |
 | `scripts/doscheck.mjs` | The seams every DOS/IF title depends on: js-dos boots under the dev server (it did not — see Gotchas), the keyboard handler is captured off `window`, the framebuffer is *readable* (not composited-and-cleared), ESC gets past the AGI copy-protection box, injected arrows move Graham, and Mario still renders **without** downloading js-dos. Retries frames because AGI legitimately fades through black. |
 
 ```bash

@@ -169,6 +169,8 @@ export class ZorkMap {
         dark: false,
         visible: new Set(),
         contains: {},
+        announced: new Set(),   // prose claims about ways out (never edges)
+        darkWays: new Set(),    // the subset the prose called dark
         facts: [],          // raw prose the room was described with (debug aid)
       })
     }
@@ -177,9 +179,9 @@ export class ZorkMap {
 
   /**
    * Called after every command, with what the sensor now believes.
-   * @param {object} o  { key, from, dir, dark, visible, contains, verdict }
+   * @param {object} o  { key, from, dir, dark, visible, contains, announced, darkExits }
    */
-  observe({ key, from, dir, dark = false, visible = [], contains = {}, fp = null }) {
+  observe({ key, from, dir, dark = false, visible = [], contains = {}, announced = [], darkExits = [], fp = null }) {
     const base = key.split('#')[0]
     let room = this.ensure(key)
     if (!room.base) room.base = base
@@ -243,6 +245,8 @@ export class ZorkMap {
           moved.visits = (origin.visits || 0) + 1
           moved.dark = origin.dark
           moved.splits = 1
+          moved.announced = origin.announced
+          moved.darkWays = origin.darkWays
           this.at = fresh
           this.splitsTo = fresh
         }
@@ -250,6 +254,14 @@ export class ZorkMap {
     }
     if (dark) room.dark = true
     for (const v of visible) room.visible.add(v)
+    // Ways the ROOM'S OWN PROSE says lead out, and the subset it called dark.
+    // Deliberately NOT edges: "a passage leads to the west" is a claim, and a map
+    // that turns claims into edges will route through a wall. Stored so the brain
+    // can know, while still in the light, that the graph it has mapped has a lit
+    // half and a dark half — the only way it can ever go looking for a lamp
+    // instead of discovering it needs one while something is eating it.
+    for (const d of announced || []) room.announced.add(d)
+    for (const d of darkExits || []) room.darkWays.add(d)
     for (const [host, items] of Object.entries(contains || {})) {
       room.contains[host] = [...new Set([...(room.contains[host] || []), ...items])]
     }
@@ -335,7 +347,22 @@ export class ZorkMap {
         else blocked++
       }
     }
-    return { rooms: this.rooms.size, proven, assumed, blocked, darkRooms: dark, unstable: [...this.unstable], splits: this.splits || 0, verified: this.verified || 0 }
+    // Ways out that the GAME labelled dark, counted across every room we have
+    // mapped, plus how many of those we have already tried and been refused.
+    // Deliberately NOT filtered to proven edges: the interesting dark way is the
+    // one we cannot walk yet (the Kitchen's chimney), so a count restricted to
+    // walked exits is always zero and reads like "nothing left to find".
+    // `darkClaims` is stage 2's goal trigger; `darkRefused` is the proof that the
+    // agent already knocked and was turned away for lack of light.
+    let darkClaims = 0
+    let darkRefused = 0
+    for (const r of this.rooms.values()) {
+      for (const d of r.darkWays || []) {
+        darkClaims++
+        if (r.exits[d]?.type === 'blocked') darkRefused++
+      }
+    }
+    return { darkClaims, darkRefused, rooms: this.rooms.size, proven, assumed, blocked, darkRooms: dark, unstable: [...this.unstable], splits: this.splits || 0, verified: this.verified || 0 }
   }
 }
 
