@@ -42,7 +42,8 @@ npm run zorkcheck  # Zork sensor + actuator play-through in **Node** — no Chro
 npm run doscheck   # DOS/IF seams in Chrome: js-dos boots in dev, keys captured, framebuffer readable
 npm run lint:ai    # eslint scoped to src/ai + Zork + King's Quest + shared utils + scripts — a CI gate
 npm run zorkcheck  # Zork: bot/agent play-through in **Node** — no Chrome, no dev server
-npm run doscheck   # DOS seams: js-dos loads in dev, keyboard captured, framebuffer readable
+npm run doscheck   # DOS/IF seams in Chrome: js-dos loads in dev, keys captured, framebuffer readable
+npm run prodsmoke    # builds + serves the PRODUCTION bundle and drives it (no DEV hooks exist there)
 ```
 
 ## How the app is structured
@@ -255,6 +256,7 @@ model/machine can reproduce it (it is not an external tool):
 | `scripts/keepplay.mjs` | IronKeep feel probe: real key events only (no frozen-frame shortcuts), so input-path bugs that deterministic stepping cannot see — a quick tap swallowed between two 60Hz samples — still show up. |
 | `scripts/aicheck.mjs` | The **spine's own contract**, in Node, ~1 s. No brain exists yet, so `AgentLoop` is driven by fake brains that reproduce the failures this repo has already lived: an unknown skill must be **rejected and counted** (not thrown, not ignored), a brain that stops advancing must trip the watchdog and then stop *with a reason*, a throwing skill must not kill the loop, a brain with no move must stop rather than spin, every `Percept` field must ship a confidence defaulting to 0 (never a hole), and a title that declares no sensors must get no arm to advertise. |
 | `scripts/zorkcheck.mjs` | Zork **in Node** (no Chrome, no dev server): boots the real `zork1.z3` through the same `GlkAdapter` the browser uses and drives the real `TranscriptSensor` through a scripted walk plus a fuzz phase. Asserts every command it sent was legal (no `Sorry, I don't know the word`), `open window` is proved **by prose** (`nailed and boarded` before, absent after — a score bump is not proof because opening the window is worth 0 points here), ≥4 rooms tracked **with names** and no document title (the leaflet!) leaked into the map, darkness detected, a refused move classified `blocked` not `moved`, percepts actually change, and no Glk/VM error anywhere. |
+| `scripts/prodsmoke.mjs` | The same titles against the **production build** (`vite preview`, port 4173). Every other browser check runs against `npm run dev`, where Vite resolves `/retrogames/...` for you and `import.meta.env.DEV` grants the `__*Test` hooks — so the shipping bundle had never been driven. This one has no hooks: it proves the emulator is fetched exactly once under `/retrogames/` (never `retrogames/retrogames`), that non-DOS titles never download js-dos at all, that the canvas survives readback outside dev, and that **real** keyboard input moves Graham and types into the Z-machine. Asserts contracts, not chosen futures: `north` may legally be answered "The way is blocked", so the check requires an echo + a reply + a `LOOK` description. |
 | `scripts/doscheck.mjs` | The seams every DOS/IF title depends on: js-dos boots under the dev server (it did not — see Gotchas), the keyboard handler is captured off `window`, the framebuffer is *readable* (not composited-and-cleared), ESC gets past the AGI copy-protection box, injected arrows move Graham, and Mario still renders **without** downloading js-dos. Retries frames because AGI legitimately fades through black. |
 
 ```bash
@@ -289,7 +291,7 @@ npm run doscheck -- --quick # Zork + King's Quest seams in Chrome (--quick skips
 | Job | Trigger | What it does |
 |-----|---------|--------------|
 | `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `lint:fps` → `lint:ai` → `aicheck` → `zorkcheck` → `build`. No browser, fast, this is the gate. |
-| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + aicheck + zorkcheck + fpscheck + evocheck + doscheck), uploads `scripts/.shots/` as an artifact, dumps the vite log on failure. |
+| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + aicheck + zorkcheck + fpscheck + evocheck + doscheck), then builds and `npm run prodsmoke` against the production bundle; uploads `scripts/.shots/`, dumps the vite/preview logs on failure. |
 
 ```bash
 gh pr checks --watch                      # the static gate on your PR

@@ -25,7 +25,8 @@
     "doscheck": "node scripts/doscheck.mjs",
     "keepplay": "node scripts/keepplay.mjs",
     "verify": "node scripts/verify.mjs",
-    "aicheck": "node scripts/aicheck.mjs"
+    "aicheck": "node scripts/aicheck.mjs",
+    "prodsmoke": "node scripts/prodsmoke.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

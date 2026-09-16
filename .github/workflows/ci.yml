@@ -80,6 +80,16 @@ jobs:
       - name: Run the self-verifying suite
         run: npm run verify -- --full
 
+      # Everything above runs against the DEV server, where the `__*Test` hooks
+      # exist and Vite resolves `/retrogames/...` for us. prodsmoke builds and
+      # drives the PRODUCTION bundle instead: base-path resolution (the doubled
+      # `/retrogames/retrogames/` that broke every DOS title in dev is only
+      # visible against a real static server), js-dos fetched on demand and NOT
+      # on titles that cannot use it, WebGL readback, and real keyboard input
+      # with no test hooks to lean on.
+      - name: Production-bundle smoke (builds + previews)
+        run: npm run prodsmoke
+
       - name: Upload captured frames (always)
         if: always()
         uses: actions/upload-artifact@v7
