@@ -5,7 +5,8 @@
 //
 // IRONKEEP's check (fpscheck) is not Mario-specific — it audits every IronKeep
 // level and drives the raycaster — but it runs here so one command proves the
-// whole arcade still works.
+// whole arcade still works. zorkcheck is not browser-specific either: it boots
+// the real .z3 in Node, which is why it is also in the CI *static* job.
 //
 // Requires a running `npm run dev` in another terminal (each check fails fast
 // with that instruction if the server is down). Exits non-zero if any check fails.
@@ -35,6 +36,12 @@ const suite = [
     node('plantcheck.mjs'),
     node('levelcheck.mjs'),
     node('fpscheck.mjs'),
+    // Browser-free: boots the real Zork I story file in Node. Cheapest gate here.
+    node('aicheck.mjs'),   // the spine's own contract: rejections, watchdog, honest arms
+    node('zorkcheck.mjs'),
+    // DOS seams (js-dos on demand, keyboard capture, readable framebuffer).
+    // Slow: DOSBox-in-wasm boots at ~40-90s headless. See scripts/doscheck.mjs.
+    node('doscheck.mjs'),
     full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '500']),
 ]
 

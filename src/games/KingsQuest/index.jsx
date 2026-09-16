@@ -1,79 +1,63 @@
+/**
+ * KING'S QUEST (1984, AGI) — js-dos shell.
+ *
+ * What this file is: DOSBox boot, manual controls, and the two seams the AI work
+ * hangs off — `src/utils/dosKeys` (actuator) and `src/utils/dosCanvas` (sensor),
+ * exposed to the harness as `window.__kqTest`.
+ *
+ * What used to be here, and is now gone deliberately:
+ *
+ *   - `api/kq-ai-move` → `5.78.145.117:3099`, a vision model on a Hetzner box
+ *     that no longer answers. The "🤖 AI" button captured a screenshot every 5 s
+ *     and POSTed it into the void. It also fetched `/api/...` root-absolute, so
+ *     under `basename="/retrogames"` it never reached this project anyway.
+ *   - Four parallel key-injection paths (dispatch-to-all-canvases, an rAF queue,
+ *     a document-level dispatch, and the one that works: calling the emulator's
+ *     own captured handler). Only the last survives, in dosKeys.js, and its
+ *     restore is now triggered by success instead of a 30 s timer.
+ *   - A 🔑 debug button that printed how many canvases it could find.
+ *
+ * There is NO AI button right now, on purpose: a button wired to nothing is how
+ * the last attempt stayed alive while dead. The brain lands in stage 6 of
+ * AI-PLAN.md and arrives together with `scripts/kqcheck.mjs`, `<AiBadge />`
+ * printing which sensor it is using, and the A/B runner.
+ */
+
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import { GAMES } from '../../config/games'
-
-const AI_INTERVAL_MS = 5000
-const AI_MAX_HISTORY = 12
+import { installDosKeys, resetDosKeys, pressKey, pressArrow, typeText, keysReady, keysDebug, KEY } from '../../utils/dosKeys'
+import { findCanvas, sampleBuffer, toDataUrl, framePrint, focusEmulator } from '../../utils/dosCanvas'
+import { mountDos } from '../../utils/jsdos'
+import { effectiveArm, setArm as selectArm, getArm, armsForGame } from '../../ai/arms'
+import AiBadge from '../../components/AiBadge'
 
 function DosGame({ bundleUrl, label }) {
   const rootRef = useRef(null)
-  const dosRef = useRef(null)
   const inputRef = useRef(null)
   const [paused, setPaused] = useState(false)
+  // The lab switch (src/ai/arms.js). There is no brain on this title yet —
+  // stage 6 mounts one — so the strip says ARMED, not "thinking". When a brain
+  // does arrive this badge must keep printing the arm it is sensing with.
+  const [arm, setArm] = useState(() => effectiveArm(GAMES.find(g => g.label === label)))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [inputVal, setInputVal] = useState('')
-  const [isMobile, setIsMobile] = useState(false)
-
-  // AI state
-  const [aiActive, setAiActive] = useState(false)
-  const [aiStatus, setAiStatus] = useState(null)  // null | 'thinking' | 'typing' | 'no-canvas' | 'error'
-  const [lastAiCmd, setLastAiCmd] = useState(null)
-  const [aiSteps, setAiSteps] = useState(0)
-  const [debugInfo, setDebugInfo] = useState('')
-  const aiActiveRef = useRef(false)
-  const aiTimerRef = useRef(null)
-  const aiHistoryRef = useRef([])
-  const keyQueueRef = useRef([])  // pending keys to inject via rAF
-  const rafRef = useRef(null)     // requestAnimationFrame handle
-
-  useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 900 || 'ontouchstart' in window)
-    check()
-    window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
-  }, [])
 
   useEffect(() => {
     if (!rootRef.current) return
-    if (typeof window.Dos === 'undefined') {
-      setError('DOSBox emulator failed to load')
-      return
-    }
-
-    let stopped = false
-
-    try {
-      const base = import.meta.env.BASE_URL
-      patchCanvasListeners()
-      const instance = window.Dos(rootRef.current, {
-        url: `${base}${bundleUrl}`,
-        autoStart: true,
-        theme: 'dark',
-        imageRendering: 'pixelated',
-        renderAspect: '4/3',
-        noNetworking: true,
-        noCloud: true,
-        kiosk: true,
-        onEvent: (event) => {
-          if (event === 'ci-ready') {
-            if (!stopped) setLoading(false)
-          }
-        },
-      })
-      dosRef.current = instance
-    } catch (e) {
-      console.error('DOSBox init error:', e)
-      setError(e.message)
-    }
-
+    // mountDos loads js-dos on demand (src/utils/jsdos.js) and retries nothing
+    // silly: it waits for window.Dos, then boots with `before` — which is where
+    // the keyboard handler capture has to happen, because the emulator registers
+    // its listeners as it starts.
+    const dos = mountDos(rootRef.current, bundleUrl, {
+      before: () => installDosKeys(),
+      onReady: () => setLoading(false),
+      onError: (e) => setError(e.message),
+    })
     return () => {
-      stopped = true
-      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
-      if (dosRef.current) {
-        dosRef.current.stop()
-        dosRef.current = null
-      }
+      dos.stop()
+      resetDosKeys()
     }
   }, [bundleUrl])
 
@@ -89,237 +73,9 @@ function DosGame({ bundleUrl, label }) {
     return () => window.removeEventListener('keydown', handlePause)
   }, [])
 
-  // Cleanup AI on unmount
-  useEffect(() => {
-    return () => {
-      aiActiveRef.current = false
-      clearTimeout(aiTimerRef.current)
-    }
-  }, [])
-
   const handleResume = useCallback(() => {
     setPaused(false)
     if (rootRef.current) rootRef.current.focus()
-  }, [])
-
-  // ── Key Injection ────────────────────────────────────────────────────────────
-  // iOS Safari won't dispatch synthetic KeyboardEvents from async contexts.
-  // Fix: monkey-patch HTMLCanvasElement.prototype.addEventListener BEFORE Dos()
-  // to capture js-dos's internal keydown/keyup handlers, then call them directly.
-  // Direct function call has NO user-gesture requirement.
-  const kqHandlersRef = useRef({ down: null, up: null, canvas: null })
-
-  const patchCanvasListeners = useCallback(() => {
-    const orig = HTMLCanvasElement.prototype.addEventListener
-    const captured = kqHandlersRef.current
-    HTMLCanvasElement.prototype.addEventListener = function(type, handler, opts) {
-      if (type === 'keydown' && !captured.down) {
-        captured.down = handler; captured.canvas = this
-      }
-      if (type === 'keyup' && !captured.up) {
-        captured.up = handler
-      }
-      return orig.call(this, type, handler, opts)
-    }
-    // Restore after 30s (game should be loaded by then)
-    setTimeout(() => { HTMLCanvasElement.prototype.addEventListener = orig }, 30000)
-  }, [])
-
-  // Inject a key directly — works from any context, no user gesture needed
-  const injectKey = useCallback((keyCode, holdMs = 80) => {
-    const { down, up, canvas } = kqHandlersRef.current
-    if (!down) {
-      // Fallback: dispatch to canvas (user-gesture context only)
-      document.querySelectorAll('canvas').forEach(c => {
-        const key = String.fromCharCode(keyCode)
-        c.dispatchEvent(new KeyboardEvent('keydown', { keyCode, which: keyCode, key, bubbles: true, cancelable: true }))
-        c.dispatchEvent(new KeyboardEvent('keyup',   { keyCode, which: keyCode, key, bubbles: true, cancelable: true }))
-      })
-      return
-    }
-    const fakeEvt = {
-      keyCode, location: 0,
-      target: canvas || {},
-      stopPropagation: () => {}, preventDefault: () => {}
-    }
-    down(fakeEvt)
-    if (up) setTimeout(() => up(fakeEvt), holdMs)
-  }, [])
-
-  // Fire to canvas via DOM (for user-gesture buttons — belt-and-suspenders)
-  const fireToCanvases = useCallback((keySpec) => {
-    document.querySelectorAll('canvas').forEach(c => {
-      c.dispatchEvent(new KeyboardEvent('keydown', { ...keySpec, which: keySpec.keyCode, bubbles: true, cancelable: true }))
-      c.dispatchEvent(new KeyboardEvent('keyup',   { ...keySpec, which: keySpec.keyCode, bubbles: true, cancelable: true }))
-    })
-    // Also call handler directly if captured
-    injectKey(keySpec.keyCode)
-  }, [injectKey])
-
-  // dispatchKey — safe from any context (uses direct handler call)
-  const dispatchKey = useCallback((keySpec) => {
-    injectKey(keySpec.keyCode)
-  }, [injectKey])
-
-  // Browser keyCode map for key injection
-  const KEY = {
-    esc:        { key: 'Escape',    code: 'Escape',      keyCode: 27  },
-    enter:      { key: 'Enter',     code: 'Enter',       keyCode: 13  },
-    space:      { key: ' ',         code: 'Space',       keyCode: 32  },
-    arrowUp:    { key: 'ArrowUp',   code: 'ArrowUp',     keyCode: 38  },
-    arrowDown:  { key: 'ArrowDown', code: 'ArrowDown',   keyCode: 40  },
-    arrowLeft:  { key: 'ArrowLeft', code: 'ArrowLeft',   keyCode: 37  },
-    arrowRight: { key: 'ArrowRight',code: 'ArrowRight',  keyCode: 39  },
-  }
-
-  const typeIntoDos = useCallback((text) => {
-    let delay = 0
-    for (const char of text) {
-      const upper = char.toUpperCase()
-      const kc = upper.charCodeAt(0)
-      if ((kc >= 65 && kc <= 90) || (kc >= 48 && kc <= 57) || kc === 32) {
-        const spec = { key: char, code: kc === 32 ? 'Space' : `Key${upper}`, keyCode: kc }
-        const d = delay
-        setTimeout(() => dispatchKey(spec), d)
-        delay += 120
-      }
-    }
-    setTimeout(() => dispatchKey(KEY.enter), delay + 60)
-  }, [dispatchKey])
-
-  const pressArrow = useCallback((dir) => {
-    const spec = { up: KEY.arrowUp, down: KEY.arrowDown, left: KEY.arrowLeft, right: KEY.arrowRight }[dir]
-    if (spec) dispatchKey(spec, 220)
-  }, [dispatchKey])
-
-  // Capture DOSBox canvas as JPEG
-  // Find DOSBox canvas — js-dos may use shadow DOM, nested divs, or iframes
-  const findCanvas = useCallback(() => {
-    const root = rootRef.current
-    if (!root) return null
-    // Direct querySelector
-    let c = root.querySelector('canvas')
-    if (c) return c
-    // Pierce shadow roots of all children
-    const walk = (el) => {
-      if (!el) return null
-      if (el.shadowRoot) {
-        const sc = el.shadowRoot.querySelector('canvas')
-        if (sc) return sc
-        for (const child of el.shadowRoot.children) {
-          const r = walk(child); if (r) return r
-        }
-      }
-      for (const child of el.children) {
-        const r = walk(child); if (r) return r
-      }
-      return null
-    }
-    c = walk(root)
-    if (c) return c
-    // Last resort: any canvas in the document
-    return document.querySelector('canvas')
-  }, [])
-
-  const captureScreen = useCallback(() => {
-    const canvas = findCanvas()
-    if (!canvas) return null
-    try {
-      const tmp = document.createElement('canvas')
-      tmp.width = 320; tmp.height = 200
-      tmp.getContext('2d').drawImage(canvas, 0, 0, 320, 200)
-      return tmp.toDataURL('image/jpeg', 0.65)
-    } catch {
-      return null
-    }
-  }, [findCanvas])
-
-  const fireKey = useCallback((spec) => {
-    if (typeof spec === 'object') dispatchKey(spec)
-  }, [dispatchKey])
-
-  // Diagnostic: find canvas and test key dispatch
-  const testEsc = useCallback(() => {
-    const allCanvases = document.querySelectorAll('canvas')
-    const testEvt = new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true })
-    const kc = testEvt.keyCode
-    let info = `canvases:${allCanvases.length} kc:${kc}`
-    allCanvases.forEach((c, i) => {
-      info += ` c${i}:${c.width}x${c.height}`
-      c.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true }))
-      c.dispatchEvent(new KeyboardEvent('keyup',   { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true }))
-    })
-    // also try document
-    document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true }))
-    // also try dosRef root
-    if (rootRef.current) {
-      const rc = rootRef.current.querySelectorAll('canvas')
-      info += ` root-c:${rc.length}`
-      rootRef.current.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true, cancelable:true }))
-    }
-    setDebugInfo(info)
-  }, [])
-
-  // AI step — runs on a timer when aiActive
-  const scheduleAiStep = useRef(null)
-  scheduleAiStep.current = async () => {
-    if (!aiActiveRef.current) return
-    setAiSteps(n => n + 1)
-
-    const screenshot = captureScreen()
-    if (!screenshot) {
-      setAiStatus('no-canvas')
-      aiTimerRef.current = setTimeout(() => scheduleAiStep.current?.(), 2000)
-      return
-    }
-
-    setAiStatus('thinking')
-    try {
-      const r = await fetch('/api/kq-ai-move', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          screenshot,
-          recentCommands: aiHistoryRef.current.slice(-AI_MAX_HISTORY),
-        }),
-      })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const { command, arrow, escape, enter } = await r.json()
-      if ((command || arrow || escape || enter) && aiActiveRef.current) {
-        setAiStatus('typing')
-        const label = escape ? 'ESC' : enter ? 'ENTER' : arrow ? `arrow ${arrow}` : command
-        setLastAiCmd(label)
-        aiHistoryRef.current = [...aiHistoryRef.current.slice(-AI_MAX_HISTORY * 2), label]
-        await new Promise(ok => setTimeout(ok, 400))
-        if (escape)      dispatchKey(KEY.esc)
-        else if (enter)  dispatchKey(KEY.enter)
-        else if (arrow)  pressArrow(arrow)
-        else             typeIntoDos(command)
-      }
-    } catch (e) {
-      console.error('[KQ AI]', e)
-      setAiStatus('error')
-    }
-    setAiStatus(null)
-    if (aiActiveRef.current) {
-      aiTimerRef.current = setTimeout(() => scheduleAiStep.current?.(), AI_INTERVAL_MS)
-    }
-  }
-
-  const toggleAI = useCallback(() => {
-    if (aiActiveRef.current) {
-      aiActiveRef.current = false
-      clearTimeout(aiTimerRef.current)
-      setAiActive(false)
-      setAiStatus(null)
-    } else {
-      aiActiveRef.current = true
-      aiHistoryRef.current = []
-      setAiActive(true)
-      setLastAiCmd(null)
-      setAiSteps(0)
-      setTimeout(() => scheduleAiStep.current?.(), 500)
-    }
   }, [])
 
   const handleSubmit = useCallback((e) => {
@@ -327,15 +83,61 @@ function DosGame({ bundleUrl, label }) {
     const text = inputVal.trim()
     if (!text) return
     setInputVal('')
-    if (text.toLowerCase() === 'esc' || text.toLowerCase() === 'escape') {
-      dispatchKey({ key:'Escape', code:'Escape', keyCode:27 })
-    } else {
-      typeIntoDos(text)
-    }
+    if (/^(esc|escape)$/.test(text.toLowerCase())) pressKey(KEY.escape)
+    else typeText(text)
     setTimeout(() => inputRef.current?.focus(), 50)
-  }, [inputVal, typeIntoDos])
+  }, [inputVal])
 
   const game = GAMES.find(g => g.label === label)
+
+  // DEV test hook. Stage 0's job for King's Quest is to prove the two AI seams
+  // exist: can we reach the emulator's keyboard, and can we read a clean 320x200
+  // frame? Everything in stage 3 (OCR, sprite match, screen graph) is built on
+  // `grab`/`print` being real, so they are exposed now and asserted now.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const api = {
+      keysReady: () => keysReady(),
+      keysDebug: () => keysDebug(),
+      press: (spec) => pressKey(spec),
+      arrow: (dir) => pressArrow(dir),
+      focus: () => focusEmulator(rootRef.current),
+      type: (text) => typeText(text),
+      canvas: () => {
+        const c = findCanvas(rootRef.current)
+        return c ? { found: true, w: c.width, h: c.height } : { found: false }
+      },
+      grab: () => toDataUrl(rootRef.current),
+      // Returns { w, h, meanLuma, nonBlack } — enough to assert "the emulator is
+      // drawing something" without shipping an image through the wire.
+      sample: () => {
+        const buf = sampleBuffer(rootRef.current)
+        if (!buf) return null
+        let lum = 0
+        let lit = 0
+        for (let i = 0; i < buf.data.length; i += 4) {
+          const l = (buf.data[i] * 299 + buf.data[i + 1] * 587 + buf.data[i + 2] * 114) / 1000
+          lum += l
+          if (l > 24) lit++
+        }
+        const px = buf.data.length / 4
+        return { w: buf.w, h: buf.h, meanLuma: Math.round(lum / px), nonBlack: +(lit / px).toFixed(3) }
+      },
+      print: () => framePrint(rootRef.current),
+      // Arm + lab switch, so an A/B run is a query param, not a rebuild.
+      arm: () => effectiveArm(GAMES.find(g => g.label === label)),
+      setSensor: (next) => { setArm(selectArm(next)); return getArm() },
+      state: () => ({ loading, error, paused, keys: keysReady(), wiring: keysDebug(), canvas: api.canvas() }),
+    }
+    window.__kqTest = api
+    return () => { if (window.__kqTest === api) delete window.__kqTest }
+  }, [loading, error, paused, label])
+
+  const btn = {
+    flexShrink: 0, background: '#111', border: '1px solid #444',
+    borderRadius: 6, color: '#aaa', fontFamily: 'monospace', fontSize: 13,
+    padding: '4px 10px', cursor: 'pointer', minWidth: 38, textAlign: 'center',
+  }
 
   return (
     <div className="fixed inset-0 bg-black flex flex-col items-center justify-center">
@@ -350,86 +152,46 @@ function DosGame({ bundleUrl, label }) {
         {/* DOS canvas — takes all remaining space */}
         <div ref={rootRef} style={{ flex: 1, display: error ? 'none' : 'block', minHeight: 0 }} />
 
-        {/* AI status strip — only when AI is active */}
-        {aiActive && !error && (
-          <div style={{
-            flexShrink: 0, padding: '3px 12px',
-            background: '#050f05', borderTop: '1px solid #1a3a1a',
-            fontFamily: 'monospace', fontSize: 11,
-            display: 'flex', alignItems: 'center', gap: 10,
-          }}>
-            <span style={{ color: aiStatus === 'thinking' ? '#60a5fa' : aiStatus === 'typing' ? '#4ade80' : aiStatus === 'no-canvas' ? '#f59e0b' : aiStatus === 'error' ? '#ef4444' : '#2a6a2a' }}>
-              {aiStatus === 'thinking' ? '🤖 thinking…' :
-               aiStatus === 'typing'   ? '🤖 acting…' :
-               aiStatus === 'no-canvas'? '⚠️ waiting for canvas…' :
-               aiStatus === 'error'    ? '❌ API error' :
-                                         '🤖 watching…'}
-            </span>
-            <span style={{ color: '#374151', fontSize: 10 }}>step {aiSteps}</span>
-            {lastAiCmd && <span style={{ color: '#6b7280' }}>last: <span style={{ color: '#d29922' }}>{lastAiCmd}</span></span>}
-            {debugInfo && <span style={{ color: '#f59e0b', fontSize: 10 }}>{debugInfo}</span>}
-          </div>
-        )}
-
-        {/* Bottom bar — text input + AI toggle */}
+        {/* Bottom bar — manual controls only until the brain lands (AI-PLAN §7 stage 6) */}
         {!error && (
           <div style={{
             flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8,
             padding: '5px 10px', background: '#0a0a0a', borderTop: '1px solid #222',
           }}>
-            {/* Startup key buttons — ESC + Enter + Space to get through intro screens */}
+            {/* The lab switch, visible even with no brain mounted: it states what
+                the title *could* sense, and SWITCH ARM lets a paired A/B run be
+                driven from the harness without a rebuild. */}
+            <AiBadge
+              arm={arm}
+              running={false}
+              arms={armsForGame(GAMES.find(g => g.label === label))}
+              onArm={(a) => setArm(selectArm(a))}
+            />
+            {/* Intro screens / dialogs: ESC, Enter, Space */}
             {[
-              { label: 'ESC', spec: { key:'Escape', code:'Escape', keyCode:27 } },
-              { label: '↵',   spec: { key:'Enter',  code:'Enter',  keyCode:13 } },
-              { label: '␣',   spec: { key:' ',      code:'Space',  keyCode:32 } },
-            ].map(({ label, spec }) => (
-              <button key={label} onClick={() => dispatchKey(spec)} style={{
-                flexShrink: 0, background: '#111', border: '1px solid #444',
-                borderRadius: 6, color: '#aaa', fontFamily: 'monospace', fontSize: 13,
-                padding: '4px 10px', cursor: 'pointer', minWidth: 38, textAlign: 'center',
-              }}>{label}</button>
+              { label: 'ESC', spec: KEY.escape },
+              { label: '↵', spec: KEY.enter },
+              { label: '␣', spec: KEY.space },
+            ].map(({ label: l, spec }) => (
+              <button key={l} onClick={() => pressKey(spec)} style={btn}>{l}</button>
             ))}
 
-            {/* Arrow buttons — test if direct key injection works from user gesture */}
             {[
-              { label: '←', spec: { key:'ArrowLeft',  code:'ArrowLeft',  keyCode:37 } },
-              { label: '↑', spec: { key:'ArrowUp',    code:'ArrowUp',    keyCode:38 } },
-              { label: '↓', spec: { key:'ArrowDown',  code:'ArrowDown',  keyCode:40 } },
-              { label: '→', spec: { key:'ArrowRight', code:'ArrowRight', keyCode:39 } },
-            ].map(({ label, spec }) => (
-              <button key={label} onClick={() => fireToCanvases(spec)} style={{
-                flexShrink: 0, background: '#111', border: '1px solid #444',
-                borderRadius: 6, color: '#60a5fa', fontFamily: 'monospace', fontSize: 13,
-                padding: '4px 8px', cursor: 'pointer',
-              }}>{label}</button>
+              { label: '←', dir: 'left' },
+              { label: '↑', dir: 'up' },
+              { label: '↓', dir: 'down' },
+              { label: '→', dir: 'right' },
+            ].map(({ label: l, dir }) => (
+              <button key={l} onClick={() => pressArrow(dir)} style={{ ...btn, color: '#60a5fa', padding: '4px 8px' }}>{l}</button>
             ))}
 
-            <button onClick={testEsc} style={{
-              flexShrink: 0, background: '#111', border: '1px solid #444',
-              borderRadius: 6, color: '#f59e0b', fontFamily: 'monospace', fontSize: 12,
-              padding: '4px 8px', cursor: 'pointer',
-            }}>🔑</button>
-
-            <button onClick={toggleAI} style={{
-              flexShrink: 0,
-              background: aiActive ? '#14532d' : '#111',
-              border: `1px solid ${aiActive ? '#22c55e' : '#333'}`,
-              borderRadius: 6, color: aiActive ? '#4ade80' : '#555',
-              fontFamily: 'monospace', fontSize: 12, padding: '4px 10px', cursor: 'pointer',
-            }}>
-              {aiActive ? '⏸ stop AI' : '🤖 AI'}
-            </button>
-
-            <form onSubmit={handleSubmit} style={{
-              flex: 1, display: isMobile ? 'flex' : (aiActive ? 'none' : 'flex'),
-              alignItems: 'center', gap: 6,
-            }}>
+            <form onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ color: '#555', fontFamily: 'monospace', fontSize: 14 }}>▶</span>
               <input
                 ref={inputRef}
                 value={inputVal}
                 onChange={e => setInputVal(e.target.value)}
-                placeholder={aiActive ? 'intervene…' : 'type command, tap Send…'}
+                placeholder="type command, tap Send…"
                 autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false}
                 style={{
                   flex: 1, background: 'transparent', border: 'none', outline: 'none',

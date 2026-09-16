@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback } from "react"
 import PauseOverlay from "../../components/PauseOverlay"
 import { GAMES } from "../../config/games"
+import { mountDos } from "../../utils/jsdos"
 
 function DosGame({ bundleUrl, label }) {
   const rootRef = useRef(null)
-  const dosRef = useRef(null)
   const inputRef = useRef(null)
   const [paused, setPaused] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -21,40 +21,13 @@ function DosGame({ bundleUrl, label }) {
 
   useEffect(() => {
     if (!rootRef.current) return
-    if (typeof window.Dos === "undefined") {
-      setError("DOSBox emulator failed to load")
-      return
-    }
-    let stopped = false
-    try {
-      const base = import.meta.env.BASE_URL
-      const instance = window.Dos(rootRef.current, {
-        url: `${base}${bundleUrl}`,
-        autoStart: true,
-        theme: "dark",
-        imageRendering: "pixelated",
-        renderAspect: "4/3",
-        noNetworking: true,
-        noCloud: true,
-        kiosk: true,
-        onEvent: (event) => {
-          if (event === "ci-ready") {
-            if (!stopped) setLoading(false)
-          }
-        },
-      })
-      dosRef.current = instance
-    } catch (e) {
-      console.error("DOSBox init error:", e)
-      setError(e.message)
-    }
-    return () => {
-      stopped = true
-      if (dosRef.current) {
-        dosRef.current.stop()
-        dosRef.current = null
-      }
-    }
+    // js-dos is loaded on demand — see src/utils/jsdos.js for why this used to
+    // 404 under `npm run dev` and leave every DOS title unplayable in dev.
+    const dos = mountDos(rootRef.current, bundleUrl, {
+      onReady: () => setLoading(false),
+      onError: (e) => setError(e.message),
+    })
+    return () => dos.stop()
   }, [bundleUrl])
 
   useEffect(() => {

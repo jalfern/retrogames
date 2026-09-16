@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "lint:mario": "eslint src/games/SuperMario src/games/SuperMarioClassic src/components src/utils src/config src/main.jsx scripts",
     "lint:fps": "eslint src/games/IronKeep src/components src/utils src/config src/main.jsx scripts",
+    "lint:ai": "eslint src/ai src/games/Zork src/games/KingsQuest src/components src/utils src/config src/main.jsx scripts",
     "preview": "vite preview",
     "shot": "node scripts/shot.mjs",
     "audcheck": "node scripts/audcheck.mjs",
@@ -20,8 +21,11 @@
     "evocheck": "node scripts/evocheck.mjs",
     "evoprobe": "node scripts/evoprobe.mjs",
     "fpscheck": "node scripts/fpscheck.mjs",
+    "zorkcheck": "node scripts/zorkcheck.mjs",
+    "doscheck": "node scripts/doscheck.mjs",
     "keepplay": "node scripts/keepplay.mjs",
-    "verify": "node scripts/verify.mjs"
+    "verify": "node scripts/verify.mjs",
+    "aicheck": "node scripts/aicheck.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",
