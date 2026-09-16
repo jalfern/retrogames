@@ -2,9 +2,12 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { ZVM } from 'ifvms'
 import { createGlk } from './GlkAdapter'
 import PauseOverlay from '../../components/PauseOverlay'
+import AiBadge from '../../components/AiBadge'
+import { AgentLoop } from '../../ai/loop'
+import { ZorkExplorer } from './agent/explorer'
 import { GAMES } from '../../config/games'
 import { TranscriptSensor } from './sensors/transcript'
-import { effectiveArm, setArm as selectArm, getArm } from '../../ai/arms'
+import { effectiveArm, armsForGame, setArm as selectArm, getArm } from '../../ai/arms'
 
 function ZorkGame({ storyFile, label, route = '/zork' }) {
   const [lines, setLines] = useState([])
@@ -13,6 +16,20 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
   const [paused, setPaused] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // ── STAGE 5a: the first face ────────────────────────────────────────────────
+  // The brain has lived in Node since it was written; this is the first time a
+  // visitor can press it. `aiOn` is the truth of who owns the keyboard, and
+  // `aiStatus` is the loop's own report (never a decoration — AiBadge prints its
+  // reason when it stops).
+  const [aiOn, setAiOn] = useState(false)
+  const [aiStatus, setAiStatus] = useState(null)
+  const [aiNote, setAiNote] = useState(null)
+  const [arm, setArmState] = useState(() => getArm())
+
+  const loopRef = useRef(null)
+  const brainRef = useRef(null)
+  const replyWaiterRef = useRef(null)
+  const bootedRef = useRef(false)
 
   const vmRef = useRef(null)
   const inputResolverRef = useRef(null)
@@ -91,11 +108,27 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
             const pending = pendingRef.current
             if (pending) {
               pendingRef.current = null
+              const reply = logRef.current.slice(pending.mark).join('')
               try {
-                sensorRef.current.saw(pending.cmd, logRef.current.slice(pending.mark).join(''))
+                // saw() FIRST: the brain's next sense() must never read a world
+                // state that hasn't been fed the reply it is waiting on.
+                sensorRef.current.saw(pending.cmd, reply)
               } catch (e) {
                 console.error('[zork sensor]', e)
               }
+              const waiter = replyWaiterRef.current
+              replyWaiterRef.current = null
+              if (waiter) waiter(reply)
+            } else if (!bootedRef.current) {
+              // THE OPENING. Zork prints its banner and the first room description
+              // BEFORE it ever asks for a command, and this sensor only learned
+              // replies to commands — so the browser brain woke up with no origin
+              // at all and sat still until the watchdog called it idle. The room
+              // description was right there in the log. `look` is the honest label
+              // for what the game just did to us: described where we are.
+              bootedRef.current = true
+              try { sensorRef.current.saw('look', logRef.current.join('')) }
+              catch (e) { console.error('[zork sensor opening]', e) }
             }
             inputResolverRef.current = callback
             setInputEnabled(true)
@@ -162,6 +195,103 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
       }
     }
   }, [])
+
+  /**
+   * The agent's actuator. SAME `sendCommand` the form calls — which is the whole
+   * point of the seam: the brain cannot pass a turn the player's keyboard would
+   * fail. It resolves only when the machine has finished replying, because a
+   * brain that acts before reading the reply is a brain walking into walls.
+   * If the VM is mid-reply we wait for the prompt rather than dropping the
+   * command on the floor.
+   */
+  const agentSend = useCallback((command) => new Promise((resolve) => {
+    const attempt = () => {
+      if (!loopRef.current?.running) return resolve('')      // stopped mid-wait
+      if (!inputResolverRef.current) { setTimeout(attempt, 60); return }
+      const earlier = replyWaiterRef.current
+      replyWaiterRef.current = (reply) => { if (earlier) earlier(reply); resolve(reply) }
+      sendCommand(command)
+    }
+    attempt()
+  }), [sendCommand])
+
+  const systemLine = useCallback((text) => {
+    setLines(prev => [...prev, { type: 'system', text }])
+  }, [])
+
+  const stopAi = useCallback((reason = 'stopped') => {
+    if (loopRef.current) loopRef.current.stop(reason)
+    loopRef.current = null
+    replyWaiterRef.current = null
+    setAiOn(false)
+    setAiStatus({ running: false, reason, diary: [], stuck: 0, invalid: 0, successRate: null })
+    return null
+  }, [])
+
+  const startAi = useCallback(() => {
+    if (loopRef.current?.running || paused) return null
+    const brain = new ZorkExplorer({ send: agentSend, sensor: sensorRef.current, onEvent: () => {} })
+    const loop = new AgentLoop({
+      brain,
+      arm: effectiveArm(GAMES.find(g => g.path === route)),
+      watchdog: 14,          // a human is watching; give it rope before crying stuck
+      maxIdleTicks: 3,
+      minActionGapMs: 600,   // slow enough that a person can read each reply
+    })
+    brainRef.current = brain
+    loopRef.current = loop
+    setAiOn(true)
+    setAiStatus(null)
+    setAiNote(`taking the keyboard — arm: ${arm}`)
+    loop.start()
+    ;(async () => {
+      while (loop.running) {
+        try { await loop.tick() } catch (err) { console.error('[ai tick]', err); loop.stop('loop error') ; break }
+        setAiStatus(loop.stats())
+      }
+      const st = loop.stats()
+      if (loopRef.current === loop) {
+        setAiOn(false)
+        setAiStatus(st)
+        systemLine(`[ai] stopped — ${st.reason || 'no move'}`)
+      }
+    })()
+    return null
+  }, [agentSend, arm, paused, route, systemLine])
+
+  /**
+   * ARBITRATION — one keyboard, one owner, decided by whoever typed last.
+   *
+   * While the agent plays, the input field is disabled, so a human keystroke
+   * cannot interleave with an agent command ("n" landing inside the half-typed
+   * "north" the machine is waiting for). That is the safe half, and it was the
+   * easy half: the honest answer to "who drives?" is that the human ALWAYS wins,
+   * so ANY keypress ends the agent's turn immediately and hands the field back.
+   * An agent that steals a turn it cannot give back is a broken feature, however
+   * well it plays the game.
+   */
+  const takeOver = useCallback(() => {
+    if (!loopRef.current?.running) return
+    stopAi('you took the keyboard')
+    setAiNote('keyboard is yours — press PLAY to hand it back')
+    systemLine('[ai] paused — the keyboard is yours again')
+    if (inputRef.current) inputRef.current.focus()
+  }, [stopAi, systemLine])
+
+  useEffect(() => {
+    if (!aiOn) return
+    const onKey = (e) => {
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) return   // pause menu still works
+      e.preventDefault()
+      takeOver()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [aiOn, takeOver])
+
+  // Never leave a loop running behind an unmount or the pause screen.
+  useEffect(() => () => { if (loopRef.current) loopRef.current.stop('unmounted') }, [])
+  useEffect(() => { if (paused && loopRef.current) stopAi('paused') }, [paused, stopAi])
 
   const handleSubmit = useCallback((e) => {
     e.preventDefault()
@@ -255,10 +385,26 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
       transcript: () => logRef.current.join(''),
       exchanges: () => sensorRef.current.exchanges.map(e => ({ command: e.command, verdict: e.verdict, room: e.room })),
       reset: () => { sensorRef.current.reset(); logRef.current = [] },
+      // Stage 5a — the browser brain. `aiStart` mounts the SAME ZorkExplorer and
+      // AgentLoop the Node gate drives, through the SAME sendCommand the form uses.
+      aiStart: () => { startAi(); return true },
+      aiStop: (why) => { stopAi(why || 'check'); return true },
+      aiRunning: () => !!loopRef.current?.running,
+      aiStatus: () => loopRef.current?.stats() || null,
+      aiRooms: () => (brainRef.current ? brainRef.current.map.stats().rooms : 0),
+      aiMap: () => (brainRef.current ? {
+        stats: brainRef.current.map.stats(),
+        at: brainRef.current.map.at,
+        keys: [...brainRef.current.map.rooms.keys()],
+        lastVerdict: sensorRef.current.lastVerdict,
+        room: sensorRef.current.room,
+      } : null),
+      aiDiary: () => (brainRef.current ? brainRef.current.diary || [] : []),
+      aiCommits: () => (brainRef.current ? (brainRef.current.commits || []).slice(-14) : []),
     }
     window.__zorkTest = api
     return () => { if (window.__zorkTest === api) delete window.__zorkTest }
-  }, [sendCommand, game, route])
+  }, [sendCommand, game, route, startAi, stopAi])
 
   return (
     <div className="fixed inset-0 bg-black flex items-center justify-center"
@@ -279,12 +425,27 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
           )}
           {lines.map((line, i) => (
             <div key={i}
-                 className={line.type === 'command' ? 'text-amber-400' : line.type === 'error' ? 'text-red-400' : ''}
+                 className={line.type === 'command' ? 'text-amber-400' : line.type === 'error' ? 'text-red-400' : line.type === 'system' ? 'text-cyan-400 italic' : ''}
                  style={line.type === 'command' ? { textShadow: '0 0 5px rgba(251, 191, 36, 0.5)' } : undefined}>
               {line.text || '\u00A0'}
             </div>
           ))}
         </div>
+
+        {/* The AI strip. Rendered only when a brain is actually mounted here,
+            which until stage 5a meant "never" on this page. */}
+        {game && (
+          <AiBadge
+            status={aiStatus}
+            running={aiOn}
+            arm={effectiveArm(game)}
+            arms={armsForGame(game)}
+            onArm={(next) => { selectArm(next); setArmState(getArm()) }}
+            onToggle={aiOn ? () => stopAi('you stopped it') : startAi}
+            progress={aiStatus?.progress ? { label: 'PROGRESS', value: aiStatus.progress, max: null } : null}
+            detail={aiNote || (aiOn ? 'any key takes the keyboard back' : null)}
+          />
+        )}
 
         {/* Input line */}
         <form onSubmit={handleSubmit} className="flex items-center p-4 pt-2">
@@ -295,7 +456,8 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={!inputEnabled || paused}
+            disabled={!inputEnabled || paused || aiOn}
+            placeholder={aiOn ? 'the agent is driving — press any key to take over' : undefined}
             autoCapitalize="none"
             autoCorrect="off"
             autoComplete="off"

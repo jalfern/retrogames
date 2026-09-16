@@ -121,6 +121,19 @@ export class ZorkExplorer {
     const verdict = p.extra?.verdict || null
     const from = this.map.at
     const move = this.pending
+    // DIAGNOSTIC (stage 5a hunt): the browser symptom is a map that never
+    // advances, and this function is the ONLY writer of the map — so either
+    // `pending` is already gone when sense() runs, or `verdict` is not 'moved'
+    // at the moment of commit. Record the inputs of every settle and print them
+    // from the harness instead of reasoning about which it is.
+    ;(this.commits || (this.commits = [])).push({
+      pending: move ? `${move.kind}${move.dir ? ':' + move.dir : ''}` : null,
+      verdict,
+      room: p.room || null,
+      hadDescription: !!this.sensor.description,
+      from,
+      lastCmd: (this.sensor.exchanges[this.sensor.exchanges.length - 1] || {}).command || null,
+    })
 
     if (move) {
       this.pending = null
@@ -304,6 +317,19 @@ export class ZorkExplorer {
   step(p) {
     const here = this.map.at ? this.map.rooms.get(this.map.at) : null
     const dark = !!p.extra?.dark && !p.extra?.lit
+    // 0. I DO NOT KNOW WHERE I AM → LOOK. Not a fallback for laziness: the
+    // browser hands the brain a terminal that already printed a room description
+    // before anyone typed a word, and until something is typed the sensor has had
+    // no command to pair it with. Staring at a map with no origin produces
+    // exactly nothing, which the watchdog then files as "brain has no move" —
+    // the failure looked like cowardice and was really blindness. `look` is the
+    // universal verb, and it is the one the game answers with geography.
+    if (!here) {
+      this.pending = { kind: 'other' }
+      this.asked = { skill: 'look', args: {}, snap: this.snap(p) }
+      return { skill: 'look', args: {} }
+    }
+
     if (dark) return this.survive(p, here, carrying)
 
     // 1b. NEED LIGHT — derived, with no noun in it. The map holds ways out the game
