@@ -39,6 +39,8 @@ const suite = [
     // Browser-free: boots the real Zork I story file in Node. Cheapest gate here.
     node('aicheck.mjs'),   // the spine's own contract: rejections, watchdog, honest arms
     node('zorkcheck.mjs'),
+    // The same brain behind a real button: click, it plays; one key, you win.
+    node('zorkuicheck.mjs'),
     // DOS seams (js-dos on demand, keyboard capture, readable framebuffer).
     // Slow: DOSBox-in-wasm boots at ~40-90s headless. See scripts/doscheck.mjs.
     node('doscheck.mjs'),
