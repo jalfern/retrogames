@@ -448,6 +448,27 @@ for (const e of ordered) {
 r.check('every noun it asked for came from the game, not from us', invented.length === 0,
   invented.length ? invented.slice(0, 3).join(' | ') : `${ordered.length} commands, all nouns traceable to live prose`)
 
+// TWIN CHURN — the actual cause of the truncation. Every `Forest#2`, `Clearing#3`
+// and (worse) every `North of House#2` in the map means the sensor read the SAME
+// room as a different one on the second visit, so the frontier re-opened, the
+// twin counter climbed, and the neighbourhood was declared unstable. I had twice
+// "fixed" identity resolution without asking what the fingerprint tripped on.
+// So: for each heading the brain visited more than once, print the first sentence
+// the game gave each time. Divergence here is the spec for the fix.
+const seenAt = new Map()
+for (const e of ordered) {
+  const room = e.room
+  if (!room) continue
+  const first = String(e.output).split('\n').filter((l) => l.trim() && !l.startsWith('>'))
+    .map((l) => l.trim())[1] || ''
+  if (!seenAt.has(room)) seenAt.set(room, new Set())
+  if (first) seenAt.get(room).add(first.slice(0, 78))
+}
+r.info('re-read headings', [...seenAt.entries()].filter(([, v]) => v.size > 0).map(([k, v]) => `${k}:${v.size}`).join(' ') || 'none revisited')
+for (const [room, prose] of seenAt) {
+  if (prose.size > 1) r.info('churn', `${room} read ${prose.size} different ways: ${[...prose].map((x) => JSON.stringify(x)).join('   |   ')}`)
+}
+
 // (2) THE GOAL FORMED FROM THE MAP, NOT FROM A HINT. `needLight` fires off
 // `darkClaims` — a word the GAME wrote about an exit — so the receipt must show
 // the goal forming while the game had said nothing about any light source.
