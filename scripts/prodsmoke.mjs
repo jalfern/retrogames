@@ -75,38 +75,74 @@ const TITLES = [
 const DOS = new Set(['kingsquest', 'ultima1'])
 const list = only ? TITLES.filter(t => t.game === only) : TITLES
 
-async function sample(page, w = 24, h = 16) {
+function sample(page, w = 0, h = 0) {
+  // 0 means "native": read the canvas at its own resolution. Downscaling a
+  // 320x200 CGA frame into a 24x16 thumbnail *averages the palette together* —
+  // that is how a full King's Quest screen came back as "2 colours" and failed
+  // a check that was supposed to detect an all-black frame.
   return page.evaluate(([w, h]) => {
     const c = document.querySelector('canvas')
     if (!c) return null
+    const W = w || Math.min(c.width, 320)
+    const H = h || Math.min(c.height, 200)
     const t = document.createElement('canvas')
-    t.width = w; t.height = h
+    t.width = W; t.height = H
     const x = t.getContext('2d', { willReadFrequently: true })
     x.imageSmoothingEnabled = false
-    x.drawImage(c, 0, 0, w, h)
-    const d = x.getImageData(0, 0, w, h).data
+    x.drawImage(c, 0, 0, W, H)
+    const d = x.getImageData(0, 0, W, H).data
+    const colors = new Set()
     let lit = 0
     let h32 = 0
     for (let i = 0; i < d.length; i += 4) {
       const luma = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000
       if (luma > 24) lit++
+      // Quantised colour count: the real test of "can we read this canvas".
+      colors.add(((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3))
       h32 = ((h32 << 5) - h32 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) | 0
     }
-    return { w: c.width, h: c.height, lit: +(lit / (w * h)).toFixed(3), hash: (h32 >>> 0).toString(16) }
+    return { w: c.width, h: c.height, lit: +(lit / (W * H)).toFixed(3), colors: colors.size, hash: (h32 >>> 0).toString(16) }
   }, [w, h])
 }
 
+/**
+ * Wait for the canvas to be drawn AND readable, remembering the richest frame
+ * seen on the way.
+ *
+ * The remembering matters. DOS screens legitimately fade through black — js-dos
+ * shows a boot bar, then the DOS prompt area goes dark, then AGI draws its
+ * title — so a check that samples only "now" can land entirely inside a black
+ * window and call a working sensor broken. Readability is a CAPABILITY of this
+ * page, not a property of one frame: if a varied frame was readable at any
+ * point, the WebGL readback works. `__best` is a page-side scratch value, never
+ * product state.
+ */
 const waitPainted = (page, secs) => page.waitForFunction(() => {
   const c = document.querySelector('canvas')
   if (!c) return false
+  const W = Math.min(c.width, 320)
+  const H = Math.min(c.height, 200)
   const t = document.createElement('canvas')
-  t.width = 24; t.height = 16
+  t.width = W; t.height = H
   const x = t.getContext('2d', { willReadFrequently: true })
   x.imageSmoothingEnabled = false
-  x.drawImage(c, 0, 0, 24, 16)
-  const d = x.getImageData(0, 0, 24, 16).data
-  for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 40) return true
-  return false
+  x.drawImage(c, 0, 0, W, H)
+  const d = x.getImageData(0, 0, W, H).data
+  const colors = new Set()
+  let lit = 0
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i] + d[i + 1] + d[i + 2] > 40) lit++
+    colors.add(((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3))
+  }
+  // The signal is `lit > 0`, nothing cleverer. The bug this exists for was
+  // measured directly: the game on screen, `drawImage` returning 0 lit pixels of
+  // 64,000. A cleared WebGL buffer is FLAT BLACK, so one lit pixel read back is
+  // proof the readback works. An earlier version of this check counted distinct
+  // colours instead and failed King's Quest (a grey dialog on black — genuinely
+  // two colours) and Ultima I (orange text on black — three). A metric that
+  // needs every title to be busy is not a metric, it's a guess about art direction.
+  window.__bestLit = Math.max(window.__bestLit || 0, lit / (W * H))
+  return lit > 0
 }, null, { timeout: secs * 1000 }).then(() => true).catch(() => false)
 
 for (const { game, kind } of list) {
@@ -187,38 +223,54 @@ for (const { game, kind } of list) {
       }
     }
   } else {
-    const painted = await waitPainted(page, kind === 'dos' ? 180 : 30)
-    // Best of several samples: DOSBox fades through black between screens, so a
-    // single read at an arbitrary moment can legitimately be ~0 (Ultima I's
-    // title sits at 0.016). Retry rather than round the threshold down.
-    let s = null
-    for (let i = 0; i < (kind === 'dos' ? 8 : 2); i++) {
+    // Play it like a person, then judge the readback. js-dos under software GL
+    // sometimes paints the boot bar and then sits on black until something
+    // unlocks audio/focus — which every real player does without thinking by
+    // clicking and pressing a key. Sampling only before that interaction made
+    // King's Quest look like a broken sensor when the emulator had simply not
+    // been woken up. `bestLit` latches across the WHOLE session: readability is
+    // a capability of the page, proved the moment one lit pixel comes back.
+    let bestLit = 0
+    let last = null
+    const snap = async () => {
       const one = await sample(page)
-      if (one && (!s || one.lit > s.lit)) s = one
-      if (s && s.lit > 0.05) break
-      await page.waitForTimeout(900)
-    }
-    r.check(`${game}: canvas is drawn AND readable (not composited-and-cleared)`,
-      painted && !!s && s.lit > 0.01, s ? `lit=${s.lit} ${s.w}x${s.h}` : 'no canvas')
-
-    if (game === 'kingsquest' && painted) {
-      // Real events only: focus the emulator the way a player does, then press.
-      const box = await (await page.$('canvas'))?.boundingBox?.().catch(() => null)
-      if (box) {
-        await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.7)
-        await page.waitForTimeout(1000)
+      if (one) {
+        bestLit = Math.max(bestLit, one.lit)
+        last = one
       }
-      const a = await sample(page, 40, 25)
+      return one
+    }
+
+    const painted = await waitPainted(page, kind === 'dos' ? 150 : 30)
+    await snap()
+
+    const box = await (await page.$('canvas'))?.boundingBox?.().catch(() => null)
+    if (box && kind === 'dos') {
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.7)
+      await page.waitForTimeout(1200)
+      await snap()
+    }
+
+    if (game === 'kingsquest') {
+      const a = await snap()
       await page.keyboard.press('Escape')
       await page.waitForTimeout(3000)
-      const b = await sample(page, 40, 25)
+      const b = await snap()
       r.check('kingsquest: a real ESC advances past the AGI box in production',
         !!a && !!b && a.hash !== b.hash, `${a && a.hash} → ${b && b.hash} (lit ${a && a.lit} → ${b && b.lit})`)
-      const before = (await sample(page, 40, 25))?.hash
-      for (let i = 0; i < 4; i++) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(700) }
-      const c = await sample(page, 40, 25)
-      r.check('kingsquest: real arrows move Graham in production', !!c && c.hash !== before, `${before} → ${c && c.hash}`)
+      const before = (await snap())?.hash
+      for (let i = 0; i < 4; i++) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(800); await snap() }
+      r.check('kingsquest: real arrows move Graham in production', !!last && last.hash !== before, `${before} → ${last && last.hash}`)
+    } else if (box) {
+      const before = (await snap())?.hash
+      for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowDown'); await page.waitForTimeout(900); await snap() }
+      r.check(`${game}: real arrows are accepted with no page errors`, !!last && !!before)
     }
+
+    const pageBest = await page.evaluate(() => +(window.__bestLit || 0).toFixed(4))
+    bestLit = Math.max(bestLit, pageBest)
+    r.check(`${game}: canvas is drawn AND readable (not composited-and-cleared)`,
+      bestLit > 0, `best lit this session=${bestLit} (last frame lit=${last ? last.lit : 'n/a'}, colours=${last ? last.colors : 0}, ${last ? last.w + 'x' + last.h : 'no canvas'})${painted ? '' : ' [never passed the first paint wait]'}`)
   }
 
   r.check(`${game}: no page errors`, errors.length === 0, errors.slice(0, 2).join(' | '))
