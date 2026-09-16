@@ -350,6 +350,46 @@ is a landmark/orienteering skill, not a cleverer graph. (c) The brain runs only
 in Node — mounting it in the browser needs input arbitration with a human who may
 type mid-sentence, which is its own change.
 
+### Stage 2c, attempt 1 (FAILED, reverted): path-anchored identity
+
+Coverage first, so the forest got a proper go. Hypothesis: identify a room by the
+path that reached it ("the Forest east of the Clearing") instead of by its
+paragraph, and identical rooms stop colliding. **It exploded**: the map grew
+hundreds of nodes with keys like
+
+```
+Forest Path@Forest@Forest Path@Forest@…>west>east>west>east>west
+```
+
+Three causes, each measured after the revert rather than guessed at:
+
+1. **Anchors were recursive.** The anchor is `from>dir`, and `from` is itself an
+   anchored key, so every hop multiplied the key's length. Any short cycle then
+   produced an unbounded key — and an unbounded key means the frontier never
+   closes, so the walk never terminates. Fix: give each node a short ordinal id
+   (`Forest#3`) and anchor on *that*, never on the parent's full key.
+2. **I promoted prose to a hard veto** (`if (fp !== twin.fp) continue` before
+   merging). That is the opposite of the shipped rule and it is wrong for a
+   different reason: Zork's descriptions **vary between visits** — the first
+   sighting lists portable objects, a revisit doesn't — so requiring the
+   paragraphs to match loses a room per lap. The reverted test proves it: one
+   lap of `Forest Path → Forest → Forest Path` with deliberately changed prose
+   still merges correctly today, because merging keys on the *proven way back*,
+   not on the words. Prose can reject a candidate (two rooms wearing one name)
+   and it may not be demanded to accept one.
+3. The existing `MAX_TWINS` cap was the only thing making the old code's wrong
+   merges survivable: it converts runaway invention into a stated limitation.
+   Removing the cap without removing the cause is how you get a 500-room map.
+
+**What this buys:** the current identity rules already handle the Forest ↔ Forest
+Path cycle, so the truncation is NOT the cycle — it is the `Clearing`/`Forest`
+twin cap. That narrows attempt 2 to: short ids + non-recursive anchors + the
+shipped merge rule untouched, measured as *"no `unstable` neighbourhood, and ≥N
+distinct rooms"*, where N comes from the real Zork I forest (~4 Forests + 1
+moving Clearing). And the check that caught this is the boring one: `it mapped at
+least ten rooms` would have read 500 and still passed, so attempt 2 lands with an
+**upper** bound too — a map bigger than the game is not a map.
+
 **Execution order is not table order.** Stage `4a` (the `ram` spike) runs *before* stage 3, and
 `4b` may follow it immediately if the spike is clean — the `ram` read is the oracle that grades
 the `eye` sensor. Building the eye first and the referee afterwards would mean shipping a
@@ -385,6 +425,46 @@ lamp exists — the dark-room invariant is therefore enforced but unexercised.
 is a landmark/orienteering skill, not a cleverer graph. (c) The brain runs only
 in Node — mounting it in the browser needs input arbitration with a human who may
 type mid-sentence, which is its own change.
+
+### Stage 2c, attempt 1 (FAILED, reverted): path-anchored identity
+
+Coverage first, so the forest got a proper go. Hypothesis: identify a room by the
+path that reached it ("the Forest east of the Clearing") instead of by its
+paragraph, and identical rooms stop colliding. **It exploded**: the map grew
+hundreds of nodes with keys like
+
+```
+Forest Path@Forest@Forest Path@Forest@…>west>east>west>east>west
+```
+
+Three causes, each measured after the revert rather than guessed at:
+
+1. **Anchors were recursive.** The anchor is `from>dir`, and `from` is itself an
+   anchored key, so every hop multiplied the key's length. Any short cycle then
+   produced an unbounded key — and an unbounded key means the frontier never
+   closes, so the walk never terminates. Fix: give each node a short ordinal id
+   (`Forest#3`) and anchor on *that*, never on the parent's full key.
+2. **I promoted prose to a hard veto** (`if (fp !== twin.fp) continue` before
+   merging). That is the opposite of the shipped rule and it is wrong for a
+   different reason: Zork's descriptions **vary between visits** — the first
+   sighting lists portable objects, a revisit doesn't — so requiring the
+   paragraphs to match loses a room per lap. The reverted test proves it: one
+   lap of `Forest Path → Forest → Forest Path` with deliberately changed prose
+   still merges correctly today, because merging keys on the *proven way back*,
+   not on the words. Prose can reject a candidate (two rooms wearing one name)
+   and it may not be demanded to accept one.
+3. The existing `MAX_TWINS` cap was the only thing making the old code's wrong
+   merges survivable: it converts runaway invention into a stated limitation.
+   Removing the cap without removing the cause is how you get a 500-room map.
+
+**What this buys:** the current identity rules already handle the Forest ↔ Forest
+Path cycle, so the truncation is NOT the cycle — it is the `Clearing`/`Forest`
+twin cap. That narrows attempt 2 to: short ids + non-recursive anchors + the
+shipped merge rule untouched, measured as *"no `unstable` neighbourhood, and ≥N
+distinct rooms"*, where N comes from the real Zork I forest (~4 Forests + 1
+moving Clearing). And the check that caught this is the boring one: `it mapped at
+least ten rooms` would have read 500 and still passed, so attempt 2 lands with an
+**upper** bound too — a map bigger than the game is not a map.
 
 **Execution order is not table order.** Build the `ram` spike (stage 4a) *before* the `eye`
 > sensor (stage 3), because the oracle is what grades the eye arm — otherwise we ship a perception

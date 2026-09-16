@@ -503,8 +503,15 @@ r.info('──── dark ways on the map',
   (sum.stats.darkClaims ? ' — stage 2 turns this number into a goal' : ''))
 
 r.info('──── assumptions', `${sum.stats.verified} walked back and tested — the difference between a map of evidence and a map of guesses`)
+// A ceiling as well as a floor, added after attempt 2c produced a 500-node map.
+// Zork I has roughly 4 rooms headed "Forest" and one moving Clearing; a map with
+// more nodes than the game has rooms is not a bigger map, it is the same rooms
+// counted repeatedly, which is the exact failure a ≥N assertion rewards. Every
+// size assertion needs both ends or it only catches one half of the lie.
 r.check('it mapped at least ten rooms on its own', sum.stats.rooms >= 10,
   `${sum.stats.rooms} rooms, ${sum.stats.proven} walked edges, ${sum.stats.blocked} closed ways`)
+r.check('the map is no bigger than the game', sum.stats.rooms <= 60,
+  `${sum.stats.rooms} nodes — more rooms than Zork I has means the same rooms counted twice (see map.js keyFor)`)
 r.check('it named the ground it could not map',
   sum.stats.unstable.length === 0 || sum.report.length > 0 || brain.reportedShifty,
   `unstable: ${sum.stats.unstable.join(', ') || 'none'} · report: ${sum.report.join(' | ').slice(0, 90) || 'nothing to explain'}`)
