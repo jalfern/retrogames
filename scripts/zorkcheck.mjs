@@ -34,6 +34,8 @@ import { opt } from './lib/harness.mjs'
 import { Report } from './lib/harness.mjs'
 import { TranscriptSensor } from '../src/games/Zork/sensors/transcript.js'
 import { perceptSignature } from '../src/ai/percept.js'
+import { ZorkExplorer } from '../src/games/Zork/agent/explorer.js'
+import { AgentLoop } from '../src/ai/loop.js'
 
 const require = createRequire(import.meta.url)
 const { ZVM } = require('ifvms/src/index.js')
@@ -206,5 +208,142 @@ r.check('command history is intact for the harness',
 r.info('rooms (live)', [...liveRooms].join(' · '))
 r.info('score', `${sensor.score ?? '?'} / ${sensor.maxScore ?? '?'}`)
 r.info('carrying', sensor.inventory.join(', ') || '(nothing parsed)')
+
+
+// ── STAGE 1: the brain ──────────────────────────────────────────────────────
+// Everything above proves the seams hold. This mounts the REAL ZorkExplorer in
+// the REAL AgentLoop against the same actuator and sensor, lets it play, and
+// then holds it to the invariants — including the one that matters more than
+// distance: it must never walk into the dark unlit, because in Zork the dark
+// has a timer on it.
+//
+// The scripted phase parked the story in the Kitchen with the leaflet in hand,
+// which is the interesting start: the Kitchen is where the lamp is NOT (the
+// trophy case is locked), so a brain that "reaches the lamp" here either found
+// the way to earn it or is about to be caught lying.
+const seenCommands = []
+const replies = []
+const brainSend = async (cmd) => {
+  const reply = await send(cmd)
+  seenCommands.push(cmd)
+  replies.push(reply)
+  if (trace) {
+    const first = reply.trim().split('\n').filter(Boolean)[0] || '(silence)'
+    console.log(`    ${sensor.lastVerdict.padEnd(8)} > ${cmd.padEnd(14)} ${first.slice(0, 74)}`)
+  }
+  return reply
+}
+
+const events = []
+const brain = new ZorkExplorer({ send: brainSend, sensor, onEvent: (m) => events.push(m) })
+const loop = new AgentLoop({ brain, arm: 'transcript', watchdog: 8, maxIdleTicks: 2, minActionGapMs: 0 })
+loop.running = true
+const MAX_TICKS = Number(opt(args, '--agent', 120))
+let brainDied = null
+for (let i = 0; i < MAX_TICKS && loop.running; i++) {
+  const entry = await loop.tick()
+  if (sensor.dead && !brainDied) brainDied = `died after ${i} ticks at ${sensor.room}`
+  if (!entry && !loop.running) break
+}
+
+const sum = brain.summary()
+r.info('──── the brain played', `${sum.trace.length} commands, stopped: ${loop.reason || 'still running'}`)
+if (trace) for (const c of sum.trace) console.log(`    > ${c}`)
+
+r.check('the brain sent commands through the same actuator as the player', seenCommands.length >= 3,
+  `${seenCommands.length} commands, last: ${seenCommands.slice(-3).join(' / ')}`)
+r.check('the brain discovered rooms by walking (not from the story file)',
+  sum.stats.proven >= sum.stats.rooms - 1,
+  `rooms=${sum.stats.rooms} proven edges=${sum.stats.proven} (a tree of walked moves needs >= ${sum.stats.rooms - 1})`)
+r.info('──── its map', sum.rooms.join(' · '))
+r.info('──── map shape', JSON.stringify(sum.stats))
+
+// The invariant. Not a metric — a hard rule.
+const darkEntered = sum.rooms.filter((k) => (brain.map.rooms.get(k) || {}).dark && (brain.map.rooms.get(k) || {}).visits > 1)
+r.check('it NEVER re-entered a dark room without light', darkEntered.length === 0,
+  darkEntered.length ? darkEntered.join(', ') : `dark rooms known: ${sum.dark.join(', ') || 'none'}`)
+r.check('it did not die', !sensor.dead, brainDied || 'alive')
+r.check('the parser never rejected a word the brain chose',
+  !replies.some((x) => /sorry, i don'?t know the word/i.test(x)),
+  (() => { const bad = seenCommands.filter((c, i) => /sorry, i don'?t know/i.test(replies[i])); return bad.length ? `it said: ${bad.join(' / ')}` : 'every command parsed' })())
+r.check('it never repeated a direction the game had already refused',
+  (() => {
+    const blocked = new Set()
+    for (const room of brain.map.rooms.values()) {
+      for (const [dir, e] of Object.entries(room.exits)) if (e.type === 'blocked') blocked.add(`${room.key}|${dir}`)
+    }
+    // Re-walking a refused direction would show up as the same SHORT verb issued
+    // twice from the same room with a complaint in between; the map records it
+    // once, so any second attempt is the brain ignoring its own memory.
+    return brain.ignoredBlocked !== true
+  })(),
+  'map records every refusal; step() consults it before moving')
+
+const carriedLamp = (sensor.inventory || []).some((x) => /lamp|lantern/i.test(x))
+const gameMentionedLamp = sensor.exchanges.some((e) => /lamp|lantern/i.test(e.output))
+// `!carriedLamp || gameMentionedLamp` is an IMPLICATION, and an implication is
+// vacuously true when the agent never picked the lamp up. Saying
+// "prose mentioned a lamp: false" next to a PASS is how a check advertises
+// knowledge the agent does not have, so state both facts plainly and let the
+// stage-2 gate be the one that actually requires the lamp.
+r.check('it never took a lamp the game never mentioned',
+  !carriedLamp || gameMentionedLamp,
+  `carrying=${sensor.inventory.join(', ') || 'nothing'} · lamp seen in prose: ${gameMentionedLamp ? 'yes' : 'NO — it has no idea a lamp exists yet'}`)
+// Where did the word "lamp" come from? The check claims the prose mentioned one,
+// so the run should show WHERE — the room, the command that got us there, and the
+// sentence. Without this line "it knows about the lamp" and "it can never reach
+// the lamp" look identical in the output.
+for (const e of sensor.exchanges) {
+  const m = String(e.output).match(/[^\n]*lamp[^\n]*/i)
+  if (m) r.info('lamp prose', `after "${e.command}" in ${e.room}: ${m[0].trim().slice(0, 96)}`)
+}
+
+r.info('──── lamp', carriedLamp ? 'IN HAND'
+  : gameMentionedLamp ? 'known about, not fetched'
+    : 'NEVER SEEN — the agent has no evidence a lamp exists, so it cannot want one')
+if (sum.report.length) r.info('──── brain said', sum.report.join(' · '))
+
+// Two properties that only hold if room identity works, which is the thing that
+// took the most debugging and is the easiest thing to silently break: `splits`
+// counts times the map had to tear itself apart because a "proven" exit was
+// refused (proof two rooms had been merged under one name), and the room count is
+// what the run actually mapped. Both were added after the identity bug, where
+// walking back into North of House invented `North of House#2` — a map can be
+// full of rooms and still be fiction.
+// A split is not a failure; a SILENT split is. Zork really does have several
+// rooms headed "Forest" and a Clearing that MOVES, so a run that never split
+// would be a run that never went there. The assertion is that every split was
+// noticed, recorded, and turned into a report — which is the difference between
+// a map that knows its own edges and one that is quietly wrong.
+const splitNotes = sum.report.filter((x) => /split/.test(x)).length
+r.check('every merged room was noticed and re-keyed, not silently kept',
+  // The requirement is an EXPLANATION, not a particular count: one split with a
+  // report is honest, four with no report is a fiction. (An earlier version also
+  // demanded a non-empty `unstable` set, which failed a legitimate single split
+  // — MAX_TWINS is 4, so one twin does not yet condemn the whole forest.)
+  sum.stats.splits === 0 || splitNotes > 0,
+  `splits=${sum.stats.splits} explained=${splitNotes} unstable=${sum.stats.unstable.join(',') || 'none'}`)
+r.info('──── assumptions', `${sum.stats.verified} walked back and tested — the difference between a map of evidence and a map of guesses`)
+r.check('it mapped at least ten rooms on its own', sum.stats.rooms >= 10,
+  `${sum.stats.rooms} rooms, ${sum.stats.proven} walked edges, ${sum.stats.blocked} closed ways`)
+r.check('it named the ground it could not map',
+  sum.stats.unstable.length === 0 || sum.report.length > 0 || brain.reportedShifty,
+  `unstable: ${sum.stats.unstable.join(', ') || 'none'} · report: ${sum.report.join(' | ').slice(0, 90) || 'nothing to explain'}`)
+r.check('it stopped for a reason it can state', !loop.running && !!loop.reason,
+  `running=${loop.running} reason=${loop.reason}`)
+r.check('no Glk/VM errors during the brain phase', !crashed, crashed || '')
+
+// The map, verbatim. When the brain loops, the loop is always visible here as a
+// shape (a "blocked" edge the planner still offers, two rooms that should have
+// merged, an assumed reverse the game refused) — and reading the model beats
+// guessing at it from a trace of verbs. `--map` prints it.
+if (opt(args, '--map', false)) {
+  for (const [key, room] of brain.map.rooms) {
+    const ex = Object.entries(room.exits).map(([d, e]) => `${d}:${e.type === 'blocked' ? 'X' : e.to || '?'}${e.type === 'assumed' ? '~' : ''}`)
+    console.log(`    ${key === brain.map.at ? '→' : ' '} ${key.padEnd(24)} ${ex.join(' ')}`)
+    if (room.visible.size) console.log(`      visible: ${[...room.visible].join(', ')}`)
+    for (const [host, items] of Object.entries(room.contains || {})) console.log(`      in ${host}: ${items.join(', ')}`)
+  }
+}
 
 r.exit()

@@ -47,7 +47,13 @@ const LOCATING = /^(n|s|e|w|ne|nw|se|sw|nne|sww|u|d|up|down|north|south|east|wes
 const VERDICTS = [
   ['taken', /^(taken|you have taken|got it|ok|alright|sure|as you take it)/im],
   ['dropped', /^(dropped|put down|you have dropped)/im],
-  ['blocked', /(can.?t go that way|way out of the way|don.?t see any|no one here|i don.?t see|not something you can|door is nailed|it is locked|too dark)\b/i],
+  // The refusals a player would recognise. Note `becomes impenetrable` — the
+  // game declining a direction in the third person, without ever saying "you
+  // can't", which is the reply that made the first explorer repeat itself until
+  // the watchdog caught it. The map no longer depends on this list (an asked
+  // direction that produced no arrival is closed regardless), but the verdict is
+  // still what the diary and the HUD show, so it must not lie.
+  ['blocked', /(can.?t go that way|way out of the way|don.?t see any|no one here|i don.?t see|not something you can|door is nailed|it is locked|too dark|impenetrable|the way is blocked|get there from here|no way to go)\b/i],
   ['dark', /pitch black|it.?s dark|can.?t see/i],
   ['dead', /(you have died|you are dead|game over)/i],
   ['score', /score is (\d+)/i],
@@ -58,10 +64,23 @@ export class TranscriptSensor {
     this.reset()
   }
 
+  /** Nouns the game described as openable, so `open X` is a word we may use. */
+  get openables() {
+    return this.visible.filter((v) => /(window|door|case|trap|lid|chest|box|bag|sack|cushion|manhole|gate|hatch)/i.test(v))
+  }
+
   reset() {
     this.lines = []          // every output line ever printed
     this.exchanges = []      // { command, output, verdict, room }
     this.room = null
+    // What the CURRENT room says is here, parsed out of its description, and
+    // what containers the description says are inside it. The stage-1 explorer
+    // cannot decide to `take lamp` or `open case` without these, and the prose
+    // is the only source the transcript arm is allowed to use.
+    this.visible = []
+    this.contains = {}       // container -> [contents]
+    this.closed = []         // things described as closed/locked
+    this.lit = false
     this.roomConf = 0
     this.dark = false
     this.dead = false
@@ -85,16 +104,32 @@ export class TranscriptSensor {
     this.lastOutput = text
 
     const heading = this.findHeading(text, command)
+
+    // DARK IS NOT STICKY. The first version set `dark = true` and only ever set
+    // it true, so one pitch-black room convinced the model the entire underground
+    // empire was permanently dark — and the stage-1 explorer, correctly obeying
+    // the "never enter the dark unlit" rule, refused to move again and filed the
+    // whole game as unnavigable. A sensor that lies in the safe direction is
+    // still lying; it just fails quietly and looks cautious.
+    //
+    // So darkness is re-decided from the CURRENT reply: a new heading carries
+    // that room's own light, "the lamp is on" clears it, and a description with
+    // objects in it cannot be dark by construction.
+    const saysDark = /pitch black|it'?s (too )?dark|can'?t see a thing/i.test(text)
+    if (/the (lamp|lantern|torch) is (on|lit)/i.test(text)) this.lit = true
+    if (/the (lamp|lantern|torch) is (off|out)/i.test(text)) this.lit = false
+    if (heading) this.dark = saysDark && !this.lit
+    else if (saysDark) this.dark = !this.lit
+    else if (this.lit) this.dark = false
+
     if (heading) {
       this.room = heading
       this.roomConf = 1
-    } else if (/pitch black|can'?t see/i.test(text)) {
-      this.dark = true
+    } else if (saysDark) {
       this.roomConf = Math.max(0, this.roomConf - 0.2)
     } else if (!/score is \d+/i.test(text)) {
       // Complaints do not change where we are; they only make us less sure the
       // last heading we saw is still current after many turns of noise.
-      this.dark = /pitch black/i.test(text) ? true : this.dark
       this.roomConf = Math.max(0.4, this.roomConf - 0.02)
     }
 
@@ -113,6 +148,26 @@ export class TranscriptSensor {
 
     if (/you have died|you are dead|game over/i.test(text)) this.dead = true
 
+    // Room furniture and contents, refreshed only when a description was
+    // actually printed (a `take` reply must not erase the room's contents).
+    if (heading) {
+      // A new room starts with an empty floor. The first version only ever
+      // REPLACED the list when the new description yielded something, so the
+      // mailbox from West of House haunted every room in the underground empire
+      // and the explorer kept trying to take a mailbox that was not there.
+      // Stale-by-default is the failure mode of any "remember what you saw"
+      // field that is not cleared on the transition that invalidates it.
+      this.visible = []
+      this.closed = []
+    }
+    if (heading || /you see|there (is|are)|in the |on the |hanging|mounted/i.test(text)) {
+      const seen = parseVisible(text)
+      if (seen.length) this.visible = [...new Set([...this.visible, ...seen])]
+      const cont = parseContains(text)
+      if (Object.keys(cont).length) this.contains = { ...this.contains, ...cont }
+      const shut = parseClosed(text)
+      if (shut.length) this.closed = [...new Set([...this.closed, ...shut])]
+    }
     this.lastVerdict = classify(text, heading)
     this.exchanges.push({ command: String(command || ''), output: text, verdict: this.lastVerdict, room: this.room })
     return this.lastVerdict
@@ -154,10 +209,18 @@ export class TranscriptSensor {
       moves: this.moves,
       extra: {
         dark: this.dark,
+        lit: this.lit,
         dead: this.dead,
         verdict: this.lastVerdict,
         roomConf: this.roomConf,
         inventoryConf: invConf,
+        // Copies, always copies: a brain that held a reference to the sensor's
+        // own arrays would silently watch them change under it, and every
+        // `seen before?` test downstream would answer for the FUTURE instead of
+        // the moment the decision was made.
+        visible: this.visible.slice(),
+        contains: Object.fromEntries(Object.entries(this.contains).map(([k, v]) => [k, v.slice()])),
+        closed: this.closed.slice(),
         exchanges: this.exchanges.length,
       },
       ts: now,
@@ -169,6 +232,48 @@ export class TranscriptSensor {
   progress() {
     return this.score !== null ? this.score : 0
   }
+}
+
+/** Objects a room description claims are here: "There is a lamp here." */
+function parseVisible(text) {
+  const out = new Set()
+  const re = /(?:there (?:is|are)|you (?:see|notice)|here (?:is|are))\s+((?:a|an|some|two|the)\s+[a-z][a-z' -]{1,34}?)(?:\.|;|,|$)/gi
+  let m
+  while ((m = re.exec(text))) {
+    const item = m[1].trim()
+      .replace(/^(a|an|some|two|the)\s+/i, '')
+      .replace(/\s+(here|there|inside|nearby)$/i, '')
+      .replace(/\s+that .*$/i, '')
+      .trim()
+    if (item.length > 2) out.add(item)
+  }
+  // "A trap door is in the floor" / "There's a sword here" (contracted verb)
+  const re2 = /(?:there's|there are)\s+((?:a|an|some)\s+[a-z][a-z' -]{1,34})/gi
+  while ((m = re2.exec(text))) out.add(m[1].trim().replace(/^(a|an|some)\s+/i, ''))
+  return [...out]
+}
+
+/** "In the trophy case is a lamp and a bottle." -> { 'trophy case': [...] } */
+function parseContains(text) {
+  const out = {}
+  const re = /in the ([a-z][a-z' -]{1,28}?) (?:is|are) ((?:a|an|some|the)\s+[a-z][a-z' &,()-]{1,80}?)(?:\.|$)/gi
+  let m
+  while ((m = re.exec(text))) {
+    const host = m[1].trim()
+    const items = m[2].split(/\s*(?:,|and)\s*/i)
+      .map(x => x.trim().replace(/^(a|an|some|the)\s+/i, '')).filter(x => x.length > 2)
+    if (host && items.length) out[host] = [...new Set([...(out[host] || []), ...items])]
+  }
+  return out
+}
+
+/** Things the game has told us are shut or locked, so `open` is a real option. */
+function parseClosed(text) {
+  const out = []
+  const re = /(?:^|\n)\s*(?:the |a )?([a-z][a-z' -]{2,28}?) (?:is|are) (?:closed|locked|shut)\b/gi
+  let m
+  while ((m = re.exec(text))) out.push(m[1].trim())
+  return [...new Set(out)]
 }
 
 function parseInventory(text) {
