@@ -126,11 +126,24 @@ Every suite here was green with bugs in it at first, so two mutations are tried 
 hand before a Zork change is believed:
 
 ```bash
-# 1. in agent/explorer.js, drop `|| inert` from the refusal rule
-npm run zorkcheck    # MUST fail: re-opens an open window forever, Kitchen unreached
-# 2. in sensors/transcript.js, make darkness sticky (`this.dark = true`)
-npm run zorkcheck    # MUST fail: "a LIT lamp outranks the word dark"
+# 1. drop `|| inert` from the refusal rule          -> infinite re-open, Kitchen unreached
+# 2. make darkness sticky (`this.dark = true`)       -> "a LIT lamp outranks the word dark"
+# 3. hardcode `turnOn('lamp')` (the deleted WANT sin) -> "the game never said lamp"
+# 4. fire needLight without a dark exit              -> "the goal formed from a hint"
+npm run zorkcheck
 ```
+
+Three of those four **survived their first attempt**, and every survival was the same
+diagnosis — the mutated line was unreachable, so the test never touched it: darkness
+that the brain never walks into; a fixture that never entered the branch; an
+experiment rule that could not run because the agent did not know what it was
+carrying. **A surviving mutant is usually a report about the test, not the code.**
+
+Fixing mutation 3's survival exposed the real bug: `p.inventory` only refreshes when
+the game prints a carry list, which is only in reply to `inventory`, which this brain
+never types — so it had no idea what was in its hands. It now tracks its own
+`Taken.` replies (`held`), and the experiment it has always wanted to run finally
+runs, and the game answers it:
 
 Mutation 2 survived **twice**, and both reasons are the lesson: first the brain
 never enters the dark, so a sensor lying about global darkness is behaviourally
@@ -138,6 +151,11 @@ invisible; then the probe said *"It is too dark"* while the detector matched onl
 *`it's dark`* — the fixture never entered the branch it was testing (and that regex
 is why Zork's actual phrasing had been sailing past the sensor all along). **A
 mutant that survives is usually telling you the test never got near the code.**
+
+```
+> turn on elongated brown sack
+  If you wish to burn the brown sack, you should say so.
+```
 
 ### The Zork brain (`src/games/Zork/agent/`)
 
@@ -177,6 +195,19 @@ world looked like the brain's work. Both fixed, and load-bearing:
   perceptible (`snap()`) is finished, whatever the game said. The regex of
   refusals died to *"Have your eyes checked."* — you cannot enumerate a text
   adventure's sarcasm.
+
+**There is no `WANT` list anymore.** Stage 1 shipped
+`const WANT = ['lamp', 'lantern', 'matches']` — a walkthrough smuggled in through the
+*goal* rather than the route, while we took credit for the agent "looking for a light
+source". Gone. The goal is now derived: the map holds exits **the game itself called
+dark** and nothing in hand burns (`needLight`), and the run must produce a receipt —
+`fired at 2 dark way(s), game had mentioned a light: false`. Two gates enforce that
+no noun ever enters a command unless the game printed it first, in an earlier **live**
+reply (95 commands, all traceable). Fixtures may not lie to the arm either: the
+`turn on lamp` probe used to leave `lit = true` for the whole brain run, which
+switched the grue rule off, because every dark check ANDs with `!lit` — a fixture
+that lies to the sensor is worse than one that lies to the check, so the harness now
+resets the sensor when it restarts the world.
 
 Assumed edges (the reverse of a walked move) are hypotheses and the brain
 *verifies* them — that is how it got indoors at all: east from North of House
