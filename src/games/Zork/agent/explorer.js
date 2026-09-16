@@ -94,6 +94,9 @@ export class ZorkExplorer {
     this.unportable = new Set()
     this.lightNoun = null      // the noun the GAME said burns (read off a reply)
     this.lightTried = new Set()
+    // room key -> every paragraph fingerprint ever seen for it, so the harness can
+    // show the churn that CREATES twins instead of guessing at it.
+    this.fpsSeen = new Map()
     // PROPRIOCEPTION. The sensor can only read a carry list when the GAME prints
     // one, and Zork prints it only in reply to INVENTORY — which this brain never
     // types. So `carrying` was empty forever and the experiment rule ("try the
@@ -124,7 +127,10 @@ export class ZorkExplorer {
       let key
       // Fingerprint FIRST: it is what room identity is decided on, so it has to
       // be in hand before the map is asked which room this is.
-      const fp = this.map.fingerprint(this.sensor.lastOutput)
+      // Fingerprint the GEOGRAPHY, not the reply. `lastOutput` also carries
+      // acknowledgements and Zork's random flavour events, and a bird singing
+      // nearby used to be enough to make the map invent a new room.
+      const fp = this.map.fingerprint(this.sensor.description || this.sensor.lastOutput)
       if (move.kind === 'move') {
         // Identity is decided by the ENTRY, not by the name alone: Zork has two
         // rooms headed "Forest", and merging them is what made the first explorer
@@ -179,7 +185,13 @@ export class ZorkExplorer {
         }
       }
       if (key) {
-        if (verdict === 'moved' && fp) this.map.lastFingerprint = fp
+        if (verdict === 'moved' && fp) {
+          this.map.lastFingerprint = fp
+          if (key) {
+            if (!this.fpsSeen.has(key)) this.fpsSeen.set(key, new Set())
+            this.fpsSeen.get(key).add(fp)
+          }
+        }
         this.map.observe({
           key,
           from,

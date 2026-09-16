@@ -448,6 +448,27 @@ for (const e of ordered) {
 r.check('every noun it asked for came from the game, not from us', invented.length === 0,
   invented.length ? invented.slice(0, 3).join(' | ') : `${ordered.length} commands, all nouns traceable to live prose`)
 
+// TWIN CHURN — the actual cause of the truncation. Every `Forest#2`, `Clearing#3`
+// and (worse) every `North of House#2` in the map means the sensor read the SAME
+// room as a different one on the second visit, so the frontier re-opened, the
+// twin counter climbed, and the neighbourhood was declared unstable. I had twice
+// "fixed" identity resolution without asking what the fingerprint tripped on.
+// So: for each heading the brain visited more than once, print the first sentence
+// the game gave each time. Divergence here is the spec for the fix.
+const seenAt = new Map()
+for (const e of ordered) {
+  const room = e.room
+  if (!room) continue
+  const first = String(e.output).split('\n').filter((l) => l.trim() && !l.startsWith('>'))
+    .map((l) => l.trim())[1] || ''
+  if (!seenAt.has(room)) seenAt.set(room, new Set())
+  if (first) seenAt.get(room).add(first.slice(0, 78))
+}
+r.info('re-read headings', [...seenAt.entries()].filter(([, v]) => v.size > 0).map(([k, v]) => `${k}:${v.size}`).join(' ') || 'none revisited')
+for (const [room, prose] of seenAt) {
+  if (prose.size > 1) r.info('churn', `${room} read ${prose.size} different ways: ${[...prose].map((x) => JSON.stringify(x)).join('   |   ')}`)
+}
+
 // (2) THE GOAL FORMED FROM THE MAP, NOT FROM A HINT. `needLight` fires off
 // `darkClaims` — a word the GAME wrote about an exit — so the receipt must show
 // the goal forming while the game had said nothing about any light source.
@@ -503,8 +524,15 @@ r.info('──── dark ways on the map',
   (sum.stats.darkClaims ? ' — stage 2 turns this number into a goal' : ''))
 
 r.info('──── assumptions', `${sum.stats.verified} walked back and tested — the difference between a map of evidence and a map of guesses`)
+// A ceiling as well as a floor, added after attempt 2c produced a 500-node map.
+// Zork I has roughly 4 rooms headed "Forest" and one moving Clearing; a map with
+// more nodes than the game has rooms is not a bigger map, it is the same rooms
+// counted repeatedly, which is the exact failure a ≥N assertion rewards. Every
+// size assertion needs both ends or it only catches one half of the lie.
 r.check('it mapped at least ten rooms on its own', sum.stats.rooms >= 10,
   `${sum.stats.rooms} rooms, ${sum.stats.proven} walked edges, ${sum.stats.blocked} closed ways`)
+r.check('the map is no bigger than the game', sum.stats.rooms <= 60,
+  `${sum.stats.rooms} nodes — more rooms than Zork I has means the same rooms counted twice (see map.js keyFor)`)
 r.check('it named the ground it could not map',
   sum.stats.unstable.length === 0 || sum.report.length > 0 || brain.reportedShifty,
   `unstable: ${sum.stats.unstable.join(', ') || 'none'} · report: ${sum.report.join(' | ').slice(0, 90) || 'nothing to explain'}`)

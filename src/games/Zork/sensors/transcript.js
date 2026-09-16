@@ -100,6 +100,14 @@ export class TranscriptSensor {
     this.inventory = []
     this.inventoryFreshness = Infinity   // moves since a credible inventory read
     this.lastOutput = ''
+    // The paragraph the game printed UNDER A HEADING — the room's own geography,
+    // and nothing else. Deliberately separate from `lastOutput`, because the
+    // fingerprint built from `lastOutput` was reading "Taken." and "You hear in
+    // the distance the chirping of a song bird." as room descriptions, which
+    // manufactured a false twin for every room the brain revisited (see the
+    // `churn` line in zorkcheck). Geography only updates when a heading prints,
+    // because that is the only moment the game is describing where we are.
+    this.description = null
     this.lastVerdict = null
   }
 
@@ -139,6 +147,7 @@ export class TranscriptSensor {
     if (heading) {
       this.room = heading
       this.roomConf = 1
+      this.description = this.describeAfter(text, heading)
     } else if (saysDark) {
       this.roomConf = Math.max(0, this.roomConf - 0.2)
     } else if (!/score is \d+/i.test(text)) {
@@ -190,6 +199,35 @@ export class TranscriptSensor {
     this.lastVerdict = classify(text, heading)
     this.exchanges.push({ command: String(command || ''), output: text, verdict: this.lastVerdict, room: this.room })
     return this.lastVerdict
+  }
+
+  /**
+   * The geography paragraph printed under `heading`: everything after it, minus
+   * the prompt, minus the flavour events Zork interleaves ("You hear in the
+   * distance the chirping of a song bird.", "Suddenly..."), minus acknowledgements
+   * that belong to a command rather than a place.
+   *
+   * The filter is not cosmetic. The first fingerprint was taken from whatever
+   * came next in the reply, so a bird chirping while the brain stood in West of
+   * House made it a DIFFERENT ROOM, and each false twin that stacked up pushed a
+   * neighbourhood over the twin cap into `unstable` — which is what truncated the
+   * sweep. The map was not failing to model moving ground; it was failing to
+   * notice it was standing still.
+   */
+  describeAfter(text, heading) {
+    const lines = String(text).split('\n').map((l) => l.trim())
+    const at = lines.findIndex((l) => l === String(heading).trim())
+    if (at < 0) return null
+    const EVENT = /^(you hear|suddenly|a song bird|there is a loud|you have been waiting|too slow|the thief|what a pity|you have better)/i
+    const ACK = /^(taken|dropped|ok(?:ay)?|alright|sure|got it|opened|you can'?t|sorry)[.,!]?$/i
+    const out = []
+    for (const line of lines.slice(at + 1)) {
+      if (!line || line.startsWith('>')) continue
+      if (EVENT.test(line) || ACK.test(line)) continue
+      out.push(line)
+      if (/[.!?]["']?$/.test(line)) break
+    }
+    return out.join(' ').trim() || null
   }
 
   /**
@@ -245,6 +283,7 @@ export class TranscriptSensor {
         announced: this.announced.slice(),
         darkExits: this.darkExits.slice(),
         exchanges: this.exchanges.length,
+        description: this.description,
       },
       ts: now,
       sensor: 'transcript',
