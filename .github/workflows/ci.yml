@@ -38,6 +38,15 @@ jobs:
       # Second scoped gate: the raycaster shares components/utils/scripts with Mario,
       # so both scopes are linted instead of the ~740-error DOS/IF tail.
       - run: npm run lint:fps
+      # Third scoped gate: the AI spine (src/ai), Zork, King's Quest, and the
+      # scripts/ harness. These were outside every gate before, which is how the
+      # dead Hetzner AI proxy survived a whole rewrite.
+      - run: npm run lint:ai
+      # Browser-free AI gates: the spine's contract, then the real Zork I story
+      # booted in Node. Both are fast enough to block merges; the Chrome suite is
+      # not, so it stays manual.
+      - run: npm run aicheck
+      - run: npm run zorkcheck
       - run: npm run build
 
   # The self-verifying suite: real Chrome driving window.__marioTest.
@@ -70,6 +79,16 @@ jobs:
 
       - name: Run the self-verifying suite
         run: npm run verify -- --full
+
+      # Everything above runs against the DEV server, where the `__*Test` hooks
+      # exist and Vite resolves `/retrogames/...` for us. prodsmoke builds and
+      # drives the PRODUCTION bundle instead: base-path resolution (the doubled
+      # `/retrogames/retrogames/` that broke every DOS title in dev is only
+      # visible against a real static server), js-dos fetched on demand and NOT
+      # on titles that cannot use it, WebGL readback, and real keyboard input
+      # with no test hooks to lean on.
+      - name: Production-bundle smoke (builds + previews)
+        run: npm run prodsmoke
 
       - name: Upload captured frames (always)
         if: always()

@@ -5,13 +5,17 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>jalfern</title>
-    <script src="/retrogames/js-dos/js-dos.js"></script>
-    <link rel="stylesheet" href="/retrogames/js-dos/js-dos.css">
-    <script>
-      if (typeof emulators !== 'undefined') {
-        emulators.pathPrefix = "/retrogames/js-dos/emulators/";
-      }
-    </script>
+    <!--
+      js-dos is NOT loaded here on purpose. It used to be a hard <script> in this
+      file, which (a) made Pong and Mario download a ~300 KB emulator and (b) was
+      404-ing under the /retrogames base in `npm run dev` — Vite prepends the base
+      to absolute index.html URLs, so the dev server was asked for
+      /retrogames/retrogames/js-dos/js-dos.js and the SPA fallback answered with
+      HTML. Every DOS title (King's Quest, Ultima I-V) then showed
+      "DOSBox emulator failed to load" in dev while working in prod.
+      DOS titles now call loadJsDos()/mountDos() (src/utils/jsdos.js), which builds
+      the URL from import.meta.env.BASE_URL and is correct in dev and prod.
+    -->
   </head>
   <body>
     <div id="root"></div>

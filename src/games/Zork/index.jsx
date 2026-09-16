@@ -3,8 +3,10 @@ import { ZVM } from 'ifvms'
 import { createGlk } from './GlkAdapter'
 import PauseOverlay from '../../components/PauseOverlay'
 import { GAMES } from '../../config/games'
+import { TranscriptSensor } from './sensors/transcript'
+import { effectiveArm, setArm as selectArm, getArm } from '../../ai/arms'
 
-function ZorkGame({ storyFile, label }) {
+function ZorkGame({ storyFile, label, route = '/zork' }) {
   const [lines, setLines] = useState([])
   const [inputEnabled, setInputEnabled] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -19,6 +21,16 @@ function ZorkGame({ storyFile, label }) {
   const outputRef = useRef(null)
   const inputRef = useRef(null)
   const containerRef = useRef(null)
+
+  // ── AI seam (see src/ai/percept.js) ─────────────────────────────────────────
+  // logRef mirrors the printed text synchronously, because setLines is batched
+  // and a harness that reads `lines` right after a command would see nothing.
+  // pendingRef remembers which command the machine is currently replying to, so
+  // the reply can be paired with it when the NEXT input request arrives — that
+  // is the only moment we know the whole response has been printed.
+  const logRef = useRef([])
+  const pendingRef = useRef(null)
+  const sensorRef = useRef(new TranscriptSensor())
 
   const scrollToBottom = useCallback(() => {
     if (outputRef.current) {
@@ -52,6 +64,7 @@ function ZorkGame({ storyFile, label }) {
         const terminal = {
           print(text) {
             if (!text) return
+            logRef.current.push(text)
             setLines(prev => {
               const newLines = [...prev]
               const parts = text.split('\n')
@@ -73,6 +86,17 @@ function ZorkGame({ storyFile, label }) {
             setLines([])
           },
           waitForInput(callback) {
+            // The machine has finished replying to the previous command: hand that
+            // exchange to the sensor before asking for the next one.
+            const pending = pendingRef.current
+            if (pending) {
+              pendingRef.current = null
+              try {
+                sensorRef.current.saw(pending.cmd, logRef.current.slice(pending.mark).join(''))
+              } catch (e) {
+                console.error('[zork sensor]', e)
+              }
+            }
             inputResolverRef.current = callback
             setInputEnabled(true)
           },
@@ -108,36 +132,41 @@ function ZorkGame({ storyFile, label }) {
     return () => { cancelled = true }
   }, [storyFile, label])
 
-  const handleSubmit = useCallback((e) => {
-    e.preventDefault()
-    const command = inputValue
+  // The single actuator for this game: humans reach it through the form, the AI
+  // (and every check) reach it through __zorkTest.send. Keeping one path means
+  // the AI cannot pass a test the player's own input path would fail.
+  const sendCommand = useCallback((command) => {
+    const text = String(command ?? '')
     setInputValue('')
     setInputEnabled(false)
 
-    // Add to history
-    if (command.trim()) {
-      historyRef.current.push(command)
+    if (text.trim()) {
+      historyRef.current.push(text)
       historyIndexRef.current = historyRef.current.length
     }
 
-    // Echo command
-    setLines(prev => [...prev, { type: 'command', text: `> ${command}` }])
+    setLines(prev => [...prev, { type: 'command', text: `> ${text}` }])
+    pendingRef.current = { cmd: text, mark: logRef.current.length }
 
-    // Resolve input and resume VM
-    if (inputResolverRef.current) {
-      const resolver = inputResolverRef.current
+    const resolver = inputResolverRef.current
+    if (resolver) {
       inputResolverRef.current = null
-      resolver(command)
+      resolver(text)
       if (vmRef.current && !vmRef.current.quit) {
         try {
-          vmRef.current.resume(command.length)
+          vmRef.current.resume(text.length)
         } catch (err) {
           console.error('VM resume error:', err)
           setLines(prev => [...prev, { type: 'error', text: `VM Error: ${err.message}` }])
         }
       }
     }
-  }, [inputValue])
+  }, [])
+
+  const handleSubmit = useCallback((e) => {
+    e.preventDefault()
+    sendCommand(inputValue)
+  }, [inputValue, sendCommand])
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'ArrowUp') {
@@ -184,6 +213,52 @@ function ZorkGame({ storyFile, label }) {
   }, [inputEnabled, paused])
 
   const game = GAMES.find(g => g.label === label)
+
+  // DEV test hook — see AGENTS.md › Self-verifying. Exists only under
+  // import.meta.env.DEV, so a check must target `npm run dev`, never a build.
+  // NOTE: the browser check is a smoke test; the real Zork gate (scripts/
+  // zorkcheck.mjs) drives the story in Node with no browser at all.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const api = {
+      ready: () => !!vmRef.current,
+      arm: () => effectiveArm(GAMES.find(g => g.path === route)),
+      // Lab switch for the A/B harness (?sensor=eye, window.__aiSensor). The
+      // per-game HUD badge arrives with the brain that reads it.
+      setSensor: (next) => { selectArm(next); return getArm() },
+      armLabel: () => effectiveArm(GAMES.find(g => g.path === route)),
+      send: (command) => { sendCommand(command); return true },
+      async play(commands, gapMs = 80) {
+        for (const c of commands || []) {
+          sendCommand(c)
+          await new Promise(res => setTimeout(res, gapMs))
+        }
+        return api.state()
+      },
+      state: () => {
+        const s = sensorRef.current
+        return {
+          ready: !!vmRef.current,
+          inputEnabled: !!inputResolverRef.current,
+          lines: logRef.current.length,
+          exchanges: s.exchanges.length,
+          moves: s.moves,
+          room: s.room,
+          roomConf: s.roomConf,
+          score: s.score,
+          maxScore: s.maxScore,
+          dark: s.dark,
+          inventory: s.inventory.slice(),
+          verdict: s.lastVerdict,
+        }
+      },
+      transcript: () => logRef.current.join(''),
+      exchanges: () => sensorRef.current.exchanges.map(e => ({ command: e.command, verdict: e.verdict, room: e.room })),
+      reset: () => { sensorRef.current.reset(); logRef.current = [] },
+    }
+    window.__zorkTest = api
+    return () => { if (window.__zorkTest === api) delete window.__zorkTest }
+  }, [sendCommand, game, route])
 
   return (
     <div className="fixed inset-0 bg-black flex items-center justify-center"
@@ -243,6 +318,6 @@ function ZorkGame({ storyFile, label }) {
 }
 
 // Export wrapper components for each Zork game
-export const ZorkI = () => <ZorkGame storyFile="games/zork/zork1.z3" label="ZORK I" />
-export const ZorkII = () => <ZorkGame storyFile="games/zork/zork2.z3" label="ZORK II" />
-export const ZorkIII = () => <ZorkGame storyFile="games/zork/zork3.z3" label="ZORK III" />
+export const ZorkI = () => <ZorkGame storyFile="games/zork/zork1.z3" label="ZORK I" route="/zork" />
+export const ZorkII = () => <ZorkGame storyFile="games/zork/zork2.z3" label="ZORK II" route="/zork2" />
+export const ZorkIII = () => <ZorkGame storyFile="games/zork/zork3.z3" label="ZORK III" route="/zork3" />

@@ -134,6 +134,11 @@ export const GAMES = [
         component: ZorkI,
         label: 'ZORK I',
         theme: 'dark',
+        // Which sensor arms the AI can use on this title (src/ai/arms.js). The
+        // transcript arm — read the prose like a person does — is the only one
+        // that exists today; 'ram' (the Z-machine object tree) and 'hybrid'
+        // arrive with AI-PLAN §7 stage 4a/4b.
+        sensors: ['transcript'],
         description: 'The Great Underground Empire. Explore a vast underground world full of treasures, puzzles, and dangers. Watch out for Grues.',
         controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game']
     },
@@ -142,6 +147,7 @@ export const GAMES = [
         component: ZorkII,
         label: 'ZORK II',
         theme: 'dark',
+        sensors: ['transcript'],
         description: 'The Wizard of Frobozz. Continue your underground adventure, but beware the capricious Wizard who haunts these depths.',
         controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game']
     },
@@ -150,6 +156,7 @@ export const GAMES = [
         component: ZorkIII,
         label: 'ZORK III',
         theme: 'dark',
+        sensors: ['transcript'],
         description: 'The Dungeon Master. The final chapter of the Zork trilogy. Prove your worth to become the Dungeon Master.',
         controls: ['Type commands: GO NORTH, TAKE LAMP, OPEN MAILBOX', 'LOOK: Examine surroundings', 'INVENTORY: Check items', 'SAVE / RESTORE: Save and load game']
     },
@@ -158,6 +165,12 @@ export const GAMES = [
         component: KingsQuestGame,
         label: "KING'S QUEST",
         theme: 'dark',
+        // Declared empty ON PURPOSE: no sensor is implemented for this title yet.
+        // `eye` joins when stage 3's OCR + ego sprite match go green, `ram` when
+        // the stage 4a spike validates a framebuffer against the canvas. The badge
+        // reads NOT IMPLEMENTED until then, so the UI cannot advertise an eye the
+        // game does not have (the old AI did exactly that, for months).
+        sensors: [],
         description: "Roberta Williams' groundbreaking graphic adventure. Guide Sir Graham through the kingdom of Daventry to recover three stolen treasures and claim the throne.",
         controls: ['Arrow Keys: Move Sir Graham', 'Type commands: LOOK, TAKE, OPEN, TALK', 'F5: Save Game', 'F7: Restore Game']
     }    ,

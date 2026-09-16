@@ -73,7 +73,10 @@ export function createGlk(terminal, savePrefix) {
     if (str) str.write_count += text.length
   }
 
-  function requestLine(win, buf, initlen) {
+  // `initlen` is the pre-filled length Glk wants in the input buffer; this
+  // adapter never prefills, so it is accepted and ignored (named _initlen so the
+  // lint gate can see this file at all).
+  function requestLine(win, buf, _initlen) {
     flushOutput()
     inputState.buffer = buf
     inputState.maxLen = buf ? buf.length : 0
@@ -144,7 +147,7 @@ export function createGlk(terminal, savePrefix) {
       str.fmode = fmode
       if (fmode === filemode_Read || fmode === filemode_ReadWrite) {
         const saved = localStorage.getItem(fref.filename)
-        if (saved) { try { str.data = JSON.parse(saved) } catch (e) { str.data = [] } }
+        if (saved) { try { str.data = JSON.parse(saved) } catch { str.data = [] } }
       }
       return str
     },

@@ -29,6 +29,7 @@ npm run build      # production build -> dist/
 npm run lint       # eslint, whole repo (currently ~740 pre-existing errors in the DOS/IF titles)
 npm run lint:mario # eslint scoped to Mario + shared shell + scripts — a CI gate
 npm run lint:fps   # eslint scoped to IronKeep (the raycaster) + shared shell + scripts — the other gate
+npm run lint:ai    # eslint scoped to src/ai + Zork + King's Quest + shared utils + scripts — the AI gate
 npm run preview    # preview the production build
 npm run shot -- --out scripts/.shots/x.png --eval "..."   # visual capture (see Self-verifying)
 npm run audcheck   # assert the chiptune engine is producing signal (exits non-zero on fail)
@@ -36,6 +37,13 @@ npm run verify     # the whole self-verifying suite (needs `npm run dev` running
 npm run mariocheck / autopilotcheck / plantcheck / levelcheck / evocheck / evoprobe   # Mario checks
 npm run fpscheck   # IronKeep: level audit + raycaster play-through (see its README)
 npm run keepplay   # IronKeep feel probe driven by real key events only (no sim shortcuts)
+npm run aicheck    # src/ai spine contract (watchdog / rejections / honest arms), Node, ~1s
+npm run zorkcheck  # Zork sensor + actuator play-through in **Node** — no Chrome, no dev server
+npm run doscheck   # DOS/IF seams in Chrome: js-dos boots in dev, keys captured, framebuffer readable
+npm run lint:ai    # eslint scoped to src/ai + Zork + King's Quest + shared utils + scripts — a CI gate
+npm run zorkcheck  # Zork: bot/agent play-through in **Node** — no Chrome, no dev server
+npm run doscheck   # DOS/IF seams in Chrome: js-dos loads in dev, keys captured, framebuffer readable
+npm run prodsmoke    # builds + serves the PRODUCTION bundle and drives it (no DEV hooks exist there)
 ```
 
 ## How the app is structured
@@ -45,6 +53,16 @@ npm run keepplay   # IronKeep feel probe driven by real key events only (no sim 
 - `src/components/` — shared: `GamesList`, `PauseOverlay`, `VirtualControls`, `Weather`, etc.
 - `src/utils/AudioController.js` — `audioController` singleton: `playTone / playSweep / playNoise`.
 - `public/games/` and `public/js-dos/` — committed emulator + game bundles (`.jsdos`, `.z3`, wasm).
+  **`index.html` no longer loads js-dos**: `src/utils/jsdos.js` injects it on demand (see Gotchas).
+- `src/ai/` — the sensor/brain spine (see *AI agents* below): `percept.js` (the one interface
+  every sensor returns and every brain reads), `arms.js` (`transcript` / `eye` / `ram` / `hybrid`
+  lab switch), `loop.js` (`AgentLoop` — diary, stuck watchdog, rejected-skill counter). Brains
+  never touch the canvas, the emulator heap or the DOM; sensors never decide anything.
+- `src/games/<Game>/sensors/` — per-game sensors. `src/games/<Game>/agent/` arrives with the
+  first brain; **no brain is mounted yet.**
+- `src/utils/dosKeys.js` (one DOS keyboard path for player, harness *and* agent),
+  `src/utils/dosCanvas.js` (canvas lookup, exact 320×200 sampling, block fingerprints),
+  `src/utils/jsdos.js` (js-dos loader + `mountDos`).
 
 ### Adding a new game
 1. Create `src/games/<Name>/index.jsx` exporting a default React component.
@@ -63,6 +81,50 @@ Match the existing game conventions (copy `Defender` or `Adventure` as a templat
 - Look up the pause entry with `GAMES.find(g => g.label === '<LABEL>')`.
 - One `index.jsx` is the convention, but a game folder may grow sibling modules when the
   engine is big enough to want it — see `src/games/IronKeep/{index,art,levels}.js`.
+
+### AI agents (`src/ai/`) — and what is deliberately *not* in here
+
+There is **no remote AI backend**. Two earlier agents shipped pointing at a Hetzner box
+(`5.78.145.117:3099` / `:3101`) that no longer answers, so both "🤖 AI" buttons on the site were
+dead — King's Quest was screenshotting itself, POSTing a JPEG to a dead host, parsing an `answer`
+field, and its parse-failure fallback **summoned the game's debug wizard** (`testEsc`, which
+Types `DEBUG` then `F7`/`F9`). All of `api/*.js` is deleted. Any brain in this repo runs **in the
+tab, locally, from on-site code**; if a server-side brain ever comes back it lives in a cloneable
+repo and its URL is an env var, never a hardcoded IP.
+
+The spine (reasoning and the staged plan in `AI-PLAN.md`):
+
+- `src/ai/percept.js` — the one interface between sensors and brains: a `Percept` with a
+  **per-field confidence**. Brains never touch canvas / heap / DOM / transcript directly, and no
+  field is optional — a hole must show as `null` + `conf: 0`, never as a missing key.
+- `src/ai/arms.js` — `transcript` (Zork: the prose *is* the state) / `eye` (pixels + OCR) /
+  `ram` (peek the emulator) / `hybrid` (default where a game declares both). Precedence
+  `window.__aiSensor` → `?sensor=eye` → `localStorage['arcade.ai.sensor']` → default, so an A/B
+  run is a query param rather than a rebuild. `components/AiBadge.jsx` always prints the arm,
+  and `games.js`' `sensors:` list is the ceiling — the badge cannot claim a sense the game lacks.
+- `src/ai/loop.js` — `AgentLoop`: one tick = percept → decide → act → settle. Owns the move
+  budget, the stuck watchdog, and a counter for **rejected unknown skills**: a brain naming a
+  skill the game does not implement must fail loudly, because that is exactly how both old
+  agents died silently (unknown intent → parse fallback → debug wizard).
+- `src/games/<Game>/sensors/` — per-game sensors. **`src/games/<Game>/agent/` does not exist
+  yet: no brain is mounted on any title**, and the King's Quest strip prints
+  `SENSING: NOT IMPLEMENTED` instead of pretending otherwise. `scripts/aicheck.mjs` is what keeps
+  the spine honest in the meantime — it runs `AgentLoop` against fake brains that reproduce the
+  failures this repo has already lived through, so the watchdog and the rejection counter are
+  proven before there is a brain to protect.
+- `src/games/Zork/sensors/transcript.js` — prose → `Percept`: room heading, verdict (`moved` /
+  `blocked` / `taken` / `deadend` / `ambiguous`), exits, darkness, score, inventory. A room name
+  is accepted only from a heading row actually printed after a *move*, so a document title (the
+  leaflet) or a complaint cannot become a room — that was a real bug the first version shipped.
+- `src/utils/dosKeys.js` is the *only* DOS key path, so the harness, the agent and the player's
+  fingers share one codebase (a harness that cheats with frozen frames cannot pass for play).
+
+Two rules the next stage must keep. **The parser is gated, the map is not:** legality may come
+from `games.js`-style vocabulary, but a room may only be entered by walking into it, an unknown
+exit stays unknown (never `#ng` — in Zork that is a legal *spell*), and two rooms that read
+identically are not aliased. Refusing to merge costs one re-walk; merging silently deletes every
+frontier behind the merge. And **prose is the referee**: `open window` is proved by
+`nailed and boarded` disappearing, never by a score bump — in Zork I that move is worth 0 points.
 
 ## Git workflow
 Feature branch → PR → squash-merge to `main`. **Do not push directly to `main`.**
@@ -111,8 +173,50 @@ open https://jalfern.com/retrogames/<game>
 ```
 
 ## Gotchas
+- **DOS titles load js-dos on demand — there is no emulator `<script>` in `index.html`.**
+  `src/utils/jsdos.js` injects `/retrogames/js-dos/js-dos.js` and mounts `.jsdos` bundles via
+  `mountDos()`. Two reasons, both learned the hard way: (a) Vite *prepends the base to absolute
+  URLs in `index.html`*, so the old hard-referenced `/retrogames/js-dos/js-dos.js` was requested
+  as `/retrogames/retrogames/...`, the SPA fallback answered with **HTML at status 200**, and
+  `window.Dos` stayed undefined — every DOS title rendered "DOSBox emulator failed to load" in
+  `npm run dev` while working in production, so nobody noticed; (b) the ~300 KB + 1.4 MB wasm
+  download should not happen on Pong. If you re-add a script tag, you break dev.
+- **js-dos draws with WebGL without `preserveDrawingBuffer`, so canvas readback is black.** The
+  game looks perfect while `drawImage`/`getImageData`/`toDataURL` return solid black (measured:
+  0 lit pixels of 64,000 on a canvas whose element-screenshot showed the intro). `jsdos.js`
+  patches `HTMLCanvasElement.prototype.getContext` to force the flag before the emulator asks
+  for a context. Without it the entire pixel/OCR sensor arm senses nothing.
+- **js-dos 8 binds keydown/keyup on `window`, not the canvas**, and drops keys while blurred.
+  `dosKeys.installDosKeys()` patches `EventTarget.prototype.addEventListener` *before* the
+  emulator script runs and `focusEmulator()` focuses before injecting. The old canvas-prototype
+  patch never saw a handler, so scripted keypresses silently did nothing.
+- **An unmoving frame is not a broken actuator.** King's Quest sits on the AGI copy-protection
+  box ("Cracked Version !!! Weiter mit ESC") where arrows do nothing *by design* — only ESC
+  advances. `doscheck` presses ESC first for that reason.
 - **ifvms postinstall patch:** `patches/fix-ifvms.cjs` (run via `npm install`) fixes a
   CJS→ESM `this` bug in `ifvms/src/zvm/opcodes.js`. If you bypass `npm install`, Zork breaks.
+- **DOS titles load js-dos on demand — there is no emulator `<script>` in `index.html`.**
+  `src/utils/jsdos.js` injects `/retrogames/js-dos/js-dos.js` and mounts `.jsdos` bundles via
+  `mountDos()`. Two reasons, both learned the hard way: (a) Vite *prepends the base to absolute
+  URLs in `index.html`*, so the old hard-referenced `/retrogames/js-dos/js-dos.js` was fetched as
+  `/retrogames/retrogames/...`, the SPA fallback answered with **HTML at status 200** (so no
+  console error stood out), and `window.Dos` stayed undefined — every DOS title rendered "DOSBox
+  emulator failed to load" in `npm run dev` while working in production, which is why nobody
+  noticed; (b) ~300 KB + 1.4 MB of wasm should not download on Pong. Re-adding a script tag
+  breaks dev.
+- **js-dos draws with WebGL without `preserveDrawingBuffer`, so canvas readback is black.** The
+  game looks perfect while `drawImage` / `getImageData` / `toDataURL` all return solid black
+  (measured: 0 lit pixels of 64,000 on a canvas whose element screenshot showed the intro). That
+  made the whole pixel/OCR sensor arm impossible — a sensor reading black. `jsdos.js` patches
+  `HTMLCanvasElement.prototype.getContext` to force the flag before the emulator asks for a context.
+- **js-dos 8 binds keydown/keyup on `window`, not the canvas**, and drops keys while blurred.
+  `dosKeys.installDosKeys()` patches `EventTarget.prototype.addEventListener` *before* the
+  emulator script runs; `focusEmulator()` focuses before injecting. The old canvas-prototype patch
+  never saw a handler, so scripted keypresses silently did nothing and the manual buttons needed
+  a real click.
+- **An unmoving frame is not a broken actuator.** King's Quest sits on the AGI copy-protection
+  box ("Cracked Version !!! Weiter mit ESC") where arrows do nothing *by design* — only ESC
+  advances. `doscheck` presses ESC first for exactly that reason.
 - **WASM assets:** `public/js-dos/**` and `public/games/**` are committed and large. The
   `application/wasm` header in `vercel.json` is required or js-dos titles fail to boot.
 - **Base path:** `vite.config.js` `base` and `App.jsx` `basename` must both be `/retrogames`.
@@ -150,6 +254,10 @@ model/machine can reproduce it (it is not an external tool):
 | `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), DEV-hook wait (`openMario`, or `openGame(browser, { hook })` for other titles), pass/fail `Report`. |
 | `scripts/fpscheck.mjs` | IronKeep (the FPS): key-gated reachability audit of all three halls, then a driven play-through — collision, doors and keys, hitscan, pathfinding without line of sight, lives, the Warden, reaching `win`, and a frame-time budget. |
 | `scripts/keepplay.mjs` | IronKeep feel probe: real key events only (no frozen-frame shortcuts), so input-path bugs that deterministic stepping cannot see — a quick tap swallowed between two 60Hz samples — still show up. |
+| `scripts/aicheck.mjs` | The **spine's own contract**, in Node, ~1 s. No brain exists yet, so `AgentLoop` is driven by fake brains that reproduce the failures this repo has already lived: an unknown skill must be **rejected and counted** (not thrown, not ignored), a brain that stops advancing must trip the watchdog and then stop *with a reason*, a throwing skill must not kill the loop, a brain with no move must stop rather than spin, every `Percept` field must ship a confidence defaulting to 0 (never a hole), and a title that declares no sensors must get no arm to advertise. |
+| `scripts/zorkcheck.mjs` | Zork **in Node** (no Chrome, no dev server): boots the real `zork1.z3` through the same `GlkAdapter` the browser uses and drives the real `TranscriptSensor` through a scripted walk plus a fuzz phase. Asserts every command it sent was legal (no `Sorry, I don't know the word`), `open window` is proved **by prose** (`nailed and boarded` before, absent after — a score bump is not proof because opening the window is worth 0 points here), ≥4 rooms tracked **with names** and no document title (the leaflet!) leaked into the map, darkness detected, a refused move classified `blocked` not `moved`, percepts actually change, and no Glk/VM error anywhere. |
+| `scripts/prodsmoke.mjs` | The same titles against the **production build** (`vite preview`, port 4173). Every other browser check runs against `npm run dev`, where Vite resolves `/retrogames/...` for you and `import.meta.env.DEV` grants the `__*Test` hooks — so the shipping bundle had never been driven. This one has no hooks: it proves the emulator is fetched exactly once under `/retrogames/` (never `retrogames/retrogames`), that non-DOS titles never download js-dos at all, that the canvas survives readback outside dev, and that **real** keyboard input moves Graham and types into the Z-machine. Asserts contracts, not chosen futures: `north` may legally be answered "The way is blocked", so the check requires an echo + a reply + a `LOOK` description. |
+| `scripts/doscheck.mjs` | The seams every DOS/IF title depends on: js-dos boots under the dev server (it did not — see Gotchas), the keyboard handler is captured off `window`, the framebuffer is *readable* (not composited-and-cleared), ESC gets past the AGI copy-protection box, injected arrows move Graham, and Mario still renders **without** downloading js-dos. Retries frames because AGI legitimately fades through black. |
 
 ```bash
 npm install                 # installs playwright-core (no browser download)
@@ -159,6 +267,8 @@ npm run audcheck            # PASS/FAIL on the audio engine
 npm run verify              # the whole browser suite
 npm run evoprobe -- --preset pitwide-run --trace
 npm run fpscheck            # IronKeep audit + play-through
+npm run zorkcheck           # Zork agent in Node (no browser) — also a CI merge gate
+npm run doscheck -- --quick # Zork + King's Quest seams in Chrome (--quick skips Ultima/Mario)
 ```
 
 - **Prereqs:** Google Chrome installed (harness uses `channel:'chrome'`, no download).
@@ -180,8 +290,8 @@ npm run fpscheck            # IronKeep audit + play-through
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
-| `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `lint:fps` → `build`. No browser, fast, this is the gate. |
-| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + fpscheck + evocheck), uploads `scripts/.shots/` as an artifact, dumps the vite log on failure. |
+| `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `lint:fps` → `lint:ai` → `aicheck` → `zorkcheck` → `build`. No browser, fast, this is the gate. |
+| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + aicheck + zorkcheck + fpscheck + evocheck + doscheck), then builds and `npm run prodsmoke` against the production bundle; uploads `scripts/.shots/`, dumps the vite/preview logs on failure. |
 
 ```bash
 gh pr checks --watch                      # the static gate on your PR
@@ -194,6 +304,8 @@ part. Promote it to `pull_request` once it has been green a handful of times.
 
 Repo-wide `npm run lint` is deliberately *not* a gate: ~740 pre-existing errors in the
 DOS/IF adapters would make it permanently red. Widen `lint:mario` as those get fixed.
+`lint:ai` exists so the AI spine and its harness are covered *now* rather than whenever
+that tail is cleaned up.
 
 > **New machine / CI bot:** pushing `.github/workflows/*` needs the `workflow` OAuth
 > scope, which GitHub hard-blocks otherwise. Check with `gh auth status`; add it with
