@@ -11,6 +11,9 @@
     "lint:mario": "eslint src/games/SuperMario src/games/SuperMarioClassic src/components src/utils src/config src/main.jsx scripts",
     "lint:fps": "eslint src/games/IronKeep src/components src/utils src/config src/main.jsx scripts",
     "lint:ai": "eslint src/ai src/games/Zork src/games/KingsQuest src/components src/utils src/config src/main.jsx scripts",
+    "lint:heist": "eslint src/games/RaccoonHeist src/components src/utils src/config src/main.jsx scripts",
+    "heistcheck": "node scripts/heistcheck.mjs",
+    "heistplay": "node scripts/heistplay.mjs",
     "preview": "vite preview",
     "shot": "node scripts/shot.mjs",
     "audcheck": "node scripts/audcheck.mjs",
@@ -34,7 +37,8 @@
     "js-dos": "^8.3.20",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.13.0"
+    "react-router-dom": "^7.13.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

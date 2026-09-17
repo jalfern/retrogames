@@ -19,6 +19,13 @@ import Ultima2Game from '../games/Ultima2'
 import Ultima3Game from '../games/Ultima3'
 import Ultima4Game from '../games/Ultima4'
 import Ultima5Game from '../games/Ultima5'
+import { lazy } from 'react'
+
+// RACCOON HEIST is lazy-loaded, and that is the js-dos lesson applied to a bundle
+// instead of a <script>: three.js is ~150 KB gzip and Pong has no business
+// downloading it. A `lazy()` route component means Vite emits a separate chunk that
+// only fetches when someone actually opens the 3D title.
+const RaccoonHeistGame = lazy(() => import('../games/RaccoonHeist'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -48,6 +55,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'A first-person dungeon shooter on a hand-written raycaster, in the spirit of Wolfenstein 3D. Three halls of a cursed keep stand between you and the open gate — crossbow bolts, repeater, and an occult lancer, against legionaries, hounds, occultists and the Warden. Every texture, sprite and note is generated at runtime; there are no assets.',
         controls: ['Arrow Keys / W: Move, Left/Right turn', 'A/D or Mouse: Strafe / look', 'Space / Click: Loose a bolt', 'Shift / B: Run', 'E: Open doors (gold + iron keys)', '1 2 3 / Q: Change weapon', '?: Pause and read the controls']
+    },
+    {
+        path: '/raccoon-heist',
+        component: RaccoonHeistGame,
+        label: 'RACCOON HEIST',
+        theme: 'dark',
+        description: 'A 3D stealth caper. You run a crew of trash pandas through three night jobs — the corner bank, the museum of shiny things, and the manor of moonstone. Slip past torchlight, grab the loot one sack at a time, drop it in the getaway cart, and be over the gate before the heat peaks. Thunder masks your footsteps; the watchman never expects a raccoon to wait for lightning.',
+        controls: ['Left stick / WASD: Move (hold away from the light to stay low)', 'Right half drag: Orbit the camera', 'A / Space: Grab loot · hide in a bin · chew a lock', 'B / E: Fling a shiny to lure a guard', 'C / Shift: Scurry (loud, costs wind)', 'X / Q: Switch raccoon — the heat chases whoever it last saw', 'F: Crouch (slow, quiet)', '?: Pause and read the controls']
     },
     {
         path: '/pong',

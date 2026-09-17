@@ -47,6 +47,12 @@ jobs:
       # not, so it stays manual.
       - run: npm run aicheck
       - run: npm run zorkcheck
+      # Fourth scoped gate: the 3D stealth title (engine/world/art/levels/stealth +
+      # its two harnesses).
+      - run: npm run lint:heist
+      # Browser-free level audit: reachability, patrol walkability, cover near the
+      # money, and proof that every locked door locks something. ~1 s, blocks merges.
+      - run: npm run heistcheck
       - run: npm run build
 
   # The self-verifying suite: real Chrome driving window.__marioTest.
@@ -79,6 +85,10 @@ jobs:
 
       - name: Run the self-verifying suite
         run: npm run verify -- --full
+      # The scripted heist: Chrome plays job 1 end to end and asserts it can walk,
+      # steal, get spotted, get caught, get rescued and get out.
+      - name: Play the heist
+        run: npm run heistplay
 
       # Everything above runs against the DEV server, where the `__*Test` hooks
       # exist and Vite resolves `/retrogames/...` for us. prodsmoke builds and

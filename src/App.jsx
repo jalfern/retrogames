@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, useCallback, useMemo } from 'react'
+import { useState, useEffect, createContext, useContext, useCallback, useMemo, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { GAMES } from './config/games'
 import GamesList from './components/GamesList'
@@ -20,7 +20,22 @@ function RandomHome() {
   }, [setGameInfo])
 
   if (!GameComponent) return null
-  return <GameComponent />
+  return (
+    <Suspense fallback={<LoadingCard />}>
+      <GameComponent />
+    </Suspense>
+  )
+}
+
+// Shown while a lazy route chunk (RACCOON HEIST's three.js bundle) downloads.
+function LoadingCard() {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center">
+      <p className="font-mono text-xs tracking-[0.35em] text-neutral-500 animate-pulse">
+        OPENING THE BACK DOOR…
+      </p>
+    </div>
+  )
 }
 
 // Wrapper for direct routes
@@ -29,7 +44,11 @@ function GameRoute({ component: Component, label, theme }) {
   useEffect(() => {
     setGameInfo(label, theme)
   }, [label, theme, setGameInfo])
-  return <Component />
+  return (
+    <Suspense fallback={<LoadingCard />}>
+      <Component />
+    </Suspense>
+  )
 }
 
 function Layout({ children }) {
