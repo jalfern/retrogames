@@ -648,6 +648,7 @@ const RaccoonHeistGame = () => {
             restoreWatcher: (i, s) => engine?.restoreWatcher(i, s) || null,
             release: (i, x, z) => engine?.release(i, x, z) || null,
             calm: () => engine?.calmWatchers() ?? -1,
+            navAt: (wx, wz) => engine?.cellNameAt(wx, wz) || '??',
             setCam: (yaw, pitch, dist) => engine?.setCam(yaw, pitch, dist),
             why: () => (engine ? engine.why() : []),
             lootList: () => (engine ? engine.debugLoot() : []),

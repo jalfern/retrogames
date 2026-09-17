@@ -1821,6 +1821,10 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             return { at: [+c.x.toFixed(2), +c.z.toFixed(2)], caged: c.caged, phase: st.phase }
         },
         /** Harness-only: stand everyone down. Used between staged set-pieces. */
+        /** Harness-only: the cell name under a world point. Lets the harness go looking
+         *  for a patch of floor instead of guessing coordinates and hoping `warpWatcher`'s
+         *  nudge finds one. */
+        cellNameAt: (wx, wz) => cellNameOf(wx, wz),
         calmWatchers() {
             for (const w of watchers.concat(cops.map(k => k.w).filter(Boolean))) {
                 w.state = 'patrol'

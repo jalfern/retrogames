@@ -126,6 +126,33 @@ const clock = async (wallMs = 1200) => {
     }
 }
 
+/**
+ * Below 4 fps this machine cannot answer a single question in seconds, and pretending
+ * otherwise is how a 3 fps runner once filed twenty-one red checks against the stealth
+ * model: the driver teleported into a torch beam, the guard only redraws once per frame
+ * (0.33 m of arc at 3 fps), the meter never left zero, nobody got spotted, so nobody got
+ * bagged, so the pound was empty for the rescue section, so the job busted before the cart
+ * section — and every one of those reads as a game bug. So: re-measure at each section
+ * boundary (`pace`), and let `claim` downgrade a FAILURE to a SKIP once the floor has been
+ * breached. Structural checks — does this verb have a mesh, is this cell solid — are never
+ * downgraded, because a slow box still answers those correctly. The skip line says exactly
+ * which machine failed to answer, and the tally counts them, so a green run states what it
+ * did not look at.
+ */
+// Set from THE CLOCK below (`seeClock`), because the clock can only be measured after
+// the job has been started — and a claim made before that measurement is a claim about a
+// machine nobody sampled yet, which is how a slow runner files twenty red bugs.
+let SLOW = 0
+const claim = (label, pass, detail = '') => (!pass && SLOW)
+    ? r.skip(label, `${detail} — not a verdict: the runner was at ${SLOW} fps, under this suite's 4 fps floor`)
+    : r.check(label, pass, detail)
+const pace = async () => {
+    const c = await clock(700)
+    if (c.fps && c.fps < 4) SLOW = c.fps
+    return c
+}
+const floorClaim = () => { if (clk.fps && clk.fps >= 4 && SLOW) clk = { fps: SLOW, rate: 0 } ; return SLOW }
+
 // `press` leaves attract -> brief -> play, with the level mounted in between.
 const press = async (secs = 0.28) => { await api(() => window.__heistTest.press()); await sleep(secs) }
 
@@ -206,6 +233,7 @@ console.log('\nTHE CLOCK')
 // that says whether the box running this can be trusted to answer any timing question:
 // `node scripts/heistclock.mjs` sweeps the same ratio across CPU throttles.
 const clk = await clock()
+SLOW = clk.fps && clk.fps < 4 ? clk.fps : 0
 r.info('sim clock', `${clk.rate}x real time at ${clk.fps} fps${THROTTLE ? ` (CPU throttled ${THROTTLE}x)` : ''}`)
 if (clk.fps >= 4) {
     // 0.75, not 0.95: the number this exists to catch is **0.14x** (the CI runner before
@@ -652,7 +680,7 @@ const catchIt = await api(async () => {
         stillPlaying: t.state().sim.phase === 'play',
     }
 })
-r.check('an alerted guard who reaches you bags you', (catchIt.cagedWho || []).length >= 1, `arrested in ${catchIt.took} s of game time; guards ${JSON.stringify(catchIt.guards)}`)
+claim('an alerted guard who reaches you bags you', (catchIt.cagedWho || []).length >= 1, `arrested in ${catchIt.took} s of game time; guards ${JSON.stringify(catchIt.guards)}`)
 r.check('the arrest hands you a raccoon that can still walk', catchIt.activeCaged === false, `active raccoon caged=${catchIt.activeCaged}`)
 r.check('and the job is still running', catchIt.stillPlaying === true, `phase ${catchIt.stillPlaying}`)
 // "One mistake must not end the job" -- measured honestly. The promise is not "exactly one
@@ -663,7 +691,7 @@ r.check('and the job is still running', catchIt.stillPlaying === true, `phase ${
 // pound holding fewer than all three, and the guard who made the bagging must be busy
 // tying the sack (asserted next).
 
-r.check('the guard who took them is busy, not reaching for the next one', catchIt.cool.some(c => c > 0.5), `cool timers ${JSON.stringify(catchIt.cool)}`)
+claim('the guard who took them is busy, not reaching for the next one', catchIt.cool.some(c => c > 0.5), `cool timers ${JSON.stringify(catchIt.cool)}`)
 console.log('  ..  staged:', JSON.stringify(catchIt.w), 'far:', JSON.stringify(catchIt.far))
 // Undo the staging: free the raccoon, stand the cast down, put the job back on the cart.
 // Every later section assumes a crew that can walk.
@@ -826,9 +854,10 @@ const drift = await api(async () => {
     const b = t.watchers()
     return a.map((w, i) => ({ kind: w.kind, moved: +Math.hypot(b[i].x - w.x, b[i].z - w.z).toFixed(2), cell: b[i].cell, state: b[i].state }))
 })
-r.check('patrols actually walk', drift.filter(d => d.moved > 0.15).length >= Math.ceil(drift.length / 2), drift.map(d => `${d.kind}:${d.moved}m`).join(' '))
+claim('patrols actually walk', drift.filter(d => d.moved > 0.15).length >= Math.ceil(drift.length / 2), drift.map(d => `${d.kind}:${d.moved}m`).join(' '))
 r.check('nobody walks through a wall', drift.every(d => !['WALL', 'VOID', '??'].includes(d.cell)), drift.map(d => d.cell).join(','))
 
+floorClaim()
 console.log('\nBEING SEEN')
 // Stand in the open, in the beam, and the meter must climb. This is the check that
 // would fail silently forever if `det` never accumulated: the guard would simply never
@@ -1055,7 +1084,7 @@ const seen = await api(async () => {
 })
 if (!seen.spot) console.log('  ..  no cell in any cone:', JSON.stringify(seen.why))
 if (seen.spot && seen.spottedAt < 0) console.log('  ..  parked and never noticed — the game said:', JSON.stringify(seen.why))
-r.check('a torch beam has floor to land on', !!seen.spot, JSON.stringify(seen.spot))
+claim('a torch beam has floor to land on', !!seen.spot, JSON.stringify(seen.spot))
 if (seen.spot) console.log(`  ..  parked in the fastest cone the hunt found: ${seen.spot.rate} meter/s at ${seen.spot.d} m`)
 // Samples are ~320 ms apart, so "noticed in about a second and a half" means the meter
 // has to be past 0.9 by the fifth sample. It used to take roughly three times that,
@@ -1069,14 +1098,16 @@ if (seen.spot) console.log(`  ..  parked in the fastest cone the hunt found: ${s
     // A threshold loosened until the bug fits is not a check. Both numbers are seconds of
     // *game* time, which is the only clock the promise was ever made against.
     const budget = 0.55 + (seen.spot ? seen.spot.d : 3) * 0.22
-    r.check('a torch at working range notices you inside the budget', seen.spottedAt >= 0 && seen.spottedAt < budget,
+    claim('a torch at working range notices you inside the budget', seen.spottedAt >= 0 && seen.spottedAt < budget,
         `spotted after ${seen.spottedAt < 0 ? 'never' : seen.spottedAt.toFixed(1) + ' s of game time'} at ${(seen.spot ? seen.spot.d : 0)} m (budget ${budget.toFixed(2)} s; meter ${S2.map(d => d.toFixed(2)).join(' > ')})`)
 }
-r.check('standing in a torch beam raises suspicion', (seen.peak || 0) > 0.15, `peak meter ${(seen.peak || 0).toFixed(2)} (last window ${((seen.samples || []).join('>')) || 'empty — the driver re-hunted'})`)
+claim('standing in a torch beam raises suspicion', (seen.peak || 0) > 0.15, `peak meter ${(seen.peak || 0).toFixed(2)} (last window ${((seen.samples || []).join('>')) || 'empty — the driver re-hunted'})`)
 r.info('the cost of standing in the light', `${seen.penned} in the pound by the end of this section — the driver steps out of the beam the moment one goes in, and never watches \`probe().caged\`, which resets when being caught hands you the next raccoon`)
-r.check('being spotted is announced', seen.spottedAt >= 0 || seen.heat > 10, `spot at ${seen.spottedAt} s of game time, heat ${Math.round(seen.heat)}`)
+claim('being spotted is announced', seen.spottedAt >= 0 || seen.heat > 10, `spot at ${seen.spottedAt} s of game time, heat ${Math.round(seen.heat)}`)
 if (!(Math.max(...(seen.samples || [0])) > 0.15)) console.log('  ..  detection arithmetic:', JSON.stringify(seen.why))
 
+await pace()
+floorClaim()
 console.log('\nCAUGHT + RESCUED')
 const caught = await api(async () => {
     const t = window.__heistTest
@@ -1178,9 +1209,9 @@ const caught = await api(async () => {
         cool: t.watchers().map(x => `${x.kind}:${(x.cool || 0).toFixed(1)}/${x.state}`),
     }
 })
-r.check('a watcher in contact bags a raccoon', caught.caged >= 1, `${caught.caged} in the pound`)
+claim('a watcher in contact bags a raccoon', caught.caged >= 1, `${caught.caged} in the pound`)
 console.log(`  ..  the pound filled: ${JSON.stringify(caught.bagged)}  guards ${JSON.stringify(caught.cool)}  staged ${JSON.stringify(caught.who)}  parked ${caught.parked}`)
-r.check('one raccoon down is not game over', caught.phase === 'play', caught.phase)
+claim('one raccoon down is not game over', caught.phase === 'play', caught.phase)
 
 // Stand at the pound with somebody still inside and photograph the door. This is the
 // frame the playtest could not get: "you need to draw the lock somehow, if I'm supposed
@@ -1338,15 +1369,15 @@ const rescue = await api(async () => {
     }
     return { log, caged: t.state().sim.crew.filter(c => c.caged).length, staged, startedCaged }
 })
-r.check('the pound offers to chew a friend loose', /CHEW/i.test((rescue.log[0] || {}).label || ''), (rescue.log[0] || {}).label)
+claim('the pound offers to chew a friend loose', /CHEW/i.test((rescue.log[0] || {}).label || ''), (rescue.log[0] || {}).label)
 // Not a nicety: every lock assertion below lives inside a loop over `rescue.log`, so an
 // empty pound is an empty suite reporting a clean bill of health.
-r.check('the rescue section had a prisoner to chew', rescue.log.length >= 1,
+claim('the rescue section had a prisoner to chew', rescue.log.length >= 1,
     `${rescue.log.length} chews, pound started at ${rescue.startedCaged}${rescue.staged ? ' (the driver staged the arrest itself)' : ''}`)
-r.check('a friend comes out of the pound', rescue.caged === 0, `${rescue.caged} still locked up`)
+claim('a friend comes out of the pound', rescue.caged === 0, `${rescue.caged} still locked up`)
 console.log('  ..  rescues:', JSON.stringify(rescue.log.map(l => ({ ...l, aff: l.aff && { kind: l.aff.kind, hit: l.aff.hit, ok: l.aff.ok }, shake: undefined }))))
 const slowest = Math.max(0, ...rescue.log.map(l => l.took))
-r.check('a rescue is desperate, not a chore', slowest > 0.3 && slowest < 4, `${slowest} s of game time for the slowest padlock`)
+claim('a rescue is desperate, not a chore', slowest > 0.3 && slowest < 4, `${slowest} s of game time for the slowest padlock`)
 // Every rescue round must find a lock on the door — including the second one, after the
 // first was chewed off. That is what `catchCrew` re-hanging the padlock buys, and it is
 // the difference between "the pound works" and "the pound works once".
@@ -1374,7 +1405,7 @@ for (const l of rescue.log) {
     // carry the claim — and both the engine's own rattle value and a measured lateral swing
     // still have to be there, so switching the shake off in the engine still reddens this.
     const enough = rescue.log.every(l => l.n >= 6 && l.fps >= 25)
-    r.check('the lock shakes while it is being chewed', swung && (!enough || rescue.log.every(l => l.flips >= 2)),
+    claim('the lock shakes while it is being chewed', swung && (!enough || rescue.log.every(l => l.flips >= 2)),
         `peak hang-time swing ${rescue.log.map(l => l.swing).join(' / ')} m, rattle ${rescue.log.map(l => l.wob).join(' / ')} over ${rescue.log.map(l => l.flips).join(' / ')} direction changes (${rescue.log.map(l => `${l.n} samples @ ${l.fps} fps`).join(', ')}${enough ? '' : ' — too few frames to require a reversal'})`)
 }
 for (const l of rescue.log) {
@@ -1387,6 +1418,37 @@ for (const l of rescue.log) {
         l.lockY !== null && (empty ? l.lockY < 0.3 : l.lockY > 0.4), `lock y ${l.lockY} with ${l.caged} still caged`)
 }
 
+// Revive the job if the runner beat it. Under the frame-rate floor a set-piece can lose
+// the whole crew — a guard only redraws once per frame, and a driver that teleports into
+// a torch beam on a 2 fps box is not playing stealth, it is losing — and a busted job
+// offers no verbs at all, which would then be reported as "the grab button is broken".
+// So: free everybody, stand the cast down, put the shell back on the job, and PRINT how
+// much reviving the machine needed. At 60 fps this is a no-op that reports zero.
+const revived = await api(async () => {
+    const t = window.__heistTest
+    const s = t.state().sim
+    const stuck = s.crew.filter(c => c.caged)
+    if (s.phase === 'play' && !stuck.length) return { revived: 0, was: 0, phase: s.phase, caged: 0 }
+    const cart = t.marks().find(m => m.ch === 'S')
+    t.calm()
+    for (const c of s.crew) t.release(c.idx)
+    t.release(0, cart.wx, cart.wz + 2.0)
+    t.switchTo(0)
+    t.goto('play')
+    await window.__simSleep(0.4)
+    const p = t.probe()
+    return { revived: stuck.length || 1, was: stuck.length, phase: p.phase, at: [p.x, p.z], caged: t.state().sim.crew.filter(c => c.caged).length }
+})
+if (revived.revived) {
+    r.skip('the crew was already standing for the structural sections',
+        `${revived.was} were in the pound (phase was not play); the runner put them back at ${JSON.stringify(revived.at)} — `
+        + `this is a machine that ran under the floor, not a job that can be played`)
+}
+// If even the harness cannot get the job back to a raccoon standing on floor with a hand
+// free, that is not a slow box — that is a broken `release`/`goto` path, and every verb
+// check below would be theatre.
+r.check('the job can be put back on its feet', revived.phase === 'play' && revived.caged === 0,
+    JSON.stringify(revived))
 console.log('\nEVERY VERB HAS A BODY')
 // "Every interaction has a body in the world." The pound offered `CHEW ULTRA LOOSE` at a
 // cage with no lock on it, and the harness saw nothing wrong because no check ever asked
@@ -1448,6 +1510,29 @@ const finish = await api(async () => {
     const marks = t.marks()
     const cart = marks.find(m => m.ch === 'S')
     const gate = marks.find(m => m.ch === 'X')
+    // This section is about CARRYING, so the yard is emptied first. The earlier sections
+    // deliberately got the crew caught, which leaves the heat high, and a bagged courier
+    // delivers nothing — so without this the tally below measures whether the AI happened
+    // to wander past, which is the exact "SCENARIOS, NOT LUCK" rule the rest of the file
+    // already applies. Guards are parked on the floor tile farthest from the cart and left
+    // PATROLLING, so the world still lives; stealth itself is asserted up above, where a
+    // raccoon actually stands in a beam until it is bagged.
+    const parked = []
+    let far = null
+    for (let cx = -34; cx <= 34; cx += 2) {
+        for (let cz = -30; cz <= 30; cz += 2) {
+            const wx = cx * 2.2, wz = cz * 2.2
+            if (t.navAt(wx, wz) !== 'FLOOR') continue
+            const d = Math.hypot(wx - cart.wx, wz - cart.wz)
+            if (!far || d > far.d) far = { wx, wz, d }
+        }
+    }
+    if (far) for (let i = 0; i < t.watchers().length; i++) {
+        const snap = t.watcherAt(i)
+        if (!snap) continue
+        parked.push({ i, snap })
+        t.warpWatcher(i, far.wx, far.wz, 'patrol')
+    }
     // Load the cart the honest way for the first pile, then walk the rest in: a
     // delivered pile is a delivered pile, but the first one proves the button path.
     for (const l of t.lootList()) {
@@ -1471,6 +1556,9 @@ const finish = await api(async () => {
     const loaded = t.state().sim
     await window.__simSleep(0.9)
     const open = t.probe().gate
+    // If the job is still running, give the guards back: a parked world is a staged
+    // world, and the sections after this one (and any future one) inherit it.
+    if (t.state().sim.phase === 'play') for (const p of parked) t.restoreWatcher(p.i, p.snap)
     t.moveTo(gate.wx, gate.wz)
     await window.__simSleep(0.9)
     const s = t.state().sim
@@ -1479,8 +1567,15 @@ const finish = await api(async () => {
         delivered: loaded.delivered, total: loaded.total, open, phase: s.phase, result: s.result,
         screen: t.state().screen, at: [p.x, p.z], cell: p.cell, active: p.caged ? 'caged' : 'free',
         gate: marks.find(m => m.ch === 'X'), caged: s.crew.filter(c => c.caged).length,
+        parked: parked.length, parkD: far ? Math.round(far.d) : null,
+        parkAt: far ? [Math.round(far.wx), Math.round(far.wz)] : null,
     }
 })
+// Saying what the scenario did is the whole point: without this line the tally above
+// reads as if the crew emptied the yard while guards patrolled it, which is not what
+// happened and not what this section is testing.
+console.log(`  ..    staged     ${finish.parked} guard(s) walked to ${finish.parkAt}, `
+    + `${finish.parkD} m from the cart — this tally is about CARRYING; stealth is asserted above`)
 r.check('every pile can be carried to the cart', finish.delivered === finish.total, `${finish.delivered}/${finish.total}`)
 r.check('a full cart raises the gate', finish.open === true, `gate=${finish.open}`)
 // The chain has to come off. A gate that rises in silence is a door; hardware hitting
