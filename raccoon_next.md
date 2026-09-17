@@ -13,9 +13,10 @@ what broke and what each fix cost. This file is only: *where we are, and what to
   and `zork-loop-clock` (one driver for the Zork agent, bounded prompt wait). Both against
   `main`. Previously merged: PRs #38–#43, and the frame-rate clock work that this file was
   written on.
-- **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **122** at 60 fps
-  and **121/121** at `--throttle 64` (~5 fps, the CI pipeline — the tally moves by one
-  because the rescue section asserts per prisoner) ·
+- **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **121/121** at 60
+  fps, and at `--throttle 64` (this box manages **2–3 fps**, under the suite's own floor)
+  **120/120 + 1 documented SKIP** — see trap 14, the suite now refuses to file a slow
+  runner against the game ·
   `npm run heistclock` **1.00x @ 6 fps** · `npm run heistmutate` **13/14 mutants die**, the
   14th survives as documented (the retreat-floor overshoot, covered by the escape hatch) ·
   `npm run lint:heist` clean ·
@@ -143,6 +144,22 @@ playtest report, not from taste.
     the getaway), and the failure looked exactly like "the torch check is flaky".
     `watcherAt` / `restoreWatcher` exist now, "the staged guard went home" is itself a check,
     and any new warp-the-world section starts by snapshotting.
+14. **A check written in seconds is a measurement of the machine the moment the machine
+    stops keeping seconds.** `heistplay` has asserted ~40 time-shaped checks since the
+    catch-up cap, and reported "frame rate under the floor" as an *info* line while doing
+    it. At 2–3 fps that produced a 21-red cascade with the game untouched: the driver
+    stood in a torch beam, a guard redraws once per frame (0.33 m of cone-arc at 3 fps),
+    so the meter never left zero — so nobody was spotted, so nobody was bagged, so the
+    pound was empty for the rescue section, so the job busted before the cart, so
+    `afford()` returned null, and the report read "the grab button is broken". Three
+    rules now: `claim()` turns a FAILURE into a **SKIP** only once the floor has been
+    breached (re-measured per section by `pace`) and only for checks shaped like seconds;
+    structural claims (is this cell solid, does this verb have a mesh) are never
+    downgraded, because a slow box still answers those honestly; and the job is *revived*
+    between sections if the runner beat it, with the number it revived printed. A SKIP is
+    not a pass and the tally says how many there were — that is the whole difference
+    between an honest green and a lie.
+
 
 ## Next steps, ranked
 
