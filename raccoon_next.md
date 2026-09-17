@@ -172,6 +172,13 @@ Alerts are visual + musical only. Voice blips ("Oi!"), or even just a per-kind b
 over the guard's head (the `icon()` + `makeIconTex` machinery already exists: `?`, `!`,
 paw, `zzz`, ear). Cheap, big character win.
 
+### 4b. `zorkuicheck` is load-sensitive
+One CI run red three checks — *"it maps real ground in the browser, not only in Node" (1 rooms)
+* and the input-lock pair — and a re-run of the same commit was 12/12. That is a timing
+assumption in the check, the same family this whole branch is about: a browser check that waits
+on wall-clock guesses goes red when the runner is busy. Give it the `__simSleep`/re-hunt
+treatment (`heistplay`'s BEING SEEN section is the template) before it gets promoted to a gate.
+
 ### 5. Smaller known gaps
 - **Affordance hardware exists only for the pound and the gate.** A hide-spot bin has no
   latch and a stolen pile leaves no scuff where it was — both deliberately deferred: the

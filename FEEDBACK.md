@@ -398,6 +398,15 @@ escape is never reached and the mutant would be equivalent by luck. What remains
 the camera was being blamed for: how does `blocksMove` let a 60 Hz simulation put the actor
 inside a wall?
 
+**CI is green, end to end, at 5 fps.** The `verify` job now runs the whole browser suite
+plus `heistplay` on the runner and reports `sim clock 0.99x real time at 5 fps`,
+`heistplay: 110/110`, `prodsmoke: 38/38`, `all checks passed` — where this branch started at
+94/104 with the clock at 0.14x and the runner at 1 fps. The pinch corner's frames on CI read
+`0.72m / 0.85m / 1.03m / 1.35m / 1.85m`, all legal, none `INSIDE`: the escape hatch fires on
+GitHub's hardware, not just on the laptop that wrote it. One earlier run of the same code red
+three `zorkuicheck` checks ("1 rooms mapped in the browser") and went green untouched on a
+re-run — a load flake in that check, filed below, not this branch's.
+
 **Still red, honestly:** at ~17 fps the shoulder rig buries itself one frame in five in the
 north-west corner. I fixed the retreat loop's floor (it tested `allowed > 0.55` *before*
 subtracting 0.35, so the last step landed at 0.35 m — a screen full of fur, and the check
