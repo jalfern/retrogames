@@ -36,6 +36,26 @@ import { buildWorld } from './world.js'
 import { createEngine } from './engine.js'
 import { heistAudio } from './audio.js'
 
+/**
+ * The one key table. Handlers read it, the attract card and the pause card are written
+ * from it, and `npm run heistplay` parses it and cross-checks every key promised in
+ * `src/config/games.js`. That contract exists because the printed controls once said
+ * "B / E: fling a shiny · F: crouch" while B did nothing, E grabbed, and F lured — so
+ * the help screen was a list of things that did not work, which is worse than no help
+ * screen. Two keys per action is fine; a documented key that does nothing is not.
+ */
+const KEYMAP = {
+    grab: ['KeyE', 'Space', 'KeyZ'],
+    throw: ['KeyF', 'KeyB'],
+    swap: ['KeyQ', 'KeyX', 'Tab'],
+    cam: ['KeyG'],
+}
+const HOLD_KEYS = KEYMAP.grab
+const CROUCH_KEYS = ['KeyC', 'ControlLeft', 'ControlRight']
+const DASH_KEYS = ['ShiftLeft', 'ShiftRight', 'KeyR']
+const KEY_LABEL = { grab: 'E / SPACE', throw: 'F / B', swap: 'Q / X', cam: 'G' }
+const HELD_LABEL = 'HOLD E / SPACE'
+
 const FIXED_DT = 1000 / 60
 const MOON = new THREE.Vector3(-9, 14, -7)
 
@@ -269,11 +289,11 @@ const RaccoonHeistGame = () => {
             const playing = scr === 'play'
             engine.update(dt, {
                 mx, my,
-                crouch: k.has('KeyC') || k.has('ControlLeft'),
-                dash: k.has('ShiftLeft') || k.has('ShiftRight') || k.has('KeyR'),
+                crouch: CROUCH_KEYS.some(c => k.has(c)),
+                dash: DASH_KEYS.some(c => k.has(c)),
                 lookX, lookY,
                 actions: playing ? acts : [],
-                hold: playing && (k.has('KeyE') || inp.hold),
+                hold: playing && (HOLD_KEYS.some(c => k.has(c)) || inp.hold),
             })
 
             // Thunder flash: the moon light and the exposure both kick, which is what
@@ -375,7 +395,7 @@ const RaccoonHeistGame = () => {
         }
 
         const onKeyDown = (e) => {
-            if (e.code === 'Slash' && e.shiftKey) {           // '?'
+            if ((e.code === 'Slash' && e.shiftKey) || e.code === 'Escape') {   // '?' / Esc
                 e.preventDefault()
                 setPaused(p => { pausedRef.current = !p; return !p })
                 return
@@ -386,14 +406,19 @@ const RaccoonHeistGame = () => {
             if (scr === 'clear' || scr === 'bust') { if (e.code === 'Enter' || e.code === 'Space') next(); return }
             if (e.repeat) return
             inputRef.current.keys.add(e.code)
-            if (e.code === 'KeyE' || e.code === 'Space') inputRef.current.actions.push('grab')
-            if (e.code === 'KeyF') inputRef.current.actions.push('throw')
-            if (e.code === 'KeyQ' || e.code === 'Tab') inputRef.current.actions.push('swap')
-            if (e.code === 'KeyG') inputRef.current.actions.push('cam')
+            // Every action is looked up in ONE table, which is also the table the help
+            // screen is written from and the table `heistplay` audits against the
+            // registry text. The old code hard-coded each `e.code ===` branch and the
+            // printed controls drifted straight off it: the pause card promised "B / E:
+            // fling a shiny" when B did nothing and E grabbed, and "F: crouch" when F
+            // lured. A player who trusts the help screen is told the game is broken.
+            for (const [action, codes] of Object.entries(KEYMAP)) {
+                if (codes.includes(e.code)) inputRef.current.actions.push(action)
+            }
         }
         const onKeyUp = (e) => {
             inputRef.current.keys.delete(e.code)
-            if (e.code === 'KeyE') inputRef.current.hold = false
+            if (HOLD_KEYS.includes(e.code)) inputRef.current.hold = false
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
@@ -514,6 +539,8 @@ const RaccoonHeistGame = () => {
                     det: +(a.det || 0).toFixed(3), caged: a.caged, hidden: a.hidden, held: a.held ? a.held.label : null,
                     camDist: +d.toFixed(2), camY: +camera.position.y.toFixed(2),
                     camYaw: +engine.st.camYaw.toFixed(3),
+                    camEff: +(engine.st.camYawEff ?? engine.st.camYaw).toFixed(3),
+                    camSide: +(engine.st.camSide || 0).toFixed(3),
                     camAt: [+camera.position.x.toFixed(1), +camera.position.z.toFixed(1)],
                     pitch: +engine.st.camPitch.toFixed(2),
                     // Where the raccoon lands on screen: |x|,|y| < 1 means on-screen.
@@ -524,6 +551,9 @@ const RaccoonHeistGame = () => {
                 }
             },
             watchers: () => (engine ? engine.debugWatchers() : []),
+            camClear: () => engine?.camClear() || null,
+            clearAt: (dx, dz) => engine?.clearAt(dx, dz) || null,
+            tightSpot: () => engine?.tightSpot() || null,
             warpWatcher: (i, x, z, state) => engine?.warpWatcher(i, x, z, state) || null,
             release: (i, x, z) => engine?.release(i, x, z) || null,
             calm: () => engine?.calmWatchers() ?? -1,
@@ -798,12 +828,12 @@ function HeistPad({ inputRef, hint, shinies, onSwap }) {
                     }}
                 >
                     {hint ? hint.split(' ')[0] : '···'}
-                    <span className="block text-[8px] opacity-70">{hint ? hint.split(' ').slice(1).join(' ') : 'HOLD TO WORK'}</span>
+                    <span className="block text-[8px] opacity-70">{hint ? hint.split(' ').slice(1).join(' ') : 'HOLD E'}</span>
                 </button>
             </div>
 
             <p className="absolute bottom-[2vh] right-3 font-mono text-[8px] tracking-[0.2em] text-cyan-200/35 pointer-events-none">
-                DRAG RIGHT SIDE = LOOK
+                DRAG RIGHT SIDE = LOOK · G RECENTRE
             </p>
             <CrouchButton inputRef={inputRef} />
             {/* crew chips in the HUD are the swap control — this pad does not duplicate them */}
@@ -860,7 +890,7 @@ function TitleCard() {
                     TAP / PRESS ANY KEY TO START
                 </p>
                 <p className="font-mono text-[9px] sm:text-[11px] tracking-[0.18em] text-cyan-200/45 mt-3">
-                    WASD MOVE · SHIFT DASH · C CROUCH · E HOLD TO WORK · F LURE · Q CREW<br />
+                    WASD MOVE · SHIFT/R SPRINT · C CROUCH · E HOLD TO WORK · F LURE · Q SWITCH<br />
                     DRAG TO LOOK · WHEEL ZOOM · ? FOR CONTROLS
                 </p>
             </div>

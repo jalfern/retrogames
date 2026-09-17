@@ -363,3 +363,90 @@ a `/tmp` copy; commit before you play with fire.** A harness that can prove the 
 wrong is worthless if the person running it can delete the code.
 
 **Where the checks stand:** `heistcheck` 264 · `heistplay` 66 · `lint:heist` clean.
+
+---
+
+## Playtest round 2 — "he doesn't catch me", "the game dies when I'm caught", and a wall made of arithmetic
+
+Four complaints from playing the shipped build. Every one was real, and the last one was a
+bug in the maths underneath *everything*.
+
+### "Once I'm caught the game is basically done — nothing works except rotating the camera"
+Four defects wearing one sentence, and the first was the whole complaint: **`catchCrew`
+caged the raccoon and left `active` pointing at it.** You kept controlling a locked
+raccoon in a cage. The camera kept orbiting (that's the only input path that doesn't ask
+the actor to move), every other key did nothing, and the HUD kept ticking, so the game
+looked hung while it was quietly still simulating.
+
+Then the cascade: being caught now hands you the next crew member, *who is standing on
+the same square*, and the guard who just bagged one raccoon reached straight for the next.
+Three arrests in four seconds, bust. A guard who has taken a raccoon is now busy tying the
+sack for 2.8 s (`cool`), and drops every other raccoon's suspicion while he does it.
+
+### "I have to be on top of him before he catches me"
+Two independent reasons, both arithmetic:
+
+- **A walk was safety.** Chase speed was `patrolSpeed * 1.75`. The patrols are strolled at
+  1.2–1.6 m/s, so an alerted guard ran 2.1–2.8 m/s — and a raccoon **walks at 2.75**. I
+  had written a chase you could win by not sprinting. Now `CHASE = {guard: 3.4, dog: 4.4,
+  cop: 3.55}`: walking gets you caught, sprinting (5.0 m/s, loud, costs wind) is how you
+  get away. The whole stealth economy — noise versus speed — only exists if these point
+  this way.
+- **Detection was spectator-paced.** `detectRate`'s constant was 2.6; at 5 m in a torch
+  that's 2.4 seconds of standing in a beam before anything happens. It's 4.6 now, ~1.1 s
+  at 5 m: the meter fills *while you can still do something about it*.
+
+`heistplay` now times the beam, and the budget **scales with the distance the driver
+actually managed to stand at** — because 2.5 m and 5.6 m are different questions, and my
+first threshold was loose enough that putting the old constant back still passed. That is
+the trap with a performance check: a budget that fits the bug is not a check. It fails at
+2.4 s against a 1.43 s budget now, verified by mutation.
+
+### "The help screen says two keys and only one works"
+It was worse than that. The registry advertised `B / E: fling a shiny` and `F: crouch`.
+B did nothing, E grabbed, and F *lured*. A player who trusts an arcade help screen and
+finds the keys don't work doesn't file a bug about key bindings — they conclude the game
+is broken and leave.
+
+So there is one `KEYMAP` in `index.jsx` now: the handlers read it, the attract card and the
+pause card are written from it, and `heistplay` parses both it and the registry text in
+Node and fails on any advertised key that isn't handled. Two keys per action is fine. A
+documented key that does nothing is a lie about the game.
+
+### The wall made of arithmetic
+The production capture showed the camera *inside* the north wall — a screenful of blurred
+brick. I fixed the symptom twice (a shoulder-probe camera collision, then a wider slide)
+before finding it in `stealth.js`:
+
+```js
+let x = ax / CELL - level.ox        // cell space
+const sx = dirX / n                 // world step
+```
+
+The march walks a grid indexed in **cells** while its arguments are **metres**, and when I
+scaled the world to `CELL = 2.2` the step stayed a world increment. Every distance came
+back 2.2× too large, so the rig believed a wall 1.3 m behind you was 2.9 m away and drove
+into it — and `losWorld` had the same bug, so guards saw through the last metre and a half
+of every doorway and neither the player nor the guard could explain it.
+
+Two things came out of that beyond the fix (one line, `/ CELL` — plus a second wrong
+division in `castWorld`, where the direction is a *unit vector* and not a delta):
+
+- **My two repair attempts were each half-right and neither was sufficient**, which is why
+  the shoulder-probe slide stayed in the file: pressed into a corner, pulling in is not an
+  answer at all and the rig has to slide. Measured outcome: 7/7 frames buried → 0/7, with
+  the camera swinging up to 94° around the corner and keeping the raccoon framed.
+- **The sampler now has numeric promises per level.** `heistcheck` casts from a floor cell
+  into its own wall neighbour and asserts the answer is ~half a cell, in metres, and that
+  sight is symmetric. Restoring the bug fails 9 of them. A check here that said "returns a
+  number" would have been worse than nothing, because it would have been green.
+
+### Where the checks are, and what the run now proves
+`heistcheck` **303** (was 264) · `heistplay` **81** (was 66) · `lint:heist`, `lint:mario`
+clean. A green run now walks, steals, gets *spotted in under a second*, gets arrested, is
+handed a crewmate that can still walk, chews two friends out of the pound (2.4 s and 1.8
+s), loads all four piles, raises the gate and clears the job — in 1.1 ms/frame.
+
+Things the harness still does not do: it has never played job 2 or 3, it cannot judge
+whether the game is *fun*, and the driver teleports, so a player who only ever walks has
+not been tested. The next round should be a human one.

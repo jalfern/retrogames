@@ -14,7 +14,7 @@
 // because it buys confidence you have not earned (this repo has already shipped two AI
 // agents that way).
 
-import { LEVELS, CELL, at, T, reachFrom, pathBetween, dumpLevel, blocksMove, blocksSight } from '../src/games/RaccoonHeist/levels.js'
+import { LEVELS, CELL, at, T, reachFrom, pathBetween, dumpLevel, blocksMove, blocksSight, worldOf, CELL_NAME } from '../src/games/RaccoonHeist/levels.js'
 import { losWorld, coneAlign, detectRate, hears, nextWaypoint, moveProfile, tally, coverOf, lightAt, castWorld } from '../src/games/RaccoonHeist/stealth.js'
 import { CREW } from '../src/games/RaccoonHeist/levels.js'
 
@@ -158,6 +158,36 @@ for (let li = 0; li < LEVELS.length; li++) {
 }
 
 // ------------------------------------------------------------ stealth model ------
+section('THE GRID SAMPLER')
+// `losWorld` and `castWorld` march the grid in CELL space while their arguments are
+// metres. When the world was scaled to 2.2 m per cell, both kept stepping in *world*
+// increments, so every distance came back CELL times too large and every line of sight
+// stopped short of the wall it was aiming at. The camera believed a wall 1.3 m away was
+// 2.9 m away and drove into the brick; guards saw through the last metre and a half of
+// every doorway. Screenshots cannot see this and a play-through only notices the camera.
+// So the sampler gets two numeric promises, in metres, on every level.
+for (const lvl of LEVELS) {
+    let tested = 0
+    for (let y = 1; y < lvl.h - 1 && tested < 3; y++) {
+        for (let x = 1; x < lvl.w - 1 && tested < 3; x++) {
+            if (at(lvl, x, y) !== T.FLOOR) continue
+            const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([dx, dy]) => blocksSight(at(lvl, x + dx, y + dy)))
+            if (!nb) continue
+            const [wx, wz] = worldOf(lvl, x, y)
+            const c = castWorld(lvl, wx, wz, nb[0], nb[1], 6)
+            ok(c.hit, `${lvl.name}: cast from (${x},${y}) into the ${CELL_NAME[at(lvl, x + nb[0], y + nb[1])]} at (${x + nb[0]},${y + nb[1]}) never hit it`)
+            ok(c.dist > 0.3 && c.dist < CELL * 0.75,
+                `${lvl.name}: cast into an adjacent wall reported ${c.dist.toFixed(2)} m -- a wall one cell away is ~${(CELL / 2).toFixed(2)} m, and a wrong number here is the camera buried in brick`)
+            const [bx, bz] = worldOf(lvl, x + nb[0], y + nb[1])
+            ok(!losWorld(lvl, wx, wz, bx, bz), `${lvl.name}: line of sight straight into an adjacent ${CELL_NAME[at(lvl, x + nb[0], y + nb[1])]} at (${x + nb[0]},${y + nb[1]})`)
+            ok(losWorld(lvl, bx, bz, wx, wz) === losWorld(lvl, wx, wz, bx, bz), `${lvl.name}: sight is not symmetric at (${x},${y}) -- a guard may not see further than you can see him`)
+            tested++
+        }
+        if (tested >= 3) break
+    }
+    ok(tested > 0, `${lvl.name}: no wall/floor boundary found to test the sampler against`)
+}
+
 section('STEALTH MODEL')
 {
     const lvl = LEVELS[0]
