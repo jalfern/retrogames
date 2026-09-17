@@ -450,3 +450,104 @@ s), loads all four piles, raises the gate and clears the job — in 1.1 ms/frame
 Things the harness still does not do: it has never played job 2 or 3, it cannot judge
 whether the game is *fun*, and the driver teleports, so a player who only ever walks has
 not been tested. The next round should be a human one.
+
+## Playtest round 3 — the lock that wasn't, and the door that never opened
+
+One sentence from playing the shipped build started the session, and it turned into a rule:
+
+> *"you need to draw the lock somehow, if I'm supposed to chew through the lock… I don't see
+> a lock."*
+
+He was right. `makeCage()` builds bars, a roof, a floor and a sign. There is no padlock mesh
+anywhere in the game — `CHEW BANDIT LOOSE` was a line of HUD text aimed at a cage. The verb
+had no body.
+
+### The rule: every verb has a body
+`engine.affordance()` now says, for the verb on offer, *where it points* and *what material
+ought to be there*, and `heistplay` walks the route and fails if the world has nothing to
+show. Two decisions in there did the real work:
+
+- **The anchor is derived from the level and the verb, never from the prop.** If the check
+  asked the padlock where the padlock was, deleting the padlock would move the goalpost and
+  stay green. The pound's anchor comes out of the pound's mark and the yaw `world.js` chose
+  from the open neighbour cell, so a missing lock is 0 m from nothing and very far from a
+  mesh.
+- **For the two lock verbs, "there is a mesh here" is not enough.** Cage bars are meshes.
+  Vault plates are meshes. The check asks for the *material name*: `padlock`, `dial`. That
+  is what makes the mutant die instead of nodding along.
+- **And the verb list is scraped out of `focus()` in the engine source.** A verb added next
+  month without a body fails the build. Otherwise the check proves only that the six verbs
+  I thought of have bodies.
+
+Then the hardware: brass padlock (faintly emissive, because a night map eats dark metals),
+shakes harder as it gives, brass filings past 60 %, comes off and tumbles. Chain and padlock
+across the getaway gate, snapped off when the cart is full — "the way out is open" was a
+door rising in silence. The pound turns to face the approach, or the lock ends up on the far
+side, which is the same complaint with better lighting.
+
+### A rule I had to write twice, because the first cage was a lie
+A chew that frees one of two raccoons left the second one in an **open cage with the HUD
+still saying CHEW** — the lock was on the ground and the sim did not care. So the lock goes
+where the pound's state says it belongs: back on the door the instant one comes out if
+anybody is still inside, on the ground when the cage is empty, back on again when somebody
+gets thrown in. The mutant for this (`a chew that frees one leaves the cage open`) kills two
+checks, one of which is the *jitter* check: with the lock on the floor there is nothing to
+shake, so a second rescue round silently measured nothing.
+
+### The vault door had never been a door
+The affordance check complained that the dial was 0.68 m from where the chew verb pointed,
+and pulling that thread took the whole door apart:
+
+```js
+door.position.x = r        // offset BEFORE bakeMeshes
+g.add(door)
+bakeMeshes(door)           // bakes each child's WORLD matrix into its geometry
+```
+
+`bakeMeshes` bakes the child's world matrix into the geometry, and the parent re-applies it
+when drawing — so the offset landed twice and the plate was drawn one door radius, 0.86 m,
+outside its cell. Then the frame's bake (`bakeMeshes(g)`) walked into the door group and
+absorbed the plate into the static batch, because nothing was marked `keep`: the group the
+engine rotates had no children, and `pivot.rotation.y = open * 1.85` had been rotating thin
+air since the level was built. The chew made a sound, bumped a score, and moved nothing.
+
+Fix is three lines in the right order — bake the node, move it onto its hinge, mark it
+`keep`, bake the parent — and one of the traps is nastier than it looks: `userData.keep`
+disables baking **of the node it sits on**, not just of the parent's bake. Put it on the
+door first and the plate stays seven draw calls instead of three, so the merge check is
+two-sided: 0 meshes means the frame ate the door, more than 4 means it never got merged.
+
+Measure geometry, not origins. My first swing at "did the door move" measured
+`plate.getWorldPosition`, which is the mesh's origin, which sits **on the hinge** and never
+moves however far the door swings. That check was green through a door that did not open.
+Bounding box, transformed into world space, eight corners, centre. Then it measured 0.35 m
+of swing and 0 m of off-centre, which is the answer I wanted.
+
+### `npm run heistmutate`: nine bugs, put back on purpose
+Every new check here got its bug re-introduced by an anchored swap and run through the real
+driver. Seven died. The two that survived were both reports about the harness, which is
+what surviving usually means:
+
+1. **`lock.visible = false` is not a mutation.** `reset()` re-hangs every bit of hardware on
+   a retry, so the flag was repaired before the driver moved a pixel. Take the lock out of
+   the cage group instead — that kills five checks and prints `kind: free, want: padlock,
+   hit: null, near: []`, which is "I don't see a lock" as data.
+2. **The origin measurement above.**
+
+Hunting #1 is also what found a real hole: `afford()` filtered on `mesh.visible`, the leaf
+flag. A mesh inside an invisible parent renders nowhere and still answers `true`, so
+hiding the padlock that way passed every affordance check in the file. `drawn()` walks the
+chain now — module scope, shared with `near()` — and got its own check, because no check on
+the play route could ever have seen it.
+
+While writing that down I edited `index.jsx` *while the mutation harness was running*. Its
+restore silently ate my edit and left `afford()` calling a helper that no longer existed. So
+the harness now hashes every file it touches at the start and screams if one differs at the
+end. A harness that lies about the tree is worse than no harness.
+
+### What this costs
+`heistplay` **81 → 107** assertions, all green · `heistcheck` unchanged at 303 ·
+`lint:heist` clean · level meshes **43 → 48** of a pinned 50 (padlock ×2, chain, gate
+padlock ×2 — none of it mergeable, because all of it has to move). That budget is now
+nearly spent, so E1 (facades) has to raise the pin on purpose, and the bin latch and the
+loot scuff from A1 wait for an `InstancedMesh` rather than quietly bust the gate.

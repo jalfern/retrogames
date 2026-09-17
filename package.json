@@ -14,6 +14,7 @@
     "lint:heist": "eslint src/games/RaccoonHeist src/components src/utils src/config src/main.jsx scripts",
     "heistcheck": "node scripts/heistcheck.mjs",
     "heistplay": "node scripts/heistplay.mjs",
+    "heistmutate": "node scripts/heistmutate.mjs",
     "preview": "vite preview",
     "shot": "node scripts/shot.mjs",
     "audcheck": "node scripts/audcheck.mjs",

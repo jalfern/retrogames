@@ -74,6 +74,14 @@ const cellName = (lvl, wx, wz) => {
     return CELL_NAME[at(lvl, cx, cy)] || '??'
 }
 
+/**
+ * "Is this actually drawn" is a question about the whole parent chain: a mesh inside an
+ * invisible group renders nowhere while answering `visible === true` itself. Every scene
+ * interrogation in this file goes through it — the first affordance check used the leaf
+ * flag and so survived the mutation that hid the padlock inside an invisible group.
+ */
+const drawn = (o) => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true }
+
 const RaccoonHeistGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
@@ -504,7 +512,7 @@ const RaccoonHeistGame = () => {
                 const out = []
                 const v = new THREE.Vector3()
                 scene.traverse((o) => {
-                    if (!o.isMesh || !o.visible || o.isInstancedMesh || o.isSprite) return
+                    if (!o.isMesh || !drawn(o) || o.isInstancedMesh || o.isSprite) return
                     o.getWorldPosition(v)
                     const d = Math.hypot(v.x - a.x, v.z - a.z)
                     if (d > 9) return
@@ -517,6 +525,39 @@ const RaccoonHeistGame = () => {
                     })
                 })
                 return out.sort((p, q) => p.d - q.d).slice(0, n)
+            },
+            /**
+             * Affordance interrogator: the verb the sim is offering right now, and
+             * whether there is a *body* in the world where that verb points. The pound
+             * asked for `CHEW ULTRA LOOSE` while drawing no lock at all (playtest: "I
+             * don't see a lock"), so this is what `heistplay` walks the route with.
+             *
+             * Distance is measured to each mesh's world bounding box rather than to its
+             * origin, because the level is deliberately merged into a handful of batches:
+             * a "can" is a few tris inside a 40-mesh behemoth whose origin is the middle
+             * of the map. For the two lock verbs the mesh must also be *the lock* (its
+             * material name), because cage bars are meshes too and none of them is
+             * something you can chew.
+             */
+            afford: (tol = 0.6) => {
+                if (!engine) return null
+                const a = engine.affordance()
+                if (!a || !a.at) return a ? { ...a, near: [], hit: null } : null
+                const p = new THREE.Vector3(a.at[0], a.at[1], a.at[2])
+                const bb = new THREE.Box3()
+                const found = []
+                scene.traverse((o) => {
+                    if (!o.isMesh || !drawn(o) || !o.geometry) return
+                    const nm = o.material?.name || ''
+                    if (a.want && !nm.includes(a.want)) return
+                    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
+                    bb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld)
+                    const d = bb.distanceToPoint(p)
+                    if (d > 2.5) return
+                    found.push({ d: +d.toFixed(2), mat: nm || '?', geo: o.geometry.type, instanced: !!o.isInstancedMesh })
+                })
+                found.sort((x, y) => x.d - y.d)
+                return { ...a, tol, near: found.slice(0, 5), hit: found.length ? found[0].d : null, ok: found.length > 0 && found[0].d <= tol }
             },
             /** Put the actor somewhere on purpose: interaction tests need positioning. */
             moveTo: (wx, wz) => {

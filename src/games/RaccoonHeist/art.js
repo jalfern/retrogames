@@ -1406,16 +1406,37 @@ export function makeGate(w = 2, h = 3) {
     // bakeMeshes re-parents the jambs into the root; put the sliding door back on top.
     g.add(door)
     g.userData.door = door
+    // Chain and padlock across the gateway: the verb "the cart is full" used to be
+    // answered by the door quietly rising. Now the chain snaps and drops (see
+    // `openGate` in engine.js) so the way out announces itself.
+    const chain = makeChain(7, 0.155)
+    chain.position.set(-w / 2 - 0.06, h * 0.62, 0.16)
+    g.add(chain)
+    const lock = makePadlock(1.15)
+    lock.position.set(-w / 2 - 0.06, h * 0.62 - 7 * 0.155 - 0.1, 0.16)
+    g.add(lock)
+    g.userData.chain = chain
+    g.userData.lock = lock
     return g
 }
 
 export function makeVaultDoor(r = 1.1) {
     const g = new THREE.Group()
     // A hinged assembly, not a spinning disc: the pivot sits at the hinge and the
-    // plate hangs off it at +x, so rotating the pivot swings the door open the way a
+    // plate hangs off it at +x, so rotating the pivot swings the open door the way a
     // 400 kg bank door does — from one edge, taking the frame with it.
+    //
+    // Two things about this assembly were wrong until the affordance check caught them,
+    // and both are `bakeMeshes` traps that a night screenshot cannot see:
+    //   * the plate used to be offset by `r` *before* baking. bakeMeshes bakes a child's
+    //     world matrix into its geometry and the parent then re-applies it on draw, so
+    //     the offset landed twice and the plate drew 0.86 m outside its cell;
+    //   * the door was not marked `keep`, so the frame's bake absorbed the plate into the
+    //     static batch and the group the engine rotates was empty. The door never swung.
+    //     (`keep` also disables baking *of* the node it is on, which is why it goes on
+    //     after `bakeMeshes(door)`, not before: without that order the plate is seven
+    //     draw calls instead of three.)
     const door = new THREE.Group()
-    door.position.x = r
     g.add(door)
     g.userData.door = door
     const steel = mat('vault', { map: makeTex('metal'), color: 0x6d7a86, roughness: 0.35, metalness: 0.9, envMapIntensity: 1.5 })
@@ -1440,9 +1461,63 @@ export function makeVaultDoor(r = 1.1) {
     lintel.position.set(0, r * 1.15, 0)
     g.add(lintel)
     bakeMeshes(door)
+    // Hang the plate on the hinge *after* baking, or the offset is applied twice. Then
+    // mark it `keep` so the frame bake below leaves the hinged bits alone.
+    door.position.x = r
+    door.userData.keep = true
     bakeMeshes(g)
     g.add(door)
     g.userData.door = door
+    return g
+}
+
+/**
+ * A padlock — an affordance with a body.
+ *
+ * The pound used to ask for `CHEW ULTRA LOOSE` while drawing bars, a roof, a floor and a
+ * sign, and no lock anywhere: the playtest report was literally "I don't see a lock", and
+ * it was right. The rule that came out of it is in the README — **every verb the sim
+ * offers has a mesh at the place the verb points at** — and `heistplay` now fails the
+ * build when it does not. Brass, faintly emissive, because a night map eats dark metals.
+ */
+export function makePadlock(s = 1) {
+    const g = new THREE.Group()
+    const brass = mat('padlock', {
+        color: 0xd8a53a, roughness: 0.3, metalness: 0.95, envMapIntensity: 1.7,
+        emissive: 0x6d4a12, emissiveIntensity: 0.5,
+    })
+    const body = new THREE.Mesh(box(0.2 * s, 0.17 * s, 0.085 * s), brass)
+    body.castShadow = true
+    g.add(body)
+    const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.07 * s, 0.022 * s, 5, 10, Math.PI), brass)
+    shackle.position.y = 0.085 * s
+    shackle.rotation.y = Math.PI / 2
+    shackle.castShadow = true
+    g.add(shackle)
+    const key = new THREE.Mesh(cyl(0.03 * s, 0.03 * s, 0.1 * s, 6), mat('padlockKey', { color: 0x241c12, roughness: 0.9 }))
+    key.rotation.x = Math.PI / 2
+    g.add(key)
+    // Brass becomes one draw call; the keyhole stays, because it is the bit that says
+    // "lock" at ten paces. Baked *before* `keep` is set: `keep` is what tells a later
+    // bakeMeshes() on the parent cage that this little assembly moves on its own.
+    bakeMeshes(g)
+    g.userData.keep = true
+    return g
+}
+
+/** A chain to hold the getaway gate shut, so "the cart is full" has a visible answer. */
+export function makeChain(links = 6, drop = 0.15) {
+    const g = new THREE.Group()
+    const iron = mat('chain', { color: 0x5c6772, roughness: 0.42, metalness: 0.92, envMapIntensity: 1.4 })
+    for (let i = 0; i < links; i++) {
+        const l = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.022, 5, 8), iron)
+        l.position.y = -i * drop
+        l.rotation.y = i % 2 ? Math.PI / 2 : 0
+        l.castShadow = true
+        g.add(l)
+    }
+    bakeMeshes(g)
+    g.userData.keep = true
     return g
 }
 
@@ -1475,8 +1550,17 @@ export function makeCage() {
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.34), new THREE.MeshStandardMaterial({ map: makeTex('poundSign'), transparent: true, roughness: 1 }))
     sign.position.set(0, 1.05, -0.63)
     g.add(sign)
+    // The lock hangs on the door face, low enough to read as "what you chew" and high
+    // enough not to be mud. `world.js` turns the whole cage to face the approach, so
+    // this is the side you walk up to.
+    const lock = makePadlock(1)
+    lock.position.set(0, 0.62, -0.68)
+    g.add(lock)
+    g.userData.padlock = lock
+    g.userData.lockAt = lock.position.clone()
     // Twenty bars, one draw call. The sign stays separate: it is transparent, it needs
-    // its own sorting, and it is the joke — jokes do not get merged into scenery.
+    // its own sorting, and it is the joke — jokes do not get merged into scenery. So
+    // does the padlock, which has to be able to shake and then fall off.
     bakeMeshes(g)
     return g
 }
