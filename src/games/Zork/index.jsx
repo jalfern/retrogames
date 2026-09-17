@@ -108,6 +108,11 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
             const pending = pendingRef.current
             if (pending) {
               pendingRef.current = null
+              // One sample for the actuator's own rhythm: how long a command→prompt
+              // round trip costs on THIS machine, right now. It is what bounds the
+              // next wait instead of a guessed constant.
+              promptMsRef.current.push(performance.now() - pending.at)
+              if (promptMsRef.current.length > 12) promptMsRef.current.shift()
               const reply = logRef.current.slice(pending.mark).join('')
               try {
                 // saw() FIRST: the brain's next sense() must never read a world
@@ -179,7 +184,7 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
     }
 
     setLines(prev => [...prev, { type: 'command', text: `> ${text}` }])
-    pendingRef.current = { cmd: text, mark: logRef.current.length }
+    pendingRef.current = { cmd: text, mark: logRef.current.length, at: performance.now() }
 
     const resolver = inputResolverRef.current
     if (resolver) {
@@ -203,26 +208,81 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
    * brain that acts before reading the reply is a brain walking into walls.
    * If the VM is mid-reply we wait for the prompt rather than dropping the
    * command on the floor.
+   *
+   * But "wait for the prompt" cannot mean *forever*. The first version polled
+   * `inputResolverRef` on a 60 ms chain with no bound at all, so a machine that
+   * never returned to the prompt parked the whole loop inside one `await` —
+   * `aiRunning()` still said true, `exchanges` never moved again, and every
+   * observer (the HUD, `zorkuicheck`, the person watching) saw an agent that was
+   * "still thinking" forever. That is the bug `zorkuicheck` hit under load.
+   *
+   * So the wait is bounded by the machine's own rhythm, not a guessed constant:
+   * the last few command→prompt latencies are measured, and the budget is
+   * `max(3 s, 8 × median)` — on a box taking 1 s a turn it is 8 s, on one taking
+   * 4 s a turn it is 32 s. Overrun, the turn is handed back empty, the loop sees
+   * a percept that has not changed, and the watchdog does what a watchdog is for:
+   * stop, with a reason anyone can read.
    */
-  const agentSend = useCallback((command) => new Promise((resolve) => {
-    const attempt = () => {
-      if (!loopRef.current?.running) return resolve('')      // stopped mid-wait
-      if (!inputResolverRef.current) { setTimeout(attempt, 60); return }
-      const earlier = replyWaiterRef.current
-      replyWaiterRef.current = (reply) => { if (earlier) earlier(reply); resolve(reply) }
-      sendCommand(command)
-    }
-    attempt()
-  }), [sendCommand])
-
   const systemLine = useCallback((text) => {
     setLines(prev => [...prev, { type: 'system', text }])
   }, [])
+
+  const promptMsRef = useRef([])
+  const inFlightRef = useRef(false)
+  const actStatRef = useRef({ timeouts: 0, waited: 0, worst: 0 })
+
+  const agentSend = useCallback((command) => new Promise((resolve) => {
+    const myLoop = loopRef.current
+    const t0 = performance.now()
+    let timer = null
+    const finish = (reply) => {
+      if (timer) { clearTimeout(timer); timer = null }
+      const dt = performance.now() - t0
+      actStatRef.current.waited = dt
+      if (dt > actStatRef.current.worst) actStatRef.current.worst = dt
+      resolve(reply)
+    }
+    const attempt = () => {
+      // THIS loop, still running. `loopRef.current` is replaced when a human takes
+      // the keyboard and PLAY is pressed again, and an attempt from the old loop
+      // must not fire a command into the new one's turn.
+      if (loopRef.current !== myLoop || !myLoop?.running) return finish('')
+      const lat = promptMsRef.current
+      const med = lat.length >= 3 ? lat.slice(-5).sort((a, b) => a - b)[Math.floor(Math.min(5, lat.length) / 2)] : 700
+      // Scaled to the machine's own rhythm, but CEILED: a median contaminated by a
+      // starved runner must not buy a five-minute wait. The point of the bound is
+      // that a wedge becomes a visible, recoverable event inside seconds.
+      const budget = Math.min(20000, Math.max(3000, med * 8))
+      if (performance.now() - t0 > budget) {
+        actStatRef.current.timeouts++
+        inFlightRef.current = false
+        systemLine(`[ai] the machine did not answer within ${Math.round(budget / 100) / 10} s — handing the turn back`)
+        return finish('')
+      }
+      // ONE command in flight. `sendCommand` with no pending prompt is a silent
+      // drop — it echoes the line and never resumes the machine — so a second act
+      // launched while one is still waiting does not just fail, it desynchronises
+      // the interpreter: `resume()` can arrive for an input event that was already
+      // consumed, and the machine then waits for a keystroke nobody will send.
+      if (!inputResolverRef.current || inFlightRef.current) { timer = setTimeout(attempt, 60); return }
+      inFlightRef.current = true
+      const earlier = replyWaiterRef.current
+      replyWaiterRef.current = (reply) => {
+        if (earlier) earlier(reply)
+        inFlightRef.current = false
+        finish(reply)
+      }
+      sendCommand(command)
+    }
+    attempt()
+  }), [sendCommand, systemLine])
+
 
   const stopAi = useCallback((reason = 'stopped') => {
     if (loopRef.current) loopRef.current.stop(reason)
     loopRef.current = null
     replyWaiterRef.current = null
+    inFlightRef.current = false
     setAiOn(false)
     setAiStatus({ running: false, reason, diary: [], stuck: 0, invalid: 0, successRate: null })
     return null
@@ -243,19 +303,22 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
     setAiOn(true)
     setAiStatus(null)
     setAiNote(`taking the keyboard — arm: ${arm}`)
-    loop.start()
-    ;(async () => {
-      while (loop.running) {
-        try { await loop.tick() } catch (err) { console.error('[ai tick]', err); loop.stop('loop error') ; break }
-        setAiStatus(loop.stats())
-      }
-      const st = loop.stats()
-      if (loopRef.current === loop) {
+    // ONE driver. `loop.start()` already arms its own timer chain, and this used
+    // to run a second chain here (`while (running) await tick()`), so two `tick()`s
+    // were in flight at once: two `agentSend`s, both looking for the prompt, one
+    // `resume()` arriving at a machine that was not asking. That is the wedge the
+    // CI run saw as "1 rooms" — the loop still said `running`, and nothing ever
+    // moved again. The loop's clock is the timer; this component only watches,
+    // through `onStatus`, which is also why the HUD updates on the beat now.
+    loop.onStatus = (st) => {
+      setAiStatus(st)
+      if (!st.running && loopRef.current === loop) {
+        loopRef.current = null
         setAiOn(false)
-        setAiStatus(st)
         systemLine(`[ai] stopped — ${st.reason || 'no move'}`)
       }
-    })()
+    }
+    loop.start()
     return null
   }, [agentSend, arm, paused, route, systemLine])
 
@@ -399,6 +462,12 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
         lastVerdict: sensorRef.current.lastVerdict,
         room: sensorRef.current.room,
       } : null),
+      // The actuator's own health: how long the last command→prompt round trip took
+      // on THIS machine, and how many turns it handed back rather than hanging. The
+      // difference between "the box is slow" and "the agent is stuck" is a number now.
+      aiActuator: () => ({ ...actStatRef.current, medianMs: promptMsRef.current.length
+        ? Math.round(promptMsRef.current.slice(-5).sort((a, b) => a - b)[Math.floor(Math.min(5, promptMsRef.current.length) / 2)])
+        : null }),
       aiDiary: () => (brainRef.current ? brainRef.current.diary || [] : []),
       aiCommits: () => (brainRef.current ? (brainRef.current.commits || []).slice(-14) : []),
     }

@@ -209,9 +209,14 @@ try {
   // 4 ─ the human wins. One real key, no DEV hook involved. If the loop had
   // already stopped on its own, the key would be pressing into an idle page and
   // the check would pass having tested nothing — so put it back to work first,
-  // with the same click a person would use, and say that we did.
-  const restarts = await page.evaluate(() => (window.__zorkTest.aiRunning() ? 0 : (window.__zorkTest.aiStart(), 1)))
-  if (restarts) await until(() => page.evaluate(() => window.__zorkTest.aiRunning()), 8000)
+  // with the same PLAY a person would press, and say that we did. Real input only:
+  // reviving through `aiStart()` could itself be the thing no visitor ever does.
+  let restarts = 0
+  if (!(await page.evaluate(() => window.__zorkTest.aiRunning()))) {
+    restarts = 1
+    await clickPlay()
+    await until(() => page.evaluate(() => window.__zorkTest.aiRunning()), 15000)
+  }
   await page.keyboard.press('a')
   const handed = await until(() => page.evaluate(() => !window.__zorkTest.aiRunning()), 5000)
   // The field only becomes usable once the machine is ALSO done replying, so poll
