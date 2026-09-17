@@ -348,6 +348,18 @@ The mutant harness also had a live bug (`survived` after a rename — every run 
 summary and the summary was the point), and its two survivors were both suite holes. Nine for
 nine die now.
 
+**And the runner itself was the next layer.** The first CI run *after* this branch said
+`sim clock 0.14x real time at 1 fps`: GitHub's runners rasterise in software, and at 1100x700
+with MSAA and shadow maps the game draws one frame a second there. 106/109 was the best that
+was ever going to be available — a 1.5 s chew yields two or three samples of a shaking lock,
+and a camera that slides over ten frames cannot settle in one. So `index.jsx` grew a
+documented `?lite=1` path (no MSAA, no shadow maps, pixel ratio 1 — a real weak-phone option,
+not a test-only back door), `heistplay` asks for it plus a 640x426 window when `CI` is set,
+and it prints which pipeline it drove. Locally nothing changes; on a 64x-throttled laptop the
+lite path holds **1.01x real time at 7 fps**. The rattle check also stopped demanding a
+*reversal* when the frame rate cannot show one, and a self-inflicted bug came out with it
+(the driver reset its own sample list while re-hunting for a torch, then reported `det=0`).
+
 **Still red, honestly:** at ~17 fps the shoulder rig buries itself one frame in five in the
 north-west corner. I fixed the retreat loop's floor (it tested `allowed > 0.55` *before*
 subtracting 0.35, so the last step landed at 0.35 m — a screen full of fur, and the check

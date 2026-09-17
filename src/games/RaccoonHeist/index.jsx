@@ -68,6 +68,23 @@ const isTouch = () => matchMedia('(hover: none) and (pointer: coarse)').matches 
 // harness exercises the touch layout on a desktop runner (same trick as ?sensor=eye
 // in the AI spine: an escape hatch on the URL, never a rebuild).
 const wantPad = () => isTouch() || new URLSearchParams(location.search).has('pad')
+/**
+ * `?lite=1` — the documented cheap-pipeline path. It drops the three things that cost
+ * *fill*: MSAA, shadow maps (and the depth pass that goes with them), and any device pixel
+ * ratio above 1. It removes nothing from the scene graph, so every "is the thing actually
+ * drawn" check means the same thing with it on as with it off.
+ *
+ * Two reasons it exists. One is a phone that cannot afford the full pipeline — the same
+ * reason it exists in every shipping game. The other is the CI runner, which rasterises in
+ * software and measured **1 fps** at 1100x700 with shadows on: below roughly 4 fps the fixed
+ * timestep cannot keep real time even with a generous catch-up cap, and the whole play suite
+ * starts describing the machine instead of the game (see `scripts/heistplay.mjs`).
+ *
+ * Deliberately **explicit**: no `hardwareConcurrency` auto-detection. A check whose scene
+ * quietly depends on whoever's laptop CI landed on is a check that changes shape in someone
+ * else's hands, and `heistplay` prints which pipeline it drove.
+ */
+const liteMode = () => new URLSearchParams(location.search).has('lite')
 
 // Human-readable cell type for the harness probe: "a raccoon stuck in a wall" should
 // print as "WALL", not "3".
@@ -122,9 +139,10 @@ const RaccoonHeistGame = () => {
         wrap.appendChild(canvas)
 
         const touch = isTouch()
+        const LITE = liteMode()
         const renderer = new THREE.WebGLRenderer({
             canvas,
-            antialias: !touch,
+            antialias: !touch && !LITE,
             alpha: false,
             powerPreference: 'high-performance',
             // Only dev needs readback (screenshot checks). Paying for
@@ -134,9 +152,9 @@ const RaccoonHeistGame = () => {
         renderer.outputColorSpace = THREE.SRGBColorSpace
         renderer.toneMapping = THREE.ACESFilmicToneMapping
         renderer.toneMappingExposure = 1.34
-        renderer.shadowMap.enabled = true
+        renderer.shadowMap.enabled = !LITE
         renderer.shadowMap.type = THREE.PCFSoftShadowMap
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 1.55 : 2))
+        renderer.setPixelRatio(LITE ? 1 : Math.min(window.devicePixelRatio || 1, touch ? 1.55 : 2))
 
         const scene = new THREE.Scene()
         scene.background = new THREE.Color(PAL.nightDeep)

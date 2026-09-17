@@ -174,6 +174,7 @@ machine it would just be two discs covering the level.
 npm run heistcheck         # Node, no browser, ~1 s: level audit + stealth model + --mutate
 npm run heistplay          # Chrome plays job 1 end to end -- 110 assertions (needs `npm run dev`)
 npm run heistplay -- --throttle 32   # the same suite on a 32x slower CPU (~17 fps)
+HEIST_LITE=1 npm run heistplay       # drive the cheap pipeline (?lite=1) — what CI drives
 npm run heistclock         # does the world keep real time? one line per CPU throttle
 npm run heistmutate        # revert each fix in turn and prove heistplay notices (~20 min)
 npm run heistmutate -- --dry  # just check the mutant anchors still exist
@@ -232,6 +233,17 @@ CI, green locally, and every one of them a lie about the sim. So:
 - **`heistplay --throttle N`** runs the whole suite on a deliberately slow CPU. At 32x
   (≈17 fps) it is green except one or two frames in the north-west corner's camera section,
   which is the honest remaining gap written up below.
+
+Then there is the machine itself. The CI runner **rasterises in software**: at 1100x700 with
+MSAA and shadow maps it drew **1 fps** (`sim clock 0.14x real time at 1 fps` in the job log),
+which is under the floor the whole suite needs — the camera never settles, a 1.5 s chew yields
+three lock samples, and every check starts describing the runner. So `index.jsx` has a
+documented `?lite=1` path: no MSAA, no shadow maps, pixel ratio 1. It removes three *fill*
+costs and nothing from the scene graph, so "the cast is a visible mesh" and "every verb has a
+body" mean exactly as much there as here. `heistplay` asks for it (and a 640x426 window) when
+`CI` is set, and prints which pipeline it drove, because a suite whose scene depends on
+wherever CI happened to land is a suite that changes shape in someone else's hands. Measured
+after the change: 1.01x real time at 7 fps on a 64x-throttled laptop.
 
 A driver is also a *player*, and a bad one lies. This driver deliberately stands in a torch
 beam until spotted and deliberately walks into a guard — which, at 17 fps, with every poll
