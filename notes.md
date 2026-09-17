@@ -146,3 +146,66 @@ complaints are the pass condition.
 `L` used to mean both "lamppost" and "laser emitter" in the marker alphabet. The audit
 cheerfully reported job 1 as having four lasers. Emitters are `Z` now. Two meanings in
 one alphabet is how a lamp becomes a death ray.
+### Commit 3 — the game is playable: engine, cast, audio, HUD, thumbsticks, and a harness that steals the loot itself
+
+`engine.js` (the simulation), `world.js` (grid → scene), `audio.js` (synthesized score),
+a rebuilt `index.jsx` (input rig + HUD + job flow), and **`npm run heistplay`**, which
+boots Chrome, starts job 1 and *plays it*: walks with a thumbstick value, takes a sack,
+carries it to the cart, chews a vault lock, stands in a torch beam until it is spotted,
+gets bagged, chews a friend out of the pound, loads every pile, raises the gate and rides
+out the gateway. **44/44 green**, render cost ~2 ms.
+
+Eight real bugs, every one invisible in a screenshot:
+
+- **Suspicion was one shared counter per raccoon, so a second guard made you harder to
+  see.** Every watcher that *couldn't* see you subtracted from the one that could:
+  walking past a guard on his way to another guard made you invisible, and the level got
+  easier as it got harder. `det` is now **per-watcher, per-prey**; the HUD publishes the
+  worst. Caught because the driver stood in a beam at 1.5 m, `why()` reported the guard at
+  `rate 2.275/s`, and the meter read zero.
+- **`audio.step` was clobbered by `audio.step = 0`.** The music sequencer's bar counter
+  and the footstep SFX method had the same name; the number won, and every footstep threw.
+- **The action button showed the *previous* interaction.** `hint` was only computed inside
+  `act()`, so the label read LOAD THE CART while you stood at a vault with empty hands.
+  `focus()` now runs every tick: the button label is live, and it names the verb —
+  TAKE / LOAD THE CART / CHEW THE LOCK / TINKER THE LOCK / CHEW BANDIT LOOSE / TIP THE CAN.
+- **The camera could sit inside a wall.** Occlusion now casts through the *grid* with
+  `castWorld` — the same sampler the guards' eyes use — and when a wall does cut in, the
+  rig **climbs** instead of merely shortening. Two sources of truth about where a wall is,
+  is how a drawn cone and a deadly cone start disagreeing.
+- **Decor swallowed the player.** Random cartons landed on walkable cells; one landed on
+  the spawn and the first minute of the game was a close-up of cardboard. Props now go
+  against a wall and never within 3 cells of a marker or a patrol point.
+- **138 draw calls.** Twenty dumpsters × 28 meshes each. Static junk is now *baked*:
+  every prop is merged into one mesh per material at build time (`stamp`/`flushBuckets`),
+  so the yard's entire clutter costs 3–4 calls. Anything that moves stays separate.
+- **A rescue took 4.4 s with Scout** and the harness held the button for 3.2. Two of your
+  crew are in a cage; that is desperate, not a minigame. Padlock is 1.5 s at 0.85×grab
+  (Tinker ~1.2 s, Scout ~2.4 s) and a new check pins the pacing: *a rescue is desperate,
+  not a chore* — it fails if the slowest padlock exceeds 4 s.
+- **Objective lied.** "FIND THE SHINY" while carrying a sack. Now derived: piles behind
+  the sealed vault are computed with the same `reachFrom(block:['X','V'])` flood fill the
+  map audit uses, so the HUD says LOAD THE CART for what is reachable and CHEW THE VAULT
+  LOCK only when the only thing left is behind the door. If a vault seals nothing, the
+  engine `console.warn`s — a lock that hides nothing is a bug, not a level feature.
+
+Two harness lessons, both about the *test*:
+
+- `if (!Math.max(...) > 0.15)` compiles, and is never true: `(!NaN) > 0.15`. The check
+  that was supposed to print the detection arithmetic printed nothing for two runs.
+- A check that sleeps 260 ms and then reads the button label passes on an idle machine
+  and fails on a loaded one. It now polls for up to 1.5 s, which is not a weaker test —
+  "the affordance must appear within 1.5 s" is the actual requirement, stated as itself.
+
+`why()` is the diagnostic this whole stage needed: for the raccoon you control, every
+nearby watcher's `los / align / cover / light / rate / det`. "Why can't they see me" is
+the one question a stealth game must be able to answer, and now the machine can too.
+
+Controls: WASD/arrows, Shift dash, C crouch, **E tap to take / hold to work a lock**,
+F lure, Q crew, drag to look, wheel to zoom. On touch: a re-anchoring floating stick (the
+stick appears where your thumb lands, because a fixed stick on a phone is always an inch
+from your thumb), CROUCH, LURE (with a count), CREW, and one big action button whose ring
+lights up when there is something to do. The shared `<VirtualControls />` is deliberately
+*not* used here: an analog thumb position is not a discrete key. Arrow/Space are still
+handled, so the pad-shaped harness still works. The touch pad is gated behind
+`isTouch() || ?pad=1` — a thumbstick on a desktop is two discs covering the game.

@@ -199,6 +199,49 @@ function buildTex(key, a) {
             })
             return wrap(c, { rx: a[0] || 1, ry: a[1] || 1 })
         }
+        // The sack's peso stamp — readable at gameplay distance, zero asset cost.
+        case 'dollar': {
+            const S = 64, c = canvasOf(S, S)
+            const ctx = c.getContext('2d')
+            ctx.clearRect(0, 0, S, S)
+            ctx.globalAlpha = 0.85
+            ctx.fillStyle = '#3f5a2c'
+            ctx.font = 'bold 44px Georgia, serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+            ctx.fillText('$', S / 2, S / 2 + 2)
+            ctx.globalAlpha = 0.4
+            ctx.strokeStyle = '#2d4020'; ctx.lineWidth = 3
+            ctx.strokeRect(10, 10, S - 20, S - 20)
+            return wrap(c)
+        }
+        // The painting inside the frame: a moonscape, because raccoon art is specific.
+        case 'painting': {
+            const S = 128, c = canvasOf(S, S)
+            paint(c, (x, y, u, v) => {
+                const sky = mixC(0x1d3550, 0x5c7fa0, Math.pow(1 - v, 1.4))
+                const hills = v > 0.62 ? mixC(0x2b3a2c, 0x16231c, fbm(u * 7, v * 4, 3, 3)) : sky
+                const moon = Math.hypot(u - 0.7, v - 0.24) < 0.09 ? [235, 245, 250] : null
+                return moon || hills
+            })
+            const ctx = c.getContext('2d')
+            ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 6
+            ctx.strokeRect(0, 0, S, S)
+            return wrap(c)
+        }
+        // The cage sign. Small, but it is the joke that makes being caught funny
+        // instead of punishing.
+        case 'poundSign': {
+            const S = 128, W = 256, c = canvasOf(W, 80)
+            const ctx = c.getContext('2d')
+            ctx.fillStyle = '#c8b98a'; ctx.fillRect(0, 0, W, 80)
+            ctx.strokeStyle = '#4a3f28'; ctx.lineWidth = 5; ctx.strokeRect(5, 5, W - 10, 70)
+            ctx.fillStyle = '#2a2418'
+            ctx.font = 'bold 26px Helvetica, Arial, sans-serif'; ctx.textAlign = 'center'
+            ctx.fillText('MUNICIPAL POUND', W / 2, 34)
+            ctx.font = 'bold 15px Helvetica, Arial, sans-serif'
+            ctx.fillText('RACCOONS: HOLD FOR OWNER', W / 2, 60)
+            void S
+            return wrap(c)
+        }
         // Soft wet patch: a radial fade, so a puddle is a stain rather than a polygon.
         case 'puddle': {
             const S = 64, c = canvasOf(S, S)
@@ -1059,4 +1102,425 @@ export function disposables(root) {
     const out = []
     root.traverse(o => { if (o.geometry) out.push(o.geometry) })
     return out
+}
+
+// ------------------------------------------------------------------ the cast ------
+/**
+ * Everyone who is not a raccoon. Same philosophy as the raccoon: a transform
+ * hierarchy plus a sine, not a skeleton. The important silhouette pieces are the
+ * shoulders (so the torch arm reads) and the hat brim (so a guard at 30 m is still
+ * a guard and not a blob).
+ */
+export function makeWalker(kind = 'guard') {
+    const g = new THREE.Group()
+    const uniform = kind === 'cop' ? 0x1b2a3d : kind === 'cop2' ? 0x2a1b2d : 0x27384d
+    const skin = kind === 'dog' || kind === 'cat' ? PAL.fur : 0xc9977a
+    const clothM = mat('cloth' + kind, { color: uniform, roughness: 0.95 })
+    const skinM = mat('skin' + kind, { color: skin, roughness: 1 })
+    const hip = new THREE.Group()
+    hip.position.y = 0.02
+    g.add(hip)
+
+    if (kind === 'dog' || kind === 'cat') {
+        const col = kind === 'cat' ? PAL.cat : 0x4a3a2c
+        const m = mat('animal' + kind, { color: col, roughness: 1 })
+        const body = new THREE.Mesh(box(0.34, 0.3, kind === 'cat' ? 0.52 : 0.62), m)
+        body.position.y = 0.42; body.castShadow = true
+        hip.add(body)
+        const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 1), m)
+        head.position.set(0, 0.56, kind === 'cat' ? 0.3 : 0.34); head.castShadow = true
+        hip.add(head)
+        const snout = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.18, 6), m)
+        snout.position.set(0, 0.5, 0.5); snout.rotation.x = Math.PI / 2
+        hip.add(snout)
+        for (const s of [-1, 1]) {
+            const ear = new THREE.Mesh(new THREE.ConeGeometry(kind === 'cat' ? 0.07 : 0.09, kind === 'cat' ? 0.16 : 0.13, 4), m)
+            ear.position.set(s * 0.1, 0.71, 0.26); ear.rotation.z = s * (kind === 'cat' ? 0.25 : 0.5)
+            hip.add(ear)
+        }
+        const legs = []
+        for (const [x, z] of [[-0.12, 0.18], [0.12, 0.18], [-0.12, -0.2], [0.12, -0.2]]) {
+            const l = new THREE.Mesh(cyl(0.05, 0.04, 0.3, 5), m)
+            l.position.set(x, 0.15, z); l.castShadow = true
+            hip.add(l); legs.push(l)
+        }
+        const tail = new THREE.Mesh(cyl(0.035, 0.02, 0.34, 5), m)
+        tail.position.set(0, 0.55, kind === 'cat' ? -0.32 : -0.36)
+        tail.rotation.x = kind === 'cat' ? -0.9 : -1.3
+        hip.add(tail)
+        const eyeM = new THREE.MeshStandardMaterial({ color: 0x0a0c10, roughness: 0.1, emissive: kind === 'cat' ? 0x8ef0a0 : 0xffb060, emissiveIntensity: 0.9 })
+        for (const s of [-1, 1]) {
+            const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), eyeM)
+            e.position.set(s * 0.07, 0.6, 0.44)
+            hip.add(e)
+        }
+        g.userData.anim = { hip, legs, tail, head, eyeM, kind }
+        return g
+    }
+
+    // torso: a tapered torso with a hi-vis vest, so a guard catches the lamp light
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.28, 0.72, 7), clothM)
+    torso.position.y = 0.98; torso.castShadow = true
+    hip.add(torso)
+    if (kind !== 'sec') {
+        const vest = new THREE.Mesh(new THREE.CylinderGeometry(0.245, 0.29, 0.36, 7), mat('hivis' + kind, {
+            color: kind === 'cop' ? 0x2b3f5c : PAL.hivis, roughness: 0.7,
+            emissive: kind === 'cop' ? 0x11304d : 0x3a4200, emissiveIntensity: 0.55,
+        }))
+        vest.position.y = 1.02
+        hip.add(vest)
+    }
+    const neck = new THREE.Mesh(cyl(0.07, 0.07, 0.1, 6), skinM); neck.position.y = 1.36; hip.add(neck)
+    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 1), skinM)
+    head.position.y = 1.5; head.castShadow = true
+    hip.add(head)
+    // hat brim: the far-distance read of "authority" is a wide flat disc
+    const brim = new THREE.Mesh(cyl(0.23, 0.23, 0.03, 10), mat('hat' + kind, { color: 0x141d28, roughness: 0.8 }))
+    brim.position.y = 1.6; hip.add(brim)
+    const crown = new THREE.Mesh(cyl(0.15, 0.16, 0.14, 8), mat('hat2' + kind, { color: 0x1a2430, roughness: 0.8 }))
+    crown.position.y = 1.68; hip.add(crown)
+    if (kind === 'cop' || kind === 'cop2') {
+        const bar = new THREE.Mesh(box(0.22, 0.07, 0.1), mat('siren', { color: 0x33060a, emissive: PAL.red, emissiveIntensity: 2, roughness: 1 }))
+        bar.position.set(0, 1.74, 0)
+        hip.add(bar)
+        g.userData.siren = bar
+    }
+    const legs = []
+    for (const s of [-1, 1]) {
+        const l = new THREE.Mesh(cyl(0.075, 0.06, 0.64, 6), mat('trousers' + kind, { color: 0x1a222c, roughness: 1 }))
+        l.position.set(s * 0.11, 0.32, 0); l.castShadow = true
+        hip.add(l); legs.push(l)
+        const shoe = new THREE.Mesh(box(0.13, 0.08, 0.24), mat('shoe', { color: 0x0e1114, roughness: 0.6 }))
+        shoe.position.set(s * 0.11, 0.04, 0.04)
+        hip.add(shoe)
+        legs.push(shoe)
+    }
+    // the torch arm is the one that matters: it is where the light comes from
+    const armR = new THREE.Group(); armR.position.set(0.26, 1.24, 0); hip.add(armR)
+    const armL = new THREE.Group(); armL.position.set(-0.26, 1.24, 0); hip.add(armL)
+    for (const a of [armR, armL]) {
+        const upper = new THREE.Mesh(cyl(0.06, 0.05, 0.42, 6), clothM)
+        upper.position.y = -0.21; upper.castShadow = true
+        a.add(upper)
+        const hand = new THREE.Mesh(new THREE.IcosahedronGeometry(0.06, 0), skinM)
+        hand.position.y = -0.44
+        a.add(hand)
+    }
+    const torch = new THREE.Mesh(cyl(0.05, 0.045, 0.18, 6), mat('torch', { color: 0x14181c, roughness: 0.5, metalness: 0.4 }))
+    torch.position.set(0, -0.5, 0.06); torch.rotation.x = 1.4
+    armR.add(torch)
+    const lens = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), mat('lens', { color: 0x201c10, emissive: 0xffe6b0, emissiveIntensity: 4, roughness: 1 }))
+    lens.position.set(0, -0.56, 0.15)
+    armR.add(lens)
+    g.userData.anim = { hip, legs: legs.filter((_, i) => i % 2 === 0), armR, armL, head, torch, lens, kind }
+    return g
+}
+
+/** Walk cycle for the cast. Two sines and a lean; the torch arm leads. */
+export function animWalker(g, dt, speed, opts = {}) {
+    const a = g.userData.anim
+    if (!a) return
+    a.t = (a.t || 0) + dt
+    const v = speed || 0
+    const f = 4 + v * 2
+    const ph = a.t * f
+    const amp = Math.min(1, v / 2.2)
+    if (a.kind === 'dog' || a.kind === 'cat') {
+        for (let i = 0; i < a.legs.length; i++) a.legs[i].rotation.x = Math.sin(ph + (i % 2) * Math.PI + ((i / 2) | 0) * Math.PI) * 0.6 * amp
+        a.hip.position.y = 0.02 + Math.abs(Math.sin(ph)) * 0.03 * amp
+        a.tail.rotation.y = Math.sin(a.t * (a.kind === 'cat' ? 2.6 : 6)) * (a.kind === 'cat' ? 0.5 : 0.35)
+        a.eyeM.emissiveIntensity = opts.alert ? 2.2 : 0.9
+        return
+    }
+    for (let i = 0; i < a.legs.length; i++) {
+        const p = Math.sin(ph + (i % 2) * Math.PI)
+        a.legs[i].rotation.x = p * 0.55 * amp
+    }
+    a.hip.position.y = 0.02 + Math.abs(Math.sin(ph)) * 0.025 * amp
+    a.hip.rotation.z = Math.sin(ph) * 0.04 * amp
+    a.armL.rotation.x = Math.sin(ph + Math.PI) * 0.5 * amp - 0.05
+    a.armR.rotation.x = opts.alert ? -0.35 : Math.sin(ph) * 0.45 * amp - 0.15
+    a.head.rotation.y = Math.sin(a.t * (opts.alert ? 3.4 : 0.7)) * (opts.alert ? 0.5 : 0.18)
+    if (g.userData.siren) {
+        const blink = Math.sin(a.t * 12) > 0
+        g.userData.siren.material.emissive.setHex(blink ? 0xff3b30 : 0x2f6bff)
+    }
+}
+
+// --------------------------------------------------------------- loot & set -----
+const LOOT_VALUE = { $: 120, '%': 260, '&': 400, '*': 520 }
+export const lootValue = (kind) => LOOT_VALUE[kind] ?? 100
+export const lootLabel = (kind) => ({ $: 'a sack of coin', '%': 'an oil painting', '&': 'the moonstone', '*': 'the donation urn' }[kind] || 'loot')
+
+/** One prop per kind of shiny, because "TAKE THE LOOT" is not a reason to be greedy. */
+export function makeLoot(kind) {
+    const g = new THREE.Group()
+    if (kind === '$') {
+        const sack = new THREE.Mesh(new THREE.SphereGeometry(0.26, 9, 7), mat('sack2', { color: 0xbfa471, roughness: 1 }))
+        sack.scale.set(1, 0.85, 1); sack.position.y = 0.22; sack.castShadow = true
+        g.add(sack)
+        const tie = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.035, 5, 8), mat('tie', { color: 0x6b4a30, roughness: 1 }))
+        tie.position.y = 0.44; tie.rotation.x = Math.PI / 2
+        g.add(tie)
+        const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3), new THREE.MeshStandardMaterial({ map: makeTex('dollar'), transparent: true, roughness: 1 }))
+        mark.position.set(0, 0.24, 0.235)
+        g.add(mark)
+    } else if (kind === '%') {
+        const frame = new THREE.Mesh(box(0.66, 0.5, 0.07), mat('gilt', { color: 0xa8802f, roughness: 0.35, metalness: 0.8, envMapIntensity: 1.4 }))
+        frame.position.y = 0.55; frame.castShadow = true
+        g.add(frame)
+        const canvasArt = new THREE.Mesh(new THREE.PlaneGeometry(0.54, 0.38), new THREE.MeshStandardMaterial({ map: makeTex('painting'), roughness: 1 }))
+        canvasArt.position.set(0, 0.55, 0.045)
+        g.add(canvasArt)
+    } else if (kind === '&') {
+        const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), new THREE.MeshStandardMaterial({
+            color: 0x9fe8ff, emissive: 0x2fa8d8, emissiveIntensity: 1.1, roughness: 0.05, metalness: 0.3, flatShading: true, envMapIntensity: 2,
+        }))
+        gem.position.y = 0.34; gem.castShadow = true
+        g.add(gem)
+        const base = new THREE.Mesh(cyl(0.14, 0.18, 0.1, 8), mat('base2', { color: 0x2c3540, roughness: 0.5, metalness: 0.6 }))
+        base.position.y = 0.05
+        g.add(base)
+        g.userData.gem = gem
+    } else {
+        // urn: LatheGeometry is a free pottery wheel
+        const pts = []
+        for (let i = 0; i <= 8; i++) {
+            const t = i / 8
+            pts.push(new THREE.Vector2(0.1 + Math.sin(t * Math.PI) * 0.24, t * 0.62))
+        }
+        const urn = new THREE.Mesh(new THREE.LatheGeometry(pts, 12), mat('urn', { color: 0x8c6a4a, roughness: 0.45, metalness: 0.25, envMapIntensity: 1.1 }))
+        urn.castShadow = true
+        g.add(urn)
+        const lip = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.03, 5, 10), mat('lipl', { color: 0xb08a5c, roughness: 0.4, metalness: 0.4 }))
+        lip.position.y = 0.62; lip.rotation.x = Math.PI / 2
+        g.add(lip)
+    }
+    g.userData.kind = kind
+    return g
+}
+
+/** The getaway: a hardware cart with a blanket in it. Delivered loot piles up inside. */
+export function makeCart() {
+    const g = new THREE.Group()
+    const wire = mat('cartWire', { color: 0x8f9aa4, roughness: 0.4, metalness: 0.8, envMapIntensity: 1.1 })
+    const basket = new THREE.Mesh(box(1.15, 0.6, 0.8), new THREE.MeshStandardMaterial({ map: makeTex('chainlink', 4, 2), transparent: true, alphaTest: 0.3, color: 0xa7b4bf, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide }))
+    basket.position.y = 0.62; basket.castShadow = true
+    g.add(basket)
+    const blanket = new THREE.Mesh(box(1.05, 0.1, 0.7), mat('blanket', { color: 0x8c3f38, roughness: 1 }))
+    blanket.position.y = 0.42
+    g.add(blanket)
+    for (const [x, z] of [[-0.44, 0.3], [0.44, 0.3], [-0.44, -0.3], [0.44, -0.3]]) {
+        const w = new THREE.Mesh(cyl(0.13, 0.13, 0.08, 8), mat('caster', { color: 0x171a1e, roughness: 0.9 }))
+        w.rotation.z = Math.PI / 2; w.position.set(x, 0.14, z)
+        g.add(w)
+    }
+    const bar = new THREE.Mesh(cyl(0.03, 0.03, 1.1, 6), wire)
+    bar.rotation.z = Math.PI / 2; bar.position.set(0, 1.0, -0.44)
+    g.add(bar)
+    for (const s of [-1, 1]) {
+        const post = new THREE.Mesh(cyl(0.03, 0.03, 0.4, 6), wire)
+        post.position.set(s * 0.5, 0.86, -0.42); post.rotation.x = 0.3
+        g.add(post)
+    }
+    g.userData.pile = new THREE.Group()
+    g.add(g.userData.pile)
+    return g
+}
+
+/** Rolling gate over the escape. Slides up when the job is done. */
+export function makeGate(w = 2, h = 3) {
+    const g = new THREE.Group()
+    const door = new THREE.Group()
+    const skin = mat('gate', { map: makeTex('metal'), color: 0x5b6b76, roughness: 0.5, metalness: 0.75, envMapIntensity: 1.1 })
+    const plate = new THREE.Mesh(box(w, h, 0.16), skin)
+    plate.position.y = h / 2; plate.castShadow = true
+    door.add(plate)
+    for (let i = 1; i < 6; i++) {
+        const slat = new THREE.Mesh(box(w * 1.01, 0.06, 0.2), mat('slat', { color: 0x37444d, roughness: 0.5, metalness: 0.7 }))
+        slat.position.y = (h / 6) * i
+        door.add(slat)
+    }
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.7, 0.5), new THREE.MeshStandardMaterial({ map: makeTex('stencil'), transparent: true, roughness: 1 }))
+    sign.position.set(0, h * 0.62, 0.1)
+    door.add(sign)
+    g.add(door)
+    const jamb = mat('jamb', { color: 0x222b33, roughness: 0.8, metalness: 0.4 })
+    for (const s of [-1, 1]) {
+        const j = new THREE.Mesh(box(0.22, h + 0.3, 0.3), jamb)
+        j.position.set(s * (w / 2 + 0.1), h / 2, 0); j.castShadow = true
+        g.add(j)
+    }
+    g.userData.door = door
+    return g
+}
+
+export function makeVaultDoor(r = 1.1) {
+    const g = new THREE.Group()
+    // A hinged assembly, not a spinning disc: the pivot sits at the hinge and the
+    // plate hangs off it at +x, so rotating the pivot swings the door open the way a
+    // 400 kg bank door does — from one edge, taking the frame with it.
+    const door = new THREE.Group()
+    door.position.x = r
+    g.add(door)
+    g.userData.door = door
+    const steel = mat('vault', { map: makeTex('metal'), color: 0x6d7a86, roughness: 0.35, metalness: 0.9, envMapIntensity: 1.5 })
+    const disc = new THREE.Mesh(cyl(r, r, 0.26, 18), steel)
+    disc.rotation.x = Math.PI / 2
+    disc.castShadow = true
+    door.add(disc)
+    for (let i = 0; i < 4; i++) {
+        const spoke = new THREE.Mesh(box(0.11, r * 1.7, 0.1), steel)
+        spoke.rotation.z = (i * Math.PI) / 4
+        spoke.position.z = 0.16
+        door.add(spoke)
+    }
+    const dial = new THREE.Mesh(cyl(0.2, 0.2, 0.14, 12), mat('dial', { color: 0xd8b24a, roughness: 0.3, metalness: 0.9, envMapIntensity: 1.6 }))
+    dial.rotation.x = Math.PI / 2; dial.position.z = 0.22
+    door.add(dial)
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 0.86, 0.06, 6, 20), mat('vaultRing', { color: 0x39454f, roughness: 0.4, metalness: 0.9 }))
+    ring.position.z = 0.1
+    door.add(ring)
+    const jamb = mat('vaultJamb', { color: 0x1b222a, roughness: 0.8, metalness: 0.4 })
+    const lintel = new THREE.Mesh(box(r * 2.5, 0.28, 0.42), jamb)
+    lintel.position.set(0, r * 1.15, 0)
+    g.add(lintel)
+    return g
+}
+
+/** The pound. Where a caught raccoon waits until someone with paws comes for them. */
+export function makeCage() {
+    const g = new THREE.Group()
+    const bar = mat('bar', { color: 0x8a96a2, roughness: 0.4, metalness: 0.85, envMapIntensity: 1.2 })
+    const floor = new THREE.Mesh(box(1.5, 0.1, 1.2), mat('cageFloor', { map: makeTex('metal'), color: 0x4b565f, roughness: 0.6, metalness: 0.6 }))
+    floor.position.y = 0.05; floor.receiveShadow = true
+    g.add(floor)
+    for (let i = 0; i <= 6; i++) {
+        const b = new THREE.Mesh(cyl(0.035, 0.035, 1.3, 5), bar)
+        b.position.set(-0.7 + i * 0.233, 0.7, -0.6)
+        b.castShadow = true
+        g.add(b)
+        const b2 = new THREE.Mesh(cyl(0.035, 0.035, 1.3, 5), bar)
+        b2.position.set(-0.7 + i * 0.233, 0.7, 0.6)
+        g.add(b2)
+    }
+    for (const s of [-1, 1]) {
+        const v = new THREE.Mesh(cyl(0.035, 0.035, 1.3, 5), bar)
+        v.position.set(s * 0.72, 0.7, 0)
+        g.add(v)
+    }
+    for (const y of [1.35]) {
+        const t = new THREE.Mesh(box(1.55, 0.09, 1.3), bar)
+        t.position.y = y; t.castShadow = true
+        g.add(t)
+    }
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.34), new THREE.MeshStandardMaterial({ map: makeTex('poundSign'), transparent: true, roughness: 1 }))
+    sign.position.set(0, 1.05, -0.63)
+    g.add(sign)
+    return g
+}
+
+/** Potted palm: the museum's version of a hedge. */
+export function makePlanter() {
+    const g = new THREE.Group()
+    const pot = new THREE.Mesh(cyl(0.3, 0.22, 0.4, 8), mat('pot', { color: 0x7a5f45, roughness: 0.9 }))
+    pot.position.y = 0.2; pot.castShadow = true
+    g.add(pot)
+    const leaf = mat('palm', { color: PAL.leafDark, roughness: 1, side: THREE.DoubleSide })
+    for (let i = 0; i < 7; i++) {
+        const l = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.9, 4), leaf)
+        const a = (i / 7) * Math.PI * 2
+        l.position.set(Math.cos(a) * 0.16, 0.75, Math.sin(a) * 0.16)
+        l.rotation.set(Math.sin(a) * 0.7, 0, -Math.cos(a) * 0.7)
+        l.castShadow = true
+        g.add(l)
+    }
+    return g
+}
+
+/** A column: the museum's real cover, and it tiles the hall into rooms. */
+export function makeColumn(h = 4.4) {
+    const g = new THREE.Group()
+    const shaft = new THREE.Mesh(cyl(0.3, 0.34, h, 10), mat('colShaft', { map: makeTex('marble'), roughness: 0.3, metalness: 0.05, envMapIntensity: 1.3 }))
+    shaft.position.y = h / 2; shaft.castShadow = true; shaft.receiveShadow = true
+    g.add(shaft)
+    const cap = new THREE.Mesh(box(0.9, 0.22, 0.9), mat('colCap', { map: makeTex('marble'), roughness: 0.3, envMapIntensity: 1.2 }))
+    cap.position.y = h + 0.1; cap.castShadow = true
+    g.add(cap)
+    const base = new THREE.Mesh(box(0.86, 0.18, 0.86), mat('colBase', { map: makeTex('marble'), roughness: 0.35 }))
+    base.position.y = 0.09
+    g.add(base)
+    return g
+}
+
+// ------------------------------------------------------------- icons & rain -----
+const iconCache = new Map()
+/** Floating combat icons: '?', '!', a paw, a zzz. Sprite textures drawn in canvas. */
+export function makeIconTex(kind) {
+    if (iconCache.has(kind)) return iconCache.get(kind)
+    const c = canvasOf(64, 64)
+    const x = c.getContext('2d')
+    x.textAlign = 'center'; x.textBaseline = 'middle'
+    if (kind === '?') {
+        x.font = 'bold 46px Georgia, serif'; x.lineWidth = 7; x.strokeStyle = '#3a2a10'
+        x.fillStyle = '#ffcc4a'; x.fillText('?', 32, 36); x.strokeText('?', 32, 36)
+        x.fillStyle = '#fff3c4'; x.fillText('?', 31, 34)
+    } else if (kind === '!') {
+        x.font = 'bold 48px Impact, Arial, sans-serif'; x.lineWidth = 7; x.strokeStyle = '#40100c'
+        x.fillStyle = '#ff5a4a'; x.fillText('!', 32, 34); x.strokeText('!', 32, 34)
+        x.fillStyle = '#ffd0c8'; x.fillText('!', 31, 32)
+    } else if (kind === 'paw') {
+        x.fillStyle = '#e9e3d3'
+        x.beginPath(); x.ellipse(32, 40, 13, 11, 0, 0, 7); x.fill()
+        for (const [dx, dy] of [[-13, -8], [-4, -14], [6, -13], [15, -5]]) { x.beginPath(); x.ellipse(32 + dx, 40 + dy, 5, 6, 0, 0, 7); x.fill() }
+    } else if (kind === 'zzz') {
+        x.font = 'bold 26px Georgia, serif'; x.fillStyle = '#bfe3ff'
+        x.fillText('z', 22, 44); x.fillText('Z', 36, 28); x.fillText('Z', 48, 16)
+    } else if (kind === 'ear') {
+        x.font = 'bold 30px Helvetica, Arial, sans-serif'; x.fillStyle = '#9dffb0'
+        x.fillText('))', 30, 34); x.fillStyle = '#3f7a4c'; x.fillText('(( ', 36, 34)
+    }
+    const t = new THREE.CanvasTexture(c)
+    t.colorSpace = THREE.SRGBColorSpace
+    iconCache.set(kind, t)
+    return t
+}
+
+/**
+ * Rain as LineSegments (see alley.js for why not Points), sized to a level footprint.
+ * Returns the object plus its animate() so the caller owns the update order.
+ */
+export function makeRain(n, w, d, seed = 5) {
+    const R = rng(seed)
+    const geo = new THREE.BufferGeometry()
+    const pos = new Float32Array(n * 6)
+    const vel = new Float32Array(n)
+    for (let i = 0; i < n; i++) {
+        const x = (R() - 0.5) * w, y = R() * 14, z = (R() - 0.5) * d
+        const len = 0.3 + R() * 0.5
+        pos[i * 6] = x; pos[i * 6 + 1] = y; pos[i * 6 + 2] = z
+        pos[i * 6 + 3] = x + len * 0.16; pos[i * 6 + 4] = y - len; pos[i * 6 + 5] = z
+        vel[i] = 10 + R() * 9
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    const mesh = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: 0xc6e6ff, transparent: true, opacity: 0.32, depthWrite: false, fog: false }))
+    mesh.frustumCulled = false
+    mesh.userData.setDensity = (count) => { geo.setDrawRange(0, Math.max(0, Math.min(n, count)) * 2) }
+    return {
+        mesh,
+        animate(dt) {
+            const arr = geo.attributes.position.array
+            for (let i = 0; i < n; i++) {
+                const k = i * 6
+                let y = arr[k + 1] - vel[i] * dt
+                let x = arr[k] + dt * 1.5
+                let z = arr[k + 2]
+                const len = arr[k + 1] - arr[k + 4]
+                if (y < 0) { y = 13 + R() * 2; x = (R() - 0.5) * w; z = (R() - 0.5) * d }
+                arr[k] = x; arr[k + 1] = y; arr[k + 2] = z
+                arr[k + 3] = x + len * 0.16; arr[k + 4] = y - len; arr[k + 5] = z
+            }
+            geo.attributes.position.needsUpdate = true
+        },
+    }
 }

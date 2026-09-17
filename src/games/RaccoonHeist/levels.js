@@ -27,6 +27,9 @@ export const T = {
 export const blocksMove = (t) => t === T.VOID || t === T.WALL || t === T.FENCE || t === T.DUMP || t === T.CRATE
 export const blocksSight = (t) => t === T.VOID || t === T.WALL || t === T.DUMP || t === T.CRATE
 
+// For harness output: a stuck raccoon should print as "WALL", never as "3".
+export const CELL_NAME = Object.fromEntries(Object.entries(T).map(([k, v]) => [v, k]))
+
 // Marker characters, stamped into `marks` (a Map of "x,y" -> {kind, ...}).
 //   S crew/getaway cart   X getaway gate (locked until the job is done)
 //   V vault door          P animal pound (where the cops park caught raccoons)
@@ -456,9 +459,14 @@ export function reachFrom(level, sx, sy, { block = [] } = {}) {
     return seen
 }
 
-/** BFS path (cell centres) between two walkable cells, or null. */
+/** BFS path (cell centres) between two walkable cells, or null.
+ *  `opts.sealed` is a Set of "x,y" keys treated as solid even though the grid says
+ *  otherwise — that is how a shut vault door keeps guards out of the steel. */
 export function pathBetween(level, from, to, opts = {}) {
+    const sealed = opts.sealed || new Set()
+    const key = (x, y) => x + ',' + y
     if (blocksMove(at(level, from[0], from[1])) || blocksMove(at(level, to[0], to[1]))) return null
+    if (sealed.has(key(to[0], to[1]))) return null
     const prev = new Int32Array(level.w * level.h).fill(-1)
     const start = from[1] * level.w + from[0]
     const goal = to[1] * level.w + to[0]
@@ -473,6 +481,7 @@ export function pathBetween(level, from, to, opts = {}) {
             if (nx < 0 || ny < 0 || nx >= level.w || ny >= level.h) continue
             const k = ny * level.w + nx
             if (prev[k] !== -1) continue
+            if (sealed.has(key(nx, ny))) continue
             const t = at(level, nx, ny)
             if (blocksMove(t) && !(opts.walkBush && t === T.BUSH)) continue
             prev[k] = cur
