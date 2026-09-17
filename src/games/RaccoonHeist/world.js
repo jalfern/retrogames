@@ -260,10 +260,14 @@ export function buildWorld(level) {
     // yard's entire junk — bins, cans, cartons, hydrants, pallets, washing lines —
     // costs three or four calls. Props that *move* (loot, the gate, the vault, the
     // flickering lamps) stay individual, because their transform is the point of them.
+    const stamped = []
+    // Colliders, in metres, for furniture that stands *on* a walkable cell and so is
+    // invisible to the grid: hydrants, bins, lampposts, the cart. The sim walks against
+    // these; without them a raccoon strolls through the entire yard.
     const props = []
     const buckets = new Map()
     const stamp = (prop, x = 0, z = 0, ry = 0, kind = 'prop') => {
-        props.push({ kind, x, z })
+        stamped.push({ kind, x, z })
         const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0))
         const root = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(1, 1, 1))
         prop.updateMatrixWorld(true)
@@ -294,7 +298,10 @@ export function buildWorld(level) {
     for (const cell of hide.filter(h => at(level, Math.round(h.x / CELL - level.ox), Math.round(h.z / CELL - level.oz)) === T.DUMP)) {
         stamp(makeDumpster(Math.round(cell.x * 31 + cell.z)), cell.x, cell.z, (R() > 0.5 ? 1 : -1) * Math.PI / 2, 'dumpster')
     }
-    for (const m of mark('T')) stamp(makeTrashCan(Math.round(m.wx * 7 + 3)), m.wx, m.wz, R() * 6.283, 'can')
+    for (const m of mark('T')) {
+        stamp(makeTrashCan(Math.round(m.wx * 7 + 3)), m.wx, m.wz, R() * 6.283, 'can')
+        props.push({ x: m.wx, z: m.wz, r: 0.42 })
+    }
     for (const m of mark('W')) {
         // Laundry in the open is the best thing in a night alley and the worst thing to
         // park on top of the player's spawn, so keep it off the cart's frontage.
@@ -331,6 +338,7 @@ export function buildWorld(level) {
             }
         })
         lamps.push({ x: wx, z: wz, bulb: lamp.userData.bulb })
+        props.push({ x: wx + 0.1, z: wz + 0.1, r: 0.26 })
     }
     if (bulbGeos.length) {
         const bulbMesh = new THREE.Mesh(batch(bulbGeos.map(geo => ({ geo, matrix: new THREE.Matrix4() }))), mat('bulb', { color: 0x2a2118, emissive: PAL.sodium, emissiveIntensity: 6, roughness: 1 }))
@@ -362,6 +370,10 @@ export function buildWorld(level) {
         const pick = [() => makeHydrant(), () => makeCardboardBox(0.9, i + 2), () => makeCardboardBox(1.25, i + 9), () => makePallet()][placed % 4]()
         const [px, pz] = worldOf(level, x, y)
         stamp(pick, px, pz, Math.floor(R() * 4) * Math.PI / 2, 'clutter')
+        // A hydrant is not a wall, so the grid says WALK. It is still a hydrant, and a
+        // raccoon that walks through it decides within two seconds that none of this
+        // world is real. Low things (pallets) are excluded on purpose: you can step up.
+        if (placed % 4 !== 3) props.push({ x: px, z: pz, r: placed % 4 === 0 ? 0.34 : 0.5 })
     }
 
     flushBuckets()
@@ -484,7 +496,11 @@ export function buildWorld(level) {
         }
     }
 
-    return { group, lamps, hide, lasers, vaults, cart: cartObj, gate: gateObj, cage, rain, animate, floor, walls, props, state }
+        // `stamped` is what got merged into the scenery batches (debug); `props` is the
+    // collider list the sim walks against. Two different questions, two arrays — they
+    // shared a name for exactly one commit, which is how a lamppost nearly became a
+    // { kind: 'lamp' } object with no radius.
+    return { group, lamps, hide, lasers, vaults, cart: cartObj, gate: gateObj, cage, rain, animate, floor, walls, stamped, props, state }
 }
 
 function boxSmall(s) { return new THREE.BoxGeometry(s, s, s) }

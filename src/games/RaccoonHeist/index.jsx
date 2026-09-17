@@ -513,6 +513,9 @@ const RaccoonHeistGame = () => {
                     cell: cellName(level, a.x, a.z), speed: +a.speed.toFixed(2), wind: +a.wind.toFixed(2),
                     det: +(a.det || 0).toFixed(3), caged: a.caged, hidden: a.hidden, held: a.held ? a.held.label : null,
                     camDist: +d.toFixed(2), camY: +camera.position.y.toFixed(2),
+                    camYaw: +engine.st.camYaw.toFixed(3),
+                    camAt: [+camera.position.x.toFixed(1), +camera.position.z.toFixed(1)],
+                    pitch: +engine.st.camPitch.toFixed(2),
                     // Where the raccoon lands on screen: |x|,|y| < 1 means on-screen.
                     ndc: [+v.x.toFixed(2), +v.y.toFixed(2)],
                     heat: Math.round(engine.st.heat), gate: engine.st.gateOpen,
@@ -521,9 +524,14 @@ const RaccoonHeistGame = () => {
                 }
             },
             watchers: () => (engine ? engine.debugWatchers() : []),
+            warpWatcher: (i, x, z, state) => engine?.warpWatcher(i, x, z, state) || null,
+            release: (i, x, z) => engine?.release(i, x, z) || null,
+            calm: () => engine?.calmWatchers() ?? -1,
+            setCam: (yaw, pitch, dist) => engine?.setCam(yaw, pitch, dist),
             why: () => (engine ? engine.why() : []),
             lootList: () => (engine ? engine.debugLoot() : []),
             props: () => (world ? world.props : []),
+            stamped: () => (world ? world.stamped : []),
             marks: () => (level ? level.marks.map(m => ({ ch: m.ch, x: m.x, y: m.y, wx: +m.wx.toFixed(2), wz: +m.wz.toFixed(2) })) : []),
             events: () => seen.splice(0, seen.length),
             info: () => ({

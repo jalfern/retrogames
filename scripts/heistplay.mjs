@@ -121,7 +121,8 @@ console.log('\nMOVE')
 const walked = await api(async () => {
     const t = window.__heistTest
     const before = t.probe()
-    t.stick(0, 1)
+    // thumb up = stick down in screen space; see WHICH WAY for the whole argument
+    t.stick(0, -1)
     await new Promise(res => setTimeout(res, 1100))
     t.stick(0, 0)
     const after = t.probe()
@@ -132,6 +133,139 @@ r.check('walking never enters solid rock', ['FLOOR', 'MARBLE', 'WATER', 'BUSH'].
 r.check('the camera follows', Math.hypot(walked.after.ndc[0], walked.after.ndc[1]) < 1.1, `ndc=${walked.after.ndc}`)
 r.check('stamina spent and came back', walked.after.wind > 0.2, `wind=${walked.after.wind}`)
 void T
+
+console.log('\nWHICH WAY IS RIGHT')
+// "Controls are inverted" is the one bug class a screenshot cannot show and a
+// distance-over-time check cannot catch: the raccoon moved, the check went green, and
+// right was left for the entire session. So the camera gets pinned to a known yaw and the
+// WORLD AXIS gets asserted.
+//
+// Two conventions had to be pinned down to write this honestly:
+//   - the pad speaks screen coordinates (thumb-up is negative DOM y) and `index.jsx`
+//     negates it into engine forward. The first draft of this test pushed stick(0, 1)
+//     meaning "forward" and the engine correctly walked backwards. A driver that lies
+//     about its own input teaches you nothing about the game.
+//   - at camYaw = 0 the camera sits at LOWER z than the raccoon and looks toward +Z
+//     (three.js cameras look down their own -Z; screen-right is therefore -X).
+//
+// Screen coordinates are useless as a ruler here: the camera follows the raccoon and
+// keeps it centred, so the raccoon's ndc never moves no matter which way it walks.
+const dirs = await api(async () => {
+    const t = window.__heistTest
+    const sleep = ms => new Promise(res => setTimeout(res, ms))
+    /** Thumb input in the player's frame of reference: +y is "toward the top of the screen". */
+    const thumb = (rx, ryUp) => t.stick(rx, -ryUp)
+    t.setCam(0, 0.55, 9)
+    await sleep(300)
+    const run = async (rx, ryUp, ms) => {
+        const a = t.probe()
+        thumb(rx, ryUp)
+        await sleep(ms)
+        thumb(0, 0)
+        await sleep(120)
+        const b = t.probe()
+        return {
+            dx: +(b.x - a.x).toFixed(2), dz: +(b.z - a.z).toFixed(2),
+            // Report the camera the test *thinks* it pinned. Half of every "controls are
+            // inverted" report is really "the camera swung round and the test never
+            // noticed", which is also why `start()` faces the open side of the level.
+            yaw: b.camYaw, camAt: b.camAt, at: [a.x, a.z], moved: +Math.hypot(b.x - a.x, b.z - a.z).toFixed(2),
+        }
+    }
+    return {
+        right: await run(1, 0, 700),
+        left: await run(-1, 0, 700),
+        fwd: await run(0, 1, 700),
+        back: await run(0, -1, 700),
+    }
+})
+console.log(`  ..  camera pinned at yaw ${dirs.fwd.yaw}, sitting at ${JSON.stringify(dirs.fwd.camAt)}, raccoon from ${JSON.stringify(dirs.fwd.at)}`)
+r.check('thumb RIGHT moves the raccoon screen-right (-X at yaw 0)', dirs.right.dx < -0.25, `dx=${dirs.right.dx}`)
+r.check('thumb LEFT moves it screen-left (+X)', dirs.left.dx > 0.25, `dx=${dirs.left.dx}`)
+r.check('thumb FORWARD moves it away from the camera (+Z at yaw 0)', dirs.fwd.dz > 0.3, `dz=${dirs.fwd.dz}`)
+r.check('thumb BACK moves it toward the camera (-Z)', dirs.back.dz < -0.25, `dz=${dirs.back.dz}`)
+r.check('forward is not sideways', Math.abs(dirs.fwd.dx) < Math.abs(dirs.fwd.dz), `dx=${dirs.fwd.dx} dz=${dirs.fwd.dz}`)
+r.check('right is not forward', Math.abs(dirs.right.dz) < Math.abs(dirs.right.dx), `dx=${dirs.right.dx} dz=${dirs.right.dz}`)
+r.check('left and right oppose', dirs.left.dx > 0 && dirs.right.dx < 0, `${dirs.left.dx} vs ${dirs.right.dx}`)
+
+console.log('\nTHE WORLD IS SOLID')
+// Collision used to be the grid alone. The grid is 2.2 m cells, and every hydrant, bin,
+// lamppost, pallet and cart in the game is *decoration standing on a walkable cell*, so
+// the raccoon strolled through all of them — and a raccoon that walks through a lamppost
+// decides within two seconds that none of this world is real.
+const solid = await api(async () => {
+    const t = window.__heistTest
+    const sleep = ms => new Promise(res => setTimeout(res, ms))
+    /** Thumb input, player frame: +y is up the screen. */
+    const thumb = (rx, ryUp) => t.stick(rx, -ryUp)
+    const props = t.props().filter(p => p.r)
+    const out = { count: props.length, hits: [] }
+    for (const p of props.slice(0, 4)) {
+        // Stand south of the prop and walk north, into it, for long enough to cross it.
+        t.setCam(0, 0.55, 9)
+        t.moveTo(p.x, p.z - 2.6)
+        await sleep(120)
+        const a = t.probe()
+        thumb(0, 1)
+        await sleep(1700)
+        thumb(0, 0)
+        await sleep(80)
+        const b = t.probe()
+        const d = Math.hypot(b.x - p.x, b.z - p.z)
+        out.hits.push({
+            r: p.r, walked: +Math.hypot(b.x - a.x, b.z - a.z).toFixed(2),
+            d: +d.toFixed(2),
+            // "stopped at the collider" = close to the surface but never through it.
+            inside: d < p.r - 0.01,
+            stopped: d < p.r + 0.75 && d > p.r - 0.01,
+        })
+    }
+    thumb(0, 1)
+    await sleep(1500)
+    thumb(0, 0)
+    out.cell = t.probe().cell
+    return out
+})
+console.log('  ..  ', JSON.stringify(solid.hits))
+r.check('the world hands the sim colliders', solid.count >= 6, `${solid.count} prop colliders`)
+r.check('walking at a prop actually walked', solid.hits.every(h => h.walked > 0.6), JSON.stringify(solid.hits.map(h => h.walked)))
+r.check('nothing walks through a prop', solid.hits.every(h => !h.inside), JSON.stringify(solid.hits))
+r.check('the prop is what stopped you', solid.hits.some(h => h.stopped), JSON.stringify(solid.hits.map(h => `${h.d}/${h.r}`)))
+r.check('a wall is still a wall', ['FLOOR', 'MARBLE', 'WATER', 'BUSH'].includes(solid.cell), solid.cell)
+
+console.log('\nA GUARD WHO TOUCHES YOU TAKES YOU')
+// The complaint: "I was on top of him and he did not capture me." Three separate causes
+// lived behind that one sentence — the catch radius was a 0.62 m handshake, an alerted
+// guard walked on 2.2 m waypoints and stopped a metre short, and the two bodies shared
+// the same cubic metre of air. Each gets its own assertion.
+const catchIt = await api(async () => {
+    const t = window.__heistTest
+    const sleep = ms => new Promise(res => setTimeout(res, ms))
+    const a = t.probe()
+    // An alerted guard, right in front of you, walking straight at you.
+    const w = t.warpWatcher(0, a.x + 2.4, a.z + 1.2, 'alert')
+    const far = t.warpWatcher(1, a.x - 9, a.z - 9, 'alert')
+    await sleep(2600)
+    const p = t.probe()
+    const watchers = t.watchers()
+    return { w, far, caged: p.caged, x: p.x, z: p.z, guards: watchers.map(x => ({ s: x.state, d: x.d })) }
+})
+r.check('an alerted guard who reaches you bags you', catchIt.caged === true, JSON.stringify(catchIt.guards))
+console.log('  ..  staged:', JSON.stringify(catchIt.w), 'far:', JSON.stringify(catchIt.far))
+// Undo the staging: free the raccoon, stand the cast down, put the job back on the cart.
+// Every later section assumes a crew that can walk.
+const restored = await api(async () => {
+    const t = window.__heistTest
+    const sleep = ms => new Promise(res => setTimeout(res, ms))
+    const cart = t.marks().find(m => m.ch === 'S')
+    t.calm()
+    const r0 = t.release(0, cart.wx, cart.wz + 2.0)
+    await sleep(300)
+    return { r0, probe: t.probe(), guards: t.watchers().map(w => w.state) }
+})
+r.check('the job recovers after a staged arrest', restored.probe.phase === 'play' && !restored.probe.caged, JSON.stringify(restored.r0))
+r.check('the cast stands down between set-pieces', restored.guards.every(g => g === 'patrol'), restored.guards.join(','))
+r.check('the freed raccoon stands on walkable ground', ['FLOOR', 'MARBLE', 'WATER', 'BUSH'].includes(restored.probe.cell), restored.probe.cell)
 
 console.log('\nLOOT + CART')
 const marks = await api(() => window.__heistTest.marks())

@@ -43,6 +43,10 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
     const markOf = (ch) => L.marks.filter(m => m.ch === ch)
     const cartMark = markOf('S')[0]
     const gateMark = markOf('X')[0]
+    // Colliders handed over by the world: { x, z, r } in metres, one per prop that
+    // stands on a walkable cell. Copied shallowly so the sim owns a flat array of
+    // numbers and never reaches into a scene graph to decide where you can walk.
+    const props = (world.props || []).map(p => ({ x: p.x, z: p.z, r: p.r }))
     const poundMark = markOf('P')[0]
     const cartW = { x: cartMark.wx, z: cartMark.wz }
     const gateW = { x: gateMark.wx, z: gateMark.wz }
@@ -196,7 +200,20 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         return blocksMove(atWorld(L, wx, wz))
     }
 
-    function blocked(x, z) {
+    /**
+     * Circle-vs-world. Two layers, because the grid alone was the whole collision model
+     * and a raccoon could therefore walk through every hydrant, bin, pallet, lamppost,
+     * cart and guard in the game — the map is coarse (2.2 m cells) and all the
+     * interesting furniture is *decoration standing on a walkable cell*.
+     *
+     *  - the grid: walls, fences, crates, dumpsters, shut doors;
+     *  - `props`: a radius per stamped prop, so a lamppost stops you at a lamppost
+     *    rather than at the middle of its cell.
+     *
+     * `self` exists so that being *already* inside something is not a prison: an actor
+     * pushed inside a radius by a shove, a respawn or a `moveTo` can always walk out.
+     */
+    function blocked(x, z, self) {
         const [cx, cy] = cellOf(L, x, z)
         for (let dy = -1; dy <= 1; dy++) {
             for (let dx = -1; dx <= 1; dx++) {
@@ -211,15 +228,41 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 if ((x - nx) ** 2 + (z - nz) ** 2 < RADIUS * RADIUS) return true
             }
         }
+        for (const p of props) {
+            const rr = p.r + RADIUS
+            const ox = x - p.x, oz = z - p.z
+            if (ox * ox + oz * oz >= rr * rr) continue
+            if (self) {
+                const sx = self.x - p.x, sz = self.z - p.z
+                if (sx * sx + sz * sz < rr * rr) continue // already inside: let them out
+            }
+            return true
+        }
         return false
     }
 
     /** Axis-separated slide: you always get the wall you scraped, never the corner. */
     function move(o, dx, dz) {
         let moved = false
-        if (dx && !blocked(o.x + dx, o.z)) { o.x += dx; moved = true }
-        if (dz && !blocked(o.x, o.z + dz)) { o.z += dz; moved = true }
+        if (dx && !blocked(o.x + dx, o.z, o)) { o.x += dx; moved = true }
+        if (dz && !blocked(o.x, o.z + dz, o)) { o.z += dz; moved = true }
         return moved
+    }
+
+    /**
+     * Bodies are not ghosts. Two actors that overlap get nudged apart along the line
+     * between them, which is what "I was standing on top of the guard" was really
+     * complaining about: nothing anywhere in this game pushed back.
+     */
+    function separate(a, b, r) {
+        const dx = b.x - a.x, dz = b.z - a.z
+        const d2 = dx * dx + dz * dz
+        if (d2 > r * r || d2 < 1e-6) return
+        const d = Math.sqrt(d2)
+        const push = (r - d) / 2
+        const ux = dx / d, uz = dz / d
+        if (!blocked(b.x + ux * push, b.z + uz * push, b)) { b.x += ux * push; b.z += uz * push }
+        if (!blocked(a.x - ux * push, a.z - uz * push, a)) { a.x -= ux * push; a.z -= uz * push }
     }
 
     // --------------------------------------------------------- noise pipes --------
@@ -479,8 +522,13 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         const mx = input.mx || 0, my = input.my || 0
         const mag = Math.min(1, Math.hypot(mx, my))
         const sin = Math.sin(st.camYaw), cos = Math.cos(st.camYaw)
-        const wx = mx * cos + my * sin
-        const wz = -mx * sin + my * cos
+        // The camera looks along (sin, cos), so screen-right — that vector rotated -90°
+        // about Y, with Y up and Z flipped the way three.js flips it — is (-cos, sin).
+        // The first version had the sign of the whole strafe axis inverted, which made
+        // D go left and A go right, and which no screenshot can show and no "did it move"
+        // test can catch. Heistplay now pins the direction in world space.
+        const wx = my * sin - mx * cos
+        const wz = my * cos + mx * sin
         const cell = atWorld(L, a.x, a.z)
         const inWater = cell === T.WATER
         const sp = prof.speed * mag * (inWater ? 0.62 : 1)
@@ -575,6 +623,18 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             } else if (w.state === 'alert') {
                 goal = w.lastSeen
                 w.alertT += dt
+                // Close, visible, and chasing a *cell* is how a guard loses a race it
+                // has already won: waypoints are 2.2 m apart, so the guard stops a metre
+                // short of you and stands there looking furious. Inside this radius it
+                // abandons the path and walks straight at the actual raccoon.
+                w.direct = null
+                let pd = 3.6
+                for (const c of crew) {
+                    if (c.caged) continue
+                    const d = Math.hypot(c.x - w.x, c.z - w.z)
+                    if (d < pd && S.losWorld(L, w.x, w.z, c.x, c.z)) { w.direct = c; pd = d }
+                }
+                if (w.direct) goal = w.direct
             } else if (w.state === 'stunned') {
                 w.stun -= dt
                 if (w.stun <= 0) w.state = 'suspect', w.aim = { x: w.x, z: w.z }
@@ -594,7 +654,20 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 w.repath = w.state === 'alert' ? 0.4 : 1.2
             }
             let sp = 0
-            if (w.state !== 'stunned' && w.path && w.pi < w.path.length) {
+            if (w.direct && w.state === 'alert' && w.direct.caged !== true) {
+                const c = w.direct
+                const d = Math.hypot(c.x - w.x, c.z - w.z)
+                sp = (w.Speed || 1.5) * 1.75
+                if (d > 0.05) {
+                    move(w, ((c.x - w.x) / d) * sp * dt, ((c.z - w.z) / d) * sp * dt)
+                    const want = Math.atan2(c.x - w.x, c.z - w.z)
+                    let dd = want - w.yaw
+                    while (dd > Math.PI) dd -= Math.PI * 2
+                    while (dd < -Math.PI) dd += Math.PI * 2
+                    w.yaw += dd * Math.min(1, dt * 9)
+                }
+                w.path = null
+            } else if (w.state !== 'stunned' && w.path && w.pi < w.path.length) {
                 const [nx, nz] = worldOf(L, w.path[w.pi][0], w.path[w.pi][1])
                 const d = Math.hypot(nx - w.x, nz - w.z)
                 if (d < 0.22) w.pi++
@@ -636,9 +709,10 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 // feeds `light` — a raccoon in the dark at 3 m takes seconds to notice,
                 // the same raccoon in a lamplit patch under a torch takes under one.
                 const floor = L.theme === 'museum' ? 0.8 : 0.5
+                let align = 0
                 if (S.losWorld(L, w.x, w.z, c.x, c.z)) {
                     const d = Math.hypot(c.x - w.x, c.z - w.z)
-                    const align = d > (w.range || 9) ? 0 : S.coneAlign(S.angleTo(w.yaw, c.x - w.x, c.z - w.z), w.half)
+                    align = d > (w.range || 9) ? 0 : S.coneAlign(S.angleTo(w.yaw, c.x - w.x, c.z - w.z), w.half)
                     if (align > 0) {
                         const cover = S.coverOf(atWorld(L, c.x, c.z), c.crouched) * (c.hidden ? 0.1 : 1)
                         const light = Math.min(1.8, S.lightAt(world.lamps, c.x, c.z, floor) + align * 0.9 + (st.alarm ? 0.3 : 0))
@@ -646,6 +720,10 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                     }
                 }
                 // Forgetting is slower than noticing, and only this watcher forgets.
+                // Already chasing this one and still in the cone: keep the target live.
+                // `lastSeen` used to refresh only when suspicion refilled, so an alert
+                // guard would run to where you were ten seconds ago and give up there.
+                if (rate > 0 && w.state === 'alert' && align > 0.25) { w.lastSeen = { x: c.x, z: c.z }; w.lose = 0 }
                 w.det[k] = Math.max(0, w.det[k] + (rate > 0 ? rate * dt : -dt * 0.55))
                 if (w.det[k] >= 1) {
                     w.det[k] = 0
@@ -653,10 +731,16 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 }
             }
             // Catch: an alerted watcher that touches an uncovered raccoon bags them.
-            if (w.state === 'alert') {
+            // The reach is an arm, not a handshake. It was 0.62 m, which — with a guard
+            // that stopped on 2.2 m waypoints and a raccoon about 0.64 m wide — meant
+            // "clearly on top of him" was not close enough, and the chase had no
+            // consequence. A surprised watcher grabs too: bumping into a raccoon in the
+            // dark is not a thing a guard just watches.
+            if (w.state === 'alert' || w.state === 'suspect') {
+                const reach = w.state === 'alert' ? (w.kind === 'dog' ? 1.25 : 1.15) : 0.85
                 for (const c of crew) {
                     if (c.caged || c.hidden) continue
-                    if (Math.hypot(c.x - w.x, c.z - w.z) < 0.62) catchCrew(c)
+                    if (Math.hypot(c.x - w.x, c.z - w.z) < reach) catchCrew(c)
                 }
                 if (w.lastSeen && Math.hypot(w.x - w.lastSeen.x, w.z - w.lastSeen.z) < 0.6) {
                     w.lose += dt
@@ -851,7 +935,9 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         if (input.actions?.includes('throw')) throwShiny()
         if (input.actions?.includes('swap')) swap()
         if (input.actions?.includes('cam')) { st.camYaw = actor().yaw }
-        st.camYaw += (input.lookX || 0) * dt * 2.4
+        // `lookX > 0` means "look right", same as dragging right and same as nudgeCamera.
+        // Increasing camYaw swings the view to the LEFT, so this sign is a minus.
+        st.camYaw -= (input.lookX || 0) * dt * 2.4
         st.camPitch = Math.max(0.22, Math.min(1.25, st.camPitch - (input.lookY || 0) * dt * 1.6))
 
         const seenBy = watchers.concat(cops.map(c => c.w).filter(Boolean))
@@ -865,6 +951,22 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         noises.length = 0
         updateCops()
         updateCat(dt)
+
+        // ---- bodies push back ---------------------------------------------------
+        // Every actor was moved independently above, so a guard and a raccoon could and
+        // did end up in the same cubic metre of air. "I was on top of him and he did not
+        // catch me" was two complaints wearing one hat: no reach (fixed in
+        // updateWatchers) and no body. Re-set the meshes after, or a shove lands a frame
+        // late and reads as a stutter.
+        for (const c of crew) {
+            if (c.caged) continue
+            for (const w of seenBy) separate(c, w, 0.88)
+            for (const o of crew) if (o !== c && !o.caged) separate(c, o, 0.66)
+            if (cat) separate(c, cat, 0.62)
+            c.mesh.position.set(c.x, c.sink || 0, c.z)
+        }
+        for (const w of seenBy) w.mesh.position.set(w.x, 0, w.z)
+        if (cat) cat.mesh.position.set(cat.x, 0, cat.z)
 
         // Heat: how loud the night has been. Drives cops, and the HUD bar.
         const alerts = watchers.filter(w => w.state === 'alert').length
@@ -1072,6 +1174,56 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             if (yaw !== undefined) st.camYaw = yaw
             if (pitch !== undefined) st.camPitch = pitch
             if (dist !== undefined) st.camDist = dist
+        },
+        /**
+         * Harness-only: park a watcher somewhere. Some situations cannot be asked to
+         * arise on their own — a guard *already* alerted and *already* breathing on you —
+         * and "does getting caught ever happen" has to be a check, not a five-minute
+         * walk around a yard hoping the AI cooperates.
+         */
+        warpWatcher(i, x, z, state) {
+            const all = watchers.concat(cops.map(k => k.w).filter(Boolean))
+            const w = all[i]
+            if (!w) return null
+            w.x = x; w.z = z
+            if (state) w.state = state
+            w.path = null; w.wait = 0; w.lose = 0
+            w.mesh.position.set(x, 0, z)
+            return { at: [+x.toFixed(2), +z.toFixed(2)], state: w.state, kind: w.kind }
+        },
+        /**
+         * Harness-only: put a caged raccoon back on its feet, optionally somewhere else.
+         * The play driver deliberately gets itself arrested to prove the pound works,
+         * then has to keep testing the rest of the job — without this, one staged
+         * capture ends the run (and on the last raccoon, ends the job).
+         */
+        release(i, x, z) {
+            const c = crew[i] || actor()
+            if (!c) return null
+            c.caged = false
+            c.hidden = false
+            if (x !== undefined) { c.x = x; c.z = z }
+            c.mesh.position.set(c.x, 0, c.z)
+            st.caughtWho = null
+            st.freeze = 0
+            st.caught = Math.max(0, st.caught - 1)
+            if (st.phase !== 'play') st.phase = 'play'
+            refreshObjective()
+            return { at: [+c.x.toFixed(2), +c.z.toFixed(2)], caged: c.caged, phase: st.phase }
+        },
+        /** Harness-only: stand everyone down. Used between staged set-pieces. */
+        calmWatchers() {
+            for (const w of watchers.concat(cops.map(k => k.w).filter(Boolean))) {
+                w.state = 'patrol'
+                w.path = null
+                w.wait = 0
+                w.lose = 0
+                w.direct = null
+                for (let k = 0; k < w.det.length; k++) w.det[k] = 0
+            }
+            st.heat = 0
+            st.alarm = false
+            return watchers.length
         },
         nudgeCamera(dx, dy) { st.camYaw -= dx; st.camPitch = Math.max(0.22, Math.min(1.25, st.camPitch + dy)) },
     }
