@@ -23,6 +23,8 @@
 //     geometry that caused it instead of just failing.
 
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { openGame, launch, requireDevServer, opt, Report } from './lib/harness.mjs'
 
 const URL = opt(process.argv, '--url', process.env.HEIST_URL || 'http://localhost:5173/retrogames/raccoon-heist?pad=1')
@@ -38,6 +40,37 @@ const api = (fn, ...args) => page.evaluate(fn, ...args)
 
 // `press` leaves attract -> brief -> play, with the level mounted in between.
 const press = async (ms = 260) => { await api(() => window.__heistTest.press()); await T(ms) }
+
+/**
+ * Verbs observed with a body attached, gathered as the run goes on and audited at the
+ * end against the list scraped out of `focus()`. Every interaction the sim offers must
+ * have a mesh where the verb points: the pound asked for `CHEW ULTRA LOOSE` with no
+ * lock drawn anywhere, and the only cue was a line of HUD text (playtest: "I don't see a
+ * lock"). Collecting the observations along the way means no new teleport-course is
+ * pretending to be a play-through, and the coverage gate at the bottom is what stops a
+ * future verb from shipping without one.
+ */
+const verbs = []
+/** Stand somewhere, ask what the button would do, and whether you can SEE that thing. */
+const affordAt = async (tag, x, z, wantKind) => {
+    const a = await api(async ([px, pz]) => {
+        const t = window.__heistTest
+        t.moveTo(px, pz)
+        await new Promise(res => setTimeout(res, 220))
+        return t.afford()
+    }, [x, z])
+    if (!a || !a.kind) {
+        r.check(`${tag}: the sim offers a verb here`, false, `afford() -> ${JSON.stringify(a)}`)
+        verbs.push({ tag, kind: null, ok: false })
+        return a
+    }
+    verbs.push({ ...a, tag, want: a.want })
+    const seen = (a.near || []).map(m => `${m.mat} ${m.d}m`).join(', ') || 'nothing in 2.5 m'
+    r.check(`${tag}: "${a.kind}" has a body you can see`, a.ok === true,
+        a.hit === null ? `no ${a.want ? `"${a.want}" mesh` : 'mesh'} within ${a.tol} m — ${seen}` : `${a.hit} m to "${(a.near[0] || {}).mat}" (wanted ${a.want || 'any mesh'})`)
+    if (wantKind) r.check(`${tag}: the verb is "${wantKind}"`, a.kind === wantKind, `sim offered "${a.kind}" — ${a.label}`)
+    return a
+}
 
 console.log('\nATTRACT')
 const boot = await api(() => window.__heistTest.state())
@@ -477,21 +510,61 @@ r.check('the objective changed', !/FIND/.test(dropped.objective), dropped.object
 console.log('\nVAULT')
 if (vault) {
     // A lock is a hold, not a tap: the button must be worth holding down.
+    await affordAt('at the shut vault', vault.wx + 0.2, vault.wz + 0.2, 'chew')
     const chew = await api(async (v) => {
         const t = window.__heistTest
+        // Pin the plate before anything moves. `bakeMeshes` bakes a child's world matrix
+        // into its geometry and then the parent re-applies it, so a hinged sub-assembly
+        // that was offset *before* baking got its offset twice — the vault plate drew
+        // 0.86 m off-centre, and the same bake absorbed the plate into the static frame,
+        // which left the group the engine rotates empty. Two bugs, both invisible in a
+        // night screenshot, and the reason the hinge below is measured, not assumed.
+        const vv = t.world().vaults[0]
+        const plate = (() => { let f = null; if (vv) vv.pivot.traverse(o => { if (o.isMesh && (o.material?.name || '').includes('dial')) f = o }); return f })()
+        // Measure the plate's *geometry centre*, not its object origin: the dial is a
+        // merged mesh whose vertices are baked around the hinge, so its origin sits on the
+        // hinge and never moves no matter how far the door swings. A check built on the
+        // origin was green through a door that did not open.
+        const scratch = plate ? plate.position.clone() : null
+        const centre = () => {
+            if (!plate.geometry.boundingBox) plate.geometry.computeBoundingBox()
+            const b = plate.geometry.boundingBox
+            let x = 0, z = 0
+            for (const sx of [b.min.x, b.max.x]) for (const sy of [b.min.y, b.max.y]) for (const sz of [b.min.z, b.max.z]) {
+                scratch.set(sx, sy, sz).applyMatrix4(plate.matrixWorld); x += scratch.x; z += scratch.z
+            }
+            return { x: x / 8, z: z / 8 }
+        }
+        const at0 = plate ? centre() : null
         t.moveTo(v.wx + 0.2, v.wz + 0.2)
         await new Promise(res => setTimeout(res, 240))
         const label = t.state().sim.hint
         t.hold(true)
         await new Promise(res => setTimeout(res, 3600))
         t.hold(false)
-        await new Promise(res => setTimeout(res, 400))
+        await new Promise(res => setTimeout(res, 900))
         const s = t.state().sim
-        return { label, hint: t.state().sim.hint, delivered: s.delivered }
+        let meshes = 0
+        if (vv) vv.pivot.traverse(o => { if (o.isMesh) meshes++ })
+        const at1 = plate ? centre() : null
+        return {
+            label, hint: t.state().sim.hint, delivered: s.delivered,
+            hinge: plate ? {
+                meshes, offCentre: +Math.hypot(at0.x - v.wx, at0.z - v.wz).toFixed(2),
+                swing: +Math.hypot(at1.x - at0.x, at1.z - at0.z).toFixed(2),
+                yaw: +(vv.pivot.rotation.y || 0).toFixed(2),
+            } : { meshes, offCentre: null, swing: null, yaw: null },
+        }
     }, vault)
     r.check('a shut vault offers to be chewed', /CHEW|TINKER/i.test(chew.label || ''), chew.label)
     const inside = await api(() => window.__heistTest.probe())
     r.check('the chewed door lets you in', !['WALL', '??'].includes(inside.cell), inside.cell)
+    // "Lets you in" is a grid fact. These three are the scene-graph facts behind it: the
+    // door is a real assembly, it is in its own cell, and chewing it moves it.
+    r.check('the vault door is an assembly, not a baked-in wall', chew.hinge.meshes > 0 && chew.hinge.meshes <= 4,
+        `${chew.hinge.meshes} meshes on the pivot (0 = the frame absorbed the plate; >4 = the plate never got merged)`)
+    r.check('the vault plate sits in its own cell', chew.hinge.offCentre !== null && chew.hinge.offCentre < 0.45, `plate ${chew.hinge.offCentre} m off its cell centre`)
+    r.check('a chewed vault door swings in the scene graph', chew.hinge.swing > 0.3, `plate moved ${chew.hinge.swing} m; pivot now ${chew.hinge.yaw} rad`)
 }
 
 console.log('\nWATCHERS')
@@ -649,6 +722,49 @@ const caught = await api(async () => {
 r.check('a watcher in contact bags a raccoon', caught.caged >= 1, `${caught.caged} in the pound`)
 r.check('one raccoon down is not game over', caught.phase === 'play', caught.phase)
 
+// Stand at the pound with somebody still inside and photograph the door. This is the
+// frame the playtest could not get: "you need to draw the lock somehow, if I'm supposed
+// to chew through the lock… I don't see a lock". The affordance check is the same claim
+// as a number rather than a picture, and it is taken here too — with the cage actually
+// locked, not after the rescue has already emptied it.
+const staged = await api(async () => {
+    const t = window.__heistTest
+    const pound = t.marks().find(m => m.ch === 'P')
+    const crew = t.state().sim.crew
+    const caged = crew.find(c => c.caged)
+    const free = crew.find(c => !c.caged && !c.active) || crew.find(c => !c.caged)
+    if (!pound || !caged || !free) return null
+    t.calm()
+    t.switchTo(free.idx)
+    t.moveTo(pound.wx + 0.6, pound.wz + 0.6)
+    let hint = ''
+    for (let i = 0; i < 15 && !hint; i++) {
+        await new Promise(res => setTimeout(res, 100))
+        hint = t.state().sim.hint
+    }
+    return { hint, aff: t.afford(), caged: crew.filter(c => c.caged).length }
+})
+if (staged) {
+    verbs.push({ ...(staged.aff || {}), tag: 'at the pound, someone inside' })
+    r.check('a locked cage shows a locked door', !!staged.aff && staged.aff.ok === true,
+        JSON.stringify(staged.aff && { kind: staged.aff.kind, want: staged.aff.want, hit: staged.aff.hit, near: (staged.aff.near || []).map(m => `${m.mat} ${m.d}m`) }))
+}
+// A mesh inside an invisible parent draws nowhere, so it must not count as something the
+// player can see. Written the obvious way — `if (!o.visible) return`, the leaf only — the
+// probe passes while the padlock is hidden and every affordance check in this file stays
+// green, so this is pinned directly rather than trusted to the route above.
+const hidden = await api(() => {
+    const t = window.__heistTest
+    const lock = t.world().cage && t.world().cage.userData.padlock
+    if (!lock) return null
+    lock.visible = false
+    const a = t.afford()
+    lock.visible = true
+    return { kind: a && a.kind, hit: a && a.hit, near: a ? a.near.length : -1 }
+})
+r.check('a lock nobody can see is not an affordance', !!hidden && hidden.hit === null, JSON.stringify(hidden))
+await page.screenshot({ path: path.resolve('scripts/.shots/h21-pound-lock.png') }).catch(() => {})
+
 const rescue = await api(async () => {
     const t = window.__heistTest
     const marks = t.marks()
@@ -674,21 +790,32 @@ const rescue = await api(async () => {
             await new Promise(res => setTimeout(res, 100))
             label = t.state().sim.hint
         }
+        // The lock is the affordance for this verb. Ask three questions of it: is it
+        // there at all, does it shake while somebody is chewing, and does it come off.
+        const aff = t.afford()
+        const lock = (t.world().cage && t.world().cage.userData.padlock) || null
+        const home = lock ? [lock.position.x, lock.position.y, lock.position.z] : null
+        const shake = []
         const t0 = performance.now()
         const before = t.state().sim.crew.filter(c => c.caged).length
         t.hold(true)
         let took = 0
         for (let i = 0; i < 14; i++) {
             await new Promise(res => setTimeout(res, 260))
+            if (lock) shake.push(+Math.hypot(lock.position.x - home[0], lock.position.y - home[1], lock.position.z - home[2]).toFixed(4))
             // Measure the moment the *count drops*, not the moment the pound empties:
             // with two locked up, the first chew only frees one.
             if (t.state().sim.crew.filter(c => c.caged).length < before) { took = performance.now() - t0; break }
         }
         t.hold(false)
+        await new Promise(res => setTimeout(res, 700))
         log.push({
             by: me ? me.name : '?', label, took: Math.round(took),
             caged: t.state().sim.crew.filter(c => c.caged).length,
             here: t.probe().cell, at: [t.probe().x, t.probe().z],
+            aff, shook: shake.length ? Math.max(...shake) : -1, shake,
+            lockY: lock ? +lock.position.y.toFixed(3) : null,
+            lockHome: home ? home.map(n => +n.toFixed(2)) : null,
         })
         await new Promise(res => setTimeout(res, 300))
     }
@@ -696,9 +823,84 @@ const rescue = await api(async () => {
 })
 r.check('the pound offers to chew a friend loose', /CHEW/i.test((rescue.log[0] || {}).label || ''), (rescue.log[0] || {}).label)
 r.check('a friend comes out of the pound', rescue.caged === 0, `${rescue.caged} still locked up`)
-console.log('  ..  rescues:', JSON.stringify(rescue.log))
+console.log('  ..  rescues:', JSON.stringify(rescue.log.map(l => ({ ...l, aff: l.aff && { kind: l.aff.kind, hit: l.aff.hit, ok: l.aff.ok }, shake: undefined }))))
 const slowest = Math.max(0, ...rescue.log.map(l => l.took))
 r.check('a rescue is desperate, not a chore', slowest > 300 && slowest < 4000, `${slowest} ms for the slowest padlock`)
+// Every rescue round must find a lock on the door — including the second one, after the
+// first was chewed off. That is what `catchCrew` re-hanging the padlock buys, and it is
+// the difference between "the pound works" and "the pound works once".
+for (const l of rescue.log) {
+    verbs.push({ ...(l.aff || {}), tag: 'at the pound' })
+    r.check('the padlock is there to chew, every time it is offered', !!l.aff && l.aff.ok === true,
+        JSON.stringify(l.aff && { kind: l.aff.kind, want: l.aff.want, hit: l.aff.hit, near: (l.aff.near || []).map(m => `${m.mat} ${m.d}m`) }))
+    r.check('the lock is named as the lock, not as cage bars', !!l.aff && (l.aff.near || []).some(m => m.mat.includes('padlock')),
+        JSON.stringify((l.aff && l.aff.near || []).map(m => `${m.mat} ${m.d}m`)))
+}
+r.check('the lock shakes while it is being chewed', rescue.log.every(l => l.shook > 0.004), `peak jitter ${rescue.log.map(l => l.shook).join(' / ')} m`)
+for (const l of rescue.log) {
+    // The lock is wherever the pound's state says it should be: on the door while
+    // anybody is still inside, on the ground once the cage is empty. A chew that frees
+    // one of two must not leave the second one in an unlocked cage with the HUD still
+    // saying CHEW — that was the second bug this section caught.
+    const empty = l.caged === 0
+    r.check(empty ? 'the last lock comes off the door' : 'the door stays locked while somebody is still in there',
+        l.lockY !== null && (empty ? l.lockY < 0.3 : l.lockY > 0.4), `lock y ${l.lockY} with ${l.caged} still caged`)
+}
+
+console.log('\nEVERY VERB HAS A BODY')
+// "Every interaction has a body in the world." The pound offered `CHEW ULTRA LOOSE` at a
+// cage with no lock on it, and the harness saw nothing wrong because no check ever asked
+// whether the thing the verb named was drawn anywhere. So: stand at each verb and ask.
+// `chew` and `free` were observed at their own set-pieces above; this closes the set.
+const marks2 = await api(() => window.__heistTest.marks())
+const loose2 = await api(() => window.__heistTest.lootList())
+const undelivered = loose2.filter(l => !l.taken && !l.delivered)
+// `focus()` ranks take above shiny above can, so a shiny parked inside a pile's radius
+// is never the verb on offer there. Pick a mark that stands clear.
+const clearOfPile = (m) => !undelivered.some(l => Math.hypot(l.x - m.wx, l.z - m.wz) < 1.6)
+const shinyMark = marks2.filter(m => m.ch === 'N').find(clearOfPile) || marks2.find(m => m.ch === 'N')
+const canMark = marks2.filter(m => m.ch === 'T').find(clearOfPile) || marks2.find(m => m.ch === 'T')
+const cartMark2 = marks2.find(m => m.ch === 'S')
+if (undelivered[0]) await affordAt('at a loot pile', undelivered[0].x, undelivered[0].z, 'take')
+if (shinyMark) await affordAt('at a shiny', shinyMark.wx, shinyMark.wz, 'shiny')
+if (canMark) await affordAt('at a trash can', canMark.wx, canMark.wz, 'can')
+
+// The cart verb needs cargo in hand, so give it cargo — then hand the pile over, which
+// is what the job wants anyway.
+if (cartMark2 && undelivered.length) {
+    const haul = undelivered[undelivered.length - 1]
+    const cartVerb = await api(async ([hx, hz, cx, cz]) => {
+        const t = window.__heistTest
+        t.moveTo(hx, hz)
+        await new Promise(res => setTimeout(res, 220))
+        const held = (t.tap('grab'), t.probe().held)
+        await new Promise(res => setTimeout(res, 260))
+        const have = t.probe().held
+        t.moveTo(cx, cz)
+        await new Promise(res => setTimeout(res, 260))
+        const a = t.afford()
+        if (t.probe().held) t.tap('grab')
+        await new Promise(res => setTimeout(res, 260))
+        return { held: have, first: held, a, delivered: t.state().sim.delivered, total: t.state().sim.total, hands: t.probe().held }
+    }, [haul.x, haul.z, cartMark2.wx, cartMark2.wz])
+    r.check('cargo sticks to the raccoon', !!cartVerb.held || !!cartVerb.first, JSON.stringify(cartVerb))
+    verbs.push({ ...(cartVerb.a || {}), tag: 'at the cart' })
+    r.check('the cart verb is "deliver"', cartVerb.a && cartVerb.a.kind === 'deliver', cartVerb.a ? `${cartVerb.a.kind} (${cartVerb.a.label})` : 'no verb offered at the cart')
+    r.check('"load the cart" has a cart to load', !!cartVerb.a && cartVerb.a.ok === true,
+        JSON.stringify(cartVerb.a && { hit: cartVerb.a.hit, near: (cartVerb.a.near || []).map(m => `${m.mat} ${m.d}m`) }))
+}
+
+const engineSrc = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/games/RaccoonHeist/engine.js'), 'utf8')
+const focusBody = (engineSrc.split('function focus()')[1] || '').split('\n    }')[0]
+const offeredKinds = [...new Set([...focusBody.matchAll(/kind: '([a-z]+)'/g)].map(m => m[1]))]
+const missed = offeredKinds.filter(k => !verbs.some(v => v.kind === k))
+// If `focus()` grows a seventh verb and nobody gives it a mesh, this is the check that
+// says so — the alternative is finding out in a playtest, again.
+r.check('every verb the sim can offer was body-checked', offeredKinds.length >= 6 && missed.length === 0,
+    `focus() offers ${offeredKinds.join(', ')}; missed: ${missed.join(', ') || 'none'}; checked ${[...new Set(verbs.map(v => v.kind))].join(', ')}`)
+const airy = verbs.filter(v => !v.ok)
+r.check('not one verb points at empty air', airy.length === 0,
+    airy.length ? airy.map(b => `${b.tag || '?'}:${b.kind || 'nothing'}`).join(', ') : `${verbs.length} verbs, all with bodies`)
 
 console.log('\nTHE GETAWAY')
 const finish = await api(async () => {
@@ -741,6 +943,15 @@ const finish = await api(async () => {
 })
 r.check('every pile can be carried to the cart', finish.delivered === finish.total, `${finish.delivered}/${finish.total}`)
 r.check('a full cart raises the gate', finish.open === true, `gate=${finish.open}`)
+// The chain has to come off. A gate that rises in silence is a door; hardware hitting
+// the floor is what says "the way out is open" from the far side of the yard.
+const chain = await api(() => {
+    const g = window.__heistTest.world().gate
+    const c = g && g.userData.chain
+    return c ? { y: +c.position.y.toFixed(2), lean: +c.rotation.x.toFixed(2), visible: !!c.visible } : null
+})
+r.check('the gate chain comes off when the gate goes up', !!chain && chain.y < 0.45,
+    JSON.stringify(chain))
 r.check('reaching the gate with an open gate ends the job', finish.phase === 'clear' || finish.screen === 'clear',
     `${finish.phase}/${finish.screen} at ${finish.at} gate ${finish.gate && [finish.gate.wx, finish.gate.wz]} cell=${finish.cell} caged=${finish.caged}`)
 r.check('the result card has numbers in it', finish.result && finish.result.value > 0, JSON.stringify(finish.result))

@@ -68,7 +68,7 @@ An arrest also **SHOUTS**: nearby watchers go `suspect` and converge on the sigh
 is why the harness check is "the job survives an arrest", not "exactly one raccoon gets
 bagged" — a second guard arriving on the noise is the design working.
 
-## Three rules the sim obeys
+## Four rules the sim obeys
 
 1. **The drawn cone *is* the deadly cone.** A guard's vision mesh is built from the same
    half-angle and range the sim uses to see you, and occlusion for both the camera and the
@@ -95,6 +95,44 @@ loose, and a padlock takes about 1.5 s to chew (Tinker faster, Scout slower). A 
 takes longer than 4 s fails `heistplay` — being locked up should feel desperate, not like a
 minigame.
 
+4. **Every verb has a body.** If the sim offers `CHEW X LOOSE`, there is a padlock mesh at
+   the point that verb points at, and it shakes while you chew and falls off when it gives.
+   The pound used to ask for exactly that chew while drawing bars, a roof, a floor and a
+   sign — no lock anywhere — and the only cue was a line of HUD text. So `engine.affordance()`
+   publishes *where a verb points and what material ought to be there*, derived from the
+   level and the verb and never from the prop (so deleting the prop fails the check instead
+   of moving the goalpost), and `heistplay` walks every verb the engine can return and
+   fails if the world has nothing to show. A verb with no body is a build failure now, not a
+   playtest finding.
+
+   The rule generalises past the pound, and two more bugs fell out of applying it: the gate
+   now wears a chain that snaps off when the cart is full ("the way out is open" used to be
+   a door rising in silence), and the pound turns to face the approach so the lock is on the
+   side you walk up to. The vault plate turned out to be drawn **0.86 m outside its cell**
+   and to have never moved when chewed — both are `bakeMeshes` traps, and both are in the
+   next section because they will bite again.
+
+## Two `bakeMeshes` traps, both paid for
+
+`bakeMeshes(node)` bakes every child's **world** matrix into its geometry and adds the
+merged mesh back to `node`. Which means:
+
+- **Offset a hinged child *before* baking and the offset applies twice** — once in the baked
+  geometry, once again when the parent transforms it on draw. The vault plate hung 0.86 m
+  (one door radius) outside its cell for the whole life of the game. Bake first, then move
+  the assembly onto its hinge.
+- **`userData.keep` on a node disables baking *of that node*, not just of its parent's
+  bake.** Set on a door group before `bakeMeshes(door)` it leaves seven draw calls where
+  three belong; omitted, the frame's bake swallows the plate and the group the engine
+  rotates is empty — the door "opens" with nothing on it. Set it *after* baking the node
+  and *before* baking the parent.
+
+Neither showed up in a screenshot: at night, a plate slightly out of its frame and a door
+that does not swing both look like art choices. `heistplay` pins all of it — plate centred
+(≤ 0.45 m from its cell centre), plate merged (1–4 meshes on the pivot), plate moving when
+chewed (≥ 0.3 m of travel) — by measuring the **geometry bounding box in world space**,
+because a merged mesh's object origin sits on the hinge and never moves.
+
 ## Draw calls
 
 Static geometry is merged at build time: one mesh for all walls (`tileBox` bakes texel
@@ -107,7 +145,11 @@ eight flickering lamps cost one call), and halos. `bakeMeshes` does the same ins
 pound, the gate, the vault and the cart, which are built as little scenes but only ever
 move as objects.
 
-Budget, pinned by `heistplay`: level ≤ 50 meshes, whole scene ≤ 280 draw calls.
+Budget, pinned by `heistplay`: level ≤ 50 meshes, whole scene ≤ 280 draw calls. The level
+runs at 48 after the pound's padlock, the gate's chain and its padlock (five meshes, and
+the padlock cannot merge with the cage bars — it has to shake and fall off). That budget is
+nearly spent, so the facade work in `FEEDBACK.md` (E1) has to come with a deliberate
+raising of the pin, not an accidental overshoot.
 
 ## Controls
 
@@ -130,7 +172,9 @@ machine it would just be two discs covering the level.
 
 ```bash
 npm run heistcheck         # Node, no browser, ~1 s: level audit + stealth model + --mutate
-npm run heistplay          # Chrome plays job 1 end to end -- 81 assertions (needs `npm run dev`)
+npm run heistplay          # Chrome plays job 1 end to end -- 107 assertions (needs `npm run dev`)
+npm run heistmutate        # revert each fix in turn and prove heistplay notices (~20 min)
+npm run heistmutate -- --dry  # just check the mutant anchors still exist
 npm run lint:heist         # eslint over the game + shared shell + scripts
 npm run heistcheck -- --map 1    # ASCII dump of a job
 npm run heistcheck -- --mutate   # seals the vault; the audit MUST notice
@@ -139,7 +183,17 @@ npm run heistcheck -- --mutate   # seals the vault; the audit MUST notice
 `heistplay` walks with a **thumbstick value**, not by assigning positions; the only
 teleports are the ones whose check is *about* placement, and they say so in the check name.
 It asserts the raccoon is a visible mesh in the scene graph — because for a whole stage
-the cast was simulated, audited, passed every check, and never added to the scene.
+the cast was simulated, audited, passed every check, and never added to the scene. And it
+asserts every verb has a body, which is how the padlock, the chain and the crooked vault
+door were all found in one sitting.
+
+`heistmutate` is the reason to believe any of it: nine mutants, each one a previously fixed
+bug re-introduced by an anchored text swap, each run through the real driver, each restored
+from a `/tmp` copy so the working tree is never reverted. Two of them were *equivalent*
+mutants — the harness hid a lock with `visible = false`, which `reset()` repairs before
+play, and a plate measured by object origin, which never moves because it sits on the
+hinge — and both are written down in that file's header, because an equivalent mutant is a
+lesson about the test, not the code.
 
 Two things to try before believing a change: seal the vault in `levels.js` and watch
 `--mutate` go red; stand in the open and read `__heistTest.why()`, which prints every
@@ -147,6 +201,11 @@ nearby watcher's `los / align / cover / light / rate / det`.
 
 ## Known gaps
 
+- **Affordance hardware is only drawn for the pound and the gate.** A hide-spot bin has no
+  latch and a stolen pile leaves no scuff on the ground where it was, both because the
+  level mesh budget is at 48/50 and a scuff per pile is four more draw calls. The right
+  shape for both is one `InstancedMesh` per kind, toggled by scaling the instance to zero,
+  not a mesh each.
 - Guards never speak, so alerts are visual + musical only. No voice lines, no "Hey!".
 - The cat is a distraction, not a system: it bolts when seen and steals attention. It has
   no stash and no route to a secret.

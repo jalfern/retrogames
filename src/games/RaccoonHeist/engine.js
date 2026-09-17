@@ -40,6 +40,9 @@ const CAUGHT_FREEZE = 1.1
  */
 const CHASE = { guard: 3.4, dog: 4.4, cop: 3.55 }
 
+/** Brass filings off a lock that is nearly through. One shared material, many sprites. */
+const SPARK_MAT = new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })
+
 export function createEngine({ level, world, camera, audio = null, onEvent = null }) {
     const L = level
     const group = new THREE.Group()
@@ -172,6 +175,60 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         return { x: m.wx, z: m.wz, mesh: s, spark, taken: false }
     })
     const cans = markOf('T').map((m) => ({ x: m.wx, z: m.wz, tipped: false, noise: 0 }))
+
+    // --------------------------------------------- pound lock & gate chain --------
+    /**
+     * Two props the sim *owes* the player a body for. `CHEW ULTRA LOOSE` used to be a
+     * line of HUD text aimed at a cage with no lock on it ("I don't see a lock"), and
+     * "the cart is full" used to be answered by a door quietly rising. Both now have
+     * hardware that shakes, snaps and falls, and `heistplay` asserts a lock-material mesh
+     * sits at every verb's anchor — so an invisible affordance is a build failure rather
+     * than a playtest finding. See `affordance()` at the bottom of this file.
+     */
+    const padlock = (world.cage && world.cage.userData.padlock) || null
+    const cageW = { x: poundMark.wx, z: poundMark.wz }
+    const gateChain = (world.gate && world.gate.userData.chain) || null
+    const gateLock = (world.gate && world.gate.userData.lock) || null
+    const home = {
+        pad: padlock ? padlock.position.clone() : null,
+        chain: gateChain ? gateChain.position.clone() : null,
+        gate: gateLock ? gateLock.position.clone() : null,
+    }
+    const cageYaw = world.cage ? world.cage.rotation.y : 0
+    let lockOff = false
+
+    /** A point given in the pound's own space, out where sparks and the HUD can use it. */
+    function cagePoint(lx, ly, lz) {
+        const c = Math.cos(cageYaw), s = Math.sin(cageYaw)
+        return [cageW.x + c * lx + s * lz, ly, cageW.z - s * lx + c * lz]
+    }
+
+    /** Hardware that has been bitten off: it falls, tumbles, and rests on the ground. */
+    const falling = []
+    function drop(o, opts = {}) {
+        if (!o) return
+        o.userData.shake = 0
+        falling.push({ o, y: o.position.y, vy: -0.3, spin: (rnd() - 0.5) * 9, t: 0, rest: opts.rest ?? 0.06, lie: !!opts.lie })
+    }
+    function rehang(o, at) {
+        if (!o || !at) return
+        for (let i = falling.length - 1; i >= 0; i--) if (falling[i].o === o) falling.splice(i, 1)
+        o.visible = true
+        o.position.copy(at)
+        o.rotation.set(0, 0, 0)
+    }
+
+    /** Brass filings off a lock that is nearly through. Three at a time, half a second each. */
+    const sparks = []
+    function sparkAt(x, y, z, n = 3) {
+        for (let i = 0; i < n; i++) {
+            const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.035, 0), SPARK_MAT)
+            s.position.set(x, y, z)
+            group.add(s)
+            sparks.push({ s, vx: (rnd() - 0.5) * 2.4, vy: 1.1 + rnd() * 1.6, vz: (rnd() - 0.5) * 2.4, life: 0.32 + rnd() * 0.2 })
+        }
+    }
+
     // The cat: walks in from wherever it came in, pads over to the cart, and back. The
     // route is *derived* with the same BFS the guards use, so it cannot be unwalkable.
     const catMark = markOf('@')[0]
@@ -347,6 +404,11 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
     function openGate() {
         if (st.gateOpen) return
         st.gateOpen = true
+        // The chain snaps. A gate that rises in silence reads as a door in a shop;
+        // hardware coming off it tells you "GO" from across the yard without a HUD.
+        drop(gateChain, { rest: 0.09, lie: true })
+        drop(gateLock, { rest: 0.07 })
+        audio?.clank?.()
         emit({ type: 'gate' })
         audio?.gate?.()
         say('THE GATE IS UP — GO, GO, GO', 3.4)
@@ -449,11 +511,21 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 a.chew += rate * dt
                 a.crouched = true
                 if (audio && Math.random() < dt * 9) audio?.chew?.()
+                // The lock is the progress bar. It shakes harder as it gives, and it
+                // throws filings once it is nearly through — a HUD ring says "some
+                // mechanic is happening", a rattling padlock says "this one is nearly off".
+                const need = f.kind === 'chew' ? 1.6 : 1.5
+                const p = Math.min(1, a.chew / need)
+                if (f.kind === 'free' && padlock && !lockOff) {
+                    padlock.userData.shake = 0.01 + p * 0.055
+                    if (p > 0.6 && rnd() < dt * 14) sparkAt(...cagePoint(padlock.position.x, padlock.position.y, padlock.position.z))
+                } else if (f.kind === 'chew' && f.t.pivot) {
+                    f.t.pivot.userData.jig = 0.5 + p
+                }
                 // A padlock gives faster than a vault tumler, and it must: being locked
                 // up is the state where every second of the clock is your friend getting
                 // bagged too.
-                const done = f.kind === 'chew' ? 1.6 : 1.5
-                if (a.chew >= done) {
+                if (a.chew >= need) {
                     a.chew = 0
                     if (f.kind === 'chew') {
                         const key = cellOf(L, f.t.x, f.t.z).join(',')
@@ -465,6 +537,18 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                         noise(a.x, a.z, 4.5, 'chew', { loud: 0.8 })
                     } else {
                         f.t.caged = false
+                        // The lock goes where the pound's state says it belongs. If a
+                        // second raccoon is still inside, the door gets locked again the
+                        // instant this one comes out — otherwise the cage sits open with
+                        // the HUD still advertising CHEW, and the next rescue is chewing
+                        // air (which is exactly what the padlock, once chewed off, did
+                        // for the whole second round). Empty pound: the lock stays off and
+                        // rusts on the ground where it fell.
+                        const stillInside = crew.some(x => x.caged)
+                        if (padlock) {
+                            if (stillInside) { sparkAt(...cagePoint(padlock.position.x, padlock.position.y, padlock.position.z), 4); rehang(padlock, home.pad) }
+                            else if (!lockOff) { lockOff = true; drop(padlock, { rest: 0.07 }); audio?.clank?.() }
+                        }
                         f.t.x = a.x; f.t.z = a.z
                         f.t.wind = 0.35
                         f.t.freeT = 3
@@ -789,6 +873,10 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         if (c.caged) return
         const wasHeld = c.i === active
         c.caged = true
+        // Somebody got thrown in the pound, so the pound gets locked again. Without this
+        // the second arrest of a job leaves an open cage with a raccoon rattling the bars,
+        // and the verb that follows (`CHEW X LOOSE`) is once again pointing at nothing.
+        if (lockOff) { lockOff = false; rehang(padlock, home.pad) }
         // The guard who took them: stand down for a beat, drop every other raccoon's
         // suspicion, and go tie the sack up. 2.8 s is the window the next raccoon gets.
         for (const w of watchers.concat(cops.map(k => k.w).filter(Boolean))) {
@@ -915,6 +1003,51 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         // The mask window is deliberately *before* the flash fades: real thunder rolls
         // for a second and the noise that masks your footsteps arrives slightly late.
         st.masked = manor && st.flash > 0.25
+    }
+
+    /**
+     * The hardware tick: locks that shake, locks that have come off, filings, and the
+     * gate chain sliding off a gate that is no longer chained. Split out because it has
+     * to run on the menu and during the freeze frames too -- a chain that snaps mid-arrest
+     * must still land on the floor, or it hangs in the air for the rest of the job.
+     */
+    function updateHardware(dt) {
+        if (padlock && padlock.userData.shake && !lockOff) {
+            const s = padlock.userData.shake
+            padlock.position.set(
+                home.pad.x + (rnd() - 0.5) * s,
+                home.pad.y + (rnd() - 0.5) * s,
+                home.pad.z + (rnd() - 0.5) * s,
+            )
+            padlock.rotation.z = (rnd() - 0.5) * s * 7
+            padlock.userData.shake = Math.max(0, s - dt * 0.12)
+        }
+        for (let i = falling.length - 1; i >= 0; i--) {
+            const f = falling[i]
+            f.t += dt
+            f.vy -= 11 * dt
+            const y = f.y + f.vy * dt
+            if (y <= f.rest) {
+                f.y = f.rest
+                // Bounce once, then lie flat: a chain that lands and stays standing
+                // vertical is the tell that none of this is simulated.
+                f.vy = f.t < 0.8 && Math.abs(f.vy) > 1.2 ? -f.vy * 0.3 : 0
+                if (f.lie) f.o.rotation.x += (Math.PI / 2 - f.o.rotation.x) * Math.min(1, dt * 6)
+                f.spin *= 0.6
+            } else f.y = y
+            f.o.position.y = f.y
+            f.o.rotation.z += f.spin * dt
+            if (f.t > 2.2) falling.splice(i, 1)
+        }
+        for (let i = sparks.length - 1; i >= 0; i--) {
+            const s = sparks[i]
+            s.life -= dt
+            s.vy -= 9 * dt
+            s.s.position.set(s.s.position.x + s.vx * dt, s.s.position.y + s.vy * dt, s.s.position.z + s.vz * dt)
+            s.s.rotation.y += dt * 12
+            s.s.scale.setScalar(Math.max(0.05, s.life * 3))
+            if (s.life <= 0 || s.s.position.y < 0.02) { group.remove(s.s); sparks.splice(i, 1) }
+        }
     }
 
     function updateCamera(dt) {
@@ -1052,6 +1185,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 c.mesh.position.set(c.x, 0, c.z)
                 animRaccoon(c.mesh, dt, 0, { shine: true, blink: !!c.blink })
             }
+            updateHardware(dt)
             updateCamera(dt)
             return st
         }
@@ -1066,6 +1200,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 c.mesh.position.set(c.x, 0, c.z)
                 animRaccoon(c.mesh, dt, 0, { alert: true, shine: true })
             }
+            updateHardware(dt)
             updateCamera(dt)
             return st
         }
@@ -1171,16 +1306,24 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             if (ic.life <= 0) { group.remove(ic.s); icons.splice(i, 1) }
         }
 
-        // Vault doors swing on their hinge once the lock is chewed through.
+        // Vault doors swing on their hinge once the lock is chewed through, and jiggle
+        // while somebody is chewing it: the door is the thing being attacked, so it is
+        // the thing that has to answer.
         for (const v of world.vaults) {
             const k = cellOf(L, v.x, v.z).join(',')
             const want = closedV.has(k) ? 0 : 1
             v.open += (want - v.open) * Math.min(1, dt * 2.2)
             v.pivot.rotation.y = v.open * 1.85
+            const jig = v.pivot.userData.jig || 0
+            if (jig > 0) {
+                v.pivot.rotation.z = (rnd() - 0.5) * 0.014 * jig
+                v.pivot.userData.jig = Math.max(0, jig - dt * 1.4)
+            } else v.pivot.rotation.z = 0
         }
         // The gate rolls up.
         const gd = world.gate.userData.door
         gd.position.y += ((st.gateOpen ? 3.2 : 0) - gd.position.y) * Math.min(1, dt * 1.6)
+        updateHardware(dt)
 
         // Loot bobs; gems turn, because the moonstone should look worth the trip.
         for (const l of loot) {
@@ -1267,6 +1410,16 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         }
         for (const l of loot) { l.taken = false; l.delivered = false; l.mesh.visible = true; l.glow.visible = true }
         for (const s of shinies) { s.taken = false; s.mesh.visible = true; s.spark.visible = true }
+        // Every bit of snapped hardware goes back on: the padlock, the gate chain, the
+        // filings. A retry that starts with the vault already chained-open is the same
+        // class of lie as a check that starts with the world already unlocked.
+        lockOff = false
+        rehang(padlock, home.pad)
+        rehang(gateChain, home.chain)
+        rehang(gateLock, home.gate)
+        falling.length = 0
+        for (let i = sparks.length - 1; i >= 0; i--) { group.remove(sparks[i].s) }
+        sparks.length = 0
         for (const c of cans) c.tipped = false
         for (const w of watchers) { w.state = 'patrol'; w.path = null; w.ri = 0; w.rdir = 1; w.det = crew.map(() => 0) }
         for (const c of cops) { if (c.w) { group.remove(c.w.mesh); group.remove(c.w.cone) }; c.w = null }
@@ -1322,6 +1475,28 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             }).filter(x => x.inRange).sort((a, b) => b.rate - a.rate)
         },
         focusLabel: () => { const f = focus(); return f ? f.kind + ':' + f.label : '' },
+        /**
+         * Where the verb on offer *points*, and which material ought to be there to be
+         * seen. The anchor is derived from the level and the verb — never from the prop
+         * mesh — so that deleting the padlock fails `heistplay`'s affordance check
+         * instead of quietly moving the goalpost to wherever the geometry still is.
+         * `want` is only set for the two lock verbs: those are the ones where "there is
+         * a mesh here" is not enough, because the cage bars and the vault plate are
+         * meshes too, and neither of them is a thing you can chew.
+         */
+        affordance: () => {
+            const f = focus()
+            if (!f) return null
+            const FACE = 0.68
+            const at = f.kind === 'free' ? cagePoint(0, 0.62, -FACE)
+                : f.kind === 'chew' ? [f.t.x, 1.05, f.t.z]
+                    : f.kind === 'deliver' ? [cartW.x, 0.6, cartW.z]
+                        : f.kind === 'take' ? [f.t.x, 0.3, f.t.z]
+                            : f.kind === 'shiny' ? [f.t.x, 0.32, f.t.z]
+                                : f.kind === 'can' ? [f.t.x, 0.35, f.t.z] : null
+            const want = f.kind === 'free' ? 'padlock' : f.kind === 'chew' ? 'dial' : null
+            return { kind: f.kind, label: f.label, at, want }
+        },
         get activeCrew() { return actor() },
         setCam(yaw, pitch, dist) {
             if (yaw !== undefined) { st.camYaw = yaw; st.camSide = 0; st.camYawEff = yaw }

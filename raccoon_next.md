@@ -11,29 +11,36 @@ what broke and what each fix cost. This file is only: *where we are, and what to
   (also on a phone — the touch pad auto-enables; `?pad=1` shows it on desktop).
 - **Branch:** `main` @ `3dc142d`. Nothing uncommitted, nothing unmerged. PRs #38–#40 merged
   and squash-merged per the repo workflow.
-- **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **81** ·
-  `npm run lint:heist` clean · `npm run lint:mario` clean (shared shell untouched-but-covered).
+- **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **107** ·
+  `npm run heistmutate` **9/9 mutants die** · `npm run lint:heist` clean ·
+  `npm run lint:mario` clean (shared shell untouched-but-covered).
   `lint:heist` + `heistcheck` are in the blocking CI `static` job; `heistplay` is in the
   manual `verify` job (headless Chrome) and should be promoted to `pull_request` once the
-  browser suite has been green a few times.
+  browser suite has been green a few times. `heistmutate` is a hand tool (~20 min): it is
+  how every new check here gets believed.
+- **Round-3 playtest should look at:** the pound door (there is a padlock now — it shakes,
+  then falls off), the vault door (it has never opened before this week), the gate chain
+  coming off when the cart is full, and whether the brass reads at night where you actually
+  stand. Level 2 and 3 still have never been *played*.
 - **A green `heistplay` run is a full job:** walks with a thumb vector, steals, gets spotted
   in <1 s, gets arrested, is handed a crewmate who can still walk, chews two friends out of
   the pound (2.4 s / 1.8 s), loads all four piles, raises the gate, clears the job.
 
-### Shape of the code (6.9k lines, all runtime-generated art and audio — no assets)
+### Shape of the code (7.6k lines, all runtime-generated art and audio — no assets)
 
 | File | Lines | Owns |
 |---|---|---|
-| `engine.js` | 1471 | the simulation: movement, AI, detection, heat, loot, camera rig |
-| `art.js` | 1587 | every texture, material, rig and prop, generated at runtime |
-| `index.jsx` | 954 | renderer, input (`KEYMAP`), HUD, screens, `__heistTest` |
-| `world.js` | 547 | grid → scene: merging, instancing, the **collider list** |
+| `engine.js` | 1646 | the simulation: movement, AI, detection, heat, loot, camera rig, lock hardware |
+| `art.js` | 1672 | every texture, material, rig and prop, generated at runtime |
+| `index.jsx` | 993 | renderer, input (`KEYMAP`), HUD, screens, `__heistTest` |
+| `world.js` | 555 | grid → scene: merging, instancing, the **collider list** |
 | `levels.js` | 530 | the three maps, carved; pure Node, no THREE |
 | `stealth.js` | 212 | pure sight/noise/gait/score maths; pure Node |
 | `audio.js` | 276 | three heat-reactive beds + ~20 SFX, synthesized |
 | `alley.js` | 252 | the attract diorama |
-| `scripts/heistplay.mjs` | 761 | Chrome plays job 1 (81 assertions) |
+| `scripts/heistplay.mjs` | 972 | Chrome plays job 1 (107 assertions) |
 | `scripts/heistcheck.mjs` | 288 | Node level audit + the grid-sampler contract |
+| `scripts/heistmutate.mjs` | 174 | nine fixed bugs, put back on purpose, one at a time |
 
 ### The numbers that are load-bearing
 
@@ -50,8 +57,11 @@ playtest report, not from taste.
 | catch reach | 1.15 m (dog 1.25, surprised 0.85) | was 0.62 m — a handshake; "I was on top of him" | "alerted guard who reaches you bags you" |
 | prop colliders | hydrant 0.34, box 0.5, can 0.42, lamp 0.26, cart 0.78, **pallets none** | grid-only collision meant walking through furniture; you can step over a pallet | "nothing walks through a prop" (stops at r + `RADIUS` = 0.74 m) |
 | camera | `MINVIEW` 2.1 m, shoulder `sh` 0.55 rad ×5 (±158°), `need` 3.1 m, retreat floor 0.55 | pulled-in cameras bury themselves in brick | "PRESSED AGAINST A WALL" (5 checks) |
+| affordance tolerance | 0.6 m, and the mesh must be *the lock* for `free`/`chew` | a verb whose object is not drawn is the "I don't see a lock" bug | "EVERY VERB HAS A BODY" + the coverage gate that scrapes `focus()` |
+| chew times | vault 1.6 s, padlock 1.5 s (× `def.grab`) | the lock must give faster than the vault: inside the pound, the clock is the enemy | "a rescue is desperate, not a chore" (300 ms–4 s) |
+| level meshes | **48 of a pinned 50** | the padlock, the chain and the gate padlock cannot merge with the cage or the gate (they have to move) | "level geometry stays batched" — E1 (facades) must raise this pin on purpose |
 
-## Traps that have already bitten twice
+## Traps that have already bitten
 
 1. **Cell space vs metres.** `losWorld`/`castWorld` take metres and walk a cell-indexed
    grid. Every step must be `/ CELL`. When the world was rescaled to 2.2 m this was missed
@@ -80,12 +90,29 @@ playtest report, not from taste.
    `t.goto('play')` or it taps into a paused game and blames the grab button.
 7. Never `git push` to `main`. It happened once (round 1); recover by branching `HEAD`,
    pushing, PR-ing, and `git branch -f main origin/main`.
+8. **`bakeMeshes(node)` bakes a child's *world* matrix into its geometry, and the parent
+   then transforms it again on draw.** Offset a hinged sub-assembly before baking and the
+   offset lands twice — the vault plate drew one door radius (0.86 m) outside its cell for
+   the entire life of the game. And `userData.keep` on a node disables baking *of that
+   node*, not just of its parent's bake: omit it and the frame's bake swallows the door so
+   the group the engine rotates is empty; set it too early and the plate stays seven draw
+   calls. Bake the node, move it onto its hinge, set `keep`, bake the parent. Both are
+   pinned by geometry (bbox centre, bbox travel), not by a screenshot.
+9. **`mesh.visible` is not "is this drawn"** — a mesh inside an invisible parent answers
+   `true` while rendering nowhere, so an affordance check written that way survives the
+   mutation that hides the affordance. Walk the parent chain (`drawn()` in `index.jsx`).
+   Related: a mutation that sets a flag `reset()` repairs before play is not a mutation; hide
+   the thing from the scene graph instead.
 
 ## Next steps, ranked
 
 ### 1. Play it yourself and tell me what's wrong (highest value)
 No harness can judge feel. Specifically: does the guard feel dangerous or unfair, is the
 stick good, is the camera readable in the museum corridors, does job 1 take too long.
+Round 3 has three new things to look at that no check can judge: whether the padlock is
+legible from where you actually stand while chewing it, whether the vault door (which opens
+for the first time this week) now reads as a door, and whether the chain hitting the floor
+registers as "go" or as noise.
 
 ### 2. Jobs 2 and 3 have never been *played*
 They're audited (`heistcheck` covers reachability/cover/patrols/lasers) but `heistplay`
@@ -105,6 +132,10 @@ over the guard's head (the `icon()` + `makeIconTex` machinery already exists: `?
 paw, `zzz`, ear). Cheap, big character win.
 
 ### 5. Smaller known gaps
+- **Affordance hardware exists only for the pound and the gate.** A hide-spot bin has no
+  latch and a stolen pile leaves no scuff where it was — both deliberately deferred: the
+  level is at 48 of a pinned 50 meshes, and the right shape is one `InstancedMesh` per kind
+  scaled to zero, not a mesh each.
 - **Cat is a distraction, not a system** — bolts when seen, has no stash and no reward for
   following it.
 - **Lasers are timing gates**, not destructible; no fusebox.
@@ -126,7 +157,8 @@ npm run dev                    # :5173 — required by heistplay and shot
 npm run heistcheck             # Node, ~1 s: levels + stealth model contract
 npm run heistcheck -- --map 2  # ASCII dump of a job
 npm run heistcheck -- --mutate # seal the vault; the audit MUST go red
-npm run heistplay              # Chrome plays job 1: 81 assertions, writes scripts/.shots/h20-play.png
+npm run heistplay              # Chrome plays job 1: 107 assertions, writes scripts/.shots/h20-play.png
+npm run heistmutate            # nine fixed bugs put back, one at a time; ~20 min (`--dry` checks anchors)
 npm run lint:heist             # eslint over the game + shared shell + scripts
 npm run shot -- --url "http://localhost:5173/retrogames/raccoon-heist" --out scripts/.shots/x.png \
   --steps '[{"down":"Enter","wait":1200},{"up":"Enter","wait":300}]'

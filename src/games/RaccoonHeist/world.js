@@ -389,8 +389,16 @@ export function buildWorld(level) {
     const gateObj = makeGate(2.2, 3.4)
     const gateMark = mark('X')[0]
     put(gateObj, gateMark)
-    const cage = makeCage()
-    put(cage, mark('P')[0])
+    const cageMark = mark('P')[0]
+    const cage = put(makeCage(), cageMark)
+    // Turn the pound so its lock face looks at the ground you would walk up from (the
+    // vaults do the same trick with their hinges). Without this the padlock can end up on
+    // the far side of the cage, which puts us right back at "I don't see a lock".
+    const cageOpen = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([dx, dy]) => {
+        const t = at(level, cageMark.x + dx, cageMark.y + dy)
+        return !!(t && t !== T.WALL && t !== T.VOID)
+    }) || [0, 1]
+    cage.rotation.y = Math.atan2(-cageOpen[0], -cageOpen[1])
     const vaults = mark('V').map(m => {
         const r = 0.86
         const v = makeVaultDoor(r)

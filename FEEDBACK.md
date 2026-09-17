@@ -30,7 +30,7 @@ The single most important block in this file. You said: *"it's still not exactly
 I'm supposed to play this game"* — and then, standing at the pound with the game telling you
 to chew a lock, *"I don't see a lock."*
 
-### A1. There is no lock to chew. Draw it. `S` → 🚀 FIRST
+### A1. There is no lock to chew. Draw it. `S` → 🚀 shipped 2026-09-16 (see Log)
 > *"you need to draw the lock somehow, if I'm supposed to chew through the lock… I don't see
 > a lock"* — correct. `makeCage()` builds bars, a roof, a floor and a sign. There is **no
 > padlock mesh anywhere on the pound.** The vault has a wheel and a dial, so chewing *that*
@@ -270,15 +270,15 @@ gets a short, specific, in-world reason. Same treatment for the mouse/touch pad.
 
 ## Today's shortlist (my ranking, once you've marked the above)
 
-| # | Item | Block | Size | Why first |
-|---|---|---|---|---|
-| 1 | Draw the padlock on the pound (+ affordance-vs-mesh check) | A1 | S | You could not do the thing the game told you to do |
-| 2 | Slide hysteresis + climb damping + move/spread the spawn | B1–B3 | S | "shaky, back and forth" poisons every minute after |
-| 3 | Spread the crew at spawn | C1 | S | Also fixes the free-hiding exploit |
-| 4 | Key + action telemetry, then name every refusal | G1–G2 | S | Settles "are the keys working?" with evidence |
-| 5 | Dog / cat / guard gaits | D1 | M | The game's characters currently look stiff next to the raccoons |
-| 6 | Facade detail on the walls | E1 | M | Biggest visual gap in a game that already looks good at night |
-| 7 | Floor grain + normal relief + specular variety | F1–F2 | M–S | The stuff you said you could keep going forever on |
+| # | Item | Block | Size | Why first | Status |
+|---|---|---|---|---|---|
+| 1 | Draw the padlock on the pound (+ affordance-vs-mesh check) | A1 | S | You could not do the thing the game told you to do | 🚀 done, 107 checks, 9 mutants |
+| 2 | Slide hysteresis + climb damping + move/spread the spawn | B1–B3 | S | "shaky, back and forth" poisons every minute after | ⏳ next |
+| 3 | Spread the crew at spawn | C1 | S | Also fixes the free-hiding exploit | ⏳ next |
+| 4 | Key + action telemetry, then name every refusal | G1–G2 | S | Settles "are the keys working?" with evidence | ⏳ |
+| 5 | Dog / cat / guard gaits | D1 | M | The game's characters currently look stiff next to the raccoons | ⏳ |
+| 6 | Facade detail on the walls | E1 | M | Biggest visual gap in a game that already looks good at night | ⏳ needs the mesh budget raised first |
+| 7 | Floor grain + normal relief + specular variety | F1–F2 | M–S | The stuff you said you could keep going forever on | ⏳ |
 
 ## What's working — don't undo this
 - **Raccoon rendering reads as a raccoon.** Keep the leg/tail/ear wiggle, protect it when
@@ -293,3 +293,68 @@ Each ✅ becomes a branch with a check attached, merged when CI is green. I'll w
 entry here per item — what I did, what the check asserts, what I mutation-proved, and what I
 couldn't fix and why — so the next playtest starts from a list of things to look at, not a
 changelog.
+
+---
+
+## Log
+
+### 2026-09-16 · A1 🚀 every verb now has a body (+ the vault door was never a door)
+
+**What I did.** `makePadlock()` and `makeChain()` in `art.js`: brass shackle-and-body, faintly
+emissive so it survives a night map, hung on the pound's door face; a chain and padlock across
+the getaway gate. The pound turns to face the approach (same open-cell scan the vault doors
+use) so the lock is on the side you walk up to. Chewing shakes the lock harder as it gives,
+fires brass filings past 60 %, and the lock comes off and tumbles to the ground; the gate chain
+snaps off when the cart is full. Engine state: a chew that frees one of two **re-locks** the
+cage (the pound is not open just because you opened it once), and an arrest re-hangs a lock
+that was on the ground.
+
+**What the check asserts.** `engine.affordance()` returns, for the verb currently on offer,
+the point in the world it points at and the material that ought to be there — derived from
+the *level and the verb*, never from the prop, so deleting the prop fails rather than moving
+the goalpost. `__heistTest.afford()` measures to each mesh's **world bounding box** (the
+level is merged into a dozen batches whose origins are the middle of the map, so an origin
+distance test measures nothing). `heistplay` then walks every verb it meets on the route —
+`take, deliver, chew, shiny, can, free` — and:
+
+- the list of verbs it must visit is **scraped out of `focus()` in the engine source**, so a
+  verb added later without a body fails the build instead of hiding;
+- for `free` and `chew` the mesh must be *the lock* (material name), because cage bars are
+  meshes too and none of them is chewable;
+- the lock must jitter while chewed, be back on the door while anyone is still inside, and
+  be on the ground when the pound is empty;
+- the chain must be on the floor after the gate goes up;
+- the vault plate must be centred in its cell (≤ 0.45 m), merged (1–4 meshes on the pivot),
+  and must **move** (≥ 0.3 m) when the lock is chewed.
+
+`heistplay` 81 → **107** assertions, all green. `heistcheck` unchanged at 303.
+
+**What it found that I was not looking for.** The vault door had never been a door. Its
+plate was offset by one door radius *before* `bakeMeshes`, which applies that offset twice
+(geometry baked in world space, parent transforms it again on draw), so the plate drew
+0.86 m outside its cell; and the door group was not marked `keep`, so the frame's bake
+absorbed the plate into the static batch and `pivot.rotation.y` was rotating an empty group.
+The chew made a HUD happy and a sound. Two `bakeMeshes` traps now written up in the game
+README, because both will bite again.
+
+**What I mutation-proved.** `npm run heistmutate` (new, tracked): nine mutants, each a fixed
+bug put back by an anchored swap, each run through the real driver, each restored from a
+`/tmp` copy. Seven died immediately. Two did not, and both were the harness's fault:
+
+1. *hiding the padlock with `visible = false`* survived — `reset()` re-hangs every bit of
+   hardware on a retry, so the flag was repaired before the driver ever moved. The honest
+   mutant removes the lock from the cage group; that one kills five checks with
+   `kind: free, want: padlock, hit: null, near: []`, which is "I don't see a lock" as data.
+2. *measuring the plate by its object origin* survived a door that never opened, because a
+   merged mesh's origin sits on the hinge. The check now measures the geometry bbox.
+
+While writing #1 I also found `afford()` was checking `mesh.visible` on the leaf only, so
+anything hidden inside an invisible parent still counted as "seen" — fixed (`drawn()` walks
+the chain), pinned by its own check, because none of the route checks could see that bug.
+
+**What I did not do, and why.** A1 also asked for a bin-latch on hide spots and an empty
+scuff where a stolen pile used to be. Both are more meshes, the level is at 48 of a pinned
+50, and the honest shape for either is one `InstancedMesh` toggled by scaling instances to
+zero rather than a mesh each — that is now written in the game README's known gaps instead
+of quietly budget-busting here.
+
