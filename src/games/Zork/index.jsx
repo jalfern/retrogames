@@ -446,7 +446,11 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
         }
       },
       transcript: () => logRef.current.join(''),
-      exchanges: () => sensorRef.current.exchanges.map(e => ({ command: e.command, verdict: e.verdict, room: e.room })),
+      // `from` matters: the anti-walkthrough gate needs the exchanges since the
+      // CLICK, and the boot script's own commands would pollute the corpus — a
+      // harness that counts its own scripted nouns as evidence is grading itself.
+      exchanges: (from = 0) => sensorRef.current.exchanges.slice(from)
+        .map(e => ({ command: e.command, verdict: e.verdict, room: e.room, output: String(e.output).slice(0, 900) })),
       reset: () => { sensorRef.current.reset(); logRef.current = [] },
       // Stage 5a — the browser brain. `aiStart` mounts the SAME ZorkExplorer and
       // AgentLoop the Node gate drives, through the SAME sendCommand the form uses.

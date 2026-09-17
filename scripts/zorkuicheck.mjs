@@ -189,8 +189,67 @@ try {
   // statement about the runner. Turns decide now (`untilRooms` at the top).
   const spread = await untilRooms(3)
   const rooms = spread.rooms
-  const seen = await page.evaluate(() => window.__zorkTest.exchanges().slice(-6).map((e) => e.command).join(' · '))
-  r.info(`agent rate`, `${rateLine()} · ${spread.turns} turns in ${(spread.waited / 1000).toFixed(1)} s · last verbs: ${seen}`)
+  // THE SAME GATE `zorkcheck` runs in Node, with the transport a visitor actually
+  // gets. In Node the harness hands the sensor one newline-separated reply per
+  // command; the browser hands it Glk chunks glued together, which is how the
+  // parser came to map 13 rooms in Node and 1 in the page. So the anti-walkthrough
+  // rule is asserted HERE too: every object the brain asked for must be a word the
+  // GAME printed in an earlier reply of this very session. A noun smuggled in from
+  // a walkthrough — or from the harness's own script — is a red build here, where
+  // it would otherwise be invisible.
+  const lastVerbs = await page.evaluate(() => window.__zorkTest.exchanges().slice(-6).map((e) => e.command).join(' · '))
+  r.info(`agent rate`, `${rateLine()} · ${spread.turns} turns in ${(spread.waited / 1000).toFixed(1)} s · last verbs: ${lastVerbs}`)
+  // THE SAME ANTI-WALKTHROUGH GATE `zorkcheck` runs in Node, with the transport a
+  // visitor actually gets. In Node the harness hands the sensor one newline-separated
+  // reply per command; the browser hands it Glk chunks GLUED together, which is how
+  // this parser once mapped 13 rooms in Node and 1 in the page. So the rule is
+  // asserted here too: every object the brain asked for must be a word the GAME
+  // printed earlier in this session.
+  //
+  // And it waits for the chance to be meaningful. The first version read one snapshot
+  // after 12 seconds of play, found one object command, asserted `asked >= 3` and
+  // went red — a gate that fails because the agent had not said enough yet is a gate
+  // about the clock again. So: keep polling in TURNS until it has asked for three
+  // objects or the turns stop arriving, and then report how thin the evidence was.
+  const audit = async () => page.evaluate((from) => {
+    const all = window.__zorkTest.exchanges(0)
+    const corpus = []
+    const invented = []
+    let asked = 0
+    for (let i = 0; i < all.length; i++) {
+      const e = all[i]
+      const m = /^(?:take|get|turn on|open|light|drop)\s+(.+)$/i.exec(String(e.command).trim())
+      // Only the BRAIN'S commands are under suspicion — the boot script is the harness
+      // talking, and grading the harness's own vocabulary proves nothing. But every
+      // REPLY counts as evidence from exchange zero: a word the game printed before
+      // the click is still a word the GAME printed, and excluding it would fail an
+      // agent for repeating the world back.
+      if (m && i >= from) {
+        asked++
+        const noun = m[1].toLowerCase()
+        if (!corpus.join('\n').toLowerCase().includes(noun)) invented.push(`"${e.command}" — the game never said "${noun}"`)
+      }
+      corpus.push(String(e.output || ''))
+    }
+    return { asked, invented, turns: all.length }
+  }, before)
+  let nouns = await audit()
+  const turnFloor = await audit
+  let waited = 0
+  while (nouns.asked < 3 && waited < 30000) {
+    const t0 = nouns.turns
+    await page.waitForTimeout(1500)
+    waited += 1500
+    const again = await audit()
+    if (again.turns === t0) break          // no turn arrived: the box is done, not slow
+    nouns = again
+  }
+  void turnFloor
+  if (nouns.asked < 3) r.info('thin evidence here', `only ${nouns.asked} object command(s) before the turns ran out — zorkcheck's 95-command gate is the thick one`)
+  r.check('every noun it asked for came from the game, not from a walkthrough',
+    nouns.invented.length === 0,
+    nouns.invented.length ? nouns.invented.slice(0, 3).join(' | ')
+      : `${nouns.asked} object commands since the click, ${nouns.turns} replies scanned, none invented`)
   r.check('it maps real ground in the browser, not only in Node', spread.ok,
     spread.stalled
       ? `${rooms} rooms and NO turn for ${STALL_MS / 1000} s — the loop stopped, it was not the box`
