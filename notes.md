@@ -209,3 +209,73 @@ lights up when there is something to do. The shared `<VirtualControls />` is del
 *not* used here: an analog thumb position is not a discrete key. Arrow/Space are still
 handled, so the pad-shaped harness still works. The touch pad is gated behind
 `isTouch() || ?pad=1` — a thumbstick on a desktop is two discs covering the game.
+
+---
+
+## Raccoon Heist, checkpoint 3 — the world gets taller, the cast appears, and the harness learns to open its eyes
+
+### The camera was in a wall because the world was a toilet
+Every screenshot for two rounds showed brick. Not bad framing — *brick*, edge to edge. The
+cause was in `levels.js`: one grid cell was one metre. A corridor was therefore a metre
+wide, a raccoon 0.64 m, and any chase camera further back than two metres was inside a
+wall. Every fix I tried (pull the camera back, raise it, fade the wall) made the frame
+worse, because the level was too small to hold a camera at all.
+
+So the world got 2.2x wider: `export const CELL = 2.2`. The decision that made this a
+twenty-minute change instead of a rewrite: **the grid stays in cells and only the world
+mapping scales.** `at / cellOf / worldOf / build()`, every carve coordinate, the
+pathfinder, `heistcheck`'s cell arithmetic — untouched. What *did* need hunting were the
+metres anyone had hardcoded while a metre and a cell were the same number: floor quads
+`±0.5`, `BoxGeometry(1, h, 1)`, windows at `dx * 0.52`, rain extent, a hardcoded sky
+radius of 80, and the fog density (exp-squared fog, so the old value swallowed the far
+half of every yard in solid black).
+
+One was a genuine trap: the fence used to be *one merged batch with a mesh-level scale*
+(`fence.scale.set(0.98, 0.55, 0.98)`). At 1 m cells, sliding every panel a few centimetres
+is invisible. At 2.2 m it is a floating rail the width of a doorway, in the wrong place.
+Scaling a merged batch scales the positions inside it, so dimensions now get baked into
+`wallGeometry(level, wantHeight, fixedH)` instead.
+
+### The raccoons did not exist
+`npm run heistplay` said 45/45. The screenshots said no raccoon. `engine.group` — crew,
+guards, loot, the cat, everything alive — was never added to the scene. The level looked
+lovely, the numbers were perfect, and the stage was empty for the entire time I had been
+"playing" it.
+
+The fix is one line. The lesson is the reason this commit exists: **my harness could not
+see.** Every check read simulation state, and simulation state was correct. So `heistplay`
+now has a section named `THE CAST EXISTS` that asks whether the crew is a mesh, whether
+that mesh is in the rendered scene graph, and whether it is inside the frame — plus a
+triangle/draw-call floor, because a scene that draws *nothing* used to satisfy "no errors".
+A numeric check certifies an empty stage happily, and it had just done exactly that.
+
+### Draw calls: 138 → 67 → 43 level meshes
+Three rounds of batching, each one a real reduction rather than a raised threshold:
+- `bakeMeshes(node)` merges every static mesh inside a prop into one per material
+  (transparent parts skipped, `userData.keep` respected). The pound is twenty bars and a
+  roof: one mesh now. Same for the gate plate and slats (baked *inside* the door group, so
+  the door still slides as one object), the vault, and the cart (whose `pile` group is kept
+  out of the bake, because delivered loot keeps landing in it).
+- Lampposts collapsed hardest. Five meshes × eight lamps was half the level's draw calls.
+  Now: all ironwork into the clutter buckets, **all bulbs into one mesh sharing one emissive
+  material** — the flicker drives the shared material, so eight flickering lamps cost one
+  call — and all additive halos into a third.
+- Puddles: fourteen transparent quads, one mesh, one shimmer. They pulse in unison now,
+  which is the price, and the rain is thick enough that nobody collects it.
+
+The budget check got *split* rather than loosened: level ≤ 50 meshes, whole scene ≤ 280
+calls. One combined number lets a 400-mesh level hide behind a 20-mesh guard.
+
+### Two smaller truths
+- **Suspicion is per-watcher, per-prey.** It lived on the raccoon as one shared number, so
+  every guard who *couldn't* see you subtracted from the one who could. Bigger levels with
+  more guards were quietly easier. That is a level-design bug wearing a rendering hat.
+- **`hears()` is an event queue, not a stat**, and `masked` is thunder's honest name for
+  "you are loud and it does not matter". The manor storm is a mechanic you plan around
+  because of those two lines, not because the sky has rain in it.
+
+### Where it is
+`heistcheck` 264 PASS · `heistplay` 50 PASS · `lint:heist` clean · CI now carries
+`lint:heist` + `heistcheck` in the blocking static job and `heistplay` in the manual
+browser job. Three jobs carved; job 1 played end to end by a machine. The raccoon is
+visible, the crew waits by the cart, and the gate opens when the cart is empty.

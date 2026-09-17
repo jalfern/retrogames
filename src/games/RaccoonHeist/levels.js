@@ -24,6 +24,16 @@ export const T = {
     WATER: 9,     // flooded: slows you, splashes loudly
 }
 
+/**
+ * Metres per grid cell. 2.2, not 1, and the reason is the camera: a third-person game
+ * needs room behind the player. At 1 m per cell a corridor is a toilet booth, the
+ * raccoon is 0.64 m wide, and any chase camera further back than about two metres is
+ * inside a wall — which is exactly what the first playable build looked like, a brick
+ * texture with a HUD on it. The grid stays in cells; only the world mapping scales, so
+ * every carve coordinate, the audit and the pathfinder keep working unchanged.
+ */
+export const CELL = 2.2
+
 export const blocksMove = (t) => t === T.VOID || t === T.WALL || t === T.FENCE || t === T.DUMP || t === T.CRATE
 export const blocksSight = (t) => t === T.VOID || t === T.WALL || t === T.DUMP || t === T.CRATE
 
@@ -135,7 +145,7 @@ function build(spec) {
     for (const [key, v] of b.marks) {
         const [x, y] = key.split(',').map(Number)
         for (const ch of v.kind) {
-            marks.push({ ch, x, y, wx: x - (spec.w - 1) / 2, wz: y - (spec.h - 1) / 2 })
+            marks.push({ ch, x, y, wx: (x - (spec.w - 1) / 2) * CELL, wz: (y - (spec.h - 1) / 2) * CELL })
         }
     }
     const level = {
@@ -159,7 +169,7 @@ function build(spec) {
             range: r.range ?? 9,
             hear: r.hear ?? 5,
             wait: r.wait ?? 0.6,
-            pts: r.pts.map(([x, y]) => ({ x, y, wx: x - (spec.w - 1) / 2, wz: y - (spec.h - 1) / 2 })),
+            pts: r.pts.map(([x, y]) => ({ x, y, wx: (x - (spec.w - 1) / 2) * CELL, wz: (y - (spec.h - 1) / 2) * CELL })),
         })),
         ox: -(spec.w - 1) / 2,
         oz: -(spec.h - 1) / 2,
@@ -415,14 +425,14 @@ export function at(level, x, y) {
 
 /** Cell type at a WORLD position (world units, level-centred). */
 export function atWorld(level, wx, wz) {
-    return at(level, Math.round(wx - level.ox), Math.round(wz - level.oz))
+    return at(level, Math.round(wx / CELL - level.ox), Math.round(wz / CELL - level.oz))
 }
 
 export function cellOf(level, wx, wz) {
-    return [Math.round(wx - level.ox), Math.round(wz - level.oz)]
+    return [Math.round(wx / CELL - level.ox), Math.round(wz / CELL - level.oz)]
 }
 
-export const worldOf = (level, x, y) => [x + level.ox, y + level.oz]
+export const worldOf = (level, x, y) => [(x + level.ox) * CELL, (y + level.oz) * CELL]
 
 export function markAt(level, x, y, ch) {
     return level.marks.filter(m => m.x === x && m.y === y && (ch ? m.ch === ch : true))

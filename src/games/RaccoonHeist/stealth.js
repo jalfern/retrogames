@@ -14,9 +14,9 @@
 //     thunder, puddles and thrown shinies for free, and it is why lightning is the
 //     most valuable item in the game: it suppresses the event, not a modifier.
 
-import { T, blocksSight, at } from './levels.js'
+import { T, CELL, blocksSight, at } from './levels.js'
 
-const SAMPLE = 0.18   // world units per occlusion sample; < 1 so a 1 m wall is never skipped
+const SAMPLE = 0.22   // metres per occlusion sample; well under one cell (2.2 m) so no wall is ever stepped over
 
 /**
  * Can point A see point B? Marches the grid and stops at the first sight blocker.
@@ -33,7 +33,7 @@ export function losWorld(level, ax, az, bx, bz) {
     if (len < 1e-6) return true
     const n = Math.ceil(len / SAMPLE)
     const sx = dx / n, sy = dy / n
-    let x = ax - level.ox, y = az - level.oz
+    let x = ax / CELL - level.ox, y = az / CELL - level.oz
     for (let i = 1; i < n; i++) {
         x += sx; y += sy
         if (blocksSight(at(level, Math.round(x), Math.round(y)))) return false
@@ -45,12 +45,13 @@ export function losWorld(level, ax, az, bx, bz) {
 export function castWorld(level, ax, az, dirX, dirZ, maxDist) {
     const n = Math.ceil(maxDist / SAMPLE)
     const sx = dirX / n, sy = dirZ / n
-    let x = ax - level.ox, y = az - level.oz
+    let x = ax / CELL - level.ox, y = az / CELL - level.oz
     for (let i = 1; i < n; i++) {
         x += sx; y += sy
-        if (blocksSight(at(level, Math.round(x), Math.round(y)))) return { x: x - level.ox, z: y - level.oz, dist: (i - 1) * SAMPLE, hit: true }
+        if (blocksSight(at(level, Math.round(x), Math.round(y)))) return { x: (x - level.ox) * CELL, z: (y - level.oz) * CELL, dist: (i - 1) * SAMPLE, hit: true }
     }
-    return { x: ax + dirX * maxDist - level.ox, z: az + dirZ * maxDist - level.oz, dist: maxDist, hit: false }
+    const hx = (ax + dirX * maxDist) / CELL - level.ox, hy = (az + dirZ * maxDist) / CELL - level.oz
+    return { x: (hx - 0) * CELL, z: (hy - 0) * CELL, dist: maxDist, hit: false }
 }
 
 /** Shortest signed angle difference, in radians, wrapped to [-PI, PI]. */

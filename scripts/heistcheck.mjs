@@ -14,7 +14,7 @@
 // because it buys confidence you have not earned (this repo has already shipped two AI
 // agents that way).
 
-import { LEVELS, at, T, reachFrom, pathBetween, dumpLevel, blocksMove, blocksSight } from '../src/games/RaccoonHeist/levels.js'
+import { LEVELS, CELL, at, T, reachFrom, pathBetween, dumpLevel, blocksMove, blocksSight } from '../src/games/RaccoonHeist/levels.js'
 import { losWorld, coneAlign, detectRate, hears, nextWaypoint, moveProfile, tally, coverOf, lightAt, castWorld } from '../src/games/RaccoonHeist/stealth.js'
 import { CREW } from '../src/games/RaccoonHeist/levels.js'
 
@@ -105,7 +105,9 @@ for (let li = 0; li < LEVELS.length; li++) {
 
     // --- cover near the money ----------------------------------------------------
     // A loot pile with no cover within a sprint teaches the player that stealth is
-    // optional. Every pile gets a hedge, a dumpster or a corner within ~3.5 m.
+    // optional. Every pile gets a hedge, a dumpster or a corner within two cells.
+    // Measured in metres now that a cell is 2.2 m, because "3.6" meant nothing twice
+    // over: once when a cell was 1 m and it meant 3.6 m, and again when it didn't.
     for (const m of loot) {
         let best = 1e9
         for (let y = 0; y < lvl.h; y++) {
@@ -115,7 +117,8 @@ for (let li = 0; li < LEVELS.length; li++) {
                 best = Math.min(best, Math.hypot(x - m.x, y - m.y))
             }
         }
-        ok(best <= 3.6, `${lvl.name}: loot '${m.ch}' at (${m.x},${m.y}) has no cover within 3.6 m (nearest ${best.toFixed(1)})`)
+        const metres = best * CELL
+        ok(metres <= 4.4, `${lvl.name}: loot '${m.ch}' at (${m.x},${m.y}) has no cover within 4.4 m (nearest ${metres.toFixed(1)} m)`)
     }
 
     // --- patrols -----------------------------------------------------------------
@@ -177,8 +180,8 @@ section('STEALTH MODEL')
     ok(fence.length > 0, 'job 1 has no chain-link to test')
     if (fence.length) {
         const [fx, fy] = fence[0]
-        const a = lvl.ox + fx, b = lvl.oz + fy
-        ok(losWorld(lvl, a - 1.5, b, a + 1.5, b), 'chain-link blocks sight — it should never')
+        const a = (lvl.ox + fx) * CELL, b = (lvl.oz + fy) * CELL
+        ok(losWorld(lvl, a - CELL * 0.85, b, a + CELL * 0.85, b), 'chain-link blocks sight — it should never')
         ok(blocksMove(at(lvl, fx, fy)), 'chain-link does not block movement — you would walk through the fence')
         ok(!blocksSight(at(lvl, fx, fy)), 'blocksSight says fence is solid')
     }

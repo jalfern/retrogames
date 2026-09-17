@@ -21,7 +21,7 @@
 //    the job; losing one is a setback with a rescue in it.
 
 import * as THREE from 'three'
-import { T, at, atWorld, cellOf, blocksMove, reachFrom, pathBetween, worldOf, CREW, CELL_NAME } from './levels.js'
+import { T, CELL, at, atWorld, cellOf, blocksMove, reachFrom, pathBetween, worldOf, CREW, CELL_NAME } from './levels.js'
 import * as S from './stealth.js'
 import { makeAgent } from './world.js'
 import { makeRaccoon, animRaccoon, animWalker, makeLoot, makeIconTex, makeTex, disposables, lootValue, lootLabel, rng } from './art.js'
@@ -49,9 +49,18 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
     const poundW = { x: poundMark.wx, z: poundMark.wz }
 
     // --------------------------------------------------------------- crew ---------
-    /** Free cells around a point, spiralling outward: nothing spawns inside a wall. */
+    /**
+     * Free cells around a point, spiralling outward. Two rules, both learned from the
+     * screenshot where the opening frame was a close-up of the inside of a shopping
+     * cart: nothing may spawn inside a wall, and nothing may spawn in a *prop* — the
+     * cart, the pound and the gate all occupy walkable cells, and standing inside the
+     * cart at the start hides your raccoon behind a wire basket for the whole job.
+     */
     function freeAround(wx, wz, want) {
         const [cx, cy] = cellOf(L, wx, wz)
+        const taken = L.marks
+            .filter(m => 'SXPV'.includes(m.ch))
+            .map(m => ({ x: m.wx, z: m.wz }))
         const seen = []
         for (let r = 0; r < 6 && seen.length < want; r++) {
             for (let dy = -r; dy <= r; dy++) {
@@ -61,6 +70,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                     if (blocksMove(at(L, x, y))) continue
                     const [x2, z2] = worldOf(L, x, y)
                     if (seen.some(s => Math.hypot(s.x - x2, s.z - z2) < 0.9)) continue
+                    if (taken.some(t => Math.hypot(t.x - x2, t.z - z2) < 1.9)) continue
                     seen.push({ x: x2, z: z2 })
                     if (seen.length >= want) break
                 }
@@ -193,10 +203,11 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 const gx = cx + dx, gy = cy + dy
                 // `solid` first: a shut vault door is a FLOOR cell in the grid, so the
                 // grid alone would happily let a raccoon walk into steel.
-                if (!blocksMove(at(L, gx, gy)) && !solid(gx + L.ox, gy + L.oz)) continue
-                const bx = gx + L.ox, bz = gy + L.oz
-                const nx = Math.max(bx - 0.5, Math.min(x, bx + 0.5))
-                const nz = Math.max(bz - 0.5, Math.min(z, bz + 0.5))
+                if (!blocksMove(at(L, gx, gy)) && !solid((gx + L.ox) * CELL, (gy + L.oz) * CELL)) continue
+                const bx = (gx + L.ox) * CELL, bz = (gy + L.oz) * CELL
+                const half = CELL / 2
+                const nx = Math.max(bx - half, Math.min(x, bx + half))
+                const nz = Math.max(bz - half, Math.min(z, bz + half))
                 if ((x - nx) ** 2 + (z - nz) ** 2 < RADIUS * RADIUS) return true
             }
         }
@@ -762,7 +773,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         // the position lerp turns the orbit into a dive onto the spawn.
         if (st.phase !== 'play') {
             st.drone = (st.drone || 0) + dt * 0.09
-            const R = Math.max(L.w, L.h) * 0.66
+            const R = Math.max(L.w, L.h) * CELL * 0.62
             camera.position.set(Math.sin(st.drone) * R, 13 + Math.sin(st.drone * 0.7) * 1.8, Math.cos(st.drone) * R)
             camera.lookAt(0, 1.2, 0)
             return
@@ -786,7 +797,9 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         // over a roof keeps the raccoon framed, whereas sitting two metres behind a wall
         // is just an expensive way to render brick.
         const blocked = k < 0.98
-        const y = wantY + (blocked ? (1 - k) * 3.1 : 0)
+        // Climb, but politely: the first version climbed three metres per metre of
+        // occluded camera, which turned every alley into a satellite view.
+        const y = Math.min(7.5, wantY + (blocked ? (1 - k) * 1.5 : 0))
         st.camY += (y - st.camY) * Math.min(1, dt * 9)
         const shake = st.shake * 0.16
         camera.position.set(px + (rnd() - 0.5) * shake, st.camY + (rnd() - 0.5) * shake, pz + (rnd() - 0.5) * shake)

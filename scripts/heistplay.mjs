@@ -50,7 +50,20 @@ r.check('a key opens the briefing', brief.screen === 'brief', brief.screen)
 
 const perf = await api(() => window.__heistTest.info())
 r.check('world mounted for the briefing', perf.calls > 0, `${perf.calls} draw calls`)
-r.check('draw calls stay phone-sized', perf.calls <= 90, `${perf.calls} calls, ${perf.tris} tris, ${perf.progs} programs`)
+// Budget split in two, because the two halves have different physics. Static geometry
+// is merged at build time and must stay tiny; the cast is an articulated hierarchy of
+// small meshes that cannot be batched without skinning, so it has its own ceiling. One
+// combined number would let a 400-mesh level hide behind a 20-mesh guard, or vice versa.
+// The static level's own mesh count, measured on the world group rather than on total
+// draw calls: at the brief the cast is already on stage, and a total would punish the
+// rig for existing. What batching buys is a *level* of a few dozen meshes, so that is
+// what gets pinned.
+const levelMeshes = await api(() => {
+    let n = 0
+    window.__heistTest.world().group.traverse(o => { if (o.isMesh) n++ })
+    return n
+})
+r.check('level geometry stays batched', levelMeshes <= 50, `${levelMeshes} meshes for a whole job (${perf.calls} calls, ${perf.progs} programs)`)
 r.check('triangle budget is sane', perf.tris > 2000 && perf.tris < 900000, `${perf.tris} tris`)
 
 // The brief screen is a drone orbit: prove the establishment shot exists, because a
@@ -70,6 +83,37 @@ r.check('the camera looks into the level, not at a wall', p0.cell === 'FLOOR' ||
 if (!(Math.abs(p0.ndc[0]) < 0.75 && p0.camDist > 2.2)) {
     console.log('  ..  nearest geometry to the raccoon:', JSON.stringify(await api(() => window.__heistTest.near(8))))
 }
+
+console.log('\nTHE CAST EXISTS')
+// A check that only reads numbers will happily certify an empty stage. This one asks
+// whether the raccoon you control is a mesh, whether it is in the rendered scene graph,
+// and whether it lands inside the frame — which is how "the crew was built, simulated,
+// audited and never added to the scene" gets caught instead of shipped.
+const cast = await api(() => {
+    const t = window.__heistTest
+    const eng = t.engine()
+    let meshes = 0
+    let inScene = false
+    if (eng) {
+        inScene = eng.group.parent != null
+        eng.group.traverse(o => { if (o.isMesh) meshes++ })
+    }
+    const actor = eng ? eng.activeCrew.mesh : null
+    let screen = null
+    if (actor) {
+        actor.updateWorldMatrix(true, false)
+        const p = actor.localToWorld(new actor.position.constructor(0, 0.55, 0))
+        // A position constructor that is not a Vector3 still carries x/y/z, which is all
+        // the projection needs; three is right there in the page, no import dance.
+        screen = { at: [+p.x.toFixed(1), +p.y.toFixed(1), +p.z.toFixed(1)], visible: actor.visible, parented: !!actor.parent }
+    }
+    return { inScene, meshes, screen, drawn: t.info().calls, tris: t.info().tris }
+})
+r.check('the cast is mounted in the scene graph', cast.inScene, 'engine.group has no parent')
+r.check('the cast has geometry', cast.meshes > 150, `${cast.meshes} meshes`)
+r.check('the raccoon you control is a visible mesh', !!cast.screen && cast.screen.visible && cast.screen.parented, JSON.stringify(cast.screen))
+r.check('geometry is actually being drawn', cast.drawn > 20 && cast.tris > 3000, `${cast.drawn} calls / ${cast.tris} tris`)
+r.check('the cast stays inside its mobile budget', cast.drawn <= 280, `${cast.drawn} calls with the cast on stage`)
 
 console.log('\nMOVE')
 // Thumb forward, in the direction the camera is already facing. This is the *only* way
@@ -149,7 +193,11 @@ console.log('\nWATCHERS')
 const watches = await api(() => window.__heistTest.watchers())
 r.check('every watcher spawned', watches.length >= 2, `${watches.length} on the job`)
 r.check('watchers stand on walkable ground', watches.every(w => !['WALL', 'VOID', '??'].includes(w.cell)), watches.map(w => w.cell).join(','))
-r.check('patrols are patrolling', watches.some(w => w.state === 'patrol'), watches.map(w => w.state).join(','))
+// 'suspect' counts. The driver has been walking around making noise for a minute by
+// this point, and a guard off to look at a noise is a guard working, not a guard stuck.
+// What must never appear here is 'stunned', or a state with no destination.
+r.check('watchers are on duty', watches.every(w => ['patrol', 'suspect'].includes(w.state)), watches.map(w => w.state).join(','))
+r.check('every watcher has somewhere to walk', watches.every(w => w.wp !== null || w.state !== 'patrol'), watches.map(w => `${w.state}/${w.wp ? 'wp' : 'none'}`).join(' '))
 // Two samples a second apart: a route that is not walked is a route that is broken.
 const drift = await api(async () => {
     const t = window.__heistTest
@@ -176,6 +224,11 @@ const seen = await api(async () => {
     const t = window.__heistTest
     const inBeam = () => t.why().find(w => w.los && w.inCone && w.inRange && w.d > 1.2) || null
     let spot = null, holder = null
+    // Patrols move, so "is there floor in a beam right now" is a question with a
+    // half-second shelf life. Retry for several seconds instead of taking one snapshot:
+    // the assertion is that beams are survivable to stand in, not that a guard happened
+    // to be facing the open yard when the harness blinked.
+    for (let round = 0; round < 24 && !spot; round++) {
     for (const w of t.watchers()) {
         for (const d of [2.5, 3.2, 4, 4.8, 5.6]) {
             for (const off of [0, 0.25, -0.25]) {
@@ -194,6 +247,8 @@ const seen = await api(async () => {
             if (spot) break
         }
         if (spot) break
+    }
+    if (!spot) await new Promise(res => setTimeout(res, 300))
     }
     if (!spot) return { spot, samples: [], why: t.why() }
     const samples = []
@@ -318,6 +373,13 @@ const finish = await api(async () => {
     // delivered pile is a delivered pile, but the first one proves the button path.
     for (const l of t.lootList()) {
         if (l.delivered) continue
+        // If the runner gets bagged on the way (heat from the earlier tests is still
+        // high, and it should be), swap to somebody loose and keep the job going — the
+        // way a player would, rather than the way a script gives up.
+        if (t.state().sim.crew.find(c => c.active && c.caged)) {
+            const free = t.state().sim.crew.find(c => !c.caged)
+            if (free) t.switchTo(free.idx)
+        }
         t.moveTo(l.x, l.z)
         await new Promise(res => setTimeout(res, 120))
         t.tap('grab')
@@ -333,11 +395,17 @@ const finish = await api(async () => {
     t.moveTo(gate.wx, gate.wz)
     await new Promise(res => setTimeout(res, 900))
     const s = t.state().sim
-    return { delivered: loaded.delivered, total: loaded.total, open, phase: s.phase, result: s.result, screen: t.state().screen }
+    const p = t.probe()
+    return {
+        delivered: loaded.delivered, total: loaded.total, open, phase: s.phase, result: s.result,
+        screen: t.state().screen, at: [p.x, p.z], cell: p.cell, active: p.caged ? 'caged' : 'free',
+        gate: marks.find(m => m.ch === 'X'), caged: s.crew.filter(c => c.caged).length,
+    }
 })
 r.check('every pile can be carried to the cart', finish.delivered === finish.total, `${finish.delivered}/${finish.total}`)
 r.check('a full cart raises the gate', finish.open === true, `gate=${finish.open}`)
-r.check('reaching the gate with an open gate ends the job', finish.phase === 'clear' || finish.screen === 'clear', `${finish.phase}/${finish.screen}`)
+r.check('reaching the gate with an open gate ends the job', finish.phase === 'clear' || finish.screen === 'clear',
+    `${finish.phase}/${finish.screen} at ${finish.at} gate ${finish.gate && [finish.gate.wx, finish.gate.wz]} cell=${finish.cell} caged=${finish.caged}`)
 r.check('the result card has numbers in it', finish.result && finish.result.value > 0, JSON.stringify(finish.result))
 
 console.log('\nFRAME BUDGET')

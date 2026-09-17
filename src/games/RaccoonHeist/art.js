@@ -490,18 +490,23 @@ export function makeNightEnv(renderer) {
  * Sky dome + stars. Better than a flat clear colour: the eye reads a vertical gradient
  * as "night sky" and flat black as "the level ran out".
  */
-export function makeSky(seed = 3) {
+export function makeSky(seed = 3, radius = 90) {
     const g = new THREE.Group()
     const c = canvasOf(64, 128)
     paint(c, (x, y) => {
         const v = y / 127
         const n = fbm(x / 6, y / 14, seed, 3) * 10
         // v=0 is the top of the canvas = the zenith of the dome
-        const base = mixC(0x070f1a, 0x24455f, Math.pow(1 - v, 1.6))
-        return mixC(base, [46, 74, 96], n / 40)
+        const base = mixC(0x0a1522, 0x2e5573, Math.pow(1 - v, 1.7))
+        // City glow: a sodium-vapour band sitting on the horizon. No sky over a town is
+        // black at the bottom, and putting that one band back is most of what makes a
+        // 3D night stop looking like a void with a lamp in it.
+        const glow = Math.pow(Math.max(0, 1 - Math.abs(v - 0.93) * 7), 2)
+        const lit = mixC(base, [176, 116, 58], glow * 0.55)
+        return mixC(lit, [56, 88, 112], n / 40)
     })
     const dome = new THREE.Mesh(
-        new THREE.SphereGeometry(80, 16, 12),
+        new THREE.SphereGeometry(radius, 16, 12),
         new THREE.MeshBasicMaterial({ map: wrap(c), side: THREE.BackSide, fog: false, depthWrite: false })
     )
     g.add(dome)
@@ -512,7 +517,7 @@ export function makeSky(seed = 3) {
     for (let i = 0; i < N; i++) {
         const a = R() * Math.PI * 2
         const e = 0.12 + R() * 1.25
-        const r = 74
+        const r = radius * 0.92
         pos[i * 3] = Math.cos(a) * Math.cos(e) * r
         pos[i * 3 + 1] = Math.sin(e) * r
         pos[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r
@@ -527,8 +532,8 @@ export function propMat(kind) {
     switch (kind) {
         // Walls carry their tiling in UVs (see tileBox), so every wall in a level can
         // share one material — and one texture upload.
-        case 'brick': return mat('brick', { map: makeTex('brick'), roughness: 0.95, envMapIntensity: 0.5 })
-        case 'stucco': return mat('stucco', { map: makeTex('stucco'), roughness: 0.95, envMapIntensity: 0.5 })
+        case 'brick': return mat('brick', { map: makeTex('brick'), roughness: 0.95, envMapIntensity: 0.75, color: 0x9aa2ac })
+        case 'stucco': return mat('stucco', { map: makeTex('stucco'), roughness: 0.95, envMapIntensity: 0.8, color: 0xa9b3bd })
         case 'asphalt': {
             // makeTex('asphalt') returns a PAIR (colour map + roughness companion). Passing
             // the wrapper itself to `map:` is a crash, not a visual bug: three calls
@@ -1098,6 +1103,45 @@ export function batch(items) {
     return merged
 }
 
+/**
+ * Merge every static mesh under `node` into one mesh per material, in place.
+ *
+ * For props that are *built* as a little scene — a pound is twenty bars and a roof, a
+ * gate is a plate and six slats — the hierarchy buys nothing: nothing inside them ever
+ * moves independently. Without this, the level's set dressing is a hundred draw calls
+ * of four triangles each; with it, a whole job is a few dozen.
+ *
+ * Transparent parts are deliberately left alone (they need their own sorting), and this
+ * must never be called on a rigged actor: the raccoon and the walkers keep their
+ * hierarchy because their children are their joints.
+ */
+export function bakeMeshes(node) {
+    node.updateMatrixWorld(true)
+    const buckets = new Map()
+    const kills = []
+    node.traverse((o) => {
+        if (!o.isMesh || !o.geometry || o === node) return
+        if (o.material && o.material.transparent) return
+        if (o.parent && o.parent.userData && o.parent.userData.keep) return
+        const g = o.geometry.clone()
+        g.applyMatrix4(o.matrixWorld)
+        const key = o.material.uuid
+        if (!buckets.has(key)) buckets.set(key, { mat: o.material, geos: [] })
+        buckets.get(key).geos.push(g)
+        kills.push(o)
+    })
+    for (const o of kills) if (o.parent) o.parent.remove(o)
+    for (const { mat: m, geos } of buckets.values()) {
+        if (!geos.length) continue
+        const merged = geos.length === 1 ? geos[0] : batch(geos.map((geo) => ({ geo, matrix: new THREE.Matrix4() })))
+        const mesh = new THREE.Mesh(merged, m)
+        mesh.castShadow = true
+        mesh.receiveShadow = true
+        node.add(mesh)
+    }
+    return node
+}
+
 export function disposables(root) {
     const out = []
     root.traverse(o => { if (o.geometry) out.push(o.geometry) })
@@ -1323,7 +1367,11 @@ export function makeCart() {
         post.position.set(s * 0.5, 0.86, -0.42); post.rotation.x = 0.3
         g.add(post)
     }
+    // Basket, blanket, casters and handle become one mesh. The pile that grows inside
+    // them is kept out of the bake, because delivered loot keeps landing in it.
+    bakeMeshes(g)
     g.userData.pile = new THREE.Group()
+    g.userData.pile.userData.keep = true
     g.add(g.userData.pile)
     return g
 }
@@ -1344,6 +1392,9 @@ export function makeGate(w = 2, h = 3) {
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.7, 0.5), new THREE.MeshStandardMaterial({ map: makeTex('stencil'), transparent: true, roughness: 1 }))
     sign.position.set(0, h * 0.62, 0.1)
     door.add(sign)
+    // Bake the plate and its slats *inside* the door group: the door still slides as
+    // one object, the frame stays behind it, and nine meshes become three.
+    bakeMeshes(door)
     g.add(door)
     const jamb = mat('jamb', { color: 0x222b33, roughness: 0.8, metalness: 0.4 })
     for (const s of [-1, 1]) {
@@ -1351,6 +1402,9 @@ export function makeGate(w = 2, h = 3) {
         j.position.set(s * (w / 2 + 0.1), h / 2, 0); j.castShadow = true
         g.add(j)
     }
+    bakeMeshes(g)
+    // bakeMeshes re-parents the jambs into the root; put the sliding door back on top.
+    g.add(door)
     g.userData.door = door
     return g
 }
@@ -1385,6 +1439,10 @@ export function makeVaultDoor(r = 1.1) {
     const lintel = new THREE.Mesh(box(r * 2.5, 0.28, 0.42), jamb)
     lintel.position.set(0, r * 1.15, 0)
     g.add(lintel)
+    bakeMeshes(door)
+    bakeMeshes(g)
+    g.add(door)
+    g.userData.door = door
     return g
 }
 
@@ -1417,6 +1475,9 @@ export function makeCage() {
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.34), new THREE.MeshStandardMaterial({ map: makeTex('poundSign'), transparent: true, roughness: 1 }))
     sign.position.set(0, 1.05, -0.63)
     g.add(sign)
+    // Twenty bars, one draw call. The sign stays separate: it is transparent, it needs
+    // its own sorting, and it is the joke — jokes do not get merged into scenery.
+    bakeMeshes(g)
     return g
 }
 

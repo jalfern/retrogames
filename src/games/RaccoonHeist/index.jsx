@@ -102,7 +102,7 @@ const RaccoonHeistGame = () => {
         })
         renderer.outputColorSpace = THREE.SRGBColorSpace
         renderer.toneMapping = THREE.ACESFilmicToneMapping
-        renderer.toneMappingExposure = 1.22
+        renderer.toneMappingExposure = 1.34
         renderer.shadowMap.enabled = true
         renderer.shadowMap.type = THREE.PCFSoftShadowMap
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, touch ? 1.55 : 2))
@@ -126,7 +126,7 @@ const RaccoonHeistGame = () => {
         moonLight.shadow.mapSize.set(touch ? 512 : 1024, touch ? 512 : 1024)
         moonLight.shadow.camera.near = 1
         moonLight.shadow.camera.far = 70
-        const SH = 18
+        const SH = 22
         moonLight.shadow.camera.left = -SH
         moonLight.shadow.camera.right = SH
         moonLight.shadow.camera.top = SH
@@ -136,15 +136,18 @@ const RaccoonHeistGame = () => {
         scene.add(moonLight)
         scene.add(moonLight.target)
 
-        // Sky bounce + a floor bounce that is almost black, so undersides stay dark
-        // (that contrast is what makes the window glow read as warm).
-        const hemi = new THREE.HemisphereLight(0x3a648c, 0x0a1622, 1.15)
+        // Sky bounce + a floor bounce that is nearly black, so undersides stay dark —
+        // that contrast is what makes a lit window read as warm. The sky term still has
+        // to be generous: the moon is the only shadow caster, and without a fat
+        // hemisphere fill every underside goes pure black and the scene reads as a cave
+        // instead of a street.
+        const hemi = new THREE.HemisphereLight(0x4d7dab, 0x16283a, 1.5)
         scene.add(hemi)
 
         // ---------------------------------------------------- 2. world per job --
-        // The alley is the attract diorama; a level is the job. Both live in the same
-        // scene and swap, so the title screen and the game are lit by one rig and
-        // cannot drift apart in look.
+        // The alley is the attract diorama; a level is the job. Both live in one scene
+        // and swap, so the title screen and the game are lit by a single rig and cannot
+        // drift apart in look.
         const alley = makeAlley({ seed: 11 })
         scene.add(alley.group)
 
@@ -154,6 +157,15 @@ const RaccoonHeistGame = () => {
         // Lamp lights: three pooled PointLights re-bound every 0.2 s to the three
         // lamps nearest the player. Lighting all 8 by real light would be 8 more
         // lights in every fragment shader; two pools read identically at night.
+        // Plus one light that rides with the raccoon you control. Not a torch — a
+        // fill. Night scenes have a specific failure where the character you are steering
+        // becomes a dark lump against a dark wall, and no amount of careful moonlight
+        // fixes it, because the moon is behind the wall. Every third-person night game
+        // solves it the same dishonest way, and so does this one.
+        const playerLight = new THREE.PointLight(0xffd9a8, 2.2, 4.6, 2)
+        playerLight.castShadow = false
+        scene.add(playerLight)
+
         const pool = []
         const POOL = touch ? 2 : 3
         for (let i = 0; i < POOL; i++) {
@@ -168,7 +180,7 @@ const RaccoonHeistGame = () => {
             if (engine) {
                 engine.dispose()
                 for (const g of disposables(engine.group)) g.dispose()
-                scene.remove(engine.group)
+                if (engine.group.parent === scene) scene.remove(engine.group)
             }
             if (world) {
                 for (const g of disposables(world.group)) g.dispose()
@@ -179,18 +191,25 @@ const RaccoonHeistGame = () => {
             world = buildWorld(level)
             scene.add(world.group)
             engine = createEngine({ level, world, camera, audio: heistAudio, onEvent: onEngineEvent })
+            // The engine owns the cast — crew, guards, loot, the cat — in its own group.
+            // Mounting the world and forgetting the cast is the nastiest bug this file
+            // has had: the level looked perfect, the harness went green, and the
+            // raccoons did not exist. The play check now asserts they are on screen.
+            scene.add(engine.group)
             engineRef.current = engine
             engine.reset()
-            scene.fog.density = level.fog ?? 0.019
+            // Fog is exponential and the world just got 2.2x wider; the old density
+            // swallowed the far half of every yard in pure black.
+            scene.fog.density = (level.fog ?? 0.019) * 0.42
             scene.background = new THREE.Color(level.theme === 'museum' ? 0x11222f : PAL.nightDeep)
             moonLight.intensity = level.theme === 'manor' ? 0.35 : 1.8
-            hemi.intensity = level.theme === 'museum' ? 0.85 : 1.15
-            renderer.toneMappingExposure = level.theme === 'manor' ? 1.35 : 1.22
+            hemi.intensity = level.theme === 'museum' ? 1.1 : 1.5
+            renderer.toneMappingExposure = level.theme === 'manor' ? 1.45 : 1.34
             // Job 1 is the tutorial dressed as a job: warm moon, two patrols, no lasers.
             // Thumbs are attached to a phone held at arm's length: pull the camera in a
             // little and lift it, because a small screen cannot show a wide frame and
             // keep the raccoon readable.
-            engine.setCam(undefined, undefined, touch ? 8.6 : 7.6)
+            engine.setCam(undefined, 0.5, touch ? 7.6 : 6.8)
         }
 
         const seen = []
@@ -261,7 +280,7 @@ const RaccoonHeistGame = () => {
             // sells "the whole street just went white" for the price of two property sets.
             const flash = engine.st.flash || 0
             moonLight.intensity = (level.theme === 'manor' ? 0.35 : 1.8) + flash * 5.5
-            hemi.intensity = (level.theme === 'museum' ? 0.85 : 1.15) + flash * 1.2
+            hemi.intensity = (level.theme === 'museum' ? 1.1 : 1.5) + flash * 1.2
             moonLight.position.set(MOON.x * (1 + flash * 0.15), MOON.y * (1 + flash * 0.25), MOON.z)
             if (world.lamps.length) {
                 poolT -= dt
@@ -285,6 +304,8 @@ const RaccoonHeistGame = () => {
             // The shadow frustum follows the raccoon, not the map: a 40 m sheet of
             // 1024 shadow map is mush, an 18 m one centred on you is crisp.
             const a = engine.activeCrew
+            playerLight.position.set(a.x, 0.85 + (a.hidden ? -0.3 : 0), a.z)
+            playerLight.intensity = 2.2 * (a.crouched ? 0.7 : 1)
             moonLight.target.position.set(a.x, 0, a.z)
             moonLight.position.set(a.x + MOON.x, MOON.y, a.z + MOON.z)
         }
@@ -502,6 +523,7 @@ const RaccoonHeistGame = () => {
             watchers: () => (engine ? engine.debugWatchers() : []),
             why: () => (engine ? engine.why() : []),
             lootList: () => (engine ? engine.debugLoot() : []),
+            props: () => (world ? world.props : []),
             marks: () => (level ? level.marks.map(m => ({ ch: m.ch, x: m.x, y: m.y, wx: +m.wx.toFixed(2), wz: +m.wz.toFixed(2) })) : []),
             events: () => seen.splice(0, seen.length),
             info: () => ({
@@ -848,7 +870,7 @@ function BriefCard({ level, job }) {
                 <div className="grid grid-cols-3 gap-2 mt-4 text-[9px] tracking-[0.15em] text-cyan-200/60">
                     <span>PAR {level.par}s</span>
                     <span>{level.routes.length} WATCHERS</span>
-                    <span>{level.rain > 400 ? 'STORM' : 'DRIZZLE'}</span>
+                    <span>{level.rain >= 800 ? 'THUNDER' : level.rain >= 400 ? 'DRIZZLE' : 'OVERCAST'}</span>
                 </div>
                 <p className="text-[10px] tracking-[0.28em] text-[#ffb45c] mt-4 animate-pulse">
                     TAP / ANY KEY TO BEGIN

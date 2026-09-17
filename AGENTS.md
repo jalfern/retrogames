@@ -353,6 +353,8 @@ model/machine can reproduce it (it is not an external tool):
 | `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), DEV-hook wait (`openMario`, or `openGame(browser, { hook })` for other titles), pass/fail `Report`. |
 | `scripts/fpscheck.mjs` | IronKeep (the FPS): key-gated reachability audit of all three halls, then a driven play-through — collision, doors and keys, hitscan, pathfinding without line of sight, lives, the Warden, reaching `win`, and a frame-time budget. |
 | `scripts/keepplay.mjs` | IronKeep feel probe: real key events only (no frozen-frame shortcuts), so input-path bugs that deterministic stepping cannot see — a quick tap swallowed between two 60Hz samples — still show up. |
+| `scripts/heistcheck.mjs` | Raccoon Heist **in Node** (no browser): every job's carved grid audited for reachability of the cart, the gate, every marker and every coin; that each locked door is *load-bearing* (run the reachability twice, once with doors shut — the difference is the proof); patrol routes that actually walk; torch beams that cross floor; cover within two cells of every loot pile; and the stealth model itself. `--map N` dumps a job as ASCII, `--mutate` seals the vault and requires the audit to complain. |
+| `scripts/heistplay.mjs` | Chrome **plays** job 1: walks with an actual thumbstick vector, steals, delivers, chews a vault, stands in a torch beam until bagged, chews a friend loose, empties the cart, escapes. Asserts the cast is a visible mesh in the scene graph (the cast once passed every numeric check while never being added to the scene), that the verb shown is the verb that fires, and that a rescue takes under 4 s. |
 | `scripts/aicheck.mjs` | The **spine's own contract**, in Node, ~1 s. No brain exists yet, so `AgentLoop` is driven by fake brains that reproduce the failures this repo has already lived: an unknown skill must be **rejected and counted** (not thrown, not ignored), a brain that stops advancing must trip the watchdog and then stop *with a reason*, a throwing skill must not kill the loop, a brain with no move must stop rather than spin, every `Percept` field must ship a confidence defaulting to 0 (never a hole), and a title that declares no sensors must get no arm to advertise. |
 | `scripts/zorkcheck.mjs` | Zork **in Node** (no Chrome, no dev server), two phases. **Seams:** every command the scripted walk sent was legal, `open window` proved **by prose** (`nailed and boarded` before, absent after — a score bump is not proof, that move is worth 0 points here), a complaint does not invent a room, reading the leaflet does not invent a room, darkness detected, a refused move classified `blocked` not `moved`, no Glk/VM error. **Brain:** mounts the real `ZorkExplorer` in the real `AgentLoop` and asserts its invariants — never re-entered a dark room unlit, never died, never said a word the parser rejected, every merged room noticed (`splits`) and reported, ≥10 rooms mapped, and it stopped **with a reason it states**. `--map` prints the map the agent believes; `--trace` prints `verdict > command > first line of reply`. **Prose phase (2a):** grades the **first sight** of a room — Zork prints a long description once and never repeats it, so knowledge must be caught or re-`look`ed — and asserts the game's own exit labels were read: `west, up, down, east out, dark: up, down`, with west **not** dark, which is per-clause attribution (per-sentence would teach the agent to fear the lit way out). Also pinned: darkness **clears** when the light does, and a **lit lamp outranks the word "dark"**.
 | `scripts/zorkuicheck.mjs` | The AI behind a **real button**, in a real browser, driven only by one mouse click and one keypress. Asserts the affordance exists (a badge with no control is a brain nobody can start), that it plays **by itself** after the click (a check that watched the key turn instead of the car move passed while the map sat still), that the input field is disabled while it drives so no keystroke lands inside a half-typed word, that **one key takes the keyboard back and it never creeps back**, and that it prints what happened. This is also the only gate whose transport matches production: the Node harness hands the sensor newline-separated replies, the browser hands it Glk **chunks glued together**, and a parser that assumes its transport's shape (see `describeAfter`) maps 13 rooms in Node and 1 in the page. |
@@ -412,6 +414,22 @@ that tail is cleaned up.
 > `gh auth refresh -s workflow` (gh ≥2.40 — it was renamed from `auth refresh-scopes`),
 > then enter the device code at github.com/login/device. Additive and reversible via
 > `--remove-scopes`.
+
+## Raccoon Heist
+
+**RACCOON HEIST** (`/raccoon-heist`) is the arcade's first 3D title: a third-person
+stealth-heist in three hand-carved night maps, in three.js, with every texture, mesh and
+note generated at runtime. Lazy-loaded so nothing else on the site pays for a 3D engine.
+
+The contract that keeps it honest is that `levels.js` and `stealth.js` import into **plain
+Node** — which is why `npm run heistcheck` can prove a job is winnable before a browser
+exists, and why `npm run heistplay` can fail a level design rather than a render. Note the
+world scale (`CELL = 2.2` m): at 1 m per cell a third-person camera cannot fit in a
+corridor, and the grid logic deliberately stays in cells.
+
+Full notes — the file boundaries, the carving, the three load-bearing sim rules, the
+draw-call budget, and the honest gaps — are in
+**[`src/games/RaccoonHeist/README.md`](src/games/RaccoonHeist/README.md)**.
 
 ## IronKeep
 

@@ -11,8 +11,8 @@
 // only a handful of them and their transforms are the point.
 
 import * as THREE from 'three'
-import { at, T } from './levels.js'
-import { PAL, mat, propMat, makeTex, tileBox, batch, rng, makeWalker, makeCart, makeGate, makeVaultDoor, makeCage, makePlanter, makeColumn, makeDumpster, makeCrate, makePallet, makeBush, makeHydrant, makeTrashCan, makeCardboardBox, makeLamppost, makePuddle, makeWashingLine, makeMoon, makeSky, makeRain, lootValue } from './art'
+import { at, T, CELL, worldOf } from './levels.js'
+import { PAL, mat, propMat, makeTex, tileBox, batch, rng, makeWalker, makeCart, makeGate, makeVaultDoor, makeCage, makePlanter, makeColumn, makeDumpster, makeCrate, makePallet, makeBush, makeHydrant, makeTrashCan, makeCardboardBox, makeLamppost, makeWashingLine, makeMoon, makeSky, makeRain, lootValue } from './art'
 
 const M_PER_TILE_TEX = 2.2   // asphalt/marble texel size, in metres
 
@@ -25,8 +25,9 @@ function floorGeometry(level, want, tile = M_PER_TILE_TEX) {
         for (let x = 0; x < level.w; x++) {
             const t = at(level, x, y)
             if (!want.includes(t)) continue
-            const wx = x + level.ox, wz = y + level.oz
-            const x0 = wx - 0.5, x1 = wx + 0.5, z0 = wz - 0.5, z1 = wz + 0.5
+            const wx = (x + level.ox) * CELL, wz = (y + level.oz) * CELL
+            const h = CELL / 2
+            const x0 = wx - h, x1 = wx + h, z0 = wz - h, z1 = wz + h
             pos.push(x0, 0, z1, x1, 0, z1, x1, 0, z0, x0, 0, z0)
             const u0 = x0 / tile, u1 = x1 / tile, v0 = z0 / tile, v1 = z1 / tile
             uv.push(u0, v1, u1, v1, u1, v0, u0, v0)
@@ -47,15 +48,15 @@ function floorGeometry(level, want, tile = M_PER_TILE_TEX) {
  * level's per-cell height map, which is what gives the skyline its ragged roofline
  * without a single hand-placed mesh.
  */
-function wallGeometry(level, wantHeight = (t) => t === T.WALL) {
+function wallGeometry(level, wantHeight = (t) => t === T.WALL, fixedH = 0) {
     const geos = []
     const m = new THREE.Matrix4()
     for (let y = 0; y < level.h; y++) {
         for (let x = 0; x < level.w; x++) {
             if (!wantHeight(at(level, x, y))) continue
-            const h = Math.max(2.4, level.height[y * level.w + x])
-            const g = tileBox(new THREE.BoxGeometry(1, h, 1), [1, h, 1], [2.1, 1.5])
-            m.makeTranslation(x + level.ox, h / 2, y + level.oz)
+            const h = fixedH || Math.max(2.4, level.height[y * level.w + x])
+            const g = tileBox(new THREE.BoxGeometry(CELL, h, CELL), [CELL, h, CELL], [2.1, 1.5])
+            m.makeTranslation((x + level.ox) * CELL, h / 2, (y + level.oz) * CELL)
             g.applyMatrix4(m)
             geos.push(g)
         }
@@ -106,9 +107,14 @@ function scatterWindows(level, theme, out) {
                     if (R() > 0.72) continue
                     const wy = 2.1 + r * 2.2
                     if (wy > h - 0.6) continue
-                    const wx = x + level.ox + dx * 0.52
-                    const wz = y + level.oz + dz * 0.52
-                    out.push({ x: wx, y: wy, z: wz, ry: dx ? Math.PI / 2 * (dx > 0 ? 1 : -1) : (dz > 0 ? Math.PI : 0), warm, lit: R() > 0.35, w: 0.62 + R() * 0.3, h: 0.8 + R() * 0.35 })
+                    const wx = (x + level.ox) * CELL + dx * (CELL / 2 + 0.02)
+                    const wz = (y + level.oz) * CELL + dz * (CELL / 2 + 0.02)
+                    // atan2(dx, dz) is the yaw whose local +Z is the outward normal.
+                    // The version before this one special-cased the four directions and
+                    // got the two along +Z backwards: every window on those faces was
+                    // mounted facing into its own wall, glass first, and the frame plate
+                    // in front of it made a black rectangle the size of a doorway.
+                    out.push({ x: wx, y: wy, z: wz, ry: Math.atan2(dx, dz), warm, lit: R() > 0.35, w: 0.62 + R() * 0.3, h: 0.8 + R() * 0.35 })
                 }
             }
         }
@@ -164,15 +170,17 @@ export function buildWorld(level) {
     group.add(walls)
 
     // Chain-link: one merged transparent mesh. Blocks movement, never sight.
-    const fenceGeo = wallGeometry(level, (t) => t === T.FENCE)
+    // The fence gets its own dimensions rather than a scaled mesh: scaling the merged
+    // batch scales the *positions* in it too, which slides every fence panel a few
+    // centimetres off its wall — invisible at 1 m cells, a floating rail at 2.2 m.
+    const fenceGeo = wallGeometry(level, (t) => t === T.FENCE, 2.1)
     if (fenceGeo.attributes.position.count) {
         const fence = new THREE.Mesh(fenceGeo, new THREE.MeshStandardMaterial({
             name: 'fence',
             map: makeTex('chainlink', 1, 1), transparent: true, alphaTest: 0.32, color: 0xa8bcc9,
             roughness: 0.45, metalness: 0.55, side: THREE.DoubleSide, envMapIntensity: 0.9,
         }))
-        fence.scale.set(0.98, 0.55, 0.98)
-        fence.position.y = 0
+        fence.castShadow = false
         group.add(fence)
     }
 
@@ -182,18 +190,21 @@ export function buildWorld(level) {
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler()
     for (const w of wins) {
         e.set(0, w.ry, 0); q.setFromEuler(e)
-        m4.compose(new THREE.Vector3(w.x, w.y, w.z), q, new THREE.Vector3(1, 1, 1))
+        const out = new THREE.Vector3(Math.sin(w.ry), 0, Math.cos(w.ry))
+        m4.compose(out.clone().multiplyScalar(0.055).add(new THREE.Vector3(w.x, w.y, w.z)), q, new THREE.Vector3(1, 1, 1))
         const pg = new THREE.PlaneGeometry(w.w, w.h)
         pg.applyMatrix4(m4)
         paneGeos.push(pg)
-        const fm = new THREE.Matrix4().compose(new THREE.Vector3(w.x, w.y, w.z), q, new THREE.Vector3(1, 1, 1))
+        const fm = new THREE.Matrix4().compose(out.clone().multiplyScalar(-0.03).add(new THREE.Vector3(w.x, w.y, w.z)), q, new THREE.Vector3(1, 1, 1))
         const fg = tileBox(new THREE.BoxGeometry(w.w + 0.16, w.h + 0.16, 0.06), [w.w, w.h, 0.06], [1, 1])
         fg.applyMatrix4(fm)
         frameGeos.push(fg)
     }
     if (paneGeos.length) {
         const panes = new THREE.Mesh(batch(paneGeos.map((geo) => ({ geo, matrix: new THREE.Matrix4() }))), new THREE.MeshStandardMaterial({
-            color: 0x1a1408, emissive: PAL.amber, emissiveIntensity: 1.35, roughness: 1, flatShading: true,
+            name: 'windowPanes',
+            color: 0x2a2416, emissive: PAL.amber, emissiveIntensity: 1.9, roughness: 0.5, metalness: 0.1,
+            envMapIntensity: 1.2, flatShading: true,
         }))
         group.add(panes)
         flicker.push(panes)
@@ -207,7 +218,7 @@ export function buildWorld(level) {
     for (let y = 0; y < level.h; y++) {
         for (let x = 0; x < level.w; x++) {
             const t = at(level, x, y)
-            const wx = x + level.ox, wz = y + level.oz
+            const [wx, wz] = worldOf(level, x, y)
             if (t === T.CRATE) (theme === 'museum' ? planters : crates).push({ x: wx, z: wz, ry: R() * 6.283 })
             if (t === T.BUSH) (theme === 'museum' ? planters : hedges).push({ x: wx, z: wz, ry: R() * 6.283 })
             if (t === T.DUMP) hide.push({ x: wx, z: wz })
@@ -217,22 +228,22 @@ export function buildWorld(level) {
     if (crates.length) {
         const proto = makeCrate(0.92)
         const merged = batch(proto.children.map((c) => ({ geo: c.geometry, matrix: c.matrix.clone() })))
-        instance({ geometry: merged, material: propMat('wood') }, crates.map((c) => ({ ...c, s: [1, 0.8 + R() * 0.5, 1] })), group)
+        instance({ geometry: merged, material: propMat('wood') }, crates.map((c) => ({ ...c, s: [1.35, 1 + R() * 0.6, 1.35] })), group)
     }
     if (hedges.length) {
         const proto = makeBush(1.15)
         const merged = batch(proto.children.map((c) => ({ geo: c.geometry, matrix: c.matrix.clone() })))
-        instance({ geometry: merged, material: mat('hedgeInst', { color: PAL.leafDark, roughness: 1 }) }, hedges.map((c) => ({ ...c, s: [1, 0.85 + R() * 0.4, 1] })), group)
+        instance({ geometry: merged, material: mat('hedgeInst', { color: PAL.leafDark, roughness: 1 }) }, hedges.map((c) => ({ ...c, s: [1.5, 1.2 + R() * 0.5, 1.5] })), group)
     }
     if (planters.length) {
         const proto = makePlanter()
         const merged = batch(proto.children.map((c) => ({ geo: c.geometry, matrix: c.matrix.clone() })))
-        instance({ geometry: merged, material: mat('palmInst', { color: 0x3f6a45, roughness: 1 }) }, planters, group)
+        instance({ geometry: merged, material: mat('palmInst', { color: 0x3f6a45, roughness: 1 }) }, planters.map(c => ({ ...c, s: [1.3, 1.3, 1.3] })), group)
     }
     if (theme === 'museum') {
         for (let y = 0; y < level.h; y += 6) {
             for (let x = 0; x < level.w; x += 6) {
-                if (at(level, x, y) === T.MARBLE) columns.push({ x: x + level.ox, z: y + level.oz })
+                if (at(level, x, y) === T.MARBLE) { const [cx2, cz2] = worldOf(level, x, y); columns.push({ x: cx2, z: cz2 }) }
             }
         }
         if (columns.length) {
@@ -249,8 +260,10 @@ export function buildWorld(level) {
     // yard's entire junk — bins, cans, cartons, hydrants, pallets, washing lines —
     // costs three or four calls. Props that *move* (loot, the gate, the vault, the
     // flickering lamps) stay individual, because their transform is the point of them.
+    const props = []
     const buckets = new Map()
-    const stamp = (prop, x = 0, z = 0, ry = 0) => {
+    const stamp = (prop, x = 0, z = 0, ry = 0, kind = 'prop') => {
+        props.push({ kind, x, z })
         const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0))
         const root = new THREE.Matrix4().compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(1, 1, 1))
         prop.updateMatrixWorld(true)
@@ -278,23 +291,56 @@ export function buildWorld(level) {
         buckets.clear()
     }
 
-    for (const cell of hide.filter(h => at(level, Math.round(h.x - level.ox), Math.round(h.z - level.oz)) === T.DUMP)) {
-        stamp(makeDumpster(Math.round(cell.x * 31 + cell.z)), cell.x, cell.z, (R() > 0.5 ? 1 : -1) * Math.PI / 2)
+    for (const cell of hide.filter(h => at(level, Math.round(h.x / CELL - level.ox), Math.round(h.z / CELL - level.oz)) === T.DUMP)) {
+        stamp(makeDumpster(Math.round(cell.x * 31 + cell.z)), cell.x, cell.z, (R() > 0.5 ? 1 : -1) * Math.PI / 2, 'dumpster')
     }
-    for (const m of mark('T')) stamp(makeTrashCan(Math.round(m.wx * 7 + 3)), m.wx, m.wz, R() * 6.283)
-    for (const m of mark('W')) stamp(makeWashingLine([m.wx - 1.6, 5.4, m.wz], [m.wx + 1.6, 4.2, m.wz + 1.2], Math.round(m.wx + m.wz)))
+    for (const m of mark('T')) stamp(makeTrashCan(Math.round(m.wx * 7 + 3)), m.wx, m.wz, R() * 6.283, 'can')
+    for (const m of mark('W')) {
+        // Laundry in the open is the best thing in a night alley and the worst thing to
+        // park on top of the player's spawn, so keep it off the cart's frontage.
+        const cart = level.marks.find(k => k.ch === 'S')
+        if (cart && Math.hypot(m.x - cart.x, m.y - cart.y) < 4) continue
+        stamp(makeWashingLine([m.wx - 1.6, 5.4, m.wz], [m.wx + 1.6, 4.2, m.wz + 1.2], Math.round(m.wx + m.wz)), 0, 0, 0, 'laundry')
+    }
     // ---- mark-driven props ------------------------------------------------------
     const put = (obj, m, dy = 0) => { obj.position.set(m.wx, dy, m.wz); group.add(obj); return obj }
 
-    const dumpsters = mark('L').length ? [] : []
-    void dumpsters
+    // Every lamp post in the job collapses into three meshes: all the ironwork (one
+    // material), all the bulbs (one emissive material — the flicker drives the shared
+    // material, so eight lamps cost one draw call, not eight), and all the halos.
+    const bulbGeos = []
+    const haloGeos = []
+    const haloMat = new THREE.MeshBasicMaterial({ color: PAL.sodium, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false })
     for (const m of mark('L')) {
         const lamp = makeLamppost()
-        lamp.position.set(m.wx, 0, m.wz)
-        lamp.rotation.y = R() * 6.283
-        group.add(lamp)
-        lamps.push({ x: m.wx, z: m.wz, bulb: lamp.userData.bulb })
+        const [wx, wz] = worldOf(level, m.x, m.y)
+        const ry = R() * 6.283
+        lamp.rotation.y = ry
+        lamp.updateMatrixWorld(true)
+        lamp.traverse((o) => {
+            if (!o.isMesh) return
+            const g = o.geometry.clone()
+            g.applyMatrix4(o.matrixWorld)
+            g.translate(wx, 0, wz)
+            if (o === lamp.userData.bulb) bulbGeos.push(g)
+            else if (o.material.transparent) haloGeos.push(g)
+            else {
+                const key = o.material.uuid
+                if (!buckets.has(key)) buckets.set(key, { mat: o.material, geos: [] })
+                buckets.get(key).geos.push(g)
+            }
+        })
+        lamps.push({ x: wx, z: wz, bulb: lamp.userData.bulb })
     }
+    if (bulbGeos.length) {
+        const bulbMesh = new THREE.Mesh(batch(bulbGeos.map(geo => ({ geo, matrix: new THREE.Matrix4() }))), mat('bulb', { color: 0x2a2118, emissive: PAL.sodium, emissiveIntensity: 6, roughness: 1 }))
+        group.add(bulbMesh)
+        flicker.push({ material: bulbMesh.material })
+    }
+    if (haloGeos.length) {
+        group.add(new THREE.Mesh(batch(haloGeos.map(geo => ({ geo, matrix: new THREE.Matrix4() }))), haloMat))
+    }
+
     // A few props that exist purely so the yard is not empty: a hydrant, a carton,
     // a pallet. Placement is not random though, and both rules are lessons:
     //
@@ -314,7 +360,8 @@ export function buildWorld(level) {
         if (touching < 1) continue
         placed++
         const pick = [() => makeHydrant(), () => makeCardboardBox(0.9, i + 2), () => makeCardboardBox(1.25, i + 9), () => makePallet()][placed % 4]()
-        stamp(pick, x + level.ox, y + level.oz, Math.floor(R() * 4) * Math.PI / 2)
+        const [px, pz] = worldOf(level, x, y)
+        stamp(pick, px, pz, Math.floor(R() * 4) * Math.PI / 2, 'clutter')
     }
 
     flushBuckets()
@@ -381,23 +428,41 @@ export function buildWorld(level) {
     }
 
     // ---- atmosphere -------------------------------------------------------------
-    const sky = makeSky(level.w)
+    const sky = makeSky(level.w, Math.max(level.w, level.h) * CELL * 1.15)
     group.add(sky)
     const moon = makeMoon()
-    moon.position.set(-46, 34, -60)
+    // Inside the dome (radius 80), not outside it: the first moon was at 89 m, which is
+    // how a night scene ends up with moonlight and no moon.
+    moon.position.set(-58, 44, -78)
     group.add(moon)
-    const rain = makeRain(level.rain, Math.max(level.w, level.h) * 1.15, Math.max(level.w, level.h) * 1.15, level.w)
+    const span = Math.max(level.w, level.h) * CELL
+    const rain = makeRain(level.rain, span * 1.1, span * 1.1, level.w)
     group.add(rain.mesh)
 
-    const puddles = []
-    for (let i = 0; i < 14; i++) {
+    // Puddles: fourteen transparent quads sharing one material become one mesh and one
+    // draw call. They shimmer together now instead of each on its own phase, which is
+    // the price, and the rain is heavy enough that nobody collects it.
+    const puddleGeos = []
+    for (let i = 0; i < 16; i++) {
         const x = Math.floor(R() * level.w), y = Math.floor(R() * level.h)
-        if (at(level, x, y) !== T.FLOOR && at(level, x, y) !== T.MARBLE) continue
-        const p = makePuddle(0.5 + R() * 1.7, i + level.w)
-        p.position.set(x + level.ox, 0.014, y + level.oz)
-        p.userData.base = 0.09 + R() * 0.13
-        puddles.push(p)
-        group.add(p)
+        const t = at(level, x, y)
+        if (t !== T.FLOOR && t !== T.MARBLE) continue
+        const [ux, uz] = worldOf(level, x, y)
+        const g = new THREE.CircleGeometry(0.5 + R() * 1.7, 12)
+        g.rotateX(-Math.PI / 2)
+        g.translate(ux, 0.014, uz)
+        puddleGeos.push(g)
+    }
+    let puddles = null
+    if (puddleGeos.length) {
+        const wet = new THREE.MeshStandardMaterial({
+            name: 'puddle',
+            map: makeTex('puddle', 1, 1), transparent: true, opacity: 0.16, roughness: 0.06,
+            metalness: 0.55, envMapIntensity: 2.4, depthWrite: false, color: 0xbcd8f0,
+        })
+        puddles = new THREE.Mesh(batch(puddleGeos.map(geo => ({ geo, matrix: new THREE.Matrix4() }))), wet)
+        for (const g of puddleGeos) g.dispose()
+        group.add(puddles)
     }
 
     const state = { t: 0 }
@@ -405,7 +470,7 @@ export function buildWorld(level) {
         state.t += dt
         rain.animate(dt)
         rain.mesh.material.opacity = 0.16 + storm * 0.3
-        for (const p of puddles) p.material.opacity = p.userData.base * (0.7 + Math.sin(state.t * 2.1 + p.position.x) * 0.3) * (0.8 + storm * 0.5)
+        if (puddles) puddles.material.opacity = (0.13 + Math.sin(state.t * 2.1) * 0.04) * (0.8 + storm * 0.6)
         const fl = 0.93 + Math.sin(state.t * 11.7) * 0.05 + Math.sin(state.t * 2.7) * 0.05
         for (const f of flicker) f.material.emissiveIntensity = 1.35 * fl
         for (const l of lamps) l.bulb.material.emissiveIntensity = 6 * fl
@@ -419,7 +484,7 @@ export function buildWorld(level) {
         }
     }
 
-    return { group, lamps, hide, lasers, vaults, cart: cartObj, gate: gateObj, cage, rain, animate, floor, walls, state }
+    return { group, lamps, hide, lasers, vaults, cart: cartObj, gate: gateObj, cage, rain, animate, floor, walls, props, state }
 }
 
 function boxSmall(s) { return new THREE.BoxGeometry(s, s, s) }
