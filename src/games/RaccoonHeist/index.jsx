@@ -533,6 +533,14 @@ const RaccoonHeistGame = () => {
              * this tells you *what*, by listing the geometry nearest the camera with its
              * world position and material — which is how "a cardboard box is on the
              * spawn" gets found in one run instead of six screenshots.
+             *
+             * Character rigs are **excluded**, and that is the whole point of this
+             * function's history. Its nearest answer used to be the raccoon's own forearm
+             * (`fur1` at 0.08 m — crew 1's fur material, one metre of meshes around the
+             * position that is its feet), which was read as "the actor is 8 cm inside a
+             * wall" and sent a camera investigation after a wall nobody had touched. A
+             * rig is not geometry; the question "is the body inside the level" belongs to
+             * the collision model, and that is `depth()` right below.
              */
             near: (n = 10) => {
                 if (!engine) return []
@@ -541,6 +549,7 @@ const RaccoonHeistGame = () => {
                 const v = new THREE.Vector3()
                 scene.traverse((o) => {
                     if (!o.isMesh || !drawn(o) || o.isInstancedMesh || o.isSprite) return
+                    for (let q = o; q; q = q.parent) if (q.userData?.rig) return
                     o.getWorldPosition(v)
                     const d = Math.hypot(v.x - a.x, v.z - a.z)
                     if (d > 9) return
@@ -620,12 +629,26 @@ const RaccoonHeistGame = () => {
                 }
             },
             watchers: () => (engine ? engine.debugWatchers() : []),
+            /**
+             * How deep each body sits inside the *collision model*, in metres (negative =
+             * clear). `blocked()` refuses a move that lands inside, so a positive number
+             * here is a sim bug — this is the instrument that decides whether a low-frame-
+             * rate failure is "the raccoon walked through a wall" or "the camera did".
+             * Ask it of one actor (`depth()` for the raccoon you control) or of the whole
+             * cast (`depths()`), and read `grid` / `prop` apart: they have different
+             * owners (`levels.js` vs `world.js`).
+             */
+            depth: () => engine?.bodyDepth() || null,
+            depths: () => engine?.allDepths() || null,
             camClear: () => engine?.camClear() || null,
             clearAt: (dx, dz) => engine?.clearAt(dx, dz) || null,
             tightSpot: () => engine?.tightSpot() || null,
-            warpWatcher: (i, x, z, state) => engine?.warpWatcher(i, x, z, state) || null,
+            warpWatcher: (i, x, z, state, aim) => engine?.warpWatcher(i, x, z, state, aim) || null,
+            watcherAt: (i) => engine?.watcherAt(i) || null,
+            restoreWatcher: (i, s) => engine?.restoreWatcher(i, s) || null,
             release: (i, x, z) => engine?.release(i, x, z) || null,
             calm: () => engine?.calmWatchers() ?? -1,
+            navAt: (wx, wz) => engine?.cellNameAt(wx, wz) || '??',
             setCam: (yaw, pitch, dist) => engine?.setCam(yaw, pitch, dist),
             why: () => (engine ? engine.why() : []),
             lootList: () => (engine ? engine.debugLoot() : []),

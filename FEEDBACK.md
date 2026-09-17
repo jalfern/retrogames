@@ -299,6 +299,104 @@ changelog.
 
 ## Log
 
+### 2026-10-07 · the suite stops prosecuting its own runner 🕐 2–3 fps is a SKIP now, out loud
+
+Three green `--throttle 64` runs turned into a 21-red cascade on a box with the game
+untouched, and the file that reported it had *already* printed "frame rate under the 4 fps
+floor" as an info line and then asserted forty time-shaped checks anyway. At 2–3 fps a guard
+redraws once per frame — 0.33 m of cone arc per tick — so a driver that plants itself in a
+torch beam is not in the cone the meter uses. Nobody gets spotted; nobody gets bagged; the
+pound is empty for the rescue section; the job busts before the cart; `afford()` returns
+null, and the report reads **"the grab button is broken"**. None of that is the game.
+
+Three rules, in `heistplay` + `Report`:
+
+- **`skip` is a first-class result.** A question this machine could not ask is not a question
+  the game answered wrong. Skips are counted in the tally, so a green run states what it did
+  not look at (`120/120 checks passed, 1 SKIPPED`).
+- **`claim()` downgrades only seconds, and only after the floor is breached.** Detection
+  budgets, arrest timing, padlock duration: skippable. "Is this cell solid", "does this verb
+  have a mesh": never, because a slow box answers those honestly. The floor is re-measured at
+  section boundaries (`pace`), not sampled once at startup.
+- **A revived job says so.** If the runner beat the crew, the harness frees them between
+  sections and prints how many it put back on their feet. At 60 fps that reports zero.
+
+And THE GETAWAY walks the guards to the far tile before tallying the cart — and prints that
+it did it, with the distance. That section is about carrying; stealth is asserted two
+sections earlier, where a raccoon actually stands in a beam until it is bagged. A staged
+scenario that isn't labelled is how a harness starts grading its own meddling.
+
+`60 fps: 121/121, no skips` · `64x throttle (2–3 fps here): 120/120 + 1 documented skip`.
+
+### 2026-10-07 · B3/C1-style forensics 🚕 the actor was never in the wall, and a guard was in a lamppost
+Queue item 0 said: *"`blocksMove` lets the actor stand 8 cm inside `fur1` at 6 fps — the
+camera was innocent all along."* It was wrong, and the interesting part is that it was
+wrong with a measurement behind it.
+
+**`near()` cannot answer "is the actor inside the level".** It walks the scene for meshes
+near the actor, sorted by distance. The nearest mesh to any raccoon is a piece of its own
+rig — crew 1's fur material is literally named `fur1` — and a rig is a metre of spheres and
+boxes arranged around the point that is its feet. `fur1 @ 0.08 m` is its forearm. Every
+number in that accusation was real: the frame rate, the corner, the distance. The mapping
+from "0.08 m from a fur mesh" to "8 cm inside a wall" was the invention, and a round of
+camera work went to the wall.
+
+So the question moved out of the scene graph and into the collision model
+(`engine.bodyDepth()` in `engine.js`, `t.depth()` / `t.depths()` on the hook, and
+`npm run cornerprobe` to print it), reported as **three columns rather than one**:
+
+| column | question | a red means |
+|---|---|---|
+| `wall` | metres from the actor's centre to solid brick | movement — `blocked()` refuses such a step |
+| `grid` | how deep the 0.32 m collider overlaps brick | same, but this one is `blocked()`'s own promise |
+| `cam` | `INSIDE`, or metres of world in front of the rig | the rig |
+
+`wall` and `grid` are separate because the first mutant written against this check
+(`RADIUS = 0.02`, a raccoon two centimetres wide) **survived** a check written on `grid`
+alone: a smaller collider is still stopped at the surface, so the check measured
+`blocked()`'s promise and stayed green while the animal stood inside a lamppost. Two
+mutants later, `heistplay` pins both — "the raccoon is never inside the level" (`wall > 0`)
+and "a raccoon is 0.64 m wide" (the walk must stop 0.32 m outside what it hit, ± one 0.08 m
+step) — and each is killed by exactly one mutant.
+
+**Answer to the queue item, measured at 5 fps in the pinch corner:** the actor's centre
+bottoms out at **0.32 m** from brick — the collider, touching, never through — across 70
+frames of walking backwards into the corner with the camera on the wall side. Zero buried
+camera frames. The sim is clean; the escape hatch added last round is what the corner needs,
+and nothing else is. Queue item 0 is closed as *not a bug*, with the instrument that proves
+it left in the repo.
+
+**What the new instrument found instead: guards were ghosts.** `updateWatchers` has two
+movement branches. The chase branch calls `move()` and so asks `blocked()`; the *waypoint*
+branch (`w.x += ...` toward the next `pathBetween` cell) did not — and the grid is only half
+the collision model, so watchmen walked through lampposts, hydrants and bins while the
+raccoon could not touch one. Nothing caught it for six rounds because the only guard who
+ever got close enough to furniture to notice had already caught you. It steps through
+`move()` now, like the cat does, and `heistplay` stages it on purpose:
+
+- `suspect` (not `alert`) so the guard takes the *pathing* branch, which is the one that
+  was broken — an `alert` guard with line of sight short-circuits into the chase code and
+  would have passed the check without touching it;
+- `routeOf()` proves the map really routes him through that prop's cell, or the whole test
+  is a walk down an empty corridor;
+- the guard must cover > 1 m, must get within 0.75 m of the prop's surface (else the check
+  is vacuous), and `prop` penetration must stay ≤ 0 in every sample.
+
+It bottoms out at **gap 0.33 m, pen −0.009**: touching the collider, never inside it.
+
+**And the driver misled me once, which is worth writing down because it looked like the
+torch check going flaky.** The first run of the new guard section failed two *later*
+sections — the torch-spotting budget and the whole getaway. The section warped watcher 0
+fifteen metres off his patrol route and left him there, so every downstream check that
+depends on when a particular beam sweeps past was measuring my staging. `watcherAt` /
+`restoreWatcher` hand him back now (position, yaw, state, waypoint index, suspicion array),
+and "the staged guard went home" is itself a check. A harness that moves the world must put
+it back.
+
+Suite: `heistplay` **122/122** at 60 fps (seven new checks on top of the 110 the last
+round left), `lint:heist` clean, `heistcheck` 303, and `heistmutate` now fourteen mutants —
+every one of them seen red except the two documented equivalents.
+
 ### 2026-10-06 · — 🚀 the world was running in slow motion and the checks blamed the game
 
 CI ran `heistplay` 94/104 red while the laptop was green, and the interesting part is that

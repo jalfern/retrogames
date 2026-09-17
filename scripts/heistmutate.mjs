@@ -160,6 +160,43 @@ const MUTANTS = [
         mustFail: 'a lock nobody can see is not an affordance',
         note: 'visibility belongs to the whole chain; the route checks cannot see this one',
     },
+    {
+        // The body-depth instrument's own mutant. Guards whose waypoint branch steps
+        // straight at the next cell centre ignore everything standing ON a cell, so the
+        // watchman clips through every lamppost and bin in the yard while the raccoon
+        // cannot touch one. Direct chase already went through `move()`; that is why six
+        // rounds of arrest checks never saw it.
+        name: 'a guard steps straight at his waypoint again',
+        file: ENG,
+        anchor: '                    if (!move(w, step(nx - w.x), step(nz - w.z))) sp = 0',
+        swap: '                    w.x += step(nx - w.x)\n                    w.z += step(nz - w.z)',
+        mustFail: 'a guard stops at the furniture instead of clipping it',
+        note: 'the grid is not the whole collision model, and this is the one body that did not ask',
+    },
+    {
+        // The other half of the instrument: a raccoon thin enough to stand inside a lamppost.
+        // Every camera check stays green, and so does the depth check that measures the
+        // *collider*, because a smaller collider is still stopped at the surface — which is
+        // how this mutant survived its first attempt, and why `wall` (centre to brick) and
+        // the 0.32 m waist are pinned separately.
+        name: 'the raccoon is two centimetres wide',
+        file: ENG,
+        anchor: 'const RADIUS = 0.32',
+        swap: 'const RADIUS = 0.02',
+        mustFail: 'a raccoon is 0.64 m wide',
+        note: 'RADIUS is the animal: shrink it and you stand in the mesh while the collider reads clean',
+    },
+    {
+        // The movement bug the pinch corner was accused of: a step that never asks the
+        // world. The raccoon walks into the north wall, its centre ends up inside brick,
+        // and every legal camera position behind it disappears with it.
+        name: 'the raccoon stops asking the world before it steps',
+        file: ENG,
+        anchor: '        if (dx && !blocked(o.x + dx, o.z, o)) { o.x += dx; moved = true }',
+        swap: '        if (dx) { o.x += dx; moved = true }',
+        mustFail: 'the raccoon is never inside the level',
+        note: 'blocked() is the only thing between a body and the map; centre-to-brick is how you see it go',
+    },
 ]
 
 const only = process.argv.slice(2).filter(a => !a.startsWith('--'))

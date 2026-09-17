@@ -68,7 +68,7 @@ An arrest also **SHOUTS**: nearby watchers go `suspect` and converge on the sigh
 is why the harness check is "the job survives an arrest", not "exactly one raccoon gets
 bagged" — a second guard arriving on the noise is the design working.
 
-## Four rules the sim obeys
+## Five rules the sim obeys
 
 1. **The drawn cone *is* the deadly cone.** A guard's vision mesh is built from the same
    half-angle and range the sim uses to see you, and occlusion for both the camera and the
@@ -111,6 +111,39 @@ minigame.
    side you walk up to. The vault plate turned out to be drawn **0.86 m outside its cell**
    and to have never moved when chewed — both are `bakeMeshes` traps, and both are in the
    next section because they will bite again.
+
+5. **Every body asks `blocked()` before it steps.** The grid is not the collision model:
+   it is 2.2 m cells, and every lamppost, hydrant, bin and crate is *decoration standing on
+   a walkable cell*, so `blocked()` adds a radius per prop. The raccoon has obeyed that
+   since round 1. The guards did not — the branch that follows a `pathBetween` route stepped
+   straight at the next cell centre and never asked, so a watchman slid through furniture
+   while you could not touch it. Direct chase *did* ask, which is why six rounds of arrest
+   checks never saw it: the only guard who ever touched a lamppost had already caught you,
+   and by then the frame is full of him.
+
+   The related trap is diagnostic, and it cost a whole round. `near()` lists meshes near the
+   actor sorted by distance; its nearest answer was `fur1` at 0.08 m, which got read as
+   *"the actor is 8 cm inside a wall at 6 fps"* and sent the camera work after a wall nobody
+   had walked into. `fur1` is crew 1's fur: the raccoon's **own forearm**, a metre of rig
+   arranged around the point that is its feet. So the rig is tagged out of `near()`, and the
+   question is asked of the collision model instead — `engine.bodyDepth()`, in signed metres,
+   reporting the two failures apart:
+
+   | number | question | who owns a red |
+   |---|---|---|
+   | `wall` | metres from the actor's **centre** to solid brick | movement (`blocked()` refuses such a step) |
+   | `grid` | how deep the **0.32 m collider** overlaps brick | the same, and it is `blocked()`'s own promise |
+   | `cam` | `INSIDE`, or metres of world in front of the rig | the camera rig |
+
+   Two columns rather than one because the second is guaranteed by `blocked()` and the
+   first is not: a raccoon that got thinner would keep `grid` clean while standing *in* the
+   mesh, so `heistplay` pins the waist itself ("a raccoon is 0.64 m wide": it must stop
+   0.32 m — give or take one 0.08 m step — outside what it walked into). Measured at 5 fps
+   in the pinch corner: centre bottoms out at exactly 0.32 m, collider touching, never
+   through, and every buried camera frame has a clean body under it. `npm run cornerprobe`
+   prints that table; the three new mutants (a guard stepping un-asked, a thinner
+   raccoon, an actor that never asks the world) each turn exactly the check that owns
+   them red.
 
 ## Two `bakeMeshes` traps, both paid for
 

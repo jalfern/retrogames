@@ -308,6 +308,53 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         return false
     }
 
+    /**
+     * How deep a body sits inside the world, in metres — **signed**: positive = that many
+     * metres inside, negative = clear by that much. `blocked()` refuses a move that lands
+     * inside, so a positive number here is a sim bug by definition, which is exactly what
+     * makes it worth measuring rather than inferring. See `bodyDepth` in the harness API
+     * for the inference that started a three-round chase after the wrong wall.
+     *
+     * Grid and prop are reported apart because they have different owners (`levels.js`
+     * carves the grid, `world.js` decides which props are solid) — and different rules:
+     * `blocked(self)` deliberately lets a body that is *already* inside a prop keep
+     * walking, so a positive `prop` after a teleport or a rescue is policy, not a bug.
+     *
+     * `-99` means "nothing of that kind is even nearby", so it never reads as a clearance.
+     */
+    function depthOf(a) {
+        if (!a) return null
+        const out = {
+            x: +a.x.toFixed(2), z: +a.z.toFixed(2), r: +RADIUS.toFixed(2),
+            cell: cellNameOf(a.x, a.z), grid: -99, gridAt: null, prop: -99, propAt: null,
+            // `wall` is the centre-to-solid-surface distance in metres, and it is the one
+            // that answers "is the BODY in the wall". `grid` above answers "does the BODY
+            // (the 0.32 m collider) overlap the wall", which `blocked()` enforces by
+            // construction — so a check written on `grid` alone cannot tell a walking bug
+            // apart from a raccoon that got thinner. `wall` can.
+            wall: 99,
+        }
+        const [cx, cy] = cellOf(L, a.x, a.z)
+        for (let dy = -2; dy <= 2; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+                const gx = cx + dx, gy = cy + dy
+                if (!blocksMove(at(L, gx, gy)) && !solid((gx + L.ox) * CELL, (gy + L.oz) * CELL)) continue
+                const bx = (gx + L.ox) * CELL, bz = (gy + L.oz) * CELL, half = CELL / 2
+                const nx = Math.max(bx - half, Math.min(a.x, bx + half))
+                const nz = Math.max(bz - half, Math.min(a.z, bz + half))
+                const d = Math.hypot(a.x - nx, a.z - nz)
+                if (d < out.wall) out.wall = +d.toFixed(3)
+                const pen = RADIUS - d
+                if (pen > out.grid) { out.grid = +pen.toFixed(3); out.gridAt = [gx, gy] }
+            }
+        }
+        for (const p of props) {
+            const pen = p.r + RADIUS - Math.hypot(a.x - p.x, a.z - p.z)
+            if (pen > out.prop) { out.prop = +pen.toFixed(3); out.propAt = [+p.x.toFixed(2), +p.z.toFixed(2), p.r] }
+        }
+        return out
+    }
+
     /** Axis-separated slide: you always get the wall you scraped, never the corner. */
     function move(o, dx, dz) {
         let moved = false
@@ -783,8 +830,14 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 else {
                     const mult = w.state === 'alert' ? 1.15 : w.state === 'suspect' ? 1.15 : 1
                     sp = w.state === 'alert' ? (CHASE[w.kind] || 3.1) : (w.Speed || 1.5) * mult
-                    w.x += ((nx - w.x) / d) * sp * dt
-                    w.z += ((nz - w.z) / d) * sp * dt
+                    // Waypoints are walkable cells, so this branch used to skip `move()`
+                    // and step straight at the next cell centre: fine for the grid, and
+                    // useless for anything standing *on* a cell. Guards walked through
+                    // lampposts, hydrants and bins while the raccoon could not, because
+                    // the grid is not the whole collision model — `blocked()` owns the
+                    // props, and this was the one moving body that never asked it.
+                    const step = (v) => (v / d) * sp * dt
+                    if (!move(w, step(nx - w.x), step(nz - w.z))) sp = 0
                     const want = Math.atan2(nx - w.x, nz - w.z)
                     let dd = want - w.yaw
                     while (dd > Math.PI) dd -= Math.PI * 2
@@ -980,8 +1033,10 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             if (cat.ri >= cat.route.length) { cat.ri = cat.route.length - 1; cat.rdir = -1; cat.mode = 'walk'; cat.sit = 1.6 + rnd() * 2 }
             if (cat.ri <= 0) { cat.ri = 0; cat.rdir = 1; cat.mode = 'walk'; cat.sit = 1 + rnd() * 2 }
         } else {
-            cat.x += ((p.x - cat.x) / d) * sp * dt
-            cat.z += ((p.z - cat.z) / d) * sp * dt
+            // Same rule as the guards: the cat asks `blocked()` too. A cat that clips a
+            // lamppost is the same broken world as a guard that does, only smaller.
+            const step = (v) => (v / d) * sp * dt
+            move(cat, step(p.x - cat.x), step(p.z - cat.z))
             cat.yaw = Math.atan2(p.x - cat.x, p.z - cat.z)
         }
         cat.mesh.position.set(cat.x, 0, cat.z)
@@ -1586,6 +1641,25 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             return { clear: +d.dist.toFixed(2), at: d.hit ? [+d.x.toFixed(1), +d.z.toFixed(1)] : null }
         },
         /**
+         * **How deep a body is inside the world, in metres** (negative = clear by that
+         * much). This exists because `near()` — meshes near the actor, sorted by distance
+         * — answered "what is the raccoon inside?" with `fur1` at 0.08 m, and `fur1` is
+         * the raccoon's *own forearm*: the rig is one metre of meshes around a position
+         * that is the centre of its feet. Reading that as "the actor is 8 cm inside a
+         * wall" sent three rounds of camera work at a wall that was never touched.
+         *
+         * So the question gets asked of the collision model directly: the grid AABBs and
+         * the prop radii `blocked()` actually walks against, for the actor, for every
+         * watcher, and for the camera. A positive `grid`/`prop` here is a sim bug by
+         * definition — `blocked()` refuses a move that lands there.
+         */
+        bodyDepth(who) { return depthOf(who || actor()) },
+        /** Same question, asked of everything that walks: one number per actor. */
+        allDepths: () => ({
+            crew: crew.map(c => depthOf(c)),
+            watchers: watchers.concat(cops.map(c => c.w).filter(Boolean)).map(w => depthOf(w)),
+        }),
+        /**
          * How much world is in front of the camera, in metres. The check this serves is
          * "the camera is not inside a wall", which no screenshot of a playable game
          * catches politely and no other number describes: a wall that fills the frame
@@ -1605,6 +1679,20 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 at: d.hit ? [+d.x.toFixed(1), +d.z.toFixed(1)] : null,
                 side: +st.camSide.toFixed(2),
                 dist: +Math.hypot(camera.position.x - a.x, camera.position.z - a.z).toFixed(2),
+            }
+        },
+        /**
+         * Harness-only: the cell route the guards *would* walk between two points, in
+         * world metres. Staging a guard that is PATHING (rather than chasing) needs to
+         * know the map actually routes him that way, and `tightSpot`'s lesson applies:
+         * where two parts of the system must agree, one of them has to measure the other.
+         */
+        routeOf(x0, z0, x1, z1) {
+            const p = pathBetween(L, cellOf(L, x0, z0), cellOf(L, x1, z1), { sealed: closedV })
+            if (!p) return null
+            return {
+                cells: p.length,
+                via: p.map(([cx, cy]) => [+((cx + L.ox) * CELL).toFixed(2), +((cy + L.oz) * CELL).toFixed(2)]),
             }
         },
         /**
@@ -1651,7 +1739,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
          * and "does getting caught ever happen" has to be a check, not a five-minute
          * walk around a yard hoping the AI cooperates.
          */
-        warpWatcher(i, x, z, state) {
+        warpWatcher(i, x, z, state, aim) {
             const all = watchers.concat(cops.map(k => k.w).filter(Boolean))
             const w = all[i]
             if (!w) return null
@@ -1673,9 +1761,44 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             w.x = nx; w.z = nz
             if (moved) x = nx, z = nz
             if (state) w.state = state
+            // `aim` is what makes a *pathing* guard stageable. `alert` with line of sight
+            // short-circuits to a straight-line chase that already went through `move()`,
+            // so the branch where guards used to ignore props could not be reached from
+            // the harness at all. `suspect` walks to `aim` via `pathBetween` instead.
+            if (aim) w.aim = { x: aim[0], z: aim[1] }
             w.path = null; w.wait = 0; w.lose = 0
             w.mesh.position.set(x, 0, z)
             return { at: [+x.toFixed(2), +z.toFixed(2)], state: w.state, kind: w.kind }
+        },
+        /**
+         * Harness-only: hand a watcher back exactly as he was. Staging a test means
+         * moving a guard around, and a guard left on the far side of the map has a
+         * different patrol phase for the rest of the run — so the *next* section's
+         * timing check measures the previous section's meddling. Every check that warps
+         * a watcher should snapshot it here and restore it after.
+         */
+        watcherAt(i) {
+            const w = watchers.concat(cops.map(k => k.w).filter(Boolean))[i]
+            if (!w) return null
+            return {
+                x: w.x, z: w.z, yaw: w.yaw, state: w.state, ri: w.ri, rdir: w.rdir, pi: w.pi,
+                aim: w.aim ? { x: w.aim.x, z: w.aim.z } : null, lastSeen: w.lastSeen ? { x: w.lastSeen.x, z: w.lastSeen.z } : null,
+                det: w.det.slice(), cool: w.cool || 0, alertT: w.alertT || 0, lose: w.lose || 0, wait: w.wait || 0,
+            }
+        },
+        restoreWatcher(i, s) {
+            const w = watchers.concat(cops.map(k => k.w).filter(Boolean))[i]
+            if (!w || !s) return null
+            Object.assign(w, {
+                x: s.x, z: s.z, yaw: s.yaw, state: s.state, ri: s.ri, rdir: s.rdir, pi: s.pi,
+                aim: s.aim, lastSeen: s.lastSeen, cool: s.cool, alertT: s.alertT, lose: s.lose, wait: s.wait,
+            })
+            w.det = s.det.slice()
+            w.path = null; w.direct = null
+            w.mesh.position.set(w.x, 0, w.z)
+            w.mesh.rotation.y = w.yaw
+            if (w.coneMesh) { w.coneMesh.position.set(w.x, 0.05, w.z); w.coneMesh.rotation.y = w.yaw }
+            return { at: [+w.x.toFixed(2), +w.z.toFixed(2)], state: w.state }
         },
         /**
          * Harness-only: put a caged raccoon back on its feet, optionally somewhere else.
@@ -1698,6 +1821,10 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             return { at: [+c.x.toFixed(2), +c.z.toFixed(2)], caged: c.caged, phase: st.phase }
         },
         /** Harness-only: stand everyone down. Used between staged set-pieces. */
+        /** Harness-only: the cell name under a world point. Lets the harness go looking
+         *  for a patch of floor instead of guessing coordinates and hoping `warpWatcher`'s
+         *  nudge finds one. */
+        cellNameAt: (wx, wz) => cellNameOf(wx, wz),
         calmWatchers() {
             for (const w of watchers.concat(cops.map(k => k.w).filter(Boolean))) {
                 w.state = 'patrol'

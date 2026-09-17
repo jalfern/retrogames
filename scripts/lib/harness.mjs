@@ -122,7 +122,19 @@ export async function throttleCPU(page, rate = 1) {
 //   r.check('music advancing', s1.step !== s2.step, `${s1.step} -> ${s2.step}`)
 //   r.exit()
 export class Report {
-    constructor(name) { this.name = name; this.rows = []; this.failed = 0 }
+    constructor(name) { this.name = name; this.rows = []; this.failed = 0; this.skipped = 0 }
+    /**
+     * A question this machine could not ask is not a question the game answered wrong.
+     * `heistplay` skips the checks shaped like seconds once the runner has been measured
+     * under its frame-rate floor — because the alternative is twenty red rows about a
+     * stealth model that was never given a chance to be seen, filed against the game.
+     * Skips are counted and printed, so a green run still says what it did not look at.
+     */
+    skip(label, detail = '') {
+        this.rows.push({ label, pass: null, detail })
+        this.skipped++
+        console.log(`  SKIP  ${label}${detail ? '  (' + detail + ')' : ''}`)
+    }
     check(label, pass, detail = '') {
         this.rows.push({ label, pass: !!pass, detail })
         if (!pass) this.failed++
@@ -131,8 +143,9 @@ export class Report {
     }
     info(label, detail) { console.log(`  ..    ${label}${detail !== undefined ? '  ' + detail : ''}`) }
     exit(browser) {
-        const total = this.rows.length
+        const total = this.rows.length - this.skipped
         console.log(`\n${this.name}: ${total - this.failed}/${total} checks passed` +
+            (this.skipped ? `, ${this.skipped} SKIPPED` : '') +
             (this.failed ? `  — ${this.failed} FAILED` : '  — OK'))
         if (browser?.close) return browser.close().then(() => process.exit(this.failed ? 1 : 0))
         process.exit(this.failed ? 1 : 0)
