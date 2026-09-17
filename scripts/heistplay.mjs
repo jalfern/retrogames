@@ -926,17 +926,37 @@ const seen = await api(async () => {
             if (best) {
                 t.moveTo(best.x, best.z)
                 await window.__simSleep(0.05)
-                if (floorish(t.probe().cell)) {
-                    spot = { x: +best.x.toFixed(2), z: +best.z.toFixed(2), d: best.d, guard: best.guard, rate: +best.rate.toFixed(2) }
-                    holder = best.holder
-                    break
+                if (!floorish(t.probe().cell)) continue
+                // **"In the cone" has to mean over time, not at one sampled instant.**
+                // A patrol's yaw is integrated per frame, so at 5 fps the cone sweeps in
+                // 200 ms arcs: a cell that scores `rate 1.2` on the frame the driver asked
+                // can be outside the beam on every frame after it, and the meter then never
+                // leaves zero while the driver samples a Strobelight. CI saw exactly that
+                // (`peak meter 0.00` at 5 fps, everything above it green). So the cell is
+                // only accepted once the game has said "I see you here" three times in a
+                // row — which is what "standing in a torch beam" means to a player anyway.
+                let firm = 0
+                for (let k = 0; k < 5 && firm < 3; k++) {
+                    const q = t.why().find(x => x.los && x.inCone && x.inRange)
+                    if (q && q.rate > 0.25) firm++
+                    else firm = 0
+                    await window.__simSleep(0.08)
                 }
+                if (firm < 3) continue
+                spot = { x: +best.x.toFixed(2), z: +best.z.toFixed(2), d: best.d, guard: best.guard, rate: +best.rate.toFixed(2) }
+                holder = best.holder
+                break
             }
             if (!spot) await window.__simSleep(0.25)
         }
         return spot
     }
-    await hunt([5.6, 4.8, 4, 3.2, 2.5])
+    // Far end of the beam first. The close cells fill the meter faster, but 2.5 m is also
+    // arm's reach for a guard who has already been alerted by the hunt itself — and on a
+    // box rendering one frame per 200 ms the driver loses that race routinely, gets the
+    // crew bagged three times over, and then the section reports the meter reading of a
+    // BUSTED job (0.00) as if the stealth model had stopped noticing.
+    await hunt([5.6, 4.8, 4])
     if (!spot) return { spot, samples: [], why: t.why(), penned: penned() }
     const samples = []
     let peak = 0
@@ -1037,7 +1057,7 @@ const seen = await api(async () => {
         // raccoon in a cone on that frame is what got crew bagged at low frame rates.
         if (spottedAt < 0 && !inBeam()) {
             const w = t.watchers().find(x => x.kind === holder) || t.watchers()[0]
-            for (const d of [2.2, 3, 3.8, 1.6, 4.6]) {
+            for (const d of [4.6, 3.8, 5.2, 3.2]) {
                 const x = w.x + Math.sin(w.yaw) * d, z = w.z + Math.cos(w.yaw) * d
                 t.moveTo(x, z)
                 await window.__simSleep(0.06)
@@ -1052,7 +1072,7 @@ const seen = await api(async () => {
         // noticed me", which is a report about the driver.
         if (spottedAt < 0 && i > 0 && i % 5 === 4 && (Math.max(...samples) < 0.02 || t.why().length === 0)) {
             spot = null
-            await hunt([3.2, 4, 2.5, 4.8])
+            await hunt([4.8, 5.6, 4])
             if (spot) {
                 // The experiment restarts, so the stopwatch does. The promise is "from cold,
                 // standing in a live beam at distance d, noticed inside the budget" — and a
@@ -1080,7 +1100,8 @@ const seen = await api(async () => {
             if (['FLOOR', 'MARBLE', 'BUSH'].includes(t.probe().cell)) break
         }
     }
-    return { spot, samples, peak: +peak.toFixed(2), why, caged: t.probe().caged, heat: st.heat, penned: penned(), spottedAt: spottedAt < 0 ? -1 : +spottedAt.toFixed(2) }
+    return { spot, samples, peak: +peak.toFixed(2), why, caged: t.probe().caged, heat: st.heat, penned: penned(),
+        busted: penned(), spottedAt: spottedAt < 0 ? -1 : +spottedAt.toFixed(2) }
 })
 if (!seen.spot) console.log('  ..  no cell in any cone:', JSON.stringify(seen.why))
 if (seen.spot && seen.spottedAt < 0) console.log('  ..  parked and never noticed — the game said:', JSON.stringify(seen.why))
@@ -1101,7 +1122,11 @@ if (seen.spot) console.log(`  ..  parked in the fastest cone the hunt found: ${s
     claim('a torch at working range notices you inside the budget', seen.spottedAt >= 0 && seen.spottedAt < budget,
         `spotted after ${seen.spottedAt < 0 ? 'never' : seen.spottedAt.toFixed(1) + ' s of game time'} at ${(seen.spot ? seen.spot.d : 0)} m (budget ${budget.toFixed(2)} s; meter ${S2.map(d => d.toFixed(2)).join(' > ')})`)
 }
-claim('standing in a torch beam raises suspicion', (seen.peak || 0) > 0.15, `peak meter ${(seen.peak || 0).toFixed(2)} (last window ${((seen.samples || []).join('>')) || 'empty — the driver re-hunted'})`)
+claim('standing in a torch beam raises suspicion', (seen.peak || 0) > 0.15,
+    `peak meter ${(seen.peak || 0).toFixed(2)} (last window ${((seen.samples || []).join('>')) || 'empty — the driver re-hunted'})`
+    // A busted job does not update its meter at all, so a zero here after a bust is a
+    // report about the DRIVER getting the crew caught, not about the stealth model.
+    + (seen.busted ? ` — and the job BUSTED during the hunt (${seen.busted} in the pound): this line is about the driver, not the game` : ''))
 r.info('the cost of standing in the light', `${seen.penned} in the pound by the end of this section — the driver steps out of the beam the moment one goes in, and never watches \`probe().caged\`, which resets when being caught hands you the next raccoon`)
 claim('being spotted is announced', seen.spottedAt >= 0 || seen.heat > 10, `spot at ${seen.spottedAt} s of game time, heat ${Math.round(seen.heat)}`)
 if (!(Math.max(...(seen.samples || [0])) > 0.15)) console.log('  ..  detection arithmetic:', JSON.stringify(seen.why))
