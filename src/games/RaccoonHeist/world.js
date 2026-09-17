@@ -338,7 +338,11 @@ export function buildWorld(level) {
             }
         })
         lamps.push({ x: wx, z: wz, bulb: lamp.userData.bulb })
-        props.push({ x: wx + 0.1, z: wz + 0.1, r: 0.26 })
+        // The pole is modelled at the group origin, so the collider goes exactly where
+        // the iron is. The +0.1 this used to carry was a fudge from an earlier frame
+        // offset that no longer exists, and a collider 10 cm from its prop is the kind
+        // of thing that turns into "I bumped air" three months from now.
+        props.push({ x: wx, z: wz, r: 0.26 })
     }
     if (bulbGeos.length) {
         const bulbMesh = new THREE.Mesh(batch(bulbGeos.map(geo => ({ geo, matrix: new THREE.Matrix4() }))), mat('bulb', { color: 0x2a2118, emissive: PAL.sodium, emissiveIntensity: 6, roughness: 1 }))
