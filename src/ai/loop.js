@@ -139,6 +139,9 @@ export class AgentLoop {
       failures: this.failures,
       invalid: this.invalid,
       stuck: this.stuck,
+      idle: this.idle,        // ticks where the brain declined to act: the number
+      stale: this.stale,      //   that says "gave up" rather than "was too slow"
+      lastActionMs: this.running ? this.now() - this.lastActionAt : null,
       progress: this.progress,
       progressMax: this.progressMax,
       successRate: total ? this.successes / total : null,
