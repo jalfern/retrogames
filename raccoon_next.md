@@ -9,11 +9,15 @@ what broke and what each fix cost. This file is only: *where we are, and what to
 
 - **Live in production:** https://www.jalfern.com/retrogames/raccoon-heist
   (also on a phone — the touch pad auto-enables; `?pad=1` shows it on desktop).
-- **Branch:** `heist-frame-rate-clock` (PR pending) — the world now keeps real time at any
-  frame rate the browser can draw at 4 fps or better. Previously merged: PRs #38–#43.
-- **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **110** at 60 fps
-  and **109/109** at `--throttle 64` (~6 fps, the CI pipeline) ·
-  `npm run heistclock` **1.00x @ 6 fps** · `npm run heistmutate` **11/11 mutants die** ·
+- **Branches:** `heist-body-depth` (is the body in the wall? no — and the seams that prove it)
+  and `zork-loop-clock` (one driver for the Zork agent, bounded prompt wait). Both against
+  `main`. Previously merged: PRs #38–#43, and the frame-rate clock work that this file was
+  written on.
+- **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **122** at 60 fps
+  and **121/121** at `--throttle 64` (~5 fps, the CI pipeline — the tally moves by one
+  because the rescue section asserts per prisoner) ·
+  `npm run heistclock` **1.00x @ 6 fps** · `npm run heistmutate` **13/14 mutants die**, the
+  14th survives as documented (the retreat-floor overshoot, covered by the escape hatch) ·
   `npm run lint:heist` clean ·
   `npm run lint:mario` clean (shared shell untouched-but-covered).
   `lint:heist` + `heistcheck` are in the blocking CI `static` job; `heistplay` is in the
@@ -42,9 +46,10 @@ what broke and what each fix cost. This file is only: *where we are, and what to
 | `stealth.js` | 212 | pure sight/noise/gait/score maths; pure Node |
 | `audio.js` | 276 | three heat-reactive beds + ~20 SFX, synthesized |
 | `alley.js` | 252 | the attract diorama |
-| `scripts/heistplay.mjs` | 972 | Chrome plays job 1 (107 assertions) |
+| `scripts/heistplay.mjs` | ~1050 | Chrome plays job 1 (122 assertions) |
+| `scripts/cornerprobe.mjs` | ~150 | "who is inside the wall — the body or the camera?" Signed metres per rendered frame. Not a gate; the instrument you reach for when the camera section goes red |
 | `scripts/heistcheck.mjs` | 288 | Node level audit + the grid-sampler contract |
-| `scripts/heistmutate.mjs` | ~200 | eleven fixed bugs, put back on purpose, one at a time (two need a CPU throttle to exist) |
+| `scripts/heistmutate.mjs` | ~230 | fourteen fixed bugs, put back on purpose, one at a time (two need a CPU throttle to exist) |
 
 ### The numbers that are load-bearing
 
@@ -60,6 +65,8 @@ playtest report, not from taste.
 | `w.cool` after a bagging | 2.8 s | a guard tying a sack is not reaching for the next raccoon | "job survives an arrest" |
 | catch reach | 1.15 m (dog 1.25, surprised 0.85) | was 0.62 m — a handshake; "I was on top of him" | "alerted guard who reaches you bags you" |
 | prop colliders | hydrant 0.34, box 0.5, can 0.42, lamp 0.26, cart 0.78, **pallets none** | grid-only collision meant walking through furniture; you can step over a pallet | "nothing walks through a prop" (stops at r + `RADIUS` = 0.74 m) |
+| `RADIUS` (engine) | 0.32 m | it *is* the animal: `blocked()` measures the world against it, so a smaller number is a raccoon standing inside a lamppost while every collider check reads clean | "a raccoon is 0.64 m wide" (must stop 0.32 m outside what it hit, ± one 0.08 m step) |
+| `move()` | every body | the raccoon, every guard, both cops and the cat step through `move()`/`blocked()`. The waypoint branch used to step straight at cell centres, so watchmen walked through furniture | "a guard stops at the furniture instead of clipping it", and `npm run cornerprobe` for the argument |
 | camera | `MINVIEW` 2.1 m, shoulder `sh` 0.55 rad ×5 (±158°), `need` 3.1 m, retreat floor **0.6 m on the step** | pulled-in cameras bury themselves in brick; testing the floor *before* the subtraction let the last step land at 0.35 m | "PRESSED AGAINST A WALL" (5 checks) |
 | `FIXED_DT` / `MAX_CATCHUP` | 1/60 s, 250 ms of world per frame | real time down to **4 fps**; five ticks (83 ms) meant half speed at 6 fps and the CI reds were the machine | "the sim keeps real time at this frame rate" + `npm run heistclock` |
 | affordance tolerance | 0.6 m, and the mesh must be *the lock* for `free`/`chew` | a verb whose object is not drawn is the "I don't see a lock" bug | "EVERY VERB HAS A BODY" + the coverage gate that scrapes `focus()` |
@@ -124,19 +131,45 @@ playtest report, not from taste.
     through it. Same family: measuring the lock's "rattle" as *any* movement scored 0.32 m
     for a lock that had just fallen off. Loop over things that happened only with a check
     that they happened, and make the driver arrange for them.
+12. **A scene-graph interrogator cannot answer a collision question.** `near()`'s nearest
+    mesh to a raccoon is a piece of its own rig (`fur1` = crew 1's fur), which is how "8 cm
+    inside a wall at 6 fps" got written into a handoff doc and chased for a round. Rigs are
+    tagged (`userData.rig`) and skipped; the collision question goes to `bodyDepth()`.
+    Related trap, same commit: a check written on `grid` (how deep the *collider* overlaps)
+    passed `RADIUS = 0.02`, because a smaller collider is still stopped at the surface —
+    `wall` (centre-to-brick) and the pinned 0.32 m waist are the two that can actually fail.
+13. **A harness that moves the world must put it back.** Staging the lamppost guard fifteen
+    metres off his patrol route broke the *next* two sections (the torch-spotting budget and
+    the getaway), and the failure looked exactly like "the torch check is flaky".
+    `watcherAt` / `restoreWatcher` exist now, "the staged guard went home" is itself a check,
+    and any new warp-the-world section starts by snapshotting.
 
 ## Next steps, ranked
 
-### 0. The raccoon walks into the mesh at 6 fps — the camera is innocent now, the sim is not
-Two camera checks still red at `--throttle 64`, and the probe says why: by the buried frame the
-*actor* is 8 cm inside `fur1`, so every cell behind it is solid from `MINVIEW` down to the 0.7 m
-fur floor and a legal camera does not exist. Round 4 fixed the four things that were actually
-the camera — a retreat that floored on the loop test instead of the step, the buried↔clear
-oscillation (hysteresis on the last clear placement), a shake that could cross the grid edge it
-had just been pulled off, and a final gate that only ran when the rig was already inside
-`MINVIEW` — and killed both the jam and the oscillation. The rest is movement: how does a 60 Hz
-simulation let `blocksMove` end with the actor inside a wall? Start at `near()` and the
-push-out, not at the camera.
+### 0. ~~The raccoon walks into the mesh at 6 fps~~ — closed: it never did, and `near()` was the bug
+The accusation was `"the actor is 8 cm inside fur1"`. `fur1` is crew 1's **fur material**:
+the raccoon's own forearm. `near()` lists meshes near the actor sorted by distance, and the
+nearest mesh to any actor is a piece of its own rig — a metre of spheres around the point
+that is its feet. Every number in the report was real; the inference from "0.08 m from a fur
+mesh" to "8 cm inside a wall" was the invention, and a round of camera work went to a wall
+nobody had walked into.
+
+The collision model is asked directly now (`engine.bodyDepth()`, `t.depth()` / `t.depths()`,
+`npm run cornerprobe`), in signed metres, three columns because the failures have different
+owners: `wall` (centre→brick: the **walking** question), `grid` (how deep the 0.32 m
+collider overlaps brick) and `cam` (the rig). Measured at 5 fps in that corner over 70 frames
+of walking backwards into it: centre bottoms out at **exactly 0.32 m**, collider touching,
+never through, zero buried camera frames. `heistplay` pins it, and three mutants prove the
+pins bite.
+
+**What the instrument found instead: the guards were ghosts.** The `pathBetween` branch of
+`updateWatchers` did `w.x += …` without asking `blocked()`, and the grid is only half the
+collision model — watchmen slid through lampposts, hydrants and bins while the raccoon could
+not touch one. Six rounds missed it because the chase branch *did* ask, so the only guard
+who ever got close to furniture had already caught you. Now every body in the game steps
+through `move()`, and `heistplay` stages the pathing branch on purpose ("A GUARD WALKS
+AROUND THE LAMPPOST"). Next: the same instrument over jobs 2 and 3, which have never been
+played at all (§2).
 
 ### 0b. Camera polish still owed (B2/B4)
 At ~17 fps (`--throttle 32`) the shoulder rig spends one frame in five inside brick in the
@@ -172,12 +205,29 @@ Alerts are visual + musical only. Voice blips ("Oi!"), or even just a per-kind b
 over the guard's head (the `icon()` + `makeIconTex` machinery already exists: `?`, `!`,
 paw, `zzz`, ear). Cheap, big character win.
 
-### 4b. `zorkuicheck` is load-sensitive
-One CI run red three checks — *"it maps real ground in the browser, not only in Node" (1 rooms)
-* and the input-lock pair — and a re-run of the same commit was 12/12. That is a timing
-assumption in the check, the same family this whole branch is about: a browser check that waits
-on wall-clock guesses goes red when the runner is busy. Give it the `__simSleep`/re-hunt
-treatment (`heistplay`'s BEING SEEN section is the template) before it gets promoted to a gate.
+### 4b. ~~`zorkuicheck` is load-sensitive~~ → closed: it was a real wedge, and the loop was driving itself twice
+One CI run red three checks — *"it maps real ground in the browser, not only in Node" (1 rooms)*
+and the input-lock pair — and a re-run of the same commit was 12/12. The check was right to
+complain; "load-sensitive" was the wrong noun. Two bugs, both found with `npm run zorkpulse`
+under CPU spinners:
+
+- **Two drivers.** `startAi` ran `while (loop.running) await loop.tick()` *and*
+  `loop.start()`, which arms `AgentLoop`'s own timer chain. Ticks at twice the rate the
+  loop's own 600 ms action gap allows was the first tell; the rest is two `agentSend`s
+  racing for the one pending prompt, a `resume()` arriving at a machine that is not asking,
+  and an interpreter that then waits for a keystroke nobody sends — with `aiRunning()`
+  still reporting true. `frz` climbing while `en=Y` on the probe is exactly that state.
+- **A wait with no bound.** The actuator polled for the prompt forever, so a wedge looked
+  like an agent who was thinking. It is bounded by the machine's own measured
+  command→prompt rhythm now (`max(3 s, 8 × median)`, capped at 20 s), and overruns count in
+  `aiActuator()` and stop the loop *with a reason*.
+
+The check keeps the lesson: budgets in the agent's **turns** (wall time is only a stall
+detector), arbitration sampled repeatedly while the loop is demonstrably driving rather than
+glimpsed once, `--throttle N` to reproduce a busy runner, and a stalled loop dumps its own
+diagnostics into the failure line. 12/12 clean, 12/12 under ten spinners, and neutering
+`takeOver()` still turns four checks red — a load-proof check that no longer bites would be
+a worse trade than the flake.
 
 ### 5. Smaller known gaps
 - **Affordance hardware exists only for the pound and the gate.** A hide-spot bin has no
@@ -211,7 +261,8 @@ npm run heistcheck -- --mutate # seal the vault; the audit MUST go red
 npm run heistplay              # Chrome plays job 1: 110 assertions, writes scripts/.shots/h20-play.png
 npm run heistplay -- --throttle 32   # same suite on a 32x slower CPU (~17 fps) — CI-shaped
 npm run heistclock             # world rate @ fps, one line per CPU throttle (`-- --throttle 1,8,32,64`)
-npm run heistmutate            # eleven fixed bugs put back, one at a time; ~30 min (`--dry` checks anchors)
+npm run heistmutate            # fourteen fixed bugs put back, one at a time; ~40 min (`--dry` checks anchors)
+npm run cornerprobe            # -- --throttle 64: per-frame signed depth of body vs camera in the pinch corner
 npm run lint:heist             # eslint over the game + shared shell + scripts
 npm run shot -- --url "http://localhost:5173/retrogames/raccoon-heist" --out scripts/.shots/x.png \
   --steps '[{"down":"Enter","wait":1200},{"up":"Enter","wait":300}]'
