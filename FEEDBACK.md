@@ -273,7 +273,7 @@ gets a short, specific, in-world reason. Same treatment for the mouse/touch pad.
 | # | Item | Block | Size | Why first | Status |
 |---|---|---|---|---|---|
 | 1 | Draw the padlock on the pound (+ affordance-vs-mesh check) | A1 | S | You could not do the thing the game told you to do | 🚀 done, 107 checks, 9 mutants |
-| 2 | Make the world keep real time, then the camera at low fps | — (new) | S | CI was red and the laptop green: the sim ran at ~½ speed and the checks measured the runner | 🚀 done 2026-10-06; the camera at low fps is what it exposed, and it is next |
+| 2 | Make the world keep real time, then the camera at low fps | — (new) | S | CI was red and the laptop green: the sim ran at ~½ speed and the checks measured the runner | 🚀 done 2026-10-06 — camera green at 6 fps too; it exposed the sim putting the actor inside a wall at low frame rates, which is next |
 | 3 | Slide hysteresis + climb damping + move/spread the spawn | B1–B3 | S | "shaky, back and forth" poisons every minute after — and B1 is now the *only* red `heistplay` has | ⏳ next |
 | 4 | Spread the crew at spawn | C1 | S | Also fixes the free-hiding exploit | ⏳ next |
 | 5 | Key + action telemetry, then name every refusal | G1–G2 | S | Settles "are the keys working?" with evidence | ⏳ |
@@ -386,6 +386,17 @@ up 8 cm inside `fur1` — `near()` says so — so every cell behind it is solid 
 does not exist. That is a movement question at low frame rates (`blocksMove`, the push-out),
 with a reproduction in the job log, and it is the next commit. Full pipeline locally:
 **110/110**. CI-shaped (lite, 6 fps): **107/109**, and the two reds are that corner, on purpose.
+
+**Round 3, and the corner stopped winning.** After the hysteresis round CI still red two
+camera checks at 5 fps, and the probe settled the argument: by the buried frame the *raccoon*
+is 8 cm inside `fur1`. With the actor inside the mesh, every cell behind it is brick from
+`MINVIEW` down to the fur floor — so the rig now takes the nearest legal cell in **any**
+direction, nearest bearing first, instead of rendering texture with a HUD on it. Both reds are
+gone at `--throttle 64` (**109/109**), the full pipeline is untouched at 60 (**110/110**), and
+mutant #11 deletes the escape hatch and must go red at the throttle, because at 60 fps the
+escape is never reached and the mutant would be equivalent by luck. What remains is the thing
+the camera was being blamed for: how does `blocksMove` let a 60 Hz simulation put the actor
+inside a wall?
 
 **Still red, honestly:** at ~17 fps the shoulder rig buries itself one frame in five in the
 north-west corner. I fixed the retreat loop's floor (it tested `allowed > 0.55` *before*

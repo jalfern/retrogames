@@ -1186,6 +1186,30 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 break
             }
         }
+        // **Nothing on this bearing is legal — go looking sideways.** In the pinch corner
+        // the actor itself ends up pressed 8 cm inside the mesh at a low frame rate, so
+        // every cell behind it, from `MINVIEW` down to the fur floor, is brick and the walk
+        // above comes back empty-handed. Rendering that is not a camera choice any more;
+        // it is a texture with a HUD on it. So take the nearest legal cell in *any*
+        // direction, nearest bearing first: a rig that drifts a metre sideways for half a
+        // second reads as an awkward operator, a rig inside a wall reads as a broken game.
+        const tightGap = Math.hypot(px - tx, pz - tz) < FUR
+        if (solid(px, pz) || tightGap) {
+            let found = null
+            for (let mult = 0; mult <= 6 && !found; mult++) {
+                const d = mult === 0 ? 0 : (mult % 2 ? 1 : -1) * sh * Math.ceil(mult / 2)
+                const ax = -Math.sin(yaw + d), az = -Math.cos(yaw + d)
+                for (const dd of [MINVIEW, 1.7, 1.2, FUR + 0.05]) {
+                    if (solid(tx + ax * dd, tz + az * dd)) continue
+                    found = [tx + ax * dd, tz + az * dd]
+                    break
+                }
+            }
+            if (found) {
+                px = found[0]
+                pz = found[1]
+            }
+        }
         if (!solid(px, pz) && Math.hypot(px - tx, pz - tz) >= FUR) st.camClearPt = [px, pz]
         // What the player is *looking along* — movement is mapped through this, not
         // through the raw input yaw, so when the rig slides around a corner "forward"

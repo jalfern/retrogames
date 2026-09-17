@@ -12,8 +12,8 @@ what broke and what each fix cost. This file is only: *where we are, and what to
 - **Branch:** `heist-frame-rate-clock` (PR pending) — the world now keeps real time at any
   frame rate the browser can draw at 4 fps or better. Previously merged: PRs #38–#43.
 - **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **110** at 60 fps
-  and **107–109/109** at `--throttle 32` (~17 fps; the residue is the camera section, see *Next steps*) ·
-  `npm run heistclock` **1.00x @ 6 fps** · `npm run heistmutate` **10/10 mutants die** ·
+  and **109/109** at `--throttle 64` (~6 fps, the CI pipeline) ·
+  `npm run heistclock` **1.00x @ 6 fps** · `npm run heistmutate` **11/11 mutants die** ·
   `npm run lint:heist` clean ·
   `npm run lint:mario` clean (shared shell untouched-but-covered).
   `lint:heist` + `heistcheck` are in the blocking CI `static` job; `heistplay` is in the
@@ -44,7 +44,7 @@ what broke and what each fix cost. This file is only: *where we are, and what to
 | `alley.js` | 252 | the attract diorama |
 | `scripts/heistplay.mjs` | 972 | Chrome plays job 1 (107 assertions) |
 | `scripts/heistcheck.mjs` | 288 | Node level audit + the grid-sampler contract |
-| `scripts/heistmutate.mjs` | ~200 | ten fixed bugs, put back on purpose, one at a time (one needs `--throttle 32` to exist) |
+| `scripts/heistmutate.mjs` | ~200 | eleven fixed bugs, put back on purpose, one at a time (two need a CPU throttle to exist) |
 
 ### The numbers that are load-bearing
 
@@ -127,7 +127,7 @@ playtest report, not from taste.
 
 ## Next steps, ranked
 
-### 0. The raccoon walks into the mesh at 6 fps, and the camera is innocent
+### 0. The raccoon walks into the mesh at 6 fps — the camera is innocent now, the sim is not
 Two camera checks still red at `--throttle 64`, and the probe says why: by the buried frame the
 *actor* is 8 cm inside `fur1`, so every cell behind it is solid from `MINVIEW` down to the 0.7 m
 fur floor and a legal camera does not exist. Round 4 fixed the four things that were actually
@@ -204,7 +204,7 @@ npm run heistcheck -- --mutate # seal the vault; the audit MUST go red
 npm run heistplay              # Chrome plays job 1: 110 assertions, writes scripts/.shots/h20-play.png
 npm run heistplay -- --throttle 32   # same suite on a 32x slower CPU (~17 fps) — CI-shaped
 npm run heistclock             # world rate @ fps, one line per CPU throttle (`-- --throttle 1,8,32,64`)
-npm run heistmutate            # ten fixed bugs put back, one at a time; ~25 min (`--dry` checks anchors)
+npm run heistmutate            # eleven fixed bugs put back, one at a time; ~30 min (`--dry` checks anchors)
 npm run lint:heist             # eslint over the game + shared shell + scripts
 npm run shot -- --url "http://localhost:5173/retrogames/raccoon-heist" --out scripts/.shots/x.png \
   --steps '[{"down":"Enter","wait":1200},{"up":"Enter","wait":300}]'

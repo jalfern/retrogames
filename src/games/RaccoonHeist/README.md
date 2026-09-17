@@ -172,7 +172,7 @@ machine it would just be two discs covering the level.
 
 ```bash
 npm run heistcheck         # Node, no browser, ~1 s: level audit + stealth model + --mutate
-npm run heistplay          # Chrome plays job 1 end to end -- 110 assertions (needs `npm run dev`)
+npm run heistplay          # Chrome plays job 1 end to end -- 110 @ 60 fps, 109 at --throttle 64 (needs `npm run dev`)
 npm run heistplay -- --throttle 32   # the same suite on a 32x slower CPU (~17 fps)
 HEIST_LITE=1 npm run heistplay       # drive the cheap pipeline (?lite=1) — what CI drives
 npm run heistclock         # does the world keep real time? one line per CPU throttle
@@ -190,7 +190,7 @@ the cast was simulated, audited, passed every check, and never added to the scen
 asserts every verb has a body, which is how the padlock, the chain and the crooked vault
 door were all found in one sitting.
 
-`heistmutate` is the reason to believe any of it: ten mutants, each one a previously fixed
+`heistmutate` is the reason to believe any of it: eleven mutants, each one a previously fixed
 bug re-introduced by an anchored text swap, each run through the real driver, each restored
 from a `/tmp` copy so the working tree is never reverted. Two of them were *equivalent*
 mutants — the harness hid a lock with `visible = false`, which `reset()` repairs before
@@ -270,21 +270,21 @@ nearby watcher's `los / align / cover / light / rate / det`.
 
 ## Known gaps
 
-- **In one corner, below ~7 fps the camera has nothing left to do, and now the harness says
-  why.** `heistplay --throttle 64` (6 fps) reds two checks in the north-west pocket: "the
-  camera stops burying itself in geometry" (1 frame in 5) and "the camera keeps some world in
-  front of it" (0 m clear). The probe is unambiguous: by the buried frame the *raccoon* is
-  8 cm inside `fur1` — it has itself penetrated the geometry — so every cell behind it, from
-  `MINVIEW` down to the 0.7 m fur floor, is solid, and a camera that refuses to be inside a
-  wall has nowhere legal to stand. What is fixed: the jam (the retreat now floors on the step,
-  not on the loop test), the frame-to-frame buried↔clear oscillation (hysteresis: a clear
-  placement from last frame is kept when this frame's is solid and still a valid shot), the
-  shake that used to jitter the camera back across the grid edge it had just been pulled off,
-  and the last gate now *measures* — it walks the bearing from the furthest distance the map
-  allows down to the fur floor instead of only running when the rig was already closer than
-  `MINVIEW`. What is left is upstream of the camera: why the actor itself ends up inside the
-  mesh at 6 fps, which is a simulation question (input, `blocksMove`, and the push-out) with a
-  reproduction in the log and `near()` output, and is the next commit.
+- **The camera now has an escape hatch, and the corner that needed it is pinned.** At
+  `--throttle 64` (≈6 fps) the north-west pocket used to red two checks: the *actor* ends up
+  8 cm inside `fur1` — the simulation puts the raccoon inside the mesh at a low frame rate —
+  so every cell behind it, from `MINVIEW` down to the 0.7 m fur floor, is solid. The rig now
+  (a) floors its retreat on the *step*, (b) dwells on the last clear placement while this
+  frame's is solid and still a valid shot, (c) never lets shake cross the grid edge it just
+  came off, (d) *measures* its final position instead of trusting the loop that only ran when
+  the rig was already inside `MINVIEW`, and (e) when nothing on the bearing is legal, takes
+  the nearest legal cell in any direction, nearest bearing first. A rig that drifts a metre
+  sideways for half a second reads as an awkward operator; a rig inside a wall reads as a
+  broken game. Both reds are gone at 6 fps and the full pipeline is unchanged at 60
+  (110/110), which is the part worth being suspicious about: it means the escape only fires
+  where the map leaves no choice. Mutant #11 deletes it and must go red at `--throttle 64`.
+  **What is still open is upstream**: why `blocksMove` lets a 60 Hz simulation end with the
+  actor inside a wall at all. The camera is out of suspects and `near()` prints the evidence.
 - **Affordance hardware is only drawn for the pound and the gate.** A hide-spot bin has no
   latch and a stolen pile leaves no scuff on the ground where it was, both because the
   level mesh budget is at 48/50 and a scuff per pile is four more draw calls. The right
