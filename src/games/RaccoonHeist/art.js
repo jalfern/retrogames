@@ -570,6 +570,12 @@ export function makeRaccoon(opts = {}) {
     const sackM = mat('sack', { color: 0xb59b6a, roughness: 1 })
 
     const g = new THREE.Group()
+    // "Is this a character?" for the scene interrogator in `index.jsx`: a rig is a metre
+    // of fur meshes arranged around the position that is its feet, so `near()` reporting
+    // the actor's own forearm as "0.08 m from fur1" is what sent a camera bug hunt after
+    // a wall that was never touched. Rigs are tagged, and `near()` answers with the
+    // collision depth instead (`engine.bodyDepth()`).
+    g.userData.rig = 'raccoon'
     const hips = new THREE.Group()
     g.add(hips)
 
@@ -1157,6 +1163,7 @@ export function disposables(root) {
  */
 export function makeWalker(kind = 'guard') {
     const g = new THREE.Group()
+    g.userData.rig = kind
     const uniform = kind === 'cop' ? 0x1b2a3d : kind === 'cop2' ? 0x2a1b2d : 0x27384d
     const skin = kind === 'dog' || kind === 'cat' ? PAL.fur : 0xc9977a
     const clothM = mat('cloth' + kind, { color: uniform, roughness: 0.95 })

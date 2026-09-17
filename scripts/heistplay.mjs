@@ -411,7 +411,7 @@ const pinch = await api(async () => {
     for (let i = 0; i < 7; i++) {
         await sleep(500)
         const p = t.probe()
-        frames.push({ ...t.camClear(), ndc: p.ndc, cell: p.cell })
+        frames.push({ ...t.camClear(), ndc: p.ndc, cell: p.cell, pen: t.depth() })
     }
     thumb(0, 0)
     return { spot, wall, frames, four, spotProbe: [t.probe().x, t.probe().z] }
@@ -439,6 +439,31 @@ r.check('the rig opens up as soon as there is room', Math.max(...SETTLED.map(f =
 r.check('the raccoon stays in frame while pressed against a wall', F.every(f => Math.abs(f.ndc[0]) < 0.9 && Math.abs(f.ndc[1]) < 0.9), JSON.stringify(F[F.length - 1].ndc))
 r.check('the rig slides around the corner instead of clipping', F.some(f => Math.abs(f.side) > 0.04), `max slide ${Math.max(...F.map(f => Math.abs(f.side))).toFixed(2)} rad`)
 r.check('and it stays on walkable ground', F.every(f => ['FLOOR', 'MARBLE', 'WATER', 'BUSH'].includes(f.cell)), F[F.length - 1].cell)
+
+/**
+ * **The body is not in the wall, and now that is a number.** This corner produced the
+ * most expensive misdiagnosis in this file: `near()` — meshes near the actor, sorted by
+ * distance — printed `fur1` at 0.08 m, and the round that followed went looking for a
+ * wall the sim had never let anybody through. `fur1` is crew 1's fur material: the
+ * raccoon's *own forearm*, one metre of rig arranged around the point that is its feet.
+ *
+ * So the question gets asked of the collision model (`engine.bodyDepth()`), in signed
+ * metres, once per rendered frame. `blocked()` refuses a move that lands inside, so a
+ * positive number here is a sim bug — and a buried *camera* with a clean *body* is a rig
+ * bug. Different owners, different fix, and `npm run cornerprobe` prints both columns.
+ */
+const PEN = F.map(f => f.pen).filter(Boolean)
+const worstGrid = Math.max(...PEN.map(p => p.grid))
+const minWall = Math.min(...PEN.map(p => p.wall))
+console.log(`  ..  body at worst: centre ${minWall} m from brick, collider overlap ${worstGrid} m; prop ${Math.max(...PEN.map(p => p.prop))} m; rig gap ${Math.min(...F.map(f => f.dist)).toFixed(2)} m`)
+r.check('the raccoon is never inside the level', PEN.length > 3 && minWall > 0.001,
+    PEN.length <= 3 ? `only ${PEN.length} depth samples` : `centre came within ${minWall} m of solid brick over ${PEN.length} frames`)
+r.check('and its body never overlaps the brick either', worstGrid <= 0.001,
+    `collider overlapped the wall by ${worstGrid} m (RADIUS ${PEN[0] ? PEN[0].r : '?'})`)
+r.check('and it is the wall that stopped it', PEN.some(p => p.grid > -0.06),
+    `closest ${Math.max(...PEN.map(p => p.grid))} m from brick (RADIUS ${PEN[0] ? PEN[0].r : '?'} m)`)
+r.check('a buried frame would be the rig, not the walk', F.every(f => !f.inside || f.pen.wall > 0.001),
+    `${F.filter(f => f.inside).length} buried frames, all with a clean body`)
 
 console.log('\nTHE WORLD IS SOLID')
 // Collision used to be the grid alone. The grid is 2.2 m cells, and every hydrant, bin,
@@ -484,7 +509,94 @@ r.check('the world hands the sim colliders', solid.count >= 6, `${solid.count} p
 r.check('walking at a prop actually walked', solid.hits.every(h => h.walked > 0.6), JSON.stringify(solid.hits.map(h => h.walked)))
 r.check('nothing walks through a prop', solid.hits.every(h => !h.inside), JSON.stringify(solid.hits))
 r.check('the prop is what stopped you', solid.hits.some(h => h.stopped), JSON.stringify(solid.hits.map(h => `${h.d}/${h.r}`)))
+// The width of the animal, pinned. `RADIUS` is what `blocked()` measures the world
+// against, so "0.32 m" is the raccoon: shrink it and nothing any longer stops you
+// 0.32 m short of a lamppost — you stand *in* the mesh while every check that measures
+// the collider stays green. So measure the gap that was actually left behind.
+const WAIST = 0.32
+const snug = solid.hits.filter(h => h.stopped)
+console.log(`  ..  stopped ${snug.map(h => (h.d - h.r).toFixed(2)).join('/')} m out from props of r ${snug.map(h => h.r).join('/')}`)
+r.check('a raccoon is 0.64 m wide', snug.length > 0 && snug.every(h => h.d - h.r > 0.24 && h.d - h.r <= 0.46),
+    snug.length ? `stopped ${snug.map(h => (h.d - h.r).toFixed(2)).join('/')} m out (body radius ${WAIST}; the band is 0.32 +/- one 0.08 m step)`
+        : 'nothing stopped the walk — it walked past every prop')
 r.check('a wall is still a wall', ['FLOOR', 'MARBLE', 'WATER', 'BUSH'].includes(solid.cell), solid.cell)
+
+console.log('\nA GUARD WALKS AROUND THE LAMPPOST')
+/**
+ * The raccoon has had prop colliders since round 1. The **guards** have not — the branch
+ * that follows a `pathBetween` route stepped straight at the next cell centre and never
+ * asked `blocked()`, so a watchman slid through every lamppost, hydrant and bin in the
+ * yard while you could not touch one. (Direct chase did ask; that is why nothing caught
+ * it: the only guard that ever touched furniture was one that had already seen you, and
+ * by then the frame is full of him.)
+ *
+ * So the check stages the *pathing* branch on purpose: `suspect` walks to `aim` via the
+ * map, `routeOf` proves the map really routes through the prop's cell (otherwise this is
+ * a check about an empty corridor), the guard must actually cover ground, and `prop`
+ * penetration stays <= 0 for every sample. `npm run heistmutate` #12 puts the raw `+=`
+ * back and must turn this red.
+ */
+const ghost = await api(async () => {
+    const t = window.__heistTest
+    const sleep = ms => window.__simSleep(ms / 1000)
+    const props = t.props().filter(p => p.r >= 0.4)
+    const out = { cases: [], crew: [], watchers: [], attempts: 0 }
+    // Snapshot first. A staged guard who is left 15 m from his patrol route has a
+    // different phase for the rest of the run, and the BEING SEEN section that follows
+    // asserts how long a *specific* torch beam takes to spot you.
+    const snap = t.watcherAt(0)
+    for (const p of props) {
+        if (out.cases.length >= 2) break
+        for (const [dx, dz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+            const sx = +(p.x + dx * 4.4).toFixed(2), sz = +(p.z + dz * 4.4).toFixed(2)
+            const route = t.engine().routeOf(sx, sz, p.x, p.z)
+            if (!route || route.cells < 2 || route.cells > 4) continue
+            out.attempts++
+            const w0 = t.warpWatcher(0, sx, sz, 'suspect', [p.x, p.z])
+            if (!w0) continue
+            await sleep(120)
+            const start = t.depths().watchers[0]
+            const samples = []
+            for (let i = 0; i < 12; i++) {
+                await sleep(280)
+                const d = t.depths().watchers[0]
+                if (d) samples.push({ ...d, dp: +Math.hypot(d.x - p.x, d.z - p.z).toFixed(2) })
+            }
+            if (samples.length) {
+                out.cases.push({
+                    r: p.r, at: [p.x, p.z], from: [sx, sz], cells: route.cells,
+                    walked: +Math.hypot(samples[samples.length - 1].x - start.x, samples[samples.length - 1].z - start.z).toFixed(2),
+                    pen: +Math.max(...samples.map(s => s.prop)).toFixed(3),
+                    gap: +Math.min(...samples.map(s => s.dp - p.r)).toFixed(3),
+                    grid: +Math.max(...samples.map(s => s.grid)).toFixed(3),
+                    wall: +Math.min(...samples.map(s => s.wall)).toFixed(3),
+                })
+            }
+            break
+        }
+    }
+    if (snap) t.restoreWatcher(0, snap)
+    // And everybody else, while we are asking: nobody in the cast may be inside the grid.
+    const d = t.depths()
+    out.crew = d.crew.map(c => c && c.grid)
+    out.watchers = d.watchers.map(w => w && w.grid)
+    // Centre-to-brick, for the same reason: `grid` is what `blocked()` guarantees, so on
+    // its own it cannot tell a walking bug from a raccoon that got thinner.
+    out.walls = [...d.crew, ...d.watchers].filter(Boolean).map(b => b.wall)
+    out.restored = !!snap && t.watcherAt(0) && [+t.watcherAt(0).x.toFixed(1), +t.watcherAt(0).z.toFixed(1)]
+    return out
+})
+console.log('  ..  staged: ' + (ghost.cases.map(c => `r=${c.r} walked ${c.walked}m over ${c.cells} cells, pen ${c.pen}, gap ${c.gap}`).join(' | ') || 'NOTHING'))
+r.check('the driver staged a guard that PATHS', ghost.cases.length >= 1, `${ghost.cases.length} prop routes staged of ${ghost.attempts} candidates`)
+r.check('and the guard actually walked', ghost.cases.every(c => c.walked > 1.0), JSON.stringify(ghost.cases.map(c => c.walked)))
+r.check('a guard stops at the furniture instead of clipping it', ghost.cases.every(c => c.pen <= 0.001), JSON.stringify(ghost.cases.map(c => `pen ${c.pen} / r ${c.r}`)))
+r.check('close enough that the check is not vacuous', ghost.cases.every(c => c.gap < 0.75), JSON.stringify(ghost.cases.map(c => c.gap)))
+r.check('no guard walks through a wall either', ghost.cases.every(c => c.grid <= 0.001) && ghost.walls.every(w => w > 0.001),
+    JSON.stringify({ overlap: ghost.cases.map(c => c.grid), centres: ghost.walls }))
+r.check('the staged guard went home', !!ghost.restored, JSON.stringify(ghost.restored))
+r.check('nobody in the crew is inside the level', [...ghost.crew, ...ghost.watchers].every(g => g !== null && g <= 0.001)
+    && ghost.walls.every(w => w > 0.001),
+    JSON.stringify({ crew: ghost.crew, watchers: ghost.watchers, centres: ghost.walls }))
 
 console.log('\nA GUARD WHO TOUCHES YOU TAKES YOU')
 // The complaint: "I was on top of him and he did not capture me." Three separate causes
