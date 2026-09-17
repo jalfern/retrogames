@@ -279,3 +279,87 @@ calls. One combined number lets a 400-mesh level hide behind a 20-mesh guard.
 `lint:heist` + `heistcheck` in the blocking static job and `heistplay` in the manual
 browser job. Three jobs carved; job 1 played end to end by a machine. The raccoon is
 visible, the crew waits by the cart, and the gate opens when the cart is empty.
+
+---
+
+## Playtest round 1 — three complaints, three bugs, and the harness learning to read a direction
+
+The first human playtest of the shipped build came back with three sentences, and every one
+of them was a real bug that 264 level checks and 50 play checks had walked straight past.
+
+### "Controls are inverted"
+The strafe axis had the wrong sign. The camera looks along `(sin yaw, cos yaw)`, so with Y
+up, screen-right is `(-cos yaw, sin yaw)`; the engine was using `(cos, -sin)`, which is the
+same axis pointed the other way. One minus sign, and D meant left for every second of
+every session.
+
+The harness could not have caught it as written. The move check asserted
+`moved > 0.9 metres` — and walking left *is* walking. So `heistplay` has a section
+**WHICH WAY IS RIGHT** now: pin the camera to a known yaw and assert world axes.
+Two conventions had to be nailed down to write it honestly, and one of them was the test's
+own:
+
+- the touch pad speaks **screen** coordinates (thumb-up is negative DOM y) and `index.jsx`
+  negates them into engine forward; the first draft of the test pushed `stick(0, 1)`
+  meaning "forward" and the engine correctly walked **backwards**. A driver that lies about
+  its own input teaches you nothing about the game, so the driver now has a `thumb(dx, dyUp)`
+  helper that says which frame of reference it is speaking in.
+- screen coordinates are useless as a ruler *here*: the camera follows the raccoon and keeps
+  it centred, so its ndc never budges no matter which way it walks. World axes at a pinned
+  yaw is the only honest measurement available.
+
+Then I proved it: put the old sign back, and three checks go red
+(`dx=+1.97` where it must be negative).
+
+### "I keep walking through things"
+Collision was the grid, the whole of it. The grid is 2.2 m cells, and every interesting
+piece of furniture in this game — hydrants, bins, pallets, lampposts, the cart — is
+*decoration standing on a walkable cell*, so the grid said WALK and the raccoon walked
+through a lamppost. Within two seconds of that a player stops believing the world.
+
+`world.js` now hands the sim a collider list (`{ x, z, r }` per stamped prop; pallets
+deliberately excluded, because you can step over a pallet) and `blocked()` tests circles
+after cells. There is an "already inside" exemption, because a collider that a shove or a
+teleport can put you *inside* is a prison, and a stuck raccoon is worse than a ghost one.
+
+The check walks the raccoon at a prop for long enough to cross it and asserts both halves:
+never inside, **and** stopped near the surface. That second half is the one that matters —
+"did not end up inside the bin" is also satisfied by a raccoon that wandered off. Actual
+output: walked 1.83 m, stopped 0.77 m from a 0.42 m hydrant. `0.42 + 0.32 = 0.74`, the
+radius plus the body. The number is the proof.
+
+### "The guard didn't capture me even though I was on top of him"
+Three separate defects wearing one hat, which is why "make the guard catch you" is not an
+action item:
+
+1. the catch radius was **0.62 m** — a handshake, with a 0.64 m wide raccoon;
+2. an alerted guard walked the **path**, and waypoints are 2.2 m apart, so it stopped a
+   metre short of you and stood there staring;
+3. **nothing in the game pushed back.** Two actors could occupy the same cubic metre of air
+   indefinitely. So the player was, literally, inside the guard.
+
+Now an alerted watcher inside 3.6 m with line of sight abandons pathing and walks straight
+at the actual raccoon; `lastSeen` refreshes every frame it still sees you (it used to update
+only when suspicion refilled, so a guard would sprint to where you were eight seconds ago
+and give up there); reach is an arm (1.15 m, dogs 1.25 m); a *surprised* watcher grabs too,
+because bumping into a raccoon in the dark is not a thing a guard just watches; and
+`separate()` shoves overlapping bodies apart — with meshes re-set afterwards, or the shove
+lands a frame late and reads as a stutter.
+
+The harness stages the arrest (`warpWatcher`) and then puts the job back
+(`release`/`calm`), because the driver has to be able to get caught on purpose and keep
+going.
+
+### On mutation testing, and one thing I broke
+Each fix got a mutation run: invert the strafe, empty the collider list, restore the
+handshake radius. All three went red, and the collider mutation took two downstream checks
+with it (a raccoon that walks through a lamppost also wanders out of the torch beam it was
+supposed to be standing in), which is what a connected suite is supposed to do.
+
+Then I reverted a mutation with `git checkout <path>` — on a dirty tree — and destroyed
+every uncommitted line of this session's `engine.js`. Rebuilt from the session log, 12
+patches, green again, and committed before touching anything else. **Revert experiments with
+a `/tmp` copy; commit before you play with fire.** A harness that can prove the code is
+wrong is worthless if the person running it can delete the code.
+
+**Where the checks stand:** `heistcheck` 264 · `heistplay` 66 · `lint:heist` clean.
