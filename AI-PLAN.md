@@ -5,10 +5,38 @@ clicks it and the agent plays the browser build of the story — reading prose,
 building a map by walking — and **any keypress hands the keyboard back**, permanently
 until the button is pressed again. No backend, no API key, no walkthrough in source.
 
-### Gates (all green as of `d7a7036`)
+### Two things that were wrong with the button, and the gates that keep them wrong
+
+`zorkuicheck` went red once on CI — *it maps real ground in the browser, not only in Node
+(1 rooms)* — and was green on a re-run of the same commit, which is the worst kind of bug
+report. It was not flake. Two real defects, both found with `npm run zorkpulse`:
+
+1. **The agent drove itself twice.** `startAi` ran `while (running) await loop.tick()` *and*
+   `loop.start()`, which arms `AgentLoop`'s own timer. Two `tick()` chains, so two
+   `agentSend`s raced for the single pending prompt; `sendCommand` with no prompt pending is
+   a silent *drop* that can land a `resume()` on a machine that is not asking, and the
+   interpreter then waits for a keystroke nobody will ever send. `aiRunning()` said true the
+   whole time. One driver now — the loop's timer — and the component only watches through
+   `onStatus`; `agentSend` also refuses to overlap and binds the loop it was created for.
+2. **The actuator waited forever.** Unbounded polling on the prompt, so a wedge looked like
+   an agent who was thinking. The budget is now the machine's own measured command→prompt
+   rhythm (`max(3 s, 8 × median)`, capped at 20 s); an overrun hands the turn back, counts
+   itself in `aiActuator()`, prints a line in the transcript, and lets the watchdog stop the
+   loop *with a reason*.
+
+The check took the same lesson: budgets in the agent's **turns**, wall time only as a stall
+detector; arbitration sampled repeatedly with the loop demonstrably driving instead of
+glimpsed once; `--throttle N` to reproduce a busy runner; and the anti-walkthrough noun gate
+now runs **in the browser**, where Glk hands the parser chunks glued together (Node hands it
+newlines — that transport gap is how a parser once mapped 13 rooms in Node and 1 in the
+page). It waits in turns for three object commands before it claims anything, and says so
+when the evidence is thinner than that.
+
+### Gates (all green on `zork-loop-clock`)
 
 ```bash
-npm run zorkuicheck   # 12/12  browser: real click, real key. Needs `npm run dev`.
+npm run zorkuicheck   # 13/13  browser: real click, real key. Needs `npm run dev`.
+npm run zorkpulse     # not a gate — the probe that found the double driver (--throttle N)
 npm run zorkcheck     # 55/55  Node brain + sensor seams. No Chrome.
 npm run aicheck       # 24/24  the spine contract
 npm run doscheck      # 11/11  DOS/js-dos seams (slow: DOSBox-in-wasm boots 40-90s)

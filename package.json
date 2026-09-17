@@ -29,6 +29,7 @@
     "fpscheck": "node scripts/fpscheck.mjs",
     "zorkcheck": "node scripts/zorkcheck.mjs",
     "zorkuicheck": "node scripts/zorkuicheck.mjs",
+    "zorkpulse": "node scripts/zorkpulse.mjs",
     "doscheck": "node scripts/doscheck.mjs",
     "keepplay": "node scripts/keepplay.mjs",
     "verify": "node scripts/verify.mjs",
