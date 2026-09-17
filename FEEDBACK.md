@@ -299,8 +299,36 @@ changelog.
 
 ## Log
 
-### 2026-10-07 · B3/C1-style forensics 🚕 the actor was never in the wall, and a guard was in a lamppost
+### 2026-10-07 · the suite stops prosecuting its own runner 🕐 2–3 fps is a SKIP now, out loud
 
+Three green `--throttle 64` runs turned into a 21-red cascade on a box with the game
+untouched, and the file that reported it had *already* printed "frame rate under the 4 fps
+floor" as an info line and then asserted forty time-shaped checks anyway. At 2–3 fps a guard
+redraws once per frame — 0.33 m of cone arc per tick — so a driver that plants itself in a
+torch beam is not in the cone the meter uses. Nobody gets spotted; nobody gets bagged; the
+pound is empty for the rescue section; the job busts before the cart; `afford()` returns
+null, and the report reads **"the grab button is broken"**. None of that is the game.
+
+Three rules, in `heistplay` + `Report`:
+
+- **`skip` is a first-class result.** A question this machine could not ask is not a question
+  the game answered wrong. Skips are counted in the tally, so a green run states what it did
+  not look at (`120/120 checks passed, 1 SKIPPED`).
+- **`claim()` downgrades only seconds, and only after the floor is breached.** Detection
+  budgets, arrest timing, padlock duration: skippable. "Is this cell solid", "does this verb
+  have a mesh": never, because a slow box answers those honestly. The floor is re-measured at
+  section boundaries (`pace`), not sampled once at startup.
+- **A revived job says so.** If the runner beat the crew, the harness frees them between
+  sections and prints how many it put back on their feet. At 60 fps that reports zero.
+
+And THE GETAWAY walks the guards to the far tile before tallying the cart — and prints that
+it did it, with the distance. That section is about carrying; stealth is asserted two
+sections earlier, where a raccoon actually stands in a beam until it is bagged. A staged
+scenario that isn't labelled is how a harness starts grading its own meddling.
+
+`60 fps: 121/121, no skips` · `64x throttle (2–3 fps here): 120/120 + 1 documented skip`.
+
+### 2026-10-07 · B3/C1-style forensics 🚕 the actor was never in the wall, and a guard was in a lamppost
 Queue item 0 said: *"`blocksMove` lets the actor stand 8 cm inside `fur1` at 6 fps — the
 camera was innocent all along."* It was wrong, and the interesting part is that it was
 wrong with a measurement behind it.
