@@ -11,7 +11,7 @@
 // reverted, only patched and un-patched.
 //
 // A mutant that SURVIVES is usually a report about the test, not the code, and this file
-// has already caught two of those:
+// has already caught four of those:
 //
 //   * "hide the padlock" written as `lock.visible = false` survives and means nothing:
 //     `reset()` re-hangs every bit of hardware on each retry, so the flag is repaired
@@ -19,6 +19,17 @@
 //     group, which is the bug the playtest actually reported.
 //   * a check that measured the vault plate by its *object origin* survived a door that
 //     never opened, because a merged mesh's origin sits on the hinge. Measure geometry.
+//   * "chewing does not shake the lock" survived while the driver measured *any* movement
+//     of the padlock — a lock that had just been chewed off and fallen 0.32 m "shook"
+//     beautifully. A rattle is lateral, measured while still hanging, and must reverse.
+//   * "a chew that frees one leaves the cage open" survived because the pound had one
+//     prisoner, so the branch needed two and the loop over `rescue.log` never reached it.
+//     Every one of these survivals was the same sentence: the test never got near the code.
+//
+// Some mutants are only alive at low frame rates, so a mutant may carry `throttle: N` and
+// the driver runs `--throttle N` for it. The camera-floor mutant is the example: at 60 fps
+// the retreat loop never reaches the bottom of the clamp, so the overshoot it exists to
+// catch only happens on a slow box — which is exactly how it shipped.
 //
 // Exit code is non-zero if any mutant survives, so this can become a gate once it is
 // cheap enough to want that.
@@ -102,6 +113,17 @@ const MUTANTS = [
         note: 'the offset lands twice: 0.86 m outside the cell',
     },
     {
+        // Only visible on a slow box: at 60 fps the retreat loop never reaches the bottom of
+        // the clamp, so the overshoot needs the throttle to happen at all.
+        name: 'the camera retreat tests its floor before stepping on it',
+        file: ENG,
+        anchor: 'for (let i = 0; i < 12 && allowed > 0.6 && embedded(allowed); i++) allowed = Math.max(0.6, allowed - 0.35)',
+        swap: 'for (let i = 0; i < 12 && allowed > 0.55 && embedded(allowed); i++) allowed -= 0.35',
+        mustFail: 'the rig never jams against the raccoon',
+        note: 'the last step overshoots the floor it just tested: 0.70 became 0.35 m of raccoon fur',
+        throttle: 32,
+    },
+    {
         name: 'a verb ships with no body',
         file: ENG,
         anchor: "        if (a.held && near(cartW, 1.9)) return { kind: 'deliver', label: 'LOAD THE CART' }",
@@ -140,8 +162,9 @@ if (DRY) {
     console.log(bad ? `${bad} broken mutant anchor(s)` : `${MUTANTS.length} mutants, all anchors unique`)
     process.exit(bad ? 1 : 0)
 }
-const run = () => {
-    const p = spawnSync('npm', ['run', 'heistplay'], { cwd: ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+const run = (throttle) => {
+    const args = ['run', 'heistplay', ...(throttle ? ['--', '--throttle', String(throttle)] : [])]
+    const p = spawnSync('npm', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
     const out = (p.stdout || '') + (p.stderr || '')
     const fails = out.split('\n').filter(l => l.trim().startsWith('FAIL')).map(l => l.trim())
     const tally = (out.match(/heistplay: [^\n]*/) || ['NO RESULT'])[0]
@@ -165,7 +188,7 @@ for (const m of MUTANTS) {
     writeFileSync(abs, src.replace(m.anchor, m.swap))
     let fails = []
     try {
-        ({ fails } = run())
+        ({ fails } = run(m.throttle))
     } finally {
         copyFileSync(bak, abs)
     }
@@ -177,15 +200,15 @@ for (const m of MUTANTS) {
     if (!dead) console.log('    !! The test never got near this line. Fix the test first.')
 }
 
+const failed = results.filter(x => !x.ok)
 // A mutant restores its file from a snapshot, so if a file does not match what it was
 // when this run started, something edited it mid-run and the restore ate that edit.
 for (const [f, h] of Object.entries(START)) {
     if (hash(f) !== h) {
         console.log(`  !! ${f} changed during the run and was restored over an edit — re-apply your changes and re-run`)
-        survived.push({ name: `dirty tree: ${f}` })
+        failed.push({ name: `dirty tree: ${f}`, why: 'file changed mid-run' })
     }
 }
-const failed = results.filter(x => !x.ok)
 console.log(`\n${results.length - failed.length}/${results.length} mutants died`)
 for (const s of failed) console.log(`  SURVIVED: ${s.name}${s.why ? ' (' + s.why + ')' : ''}`)
-process.exit(survived.length || failed.length ? 1 : 0)
+process.exit(failed.length ? 1 : 0)

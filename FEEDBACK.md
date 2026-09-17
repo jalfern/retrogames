@@ -273,12 +273,13 @@ gets a short, specific, in-world reason. Same treatment for the mouse/touch pad.
 | # | Item | Block | Size | Why first | Status |
 |---|---|---|---|---|---|
 | 1 | Draw the padlock on the pound (+ affordance-vs-mesh check) | A1 | S | You could not do the thing the game told you to do | 🚀 done, 107 checks, 9 mutants |
-| 2 | Slide hysteresis + climb damping + move/spread the spawn | B1–B3 | S | "shaky, back and forth" poisons every minute after | ⏳ next |
-| 3 | Spread the crew at spawn | C1 | S | Also fixes the free-hiding exploit | ⏳ next |
-| 4 | Key + action telemetry, then name every refusal | G1–G2 | S | Settles "are the keys working?" with evidence | ⏳ |
-| 5 | Dog / cat / guard gaits | D1 | M | The game's characters currently look stiff next to the raccoons | ⏳ |
-| 6 | Facade detail on the walls | E1 | M | Biggest visual gap in a game that already looks good at night | ⏳ needs the mesh budget raised first |
-| 7 | Floor grain + normal relief + specular variety | F1–F2 | M–S | The stuff you said you could keep going forever on | ⏳ |
+| 2 | Make the world keep real time, then the camera at low fps | — (new) | S | CI was red and the laptop green: the sim ran at ~½ speed and the checks measured the runner | 🚀 done 2026-10-06; the camera at low fps is what it exposed, and it is next |
+| 3 | Slide hysteresis + climb damping + move/spread the spawn | B1–B3 | S | "shaky, back and forth" poisons every minute after — and B1 is now the *only* red `heistplay` has | ⏳ next |
+| 4 | Spread the crew at spawn | C1 | S | Also fixes the free-hiding exploit | ⏳ next |
+| 5 | Key + action telemetry, then name every refusal | G1–G2 | S | Settles "are the keys working?" with evidence | ⏳ |
+| 6 | Dog / cat / guard gaits | D1 | M | The game's characters currently look stiff next to the raccoons | ⏳ |
+| 7 | Facade detail on the walls | E1 | M | Biggest visual gap in a game that already looks good at night | ⏳ needs the mesh budget raised first |
+| 8 | Floor grain + normal relief + specular variety | F1–F2 | M–S | The stuff you said you could keep going forever on | ⏳ |
 
 ## What's working — don't undo this
 - **Raccoon rendering reads as a raccoon.** Keep the leg/tail/ear wiggle, protect it when
@@ -297,6 +298,62 @@ changelog.
 ---
 
 ## Log
+
+### 2026-10-06 · — 🚀 the world was running in slow motion and the checks blamed the game
+
+CI ran `heistplay` 94/104 red while the laptop was green, and the interesting part is that
+*both were telling the truth about different games*. The fixed-timestep loop in `index.jsx`
+capped catch-up at five ticks — 83 ms of world per frame — so at 6 fps the heist runs at
+half speed and at 2 fps it runs at a sixth. The runner was rendering maybe 2–4 fps, so
+"walked for one second" was 0.17 s of raccoon, "the vault door moved 0 m" was true of a door
+that had been chewed for a fifth of its timer, and the torch check reported 21 s because the
+stopwatch was the wall and the meter was the world.
+
+What changed:
+
+- **`MAX_CATCHUP = 250`** (15 ticks): real time down to 4 fps, and `heistplay` now says so
+  out loud — `the sim keeps real time at this frame rate`, with the floor reported instead of
+  asserted when the box cannot even draw 4 fps.
+- **`npm run heistclock`** (`scripts/heistclock.mjs`) prints `loop / job x real time @ fps`
+  per CDP CPU throttle. The old clamp: **0.59x @ 7 fps**. The new one: **1.00x @ 6 fps**.
+  That is the whole bug in two lines, and it is now a command rather than an argument.
+- **the harness speaks world seconds.** Every wait in `heistplay` is
+  `window.__simSleep(0.3)` = 0.3 s *of raccoon* (wall sleep scaled by a measured EMA of the
+  world rate, 150 ms floor), and every budget is read off `window.__gameTime()`. Five CPU
+  throttles now run the same suite: `npm run heistplay -- --throttle 32` is 110/110 at 60 fps
+  and 107–109/109 at ~17 fps — the residue is the camera section, which is intermittently
+  honest there and is the next commit.
+- **launch flags**: `--disable-background-timer-throttling`,
+  `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`, and *not*
+  `--disable-frame-rate-limit` — that one spins rAF at 600 fps and stops `--throttle` from
+  being a slow machine at all.
+
+Three of the fixes were about the driver being a bad player rather than the game being wrong,
+and all three showed up only once the world could move between polls:
+
+- standing in a torch beam until spotted **lost the whole crew** before the pound test. The
+  loop was watching `probe().caged`, which flips back to false a frame after an arrest
+  because being caught hands you the next raccoon — the exact trap the CAUGHT section had
+  already written down. Now it counts the pound, and it breaks on the `spotted` event instead
+  of taking "two more samples", which was two crew bagged.
+- the rescue section **looped over an empty list** on runs where nobody got caught, so two
+  mutants ("chewing does not shake the lock", "a chew that frees one leaves the cage open")
+  walked green through a whole suite. It now fills the pound to two itself and asserts it had
+  a prisoner.
+- the lock's "rattle" was measured as *any movement*: with the shake code switched off in the
+  engine the suite still saw 0.32 m of shaking, which was the lock falling off. Now it is
+  lateral, only while the lock is still hanging, and must change direction twice.
+
+The mutant harness also had a live bug (`survived` after a rename — every run crashed at the
+summary and the summary was the point), and its two survivors were both suite holes. Nine for
+nine die now.
+
+**Still red, honestly:** at ~17 fps the shoulder rig buries itself one frame in five in the
+north-west corner. I fixed the retreat loop's floor (it tested `allowed > 0.55` *before*
+subtracting 0.35, so the last step landed at 0.35 m — a screen full of fur, and the check
+agreed: `min 0.35 m`), but once the slid bearing is inside brick at every legal distance the
+rig has nothing left to try. That is B1: hysteresis — remember the last clear placement and
+keep it until a genuinely better bearing opens up. It is the next commit.
 
 ### 2026-09-16 · A1 🚀 every verb now has a body (+ the vault door was never a door)
 

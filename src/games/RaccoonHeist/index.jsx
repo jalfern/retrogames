@@ -57,6 +57,9 @@ const KEY_LABEL = { grab: 'E / SPACE', throw: 'F / B', swap: 'Q / X', cam: 'G' }
 const HELD_LABEL = 'HOLD E / SPACE'
 
 const FIXED_DT = 1000 / 60
+/** Catch-up window, in ms of world time per frame. See `frame()` for why 250. */
+const MAX_CATCHUP = 250
+const MAX_STEPS = Math.round(MAX_CATCHUP / FIXED_DT)
 const MOON = new THREE.Vector3(-9, 14, -7)
 
 const isTouch = () => matchMedia('(hover: none) and (pointer: coarse)').matches || navigator.maxTouchPoints > 0
@@ -340,21 +343,28 @@ const RaccoonHeistGame = () => {
 
         const frame = (now) => {
             raf = requestAnimationFrame(frame)
-            const raw = Math.min(120, now - last)
+            // **The clock is the game.** A fixed timestep capped at five ticks per frame
+            // simulates 83 ms of world per frame, so anything under 12 fps runs the whole
+            // heist in slow motion — torch timers, guard speed, the job clock, all of it.
+            // On the CI runner (~4 fps in headless Chrome) that made the play harness red
+            // for the wrong reason; on a weak phone it would make the game quietly easier.
+            // The cap is there so a backgrounded tab *skips* time instead of fast-forwarding
+            // guards through a wall of frames, so it has to be generous enough that every
+            // foreground frame rate keeps real time: 250 ms of catch-up holds real time
+            // down to 4 fps, and discards anything past that.
+            const raw = Math.min(MAX_CATCHUP, now - last)
             last = now
             if (pausedRef.current) return
             acc += raw
-            // Never simulate more than 5 catch-up ticks: a backgrounded tab should skip
-            // time, not fast-forward the guards through a wall of frames.
             let steps = 0
-            while (acc >= FIXED_DT && steps < 5) {
+            while (acc >= FIXED_DT && steps < MAX_STEPS) {
                 const dt = FIXED_DT / 1000
                 elapsed += dt
                 update(dt)
                 acc -= FIXED_DT
                 steps++
             }
-            if (acc > FIXED_DT * 5) acc = 0
+            if (acc > MAX_CATCHUP) acc = 0
             const t0 = performance.now()
             renderer.render(scene, camera)
             // Exponential moving average of the *render* cost, which is the number a

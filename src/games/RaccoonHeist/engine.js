@@ -1126,7 +1126,13 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         // Measured from the same anchor the placement below uses, or the retreat decides
         // one thing and the camera goes somewhere else.
         const embedded = (d) => blocksSight(atWorld(L, tx + fx * d, tz + fz * d))
-        for (let i = 0; i < 12 && allowed > 0.55 && embedded(allowed); i++) allowed -= 0.35
+        // The 0.55 m floor has to be on the STEP, not on the loop test. Written as
+        // `allowed > 0.55` the last iteration is free to overshoot it — 0.70 became 0.35 —
+        // and a rig 35 cm behind a raccoon's ear is the exact "screen full of fur" this
+        // whole block exists to prevent. It showed up on a 17 fps box (throttle 32) where
+        // the slide lands further per frame; `heistplay` called it "the rig never jams
+        // against the raccoon (min 0.35 m in a 2.2 m pocket)".
+        for (let i = 0; i < 12 && allowed > 0.6 && embedded(allowed); i++) allowed = Math.max(0.6, allowed - 0.35)
         const k = allowed / dist
         let px = st.camX + fx * allowed
         let pz = st.camZ + fz * allowed

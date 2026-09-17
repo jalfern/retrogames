@@ -9,10 +9,12 @@ what broke and what each fix cost. This file is only: *where we are, and what to
 
 - **Live in production:** https://www.jalfern.com/retrogames/raccoon-heist
   (also on a phone — the touch pad auto-enables; `?pad=1` shows it on desktop).
-- **Branch:** `main` @ `3dc142d`. Nothing uncommitted, nothing unmerged. PRs #38–#40 merged
-  and squash-merged per the repo workflow.
-- **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **107** ·
-  `npm run heistmutate` **9/9 mutants die** · `npm run lint:heist` clean ·
+- **Branch:** `heist-frame-rate-clock` (PR pending) — the world now keeps real time at any
+  frame rate the browser can draw at 4 fps or better. Previously merged: PRs #38–#43.
+- **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **110** at 60 fps
+  and **107–109/109** at `--throttle 32` (~17 fps; the residue is the camera section, see *Next steps*) ·
+  `npm run heistclock` **1.00x @ 6 fps** · `npm run heistmutate` **10/10 mutants die** ·
+  `npm run lint:heist` clean ·
   `npm run lint:mario` clean (shared shell untouched-but-covered).
   `lint:heist` + `heistcheck` are in the blocking CI `static` job; `heistplay` is in the
   manual `verify` job (headless Chrome) and should be promoted to `pull_request` once the
@@ -24,7 +26,9 @@ what broke and what each fix cost. This file is only: *where we are, and what to
   stand. Level 2 and 3 still have never been *played*.
 - **A green `heistplay` run is a full job:** walks with a thumb vector, steals, gets spotted
   in <1 s, gets arrested, is handed a crewmate who can still walk, chews two friends out of
-  the pound (2.4 s / 1.8 s), loads all four piles, raises the gate, clears the job.
+  the pound (2.4 s / 1.8 s), loads all four piles, raises the gate, clears the job — and it
+  now reports the frame rate it did that at, because a pass on a machine that cannot keep
+  real time is not a pass.
 
 ### Shape of the code (7.6k lines, all runtime-generated art and audio — no assets)
 
@@ -40,7 +44,7 @@ what broke and what each fix cost. This file is only: *where we are, and what to
 | `alley.js` | 252 | the attract diorama |
 | `scripts/heistplay.mjs` | 972 | Chrome plays job 1 (107 assertions) |
 | `scripts/heistcheck.mjs` | 288 | Node level audit + the grid-sampler contract |
-| `scripts/heistmutate.mjs` | 174 | nine fixed bugs, put back on purpose, one at a time |
+| `scripts/heistmutate.mjs` | ~200 | ten fixed bugs, put back on purpose, one at a time (one needs `--throttle 32` to exist) |
 
 ### The numbers that are load-bearing
 
@@ -56,7 +60,8 @@ playtest report, not from taste.
 | `w.cool` after a bagging | 2.8 s | a guard tying a sack is not reaching for the next raccoon | "job survives an arrest" |
 | catch reach | 1.15 m (dog 1.25, surprised 0.85) | was 0.62 m — a handshake; "I was on top of him" | "alerted guard who reaches you bags you" |
 | prop colliders | hydrant 0.34, box 0.5, can 0.42, lamp 0.26, cart 0.78, **pallets none** | grid-only collision meant walking through furniture; you can step over a pallet | "nothing walks through a prop" (stops at r + `RADIUS` = 0.74 m) |
-| camera | `MINVIEW` 2.1 m, shoulder `sh` 0.55 rad ×5 (±158°), `need` 3.1 m, retreat floor 0.55 | pulled-in cameras bury themselves in brick | "PRESSED AGAINST A WALL" (5 checks) |
+| camera | `MINVIEW` 2.1 m, shoulder `sh` 0.55 rad ×5 (±158°), `need` 3.1 m, retreat floor **0.6 m on the step** | pulled-in cameras bury themselves in brick; testing the floor *before* the subtraction let the last step land at 0.35 m | "PRESSED AGAINST A WALL" (5 checks) |
+| `FIXED_DT` / `MAX_CATCHUP` | 1/60 s, 250 ms of world per frame | real time down to **4 fps**; five ticks (83 ms) meant half speed at 6 fps and the CI reds were the machine | "the sim keeps real time at this frame rate" + `npm run heistclock` |
 | affordance tolerance | 0.6 m, and the mesh must be *the lock* for `free`/`chew` | a verb whose object is not drawn is the "I don't see a lock" bug | "EVERY VERB HAS A BODY" + the coverage gate that scrapes `focus()` |
 | chew times | vault 1.6 s, padlock 1.5 s (× `def.grab`) | the lock must give faster than the vault: inside the pound, the clock is the enemy | "a rescue is desperate, not a chore" (300 ms–4 s) |
 | level meshes | **48 of a pinned 50** | the padlock, the chain and the gate padlock cannot merge with the cage or the gate (they have to move) | "level geometry stays batched" — E1 (facades) must raise this pin on purpose |
@@ -84,7 +89,9 @@ playtest report, not from taste.
    `heistcheck` checks red. Also `npm run heistcheck -- --mutate` (seals the vault, the
    audit *must* complain).
 5. **Watch the cage count, not `probe().caged`.** Being caught switches `active`, so the
-   active raccoon is never caged for long. The driver hit this twice.
+   active raccoon is never caged for long. The driver hit this **three** times, and the
+   third was the expensive one: standing in a torch beam until spotted watched `caged`, kept
+   going after a good arrest, and lost the whole crew before the pound test.
 6. **Screens are React state; the engine can disagree.** The frame loop feeds the sim
    nothing while a result card is up, so a driver that "revives" a busted job must also
    `t.goto('play')` or it taps into a paused game and blames the grab button.
@@ -103,8 +110,31 @@ playtest report, not from taste.
    mutation that hides the affordance. Walk the parent chain (`drawn()` in `index.jsx`).
    Related: a mutation that sets a flag `reset()` repairs before play is not a mutation; hide
    the thing from the scene graph instead.
+10. **Below ~12 fps the world runs in slow motion, and the harness blames the game.** A
+    fixed-timestep loop that simulates at most five ticks per frame can only ever hand the
+    world 83 ms per frame — at 6 fps that is half speed, guards and job clock included.
+    CI was 94/104 while the laptop was green, and every red was a check written in wall
+    seconds. So: waits in `heistplay` are `__simSleep(worldSeconds)`, budgets are
+    `__gameTime()`, the cap is 250 ms, and `npm run heistclock -- --throttle 1,8,32,64` is
+    the instrument that decides who is lying. Measured: old clamp **0.59x @ 7 fps**, new
+    **1.00x @ 6 fps**.
+11. **A section that loops over "things that happened" can silently be a no-op.** The rescue
+    suite iterated `rescue.log`; on runs where nobody got caught that list was empty and the
+    suite reported a clean bill of health having tested nothing — two mutants walked green
+    through it. Same family: measuring the lock's "rattle" as *any* movement scored 0.32 m
+    for a lock that had just fallen off. Loop over things that happened only with a check
+    that they happened, and make the driver arrange for them.
 
 ## Next steps, ranked
+
+### 0. Camera hysteresis (B1) — the only red `heistplay` has left
+At ~17 fps (`--throttle 32`) the shoulder rig spends one frame in five inside brick in the
+north-west corner. The retreat loop now has a 0.6 m floor on the *step*, so it can no longer
+end up 0.35 m behind your ear — but once the slid bearing is inside geometry at every legal
+distance there is nothing left in the frame to do. What it needs is memory: keep the last
+placement that was clear, and only leave it when a probe finds a bearing that is clear at a
+real distance. That is B1 in `FEEDBACK.md`, and it is also the fix for "shaky, back and
+forth" in the corner, which is the same oscillation seen at 60 fps.
 
 ### 1. Play it yourself and tell me what's wrong (highest value)
 No harness can judge feel. Specifically: does the guard feel dangerous or unfair, is the
@@ -145,8 +175,11 @@ paw, `zzz`, ear). Cheap, big character win.
   deliberately not a gate; don't "fix" it as a drive-by.
 
 ### 6. Housekeeping
-- Promote `heistplay` to `pull_request` in CI once the manual browser job is green ~3 times.
-- Draw calls: level 43 meshes / scene ~120. The cast is ~155 small meshes (articulated rigs
+- Promote `heistplay` to `pull_request` in CI once the manual browser job is green ~3 times —
+  and note that `the sim keeps real time at this frame rate` is the check that tells you
+  whether a runner is fit to answer *any* timing question, so look at its line first when a
+  browser run goes red.
+- Draw calls: level 48 meshes / scene ~120. The cast is ~155 small meshes (articulated rigs
   can't batch without skinning) — if it ever needs to come down, merge per-material static
   children inside each rig, keeping anything in `userData.anim` unmerged.
 
@@ -157,8 +190,10 @@ npm run dev                    # :5173 — required by heistplay and shot
 npm run heistcheck             # Node, ~1 s: levels + stealth model contract
 npm run heistcheck -- --map 2  # ASCII dump of a job
 npm run heistcheck -- --mutate # seal the vault; the audit MUST go red
-npm run heistplay              # Chrome plays job 1: 107 assertions, writes scripts/.shots/h20-play.png
-npm run heistmutate            # nine fixed bugs put back, one at a time; ~20 min (`--dry` checks anchors)
+npm run heistplay              # Chrome plays job 1: 110 assertions, writes scripts/.shots/h20-play.png
+npm run heistplay -- --throttle 32   # same suite on a 32x slower CPU (~17 fps) — CI-shaped
+npm run heistclock             # world rate @ fps, one line per CPU throttle (`-- --throttle 1,8,32,64`)
+npm run heistmutate            # ten fixed bugs put back, one at a time; ~25 min (`--dry` checks anchors)
 npm run lint:heist             # eslint over the game + shared shell + scripts
 npm run shot -- --url "http://localhost:5173/retrogames/raccoon-heist" --out scripts/.shots/x.png \
   --steps '[{"down":"Enter","wait":1200},{"up":"Enter","wait":300}]'
