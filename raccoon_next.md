@@ -9,10 +9,10 @@ what broke and what each fix cost. This file is only: *where we are, and what to
 
 - **Live in production:** https://www.jalfern.com/retrogames/raccoon-heist
   (also on a phone — the touch pad auto-enables; `?pad=1` shows it on desktop).
-- **Branches:** `heist-body-depth` (is the body in the wall? no — and the seams that prove it)
-  and `zork-loop-clock` (one driver for the Zork agent, bounded prompt wait). Both against
-  `main`. Previously merged: PRs #38–#43, and the frame-rate clock work that this file was
-  written on.
+- **Branches:** none open. Merged: **#45** (the actor was never in the wall — signed depth
+  seams, guards through `blocked()`, the suite stops blaming its runner) and **#46** (one
+  driver for the Zork agent, bounded prompt wait, `zorkuicheck` speaks the game's clock).
+  Before those: PRs #38–#44. The one CI red left is §0a below.
 - **Gates, all green:** `npm run heistcheck` **303** · `npm run heistplay` **121/121** at 60
   fps, and at `--throttle 64` (this box manages **2–3 fps**, under the suite's own floor)
   **120/120 + 1 documented SKIP** — see trap 14, the suite now refuses to file a slow
@@ -187,6 +187,37 @@ who ever got close to furniture had already caught you. Now every body in the ga
 through `move()`, and `heistplay` stages the pathing branch on purpose ("A GUARD WALKS
 AROUND THE LAMPPOST"). Next: the same instrument over jobs 2 and 3, which have never been
 played at all (§2).
+
+### 0a. Two things still steer per FRAME, not per second (the last CI reds)
+
+`main`'s browser suite is green except `heistplay`, and the remaining reds are **not** the
+21-red cascade this branch already killed. On the runner the world keeps real time
+(`1x real time at 5 fps`) — above the floor, so nothing is downgraded — and three checks
+fail that both a 60 fps laptop and a 2–3 fps throttled box pass:
+
+- `the rig opens up as soon as there is room` — best settled gap **1.35 m while the log
+  prints `clear 6` behind the rig**. The bearing probe and the hysteresis
+  (`st.camClearPt`) are per-frame snapshots; at one frame per 200 ms the bearing has slid
+  half a corridor between the probe and the placement, so the rig keeps accepting last
+  frame's close spot.
+- `standing in a torch beam raises suspicion` — **peak meter 0.00**. `why()` says
+  `rate 1.25`, the driver stands there, and the cone has turned past that cell before the
+  next accumulator tick. The driver's re-hunt then resets the sample window, so the
+  assertion sees an empty window rather than a game that never noticed (which is why the
+  check prints `last window` now).
+
+Both have the same shape as the catch-up-cap bug this file already documents, one layer up:
+the *simulation* is on a fixed timestep, but the **camera bearing and the watcher's cone
+sweep ease per frame**, so they run at a rate that depends on the renderer. The fix is a
+world-rate accumulator (or `1 - exp(-k·dt)` smoothing) in `engine.js`'s rig and
+`updateWatchers`, and the proof is `heistplay` going green on the runner at 5 fps *and*
+`heistclock` holding 1.00x — not a raised threshold. Reproduce with
+`node scripts/heistplay.mjs --throttle 16` and read the `corner … /side …` line: a `side`
+that swings more than ~0.3 rad between samples is the bearing outrunning the probe.
+
+Order of work: cone first (it gates the stealth chain — nothing gets spotted, so nothing
+gets bagged, so the pound is empty and the cart section inherits a bust), camera second
+(it is one check and one easing constant).
 
 ### 0b. Camera polish still owed (B2/B4)
 At ~17 fps (`--throttle 32`) the shoulder rig spends one frame in five inside brick in the
