@@ -15,6 +15,7 @@
     "heistcheck": "node scripts/heistcheck.mjs",
     "heistplay": "node scripts/heistplay.mjs",
     "heistmutate": "node scripts/heistmutate.mjs",
+    "heistclock": "node scripts/heistclock.mjs",
     "preview": "vite preview",
     "shot": "node scripts/shot.mjs",
     "audcheck": "node scripts/audcheck.mjs",

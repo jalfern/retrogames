@@ -172,7 +172,10 @@ machine it would just be two discs covering the level.
 
 ```bash
 npm run heistcheck         # Node, no browser, ~1 s: level audit + stealth model + --mutate
-npm run heistplay          # Chrome plays job 1 end to end -- 107 assertions (needs `npm run dev`)
+npm run heistplay          # Chrome plays job 1 end to end -- 110 @ 60 fps, 109 at --throttle 64 (needs `npm run dev`)
+npm run heistplay -- --throttle 32   # the same suite on a 32x slower CPU (~17 fps)
+HEIST_LITE=1 npm run heistplay       # drive the cheap pipeline (?lite=1) — what CI drives
+npm run heistclock         # does the world keep real time? one line per CPU throttle
 npm run heistmutate        # revert each fix in turn and prove heistplay notices (~20 min)
 npm run heistmutate -- --dry  # just check the mutant anchors still exist
 npm run lint:heist         # eslint over the game + shared shell + scripts
@@ -187,7 +190,7 @@ the cast was simulated, audited, passed every check, and never added to the scen
 asserts every verb has a body, which is how the padlock, the chain and the crooked vault
 door were all found in one sitting.
 
-`heistmutate` is the reason to believe any of it: nine mutants, each one a previously fixed
+`heistmutate` is the reason to believe any of it: eleven mutants, each one a previously fixed
 bug re-introduced by an anchored text swap, each run through the real driver, each restored
 from a `/tmp` copy so the working tree is never reverted. Two of them were *equivalent*
 mutants — the harness hid a lock with `visible = false`, which `reset()` repairs before
@@ -195,12 +198,93 @@ play, and a plate measured by object origin, which never moves because it sits o
 hinge — and both are written down in that file's header, because an equivalent mutant is a
 lesson about the test, not the code.
 
+Two more survived their first outing, and both were holes in the **suite**, not the game:
+the lock "rattle" was measured as *any* movement, so a lock that had just been chewed off
+and fallen 0.32 m counted as shaking beautifully while the rattle code was switched off; and
+the pound held one prisoner, so the branch "a chew that frees one of two must leave the cage
+shut" was dead code with a green tick under it. The rattle is now lateral, measured only
+while the lock is still hanging, and required to change direction twice; the driver fills
+the pound to two before it starts chewing. A check inside a loop over "things that happened"
+must be able to say it never ran.
+
+## The world clock, and why the harness waits in world seconds
+
+`index.jsx` runs a fixed timestep and will simulate at most `MAX_CATCHUP` (250 ms) of world
+per frame. That number used to be five ticks — 83 ms — which is invisible at 60 fps and
+*catastrophic* below twelve: the loop can only ever hand the world 83 ms per frame, so at
+6 fps the heist runs at half speed, and at 2 fps it runs at a sixth. Guards, torch timers
+and the job clock all quietly slow down while the game looks "a bit choppy". The cap is
+250 ms because that is 60 Hz × 15 steps, i.e. real time down to 4 fps; below that the
+harness stops asserting a clock ratio and says the machine cannot be asked.
+
+The consequence for every check written in seconds is the important part. `heistplay` used
+to `setTimeout(1000)` and then assert "the raccoon moved 0.46 m" — on a CI runner the world
+had advanced 0.17 s, so the check measured the runner and called it the game. Ten reds on
+CI, green locally, and every one of them a lie about the sim. So:
+
+- **waits are `window.__simSleep(worldSeconds)`** — it sleeps on the wall, but scaled by an
+  EMA of the measured world rate (with a 150 ms floor so a fast box does not poll once a
+  frame). `sleep(0.3)` means *0.3 s of raccoon time*, whatever the frame rate.
+- **budgets are read off `window.__gameTime()`** (`st.elapsed`, the job clock): "noticed in
+  under 1.65 s" is a promise about the game, and the wall is a different clock.
+- **`npm run heistclock -- --throttle 1,8,32,64`** prints `loop/job x real time @ fps` per
+  CDP CPU throttle. This is the instrument that turns "CI is red, local is green" into a
+  number: 1.00x @ 6 fps with the current cap, **0.59x @ 7 fps** with the old five-tick one.
+- **`heistplay --throttle N`** runs the whole suite on a deliberately slow CPU. At 32x
+  (≈17 fps) it is green except one or two frames in the north-west corner's camera section,
+  which is the honest remaining gap written up below.
+
+Then there is the machine itself. The CI runner **rasterises in software**: at 1100x700 with
+MSAA and shadow maps it drew **1 fps** (`sim clock 0.14x real time at 1 fps` in the job log),
+which is under the floor the whole suite needs — the camera never settles, a 1.5 s chew yields
+three lock samples, and every check starts describing the runner. So `index.jsx` has a
+documented `?lite=1` path: no MSAA, no shadow maps, pixel ratio 1. It removes three *fill*
+costs and nothing from the scene graph, so "the cast is a visible mesh" and "every verb has a
+body" mean exactly as much there as here. `heistplay` asks for it (and a 640x426 window) when
+`CI` is set, and prints which pipeline it drove, because a suite whose scene depends on
+wherever CI happened to land is a suite that changes shape in someone else's hands. Measured
+after the change: 1.01x real time at 7 fps on a 64x-throttled laptop.
+
+A driver is also a *player*, and a bad one lies. This driver deliberately stands in a torch
+beam until spotted and deliberately walks into a guard — which, at 17 fps, with every poll
+worth 60 ms of world time, used to lose the entire crew before the pound test started, and
+every check after it was a corpse being prodded. Three rules keep it honest:
+
+- **count the pound, never `probe().caged`** — being caught hands you the next raccoon, so
+  the crewmate you are watching is back to `caged:false` a frame after a good arrest, and
+  the loop then stands *her* in the same beam;
+- **stop the tick the answer arrives** — the torch question is "how long until noticed", so
+  the loop breaks on the `spotted` event; the two extra samples it used to take were two
+  crew bagged;
+- **a stale measurement is a lie** — patrols move, so the driver re-finds a *live* cone
+  before starting the stopwatch. Parking at the coordinates it measured five seconds ago is
+  how it once reported "noticed in 5.2 s" with the meter reading 0.00 for five seconds.
+
+And a section must refuse to be empty: the rescue section fills the pound itself if the
+earlier set-pieces left the crew walking free, because an empty loop over "rescues" is a
+suite that reports a clean bill of health having run nothing.
+
 Two things to try before believing a change: seal the vault in `levels.js` and watch
 `--mutate` go red; stand in the open and read `__heistTest.why()`, which prints every
 nearby watcher's `los / align / cover / light / rate / det`.
 
 ## Known gaps
 
+- **The camera now has an escape hatch, and the corner that needed it is pinned.** At
+  `--throttle 64` (≈6 fps) the north-west pocket used to red two checks: the *actor* ends up
+  8 cm inside `fur1` — the simulation puts the raccoon inside the mesh at a low frame rate —
+  so every cell behind it, from `MINVIEW` down to the 0.7 m fur floor, is solid. The rig now
+  (a) floors its retreat on the *step*, (b) dwells on the last clear placement while this
+  frame's is solid and still a valid shot, (c) never lets shake cross the grid edge it just
+  came off, (d) *measures* its final position instead of trusting the loop that only ran when
+  the rig was already inside `MINVIEW`, and (e) when nothing on the bearing is legal, takes
+  the nearest legal cell in any direction, nearest bearing first. A rig that drifts a metre
+  sideways for half a second reads as an awkward operator; a rig inside a wall reads as a
+  broken game. Both reds are gone at 6 fps and the full pipeline is unchanged at 60
+  (110/110), which is the part worth being suspicious about: it means the escape only fires
+  where the map leaves no choice. Mutant #11 deletes it and must go red at `--throttle 64`.
+  **What is still open is upstream**: why `blocksMove` lets a 60 Hz simulation end with the
+  actor inside a wall at all. The camera is out of suspects and `near()` prints the evidence.
 - **Affordance hardware is only drawn for the pound and the gate.** A hide-spot bin has no
   latch and a stolen pile leaves no scuff on the ground where it was, both because the
   level mesh budget is at 48/50 and a scuff per pile is four more draw calls. The right

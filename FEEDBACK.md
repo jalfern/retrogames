@@ -273,12 +273,13 @@ gets a short, specific, in-world reason. Same treatment for the mouse/touch pad.
 | # | Item | Block | Size | Why first | Status |
 |---|---|---|---|---|---|
 | 1 | Draw the padlock on the pound (+ affordance-vs-mesh check) | A1 | S | You could not do the thing the game told you to do | 🚀 done, 107 checks, 9 mutants |
-| 2 | Slide hysteresis + climb damping + move/spread the spawn | B1–B3 | S | "shaky, back and forth" poisons every minute after | ⏳ next |
-| 3 | Spread the crew at spawn | C1 | S | Also fixes the free-hiding exploit | ⏳ next |
-| 4 | Key + action telemetry, then name every refusal | G1–G2 | S | Settles "are the keys working?" with evidence | ⏳ |
-| 5 | Dog / cat / guard gaits | D1 | M | The game's characters currently look stiff next to the raccoons | ⏳ |
-| 6 | Facade detail on the walls | E1 | M | Biggest visual gap in a game that already looks good at night | ⏳ needs the mesh budget raised first |
-| 7 | Floor grain + normal relief + specular variety | F1–F2 | M–S | The stuff you said you could keep going forever on | ⏳ |
+| 2 | Make the world keep real time, then the camera at low fps | — (new) | S | CI was red and the laptop green: the sim ran at ~½ speed and the checks measured the runner | 🚀 done 2026-10-06 — camera green at 6 fps too; it exposed the sim putting the actor inside a wall at low frame rates, which is next |
+| 3 | Slide hysteresis + climb damping + move/spread the spawn | B1–B3 | S | "shaky, back and forth" poisons every minute after — and B1 is now the *only* red `heistplay` has | ⏳ next |
+| 4 | Spread the crew at spawn | C1 | S | Also fixes the free-hiding exploit | ⏳ next |
+| 5 | Key + action telemetry, then name every refusal | G1–G2 | S | Settles "are the keys working?" with evidence | ⏳ |
+| 6 | Dog / cat / guard gaits | D1 | M | The game's characters currently look stiff next to the raccoons | ⏳ |
+| 7 | Facade detail on the walls | E1 | M | Biggest visual gap in a game that already looks good at night | ⏳ needs the mesh budget raised first |
+| 8 | Floor grain + normal relief + specular variety | F1–F2 | M–S | The stuff you said you could keep going forever on | ⏳ |
 
 ## What's working — don't undo this
 - **Raccoon rendering reads as a raccoon.** Keep the leg/tail/ear wiggle, protect it when
@@ -297,6 +298,121 @@ changelog.
 ---
 
 ## Log
+
+### 2026-10-06 · — 🚀 the world was running in slow motion and the checks blamed the game
+
+CI ran `heistplay` 94/104 red while the laptop was green, and the interesting part is that
+*both were telling the truth about different games*. The fixed-timestep loop in `index.jsx`
+capped catch-up at five ticks — 83 ms of world per frame — so at 6 fps the heist runs at
+half speed and at 2 fps it runs at a sixth. The runner was rendering maybe 2–4 fps, so
+"walked for one second" was 0.17 s of raccoon, "the vault door moved 0 m" was true of a door
+that had been chewed for a fifth of its timer, and the torch check reported 21 s because the
+stopwatch was the wall and the meter was the world.
+
+What changed:
+
+- **`MAX_CATCHUP = 250`** (15 ticks): real time down to 4 fps, and `heistplay` now says so
+  out loud — `the sim keeps real time at this frame rate`, with the floor reported instead of
+  asserted when the box cannot even draw 4 fps.
+- **`npm run heistclock`** (`scripts/heistclock.mjs`) prints `loop / job x real time @ fps`
+  per CDP CPU throttle. The old clamp: **0.59x @ 7 fps**. The new one: **1.00x @ 6 fps**.
+  That is the whole bug in two lines, and it is now a command rather than an argument.
+- **the harness speaks world seconds.** Every wait in `heistplay` is
+  `window.__simSleep(0.3)` = 0.3 s *of raccoon* (wall sleep scaled by a measured EMA of the
+  world rate, 150 ms floor), and every budget is read off `window.__gameTime()`. Five CPU
+  throttles now run the same suite: `npm run heistplay -- --throttle 32` is 110/110 at 60 fps
+  and 107–109/109 at ~17 fps — the residue is the camera section, which is intermittently
+  honest there and is the next commit.
+- **launch flags**: `--disable-background-timer-throttling`,
+  `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`, and *not*
+  `--disable-frame-rate-limit` — that one spins rAF at 600 fps and stops `--throttle` from
+  being a slow machine at all.
+
+Three of the fixes were about the driver being a bad player rather than the game being wrong,
+and all three showed up only once the world could move between polls:
+
+- standing in a torch beam until spotted **lost the whole crew** before the pound test. The
+  loop was watching `probe().caged`, which flips back to false a frame after an arrest
+  because being caught hands you the next raccoon — the exact trap the CAUGHT section had
+  already written down. Now it counts the pound, and it breaks on the `spotted` event instead
+  of taking "two more samples", which was two crew bagged.
+- the rescue section **looped over an empty list** on runs where nobody got caught, so two
+  mutants ("chewing does not shake the lock", "a chew that frees one leaves the cage open")
+  walked green through a whole suite. It now fills the pound to two itself and asserts it had
+  a prisoner.
+- the lock's "rattle" was measured as *any movement*: with the shake code switched off in the
+  engine the suite still saw 0.32 m of shaking, which was the lock falling off. Now it is
+  lateral, only while the lock is still hanging, and must change direction twice.
+
+The mutant harness also had a live bug (`survived` after a rename — every run crashed at the
+summary and the summary was the point), and its two survivors were both suite holes. Nine for
+nine die now.
+
+**And the runner itself was the next layer.** The first CI run *after* this branch said
+`sim clock 0.14x real time at 1 fps`: GitHub's runners rasterise in software, and at 1100x700
+with MSAA and shadow maps the game draws one frame a second there. 106/109 was the best that
+was ever going to be available — a 1.5 s chew yields two or three samples of a shaking lock,
+and a camera that slides over ten frames cannot settle in one. So `index.jsx` grew a
+documented `?lite=1` path (no MSAA, no shadow maps, pixel ratio 1 — a real weak-phone option,
+not a test-only back door), `heistplay` asks for it plus a 640x426 window when `CI` is set,
+and it prints which pipeline it drove. Locally nothing changes; on a 64x-throttled laptop the
+lite path holds **1.01x real time at 7 fps**. The rattle check also stopped demanding a
+*reversal* when the frame rate cannot show one, and a self-inflicted bug came out with it
+(the driver reset its own sample list while re-hunting for a torch, then reported `det=0`).
+
+**Then the camera got its own round, because CI kept red-shaming two checks.** Four real
+bugs came out of it, none of them visible at 60 fps: the retreat floor was tested *before* the
+subtraction so the last step overshot into a fur close-up; the rig oscillated buried-clear
+frame after frame (it now dwells on the last clear placement while this frame's is solid and
+still a valid shot); the camera shake could jitter the rig straight back across the grid edge
+it had just been pulled off; and the final gate only ran when the rig was *already* closer
+than `MINVIEW`, so a point that came out of the retreat inside brick reached
+`camera.position` untouched — it measures the bearing now, from the furthest the map allows
+down to the 0.7 m fur floor. Mutant #10 covers the first, and it only exists at low frame
+rates, which is why mutants can now carry `throttle: N`.
+
+And the driver was still lying twice: the torch hunt scored candidates on the game's own
+detection `rate` (because `los + cone + range` was parking the raccoon where the meter never
+left zero) — but the *fastest* rate is "you died", so it now aims for ~0.8 s of meter and
+prefers the further cell — and its cold start teleported blindly backwards for up to sixteen
+steps until it landed on a guard, lost the crew to contact, and reported `det=0.00` as a
+stealth failure. It only moves to cells the game calls safe. "The lock shakes while it is
+being chewed" was passing *vacuously* over an empty rescue log; it now asserts a prisoner, the
+engine's own rattle amplitude and a measured lateral swing, and demands a reversal only at
+frame rates that can resolve one.
+
+What is left is not the camera. In the north-west pocket at 6 fps the **raccoon itself** ends
+up 8 cm inside `fur1` — `near()` says so — so every cell behind it is solid and a legal camera
+does not exist. That is a movement question at low frame rates (`blocksMove`, the push-out),
+with a reproduction in the job log, and it is the next commit. Full pipeline locally:
+**110/110**. CI-shaped (lite, 6 fps): **107/109**, and the two reds are that corner, on purpose.
+
+**Round 3, and the corner stopped winning.** After the hysteresis round CI still red two
+camera checks at 5 fps, and the probe settled the argument: by the buried frame the *raccoon*
+is 8 cm inside `fur1`. With the actor inside the mesh, every cell behind it is brick from
+`MINVIEW` down to the fur floor — so the rig now takes the nearest legal cell in **any**
+direction, nearest bearing first, instead of rendering texture with a HUD on it. Both reds are
+gone at `--throttle 64` (**109/109**), the full pipeline is untouched at 60 (**110/110**), and
+mutant #11 deletes the escape hatch and must go red at the throttle, because at 60 fps the
+escape is never reached and the mutant would be equivalent by luck. What remains is the thing
+the camera was being blamed for: how does `blocksMove` let a 60 Hz simulation put the actor
+inside a wall?
+
+**CI is green, end to end, at 5 fps.** The `verify` job now runs the whole browser suite
+plus `heistplay` on the runner and reports `sim clock 0.99x real time at 5 fps`,
+`heistplay: 110/110`, `prodsmoke: 38/38`, `all checks passed` — where this branch started at
+94/104 with the clock at 0.14x and the runner at 1 fps. The pinch corner's frames on CI read
+`0.72m / 0.85m / 1.03m / 1.35m / 1.85m`, all legal, none `INSIDE`: the escape hatch fires on
+GitHub's hardware, not just on the laptop that wrote it. One earlier run of the same code red
+three `zorkuicheck` checks ("1 rooms mapped in the browser") and went green untouched on a
+re-run — a load flake in that check, filed below, not this branch's.
+
+**Still red, honestly:** at ~17 fps the shoulder rig buries itself one frame in five in the
+north-west corner. I fixed the retreat loop's floor (it tested `allowed > 0.55` *before*
+subtracting 0.35, so the last step landed at 0.35 m — a screen full of fur, and the check
+agreed: `min 0.35 m`), but once the slid bearing is inside brick at every legal distance the
+rig has nothing left to try. That is B1: hysteresis — remember the last clear placement and
+keep it until a genuinely better bearing opens up. It is the next commit.
 
 ### 2026-09-16 · A1 🚀 every verb now has a body (+ the vault door was never a door)
 

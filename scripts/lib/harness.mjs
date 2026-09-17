@@ -47,11 +47,22 @@ export async function launch(opts = {}) {
     // GitHub-hosted Linux runners need the sandbox off and a bigger shm than
     // the default 64mb, or Chromium dies on startup before the check runs.
     const ciArgs = process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []
+    // Headless Chrome happily drops a page's timers to a few ticks a second when it
+    // decides the tab is backgrounded or occluded, and a fixed-timestep sim cannot tell
+    // that from a slow machine: it just runs the world in slow motion. These flags say
+    // "this tab is the thing the user is looking at". Deliberately NOT
+    // `--disable-frame-rate-limit` / `--disable-gpu-vsync`: those spin rAF at 600+ fps,
+    // which stops the sim losing time for the wrong reason and makes `--throttle` stop
+    // being a reproduction of a slow box. A real browser gets ~60 fps; so should this.
+    const frameArgs = [
+        '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+    ]
     try {
         return await chromium.launch({
             channel,
             headless: opts.headless ?? true,
-            args: ['--autoplay-policy=no-user-gesture-required', ...ciArgs],
+            args: ['--autoplay-policy=no-user-gesture-required', ...frameArgs, ...ciArgs],
         })
     } catch (e) {
         console.error(`Could not launch browser (channel="${channel}").`)
@@ -88,6 +99,22 @@ export async function openGame(browser, { url, viewport = { width: 900, height: 
         await page.waitForTimeout(wait)
     }
     return page
+}
+
+/**
+ * Slow the CPU down on purpose. `--throttle 8` is how a laptop reproduces a GitHub
+ * runner: without it every timing-shaped check here passes at 60 fps on this machine and
+ * reds on CI, which is the worst failure mode a check can have — green where it is looked
+ * at most often. So the 3D drivers take a throttle flag, the slow box gets reproduced
+ * locally, and "does this still hold when the machine cannot keep up?" is a flag rather
+ * than a surprise.
+ */
+export async function throttleCPU(page, rate = 1) {
+    if (!rate || rate <= 1) return null
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate })
+    console.log(`  ..    CPU throttled ${rate}x — a low frame rate is the point, not a failure`)
+    return cdp
 }
 
 // Tiny assertion recorder. Usage:
