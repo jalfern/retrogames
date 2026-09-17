@@ -62,7 +62,7 @@ export const GAMES = [
         label: 'RACCOON HEIST',
         theme: 'dark',
         description: 'A 3D stealth caper. You run a crew of trash pandas through three night jobs — the corner bank, the museum of shiny things, and the manor of moonstone. Slip past torchlight, grab the loot one sack at a time, drop it in the getaway cart, and be over the gate before the heat peaks. Thunder masks your footsteps; the watchman never expects a raccoon to wait for lightning.',
-        controls: ['Left stick / WASD: Move (hold away from the light to stay low)', 'Right half drag: Orbit the camera', 'A / Space: Grab loot · hide in a bin · chew a lock', 'B / E: Fling a shiny to lure a guard', 'C / Shift: Scurry (loud, costs wind)', 'X / Q: Switch raccoon — the heat chases whoever it last saw', 'F: Crouch (slow, quiet)', '?: Pause and read the controls']
+        controls: ['Left stick / WASD: Move (the stick is camera-relative — pull back to retreat)', 'Drag right half / G: Orbit the camera · G recentres it behind you', 'E / Space / Z: Take loot, hide in a bin or the hedge, chew a lock — HOLD to keep chewing', 'F / B: Fling a shiny to lure a guard off your route', 'Q / X: Switch raccoon — the heat chases whoever it last saw', 'Shift / R: Sprint. Faster than a guard, and much louder', 'C: Crouch. Slower, nearly silent, and cover counts double', '?: Pause and read the controls']
     },
     {
         path: '/pong',

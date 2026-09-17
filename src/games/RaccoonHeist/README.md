@@ -41,13 +41,47 @@ corridor is a toilet booth, the raccoon is 0.64 m wide, and any chase camera fur
 than two metres is inside a wall. The grid stays in cells; only the world mapping scales,
 so every carve coordinate and the whole pathfinder kept working untouched.
 
+## Being caught is a setback, not a full stop
+
+Playtest round 2 said: *"once I'm caught the game is basically done — nothing works except
+rotating the camera."* That was four defects in one sentence.
+
+1. **Control never moved.** `catchCrew` caged the raccoon and left `active` pointing at it.
+   The camera kept orbiting a caged animal (the one input path that doesn't ask the actor
+   to move) and every other key did nothing. Now a catch hands you the next free crew
+   member, recentres the camera on them, and says so.
+2. **Arrests cascaded.** Being caught switches you to a crewmate standing on the same
+   square, and the guard who just bagged one raccoon reached straight for the next: three
+   arrests in four seconds = bust. A guard who has taken a raccoon is now **busy for 2.8 s**
+   (`cool`), drops every other raccoon's suspicion, and goes back to suspect.
+3. **Guards could not catch a walking raccoon.** Chase speed was `patrolSpeed * 1.75`, i.e.
+   2.1–2.8 m/s against a raccoon that *walks* at 2.75. Safety was a jog. Now
+   `CHASE = { guard: 3.4, dog: 4.4, cop: 3.55 }`: walking gets you caught, sprinting
+   (5.0 m/s, loud, costs wind) is how you escape. The stealth economy only exists if the
+   numbers point this way.
+4. **Detection was spectator-paced.** `detectRate`'s constant was 2.6, which at 5 m in a
+   torch took ~2.4 s. It is 4.6 with a distance floor now, so 5 m is ~1.1 s: the meter
+   fills while you can still react. `heistplay` times it, and the budget scales with the
+   distance the driver stood at, tuned so the old constant cannot pass.
+
+An arrest also **SHOUTS**: nearby watchers go `suspect` and converge on the sighting. Which
+is why the harness check is "the job survives an arrest", not "exactly one raccoon gets
+bagged" — a second guard arriving on the noise is the design working.
+
 ## Three rules the sim obeys
 
 1. **The drawn cone *is* the deadly cone.** A guard's vision mesh is built from the same
    half-angle and range the sim uses to see you, and occlusion for both the camera and the
    guards marches the same grid sampler (`losWorld` / `castWorld`). Two sources of truth
    about where a wall is is how a stealth game starts lying.
-2. **Suspicion is per-watcher, per-prey.** It used to live on the raccoon as one shared
+2. **Sight is marched in CELL space.** `losWorld` / `castWorld` take metres and walk a
+   grid indexed in cells, so the step must be divided by `CELL`. It wasn't, which made
+   every reported distance 2.2× too large: the camera believed a wall 1.3 m behind you was
+   2.9 m away and drove into the brick (the "screen full of blurred wall" the second
+   playtest reported), and guards saw through the last metre and a half of every doorway.
+   `heistcheck` pins this per level with assertions *in metres* — "a wall one cell away is
+   ~1.1 m" — because a check here that only proved a number came back would have been
+   green through the whole bug. It used to live on the raccoon as one shared
    number, which meant every guard who *couldn't* see you subtracted from the one who
    could: walking past a second guard made you invincible, and levels got easier as they
    got harder.
@@ -80,10 +114,10 @@ Budget, pinned by `heistplay`: level ≤ 50 meshes, whole scene ≤ 280 draw cal
 | | Keyboard | Touch |
 |---|---|---|
 | Move | WASD / arrows | floating stick (re-anchors under the thumb) |
-| Dash / Crouch | Shift / C | — / CROUCH |
-| Work | **E — tap to take, hold to chew** | big button, ring lights up when there is a verb |
-| Lure / Crew | F / Q | LURE (with a count) / CREW |
-| Look | drag, wheel to zoom | drag the right half |
+| Sprint / Crouch | Shift or R / C or Ctrl | — / CROUCH |
+| Work | **E / Space / Z — tap to take, hold to chew** | big button, ring lights up when there is a verb |
+| Lure / Crew | F or B / Q or X | LURE (with a count) / CREW |
+| Look | drag, wheel to zoom, G to recentre | drag the right half |
 | Pause | `?` | `?` |
 
 The shared `<VirtualControls />` is deliberately **not** used: a discrete arrow-key pad
@@ -96,7 +130,7 @@ machine it would just be two discs covering the level.
 
 ```bash
 npm run heistcheck         # Node, no browser, ~1 s: level audit + stealth model + --mutate
-npm run heistplay          # Chrome plays job 1 end to end (needs `npm run dev`)
+npm run heistplay          # Chrome plays job 1 end to end -- 81 assertions (needs `npm run dev`)
 npm run lint:heist         # eslint over the game + shared shell + scripts
 npm run heistcheck -- --map 1    # ASCII dump of a job
 npm run heistcheck -- --mutate   # seals the vault; the audit MUST notice

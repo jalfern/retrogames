@@ -32,9 +32,16 @@ export function losWorld(level, ax, az, bx, bz) {
     const len = Math.hypot(dx, dy)
     if (len < 1e-6) return true
     const n = Math.ceil(len / SAMPLE)
-    const sx = dx / n, sy = dy / n
+    // The march runs in CELL space (the grid is indexed in cells), so the step has to be
+    // a cell-space increment. Dividing the world delta by `n` -- which is all this did
+    // until the world got scaled -- advances 1/CELL of the intended distance per
+    // iteration, so the march stops a fifth of the way to the target and reports clear
+    // sight through every wall it never reached. Line of sight is the one thing a stealth
+    // game may not get wrong twice, and it is why a guard could see you through a
+    // doorway you could see him through and neither of you could explain it.
+    const sx = dx / n / CELL, sy = dy / n / CELL
     let x = ax / CELL - level.ox, y = az / CELL - level.oz
-    for (let i = 1; i < n; i++) {
+    for (let i = 1; i <= n; i++) {
         x += sx; y += sy
         if (blocksSight(at(level, Math.round(x), Math.round(y)))) return false
     }
@@ -43,18 +50,26 @@ export function losWorld(level, ax, az, bx, bz) {
 
 /** Where a sight ray from A toward B is stopped. Used for torch beams and investigations. */
 export function castWorld(level, ax, az, dirX, dirZ, maxDist) {
-    const n = Math.ceil(maxDist / SAMPLE)
-    const sx = dirX / n, sy = dirZ / n
+    const n = Math.max(1, Math.ceil(maxDist / SAMPLE))
+    const step = maxDist / n
+    // Same cell-space step as `losWorld`, and the same lesson: the distance this returns
+    // is what the camera rig trusts. Inflated by CELL, it believed a wall 1.3 m behind
+    // the raccoon was 2.9 m away and drove the camera into the brick -- a screen full of
+    // blurred wall, which is exactly what the first playtest reported.
+    // `dirX` here is a UNIT vector (unlike `losWorld`, whose delta is the whole
+    // distance), so the cell-space step is the world step divided by CELL. Getting
+    // this wrong twice in one function is the argument for the two numeric assertions
+    // heistcheck now makes about this file: they fail by metres, not by vibes.
+    const sx = dirX * step / CELL, sy = dirZ * step / CELL
     let x = ax / CELL - level.ox, y = az / CELL - level.oz
-    for (let i = 1; i < n; i++) {
+    for (let i = 1; i <= n; i++) {
         x += sx; y += sy
-        if (blocksSight(at(level, Math.round(x), Math.round(y)))) return { x: (x - level.ox) * CELL, z: (y - level.oz) * CELL, dist: (i - 1) * SAMPLE, hit: true }
+        if (blocksSight(at(level, Math.round(x), Math.round(y)))) return { x: (x - level.ox) * CELL, z: (y - level.oz) * CELL, dist: (i - 1) * step, hit: true }
     }
     const hx = (ax + dirX * maxDist) / CELL - level.ox, hy = (az + dirZ * maxDist) / CELL - level.oz
     return { x: (hx - 0) * CELL, z: (hy - 0) * CELL, dist: maxDist, hit: false }
 }
 
-/** Shortest signed angle difference, in radians, wrapped to [-PI, PI]. */
 export function angleTo(fromAng, dx, dz) {
     // Model convention: heading 0 faces +Z, and yaw increases toward +X (three's Y-up
     // rotation is right-handed about +Y, so a yaw of +a turns +Z toward +X).
@@ -105,9 +120,25 @@ export function coverOf(cellType, crouching) {
  * right next to a guard in the open is *immediately* obvious rather than taking a
  * comically long second to notice.
  */
+/**
+ * How fast suspicion fills, in units of "whole meter" per second. `1.0` = noticed.
+ *
+ * The constant was 2.6, which at 5 m in a torch gave 2.4 seconds of standing in a beam
+ * before anything happened. That is not stealth, that is a spectator: the player is
+ * supposed to feel the beam fill and *move*, and the first playtest put it plainly --
+ * "I have to be on top of him before he catches me". So:
+ *
+ *   torch, 5 m, no cover   ~1.1 s     <- the moment of "oh no", then you run
+ *   torch, 9 m             ~2.0 s
+ *   dark, 4 m, crouched    ~4 s+      cover and darkness still earn their keep
+ *   already alert          ~0.7 s     a guard who has seen you once is not slow twice
+ *
+ * Distance falloff has a floor (`dist * 0.8`) so close range is not absurdly instant.
+ * `heistplay` times the beam, so this is a promise and not a comment.
+ */
 export function detectRate(dist, align, mods = {}) {
     if (align <= 0) return 0
-    const base = 2.6 * align / Math.max(1.6, dist)
+    const base = 4.6 * align / Math.max(2.6, dist * 0.8)
     return base * (mods.cover ?? 1) * (mods.light ?? 1) * (mods.aware ?? 1)
 }
 

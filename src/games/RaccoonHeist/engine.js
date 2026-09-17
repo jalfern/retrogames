@@ -21,7 +21,7 @@
 //    the job; losing one is a setback with a rescue in it.
 
 import * as THREE from 'three'
-import { T, CELL, at, atWorld, cellOf, blocksMove, reachFrom, pathBetween, worldOf, CREW, CELL_NAME } from './levels.js'
+import { T, CELL, at, atWorld, cellOf, blocksMove, blocksSight, reachFrom, pathBetween, worldOf, CREW, CELL_NAME } from './levels.js'
 import * as S from './stealth.js'
 import { makeAgent } from './world.js'
 import { makeRaccoon, animRaccoon, animWalker, makeLoot, makeIconTex, makeTex, disposables, lootValue, lootLabel, rng } from './art.js'
@@ -29,6 +29,16 @@ import { makeRaccoon, animRaccoon, animWalker, makeLoot, makeIconTex, makeTex, d
 const RADIUS = 0.32
 const LOOT_CH = '$%&*'
 const CAUGHT_FREEZE = 1.1
+/**
+ * Chase speed per kind, m/s, and the reason it is a table rather than a multiplier:
+ * an alerted guard used to run `patrolSpeed * 1.75`, which for the 1.2–1.6 m/s patrols
+ * in these levels meant 2.1–2.8 m/s — and a raccoon *walks* at 2.75. So walking away
+ * from a chase always worked, which is the same thing as saying the guards could not
+ * catch you and the game had no consequence. Now a walk gets you caught and a dash
+ * (5.0 m/s, loud, costs wind) is how you actually escape: that is the whole stealth
+ * economy, and it only exists if the numbers point this way.
+ */
+const CHASE = { guard: 3.4, dog: 4.4, cop: 3.55 }
 
 export function createEngine({ level, world, camera, audio = null, onEvent = null }) {
     const L = level
@@ -116,7 +126,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             : { x: p.wx ?? p.x, z: p.wz ?? p.z }))
         return {
             ...spec, half, x: wx, z: wz, yaw: 0, state: 'patrol', route, ri: 0, rdir: 1,
-            path: null, pi: 0, repath: 0, aim: null, wait: 0, waitT: spec.wait ?? 0.9,
+            path: null, pi: 0, repath: 0, aim: null, wait: 0, waitT: spec.wait ?? 0.9, cool: 0,
             // Suspicion is per-watcher, per-prey. It used to live on the raccoon as one
             // shared number, which meant every guard who could NOT see you subtracted
             // from the one who could: walking a second guard's route made you
@@ -183,7 +193,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         phase: 'brief', t: 0, elapsed: 0, heat: 0, alarm: false, copsOut: false,
         shinies: 2, delivered: 0, deliveredValue: 0, caught: 0, msg: '', msgT: 0,
         hint: '', objective: '', flash: 0, masked: false, nextFlash: 2.5, storm: L.theme === 'manor' ? 1 : 0.18,
-        gateOpen: false, shake: 0, result: null, camYaw: 0, camPitch: 0.62, camDist: 7.2,
+        gateOpen: false, shake: 0, result: null, camYaw: 0, camYawEff: 0, camSide: 0, camPitch: 0.62, camDist: 7.2,
         camX: cartW.x, camZ: cartW.z + 7, camY: 4, freeze: 0, caughtWho: -1,
     }
     const noises = []
@@ -283,6 +293,19 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         st.heat = Math.min(100, st.heat + 20)
         st.shake = Math.max(st.shake, 0.5)
         icon(w, '!', 1.4)
+        // A shout. Every watcher who can hear the commotion turns toward it and starts
+        // filling their own meter, so a spotted run escalates into a *job* instead of
+        // one furious guard trailing you forever while his colleague watches the wall.
+        for (const o of watchers) {
+            if (o === w || o.state === 'alert') continue
+            const dd = Math.hypot(o.x - w.x, o.z - w.z)
+            if (dd > (o.hear || 6) * 2.2) continue
+            o.state = 'suspect'
+            o.aim = { x: c.x, z: c.z }
+            o.path = null
+            o.det[c.i] = Math.max(o.det[c.i], 0.35)
+            icon(o, '!', 0.9)
+        }
         emit({ type: 'spotted', who: c.def.name, kind: w.kind })
         audio?.spot?.()
         say(`${w.kind === 'dog' ? 'THE DOG' : 'SPOTTED'} — ${w.kind === 'dog' ? 'run' : 'move!'}`, 1.8)
@@ -521,7 +544,9 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         // you can orbit: down-left on the thumb is always "back toward the cart".
         const mx = input.mx || 0, my = input.my || 0
         const mag = Math.min(1, Math.hypot(mx, my))
-        const sin = Math.sin(st.camYaw), cos = Math.cos(st.camYaw)
+        // The camera the player is looking through, including any slide around a corner.
+        const eff = st.camYawEff ?? st.camYaw
+        const sin = Math.sin(eff), cos = Math.cos(eff)
         // The camera looks along (sin, cos), so screen-right — that vector rotated -90°
         // about Y, with Y up and Z flipped the way three.js flips it — is (-cos, sin).
         // The first version had the sign of the whole strafe axis inverted, which made
@@ -657,7 +682,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             if (w.direct && w.state === 'alert' && w.direct.caged !== true) {
                 const c = w.direct
                 const d = Math.hypot(c.x - w.x, c.z - w.z)
-                sp = (w.Speed || 1.5) * 1.75
+                sp = CHASE[w.kind] || 3.2
                 if (d > 0.05) {
                     move(w, ((c.x - w.x) / d) * sp * dt, ((c.z - w.z) / d) * sp * dt)
                     const want = Math.atan2(c.x - w.x, c.z - w.z)
@@ -672,8 +697,8 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 const d = Math.hypot(nx - w.x, nz - w.z)
                 if (d < 0.22) w.pi++
                 else {
-                    const mult = w.state === 'alert' ? 1.75 : w.state === 'suspect' ? 1.15 : 1
-                    sp = (w.Speed || 1.5) * mult
+                    const mult = w.state === 'alert' ? 1.15 : w.state === 'suspect' ? 1.15 : 1
+                    sp = w.state === 'alert' ? (CHASE[w.kind] || 3.1) : (w.Speed || 1.5) * mult
                     w.x += ((nx - w.x) / d) * sp * dt
                     w.z += ((nz - w.z) / d) * sp * dt
                     const want = Math.atan2(nx - w.x, nz - w.z)
@@ -736,7 +761,14 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             // "clearly on top of him" was not close enough, and the chase had no
             // consequence. A surprised watcher grabs too: bumping into a raccoon in the
             // dark is not a thing a guard just watches.
-            if (w.state === 'alert' || w.state === 'suspect') {
+            // A guard who has just bagged a raccoon is busy bagging a raccoon. Without
+            // this beat, the guard reaches straight past the bag for the next raccoon --
+            // and since being caught now *switches you* to whoever is free, usually
+            // standing right there, one mistake became three arrests and a bust in about
+            // four seconds. That is what "once I'm caught the game is basically done"
+            // really was: not a stuck game, a pile-up with no mercy window.
+            if (w.cool > 0) w.cool -= dt
+            if (w.cool <= 0 && (w.state === 'alert' || w.state === 'suspect')) {
                 const reach = w.state === 'alert' ? (w.kind === 'dog' ? 1.25 : 1.15) : 0.85
                 for (const c of crew) {
                     if (c.caged || c.hidden) continue
@@ -755,9 +787,44 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
 
     function catchCrew(c) {
         if (c.caged) return
+        const wasHeld = c.i === active
         c.caged = true
+        // The guard who took them: stand down for a beat, drop every other raccoon's
+        // suspicion, and go tie the sack up. 2.8 s is the window the next raccoon gets.
+        for (const w of watchers.concat(cops.map(k => k.w).filter(Boolean))) {
+            if (Math.hypot(w.x - c.x, w.z - c.z) > 2.6) continue
+            w.cool = 2.8
+            w.det = w.det.map(() => 0)
+            if (w.state === 'alert') {
+                w.state = 'suspect'
+                w.aim = { x: w.x, z: w.z }
+                w.path = null
+                w.direct = null
+                w.lose = 0
+            }
+        }
         c.held = null
         st.caught++
+        // Hand the player a raccoon that can still walk. This was the worst bug in the
+        // build: `active` stayed on the caught raccoon, so the camera kept orbiting a
+        // caged animal and every key did nothing -- the game looked hung, the HUD still
+        // counted down, and the player had no idea the job was still running. Being
+        // caught is supposed to *change* the job, not stop it.
+        if (wasHeld) {
+            const free = crew.find(x => !x.caged)
+            if (free) {
+                active = free.i
+                emit({ type: 'swap', who: free.def.name })
+                audio?.swap?.()
+                say(`${free.def.name} TAKES OVER — ${free.def.note}`, 3.2)
+                // And look at the new one, or the camera stays on the cage and the
+                // player thinks the screen is the problem.
+                st.camYaw = free.yaw
+                st.camYawEff = free.yaw
+                st.camX = free.x
+                st.camZ = free.z
+            }
+        }
         st.shake = 1
         st.freeze = CAUGHT_FREEZE
         st.caughtWho = c.i
@@ -867,16 +934,97 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         st.camX += (tx - st.camX) * Math.min(1, dt * 7.5)
         st.camZ += (tz - st.camZ) * Math.min(1, dt * 7.5)
         const wantY = ty + Math.sin(st.camPitch) * dist
-        const dirX = -Math.sin(st.camYaw), dirZ = -Math.cos(st.camYaw)
         // Occlusion through the *grid*, with the same sampler the guards' eyes use. A
         // mesh raycast against the merged wall batch would also work, but it would be a
         // second source of truth about where a wall is — and the last time this repo had
         // two of those, the drawn cone and the deadly cone disagreed.
-        const wall = S.castWorld(L, tx, tz, dirX, dirZ, dist + 0.5)
-        const allowed = Math.max(2.3, Math.min(dist, wall.dist - 0.4))
+        //
+        // THREE-PROBE CAMERA COLLISION: the centre bearing plus a shoulder either side.
+        // trick every third-person game uses, and this one badly needed it. Pulling
+        // straight in is not an answer to a wall — the rig has a floor under its
+        // distance, so "pull in" eventually means *bury the camera in brick*, and the
+        // screen becomes one blurred wall with a HUD on it (which is exactly what a
+        // walk along the north wall produced in production). So: if the centre probe has
+        // no room, look for the direction that does — usually back down the corridor you
+        // came from — and slide the rig there instead of clipping through the map.
+        const room = (yawTry) => Math.min(dist, S.castWorld(L, tx, tz, -Math.sin(yawTry), -Math.cos(yawTry), dist + 0.5).dist)
+        const need = Math.min(dist, 3.1)
+        // Probes are yaw *deltas*, and the winning delta is what gets applied. The first
+        // version probed rotated direction vectors and then recovered a sign from a cross
+        // product, but rotating (-sin y, -cos y) by +a is the yaw y - a, not y + a, so
+        // the rig slid to the mirror image of the bearing it had just measured: it would
+        // find open ground to the east and put itself in the wall to the south. Where the
+        // probe and the move must agree, they have to share one parameterisation.
+        const sh = 0.55
+        let side = 0
+        // The bearing the rig is on *now*, before this frame's correction.
+        const basis = st.camYaw + st.camSide
+        const centre = room(basis)
+        if (centre < need) {
+            let best = centre
+            // Up to ~2.75 rad (158 degrees) either side. In a corner there is no room
+            // anywhere near the ideal bearing and the answer is to look nearly back the
+            // way you came; probing only +/-35 degrees is what left the rig inside the
+            // north wall in production.
+            for (let mult = 1; mult <= 5; mult++) {
+                for (const d of [sh * mult, -sh * mult]) {
+                    const r = room(basis + d)
+                    if (r > best + 0.12) { best = r; side = d }
+                }
+            }
+        }
+        // Slide smoothly, never snap: a camera that teleports 40 degrees reads as the
+        // world lurching, and players report that as "the controls feel wrong". But slide
+        // twice as fast while the rig is buried -- that only happens when the player is
+        // wedged into a corner, which is exactly when an instant correction is polite.
+        const candX = -Math.sin(basis + side), candZ = -Math.cos(basis + side)
+        const stuckNow = blocksSight(atWorld(L, tx + candX * Math.min(dist, 2.4), tz + candZ * Math.min(dist, 2.4)))
+        st.camSide += (side - st.camSide) * Math.min(1, dt * (stuckNow ? 11 : 4.5))
+        const yaw = st.camYaw + st.camSide
+        const fx = -Math.sin(yaw), fz = -Math.cos(yaw)
+        const wall = S.castWorld(L, tx, tz, fx, fz, dist + 0.5)
+        let allowed = Math.max(1.75, Math.min(dist, wall.dist - 0.35))
+        // And if even the slid bearing puts the rig inside geometry, walk it toward the
+        // raccoon until there is world to see. Once the camera is *inside* a cell, every
+        // probe outwards reads zero clearance and the rig cannot escape on its own — it
+        // stays embedded for as long as the player stays there, which is exactly the
+        // frozen-brick screen this whole block exists to prevent. Being 1.2 m behind the
+        // raccoon is ugly. Being inside a wall is unplayable.
+        // Measured from the same anchor the placement below uses, or the retreat decides
+        // one thing and the camera goes somewhere else.
+        const embedded = (d) => blocksSight(atWorld(L, tx + fx * d, tz + fz * d))
+        for (let i = 0; i < 12 && allowed > 0.55 && embedded(allowed); i++) allowed -= 0.35
         const k = allowed / dist
-        const px = st.camX + dirX * allowed
-        const pz = st.camZ + dirZ * allowed
+        let px = st.camX + fx * allowed
+        let pz = st.camZ + fz * allowed
+        // The look-at target lerps for smoothness, which is a kindness right up until the
+        // raccoon walks into a corner: the lag lets the target drift away from the actor
+        // and puts the camera closer than `allowed` just promised. Anchor on the actor
+        // itself once the gap goes tight — a slightly stiff camera beats one inside a
+        // wall, and this is the frame where the player is already tense.
+        if (Math.hypot(px - tx, pz - tz) < allowed * 0.7) {
+            px = tx + fx * allowed
+            pz = tz + fz * allowed
+        }
+        // Last gate: never sit closer to the raccoon than MINVIEW if there is room to sit
+        // further out. Wedged in a corner with the rig sliding, `allowed` can come out of
+        // the retreat loop tiny and the player gets a screen full of raccoon fur -- which
+        // is the same complaint as a wall in the lens, only fuzzier.
+        const MINVIEW = 2.1
+        const gap = Math.hypot(px - tx, pz - tz)
+        if (gap < MINVIEW) {
+            for (let d = MINVIEW; d >= gap; d -= 0.3) {
+                if (blocksSight(atWorld(L, tx + fx * d, tz + fz * d))) continue
+                px = tx + fx * d
+                pz = tz + fz * d
+                break
+            }
+        }
+        // What the player is *looking along* — movement is mapped through this, not
+        // through the raw input yaw, so when the rig slides around a corner "forward"
+        // stays forward. Two sources of truth about the camera direction is how a game
+        // ends up with controls that are correct on paper and wrong in the hands.
+        st.camYawEff = yaw
         // When a wall does cut us off, climb rather than merely shorten: looking down
         // over a roof keeps the raccoon framed, whereas sitting two metres behind a wall
         // is just an expensive way to render brick.
@@ -1142,6 +1290,11 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             kind: w.kind, state: w.state, x: +w.x.toFixed(2), z: +w.z.toFixed(2), yaw: +w.yaw.toFixed(2),
             cell: cellNameOf(w.x, w.z), range: w.range, half: w.half, hear: w.hear,
             wp: w.route.length ? w.route[w.ri] : null, path: w.path ? w.path.length : 0,
+            // `cool` is the mercy window after a bagging, and `d` is the worst suspicion
+            // anyone currently holds of the raccoon you control: the two numbers that say
+            // whether being caught is a setback or a full stop.
+            cool: +(w.cool || 0).toFixed(2), chasing: !!w.direct,
+            d: +(Math.max(0, ...crew.map(c => w.det[c.i] || 0)) / 1).toFixed(2),
         })),
         debugLoot: () => loot.map(l => ({
             kind: l.kind, label: l.label, value: l.value, x: l.x, z: l.z,
@@ -1171,9 +1324,81 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         focusLabel: () => { const f = focus(); return f ? f.kind + ':' + f.label : '' },
         get activeCrew() { return actor() },
         setCam(yaw, pitch, dist) {
-            if (yaw !== undefined) st.camYaw = yaw
+            if (yaw !== undefined) { st.camYaw = yaw; st.camSide = 0; st.camYawEff = yaw }
             if (pitch !== undefined) st.camPitch = pitch
             if (dist !== undefined) st.camDist = dist
+        },
+        /** Clearance from the raccoon along a unit direction, in metres. Used to find
+         * the nearest wall so the harness can *walk into it* rather than stroll down an
+         * open lane and declare the camera fine. */
+        clearAt(dx, dz) {
+            const a = actor()
+            const d = S.castWorld(L, a.x, a.z, dx, dz, 8)
+            // `castWorld` reports the impact point as `x`/`z` and a boolean `hit` — the
+            // first draft here did `d.hit[0]`, which threw the first time the harness
+            // actually hit a wall and worked perfectly (returning null) in every open
+            // yard before that. A test that never reaches its branch is not a test.
+            return { clear: +d.dist.toFixed(2), at: d.hit ? [+d.x.toFixed(1), +d.z.toFixed(1)] : null }
+        },
+        /**
+         * How much world is in front of the camera, in metres. The check this serves is
+         * "the camera is not inside a wall", which no screenshot of a playable game
+         * catches politely and no other number describes: a wall that fills the frame
+         * still renders at a healthy 60 fps.
+         */
+        camClear() {
+            const yaw = st.camYawEff ?? st.camYaw
+            const d = S.castWorld(L, camera.position.x, camera.position.z, Math.sin(yaw), Math.cos(yaw), 6)
+            const a = actor()
+            return {
+                // Two different failures, because they need different fixes and the
+                // first version of this metric could not tell them apart: `inside` means
+                // the camera is *in* geometry (unplayable), `clear` means it is merely
+                // close to something (framing).
+                inside: blocksSight(atWorld(L, camera.position.x, camera.position.z)),
+                clear: +d.dist.toFixed(2),
+                at: d.hit ? [+d.x.toFixed(1), +d.z.toFixed(1)] : null,
+                side: +st.camSide.toFixed(2),
+                dist: +Math.hypot(camera.position.x - a.x, camera.position.z - a.z).toFixed(2),
+            }
+        },
+        /**
+         * Harness-only: find a corner. Scans for a walkable cell with a wall next to it
+         * and returns both, so a test can *stage* being pressed against geometry instead
+         * of hoping a stroll runs into some.
+         */
+        tightSpot() {
+            let best = null
+            // Cell +y is world +z (worldOf multiplies (y + oz) by CELL), so the world
+            // direction of a wall at cell +y is +z. Getting that sign backwards points
+            // the camera at the open side and the test then "passes" by testing nothing,
+            // which is precisely how the first draft of this check was green in a yard
+            // where production was showing brick.
+            for (let y = 1; y < L.h - 1; y++) {
+                for (let x = 1; x < L.w - 1; x++) {
+                    if (at(L, x, y) !== T.FLOOR) continue
+                    const walls = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => blocksSight(at(L, x + dx, y + dy)))
+                    if (!walls.length) continue
+                    // A corner (two walls) is the worst case and the interesting one:
+                    // there is no bearing behind the raccoon at all, so the rig has to
+                    // slide or die. Prefer those, and only fall back to a flat wall.
+                    const [wx, wz] = worldOf(L, x, y)
+                    // Verify the spot with the SAME cast the harness will use, and
+                    // require it to be tight. The first version trusted `blocksSight`
+                    // on the grid neighbour and handed the test a "corner" whose wall
+                    // was 3.96 m away -- the precondition, the check and the map
+                    // disagreed, and three downstream checks failed while telling me
+                    // nothing about why. Where two parts of the system must agree, one
+                    // of them has to measure the other.
+                    const cands = walls.map(([dx, dy]) => {
+                        const d = S.castWorld(L, wx, wz, dx, dy, 6)
+                        return { x: wx, z: wz, dx, dz: dy, walls: walls.length, clear: +d.dist.toFixed(2) }
+                    }).filter(c => c.clear < 1.9)
+                    if (walls.length >= 2 && cands.length) return cands[0]
+                    if (!best && cands.length) best = { ...cands[0], walls: 1 }
+                }
+            }
+            return best || null
         },
         /**
          * Harness-only: park a watcher somewhere. Some situations cannot be asked to
@@ -1185,7 +1410,23 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             const all = watchers.concat(cops.map(k => k.w).filter(Boolean))
             const w = all[i]
             if (!w) return null
-            w.x = x; w.z = z
+            // Never park a watcher inside geometry. A guard placed in a wall cannot path,
+            // cannot see, and fails the "watchers stand on walkable ground" check for a
+            // reason that has nothing to do with what is being tested -- which is exactly
+            // how one mutation run here reported a phantom wall bug. Nudge outward on a
+            // spiral until the cell is floor, and say whether we had to.
+            let nx = x, nz = z, moved = false
+            if (blocked(x, z, w)) {
+                moved = true
+                outer: for (let r = 0.6; r < 4.5; r += 0.45) {
+                    for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+                        const px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r
+                        if (!blocked(px, pz, w)) { nx = px; nz = pz; break outer }
+                    }
+                }
+            }
+            w.x = nx; w.z = nz
+            if (moved) x = nx, z = nz
             if (state) w.state = state
             w.path = null; w.wait = 0; w.lose = 0
             w.mesh.position.set(x, 0, z)

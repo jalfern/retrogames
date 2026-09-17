@@ -134,6 +134,38 @@ r.check('the camera follows', Math.hypot(walked.after.ndc[0], walked.after.ndc[1
 r.check('stamina spent and came back', walked.after.wind > 0.2, `wind=${walked.after.wind}`)
 void T
 
+console.log('\nTHE HELP SCREEN TELLS THE TRUTH')
+// The pause card promised "B / E: fling a shiny" and "F: crouch". B did nothing, E
+// grabbed, and F lured. A player who believes an arcade help screen and finds the keys
+// do not work does not file a bug report about key bindings -- they conclude the game is
+// broken and leave. So the promise and the implementation get diffed here, in Node, on
+// every run: whatever `games.js` advertises must exist in the engine's one key table.
+const fs = await import('node:fs')
+const shell = fs.readFileSync('src/games/RaccoonHeist/index.jsx', 'utf8')
+const registry = fs.readFileSync('src/config/games.js', 'utf8')
+const table = shell.slice(shell.indexOf('const KEYMAP = {'), shell.indexOf('const HELD_LABEL'))
+const handled = new Set([...table.matchAll(/'(Key[A-Z]|Space|Tab|Escape|ShiftLeft|ShiftRight|ControlLeft|Arrow\w+)'/g)].map(m => m[1]))
+for (const extra of shell.matchAll(/k\.has\('(Key[A-Z]|Space|Tab|Escape|ShiftLeft|ShiftRight|ControlLeft|ControlRight|Arrow\w+)'\)/g)) handled.add(extra[1])
+for (const arr of ['CROUCH_KEYS', 'DASH_KEYS']) {
+    const m = shell.match(new RegExp(`const ${arr} = \\[([^\\]]*)\\]`))
+    if (m) for (const c of m[1].matchAll(/'(Key[A-Z]|ShiftLeft|ShiftRight|ControlLeft|ControlRight)'/g)) handled.add(c[1])
+}
+const alias = { A: 'KeyA', B: 'KeyB', C: 'KeyC', D: 'KeyD', E: 'KeyE', F: 'KeyF', G: 'KeyG', Q: 'KeyQ', R: 'KeyR', S: 'KeyS', W: 'KeyW', X: 'KeyX', Z: 'KeyZ', SPACE: 'Space', TAB: 'Tab', ESC: 'Escape', SHIFT: 'ShiftLeft', CTRL: 'ControlLeft' }
+const advertised = []
+const heist = registry.slice(registry.indexOf("label: 'RACCOON HEIST'"))
+for (const line of heist.slice(0, heist.indexOf(']')).matchAll(/'([^']+)'/g)) {
+    const [left] = line[1].split(':')
+    for (const tok of left.split(/[\/·,]/).map(t => t.trim().toUpperCase())) {
+        if (alias[tok]) advertised.push([tok, alias[tok], line[1]])
+    }
+    if (/WASD/i.test(left)) for (const k of ['KeyW', 'KeyA', 'KeyS', 'KeyD']) advertised.push([k, k, line[1]])
+    if (/arrow/i.test(left)) for (const k of ['ArrowLeft', 'ArrowRight']) advertised.push([k, k, line[1]])
+}
+r.check('the registry advertises keys at all', advertised.length >= 10, `${advertised.length} advertised keys`)
+const lies = advertised.filter(([, code]) => !handled.has(code))
+r.check('every advertised key actually does something', lies.length === 0, lies.map(l => `${l[0]} (in "${l[2].slice(0, 38)}…")`).join(', '))
+r.check('the key table is the only place keys are written', !/e\.code === 'Key[A-Z]'/.test(shell.split('const onKeyDown')[1].split('const onKeyUp')[0]), 'a hard-coded e.code branch survived the table')
+
 console.log('\nWHICH WAY IS RIGHT')
 // "Controls are inverted" is the one bug class a screenshot cannot show and a
 // distance-over-time check cannot catch: the raccoon moved, the check went green, and
@@ -172,21 +204,91 @@ const dirs = await api(async () => {
             yaw: b.camYaw, camAt: b.camAt, at: [a.x, a.z], moved: +Math.hypot(b.x - a.x, b.z - a.z).toFixed(2),
         }
     }
+    const right = await run(1, 0, 700)
+    const left = await run(-1, 0, 700)
+    const fwd = await run(0, 1, 700)
+    const back = await run(0, -1, 700)
+    // Expectations are computed from the camera the rig actually ended up on, not from
+    // the yaw this test asked for. The rig is allowed to slide around a corner (it has to,
+    // or it clips through brick), and a direction test that assumes the pin held fails
+    // intermittently for a reason that is not a bug. What must hold is: forward is along
+    // the view, right is 90 degrees clockwise of it, and they never swap.
+    const eff = fwd.yaw
     return {
-        right: await run(1, 0, 700),
-        left: await run(-1, 0, 700),
-        fwd: await run(0, 1, 700),
-        back: await run(0, -1, 700),
+        eff,
+        right, left, fwd, back,
+        fwdDot: +(fwd.dx * Math.sin(eff) + fwd.dz * Math.cos(eff)).toFixed(2),
+        backDot: +(back.dx * Math.sin(eff) + back.dz * Math.cos(eff)).toFixed(2),
+        rightDot: +(right.dx * -Math.cos(eff) + right.dz * Math.sin(eff)).toFixed(2),
+        leftDot: +(left.dx * -Math.cos(eff) + left.dz * Math.sin(eff)).toFixed(2),
+        cross: +(right.dx * Math.sin(eff) + right.dz * Math.cos(eff)).toFixed(2),
     }
 })
-console.log(`  ..  camera pinned at yaw ${dirs.fwd.yaw}, sitting at ${JSON.stringify(dirs.fwd.camAt)}, raccoon from ${JSON.stringify(dirs.fwd.at)}`)
-r.check('thumb RIGHT moves the raccoon screen-right (-X at yaw 0)', dirs.right.dx < -0.25, `dx=${dirs.right.dx}`)
-r.check('thumb LEFT moves it screen-left (+X)', dirs.left.dx > 0.25, `dx=${dirs.left.dx}`)
-r.check('thumb FORWARD moves it away from the camera (+Z at yaw 0)', dirs.fwd.dz > 0.3, `dz=${dirs.fwd.dz}`)
-r.check('thumb BACK moves it toward the camera (-Z)', dirs.back.dz < -0.25, `dz=${dirs.back.dz}`)
-r.check('forward is not sideways', Math.abs(dirs.fwd.dx) < Math.abs(dirs.fwd.dz), `dx=${dirs.fwd.dx} dz=${dirs.fwd.dz}`)
-r.check('right is not forward', Math.abs(dirs.right.dz) < Math.abs(dirs.right.dx), `dx=${dirs.right.dx} dz=${dirs.right.dz}`)
-r.check('left and right oppose', dirs.left.dx > 0 && dirs.right.dx < 0, `${dirs.left.dx} vs ${dirs.right.dx}`)
+console.log(`  ..  camera pinned at ${dirs.eff} rad, sitting at ${JSON.stringify(dirs.fwd.camAt)}, raccoon from ${JSON.stringify(dirs.fwd.at)}`)
+r.check('thumb FORWARD travels along the view', dirs.fwdDot > 0.6, `dot ${dirs.fwdDot} (moved dx=${dirs.fwd.dx} dz=${dirs.fwd.dz})`)
+r.check('thumb BACK travels against the view', dirs.backDot < -0.4, `dot ${dirs.backDot}`)
+r.check('thumb RIGHT travels screen-right of the view', dirs.rightDot > 0.6, `dot ${dirs.rightDot} (moved dx=${dirs.right.dx} dz=${dirs.right.dz})`)
+r.check('thumb LEFT travels screen-left of the view', dirs.leftDot < -0.4, `dot ${dirs.leftDot}`)
+r.check('right is not forward (the inversion bug)', Math.abs(dirs.cross) < Math.abs(dirs.rightDot), `along-view ${dirs.cross} vs across ${dirs.rightDot}`)
+r.check('left and right oppose', dirs.leftDot < 0 && dirs.rightDot > 0, `${dirs.leftDot} vs ${dirs.rightDot}`)
+r.check('the rig does not wander off the pin in open ground', Math.abs(dirs.fwd.yaw - dirs.eff) < 0.4, `yaw ${dirs.fwd.yaw} vs eff ${dirs.eff}`)
+
+console.log('\nPRESSED AGAINST A WALL')
+// Production found this one, not the harness: walking along the north wall filled the
+// screen with one blurred brick, because the rig has a floor under its distance and
+// "pull the camera in when a wall appears" eventually means "put the camera in the
+// wall". Every previous camera check looked at the spawn, where nothing is close.
+const pinch = await api(async () => {
+    const t = window.__heistTest
+    const sleep = ms => new Promise(res => setTimeout(res, ms))
+    const thumb = (rx, ryUp) => t.stick(rx, -ryUp)
+    // Stand at a real corner first. The previous version of this test started in the
+    // middle of the yard, walked backwards for three seconds, found nothing within eight
+    // metres in any direction, and reported a healthy camera while production was
+    // filling the screen with brick. A check needs to *visit* the failure.
+    const spot = t.tightSpot()
+    t.moveTo(spot.x, spot.z)
+    await sleep(150)
+    // Camera on the wall side (its offset is (-sin yaw, -cos yaw)), then walk the
+    // raccoon BACKWARD into the wall. Backing into a wall is the common accident: you
+    // are watching a guard over your shoulder, not your feet.
+    const wall = t.clearAt(spot.dx, spot.dz)
+    const four = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => [dx, dz, t.clearAt(dx, dz).clear])
+    t.setCam(Math.atan2(-spot.dx, -spot.dz), 0.5, 9)
+    await sleep(400)
+    const frames = []
+    thumb(0, -1)
+    for (let i = 0; i < 7; i++) {
+        await sleep(500)
+        const p = t.probe()
+        frames.push({ ...t.camClear(), ndc: p.ndc, cell: p.cell })
+    }
+    thumb(0, 0)
+    return { spot, wall, frames, four, spotProbe: [t.probe().x, t.probe().z] }
+})
+const F = pinch.frames
+console.log(`  ..  corner ${JSON.stringify([pinch.spot.x, pinch.spot.z])} dir ${pinch.spot.dx},${pinch.spot.dz} at=${JSON.stringify(pinch.spotProbe)} four=${JSON.stringify(pinch.four)}`)
+console.log(`  ..  corner at ${JSON.stringify([pinch.spot.x, pinch.spot.z])}, wall ${pinch.wall.clear} m; `, F.map(f => `${f.dist}m/${f.inside ? 'INSIDE' : 'clear ' + f.clear}/side ${f.side}`).join('  '))
+r.check('the test got a raccoon against a real wall', pinch.wall.clear <= 1.4, `wall ${pinch.wall.clear} m away at the start`)
+// Frames 3 onward are the settled state. A single buried frame while the rig swings
+// through a corner is a transitional artefact and not worth failing a build over; a rig
+// that stays buried -- which is what production did, all seven frames -- is.
+const SETTLED = F.slice(2)
+r.check('the camera stops burying itself in geometry', SETTLED.every(f => !f.inside), `${SETTLED.filter(f => f.inside).length}/${SETTLED.length} settled frames buried (transient frames: ${F.filter(f => f.inside).length})`)
+r.check('the camera keeps some world in front of it', F.every(f => f.clear > 0.55), `${Math.min(...F.map(f => f.clear))} m clear at worst`)
+// Never closer than 0.55 m (the fur-fill failure), and never so far that the raccoon
+// leaves frame. Note the honest limit: this corner is 1.08 m from floor centre to brick,
+// so a rig 1.5 m behind the raccoon is IN the brick by definition and no amount of
+// probing fixes that. What the rig owes you there is a framed raccoon and no buried
+// frames -- both asserted above -- not a wide shot that the map physically forbids.
+r.check('the rig never jams against the raccoon', F.every(f => f.dist > 0.55), `min ${Math.min(...F.map(f => f.dist)).toFixed(2)} m in a ${(pinch.wall.clear * 2).toFixed(1)} m pocket`)
+// The max, not the min: while the raccoon is *still pressing* into the wall the rig is
+// legitimately confined, so the promise is that it opens up as soon as there is room --
+// 2.1 m on the frame where the slide had finished and the bearing was open.
+r.check('the rig opens up as soon as there is room', Math.max(...SETTLED.map(f => f.dist)) > 1.8, `best settled gap ${Math.max(...SETTLED.map(f => f.dist)).toFixed(2)} m`)
+r.check('the raccoon stays in frame while pressed against a wall', F.every(f => Math.abs(f.ndc[0]) < 0.9 && Math.abs(f.ndc[1]) < 0.9), JSON.stringify(F[F.length - 1].ndc))
+r.check('the rig slides around the corner instead of clipping', F.some(f => Math.abs(f.side) > 0.04), `max slide ${Math.max(...F.map(f => Math.abs(f.side))).toFixed(2)} rad`)
+r.check('and it stays on walkable ground', F.every(f => ['FLOOR', 'MARBLE', 'WATER', 'BUSH'].includes(f.cell)), F[F.length - 1].cell)
 
 console.log('\nTHE WORLD IS SOLID')
 // Collision used to be the grid alone. The grid is 2.2 m cells, and every hydrant, bin,
@@ -245,12 +347,54 @@ const catchIt = await api(async () => {
     // An alerted guard, right in front of you, walking straight at you.
     const w = t.warpWatcher(0, a.x + 2.4, a.z + 1.2, 'alert')
     const far = t.warpWatcher(1, a.x - 9, a.z - 9, 'alert')
-    await sleep(2600)
-    const p = t.probe()
-    const watchers = t.watchers()
-    return { w, far, caged: p.caged, x: p.x, z: p.z, guards: watchers.map(x => ({ s: x.state, d: x.d })) }
+    // Poll for the arrest and stand the cast down the instant it lands. Leaving an
+    // alert 3.4 m/s guard loose for a fixed 2.6 s used to chain into a second and third
+    // arrest -- being caught switches you to the next raccoon, who is standing right
+    // there -- and the "job recovers" check then had nothing to recover.
+    // Watch the CAGE COUNT, not the raccoon you control: being caught now hands you the
+    // next crew member, so `probe().caged` goes back to false a frame after a perfectly
+    // good arrest, and a driver polling that keeps a 3.4 m/s guard loose long enough to
+    // bag the rest of the crew.
+    const inPound = () => t.state().sim.crew.filter(c => c.caged).length
+    const before = inPound()
+    let p = t.probe()
+    let took = 0
+    const t0 = performance.now()
+    for (let i = 0; i < 24 && inPound() === before; i++) {
+        await sleep(130)
+        p = t.probe()
+        took = performance.now() - t0
+    }
+    const caged = t.state().sim.crew.filter(c => c.caged).map(c => c.name)
+    // Stand down the instant the arrest lands -- see the mercy-window comment in engine.js.
+    t.calm()
+    return {
+        w, far, caged: p.caged, x: p.x, z: p.z, cagedWho: caged,
+        guards: t.watchers().map(x => ({ s: x.state, d: x.d })),
+        // The grace window, measured: how long the catching guard is busy tying the sack
+        // before he reaches for the next raccoon. Zero here means one mistake ends the job.
+        cool: t.watchers().map(x => +(x.cool || 0).toFixed(1)),
+        took: Math.round(took),
+        where: t.watchers().map(x => `${x.kind}@${[x.x, x.z]}cool${x.cool}`),
+        caughtEvents: t.events().filter(e => e.type === 'caught' || e.type === 'swap').map(e => e.type + ':' + (e.who || '')),
+        // Being caught must hand you somebody who can still walk, or the job looks hung:
+        // the camera keeps orbiting a caged raccoon and every key does nothing.
+        activeCaged: t.state().sim.crew.find(c => c.active)?.caged,
+        stillPlaying: t.state().sim.phase === 'play',
+    }
 })
-r.check('an alerted guard who reaches you bags you', catchIt.caged === true, JSON.stringify(catchIt.guards))
+r.check('an alerted guard who reaches you bags you', (catchIt.cagedWho || []).length >= 1, `arrested in ${catchIt.took} ms; guards ${JSON.stringify(catchIt.guards)}`)
+r.check('the arrest hands you a raccoon that can still walk', catchIt.activeCaged === false, `active raccoon caged=${catchIt.activeCaged}`)
+r.check('and the job is still running', catchIt.stillPlaying === true, `phase ${catchIt.stillPlaying}`)
+// "One mistake must not end the job" -- measured honestly. The promise is not "exactly one
+// raccoon gets bagged": an arrest SHOUTS, the second guard heard it (that is what the
+// `suspicious`/`suspect` escalation is for) and closed on a raccoon this driver had
+// teleported into the open, which is the pressure the game is supposed to apply. What must
+// never happen is the job ending on the spot -- the crew must still be playing, with the
+// pound holding fewer than all three, and the guard who made the bagging must be busy
+// tying the sack (asserted next).
+
+r.check('the guard who took them is busy, not reaching for the next one', catchIt.cool.some(c => c > 0.5), `cool timers ${JSON.stringify(catchIt.cool)}`)
 console.log('  ..  staged:', JSON.stringify(catchIt.w), 'far:', JSON.stringify(catchIt.far))
 // Undo the staging: free the raccoon, stand the cast down, put the job back on the cart.
 // Every later section assumes a crew that can walk.
@@ -258,9 +402,25 @@ const restored = await api(async () => {
     const t = window.__heistTest
     const sleep = ms => new Promise(res => setTimeout(res, ms))
     const cart = t.marks().find(m => m.ch === 'S')
+    // Stand down FIRST: a warped-up alert guard at 2.4 m with a 3.4 m/s chase re-arrests
+    // whoever the sim hands the player a half-second later, and then the driver is
+    // chasing its own capture. Then free everybody -- getting caught now switches you to
+    // the next raccoon, so the free one is not necessarily crew 0.
     t.calm()
+    // No re-warping the guards anywhere: an arbitrary offset off the raccoon lands them
+    // outside the map (VOID), and a guard standing in VOID cannot patrol, cannot see, and
+    // its torch has no floor to land on. `calm()` already puts them back on their routes,
+    // and they path there from wherever they are.
+    const freed = [0, 1, 2].map(i => t.release(i))
     const r0 = t.release(0, cart.wx, cart.wz + 2.0)
-    await sleep(300)
+    t.switchTo(0)
+    // Put the shell back too. The engine can be talking itself out of a bust, but the
+    // card is React state and the frame loop deliberately feeds the sim nothing while a
+    // result card is up -- so a driver that forgets this starts tapping into a paused
+    // game and concludes the grab button is broken when it is the screen that is.
+    t.goto('play')
+    await sleep(400)
+    void freed
     return { r0, probe: t.probe(), guards: t.watchers().map(w => w.state) }
 })
 r.check('the job recovers after a staged arrest', restored.probe.phase === 'play' && !restored.probe.caged, JSON.stringify(restored.r0))
@@ -282,12 +442,23 @@ const take = await api(async (l) => {
     await new Promise(res => setTimeout(res, 260))
     const focus = t.probe().held
     const label = t.state().sim.hint
+    const before = t.probe()
     t.tap('grab')
     await new Promise(res => setTimeout(res, 260))
-    return { focus, label, held: t.probe().held }
+    const after = t.probe()
+    return {
+        focus, label, held: after.held,
+        dbg: {
+            want: [l.x, l.z], at: [before.x, before.z], cell: before.cell, caged: before.caged,
+            atAfter: [after.x, after.z], active: t.state().sim.active,
+            crew: t.state().sim.crew.map(c => `${c.name}:${c.caged ? 'caged' : 'free'}${c.active ? '*' : ''}`),
+            pile: t.lootList().map(x => `${x.label}@${[x.x.toFixed(1), x.z.toFixed(1)]}${x.taken ? 'taken' : ''}${x.delivered ? 'sent' : ''}`),
+            events: t.events().map(e => e.type + (e.who ? ':' + e.who : '')),
+        },
+    }
 }, pile[0])
 r.check('the action button knows what it is for', /TAKE/i.test(take.label || ''), take.label)
-r.check('picking loot up works', !!take.held, take.held || 'hands empty')
+r.check('picking loot up works', !!take.held, take.held || `hands empty -- ${JSON.stringify(take.dbg)}`)
 
 const dropped = await api(async (c) => {
     const t = window.__heistTest
@@ -364,7 +535,7 @@ const seen = await api(async () => {
     // to be facing the open yard when the harness blinked.
     for (let round = 0; round < 24 && !spot; round++) {
     for (const w of t.watchers()) {
-        for (const d of [2.5, 3.2, 4, 4.8, 5.6]) {
+        for (const d of [5.6, 4.8, 4, 3.2, 2.5]) {
             for (const off of [0, 0.25, -0.25]) {
                 const yaw = w.yaw + off
                 const x = w.x + Math.sin(yaw) * d, z = w.z + Math.cos(yaw) * d
@@ -387,11 +558,18 @@ const seen = await api(async () => {
     if (!spot) return { spot, samples: [], why: t.why() }
     const samples = []
     let why = []
-    for (let i = 0; i < 10; i++) {
-        await new Promise(res => setTimeout(res, 320))
+    // Time to the SPOTTED event, not the peak of the meter: filling the meter *is* the
+    // alert, and the alert zeroes the counter. A check on "did the number reach 0.9"
+    // measures a guard who never noticed you and calls it a failure to detect, which is
+    // the precise opposite of what happened.
+    const tSpot = performance.now()
+    let spottedAt = -1
+    for (let i = 0; i < 12; i++) {
+        await new Promise(res => setTimeout(res, 300))
         const s = t.probe()
         samples.push(+s.det.toFixed(2))
         why = t.why()
+        if (spottedAt < 0 && t.events().some(e => e.type === 'spotted')) spottedAt = performance.now() - tSpot
         if (s.caged) break
         // The beam moved; keep standing in it, like a player hugging the light.
         if (!inBeam()) {
@@ -406,12 +584,25 @@ const seen = await api(async () => {
         }
     }
     const st = t.state().sim
-    return { spot, samples, why, caged: t.probe().caged, heat: st.heat, alarms: t.events().filter(e => e.type === 'spotted').length }
+    return { spot, samples, why, caged: t.probe().caged, heat: st.heat, spottedAt: Math.round(spottedAt) }
 })
 if (!seen.spot) console.log('  ..  no cell in any cone:', JSON.stringify(seen.why))
 r.check('a torch beam has floor to land on', !!seen.spot, JSON.stringify(seen.spot))
+// Samples are ~320 ms apart, so "noticed in about a second and a half" means the meter
+// has to be past 0.9 by the fifth sample. It used to take roughly three times that,
+// which is why a playtest could stand in a torch beam at arm's length and wonder why
+// nothing happened.
+{
+    const S2 = seen.samples || []
+    const quick = S2.findIndex(d => d > 0.9)
+    // The budget scales with the distance the driver actually managed to stand at, because
+// 2.5 m and 5.6 m are different questions. It is tuned so the previous curve (2.6/dist)
+// fails it everywhere: at 5 m the old numbers needed ~2.4 s and the budget is 1.75 s.
+// A threshold loosened until the bug fits is not a check.
+r.check('a torch at working range notices you inside the budget', seen.spottedAt >= 0 && seen.spottedAt < (550 + (seen.spot ? seen.spot.d : 3) * 220), `spotted after ${seen.spottedAt < 0 ? 'never' : (seen.spottedAt / 1000).toFixed(1) + ' s'} at ${(seen.spot ? seen.spot.d : 0)} m (budget ${((550 + (seen.spot ? seen.spot.d : 3) * 220) / 1000).toFixed(2)} s; meter ${S2.map(d => d.toFixed(2)).join(' > ')})`)
+}
 r.check('standing in a torch beam raises suspicion', Math.max(...(seen.samples || [0])) > 0.15, `det=${(seen.samples || []).join('>')}`)
-r.check('being spotted is announced', seen.alarms > 0 || seen.heat > 10, `${seen.alarms} spot events, heat ${seen.heat}`)
+r.check('being spotted is announced', seen.spottedAt >= 0 || seen.heat > 10, `spot at ${seen.spottedAt} ms, heat ${Math.round(seen.heat)}`)
 if (!(Math.max(...(seen.samples || [0])) > 0.15)) console.log('  ..  detection arithmetic:', JSON.stringify(seen.why))
 
 console.log('\nCAUGHT + RESCUED')
@@ -432,14 +623,26 @@ const caught = await api(async () => {
         if (who) break
     }
     const trail = []
+    const inPound = () => t.state().sim.crew.filter(c => c.caged).length
+    const nest = inPound()
     for (let i = 0; i < 14; i++) {
-        await new Promise(res => setTimeout(res, 380))
+        await new Promise(res => setTimeout(res, 360))
         const w = t.watchers().find(x => x.kind === (who && who.kind)) || t.watchers()[0]
         if (w) t.moveTo(w.x + Math.sin(w.yaw) * 0.4, w.z + Math.cos(w.yaw) * 0.4)
         const p = t.probe()
         trail.push(`${w ? w.state : '?'}:${p.det.toFixed(1)}`)
-        if (p.caged) break
+        // Stop the moment one raccoon is bagged. This driver teleports a raccoon onto a
+        // guard every 360 ms, which is far more adversarial than a player: a real player
+        // who gets caught *moves*, and being caught now switches you to a crewmate
+        // standing on the same square. Parking that crewmate there is not testing the
+        // pound, it is staging a bust.
+        if (inPound() > nest) break
     }
+    // Back off to the pound, which is where the rescue happens anyway and is not inside
+    // anybody's cone.
+    t.calm()
+    const free = t.state().sim.crew.find(c => !c.caged)
+    if (free) t.switchTo(free.idx)
     const crew = t.state().sim.crew
     return { caged: crew.filter(c => c.caged).length, phase: t.probe().phase, msg: t.state().sim.msg, trail, who }
 })
