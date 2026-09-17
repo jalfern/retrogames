@@ -270,17 +270,21 @@ nearby watcher's `los / align / cover / light / rate / det`.
 
 ## Known gaps
 
-- **At ~17 fps the shoulder rig still squeezes too tight, intermittently** in the north-west
-  corner (`heistplay --throttle 32` reds one or two of "the camera stops burying itself in
-  geometry" / "the rig never jams against the raccoon", usually `min 0.43 m`). The retreat
-  loop now has a 0.6 m floor on the *step* (it used to test the floor before subtracting, so
-  the last iteration overshot to 0.35 m), but the placement still runs off a lerped anchor,
-  so when the raccoon is the thing that moved into the wall the gap can come out smaller than
-  `allowed` just promised — and once the slid bearing is inside brick at every legal distance
-  there is nothing left to do but give up. The rig needs hysteresis (remember the last clear
-  placement and stay there until a genuinely better bearing opens up) and a hard post-place
-  measurement, which is the B1/B2 camera item in `FEEDBACK.md`. At 60 fps this section is
-  green, which is exactly why it is worth fixing before someone trusts the green run.
+- **In one corner, below ~7 fps the camera has nothing left to do, and now the harness says
+  why.** `heistplay --throttle 64` (6 fps) reds two checks in the north-west pocket: "the
+  camera stops burying itself in geometry" (1 frame in 5) and "the camera keeps some world in
+  front of it" (0 m clear). The probe is unambiguous: by the buried frame the *raccoon* is
+  8 cm inside `fur1` — it has itself penetrated the geometry — so every cell behind it, from
+  `MINVIEW` down to the 0.7 m fur floor, is solid, and a camera that refuses to be inside a
+  wall has nowhere legal to stand. What is fixed: the jam (the retreat now floors on the step,
+  not on the loop test), the frame-to-frame buried↔clear oscillation (hysteresis: a clear
+  placement from last frame is kept when this frame's is solid and still a valid shot), the
+  shake that used to jitter the camera back across the grid edge it had just been pulled off,
+  and the last gate now *measures* — it walks the bearing from the furthest distance the map
+  allows down to the fur floor instead of only running when the rig was already closer than
+  `MINVIEW`. What is left is upstream of the camera: why the actor itself ends up inside the
+  mesh at 6 fps, which is a simulation question (input, `blocksMove`, and the push-out) with a
+  reproduction in the log and `near()` output, and is the next commit.
 - **Affordance hardware is only drawn for the pound and the gate.** A hide-spot bin has no
   latch and a stolen pile leaves no scuff on the ground where it was, both because the
   level mesh budget is at 48/50 and a scuff per pile is four more draw calls. The right

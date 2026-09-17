@@ -250,7 +250,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         phase: 'brief', t: 0, elapsed: 0, heat: 0, alarm: false, copsOut: false,
         shinies: 2, delivered: 0, deliveredValue: 0, caught: 0, msg: '', msgT: 0,
         hint: '', objective: '', flash: 0, masked: false, nextFlash: 2.5, storm: L.theme === 'manor' ? 1 : 0.18,
-        gateOpen: false, shake: 0, result: null, camYaw: 0, camYawEff: 0, camSide: 0, camPitch: 0.62, camDist: 7.2,
+        gateOpen: false, shake: 0, result: null, camYaw: 0, camYawEff: 0, camSide: 0, camClearPt: null, camPitch: 0.62, camDist: 7.2,
         camX: cartW.x, camZ: cartW.z + 7, camY: 4, freeze: 0, caughtWho: -1,
     }
     const noises = []
@@ -1145,20 +1145,48 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             px = tx + fx * allowed
             pz = tz + fz * allowed
         }
-        // Last gate: never sit closer to the raccoon than MINVIEW if there is room to sit
-        // further out. Wedged in a corner with the rig sliding, `allowed` can come out of
-        // the retreat loop tiny and the player gets a screen full of raccoon fur -- which
-        // is the same complaint as a wall in the lens, only fuzzier.
+        // **Hysteresis: a clear place to stand beats the ideal place to stand.** Everything
+        // above asks "how much room is there on this bearing" and answers with the furthest
+        // legal distance on the best bearing it found. In a pinch corner at a low frame rate
+        // that answer can still be inside brick: the probes are per-frame snapshots, the
+        // bearing is sliding, and the raccoon is walking *into* the wall, so the rig arrives
+        // one step late and one step deep — `heistplay` at 6 fps called it "the camera stops
+        // burying itself in geometry" and "0 m clear at worst", oscillating between buried
+        // and clear frame after frame. If last frame's placement was clear and this frame's
+        // is not, stay where it was clear, provided it is still a *camera position*: near
+        // enough to be a dwell, not a camera stuck down the corridor, and far enough from
+        // the raccoon to be a shot rather than a fur close-up (`min 0.33 m` is what
+        // happened the first time this landed without that clause).
+        const solid = (x, z) => blocksSight(atWorld(L, x, z))
         const MINVIEW = 2.1
-        const gap = Math.hypot(px - tx, pz - tz)
-        if (gap < MINVIEW) {
-            for (let d = MINVIEW; d >= gap; d -= 0.3) {
-                if (blocksSight(atWorld(L, tx + fx * d, tz + fz * d))) continue
-                px = tx + fx * d
-                pz = tz + fz * d
+        // The smallest gap the rig will accept. In this corner the floor centre sits 1.08 m
+        // from brick, so MINVIEW is *inside* the wall by definition and the map forbids a
+        // wide shot — it does not forbid a legal one, and "a screen full of raccoon fur" is
+        // the failure the checks below assert against.
+        const FUR = 0.7
+        const last = st.camClearPt
+        const dLast = last ? Math.hypot(last[0] - tx, last[1] - tz) : 0
+        if (solid(px, pz) && last && !solid(last[0], last[1])
+            && dLast <= dist + 0.6 && dLast >= FUR && Math.hypot(last[0] - px, last[1] - pz) <= 3) {
+            px = last[0]
+            pz = last[1]
+        }
+        // **And the last gate measures, instead of promising.** The old loop only ran when
+        // the rig was already closer than MINVIEW, so a point that came out of the retreat
+        // *inside* brick sailed through it and into `camera.position`. Walk the bearing from
+        // the furthest distance the map will actually allow, and take the first step that is
+        // outside geometry — which reproduces the old "sit out at MINVIEW when there is
+        // room" behaviour wherever there is room, and stops at FUR where there is none.
+        const dNow = Math.hypot(px - tx, pz - tz)
+        if (solid(px, pz) || dNow < MINVIEW) {
+            for (let dd = Math.max(MINVIEW, dNow); dd >= FUR; dd -= 0.25) {
+                if (solid(tx + fx * dd, tz + fz * dd)) continue
+                px = tx + fx * dd
+                pz = tz + fz * dd
                 break
             }
         }
+        if (!solid(px, pz) && Math.hypot(px - tx, pz - tz) >= FUR) st.camClearPt = [px, pz]
         // What the player is *looking along* — movement is mapped through this, not
         // through the raw input yaw, so when the rig slides around a corner "forward"
         // stays forward. Two sources of truth about the camera direction is how a game
@@ -1173,7 +1201,19 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         const y = Math.min(7.5, wantY + (blocked ? (1 - k) * 1.5 : 0))
         st.camY += (y - st.camY) * Math.min(1, dt * 9)
         const shake = st.shake * 0.16
-        camera.position.set(px + (rnd() - 0.5) * shake, st.camY + (rnd() - 0.5) * shake, pz + (rnd() - 0.5) * shake)
+        // The gate above approved `(px, pz)` — a point it proved is not inside brick. Adding
+        // an unbounded jitter to it can put the camera straight back into the wall it just
+        // stepped out of, and in the pinch corner the boundary is 1.08 m away while the
+        // shake is worth ±0.16 m: that is the whole of "1/5 settled frames buried", a
+        // flicker whose only crime is landing on the wrong side of a grid edge. Keep the
+        // shake — a still camera reads as a bug — but never past the geometry.
+        let sx = (rnd() - 0.5) * shake
+        let sz = (rnd() - 0.5) * shake
+        for (let i = 0; i < 4 && (solid(px + sx, pz + sz) || Math.hypot(px + sx - tx, pz + sz - tz) < FUR); i++) {
+            sx *= 0.5
+            sz *= 0.5
+        }
+        camera.position.set(px + sx, st.camY + (rnd() - 0.5) * shake, pz + sz)
         camera.lookAt(st.camX, ty + 0.25 + (blocked ? 0.25 : 0), st.camZ)
         st.shake = Math.max(0, st.shake - dt * 1.8)
     }

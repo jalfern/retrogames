@@ -127,7 +127,18 @@ playtest report, not from taste.
 
 ## Next steps, ranked
 
-### 0. Camera hysteresis (B1) — the only red `heistplay` has left
+### 0. The raccoon walks into the mesh at 6 fps, and the camera is innocent
+Two camera checks still red at `--throttle 64`, and the probe says why: by the buried frame the
+*actor* is 8 cm inside `fur1`, so every cell behind it is solid from `MINVIEW` down to the 0.7 m
+fur floor and a legal camera does not exist. Round 4 fixed the four things that were actually
+the camera — a retreat that floored on the loop test instead of the step, the buried↔clear
+oscillation (hysteresis on the last clear placement), a shake that could cross the grid edge it
+had just been pulled off, and a final gate that only ran when the rig was already inside
+`MINVIEW` — and killed both the jam and the oscillation. The rest is movement: how does a 60 Hz
+simulation let `blocksMove` end with the actor inside a wall? Start at `near()` and the
+push-out, not at the camera.
+
+### 0b. Camera polish still owed (B2/B4)
 At ~17 fps (`--throttle 32`) the shoulder rig spends one frame in five inside brick in the
 north-west corner. The retreat loop now has a 0.6 m floor on the *step*, so it can no longer
 end up 0.35 m behind your ear — but once the slid bearing is inside geometry at every legal

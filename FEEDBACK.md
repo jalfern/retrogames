@@ -360,6 +360,33 @@ lite path holds **1.01x real time at 7 fps**. The rattle check also stopped dema
 *reversal* when the frame rate cannot show one, and a self-inflicted bug came out with it
 (the driver reset its own sample list while re-hunting for a torch, then reported `det=0`).
 
+**Then the camera got its own round, because CI kept red-shaming two checks.** Four real
+bugs came out of it, none of them visible at 60 fps: the retreat floor was tested *before* the
+subtraction so the last step overshot into a fur close-up; the rig oscillated buried-clear
+frame after frame (it now dwells on the last clear placement while this frame's is solid and
+still a valid shot); the camera shake could jitter the rig straight back across the grid edge
+it had just been pulled off; and the final gate only ran when the rig was *already* closer
+than `MINVIEW`, so a point that came out of the retreat inside brick reached
+`camera.position` untouched — it measures the bearing now, from the furthest the map allows
+down to the 0.7 m fur floor. Mutant #10 covers the first, and it only exists at low frame
+rates, which is why mutants can now carry `throttle: N`.
+
+And the driver was still lying twice: the torch hunt scored candidates on the game's own
+detection `rate` (because `los + cone + range` was parking the raccoon where the meter never
+left zero) — but the *fastest* rate is "you died", so it now aims for ~0.8 s of meter and
+prefers the further cell — and its cold start teleported blindly backwards for up to sixteen
+steps until it landed on a guard, lost the crew to contact, and reported `det=0.00` as a
+stealth failure. It only moves to cells the game calls safe. "The lock shakes while it is
+being chewed" was passing *vacuously* over an empty rescue log; it now asserts a prisoner, the
+engine's own rattle amplitude and a measured lateral swing, and demands a reversal only at
+frame rates that can resolve one.
+
+What is left is not the camera. In the north-west pocket at 6 fps the **raccoon itself** ends
+up 8 cm inside `fur1` — `near()` says so — so every cell behind it is solid and a legal camera
+does not exist. That is a movement question at low frame rates (`blocksMove`, the push-out),
+with a reproduction in the job log, and it is the next commit. Full pipeline locally:
+**110/110**. CI-shaped (lite, 6 fps): **107/109**, and the two reds are that corner, on purpose.
+
 **Still red, honestly:** at ~17 fps the shoulder rig buries itself one frame in five in the
 north-west corner. I fixed the retreat loop's floor (it tested `allowed > 0.55` *before*
 subtracting 0.35, so the last step landed at 0.35 m — a screen full of fur, and the check

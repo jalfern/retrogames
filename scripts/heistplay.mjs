@@ -208,8 +208,13 @@ console.log('\nTHE CLOCK')
 const clk = await clock()
 r.info('sim clock', `${clk.rate}x real time at ${clk.fps} fps${THROTTLE ? ` (CPU throttled ${THROTTLE}x)` : ''}`)
 if (clk.fps >= 4) {
-    r.check('the sim keeps real time at this frame rate', clk.rate > 0.85,
-        `the world ran at ${clk.rate}x real time at ${clk.fps} fps — under ~4 fps the catch-up cap in index.jsx has to give, and every check in seconds becomes a measurement of the machine`)
+    // 0.75, not 0.95: the number this exists to catch is **0.14x** (the CI runner before
+    // the catch-up cap was raised) and the old five-tick clamp measured 0.59x @ 7 fps, so
+    // the line has to sit between "catastrophically slow-motion" and "a machine sampling a
+    // 6 fps frame budget". Raising it to 0.9 would only make this check about the laptop it
+    // was written on, which is the exact disease.
+    r.check('the sim keeps real time at this frame rate', clk.rate > 0.75,
+        `the world ran at ${clk.rate}x real time at ${clk.fps} fps — the catch-up cap in index.jsx has to give below ~4 fps, and every check in seconds becomes a measurement of the machine`)
 } else {
     r.info('frame rate under the 4 fps floor', `${clk.fps} fps — clock ratio ${clk.rate}x reported, not asserted`)
 }
@@ -733,43 +738,67 @@ const seen = await api(async () => {
     // precisely the section that walks into it: on a 17 fps box it lost the whole crew
     // before the pound test even started.
     const penned = () => t.state().sim.crew.filter(c => c.caged).length
-    const penned0 = penned()
+    let penned0 = penned()
     const bagged = () => penned() > penned0
+    const rebase = () => { penned0 = penned() }
     let spot = null, holder = null
     // Patrols move, so "is there floor in a beam right now" is a question with a
     // half-second shelf life. Retry for several seconds instead of taking one snapshot:
     // the assertion is that beams are survivable to stand in, not that a guard happened
     // to be facing the open yard when the harness blinked. It is also a *function*, because
     // it has to be asked twice — see the cold start below.
-    const hunt = async (from) => {
+    const hunt = async (from, wantRate = 1.25) => {
+        // Score candidates by the game's own `rate` — the per-second term inside the
+        // detection meter, which already folds in distance, alignment, cover and light.
+        // "Somewhere in the cone" was the first version's question, and it happily parked
+        // the raccoon in a cell the cone clipped the corner of: `los` true, cone true,
+        // range true, and the meter flat at 0.00 for the whole budget while CI filed a
+        // failure against the stealth model.
+        //
+        // But *fastest* is the wrong optimum too — that was my first attempt here, and it
+        // picked a cell 2.5 m from a guard at 2.48 meter/s, which is not "a torch notices
+        // you" so much as "you died": the guard noticed, alerted and bagged a crewmate
+        // before the second poll, and every measurement after that belonged to a different
+        // raccoon standing somewhere else. So the target is the rate that fills the meter
+        // in about four fifths of a second — long enough to be a fair alarm, short enough
+        // to fit the budget — and the further cell wins the tie.
+        const floorish = c => ['FLOOR', 'MARBLE', 'BUSH'].includes(c)
+        const score = (q, d) => -Math.abs(q.rate - wantRate) - (d < 3.2 ? 1.5 : 0)
         for (let round = 0; round < 24 && !spot && !bagged(); round++) {
+            let best = null
             for (const w of t.watchers()) {
-                if (bagged() || spot) break
+                if (bagged()) break
                 for (const d of from) {
-                    if (spot) break
-                    for (const off of [0, 0.25, -0.25]) {
-                        if (bagged()) break
+                    for (const off of [0, 0.25, -0.25, 0.5, -0.5]) {
                         const yaw = w.yaw + off
                         const x = w.x + Math.sin(yaw) * d, z = w.z + Math.cos(yaw) * d
                         t.moveTo(x, z)
-                        await window.__simSleep(0.07)
                         const p = t.probe()
-                        if (!['FLOOR', 'MARBLE', 'BUSH'].includes(p.cell)) continue
+                        if (!floorish(p.cell)) continue
                         const w2 = t.why().find(q => q.los && q.inCone && q.inRange)
-                        if (!w2) continue
-                        spot = { x: +x.toFixed(2), z: +z.toFixed(2), d, guard: w.kind }
-                        holder = w2.kind
-                        break
+                        if (!w2 || w2.rate < 0.5) continue
+                        const sc = score(w2, d)
+                        if (!best || sc > best.sc) best = { x, z, d, sc, rate: w2.rate, guard: w.kind, holder: w2.kind }
                     }
                 }
             }
-            if (!spot) await window.__simSleep(0.3)
+            if (best) {
+                t.moveTo(best.x, best.z)
+                await window.__simSleep(0.05)
+                if (floorish(t.probe().cell)) {
+                    spot = { x: +best.x.toFixed(2), z: +best.z.toFixed(2), d: best.d, guard: best.guard, rate: +best.rate.toFixed(2) }
+                    holder = best.holder
+                    break
+                }
+            }
+            if (!spot) await window.__simSleep(0.25)
         }
         return spot
     }
     await hunt([5.6, 4.8, 4, 3.2, 2.5])
     if (!spot) return { spot, samples: [], why: t.why(), penned: penned() }
     const samples = []
+    let peak = 0
     let why = []
     // COLD START. The hunt above almost certainly got noticed on the way in, and `events()`
     // *drains* — so the stale `spotted` from that hunt was grabbed by the very first poll
@@ -780,17 +809,40 @@ const seen = await api(async () => {
     const holder0 = t.watchers().find(w => w.kind === holder) || t.watchers()[0]
     t.calm()
     const isFloor = c => ['FLOOR', 'MARBLE', 'BUSH'].includes(c)
+    // Step back until the meter is flat, but ONLY onto a cell the game says is safe: floor,
+    // at least 3 m from every watcher, and not in anybody's cone. The first version backed
+    // up blindly for up to 16 steps, and at 6 fps that is a roulette wheel of teleports —
+    // one of them lands on a guard, the raccoon is bagged by *contact* with the meter never
+    // having left zero, and the run quietly ends here while the report blames the stealth
+    // model with `det=0.00` and an empty `why()`.
+    const safeCell = (x, z) => {
+        t.moveTo(x, z)
+        const p = t.probe()
+        if (!isFloor(p.cell)) return false
+        return t.why().every(q => q.d > 3) && !t.watchers().some(w => Math.hypot(w.x - x, w.z - z) < 3)
+    }
     for (let i = 0; i < 16 && t.probe().det > 0.03; i++) {
         const q = t.probe()
         const dx = q.x - (holder0 ? holder0.x : q.x - 1), dz = q.z - (holder0 ? holder0.z : q.z)
         const len = Math.hypot(dx, dz) || 1
+        let moved = false
         for (const s of [1.2, 2, 2.8]) {
-            t.moveTo(q.x + dx / len * s, q.z + dz / len * s)
-            if (isFloor(t.probe().cell)) break
+            for (const side of [0, 0.7, -0.7]) {
+                const ux = dx / len * Math.cos(side) - dz / len * Math.sin(side)
+                const uz = dx / len * Math.sin(side) + dz / len * Math.cos(side)
+                if (safeCell(q.x + ux * s, q.z + uz * s)) { moved = true; break }
+            }
+            if (moved) break
         }
+        if (!moved) break
         await window.__simSleep(0.15)
     }
     t.events()                       // drain: nothing before this line may answer the question
+    // If the cold start cost somebody the pound, that is a new baseline: the driver is now
+    // measuring a different raccoon, and pretending otherwise is how this section once
+    // reported a `det` of 0.00 for five seconds — the raccoon it was polling was in a sack,
+    // `why()` had every watcher filtered out by range, and the game was not the liar.
+    if (bagged()) { rebase(); if (!spot) return { spot: null, samples, peak: +peak.toFixed(2), why: t.why(), penned: penned(), spottedAt: -1 } }
     // And back into a beam — *a fresh one*. `spot` was measured before the retreat, and a
     // patrol that has walked ten metres since does not leave its torch where you left it:
     // standing at the stale coordinates is how this section managed to report "noticed in
@@ -813,7 +865,6 @@ const seen = await api(async () => {
     // first version of that reset fed an empty list to "standing in a torch beam raises
     // suspicion" — a check that went red because the driver moved, not because the game
     // stopped noticing.
-    let peak = 0
     // 24 x 0.12 s: comfortably past the widest budget below (1.78 s at 5.6 m), so a loop
     // that ends without an alert is a missed alert, not a stopwatch that ran out.
     for (let i = 0; i < 24; i++) {
@@ -850,7 +901,7 @@ const seen = await api(async () => {
                 t.moveTo(x, z)
                 await window.__simSleep(0.06)
                 if (!['FLOOR', 'MARBLE', 'BUSH'].includes(t.probe().cell)) continue
-                if (t.why().find(q => q.los && q.inCone && q.inRange)) break
+                if (t.why().find(q => q.los && q.inCone && q.inRange && q.rate > 0.15)) break
             }
         }
         // If the meter has not twitched in half a second, the driver is not in a beam any
@@ -858,7 +909,7 @@ const seen = await api(async () => {
         // above only works within arm's reach of the last known torch. Re-hunt instead of
         // sampling a zero for another two seconds and then reporting "the game never
         // noticed me", which is a report about the driver.
-        if (spottedAt < 0 && i > 0 && i % 6 === 5 && Math.max(...samples) < 0.02) {
+        if (spottedAt < 0 && i > 0 && i % 5 === 4 && (Math.max(...samples) < 0.02 || t.why().length === 0)) {
             spot = null
             await hunt([3.2, 4, 2.5, 4.8])
             if (spot) {
@@ -891,7 +942,9 @@ const seen = await api(async () => {
     return { spot, samples, peak: +peak.toFixed(2), why, caged: t.probe().caged, heat: st.heat, penned: penned(), spottedAt: spottedAt < 0 ? -1 : +spottedAt.toFixed(2) }
 })
 if (!seen.spot) console.log('  ..  no cell in any cone:', JSON.stringify(seen.why))
+if (seen.spot && seen.spottedAt < 0) console.log('  ..  parked and never noticed — the game said:', JSON.stringify(seen.why))
 r.check('a torch beam has floor to land on', !!seen.spot, JSON.stringify(seen.spot))
+if (seen.spot) console.log(`  ..  parked in the fastest cone the hunt found: ${seen.spot.rate} meter/s at ${seen.spot.d} m`)
 // Samples are ~320 ms apart, so "noticed in about a second and a half" means the meter
 // has to be past 0.9 by the fifth sample. It used to take roughly three times that,
 // which is why a playtest could stand in a torch beam at arm's length and wonder why
@@ -1081,7 +1134,10 @@ const rescue = await api(async () => {
         // code with a green check mark under it.
         for (let try2 = 0; try2 < WANT_PRISONERS - cagedCount(); try2++) {
             const freeC = t.state().sim.crew.find(c => !c.caged)
-            if (!freeC) break
+            // Never take the last one that can walk. This section needs a prisoner and a
+            // rescuer; a run that arrives with the pound already half full otherwise ends
+            // here, and every check downstream is a corpse being prodded.
+            if (!freeC || t.state().sim.crew.filter(c => !c.caged).length <= 1) break
             t.switchTo(freeC.idx)
             const a = t.probe()
             t.warpWatcher(try2, a.x + 2.0, a.z + 1.0, 'alert')
@@ -1117,6 +1173,10 @@ const rescue = await api(async () => {
         const lock = (t.world().cage && t.world().cage.userData.padlock) || null
         const home = lock ? [lock.position.x, lock.position.y, lock.position.z] : null
         const shake = []
+        // The engine's own rattle amplitude, sampled alongside the geometry: "the lock is
+        // the progress bar" is a claim about `userData.shake` driving a visible wobble, and
+        // at 6 fps a per-frame jitter aliases too hard to prove by eye alone.
+        const wob = []
         // How many times the swinging lock changed direction. A rattle goes back and
         // forth; a lock that has just been chewed off goes down once, and the first
         // version of this measured *any* movement — so with the rattle switched off in the
@@ -1137,6 +1197,7 @@ const rescue = await api(async () => {
                 const hanging = Math.abs(lock.position.y - home[1]) < 0.05 && Math.abs(lock.position.z - home[2]) < 0.05
                 if (hanging) {
                     shake.push(+Math.abs(dx).toFixed(4))
+                    wob.push(+(lock.userData.shake || 0).toFixed(3))
                     if (Math.abs(dx) > 0.0015) {
                         const side = Math.sign(dx)
                         if (lastSide && side !== lastSide) flips++
@@ -1156,6 +1217,7 @@ const rescue = await api(async () => {
             caged: t.state().sim.crew.filter(c => c.caged).length,
             here: t.probe().cell, at: [t.probe().x, t.probe().z],
             aff, shook: shake.length ? Math.max(...shake) : -1, shake, flips, swing: +swing.toFixed(4),
+            wob: +Math.max(0, ...wob).toFixed(3),
             n: shake.length, fps: Math.round(window.__fps || 0),
             lockY: lock ? +lock.position.y.toFixed(3) : null,
             lockHome: home ? home.map(n => +n.toFixed(2)) : null,
@@ -1186,15 +1248,22 @@ for (const l of rescue.log) {
 {
     // The lock visibly rattles: lateral, and it has to come back, because "it moved" is
     // also true of a lock that has just been chewed off and fallen.
-    const swung = rescue.log.every(l => l.swing > 0.004)
+    // `every` over an empty list is true, and this check passed once on a run where the
+    // pound was empty and nothing was chewed at all. Assert there was something to chew.
+    const swung = rescue.log.length > 0 && rescue.log.every(l => l.swing > 0.004 && l.wob > 0)
     // ...but "and it reverses direction" needs enough *frames* to see a reversal in. At
     // 1 fps a 1.5 s chew yields two or three samples of the lock, so demanding two flips
     // there is a claim about the refresh rate. Below that the driver reports what it saw
     // instead of failing: this is the check that red'd on CI with `swing 0.0085 / 0.0137 m
     // over 2 / 1 direction changes` — the rattle was real, the camera was once a second.
-    const enough = rescue.log.every(l => l.n >= 6)
+    // A per-frame jitter sampled at 8 fps aliases: the driver can watch a lock visibly
+    // rattling for eight samples and record one direction change. Requiring a reversal is
+    // only fair above a frame rate that can resolve one; below it the amplitude has to
+    // carry the claim — and both the engine's own rattle value and a measured lateral swing
+    // still have to be there, so switching the shake off in the engine still reddens this.
+    const enough = rescue.log.every(l => l.n >= 6 && l.fps >= 25)
     r.check('the lock shakes while it is being chewed', swung && (!enough || rescue.log.every(l => l.flips >= 2)),
-        `peak hang-time swing ${rescue.log.map(l => l.swing).join(' / ')} m over ${rescue.log.map(l => l.flips).join(' / ')} direction changes (${rescue.log.map(l => `${l.n} samples @ ${l.fps} fps`).join(', ')}${enough ? '' : ' — too few frames to require a reversal'})`)
+        `peak hang-time swing ${rescue.log.map(l => l.swing).join(' / ')} m, rattle ${rescue.log.map(l => l.wob).join(' / ')} over ${rescue.log.map(l => l.flips).join(' / ')} direction changes (${rescue.log.map(l => `${l.n} samples @ ${l.fps} fps`).join(', ')}${enough ? '' : ' — too few frames to require a reversal'})`)
 }
 for (const l of rescue.log) {
     // The lock is wherever the pound's state says it should be: on the door while
