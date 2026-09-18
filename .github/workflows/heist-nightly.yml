@@ -1,0 +1,111 @@
+name: Heist nightly (full play-through)
+
+# heistwin plays a WHOLE job start -> gate with stick input only. It is the only
+# check that proves a job is WINNABLE end to end (loot survives arrest, the vault
+# opens, the gate sequence fires), and it is also the slowest and flakiest thing
+# in the repo — ~6-10 min per job headless, and headless Chrome occasionally eats
+# the WebGL renderer. That trade makes it a NIGHTLY, never a merge gate: the PR
+# gates are `static` (grid/stealth/art-build, seconds) and `smoke` (every job
+# mounts, renders and moves, ~10 s). Nothing in this workflow can block a merge.
+
+on:
+  schedule:
+    - cron: '30 5 * * *'   # nightly, quiet hours UTC
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Which job (1/2/3); empty = all three'
+        required: false
+        default: ''
+
+concurrency:
+  group: heist-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # npm >=11, see the note in ci.yml's static job
+          cache: npm
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - name: Start dev server
+        run: |
+          npm run dev > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5173/retrogames/raccoon-heist > /dev/null; then
+              echo "dev server up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "dev server never came up"; cat /tmp/vite.log; exit 1
+
+      - name: Play the jobs
+        continue-on-error: true
+        env:
+          SHOT_CHANNEL: chromium
+          HEIST_LITE: "1"
+        run: |
+          mkdir -p /tmp/win
+          sel="${{ github.event.inputs.job }}"
+          jobs=$( [ -n "$sel" ] && echo "$sel" || echo "1 2 3" )
+          rc=0
+          for j in $jobs; do
+            echo "::group::heistwin job $j"
+            timeout 25m npm run heistwin -- --job "$j" --budget 1500 \
+              > "/tmp/win/job$j.log" 2>&1
+            code=$?
+            tail -30 "/tmp/win/job$j.log"
+            if [ $code -ne 0 ]; then rc=1; echo "job $j exit=$code" >> /tmp/win/failed; fi
+            echo "::endgroup::"
+          done
+          exit $rc
+
+      - name: Driver logs (always)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: heistwin-logs
+          path: /tmp/win/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Dev server log (on failure)
+        if: failure()
+        run: cat /tmp/vite.log
+
+      # A nightly nobody reads is a shrug with a cron. File (or refresh) ONE
+      # issue so a red night lands where Jon looks, without spamming a new
+      # issue per job per night.
+      - name: Report a red night
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="heistwin nightly is red ($(date -u +%Y-%m-%d))"
+          dup=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "heistwin nightly is red in:title" --json number --jq '.[0].number // empty')
+          body="Nightly full play-through failed. Tail of each job:"
+          for f in /tmp/win/job*.log; do
+            body="$body
+
+          ---
+          ### $f
+          \`\`\`
+          $(tail -15 "$f")
+          \`\`\`"
+          done
+          if [ -n "$dup" ]; then
+            gh issue comment "$dup" --repo "$GITHUB_REPOSITORY" --body "Another red night:
+
+          $body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi
