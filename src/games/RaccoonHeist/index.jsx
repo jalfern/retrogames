@@ -644,6 +644,8 @@ const RaccoonHeistGame = () => {
             clearAt: (dx, dz) => engine?.clearAt(dx, dz) || null,
             tightSpot: () => engine?.tightSpot() || null,
             warpWatcher: (i, x, z, state, aim) => engine?.warpWatcher(i, x, z, state, aim) || null,
+            // Off duty as well as off map: a warped patrol paths home, an off-duty one waits.
+            parkWatcher: (i, x, z) => engine?.parkWatcher(i, x, z) || null,
             watcherAt: (i) => engine?.watcherAt(i) || null,
             restoreWatcher: (i, s) => engine?.restoreWatcher(i, s) || null,
             release: (i, x, z) => engine?.release(i, x, z) || null,

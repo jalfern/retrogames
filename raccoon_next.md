@@ -161,6 +161,20 @@ playtest report, not from taste.
     between an honest green and a lie.
 
 
+15. **A mutant that survives at *every* frame rate is a report about the code.** The
+    fourteenth mutant undid "sample the cone across the arc it swept" and stayed green at
+    60 fps, at 32x and at 64x. I had it written up as "this laptop cannot reproduce the CI
+    runner" — an unreproducible-machine story, which is the most comfortable kind of wrong.
+    `grep` finished it in one move: the mutated line read `w.yawFrom`, and **nothing anywhere
+    assigned `yawFrom`**, so `?? yawEnd` made the arc zero, `slices` was always 1, and the
+    mutant compared an expression with itself. The engine change is reverted (dead code with
+    a green test on it is worse than no code, because it comes with a causal story), and the
+    CI failure it claimed to explain was four driver bugs wearing one hat: polling `det`
+    after the alert wipes it, polling the meter of a raccoon in a sack, parking the courier
+    within grabbing range of the guard being measured, and a cart section that "emptied the
+    yard" by teleport — where a patrol is a route and routes walk home. **Before blaming a
+    machine for a surviving mutant, ask what makes the mutated line run.**
+
 ## Next steps, ranked
 
 ### 0. ~~The raccoon walks into the mesh at 6 fps~~ — closed: it never did, and `near()` was the bug

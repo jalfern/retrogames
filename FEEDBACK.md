@@ -572,3 +572,30 @@ scuff where a stolen pile used to be. Both are more meshes, the level is at 48 o
 zero rather than a mesh each — that is now written in the game README's known gaps instead
 of quietly budget-busting here.
 
+
+
+---
+
+## 2. The comfortable wrong answer: "the CI box is special"
+
+The cone fix. A check went red only on CI, I built a theory (the torch sweeps its arc between
+frames at 7 fps and the sight test is asked once, after the arc), implemented a fix, added a
+mutant for it, and the mutant **survived at 60 fps, at 32x and at 64x**.
+
+What I wrote down at that moment — in the mutant's own comment — was "this box cannot kill it;
+the CI runner is the box that reproduced it". That sentence made an untested change look
+disciplined. It was the least reliable thing in the file, and the shape of the error is worth
+naming: I had already *decided* the machine was the variable, so every further observation
+(frame rate after frame rate) got filed under "not this box" instead of "not this code".
+
+`grep -n yawFrom` ended it in one move. Nothing assigned it. The branch was dead, `slices`
+was always 1, and the mutant was comparing an expression with itself — a green test on code
+that never runs, with a causal story stapled to it.
+
+The actual CI red was four driver bugs in a trenchcoat: the poll asked `probe().det` after the
+alert had wiped it; asked it of a raccoon in a sack (pinned at zero by design); parked the
+courier 1.3 m from the guard being measured, so the experiment was an arrest; and "emptied the
+yard" by teleport, where a patrol is a route and routes walk home.
+
+**Pin the rule:** a surviving mutant is a pointer at *reachability* first and *hardware*
+never. Fix the theory before naming the machine.

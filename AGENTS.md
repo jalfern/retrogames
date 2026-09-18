@@ -127,6 +127,18 @@ The spine (reasoning and the staged plan in `AI-PLAN.md`):
 - `src/utils/dosKeys.js` is the *only* DOS key path, so the harness, the agent and the player's
   fingers share one codebase (a harness that cheats with frozen frames cannot pass for play).
 
+### The harness must be able to fail — and a mutant that survives everywhere is a report about the code
+
+Before blaming an unreproducible machine for a surviving mutant, ask what makes the mutated
+line **run**. A cone-sampling mutant here stayed green at 60 fps, 32x and 64x, and was
+written up as "the CI runner is the only box that sees this" — until `grep` showed the line
+read `w.yawFrom` and nothing assigned `yawFrom`, so `slices` was always 1 and the mutant
+compared an expression with itself. The fix it "proved" is reverted. Dead code carrying a
+green test is worse than no code: it ships a causal story with it. (The real cause of the CI
+red turned out to be four driver bugs: polling a suspicion meter the alert wipes, polling one
+belonging to a raccoon in a sack, parking the courier inside the guard's grabbing range, and
+"emptying a yard" by teleport when a patrol is a route and routes walk home.)
+
 ### The harness must be able to fail
 
 Every suite here was green with bugs in it at first, so two mutations are tried by
