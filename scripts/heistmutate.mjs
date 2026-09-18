@@ -26,6 +26,25 @@
 //     prisoner, so the branch needed two and the loop over `rescue.log` never reached it.
 //     Every one of these survivals was the same sentence: the test never got near the code.
 //
+// ONE MUTANT WAS DELETED FOR BEING UNDEAD, and its post-mortem belongs here.
+//
+// "The sight cone is sampled once per frame, at the end of the arc" was written to prove an
+// engine fix for the CI-only reds (a torch sweeping over the raccoon between frames at 7 fps).
+// It survived at 60 fps, at 32x and at 64x. What I wrote down at the time, in the mutant's own
+// comment, was that *this laptop cannot reproduce the CI runner* — the most comfortable kind
+// of wrong, because it makes an untested change look disciplined.
+//
+// `grep -n yawFrom` ended it: the mutated line read `w.yawFrom` and nothing anywhere
+// assigned `yawFrom`, so `?? yawEnd` made the arc zero, `slices` was always 1, and the mutant
+// was comparing an expression with itself. The engine fix it "proved" is reverted (see
+// `git log` and AGENTS.md), and the CI reds it claimed to explain turned out to be four
+// driver bugs wearing one hat — polling `det` after the alert wipes it, polling one belonging
+// to a raccoon in a sack, parking the courier inside the guard's grabbing range, and
+// "emptying a yard" by teleport when a patrol is a route and routes walk home.
+//
+// So: before a surviving mutant gets blamed on the machine, ask what makes the mutated line
+// RUN. A test on dead code is worse than no test — it ships with a causal story.
+//
 // Some mutants are only alive at low frame rates, so a mutant may carry `throttle: N` and
 // the driver runs `--throttle N` for it. The camera-floor mutant is the example: at 60 fps
 // the retreat loop never reaches the bottom of the clamp, so the overshoot it exists to
