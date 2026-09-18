@@ -272,6 +272,16 @@ legible from where you actually stand while chewing it, whether the vault door (
 for the first time this week) now reads as a door, and whether the chain hitting the floor
 registers as "go" or as noise.
 
+### 0a. **`doscheck` King's Quest is the flaky one, and now we have the receipt.** One CI
+    run went red on `kingsquest: framebuffer readable (lit=0 640x400 after 308s)` with
+    `wiring: {installed: false, captured: true}`; the **same commit** re-dispatched minutes
+    later and passed the whole suite (`35310367097` red, `35311823473` green, same ref). Two
+    things to read off that: `installed: false` is not a finding — it is the component having
+    unmounted, because `uninstall()` legitimately clears the flag — and a 308 s black
+    framebuffer is js-dos failing to boot under runner contention, not a broken patch.
+    Before re-architecting the DOS boot because CI said so, re-run CI. (If it ever reproduces
+    twice, the fix is a boot budget that *re-mounts* rather than one that keeps sampling black.)
+
 ### 1a. **Ask the sim where a watcher can see — and about WHICH watcher.** Two reds on the
     same check, one build, five minutes apart, both true:
     * `why()` answers about **the active raccoon and every watcher in range**, sorted by rate.
