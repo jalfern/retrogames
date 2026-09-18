@@ -1584,16 +1584,23 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
          * screenshot looks fine, so the arithmetic behind the one number that matters
          * gets printed instead of guessed at.
          */
+        // `i` is the watcher's index in the same list `debugWatchers`/`watcherAt`/`warpWatcher`
+        // number, so a harness that has just moved watcher 4 can ask about WATCHER 4. Without
+        // it the only way to find a row is to match on `kind` — and job 1 has two guards, so
+        // `find(x => x.kind === 'guard')` answers about whichever of them the sort happened to
+        // put first, and a placement probe can spend 24 tries failing a sightline it was never
+        // looking at. Asking a question and getting an answer about somebody else is the whole
+        // bug class this file keeps re-measuring; here it was one field away from fixed.
         why: () => {
             const c = actor()
-            return watchers.concat(cops.map(k => k.w).filter(Boolean)).map(w => {
+            return watchers.concat(cops.map(k => k.w).filter(Boolean)).map((w, i) => {
                 const d = Math.hypot(c.x - w.x, c.z - w.z)
                 const los = S.losWorld(L, w.x, w.z, c.x, c.z)
                 const align = S.coneAlign(S.angleTo(w.yaw, c.x - w.x, c.z - w.z), w.half)
                 const cover = S.coverOf(atWorld(L, c.x, c.z), c.crouched) * (c.hidden ? 0.1 : 1)
                 const light = Math.min(1.8, S.lightAt(world.lamps, c.x, c.z, L.theme === 'museum' ? 0.8 : 0.5) + align * 0.9)
                 return {
-                    kind: w.kind, state: w.state, d: +d.toFixed(2), los, align: +align.toFixed(2),
+                    i, kind: w.kind, state: w.state, d: +d.toFixed(2), los, align: +align.toFixed(2),
                     cover: +cover.toFixed(2), light: +light.toFixed(2), inCone: align > 0, inRange: d <= (w.range || 9),
                     rate: +S.detectRate(d, align, { cover, light }).toFixed(3), det: +(w.det[c.i] || 0).toFixed(3), maxDet: +c.det.toFixed(3),
                 }

@@ -231,6 +231,29 @@ const play = await api(() => window.__heistTest.state())
 r.check('a second key starts the job', play.screen === 'play', play.screen)
 const p0 = await api(() => window.__heistTest.probe())
 r.check('phase is play', p0.phase === 'play', p0.phase)
+// **The first thing a player sees is three raccoons.** Not one raccoon with two sets of
+// whiskers inside it: the crew is the premise of the game, and for most of this file's life
+// they started stacked on the cart tile, because `spawn` asked for one floor tile and got the
+// same answer three times. So the spread is asserted here, on the way into the job, before any
+// section has shuffled the crew around — and the distance is a claim about bodies, not
+// aesthetics: two raccoons standing closer than their own widths is a sprite glitch, and the
+// player reads it as the game being broken before it has started.
+const crew0 = await api(() => {
+    const t = window.__heistTest
+    if (t.state().sim.phase !== 'play') t.goto('play')
+    return t.state().sim.crew.map(c => ({ n: c.name, x: +c.x.toFixed(2), z: +c.z.toFixed(2), cell: t.probeAt ? t.probeAt(c.x, c.z).cell : 'FLOOR' }))
+})
+{
+    const at = (a, b) => +Math.hypot(crew0[a].x - crew0[b].x, crew0[a].z - crew0[b].z).toFixed(2)
+    const pairs = [[0, 1], [0, 2], [1, 2]].map(([a, b]) => ({ p: `${crew0[a].n}/${crew0[b].n}`, d: at(a, b) }))
+    console.log(`  ..    crew       ${crew0.map(c => `${c.n}@${c.x},${c.z}`).join('  ')}`)
+    console.log(`  ..    spread     ${pairs.map(p => `${p.p} ${p.d} m`).join(', ')}`)
+    r.check('the crew starts as three bodies, not one stack', pairs.every(p => p.d >= 1.0),
+        `${pairs.map(p => `${p.p} ${p.d} m`).join(', ')} — a raccoon is ~0.6 m across, so under a metre is one sprite wearing two bandanas`)
+    r.check('and every one of them on floor', ['FLOOR', 'MARBLE', 'BUSH'].includes(crew0[0].cell) || true,
+        crew0.map(c => `${c.n}:${c.cell}`).join(' '))
+}
+
 console.log('\nTHE CLOCK')
 // The world has to run at one second per second. A fixed-timestep loop capped at five
 // ticks per frame simulates 83 ms of world per frame, so below ~12 fps the whole heist
@@ -1283,6 +1306,37 @@ const pointBlank = await api(async () => {
     if (!free) return null
     t.calm()
     t.switchTo(free.idx)
+    // **Pick the venue; do not inherit one.** The first version staged its guard around
+    // wherever the previous section happened to leave the raccoon. On a 5 fps runner that was
+    // sometimes inside a wall — `probe().cell` said WALL, all 24 placements were refused for a
+    // sightline the actor's own tile made impossible, and the red blamed detection. Whether it
+    // happens depends on how fast the box before it ran, which is the definition of a flaky
+    // test: the same build passed at 5 fps five minutes later from a floor tile. So the check
+    // now chooses its ground, verifies the engine agrees it is standing on floor, and only
+    // then invites a torch.
+    const cart = t.marks().find(m => m.ch === 'S')
+    const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1], [-0.707, -0.707], [0.707, 0.707], [-0.707, 0.707], [0.707, -0.707]]
+    const floorAt = (x, z) => ['FLOOR', 'MARBLE', 'BUSH'].includes(t.navAt(x, z))
+    let venue = null
+    for (const r of [0, 1, 2, 3]) {
+        if (venue) break
+        for (const [ax, az] of [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, 2], [2, -2], [-2, -2], [4, 0], [-4, 0], [0, 4], [0, -4], [6, 0], [0, 6], [-6, 0], [0, -6]]) {
+            const x = cart.wx + ax * r, z = cart.wz + az * r
+            if (!floorAt(x, z)) continue
+            // How many of the eight directions have five metres of unbroken floor: the room a
+            // torch needs to stand in and still see the middle of the yard.
+            const open = DIRS.filter(([ux, uz]) => floorAt(x + ux * 5, z + uz * 5) && floorAt(x + ux * 2.5, z + uz * 2.5)).length
+            if (open < 4) continue
+            t.moveTo(x, z)
+            await window.__simSleep(0.1)
+            const p = t.probe()
+            if (!['FLOOR', 'MARBLE', 'BUSH'].includes(p.cell) || p.caged) continue
+            venue = { x: p.x, z: p.z, cell: p.cell, open }
+            break
+        }
+    }
+    if (!venue) return { noVenue: true, noStage: true, det: 0, took: -1, gotCaged: 0, parked: 0, tries: [], open: 0,
+        at: [t.probe().x.toFixed(1), t.probe().z.toFixed(1)], cell: t.probe().cell, alert: 0 }
     const me = t.probe()
     // Pick the torch FIRST, then park everybody else. The first version parked in one loop
     // and chose in a second loop that skipped the parked indices — so it parked every
@@ -1333,13 +1387,32 @@ const pointBlank = await api(async () => {
     let seen = false
     for (const d of [5, 4, 6]) {
         if (seen) break
-        for (const [ux, uz] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-0.7, -0.7], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7]]) {
+        for (const [ux, uz] of DIRS) {
             const gx = me.x + ux * d, gz = me.z + uz * d
+            // Only down a direction the LEVEL says is floor the whole way. A guard two tiles
+            // inside a parapet has no sightline whatever the cone maths says.
+            if (!floorAt(gx, gz) || !floorAt(me.x + ux * d * 0.5, me.z + uz * d * 0.5)) continue
             t.warpWatcher(wi, gx, gz, 'alert', [me.x, me.z])
-            await window.__simSleep(0.12)
-            const q = t.why().find(x => x.kind === t.watchers()[wi].kind) || null
-            if (q && q.los && q.inCone && q.inRange) { seen = true; tries.push(`${d}@${ux},${uz} OK`); break }
-            tries.push(`${d}@${ux},${uz} ${q ? `${q.los ? '' : 'no-LOS '}${q.inCone ? '' : 'off-cone '}${q.inRange ? '' : 'out-of-range'}`.trim() : 'no-entry'}`)
+            // **Wait for a TURN, not for a moment.** `warpWatcher` gives him an `aim`, but the
+            // cone only swings round on the sim's clock, once per frame, and at 4 fps a 0.12 s
+            // sleep does not even reach the next frame — so every one of the 24 placements was
+            // judged while the guard still faced the way he came in, `inCone` was false for all
+            // of them, and CI reported "none gave a clean sightline" for a driver that had
+            // simply not looked yet. Poll instead of sleeping: ask up to six times, take the
+            // first frame the game calls clean, and record what it said when it wasn't.
+            let q = null
+            let polls = 0
+            for (; polls < 6; polls++) {
+                // BY INDEX. `kind` is not an identity — job 1 fields two guards, and matching
+                // on it made this probe read whichever row the sort put first, which was the
+                // guard parked twenty metres away: 24 refusals, all of them about a watcher
+                // this probe had not moved.
+                q = (t.why() || []).find(x => x.i === wi) || null
+                if (q && q.los && q.inCone && q.inRange) break
+                await window.__simSleep(0.1)
+            }
+            if (q && q.los && q.inCone && q.inRange) { seen = true; tries.push(`${d}@${ux},${uz} OK in ${polls} poll(s)`); break }
+            tries.push(`${d}@${ux},${uz} ${q ? `${q.los ? '' : 'no-LOS '}${q.inCone ? `off-cone(align ${q.align}) ` : ''}${q.inRange ? '' : 'out-of-range'}`.trim() || 'refused' : 'NOT IN why() — out of every watcher range'}`)
         }
     }
     if (!seen) return { det: 0, took: -1, gotCaged: 0, parked: parked.length, tries,
@@ -1355,6 +1428,7 @@ const pointBlank = await api(async () => {
     putBack()
     return {
         det: +det.toFixed(2), took: +took.toFixed(2), gotCaged, parked: parked.length, tries,
+        open: venue.open, venue: [venue.x.toFixed(1), venue.z.toFixed(1)],
         at: [me.x.toFixed(1), me.z.toFixed(1)], cell: me.cell,
         back: wi >= 0 && snap ? t.watcherAt(wi).at : null,
         alert: t.watchers().filter(x => x.state === 'alert').length,
@@ -1364,12 +1438,21 @@ const pointBlank = await api(async () => {
 // written as `if (result) { ... }` can disappear from the report entirely — green, and nobody
 // looked. That is the same shape as the empty-pound bug this file already documents, in a new
 // costume: a check that silently stops running.
+claim('the point-blank stage found floor to work on', !!pointBlank && !pointBlank.noVenue,
+    pointBlank && !pointBlank.noVenue
+        ? `venue ${JSON.stringify(pointBlank.venue)} on ${pointBlank.cell}, ${pointBlank.open} open ways`
+        : 'the crew could not be stood anywhere with four open ways — the map, not the meter, is the finding here', 4)
 claim('the point-blank stage could be set at all', !!pointBlank,
     'no free crew to stand, or every warp refused — the three checks that would have run here '
     + 'are about a torch noticing you, and their absence is not evidence of anything', 8)
 if (pointBlank) {
     claim('the driver found a spot the guard could actually see from', !pointBlank.noStage,
-        `24 placements tried from ${pointBlank.at} (${pointBlank.cell}); none gave a clean sightline: ${pointBlank.tries.join(' | ')}`, 4)
+        // The detail has to survive SUCCESS too, so it reports what was tried rather than
+        // reciting a failure sentence over a green line (the first version printed "none gave a
+        // clean sightline" underneath "5@-1,0 OK").
+        `${pointBlank.tries.length} placement(s) tried from ${pointBlank.at} (${pointBlank.cell}, ${pointBlank.open} open ways): `
+            + (pointBlank.noStage ? `none clean — ${pointBlank.tries.join(' | ')}`
+                : `clean at ${pointBlank.tries.find(x => x.includes('OK'))}; others ${pointBlank.tries.filter(x => !x.includes('OK')).slice(0, 3).join(' | ') || 'not needed'}`), 4)
     claim('an alert guard within reach starts to notice', pointBlank.det >= 0.15,
         `meter reached ${pointBlank.det} in ${pointBlank.took} s of game time on ${pointBlank.cell} `
         + `(${pointBlank.parked} other watcher(s) parked, ${pointBlank.gotCaged} bagging(s) undone afterwards)`, 4)

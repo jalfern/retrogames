@@ -272,6 +272,47 @@ legible from where you actually stand while chewing it, whether the vault door (
 for the first time this week) now reads as a door, and whether the chain hitting the floor
 registers as "go" or as noise.
 
+### 0a. **`doscheck` King's Quest is the flaky one, and now we have the receipt.** One CI
+    run went red on `kingsquest: framebuffer readable (lit=0 640x400 after 308s)` with
+    `wiring: {installed: false, captured: true}`; the **same commit** re-dispatched minutes
+    later and passed the whole suite (`35310367097` red, `35311823473` green, same ref). Two
+    things to read off that: `installed: false` is not a finding — it is the component having
+    unmounted, because `uninstall()` legitimately clears the flag — and a 308 s black
+    framebuffer is js-dos failing to boot under runner contention, not a broken patch.
+    Before re-architecting the DOS boot because CI said so, re-run CI. (If it ever reproduces
+    twice, the fix is a boot budget that *re-mounts* rather than one that keeps sampling black.)
+
+### 1a. **Ask the sim where a watcher can see — and about WHICH watcher.** Two reds on the
+    same check, one build, five minutes apart, both true:
+    * `why()` answers about **the active raccoon and every watcher in range**, sorted by rate.
+      Matching its rows on `kind` is not an identity: job 1 fields two guards, so
+      `find(x => x.kind === 'guard')` returned whichever the sort put first — usually the one
+      parked 20 m away, and a placement probe spent 24 tries failing sightlines it was never
+      looking at. `why()` now carries `i`, the same index `watcherAt`/`warpWatcher` number, and
+      the probe asks by index.
+    * Then it inherited its **ground**: it staged the torch around wherever the previous
+      section left the raccoon, which at 5 fps was sometimes inside a wall — every sightline
+      impossible because the actor's own tile made it so. It now picks a venue (floor, >= 4
+      directions with 5 m of unbroken floor), verifies the engine calls the tile floor, and
+      says so: `venue [-12.1,18.5] on FLOOR, 5 open ways`.
+    Same lesson twice in one day, from two different subsystems: **a fact the engine can be
+    asked is a fact that must be asked** — and the answer must name the thing you asked about.
+
+### 1b. ~~All three crew are stacked on the spawn tile~~ — closed, and now *gated*
+They were spread already (`freeAround` walks outward in rings, >= 0.9 m apart and >= 1.9 m
+clear of any S/X/P/V mark), but nothing said so: the queue item survived because the fix had
+no check attached, which is how a level's first impression stays broken for a month — or
+looks broken. `heistplay` now prints where the crew starts and asserts the pairwise distance:
+
+```
+..    crew       BANDIT@-14.3,16.5  TINKER@-12.1,16.5  SCOUT@-9.9,16.5
+..    spread     BANDIT/TINKER 2.2 m, BANDIT/SCOUT 4.4 m, TINKER/SCOUT 2.2 m
+```
+
+Two metres apart is a crew; under a metre is one sprite wearing two bandanas. The claim is
+about bodies (a raccoon is ~0.6 m across), not aesthetics, so it cannot drift into a
+screenshot test.
+
 ### 2. Jobs 2 and 3 have never been *played*
 They're audited (`heistcheck` covers reachability/cover/patrols/lasers) but `heistplay`
 only drives job 1. Highest-value code task: make `heistplay` take a job argument
