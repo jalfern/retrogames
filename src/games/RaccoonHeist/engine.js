@@ -1786,9 +1786,38 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 det: w.det.slice(), cool: w.cool || 0, alertT: w.alertT || 0, lose: w.lose || 0, wait: w.wait || 0,
             }
         },
+        /**
+         * Harness-only: walk a watcher off the map AND take him off duty.
+         *
+         * Teleporting is not parking. A patrol is a ROUTE, and the tick after you move him
+         * he starts pathing back toward his first node — at 3 m/s, quicker than a driver
+         * carrying a sack of coins at 2.2. That is how the cart tally became a bust cascade
+         * on a slow runner: the section had every right to declare "this tally is about
+         * CARRYING", and then two guards walked back into the yard halfway through it anyway.
+         * Taking the route away is the honest version of that stage direction, and
+         * `restoreWatcher` hands it back, so the sections after this one meet the guard force
+         * the level actually has. An empty route is already a valid state — the patrol branch
+         * only runs `if (w.state === 'patrol' && w.route.length)` — so an off-duty guard
+         * stands where he was put instead of coming back to relieve himself.
+         */
+        parkWatcher(i, x, z) {
+            const w = watchers.concat(cops.map(k => k.w).filter(Boolean))[i]
+            if (!w) return null
+            if (!w.onDuty) w.onDuty = w.route
+            w.route = []
+            w.path = null; w.direct = null; w.wait = 0; w.lose = 99
+            w.x = x; w.z = z; w.state = 'patrol'
+            w.det.fill(0); w.cool = 0
+            w.mesh.position.set(x, 0, z)
+            if (w.coneMesh) { w.coneMesh.position.set(x, 0.05, z); w.coneMesh.rotation.y = w.yaw }
+            return { at: [+x.toFixed(2), +z.toFixed(2)], state: w.state, route: w.route.length }
+        },
         restoreWatcher(i, s) {
             const w = watchers.concat(cops.map(k => k.w).filter(Boolean))[i]
             if (!w || !s) return null
+            // Back on duty first: the snapshot carries position and mood, not the route, and
+            // a guard restored without it is a statue that still probes as `state: patrol`.
+            if (w.onDuty) { w.route = w.onDuty; delete w.onDuty }
             Object.assign(w, {
                 x: s.x, z: s.z, yaw: s.yaw, state: s.state, ri: s.ri, rdir: s.rdir, pi: s.pi,
                 aim: s.aim, lastSeen: s.lastSeen, cool: s.cool, alertT: s.alertT, lose: s.lose, wait: s.wait,

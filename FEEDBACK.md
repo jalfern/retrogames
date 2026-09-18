@@ -572,3 +572,55 @@ scuff where a stolen pile used to be. Both are more meshes, the level is at 48 o
 zero rather than a mesh each — that is now written in the game README's known gaps instead
 of quietly budget-busting here.
 
+
+
+---
+
+## 2. The comfortable wrong answer: "the CI box is special"
+
+The cone fix. A check went red only on CI, I built a theory (the torch sweeps its arc between
+frames at 7 fps and the sight test is asked once, after the arc), implemented a fix, added a
+mutant for it, and the mutant **survived at 60 fps, at 32x and at 64x**.
+
+What I wrote down at that moment — in the mutant's own comment — was "this box cannot kill it;
+the CI runner is the box that reproduced it". That sentence made an untested change look
+disciplined. It was the least reliable thing in the file, and the shape of the error is worth
+naming: I had already *decided* the machine was the variable, so every further observation
+(frame rate after frame rate) got filed under "not this box" instead of "not this code".
+
+`grep -n yawFrom` ended it in one move. Nothing assigned it. The branch was dead, `slices`
+was always 1, and the mutant was comparing an expression with itself — a green test on code
+that never runs, with a causal story stapled to it.
+
+The actual CI red was four driver bugs in a trenchcoat: the poll asked `probe().det` after the
+alert had wiped it; asked it of a raccoon in a sack (pinned at zero by design); parked the
+courier 1.3 m from the guard being measured, so the experiment was an arrest; and "emptied the
+yard" by teleport, where a patrol is a route and routes walk home.
+
+**Pin the rule:** a surviving mutant is a pointer at *reachability* first and *hardware*
+never. Fix the theory before naming the machine.
+
+
+## 3. The check written to defend a rule, which broke the rule
+
+CI was skipping its detection checks at 5 fps, so I added one that could stage its premise
+with a **single warp**: put an alert guard three metres from the raccoon and ask whether the
+meter moves. It passed on the runner. It also broke the very next section:
+
+```
+FAIL  cargo sticks to the raccoon  ({"held":null, ... "hands":null})
+FAIL  the cart verb is "deliver"  (no verb offered at the cart)
+```
+
+The new check warped an **alert** guard into the middle of the map and left him there. He
+spent the next two sections hunting the courier and bagged him mid-grab. `held: null` is not
+a grab-button bug; it is a guard with a loan he was never called back for.
+
+The repo's rule seventeen says *a harness that moves the world must put it back*. I wrote a
+check that violated it two screens below the rule, in the same file, while fixing the checks
+that rule was written from. It passed locally on the first run because a laptop at 60 fps
+finishes the grab before the guard arrives.
+
+**Pin the rule:** the leak-check I added on the spot is one line — count watchers still
+`alert` on entry to the next section and print it. Cheap detectors of "the previous test
+stole the world" beat careful authoring, because careful authoring is what just failed.
