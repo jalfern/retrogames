@@ -159,7 +159,11 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         glow.scale.setScalar(1.9)
         glow.position.set(m.wx, 0.6, m.wz)
         group.add(glow)
-        return { kind: m.ch, x: m.wx, z: m.wz, value: lootValue(m.ch), label: lootLabel(m.ch), taken: false, delivered: false, mesh, glow, i }
+        // `hx/hz` is the pile's *home* cell. A bagged carrier drops the sack where he
+        // fell (see `catchCrew`), and `reset()` must put it home again — a retry that
+        // starts with the Moonstone lying in the alley where the last run ended is a
+        // world that remembers the previous attempt.
+        return { kind: m.ch, x: m.wx, z: m.wz, hx: m.wx, hz: m.wz, value: lootValue(m.ch), label: lootLabel(m.ch), taken: false, delivered: false, mesh, glow, i }
     })
     const totalValue = loot.reduce((a, l) => a + l.value, 0)
 
@@ -925,6 +929,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
     function catchCrew(c) {
         if (c.caged) return
         const wasHeld = c.i === active
+        let droppedLabel = null
         c.caged = true
         // Somebody got thrown in the pound, so the pound gets locked again. Without this
         // the second arrest of a job leaves an open cage with a raccoon rattling the bars,
@@ -943,6 +948,22 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
                 w.direct = null
                 w.lose = 0
             }
+        }
+        // The sack does NOT vanish with the arrest. `c.held = null` alone left the loot
+        // `taken` with a hidden mesh — and the gate only opens when every pile is in
+        // the cart, so getting caught mid-carry made the job mathematically unwinnable.
+        // The loot drops at the arrest point, visible and re-takeable, and `reset()`
+        // walks it back home for the retry.
+        if (c.held) {
+            const l = c.held
+            droppedLabel = l.label
+            l.taken = false
+            l.x = c.x; l.z = c.z
+            l.mesh.position.set(l.x, 0.3, l.z)
+            l.glow.position.set(l.x, 0.6, l.z)
+            l.mesh.visible = true
+            l.glow.visible = true
+            emit({ type: 'dropped', label: l.label })
         }
         c.held = null
         st.caught++
@@ -971,7 +992,9 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         st.caughtWho = c.i
         emit({ type: 'caught', who: c.def.name })
         audio?.caught?.()
-        say(`${c.def.name} IS IN THE POUND — GET THEM OUT`, 3.4)
+        say(droppedLabel
+            ? `${c.def.name} IS IN THE POUND — GET THEM OUT · YOUR ${droppedLabel.toUpperCase()} FELL HERE`
+            : `${c.def.name} IS IN THE POUND — GET THEM OUT`, 3.4)
         refreshObjective()
         if (crew.every(x => x.caged)) finish(false)
     }
@@ -1533,7 +1556,12 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             const p = starts[Math.min(c.i, starts.length - 1)] || cartW
             c.x = p.x; c.z = p.z; c.mesh.visible = true
         }
-        for (const l of loot) { l.taken = false; l.delivered = false; l.mesh.visible = true; l.glow.visible = true }
+        for (const l of loot) {
+            l.taken = false; l.delivered = false; l.mesh.visible = true; l.glow.visible = true
+            l.x = l.hx; l.z = l.hz
+            l.mesh.position.set(l.hx, 0, l.hz)
+            l.glow.position.set(l.hx, 0.6, l.hz)
+        }
         for (const s of shinies) { s.taken = false; s.mesh.visible = true; s.spark.visible = true }
         // Every bit of snapped hardware goes back on: the padlock, the gate chain, the
         // filings. A retry that starts with the vault already chained-open is the same

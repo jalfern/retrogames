@@ -1098,6 +1098,17 @@ export function makeMoon() {
 // ----------------------------------------------------------------- helpers -------
 /** Merge an array of {geo, matrix} into one geometry (static level batch). */
 export function batch(items) {
+    // An empty batch is not an error — it is "this level has no fences". The museum
+    // has no FENCE cells, `mergeGeometries([])` read `geometries[0].index` off
+    // undefined, and job 2 CRASHED on mount: it had never been playable, by anyone,
+    // from the day it was committed. Callers who then check
+    // `geo.attributes.position.count` were clearly expecting this to answer quietly,
+    // so the quiet answer ships pre-warmed with an empty position attribute.
+    if (!items.length) {
+        const empty = new THREE.BufferGeometry()
+        empty.setAttribute('position', new THREE.Float32BufferAttribute([], 3))
+        return empty
+    }
     const geos = []
     for (const it of items) {
         const g = it.geo.clone()

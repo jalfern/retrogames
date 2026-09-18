@@ -13,6 +13,7 @@
     "lint:ai": "eslint src/ai src/games/Zork src/games/KingsQuest src/components src/utils src/config src/main.jsx scripts",
     "lint:heist": "eslint src/games/RaccoonHeist src/components src/utils src/config src/main.jsx scripts",
     "heistcheck": "node scripts/heistcheck.mjs",
+    "heistwin": "node scripts/heistwin.mjs",
     "heistplay": "node scripts/heistplay.mjs",
     "heistmutate": "node scripts/heistmutate.mjs",
     "heistclock": "node scripts/heistclock.mjs",
