@@ -169,11 +169,23 @@ playtest report, not from taste.
     assigned `yawFrom`**, so `?? yawEnd` made the arc zero, `slices` was always 1, and the
     mutant compared an expression with itself. The engine change is reverted (dead code with
     a green test on it is worse than no code, because it comes with a causal story), and the
-    CI failure it claimed to explain was four driver bugs wearing one hat: polling `det`
+    CI failure it claimed to explain was a row of driver bugs wearing one hat — the first
+    four found from the log, the next two only by running on the runner itself: polling `det`
     after the alert wipes it, polling the meter of a raccoon in a sack, parking the courier
     within grabbing range of the guard being measured, and a cart section that "emptied the
     yard" by teleport — where a patrol is a route and routes walk home. **Before blaming a
-    machine for a surviving mutant, ask what makes the mutated line run.**
+    machine for a surviving mutant, ask what makes the mutated line run.
+16. **A staged guard is a loan, and an ALERT guard at three metres is a bagging.** The check
+    written to defend trap 13 ("a harness that moves the world must put it back") broke it two
+    screens below the rule: it warped an alert guard into the map, forgot him, and he hunted the
+    courier through the next two sections — filed as `cargo sticks to the raccoon (held: null)`,
+    a red about the GRAB button. Its replacement then got its own actor caged, because alert
+    guards close and swing inside a second, so the pound reached the rescue section already full
+    and was reported as "the pound does not open". Both are now asserted rather than trusted:
+    **five metres, everybody else parked**, and `the staged guard went home and took nobody with
+    him` (zero left alert, zero crew bagged by the stage direction). And before any section
+    drives a raccoon, `ensureFree()` puts any prisoner back on their feet — a caged actor ignores
+    `moveTo` and `tap` completely, which is what "the grab button is broken" actually meant.**
 
 ## Next steps, ranked
 
