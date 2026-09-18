@@ -176,7 +176,13 @@ const MUTANTS = [
         file: IDX,
         anchor: 'if (!o.isMesh || !drawn(o) || !o.geometry) return',
         swap: 'if (!o.isMesh || !o.visible || !o.geometry) return',
-        mustFail: 'a lock nobody can see is not an affordance',
+        // The check that actually reddens. Not the one this mutant was written for: the
+        // hidden-lock probe below the rescue *also* passes with the leaf test gone, because it
+        // only asks about `afford().hit`, and `found` is collected through the same
+        // skip-invisible-leaf walk for both. The one that bites is the affordance shown AT the
+        // locked cage — with the leaf rule removed, a padlock hidden inside an invisible parent
+        // still "shows a locked door".
+        mustFail: 'a locked cage shows a locked door',
         note: 'visibility belongs to the whole chain; the route checks cannot see this one',
     },
     {
