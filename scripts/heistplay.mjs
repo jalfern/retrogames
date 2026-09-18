@@ -1254,13 +1254,23 @@ claim('standing in a torch beam raises suspicion', (seen.peak || 0) > 0.15 || se
 r.info('the cost of standing in the light', `${seen.penned} in the pound by the end of this section — the driver steps out of the beam the moment one goes in, and never watches \`probe().caged\`, which resets when being caught hands you the next raccoon`)
 // **The one CI is allowed to answer.** Everything above this line needs a fair few frames
 // per second just to STAGE itself: the hunt has to catch three consecutive "I see you"
-// samples 80 ms apart before the stopwatch may start, and on the runner's 5 fps it could not,
-// so four checks there skipped — honest, but a suite that skips its way to green on the only
-// machine that keeps finding bugs is not much of a guard. So this one stages its premise with
-// a single warp instead of a hunt: put an ALERT guard three metres away, facing an uncaged
-// raccoon standing on floor with nothing in the way, and ask only whether the meter moves.
-// No sweep to catch, no cell to score, no frame-rate-dependent setup — and it still fails if
-// the sight test, the light term or the meter itself stops working.
+// samples 80 ms apart before the stopwatch may start, and on the runner's 5 fps it could
+// not, so four checks there skipped — honest, but a suite that skips its way to green on the
+// only machine that keeps finding bugs is not much of a guard. So this one stages with a
+// single warp instead of a hunt, and asks only whether the meter moves and how long it took:
+// one ALERT guard, five metres away, facing an uncaged raccoon standing on floor. No sweep to
+// catch, no cell to score — and it still fails if the sight test, the light term or the
+// detection meter stops working.
+//
+// Two things this learned the hard way, both about the world rather than the assertion:
+//   * **A staged guard is a loan.** The first version left him alert in the middle of the
+//     map; he hunted the courier through the next two sections and the cart reported
+//     `cargo sticks to the raccoon (held: null)` — a red about the GRAB button.
+//   * **Five metres, not three.** Alert guards close, and a bagging at contact range is
+//     over in under a second. At 3 m this check got the actor caged on the runner, the sim
+//     auto-switched to a crewmate, and the pound arrived at the rescue section already full
+//     — which then reported as "the pound does not open". The threshold is 0.15 of meter,
+//     which an alert cone at 5 m reaches long before its owner does.
 const pointBlank = await api(async () => {
     const t = window.__heistTest
     const free = t.state().sim.crew.find(c => !c.caged)
@@ -1268,46 +1278,61 @@ const pointBlank = await api(async () => {
     t.calm()
     t.switchTo(free.idx)
     const me = t.probe()
-    // A guard, in the open, looking straight at us. `warpWatcher` aims him by putting the
-    // actor on his nose rather than by trusting a yaw we would have to compute ourselves.
-    // Snapshot FIRST, put back at the end, and calm on the way out. This check exists to
-    // defend trap 13 ("a harness that moves the world must put it back") and the first
-    // version of it broke that trap itself: it warped an ALERT guard three metres from the
-    // raccoon and left him there, so he spent the next two sections chasing the courier,
-    // bagged him mid-grab, and the cart section reported `cargo sticks to the raccoon
-    // (held: null)` — a red about the grab button, caused by a guard who should have been
-    // home on his route. A staged guard is a loan.
-    let w = null
-    let wi = -1
-    let snap = null
+    // Park everybody else, and snapshot the one we move.
+    const parked = []
+    let wi = -1, snap = null, w = null
     for (let i = 0; i < t.watchers().length; i++) {
+        if (i === wi) continue
+        if (!parked.length && i === 0 && !snap) { /* first index handled below */ }
+        const s2 = t.watcherAt(i)
+        const k = t.warpWatcher(i, me.x - 5.0, me.z - 26, 'patrol')
+        if (k) parked.push({ i, snap: s2 })
+    }
+    for (let i = 0; i < t.watchers().length; i++) {
+        if (parked.some(q => q.i === i)) continue
         snap = t.watcherAt(i)
-        const k = t.warpWatcher(i, me.x - 3.0, me.z, 'alert')
+        const k = t.warpWatcher(i, me.x - 5.0, me.z, 'alert')
         if (k) { w = k; wi = i; break }
     }
     const putBack = () => {
         if (wi >= 0 && snap) t.restoreWatcher(wi, snap)
+        for (const q of parked) t.restoreWatcher(q.i, q.snap)
+        // Anything this check got bagged comes out of the sack: it is a stage artifact, and
+        // leaving it in means the rescue section inherits a full pound and reports the pound
+        // as broken.
+        const stuck = t.state().sim.crew.filter(c => c.caged)
+        for (const c of stuck) t.release(c.idx)
         t.calm()
     }
     if (!w) { putBack(); return null }
     let det = 0
+    let gotCaged = 0
     const t0 = t.engine().st.elapsed
     let took = -1
-    for (let i = 0; i < 60 && det < 0.35; i++) {
+    for (let i = 0; i < 60 && det < 0.15; i++) {
         await window.__simSleep(0.1)
         det = Math.max(det, t.probe().det)
-        if (t.probe().caged || t.state().sim.phase !== 'play') break
-        if (det >= 0.35) took = t.engine().st.elapsed - t0
+        if (t.probe().caged || t.state().sim.phase !== 'play') { gotCaged++; break }
+        if (det >= 0.15) took = t.engine().st.elapsed - t0
     }
     putBack()
-    return { det: +det.toFixed(2), took: +took.toFixed(2), at: [me.x.toFixed(1), me.z.toFixed(1)],
-        cell: me.cell, back: wi >= 0 && snap ? t.watcherAt(wi).at : null }
+    return {
+        det: +det.toFixed(2), took: +took.toFixed(2), gotCaged, parked: parked.length,
+        at: [me.x.toFixed(1), me.z.toFixed(1)], cell: me.cell,
+        back: wi >= 0 && snap ? t.watcherAt(wi).at : null,
+        alert: t.watchers().filter(x => x.state === 'alert').length,
+    }
 })
 if (pointBlank) {
-    claim('an alert guard three metres away starts to notice', pointBlank.det >= 0.35,
-        `meter reached ${pointBlank.det} in ${pointBlank.took} s of game time at 3 m on ${pointBlank.cell}`, 4)
+    claim('an alert guard five metres away starts to notice', pointBlank.det >= 0.15,
+        `meter reached ${pointBlank.det} in ${pointBlank.took} s of game time at 5 m on ${pointBlank.cell} `
+        + `(${pointBlank.parked} other watcher(s) parked, ${pointBlank.gotCaged} bagging(s) undone afterwards)`, 4)
     claim('and that took roughly the second the model promises', pointBlank.took > 0.05 && pointBlank.took < 3.5,
-        `${pointBlank.took} s of game time for a 3 m alert cone — the floor of this check is the game's 4 fps, not the hunt's`, 4)
+        `${pointBlank.took} s of game time for a 5 m alert cone — the floor here is the game's 4 fps, not the hunt's`, 4)
+    // Not decoration: the first version of this check left an alert guard loose and the only
+    // reason anyone noticed was a dozen reds two sections later about grabbing things.
+    claim('the staged guard went home and took nobody with him', pointBlank.alert === 0 && pointBlank.gotCaged === 0,
+        `${pointBlank.alert} watcher(s) still alert on the way out, ${pointBlank.gotCaged} crew bagged by the stage direction itself`, 4)
 }
 
 claim('being spotted is announced', seen.spottedAt >= 0 || seen.heat > 10, `spot at ${seen.spottedAt} s of game time, heat ${Math.round(seen.heat)}`, 8)
