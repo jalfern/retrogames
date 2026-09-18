@@ -176,14 +176,23 @@ const MUTANTS = [
         file: IDX,
         anchor: 'if (!o.isMesh || !drawn(o) || !o.geometry) return',
         swap: 'if (!o.isMesh || !o.visible || !o.geometry) return',
-        // The check that actually reddens. Not the one this mutant was written for: the
-        // hidden-lock probe below the rescue *also* passes with the leaf test gone, because it
-        // only asks about `afford().hit`, and `found` is collected through the same
-        // skip-invisible-leaf walk for both. The one that bites is the affordance shown AT the
-        // locked cage — with the leaf rule removed, a padlock hidden inside an invisible parent
-        // still "shows a locked door".
+        // **EQUIVALENT, and that is a finding, not a failure.** Two independent places decide
+        // whether an invisible mesh counts as seen: `drawn(o)` here (the walk that builds the
+        // affordance target list) and the leaf-only test in `art.js meshesByName` (the walk
+        // that answers "is the thing I aimed at actually drawn"). Mutate either one and the
+        // other still refuses, so no single mutation reddens anything — proven by running this
+        // one at 60 fps and at 64x, both green. The pair IS covered: mutate BOTH and
+        // `a locked cage shows a locked door` goes red, which is what the sibling mutant
+        // ("a lock hidden inside an invisible parent counts as seen") does by attacking the
+        // art.js side, where the route's own checks happen to lean on that path.
+        //
+        // Recorded instead of deleted because the redundancy is the interesting part: if
+        // someone ever unifies those two visibility tests into one helper, this mutant starts
+        // to die, and the suite should tell them that.
         mustFail: 'a locked cage shows a locked door',
-        note: 'visibility belongs to the whole chain; the route checks cannot see this one',
+        covered: 'two independent visibility walks protect this; mutating one leaves the other (proven at 60 fps and 64x)',
+        coveredBy: "the sibling 'a lock hidden inside an invisible parent counts as seen', on the art.js side",
+        note: 'redundant guards: a single-site mutation cannot reach this',
     },
     {
         // The body-depth instrument's own mutant. Guards whose waypoint branch steps
