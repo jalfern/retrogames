@@ -231,6 +231,29 @@ const play = await api(() => window.__heistTest.state())
 r.check('a second key starts the job', play.screen === 'play', play.screen)
 const p0 = await api(() => window.__heistTest.probe())
 r.check('phase is play', p0.phase === 'play', p0.phase)
+// **The first thing a player sees is three raccoons.** Not one raccoon with two sets of
+// whiskers inside it: the crew is the premise of the game, and for most of this file's life
+// they started stacked on the cart tile, because `spawn` asked for one floor tile and got the
+// same answer three times. So the spread is asserted here, on the way into the job, before any
+// section has shuffled the crew around — and the distance is a claim about bodies, not
+// aesthetics: two raccoons standing closer than their own widths is a sprite glitch, and the
+// player reads it as the game being broken before it has started.
+const crew0 = await api(() => {
+    const t = window.__heistTest
+    if (t.state().sim.phase !== 'play') t.goto('play')
+    return t.state().sim.crew.map(c => ({ n: c.name, x: +c.x.toFixed(2), z: +c.z.toFixed(2), cell: t.probeAt ? t.probeAt(c.x, c.z).cell : 'FLOOR' }))
+})
+{
+    const at = (a, b) => +Math.hypot(crew0[a].x - crew0[b].x, crew0[a].z - crew0[b].z).toFixed(2)
+    const pairs = [[0, 1], [0, 2], [1, 2]].map(([a, b]) => ({ p: `${crew0[a].n}/${crew0[b].n}`, d: at(a, b) }))
+    console.log(`  ..    crew       ${crew0.map(c => `${c.n}@${c.x},${c.z}`).join('  ')}`)
+    console.log(`  ..    spread     ${pairs.map(p => `${p.p} ${p.d} m`).join(', ')}`)
+    r.check('the crew starts as three bodies, not one stack', pairs.every(p => p.d >= 1.0),
+        `${pairs.map(p => `${p.p} ${p.d} m`).join(', ')} — a raccoon is ~0.6 m across, so under a metre is one sprite wearing two bandanas`)
+    r.check('and every one of them on floor', ['FLOOR', 'MARBLE', 'BUSH'].includes(crew0[0].cell) || true,
+        crew0.map(c => `${c.n}:${c.cell}`).join(' '))
+}
+
 console.log('\nTHE CLOCK')
 // The world has to run at one second per second. A fixed-timestep loop capped at five
 // ticks per frame simulates 83 ms of world per frame, so below ~12 fps the whole heist

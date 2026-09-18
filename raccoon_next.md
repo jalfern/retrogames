@@ -272,6 +272,21 @@ legible from where you actually stand while chewing it, whether the vault door (
 for the first time this week) now reads as a door, and whether the chain hitting the floor
 registers as "go" or as noise.
 
+### 1b. ~~All three crew are stacked on the spawn tile~~ — closed, and now *gated*
+They were spread already (`freeAround` walks outward in rings, >= 0.9 m apart and >= 1.9 m
+clear of any S/X/P/V mark), but nothing said so: the queue item survived because the fix had
+no check attached, which is how a level's first impression stays broken for a month — or
+looks broken. `heistplay` now prints where the crew starts and asserts the pairwise distance:
+
+```
+..    crew       BANDIT@-14.3,16.5  TINKER@-12.1,16.5  SCOUT@-9.9,16.5
+..    spread     BANDIT/TINKER 2.2 m, BANDIT/SCOUT 4.4 m, TINKER/SCOUT 2.2 m
+```
+
+Two metres apart is a crew; under a metre is one sprite wearing two bandanas. The claim is
+about bodies (a raccoon is ~0.6 m across), not aesthetics, so it cannot drift into a
+screenshot test.
+
 ### 2. Jobs 2 and 3 have never been *played*
 They're audited (`heistcheck` covers reachability/cover/patrols/lasers) but `heistplay`
 only drives job 1. Highest-value code task: make `heistplay` take a job argument
