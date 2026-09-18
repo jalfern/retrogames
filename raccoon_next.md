@@ -74,6 +74,16 @@ playtest report, not from taste.
 | chew times | vault 1.6 s, padlock 1.5 s (× `def.grab`) | the lock must give faster than the vault: inside the pound, the clock is the enemy | "a rescue is desperate, not a chore" (300 ms–4 s) |
 | level meshes | **48 of a pinned 50** | the padlock, the chain and the gate padlock cannot merge with the cage or the gate (they have to move) | "level geometry stays batched" — E1 (facades) must raise this pin on purpose |
 
+18. **"Five metres due west" is a formula, not a sightline.** The point-blank stage put its
+    guard at `me.x - 5` and asked whether the meter moved. On the runner that was inside a wall,
+    `losWorld` said no for six straight seconds, and the suite filed `meter reached 0` as
+    "detection broken at 4 fps" — while the laptop, whose earlier sections leave the crew
+    standing somewhere else at 60 fps, was green. It now tries eight directions and three
+    ranges and keeps the first placement the GAME calls clean (`los && inCone && inRange`); if
+    all 24 fail it says so with a reason per placement. **Ask the sim where a watcher can see;
+    never compute it and hope.** Same lesson as the camo cone and the verb ray: a fact the
+    engine can be asked is a fact that must be asked.
+
 ## Traps that have already bitten
 
 1. **Cell space vs metres.** `losWorld`/`castWorld` take metres and walk a cell-indexed
