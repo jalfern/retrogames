@@ -4,7 +4,7 @@
 // does not need `npm run dev`: the Z-machine is a portable interpreter, so the
 // real story file can be booted in Node and driven move by move in milliseconds.
 // That makes it the cheapest AI regression gate we will ever have — and the only
-// one where the agent is byte-for-byte reproducible (see AI-PLAN.md §6.5, where
+// one where the agent is byte-for-byte reproducible (see docs/archive/qwen-run-2026-09/AI-PLAN.md §6.5, where
 // King's Quest needs 10 paired trials because DOSBox is not deterministic).
 //
 // It gates the two seams the Zork AI is built on, not the AI's cleverness:

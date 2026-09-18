@@ -181,7 +181,7 @@ move as objects.
 Budget, pinned by `heistplay`: level ≤ 50 meshes, whole scene ≤ 280 draw calls. The level
 runs at 48 after the pound's padlock, the gate's chain and its padlock (five meshes, and
 the padlock cannot merge with the cage bars — it has to shake and fall off). That budget is
-nearly spent, so the facade work in `FEEDBACK.md` (E1) has to come with a deliberate
+nearly spent, so the facade work in `docs/archive/qwen-run-2026-09/FEEDBACK.md` (E1) has to come with a deliberate
 raising of the pin, not an accidental overshoot.
 
 ## Controls

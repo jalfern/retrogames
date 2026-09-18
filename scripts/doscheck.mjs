@@ -1,6 +1,6 @@
 // doscheck — the seams every DOS title depends on, asserted instead of assumed.
 //
-// Stage 0 of AI-PLAN.md was supposed to be "purge the dead AI, add hooks". It
+// Stage 0 of docs/archive/qwen-run-2026-09/AI-PLAN.md was supposed to be "purge the dead AI, add hooks". It
 // found four live bugs instead, all invisible because no check in this repo had
 // ever opened a DOS title:
 //

@@ -2,6 +2,19 @@
 
 Guidance for working in this repo (and, by extension, shipping to jalfern.com).
 
+## Rules for unattended runs (read first)
+
+1. Read `STATE.md` first. At the end of a session, **rewrite** it (don't append), under 150 lines.
+2. Work on the one goal in `STATE.md`. If there is none, ask; don't invent one.
+3. Only the CI `static` job blocks merges. Browser suites (`heistplay`, `verify`, …) are
+   advisory: never spend more than one PR fixing a harness timing problem.
+4. If 3 PRs in a row don't change game code (`src/games/**`), stop and report to Jon.
+5. Never merge a PR whose own description says it is red or WIP.
+6. Don't grow the harness past the code it tests. Prefer a new small check to a longer script.
+7. Every ~4 hours, stop with: what's playable now, what changed, three questions for Jon.
+
+History: `docs/qwen-run-2026-09-postmortem.md` explains why these rules exist.
+
 ## What this is
 The **arcade** app — a collection of browser-playable retro games (React + Vite).
 It is one half of a two-repo site:
@@ -47,9 +60,6 @@ npm run aicheck    # src/ai spine contract (watchdog / rejections / honest arms)
 npm run zorkcheck  # Zork in **Node**: sensor seams, then the real agent's invariants (no Chrome)
 npm run zorkuicheck  # the ▶ AI button in a browser: click, it plays; one key, you win
 npm run doscheck   # DOS/IF seams in Chrome: js-dos boots in dev, keys captured, framebuffer readable
-npm run lint:ai    # eslint scoped to src/ai + Zork + King's Quest + shared utils + scripts — a CI gate
-npm run zorkcheck  # Zork: bot/agent play-through in **Node** — no Chrome, no dev server
-npm run doscheck   # DOS/IF seams in Chrome: js-dos loads in dev, keys captured, framebuffer readable
 npm run prodsmoke    # builds + serves the PRODUCTION bundle and drives it (no DEV hooks exist there)
 ```
 
@@ -99,7 +109,7 @@ Types `DEBUG` then `F7`/`F9`). All of `api/*.js` is deleted. Any brain in this r
 tab, locally, from on-site code**; if a server-side brain ever comes back it lives in a cloneable
 repo and its URL is an env var, never a hardcoded IP.
 
-The spine (reasoning and the staged plan in `AI-PLAN.md`):
+The spine (reasoning and the staged plan in `docs/archive/qwen-run-2026-09/AI-PLAN.md`):
 
 - `src/ai/percept.js` — the one interface between sensors and brains: a `Percept` with a
   **per-field confidence**. Brains never touch canvas / heap / DOM / transcript directly, and no
@@ -321,7 +331,7 @@ open https://jalfern.com/retrogames/<game>
   makes a shrunken `RADIUS`, which moves no other number, loud), and **anything that moves asks
   `blocked()`**: `updateWatchers` wrote `w.x += ...` straight, so guards walked through lampposts,
   hydrants and bins in all three jobs while the *direct chase* branch — the only one six rounds of
-  testing ever exercised — did ask. See `FEEDBACK.md`.
+  testing ever exercised — did ask. See `docs/archive/qwen-run-2026-09/FEEDBACK.md`.
 - **One driver per loop.** `startAi` (Zork) ran `while (running) await loop.tick()` *and*
   `loop.start()`, so two `tick()` chains raced, two `agentSend`s fought over the one pending
   prompt, a `resume()` reached a machine that was not asking, and the interpreter waited forever
