@@ -9,7 +9,9 @@ Guidance for working in this repo (and, by extension, shipping to jalfern.com).
 3. Only the CI `static` job blocks merges. Browser suites (`heistplay`, `verify`, …) are
    advisory: never spend more than one PR fixing a harness timing problem.
 4. If 3 PRs in a row don't change game code (`src/games/**`), stop and report to Jon.
-5. Never merge a PR whose own description says it is red or WIP.
+5. Never merge a PR whose own description says it is red or WIP. From the PR's branch, merge
+   **only** with this command, never any other way:
+   `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
 6. Don't grow the harness past the code it tests. Prefer a new small check to a longer script.
 7. Every ~4 hours, stop with: what's playable now, what changed, three questions for Jon.
 
