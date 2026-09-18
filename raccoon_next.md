@@ -293,7 +293,29 @@ registers as "go" or as noise.
     the stopwatch** — the ramp it was measuring no longer exists — under a claim that says
     `one animal was measured, not two`. **Two subjects averaged is not a measurement.**
 
-### 1c. **Before blaming patrol AI for a guard that will not walk, ask if the job is running.**
+### 1c. **A cell scored at the nose of a cone is behind the guard within a frame or two.** The
+    hunt parks the courier in a torch beam, then times the meter. The guard walks 3 m/s, so at
+    CI's frame rate each frame is half a metre of guard: the cell the hunt had just scored
+    `rate 1.31` stops being in the cone almost immediately and the meter reads `0.00 > 0.00 >
+    0.00` for a torch that was lit for one instant. At 60 fps the same guard advances 5 cm a
+    frame, the cell stays warm, and every laptop on earth is green. Two sessions of "CI red,
+    local green" were this, and no amount of staring at the stealth model would have said so —
+    the check that did it asks the game, every poll, *is she still seen*:
+
+    ```
+    ..    beam   lit on 3/4 polls (75%); walked back into an arc 0 time(s)
+    PASS  the courier was actually in a beam while it was being timed
+    ```
+
+    Below half-lit, the beam checks stop being verdicts: the number underneath is measuring a
+    raccoon standing in a garden nobody was watching. Two nearby fiddly truths: the span must be
+    measured on the **job clock** (polls × 0.1 s under-counts by a frame, and the loop exits on
+    the first poll past the threshold, so "0.1 s of admitted sight" was really 0.4 s of warm
+    beam), and the same trick is used point-blank, where an ALERT guard walks his own mind and
+    has to be re-aimed — printed as `re-aim(s)`, because stage direction must never be
+    mistaken for a result.
+
+### 1d. **Before blaming patrol AI for a guard that will not walk, ask if the job is running.**
     CI filed `patrols actually walk (guard:0m guard:0m)` — both guards, zero metres, damning —
     and the section had no way to tell three different bugs apart: a **paused or busted job**
     (which stops `updateWatchers` dead, so *nothing* can move), a watcher with **no route** (a

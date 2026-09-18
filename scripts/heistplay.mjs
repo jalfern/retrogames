@@ -1196,6 +1196,7 @@ const seen = await api(async () => {
     // no longer exists. How often that happened is reported, never absorbed.
     const subject = t.state().sim.crew.find(c => c.active) || t.state().sim.crew[0]
     let repins = 0
+    let reparked = 0, litBy = 0, pollsBy = 0
     for (let i = 0; i < 48; i++) {
         await window.__simSleep(0.05)
         const who = t.state().sim.crew.find(c => c.active)
@@ -1220,6 +1221,25 @@ const seen = await api(async () => {
         // loop's own sleeps undercounts by exactly the re-hunt, which is what made the
         // first version of this ratio report 3.88x on a perfectly healthy build.
         stood = Math.max(stood, t.engine().st.elapsed - tSpot)
+        // **A cell chosen at the start of a beam is behind the guard two frames later.** He
+        // walks ~3 m/s, so at CI's frame rate each frame is 0.4-0.6 m of guard: the cell the
+        // hunt scored `rate 1.31` stops being inside the cone almost immediately, and the meter
+        // reports `0.00 > 0.00 > 0.00` for a torch that was only ever lit for an instant. At 60
+        // fps the guard advances 5 cm a frame and the same cell stays warm, which is the entire
+        // difference between "local green / CI red" that was chased here for two sessions. So:
+        // ask every poll whether the game still sees the subject, and if not, walk her back into
+        // the arc — and print how often that had to happen. This is stage direction, not a
+        // result; the result is the meter's rate while the beam is honestly on her.
+        let q3 = (t.why() || []).find(x => x.d < 9 && x.los && x.inCone && x.inRange)
+        if (!q3) {
+            for (const off of [0, 0.6, -0.6, 1.2, -1.2]) {
+                t.moveTo(spot.x + off, spot.z + off * 0.5)
+                q3 = (t.why() || []).find(x => x.d < 9 && x.los && x.inCone && x.inRange)
+                if (q3) { reparked++; spot.x = +spot.x.toFixed(2); break }
+            }
+        }
+        if (q3) litBy++
+        pollsBy++
         const s = t.probe()
         samples.push(+s.det.toFixed(2))
         peak = Math.max(peak, s.det)
@@ -1325,6 +1345,7 @@ const seen = await api(async () => {
     const eff = !spot ? 1 : (want > 0.05 ? (alerted ? 1 : peak) / want : 1)
     return { spot, samples, peak: +peak.toFixed(2), why, caged: t.probe().caged, heat: st.heat, penned: penned(),
         eff: +eff.toFixed(2), ramp, alerted, want: +want.toFixed(2), stood: +stood.toFixed(2), repins,
+        reparked, litBy, pollsBy, litFrac: pollsBy ? +(litBy / pollsBy).toFixed(2) : 0,
         offstage: keptSnap.length,
         busted: penned(), revived, spottedAt: spottedAt < 0 ? -1 : +spottedAt.toFixed(2),
         // What the box was doing DURING the hunt, not five seconds before it. A floor measured
@@ -1339,7 +1360,8 @@ const seen = await api(async () => {
 // One normaliser, so no early return inside that 400-line page function can hand a claim an
 // undefined to call `.toFixed()` on. Every path out of there now means the same thing:
 // "the experiment did not get to run", and the claims say so instead of throwing.
-for (const [k, v] of Object.entries({ spottedAt: -1, revived: 0, repins: 0, eff: 0, ramp: 0, want: 0, stood: 0,
+for (const [k, v] of Object.entries({ spottedAt: -1, revived: 0, repins: 0, reparked: 0, litBy: 0, pollsBy: 0, litFrac: 0,
+    eff: 0, ramp: 0, want: 0, stood: 0,
     alerted: false, samples: [], peak: 0, offstage: 0, busted: 0, fps: 0, why: [], penned: 0 })) {
     if (seen[k] === undefined) seen[k] = v
 }
@@ -1392,6 +1414,12 @@ claim('the meter fills at the rate the game says it should', (seen.eff ?? 1) > 0
         + (seen.alerted ? ` — and the BAGGING is the evidence: the meter is wiped the frame it fires, so the polled residue of ${seen.peak} is not the peak`
             : ` — polled peak ${seen.peak}, and it never bagged them`)
         + (seen.revived ? ` — after putting ${seen.revived} prisoner(s) back on their feet: a caged raccoon's meter is pinned at zero, so polling one proves nothing` : ''), 8)
+if (seen.pollsBy) console.log(`  ..    beam       lit on ${seen.litBy}/${seen.pollsBy} polls (${Math.round(seen.litFrac * 100)}%); walked back into an arc `
+    + `${seen.reparked} time(s) — a guard walks 3 m/s, so a cell scored at the nose of a cone is behind him within a frame or two at low fps`)
+claim('the courier was actually in a beam while it was being timed', (seen.litFrac ?? 0) > 0.5 || seen.alerted,
+    `the game said "I see you" on ${seen.litBy} of ${seen.pollsBy} polls, after ${seen.reparked} re-park(s) — below half and the number `
+    + `underneath is measuring a raccoon standing in a garden nobody was watching, not a torch noticing you `
+    + `meter, not a raccoon in a beam`, 12)
 claim('standing in a torch beam raises suspicion', (seen.peak || 0) > 0.15 || seen.alerted,
     `peak meter ${(seen.peak || 0).toFixed(2)}${seen.alerted
         // A poll after the alert reads zero BY DESIGN, so say so here rather than letting
@@ -1557,6 +1585,10 @@ const pointBlank = await api(async () => {
     // and only one of those is about the game. `lit` out of `polls` is the difference between
     // "the sim noticed you slowly" and "nobody was ever looking at you".
     let lit = 0, polls2 = 0, reaim = 0
+    // The wake time, measured on the job clock at the moment the meter first crosses the
+    // threshold. Everything about this section is a rate, and a rate needs the clock that the
+    // rate is defined against.
+    const tArm = t.engine().st.elapsed
     for (let i = 0; i < 60 && det < 0.15; i++) {
         await window.__simSleep(0.1)
         polls2++
@@ -1585,6 +1617,7 @@ const pointBlank = await api(async () => {
     return {
         det: +det.toFixed(2), took: +took.toFixed(2), gotCaged, parked: parked.length, tries,
         lit, polls: polls2, reaim, rate: placedRate,
+        wake: +(det >= 0.15 ? t.engine().st.elapsed - tArm : -1).toFixed(3),
         litSecs: +(lit * 0.1).toFixed(2),
         open: venue.open, venue: [venue.x.toFixed(1), venue.z.toFixed(1)],
         at: [me.x.toFixed(1), me.z.toFixed(1)], cell: me.cell,
@@ -1619,13 +1652,19 @@ if (pointBlank) {
     // and `det` is what it paid. This replaces "took roughly a second", which silently assumed
     // the beam never moved — on a slow box the guard wanders, the lit window collapses, and a
     // timing red blames the stealth model for a stage that fell over.
-    claim('the meter integrates at the rate the torch advertises', pointBlank.litSecs > 0.2
-        && pointBlank.det / Math.max(0.01, pointBlank.rate * pointBlank.litSecs) > 0.45
-        && pointBlank.det / Math.max(0.01, pointBlank.rate * pointBlank.litSecs) < 2.4,
-        `${pointBlank.rate}/s over ${pointBlank.litSecs} s of admitted sight owes ${(pointBlank.rate * pointBlank.litSecs).toFixed(2)} of meter; it read ${pointBlank.det} `
-        + `(lit on ${pointBlank.lit}/${pointBlank.polls} polls, ${pointBlank.reaim} re-aim(s) needed to hold the beam on the subject)`, 8)
+    // The integral over the span the GAME says it was lit — job clock, start to wake — not a
+    // count of polls times 0.1 s. Polls were the first attempt and they under-count by a frame
+    // at least (a poll at 18 fps is 0.055 s of world, and the loop exits on the first poll that
+    // crosses 0.15, so "0.1 s of admitted sight" was really 0.4 s of a warm beam). Same claim,
+    // honest clock: what the rate owes across the window it was shown, versus what it paid.
+    claim('the meter integrates at the rate the torch advertises', pointBlank.wake > 0.02
+        && pointBlank.det / Math.max(0.01, pointBlank.rate * pointBlank.wake) > 0.45
+        && pointBlank.det / Math.max(0.01, pointBlank.rate * pointBlank.wake) < 2.4,
+        `${pointBlank.rate}/s over ${pointBlank.wake.toFixed(2)} s of job clock owes ${(pointBlank.rate * pointBlank.wake).toFixed(2)} of meter; it paid ${pointBlank.det} `
+        + `(lit on ${pointBlank.lit}/${pointBlank.polls} polls, ${pointBlank.reaim} re-aim(s) to hold the beam)`, 8)
     claim('the driver held a beam on the subject long enough to time anything', pointBlank.polls > 0 && pointBlank.lit / pointBlank.polls > 0.5,
-        `the game said "I see you" on ${pointBlank.lit} of ${pointBlank.polls} polls (${pointBlank.reaim} re-aim(s)) — below half, the stage collapsed and no timing claim below means anything`, 8)
+        `the game said "I see you" on ${pointBlank.lit} of ${pointBlank.polls} polls, after ${pointBlank.reaim} re-aim(s) to hold the beam `
+        + `on the subject — below half and nothing under this line is a measurement of anything`, 8)
     claim('and it happened inside a second of admitted sight', pointBlank.litSecs > 0.05 && pointBlank.litSecs < 1.6,
         `${pointBlank.litSecs} s in the lit window before the meter woke (rate ${pointBlank.rate}/s, ${pointBlank.reaim} re-aim(s)) — a wall-clock `
         + `second here would measure the runner, so this is counted only in polls the game called lit`, 8)
