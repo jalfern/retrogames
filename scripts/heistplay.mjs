@@ -471,7 +471,13 @@ r.check('the rig never jams against the raccoon', F.every(f => f.dist > 0.55), `
 // The max, not the min: while the raccoon is *still pressing* into the wall the rig is
 // legitimately confined, so the promise is that it opens up as soon as there is room --
 // 2.1 m on the frame where the slide had finished and the bearing was open.
-claim('the rig opens up as soon as there is room', Math.max(...SETTLED.map(f => f.dist)) > 1.8, `best settled gap ${Math.max(...SETTLED.map(f => f.dist)).toFixed(2)} m`)
+// Floor 20, not 4: this measures a slide *settling*, and the door's easing advances once per
+// frame, so the number of frames in the sample window is the door travel. At 7 fps six polls
+// is half a second of game time and the panel has physically not got there yet — a claim about
+// the refresh rate, exactly the trap this file keeps re-learning. At any rate a real phone
+// holds (20+) it is a hard assertion, and `rigPoly().min >= 1.75` above still catches a door
+// whose geometry is carved too narrow at any frame rate.
+claim('the rig opens up as soon as there is room', Math.max(...SETTLED.map(f => f.dist)) > 1.8, `best settled gap ${Math.max(...SETTLED.map(f => f.dist)).toFixed(2)} m`, 20)
 r.check('the raccoon stays in frame while pressed against a wall', F.every(f => Math.abs(f.ndc[0]) < 0.9 && Math.abs(f.ndc[1]) < 0.9), JSON.stringify(F[F.length - 1].ndc))
 r.check('the rig slides around the corner instead of clipping', F.some(f => Math.abs(f.side) > 0.04), `max slide ${Math.max(...F.map(f => Math.abs(f.side))).toFixed(2)} rad`)
 r.check('and it stays on walkable ground', F.every(f => ['FLOOR', 'MARBLE', 'WATER', 'BUSH'].includes(f.cell)), F[F.length - 1].cell)
@@ -1278,21 +1284,29 @@ const pointBlank = await api(async () => {
     t.calm()
     t.switchTo(free.idx)
     const me = t.probe()
-    // Park everybody else, and snapshot the one we move.
-    const parked = []
-    let wi = -1, snap = null, w = null
-    for (let i = 0; i < t.watchers().length; i++) {
-        if (i === wi) continue
-        if (!parked.length && i === 0 && !snap) { /* first index handled below */ }
-        const s2 = t.watcherAt(i)
-        const k = t.warpWatcher(i, me.x - 5.0, me.z - 26, 'patrol')
-        if (k) parked.push({ i, snap: s2 })
+    // Pick the torch FIRST, then park everybody else. The first version parked in one loop
+    // and chose in a second loop that skipped the parked indices — so it parked every
+    // watcher, found nobody left to stand five metres away, returned null, and the three
+    // checks underneath quietly never ran, on any machine. The `api()` bridge resolves to
+    // nothing when the page function bails, so an `if (result)` block around checks is how a
+    // test disappears while the suite stays green; that is why the claim below is unconditional.
+    const n = t.watchers().length
+    let wi = -1
+    for (let i = 0; i < n; i++) {
+        const x = t.watchers()[i]
+        if (x.kind === 'guard') { wi = i; break }
     }
-    for (let i = 0; i < t.watchers().length; i++) {
-        if (parked.some(q => q.i === i)) continue
-        snap = t.watcherAt(i)
-        const k = t.warpWatcher(i, me.x - 5.0, me.z, 'alert')
-        if (k) { w = k; wi = i; break }
+    if (wi < 0 && n) wi = 0
+    const snap = wi >= 0 ? t.watcherAt(wi) : null
+    const w = wi >= 0 ? t.warpWatcher(wi, me.x - 5.0, me.z, 'alert') : null
+    const parked = []
+    for (let i = 0; i < n; i++) {
+        if (i === wi) continue
+        const s2 = t.watcherAt(i)
+        const far = t.watchers()[i]
+        // Off the map AND off duty: a parked-but-patrolling watcher paths home mid-section.
+        if (t.parkWatcher(i, far.x, far.z - 20)) parked.push({ i, snap: s2 })
+        else if (t.warpWatcher(i, far.x, far.z - 20, 'patrol')) parked.push({ i, snap: s2 })
     }
     const putBack = () => {
         if (wi >= 0 && snap) t.restoreWatcher(wi, snap)
@@ -1323,6 +1337,13 @@ const pointBlank = await api(async () => {
         alert: t.watchers().filter(x => x.state === 'alert').length,
     }
 })
+// Loud, on purpose. `api()` resolves to nothing when the page function throws, so a check
+// written as `if (result) { ... }` can disappear from the report entirely — green, and nobody
+// looked. That is the same shape as the empty-pound bug this file already documents, in a new
+// costume: a check that silently stops running.
+claim('the point-blank stage could be set at all', !!pointBlank,
+    'no free crew to stand, or every warp refused — the three checks that would have run here '
+    + 'are about a torch noticing you, and their absence is not evidence of anything', 8)
 if (pointBlank) {
     claim('an alert guard five metres away starts to notice', pointBlank.det >= 0.15,
         `meter reached ${pointBlank.det} in ${pointBlank.took} s of game time at 5 m on ${pointBlank.cell} `
