@@ -29,7 +29,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import PauseOverlay from '../../components/PauseOverlay'
 import { GAMES } from '../../config/games'
-import { LEVELS, T, at, cellOf } from './levels.js'
+import { LEVELS, T, at, cellOf, CELL } from './levels.js'
 import { PAL, disposables, makeNightEnv } from './art'
 import { makeAlley } from './alley'
 import { buildWorld } from './world.js'
@@ -651,6 +651,10 @@ const RaccoonHeistGame = () => {
             release: (i, x, z) => engine?.release(i, x, z) || null,
             calm: () => engine?.calmWatchers() ?? -1,
             navAt: (wx, wz) => engine?.cellNameAt(wx, wz) || '??',
+            // Grid geometry for the harnesses that plan (heistwin): size + origin + cell
+            // size, so a driver can build the same grid `navAt` names without guessing
+            // dimensions off the marker cloud.
+            dims: () => ({ w: level.w, h: level.h, ox: level.ox, oz: level.oz, cell: CELL }),
             setCam: (yaw, pitch, dist) => engine?.setCam(yaw, pitch, dist),
             why: () => (engine ? engine.why() : []),
             lootList: () => (engine ? engine.debugLoot() : []),
