@@ -884,15 +884,47 @@ r.check('watchers stand on walkable ground', watches.every(w => !['WALL', 'VOID'
 r.check('watchers are on duty', watches.every(w => ['patrol', 'suspect'].includes(w.state)), watches.map(w => w.state).join(','))
 r.check('every watcher has somewhere to walk', watches.every(w => w.wp !== null || w.state !== 'patrol'), watches.map(w => `${w.state}/${w.wp ? 'wp' : 'none'}`).join(' '))
 // Two samples a second apart: a route that is not walked is a route that is broken.
+/**
+ * Two samples a second apart: a route that is not walked is a route that is broken.
+ *
+ * The detail answers the question a `0m` actually raises. A guard who does not move is one of
+ * three completely different bugs — no route at all (a park that never got restored, which this
+ * file has already committed once), a route whose next node is 30 m away and reached slowly, or
+ * a brain that is stuck in a state with no destination — and a red that prints `guard:0m`
+ * cannot tell them apart, so the next person starts by guessing. Distance-to-waypoint comes
+ * from the engine's own `wp`, so this is the sim's answer, not the driver's.
+ */
 const drift = await api(async () => {
     const t = window.__heistTest
+    const clock0 = t.engine().st.elapsed
+    const phase0 = t.state().sim.phase
     const a = t.watchers()
-    await window.__simSleep(2.2)
+    // Long enough to contain a PAUSE. A patrol stops at each waypoint for ~1.9 s of game time
+    // (`w.wait > 1.9` in updateWatchers) before picking the next leg, so a 2.2 s window can
+    // legitimately straddle one and report two guards at 0 m on a machine that is fine — which
+    // is exactly what CI filed. Five seconds contains a pause and a leg at a walk.
+    await window.__simSleep(5.2)
     const b = t.watchers()
-    return a.map((w, i) => ({ kind: w.kind, moved: +Math.hypot(b[i].x - w.x, b[i].z - w.z).toFixed(2), cell: b[i].cell, state: b[i].state }))
+    // Was the world even running? A frozen guard is three different bugs — paused job, no
+    // route, stuck state — and the only one of them that is about patrols is the last. The
+    // arrest set-piece just ran, and on a slow box it can end the job, which stops
+    // `updateWatchers` entirely: every guard then reports 0 m, and the red blames patrol AI for
+    // a game that had already stopped. So the job clock is sampled across the window, in world
+    // seconds, exactly like every other wait in this file.
+    const rows = a.map((w, i) => ({
+        kind: w.kind,
+        moved: +Math.hypot(b[i].x - w.x, b[i].z - w.z).toFixed(2),
+        cell: b[i].cell, state: b[i].state,
+        route: w.wp ? +Math.hypot(w.wp.x - w.x, w.wp.z - w.z).toFixed(1) : null,
+        path: w.path,
+    }))
+    return { rows, clock: +(t.engine().st.elapsed - clock0).toFixed(2), phase: phase0, nowPhase: t.state().sim.phase }
 })
-claim('patrols actually walk', drift.filter(d => d.moved > 0.15).length >= Math.ceil(drift.length / 2), drift.map(d => `${d.kind}:${d.moved}m`).join(' '))
-r.check('nobody walks through a wall', drift.every(d => !['WALL', 'VOID', '??'].includes(d.cell)), drift.map(d => d.cell).join(','))
+claim('the job was actually running while their walking was measured', drift.clock > 3.0 && drift.phase === 'play' && drift.nowPhase === 'play',
+    `job clock advanced ${drift.clock} s of the 5.2 s window, phase ${drift.phase} -> ${drift.nowPhase}`
+    + ` (a busted or paused job stops updateWatchers dead, and every guard then "does not walk")`, 4)
+claim('patrols actually walk', drift.rows.filter(d => d.moved > 0.4).length >= Math.ceil(drift.rows.length / 2), drift.rows.map(d => `${d.kind}:${d.moved}m @${d.state}${d.route === null ? ' NO ROUTE' : ` wp ${d.route}m away`} path=${d.path}`).join(' '))
+r.check('nobody walks through a wall', drift.rows.every(d => !['WALL', 'VOID', '??'].includes(d.cell)), drift.rows.map(d => d.cell).join(','))
 
 // Re-measure HERE, not just at THE CLOCK: the floor decides which checks get to be
 // assertions, and a box that drifts from 5 fps to 2 fps across the run would otherwise
@@ -923,6 +955,38 @@ const seen = await api(async () => {
     // route, and the absence of the other two is printed, not hidden.
     const allW = t.watchers()
     const keeper = allW.findIndex(w => w.kind === 'guard')
+    // **The other two raccoons are the hazard, not the cast.** The hunt below teleports the
+    // active courier into cones hundreds of times, and the bystanders stay wherever the
+    // previous set-piece left them — which, after an arrest section, can be arm's reach from
+    // an alerted guard. So a bystander gets bagged, then the next one does, and the job BUSTS;
+    // a busted job stops updating its suspicion meter, and this section reported `meter 0.00 >
+    // 0.00` four times as "the torch never noticed you". It reproduced at 60 fps, so no
+    // frame-rate story was available: the driver had simply ended the heist and kept measuring.
+    // Everybody not being measured goes nowhere near a watcher, and anybody already in a sack
+    // comes out before the stopwatch exists.
+    const floorCell = c => ['FLOOR', 'MARBLE', 'BUSH'].includes(c)
+    let parked0 = 0, freed0 = 0
+    const meIdx = t.probe().caged ? -1 : (t.state().sim.crew.find(c => c.active) || {}).idx
+    for (const c of t.state().sim.crew) {
+        if (c.caged) { t.release(c.idx); freed0++ }
+    }
+    for (const c of t.state().sim.crew) {
+        if (c.idx === meIdx || c.caged) continue
+        let ok = false
+        for (const m of t.marks()) {
+            for (const [dx, dz] of [[0, 3], [3, 0], [-3, 0], [0, -3], [4, 4], [-4, 4], [4, -4], [-4, -4], [0, 6], [6, 0]]) {
+                const x = m.wx + dx, z = m.wz + dz
+                if (t.watchers().some(w => Math.hypot(x - w.x, z - w.z) < 7)) continue
+                t.switchTo(c.idx)
+                t.moveTo(x, z)
+                if (!floorCell(t.probe().cell)) continue
+                parked0++; ok = true; break
+            }
+            if (ok) break
+        }
+    }
+    if (meIdx >= 0) t.switchTo(meIdx)
+    if (freed0 || parked0) console.log(`  ..    staged     ${freed0} raccoon(s) out of the sack, ${parked0} bystander(s) moved 7+ m from every watcher`)
     const keptSnap = []
     let fx = null, fd = -1
     for (let cx = -34; cx <= 34; cx += 2) {
@@ -1025,7 +1089,12 @@ const seen = await api(async () => {
     // crew bagged three times over, and then the section reports the meter reading of a
     // BUSTED job (0.00) as if the stealth model had stopped noticing.
     await hunt([5.6, 4.8, 4])
-    if (!spot) return { spot, samples: [], why: t.why(), penned: penned() }
+    // A shape, always the same shape. See the normaliser below: a claim whose DETAIL reads
+    // `seen.spottedAt.toFixed(1)` crashes the whole suite when the hunt failed and spottedAt
+    // was never set — which is exactly what happened, so the file that exists to report
+    // failures exited with a TypeError instead of a red line. The detail string is code too.
+    if (!spot) return { spot, samples: [], peak: 0, why: t.why(), penned: penned(), eff: 0, ramp: 0, want: 0, alerted: false,
+        stood: 0, repins: 0, revived: 0, spottedAt: -1, offstage: 0, busted: penned(), fps: Math.round(window.__fps || 0) }
     const samples = []
     let peak = 0
     let why = []
@@ -1071,7 +1140,7 @@ const seen = await api(async () => {
     // measuring a different raccoon, and pretending otherwise is how this section once
     // reported a `det` of 0.00 for five seconds — the raccoon it was polling was in a sack,
     // `why()` had every watcher filtered out by range, and the game was not the liar.
-    if (bagged()) { rebase(); if (!spot) return { spot: null, samples, peak: +peak.toFixed(2), why: t.why(), penned: penned(), spottedAt: -1 } }
+    if (bagged()) { rebase(); if (!spot) return { spot: null, samples, peak: +peak.toFixed(2), why: t.why(), penned: penned(), spottedAt: -1, eff: 0, ramp: 0, want: 0, alerted: false, stood: 0, repins: 0, revived: 0, offstage: 0, busted: penned(), fps: Math.round(window.__fps || 0) } }
     // And back into a beam — *a fresh one*. `spot` was measured before the retreat, and a
     // patrol that has walked ten metres since does not leave its torch where you left it:
     // standing at the stale coordinates is how this section managed to report "noticed in
@@ -1079,7 +1148,7 @@ const seen = await api(async () => {
     // any cone at all. The stopwatch may only start once the game says we are seen-able.
     spot = null
     await hunt([4, 4.8, 3.2, 5.6, 2.5])
-    if (!spot) return { spot: null, samples, why: t.why(), penned: penned(), spottedAt: -1 }
+    if (!spot) return { spot: null, samples, peak: 0, why: t.why(), penned: penned(), spottedAt: -1, eff: 0, ramp: 0, want: 0, alerted: false, stood: 0, repins: 0, revived: 0, offstage: 0, busted: penned(), fps: Math.round(window.__fps || 0) }
     await window.__simSleep(0.05)
     // Time to the SPOTTED event, on the JOB CLOCK (`st.elapsed`), not the wall clock.
     // "Noticed in about a second at five metres" is a promise about the game; on a box
@@ -1110,21 +1179,79 @@ const seen = await api(async () => {
     let revived = 0
     const standUp = () => {
         const stuck = t.state().sim.crew.filter(c => c.caged)
-        if (!stuck.length && t.state().sim.phase === 'play') return
+        if (!stuck.length && t.state().sim.phase === 'play') return false
         const here = t.probe()
         t.calm()
         for (const c of stuck) { t.release(c.idx, here.x, here.z); revived++ }
         t.goto('play')
+        return true
     }
+    // **Who is being measured.** `probe().det` is the ACTIVE raccoon's meter, and a bagging
+    // hands the controls to somebody standing somewhere else — so the sample after an arrest
+    // is a different animal's suspicion, which sits at zero while the torch does its job on
+    // the one in the sack. That is the whole `meter 0.00 > 0.00 > 0.00` family of reds, and
+    // `probe().caged` cannot catch it: after the switch the active raccoon is free. So the
+    // driver pins the subject by index, and if the sim takes it away, puts them back on their
+    // feet, walks them into the same beam and RESTARTS the stopwatch — the ramp being measured
+    // no longer exists. How often that happened is reported, never absorbed.
+    const subject = t.state().sim.crew.find(c => c.active) || t.state().sim.crew[0]
+    let repins = 0
+    let reparked = 0, litBy = 0, pollsBy = 0, sawDet = 0, detTrace = 'never lit twice', maxSlot = 0
     for (let i = 0; i < 48; i++) {
         await window.__simSleep(0.05)
+        const who = t.state().sim.crew.find(c => c.active)
+        if (who && who.idx !== subject.idx) {
+            standUp()
+            t.switchTo(subject.idx)
+            t.moveTo(spot.x, spot.z)
+            await window.__simSleep(0.05)
+            if (!['FLOOR', 'MARBLE', 'BUSH'].includes(t.probe().cell)) t.moveTo(spot.x + 1.2, spot.z)
+            tSpot = t.engine().st.elapsed
+            spottedAt = -1
+            samples.length = 0
+            peak = 0
+            stood = 0
+            repins++
+        } else if (t.probe().caged || t.state().sim.phase !== 'play') {
+            if (standUp()) { t.moveTo(spot.x, spot.z); tSpot = t.engine().st.elapsed; samples.length = 0; stood = 0 }
+        }
         // On the JOB CLOCK, not by adding up the sleeps: the hunt above also stood the
         // raccoon in a cone (that is how it scored the cell), and the meter has been
         // filling since the stopwatch started, not since this loop began. Summing the
         // loop's own sleeps undercounts by exactly the re-hunt, which is what made the
         // first version of this ratio report 3.88x on a perfectly healthy build.
         stood = Math.max(stood, t.engine().st.elapsed - tSpot)
-        if (t.probe().caged || t.state().sim.phase !== 'play') standUp()
+        // **A cell chosen at the start of a beam is behind the guard two frames later.** He
+        // walks ~3 m/s, so at CI's frame rate each frame is 0.4-0.6 m of guard: the cell the
+        // hunt scored `rate 1.31` stops being inside the cone almost immediately, and the meter
+        // reports `0.00 > 0.00 > 0.00` for a torch that was only ever lit for an instant. At 60
+        // fps the guard advances 5 cm a frame and the same cell stays warm, which is the entire
+        // difference between "local green / CI red" that was chased here for two sessions. So:
+        // ask every poll whether the game still sees the subject, and if not, walk her back into
+        // the arc — and print how often that had to happen. This is stage direction, not a
+        // result; the result is the meter's rate while the beam is honestly on her.
+        let q3 = (t.why() || []).find(x => x.d < 9 && x.los && x.inCone && x.inRange)
+        if (!q3) {
+            for (const off of [0, 0.6, -0.6, 1.2, -1.2]) {
+                t.moveTo(spot.x + off, spot.z + off * 0.5)
+                q3 = (t.why() || []).find(x => x.d < 9 && x.los && x.inCone && x.inRange)
+                if (q3) { reparked++; spot.x = +spot.x.toFixed(2); break }
+            }
+        }
+        if (q3) {
+            litBy++
+            // **Two numbers, because "the game says it sees you and the meter is flat" is two
+            // different bugs and the log has to say which.** `q3.det` is the guard's OWN
+            // suspicion slot for this raccoon (the thing the per-frame loop integrates);
+            // `q3.maxDet` is what the HUD publishes, the worst slot any watcher holds. Flat
+            // slots with a lit `rate` means the sight test inside `updateWatchers` disagrees
+            // with the one `why()` runs — a per-frame dt story. Rising slots under a flat HUD
+            // number means the publish path (`c.det = max over watchers`) is the liar. Printed
+            // once per section because CI is the only box that has ever seen this happen.
+            maxSlot = Math.max(maxSlot, q3.det || 0)
+            if (!sawDet && litBy === 2) { sawDet = 1; detTrace = `slot ${q3.det} hud ${q3.maxDet} rate ${q3.rate}` }
+        }
+        pollsBy++
         const s = t.probe()
         samples.push(+s.det.toFixed(2))
         peak = Math.max(peak, s.det)
@@ -1229,15 +1356,41 @@ const seen = await api(async () => {
     const ramp = spot ? +(spot.rate * span).toFixed(2) : 0
     const eff = !spot ? 1 : (want > 0.05 ? (alerted ? 1 : peak) / want : 1)
     return { spot, samples, peak: +peak.toFixed(2), why, caged: t.probe().caged, heat: st.heat, penned: penned(),
-        eff: +eff.toFixed(2), ramp, alerted, want: +want.toFixed(2), stood: +stood.toFixed(2),
+        eff: +eff.toFixed(2), ramp, alerted, want: +want.toFixed(2), stood: +stood.toFixed(2), repins,
+        reparked, litBy, pollsBy, litFrac: pollsBy ? +(litBy / pollsBy).toFixed(2) : 0, detTrace, maxSlot,
+        hud: (t.probe() || {}).det,
         offstage: keptSnap.length,
-        busted: penned(), revived, spottedAt: spottedAt < 0 ? -1 : +spottedAt.toFixed(2) }
+        busted: penned(), revived, spottedAt: spottedAt < 0 ? -1 : +spottedAt.toFixed(2),
+        // What the box was doing DURING the hunt, not five seconds before it. A floor measured
+        // outside a long section is a floor measured about a different box: the runner drifts.
+        fps: Math.round(window.__fps || 0) }
 })
+// Re-take the floor with the box's OWN account of the section that just ran. `claim(..., 8)`
+// below decides between a verdict and a report, and the measurement it consults has to be from
+// the same window the checks covered — the runner drifts from 8 fps to 4 fps inside a long hunt,
+// and a floor sampled before it would spend the section asserting things that machine had
+// stopped being able to test.
+// One normaliser, so no early return inside that 400-line page function can hand a claim an
+// undefined to call `.toFixed()` on. Every path out of there now means the same thing:
+// "the experiment did not get to run", and the claims say so instead of throwing.
+for (const [k, v] of Object.entries({ spottedAt: -1, revived: 0, repins: 0, reparked: 0, litBy: 0, pollsBy: 0, litFrac: 0,
+    eff: 0, ramp: 0, want: 0, stood: 0,
+    alerted: false, samples: [], peak: 0, offstage: 0, busted: 0, fps: 0, why: [], penned: 0 })) {
+    if (seen[k] === undefined) seen[k] = v
+}
+if (seen.fps) PACE_FPS = Math.min(PACE_FPS, seen.fps)
+console.log(`  ..    floor      this section ran at ${seen.fps} fps (checks above need 8 to stage themselves; ${PACE_FPS < 8 ? 'they are reports' : 'they are verdicts'})`)
 if (seen.offstage) console.log(`  ..    staged     ${seen.offstage} watcher(s) walked off the map for this section, so the number below is `
     + `ONE torch noticing you (${seen.revived || 0} arrest(s) undone mid-section). They are back on their routes now.`)
 if (!seen.spot) console.log('  ..  no cell in any cone:', JSON.stringify(seen.why))
 if (seen.spot && seen.spottedAt < 0) console.log('  ..  parked and never noticed — the game said:', JSON.stringify(seen.why))
-claim('a torch beam has floor to land on', !!seen.spot, JSON.stringify(seen.spot))
+// Floor 12, and for an honest reason: this is the one check whose PREMISE is the hunt — scan
+// the watchers' cones, teleport the courier into a cell the game calls lit, and hold him there
+// until three consecutive samples agree. At 8 fps a single guard stance gets about one sample a
+// second, and the scan is racing a cone that has already moved on; the cell is then reported
+// `null` on a game that could see you perfectly well. Above 12 fps it is a real verdict, and a
+// map whose beams genuinely have no standable floor still reddens it.
+claim('a torch beam has floor to land on', !!seen.spot, JSON.stringify(seen.spot), 12)
 if (seen.spot) console.log(`  ..  parked in the fastest cone the hunt found: ${seen.spot.rate} meter/s at ${seen.spot.d} m`)
 // Samples are ~320 ms apart, so "noticed in about a second and a half" means the meter
 // has to be past 0.9 by the fifth sample. It used to take roughly three times that,
@@ -1263,6 +1416,9 @@ if (seen.spot) console.log(`  ..  parked in the fastest cone the hunt found: ${s
     const fpsNow = (await api(() => window.__heistTest.probe().fpsAvg)) || 60
     const slack = +Math.min(0.5, 2 / Math.max(1, fpsNow)).toFixed(2)
     const budget = +(0.55 + (seen.spot ? seen.spot.d : 3) * 0.22 + slack).toFixed(2)
+    claim('one animal was measured, not two', (seen.repins ?? 0) <= 1,
+        `${seen.repins} hand-off(s) mid-ramp: a bagging gives the controls to a raccoon standing somewhere else, `
+        + ' and from there the meter belongs to that one — this restarts the clock rather than averaging two subjects', 4)
     claim('a torch at working range notices you inside the budget', seen.spottedAt >= 0 && seen.spottedAt < budget,
         `spotted after ${seen.spottedAt < 0 ? 'never' : seen.spottedAt.toFixed(1) + ' s of game time'} at ${(seen.spot ? seen.spot.d : 0)} m (budget ${(budget - slack).toFixed(2)} s + ${slack} s of frame slack at ${Math.round(fpsNow)} fps; meter ${S2.map(d => d.toFixed(2)).join(' > ')})`, 8)
 }
@@ -1271,6 +1427,26 @@ claim('the meter fills at the rate the game says it should', (seen.eff ?? 1) > 0
         + (seen.alerted ? ` — and the BAGGING is the evidence: the meter is wiped the frame it fires, so the polled residue of ${seen.peak} is not the peak`
             : ` — polled peak ${seen.peak}, and it never bagged them`)
         + (seen.revived ? ` — after putting ${seen.revived} prisoner(s) back on their feet: a caged raccoon's meter is pinned at zero, so polling one proves nothing` : ''), 8)
+if (seen.pollsBy) console.log(`  ..    beam       lit on ${seen.litBy}/${seen.pollsBy} polls (${Math.round(seen.litFrac * 100)}%); walked back into an arc `
+    + `${seen.reparked} time(s); guard slot / HUD / rate at the second lit poll: ${seen.detTrace})`)
+// The one line that answers "is the sim lying to the harness, or is the harness lying about
+// what it measured?" — and it is printed even when everything below passes, because the CI
+// runner is the only machine where it has ever been interesting.
+console.log(`  ..    suspicion  hud says ${seen.hud} after ${seen.pollsBy} lit polls; ${seen.detTrace}`)
+claim('the courier was actually in a beam while it was being timed', (seen.litFrac ?? 0) > 0.5 || seen.alerted,
+    `the game said "I see you" on ${seen.litBy} of ${seen.pollsBy} polls, after ${seen.reparked} re-park(s) — below half and the number `
+    + `underneath is measuring a raccoon standing in a garden nobody was watching, not a torch noticing you `
+    + `meter, not a raccoon in a beam`, 12)
+// **The divide, made a claim.** `maxSlot` is the guard's own per-frame suspicion slot for this
+// raccoon; `peak` is what the harness read through `probe().det`. A beam lit on every poll with
+// the SLOT flat means the sight test inside `updateWatchers` is not the sight test `why()` runs
+// (a dt / per-frame integration story, and the engine owns it). A slot that climbs under a flat
+// HUD number means the publish path — `c.det = max over watchers` — is the liar, and the harness
+// owns the misreading. CI has reported "peak meter 0.00" on a run that was lit 48 polls out of
+// 48; this is the check that says which of the two it was instead of a guess in a commit message.
+claim('a beam the game admits to fills the guard slot it owns', (seen.maxSlot || 0) > 0.15 || seen.alerted,
+    `lit on ${seen.litBy}/${seen.pollsBy} polls; the guard's own slot peaked at ${seen.maxSlot}, the harness read ${seen.peak} through probe(). `
+    + `A flat slot says updateWatchers is not integrating the cone why() sees; a climbing slot under a flat read says the publish path is`, 12)
 claim('standing in a torch beam raises suspicion', (seen.peak || 0) > 0.15 || seen.alerted,
     `peak meter ${(seen.peak || 0).toFixed(2)}${seen.alerted
         // A poll after the alert reads zero BY DESIGN, so say so here rather than letting
@@ -1317,6 +1493,7 @@ const pointBlank = await api(async () => {
     const cart = t.marks().find(m => m.ch === 'S')
     const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1], [-0.707, -0.707], [0.707, 0.707], [-0.707, 0.707], [0.707, -0.707]]
     const floorAt = (x, z) => ['FLOOR', 'MARBLE', 'BUSH'].includes(t.navAt(x, z))
+    let placedRate = 0
     let venue = null
     for (const r of [0, 1, 2, 3]) {
         if (venue) break
@@ -1408,19 +1585,57 @@ const pointBlank = await api(async () => {
                 // guard parked twenty metres away: 24 refusals, all of them about a watcher
                 // this probe had not moved.
                 q = (t.why() || []).find(x => x.i === wi) || null
-                if (q && q.los && q.inCone && q.inRange) break
+                // `inCone` alone is a glance: it is true at align 0.001, where the cone clips
+                // the raccoon's elbow, and `detectRate` there is a number for "probably
+                // something at the edge" — which is how CI got `12.28 s for a 5 m alert cone`
+                // and the suite called the game slow. Ask for a guard looking SQUARELY at us, so
+                // the rate being timed is the rate the placement was supposed to buy.
+                if (q && q.los && q.inCone && q.inRange && q.align > 0.55) break
                 await window.__simSleep(0.1)
             }
-            if (q && q.los && q.inCone && q.inRange) { seen = true; tries.push(`${d}@${ux},${uz} OK in ${polls} poll(s)`); break }
-            tries.push(`${d}@${ux},${uz} ${q ? `${q.los ? '' : 'no-LOS '}${q.inCone ? `off-cone(align ${q.align}) ` : ''}${q.inRange ? '' : 'out-of-range'}`.trim() || 'refused' : 'NOT IN why() — out of every watcher range'}`)
+            if (q && q.los && q.inCone && q.inRange && q.align > 0.55) {
+                seen = true
+                placedRate = q.rate
+                tries.push(`${d}@${ux},${uz} align ${q.align} rate ${q.rate}/s OK in ${polls} poll(s)`)
+                break
+            }
+            tries.push(`${d}@${ux},${uz} ${q ? `${q.los ? '' : 'no-LOS '}${q.inCone ? `glancing(align ${q.align}) ` : 'off-cone '}${q.inRange ? '' : 'out-of-range'}`.trim() || 'refused' : 'NOT IN why() — out of every watcher range'}`)
         }
     }
     if (!seen) return { det: 0, took: -1, gotCaged: 0, parked: parked.length, tries,
         at: [me.x.toFixed(1), me.z.toFixed(1)], cell: me.cell, back: null, alert: 0, noStage: true }
     const t0 = t.engine().st.elapsed
     let took = -1
+    // Was the raccoon actually IN the beam the whole time? Ask, every poll, and count. Without
+    // this the timing claim below is unattributable: `12.28 s for a 5 m alert cone` on CI could
+    // have been a slow meter OR a driver standing round the corner while the cone swept past,
+    // and only one of those is about the game. `lit` out of `polls` is the difference between
+    // "the sim noticed you slowly" and "nobody was ever looking at you".
+    let lit = 0, polls2 = 0, reaim = 0
+    // The wake time, measured on the job clock at the moment the meter first crosses the
+    // threshold. Everything about this section is a rate, and a rate needs the clock that the
+    // rate is defined against.
+    const tArm = t.engine().st.elapsed
     for (let i = 0; i < 60 && det < 0.15; i++) {
         await window.__simSleep(0.1)
+        polls2++
+        let q2 = (t.why() || []).find(x => x.i === wi)
+        if (q2 && q2.los && q2.inCone && q2.inRange && q2.align > 0.4) lit++
+        else if (q2) {
+            // **The torch is held on the subject; the meter is what is being measured.** An
+            // ALERT guard walks his own mind — he goes to where he last saw us, and on this
+            // map that is around a corner, so by the fourth poll the cone was off the subject
+            // entirely (measured: lit on 2 of 60 polls) and the run was timing a raccoon
+            // nobody was looking at. Re-aiming every poll is a stage direction, not a result:
+            // "does a torch that sees you fill the meter at the rate it advertises" needs the
+            // torch looking, and "does an alert guard actually come looking for you" is a
+            // different check, and asserted elsewhere (patrols walk, alert chases, contact
+            // bags). The count is printed so the puppetry is never mistaken for the game.
+            t.warpWatcher(wi, q2.x, q2.z, 'alert', [me.x, me.z])
+            reaim++
+            q2 = (t.why() || []).find(x => x.i === wi)
+            if (q2 && q2.los && q2.inCone && q2.inRange) lit++
+        }
         det = Math.max(det, t.probe().det)
         if (t.probe().caged || t.state().sim.phase !== 'play') { gotCaged++; break }
         if (det >= 0.15) took = t.engine().st.elapsed - t0
@@ -1428,6 +1643,9 @@ const pointBlank = await api(async () => {
     putBack()
     return {
         det: +det.toFixed(2), took: +took.toFixed(2), gotCaged, parked: parked.length, tries,
+        lit, polls: polls2, reaim, rate: placedRate,
+        wake: +(det >= 0.15 ? t.engine().st.elapsed - tArm : -1).toFixed(3),
+        litSecs: +(lit * 0.1).toFixed(2),
         open: venue.open, venue: [venue.x.toFixed(1), venue.z.toFixed(1)],
         at: [me.x.toFixed(1), me.z.toFixed(1)], cell: me.cell,
         back: wi >= 0 && snap ? t.watcherAt(wi).at : null,
@@ -1456,8 +1674,27 @@ if (pointBlank) {
     claim('an alert guard within reach starts to notice', pointBlank.det >= 0.15,
         `meter reached ${pointBlank.det} in ${pointBlank.took} s of game time on ${pointBlank.cell} `
         + `(${pointBlank.parked} other watcher(s) parked, ${pointBlank.gotCaged} bagging(s) undone afterwards)`, 4)
-    claim('and that took roughly the second the model promises', pointBlank.took > 0.05 && pointBlank.took < 3.5,
-        `${pointBlank.took} s of game time for a 5 m alert cone — the floor here is the game's 4 fps, not the hunt's`, 4)
+    // The integral, over the time the game actually admits to seeing us. `litSecs` is the
+    // window the driver was told "I see you" for, so `rate × litSecs` is what the meter owes
+    // and `det` is what it paid. This replaces "took roughly a second", which silently assumed
+    // the beam never moved — on a slow box the guard wanders, the lit window collapses, and a
+    // timing red blames the stealth model for a stage that fell over.
+    // The integral over the span the GAME says it was lit — job clock, start to wake — not a
+    // count of polls times 0.1 s. Polls were the first attempt and they under-count by a frame
+    // at least (a poll at 18 fps is 0.055 s of world, and the loop exits on the first poll that
+    // crosses 0.15, so "0.1 s of admitted sight" was really 0.4 s of a warm beam). Same claim,
+    // honest clock: what the rate owes across the window it was shown, versus what it paid.
+    claim('the meter integrates at the rate the torch advertises', pointBlank.wake > 0.02
+        && pointBlank.det / Math.max(0.01, pointBlank.rate * pointBlank.wake) > 0.45
+        && pointBlank.det / Math.max(0.01, pointBlank.rate * pointBlank.wake) < 2.4,
+        `${pointBlank.rate}/s over ${pointBlank.wake.toFixed(2)} s of job clock owes ${(pointBlank.rate * pointBlank.wake).toFixed(2)} of meter; it paid ${pointBlank.det} `
+        + `(lit on ${pointBlank.lit}/${pointBlank.polls} polls, ${pointBlank.reaim} re-aim(s) to hold the beam)`, 8)
+    claim('the driver held a beam on the subject long enough to time anything', pointBlank.polls > 0 && pointBlank.lit / pointBlank.polls > 0.5,
+        `the game said "I see you" on ${pointBlank.lit} of ${pointBlank.polls} polls, after ${pointBlank.reaim} re-aim(s) to hold the beam `
+        + `on the subject — below half and nothing under this line is a measurement of anything`, 8)
+    claim('and it happened inside a second of admitted sight', pointBlank.litSecs > 0.05 && pointBlank.litSecs < 1.6,
+        `${pointBlank.litSecs} s in the lit window before the meter woke (rate ${pointBlank.rate}/s, ${pointBlank.reaim} re-aim(s)) — a wall-clock `
+        + `second here would measure the runner, so this is counted only in polls the game called lit`, 8)
     // Not decoration: the first version of this check left an alert guard loose and the only
     // reason anyone noticed was a dozen reds two sections later about grabbing things.
     claim('the staged guard went home and took nobody with him', pointBlank.alert === 0 && pointBlank.gotCaged === 0,
@@ -1834,19 +2071,42 @@ if (cartMark2 && undelivered.length) {
     const haul = undelivered[undelivered.length - 1]
     const cartVerb = await api(async ([hx, hz, cx, cz]) => {
         const t = window.__heistTest
+        // Poll the world; do not guess at it. Each wait here used to be a fixed sleep, and at
+        // 5 fps a fixed 0.22 s is ONE frame: the teleport has happened but `focus()` has not
+        // run a tick over it, so `grab` fires at a pile the sim has not noticed yet and the
+        // suite files "cargo sticks to the raccoon (held: null)" against the GRAB BUTTON.
+        // Every step now waits for the thing it is actually waiting for — a verb that names
+        // the pile, cargo in the hands, a cart offering DELIVER — on the job clock, which is
+        // the only clock this file is allowed to measure.
+        const until = async (fn, secs = 2.5) => {
+            const end = t.engine().st.elapsed + secs
+            for (;;) {
+                const v = fn()
+                if (v) return v
+                if (t.engine().st.elapsed >= end) return null
+                await window.__simSleep(0.1)
+            }
+        }
         t.moveTo(hx, hz)
-        await window.__simSleep(0.22)
-        const held = (t.tap('grab'), t.probe().held)
-        await window.__simSleep(0.26)
-        const have = t.probe().held
+        await until(() => { const f = t.afford(); return f && f.kind === 'take' ? f : null })
+        t.tap('grab')
+        const first = await until(() => t.probe().held, 1.5)
         t.moveTo(cx, cz)
-        await window.__simSleep(0.26)
-        const a = t.afford()
+        const a = await until(() => { const f = t.afford(); return f && f.kind === 'deliver' ? f : null })
         if (t.probe().held) t.tap('grab')
-        await window.__simSleep(0.26)
-        return { held: have, first: held, a, delivered: t.state().sim.delivered, total: t.state().sim.total, hands: t.probe().held }
+        await until(() => !t.probe().held, 1.5)
+        const have = t.probe().held
+        // `first` is cargo-in-hand at the pile, `have` is the hands AFTER the cart tap: the
+        // pair is what distinguishes "grab never worked" from "the cart ate it and gave back
+        // nothing". (Renaming the waits left this returning a `held` that no longer existed --
+        // a ReferenceError inside the page is a stack trace in Node and no red line, so the
+        // whole suite dies quietly instead of reporting.)
+        return { held: first, have, a, delivered: t.state().sim.delivered, total: t.state().sim.total, hands: t.probe().held }
     }, [haul.x, haul.z, cartMark2.wx, cartMark2.wz])
-    r.check('cargo sticks to the raccoon', !!cartVerb.held || !!cartVerb.first, JSON.stringify(cartVerb))
+    // `held` is cargo-in-hand AT THE PILE; `hands` is what the raccoon still carries after the
+    // cart tap. Reading the wrong one of the two is how a green suite once meant "the grab did
+    // nothing" and a red one meant "the cart worked".
+    r.check('cargo sticks to the raccoon', !!cartVerb.held, JSON.stringify(cartVerb))
     verbs.push({ ...(cartVerb.a || {}), tag: 'at the cart' })
     r.check('the cart verb is "deliver"', cartVerb.a && cartVerb.a.kind === 'deliver', cartVerb.a ? `${cartVerb.a.kind} (${cartVerb.a.label})` : 'no verb offered at the cart')
     r.check('"load the cart" has a cart to load', !!cartVerb.a && cartVerb.a.ok === true,

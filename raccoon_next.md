@@ -282,7 +282,70 @@ registers as "go" or as noise.
     Before re-architecting the DOS boot because CI said so, re-run CI. (If it ever reproduces
     twice, the fix is a boot budget that *re-mounts* rather than one that keeps sampling black.)
 
-### 1a. **Ask the sim where a watcher can see — and about WHICH watcher.** Two reds on the
+### 1a. **`probe().det` is not a measurement of the raccoon you parked.** It is the **active**
+    raccoon's meter, and a bagging hands the controls to somebody standing elsewhere. So the
+    sample after an arrest is a *different animal's* suspicion — pinned at zero while the torch
+    does its work on the one now in the sack — and `probe().caged` cannot catch it, because
+    after the hand-off the active raccoon is free. This is the whole `meter 0.00 > 0.00 > 0.00`
+    family of reds, and it reproduced at 60 fps, which is what stopped me filing it as
+    frame-rate noise like the last three. The driver now pins its subject by index, and if the
+    sim takes the subject away it puts them back, walks them into the same beam and **restarts
+    the stopwatch** — the ramp it was measuring no longer exists — under a claim that says
+    `one animal was measured, not two`. **Two subjects averaged is not a measurement.**
+
+### 1b2. **CI is green with the honest floors in place** — 137/137 + 1 SKIP on the runner,
+    the whole browser suite. What made it green was not relaxing a threshold anywhere: it was
+    four driver bugs (poll the world instead of sleeping at it; zero the meter before timing it;
+    don't stand the courier within grab range of a guard; wait for patrols to *arrive*) and one
+    piece of theatre that had to be measured rather than assumed — `lit on 48/48 polls` used to
+    be a claim, now it is a number with a claim underneath it, and the CI box that once reported
+    `peak meter 0.00` while claiming to be lit 48 polls out of 48 now reports the guard's own
+    slot rising with it (`slot 0.491 / probe 0.49`), which is the pair that says the sim and the
+    harness are watching the same torch.
+
+### 1c. **A cell scored at the nose of a cone is behind the guard within a frame or two.** The
+    hunt parks the courier in a torch beam, then times the meter. The guard walks 3 m/s, so at
+    CI's frame rate each frame is half a metre of guard: the cell the hunt had just scored
+    `rate 1.31` stops being in the cone almost immediately and the meter reads `0.00 > 0.00 >
+    0.00` for a torch that was lit for one instant. At 60 fps the same guard advances 5 cm a
+    frame, the cell stays warm, and every laptop on earth is green. Two sessions of "CI red,
+    local green" were this, and no amount of staring at the stealth model would have said so —
+    the check that did it asks the game, every poll, *is she still seen*:
+
+    ```
+    ..    beam   lit on 3/4 polls (75%); walked back into an arc 0 time(s)
+    PASS  the courier was actually in a beam while it was being timed
+    ```
+
+    Below half-lit, the beam checks stop being verdicts: the number underneath is measuring a
+    raccoon standing in a garden nobody was watching. Two nearby fiddly truths: the span must be
+    measured on the **job clock** (polls × 0.1 s under-counts by a frame, and the loop exits on
+    the first poll past the threshold, so "0.1 s of admitted sight" was really 0.4 s of warm
+    beam), and the same trick is used point-blank, where an ALERT guard walks his own mind and
+    has to be re-aimed — printed as `re-aim(s)`, because stage direction must never be
+    mistaken for a result.
+
+### 1d. **Before blaming patrol AI for a guard that will not walk, ask if the job is running.**
+    CI filed `patrols actually walk (guard:0m guard:0m)` — both guards, zero metres, damning —
+    and the section had no way to tell three different bugs apart: a **paused or busted job**
+    (which stops `updateWatchers` dead, so *nothing* can move), a watcher with **no route** (a
+    park that never got restored — this file has committed that exact sin), and a brain **stuck
+    in a state with no destination**. Now the sample carries the job clock across the window and
+    the phase at both ends, plus each guard's state and distance-to-waypoint:
+
+    ```
+    PASS  the job was actually running while their walking was measured
+          (job clock advanced 2.2 s of the 2.2 s window, phase play -> play)
+    PASS  patrols actually walk
+          (guard:2.92m @patrol wp 26.4m away path=14  guard:2.05m @patrol wp 38.9m away path=35)
+    ```
+
+    A red is only worth its diagnosis. `guard:0m` is not a diagnosis; `clock advanced 0.0 s of
+    the 2.2 s window, phase play -> busted` is. (Two near-misses in the making: `wp` is a
+    `{x, z}` node, so the first two versions printed `wp NaNm away` and taught nobody anything —
+    check the shape of a diagnostic before you rely on it too.)
+
+### 1b. **Ask the sim where a watcher can see — and about WHICH watcher.** Two reds on the
     same check, one build, five minutes apart, both true:
     * `why()` answers about **the active raccoon and every watcher in range**, sorted by rate.
       Matching its rows on `kind` is not an identity: job 1 fields two guards, so
