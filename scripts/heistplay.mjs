@@ -1252,6 +1252,48 @@ claim('standing in a torch beam raises suspicion', (seen.peak || 0) > 0.15 || se
     // report about the DRIVER getting the crew caught, not about the stealth model.
     + (seen.busted ? ` — and the job BUSTED during the hunt (${seen.busted} in the pound): this line is about the driver, not the game` : ''), 8)
 r.info('the cost of standing in the light', `${seen.penned} in the pound by the end of this section — the driver steps out of the beam the moment one goes in, and never watches \`probe().caged\`, which resets when being caught hands you the next raccoon`)
+// **The one CI is allowed to answer.** Everything above this line needs a fair few frames
+// per second just to STAGE itself: the hunt has to catch three consecutive "I see you"
+// samples 80 ms apart before the stopwatch may start, and on the runner's 5 fps it could not,
+// so four checks there skipped — honest, but a suite that skips its way to green on the only
+// machine that keeps finding bugs is not much of a guard. So this one stages its premise with
+// a single warp instead of a hunt: put an ALERT guard three metres away, facing an uncaged
+// raccoon standing on floor with nothing in the way, and ask only whether the meter moves.
+// No sweep to catch, no cell to score, no frame-rate-dependent setup — and it still fails if
+// the sight test, the light term or the meter itself stops working.
+const pointBlank = await api(async () => {
+    const t = window.__heistTest
+    const free = t.state().sim.crew.find(c => !c.caged)
+    if (!free) return null
+    t.calm()
+    t.switchTo(free.idx)
+    const me = t.probe()
+    // A guard, in the open, looking straight at us. `warpWatcher` aims him by putting the
+    // actor on his nose rather than by trusting a yaw we would have to compute ourselves.
+    let w = null
+    for (let i = 0; i < t.watchers().length; i++) {
+        const k = t.warpWatcher(i, me.x - 3.0, me.z, 'alert')
+        if (k) { w = k; break }
+    }
+    if (!w) return null
+    let det = 0
+    const t0 = t.engine().st.elapsed
+    let took = -1
+    for (let i = 0; i < 60 && det < 0.35; i++) {
+        await window.__simSleep(0.1)
+        det = Math.max(det, t.probe().det)
+        if (t.probe().caged || t.state().sim.phase !== 'play') break
+        if (det >= 0.35) took = t.engine().st.elapsed - t0
+    }
+    return { det: +det.toFixed(2), took: +took.toFixed(2), at: [me.x.toFixed(1), me.z.toFixed(1)], cell: me.cell }
+})
+if (pointBlank) {
+    claim('an alert guard three metres away starts to notice', pointBlank.det >= 0.35,
+        `meter reached ${pointBlank.det} in ${pointBlank.took} s of game time at 3 m on ${pointBlank.cell}`, 4)
+    claim('and that took roughly the second the model promises', pointBlank.took > 0.05 && pointBlank.took < 3.5,
+        `${pointBlank.took} s of game time for a 3 m alert cone — the floor of this check is the game's 4 fps, not the hunt's`, 4)
+}
+
 claim('being spotted is announced', seen.spottedAt >= 0 || seen.heat > 10, `spot at ${seen.spottedAt} s of game time, heat ${Math.round(seen.heat)}`, 8)
 if (!(Math.max(...(seen.samples || [0])) > 0.15)) console.log('  ..  detection arithmetic:', JSON.stringify(seen.why))
 
