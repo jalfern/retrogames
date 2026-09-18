@@ -21,7 +21,7 @@ import {
     makeCardboardBox, makeDumpster, makeTrashCan, makeTrashBag, makeCrate, makePallet,
     makeLamppost, makeBush, makePuddle, makeFence, makeWindow, makeFireEscape, makeAC,
     makeHydrant, makeAwning, makeRooftopGear, makeMoon, makeWashingLine,
-} from './art'
+} from './art.js'
 
 // Rain is a square point sprite, so the streak has to be drawn inside a square canvas.
 // Drawing it 8x32 and letting the sprite stretch it is how you get falling churros.

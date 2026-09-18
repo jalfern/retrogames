@@ -407,7 +407,19 @@ const matCache = new Map()
  * and they hide the fact that most props are boxes and spheres.
  */
 export function mat(key, params = {}) {
-    const ck = key + JSON.stringify(params)
+    // The cache key used to be `key + JSON.stringify(params)` — and 24 call sites
+    // pass `map: makeTex(...)`, so every cache MISS serialized the texture, which
+    // in a browser means `canvas.toDataURL()` on a procedural 256² canvas: real
+    // mount-time milliseconds on every job, in prod, forever, to build a string
+    // nobody reads. `makeTex` is itself cached (same key ⇒ same texture object),
+    // so a texture's identity IS the right fragment of this key — never its
+    // pixels. (In the Node audit this line instead screamed
+    // "THREE.Texture: Unable to serialize Texture" sixty times per mount.)
+    let ck = key
+    for (const k of Object.keys(params)) {
+        const v = params[k]
+        ck += v && v.isTexture ? `|${k}#${v.id}` : `|${k}${JSON.stringify(v)}`
+    }
     if (matCache.has(ck)) return matCache.get(ck)
     const m = new THREE.MeshStandardMaterial(Object.assign({ flatShading: true, roughness: 0.85, metalness: 0.05, envMapIntensity: 0.4 }, params))
     m.name = key
@@ -821,7 +833,12 @@ export function makeDumpster(seed = 1) {
 
 export function makeTrashCan(seed = 1) {
     const g = new THREE.Group()
-    const m = mat('can' + (seed % 3), { map: makeTex('metal', 1, 1), color: [0x3c4a52, 0x4a4038, 0x2f4438][seed % 3], roughness: 0.75, metalness: 0.35 })
+    // seeds come from `Math.round(wx * 7 + 3)` — negative on the west half of every
+    // map, and `-1 % 3` is `-1` in JS, so west-side cans got `color: undefined`
+    // (three warned, the can rendered uncoloured) and a cache key the palette
+    // never visits. Euclidean mod; same can east/west, no warning, no ghost can.
+    const k = ((seed % 3) + 3) % 3
+    const m = mat('can' + k, { map: makeTex('metal', 1, 1), color: [0x3c4a52, 0x4a4038, 0x2f4438][k], roughness: 0.75, metalness: 0.35 })
     const body = new THREE.Mesh(cyl(0.34, 0.28, 0.85, 9), m)
     body.position.y = 0.42; body.castShadow = true; body.receiveShadow = true
     g.add(body)

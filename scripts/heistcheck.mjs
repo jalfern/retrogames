@@ -92,7 +92,6 @@ for (let li = 0; li < LEVELS.length; li++) {
     ok(behindDoor.length >= 1, `${lvl.name}: no loot actually requires the vault door — the lockpick is decoration`)
     // ...and the gate has to matter: the exit must be unreachable while it is shut.
     for (const m of ex) {
-        ok(!reach(shut, m) || true, '')          // X cells are sealed in `shut` by construction
         const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) =>
             reach(open, { x: m.x + dx, y: m.y + dy }))
         ok(near, `${lvl.name}: escape at (${m.x},${m.y}) has no reachable neighbour`)
@@ -148,9 +147,7 @@ for (let li = 0; li < LEVELS.length; li++) {
     ok(lamps.length >= 2, `${lvl.name}: ${lamps.length} lamps; the night needs pools of light to dodge`)
     const cover = lvl.grid.filter(t => t === T.BUSH || t === T.DUMP).length
     ok(cover >= 4, `${lvl.name}: only ${cover} cover cells`)
-    const wax = lvl.grid.filter(t => t === T.WATER).length
     ok(marksOf(lvl, '@').length >= 1, `${lvl.name}: no cat route — every job should have a way to be surprised`)
-    if (li > 0) ok(wax >= 0, '')
     const walls = lvl.grid.filter(t => t === T.WALL).length
     const floors = lvl.grid.filter(t => !blocksMove(t)).length
     ok(floors > 90, `${lvl.name}: only ${floors} walkable cells`)
@@ -258,6 +255,77 @@ section('STEALTH MODEL')
     const messy = tally({ lootValue: 300, totalValue: 900, delivered: 1, secs: 140, par: 90, caught: 2, shinies: 0 })
     ok(clean.complete && clean.value > messy.value * 2, 'score does not reward a clean complete job')
     ok(!tally({ lootValue: 0, totalValue: 900, delivered: 0, secs: 10, par: 90, caught: 0, shinies: 0 }).complete, 'an empty-handed job counts as complete')
+}
+
+// ------------------------------------------------------------- art build --------
+section('ART BUILD — the real world builder, headless')
+// Why this section exists: job 2 shipped having NEVER MOUNTED. `batch([])` threw
+// inside the mount effect (the museum has no FENCE cells), and the audit above —
+// 300 checks of grid, cones and cover — stayed green, because none of it imported
+// the module that crashed. The browser gate (`heistsmoke`) is the real answer, but
+// the *class* of failure is "procedural geometry builder throws on real level
+// input", and that class runs fine in Node once the canvas is stubbed: three only
+// touches GL at render time, and the texture painters just scribble into pixels
+// nobody reads here. So every job's world is actually BUILT here, for real, in CI
+// that has no browser at all. A builder that throws, returns null, or silently
+// emits NaN vertices is red here even before Chrome exists.
+{
+    const mkCtx = () => new Proxy({}, {
+        get(t, k) {
+            if (k in t) return t[k]
+            if (k === 'createImageData' || k === 'getImageData') {
+                return (a, b, c, d) => {
+                    const w = typeof a === 'number' ? a : b, h = typeof a === 'number' ? b : c
+                    return { width: w, height: h, data: new Uint8ClampedArray(Math.max(1, w * h * 4)) }
+                }
+            }
+            if (k === 'createRadialGradient' || k === 'createLinearGradient') return () => ({ addColorStop() {} })
+            return () => {}
+        },
+        set(t, k, v) { t[k] = v; return true },
+    })
+    globalThis.document = globalThis.document || {
+        createElement: () => ({
+            width: 0, height: 0, style: {},
+            getContext: () => mkCtx(),
+            addEventListener() {}, removeEventListener() {},
+        }),
+    }
+    const THREE = await import('three')
+    const { batch } = await import('../src/games/RaccoonHeist/art.js')
+    const { buildWorld } = await import('../src/games/RaccoonHeist/world.js')
+
+    // The exact shape that killed job 2: a level feature absent from the carve.
+    let empty = null, threw = null
+    try { empty = batch([]) } catch (e) { threw = e }
+    ok(!threw, `batch([]) threw again — the job-2 mount crash is back: ${(threw && threw.message || '').slice(0, 80)}`)
+    ok(empty && empty.attributes?.position && empty.attributes.position.count === 0,
+        'batch([]) does not answer with an empty positioned geometry')
+    const one = batch([{ geo: new THREE.BoxGeometry(1, 1, 1), matrix: new THREE.Matrix4() }])
+    ok(one && one.attributes.position.count === 24, 'batch of one box lost its vertices')
+
+    for (let li = 0; li < LEVELS.length; li++) {
+        let world = null, err = null
+        const t0 = Date.now()
+        try { world = buildWorld(LEVELS[li]) }
+        catch (e) { err = e }
+        if (!ok(!err, `job ${li + 1}: buildWorld threw — this is the mount crash the browser would eat: ${(err && err.message || '').slice(0, 100)}`)) continue
+        let meshes = 0, tris = 0, nan = 0
+        world.group.traverse(o => {
+            if (!o.isMesh) return
+            meshes++
+            const p = o.geometry?.attributes?.position
+            if (p) {
+                tris += p.count / 3
+                for (let i = 0; i < p.array.length; i += 977) if (!Number.isFinite(p.array[i])) nan++
+            }
+        })
+        ok(meshes > 60, `job ${li + 1}: world built with only ${meshes} meshes — a builder silently made nothing`)
+        ok(nan === 0, `job ${li + 1}: ${nan} NaN vertices sampled in built geometry`)
+        ok(Array.isArray(world.props) && world.props.length >= 4, `job ${li + 1}: no collidable props came out of the builder`)
+        ok(world.vaults?.length === marksOf(LEVELS[li], 'V').length, `job ${li + 1}: vault doors built ${world.vaults?.length} vs ${marksOf(LEVELS[li], 'V').length} marks`)
+        console.log(`  job ${li + 1}: built in ${Date.now() - t0} ms — ${meshes} meshes / ${Math.round(tris)} tris / ${world.props.length} props`)
+    }
 }
 
 // ------------------------------------------------------------- mutation mode -----
