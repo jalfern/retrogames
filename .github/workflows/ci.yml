@@ -55,6 +55,47 @@ jobs:
       - run: npm run heistcheck
       - run: npm run build
 
+  # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
+  # fence batch threw inside the mount effect) and both gates were green:
+  # heistcheck audits levels/stealth in Node and never touches the renderer, and
+  # the suites that do render are the slow manual ones. This job renders each
+  # job in a real browser, samples real pixels, and moves the raccoon with a
+  # real stick — ~10 s of checking, so it can afford to gate every PR.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # npm >=11, see the note in the static job
+          cache: npm
+      - run: npm ci
+      # Downloaded browser rather than the runner's system Chrome: it is the same
+      # pinned binary everywhere and does not depend on which browsers the runner
+      # image happens to ship this month. SHOT_CHANNEL tells harness.launch() too.
+      # playwright-core ships the browser-install CLI too (verified: `node
+      # node_modules/playwright-core/cli.js install` exists), so no second
+      # playwright package is needed — same pinned version that launches above.
+      - run: npx playwright-core install --with-deps chromium
+      - name: Start dev server
+        run: |
+          npm run dev > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5173/retrogames/raccoon-heist > /dev/null; then
+              echo "dev server up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "dev server never came up"; cat /tmp/vite.log; exit 1
+      - name: Heist smoke (mount + render + move, all three jobs)
+        run: npm run heistsmoke
+        env:
+          SHOT_CHANNEL: chromium
+          HEIST_LITE: "1"
+      - name: Dev server log (on failure)
+        if: failure()
+        run: cat /tmp/vite.log
+
   # The self-verifying suite: real Chrome driving window.__marioTest.
   # Manual for now — it needs the dev server, real Chrome, and a working audio
   # analyser, which is the flakiest thing to run headless on a shared runner.
