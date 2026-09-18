@@ -1319,8 +1319,31 @@ const pointBlank = await api(async () => {
         t.calm()
     }
     if (!w) { putBack(); return null }
+    // **Place him where the game says he can see, not where a formula says.** Five metres
+    // due west is a formula, and on the runner it put him inside a wall: `losWorld` then says
+    // no for the whole six-second window and the meter never leaves zero — a red that reads
+    // "detection is broken at 4 fps" and is really "the driver stood a guard in masonry". The
+    // laptop never saw it because the sections before this one leave the crew somewhere else
+    // at 60 fps. So try eight directions and three ranges, ask `why()` after each, and keep the
+    // first placement the GAME calls a clean sightline. If none of the 24 works, that is the
+    // finding, and the arithmetic comes back with it.
     let det = 0
     let gotCaged = 0
+    let tries = []
+    let seen = false
+    for (const d of [5, 4, 6]) {
+        if (seen) break
+        for (const [ux, uz] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-0.7, -0.7], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7]]) {
+            const gx = me.x + ux * d, gz = me.z + uz * d
+            t.warpWatcher(wi, gx, gz, 'alert', [me.x, me.z])
+            await window.__simSleep(0.12)
+            const q = t.why().find(x => x.kind === t.watchers()[wi].kind) || null
+            if (q && q.los && q.inCone && q.inRange) { seen = true; tries.push(`${d}@${ux},${uz} OK`); break }
+            tries.push(`${d}@${ux},${uz} ${q ? `${q.los ? '' : 'no-LOS '}${q.inCone ? '' : 'off-cone '}${q.inRange ? '' : 'out-of-range'}`.trim() : 'no-entry'}`)
+        }
+    }
+    if (!seen) return { det: 0, took: -1, gotCaged: 0, parked: parked.length, tries,
+        at: [me.x.toFixed(1), me.z.toFixed(1)], cell: me.cell, back: null, alert: 0, noStage: true }
     const t0 = t.engine().st.elapsed
     let took = -1
     for (let i = 0; i < 60 && det < 0.15; i++) {
@@ -1331,7 +1354,7 @@ const pointBlank = await api(async () => {
     }
     putBack()
     return {
-        det: +det.toFixed(2), took: +took.toFixed(2), gotCaged, parked: parked.length,
+        det: +det.toFixed(2), took: +took.toFixed(2), gotCaged, parked: parked.length, tries,
         at: [me.x.toFixed(1), me.z.toFixed(1)], cell: me.cell,
         back: wi >= 0 && snap ? t.watcherAt(wi).at : null,
         alert: t.watchers().filter(x => x.state === 'alert').length,
@@ -1345,8 +1368,10 @@ claim('the point-blank stage could be set at all', !!pointBlank,
     'no free crew to stand, or every warp refused — the three checks that would have run here '
     + 'are about a torch noticing you, and their absence is not evidence of anything', 8)
 if (pointBlank) {
-    claim('an alert guard five metres away starts to notice', pointBlank.det >= 0.15,
-        `meter reached ${pointBlank.det} in ${pointBlank.took} s of game time at 5 m on ${pointBlank.cell} `
+    claim('the driver found a spot the guard could actually see from', !pointBlank.noStage,
+        `24 placements tried from ${pointBlank.at} (${pointBlank.cell}); none gave a clean sightline: ${pointBlank.tries.join(' | ')}`, 4)
+    claim('an alert guard within reach starts to notice', pointBlank.det >= 0.15,
+        `meter reached ${pointBlank.det} in ${pointBlank.took} s of game time on ${pointBlank.cell} `
         + `(${pointBlank.parked} other watcher(s) parked, ${pointBlank.gotCaged} bagging(s) undone afterwards)`, 4)
     claim('and that took roughly the second the model promises', pointBlank.took > 0.05 && pointBlank.took < 3.5,
         `${pointBlank.took} s of game time for a 5 m alert cone — the floor here is the game's 4 fps, not the hunt's`, 4)
