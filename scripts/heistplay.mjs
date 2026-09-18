@@ -884,15 +884,43 @@ r.check('watchers stand on walkable ground', watches.every(w => !['WALL', 'VOID'
 r.check('watchers are on duty', watches.every(w => ['patrol', 'suspect'].includes(w.state)), watches.map(w => w.state).join(','))
 r.check('every watcher has somewhere to walk', watches.every(w => w.wp !== null || w.state !== 'patrol'), watches.map(w => `${w.state}/${w.wp ? 'wp' : 'none'}`).join(' '))
 // Two samples a second apart: a route that is not walked is a route that is broken.
+/**
+ * Two samples a second apart: a route that is not walked is a route that is broken.
+ *
+ * The detail answers the question a `0m` actually raises. A guard who does not move is one of
+ * three completely different bugs — no route at all (a park that never got restored, which this
+ * file has already committed once), a route whose next node is 30 m away and reached slowly, or
+ * a brain that is stuck in a state with no destination — and a red that prints `guard:0m`
+ * cannot tell them apart, so the next person starts by guessing. Distance-to-waypoint comes
+ * from the engine's own `wp`, so this is the sim's answer, not the driver's.
+ */
 const drift = await api(async () => {
     const t = window.__heistTest
+    const clock0 = t.engine().st.elapsed
+    const phase0 = t.state().sim.phase
     const a = t.watchers()
     await window.__simSleep(2.2)
     const b = t.watchers()
-    return a.map((w, i) => ({ kind: w.kind, moved: +Math.hypot(b[i].x - w.x, b[i].z - w.z).toFixed(2), cell: b[i].cell, state: b[i].state }))
+    // Was the world even running? A frozen guard is three different bugs — paused job, no
+    // route, stuck state — and the only one of them that is about patrols is the last. The
+    // arrest set-piece just ran, and on a slow box it can end the job, which stops
+    // `updateWatchers` entirely: every guard then reports 0 m, and the red blames patrol AI for
+    // a game that had already stopped. So the job clock is sampled across the window, in world
+    // seconds, exactly like every other wait in this file.
+    const rows = a.map((w, i) => ({
+        kind: w.kind,
+        moved: +Math.hypot(b[i].x - w.x, b[i].z - w.z).toFixed(2),
+        cell: b[i].cell, state: b[i].state,
+        route: w.wp ? +Math.hypot(w.wp.x - w.x, w.wp.z - w.z).toFixed(1) : null,
+        path: w.path,
+    }))
+    return { rows, clock: +(t.engine().st.elapsed - clock0).toFixed(2), phase: phase0, nowPhase: t.state().sim.phase }
 })
-claim('patrols actually walk', drift.filter(d => d.moved > 0.15).length >= Math.ceil(drift.length / 2), drift.map(d => `${d.kind}:${d.moved}m`).join(' '))
-r.check('nobody walks through a wall', drift.every(d => !['WALL', 'VOID', '??'].includes(d.cell)), drift.map(d => d.cell).join(','))
+claim('the job was actually running while their walking was measured', drift.clock > 1.0 && drift.phase === 'play' && drift.nowPhase === 'play',
+    `job clock advanced ${drift.clock} s of the 2.2 s window, phase ${drift.phase} -> ${drift.nowPhase}`
+    + ` (a busted or paused job stops updateWatchers dead, and every guard then "does not walk")`, 4)
+claim('patrols actually walk', drift.rows.filter(d => d.moved > 0.15).length >= Math.ceil(drift.rows.length / 2), drift.rows.map(d => `${d.kind}:${d.moved}m @${d.state}${d.route === null ? ' NO ROUTE' : ` wp ${d.route}m away`} path=${d.path}`).join(' '))
+r.check('nobody walks through a wall', drift.rows.every(d => !['WALL', 'VOID', '??'].includes(d.cell)), drift.rows.map(d => d.cell).join(','))
 
 // Re-measure HERE, not just at THE CLOCK: the floor decides which checks get to be
 // assertions, and a box that drifts from 5 fps to 2 fps across the run would otherwise

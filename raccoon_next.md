@@ -293,6 +293,26 @@ registers as "go" or as noise.
     the stopwatch** — the ramp it was measuring no longer exists — under a claim that says
     `one animal was measured, not two`. **Two subjects averaged is not a measurement.**
 
+### 1c. **Before blaming patrol AI for a guard that will not walk, ask if the job is running.**
+    CI filed `patrols actually walk (guard:0m guard:0m)` — both guards, zero metres, damning —
+    and the section had no way to tell three different bugs apart: a **paused or busted job**
+    (which stops `updateWatchers` dead, so *nothing* can move), a watcher with **no route** (a
+    park that never got restored — this file has committed that exact sin), and a brain **stuck
+    in a state with no destination**. Now the sample carries the job clock across the window and
+    the phase at both ends, plus each guard's state and distance-to-waypoint:
+
+    ```
+    PASS  the job was actually running while their walking was measured
+          (job clock advanced 2.2 s of the 2.2 s window, phase play -> play)
+    PASS  patrols actually walk
+          (guard:2.92m @patrol wp 26.4m away path=14  guard:2.05m @patrol wp 38.9m away path=35)
+    ```
+
+    A red is only worth its diagnosis. `guard:0m` is not a diagnosis; `clock advanced 0.0 s of
+    the 2.2 s window, phase play -> busted` is. (Two near-misses in the making: `wp` is a
+    `{x, z}` node, so the first two versions printed `wp NaNm away` and taught nobody anything —
+    check the shape of a diagnostic before you rely on it too.)
+
 ### 1b. **Ask the sim where a watcher can see — and about WHICH watcher.** Two reds on the
     same check, one build, five minutes apart, both true:
     * `why()` answers about **the active raccoon and every watcher in range**, sorted by rate.
