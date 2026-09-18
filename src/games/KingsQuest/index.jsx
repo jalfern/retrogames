@@ -19,7 +19,7 @@
  *
  * There is NO AI button right now, on purpose: a button wired to nothing is how
  * the last attempt stayed alive while dead. The brain lands in stage 6 of
- * AI-PLAN.md and arrives together with `scripts/kqcheck.mjs`, `<AiBadge />`
+ * docs/archive/qwen-run-2026-09/AI-PLAN.md and arrives together with `scripts/kqcheck.mjs`, `<AiBadge />`
  * printing which sensor it is using, and the A/B runner.
  */
 

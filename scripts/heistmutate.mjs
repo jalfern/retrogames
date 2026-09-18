@@ -5,7 +5,7 @@
 //
 // Every check in this repo was green with bugs in it at first, so the house rule is:
 // revert the fix, watch the check go red, then believe it. Doing that by hand is how a
-// session gets lost (see raccoon_next.md: `git checkout <path>` once destroyed a day of
+// session gets lost (see docs/archive/qwen-run-2026-09/raccoon_next.md: `git checkout <path>` once destroyed a day of
 // uncommitted engine.js), so it is scripted: each mutant is one anchored text swap, run
 // through the real `heistplay`, and restored from a /tmp copy — the working tree is never
 // reverted, only patched and un-patched.

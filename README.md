@@ -1,16 +1,14 @@
-# React + Vite
+# RetroGames Arcade
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Browser-playable retro games (React + Vite), live at https://www.jalfern.com/retrogames.
+Includes Super Mario, IronKeep (Wolf3D-style), Raccoon Heist (3D stealth), Zork,
+King's Quest, Ultima I–V, and a shelf of arcade classics.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev     # http://localhost:5173/retrogames/
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **Start here:** [`STATE.md`](STATE.md) (current state, short) and [`AGENTS.md`](AGENTS.md)
+  (how the repo works).
+- **Postmortem of the unattended Qwen run:** [`docs/qwen-run-2026-09-postmortem.md`](docs/qwen-run-2026-09-postmortem.md).
