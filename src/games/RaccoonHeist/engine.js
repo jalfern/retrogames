@@ -52,6 +52,39 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
     const emit = (e) => { if (onEvent) onEvent(e); return e }
     const say = (text, secs = 2.6) => { st.msg = text; st.msgT = secs }
 
+    /**
+     * One ledger line per key press. `outcome` is deliberately coarse and closed:
+     *   seen      a handler matched the key and it went into the action queue
+     *   did       the world changed
+     *   refused   the game understood and said no, with a NAME (`no-target`, `no-shinies`,
+     *             `tap-not-hold`, `hold-not-tap`, `locked-up`, `nobody-else`, `caged`)
+     *   swallowed the key never reached the sim because a screen owns the keyboard
+     *   unhandled no table entry matched — a dead key, and the only one that is a bug
+     * `text` is what the player was told; a refusal with no text is the bug being fixed.
+     */
+    let keySeq = 0
+    function noteKey(code, action, outcome, why = '', text = '') {
+        // A monotonic id, because the ledger is a RING: it is capped at 40 lines and shifts
+        // the oldest off. A harness that asks "what appeared since length N" gets [] forever
+        // once the ring is full — which is exactly how a working keyboard looked dead for an
+        // hour. Length is a position in a window; `id` is a position in history.
+        const rec = { id: ++keySeq, code, action, outcome, why, text, at: +st.t.toFixed(2) }
+        st.keys.push(rec)
+        if (st.keys.length > 40) st.keys.shift()
+        st.lastKey = rec
+        if (import.meta.env && import.meta.env.DEV && typeof console !== 'undefined') {
+            console.info(`[heist key] ${code} -> ${action || '?'} ${outcome}${why ? ':' + why : ''}${text ? ` ("${text}")` : ''}`)
+        }
+        return rec
+    }
+
+    /** A refusal the player can read. Every `no` in this game goes through here. */
+    function refuse(action, why, text, secs = 1.5) {
+        say(text, secs)
+        noteKey(null, action, 'refused', why, text)
+        return { ok: false, why, text }
+    }
+
     // ---------------------------------------------------------------- marks -------
     const markOf = (ch) => L.marks.filter(m => m.ch === ch)
     const cartMark = markOf('S')[0]
@@ -252,6 +285,16 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         hint: '', objective: '', flash: 0, masked: false, nextFlash: 2.5, storm: L.theme === 'manor' ? 1 : 0.18,
         gateOpen: false, shake: 0, result: null, camYaw: 0, camYawEff: 0, camSide: 0, camClearPt: null, camPitch: 0.62, camDist: 7.2,
         camX: cartW.x, camZ: cartW.z + 7, camY: 4, freeze: 0, caughtWho: -1,
+        // **Every key the game was offered, and what it did with it.** The complaint this
+        // answers is specific — "I'm not sure all the keys are working" — and re-reading the
+        // handler cannot answer it: a key can be handled by code that then refuses for a
+        // reason it never says out loud. Four different experiences feel identical to the
+        // person holding the key (nothing happened), and only one of them is a broken key.
+        // So the sim keeps a ledger: `seen` (a handler ran), `did`, `refused:<why>` with a
+        // named reason, and the component records `swallowed:<screen>` for the ones a menu
+        // ate. `heistplay` presses every advertised key in every phase and audits this.
+        keys: [],
+        lastKey: null,
     }
     const noises = []
     const icons = []
@@ -502,12 +545,47 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
      * down: picking stuff up is a tap, chewing a lock or a cage padlock is a hold,
      * because the hold is the thing that makes a lock feel like work.
      */
+    // "NOTHING IN REACH" is only useful if it points somewhere. This walks the same
+    // candidates `focus()` walks and returns the nearest one that is NOT reachable, as
+    // prose — so the refusal tells the player which way to walk. It is deliberately a
+    // string, not a cell: the harness asserts the reason exists, not its grammar.
+    function nearestReachable() {
+        const a = actor()
+        let best = null, bd = 1e9
+        const consider = (x, z, label) => {
+            const d = Math.hypot(x - a.x, z - a.z)
+            if (d < bd && d < 8) { bd = d; best = `${label}, ${Math.round(d)} m` }
+        }
+        for (const l of loot) if (!l.taken) consider(l.mesh.position.x, l.mesh.position.z, l.label.toLowerCase())
+        if (a.held) consider(cartW.x, cartW.z, 'the cart')
+        // Same predicate `focus()` uses: a door counts as "there is work here" only while the
+        // cell it stands in is still closed, so this never points at a door already chewed.
+        for (const v of world.vaults) if (closedV.has(cellOf(L, v.x, v.z).join(','))) consider(v.x, v.z, 'a locked door')
+        for (const s of shinies) if (!s.taken) consider(s.x, s.z, 'a shiny')
+        for (const c of crew) if (c.caged && c.i !== a.i) consider(poundW.x, poundW.z, `${c.def.name} in the pound`)
+        return best
+    }
+
     function act(mode, dt) {
         const f = focus()
-        if (!f) return
         const a = actor()
+        if (a.caged) return refuse('grab', 'caged', 'YOU ARE IN THE POUND — CHEW YOUR OWN LOCK', 1.4)
+        if (!f) {
+            // The reach is short on purpose (you have to be *at* the thing), which also means
+            // "I pressed and nothing happened" is the single most common thing a player will
+            // ever experience here. It is not a broken key; it is a distance. Say so, and
+            // say what is nearest, so the answer is actionable rather than a shrug.
+            const near = nearestReachable()
+            return refuse('grab', 'no-target', near ? `NOTHING IN REACH — ${near} IS CLOSER` : 'NOTHING IN REACH', 1.3)
+        }
         const hold = f.kind === 'chew' || f.kind === 'free'
-        if (hold !== (mode === 'hold')) return
+        if (hold !== (mode === 'hold')) {
+            // Two verbs share one key and the difference is timing. Getting this wrong looks
+            // exactly like a dead key, which is half of "some of my keys don't work".
+            return hold
+                ? refuse('grab', 'hold-not-tap', 'HOLD THE KEY TO WORK THE LOCK', 1.6)
+                : refuse('grab', 'tap-not-hold', 'TAP TO TAKE — THAT IS NOT A LOCK', 1.4)
+        }
         switch (f.kind) {
             case 'take': {
                 const l = f.t
@@ -609,6 +687,15 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             }
             default: break
         }
+        // Reaching here means the world changed. `chew`/`free` are held, so they would write
+        // sixty ledger lines a second; one line per episode instead, and `updateCrew` clears
+        // the flag when the key comes up.
+        if (f.kind === 'chew' || f.kind === 'free') {
+            if (!a.notedHold) { a.notedHold = true; noteKey(null, 'grab', 'did', 'hold', f.label) }
+        } else {
+            noteKey(null, 'grab', 'did', 'ok', f.label)
+        }
+        return { ok: true, kind: f.kind }
     }
 
     /** Delivered loot visibly piles up in the cart, because the cart is the score. */
@@ -621,7 +708,7 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
     }
 
     function throwShiny() {
-        if (st.shinies <= 0) { say('NO SHINIES LEFT', 1.2); return }
+        if (st.shinies <= 0) { refuse('throw', 'no-shinies', 'NO SHINIES LEFT — POCKET ONE', 1.4); return false }
         const a = actor()
         st.shinies--
         const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xfff0a8, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }))
@@ -630,12 +717,13 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         group.add(s)
         flying.push({ s, x: a.x, z: a.z, y: 0.8, vx: Math.sin(a.yaw) * 6.5, vz: Math.cos(a.yaw) * 6.5, vy: 2.6 })
         audio?.throw?.()
+        return true
     }
 
     function switchTo(i) {
         const c = crew[i]
         if (!c) return
-        if (c.caged) { say(`${c.def.name} IS LOCKED UP`, 1.4); return }
+        if (c.caged) { refuse('swap', 'locked-up', `${c.def.name} IS LOCKED UP — CHEW HER DOOR`, 1.6); return }
         if (c.i === active) return
         crew[active].crouched = true
         active = c.i
@@ -650,12 +738,14 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
             const c = crew[(active + i) % crew.length]
             if (!c.caged) { switchTo(c.i); return }
         }
-        say('NOBODY ELSE TO SWITCH TO', 1.4)
+        refuse('swap', 'nobody-else', 'NOBODY ELSE IS OUT HERE', 1.4)
     }
 
     // -------------------------------------------------------------- update -------
     function updateCrew(dt, input) {
         const a = actor()
+        // The hold episode ends when the key does, so the next chew gets its own ledger line.
+        if (!input.hold) a.notedHold = false
         for (const c of crew) {
             c.blink = c.nextBlink < 0 ? 0 : c.blink
             c.nextBlink -= dt
@@ -1338,11 +1428,24 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
         // "LOAD THE CART" while you are standing at a vault with empty hands.
         const f = focus()
         st.hint = f ? f.label : ''
+        // Every action the queue holds gets a line, including the ones whose handler is a
+        // one-liner like `cam`. A key that "does nothing" and a key that recentres the camera
+        // feel the same from the couch unless the game says which it did.
         if (input.actions?.includes('grab')) act('tap', dt)
         if (input.hold) act('hold', dt)
-        if (input.actions?.includes('throw')) throwShiny()
-        if (input.actions?.includes('swap')) swap()
-        if (input.actions?.includes('cam')) { st.camYaw = actor().yaw }
+        if (input.actions?.includes('throw')) {
+            const r = throwShiny()
+            if (r !== false) noteKey(null, 'throw', 'did', 'ok', `${st.shinies} shiny left`)
+        }
+        if (input.actions?.includes('swap')) {
+            const before = active
+            swap()
+            if (active !== before) noteKey(null, 'swap', 'did', 'ok', actor().def.name)
+        }
+        if (input.actions?.includes('cam')) {
+            st.camYaw = actor().yaw
+            noteKey(null, 'cam', 'did', 'ok', 'camera behind')
+        }
         // `lookX > 0` means "look right", same as dragging right and same as nudgeCamera.
         // Increasing camYaw swings the view to the LEFT, so this sign is a minus.
         st.camYaw -= (input.lookX || 0) * dt * 2.4
@@ -1561,6 +1664,42 @@ export function createEngine({ level, world, camera, audio = null, onEvent = nul
 
     return {
         group, st, update, snapshot, start, reset, dispose, focus, switchTo,
+        // The key ledger, and the one way for the *component* to add a line to it: a key the
+        // sim never saw (a menu owns the keyboard, or no table entry matched) is exactly the
+        // case the sim cannot record for itself, and it is the case the player calls "broken".
+        noteKey,
+        keys: () => st.keys.slice(),
+        nearestReachable,
+        /**
+         * The stage for "nothing in reach": the walkable cell, near the actor, that is
+         * furthest from every prop the work key can act on. A harness that wants to prove the
+         * game ANSWERS an empty press has to stand somewhere that is genuinely empty, and
+         * guessing coordinates is how you end up asserting a refusal three centimetres from a
+         * sack of coin. Distance is to loot, locks, cans, shinies, the cart, the pound and the
+         * crew — the whole `focus()` list, so this cannot drift from what the verb can see.
+         */
+        quietSpot: () => {
+            const a = actor()
+            const props = []
+            for (const l of loot) if (!l.taken) props.push(l.mesh.position)
+            for (const sh of shinies) if (!sh.taken) props.push({ x: sh.x, z: sh.z })
+            for (const c of cans) if (!c.tipped) props.push({ x: c.x, z: c.z })
+            for (const v of world.vaults) if (closedV.has(cellOf(L, v.x, v.z).join(','))) props.push({ x: v.x, z: v.z })
+            props.push(cartW, poundW)
+            for (const c of crew) if (c.i !== a.i) props.push({ x: c.x, z: c.z })
+            let best = null, bestD = -1
+            for (let i = 0; i < 96; i++) {
+                const ang = (i / 96) * Math.PI * 2
+                for (let r = 2; r <= 9; r += 1.5) {
+                    const x = a.x + Math.cos(ang) * r, z = a.z + Math.sin(ang) * r
+                    if (blocksMove(atWorld(L, x, z))) continue
+                    const d = Math.min(...props.map(p => Math.hypot(p.x - x, p.z - z)))
+                    if (d > bestD) { bestD = d; best = { x: +x.toFixed(2), z: +z.toFixed(2), nearest: +d.toFixed(2) } }
+                    break
+                }
+            }
+            return best
+        },
         // Harness windows onto the sim. Read-only by convention: the driver is not
         // allowed to write state it could have just asserted, which is why `update`
         // stays the only way anything moves.

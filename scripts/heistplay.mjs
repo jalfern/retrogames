@@ -931,6 +931,152 @@ r.check('nobody walks through a wall', drift.rows.every(d => !['WALL', 'VOID', '
 // spend its last third asserting promises it cannot physically test.
 await pace()
 floorClaim()
+// =============================================================================================
+// EVERY ADVERTISED KEY, PRESSED WITH A REAL KEYBOARD, AUDITED IN THE SIM'S OWN LEDGER.
+//
+// The complaint was not that a check fails. It was: "I'm not sure all the keys are working…
+// either my understanding is wrong, or we're not capturing all the key press events." Reading
+// the handler cannot settle that: a key can be captured by code that then refuses for a reason
+// it never says out loud, and from the couch that is indistinguishable from a dead key. Four
+// different experiences feel identical — key not captured, key captured with no target, action
+// blocked by a screen, action refused by a rule — and until now the game was silent in all four.
+//
+// So the sim keeps a ledger of every press (`did`, `refused:<why>`, `swallowed:<screen>`,
+// `unhandled`) and this section presses each control with `page.keyboard` — through the browser,
+// not through `api.tap`, which pushes an action straight into the queue and proves nothing about
+// the path a thumb uses.
+console.log('\nEVERY KEY, THROUGH A REAL KEYBOARD')
+// A listener of our own, bolted onto the same window the game uses. If THIS sees the key and
+// the ledger does not, the game's handler is gone (unmounted, or replaced) and every "dead key"
+// report is really about the handler. If this does not see it either, the browser never sent it
+// and the harness is the problem. Cheap, permanent, and it turned a two-hour guess into one run.
+let probeSeen = 0
+await page.evaluate(() => {
+    window.__probeKeys = []
+    window.__probeOn = (e) => window.__probeKeys.push(e.code)
+    window.addEventListener('keydown', window.__probeOn)
+})
+// Anything the page throws while keys are flying goes to the log, because a key handler that
+// throws on line one looks exactly like a key that was never captured: no ledger line, no red,
+// no message. This is the difference between debugging this in two minutes and two hours.
+page.on('pageerror', (e) => console.log(`  ..    pageerror  ${String(e && e.message).slice(0, 160)}`))
+page.on('console', (m) => { if (m.type() === 'error') console.log(`  ..    console    ${m.text().slice(0, 160)}`) })
+const OUTCOMES = ['did', 'refused', 'swallowed', 'seen', 'unhandled']
+// Back on the street: the job may have ended by now, and auditing a key against a screen that
+// legitimately owns the keyboard would only prove that screens exist. `play` first, then every
+// key is asked what it did *in the world*.
+const stage = await page.evaluate(async () => {
+    const t = window.__heistTest
+    t.calm()
+    // WALL clock, deliberately. Every other wait in this file is `__simSleep`, because a
+    // physics claim must be paid in the clock that produced it. This one is not a physics
+    // claim — it is "let React settle and the loop take a few frames" — and `__simSleep`
+    // here is a hang if the loop happens to be stopped, which is exactly what happened the
+    // first time this section ran after the job had already ended.
+    await new Promise(r => setTimeout(r, 400))
+    return { screen: t.state().screen, phase: t.engine().st.phase }
+})
+console.log(`  ..    stage      pressed the keys with the game in screen=${stage.screen} / phase=${stage.phase}`)
+const keyAudit = []
+for (const code of ['KeyE', 'Space', 'KeyZ', 'KeyF', 'KeyB', 'KeyQ', 'KeyX', 'KeyG', 'KeyC', 'ShiftLeft', 'ArrowUp', 'KeyW']) {
+    const before = await api(() => (window.__heistTest.keys().slice(-1)[0] || { id: 0 }).id)
+    // A real CDP key event, held ~90 ms so a movement key gets more than one physics tick.
+    await page.keyboard.press(code, { delay: 90 })
+    await page.waitForTimeout(60)
+    let added = await api((id) => window.__heistTest.keys().filter(k => k.id > id), before)
+    const heard = await api((n) => window.__probeKeys.slice(n), probeSeen)
+    probeSeen = await api(() => window.__probeKeys.length)
+    if (!added.length) {
+        // Which half is deaf? Dispatch the same event from inside the page and compare.
+        // Delivered-but-unrecorded = transport; both silent = the handler or the ledger.
+        const n2 = await api(() => (window.__heistTest.keys().slice(-1)[0] || { id: 0 }).id)
+        await page.evaluate((c) => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: c, bubbles: true }))
+            window.dispatchEvent(new KeyboardEvent('keyup', { code: c, bubbles: true }))
+        }, code)
+        await page.waitForTimeout(140)
+        const syn = await api((id) => window.__heistTest.keys().filter(k => k.id > id), n2)
+        keyAudit.push({ code, n: syn.length, last: syn[syn.length - 1] || null, synthetic: syn.length, heard: heard.length })
+        continue
+    }
+    keyAudit.push({ code, n: added.length, last: added[added.length - 1] || null })
+}
+for (const k of keyAudit) {
+    const l = k.last || {}
+    console.log(`  ..    ${k.code.padEnd(10)} ${String(l.action || '-').padEnd(7)} ${String(l.outcome || 'NEVER SEEN').padEnd(11)}`
+        + ` ${String(l.why || '').padEnd(12)} ${l.text ? `"${l.text}"` : ''}`)
+}
+const uncaught = keyAudit.filter(k => !k.n)
+const nameless = keyAudit.filter(k => k.n && (!k.last || !OUTCOMES.includes(k.last.outcome)))
+// `k.text`, not `k.last.text` — and the fact that this needs a comment is the lesson: a
+// filter over the wrong field silently passes the very thing it is guarding, because the
+// outer object has no `text` and `!undefined` is true. The first run of this check filed
+// three refusals as mute while printing their messages one line above it.
+const mute = keyAudit.filter(k => k.last && k.last.outcome === 'refused' && !k.last.text)
+const unbound = keyAudit.filter(k => k.last && k.last.outcome === 'unhandled')
+r.check('every advertised key was CAPTURED by the page', uncaught.length === 0,
+    uncaught.length ? (() => {
+        const syn = uncaught.reduce((a, k) => a + (k.synthetic || 0), 0)
+        const heard = uncaught.reduce((a, k) => a + (k.heard || 0), 0)
+        const which = uncaught.some(k => k.synthetic)
+            ? 'the EVENT reaches the page and the handler or ledger is deaf'
+            : heard ? `an independent window listener caught ${heard} of them, so the GAME'S handler never ran`
+                : 'not even a listener of our own on the same window saw them — the browser is not delivering'
+        return `${uncaught.map(m => m.code).join(', ')} left no trace. A synthetic dispatch of the same keys inside `
+            + `the page produced ${syn} lines, so ${which}`
+    })() : `${keyAudit.length} keys pressed through the browser, ${keyAudit.reduce((a, k) => a + k.n, 0)} ledger lines`)
+r.check('every key press resolves to a NAMED outcome', nameless.length === 0,
+    nameless.length ? nameless.map(n => `${n.code} -> ${JSON.stringify(n.last)}`).join('; ')
+        : 'did / refused:<why> / swallowed:<screen> / seen. "nothing happened" is not a legal answer')
+r.check('a refusal says why, out loud', mute.length === 0,
+    mute.length ? mute.map(m => `${m.code}: refused with no message`).join('; ')
+        : 'every "no" this game says is a sentence the player can read')
+r.check('not one advertised key is unbound', unbound.length === 0,
+    unbound.length ? unbound.map(d => d.code).join(', ') + ' reached the sim with no table entry'
+        : 'help screen, KEYMAP and handler agree on every key')
+
+// And the two refusals a player actually meets, forced by playing rather than by scripting a
+// state: an empty floor under the work key, and a throw with the pouch empty. Both are the
+// "my key is dead" experience with a name attached to it.
+const refusals = await page.evaluate(async () => {
+    const t = window.__heistTest
+    // Wall clock again: nothing below asserts a duration, only that a refusal was RECORDED.
+    const wait = (ms) => new Promise(r2 => setTimeout(r2, ms))
+    const tap = async (code) => {
+        // BY ID, not by length. `keys()` is a 40-line ring: once it is full, `slice(len)` is
+        // empty forever and every refusal looks like "no ledger line at all" — which is how a
+        // working refuse-and-tell path read as a missing feature on the first run of this block.
+        const id = (t.keys().slice(-1)[0] || { id: 0 }).id
+        window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }))
+        await wait(140)
+        window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }))
+        const log = t.keys().filter(k => k.id > id)
+        return log.find(x => x.outcome === 'refused') || log[log.length - 1] || null
+    }
+    // Step away from every prop first, so "nothing in reach" is true rather than staged elsewhere.
+    const here = t.probe()
+    // Where do we stand, exactly? `no-target` is only true if the nearest prop really is
+    // out of reach, and the reach is short on purpose (1.15 m for loot), so "6.5 m away" is
+    // measured against the loot list rather than guessed from a corner of the room.
+    const far = t.farFromEveryProp ? t.farFromEveryProp() : { x: here.x + 6.5, z: here.z + 6.5 }
+    t.moveTo(far.x, far.z)
+    await wait(400)
+    const verb = t.afford()
+    const empty = await tap('KeyE')
+    for (let i = 0; i < 5; i++) { await tap('KeyF'); await wait(90) }
+    const dry = await tap('KeyF')
+    return { empty, dry, verb, shinies: t.state().sim.shinies, at: [Math.round(far.x), Math.round(far.z)] }
+})
+const said = (k) => (k ? `${k.outcome}:${k.why || '-'} "${k.text || ''}"` : 'no ledger line at all')
+console.log(`  ..    refusals   empty floor  ->  ${said(refusals.empty)}`)
+console.log(`  ..              empty pouch  ->  ${said(refusals.dry)}`)
+r.check('an empty floor answers the work key with a reason',
+    !refusals.verb && !!refusals.empty && refusals.empty.why === 'no-target' && /REACH/i.test(refusals.empty.text || ''),
+    `stood at ${refusals.at} with verb ${refusals.verb ? refusals.verb.kind : 'none'} — ${said(refusals.empty)}`)
+r.check('throwing with an empty pouch says so',
+    refusals.shinies === 0 && !!refusals.dry && refusals.dry.why === 'no-shinies' && /SHINY/i.test(refusals.dry.text || ''),
+    `${refusals.shinies} shinies left — ${said(refusals.dry)}`)
+
 console.log('\nBEING SEEN')
 // Stand in the open, in the beam, and the meter must climb. This is the check that
 // would fail silently forever if `det` never accumulated: the guard would simply never
@@ -2255,6 +2401,7 @@ if (THROTTLE) r.info('render cost', `${budget.b} ms avg render — not asserted 
 else r.check('render cost fits a phone frame', budget.b < 17, `${budget.b} ms avg render (dev build, software GL on CI)`)
 const end = await clock()
 r.info('clock at the end', `${end.rate}x real time at ${end.fps} fps${THROTTLE ? `, CPU throttled ${THROTTLE}x` : ''}`)
+
 
 await page.screenshot({ path: path.resolve(SHOT) }).catch(() => {})
 console.log(`  ..  wrote ${SHOT}`)

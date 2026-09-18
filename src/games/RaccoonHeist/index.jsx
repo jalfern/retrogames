@@ -430,17 +430,42 @@ const RaccoonHeistGame = () => {
             } else if (scr === 'brief') beginJob()
         }
 
+        // `held` keys are analog: movement, crouch and sprint live in `keys`/`hold`, not in
+        // the action queue, so the ledger has to know they are handled or it files every
+        // ArrowLeft as a dead key.
+        const MOVEMENT = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']
+        const lookUp = {}
+        for (const [action, codes] of Object.entries(KEYMAP)) codes.forEach(c => { lookUp[c] = action })
+        CROUCH_KEYS.forEach(c => { lookUp[c] = 'crouch' })
+        DASH_KEYS.forEach(c => { lookUp[c] = 'dash' })
+        MOVEMENT.forEach(c => { lookUp[c] = 'move' })
+
         const onKeyDown = (e) => {
+            // ONE ledger, in the sim, for every key the window ever handed us. The sim records
+            // what it did with the actions it consumed (`did`, `refused:no-shinies`); this
+            // records the three things the sim structurally cannot see: a key a screen ate, a
+            // key the browser repeated, and a key no table knows. Those three are what a
+            // player calls "that key doesn't work", and until now all three were silent.
+            const note = (outcome, why = '', text = '') => engine?.noteKey?.(e.code, lookUp[e.code] || null, outcome, why, text)
             if ((e.code === 'Slash' && e.shiftKey) || e.code === 'Escape') {   // '?' / Esc
                 e.preventDefault()
+                // Read the flag BEFORE the setState, because the updater runs on the next
+                // render: reading it after would describe the state the key is leaving, not
+                // the one it entered, and the ledger would say "RESUMED" on the way in.
+                const entering = !pausedRef.current
                 setPaused(p => { pausedRef.current = !p; return !p })
+                note('swallowed', entering ? 'pause-open' : 'pause-close', entering ? 'HELP OPEN — THE GAME IS PAUSED' : 'RESUMED')
                 return
             }
             if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault()
             const scr = screenRef.current
-            if (scr === 'attract' || scr === 'brief') { start(); return }
-            if (scr === 'clear' || scr === 'bust') { if (e.code === 'Enter' || e.code === 'Space') next(); return }
-            if (e.repeat) return
+            if (scr === 'attract' || scr === 'brief') { note('swallowed', `screen:${scr}`, 'THE TITLE SCREEN OWNS THE KEYBOARD'); start(); return }
+            if (scr === 'clear' || scr === 'bust') {
+                if (e.code === 'Enter' || e.code === 'Space') next()
+                note('swallowed', `screen:${scr}`, e.code === 'Enter' || e.code === 'Space' ? 'ON TO THE NEXT JOB' : 'THE JOB IS OVER')
+                return
+            }
+            if (e.repeat) { note('seen', 'key-repeat'); return }
             inputRef.current.keys.add(e.code)
             // Every action is looked up in ONE table, which is also the table the help
             // screen is written from and the table `heistplay` audits against the
@@ -448,8 +473,13 @@ const RaccoonHeistGame = () => {
             // printed controls drifted straight off it: the pause card promised "B / E:
             // fling a shiny" when B did nothing and E grabbed, and "F: crouch" when F
             // lured. A player who trusts the help screen is told the game is broken.
-            for (const [action, codes] of Object.entries(KEYMAP)) {
-                if (codes.includes(e.code)) inputRef.current.actions.push(action)
+            const action = lookUp[e.code]
+            if (!action) { note('unhandled', 'no-table-entry', 'NO CONTROL IS BOUND TO THAT KEY'); return }
+            if (['grab', 'throw', 'swap', 'cam'].includes(action)) {
+                inputRef.current.actions.push(action)
+                note('seen', 'queued', '')
+            } else {
+                note('seen', action === 'crouch' ? 'crouch' : action === 'dash' ? 'dash' : 'move', '')
             }
         }
         const onKeyUp = (e) => {
@@ -520,6 +550,12 @@ const RaccoonHeistGame = () => {
             }),
             press: () => start(),
             goto: (m) => setMode(m),
+            // **The key ledger.** Every key the window saw, what action it resolved to, and
+            // whether the sim did it, refused it by name, swallowed it behind a screen, or
+            // never heard of it. `heistplay` presses every advertised control in every phase
+            // and audits this; a key that vanishes silently is the complaint it exists for.
+            keys: () => (engine ? engine.keys() : []),
+            quietSpot: () => engine?.quietSpot?.() || null,
             // Keys through the *real* path, so a harness cannot pass by poking the sim.
             key: (code, down = true) => {
                 if (down) inputRef.current.keys.add(code)
