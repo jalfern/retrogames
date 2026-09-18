@@ -134,8 +134,13 @@ class Model {
         return true
     }
     propBlocks(x, y) {
+        // any prop whose BODY (plus a body's worth of clearance) claims this cell —
+        // the old p.r+0.34 test only caught dead-centre props and happily routed
+        // the whole plan straight through a bin the engine refuses to let anyone
+        // cross (job 3: pinned in a two-barrel slot at y24, both contact rings
+        // touching, zero legal axis, full stick into the barrel forever).
         const [wx, wz] = this.worldOf(x, y)
-        return this.props.some(p => Math.hypot(wx - p.x, wz - p.z) < p.r + 0.34)
+        return this.props.some(p => Math.hypot(wx - p.x, wz - p.z) < p.r + 0.65)
     }
 }
 
@@ -166,7 +171,7 @@ function route(model, from, to, { sealed = new Set(), danger = new Map() } = {})
             if (sealed.has(key(nx, ny))) continue
             let c = 1
             if (t === 9) c += 6                                // water is loud
-            if (model.propBlocks(nx, ny)) c += 4              // a bin standing in it
+            if (model.propBlocks(nx, ny)) c += 14             // a bin standing in it
             if (t === 5) c -= 0.35                            // hedges are cheap at night
             const d = danger.get(key(nx, ny)) || 0
             const step = c + (d ? 3 * d : d) // watched cells must also be LOOKED AHEAD through
@@ -386,6 +391,8 @@ class Player {
         const m = this.m
         const endAt = s.elapsed + leash
         let waited = 0
+        let bounces = 0
+        let lastX = s.x, lastZ = s.z, movedT = s.elapsed
         let bestD = Math.hypot(s.x - tx, s.z - tz)
         let bestT = s.elapsed
         while (true) {
@@ -422,7 +429,25 @@ class Player {
             const [nx, ny] = path.length > 1 ? path[1] : target
             const [wx, wz] = path.length > 1 ? m.worldOf(nx, ny) : [tx, tz]
             const bad = (danger.get(nx + ',' + ny) || 0) >= 100 || !beamOk(m, s, beams, nx, ny)
-            if (bad && dW > radius + 3.2 && waited < 40 && !hurry) {
+            const hereWatched = (danger.get(here.join(',')) || 0) >= 100
+            if (bad && dW > radius + 3.2 && waited < 150 && !hurry) {
+                // Being watched WHERE WE STAND outranks the wait: step into the
+                // nearest hedge and wait inside it — job 3's garden watchdog parked
+                // in the one doorway to the last painting and every route crossed
+                // his cone; sitting in the open corridor chewing patience is how
+                // three attempts died. Crouched in a hedge at night he cannot see
+                // us at all; the patrol walks its route and the way reopens.
+                if (hereWatched) {
+                    const hid = nearestHide(m, s)
+                    if (hid && (hid.x !== here[0] || hid.y !== here[1])) {
+                        const [hx, hz] = m.worldOf(hid.x, hid.y)
+                        await this.say(`watched standing up — ducking into hedge ${[hid.x, hid.y]}`)
+                        await this.goTo(s, hx, hz, { radius: 0.45, leash: 40 })
+                        s = await this.refresh(0.2)
+                        waited += 6 // cost the wait loop for the detour
+                        continue
+                    }
+                }
                 // Hold, and hold *well*: crouch if the floor under us is cover, and if
                 // a watcher is in 'suspect' state heading roughly at us, back off the
                 // route they are walking instead of standing on the doorbell.
@@ -435,12 +460,13 @@ class Player {
                 s = await this.refresh(0.2)
                 continue
             }
-            if (bad && !hurry) {
+            if (bad && !hurry && waited >= 150) {
                 // Forty seconds of the same cone and no pressure to run from: the patrol
                 // is not coming off this cell on its own. Fall back to the nearest clean
                 // cell and regroup there rather than standing on the doormat forever.
                 const safe = nearestSafe(m, s, danger)
                 if (safe && (safe.x !== here[0] || safe.y !== here[1])) {
+                    if (++bounces > 4) { await stick(0, 0); await this.say('livelock: patrol owns every way out — abandon leg'); return false }
                     await this.say('patrol parked on the route — relocating to', [safe.x, safe.y])
                     const [sx2, sz2] = m.worldOf(safe.x, safe.y)
                     await this.goTo(s, sx2, sz2, { radius: 0.5, leash: 60 })
@@ -455,9 +481,53 @@ class Player {
             // Progress watchdog: a prop (bin, lamppost) stops the walker dead mid-cell,
             // and the grid route cannot see the difference between "stuck" and "slow".
             if (dW < bestD - 0.07) { bestD = dW; bestT = s.elapsed }
+            // Frozen watchdog: `bad` can never trigger when the grid says open floor —
+            // a bin fills the next cell, the aim clips it, and every tick's push
+            // cancels itself with dW CONSTANT, so a d-based watchdog never wakes up.
+            // Constant POSITION is the only witness. This is also the "a thumb would
+            // notice" case: nobody stands at a full stick into a barrel for minutes.
+            if (Math.abs(s.x - lastX) + Math.abs(s.z - lastZ) > 0.12) { lastX = s.x; lastZ = s.z; movedT = s.elapsed }
+            let evasive = false
             let ax, az
             ax = wx - s.x; az = wz - s.z
-            if (s.elapsed - bestT > 1.6) {
+            if (s.elapsed - movedT > 2.5) {
+                // aim tangent to the prop that owns our feet, alternating sides
+                evasive = true
+                let fp = null, fd = 9e9
+                for (const pr of m.props) { const dd = Math.hypot(pr.x - s.x, pr.z - s.z); if (dd < fd) { fd = dd; fp = pr } }
+                if (fp && fd < fp.r + 0.8) {
+                    const dx2 = s.x - fp.x, dz2 = s.z - fp.z
+                    const pl3 = Math.hypot(dx2, dz2) || 1
+                    const sgn = (Math.floor(s.elapsed * 0.7) % 2) ? 1 : -1
+                    ax = (-dz2 / pl3) * 1.2 * sgn + (dx2 / pl3) * 0.55
+                    az = (dx2 / pl3) * 1.2 * sgn + (dz2 / pl3) * 0.55
+                }
+            }
+            // Arc around props the straight chord clips. Bins are invisible to the
+            // GRID, the route only penalises their cell, and the engine simply
+            // refuses the walk — job 3 stalled forever at a barrel mid-corridor with
+            // a heartbeat frozen at one cell because every tick aimed through it.
+            {
+                const L = Math.hypot(ax, az) || 1
+                const ux = ax / L, uz = az / L
+                const px2 = -uz, pz2 = ux
+                for (const pr of m.props) {
+                    const rx = pr.x - s.x, rz = pr.z - s.z
+                    const t = rx * ux + rz * uz
+                    if (t < 0.1 || t > L + 0.1) continue
+                    const cx = rx - ux * t, cz = rz - uz * t
+                    const d = Math.hypot(cx, cz)
+                    const need = pr.r + 0.62 // > the engine's r + 0.32 contact ring —
+                    // sitting exactly ON the ring is what froze the walk dead
+                    if (d < need) {
+                        const side = (cx * px2 + cz * pz2) >= 0 ? 1 : -1
+                        const push = Math.min(0.9, need - d + 0.25)
+                        ax -= px2 * push * side * (evasive ? 0.35 : 1)
+                        az -= pz2 * push * side * (evasive ? 0.35 : 1)
+                    }
+                }
+            }
+            if (s.elapsed - bestT > 1.6 && !evasive) {
                 if (TRACE) {
                     const sm = stickFor(s.camEff, ax, az)
                     await this.trace(`stuck at ${s.x.toFixed(2)},${s.z.toFixed(2)} best=${bestD.toFixed(2)} aim=(${ax.toFixed(1)},${az.toFixed(1)}) stick=(${sm[0].toFixed(2)},${sm[1].toFixed(2)}) cam=${s.camEff.toFixed(2)} side=${Math.floor((s.elapsed - bestT) / 1.6) % 2 ? -1 : 1}`)
@@ -476,7 +546,11 @@ class Player {
                 bestD = dW
             }
             const [mx, my] = stickFor(s.camEff, ax, az)
-            if (++this.legN % 50 === 0) await this.beat(`leg->(${tx.toFixed(1)},${tz.toFixed(1)}) @${here} d=${dW.toFixed(1)} bad=${bad} hint="${s.hint}"`)
+            if (++this.legN % 50 === 0) {
+                let np = null, nd = 9e9
+                for (const pr of m.props) { const dd = Math.hypot(pr.x - s.x, pr.z - s.z); if (dd < nd) { nd = dd; np = pr } }
+                await this.beat(`leg->(${tx.toFixed(1)},${tz.toFixed(1)}) @${here} (${s.x.toFixed(2)},${s.z.toFixed(2)}) d=${dW.toFixed(1)} bad=${bad} stick=(${mx.toFixed(2)},${my.toFixed(2)}) prop=${np ? `${nd.toFixed(2)}/${np.r.toFixed(2)}` : '—'} hint="${s.hint}"`)
+            }
             // The gait: a watcher within earshot means CROUCH — crouch noise is 0, and
             // every suspect this job generated was summoned by upright footsteps. The
             // walk is only allowed where nobody could hear it anyway.
