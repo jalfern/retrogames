@@ -1270,12 +1270,26 @@ const pointBlank = await api(async () => {
     const me = t.probe()
     // A guard, in the open, looking straight at us. `warpWatcher` aims him by putting the
     // actor on his nose rather than by trusting a yaw we would have to compute ourselves.
+    // Snapshot FIRST, put back at the end, and calm on the way out. This check exists to
+    // defend trap 13 ("a harness that moves the world must put it back") and the first
+    // version of it broke that trap itself: it warped an ALERT guard three metres from the
+    // raccoon and left him there, so he spent the next two sections chasing the courier,
+    // bagged him mid-grab, and the cart section reported `cargo sticks to the raccoon
+    // (held: null)` — a red about the grab button, caused by a guard who should have been
+    // home on his route. A staged guard is a loan.
     let w = null
+    let wi = -1
+    let snap = null
     for (let i = 0; i < t.watchers().length; i++) {
+        snap = t.watcherAt(i)
         const k = t.warpWatcher(i, me.x - 3.0, me.z, 'alert')
-        if (k) { w = k; break }
+        if (k) { w = k; wi = i; break }
     }
-    if (!w) return null
+    const putBack = () => {
+        if (wi >= 0 && snap) t.restoreWatcher(wi, snap)
+        t.calm()
+    }
+    if (!w) { putBack(); return null }
     let det = 0
     const t0 = t.engine().st.elapsed
     let took = -1
@@ -1285,7 +1299,9 @@ const pointBlank = await api(async () => {
         if (t.probe().caged || t.state().sim.phase !== 'play') break
         if (det >= 0.35) took = t.engine().st.elapsed - t0
     }
-    return { det: +det.toFixed(2), took: +took.toFixed(2), at: [me.x.toFixed(1), me.z.toFixed(1)], cell: me.cell }
+    putBack()
+    return { det: +det.toFixed(2), took: +took.toFixed(2), at: [me.x.toFixed(1), me.z.toFixed(1)],
+        cell: me.cell, back: wi >= 0 && snap ? t.watcherAt(wi).at : null }
 })
 if (pointBlank) {
     claim('an alert guard three metres away starts to notice', pointBlank.det >= 0.35,
@@ -1725,6 +1741,11 @@ const finish = await api(async () => {
         // `park`, not `warp`: the route goes with them and comes back with the snapshot.
         if (!t.parkWatcher(i, far.wx, far.wz)) t.warpWatcher(i, far.wx, far.wz, 'patrol')
     }
+    // Where the point-blank guard was left, if the section above forgot. Printed because
+    // "the cart section is being hunted" should be visible in the log, not inferred from
+    // a dozen reds about grabbing.
+    const stillAlert = t.watchers().filter(x => x.state === 'alert').length
+    if (stillAlert) console.log(`  ..    leak       ${stillAlert} watcher(s) still ALERT entering the tally`)
     // Guards do get walked off the map above, but a patrol is a route, not a teleport
     // prison: the next tick paths them back toward their first node, and the cart section
     // takes long enough at 4 fps that they arrive. So if somebody goes into the sack during

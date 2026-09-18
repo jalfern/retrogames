@@ -599,3 +599,28 @@ yard" by teleport, where a patrol is a route and routes walk home.
 
 **Pin the rule:** a surviving mutant is a pointer at *reachability* first and *hardware*
 never. Fix the theory before naming the machine.
+
+
+## 3. The check written to defend a rule, which broke the rule
+
+CI was skipping its detection checks at 5 fps, so I added one that could stage its premise
+with a **single warp**: put an alert guard three metres from the raccoon and ask whether the
+meter moves. It passed on the runner. It also broke the very next section:
+
+```
+FAIL  cargo sticks to the raccoon  ({"held":null, ... "hands":null})
+FAIL  the cart verb is "deliver"  (no verb offered at the cart)
+```
+
+The new check warped an **alert** guard into the middle of the map and left him there. He
+spent the next two sections hunting the courier and bagged him mid-grab. `held: null` is not
+a grab-button bug; it is a guard with a loan he was never called back for.
+
+The repo's rule seventeen says *a harness that moves the world must put it back*. I wrote a
+check that violated it two screens below the rule, in the same file, while fixing the checks
+that rule was written from. It passed locally on the first run because a laptop at 60 fps
+finishes the grab before the guard arrives.
+
+**Pin the rule:** the leak-check I added on the spot is one line — count watchers still
+`alert` on entry to the next section and print it. Cheap detectors of "the previous test
+stole the world" beat careful authoring, because careful authoring is what just failed.
