@@ -293,6 +293,16 @@ registers as "go" or as noise.
     the stopwatch** — the ramp it was measuring no longer exists — under a claim that says
     `one animal was measured, not two`. **Two subjects averaged is not a measurement.**
 
+### 1b2. **CI is green with the honest floors in place** — 137/137 + 1 SKIP on the runner,
+    the whole browser suite. What made it green was not relaxing a threshold anywhere: it was
+    four driver bugs (poll the world instead of sleeping at it; zero the meter before timing it;
+    don't stand the courier within grab range of a guard; wait for patrols to *arrive*) and one
+    piece of theatre that had to be measured rather than assumed — `lit on 48/48 polls` used to
+    be a claim, now it is a number with a claim underneath it, and the CI box that once reported
+    `peak meter 0.00` while claiming to be lit 48 polls out of 48 now reports the guard's own
+    slot rising with it (`slot 0.491 / probe 0.49`), which is the pair that says the sim and the
+    harness are watching the same torch.
+
 ### 1c. **A cell scored at the nose of a cone is behind the guard within a frame or two.** The
     hunt parks the courier in a torch beam, then times the meter. The guard walks 3 m/s, so at
     CI's frame rate each frame is half a metre of guard: the cell the hunt had just scored
