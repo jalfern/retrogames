@@ -272,6 +272,22 @@ legible from where you actually stand while chewing it, whether the vault door (
 for the first time this week) now reads as a door, and whether the chain hitting the floor
 registers as "go" or as noise.
 
+### 1a. **Ask the sim where a watcher can see — and about WHICH watcher.** Two reds on the
+    same check, one build, five minutes apart, both true:
+    * `why()` answers about **the active raccoon and every watcher in range**, sorted by rate.
+      Matching its rows on `kind` is not an identity: job 1 fields two guards, so
+      `find(x => x.kind === 'guard')` returned whichever the sort put first — usually the one
+      parked 20 m away, and a placement probe spent 24 tries failing sightlines it was never
+      looking at. `why()` now carries `i`, the same index `watcherAt`/`warpWatcher` number, and
+      the probe asks by index.
+    * Then it inherited its **ground**: it staged the torch around wherever the previous
+      section left the raccoon, which at 5 fps was sometimes inside a wall — every sightline
+      impossible because the actor's own tile made it so. It now picks a venue (floor, >= 4
+      directions with 5 m of unbroken floor), verifies the engine calls the tile floor, and
+      says so: `venue [-12.1,18.5] on FLOOR, 5 open ways`.
+    Same lesson twice in one day, from two different subsystems: **a fact the engine can be
+    asked is a fact that must be asked** — and the answer must name the thing you asked about.
+
 ### 1b. ~~All three crew are stacked on the spawn tile~~ — closed, and now *gated*
 They were spread already (`freeAround` walks outward in rings, >= 0.9 m apart and >= 1.9 m
 clear of any S/X/P/V mark), but nothing said so: the queue item survived because the fix had
