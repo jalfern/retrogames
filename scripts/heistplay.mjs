@@ -1196,7 +1196,7 @@ const seen = await api(async () => {
     // no longer exists. How often that happened is reported, never absorbed.
     const subject = t.state().sim.crew.find(c => c.active) || t.state().sim.crew[0]
     let repins = 0
-    let reparked = 0, litBy = 0, pollsBy = 0
+    let reparked = 0, litBy = 0, pollsBy = 0, sawDet = 0, detTrace = 'never lit twice', maxSlot = 0
     for (let i = 0; i < 48; i++) {
         await window.__simSleep(0.05)
         const who = t.state().sim.crew.find(c => c.active)
@@ -1238,7 +1238,19 @@ const seen = await api(async () => {
                 if (q3) { reparked++; spot.x = +spot.x.toFixed(2); break }
             }
         }
-        if (q3) litBy++
+        if (q3) {
+            litBy++
+            // **Two numbers, because "the game says it sees you and the meter is flat" is two
+            // different bugs and the log has to say which.** `q3.det` is the guard's OWN
+            // suspicion slot for this raccoon (the thing the per-frame loop integrates);
+            // `q3.maxDet` is what the HUD publishes, the worst slot any watcher holds. Flat
+            // slots with a lit `rate` means the sight test inside `updateWatchers` disagrees
+            // with the one `why()` runs — a per-frame dt story. Rising slots under a flat HUD
+            // number means the publish path (`c.det = max over watchers`) is the liar. Printed
+            // once per section because CI is the only box that has ever seen this happen.
+            maxSlot = Math.max(maxSlot, q3.det || 0)
+            if (!sawDet && litBy === 2) { sawDet = 1; detTrace = `slot ${q3.det} hud ${q3.maxDet} rate ${q3.rate}` }
+        }
         pollsBy++
         const s = t.probe()
         samples.push(+s.det.toFixed(2))
@@ -1345,7 +1357,8 @@ const seen = await api(async () => {
     const eff = !spot ? 1 : (want > 0.05 ? (alerted ? 1 : peak) / want : 1)
     return { spot, samples, peak: +peak.toFixed(2), why, caged: t.probe().caged, heat: st.heat, penned: penned(),
         eff: +eff.toFixed(2), ramp, alerted, want: +want.toFixed(2), stood: +stood.toFixed(2), repins,
-        reparked, litBy, pollsBy, litFrac: pollsBy ? +(litBy / pollsBy).toFixed(2) : 0,
+        reparked, litBy, pollsBy, litFrac: pollsBy ? +(litBy / pollsBy).toFixed(2) : 0, detTrace, maxSlot,
+        hud: (t.probe() || {}).det,
         offstage: keptSnap.length,
         busted: penned(), revived, spottedAt: spottedAt < 0 ? -1 : +spottedAt.toFixed(2),
         // What the box was doing DURING the hunt, not five seconds before it. A floor measured
@@ -1415,11 +1428,25 @@ claim('the meter fills at the rate the game says it should', (seen.eff ?? 1) > 0
             : ` — polled peak ${seen.peak}, and it never bagged them`)
         + (seen.revived ? ` — after putting ${seen.revived} prisoner(s) back on their feet: a caged raccoon's meter is pinned at zero, so polling one proves nothing` : ''), 8)
 if (seen.pollsBy) console.log(`  ..    beam       lit on ${seen.litBy}/${seen.pollsBy} polls (${Math.round(seen.litFrac * 100)}%); walked back into an arc `
-    + `${seen.reparked} time(s) — a guard walks 3 m/s, so a cell scored at the nose of a cone is behind him within a frame or two at low fps`)
+    + `${seen.reparked} time(s); guard slot / HUD / rate at the second lit poll: ${seen.detTrace})`)
+// The one line that answers "is the sim lying to the harness, or is the harness lying about
+// what it measured?" — and it is printed even when everything below passes, because the CI
+// runner is the only machine where it has ever been interesting.
+console.log(`  ..    suspicion  hud says ${seen.hud} after ${seen.pollsBy} lit polls; ${seen.detTrace}`)
 claim('the courier was actually in a beam while it was being timed', (seen.litFrac ?? 0) > 0.5 || seen.alerted,
     `the game said "I see you" on ${seen.litBy} of ${seen.pollsBy} polls, after ${seen.reparked} re-park(s) — below half and the number `
     + `underneath is measuring a raccoon standing in a garden nobody was watching, not a torch noticing you `
     + `meter, not a raccoon in a beam`, 12)
+// **The divide, made a claim.** `maxSlot` is the guard's own per-frame suspicion slot for this
+// raccoon; `peak` is what the harness read through `probe().det`. A beam lit on every poll with
+// the SLOT flat means the sight test inside `updateWatchers` is not the sight test `why()` runs
+// (a dt / per-frame integration story, and the engine owns it). A slot that climbs under a flat
+// HUD number means the publish path — `c.det = max over watchers` — is the liar, and the harness
+// owns the misreading. CI has reported "peak meter 0.00" on a run that was lit 48 polls out of
+// 48; this is the check that says which of the two it was instead of a guess in a commit message.
+claim('a beam the game admits to fills the guard slot it owns', (seen.maxSlot || 0) > 0.15 || seen.alerted,
+    `lit on ${seen.litBy}/${seen.pollsBy} polls; the guard's own slot peaked at ${seen.maxSlot}, the harness read ${seen.peak} through probe(). `
+    + `A flat slot says updateWatchers is not integrating the cone why() sees; a climbing slot under a flat read says the publish path is`, 12)
 claim('standing in a torch beam raises suspicion', (seen.peak || 0) > 0.15 || seen.alerted,
     `peak meter ${(seen.peak || 0).toFixed(2)}${seen.alerted
         // A poll after the alert reads zero BY DESIGN, so say so here rather than letting
