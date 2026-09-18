@@ -923,6 +923,38 @@ const seen = await api(async () => {
     // route, and the absence of the other two is printed, not hidden.
     const allW = t.watchers()
     const keeper = allW.findIndex(w => w.kind === 'guard')
+    // **The other two raccoons are the hazard, not the cast.** The hunt below teleports the
+    // active courier into cones hundreds of times, and the bystanders stay wherever the
+    // previous set-piece left them — which, after an arrest section, can be arm's reach from
+    // an alerted guard. So a bystander gets bagged, then the next one does, and the job BUSTS;
+    // a busted job stops updating its suspicion meter, and this section reported `meter 0.00 >
+    // 0.00` four times as "the torch never noticed you". It reproduced at 60 fps, so no
+    // frame-rate story was available: the driver had simply ended the heist and kept measuring.
+    // Everybody not being measured goes nowhere near a watcher, and anybody already in a sack
+    // comes out before the stopwatch exists.
+    const floorCell = c => ['FLOOR', 'MARBLE', 'BUSH'].includes(c)
+    let parked0 = 0, freed0 = 0
+    const meIdx = t.probe().caged ? -1 : (t.state().sim.crew.find(c => c.active) || {}).idx
+    for (const c of t.state().sim.crew) {
+        if (c.caged) { t.release(c.idx); freed0++ }
+    }
+    for (const c of t.state().sim.crew) {
+        if (c.idx === meIdx || c.caged) continue
+        let ok = false
+        for (const m of t.marks()) {
+            for (const [dx, dz] of [[0, 3], [3, 0], [-3, 0], [0, -3], [4, 4], [-4, 4], [4, -4], [-4, -4], [0, 6], [6, 0]]) {
+                const x = m.wx + dx, z = m.wz + dz
+                if (t.watchers().some(w => Math.hypot(x - w.x, z - w.z) < 7)) continue
+                t.switchTo(c.idx)
+                t.moveTo(x, z)
+                if (!floorCell(t.probe().cell)) continue
+                parked0++; ok = true; break
+            }
+            if (ok) break
+        }
+    }
+    if (meIdx >= 0) t.switchTo(meIdx)
+    if (freed0 || parked0) console.log(`  ..    staged     ${freed0} raccoon(s) out of the sack, ${parked0} bystander(s) moved 7+ m from every watcher`)
     const keptSnap = []
     let fx = null, fd = -1
     for (let cx = -34; cx <= 34; cx += 2) {
@@ -1110,21 +1142,47 @@ const seen = await api(async () => {
     let revived = 0
     const standUp = () => {
         const stuck = t.state().sim.crew.filter(c => c.caged)
-        if (!stuck.length && t.state().sim.phase === 'play') return
+        if (!stuck.length && t.state().sim.phase === 'play') return false
         const here = t.probe()
         t.calm()
         for (const c of stuck) { t.release(c.idx, here.x, here.z); revived++ }
         t.goto('play')
+        return true
     }
+    // **Who is being measured.** `probe().det` is the ACTIVE raccoon's meter, and a bagging
+    // hands the controls to somebody standing somewhere else — so the sample after an arrest
+    // is a different animal's suspicion, which sits at zero while the torch does its job on
+    // the one in the sack. That is the whole `meter 0.00 > 0.00 > 0.00` family of reds, and
+    // `probe().caged` cannot catch it: after the switch the active raccoon is free. So the
+    // driver pins the subject by index, and if the sim takes it away, puts them back on their
+    // feet, walks them into the same beam and RESTARTS the stopwatch — the ramp being measured
+    // no longer exists. How often that happened is reported, never absorbed.
+    const subject = t.state().sim.crew.find(c => c.active) || t.state().sim.crew[0]
+    let repins = 0
     for (let i = 0; i < 48; i++) {
         await window.__simSleep(0.05)
+        const who = t.state().sim.crew.find(c => c.active)
+        if (who && who.idx !== subject.idx) {
+            standUp()
+            t.switchTo(subject.idx)
+            t.moveTo(spot.x, spot.z)
+            await window.__simSleep(0.05)
+            if (!['FLOOR', 'MARBLE', 'BUSH'].includes(t.probe().cell)) t.moveTo(spot.x + 1.2, spot.z)
+            tSpot = t.engine().st.elapsed
+            spottedAt = -1
+            samples.length = 0
+            peak = 0
+            stood = 0
+            repins++
+        } else if (t.probe().caged || t.state().sim.phase !== 'play') {
+            if (standUp()) { t.moveTo(spot.x, spot.z); tSpot = t.engine().st.elapsed; samples.length = 0; stood = 0 }
+        }
         // On the JOB CLOCK, not by adding up the sleeps: the hunt above also stood the
         // raccoon in a cone (that is how it scored the cell), and the meter has been
         // filling since the stopwatch started, not since this loop began. Summing the
         // loop's own sleeps undercounts by exactly the re-hunt, which is what made the
         // first version of this ratio report 3.88x on a perfectly healthy build.
         stood = Math.max(stood, t.engine().st.elapsed - tSpot)
-        if (t.probe().caged || t.state().sim.phase !== 'play') standUp()
         const s = t.probe()
         samples.push(+s.det.toFixed(2))
         peak = Math.max(peak, s.det)
@@ -1229,7 +1287,7 @@ const seen = await api(async () => {
     const ramp = spot ? +(spot.rate * span).toFixed(2) : 0
     const eff = !spot ? 1 : (want > 0.05 ? (alerted ? 1 : peak) / want : 1)
     return { spot, samples, peak: +peak.toFixed(2), why, caged: t.probe().caged, heat: st.heat, penned: penned(),
-        eff: +eff.toFixed(2), ramp, alerted, want: +want.toFixed(2), stood: +stood.toFixed(2),
+        eff: +eff.toFixed(2), ramp, alerted, want: +want.toFixed(2), stood: +stood.toFixed(2), repins,
         offstage: keptSnap.length,
         busted: penned(), revived, spottedAt: spottedAt < 0 ? -1 : +spottedAt.toFixed(2) }
 })
@@ -1263,6 +1321,9 @@ if (seen.spot) console.log(`  ..  parked in the fastest cone the hunt found: ${s
     const fpsNow = (await api(() => window.__heistTest.probe().fpsAvg)) || 60
     const slack = +Math.min(0.5, 2 / Math.max(1, fpsNow)).toFixed(2)
     const budget = +(0.55 + (seen.spot ? seen.spot.d : 3) * 0.22 + slack).toFixed(2)
+    claim('one animal was measured, not two', (seen.repins ?? 0) <= 1,
+        `${seen.repins} hand-off(s) mid-ramp: a bagging gives the controls to a raccoon standing somewhere else, `
+        + ' and from there the meter belongs to that one — this restarts the clock rather than averaging two subjects', 4)
     claim('a torch at working range notices you inside the budget', seen.spottedAt >= 0 && seen.spottedAt < budget,
         `spotted after ${seen.spottedAt < 0 ? 'never' : seen.spottedAt.toFixed(1) + ' s of game time'} at ${(seen.spot ? seen.spot.d : 0)} m (budget ${(budget - slack).toFixed(2)} s + ${slack} s of frame slack at ${Math.round(fpsNow)} fps; meter ${S2.map(d => d.toFixed(2)).join(' > ')})`, 8)
 }

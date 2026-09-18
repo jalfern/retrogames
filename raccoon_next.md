@@ -282,7 +282,18 @@ registers as "go" or as noise.
     Before re-architecting the DOS boot because CI said so, re-run CI. (If it ever reproduces
     twice, the fix is a boot budget that *re-mounts* rather than one that keeps sampling black.)
 
-### 1a. **Ask the sim where a watcher can see — and about WHICH watcher.** Two reds on the
+### 1a. **`probe().det` is not a measurement of the raccoon you parked.** It is the **active**
+    raccoon's meter, and a bagging hands the controls to somebody standing elsewhere. So the
+    sample after an arrest is a *different animal's* suspicion — pinned at zero while the torch
+    does its work on the one now in the sack — and `probe().caged` cannot catch it, because
+    after the hand-off the active raccoon is free. This is the whole `meter 0.00 > 0.00 > 0.00`
+    family of reds, and it reproduced at 60 fps, which is what stopped me filing it as
+    frame-rate noise like the last three. The driver now pins its subject by index, and if the
+    sim takes the subject away it puts them back, walks them into the same beam and **restarts
+    the stopwatch** — the ramp it was measuring no longer exists — under a claim that says
+    `one animal was measured, not two`. **Two subjects averaged is not a measurement.**
+
+### 1b. **Ask the sim where a watcher can see — and about WHICH watcher.** Two reds on the
     same check, one build, five minutes apart, both true:
     * `why()` answers about **the active raccoon and every watcher in range**, sorted by rate.
       Matching its rows on `kind` is not an identity: job 1 fields two guards, so
