@@ -12,7 +12,7 @@
 
 import * as THREE from 'three'
 import { at, T, CELL, worldOf } from './levels.js'
-import { PAL, mat, propMat, makeTex, tileBox, batch, rng, makeWalker, makeCart, makeGate, makeVaultDoor, makeCage, makePlanter, makeColumn, makeDumpster, makeCrate, makePallet, makeBush, makeHydrant, makeTrashCan, makeCardboardBox, makeLamppost, makeWashingLine, makeMoon, makeSky, makeRain, lootValue } from './art'
+import { PAL, mat, propMat, makeTex, tileBox, batch, rng, makeWalker, makeCart, makeGate, makeVaultDoor, makeCage, makePlanter, makeColumn, makeDumpster, makeCrate, makePallet, makeBush, makeHydrant, makeTrashCan, makeCardboardBox, makeLamppost, makeWashingLine, makeMoon, makeSky, makeRain, lootValue } from './art.js'
 
 const M_PER_TILE_TEX = 2.2   // asphalt/marble texel size, in metres
 
