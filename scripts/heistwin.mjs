@@ -3,6 +3,16 @@
 //   npm run heistwin            # job 2 (the museum)
 //   npm run heistwin -- --job 3 # job 3 (the manor)
 //
+// FROZEN (2026-09). This driver is feature-complete and keeps its bugs.
+// Do not add steering, routing or stealth cleverness to it: its job is to be a
+// patient, boring proof that each job is WINNABLE from spawn to gate, and every
+// cleverness added here historically uncovered a driver bug, not a game one
+// (~3 dead-run hours per cleverness). It runs nightly
+// (`.github/workflows/heist-nightly.yml`), never as a merge gate — per-PR proof
+// of existence is `heistsmoke`, per-PR proof of the map/stealth/art contract is
+// `heistcheck`. Change this file only when a GAME change breaks it, and then fix
+// the driver minimally and say why in the commit.
+//
 // `heistplay` walks job 1 through scripted set-pieces whose coordinates a human typed.
 // That method cannot be copied to jobs 2 and 3 — those maps have never been walked by
 // anything, and out there a driver needs not coordinates but *decisions*: which pile
