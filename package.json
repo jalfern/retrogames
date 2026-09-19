@@ -36,7 +36,8 @@
     "verify": "node scripts/verify.mjs",
     "aicheck": "node scripts/aicheck.mjs",
     "prodsmoke": "node scripts/prodsmoke.mjs",
-    "heistsmoke": "node scripts/heistsmoke.mjs"
+    "heistsmoke": "node scripts/heistsmoke.mjs",
+    "heisttiming": "node scripts/heisttiming.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

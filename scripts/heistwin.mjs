@@ -350,8 +350,11 @@ class Player {
         console.log(`      [w] ${bits.join(' ')}`)
     }
     async trace(...bits) {
+        // Kept even when quiet: the end-of-attempt autopsy prints the last one, so a
+        // nightly red says which leg the bot was fighting, not just that it lost.
+        this.last = bits.join(' ')
         if (!TRACE) return
-        console.log(`      · ${bits.join(' ')}`)
+        console.log(`      · ${this.last}`)
     }
     // Always-on heartbeat: a leg silent for minutes in a CI log is a hung renderer,
     // and one line per 8 s is cheap insurance against guessing that from an eof.
@@ -844,7 +847,27 @@ for (let attempt = 1; attempt <= MAX_RUNS; attempt++) {
             r.check('the win is the real win flag', s.result?.win === true, JSON.stringify(s.result))
             break
         }
+        // A nightly red used to say only "phase: lost" — nowhere, nothing about why.
+        // This block turns one red into a bug report: where the bot stood, what it was
+        // carrying, who was near and looking at it, and the last heartbeat line the
+        // driver logged (which carries the route hint and prop clearance). Everything
+        // here is read-only — `probe` and the driver's own trace — never a new door in.
+        const eng = await api(() => window.__heistTest.engine())
+        // The driver's own per-leg trace (declared at the top of the run): the last
+        // line is the leg it was fighting when the job ended.
+        const lastTrace = out.p.last || '(no leg logged)'
+        const near = await api((px, pz) => window.__heistTest.debug().map(w => ({
+            k: w.kind, s: w.state, d: +Math.hypot(w.x - px, w.z - pz).toFixed(1),
+            saw: +w.det[0].toFixed(2), x: +w.x.toFixed(1), z: +w.z.toFixed(1),
+        })).filter(w => w.d < 14).sort((a, b) => a.d - b.d), eng.activeCrew.x, eng.activeCrew.z)
+        console.log('      .. autopsy   :',
+            `me=(${eng.activeCrew.x.toFixed(1)},${eng.activeCrew.z.toFixed(1)})`,
+            `cage=${eng.cage.map(m => `(${m.x},${m.z})`).join(' ')} open=${eng.cageOpen()}`,
+            `carrying=${JSON.stringify(s.crew.filter(c => c.carry).map(c => `${c.name}:${c.carry}`))}`,
+            `pie=${eng.pie ? `x${eng.pie.n}` : '-'}`,
+            `near=${JSON.stringify(near)}`)
         console.log('      .. last events:', JSON.stringify(s.events.slice(-12)))
+        console.log('      .. trace     :', lastTrace || '(no leg logged)')
         console.log('      .. watchers  :', JSON.stringify(s.watchers.map(w => `${w.kind}:${w.state}@${w.x.toFixed(0)},${w.z.toFixed(0)}`)))
         console.log('      .. crew      :', JSON.stringify(s.crew.map(c => `${c.name}${c.caged ? '*' : ''}${c.held ? 'P' : ''}@${c.x.toFixed(0)},${c.z.toFixed(0)}`)))
         await api((j) => window.__heistTest.job(j), JOB) // full engine.reset() + brief
