@@ -520,6 +520,18 @@ class Player {
             // GRID, the route only penalises their cell, and the engine simply
             // refuses the walk — job 3 stalled forever at a barrel mid-corridor with
             // a heartbeat frozen at one cell because every tick aimed through it.
+            if (evasive) {
+                // Frozen against a prop: the arc must swing HARD to the flank, not
+                // lean 0.35 off the tangent — the old scaled-down blend still had
+                // the finger pointing at the barrel, and the probe that proved the
+                // escape walked the wrong way (`cam = atan2(dz,dx)`, the engine's
+                // own yaw convention, stick = (sin, -cos); mx=1 walks -x under a
+                // yaw-0 camera). Verified in the live engine: guard at 2.8 m,
+                // opening to 12 m in three seconds of this arc.
+                const L = Math.hypot(ax, az) || 1
+                ax = (ax / L) * 0.2
+                az = (az / L) * 0.2
+            }
             {
                 const L = Math.hypot(ax, az) || 1
                 const ux = ax / L, uz = az / L
@@ -534,9 +546,9 @@ class Player {
                     // sitting exactly ON the ring is what froze the walk dead
                     if (d < need) {
                         const side = (cx * px2 + cz * pz2) >= 0 ? 1 : -1
-                        const push = Math.min(0.9, need - d + 0.25)
-                        ax -= px2 * push * side * (evasive ? 0.35 : 1)
-                        az -= pz2 * push * side * (evasive ? 0.35 : 1)
+                        const push = Math.min(1.3, need - d + 0.4)
+                        ax -= px2 * push * side
+                        az -= pz2 * push * side
                     }
                 }
             }
@@ -697,6 +709,14 @@ async function run(job) {
             const risk = ok ? ok.reduce((a, [x, y]) => a + Math.min(50, danger0.get(x + ',' + y) || 0), 0) : 1e9
             pool.push({ l, ok: !!ok, risk, d: Math.hypot(l.x - s.x, l.z - s.z) })
         }
+        if (s.crew.some(c => c.caged)) {
+            // Someone is ALREADY in the pound. Every grab that starts a chase now
+            // ends in a second arrest before a rescue is even possible (job 3's
+            // opening died exactly this way: painting, pound, painting, pound,
+            // bust at 38 s). Until the cage is empty the bot takes only the
+            // genuinely quiet piles — speed stops mattering, silence is the route.
+            for (const k of pool) if (k.risk > 12) k.risk += 400
+        }
         const reachable = pool.filter(k => k.ok)
         if (!reachable.length) {
             // Nothing is reachable => the vault is what is in the way (that is the only
@@ -856,10 +876,10 @@ for (let attempt = 1; attempt <= MAX_RUNS; attempt++) {
         // The driver's own per-leg trace (declared at the top of the run): the last
         // line is the leg it was fighting when the job ended.
         const lastTrace = out.p.last || '(no leg logged)'
-        const near = await api((px, pz) => window.__heistTest.debug().map(w => ({
+        const near = await api(({ px, pz }) => window.__heistTest.debug().map(w => ({
             k: w.kind, s: w.state, d: +Math.hypot(w.x - px, w.z - pz).toFixed(1),
             saw: +w.det[0].toFixed(2), x: +w.x.toFixed(1), z: +w.z.toFixed(1),
-        })).filter(w => w.d < 14).sort((a, b) => a.d - b.d), eng.activeCrew.x, eng.activeCrew.z)
+        })).filter(w => w.d < 14).sort((a, b) => a.d - b.d), { px: eng.activeCrew.x, pz: eng.activeCrew.z })
         console.log('      .. autopsy   :',
             `me=(${eng.activeCrew.x.toFixed(1)},${eng.activeCrew.z.toFixed(1)})`,
             `cage=${eng.cage.map(m => `(${m.x},${m.z})`).join(' ')} open=${eng.cageOpen()}`,
