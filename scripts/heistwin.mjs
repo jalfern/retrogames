@@ -679,6 +679,23 @@ async function run(job) {
             s = await p.refresh(0.3)
             continue
         }
+        {
+            // CARRIED-AND-CAGED IS NOT LOST — the job is lost when the NEXT
+            // raccoon is bagged coming in. With one crew left there is nobody
+            // to chew the pound (engine.js catchCrew: arrests need two standing),
+            // so a run that arrives here was already dead — and it usually dies
+            // in 38 s chewing a cage for a crewmate the rules cannot return.
+            // Bail loudly; the attempt counter restarts the job honestly.
+            // The engine's own ledger, not my guesses about where the sack is:
+            // `left` counts raccoons still out of the pound, and the sack drops
+            // when the carrier is bagged (it never travels into the cage).
+            const left = (s.sim ? s.sim.left : null) ?? s.crew.filter(c => !c.caged).length
+            if (s.sim && s.sim.caught >= 2 && left < 2) {
+                await p.say('dead job: two bagged and nobody free to chew the pound — restart the attempt')
+                await stick(0, 0)
+                return false
+            }
+        }
         if (s.held) {
             const [cx, cz] = model.worldOf(...model.cart)
             await p.say(`carrying ${s.held} to the cart (${s.delivered}/${s.loot.length} in)`)

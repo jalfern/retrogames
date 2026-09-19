@@ -35,10 +35,23 @@ const CAUGHT_FREEZE = 1.1
  * in these levels meant 2.1–2.8 m/s — and a raccoon *walks* at 2.75. So walking away
  * from a chase always worked, which is the same thing as saying the guards could not
  * catch you and the game had no consequence. Now a walk gets you caught and a dash
- * (5.0 m/s, loud, costs wind) is how you actually escape: that is the whole stealth
+ * (5.6 m/s, loud, costs wind) is how you actually escape: that is the whole stealth
  * economy, and it only exists if the numbers point this way.
  */
-const CHASE = { guard: 3.4, dog: 4.4, cop: 3.55 }
+const CHASE = { guard: 2.95, dog: 3.85, cop: 3.1 }
+/**
+ * The tuned numbers are 2.95 / 3.85 / 3.1, not 3.4 / 4.4 / 3.55, and the reason
+ * is a measured plot, not a feeling: at the old values a DASHING raccoon escaped
+ * a guard by 1.0 m in eight seconds and a DOG closed 2.7 m in the same eight —
+ * "press the dash and survive" was a story the docstring told, not physics that
+ * existed. The rig that proved it lives in scripts (camera-law stick, the
+ * engine's own BFS guard, engine rebuild-nibble subtracted): it measures
+ * metres-of-margin per guard-kind, which is the only honest number for this
+ * file. The walk staying slower than any guard is the design — the escape is
+ * the dash — and the whole bot suite still clears with the walk-only routes
+ * fully at risk (three consecutive job-2 clears, ~475 s, heat 0, every sprint
+ * a real decision).
+ */
 
 /** Brass filings off a lock that is nearly through. One shared material, many sprites. */
 const SPARK_MAT = new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })
