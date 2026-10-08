@@ -196,7 +196,7 @@ export function nextWaypoint(i, n, loop) {
 export function moveProfile(crew, input) {
     const crouch = !!input.crouch
     const dash = !!input.dash && (input.wind ?? 1) > 0.05
-    const speed = (dash ? 5.0 : crouch ? 1.35 : 2.75) * (crew?.speed ?? 1)
+    const speed = (dash ? 5.6 : crouch ? 1.35 : 2.75) * (crew?.speed ?? 1)
     const noise = dash ? 8.5 : crouch ? 0 : 3.6
     return { speed, noise, crouch, dash }
 }
