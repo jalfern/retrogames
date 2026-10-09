@@ -8,8 +8,6 @@ const FroggerGame = () => {
     const canvasRef = useRef(null)
     const containerRef = useRef(null)
     const [paused, setPaused] = React.useState(false)
-    const [started, setStarted] = React.useState(false)
-    const [gameOver, setGameOver] = React.useState(false)
     const pausedRef = useRef(false)
 
     const handleResume = () => {
@@ -189,7 +187,6 @@ const FroggerGame = () => {
             score = 0
             lives = 3
             gameOverFlag = false
-            setGameOver(false)
             buildWorld()
             resetFrog()
         }
@@ -208,7 +205,6 @@ const FroggerGame = () => {
             lives--
             if (lives <= 0) {
                 gameOverFlag = true
-                setGameOver(true)
                 if (score > hiScore) {
                     hiScore = score
                     localStorage.setItem('frogger.hi', String(hiScore))
@@ -323,6 +319,7 @@ const FroggerGame = () => {
 
         // ------------------------------------------------------------------
         const update = () => {
+            if (frog.animT > 0) frog.animT--
             const m = speedMult()
             riverLanes.forEach(lane => {
                 lane.t++
@@ -584,7 +581,7 @@ const FroggerGame = () => {
                 if (Math.floor(Date.now() / 500) % 2 === 0) {
                     ctx.fillStyle = '#ffe14d'
                     ctx.font = 'bold 11px monospace'
-                    ctx.fillText('PRESS ANY KEY TO START', W / 2, H / 2 + 26)
+                    ctx.fillText('TAP OR PRESS ANY KEY', W / 2, H / 2 + 26)
                 }
                 ctx.fillStyle = '#8f8f8f'
                 ctx.font = '8px monospace'
@@ -601,7 +598,7 @@ const FroggerGame = () => {
                 ctx.fillText(`SCORE ${score}   LEVEL ${level}`, W / 2, H / 2 + 6)
                 if (Math.floor(Date.now() / 500) % 2 === 0) {
                     ctx.fillStyle = '#ffe14d'
-                    ctx.fillText('PRESS ANY KEY', W / 2, H / 2 + 28)
+                    ctx.fillText('TAP OR PRESS ANY KEY', W / 2, H / 2 + 28)
                 }
             }
         }
@@ -609,7 +606,6 @@ const FroggerGame = () => {
         // ------------------------------------------------------------------
         const startGame = () => {
             isAttractMode = false
-            setStarted(true)
             resetGame()
             audioController.playSweep(220, 440, 0.15, 'square', 0.1)
         }
@@ -665,12 +661,19 @@ const FroggerGame = () => {
             }
         }
 
+        const handlePointerDown = () => {
+            if (isAttractMode || gameOverFlag) {
+                window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter' }))
+            }
+        }
+
         const init = () => {
             buildWorld()
             resetFrog()
             resize()
             window.addEventListener('keydown', handleKeyDown)
             window.addEventListener('resize', resize)
+            canvas.addEventListener('pointerdown', handlePointerDown)
             canvas.focus()
             animationFrameId = requestAnimationFrame(loop)
         }
@@ -697,6 +700,7 @@ const FroggerGame = () => {
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('resize', resize)
+            canvas.removeEventListener('pointerdown', handlePointerDown)
             cancelAnimationFrame(animationFrameId)
         }
     }, [])
@@ -707,7 +711,7 @@ const FroggerGame = () => {
                 <canvas ref={canvasRef} className="block" style={{ imageRendering: 'pixelated' }} />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'FROGGER')} onResume={handleResume} />}
             </div>
-            <VirtualControls visible={started && !gameOver} />
+            <VirtualControls visible={!paused} />
         </div>
     )
 }
