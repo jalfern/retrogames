@@ -3,7 +3,8 @@
 //   npm run heistwin            # job 2 (the museum)
 //   npm run heistwin -- --job 3 # job 3 (the manor)
 //
-// FROZEN (2026-09). This driver is feature-complete and keeps its bugs.
+// FROZEN (2026-09; re-touched 2026-10 for the dash-escape tune). This driver is
+// feature-complete and keeps its bugs.
 // Do not add steering, routing or stealth cleverness to it: its job is to be a
 // patient, boring proof that each job is WINNABLE from spawn to gate, and every
 // cleverness added here historically uncovered a driver bug, not a game one
@@ -12,6 +13,12 @@
 // of existence is `heistsmoke`, per-PR proof of the map/stealth/art contract is
 // `heistcheck`. Change this file only when a GAME change breaks it, and then fix
 // the driver minimally and say why in the commit.
+//
+// 2026-10 exception (the dash-escape tune, PR #61): the tune narrowed the rescue
+// window so a guard could bag the *chewer* mid-chew — the 2nd arrest that ends job
+// 3 (two caged, nobody left free to chew). `chewPound` is now threat-aware: if a
+// watcher closes to grab range it aborts, breaks sight, and resumes — safe because
+// the engine's lock progress never decays on interrupt. No steering/routing changed.
 //
 // `heistplay` walks job 1 through scripted set-pieces whose coordinates a human typed.
 // That method cannot be copied to jobs 2 and 3 — those maps have never been walked by
@@ -857,12 +864,43 @@ async function chewPound(p, model, s) {
             if (String(s.hint).includes('LOOSE')) break
         }
     }
-    await hold(true)
-    for (let i = 0; i < 50 && s.phase === 'play'; i++) {
+    // The chew is a stationary action: stand here long enough and a guard that was
+    // already hunting you arrives to bag the *chewer* — the second arrest that ends
+    // the job (two caged, nobody left free to chew). The lock does not reset when the
+    // hold breaks (engine.js: `a.chew` only accumulates, never decays), so the chew
+    // can be interrupted safely: if a watcher closes to grab range, break sight,
+    // re-approach and resume from the same progress. A slower-but-safe rescue beats a
+    // faster one that loses the whole crew. Aborts are capped so a permanently-guarded
+    // pound bails and retries instead of looping forever.
+    let aborts = 0, cycles = 0
+    while (s.phase === 'play' && s.crew.some(c => c.caged) && aborts < 8 && cycles < 60) {
+        const threat = s.watchers.some(w => {
+            const d = Math.hypot(w.x - s.x, w.z - s.z)
+            return (w.state === 'alert' && d < 4) || (w.state === 'suspect' && d < 2.5)
+        })
+        if (threat) {
+            aborts++
+            await hold(false)
+            await p.say(`chew interrupted, guard closing in (aborts=${aborts})`)
+            s = await p.evade(s)
+            if (s.phase !== 'play') return
+            if (!s.crew.some(c => c.caged)) { await p.say('crewmate freed during evade'); return }
+            // re-approach the pound and hug the cage until the verb face is back
+            await p.goTo(s, px, pz, { radius: 1.6, hurry: true, leash: 60 })
+            s = await p.refresh(0.2)
+            for (let a = 0; a < 6 && s.phase === 'play' && !String(s.hint).includes('LOOSE'); a++) {
+                const ang = a * Math.PI / 3
+                await p.goTo(s, px + Math.cos(ang) * 1.55, pz + Math.sin(ang) * 1.55, { radius: 0.4, hurry: true, leash: 25 })
+                s = await p.refresh(0.2)
+            }
+            continue
+        }
+        cycles++
+        await hold(true)
         await sleep(0.3)
         s = await p.refresh(0)
-        if (!s.crew.some(c => c.caged)) { await hold(false); await p.say('crewmate chewed loose'); break }
-        if (s.events.some(e => e.type === 'free')) { await hold(false); break }
+        if (!s.crew.some(c => c.caged)) { await hold(false); await p.say('crewmate chewed loose'); return }
+        if (s.events.some(e => e.type === 'free')) { await hold(false); return }
     }
     await hold(false)
 }
