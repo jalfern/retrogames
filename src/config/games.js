@@ -135,7 +135,7 @@ export const GAMES = [
         label: 'FROGGER',
         theme: 'dark',
         description: 'Hop five lanes of traffic, ride the logs across the river, and fill all five lily pads before the clock runs out. Turtles nap — and the water never forgets. Every pad you fill brings faster traffic.',
-        controls: ['Arrow Keys: Hop', 'Space: Hop Forward', '?: Pause and read the controls']
+        controls: ['Arrow Keys / D-Pad: Hop', 'Space / A button: Hop Forward', 'Tap the screen to start and restart', '?: Pause and read the controls']
     },
     {
         path: '/missilecommand',
