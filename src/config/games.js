@@ -6,6 +6,7 @@ import DonkeyKongGame from '../games/DonkeyKong'
 import CentipedeGame from '../games/Centipede'
 import DefenderGame from '../games/Defender'
 import PitfallGame from '../games/Pitfall'
+import FroggerGame from '../games/Frogger'
 import MissileCommandGame from '../games/MissileCommand'
 import AdventureGame from '../games/Adventure'
 import SuperMarioGame from '../games/SuperMario'
@@ -127,6 +128,14 @@ export const GAMES = [
         theme: 'light',
         description: 'Navigate the jungle, jump over pits and crocs, and swing on vines to find the treasure.',
         controls: ['Arrow Left/Right: Run', 'Space: Jump', 'Arrow Up/Down: Climb Ladder']
+    },
+    {
+        path: '/frogger',
+        component: FroggerGame,
+        label: 'FROGGER',
+        theme: 'dark',
+        description: 'Hop five lanes of traffic, ride the logs across the river, and fill all five lily pads before the clock runs out. Turtles nap — and the water never forgets. Every pad you fill brings faster traffic.',
+        controls: ['Arrow Keys: Hop', 'Space: Hop Forward', '?: Pause and read the controls']
     },
     {
         path: '/missilecommand',
