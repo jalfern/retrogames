@@ -539,3 +539,17 @@ Quick orientation: `src/games/SuperMario/index.jsx` is the live build, and
 `src/games/SuperMarioClassic/index.jsx` is the vendored pristine v1 (route `/mario-classic`,
 `hidden: true`, reached only from the menu; its `?` returns to `/mario?menu=1`).
 Verify Mario work with `npm run verify` (see *Self-verifying* above).
+
+## The Forge (autonomous game production)
+`/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the
+`game-queue/building/shipped` GitHub labels, and "＋ PROPOSE A GAME" is a prefilled
+new-issue link — anything Jon files joins the queue. The loop: **launchd**
+(`scripts/com.jalfern.forge.plist` → `scripts/forge.sh`) runs `opencode run` at
+09/13/17/21 with one instruction — execute `scripts/FORGE.md` (the playbook: claim oldest
+issue → build per conventions + a harness that can fail → the only allowed merge path →
+verify prod → rewrite STATE.md). One game per session, 3-hour cap, stalled-loop exits.
+```bash
+launchctl load ~/Library/LaunchAgents/com.jalfern.forge.plist   # install (after cp)
+scripts/forge.sh                                                # force a session now
+tail -f /tmp/forge/last.log                                     # watch a session
+```

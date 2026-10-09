@@ -2,6 +2,7 @@ import { useState, useEffect, createContext, useContext, useCallback, useMemo, S
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { GAMES } from './config/games'
 import GamesList from './components/GamesList'
+import ForgeBoard from './pages/ForgeBoard'
 import { audioController } from './utils/AudioController'
 
 const GameLabelContext = createContext({
@@ -154,6 +155,7 @@ function App() {
         <Routes>
           <Route path="/" element={<RandomHome />} />
           <Route path="/games" element={<GamesList />} />
+          <Route path="/forge" element={<div className="w-full h-full relative"><ForgeBoard /></div>} />
           {GAMES.map(game => (
             <Route
               key={game.path}
