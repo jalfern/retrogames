@@ -30,8 +30,11 @@ const GamesList = () => {
                 ))}
             </div>
 
-            <div className="mt-16 text-xs text-gray-500">
-                SELECT A GAME TO START
+            <div className="mt-16 text-xs text-gray-500 flex flex-col items-center gap-3">
+                <span>SELECT A GAME TO START</span>
+                <Link to="/forge" className="text-[#ffb347] hover:text-white transition-colors tracking-wider">
+                    ⚒ VISIT THE FORGE — SEE WHAT GETS BUILT NEXT
+                </Link>
             </div>
         </div>
     )
