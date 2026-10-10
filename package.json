@@ -60,7 +60,8 @@
     "icecheck": "node scripts/icecheck.mjs",
     "iceplay": "node scripts/iceplay.mjs",
     "lint:forge": "eslint src/pages scripts",
-    "forgecheck": "node scripts/forgecheck.mjs"
+    "forgecheck": "node scripts/forgecheck.mjs",
+    "forgeplay": "node scripts/forgeplay.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

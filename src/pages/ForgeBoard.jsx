@@ -38,11 +38,12 @@ const ForgeBoard = () => {
     useEffect(() => {
         let alive = true
         let timer = null
-        const get = async p => {
-            const r = await fetch(API(p), { headers: { Accept: 'application/vnd.github+json' } })
-            if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? 'GitHub rate limit (retrying in 10 min)' : `GitHub ${r.status}`)
+        const fetchJson = async (url, label) => {
+            const r = await fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
+            if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? 'GitHub rate limit (retrying in 10 min)' : `${label} GitHub ${r.status}`)
             return r.json()
         }
+        const get = p => fetchJson(API(p), 'query')
         const load = async () => {
             const results = await Promise.allSettled([
                 ...QUERIES.map(get),
@@ -60,14 +61,17 @@ const ForgeBoard = () => {
             const pulse = all.find(i => i.title === 'FORGE PULSE')
             if (pulse) {
                 try {
-                    const cs = await get(pulse.comments_url.replace('https://api.github.com/', ''))
+                    // comments_url is ABSOLUTE — it used to be host-stripped and
+                    // re-prefixed by API(), doubling /repos/... → a 404 that the
+                    // "decorative" catch swallowed. The warden log never rendered.
+                    const cs = await fetchJson(pulse.comments_url, 'pulse')
                     if (alive) setPulses(cs.slice(-6).reverse())
                 } catch { /* decorative */ }
             }
             const nowBuilding = all.filter(i => labelOf(i, 'building') && !i.pull_request)
             if (nowBuilding[0]) {
                 try {
-                    const cs = await get(nowBuilding[0].comments_url.replace('https://api.github.com/', ''))
+                    const cs = await fetchJson(nowBuilding[0].comments_url, 'feed')
                     if (alive) setFeed(cs.slice(-4).reverse())
                 } catch { /* decorative */ }
             } else if (alive) setFeed([])

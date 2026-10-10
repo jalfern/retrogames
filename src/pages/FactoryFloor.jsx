@@ -23,11 +23,11 @@ const FactoryFloor = ({ floor }) => {
             <div className="flex items-stretch gap-1 text-[10px]">
 
                 <Station tag={`QUEUE BIN · ${queued.length}`} className="border-[#d4c5f9]/50 flex-1 min-w-[120px]">
-                    <div className="flex flex-col gap-[2px] h-12 overflow-hidden">
+                    <div className="flex flex-col gap-[2px] h-[74px] overflow-hidden">
                         {shown.map((i, n) => (
                             <div key={i.number} data-queue-card="1"
                                 className="truncate text-[#d4c5f9] text-[9px] leading-tight"
-                                style={{ animation: `forge-drift 6s ease-out both`, animationDelay: `${n * 0.35}s` }}>
+                                style={{ animation: 'forge-drift 1.6s ease-out both', animationDelay: `${n * 0.15}s` }}>
                                 ▸ {shortName(i.title)}
                             </div>
                         ))}
