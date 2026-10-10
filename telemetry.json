@@ -32,3 +32,8 @@ $ gh issue comment 71 --repo jalfern/retrogames --body-file /tmp/qa-dirty-tree-a
 $ npx eslint src/games/Galaga src/config/games.js scripts/galactcheck.mjs 2>&1 |
 $ git add -A && git commit -qm \"GALAGA: canvas shell, attract replay of the prov","qa":"→ the forge is now in the **harness/wiring stage** of #71 (core + autopilot co
 $ echo \"HEAD:    $(git rev-parse HEAD)\"; echo \"origin:  $(git rev-parse origin/f"}}
+{"t":"16:28:01","load":4.66,"free":39,"tasks":{"forge":{"cpu":4,"rss":697},"qa":null,"warden":{"cpu":0,"rss":524},"omlx":{"cpu":29,"rss":31507},"mini":{"cpu":149,"rss":466}},"commit":"forge-galaga: GALAGA: canvas shell, attract replay of the proven run, HUD, VirtualCo","act":{"forge":"[0m$ [0mgit add -A && git commit -qm \"GALAGA harness: 71 checks + 4 mutants ca
+[0m$ [0mnpx eslint src/games/Galaga src/config/games.js scripts/galactcheck.mj
+[0m$ [0mgit add -A && git commit -qm \"GALAGA: canvas shell, attract replay of ","qa":"[0m$ [0mecho \"HEAD:    $(git rev-parse HEAD)\"; echo \"origin:  $(git rev-parse 
+[0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9
+[0m$ [0mecho \"porcelain:\"; git status --porcelain; echo \"branch: $(git branch "}}
