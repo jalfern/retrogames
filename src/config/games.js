@@ -42,6 +42,9 @@ const SonarGame = lazy(() => import('../games/Sonar'))
 // MetroidLite: same lesson — the attract demo is the flow machine's own
 // proven route, so the planner ships in its chunk.
 const MetroidLiteGame = lazy(() => import('../games/MetroidLite'))
+// Momentum Runner: the attract demo is the autopilot's own proven route and
+// the angle-physics sim is its own chunk, so it lazy-loads like the others.
+const MomentumRunnerGame = lazy(() => import('../games/MomentumRunner'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -119,6 +122,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'One hand-carved cave, three upgrades, and the way back is the way forward. The POWER BEAM melts cracked blocks, a dropped BOMB brings down green bulkheads, and the SPACE JUMP — a second push in mid-air — is the only thing that clears the two-jump shafts to the relic. Get strong in the order the cave allows: a ledge hop buys the beam, a shelf climb buys the bombs, and the beam pries open the bulkhead that hides the jump boots. Touch a beacon and the cave remembers you; die and it does not forget the doors you opened. The attract demo is the flow machine hunting its own proven route, tick for tick, behind three layers of parallax.',
         controls: ['Arrow Keys / D-pad: Move', 'Space / A: Jump — press it again in mid-air once you own the SPACE JUMP', 'X / B: FIRE the beam (once acquired) · hold DOWN + FIRE: drop a BOMB', 'Cracked orange blocks melt to beams; green bulkheads fall to bombs', 'Beacons save your progress and recharge your energy', '?: Pause and read the controls']
+    },
+    {
+        path: '/momentum',
+        component: MomentumRunnerGame,
+        label: 'MOMENTUM RUNNER',
+        theme: 'dark',
+        description: 'Hold right and never stop. A hand-carved slope-runner where speed is the only currency: gravity pulls you faster downhill (angle-based collision projects your landing onto the slope), you jump the pits, and springs loft you over the wide ones. The vertical loop only holds you if you enter FAST — and the only rings that survive the far spike hang on its apex, so skimp on momentum and you fall. Three zones, every slope and loop proven clearable by an autopilot that ships in the repo; the attract demo is its own winning route, replayed tick for tick.',
+        controls: ['Arrow Right / D-pad right: Build speed (flat running is too slow for the loop)', 'Arrow Left: Brake', 'Space / Z / Up / A: Jump pits — release early to land short, hold to fly far', 'Hit a hazard WITH rings: you stagger and lose them; WITHOUT: you fall back to the totem', 'Enter the loop fast enough (v² ≥ 5·g·r) or you peel off at the apex', '?: Pause and read the controls']
     },
     {
         path: '/pong',
