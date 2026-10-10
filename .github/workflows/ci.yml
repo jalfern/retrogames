@@ -75,6 +75,12 @@ jobs:
       - run: npm run sonarcheck
       - run: npm run lint:metroid
       - run: npm run metroidcheck
+      # Ninth scoped gate for MOMENTUM RUNNER: the autopilot must clear every
+      # pit with >=24px of proven landing margin, enter the loop at >=1.25x the
+      # centripetal need, and pass every spike holding rings — then eight
+      # mutants prove each physics rule is load-bearing.
+      - run: npm run lint:runner
+      - run: npm run runnercheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

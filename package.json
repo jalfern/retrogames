@@ -52,7 +52,10 @@
         "sonarplay": "node scripts/sonarplay.mjs",
         "lint:metroid": "eslint src/games/MetroidLite src/components src/utils src/config src/main.jsx scripts",
         "metroidcheck": "node scripts/metroidcheck.mjs",
-        "metroidplay": "node scripts/metroidplay.mjs"
+        "metroidplay": "node scripts/metroidplay.mjs",
+        "lint:runner": "eslint src/games/MomentumRunner src/components src/utils src/config src/main.jsx scripts",
+        "runnercheck": "node scripts/runnercheck.mjs",
+        "runnerplay": "node scripts/runnerplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
