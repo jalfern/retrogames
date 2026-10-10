@@ -6,8 +6,11 @@
     <string>com.jalfern.forge-qa</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/jon/Dev/retrogames/scripts/forge-qa.sh</string>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null; git -C /Users/jon/Dev/retrogames show origin/main:scripts/forge-qa.sh | exec /bin/zsh -s -- "$@"</string>
         <string>--foreground</string>
+        <string>forge-qa.sh</string>
     </array>
     <key>StartInterval</key>
     <integer>1800</integer>

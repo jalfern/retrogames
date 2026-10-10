@@ -7,7 +7,9 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>/Users/jon/Dev/retrogames/scripts/warden.sh</string>
+        <string>-c</string>
+        <string>git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null; git -C /Users/jon/Dev/retrogames show origin/main:scripts/warden.sh | exec /bin/zsh -s -- "$@"</string>
+        <string>warden.sh</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/jon/Dev/retrogames</string>
