@@ -56,9 +56,10 @@ const Telemetry = ({ now }) => {
             <div className="flex justify-between mt-2 pt-2 border-t border-[#66b3ff]/20 text-gray-400">
                 <span>free: {last.free}% · load: {last.load}</span>
                 <span className="opacity-90">
-                    {last.act?.qa && <>🔨 {last.act.qa}<br /></>}
-                    {last.act?.forge && <>⚒ {last.act.forge}</>}
-                    {!last.act?.forge && !last.act?.qa && 'lanes quiet'}
+                    {last.commit && <span className="text-[#ffb347]">⚒ {last.commit}<br /></span>}
+                    {last.act?.qa && last.act.qa.split('\n').map((l, i) => <div key={`q${i}`}>🔨 {l}</div>)}
+                    {last.act?.forge && last.act.forge.split('\n').map((l, i) => <div key={`f${i}`}>⚒ {l}</div>)}
+                    {!last.act?.forge && !last.act?.qa && !last.commit && 'lanes quiet'}
                 </span>
             </div>
         </div>

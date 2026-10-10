@@ -75,7 +75,10 @@ AGENTS.md wins.
   commit pushed to `forge/<slug>` the moment it passes `node`/`eslint`.
   A session that dies then leaves a decodable corpse, not vapor. Update the
   issue with a `FORGE: <what's done / what's next>` comment at the same time
-  (that comment is the session handoff).
+  (that comment is the session handoff). Every pushed commit gets one line on
+  the issue — the board's BUILD FLOOR is built from those comments, so an
+  uncommented commit is invisible work: on a multi-hour build, silence reads
+  as stalled and invites a watchdog to call you dead.
 - One game per session. If a game isn't mergeable in this session, leave the
   branch pushed with a draft PR marked **WIP: <what's missing>**, keep the
   `building` label, and exit — never merge a red/WIP PR (AGENTS.md #5).

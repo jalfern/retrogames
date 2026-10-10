@@ -21,12 +21,25 @@ task() {
     fi
 }
 act() {
-    local f pid line
-    f="$1"
-    [[ -f "$f" ]] || { printf '""'; return; }
-    line=$(tail -c 4000 "$f" | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^(→|⚙|\$) ' | tail -1)
-    printf '%s' "${line:0:90}" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+    # one python block: strips ANSI (BSD sed has no \x1b), keeps the last 3
+    # meaningful lines, emits valid JSON. No shell quoting in the path.
+    python3 - "$1" <<'PYA'
+import json, re, sys
+try:
+    raw = open(sys.argv[1], errors='ignore').read()[-8000:]
+except OSError:
+    print('""'); raise SystemExit
+lines = [l[:80] for l in raw.splitlines()
+         if re.match(r'^(\u2192|\u2699|\$|\s{2}(FAIL|PASS))', re.sub(r'\x1b\[[0-9;]*m', '', l))]
+print(json.dumps('\n'.join(lines[-3:])))
+PYA
 }
+
+# the builder's own working tree = its live progress: branch + last commit
+B=$(git -C /Users/jon/Dev/retrogames branch --show-current 2>/dev/null)
+C=$(git -C /Users/jon/Dev/retrogames log -1 --format=%s 2>/dev/null)
+COMMIT=""
+[[ -n "$B" && "$B" != main ]] && COMMIT="${B}: ${C:0:70}"
 
 LOAD=$(sysctl -n vm.loadavg | awk '{print $2}')
 FREE=$(memory_pressure -Q 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d '%')
@@ -45,10 +58,22 @@ MR=${MR:-0}
 S="{\"t\":\"$(date +%H:%M:%S)\",\"load\":$LOAD,\"free\":${FREE:-0},\
 \"tasks\":{$(task 'opencode run.*THE FORGE' forge),$(task 'opencode run.*QA MASTER' qa),\
 $(task 'opencode run.*WARDEN' warden),$(task 'omlx-server' omlx),\"mini\":{\"cpu\":$MC,\"rss\":$MR}},\
-\"act\":{\"forge\":$(act "$(readlink /tmp/forge/last.log)" ),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)")}}"
+\"commit\":$(printf '%s' "$COMMIT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"act\":{\"forge\":$(act "$(readlink /tmp/forge/last.log)" ),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)")}}"
 
-echo "$S" >> "$LOCAL"
-tail -n 288 "$LOCAL" > "$LOCAL.tmp" && mv "$LOCAL.tmp" "$LOCAL"   # 24 h at 5 min
+python3 - "$LOCAL" "$S" <<'PYS'
+import os, sys
+path, sample = sys.argv[1], sys.argv[2]
+try:
+    lines = open(path).read().splitlines()
+except FileNotFoundError:
+    lines = []
+if sample.startswith('{'):
+    lines.append(sample)
+lines = lines[-288:]   # 24 h at 5 min
+with open(path + '.tmp', 'w') as f:
+    f.write('\n'.join(lines) + '\n')
+os.replace(path + '.tmp', path)   # atomic: readers never see a torn line
+PYS
 
 python3 - "$S" <<'PY'
 import json, subprocess, sys, base64
