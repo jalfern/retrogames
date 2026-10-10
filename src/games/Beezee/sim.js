@@ -63,8 +63,8 @@ export const mulberry32 = (a) => () => {
 // on the hive pad, at least one deep-cup and one web between hive and the far
 // arc — a hazard that cannot be met is scenery, not a hazard).
 export const GARDENS = [
-    { name: 'CLOVER MEADOW', seed: 1337, windBase: 2.4, windGust: 1.6, flowers: 9 },
-    { name: 'SUNNHY MEADOW', seed: 80421, windBase: 3.4, windGust: 2.4, flowers: 11 },
+    { name: 'CLOVER MEADOW', seed: 1337, windBase: 2.4, windGust: 1.6, flowers: 13 },
+    { name: 'SUNNHY MEADOW', seed: 80421, windBase: 3.4, windGust: 2.4, flowers: 15 },
 ]
 
 const kindFor = (rnd) => {
@@ -89,7 +89,7 @@ export function buildGarden(gardenIdx) {
         if (Math.hypot(x, z) < 11) continue                    // keep the hive pad clear
         if (flowers.some(f => Math.hypot(f.x - x, f.z - z) < 7)) continue
         const k = kindFor(rnd)
-        flowers.push({ id: flowers.length, x, z, stemH: 0.5 + rnd() * 0.7, sway: rnd() * 6.28, ...k })
+        flowers.push({ id: flowers.length, x, z, stemH: 0.32 + rnd() * 0.45, sway: rnd() * 6.28, ...k })
     }
 
     const webs = []
@@ -131,11 +131,11 @@ export function buildGarden(gardenIdx) {
         const x = Math.cos(a) * d, z = Math.sin(a) * d
         wasps.push({
             x, z, y: 1 + rnd(), home: { x, z }, r: 0.7,
-            aggro: 9, speed: 3.6, orbit: rnd() * 6.28, wait: 0, stun: 0,
+            aggro: 9, speed: 3.6, orbit: rnd() * 6.28, wait: 0, stun: 0, retreat: 0,
         })
     }
 
-    const gecko = { x: 4.6, z: 0.5, range: 2.0, cool: 1.5, lash: 0 }
+    const gecko = { x: 4.6, z: 0.5, range: 1.9, cool: 1.5, lash: 0 }
 
     return {
         name: g.name, seed: g.seed, windBase: g.windBase, windGust: g.windGust,
@@ -160,6 +160,7 @@ export function newGame(gardenIdx = 0, seedShift = 0) {
         uv: false,
         health: CFG.health,
         scare: 0,
+        goalId: -1,
         bird: { on: false, x: 0, y: 24, z: 0, mode: 'cruise', t: 0 },
         events: [],
         windSeed: mulberry32(world.seed ^ 0x9e3779b9),
@@ -293,9 +294,12 @@ export function step(g, input = {}) {
     // ---- wasps: lazy orbit at home, chase inside aggro AND on leash, sting on contact ----
     for (const wp of g.world.wasps) {
         if (wp.stun > 0) { wp.stun -= dt; continue }
+        if (wp.retreat > 0) wp.retreat -= dt
         const homeD = Math.hypot(wp.x - wp.home.x, wp.z - wp.home.z)
         const bd = Math.hypot(b.x - wp.x, b.z - wp.z)
-        if (bd < wp.aggro && b.stuck <= 0 && homeD < 11) {
+        // A wasp that just stung withdraws for a few seconds. A wasp that
+        // re-aggros instantly is not a hazard, it is a tax collector.
+        if (bd < wp.aggro && b.stuck <= 0 && homeD < 11 && wp.retreat <= 0) {
             const s = wp.speed * dt
             wp.x += (b.x - wp.x) / bd * s
             wp.z += (b.z - wp.z) / bd * s
@@ -311,6 +315,7 @@ export function step(g, input = {}) {
             b.grace = CFG.stingGrace
             b.vx += (b.x - wp.x) * 4; b.vz += (b.z - wp.z) * 4; b.vy = 2
             wp.stun = 0.8
+            wp.retreat = 5
             hurt(g, 'wasp')
         }
     }
@@ -358,7 +363,11 @@ export function step(g, input = {}) {
     if (ge.cool > 0) ge.cool -= dt
     if (ge.lash > 0) ge.lash -= dt
     const gd = Math.hypot(b.x - ge.x, b.z - ge.z)
-    if (ge.cool <= 0 && gd < ge.range && b.y < 2.6) {
+    const [gwx, gwz] = windAt(g.world, g.t)
+    const gspd = Math.hypot(b.vx + gwx, b.vy, b.vz + gwz)
+    // The gecko takes its time and snaps at whatever LOITERS by its rock.
+    // Fly the hive approach fast and high and it never gets a shot.
+    if (ge.cool <= 0 && gd < ge.range && b.y < 2.6 && gspd < 1.5) {
         ge.lash = 0.35
         ge.cool = 2.5 + g.windSeed() * 2
         if (b.grace <= 0) { b.grace = CFG.stingGrace; hurt(g, 'gecko') }
@@ -367,8 +376,11 @@ export function step(g, input = {}) {
     // ---- sun ----
     if (g.t >= CFG.day) {
         g.end = 'sun'
-        g.score += 0
         g.events.push({ type: 'sunset' })
+    } else if (g.world.flowers.every(f => f.nectar <= 0)) {
+        g.end = 'delivered'
+        g.score += Math.max(0, Math.round((CFG.day - g.t) * 3))
+        g.events.push({ type: 'cleared', bonus: Math.max(0, Math.round((CFG.day - g.t) * 3)) })
     }
     return g
 }
@@ -418,18 +430,27 @@ export function autopilot(g) {
         }
     }
     if (!target) {
-        if (mustBank) target = { x: 0, z: 0, y: 1.6, home: true }
+        if (mustBank) target = { x: 0, z: 0, y: Math.hypot(b.x, b.z) > 7 ? 3.8 : 1.2, home: true }
         else {
-            let best = null, bs = Infinity
-            for (const f of g.world.flowers) {
-                if (f.nectar <= 0) continue
-                const risk = (g.world.webs.some(w => Math.hypot(w.x - f.x, w.z - f.z) < 2.5) ? 4 : 0)
-                    + (g.world.wasps.some(w => Math.hypot(w.home.x - f.x, w.home.z - f.z) < 12) ? 6 : 0)
-                const d = Math.hypot(f.x - b.x, f.z - b.z) + risk
-                if (d < bs) { bs = d; best = f }
+            // Sticky goal: a bee works ONE flower until it is dry. "Nearest
+            // nectar each tick" made the bot mill between two blooms and never
+            // fill the carry — it starved with a full meadow around it.
+            const safe = (pool) => pool.filter(f => !g.world.wasps.some(w => Math.hypot(w.home.x - f.x, w.home.z - f.z) < 12))
+            const held = g.world.flowers.find(f => f.id === g.goalId && f.nectar > 0)
+            const pool = safe(g.world.flowers)
+            let best = held && safe([held]).length ? held : null
+            if (!best) {
+                let bs = Infinity
+                for (const f of (pool.length ? pool : g.world.flowers)) {
+                    if (f.nectar <= 0) continue
+                    const risk = g.world.webs.some(w => Math.hypot(w.x - f.x, w.z - f.z) < 2.5) ? 4 : 0
+                    const d = Math.hypot(f.x - b.x, f.z - b.z) + risk
+                    if (d < bs) { bs = d; best = f }
+                }
             }
-            if (!best) target = { x: 0, z: 0, y: 1.6, home: true }
+            if (!best) target = { x: 0, z: 0, y: Math.hypot(b.x, b.z) > 7 ? 3.8 : 1.2, home: true }
             else {
+                g.goalId = best.id
                 target = { x: best.x, z: best.z, y: best.stemH + 0.4 }
                 if (best.uv) g.uvGoal = true
             }
