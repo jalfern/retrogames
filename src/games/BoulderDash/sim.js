@@ -55,6 +55,17 @@ export const CFG = {
     moveEvery: 4,                       // CA ticks between scripted moves (plan + replay cadence)
     caHz: 12,                           // CA ticks per second of world time (classic BD pace)
     fireflyDirs: [[0, 1], [1, 0], [0, -1], [-1, 0]],   // down, right, up, left
+    // Engine switches. All true in play and never touched by the shell; they
+    // exist ONLY so `dashcheck --mutate` can prove each rule is load-bearing
+    // (a child run silences one and the matching check must go red). These are
+    // the same idea as Lemmings' CFG numbers — a single, honest, documented
+    // surface for the gate — just expressed as the on/off rules gravity is.
+    gravity: true,                      // rocks/gems fall
+    roll: true,                         // a blocked rock levels out sideways
+    convert: true,                      // a fallen gem gives up and becomes dirt
+    fireSpread: true,                   // fire lights flammable neighbours
+    flyIgnite: true,                    // the firefly sets what it touches alight
+    fallKill: true,                     // a falling boulder crushes the player
 }
 
 export const DIRS = {
@@ -164,6 +175,7 @@ export function playerMove(g, dir) {
 // re-processed this tick (one cell of fall per tick — the classic pace). Every
 // move is recorded so the shell can kill the player on an impact.
 function gravity(g) {
+    if (!CFG.gravity) return
     const mvB = new Set(), mvD = new Set()
     for (let y = H - 2; y >= 0; y--) {
         for (let x = 0; x < W; x++) {
@@ -178,13 +190,13 @@ function gravity(g) {
                 if (below === FIRE) g.burn[idx(x, y + 1)] = 0
                 if (t === BOULDER) mvB.add(idx(x, y + 1)); else mvD.add(idx(x, y + 1))
                 g.events.push({ type: 'fell', x, y: y + 1, kind: t })
-                if (t === BOULDER && g.player.alive && g.player.x === x && g.player.y === y + 1) {
+                if (t === BOULDER && CFG.fallKill && g.player.alive && g.player.x === x && g.player.y === y + 1) {
                     killPlayer(g, 'boulder')
                 }
                 continue
             }
             // blocked straight down by another rock: try to level out sideways
-            if (below === BOULDER || below === DIAMOND) {
+            if (CFG.roll && (below === BOULDER || below === DIAMOND)) {
                 let rolled = false
                 for (const dx of [-1, 1]) {
                     if (cell(g, x + dx, y) === EMPTY && cell(g, x + dx, y + 1) === EMPTY) {
@@ -199,7 +211,7 @@ function gravity(g) {
                 if (rolled) continue
             }
             // resting. A gem that fell at least one cell gives up and becomes dirt.
-            if (moving && t === DIAMOND) {
+            if (moving && t === DIAMOND && CFG.convert) {
                 g.grid[i] = DIRT
                 g.events.push({ type: 'gemlost', x, y })
             }
@@ -221,7 +233,7 @@ function fire(g) {
         else { g.grid[i] = EMPTY; g.burn[i] = 0 }
     }
     const ignite = []
-    for (const i of burning) {
+    if (CFG.fireSpread) for (const i of burning) {
         if (g.grid[i] !== FIRE) continue                            // just emptied
         const x = i % W, y = (i - x) / W
         for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
@@ -254,7 +266,7 @@ function fireflies(g) {
         const nx = f.x + d[0], ny = f.y + d[1]
         if (inBounds(nx, ny) && cell(g, nx, ny) !== STEEL) {
             f.x = nx; f.y = ny
-            if (g.grid[idx(nx, ny)] !== FIRE) {
+            if (CFG.flyIgnite && g.grid[idx(nx, ny)] !== FIRE) {
                 g.grid[idx(nx, ny)] = FIRE
                 g.burn[idx(nx, ny)] = CFG.burn
                 g.events.push({ type: 'ignite', x: nx, y: ny })
