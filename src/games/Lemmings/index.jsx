@@ -334,7 +334,7 @@ const LemGame = () => {
                     spawned: gs.spawned, exited: gs.exited, dead: gs.dead, need: meta.need,
                     end: gs.end, win: gs.win, score: gs.score, hash: stateHash(gs),
                     cmds: runCmds.length, board: board(),
-                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir })),
+                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger })),
                 }),
                 // The next move the PROVEN solver makes at this point in the
                 // replay — as the live position of that live lemming. Read-only:
