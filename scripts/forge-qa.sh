@@ -18,6 +18,14 @@ fi
 
 cd "$REPO" || exit 1
 
+# The QA brain runs on the Mac mini (omlxmini) so it never fights the game
+# builder for the studio GPU. If the tunnel/mini is down, fall back local.
+MODEL="omlxmini/Qwen3.8-27B-oQ4e-mtp"
+if ! curl -s -m 3 http://127.0.0.1:18000/v1/models >/dev/null 2>&1; then
+    echo "$(date): mini unreachable, running QA on the local GPU instead" >> "$LOG"
+    MODEL="omlx/Qwen3.8-Flash-Next-oQ5e-mtp"
+fi
+
 PROMPT="You are THE QA MASTER. Open scripts/FORGE-QA.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 60 minutes."
 
 # launchd KILLS backgrounded children when the job's script exits (macOS
@@ -27,7 +35,7 @@ PROMPT="You are THE QA MASTER. Open scripts/FORGE-QA.md and execute its session 
 # calls this script plain and gets the old non-blocking behaviour.
 if [[ "${1:-}" == "--foreground" ]]; then
     echo "$(date): FOREGROUND session pid=$$ log=$LOG" >> "$LOG"
-    /opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1
+    /opt/homebrew/bin/opencode run --auto --model "$MODEL" "$PROMPT" >> "$LOG" 2>&1
     STATUS=$?
     echo "$(date): session exit=$STATUS" >> "$LOG"
     exit $STATUS
