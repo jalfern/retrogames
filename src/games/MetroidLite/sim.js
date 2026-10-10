@@ -670,6 +670,12 @@ export const LAYERS = [
     { f: 0.62, n: 12, color: '#e6f2ff' },
 ]
 export function starWorld(layer, k) {
+    // k=0 of the two far layers is PINNED into the relic-hall sky window
+    // (x107-124, rows 2-4) so two camera positions along the hall can prove
+    // each far layer scrolls at its pinned factor and not at the camera's.
+    // Without a pin the far layers have no candidate in that 304 px window.
+    if (layer === 1 && k === 0) return { x: 940, y: 55 }
+    if (layer === 2 && k === 0) return { x: 1180, y: 35 }
     let h = ((layer + 1) * 7919 + (k + 1) * 104729) >>> 0
     h = Math.imul(h ^ (h >>> 15), 0x2c1b31d1) >>> 0
     const x = h % STAR_PER

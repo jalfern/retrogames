@@ -132,7 +132,7 @@ const MetroidGame = () => {
             if (jumpEdge) dbg.jumps++
             if (fireEdge || bombEdge) dbg.fire++
             jumpEdge = false; jumpCut = false; fireEdge = false; bombEdge = false
-            hist.push([gs.tick, Math.round(gs.p.x), Math.round(gs.p.y), gs.p.onGround ? 1 : 0, gs.p.dbl ? 1 : 0])
+            hist.push([gs.tick, Math.round(gs.p.x), Math.round(gs.p.y), gs.p.onGround ? 1 : 0, gs.p.dbl ? 1 : 0, jumpEdge ? 1 : 0, jumpCut ? 1 : 0, gs.dead, gs.end ? 1 : 0])
             if (hist.length > 220) hist.shift()
             if (gs.end === 'win') finish()
         }
@@ -359,9 +359,11 @@ const MetroidGame = () => {
         }
         const JUMP = ['Space', 'KeyZ']
         const FIRE = ['KeyX', 'KeyF']
-        const dbg = { kd: 0, jumps: 0, fire: 0 }
+        const dbg = { kd: 0, jumps: 0, fire: 0, keys: [] }
         const onDown = (e) => {
             dbg.kd++
+            dbg.keys.push([gs.tick, e.code, e.repeat ? 1 : 0])
+            if (dbg.keys.length > 40) dbg.keys.shift()
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') {
                 pausedRef.current = !pausedRef.current
@@ -431,7 +433,7 @@ const MetroidGame = () => {
                     onGround: gs.p.onGround,
                     board: board(),
                 }),
-                camX: () => cam().x,
+                camX: () => cam().x, camY: () => cam().y,
                 evLog,
                 // DEV rig: grant an ability or relocate the body (SETUP ONLY —
                 // damage, doors and death still come from the real sim loop;
