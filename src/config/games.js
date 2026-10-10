@@ -30,6 +30,9 @@ const RaccoonHeistGame = lazy(() => import('../games/RaccoonHeist'))
 // Same lesson, second pupil: BEEZEE is the other three.js title, and Pong is
 // still not paying for a 3D engine.
 const BeeGame = lazy(() => import('../games/Beezee'))
+// Third pupil of the same lesson: Lemmings is 2D canvas but its solver runs in
+// the tab for the attract replay, so keep it out of the main chunk too.
+const LemmingsGame = lazy(() => import('../games/Lemmings'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -75,6 +78,14 @@ export const GAMES = [
         theme: 'light',
         description: 'A first-person honeybee flier. Magic Carpet meets Bug\u2019s Life: drop into a summer meadow at knee-height for a bee, hover flower centers to drink nectar and dust pollen, and fly the load home to the hive before the sun sets. Some flowers only show their landing ring in ULTRAVIOLET — flip on your UV eyes and aim dead-center, because the wind absolutely will not aim for you. Webs, wasps, a bird, and the landlord\u2019s pet gecko all have opinions about your flight path.',
         controls: ['Arrows: Yaw left/right, climb/diving pitch', 'Space / Z / A button: Thrust (hold to fly — bees do not idle)', 'Shift / R: Sprint (faster, and wasps respect it)', 'V / UV button: Ultraviolet eyes — deep-cup flowers only answer to UV', 'Fly into the hive mouth to bank your nectar before sundown', '?: Pause and read the controls']
+    },
+    {
+        path: '/lemmings',
+        component: LemmingsGame,
+        label: 'LEMMINGS-LITE',
+        theme: 'dark',
+        description: 'They walk, they fall, you decide otherwise. A stream of mindless lemmings shuffles out of a cave toward cliffs, voids and plugged steel doors — one key press assigns a skill to the nearest one: blocker, bomber, climber or digger. Four hand-carved levels, each proven solvable (and each skill proven load-bearing) by a solver that ships in the repo; the attract demo is that solution, replayed move for move. Fatal falls are the killer, and a tunnelling digger is the only safe way down.',
+        controls: ['Arrow Keys: Move the assignment cursor (or drag on touch)', '1 2 3 4: pick BLOCKER / BOMBER / CLIMBER / DIGGER (B button cycles)', 'Space / A button / click: assign the skill to the nearest lemming', 'Get at least the OUT quota of lemmings into the door before the clock runs out', '?: Pause and read the controls']
     },
     {
         path: '/pong',

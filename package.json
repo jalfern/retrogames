@@ -40,7 +40,10 @@
         "heisttiming": "node scripts/heisttiming.mjs",
         "lint:bee": "eslint src/games/Beezee src/components src/utils src/config src/main.jsx scripts",
         "beecheck": "node scripts/beecheck.mjs",
-        "beeplay": "node scripts/beeplay.mjs"
+        "beeplay": "node scripts/beeplay.mjs",
+        "lint:lem": "eslint src/games/Lemmings src/components src/utils src/config src/main.jsx scripts",
+        "lemcheck": "node scripts/lemcheck.mjs",
+        "lemplay": "node scripts/lemplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
