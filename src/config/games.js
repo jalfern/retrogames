@@ -27,6 +27,9 @@ import { lazy } from 'react'
 // downloading it. A `lazy()` route component means Vite emits a separate chunk that
 // only fetches when someone actually opens the 3D title.
 const RaccoonHeistGame = lazy(() => import('../games/RaccoonHeist'))
+// Same lesson, second pupil: BEEZEE is the other three.js title, and Pong is
+// still not paying for a 3D engine.
+const BeeGame = lazy(() => import('../games/Beezee'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -64,6 +67,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'A 3D stealth caper. You run a crew of trash pandas through three night jobs — the corner bank, the museum of shiny things, and the manor of moonstone. Slip past torchlight, grab the loot one sack at a time, drop it in the getaway cart, and be over the gate before the heat peaks. Thunder masks your footsteps; the watchman never expects a raccoon to wait for lightning.',
         controls: ['Left stick / WASD: Move (the stick is camera-relative — pull back to retreat)', 'Drag right half / G: Orbit the camera · G recentres it behind you', 'E / Space / Z: Take loot, hide in a bin or the hedge, chew a lock — HOLD to keep chewing', 'F / B: Fling a shiny to lure a guard off your route', 'Q / X: Switch raccoon — the heat chases whoever it last saw', 'Shift / R: Sprint. Faster than a guard, and much louder', 'C: Crouch. Slower, nearly silent, and cover counts double', '?: Pause and read the controls']
+    },
+    {
+        path: '/beezee',
+        component: BeeGame,
+        label: 'BEEZEE',
+        theme: 'light',
+        description: 'A first-person honeybee flier. Magic Carpet meets Bug\u2019s Life: drop into a summer meadow at knee-height for a bee, hover flower centers to drink nectar and dust pollen, and fly the load home to the hive before the sun sets. Some flowers only show their landing ring in ULTRAVIOLET — flip on your UV eyes and aim dead-center, because the wind absolutely will not aim for you. Webs, wasps, a bird, and the landlord\u2019s pet gecko all have opinions about your flight path.',
+        controls: ['Arrows: Yaw left/right, climb/diving pitch', 'Space / Z / A button: Thrust (hold to fly — bees do not idle)', 'Shift / R: Sprint (faster, and wasps respect it)', 'V / UV button: Ultraviolet eyes — deep-cup flowers only answer to UV', 'Fly into the hive mouth to bank your nectar before sundown', '?: Pause and read the controls']
     },
     {
         path: '/pong',

@@ -53,6 +53,10 @@ jobs:
       # Browser-free level audit: reachability, patrol walkability, cover near the
       # money, and proof that every locked door locks something. ~1 s, blocks merges.
       - run: npm run heistcheck
+      # Fifth scoped gate + Node audit for BEEZEE: the flier's garden must be
+      # provably flyable (autopilot banks a load in every garden) before merge.
+      - run: npm run lint:bee
+      - run: npm run beecheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
