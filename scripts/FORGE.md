@@ -15,12 +15,18 @@ AGENTS.md wins.
    corpse. If one exists: check out that branch, read the issue's last
    `FORGE:` comment and `git log` to see how far it got, and **continue the
    build**. Do not claim a second issue while one is half-built.
-2. **Claim a game.**
-   `gh issue list --label game-queue --json number,title --jq '.[-1] | "\(.number) \(.title)"'`
-   takes the OLDEST queued request (lowest number first). If none exists,
-   STOP — nothing to forge; say so in STATE.md and exit.
-   Grab it: `gh issue edit <n> --add-label building --remove-label game-queue`
-   and comment: `gh issue comment <n> -b "FORGE: claimed <date>"`.
+2. **Claim a game.** Candidate order: any issue labeled `next` first
+   (Jon's manual override), then the oldest `game-queue`. ALSO scan open
+   issues whose title starts with `GAME` but carry NO label — external
+   submitters (from the /forge board) cannot apply `game-queue` themselves;
+   GitHub silently drops labels a submitter lacks triage rights for, so an
+   unlabeled `GAME —` issue IS a queue entry. Adopt the oldest unlabeled
+   `GAME —` issue if it predates the labeled queue head, and say so in your
+   claim comment.
+   Claim it: `gh issue edit <n> --add-label building --remove-label game-queue
+   --remove-label next` and comment: `gh issue comment <n> -b "FORGE:
+   claimed <date>"`. If the candidate list is empty, STOP — nothing to
+   forge; say so in STATE.md and exit.
 3. **Design in one paragraph** (core loop, the one harness you'll demand of
    it, the game's own `README.md` if it's a big one). Respect the issue body —
    it names the engine muscle the request wants stretched.

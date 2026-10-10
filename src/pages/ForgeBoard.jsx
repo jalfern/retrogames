@@ -17,11 +17,17 @@ const ForgeBoard = () => {
         let alive = true
         let timer = null
         const load = async () => {
-            const results = await Promise.allSettled(LABELS.map(async l => {
-                const r = await fetch(API(l), { headers: { Accept: 'application/vnd.github+json' } })
-                if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? 'GitHub rate limit (retries in 5 min)' : `GitHub answered ${r.status}`)
-                return r.json()
-            }))
+            const results = await Promise.allSettled([
+                ...LABELS.map(async l => {
+                    const r = await fetch(API(l), { headers: { Accept: 'application/vnd.github+json' } })
+                    if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? 'GitHub rate limit (retries in 5 min)' : `GitHub answered ${r.status}`)
+                    return r.json()
+                }),
+                // External submitters lack triage rights, so GitHub drops the
+                // prefilled label — an open unlabelled "GAME —" issue is queued.
+                fetch('https://api.github.com/repos/jalfern/retrogames/issues?state=open&per_page=100', { headers: { Accept: 'application/vnd.github+json' } })
+                    .then(r => { if (!r.ok) throw new Error('unlabeled scan unavailable'); return r.json() })
+            ])
             const ok = results.filter(r => r.status === 'fulfilled')
             if (!alive) return
             if (ok.length === 0) { setError(results[0].reason.message); clearInterval(timer); timer = setInterval(load, 300000); return }
@@ -36,7 +42,8 @@ const ForgeBoard = () => {
     }, [])
 
     const building = issues?.filter(i => labelOf(i, 'building')) ?? []
-    const queued = issues?.filter(i => !labelOf(i, 'building') && !labelOf(i, 'shipped') && !i.pull_request) ?? []
+    const queued = issues?.filter(i => !labelOf(i, 'building') && !labelOf(i, 'shipped') && !i.pull_request
+        && (labelOf(i, 'game-queue') || /^game\b/i.test(i.title))) ?? []
     const shipped = issues?.filter(i => labelOf(i, 'shipped')) ?? []
 
     const card = (i, cls) => (
