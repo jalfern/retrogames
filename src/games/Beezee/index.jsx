@@ -354,6 +354,7 @@ const BeeGame = () => {
             keys.clear()
         }
 
+        let lastUv = false
         const doSim = () => {
             if (screenRef.current === 'attract') {
                 demoT += FIXED_DT
@@ -366,6 +367,7 @@ const BeeGame = () => {
                 input.yaw = (keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)
                 input.pitch = (keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)
                 handleEvents(step(gs, input).events)
+                if (gs.uv !== lastUv) { lastUv = gs.uv; paintUv(gs.uv) }
                 if (gs.end) finishRun()
             }
         }
@@ -497,7 +499,9 @@ const BeeGame = () => {
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
-        canvas.addEventListener('pointerdown', onPointer)
+        // pointerdown on the window, not the canvas: the end-screen overlay sits
+        // above the canvas, and a tap there is still "a finger on the game".
+        window.addEventListener('pointerdown', onPointer)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -530,7 +534,23 @@ const BeeGame = () => {
                         stuck: b.stuck, scare: gs.scare, wind: [wx, wz],
                         flowersLeft: gs.world.flowers.reduce((s, f) => s + f.nectar, 0),
                         targetDist: bd, targetUv: buv, keys: [...keys], board: board(),
+                        wasps: gs.world.wasps.map(w => ({ x: w.x, y: w.y, z: w.z })),
+                        hive: { x: 0, y: 1.6, z: 0 },
                     }
+                },
+                // Read-only "where would the brain aim right now?" — lets the
+                // driver steer with real keys instead of teleporting. Decides
+                // nothing; mutates nothing; same math the autopilot uses.
+                aim: () => {
+                    const b = gs.bee
+                    if (b.nectar >= CFG.carry || gs.t > CFG.day - 30) return { x: 0, z: 0, y: Math.hypot(b.x, b.z) > 7 ? 3.8 : 1.2, uv: false, home: true, d: Math.hypot(b.x, b.z) }
+                    let best = null, bd = 1e9
+                    for (const f of gs.world.flowers) {
+                        if (f.nectar <= 0) continue
+                        const d = Math.hypot(f.x - b.x, f.z - b.z)
+                        if (d < bd) { bd = d; best = f }
+                    }
+                    return best ? { x: best.x, z: best.z, y: best.stemH + 0.4, uv: best.uv, d: bd } : { x: 0, z: 0, y: 1.6, uv: false, d: Math.hypot(b.x, b.z) }
                 },
                 start: startPlay,
             }
@@ -542,7 +562,7 @@ const BeeGame = () => {
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
             window.removeEventListener('resize', resize)
-            canvas.removeEventListener('pointerdown', onPointer)
+            window.removeEventListener('pointerdown', onPointer)
             cancelAnimationFrame(raf)
             clearNodes()
             disposables.forEach(d => { if (d.dispose) d.dispose() })
@@ -567,21 +587,21 @@ const BeeGame = () => {
                 <div className="absolute top-3 left-4 right-4 flex items-center gap-3 text-amber-50 font-mono">
                     <span className="text-sm font-bold tracking-widest">SUN</span>
                     <div className="w-36 h-3 bg-black/40 rounded-full overflow-hidden border border-black/40">
-                        <div ref={setHud('sun')} className="h-full rounded-full" style={{ background: 'linear-gradient(90deg,#ffd873,#ff5a2a)', width: '100%' }} />
+                        <div id="bee-sun" ref={setHud('sun')} className="h-full rounded-full" style={{ background: 'linear-gradient(90deg,#ffd873,#ff5a2a)', width: '100%' }} />
                     </div>
-                    <span className="text-lg"><span ref={setHud('nectar')} className="tracking-tighter text-yellow-300" /></span>
-                    <span className="text-sm opacity-90">✿×<span ref={setHud('pollen')}>0</span></span>
+                    <span className="text-lg"><span id="bee-nectar" ref={setHud('nectar')} className="tracking-tighter text-yellow-300" /></span>
+                    <span className="text-sm opacity-90">✿×<span id="bee-pollen" ref={setHud('pollen')}>0</span></span>
                     <span className="ml-auto text-2xl font-bold" style={{ textShadow: '0 2px 6px #000' }}>
-                        <span ref={setHud('score')}>00000</span>
+                        <span id="bee-score" ref={setHud('score')}>00000</span>
                     </span>
                 </div>
                 <div className="absolute bottom-44 left-4 text-2xl tracking-widest" style={{ textShadow: '0 2px 8px #000' }}>
-                    <span ref={setHud('hearts')} className="text-red-400" />
+                    <span id="bee-hearts" ref={setHud('hearts')} className="text-red-400" />
                 </div>
                 <div className="absolute bottom-44 right-4 flex items-center gap-3 text-amber-100 font-mono text-xs">
-                    <span ref={setHud('uv')} className="text-fuchsia-300 text-xl font-bold transition-opacity duration-200" style={{ opacity: 0.15 }}>UV◎</span>
+                    <span id="bee-uv" ref={setHud('uv')} className="text-fuchsia-300 text-xl font-bold transition-opacity duration-200" style={{ opacity: 0.15 }}>UV◎</span>
                     <div className="flex flex-col items-center">
-                        <div ref={setHud('wind')} className="text-2xl" style={{ transform: 'rotate(0deg)' }}>➤</div>
+                        <div id="bee-wind" ref={setHud('wind')} className="text-2xl" style={{ transform: 'rotate(0deg)' }}>➤</div>
                         <span>WIND</span>
                     </div>
                 </div>
