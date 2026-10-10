@@ -45,6 +45,9 @@ const MetroidLiteGame = lazy(() => import('../games/MetroidLite'))
 // Momentum Runner: the attract demo is the autopilot's own proven route and
 // the angle-physics sim is its own chunk, so it lazy-loads like the others.
 const MomentumRunnerGame = lazy(() => import('../games/MomentumRunner'))
+// Ice Climber Co-op: same lesson — the attract demo is the co-op autopilot's
+// own proven three-mountain route, so the planner rides in its chunk.
+const IceClimberGame = lazy(() => import('../games/IceClimber'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -130,6 +133,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'Hold right and never stop. A hand-carved slope-runner where speed is the only currency: gravity pulls you faster downhill (angle-based collision projects your landing onto the slope), you jump the pits, and springs loft you over the wide ones. The vertical loop only holds you if you enter FAST — and the only rings that survive the far spike hang on its apex, so skimp on momentum and you fall. Three zones, every slope and loop proven clearable by an autopilot that ships in the repo; the attract demo is its own winning route, replayed tick for tick.',
         controls: ['Arrow Right / D-pad right: Build speed (flat running is too slow for the loop)', 'Arrow Left: Brake', 'Space / Z / Up / A: Jump pits — release early to land short, hold to fly far', 'Hit a hazard WITH rings: you stagger and lose them; WITHOUT: you fall back to the totem', 'Enter the loop fast enough (v² ≥ 5·g·r) or you peel off at the apex', '?: Pause and read the controls']
+    },
+    {
+        path: '/ice-climber',
+        component: IceClimberGame,
+        label: 'ICE CLIMBER CO-OP',
+        theme: 'dark',
+        description: "Two climbers, one frozen massif, and every tile punched is gone forever. Hold UP under the ice and bore a shaft straight to the summit shelf, dodge the condor that owns the middle mountain's ledge (the ice column keeps a pocket it cannot reach), and take the carrot. But the last carrot hangs a head taller than any jump in the game: the only way up is one climber standing still while the other jumps onto their shoulders and jumps again — and a climber downed by the condor is only revived by a partner's touch. Alone, the summit is impossible. The attract demo is the autopilot's own proven co-op route, tick for tick.",
+        controls: ['P1 (red): Arrow Left/Right: move · UP: punch upward through the ice · SPACE: jump', 'P2 (blue): A / D: move · W: punch upward · F: jump (the second pad on the screen drives P2)', 'Punching deletes ice FOREVER — the shaft you bore is your shaft', 'The condor owns its shelf: wait in the ice pocket, dash when its back is turned', 'The top carrot needs a climber-shaped stepladder — jump on your partner, then jump again', 'Touch a downed partner to revive them; lives are shared, the summit is not winnable solo', '?: Pause and read the controls'],
     },
     {
         path: '/pong',

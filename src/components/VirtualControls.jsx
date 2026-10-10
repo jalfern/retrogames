@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const VirtualControls = ({ secondAction, visible = true }) => {
+const VirtualControls = ({ secondPad, secondAction, visible = true }) => {
     // We'll use these to track active states for visual feedback
     const [activeKeys, setActiveKeys] = useState({});
 
@@ -19,7 +19,11 @@ const VirtualControls = ({ secondAction, visible = true }) => {
             'action': 'Space' // Jump
         };
 
-        const code = key === 'action2' ? (secondAction && secondAction.code) : codeMap[key];
+        // Local-2P titles pass `secondPad` = { up,down,left,right,action } of
+        // keycodes; its buttons dispatch the SECOND key path, so both key sets
+        // feed the same tick exactly like two hands on one keyboard.
+        let code = key === 'action2' ? (secondAction && secondAction.code) : codeMap[key];
+        if (key.startsWith('p2:') && secondPad) code = secondPad[key.slice(3)];
         if (!code) return;
 
         // Update visual state
@@ -115,6 +119,37 @@ const VirtualControls = ({ secondAction, visible = true }) => {
                     <span className="text-white font-bold text-lg">A</span>
                 </button>
             </div>
+
+            {/* Second-player pad (local 2P titles only — `secondPad` prop).
+                Bottom-center so it never collides with the P1 d-pad/buttons. */}
+            {secondPad && (
+                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-end gap-2 pointer-events-auto">
+                    <button
+                        className={`${dPadClass} w-10 h-10 text-white/80 font-bold`}
+                        {...bindEvents('p2:left')}
+                    >◀</button>
+                    <div className="flex flex-col gap-1">
+                        <button
+                            className={`${dPadClass} w-10 h-10 text-white/80 font-bold`}
+                            {...bindEvents('p2:up')}
+                        >▲</button>
+                        <button
+                            className={`${dPadClass} w-10 h-10 text-white/80 font-bold`}
+                            {...bindEvents('p2:down')}
+                        >▼</button>
+                    </div>
+                    <button
+                        className={`${dPadClass} w-10 h-10 text-white/80 font-bold`}
+                        {...bindEvents('p2:right')}
+                    >▶</button>
+                    <button
+                        className={`w-14 h-14 bg-sky-500/50 rounded-full flex items-center justify-center select-none active:bg-sky-400/80 transition-colors backdrop-blur-sm border border-white/10 shadow-lg shadow-sky-900/20 ${activeKeys['p2:action'] ? 'bg-sky-400/90 scale-95' : ''}`}
+                        {...bindEvents('p2:action')}
+                    >
+                        <span className="text-white font-bold text-lg">J</span>
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

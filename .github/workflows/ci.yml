@@ -81,6 +81,12 @@ jobs:
       # mutants prove each physics rule is load-bearing.
       - run: npm run lint:runner
       - run: npm run runnercheck
+      # Tenth scoped gate for ICE CLIMBER CO-OP: the autopilot must bore all
+      # three mountains (69 real tile removals), win THE STACK by standing on
+      # a partner, and every rule — dig, shoulder, climb, jump, key paths —
+      # must have a mutant that dies proving it is load-bearing.
+      - run: npm run lint:ice
+      - run: npm run icecheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
