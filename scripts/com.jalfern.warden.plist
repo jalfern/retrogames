@@ -12,7 +12,7 @@
     <key>WorkingDirectory</key>
     <string>/Users/jon/Dev/retrogames</string>
     <key>StartInterval</key>
-    <integer>1800</integer>
+    <integer>600</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
