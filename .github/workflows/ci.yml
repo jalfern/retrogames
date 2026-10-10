@@ -67,6 +67,12 @@ jobs:
       # a mutation harness proves each cellular-automata rule is load-bearing.
       - run: npm run lint:dash
       - run: npm run dashcheck
+      # Eighth scoped gate for SONAR ABYSS: the audit is of the INFORMATION
+      # PIPELINE itself — every lit cell must equal a recomputed wavefront
+      # arrival, occlusion and decay and "hidden eel" must all be provable,
+      # and six mutants prove each rule load-bearing.
+      - run: npm run lint:sonar
+      - run: npm run sonarcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

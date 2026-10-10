@@ -36,6 +36,9 @@ const LemmingsGame = lazy(() => import('../games/Lemmings'))
 // Boulder Dash too: the planner runs in the tab to drive the attract demo, and
 // the caves are a compiled grid, so it earns its own chunk.
 const BoulderDashGame = lazy(() => import('../games/BoulderDash'))
+// Sonar Abyss: same lesson — its planner scripts the attract demo and the
+// caves are generated at load, so it keeps its own chunk.
+const SonarGame = lazy(() => import('../games/Sonar'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -97,6 +100,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'Dig deep, grab the gems, and do not be under the rock when it drops. A cellular-automata cave: boulders and diamonds fall through the dirt you carve, a boulder crushes you while a dropped gem gives up and turns to dirt, and a firefly wanders its steel cell turning everything it touches into a chain of flame that steel alone respects. Four hand-carved caves, each proven winnable by a planner that ships in the repo (the attract demo is its route, replayed move for move); gather the gem quota, then reach the exit before the clock runs out.',
         controls: ['Arrow Keys / D-pad: Dig dirt and move (one cell per tap, hold to keep going)', 'Collect the GEM quota, then dig to the exit door', 'Boulders fall and crush you — read which rocks are actually moving', 'A gem that falls turns to dirt — do not cut the paydirt out from under it', 'The firefly burns everything but steel — the wall is your strategy', '?: Pause and read the controls']
+    },
+    {
+        path: '/sonar',
+        component: SonarGame,
+        label: 'SONAR ABYSS',
+        theme: 'dark',
+        description: 'You only see what sound reveals. Pitch-black seeded sea caves: every PING sends a wavefront through the water, lighting rock and pearl exactly as it reaches them — sound does not cross stone, so pockets behind walls stay dark until the echo walks in through the door. The light fades in seconds; the map lives in your head. Pearls score, the teal swirl is the vent to the next, darker depth, and the eels out there are real whether or not you just heard one. Die, and the abyss reshuffles its seed.',
+        controls: ['Arrow Keys / D-pad: Swim (one stroke per tap, hold to keep going)', 'Space / A button / tap: PING — see with sound', 'Lit cells FADE — remember the cave, then swim to the vent', 'Pearls score; the swirl marks the way down', 'Eels only show as fading sonar contacts — a remembered eel is not where it is', '?: Pause and read the controls']
     },
     {
         path: '/pong',

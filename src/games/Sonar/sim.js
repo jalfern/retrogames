@@ -264,7 +264,6 @@ export function makeGame(cave, opts = {}) {
     return g
 }
 
-const pi = (p) => p.c
 
 export function stateHash(g) {
     let s = `${g.seed}|${g.depth}|${g.tick}|${g.player.c}|${g.lives}|${g.score}|${g.have}|${g.end}|${g.invuln}`
@@ -300,7 +299,6 @@ export function ping(g, opts = {}) {
         // and "when" is decided once, here, by the SAME distance field the
         // auditor recomputes. The wavefront mutant changes this one block:
         // straight-line distance through rock — pockets light instantly.
-        const maxD = Math.ceil(Math.sqrt(N) * 1.5)
         const buckets = []
         if (CFG.wavefront) {
             for (let i = 0; i < N; i++) {

@@ -46,7 +46,10 @@
         "lemplay": "node scripts/lemplay.mjs",
         "lint:dash": "eslint src/games/BoulderDash src/components src/utils src/config src/main.jsx scripts",
         "dashcheck": "node scripts/dashcheck.mjs",
-        "dashplay": "node scripts/dashplay.mjs"
+        "dashplay": "node scripts/dashplay.mjs",
+        "lint:sonar": "eslint src/games/Sonar src/components src/utils src/config src/main.jsx scripts",
+        "sonarcheck": "node scripts/sonarcheck.mjs",
+        "sonarplay": "node scripts/sonarplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
