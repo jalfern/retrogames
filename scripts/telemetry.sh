@@ -6,7 +6,6 @@
 # launchd: com.jalfern.telemetry, every 5 minutes.
 
 set -u
-REPO="jalfern/retrogames"
 LOCAL="/tmp/forge/telemetry.jsonl"
 mkdir -p /tmp/forge
 
@@ -32,9 +31,20 @@ act() {
 LOAD=$(sysctl -n vm.loadavg | awk '{print $2}')
 FREE=$(memory_pressure -Q 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d '%')
 
+# The Mac mini answers over the ssh tunnel (launchd com.jalfern.tunnel);
+# remote returns two plain numbers (cpu%, omlx-server rss MB) so no JSON
+# survives more than one shell boundary. Unreachable => zeros, board shows flat.
+MC=0
+MR=0
+read -r MC MR <<< "$(ssh -o ConnectTimeout=2 -o BatchMode=yes sfm5mini \
+'p=$(pgrep -f omlx-server | head -1); c=$(ps -A -o %cpu= | awk "{s+=\$1} END {printf \"%.0f\", s}"); r=0; [ -n "$p" ] && r=$(ps -p $p -o rss= | awk "{print int(\$1/1024)}"); echo $c $r' \
+2>/dev/null)"
+MC=${MC:-0}
+MR=${MR:-0}
+
 S="{\"t\":\"$(date +%H:%M:%S)\",\"load\":$LOAD,\"free\":${FREE:-0},\
 \"tasks\":{$(task 'opencode run.*THE FORGE' forge),$(task 'opencode run.*QA MASTER' qa),\
-$(task 'opencode run.*WARDEN' warden),$(task 'omlx-server' omlx)},\
+$(task 'opencode run.*WARDEN' warden),$(task 'omlx-server' omlx),\"mini\":{\"cpu\":$MC,\"rss\":$MR}},\
 \"act\":{\"forge\":$(act "$(readlink /tmp/forge/last.log)" ),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)")}}"
 
 echo "$S" >> "$LOCAL"

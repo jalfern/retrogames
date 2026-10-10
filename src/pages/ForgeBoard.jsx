@@ -91,8 +91,10 @@ const ForgeBoard = () => {
     // the counts against the fetched labels through THIS function.
     const floor = deriveFloor({ issues, prs, pulses, now })
     const { queued, shipped, pulse, building } = floor
+    const qaShape = i => (/^(qa|bug)\b/i.test(i.title) || (i.body || '').startsWith('**where:**'))
+        && !labelOf(i, 'game-queue') && !labelOf(i, 'building') && !labelOf(i, 'shipped')
     const qa = (issues ?? []).filter(i => i.state === 'open' && !i.pull_request
-        && (labelOf(i, 'feedback') || labelOf(i, 'building-qa')))
+        && (labelOf(i, 'feedback') || labelOf(i, 'building-qa') || qaShape(i)))
         .sort((a, b) => (b.reactions?.total_count ?? 0) - (a.reactions?.total_count ?? 0) || a.number - b.number)
     const qaBusy = qa.some(i => labelOf(i, 'building-qa'))
 

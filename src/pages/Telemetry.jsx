@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ago } from './floor'
 
 const RAW = 'https://raw.githubusercontent.com/jalfern/retrogames/telemetry/telemetry.json'
-const TASKS = [['forge', '#ffb347'], ['qa', '#ff6600'], ['warden', '#4dffb8'], ['omlx', '#66b3ff']]
+const TASKS = [['forge', '#ffb347'], ['qa', '#ff6600'], ['warden', '#4dffb8'], ['omlx', '#66b3ff'], ['mini', '#c58aff']]
 export const Spark = ({ values, color, label, unit }) => {
     const w = 220, h = 34
     const max = Math.max(1, ...values)

@@ -47,16 +47,21 @@ Tick procedure (exactly):
    `FORGE PULSE` (create it if absent: title `FORGE PULSE`, no labels, body
    "Machine-updated status line for https://jalfern.com/retrogames/forge —
    do not close."), and comment ONE line:
-   `<HH:MM> alive=<yes|no|pending> queue=<n> building=<n> shipped=<n> main=<7chars> qa=<n> gate=<none|#N> actions=none`
+   `<HH:MM> alive=<yes|no|pending> queue=<n> building=<n> shipped=<n> main=<7chars> qa=<n> mini=<up|down> gate=<none|#N> actions=none`
    `gate` is `gh pr list --state open --json number` head number, or `none` —
    the website board renders it, so never omit it. Corrections to `actions`
    come in step 6, after the heavy work.
-3. TRIAGE. Open issues whose title starts with "GAME" (case-insensitive) and
-   carry NO queue label (`game-queue`/`building`/`shipped`): add `game-queue`
+3. TRIAGE. Open issues with NO queue label. Two shapes:
+   a) title starts with "GAME" (case-insensitive) -> add `game-queue`
    and comment: `WARDEN: queued for you — the forge builds queue items
    oldest-first; Jon can bump yours with the 'next' label. Live board:
    https://jalfern.com/retrogames/forge`. This is the fix for submitters who
    lack triage rights and lose the prefilled label.
+   b) title starts with "QA" or "BUG" (case-insensitive) OR the body starts
+     with `**where:**` (the website bug template) -> add `feedback` and
+     comment `WARDEN: queued for QA`. If the body is still the empty
+     template placeholders (`<game/screen>`), comment that details are
+     needed and close it - an empty report is noise the lane must not chew.
 4. LIVENESS — TWO LANES.
    4a. Game lane: `pgrep -fl "opencode run.*THE FORGE"`.
    - Running → do nothing (a healthy builder is left alone, even if slow).
@@ -67,7 +72,10 @@ Tick procedure (exactly):
      (per the FORGE.md claim order: `next` first, else oldest): `WARDEN:
      builder idle, kicked a session`.
    - NOT running AND queue empty → do nothing (idle is correct).
-   4b. QA lane: `pgrep -fl "opencode run.*QA MASTER"`. NOT running AND an
+   4a2. MINI. `curl -s -m 3 http://127.0.0.1:18000/v1/models` — down means the
+     QA brain fell back to the studio GPU (the driver logs it); report
+     `mini=down` in the pulse so a dead second box is a visible state.
+4b. QA lane: `pgrep -fl "opencode run.*QA MASTER"`. NOT running AND an
      open `feedback` issue exists → run `scripts/forge-qa.sh` and comment on
      the item it will claim (own order: `/priority` comment, else most +1,
      else oldest): `WARDEN: QA idle, kicked a fix`. Otherwise do nothing.
