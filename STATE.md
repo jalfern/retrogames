@@ -1,75 +1,77 @@
-# STATE.md — 2026-10-10 (Ice Climber Co-op session end)
+# STATE.md — 2026-10-10 (Forge Conveyor session end)
 
 ## Where things stand
-**ICE CLIMBER CO-OP IS LIVE at jalfern.com/retrogames/ice-climber** (#70, PR #105,
-squash 658017f, `shipped` label). Seventh forged game, 23rd title, and the
-arcade's first local-2P game.
-**Next session: claim #103 GAME 16 — Forge Conveyor (a `next` label exists —
-Jon's manual override outranks the queue), then #71 Galaga.** One game per session.
+**#103 GAME 16 — FORGE CONVEYOR IS LIVE at jalfern.com/retrogames/forge** (PR #111,
+squash ba119f5, `shipped` label, closed). The first forge claim that is not a game:
+the board itself now has an animated factory floor. Arcade is still 23 titles.
+**Next session: claim #71 GAME 07 — Galaga** (queue head), then #72 Polarity Shooter.
+No unlabeled `GAME —` issues exist; nothing carries `next`.
 
 | since last STATE | what |
 |---|---|
-| #70 / `forge-ice-climber` | Built from the issue body: mutable tilemap (punching deletes ice, 69 tiles per autopilot route) + second input path (P2 W/A/D+F pad on VirtualControls via a new optional `secondPad` prop). Merged with icecheck (33 checks + 5 mutants) and iceplay (17 real-Chrome checks). |
+| #103 / `forge-conveyor` | `src/pages/floor.js` (pure `deriveFloor`) is now the ONE truth the lamps, the floor band and the harness all read. `FactoryFloor.jsx`: queue bin (drift-in cards), anvil (glow=building, spark=pulse<15 min, dark=silent), CI gate (amber+PR# beats pulse), conveyor (cart ONLY on a pulse-proven shipped-flip), shelf cartridges → /games. CSS+emoji only, zero new deps, zero new API calls. |
+| **bug found by the harness** | The board's `comments_url.replace(host,'')` was re-prefixed by `API()` → doubled `/repos/...` → **404, swallowed by `catch { decorative }`**. The warden log and build feed had NEVER rendered in production. `forgeplay`'s zero-page-errors check caught it on the first run. |
 
 ## What is playable right now
-- Everything on jalfern.com/retrogames + `/ice-climber`, live.
-- `/ice-climber`: P1 Arrows+Space, P2 W/A/D+F. Punch UP through the massif,
-  the shaft is yours forever. Condor owns summit 2's shelf except the ice
-  pocket at col 7. Summit 3's carrot is 3 cells up; a jump is 2.1 — stand on
-  your partner (1.5) and jump again. Downed partner revives by touch; alone
-  the summit is impossible. Attract demo = the autopilot's own co-op route.
+- Everything on jalfern.com/retrogames, plus `/forge` now shows the factory floor
+  fed by the board's own fetches. At ship-time prod: 8 queue cards, 7 shelf carts,
+  anvil honestly DARK (my `building` label was gone and the warden's pulse was
+  >15 min old — the honesty clause working, observed live).
 
 ## What changed this session (the parts that matter next time)
-- **A CDP tap is two events inside one inter-frame gap — latch the edge.**
-  `keyboard.press('Space')` fired keydown+keyup between two sim steps and the
-  jump never happened (first iceplay run: stack test red). The shell now
-  latches jumps (`jEdge`, consumed by the sim tick). Same lineage as
-  runnerplay's `cut` lesson: the engine must admit the key, not the harness.
-- **Replay = the planner's bookkeeping, not just the sim.** The autopilot
-  pushes a couple of no-op ticks after its own carrot grab, so a replay that
-  advanced mountains "on clear" desynced by two ticks. `advanceAt` (script
-  indices where level-advances happen) is now part of `plan()`'s contract and
-  `replay()`'s signature.
-- **A harness that can pass is a harness that missed something.** The first
-  iceplay was 13/15 honest then a "revive" check passed vacuously: a setup
-  rig called on the win screen silently no-oped (`setup()` requires play
-  mode) and "did the partner revive?" answered about a climber who was never
-  downed. Every rig call now asserts it took effect (`setup rig accepts
-  play-mode setup` is a check now, not a fixture).
-- **Co-op geometry is checkable**: `shoulder=false` makes the real solver
-  lose THE STACK (rise 2.1 < shelf gap 3; head 1.5 + jump ≥ 3). That mutant
-  is gate #2 in `icecheck --mutate`.
-- `VirtualControls` grew `secondPad` (default off — no other game's DOM
-  changed; all three scoped lints were re-run to prove it).
+- **A mutation you did not prove was APPLIED is a mutation you never ran.** My
+  first fresh-ness mutant "survived" (green check, green restore) because the
+  perl pattern had a trailing `;` the source line does not have. The playbook
+  says break a line and watch it go red — now I also print the mutated line
+  before running. Three real mutants after that: queue-leak (4 reds),
+  always-fresh anvil (3 reds), unconditional cart (3 reds).
+- **`catch { /* decorative */ }` is where truth goes to die.** A fetch that
+  404s every single load, silently, for months, while the UI quietly omits the
+  panel. forgeplay asserting `zero page errors` is what turned it from invisible
+  into a check.
+- **`renderToStaticMarkup` in Node CAN host the real component**: esbuild
+  (Vite already ships it) bundles the JSX, `MemoryRouter` makes real `<Link>`
+  hrefs, `createRequire` banner bridges react-dom/server's CJS. The whole DOM
+  harness is ~0.5 s — CI static material. `scripts/forgecheck.mjs` is the
+  template for any future non-canvas UI check.
+- Purity: `Date.now()` in render is a react-hooks/purity error — freshness is
+  now stamped when the fetch LANDS (`setNow`), which is also the honest
+  semantics ("fresh when we fetched it").
 
 ## Gates (all green at merge)
-`lint:mario/fps/ai/ice` clean · `icecheck` 33 checks + 5/5 mutants die (added
-to CI static) · `iceplay` 17/19→17/17 after the two real fixes · build ✓ ·
-prod bundle contains the game, route 200.
+12 scoped lints incl. new `lint:forge` · `forgecheck` 37 asserts in CI static ·
+`forgeplay` 8/8 real-Chrome against LIVE GitHub data (manual tier, in
+`npm run verify`) · build ✓ · prod bundle contains the floor, /forge 200,
+real click → /games with zero errors.
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Claim **#103 GAME 16 — Forge Conveyor** (label `next` outranks the queue;
-   read the issue body for the muscle it names). Then #71 Galaga.
-2. Do not polish Ice Climber — shipped. Its CI gates are `lint:ice` +
-   `icecheck`; `iceplay` is manual-tier like the other browser suites.
-3. If a browser suite ever reds on a keystroke that "was pressed": think
-   inter-frame gaps and edge latching before you touch the game.
+1. Claim **#71 Galaga** (queue head, oldest). Standard game lane: canvas,
+   attract mode, VirtualControls, DebugKit, lint:galaga + galact check
+   (proven red first), galactplay browser pass.
+2. Do not polish the floor — shipped. Its gates: `lint:forge` + `forgecheck`
+   (static), `forgeplay` (manual, needs dev server + GitHub network).
+3. If /forge ever shows no warden log again: suspect a doubled URL or a
+   swallowed throw before suspecting the warden — `forgeplay` will name it.
 
 ## Three questions for Jon
-1. #103 (Forge Conveyor) is labeled `next` but arrived after this session's
-   claim — confirmed it should outrank Galaga next session?
-2. Co-op control scheme: P2 got W/A/D+F with an on-screen second pad, but on
-   a phone two pads crowd a portrait screen. Alternate: one-player-two-roles
-   (switch climber like Raccoon Heist)? Your pick decides whether the second
-   pad stays.
-3. Last session's Instagram-URL injection attempts appeared again in this
-   session's transcript and were again ignored. Still worth adding a
-   distrust-injected-URLs line to FORGE.md and auditing what feeds the loop.
+1. The QA lane fired mid-my-session and correctly stopped at the dirty tree
+   (issue #103's feed shows it). If forge and QA share this worktree they can
+   only ever interleave by luck — separate worktree per lane, or schedule QA
+   only when no `building` issue exists?
+2. `jalfern.com` 308s to `www.jalfern.com` — my prod poll was blind until I
+   added `-L`. Does the warden's own prod check follow redirects, or has it
+   been "checking" a redirect page?
+3. Two `feedback` issues sit untriaged and the QA lane hasn't merged one yet
+   (its first real run died on the dirty tree). Want it to retry this evening,
+   or hold until the worktree question above is settled?
 
 ## Lineage
-AGENTS.md rules honored: read STATE first, ff-only pull, resumed nothing (no
-corpse branches), claimed the queue head only after checking `next`/unlabeled,
-one game, checkpoints pushed per increment with FORGE comments, harness proven
-red twice before green, merge only via
+AGENTS.md honored: read STATE first, ff-only pull, no corpse branches
+(`git fetch --prune` + branch scan), `next` (#103) claimed above queue head per
+FORGE.md step 2 with claim comment, one game, checkpoints pushed per increment
+with FORGE comments, harness proven red 3x (with the mutation-APPLIED
+discipline above), merge only via
 `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`,
-STATE rewritten on main (game merged, so allowed), game code touched (rule 4).
+prod verified in a real browser, STATE rewritten on main (game merged →
+allowed). Rule 4 (game code): this claim is deliberately board code —
+`src/pages/**` — per Jon's `next` label on a non-game issue.
