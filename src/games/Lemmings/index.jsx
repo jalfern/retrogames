@@ -15,6 +15,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
+import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { LEVELS, buildLevel } from './levels.js'
 import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, W, H, DIRT, FIXED_DT } from './sim.js'
 
@@ -347,11 +348,69 @@ const LemGame = () => {
                     return { x: L.x, y: L.y, skill: c.skill, id: L.id, inPlan: true }
                 },
                 start: startPlay,
+                give: (skill, n = 1) => { gs.skills[skill] += n; return gs.skills[skill] },
+                teleport: (id) => {
+                    const L = gs.lemmings.find(l => l.id === id && l.live)
+                    if (!L) return false
+                    L.x = meta.exit.x; L.y = meta.exit.y - 1; L.vy = 0; L.state = 'fall'; L.fallDist = 0
+                    return true
+                },
+                kill: (id) => {
+                    const L = gs.lemmings.find(l => l.id === id && l.live)
+                    if (!L) return false
+                    L.live = false; L.state = 'dead'; gs.dead++
+                    return true
+                },
             }
+
+            // F1 surgery panel: live state + the question Jon asked the
+            // hard way: "can this level STILL be won from exactly here?"
+            // Clones the live game (terrain damage included) and asks the
+            // real solver. Solver-no means "no path the oracle can see",
+            // which for a human is already bad news worth showing.
+            mountDbg({
+                title: 'LEMMINGS',
+                getState: () => {
+                    if (!gs) return ['(no level mounted yet)']
+                    const rows = [
+                        `need ${gs.exited}/${meta.need}  dead ${gs.dead}  live ${gs.lemmings.filter(l => l.live).length}  spawn ${gs.spawned}/${meta.spawnCount}`,
+                        `stock blk${gs.skills.block} bmb${gs.skills.bomb} clm${gs.skills.climb} dig${gs.skills.dig}  tick ${gs.tick}  end ${gs.end || '-'}`,
+                    ]
+                    for (const L of gs.lemmings.filter(l => l.live).slice(0, 10)) {
+                        rows.push(`#${L.id} ${L.state}${L.climber ? 'C' : ''}${L.digger ? 'D' : ''} (${L.x.toFixed(1)},${L.y.toFixed(0)})`)
+                    }
+                    return rows
+                },
+                actions: [
+                    { label: 'PROGNOSIS', run: () => {
+                        if (!gs) return 'no level'
+                        const g2 = makeGame(meta, gs.grid)
+                        Object.assign(g2, {
+                            tick: gs.tick, t: gs.t, exited: gs.exited, dead: gs.dead,
+                            spawned: gs.spawned, skills: { ...gs.skills },
+                        })
+                        g2.lemmings = structuredClone(gs.lemmings)
+                        const r = solve(g2)
+                        return r.win ? `win path exists (${r.exited}/${meta.need})` : `NO PATH — can save only ${r.exited}/${meta.need}`
+                    } },
+                    { label: '+BLOCKER', run: () => { gs.skills.block++ } },
+                    { label: '+BOMBER', run: () => { gs.skills.bomb++ } },
+                    { label: '+CLIMBER', run: () => { gs.skills.climb++ } },
+                    { label: '+DIGGER', run: () => { gs.skills.dig++ } },
+                    { label: 'KILL A CLIMBER', run: () => {
+                        const L = gs.lemmings.find(l => l.live && (l.climber || l.state === 'climb')) || gs.lemmings.find(l => l.live)
+                        if (!L) return 'none live'
+                        L.live = false; L.state = 'dead'; gs.dead++
+                        return `#${L.id}`
+                    } },
+                    { label: 'TELEPORT #0 OUT', run: () => window.__lemTest.teleport(0) ? 'sent' : 'no live #0' },
+                ],
+            })
         }
 
         return () => {
             if (import.meta.env.DEV && window.__lemTest) delete window.__lemTest
+            if (import.meta.env.DEV) unmountDbg()
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

@@ -32,7 +32,12 @@ export const LEVELS = [
         name: 'THE SPIRE', time: 120,
         spawn: { x: 4.5, y: 23 }, exit: { x: 42, y: 22 },
         spawnCount: 9, spawnEvery: 44, need: 4,
-        skills: { block: 0, bomb: 0, climb: 4, dig: 0 },
+        // SLACK RULE (lemcheck): the winning script must leave one supply to
+        // spare. Shipped originally with climb:4 = need exactly 4 — winnable
+        // by the perfect solver, and Jon watched one climber die and a
+        // "winnable" level become mathematically lost. A tutorial must be
+        // losable-ly winnable: six climbers, four needed, two to burn.
+        skills: { block: 0, bomb: 0, climb: 6, dig: 0 },
         proves: ['climb'],
         build() {
             const c = new Carve()

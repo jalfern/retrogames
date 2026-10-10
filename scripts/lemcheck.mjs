@@ -68,6 +68,23 @@ for (let i = 0; i < LEVELS.length; i++) {
         const r2 = sim.solve(sim.makeGame(meta2, grid))
         ok(!r2.win, `${r.meta.name}: still won with ZERO '${skill}' supplies — '${skill}' is decoration, not a mechanic`)
     }
+    // THE SLACK RULE (learned from live play, level 1): winnable by a perfect
+    // solver is NOT humanly winnable. THE SPIRE shipped climb:4 need:4 — a
+    // flawless 4/4 route, and Jon watched one climber die and a "winnable"
+    // level become mathematically lost. The human question, asked of the
+    // real solver: with ONE fewer of every supply the winning script uses,
+    // can the level STILL be won? (Not "is the skill load-bearing" — the
+    // proves loop covers that. This is the margin between the two.)
+    const used = {}
+    for (const c of r.cmds) used[c.skill] = (used[c.skill] || 0) + 1
+    for (const skill of Object.keys(used)) {
+        const have = r.meta.skills[skill] || 0
+        const { meta, grid } = buildLevel(i)
+        const meta2 = { ...meta, skills: { ...meta.skills, [skill]: have - 1 } }
+        const r2 = sim.solve(sim.makeGame(meta2, grid))
+        ok(r2.win,
+            `${r.meta.name}: ZERO SLACK in '${skill}' (supply ${have}) — with one fewer the solver itself cannot win, so any human who loses one has lost. Give ${skill} +1 supply or the level -1 need.`)
+    }
 }
 
 // --------------------------------------------------------------- determinism ---
