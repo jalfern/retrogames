@@ -62,6 +62,11 @@ jobs:
       # — a level nobody can clear cannot ship.
       - run: npm run lint:lem
       - run: npm run lemcheck
+      # Seventh scoped gate for BOULDER DASH: the real planner must clear every
+      # cave with its hazards live (winnability + reachability + determinism), and
+      # a mutation harness proves each cellular-automata rule is load-bearing.
+      - run: npm run lint:dash
+      - run: npm run dashcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
