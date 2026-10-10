@@ -3,3 +3,5 @@
 {"t":"12:49:14","load":6.49,"free":41,"tasks":{"forge":{"cpu":8,"rss":997},"qa":null,"warden":null,"omlx":{"cpu":91,"rss":39498}},"act":{"forge":"$ cat > /tmp/prodforge.mjs <<'EOF'","qa":""}}
 {"t":"13:01:00","load":,"free":92,"tasks":{"forge":null,"qa":null,"warden":{"cpu":24,"rss":68},"omlx":{"cpu":1,"rss":40086}},"act":{"forge":"","qa":""}}
 {"t":"13:01:49","load":4.98,"free":34,"tasks":{"forge":null,"qa":null,"warden":{"cpu":14,"rss":864},"omlx":{"cpu":84,"rss":40449}},"act":{"forge":"","qa":""}}
+{"t":"13:06:01","load":,"free":31,"tasks":{"forge":{"cpu":0,"rss":854},"qa":null,"warden":{"cpu":12,"rss":960},"omlx":{"cpu":77,"rss":40771}},"act":{"forge":"$ git diff scripts/telemetry.sh","qa":""}}
+{"t":"13:06:06","load":4.66,"free":44,"tasks":{"forge":{"cpu":10,"rss":855},"qa":null,"warden":{"cpu":15,"rss":104},"omlx":{"cpu":105,"rss":40825}},"act":{"forge":"$ grep -rn \"telemetry\" scripts/forge.sh scripts/com.jalfern.forge.plist 2>/dev/null; ls -l","qa":""}}
