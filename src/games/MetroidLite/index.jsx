@@ -69,6 +69,8 @@ const MetroidGame = () => {
         let toast = 0, toastMsg = ''
         const keys = { left: false, right: false, down: false }
         let jumpEdge = false, jumpCut = false, fireEdge = false, bombEdge = false
+        const evLog = []
+        const hist = []
 
         const cam = () => ({
             x: Math.max(0, Math.min(RIGHT_WALL, Math.round(gs.p.x + gs.p.w / 2 - VIEW_W / 2))),
@@ -78,6 +80,8 @@ const MetroidGame = () => {
         const say = (msg) => { toastMsg = msg; toast = 90 }
 
         const handleEvents = (evts) => {
+            for (const e of evts) evLog.push({ ...e, tick: gs.tick })
+            if (evLog.length > 240) evLog.splice(0, evLog.length - 240)
             for (const e of evts) {
                 if (e.type === 'fire') audioController.playSweep(1200, 500, 0.09, 'square', 0.05)
                 else if (e.type === 'bomb') audioController.playTone(180, 0.08, 'triangle', 0.05)
@@ -107,7 +111,7 @@ const MetroidGame = () => {
             if (sc === 'attract') {
                 const script = provenScript()
                 if (demoAt >= script.length) {
-                    if (demoAt >= script.length + 150) { gs = makeGame(); demoAt = 0 }
+                    if (demoAt >= script.length + 150) { gs = makeGame(); demoAt = 0; evLog.length = 0 }
                     demoAt++
                     if (!gs.end) step(gs, {})
                     return
@@ -125,7 +129,11 @@ const MetroidGame = () => {
                 jumpEdge, jumpCut, fireEdge, bombEdge,
             })
             handleEvents(gs.events.slice(before))
+            if (jumpEdge) dbg.jumps++
+            if (fireEdge || bombEdge) dbg.fire++
             jumpEdge = false; jumpCut = false; fireEdge = false; bombEdge = false
+            hist.push([gs.tick, Math.round(gs.p.x), Math.round(gs.p.y), gs.p.onGround ? 1 : 0, gs.p.dbl ? 1 : 0])
+            if (hist.length > 220) hist.shift()
             if (gs.end === 'win') finish()
         }
 
@@ -147,8 +155,8 @@ const MetroidGame = () => {
                     if (sx >= VIEW_W) continue
                     const s = starWorld(li, k)
                     const tw = 0.6 + 0.4 * Math.sin(gs.tick / 20 + k * 2 + li)
-                    ctx.globalAlpha = (0.25 + li * 0.25) * tw
-                    ctx.fillRect(sx, s.y, li + 1, li + 1)
+                    ctx.globalAlpha = (0.5 + li * 0.2) * tw
+                    ctx.fillRect(Math.floor(sx), s.y, Math.max(2, li + 1), Math.max(2, li + 1))
                 }
             }
             ctx.globalAlpha = 1
@@ -345,12 +353,15 @@ const MetroidGame = () => {
         // ---------- input ----------
         const startPlay = () => {
             gs = makeGame()
+            evLog.length = 0
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
         const JUMP = ['Space', 'KeyZ']
         const FIRE = ['KeyX', 'KeyF']
+        const dbg = { kd: 0, jumps: 0, fire: 0 }
         const onDown = (e) => {
+            dbg.kd++
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') {
                 pausedRef.current = !pausedRef.current
@@ -369,7 +380,7 @@ const MetroidGame = () => {
             }
             if (e.code === 'ArrowDown') keys.down = true
             if (JUMP.includes(e.code)) jumpEdge = true
-            if (FIRE.includes(e.code)) (keys.down ? bombEdge : fireEdge) = true
+            if (FIRE.includes(e.code)) { if (keys.down) bombEdge = true; else fireEdge = true }
             if (e.code === 'KeyB') bombEdge = true
         }
         const onUp = (e) => {
@@ -405,30 +416,38 @@ const MetroidGame = () => {
             window.__metroidTest = {
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, t: gs.tick / 60,
-                    player: { x: Math.round(gs.p.x), y: Math.round(gs.p.y), foot: footCell(gs.p) },
+                    player: { x: Math.round(gs.p.x), y: Math.round(gs.p.y), dbl: gs.p.dbl, foot: footCell(gs.p) },
                     cam: cam(),
-                    energy: gs.energy, deaths: gs.deaths, score: gs.score,
+                    energy: gs.energy, deaths: gs.deaths, dead: gs.dead, score: gs.score,
                     abil: { ...gs.abil },
                     items: gs.world.items.map(i => ({ id: i.id, taken: i.taken })),
                     taken: gs.world.items.filter(i => i.taken).length,
                     save: { ...gs.save },
                     cracks: gs.cracks, bulks: gs.bulks,
                     end: gs.end, win: gs.win, hash: stateHash(gs),
+                    evLog: evLog.slice(-120),
+                    hist: hist.slice(-60), dbg: { ...dbg },
                     crawlers: gs.world.crawlers.map(cr => ({ x: Math.round(cr.x), alive: cr.alive })),
                     onGround: gs.p.onGround,
                     board: board(),
                 }),
                 camX: () => cam().x,
+                evLog,
+                // DEV rig: grant an ability or relocate the body (SETUP ONLY —
+                // damage, doors and death still come from the real sim loop;
+                // metroidplay fires the gadget with a REAL key after granting).
+                grant: (id) => { if (screenRef.current === 'play' && ['beam', 'bomb', 'sjump'].includes(id)) { gs.abil[id] = true; return true } return false },
                 // the renderer's OWN star placement — the harness predicts the
                 // screen pixel of star (layer,k) at the CURRENT camera from
                 // LAYERS factors it hardcodes itself, then samples the canvas.
                 star: (layer, k) => ({ wx: starWorld(layer, k), sx: starScreenX(layer, k, cam().x) }),
                 // DEV rig: relocate the body (setup only — damage and death
                 // still come from the real collision loop, dashcheck lesson).
+                tile: (x, y) => tileAt(gs.world.grid, x, y),
                 teleport: (tx, ty) => {
                     if (screenRef.current !== 'play' || gs.end) return false
                     gs.p.x = tx * TS + 3; gs.p.y = (ty + 1) * TS - PLAYER.h
-                    gs.p.vx = 0; gs.p.vy = 0
+                    gs.p.vx = 0; gs.p.vy = 0; gs.p.onGround = true; gs.p.groundFrames = 2
                     return true
                 },
                 start: startPlay,

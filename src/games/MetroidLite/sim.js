@@ -175,13 +175,21 @@ export function solid(g, x, y) {
 // step through this — which is what keeps the flow machine honest: it can
 // only promise landings a real body survives.
 export function stepBody(b, inp, g) {
+    // Standing at rest, one gravity tick (0.36 px) floats the feet off the
+    // floor for exactly one tick before the pin catches them — so a raw
+    // onGround read oscillates true/false every other frame, and a keyboard
+    // press has a coin flip of being ignored. groundFrames is the fix: a
+    // 2-tick grace set on every floor pin; ground jumps ask IT, not the
+    // instantaneous onGround. (Every other game here paid this tax too —
+    // their scripts just happened to land on the lucky parity.)
+    if (b.groundFrames > 0) b.groundFrames--
     if (inp.left) b.vx -= PHY.acc
     if (inp.right) b.vx += PHY.acc
     if (!inp.left && !inp.right) b.vx *= b.onGround ? PHY.fric : PHY.airFric
     b.vx = Math.max(-PHY.maxV, Math.min(PHY.maxV, b.vx))
     if (Math.abs(b.vx) < 0.05) b.vx = 0
-    if (inp.jump && b.onGround) { b.vy = PHY.jumpV; b.onGround = false; b.dbl = false }
-    else if (inp.jump2 && !b.onGround && CFG.doubleJump && !b.dbl) { b.vy = PHY.jumpV; b.dbl = true }
+    if (inp.jump && b.groundFrames > 0) { b.vy = PHY.jumpV; b.onGround = false; b.dbl = false; b.groundFrames = 0 }
+    else if (inp.jump2 && b.groundFrames <= 0 && CFG.doubleJump && !b.dbl) { b.vy = PHY.jumpV; b.dbl = true }
     if (inp.cut && b.vy < 0) b.vy *= PHY.cut
     b.vy = Math.min(b.vy + PHY.grav, PHY.maxFall)
 
@@ -197,7 +205,7 @@ export function stepBody(b, inp, g) {
     const nx0 = Math.floor(b.x / TS), nx1 = Math.floor((b.x + b.w - 1) / TS)
     const ny0 = Math.floor(b.y / TS), ny1 = Math.floor((b.y + b.h - 1) / TS)
     for (let x = nx0; x <= nx1; x++) {
-        if (b.vy > 0 && solid(g, x, ny1)) { b.y = ny1 * TS - b.h; b.vy = 0; b.onGround = true }
+        if (b.vy > 0 && solid(g, x, ny1)) { b.y = ny1 * TS - b.h; b.vy = 0; b.onGround = true; b.groundFrames = 2 }
         else if (b.vy < 0 && solid(g, x, ny0)) { b.y = (ny0 + 1) * TS; b.vy = 0 }
     }
     if (b.y > MH * TS + 64) b.dead = true
@@ -250,7 +258,7 @@ function ghostTraj(g, cell, pat, abil, pose) {
     const sj = pat.dbl !== undefined
     if (sj && !(abil.sjump && CFG.doubleJump)) return null
     const at = pose || bodyAt(cell)
-    const b = { x: at.x, y: at.y, w: PLAYER.w, h: PLAYER.h, vx: 0, vy: 0, onGround: true, dbl: false }
+    const b = { x: at.x, y: at.y, w: PLAYER.w, h: PLAYER.h, vx: 0, vy: 0, onGround: true, dbl: false, groundFrames: 2 }
     const script = []
     const MAX = 110
     const dirPushed = pat.push.some(([d]) => d !== 0)
@@ -361,7 +369,7 @@ export function makeGame(opts = {}) {
     const w = makeWorld()
     return {
         world: w,
-        p: { ...bodyAt(w.spawn), w: PLAYER.w, h: PLAYER.h, vx: 0, vy: 0, onGround: false, dbl: false, face: 1 },
+        p: { ...bodyAt(w.spawn), w: PLAYER.w, h: PLAYER.h, vx: 0, vy: 0, onGround: false, dbl: false, face: 1, groundFrames: 2 },
         energy: PLAYER.energy, invuln: 0, dead: 0,
         save: { ...w.spawn },
         abil: { beam: false, bomb: false, sjump: false, ...(opts.abil || {}) },
@@ -444,8 +452,8 @@ export function step(g, inp = {}) {
         if (inp.right) g.p.face = 1
         stepBody(g.p, {
             left: inp.left, right: inp.right,
-            jump: inp.jumpEdge && g.p.onGround,
-            jump2: inp.jumpEdge && !g.p.onGround && !g.p.dbl && g.abil.sjump,
+            jump: inp.jumpEdge,
+            jump2: inp.jumpEdge && !g.p.dbl && g.abil.sjump,
             cut: inp.jumpCut,
         }, g.world.grid)
         if (inp.fireEdge && !inp.down) fireBeam(g)
