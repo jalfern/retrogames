@@ -17,3 +17,4 @@
 {"t":"13:56:28","load":5.20,"free":32,"tasks":{"forge":{"cpu":12,"rss":584},"qa":null,"warden":null,"omlx":{"cpu":69,"rss":33787}},"act":{"forge":"$ node /var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/deaths.mjs","qa":""}}
 {"t":"14:01:31","load":4.73,"free":28,"tasks":{"forge":{"cpu":1,"rss":585},"qa":null,"warden":null,"omlx":{"cpu":80,"rss":33849}},"act":{"forge":"$ node -e \"","qa":""}}
 {"t":"14:04:19","load":5.20,"free":30,"tasks":{"forge":{"cpu":14,"rss":715},"qa":null,"warden":null,"omlx":{"cpu":78,"rss":33956},"mini":{"cpu":120,"rss":462}},"act":{"forge":"$ node -e \"","qa":""}}
+{"t":"14:06:33","load":6.09,"free":38,"tasks":{"forge":{"cpu":0,"rss":719},"qa":null,"warden":{"cpu":4,"rss":843},"omlx":{"cpu":20,"rss":34185}},"act":{"forge":"$ node /var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/death2.mjs","qa":""}}
