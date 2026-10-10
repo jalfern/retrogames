@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "git push origin main": "deny",
+      "git push -f origin main": "deny",
+      "git push --force-with-lease origin main": "deny",
+      "rm -rf /*": "deny"
+    },
+    "external_directory": {
+      "*": "allow",
+      "~/.ssh/**": "deny",
+      "~/.aws/**": "deny",
+      "~/.config/gh/**": "deny"
+    },
+    "question": "deny"
+  }
+}
