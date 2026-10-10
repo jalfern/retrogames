@@ -1,10 +1,1 @@
-{"t":"16:44:34","load":4.79,"free":27,"tasks":{"forge":{"cpu":13,"rss":747},"qa":null,"warden":{"cpu":3,"rss":907},"omlx":{"cpu":88,"rss":36678},"mini":{"cpu":136,"rss":479}},"commit":"forge-galaga: GALAGA: browser harness — real keys, pixels, capture/rescue chain end ","act":{"forge":"  PASS  a real ? opens the pause overlay
-  PASS  a real ? closes it again
-  PASS  zero page errors across the whole playthrough","qa":"[0m$ [0mgit branch --show-current; git log --oneline -3; git status --porcelai
-[0m$ [0mgit rev-parse origin/forge-galaga
-[0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9"}}
-{"t":"16:44:37","load":4.79,"free":43,"tasks":{"forge":{"cpu":13,"rss":747},"qa":null,"warden":{"cpu":7,"rss":907},"omlx":{"cpu":120,"rss":36621},"mini":{"cpu":132,"rss":479}},"commit":"forge-galaga: GALAGA: browser harness — real keys, pixels, capture/rescue chain end ","act":{"forge":"  PASS  a real ? opens the pause overlay
-  PASS  a real ? closes it again
-  PASS  zero page errors across the whole playthrough","qa":"[0m$ [0mgit branch --show-current; git log --oneline -3; git status --porcelai
-[0m$ [0mgit rev-parse origin/forge-galaga
-[0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9"}}
+{"t":"16:47:25","load":4.91,"free":33,"tasks":{"forge":{"cpu":8,"rss":748},"qa":null,"warden":{"cpu":9,"rss":930},"omlx":{"cpu":98,"rss":37279},"mini":{"cpu":124,"rss":479}},"commit":"forge-galaga: GALAGA: browser harness \u2014 real keys, pixels, capture/rescue chain end ","act":{"forge":"  PASS  a real ? closes it again\n  PASS  zero page errors across the whole playthrough\n\u001b[0m$ \u001b[0mrg -n \"flag|WAVES|name:\" src/games/Galaga/waves.js | head -20; rg -n \"","qa":"\u001b[0m$ \u001b[0mgit branch --show-current; git log --oneline -3; git status --porcelai\n\u001b[0m$ \u001b[0mgit rev-parse origin/forge-galaga\n\u001b[0m$ \u001b[0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9"}}
