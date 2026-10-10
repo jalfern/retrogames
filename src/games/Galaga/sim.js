@@ -18,24 +18,24 @@ export { W, H }
 export const CFG = {
     life: 3,
     banner: 70,
-    pSpeed: 2.0,
+    pSpeed: 2.3,
     pTop: 204,
     pBottom: 274,
     pStartX: 112,
-    pStartY: 258,
+    pStartY: 268,
     bulletV: 4.6,
-    enemyBulletV: 2.0,
-    fireCool: 9,
+    enemyBulletV: 1.65,
+    fireCool: 6,
     maxShots: 2,
     doubleShots: 4,
     invuln: 100,
     deadT: 90,
-    swayAmp: 8,
+    swayAmp: 6,
     swayPeriod: 150,
-    diveBase: 92,
-    divePerKill: 3,
-    divePerWave: 12,
-    diveMin: 28,
+    diveBase: 120,
+    divePerKill: 2,
+    divePerWave: 8,
+    diveMin: 42,
     escortPeriod: 64,
     beamPeriod: 700,
     beamOff: false,
@@ -56,6 +56,7 @@ export function makeGame(wave = 0) {
         double: false, end: null, phase: 'banner', phaseT: CFG.banner,
         pending: null, events: [], shots: [], enemyShots: [], fallers: [],
         enemies: [], beamOwner: null, beamUsed: false, cap: null, escorts: [], kills: 0,
+        nextDiveAt: 24, nextCol: 0,
         player: { x: CFG.pStartX, y: CFG.pStartY, state: 'alive', deadT: 0, cool: 0, invuln: 60, carryX: 0 },
     }
     startStage(gs, wave)
@@ -80,6 +81,8 @@ function startStage(gs, w) {
     gs.timeLeft = WAVES[w].time
     gs.beamOwner = null
     gs.beamUsed = false
+    gs.nextDiveAt = 24
+    gs.nextCol = 0
     gs.enemyShots = []
     gs.fallers = []
     gs.shots = []
@@ -114,11 +117,24 @@ export function decide(gs, e) {
         return null
     }
 
-    // RULE 3 — the dive roster: pressure ramps as the formation thins.
-    const period = Math.max(CFG.diveMin, CFG.diveBase - gs.kills * CFG.divePerKill - gs.wave * CFG.divePerWave)
-    if (t % period === (e.id.length * 13 + e.col * 7) % period) {
-        const path = e.kind === 'boss' ? 'loop' : (e.col % 2 ? 'zig' : 'swoop')
-        return { type: 'dive', path, dir: colX(e.col) < W / 2 ? 1 : -1 }
+    // RULE 3 — the dive roster: ONE committed diver at a time (the tree
+    // hands out turns via gs.nextDiveAt — per-enemy modulo was a swarm
+    // flood no pilot could read), and never while a captive leads the
+    // formation (that is the rescue window Rule 1 opens).
+    if (e.kind === 'flag' || e.kind === 'captive') return null
+    if (hasCaptive(gs)) return null
+    if (t >= gs.nextDiveAt) {
+        // the hive commits AT MOST two fighters at a time (classic pairs):
+        // three divers plus their bullets is a pincer with no readable
+        // answer, and a pincer with no answer is not a game
+        if (gs.enemies.filter((en) => en.state === 'dive').length >= 2) return null
+        const cands = gs.enemies.filter((en) => en.state === 'hold' && en.kind !== 'flag' && en.kind !== 'captive')
+        const rot = cands.filter((en) => en.col >= gs.nextCol)
+        const pick = (rot.length ? rot : cands)[0]
+        if (pick && pick.id === e.id) {
+            const path = e.kind === 'boss' ? 'loop' : (e.col % 2 ? 'zig' : 'swoop')
+            return { type: 'dive', path, dir: colX(e.col) < W / 2 ? 1 : -1 }
+        }
     }
     return null
 }
@@ -139,11 +155,15 @@ function commit(gs, e, act) {
         e.state = 'dive'
         e.path = resolvePath(act.path, ctx)
         e.fired = false
+        gs.nextDiveAt = gs.pt + periodFor(gs)
+        gs.nextCol = e.col + 1
         gs.events.push({ type: 'dive', id: e.id, kind: e.kind, path: act.path })
     }
     e.uT = 0
     e.base = { x: sx, y: e.y }
 }
+
+const periodFor = (gs) => Math.max(CFG.diveMin, CFG.diveBase - gs.kills * CFG.divePerKill - gs.wave * CFG.divePerWave)
 
 function killEnemy(gs, e) {
     const diving = e.state === 'dive' || e.state === 'beam'
@@ -260,11 +280,10 @@ export function step(gs, input = {}) {
         }
         if (e.state === 'hold') { e.x = colX(e.col) + sway(gs); e.y = rowY(e.row); continue }
         if (e.state === 'return') {
-            const tx = colX(e.col) + sway(gs), ty = rowY(e.row)
-            const dx = tx - e.x, dy = ty - e.y
-            const dist = Math.hypot(dx, dy)
-            if (dist < 0.6) { e.state = 'hold'; e.x = tx; e.y = ty }
-            else { const k = Math.min(MAX_STEP, dist * 0.2, dist); e.x += (dx / dist) * k; e.y += (dy / dist) * k }
+            e.uT++
+            const u = e.uT / e.path.ticks
+            if (u >= 1) { e.state = 'hold'; e.x = colX(e.col) + sway(gs); e.y = rowY(e.row) }
+            else { const q = e.path.fn(u); e.x = q[0]; e.y = q[1] }
             continue
         }
 
@@ -287,30 +306,34 @@ export function step(gs, input = {}) {
         }
         if (p.state === 'carried') { if (p.carryX) p.x = p.carryX; p.y -= 2.4 }
         if (u >= 1) {
-            if (e.state === 'dive') {
-                e.state = 'return'
-                e.path = resolvePath('rejoin', { x: Math.max(6, Math.min(W - 6, e.x)), y: H + 30, slot: { x: colX(e.col), y: rowY(e.row) }, dir: 1 })
-                e.uT = 0
-            } else if (e.state === 'beam') {
-                e.state = 'return'
-                e.path = resolvePath('rejoin', { x: Math.max(6, Math.min(W - 6, e.x)), y: H + 30, slot: { x: colX(e.col), y: rowY(e.row) }, dir: 1 })
-                e.uT = 0
+            if (e.path.end === 'anchor') {
+                e.state = 'hold'
             } else if (e.state === 'carry') {
                 if (gs.cap) {
                     gs.cap = null
                     endStage(gs, gs.lives > 0 ? 'capture' : 'dead')
                 }
                 e.state = 'dead'
+            } else {
+                e.state = 'return'
+                e.path = resolvePath('rejoin', { x: e.x, y: e.y, slot: { x: colX(e.col), y: rowY(e.row) }, dir: 1 })
+                e.uT = 0
             }
             continue
         }
         const q = e.path.fn(u)
         e.x = q[0]; e.y = q[1]
         if (e.state === 'beam' && inBand && p.state === 'carried') { e.bandX = q[0]; p.carryX = q[0] }
-        if ((e.state === 'dive' || (e.state === 'beam' && !inBand)) && !e.fired && u > 0.42 && e.kind !== 'flag') {
+        // divers lead the player — but never at point-blank range: the
+        // bullet is dodgeable or it is not a game
+        if ((e.state === 'dive' || (e.state === 'beam' && !inBand)) && !e.fired && u > 0.42 && u < 0.62 && e.y < p.y - 44 && e.kind !== 'flag') {
             e.fired = true
-            const dx = p.x - e.x, dy = p.y - e.y, d = Math.hypot(dx, dy) || 1
-            gs.enemyShots.push({ x: e.x, y: e.y + 6, vx: (dx / d) * CFG.enemyBulletV, vy: Math.max(0.8, (dy / d) * CFG.enemyBulletV) })
+            // diver fire drops NEARLY straight — it threatens a lane, it
+            // does not hunt. A tracking bullet plus a diving shooter is a
+            // pincer no dodge window survives.
+            const vx = Math.max(-0.55, Math.min(0.55, (p.x - e.x) * 0.01))
+            const vy = Math.sqrt(Math.max(0.25, CFG.enemyBulletV * CFG.enemyBulletV - vx * vx))
+            gs.enemyShots.push({ x: e.x, y: e.y + 6, vx, vy })
         }
         if (e.state === 'beam' && gs.cap && gs.cap.id === e.id && u > 0.82) {
             e.state = 'carry'
@@ -377,9 +400,18 @@ export function step(gs, input = {}) {
         endStage(gs, 'clear')
     }
     if (!gs.pending && gs.timeLeft <= 0 && gs.phase === 'play' && !gs.cap) {
-        gs.events.push({ type: 'timer' })
-        hurtPlayer(gs, 'timer')
-        if (p.state === 'alive') endStage(gs, 'clear')
+        // the stage clock ends the STAGE, not the player (classic Galaga):
+        // the survivors self-destruct, 25 each, and the next wave begins
+        for (const e of gs.enemies) {
+            if (alive(e)) {
+                e.state = 'dead'
+                gs.kills++
+                gs.score += 25
+                gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: 25, timeout: true })
+            }
+        }
+        gs.events.push({ type: 'timeout' })
+        endStage(gs, 'clear')
     }
     return harvest(gs)
 }

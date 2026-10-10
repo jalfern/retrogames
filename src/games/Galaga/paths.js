@@ -25,13 +25,13 @@ export const REGISTRY = {
     zig: {
         ticks: 88, end: 'exit',
         build: (c) => {
-            const tx = Math.max(20, Math.min(W - 20, c.px))
+            const tx = Math.max(40, Math.min(W - 40, c.px))
             const pts = [[c.x, c.y]]
             const n = 13
             for (let i = 1; i <= n; i++) {
                 const u = i / n
                 pts.push([
-                    c.x + Math.sin(u * Math.PI * 2.5) * 25 * (c.dir || 1) + (tx - c.x) * u,
+                    c.x + Math.sin(u * Math.PI * 2.5) * 16 * (c.dir || 1) + (tx - c.x) * u,
                     c.y + (H + 26 - c.y) * u,
                 ])
             }
@@ -42,7 +42,7 @@ export const REGISTRY = {
     swoop: {
         ticks: 80, end: 'exit',
         build: (c) => {
-            const tx = Math.max(14, Math.min(W - 14, c.px))
+            const tx = Math.max(40, Math.min(W - 40, c.px))
             const pts = [[c.x, c.y], [c.x + (c.dir || 1) * 12, c.y + 42], [tx, (c.y + H) / 2], [tx, H + 26]]
             return pts
         },
@@ -84,12 +84,18 @@ export const REGISTRY = {
         ticks: 70, end: 'top',
         build: (c) => [[c.x, c.y], [c.x, c.y - 40], [c.x, -30]],
     },
-    // a diver that exited the bottom re-enters from a side and flies home
+    // a diver that exited the bottom (or finished a loop back at its
+    // anchor) flies home along a real path FROM WHEREVER IT STANDS — the
+    // handoff must be position-continuous, or the browser draw blinks the
+    // bee across the player's own lane
     rejoin: {
-        ticks: 90, end: 'slot',
+        ticks: 70, end: 'slot',
         build: (c) => [
-            [c.x, H + 30], [c.x < W / 2 ? -18 : W + 18, H - 60],
-            [c.slot.x - 20, c.slot.y + 40], [c.slot.x, c.slot.y + 10], [c.slot.x, c.slot.y],
+            [c.x, c.y],
+            [c.x < W / 2 ? -20 : W + 20, Math.max(H - 30, Math.min(H + 26, c.y))],
+            [c.x < W / 2 ? -14 : W + 14, 190],
+            [c.slot.x - (c.x < W / 2 ? 24 : -24), c.slot.y + 34],
+            [c.slot.x, c.slot.y],
         ],
     },
     entryBeeL: {

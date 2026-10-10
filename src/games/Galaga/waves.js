@@ -30,7 +30,7 @@ export const WAVES = [
             { kind: 'flag', col: 3, row: 0 }, { kind: 'flag', col: 4, row: 0 },
             ...row('boss', 1, 2, 5), ...row('bee', 2, 1, 6),
         ],
-        time: 2600,
+        time: 3300,
     },
     {
         name: 'GUARD',
@@ -38,7 +38,7 @@ export const WAVES = [
             { kind: 'flag', col: 2, row: 0 }, { kind: 'flag', col: 5, row: 0 },
             ...row('boss', 1, 1, 6), ...row('bee', 2, 0, 7),
         ],
-        time: 2800,
+        time: 3400,
     },
 ]
 
