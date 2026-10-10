@@ -1,16 +1,18 @@
-# STATE.md — 2026-10-09 (Boulder Dash session end)
+# STATE.md — 2026-10-10 (Sonar Abyss session end)
 
 ## Where things stand
-**BOULDER DASH is LIVE at jalfern.com/retrogames/boulder-dash** (#66, PR #94,
-squash 21739e2). Third forged game, 19th title. A cellular-automata cave: dig
-dirt, gather the gem quota, reach the exit before the clock — while boulders
-crush you, dropped gems turn to dirt, and a firefly chains steel-respecting
-flame through the rock. Four hand-carved caves, each *proven* winnable by a
-planner that ships in the repo; the attract demo is that route, replayed.
+**SONAR ABYSS is LIVE at jalfern.com/retrogames/sonar** (#67, PR #95,
+squash c144144). Fourth forged game, 20th title. A hidden-information roguelike:
+pitch-black seeded sea caves, SPACE emits a sonar ping whose wavefront spreads
+BFS through water only — rock never conducts — lighting each cell exactly as
+the front arrives, fading to black in seconds. Eels are drawn ONLY as contact
+blips where a wavefront physically touched them; the renderer's eel loop
+literally has no live-eel path. Pearls score, the vent descends, death rerolls
+the seed. Attract demo is the planner's proven route replayed ping for ping.
 
 | since last STATE | what |
 |---|---|
-| #66 / PR #94 | **BOULDER DASH shipped** — CA sim → carved caves → Node gate + mutation harness → real-key Chrome play → merge → prod verify, one session |
+| #67 / PR #95 | **SONAR ABYSS shipped** — knowledge/truth split sim → space-time planner → Node info-audit (174 checks, 6 mutants caught) → real-key Chrome (18/18) → merge → prod verify, one session |
 
 ## The loop in one breath
 launchd → `scripts/forge.sh` → `opencode run` → claim (`next` > oldest
@@ -20,59 +22,63 @@ Chrome play → merge ONLY via
 verify prod bundle → relabel `shipped` + comment URL → rewrite this file.
 
 ## What's playable NOW
-19 playable titles + 9 emulated classics at jalfern.com/retrogames, plus
-`/forge`. Queue heads (oldest first): **#67 Sonar Roguelike → #68 Metroid-lite
-→ #69–#79 → #82 BensMagicBugLife** (`gh issue list --label game-queue`).
+20 playable titles + 9 emulated classics at jalfern.com/retrogames, plus
+`/forge`. Queue heads (oldest first): **#68 Metroid-lite → #69 Momentum
+Runner → #70 Ice Climber Co-op → … → #82 BensMagicBugLife**
+(`gh issue list --label game-queue`).
 
-## What BOULDER DASH is, in one line
-`src/games/BoulderDash/{sim.js, levels.js, index.jsx}`: a pure-Node CA
-(bottom-up gravity/roll, gem→dirt on landing, a timed fire-chain automaton, a
-fixed-cycle firefly that ignites everything but steel) + the planner + a 12 Hz
-canvas shell. `npm run dashcheck` is the CI gate — 47 checks: the planner wins
-every cave with hazards live; dig-reachability proves the quota + exit are
-solvable by construction; deterministic replay + a dropped-move tamper; and rule
-pins (a **resting** boulder spares you, a **falling** one crushes; gem→dirt; roll
-off a ledge; fire chains then burns out and dies at steel; firefly moves+ignites;
-the quota binds the exit). `--mutate` silences each engine rule in a child and
-**all 6 mutants are caught**. `npm run dashplay` is Chrome with real keys only —
-19/19: attract is live, arrows dig/move and the pixels follow, the driver presses
-the planner's arrows to fill the quota, reaches the exit, HUD == sim, a loosened
-boulder crushes the digger through the real CA, a key restarts, zero errors.
-New CI steps: `lint:dash` + `dashcheck`.
+## What SONAR ABYSS is, in one line
+`src/games/Sonar/{sim.js, index.jsx}`: pure-Node sim (seeded mulberry32 caves
+— 7 fixed fallback chambers guarantee connectivity for EVERY seed, so the CI
+gate can never be flaky — BFS wavefront reveal with per-tick buckets, a
+knowledge layer `mem/blips` separate from truth, deterministic ping-pong eel
+patrols) + space-time planner + 20 Hz canvas shell that paints knowledge
+only. `npm run sonarcheck` is the new CI gate (with `lint:sonar`): INTEGRITY
+(every lit cell == independently recomputed BFS arrival; rock faces via their
+lit neighbour; sound-shadowed cells NEVER lit), OCCLUSION (a sealed pocket
+inside the blast radius stays dark ~23 ticks until the echo walks the long way
+in — Euclid would light it in 4), DECAY, hidden-eel counting, blips graded
+against live truth at the firing tick, generation reachability + eel-route
+walkability, 5 seeds × 4 depths crossed by the planner with ZERO hits,
+determinism + tamper probe. `--mutate`: wavefront/decay/blipOnly/carve/eelKill/
+descend — **all 6 caught**. `npm run sonarplay` is Chrome with real keys only —
+18/18: fog renders as measured-black pixels, a real SPACE ping lights 1→144
+cells, arrows cross a cave and descend, an eel kill goes through the real
+collision loop (the rig only re-routes truth), new seed after death, zero
+errors; the fog check mutation-failed exactly when the renderer was edited to
+paint unknown water.
 
 ## Flags for Jon (hard-won, cheap to read)
-- **Every red I hit was a test bug, not a sim bug — three times.** The dashcheck
-  reds were a probe that double-counted events (`step()` clears `g.events` at its
-  start, so player events live in the slice, not the whole buffer), a roll
-  detector that missed a rock that rolled *then* fell in the same tick, and a
-  "steel blocks fire" pin whose steel wall stopped at the cave edge so the chain
-  correctly walked around it. AGENTS' "harness must be able to fail" again cut
-  both ways: it failed on the harness, and **zero sim lines changed** to satisfy
-  a red. The engine was right the whole time.
-- **Level design is the real puzzle.** The first caves failed because a 2D gem
-  scatter let the honest route dig a support out from under its own paydirt, so
-  gems fell→dirt and the cave became unwinnable. Fix was structural, not a
-  planner hack: harvest gems are always supported on solid dirt and reached
-  laterally, and the fell/roll/convert/burn `proves` drain on their own in
-  isolated pockets at tick 0 — so each mechanic is proven LIVE without the win
-  gambling on dodging it. Fire is boxed behind steel (the wall is the lesson).
-- Determinism is structural (no RNG anywhere), so the attract replay is trivially
-  reproducible; the tamper probe (drop one move → different hash) is what keeps
-  that honest rather than vacuous.
-- Streak check (AGENTS #4): last two PRs both changed `src/games/**`
-  (#93 Lemmings, #94 Boulder Dash). Streak clean.
-- Dev server stopped; tree clean; `origin/main` = 21739e2.
+- **Every red this session was the harness or the shadow, not the caves** —
+  again. The planner died because its eel-timeline shadow *double-applied the
+  current tick's transition* and bounced route endpoints differently from
+  `step()`; the fix was making the shadow the exact same code path, and the
+  lesson is general: a predictive model that disagrees with the sim by one
+  tick is a collision model written by a liar. The two `sonarcheck` reds were
+  grading blips after the eel already stepped (compare at the firing tick,
+  allow one route hop) and demanding hidden-eels during a metronome-pinging
+  demo (sample the un-pinged opening seconds instead). `sonarplay`'s one red
+  was asserting a wall-clock threshold on a world-time cooldown — the heist
+  lesson again, third game running.
+- **Space-time planning paid for itself.** The naive "block the eel's next
+  cell" heuristic deadlocked corridors AND died anyway; (cell × move-window)
+  BFS against a precomputed eel timeline crossed 20/20 seeds×depths untouched
+  at ~35 ms/cave.
+- **The winnability contract holds**: hazards are real (a rigged approach eats
+  a life through the genuine loop) but the planned route never dies, so the
+  gate never gambles on dodging.
+- Streak check (AGENTS #4): last three PRs all changed `src/games/**`
+  (#93 Lemmings, #94 Boulder Dash, #95 Sonar). Streak clean.
+- Dev server stopped; tree clean; `origin/main` = c144144.
 
 ## Three questions for Jon
-1. Boulder Dash's real grief is digging greedily and getting crushed by the gems
-   you just turned to dirt. Want a visible "this seam is unsafe" tell (a subtle
-   floor tint under a floating rock), or keep it silent and let the first buried
-   run teach it the classic way?
-2. The caves are hazard-bounded so the CI gate stays green; the firefly can't
-   actually kill you (its fire never crosses steel). Want a fifth cave where the
-   fire DOES threaten the harvest — accepting a slower, luckier planner and a
-   throttled `dashplay` — or is "hazards present, win never a coin flip" the
-   right contract for a forge-shipped title?
-3. #67 Sonar Roguelike is the next queue head (hidden-information BFS + a
-   fog/echo audit) — good next muscle, or take #68 Metroid-lite (side-scroll
-   exploration, existing platformer debt in SuperMario) first?
+1. The fog is honest: with metronome pings most of an already-mapped room
+   stays lit (fade 4.5 s vs ping 1.5 s). Want the fade shortened (~2.5 s) so
+   memory matters more than pinging, or keep it — the phone-player's casual
+   path — and let hardcore runs just ping less?
+2. Depth 4 exists but the ladder loops back to depth 1 with your score. Is
+   "endless descent, escalating eels, your score as the only ceiling" the
+   roguelike shape you want, or should depth 4 be a true win with a board?
+3. #68 Metroid-lite is the queue head (side-scroll + ability-gated world =
+   real overlap with SuperMario's engine debt). Build it on the Mario physics
+   or carve a fresh platformer core so Mario stays untouched?
