@@ -3,3 +3,8 @@
   PASS  zero page errors across the whole playthrough","qa":"[0m$ [0mgit branch --show-current; git log --oneline -3; git status --porcelai
 [0m$ [0mgit rev-parse origin/forge-galaga
 [0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9"}}
+{"t":"16:44:37","load":4.79,"free":43,"tasks":{"forge":{"cpu":13,"rss":747},"qa":null,"warden":{"cpu":7,"rss":907},"omlx":{"cpu":120,"rss":36621},"mini":{"cpu":132,"rss":479}},"commit":"forge-galaga: GALAGA: browser harness — real keys, pixels, capture/rescue chain end ","act":{"forge":"  PASS  a real ? opens the pause overlay
+  PASS  a real ? closes it again
+  PASS  zero page errors across the whole playthrough","qa":"[0m$ [0mgit branch --show-current; git log --oneline -3; git status --porcelai
+[0m$ [0mgit rev-parse origin/forge-galaga
+[0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9"}}
