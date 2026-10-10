@@ -42,6 +42,9 @@ const suite = [
     // The /forge board: derives + renders the factory floor in Node and asserts
     // the HTML against the fixtures. Cheapest gate of all (~0.5 s).
     node('forgecheck.mjs'),
+    // The same board in real Chrome against live GitHub data: floor mounts,
+    // counts match the fetched labels, one real click lands in the arcade.
+    node('forgeplay.mjs'),
     // The same brain behind a real button: click, it plays; one key, you win.
     node('zorkuicheck.mjs'),
     // DOS seams (js-dos on demand, keyboard capture, readable framebuffer).
