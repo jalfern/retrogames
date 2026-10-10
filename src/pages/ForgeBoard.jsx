@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { GAMES } from '../config/games'
 
 const REPO = 'jalfern/retrogames'
 const API = p => `https://api.github.com/repos/${REPO}/${p}`
@@ -34,7 +35,7 @@ const ForgeBoard = () => {
         }
         const load = async () => {
             const results = await Promise.allSettled([
-                ...LABELS.map(get),
+                ...LABELS.map(l => get(`issues?labels=${l}&state=all&per_page=100`)),
                 get('issues?state=open&per_page=100'),
                 get('pulls?state=open&per_page=10'),
             ])
@@ -121,7 +122,7 @@ const ForgeBoard = () => {
                             ) : pulse?.gate && pulse.gate !== 'none' ? pulse.gate : 'gate clear'}
                         </Lamp>
                         <Lamp label="MAIN" ok>
-                            {pulse?.main || '…'}<br />{shipped.length} shipped · {queued.length} queued
+                            {pulse?.main || '…'}<br />{GAMES.length} in arcade<br />{shipped.length} forge-built · {queued.length} queued
                         </Lamp>
                     </div>
                 )}
