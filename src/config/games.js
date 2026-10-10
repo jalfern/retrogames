@@ -48,6 +48,9 @@ const MomentumRunnerGame = lazy(() => import('../games/MomentumRunner'))
 // Ice Climber Co-op: same lesson — the attract demo is the co-op autopilot's
 // own proven three-mountain route, so the planner rides in its chunk.
 const IceClimberGame = lazy(() => import('../games/IceClimber'))
+// Galaga: same lesson again — the attract demo is the autopilot's own proven
+// run, and the path library it shares with the harness rides in its chunk.
+const GalagaGame = lazy(() => import('../games/Galaga'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -141,6 +144,14 @@ export const GAMES = [
         theme: 'dark',
         description: "Two climbers, one frozen massif, and every tile punched is gone forever. Hold UP under the ice and bore a shaft straight to the summit shelf, dodge the condor that owns the middle mountain's ledge (the ice column keeps a pocket it cannot reach), and take the carrot. But the last carrot hangs a head taller than any jump in the game: the only way up is one climber standing still while the other jumps onto their shoulders and jumps again — and a climber downed by the condor is only revived by a partner's touch. Alone, the summit is impossible. The attract demo is the autopilot's own proven co-op route, tick for tick.",
         controls: ['P1 (red): Arrow Left/Right: move · UP: punch upward through the ice · SPACE: jump', 'P2 (blue): A / D: move · W: punch upward · F: jump (the second pad on the screen drives P2)', 'Punching deletes ice FOREVER — the shaft you bore is your shaft', 'The condor owns its shelf: wait in the ice pocket, dash when its back is turned', 'The top carrot needs a climber-shaped stepladder — jump on your partner, then jump again', 'Touch a downed partner to revive them; lives are shared, the summit is not winnable solo', '?: Pause and read the controls'],
+    },
+    {
+        path: '/galaga',
+        component: GalagaGame,
+        label: 'GALAGA',
+        theme: 'dark',
+        description: 'The fighting formation of the bee species. Every dive is a SCRIPTED flight path — readable, dodgeable, and audited tick by tick by the harness that ships with this repo. The red Flagship drops a tractor beam: dodge it or lose a fighter. A captured fighter flies the next stage as an escort — shoot your own escort down and CATCH the falling fighter to win a DOUBLE fighter. Three challenging stages; the attract demo is the autopilot\'s own proven run, tick for tick.',
+        controls: ['Arrow Keys / D-pad: Fly (you own the bottom band — the walls are death traps)', 'Space / A: Fire (two shots — a DOUBLE fighter fires two PAIRS)', 'Divers hunt your lane: read the path, dodge early, not last-second', 'The Flagship\'s tractor beam captures you — dodge it, or let it take you and win the fighter back', '?: Pause and read the controls'],
     },
     {
         path: '/pong',
