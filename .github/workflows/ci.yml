@@ -87,6 +87,11 @@ jobs:
       # must have a mutant that dies proving it is load-bearing.
       - run: npm run lint:ice
       - run: npm run icecheck
+      # Eleventh scoped gate: /forge's factory floor. forgecheck renders the real
+      # component in Node and proves the animation cannot lie about the data
+      # (queue card count, gate color, anvil freshness, cart flips). ~1 s.
+      - run: npm run lint:forge
+      - run: npm run forgecheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

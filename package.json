@@ -58,7 +58,10 @@
     "runnerplay": "node scripts/runnerplay.mjs",
     "lint:ice": "eslint src/games/IceClimber src/components src/utils src/config src/main.jsx scripts",
     "icecheck": "node scripts/icecheck.mjs",
-    "iceplay": "node scripts/iceplay.mjs"
+    "iceplay": "node scripts/iceplay.mjs",
+    "lint:forge": "eslint src/pages scripts",
+    "forgecheck": "node scripts/forgecheck.mjs",
+    "forgeplay": "node scripts/forgeplay.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",
