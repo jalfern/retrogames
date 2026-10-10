@@ -10,6 +10,11 @@ AGENTS.md wins.
 1. **Read `STATE.md`, then `git pull --ff-only origin main`.** If the working
    tree is dirty, STOP and report (the previous session died mid-edit; do not
    guess what was in flight).
+1b. **Resume before you claim.** `git fetch --prune` and look for a
+   `building` issue with a pushed `forge/<slug>` branch — a dead session's
+   corpse. If one exists: check out that branch, read the issue's last
+   `FORGE:` comment and `git log` to see how far it got, and **continue the
+   build**. Do not claim a second issue while one is half-built.
 2. **Claim a game.**
    `gh issue list --label game-queue --json number,title --jq '.[-1] | "\(.number) \(.title)"'`
    takes the OLDEST queued request (lowest number first). If none exists,
@@ -49,6 +54,12 @@ AGENTS.md wins.
 
 ## Hard rules (each one learned in a postmortem)
 
+- **Checkpoint to the pushed branch after every working increment** —
+  design note, engine core, levels, harness, menu wiring: each gets its own
+  commit pushed to `forge/<slug>` the moment it passes `node`/`eslint`.
+  A session that dies then leaves a decodable corpse, not vapor. Update the
+  issue with a `FORGE: <what's done / what's next>` comment at the same time
+  (that comment is the session handoff).
 - One game per session. If a game isn't mergeable in this session, leave the
   branch pushed with a draft PR marked **WIP: <what's missing>**, keep the
   `building` label, and exit — never merge a red/WIP PR (AGENTS.md #5).
