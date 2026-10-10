@@ -64,11 +64,13 @@ export function makeGame(wave = 0) {
 }
 
 function startStage(gs, w) {
+    gs.epoch = (gs.epoch || 0) + 1
     const stage = buildStage(w, gs.escorts)
     gs.enemies = stage.map((e) => {
         const p = resolvePath(e.entry, { x: colX(e.col), y: e.y, px: CFG.pStartX, py: CFG.pStartY, dir: 1 })
         return {
             ...e,
+            seq: `${gs.epoch}:${e.id}`,
             hp: CFG.hp[e.kind],
             state: 'wait',
             x: p.fn(0)[0], y: p.fn(0)[1],
@@ -132,7 +134,7 @@ export function decide(gs, e) {
         const rot = cands.filter((en) => en.col >= gs.nextCol)
         const pick = (rot.length ? rot : cands)[0]
         if (pick && pick.id === e.id) {
-            const path = e.kind === 'boss' ? 'loop' : (e.col % 2 ? 'zig' : 'swoop')
+            const path = e.kind === 'boss' ? (e.col % 2 ? 'zig' : 'loop') : (e.col % 2 ? 'zig' : 'swoop')
             return { type: 'dive', path, dir: colX(e.col) < W / 2 ? 1 : -1 }
         }
     }
@@ -278,7 +280,16 @@ export function step(gs, input = {}) {
             else { const q = e.path.fn(u); e.x = q[0]; e.y = q[1] }
             continue
         }
-        if (e.state === 'hold') { e.x = colX(e.col) + sway(gs); e.y = rowY(e.row); continue }
+        if (e.state === 'hold') {
+            const tx = colX(e.col) + sway(gs), ty = rowY(e.row)
+            const d = Math.hypot(tx - e.x, ty - e.y)
+            // eased formation entry: a bee that looped home lands where its
+            // commit-time sway was, the slot drifts — ease in at <= 3/t
+            // instead of snapping 9 px in one tick
+            if (d > 3.2) { const k = 3 / d; e.x += (tx - e.x) * k; e.y += (ty - e.y) * k }
+            else { e.x = tx; e.y = ty }
+            continue
+        }
         if (e.state === 'return') {
             e.uT++
             const u = e.uT / e.path.ticks

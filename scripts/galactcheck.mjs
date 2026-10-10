@@ -61,14 +61,22 @@ let seen = 0
 const r = plan(gs, {
     onFrame: () => {
         for (const e of gs.enemies) {
-            const b = live.prev.get(e.id)
-            live.prev.set(e.id, { x: e.x, y: e.y, state: e.state, path: e.path })
+            const key = e.seq
+            const b = live.prev.get(key)
+            live.prev.set(key, { x: e.x, y: e.y, state: e.state, path: e.path, pt: gs.pt, epoch: gs.epoch })
             if (!b || b.state === 'wait' || b.state === 'dead' || e.state === 'wait' || e.state === 'dead') continue
-            live.maxStep = Math.max(live.maxStep, Math.hypot(e.x - b.x, e.y - b.y))
+            {
+                const stp = Math.hypot(e.x - b.x, e.y - b.y)
+                if (stp > live.maxStep) { live.maxStep = stp; if (stp > MAX_STEP) console.log('  BIGSTEP', e.kind, b.state, '->', e.state, stp.toFixed(2), b.x.toFixed(0), b.y.toFixed(0), '->', e.x.toFixed(0), e.y.toFixed(0), 'pt', b.pt, '->', gs.pt, 'ep', b.epoch, '->', gs.epoch) }
+            }
+            // a path handoff is legal only at off-screen ends, at the loop
+            // anchor, or when the position is CONTINUOUS (carry inherits
+            // the beam's exact position — 0 px of jump, so it is not a blink)
             if (e.path !== b.path && b.state !== 'hold' && b.state !== 'entry') {
                 const off = (x, y) => x < -8 || x > W + 8 || y < -8 || y > H + 8
                 const anchor = b.state === 'dive' && e.state === 'hold' && b.path.end === 'anchor'
-                if (!off(b.x, b.y) && !off(e.x, e.y) && !anchor) {
+                const step = Math.hypot(e.x - b.x, e.y - b.y)
+                if (!off(b.x, b.y) && !off(e.x, e.y) && !anchor && step > MAX_STEP) {
                     live.teleports++
                     console.log(`  ..    on-screen handoff: ${b.state}(${b.x.toFixed(0)},${b.y.toFixed(0)}) -> ${e.state}(${e.x.toFixed(0)},${e.y.toFixed(0)})`)
                 }
@@ -165,7 +173,7 @@ section('BEHAVIOR TREE (rule order is the law)')
             for (let u = 0; u < 900; u++) {
                 if (g4b.pending) break // the stage ended — a NEW stage may beam, that is not "a second beam"
                 step(g4b, {})
-                const again = g4b.enemies.some((e) => e.state === 'beam' && e.bandX)
+                const again = g4b.enemies.some((e) => e.state === 'beam' && e.bandX && (!g4b.cap || g4b.cap.id !== e.id))
                 if (again) { ok(false, 'a second tractor beam ran inside the capture stage'); break }
             }
             ok(true, 'no second tractor beam inside the capture stage (once per stage holds)')
@@ -216,9 +224,10 @@ section('CAPTURE / RESCUE CHAIN (the bonus, end to end)')
     ok(g5.lives === 3, `lives after rescue ${g5.lives} (capture costs one, rescue pays one back)`)
     // friendly fire: your own bullet flying UP past it kills your own fighter
     const g6 = makeGame(1)
+    for (let t = 0; t < 200 && g6.phase !== 'play'; t++) step(g6, {})
     g6.fallers.push({ x: 112, y: 150, vy: 1.3 })
     g6.shots.push({ x: 112, y: 168 })
-    step(g6, {})
+    for (let t = 0; t < 10 && g6.fallers.length; t++) step(g6, {})
     ok(g6.events.some((e) => e.type === 'lostfighter'), 'a bullet passed through the falling fighter without killing it — friendly fire is off')
 }
 
@@ -245,6 +254,7 @@ if (MUT) {
         const g = makeGame(1)
         g.player.y = 250
         for (let t = 0; t < 2600; t++) {
+            g.player.invuln = 30
             const bl = g.enemies.find((e) => e.state === 'beam')
             if (bl && bl.bandX) g.player.x = bl.bandX
             step(g, {})
@@ -252,6 +262,41 @@ if (MUT) {
             if (g.end) return false
         }
         return false
+    }
+    const captiveDives = () => {
+        const g = makeGame(1)
+        g.player.y = 250
+        let t = 0
+        for (; t < 2600 && !g.events.some((e) => e.type === 'captured'); t++) {
+            g.player.invuln = 30
+            const bl = g.enemies.find((e) => e.state === 'beam')
+            if (bl && bl.bandX) g.player.x = bl.bandX
+            step(g, {})
+        }
+        if (!g.events.some((e) => e.type === 'captured')) return false
+        for (let k = 0; k < 1200; k++) {
+            g.player.invuln = 30
+            step(g, {})
+            if (g.enemies.some((e) => e.kind === 'captive' && e.state === 'dive')) return true
+        }
+        return false
+    }
+    const divesRun = () => {
+        const g = makeGame(0)
+        let n = 0
+        for (let t = 0; t < 4000 && !g.end; t++) {
+            const ev = g.events.length
+            step(g, {})
+            for (const e of g.events.slice(ev)) if (e.type === 'dive') n++
+        }
+        return n >= 3
+    }
+    const rescued = () => {
+        const g = makeGame(1)
+        for (let t = 0; t < 200 && g.phase !== 'play'; t++) step(g, {})
+        g.fallers.push({ x: 112, y: 250, vy: 1.3 })
+        for (let t = 0; t < 12 && !g.double; t++) step(g, {})
+        return g.double
     }
     const tryMut = (name, apply, probe, expect = true) => {
         const base = probe()
@@ -265,29 +310,9 @@ if (MUT) {
         ok(v !== expect, `${name} SURVIVED — a check stopped touching this rule`)
     }
     tryMut('beamOff (tractor beam disabled)', { beamOff: true }, capture)
-    tryMut('escortPeriod=inf (captive never dives)', { escortPeriod: 1e9 }, () => {
-        const g = makeGame(1)
-        g.pt = 0
-        let d = false
-        for (let t = 0; t < 4000; t++) {
-            step(g, {})
-            if (g.enemies.some((e) => e.kind === 'captive' && e.state === 'dive')) { d = true; break }
-            if (t === 1500 && !g.enemies.some((e) => e.kind === 'captive')) g.enemies.push({ id: 'm', kind: 'captive', col: 3, row: 3, aboard: true, hp: 1, state: 'hold', x: 91, y: 146, uT: 0, path: resolvePath('entryBeeL', { x: 91, y: 146, dir: 1 }), fired: false })
-        }
-        return d
-    })
-    tryMut('diveMin=inf (no dives ever)', { diveMin: 1e9, diveBase: 1e9 }, () => {
-        const g = makeGame(0)
-        let any = false
-        for (let t = 0; t < 4000 && !g.end; t++) { step(g, {}); if (g.enemies.some((e) => e.state === 'dive')) any = true }
-        return any
-    })
-    tryMut('rescueDouble=false (rescue grants no double)', { rescueDouble: false }, () => {
-        const g = makeGame(1)
-        g.fallers.push({ x: 112, y: 250, vy: 1.3 })
-        step(g, {})
-        return g.double
-    })
+    tryMut('escortPeriod=inf (captive never dives)', { escortPeriod: 1e9 }, captiveDives)
+    tryMut('diveBase=inf (no dive cadence ever)', { diveMin: 1e9, diveBase: 1e9 }, divesRun)
+    tryMut('rescueDouble=false (rescue grants no double)', { rescueDouble: false }, rescued)
 }
 
 console.log(`\ngalactcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

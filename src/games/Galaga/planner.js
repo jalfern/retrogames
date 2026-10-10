@@ -24,7 +24,9 @@ export function threats(gs) {
         if (e.state === 'dead' || e.state === 'hold' || e.state === 'wait') continue
         if (e.state === 'beam') {
             if (!e.bandX) continue
-            for (let t = 0; t <= 6; t++) out.push([e.bandX, e.y + 20, 20])
+            // an open band is a WATED column, not a point: dodge the whole
+            // shaft it hangs down, all the way to the floor
+            for (let k = 8; k <= H - e.y - 6; k += 8) out.push([e.bandX, e.y + k, 19])
             continue
         }
         if (!e.path?.fn) continue

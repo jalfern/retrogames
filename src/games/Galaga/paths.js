@@ -89,7 +89,7 @@ export const REGISTRY = {
     // handoff must be position-continuous, or the browser draw blinks the
     // bee across the player's own lane
     rejoin: {
-        ticks: 160, end: 'slot',
+        ticks: 185, end: 'slot',
         build: (c) => [
             [c.x, c.y],
             [c.x < W / 2 ? -20 : W + 20, Math.max(H - 30, Math.min(H + 26, c.y))],
