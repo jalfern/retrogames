@@ -9,8 +9,8 @@
         <string>/bin/zsh</string>
         <string>-c</string>
         <string>git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null; git -C /Users/jon/Dev/retrogames show origin/main:scripts/forge-qa.sh | exec /bin/zsh -s -- "$@"</string>
-        <string>--foreground</string>
         <string>forge-qa.sh</string>
+        <string>--foreground</string>
     </array>
     <key>StartInterval</key>
     <integer>900</integer>
