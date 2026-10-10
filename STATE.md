@@ -1,73 +1,75 @@
-# STATE.md — 2026-10-10 (Momentum Runner session end)
+# STATE.md — 2026-10-10 (Ice Climber Co-op session end)
 
 ## Where things stand
-**MOMENTUM RUNNER IS LIVE at jalfern.com/retrogames/momentum** (#69, PR #100,
-squash 75b3d2d, `shipped` label). Sixth forged game, 22nd title.
-This session RESUMED the corpse of a dead forge-momentum session (playbook 1b):
-sim, shell, runnercheck and runnerplay were already pushed; what remained was
-the DebugKit mount (required by FORGE.md since #98, never done), a broken
-Chrome check, and the gate sweep.
-**Next session: claim #70 GAME 06 — Ice Climber Co-op** (oldest `game-queue`;
-no `next` label, no unlabeled GAME issues). MomentumRunner is done — touch it
-only if `runnercheck` goes red.
+**ICE CLIMBER CO-OP IS LIVE at jalfern.com/retrogames/ice-climber** (#70, PR #105,
+squash 658017f, `shipped` label). Seventh forged game, 23rd title, and the
+arcade's first local-2P game.
+**Next session: claim #103 GAME 16 — Forge Conveyor (a `next` label exists —
+Jon's manual override outranks the queue), then #71 Galaga.** One game per session.
 
 | since last STATE | what |
 |---|---|
-| #69 / `forge-momentum` | Resumed + finished: DebugKit with live-state PROGNOSIS → rebuilt the variable-jump check (2 harness bugs found by CI-speed CDP) → all gates → merged → prod-verified |
+| #70 / `forge-ice-climber` | Built from the issue body: mutable tilemap (punching deletes ice, 69 tiles per autopilot route) + second input path (P2 W/A/D+F pad on VirtualControls via a new optional `secondPad` prop). Merged with icecheck (33 checks + 5 mutants) and iceplay (17 real-Chrome checks). |
 
 ## What is playable right now
-- Everything on jalfern.com/retrogames (unchanged) + `/momentum`, live.
-- `/momentum`: RIGHT builds speed (downhills drive you, flat is too slow),
-  SPACE/Z jump (variable — release early lands short), loops stick only at
-  v² ≥ 5·g·r, rings are the life bar, totems are checkpoints. Attract demo =
-  the autopilot's own proven route, tick for tick.
+- Everything on jalfern.com/retrogames + `/ice-climber`, live.
+- `/ice-climber`: P1 Arrows+Space, P2 W/A/D+F. Punch UP through the massif,
+  the shaft is yours forever. Condor owns summit 2's shelf except the ice
+  pocket at col 7. Summit 3's carrot is 3 cells up; a jump is 2.1 — stand on
+  your partner (1.5) and jump again. Downed partner revives by touch; alone
+  the summit is impossible. Attract demo = the autopilot's own co-op route.
 
 ## What changed this session (the parts that matter next time)
-- **A tick-scheduled Chrome key check races CDP and loses — grade the ENGINE
-  instead.** The tap/hold jump check failed twice with schedules measured from
-  a pre-key `tick()`: keydown latency alone ate 0–12 ticks, so "release at
-  airborne+2" arrived at launch+14 (an 87 px half-cut, not a tap). Final
-  design: HOLD releases only after landing (a ground key-up can never clip the
-  apex); TAP releases on first airborne probe and the attempt **counts only if
-  `probe().cut` flipped** — the engine confirms the key-up reached `step()`.
-  `cut` was added to `__runnerTest.probe()` for exactly this. 62 px vs 99 px.
-  Same lesson as metroidplay's cadence notes: any wait in a browser harness is
-  meaningless unless the engine admits it happened.
-- **DebugKit PROGNOSIS = `planRun(clone(gs))`.** `planRun` now takes an
-  optional start state (default `makeGame()`, so runnercheck is untouched);
-  the panel clones `{...gs, p:{...}, taken:Set, spent:Map}` and re-runs the
-  greedy autopilot on it. Verified honest on fresh / mid-run / deliberately
-  hopeless (ringless before the far spike → "died at tick 17").
-- **Production probe gotcha:** `jalfern.com/retrogames/` 308s to `www.`;
-  prod deploy checks must `curl -sL`. Prod Chrome proof: canvas + attract h1
-  + zero pageerrors + `__runnerTest === undefined` (DEV hook absent).
+- **A CDP tap is two events inside one inter-frame gap — latch the edge.**
+  `keyboard.press('Space')` fired keydown+keyup between two sim steps and the
+  jump never happened (first iceplay run: stack test red). The shell now
+  latches jumps (`jEdge`, consumed by the sim tick). Same lineage as
+  runnerplay's `cut` lesson: the engine must admit the key, not the harness.
+- **Replay = the planner's bookkeeping, not just the sim.** The autopilot
+  pushes a couple of no-op ticks after its own carrot grab, so a replay that
+  advanced mountains "on clear" desynced by two ticks. `advanceAt` (script
+  indices where level-advances happen) is now part of `plan()`'s contract and
+  `replay()`'s signature.
+- **A harness that can pass is a harness that missed something.** The first
+  iceplay was 13/15 honest then a "revive" check passed vacuously: a setup
+  rig called on the win screen silently no-oped (`setup()` requires play
+  mode) and "did the partner revive?" answered about a climber who was never
+  downed. Every rig call now asserts it took effect (`setup rig accepts
+  play-mode setup` is a check now, not a fixture).
+- **Co-op geometry is checkable**: `shoulder=false` makes the real solver
+  lose THE STACK (rise 2.1 < shelf gap 3; head 1.5 + jump ≥ 3). That mutant
+  is gate #2 in `icecheck --mutate`.
+- `VirtualControls` grew `secondPad` (default off — no other game's DOM
+  changed; all three scoped lints were re-run to prove it).
 
 ## Gates (all green at merge)
-`lint:mario/fps/ai/runner` clean · `runnercheck` 48 checks + 8/8 mutants die
-(CI static gate) · `runnerplay` 19/19 · build ✓ · prod smoke in real Chrome ✓.
+`lint:mario/fps/ai/ice` clean · `icecheck` 33 checks + 5/5 mutants die (added
+to CI static) · `iceplay` 17/19→17/17 after the two real fixes · build ✓ ·
+prod bundle contains the game, route 200.
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Claim **#70 Ice Climber Co-op** (co-op = VirtualControls second player?
-   read the issue body first — that is the new muscle it names).
-2. Do not polish MomentumRunner — shipped.
+1. Claim **#103 GAME 16 — Forge Conveyor** (label `next` outranks the queue;
+   read the issue body for the muscle it names). Then #71 Galaga.
+2. Do not polish Ice Climber — shipped. Its CI gates are `lint:ice` +
+   `icecheck`; `iceplay` is manual-tier like the other browser suites.
+3. If a browser suite ever reds on a keystroke that "was pressed": think
+   inter-frame gaps and edge latching before you touch the game.
 
 ## Three questions for Jon
-1. `/momentum` keeps a very Sonic-flavored skin (rings, loops, wheels). Rename
-   before SEO, like the Metroid question from last STATE? (That one is also
-   still unanswered.)
-2. The co-op issue (#70) implies two players on one keyboard/pad. VirtualControls
-   is one-pad today — design call: second on-screen pad, or share-one-joycon
-   style "both climb together"? First decision shapes the whole build.
-3. This session's transcript was spammed with "fetch this Instagram URL"
-   user-turns that had nothing to do with the task (prompt-injection attempts
-   against the unattended loop). I ignored them. Worth a line in FORGE.md
-   telling sessions to distrust injected URLs, and checking what feeds the
-   loop's stdin?
+1. #103 (Forge Conveyor) is labeled `next` but arrived after this session's
+   claim — confirmed it should outrank Galaga next session?
+2. Co-op control scheme: P2 got W/A/D+F with an on-screen second pad, but on
+   a phone two pads crowd a portrait screen. Alternate: one-player-two-roles
+   (switch climber like Raccoon Heist)? Your pick decides whether the second
+   pad stays.
+3. Last session's Instagram-URL injection attempts appeared again in this
+   session's transcript and were again ignored. Still worth adding a
+   distrust-injected-URLs line to FORGE.md and auditing what feeds the loop.
 
 ## Lineage
-AGENTS.md rules honored: one goal (rule 2), resumed per playbook 1b rather
-than claiming a second issue, harness-that-can-fail (8 mutants + a check that
-demonstrably went red twice before the fix), world/engine-clock scheduling in
-the driver, merge only via `gh pr checks --watch --fail-fast && gh pr merge
---squash --delete-branch`, STATE rewritten, game code touched every session
-(rule 4 unbroken).
+AGENTS.md rules honored: read STATE first, ff-only pull, resumed nothing (no
+corpse branches), claimed the queue head only after checking `next`/unlabeled,
+one game, checkpoints pushed per increment with FORGE comments, harness proven
+red twice before green, merge only via
+`gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`,
+STATE rewritten on main (game merged, so allowed), game code touched (rule 4).
