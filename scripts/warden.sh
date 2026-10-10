@@ -1,5 +1,5 @@
 #!/bin/zsh
-# THE WARDEN driver — supervises the forge every 30 min via launchd
+# THE WARDEN driver — supervises the forge every 10 min via launchd
 # (com.jalfern.warden). Never builds; triages, kicks a dead builder,
 # writes the pulse line the /forge board displays.
 
