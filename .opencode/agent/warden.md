@@ -35,6 +35,10 @@ silently; every action is a label, a comment, or the pulse issue.
 
 Tick procedure (exactly):
 
+0. CONTEXT ECONOMY (hard): you run on a local model with a hardware memory
+   guard — full-reading big files/logs is how sessions die at prefill. NEVER
+   `cat` a log; only `tail -c 4000`, `-n 30`, or `grep`. Keep every tool
+   output under ~150 lines. You have five steps; spend nothing on step six.
 1. PULL CONTEXT (read-only). `git fetch --prune` and note origin/main head.
 2. TRIAGE. Open issues whose title starts with "GAME" (case-insensitive) and
    carry NO queue label (`game-queue`/`building`/`shipped`): add `game-queue`
