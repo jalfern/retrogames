@@ -5,8 +5,16 @@ import { GAMES } from '../config/games'
 const REPO = 'jalfern/retrogames'
 const API = p => `https://api.github.com/repos/${REPO}/${p}`
 // GitHub's ?labels= filter is an AND (issue must carry EVERY listed label),
-// so one query per label — merged by issue number below.
-const LABELS = ['game-queue', 'building', 'shipped']
+// so one query per lane — merged by issue number below. Only shipped needs
+// state=all: those issues are CLOSED on ship. Open lanes arrive anyway via
+// the catch-all open query; per-label copies are the belt-and-braces record.
+const QUERIES = [
+    'issues?labels=shipped&state=all&per_page=100',
+    'issues?labels=game-queue&per_page=100',
+    'issues?labels=feedback&per_page=100',
+    'issues?state=open&per_page=100',
+    'pulls?state=open&per_page=10',
+]
 
 const labelOf = (issue, name) => issue.labels.some(l => l.name === name)
 const kv = line => Object.fromEntries(line.split(/\s+/).slice(1).map(t => t.split('=')))
@@ -35,9 +43,7 @@ const ForgeBoard = () => {
         }
         const load = async () => {
             const results = await Promise.allSettled([
-                ...LABELS.map(l => get(`issues?labels=${l}&state=all&per_page=100`)),
-                get('issues?state=open&per_page=100'),
-                get('pulls?state=open&per_page=10'),
+                ...QUERIES.map(get),
             ])
             const ok = results.filter(r => r.status === 'fulfilled')
             if (!alive) return
@@ -46,7 +52,7 @@ const ForgeBoard = () => {
             const byNum = new Map()
             all.filter(i => !i.pull_request).forEach(i => byNum.set(i.number, i))
             setIssues([...byNum.values()].sort((a, b) => a.number - b.number))
-            setPrs(ok[4] ? ok[4].value : [])
+            setPrs(results[4].status === 'fulfilled' ? results[4].value : [])
             setError('')
             const pulse = all.find(i => i.title === 'FORGE PULSE')
             if (pulse) {
@@ -68,7 +74,11 @@ const ForgeBoard = () => {
         return () => { alive = false; clearInterval(timer) }
     }, [])
 
-    const building = issues?.filter(i => labelOf(i, 'building')) ?? []
+    const building = issues?.filter(i => labelOf(i, 'building') && i.state === 'open') ?? []
+    const qa = (issues ?? []).filter(i => i.state === 'open' && !i.pull_request
+        && (labelOf(i, 'feedback') || labelOf(i, 'building-qa')))
+        .sort((a, b) => (b.reactions?.total_count ?? 0) - (a.reactions?.total_count ?? 0) || a.number - b.number)
+    const qaBusy = qa.some(i => labelOf(i, 'building-qa'))
     const queued = issues?.filter(i => !labelOf(i, 'building') && !labelOf(i, 'shipped') && !i.pull_request
         && (labelOf(i, 'game-queue') || /^game\b/i.test(i.title))) ?? []
     const shipped = issues?.filter(i => labelOf(i, 'shipped')) ?? []
@@ -101,18 +111,26 @@ const ForgeBoard = () => {
                         href={`https://github.com/${REPO}/issues/new?labels=game-queue&title=GAME%20—%20%3Cname%3E&body=%3Cwhat%20it%20is%20and%20the%20engine%20muscle%20it%20should%20stretch%3E`}>
                         ＋ PROPOSE A GAME
                     </a>
+                    <a className="border-2 border-[#ffb347] text-[#ffb347] px-4 py-2 text-xs tracking-wider hover:bg-[#ffb347] hover:text-black transition-colors"
+                        href={`https://github.com/${REPO}/issues/new?labels=feedback&title=QA%20%E2%80%94%20%3Cgame%2Fscreen%3E%3A%20%3Cwhat%20is%20wrong%3E&body=%2A%2Awhere%3A%2A%2A%20https%3A%2F%2Fjalfern.com%2Fretrogames%2F%0A%2A%2Awhat%20happened%3A%2A%2A%20%0A%2A%2Awhat%20I%20expected%3A%2A%2A%20%0A%2A%2Adevice%2Fbrowser%3A%2A%2A%20%0A%0Apriority%20%3D%20%F0%9F%91%8D%20on%20this%20issue%2C%20or%20comment%20%60%2Fpriority%20now%60`}>
+                        ＋ REPORT A BUG
+                    </a>
                     <Link to="/games" className="border-2 border-white px-4 py-2 text-xs tracking-wider hover:bg-white hover:text-black transition-colors">
                         ← ARCADE
                     </Link>
                 </div>
 
                 {issues && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-6">
                         <Lamp label="BUILDER" ok={building.length > 0}>
                             {building[0] ? building[0].title.replace(/^GAME.*?—\s*/, '') : 'idle — next warden tick kicks'}
                         </Lamp>
                         <Lamp label="WARDEN" ok={!!pulse}>
-                            {pulse ? `heartbeat ${pulse['0'] || pulses[0].body.slice(0, 5)}` : 'no pulse yet'}
+                            {pulse ? `heartbeat ${pulses[0].body.slice(0, 5)}` : 'no pulse yet'}
+                        </Lamp>
+                        <Lamp label="QA LANE" ok={qaBusy || qa.length === 0}>
+                            {qaBusy ? `fixing: ${qa.find(i => labelOf(i, 'building-qa')).title.replace(/^QA —?\s*/, '')}`
+                                : qa.length ? `${qa.length} awaiting a fix` : 'board empty'}
                         </Lamp>
                         <Lamp label="CI GATE" ok>
                             {prs.length ? (
@@ -154,6 +172,28 @@ const ForgeBoard = () => {
                     <section className="mb-10">
                         <h2 className="text-[#ffb347] text-sm tracking-widest mb-3">⚒ BUILDING NOW</h2>
                         <div className="grid gap-4">{building.map(i => card(i, 'border-[#ffb347] animate-pulse'))}</div>
+                    </section>
+                )}
+
+                {qa.length > 0 && (
+                    <section className="mb-10">
+                        <h2 className="text-[#ff9d4d] text-sm tracking-widest mb-2">🔧 QA BOARD — fixed beside the forge ({qa.length})</h2>
+                        <p className="text-[10px] text-gray-500 mb-3 leading-relaxed">
+                            ADDED FROM THIS PAGE (REPORT A BUG). TO JUMP THE QUEUE: 👍 the issue — or comment
+                            <span className="text-[#ff9d4d]"> /priority </span> and the QA lane takes it next session (15–45 min).
+                        </p>
+                        <div className="grid md:grid-cols-2 gap-4">
+                            {qa.map(i => (
+                                <a key={i.number} href={i.html_url} target="_blank" rel="noreferrer"
+                                    className={`border-2 p-4 block hover:opacity-80 transition-opacity ${labelOf(i, 'building-qa') ? 'border-[#ff6600] animate-pulse' : 'border-[#ff9d4d]/60'}`}>
+                                    <div className="flex justify-between items-start gap-2">
+                                        <span className="tracking-wider font-bold text-sm">{labelOf(i, 'building-qa') ? '🔨 ' : ''}{i.title}</span>
+                                        <span className="text-[10px] opacity-60 shrink-0">👍{i.reactions?.total_count ?? 0} #{i.number}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-2 leading-relaxed">{(i.body || '').split('\n')[0]}</p>
+                                </a>
+                            ))}
+                        </div>
                     </section>
                 )}
 

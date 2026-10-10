@@ -47,7 +47,7 @@ Tick procedure (exactly):
    `FORGE PULSE` (create it if absent: title `FORGE PULSE`, no labels, body
    "Machine-updated status line for https://jalfern.com/retrogames/forge —
    do not close."), and comment ONE line:
-   `<HH:MM> alive=<yes|no|pending> queue=<n> building=<n> shipped=<n> main=<7chars> gate=<none|#N> actions=none`
+   `<HH:MM> alive=<yes|no|pending> queue=<n> building=<n> shipped=<n> main=<7chars> qa=<n> gate=<none|#N> actions=none`
    `gate` is `gh pr list --state open --json number` head number, or `none` —
    the website board renders it, so never omit it. Corrections to `actions`
    come in step 6, after the heavy work.
@@ -57,7 +57,8 @@ Tick procedure (exactly):
    oldest-first; Jon can bump yours with the 'next' label. Live board:
    https://jalfern.com/retrogames/forge`. This is the fix for submitters who
    lack triage rights and lose the prefilled label.
-4. LIVENESS. `pgrep -fl "opencode run.*THE FORGE"`.
+4. LIVENESS — TWO LANES.
+   4a. Game lane: `pgrep -fl "opencode run.*THE FORGE"`.
    - Running → do nothing (a healthy builder is left alone, even if slow).
    - NOT running AND the queue is non-empty (game-queue or unlabeled GAME
      issues, after step 2): `git log --oneline -3 origin/main` to see if
@@ -66,6 +67,10 @@ Tick procedure (exactly):
      (per the FORGE.md claim order: `next` first, else oldest): `WARDEN:
      builder idle, kicked a session`.
    - NOT running AND queue empty → do nothing (idle is correct).
+   4b. QA lane: `pgrep -fl "opencode run.*QA MASTER"`. NOT running AND an
+     open `feedback` issue exists → run `scripts/forge-qa.sh` and comment on
+     the item it will claim (own order: `/priority` comment, else most +1,
+     else oldest): `WARDEN: QA idle, kicked a fix`. Otherwise do nothing.
 5. CRASH WATCH. For each open `building` issue: if no `forge/<slug>` remote
    branch exists AND the newest /tmp/forge/*.log older than ~4 h ends in
    `exit=0` with no PR → comment `WARDEN: builder died before first
@@ -76,7 +81,7 @@ Tick procedure (exactly):
 6. FOLLOW-UP PULSE, only if you triaged, kicked or stalled anything AND the
    first pulse landed. If the model rejects this prefill, stop — a fresh
    pending line beats a half-finished tick. Comment the corrected line:
-   `<HH:MM> alive=<yes|no|kicked> queue=<n> building=<n> shipped=<n> main=<7chars> gate=<none|#N> actions=<none|triaged:N|kicked:N|stalled:N>`
+   `<HH:MM> alive=<yes|no|kicked> queue=<n> building=<n> shipped=<n> main=<7chars> qa=<n> gate=<none|#N> actions=<none|triaged:N|kicked:N|qa-kicked:N|stalled:N>`
    That comment pair is what the website board displays as the heartbeat.
 7. STOP. Do not summarize in prose, do not plan a game, do not fetch URLs
    beyond the GitHub API via gh. One tick, five steps, exit.
