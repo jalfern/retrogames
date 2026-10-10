@@ -1,3 +1,5 @@
 {"t":"12:49:10","load":6.27,"free":36,"tasks":{"forge":{"cpu":2,"rss":997},"qa":null,"warden":null,"omlx":{"cpu":81,"rss":39533}},"act":{"forge":"$ cat > /tmp/prodforge.mjs <<'EOF'","qa":""}}
 {"t":"12:49:12","load":6.27,"free":42,"tasks":{"forge":{"cpu":0,"rss":997},"qa":null,"warden":null,"omlx":{"cpu":101,"rss":39498}},"act":{"forge":"$ cat > /tmp/prodforge.mjs <<'EOF'","qa":""}}
 {"t":"12:49:14","load":6.49,"free":41,"tasks":{"forge":{"cpu":8,"rss":997},"qa":null,"warden":null,"omlx":{"cpu":91,"rss":39498}},"act":{"forge":"$ cat > /tmp/prodforge.mjs <<'EOF'","qa":""}}
+{"t":"13:01:00","load":,"free":92,"tasks":{"forge":null,"qa":null,"warden":{"cpu":24,"rss":68},"omlx":{"cpu":1,"rss":40086}},"act":{"forge":"","qa":""}}
+{"t":"13:01:49","load":4.98,"free":34,"tasks":{"forge":null,"qa":null,"warden":{"cpu":14,"rss":864},"omlx":{"cpu":84,"rss":40449}},"act":{"forge":"","qa":""}}
