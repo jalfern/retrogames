@@ -49,7 +49,7 @@ export const REGISTRY = {
     },
     // dive, swing a full loop near the bottom, climb back to the anchor
     loop: {
-        ticks: 150, end: 'anchor',
+        ticks: 190, end: 'anchor',
         build: (c) => {
             const s = c.dir || 1
             const Yb = 236, R = 24
@@ -68,14 +68,14 @@ export const REGISTRY = {
     // screen dirty — it rejoins via `rejoin`). A caught fighter is carried
     // off the top by `carry` instead.
     beam: {
-        ticks: 260, end: 'exit', band: [0.26, 0.72], half: 17,
+        ticks: 300, end: 'exit', band: [0.60, 0.90], half: 17,
         build: (c) => {
             const bx = Math.max(34, Math.min(W - 34, c.px))
-            const hold = Math.max(c.y + 58, 128)
+            const hold = Math.max(c.y + 42, 120)
             return [
-                [c.x, c.y], [(c.x + bx) / 2, c.y + 18], [bx, hold],
-                [bx, hold + 10], [bx, hold + 22], [bx, hold + 30], [bx, hold + 34],
-                [bx, H + 40],
+                [c.x, c.y], [(c.x + bx) / 2, c.y + 14], [bx, hold],
+                [bx, hold + 10], [bx, hold + 24], [bx, hold + 38], [bx, hold + 56],
+                [bx, 210], [bx, 248], [bx, H + 40],
             ]
         },
     },
@@ -89,7 +89,7 @@ export const REGISTRY = {
     // handoff must be position-continuous, or the browser draw blinks the
     // bee across the player's own lane
     rejoin: {
-        ticks: 70, end: 'slot',
+        ticks: 160, end: 'slot',
         build: (c) => [
             [c.x, c.y],
             [c.x < W / 2 ? -20 : W + 20, Math.max(H - 30, Math.min(H + 26, c.y))],

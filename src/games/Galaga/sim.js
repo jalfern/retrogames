@@ -335,7 +335,7 @@ export function step(gs, input = {}) {
             const vy = Math.sqrt(Math.max(0.25, CFG.enemyBulletV * CFG.enemyBulletV - vx * vx))
             gs.enemyShots.push({ x: e.x, y: e.y + 6, vx, vy })
         }
-        if (e.state === 'beam' && gs.cap && gs.cap.id === e.id && u > 0.82) {
+        if (e.state === 'beam' && gs.cap && gs.cap.id === e.id && u > 0.91) {
             e.state = 'carry'
             e.path = resolvePath('carry', { x: e.x, y: e.y, dir: 1 })
             e.uT = 0
