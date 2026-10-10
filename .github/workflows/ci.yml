@@ -73,6 +73,8 @@ jobs:
       # and six mutants prove each rule load-bearing.
       - run: npm run lint:sonar
       - run: npm run sonarcheck
+      - run: npm run lint:metroid
+      - run: npm run metroidcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

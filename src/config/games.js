@@ -39,6 +39,9 @@ const BoulderDashGame = lazy(() => import('../games/BoulderDash'))
 // Sonar Abyss: same lesson — its planner scripts the attract demo and the
 // caves are generated at load, so it keeps its own chunk.
 const SonarGame = lazy(() => import('../games/Sonar'))
+// MetroidLite: same lesson — the attract demo is the flow machine's own
+// proven route, so the planner ships in its chunk.
+const MetroidLiteGame = lazy(() => import('../games/MetroidLite'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -108,6 +111,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'You only see what sound reveals. Pitch-black seeded sea caves: every PING sends a wavefront through the water, lighting rock and pearl exactly as it reaches them — sound does not cross stone, so pockets behind walls stay dark until the echo walks in through the door. The light fades in seconds; the map lives in your head. Pearls score, the teal swirl is the vent to the next, darker depth, and the eels out there are real whether or not you just heard one. Die, and the abyss reshuffles its seed.',
         controls: ['Arrow Keys / D-pad: Swim (one stroke per tap, hold to keep going)', 'Space / A button / tap: PING — see with sound', 'Lit cells FADE — remember the cave, then swim to the vent', 'Pearls score; the swirl marks the way down', 'Eels only show as fading sonar contacts — a remembered eel is not where it is', '?: Pause and read the controls']
+    },
+    {
+        path: '/metroid',
+        component: MetroidLiteGame,
+        label: 'METROID-LITE',
+        theme: 'dark',
+        description: 'One hand-carved cave, three upgrades, and the way back is the way forward. The POWER BEAM melts cracked blocks, a dropped BOMB brings down green bulkheads, and the SPACE JUMP — a second push in mid-air — is the only thing that clears the two-jump shafts to the relic. Get strong in the order the cave allows: a ledge hop buys the beam, a shelf climb buys the bombs, and the beam pries open the bulkhead that hides the jump boots. Touch a beacon and the cave remembers you; die and it does not forget the doors you opened. The attract demo is the flow machine hunting its own proven route, tick for tick, behind three layers of parallax.',
+        controls: ['Arrow Keys / D-pad: Move', 'Space / A: Jump — press it again in mid-air once you own the SPACE JUMP', 'X / B: FIRE the beam (once acquired) · hold DOWN + FIRE: drop a BOMB', 'Cracked orange blocks melt to beams; green bulkheads fall to bombs', 'Beacons save your progress and recharge your energy', '?: Pause and read the controls']
     },
     {
         path: '/pong',
