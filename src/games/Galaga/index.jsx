@@ -303,7 +303,7 @@ const GalagaGame = () => {
                     enemies: gs.enemies.filter((e) => e.state !== 'dead' && e.state !== 'wait')
                         .map((e) => ({ kind: e.kind, state: e.state, x: Math.round(e.x), y: Math.round(e.y) })),
                     beam: gs.enemies.some((e) => e.state === 'beam' && e.bandX) ? gs.enemies.find((e) => e.state === 'beam').bandX : 0,
-                    fallers: gs.fallers.length, escorts: gs.escorts.length,
+                    fallers: gs.fallers.map((f) => Math.round(f.x)), escorts: gs.escorts.length,
                     board: board(), evLog: evLog.slice(-90),
                 }),
                 start: startPlay,
@@ -312,6 +312,7 @@ const GalagaGame = () => {
                     if (screenRef.current !== 'play') return false
                     if (opts.wave !== undefined) { gs = makeGame(opts.wave); gs.end = null }
                     if (opts.player) Object.assign(gs.player, opts.player)
+                    if (opts.lives !== undefined) gs.lives = opts.lives
                     evLog.length = 0
                     return true
                 },
