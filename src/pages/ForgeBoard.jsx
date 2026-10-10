@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
+import FactoryFloor from './FactoryFloor'
+import { deriveFloor, labelOf } from './floor'
 
 const REPO = 'jalfern/retrogames'
 const API = p => `https://api.github.com/repos/${REPO}/${p}`
@@ -16,9 +18,6 @@ const QUERIES = [
     'pulls?state=open&per_page=10',
 ]
 
-const labelOf = (issue, name) => issue.labels.some(l => l.name === name)
-const kv = line => Object.fromEntries(line.split(/\s+/).slice(1).map(t => t.split('=')))
-
 const Lamp = ({ label, ok, children }) => (
     <div className={`border p-3 text-xs ${ok ? 'border-[#0f0]/60' : 'border-[#f80]/60'}`}>
         <div className="tracking-widest text-[10px] opacity-70 mb-1">{label}</div>
@@ -32,6 +31,9 @@ const ForgeBoard = () => {
     const [feed, setFeed] = useState([])
     const [prs, setPrs] = useState([])
     const [error, setError] = useState('')
+    // Freshness is stamped when the data ARRIVES, not per render — render must
+    // stay pure, and "fresh" means "fresh when we fetched it" anyway.
+    const [now, setNow] = useState(0)
 
     useEffect(() => {
         let alive = true
@@ -53,6 +55,7 @@ const ForgeBoard = () => {
             all.filter(i => !i.pull_request).forEach(i => byNum.set(i.number, i))
             setIssues([...byNum.values()].sort((a, b) => a.number - b.number))
             setPrs(results[4].status === 'fulfilled' ? results[4].value : [])
+            setNow(Date.now())
             setError('')
             const pulse = all.find(i => i.title === 'FORGE PULSE')
             if (pulse) {
@@ -74,15 +77,14 @@ const ForgeBoard = () => {
         return () => { alive = false; clearInterval(timer) }
     }, [])
 
-    const building = issues?.filter(i => labelOf(i, 'building') && i.state === 'open') ?? []
+    // One derivation for lamps, floor and cards alike — forgecheck.mjs asserts
+    // the counts against the fetched labels through THIS function.
+    const floor = deriveFloor({ issues, prs, pulses, now })
+    const { queued, shipped, pulse, building } = floor
     const qa = (issues ?? []).filter(i => i.state === 'open' && !i.pull_request
         && (labelOf(i, 'feedback') || labelOf(i, 'building-qa')))
         .sort((a, b) => (b.reactions?.total_count ?? 0) - (a.reactions?.total_count ?? 0) || a.number - b.number)
     const qaBusy = qa.some(i => labelOf(i, 'building-qa'))
-    const queued = issues?.filter(i => !labelOf(i, 'building') && !labelOf(i, 'shipped') && !i.pull_request
-        && (labelOf(i, 'game-queue') || /^game\b/i.test(i.title))) ?? []
-    const shipped = issues?.filter(i => labelOf(i, 'shipped')) ?? []
-    const pulse = pulses[0] ? kv(pulses[0].body.split('\n')[0]) : null
 
     const card = (i, cls) => (
         <a key={i.number} href={i.html_url} target="_blank" rel="noreferrer"
@@ -142,8 +144,9 @@ const ForgeBoard = () => {
                         <Lamp label="MAIN" ok>
                             {pulse?.main || '…'}<br />{GAMES.length} in arcade<br />{shipped.length} forge-built · {queued.length} queued
                         </Lamp>
-                    </div>
-                )}
+                    </div>)}
+
+                {issues && <FactoryFloor floor={floor} />}
 
                 {pulses.length > 0 && (
                     <div className="border border-[#ffb347]/40 p-3 mb-8 text-[10px] leading-relaxed text-[#ffb347]">

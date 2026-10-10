@@ -39,6 +39,9 @@ const suite = [
     // Browser-free: boots the real Zork I story file in Node. Cheapest gate here.
     node('aicheck.mjs'),   // the spine's own contract: rejections, watchdog, honest arms
     node('zorkcheck.mjs'),
+    // The /forge board: derives + renders the factory floor in Node and asserts
+    // the HTML against the fixtures. Cheapest gate of all (~0.5 s).
+    node('forgecheck.mjs'),
     // The same brain behind a real button: click, it plays; one key, you win.
     node('zorkuicheck.mjs'),
     // DOS seams (js-dos on demand, keyboard capture, readable framebuffer).
