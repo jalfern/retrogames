@@ -28,3 +28,7 @@ $ npx eslint src/games/Galaga src/config/games.js scripts/galactcheck.mjs 2>&1 |
 $ git add -A && git commit -qm \"GALAGA: canvas shell, attract replay of the prov","qa":"$ git status --short 2>&1; echo \"---branch---\"; git branch --show-current 2>&1
 $ git status 2>&1; echo \"---LOG---\"; git log --oneline -3 2>&1
 $ gh issue comment 71 --repo jalfern/retrogames --body-file /tmp/qa-dirty-tree-a"}}
+{"t":"16:16:20","load":4.77,"free":27,"tasks":{"forge":{"cpu":1,"rss":465},"qa":{"cpu":16,"rss":552},"warden":{"cpu":2,"rss":492},"omlx":{"cpu":70,"rss":29321},"mini":{"cpu":172,"rss":507}},"commit":"forge-galaga: GALAGA: canvas shell, attract replay of the proven run, HUD, VirtualCo","act":{"forge":"$ git add -A && git commit -qm \"GALAGA harness: 71 checks + 4 mutants caught (pa
+$ npx eslint src/games/Galaga src/config/games.js scripts/galactcheck.mjs 2>&1 |
+$ git add -A && git commit -qm \"GALAGA: canvas shell, attract replay of the prov","qa":"→ the forge is now in the **harness/wiring stage** of #71 (core + autopilot co
+$ echo \"HEAD:    $(git rev-parse HEAD)\"; echo \"origin:  $(git rev-parse origin/f"}}
