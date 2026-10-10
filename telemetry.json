@@ -2,3 +2,7 @@
 [0m$ [0mrg -n \"galact\" package.json; npx eslint scripts/galactplay.mjs src/gam","qa":"[0m$ [0mdate -u; git rev-parse forge-galaga; git rev-parse origin/forge-galaga
 [0m$ [0mgh issue view 71 --comments --json comments 2>/dev/null | python3 -c \"
 [0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9"}}
+{"t":"16:39:58","load":4.72,"free":93,"tasks":{"forge":{"cpu":3,"rss":747},"qa":{"cpu":10,"rss":910},"warden":null,"omlx":{"cpu":1,"rss":36367},"mini":{"cpu":175,"rss":539}},"commit":"forge-galaga: GALAGA: browser harness — real keys, pixels, capture/rescue chain end ","act":{"forge":"[0m$ [0mrg -o \"ev\.push\(\{ type: '\w+'|events\.push\(\{ type: '\w+'\" src/game
+[0m$ [0mrg -n \"galact\" package.json; npx eslint scripts/galactplay.mjs src/gam","qa":"[0m$ [0mdate -u; git rev-parse forge-galaga; git rev-parse origin/forge-galaga
+[0m$ [0mgh issue view 71 --comments --json comments 2>/dev/null | python3 -c \"
+[0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9"}}
