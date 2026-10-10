@@ -11,6 +11,7 @@ const labelOf = (issue, name) => issue.labels.some(l => l.name === name)
 
 const ForgeBoard = () => {
     const [issues, setIssues] = useState(null)
+    const [pulse, setPulse] = useState('')
     const [error, setError] = useState('')
 
     useEffect(() => {
@@ -35,6 +36,13 @@ const ForgeBoard = () => {
             ok.forEach(r => r.value.forEach(i => { if (!i.pull_request) byNum.set(i.number, i) }))
             setIssues([...byNum.values()].sort((a, b) => a.number - b.number))
             setError('')
+            try {
+                const pulseIssue = ok.flatMap(r => r.value).find(i => i.title === 'FORGE PULSE')
+                if (pulseIssue) {
+                    const cs = await (await fetch(pulseIssue.comments_url)).json()
+                    if (cs.length && alive) setPulse(`${cs[cs.length - 1].user.login}: ${cs[cs.length - 1].body}\n(${cs[cs.length - 1].updated_at.replace('T', ' ').slice(0, 16)} UTC)`)
+                }
+            } catch { /* pulse is decorative */ }
         }
         load()
         timer = setInterval(load, 60000)
@@ -66,6 +74,11 @@ const ForgeBoard = () => {
                         GAMES BUILT BY THE MACHINE, SHIPPED TO THIS SITE — ONE PR AT A TIME
                     </p>
                     <div className="w-24 h-1 bg-[#00ff00] mt-4 opacity-50"></div>
+                    {pulse && (
+                        <pre className="mt-4 text-[10px] text-[#ffb347] whitespace-pre-wrap max-w-xl text-center leading-relaxed">
+                            ⚡ WARDEN PULSE — {pulse}
+                        </pre>
+                    )}
                 </div>
 
                 <div className="flex justify-center gap-4 mb-10">
