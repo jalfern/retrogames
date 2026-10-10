@@ -10,3 +10,8 @@
 [0m$ [0mrg -n \"galact\" package.json; npx eslint scripts/galactplay.mjs src/gam","qa":"[0m$ [0mgh issue view 71 --comments --json comments 2>/dev/null | python3 -c \"
 [0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9
 [0m$ [0mgit branch --show-current; git log --oneline -3; git status --porcelai"}}
+{"t":"16:43:09","load":5.52,"free":26,"tasks":{"forge":{"cpu":12,"rss":747},"qa":null,"warden":{"cpu":10,"rss":858},"omlx":{"cpu":97,"rss":36663},"mini":{"cpu":146,"rss":479}},"commit":"forge-galaga: GALAGA: browser harness — real keys, pixels, capture/rescue chain end ","act":{"forge":"  PASS  a real ? opens the pause overlay
+  PASS  a real ? closes it again
+  PASS  zero page errors across the whole playthrough","qa":"[0m$ [0mgit branch --show-current; git log --oneline -3; git status --porcelai
+[0m$ [0mgit rev-parse origin/forge-galaga
+[0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9"}}
