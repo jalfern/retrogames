@@ -42,3 +42,8 @@ $ echo \"HEAD:    $(git rev-parse HEAD)\"; echo \"origin:  $(git rev-parse origi
 [0m$ [0mgit add -A && git commit -qm \"GALAGA: canvas shell, attract replay of ","qa":"[0m$ [0mecho \"HEAD:    $(git rev-parse HEAD)\"; echo \"origin:  $(git rev-parse 
 [0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9
 [0m$ [0mecho \"porcelain:\"; git status --porcelain; echo \"branch: $(git branch "}}
+{"t":"16:28:05","load":4.60,"free":40,"tasks":{"forge":{"cpu":0,"rss":697},"qa":null,"warden":{"cpu":6,"rss":524},"omlx":{"cpu":8,"rss":32055},"mini":{"cpu":128,"rss":466}},"commit":"forge-galaga: GALAGA: canvas shell, attract replay of the proven run, HUD, VirtualCo","act":{"forge":"[0m$ [0mgit add -A && git commit -qm \"GALAGA harness: 71 checks + 4 mutants ca
+[0m$ [0mnpx eslint src/games/Galaga src/config/games.js scripts/galactcheck.mj
+[0m$ [0mgit add -A && git commit -qm \"GALAGA: canvas shell, attract replay of ","qa":"[0m$ [0mecho \"HEAD:    $(git rev-parse HEAD)\"; echo \"origin:  $(git rev-parse 
+[0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9
+[0m$ [0mecho \"porcelain:\"; git status --porcelain; echo \"branch: $(git branch "}}
