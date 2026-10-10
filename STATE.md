@@ -1,8 +1,10 @@
 # STATE.md — 2026-10-10 (MetroidLite session end)
 
 ## Where things stand
-**METROID-LITE is built, green, and in PR** (#68, branch `forge-metroid`,
-5 commits). Fifth forged game, 21st title. A hand-carved 2D cave-run:
+**METROID-LITE IS LIVE at jalfern.com/retrogames/metroid** (#68, PR #96,
+squash ea8c494, `shipped` label). Fifth forged game, 21st title.
+**Next session: claim the next queue item — MetroidLite is done; touch it
+only if `metroidplay` goes red.** A hand-carved 2D cave-run:
 beam/crack, bomb/bulkhead, and a SPACE-JUMP shaft of 80 px half-shelves
 (double-jump-only) up to the relic — every gate proven load-bearing in Node,
 every verb proven in a real Chrome tab with real keystrokes.
@@ -45,11 +47,8 @@ every verb proven in a real Chrome tab with real keystrokes.
 physics constants ever move).
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Merge path ONLY: `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
-2. Verify prod: `open https://jalfern.com/retrogames/metroid` (Vercel deploys on merge).
-3. Issue #68: progress comment + `shipped` label.
-4. Then claim the next queue item — do not polish MetroidLite further unless
-   `metroidplay` goes red.
+1. Claim the next queue item (`game-queue`, oldest first, per FORGE.md).
+2. Do not polish MetroidLite — shipped; only return if `metroidplay` goes red.
 
 ## Three questions for Jon
 1. `/metroid` keeps the Metroid skin name — rename to something original
