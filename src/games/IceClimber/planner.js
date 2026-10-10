@@ -170,6 +170,7 @@ function nextMountain(g) {
 // (mutated) state.
 export function plan(g) {
     const out = []
+    const advanceAt = []
     g.receipts = { digs: 0, stack: 0, revives: 0, dodges: 0 }
     const run = (fn, retries = 1) => {
         for (let k = 0; k <= retries; k++) {
@@ -206,17 +207,32 @@ export function plan(g) {
                 run(() => climbToShelf(g, out, 1))
                 run(() => theStack(g, out), 2)
             }
-            if (g.end === 'clear') { g.score += 500; nextMountain(g) }
+            if (g.end === 'clear') { advanceAt.push(out.length); g.score += 500; nextMountain(g) }
             else break
         }
     } catch (e) {
         g.receipts.digs = g.climbers.reduce((n, c) => n + c.digs, 0)
-        return { script: out, ok: g.end === 'win', end: g.end || 'stuck', reason: e.message, receipts: g.receipts }
+        return { script: out, advanceAt, ok: g.end === 'win', end: g.end || 'stuck', reason: e.message, receipts: g.receipts }
     }
     g.receipts.digs = g.climbers.reduce((n, c) => n + c.digs, 0)
-    return { script: out, ok: g.end === 'win', end: g.end, reason: null, receipts: g.receipts }
+    return { script: out, advanceAt, ok: g.end === 'win', end: g.end, reason: null, receipts: g.receipts }
 }
 
 export function planRun() {
     return plan(makeGame(buildLevel(0)))
+}
+
+// Replay a recorded script on a fresh mountain. Level advances happen HERE
+// (nextMountain is a planner concern, not a sim one), so a replayed script
+// must reproduce the solve tick-for-tick — that is the determinism contract.
+export function replay(meta0, script, advanceAt = []) {
+    const g = makeGame(meta0)
+    const at = new Set(advanceAt)
+    for (let i = 0; i < script.length; i++) {
+        if (at.has(i)) { g.score += 500; nextMountain(g); if (g.end === 'win') break }
+        step(g, script[i])
+        if (g.end === 'dead') break
+    }
+    if (g.end === 'clear') { g.score += 500; nextMountain(g) }
+    return g
 }
