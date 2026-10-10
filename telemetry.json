@@ -19,3 +19,8 @@
 {"t":"14:04:19","load":5.20,"free":30,"tasks":{"forge":{"cpu":14,"rss":715},"qa":null,"warden":null,"omlx":{"cpu":78,"rss":33956},"mini":{"cpu":120,"rss":462}},"act":{"forge":"$ node -e \"","qa":""}}
 {"t":"14:06:33","load":6.09,"free":38,"tasks":{"forge":{"cpu":0,"rss":719},"qa":null,"warden":{"cpu":4,"rss":843},"omlx":{"cpu":20,"rss":34185}},"act":{"forge":"$ node /var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/death2.mjs","qa":""}}
 {"t":"15:58:57","load":3.76,"free":15,"tasks":{"forge":{"cpu":1,"rss":187},"qa":null,"warden":null,"omlx":{"cpu":70,"rss":29710},"mini":{"cpu":121,"rss":474}},"act":{"forge":"$ git add -A && git commit -qm \"GALAGA harness: 71 checks + 4 mutants caught (path audit, ","qa":"$ gh issue comment 71 --repo jalfern/retrogames --body-file /tmp/qa-dirty-tree-addendum.md"}}
+{"t":"16:01:00","load":4.78,"free":15,"tasks":{"forge":{"cpu":2,"rss":464},"qa":null,"warden":null,"omlx":{"cpu":76,"rss":29747},"mini":{"cpu":135,"rss":474}},"commit":"forge-galaga: GALAGA harness: 71 checks + 4 mutants caught (path audit, live traject","act":{"forge":"FAIL  mutation harness broken: baseline for 'rescueDouble=false (rescue grants
+$ node scripts/galactcheck.mjs --mutate 2>&1 | tail -8 && node scripts/galactche
+$ git add -A && git commit -qm \"GALAGA harness: 71 checks + 4 mutants caught (pa","qa":"$ git status --short 2>&1; echo \"---branch---\"; git branch --show-current 2>&1
+$ git status 2>&1; echo \"---LOG---\"; git log --oneline -3 2>&1
+$ gh issue comment 71 --repo jalfern/retrogames --body-file /tmp/qa-dirty-tree-a"}}
