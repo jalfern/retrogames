@@ -21,7 +21,10 @@ cd "$REPO" || exit 1
 
 PROMPT="You are THE FORGE. Open scripts/FORGE.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 3 hours."
 
-/opt/homebrew/bin/opencode run "$PROMPT" >> "$LOG" 2>&1
+# --auto: headless runs cannot answer permission prompts (an auto-reject
+# silently killed session #2 mid-build). opencode.json carries the guard
+# rails (no force-push, no push to main, no ~/.ssh) around the autonomy.
+/opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1
 STATUS=$?
 
 {
