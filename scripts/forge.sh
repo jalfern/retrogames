@@ -24,8 +24,12 @@ PROMPT="You are THE FORGE. Open scripts/FORGE.md and execute its session procedu
 # --auto: headless runs cannot answer permission prompts (an auto-reject
 # silently killed session #2 mid-build). opencode.json carries the guard
 # rails (no force-push, no push to main, no ~/.ssh) around the autonomy.
-/opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1
-STATUS=$?
+# Background the session so callers (launchd, the warden) never block on a
+# 3-hour build; the session's own lock dedupes the next fire.
+nohup /opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1 &
+BG=$!
+STATUS=0
+echo "$(date): kicked forge session pid=$BG log=$LOG" >> "$LOG"
 
 {
     echo "=== forge $STAMP exit=$STATUS ==="
