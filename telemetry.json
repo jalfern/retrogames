@@ -5,3 +5,6 @@
 {"t":"13:01:49","load":4.98,"free":34,"tasks":{"forge":null,"qa":null,"warden":{"cpu":14,"rss":864},"omlx":{"cpu":84,"rss":40449}},"act":{"forge":"","qa":""}}
 {"t":"13:06:01","load":,"free":31,"tasks":{"forge":{"cpu":0,"rss":854},"qa":null,"warden":{"cpu":12,"rss":960},"omlx":{"cpu":77,"rss":40771}},"act":{"forge":"$ git diff scripts/telemetry.sh","qa":""}}
 {"t":"13:06:06","load":4.66,"free":44,"tasks":{"forge":{"cpu":10,"rss":855},"qa":null,"warden":{"cpu":15,"rss":104},"omlx":{"cpu":105,"rss":40825}},"act":{"forge":"$ grep -rn \"telemetry\" scripts/forge.sh scripts/com.jalfern.forge.plist 2>/dev/null; ls -l","qa":""}}
+{"t":"13:11:09","load":3.55,"free":42,"tasks":{"forge":{"cpu":1,"rss":875},"qa":null,"warden":null,"omlx":{"cpu":8,"rss":41074}},"act":{"forge":"
+{"t":"13:16:10","load":4.86,"free":27,"tasks":{"forge":{"cpu":14,"rss":930},"qa":null,"warden":null,"omlx":{"cpu":86,"rss":41908}},"act":{"forge":"
+{"t":"13:21:10","load":4.55,"free":38,"tasks":{"forge":{"cpu":12,"rss":933},"qa":null,"warden":{"cpu":1,"rss":856},"omlx":{"cpu":91,"rss":40087}},"act":{"forge":"$ node -e \"","qa":""}}
