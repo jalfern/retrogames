@@ -149,7 +149,7 @@ function recover(g, out) {
     if (g.climbers.some(c => c.down)) throw new Fail('revive failed')
 }
 
-function nextMountain(g) {
+export function nextMountain(g) {
     const meta = buildLevel(g.level + 1)
     g.level = g.level + 1
     if (g.level >= 3) { g.end = 'win'; return }
