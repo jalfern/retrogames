@@ -20,6 +20,19 @@ cd "$REPO" || exit 1
 
 PROMPT="You are THE QA MASTER. Open scripts/FORGE-QA.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 60 minutes."
 
+# launchd KILLS backgrounded children when the job's script exits (macOS
+# process tracking) — an 08:00-2026-10-10 corpse proved it: every session so
+# far was started by the warden (a live parent), never by launchd itself.
+# So: launchd must run opencode IN THE FOREGROUND (--foreground); the warden
+# calls this script plain and gets the old non-blocking behaviour.
+if [[ "${1:-}" == "--foreground" ]]; then
+    echo "$(date): FOREGROUND session pid=$$ log=$LOG" >> "$LOG"
+    /opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1
+    STATUS=$?
+    echo "$(date): session exit=$STATUS" >> "$LOG"
+    exit $STATUS
+fi
+
 nohup /opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1 &
 BG=$!
 echo "$(date): kicked QA session pid=$BG log=$LOG" >> "$LOG"

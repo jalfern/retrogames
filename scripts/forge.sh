@@ -26,6 +26,19 @@ PROMPT="You are THE FORGE. Open scripts/FORGE.md and execute its session procedu
 # rails (no force-push, no push to main, no ~/.ssh) around the autonomy.
 # Background the session so callers (launchd, the warden) never block on a
 # 3-hour build; the session's own lock dedupes the next fire.
+# launchd KILLS backgrounded children when the job's script exits (macOS
+# process tracking) — an 08:00-2026-10-10 corpse proved it: every session so
+# far was started by the warden (a live parent), never by launchd itself.
+# So: launchd must run opencode IN THE FOREGROUND (--foreground); the warden
+# calls this script plain and gets the old non-blocking behaviour.
+if [[ "${1:-}" == "--foreground" ]]; then
+    echo "$(date): FOREGROUND session pid=$$ log=$LOG" >> "$LOG"
+    /opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1
+    STATUS=$?
+    echo "$(date): session exit=$STATUS" >> "$LOG"
+    exit $STATUS
+fi
+
 nohup /opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1 &
 BG=$!
 STATUS=0

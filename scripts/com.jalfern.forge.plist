@@ -8,6 +8,7 @@
     <array>
         <string>/bin/zsh</string>
         <string>/Users/jon/Dev/retrogames/scripts/forge.sh</string>
+        <string>--foreground</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/jon/Dev/retrogames</string>
