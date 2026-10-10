@@ -445,7 +445,7 @@ export function step(g, inp = {}) {
         stepBody(g.p, {
             left: inp.left, right: inp.right,
             jump: inp.jumpEdge && g.p.onGround,
-            jump2: inp.jumpEdge && !g.p.onGround && !g.p.dbl,
+            jump2: inp.jumpEdge && !g.p.onGround && !g.p.dbl && g.abil.sjump,
             cut: inp.jumpCut,
         }, g.world.grid)
         if (inp.fireEdge && !inp.down) fireBeam(g)
@@ -561,7 +561,9 @@ export function planRun(opts = {}) {
     const script = []
     const trace = []
     const stages = ['beam', 'bomb', 'sj', 'relic']
-    for (let i = 0; i < 8 && !g.p.onGround; i++) step(g, {})   // settle on the floor
+    // the settle ticks ARE part of the recorded demo — a replay must start
+    // in the exact rest pose the ghosts launched from, not mid-air.
+    for (let i = 0; i < 8 && !g.p.onGround; i++) { step(g, {}); script.push({}) }
     for (const st of stages) {
         const it = st === 'relic' ? null : world.items.find((i) => i.id === st)
         const goal = st === 'relic' ? { x: world.relic.x, y: 4 } : { x: it.x, y: it.y }

@@ -49,7 +49,10 @@
         "dashplay": "node scripts/dashplay.mjs",
         "lint:sonar": "eslint src/games/Sonar src/components src/utils src/config src/main.jsx scripts",
         "sonarcheck": "node scripts/sonarcheck.mjs",
-        "sonarplay": "node scripts/sonarplay.mjs"
+        "sonarplay": "node scripts/sonarplay.mjs",
+        "lint:metroid": "eslint src/games/MetroidLite src/components src/utils src/config src/main.jsx scripts",
+        "metroidcheck": "node scripts/metroidcheck.mjs",
+        "metroidplay": "node scripts/metroidplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
