@@ -13,3 +13,8 @@
 [0m$ [0mgit add -A && git commit -qm \"GALAGA: canvas shell, attract replay of ","qa":"[0m$ [0mecho \"HEAD:    $(git rev-parse HEAD)\"; echo \"origin:  $(git rev-parse 
 [0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9
 [0m$ [0mecho \"porcelain:\"; git status --porcelain; echo \"branch: $(git branch "}}
+{"t":"16:34:36","load":4.57,"free":43,"tasks":{"forge":{"cpu":12,"rss":735},"qa":{"cpu":15,"rss":886},"warden":null,"omlx":{"cpu":95,"rss":31521},"mini":{"cpu":167,"rss":484}},"commit":"forge-galaga: GALAGA: canvas shell, attract replay of the proven run, HUD, VirtualCo","act":{"forge":"[0m$ [0mgit add -A && git commit -qm \"GALAGA harness: 71 checks + 4 mutants ca
+[0m$ [0mnpx eslint src/games/Galaga src/config/games.js scripts/galactcheck.mj
+[0m$ [0mgit add -A && git commit -qm \"GALAGA: canvas shell, attract replay of ","qa":"[0m$ [0mgit branch --show-current; git log --oneline -3; git diff --stat src/g
+[0m$ [0mgh issue list --state open --label feedback --json number,title,create
+[0m$ [0mgh issue list --state open --label building --json number,title,labels"}}
