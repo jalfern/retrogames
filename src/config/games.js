@@ -33,6 +33,9 @@ const BeeGame = lazy(() => import('../games/Beezee'))
 // Third pupil of the same lesson: Lemmings is 2D canvas but its solver runs in
 // the tab for the attract replay, so keep it out of the main chunk too.
 const LemmingsGame = lazy(() => import('../games/Lemmings'))
+// Boulder Dash too: the planner runs in the tab to drive the attract demo, and
+// the caves are a compiled grid, so it earns its own chunk.
+const BoulderDashGame = lazy(() => import('../games/BoulderDash'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -86,6 +89,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'They walk, they fall, you decide otherwise. A stream of mindless lemmings shuffles out of a cave toward cliffs, voids and plugged steel doors — one key press assigns a skill to the nearest one: blocker, bomber, climber or digger. Four hand-carved levels, each proven solvable (and each skill proven load-bearing) by a solver that ships in the repo; the attract demo is that solution, replayed move for move. Fatal falls are the killer, and a tunnelling digger is the only safe way down.',
         controls: ['Arrow Keys: Move the assignment cursor (or drag on touch)', '1 2 3 4: pick BLOCKER / BOMBER / CLIMBER / DIGGER (B button cycles)', 'Space / A button / click: assign the skill to the nearest lemming', 'Get at least the OUT quota of lemmings into the door before the clock runs out', '?: Pause and read the controls']
+    },
+    {
+        path: '/boulder-dash',
+        component: BoulderDashGame,
+        label: 'BOULDER DASH',
+        theme: 'dark',
+        description: 'Dig deep, grab the gems, and do not be under the rock when it drops. A cellular-automata cave: boulders and diamonds fall through the dirt you carve, a boulder crushes you while a dropped gem gives up and turns to dirt, and a firefly wanders its steel cell turning everything it touches into a chain of flame that steel alone respects. Four hand-carved caves, each proven winnable by a planner that ships in the repo (the attract demo is its route, replayed move for move); gather the gem quota, then reach the exit before the clock runs out.',
+        controls: ['Arrow Keys / D-pad: Dig dirt and move (one cell per tap, hold to keep going)', 'Collect the GEM quota, then dig to the exit door', 'Boulders fall and crush you — read which rocks are actually moving', 'A gem that falls turns to dirt — do not cut the paydirt out from under it', 'The firefly burns everything but steel — the wall is your strategy', '?: Pause and read the controls']
     },
     {
         path: '/pong',
