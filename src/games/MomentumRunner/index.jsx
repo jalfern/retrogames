@@ -15,6 +15,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
+import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import {
     ZONES, groundY, maybeEnterLoop, makeGame, step, planRun,
     FIXED_DT, VIEW_W, VIEW_H, BODY_R, RUN_TOP, VMAX,
@@ -407,6 +408,7 @@ const MomentumGame = () => {
                         at: { x: Math.round(p.x - c.x), y: Math.round(p.y - BODY_R - c.y) },
                         rings: gs.rings, score: gs.score, deaths: gs.deaths,
                         loopTaken: gs.loopTaken, phi: Math.round(p.phi * 100) / 100,
+                        cut: !!p.cut,
                         save: { ...gs.save }, goal: ZONES[gs.zone].goal, end: gs.end,
                         invuln: p.invuln, speed: Math.round(Math.abs(p.s || 0)),
                         taken: [...gs.taken], evLog: evLog.slice(-80),
@@ -428,10 +430,39 @@ const MomentumGame = () => {
                 setSpeed: (v) => { if (screenRef.current === 'play') gs.p.s = v },
                 dbg,
             }
+            mountDbg({
+                title: 'MOMENTUM RUNNER',
+                getState: () => {
+                    const p = gs.p
+                    return [
+                        `${ZONES[gs.zone].name}  x ${p.x.toFixed(0)} y ${p.y.toFixed(0)}  ${p.mode}  s ${(p.s || 0).toFixed(0)}  vy ${(p.vy || 0).toFixed(0)}`,
+                        `rings ${gs.rings}  score ${gs.score}  deaths ${gs.deaths}  inv ${p.invuln}  save z${gs.save.zone}@${gs.save.x}  loop ${gs.loopTaken ? 'TAKEN' : '-'}`,
+                        `screen ${screenRef.current}  paused ${pausedRef.current}  tick ${gs.tick}`,
+                    ]
+                },
+                actions: [
+                    { label: 'PROGNOSIS', run: () => {
+                        if (gs.end) return `already ${gs.end}`
+                        const c = { ...gs, p: { ...gs.p }, save: { ...gs.save },
+                            taken: new Set(gs.taken), spent: new Map(gs.spent), ev: [] }
+                        const plan = planRun(c)
+                        return plan.ok
+                            ? `WINNABLE: autopilot wins from here in ${plan.script.length}t, ` +
+                              `min gap margin ${Math.min(...plan.receipt.gaps.map(q => q.margin)).toFixed(0)}px`
+                            : `NOT WINNABLE: ${(plan.receipt.warnings.join('; ') || `stuck after ${plan.script.length}t (end=${plan.end})`)}`
+                    } },
+                    { label: '+5 RINGS', run: () => { gs.rings += 5; return `rings ${gs.rings}` } },
+                    { label: 'BOOST', run: () => {
+                        if (gs.p.mode === 'air') gs.p.vx = Math.min(1150, gs.p.vx + 400)
+                        else gs.p.s = Math.max(gs.p.s, 900)
+                        return `s ${(gs.p.s || gs.p.vx).toFixed(0)}`
+                    } },
+                ],
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV && window.__runnerTest) delete window.__runnerTest
+            if (import.meta.env.DEV) { if (window.__runnerTest) delete window.__runnerTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

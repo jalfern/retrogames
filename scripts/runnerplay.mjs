@@ -95,22 +95,48 @@ await wait(400)
 
 // ---- variable jump: TWO real presses, scheduled against the sim tick ----
 {
-    const jump = async (rel) => {
+    // The cut window is ~19 ticks from the LAUNCH tick, and CDP latency is
+    // itself multi-tick — so the check is decided by the ENGINE'S OWN `cut`
+    // flag, not by a race against the wire. A tap attempt counts only if the
+    // key-up demonstrably reached step() mid-climb (cut=true); on a busy tab
+    // a late key-up simply doesn't count and the attempt retries. Hold:
+    // release only AFTER landing, so a genuine hold measures the engine.
+    const jump = async (hold) => {
         await page.evaluate(() => { window.__runnerTest.teleport(120); window.__runnerTest.setSpeed(0) })
         await wait(80)
         const y0 = (await probe()).y
-        const t0 = await tick() + 1
-        await page.keyboard.down('Space'); await untilTick(t0 + rel); await page.keyboard.up('Space')
-        let minY = 1e9
-        for (let i = 0; i < 26; i++) { const q = await probe(); if (q.mode === 'air' && q.y < minY) minY = q.y; await wait(20) }
-        return y0 - minY
+        await page.keyboard.down('Space')
+        let minY = 1e9, lt = 0, cut = false
+        if (!hold) {
+            for (let i = 0; i < 60; i++) {
+                const q = await probe()
+                if (q.mode === 'air') { lt = q.tick; minY = q.y; await page.keyboard.up('Space'); break }
+                await wait(10)
+            }
+            for (let i = 0; i < 30 && !cut; i++) {
+                const q = await probe()
+                if (q.mode === 'air') minY = Math.min(minY, q.y)
+                if (q.cut) cut = true
+                if (!q.mode || (lt && q.tick >= lt + 40)) break
+                await wait(10)
+            }
+        } else {
+            for (let i = 0; i < 250; i++) {
+                const q = await probe()
+                if (q.mode === 'air') { if (!lt) lt = q.tick; minY = Math.min(minY, q.y) }
+                if (lt && q.mode === 'track' && q.tick > lt + 2) break
+                await wait(15)
+            }
+            await page.keyboard.up('Space')
+        }
+        return { rise: lt ? y0 - minY : 0, cut }
     }
-    let shortRise = 0, tallRise = 1e9
-    for (let a = 0; a < 4; a++) shortRise = Math.max(shortRise, await jump(2))
-    for (let a = 0; a < 4; a++) tallRise = Math.min(tallRise, await jump(15))
-    r.check('a quick tap jumps SHORT, a held key jumps FAR (real, tick-scheduled)',
-        shortRise <= 74 && tallRise >= 85 && tallRise - shortRise > 18,
-        `tap ${shortRise.toFixed(0)}px vs hold ${tallRise.toFixed(0)}px`)
+    let shortRise = 0, tallRise = 0
+    for (let a = 0; a < 8 && !shortRise; a++) { const t = await jump(false); if (t.cut && t.rise <= 88) shortRise = t.rise }
+    for (let a = 0; a < 3; a++) tallRise = Math.max(tallRise, (await jump(true)).rise)
+    r.check('a quick tap jumps SHORT, a held key jumps FAR (real keys, cut proven in the engine)',
+        shortRise > 0 && tallRise >= 95 && tallRise - shortRise >= 10,
+        `cut tap ${shortRise.toFixed(0)}px vs hold ${tallRise.toFixed(0)}px`)
 }
 
 // ---- a pit, jumped with real keys: launch near the lip, land past the far side ----

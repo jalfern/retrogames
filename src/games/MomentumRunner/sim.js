@@ -364,8 +364,11 @@ function flyLand(z, x, y, vx, vy) {
     return null
 }
 
-export function planRun() {
-    const g = makeGame()
+// planRun(g0): the greedy policy from any state. Default = a fresh game (the
+// attract proof). DebugKit's PROGNOSIS passes a CLONE of the live game so the
+// question it answers is "can this still be won from HERE?".
+export function planRun(g0) {
+    const g = g0 || makeGame()
     const script = []
     const receipt = {
         gaps: [], loop: null, hits: 0, ringsAtHit: [], deaths: 0,
