@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 const REPO = 'jalfern/retrogames'
-const API = `https://api.github.com/repos/${REPO}/issues?labels=game-queue,building,shipped&state=all&per_page=100`
+// GitHub's ?labels= filter is an AND (issue must carry EVERY listed label),
+// so one query per label — merged by issue number below.
+const API = l => `https://api.github.com/repos/${REPO}/issues?labels=${l}&state=all&per_page=100`
+const LABELS = ['game-queue', 'building', 'shipped']
 
 const labelOf = (issue, name) => issue.labels.some(l => l.name === name)
 
@@ -12,19 +15,24 @@ const ForgeBoard = () => {
 
     useEffect(() => {
         let alive = true
+        let timer = null
         const load = async () => {
-            try {
-                const r = await fetch(API, { headers: { Accept: 'application/vnd.github+json' } })
-                if (!r.ok) throw new Error(`GitHub answered ${r.status}`)
-                const data = await r.json()
-                if (alive) { setIssues(data); setError('') }
-            } catch (e) {
-                if (alive) setError(e.message)
-            }
+            const results = await Promise.allSettled(LABELS.map(async l => {
+                const r = await fetch(API(l), { headers: { Accept: 'application/vnd.github+json' } })
+                if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? 'GitHub rate limit (retries in 5 min)' : `GitHub answered ${r.status}`)
+                return r.json()
+            }))
+            const ok = results.filter(r => r.status === 'fulfilled')
+            if (!alive) return
+            if (ok.length === 0) { setError(results[0].reason.message); clearInterval(timer); timer = setInterval(load, 300000); return }
+            const byNum = new Map()
+            ok.forEach(r => r.value.forEach(i => { if (!i.pull_request) byNum.set(i.number, i) }))
+            setIssues([...byNum.values()].sort((a, b) => a.number - b.number))
+            setError('')
         }
         load()
-        const t = setInterval(load, 60000)
-        return () => { alive = false; clearInterval(t) }
+        timer = setInterval(load, 60000)
+        return () => { alive = false; clearInterval(timer) }
     }, [])
 
     const building = issues?.filter(i => labelOf(i, 'building')) ?? []
