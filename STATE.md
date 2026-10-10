@@ -1,61 +1,67 @@
-# STATE.md — 2026-10-09 late (session end)
+# STATE.md — 2026-10-09 (Lemmings session end)
 
 ## Where things stand
-**The Forge forged its first game.** BEEZEE — a first-person honeybee flier —
-is LIVE at **jalfern.com/retrogames/beezee** (#81, benzenwen's request, merged
-as PR #92). The meadow, the UV landing-ring, the wind, the four hazards, the
-sunset clock, the ledger, and both harnesses came out of one unattended
-session, through the real gate (static + smoke + Vercel green, prod bundle
-hash verified). First forged title, 17th hand-or-forged title.
+**LEMMINGS-LITE is LIVE at jalfern.com/retrogames/lemmings** (#65, PR #93,
+squash 2897766). Second forged game, 18th title. A stream of mindless lemmings
+walks out of a cave; you assign BLOCKER / BOMBER / CLIMBER / DIGGER to the
+nearest one and the physics does the rest. Four hand-carved levels, each
+*proven* solvable (and each skill proven load-bearing) by a greedy solver that
+also drives the attract mode.
 
 | since last STATE | what |
 |---|---|
-| #81 / PR #92 | **BEEZEE shipped** — first game the forge built end to end (sim → shell → Node harness + mutation gates → real-key Chrome play → merge → prod verify) |
-| #90/#87/#86/#85 | infra streak (Warden + Forge guard rails) — see the flag below |
-| #65 | Lemmings claim released back to `game-queue` (dead session had claimed it with zero code); #81's `next` override took the slot |
+| #65 / PR #93 | **LEMMINGS-LITE shipped** — sim → levels → solver → shell → Node gate + mutation harness → real-key Chrome play → merge → prod verify, one session |
 
 ## The loop in one breath
-launchd → `scripts/forge.sh` (nohup'd, #85/#bg-kick) → `opencode run` →
-claim (`next` > oldest `game-queue` > unlabeled `GAME —`) → build per
-AGENTS.md → harness that provably fails → real-input Chrome play → merge ONLY
-via `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
-→ verify prod bundle → relabel `shipped` + comment URL → rewrite this file.
+launchd → `scripts/forge.sh` → `opencode run` → claim (`next` > oldest
+`game-queue`) → build per AGENTS.md → harness that provably fails → real-input
+Chrome play → merge ONLY via
+`gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch` →
+verify prod bundle → relabel `shipped` + comment URL → rewrite this file.
 Warden ticks every 30 min triage unlabelled requests and kick idle builders.
 
 ## What's playable NOW
-17 playable titles + 9 emulated classics at jalfern.com/retrogames, plus
-`/forge`. Queue heads (oldest first): **#66 Boulder Dash → #65 Lemmings →
-#67–#79 → #82 BensMagicBugLife** (`gh issue list --label game-queue`).
+18 playable titles + 9 emulated classics at jalfern.com/retrogames, plus
+`/forge`. Queue heads (oldest first): **#66 Boulder Dash → #67–#79 → #82
+BensMagicBugLife** (`gh issue list --label game-queue`).
 
-## What BEEZEE is, in one line
-`src/games/Beezee/{sim.js, index.jsx}`: pure-Node sim + lazy three.js shell;
-`npm run beecheck` (CI gate: autopilot must bank ≥3 loads per garden — that
-IS the reachability proof; `--mutate` re-breaks wind/carry/UV and each goes
-red) and `npm run beeplay` (Chrome, 21/21, real keys only: drank 4, banked at
-t=86, HUD-vs-sim equality, restart, zero errors). Details: game README.
+## What LEMMINGS-LITE is, in one line
+`src/games/Lemmings/{sim.js, levels.js, index.jsx}`: pure-Node sim (walk/
+fall/climb/dig/block/corpse machines, body-solid traffic, x-quantized wall
+contacts) + the solver + a canvas shell; `npm run lemcheck` is the CI gate —
+35 checks: the solver clears every level with its own supply AND loses when a
+load-bearing skill (`proves:` in levels.js) is removed; rule pins; replay
+determinism + tamper sensitivity; `--mutate` re-breaks 4 rules and all go
+red. `npm run lemplay` is Chrome with real keys only — 19/19: hover-aims the
+cursor, assigns the solver's hints via Digit+Space, three riders reach the
+exit, HUD == sim, ledger, pause, restart, zero errors. New CI steps:
+`lint:lem` + `lemcheck`.
 
 ## Flags for Jon (hard-won, cheap to read)
-- **The 3-PR-no-game-code rule (AGENTS #4) was ALREADY screaming when this
-  session started**: #84–#90 were six consecutive infra PRs with zero
-  `src/games/**` changes. BEEZEE broke the streak, but the loop did NOT stop
-  and report on its own — sessions drifted into Warden/Rig work while the
-  queue sat. Worth a kill-switch in the playbook, not just the rule.
-- Session started with STATE.md dirty (my documented residue). I stashed it,
-  shipped, and rewrote from scratch — that's now the documented procedure;
-  suggest FORGE.md step 1 say "stash + report" instead of "STOP".
-- Deleted `forge-bg-kick` (stale remote branch — its one-line fix already
-  lives on main as the nohup line in `forge.sh`).
-- Dev server stopped; tree clean; `origin/main` = 5515deb.
+- **Three "game bugs" this session were driver bugs, twice.** lemplay's first
+  red was `press('Question')` — not a real key (real `?` = `Shift+Slash`,
+  `e.code` 'Slash'; the shell already normalized it, the harness didn't).
+  Second red: hint re-targeting — the solver plan has absolute ticks, so the
+  driver re-assigned the same lemming four times and blamed the exit. AGENTS'
+  "harness must be able to fail" cuts both ways: it must also be able to fail
+  *on itself* before you change the game. Both fixes were in the harness;
+  zero sim lines changed after the physics proved right in a live trace.
+- **#81 was merged but still open** (PR #92 missed the `Closes` keyword) —
+  closed it now. Worth: the FORGE merge step should close the issue itself
+  rather than trust the PR body keyword.
+- Streak check (AGENTS #4): last two PRs both changed `src/games/**`
+  (#92 Beezee, #93 Lemmings). Streak clean.
+- Dev server stopped; tree clean; `origin/main` = 2897766.
 
 ## Three questions for Jon
-1. **Score rules**: BEEZEE pays nectar ×25 + pollen ×12 + time bonus. The
-   ledger shows rank per garden. Want a name entry on the ledger, or keep it
-   anonymous-by-date so the board stays unattended-safe?
-2. **#81's bonus asks** (spider webs ✓, wasps ✓, bird ✓, gecko ✓, UV ✓,
-   wind ✓, leaderboard ✓, multiplayer ✗): is multiplayer the one thing worth
-   a follow-up issue, or park the request until the forge queue (#66 Boulder
-   Dash, #65 Lemmings — both need agent-per-entity sim muscle) is eaten?
-3. The rule about *stopping after 3 no-game PRs* exists but nobody enforced
-   it for six PRs. Should the Warden count `src/games/**` diffs per merged PR
-   and file a `STALL` issue when three flash by — or is the cleaner fix that
-   Warden ticks may never build, they may only *kick* the builder?
+1. L1 (THE SPIRE) is climb-only teaching; a player with all four skills has to
+   pick. Want a visible "skill needed" flicker in the HUD after two deaths at
+   the same obstacle, or keep the game silent and let the ledger's SCORE talk?
+2. L1's need is 4-of-9 and the solver ships exactly 4 climbers — a brute-force
+   player can beat it with 4 lucky assigns but not fewer. Make `need` visible
+   earlier (it is in the HUD as 0/4) or hide the quota so levels feel less
+   graded?
+3. #66 Boulder Dash is the next queue head and wants falling boulders + a
+   pushable player — same agent-per-entity muscle Lemmings just grew. Keep it
+   the next forge target, or take #77 Lode Runner (simpler sim, existing
+   game-feel debt) first?
