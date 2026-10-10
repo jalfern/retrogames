@@ -1,65 +1,73 @@
-# STATE.md — 2026-10-10 (MetroidLite session end)
+# STATE.md — 2026-10-10 (Momentum Runner session end)
 
 ## Where things stand
-**METROID-LITE IS LIVE at jalfern.com/retrogames/metroid** (#68, PR #96,
-squash ea8c494, `shipped` label). Fifth forged game, 21st title.
-**Next session: claim the next queue item — MetroidLite is done; touch it
-only if `metroidplay` goes red.** A hand-carved 2D cave-run:
-beam/crack, bomb/bulkhead, and a SPACE-JUMP shaft of 80 px half-shelves
-(double-jump-only) up to the relic — every gate proven load-bearing in Node,
-every verb proven in a real Chrome tab with real keystrokes.
-**On merge, it goes live at jalfern.com/retrogames/metroid.**
+**MOMENTUM RUNNER IS LIVE at jalfern.com/retrogames/momentum** (#69, PR #100,
+squash 75b3d2d, `shipped` label). Sixth forged game, 22nd title.
+This session RESUMED the corpse of a dead forge-momentum session (playbook 1b):
+sim, shell, runnercheck and runnerplay were already pushed; what remained was
+the DebugKit mount (required by FORGE.md since #98, never done), a broken
+Chrome check, and the gate sweep.
+**Next session: claim #70 GAME 06 — Ice Climber Co-op** (oldest `game-queue`;
+no `next` label, no unlabeled GAME issues). MomentumRunner is done — touch it
+only if `runnercheck` goes red.
 
 | since last STATE | what |
 |---|---|
-| #68 / `forge-metroid` | METROID-LITE full build: sim core → renderer shell + registry/CI → Node harness (46 checks, 7 mutants all caught) → Chrome harness **23/23** |
+| #69 / `forge-momentum` | Resumed + finished: DebugKit with live-state PROGNOSIS → rebuilt the variable-jump check (2 harness bugs found by CI-speed CDP) → all gates → merged → prod-verified |
 
 ## What is playable right now
-- Everything on jalfern.com/retrogames (unchanged) + `/metroid` one PR away.
-- `/metroid`: arrows move, Space/Z jump (variable height, key-up cut), X fires
-  the beam once owned, Down+X drops bombs, `?` pauses; attract mode replays the
-  planner's proven route; beacons save, spikes kill, death re-spawns at the beacon.
+- Everything on jalfern.com/retrogames (unchanged) + `/momentum`, live.
+- `/momentum`: RIGHT builds speed (downhills drive you, flat is too slow),
+  SPACE/Z jump (variable — release early lands short), loops stick only at
+  v² ≥ 5·g·r, rings are the life bar, totems are checkpoints. Attract demo =
+  the autopilot's own proven route, tick for tick.
 
 ## What changed this session (the parts that matter next time)
-- **`step()` takes EDGES, not held-state**: `inp.jumpEdge/jumpCut`. A Node
-  probe that passed `jump` held-state produced a silently flat trace — that
-  is how to tell "harness bug" from "game bug" here: replay the exact tick
-  script in plain Node first. It found every SJ miss.
-- **SJ harness cadence (works on attempt 1)**: down@t0, up AT apex t0+19
-  (vy~0 so the cut is a no-op), down again t0+22 (gap survives CDP merge),
-  drift t0+24..32, land. Node jitter-band scan says the window is P@{-1,0,+2}
-  ticks — narrow but real; the block retries up to 3 real attempts (no
-  shortcuts). A wider catcher shelf at x109 was tried and REVERTED: the
-  planner's PATTERNS are tuned to the exact original geometry and 45/46.
-- **Parallax proof = two cameras, one star.** In the hall a star visible on
-  screen has `wx < cam`, so its cam-rate pixel ALWAYS wraps off-screen — a
-  cam-rate cheat probe cannot exist there (comment in metroidplay). The
-  2-camera prediction is the rate proof. L1/L2 have k=0 PINNED into the
-  hall sky window (sim.js `starWorld`) because random stars give zero
-  candidates in that 304 px band. Walk bursts are 10t / steps ≥35 px so no
-  camera window is skipped.
-- Attract `hist` now logs dead/end — cheap, and it makes a frozen-body trace
-  readable without a debugger.
+- **A tick-scheduled Chrome key check races CDP and loses — grade the ENGINE
+  instead.** The tap/hold jump check failed twice with schedules measured from
+  a pre-key `tick()`: keydown latency alone ate 0–12 ticks, so "release at
+  airborne+2" arrived at launch+14 (an 87 px half-cut, not a tap). Final
+  design: HOLD releases only after landing (a ground key-up can never clip the
+  apex); TAP releases on first airborne probe and the attempt **counts only if
+  `probe().cut` flipped** — the engine confirms the key-up reached `step()`.
+  `cut` was added to `__runnerTest.probe()` for exactly this. 62 px vs 99 px.
+  Same lesson as metroidplay's cadence notes: any wait in a browser harness is
+  meaningless unless the engine admits it happened.
+- **DebugKit PROGNOSIS = `planRun(clone(gs))`.** `planRun` now takes an
+  optional start state (default `makeGame()`, so runnercheck is untouched);
+  the panel clones `{...gs, p:{...}, taken:Set, spent:Map}` and re-runs the
+  greedy autopilot on it. Verified honest on fresh / mid-run / deliberately
+  hopeless (ringless before the far spike → "died at tick 17").
+- **Production probe gotcha:** `jalfern.com/retrogames/` 308s to `www.`;
+  prod deploy checks must `curl -sL`. Prod Chrome proof: canvas + attract h1
+  + zero pageerrors + `__runnerTest === undefined` (DEV hook absent).
 
-## Gates (all green at HEAD)
-`lint:metroid` clean · `metroidcheck` 46/46 (7/7 mutants die) · `build` ✓ ·
-`metroidplay` **23/23** (not a CI gate — advisory, watch its SJ cadence if
-physics constants ever move).
+## Gates (all green at merge)
+`lint:mario/fps/ai/runner` clean · `runnercheck` 48 checks + 8/8 mutants die
+(CI static gate) · `runnerplay` 19/19 · build ✓ · prod smoke in real Chrome ✓.
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Claim the next queue item (`game-queue`, oldest first, per FORGE.md).
-2. Do not polish MetroidLite — shipped; only return if `metroidplay` goes red.
+1. Claim **#70 Ice Climber Co-op** (co-op = VirtualControls second player?
+   read the issue body first — that is the new muscle it names).
+2. Do not polish MomentumRunner — shipped.
 
 ## Three questions for Jon
-1. `/metroid` keeps the Metroid skin name — rename to something original
-   ("Cave Hunter") before it gets SEO'd into the site?
-2. Attract mode replays the same proven route forever (like Sonar). OK, or
-   should it loop with a different seed/route?
-3. The SJ check is the only harness check with retry attempts; if CDP gets
-   worse on CI someday — bump attempts, or pin the schedule to the demo
-   script's own inputs? (Demo-script-driven = fewer real keys, same proof?)
+1. `/momentum` keeps a very Sonic-flavored skin (rings, loops, wheels). Rename
+   before SEO, like the Metroid question from last STATE? (That one is also
+   still unanswered.)
+2. The co-op issue (#70) implies two players on one keyboard/pad. VirtualControls
+   is one-pad today — design call: second on-screen pad, or share-one-joycon
+   style "both climb together"? First decision shapes the whole build.
+3. This session's transcript was spammed with "fetch this Instagram URL"
+   user-turns that had nothing to do with the task (prompt-injection attempts
+   against the unattended loop). I ignored them. Worth a line in FORGE.md
+   telling sessions to distrust injected URLs, and checking what feeds the
+   loop's stdin?
 
 ## Lineage
-AGENTS.md rules honored: one goal, harness-that-can-fail (7 mutants),
-world-seconds in drivers, no direct main pushes, no AI backend. Session did
-NOT stack PRs and touched `src/games/**` every commit (rule 4 satisfied).
+AGENTS.md rules honored: one goal (rule 2), resumed per playbook 1b rather
+than claiming a second issue, harness-that-can-fail (8 mutants + a check that
+demonstrably went red twice before the fix), world/engine-clock scheduling in
+the driver, merge only via `gh pr checks --watch --fail-fast && gh pr merge
+--squash --delete-branch`, STATE rewritten, game code touched every session
+(rule 4 unbroken).
