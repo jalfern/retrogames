@@ -1,14 +1,4 @@
-{"t":"13:31:16","load":4.29,"free":40,"tasks":{"forge":{"cpu":0,"rss":539},"qa":null,"warden":null,"omlx":{"cpu":121,"rss":36464}},"act":{"forge":"","qa":""}}
-{"t":"13:36:18","load":4.74,"free":26,"tasks":{"forge":{"cpu":1,"rss":563},"qa":null,"warden":null,"omlx":{"cpu":79,"rss":37037}},"act":{"forge":"$ node -e \"","qa":""}}
-{"t":"13:41:20","load":4.79,"free":32,"tasks":{"forge":{"cpu":9,"rss":566},"qa":null,"warden":{"cpu":10,"rss":882},"omlx":{"cpu":72,"rss":37539}},"act":{"forge":"$ npx eslint src/games/Galaga && git add src/games/Galaga scripts/telemetry.sh && git comm","qa":""}}
-{"t":"13:46:23","load":4.59,"free":33,"tasks":{"forge":{"cpu":10,"rss":571},"qa":null,"warden":{"cpu":12,"rss":886},"omlx":{"cpu":73,"rss":37735}},"act":{"forge":"$ node /var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/deaths.mjs","qa":""}}
-{"t":"13:51:25","load":4.04,"free":32,"tasks":{"forge":{"cpu":1,"rss":583},"qa":null,"warden":{"cpu":2,"rss":915},"omlx":{"cpu":69,"rss":38138}},"act":{"forge":"$ node /var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/deaths.mjs","qa":""}}
-{"t":"13:56:28","load":5.20,"free":32,"tasks":{"forge":{"cpu":12,"rss":584},"qa":null,"warden":null,"omlx":{"cpu":69,"rss":33787}},"act":{"forge":"$ node /var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/deaths.mjs","qa":""}}
-{"t":"14:01:31","load":4.73,"free":28,"tasks":{"forge":{"cpu":1,"rss":585},"qa":null,"warden":null,"omlx":{"cpu":80,"rss":33849}},"act":{"forge":"$ node -e \"","qa":""}}
-{"t":"14:04:19","load":5.20,"free":30,"tasks":{"forge":{"cpu":14,"rss":715},"qa":null,"warden":null,"omlx":{"cpu":78,"rss":33956},"mini":{"cpu":120,"rss":462}},"act":{"forge":"$ node -e \"","qa":""}}
-{"t":"14:06:33","load":6.09,"free":38,"tasks":{"forge":{"cpu":0,"rss":719},"qa":null,"warden":{"cpu":4,"rss":843},"omlx":{"cpu":20,"rss":34185}},"act":{"forge":"$ node /var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/death2.mjs","qa":""}}
-{"t":"15:58:57","load":3.76,"free":15,"tasks":{"forge":{"cpu":1,"rss":187},"qa":null,"warden":null,"omlx":{"cpu":70,"rss":29710},"mini":{"cpu":121,"rss":474}},"act":{"forge":"$ git add -A && git commit -qm \"GALAGA harness: 71 checks + 4 mutants caught (path audit, ","qa":"$ gh issue comment 71 --repo jalfern/retrogames --body-file /tmp/qa-dirty-tree-addendum.md"}}
-{"t":"16:39:32","load":4.61,"free":41,"tasks":{"forge":{"cpu":1,"rss":747},"qa":{"cpu":0,"rss":908},"warden":null,"omlx":{"cpu":38,"rss":36364},"mini":{"cpu":143,"rss":651}},"commit":"forge-galaga: GALAGA: browser harness — real keys, pixels, capture/rescue chain end ","act":{"forge":"[0m$ [0mrg -o \"ev\.push\(\{ type: '\w+'|events\.push\(\{ type: '\w+'\" src/game
-[0m$ [0mrg -n \"galact\" package.json; npx eslint scripts/galactplay.mjs src/gam","qa":"[0m$ [0mgh issue view 71 --comments --json number,title,labels,comments 2>&1 |
-[0m$ [0mdate -u; git rev-parse forge-galaga; git rev-parse origin/forge-galaga
-[0m$ [0mgh issue view 71 --comments --json comments 2>/dev/null | python3 -c \""}}
+{"t":"16:39:55","load":4.72,"free":43,"tasks":{"forge":{"cpu":3,"rss":747},"qa":{"cpu":12,"rss":910},"warden":null,"omlx":{"cpu":28,"rss":36367},"mini":{"cpu":181,"rss":537}},"commit":"forge-galaga: GALAGA: browser harness — real keys, pixels, capture/rescue chain end ","act":{"forge":"[0m$ [0mrg -o \"ev\.push\(\{ type: '\w+'|events\.push\(\{ type: '\w+'\" src/game
+[0m$ [0mrg -n \"galact\" package.json; npx eslint scripts/galactplay.mjs src/gam","qa":"[0m$ [0mdate -u; git rev-parse forge-galaga; git rev-parse origin/forge-galaga
+[0m$ [0mgh issue view 71 --comments --json comments 2>/dev/null | python3 -c \"
+[0m$ [0mgh issue comment 71 --body-file /var/folders/41/gz22zd5d55g08jn448xnd9"}}
