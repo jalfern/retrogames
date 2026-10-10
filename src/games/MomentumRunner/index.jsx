@@ -78,6 +78,7 @@ const MomentumGame = () => {
         let toast = 0, toastMsg = '', shake = 0, wheelAng = 0
         const keys = { left: false, right: false }
         let jumpEdge = false, jumpCut = false
+        const dbg = { kp: 0 }
         const evLog = []
         const hist = []
         const parts = []
@@ -354,6 +355,7 @@ const MomentumGame = () => {
         }
 
         const onDown = (e) => {
+            dbg.kp++
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
@@ -408,7 +410,7 @@ const MomentumGame = () => {
                         save: { ...gs.save }, goal: ZONES[gs.zone].goal, end: gs.end,
                         invuln: p.invuln, speed: Math.round(Math.abs(p.s || 0)),
                         taken: [...gs.taken], evLog: evLog.slice(-80),
-                        hist: hist.slice(-60), dbg: { kp: 0 },
+                        hist: hist.slice(-60), dbg: { ...dbg },
                     }
                 },
                 evLog, cam: () => cam(),
@@ -424,9 +426,8 @@ const MomentumGame = () => {
                     return true
                 },
                 setSpeed: (v) => { if (screenRef.current === 'play') gs.p.s = v },
+                dbg,
             }
-            // count real key presses for the harness's input-path assertion
-            window.addEventListener('keydown', () => { const h = window.__runnerTest; if (h) h.dbg.kp++ })
         }
 
         return () => {

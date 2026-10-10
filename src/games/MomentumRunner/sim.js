@@ -230,8 +230,11 @@ export function step(g, inp) {
         const L = z.loop
         // energy along the circle; phi measured from the bottom, screen y-down
         const v2 = Math.max(0, p.v0 * p.v0 - 2 * G * L.r * (1 - Math.cos(p.phi)))
-        if (CFG.loopContact && Math.cos(p.phi) > 0 && v2 < G * L.r * Math.cos(p.phi)) {
-            // peeled off the wall inside the upper half — real fall
+        // inside the loop the track's normal force is N = v^2/r + g*cos(phi):
+        // it releases near the APEX (upper half, cos<0) once v^2 < -g*r*cos,
+        // which is exactly why the entry floor is v^2 >= 5*g*r (top: v^2>=g*r).
+        if (CFG.loopContact && Math.cos(p.phi) < 0 && v2 < -G * L.r * Math.cos(p.phi)) {
+            // peeled off the wall before the apex — a real fall, no loop, no apex rings
             const v = Math.sqrt(v2)
             p.mode = 'air'; p.cut = false
             p.x = L.cx + L.r * Math.sin(p.phi)
