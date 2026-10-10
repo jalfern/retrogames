@@ -109,6 +109,6 @@ export const LEVELS = [
 
 export function buildLevel(idx) {
     const lv = LEVELS[idx % LEVELS.length]
-    const { build, ...meta } = lv            // functions must not ride in cloneable state
+    const { build: _build, ...meta } = lv            // functions must not ride in cloneable state
     return { meta, grid: lv.build() }
 }

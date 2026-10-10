@@ -437,7 +437,7 @@ const roll = (g0, act, horizon) => {
     return g
 }
 
-export function solve(g, horizon = 1500, maxDecisions = 260) {
+export function solve(g, horizon = 1500) {
     let cooldown = 0
     while (!g.end && g.tick < g.level.time * 60) {
         if (cooldown <= 0) {

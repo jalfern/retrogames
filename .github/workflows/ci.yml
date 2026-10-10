@@ -57,6 +57,11 @@ jobs:
       # provably flyable (autopilot banks a load in every garden) before merge.
       - run: npm run lint:bee
       - run: npm run beecheck
+      # Sixth scoped gate for LEMMINGS-LITE: the solver must clear every level
+      # with its own skill supply AND lose when a load-bearing skill is removed
+      # — a level nobody can clear cannot ship.
+      - run: npm run lint:lem
+      - run: npm run lemcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
