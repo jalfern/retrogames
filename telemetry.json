@@ -16,3 +16,4 @@
 {"t":"13:51:25","load":4.04,"free":32,"tasks":{"forge":{"cpu":1,"rss":583},"qa":null,"warden":{"cpu":2,"rss":915},"omlx":{"cpu":69,"rss":38138}},"act":{"forge":"$ node /var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/deaths.mjs","qa":""}}
 {"t":"13:56:28","load":5.20,"free":32,"tasks":{"forge":{"cpu":12,"rss":584},"qa":null,"warden":null,"omlx":{"cpu":69,"rss":33787}},"act":{"forge":"$ node /var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/deaths.mjs","qa":""}}
 {"t":"14:01:31","load":4.73,"free":28,"tasks":{"forge":{"cpu":1,"rss":585},"qa":null,"warden":null,"omlx":{"cpu":80,"rss":33849}},"act":{"forge":"$ node -e \"","qa":""}}
+{"t":"14:04:19","load":5.20,"free":30,"tasks":{"forge":{"cpu":14,"rss":715},"qa":null,"warden":null,"omlx":{"cpu":78,"rss":33956},"mini":{"cpu":120,"rss":462}},"act":{"forge":"$ node -e \"","qa":""}}
