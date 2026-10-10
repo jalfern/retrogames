@@ -35,6 +35,16 @@ AGENTS.md wins.
    internal resolution, fixed timestep, attract mode, `?` PauseOverlay,
    `VirtualControls` with tap-to-start (`pointerdown`) so it is playable on a
    phone, all art/audio synthesized at runtime (no assets).
+   **Mount `src/utils/DebugKit.js`** (DEV-only F1 panel: live state, cheat
+   buttons, and for puzzle/level games a PROGNOSIS action that re-runs your
+   own solver on the LIVE mutated state — "can this still be won from
+   here?"). The kit exists because Jon found a "winnable" level Jon could
+   not win; the panel is how the next such bug gets named in seconds, not
+   issue threads.
+   **The slack rule:** winnable-by-perfect-solver is not humanly winnable.
+   Your Node harness must re-solve every level with ONE fewer of every
+   supply the winning script consumes — it must still win. Zero slack is a
+   build failure (`lemcheck`'s slack loop is the reference implementation).
 5. **Harness.** Write `scripts/<name>check.mjs` (Node-first where possible —
    the heistcheck/zorkcheck pattern beats any browser check), give it an
    `npm run <name>check` alias, and prove it can fail: break one load-bearing
