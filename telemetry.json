@@ -24,3 +24,8 @@ $ node scripts/galactcheck.mjs --mutate 2>&1 | tail -8 && node scripts/galactche
 $ git add -A && git commit -qm \"GALAGA harness: 71 checks + 4 mutants caught (pa","qa":"$ git status --short 2>&1; echo \"---branch---\"; git branch --show-current 2>&1
 $ git status 2>&1; echo \"---LOG---\"; git log --oneline -3 2>&1
 $ gh issue comment 71 --repo jalfern/retrogames --body-file /tmp/qa-dirty-tree-a"}}
+{"t":"16:01:52","load":5.11,"free":20,"tasks":{"forge":{"cpu":0,"rss":465},"qa":null,"warden":null,"omlx":{"cpu":110,"rss":30210},"mini":{"cpu":205,"rss":474}},"commit":"forge-galaga: GALAGA harness: 71 checks + 4 mutants caught (path audit, live traject","act":{"forge":"FAIL  mutation harness broken: baseline for 'rescueDouble=false (rescue grants
+$ node scripts/galactcheck.mjs --mutate 2>&1 | tail -8 && node scripts/galactche
+$ git add -A && git commit -qm \"GALAGA harness: 71 checks + 4 mutants caught (pa","qa":"$ git status --short 2>&1; echo \"---branch---\"; git branch --show-current 2>&1
+$ git status 2>&1; echo \"---LOG---\"; git log --oneline -3 2>&1
+$ gh issue comment 71 --repo jalfern/retrogames --body-file /tmp/qa-dirty-tree-a"}}
