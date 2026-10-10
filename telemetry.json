@@ -18,3 +18,6 @@
 [0m$ [0mgit add -A && git commit -qm \"GALAGA: canvas shell, attract replay of ","qa":"[0m$ [0mgit branch --show-current; git log --oneline -3; git diff --stat src/g
 [0m$ [0mgh issue list --state open --label feedback --json number,title,create
 [0m$ [0mgh issue list --state open --label building --json number,title,labels"}}
+{"t":"16:34:38","load":4.57,"free":39,"tasks":{"forge":{"cpu":26,"rss":738},"qa":{"cpu":12,"rss":886},"warden":null,"omlx":{"cpu":78,"rss":32534},"mini":{"cpu":184,"rss":484}},"commit":"forge-galaga: GALAGA: canvas shell, attract replay of the proven run, HUD, VirtualCo","act":{"forge":"","qa":"[0m$ [0mgit branch --show-current; git log --oneline -3; git diff --stat src/g
+[0m$ [0mgh issue list --state open --label feedback --json number,title,create
+[0m$ [0mgh issue list --state open --label building --json number,title,labels"}}
