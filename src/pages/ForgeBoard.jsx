@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
-import { deriveFloor, labelOf } from './floor'
+import Telemetry from './Telemetry'
+import { ago, deriveFloor, labelOf } from './floor'
 
 const REPO = 'jalfern/retrogames'
 const API = p => `https://api.github.com/repos/${REPO}/${p}`
@@ -34,6 +35,11 @@ const ForgeBoard = () => {
     // Freshness is stamped when the data ARRIVES, not per render — render must
     // stay pure, and "fresh" means "fresh when we fetched it" anyway.
     const [now, setNow] = useState(0)
+
+    useEffect(() => {
+        const id = setInterval(() => setNow(Date.now()), 1000)
+        return () => clearInterval(id)
+    }, [])
 
     useEffect(() => {
         let alive = true
@@ -132,7 +138,7 @@ const ForgeBoard = () => {
                             {building[0] ? building[0].title.replace(/^GAME.*?—\s*/, '') : 'idle — next warden tick kicks'}
                         </Lamp>
                         <Lamp label="WARDEN" ok={!!pulse}>
-                            {pulse ? `heartbeat ${pulses[0].body.slice(0, 5)}` : 'no pulse yet'}
+                            {pulse ? `${pulses[0].body.slice(0, 5)} · ${ago(pulses[0].body.slice(0, 5) + ':00', now)}s ago` : 'no pulse yet'}
                         </Lamp>
                         <Lamp label="QA LANE" ok={qaBusy || qa.length === 0}>
                             {qaBusy ? `fixing: ${qa.find(i => labelOf(i, 'building-qa')).title.replace(/^QA —?\s*/, '')}`
@@ -151,6 +157,7 @@ const ForgeBoard = () => {
                     </div>)}
 
                 {issues && <FactoryFloor floor={floor} />}
+                <Telemetry now={now} />
 
                 {pulses.length > 0 && (
                     <div className="border border-[#ffb347]/40 p-3 mb-8 text-[10px] leading-relaxed text-[#ffb347]">

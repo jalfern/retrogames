@@ -18,6 +18,14 @@ export const shortName = title => {
     return cut || (title || '').slice(0, 14) || '?'
 }
 
+
+export const ago = (hhmmss, now) => {
+    const [h, m, s] = hhmmss.split(':').map(Number)
+    const d = new Date()
+    d.setHours(h, m, s, 0)
+    return Math.max(0, Math.round((now - d.getTime()) / 1000))
+}
+
 export function deriveFloor({ issues = null, prs = [], pulses = [], now = Date.now() } = {}) {
     const list = (issues ?? []).filter(i => !i.pull_request)
 
