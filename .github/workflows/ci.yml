@@ -122,6 +122,13 @@ jobs:
       # with one fewer dwarf and one fewer ration) — plus seven mutants.
       - run: npm run lint:outpost
       - run: npm run outpostcheck
+      # Seventeenth scoped gate: PAPERS, PLEASE-MIN. The fairness prover grades
+      # every generated applicant twice (booth view vs generator truth) and
+      # every deny must carry a printed witness; the trap contract pins that a
+      # naive eye misjudges EXACTLY the planted traps; the slack rule re-runs
+      # each week as the clumsy inspector; seven mutants must die.
+      - run: npm run lint:papers
+      - run: npm run paperscheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -175,6 +182,10 @@ jobs:
           SHOT_CHANNEL: chromium
       - name: Outpost smoke (real keys, pixels vs the job queue, a dwarf digs on camera)
         run: npm run outpostplay
+        env:
+          SHOT_CHANNEL: chromium
+      - name: Papers-Please-Min smoke (real keys at the booth, ink vs verdict, the week ends as the prover says)
+        run: npm run papersplay
         env:
           SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)

@@ -76,6 +76,9 @@
     "lint:outpost": "eslint src/games/Outpost src/components src/utils src/config src/main.jsx scripts",
     "outpostcheck": "node scripts/outpostcheck.mjs",
     "outpostplay": "node scripts/outpostplay.mjs",
+    "lint:papers": "eslint src/games/PapersPleaseMin src/components src/utils src/config src/main.jsx scripts",
+    "paperscheck": "node scripts/paperscheck.mjs",
+    "papersplay": "node scripts/papersplay.mjs",
     "forgeplay": "node scripts/forgeplay.mjs"
   },
   "dependencies": {

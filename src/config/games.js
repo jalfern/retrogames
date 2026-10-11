@@ -59,6 +59,10 @@ const PolarityGame = lazy(() => import('../games/Polarity'))
 const MissileBattleGame = lazy(() => import('../games/MissileBattle'))
 const SimCityMinGame = lazy(() => import('../games/SimCityMin'))
 const OutpostGame = lazy(() => import('../games/Outpost'))
+// Papers-Please-Min: same lesson — the fairness prover it shares with the
+// harness (rules.js/gen.js are the SAME code the booth plays with) rides
+// in its own chunk.
+const PapersPleaseMinGame = lazy(() => import('../games/PapersPleaseMin'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -192,6 +196,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'A dwarf-style colony in ASCII, three procedurally-carved depths deep. You are the foreman — you never touch a dwarf: you designate DIG / FARM / RALLY jobs, and idle colonists claim them off a priority queue and A-star to them across the walk graph. Plots ripen, bushes fall to the pick, hauls feed the depot, and every dwarf eats on a hunger clock — an unfed dwarf dies and their job returns to the queue. The beacon stairs sleep in a SEALED rock room: the tunnel front is computed by a 0-1 BFS through stone, and the shortest dig is provable. Every seed is audited offline by a Node harness: generator reachability, A* path-optimality against BFS, job-claim conservation (deaths return claims), a food ledger exact to the unit — and the slack rule: each seed still clears with one fewer dwarf and one fewer ration. The attract demo is the autopilot\'s own proven run, tick for tick.',
         controls: ['Arrows / D-pad: move the foreman\'s cursor', 'Space / A: post the selected job on the cursor', 'T / B: cycle tool — DIG the rock, FARM the soil, RALLY the beacon stairs', 'Rally stands every living dwarf on the stairs — that is the one state that descends', 'Keep the depot fed: ripe o-plots and bushes * are jobs the world posts for you', 'Tap to designate; ? pauses. 1-4 on the title pick a depth seed'],
+    },
+    {
+        path: '/papers-please',
+        component: PapersPleaseMinGame,
+        label: 'PAPERS, PLEASE-MIN',
+        theme: 'dark',
+        description: 'Seven days at the border gate of a small gray country. Each entrant slides papers under the glass; the wall carries the law of the day — entry list, wanted sheet, calendar, a scale that reads the truth under their feet. ADMIT or DENY: the booth never hides its evidence, and every generated paper in the game is PROVEN decidable by a Node harness that re-judges each applicant twice (booth vs truth) and proves a careless eye still clears every day — the six traps (expires-TODAY, same-name-on-the-sheet, foreign-looking city, ID height, child without ID, ID weight) are placed on purpose. One new rule wakes every morning; three mistakes demote you.',
+        controls: ['A / SPACE / tap left: ADMIT the entrant', 'D / B button / tap right: DENY the entrant', 'Read the wall first: date, RULEBOOK, ENTRY LIST, WANTED sheet, SCALE', 'Expired BEFORE today is void — expiring TODAY is still valid', 'Wanted means name AND passport number; children are exempt from the ID rule', 'Day 7 wakes the CURFEW: a passport needs seven days of grace', '?: Pause and read the rules'],
     },
     {
         path: '/pong',
