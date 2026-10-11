@@ -57,7 +57,7 @@ const PolarityGame = () => {
         let gs = makeGame(0)
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0
-        const keys = { l: false, r: false, u: false, d: false, f: false, sEdge: false }
+        const keys = { l: false, r: false, u: false, d: false, f: false, fTap: false, sEdge: false }
         const evLog = []
         const parts = []
         const tele = []
@@ -123,8 +123,9 @@ const PolarityGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim({ l: keys.l, r: keys.r, u: keys.u, d: keys.d, f: keys.f, s: keys.sEdge })
+            doSim({ l: keys.l, r: keys.r, u: keys.u, d: keys.d, f: keys.f || keys.fTap, s: keys.sEdge })
             keys.sEdge = false
+            keys.fTap = false
         }
 
         // ---------------------------------------------------------------- paint ----
@@ -269,7 +270,7 @@ const PolarityGame = () => {
         const startPlay = () => {
             gs = makeGame(0)
             evLog.length = 0; parts.length = 0; tele.length = 0
-            keys.l = keys.r = keys.u = keys.d = keys.f = keys.sEdge = false
+            keys.l = keys.r = keys.u = keys.d = keys.f = keys.fTap = keys.sEdge = false
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -286,7 +287,7 @@ const PolarityGame = () => {
             if (e.code === 'ArrowRight') keys.r = true
             if (e.code === 'ArrowUp') keys.u = true
             if (e.code === 'ArrowDown') keys.d = true
-            if (e.code === 'Space') keys.f = true
+            if (e.code === 'Space') { keys.f = true; if (!e.repeat) keys.fTap = true }
             if (e.code === 'KeyX') keys.sEdge = true
         }
         const onUp = (e) => {
