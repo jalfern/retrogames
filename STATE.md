@@ -1,84 +1,87 @@
-# STATE.md — 2026-10-10 (SIMCITY-MIN session end)
+# STATE.md — 2026-10-11 (OUTPOST session end)
 
 ## Where things stand
-**#74 GAME 10 — SIMCITY-MIN IS LIVE at jalfern.com/retrogames/simcity-min**
-(PR #132, squash ee343e0, issue closed — add the `shipped` label). Arcade is
-27 titles. **Next session: claim the oldest `game-queue`** — head is #77
-Lode Runner (#118 Minesweeper, #82 BensMagicBugLife also queued).
+**#75 GAME 11 — OUTPOST IS LIVE at jalfern.com/retrogames/outpost**
+(PR #136, squash cf901cb, `shipped`, issue closed). Arcade is 28 titles.
+**Next session: claim the oldest `game-queue`** — head is #76
+Papers-Please-Min (then #77 Lode Runner, #79 WWI Dogfight, #78 Arena
+Archery, #82 BensMagicBugLife, #118 Minesweeper). Do NOT trust older
+STATE notes naming a head — this queue was re-sorted by createdAt, which is
+how #75 beat #77 (the WARDEN comment on #75 also said a session was kicked
+for it and never showed).
 
 | since last STATE | what |
 |---|---|
-| #74 / `forge-simcity` | Four-module city: `scen.js` (3 maps, scripted fires + one tornado), `sim.js` (yearly ledger conserved to the cent, power BFS over the road graph, job-gated growth, `Math.random` banned at import), `planner.js` (greedy terrain-aware autopilot; its proven run IS the attract demo), shell with a cursor + 8-tool rail. Core contract: every map still wins with one fewer plant, one fewer station, $150 less (slack rule). |
-| harnesses | `citycheck` 151 Node checks + 7 mutants (`--mutate`), `cityplay` 22 Chrome checks real-keys-only. Gates: `lint:sim` + `citycheck` in static; `cityplay` added to `smoke` (SC_URL env override like MB_URL). |
+| #75 / `forge-outpost` | Four-module colony sim: `cave.js` (seeded mulberry32, rooms chained by construction, beacon room SEALED — layouts whose beacon is already walkable are retired by the generator itself), `sim.js` (job queue `pending→claimed→resolved exactly once`, A* pinned to BFS-exactness, hunger clock, food ledger `depot+carry+eaten+rotten == start+harvested` every tick), `planner.js` (greedy foreman: farms, 0-1-BFS tunnel front, rally — its proven run IS the attract demo), shell + ASCII canvas. Contract: every seed clears with one fewer dwarf AND one fewer ration. |
+| harnesses | `outpostcheck` 626 Node checks + 7 mutants (`--mutate`), `outpostplay` 22 Chrome checks real-keys-only. Gates: `lint:outpost` + `outpostcheck` in static; `outpostplay` in smoke. |
 
 ## What is playable right now
-- jalfern.com/retrogames/simcity-min — prod verified with a real browser:
-  route 200, H1 + live canvas, zero page errors.
-- Attract cycles the three proven runs tick-for-tick; S0 wins y18, S1 y22,
-  S2 y28; all three slack runs win too (receipts in citycheck output).
+- jalfern.com/retrogames/outpost — prod verified: route 200, bundle
+  `index-CddBr-Wv.js` contains the game.
+- Attract replays the autopilot's proven run tick-for-tick; seeds 0-7 win
+  base AND slack runs.
 
 ## What changed this session (the parts that matter next time)
-- **I never touched the main checkout** (still dirty: `fpscheck.mjs`,
-  `IronKeep/index.jsx`, QA's). Built in worktree `retrogames-simcity`;
-  its `node_modules` is a SYMLINK to the main checkout's — worktrees without
-  their own install need that (or `npm ci`) before any eslint/vite run.
-- **A fire seed now waits for a city**: seeds stay armed until development is
-  near, announce one `dudfire`, retry silently; scenario objects are never
-  mutated (an `ignited` flag on S.fires would have poisoned every later run
-  in the harness — found before it shipped).
-- **Job-gated growth grew people with zero jobs**: the mid-band test was
-  `J >= 0.65*P` which is vacuous at P=0. A powerRange mutant caught it
-  because its fixture city had no industry. Every mutant survival this
-  session was a report about the TEST: drained event buffers (probe must
-  accumulate per tick), fixtures with no jobs, a probe asserting on ash
-  while the fire had already burned out, and `(await x ? a : b)` parsing as
-  `(await x) ? a : b` — the Promise never got awaited and `.cursor` was
-  undefined.
-- **`gh pr merge` cannot run when `main` is checked out in another worktree**
-  — it tries to git-checkout main. Merge via
-  `gh api -X PUT repos/.../pulls/N/merge -f merge_method=squash -f delete_branch=true`
-  (same squash, branch deleted server-side; local branch left behind —
-  `git switch -c <state-branch> origin/main` after fetching).
-- S1 target moved 480→380 with funds 1600→2000 and deadline 52: the honest
-  knob was capital (the tier gate was money-starved, not map-starved); the
-  stability pin now grades DRAWS on the peak in the mature tail only — a
-  still-climbing curve is health, not oscillation.
+- **A false receipt in a commit message is still a lie.** Mid-session I
+  committed "harness 180 checks + 9 mutants" when the harness did not exist
+  yet; the correction went in the next commit + PR comment. Commit real
+  receipts only, after the run that earns them.
+- **Two mutants survived because the TESTS were lies** (pattern continues):
+  a greedy-A* mutant that was secretly Dijkstra (dropped `g`, not `h` — still
+  optimal, unkillable by BFS-equality by construction), and a FARM_FOOD=0
+  mutant on a bush-rich fixture whose farm branch never ran. And one REAL
+  sim bug the live integrity scan only caught after `release()` was leaked:
+  resolved jobs kept their claims; runs still WON while the queue rotted.
+- **Pixels need windows, not points.** Sampling one pixel at a glyph baseline
+  hit the cursor stroke/tool label (an "orange rock"). `outpostplay` now
+  classifies a 9x16 cell window into cool-rock/warm-floor/gold counts; the
+  CI runner (software raster) paints FEWER pixels than a laptop — the
+  attract check is a whole-canvas census, not one cell.
+- **`dig` targets rock and nobody stands on stone**: the digger paths to the
+  ADJACENT open cell (`digX/digY` = swing target). And a dig destination that
+  opens into the sealed beacon room is what makes "dug==0 win" a red check.
+- `gh pr merge --squash` STILL fails with main checked out in another
+  worktree — merged again via `gh api PUT .../merge merge_method=squash
+  delete_branch=true` after `--watch --fail-fast` came back green (twice).
+- QA MASTER (pid 95327) was LIVE all session in the main checkout (it
+  shipped #135/#137 around me). Main checkout remains dirty with its files;
+  the whole session ran in worktree `retrogames-outpost` (node_modules
+  symlinked) — removed after merge.
 
 ## Gates (all green at merge)
-15 scoped lints (+`lint:sim` now a 16th) · `citycheck` 151/151 + 7/7 mutants
-· `cityplay` 22/22 twice in a row · `missilecheck`/`aicheck`/`zorkcheck`/
-`galactcheck`/`forgecheck`/`polarcheck` green · build ✓ · prod browser
-check clean.
+16 scoped lints (+`lint:outpost`) · `outpostcheck` 626/626 + 7/7 mutants ·
+`outpostplay` 22/22 local twice AND green on the smoke runner · static job
+green · build ✓ · prod HTTP 200 + bundle contains OUTPOST.
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Claim #77 Lode Runner. `pgrep -fl FORGE-QA` first; fresh worktree +
-   node_modules symlink dance if main is still dirty.
-2. SimCity-Min is shipped — do not polish. Its gates: `lint:sim` +
-   `citycheck` (static), `cityplay` (smoke job).
-3. Known honest gaps to pick up as their own issues someday: tax model is
-   shallow (best-rate, no migration), fire spread residue is a die the
-   planner can't see, no in-browser WIN check (win is Node-only; the end
-   SCREEN is browser-checked).
+1. Claim #76 Papers-Please-Min (oldest by createdAt). Rule engine + a prover
+   that no generated paper is unfair — a natural sibling of outpostcheck's
+   ledger/audit idiom. `pgrep -fl "opencode run"` first; worktree lane if the
+   main checkout is dirty.
+2. OUTPOST is shipped — do not polish. Its gates: `lint:outpost` +
+   `outpostcheck` (static), `outpostplay` (smoke). Honest gaps are written
+   in `src/games/Outpost/README.md` (bush economy generous; ore is score
+   only; dwarves share tiles).
+3. `outpostplay` gold-pixel threshold is >4 (got 9 on the runner, 73 on a
+   laptop). If it ever flakes, widen the window, do not lower the bar.
 
 ## Three questions for Jon
-1. Same recurring one, third session: worktree-per-session in the plists
-   now that `gh api` merge is the documented path, or do we fix the main
-   checkout (kill the QA loop, land its stash) so sessions can work in it?
-2. The `--mutate` block spent more wall-time than the whole first harness
-   build this session. Keep 7 mutants in `citycheck` forever, or graduate
-   them to a rarer `--deep` run like `heistmutate`?
-3. `scripts/.shots/` is images-only by policy — cityplay currently writes no
-   screenshots at all. Do you want a `--shots` mode (title/play/fire/end
-   frames uploaded by the smoke job) or is pixel-sampling enough?
+1. Queue order: I claimed #75 over STATE's named #77 because the playbook
+   says oldest-first and #75 predates it by seconds + the WARDEN comment.
+   Should STATE's "next session claim X" line override createdAt order?
+2. The smoke job runs the full browser suite serially (~4 min now). Should
+   each play-suite be its own CI job so one flaky canvas doesn't hide a
+   green board?
+3. `@` dwarf is gold while carrying, white otherwise — QA's QA Master
+   session might make a fine consumer for a "watch the colony" debug view.
+   Worth a DebugKit PROGNOSIS button that runs `plan()` on the live state
+   and prints winnable-or-not? (It exists; it is unproven in a browser.)
 
 ## Lineage
-AGENTS.md honored: read STATE first, claimed queue head #74 (claim was
-already posted from the prior half of this session), one game, checkpoint
-pushes with issue comments, harness proven able-to-fail (7/7 mutants — and
-four of them first SURVIVED, each survival fixed in the test, not the code),
-merge only after `gh pr checks --watch --fail-fast` (static+smoke+Vercel
-green) then squash via the API because main was worktree-locked, prod
-verified in a real browser, STATE rewritten here on a PR branch.
-Rule 4: six straight sessions touching `src/games/**`. Ran ~4h20m — over
-the 3-hour box by ~50m; the overage was entirely in test-honesty work
-(mutants + browser flake root-causes), one game only, no scope creep.
+AGENTS.md honored: read STATE first, claimed by oldest-queue order with a
+comment explaining the deviation, one game, 4 checkpoint pushes with
+one-line issue comments, harness proven able-to-fail (7/7 mutants + a
+manual `release()` break), merge only via checks-watch-then-squash (API
+form for the worktree lock), prod verified, STATE via PR to main (never a
+direct push). Rule 4: seven straight sessions touching `src/games/**`.
+Ran ~2h50m — inside the box.
