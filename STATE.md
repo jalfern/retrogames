@@ -1,77 +1,73 @@
-# STATE.md — 2026-10-10 (Forge Conveyor session end)
+# STATE.md — 2026-10-10 (Galaga session end)
 
 ## Where things stand
-**#103 GAME 16 — FORGE CONVEYOR IS LIVE at jalfern.com/retrogames/forge** (PR #111,
-squash ba119f5, `shipped` label, closed). The first forge claim that is not a game:
-the board itself now has an animated factory floor. Arcade is still 23 titles.
-**Next session: claim #71 GAME 07 — Galaga** (queue head), then #72 Polarity Shooter.
-No unlabeled `GAME —` issues exist; nothing carries `next`.
+**#71 GAME 07 — GALAGA IS LIVE at jalfern.com/retrogames/galaga** (PR #123,
+squash 848018d, `shipped` label, issue auto-closed). Arcade is 24 titles.
+**Next session: claim #72 Polarity Shooter** (queue head).
+No unlabeled `GAME —` issues remain beyond the queue; nothing carries `next`.
 
 | since last STATE | what |
 |---|---|
-| #103 / `forge-conveyor` | `src/pages/floor.js` (pure `deriveFloor`) is now the ONE truth the lamps, the floor band and the harness all read. `FactoryFloor.jsx`: queue bin (drift-in cards), anvil (glow=building, spark=pulse<15 min, dark=silent), CI gate (amber+PR# beats pulse), conveyor (cart ONLY on a pulse-proven shipped-flip), shelf cartridges → /games. CSS+emoji only, zero new deps, zero new API calls. |
-| **bug found by the harness** | The board's `comments_url.replace(host,'')` was re-prefixed by `API()` → doubled `/repos/...` → **404, swallowed by `catch { decorative }`**. The warden log and build feed had NEVER rendered in production. `forgeplay`'s zero-page-errors check caught it on the first run. |
+| #71 / `forge-galaga` | Four-module shooter: `paths.js` (every flight a named sampled path), `waves.js` (SWARM/BOSSES/GUARD stage scripts), `sim.js` (pure `step(state,input)`, zero `Math.random`, behavior tree captive→beam→roster), `planner.js` (autopilot; its proven run IS the attract demo). Capture chain is the feature: beam → captive escort → shoot your own escort → catch pod → DOUBLE. |
+| harnesses | `galactcheck` 71 Node checks + 4 mutants (`--mutate`); `galactplay` 20 Chrome checks, real keys only. Both in CI static (lint:galaga + galactcheck) / verify tier. |
 
 ## What is playable right now
-- Everything on jalfern.com/retrogames, plus `/forge` now shows the factory floor
-  fed by the board's own fetches. At ship-time prod: 8 queue cards, 7 shelf carts,
-  anvil honestly DARK (my `building` label was gone and the warden's pulse was
-  >15 min old — the honesty clause working, observed live).
+- jalfern.com/retrogames/galaga — verified on PROD with a real keypress in a
+  real browser: canvas 224×288, fighter pixels at the physics x, zero errors.
+- The attract screen plays the autopilot's proven run tick-for-tick.
 
 ## What changed this session (the parts that matter next time)
-- **A mutation you did not prove was APPLIED is a mutation you never ran.** My
-  first fresh-ness mutant "survived" (green check, green restore) because the
-  perl pattern had a trailing `;` the source line does not have. The playbook
-  says break a line and watch it go red — now I also print the mutated line
-  before running. Three real mutants after that: queue-leak (4 reds),
-  always-fresh anvil (3 reds), unconditional cart (3 reds).
-- **`catch { /* decorative */ }` is where truth goes to die.** A fetch that
-  404s every single load, silently, for months, while the UI quietly omits the
-  panel. forgeplay asserting `zero page errors` is what turned it from invisible
-  into a check.
-- **`renderToStaticMarkup` in Node CAN host the real component**: esbuild
-  (Vite already ships it) bundles the JSX, `MemoryRouter` makes real `<Link>`
-  hrefs, `createRequire` banner bridges react-dom/server's CJS. The whole DOM
-  harness is ~0.5 s — CI static material. `scripts/forgecheck.mjs` is the
-  template for any future non-canvas UI check.
-- Purity: `Date.now()` in render is a react-hooks/purity error — freshness is
-  now stamped when the fetch LANDS (`setNow`), which is also the honest
-  semantics ("fresh when we fetched it").
+- **A surviving mutant is about the test again.** `diveMin=inf` survived
+  because ONE dive is observable without the cadence rule; the probe now
+  demands ≥3 dives before it may pass. The `rescued` probe baseline failed
+  because the stage banner ignores fallers — probes must wait for `phase=play`
+  or they mutate code that never ran.
+- **Node-pass ≠ browser-alive.** galactplay caught two shell bugs Node
+  structurally cannot see: (a) `tickDemo` resumed a game holding `end`, so
+  `over → attract → doSim(dead)` bounced back to `over` on the next tick —
+  now tickDemo replaces the sim the instant it sees `end`; (b) pixel checks
+  sampled inside the respawn blink frame. Harness wait loops must first wait
+  for `player.state==='alive'` (stage banners make the fighter inert ~4 s).
+- **Rigs must not be killed by the game while waiting for a rare scripted
+  event.** The browser capture test pinned the player at 3 lives to await a
+  pt≥700 beam; divers ended the game first. Rig `lives: 9` for chain probes.
+- Beam band honesty: `bandX` is exposed by `probe()` only while the band is
+  open, and the browser test steers by that + canvas pixels, not by peeking
+  at the path — same information the player has.
 
 ## Gates (all green at merge)
-12 scoped lints incl. new `lint:forge` · `forgecheck` 37 asserts in CI static ·
-`forgeplay` 8/8 real-Chrome against LIVE GitHub data (manual tier, in
-`npm run verify`) · build ✓ · prod bundle contains the floor, /forge 200,
-real click → /games with zero errors.
+13 scoped lints (new `lint:galaga`) · `galactcheck` 71/71 + 4/4 mutants in CI
+static · `galactplay` 20/20 local Chrome · aicheck 24 · zorkcheck 55 ·
+build ✓ · prod browser check ✓ (also: telemetry.sh +x piggybacked, launchd
+needs it — committed with mode 755).
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Claim **#71 Galaga** (queue head, oldest). Standard game lane: canvas,
-   attract mode, VirtualControls, DebugKit, lint:galaga + galact check
-   (proven red first), galactplay browser pass.
-2. Do not polish the floor — shipped. Its gates: `lint:forge` + `forgecheck`
-   (static), `forgeplay` (manual, needs dev server + GitHub network).
-3. If /forge ever shows no warden log again: suspect a doubled URL or a
-   swallowed throw before suspecting the warden — `forgeplay` will name it.
+1. Claim **#72 Polarity Shooter** (queue head). Same lane: pure sim,
+   attract = proven run, `lint:polar` + a Node check proven red, a real-keys
+   browser pass. Reuse galactcheck's mutation discipline verbatim (print the
+   mutated line; probes wait for `play` phase; demand observable frequency).
+2. Galaga is shipped — do not polish it. Its gates: `lint:galaga` +
+   `galactcheck` (static), `galactplay` (manual tier, needs dev server).
+3. If the attract demo ever freezes: `probe().tick` frozen = the proven-run
+   planner broke; frozen only after a death = `tickDemo` end-guard (see
+   above) regressed.
 
 ## Three questions for Jon
-1. The QA lane fired mid-my-session and correctly stopped at the dirty tree
-   (issue #103's feed shows it). If forge and QA share this worktree they can
-   only ever interleave by luck — separate worktree per lane, or schedule QA
-   only when no `building` issue exists?
-2. `jalfern.com` 308s to `www.jalfern.com` — my prod poll was blind until I
-   added `-L`. Does the warden's own prod check follow redirects, or has it
-   been "checking" a redirect page?
-3. Two `feedback` issues sit untriaged and the QA lane hasn't merged one yet
-   (its first real run died on the dirty tree). Want it to retry this evening,
-   or hold until the worktree question above is settled?
+1. galactplay takes ~4 min real time (the beam alone is ~16 world-seconds).
+   Fine in the manual `verify` tier, too slow for static — OK to keep it
+   manual forever, or want a `?lite` fast-forward knob for CI browser runs?
+2. The `smoke` job was green before `static` finished — does it actually
+   deploy-check the branch, or the previous prod? It passed on my PR before
+   the Galaga code was anywhere near prod.
+3. Queue is thin after #72: want the Forge board to start drafting candidate
+   GAME issues itself (queue bin can hold drafts), or stay manual?
 
 ## Lineage
-AGENTS.md honored: read STATE first, ff-only pull, no corpse branches
-(`git fetch --prune` + branch scan), `next` (#103) claimed above queue head per
-FORGE.md step 2 with claim comment, one game, checkpoints pushed per increment
-with FORGE comments, harness proven red 3x (with the mutation-APPLIED
-discipline above), merge only via
+AGENTS.md honored: read STATE first, ff-only pull + prune, claimed queue head
+#71 with claim comment + design note, one game, ~6 checkpoint pushes with
+FORGE comments, harness proven able-to-fail (4 mutants caught, 2 honest
+survival post-mortems above), merge only via
 `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`,
-prod verified in a real browser, STATE rewritten on main (game merged →
-allowed). Rule 4 (game code): this claim is deliberately board code —
-`src/pages/**` — per Jon's `next` label on a non-game issue.
+prod verified in a real browser (real keypress drew the fighter), STATE
+rewritten on main (game merged → allowed). Rule 4 satisfied: five sessions of
+game code in a row — this one IS game code (`src/games/Galaga/**`).
