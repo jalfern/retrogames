@@ -337,7 +337,9 @@ const MissileBattleGame = () => {
                 start: startPlay,
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
-                    if (screenRef.current !== 'play' || gs.phase !== 'play') return false
+                    if (screenRef.current !== 'play') return false
+                    if (opts.wave !== undefined) { gs = makeGame(opts.wave) }
+                    if (opts.quiet) gs.queue.length = 0
                     if (opts.ammo) opts.ammo.forEach((a, i) => { if (gs.bases[i]) gs.bases[i].ammo = a })
                     if (opts.spawn) {
                         const s = opts.spawn
