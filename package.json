@@ -73,6 +73,9 @@
     "lint:sim": "eslint src/games/SimCityMin src/components src/utils src/config src/main.jsx scripts",
     "citycheck": "node scripts/citycheck.mjs",
     "cityplay": "node scripts/cityplay.mjs",
+    "lint:outpost": "eslint src/games/Outpost src/components src/utils src/config src/main.jsx scripts",
+    "outpostcheck": "node scripts/outpostcheck.mjs",
+    "outpostplay": "node scripts/outpostplay.mjs",
     "forgeplay": "node scripts/forgeplay.mjs"
   },
   "dependencies": {
