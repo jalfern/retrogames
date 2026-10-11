@@ -279,9 +279,9 @@ export class ZorkMap {
         // the room we mapped. Re-key it as a fresh room and forget the inherited
         // exits — keeping them is what produced the endless walk into "Storm-tossed
         // trees block your way" that this whole mechanism exists to prevent.
-        this.splits = (this.splits || 0) + 1
         const fresh = this.claim(origin.base || base, null)
         if (fresh !== key) {
+          this.splits = (this.splits || 0) + 1
           this.rooms.delete(key)
           const moved = this.ensure(fresh)
           moved.base = origin.base || base
@@ -293,6 +293,17 @@ export class ZorkMap {
           moved.darkWays = origin.darkWays
           this.at = fresh
           this.splitsTo = fresh
+        } else {
+          // The twin cap was reached, so there is no fresh key to re-key into —
+          // the node is the map's last word for this ground. The old code then
+          // did NOTHING: the split counter climbed (25 "splits" in one run) and
+          // the refused way stayed `proven`, so the BFS kept routing the agent
+          // through the same mountain, which refused it seven times in a row
+          // before the watchdog gave up. The same principle that closes an
+          // untried way applies here: asked to go that way, did not arrive —
+          // the way is closed. Demoting it is the capped twin of the split:
+          // no room to tear apart, so the edge is what gets corrected.
+          origin.exits[dir] = { to: null, type: 'blocked' }
         }
       }
     }
@@ -335,6 +346,55 @@ export class ZorkMap {
     const room = this.rooms.get(key)
     if (!room) return []
     return DIRS.filter((d) => room.exits[d] && room.exits[d].type === 'assumed')
+  }
+
+  /**
+   * Nearest room that still has an untested hypothesis, BFS path included.
+   *
+   * An `assumed` edge is the reverse of a walked move: a hypothesis, not a
+   * fact. Rule 3c of the explorer tests the assumptions of the room it stands
+   * in, but when the honest frontier runs out the hypotheses still waiting
+   * may live in rooms it is not standing in — and standing in a room with no
+   * honest options is exactly where the production deadlock showed up (a tree
+   * whose only way down had been filed `blocked` by a misread reply, with the
+   * rest of the map exhausted behind it). So the fallback can ask for the
+   * nearest untested way anywhere it can reach, and walk there to test it.
+   *
+   * `avoidDark` refuses to route THROUGH a room recorded dark, the same
+   * restraint the planner already applies to every move it makes.
+   */
+  nearestUnverified(from = this.at, { avoidDark = false } = {}) {
+    from = from || this.at
+    if (!from) return null
+    const passable = (k) => {
+      if (avoidDark) {
+        const r = this.rooms.get(k)
+        if (r && r.dark) return false
+      }
+      return true
+    }
+    if (this.unverified(from).length && passable(from)) return { path: [], room: from, dir: this.unverified(from)[0] }
+    const prev = new Map([[from, null]])
+    const queue = [from]
+    while (queue.length) {
+      const cur = queue.shift()
+      const room = this.rooms.get(cur)
+      if (!room) continue
+      for (const [dir, edge] of Object.entries(room.exits)) {
+        if (!edge.to || edge.type === 'blocked') continue
+        if (!passable(edge.to) || prev.has(edge.to)) continue
+        prev.set(edge.to, { from: cur, dir })
+        const unv = this.unverified(edge.to)
+        if (unv.length) {
+          const path = []
+          let k = edge.to
+          while (prev.get(k)) { path.unshift(prev.get(k).dir); k = prev.get(k).from }
+          return { path, room: edge.to, dir: unv[0] }
+        }
+        queue.push(edge.to)
+      }
+    }
+    return null
   }
 
   get visitedCount() { return this.rooms.size }

@@ -310,7 +310,18 @@ export class ZorkExplorer {
     // Rooms discovered is the currency: it can only go up by walking somewhere
     // new, so the watchdog is measuring exploration, not luck. Score is added so
     // a treasure grab also reads as progress the moment stage 2 lands.
-    return this.map.visitedCount * 10 + (Number(p.score) || 0)
+    //
+    // Edges are the other half of the work, and they had to be added. In the
+    // twin-capped forest every frontier step re-enters an ALREADY-MAPPED room
+    // (same paragraph, same key), so `visitedCount` freezes while the map still
+    // grows one fact per move — a proven way, a closed way, a tested guess.
+    // With rooms as the only currency the watchdog read "no new rooms" as "no
+    // progress" and killed a run that was finishing the map, which is the same
+    // failure as #36 from the other door: the agent gave up while work remained.
+    // Counting proven+blocked edges makes every step of the frontier register,
+    // so the watchdog only fires when the agent truly is in circles.
+    const s = this.map.stats()
+    return this.map.visitedCount * 10 + (s.proven + s.blocked) + (Number(p.score) || 0)
   }
 
   /** The ladder. Returns {skill,args} or null (loop counts it as idle). */
@@ -330,6 +341,20 @@ export class ZorkExplorer {
       return { skill: 'look', args: {} }
     }
 
+    // The sensor's carry list plus what we know we picked up. Union, not
+    // replacement: the game's INVENTORY is authoritative when it prints, and our
+    // own memory of "Taken." covers every moment in between.
+    //
+    // Computed BEFORE the dark branch: `survive` reads it to find a lamp or
+    // matches in hand, and the old code declared it two lines BELOW that call —
+    // a temporal-dead-zone ReferenceError the moment an unlit dark room existed.
+    // The suite never produced one, because the agent was never allowed to stand
+    // in one: a crash that only lives where the invariants say the agent cannot
+    // go is still a crash, and the moment the guard has a gap it is the whole
+    // loop dying instead of retreating.
+    for (const h of p.inventory || []) this.held.add(String(h).toLowerCase())
+    const carrying = [...this.held]
+
     if (dark) return this.survive(p, here, carrying)
 
     // 1b. NEED LIGHT — derived, with no noun in it. The map holds ways out the game
@@ -337,11 +362,6 @@ export class ZorkExplorer {
     //     labels ("a dark staircase … leading upward"), so wanting a light costs no
     //     lore, only the literacy the sensor was given.
     const needLight = this.needLight(p)
-    // The sensor's carry list plus what we know we picked up. Union, not
-    // replacement: the game's INVENTORY is authoritative when it prints, and our
-    // own memory of "Taken." covers every moment in between.
-    for (const h of p.inventory || []) this.held.add(String(h).toLowerCase())
-    const carrying = [...this.held]
 
     // 2. take what this room's prose said is here, if we want it, are not
     //    carrying it, and have not already been told no about it.
@@ -443,11 +463,78 @@ export class ZorkExplorer {
       return { skill: 'go', args: { dir: SHORT[dir] || dir } }
     }
 
-    // 5. nothing left that we know how to want.
+    // 5. The honest frontier is empty. Do NOT idle into the loop's generic
+    //    "brain has no move": the map still holds untested hypotheses, `look`
+    //    reprints the room's own geography (Zork prints it once per visit), and
+    //    only when those are spent is stopping the honest move. The production
+    //    deadlock was exactly this line: a tree whose one way out had been filed
+    //    closed by a misread reply, an exhausted map behind it, and the agent
+    //    sitting on top of both saying nothing. The choice is printed, because
+    //    in the output a smart fallback and a stuck agent look identical without
+    //    it — the recurring lesson of this whole arc.
+    const fb = this.fallback(p)
+    if (fb) return fb
     if (!this.reportedEmpty) {
       this.reportedEmpty = true
-      this.report.push('frontier exhausted with the map it built')
-      this.say('no frontier left; stopping rather than wandering')
+      this.report.push('frontier exhausted: no untested way left, no frontier, and the room offered nothing on re-look')
+      this.say('frontier exhausted — nothing left to walk, test, or re-read; stopping')
+    }
+    return null
+  }
+
+  /**
+   * The fallback: what to do when the ladder has nothing left — either the
+   * honest frontier is empty (step rule 5) or the watchdog says progress has
+   * stalled (recover). Same chain, same priorities, every choice printed:
+   *
+   *   1. TEST AN UNTESTED HYPOTHESIS. An `assumed` edge is the reverse of a
+   *      walked move — a guess the game has not confirmed. Walking it costs at
+   *      most one refused move and turns a guess into evidence; it is how the
+   *      agent gets indoors at all (map.js `unverified`). When the frontier
+   *      runs out, the guesses are the last real work left on the map, and
+   *      they may live in rooms the agent is not standing in — so the nearest
+   *      one anywhere reachable is walked to, one step per call.
+   *   2. WALK THE FRONTIER. An untried bearing somewhere reachable. This is
+   *      what the ladder was supposed to be doing; when the watchdog fires it
+   *      means the ladder spent its turns re-asking refused things and pacing
+   *      between known rooms, and the honest fix is to just go there.
+   *   3. LOOK. Free, and it reprints the room's geography — the only way to
+   *      recover what the sensor missed on first sight, because Zork prints a
+   *      long description once per visit. Once per room: a second look cannot
+   *      change anything, so it cannot loop.
+   *   4. null. The caller stops and says which of the above ran out.
+   */
+  fallback(p) {
+    const lit = !!p.extra?.lit
+    // 1. the untested hypothesis, nearest first — and never by routing through
+    //    a room recorded dark unless something is burning in hand.
+    const guess = this.map.nearestUnverified(this.map.at, { avoidDark: !lit })
+    if (guess) {
+      const dest = this.map.rooms.get(guess.room)?.exits[guess.dir]?.to
+      if (!this.wouldEnterDark(dest)) {
+        const dir = guess.path.length ? guess.path[0] : guess.dir
+        this.pending = { kind: 'move', dir, from: this.map.at }
+        this.say(`no new ground to walk; testing an untested way: ${guess.dir} from ${guess.room}`)
+        return { skill: 'go', args: { dir: SHORT[dir] || dir } }
+      }
+    }
+    // 2. the frontier — what the ladder was supposed to be doing.
+    const target = this.map.nearestFrontier()
+    if (target) {
+      const dir = target.path.length ? target.path[0] : this.map.untried(target.room)[0]
+      if (dir && !this.wouldEnterDark(target.room)) {
+        this.pending = { kind: 'move', dir, from: this.map.at }
+        this.say(`progress stalled; walking the frontier: ${dir} toward ${target.room}`)
+        return { skill: 'go', args: { dir: SHORT[dir] || dir } }
+      }
+    }
+    // 3. look — once per room, free, and it reprints the geography.
+    if (this.lastLookRoom !== this.map.at) {
+      this.lastLookRoom = this.map.at
+      this.pending = { kind: 'other' }
+      this.asked = { skill: 'look', args: {}, snap: this.snap(p) }
+      this.say('nothing left to walk or test; looking — the game prints this room once per visit')
+      return { skill: 'look', args: {} }
     }
     return null
   }
@@ -571,6 +658,12 @@ export class ZorkExplorer {
    * stopping and saying why.
    */
   recover(p) {
+    // The counter stays: two recover cycles with the fallback, then silence, so
+    // the watchdog still wins against a world that offers no honest move. What
+    // changed is WHAT the cycles do — the old code spent them on a bare `look`,
+    // so the loop died "stuck — no recovery action" with untried directions
+    // sitting on the map four steps away. The fallback does the thing the
+    // ladder was supposed to be doing, and says so.
     if ((this.recovers = (this.recovers || 0) + 1) > 2) return null
     if (p.extra?.dark && !p.extra?.lit) {
       const back = this.lastDirBack()
@@ -579,8 +672,11 @@ export class ZorkExplorer {
         return { skill: 'go', args: { dir: SHORT[back.dir] || back.dir } }
       }
     }
-    // Stuck in the light: re-read the room. A `look` is how a stuck player
-    // notices the door they walked past, and it never lies about anything.
+    const fb = this.fallback(p)
+    if (fb) return fb
+    // Nothing left to walk, test, or re-read: re-read the room anyway — a stuck
+    // player's `look` is how the door they walked past gets noticed, and it
+    // never lies about anything.
     this.pending = { kind: 'other' }
     return { skill: 'look', args: {} }
   }
