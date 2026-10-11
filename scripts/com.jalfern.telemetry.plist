@@ -23,6 +23,8 @@
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
         <key>HOME</key>
         <string>/Users/jon</string>
     </dict>
