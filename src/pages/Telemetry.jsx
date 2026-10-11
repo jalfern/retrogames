@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ago } from './floor'
+
+const ago = (sample, now) => sample.ts
+    ? Math.max(0, Math.round((now - sample.ts) / 1000))
+    : 9999
 
 const RAW = 'https://raw.githubusercontent.com/jalfern/retrogames/telemetry/telemetry.json'
 const TASKS = [['forge', '#ffb347'], ['qa', '#ff6600'], ['warden', '#4dffb8'], ['omlx', '#66b3ff'], ['mini', '#c58aff']]
@@ -45,8 +48,8 @@ const Telemetry = ({ now }) => {
         <div className="border border-[#66b3ff]/40 p-3 mb-8 text-[10px]">
             <div className="flex justify-between tracking-widest opacity-70 mb-2">
                 <span>PULSE-O-METER — machine vitals, 5-min samples, last 4 h</span>
-                <span className={ago(last.t, now) > 900 ? 'text-[#f55]' : 'text-[#4dffb8]'}>
-                    {ago(last.t, now)}s ago
+                <span className={ago(last, now) > 900 ? 'text-[#f55]' : 'text-[#4dffb8]'}>
+                    {ago(last, now)}s ago
                 </span>
             </div>
             {TASKS.filter(([k]) => samples.some(s => s.tasks?.[k])).map(([k, c]) => (
