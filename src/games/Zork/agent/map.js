@@ -409,11 +409,25 @@ export class ZorkMap {
    *   split into twins (the shifting forest). Used first, so the agent exhausts
    *   the ground it can trust before admitting the map has run out.
    */
-  nearestFrontier({ avoidUnstable = false } = {}, from = this.at) {
+  nearestFrontier({ avoidUnstable = false, avoidDark = false, noDarkWays = false } = {}, from = this.at) {
     from = from || this.at
     if (!from) return null
     const shaky = (k) => avoidUnstable && this.unstable.has(String(k).split('#')[0])
-    if (this.untried(from).length && !shaky(from)) return { path: [], room: from }
+    const dark = (k) => avoidDark && !!(this.rooms.get(k) || {}).dark
+    // `noDarkWays` is the light state of the agent doing the asking: a way the
+    // room's own prose labelled dark is not owed work while nothing burns in
+    // hand — refusing it is the invariant, not an abandoned frontier. Without
+    // this, an agent that correctly sealed the Kitchen's dark staircase still
+    // reads as "gave up with work left", because the sealed way sits in
+    // `untried()` until walked or refused by the game.
+    const owed = (k) => {
+      const room = this.rooms.get(k)
+      if (!room) return 0
+      const un = this.untried(k)
+      if (!noDarkWays || !room.darkWays || room.darkWays.size === 0) return un.length
+      return un.filter((d) => !room.darkWays.has(d)).length
+    }
+    if (owed(from) && !shaky(from) && !dark(from)) return { path: [], room: from }
     const prev = new Map([[from, null]])
     const queue = [from]
     while (queue.length) {
@@ -422,10 +436,10 @@ export class ZorkMap {
       if (!room) continue
       for (const [dir, edge] of Object.entries(room.exits)) {
         if (!edge.to || edge.type === 'blocked') continue
-        if (shaky(edge.to)) continue
+        if (shaky(edge.to) || dark(edge.to)) continue
         if (prev.has(edge.to)) continue
         prev.set(edge.to, { from: cur, dir })
-        if (this.untried(edge.to).length) {
+        if (owed(edge.to)) {
           const path = []
           let k = edge.to
           while (prev.get(k)) { path.unshift(prev.get(k).dir); k = prev.get(k).from }

@@ -321,7 +321,20 @@ export class ZorkExplorer {
     // Counting proven+blocked edges makes every step of the frontier register,
     // so the watchdog only fires when the agent truly is in circles.
     const s = this.map.stats()
-    return this.map.visitedCount * 10 + (s.proven + s.blocked) + (Number(p.score) || 0)
+    const v = this.map.visitedCount * 10 + (s.proven + s.blocked) + (Number(p.score) || 0)
+    // The recover budget is per-stall-episode, not per-run. A healthy agent
+    // stalls a few times over a long run (pacing between already-mapped rooms)
+    // and each stall is resolved by one fallback move. With the budget global,
+    // the third-ever stall — even a harmless one — killed an otherwise healthy
+    // run with work still on the frontier: the 177-command tree death stopped
+    // "stuck — no recovery action" four steps from untried treetop ground.
+    // Advancing progress starts a fresh episode; a truly stuck agent (whose
+    // fallback moves never advance it) still burns the budget and stops.
+    if (v > (this.lastProgress || 0)) {
+      this.lastProgress = v
+      this.recovers = 0
+    }
+    return v
   }
 
   /** The ladder. Returns {skill,args} or null (loop counts it as idle). */
@@ -421,16 +434,23 @@ export class ZorkExplorer {
     //     unverified guess, and Zork punishes guessing gently but persistently:
     //     the way back is not always the way you came.
     for (const dir of this.map.unverified(this.map.at)) {
-      // Never test an assumption by walking into a room we know is dark.
+      // Never test an assumption by walking into a room we know is dark — or
+      // down a way the room's own prose labelled dark and nothing is burning.
       const guess = this.map.rooms.get(this.map.at)?.exits[dir]?.to
-      if (this.wouldEnterDark(guess, p)) continue
+      if (this.wouldEnterDark(guess, p) || this.darkWay(here, dir, p)) continue
       this.pending = { kind: 'move', dir, from: this.map.at }
       return { skill: 'go', args: { dir: SHORT[dir] || dir } }
     }
 
     // 4. the frontier — preferring ground the map can actually hold still.
-    const stable = this.map.nearestFrontier({ avoidUnstable: true })
-    const target = stable || this.map.nearestFrontier()
+    //    avoidDark: a path that routes THROUGH a recorded-dark room is not a
+    //    path, it is a death, so the BFS never offers it unlit. noDarkWays: a
+    //    way the room's own prose labelled dark is not owed work while nothing
+    //    burns in hand — the sealed Kitchen staircase is the invariant, not the
+    //    frontier.
+    const litNow = !!p.extra?.lit
+    const stable = this.map.nearestFrontier({ avoidUnstable: true, avoidDark: true, noDarkWays: !litNow })
+    const target = stable || this.map.nearestFrontier({ avoidDark: true, noDarkWays: !litNow })
     if (target && !stable && !this.reportedShifty) {
       // Nothing is left except more forest, and the forest is where the map broke.
       // Zork ANNOTATES this ("the clearing spins in the forest, and when it stops,
@@ -446,7 +466,7 @@ export class ZorkExplorer {
     }
     if (target) {
       const dir = target.path.length ? target.path[0] : this.map.untried(target.room)[0]
-      if (dir && this.wouldEnterDark(target.room)) {
+      if (dir && (this.wouldEnterDark(target.room) || this.darkWay(here, dir, p))) {
         // A first step into a room we recorded as dark, with no light. Survival
         // outranks curiosity, so try a different branch; if every branch is dark,
         // stop and say so instead of rolling the dice on the grue.
@@ -506,23 +526,25 @@ export class ZorkExplorer {
    */
   fallback(p) {
     const lit = !!p.extra?.lit
+    const here = this.map.at ? this.map.rooms.get(this.map.at) : null
     // 1. the untested hypothesis, nearest first — and never by routing through
-    //    a room recorded dark unless something is burning in hand.
+    //    a room recorded dark, or down a way its prose labelled dark, unless
+    //    something is burning in hand.
     const guess = this.map.nearestUnverified(this.map.at, { avoidDark: !lit })
     if (guess) {
       const dest = this.map.rooms.get(guess.room)?.exits[guess.dir]?.to
-      if (!this.wouldEnterDark(dest)) {
-        const dir = guess.path.length ? guess.path[0] : guess.dir
+      const dir = guess.path.length ? guess.path[0] : guess.dir
+      if (!this.wouldEnterDark(dest) && !this.darkWay(here, dir, p)) {
         this.pending = { kind: 'move', dir, from: this.map.at }
         this.say(`no new ground to walk; testing an untested way: ${guess.dir} from ${guess.room}`)
         return { skill: 'go', args: { dir: SHORT[dir] || dir } }
       }
     }
     // 2. the frontier — what the ladder was supposed to be doing.
-    const target = this.map.nearestFrontier()
+    const target = this.map.nearestFrontier({ avoidDark: true, noDarkWays: !lit })
     if (target) {
       const dir = target.path.length ? target.path[0] : this.map.untried(target.room)[0]
-      if (dir && !this.wouldEnterDark(target.room)) {
+      if (dir && !this.wouldEnterDark(target.room) && !this.darkWay(here, dir, p)) {
         this.pending = { kind: 'move', dir, from: this.map.at }
         this.say(`progress stalled; walking the frontier: ${dir} toward ${target.room}`)
         return { skill: 'go', args: { dir: SHORT[dir] || dir } }
@@ -542,6 +564,21 @@ export class ZorkExplorer {
   wouldEnterDark(roomKey) {
     const room = this.map.rooms.get(roomKey)
     return !!(room && room.dark)
+  }
+
+  /**
+   * The game's own dark labels: a way OUT that THIS room's prose called dark
+   * (`darkWays`). `wouldEnterDark` only knows rooms already stood in; this one
+   * speaks about ways not yet walked, which is where the death in the forest
+   * came from — the frontier offered the Kitchen's dark staircase, the agent
+   * climbed it unlit, and the grue collected the difference. In Zork I every
+   * dark room sits behind one of these labels, so sealing them while nothing
+   * burns in hand is what makes "never enter the dark" an invariant instead of
+   * luck. With a lamp the dark way is the point, so it unlocks with the light.
+   */
+  darkWay(here, dir, p) {
+    if (p.extra?.lit) return false
+    return !!(here && here.darkWays && here.darkWays.has(dir))
   }
 
   /** Survival: light, acquire light, or back out. Order is the whole point. */
@@ -583,10 +620,11 @@ export class ZorkExplorer {
   alternative(p, carrying) {
     const want = ['lamp', 'lantern', 'matches'].find((w) => !has(carrying, w))
     if (!want) return null
-    const target = this.map.nearestFrontier()
+    const here = this.map.at ? this.map.rooms.get(this.map.at) : null
+    const target = this.map.nearestFrontier({ avoidDark: true, noDarkWays: !p.extra?.lit })
     if (!target) return null
     const dir = target.path.length ? target.path[0] : this.map.untried(target.room)[0]
-    if (!dir || this.wouldEnterDark(target.room, dir)) return null
+    if (!dir || this.wouldEnterDark(target.room, dir) || this.darkWay(here, dir, p)) return null
     this.pending = { kind: 'move', dir, from: this.map.at }
     return { skill: 'go', args: { dir: SHORT[dir] || dir } }
   }
