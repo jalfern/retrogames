@@ -183,15 +183,28 @@ export function decideYear(g, ctx) {
         const nearPlant = (x, y) => plantCells.some(([px, py]) => Math.max(Math.abs(px - x), Math.abs(py - y)) <= 8)
         const outOfReach = ctx.zoneQueue.filter(([tool, x, y]) => tool !== T.PARK && !poweredNear(x, y) && !nearPlant(x, y))
         if (outOfReach.length >= 4) {
-            const [fx] = outOfReach[0]
-            const ry = ctx.avenue.y + (ctx.relaySide ? 1 : -1)
-            ctx.relaySide = 1 - ctx.relaySide
+            const [, fx, fy] = outOfReach[0]
+            // the plant must stand beside the avenue THAT zone's row is
+            // served by — not the newest avenue the planner happens to be
+            // opening. Keying on ctx.avenue orphaned the old rows' far cells
+            // every tier beyond the first.
+            const roadRows = [fy - 1, fy + 1].filter((r) => {
+                if (r < 0 || r >= H) return false
+                let roads = 0
+                for (let x = Math.max(0, fx - 6); x <= Math.min(W - 1, fx + 6); x++) {
+                    if (g.grid[idx(x, r)].t === T.ROAD || ctx.roads.has(idx(x, r))) roads++
+                }
+                return roads >= 3
+            })
+            const ay = roadRows.length ? roadRows[ctx.relaySide % roadRows.length] : ctx.avenue.y
+            const ry = ay + (ctx.relaySide % 2 === 0 ? -1 : 1) === fy ? ay + (ctx.relaySide % 2 === 0 ? 1 : -1) : ay + (ctx.relaySide % 2 === 0 ? -1 : 1)
+            ctx.relaySide++
             // a plant needs its own road adjacency: only columns whose
             // neighbouring avenue cell is already ROAD conduct current
-            for (let dx = 0; dx <= 9; dx++) {
+            for (let dx = 0; dx <= 4; dx++) {
                 const cand = [fx + dx, fx - dx].find((sx) =>
-                    grass(g, sx, ry) && N4.some(([ax, ay]) => inB(sx + ax, ry + ay) &&
-                        (g.grid[idx(sx + ax, ry + ay)].t === T.ROAD || ctx.roads.has(idx(sx + ax, ry + ay)))))
+                    grass(g, sx, ry) && N4.some(([ax, ay2]) => inB(sx + ax, ry + ay2) &&
+                        (g.grid[idx(sx + ax, ry + ay2)].t === T.ROAD || ctx.roads.has(idx(sx + ax, ry + ay2)))))
                 if (cand !== undefined) {
                     ctx.queue.push({ tool: T.PLANT, place: [cand, ry] })
                     ctx.plantsPlaced++
@@ -221,7 +234,11 @@ export function decideYear(g, ctx) {
     //    tier needed the queue empty, the queue needed power, the power
     //    needed the tier, and the city sat on idle cash until the deadline.
     const placeable = ctx.zoneQueue.filter(([, x, y]) => g.grid[idx(x, y)].t === T.GRASS && poweredNear(x, y)).length
-    if (!placeable && plants > 0 && can(CFG.cost.plant + 150) && ctx.tier < ctx.tierRows.length &&
+    // dark stall: cells wait in the queue with no power and no plant coming —
+    // that avenue is exhausted as surely as an empty queue (this deadlock
+    // capped one scenario at exactly the row inventory, 408 souls)
+    ctx.darkStall = placeable === 0 ? (ctx.darkStall || 0) + 1 : 0
+    if ((placeable === 0 || ctx.darkStall >= 5) && plants > 0 && can(CFG.cost.plant + 150) && ctx.tier < ctx.tierRows.length &&
         g.year < SCEN[g.sc].deadline - 10) {
         const y2 = ctx.tierRows[ctx.tier]
         if (y2 >= 1 && y2 <= H - 2) {

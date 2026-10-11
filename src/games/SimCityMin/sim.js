@@ -20,7 +20,7 @@ export const BURNABLE = (t) => isZone(t) || t === T.PLANT
 
 export const CFG = {
     yearTicks: 240,          // 4 s per year at 60 Hz
-    powerRange: 12,          // road-graph steps a plant's current travels
+    powerRange: 13,          // road-graph steps a plant's current travels
     fireRadius: 5,           // Chebyshev douse radius of a fire station
     fireYears: 2,
     spreadMod: 5,            // a burning cell ignites a neighbour when (7x+13y+year)%3==0
@@ -50,6 +50,7 @@ function place(g, x, y) {
         if (cell.t < T.ROAD) { g.events.push({ type: 'deny', why: 'NOTHING', x, y }); return false }
         if (g.funds < CFG.cost.doze) { g.events.push({ type: 'deny', why: 'BROKE', x, y }); return false }
         g.funds -= CFG.cost.doze
+        g.spent += CFG.cost.doze
         cell.t = T.GRASS; cell.lvl = 0; cell.burn = 0
         g.events.push({ type: 'doze', x, y, cost: CFG.cost.doze })
         return true
@@ -60,6 +61,7 @@ function place(g, x, y) {
     if (tool !== T.ROAD && !roadAdj(g, x, y)) { g.events.push({ type: 'deny', why: 'NOROAD', x, y }); return false }
     if (g.funds < cost) { g.events.push({ type: 'deny', why: 'BROKE', x, y }); return false }
     g.funds -= cost
+    g.spent += cost
     cell.t = tool
     g.events.push({ type: 'place', t: tool, x, y, cost })
     return true
@@ -155,15 +157,19 @@ function yearTick(g) {
                 const jobF = J > P + 6 ? 1.4 : (J >= P * 0.65 ? 0.45 : -0.9)
                 qv = jobF + (c.lit ? 0.4 : -1.6) + (roadA ? 0 : -1.3) + 0.15 * parks - 0.15 * smog - taxPen(g.tax) + (nearFire ? 0.2 : -0.2)
             } else if (c.t === T.COM) {
-                qv = (P >= c.lvl * 24 + 18 ? 1.15 : -0.85) + (c.lit ? 0.45 : -1.6) + (roadA ? 0 : -1.3) + 0.1 * parks - taxPen(g.tax)
+                qv = (P >= c.lvl * 24 + 16 ? 1.15 : -0.85) + (c.lit ? 0.45 : -1.6) + (roadA ? 0 : -1.3) + 0.1 * parks - taxPen(g.tax)
             } else {
                 qv = 0.85 + (c.lit ? 0.3 : -1.6) + (roadA ? 0 : -1.3) - taxPen(g.tax) - (g.tax > 13 ? 0.6 : 0)
             }
             // growth is BLOCK BY BLOCK: a level only rises when the demand
             // says yes AND the construction cooldown has run out, so a city
             // ratchets toward its job base instead of saturating in a season
-            if (c.gc > 0) c.gc--
-            if (qv >= 0.7 && c.lit && roadA && c.lvl < CFG.maxLvl && c.gc === 0) { c.lvl++; c.gc = CFG.growCooldown }
+            // block-by-block growth with a per-cell phase: every tile builds
+            // on a growCooldown-year beat, but tiles start at different beats
+            // (by position and level). Unphased, a synchronised town PULSEs
+            // half-a-level every cycle — that is what failed the stability pin.
+            const phase = (x * 7 + y * 13 + c.lvl * 2) % CFG.growCooldown
+            if (qv >= 0.7 && c.lit && roadA && c.lvl < CFG.maxLvl && g.year % CFG.growCooldown === phase) c.lvl++
             else if (qv <= -0.4 || !c.lit || !roadA) c.lvl = Math.max(0, c.lvl - 1)
             if (c.lvl > 0) {
                 if (c.t === T.RES) pop += c.lvl * CFG.popPerLevel
@@ -245,7 +251,8 @@ function yearTick(g) {
     g.pop = pop
     g.jobs = jobs
     g.popHistory.push(pop)
-    g.events.push({ type: 'year', year: g.year, income, expense, delta: income - expense, pop, funds: g.funds, events: burns.length })
+    g.events.push({ type: 'year', year: g.year, income, expense, spent: g.spent, delta: income - expense - g.spent, pop, funds: g.funds })
+    g.spent = 0
     if (g.funds < 0) { g.end = 'lose'; g.endWhy = 'BANKRUPT'; g.events.push({ type: 'lose', why: 'BANKRUPT', year: g.year }) }
     else if (g.pop >= S.target) { g.end = 'win'; g.endWhy = 'POP'; g.events.push({ type: 'win', pop: g.pop, year: g.year }) }
     else if (g.year >= S.deadline) { g.end = 'lose'; g.endWhy = 'MISSED'; g.events.push({ type: 'lose', why: 'MISSED', year: g.year, pop: g.pop }) }
@@ -265,9 +272,13 @@ export function newCity(scenIdx = 0, { fundsCut = 0 } = {}) {
             grid.push({ t: ch === '~' ? T.WATER : ch === '#' ? T.ROCK : T.GRASS, lvl: 0, scar: 0, burn: 0, lit: false, gc: 0 })
         }
     }
+    if (S.seed) {
+        for (const [x, y] of S.seed.roads || []) grid[idx(x, y)].t = T.ROAD
+        for (const [x, y] of S.seed.plants || []) grid[idx(x, y)].t = T.PLANT
+    }
     return {
         sc: scenIdx,
-        tick: 0, year: 0, yTick: 0,
+        tick: 0, year: 0, yTick: 0, spent: 0,
         funds: S.funds - fundsCut, tax: S.tax, tool: T.ROAD,
         pop: 0, jobs: 0, income: 0, expense: 0, score: 0,
         grid, events: [], end: null, endWhy: null,

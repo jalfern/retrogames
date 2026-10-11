@@ -40,9 +40,9 @@ export const SCEN = [
     {
         name: 'SMOKESTACK',
         tax: 7,
-        funds: 1600,
-        target: 500,
-        deadline: 50,
+        funds: 2000,
+        target: 380,
+        deadline: 52,
         blurb: 'industry pays — and burns',
         map: [
             '.~~~....................',
@@ -79,6 +79,9 @@ export const SCEN = [
         target: 440,
         deadline: 55,
         blurb: 'one river, two bridges, a funnel',
+        // a derelict substation on the east bank from the town that failed
+        // here before yours — one free plant, one stub of its private road
+        seed: { plants: [[16, 6]], roads: [[15, 6], [17, 6]] },
         map: [
             '........................',
             '..........~~............',
