@@ -19,11 +19,13 @@ fi
 cd "$REPO" || exit 1
 
 # The QA brain runs on the Mac mini (omlxmini) so it never fights the game
-# builder for the studio GPU. If the tunnel/mini is down, fall back local.
+# builder for the studio GPU. If the tunnel/mini is down, SKIP this run rather
+# than falling back to the studio: a second stream on the builder's model
+# disables MTP and drops both to single-digit tok/s. The warden retries later.
 MODEL="omlxmini/Qwen3.8-27B-oQ4e-mtp"
 if ! curl -s -m 3 http://127.0.0.1:18000/v1/models >/dev/null 2>&1; then
-    echo "$(date): mini unreachable, running QA on the local GPU instead" >> "$LOG"
-    MODEL="omlx/Qwen3.8-Flash-Next-oQ5e-mtp"
+    echo "$(date): mini unreachable, skipping QA this run (no studio fallback)" >> "$LOG"
+    exit 0
 fi
 
 PROMPT="You are THE QA MASTER. Open scripts/FORGE-QA.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 60 minutes."
@@ -41,7 +43,7 @@ if [[ "${1:-}" == "--foreground" ]]; then
     exit $STATUS
 fi
 
-nohup /opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1 &
+nohup /opt/homebrew/bin/opencode run --auto --model "$MODEL" "$PROMPT" >> "$LOG" 2>&1 &
 BG=$!
 echo "$(date): kicked QA session pid=$BG log=$LOG" >> "$LOG"
 
