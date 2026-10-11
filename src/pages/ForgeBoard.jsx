@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
@@ -35,10 +35,23 @@ const ForgeBoard = () => {
     // Freshness is stamped when the data ARRIVES, not per render — render must
     // stay pure, and "fresh" means "fresh when we fetched it" anyway.
     const [now, setNow] = useState(0)
+    const lastFetch = useRef(0)
+    const [lastFetched, setLastFetched] = useState(0)
+    const reload = useRef(() => {})
 
     useEffect(() => {
         const id = setInterval(() => setNow(Date.now()), 1000)
         return () => clearInterval(id)
+    }, [])
+
+    // Background tabs are throttled to ~1 timer wake per HOUR by Chrome —
+    // a board left open in a tab lies about the machine by hours unless it
+    // refetches the moment you actually look at it.
+    useEffect(() => {
+        const wake = () => { if (Date.now() - lastFetch.current > 20000) reload.current() }
+        window.addEventListener('focus', wake)
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) wake() })
+        return () => { window.removeEventListener('focus', wake); document.removeEventListener('visibilitychange', wake) }
     }, [])
 
     useEffect(() => {
@@ -62,7 +75,7 @@ const ForgeBoard = () => {
             all.filter(i => !i.pull_request).forEach(i => byNum.set(i.number, i))
             setIssues([...byNum.values()].sort((a, b) => a.number - b.number))
             setPrs(results[4].status === 'fulfilled' ? results[4].value : [])
-            setNow(Date.now())
+            setNow(Date.now()); lastFetch.current = Date.now(); setLastFetched(Date.now())
             setError('')
             const pulse = all.find(i => i.title === 'FORGE PULSE')
             if (pulse) {
@@ -83,6 +96,7 @@ const ForgeBoard = () => {
             } else if (alive) setFeed([])
         }
         load()
+        reload.current = load
         timer = setInterval(load, 600000)
         return () => { alive = false; clearInterval(timer) }
     }, [])
@@ -118,6 +132,10 @@ const ForgeBoard = () => {
                         GAMES BUILT BY THE MACHINE, SHIPPED TO THIS SITE — ONE PR AT A TIME
                     </p>
                     <div className="w-24 h-1 bg-[#00ff00] mt-4 opacity-50"></div>
+                    <div className={`text-[10px] mt-2 tracking-wider ${now - lastFetched > 900000 ? 'text-[#f55] animate-pulse' : 'text-gray-500'}`}>
+                        board data {Math.max(0, Math.round((now - lastFetched) / 1000))}s old
+                        {now - lastFetched > 900000 ? ' — STALE, focus this tab to refresh' : ''}
+                    </div>
                 </div>
 
                 <div className="flex justify-center gap-4 mb-6">
