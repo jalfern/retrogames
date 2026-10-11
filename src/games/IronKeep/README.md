@@ -104,9 +104,14 @@ Pushing a door opens it (mobile-friendly: no "use" required); locked doors refus
 name the key. Enemies shove unlocked doors open on the way through, and the BFS field
 treats `D` as passable but never `L`/`G` — so a locked door genuinely stops the horde.
 
-Known artifact: above a *half*-open door you see the near side's floor/ceiling, not
-the room beyond. A single ray stops at the first solid tile; Wolf3D has the identical
-artifact, and fixing it means portal-receding past the door tile.
+A *half*-open door leaves a see-through gap in the top of its band, and the single DDA
+stops at the door tile — so without care that gap would show the near side's floor/
+ceiling, not the room beyond (Wolf3D ships with exactly this artifact). The render
+**portal-recedes**: after drawing the sinking panel it re-casts the ray past the door
+tile and paints the far wall into the gap, or opaque black when the far wall is past
+fog — never the near side. `fpscheck` pins a door 90% open in front of a door whose
+far wall is past fog and asserts the gap reads ~0, so a regression that repaints the
+near floor there goes red.
 
 ## Enemies
 
@@ -212,8 +217,7 @@ that bug violates — a tap registers, and the cooldown still throttles (2–3 s
 
 - **No vertical look.** Eye height is fixed at 0.5 tiles (Wolf's own limitation);
   `horizon` shifts for screen shake only. Adding pitch means offsetting floor, wall
-  and sprite math consistently — do it as one change or not at all.
-- **Half-open doors show near-side floor** through the gap (see Doors).
+   and sprite math consistently — do it as one change or not at all.
 - **No stairs, slopes, or multi-height sectors** — that is the Doom line, and this
   engine deliberately does not cross it.
 - **Enemies never handle locked doors**: they stop and mill about. Correct, but a

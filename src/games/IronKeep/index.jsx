@@ -1217,6 +1217,9 @@ const IronKeepGame = () => {
                 clearNow: () => { mode = 'clear'; clearT = 0 },
                 openAll: () => { for (const d of doors) { d.lock = null; d.target = 1; d.open = 1 } },
                 killAll: () => { for (const e of enemies) if (e.state !== 'dead') hurtEnemy(e, 9999) },
+                // Remove every enemy from the scene (controlled render probes): a corpse
+                // still draws a sinking sprite, so killAll is not enough for a clean gap.
+                clearEnemies: () => { const n = enemies.length; enemies.length = 0; return n },
                 list: () => enemies.map(e => ({ id: e.id, kind: e.kind, x: +e.x.toFixed(2), y: +e.y.toFixed(2), hp: e.hp, state: e.state, awake: !!e.awake })),
                 props: () => props.map(p => ({ kind: p.kind, x: p.x, y: p.y, gone: p.gone })),
                 fieldAt: (x, y) => field[y * W + x],
@@ -1238,7 +1241,10 @@ const IronKeepGame = () => {
                 // the only way to pin a *mid*-slide frame deterministically for the renderer.
                 setDoor: (i, v) => { const d = doors[i]; if (!d) return null; d.open = v; d.target = v; return { open: +d.open.toFixed(3), target: +d.target.toFixed(3) } },
                 // The live framebuffer as a flat [row*RW+col] array of RGBA-packed u32.
-                pixels: () => Array.from(buf),
+                // Renders first: when the loop is frozen (fpscheck drives it with step(),
+                // which only advances the sim), a passive read returns the *last* rendered
+                // frame, not the current state — so a door pinned mid-slide never showed.
+                pixels: () => { render(); return Array.from(buf) },
             }
         }
 
