@@ -109,6 +109,12 @@ jobs:
       # battery) + six mutants, all in Node.
       - run: npm run lint:missile
       - run: npm run missilecheck
+      # Fifteenth scoped gate: SIMCITY-MIN. Ledger conservation to the cent,
+      # the job-gated growth curve, the disaster script, and the slack rule
+      # (every map re-solved with one fewer plant, one fewer station and
+      # $150 less) — plus seven mutants, all in Node in seconds.
+      - run: npm run lint:sim
+      - run: npm run citycheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
