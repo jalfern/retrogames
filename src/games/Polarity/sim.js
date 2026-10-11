@@ -323,7 +323,7 @@ export function step(gs, input = {}) {
                 gs.charge = 0
                 ev(gs, { type: 'nova', pol: p.pol })
                 if (CFG.novaClear) {
-                    for (const b of gs.enemyShots) gs.score += CFG.score.novaBall
+                    gs.score += CFG.score.novaBall * gs.enemyShots.length
                     gs.enemyShots = []
                 }
                 gs.storms = []
