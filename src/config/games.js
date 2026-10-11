@@ -58,6 +58,7 @@ const PolarityGame = lazy(() => import('../games/Polarity'))
 // the attract demo is the autopilot's proven run, and the slack rule grades it.
 const MissileBattleGame = lazy(() => import('../games/MissileBattle'))
 const SimCityMinGame = lazy(() => import('../games/SimCityMin'))
+const OutpostGame = lazy(() => import('../games/Outpost'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -183,6 +184,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'A city on a fixed-timestep ledger: power travels the ROAD graph (a plant with no wire to your block lights nothing), residents follow JOBS (zone housing without factories and the census stays empty), and the yearly budget must balance with no random bumps to save you. Three maps — a green field, a strip mine with a dead grid, a town the script torches twice and then walks a tornado through. Reach the charter population before the deadline. Every fire, every spread, every dollar is audited offline by a Node harness that also replays each map with one fewer plant, one fewer station and $150 less — the slack rule — and Math.random is banned at import time. The attract demo is the autopilot\'s own proven run, tick for tick.',
         controls: ['Arrows / D-pad: move the cursor', 'Space / A: place the selected tool on the cursor (streets first — power rides the wires)', 'T / B: cycle tool — ROAD, PLANT, RES, COM, IND, PARK, FIRE, DOZE', '[ and ]: nudge the tax — 7% pays best, greed empties the blocks', 'Tap the map to place; ? pauses. 1·2·3 on the title pick a map'],
+    },
+    {
+        path: '/outpost',
+        component: OutpostGame,
+        label: 'OUTPOST',
+        theme: 'dark',
+        description: 'A dwarf-style colony in ASCII, three procedurally-carved depths deep. You are the foreman — you never touch a dwarf: you designate DIG / FARM / RALLY jobs, and idle colonists claim them off a priority queue and A-star to them across the walk graph. Plots ripen, bushes fall to the pick, hauls feed the depot, and every dwarf eats on a hunger clock — an unfed dwarf dies and their job returns to the queue. The beacon stairs sleep in a SEALED rock room: the tunnel front is computed by a 0-1 BFS through stone, and the shortest dig is provable. Every seed is audited offline by a Node harness: generator reachability, A* path-optimality against BFS, job-claim conservation (deaths return claims), a food ledger exact to the unit — and the slack rule: each seed still clears with one fewer dwarf and one fewer ration. The attract demo is the autopilot\'s own proven run, tick for tick.',
+        controls: ['Arrows / D-pad: move the foreman\'s cursor', 'Space / A: post the selected job on the cursor', 'T / B: cycle tool — DIG the rock, FARM the soil, RALLY the beacon stairs', 'Rally stands every living dwarf on the stairs — that is the one state that descends', 'Keep the depot fed: ripe o-plots and bushes * are jobs the world posts for you', 'Tap to designate; ? pauses. 1-4 on the title pick a depth seed'],
     },
     {
         path: '/pong',
