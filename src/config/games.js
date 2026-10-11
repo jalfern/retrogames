@@ -54,6 +54,9 @@ const GalagaGame = lazy(() => import('../games/Galaga'))
 // Polarity: same lesson — the attract demo is the autopilot's own proven run,
 // and the fairness scanner it shares with the harness IS the autopilot.
 const PolarityGame = lazy(() => import('../games/Polarity'))
+// Missile Battle: same lane again — pure step(state,input), zero Math.random,
+// the attract demo is the autopilot's proven run, and the slack rule grades it.
+const MissileBattleGame = lazy(() => import('../games/MissileBattle'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -163,6 +166,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'Two colors, one pilot. An Ikaruga-like shooter where the constant decision is which color to BE: bullets of your color are absorbed and charge the flux meter (a full charge plus a flip = FLUX NOVA), the opposite color kills you — and your shots only kill the opposite color. Walls and storms are telegraphed by the script and audited tick-by-tick by the fairness scanner that ships in the repo: every telegraph has BOTH a position answer and a polarity answer. The REACTOR core answers only to shots opposite its spinning shell, one color per quota, so the flip is the win condition. The attract demo is the autopilot\'s own proven run, tick for tick.',
         controls: ['Arrow Keys / D-pad: Fly the bottom band', 'Space / A: Fire (your shots only kill the OPPOSITE color)', 'X / B button: FLIP POLARITY — the whole game is this one decision', 'Same-color fire is absorbed and charges FLUX — a full charge plus a flip nukes everything except the core shell', 'Telegraph lines mark incoming walls (find the gap) and storms (colorless — move)', 'The clock never wipes a stage: stall it and you pay a fighter and run it again', '?: Pause and read the controls'],
+    },
+    {
+        path: '/missile-battle',
+        component: MissileBattleGame,
+        label: 'MISSILE BATTLE',
+        theme: 'dark',
+        description: 'Missile Command done honestly: every warhead that ever falls is named in a SCRIPT — tick, column, target, split — audited offline by a Node harness that also re-solves every wave with one fewer interceptor in every battery (the slack rule) and freezes Math.random to prove nothing here is luck. ICBMs MIRV into siblings that converge on one crater, bombers drop on the run, smart bombs weave; your blast chains, so the answer to saturation is geometry. Three barrages; between waves the cities rebuild; lose all six and the map goes dark. The attract demo is the autopilot\'s own proven run, tick for tick.',
+        controls: ['TAP the sky / arrows + Space: put an interceptor exactly there — the nearest battery in range fires it', 'The blast kills anything it touches and every kill chains a smaller blast — clusters die together', 'Warheads SPLIT, bombers DROP, smart bombs WEAVE — all scripted, all readable, never random', '10 interceptors per battery per wave; the outer batteries have limited arcs, the center covers the map', '?: Pause and read the controls'],
     },
     {
         path: '/pong',

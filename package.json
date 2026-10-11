@@ -67,6 +67,9 @@
     "lint:polar": "eslint src/games/Polarity src/components src/utils src/config src/main.jsx scripts",
     "polarcheck": "node scripts/polarcheck.mjs",
     "polarplay": "node scripts/polarplay.mjs",
+    "lint:missile": "eslint src/games/MissileBattle src/components src/utils src/config src/main.jsx scripts",
+    "missilecheck": "node scripts/missilecheck.mjs",
+    "missileplay": "node scripts/missileplay.mjs",
     "forgeplay": "node scripts/forgeplay.mjs"
   },
   "dependencies": {

@@ -32,7 +32,6 @@ export const CFG = {
     spans: [[0, 104], [40, 216], [152, 256]],
 }
 
-let eid = 1
 
 // ti indexes TARGETS; a dead target keeps its column (the impact reads as a
 // dud on the rubble — legality never depends on a living victim).
@@ -49,7 +48,7 @@ function nearestTarget(g, x) {
 }
 
 function pushEnemy(g, e) {
-    e.id = eid++
+    e.id = g.nextId++
     e.t = 0
     e.alive = true
     g.enemies.push(e)
@@ -82,16 +81,17 @@ function spawnEnemy(g, spec) {
 // which is what makes a chain blast worth engineering.
 function spawnChild(g, parent, k) {
     const n = parent.split.n
-    const tgt = parent.ti >= 0 && parent.ti < 6 && g.cities[parent.ti].alive
-        ? CITIES[parent.ti]
+    const ti = parent.ti >= 0 && parent.ti < 6 && g.cities[parent.ti].alive
+        ? parent.ti
         : nearestTarget(g, parent.x)
-    const tx0 = Math.max(2, Math.min(W - 2, (tgt ?? 128) + (k - (n - 1) / 2) * 10))
+    const tgt = ti >= 0 ? TARGETS[ti] : parent.x
+    const tx0 = Math.max(2, Math.min(W - 2, tgt + (k - (n - 1) / 2) * 10))
     const spd = parent.split.spd * (1 + (k - (n - 1) / 2) * 0.16)
     const vy = (CFG.groundY - parent.y) / spd
     return pushEnemy(g, {
         kind: 'icbm', x: parent.x, px: parent.x, y: parent.y,
         vx: (tx0 - parent.x) / spd, vy,
-        ti: tgt ?? -1, split: null, amp: 0, drops: null,
+        ti, split: null, amp: 0, drops: null,
         spawnAt: g.playT, score: CFG.score.icbm,
     })
 }
@@ -112,7 +112,7 @@ function fire(g, tx, ty) {
     b.ammo--
     const sx = b.x, sy = CFG.groundY + 8
     const eta = Math.max(1, Math.round(Math.hypot(tx - sx, ty - sy) / CFG.ivSpeed))
-    g.intc.push({ id: eid++, x: sx, y: sy, tx, ty, vx: (tx - sx) / eta, vy: (ty - sy) / eta, eta, t: 0, bat: bi })
+    g.intc.push({ id: g.nextId++, x: sx, y: sy, tx, ty, vx: (tx - sx) / eta, vy: (ty - sy) / eta, eta, t: 0, bat: bi })
     g.fired++
     g.firedBy[bi]++
     g.events.push({ type: 'ifire', x: sx, y: sy, tx: Math.round(tx), ty: Math.round(ty), bat: bi, tick: g.tick })
@@ -121,7 +121,9 @@ function fire(g, tx, ty) {
 
 function addBlast(g, x, y, r, chain = false) {
     if (g.blasts.length >= CFG.maxBlasts) g.blasts.shift()
-    g.blasts.push({ x, y, r: 0, rMax: r, age: 0, state: 'grow', chain })
+    // a blast is born ALREADY breathing: r=0 would be filtered out before
+    // its first growth tick — a chain blast born invisible never kills
+    g.blasts.push({ x, y, r: CFG.blastGrow, rMax: r, age: 0, state: 'grow', chain })
 }
 
 const freshWave = (g, wave) => {
@@ -136,12 +138,11 @@ const freshWave = (g, wave) => {
 }
 
 export function makeGame(wave = 0) {
-    eid = 1
     const g = {
         tick: 0, playT: 0, wave: 0, phase: 'banner', pT: CFG.bannerLen,
         score: 0, end: null,
         cities: [], bases: [], aim: { x: 128, y: 90 },
-        fireHeld: false, fired: 0, firedBy: [0, 0, 0], kills: 0,
+        fireHeld: false, fired: 0, firedBy: [0, 0, 0], kills: 0, nextId: 1,
         enemies: [], intc: [], blasts: [], queue: [], events: [],
     }
     freshWave(g, wave)
