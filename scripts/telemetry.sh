@@ -47,13 +47,27 @@ FREE=$(memory_pressure -Q 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d '%')
 # The Mac mini answers over the ssh tunnel (launchd com.jalfern.tunnel);
 # remote returns two plain numbers (cpu%, omlx-server rss MB) so no JSON
 # survives more than one shell boundary. Unreachable => zeros, board shows flat.
+LOAD=$(sysctl -n vm.loadavg | awk '{print $2}')
+FREE=$(memory_pressure -Q 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d '%')
+
+# The Mac mini answers over the ssh tunnel (launchd com.jalfern.tunnel);
+# remote returns two plain numbers (cpu%, omlx-server rss MB) so no JSON
+# survives more than one shell boundary. Unreachable => zeros, board shows flat.
 MC=0
 MR=0
-read -r MC MR <<< "$(ssh -o ConnectTimeout=2 -o BatchMode=yes sfm5mini \
+
+# The mini answers over the ssh tunnel (launchd com.jalfern.tunnel): two plain
+# numbers (cpu%, omlx-server rss MB). NO `read` here — this script is piped to
+# zsh -s by launchd, and read would eat the rest of the script as stdin
+# (that silent death cost the board 14 h of vitals, 2026-10-11). And ssh is
+# nailed shut: ssh inherits the script's stdin, so the remote shell swallows
+# every command that comes after it unless its stdin is closed.
+MINI=$(ssh -n -o ConnectTimeout=2 -o BatchMode=yes sfm5mini \
 'p=$(pgrep -f omlx-server | head -1); c=$(ps -A -o %cpu= | awk "{s+=\$1} END {printf \"%.0f\", s}"); r=0; [ -n "$p" ] && r=$(ps -p $p -o rss= | awk "{print int(\$1/1024)}"); echo $c $r' \
-2>/dev/null)"
-MC=${MC:-0}
-MR=${MR:-0}
+2>/dev/null </dev/null)
+MC=${MINI%% *}; MR=${MINI##* }
+case "$MC" in (''|*[!0-9]*) MC=0;; esac
+case "$MR" in (''|*[!0-9]*) MR=0;; esac
 
 S="{\"t\":\"$(date +%H:%M:%S)\",\"load\":$LOAD,\"free\":${FREE:-0},\
 \"tasks\":{$(task 'opencode run.*THE FORGE' forge),$(task 'opencode run.*QA MASTER' qa),\
