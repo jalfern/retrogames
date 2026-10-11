@@ -6,26 +6,37 @@
 //
 // Usage:
 //   npm run evocheck
-//   node scripts/evocheck.mjs [--gens 60] [--min-fit 900] [--trials 1] [--no-hud]
+//   node scripts/evocheck.mjs [--gens 60] [--min-fit 200] [--trials 1] [--no-hud]
 //
 //   --gens     generations to fast-forward headlessly per trial (default 60)
-//   --min-fit  fail if best fitness after --gens is below this (default 900)
+//   --min-fit  fail if best fitness after --gens is below this (default 200)
 //   --trials   independent fresh populations (default 1; each wipes localStorage)
 //
 // Fitness reference (see evoFitness in the engine): distance + coins*10 + bonuses,
 // plus 6000 for a flagpole win.
 //
 // Measured baseline on this machine, COLD start (localStorage cleared, seeded
-// population), 60 generations, repeat runs: fitness 1696 / 2102 / 2513 / 2558 /
-// 2872 / 2912 / 3160 / 4566, bestCol 103-134, champion replay col 94-122.
-// So --min-fit and col >= 90 are smoke tests with headroom, not performance bars. The
-// real gate is the learning RATIO below (final >= 1.5x gen 1), which is scale-free.
-// Measured cold-start fitness across identical builds: 1165, 1658, 1686, 2999 — the GA is
-// stochastic, so a floor raised into that spread (1500 did) fails at random and teaches
+// population), 60 generations, CLEAN fitness (post #107), repeat runs: final
+// 299 / 375 / 323 / 390, bestCol 106-128, champion replay col 88-111. So --min-fit
+// and col >= 90 are smoke tests with headroom, not performance bars. The real gate
+// is the learning RATIO below (final >= 1.5x gen 1), which is scale-free. The GA is
+// stochastic, so a floor raised into the measured spread fails at random and teaches
 // nothing except to distrust the suite.
-// (Piranha plants cost the GA ~25 columns: the pre-plant baseline was ~1980-2820 at
-// col 141-147. The wall sensors commit the jump ~4 tiles out, so the agent is already
-// descending as it crosses a plant pipe and clips its head — see README.)
+//
+// #107 (the fix this file measures against): evoTrain used to load episodes with
+// loadRoom(), which does NOT reset coins/score/lives (only resetGame does). Coins
+// accumulated across all 1440 episodes, so the fitness history measured cumulative
+// coins (the old 1165-4566 "baselines" were coin totals, not progress), the
+// coins % 100 1-up fired mid-training, and within a generation each genome's
+// fitness included every earlier genome's coins — the GA selected by population
+// slot, not merit. evoTrain/evoProbe now go through startEpisode/resetGame (the
+// live path). Old header numbers were measured under that corrupted formula.
+//
+// (Piranha plants cost the GA ~25 columns: the pre-plant baseline was at
+// col 141-147. The wall sensors commit the jump ~4 tiles out, so the agent is
+// already descending as it crosses a plant pipe and clips its head — see README.
+// The plateau itself and why the fitness signal cannot teach past it are
+// documented in the README, Option 4 / Known gaps.)
 //
 // Prereqs: `npm install`, a running `npm run dev`.
 
@@ -34,7 +45,7 @@ import { opt, requireDevServer, launch, openMario, Report, URL_DEFAULT } from '.
 const args = process.argv.slice(2)
 const url = opt(args, '--url', URL_DEFAULT)
 const gens = +opt(args, '--gens', 60)
-const minFit = +opt(args, '--min-fit', 900)
+const minFit = +opt(args, '--min-fit', 200)
 const trials = +opt(args, '--trials', 1)
 const hudCheck = !args.includes('--no-hud')
 const WIN_FITNESS = 6000   // flagpole bonus — reference only; a win is MEASURED by replay, not inferred
