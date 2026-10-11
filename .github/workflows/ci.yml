@@ -115,6 +115,13 @@ jobs:
       # $150 less) — plus seven mutants, all in Node in seconds.
       - run: npm run lint:sim
       - run: npm run citycheck
+      # Sixteenth scoped gate: OUTPOST. The job-queue contract (claims are
+      # one-to-one and RETURN when a dwarf dies), A* proven optimal against
+      # BFS, the sealed-beacon generator (a stroll win is a failure), the
+      # food ledger to the unit, the slack rule (every seed still clears
+      # with one fewer dwarf and one fewer ration) — plus seven mutants.
+      - run: npm run lint:outpost
+      - run: npm run outpostcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -164,6 +171,10 @@ jobs:
           SHOT_CHANNEL: chromium
       - name: SimCity-Min smoke (real keys, pixels vs the road graph, disasters that wait for a city)
         run: npm run cityplay
+        env:
+          SHOT_CHANNEL: chromium
+      - name: Outpost smoke (real keys, pixels vs the job queue, a dwarf digs on camera)
+        run: npm run outpostplay
         env:
           SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)

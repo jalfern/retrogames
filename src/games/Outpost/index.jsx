@@ -286,12 +286,7 @@ const OutpostGame = () => {
                 setTool: (ti) => { toolIdx = ((ti % TOOLS.length) + TOOLS.length) % TOOLS.length },
                 designate: (x, y, ti) => { if (ti !== undefined) toolIdx = ti; designTap = { x, y } },
                 ticks: (n) => { for (let k = 0; k < n && !gs.end; k++) doSim({}) },
-                planRun: () => {
-                    for (let k = 0; k < 60 * 60 * 6 && !gs.end; k++) {
-                        const inp = decideTick(gs)
-                        doSim(inp)
-                    }
-                },
+                drive: (n) => { for (let k = 0; k < n && !gs.end; k++) doSim(decideTick(gs)) },
             }
             mountDbg({
                 title: 'OUTPOST',

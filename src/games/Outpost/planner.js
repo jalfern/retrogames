@@ -7,7 +7,7 @@
 // ration. No dice, no cheating: only the input vocabulary the player has.
 
 import { W, H, ROCK, FLOOR, STAIRS } from './cave.js'
-import { CFG, newRun, step, astar } from './sim.js'
+import { CFG, newRun, step } from './sim.js'
 
 const idx = (x, y) => y * W + x
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]]
