@@ -1,87 +1,68 @@
-# STATE.md — 2026-10-11 (OUTPOST session end)
+# STATE.md — 2026-10-11 (PAPERS session end)
 
 ## Where things stand
-**#75 GAME 11 — OUTPOST IS LIVE at jalfern.com/retrogames/outpost**
-(PR #136, squash cf901cb, `shipped`, issue closed). Arcade is 28 titles.
-**Next session: claim the oldest `game-queue`** — head is #76
-Papers-Please-Min (then #77 Lode Runner, #79 WWI Dogfight, #78 Arena
-Archery, #82 BensMagicBugLife, #118 Minesweeper). Do NOT trust older
-STATE notes naming a head — this queue was re-sorted by createdAt, which is
-how #75 beat #77 (the WARDEN comment on #75 also said a session was kicked
-for it and never showed).
+**#76 GAME 12 — PAPERS, PLEASE-MIN IS LIVE at jalfern.com/retrogames/papers-please**
+(PR #140, squash 5153096, `shipped`, issue closed). Arcade is 29 titles.
+**Next session: claim the oldest `game-queue`** — head is #77 Lode Runner
+(then #79 WWI Dogfight, #78 Arena Archery, #82 BensMagicBugLife, #118
+Minesweeper). `pgrep -fl "opencode run"` first — QA MASTER (pid varies,
+main checkout) was live again this session; use a worktree lane.
 
 | since last STATE | what |
 |---|---|
-| #75 / `forge-outpost` | Four-module colony sim: `cave.js` (seeded mulberry32, rooms chained by construction, beacon room SEALED — layouts whose beacon is already walkable are retired by the generator itself), `sim.js` (job queue `pending→claimed→resolved exactly once`, A* pinned to BFS-exactness, hunger clock, food ledger `depot+carry+eaten+rotten == start+harvested` every tick), `planner.js` (greedy foreman: farms, 0-1-BFS tunnel front, rally — its proven run IS the attract demo), shell + ASCII canvas. Contract: every seed clears with one fewer dwarf AND one fewer ration. |
-| harnesses | `outpostcheck` 626 Node checks + 7 mutants (`--mutate`), `outpostplay` 22 Chrome checks real-keys-only. Gates: `lint:outpost` + `outpostcheck` in static; `outpostplay` in smoke. |
+| #76 / `forge-papers` | Border-gate rule engine: `rules.js` decide(view)/judge(truth) twins that must never merge — the booth can only convict on printed witnesses; `gen.js` builds every applicant twice (person/truth) with the iron rule "truth−paper disagreement ⇒ the wall prints the witness"; `sim.js` day loop (3 strikes, 7 days, CURFEW wakes day 7 after the rulebook-audit caught day 7 as a no-op). 7 trap species scheduled by construction (coverage is a construction, not a hope). |
+| harnesses | `paperscheck` 6237 checks + 7 mutants (`--mutate`), `papersplay` 19 Chrome checks real-keys-only. Gates: `lint:papers` + `paperscheck` in static; `papersplay` in smoke. |
 
 ## What is playable right now
-- jalfern.com/retrogames/outpost — prod verified: route 200, bundle
-  `index-CddBr-Wv.js` contains the game.
-- Attract replays the autopilot's proven run tick-for-tick; seeds 0-7 win
-  base AND slack runs.
+- jalfern.com/retrogames/papers-please — prod verified: bundle contains
+  PapersPleaseMin, route 200, static+smoke+Vercel all green.
+- Attract replays the perfect inspector's own proven week tick for tick.
 
 ## What changed this session (the parts that matter next time)
-- **A false receipt in a commit message is still a lie.** Mid-session I
-  committed "harness 180 checks + 9 mutants" when the harness did not exist
-  yet; the correction went in the next commit + PR comment. Commit real
-  receipts only, after the run that earns them.
-- **Two mutants survived because the TESTS were lies** (pattern continues):
-  a greedy-A* mutant that was secretly Dijkstra (dropped `g`, not `h` — still
-  optimal, unkillable by BFS-equality by construction), and a FARM_FOOD=0
-  mutant on a bush-rich fixture whose farm branch never ran. And one REAL
-  sim bug the live integrity scan only caught after `release()` was leaked:
-  resolved jobs kept their claims; runs still WON while the queue rotted.
-- **Pixels need windows, not points.** Sampling one pixel at a glyph baseline
-  hit the cursor stroke/tool label (an "orange rock"). `outpostplay` now
-  classifies a 9x16 cell window into cool-rock/warm-floor/gold counts; the
-  CI runner (software raster) paints FEWER pixels than a laptop — the
-  attract check is a whole-canvas census, not one cell.
-- **`dig` targets rock and nobody stands on stone**: the digger paths to the
-  ADJACENT open cell (`digX/digY` = swing target). And a dig destination that
-  opens into the sealed beacon room is what makes "dug==0 win" a red check.
-- `gh pr merge --squash` STILL fails with main checked out in another
-  worktree — merged again via `gh api PUT .../merge merge_method=squash
-  delete_branch=true` after `--watch --fail-fast` came back green (twice).
-- QA MASTER (pid 95327) was LIVE all session in the main checkout (it
-  shipped #135/#137 around me). Main checkout remains dirty with its files;
-  the whole session ran in worktree `retrogames-outpost` (node_modules
-  symlinked) — removed after merge.
+- **The driver caught two bugs the Node suite structurally cannot see:**
+  stamp color meant correctness (ungradeable for "deny = red") and
+  `current()` walked off the queue end at victory — that would have
+  crashed the canvas one frame after every win. Model-vs-wall is the
+  Node gate's job; wall-vs-real-keys is play's job; neither substitutes.
+- **A seventh mutant survived and said WHY: nothing consumes `stateHash`,**
+  so a hash-blind mutant is décor. Replaced with the strike-wall mutant
+  (chaos must fall day 1). Never write a check whose subject is unread.
+- **Generator fairness is caught by its own audit:** EXPIRED's trap
+  species provably lands ≤ day 4 by the schedule — which is exactly what
+  keeps the day-7 CURFEW doctrine-clash from convicting an innocent;
+  verified, and `day.wanted.length <= 4` is pinned ("unfair by furniture").
+- CI smoke is now ~7 play suites serial (~9 min). Fine, still advisory.
 
 ## Gates (all green at merge)
-16 scoped lints (+`lint:outpost`) · `outpostcheck` 626/626 + 7/7 mutants ·
-`outpostplay` 22/22 local twice AND green on the smoke runner · static job
-green · build ✓ · prod HTTP 200 + bundle contains OUTPOST.
+17 scoped lints (+`lint:papers`) · `paperscheck` 6237/6237 + 7/7 mutants ·
+`papersplay` 19/19 local AND on the smoke runner · static job green ·
+build ✓ · prod HTTP 200 + bundle contains the game.
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Claim #76 Papers-Please-Min (oldest by createdAt). Rule engine + a prover
-   that no generated paper is unfair — a natural sibling of outpostcheck's
-   ledger/audit idiom. `pgrep -fl "opencode run"` first; worktree lane if the
-   main checkout is dirty.
-2. OUTPOST is shipped — do not polish. Its gates: `lint:outpost` +
-   `outpostcheck` (static), `outpostplay` (smoke). Honest gaps are written
-   in `src/games/Outpost/README.md` (bush economy generous; ore is score
-   only; dwarves share tiles).
-3. `outpostplay` gold-pixel threshold is >4 (got 9 on the runner, 73 on a
-   laptop). If it ever flakes, widen the window, do not lower the bar.
+1. Claim #77 Lode Runner (oldest). Its natural harness idiom: a solver
+   that proves every level's rope/win plan, mutant-killed — sibling of
+   outpostcheck/lemcheck. `-- --mutate` per the pattern.
+2. PAPERS is shipped — do not polish. Honest gaps are in
+   `src/games/PapersPleaseMin/README.md` (serial-date calendar; portrait
+   is décor; day 7's queue is long by design and slack-proven).
+3. papersplay seeds: seed 2 (Digit3) runs the whole week in one evaluate;
+   if the smoke runner ever times out there, split the week into halves —
+   do not lower any assertion.
 
 ## Three questions for Jon
-1. Queue order: I claimed #75 over STATE's named #77 because the playbook
-   says oldest-first and #75 predates it by seconds + the WARDEN comment.
-   Should STATE's "next session claim X" line override createdAt order?
-2. The smoke job runs the full browser suite serially (~4 min now). Should
-   each play-suite be its own CI job so one flaky canvas doesn't hide a
-   green board?
-3. `@` dwarf is gold while carrying, white otherwise — QA's QA Master
-   session might make a fine consumer for a "watch the colony" debug view.
-   Worth a DebugKit PROGNOSIS button that runs `plan()` on the live state
-   and prints winnable-or-not? (It exists; it is unproven in a browser.)
+1. Day-7 CURFEW harshly outranks "expires TODAY is valid" where they meet
+   (prover stays green, generator guarantees the clash is invisible).
+   Cute realism or should laws never contradict in your UI?
+2. The `/forge` floor could show "traps per day" per week — the number
+   the slack rule lives on. Worth a small board panel?
+3. `runDay`/`runToEnd` DEV hooks drive whole days through the same act()
+   as keys. Is the "keys only for the graded part" convention right, or
+   should play drive the full 63 stamps key-by-key (~+40 s smoke)?
 
 ## Lineage
-AGENTS.md honored: read STATE first, claimed by oldest-queue order with a
-comment explaining the deviation, one game, 4 checkpoint pushes with
-one-line issue comments, harness proven able-to-fail (7/7 mutants + a
-manual `release()` break), merge only via checks-watch-then-squash (API
-form for the worktree lock), prod verified, STATE via PR to main (never a
-direct push). Rule 4: seven straight sessions touching `src/games/**`.
-Ran ~2h50m — inside the box.
+AGENTS.md honored: read STATE first, claimed #76 by oldest-queue order
+(commented), one game, 4 checkpoint pushes with issue handoffs, harness
+proven able-to-fail (7/7 mutants; one mutant replaced because it was
+decorate), merge only via checks-watch-then-squash, prod verified, STATE
+via PR to main. Rule 4: eight straight sessions touching `src/games/**`.
+Ran ~2h55m — inside the box.
