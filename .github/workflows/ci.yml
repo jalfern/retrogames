@@ -104,6 +104,11 @@ jobs:
       # the attract demo an honest replay instead of theatre.
       - run: npm run lint:polar
       - run: npm run polarcheck
+      # Fourteenth scoped gate: MISSILE BATTLE. Script audit + frozen random +
+      # the slack rule (every wave re-solved with one fewer interceptor per
+      # battery) + six mutants, all in Node.
+      - run: npm run lint:missile
+      - run: npm run missilecheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -145,6 +150,10 @@ jobs:
           HEIST_LITE: "1"
       - name: Polarity smoke (real keys, pixels graded against physics)
         run: npm run polarplay
+        env:
+          SHOT_CHANNEL: chromium
+      - name: Missile Battle smoke (real keys, lead-aimed shots, pixels vs physics)
+        run: npm run missileplay
         env:
           SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)
