@@ -113,30 +113,66 @@ reloads. HUD shows `GEN · BEST`, a distance progress bar with a red best-ever m
 `»»` turbo / `▶ SHOWCASE` tag.
 
 **Honest baseline** (cold start, `localStorage` cleared, seeded population, this machine,
-60 generations):
+60 generations, **clean** fitness — the fix and the old corrupted numbers are documented
+below):
 
 | | fitness | bestCol | champion replay reaches |
 |---|---|---|---|
-| before plants | 1981 / 2202 / 2422 / 2819 | 141–147 | col ~140 |
-| **with plants** | 1696 / 2102 / 2513 / 2558 / 2872 / 2912 / 3160 / 4566 | 103–134 | col 94–122 |
+| **with plants** | 299 / 375 / 323 / 390 | 106–128 | col 88–111 |
 
-So plants cost the GA roughly **25 columns**. It has never finished 1-1: the flagpole is col
-174. Two known contributors, both measurable:
+It has never finished 1-1: the flagpole is col 174. Two known contributors, both measurable:
 
 1. **The seed commits its jump too early.** `seedGenome` weights the wall sensor at +4 tiles
    (`in[11]`), which is right for pits and wrong for a plant pipe — the agent is already
-   *descending* as it crosses the pipe and clips the plant's head. The autopilot proves the
+   *descending* as it crossed the pipe and clips the plant's head. The autopilot proves the
    jump wants to happen at ~2.75 tiles instead.
 2. **No overhead/ceiling lookahead**, and `evolveDrive` gates jumping on `onGround` *and*
    subtracts `-0.3` per jump when nothing dangerous is sensed — a gradient that discourages
    the staircase hop (relaxed for plants via `inp[22]`/`inp[23]`).
 
+**#107 — the plateau, and why the fitness signal cannot teach past it.** The pre-fix table
+here (fitness 1696–4566, bestCol 103–134, "plants cost ~25 columns") was measured under a
+corrupted signal: `evoTrain` loaded episodes with `loadRoom()`, which does **not** reset
+`coins`/`score`/`lives` (only `resetGame()` does). Coins accumulated across all 1440
+episodes, so the fitness history measured *cumulative coins* (the 1165–4566 spread was a
+coin total, not progress — which is also why "identical builds" disagreed so wildly), the
+`coins % 100` 1-up fired mid-training, and within a generation each genome's fitness
+included every earlier genome's coins, so the GA selected by **population slot** instead of
+merit. `evoTrain`/`evoProbe` now go through `startEpisode`/`resetGame` — the same path the
+live game uses — and the numbers above are the first honest ones.
+
+With the signal cleaned, the plateau remains, and its shape is now measurable (dense
+`evoProbe` trace: `npm run evoprobe -- --gens 60 --best --trace`):
+
+- The champion stalls in the **late pipe corridor** (cols 101–152: plant on the 4-tile
+  pipe at 101, goombas 108/110, pipes 118/129/140, plant 129). Its failure mode is a
+  **hop loop**: with an enemy within 44 px the jump output stays "justified", the
+  `-0.3` air-lock penalty never fires, and the agent bounces in place until the 1500-step
+  episode cap — `state=play`, not dead.
+- The plant makes waiting mandatory, not optional: out of its 4-tile pipe its head sits
+  ~6.5 tiles up, above the ~5-tile jump apex, and it is out for ~64% of its 180-frame
+  cycle — and `in[22]` (pout) is *saturated* for 72 of those frames, so the phase the
+  agent must wait for is barely visible to the net.
+- So crossing the corridor is a **compound timing problem** (plant phase × goomba
+  approach × pipe jump), and a 24-genome pure GA with a scalar distance reward cannot
+  coordinate it: progress beyond ~col 110 is a rare stochastic event (a lucky phase), too
+  sparse for selection to climb, while the hop loop is a stable attractor that keeps
+  `maxCol` high enough to win locally. The level itself is clearable — the hand-coded
+  autopilot (option 3) clears 1-1 with all three plants — so the blocker is the
+  controller/learning pair, not the geometry.
+- What was tried and ruled out (measured, not asserted): super-linear distance shaping
+  (`col + col²/50`, making 10 columns of progress worth ~56 fitness instead of ~10) left
+  the frontier unchanged (bestCol 102–119 vs 106–128) — selection pressure is not the
+  bottleneck; the policy is.
+
 > Earlier notes here claimed `evoTrain(60)` reaches ~5500. That was a **warm** run — the
-> persisted-genome-in-`localStorage` path, which compounds across reloads. A cold CI-style
-> run tops out nearer 2500. `npm run evocheck` measures the cold number, asserts ≥900 plus a 1.5x gain over its own gen-1, and
-> **replays** the champion to report the column it truly reaches — it no longer infers a win
-> from `fitness >= 6000`, because that inference once reported a flagpole clear that a replay
-> could not reproduce.
+> persisted-genome-in-`localStorage` path, which compounds across reloads (and the old cold
+> numbers, 1165–2999, were the corrupted cumulative-coin totals above). `npm run evocheck`
+> measures the cold number, asserts ≥200 (a smoke floor below the measured 299–390 spread —
+> a floor inside the spread fails at random) plus a 1.5x gain over its own gen-1 (the
+> real, scale-free gate), and **replays** the champion to report the column it truly
+> reaches — it no longer infers a win from `fitness >= 6000`, because that inference once
+> reported a flagpole clear that a replay could not reproduce.
 
 ### Gotchas
 
@@ -214,7 +250,7 @@ is the classic way to ship a firebar that kills you off-screen. And fire **kills
 | `npm run autopilotcheck` | option 3 clears 1-1 twice — as it plays (must reach Fire Mario) and with fire taken away (must jump the plants) |
 | `npm run plantcheck` | plant cycle, hitbox==emerged-part coupling, hurts-only-when-out, safe-when-retracted, not stompable |
 | `npm run levelcheck` | geometry audit of every world: no pit wider than a jump, a landing chain that reaches the flagpole, firebar clearance, lava over real holes |
-| `npm run evocheck` | option 4 learns (cold-start fitness ≥900 after 60 gens, and ≥1.5x its own gen-1) + the evolve HUD actually renders |
+| `npm run evocheck` | option 4 learns (clean cold-start fitness after 60 gens, and ≥1.5x its own gen-1 — the ratio is the real gate, the GA is stochastic; post-#107 the fitness is per-episode, not cumulative) + the evolve HUD actually renders |
 | `npm run evoprobe` | per-genome diagnostics: named hand-built controllers, random floor, and the evolved champion (`--preset`, `--random N`, `--best`, `--trace`) |
 | `npm run audcheck` | chiptune engine steps + produces an `AnalyserNode` signal |
 | `npm run shot -- ...` | screenshot capture (see `AGENTS.md`) |
@@ -259,9 +295,12 @@ symbol name.
 
 ## Known gaps / next steps
 
-- **Evolve never finishes 1-1** (champion replay col 94–122 vs flagpole 174). Plants moved it
-  backwards ~25 columns; the seed's +4-tile wall jump is the first thing to attack, and
-  `npm run evoprobe -- --preset plant-jumper --trace` is the tool for it.
+- **Evolve never finishes 1-1** (champion replay col 88–111 vs flagpole 174, clean numbers
+  post-#107 — see *Option 4* for the full causal analysis: the fitness signal is now honest,
+  and the remaining blocker is the hop-loop attractor + plant-phase timing the 24-genome GA
+  cannot learn). The seed's +4-tile wall jump and the air-lock penalty are the levers to
+  attack; `npm run evoprobe -- --gens 60 --best --trace` (dense trace: power, plant phase,
+  nearest foe) is the tool.
 - **Autopilot grazes one plant in the no-fire pass** (col 46, feet ~12px below the head, costs
   power not a life). Root cause is a level-level conflict, not a formula bug: the goomba at
   col 41 forces a hop that lands ~15px past the last usable take-off for the col-46 pipe. Every

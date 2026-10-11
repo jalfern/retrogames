@@ -951,13 +951,19 @@ const SuperMarioGame = () => {
             startEpisode(0)
         }
         const resetEvolve = () => { try { localStorage.removeItem(EVO_KEY) } catch { /* ignore */ }; startEvolve() }
-        // fast, non-rendered training used only by the DEV hook to verify learning
+        // fast, non-rendered training used only by the DEV hook to verify learning.
+        // Episodes must go through startEpisode (the live path), not loadRoom: loadRoom
+        // does not reset coins/score/lives, so a bare loadRoom let coins accumulate
+        // across all 1440 episodes — fitness then measured cumulative coins (and the
+        // coins % 100 1-up fired mid-training), and within a generation each genome's
+        // fitness included every earlier genome's coins, so the GA selected by slot
+        // instead of merit. That corrupted signal was the plateau's enabler: evocheck
+        // "learning" passed on coin accumulation while bestCol sat at ~110.
         const evoTrain = (gens) => {
             const hist = []
             for (let g = 0; g < gens; g++) {
                 for (let i = 0; i < POP; i++) {
-                    genome = pop[i]; maxCol = 0; epSteps = 0; evoBonus = 0; evoJumpHold = 0; evoH = new Float64Array(NH)
-                    loadRoom(LEVEL_1, false, undefined, { setIndex: 0 }); state = 'play'
+                    startEpisode(i)
                     while (epSteps < EP_CAP && state === 'play') { evolveDrive(); update() }
                     const fit = evoFitness(state === 'win')
                     fitArr[i] = fit
@@ -2066,15 +2072,24 @@ const SuperMarioGame = () => {
                 evolve: () => startEvolve(),
                 evoTrain: (g) => evoTrain(g || 5),
                 evoBest: () => bestEverWeights ? Array.from(bestEverWeights) : null,
-                evoProbe: (w) => {
+                evoProbe: (w, detail) => {
                     const savePop = pop, saveGenome = genome
                     const g = w ? Float64Array.from(w) : randWeights()
                     pop = [g]; genome = g
                     maxCol = 0; epSteps = 0; evoBonus = 0; evoJumpHold = 0; evoH = new Float64Array(NH)
-                    loadRoom(LEVEL_1, false, undefined, { setIndex: 0 }); state = 'play'
+                    resetGame(); state = 'play'
                     let jumps = 0; const trace = []
-                    while (epSteps < 1500 && state === 'play') { evolveDrive(); if (mario.jumpPressed && mario.onGround) jumps++; update(); if (epSteps % 12 === 0 && epSteps > 120) trace.push([Math.round(mario.x / TILE), Math.round(mario.y), Math.round(mario.vy), mario.onGround ? 1 : 0]) }
-                    const r = { maxCol, epSteps, state, jumps, trace: trace.slice(-24) }
+                    const stride = detail ? 4 : 12
+                    while (epSteps < 1500 && state === 'play') {
+                        evolveDrive(); if (mario.jumpPressed && mario.onGround) jumps++; update()
+                        if (epSteps > 120 && epSteps % stride === 0) {
+                            const plant = enemies.find(e => e.alive && e.type === 'plant' && !e.flip && e.x > mario.x - 16 && e.x < mario.x + 160)
+                            const foe = enemies.find(e => e.alive && e.type !== 'plant' && !e.flip && e.x > mario.x - 16 && e.x < mario.x + 120)
+                            if (detail) trace.push([Math.round(mario.x / TILE), Math.round(mario.y), Math.round(mario.vy), mario.onGround ? 1 : 0, mario.power === 'fire' ? 2 : mario.power === 'big' ? 1 : 0, plant ? +plant.out.toFixed(2) : -1, plant ? plant.type : 0, foe ? Math.round(foe.x / TILE) : -1])
+                            else trace.push([Math.round(mario.x / TILE), Math.round(mario.y), Math.round(mario.vy), mario.onGround ? 1 : 0])
+                        }
+                    }
+                    const r = { maxCol, epSteps, state, jumps, trace: trace.slice(detail ? -60 : -24) }
                     pop = savePop; genome = saveGenome
                     return r
                 },

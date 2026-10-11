@@ -415,7 +415,7 @@ model/machine can reproduce it (it is not an external tool):
 | `scripts/autopilotcheck.mjs` | Mario option 3 must clear 1-1 twice: as it plays (must reach Fire Mario) and with fire taken away (must jump the plants). |
 | `scripts/plantcheck.mjs` | Piranha plants: cycle, hitbox == emerged part, hurts only when out, safe when retracted, never stompable. |
 | `scripts/levelcheck.mjs` | Geometry audit of every world in `LEVELS`: no pit wider than a running jump, a landing chain that actually reaches the flagpole, every firebar clear of the tilemap, lava over real holes. Catches the one level bug a screenshot cannot — a jump that is simply impossible. |
-| `scripts/evocheck.mjs` | Mario option 4 must learn (cold-start fitness ≥900 after 60 gens, and ≥1.5x its own gen-1 — the ratio is the real gate, the GA is stochastic) and its HUD must actually render. |
+| `scripts/evocheck.mjs` | Mario option 4 must learn (clean cold-start fitness after 60 gens, and ≥1.5x its own gen-1 — the ratio is the real gate, the GA is stochastic; post-#107 `evoTrain` goes through `startEpisode` so fitness is per-episode, not cumulative coins) and its HUD must actually render. |
 | `scripts/evoprobe.mjs` | Per-genome scalpel: one episode with a named/random/evolved controller → `maxCol`, jumps, trace. |
 | `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), DEV-hook wait (`openMario`, or `openGame(browser, { hook })` for other titles), pass/fail `Report`. |
 | `scripts/fpscheck.mjs` | IronKeep (the FPS): key-gated reachability audit of all three halls, then a driven play-through — collision, doors and keys, hitscan, pathfinding without line of sight, lives, the Warden, reaching `win`, and a frame-time budget. |
