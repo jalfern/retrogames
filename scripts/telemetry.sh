@@ -90,7 +90,7 @@ os.replace(path + '.tmp', path)   # atomic: readers never see a torn line
 PYS
 
 python3 - "$S" <<'PY'
-import json, subprocess, sys, base64
+import json, re, subprocess, sys, base64
 sample = json.loads(sys.argv[1])
 try:
     lines = open('/tmp/forge/telemetry.jsonl').read().splitlines()[-288:]
@@ -107,14 +107,84 @@ subprocess.run(['gh', 'api', '-X', 'POST', 'repos/jalfern/retrogames/git/refs',
 args = ['gh', 'api', '-X', 'PUT', f'repos/jalfern/retrogames/contents/telemetry.json',
         '--input', '-']
 body = {'message': 'pulse', 'content': data, 'branch': 'telemetry'}
-try:
-    sha = subprocess.run(['gh', 'api', 'repos/jalfern/retrogames/contents/telemetry.json?ref=telemetry',
-                          '--jq', '.sha'], capture_output=True, text=True).stdout.strip()
-    if sha and not sha.startswith('gh:'):
-        body['sha'] = sha
-except Exception:
-    pass
+sha = subprocess.run(['gh', 'api', 'repos/jalfern/retrogames/contents/telemetry.json?ref=telemetry',
+                      '--jq', '.sha'], capture_output=True, text=True)
+# gh prints the 404 JSON BODY to stdout on a miss, so 'gh:' never prefixes
+# one — trust nothing but a bare hex sha, or the PUT is rejected silently.
+if sha.returncode == 0 and re.fullmatch(r'[0-9a-f]{40}', sha.stdout.strip()):
+    body['sha'] = sha.stdout.strip()
 r = subprocess.run(args, input=json.dumps(body), text=True, capture_output=True)
 if r.returncode != 0:
     print('telemetry push failed:', r.stderr[:200])
 PY
+
+# board.json — the board's ONE file. The browser used to hit api.github.com
+# directly (~6 fetches per reload) and shared-IP rate limits took the board
+# OFFLINE while the machine underneath was healthy. Everything the board
+# renders now rides the same CDN pipe as telemetry.json; the browser makes
+# ONE anonymous raw fetch, which that limit cannot starve the same way.
+python3 - <<'PYB'
+import json, re, subprocess, base64
+
+def gh(path):
+    r = subprocess.run(['gh', 'api', path, '--jq', '.'], capture_output=True, text=True)
+    if r.returncode != 0:
+        print('board fetch failed:', path, r.stderr[:150])
+        return None
+    try:
+        return json.loads(r.stdout)
+    except Exception:
+        return None
+
+R = 'repos/jalfern/retrogames'
+try:
+    lines = open('/tmp/forge/telemetry.jsonl').read().splitlines()[-48:]
+    samples = [json.loads(l) for l in lines if l.startswith('{')]
+except Exception:
+    samples = []
+
+def issue(i):
+    return {'number': i['number'], 'title': i['title'], 'state': i['state'],
+            'body': (i.get('body') or '').split('\n')[0][:300],
+            'labels': [{'name': l['name']} for l in i.get('labels', [])],
+            'html_url': i['html_url'],
+            'reactions': {'total_count': i.get('reactions', {}).get('total_count', 0)}}
+
+open_issues = gh(f'{R}/issues?state=open&per_page=100') or []
+shipped = gh(f'{R}/issues?state=all&labels=shipped&per_page=100') or []
+by = {}
+for i in open_issues + shipped:
+    if not i.get('pull_request'):
+        by[i['number']] = issue(i)
+
+prs = [{'number': p['number'], 'title': p['title'], 'html_url': p['html_url']}
+       for p in (gh(f'{R}/pulls?state=open&per_page=10') or [])]
+
+def comments(n, per):
+    cs = gh(f'{R}/issues/{n}/comments?per_page={per}&sort=created&direction=desc') if n else None
+    return [{'id': c['id'], 'body': c['body'].split('\n')[0][:200],
+             'created_at': c['created_at'], 'updated_at': c['updated_at']} for c in (cs or [])]
+
+pulse_num = next((i['number'] for i in open_issues if i['title'] == 'FORGE PULSE'), None)
+build_num = next((i['number'] for i in open_issues
+                  if any(l['name'] == 'building' for l in i.get('labels', []))), None)
+
+board = {'generated': subprocess.run(['date', '-u', '+%Y-%m-%dT%H:%M:%SZ'],
+                                     capture_output=True, text=True).stdout.strip(),
+         'samples': samples, 'issues': list(by.values()), 'prs': prs,
+         'pulses': comments(pulse_num, 6), 'feed': comments(build_num, 8)}
+
+data = base64.b64encode(json.dumps(board).encode()).decode()
+body = {'message': 'board', 'content': data, 'branch': 'telemetry'}
+sha = subprocess.run(['gh', 'api', f'{R}/contents/board.json?ref=telemetry',
+                      '--jq', '.sha'], capture_output=True, text=True)
+# gh prints the 404 JSON BODY to stdout, so 'gh:' never prefixes a miss —
+# the first create silently poisoned body['sha'] and the PUT was rejected
+# while the script exited 0. Trust nothing but a bare hex sha.
+if sha.returncode == 0 and re.fullmatch(r'[0-9a-f]{40}', sha.stdout.strip()):
+    body['sha'] = sha.stdout.strip()
+r = subprocess.run(['gh', 'api', '-X', 'PUT', f'{R}/contents/board.json', '--input', '-'],
+                   input=json.dumps(body), text=True, capture_output=True)
+if r.returncode != 0:
+    print('board push failed:', r.stderr[:300])
+PYB

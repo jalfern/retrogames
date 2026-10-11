@@ -6,18 +6,11 @@ import Telemetry from './Telemetry'
 import { deriveFloor, labelOf } from './floor'
 
 const REPO = 'jalfern/retrogames'
-const API = p => `https://api.github.com/repos/${REPO}/${p}`
-// GitHub's ?labels= filter is an AND (issue must carry EVERY listed label),
-// so one query per lane — merged by issue number below. Only shipped needs
-// state=all: those issues are CLOSED on ship. Open lanes arrive anyway via
-// the catch-all open query; per-label copies are the belt-and-braces record.
-const QUERIES = [
-    'issues?labels=shipped&state=all&per_page=100',
-    'issues?labels=game-queue&per_page=100',
-    'issues?labels=feedback&per_page=100',
-    'issues?state=open&per_page=100',
-    'pulls?state=open&per_page=10',
-]
+// ONE anonymous CDN fetch. The board used to fire ~6 api.github.com queries
+// per reload; shared-IP rate limits took it OFFLINE while the machine
+// underneath was healthy. telemetry.sh bakes everything the board renders
+// (issues, PRs, pulses, build feed, vitals) into this one file.
+const RAW = 'https://raw.githubusercontent.com/jalfern/retrogames/telemetry/board.json'
 
 const Lamp = ({ label, ok, children }) => (
     <div className={`border p-3 text-xs ${ok ? 'border-[#0f0]/60' : 'border-[#f80]/60'}`}>
@@ -37,6 +30,8 @@ const ForgeBoard = () => {
     const [now, setNow] = useState(0)
     const lastFetch = useRef(0)
     const [lastFetched, setLastFetched] = useState(0)
+    const [samples, setSamples] = useState(null)
+    const [generated, setGenerated] = useState(null)
     const reload = useRef(() => {})
 
     useEffect(() => {
@@ -57,47 +52,28 @@ const ForgeBoard = () => {
     useEffect(() => {
         let alive = true
         let timer = null
-        const fetchJson = async (url, label) => {
-            const r = await fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
-            if (!r.ok) throw new Error(r.status === 403 || r.status === 429 ? 'GitHub rate limit (retrying in 10 min)' : `${label} GitHub ${r.status}`)
-            return r.json()
-        }
-        const get = p => fetchJson(API(p), 'query')
         const load = async () => {
-            const results = await Promise.allSettled([
-                ...QUERIES.map(get),
-            ])
-            const ok = results.filter(r => r.status === 'fulfilled')
-            if (!alive) return
-            if (ok.length === 0) { setError(results[0].reason.message); clearInterval(timer); timer = setInterval(load, 600000); return }
-            const all = ok.flatMap(r => r.value)
-            const byNum = new Map()
-            all.filter(i => !i.pull_request).forEach(i => byNum.set(i.number, i))
-            setIssues([...byNum.values()].sort((a, b) => a.number - b.number))
-            setPrs(results[4].status === 'fulfilled' ? results[4].value : [])
-            setNow(Date.now()); lastFetch.current = Date.now(); setLastFetched(Date.now())
-            setError('')
-            const pulse = all.find(i => i.title === 'FORGE PULSE')
-            if (pulse) {
-                try {
-                    // comments_url is ABSOLUTE — it used to be host-stripped and
-                    // re-prefixed by API(), doubling /repos/... → a 404 that the
-                    // "decorative" catch swallowed. The warden log never rendered.
-                    const cs = await fetchJson(`${pulse.comments_url}?per_page=12&sort=desc`, 'pulse')
-                    if (alive) setPulses(cs.slice(0, 6))
-                } catch { /* decorative */ }
+            try {
+                const r = await fetch(`${RAW}?t=${Math.floor(Date.now() / 60000)}`)
+                if (!r.ok) throw new Error(`board feed ${r.status}`)
+                const d = await r.json()
+                if (!alive) return
+                setIssues(d.issues ?? [])
+                setPrs(d.prs ?? [])
+                setPulses(d.pulses ?? [])
+                setFeed(d.feed ?? [])
+                setSamples(d.samples ?? [])
+                setGenerated(d.generated ?? null)
+                setNow(Date.now()); lastFetch.current = Date.now(); setLastFetched(Date.now())
+                setError('')
+            } catch (e) {
+                if (!alive) return
+                setError(`${e.message} — the machine pushes this file every 5 min; if it is down, check launchctl list com.jalfern.telemetry`)
             }
-            const nowBuilding = all.filter(i => labelOf(i, 'building') && !i.pull_request)
-            if (nowBuilding[0]) {
-                try {
-                    const cs = await fetchJson(`${nowBuilding[0].comments_url}?per_page=8&sort=desc`, 'feed')
-                    if (alive) setFeed(cs.slice(0, 4))
-                } catch { /* decorative */ }
-            } else if (alive) setFeed([])
+            if (alive) timer = setInterval(load, 60000)
         }
         load()
         reload.current = load
-        timer = setInterval(load, 600000)
         return () => { alive = false; clearInterval(timer) }
     }, [])
 
@@ -132,9 +108,10 @@ const ForgeBoard = () => {
                         GAMES BUILT BY THE MACHINE, SHIPPED TO THIS SITE — ONE PR AT A TIME
                     </p>
                     <div className="w-24 h-1 bg-[#00ff00] mt-4 opacity-50"></div>
-                    <div className={`text-[10px] mt-2 tracking-wider ${now - lastFetched > 900000 ? 'text-[#f55] animate-pulse' : 'text-gray-500'}`}>
-                        board data {Math.max(0, Math.round((now - lastFetched) / 1000))}s old
-                        {now - lastFetched > 900000 ? ' — STALE, focus this tab to refresh' : ''}
+                    <div className={`text-[10px] mt-2 tracking-wider ${lastFetched && now - lastFetched > 900000 ? 'text-[#f55] animate-pulse' : 'text-gray-500'}`}>
+                        {lastFetched
+                            ? `board data ${Math.max(0, Math.round((now - lastFetched) / 1000))}s old${now - lastFetched > 900000 ? ' — STALE, focus this tab to refresh' : ''}`
+                            : 'never fetched'}
                     </div>
                 </div>
 
@@ -177,7 +154,7 @@ const ForgeBoard = () => {
                     </div>)}
 
                 {issues && <FactoryFloor floor={floor} />}
-                <Telemetry now={now} />
+                <Telemetry now={now} samples={samples} generated={generated} />
 
                 {pulses.length > 0 && (
                     <div className="border border-[#ffb347]/40 p-3 mb-8 text-[10px] leading-relaxed text-[#ffb347]">
