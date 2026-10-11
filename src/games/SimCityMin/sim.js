@@ -154,7 +154,7 @@ function yearTick(g) {
             const nearFire = stations.some((si) => Math.max(Math.abs((si % W) - x), Math.abs(((si - (si % W)) / W) - y)) <= CFG.fireRadius)
             let qv = 0
             if (c.t === T.RES) {
-                const jobF = J > P + 6 ? 1.4 : (J >= P * 0.65 ? 0.45 : -0.9)
+                const jobF = J > P + 6 ? 1.4 : (J > 0 && J >= P * 0.65 ? 0.45 : -0.9)
                 qv = jobF + (c.lit ? 0.4 : -1.6) + (roadA ? 0 : -1.3) + 0.15 * parks - 0.15 * smog - taxPen(g.tax) + (nearFire ? 0.2 : -0.2)
             } else if (c.t === T.COM) {
                 qv = (P >= c.lvl * 24 + 16 ? 1.15 : -0.85) + (c.lit ? 0.45 : -1.6) + (roadA ? 0 : -1.3) + 0.1 * parks - taxPen(g.tax)

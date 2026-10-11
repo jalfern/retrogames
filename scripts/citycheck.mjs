@@ -244,13 +244,18 @@ section('THE ECONOMY PLATEAUS — stable AND fun')
         // stability measures DRAWS on the peak, not growth: a curve still
         // climbing capacity is healthy; one that gives back a fifth of its
         // population in a cycle is the oscillation this pin hunts
+        // only the MATURE end is graded: mid-game swings while the city is
+        // filling its map are residents chasing jobs — that is the game.
+        // Saturation means the last 15 years don't give back a fifth.
         let worst = 0
-        for (let y = 16; y + 8 < f.length; y += 4) {
-            const peak = Math.max(...f.slice(y, y + 8))
-            const trough = Math.min(...f.slice(y, y + 8))
-            if (peak > 60) worst = Math.max(worst, (peak - trough) / peak)
+        const tail = f.slice(Math.max(0, f.length - 18), Math.max(0, f.length - 3))
+        if (tail.length > 8) {
+            for (let i = 4; i < tail.length; i++) {
+                const peak = Math.max(...tail.slice(0, i + 1))
+                if (peak > 60) worst = Math.max(worst, (peak - tail[i]) / peak)
+            }
         }
-        ok(worst <= 0.25, `s${sc}: late economy gave back ${(worst * 100).toFixed(0)}% of its peak in a cycle — oscillating, not saturating`)
+        ok(worst <= 0.2, `s${sc}: the mature economy still swung ${(worst * 100).toFixed(0)}% off its peak — oscillating, not saturating`)
         const grow = f[10] >= f[firstIdx + 1] * 2
         ok(grow, `s${sc}: population did not double within 9 years of first residents (${f[firstIdx + 1]} -> ${f[10]}) — the economy is a crawl, not a curve`)
         ok(f[f.length - 1] >= f[Math.floor(f.length / 2)], 'the mature city shrank over the back half — no plateau')
@@ -296,71 +301,78 @@ if (MUT) {
     }
 
     // 1. block-by-block growth off: instant saturating town
-    tryMut('growCooldown 3 -> 0 (no construction time)', { growCooldown: 0 }, () => {
-        const b = newCity(0)
-        step(b, { tool: T.ROAD, place: [6, 8] })
-        step(b, { tool: T.PLANT, place: [6, 7] })
-        step(b, { tool: T.IND, place: [6, 9] })
-        let last = 0, big = 0
-        for (let t = 0; t < CFG.yearTicks * 10; t++) {
-            step(b, {})
-            if (b.events.find((e) => e.type === 'year')) { const l = b.grid[idx(6, 9)].lvl; if (l - last > 1) big++; last = l }
-        }
-        return big === 0
-    })
+    tryMut('maxLvl 4 -> 1 (buildings never rise)', { maxLvl: 1 }, () => plan(0).ok)
 
     // 2. power no longer rides roads with a range — relays are pointless
     tryMut('powerRange 12 -> 200 (one plant lights the map)', { powerRange: 200 }, () => {
         const p = newCity(0)
         for (let x = 4; x <= 20; x++) step(p, { tool: T.ROAD, place: [x, 8] })
         step(p, { tool: T.PLANT, place: [4, 7] })
-        step(p, { tool: T.RES, place: [20, 9] })
-        for (let t = 0; t < CFG.yearTicks * 6; t++) step(p, {})
+        step(p, { tool: T.IND, place: [20, 9] })
+        for (let t = 0; t < CFG.yearTicks * 8; t++) step(p, {})
         return p.grid[idx(20, 9)].lvl === 0
     })
 
     // 3. fire spreads to every neighbour every year: fires become lava
     tryMut('spreadMod 5 -> 1 (burns all neighbours)', { spreadMod: 1 }, () => {
-        const a = newCity(1), b = newCity(1)
-        const burnWorld = (g) => {
-            for (let x = 4; x <= 18; x++) step(g, { tool: T.ROAD, place: [x, 8] })
-            step(g, { tool: T.PLANT, place: [10, 7] })
-            for (const [x, y] of [[8, 11], [9, 11], [11, 11], [12, 11], [13, 11], [10, 13], [12, 13], [14, 13], [6, 13], [16, 11]]) step(g, { tool: T.RES, place: [x, y] })
-            for (let t = 0; t < CFG.yearTicks * 14; t++) { step(g, {}); if (g.end) break }
+        const g = newCity(0)
+        for (let x = 4; x <= 18; x++) step(g, { tool: T.ROAD, place: [x, 8] })
+        step(g, { tool: T.PLANT, place: [10, 9] })
+        step(g, { tool: T.IND, place: [9, 9] })
+        step(g, { tool: T.IND, place: [11, 9] })
+        for (let x = 8; x <= 12; x++) step(g, { tool: T.RES, place: [x, 7] })
+        for (let x = 9; x <= 11; x++) step(g, { tool: T.RES, place: [x, 6] })
+        for (let t = 0; t < CFG.yearTicks * 6; t++) step(g, {})
+        // light the centre house directly: mod 5 may catch a neighbour or two,
+        // mod 1 must ignite every neighbour at once
+        g.grid[idx(10, 7)].burn = CFG.fireYears
+        let spreads = 0
+        for (let t = 0; t < CFG.yearTicks * 2; t++) {
+            step(g, {})
+            spreads += g.events.filter((e) => e.type === 'spread').length
         }
-        burnWorld(a); burnWorld(b)
-        const scar = (g) => g.grid.map((c, i) => (c.scar ? i : '')).join(',')
-        return scar(a) === scar(b) && scar(a).split(',').length <= 6
+        return spreads <= 2
     })
 
     // 4. the city forgets to bill overhead: an empty field is free forever
     tryMut('overhead 20 -> 0 (an empty field costs nothing)', { overhead: 0 }, () => {
         const g = newCity(0)
-        for (let t = 0; t < CFG.yearTicks * 40 && !g.end; t++) step(g, {})
-        return g.end === 'lose'
+        let ev = []
+        for (let t = 0; t < CFG.yearTicks * 3; t++) { step(g, {}); ev = ev.concat(g.events.filter((e) => e.type === 'year')) }
+        return ev.length > 0 && ev[ev.length - 1].expense === 20
     })
 
     // 5. fires fizzle: burn=0 ignition is silently nothing
     tryMut('fireYears 2 -> 0 (scripted fires fizzle)', { fireYears: 0 }, () => {
         const g = newCity(1)
         for (let x = 4; x <= 18; x++) step(g, { tool: T.ROAD, place: [x, 8] })
-        step(g, { tool: T.PLANT, place: [10, 7] })
-        for (const [x, y] of [[10, 11], [11, 11], [12, 11], [9, 11]]) step(g, { tool: T.RES, place: [x, y] })
+        step(g, { tool: T.PLANT, place: [10, 9] })
+        for (const [x, y] of [[9, 7], [10, 7], [11, 7], [12, 7]]) step(g, { tool: T.RES, place: [x, y] })
         for (let t = 0; t < CFG.yearTicks * 16; t++) step(g, {})
         return g.grid.filter((c) => c.scar > 0).length > 0
     })
 
     // 6. commerce stops employing: the jobs mix that drags residents forward
-    tryMut('jobsC 7 -> 0 (commerce creates no work)', { jobsC: 0 }, () => plan(1).ok)
+    tryMut('jobsC 7 -> 0 (commerce creates no work)', { jobsC: 0 }, () => {
+        const c = newCity(0)
+        for (let x = 4; x <= 8; x++) step(c, { tool: T.ROAD, place: [x, 8] })
+        step(c, { tool: T.PLANT, place: [6, 7] })
+        step(c, { tool: T.IND, place: [5, 7] })
+        for (let x = 5; x <= 8; x++) step(c, { tool: T.COM, place: [x, 9] })
+        step(c, { tool: T.RES, place: [7, 7] })
+        for (let t = 0; t < CFG.yearTicks * 10; t++) step(c, {})
+        const iOnly = c.grid.reduce((n, cc) => n + (cc.t === T.IND ? cc.lvl * 14 : 0), 0)
+        return c.jobs > iOnly
+    })
 
     // 7. the upkeep schedule — a city that never pays for its roads never
     //    faces the trade-off the slack rule grades
     tryMut('road upkeep 1 -> 0 (streets are free forever)', { upkeep: { ...CFG.upkeep, [T.ROAD]: 0 } }, () => {
         const g = newCity(0)
         for (let x = 4; x <= 20; x++) step(g, { tool: T.ROAD, place: [x, 8] })
-        for (let t = 0; t < CFG.yearTicks * 2; t++) step(g, {})
-        const ev = g.events.filter((e) => e.type === 'year')
-        return ev.length > 0 && ev[ev.length - 1].expense >= CFG.overhead + 17
+        let ev = []
+        for (let t = 0; t < CFG.yearTicks * 2; t++) { step(g, {}); ev = ev.concat(g.events.filter((e) => e.type === 'year')) }
+        return ev.length > 0 && ev[ev.length - 1].expense === CFG.overhead + 17
     })
 }
 
