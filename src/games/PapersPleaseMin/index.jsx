@@ -34,8 +34,6 @@ const PapersPleaseMinGame = () => {
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
-    const hudRef = useRef({})
-    const setHud = (k) => (el) => { hudRef.current[k] = el }
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -193,20 +191,22 @@ const PapersPleaseMinGame = () => {
                 const words = t.split(' ')
                 let line = ''
                 for (const w of words) {
-                    if ((line + w).length > 30) { text(line, 14, yy, 9, '#9fb0d6'); yy += 11; line = '' }
+                    if ((line + w).length > 34) { text(line, 14, yy, 8, '#9fb0d6'); yy += 9; line = '' }
                     line += w + ' '
                 }
-                text(line, 14, yy, 9, '#9fb0d6'); yy += 13
+                text(line, 14, yy, 8, '#9fb0d6'); yy += 11
             }
             yy += 6
             text('ENTRY LIST:', 12, yy, 11, COL.text); yy += 13
             for (const c of day.allowed) { text(`  ${c}`, 14, yy, 10, '#7ddc5d'); yy += 12 }
             yy += 6
             text('WANTED:', 12, yy, 11, COL.text); yy += 13
-            for (const w of day.wanted.slice(0, 4)) { text(`  ${w.name} #${w.id}`, 14, yy, 10, COL.red); yy += 12 }
-            box(150, 300, 92, 54, '#0f1420', '#4a5578')
-            text('SCALE', 196, 316, 10, COL.text, 'center')
-            text(`${view.scale}KG`, 196, 342, 16, COL.gold, 'center')
+            // every name on the sheet must FIT on the wall — paperscheck
+            // pins day.wanted.length <= 4 so no booth must ever hide one
+            for (const w of day.wanted) { text(`  ${w.name} #${w.id}`, 14, yy, 9, COL.red); yy += 11 }
+            box(12, 340, 96, 30, '#0f1420', '#4a5578')
+            text('SCALE', 60, 352, 9, COL.text, 'center')
+            text(`${view.scale}KG`, 60, 366, 12, COL.gold, 'center')
             // strikes: three slots, filled red
             for (let i = 0; i < CFG.STRIKE_MAX; i++) {
                 box(12 + i * 26, CHS - 34, 20, 20, i < gs.strikes ? '#7a1f1f' : '#10141f', '#555f7d')
@@ -230,17 +230,28 @@ const PapersPleaseMinGame = () => {
             box(0, CHS - 40, CW, 40, '#10141f', '#000')
             text('A / SPACE: ADMIT        D: DENY', 12, CHS - 16, 13, COL.gold)
             if (gs.last) text(gs.last.ok ? 'CORRECT' : 'MISTAKE', 628, CHS - 16, 13, gs.last.ok ? COL.green : COL.red, 'right')
-            // the stamp
+            // the stamp: its COLOR is your call (green admit, red deny),
+            // never your correctness — a wrong call gets the red/green of
+            // what you did, plus the red double frame and the witness line
+            // for what you missed. The player reads the stamp as ink; the
+            // harness grades the same two rectangles.
             if (stamp && stamp.ticks > 0) {
+                if (!stamp.ok) {
+                    ctx.strokeStyle = COL.red
+                    ctx.lineWidth = 4
+                    ctx.strokeRect(322, 42, 296, 226)
+                    ctx.strokeRect(316, 36, 308, 238)
+                }
                 ctx.save()
                 ctx.translate(470, 110)
                 ctx.rotate(-0.18)
-                ctx.strokeStyle = stamp.ok ? COL.green : COL.red
+                const stampCol = stamp.verdict === 'approve' ? COL.green : COL.red
+                ctx.strokeStyle = stampCol
                 ctx.lineWidth = 3
                 ctx.strokeRect(-86, -22, 172, 44)
-                text(stamp.verdict === 'approve' ? 'APPROVED' : 'DENIED', 0, 6, 24, stamp.ok ? COL.green : COL.red, 'center')
+                text(stamp.verdict === 'approve' ? 'APPROVED' : 'DENIED', 0, 6, 24, stampCol, 'center')
                 ctx.restore()
-                if (!stamp.ok) text(gs.last?.why === 'INNOCENT' ? 'THEY WERE CLEAN' : `WITNESS: ${gs.last?.why}`, 470, 150, 11, COL.red, 'center')
+                if (!stamp.ok) text(gs.last?.why === 'INNOCENT' ? 'THEY WERE CLEAN' : `WITNESS: ${gs.last?.why}`, 470, 296, 12, COL.red, 'center')
             }
             // day banner
             if (banner && banner.ticks > 0) {
@@ -313,13 +324,14 @@ const PapersPleaseMinGame = () => {
                         strikes: gs.strikes, score: gs.score, caught: gs.caught, admitted: gs.admitted,
                         end: gs.end, why: gs.endWhy, last: gs.last, stamp: stamp && { ...stamp },
                         rules: day.rules, date: dfmt(day.date), allowed: day.allowed, wanted: day.wanted,
-                        view, evLog: evLog.slice(-60),
+                        banner: banner && { ...banner }, view, evLog: evLog.slice(-60),
                     }
                 },
                 start: startPlay,
                 verdict: () => decide(current(gs).view).verdict,
                 hash: () => stateHash(gs),
                 stamp: act,
+                runDay: () => { const d = gs.day; while (!gs.end && gs.day === d) act(decide(current(gs).view).verdict); return gs.day },
                 runToEnd: () => { while (!gs.end) act(decide(current(gs).view).verdict) },
             }
             mountDbg({
@@ -368,10 +380,6 @@ const PapersPleaseMinGame = () => {
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
-
-            <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div ref={hudRef.toast} className="absolute inset-x-0 top-2 text-center font-mono" style={{ opacity: 0 }} />
-            </div>
 
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-3 text-center pointer-events-none">

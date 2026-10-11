@@ -112,6 +112,9 @@ section('THE FAIRNESS PROVER — booth vs truth, every paper, every seed')
                 if (day.rules.includes('WEIGHT')) {
                     ok(typeof a.scale === 'number' && a.scale === a.truth.trueWeight, `the scale skipped its witness duty at seed ${seed} day ${day.n}`)
                 }
+                // the wall has no scroll: every name on the sheet must fit
+                // the booth's printed panel (index.jsx prints every entry)
+                ok(day.wanted.length <= 4, `day ${day.n} printed ${day.wanted.length} wanted names — the wall would have to hide one (unfair by furniture)`)
             }
         }
     }

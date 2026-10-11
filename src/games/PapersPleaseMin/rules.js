@@ -103,7 +103,6 @@ export function judge(day) {
     const v = []
     const t = day.truth
     const p = day.person
-    const pp = p.passport
     const has = (r) => day.rules.includes(r)
     if (has('PASSPORT') && !t.hasPassport) v.push({ rule: 'PASSPORT' })
     if (has('ALLOWED') && !day.allowed.includes(t.country)) v.push({ rule: 'ALLOWED' })

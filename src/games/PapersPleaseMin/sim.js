@@ -26,9 +26,14 @@ export function newRun(seed = 0) {
     }
 }
 
+// current must survive the end of the line: after a win/lose the queue is
+// finished, but the frame loop still paints the frozen booth behind the
+// end screen — clamping is what stops the last entrant's card from
+// becoming undefined and crashing the canvas one frame after victory.
 export function current(gs) {
     const day = gs.week.days[gs.day - 1]
-    return { day, applicant: day.queue[gs.idx], view: viewOf(day, day.queue[gs.idx]) }
+    const a = day.queue[Math.min(gs.idx, day.queue.length - 1)]
+    return { day, applicant: a, view: viewOf(day, a) }
 }
 
 // input: {action:'approve'|'deny'} — anything else is a no-op (the booth
