@@ -83,15 +83,15 @@ const ForgeBoard = () => {
                     // comments_url is ABSOLUTE — it used to be host-stripped and
                     // re-prefixed by API(), doubling /repos/... → a 404 that the
                     // "decorative" catch swallowed. The warden log never rendered.
-                    const cs = await fetchJson(pulse.comments_url, 'pulse')
-                    if (alive) setPulses(cs.slice(-6).reverse())
+                    const cs = await fetchJson(`${pulse.comments_url}?per_page=12&sort=desc`, 'pulse')
+                    if (alive) setPulses(cs.slice(0, 6))
                 } catch { /* decorative */ }
             }
             const nowBuilding = all.filter(i => labelOf(i, 'building') && !i.pull_request)
             if (nowBuilding[0]) {
                 try {
-                    const cs = await fetchJson(nowBuilding[0].comments_url, 'feed')
-                    if (alive) setFeed(cs.slice(-4).reverse())
+                    const cs = await fetchJson(`${nowBuilding[0].comments_url}?per_page=8&sort=desc`, 'feed')
+                    if (alive) setFeed(cs.slice(0, 4))
                 } catch { /* decorative */ }
             } else if (alive) setFeed([])
         }
