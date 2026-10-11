@@ -52,6 +52,7 @@ export const TRAPS = [
     { rule: 'WANTED', how: 'same NAME as a sheet entry, different passport number' },
     { rule: 'IDMATCH', how: 'ID name matches; the HEIGHT differs (height is not a rule)' },
     { rule: 'IDREQ', how: 'no ID card, but the DOB makes them a child — children are exempt' },
+    { rule: 'CURFEW', how: 'valid for exactly 7 more days — curfew counts days AFTER today' },
 ]
 
 let PERSON_ID = 0
@@ -154,6 +155,12 @@ function violator(rule, rnd, date, dayRules, day, used) {
             a.person.idcard = null
             a.truth.hasIdCard = false
             break
+        case 'CURFEW': {
+            const exp = dadd(date, 1 + Math.floor(rnd() * 6))   // 1..6 days of grace: under seven
+            a.person.passport = { ...a.person.passport, expiry: exp }
+            a.truth.expiry = exp
+            break
+        }
         default: throw new Error(`no builder for rule ${rule}`)
     }
     a.breakRule = rule
@@ -195,13 +202,19 @@ function trapApplicant(species, rnd, date, dayRules, day, used) {
             a.person.idcard = null
             a.truth.hasIdCard = false
             break
+        case 'CURFEW': {
+            const exp = dadd(date, 7)   // exactly 7 days of grace: the law counts days AFTER today
+            a.person.passport = { ...pp, expiry: exp }
+            a.truth.expiry = exp
+            break
+        }
         default: throw new Error(`no trap builder for ${s.rule}`)
     }
     a.trap = s.rule
     return a
 }
 
-export function genDay(seed, n, trapIdx) {
+export function genDay(seed, n, trapIdx, trap2Idx = null) {
     PERSON_ID = n * 37 + seed * 601
     const rnd = mulberry32((seed + 1) * 100003 + n * 7919)
     const rules = DAY_RULES[n - 1]
@@ -219,14 +232,14 @@ export function genDay(seed, n, trapIdx) {
     }
     const used = new Set()
     for (const rule of rules) day.queue.push(violator(rule, rnd, date, rules, day, used))
-    const activeTrapIdx = TRAPS.map((t, i) => (rules.includes(t.rule) ? i : -1)).filter((i) => i >= 0)
     if (trapIdx !== null && trapIdx !== undefined) {
         day.queue.push(trapApplicant(trapIdx, rnd, date, rules, day, used))
-        // a second trap on days divisible by three — only from species whose
-        // RULE is awake (a trap for a sleeping law is a phantom, not a trap)
-        if (n % 3 === 0 && activeTrapIdx.length > 1) {
-            const i2 = (activeTrapIdx.indexOf(trapIdx) + 1 + Math.floor(rnd() * (activeTrapIdx.length - 1))) % activeTrapIdx.length
-            day.queue.push(trapApplicant(activeTrapIdx[i2], rnd, date, rules, day, used))
+        // a second trap when the week's schedule asks for one (days 3 and 6,
+        // and day 7 to close coverage) — genWeek picks it, so a standalone
+        // genDay call replays EXACTLY the week's day
+        if (trap2Idx !== null && trap2Idx !== undefined) {
+            if (!rules.includes(TRAPS[trap2Idx].rule)) throw new Error(`trap2 ${TRAPS[trap2Idx].rule} has no rule on day ${n}`)
+            day.queue.push(trapApplicant(trap2Idx, rnd, date, rules, day, used))
         }
     }
     while (day.queue.length < rules.length + 4) day.queue.push(base(rnd, date, rules, used, { allowed: day.allowed }))
@@ -263,15 +276,23 @@ export function genWeek(seed) {
     const days = []
     for (let n = 1; n <= 7; n++) {
         const rules = DAY_RULES[n - 1]
+        const active = TRAPS.map((t, i) => (rules.includes(t.rule) ? i : -1)).filter((i) => i >= 0)
         let trapIdx = null
+        let trap2Idx = null
         if (n >= 2) {
-            const open = TRAPS.map((t, i) => (rules.includes(t.rule) && !used.has(i) ? i : -1)).filter((i) => i >= 0)
+            const open = active.filter((i) => !used.has(i))
             if (open.length) {
                 trapIdx = open[(n - 2 + seed) % open.length]
                 used.add(trapIdx)
             }
+            // second traps: days 3 and 6 keep the clumsy run busy; day 7
+            // closes coverage by taking the LAST species never staged
+            if (n % 3 === 0 || n === 7) {
+                const left = active.filter((i) => !used.has(i))
+                trap2Idx = left.length ? left[(n + seed) % left.length] : (active.length > 1 ? active[(n + seed) % active.length] : null)
+            }
         }
-        days.push(genDay(seed, n, trapIdx))
+        days.push(genDay(seed, n, trapIdx, trap2Idx))
     }
     return { seed, days }
 }

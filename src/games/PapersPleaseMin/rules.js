@@ -36,6 +36,7 @@ export const RULES = {
     WANTED: { text: 'DENY ANYONE ON THE WANTED SHEET — NAME *AND* PASSPORT NO.', reads: 'passport.name + passport.no + wanted sheet' },
     IDMATCH: { text: 'IF AN ID CARD IS SHOWN, ITS NAME MUST MATCH THE PASSPORT.', reads: 'passport.name + id-card name' },
     IDREQ: { text: 'ADULTS MUST CARRY AN ID CARD. CHILDREN (BY DOB) ARE EXEMPT.', reads: 'papers + passport DOB + wall date' },
+    CURFEW: { text: 'CURFEW: PASSPORTS EXPIRING SOONER THAN 7 DAYS FROM TODAY ARE VOID.', reads: 'passport.expiry + wall date' },
 }
 
 // the rulebook grows one line a day; day 7 is the full sheet.
@@ -46,7 +47,11 @@ export const DAY_RULES = [
     ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT', 'WANTED'],
     ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH'],
     ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH', 'IDREQ'],
-    ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH', 'IDREQ'],
+    // day 7: the state tightens again — a passport must carry a full week
+    // of validity. (Where that meets the expires-TODAY doctrine, the newer,
+    // harsher law speaks; both booths — decide and judge — agree, and the
+    // prover is the referee.)
+    ['PASSPORT', 'ALLOWED', 'EXPIRED', 'WEIGHT', 'WANTED', 'IDMATCH', 'IDREQ', 'CURFEW'],
 ]
 export const newRuleOfDay = (day) => (day >= 2 ? DAY_RULES[day - 1][DAY_RULES[day - 1].length - 1] : null)
 
@@ -84,6 +89,9 @@ export function decide(view) {
     if (has('IDREQ') && p.papers.indexOf('idcard') < 0 && isAdult(pp.dob, view.date)) {
         v.push({ rule: 'IDREQ', evidence: `ADULT (DOB ${dfmt(pp.dob)}) WITHOUT ID CARD` })
     }
+    if (has('CURFEW') && dnum(pp.expiry) - view.dateNum <= 6) {
+        v.push({ rule: 'CURFEW', evidence: `EXPIRES ${dfmt(pp.expiry)} — CURFEW WANTS 7 DAYS OF GRACE` })
+    }
     return { verdict: v.length ? 'deny' : 'approve', violations: v }
 }
 
@@ -108,5 +116,6 @@ export function judge(day) {
     if (has('WANTED') && t.wanted) v.push({ rule: 'WANTED' })
     if (has('IDMATCH') && p.idcard && t.idName !== t.trueName) v.push({ rule: 'IDMATCH' })
     if (has('IDREQ') && !t.hasIdCard && isAdult(t.dob, day.date)) v.push({ rule: 'IDREQ' })
+    if (has('CURFEW') && dnum(t.expiry) - dnum(day.date) <= 6) v.push({ rule: 'CURFEW' })
     return { verdict: v.length ? 'deny' : 'approve', violations: v }
 }
