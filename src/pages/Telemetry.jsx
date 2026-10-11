@@ -1,10 +1,3 @@
-import { useEffect, useState } from 'react'
-
-const ago = (sample, now) => sample.ts
-    ? Math.max(0, Math.round((now - sample.ts) / 1000))
-    : 9999
-
-const RAW = 'https://raw.githubusercontent.com/jalfern/retrogames/telemetry/telemetry.json'
 const TASKS = [['forge', '#ffb347'], ['qa', '#ff6600'], ['warden', '#4dffb8'], ['omlx', '#66b3ff'], ['mini', '#c58aff']]
 export const Spark = ({ values, color, label, unit }) => {
     const w = 220, h = 34
@@ -24,32 +17,19 @@ export const Spark = ({ values, color, label, unit }) => {
     )
 }
 
-const Telemetry = ({ now }) => {
-    const [samples, setSamples] = useState(null)
-
-    useEffect(() => {
-        let alive = true
-        const load = () => fetch(`${RAW}?t=${Math.floor(Date.now() / 60000)}`)
-            .then(r => (r.ok ? r.text() : Promise.reject()))
-            .then(txt => {
-                if (!alive) return
-                setSamples(txt.trim().split('\n').slice(-48).map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean))
-            })
-            .catch(() => alive && setSamples([]))
-        load()
-        const id = setInterval(load, 600000)
-        return () => { alive = false; clearInterval(id) }
-    }, [])
-
+const Telemetry = ({ now, samples, generated }) => {
     if (!samples || samples.length === 0) return null
     const last = samples[samples.length - 1]
+    // board.json is stamped UTC when the sampler RAN; age of the vitals is
+    // age of that stamp, not a HH:MM parse of a local-clock string.
+    const age = generated ? Math.max(0, Math.round((now - Date.parse(generated)) / 1000)) : 0
 
     return (
         <div className="border border-[#66b3ff]/40 p-3 mb-8 text-[10px]">
             <div className="flex justify-between tracking-widest opacity-70 mb-2">
                 <span>PULSE-O-METER — machine vitals, 5-min samples, last 4 h</span>
-                <span className={ago(last, now) > 900 ? 'text-[#f55]' : 'text-[#4dffb8]'}>
-                    {ago(last, now)}s ago
+                <span className={age > 900 ? 'text-[#f55]' : 'text-[#4dffb8]'}>
+                    {generated ? `${age}s ago` : 'never fetched'}
                 </span>
             </div>
             {TASKS.filter(([k]) => samples.some(s => s.tasks?.[k])).map(([k, c]) => (

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
 import Telemetry from './Telemetry'
-import { deriveFloor, labelOf } from './floor'
+import { ago, deriveFloor, labelOf } from './floor'
 
 const REPO = 'jalfern/retrogames'
 const API = p => `https://api.github.com/repos/${REPO}/${p}`
@@ -158,7 +158,7 @@ const ForgeBoard = () => {
                             {building[0] ? building[0].title.replace(/^GAME.*?—\s*/, '') : 'idle — next warden tick kicks'}
                         </Lamp>
                         <Lamp label="WARDEN" ok={!!pulse}>
-                            {pulse ? `${pulses[0].body.slice(0, 5)} · ${Math.max(0, Math.round((now - new Date(pulses[0].created_at).getTime()) / 1000))}s ago` : 'no pulse yet'}
+                            {pulse ? `${pulses[0].body.slice(0, 5)} · ${ago(pulses[0].body.slice(0, 5) + ':00', now)}s ago` : 'no pulse yet'}
                         </Lamp>
                         <Lamp label="QA LANE" ok={qaBusy || qa.length === 0}>
                             {qaBusy ? `fixing: ${qa.find(i => labelOf(i, 'building-qa')).title.replace(/^QA —?\s*/, '')}`
