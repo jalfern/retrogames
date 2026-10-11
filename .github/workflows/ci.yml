@@ -162,6 +162,10 @@ jobs:
         run: npm run missileplay
         env:
           SHOT_CHANNEL: chromium
+      - name: SimCity-Min smoke (real keys, pixels vs the road graph, disasters that wait for a city)
+        run: npm run cityplay
+        env:
+          SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)
         if: failure()
         run: cat /tmp/vite.log

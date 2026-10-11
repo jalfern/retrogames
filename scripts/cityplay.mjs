@@ -14,7 +14,7 @@
 //   5. ONE KEY LEAVES AND ONE KEY RETURNS — win screen, key, attract.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.SC_URL || 'http://localhost:5178/retrogames/simcity-min'
+const URL = process.env.SC_URL || 'http://localhost:5173/retrogames/simcity-min'
 await requireDevServer(URL)
 
 const r = new Report('cityplay')
@@ -167,8 +167,21 @@ for (let k = 0; k < 20 && !burning; k++) {
     if (!burning) { await page.evaluate(() => window.__scTest.years(1)); await wait(150) }
 }
 if (burning) {
-    const c = await px(burning.x, burning.y)
-    r.check(`a burning cell (${burning.x},${burning.y}) paints hot (rgb ${c})`, c && c[0] > 120 && c[0] > c[1] + 40)
+    // the flame flickers on a 4-tick phase; one sample can honestly land on
+    // the spark gap. The claim that survives every machine: while the SIM
+    // says this cell burns, it never stays cold-dark for a full second.
+    let hot = null, coldRun = 0, everBurn = false
+    for (let i = 0; i < 12; i++) {
+        const st = await probe()
+        if (!st.burning.some(([x, y]) => x === burning.x && y === burning.y)) break
+        everBurn = true
+        const c = await px(burning.x, burning.y)
+        if (c && c[0] > 120 && c[0] > c[1] + 40) { hot = c; break }
+        coldRun++
+        await wait(90)
+    }
+    r.check(`a burning cell (${burning.x},${burning.y}) paints hot while the sim burns it${hot ? '' : ` (${coldRun} cold frames)`}`, !!hot, hot ? `rgb ${hot}` : 'never lit')
+    void everBurn
 } else {
     r.check('a cell is burning while the script says so', false, 'no burn>0 cell found in 20 years of the SMOKESTACK script')
 }

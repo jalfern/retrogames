@@ -1,80 +1,84 @@
-# STATE.md — 2026-10-10 (MISSILE BATTLE session end)
+# STATE.md — 2026-10-10 (SIMCITY-MIN session end)
 
 ## Where things stand
-**#73 GAME 09 — MISSILE BATTLE IS LIVE at jalfern.com/retrogames/missile-battle**
-(PR #128, squash 3064083, `shipped`, issue closed). Arcade is 26 titles.
-**Next session: claim the oldest `game-queue`** — head is #74 SimCity-Min
-(then #77 Lode Runner; #118 Minesweeper and #82 BensMagicBugLife are also queued).
+**#74 GAME 10 — SIMCITY-MIN IS LIVE at jalfern.com/retrogames/simcity-min**
+(PR #132, squash ee343e0, issue closed — add the `shipped` label). Arcade is
+27 titles. **Next session: claim the oldest `game-queue`** — head is #77
+Lode Runner (#118 Minesweeper, #82 BensMagicBugLife also queued).
 
 | since last STATE | what |
 |---|---|
-| #73 / `forge-missile` | Four-module shooter again: `waves.js` (49 scripted launches, 81 warheads, 18 splitters — no random exists there), `sim.js` (pure `step(state,input)`, batteries-with-arcs, chain blasts, wave rebuild), `planner.js` (greedy intercept autopilot; its proven run IS the attract demo), shell with lead-aimed reticle. Core contract: every wave re-solvable with ONE FEWER interceptor per battery (slack rule). |
-| harnesses | `missilecheck` 355 Node checks + 6 mutants (`--mutate`), `missileplay` 25 Chrome checks real-keys-only. Gates: `lint:missile` + `missilecheck` in static; `missileplay` added to `smoke` (ran green on the runner, 3m6s). |
+| #74 / `forge-simcity` | Four-module city: `scen.js` (3 maps, scripted fires + one tornado), `sim.js` (yearly ledger conserved to the cent, power BFS over the road graph, job-gated growth, `Math.random` banned at import), `planner.js` (greedy terrain-aware autopilot; its proven run IS the attract demo), shell with a cursor + 8-tool rail. Core contract: every map still wins with one fewer plant, one fewer station, $150 less (slack rule). |
+| harnesses | `citycheck` 151 Node checks + 7 mutants (`--mutate`), `cityplay` 22 Chrome checks real-keys-only. Gates: `lint:sim` + `citycheck` in static; `cityplay` added to `smoke` (SC_URL env override like MB_URL). |
 
 ## What is playable right now
-- jalfern.com/retrogames/missile-battle — prod verified: route 200, live
-  bundle `index-BQ8r7CFu.js` contains the game, zero page errors in the
-  browser suite.
-- Attract plays the autopilot's proven run (60 fired / 57 kills / 0 cities
-  lost) tick-for-tick; slack@9 wins all three waves.
+- jalfern.com/retrogames/simcity-min — prod verified with a real browser:
+  route 200, H1 + live canvas, zero page errors.
+- Attract cycles the three proven runs tick-for-tick; S0 wins y18, S1 y22,
+  S2 y28; all three slack runs win too (receipts in citycheck output).
 
 ## What changed this session (the parts that matter next time)
-- **I never touched the main checkout.** It was dirty on entry (live QA
-  session #106 editing `fpscheck.mjs`, pid alive 3h52m past its 60-min box)
-  — the whole build ran in `git worktree` `retrogames-missile` on dev :5175,
-  removed after merge. `stash@{0}` (QA's parked IronKeep work) is STILL
-  PARKED and QA is STILL ALIVE — do not pop it as a drive-by; as of this
-  writing the main checkout shows two dirty files (`fpscheck.mjs`,
-  `IronKeep/index.jsx`), both the QA session's.
-- **A blast born at r=0 dies before it breathes.** Chain kills had NEVER
-  fired in any run, proven ones included — the harness pin that kills a
-  neighbour 8px OUTSIDE the main blast's reach is the only reason we know.
-  Same family: `>` comparisons are false for NaN and `JSON.stringify`
-  prints NaN as `null` (a bomber entry without `spd` poisoned its wave
-  silently — spawn guards are finite-checks now).
-- **Ids belong to the game (`g.nextId`), not the module.** A global `eid`
-  made two identical fresh states hash differently.
-- **In browser drivers: arrows must be HELD** (a `press()` fits inside one
-  60Hz frame gap — keepplay, repriced), **the driver must LEAD its shots**
-  (aiming at the present tense is a legitimate miss: blast cannot chase a
-  receder), and **sections must run on quiet reloaded stages** (`setup({wave,
-  quiet})`) or the live script races the probe. Also: a `waitEv` that
-  returns the probe STATE instead of the matched event makes every
-  field-level assertion vacuous until a real one catches it.
-- Static job now has 14 lint gates + missilecheck; smoke has missileplay
-  (MB_URL env override exists for worktree servers, like POLAR_URL).
+- **I never touched the main checkout** (still dirty: `fpscheck.mjs`,
+  `IronKeep/index.jsx`, QA's). Built in worktree `retrogames-simcity`;
+  its `node_modules` is a SYMLINK to the main checkout's — worktrees without
+  their own install need that (or `npm ci`) before any eslint/vite run.
+- **A fire seed now waits for a city**: seeds stay armed until development is
+  near, announce one `dudfire`, retry silently; scenario objects are never
+  mutated (an `ignited` flag on S.fires would have poisoned every later run
+  in the harness — found before it shipped).
+- **Job-gated growth grew people with zero jobs**: the mid-band test was
+  `J >= 0.65*P` which is vacuous at P=0. A powerRange mutant caught it
+  because its fixture city had no industry. Every mutant survival this
+  session was a report about the TEST: drained event buffers (probe must
+  accumulate per tick), fixtures with no jobs, a probe asserting on ash
+  while the fire had already burned out, and `(await x ? a : b)` parsing as
+  `(await x) ? a : b` — the Promise never got awaited and `.cursor` was
+  undefined.
+- **`gh pr merge` cannot run when `main` is checked out in another worktree**
+  — it tries to git-checkout main. Merge via
+  `gh api -X PUT repos/.../pulls/N/merge -f merge_method=squash -f delete_branch=true`
+  (same squash, branch deleted server-side; local branch left behind —
+  `git switch -c <state-branch> origin/main` after fetching).
+- S1 target moved 480→380 with funds 1600→2000 and deadline 52: the honest
+  knob was capital (the tier gate was money-starved, not map-starved); the
+  stability pin now grades DRAWS on the peak in the mature tail only — a
+  still-climbing curve is health, not oscillation.
 
 ## Gates (all green at merge)
-15 scoped lints · `missilecheck` 355/355 + 6/6 mutants · `missileplay`
-25/25 local AND on the smoke runner · `aicheck`/`zorkcheck`/`galactcheck`/
-`forgecheck`/`polarcheck` all green · build ✓ · prod HTTP 200 + bundle clean.
+15 scoped lints (+`lint:sim` now a 16th) · `citycheck` 151/151 + 7/7 mutants
+· `cityplay` 22/22 twice in a row · `missilecheck`/`aicheck`/`zorkcheck`/
+`galactcheck`/`forgecheck`/`polarcheck` green · build ✓ · prod browser
+check clean.
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Claim #74 SimCity-Min (queue head). Fresh worktree if the main checkout
-   is dirty again; `pgrep -fl FORGE-QA` first.
-2. Missile Battle is shipped — do not polish it. Its gates: `lint:missile`
-   + `missilecheck` (static), `missileplay` (smoke job).
-3. Before touching anything: `git status` in the main checkout — if it shows
-   `fpscheck.mjs`/`IronKeep/index.jsx` dirty and QA is dead (`pgrep -fl
-   FORGE-QA`), settle that tree deliberately; the worktree-lane dance works
-   but it is not free.
+1. Claim #77 Lode Runner. `pgrep -fl FORGE-QA` first; fresh worktree +
+   node_modules symlink dance if main is still dirty.
+2. SimCity-Min is shipped — do not polish. Its gates: `lint:sim` +
+   `citycheck` (static), `cityplay` (smoke job).
+3. Known honest gaps to pick up as their own issues someday: tax model is
+   shallow (best-rate, no migration), fire spread residue is a die the
+   planner can't see, no in-browser WIN check (win is Node-only; the end
+   SCREEN is browser-checked).
 
 ## Three questions for Jon
-1. Same one as last session, now with more evidence: worktree-per-session in
-   the plists (this session ran 100% in one and cost nothing but a slower
-   disk), or a hard kill for QA sessions that blow their 60-min box (this
-   one ran 4h+ and was still writing files as I merged)?
-2. `smoke` finished before `static` on this PR too (3m6s vs 1m46s) —
-   intentional parallelism, or should the merge wait on both explicitly?
-3. Two Missile Commands now ship (`/missilecommand` the initial-commit
-   stub, `/missile-battle` the harnessable one). Hide the old one like
-   SuperMarioClassic, or keep both listed?
+1. Same recurring one, third session: worktree-per-session in the plists
+   now that `gh api` merge is the documented path, or do we fix the main
+   checkout (kill the QA loop, land its stash) so sessions can work in it?
+2. The `--mutate` block spent more wall-time than the whole first harness
+   build this session. Keep 7 mutants in `citycheck` forever, or graduate
+   them to a rarer `--deep` run like `heistmutate`?
+3. `scripts/.shots/` is images-only by policy — cityplay currently writes no
+   screenshots at all. Do you want a `--shots` mode (title/play/fire/end
+   frames uploaded by the smoke job) or is pixel-sampling enough?
 
 ## Lineage
-AGENTS.md honored: read STATE first, claimed queue head #73 with claim +
-design comments, one game, 5 checkpoint pushes with one-line FORGE comments,
-harness proven able-to-fail (6/6 mutants + a manual chainR break), merge
-only via `gh pr checks --watch --fail-fast && gh pr merge --squash
---delete-branch`, prod verified, STATE rewritten on main after merge.
-Rule 4: five straight sessions of `src/games/**` game code. Ran ~3h05m —
-inside the box.
+AGENTS.md honored: read STATE first, claimed queue head #74 (claim was
+already posted from the prior half of this session), one game, checkpoint
+pushes with issue comments, harness proven able-to-fail (7/7 mutants — and
+four of them first SURVIVED, each survival fixed in the test, not the code),
+merge only after `gh pr checks --watch --fail-fast` (static+smoke+Vercel
+green) then squash via the API because main was worktree-locked, prod
+verified in a real browser, STATE rewritten here on a PR branch.
+Rule 4: six straight sessions touching `src/games/**`. Ran ~4h20m — over
+the 3-hour box by ~50m; the overage was entirely in test-honesty work
+(mutants + browser flake root-causes), one game only, no scope creep.
