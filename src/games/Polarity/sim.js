@@ -73,7 +73,7 @@ export const CFG = {
 
 const sway = (gs) => Math.sin(gs.pt / CFG.swayPeriod * Math.PI * 2) * CFG.swayAmp
 const alive = (e) => e.state !== 'dead'
-const ev = (gs, e) => { if (!gs.noscan) gs.events.push(e) }
+const ev = (gs, e) => { if (!gs.noscan) { e.tick = gs.tick; gs.events.push(e) } }
 
 // the engine's promise: opposite-colour volleys need flipGap ticks of air
 export function volleyOK(gs, color) {
@@ -488,7 +488,7 @@ export function freeze(gs) {
         n: [gs.tick, gs.pt, gs.timeLeft, gs.score, gs.lives, gs.charge, gs.kills,
             gs.wallIdx, gs.stormIdx, gs.nextDiveAt, gs.nextCol,
             gs.lastVolley ? gs.lastVolley.tick : -1, gs.lastVolley ? (gs.lastVolley.color === L ? 0 : 1) : 2,
-            gs.wave, gs.phase === 'play' ? 0 : 1],
+            gs.wave, gs.phase === 'play' ? 1 : 0],
         p: [gs.player.x, gs.player.y, gs.player.cool, PSTATE[gs.player.state], gs.player.invuln, gs.player.deadT, gs.player.pol === L ? 0 : 1],
         e: gs.enemies.map((e) => [e.x, e.y, e.uT, SIDX.indexOf(e.state), e.fired ? 1 : 0, e.nextShot || 0, e.alt === L ? 0 : 1, e.nextRing || 0, e.nextFan || 0, e.gap || 0, e.quota ? e.quota.L : 0, e.quota ? e.quota.D : 0, e.hp, e.shell === L ? 0 : 1]),
         s: gs.shots.map((b) => ({ ...b })),
