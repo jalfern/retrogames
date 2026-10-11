@@ -20,7 +20,6 @@ import { W, H, SCEN } from './scen.js'
 import { newCity, step, T, CFG, inB } from './sim.js'
 
 const idx = (x, y) => y * W + x
-const idOf = (x, y) => y * W + x
 const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 const grass = (g, x, y) => inB(x, y) && g.grid[idx(x, y)].t === T.GRASS
 
@@ -219,7 +218,7 @@ export function decideYear(g, ctx) {
     //    dark candidates wait in the queue for the relay that will light them.
     let budget = 8
     while (ctx.zoneQueue.length && budget-- > 0 && can(CFG.cost.res)) {
-        const i = ctx.zoneQueue.findIndex(([tool, x, y]) => g.grid[idx(x, y)].t === T.GRASS && poweredNear(x, y))
+        const i = ctx.zoneQueue.findIndex(([, x, y]) => g.grid[idx(x, y)].t === T.GRASS && poweredNear(x, y) && poweredNear(x, y))
         if (i < 0) break
         const [tool, x, y] = ctx.zoneQueue.splice(i, 1)[0]
         ctx.queue.push({ tool, place: [x, y] })

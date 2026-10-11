@@ -70,6 +70,9 @@
     "lint:missile": "eslint src/games/MissileBattle src/components src/utils src/config src/main.jsx scripts",
     "missilecheck": "node scripts/missilecheck.mjs",
     "missileplay": "node scripts/missileplay.mjs",
+    "lint:sim": "eslint src/games/SimCityMin src/components src/utils src/config src/main.jsx scripts",
+    "citycheck": "node scripts/citycheck.mjs",
+    "cityplay": "node scripts/cityplay.mjs",
     "forgeplay": "node scripts/forgeplay.mjs"
   },
   "dependencies": {

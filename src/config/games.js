@@ -57,6 +57,7 @@ const PolarityGame = lazy(() => import('../games/Polarity'))
 // Missile Battle: same lane again — pure step(state,input), zero Math.random,
 // the attract demo is the autopilot's proven run, and the slack rule grades it.
 const MissileBattleGame = lazy(() => import('../games/MissileBattle'))
+const SimCityMinGame = lazy(() => import('../games/SimCityMin'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -174,6 +175,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'Missile Command done honestly: every warhead that ever falls is named in a SCRIPT — tick, column, target, split — audited offline by a Node harness that also re-solves every wave with one fewer interceptor in every battery (the slack rule) and freezes Math.random to prove nothing here is luck. ICBMs MIRV into siblings that converge on one crater, bombers drop on the run, smart bombs weave; your blast chains, so the answer to saturation is geometry. Three barrages; between waves the cities rebuild; lose all six and the map goes dark. The attract demo is the autopilot\'s own proven run, tick for tick.',
         controls: ['TAP the sky / arrows + Space: put an interceptor exactly there — the nearest battery in range fires it', 'The blast kills anything it touches and every kill chains a smaller blast — clusters die together', 'Warheads SPLIT, bombers DROP, smart bombs WEAVE — all scripted, all readable, never random', '10 interceptors per battery per wave; the outer batteries have limited arcs, the center covers the map', '?: Pause and read the controls'],
+    },
+    {
+        path: '/simcity-min',
+        component: SimCityMinGame,
+        label: 'SIMCITY-MIN',
+        theme: 'dark',
+        description: 'A city on a fixed-timestep ledger: power travels the ROAD graph (a plant with no wire to your block lights nothing), residents follow JOBS (zone housing without factories and the census stays empty), and the yearly budget must balance with no random bumps to save you. Three maps — a green field, a strip mine with a dead grid, a town the script torches twice and then walks a tornado through. Reach the charter population before the deadline. Every fire, every spread, every dollar is audited offline by a Node harness that also replays each map with one fewer plant, one fewer station and $150 less — the slack rule — and Math.random is banned at import time. The attract demo is the autopilot\'s own proven run, tick for tick.',
+        controls: ['Arrows / D-pad: move the cursor', 'Space / A: place the selected tool on the cursor (streets first — power rides the wires)', 'T / B: cycle tool — ROAD, PLANT, RES, COM, IND, PARK, FIRE, DOZE', '[ and ]: nudge the tax — 7% pays best, greed empties the blocks', 'Tap the map to place; ? pauses. 1·2·3 on the title pick a map'],
     },
     {
         path: '/pong',

@@ -181,15 +181,21 @@ function yearTick(g) {
     }
 
     // disasters: scripted ignition, deterministic spread, stations douse
-    for (const f of S.fires) {
-        if (f.year !== g.year || g.doneFire?.includes(f.year)) continue
-        g.doneFire.push(f.year)
+    for (let i = 0; i < S.fires.length; i++) {
+        const f = S.fires[i]
+        // a seed stays armed until it finds something to burn: a city that
+        // never builds near the script's corner is not a city on fire — it is
+        // a city that never saw the fire. One dudfire is announced; the retry
+        // after that is silent, and the script itself is never mutated.
+        if (f.year > g.year || g.doneFire?.includes(i + 'i')) continue
         const at = g.grid[idx(f.x, f.y)]
         const cell = BURNABLE(at.t) && (at.t === T.PLANT || at.lvl > 0) ? [f.x, f.y] : nearDeveloped(g, f.x, f.y)
         if (cell) {
+            g.doneFire.push(i + 'i')
             g.grid[idx(cell[0], cell[1])].burn = CFG.fireYears
             g.events.push({ type: 'fire', x: cell[0], y: cell[1], year: g.year })
-        } else {
+        } else if (!g.doneFire.includes(i + 'd')) {
+            g.doneFire.push(i + 'd')
             g.events.push({ type: 'dudfire', x: f.x, y: f.y, year: g.year })
         }
     }
@@ -243,7 +249,6 @@ function yearTick(g) {
         }
     }
 
-    const before = g.funds
     g.income = income
     g.expense = expense
     g.funds += income - expense
