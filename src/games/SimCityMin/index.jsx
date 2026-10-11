@@ -180,8 +180,10 @@ const SimCityMinGame = () => {
             }
             if (c.burn) {
                 ctx.fillStyle = (x + y + Math.floor(tk / 4)) % 2 ? '#ff7d3d' : '#ffcf3d'
-                const f = 4 + ((x * 3 + tk) % 5)
-                ctx.fillRect(px + 6, py + TILE - 6 - f, 6, f); ctx.fillRect(px + 15, py + TILE - 4 - f, 5, f)
+                const f = 6 + ((x * 3 + tk) % 5)
+                ctx.fillRect(px + 9, py + 12 - (f >> 1), 10, f + 6)
+                ctx.fillRect(px + 4, py + TILE - 3 - (f >> 1), 5, f >> 1)
+                ctx.fillRect(px + 19, py + TILE - 3 - (f >> 1), 5, f >> 1)
             }
         }
 
