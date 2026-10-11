@@ -18,7 +18,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import {
     TS, MW, MH, VIEW_W, VIEW_H, EMPTY, ROCK, CRACK, BULK, SPIKE,
-    PLAYER, LAYERS, makeGame, planRun, step, footCell,
+    PLAYER, LAYERS, GROUND_GRACE, makeGame, planRun, step, footCell,
     stateHash, starWorld, starScreenX, tileAt,
 } from './sim.js'
 
@@ -449,7 +449,7 @@ const MetroidGame = () => {
                 teleport: (tx, ty) => {
                     if (screenRef.current !== 'play' || gs.end) return false
                     gs.p.x = tx * TS + 3; gs.p.y = (ty + 1) * TS - PLAYER.h
-                    gs.p.vx = 0; gs.p.vy = 0; gs.p.onGround = true; gs.p.groundFrames = 2
+                    gs.p.vx = 0; gs.p.vy = 0; gs.p.onGround = true; gs.p.groundFrames = GROUND_GRACE
                     return true
                 },
                 start: startPlay,
