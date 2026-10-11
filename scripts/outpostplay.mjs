@@ -66,8 +66,15 @@ const cellPix = (gx, gy) => page.evaluate(([x, y]) => {
 await wait(3500)
 let s = await probe()
 r.check('attract mode is showing', s && s.screen === 'attract')
-const demo = await cellPix(17, 10)
-r.check(`attract canvas is not black (cell paints ${JSON.stringify(demo)})`, demo && demo.cool + demo.warm + demo.gold > 3)
+const demo = await page.evaluate(() => {
+    const c = document.querySelector('canvas[data-op-stage]')
+    if (!c) return 0
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+    let lit = 0
+    for (let i = 0; i < d.length; i += 16) if (d[i] + d[i + 1] + d[i + 2] > 40) lit++
+    return lit
+})
+r.check(`attract canvas is not black (${demo} lit samples of the ASCII field)`, demo > 200)
 const pos0 = (await probe()).dwarves.map((d) => `${d.x},${d.y}`).join(';')
 await wait(2500)
 const pos1 = (await probe()).dwarves.map((d) => `${d.x},${d.y}`).join(';')
