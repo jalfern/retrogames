@@ -1,9 +1,6 @@
 ---
 description: The Forge Warden — supervises the game-build loop every 10 min. Never builds, never merges.
 mode: primary
-# Runs on the studio 27B, NOT Flash-Next: every tick on the builder's model
-# batched with it and knocked the build off MTP. Not on the mini either (QA lane).
-model: omlx/Qwen3.8-27B-oQ8e-mtp
 permission:
   bash:
     "*": deny
