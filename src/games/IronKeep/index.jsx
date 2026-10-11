@@ -757,6 +757,48 @@ const IronKeepGame = () => {
                     buf[y * RW + x] = sh[t * 64 + texX]
                     ty += tstep
                 }
+
+                // A half-open door leaves a see-through gap in the top of its band. The
+                // single DDA stopped at the door, so those pixels still hold the *near*
+                // floor/ceiling (README: Known gaps — half-open doors). Portal-recede:
+                // continue the ray past the door and paint the room beyond, or opaque
+                // black when it is past fog — never the near side.
+                if (open > 0) {
+                    const oTop = Math.max(0, Math.round(wallTop))
+                    const oBot = Math.min(RH, y0)
+                    if (oBot > oTop) {
+                        for (let y = oTop; y < oBot; y++) buf[y * RW + x] = 0xff000000
+                        let fmapX = mapX, fmapY = mapY, fsdx = sdx, fsdy = sdy, fside = side, fhit = 0, fguard = 0
+                        while (!fhit && fguard++ < 90) {
+                            if (fsdx < fsdy) { fsdx += ddx; fmapX += stepX; fside = 0 } else { fsdy += ddy; fmapY += stepY; fside = 1 }
+                            if (fmapX < 0 || fmapY < 0 || fmapX >= W || fmapY >= HH) { fhit = 2; break }
+                            if (isSolid(fmapX, fmapY)) fhit = 1
+                        }
+                        if (fhit === 1) {
+                            const fdist = Math.max(dist, fside === 0 ? fsdx - ddx : fsdy - ddy)
+                            if (fdist < FOG) {
+                                const fl = RH / fdist
+                                const fwall = horizon - fl / 2
+                                let fwallX = fside === 0 ? py + fdist * rdy : px + fdist * rdx
+                                fwallX -= Math.floor(fwallX)
+                                let ftexX = (fwallX * 64) | 0
+                                if ((fside === 0 && rdx > 0) || (fside === 1 && rdy < 0)) ftexX = 63 - ftexX
+                                const ftex = wallTex[at(fmapX, fmapY)] || wallTex['#']
+                                const fsh = ftex.shades[Math.min(11, shadeLevel(fdist, fside === 1 ? 1.7 : 0))]
+                                const fstep = 64 / fl
+                                const ft0 = Math.max(oTop, Math.round(fwall))
+                                const ft1 = Math.min(oBot, Math.round(fwall + fl))
+                                let fty = (ft0 - fwall) * fstep
+                                for (let y = ft0; y < ft1; y++) {
+                                    let t = fty | 0
+                                    if (t > 63) t = 63
+                                    buf[y * RW + x] = fsh[t * 64 + ftexX]
+                                    fty += fstep
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // ---- billboards ----
@@ -1192,6 +1234,11 @@ const IronKeepGame = () => {
                 perf: () => ({ avg: +frameMs.toFixed(2), max: +frameMax.toFixed(2), n: frameN }),
                 peak: () => audioController._peak?.() ?? 0,
                 input: (k, v) => { input[k] = v; if (k === 'fire' && v) input.queued = true },
+                // Hold door i at open fraction v (open+target together so it stops sliding):
+                // the only way to pin a *mid*-slide frame deterministically for the renderer.
+                setDoor: (i, v) => { const d = doors[i]; if (!d) return null; d.open = v; d.target = v; return { open: +d.open.toFixed(3), target: +d.target.toFixed(3) } },
+                // The live framebuffer as a flat [row*RW+col] array of RGBA-packed u32.
+                pixels: () => Array.from(buf),
             }
         }
 

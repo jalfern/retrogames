@@ -98,6 +98,12 @@ jobs:
       # (queue card count, gate color, anvil freshness, cart flips). ~1 s.
       - run: npm run lint:forge
       - run: npm run forgecheck
+      # Thirteenth scoped gate: POLARITY. The volley rhythm promise, a per-tick
+      # fairness scan through the same step() the player drives, the muscle pins,
+      # and six mutants all run in Node in seconds — the same proof that makes
+      # the attract demo an honest replay instead of theatre.
+      - run: npm run lint:polar
+      - run: npm run polarcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -137,6 +143,10 @@ jobs:
         env:
           SHOT_CHANNEL: chromium
           HEIST_LITE: "1"
+      - name: Polarity smoke (real keys, pixels graded against physics)
+        run: npm run polarplay
+        env:
+          SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)
         if: failure()
         run: cat /tmp/vite.log

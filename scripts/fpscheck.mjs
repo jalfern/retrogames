@@ -214,6 +214,32 @@ s = await st()
 const gold2 = s.doors.find(d => d.x === 17 && d.y === 12)
 await r.check('gold door opens with the key', !!gold2 && gold2.open > 0.5, JSON.stringify(gold2))
 
+// 4d. Mid-door frame (README "Known gaps"): while a door is between closed and open,
+// the gap above the sinking panel must show the room beyond or black — never the
+// player's own near-side floor/ceiling. Stand close so the near floor is bright, pin
+// the door 90% open, and read the gap straight from the live framebuffer.
+{
+    await call('warp', 8.5, 17.5, 0)                 // courtyard, facing door[0] at (11,17)
+    await call('setDoor', 0, 0.9)
+    await page.waitForTimeout(300)                    // let the rAF loop render the mid-door frame
+    const buf = await call('pixels')
+    const RW = 320, RH = 200
+    const dist = 11 - 8.5                             // door near edge at x=11, player at x=8.5
+    const y0 = RH / 2 - (RH / dist) / 2 + (RH / dist) * 0.9   // panel top of the 90%-open door
+    let t = 0, n = 0
+    for (let y = RH / 2 + 1; y < y0; y++) for (let cx = 150; cx <= 170; cx++) {
+        const v = buf[y * RW + cx]
+        t += 0.2126 * (v & 255) + 0.7152 * ((v >>> 8) & 255) + 0.0722 * ((v >>> 16) & 255); n++
+    }
+    const gapLum = t / n
+    const s2 = await st()
+    const row120 = Array.from({ length: 11 }, (_, i) => { const v = buf[120 * RW + (155 + i)]; return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255].join(',') })
+    console.log('  DBG mid-door state:', JSON.stringify({ mode: s2.mode, level: s2.level, x: +s2.x.toFixed(2), y: +s2.y.toFixed(2), ang: +s2.ang.toFixed(2), door0: s2.doors[0] }))
+    console.log('  DBG row120 cols155-165 (rgb):', row120.join(' | '))
+    await r.check('mid-door gap shows the room beyond, not near-side floor', gapLum < 6,
+        `gap mean lum=${gapLum.toFixed(1)} (the bug leaves the near floor, ≈14, in view)`)
+}
+
 // 5. Hitscan: three bolts into a legionary at close range must put him down.
 await call('warp', 5.5, 19.0, -Math.PI / 2)
 const gid = await call('spawn', 'grunt', 5.5, 16.0)

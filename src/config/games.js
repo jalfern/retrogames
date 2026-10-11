@@ -51,6 +51,9 @@ const IceClimberGame = lazy(() => import('../games/IceClimber'))
 // Galaga: same lesson again — the attract demo is the autopilot's own proven
 // run, and the path library it shares with the harness rides in its chunk.
 const GalagaGame = lazy(() => import('../games/Galaga'))
+// Polarity: same lesson — the attract demo is the autopilot's own proven run,
+// and the fairness scanner it shares with the harness IS the autopilot.
+const PolarityGame = lazy(() => import('../games/Polarity'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -152,6 +155,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'The fighting formation of the bee species. Every dive is a SCRIPTED flight path — readable, dodgeable, and audited tick by tick by the harness that ships with this repo. The red Flagship drops a tractor beam: dodge it or lose a fighter. A captured fighter flies the next stage as an escort — shoot your own escort down and CATCH the falling fighter to win a DOUBLE fighter. Three challenging stages; the attract demo is the autopilot\'s own proven run, tick for tick.',
         controls: ['Arrow Keys / D-pad: Fly (you own the bottom band — the walls are death traps)', 'Space / A: Fire (two shots — a DOUBLE fighter fires two PAIRS)', 'Divers hunt your lane: read the path, dodge early, not last-second', 'The Flagship\'s tractor beam captures you — dodge it, or let it take you and win the fighter back', '?: Pause and read the controls'],
+    },
+    {
+        path: '/polarity',
+        component: PolarityGame,
+        label: 'POLARITY',
+        theme: 'dark',
+        description: 'Two colors, one pilot. An Ikaruga-like shooter where the constant decision is which color to BE: bullets of your color are absorbed and charge the flux meter (a full charge plus a flip = FLUX NOVA), the opposite color kills you — and your shots only kill the opposite color. Walls and storms are telegraphed by the script and audited tick-by-tick by the fairness scanner that ships in the repo: every telegraph has BOTH a position answer and a polarity answer. The REACTOR core answers only to shots opposite its spinning shell, one color per quota, so the flip is the win condition. The attract demo is the autopilot\'s own proven run, tick for tick.',
+        controls: ['Arrow Keys / D-pad: Fly the bottom band', 'Space / A: Fire (your shots only kill the OPPOSITE color)', 'X / B button: FLIP POLARITY — the whole game is this one decision', 'Same-color fire is absorbed and charges FLUX — a full charge plus a flip nukes everything except the core shell', 'Telegraph lines mark incoming walls (find the gap) and storms (colorless — move)', 'The clock never wipes a stage: stall it and you pay a fighter and run it again', '?: Pause and read the controls'],
     },
     {
         path: '/pong',
