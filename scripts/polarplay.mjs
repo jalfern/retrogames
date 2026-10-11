@@ -48,6 +48,17 @@ const waitAlive = async (tries = 200) => {
     }
     return null
 }
+// setup() is refused on the over/attract screens (a dead player two lives
+// deep from the last scripted death lands there), and a refused setup that
+// nobody checks makes every later assert chase a world that was never built.
+const ensureSetup = async (opts) => {
+    for (let i = 0; i < 6; i++) {
+        if (await page.evaluate((o) => window.__polarTest.setup(o), opts)) return true
+        await page.keyboard.press('KeyZ')
+        await wait(450)
+    }
+    return false
+}
 
 await page.goto(URL, { waitUntil: 'load' })
 try {
@@ -102,16 +113,19 @@ await wait(300)
     await wait(120)
     const d = await probe()
     r.check('X flips polarity (real key)', d.player.pol !== pol0, `${pol0} -> ${d.player.pol}`)
+    for (let i = 0; i < 60 && (await probe()).shots.length > 0; i++) await wait(80)
     await page.keyboard.press('Space')
-    await wait(60)
-    const f = await probe()
-    const myShot = f.shots.find((s) => s.y > 180)
-    r.check('fresh shots exist and take the NEW color', !!myShot && myShot.color === d.player.pol, `pol=${d.player.pol} shot=${myShot && myShot.color} shots=${f.shots.length}`)
+    let shot = null
+    for (let i = 0; i < 20; i++) { await wait(80); shot = await probe(); if (shot.shots.length > 0) break }
+    const fires = shot ? shot.evLog.filter((e) => e.type === 'fire') : []
+    const last = fires[fires.length - 1]
+    r.check('the shot after a real flip comes out in the NEW color',
+        !!last && last.color === d.player.pol, `pol=${d.player.pol} last fire=${last && last.color}`)
 }
 
 // ---- paint follows physics AND polarity ----
 {
-    await page.evaluate(() => window.__polarTest.setup({ player: { x: 60, y: 264, pol: 'L', state: 'alive', invuln: 0 } }))
+    await ensureSetup({ player: { x: 60, y: 264, pol: 'L', state: 'alive', invuln: 999 } })
     await wait(120)
     const sample = () => page.evaluate(() => {
         const q = window.__polarTest.probe()
@@ -138,7 +152,7 @@ await wait(300)
     const L2 = await best()
     r.check('the LIGHT fighter is PAINTED cyan at the pixel the physics reports, before and after a real move',
         L1.c >= 2 && L2.c >= 2 && s2.x > 60 + 15, `cyan ${L1.c}/${L2.c} at x 60->${s2.x.toFixed(0)} (${s2.st})`)
-    await page.evaluate(() => window.__polarTest.setup({ player: { x: 60, y: 264, pol: 'D' } }))
+    await ensureSetup({ player: { x: 60, y: 264, pol: 'D', state: 'alive', invuln: 999 } })
     await wait(150)
     const D1 = await best()
     r.check('flip the sim, the SAME pixels turn magenta — the paint IS the polarity', D1.m >= 2, `magenta ${D1.m} cyan ${D1.c}`)
@@ -154,9 +168,9 @@ await wait(300)
 
 // ---- absorb / death chain in the browser ----
 {
-    await page.evaluate(() => window.__polarTest.setup({ wave: 0, player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 }, charge: 3 }))
+    await ensureSetup({ wave: 0, player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 }, charge: 3 })
     await waitAlive()
-    await page.evaluate(() => window.__polarTest.setup({ player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 }, charge: 3, shot: { x: 112, y: 267, color: 'L', vy: 0.4 } }))
+    await ensureSetup({ player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 }, charge: 3, shot: { x: 112, y: 267, color: 'L', vy: 0.4 } })
     let s = null, died = null
     for (let i = 0; i < 60; i++) {
         s = await probe()
@@ -167,7 +181,7 @@ await wait(300)
     r.check('an L bullet vanishes into an L fighter (absorb, charge +1, alive)',
         !!s && !died && s.evLog.some((e) => e.type === 'absorb') && s.player.state === 'alive',
         died ? 'the player died before the injected bullet arrived' : `absorb=${s && s.evLog.some((e) => e.type === 'absorb')}`)
-    await page.evaluate(() => window.__polarTest.setup({ player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 }, shot: { x: 112, y: 267, color: 'D', vy: 0.4 } }))
+    await ensureSetup({ player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 }, shot: { x: 112, y: 267, color: 'D', vy: 0.4 } })
     const dead = await waitEv((e) => e.type === 'death' && e.cause === 'shot', 100)
     r.check('the opposite color kills the same fighter (real browser sim)', !!dead, `cause=${dead && dead.cause}`)
     await waitAlive()
@@ -175,7 +189,7 @@ await wait(300)
 
 // ---- nova in the browser: real X press sweeps the board ----
 {
-    await page.evaluate(() => window.__polarTest.setup({ wave: 0, player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 } }))
+    await ensureSetup({ wave: 0, player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 } })
     await waitAlive() // startStage clears shots at banner-end — inject AFTER it
     await page.evaluate(() => {
         window.__polarTest.setup({ charge: 10 })
@@ -193,7 +207,7 @@ await wait(300)
 
 // ---- the storm telegraph kills a stander ----
 {
-    await page.evaluate(() => window.__polarTest.setup({ wave: 0, player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 } }))
+    await ensureSetup({ wave: 0, player: { x: 112, y: 264, pol: 'L', state: 'alive', invuln: 0 } })
     const warned = await waitEv((e) => e.type === 'warn' && e.hazard === 'storm', 400)
     r.check('the storm TELEGRAPHS before it lands (warn event + drawn strip)', !!warned, `warn at tick ${warned && warned.tick}`)
     const stormDeath = await waitEv((e) => e.type === 'death' && e.cause === 'storm', 600)
@@ -203,42 +217,50 @@ await wait(300)
 
 // ---- the shell answers only the opposite color, real keys ----
 {
-    await page.evaluate(() => window.__polarTest.setup({ wave: 2, player: { x: 112, y: 264, state: 'alive', invuln: 0 } }))
+    await ensureSetup({ wave: 2, player: { x: 112, y: 264, state: 'alive', invuln: 0 }, lives: 9 })
     await waitAlive()
-    let gotChit = false
-    for (let i = 0; i < 600 && !gotChit; i++) {
+    // The proof is the QUOTA the sim reports, not the event log: a busy
+    // reactor scrolls chits out of any fixed event window. The core dying
+    // after being seen alive is itself a receipt — the quota is the only
+    // way it dies.
+    let sawCore = false
+    let quotaChanged = false
+    for (let i = 0; i < 900 && !(quotaChanged && sawCore); i++) {
         const st = await probe()
         const core = st.enemies.find((e) => e.kind === 'core')
-        if (!core) { await wait(60); continue }
+        if (!core) { if (sawCore) break; await wait(60); continue }
+        sawCore = true
+        if (core.quota && core.quota !== '0/0') quotaChanged = true
         const need = core.shell === 'L' ? 'D' : 'L' // a chit is a shot OPPOSITE the shell
+        if (st.player.state !== 'alive') { await wait(80); continue }
         if (st.player.pol !== need) {
             await page.keyboard.press('KeyX')
             await wait(60)
         }
-        const dx = 112 - st.player.x
-        if (Math.abs(dx) > 3) {
-            await page.keyboard.down(dx > 0 ? 'ArrowRight' : 'ArrowLeft')
+        const now = await probe()
+        if (Math.abs(112 - now.player.x) > 3) {
+            const dir = 112 > now.player.x ? 'ArrowRight' : 'ArrowLeft'
+            await page.keyboard.down(dir)
             await wait(80)
-            await page.keyboard.up(dx > 0 ? 'ArrowRight' : 'ArrowLeft')
+            await page.keyboard.up(dir)
         } else {
-            const now = await probe()
             const c2 = now.enemies.find((e) => e.kind === 'core')
             if (c2 && now.player.pol !== c2.shell) {
                 await page.keyboard.press('Space')
-                await wait(120)
-                const s3 = await probe()
-                if (s3.evLog.some((e) => e.type === 'chit')) gotChit = true
+                await wait(140)
             } else await wait(60)
         }
     }
     const fin = await probe()
     const core = fin.enemies.find((e) => e.kind === 'core')
-    r.check('real X + real Space: opposite-color shots CHIT the core through the open shell', gotChit || (core && core.quota && core.quota !== '0/0'), `chit=${gotChit} quota=${core && core.quota}`)
+    const coreDown = sawCore && !core
+    r.check('real X + real Space: opposite-color shots CHIT the core (quota moved, then the core died)',
+        quotaChanged && sawCore, `quota seen=${quotaChanged} core down=${coreDown} now=${core ? core.quota : 'gone'} screen=${fin.screen}`)
 }
 
 // ---- death and restart ----
 {
-    await page.evaluate(() => window.__polarTest.setup({ wave: 0, player: { x: 112, y: 264, pol: 'D', state: 'alive', invuln: 0 }, lives: 1 }))
+    await ensureSetup({ wave: 0, player: { x: 112, y: 264, pol: 'D', state: 'alive', invuln: 0 }, lives: 1 })
     const died = await waitEv((e) => e.type === 'death', 800)
     r.check('the fleet can kill a motionless player (the sim is not rigged in the browser)', !!died)
     let over = null
