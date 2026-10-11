@@ -77,6 +77,15 @@ export const PHY = {
 
 export const PLAYER = { w: 10, h: 20, energy: 4, invuln: 60, respawn: 55 }
 
+// The floor re-pins every ~2 ticks, not 1: stepBody's vertical probe sits 1px
+// ABOVE the feet, so a resting body must sink 0.36px/tick (gravity) for two
+// ticks before the pin catches it. The jump gate decrements groundFrames
+// BEFORE it reads it, so a 2-tick grace lands on 0 every other tick and
+// silently drops ~half of all ground jumps — the "glitchy, especially when
+// running" report. The grace must exceed the pin cycle; 6 (≈100ms) also reads
+// as a comfortable coyote window when you walk off a ledge.
+export const GROUND_GRACE = 6
+
 // ---------------------------------------------------------------- world ----
 // Carve rooms/corridors/shelves out of solid rock (the IronKeep lesson: an
 // un-leaky map is the default when you carve, and every number below is a
@@ -205,7 +214,7 @@ export function stepBody(b, inp, g) {
     const nx0 = Math.floor(b.x / TS), nx1 = Math.floor((b.x + b.w - 1) / TS)
     const ny0 = Math.floor(b.y / TS), ny1 = Math.floor((b.y + b.h - 1) / TS)
     for (let x = nx0; x <= nx1; x++) {
-        if (b.vy > 0 && solid(g, x, ny1)) { b.y = ny1 * TS - b.h; b.vy = 0; b.onGround = true; b.groundFrames = 2 }
+        if (b.vy > 0 && solid(g, x, ny1)) { b.y = ny1 * TS - b.h; b.vy = 0; b.onGround = true; b.groundFrames = GROUND_GRACE }
         else if (b.vy < 0 && solid(g, x, ny0)) { b.y = (ny0 + 1) * TS; b.vy = 0 }
     }
     if (b.y > MH * TS + 64) b.dead = true
@@ -258,7 +267,7 @@ function ghostTraj(g, cell, pat, abil, pose) {
     const sj = pat.dbl !== undefined
     if (sj && !(abil.sjump && CFG.doubleJump)) return null
     const at = pose || bodyAt(cell)
-    const b = { x: at.x, y: at.y, w: PLAYER.w, h: PLAYER.h, vx: 0, vy: 0, onGround: true, dbl: false, groundFrames: 2 }
+    const b = { x: at.x, y: at.y, w: PLAYER.w, h: PLAYER.h, vx: 0, vy: 0, onGround: true, dbl: false, groundFrames: GROUND_GRACE }
     const script = []
     const MAX = 110
     const dirPushed = pat.push.some(([d]) => d !== 0)
@@ -369,7 +378,7 @@ export function makeGame(opts = {}) {
     const w = makeWorld()
     return {
         world: w,
-        p: { ...bodyAt(w.spawn), w: PLAYER.w, h: PLAYER.h, vx: 0, vy: 0, onGround: false, dbl: false, face: 1, groundFrames: 2 },
+        p: { ...bodyAt(w.spawn), w: PLAYER.w, h: PLAYER.h, vx: 0, vy: 0, onGround: false, dbl: false, face: 1, groundFrames: GROUND_GRACE },
         energy: PLAYER.energy, invuln: 0, dead: 0,
         save: { ...w.spawn },
         abil: { beam: false, bomb: false, sjump: false, ...(opts.abil || {}) },

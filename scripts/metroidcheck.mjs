@@ -166,6 +166,44 @@ section('GADGETS (the live sim must really open what the ghosts promise)')
     }
 }
 
+// --------------------------------------------------------------- ground ----
+// the "glitchy jump": stepBody re-pins the floor every ~2 ticks (the vertical
+// probe sits 1px above the feet, so a resting body sinks 0.36px/tick before
+// the pin catches it) and decrements groundFrames BEFORE the jump gate reads
+// it. A grace of 2 therefore reads 0 on every other tick and silently drops
+// ~half of all ground jumps — fine in a still frame, brutal while running.
+// The gate value the body reads next tick is max(0, groundFrames-1): 0 iff
+// groundFrames<2. Assert a resting body can jump on EVERY tick.
+section('GROUND (the jump gate is not a coin flip — a resting body can jump every tick)')
+{
+    const dropped = (g, ticks, drive) => {
+        for (let i = 0; i < 45 && !g.p.onGround; i++) s.step(g, {})   // settle on the floor
+        let d = 0
+        for (let i = 0; i < ticks; i++) {
+            if (g.p.groundFrames < 2) d++          // the gate would read 0 this tick
+            s.step(g, drive())
+        }
+        return d
+    }
+    {
+        const g = s.makeGame()
+        const d = dropped(g, 240, () => ({}))
+        ok(d === 0, `standing still, a ground jump would be DROPPED on ${d}/240 ticks — the jump is a coin flip`)
+    }
+    {
+        const g = s.makeGame()
+        place(g, { x: 3, y: 35 })               // room A floor, run right: flat, no pit or wall in 80 ticks
+        const d = dropped(g, 80, () => ({ right: true }))
+        ok(d === 0, `running, a ground jump would be DROPPED on ${d}/80 ticks — the "glitchy when running" report`)
+    }
+    {
+        const g = s.makeGame()                     // and the measured gate is a REAL launch, not a proxy
+        place(g, { x: 6, y: 35 })
+        s.step(g, { jumpEdge: true })
+        ok(!g.p.onGround && g.p.vy < 0, 'a ground jump issued while resting did not launch the body')
+    }
+}
+
 // --------------------------------------------------------------- hazards ----
 section('HAZARD (the cave bites; the beacon remembers)')
 {
