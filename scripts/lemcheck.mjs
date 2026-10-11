@@ -201,6 +201,19 @@ for (let i = 0; i < LEVELS.length; i++) {
         const before = g.lemmings[0].climber
         ok(!sim.assign(g, 0, 'climb') && g.lemmings[0].climber === before, 'a zero supply still granted a skill')
     }
+    // the count is the whole goal (issue #110): once `need` have escaped the
+    // ledge is over, even with lemmings still pacing on screen. Before the fix
+    // the criteria was met at ~31s but the level paced to the 120s clock.
+    {
+        const g = mk()
+        for (let t = 0; t < 150; t++) sim.step(g)   // a few are up and walking; none out yet
+        const live = g.lemmings.filter(l => l.live)
+        ok(live.length > 0 && g.end === null, 'setup: need live lemmings and an open level to hold it back')
+        g.exited = g.level.need                     // the criteria is met right now
+        sim.step(g)
+        ok(g.end === 'clear' && g.win === true,
+            'criteria met (exited>=need) but the level kept running — it waits for stragglers or the clock instead of ending on the count')
+    }
 }
 
 // ------------------------------------------------------------------ mutations ---

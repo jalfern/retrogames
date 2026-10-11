@@ -181,7 +181,12 @@ export function step(g, cursorTarget = null) {
     }
 
     const active = g.lemmings.reduce((n, L) => n + (L.live ? 1 : 0), 0)
-    if (active === 0 && g.spawned >= lv.spawnCount) {
+    if (g.exited >= lv.need) {                 // save enough and the ledge is over: end on the count,
+        g.end = 'clear'                        // never wait for the stragglers to die or the clock to run out
+        g.win = true
+        g.score += skillBonus(g) + Math.max(0, Math.round(lv.time - g.t)) * 2
+        g.events.push({ type: 'win' })
+    } else if (active === 0 && g.spawned >= lv.spawnCount) {
         g.end = 'clear'
         g.win = g.exited >= lv.need
         g.score += g.win ? skillBonus(g) + Math.max(0, Math.round(lv.time - g.t)) * 2 : 0
