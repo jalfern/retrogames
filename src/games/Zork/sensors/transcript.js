@@ -180,8 +180,18 @@ export class TranscriptSensor {
       // and the explorer kept trying to take a mailbox that was not there.
       // Stale-by-default is the failure mode of any "remember what you saw"
       // field that is not cleared on the transition that invalidates it.
+      //
+      // `contains` was the field this code forgot: the Kitchen's "The glass
+      // bottle contains: A quantity of water" was merged into every room the
+      // agent visited afterwards, so all thirteen rooms on the map claimed to
+      // hold a bottle, the explorer `open`ed a bottle that was not in the
+      // room (one refused turn per visit, and the refusals only got worse per
+      // twin), and `take quantity of water` entered its vocabulary. A room
+      // that the game never described cannot inherit the furniture of one it
+      // did.
       this.visible = []
       this.closed = []
+      this.contains = {}
       this.announced = []
       this.darkExits = []
     }

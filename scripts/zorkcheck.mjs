@@ -360,13 +360,21 @@ const events = []
 const brain = new ZorkExplorer({ send: brainSend, sensor, onEvent: (m) => events.push(m) })
 const loop = new AgentLoop({ brain, arm: 'transcript', watchdog: 8, maxIdleTicks: 2, minActionGapMs: 0 })
 loop.running = true
-const MAX_TICKS = Number(opt(args, '--agent', 120))
+// The budget is in the agent's OWN turns, not wall clock — but it is a budget
+// the CHECK imposes, so when it runs out the check has to say so. Zork's
+// flavour events are random, so a run that is still exploring at the limit is
+// a different (perfectly healthy) shape from one that exhausted the map early,
+// and "running=true reason=null" is the check cutting the agent off, not the
+// agent giving up. Stopping it with a named reason is what lets the assertions
+// below tell the two shapes apart.
+const MAX_TICKS = Number(opt(args, '--agent', 200))
 let brainDied = null
 for (let i = 0; i < MAX_TICKS && loop.running; i++) {
   const entry = await loop.tick()
   if (sensor.dead && !brainDied) brainDied = `died after ${i} ticks at ${sensor.room}`
   if (!entry && !loop.running) break
 }
+if (loop.running) loop.stop('budget — tick limit')
 
 const sum = brain.summary()
 r.info('──── the brain played', `${sum.trace.length} commands, stopped: ${loop.reason || 'still running'}`)
@@ -545,6 +553,38 @@ r.check('it named the ground it could not map',
   `unstable: ${sum.stats.unstable.join(', ') || 'none'} · report: ${sum.report.join(' | ').slice(0, 90) || 'nothing to explain'}`)
 r.check('it stopped for a reason it can state', !loop.running && !!loop.reason,
   `running=${loop.running} reason=${loop.reason}`)
+
+// ── #36: the agent may not give up while work remains ────────────────────────
+// Reported from production: the agent climbed a tree, the frontier ran out
+// behind it, and it sat on top of the map saying `idle — brain has no move`
+// with no idea that its own map held an untested way down. Three numbers say
+// whether that class is still in the code, regardless of where THIS run's
+// random flavour events happened to take it:
+//
+//   * the old brain died at ~65 commands, `stuck — no recovery action`, with
+//     untried directions still sitting on the map — a give-up, not an end;
+//   * a frontier that is still non-empty at a stop the AGENT chose (not the
+//     check's tick budget) means it abandoned work;
+//   * a stop at a truly exhausted map must carry the planner's own words —
+//     which fallback it tried and what ran out — because in the output a smart
+//     fallback and a stuck agent look identical without that line.
+// Measured with the agent's own light state: a way the room's prose labelled
+// dark is not owed work while nothing burns in hand — the agent sealing the
+// Kitchen's dark staircase is the invariant, not an abandoned frontier.
+const frontierLeft = brain.map.nearestFrontier({ avoidDark: true, noDarkWays: !sensor.lit })
+const checkBudget = loop.reason === 'budget — tick limit'
+r.check('it kept working past the old give-up point', sum.trace.length >= 76,
+  `${sum.trace.length} commands${checkBudget ? ' (still exploring at the tick limit — healthy)' : ` (stopped: ${loop.reason})`}`)
+r.check('it did not abandon a non-empty frontier',
+  frontierLeft === null || checkBudget,
+  frontierLeft && !checkBudget
+    ? `the map still holds untried ground (${frontierLeft.room}) and the agent chose to stop: ${loop.reason}`
+    : `frontier ${frontierLeft ? 'open — but only because the check ended the run' : 'exhausted'}`)
+if (frontierLeft === null) {
+  r.check('the exhaustion stop says which fallback ran out',
+    sum.report.some((x) => /frontier exhausted: no untested way left/.test(x)),
+    sum.report.slice(-2).join(' · ') || 'no report at all — it sat down without explaining')
+}
 r.check('no Glk/VM errors during the brain phase', !crashed, crashed || '')
 
 // The map, verbatim. When the brain loops, the loop is always visible here as a
