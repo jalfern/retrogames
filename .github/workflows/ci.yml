@@ -87,6 +87,12 @@ jobs:
       # must have a mutant that dies proving it is load-bearing.
       - run: npm run lint:ice
       - run: npm run icecheck
+      # Twelfth scoped gate: GALAGA. The path library is sampled offline and
+      # every dive is audited live (step size, band honesty, tree order, the
+      # capture/rescue chain, determinism) — scripted enemies are only
+      # "readable and dodgeable" if a harness proves the paths exist per tick.
+      - run: npm run lint:galaga
+      - run: npm run galactcheck
       # Eleventh scoped gate: /forge's factory floor. forgecheck renders the real
       # component in Node and proves the animation cannot lie about the data
       # (queue card count, gate color, anvil freshness, cart flips). ~1 s.

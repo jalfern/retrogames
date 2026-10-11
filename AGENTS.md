@@ -53,6 +53,8 @@ npm run mariocheck / autopilotcheck / plantcheck / levelcheck / evocheck / evopr
 npm run fpscheck   # IronKeep: level audit + raycaster play-through (see its README)
 npm run keepplay   # IronKeep feel probe driven by real key events only (no sim shortcuts)
 npm run heistcheck # Raccoon Heist level + stealth audit in Node (~1s, no browser)
+npm run galactcheck  # Galaga: path audit + live trajectory + behavior-tree pins + capture/rescue chain + determinism, in Node (~2s); `-- --mutate` adds 4 mutants that MUST die
+npm run galactplay   # Galaga in Chrome with real key events only: pixels vs physics, capture chain end-to-end (needs `npm run dev`)
 npm run heistplay  # Chrome plays job 1: 110 assertions (needs `npm run dev`); `-- --throttle 32` = a 32x slower CPU
 npm run heistclock # does the fixed timestep keep real time? one line per CPU throttle
 npm run heistmutate # put fourteen fixed bugs back and prove heistplay notices (~40 min)
@@ -501,6 +503,19 @@ corridor, and the grid logic deliberately stays in cells.
 Full notes — the file boundaries, the carving, the three load-bearing sim rules, the
 draw-call budget, and the honest gaps — are in
 **[`src/games/RaccoonHeist/README.md`](src/games/RaccoonHeist/README.md)**.
+
+## Galaga
+
+**GALAGA** (`/galaga`) is the scripted-swarm shooter: every enemy flight is a
+**named sampled path** (`paths.js`) so the harness can audit dives offline —
+continuity ≤9 px/step, entries landing on their slot, loops closing. The sim
+(`sim.js`) is pure `(state, input)` with zero `Math.random()`; the behavior
+tree is pinned by live audit (captive dives first, beam once/stage, max 2
+divers). The title's feature is the capture chain: Flagship's tractor beam →
+captive escort next stage → shoot your own escort down → catch the pod for the
+DOUBLE. Attract mode replays the autopilot's proven run tick-for-tick. Deep
+notes in **[`src/games/Galaga/README.md`](src/games/Galaga/README.md)**; verify
+with `npm run galactcheck` (in the `static` CI gate) and `npm run galactplay`.
 
 ## IronKeep
 
