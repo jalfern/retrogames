@@ -107,6 +107,7 @@ const GalagaGame = () => {
         }
 
         const tickDemo = () => {
+            if (gs.end) { gs = makeGame(0); demoAt = 0; return }
             const run = provenRun()
             if (demoAt >= run.script.length) { gs = makeGame(0); demoAt = 0; return }
             doSim(run.script[demoAt++])
@@ -303,6 +304,7 @@ const GalagaGame = () => {
                     enemies: gs.enemies.filter((e) => e.state !== 'dead' && e.state !== 'wait')
                         .map((e) => ({ kind: e.kind, state: e.state, x: Math.round(e.x), y: Math.round(e.y) })),
                     beam: gs.enemies.some((e) => e.state === 'beam' && e.bandX) ? gs.enemies.find((e) => e.state === 'beam').bandX : 0,
+                    pt: gs.pt, beamUsed: gs.beamUsed,
                     fallers: gs.fallers.map((f) => Math.round(f.x)), escorts: gs.escorts.length,
                     board: board(), evLog: evLog.slice(-90),
                 }),

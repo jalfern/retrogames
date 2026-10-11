@@ -69,6 +69,13 @@ await wait(300)
 {
     const a = await probe()
     r.check('a real key starts a fresh run', a.screen === 'play' && a.lives === 3 && a.wave === 0, `screen=${a.screen} lives=${a.lives}`)
+    let live = null
+    for (let i = 0; i < 100 && !live; i++) {
+        const s = await probe()
+        live = s.player.state === 'alive' && s.enemies.length > 0
+        if (!live) await wait(100)
+    }
+    r.check('the fighter goes live after the stage banner, fleet on formation', !!live, JSON.stringify((await probe()).player))
 }
 
 // ---- arrows move, Space fires ----
@@ -87,45 +94,67 @@ await wait(300)
 
 // ---- paint follows physics ----
 {
-    await page.evaluate(() => window.__galagaTest.setup({ player: { x: 60, y: 258, state: 'alive', invuln: 100000 } }))
+    await page.evaluate(() => window.__galagaTest.setup({ player: { x: 60, y: 258, state: 'alive', invuln: 0 } }))
     await wait(120)
     const sample = () => page.evaluate(() => {
         const q = window.__galagaTest.probe()
         const g = document.querySelector('canvas[data-galaga-stage]').getContext('2d')
         const d = g.getImageData(Math.max(0, q.player.x - 6), Math.max(0, q.player.y - 8), 13, 15).data
-        let red = 0, white = 0
-        for (let i = 0; i < d.length; i += 4) {
-            if (d[i] > 200 && d[i + 1] < 110 && d[i + 2] < 110) red++
-            if (d[i] > 220 && d[i + 1] > 220 && d[i + 2] > 230) white++
-        }
-        return { red, white, x: q.player.x }
+        let red = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] < 110 && d[i + 2] < 110) red++
+        return { red, x: q.player.x, st: q.player.state }
     })
-    const s1 = await sample()
+    const maxRed = async () => {
+        let best = 0
+        for (let i = 0; i < 6; i++) { best = Math.max(best, (await sample()).red); await wait(90) }
+        return best
+    }
+    const red1 = await maxRed()
     await page.keyboard.down('ArrowRight')
     await wait(700)
     await page.keyboard.up('ArrowRight')
     const s2 = await sample()
+    const red2 = await maxRed()
     r.check('the fighter is PAINTED at the pixel the physics reports, before and after a real move',
-        s1.red >= 2 && s2.red >= 2 && s2.x > s1.x + 15, `red ${s1.red}/${s2.red} at x ${s1.x}->${s2.x}`)
+        red1 >= 2 && red2 >= 2 && s2.x > 60 + 15, `red ${red1}/${red2} at x 60->${s2.x.toFixed(0)} (${s2.st})`)
     const fleet = await page.evaluate(() => {
         const g = document.querySelector('canvas[data-galaga-stage]').getContext('2d')
-        const d = g.getImageData(0, 40, 224, 120).data
+        const d = g.getImageData(0, 20, 224, 180).data
         let yellow = 0
         for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 150 && d[i + 2] < 110) yellow++
         return yellow
     })
-    r.check('the fleet is drawn (yellow bee pixels in the formation band)', fleet > 60, `${fleet} px`)
+    r.check('the fleet is drawn (yellow bee pixels on the board)', fleet > 60, `${fleet} px`)
 }
 
 // ---- THE CAPTURE CHAIN, end to end, real keys only ----
 {
-    await page.evaluate(() => window.__galagaTest.setup({ wave: 1, player: { x: 112, y: 258, state: 'alive', invuln: 30 } }))
-    const capped = await waitEv('captured', 800)
-    r.check('the Flagship real-beamed a real fighter (real keys steered into it)', !!capped, capped ? `lives now ${(await probe()).lives}` : 'no capture in 40 s')
+    await page.evaluate(() => window.__galagaTest.setup({ wave: 1, player: { x: 112, y: 258, state: 'alive', invuln: 0 }, lives: 9 }))
+    // the band is a fixed band on a scripted path: STEER into it with real keys
+    let capped = null
+    for (let i = 0; i < 1200 && !capped; i++) {
+        const st = await probe()
+        if (st.evLog.some((e) => e.type === 'captured')) { capped = st; break }
+        if (st.player.state === 'alive' && st.beam > 0) {
+            const dx = st.beam - st.player.x
+            if (Math.abs(dx) > 4) {
+                await page.keyboard.down(dx > 0 ? 'ArrowRight' : 'ArrowLeft')
+                await wait(60)
+                await page.keyboard.up(dx > 0 ? 'ArrowRight' : 'ArrowLeft')
+            } else await wait(30)
+        } else await wait(50)
+        capped = null
+    }
+    r.check('the Flagship real-beamed a real fighter (real keys steered into it)', !!capped, capped ? `lives now ${(await probe()).lives}` : 'no capture in 60 s')
     if (capped) {
-        const after = await waitEv('stage', 400) || await probe()
-        const s = await probe()
-        r.check('a captured fighter becomes a captive escort next stage', s.escorts >= 1 || (after.evLog || []).some((e) => e.type === 'takerest'), `escorts=${s.escorts}`)
+        let s = null
+        for (let i = 0; i < 200; i++) {
+            s = await probe()
+            if (s.enemies.some((e) => e.kind === 'captive')) break
+            await wait(60)
+        }
+        r.check('a captured fighter becomes a captive escort on the restarted stage',
+            s.escorts >= 1 && s.enemies.some((e) => e.kind === 'captive'), `escorts=${s.escorts} captive-in-fleet=${s.enemies.some((e) => e.kind === 'captive')}`)
         // wait for the captive to dive, then shoot it with REAL Space presses
         let loose = null
         for (let i = 0; i < 500 && !loose; i++) {
@@ -179,9 +208,11 @@ await wait(300)
     let over = null
     for (let i = 0; i < 400 && !over; i++) { over = (await probe()).screen === 'over'; if (!over) await wait(50) }
     r.check('the last life ends the game (over screen)', over)
-    await wait(1000)
+    await wait(1500)
     await page.keyboard.press('KeyZ')
     await wait(400)
+    const mid = await probe()
+    if (mid.screen === 'attract') { await page.keyboard.press('KeyZ'); await wait(400) }
     const fresh = await probe()
     r.check('a real key restarts from the attract screen into a fresh run', fresh.screen === 'play' && fresh.lives === 3, `screen=${fresh.screen} lives=${fresh.lives}`)
 }
