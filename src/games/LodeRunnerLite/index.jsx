@@ -242,7 +242,7 @@ const LodeRunnerLiteGame = () => {
 
         // ---------------------------------------------------------------- paint ----
         const paintBg = () => {
-            bgx.fillStyle = '#06070b'
+            bgx.fillStyle = '#0a0e24'   // the original's dark navy vault
             bgx.fillRect(0, 0, PXW, PXH)
             const src = screenRef.current === 'attract' && demoG ? demoG : gs
             const now = performance.now()
@@ -310,11 +310,11 @@ const LodeRunnerLiteGame = () => {
             const g = screenRef.current === 'attract' && demoG ? demoG : gs
             const now = performance.now()
             // gold rides the dynamic layer (collecting is a state change,
-            // never a repaint guess); the chest keeps the old 2 s blink
-            const chest = g.tick % 30 < 18 ? art.chest[0] : art.chest[1]
+            // never a repaint guess); the nugget keeps the original's blink
+            const gold = g.tick % 30 < 18 ? art.gold[0] : art.gold[1]
             for (let y = 0; y < H; y++) {
                 for (let x = 0; x < W; x++) {
-                    if (g.grid[y * W + x] === GOLD) ctx.drawImage(chest, x * CW, y * CH)
+                    if (g.grid[y * W + x] === GOLD) ctx.drawImage(gold, x * CW, y * CH)
                 }
             }
             for (const gd of g.guards) {
