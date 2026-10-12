@@ -137,6 +137,16 @@ jobs:
       # rope catch, the jump and the quota gate are each load-bearing.
       - run: npm run lint:lode
       - run: npm run lodecheck -- --mutate
+      # Nineteenth scoped gate: ARENA ARCHERY. The 45° closed form and the
+      # flat-drop form are pinned to the cell against the integrator the
+      # arrows actually fly; the arrow ledger (quiver+fly+stuck+hit+lost ==
+      # total+resupply) is asserted every tick of every match; the autopilot
+      # must WIN both arenas by the exact win condition; slack (quiver-1 AND
+      # the foe gifted the first point) still wins; determinism three ways
+      # with a both-players-stamp tick proven. Six mutants — stick, mid-air
+      # knockout, pull, arrow gravity, jump contract, clock — must die.
+      - run: npm run lint:archery
+      - run: npm run archerycheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -198,6 +208,10 @@ jobs:
           SHOT_CHANNEL: chromium
       - name: Lode Runner-Lite smoke (real keys in the vault, pixels vs the dig, the replay hash-matches in the page)
         run: npm run lodeplay
+        env:
+          SHOT_CHANNEL: chromium
+      - name: Arena Archery smoke (real keys, drawn archer at the logical cell, your arrow loosed by id, live replay hash-matches in the page)
+        run: npm run archeryplay
         env:
           SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)
