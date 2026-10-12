@@ -157,6 +157,17 @@ jobs:
       # and 40 m of altitude gone) still winning; seven mutants must die.
       - run: npm run lint:dog
       - run: npm run dogfightcheck -- --mutate
+      # Twenty-first scoped gate: MINESWEEPER. The fairness referee IS the
+      # generator's gate — so every battery board is re-certified independently:
+      # witness audit (every dug cell carries the rule that dug it — the
+      # guess-path that poisoned two solver eras dug with no witness),
+      # sequential replay (a board the batch solve "wins" but one-cell-at-a-
+      # time play stalls on is a lying referee), zero guesses under the SLACK
+      # gate (chording forbidden), and a plant-time budget (an honest stall
+      # replaced a poisoned fast path; a 12s board is a design failure).
+      # Three mutants — guess-dig, nesting check, witness drop — must die.
+      - run: npm run lint:sweep
+      - run: npm run sweepcheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

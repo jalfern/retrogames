@@ -43,7 +43,7 @@ function rng32(state) {
     }
 }
 
-const idx = (s, x, y) => y * s.w + x
+export const idx = (s, x, y) => y * s.w + x
 
 export function neighbors(s, x, y, cb) {
     for (let dy = -1; dy <= 1; dy++) {
@@ -388,6 +388,17 @@ function solveOn(s, opts = {}) {
             }
                 const ua = []
                 for (const ai of clues) {
+                    // ua is REBUILT per ai — the old code reused one array
+                    // across the whole ai loop, so stale cells from the
+                    // previous ai kept their freshly-resent uaMark: a pair
+                    // could nest against cells its own clue never covers
+                    // and file a true mine into the diff (the brute-force
+                    // oracle caught it: dm=1 vs diff={(0,6)}). Derived
+                    // safe cells must leave too — same reuse made them
+                    // phantom pair members. The filtered-set disease was
+                    // this bug's first incarnation; stale reuse is why a
+                    // scratch array wants an owner per iteration.
+                    ua.length = 0
                     const covA = covC(ai)
                     let kA = s.clue[ai]
                     for (const c of covA) {
@@ -465,7 +476,7 @@ function solveOn(s, opts = {}) {
             }
             open[c] = 1
             openCount++
-            plan.push({ x: c % s.w, y: (c / s.w) | 0 })
+            plan.push({ x: c % s.w, y: (c / s.w) | 0, rule: ruleOf[c] })
             acted = true
         }
         // Stalled: derivation stopped with cells left. A solver that DIGS

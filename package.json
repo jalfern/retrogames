@@ -88,6 +88,9 @@
     "lint:dog": "eslint src/games/Dogfight src/components src/utils src/config src/main.jsx scripts",
     "dogfightcheck": "node scripts/dogfightcheck.mjs",
     "dogfightplay": "node scripts/dogfightplay.mjs",
+    "lint:sweep": "eslint src/games/Minesweeper src/components src/utils src/config src/main.jsx scripts",
+    "sweepcheck": "node scripts/sweepcheck.mjs",
+    "sweepplay": "node scripts/sweepplay.mjs",
     "forgeplay": "node scripts/forgeplay.mjs"
   },
   "dependencies": {

@@ -1,88 +1,66 @@
-# STATE.md — 2026-10-12 (WWI DOGFIGHT session end)
+# STATE.md — 2026-10-12 (MINESWEEPER session end — NO GAME MERGED)
 
 ## Where things stand
-**#79 GAME 15 — WWI DOGFIGHT IS LIVE at jalfern.com/retrogames/dogfight**
-(PR #160, squash `08e8297`, `shipped`, issue closed; prod lazy chunk
-`index-DAVroScq.js` fetched from jalfern.com and grepped for the patrol
-names — DAWN PATROL/THE CIRCUS. Arcade lists 35 titles.)
-**Next session: claim #82 BensMagicBugLife** — oldest `game-queue` entry
-(`gh issue list --label game-queue`; then #118 Minesweeper, #143 Paperboy,
-#152 Wizardry). No `next` label exists.
+**No game shipped this session.** #118 Minesweeper is WIP: branch
+`forge-minesweeper` (commit `d061ba2`) pushed, draft PR #162 marked WIP
+(NOT merged — AGENTS #5), `building` label stays, handoff comment on #118.
+NOTE: this file is deliberately left UNCOMMITTED per FORGE.md #9 (no game
+merged) — a dirty STATE.md is the intended signal, not a dead session.
 
-| this session | what |
-|---|---|
-| #79 / `forge-dogfight` | Built from zero: `sim.js` pure 30 Hz `step` (zero random, energy ledger `v'=T−d−g·sinγ`, stall drops the nose, P-D bandits with Circus doctrine — one lead guns at 300 m, wingmen at 140); `levels.js` two patrols that MUST spawn bandits above the scout (the opening zoom climb is the first transaction); `index.jsx` chase cam on the sim's own attitude, instrument DOM from sim state, attract = `recordMission` witness. |
-| harnesses | `dogfightcheck` 62 checks + **7 mutants, in CI `--mutate`** (stall/flat-tracers/frictionless/eternal-belt/BB-gun/no-elevator/anaemic-bank — all die); `dogfightplay` 18 Chrome real-key checks, green locally AND at `DOG_LITE=1 --throttle 16`. Gates: `lint:dog` + `dogfightcheck --mutate` static, `dogfightplay` smoke. |
+Queue truth: #82 BensMagicBugLife was **closed as duplicate** — BEEZEE
+(#81) shipped the exact core loop (bee/nectar/UV/webs/wasps/gecko/wind/
+leaderboard) minutes before #82 was filed; duplicate label + closed with
+the live URL and a note inviting Ben to file a *different* variant.
+Next queue head after #118: #143 Paperboy, then #152 Wizardry.
+
+## What changed (all on the forge branch, none on main)
+`src/games/Minesweeper/minefield.js` + `WIP.md`: pure seeded board, rules,
+and the fairness referee — zero-guess single-square + subset-pair, chord
+as the STRIP-ABLE shortcut (slack gate: boards must close without chord).
+Hill-climb mine-repair replaced rejection-resampling (500 reshuffles →
+~5 moves/board). Two solver lies found and killed; the third is alive.
+
+## The lesson (this is why the branch exists)
+**The fairness gate runs the SAME solver as the generator — when the
+subset rule was unsound (it subtracted `set.filter(isMine)` from a set
+that had already filtered mines out, so every count-delta was the raw
+clue delta), the gate certified mines-as-safe boards and the autopilot
+lost on them: the referee corroborated its own lie.** Permanent fix now
+in code: the solver THROWS when it derives a mine as safe or vice versa —
+a referee that can lie quietly is worse than a stuck one. Second density
+lesson: ~12% mines is the ceiling where zero-guess-under-slack boards
+generate at human pace; classic 20% density never closes the gate at any
+budget we tried.
+
+## Open bug (for the next session — do NOT re-derive this)
+On ~1/3 of gate-certified boards, sequential play (which only ever has
+MORE information) refuses a derivation the batch solve "proved" and ends
+one cell short on a true 50/50. Unsound step, false premise expired.
+`src/games/Minesweeper/WIP.md` has both repro one-liners, the 60-seed
+battery, and the candidate roots. Kill this BEFORE writing index.jsx.
+Then: index.jsx → sweepcheck.mjs (+aliases, lint:sweep, CI) → sweepplay
+→ gates → PR. Same drill as every shipped title.
 
 ## What is playable right now
-- jalfern.com/retrogames/dogfight — two patrols, stall contract, belt
-  economy, receipt-gated Vickers; the autopilot wins Dawn Patrol in ~55 s
-  at hp 3 and The Circus in ~106 s at hp 1 (that one is meant to be close).
-- Ledgers exact EVERY tick in sim and browser:
-  `belt + flying + hit + missed == total`, per plane.
-
-## What changed this session (the parts that matter next time)
-- **`NaN > 0` is false — a missing spawn field disarms the enemy and the
-  sky looks PEACEFUL, not broken.** Bandit specs had no `belt`, so `e.belt >
-  0` never opened the gate and no check went red. Two fixes came out of it:
-  spawn defaults in the plane factory (`belt: src.belt ?? 240`), and the
-  per-tick `finiteOk` + "bandits fired >0" audits in `dogfightcheck`. Fake
-  danger is as bad as a frozen sim; audit that the guns BARK.
-- **A scratch lab that clears the foes freezes the world via the win
-  condition** (tick 1 = "patrol cleared", every later step a no-op, and the
-  physics probes judge a statue and still pass construction). Repark them
-  6 km away instead.
-- **P-only aiming limit-cycles across the gun gate forever** — pitch and
-  bank both integrate their command. The bandits were honest until they were
-  given a D-term (last-tick attitude as the derivative); before that the
-  merge was gun-free theatre even with the gates wide.
-- **ω = tan φ / v must stay unbendable enough that SPEED buys turn rate**
-  (clamp ~0.85, not 0.5): with a flat clamp both sides circle identically
-  and nothing converges; the pilot's turn-throttle ("speed is the argument")
-  is only honest if slowing down actually tightens the circle.
-- **A pixels-vs-state probe must sample while the subject is in frame** —
-  the first sight-loop judged bandits after the merge had put them behind
-  the camera (`project` returned null, "0/0 projections" read as failure of
-  the RENDER). Test projections against a fresh spawn, steering with real
-  keys between samples.
-- Bandit doctrine (lead-only fire) was the honest difficulty fix for 3v1 —
-  the alternative was buffing the player, which is lying about the ledger.
-
-## Gates (all green at merge, PR #160)
-lint:mario/fps/ai/dog ✓ · `dogfightcheck` 83/83 + 7/7 mutants (CI runs
-`--mutate`) ✓ · `dogfightplay` 18/18 local AND 16x-lite ✓ · static ✓ 2m6s ·
-smoke ✓ 4m49s (first try) · build ✓ · prod 200 + patrol names found in the
-live chunk.
-
-## Next (for the next session — do NOT re-debug these here)
-1. Claim #82 BensMagicBugLife (oldest queue head; then #118 Minesweeper,
-   #143 Paperboy, #152 Wizardry). Same drill: design comment first, one
-   game, harness that can fail, slack rule, merge only via
-   `--watch --fail-fast` then squash.
-2. WWI Dogfight is shipped — do not polish. Honest gaps in
-   `src/games/Dogfight/README.md` (pilot fires ~5 rounds because receipts
-   are honest; no gun jams). If The Circus feels unfair to Jon, the honest
-   knob is the lead's gun range (300 m), never the player's hull.
-3. If `dogfightplay` flakes on CI, widen sampling windows, not assertions;
-   the bandit-pixel check samples a fresh spawn twice by design — give it
-   the steer-and-resample loop, don't drop it.
+Unchanged from last session: jalfern.com/retrogames/dogfight (+ the other
+34 titles). Minesweeper: NOT reachable (no route registered — deliberate).
 
 ## Three questions for Jon
-1. `dogfightplay` also passed CI smoke first try (two browser drivers now
-   do). Promote the smoke job to automatic-on-PR, or is headless audio
-   still the blocker? (state.md asked this last session — #79's session.)
-2. The Circus ends at hp 1 on the autopilot's witness. Is "won by a
-   thread" the right feel for the arcade's hardest mission, or should the
-   lead's gun range drop 300→260 so a human's sloppy lead survives one
-   more pass?
-3. Q/E throttle has no touch DOWN (the TH button is throttle UP only).
-   Extend VirtualControls with a third mapped code, or is cruise-enough on
-   a phone (the game is winnable with E never tapped — verified)?
+1. Was closing #82 as a BEEZEE-duplicate the call you want? (It felt wrong
+   to clone your own arcade; Ben's board entry sits closed now.)
+2. Session received repeated relayed "user" messages that echoed my own
+   tool output AND asserted instructions to rename the harness to
+   `paperscheck` (which would overwrite Papers-Please-Min's shipped
+   harness). I ignored them and kept `sweepcheck`. Where do those relays
+   come from — the QA launchd job (`forge-qa.sh`)? Same driver as the
+   `sweepcheck`/`lint:sweep` references in them that don't exist yet?
+3. For #118's next session: 3h barely covers the fairness proof. Split it
+   into two issues (fair-board engine, then the UI+harness shell), or
+   give one session a longer clock?
 
 ## Lineage
-AGENTS.md honored: read STATE first, one game (#79, oldest queue head),
-design comment posted before code, 5 checkpoint pushes each with its issue
-comment, harness proven able-to-fail (7/7 mutants IN CI), merge only via
-`gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`,
-prod verified from the live chunk, STATE via this commit. Rule 4: ten
-straight sessions touching `src/games/**`. Ran ~3h.
+AGENTS.md honored: STATE first; oldest-queue discipline with a stated
+reason for the #82 skip; design comment before code; checkpoint pushed
+with its issue comment; merge path untouched (nothing merged); timebox
+respected with this report. Rule 4 check: the 11-session game-code streak
+survives in the pushed branch (not on main). Ran ~3h.

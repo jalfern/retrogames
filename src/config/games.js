@@ -70,6 +70,10 @@ const LodeRunnerLiteGame = lazy(() => import('../games/LodeRunnerLite'))
 // demo's match rides in the chunk, together with the pure sim the harness
 // imports unchanged in Node.
 const ArenaArcheryGame = lazy(() => import('../games/ArenaArchery'))
+// Minesweeper: same lesson — the fairness referee that certifies every board
+// guess-free is the SAME module the Node harness audits and the attract
+// autopilot plays through, so it rides in its own chunk.
+const MinesweeperGame = lazy(() => import('../games/Minesweeper'))
 // WWI Dogfight: third three.js pupil of the same lesson — Pong is still not
 // paying for a 3D engine, and the autopilot that scripts the attract patrol
 // (plus the pure flight sim the Node harness audits) rides in its chunk.
@@ -239,6 +243,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'A TowerFall-like duel on a hand-carved night arena: one stick moves and aims, hold to draw, release to loose a ballistic arrow whose 45° range is exactly r = v²/g. And every arrow that misses STICKS — stuck arrows knock out the next arrow that crosses them (cover that builds up as the duel runs) and refill your quiver when you walk over and pull them out: leave it as terrain, or take the ammo. Solo against an autopilot bot, or a local 2-player duel on one keyboard (WASD+F for player two, with a second touch pad). First to 3 wins; the attract demo is the autopilot’s own proven match, replayed tick for tick through the same pure sim a Node harness audits — arrow ledger exact, replay hash-for-hash.',
         controls: ['P1 Arrows / first pad: move, aim, UP jumps (and UP+draw is the 45° lob)', 'SPACE / A: hold to draw — release to loose; charge sets velocity, and the arc lands where the math says', 'P2 (duel mode): A/D move, W jump+lob, S aim down, F draw — the second on-screen pad drives P2', 'Quiver is finite: walk over a stuck arrow to PULL it back — or leave it to eat the next shot', 'First to 3 points takes the arena; 1 = solo vs bot, 2 = duel on the title'],
+    },
+    {
+        path: '/minesweeper',
+        component: MinesweeperGame,
+        label: 'MINESWEEPER',
+        theme: 'dark',
+        description: 'The office classic, rebuilt so it never lies to you: every board is generated under a zero-guess fairness gate — the same referee a Node harness audits — so logic alone ALWAYS clears it. No 50/50 endgames, no dead ends, no luck. And the gate double-proves: every board must also close with chording FORBIDDEN (the slack rule), and every dig the autopilot makes in the attract demo carries the RULE that derived it as safe. Cursor-played so one code path serves keyboard and phone; three densities, from COLT to GENERAL.',
+        controls: ['Arrows / WASD / d-pad: move the cursor', 'SPACE / A / tap a cell: dig (a number with matching flags chords the rest open)', 'B / SHIFT / ⚑: plant or lift a flag', 'A wrong flag chordeS into a mine — flags are a claim, not a shield', '1/2/3 on the marquee: COLT 9×9, SAPPER 16×12, GENERAL 22×13', '?: pause and read the rules']
     },
     {
         path: '/pong',
