@@ -129,12 +129,12 @@ jobs:
       # each week as the clumsy inspector; seven mutants must die.
       - run: npm run lint:papers
       - run: npm run paperscheck
-      # Eighteenth scoped gate: LODE RUNNER-LITE. The solver must clear all
-      # three vaults with guards hunting on the real pathfinder, never share
-      # a cell with a live guard, replay hash-identical from its own command
-      # stream, and still clear each vault on half the clock (the slack
-      # rule). Six mutants prove the dig, the trap collapse, the chase, the
-      # rope catch, the jump and the quota gate are each load-bearing.
+      # Eighteenth scoped gate: LODE RUNNER-LITE (1983 rules). The no-jump
+      # solver must clear all three vaults with guards hunting on the real
+      # pathfinder, replay hash-identical from its own command stream, and
+      # still clear each vault with one fewer life (the slack rule). Five
+      # mutants prove the diagonal dig, the guard chase, the rope catch, the
+      # guard-hole fall/climb and the guard's gold steal are each load-bearing.
       - run: npm run lint:lode
       - run: npm run lodecheck -- --mutate
       # Nineteenth scoped gate: ARENA ARCHERY. The 45° closed form and the
