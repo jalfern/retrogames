@@ -70,6 +70,10 @@ const LodeRunnerLiteGame = lazy(() => import('../games/LodeRunnerLite'))
 // demo's match rides in the chunk, together with the pure sim the harness
 // imports unchanged in Node.
 const ArenaArcheryGame = lazy(() => import('../games/ArenaArchery'))
+// WWI Dogfight: third three.js pupil of the same lesson — Pong is still not
+// paying for a 3D engine, and the autopilot that scripts the attract patrol
+// (plus the pure flight sim the Node harness audits) rides in its chunk.
+const DogfightGame = lazy(() => import('../games/Dogfight'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -219,6 +223,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'Three hand-carved vaults of concrete, brick and rope. Collect every gold nugget and the gate opens — but your only weapon is the floor itself: dig a brick and it becomes a trap that holds its rider for one breath, then collapses into a HOLE that never comes back. Guards hunt you over the SAME physics graph you move on — minus the jump and the rope — so a rope line is a moat, a shaft is a grave, and a trapped guard walks off his own trap into the dark. Every vault is proven winnable by the real solver with guards live, and the sim is pure (level, input-script): the attract demo is that proven witness replayed tick-for-tick, your last run haunts the next one as a ghost, and a Node harness replays your commands down to the state hash — plus the slack rule: every vault still clears with one fewer life.',
         controls: ['Arrows / D-pad: run, climb ladders, swing under rope', 'Push into a wall: dig the brick under its far foot · DOWN digs the brick below you', 'SPACE / A: jump — hold a direction for a diagonal; a rising body catches any rope overhead', 'A rising jump catches rope; a falling body grabs any ladder it passes', 'Take every gold * to open the gate ▼; holes and buried guards are forever', '?: pause · R on the end screen replays that vault beside your ghost'],
+    },
+    {
+        path: '/dogfight',
+        component: DogfightGame,
+        label: 'WWI DOGFIGHT',
+        theme: 'dark',
+        description: 'A fixed-wing scout over the line: altitude is ammunition and speed is the coin you pay it in. The energy model is the game — thrust minus drag minus gravity along the flight path; bank to turn (there is no rudder miracle), and below the ASI\u2019s white arc the wing quits and the nose drops itself. The synchronized Vickers is belt-fed and finite, tracers drop at 400 m/s, and the autopilot that scripts the attract demo only fires rounds its own bullet integrator PROVES will arrive. Two patrols, one honest sky: a Node harness pins trim to the closed form, the stall contract, the zoom ledger, the round count every tick, and re-fights both patrols with 20 fewer rounds and 40 fewer metres of altitude (the slack rule) \u2014 and wins anyway.',
+        controls: ['\u2191/\u2193: pull and push (pulling spends AIRSPEED to buy ALTITUDE \u2014 watch the ASI)', '\u2190/\u2192: bank the wings \u2014 the bank turns you; tighter and slower turns bite harder', 'SPACE: fire the synchronized Vickers \u2014 lead the bandit, the tracers drop', 'Q/E (or the TH button): throttle. Full throttle is not always the fast way home', 'Below the stall arc the nose falls by itself \u2014 push over before the deck does it for you', '?: pause and read the instruments']
     },
     {
         path: '/arena-archery',

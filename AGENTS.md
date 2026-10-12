@@ -54,6 +54,8 @@ npm run fpscheck   # IronKeep: level audit + raycaster play-through (see its REA
 npm run keepplay   # IronKeep feel probe driven by real key events only (no sim shortcuts)
 npm run heistcheck # Raccoon Heist level + stealth audit in Node (~1s, no browser)
 npm run galactcheck  # Galaga: path audit + live trajectory + behavior-tree pins + capture/rescue chain + determinism, in Node (~2s); `-- --mutate` adds 4 mutants that MUST die
+npm run dogfightcheck # WWI Dogfight: energy ledgers (trim/stall/zoom/glide), bullet-integrator parity, per-tick round ledger, pilot wins both patrols + slack rule, in Node (~1s); `-- --mutate` = 7 mutants that MUST die
+npm run dogfightplay # WWI Dogfight in Chrome, real keys only: instruments==sim, bandit pixels==projection, replay hash in the page (`DOG_LITE=1 -- --throttle 16` reproduces the CI runner)
 npm run galactplay   # Galaga in Chrome with real key events only: pixels vs physics, capture chain end-to-end (needs `npm run dev`)
 npm run heistplay  # Chrome plays job 1: 110 assertions (needs `npm run dev`); `-- --throttle 32` = a 32x slower CPU
 npm run heistclock # does the fixed timestep keep real time? one line per CPU throttle

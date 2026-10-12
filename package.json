@@ -85,6 +85,9 @@
     "lint:archery": "eslint src/games/ArenaArchery src/components src/utils src/config src/main.jsx scripts",
     "archerycheck": "node scripts/archerycheck.mjs",
     "archeryplay": "node scripts/archeryplay.mjs",
+    "lint:dog": "eslint src/games/Dogfight src/components src/utils src/config src/main.jsx scripts",
+    "dogfightcheck": "node scripts/dogfightcheck.mjs",
+    "dogfightplay": "node scripts/dogfightplay.mjs",
     "forgeplay": "node scripts/forgeplay.mjs"
   },
   "dependencies": {
