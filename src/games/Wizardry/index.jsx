@@ -393,6 +393,30 @@ const WizardryGame = () => {
                     springHere: gs.springs.has(gs.y * SIZE + gs.x),
                     potHere: gs.pots.has(gs.y * SIZE + gs.x),
                     explored: gs.explored.size,
+                    view: (() => {
+                        // what the wireframe can see: first solid depth + features
+                        // in front, exactly as paintMap walks the corridor
+                        let wallDist = 7, pots = 0, springs = 0, stairs = false
+                        for (let i = 1; i <= DEPTH; i++) {
+                            const cell = { x: gs.x + DX[gs.dir] * i, y: gs.y + DY[gs.dir] * i }
+                            if (gs.map.wall(cell.x, cell.y)) { wallDist = i; break }
+                            const t = cell.y * SIZE + cell.x
+                            if (gs.pots.has(t)) pots = i
+                            if (gs.springs.has(t)) springs = i
+                            if ((gs.map.stairs && gs.map.stairs.y === cell.y && gs.map.stairs.x === cell.x) ||
+                                (gs.map.throne && gs.map.throne.y === cell.y && gs.map.throne.x === cell.x)) stairs = true
+                        }
+                        return { wallDist, pots, springs, stairs }
+                    })(),
+                    mobPx: gs.combat ? gs.combat.mobs.map((m, i) => {
+                        const liveN = gs.combat.mobs.filter((q) => q.hp > 0).length
+                        const n = Math.max(liveN, gs.combat.mobs.length)
+                        const slot = gs.combat.mobs.indexOf(m)
+                        const sx = 128 + (slot - (n - 1) / 2) * 62
+                        const A = ART[m.art]
+                        const size = (A ? A.s * 10 : 50) * (m.key === 'LICH' ? 1.25 : 1)
+                        return { i, sx, size, hp: m.hp }
+                    }) : [],
                     party: gs.party.map((h) => ({ ...h })),
                     combat: gs.combat ? { boss: gs.combat.boss, round: gs.combat.round, mobs: gs.combat.mobs.map((m) => ({ ...m })), target: gs.target } : null,
                     ledger: { ...gs.ledger },
