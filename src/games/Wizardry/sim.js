@@ -21,13 +21,13 @@ export const VIEWD = 6
 export const CFG = {
     dmgFloor: 1,        // every honest swing lands at least this
     potionHeal: 26,
-    springMp: 14,
+    springMp: 10,
     fireCost: 3,
     healCost: 4,
     fleeCost: 6,        // monsters' parting shot when the party runs (normal fights)
-    xpBase: 130,        // next level at xpBase * lvl^2
+    xpBase: 100,        // next level at xpBase * lvl^2
     lvlHp: 8, lvlMp: 3, lvlAtk: 2, lvlDef: 1,
-    healAmt: 20,        // + lvl*3
+    healAmt: 16,        // + lvl*3
 }
 
 export const HEROES0 = [

@@ -81,6 +81,10 @@ const DogfightGame = lazy(() => import('../games/Dogfight'))
 // PAPERBOY: same lesson — the route solver that scripts the attract demo is
 // the SAME module the Node harness audits, so it rides in its own chunk.
 const PaperboyGame = lazy(() => import('../games/Paperboy'))
+// WIZARDRY: same lesson — the seeded floors and the solver that proves them
+// winnable (and re-proves them with slack supplies deleted) ride in the
+// game's own chunk; wizcheck imports those modules unchanged in Node.
+const WizardryGame = lazy(() => import('../games/Wizardry'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -246,6 +250,14 @@ export const GAMES = [
         theme: 'light',
         description: 'The paper round, rebuilt like an NES cartridge that never existed — pseudo-3D road, runtime art and audio, and a route the SOLVER has proven. Steer with the handlebars, pedal up and down, and hurl papers at the doorsteps: a paper only counts if you are LEANED toward it when you cross its door, and the door window is the one consumable — the harness re-proves every route at full throttle AND at a crawl with the windows tighter and zero spare papers. Carts sweep the crossings behind their noses (you cannot out-steer one), dogs lunge from the kerb past centre, and the attract demo is the autopilot\'s own proven ride, tick for tick. Three routes, 77 doors.',
         controls: ['Arrows / D-pad: steer the handlebars; UP mashes the pedals, DOWN crawls', 'SPACE / A: throw a paper toward your lean (you must be leaned that way at the door!)', 'F / B button: hurl one down the lane — the only answer to a lunging dog', 'Cross carts only AHEAD of their nose, and hug a dog\'s own kerb after it launches', '?: pause and read the rules'],
+    },
+    {
+        path: '/wizardry',
+        component: WizardryGame,
+        label: 'WIZARDRY',
+        theme: 'dark',
+        description: 'The 1981 dungeon, rebuilt honest: a party of six crawls three seeded mazes in shaded wireframe first person, fighting turn-based ledger combat where every point of damage is booked and recomputed by the harness that ships with this repo. Firebolt, heal, potions and MP springs are the resource puzzle — the whole campaign is PROVEN winnable by the autopilot (the thing demoing on this title screen is that proof, live), and re-proven with one fewer potion and one fewer spring than the proof consumes. Kill the Lich on Level 3. Death is real; every run reshuffles nothing — the dungeon is the same maze the harness audited.',
+        controls: ['Arrows / D-pad: walk and turn in the corridor', 'SPACE / A: USE — stairs down, drink at a spring, touch the throne (that wakes the Lich)', 'In battle: SPACE attack · F / B: FIREBOLT · H heal the most wounded · P drink a potion · L flee (not from the Lich)', 'In battle the arrows pick your TARGET — burn the caster first', '?: pause and read the rules'],
     },
     {
         path: '/arena-archery',

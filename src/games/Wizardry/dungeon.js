@@ -26,8 +26,8 @@ export const MOBS = {
     RAT:    { name: 'Giant Rat',    hp: 12, atk: 6,  def: 1, spd: 6, xp: 24,  art: 'rat' },
     SNAKE:  { name: 'Cave Snake',   hp: 16, atk: 7,  def: 2, spd: 7, xp: 34,  art: 'snake' },
     GOBLIN: { name: 'Goblin',       hp: 22, atk: 9,  def: 3, spd: 4, xp: 58,  art: 'goblin' },
-    SKELET: { name: 'Skeleton',     hp: 28, atk: 11, def: 4, spd: 5, xp: 86,  art: 'skelet' },
-    WRAITH: { name: 'Wraith',       hp: 26, atk: 13, def: 3, spd: 8, xp: 120, art: 'wraith' },
+    SKELET: { name: 'Skeleton',     hp: 28, atk: 10, def: 4, spd: 5, xp: 86,  art: 'skelet' },
+    WRAITH: { name: 'Wraith',       hp: 26, atk: 12, def: 3, spd: 8, xp: 120, art: 'wraith' },
     LICH:   { name: 'THE LICH',     hp: 300, atk: 20, def: 8, spd: 6, xp: 2000, art: 'lich' },
 }
 
@@ -64,7 +64,11 @@ export function genFloor(fi) {
     const DIRS = [[2, 0], [-2, 0], [0, 2], [0, -2]]
     while (stack.length) {
         const [cx, cy] = stack[stack.length - 1]
-        const shuffled = DIRS.slice().sort((a, b) => (rnd() * 2 - 1) - (rnd() * 2 - 1))
+        const shuffled = DIRS.slice()
+        for (let si = shuffled.length - 1; si > 0; si--) {
+            const j = Math.floor(rnd() * (si + 1))
+            const tmp = shuffled[si]; shuffled[si] = shuffled[j]; shuffled[j] = tmp
+        }
         let moved = false
         for (const [dx, dy] of shuffled) {
             const nx = cx + dx, ny = cy + dy
