@@ -289,6 +289,7 @@ export const GAMES = [
         component: SpyHunterGame,
         label: 'SPY HUNTER',
         theme: 'dark',
+        builtBy: 'forge',
         description: 'The G-6155 against two hand-scripted stages of the original arcade highway — every spawn is a named event a Node harness audits BEFORE you drive on it, so "readable" is a proof, not a vibe. Three lanes of Killers that match your speed and fire back, Road Lakers painting oil that spins you, a Sweeper that shoves you into the oil, a helicopter walking bombs down your lane, and the gunboat in the river the road cannon can never reach — that one is the missiles\' job. Shoot the Supporter to drop GUN/MISSILE/repair crates and catch the drop; every stage ends with the 2000-point bonus car. The attract demo is the autopilot\'s own proven run, tick for tick — and the campaign is re-proven with one fewer missile, one fewer life, and with no missiles at all.',
         controls: ['Arrows / D-pad: steer across three lanes — grass kills slowly, the wall kills fast', 'SPACE / A: machine gun — watch the HEAT gauge, an overheated gun is a parked car', 'X / B: homing MISSILE — the gunboat in the river only answers to these', 'Shoot the white SUPPORTER, then catch its crate: GUN, MISSILE or repair', 'Oil spins you; Sweepers push you toward it — never sit in the oil lane with traffic coming', '?: pause and read the rules'],
     },
