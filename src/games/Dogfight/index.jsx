@@ -524,19 +524,19 @@ const DogfightGame = () => {
                 <div className="absolute top-2 left-3 flex items-start gap-4 text-amber-50 font-mono">
                     <div className="bg-black/40 border border-amber-200/30 rounded px-2 py-1 text-center">
                         <div className="text-[9px] tracking-widest opacity-70">AIRSPEED kt</div>
-                        <div ref={setHud('asi')} className="text-2xl font-bold text-amber-200 leading-6">0</div>
+                        <div id="dog-asi" ref={setHud('asi')} className="text-2xl font-bold text-amber-200 leading-6">0</div>
                         <div className="w-3 h-24 bg-black/40 mt-1 relative overflow-hidden mx-auto rounded-sm">
                             <div ref={setHud('asiTape')} className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-red-500 via-amber-300 to-emerald-300" style={{ height: '0%' }} />
                         </div>
                     </div>
                     <div className="bg-black/40 border border-amber-200/30 rounded px-2 py-1 text-center">
                         <div className="text-[9px] tracking-widest opacity-70">ALT m</div>
-                        <div ref={setHud('alt')} className="text-2xl font-bold text-sky-200 leading-6">0</div>
+                        <div id="dog-alt" ref={setHud('alt')} className="text-2xl font-bold text-sky-200 leading-6">0</div>
                         <div ref={setHud('bank')} className="text-xl leading-6" style={{ transform: 'rotate(0deg)' }}>◹</div>
                     </div>
                     <div className="bg-black/40 border border-amber-200/30 rounded px-2 py-1">
                         <div className="text-[9px] tracking-widest opacity-70">BELT</div>
-                        <div ref={setHud('belt')} className="text-xl font-bold text-yellow-100">0</div>
+                        <div id="dog-belt" ref={setHud('belt')} className="text-xl font-bold text-yellow-100">0</div>
                         <div className="w-10 h-1.5 bg-black/50 mt-1 rounded overflow-hidden">
                             <div ref={setHud('beltBar')} className="h-full bg-yellow-300" style={{ width: '100%' }} />
                         </div>
