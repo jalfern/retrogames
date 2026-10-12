@@ -79,6 +79,9 @@
     "lint:papers": "eslint src/games/PapersPleaseMin src/components src/utils src/config src/main.jsx scripts",
     "paperscheck": "node scripts/paperscheck.mjs",
     "papersplay": "node scripts/papersplay.mjs",
+    "lint:lode": "eslint src/games/LodeRunnerLite src/components src/utils src/config src/main.jsx scripts",
+    "lodecheck": "node scripts/lodecheck.mjs",
+    "lodeplay": "node scripts/lodeplay.mjs",
     "forgeplay": "node scripts/forgeplay.mjs"
   },
   "dependencies": {

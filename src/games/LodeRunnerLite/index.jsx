@@ -391,11 +391,13 @@ const LodeRunnerLiteGame = () => {
                 // live stream in the page and compare final state hashes.
                 replayCheck: () => {
                     const b = buildLevel(levelIdx)
-                    // run the twin to EXACTLY the live tick — comparing a
-                    // finished replay against a mid-run live state would
-                    // measure the difference between two clocks, not the
-                    // difference between two engines.
-                    const g2 = replay(b.meta, b.grid, gs.cmds.map((c) => ({ ...c })), { maxTicks: gs.tick })
+                    // run the twin to EXACTLY the live tick — and if the
+                    // live vault already ended on its last command, one tick
+                    // later so the twin gets to fire the same winning step
+                    // instead of comparing a cleared vault to an un-cleared
+                    // one. Measuring two clocks is not determinism.
+                    const tail = gs.cmds.length && gs.cmds[gs.cmds.length - 1].tick >= gs.tick ? 1 : 0
+                    const g2 = replay(b.meta, b.grid, gs.cmds.map((c) => ({ ...c })), { maxTicks: gs.tick + tail })
                     const liveHash = stateHash(gs)
                     const replayHash = stateHash(g2)
                     return { liveHash, replayHash, match: liveHash === replayHash, cmds: gs.cmds.length, end: g2.end }

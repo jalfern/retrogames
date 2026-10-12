@@ -129,6 +129,14 @@ jobs:
       # each week as the clumsy inspector; seven mutants must die.
       - run: npm run lint:papers
       - run: npm run paperscheck
+      # Eighteenth scoped gate: LODE RUNNER-LITE. The solver must clear all
+      # three vaults with guards hunting on the real pathfinder, never share
+      # a cell with a live guard, replay hash-identical from its own command
+      # stream, and still clear each vault on half the clock (the slack
+      # rule). Six mutants prove the dig, the trap collapse, the chase, the
+      # rope catch, the jump and the quota gate are each load-bearing.
+      - run: npm run lint:lode
+      - run: npm run lodecheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -186,6 +194,10 @@ jobs:
           SHOT_CHANNEL: chromium
       - name: Papers-Please-Min smoke (real keys at the booth, ink vs verdict, the week ends as the prover says)
         run: npm run papersplay
+        env:
+          SHOT_CHANNEL: chromium
+      - name: Lode Runner-Lite smoke (real keys in the vault, pixels vs the dig, the replay hash-matches in the page)
+        run: npm run lodeplay
         env:
           SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)
