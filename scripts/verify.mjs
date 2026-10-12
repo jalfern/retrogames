@@ -50,6 +50,11 @@ const suite = [
     // DOS seams (js-dos on demand, keyboard capture, readable framebuffer).
     // Slow: DOSBox-in-wasm boots at ~40-90s headless. See scripts/doscheck.mjs.
     node('doscheck.mjs'),
+    // Minesweeper: the fairness gate + brute-force oracle + 4 mutants, in Node
+    // (cheap, deterministic). Then Chrome plays a COLT board by real keys to a
+    // win — this one caught the bug where the first click could never plant.
+    node('sweepcheck.mjs'),
+    node('sweepplay.mjs'),
     full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '500']),
 ]
 
