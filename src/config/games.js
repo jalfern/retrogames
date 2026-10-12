@@ -66,6 +66,10 @@ const PapersPleaseMinGame = lazy(() => import('../games/PapersPleaseMin'))
 // Lode Runner-Lite: same lesson — the solver that scripts the attract demo and
 // the deterministic sim it shares with the harness ride in its own chunk.
 const LodeRunnerLiteGame = lazy(() => import('../games/LodeRunnerLite'))
+// Arena Archery: same lesson again — the autopilot that proves the attract
+// demo's match rides in the chunk, together with the pure sim the harness
+// imports unchanged in Node.
+const ArenaArcheryGame = lazy(() => import('../games/ArenaArchery'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -215,6 +219,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'Three hand-carved vaults of concrete, brick and rope. Collect every gold nugget and the gate opens — but your only weapon is the floor itself: dig a brick and it becomes a trap that holds its rider for one breath, then collapses into a HOLE that never comes back. Guards hunt you over the SAME physics graph you move on — minus the jump and the rope — so a rope line is a moat, a shaft is a grave, and a trapped guard walks off his own trap into the dark. Every vault is proven winnable by the real solver with guards live, and the sim is pure (level, input-script): the attract demo is that proven witness replayed tick-for-tick, your last run haunts the next one as a ghost, and a Node harness replays your commands down to the state hash — plus the slack rule: every vault still clears with one fewer life.',
         controls: ['Arrows / D-pad: run, climb ladders, swing under rope', 'Push into a wall: dig the brick under its far foot · DOWN digs the brick below you', 'SPACE / A: jump — hold a direction for a diagonal; a rising body catches any rope overhead', 'A rising jump catches rope; a falling body grabs any ladder it passes', 'Take every gold * to open the gate ▼; holes and buried guards are forever', '?: pause · R on the end screen replays that vault beside your ghost'],
+    },
+    {
+        path: '/arena-archery',
+        component: ArenaArcheryGame,
+        label: 'ARENA ARCHERY',
+        theme: 'dark',
+        description: 'A TowerFall-like duel on a hand-carved night arena: one stick moves and aims, hold to draw, release to loose a ballistic arrow whose 45° range is exactly r = v²/g. And every arrow that misses STICKS — stuck arrows knock out the next arrow that crosses them (cover that builds up as the duel runs) and refill your quiver when you walk over and pull them out: leave it as terrain, or take the ammo. Solo against an autopilot bot, or a local 2-player duel on one keyboard (WASD+F for player two, with a second touch pad). First to 3 wins; the attract demo is the autopilot’s own proven match, replayed tick for tick through the same pure sim a Node harness audits — arrow ledger exact, replay hash-for-hash.',
+        controls: ['P1 Arrows / first pad: move, aim, UP jumps (and UP+draw is the 45° lob)', 'SPACE / A: hold to draw — release to loose; charge sets velocity, and the arc lands where the math says', 'P2 (duel mode): A/D move, W jump+lob, S aim down, F draw — the second on-screen pad drives P2', 'Quiver is finite: walk over a stuck arrow to PULL it back — or leave it to eat the next shot', 'First to 3 points takes the arena; 1 = solo vs bot, 2 = duel on the title'],
     },
     {
         path: '/pong',

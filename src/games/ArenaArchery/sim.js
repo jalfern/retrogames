@@ -15,11 +15,13 @@
 //   - ballistics: a released arrow carries (vx, vy) with gravity; a 45°
 //     lob's range is r = v²/g, which is a closed form the bot solves and
 //     the harness pins to the cell. Charge sets v, stick sets angle.
-//   - stuck arrows as terrain: hit stone and the arrow sticks in the last
-//     air cell; while stuck it KNOCKS OUT any flying arrow that crosses it
-//     (the knockout drops straight down and sticks at the floor — ammo for
-//     whoever reaches it first) and blocks nothing that walks: stepping on
-//     a stuck arrow PULLS it out into your quiver if there is room.
+//   - stuck arrows as terrain: hit stone and the arrow sticks — in the
+//     AIR cell beside what it hit (floors stick one above the stone so a
+//     walking archer can pull them back; walls hold their arrows until the
+//     TTL recycles them). While stuck an arrow KNOCKS OUT any flying arrow
+//     that crosses it: the newcomer takes the cell and the spent rival is
+//     counted lost on the ledger. Stepping on a stuck arrow PULLS it out
+//     into your quiver if there is room.
 
 import { buildArena } from './levels.js'
 
@@ -60,7 +62,7 @@ export function makeGame(arena, opts = {}) {
         vx: 0, vy: 0, face: id === 0 ? 1 : -1, grounded: true,
         charge: 0, firing: false, firePrev: false,
         aimX: id === 0 ? 1 : -1, aimY: 0,
-        quiver: opts.quiver ?? CFG.quiver,
+        quiver: opts.quiver ?? CFG.quiver, quiverMax: opts.quiverMax ?? CFG.quiver,
         score: id === 1 ? (opts.p2Gift || 0) : 0,
         alive: true, deadT: 0, invuln: 0,
         spawnX: sp.x * CFG.cell + CFG.cell / 2, spawnY: sp.y * CFG.cell + CFG.cell / 2 + (CFG.cell / 2 - R),
@@ -71,7 +73,7 @@ export function makeGame(arena, opts = {}) {
         arrows: [], stuck: [],
         ledger: { hit: 0, lost: 0 },
         tick: 0, end: null, winner: -1, events: [], cmds: [], arrowSeq: 0,
-        total: 2 * (opts.quiver ?? CFG.quiver),
+        total: 2 * (opts.quiver ?? CFG.quiver), supplied: 0,
     }
     return g
 }
@@ -124,17 +126,26 @@ function looseArrow(g, p) {
 }
 
 function stickArrow(g, ar) {
-    const cell = Math.floor(ar.y / CFG.cell) * g.W + Math.floor(ar.x / CFG.cell)
+    const cx = Math.floor(ar.x / CFG.cell), cy = Math.floor(ar.y / CFG.cell)
+    let cell = cy * g.W + cx
+    // A stuck arrow lives in AIR: an arrow nosing into a floor sticks in
+    // the air cell above it — the cell a walking archer shares, and the
+    // only place the pull-back economy can reach. A wall stays a wall
+    // cell (visible, knocks, recycles on the TTL; you cannot pull an
+    // arrow out of the middle of a wall you cannot touch).
+    if (solidAt(g, ar.x, ar.y) && cy > 0 && !solidAt(g, ar.x, ar.y - CFG.cell)) cell = (cy - 1) * g.W + cx
     const old = g.stuck.find((s) => s.cell === cell)
     if (old) {
-        // the cell is already held by another stuck arrow: the newcomer
-        // lands nose-first against it and drops at its foot instead
-        ar.state = 'fall'
-        ar.vx = 0; ar.vy = 0.5
-        return
+        // the newcomer replaces its rival in the cell — the old arrow is
+        // spent (the ledger counts it lost), never dropped into a loop
+        g.stuck.splice(g.stuck.indexOf(old), 1)
+        const k = g.arrows.indexOf(old)
+        if (k >= 0) g.arrows.splice(k, 1)
+        g.ledger.lost++
     }
     ar.state = 'stuck'
     ar.cell = cell
+    ar.ang = Math.atan2(ar.vy, ar.vx)
     ar.vx = 0; ar.vy = 0
     g.stuck.push(ar)
     g.events.push({ type: 'stick', who: ar.owner, cell })
@@ -162,7 +173,14 @@ function stepPlayer(g, p, inp) {
         if (p.deadT <= 0) {
             p.alive = true; p.x = p.spawnX; p.y = p.spawnY
             p.vx = 0; p.vy = 0; p.invuln = CFG.invulnTicks
-            g.events.push({ type: 'respawn', who: p.id })
+            // the falconer's pouch: a risen archer always gets two fresh
+            // shafts — an empty-quiver corner is otherwise un-winnable for
+            // ever, and a rule the harness cannot count is a rule it will
+            // silently break. Supplied arrows join the ledger's right side.
+            const add = Math.min(p.quiverMax, p.quiver + 2) - p.quiver
+            p.quiver += add
+            g.supplied += add
+            g.events.push({ type: 'respawn', who: p.id, resupply: add })
         }
         return
     }
@@ -209,7 +227,7 @@ function stepPlayer(g, p, inp) {
     moveBody(g, p)
 
     // pulling a stuck arrow out of the terrain (first body to touch wins)
-    if (CFG.retrieve && p.quiver < CFG.quiver) {
+    if (CFG.retrieve && p.quiver < p.quiverMax) {
         const s = stuckAt(g, p.x, p.y) || stuckAt(g, p.x, p.y + R - 2) || stuckAt(g, p.x, p.y - R + 2)
         if (s) {
             g.stuck.splice(g.stuck.indexOf(s), 1)
@@ -228,13 +246,11 @@ function stepArrows(g) {
         ar.age++
         if (CFG.ballistics) ar.vy += CFG.arrowGravity
         if (ar.state === 'fall') {
-            // a knocked-out arrow just drops and sticks wherever it lands
+            // a dropped arrow sticks wherever it lands
             ar.x += ar.vx
             ar.y += ar.vy
             if (solidAt(g, ar.x, ar.y + 1) || ar.age > 400) {
-                if (solidAt(g, ar.x, ar.y)) ar.y -= 2
                 stickArrow(g, ar)
-                if (ar.state !== 'stuck') { g.arrows.splice(i, 1); g.ledger.lost++ }
             }
             continue
         }
@@ -251,10 +267,8 @@ function stepArrows(g) {
             if (CFG.knockout) {
                 const s2 = stuckAt(g, ar.x, ar.y)
                 if (s2) {
-                    s2.knocks = (s2.knocks || 0) + 1
-                    ar.state = 'fall'
-                    ar.vx = 0; ar.vy = 0.5
                     g.events.push({ type: 'knockout', who: ar.owner, cell: s2.cell })
+                    stickArrow(g, ar)
                     done = true
                     break
                 }
@@ -282,7 +296,7 @@ function stepArrows(g) {
                 const k = g.arrows.indexOf(s)
                 if (k >= 0) g.arrows.splice(k, 1)
                 const owner = g.p[s.owner]
-                if (owner.quiver < CFG.quiver) owner.quiver++
+                if (owner.quiver < owner.quiverMax) owner.quiver++
                 else g.ledger.lost++
                 g.events.push({ type: 'dryout', who: s.owner, cell: s.cell })
             }
@@ -385,7 +399,7 @@ export function botInput(g, meId, skill) {
     let want = null, aimUp = 1, aim = null
     if (!scavenging && foe.alive && me.quiver > 0 && skill > 0) {
         const t = 26
-        let tx = foe.x + foe.vx * t, ty = foe.y + foe.vy * t * 0.5
+        let tx = foe.x + foe.vx * t
         const mk = (v) => clamp((v - CFG.arrowMin) / (CFG.arrowMax - CFG.arrowMin), 0.04, 1)
         // two lead passes: solve -> simulate -> re-lead at the measured
         // flight time -> solve again. One fixed lead walked itself out of
@@ -394,7 +408,10 @@ export function botInput(g, meId, skill) {
             const ldx = ltx - me.x, ladx = Math.abs(ldx), lrise = me.y - lty
             const out = []
             if (ladx > 30 && ladx - lrise > 10) out.push({ up: 1, c: mk(Math.sqrt(CFG.arrowGravity * ((ladx * ladx) / (ladx - lrise)))) })
-            if (lty - me.y > 6 && ladx > 20) out.push({ up: 0, c: mk(ladx * Math.sqrt(CFG.arrowGravity / (2 * (lty - me.y)))) })
+            if (lty - me.y > -6 && ladx > 8) {
+                const drop = Math.max(2, lty - me.y)
+                out.push({ up: 0, c: mk(ladx * Math.sqrt(CFG.arrowGravity / (2 * drop))) })
+            }
             return out
         }
         // iterate the lead on the arrow's OWN measured flight time: solve,
@@ -415,7 +432,6 @@ export function botInput(g, meId, skill) {
             py = foe.y + foe.vy * th * 0.4
             pt = Math.max(8, th * 0.7)
         }
-        void tx; void ty
         if (want !== null) {
             // plant for the lob (release the frame both feet are down and
             // the solver still agrees); walk the flat shot INTO the line
@@ -498,4 +514,10 @@ export function recordMatch(opts = {}) {
         step(g, i1, i2)
     }
     return g
+}
+
+// deep copy for the DebugKit's PROGNOSIS: re-run the autopilot against the
+// LIVE mutated state and answer "can this still be won from here?"
+export function cloneGame(g) {
+    return structuredClone(g)
 }
