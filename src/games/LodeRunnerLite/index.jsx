@@ -1,11 +1,15 @@
-// LODE RUNNER-LITE — the arcade shell. The vault is the pure sim in ./sim.js
-// and the three hand-carved maps are ./levels.js; this file only paints,
-// listens, and proves the issue's four muscles on screen:
+// LODE RUNNER-LITE — the arcade shell, 1983 rules. The vault is the pure sim
+// in ./sim.js and the three hand-carved maps are ./levels.js; this file only
+// paints, listens, and proves the classic contract on screen:
 //
-//   - destructible floors  → bricks repaint TRAP then hole on the sim's own
-//     events (the terrain layer is dirty-flagged from events, never guessed),
-//   - pathfinding guards   → they move because guardAct says so; the harness
-//     pins the `pursued` receipts, the screen just shows them,
+//   - destructible floors  → a dig opens a hole, the sim's `refill` event
+//     grows the brick back after the fuse; the terrain layer is dirty-flagged
+//     from events, never guessed,
+//   - pathfinding guards   → they move because guardAct says so; they fall in
+//     your holes, climb out, and lift gold; the harness pins the `pursued`
+//     receipts, the screen just shows them,
+//   - the hidden ladder    → the exit ladder is concealed until every gold is
+//     in hand, then it reveals at the top of the screen; no clock,
 //   - ghost replay         → your LAST run on this vault (cmds stamped
 //     tick-for-tick) is replayed by a second sim instance while you play
 //     again: the dim @,
@@ -26,7 +30,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import {
-    CFG, W, H, SOLID, BRICK, ROPE, LADDER, GOLD, TRAP,
+    CFG, W, H, EMPTY, SOLID, BRICK, ROPE, LADDER, GOLD,
     makeGame, applyAction, step, planRun, planStep, stateHash, replay,
 } from './sim.js'
 import { LEVELS, buildLevel } from './levels.js'
@@ -111,14 +115,16 @@ const LodeRunnerLiteGame = () => {
             if (evLog.length > 300) evLog.splice(0, evLog.length - 300)
             for (const e of evts) {
                 if (e.type === 'dig') { bgDirty = true; audioController.playNoise(0.05, 0.04) }
-                else if (e.type === 'trap') { bgDirty = true; audioController.playTone(140, 0.08, 'square', 0.05) }
+                else if (e.type === 'refill') { bgDirty = true; audioController.playTone(140, 0.08, 'square', 0.05) }
                 else if (e.type === 'gold') { say(`GOLD ${e.have}/${gs.need}`); audioController.playTone(880, 0.07, 'square', 0.06) }
-                else if (e.type === 'unlock') { say('THE GATE OPENS'); audioController.playSweep(300, 700, 0.4, 'square', 0.07) }
-                else if (e.type === 'guardGone') { say('BURIED'); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.08) }
+                else if (e.type === 'unlock') { say('THE LADDER APPEARS'); audioController.playSweep(300, 700, 0.4, 'square', 0.07) }
+                else if (e.type === 'guardBuried') { say('A GUARD IS BURIED'); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.08) }
+                else if (e.type === 'goldPickup') { say('A GUARD LIFTED GOLD'); audioController.playTone(220, 0.06, 'square', 0.05) }
                 else if (e.type === 'capture') { say('CAUGHT!'); audioController.playSweep(240, 50, 0.6, 'sawtooth', 0.1) }
+                else if (e.type === 'life') audioController.playSweep(200, 80, 0.4, 'sawtooth', 0.06)
                 else if (e.type === 'grab') audioController.playTone(520, 0.04, 'triangle', 0.04)
                 else if (e.type === 'win') audioController.playSweep(400, 1600, 0.9, 'square', 0.09)
-                else if (e.type === 'die' || e.type === 'time') audioController.playSweep(300, 40, 1.1, 'sawtooth', 0.1)
+                else if (e.type === 'die') audioController.playSweep(300, 40, 1.1, 'sawtooth', 0.1)
             }
         }
 
@@ -172,7 +178,6 @@ const LodeRunnerLiteGame = () => {
                 for (const act of cands) {
                     if (applyAction(gs, gs.player, act)) {
                         gs.cmds.push({ tick: gs.tick, act })
-                        if (act.startsWith('JUMP')) audioController.playSweep(180, 420, 0.09, 'square', 0.045)
                         break
                     }
                 }
@@ -187,17 +192,17 @@ const LodeRunnerLiteGame = () => {
             step(gs)
             handleEvents(gs.events.splice(0))
             if (gs.end === 'clear') vaultCleared()
-            else if (gs.end) { finishRun(); gameOver(false, gs.end === 'time' ? 'OUT OF TIME' : 'CAUGHT FOR GOOD') }
+            else if (gs.end) { finishRun(); gameOver(false, 'THE VAULT TOOK YOU') }
         }
 
         const tickDemo = () => {
             if (!demoG || demoG.end) { buildDemo(demoIdx + (demoG ? 1 : 0)); return }
             const todo = demoBy.get(demoG.tick)
             if (todo) for (const c of todo) applyAction(demoG, demoG.player, c.act)
-            for (const e of demoG.events) if (e.type === 'dig' || e.type === 'trap') bgDirty = true
+            for (const e of demoG.events) if (e.type === 'dig' || e.type === 'refill') bgDirty = true
             demoG.events.length = 0
             step(demoG)
-            for (const e of demoG.events) if (e.type === 'dig' || e.type === 'trap') bgDirty = true
+            for (const e of demoG.events) if (e.type === 'dig' || e.type === 'refill') bgDirty = true
             demoG.events.length = 0
         }
 
@@ -208,10 +213,6 @@ const LodeRunnerLiteGame = () => {
             let act = null
             if (gs.tick % CFG.moveEvery === 0) {
                 const cands = []
-                if (held.includes('Space')) {
-                    const dir = held.includes('ArrowLeft') ? -1 : held.includes('ArrowRight') ? 1 : 0
-                    cands.push(`JUMP:${dir}`)
-                }
                 for (let i = held.length - 1; i >= 0; i--) {
                     const c = held[i]
                     if (c === 'ArrowLeft' || c === 'ArrowRight' || c === 'ArrowUp' || c === 'ArrowDown') cands.push(c)
@@ -235,13 +236,10 @@ const LodeRunnerLiteGame = () => {
                     const px = x * CW + CW / 2, py = y * CH + CH - 6
                     if (t === SOLID) { bgx.fillStyle = '#3a4258'; bgx.fillText('=', px, py) }
                     else if (t === BRICK) { bgx.fillStyle = '#b06a3f'; bgx.fillText('#', px, py) }
-                    else if (t === TRAP) {
-                        const aging = src.trap[i]
-                        const blink = aging > CFG.trapHold - 7 && aging % 4 < 2
-                        bgx.fillStyle = blink ? '#ff9d7e' : '#d95d3e'
-                        bgx.fillText('#', px, py)
-                    } else if (t === ROPE) { bgx.fillStyle = '#d9c26a'; bgx.fillText('=', px, py) }
+                    else if (t === ROPE) { bgx.fillStyle = '#d9c26a'; bgx.fillText('=', px, py) }
                     else if (t === LADDER) { bgx.fillStyle = '#6fbf73'; bgx.fillText('|', px, py) }
+                    else if (t === GOLD) { /* rides the dynamic layer */ }
+                    else if (src.holeAge[i] > 0) { bgx.fillStyle = '#5a3527'; bgx.fillText('v', px, py) }   // a live hole: it will refill
                 }
             }
             bgDirty = false
@@ -263,9 +261,6 @@ const LodeRunnerLiteGame = () => {
                     if (g.grid[y * W + x] === GOLD) ctx.fillText('*', x * CW + CW / 2, y * CH + CH - 6)
                 }
             }
-            // the gate: cyan while the quota rules it, green once open
-            ctx.fillStyle = g.unlocked ? (g.tick % 24 < 12 ? '#7dff8a' : '#39c958') : '#4ad7ff'
-            ctx.fillText('\u25BC', g.exit.x * CW + CW / 2, g.exit.y * CH + CH - 6)
             for (const gd of g.guards) {
                 if (!gd.alive) continue
                 ctx.fillStyle = gd.mode === 'air' ? '#ff9d5c' : '#ff5d5d'
@@ -291,8 +286,7 @@ const LodeRunnerLiteGame = () => {
             if (h.gold) h.gold.textContent = `GOLD ${gs.have}/${gs.need}`
             if (h.lives) h.lives.textContent = `LIVES ${gs.lives}`
             if (h.score) h.score.textContent = `SCORE ${gs.score}`
-            const secs = Math.max(0, Math.ceil((gs.meta.timeTicks - gs.tick) / 15))
-            if (h.time) h.time.textContent = `TIME ${secs}s`
+            if (h.exit) h.exit.textContent = gs.unlocked ? 'LADDER UP' : 'HIDDEN LADDER'
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
         }
@@ -363,7 +357,7 @@ const LodeRunnerLiteGame = () => {
                     player: { x: gs.player.x, y: gs.player.y, mode: gs.player.mode, alive: gs.player.alive },
                     guards: gs.guards.map((gd) => ({ id: gd.id, x: gd.x, y: gd.y, mode: gd.mode, alive: gd.alive })),
                     cellAt: (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? gs.grid[y * W + x] : SOLID),
-                    trapAt: (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? gs.trap[y * W + x] : -1),
+                    holeAt: (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? gs.holeAge[y * W + x] : 0),
                     exit: { ...gs.exit },
                     cmds: gs.cmds.length,
                     // the attract demo is a separate sim instance — the
@@ -424,12 +418,10 @@ const LodeRunnerLiteGame = () => {
                     },
                     {
                         label: 'DIG HERE', run: () => {
-                            const i = gs.player.y * W + gs.player.x + W
-                            if (gs.grid[i] === BRICK) {
-                                gs.grid[i] = TRAP; gs.trap[i] = 0; bgDirty = true
-                                return 'a trap blooms under the runner (watch the collapse)'
-                            }
-                            return 'no brick under the runner'
+                            const x = gs.player.x + 1, y = gs.player.y + 1
+                            if (x < 0 || x >= W || y < 0 || y >= H || gs.grid[y * W + x] !== BRICK) return 'no diagonal brick below-right of the runner'
+                            gs.grid[y * W + x] = EMPTY; gs.holeAge[y * W + x] = 1; bgDirty = true
+                            return 'a hole opens diagonally below-right (it refills in 5s)'
                         },
                     },
                     { label: '+1 LIFE', run: () => { gs.lives++; return `lives ${gs.lives} — extra slack the solver is NOT allowed to assume` } },
@@ -462,7 +454,7 @@ const LodeRunnerLiteGame = () => {
                     <span ref={setHud('gold')} className="text-yellow-300">GOLD 0/5</span>
                     <span ref={setHud('lives')} className="text-red-300/90">LIVES 3</span>
                     <span ref={setHud('score')} className="text-amber-200">SCORE 0</span>
-                    <span ref={setHud('time')} className="text-cyan-200">TIME 90s</span>
+                    <span ref={setHud('exit')} className="text-emerald-300/90">HIDDEN LADDER</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center text-amber-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #f60' }} />
             </div>
@@ -470,13 +462,13 @@ const LodeRunnerLiteGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
                     <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>LODE RUNNER-LITE</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm">dig the floor. hang the rope. the guards learn the same physics you do &mdash; except yours has a jump.</p>
+                    <p className="text-amber-200/90 font-mono mt-1 text-sm">no jump. dig the floor. hang the rope. the guards learn the same physics you do.</p>
                     <p className="text-white font-mono font-bold mt-1 animate-pulse">TAP / PRESS ANY KEY &mdash; 1 &middot; 2 &middot; 3 PICK A VAULT</p>
                     <p className="text-amber-100/80 font-mono text-[11px] mt-1 px-8 leading-4">
-                        arrows run, climb and swing on rope &mdash; push into a wall to dig the brick under its far foot<br />
-                        SPACE jumps (&larr;/&rarr; held = diagonally); a rising body catches any rope overhead<br />
-                        a dug brick becomes a trap: it holds you or a guard a moment, then becomes a HOLE forever<br />
-                        take every gold * to open the gate &#9660;; a guard sunk in a hole is gone for good<br />
+                        arrows run, climb and swing on rope &mdash; face a way and push DOWN to dig the brick diagonally below it<br />
+                        a dug hole lasts about 5 seconds, then the brick grows back; whatever is in it when it closes dies<br />
+                        guards fall into your holes, sit it out and climb back out &mdash; and they lift gold you must win back<br />
+                        take every gold * and the hidden ladder appears at the top: climb off the screen to clear the vault<br />
                         R replays the vault you just lost with your dim ghost @ alongside &mdash; the attract demo is the solver&apos;s own proven witness
                     </p>
                 </div>
@@ -486,7 +478,7 @@ const LodeRunnerLiteGame = () => {
                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-amber-50 font-mono px-6">
                     <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'EVERY VAULT CLEANED' : end.why}</h2>
                     <p className="text-lg mb-1">{end.win ? 'all three vaults, ghosts all the way down' : `fell in vault ${end.level + 1}`}</p>
-                    <p className="text-sm text-amber-200/80 mb-2">score {end.score} &middot; every hole you dug is still there &middot; the replay reproduces your run hash-for-hash</p>
+                    <p className="text-sm text-amber-200/80 mb-2">score {end.score} &middot; the floor you dug has already grown back &middot; the replay reproduces your run hash-for-hash</p>
                     <p className="text-sm text-amber-100/80 mb-4">R replays this vault with your ghost &middot; any other key returns to the marquee</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
