@@ -27,7 +27,8 @@ canvas and zero `Math.random`. That is what lets:
 |---|---|
 | `sim.js` | the physics of everything: one `applyAction` generator drives player, guards and the solver's search; `step` runs hole refills, the guard trap/steal clocks, guard pace, falls and capture; `planStep`/`planRun` the greedy-BFS autopilot; `replay` the recorded-input twin. |
 | `levels.js` | the three vaults, carved from row-builders (a width bug is impossible). The exit is the hidden ladder in column 2, concealed until every gold is in hand. Construction contracts (no support under a rope, ladder-topped rope lines, everything stands on something, nothing entombed, the exit ladder reaches the floor) are enforced by lodecheck. |
-| `index.jsx` | paint + input only. Terrain dirty-flags from sim EVENTS (never guessed); the gold/guards/runner ride the dynamic layer. Ghost = a second `makeGame` fed your previous run's `{tick,act}` stream. |
+| `art.js` | **all the pixel art, generated at runtime** — no image assets, no `Math.random`. Every sprite is a fixed pixel map (runner: stand/run/climb/hang/fall, a mirrored facing, a dim orange ghost copy; the guard is the same body in an olive kit) and every tile is a few rects: mortar brick vs cool concrete, rope, ladder, the pit, 3-stage crumble and rebuild for dig/refill. 680×418 internal resolution, `image-rendering: pixelated`. |
+| `index.jsx` | paint + input only. Terrain dirty-flags from sim EVENTS (never guessed); gold/guards/runner/ghost ride the dynamic layer. Run frames are driven by **paint-time motion tracking** (a body is "running" for a couple hundred ms after its last cell change) — a cosmetic, never sim state. Ghost = a second `makeGame` fed your previous run's `{tick,act}` stream. |
 
 ## The classic rules (issue #155), each load-bearing
 
@@ -66,7 +67,7 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
 | | |
 |---|---|
 | `npm run lodecheck` | 80 Node checks (90 with `--mutate`): construction contracts, per-vault solve + determinism both ways + one-fewer-life slack, every classic rule pinned by a scenario, and five mutants that MUST die. CI runs it with `--mutate` in the static gate. |
-| `npm run lodeplay` | Chrome, real key events only: the attract demo moves by itself, a held arrow runs the runner, dig→hole→refill graded in pixels, climb-to-hang on the real ladder, guards hunt untouched, R replays your lost run as a ghost, in-page replay hash-matches mid-run. |
+| `npm run lodeplay` | Chrome, real key events only: the attract demo moves by itself, a held arrow runs the runner, dig→hole→refill graded in pixels, the paint graded in pixels too (warm mortar brick distinct from cool concrete in hue AND density; runner and guard distinct sprites), climb-to-hang on the real ladder, guards hunt untouched, R replays your lost run as a ghost, in-page replay hash-matches mid-run. |
 
 ## Honest gaps
 
