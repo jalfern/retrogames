@@ -52,6 +52,8 @@ npm run verify     # the whole self-verifying suite (needs `npm run dev` running
 npm run mariocheck / autopilotcheck / plantcheck / levelcheck / evocheck / evoprobe   # Mario checks
 npm run fpscheck   # IronKeep: level audit + raycaster play-through (see its README)
 npm run keepplay   # IronKeep feel probe driven by real key events only (no sim shortcuts)
+npm run huntercheck # Spy Hunter: road projected as data (oil never seals 3 lanes), score ledger recomputed, slack (zero missiles / lives-1), 6 mutants, in Node (~8s)
+npm run hunterplay  # Spy Hunter in Chrome, real keys only: pixels at the sim's coords, scripted oil spins the car, real-key missile kills the gunboat
 npm run heistcheck # Raccoon Heist level + stealth audit in Node (~1s, no browser)
 npm run galactcheck  # Galaga: path audit + live trajectory + behavior-tree pins + capture/rescue chain + determinism, in Node (~2s); `-- --mutate` adds 4 mutants that MUST die
 npm run dogfightcheck # WWI Dogfight: energy ledgers (trim/stall/zoom/glide), bullet-integrator parity, per-tick round ledger, pilot wins both patrols + slack rule, in Node (~1s); `-- --mutate` = 7 mutants that MUST die
@@ -578,6 +580,19 @@ trusting the solver's ledger to become able to fail, and the two green-tested-no
 oracle versions — are in **[`src/games/Minesweeper/README.md`](src/games/Minesweeper/README.md)**.
 Verify with `npm run sweepcheck` (`-- --mutate` = 4/4 mutants die; in the `static`
 gate) and `npm run sweepplay` (Chrome, real keys only; in `verify`).
+
+## Spy Hunter
+
+**SPY HUNTER** (`/spy-hunter`) is the arcade's driving title: two hand-
+scripted stages of the 1984 highway at 256x224, every sprite and the music
+riff synthesized at runtime. `script.js` is the traffic as *data*
+(`{t, type, x}`), which is what lets `huntercheck` audit the road before
+anyone drives it; `sim.js` is pure `step(state, input)` with zero
+`Math.random`; the autopilot decides by **rolling the real sim forward ~1.3
+s per candidate lane** (hand-drawn threat rings lost to the real box twice
+— see `src/games/SpyHunter/README.md`), and the attract demo is that
+proven run replayed tick-for-tick. Verify with `npm run huntercheck --
+--mutate` (in the `static` gate) and `npm run hunterplay`.
 
 ## The Forge (autonomous game production)
 `/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the

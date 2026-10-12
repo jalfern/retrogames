@@ -1,50 +1,61 @@
-# STATE — 2026-10-12 (forge session END, ~14:20 PDT)
+# STATE — 2026-10-12 (forge session END, ~13:30 PDT)
 
-## SHIPPED: WIZARDRY (#152 → PR #170 → squash 936bf18 — LIVE in production)
-jalfern.com/retrogames/wizardry — verified live in real Chrome (attract title,
-real keys, chunk loads, zero errors). The 1981 crawl: 6 heroes, three seeded
-braided mazes, shaded-wireframe first-person view, ledger-exact turn combat
-(ATTACK/FIREBOLT/HEAL/POTION/FLEE), the Lich on L3. All art+audio runtime;
-attract = the CI solver's own proven campaign, live.
+## SHIPPED: SPY HUNTER (#169 → PR #174 → squash 80a9f4b — LIVE in production)
+jalfern.com/retrogames/spy-hunter — verified live in real Chrome (real keys,
+oil spin in the browser, gunboat, zero errors, DEV hooks absent). The 1984
+highway at 256x224: two hand-scripted stages, overheat cannon, river
+gunboat that only missiles can reach, oil spins, Sweeper shoves, crate-
+dropping Supporter, 2000-point bonus crossing. All art+audio runtime;
+attract = the autopilot's own proven run, live.
 
-Gates (static CI): `wizcheck --mutate` 219/219, 5/5 mutants die. Its spine:
-independent BFS re-proves every seeded floor (the generator never referees
-itself); the round ledger is recomputed from STATE, not from the event's own
-arithmetic; overkill is capped so a kill can't book more than the victim had.
-SLACK RULE: campaign re-won with −1 consumed potion, −1 consumed spring,
-both, and with EVERY spring deleted. `wizplay` 25/25 (smoke job) is real-keys
-Chrome: view centre is wall-blue (290px) when the grid says wall and dark (0px)
-when it says hall; automap cursor sits on the sim's cell.
+Gates (static CI): `huntercheck --mutate` 51 checks + 6/6 mutants die. Its
+spine: the stage scripts are projected as DATA before anyone drives them
+(oil never seals 3 lanes, nothing spawns off-road, every scripted car
+reaches the row); the score ledger is recomputed from booked events; the
+road cannon provably cannot touch the river. SLACK: campaign re-wins at
+missile-tax 1, 2, ZERO missiles, lives-1, and lives-2+tax-1. `hunterplay`
+19/19 in smoke: real keys only — pixels land at the sim's coordinates
+before/after a real steer.
 
 ## Playable now
-Full arcade incl. Wizardry, Lode Runner palette (#171, other session),
-Paperboy, Minesweeper, Raccoon Heist, Galaga, Dogfight, IronKeep, Mario, Zork+AI.
+Full arcade incl. Spy Hunter, Wizardry, Lode Runner palette, Paperboy,
+Minesweeper, Raccoon Heist, Galaga, Dogfight, IronKeep, Mario, Zork+AI.
 
 ## Session report (rule 7)
-**Playable now:** Wizardry, live on the site.
-**What changed:** +4 game files (dungeon/solver are the harness's own
-modules), wizcheck + wizplay, `lint:wiz` + wizcheck in the static gate,
-wizplay in the smoke job. Balance was retuned mid-session: the Fisher-Yates
-fix reshaped all three mazes and the campaign DIED at lvl 3 — proven-winnable
-is a property of the shipped numbers, not of intent.
+**Playable now:** Spy Hunter, live on the site, phone-playable (tap pad with
+MSL button).
+**What changed:** +5 game files (sim/script/planner are the harness's own
+modules), huntercheck + hunterplay, `lint:hunter` + huntercheck --mutate in
+the static gate, hunterplay in smoke. Mid-session the planner got rewritten:
+hand-drawn threat rings lost twice (lane-tie oscillation run over standing
+still; a bomb through a lane-change's transit) — it now rolls the REAL sim
+1.3 s per candidate lane, and that is also why the attract demo is honest.
+One rebase conflict (main grew the builtby gate #173 mid-ship): resolved,
+builtBy added, re-verified.
 
-## Notes for the next session
-- `missileplay` red on the main-push smoke run (6th-city/over-screen timing on
-  the runner). Pre-existing, advisory, not touched here (AGENTS #3 — don't
-  spend a PR on harness timing). If it recurs, that PR is about missileplay.
-- wizplay walks with real keys only; the ambush tiles are NOT exposed to the
-  driver — if that ever needs cheating to pass, the check died.
+## Lessons this session (already baked into the code comments)
+- The harness found a REAL bug the run hides: the boat had no `type` field,
+  so its kills booked `kind:undefined` — the campaign made boat kills while
+  every consumer said it hadn't.
+- Two mutants survived first probes; both were probes reading the EVENT
+  instead of the BEHAVIOR (spin event fires even with spin=0; a dead gun
+  still sputters one shot). Probes now grade duration and burst.
+- A test that floods player invulnerability cannot see oil spin — immune
+  car, "dead road". Immunity is a lever to set deliberately per probe.
 
 ## Queue / next session
-1. Read this. Queue: `gh issue list --label game-queue` — check for `next`
-   labels and new unlabeled `GAME —` issues first (the board feeds them).
-2. The law: only `static` blocks merges; one merge command; 3 non-game PRs in
-   a row ⇒ stop and report. (This session shipped game code — counter at 0.)
+1. **The queue is EMPTY** (no `game-queue`, no `next`, no unlabeled
+   `GAME —` issues). Per FORGE step 2: nothing to forge — next session
+   should say so and exit, unless Jon files more or re-opens one.
+2. The law: only `static` blocks merges; one merge command; 3 non-game PRs
+   in a row ⇒ stop and report. (This session shipped game code — counter 0.)
 
-## Open questions for Jon (carried + new)
-1. (carried) Add `timeout 3600` to forge-qa.sh like the forge's 3h cap?
-2. (carried) FORGE-QA step 1: refuse to branch unless HEAD == main, loudly?
-   (Partly answered by #171 shipping qa/lode-art properly.)
-3. Missile Battle's smoke flake on the runner: keep advisory (it passed on the
-   PR smoke, fails on main-push smoke — machine-dependent), or should the
-   smoke job retry once? A flaky advisory job trains everyone to ignore red.
+## Open questions for Jon
+1. Spy Hunter was scoped to two stages per the issue. Arcade-authentic
+   next step would be looping stage 1-2 faster; a third stage is a
+   bigger script. Which do you want queued?
+2. The D-pad shows dead up/down buttons on driving games. Add a
+   `padMode="drive"` to VirtualControls (shared component, every title
+   sees the change) or leave it?
+3. The /forge board fed issue #169 into the queue and the loop shipped it
+   in one session. Any other requests the board should be submitting?
