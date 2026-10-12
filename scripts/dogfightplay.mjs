@@ -23,14 +23,17 @@ import { launch, openGame, Report, throttleCPU, opt } from './lib/harness.mjs'
 
 const URL = process.env.DOG_URL || 'http://localhost:5173/retrogames/dogfight'
 const THROTTLE = +opt(process.argv.slice(2), '--throttle', 1)
+// CI's runner rasterises in software — the documented lite pipeline and a
+// small window are how a 3D title stays green there (the heistplay lesson).
+const LITE = THROTTLE > 1 || process.env.CI === 'true' || !!process.env.DOG_LITE
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function main() {
     const browser = await launch()
     const page = await openGame(browser, {
-        url: URL + (THROTTLE > 1 ? '?lite=1' : ''),
-        viewport: { width: 1000, height: 640 },
+        url: URL + (LITE ? '?lite=1' : ''),
+        viewport: LITE ? { width: 640, height: 426 } : { width: 1000, height: 640 },
         wait: 600,
         hook: '__dogTest',
     })
@@ -116,20 +119,21 @@ async function main() {
     // tested against a FRESH spawn: bandits dead ahead against clean sky,
     // no merge geometry to argue with. Steering between samples is real
     // keys only; the projection is the sim's own camera.
-    const sampleAt = (x, y) => page.evaluate(({ x, y, W, H }) => {
+    const sampleAt = (x, y) => page.evaluate(({ x, y }) => {
         const c = document.querySelector('canvas[data-dog-stage]')
         const t = document.createElement('canvas')
         t.width = c.width; t.height = c.height
         const g = t.getContext('2d')
         g.drawImage(c, 0, 0)
-        const sx = Math.round(x * (c.width / W)), sy = Math.round(y * (c.height / H))
+        const sx = Math.round(x * (c.width / window.innerWidth))
+        const sy = Math.round(y * (c.height / window.innerHeight))
         const d = g.getImageData(Math.max(0, sx - 7), Math.max(0, sy - 7), 15, 15).data
         for (let k = 0; k < d.length; k += 4) {
             const dist = Math.abs(d[k] - 0x9d) + Math.abs(d[k + 1] - 0xb8) + Math.abs(d[k + 2] - 0xd8)
             if (dist > 90) return { found: true, rgb: [d[k], d[k + 1], d[k + 2]] }
         }
         return { found: false }
-    }, { x, y, W: 1000, H: 640 })
+    }, { x, y })
 
     const steerAtNearest = async () => {
         const p = await probe()
@@ -217,11 +221,12 @@ async function main() {
 
     // bandits dead ahead against clean sky: the projection says where the
     // sim put them, the canvas must agree in pixels
+    const VW = LITE ? 640 : 1000, VH = LITE ? 426 : 640
     let sighted = 0, tried = 0
-    for (let i = 0; i < 10 && sighted < 2; i++) {
+    for (let i = 0; i < 12 && sighted < 2; i++) {
         for (let f = 0; f < 2; f++) {
             const s = await page.evaluate((fi) => window.__dogTest.project(fi), f)
-            if (!s || s.x < 80 || s.x > 920 || s.y < 60 || s.y > 560) continue
+            if (!s || s.x < VW * 0.1 || s.x > VW * 0.9 || s.y < VH * 0.1 || s.y > VH * 0.85) continue
             tried++
             const hit = await sampleAt(s.x, s.y)
             if (hit.found) sighted++

@@ -147,6 +147,16 @@ jobs:
       # knockout, pull, arrow gravity, jump contract, clock — must die.
       - run: npm run lint:archery
       - run: npm run archerycheck -- --mutate
+      # Twentieth scoped gate: WWI DOGFIGHT. The flight model is pinned to
+      # the closed forms (trim = terminal speed, stall drops the nose, the
+      # zoom ledger pays in m/s, glides never gain energy); the bullet
+      # integrator is held tick-for-tick against an independent integration;
+      # the rounds ledger is exact every tick (a NaN belt once silently
+      # disarmed the patrol — only per-tick accounting catches that); the
+      # autopilot wins both patrols by the gun alone, with slack (20 rounds
+      # and 40 m of altitude gone) still winning; seven mutants must die.
+      - run: npm run lint:dog
+      - run: npm run dogfightcheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -214,6 +224,11 @@ jobs:
         run: npm run archeryplay
         env:
           SHOT_CHANNEL: chromium
+      - name: WWI Dogfight smoke (real keys, instruments read the sim, a bandit is pixels where the sim puts him, a pull drains airspeed into altitude)
+        run: npm run dogfightplay
+        env:
+          SHOT_CHANNEL: chromium
+          DOG_LITE: "1"
       - name: Dev server log (on failure)
         if: failure()
         run: cat /tmp/vite.log
