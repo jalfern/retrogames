@@ -1,94 +1,90 @@
-# STATE.md — 2026-10-12 (LODE RUNNER session end)
+# STATE.md — 2026-10-12 (ARENA ARCHERY session end)
 
 ## Where things stand
-**#77 GAME 13 — LODE RUNNER-LITE IS LIVE at jalfern.com/retrogames/lode-runner**
-(PR #153, squash `6fea7de`, `shipped`, issue closed; prod bundle
-`index-CAlti0Qf.js` verified by driving the live page in Chrome, no dev
-hooks). Arcade lists 33 titles.
-**Next session: claim #78 Arena Archery (TowerFall-like)** — the oldest
-`game-queue` entry (`gh issue list --label game-queue` sorted by createdAt;
-head was #78 at 2026-10-09T22:50:34Z, then #79 WWI Dogfight, #82
-BensMagicBugLife, #118 Minesweeper, #143 Paperboy, #152 Wizardry). No `next`
-label exists right now. No unlabeled `GAME —` issue predates #78.
-The queue move from #76 happened in a parallel session; this session
-resumed the #77 corpse on `forge/lode-runner` per playbook 1b — that
-mattered: two sim commits + three vaults were already hash-proven.
+**#78 GAME 14 — ARENA ARCHERY IS LIVE at jalfern.com/retrogames/arena-archery**
+(PR #158, squash `d409794`, `shipped`, issue closed; prod lazy chunk
+`index-BZWZTe5E.js` fetched from jalfern.com and grepped for the engine's
+own arena names — CROSSGLOVE/KNOCKBACK/nock. Arcade lists 34 titles.)
+**Next session: claim #79 WWI Dogfight 3D** — oldest `game-queue` entry
+(`gh issue list --label game-queue` by createdAt; then #82 BensMagicBugLife,
+#118 Minesweeper, #143 Paperboy, #152 Wizardry). No `next` label exists.
 
-| since last STATE | what |
+| this session | what |
 |---|---|
-| #77 / `forge/lode-runner` | Resumed corpse (sim + levels existed, harness/shell did not). Shell: `index.jsx` 15 Hz fixed-step ASCII, attract = solver's witness through the real `applyAction+step`, ghost of your lost run (second sim fed your `{tick,act}` stream, ghost tick == live tick), R-retry, 19 lint scopes green. |
-| harnesses | `lodecheck` 92 checks + **6 mutants, wired into CI with `--mutate`** (dig/jump/guardChase/trapCollapse/ropeCatch/quota — all die); `lodeplay` 23 Chrome real-key checks, 23/23 twice locally AND green on the CI smoke runner. Gates: `lint:lode` + `lodecheck --mutate` in static, `lodeplay` in smoke. |
+| #78 / `forge-archery` | Built from zero: `sim.js` pure 30 Hz `step` (zero random, **P1-then-P2 stamp every tick**), two-angle ballistic solver (45° closed form + flat-drop + exact `predictHit` forward-sim); `levels.js` two box arenas, jump apex pinned to 2 cells (= jump²/2g); `index.jsx` attract = `recordMatch` witness through the real `step`, 1P/2P, second touch pad. |
+| harnesses | `archerycheck` 93 checks + **6 mutants, wired into CI `--mutate`** (stick/knockout/pull/arrowGravity/float/shortClock — all die); `archeryplay` 18 Chrome real-key checks, green locally AND on the CI smoke runner. Gates: `lint:archery` + `archerycheck --mutate` static, `archeryplay` smoke. |
 
 ## What is playable right now
-- jalfern.com/retrogames/lode-runner — prod verified 200 + canvas lit +
-  tap-to-start on the live bundle; attract self-walks the proven witness.
-- All three vaults solvable by the real solver with guards live; witnesses
-  never share a cell with a live guard; slack = half the clock AND -1 life.
+- jalfern.com/retrogames/arena-archery — arrows stick as terrain, pull-back
+  economy, 45° lobs; autopilot wins both arenas (~22–53 s) in the attract
+  loop; slack (quiver−1 AND foe gifted first point) still wins 3-1.
+- Arrow ledger exact EVERY tick in sim and browser:
+  `quivers+fly+stuck+hit+lost == total+resupply`.
 
 ## What changed this session (the parts that matter next time)
-- **`step()` clears `g.events` at the top of the tick.** Anything that acts
-  OUTSIDE step (this game's shell and harness both apply then step) must
-  splice events BEFORE the step or its action-stage events (dig/jump/swing)
-  are silently swallowed — first browser run painted traps only at
-  collapse. Any future game whose input applies outside `step` inherits this.
-- **Replaying a FINISHED run needs the tail tick**: the winning command fires
-  `checkExit` at tick T and `step` refuses to advance past `end`, so a replay
-  stopped at `maxTicks = T` compares an un-cleared vault to a cleared one and
-  "diverges" while the engine is innocent. Both harness and `__lodeTest.replayCheck`
-  use `maxTicks = tick + (last cmd at >= tick ? 1 : 0)`.
-- **Contract as literally phrased can lie about its own level**: "nothing
-  supports a rope" — but nuggets HANG from the line, so GOLD under rope is
-  carved-in and legal. Contract now says EMPTY|LADDER|GOLD.
-- **A harness that walks east on a guard's clock is a race, not a test**:
-  lodeplay's walk-east check once flaked because the chase legitimately
-  captured mid-assert and the honest respawn reset `x`. Narrowed the window;
-  dying belongs to its own section.
-- **Poll prod with -L** (jalfern 308→www) and never trust a manual loop that
-  silently matched nothing — the env name `LODE_URL` vs a typo'd `LOADE_URL`
-  also burned ten silent minutes polling 5173 for a game it didn't have.
-  `lodeplay` now dumps `location.href` into the hook-failure line on purpose.
-- `gh pr merge --squash` STILL fails while main is checked out elsewhere; the
-  documented API form (`gh api PUT pulls/N/merge merge_method=squash
-  delete_branch=true`) merged it after `--watch --fail-fast` was green, then
-  delete the remote branch by hand (the API did not).
-- QA MASTER (pid 73040) ran alongside in the main checkout all session;
-  session lived in worktree `retrogames-runner` (removed after merge).
+- **A jump must not eat the nock.** Jump-and-release share a tick: the
+  release branch originally skipped the loose, which (a) ate the player's
+  arrow and (b) silently dropped the fire from the recorded cmd stream —
+  the browser replay then "diverged" while the engine was deterministic.
+  The draw is now ONE state machine and `firing` is cleared exactly when
+  the loose happens. Any game with hold-then-release inputs: if the release
+  can share a tick with another verb, the loose lives at the top of the tick.
+- **Replay parity means tick parity**: live applied commands stamped
+  `< tick` and stepped once per tick, so the twin stops AT `tick` — an
+  off-by-one tail over-ticks and the hash (which includes tick) differs.
+  (Lode needed a `+1` tail; archery needs `+0`. Derive it from how the
+  game stamps its end, don't cargo-cult the previous title.)
+- **Sky censuses are not receipts.** `archeryplay` asserts "your arrow
+  loosed" by arrow **id** (`owner===0 && !seen.has(id)`), not by counting
+  flying arrows — the bot has arrows up there too. Same lesson as lode's
+  pound: count the thing the actor owns.
+- **LOS lies for arcs** (first sim pass): a straight sight-check passed
+  while the 45° bulged into a ledge underside and the bot shot its own
+  cover. `predictHit` (real integrator + terrain + stuck arrows) replaced
+  it. Any aiming bot must forward-sim, never raycast straight.
+- **A knockout probe needs a mid-air crossing**: arrows resting in one
+  cell replace each other under any rule, so the no-knockout mutant is
+  equivalent unless the test arc crosses a stuck arrow mid-air.
+- Slack reached parity only after respawn resupply (+2, capped by
+  `quiverMax`, tracked in `supplied`) — an empty-quiver corner was
+  otherwise un-winnable and the clock, not the autopilot, decided.
 
-## Gates (all green at merge, PR #153)
-19 scoped lints · `lodecheck` 92/92 + 6/6 mutants (CI runs `--mutate`) ·
-`lodeplay` 23/23 ×2 local AND green on the smoke runner · static ✓ 2m ·
-smoke ✓ 5m19s · build ✓ · prod 200 + game chunk driving on the live page.
+## Gates (all green at merge, PR #158)
+lint:mario/fps/ai/archery ✓ · `archerycheck` 93/93 + 6/6 mutants (CI runs
+`--mutate`) · `archeryplay` 18/18 local AND smoke ✓ 4m28s · static ✓ 1m26s
+· build ✓ · prod 200 + engine strings found in the live chunk.
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Claim #78 Arena Archery (TowerFall-like). Its muscle: local multiplayer
-   aim/duel physics — the natural sibling of lode's one-input-per-tick
-   discipline: two players, one keyboard, determinism needs an ordered
-   input-stamp per tick, which is the harness lodecheck just proved works.
-2. LODE RUNNER is shipped — do not polish. Honest gaps live in
-   `src/games/LodeRunnerLite/README.md` (vault-2 `drop` pinned by scenario
-   not witness; guard cell-pinning in the burial scenario; no pad vault
-   select). If a harness flakes on CI, widen the WINDOW (lodeplay), never
-   the assertion.
-3. `lodecheck --mutate` runs IN CI's static job (cheap, ~6 solves) — keep
-   new gates paid-for like this rather than opt-in.
+1. Claim #79 WWI Dogfight 3D (three.js — see RaccoonHeist for the 3D
+   conventions, CELL-scale thinking, `?lite=1` CI path). Its harness needs
+   a 3D analogue of "pixels vs the sim": projected screen-space position vs
+   world position, and biplane ballistics get the same
+   solve-then-forward-sim treatment as archery's `predictHit`.
+2. Arena Archery is shipped — do not polish. Honest gaps in
+   `src/games/ArenaArchery/README.md` (2P has no driven harness; bot doesn't
+   climb ledges deliberately). If `archeryplay` flakes on CI, widen the
+   WINDOW, never the assertion.
+3. Queue keeps growing (#143 Paperboy, #152 Wizardry filed since). Same
+   drill: claim oldest, design comment first, one game, harness that can
+   fail, merge only via `--watch --fail-fast` then squash.
 
 ## Three questions for Jon
-1. Main checkout: QA MASTER keeps it busy, and `gh pr merge` refuses while
-   it holds `main`. Should forge sessions standardize on the API merge form
-   (documented twice now), or should the loop detach main (`worktree` on a
-   pinned ref) so the normal command works?
-2. Three sessions now shipped vault/portrait 2D canvas games with the same
-   shell skeleton (canvas+HUD+attract+harness). Worth a `docs/GAME-SHELL.md`
-   template so the next forge session starts from a proven skeleton instead
-   of re-deriving the loop from Outpost's source?
-3. The queue head #78 (Arena Archery) is local-multiplayer — phones can't
-   share one touchpad. Prefer VirtualControls second-pad support first, or
-   re-order the queue for a solo-friendly title (#118 Minesweeper)?
+1. `archeryplay` passed CI smoke first try — promote the smoke job to
+   automatic on PRs for games whose drivers ran green twice locally, or
+   keep it manual until headless audio is sorted (the old reason)?
+2. Two browser drivers now hunt "pixels vs state" differently (lodepaint
+   region census, archery id-tracking). Worth a `scripts/lib/pixels.mjs`
+   shared helper before WWI Dogfight starts drawing on a 3D canvas?
+3. #79 WWI Dogfight is three.js and three-axes aim — the virtual-pad
+   contract bends there (pitch+roll on one stick). Descope to pitch+yaw
+   with roll cosmetic, or extend VirtualControls with a twin-stick mode
+   first?
 
 ## Lineage
-AGENTS.md honored: read STATE first, resumed the corpse before claiming
-(1b), one game, checkpoint pushes with one-line issue comments per push,
+AGENTS.md honored: read STATE first, one game (#78, oldest queue head),
+design comment posted before code, checkpoint pushes with issue comments,
 harness proven able-to-fail (6/6 mutants IN CI), merge only via
-checks-watch-then-squash (API form, worktree lock), prod verified, STATE via
-PR to main. Rule 4: eight straight sessions touching `src/games/**`.
-Ran ~2h45m — inside the box.
+`gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
+(clean this time — main was not locked), prod verified from the live
+bundle, STATE via PR. Rule 4: nine straight sessions touching
+`src/games/**`. Ran ~3h — at the box edge, shipping beat polishing.
