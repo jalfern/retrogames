@@ -6,7 +6,7 @@
 //
 //   CW x CH cell            runner frames     guard frames   ghost (dim copy)
 //   brick / solid / rope /  stand runA runB   same set,      all runner frames
-//   ladder / hole / crumble / climbA climbB   other palette  in warm orange
+//   ladder / hole / crumble / climbA climbB   other palette  in spectral blue
 //                 3 stages   hang  fall
 
 export const CW = 20
@@ -216,10 +216,13 @@ const GUARD = {
     ],
 }
 
+// the Apple II original's palette: an aqua runner, orange guards, grey
+// rope and ladder on a dark navy vault. lodeplay pins each of these in
+// pixels (a revert to the old white/olive/green/yellow read fails).
 const PALETTES = {
-    runner: { w: '#f4f7ff', s: '#f2c9a0', b: '#4a74e8', k: '#101528' },
-    guard: { o: '#9aa06b', s: '#e8bd93', p: '#5c6644', k: '#131a10' },
-    ghost: { w: '#ffb45a', s: '#ffd9a0', b: '#e08b2e', k: '#3a2408' },
+    runner: { w: '#98e8c8', s: '#84dcc0', b: '#3ec8b4', k: '#0e2a33' },
+    guard: { o: '#f08434', s: '#f2b078', p: '#c8681c', k: '#2a1808' },
+    ghost: { w: '#b8c8dc', s: '#ccd8e8', b: '#5e7a9e', k: '#16202e' },
 }
 
 function fromMap(map, pal) {
@@ -263,29 +266,31 @@ function fromMap(map, pal) {
     return c
 }
 
-// the gold chest: body g, lid seam L, lock G, base f. Two blink shades —
-// BOTH pass lodeplay's warm-yellow pixel test (r>150, g>110, b<140).
-const CHEST = [
+// the gold: the original's nugget — a bright lump that blinks, not a chest.
+// g=body, G=sparkle, f=base. Two blink shades — BOTH pass lodeplay's
+// warm-yellow pixel test (r>150, g>110, b<140).
+const NUGGET = [
+    '.....gggggg.....',
+    '...gggggggggg...',
+    '..gggggggggggg..',
     '.gggggggggggggg.',
-    'gggggggggggggggg',
-    'gLLLLLLLLLLLLLLg',
-    'gggggggggggggggg',
-    'ggGgggggggggggGg',
-    'gggggggggggggggg',
-    'gggggggggggggggg',
-    'ffffffffffffffff',
+    '.ggGgggggggggGg.',
+    '.gggggggggggggg.',
+    '.gggggggggggggg.',
+    '.gggggggggggggg.',
+    '..ffffffffffff..',
 ]
 
-function chest(pal) {
+function nugget(pal) {
     const c = document.createElement('canvas')
     c.width = CW; c.height = CH
     const x = c.getContext('2d')
-    const w = CHEST[0].length
+    const w = NUGGET[0].length
     const offX = (CW - w) >> 1
-    const offY = CH - CHEST.length - 1
-    for (let r = 0; r < CHEST.length; r++) {
+    const offY = CH - NUGGET.length - 1
+    for (let r = 0; r < NUGGET.length; r++) {
         for (let col = 0; col < w; col++) {
-            const ch = CHEST[r][col]
+            const ch = NUGGET[r][col]
             if (ch === '.') continue
             x.fillStyle = pal[ch]
             x.fillRect(offX + col, offY + r, 1, 1)
@@ -335,9 +340,9 @@ function ropeTile() {
     const c = document.createElement('canvas')
     c.width = CW; c.height = CH
     const x = c.getContext('2d')
-    rect(x, 0, 8, CW, 3, '#d9c26a')
-    rect(x, 0, 11, CW, 1, '#8a7434')
-    for (let px = 1; px < CW; px += 3) rect(x, px, 9, 1, 1, '#a3873e')
+    rect(x, 0, 8, CW, 3, '#c9c9d4')
+    rect(x, 0, 11, CW, 1, '#707088')
+    for (let px = 1; px < CW; px += 3) rect(x, px, 9, 1, 1, '#9090a8')
     return c
 }
 
@@ -345,10 +350,10 @@ function ladderTile() {
     const c = document.createElement('canvas')
     c.width = CW; c.height = CH
     const x = c.getContext('2d')
-    rect(x, 5, 0, 2, CH, '#6fbf73')
-    rect(x, 13, 0, 2, CH, '#6fbf73')
-    for (const y of [4, 11, 18]) rect(x, 5, y, 10, 2, '#6fbf73')
-    rect(x, 5, 0, 10, 1, '#4a9a52')
+    rect(x, 5, 0, 2, CH, '#c9cdd9')
+    rect(x, 13, 0, 2, CH, '#c9cdd9')
+    for (const y of [4, 11, 18]) rect(x, 5, y, 10, 2, '#c9cdd9')
+    rect(x, 5, 0, 10, 1, '#8890a4')
     return c
 }
 
@@ -417,8 +422,8 @@ export function buildArt() {
     const ghost = frames(RUNNER, PALETTES.ghost)
     const art = {
         runner, guard, ghost,
-        chest: [chest({ g: '#ffd23e', L: '#c8961e', G: '#fff3c0', f: '#a87615' }),
-            chest({ g: '#b8922e', L: '#8a6a1c', G: '#e8c46a', f: '#6e5213' })],
+        gold: [nugget({ g: '#ffd23e', G: '#fff6c8', f: '#8a6a1c' }),
+            nugget({ g: '#b8922e', G: '#d8bc6e', f: '#6e5213' })],
         brick: brickTile(),
         solid: solidTile(),
         rope: ropeTile(),

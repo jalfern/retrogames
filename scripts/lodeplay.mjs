@@ -13,6 +13,11 @@
 //   3b. THE PAINT — terrain is runtime pixel art: warm mortar brick reads
 //       distinct from cool concrete, and the runner and guard are distinct
 //       sprites, not two shades of one glyph.
+//   3c. THE ORIGINAL PALETTE — issue #168: the vault background is the
+//       Apple II original's dark navy (not near-black), the runner paints
+//       aqua (no strong-blue pixel, i.e. not the old white+blue kit), the
+//       guard paints orange (not the old olive), and ladder and rope paint
+//       the original's light grey (not green/yellow).
 //   4. THE LADDER AND THE ROPE (vault 2) — run to a real ladder, climb it, and
 //      dangle onto the rope line: the runner hangs, rope over his head in the state.
 //   5. GUARDS HUNT — a guard's cell changes without being touched.
@@ -148,6 +153,15 @@ r.check('terrain is pixel art: warm mortar brick distinct from cool concrete (hu
     && artPx.brick.r > artPx.brick.b + 15 && artPx.solid.b >= artPx.solid.r
     && artPx.brick.n > 150 && artPx.solid.n > 150,
     JSON.stringify(artPx))
+// 3c — the vault background: vault 1 row 1 is the air row, so cell (5,1) is
+// pure background fill. The original's is a DARK NAVY — blue-dominant but
+// still dark; the old near-black failed on the hue, a bright blue would
+// fail on the sum.
+const bgPx = await avgPx(5, 1)
+r.check('the background is the original dark navy (not the old near-black)',
+    bgPx && bgPx.b > bgPx.r + 15
+    && bgPx.r + bgPx.g + bgPx.b < 150 && bgPx.r + bgPx.g + bgPx.b > 25,
+    JSON.stringify(bgPx))
 
 // 4 — face and push DOWN at spawn: the diagonal brick below opens a live HOLE,
 // which the sim's fuse grows back into brick after the ~5 s hold
@@ -191,6 +205,28 @@ r.check('walking reaches the col-8 ladder foot in vault 2', !!foot, JSON.stringi
 for (let i = 0; i < 6; i++) await holdKey('ArrowUp', 90)   // a few rungs up, well below the top
 const climbed = await page.evaluate(() => { const p = window.__lodeTest.probe(); return { mode: p.player.mode, x: p.player.x, y: p.player.y } })
 r.check('a held arrow climbs the real ladder off the floor', (climbed.mode === 'climb' || climbed.mode === 'hang') && climbed.y < 16, JSON.stringify(climbed))
+// 5b — the rope-and-ladder read the ORIGINAL's light grey (the old art was
+// green ladder / yellow rope). The bright-filtered window average drops the
+// navy background (its r+g+b is exactly 60), so the read is pure fixture.
+const greyPx = (gx, gy) => page.evaluate(([x, y]) => {
+    const c = document.querySelector('canvas[data-lode-stage]')
+    const d = c.getContext('2d').getImageData(x * 20 + 3, y * 22 + 3, 14, 16).data
+    let r = 0, g = 0, b = 0, n = 0
+    for (let i = 0; i < d.length; i += 4) {
+        if (d[i] + d[i + 1] + d[i + 2] <= 60) continue
+        r += d[i]; g += d[i + 1]; b += d[i + 2]; n++
+    }
+    return n ? { r: r / n, g: g / n, b: b / n, n } : null
+}, [gx, gy])
+const ladY = Math.min(climbed.y + 2, 15)   // a ladder rung below the runner, clear of him
+const ladPx = await greyPx(8, ladY)
+r.check(`the ladder paints the original's light grey (col 8, row ${ladY})`,
+    ladPx && ladPx.n > 20 && ladPx.r > 100 && Math.abs(ladPx.r - ladPx.g) < 30 && Math.abs(ladPx.g - ladPx.b) < 30,
+    JSON.stringify(ladPx))
+const ropePx = await greyPx(12, 5)   // the rope line spans cols 6-18 in vault 2
+r.check('the rope line paints the same light grey, not the old yellow',
+    ropePx && ropePx.n > 20 && ropePx.r > 100 && Math.abs(ropePx.r - ropePx.g) < 30 && Math.abs(ropePx.g - ropePx.b) < 30,
+    JSON.stringify(ropePx))
 
 // 6 — guards hunt without being touched
 await page.evaluate(() => window.__lodeTest.start(0))
@@ -209,11 +245,15 @@ const cast = await page.evaluate(() => {
     const read = (x, y) => {
         const d = c.getContext('2d').getImageData(x * 20 + 3, y * 22 + 3, 14, 16).data
         let r = 0, g = 0, b = 0, n = 0
+        let blue = 0   // max b-g over the window: a strong-blue pixel is the
+        // old runner's blue overalls; the aqua kit and the navy background
+        // never get anywhere near that
         for (let i = 0; i < d.length; i += 4) {
             if (d[i] + d[i + 1] + d[i + 2] < 24) continue
             r += d[i]; g += d[i + 1]; b += d[i + 2]; n++
+            blue = Math.max(blue, d[i + 2] - d[i + 1])
         }
-        return n ? { r: r / n, g: g / n, b: b / n, n } : null
+        return n ? { r: r / n, g: g / n, b: b / n, n, blue } : null
     }
     const gd = p.guards.find((x) => x.alive)
     return { player: read(p.player.x, p.player.y), guard: gd ? read(gd.x, gd.y) : null, at: { p: [p.player.x, p.player.y], g: gd && [gd.x, gd.y] } }
@@ -223,6 +263,12 @@ const castDist = cast.player && cast.guard
 r.check('the runner and the guard paint as distinct sprites (not one glyph in two colors)',
     cast.player && cast.guard && cast.player.n > 60 && cast.guard.n > 60 && castDist > 30,
     JSON.stringify({ ...cast, dist: Math.round(castDist) }))
+// 6c — the ORIGINAL palette (issue #168): the old art was a white+blue runner
+// and an olive guard; the original is an aqua runner and orange guards.
+r.check('the runner paints aqua (no strong-blue pixel in his window, the old overalls test)',
+    cast.player && cast.player.blue < 40, JSON.stringify(cast.player))
+r.check('the guard paints orange, not the old olive (warm window average)',
+    cast.guard && cast.guard.r > cast.guard.g + 10, JSON.stringify(cast.guard))
 
 // 7 — you can die: walk east into the hunt until the game overs
 let over = null
