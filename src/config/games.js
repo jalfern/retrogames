@@ -63,6 +63,9 @@ const OutpostGame = lazy(() => import('../games/Outpost'))
 // harness (rules.js/gen.js are the SAME code the booth plays with) rides
 // in its own chunk.
 const PapersPleaseMinGame = lazy(() => import('../games/PapersPleaseMin'))
+// Lode Runner-Lite: same lesson — the solver that scripts the attract demo and
+// the deterministic sim it shares with the harness ride in its own chunk.
+const LodeRunnerLiteGame = lazy(() => import('../games/LodeRunnerLite'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -204,6 +207,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'Seven days at the border gate of a small gray country. Each entrant slides papers under the glass; the wall carries the law of the day — entry list, wanted sheet, calendar, a scale that reads the truth under their feet. ADMIT or DENY: the booth never hides its evidence, and every generated paper in the game is PROVEN decidable by a Node harness that re-judges each applicant twice (booth vs truth) and proves a careless eye still clears every day — the six traps (expires-TODAY, same-name-on-the-sheet, foreign-looking city, ID height, child without ID, ID weight) are placed on purpose. One new rule wakes every morning; three mistakes demote you.',
         controls: ['A / SPACE / tap left: ADMIT the entrant', 'D / B button / tap right: DENY the entrant', 'Read the wall first: date, RULEBOOK, ENTRY LIST, WANTED sheet, SCALE', 'Expired BEFORE today is void — expiring TODAY is still valid', 'Wanted means name AND passport number; children are exempt from the ID rule', 'Day 7 wakes the CURFEW: a passport needs seven days of grace', '?: Pause and read the rules'],
+    },
+    {
+        path: '/lode-runner',
+        component: LodeRunnerLiteGame,
+        label: 'LODE RUNNER-LITE',
+        theme: 'dark',
+        description: 'Three hand-carved vaults of concrete, brick and rope. Collect every gold nugget and the gate opens — but your only weapon is the floor itself: dig a brick and it becomes a trap that holds its rider for one breath, then collapses into a HOLE that never comes back. Guards hunt you over the SAME physics graph you move on — minus the jump and the rope — so a rope line is a moat, a shaft is a grave, and a trapped guard walks off his own trap into the dark. Every vault is proven winnable by the real solver with guards live, and the sim is pure (level, input-script): the attract demo is that proven witness replayed tick-for-tick, your last run haunts the next one as a ghost, and a Node harness replays your commands down to the state hash — plus the slack rule: every vault still clears with one fewer life.',
+        controls: ['Arrows / D-pad: run, climb ladders, swing under rope', 'Push into a wall: dig the brick under its far foot · DOWN digs the brick below you', 'SPACE / A: jump — hold a direction for a diagonal; a rising body catches any rope overhead', 'A rising jump catches rope; a falling body grabs any ladder it passes', 'Take every gold * to open the gate ▼; holes and buried guards are forever', '?: pause · R on the end screen replays that vault beside your ghost'],
     },
     {
         path: '/pong',
