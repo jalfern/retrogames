@@ -94,7 +94,10 @@
         "forgeplay": "node scripts/forgeplay.mjs",
         "lint:paper": "eslint src/games/Paperboy src/components src/utils src/config src/main.jsx scripts",
         "papercheck": "node scripts/papercheck.mjs",
-        "paperplay": "node scripts/paperplay.mjs"
+        "paperplay": "node scripts/paperplay.mjs",
+        "lint:wiz": "eslint src/games/Wizardry src/components src/utils src/config src/main.jsx scripts",
+        "wizcheck": "node scripts/wizcheck.mjs",
+        "wizplay": "node scripts/wizplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
