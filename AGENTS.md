@@ -57,6 +57,8 @@ npm run galactcheck  # Galaga: path audit + live trajectory + behavior-tree pins
 npm run dogfightcheck # WWI Dogfight: energy ledgers (trim/stall/zoom/glide), bullet-integrator parity, per-tick round ledger, pilot wins both patrols + slack rule, in Node (~1s); `-- --mutate` = 7 mutants that MUST die
 npm run dogfightplay # WWI Dogfight in Chrome, real keys only: instruments==sim, bandit pixels==projection, replay hash in the page (`DOG_LITE=1 -- --throttle 16` reproduces the CI runner)
 npm run galactplay   # Galaga in Chrome with real key events only: pixels vs physics, capture chain end-to-end (needs `npm run dev`)
+npm run sweepcheck   # Minesweeper: fairness battery + brute-force oracle (independent of the solver) + 4 mutants that MUST die, in Node (~4s)
+npm run sweepplay    # Minesweeper in Chrome, real keys only: first click plants, canvas reads back, plays COLT to a win (needs `npm run dev`)
 npm run heistplay  # Chrome plays job 1: 110 assertions (needs `npm run dev`); `-- --throttle 32` = a 32x slower CPU
 npm run heistclock # does the fixed timestep keep real time? one line per CPU throttle
 npm run heistmutate # put fourteen fixed bugs back and prove heistplay notices (~40 min)
@@ -556,6 +558,26 @@ Quick orientation: `src/games/SuperMario/index.jsx` is the live build, and
 `src/games/SuperMarioClassic/index.jsx` is the vendored pristine v1 (route `/mario-classic`,
 `hidden: true`, reached only from the menu; its `?` returns to `/mario?menu=1`).
 Verify Mario work with `npm run verify` (see *Self-verifying* above).
+
+## Minesweeper
+
+**MINESWEEPER** (`/minesweeper`) is the arcade's logic-only title: three
+difficulties (COLT/SAPPER/GENERAL), every board **guess-free by construction** —
+the generator ships a board only after a solver playing *just the rules the
+player learns* (single-square + subset-pair, chord as a strippable shortcut)
+proves it closes with zero forced guesses, then re-proves it with chord
+**forbidden** (the slack gate). Cursor + tap play, attract autopilot.
+
+The one contract that keeps it honest: **the solver is the gate, so the solver
+must not be its own referee.** Two solver lies found and killed; the browser
+harness then found a third the Node battery structurally could not see (a first
+click gated behind `screen:'play'` that `dig()` itself was refusing to set —
+planting was unreachable in the app, while `plantAt` called directly passed every
+Node check). Full notes — the stale-scratch bug, the oracle that had to stop
+trusting the solver's ledger to become able to fail, and the two green-tested-nothing
+oracle versions — are in **[`src/games/Minesweeper/README.md`](src/games/Minesweeper/README.md)**.
+Verify with `npm run sweepcheck` (`-- --mutate` = 4/4 mutants die; in the `static`
+gate) and `npm run sweepplay` (Chrome, real keys only; in `verify`).
 
 ## The Forge (autonomous game production)
 `/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the
