@@ -161,8 +161,9 @@ const PaperboyGame = () => {
             ctx.globalAlpha = 1
 
             ctx.save(); ctx.translate(sx, sy)
-            // road strip: far to near quads
-            for (let dy = LOOK; dy > 0; dy -= 4) {
+            // road strip: far to near quads (extend past the boy so the
+            // foreground is road, not a void at the canvas foot)
+            for (let dy = LOOK; dy > -34; dy -= 4) {
                 const rA = projRoad(dy), rB = projRoad(dy - 4)
                 const y0r = rA.y, k0 = rA.k, y1r = rB.y, k1 = rB.k
                 const band = Math.floor((gs.s + dy) / 24) % 2
@@ -405,6 +406,7 @@ const PaperboyGame = () => {
                     if (screenRef.current !== 'play') return false
                     if (opts.s !== undefined) gs.s = opts.s
                     if (opts.x !== undefined) gs.x = opts.x
+                    if (opts.lives !== undefined) gs.lives = opts.lives
                     if (opts.papers !== undefined) gs.papers = opts.papers
                     if (opts.stun !== undefined) gs.stun = opts.stun
                     if (opts.inv !== undefined) gs.inv = opts.inv
