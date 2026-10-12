@@ -30,8 +30,9 @@ const A0 = buildArena(0)
 const PXW = A0.W * CW
 const PXH = A0.H * CW
 
-const P1_KEYS = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd', Space: 'f' }
-const P2_KEYS = { KeyA: 'l', KeyD: 'r', KeyW: 'u', KeyS: 'd', KeyF: 'f' }
+const P1_KEYS = { l: 'ArrowLeft', r: 'ArrowRight', u: 'ArrowUp', d: 'ArrowDown', f: 'Space' }
+const P2_KEYS = { l: 'KeyA', r: 'KeyD', u: 'KeyW', d: 'KeyS', f: 'KeyF' }
+const KEY_SET = new Set([...Object.values(P1_KEYS), ...Object.values(P2_KEYS)])
 
 const inputOf = (held, map) => ({
     mx: (held.has(map.r) ? 1 : 0) - (held.has(map.l) ? 1 : 0),
@@ -250,7 +251,7 @@ const ArenaArcheryGame = () => {
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
-            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyA', 'KeyD', 'KeyW', 'KeyS', 'KeyF'].includes(e.code)) e.preventDefault()
+            if (KEY_SET.has(e.code)) e.preventDefault()
             const sc = screenRef.current
             if (sc === 'attract') {
                 if (e.code === 'Digit2') return startPlay('2p', 0)
@@ -263,7 +264,7 @@ const ArenaArcheryGame = () => {
                 setMode('attract'); return
             }
             if (pausedRef.current) return
-            if (P1_KEYS[e.code] || P2_KEYS[e.code]) held.add(e.code)
+            if (KEY_SET.has(e.code)) held.add(e.code)
         }
         const onUp = (e) => { held.delete(e.code) }
         const onPointer = () => {
@@ -297,7 +298,8 @@ const ArenaArcheryGame = () => {
                     p2: { x: gs.p[1].x, y: gs.p[1].y, alive: gs.p[1].alive, quiver: gs.p[1].quiver },
                     flying: gs.arrows.filter((a) => a.state === 'fly').length,
                     stuck: gs.stuck.length,
-                    ledger: { ...gs.ledger, total: gs.total + gs.supplied, now: gs.p[0].quiver + gs.p[1].quiver + gs.arrows.filter((a) => a.state !== 'stuck').length + gs.stuck.length + gs.ledger.hit + gs.ledger.lost + gs.supplied },
+                    arrows: gs.arrows.map((a) => ({ id: a.id, state: a.state, owner: a.owner })),
+                    ledger: { ...gs.ledger, total: gs.total + gs.supplied, now: gs.p[0].quiver + gs.p[1].quiver + gs.arrows.filter((a) => a.state !== 'stuck').length + gs.stuck.length + gs.ledger.hit + gs.ledger.lost },
                     // attract is a separate sim instance — the harness grades
                     // THAT moving, not the idle gs
                     demo: demoG ? { tick: demoG.tick, end: demoG.end, scores: [demoG.p[0].score, demoG.p[1].score] } : null,
@@ -308,8 +310,11 @@ const ArenaArcheryGame = () => {
                 // so a harness can advance the duel through real step() calls
                 drive: (n) => {
                     for (let k = 0; k < n && !gs.end; k++) {
+                        const i1 = botInput(gs, 0, 1)
+                        const i2 = botInput(gs, 1, 0)
+                        gs.cmds.push({ tick: gs.tick, p1: i1, p2: i2 })
                         const before = gs.events.length
-                        step(gs, botInput(gs, 0, 1), botInput(gs, 1, 0))
+                        step(gs, i1, i2)
                         handleEvents(gs.events.splice(before))
                     }
                     if (gs.end) gameOver()
@@ -320,8 +325,18 @@ const ArenaArcheryGame = () => {
                     // +1 so a match that ENDED on the last recorded command
                     // gets that command applied in the twin too — stopping the
                     // referee early is not measuring divergence
-                    const g2 = replay(buildArena(arenaIdx), gs.cmds, { maxTicks: gs.tick + 1 })
-                    return { live: stateHash(gs), replay: stateHash(g2), match: stateHash(gs) === stateHash(g2), cmds: gs.cmds.length }
+                    // exact tick parity: live has applied every command
+                    // stamped < gs.tick and stepped once per tick, so the
+                    // twin must stop AT gs.tick — not one past it, or the
+                    // hash mixes a tick the live board never lived
+                    const g2 = replay(buildArena(arenaIdx), gs.cmds, { maxTicks: gs.tick })
+                    return {
+                        live: stateHash(gs), replay: stateHash(g2), match: stateHash(gs) === stateHash(g2),
+                        cmds: gs.cmds.length, tick: gs.tick, twinTick: g2.tick,
+                        liveP1: [Math.round(gs.p[0].x), Math.round(gs.p[0].y), gs.p[0].quiver, gs.p[0].charge],
+                        twinP1: [Math.round(g2.p[0].x), Math.round(g2.p[0].y), g2.p[0].quiver, g2.p[0].charge],
+                        liveStuck: gs.stuck.map((s) => s.cell), twinStuck: g2.stuck.map((s) => s.cell),
+                    }
                 },
                 prognose: () => {
                     if (gs.end) return `already ${gs.end}`

@@ -201,6 +201,12 @@ function stepPlayer(g, p, inp) {
         p.vy += CFG.gravity
     }
 
+
+    // the draw is one STATE MACHINE, one place: `firing` must be false
+    // once a release loosed, or the NEXT tick looses a second arrow from
+    // the same nock (and replays a stream the live game never played).
+    // A release that shares its tick with a jump still looses: the arrow
+    // leaves before any vertical state matters.
     if (fire) {
         p.firing = true
         p.charge = clamp(p.charge + CFG.chargeRate, 0, 1)
@@ -210,17 +216,17 @@ function stepPlayer(g, p, inp) {
         if (inp && inp.aim) { p.aimX = inp.aim.x; p.aimY = inp.aim.y }
         else if (mx !== 0) { p.aimX = mx; p.aimY = my !== 0 ? -Math.sign(my) : 0 }
         else if (my > 0) { p.aimX = p.face; p.aimY = -1 }
-    } else {
-        if (p.firing) {
-            // releasing with a level stick fires level at the facing;
-            // a solver-named aim wins over the stick
-            if (inp && inp.aim) { p.aimX = inp.aim.x; p.aimY = inp.aim.y }
-            else { if (mx !== 0) p.aimX = mx; p.aimY = -my }
-            looseArrow(g, p)
-            p.firing = false
-            p.charge = 0
-        }
-        if (mx !== 0 || my !== 0) { p.aimX = mx; p.aimY = my > 0 ? -1 : 0 }
+    } else if (p.firing) {
+        // release: a level stick fires level at the facing; a solver-named
+        // aim wins over the stick
+        if (inp && inp.aim) { p.aimX = inp.aim.x; p.aimY = inp.aim.y }
+        else { if (mx !== 0) p.aimX = mx; p.aimY = -my }
+        looseArrow(g, p)
+        p.firing = false
+        p.charge = 0
+    } else if (mx !== 0 || my !== 0) {
+        p.aimX = mx
+        p.aimY = my > 0 ? -1 : my < 0 ? 1 : 0
     }
     p.firePrev = fire
 
