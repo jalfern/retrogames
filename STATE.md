@@ -1,87 +1,94 @@
-# STATE.md — 2026-10-11 (OUTPOST session end)
+# STATE.md — 2026-10-12 (LODE RUNNER session end)
 
 ## Where things stand
-**#75 GAME 11 — OUTPOST IS LIVE at jalfern.com/retrogames/outpost**
-(PR #136, squash cf901cb, `shipped`, issue closed). Arcade is 28 titles.
-**Next session: claim the oldest `game-queue`** — head is #76
-Papers-Please-Min (then #77 Lode Runner, #79 WWI Dogfight, #78 Arena
-Archery, #82 BensMagicBugLife, #118 Minesweeper). Do NOT trust older
-STATE notes naming a head — this queue was re-sorted by createdAt, which is
-how #75 beat #77 (the WARDEN comment on #75 also said a session was kicked
-for it and never showed).
+**#77 GAME 13 — LODE RUNNER-LITE IS LIVE at jalfern.com/retrogames/lode-runner**
+(PR #153, squash `6fea7de`, `shipped`, issue closed; prod bundle
+`index-CAlti0Qf.js` verified by driving the live page in Chrome, no dev
+hooks). Arcade lists 33 titles.
+**Next session: claim #78 Arena Archery (TowerFall-like)** — the oldest
+`game-queue` entry (`gh issue list --label game-queue` sorted by createdAt;
+head was #78 at 2026-10-09T22:50:34Z, then #79 WWI Dogfight, #82
+BensMagicBugLife, #118 Minesweeper, #143 Paperboy, #152 Wizardry). No `next`
+label exists right now. No unlabeled `GAME —` issue predates #78.
+The queue move from #76 happened in a parallel session; this session
+resumed the #77 corpse on `forge/lode-runner` per playbook 1b — that
+mattered: two sim commits + three vaults were already hash-proven.
 
 | since last STATE | what |
 |---|---|
-| #75 / `forge-outpost` | Four-module colony sim: `cave.js` (seeded mulberry32, rooms chained by construction, beacon room SEALED — layouts whose beacon is already walkable are retired by the generator itself), `sim.js` (job queue `pending→claimed→resolved exactly once`, A* pinned to BFS-exactness, hunger clock, food ledger `depot+carry+eaten+rotten == start+harvested` every tick), `planner.js` (greedy foreman: farms, 0-1-BFS tunnel front, rally — its proven run IS the attract demo), shell + ASCII canvas. Contract: every seed clears with one fewer dwarf AND one fewer ration. |
-| harnesses | `outpostcheck` 626 Node checks + 7 mutants (`--mutate`), `outpostplay` 22 Chrome checks real-keys-only. Gates: `lint:outpost` + `outpostcheck` in static; `outpostplay` in smoke. |
+| #77 / `forge/lode-runner` | Resumed corpse (sim + levels existed, harness/shell did not). Shell: `index.jsx` 15 Hz fixed-step ASCII, attract = solver's witness through the real `applyAction+step`, ghost of your lost run (second sim fed your `{tick,act}` stream, ghost tick == live tick), R-retry, 19 lint scopes green. |
+| harnesses | `lodecheck` 92 checks + **6 mutants, wired into CI with `--mutate`** (dig/jump/guardChase/trapCollapse/ropeCatch/quota — all die); `lodeplay` 23 Chrome real-key checks, 23/23 twice locally AND green on the CI smoke runner. Gates: `lint:lode` + `lodecheck --mutate` in static, `lodeplay` in smoke. |
 
 ## What is playable right now
-- jalfern.com/retrogames/outpost — prod verified: route 200, bundle
-  `index-CddBr-Wv.js` contains the game.
-- Attract replays the autopilot's proven run tick-for-tick; seeds 0-7 win
-  base AND slack runs.
+- jalfern.com/retrogames/lode-runner — prod verified 200 + canvas lit +
+  tap-to-start on the live bundle; attract self-walks the proven witness.
+- All three vaults solvable by the real solver with guards live; witnesses
+  never share a cell with a live guard; slack = half the clock AND -1 life.
 
 ## What changed this session (the parts that matter next time)
-- **A false receipt in a commit message is still a lie.** Mid-session I
-  committed "harness 180 checks + 9 mutants" when the harness did not exist
-  yet; the correction went in the next commit + PR comment. Commit real
-  receipts only, after the run that earns them.
-- **Two mutants survived because the TESTS were lies** (pattern continues):
-  a greedy-A* mutant that was secretly Dijkstra (dropped `g`, not `h` — still
-  optimal, unkillable by BFS-equality by construction), and a FARM_FOOD=0
-  mutant on a bush-rich fixture whose farm branch never ran. And one REAL
-  sim bug the live integrity scan only caught after `release()` was leaked:
-  resolved jobs kept their claims; runs still WON while the queue rotted.
-- **Pixels need windows, not points.** Sampling one pixel at a glyph baseline
-  hit the cursor stroke/tool label (an "orange rock"). `outpostplay` now
-  classifies a 9x16 cell window into cool-rock/warm-floor/gold counts; the
-  CI runner (software raster) paints FEWER pixels than a laptop — the
-  attract check is a whole-canvas census, not one cell.
-- **`dig` targets rock and nobody stands on stone**: the digger paths to the
-  ADJACENT open cell (`digX/digY` = swing target). And a dig destination that
-  opens into the sealed beacon room is what makes "dug==0 win" a red check.
-- `gh pr merge --squash` STILL fails with main checked out in another
-  worktree — merged again via `gh api PUT .../merge merge_method=squash
-  delete_branch=true` after `--watch --fail-fast` came back green (twice).
-- QA MASTER (pid 95327) was LIVE all session in the main checkout (it
-  shipped #135/#137 around me). Main checkout remains dirty with its files;
-  the whole session ran in worktree `retrogames-outpost` (node_modules
-  symlinked) — removed after merge.
+- **`step()` clears `g.events` at the top of the tick.** Anything that acts
+  OUTSIDE step (this game's shell and harness both apply then step) must
+  splice events BEFORE the step or its action-stage events (dig/jump/swing)
+  are silently swallowed — first browser run painted traps only at
+  collapse. Any future game whose input applies outside `step` inherits this.
+- **Replaying a FINISHED run needs the tail tick**: the winning command fires
+  `checkExit` at tick T and `step` refuses to advance past `end`, so a replay
+  stopped at `maxTicks = T` compares an un-cleared vault to a cleared one and
+  "diverges" while the engine is innocent. Both harness and `__lodeTest.replayCheck`
+  use `maxTicks = tick + (last cmd at >= tick ? 1 : 0)`.
+- **Contract as literally phrased can lie about its own level**: "nothing
+  supports a rope" — but nuggets HANG from the line, so GOLD under rope is
+  carved-in and legal. Contract now says EMPTY|LADDER|GOLD.
+- **A harness that walks east on a guard's clock is a race, not a test**:
+  lodeplay's walk-east check once flaked because the chase legitimately
+  captured mid-assert and the honest respawn reset `x`. Narrowed the window;
+  dying belongs to its own section.
+- **Poll prod with -L** (jalfern 308→www) and never trust a manual loop that
+  silently matched nothing — the env name `LODE_URL` vs a typo'd `LOADE_URL`
+  also burned ten silent minutes polling 5173 for a game it didn't have.
+  `lodeplay` now dumps `location.href` into the hook-failure line on purpose.
+- `gh pr merge --squash` STILL fails while main is checked out elsewhere; the
+  documented API form (`gh api PUT pulls/N/merge merge_method=squash
+  delete_branch=true`) merged it after `--watch --fail-fast` was green, then
+  delete the remote branch by hand (the API did not).
+- QA MASTER (pid 73040) ran alongside in the main checkout all session;
+  session lived in worktree `retrogames-runner` (removed after merge).
 
-## Gates (all green at merge)
-16 scoped lints (+`lint:outpost`) · `outpostcheck` 626/626 + 7/7 mutants ·
-`outpostplay` 22/22 local twice AND green on the smoke runner · static job
-green · build ✓ · prod HTTP 200 + bundle contains OUTPOST.
+## Gates (all green at merge, PR #153)
+19 scoped lints · `lodecheck` 92/92 + 6/6 mutants (CI runs `--mutate`) ·
+`lodeplay` 23/23 ×2 local AND green on the smoke runner · static ✓ 2m ·
+smoke ✓ 5m19s · build ✓ · prod 200 + game chunk driving on the live page.
 
 ## Next (for the next session — do NOT re-debug these here)
-1. Claim #76 Papers-Please-Min (oldest by createdAt). Rule engine + a prover
-   that no generated paper is unfair — a natural sibling of outpostcheck's
-   ledger/audit idiom. `pgrep -fl "opencode run"` first; worktree lane if the
-   main checkout is dirty.
-2. OUTPOST is shipped — do not polish. Its gates: `lint:outpost` +
-   `outpostcheck` (static), `outpostplay` (smoke). Honest gaps are written
-   in `src/games/Outpost/README.md` (bush economy generous; ore is score
-   only; dwarves share tiles).
-3. `outpostplay` gold-pixel threshold is >4 (got 9 on the runner, 73 on a
-   laptop). If it ever flakes, widen the window, do not lower the bar.
+1. Claim #78 Arena Archery (TowerFall-like). Its muscle: local multiplayer
+   aim/duel physics — the natural sibling of lode's one-input-per-tick
+   discipline: two players, one keyboard, determinism needs an ordered
+   input-stamp per tick, which is the harness lodecheck just proved works.
+2. LODE RUNNER is shipped — do not polish. Honest gaps live in
+   `src/games/LodeRunnerLite/README.md` (vault-2 `drop` pinned by scenario
+   not witness; guard cell-pinning in the burial scenario; no pad vault
+   select). If a harness flakes on CI, widen the WINDOW (lodeplay), never
+   the assertion.
+3. `lodecheck --mutate` runs IN CI's static job (cheap, ~6 solves) — keep
+   new gates paid-for like this rather than opt-in.
 
 ## Three questions for Jon
-1. Queue order: I claimed #75 over STATE's named #77 because the playbook
-   says oldest-first and #75 predates it by seconds + the WARDEN comment.
-   Should STATE's "next session claim X" line override createdAt order?
-2. The smoke job runs the full browser suite serially (~4 min now). Should
-   each play-suite be its own CI job so one flaky canvas doesn't hide a
-   green board?
-3. `@` dwarf is gold while carrying, white otherwise — QA's QA Master
-   session might make a fine consumer for a "watch the colony" debug view.
-   Worth a DebugKit PROGNOSIS button that runs `plan()` on the live state
-   and prints winnable-or-not? (It exists; it is unproven in a browser.)
+1. Main checkout: QA MASTER keeps it busy, and `gh pr merge` refuses while
+   it holds `main`. Should forge sessions standardize on the API merge form
+   (documented twice now), or should the loop detach main (`worktree` on a
+   pinned ref) so the normal command works?
+2. Three sessions now shipped vault/portrait 2D canvas games with the same
+   shell skeleton (canvas+HUD+attract+harness). Worth a `docs/GAME-SHELL.md`
+   template so the next forge session starts from a proven skeleton instead
+   of re-deriving the loop from Outpost's source?
+3. The queue head #78 (Arena Archery) is local-multiplayer — phones can't
+   share one touchpad. Prefer VirtualControls second-pad support first, or
+   re-order the queue for a solo-friendly title (#118 Minesweeper)?
 
 ## Lineage
-AGENTS.md honored: read STATE first, claimed by oldest-queue order with a
-comment explaining the deviation, one game, 4 checkpoint pushes with
-one-line issue comments, harness proven able-to-fail (7/7 mutants + a
-manual `release()` break), merge only via checks-watch-then-squash (API
-form for the worktree lock), prod verified, STATE via PR to main (never a
-direct push). Rule 4: seven straight sessions touching `src/games/**`.
-Ran ~2h50m — inside the box.
+AGENTS.md honored: read STATE first, resumed the corpse before claiming
+(1b), one game, checkpoint pushes with one-line issue comments per push,
+harness proven able-to-fail (6/6 mutants IN CI), merge only via
+checks-watch-then-squash (API form, worktree lock), prod verified, STATE via
+PR to main. Rule 4: eight straight sessions touching `src/games/**`.
+Ran ~2h45m — inside the box.
