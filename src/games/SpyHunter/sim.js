@@ -57,7 +57,7 @@ export function makeGame(stage = 0) {
         bonusT: 0, bannerT: 0,
         player: { x: 112, spin: 0, spinDrift: 0, offT: 0, dead: 0, invuln: 60, heat: 0, lock: 0, cd: 0 },
         shots: [], eshots: [], missilesFly: [], oils: [], crates: [], parts: 0,
-        ents: [], boat: { state: 'run', y: -20, t: 0, vy: 0.9, respawnAt: 0 },
+        ents: [], boat: { type: 'boat', state: 'run', y: -20, t: 0, vy: 0.9, respawnAt: 0 },
         events: [],
         end: null,
     }
@@ -119,7 +119,7 @@ function updateBoat(g) {
     b.y += b.vy
     if (b.y > H + 20) { b.y = -20 }
     const p = g.player
-    if (b.t % CFG.boatFire === 0 && b.y > 10 && b.y < 150 && p.invuln <= 0 && !p.dead && g.phase === 'drive') {
+    if (b.t % CFG.boatFire === 0 && b.y > 10 && b.y < 150 && !p.dead && g.phase === 'drive') {
         const dx = Math.max(-1.8, Math.min(1.8, (p.x - b.x) / 45))
         g.eshots.push({ x: b.x - 6, y: b.y + 6, vx: dx, vy: 2.5 })
         g.events.push({ type: 'boatfire', x: Math.round(b.x), y: Math.round(b.y) })
@@ -407,7 +407,7 @@ function stepStage(g) {
             g.player.offT = 0
             g.player.heat = 0
             g.player.lock = 0
-            g.boat = { state: 'run', y: -20, t: 0, vy: 0.9, respawnAt: 0 }
+            g.boat = { type: 'boat', state: 'run', y: -20, t: 0, vy: 0.9, respawnAt: 0 }
             g.phase = 'drive'
             g.events.push({ type: 'stage', stage: g.stage })
         }

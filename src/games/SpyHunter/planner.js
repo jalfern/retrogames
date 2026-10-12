@@ -136,6 +136,7 @@ export function plan(opts = {}) {
         script.push(inp)
         step(g, inp)
         for (const e of g.events) {
+            if (opts.onEvent) opts.onEvent(e)
             if (e.type === 'kill') receipts.kills++
             if (e.type === 'death') receipts.deaths++
             if (e.type === 'missile') receipts.missilesFired++
