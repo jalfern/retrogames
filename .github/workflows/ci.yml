@@ -182,6 +182,11 @@ jobs:
       # deleted (the slack rule). Five mutants must die. ~1 s, blocks merges.
       - run: npm run lint:wiz
       - run: npm run wizcheck -- --mutate
+      # Twenty-fourth scoped gate: the arcade menu's attribution (issue #172).
+      # The registry imports for real — every entry (incl. hidden) must carry a
+      # valid builtBy — and the real GamesList is rendered in Node: one tag per
+      # visible card, agreeing with the registry per path. ~1 s, blocks merges.
+      - run: npm run builtbycheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

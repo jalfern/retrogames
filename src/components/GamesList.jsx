@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
+import BuiltBy from './BuiltBy'
 
 const GamesList = () => {
     return (
@@ -26,6 +27,7 @@ const GamesList = () => {
                                 PLAY &gt;
                             </span>
                         </div>
+                        <BuiltBy builtBy={game.builtBy} />
                     </Link>
                 ))}
             </div>

@@ -97,7 +97,8 @@
         "paperplay": "node scripts/paperplay.mjs",
         "lint:wiz": "eslint src/games/Wizardry src/components src/utils src/config src/main.jsx scripts",
         "wizcheck": "node scripts/wizcheck.mjs",
-        "wizplay": "node scripts/wizplay.mjs"
+        "wizplay": "node scripts/wizplay.mjs",
+        "builtbycheck": "node scripts/builtbycheck.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
