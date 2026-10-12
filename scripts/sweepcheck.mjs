@@ -156,18 +156,23 @@ function adjCells(s, i) {
     return out
 }
 
-// Independent oracle: enumerate every consistent mine assignment of the
-// covered pocket (fair play has never dug a mine, so all mines live in
-// the pocket). A cell is ambiguous when some consistent world makes it a
-// mine and another makes it safe — the honest rules may NEVER call it
-// safe, and if a solver does, the enumeration convicts it with no appeal.
-function bruteAmbiguous(s) {
+// Independent oracle (PLAYER'S-EYE, no flags): enumerate EVERY consistent
+// mine assignment of the raw covered pocket — a correct board has never
+// been dug into, so all mines live there. Then, per covered cell: it is
+// PROVABLY SAFE if every consistent world leaves it empty, PROVABLY MINE
+// if every world fills it. On a guess-free board the enumeration collapses
+// to the UNIQUE true world (that is what "guess-free" means), which is even
+// stronger evidence. Either way the contract is absolute: a solver that
+// digs a cell NOT provably safe is digging a mine in some world the clues
+// still allow — a lie no chain of rule-following excuses. The referee must
+// never be its own oracle; this enumeration never consults the solver.
+function bruteOracle(s) {
     const cells = s.w * s.h
     const pocket = []
     for (let i = 0; i < cells; i++) if (!s.open[i]) pocket.push(i)
     const m = pocket.length
     const k = s.totalMines
-    if (m > 16 || m < 4 || k > m || k < 1) return null
+    if (m > 18 || m < 2 || k > m || k < 0) return null
     const pIndex = new Map(pocket.map((c, b) => [c, b]))
     const pre = []
     for (let i = 0; i < cells; i++) {
@@ -176,27 +181,30 @@ function bruteAmbiguous(s) {
         for (const c of adjCells(s, i)) { const b = pIndex.get(c); if (b !== undefined) list.push(b) }
         pre.push([s.clue[i], list])
     }
-    let sols = 0
-    const mineSeen = new Uint16Array(m)
-    for (let mask = 0; mask < (1 << m); mask++) {
+    let worlds = 0
+    const mineCnt = new Map(pocket.map((c) => [c, 0]))
+    for (let mask = 0; mask < (1 << m) && worlds < 20000; mask++) {
         let cnt = 0
         for (let x = mask; x; x &= x - 1) cnt++
         if (cnt !== k) continue
         let good = true
-        for (const [cl, list] of pre) {
+        for (const [need, list] of pre) {
             let n = 0
             for (const b of list) if (mask & (1 << b)) n++
-            if (n !== cl) { good = false; break }
+            if (n !== need) { good = false; break }
         }
         if (!good) continue
-        sols++
-        for (let b = 0; b < m; b++) if (mask & (1 << b)) mineSeen[b]++
-        if (sols > 4000) return null
+        worlds++
+        for (let b = 0; b < m; b++) if (mask & (1 << b)) mineCnt.set(pocket[b], mineCnt.get(pocket[b]) + 1)
     }
-    if (sols < 2) return null
-    const ambiguous = new Set()
-    for (let b = 0; b < m; b++) if (mineSeen[b] > 0 && mineSeen[b] < sols) ambiguous.add(pocket[b])
-    return ambiguous.size ? { ambiguous, sols } : null
+    if (worlds < 1) return null
+    const safe = new Set(), mine = new Set()
+    for (const c of pocket) {
+        const v = mineCnt.get(c)
+        if (v === 0) safe.add(c)
+        else if (v === worlds) mine.add(c)
+    }
+    return { safe, mine, worlds }
 }
 
 function snap(s) {
@@ -208,33 +216,36 @@ function snap(s) {
 }
 
 function gatherMidgame(M, n, want) {
-    // The endgame of a zero-guess board is fully derivable — but the MID
-    // positions, before the last derivations land, are genuinely
-    // ambiguous. An unsound rule reaches exactly there. So: play real
-    // fair boards, brute-force every live pocket of size 5..16, and keep
-    // the genuinely-ambiguous snapshots as the oracle battery. Snapshots
-    // are taken BETWEEN plan batches only: mid-batch states carry derived
-    // mines the state itself has not recorded (a player would have
-    // flagged them), and enumerating those pockets as free fabricates
-    // worlds the real board never lived.
+    // Play real fair boards with the CORE rules. Snapshot after EVERY dig
+    // (not just between batches): a flood fill opens a big region in one
+    // batch, so between-batch views leap straight over the small pockets
+    // this oracle can enumerate. After each dig, whenever the covered
+    // pocket is <=18, bruteOracle enumerates every world the visible clues
+    // allow. Keep it only when the oracle can name a provably-safe cell AND
+    // the solver still has a dig to make — that is where a lying rule has
+    // something concrete to be wrong about. The solver's whole next batch
+    // must land inside the oracle's provably-safe set.
     const out = []
     for (const seed of seeds(n)) {
         const g = M.newGame(0, seed)
         M.plantAt(g, g.w >> 1, g.h >> 1)
         let steps = 0
         while (!g.end && out.length < want && steps++ < 400) {
-            const covered = g.w * g.h - g.opened
-            if (covered >= 5 && covered <= 16) {
-                const ab = bruteAmbiguous(g)
-                if (ab) out.push({ ...snap(g), ambiguous: ab.ambiguous, sols: ab.sols })
-            }
-            if (out.length >= want) break
             const plan = M.nextDigs(g)
             if (!plan.length) break
             for (const p of plan) {
+                if (g.end) break
                 M.dig(g, p.x, p.y)
                 g.events.length = 0
                 if (g.end) break
+                const covered = g.w * g.h - g.opened
+                if (covered < 2 || covered > 18) continue
+                const ab = bruteOracle(g)
+                if (!ab || !ab.safe.size) continue
+                const next = M.nextDigs(g)
+                if (!next.length) continue
+                const s = snap(g)
+                out.push({ ...s, safe: ab.safe, mine: ab.mine, worlds: ab.worlds, next })
             }
         }
     }
@@ -246,14 +257,24 @@ const rows = await battery(M0)
 
 section('BRUTE-FORCE ORACLES — the honest solver must never dig a cell that is a mine in some consistent world')
 const FIXTURES = gatherMidgame(M0, 14, 24)
-ok(FIXTURES.length >= 10, `only ${FIXTURES.length} ambiguous mid-game oracles generated — the oracle battery itself broke`)
+ok(FIXTURES.length >= 10, `only ${FIXTURES.length} enumerable mid-game oracles generated — the oracle battery itself broke`)
+ok(FIXTURES.some((f) => f.worlds === 1), 'no unique-world (fully forced) fixture in the battery — the enumeration never pinned a board to truth')
 for (const [i, f] of FIXTURES.entries()) {
     const r = solve(f, { subset: true, chord: false })
     let lied = 0
-    for (const p of r.plan) if (f.ambiguous.has(p.y * f.w + p.x)) lied++
-    for (const p of r.plan) if (!p.rule || !LEGAL_RULES.has(p.rule)) lied++
-    ok(lied === 0, `fixture ${i} (${f.sols} consistent worlds): solver dug ${lied} ambiguous/witnessless cells — the brute force says that was a lie`)
-    ok(r.guesses >= 1 || lied === 0 && r.win, `fixture ${i}: solver claimed a win on a genuinely ambiguous board — the brute force knows better`)
+    // every cell the solver plans to dig must be provably safe in ALL
+    // worlds the visible clues allow — the brute force never asks the
+    // solver anything, so a cell outside its safe set is a real lie
+    for (const p of r.plan) {
+        const cell = p.y * f.w + p.x
+        if (!f.safe.has(cell)) lied++
+        if (!p.rule || !LEGAL_RULES.has(p.rule)) lied++
+    }
+    // and a cell it flags as a derived mine must be a mine in EVERY world
+    let misflag = 0
+    for (const c of r.derivedMines) if (!f.mine.has(c)) misflag++
+    ok(lied === 0, `fixture ${i} (${f.worlds} consistent world(s)): solver dug ${lied} cell(s) the brute force cannot certify safe — that was a lie`)
+    ok(misflag === 0, `fixture ${i}: solver flagged ${misflag} cell(s) as derived mines the brute force says are safe in some world — the referee misread the clues`)
 }
 
 
@@ -349,20 +370,24 @@ if (MUT) {
     }
     const probeMutant = (Mm) => {
         // returns "why caught" or null if the mutant ran clean everywhere.
-        // 1) brute-force fixtures: dig an ambiguous cell (or witnessless,
-        //    or throw) and the independent oracle convicts it.
-        // 2) battery: seqPlay/witnesses/slack as usual.
-        // The fixtures are the point: on fair-only battery boards the
-        // guess branch is UNREACHABLE by design (a zero-guess cert never
-        // stalls) — a mutant on that line stays green there and only a
-        // genuinely ambiguous board forces it to run. A green mutant on
-        // unreachable code is the dead-code-with-a-green-test trap.
+        // 1) brute-force fixtures: dig a cell the enumeration cannot
+        //    certify safe (or witnessless, or throw) and the INDEPENDENT
+        //    oracle convicts it — no derived verdict, just "is this cell a
+        //    mine in some world the visible clues still allow".
+        // 2) battery: seqPlay/witnesses/slack as usual; the guess-dig
+        //    mutant dies here (the referee's own mine-safe assertion fires
+        //    the moment a guessed cell poisons open[]).
+        // The fixtures matter because on fair-only battery boards the guess
+        // branch never runs (a zero-guess cert never stalls), so an
+        // unsound-but-not-guessing rule — a bad pair, an off-by-one — is
+        // invisible to the battery and only a mid-game pocket the enumeration
+        // independently pins to truth can catch it.
         for (const [i, f] of FIXTURES.entries()) {
             try {
                 const r = Mm.solve({ ...f }, { subset: true, chord: false })
                 for (const p of r.plan) {
                     const c = p.y * f.w + p.x
-                    if (f.ambiguous.has(c)) return `fixture ${i}: dug cell ${p.x},${p.y} that the brute force says is a mine in some consistent world (rule '${p.rule}')`
+                    if (!f.safe.has(c)) return `fixture ${i}: dug cell ${p.x},${p.y} that the brute force cannot certify safe — a mine in some consistent world (rule '${p.rule}')`
                     if (!p.rule) return `fixture ${i}: witnessless dig at ${p.x},${p.y}`
                 }
             } catch (e) {

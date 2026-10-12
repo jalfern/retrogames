@@ -230,7 +230,13 @@ function openCell(s, x, y) {
 }
 
 export function dig(s, x, y) {
-    if (s.end || s.screen !== 'play') return false
+    // The first click PLANTS, and a fresh board sits in 'idle' until
+    // plantAt promotes it to 'play'. Guarding `!== 'play'` here rejected
+    // the very dig meant to make it play — so the browser game could never
+    // plant its first click (the Node battery never saw it because it
+    // calls plantAt directly). A dig may therefore open a 'play' board or
+    // plant an 'idle' one; a finished board is still refused.
+    if (s.end || (s.screen !== 'play' && s.screen !== 'idle')) return false
     if (x < 0 || y < 0 || x >= s.w || y >= s.h) return false
     const i = idx(s, x, y)
     if (!s.planted) return plantAt(s, x, y)
@@ -353,6 +359,7 @@ function solveOn(s, opts = {}) {
             covCache.set(i, out)
         }
         const covC = (i) => covCache.get(i)
+        if (globalThis.PASSDUMP) globalThis.PASSDUMP(passes, open, s, mineStamp, token, safeStamp, guesses)
         // single-square: N unknowns under an N-clue are all mines; a clue
         // whose mines are all accounted for is safe everywhere else.
         for (const i of clues) {
@@ -386,72 +393,59 @@ function solveOn(s, opts = {}) {
                     l.push(i)
                 }
             }
-                const ua = []
-                for (const ai of clues) {
-                    // ua is REBUILT per ai — the old code reused one array
-                    // across the whole ai loop, so stale cells from the
-                    // previous ai kept their freshly-resent uaMark: a pair
-                    // could nest against cells its own clue never covers
-                    // and file a true mine into the diff (the brute-force
-                    // oracle caught it: dm=1 vs diff={(0,6)}). Derived
-                    // safe cells must leave too — same reuse made them
-                    // phantom pair members. The filtered-set disease was
-                    // this bug's first incarnation; stale reuse is why a
-                    // scratch array wants an owner per iteration.
-                    ua.length = 0
-                    const covA = covC(ai)
-                    let kA = s.clue[ai]
-                    for (const c of covA) {
-                        if (isMine(c)) kA--
-                        else if (!isSafe(c)) ua.push(c)
-                    }
-                    if (kA < 0 || !ua.length) { ua.length = 0; continue }
-                    const uaLen = ua.length
-                    uaTok++
-                    for (let j = 0; j < uaLen; j++) uaMark[ua[j]] = uaTok
-                    // Nesting domain excludes cells derived SAFE this pass:
-                    // ub already excludes them, so a pair connected ONLY
-                    // through safe cells would fail ub's uaMark check anyway
-                    // — skipping the candidate now is waste-cut, not a
-                    // semantic change (mid-audit note: an earlier comment
-                    // here claimed safe cells could inflate dm; they
-                    // cannot, and neither can mined ones — kX is always
-                    // clue minus derived mines, and safe cells contribute
-                    // to neither kX nor the sets).
-                    const cands = []
-                    for (const c of covA) {
-                        if (isSafe(c)) continue
-                        for (const b of byCell.get(c)) if (b !== ai) cands.push(b)
-                    }
-                    for (const bi of cands) {
-                        const covB = covC(bi)
-                        let kB = s.clue[bi]
-                        for (const c of covB) if (isMine(c)) kB--
-                        if (kB < 0 || kB > kA) continue
-                        // ubTok is PER CANDIDATE: a stale mark from the
-                        // previous pair must never read as "in this ub".
-                        ubTok++
-                        let ubLen = 0
-                        let nested = true
-                        for (const c of covB) {
-                            if (isMine(c) || isSafe(c)) continue
-                            if (uaMark[c] !== uaTok) { nested = false; break }
-                            ubMark[c] = ubTok
-                            ubLen++
-                        }
-                        if (!nested || !ubLen) continue
-                        let diffLen = 0
-                        for (let j = 0; j < uaLen; j++) {
-                            const c = ua[j]
-                            if (ubMark[c] !== ubTok && safeStamp[c] !== token) diffLen++
-                        }
-                        if (!diffLen) continue
-                        const dm = kA - kB
-                        if (dm === diffLen) { for (let j = 0; j < uaLen; j++) { const c = ua[j]; if (ubMark[c] !== ubTok && safeStamp[c] !== token) { mineStamp[c] = token; ruleOf[c] = 'subset-mines'; mineSet.push(c) } }; acted = true }
-                        else if (dm === 0) { for (let j = 0; j < uaLen; j++) { const c = ua[j]; if (ubMark[c] !== ubTok && safeStamp[c] !== token) { safeStamp[c] = token; ruleOf[c] = 'subset-safe'; safeSet.push(c) } }; acted = true }
-                    }
-                    ua.length = 0
+            const ua = []
+            for (const ai of clues) {
+                // ua is REBUILT per ai — reusing one array across the loop
+                // let stale cells keep a freshly-set uaMark: a pair could
+                // nest against cells its own clue never covers and file a
+                // true mine into the diff. The brute-force oracle caught
+                // the stale reuse deriving (0,6) as a mine with dm=1 vs a
+                // two-cell diff. Stale reuse is why a scratch array wants
+                // one owner per iteration.
+                ua.length = 0
+                const covA = covC(ai)
+                let kA = s.clue[ai]
+                for (const c of covA) {
+                    if (isMine(c)) kA--
+                    else if (!isSafe(c)) ua.push(c)
                 }
+                if (kA < 0 || !ua.length) continue
+                const uaLen = ua.length
+                uaTok++
+                for (let j = 0; j < uaLen; j++) uaMark[ua[j]] = uaTok
+                const cands = []
+                for (const c of covA) {
+                    if (isSafe(c)) continue
+                    for (const b of byCell.get(c)) if (b !== ai) cands.push(b)
+                }
+                for (const bi of cands) {
+                    const covB = covC(bi)
+                    let kB = s.clue[bi]
+                    for (const c of covB) if (isMine(c)) kB--
+                    if (kB < 0 || kB > kA) continue
+                    // ubTok is PER CANDIDATE: a stale mark from the
+                    // previous pair must never read as "in this ub".
+                    ubTok++
+                    let ubLen = 0
+                    let nested = true
+                    for (const c of covB) {
+                        if (isMine(c) || isSafe(c)) continue
+                        if (uaMark[c] !== uaTok) { nested = false; break }
+                        ubMark[c] = ubTok
+                        ubLen++
+                    }
+                    if (!nested || !ubLen) continue
+                    let diffLen = 0
+                    for (let j = 0; j < uaLen; j++) {
+                        const c = ua[j]
+                        if (ubMark[c] !== ubTok && safeStamp[c] !== token) diffLen++
+                    }
+                    if (!diffLen) continue
+                    const dm = kA - kB
+                    if (dm === diffLen) { for (let j = 0; j < uaLen; j++) { const c = ua[j]; if (ubMark[c] !== ubTok && safeStamp[c] !== token) { mineStamp[c] = token; ruleOf[c] = 'subset-mines'; mineSet.push(c) } }; acted = true }
+                    else if (dm === 0) { for (let j = 0; j < uaLen; j++) { const c = ua[j]; if (ubMark[c] !== ubTok && safeStamp[c] !== token) { safeStamp[c] = token; ruleOf[c] = 'subset-safe'; safeSet.push(c) } }; acted = true }
+                }
+            }
         }
         if (useChord) {
             for (const i of clues) {
@@ -488,12 +482,24 @@ function solveOn(s, opts = {}) {
         // solver returns the stuck state, counts the guess, and STOPS.
         if (!acted && openCount < cells - s.totalMines) guesses++
     }
-    // Stuck cells for the repair loop: the SAFE cells this rule set could
-    // not crack. The generator owns the mine map — consulting it here is
-    // fair (the player never may); unfairness is only ever the player's.
-    const stuck = []
-    for (let i = 0; i < cells; i++) if (!open[i] && !s.mines[i]) stuck.push(i)
-    return { win: openCount >= cells - s.totalMines, guesses, plan, passes, stuck }
+        // Stamped facts that SURVIVED the whole solve: any cell ever
+        // stamped mine (and never opened) or ever stamped safe. Tokens
+        // change per pass, so the ledger scans for a NON-ZERO stamp, not
+        // the final token — a first version that keyed on the final token
+        // silently dropped every earlier pass's derivations, and one that
+        // keyed on the final mineSet dropped earlier passes too. The
+        // oracle enumerates worlds consistent with the FULL derivation
+        // ledger, so a partial ledger fabricates worlds the rules already
+        // excluded. The generator owns the mine map here (the player
+        // never may); unfairness is only ever the player's.
+        const ledgerMines = [], ledgerSafe = []
+        for (let i = 0; i < cells; i++) {
+            if (mineStamp[i] !== 0 && !open[i]) ledgerMines.push(i)
+            else if (safeStamp[i] !== 0) ledgerSafe.push(i)
+        }
+        const stuck = []
+        for (let i = 0; i < cells; i++) if (!open[i] && !s.mines[i]) stuck.push(i)
+        return { win: openCount >= cells - s.totalMines, guesses, plan, passes, stuck, derivedMines: ledgerMines, derivedSafe: ledgerSafe }
 }
 
 // Solve a copy of the live board — the player's real flags are part of the
