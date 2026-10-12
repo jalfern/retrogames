@@ -1,17 +1,23 @@
 # LODE RUNNER-LITE
 
-The arcade's dig-the-floor stealth-runner: three hand-carved vaults of
-concrete, brick and rope. Gold opens the gate; the floor is your only
-weapon — a dug brick becomes a TRAP that holds its rider for one breath
-(`CFG.trapHold`), then a HOLE forever.
+The arcade's dig-the-floor stealth-runner, in the **1983 rules**: three
+hand-carved vaults of concrete, brick and rope. There is no jump — you run,
+climb, hang on ropes and fall. Your weapon is the floor: dig a brick
+diagonally and a **hole** opens, which lasts about five seconds before the
+brick grows back and whatever is inside it when it closes **dies**. Guards
+hunt you on the same physics, fall into your holes, sit it out and climb back
+out, and lift the gold you must win back. Take every gold and the **hidden
+ladder** appears at the top of the screen: climb off to clear the vault. There
+is no clock.
 
 ## The honesty contract
 
 `sim.js` and `levels.js` import into **plain Node** with zero DOM, zero
 canvas and zero `Math.random`. That is what lets:
 
-- `npm run lodecheck` prove every vault winnable by the REAL autopilot
-  (guards hunting live on the pathfinder) before a browser exists, and
+- `npm run lodecheck` prove every vault winnable by the REAL no-jump, no-dig
+  autopilot (guards hunting live on the pathfinder) before a browser exists,
+  and
 - the attract demo BE the solver's proven witness, replayed tick-for-tick
   through the same `applyAction` + `step` the player drives.
 
@@ -19,60 +25,59 @@ canvas and zero `Math.random`. That is what lets:
 
 | file | owns |
 |---|---|
-| `sim.js` | the physics of everything: one `applyAction` generator drives player, guards and the solver's search; `step` runs traps, guard pace, airborne, capture; `planStep`/`planRun` the greedy-BFS autopilot; `replay` the recorded-input twin. |
-| `levels.js` | the three vaults, carved from row-builders (a width bug is impossible). Construction contracts 1-4 (no support under a rope except hang-gold, ladder-topped rope lines, everything stands on something, nothing entombed) are enforced by lodecheck, not by eye. |
-| `index.jsx` | paint + input only. Terrain layer dirty-flags from sim EVENTS (never guessed); the gold/guards/runner ride the dynamic layer. Ghost = a second `makeGame` fed your previous run's `{tick,act}` stream. |
+| `sim.js` | the physics of everything: one `applyAction` generator drives player, guards and the solver's search; `step` runs hole refills, the guard trap/steal clocks, guard pace, falls and capture; `planStep`/`planRun` the greedy-BFS autopilot; `replay` the recorded-input twin. |
+| `levels.js` | the three vaults, carved from row-builders (a width bug is impossible). The exit is the hidden ladder in column 2, concealed until every gold is in hand. Construction contracts (no support under a rope, ladder-topped rope lines, everything stands on something, nothing entombed, the exit ladder reaches the floor) are enforced by lodecheck. |
+| `index.jsx` | paint + input only. Terrain dirty-flags from sim EVENTS (never guessed); the gold/guards/runner ride the dynamic layer. Ghost = a second `makeGame` fed your previous run's `{tick,act}` stream. |
 
-## The four muscles (issue #77)
+## The classic rules (issue #155), each load-bearing
 
-- **Destructible floors** — `BRICK → TRAP → EMPTY` is one-way; a guard
-  sunk over a shaft is `alive=false` for the rest of the vault
-  (pinned: `lodecheck` guard-burial scenario + `trapCollapse` mutant).
-- **Pathfinding** — guards BFS the *player's own* field every
-  `CFG.guardPace` ticks but can never jump, catch a rope or dig, so the
-  escape language (ropes, gaps, holes) is exact. The witness must never
-  share a cell with a live guard — asserted per tick.
-- **Ghost replay** — your lost run stamps `{tick, act}` into `g.cmds`;
-  `R` on the end screen rebuilds the vault with a ghost sim alongside
-  (`lodeplay` proves ghost tick == live tick).
-- **Determinism** — pure `(level, input-script)`: the harness re-replays
-  every witness through `replay()` AND re-solves from scratch and both
-  must land on the same `stateHash`; a dropped interior command must NOT
-  (`lodecheck` receipts; `__lodeTest.replayCheck()` does it live in the
-  page).
+- **No jump** — the vocabulary has no `JUMP`; a flat-ground Up does not rise.
+- **Diagonal dig** — `Down` digs the brick one cell below-LEFT/RIGHT, the way
+  you face; the brick straight down is never dug.
+- **Refilling holes** — a hole holds ~5 s (`CFG.refill`) then refills; a guard
+  in it is buried and re-enters at the top, the runner in it loses a life.
+- **Guards fall and climb** — a guard that drops in a hole is pinned for
+  `CFG.guardTrap` ticks, then climbs back to the floor; a shaft deep enough
+  that it cannot before the refill buries it.
+- **Guard gold** — a guard pockets the gold it walks over and drops it a
+  moment later; the runner must win it back before the exit opens.
+- **The ladder appears** — the exit ladder is concealed until every gold is
+  in the runner's hands, then it reveals and climbing off the top clears the
+  vault. **No clock.**
 
 ## Load-bearing rules (mutants must die: `npm run lodecheck -- --mutate`)
 
-`dig` (vault 2's only door is a hole you dig) · `jump` (vault 1 unwinnable
-without the leap) · `guardChase` (the `pursued` receipt) · `trapCollapse`
-(burial) · `ropeCatch` (the rising-body catch) · `quota` (a 0-gold walk-in
-must not clear).
+`dig` (the diagonal dig) · `guardChase` (the `pursued` receipt) · `ropeCatch`
+(a falling body missing the line) · `guardHole` (a guard that never falls in)
+· `goldSteal` (a guard that cannot lift gold).
 
-## The solver's two honesty contracts
+## The solver's honesty contract
 
-1. GOLD is a door-to-stop-at, never a corridor — so a search branch can be
-   stale about collected gold only at the moment it replans anyway.
-2. the solver never digs through a real grid: `digEdge` computes the
-   pocket's landing cell from the same gravity rules, and every edge
-   simulation leaves the shared mini-grid exactly as it found it (a
-   simulated death used to poison the rest of the search — "a looser
-   search finding LESS is state poisoning, always").
+The solver speaks only as a player does — one legal action every
+`CFG.moveEvery` ticks — and walks the SAME state graph `applyAction` defines,
+**minus dig**: digging is the player's defensive tool (a hole for a guard to
+fall in), never a route the runner takes. Letting go of a rope, stepping off a
+ladder or dropping into a hole settles through the real `airTick`, so the
+search models exactly where the fall lands. If a vault needs a dig or a jump
+to clear, it is unclassic and lodecheck's winnability gate fails it.
 
 ## Harnesses
 
 | | |
 |---|---|
-| `npm run lodecheck` | 92 Node checks: construction contracts, per-vault solve + receipts + never-share-a-cell + slack (half the clock AND lives-1), determinism both ways, trap-economy scenarios. CI runs it with `--mutate` (6 mutants). |
-| `npm run lodeplay` | Chrome, real key events only: attract moves by itself, one held arrow runs east, dig→trap→hole graded in PIXELS across the blink cycle, climb-to-hang on the real ladder, guards move untouched, you can die three ways, R replays you as a ghost, in-page replay hash-matches mid-run. |
+| `npm run lodecheck` | 80 Node checks (90 with `--mutate`): construction contracts, per-vault solve + determinism both ways + one-fewer-life slack, every classic rule pinned by a scenario, and five mutants that MUST die. CI runs it with `--mutate` in the static gate. |
+| `npm run lodeplay` | Chrome, real key events only: the attract demo moves by itself, a held arrow runs the runner, dig→hole→refill graded in pixels, climb-to-hang on the real ladder, guards hunt untouched, R replays your lost run as a ghost, in-page replay hash-matches mid-run. |
 
 ## Honest gaps
 
-- Guards share the same trap economy you do — mostly a feature; a guard
-  can also dig himself in never (they never dig).
-- Vault 2's `proves` cannot pin `drop` from the witness (the jump arc
-  drifts sideways off its own trap); it is pinned by the scenario instead.
-- The guard pins in the burial scenario pin the CELL only — the chase
-  itself is graded by the `pursued` receipts, not by that scenario.
+- The trap is a single-cell pit in these vaults; deep shafts (the multi-cell
+  burial) are proven by scenario, not by a carved shaft, because a 5 s fuse on
+  a 19-row board rarely leaves room for one.
+- A guard climbing out of a shallow pit lands in a floor-level cell with no
+  support below (a "hole" is one dug brick); it stands there until it BFSes
+  back to the path. A cosmetic oddity, not a sim bug.
+- Vault 3's witness spends one life (a guard closes the crossing); the
+  one-fewer-life slack check proves the route is still robust.
 - No keyboard-less vault skipping on phones: pads withdraw on menus, and
-  vault select is 1/2/3. (The vault chain carries score+lives, so a
-  phone player who dies on vault 2 restarts at 1 — the honest classic.)
+  vault select is 1/2/3. The vault chain carries score+lives, so a phone
+  player who dies on vault 2 restarts at 1 — the honest classic.

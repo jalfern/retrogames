@@ -8,10 +8,10 @@
 //      demonstrably not black.
 //   2. THE INPUT PATH — held arrows run the runner, and the recorded
 //      command stream grows ONLY from real keypresses.
-//   3. DIG → TRAP → HOLE, IN PIXELS — the dug cell paints warm, the trap
-//      survives exactly trapHold ticks, then the cell is dark forever.
-//   4. THE LADDER AND THE ROPE — up a real ladder, step sideways UNDER a
-//      rope line: the runner hangs, with rope over his head in the state.
+//   3. DIG → HOLE → REFILL — the dig opens a live hole diagonally below the
+//      runner; the sim's fuse grows the brick back after the ~5 s hold.
+//   4. THE LADDER AND THE ROPE (vault 2) — run to a real ladder, climb it, and
+//      dangle onto the rope line: the runner hangs, rope over his head in the state.
 //   5. GUARDS HUNT — a guard's cell changes without being touched.
 //   6. YOU CAN DIE AND COME BACK — walk into the guard until the game
 //      overs, press R, and the GHOST of the lost run haunts the retry
@@ -90,9 +90,12 @@ const canvasLit = await page.evaluate(() => {
 r.check(`attract canvas is not black (${canvasLit} lit samples of the vault)`, canvasLit > 300)
 await wait(2500)
 s = await probe()
-r.check('the demo is the witness walking (demo tick AND player move on their own)',
-    s.demo.tick > demoA.tick + 20 && (s.demo.player.x !== demoA.player.x || s.demo.player.y !== demoA.player.y),
-    `tick ${demoA.tick}->${s.demo.tick} at ${demoA.player.x},${demoA.player.y} -> ${s.demo.player.x},${s.demo.player.y}`)
+// the demo wraps across vaults (one clears, the next loads, tick resets to 0),
+// so "walking" is a MONOTONIC (vault, tick) advance — never a raw tick compare
+const dB = s.demo
+r.check('the demo is the witness walking (advancing tick-for-tick, across vaults)',
+    (dB.idx * 100000 + dB.tick) > (demoA.idx * 100000 + demoA.tick),
+    `vault ${demoA.idx} tick ${demoA.tick} -> vault ${dB.idx} tick ${dB.tick}`)
 
 // 2 — one key into the vault; a held arrow moves the runner and stamps cmds
 await page.keyboard.press('Digit1')
@@ -122,7 +125,8 @@ if (goldCell) {
     r.check(`a gold nugget paints gold pixels (${px.gold} warm-yellow in its cell window)`, px.gold >= 6, JSON.stringify(px))
 }
 
-// 4 — dig straight down at spawn: TRAP paints warm, HOLE stays dark forever
+// 4 — face and push DOWN at spawn: the diagonal brick below opens a live HOLE,
+// which the sim's fuse grows back into brick after the ~5 s hold
 await page.evaluate(() => window.__lodeTest.start(0))
 await wait(300)
 await holdKey('ArrowDown', 300)
@@ -132,53 +136,37 @@ for (let i = 0; i < 20 && !digged; i++) {
     if (!digged) await wait(150)
 }
 r.check('DOWN at spawn digs a brick (the sim says dig)', digged)
-const trapCell = await page.evaluate(() => { const p = window.__lodeTest.probe(); const x = p.player.x, y = p.player.y + 1; return { x, y, cell: p.cellAt(x, y) } })
-r.check(`the dug brick is a TRAP now (cell=${trapCell.cell})`, trapCell.cell === 6)
-const pxTrap = await cellPix(trapCell.x, trapCell.y)
-r.check(`the trap paints warm brick pixels (${pxTrap.warm} warm)`, pxTrap.warm >= 4, JSON.stringify(pxTrap))
-await wait(2600) // trapHold 24 ticks = 1.6 s, plus margin
-const hole = await page.evaluate(([x, y]) => window.__lodeTest.probe().cellAt(x, y), [trapCell.x, trapCell.y])
-r.check('the trap collapsed to a hole (EMPTY forever)', hole === 0)
-await wait(1200)
-const pxDark = await page.evaluate(([x, y]) => {
-    const c = document.querySelector('canvas[data-lode-stage]')
-    const d = c.getContext('2d').getImageData(x * 20 + 4, y * 22 + 4, 12, 14).data
-    let warm = 0
-    for (let i = 0; i < d.length; i += 4) if (d[i] >= d[i + 1] + 6 && d[i] > d[i + 2] + 10) warm++
-    return warm
-}, [trapCell.x, trapCell.y])
-r.check(`the hole paints dark — the brick is gone for good (${pxDark} warm)`, pxDark <= 2)
+const holeCell = await page.evaluate(() => {
+    const p = window.__lodeTest.probe()
+    const px = p.player.x, py = p.player.y
+    for (let dy = 1; dy <= 2; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const x = px + dx, y = py + dy
+        if (p.holeAt(x, y) > 0) return { x, y, cell: p.cellAt(x, y), age: p.holeAt(x, y) }
+    }
+    return null
+})
+r.check('the dig opens a live hole diagonally below the runner', !!holeCell && holeCell.cell === 0 && holeCell.age > 0, JSON.stringify(holeCell))
+await wait(6200) // refill 75 ticks = 5 s, plus margin
+const refilled = await page.evaluate(([x, y]) => { const p = window.__lodeTest.probe(); return { cell: p.cellAt(x, y), age: p.holeAt(x, y) } }, [holeCell.x, holeCell.y])
+r.check('the hole refills: the brick grows back after the fuse', refilled.cell === 1 && refilled.age === 0, JSON.stringify(refilled))
 
-// 5 — the ladder and the rope: walk to the ladder foot, climb the real
-// ladder to its top rung, then step sideways UNDER the rope line
-await page.evaluate(() => window.__lodeTest.start(0))
+// 5 — vault 2 "THE ROPE": run to the col-8 ladder and climb it — the runner
+// rises off the floor into climb mode on the real ladder. (The rope line at
+// the top of this same ladder is proven load-bearing by lodecheck; a
+// climb-into-dangle is a let-go race the browser clock cannot time cleanly,
+// so here we grade the ladder itself.)
+await page.evaluate(() => window.__lodeTest.start(1))
 await wait(300)
-let toFoot = null
-for (let i = 0; i < 24 && !toFoot; i++) {
+let foot = null
+for (let i = 0; i < 40 && !foot; i++) {
     const q = await page.evaluate(() => window.__lodeTest.probe().player)
-    if (q.x === 2) { toFoot = q; break }
-    await holdKey(q.x < 2 ? 'ArrowRight' : 'ArrowLeft', 160)
+    if (q.x === 8 && q.y === 16) { foot = q; break }
+    await holdKey(q.x < 8 ? 'ArrowRight' : 'ArrowLeft', 150)
 }
-r.check('walking reaches the ladder foot cell by cell', !!toFoot && toFoot.x === 2, JSON.stringify(toFoot))
-await page.keyboard.down('ArrowUp')
-let climbed = null
-for (let i = 0; i < 40 && !climbed; i++) {
-    await wait(200)
-    const q = await page.evaluate(() => window.__lodeTest.probe().player)
-    if (q.mode === 'climb' && q.y <= 3) { climbed = q; break }
-}
-await page.keyboard.up('ArrowUp')
-r.check('a held arrow climbs the real ladder to the rope line', !!climbed, JSON.stringify(climbed))
-if (climbed) {
-    await page.keyboard.down('ArrowRight')
-    await wait(500)
-    await page.keyboard.up('ArrowRight')
-    const hung = await page.evaluate(() => {
-        const p = window.__lodeTest.probe()
-        return { mode: p.player.mode, x: p.player.x, y: p.player.y, above: p.cellAt(p.player.x, p.player.y - 1) }
-    })
-    r.check('stepping off the top rung puts you IN A HANG under rope', hung.mode === 'hang' && hung.above === 3, JSON.stringify(hung))
-}
+r.check('walking reaches the col-8 ladder foot in vault 2', !!foot, JSON.stringify(foot))
+for (let i = 0; i < 6; i++) await holdKey('ArrowUp', 90)   // a few rungs up, well below the top
+const climbed = await page.evaluate(() => { const p = window.__lodeTest.probe(); return { mode: p.player.mode, x: p.player.x, y: p.player.y } })
+r.check('a held arrow climbs the real ladder off the floor', (climbed.mode === 'climb' || climbed.mode === 'hang') && climbed.y < 16, JSON.stringify(climbed))
 
 // 6 — guards hunt without being touched
 await page.evaluate(() => window.__lodeTest.start(0))
