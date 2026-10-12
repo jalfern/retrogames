@@ -92,6 +92,7 @@ const WizardryGame = lazy(() => import('../games/Wizardry'))
 export const GAMES = [
     {
         path: '/mario',
+        builtBy: 'qwen',
         component: SuperMarioGame,
         label: 'SUPER MARIO BROS',
         theme: 'light',
@@ -100,6 +101,7 @@ export const GAMES = [
     },
     {
         path: '/mario-classic',
+        builtBy: 'qwen',
         component: SuperMarioClassicGame,
         label: 'SUPER MARIO BROS (ORIGINAL)',
         theme: 'light',
@@ -109,6 +111,7 @@ export const GAMES = [
     },
     {
         path: '/ironkeep',
+        builtBy: 'qwen',
         component: IronKeepGame,
         label: 'IRONKEEP',
         theme: 'dark',
@@ -117,6 +120,7 @@ export const GAMES = [
     },
     {
         path: '/raccoon-heist',
+        builtBy: 'qwen',
         component: RaccoonHeistGame,
         label: 'RACCOON HEIST',
         theme: 'dark',
@@ -125,6 +129,7 @@ export const GAMES = [
     },
     {
         path: '/beezee',
+        builtBy: 'forge',
         component: BeeGame,
         label: 'BEEZEE',
         theme: 'light',
@@ -133,6 +138,7 @@ export const GAMES = [
     },
     {
         path: '/lemmings',
+        builtBy: 'forge',
         component: LemmingsGame,
         label: 'LEMMINGS-LITE',
         theme: 'dark',
@@ -141,6 +147,7 @@ export const GAMES = [
     },
     {
         path: '/boulder-dash',
+        builtBy: 'forge',
         component: BoulderDashGame,
         label: 'BOULDER DASH',
         theme: 'dark',
@@ -149,6 +156,7 @@ export const GAMES = [
     },
     {
         path: '/sonar',
+        builtBy: 'forge',
         component: SonarGame,
         label: 'SONAR ABYSS',
         theme: 'dark',
@@ -157,6 +165,7 @@ export const GAMES = [
     },
     {
         path: '/metroid',
+        builtBy: 'forge',
         component: MetroidLiteGame,
         label: 'METROID-LITE',
         theme: 'dark',
@@ -165,6 +174,7 @@ export const GAMES = [
     },
     {
         path: '/momentum',
+        builtBy: 'forge',
         component: MomentumRunnerGame,
         label: 'MOMENTUM RUNNER',
         theme: 'dark',
@@ -173,6 +183,7 @@ export const GAMES = [
     },
     {
         path: '/ice-climber',
+        builtBy: 'forge',
         component: IceClimberGame,
         label: 'ICE CLIMBER CO-OP',
         theme: 'dark',
@@ -181,6 +192,7 @@ export const GAMES = [
     },
     {
         path: '/galaga',
+        builtBy: 'forge',
         component: GalagaGame,
         label: 'GALAGA',
         theme: 'dark',
@@ -189,6 +201,7 @@ export const GAMES = [
     },
     {
         path: '/polarity',
+        builtBy: 'forge',
         component: PolarityGame,
         label: 'POLARITY',
         theme: 'dark',
@@ -197,6 +210,7 @@ export const GAMES = [
     },
     {
         path: '/missile-battle',
+        builtBy: 'forge',
         component: MissileBattleGame,
         label: 'MISSILE BATTLE',
         theme: 'dark',
@@ -205,6 +219,7 @@ export const GAMES = [
     },
     {
         path: '/simcity-min',
+        builtBy: 'forge',
         component: SimCityMinGame,
         label: 'SIMCITY-MIN',
         theme: 'dark',
@@ -213,6 +228,7 @@ export const GAMES = [
     },
     {
         path: '/outpost',
+        builtBy: 'forge',
         component: OutpostGame,
         label: 'OUTPOST',
         theme: 'dark',
@@ -221,6 +237,7 @@ export const GAMES = [
     },
     {
         path: '/papers-please',
+        builtBy: 'forge',
         component: PapersPleaseMinGame,
         label: 'PAPERS, PLEASE-MIN',
         theme: 'dark',
@@ -229,6 +246,7 @@ export const GAMES = [
     },
     {
         path: '/lode-runner',
+        builtBy: 'forge',
         component: LodeRunnerLiteGame,
         label: 'LODE RUNNER-LITE',
         theme: 'dark',
@@ -237,6 +255,7 @@ export const GAMES = [
     },
     {
         path: '/dogfight',
+        builtBy: 'forge',
         component: DogfightGame,
         label: 'WWI DOGFIGHT',
         theme: 'dark',
@@ -245,6 +264,7 @@ export const GAMES = [
     },
     {
         path: '/paperboy',
+        builtBy: 'forge',
         component: PaperboyGame,
         label: 'PAPERBOY',
         theme: 'light',
@@ -253,6 +273,7 @@ export const GAMES = [
     },
     {
         path: '/wizardry',
+        builtBy: 'forge',
         component: WizardryGame,
         label: 'WIZARDRY',
         theme: 'dark',
@@ -261,6 +282,7 @@ export const GAMES = [
     },
     {
         path: '/arena-archery',
+        builtBy: 'forge',
         component: ArenaArcheryGame,
         label: 'ARENA ARCHERY',
         theme: 'dark',
@@ -269,6 +291,7 @@ export const GAMES = [
     },
     {
         path: '/minesweeper',
+        builtBy: 'forge',
         component: MinesweeperGame,
         label: 'MINESWEEPER',
         theme: 'dark',
@@ -277,6 +300,7 @@ export const GAMES = [
     },
     {
         path: '/pong',
+        builtBy: 'claude',
         component: PongGame,
         label: 'PONG',
         theme: 'light',
@@ -285,6 +309,7 @@ export const GAMES = [
     },
     {
         path: '/invaders',
+        builtBy: 'claude',
         component: SpaceInvadersGame,
         label: 'SPACE INVADERS',
         theme: 'light',
@@ -293,6 +318,7 @@ export const GAMES = [
     },
     {
         path: '/pacman',
+        builtBy: 'claude',
         component: PacmanGame,
         label: 'PAC-MAN',
         theme: 'light',
@@ -301,6 +327,7 @@ export const GAMES = [
     },
     {
         path: '/asteroids',
+        builtBy: 'claude',
         component: AsteroidsGame,
         label: 'ASTEROIDS',
         theme: 'dark',
@@ -309,6 +336,7 @@ export const GAMES = [
     },
     {
         path: '/donkeykong',
+        builtBy: 'claude',
         component: DonkeyKongGame,
         label: 'DONKEY KONG',
         theme: 'dark',
@@ -317,6 +345,7 @@ export const GAMES = [
     },
     {
         path: '/centipede',
+        builtBy: 'claude',
         component: CentipedeGame,
         label: 'CENTIPEDE',
         theme: 'dark',
@@ -325,6 +354,7 @@ export const GAMES = [
     },
     {
         path: '/defender',
+        builtBy: 'claude',
         component: DefenderGame,
         label: 'DEFENDER',
         theme: 'dark',
@@ -333,6 +363,7 @@ export const GAMES = [
     },
     {
         path: '/pitfall',
+        builtBy: 'claude',
         component: PitfallGame,
         label: 'PITFALL',
         theme: 'light',
@@ -341,6 +372,7 @@ export const GAMES = [
     },
     {
         path: '/frogger',
+        builtBy: 'forge',
         component: FroggerGame,
         label: 'FROGGER',
         theme: 'dark',
@@ -349,6 +381,7 @@ export const GAMES = [
     },
     {
         path: '/missilecommand',
+        builtBy: 'claude',
         component: MissileCommandGame,
         label: 'MISSILE COMMAND',
         theme: 'dark',
@@ -357,6 +390,7 @@ export const GAMES = [
     },
     {
         path: '/adventure',
+        builtBy: 'claude',
         component: AdventureGame,
         label: 'ADVENTURE',
         theme: 'dark',
@@ -365,6 +399,7 @@ export const GAMES = [
     },
     {
         path: '/zork',
+        builtBy: 'claude',
         component: ZorkI,
         label: 'ZORK I',
         theme: 'dark',
@@ -378,6 +413,7 @@ export const GAMES = [
     },
     {
         path: '/zork2',
+        builtBy: 'claude',
         component: ZorkII,
         label: 'ZORK II',
         theme: 'dark',
@@ -387,6 +423,7 @@ export const GAMES = [
     },
     {
         path: '/zork3',
+        builtBy: 'claude',
         component: ZorkIII,
         label: 'ZORK III',
         theme: 'dark',
@@ -396,6 +433,7 @@ export const GAMES = [
     },
     {
         path: '/kingsquest',
+        builtBy: 'claude',
         component: KingsQuestGame,
         label: "KING'S QUEST",
         theme: 'dark',
@@ -410,6 +448,7 @@ export const GAMES = [
     }    ,
     {
         path: '/rogue',
+        builtBy: 'claude',
         component: RogueGame,
         label: 'ROGUE',
         theme: 'dark',
@@ -419,6 +458,7 @@ export const GAMES = [
     ,
     {
         path: "/ultima1",
+        builtBy: 'claude',
         component: Ultima1Game,
         label: "ULTIMA I",
         theme: "dark",
@@ -428,6 +468,7 @@ export const GAMES = [
     ,
     {
         path: "/ultima2",
+        builtBy: 'claude',
         component: Ultima2Game,
         label: "ULTIMA II",
         theme: "dark",
@@ -437,6 +478,7 @@ export const GAMES = [
     ,
     {
         path: "/ultima4",
+        builtBy: 'claude',
         component: Ultima4Game,
         label: "ULTIMA IV",
         theme: "dark",
@@ -446,6 +488,7 @@ export const GAMES = [
     ,
     {
         path: "/ultima3",
+        builtBy: 'claude',
         component: Ultima3Game,
         label: "ULTIMA III",
         theme: "dark",
@@ -455,6 +498,7 @@ export const GAMES = [
     ,
     {
         path: "/ultima5",
+        builtBy: 'claude',
         component: Ultima5Game,
         label: "ULTIMA V",
         theme: "dark",
