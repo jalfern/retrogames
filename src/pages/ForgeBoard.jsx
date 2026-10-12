@@ -10,7 +10,7 @@ const REPO = 'jalfern/retrogames'
 // per reload; shared-IP rate limits took it OFFLINE while the machine
 // underneath was healthy. telemetry.sh bakes everything the board renders
 // (issues, PRs, pulses, build feed, vitals) into this one file.
-const RAW = 'https://raw.githubusercontent.com/jalfern/retrogames/telemetry/board.json'
+const RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/board.json'
 
 const Lamp = ({ label, ok, children }) => (
     <div className={`border p-3 text-xs ${ok ? 'border-[#0f0]/60' : 'border-[#f80]/60'}`}>

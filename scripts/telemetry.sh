@@ -1,7 +1,10 @@
 #!/bin/zsh
 # THE PULSE-O-METER — samples what the fleet is physically doing and pushes
-# a small telemetry.json to the `telemetry` branch (Contents API, no checkout,
-# no tokens spent on a model). The /forge board draws sparklines from it via
+# telemetry.json + board.json to the separate jalfern/forge-telemetry repo
+# (Contents API, no checkout, no tokens spent on a model). NOT a branch of
+# retrogames: Vercel builds every push to every retrogames branch, and two
+# commits per 5-min run meant ~576 full app builds a day, which burned the
+# build quota and tripped GitHub's secondary rate limit (2026-10-11). The /forge board draws sparklines from it via
 # raw.githubusercontent (CDN — does not count against the API rate limit).
 # launchd: com.jalfern.telemetry, every 5 minutes.
 
@@ -97,17 +100,11 @@ try:
 except FileNotFoundError:
     lines = [sys.argv[1]]
 data = base64.b64encode('\n'.join(lines).encode()).decode()
-# the branch must exist before Contents API can commit to it
-subprocess.run(['gh', 'api', '-X', 'POST', 'repos/jalfern/retrogames/git/refs',
-                '-f', 'ref=refs/heads/telemetry',
-                '-f', 'sha=' + subprocess.run(
-                    ['gh', 'api', 'repos/jalfern/retrogames/git/ref/heads/main',
-                     '--jq', '.object.sha'], capture_output=True, text=True).stdout.strip()],
-               capture_output=True)  # 422 if it exists already: fine
-args = ['gh', 'api', '-X', 'PUT', f'repos/jalfern/retrogames/contents/telemetry.json',
+OUT = 'repos/jalfern/forge-telemetry'
+args = ['gh', 'api', '-X', 'PUT', f'{OUT}/contents/telemetry.json',
         '--input', '-']
-body = {'message': 'pulse', 'content': data, 'branch': 'telemetry'}
-sha = subprocess.run(['gh', 'api', 'repos/jalfern/retrogames/contents/telemetry.json?ref=telemetry',
+body = {'message': 'pulse', 'content': data, 'branch': 'main'}
+sha = subprocess.run(['gh', 'api', f'{OUT}/contents/telemetry.json?ref=main',
                       '--jq', '.sha'], capture_output=True, text=True)
 # gh prints the 404 JSON BODY to stdout on a miss, so 'gh:' never prefixes
 # one — trust nothing but a bare hex sha, or the PUT is rejected silently.
@@ -136,7 +133,8 @@ def gh(path):
     except Exception:
         return None
 
-R = 'repos/jalfern/retrogames'
+R = 'repos/jalfern/retrogames'          # where the issues and PRs live (read)
+OUT = 'repos/jalfern/forge-telemetry'  # where board.json is written
 try:
     lines = open('/tmp/forge/telemetry.jsonl').read().splitlines()[-48:]
     samples = [json.loads(l) for l in lines if l.startswith('{')]
@@ -161,7 +159,18 @@ prs = [{'number': p['number'], 'title': p['title'], 'html_url': p['html_url']}
        for p in (gh(f'{R}/pulls?state=open&per_page=10') or [])]
 
 def comments(n, per):
-    cs = gh(f'{R}/issues/{n}/comments?per_page={per}&sort=created&direction=desc') if n else None
+    # The per-issue comments endpoint IGNORES sort/direction and is always
+    # oldest-first, so `?per_page=6&sort=created&direction=desc` returned the
+    # thread's first six comments forever (the WARDEN card stuck on Oct 10).
+    # Read the LAST page, plus the one before if it is short; newest first.
+    if not n:
+        return []
+    total = (gh(f'{R}/issues/{n}') or {}).get('comments', 0)
+    page = max(1, -(-total // 100))
+    cs = gh(f'{R}/issues/{n}/comments?per_page=100&page={page}') or []
+    if len(cs) < per and page > 1:
+        cs = (gh(f'{R}/issues/{n}/comments?per_page=100&page={page - 1}') or []) + cs
+    cs = cs[-per:][::-1]
     return [{'id': c['id'], 'body': c['body'].split('\n')[0][:200],
              'created_at': c['created_at'], 'updated_at': c['updated_at']} for c in (cs or [])]
 
@@ -175,15 +184,15 @@ board = {'generated': subprocess.run(['date', '-u', '+%Y-%m-%dT%H:%M:%SZ'],
          'pulses': comments(pulse_num, 6), 'feed': comments(build_num, 8)}
 
 data = base64.b64encode(json.dumps(board).encode()).decode()
-body = {'message': 'board', 'content': data, 'branch': 'telemetry'}
-sha = subprocess.run(['gh', 'api', f'{R}/contents/board.json?ref=telemetry',
+body = {'message': 'board', 'content': data, 'branch': 'main'}
+sha = subprocess.run(['gh', 'api', f'{OUT}/contents/board.json?ref=main',
                       '--jq', '.sha'], capture_output=True, text=True)
 # gh prints the 404 JSON BODY to stdout, so 'gh:' never prefixes a miss —
 # the first create silently poisoned body['sha'] and the PUT was rejected
 # while the script exited 0. Trust nothing but a bare hex sha.
 if sha.returncode == 0 and re.fullmatch(r'[0-9a-f]{40}', sha.stdout.strip()):
     body['sha'] = sha.stdout.strip()
-r = subprocess.run(['gh', 'api', '-X', 'PUT', f'{R}/contents/board.json', '--input', '-'],
+r = subprocess.run(['gh', 'api', '-X', 'PUT', f'{OUT}/contents/board.json', '--input', '-'],
                    input=json.dumps(body), text=True, capture_output=True)
 if r.returncode != 0:
     print('board push failed:', r.stderr[:300])
