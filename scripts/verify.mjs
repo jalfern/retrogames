@@ -55,6 +55,8 @@ const suite = [
     // win — this one caught the bug where the first click could never plant.
     node('sweepcheck.mjs'),
     node('sweepplay.mjs'),
+    node('papercheck.mjs'),
+    node('paperplay.mjs'),
     full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '500']),
 ]
 

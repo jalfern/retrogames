@@ -203,6 +203,7 @@ export function step(g, inp = {}) {
                 push(g, { type: 'lean', x: g.x, side: inp.throw })
             } else {
                 g.flights.push({ x: g.x, s: g.s, s0: g.s, side: inp.throw, fwd: false })
+                push(g, { type: 'throw', side: inp.throw, x: g.x })
             }
         }
     }
