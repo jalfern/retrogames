@@ -26,6 +26,25 @@ export const ago = (hhmmss, now) => {
     return Math.max(0, Math.round((now - d.getTime()) / 1000))
 }
 
+// applyOrder(list, order, key) -> the list with the `order` keys first, in the
+// order given; every item not named in `order` follows in its original order.
+// Pure: no DOM, no storage, so forgecheck can pin it without a browser. `order`
+// is a flat array of keys (issue numbers) persisted by the board's drag re-order.
+// A key that is no longer in the list is dropped; a duplicate ranks by first
+// occurrence; an empty/missing `order` is the identity (the list is untouched).
+export const applyOrder = (list, order, key = i => i.number) => {
+    if (!Array.isArray(order) || order.length === 0) return list
+    const present = new Set(list.map(key))
+    const rank = new Map()
+    let r = 0
+    for (const k of order) if (present.has(k) && !rank.has(k)) rank.set(k, r++)
+    if (rank.size === 0) return list
+    const ranked = list.filter(i => rank.has(key(i)))
+    const rest = list.filter(i => !rank.has(key(i)))
+    ranked.sort((a, b) => rank.get(key(a)) - rank.get(key(b)))
+    return [...ranked, ...rest]
+}
+
 export function deriveFloor({ issues = null, prs = [], pulses = [], now = Date.now() } = {}) {
     const list = (issues ?? []).filter(i => !i.pull_request)
 
