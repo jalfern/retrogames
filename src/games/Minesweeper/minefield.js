@@ -91,20 +91,22 @@ function clearMineZone(s, fx, fy) {
 }
 
 // Verify the layout the way the gate does: dig the first click, run the
-// SLACK solver first (chord forbidden — the hard constraint, fail fast),
-// then the full rule set. Returns the ambiguous pocket the failure got
-// stuck on: the safe cells the rule set could not crack. Repair pulls
-// mines out of THAT pocket, so the hill-climb faces one problem at a time
-// instead of reshuffling the whole field (which rejected ~1 board in 500
-// at real densities and took seconds per fair board).
+// SLACK solver (chord forbidden — the hard constraint). The full-rule pass
+// was deleted deliberately: the solver's chord rule fires only when a
+// clue's FLAG count equals its clue, the gate never sets a flag, so
+// "full" and "slack" certify exactly the same board here — the second
+// solve was pure duplicated work (and GENERAL generation felt it: seconds).
+// Returns the ambiguous pocket the failure got stuck on: the safe cells
+// the rule set could not crack. Repair pulls mines out of THAT pocket, so
+// the hill-climb faces one problem at a time instead of reshuffling the
+// whole field (which rejected ~1 board in 500 at real densities and took
+// seconds per fair board).
 function verifyLayout(s, fx, fy) {
     const g = cloneGame(s)
     g.open.fill(0); g.flag.fill(0); g.opened = 0; g.flags = 0; g.end = null; g.why = ''
     openCell(g, fx, fy)
     const slack = solveOn(g, { subset: true, chord: false })
     if (!slack.win || slack.guesses > GUESS_LIMIT) return { ok: false, stuck: slack.stuck }
-    const full = solveOn(g, { subset: true, chord: true })
-    if (!full.win || full.guesses > GUESS_LIMIT) return { ok: false, stuck: full.stuck }
     return { ok: true, stuck: [] }
 }
 
@@ -139,10 +141,13 @@ export function plantAt(s, fx, fy) {
         let stall = 0
         for (let iter = 0; iter < 120 && !verdict.ok; iter++) {
             const stuck = verdict.stuck
-            // plateau escape: 24 moves with no improvement and the layout is
+            // plateau escape: 5 moves with no improvement and the layout is
             // a lost cause — take a fresh random layout rather than burn the
-            // budget polishing an ambiguous corpse.
-            if (stuck.length === lastStuck) { if (++stall > 24) break } else stall = 0
+            // budget polishing an ambiguous corpse. (Was 24, then 12: with
+            // the honest stall report, a pocket that has not shrunk in a
+            // handful of moves almost never shrinks at all — the worst seed
+            // spent ~5 s on 16 layouts' worth of useless moves.)
+            if (stuck.length === lastStuck) { if (++stall > 5) break } else stall = 0
             lastStuck = stuck.length
             const stuckSet = new Set(stuck)
             const adj = adjOf(s.w, s.h)
@@ -319,31 +324,45 @@ function solveOn(s, opts = {}) {
     const plan = []
     let guesses = 0, passes = 0
     let acted = true
+    // Stamps instead of fresh Uint8Arrays per pass: a derivation is live
+    // for the pass that made it (stamp === token). The referee runs
+    // thousands of full solves during generation, and the profile said so.
+    const mineStamp = new Int32Array(cells)
+    const safeStamp = new Int32Array(cells)
+    const uaMark = new Int32Array(cells)
+    const ubMark = new Int32Array(cells)
+    let token = 0, uaTok = 0, ubTok = 0
     while (acted && openCount < cells - s.totalMines && passes < cells * 4) {
         acted = false
         passes++
+        token++
         const safeSet = []
         const ruleOf = new Array(cells)
         const mineSet = []
-        const isSafe = new Uint8Array(cells)
-        const isMine = new Uint8Array(cells)
-        const coveredOf = (i) => {
+        const isMine = (c) => mineStamp[c] === token
+        const isSafe = (c) => safeStamp[c] === token
+        // coverage only changes when cells open (end of pass), so cache
+        // it per pass; clues likewise.
+        const clues = []
+        const covCache = new Map()
+        for (let i = 0; i < cells; i++) {
+            if (!open[i] || s.clue[i] === 0) continue
+            clues.push(i)
             const out = []
             for (const c of adj[i]) if (!open[c]) out.push(c)
-            return out
+            covCache.set(i, out)
         }
-        const clues = []
-        for (let i = 0; i < cells; i++) if (open[i] && s.clue[i] > 0) clues.push(i)
+        const covC = (i) => covCache.get(i)
         // single-square: N unknowns under an N-clue are all mines; a clue
         // whose mines are all accounted for is safe everywhere else.
         for (const i of clues) {
-            const cov = coveredOf(i)
+            const cov = covC(i)
             if (!cov.length) continue
-            const minesLeft = s.clue[i] - cov.filter((c) => isMine[c]).length
-            const unk = cov.filter((c) => !isMine[c])
-            if (!unk.length) continue
-            if (minesLeft === unk.length) { unk.forEach((c) => { isMine[c] = 1; ruleOf[c] = "single-mines"; mineSet.push(c) }); acted = true }
-            else if (minesLeft === 0) { unk.forEach((c) => { isSafe[c] = 1; ruleOf[c] = "single-safe"; safeSet.push(c) }); acted = true }
+            let mLeft = s.clue[i], uLen = 0
+            for (const c of cov) if (isMine(c)) mLeft--; else uLen++
+            if (!uLen) continue
+            if (mLeft === uLen) { for (const c of cov) if (!isMine(c)) { mineStamp[c] = token; ruleOf[c] = 'single-mines'; mineSet.push(c) }; acted = true }
+            else if (mLeft === 0) { for (const c of cov) if (!isMine(c)) { safeStamp[c] = token; ruleOf[c] = 'single-safe'; safeSet.push(c) }; acted = true }
         }
         // subset-pair: nested unknown sets, the difference of the counts
         // lives in the difference of the sets. Counts are reduced by the
@@ -353,37 +372,84 @@ function solveOn(s, opts = {}) {
         // delta and "0 = all safe" fired on every second board: the
         // referee was certifying mines as safe, and because the fairness
         // gate runs this same referee, the illusion confirmed itself.
+        // Pairing is restricted to clues that SHARE a covered cell (built
+        // off a cell→clues incidence list): clues with no shared unknown
+        // can never nest, so the candidate cut changes no verdict — it
+        // only stops the pass from being O(clues²) on a stuck GENERAL.
+        // Membership is stamps, not Sets: same verdict, no allocation.
         if (useSubset) {
-            for (const ai of clues) {
-                const covA = coveredOf(ai)
-                const kA = s.clue[ai] - covA.filter((c) => isMine[c]).length
-                if (kA < 0) continue
-                const ua = covA.filter((c) => !isMine[c] && !isSafe[c])
-                if (!ua.length) continue
-                const uaSet = new Set(ua)
-                for (const bi of clues) {
-                    if (ai === bi) continue
-                    const covB = coveredOf(bi)
-                    const kB = s.clue[bi] - covB.filter((c) => isMine[c]).length
-                    if (kB < 0 || kB > kA) continue
-                    const ub = covB.filter((c) => !isMine[c] && !isSafe[c])
-                    if (!ub.length || !ub.every((c) => uaSet.has(c))) continue
-                    const ubSet = new Set(ub)
-                    const diff = ua.filter((c) => !ubSet.has(c))
-                    if (!diff.length) continue
-                    const dm = kA - kB
-                    if (dm === diff.length) { diff.forEach((c) => { isMine[c] = 1; ruleOf[c] = 'subset-mines'; mineSet.push(c) }); acted = true }
-                    else if (dm === 0) { diff.forEach((c) => { isSafe[c] = 1; ruleOf[c] = 'subset-safe'; safeSet.push(c) }); acted = true }
+            const byCell = new Map()
+            for (const i of clues) {
+                for (const c of covC(i)) {
+                    let l = byCell.get(c)
+                    if (!l) byCell.set(c, l = [])
+                    l.push(i)
                 }
             }
+                const ua = []
+                for (const ai of clues) {
+                    const covA = covC(ai)
+                    let kA = s.clue[ai]
+                    for (const c of covA) {
+                        if (isMine(c)) kA--
+                        else if (!isSafe(c)) ua.push(c)
+                    }
+                    if (kA < 0 || !ua.length) { ua.length = 0; continue }
+                    const uaLen = ua.length
+                    uaTok++
+                    for (let j = 0; j < uaLen; j++) uaMark[ua[j]] = uaTok
+                    // Nesting domain excludes cells derived SAFE this pass:
+                    // ub already excludes them, so a pair connected ONLY
+                    // through safe cells would fail ub's uaMark check anyway
+                    // — skipping the candidate now is waste-cut, not a
+                    // semantic change (mid-audit note: an earlier comment
+                    // here claimed safe cells could inflate dm; they
+                    // cannot, and neither can mined ones — kX is always
+                    // clue minus derived mines, and safe cells contribute
+                    // to neither kX nor the sets).
+                    const cands = []
+                    for (const c of covA) {
+                        if (isSafe(c)) continue
+                        for (const b of byCell.get(c)) if (b !== ai) cands.push(b)
+                    }
+                    for (const bi of cands) {
+                        const covB = covC(bi)
+                        let kB = s.clue[bi]
+                        for (const c of covB) if (isMine(c)) kB--
+                        if (kB < 0 || kB > kA) continue
+                        // ubTok is PER CANDIDATE: a stale mark from the
+                        // previous pair must never read as "in this ub".
+                        ubTok++
+                        let ubLen = 0
+                        let nested = true
+                        for (const c of covB) {
+                            if (isMine(c) || isSafe(c)) continue
+                            if (uaMark[c] !== uaTok) { nested = false; break }
+                            ubMark[c] = ubTok
+                            ubLen++
+                        }
+                        if (!nested || !ubLen) continue
+                        let diffLen = 0
+                        for (let j = 0; j < uaLen; j++) {
+                            const c = ua[j]
+                            if (ubMark[c] !== ubTok && safeStamp[c] !== token) diffLen++
+                        }
+                        if (!diffLen) continue
+                        const dm = kA - kB
+                        if (dm === diffLen) { for (let j = 0; j < uaLen; j++) { const c = ua[j]; if (ubMark[c] !== ubTok && safeStamp[c] !== token) { mineStamp[c] = token; ruleOf[c] = 'subset-mines'; mineSet.push(c) } }; acted = true }
+                        else if (dm === 0) { for (let j = 0; j < uaLen; j++) { const c = ua[j]; if (ubMark[c] !== ubTok && safeStamp[c] !== token) { safeStamp[c] = token; ruleOf[c] = 'subset-safe'; safeSet.push(c) } }; acted = true }
+                    }
+                    ua.length = 0
+                }
         }
         if (useChord) {
             for (const i of clues) {
-                const cov = coveredOf(i)
-                const flagged = cov.filter((c) => s.flag[c]).length
-                const rest = cov.filter((c) => !s.flag[c] && !isMine[c] && !isSafe[c])
-                if (rest.length && flagged === s.clue[i]) {
-                    rest.forEach((c) => { isSafe[c] = 1; ruleOf[c] = 'chord'; safeSet.push(c) }); acted = true
+                const cov = covC(i)
+                let flagged = 0, restLen = 0
+                for (const c of cov) if (s.flag[c]) flagged++; else if (!isMine(c) && !isSafe(c)) restLen++
+                if (restLen && flagged === s.clue[i]) {
+                    for (const c of cov) if (!s.flag[c] && !isMine(c) && !isSafe(c)) { safeStamp[c] = token; ruleOf[c] = 'chord'; safeSet.push(c) }
+                    acted = true
                 }
             }
         }
@@ -402,24 +468,14 @@ function solveOn(s, opts = {}) {
             plan.push({ x: c % s.w, y: (c / s.w) | 0 })
             acted = true
         }
-        if (!acted && openCount < cells - s.totalMines) {
-            guesses++
-            const coverCount = new Map()
-            for (const i of clues) for (const c of adj[i]) if (!open[c] && !isMine[c]) coverCount.set(c, (coverCount.get(c) || 0) + 1)
-            let pick = -1, best = -1
-            for (let i = 0; i < cells; i++) {
-                if (open[i] || isMine[i]) continue
-                const k = coverCount.get(i) || 0
-                if (k > best) { best = k; pick = i }
-            }
-            if (pick < 0) { for (let i = 0; i < cells; i++) if (!open[i] && !isMine[i]) { pick = i; break } }
-            if (pick >= 0) {
-                open[pick] = 1
-                if (!s.mines[pick]) openCount++
-                plan.push({ x: pick % s.w, y: (pick / s.w) | 0 })
-                acted = true
-            }
-        }
+        // Stalled: derivation stopped with cells left. A solver that DIGS
+        // un-derived cells poisons its own state — opening a possible mine
+        // drops it from every later coveredOf() while clue[] keeps counting
+        // it, and the phantom mine then "proves" safe cells to be mines
+        // (that was the single-mines lie at 12,4, thrown from inside the
+        // generator's own gate). Guesses are forbidden by definition: the
+        // solver returns the stuck state, counts the guess, and STOPS.
+        if (!acted && openCount < cells - s.totalMines) guesses++
     }
     // Stuck cells for the repair loop: the SAFE cells this rule set could
     // not crack. The generator owns the mine map — consulting it here is
