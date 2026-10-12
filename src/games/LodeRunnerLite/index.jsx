@@ -17,11 +17,11 @@
 //     back through the real applyAction+step, and the DEV hook re-replays
 //     your own stream in the page and compares state hashes.
 //
-// Layout: 1. demo cache (the solver runs once per vault) 2. ASCII painters
-// (cached terrain + live glyph layers) 3. fixed 15 Hz timestep with the
-// 250 ms catch-up cap (the heist lesson) 4. input (held-key stack, one
-// action every CFG.moveEvery ticks — the same phase planRun uses) 5. DEV
-// hook + DebugKit 6. React + HUD.
+// Layout: 1. demo cache (the solver runs once per vault) 2. pixel painters
+// (cached terrain tiles from ./art.js + live sprite layers, runtime-generated)
+// 3. fixed 15 Hz timestep with the 250 ms catch-up cap (the heist lesson)
+// 4. input (held-key stack, one action every CFG.moveEvery ticks — the same
+// phase planRun uses) 5. DEV hook + DebugKit 6. React + HUD.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
@@ -34,9 +34,9 @@ import {
     makeGame, applyAction, step, planRun, planStep, stateHash, replay,
 } from './sim.js'
 import { LEVELS, buildLevel } from './levels.js'
+import { buildArt, CW, CH } from './art.js'
 
 const SIM_MS = 1000 / 15
-const CW = 20, CH = 22
 const PXW = W * CW
 const PXH = H * CH
 
@@ -88,6 +88,11 @@ const LodeRunnerLiteGame = () => {
         const bgx = bg.getContext('2d')
         let bgDirty = true
 
+        const art = buildArt()                    // every sprite/tile, runtime-generated
+        const ANIM_MS = 450                        // crumble/refill cosmetic window
+        const animAt = new Map()                   // cell index -> { kind, t0 }
+        const movedT = new WeakMap()               // entity -> { x, y, t } for run frames
+
         let levelIdx = 0
         let b0 = buildLevel(0)
         let gs = makeGame(b0.meta, b0.grid)
@@ -108,16 +113,17 @@ const LodeRunnerLiteGame = () => {
             demoG = makeGame(b.meta, b.grid)
             demoBy = byTickOf(demoFor(i))
             bgDirty = true
+            animAt.clear()
         }
 
         const handleEvents = (evts) => {
             for (const e of evts) evLog.push({ ...e, tick: gs.tick })
             if (evLog.length > 300) evLog.splice(0, evLog.length - 300)
             for (const e of evts) {
-                if (e.type === 'dig') { bgDirty = true; audioController.playNoise(0.05, 0.04) }
-                else if (e.type === 'refill') { bgDirty = true; audioController.playTone(140, 0.08, 'square', 0.05) }
+                if (e.type === 'dig') { bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'dig', t0: performance.now() }); audioController.playNoise(0.05, 0.04) }
+                else if (e.type === 'refill') { bgDirty = true; animAt.set(e.y * W + e.x, { kind: 'refill', t0: performance.now() }); audioController.playTone(140, 0.08, 'square', 0.05) }
                 else if (e.type === 'gold') { say(`GOLD ${e.have}/${gs.need}`); audioController.playTone(880, 0.07, 'square', 0.06) }
-                else if (e.type === 'unlock') { say('THE LADDER APPEARS'); audioController.playSweep(300, 700, 0.4, 'square', 0.07) }
+                else if (e.type === 'unlock') { bgDirty = true; say('THE LADDER APPEARS'); audioController.playSweep(300, 700, 0.4, 'square', 0.07) }
                 else if (e.type === 'guardBuried') { say('A GUARD IS BURIED'); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.08) }
                 else if (e.type === 'goldPickup') { say('A GUARD LIFTED GOLD'); audioController.playTone(220, 0.06, 'square', 0.05) }
                 else if (e.type === 'capture') { say('CAUGHT!'); audioController.playSweep(240, 50, 0.6, 'sawtooth', 0.1) }
@@ -152,6 +158,7 @@ const LodeRunnerLiteGame = () => {
                 ghost = { g: makeGame(b.meta, b.grid), byTick: byTickOf(lastRun.cmds) }
             }
             bgDirty = true
+            animAt.clear()
             setMode('play')
             say(b.meta.name)
             audioController.playSweep(220, 440, 0.25, 'square', 0.07)
@@ -195,15 +202,26 @@ const LodeRunnerLiteGame = () => {
             else if (gs.end) { finishRun(); gameOver(false, 'THE VAULT TOOK YOU') }
         }
 
+        // the attract demo is a separate sim: its terrain changes still dirty
+        // the cached background, and its dig/refill events get the same
+        // cosmetic animation as live play
+        const demoEvents = (evts) => {
+            for (const e of evts) {
+                if (e.type === 'dig' || e.type === 'refill') {
+                    bgDirty = true
+                    animAt.set(e.y * W + e.x, { kind: e.type, t0: performance.now() })
+                } else if (e.type === 'unlock') bgDirty = true
+            }
+            evts.length = 0
+        }
+
         const tickDemo = () => {
             if (!demoG || demoG.end) { buildDemo(demoIdx + (demoG ? 1 : 0)); return }
             const todo = demoBy.get(demoG.tick)
             if (todo) for (const c of todo) applyAction(demoG, demoG.player, c.act)
-            for (const e of demoG.events) if (e.type === 'dig' || e.type === 'refill') bgDirty = true
-            demoG.events.length = 0
+            demoEvents(demoG.events)
             step(demoG)
-            for (const e of demoG.events) if (e.type === 'dig' || e.type === 'refill') bgDirty = true
-            demoG.events.length = 0
+            demoEvents(demoG.events)
         }
 
         const doFrameSim = () => {
@@ -226,53 +244,91 @@ const LodeRunnerLiteGame = () => {
         const paintBg = () => {
             bgx.fillStyle = '#06070b'
             bgx.fillRect(0, 0, PXW, PXH)
-            bgx.font = 'bold 15px monospace'
-            bgx.textAlign = 'center'
             const src = screenRef.current === 'attract' && demoG ? demoG : gs
+            const now = performance.now()
             for (let y = 0; y < H; y++) {
                 for (let x = 0; x < W; x++) {
                     const i = y * W + x
                     const t = src.grid[i]
-                    const px = x * CW + CW / 2, py = y * CH + CH - 6
-                    if (t === SOLID) { bgx.fillStyle = '#3a4258'; bgx.fillText('=', px, py) }
-                    else if (t === BRICK) { bgx.fillStyle = '#b06a3f'; bgx.fillText('#', px, py) }
-                    else if (t === ROPE) { bgx.fillStyle = '#d9c26a'; bgx.fillText('=', px, py) }
-                    else if (t === LADDER) { bgx.fillStyle = '#6fbf73'; bgx.fillText('|', px, py) }
-                    else if (t === GOLD) { /* rides the dynamic layer */ }
-                    else if (src.holeAge[i] > 0) { bgx.fillStyle = '#5a3527'; bgx.fillText('v', px, py) }   // a live hole: it will refill
+                    let tile = null
+                    if (t === SOLID) tile = art.solid
+                    else if (t === BRICK) tile = art.brick
+                    else if (t === ROPE) tile = art.rope
+                    else if (t === LADDER) tile = art.ladder
+                    else if (t === EMPTY && src.holeAge[i] > 0) tile = art.hole   // a live hole: it will refill
+                    if (tile) bgx.drawImage(tile, x * CW, y * CH)
+                    const anim = animAt.get(i)
+                    if (anim) {
+                        const age = now - anim.t0
+                        if (age >= ANIM_MS) animAt.delete(i)
+                        else {
+                            const stage = Math.min(2, Math.floor(age / (ANIM_MS / 3)))
+                            bgx.drawImage(anim.kind === 'dig' ? art.crumble[stage] : art.rebuild[stage], x * CW, y * CH)
+                        }
+                    }
                 }
             }
             bgDirty = false
         }
 
+        // the run cycle belongs to motion, not mode: a body is "running" for a
+        // couple of hundred ms after its last cell change. The frame clock is
+        // real paint time — a cosmetic, never sim state.
+        const frameOf = (set, e, now) => {
+            if (e.mode === 'hang') return set.hang
+            if (e.mode === 'air') return set.fall
+            if (e.mode === 'climb') return now % 160 < 80 ? set.climbA : set.climbB
+            const rec = movedT.get(e)
+            if (rec && now - rec.t < 220) return now % 140 < 70 ? set.runA : set.runB
+            return set.stand
+        }
+
+        const trackMove = (e, now) => {
+            const prev = movedT.get(e)
+            if (!prev || prev.x !== e.x || prev.y !== e.y) movedT.set(e, { x: e.x, y: e.y, t: now })
+        }
+
+        const drawEnt = (c, set, e, now, alpha = 1) => {
+            c.save()
+            if (alpha < 1) c.globalAlpha = alpha
+            const img = frameOf(set, e, now)
+            if (e.face === -1) {
+                c.translate(e.x * CW + CW, e.y * CH)
+                c.scale(-1, 1)
+                c.drawImage(img, 0, 0)
+            } else {
+                c.drawImage(img, e.x * CW, e.y * CH)
+            }
+            c.restore()
+        }
+
         const paint = () => {
-            if (bgDirty) paintBg()
+            if (bgDirty || animAt.size) paintBg()
             ctx.clearRect(0, 0, PXW, PXH)
             ctx.drawImage(bg, 0, 0)
-            ctx.font = 'bold 15px monospace'
-            ctx.textAlign = 'center'
             const live = screenRef.current === 'play'
             const g = screenRef.current === 'attract' && demoG ? demoG : gs
+            const now = performance.now()
             // gold rides the dynamic layer (collecting is a state change,
-            // never a repaint guess)
-            ctx.fillStyle = g.tick % 30 < 18 ? '#ffd23e' : '#b8922e'
+            // never a repaint guess); the chest keeps the old 2 s blink
+            const chest = g.tick % 30 < 18 ? art.chest[0] : art.chest[1]
             for (let y = 0; y < H; y++) {
                 for (let x = 0; x < W; x++) {
-                    if (g.grid[y * W + x] === GOLD) ctx.fillText('*', x * CW + CW / 2, y * CH + CH - 6)
+                    if (g.grid[y * W + x] === GOLD) ctx.drawImage(chest, x * CW, y * CH)
                 }
             }
             for (const gd of g.guards) {
                 if (!gd.alive) continue
-                ctx.fillStyle = gd.mode === 'air' ? '#ff9d5c' : '#ff5d5d'
-                ctx.fillText('X', gd.x * CW + CW / 2, gd.y * CH + CH - 6)
+                trackMove(gd, now)
+                drawEnt(ctx, art.guard, gd, now)
             }
             if (live && ghost && ghost.g.player.alive && !ghost.g.end) {
-                ctx.fillStyle = 'rgba(255,180,90,0.45)'
-                ctx.fillText('@', ghost.g.player.x * CW + CW / 2, ghost.g.player.y * CH + CH - 6)
+                trackMove(ghost.g.player, now)
+                drawEnt(ctx, art.ghost, ghost.g.player, now, 0.45)
             }
             if (g.player.alive && !g.end) {
-                ctx.fillStyle = g.player.mode === 'hang' ? '#cfe8ff' : '#f2f5ff'
-                ctx.fillText('@', g.player.x * CW + CW / 2, g.player.y * CH + CH - 6)
+                trackMove(g.player, now)
+                drawEnt(ctx, art.runner, g.player, now)
             }
         }
 
@@ -421,6 +477,7 @@ const LodeRunnerLiteGame = () => {
                             const x = gs.player.x + 1, y = gs.player.y + 1
                             if (x < 0 || x >= W || y < 0 || y >= H || gs.grid[y * W + x] !== BRICK) return 'no diagonal brick below-right of the runner'
                             gs.grid[y * W + x] = EMPTY; gs.holeAge[y * W + x] = 1; bgDirty = true
+                            animAt.set(y * W + x, { kind: 'dig', t0: performance.now() })
                             return 'a hole opens diagonally below-right (it refills in 5s)'
                         },
                     },

@@ -10,12 +10,16 @@
 //      command stream grows ONLY from real keypresses.
 //   3. DIG → HOLE → REFILL — the dig opens a live hole diagonally below the
 //      runner; the sim's fuse grows the brick back after the ~5 s hold.
+//   3b. THE PAINT — terrain is runtime pixel art: warm mortar brick reads
+//       distinct from cool concrete, and the runner and guard are distinct
+//       sprites, not two shades of one glyph.
 //   4. THE LADDER AND THE ROPE (vault 2) — run to a real ladder, climb it, and
 //      dangle onto the rope line: the runner hangs, rope over his head in the state.
 //   5. GUARDS HUNT — a guard's cell changes without being touched.
 //   6. YOU CAN DIE AND COME BACK — walk into the guard until the game
 //      overs, press R, and the GHOST of the lost run haunts the retry
 //      tick-for-tick beside you.
+//      (6b: runner and guard are distinct sprites, not one glyph in two colors.)
 //   7. THE PAGE ITSELF REPLAYS — replayCheck re-runs the recorded stream
 //      through the sim and compares state hashes mid-run.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
@@ -125,6 +129,26 @@ if (goldCell) {
     r.check(`a gold nugget paints gold pixels (${px.gold} warm-yellow in its cell window)`, px.gold >= 6, JSON.stringify(px))
 }
 
+// 3b — the paint (issue #156): vault 1's row 0 is wall, row 17 is the floor,
+// so one read each grades "mortar brick vs cool concrete" — in hue AND in
+// density (a glyph in a cell leaves most of the window black; a tile fills it).
+const avgPx = (gx, gy) => page.evaluate(([x, y]) => {
+    const c = document.querySelector('canvas[data-lode-stage]')
+    const d = c.getContext('2d').getImageData(x * 20 + 3, y * 22 + 3, 14, 16).data
+    let r = 0, g = 0, b = 0, n = 0
+    for (let i = 0; i < d.length; i += 4) {
+        if (d[i] + d[i + 1] + d[i + 2] < 24) continue
+        r += d[i]; g += d[i + 1]; b += d[i + 2]; n++
+    }
+    return n ? { r: r / n, g: g / n, b: b / n, n } : null
+}, [gx, gy])
+const artPx = { solid: await avgPx(5, 0), brick: await avgPx(5, 17) }
+r.check('terrain is pixel art: warm mortar brick distinct from cool concrete (hue and density)',
+    artPx.brick && artPx.solid
+    && artPx.brick.r > artPx.brick.b + 15 && artPx.solid.b >= artPx.solid.r
+    && artPx.brick.n > 150 && artPx.solid.n > 150,
+    JSON.stringify(artPx))
+
 // 4 — face and push DOWN at spawn: the diagonal brick below opens a live HOLE,
 // which the sim's fuse grows back into brick after the ~5 s hold
 await page.evaluate(() => window.__lodeTest.start(0))
@@ -177,6 +201,28 @@ const q = await probe()
 const gB = q.guards.map((gd) => `${gd.x},${gd.y}`).join(' ')
 const pursued = q.evLog.filter((e) => e.type === 'pursued').length
 r.check('guards move on their own (the pathfinder is driving)', gA !== gB || pursued > 0, `${gA} -> ${gB}, pursued receipts: ${pursued}`)
+// 6b — runner and guard are distinct sprites: positions and pixels in one
+// evaluate, so a guard cannot drift between the two reads
+const cast = await page.evaluate(() => {
+    const c = document.querySelector('canvas[data-lode-stage]')
+    const p = window.__lodeTest.probe()
+    const read = (x, y) => {
+        const d = c.getContext('2d').getImageData(x * 20 + 3, y * 22 + 3, 14, 16).data
+        let r = 0, g = 0, b = 0, n = 0
+        for (let i = 0; i < d.length; i += 4) {
+            if (d[i] + d[i + 1] + d[i + 2] < 24) continue
+            r += d[i]; g += d[i + 1]; b += d[i + 2]; n++
+        }
+        return n ? { r: r / n, g: g / n, b: b / n, n } : null
+    }
+    const gd = p.guards.find((x) => x.alive)
+    return { player: read(p.player.x, p.player.y), guard: gd ? read(gd.x, gd.y) : null, at: { p: [p.player.x, p.player.y], g: gd && [gd.x, gd.y] } }
+})
+const castDist = cast.player && cast.guard
+    ? Math.hypot(cast.player.r - cast.guard.r, cast.player.g - cast.guard.g, cast.player.b - cast.guard.b) : 0
+r.check('the runner and the guard paint as distinct sprites (not one glyph in two colors)',
+    cast.player && cast.guard && cast.player.n > 60 && cast.guard.n > 60 && castDist > 30,
+    JSON.stringify({ ...cast, dist: Math.round(castDist) }))
 
 // 7 — you can die: walk east into the hunt until the game overs
 let over = null
