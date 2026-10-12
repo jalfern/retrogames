@@ -78,42 +78,42 @@ export const LEVELS = [
     },
     // ------------------------------------------------------------- level 2 ----
     // Teach the hole. The top corridor carries the easy nuggets and its
-    // ENTIRE floor is brick; the far half of the vault lives BELOW it and the
-    // only door is a hole you dig with your own feet. The guard patrols the
-    // lower corridor and will walk straight under your hole — the collapsing
-    // floor is the only thing between him and you. (His two traps survive:
-    // he emerges from the rubble, which is why he patrols below and not with
-    // you above.) Proves dig + trap collapse + drop + pursuit.
+    // ENTIRE floor is brick; the gate lives BELOW and the only door is a hole
+    // you dig with your own feet. Under the lower corridor's brick there is
+    // SOLID rock with three shafts punched through it: a guard who walks over
+    // a collapsing trap at x=4/16/27 falls off the bottom of the vault and is
+    // gone for good; anywhere else he lands in a one-cell niche he can never
+    // climb out of (no ladder, no step-up — the niche IS the grave). The same
+    // holes kill you if you forget them: jump the gaps or lose a life.
+    // NOTE on `proves`: it lists what the AUTOPILOT's witness actually shows.
+    // Riding a collapsing trap ('drop') cannot be pinned there — the jump arc
+    // drifts sideways while it falls, so no arrangement of openings forces
+    // the solver to stand still on its own trap. 'drop' and the shaft burials
+    // are pinned by scripted scenarios in lodecheck instead.
     {
         ...parse([
             wall(),
             air(),
             air(),
-            air(),
-            marks({ 7: '*', 11: '*' }),
+            marks({ 2: 'P', 7: '*', 13: '*' }),
             floor(),
-            marks({ 5: '=', 29: '=' }),
-            marks({ 5: '=', 10: 'G', 18: '*', 23: '*', 28: 'E', 29: '=' }),
-            row((x) => x >= 6 && x <= 28 ? '#' : (x === 5 || x === 29 ? '=' : '.')),
-            marks({ 5: '=', 29: '=' }),
-            air(),
-            air(),
-            air(),
-            air(),
-            air(),
-            air(),
-            air(),
+            marks({ 5: 'G', 18: '*', 23: '*', 28: 'E' }),
             floor(),
-            wall(),
-        ], 'THE DIGGER', { timeTicks: 1600, proves: ['dig', 'trap', 'drop', 'pursued'] }),
+            row((x) => x === 4 || x === 16 || x === 27 ? '.' : '='),
+            ...Array.from({ length: 10 }, () => row((x) => x === 4 || x === 16 || x === 27 ? '.' : '=')),
+            row((x) => x === 4 || x === 16 || x === 27 ? '.' : '='),
+        ], 'THE DIGGER', { timeTicks: 1600, proves: ['dig', 'trap', 'pursued'] }),
     },
     // ------------------------------------------------------------- level 3 ----
-    // The vault: three tiers. A rope of three nuggets over the top void
-    // (ladder in, step sideways onto the line); a middle rope reached by
-    // climbing THROUGH the line on the middle ladder; a bottomless shaft
-    // that cuts the lower ledge in half, so the ground floor is two worlds
-    // and each holds a guard who can never reach the other. Proves swing +
-    // pursuit + the shaft (a guard lured over it is gone — see the pin).
+    // The vault: three tiers. One BIG LADDER (col 3, floor to top) is the
+    // only way to the top rope of three nuggets — the middle rope cannot be
+    // climbed through (a jump rises exactly one cell and catches ropes only
+    // at the top of its rise, so climbing THROUGH a line is a myth this
+    // physics engine does not grant; the first cut of this vault made its
+    // top gold unreachable and the solver proved it by timing out). A middle
+    // rope of three more nuggets is reached from the x=14 ladder; a
+    // bottomless shaft (x=16) cuts the lower ledge in half, and a guard
+    // lured over a collapsing trap there is gone for good.
     {
         ...parse([
             wall(),
@@ -121,17 +121,17 @@ export const LEVELS = [
             marks({ 3: '|', 7: '*', 11: '*', 16: '*' }),
             cols([3], '|'),
             cols([3], '|'),
-            ropeRow(10, 22),
-            marks({ 14: '|', 12: '*', 16: '*', 19: '*' }),
-            cols([14, 22], '|'),
-            cols([14, 22], '|'),
-            cols([14, 22], '|'),
-            marks({ 3: '|', 6: '|', 14: '|', 22: '|', 23: '|' }),
-            row((x) => (x >= 3 && x <= 15 ? (x === 6 ? '|' : '#') : x === 16 ? '.' : x >= 17 && x <= 28 ? (x === 23 ? '|' : '#') : '.')),
-            marks({ 6: '|', 16: '.', 23: '|' }),
-            marks({ 6: '|', 16: '.', 23: '|' }),
-            marks({ 6: '|', 16: '.', 23: '|' }),
-            marks({ 2: 'P', 6: '|', 13: 'G', 16: '.', 23: '|', 26: 'G', 29: 'E' }),
+            row((x) => x === 3 ? '|' : x >= 10 && x <= 22 ? '~' : '.'),
+            marks({ 3: '|', 14: '|', 12: '*', 16: '*', 19: '*' }),
+            cols([3, 14], '|'),
+            cols([3, 14], '|'),
+            cols([3, 14], '|'),
+            marks({ 3: '|', 6: '|', 14: '|', 23: '|' }),
+            row((x) => (x >= 3 && x <= 15 ? (x === 3 || x === 6 ? '|' : '#') : x === 16 ? '.' : x >= 17 && x <= 28 ? (x === 23 ? '|' : '#') : '.')),
+            marks({ 3: '|', 6: '|', 16: '.', 23: '|' }),
+            marks({ 3: '|', 6: '|', 16: '.', 23: '|' }),
+            marks({ 3: '|', 6: '|', 16: '.', 23: '|' }),
+            marks({ 2: 'P', 3: '|', 6: '|', 13: 'G', 16: '.', 23: '|', 26: 'G', 29: 'E' }),
             row((x) => x === 16 ? '.' : '#'),
             row((x) => x === 16 ? '.' : '='),
         ], 'THE VAULT', { timeTicks: 2200, proves: ['swing', 'pursued'] }),

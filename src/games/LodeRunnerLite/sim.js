@@ -360,8 +360,13 @@ function guardAct(g, gd) {
     if (gd.mode === 'air' || !CFG.guardChase) return false
     const p = g.player
     if (!p.alive) return false
-    const field = guardField(g, gd)
-    const pd = field[idx(p.x, p.y)]
+    // dist-to-PLAYER from the player's own cell: a guard walks onto the
+    // neighbour whose player-distance is smaller. (BFSing from the guard was
+    // the corpse's bug: the guard's own cell is distance 0, so no candidate
+    // ever improved — every guard stood post for the whole vault while the
+    // `pursued` event happily fired.)
+    const field = guardField(g, p)
+    const pd = field[idx(gd.x, gd.y)]
     if (pd < 0) return false                       // cannot reach the player: stand post
     if (pd < g.guardDist[gd.id] - 0.5) push(g, { type: 'pursued', id: gd.id, d: pd })
     g.guardDist[gd.id] = pd
@@ -439,7 +444,7 @@ export function step(g) {
 const MODE_ID = { stand: 0, climb: 1, hang: 2 }
 
 function miniGrid(g) {
-    return { search: true, grid: g.grid, meta: g.meta, have: g.have, need: g.need, exit: g.exit, events: [], unlocked: true, lives: 1, player: { x: 0, y: 0, mode: 'stand', alive: true }, guards: [] }
+    return { search: true, end: null, grid: g.grid, meta: g.meta, have: g.have, need: g.need, exit: g.exit, events: [], unlocked: true, lives: 1, player: { x: 0, y: 0, mode: 'stand', alive: true }, guards: [] }
 }
 
 function stepEdge(g, mini, e, act) {
@@ -471,10 +476,17 @@ function digEdge(g, e) {
     return { x: e.x, y, mode: 'stand', vx: 0, vy: 0, alive: true }
 }
 
+// A simulated arc over a shaft ends in killFall → loseLife → mini.end='dead',
+// and EVERY applyAction refuses a game whose end is set — so one poisoned edge
+// silently deleted the rest of the search (vault 3's solver saw 43 states in
+// the guarded pass and 3 in the open one; a looser search finding LESS is
+// state poisoning, always). Every edge simulation therefore leaves `mini` as
+// it found it.
 function successors(g, mini, e, targets) {
     const out = []
+    const clean = () => { mini.end = null; mini.lives = 1 }
     for (const act of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) {
-        const n = stepEdge(g, mini, e, act)
+        const n = stepEdge(g, mini, e, act); clean()
         if (!n) continue
         const cell = idx(n.x, n.y)
         if (targets.has(cell)) { out.push({ act, e: n, goal: true }); continue }
@@ -483,7 +495,7 @@ function successors(g, mini, e, targets) {
     }
     if (CFG.jump && (e.mode === 'stand' || e.mode === 'hang')) {
         for (const v of [-1, 0, 1]) {
-            const n = arcEdge(mini, e, v)
+            const n = arcEdge(mini, e, v); clean()
             if (!n) continue
             const cell = idx(n.x, n.y)
             if (targets.has(cell)) { out.push({ act: `JUMP:${v}`, e: n, goal: true }); continue }
@@ -516,20 +528,16 @@ function dangerField(g) {
     return danger
 }
 
-export function planStep(g) {
-    const p = g.player
-    if (g.end || !p.alive) return null
-    const danger = dangerField(g)
-    const targets = new Set()
-    if (g.have < g.need) {
-        for (let i = 0; i < g.grid.length; i++) if (g.grid[i] === GOLD) targets.add(i)
-    } else {
-        targets.add(idx(g.exit.x, g.exit.y))
-    }
-    if (!targets.size) return null
-    const mini = miniGrid(g)
+// `slack` is how many ticks of guard-arrival margin a cell must keep. The
+// first pass demands CFG.dangerMargin; a SECOND pass at slack=-Infinity runs
+// when the first maps nothing — because "no safe move" must not mean "stand
+// still and be arrested". A runner with no safe route keeps heading for its
+// target and takes its chances; only if even the unguarded search finds
+// nothing does it stop. (The corpse had no second pass, and every vault-3
+// run ended with the runner frozen on a ledge while a guard walked up the
+// same ladder it had used.)
+function searchOnce(g, mini, start, targets, danger, slack) {
     const key = (e) => (e.y * W + e.x) * 4 + (MODE_ID[e.mode] ?? 3)
-    const start = { x: p.x, y: p.y, mode: p.mode, vx: 0, vy: 0, alive: true }
     const seen = new Set([key(start)])
     const parent = new Map()
     const q = [{ e: start, d: 0 }]
@@ -542,7 +550,7 @@ export function planStep(g) {
             if (seen.has(k)) continue
             const cell = idx(s.e.x, s.e.y)
             const dk = danger[cell]
-            if (dk !== -1 && dk <= arriveTick + (s.e.mode === 'hang' ? 0 : CFG.dangerMargin)) continue
+            if (dk !== -1 && dk <= arriveTick + (s.e.mode === 'hang' ? 0 : slack)) continue
             seen.add(k)
             parent.set(k, { pk: key(cur), act: s.act })
             if (s.goal) { found = k; break }
@@ -558,6 +566,24 @@ export function planStep(g) {
         k = par.pk
     }
     return null
+}
+
+export function planStep(g) {
+    const p = g.player
+    if (g.end || !p.alive) return null
+    const danger = dangerField(g)
+    const targets = new Set()
+    if (g.have < g.need) {
+        for (let i = 0; i < g.grid.length; i++) if (g.grid[i] === GOLD) targets.add(i)
+    } else {
+        targets.add(idx(g.exit.x, g.exit.y))
+    }
+    if (!targets.size) return null
+    const mini = miniGrid(g)
+    const start = { x: p.x, y: p.y, mode: p.mode, vx: 0, vy: 0, alive: true }
+    let act = searchOnce(g, mini, start, targets, danger, CFG.dangerMargin)
+    if (!act) act = searchOnce(g, mini, start, targets, danger, -Infinity)
+    return act
 }
 
 export function planRun(g, opts = {}) {
