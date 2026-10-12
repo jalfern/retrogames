@@ -187,6 +187,14 @@ jobs:
       # valid builtBy — and the real GamesList is rendered in Node: one tag per
       # visible card, agreeing with the registry per path. ~1 s, blocks merges.
       - run: npm run builtbycheck
+      # Twenty-fifth scoped gate: SPY HUNTER. The two stages are audited as
+      # DATA before anyone drives them (oil may never seal three lanes,
+      # nothing spawns off-road, every scripted car reaches the driving row);
+      # the score ledger is recomputed from the events the machine booked;
+      # the slack rule re-wins the campaign with fewer missiles per crate,
+      # with no missiles at all, and with one fewer life; six mutants die.
+      - run: npm run lint:hunter
+      - run: npm run huntercheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

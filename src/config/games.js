@@ -85,6 +85,10 @@ const PaperboyGame = lazy(() => import('../games/Paperboy'))
 // winnable (and re-proves them with slack supplies deleted) ride in the
 // game's own chunk; wizcheck imports those modules unchanged in Node.
 const WizardryGame = lazy(() => import('../games/Wizardry'))
+// SPY HUNTER: same lesson — the scripted stages and the simulative autopilot
+// that proves them (and scripts/huntercheck.mjs audits) ride in their own
+// chunk; the harness imports sim/script/planner unchanged in Node.
+const SpyHunterGame = lazy(() => import('../games/SpyHunter'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -279,6 +283,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'The 1981 dungeon, rebuilt honest: a party of six crawls three seeded mazes in shaded wireframe first person, fighting turn-based ledger combat where every point of damage is booked and recomputed by the harness that ships with this repo. Firebolt, heal, potions and MP springs are the resource puzzle — the whole campaign is PROVEN winnable by the autopilot (the thing demoing on this title screen is that proof, live), and re-proven with one fewer potion and one fewer spring than the proof consumes. Kill the Lich on Level 3. Death is real; every run reshuffles nothing — the dungeon is the same maze the harness audited.',
         controls: ['Arrows / D-pad: walk and turn in the corridor', 'SPACE / A: USE — stairs down, drink at a spring, touch the throne (that wakes the Lich)', 'In battle: SPACE attack · F / B: FIREBOLT · H heal the most wounded · P drink a potion · L flee (not from the Lich)', 'In battle the arrows pick your TARGET — burn the caster first', '?: pause and read the rules'],
+    },
+    {
+        path: '/spy-hunter',
+        component: SpyHunterGame,
+        label: 'SPY HUNTER',
+        theme: 'dark',
+        builtBy: 'forge',
+        description: 'The G-6155 against two hand-scripted stages of the original arcade highway — every spawn is a named event a Node harness audits BEFORE you drive on it, so "readable" is a proof, not a vibe. Three lanes of Killers that match your speed and fire back, Road Lakers painting oil that spins you, a Sweeper that shoves you into the oil, a helicopter walking bombs down your lane, and the gunboat in the river the road cannon can never reach — that one is the missiles\' job. Shoot the Supporter to drop GUN/MISSILE/repair crates and catch the drop; every stage ends with the 2000-point bonus car. The attract demo is the autopilot\'s own proven run, tick for tick — and the campaign is re-proven with one fewer missile, one fewer life, and with no missiles at all.',
+        controls: ['Arrows / D-pad: steer across three lanes — grass kills slowly, the wall kills fast', 'SPACE / A: machine gun — watch the HEAT gauge, an overheated gun is a parked car', 'X / B: homing MISSILE — the gunboat in the river only answers to these', 'Shoot the white SUPPORTER, then catch its crate: GUN, MISSILE or repair', 'Oil spins you; Sweepers push you toward it — never sit in the oil lane with traffic coming', '?: pause and read the rules'],
     },
     {
         path: '/arena-archery',

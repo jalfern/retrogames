@@ -98,7 +98,10 @@
         "lint:wiz": "eslint src/games/Wizardry src/components src/utils src/config src/main.jsx scripts",
         "wizcheck": "node scripts/wizcheck.mjs",
         "wizplay": "node scripts/wizplay.mjs",
-        "builtbycheck": "node scripts/builtbycheck.mjs"
+        "builtbycheck": "node scripts/builtbycheck.mjs",
+        "lint:hunter": "eslint src/games/SpyHunter src/components src/utils src/config src/main.jsx scripts",
+        "huntercheck": "node scripts/huntercheck.mjs",
+        "hunterplay": "node scripts/hunterplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
