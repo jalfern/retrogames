@@ -34,15 +34,18 @@ export const W = 256
 export const H = 224
 export const XMAX = 64
 export const G = 0.8                       // planner grid step; STEER = 3G
-export const STEER = 2.4                   // lateral px per tick, bang-bang
 export const ROAD = 52                     // |x| > ROAD is sidewalk (and its props)
 export const LEAN = 6                      // how far you must lean to throw that way
 export const PAPERSPD = 6                  // paper lateral px/tick
 export const PEDAL = [1.2, 2.0, 2.8]       // lo / mid / hi  (mid = 2.5G: s(t) lands on the grid)
 
 export const CFG = {
+    steer: 2.4,                              // lateral px per tick, bang-bang
     wwin: 16,                              // door window, +/- px of s (THE consumable)
-    dogR: 150,                             // a dog lunges when your s closes to this
+    dogR: 30,                              // the lunge starts this close — late AND mean:
+                                           // the crossing lands INSIDE the dog's s-band,
+                                           // threatening the lane PAST centre. Hug the
+                                           // dog's own kerb after it launches.
     dogSpd: 2.4, dogTicks: 50,             // the lunge crosses the road in 120 px
     dogHit: 9,                             // |dogX - x| hitbox
     carW: 14, carBand: 12, carSpd: 3, carAhead: 26,   // the sweeper
@@ -142,6 +145,7 @@ function crash(g, what) {
     if (CFG.crashReset) g.streak = 0
     g.stun = CFG.stun
     g.inv = CFG.iframes
+    g.s += 16                    // spill PAST the thing that took the life
     g.x = Math.max(-40, Math.min(40, g.x))
     push(g, { type: 'crash', what, s: g.s, lives: g.lives })
     if (g.lives <= 0) { g.end = 'dead'; push(g, { type: 'dead' }) }
@@ -183,7 +187,7 @@ export function step(g, inp = {}) {
     }
 
     // the handlebars: bang-bang, exactly STEER per tick
-    if (g.stun <= 0) g.x = Math.max(-XMAX, Math.min(XMAX, g.x + (inp.steer || 0) * STEER))
+    if (g.stun <= 0) g.x = Math.max(-XMAX, Math.min(XMAX, g.x + (inp.steer || 0) * CFG.steer))
 
     // throws
     if (inp.throw === -1 || inp.throw === 1 || inp.throw === 2) {
@@ -210,7 +214,7 @@ export function step(g, inp = {}) {
             f.s += 8
             for (const d of g.dogs) {
                 if (d.gone) continue
-                if (Math.abs(d.x - f.x) < 14 && Math.abs(d.s0 - f.s) < 10) {
+                if (Math.abs(d.x - f.x) < 20 && Math.abs(d.s0 - f.s) < 10) {
                     d.gone = true
                     d.vx = (d.x >= 0 ? 1 : -1) * 3
                     g.scared++
@@ -252,7 +256,11 @@ export function step(g, inp = {}) {
             const xc = cartAt(c, g.tick, t0)
             if (Math.abs(xc) > 84) { c.launched.splice(k, 1); continue }
             if (Math.abs(c.s - g.s) < CFG.carBand) {
-                const [lo, hi] = sweepBlock(xc, c.from)
+                // with carSweep off the cart is just a moving body; with it on,
+                // the road behind the nose is closed too (you cannot out-steer it)
+                const [lo, hi] = CFG.carSweep
+                    ? sweepBlock(xc, c.from)
+                    : [xc - CFG.carW - 4, xc + CFG.carW + 4]
                 if (g.x >= lo && g.x <= hi) hurt = true
             }
         }

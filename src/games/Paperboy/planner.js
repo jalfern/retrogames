@@ -12,12 +12,11 @@
 // scripts are replayed through the real step() by papercheck; a planner that
 // lies about geometry cannot survive that witness.
 
-import { CFG, G, XMAX, PEDAL, STEER, cartAt, sweepBlock, houseList, makeGame, step } from './sim.js'
+import { CFG, G, XMAX, PEDAL, cartAt, sweepBlock, houseList, makeGame, step } from './sim.js'
 import { STAGES } from './levels.js'
 
 const N = Math.round((2 * XMAX) / G) + 1     // 161 slots, -64..64 step 0.8
 const SLOT0 = (N - 1) / 2                     // slot of x=0
-const D = Math.round(STEER / G)               // 3 slots per tick
 
 // one tick of blocked intervals in the DP's paranoid frame (padded a hair past
 // the sim's hitboxes so the DP never promises a slot the sim might take)
@@ -47,7 +46,9 @@ function blocksAt(stage, v, t, t0, pad) {
             const xc = cartAt(c, t, L)                        // local time is launch-invariant
             if (Math.abs(xc) > 84) continue
             if (Math.abs(c.s - s) < CFG.carBand + pad) {
-                const [lo, hi] = sweepBlock(xc, c.from)
+                const [lo, hi] = CFG.carSweep
+                    ? sweepBlock(xc, c.from)
+                    : [xc - CFG.carW - 4, xc + CFG.carW + 4]
                 out.push([lo - pad, hi + pad])
             }
         }
@@ -58,6 +59,7 @@ function blocksAt(stage, v, t, t0, pad) {
 // fixed pedal v, stage solved in LOCAL ticks (t0 = absolute tick the stage
 // starts at, so cross-cart phase matches the chained game exactly)
 export function solveStage(si, { v = PEDAL[1], t0 = 0, wwin = CFG.wwin } = {}) {
+    const D = Math.max(1, Math.round(CFG.steer / G))   // slots per tick — CFG so mutants bite
     const stage = STAGES[si]
     const houses = houseList(stage)
     const tEnd = Math.ceil(stage.len / v)

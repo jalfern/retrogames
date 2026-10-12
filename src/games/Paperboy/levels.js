@@ -21,7 +21,7 @@ export const STAGES = [
             { s: 900, x: 0, w: 16 }, { s: 1750, x: 22 }, { s: 2600, x: -24 },
             { s: 3500, x: 6 }, { s: 4400, x: -14 },
         ],
-        dogs: [{ s: 1250, side: -1 }, { s: 2200, side: 1 }, { s: 2950, side: -1 }],
+        dogs: [{ s0: 1250, side: 1 }, { s0: 2200, side: 1 }, { s0: 2950, side: -1 }],
         crossings: [
             { s: 1600, P: 150, ph: 100, from: -1 },
             { s: 3200, P: 135, ph: 75, from: 1 },
@@ -38,8 +38,8 @@ export const STAGES = [
             { s: 5150, x: -20 },
         ],
         dogs: [
-            { s: 780, side: 1 }, { s: 1850, side: -1 }, { s: 2750, side: 1 },
-            { s: 4450, side: -1 },
+            { s0: 700, side: 1 }, { s0: 1800, side: -1 }, { s0: 2690, side: 1 },
+            { s0: 4450, side: -1 },
         ],
         crossings: [
             { s: 1200, P: 140, ph: 84, from: -1 },
@@ -55,12 +55,12 @@ export const STAGES = [
         houses: 'LRLRRLRLLRRLRLLRRLRLLRRLRLRL',
         crates: [
             { s: 800, x: -14, w: 10 }, { s: 800, x: 14, w: 10 },
-            { s: 1800, x: 0, w: 16 }, { s: 2500, x: -22 }, { s: 3300, x: 18, w: 12 },
+            { s: 1800, x: 0, w: 16 }, { s: 2500, x: -22 }, { s: 3380, x: 18, w: 12 },
             { s: 4100, x: -6 }, { s: 4700, x: 22 }, { s: 5300, x: 0, w: 16 },
         ],
         dogs: [
-            { s: 1050, side: -1 }, { s: 1950, side: 1 }, { s: 3050, side: -1 },
-            { s: 3900, side: 1 }, { s: 4950, side: -1 },
+            { s0: 1050, side: -1 }, { s0: 1900, side: 1 }, { s0: 3050, side: -1 },
+            { s0: 3930, side: 1 }, { s0: 4950, side: -1 },
         ],
         crossings: [
             { s: 1400, P: 135, ph: 95, from: -1 },
