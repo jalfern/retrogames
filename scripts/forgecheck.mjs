@@ -33,8 +33,8 @@ const entry = `
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import FactoryFloor from ${JSON.stringify(join(ENTRY, 'FactoryFloor.jsx'))}
-import { deriveFloor, shortName } from ${JSON.stringify(join(ENTRY, 'floor.js'))}
-export { deriveFloor, shortName }
+import { deriveFloor, shortName, applyOrder } from ${JSON.stringify(join(ENTRY, 'floor.js'))}
+export { deriveFloor, shortName, applyOrder }
 export const render = data => renderToStaticMarkup(
     <MemoryRouter><FactoryFloor floor={deriveFloor(data)} /></MemoryRouter>)
 `
@@ -53,7 +53,7 @@ await build({
     logLevel: 'silent',
 })
 const mod = await import(pathToFileURL(bundle).href)
-const { render, deriveFloor, shortName } = mod
+const { render, deriveFloor, shortName, applyOrder } = mod
 
 let pass = 0
 const fails = []
@@ -181,6 +181,34 @@ section('SHORT NAMES')
     ok(shortName('QA — thing: broken') === 'QA — thing: b…',
         `non-GAME title should truncate at 14, got "${shortName('QA — thing: broken')}"`)
     ok(shortName('') === '?', 'empty title must not render an empty cartridge')
+}
+
+// --------------------------------------------------------- drag re-order -----
+// The board's "drag a card to re-order" is backed by this pure function; the
+// DOM drag is thin and browser-only, so the algorithm is pinned here in Node.
+// Each ok() below is a lie the function must not tell: that it re-sorts a full
+// custom order back, drops the items a custom order did not name, invents a
+// phantom for a number that left the queue, or copies the list it was told to
+// leave alone.
+section('RE-ORDER (applyOrder: stored order first, rest appended, no phantoms)')
+{
+    const L = [{ number: 1 }, { number: 2 }, { number: 3 }, { number: 4 }]
+    ok(applyOrder(L, []) === L, 'an empty stored order must be the identity, not a copy')
+    ok(applyOrder(L, null) === L, 'a missing stored order must be the identity')
+    const r1 = applyOrder(L, [3, 1])
+    ok(r1.map(i => i.number).join() === '3,1,2,4',
+        `stored order [3,1] came back as [${r1.map(i => i.number)}], want 3,1,2,4 (rest in original order)`)
+    const r2 = applyOrder(L, [2])
+    ok(r2.map(i => i.number).join() === '2,1,3,4',
+        `naming one item dropped the others: [${r2.map(i => i.number)}], want 2,1,3,4`)
+    const r3 = applyOrder(L, [99, 2, 99, 1])
+    ok(r3.map(i => i.number).join() === '2,1,3,4',
+        `a number that left the queue became a phantom / a dup re-ranked: [${r3.map(i => i.number)}], want 2,1,3,4`)
+    const set = a => new Set(a.map(i => i.number))
+    ok(set(r1).size === 4 && set(r1).has(1) && set(r1).has(4), 'applyOrder changed the SET of issues (drop or phantom)')
+    ok(r1.length === 4, 'applyOrder changed the LENGTH of the queue')
+    ok(applyOrder(L, [4, 3, 2, 1]).map(i => i.number).join() === '4,3,2,1',
+        'a full custom order was re-sorted back to the natural order')
 }
 
 if (dump) {

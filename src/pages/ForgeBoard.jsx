@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
 import Telemetry from './Telemetry'
-import { deriveFloor, labelOf } from './floor'
+import { applyOrder, deriveFloor, labelOf } from './floor'
 
 const REPO = 'jalfern/retrogames'
 // ONE anonymous CDN fetch. The board used to fire ~6 api.github.com queries
@@ -18,6 +18,39 @@ const Lamp = ({ label, ok, children }) => (
         <div className="text-[11px] leading-snug">{children}</div>
     </div>
 )
+
+// Persists a user's drag order for one column. `derived` is the live list the
+// feed hands us (a fresh array each fetch); the stored order is an array of
+// issue numbers kept in localStorage. Display = the stored order applied to the
+// live list, so issues that leave the queue drop out on their own and new ones
+// slot in after the custom-ordered ones. Reads/writes are guarded so the board
+// still renders in Node (forgecheck) and in private-mode browsers.
+const useLocalOrder = (storageKey, derived) => {
+    const [order, setOrder] = useState(() => {
+        try { const raw = localStorage.getItem(storageKey); return raw ? JSON.parse(raw) : [] } catch { return [] }
+    })
+    const display = useMemo(() => applyOrder(derived, order, i => i.number), [derived, order])
+    const commit = useCallback((nums) => {
+        setOrder(nums)
+        try { localStorage.setItem(storageKey, JSON.stringify(nums)) } catch { /* private mode / quota */ }
+    }, [storageKey])
+    const move = useCallback((dragNum, targetNum) => {
+        const cur = display.map(i => i.number)
+        if (dragNum === targetNum || !cur.includes(dragNum)) return
+        const without = cur.filter(n => n !== dragNum)
+        // targetNum == null -> the drop landed in the section's padding, not on a
+        // card, so the item goes to the very end (the one spot "before a card"
+        // cannot reach).
+        if (targetNum == null) { commit([...without, dragNum]); return }
+        const idx = without.indexOf(targetNum)
+        commit(idx < 0 ? [...without, dragNum] : [...without.slice(0, idx), dragNum, ...without.slice(idx)])
+    }, [display, commit])
+    const reset = useCallback(() => {
+        try { localStorage.removeItem(storageKey) } catch { /* ignore */ }
+        setOrder([])
+    }, [storageKey])
+    return { display, move, reset, hasCustom: order.length > 0 }
+}
 
 const ForgeBoard = () => {
     const [issues, setIssues] = useState(null)
@@ -88,8 +121,28 @@ const ForgeBoard = () => {
         .sort((a, b) => (b.reactions?.total_count ?? 0) - (a.reactions?.total_count ?? 0) || a.number - b.number)
     const qaBusy = qa.some(i => labelOf(i, 'building-qa'))
 
-    const card = (i, cls) => (
+    // Drag re-order per column: the user's order is applied on top of the live
+    // list (see useLocalOrder) and remembered in localStorage. A shared ref names
+    // the issue being dragged; the click-suppress ref swallows the one spurious
+    // click some browsers fire when a drag onto a link ends, so a reorder never
+    // navigates away.
+    const queueOrder = useLocalOrder('forge.order.queue', queued)
+    const qaOrder = useLocalOrder('forge.order.qa', qa)
+    const dragRef = useRef(null)
+    const suppressRef = useRef(false)
+    const dragProps = (num, move) => ({
+        draggable: true,
+        onDragStart: e => { dragRef.current = num; suppressRef.current = true; e.dataTransfer.effectAllowed = 'move' },
+        onDragEnd: () => { dragRef.current = null },
+        onDragOver: e => e.preventDefault(),
+        onDrop: e => { e.preventDefault(); e.stopPropagation(); const d = dragRef.current; dragRef.current = null; if (d != null) move(d, num) },
+        onMouseDown: () => { suppressRef.current = false },
+        onClick: e => { if (suppressRef.current) { suppressRef.current = false; e.preventDefault() } },
+    })
+
+    const card = (i, cls, extra) => (
         <a key={i.number} href={i.html_url} target="_blank" rel="noreferrer"
+            {...extra}
             className={`border-2 p-4 block hover:opacity-80 transition-opacity ${cls}`}>
             <div className="flex justify-between items-start gap-2">
                 <span className="tracking-wider font-bold text-sm">{i.title}</span>
@@ -153,7 +206,7 @@ const ForgeBoard = () => {
                         </Lamp>
                     </div>)}
 
-                {issues && <FactoryFloor floor={floor} />}
+                {issues && <FactoryFloor floor={{ ...floor, queued: queueOrder.display }} />}
                 <Telemetry now={now} samples={samples} generated={generated} />
 
                 {pulses.length > 0 && (
@@ -192,11 +245,18 @@ const ForgeBoard = () => {
                         <p className="text-[10px] text-gray-500 mb-3 leading-relaxed">
                             ADDED FROM THIS PAGE (REPORT A BUG). TO JUMP THE QUEUE: 👍 the issue — or comment
                             <span className="text-[#ff9d4d]"> /priority </span> and the QA lane takes it next session (15–45 min).
+                            <span className="text-gray-600"> DRAG a card to re-order this board.</span>
+                            {qaOrder.hasCustom && (
+                                <button type="button" onClick={qaOrder.reset} className="ml-1 underline hover:text-[#ff9d4d]">↺ reset</button>
+                            )}
                         </p>
-                        <div className="grid md:grid-cols-2 gap-4">
-                            {qa.map(i => (
+                        <div className="grid md:grid-cols-2 gap-4"
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={e => { e.preventDefault(); const d = dragRef.current; dragRef.current = null; if (d != null) qaOrder.move(d, null) }}>
+                            {qaOrder.display.map(i => (
                                 <a key={i.number} href={i.html_url} target="_blank" rel="noreferrer"
-                                    className={`border-2 p-4 block hover:opacity-80 transition-opacity ${labelOf(i, 'building-qa') ? 'border-[#ff6600] animate-pulse' : 'border-[#ff9d4d]/60'}`}>
+                                    {...dragProps(i.number, qaOrder.move)}
+                                    className={`border-2 p-4 block hover:opacity-80 transition-opacity cursor-grab active:cursor-grabbing ${labelOf(i, 'building-qa') ? 'border-[#ff6600] animate-pulse' : 'border-[#ff9d4d]/60'}`}>
                                     <div className="flex justify-between items-start gap-2">
                                         <span className="tracking-wider font-bold text-sm">{labelOf(i, 'building-qa') ? '🔨 ' : ''}{i.title}</span>
                                         <span className="text-[10px] opacity-60 shrink-0">👍{i.reactions?.total_count ?? 0} #{i.number}</span>
@@ -210,7 +270,17 @@ const ForgeBoard = () => {
 
                 <section className="mb-10">
                     <h2 className="text-[#d4c5f9] text-sm tracking-widest mb-3">🗂 IN THE QUEUE ({queued.length})</h2>
-                    <div className="grid md:grid-cols-2 gap-4">{queued.map(i => card(i, 'border-[#d4c5f9]'))}</div>
+                    <p className="text-[10px] text-gray-600 mb-3">
+                        DRAG a card to set the build order (remembered on this browser).
+                        {queueOrder.hasCustom && (
+                            <button type="button" onClick={queueOrder.reset} className="ml-1 underline hover:text-[#d4c5f9]">↺ reset</button>
+                        )}
+                    </p>
+                    <div className="grid md:grid-cols-2 gap-4"
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={e => { e.preventDefault(); const d = dragRef.current; dragRef.current = null; if (d != null) queueOrder.move(d, null) }}>
+                        {queueOrder.display.map(i => card(i, 'border-[#d4c5f9] cursor-grab active:cursor-grabbing', dragProps(i.number, queueOrder.move)))}
+                    </div>
                 </section>
 
                 <section className="mb-10">
