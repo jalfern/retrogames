@@ -78,6 +78,9 @@ const MinesweeperGame = lazy(() => import('../games/Minesweeper'))
 // paying for a 3D engine, and the autopilot that scripts the attract patrol
 // (plus the pure flight sim the Node harness audits) rides in its chunk.
 const DogfightGame = lazy(() => import('../games/Dogfight'))
+// PAPERBOY: same lesson — the route solver that scripts the attract demo is
+// the SAME module the Node harness audits, so it rides in its own chunk.
+const PaperboyGame = lazy(() => import('../games/Paperboy'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -235,6 +238,14 @@ export const GAMES = [
         theme: 'dark',
         description: 'A fixed-wing scout over the line: altitude is ammunition and speed is the coin you pay it in. The energy model is the game — thrust minus drag minus gravity along the flight path; bank to turn (there is no rudder miracle), and below the ASI\u2019s white arc the wing quits and the nose drops itself. The synchronized Vickers is belt-fed and finite, tracers drop at 400 m/s, and the autopilot that scripts the attract demo only fires rounds its own bullet integrator PROVES will arrive. Two patrols, one honest sky: a Node harness pins trim to the closed form, the stall contract, the zoom ledger, the round count every tick, and re-fights both patrols with 20 fewer rounds and 40 fewer metres of altitude (the slack rule) \u2014 and wins anyway.',
         controls: ['\u2191/\u2193: pull and push (pulling spends AIRSPEED to buy ALTITUDE \u2014 watch the ASI)', '\u2190/\u2192: bank the wings \u2014 the bank turns you; tighter and slower turns bite harder', 'SPACE: fire the synchronized Vickers \u2014 lead the bandit, the tracers drop', 'Q/E (or the TH button): throttle. Full throttle is not always the fast way home', 'Below the stall arc the nose falls by itself \u2014 push over before the deck does it for you', '?: pause and read the instruments']
+    },
+    {
+        path: '/paperboy',
+        component: PaperboyGame,
+        label: 'PAPERBOY',
+        theme: 'light',
+        description: 'The paper round, rebuilt like an NES cartridge that never existed — pseudo-3D road, runtime art and audio, and a route the SOLVER has proven. Steer with the handlebars, pedal up and down, and hurl papers at the doorsteps: a paper only counts if you are LEANED toward it when you cross its door, and the door window is the one consumable — the harness re-proves every route at full throttle AND at a crawl with the windows tighter and zero spare papers. Carts sweep the crossings behind their noses (you cannot out-steer one), dogs lunge from the kerb past centre, and the attract demo is the autopilot\'s own proven ride, tick for tick. Three routes, 77 doors.',
+        controls: ['Arrows / D-pad: steer the handlebars; UP mashes the pedals, DOWN crawls', 'SPACE / A: throw a paper toward your lean (you must be leaned that way at the door!)', 'F / B button: hurl one down the lane — the only answer to a lunging dog', 'Cross carts only AHEAD of their nose, and hug a dog\'s own kerb after it launches', '?: pause and read the rules'],
     },
     {
         path: '/arena-archery',

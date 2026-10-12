@@ -168,6 +168,12 @@ jobs:
       # Three mutants — guess-dig, nesting check, witness drop — must die.
       - run: npm run lint:sweep
       - run: npm run sweepcheck -- --mutate
+      # Twenty-second scoped gate: PAPERBOY. The route DP shares the sim's
+      # blocked-geometry; the gate proves every door is throwable at full
+      # throttle AND at a crawl with tighter windows and zero spare papers
+      # (slack), and six mutants die. ~1 s, blocks merges.
+      - run: npm run lint:paper
+      - run: npm run papercheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -240,6 +246,10 @@ jobs:
         env:
           SHOT_CHANNEL: chromium
           DOG_LITE: "1"
+      - name: Paperboy smoke (real keys, drawn boy sits where the physics projects him, a timed throw scores, a crash pays a life)
+        run: npm run paperplay
+        env:
+          SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)
         if: failure()
         run: cat /tmp/vite.log

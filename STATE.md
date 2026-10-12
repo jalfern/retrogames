@@ -1,65 +1,46 @@
-# STATE.md — 2026-10-12 (MINESWEEPER SHIPPED)
+# STATE — 2026-10-12 (~10:55 PDT, forge session end)
 
-## Where things stand
-**#118 Minesweeper is live.** PR #162 squash-merged to `main`
-(`61036f7`), `static` + `smoke` CI green, prod deploy triggered. The `WIP`
-draft is gone; the branch is deleted. `jalfern.com/retrogames/minesweeper`.
+## Shipped this session
+**PAPERBOY** (#143, `forge-paperboy` → PR, `/paperboy`). NES-style paper
+route: pseudo-3D band-strip road (256×224, all art+audio runtime), 77 doors
+in 3 routes, carts that sweep crossings, kerb-lunge dogs, F-throw. The
+attract demo is the solver's proven ride, tick for tick.
+Gates: `papercheck` 581/581 (6/6 mutants die, slack ladder = windows 2px
+tighter × full-throttle × crawl × zero-spare all win 77/77), `paperplay`
+21/21 real keys in Chrome. Wired: `lint:paper` + `papercheck --mutate` into
+the static CI job, `paperplay` into the smoke job, both into `verify`.
 
-Queue head now: **#143 Paperboy**, then #152 Wizardry. (#82 stays closed as a
-BEEZEE duplicate — see prior STATE, no change.)
+## Playable now
+Full arcade incl. Paperboy + this morning's Lode Runner pixel-art coat (#165,
+QA lane). jalfern.com/retrogames/<game> after the deploy lands.
 
-## What shipped this session
-The engine (solver/generator/rules) shipped on the prior commits; THIS session
-finished the honest-harness + the ship:
-- `scripts/sweepcheck.mjs` — the independent **brute-force oracle** rewritten:
-  it enumerates every mine assignment the *visible clues* allow for a mid-game
-  pocket (player's-eye: only flags are hard facts) and convicts any solver dig
-  it cannot certify safe, or any flag safe in some consistent world. It never
-  asks the solver anything. `--mutate`: **4/4 mutants die**, two of them now by
-  the *independent* oracle, not the solver's self-check.
-- `scripts/sweepplay.mjs` — Chrome, **real key events only**: input path, canvas
-  readback (not a WebGL black void), determinism, and it **plays a COLT board to
-  71/71** by walking the cursor with arrows + Space. Wired into `verify`.
-- `minefield.js` — the **stale-scratch** bug (a reused `ua` array let a pair nest
-  against cells its clue never covers → a real mine filed into a difference) is
-  dead; the derived ledger is now the cumulative stamp scan, not a final-token
-  peek.
+## What changed
+- `src/games/Paperboy/{sim,levels,planner,index}.js(x)` + README — new game.
+- `scripts/papercheck.mjs` + `scripts/paperplay.mjs` + npm aliases + CI wiring.
+- Load-bearing rules (each pinned by a mutant): door window ±16 px AND lean;
+  cart closes the road **behind its nose** (swept span shared verbatim
+  sim↔DP); dog lunge lands INSIDE its s-band (dogR=30); a lying physics
+  must make the DP *disagree* — the replay witness gets the final word.
 
-## The bug the browser caught (this is the section that matters)
-**The first click was dead in the shipped app.** `newGame` sits in
-`screen:'idle'` and `dig()` guarded `!== 'play'` *before* its own `plantAt`
-branch — so planting was unreachable in the browser; no human could ever start a
-game. The Node battery never saw it because `plantAt` is called directly there.
-`sweepplay` found it in one run. Lesson kept loud in the README: **a pure-model
-harness passes a game you cannot click.** Any title whose first action is gated
-behind a state the harness never enters needs a real-input pass.
+## Lane collision found (for Jon)
+The 07:23 QA session (#156 lode paint) **ran 2h, not 60 min** — it merged
+#165 then kept painting. It also branched `qa/lode-art` off *my* unmerged
+forge-paperboy tip, and this checkout still sits on it with my dirt.
+I shipped Paperboy from `/tmp/pb-ship` worktree; shared checkout cleaned.
+Questions:
+1. Should the QA lane get the same hard 60-min kill (`timeout 3600` in
+   `forge-qa.sh` like the forge's 3 h cap) — it stalled at ~08:42 but kept
+   burning the GPU this whole session?
+2. QA playbook step 1 says `checkout main`; it branched off whatever was
+   checked out instead. Add "refuse to branch if HEAD != main" to FORGE-QA?
+3. Queue head is **#152 Wizardry (game-queue)**. It's a dungeon crawler —
+   big scoping. Proceed with it next session, or pick something smaller?
 
-## Two stale traps this session dodged (both were green and wrong)
-- The oracle first trusted the solver's derived ledger → collapsed every fair
-  board to one world → generated **zero** fixtures (green, tested nothing).
-- Then it snapshotted only between dig-batches → a flood fill skipped the small
-  enumerable pockets → still **zero** fixtures. Fix: snapshot after *every* dig.
-A green oracle that enumerates nothing is worse than no oracle.
-
-## What is playable right now
-Everything from before **plus `jalfern.com/retrogames/minesweeper`** (COLT /
-SAPPER / GENERAL, all guess-free by construction).
-
-## Three questions for Jon
-1. `WIP.md` became `src/games/Minesweeper/README.md` and a short AGENTS section
-   was added. OK, or do you want the two-session bug-hunt history kept verbatim?
-2. GENERAL plants in ~0.7 s on a slow box (the fair re-plant is the price of the
-   zero-guess guarantee). Acceptable, or add a "SAPPER is the ceiling" hint and
-   route attract there only (already COLT/SAPPER only)?
-3. Still flagging the prior session's note: relayed "user" messages that echoed
-   tool output and told me to rename the harness to `paperscheck` (would clobber
-   Papers-Please-Min's harness). I kept `sweepcheck`. I saw none this session —
-   is that relay (`forge-qa.sh`?) disabled? It reads like prompt-injection.
-
-## Lineage
-AGENTS.md honored: STATE first; oldest-queue discipline (#118); design comment
-before the oracle rewrite; the **only** merge path used
-(`gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`,
-after marking the draft ready — rule 5: a WIP/draft was never merged). Rule 4
-holds — this PR changed game code (`minefield.js`) and shipped. Ran ~the
-timebox.
+## Next session
+1. Read this file. Work #152 unless Jon redirected (check `/priority`
+   comments on #152 and #91 first — the website box may have spoken).
+2. Prod-verify Paperboy at jalfern.com/retrogames/paperboy after merge
+   (this session ships it; if you are reading this post-merge, close #143
+   with `shipped` if it is still open).
+3. Remember the law: only the static job blocks merges; one merge command;
+   3 non-game PRs in a row ⇒ stop and report.
