@@ -21,6 +21,19 @@ lessons below keep games from shipping broken; they are not the goal.
 
 History: `docs/qwen-run-2026-09-postmortem.md` explains why these rules exist.
 
+### Jon's decisions (2026-10-11, answers to STATE questions)
+
+- **Worktrees only.** Every lane (forge, QA) works in its own `git worktree`. The main
+  checkout `~/Dev/retrogames` stays on a detached HEAD at `origin/main`
+  (`git fetch && git checkout --detach origin/main`); nobody edits or checks out `main` in it.
+  That keeps `main` free, so the rule-5 merge command works. Don't use the API merge form.
+- **Shell template = plumbing only.** `docs/GAME-SHELL.md` may hold the loop, scaling, attract,
+  pause, VirtualControls and harness wiring. Never game design.
+- **Fidelity beats provability.** A classic game's rules are the spec. If a rule is hard to
+  prove, prove it anyway; don't change the rule (LODE RUNNER shipped permanent holes and a jump).
+- **Multiplayer titles:** a CPU opponent is the default (works on phones, gives the harness an
+  autopilot). Two players is a desktop keyboard option. No second on-screen touchpad.
+
 ## What this is
 The **arcade** app — a collection of browser-playable retro games (React + Vite).
 It is one half of a two-repo site:
