@@ -63,7 +63,7 @@ function drawTile(ctx, ch, x, y, kind, t, c, r) {
 
 function drawLink(ctx, s) {
     const x = Math.round(s.px + 3); const y = Math.round(s.py + 1)
-    if (s.dieT) { ctx.globalAlpha = s.dieT % 8 < 4 ? 1 : 0.3 }
+    if (s.dieT || s.inv) { ctx.globalAlpha = (s.dieT ? s.dieT : s.tick) % 8 < 4 ? 1 : 0.3 }
     ctx.fillStyle = '#00a800'; ctx.fillRect(x, y + 6, 10, 9)
     ctx.fillStyle = '#f8b800'; ctx.fillRect(x + 1, y, 8, 6)
     ctx.fillStyle = '#00a800'; ctx.fillRect(x - 1, y - 3, 12, 4)
@@ -257,7 +257,7 @@ export default function Zelda() {
             for (const e of g.enemies) drawEnemy(c, e, t)
             for (const q of g.shots) drawShot(c, q)
             if (g.bomb) { c.fillStyle = t % 12 < 6 ? '#e8e8e8' : '#a0a0a0'; c.beginPath(); c.arc(g.bomb.x, g.bomb.y, 5, 0, 7); c.fill(); c.fillStyle = '#f85800'; c.fillRect(g.bomb.x - 1, g.bomb.y - 8, 2, 3) }
-            if (g.graceDir === null && st.screen === 'play') drawLink(c, g)
+            if (st.screen === 'play') drawLink(c, g)
             if (g.talk) {
                 c.fillStyle = '#f8d800'; c.font = 'bold 9px monospace'
                 c.fillText(g.talk.lines[Math.min(g.talk.i, g.talk.lines.length - 1)] || '', 24, PLAY_H - 20)

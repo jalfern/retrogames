@@ -56,12 +56,38 @@ const OK = (scrId, c, rl) => {
     const ch = at(scrDef, c, rl)
     return !isWall(ch, scrDef.kind) && !'CSDOF'.includes(ch || 'X')
 }
+// Link's face (#f8b800) is painted by drawLink and by nothing else in the
+// palette — so counting it inside the box the sim puts him in is the only
+// check that grades "I can see my character", not just "the sim moved".
+// (An invisible player passed every coordinate-only check in v1 of this
+// script while Jon died to octoroks he could not see.) Polls through the
+// legitimate post-hit invincibility flicker (0.3 alpha on blink frames).
+const faceAt = async (tries = 20) => {
+    for (let k = 0; k < tries; k++) {
+        const n = await page.evaluate(() => {
+            const c = document.querySelector('canvas')
+            const g = window.__zeldaTest.game()
+            const x = Math.max(0, Math.round(g.px + 1))
+            const y = Math.max(0, Math.round(g.py - 3))
+            const d = c.getContext('2d').getImageData(x, y, 16, 22).data
+            let n = 0
+            for (let i = 0; i < d.length; i += 4) if (d[i] === 0xf8 && d[i + 1] === 0xb8 && d[i + 2] === 0) n++
+            return n
+        })
+        if (n >= 8) return n
+        await page.waitForTimeout(50)
+    }
+    return 0
+}
+
 const KEY = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }
 const D = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
 
 await page.keyboard.press('Space')
 await page.waitForTimeout(400)
 r.check('a real key leaves attract', (await st()).screen === 'play')
+
+r.check(`Link is ON SCREEN — his face pixels sit where the sim puts him (${await faceAt()} px)`, (await faceAt()) >= 8)
 
 // Plan once from the live spawn cell: the longest straight run of open
 // cells (walls, caves, doors and shops are not walkable targets).
@@ -88,7 +114,9 @@ for (let i = 1; i <= Math.min(run, 4); i++) {
     }
     await page.keyboard.up(KEY[dir])
     const s = await st()
+    const face = await faceAt()
     r.check(`cell ${i}: a held ${dir} walks onto the open cell (${tc},${tr})`, arrived && s.screen === 'play', `at ${cell(s)} hearts ${s.hearts}`)
+    r.check(`cell ${i}: Link is VISIBLE there (${face} face px at his sim coords)`, arrived && face >= 8)
     if (!arrived) break
 }
 
