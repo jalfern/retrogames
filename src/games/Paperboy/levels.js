@@ -75,26 +75,33 @@ for (const st of STAGES) st.houseCount = st.houses.replace(/[^LR]/g, '').length
 
 // Renderer palettes — every colour the painter uses lives here so a stage is
 // one honest object, and the pixel probes in paperplay can name what they see.
+// Road and grass are FLAT one colour each: the 1989 original is a plain grey
+// road and a plain green field, and the alternating-band look was the bug
+// (#186). paperplay counts band edges down the road/grass columns and fails
+// on more than two.
 export const PALETTES = {
     day: {
-        skyTop: '#2f7fd6', skyBot: '#cfeaff', sun: '#fff3a8', hill: '#2c7a3d',
-        grass: ['#43a94c', '#3c9e46'], road: ['#5c6069', '#565a63'], stripe: '#f2df8f',
+        skyTop: '#2f7fd6', skyBot: '#cfeaff', sun: '#fff3a8', hill: '#2c7a3d', hillFar: '#69a871',
+        grass: '#43a94c', road: '#5c6069', stripe: '#f2df8f', edge: '#e8e4d8',
         walk: '#cfc9bb', kerb: '#a59f91', tree: '#1e6b33', trunk: '#6a4a2c',
         wall: ['#d8b26c', '#c8685c', '#b0c4d8'], wall2: ['#b58f4e', '#a8564c', '#8fa3ba'],
-        roof: '#7a3b3b', door: '#5a3a22', win: '#eaf4ff', box: '#3f6fd8', cart: '#c94f4f',
+        roof: '#7a3b3b', door: '#5a3a22', win: '#eaf4ff', box: '#b83232', cart: '#c94f4f',
+        cloud: '#ffffff', haze: 'rgba(207,234,255,0.55)',
     },
     dusk: {
-        skyTop: '#2b2050', skyBot: '#ff9d5c', sun: '#ffd27a', hill: '#26304d',
-        grass: ['#2f6b3c', '#2a6036'], road: ['#484c58', '#434751'], stripe: '#e8cf8a',
+        skyTop: '#2b2050', skyBot: '#ff9d5c', sun: '#ffd27a', hill: '#26304d', hillFar: '#41355f',
+        grass: '#2f6b3c', road: '#484c58', stripe: '#e8cf8a', edge: '#cfc4ae',
         walk: '#8f887b', kerb: '#6e675c', tree: '#17442a', trunk: '#4c3420',
         wall: ['#a8885a', '#9c5c52', '#8798ac'], wall2: ['#8a6d46', '#7f4a42', '#6d7c8e'],
-        roof: '#572e33', door: '#402818', win: '#ffd98a', box: '#2f55a0', cart: '#b04040',
+        roof: '#572e33', door: '#402818', win: '#ffd98a', box: '#93303a', cart: '#b04040',
+        cloud: '#ffd9c2', haze: 'rgba(255,157,92,0.5)',
     },
     night: {
-        skyTop: '#05060f', skyBot: '#1c2650', sun: '#dfe6ff', hill: '#0d1226',
-        grass: ['#173222', '#142c1e'], road: ['#2e313b', '#2a2d36'], stripe: '#b3ab72',
+        skyTop: '#05060f', skyBot: '#1c2650', sun: '#dfe6ff', hill: '#0d1226', hillFar: '#131c38',
+        grass: '#173222', road: '#2e313b', stripe: '#b3ab72', edge: '#8d8876',
         walk: '#5c584e', kerb: '#45423a', tree: '#0e2c18', trunk: '#33241a',
         wall: ['#6b5a3e', '#64413c', '#4e5c70'], wall2: ['#57482f', '#513531', '#404c5c'],
-        roof: '#38242b', door: '#2c1c12', win: '#ffe9a0', box: '#25407c', cart: '#8f3535',
+        roof: '#38242b', door: '#2c1c12', win: '#ffe9a0', box: '#5c2226', cart: '#8f3535',
+        cloud: '#7d86ad', haze: 'rgba(28,38,80,0.55)',
     },
 }

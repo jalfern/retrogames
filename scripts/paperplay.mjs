@@ -4,6 +4,8 @@
 //   npm run paperplay     (needs `npm run dev`)
 //
 //   1. THE DEMO IS ALIVE — the proven route plays itself and delivers.
+//   1b. THE LOOK OF 1989 (#186) — road and grass stay flat (the two-tone
+//       banding fails), and the bike is rear-view (taller than it is wide).
 //   2. THE INPUT PATH — held arrows steer, and the drawn boy is painted at
 //      the exact column proj(x) says he is (projection lies die here).
 //   3. THE DOOR WINDOW IN REAL TIME — wait for s to enter the window, one
@@ -15,6 +17,13 @@
 // The slack rule, route audit and determinism live in papercheck (Node).
 
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { STAGES, PALETTES } from '../src/games/Paperboy/levels.js'
+
+const hexToRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+// the attract demo always rides stage 0, so its theme is the one graded below
+const ART_P = PALETTES[STAGES[0].theme]
+const ROAD_RGB = hexToRgb(ART_P.road)
+const GRASS_RGB = hexToRgb(ART_P.grass)
 
 const URL = process.env.PB_URL || 'http://localhost:5173/retrogames/paperboy'
 await requireDevServer(URL)
@@ -74,6 +83,81 @@ await wait(900)
     }
     r.check('the proven demo is live (ticks advance)', tickGrew, `tick ${t0} -> ${(await probe()).tick}`)
     r.check('the demo actually delivers papers', delivered > 0, `delivered=${delivered}`)
+}
+
+// ---- the look of 1989, graded in pixels (#186) ----
+// Road and grass must be FLAT: a column of asphalt (resp. grass) with more
+// than two luminance edges (>=5/255) is the old two-tone banding — its steps
+// are 6.1 (road) and 9.3 (grass) — and it dies here. Samples are kept only
+// when FULLY opaque (a <255 alpha is a row-tile edge, never paint) AND within
+// 24 RGB-distance of the palette's own road/grass colour (that skips the
+// centre-dash AA blends and the crossing band). The spread of the kept
+// samples is reported with the failure so a renderer quirk reads as a number.
+// The boy must be rear-view: his sprite mask taller than it is wide.
+{
+    const art = await page.evaluate(([roadC, grassC]) => {
+        const cv = document.querySelector('canvas[data-pb-stage]')
+        const g = cv.getContext('2d')
+        const lumOf = (R, Gc, B) => 0.299 * R + 0.587 * Gc + 0.114 * B
+        const near = ([R, Gc, B], c) => Math.hypot(R - c[0], Gc - c[1], B - c[2]) <= 24
+        // spread between the 10th and 90th percentiles: immune to the odd
+        // mailbox/dash pixel crossing the column, while a 50/50 two-tone
+        // banding (the thing this gate exists to kill) still shows in full.
+        const spreadPct = (vals, lo, hi) => {
+            if (vals.length < 4) return 0
+            const s = [...vals].sort((a, b) => a - b)
+            return s[Math.min(s.length - 1, Math.ceil(s.length * hi))] - s[Math.floor(s.length * lo)]
+        }
+        const grade = (vals) => {
+            let edges = 0
+            for (let i = 1; i < vals.length; i++) if (Math.abs(vals[i] - vals[i - 1]) >= 5) edges++
+            return { edges, spread: +spreadPct(vals, 0.1, 0.9).toFixed(1), n: vals.length }
+        }
+        const col = (x, y0, h, c) => {
+            const d = g.getImageData(x, y0, 1, h).data
+            const out = []
+            for (let i = 0; i < d.length; i += 4) {
+                if (d[i + 3] < 255) continue
+                const px = [d[i], d[i + 1], d[i + 2]]
+                if (near(px, c)) out.push(lumOf(...px))
+            }
+            return grade(out)
+        }
+        // road: centre column, above the boy (y 186) so no sprite pixel in it
+        const road = col(128, 96, 64, roadC)
+        // grass: a clean left column (no house, tree or cart ever reaches x=8)
+        const grass = col(8, 96, 124, grassC)
+        // the boy's mask: his own colours inside a 24x28 box around the anchor
+        const b = window.__paperTest.probe().boy
+        const d2 = g.getImageData(Math.round(b.bx) - 12, Math.round(b.by) - 24, 24, 28).data
+        let minX = 99, maxX = -1, minY = 99, maxY = -1
+        for (let y = 0; y < 28; y++) for (let x = 0; x < 24; x++) {
+            const i = (y * 24 + x) * 4
+            const R = d2[i], Gc = d2[i + 1], B = d2[i + 2]
+            const is = (t, tol = 16) => Math.abs(R - t[0]) <= tol && Math.abs(Gc - t[1]) <= tol && Math.abs(B - t[2]) <= tol
+            if (is([232, 68, 58]) || is([46, 111, 216]) || is([232, 176, 136]) || is([242, 242, 242]) || is([28, 32, 39]) || is([245, 242, 232])) {
+                minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+                minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+            }
+        }
+        return {
+            road, grass,
+            boy: maxX > 0 ? { w: maxX - minX + 1, h: maxY - minY + 1 } : null,
+        }
+    }, [ROAD_RGB, GRASS_RGB])
+    // flat paint: no sustained level (spread) and no alternation (edges).
+    // Threshold 5 sits under the old two-tone steps (6.1 road, 9.3 grass)
+    // and above renderer rounding of fully-opaque pixels (a couple of lum).
+    const flat = (c) => c.edges < 3 && c.spread <= 5
+    r.check('the road reads as asphalt, not zebra (no band stripes)',
+        flat(art.road) && art.road.n >= 12,
+        `${art.road.edges} band edges, spread ${art.road.spread} on ${art.road.n} road samples`)
+    r.check('the grass reads as grass, not stripes',
+        flat(art.grass) && art.grass.n >= 40,
+        `${art.grass.edges} band edges, spread ${art.grass.spread} on ${art.grass.n} grass samples`)
+    const ratio = art.boy ? art.boy.h / art.boy.w : 0
+    r.check('the bike is rear-view (taller than it is wide)', art.boy && ratio >= 1.2,
+        art.boy ? `${art.boy.w}x${art.boy.h} (h/w ${ratio.toFixed(2)})` : 'no boy pixels found')
 }
 
 // ---- a real key leaves attract ----

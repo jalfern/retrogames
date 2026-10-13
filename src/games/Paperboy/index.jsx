@@ -35,7 +35,11 @@ const proj = (x, dy) => {
     return [128 + x * k, yAt(t), k]
 }
 
-const DASHES = Array.from({ length: 13 }, (_, i) => [((i * 67) % 240) + 6, 40 + ((i * 31) % 22), 0.25 + ((i * 7) % 10) / 22])
+// Blocky pixel clouds (the original's sky has puffs, not smears). Each is a
+// few rects; they drift at two parallax speeds and wrap the canvas.
+const CLOUDS = Array.from({ length: 5 }, (_, i) => ({
+    x: (i * 61 + 14) % 256, y: 10 + ((i * 29) % 36), s: 0.6 + ((i * 3) % 4) / 5, v: i % 2 ? 0.006 : 0.003,
+}))
 
 const PaperboyGame = () => {
     const stageRef = useRef(null)
@@ -146,37 +150,56 @@ const PaperboyGame = () => {
             const sy = shake > 0 ? ((performance.now() % 5) - 2) * shake * 0.4 : 0
             if (shake > 0) { shake *= 0.86; if (shake < 0.4) shake = 0 }
 
-            // sky + skyline
+            // sky, sun, clouds, treeline
             const grad = ctx.createLinearGradient(0, 0, 0, Y0 + 8)
             grad.addColorStop(0, P.skyTop); grad.addColorStop(1, P.skyBot)
             ctx.fillStyle = grad; ctx.fillRect(0, 0, W, Y0 + 8)
             ctx.fillStyle = P.sun
             ctx.beginPath(); ctx.arc(205, 26, 11, 0, Math.PI * 2); ctx.fill()
+            ctx.fillStyle = P.cloud
+            ctx.globalAlpha = 0.9
+            for (const c of CLOUDS) {
+                const cx = ((c.x - gs.s * c.v) % (W + 60) + W + 60) % (W + 60) - 30
+                ctx.fillRect(cx, c.y + 4 * c.s, 26 * c.s, 5 * c.s)
+                ctx.fillRect(cx + 4 * c.s, c.y, 11 * c.s, 6 * c.s)
+                ctx.fillRect(cx + 12 * c.s, c.y + c.s, 12 * c.s, 5 * c.s)
+            }
+            ctx.globalAlpha = 1
+            // treeline: a hazed far band and a dark front band, gently bumpy
+            ctx.fillStyle = P.hillFar
+            ctx.beginPath(); ctx.moveTo(0, Y0 + 8)
+            for (let x = 0; x <= W; x += 8) ctx.lineTo(x, Y0 + 2 - Math.sin(x * 0.11) * 2.4 - Math.sin(x * 0.031 + 2.1) * 1.6)
+            ctx.lineTo(W, Y0 + 8); ctx.closePath(); ctx.fill()
             ctx.fillStyle = P.hill
             ctx.beginPath(); ctx.moveTo(0, Y0 + 8)
-            for (let x = 0; x <= W; x += 16) ctx.lineTo(x, Y0 + 2 - Math.abs(Math.sin(x * 0.09) * 12 + Math.sin(x * 0.37) * 5))
+            for (let x = 0; x <= W; x += 8) ctx.lineTo(x, Y0 + 4 - Math.sin(x * 0.05 + 1.7) * 3.2 - Math.sin(x * 0.17) * 1.4)
             ctx.lineTo(W, Y0 + 8); ctx.closePath(); ctx.fill()
-            ctx.fillStyle = 'rgba(255,255,255,0.5)'
-            for (const [cx, cy, o] of DASHES) { ctx.globalAlpha = o * 0.5; ctx.fillRect((cx - gs.s * 0.004 + W) % W, cy, 22, 4) }
-            ctx.globalAlpha = 1
 
             ctx.save(); ctx.translate(sx, sy)
             // road strip: far to near quads (extend past the boy so the
-            // foreground is road, not a void at the canvas foot)
+            // foreground is road, not a void at the canvas foot). Flat grass,
+            // flat path, flat asphalt like the 1989 original — the boundaries
+            // are thin LINE strips, not alternating bands (#186).
             for (let dy = LOOK; dy > -34; dy -= 4) {
                 const rA = projRoad(dy), rB = projRoad(dy - 4)
                 const y0r = rA.y, k0 = rA.k, y1r = rB.y, k1 = rB.k
-                const band = Math.floor((gs.s + dy) / 24) % 2
-                ctx.fillStyle = band ? P.grass[0] : P.grass[1]
+                ctx.fillStyle = P.grass
                 ctx.fillRect(0, y1r, W, y0r - y1r + 1)
-                quad(y0r, 128 - 66 * k0, 128 + 66 * k0, y1r, 128 - 66 * k1, 128 + 66 * k1, band ? P.walk : P.kerb)
-                quad(y0r, 128 - 53 * k0, 128 + 53 * k0, y1r, 128 - 53 * k1, 128 + 53 * k1, band ? P.road[0] : P.road[1])
+                quad(y0r, 128 - 66 * k0, 128 + 66 * k0, y1r, 128 - 66 * k1, 128 + 66 * k1, P.walk)
+                quad(y0r, 128 - 56 * k0, 128 + 56 * k0, y1r, 128 - 56 * k1, 128 + 56 * k1, P.kerb)
+                quad(y0r, 128 - 54 * k0, 128 + 54 * k0, y1r, 128 - 54 * k1, 128 + 54 * k1, P.road)
+                quad(y0r, 128 - 51 * k0, 128 - 49.5 * k0, y1r, 128 - 51 * k1, 128 - 49.5 * k1, P.edge)
+                quad(y0r, 128 + 49.5 * k0, 128 + 51 * k0, y1r, 128 + 49.5 * k1, 128 + 51 * k1, P.edge)
                 if (Math.floor((gs.s + dy) / 40) % 2 === 0) quad(y0r, 128 - 1.2 * k0, 128 + 1.2 * k0, y1r, 128 - 1.2 * k1, 128 + 1.2 * k1, P.stripe)
                 for (const c of STAGES[gs.si].crossings) {
                     const cd = c.s - gs.s
                     if (dy - 4 < cd && cd <= dy) quad(y0r, 128 - 70 * k0, 128 + 70 * k0, y1r, 128 - 70 * k1, 128 + 70 * k1, '#8f8f96')
                 }
             }
+            // aerial haze where the road meets the treeline
+            const hz = ctx.createLinearGradient(0, Y0, 0, Y0 + 16)
+            hz.addColorStop(0, P.haze); hz.addColorStop(1, 'rgba(255,255,255,0)')
+            ctx.fillStyle = hz; ctx.fillRect(0, Y0, W, 16)
             // houses + props (far to near so nearer paints over)
             const props = []
             const hsList = gs.houses
@@ -231,10 +254,17 @@ const PaperboyGame = () => {
         }
         const projRoad = (dy) => ({ y: yAt(Math.min(1, dy / LOOK)), k: kAt(Math.min(1, dy / LOOK)) * Z })
 
+        const shadow = (cx, cy, rx, ry) => {
+            ctx.globalAlpha = 0.22; ctx.fillStyle = '#000'
+            ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill()
+            ctx.globalAlpha = 1
+        }
+
         const drawProp = (p, P) => {
             if (p.kind === 'house') {
                 const [hx, hy, k] = proj(p.side * 78, p.dy)
                 const w = 34 * k, hh = 26 * k
+                shadow(hx, hy + 1 * k, w * 0.58, 3 * k)
                 const pal = P.wall[Math.abs(Math.round(p.s / 60)) % P.wall.length]
                 const pal2 = P.wall2[Math.abs(Math.round(p.s / 60)) % P.wall2.length]
                 ctx.fillStyle = pal
@@ -248,20 +278,31 @@ const PaperboyGame = () => {
                 ctx.fillStyle = P.win
                 ctx.fillRect(hx - w * 0.32, hy - hh * 0.75, 5 * k, 5 * k)
                 ctx.fillRect(hx + w * 0.12, hy - hh * 0.75, 5 * k, 5 * k)
-                if (p.done) { ctx.fillStyle = '#5ddc6f'; ctx.fillRect(hx - 2, hy - hh - 15 * k, 4, 4) }
+                // the mailbox sits between the door and the road; its flag
+                // rises the moment the doorstep is delivered
+                const [mx, my, mk] = proj(p.side * 68, p.dy)
+                ctx.fillStyle = P.door
+                ctx.fillRect(mx - mk, my - 9 * mk, 2 * mk, 9 * mk)
+                ctx.fillStyle = P.box
+                ctx.fillRect(mx - 3.5 * mk, my - 13 * mk, 7 * mk, 5 * mk)
+                if (p.done) { ctx.fillStyle = '#e8443a'; ctx.fillRect(mx + 2.5 * mk, my - 19 * mk, 1.5 * mk, 6 * mk) }
+                else { ctx.fillStyle = P.kerb; ctx.fillRect(mx + 2.5 * mk, my - 13.5 * mk, 3.5 * mk, 1.5 * mk) }
             } else if (p.kind === 'tree') {
                 const [tx, ty, k] = proj(p.side * 66, p.dy)
+                shadow(tx, ty + 1 * k, 8 * k, 2.4 * k)
                 ctx.fillStyle = P.trunk; ctx.fillRect(tx - 2 * k, ty - 16 * k, 4 * k, 16 * k)
                 ctx.fillStyle = P.tree
                 ctx.beginPath(); ctx.arc(tx, ty - 20 * k, 10 * k, 0, Math.PI * 2); ctx.fill()
             } else if (p.kind === 'crate') {
                 const [cx, cy, k] = proj(p.x, p.dy)
+                shadow(cx, cy + 1 * k, (p.w + 4) * k, 2.6 * k)
                 ctx.fillStyle = '#8a8f98'
                 ctx.fillRect(cx - (p.w + 4) * k, cy - 11 * k, (p.w + 4) * 2 * k, 11 * k)
                 ctx.fillStyle = '#5a5f68'
                 ctx.fillRect(cx - p.w * k, cy - 4 * k, p.w * 2 * k, 3 * k)
             } else if (p.kind === 'dog') {
                 const [dx, dy, k] = proj(p.x, p.dy)
+                shadow(dx, dy + 0.5 * k, 8 * k, 2 * k)
                 ctx.fillStyle = '#a8712e'
                 ctx.fillRect(dx - 7 * k, dy - 6 * k, 14 * k, 5 * k)
                 ctx.fillRect(dx + (p.x >= 0 ? 5 : -9) * k, dy - 9 * k, 4 * k, 4 * k)
@@ -270,6 +311,7 @@ const PaperboyGame = () => {
                 ctx.fillRect(dx + 4 * k, dy - 1 * k, 2 * k, 2 * k)
             } else if (p.kind === 'cart') {
                 const [cx, cy, k] = proj(p.x, p.dy)
+                shadow(cx, cy + 1 * k, 14 * k, 3 * k)
                 ctx.fillStyle = P.cart
                 ctx.fillRect(cx - 14 * k, cy - 9 * k, 28 * k, 8 * k)
                 ctx.fillStyle = '#20242c'
@@ -279,26 +321,38 @@ const PaperboyGame = () => {
             }
         }
 
+        // The original rides from BEHIND: one wheel, the rider's back, the
+        // handlebars hidden behind him. The profile view was the "bike is
+        // sideways" bug (#186). Lean tilts the whole figure; the rider bobs
+        // at pedal rate while the wheel stays planted.
         const drawBoy = (bx, by, lean, hurt) => {
             ctx.save(); ctx.translate(bx, by)
             if (hurt) ctx.rotate(Math.sin(gs.tick / 2) * 0.18)
             else ctx.rotate(lean * 0.12)
-            // wheels
+            shadow(0, 1, 7, 2)
+            const bob = Math.sin(gs.tick * 0.09 * (gs.pedal + 1)) * 0.7
+            // rear wheel, seen from behind: a vertical sliver
             ctx.fillStyle = '#1c2027'
-            ctx.beginPath(); ctx.arc(-6, 0, 4.5, 0, Math.PI * 2); ctx.arc(7, 0, 4.5, 0, Math.PI * 2); ctx.fill()
+            ctx.fillRect(-2, -8, 4, 9)
             ctx.fillStyle = '#c9ced6'
-            const spin = (gs.tick * (PEDAL[gs.pedal] || 0) * 0.5) % 6.28
-            for (const wx of [-6, 7]) {
-                ctx.fillRect(wx - 0.5 + Math.cos(spin) * 2.4, -0.5 + Math.sin(spin) * 2.4, 1, 1)
-                ctx.fillRect(wx - 0.5 - Math.cos(spin) * 2.4, -0.5 - Math.sin(spin) * 2.4, 1, 1)
-            }
-            ctx.strokeStyle = '#e8443a'; ctx.lineWidth = 2
-            ctx.beginPath(); ctx.moveTo(-5, -1); ctx.lineTo(0, -7); ctx.lineTo(7, -1); ctx.moveTo(0, -7); ctx.lineTo(4, -9); ctx.stroke()
-            // rider
-            ctx.fillStyle = '#2e6fd8'; ctx.fillRect(-2, -14, 5, 7)
-            ctx.fillStyle = '#e8b088'; ctx.fillRect(-1, -18, 4, 4)
-            ctx.fillStyle = '#f2f2f2'; ctx.fillRect(-2, -19, 6, 2)
-            if (gs.papers > 0) { ctx.fillStyle = '#f5f2e8'; ctx.fillRect(-6, -12, 4, 3) }
+            ctx.fillRect(-1, -6, 2, 3)
+            // red frame: fender plus the forks working out to each side
+            ctx.fillStyle = '#e8443a'
+            ctx.fillRect(-4.5, -9, 9, 2)
+            ctx.fillRect(-5, -7, 2, 5)
+            ctx.fillRect(3, -7, 2, 5)
+            // rider, back view
+            ctx.fillStyle = '#2e6fd8'
+            ctx.fillRect(-4, -16 + bob, 8, 9)
+            ctx.fillRect(-6, -15 + bob, 2, 6)
+            ctx.fillRect(4, -15 + bob, 2, 6)
+            ctx.fillStyle = '#e8b088'
+            ctx.fillRect(-6, -10 + bob, 2, 2)
+            ctx.fillRect(4, -10 + bob, 2, 2)
+            ctx.fillRect(-3, -20 + bob, 6, 5)
+            ctx.fillStyle = '#e8443a'
+            ctx.fillRect(-3, -22 + bob, 6, 3)
+            if (gs.papers > 0) { ctx.fillStyle = '#f5f2e8'; ctx.fillRect(-8, -13 + bob, 4, 4) }
             ctx.restore()
         }
 

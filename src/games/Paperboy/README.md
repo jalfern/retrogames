@@ -50,7 +50,14 @@ to believe a DP the sim doesn't honour.
 - `scripts/papercheck.mjs` — route audit (a window a crate/crossing would
   steal is a build failure), engine pins, the proven run, the slack ladder,
   determinism, six mutants. `scripts/paperplay.mjs` — Chrome, real keys only:
-  timed throws, lean gate, crash ledger, death, restart, pixels vs physics.
+  timed throws, lean gate, crash ledger, death, restart, pixels vs physics —
+   and the look of 1989, graded in pixels (#186): a column of fully-opaque
+   road/grass pixels must stay flat — 3+ luminance edges (Δ≥5) or a 10th–90th
+   percentile spread above 5 is the old two-tone banding (its steps are 6.1
+   and 9.3; the threshold sits under both and above renderer rounding), and
+   it fails. The percentile spread is what keeps a mailbox crossing the
+   sample column from reading as banding. The boy's sprite mask must be
+   taller than it is wide (the profile "bike is sideways" fails).
 
 ## Knobs worth knowing
 
