@@ -124,7 +124,11 @@ const ExcitebikeGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim({ g: keys.g, b: keys.b, j: keys.j })
+            // One arrow, two truths: on the ground Up is the GAS and Down the
+            // BRAKE; airborne the SAME arrows are the rider's weight — the sim
+            // only reads u/d when g.air, so sending both is how the bike leans
+            // without needing a second set of keys.
+            doSim({ g: keys.g, b: keys.b, j: keys.j, u: keys.g, d: keys.b })
         }
 
         const music = () => {
@@ -373,6 +377,7 @@ const ExcitebikeGame = () => {
                         ...(opts.stall !== undefined && { stall: opts.stall }),
                         ...(opts.crash !== undefined && { crash: opts.crash }),
                         ...(opts.heat !== undefined && { heat: opts.heat }),
+                        ...(opts.clock !== undefined && { clock: opts.clock }),
                     })
                     if (opts.alt === undefined) gs.alt = groundY(track(gs.track).ground, gs.x)
                     return true

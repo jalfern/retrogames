@@ -195,6 +195,15 @@ jobs:
       # with no missiles at all, and with one fewer life; six mutants die.
       - run: npm run lint:hunter
       - run: npm run huntercheck -- --mutate
+      # Twenty-sixth scoped gate: EXCITEBIKE. The carved heightmap is audited for
+      # jump-recoverability (every ramp a rider can actually land), the whole race
+      # ledger is recomputed from the events the machine booked, the slack rule
+      # re-wins with a colder engine budget, and nine mutants — boost, water stall,
+      # the immortal engine, a free nose-down landing, frictionless mud, an
+      # un-feathery brake, the mash-out, a free over-rotation and a gate that never
+      # lifts — must all die. ~20 s in Node, blocks merges.
+      - run: npm run lint:excite
+      - run: npm run excitecheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -273,6 +282,10 @@ jobs:
           SHOT_CHANNEL: chromium
       - name: Wizardry smoke (real keys walk a seeded maze, the view matches the grid pixel-for-pixel, a stepped-on ambush fights back, the stairs answer SPACE)
         run: npm run wizplay
+        env:
+          SHOT_CHANNEL: chromium
+      - name: Excitebike smoke (real keys: pixels sit where the heightmap projects the bike, an air is won by the lean, the engine boils and a stalled bike pumps out)
+        run: npm run exciteplay
         env:
           SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)
