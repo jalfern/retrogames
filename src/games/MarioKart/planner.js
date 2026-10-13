@@ -43,6 +43,10 @@ export function decide(g) {
         }
     }
     lat = Math.max(-130, Math.min(130, lat))
+    // same low-speed cap as the CPUs: a spin to v~0 in a corner must not
+    // ask the player's phantom thumb for a sideways bearing it cannot grip
+    const arcPx = look * (T.len / T.N)
+    lat = Math.max(-arcPx * 0.35, Math.min(arcPx * 0.35, lat))
     const tx = t.x + Math.cos(t.a + Math.PI / 2) * lat
     const ty = t.y + Math.sin(t.a + Math.PI / 2) * lat
     const da = wrap(Math.atan2(ty - k.y, tx - k.x) - k.a)
@@ -50,7 +54,11 @@ export function decide(g) {
     if (da > 0.015) inp.r = true
 
     const vmax = Math.min(9.2, 0.0465 / Math.max(kmax, 8e-4))
-    if (k.v > vmax * 1.25) { inp.d = true; inp.u = false }
+    // a +/-25% bang-bang with 0.24 brake depth dives way under the target
+    // speed — the old autopilot lost seconds to its own foot. Brake only a
+    // little past the target, lift when over it: the short band stays on
+    // the tire, and the player (and this demo of it) exits corners alive.
+    if (k.v > vmax + 0.55) { inp.d = true; inp.u = false }
     else if (k.v > vmax) inp.u = false
 
     if (Math.abs(da) > 0.19 && k.v > 5.2) inp.drift = true

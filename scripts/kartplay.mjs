@@ -29,10 +29,19 @@ r.check('attract boots clean and runs the demo', await (async () => {
     return a.screen === 'attract' && b.t > a.t
 })())
 
-await page.keyboard.press('Enter')
+// the pad must be OFF the canvas during attract — its buttons used to sit
+// right on the title band at phone scale — and a real tap on the bare
+// canvas is the phone player's only way in
+const padBtns = () => page.evaluate(() => document.querySelectorAll('.fixed.bottom-8 button').length)
+r.check('attract: touchpad withdrawn from the canvas', (await padBtns()) === 0)
+
+const cbox = await (await page.$('canvas')).boundingBox()
+await page.mouse.click(cbox.x + cbox.width / 2, cbox.y + cbox.height / 2)
 await page.waitForTimeout(3500)
 let s = await state()
-r.check('key entry leaves attract into the countdown/race', s.screen === 'race' && s.phase === 'race', `phase ${s.phase}`)
+r.check('a real TAP starts the race (no keyboard touched)', s.screen === 'race', `screen ${s.screen} phase ${s.phase}`)
+r.check('race: touchpad present for the drive', (await padBtns()) > 0)
+r.info('phase at first poll', s.phase)
 
 // drive with REAL keys: the browser driver holds arrows just long enough
 // to steer the sim's own state — no setPlan shortcut on this path
@@ -98,6 +107,20 @@ const px = await page.evaluate(() => {
 r.check('road pixels painted under the kart (not black)', px.row[0] + px.row[1] + px.row[2] > 90, px.row.join(','))
 r.check('player kart sprite is on screen', px.lit >= 6, `lit ${px.lit}/16`)
 r.info('spin seen during the lap', String(spinSeen))
+
+const best = await page.evaluate(() => ({
+    hook: window.__kartTest.best(),
+    stored: Number(localStorage.getItem('arcade.kart.bestLap')) || 0,
+}))
+r.check('a lap banks a persisted best lap', best.hook > 0 && best.stored === best.hook, `best ${best.hook} stored ${best.stored}`)
+
+// the end screen must withdraw the pad too, and a tap returns to attract
+await page.evaluate(() => { window.__kartTest.game().end = 'lose'; window.__kartTest.game().karts[0].place = 4 })
+await page.waitForTimeout(400)
+r.check('end screen withdraws the pad', (await padBtns()) === 0, `pad ${(await padBtns())}`)
+await page.mouse.click(cbox.x + cbox.width / 2, cbox.y + cbox.height / 2)
+await page.waitForTimeout(250)
+r.check('tap on the end screen returns to attract', (await state()).screen === 'attract')
 if (throttle > 1) r.info('throttle', `${throttle}x (advisory frame rate)`)
 
 r.exit(browser)

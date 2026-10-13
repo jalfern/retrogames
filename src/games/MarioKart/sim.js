@@ -229,14 +229,26 @@ function cpuInput(g, k) {
     const look = 4 + Math.round(k.v * 2.6)
     const t = T.pts[(k.idx + look) % T.N]
     const kmax = T.aheadK((k.idx + look) % T.N, look + 6)
-    const lat = -Math.sign(t.k) * Math.min(75, Math.abs(t.k) * 6.5e4)
+    // the apex line, capped by how far the target actually is: an 75 px
+    // offset on a target 34 px away asks for a 70-degree heading — the
+    // front row launched sideways every race and crawled there (grip is
+    // v/2.2, so yaw dies near standstill). A low-speed kart may only aim
+    // as far sideways as the road ahead can absorb.
+    const arc = look * (T.len / T.N)
+    let lat = -Math.sign(t.k) * Math.min(75, Math.abs(t.k) * 6.5e4)
+    lat = Math.max(-arc * 0.3, Math.min(arc * 0.3, lat))
     const tx = t.x + Math.cos(t.a + Math.PI / 2) * lat
     const ty = t.y + Math.sin(t.a + Math.PI / 2) * lat
     const want = Math.atan2(ty - k.y, tx - k.x)
     const da = wrap(want - k.a)
     if (da < -0.02) inp.l = true
     if (da > 0.02) inp.r = true
-    const vmax = Math.min(CFG.top * k.skill, 0.041 / Math.max(kmax, 9e-4))
+    // bravery scales with skill: one flat fear constant for every CPU was
+    // the real pack-sorter — it walked them ALL into corners 12% under the
+    // player's line whatever the skill scalar said. Now skill decides who
+    // attacks the apex and who coasts, and top speed is the difference.
+    const fear = k.skill * 0.0492
+    const vmax = Math.min(CFG.top * k.skill, fear / Math.max(kmax, 9e-4))
     if (k.v > vmax + 0.4) { inp.d = true; inp.u = false }
     if (Math.abs(k.steerVis) > 0 && Math.abs(da) > 0.2 && k.v > 5) inp.drift = true
     if (k.item) {
@@ -290,8 +302,13 @@ function kartBump(g) {
                 const nx = dx / d; const ny = dy / d
                 a.x -= nx * push; a.y -= ny * push
                 b.x += nx * push; b.y += ny * push
-                const slow = Math.min(a.v, b.v) * 0.5 + Math.max(a.v, b.v) * 0.5
-                a.v = Math.min(a.v, slow * 0.96); b.v = Math.min(b.v, slow * 0.96)
+                // a side swipe shaves a slice of the SPEED DELTA, not a
+                // clamp to the average: the old rule dropped the faster
+                // kart to the slower one's pace every tick of contact, so
+                // the pack welded into a queue and P5 could never climb
+                // out of traffic — but karts do slow when they rub
+                const dv = Math.abs(a.v - b.v)
+                if (a.v > b.v) a.v -= dv * 0.04; else b.v -= dv * 0.04
             }
         }
     }
