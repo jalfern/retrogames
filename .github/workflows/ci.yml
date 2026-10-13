@@ -206,6 +206,15 @@ jobs:
       # lifts — must all die. ~20 s in Node, blocks merges.
       - run: npm run lint:excite
       - run: npm run excitecheck -- --mutate
+      # Twenty-seventh scoped gate: SUPER MARIO KART. The circuit is audited as
+      # DATA before anyone drives it (minimum radius, no road self-crossing,
+      # every feature on asphalt); the whole 5-lap GP is then raced in Node by
+      # the same autopilot the attract demo replays — it must WIN from last,
+      # and still win with every item box deleted (the slack rule); laps must
+      # be checkpoint-honest; determinism is hash-for-hash; one mutant (the
+      # checkpoint gate) must die. ~3 s, blocks merges.
+      - run: npm run lint:kart
+      - run: npm run kartcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
