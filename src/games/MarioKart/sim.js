@@ -151,15 +151,19 @@ function drive(g, k, inp) {
             k.driftT = 0
             k.a += k.steerVis * CFG.steer * grip
         }
-        if (surf.surf === 'wall' && k.bumpCd === 0) {
-            const p = T.pts[surf.i]
-            const side = Math.sign(surf.lat)
-            const lim = CFG.wallLimit
-            k.x = p.x + Math.cos(p.a + Math.PI / 2) * side * lim
-            k.y = p.y + Math.sin(p.a + Math.PI / 2) * side * lim
-            k.v *= CFG.bumpV
-            k.bumpCd = 12
-            g.events.push({ e: 'bump', who: k.name })
+        const s2 = surfaceAt(k.x, k.y, k.hint)
+        if (s2.surf === 'wall') {
+            // clamp EVERY tick — a one-shot clamp let karts sail through
+            // the barrier between bump cooldowns on the old build
+            const p = T.pts[s2.i]
+            const side = Math.sign(s2.lat)
+            k.x = p.x + Math.cos(p.a + Math.PI / 2) * side * CFG.wallLimit
+            k.y = p.y + Math.sin(p.a + Math.PI / 2) * side * CFG.wallLimit
+            if (k.bumpCd === 0) {
+                k.v *= CFG.bumpV
+                k.bumpCd = 12
+                g.events.push({ e: 'bump', who: k.name })
+            }
         }
     }
     if (k.bumpCd > 0) k.bumpCd--

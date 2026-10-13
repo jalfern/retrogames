@@ -21,8 +21,8 @@ const W = 256
 const H = 224
 const HORIZON = 78
 const PLAY_H = 200
-const CAM_H = 140
-const PP = 900
+const CAM_H = 55
+const PP = 520
 const BACK = 92
 const FOG_C = [0xa8, 0xc8, 0xf8]
 
@@ -100,10 +100,10 @@ function buildSky() {
         const t = (i / 512) * Math.PI * 2
         mtn[i] = 26 + 14 * Math.abs(Math.sin(t * 3 + 1)) + 10 * Math.abs(Math.sin(t * 7 + 2)) + 6 * Math.abs(Math.sin(t * 13))
     }
-    const cloud = new Uint8Array(48 * 256)
-    for (let y = 0; y < 48; y++) for (let xx = 0; xx < 256; xx++) {
-        const v = Math.sin(xx * 0.11 + y * 0.05) + Math.sin(xx * 0.05 - y * 0.13 + 2) + Math.sin(xx * 0.023 + y * 0.2)
-        cloud[y * 256 + xx] = y >= 8 && y <= 40 && v > 1.2 ? 1 : 0
+    const cloud = new Uint8Array(60 * 256)
+    for (let y = 0; y < 60; y++) for (let xx = 0; xx < 256; xx++) {
+        const v = Math.sin(xx * 0.10 + y * 0.04) + Math.sin(xx * 0.047 - y * 0.11 + 2) + Math.sin(xx * 0.021 + y * 0.18)
+        cloud[y * 256 + xx] = y >= 6 && y <= 52 && v > 1.0 ? 1 : 0
     }
     return { mtn, cloud }
 }
@@ -237,22 +237,22 @@ export default function MarioKart() {
             for (let y = 0; y < HORIZON; y++) {
                 const t = y / HORIZON
                 const sr = 0x20 + t * 0x88 | 0; const sg = 0x38 + t * 0x90 | 0; const sb = 0xf8
-                const row = (sr) | (sg << 8) | (sb << 16)
+                const row = (sr) | (sg << 8) | (sb << 16) | 0xff000000
                 let o = y * W
                 for (let x = 0; x < W; x++) {
                     const mh = sky.mtn[(x + aN | 0) & 511]
                     if (y > HORIZON - mh) {
-                        px[o++] = y > HORIZON - mh + 5 ? 0xa87868 : 0x906050
+                        px[o++] = y > HORIZON - mh + 5 ? 0xffa87868 : 0xff906050
                         continue
                     }
-                    if (y < 44 && sky.cloud[((y * 256) + ((x + cA) & 255)) | 0]) { px[o++] = 0xf8f8f8; continue }
+                    if (y < 60 && sky.cloud[((y * 256) + ((x + cA) & 255)) | 0]) { px[o++] = 0xfff8f8f8; continue }
                     px[o++] = row
                 }
             }
             for (let y = HORIZON; y < PLAY_H; y++) {
                 const dd = (CAM_H * PP) / (y - HORIZON + 0.6)
                 const dl = dd / PP
-                const fr = dd > 1300 ? Math.min(0.8, (dd - 1300) / 1500) : 0
+                const fr = dd > 2200 ? Math.min(0.8, (dd - 2200) / 1400) : 0
                 const cosd = ca * dd; const sind = sa * dd
                 let wx = cx + cosd + sa * 128 * dl
                 let wy = cy + sind - ca * 128 * dl
@@ -263,7 +263,7 @@ export default function MarioKart() {
                         const tx = wx | 0; const ty = wy | 0
                         const c = (tx < 0 || ty < 0 || tx >= TX || ty >= TY) ? 0x30a028 : gnd[ty * TX + tx]
                         const r = c & 255; const gg = (c >> 8) & 255; const b = (c >> 16) & 255
-                        px[o++] = (r + (FOG_C[0] - r) * fr) | ((gg + (FOG_C[1] - gg) * fr) << 8) | ((b + (FOG_C[2] - b) * fr) << 16)
+                        px[o++] = ((r + (FOG_C[0] - r) * fr) | 0) | (((gg + (FOG_C[1] - gg) * fr) | 0) << 8) | (((b + (FOG_C[2] - b) * fr) | 0) << 16) | 0xff000000
                         wx += stepX; wy += stepY
                     }
                 } else {
@@ -278,6 +278,8 @@ export default function MarioKart() {
         }
 
         const drawSprites = () => {
+            ctx.save()
+            ctx.beginPath(); ctx.rect(0, 0, W, PLAY_H); ctx.clip()
             const items = []
             for (const k of g.karts.slice(1)) items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color], w: 56, h: 64, o: k })
             for (const b of g.bananas) items.push({ x: b.x, y: b.y, a: 0, img: S.banana, w: 26, h: 20 })
@@ -288,12 +290,11 @@ export default function MarioKart() {
             items.push({ x: s0.x + 120, y: s0.y - 25, a: 0, img: S.gantry, w: 120, h: 120 })
             for (const it of items) {
                 const pr = project(it.x, it.y)
-                if (pr.f < 80 || pr.f > 2600) continue
+                if (pr.f < 30 || pr.f > 2600) continue
                 const s = PP / pr.f
                 const sy = HORIZON + CAM_H * s
-                if (sy > PLAY_H + 20 || sy < HORIZON - it.h * s * 0.2) continue
                 const sx = W / 2 + pr.l * s
-                const w = it.w * s * 0.9; const h = it.h * s * 0.9
+                const w = Math.min(300, it.w * s * 0.9); const h = Math.min(320, it.h * s * 0.9)
                 const bob = it.bob ? Math.sin(g.tick * 0.1 + it.x) * 3 * s : 0
                 if (sx + w < 0 || sx - w > W) continue
                 ctx.globalAlpha = 0.25
@@ -306,6 +307,7 @@ export default function MarioKart() {
                 ctx.drawImage(it.img, -w / 2, -h / 2, w, h)
                 ctx.restore()
             }
+            ctx.restore()
             const P = g.karts[0]
             const tilt = P.spinT > 0 ? g.tick * 0.32 : P.steerVis * 0.18 + (P.driftT ? P.steerVis * 0.22 : 0)
             const bounce = P.offroad && P.v > 1 ? (g.tick >> 1) % 2 : 0
@@ -394,7 +396,9 @@ export default function MarioKart() {
         }
 
         const tickWorld = (live) => {
-            const inp = { u: !!keys.ArrowUp, d: !!keys.ArrowDown, l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyX || keys.KeyC), item: !!keys.Space }
+            const inp = st.plan
+                ? decide(g)
+                : { u: !!keys.ArrowUp, d: !!keys.ArrowDown, l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyX || keys.KeyC), item: !!keys.Space }
             step(g, live ? inp : decide(g))
             sfx(g.events.splice(0), live)
             if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame()); st.endT = 0 } }
@@ -477,6 +481,7 @@ export default function MarioKart() {
             keys,
             screen: () => st.screen,
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
+            setPlan: (v) => { st.plan = !!v },
         }
 
         return () => {
