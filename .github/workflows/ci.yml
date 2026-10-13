@@ -284,7 +284,7 @@ jobs:
         run: npm run wizplay
         env:
           SHOT_CHANNEL: chromium
-      - name: Excitebike smoke (real keys: pixels sit where the heightmap projects the bike, an air is won by the lean, the engine boils and a stalled bike pumps out)
+      - name: Excitebike smoke (real keys — pixels sit where the heightmap projects the bike, an air is won by the lean, the engine boils and a stalled bike pumps out)
         run: npm run exciteplay
         env:
           SHOT_CHANNEL: chromium
