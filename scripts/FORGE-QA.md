@@ -18,11 +18,17 @@ confuse the two queues.
 
 ## Session procedure
 
-1. `git fetch --prune origin` then `git checkout main && git pull --ff-only
-   origin main`. If the tree is dirty: `git status` — if the dirt is
-   untracked `/tmp`-style harness scratch, ignore it; if tracked files are
-   modified, STOP and comment on the newest open `building`/`building-qa`
-   issue what you found. Do not guess.
+1. `git fetch --prune origin` then `git checkout main`. A modified
+   `STATE.md` is the FORGE lane's uncommitted report (its step 9) — never
+   author changes to it, and never count it as a corpse. Triage everything
+   else with `git status --porcelain -- . ':(exclude)STATE.md'`: untracked
+   `/tmp`-style harness scratch, ignore; tracked files modified, STOP and
+   comment on the newest open `building`/`building-qa` issue what you found.
+   Do not guess. Then `git pull --ff-only origin main`; if it aborts on
+   STATE.md alone, park it (`mkdir -p /tmp/forge && cp STATE.md
+   /tmp/forge/STATE.parked.md && git checkout -- STATE.md`), pull, and copy
+   it back — a round trip, not an edit; the forge lane's step 1 expects it
+   in the tree.
 2. **Pick an item.** Open issues labeled `feedback` (not `building-qa`).
    Priority, highest first:
    a) a comment starting `/priority` — newest such comment wins
