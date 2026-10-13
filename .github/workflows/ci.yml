@@ -62,6 +62,8 @@ jobs:
       # — a level nobody can clear cannot ship.
       - run: npm run lint:lem
       - run: npm run lemcheck
+      - run: npm run lint:zelda
+      - run: npm run zeldacheck
       # Seventh scoped gate for BOULDER DASH: the real planner must clear every
       # cave with its hazards live (winnability + reachability + determinism), and
       # a mutation harness proves each cellular-automata rule is load-bearing.

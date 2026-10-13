@@ -89,6 +89,7 @@ const WizardryGame = lazy(() => import('../games/Wizardry'))
 // that proves them (and scripts/huntercheck.mjs audits) ride in their own
 // chunk; the harness imports sim/script/planner unchanged in Node.
 const SpyHunterGame = lazy(() => import('../games/SpyHunter'))
+const ZeldaGame = lazy(() => import('../games/Zelda'))
 // EXCITEBIKE: same lesson — the heightmap, the pure sim and the rolling autopilot
 // that scripts the attract demo (and scripts/excitecheck.mjs audits tick-for-tick)
 // ride in their own chunk; the harness imports levels/sim/planner unchanged in Node.
@@ -314,6 +315,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'A TowerFall-like duel on a hand-carved night arena: one stick moves and aims, hold to draw, release to loose a ballistic arrow whose 45° range is exactly r = v²/g. And every arrow that misses STICKS — stuck arrows knock out the next arrow that crosses them (cover that builds up as the duel runs) and refill your quiver when you walk over and pull them out: leave it as terrain, or take the ammo. Solo against an autopilot bot, or a local 2-player duel on one keyboard (WASD+F for player two, with a second touch pad). First to 3 wins; the attract demo is the autopilot’s own proven match, replayed tick for tick through the same pure sim a Node harness audits — arrow ledger exact, replay hash-for-hash.',
         controls: ['P1 Arrows / first pad: move, aim, UP jumps (and UP+draw is the 45° lob)', 'SPACE / A: hold to draw — release to loose; charge sets velocity, and the arc lands where the math says', 'P2 (duel mode): A/D move, W jump+lob, S aim down, F draw — the second on-screen pad drives P2', 'Quiver is finite: walk over a stuck arrow to PULL it back — or leave it to eat the next shot', 'First to 3 points takes the arena; 1 = solo vs bot, 2 = duel on the title'],
+    },
+    {
+        path: '/zelda',
+        builtBy: 'forge',
+        component: ZeldaGame,
+        label: 'ZELDA',
+        theme: 'dark',
+        description: 'Hyrule as a cartridge that never was: a 3x3 overworld of hand-carved screens, a sword cave, a bomb shop whose price you earn by the drop tables, a cracked wall that hides an old man and his bombs, and a three-hall dungeon where a push-block opens the way to Aquamentus and the Triforce of Wisdom. Every screen respawns its monsters when you walk back in, every octorok spits on a fixed beat, and every kill drops exactly what the NES ledger says it drops — hearts for the brave, rupees for the hungry. The whole route (sword -> rupees -> bombs -> crack -> dungeon -> boss -> Triforce) is walked by a deterministic autopilot a Node harness audits offline, and the game is re-proven with a thinner wallet and no second cave container.',
+        controls: ['Arrows / D-pad: walk Hyrule — cave mouths and doors swallow you when you step in', 'Z / A: the sword — it hits the arc you face; monsters die to patterns, not to mashing', 'X / B: BOMB — blow the cracked wall, and the rocks of a set full pack too', 'Buy low at the BOMB SHOP (stand at the counter, press A to trade)', 'Push blocks from the side onto the switch tile; wait out Aquamentus, then dash the top row', '?: pause and read the quest'],
     },
     {
         path: '/minesweeper',
