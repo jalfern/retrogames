@@ -400,7 +400,13 @@ export default function MarioKart() {
                 ? decide(g)
                 : { u: !!keys.ArrowUp, d: !!keys.ArrowDown, l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyX || keys.KeyC), item: !!keys.Space }
             step(g, live ? inp : decide(g))
-            sfx(g.events.splice(0), live)
+            const evs = g.events.splice(0)
+            if (import.meta.env.DEV) {
+                const log = (window.__kartLog ||= [])
+                for (const ev of evs) log.push({ ...ev, t: g.tick })
+                if (log.length > 2000) log.splice(0, log.length - 2000)
+            }
+            sfx(evs, live)
             if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame()); st.endT = 0 } }
             if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0 }
         }

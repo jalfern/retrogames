@@ -45,16 +45,30 @@ const setKey = async (k, on) => {
     if (on) await page.keyboard.down(key[k]); else await page.keyboard.up(key[k])
 }
 const nodePlanner = await import('../src/games/MarioKart/planner.js')
+const { TRACK } = await import('../src/games/MarioKart/track.js')
 
 const t0 = Date.now()
-let moved = false; let usedItem = false; let spinSeen = false
+let moved = false; let usedItem = false; let spinSeen = false; let seenPickup = false
 while (Date.now() - t0 < 150000) {
     s = await state()
     if (s.screen !== 'race') break
     if (!moved && Math.hypot(s.x - 900, s.y - 1810) > 300) moved = true
     if (s.spin > 0) spinSeen = true
     const g = await page.evaluate(() => window.__kartTest.game())
+    const log = await page.evaluate(() => (window.__kartLog || []).filter((ev) => ev.e === 'pickup' && ev.who === 'PLAYER'))
+    if (log.length) seenPickup = true
     const inp = nodePlanner.decide(g)
+    if (s.item === null) {
+        const ahead = g.boxes.filter((b) => b && ((b.idx - s.idx + TRACK.N) % TRACK.N) < 400)
+            .sort((a, b) => Math.hypot(a.x - s.x, a.y - s.y) - Math.hypot(b.x - s.x, b.y - s.y))[0]
+        if (ahead) {
+            let da = Math.atan2(ahead.y - s.y, ahead.x - s.x) - s.a
+            while (da > Math.PI) da -= 2 * Math.PI
+            while (da < -Math.PI) da += 2 * Math.PI
+            if (da > 0.02) inp.r = true
+            if (da < -0.02) inp.l = true
+        }
+    }
     await setKey('u', inp.u)
     await setKey('l', inp.l)
     await setKey('r', inp.r)
@@ -66,7 +80,7 @@ await setKey('u', false); await setKey('l', false); await setKey('r', false)
 
 s = await state()
 r.check('the kart drove (moved off the grid under keys)', moved)
-r.check('picked up an item box', usedItem || s.item !== null, `item ${s.item}`)
+r.check('picked up an item box', seenPickup, `item ${s.item}`)
 r.check('completed a full lap under real keys', s.lap >= lapsAtStart + 1, `lap ${s.lap} t ${s.t}`)
 r.check('never went off-road and stayed on the leaderboard', s.place >= 1 && s.place <= 5, `place ${s.place}`)
 

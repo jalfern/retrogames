@@ -58,6 +58,8 @@ const suite = [
     node('papercheck.mjs'),
     node('paperplay.mjs'),
     node('zeldaplay.mjs'),
+    node('kartcheck.mjs'),
+    node('kartplay.mjs'),
     full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '500']),
 ]
 
