@@ -8,8 +8,8 @@
 import { TILE, COLS, ROWS, W, PLAY_H, screenOf, at, isWall } from './world.js'
 
 export const CFG = {
-    spd: 1.05, dmgBig: 2, dmgSmall: 1, iframe: 45, swingDur: 16,
-    bombFuse: 70, bombR: 26, shopPrice: 15, invulnPickup: 0,
+    spd: 1.05, dmgBig: 2, dmgSmall: 1, iframe: 72, swingDur: 12,
+    bombFuse: 70, bombR: 26, shopPrice: 8, invulnPickup: 0,
 }
 export { W, PLAY_H }
 
@@ -68,7 +68,7 @@ function makeEnemy(d, i) {
     const E = ENEMY[d.type]
     return {
         type: d.type, i, x: d.x * TILE, y: d.y * TILE, hp: E.hp, t: i * 13,
-        dir: ['left', 'up', 'right', 'down'][i % 4], kx: 0, ky: 0, state: 0, t0: 0,
+        dir: ['left', 'up', 'right', 'down'][i % 4], kx: 0, ky: 0, state: 0, t0: 0, dx: 0, dy: 0,
     }
 }
 
@@ -77,13 +77,13 @@ export function makeGame(opts = {}) {
         tick: 0, scr: '1,1', px: 7 * TILE, py: 5 * TILE, dir: 'up', anim: 0, walk: 0,
         hearts: 6, maxHearts: 6, rupees: 0, bombs: 0,
         inv: 0, swing: 0, swingDir: 'up', prevA: false, prevB: false, hit: [], pushDir: null, pushN: 0, kx: 0,
-        trans: null, talk: null, bomb: null, dieT: 0, end: null,
+        trans: null, talk: null, bomb: null, dieT: 0, end: null, noCross: 0,
         enemies: [], items: [], shots: [], parts: [],
         blocks: [], pots: [],
         flags: { sword: false, crack: false, switch: false, swordTaken: false, bombsTaken: false, bought: false, bossDead: false, triforce: false, container: {} },
         visited: { '1,1': true },
         ledger: { kills: {}, dmgTaken: 0, blocked: 0, rupeeGot: 0, rupeeSpent: 0, bombsUsed: 0, bossHits: 0, pots: 0, swings: 0 },
-        events: [], slack: !!opts.slack, price: opts.slack ? 20 : CFG.shopPrice,
+        events: [], slack: !!opts.slack, price: opts.slack ? 5 : CFG.shopPrice,
     }
     const scr = screenOf(st.scr)
     st.enemies = (scr.enemies || []).filter((d) => ENEMY[d.type]).map(makeEnemy)
@@ -92,7 +92,7 @@ export function makeGame(opts = {}) {
 
 // room entry: rebuild the per-visit cast (respawn, like the original), keep
 // the persistent flags (cracked wall, pushed block, triforce, purchases)
-function enterRoom(s, id, spawnC, spawnR, dir) {
+function enterRoom(s, id, spawnC, spawnR, dir, kind = 'wipe') {
     s.scr = id
     const scr = screenOf(id)
     s.enemies = (scr.enemies || []).filter((d) => ENEMY[d.type]).map(makeEnemy)
@@ -121,8 +121,15 @@ function enterRoom(s, id, spawnC, spawnR, dir) {
     for (const [tc, tr] of trySpots) {
         if (!solid(s, tc * TILE + 8, tr * TILE + 10)) { c = tc; r = tr; break }
     }
-    void dir
     s.px = c * TILE; s.py = r * TILE - 2
+    // step IN from the tripwire: landing with px<=6 after a left-cross means
+    // the next tick computes dir='left' again and the screens ping-pong
+    if (kind === 'wipe') {
+        // Do NOT nudge the spawn — that parks the box inside the boulder row.
+        // Instead: for a few ticks the edge we came in from is refused, so the
+        // tripwire can't ping-pong us back before the route turns away.
+        s.noCross = 24
+    }
     if (id === 'D2') s.events.push({ e: 'bossroom' })
 }
 
@@ -132,6 +139,7 @@ const startWipe = (s, to, c, r, dir, kind = 'wipe') => {
 }
 
 function solid(s, x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return true
     const scr = screenOf(s.scr)
     const kind = scr.kind
     const c = Math.floor(x / TILE); const r = Math.floor(y / TILE)
@@ -140,7 +148,7 @@ function solid(s, x, y) {
     if (ch === 'B') return true
     if (s.blocks.some((b) => b.c === c && b.r === r)) return true
     if (s.pots.some((p) => p.c === c && p.r === r && !p.smashed)) return true
-    if (ch === 'T' && !s.flags.crack) return true
+    if (ch === 'T') return !s.flags.crack
     if (ch === 'O') {
         const d = doorsOf(s.scr).find((q) => q.c === c && q.r === r)
         if (d && d.locked && !s.flags.switch) return true
@@ -149,7 +157,7 @@ function solid(s, x, y) {
 }
 
 function boxSolid(s, cx, cy) {
-    const HW = 5; const HH = 6
+    const HW = 5; const HH = 5
     return solid(s, cx - HW, cy - HH) || solid(s, cx + HW, cy - HH) || solid(s, cx - HW, cy + HH) || solid(s, cx + HW, cy + HH)
 }
 
@@ -159,7 +167,6 @@ function tryMove(s, dx, dy) {
     if (dy && !boxSolid(s, cx, cy + dy)) s.py += dy
 }
 
-const nearEnemyLine = (s, e) => Math.abs(e.x - s.px) < 14 && Math.abs(e.y - s.py) < 14
 
 function hurt(s, amt, fromX) {
     if (s.inv > 0 || s.end || s.trans || s.dieT) return
@@ -175,9 +182,14 @@ function killEnemy(s, e, idx) {
     s.ledger.kills[e.type] = (s.ledger.kills[e.type] || 0) + 1
     s.events.push({ e: 'kill', type: e.type, x: e.x, y: e.y })
     if (e.type === 'zol') {
-        for (const [ox] of [[-6], [6]]) s.enemies.push({ type: 'gel', i: e.i + 9, x: e.x + ox, y: e.y, hp: 1, t: 0, dir: 'down', kx: 0, ky: 0, state: 0, t0: 0 })
+        for (const [ox] of [[-6], [6]]) s.enemies.push({ type: 'gel', i: e.i + 9, x: e.x + ox, y: e.y, hp: 1, t: 0, dir: 'down', kx: 0, ky: 0, state: 0, t0: 0, dx: 0, dy: 0 })
     }
-    if (e.type === 'blueoc') s.items.push({ kind: 'rupee', worth: 1, x: e.x, y: e.y, t: 0 })
+    // NES drop tables were per-enemy and fixed, not random — keep it fixed.
+    // octoroks and blue octoroks feed you (NES drop tables leaned heavily on
+    // hearts at low levels); keese pay the rent in rupees.
+    if (e.type === 'tektite') s.items.push({ kind: 'rupee', worth: 1, x: e.x, y: e.y, t: 0 })
+    if (e.type === 'blueoc' || e.type === 'octorok' || e.type === 'keese' || (e.type === 'gel' && e.i % 3 === 0)) s.items.push({ kind: 'heart', x: e.x, y: e.y, t: 0 })
+    if (e.type === 'keese') s.items.push(e.i % 2 === 0 ? { kind: 'heart', x: e.x, y: e.y, t: 0 } : { kind: 'rupee', worth: 1, x: e.x, y: e.y, t: 0 })
     if (e.type === 'aquamentus') { s.flags.bossDead = true; s.events.push({ e: 'bossdown' }) }
     s.enemies.splice(idx, 1)
 }
@@ -190,6 +202,7 @@ function swordBox(s) {
 const inBox = (e, b) => e.x + 12 > b.x && e.x + 4 < b.x + b.w && e.y + 13 > b.y && e.y + 4 < b.y + b.h
 
 export function step(s, inp) {
+    if (s.noCross > 0) s.noCross--
     s.tick++
     if (s.inv > 0) s.inv--
 
@@ -198,7 +211,7 @@ export function step(s, inp) {
         if (s.trans.t === 18) {
             const tr = s.trans
             if (tr.to === null) { s.end = s.end || 'dead' } // (death handled elsewhere)
-            else enterRoom(s, tr.to, tr.c, tr.r, tr.dir)
+            else enterRoom(s, tr.to, tr.c, tr.r, tr.dir, tr.kind)
         }
         if (s.trans.t >= 36) s.trans = null
         return drain(s)
@@ -238,9 +251,11 @@ export function step(s, inp) {
 
     // shop/cave touch talks
     const doneTalk = (g) => (g === 'sword' && s.flags.swordTaken) || (g === 'bombs5' && s.flags.bombsTaken)
-    if (scr.kind === 'shop' && scr.talk && !doneTalk(scr.talk.gives)) {
+    const chat = scr.kind === 'shop' && scr.talk && !doneTalk(scr.talk.gives) && !(scr.talk.gives === 'buy' && s.flags.bought)
+    if (chat) {
         const [tc, tr] = scr.talk.at
-        if (Math.abs(s.px + 8 - (tc * TILE + 8)) < 16 && Math.abs(s.py + 10 - (tr * TILE + 8)) < 24) {
+        const vr = scr.talk.gives === 'buy' ? 14 : 24
+        if (Math.abs(s.px + 8 - (tc * TILE + 8)) < 14 && Math.abs(s.py + 10 - (tr * TILE + 8)) < vr) {
             s.talk = { ...scr.talk, i: 0 }
             s.events.push({ e: 'talkStart', who: scr.talk.who })
             s.prevA = inp.a
@@ -322,7 +337,7 @@ export function step(s, inp) {
     // ---- bombs ----------------------------------------------------------
     if (inp.b && !s.prevB && s.bombs > 0 && !s.bomb && scr.kind !== 'shop') {
         s.bombs--; s.ledger.bombsUsed++
-        s.bomb = { x: s.px + 8 + DIRV[s.dir][0] * 14, y: s.py + 10 + DIRV[s.dir][1] * 14, t: 0 }
+        s.bomb = { x: s.px + 8 + DIRV[s.dir][0] * 26, y: s.py + 10 + DIRV[s.dir][1] * 26, t: 0 }
         s.events.push({ e: 'bomb' })
     }
     s.prevB = inp.b
@@ -366,6 +381,7 @@ export function step(s, inp) {
         return drain(s)
     }
     if (at(scr, cc, cr) === 'C' && scr.cave) { startWipe(s, scr.cave.to, 6, 8, 'down', 'cave'); return drain(s) }
+    if (at(scr, cc, cr) === 'C' && scr.secret) { startWipe(s, scr.secret.cave.to, 6, 8, 'down', 'cave'); return drain(s) }
     if (at(scr, cc, cr) === 'D') { startWipe(s, scr.door.to, cc, 1, 'up'); return drain(s) }
     if (at(scr, cc, cr) === 'S') { startWipe(s, scr.shop.to, 5, 2, 'down', 'cave'); return drain(s) }
     if (at(scr, cc, cr) === 'O') {
@@ -385,12 +401,12 @@ export function step(s, inp) {
             return drain(s)
         }
     } else if (scr.kind === 'over') {
-        const out = crossEdge(s, cc, cr)
+        const out = crossEdge(s, cc, cr, inp)
         if (out) return drain(s)
     }
 
     // ---- enemies --------------------------------------------------------
-    for (let i = s.enemies.length - 1; i >= 0; i--) updateEnemy(s, s.enemies[i], i)
+    for (let i = s.enemies.length - 1; i >= 0; i--) updateEnemy(s, s.enemies[i])
 
     // ---- shots ----------------------------------------------------------
     for (let i = s.shots.length - 1; i >= 0; i--) {
@@ -408,16 +424,20 @@ export function step(s, inp) {
     return drain(s)
 }
 
-function crossEdge(s, cc, cr) {
+function crossEdge(s, cc, cr, inp = {}) {
     const scr = screenOf(s.scr)
     const cx = s.px + 8; const cy = s.py + 10
+    // Intent, not geometry: a screen change happens when you WALK into the
+    // edge. Position alone ping-pongs across boulder corridors at px238 with
+    // no input at all; a player never crosses without pushing.
     let dir = null
-    if (s.py >= PLAY_H - TILE - 6 && !boxSolid(s, cx, PLAY_H - TILE - 1)) dir = 'down'
-    else if (s.py <= 6) dir = 'up'
-    else if (s.px <= 6) dir = 'left'
-    else if (s.px >= W - TILE - 6) dir = 'right'
+    if (inp.d && s.py >= PLAY_H - TILE - 6 && !boxSolid(s, cx, PLAY_H - TILE - 1)) dir = 'down'
+    else if (inp.u && s.py <= 6) dir = 'up'
+    else if (inp.l && s.px <= 6) dir = 'left'
+    else if (inp.r && s.px >= W - TILE - 6) dir = 'right'
     if (!dir) return false
     void cx; void cy
+    if (s.noCross > 0) return false
     const e = scr[dir]
     if (!e) return clampBack(s, dir)
     const span = e.cols || e.rows
@@ -448,12 +468,12 @@ function freeLine(s, x, y, vx, vy) {
     return 16
 }
 
-function updateEnemy(s, e, idx) {
+function updateEnemy(s, e) {
     const E = ENEMY[e.type]
     e.t++
     if (e.kx || e.ky) {
         const ox = e.x; e.x += e.kx; e.y += e.ky; e.kx *= 0.7; e.ky *= 0.7
-        if (solid(s, e.x + 8, e.y + 12)) { e.x = ox }
+        if (solid(s)) { e.x = ox }
         if (Math.abs(e.kx) < 0.3) e.kx = 0
         if (Math.abs(e.ky) < 0.3) e.ky = 0
     }
@@ -551,11 +571,12 @@ function updateEnemy(s, e, idx) {
         if (row && freeLine(s, ecx, ecy, Math.sign(pcx - ecx), 0) > 1) vx = Math.sign(pcx - ecx) * (e.type.startsWith('mob') ? 1.5 : 1.15)
         else if (col && freeLine(s, ecx, ecy, 0, Math.sign(pcy - ecy)) > 1) vy = Math.sign(pcy - ecy) * (e.type.startsWith('mob') ? 1.5 : 1.15)
         if (vx || vy) {
-            s.shots.push({ kind: e.type.startsWith('mob') ? 'spear' : 'rock', x: ecx + (vx ? Math.sign(vx) * 10 : 0), y: ecy + (vy ? Math.sign(vy) * 10 : 0), vx, vy, big: !!E.big })
+            // rocks graze for half a heart (NES); blue moblin spears take a full one
+            s.shots.push({ kind: e.type.startsWith('mob') ? 'spear' : 'rock', x: ecx + (vx ? Math.sign(vx) * 10 : 0), y: ecy + (vy ? Math.sign(vy) * 10 : 0), vx, vy, big: e.type.startsWith('mob') })
             s.events.push({ e: 'shoot', type: e.type })
         }
     }
-    hitP(CFG.dmgBig)
+    hitP(CFG.dmgSmall)
 }
 
 function drain(s) {

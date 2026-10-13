@@ -23,7 +23,7 @@ export const HUD_H = 64
 export const W = COLS * TILE               // 256
 export const H = PLAY_H + HUD_H            // 240
 
-export const WALLS_OVER = new Set(['#', 'R', 'W', 'g', 'T'])
+export const WALLS_OVER = new Set(['#', 'R', 'W', 'g'])
 export const WALLS_DUNGEON = new Set(['x'])
 export const SOLID_SHOP = new Set(['R'])
 
@@ -104,7 +104,7 @@ export const SCREENS = {
             '....,.f.........',
             '................',
         ],
-        down: { to: '0,1', cols: [7, 9] },
+        down: { to: '0,1', cols: [7, 13] },
         right: { to: '1,0', rows: [4, 7] },
         enemies: [
             { type: 'tektite', x: 6, y: 4, i: 0 },
@@ -236,7 +236,7 @@ export const SCREENS = {
             { type: 'keese', x: 9, y: 2, i: 1 },
             { type: 'keese', x: 12, y: 5, i: 2 },
             { type: 'zol', x: 7, y: 7, i: 3 },
-            { type: 'rupee', x: 6, y: 6, worth: 1 },
+            { type: 'rupee', x: 6, y: 6, worth: 5 },
         ],
     },
     '2,2': {
@@ -410,4 +410,4 @@ for (const [id, s] of Object.entries(INTERIORS)) {
 }
 
 export function screenOf(id) { return SCREENS[id] || INTERIORS[id] }
-export function at(scr, c, r) { return scr.rows[r][c] }
+export function at(scr, c, r) { const row = scr.rows[r]; return row ? row[c] : undefined }
