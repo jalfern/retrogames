@@ -11,7 +11,7 @@
 // `--mutate` breaks the checkpoint gate and demands this file go red —
 // a check that cannot fail is a check that is not watching.
 
-import { readFileSync, writeFileSync, copyFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { TRACK, BOOSTS, BOXES, CHECKPOINTS, surfaceAt } from '../src/games/MarioKart/track.js'
 import { makeGame, step, stateHash, fmtTime } from '../src/games/MarioKart/sim.js'
 import { decide } from '../src/games/MarioKart/planner.js'
@@ -153,22 +153,20 @@ check('same race twice, hash for hash', stateHash(a.g) === stateHash(b.g) && a.g
 
 if (process.argv.includes('--mutate')) {
     console.log('— mutant: checkpoint gate must NOT be free —')
-    const FILE = 'src/games/MarioKart/sim.js'
-    copyFileSync(FILE, '/tmp/kart-sim.bak.js')
-    const src = readFileSync(FILE, 'utf8')
+    const src = readFileSync('src/games/MarioKart/sim.js', 'utf8')
     const ANCHOR = 'if (crossed && k.cp === (1 << CHECKPOINTS.length) - 1) {'
     if (!src.includes(ANCHOR)) { console.error('  FAIL  mutant anchor missing'); R.fail++ }
     else {
-        writeFileSync(FILE, src.replace(ANCHOR, 'if (crossed && true) {'))
-        // the mutated code runs from a cache-busted copy that imports the
-        // real track/planner by absolute path (sim.js itself stays intact
-        // for the green run; this copy is the mutant)
+        // the mutant runs from a copy in /tmp that imports the real
+        // track/planner by absolute path — the tree is NEVER mutated, so a
+        // crash cannot leave a mutant on disk (it once did: a rewrite
+        // dropped `from`, the import threw, the restore never ran)
         const copy = '/tmp/mut-sim.mjs'
         const rewritten = src.replace(ANCHOR, 'if (crossed && true) {')
-            .replace(/from '\.\/track\.js'/g, `'${process.cwd()}/src/games/MarioKart/track.js'`)
-            .replace(/from '\.\/planner\.js'/g, `'${process.cwd()}/src/games/MarioKart/planner.js'`)
+            .replace(/from '\.\/track\.js'/g, `from '${process.cwd()}/src/games/MarioKart/track.js'`)
+            .replace(/from '\.\/planner\.js'/g, `from '${process.cwd()}/src/games/MarioKart/planner.js'`)
         writeFileSync(copy, rewritten)
-        const M = await import('/tmp/mut-sim.mjs')
+        const M = await import(copy)
         // the exact cheat the honest audit refused above: with the gate
         // dead the mutated machine banks the lap — proof the gate is the
         // thing that was stopping it (a mutant the audit cannot distinguish
@@ -181,7 +179,6 @@ if (process.argv.includes('--mutate')) {
         check('mutant flips the cheat probe: gate is load-bearing', k.lap === 2,
             `lap ${k.lap} cp ${k.cp}`)
     }
-    copyFileSync('/tmp/kart-sim.bak.js', FILE)
 }
 
 console.log(`\nkartcheck: ${R.fail === 0 ? 'ALL GREEN' : R.fail + ' FAILED'}`)
