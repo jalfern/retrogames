@@ -87,27 +87,41 @@ await wait(900)
 
 // ---- the look of 1989, graded in pixels (#186) ----
 // Road and grass must be FLAT: a column of asphalt (resp. grass) with more
-// than two luminance edges is the old two-tone banding, and it dies here.
-// Samples are kept only when they are opaque AND within 24 RGB-distance of
-// the palette's own road/grass colour — that skips the centre-dash AA blends,
-// the crossing band and the pre-existing semi-transparent rows near the
-// horizon. The boy must be rear-view: his sprite mask taller than it is wide.
+// than two luminance edges (>=5/255) is the old two-tone banding — its steps
+// are 6.1 (road) and 9.3 (grass) — and it dies here. Samples are kept only
+// when FULLY opaque (a <255 alpha is a row-tile edge, never paint) AND within
+// 24 RGB-distance of the palette's own road/grass colour (that skips the
+// centre-dash AA blends and the crossing band). The spread of the kept
+// samples is reported with the failure so a renderer quirk reads as a number.
+// The boy must be rear-view: his sprite mask taller than it is wide.
 {
     const art = await page.evaluate(([roadC, grassC]) => {
         const cv = document.querySelector('canvas[data-pb-stage]')
         const g = cv.getContext('2d')
         const lumOf = (R, Gc, B) => 0.299 * R + 0.587 * Gc + 0.114 * B
         const near = ([R, Gc, B], c) => Math.hypot(R - c[0], Gc - c[1], B - c[2]) <= 24
-        const edgesOf = (vals) => { let n = 0; for (let i = 1; i < vals.length; i++) if (Math.abs(vals[i] - vals[i - 1]) >= 4) n++; return n }
+        // spread between the 10th and 90th percentiles: immune to the odd
+        // mailbox/dash pixel crossing the column, while a 50/50 two-tone
+        // banding (the thing this gate exists to kill) still shows in full.
+        const spreadPct = (vals, lo, hi) => {
+            if (vals.length < 4) return 0
+            const s = [...vals].sort((a, b) => a - b)
+            return s[Math.min(s.length - 1, Math.ceil(s.length * hi))] - s[Math.floor(s.length * lo)]
+        }
+        const grade = (vals) => {
+            let edges = 0
+            for (let i = 1; i < vals.length; i++) if (Math.abs(vals[i] - vals[i - 1]) >= 5) edges++
+            return { edges, spread: +spreadPct(vals, 0.1, 0.9).toFixed(1), n: vals.length }
+        }
         const col = (x, y0, h, c) => {
             const d = g.getImageData(x, y0, 1, h).data
             const out = []
             for (let i = 0; i < d.length; i += 4) {
-                if (d[i + 3] < 250) continue
+                if (d[i + 3] < 255) continue
                 const px = [d[i], d[i + 1], d[i + 2]]
                 if (near(px, c)) out.push(lumOf(...px))
             }
-            return out
+            return grade(out)
         }
         // road: centre column, above the boy (y 186) so no sprite pixel in it
         const road = col(128, 96, 64, roadC)
@@ -127,15 +141,20 @@ await wait(900)
             }
         }
         return {
-            roadEdges: edgesOf(road), roadSamples: road.length,
-            grassEdges: edgesOf(grass), grassSamples: grass.length,
+            road, grass,
             boy: maxX > 0 ? { w: maxX - minX + 1, h: maxY - minY + 1 } : null,
         }
     }, [ROAD_RGB, GRASS_RGB])
-    r.check('the road reads as asphalt, not zebra (no band stripes)', art.roadEdges <= 2 && art.roadSamples >= 20,
-        `${art.roadEdges} band edges on ${art.roadSamples} road samples`)
-    r.check('the grass reads as grass, not stripes', art.grassEdges <= 2 && art.grassSamples >= 40,
-        `${art.grassEdges} band edges on ${art.grassSamples} grass samples`)
+    // flat paint: no sustained level (spread) and no alternation (edges).
+    // Threshold 5 sits under the old two-tone steps (6.1 road, 9.3 grass)
+    // and above renderer rounding of fully-opaque pixels (a couple of lum).
+    const flat = (c) => c.edges < 3 && c.spread <= 5
+    r.check('the road reads as asphalt, not zebra (no band stripes)',
+        flat(art.road) && art.road.n >= 12,
+        `${art.road.edges} band edges, spread ${art.road.spread} on ${art.road.n} road samples`)
+    r.check('the grass reads as grass, not stripes',
+        flat(art.grass) && art.grass.n >= 40,
+        `${art.grass.edges} band edges, spread ${art.grass.spread} on ${art.grass.n} grass samples`)
     const ratio = art.boy ? art.boy.h / art.boy.w : 0
     r.check('the bike is rear-view (taller than it is wide)', art.boy && ratio >= 1.2,
         art.boy ? `${art.boy.w}x${art.boy.h} (h/w ${ratio.toFixed(2)})` : 'no boy pixels found')
