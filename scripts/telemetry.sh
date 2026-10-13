@@ -74,7 +74,7 @@ case "$MR" in (''|*[!0-9]*) MR=0;; esac
 
 S="{\"t\":\"$(date +%H:%M:%S)\",\"ts\":$(date +%s),\"load\":$LOAD,\"free\":${FREE:-0},\
 \"tasks\":{$(task 'opencode run.*THE FORGE' forge),$(task 'opencode run.*QA MASTER' qa),\
-$(task 'opencode run.*WARDEN' warden),$(task 'omlx-server' omlx),\"mini\":{\"cpu\":$MC,\"rss\":$MR}},\
+$(task 'zsh -s -- warden.sh' warden),$(task 'omlx-server' omlx),\"mini\":{\"cpu\":$MC,\"rss\":$MR}},\
 \"commit\":$(printf '%s' "$COMMIT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"act\":{\"forge\":$(act "$(readlink /tmp/forge/last.log)" ),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)")}}"
 
 python3 - "$LOCAL" "$S" <<'PYS'

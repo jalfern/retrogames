@@ -602,6 +602,10 @@ new-issue link — anything Jon files joins the queue. The loop: **launchd**
 09/13/17/21 with one instruction — execute `scripts/FORGE.md` (the playbook: claim oldest
 issue → build per conventions + a harness that can fail → the only allowed merge path →
 verify prod → rewrite STATE.md). One game per session, 3-hour cap, stalled-loop exits.
+**The warden** (`scripts/warden.sh`, launchd every 10 min) is a plain shell script, not an
+agent: pulse line, trust gate + triage, kick the builder / QA when idle, `stalled` after 3
+kicks with no progress. It never calls a model, so it never slows the builder or hangs on oMLX.
+Test any change with `WARDEN_DRY=1 zsh scripts/warden.sh` (reads everything, changes nothing).
 ```bash
 launchctl load ~/Library/LaunchAgents/com.jalfern.forge.plist   # install (after cp)
 scripts/forge.sh                                                # force a session now
