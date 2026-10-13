@@ -218,8 +218,12 @@ jobs:
       # The lanes' watchdog (issue #180): the sentinel's decision battery in
       # plain zsh — the 5-min dead request (silence + oMLX idle + no running
       # child), the server-restart case, and the 25-min builder silence that
-      # must NOT kill a 40-min tool call. ~1 s.
-      - run: npm run sentinelcheck
+      # must NOT kill a 40-min tool call. ~1 s. The runner image ships no
+      # zsh (the sentinel itself runs on the Mac), so install it first.
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zsh
+          npm run sentinelcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
