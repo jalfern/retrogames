@@ -35,9 +35,11 @@
 #   - Never let a command read stdin (launchd pipes this into `zsh -s`);
 #     main runs with stdin from /dev/null.
 #   - Plain counting, matching, killing. At most one gh api call (the pulse).
-#   - The decision helpers (cpusec / etime_sec / decide_dead / decide_silent
-#     / omlx_idle) are pure and unit-tested by scripts/sentinelcheck.sh —
-#     keep them pure.
+#   - The helpers (cpusec / etime_sec / decide_dead / decide_silent /
+#     omlx_idle / agent_tick / omlx_tick) are pure and unit-tested by
+#     scripts/sentinelcheck.sh — keep them pure. agent_tick and omlx_tick are
+#     the window accumulators: they turn a per-tick sample into a silence /
+#     idle window that persists across ticks (see their comments).
 #   - Test: SENTINEL_DRY=1 zsh scripts/sentinel.sh (reads everything, acts on
 #     nothing). Never `launchctl load` from a PR.
 
@@ -126,6 +128,50 @@ omlx_idle() {
     fi
 }
 
+# agent_tick <mode> <prev_wm> <now> -> "<new_wm> <silence>"
+# The watermark is the time the agent's log LAST GREW. It only moves when the
+# log grows, so the silence (now - watermark) ACCUMULATES across 3-min ticks
+# past the 300 s / 1500 s floors. The old code re-stamped the watermark to NOW
+# every tick, capping the measured silence at one tick — so dead-request and
+# log-silent-25m could never fire. Modes: 0=grew, 1=unchanged, 2=unknown (new
+# file / truncated / no agent: re-baseline, silence -1 => never kill on it).
+agent_tick() {
+    local mode=$1 wm=$2 now=$3
+    if (( mode == 0 )); then echo "$now 0"
+    elif (( mode == 1 )); then echo "$wm $(( now - wm ))"
+    else echo "$now -1"
+    fi
+}
+
+# omlx_tick <wm_in> <wmc_in> <prev_time> <prev_cpu> <now> <cpu>
+#   -> "<idle> <new_wm> <new_wm_cpu> <new_prev_time> <new_prev_cpu>"
+# The watermark (wm) is the time oMLX LAST GENERATED — persisted across ticks as
+# omlx_w_at. The previous-tick sample (prev_time/prev_cpu, omlx_p_at/_cpu) is a
+# separate, one-step sample used only to detect "generating right now." They
+# diverge while the server idles, which is exactly what lets the idle window
+# accumulate: a tick that burns >= IDLE_PCT of its wall means the server is
+# generating, so the watermark jumps to now and the idle clock restarts; while
+# it idles the watermark stays put, so (now - watermark) grows across ticks
+# until it crosses IDLE_WINDOW_SECS and omlx_idle confirms the burn stayed under
+# IDLE_PCT. prev_time=0 means "no sample yet" (first tick / fresh state file):
+# baseline, not idle.
+omlx_tick() {
+    local wm=$1 wmc=$2 pt=$3 pc=$4 now=$5 cpu=$6
+    local gen=0 pwall wall idle
+    if (( pt == 0 )); then
+        wm=$now; wmc=$cpu
+    else
+        pwall=$(( now - pt ))
+        if (( pwall > 0 && (cpu - pc) * 100 >= pwall * IDLE_PCT )); then
+            wm=$now; wmc=$cpu; gen=1
+        fi
+    fi
+    wall=$(( now - wm ))
+    idle=0
+    (( gen )) || idle=$(omlx_idle $(( cpu - wmc )) $wall)
+    echo "$idle $wm $wmc $now $cpu"
+}
+
 main() {
     set -u
     local REPO="$HOME/Dev/retrogames"
@@ -171,28 +217,33 @@ main() {
 
     has_child() { [[ -n $(pgrep -P "$1" 2>/dev/null | head -1) ]]; }
 
-    # agent_silent <pid> <state-key> <log> -> seconds since the log last grew
-    # (-1 = unknown: first tick, new log file, or no baseline: never kill on it)
-    agent_silent() {
-        local pid=$1 key=$2 logpath=$3 size slog ssize sat
-        [[ -z $pid || -z $logpath ]] && { echo -1; return; }
-        size=$(stat -f %z "$logpath" 2>/dev/null) || { echo -1; return; }
-        slog=${S[${key}_log]:-}; ssize=${S[${key}_size]:-}; sat=${S[${key}_at]:-}
-        [[ -z $slog || -z $ssize || -z $sat ]] && { echo -1; return; }
-        [[ "$slog" != "$logpath" ]] && { echo -1; return; }
-        (( size > ssize )) && { echo 0; return; }
-        (( size < ssize )) && { echo -1; return; }   # truncated: no baseline
-        echo $(( NOW - sat ))
+    # agent_mode <pid> <logpath> <prev_log> <prev_size> -> 0 grew / 1 unchanged /
+    # 2 unknown. The watermark (last-grew time) is derived from this in main via
+    # the pure agent_tick; it is stored as <key>_wm so the silence accumulates
+    # across ticks instead of being re-stamped to NOW every tick.
+    agent_mode() {
+        local pid=$1 logpath=$2 plog=$3 psize=$4 size
+        [[ -z $pid || -z $logpath ]] && { echo 2; return; }
+        size=$(stat -f %z "$logpath" 2>/dev/null) || { echo 2; return; }
+        [[ -z $plog || -z $psize ]] && { echo 2; return; }
+        [[ "$plog" != "$logpath" ]] && { echo 2; return; }
+        if (( size > psize )); then echo 0
+        elif (( size < psize )); then echo 2     # truncated: no baseline
+        else echo 1
+        fi
     }
 
     # ---- observe the agents --------------------------------------------------
     # Newest log wins; the warden's proven ls -t pattern (a no-match glob makes
     # zsh abort the command and ls never runs — no null_glob needed).
-    local B_LOG Q_LOG B_SIL Q_SIL B_CH=0 Q_CH=0
+    local B_LOG Q_LOG B_SIL Q_SIL B_WM Q_WM B_CH=0 Q_CH=0
     B_LOG=$(ls -t "$LOG_DIR"/2*.log 2>/dev/null | head -1)
     Q_LOG=$(ls -t "$LOG_DIR"/qa-2*.log 2>/dev/null | head -1)
-    B_SIL=$(agent_silent "$B_PID" builder "$B_LOG")
-    Q_SIL=$(agent_silent "$Q_PID" qa "$Q_LOG")
+    local bm qm
+    bm=$(agent_mode "$B_PID" "$B_LOG" "${S[builder_log]:-}" "${S[builder_size]:-}")
+    qm=$(agent_mode "$Q_PID" "$Q_LOG" "${S[qa_log]:-}" "${S[qa_size]:-}")
+    read -r B_WM B_SIL <<< "$(agent_tick "$bm" "${S[builder_wm]:-0}" "$NOW")"
+    read -r Q_WM Q_SIL <<< "$(agent_tick "$qm" "${S[qa_wm]:-0}" "$NOW")"
     [[ -n $B_PID ]] && has_child "$B_PID" && B_CH=1
     [[ -n $Q_PID ]] && has_child "$Q_PID" && Q_CH=1
 
@@ -209,11 +260,12 @@ main() {
         echo $total
     }
     local O_CPU=$(omlx_cpu_total "$O_PID")
-    local O_IDLE=0 O_RESTART_B=0 O_RESTART_Q=0
-    local oprev_pid=${S[omlx_pid]:-} oprev_cpu=${S[omlx_cpu_prev]:-} oprev_at=${S[omlx_at_prev]:-}
-    if [[ -n $O_PID && "$O_PID" == "$oprev_pid" && -n $oprev_at && -n $oprev_cpu ]]; then
-        O_IDLE=$(omlx_idle $(( O_CPU - oprev_cpu )) $(( NOW - oprev_at )))
-    fi
+    local O_IDLE=0 O_WM=0 O_WMC=0 O_PT=0 O_PC=0 O_RESTART_B=0 O_RESTART_Q=0
+    # prev_time=0 => no sample yet (first tick or a state file from before the
+    # watermark): omlx_tick baselines instead of declaring idle.
+    local prev_time=${S[omlx_p_at]:-0} prev_cpu=${S[omlx_p_cpu]:-0}
+    local wm_in=${S[omlx_w_at]:-0} wmc_in=${S[omlx_w_cpu]:-0}
+    read -r O_IDLE O_WM O_WMC O_PT O_PC <<< "$(omlx_tick "$wm_in" "$wmc_in" "$prev_time" "$prev_cpu" "$NOW" "$O_CPU")"
     # A server that started AFTER the agent: the agent's request died with the
     # old server. (Start = now - etime, so the server is newer when its
     # elapsed time is smaller.)
@@ -302,17 +354,20 @@ main() {
     fi
 
     # ---- save state for the next tick --------------------------------------------
+    # _wm keys are the persistent watermarks (last-grew / last-generation time);
+    # they are what let the silence and idle windows accumulate past one tick.
     {
         echo "builder_log=$B_LOG"
         echo "builder_size=$(stat -f %z "$B_LOG" 2>/dev/null || echo 0)"
-        echo "builder_at=$NOW"
+        echo "builder_wm=$B_WM"
         echo "qa_log=$Q_LOG"
         echo "qa_size=$(stat -f %z "$Q_LOG" 2>/dev/null || echo 0)"
-        echo "qa_at=$NOW"
+        echo "qa_wm=$Q_WM"
         echo "omlx_pid=$O_PID"
-        echo "omlx_cpu=$O_CPU"
-        echo "omlx_cpu_prev=${S[omlx_cpu]:-}"
-        echo "omlx_at_prev=${S[omlx_at]:-}"
+        echo "omlx_w_at=$O_WM"
+        echo "omlx_w_cpu=$O_WMC"
+        echo "omlx_p_at=$O_PT"
+        echo "omlx_p_cpu=$O_PC"
     } > "$STATE"
 
     # Keep the newest 20 sentinel logs.

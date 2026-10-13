@@ -73,5 +73,36 @@ t floor-deadreq      300    "$DEAD_REQ_SECS"
 t floor-builder      1500   "$BUILDER_SILENT_SECS"
 t floor-warden       900    "$WARDEN_STUCK_SECS"
 
+# ---- agent_tick: the watermark PERSISTS across unchanged ticks so the silence
+#      accumulates past the floors. The old code re-stamped the watermark to
+#      NOW every tick, capping the silence at one 3-min tick — so 360 here
+#      (not 180) is the proof the window crosses ticks. (Red on the old code.)
+read -r _wm _sil <<< "$(agent_tick 2 0 180)"          # t1: first tick, baseline
+t agent-baseline       "-1"   "$_sil"
+t agent-baseline-wm    "180"  "$_wm"
+read -r _wm _sil <<< "$(agent_tick 1 "$_wm" 360)"     # t2: +3 min, unchanged
+t agent-3min           "180"  "$_sil"
+read -r _wm _sil <<< "$(agent_tick 1 "$_wm" 540)"     # t3: +6 min
+t agent-6min           "360"  "$_sil"                 # crosses the 300 s floor
+t agent-crosses5m      "kill:dead-request" "$(decide_dead "$_sil" 1 0 0)"
+read -r _wm _sil <<< "$(agent_tick 1 "$_wm" 1680)"    # +25 min since baseline
+t agent-25min          "1500" "$_sil"                 # crosses the 1500 s floor
+t agent-crosses25m     "kill:log-silent-25m" "$(decide_silent "$_sil" 0)"
+read -r _wm _sil <<< "$(agent_tick 0 "$_wm" 1800)"    # log grows: clock resets
+t agent-grew-reset     "0"    "$_sil"
+t agent-grew-wm        "1800" "$_wm"
+
+# ---- omlx_tick: the idle window accumulates across idle ticks and hits the
+#      floor; a generating tick restarts the clock. (Red on the old code.)
+read -r _idle _wm _wmc _pt _pc <<< "$(omlx_tick 0 0 0 0 1000000 100)"  # t1 baseline
+t omlx-baseline        "0"    "$_idle"
+read -r _idle _wm _wmc _pt _pc <<< "$(omlx_tick "$_wm" "$_wmc" "$_pt" "$_pc" 1000180 100)"  # t2 +3 min idle
+t omlx-3min-not-idle   "0"    "$_idle"
+read -r _idle _wm _wmc _pt _pc <<< "$(omlx_tick "$_wm" "$_wmc" "$_pt" "$_pc" 1000360 100)"  # t3 +6 min idle
+t omlx-6min-idle       "1"    "$_idle"                 # window crossed 300 s
+read -r _idle _wm _wmc _pt _pc <<< "$(omlx_tick "$_wm" "$_wmc" "$_pt" "$_pc" 1000540 1360)" # t4 busy tick
+t omlx-gen-resets      "0"    "$_idle"                 # a generating tick is never idle
+t omlx-gen-wm-moves    "1000540" "$_wm"                # the watermark jumped to now
+
 echo "sentinelcheck: $PASS ok, $FAIL failed"
 exit $(( FAIL > 0 ))
