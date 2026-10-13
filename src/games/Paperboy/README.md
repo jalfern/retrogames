@@ -50,7 +50,11 @@ to believe a DP the sim doesn't honour.
 - `scripts/papercheck.mjs` — route audit (a window a crate/crossing would
   steal is a build failure), engine pins, the proven run, the slack ladder,
   determinism, six mutants. `scripts/paperplay.mjs` — Chrome, real keys only:
-  timed throws, lean gate, crash ledger, death, restart, pixels vs physics.
+  timed throws, lean gate, crash ledger, death, restart, pixels vs physics —
+  and the look of 1989, graded in pixels (#186): the road and grass columns
+  must stay flat (more than two luminance edges is the old two-tone banding,
+  and it fails), and the boy's sprite mask must be taller than it is wide
+  (the profile "bike is sideways" fails).
 
 ## Knobs worth knowing
 
