@@ -34,28 +34,33 @@ AGENTS.md wins.
    --remove-label next` and comment: `gh issue comment <n> -b "FORGE:
    claimed <date>"`. If the candidate list is empty, STOP — nothing to
    forge; say so in STATE.md and exit.
-3. **Design in one paragraph** (core loop, the one harness you'll demand of
-   it, the game's own `README.md` if it's a big one). Respect the issue body —
-   it names the engine muscle the request wants stretched.
+3. **Design in one paragraph.** Name the original (machine and year) and
+   list its 5 signature features, mechanics AND look. Those five are the
+   spec; respect anything extra the issue body asks for. Build the real game,
+   not a reduced one: no "-Lite"/"-Min" in names unless the issue asks for a
+   cut-down version. Write the game's own `README.md` if it's a big one.
 4. **Build it** per the AGENTS.md conventions:
    `src/games/<Name>/index.jsx`, register in `src/config/games.js`, fixed
    internal resolution, fixed timestep, attract mode, `?` PauseOverlay,
    `VirtualControls` with tap-to-start (`pointerdown`) so it is playable on a
    phone, all art/audio synthesized at runtime (no assets).
+   **Read `docs/ART.md` before drawing anything** and match its exemplars.
    **Mount `src/utils/DebugKit.js`** (DEV-only F1 panel: live state, cheat
    buttons, and for puzzle/level games a PROGNOSIS action that re-runs your
    own solver on the LIVE mutated state — "can this still be won from
    here?"). The kit exists because Jon found a "winnable" level Jon could
    not win; the panel is how the next such bug gets named in seconds, not
    issue threads.
-   **The slack rule:** winnable-by-perfect-solver is not humanly winnable.
+   **The slack rule (puzzle and level games only):** winnable-by-perfect-solver is not humanly winnable.
    Your Node harness must re-solve every level with ONE fewer of every
    supply the winning script consumes — it must still win. Zero slack is a
    build failure (`lemcheck`'s slack loop is the reference implementation).
-5. **Harness.** Write `scripts/<name>check.mjs` (Node-first where possible —
-   the heistcheck/zorkcheck pattern beats any browser check), give it an
-   `npm run <name>check` alias, and prove it can fail: break one load-bearing
-   line by hand, watch it go red, restore.
+5. **Harness — one check, about a third of the session at most.** Write
+   `scripts/<name>check.mjs` (Node-first where possible), give it an
+   `npm run <name>check` alias. It proves three things: the game boots, its
+   core rules hold, it can be won. Prove it can fail once: break one
+   load-bearing line by hand, watch it go red, restore. No mutant suites for
+   a new game; the time goes into the game.
 6. **Drive it for real** (headless Chrome, real key/tap events only):
    it must start, play, die and restart with zero page errors, and the drawn
    sprite must match the logical state after every input.
@@ -70,6 +75,10 @@ AGENTS.md wins.
 8. **Verify prod:** poll `https://jalfern.com/retrogames/` assets until the
    bundle hash contains the new game; comment the live URL on the issue;
    `gh issue edit <n> --remove-label building --add-label shipped`.
+8b. **File the polish pass.** Every game gets a second round. Open
+   `QA — <NAME>: polish pass` with label `feedback`, listing what is still
+   short of `docs/ART.md` and of the original: missing signature features,
+   animation, sound, juice. Be specific; this is the QA lane's next job.
 9. **Rewrite `STATE.md`** (<150 lines): what shipped, next queued game,
    three questions for Jon. Commit STATE.md to main ONLY if the forge game
    merged this session (`git commit` on main is otherwise forbidden — if no
@@ -106,5 +115,5 @@ AGENTS.md wins.
 ## What "done" looks like
 
 A game Jon can open on his phone at `https://jalfern.com/retrogames/<slug>`
-and play immediately — tap to start — with a harness that has proven it can
-fail.
+and play immediately — tap to start — that someone who played the original
+recognizes in five seconds, with a harness that has proven it can fail.

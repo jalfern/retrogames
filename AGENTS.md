@@ -4,6 +4,10 @@ Guidance for working in this repo (and, by extension, shipping to jalfern.com).
 
 ## Rules for unattended runs (read first)
 
+**The game is the product; the harness serves it.** Spend most of every session on the
+game itself: faithful mechanics, art, sound, feel (`docs/ART.md` is the bar). The harness
+lessons below keep games from shipping broken; they are not the goal.
+
 1. Read `STATE.md` first. At the end of a session, **rewrite** it (don't append), under 150 lines.
 2. Work on the one goal in `STATE.md`. If there is none, ask; don't invent one.
 3. Only the CI `static` job blocks merges. Browser suites (`heistplay`, `verify`, …) are
