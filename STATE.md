@@ -1,38 +1,51 @@
-# STATE — forge session 2026-10-13
+# STATE — forge session 2026-10-13 (kart)
 
 ## Shipped this session
-- **ZELDA `/zelda` (issue #177) MERGED** (PR #193, squash, CI green incl. new `lint:zelda` +
-  `zeldacheck` 29 checks). 3x3 overworld, sword cave, bomb shop with earned rupees on fixed
-  NES drop tables, cracked wall → SECRET CAVE, three-hall Level-1, push-block + switch,
-  Aquamentus, Triforce win. World-as-data + pure sim + transit autopilot + NES-styled canvas
-  (256x240, HUD, minimap, wipe bars, VirtualControls A=sword B=bomb). Determinism asserted
-  (hash-for-hash plan replay in CI). No Math.random anywhere.
+- **SUPER MARIO KART `/mario-kart` (issue #187) MERGED + LIVE** (PR #196, squash, `static`
+  green incl. new `lint:kart` + `kartcheck`; prod verified: real Chrome on
+  jalfern.com/retrogames/mario-kart paints the circuit, zero page errors).
+  5-lap Mode 7 GP on MARIO CIRCUIT: per-scanline ground raster, drift + mini-turbo,
+  rank-weighted item boxes (P5 mushroom / P1 crumbs), shells/bananas, 4 CPU rivals on
+  the certified planner, attract replays the proven run tick-for-tick. Track is data
+  (Catmull-Rom, minR 201 so flat-out is drivable), sim is pure, zero Math.random.
+- `kartcheck` (Node, CI gate): geometry audit, GP win from P5 + zero-item slack win,
+  item rules by state, off-checkpoint cheat probe, determinism; `--mutate` kills the
+  checkpoint gate **in a /tmp copy** (tree never touched) and the probe catches it.
+- `kartplay` (Chrome, real keys): driver aims at boxes with real arrows, banks a lap,
+  pixels at sim coords, player sprite on screen. 8/8.
+- Filed #197 (QA polish: attract title overlaps touchpad at 256px; drift/turbo feel;
+  CPU balance; ghost/second-course decisions).
 
-## Known gap (honest, on the PR)
-- The autopilot proves sword→rupees→shop→bomb→crack and then DIES in West Forest ('0,1')
-  under the respawned octorok volley before the dungeon. So the attract screen is a title
-  card, not a proven-run replay. Every segment of the Triforce route except that one screen
-  is wired and audited. The fix is combat spacing on '0,1' (a shield-block assist or a
-  corridor-vs-volley policy), not new systems.
+## Lessons paid for this session
+- The renderer DRAINS `g.events` every frame for sfx — a browser harness polling that
+  queue watches an emptied ledger. DEV now mirrors events into `window.__kartLog`.
+- A mutation harness that rewrites the live tree must restore in `finally` — a crashed
+  rewrite (dropped `from` in an import rewrite) left a mutant on disk and it nearly
+  got committed. Mutants now run only from /tmp.
+- Mode 7 needs CAM_H/PP tuned so the ground UNDER the kart is on-screen (the whole
+  plane once sat at the horizon — sprites fine, road a slit).
+- Wall clamp must fire EVERY tick past the limit, not only on bump cooldown.
+- Queue was #177 (Zelda) + #187; both now shipped. Queue is empty.
 
-## Notes for the next session (pick ONE)
-1. Finish the win: teach the autopilot West Forest (fight the orbiting octorok off the
-   corridor, or block aimed rocks by facing at the volley beat), get `plan()` → 'win', and
-   only THEN make the attract demo replay that proven run tick-for-tick (the repo law).
-2. zeldacheck could then assert: win result + slack win + a "crack-needs-bombs" mutant that
-   must die (e.g. make 'T' non-crackable → the audit must catch the route break).
-3. If not #1: pull a fresh issue from the queue.
+## Next session (pick ONE — queue is empty, so likely ask Jon)
+1. **#197 QA polish** on MARIO KART — human-thumbs items; kartplay/kartcheck are the
+   regression gate. Attract-title-over-pad is the one clear defect.
+2. **Zelda West Forest gap still open?** (STATE 2026-10-13 AM said the autopilot dies
+   in West Forest before Level 1; #194/#195 fixed crash+pixels but may not the gap.)
+   Check `npm run zeldacheck` result line for `win`; if not, that's the game's next gate.
+3. If the queue has fresh issues by then (Jon files via /forge board), oldest first.
 
 ## Harness commands
-- `npm run zeldacheck` — Node audit (~1s), in the static CI gate.
-- `npm run lint:zelda` — scoped lint (green).
-- Browser hooks: `window.__zeldaTest.game()`, `.press('KeyZ')` etc. (dev only).
+- `npm run kartcheck [-- --mutate]`, `npm run kartplay` (needs dev server;
+  `KART_URL` override), `npm run lint:kart` — all in the static gate or verify.
+- Worktree `~/Dev/retrogames-kart` (branch merged/deleted remote; detach to
+  `origin/main` before reuse). Main checkout is detached at `origin/main`.
 
-## Session limits hit
-- ~3h cap reached on the #177 session; stopping per FORGE rule 7.
-- Questions for Jon:
-  1. Is the attract-on-title-screen acceptable for one deploy, or should /zelda stay
-     hidden (menu flag) until the autopilot wins?
-  2. Heart-drop economy is generous (every octorok/blueoc/keese drops a heart) — keep for
-     playability or revert to rarer NES-true drops and teach the bot to dodge instead?
-  3. Enemy damage: rocks graze (1 half-heart) but moblin spears hurt full — okay?
+## Three questions for Jon
+1. Queue is empty — propose games on /forge, or should the next sessions polish
+   (#197, Zelda West Forest) instead of shipping titles?
+2. MARIO KART: second course + ghost times — worth a feature issue, or leave it as
+   the faithful one-circuit Classic cup?
+3. `verify` manual job now includes kartplay — promote the whole verify job to
+   `pull_request` (browser suite has been green across Mario Kart/Zelda/Spy Hunter
+   sessions) or keep it manual one more month?
