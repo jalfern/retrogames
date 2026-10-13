@@ -85,15 +85,18 @@ await wait(900)
     r.check('the demo actually delivers papers', delivered > 0, `delivered=${delivered}`)
 }
 
-// ---- the look of 1989, graded in pixels (#186) ----
-// Road and grass must be FLAT: a column of asphalt (resp. grass) with more
-// than two luminance edges (>=5/255) is the old two-tone banding — its steps
-// are 6.1 (road) and 9.3 (grass) — and it dies here. Samples are kept only
-// when FULLY opaque (a <255 alpha is a row-tile edge, never paint) AND within
-// 24 RGB-distance of the palette's own road/grass colour (that skips the
-// centre-dash AA blends and the crossing band). The spread of the kept
-// samples is reported with the failure so a renderer quirk reads as a number.
-// The boy must be rear-view: his sprite mask taller than it is wide.
+// ---- the look of 1989, graded in pixels (#186, #199) ----
+// Road and grass must be FLAT: a band of asphalt (resp. grass) columns with
+// more than two luminance edges (>=5/255) is the old two-tone banding — its
+// steps are 6.1 (road) and 9.3 (grass) — and it dies here. We sample a small
+// band of columns and grade the MEDIAN (a local transient — the scrolling
+// centre stripe, the boy, a prop — touches at most one or two of them, while
+// the banding paints all of them; that is the shared-runner immunity from
+// #199). Samples are kept only when FULLY opaque (a <255 alpha is a row-tile
+// edge, never paint) AND within 24 RGB-distance of the palette's own
+// road/grass colour (that skips the centre-dash AA blends and the crossing
+// band). The spread of the kept samples is reported with the failure so a
+// renderer quirk reads as a number. The boy must be rear-view: taller than wide.
 {
     const art = await page.evaluate(([roadC, grassC]) => {
         const cv = document.querySelector('canvas[data-pb-stage]')
@@ -123,10 +126,27 @@ await wait(900)
             }
             return grade(out)
         }
-        // road: centre column, above the boy (y 186) so no sprite pixel in it
-        const road = col(128, 96, 64, roadC)
-        // grass: a clean left column (no house, tree or cart ever reaches x=8)
-        const grass = col(8, 96, 124, grassC)
+        // Grade a BAND of columns and take the MEDIAN column reading. One 1px
+        // column sitting on the scrolling centre stripe let a sub-pixel AA blend
+        // push its spread past the gate on a shared runner (#199). A local
+        // transient (that stripe, the boy's sprite, a prop) touches at most one
+        // or two columns, so the median ignores it; a global two-tone banding
+        // paints every column, so the median still goes red.
+        const med = (arr) => arr.slice().sort((a, b) => a - b)[Math.floor((arr.length - 1) / 2)]
+        const band = (xs, y0, h, c) => {
+            const per = xs.map((x) => col(x, y0, h, c))
+            return {
+                edges: med(per.map((p) => p.edges)),
+                spread: med(per.map((p) => p.spread)),
+                n: per.reduce((a, p) => a + p.n, 0),
+                solid: per.filter((p) => p.n >= 8).length,
+            }
+        }
+        // road: five columns across the asphalt, above the boy (y 186); the
+        // centre one is the fragile stripe column, the off-centre ones are not
+        const road = band([110, 119, 128, 137, 146], 96, 64, roadC)
+        // grass: five columns near the left edge (no house/tree/cart reaches x=8)
+        const grass = band([8, 16, 24, 32, 40], 96, 124, grassC)
         // the boy's mask: his own colours inside a 24x28 box around the anchor
         const b = window.__paperTest.probe().boy
         const d2 = g.getImageData(Math.round(b.bx) - 12, Math.round(b.by) - 24, 24, 28).data
@@ -145,16 +165,17 @@ await wait(900)
             boy: maxX > 0 ? { w: maxX - minX + 1, h: maxY - minY + 1 } : null,
         }
     }, [ROAD_RGB, GRASS_RGB])
-    // flat paint: no sustained level (spread) and no alternation (edges).
-    // Threshold 5 sits under the old two-tone steps (6.1 road, 9.3 grass)
-    // and above renderer rounding of fully-opaque pixels (a couple of lum).
+    // flat paint: no sustained level (spread) and no alternation (edges) in the
+    // MEDIAN column of the band. Threshold 5 sits under the old two-tone steps
+    // (6.1 road, 9.3 grass) and above renderer rounding. `solid >= 3` means the
+    // median is graded on real paint, not a column that was skipped out.
     const flat = (c) => c.edges < 3 && c.spread <= 5
     r.check('the road reads as asphalt, not zebra (no band stripes)',
-        flat(art.road) && art.road.n >= 12,
-        `${art.road.edges} band edges, spread ${art.road.spread} on ${art.road.n} road samples`)
+        flat(art.road) && art.road.solid >= 3,
+        `median ${art.road.edges} band edges, spread ${art.road.spread} on ${art.road.solid}/5 solid columns (${art.road.n} samples)`)
     r.check('the grass reads as grass, not stripes',
-        flat(art.grass) && art.grass.n >= 40,
-        `${art.grass.edges} band edges, spread ${art.grass.spread} on ${art.grass.n} grass samples`)
+        flat(art.grass) && art.grass.solid >= 3,
+        `median ${art.grass.edges} band edges, spread ${art.grass.spread} on ${art.grass.solid}/5 solid columns (${art.grass.n} samples)`)
     const ratio = art.boy ? art.boy.h / art.boy.w : 0
     r.check('the bike is rear-view (taller than it is wide)', art.boy && ratio >= 1.2,
         art.boy ? `${art.boy.w}x${art.boy.h} (h/w ${ratio.toFixed(2)})` : 'no boy pixels found')
