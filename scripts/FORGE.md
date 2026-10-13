@@ -7,8 +7,16 @@ AGENTS.md wins.
 
 ## Session procedure
 
-1. **Read `STATE.md`, then `git pull --ff-only origin main`.** If the working
-   tree is dirty, STOP and report (the previous session died mid-edit; do not
+1. **Read `STATE.md` first — it may BE the previous session's report.** Step 9
+   deliberately leaves `STATE.md` written-but-uncommitted, so a lone dirty
+   `STATE.md` is a report, NOT a corpse, and a dirty `STATE.md` would also
+   abort the ff-pull once main advances (game merges touch it). Park it, pull,
+   keep its content for step 9:
+   `mkdir -p /tmp/forge && cp STATE.md /tmp/forge/STATE.parked.md && git checkout -- STATE.md && git pull --ff-only origin main`
+   (that checkout is scoped to STATE.md, the one file this lane owns; no
+   corpse can be wiped by it). **Anything else dirty IS a corpse:**
+   `git status --porcelain -- . ':(exclude)STATE.md'` must print nothing —
+   if it does, STOP and report (the previous session died mid-edit; do not
    guess what was in flight).
 1b. **Resume before you claim.** `git fetch --prune` and look for a
    `building` issue with a pushed `forge/<slug>` branch — a dead session's
@@ -66,7 +74,11 @@ AGENTS.md wins.
 9. **Rewrite `STATE.md`** (<150 lines): what shipped, next queued game,
    three questions for Jon. Commit STATE.md to main ONLY if the forge game
    merged this session (`git commit` on main is otherwise forbidden — if no
-   game merged, leave STATE.md written but uncommitted and say why in it).
+   game merged, leave STATE.md written but uncommitted and say why in it —
+    step 1 knows that dirt from a corpse, and the QA lane parks it at
+    `/tmp/forge/STATE.parked.md`; if that copy is newer than what you read
+    at step 1, fold its open questions into your report so nothing
+    evaporates between lanes).
 
 ## Hard rules (each one learned in a postmortem)
 
