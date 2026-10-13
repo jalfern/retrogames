@@ -14,7 +14,7 @@ export const CFG = {
     top: 9.2, acc: 0.075, brake: 0.24, coast: 0.015,
     grassTop: 3.6, kerbTop: 7.4,
     steer: 0.055, driftMul: 1.5, slide: 0.13,
-    spinT: 50, bumpV: 0.42, wallLimit: 246,
+    spinT: 50, bumpV: 0.42, wallLimit: 200,
     boostAcc: 0.17, boostOver: 4.2, boostDur: 95,
     shellV: 13.5, shellLife: 85, hitR: 30, bananaR: 24,
     respawnBox: 170, kartR: 27,
@@ -83,7 +83,7 @@ function rank(g) {
     order.forEach((k, i) => { k.place = i + 1 })
 }
 
-function useItem(g, k) {
+function spendItem(g, k) {
     if (!k.item || k.spinT > 0) return
     const it = k.item
     k.item = null
@@ -307,13 +307,13 @@ export function step(g, inp) {
     const locked = g.phase !== 'race'
     const pin = locked ? {} : inp || {}
     drive(g, P, { u: !!pin.u, d: !!pin.d, l: !!pin.l, r: !!pin.r, drift: !!pin.drift })
-    if (pin.item && g.phase === 'race') useItem(g, P)
+    if (pin.item && g.phase === 'race') spendItem(g, P)
     for (let i = 1; i < g.karts.length; i++) {
         const k = g.karts[i]
         const ci = cpuInput(g, k)
         if (locked) ci.u = false
         drive(g, k, ci)
-        if (ci.item && g.phase === 'race') useItem(g, k)
+        if (ci.item && g.phase === 'race') spendItem(g, k)
     }
     for (const k of g.karts) {
         checkpoints(g, k, k.lastS)

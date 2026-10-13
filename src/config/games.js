@@ -94,6 +94,10 @@ const ZeldaGame = lazy(() => import('../games/Zelda'))
 // that scripts the attract demo (and scripts/excitecheck.mjs audits tick-for-tick)
 // ride in their own chunk; the harness imports levels/sim/planner unchanged in Node.
 const ExcitebikeGame = lazy(() => import('../games/Excitebike'))
+// SUPER MARIO KART: same lesson — the track data, pure sim and the autopilot
+// that proves the 5-lap GP win (and scripts/kartcheck.mjs audits) ride in
+// their own chunk; the harness imports track/sim/planner unchanged in Node.
+const MarioKartGame = lazy(() => import('../games/MarioKart'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -306,6 +310,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'The 1984 motocross, rebuilt as an NES cartridge that leans on physics, not sprites. The throttle is the whole game: hold it and you go faster, hold it too long and the engine BOILS and drops you to a limp. Every jump is a ramp off a hand-carved heightmap — go airborne and the bike answers only to your weight, so you must lean it to meet the slope you are about to land on, or eat dirt. Mud and water holes suck the speed out and can stall you outright (pump the throttle to walk it back to life); the boost arrows throw you clear over the far one. Two circuits against rival pace lines; the attract demo is the autopilot\'s own proven lap — it rolls the same pure sim every tick to pick its lean — replayed tick for tick, and a Node harness audits the terrain, the ledger and the whole race offline (80 checks, 9 mutants that must all die).',
         controls: ['↑ / D-pad up: the GAS on the ground — and while airborne this LEANS the nose UP', '↓ / D-pad down: the BRAKE on the ground — and while airborne this LEANS the nose DOWN', 'Space / A-button: hop off a ramp · pump a stalled bike back to life in mud or water', 'G / GEAR button: high gear for the long straights, low gear will not boil as fast', 'Land flat: the bike self-tracks the slope it sees, but a big air needs YOU on the lean', '?: pause and read the engine gauges'],
+    },
+    {
+        path: '/mario-kart',
+        builtBy: 'forge',
+        component: MarioKartGame,
+        label: 'SUPER MARIO KART',
+        theme: 'light',
+        description: 'The SNES classic rebuilt on its own trick: the whole circuit is ONE textured plane rotated and scaled under your kart scanline by scanline — real Mode 7, in canvas, no assets. Five laps of MARIO CIRCUIT from last on the grid against four CPU karts: clip the apex, hold the drift through the hairpin, catch the dash panels on the straight, and take what the ? boxes hand you — a Shell to spin the leader, a Banana for the corner behind you, a Mushroom when the road goes straight. Standing last buys the best items, and the whole GP is proven winnable by the autopilot that scripts the attract demo, tick for tick (it even wins with every item box deleted).',
+        controls: ['↑: GAS · ↓: BRAKE · ← → : steer (you cannot turn standing still — the karts work on speed)', 'X / B button: DRIFT — hold through a corner for a tighter arc, and expect the slide', 'SPACE / A button: use your ITEM — Shell fires forward, Banana drops behind, Mushroom launches', 'Hit a ? box for an item: last place gets the good ones, and Lap 5 is chaos', 'Hold the dashed DASH PANELS on the straights — they throw you forward', '?: pause and read the rules of the circuit'],
     },
     {
         path: '/arena-archery',

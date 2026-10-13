@@ -107,7 +107,10 @@
         "hunterplay": "node scripts/hunterplay.mjs",
         "lint:excite": "eslint src/games/Excitebike src/components src/utils src/config src/main.jsx scripts",
         "excitecheck": "node scripts/excitecheck.mjs",
-        "exciteplay": "node scripts/exciteplay.mjs"
+        "exciteplay": "node scripts/exciteplay.mjs",
+        "lint:kart": "eslint src/games/MarioKart src/components src/utils src/config src/main.jsx scripts",
+        "kartcheck": "node scripts/kartcheck.mjs",
+        "kartplay": "node scripts/kartplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",

@@ -14,24 +14,23 @@
 
 export const TX = 2048
 export const TY = 2048
-export const ROAD_R = 190            // half-width of asphalt
-export const KERB_R = ROAD_R + 20    // red/white rumble strip
-export const WALL_R = ROAD_R + 66    // grass ends, barrier: the wall
+export const ROAD_R = 150            // half-width of asphalt
+export const KERB_R = ROAD_R + 18    // red/white rumble strip
+export const WALL_R = ROAD_R + 58    // grass ends, barrier: the wall
 
 // Hand-carved MARIO CIRCUIT: long start straight with the dash panels, a
-// sweeping right-hander, a kink, an S back up the right side, the top
-// straight heading home westbound, a tight-but-legal hairpin in the
-// north-west, and an S-chicane down the left cheek back to the line.
+// sweeping right-hander, an S back up the right side, the top straight
+// heading home westbound, a tight-but-legal hairpin in the north-west, and
+// one long tangent arc in the south bringing you onto the line. The point
+// spacings are not folklore: every corner here was widened until the audit
+// (scripts/kartcheck.mjs) proved min radius >= 200 and no road overlap —
+// a radius of 200 is flat-out at top speed (9.2 < 0.055 * 200).
 const CONTROL = [
-    [900, 1690], [1250, 1676],
-    [1520, 1600], [1760, 1450], [1848, 1230],
-    [1775, 1015], [1615, 905],
-    [1575, 735], [1645, 560], [1770, 430],
-    [1690, 285], [1440, 215], [1160, 202],
-    [860, 228], [620, 320],
-    [462, 480], [412, 672], [482, 852],
-    [545, 1030], [505, 1200], [430, 1360], [442, 1520],
-    [560, 1640], [730, 1692],
+    [960, 1810], [1330, 1790],
+    [1610, 1715], [1780, 1620], [1875, 1475], [1910, 1290],
+    [1890, 1090], [1810, 950], [1710, 830], [1650, 700], [1620, 560], [1560, 430], [1460, 325], [1320, 250],
+    [1150, 215], [970, 195], [790, 215], [630, 285],
+    [490, 420], [425, 600], [448, 790], [505, 935], [525, 1070], [500, 1205], [455, 1335], [425, 1465], [445, 1625], [515, 1735], [630, 1798], [765, 1818],
 ]
 
 function catmull(p0, p1, p2, p3, t) {
