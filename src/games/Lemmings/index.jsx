@@ -17,7 +17,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { LEVELS, buildLevel } from './levels.js'
-import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, W, H, DIRT, FIXED_DT } from './sim.js'
+import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
 
 const TS = 8                                   // internal pixels per tile
 const CW = W * TS
@@ -159,10 +159,39 @@ const LemGame = () => {
 
         // ---------- painter ----------
         const paint = () => {
-            ctx.fillStyle = '#7ec8e3'
+            // sky: full-canvas gradient, a sun, parallax ridges and fluffy
+            // clouds — all drawn behind the rock. The Amiga original sells
+            // depth with layered hills and a bright sky; a flat fill reads as
+            // a test fixture.
+            const sky = ctx.createLinearGradient(0, 0, 0, CH)
+            sky.addColorStop(0, '#3f8fca')
+            sky.addColorStop(0.5, '#7ec8e3')
+            sky.addColorStop(1, '#cdeaf4')
+            ctx.fillStyle = sky
             ctx.fillRect(0, 0, CW, CH)
-            ctx.fillStyle = '#a9ddf0'
-            for (let i = 0; i < 5; i++) ctx.fillRect(40 + i * 83, 14 + (i % 3) * 16, 34, 5)
+            ctx.fillStyle = 'rgba(255,252,235,0.30)'
+            ctx.beginPath(); ctx.arc(322, 44, 30, 0, Math.PI * 2); ctx.fill()
+            ctx.fillStyle = 'rgba(255,252,235,0.9)'
+            ctx.beginPath(); ctx.arc(322, 44, 15, 0, Math.PI * 2); ctx.fill()
+            const ridge = (base, amp, col) => {
+                ctx.fillStyle = col
+                ctx.beginPath()
+                ctx.moveTo(0, CH)
+                for (let x = 0; x <= CW; x += 12) {
+                    const y = base + Math.sin(x * 0.045 + base) * amp + Math.sin(x * 0.017) * amp * 0.6
+                    ctx.lineTo(x, y)
+                }
+                ctx.lineTo(CW, CH); ctx.closePath(); ctx.fill()
+            }
+            ridge(150, 11, 'rgba(120,160,168,0.5)')
+            ridge(168, 13, 'rgba(84,126,136,0.65)')
+            const cloud = (cx, cy, s) => {
+                ctx.fillStyle = 'rgba(255,255,255,0.92)'
+                for (const [dx, dy, w, h] of [[-13, 2, 24, 8], [3, -3, 20, 9], [-1, 4, 28, 7]]) {
+                    ctx.beginPath(); ctx.ellipse(cx + dx * s, cy + dy * s, w * s, h * s, 0, 0, Math.PI * 2); ctx.fill()
+                }
+            }
+            cloud(86, 54, 1); cloud(214, 84, 1.25); cloud(300, 96, 0.9)
 
             for (let y = 0; y < H; y++) {
                 for (let x = 0; x < W; x++) {
@@ -173,11 +202,20 @@ const LemGame = () => {
                         ctx.fillStyle = '#7a4a22'; ctx.fillRect(px, py, TS, TS)
                         ctx.fillStyle = speck(x, y) > 0.5 ? '#8d5a2c' : '#68391a'
                         ctx.fillRect(px + 1, py + 2, 2, 2); ctx.fillRect(px + 5, py + 5, 2, 1)
-                        if (gs.grid[(y - 1) * W + x] === 0) { ctx.fillStyle = '#59b25d'; ctx.fillRect(px, py, TS, 2) }
+                        if (y > 0 && gs.grid[(y - 1) * W + x] === 0) {
+                            ctx.fillStyle = '#59b25d'; ctx.fillRect(px, py, TS, 2)
+                            ctx.fillStyle = '#6fce72'
+                            ctx.fillRect(px + 1, py, 1, 3); ctx.fillRect(px + 5, py, 1, 4); ctx.fillRect(px + 7, py, 1, 3)
+                        }
                     } else {
-                        ctx.fillStyle = '#93a0ad'; ctx.fillRect(px, py, TS, TS)
-                        ctx.fillStyle = '#b6c2cf'; ctx.fillRect(px, py, TS, 2)
-                        ctx.fillStyle = '#6b7885'; ctx.fillRect(px + 2, py + 4, 2, 2); ctx.fillRect(px + 5, py + 2, 1, 1)
+                        // steel = unbreakable rock: the dark cool bedrock the dirt
+                        // sits on (and the plug the bomb cannot open). Variegated
+                        // stone, not a metal road.
+                        ctx.fillStyle = '#5d6b78'; ctx.fillRect(px, py, TS, TS)
+                        if (y > 0 && gs.grid[(y - 1) * W + x] !== STEEL) { ctx.fillStyle = '#8b98a2'; ctx.fillRect(px, py, TS, 2) }
+                        const r = speck(x, y)
+                        if (r > 0.5) { ctx.fillStyle = '#6a7983'; ctx.fillRect(px + 1 + Math.floor(r * 4), py + 2 + Math.floor(r * 3), 2, 2) }
+                        else if (r < 0.22) { ctx.fillStyle = '#454f59'; ctx.fillRect(px + 1 + Math.floor(r * 26), py + 3 + Math.floor(r * 6), 2, 1) }
                     }
                 }
             }
@@ -185,10 +223,15 @@ const LemGame = () => {
             // spawn cave + exit door
             ctx.fillStyle = '#241608'
             ctx.fillRect(meta.spawn.x * TS - 3, (meta.spawn.y - 1) * TS, TS + 6, TS + 2)
-            ctx.fillStyle = '#1d3a1d'
-            ctx.fillRect(meta.exit.x * TS + 1, meta.exit.y * TS - TS, TS - 2, TS * 2 - 1)
+            const ex = Math.round(meta.exit.x * TS), ey = Math.round(meta.exit.y * TS - TS)
+            ctx.fillStyle = '#0e2412'
+            ctx.fillRect(ex, ey, TS, TS * 2 - 1)
             ctx.fillStyle = '#59e05e'
-            ctx.fillRect(meta.exit.x * TS + 3, meta.exit.y * TS - 2, TS - 6, 3)
+            ctx.fillRect(ex, ey, TS, 2)                       // glowing lip
+            ctx.fillRect(ex, ey + 2, 2, TS * 2 - 3)           // side glow
+            ctx.fillRect(ex + TS - 2, ey + 2, 2, TS * 2 - 3)
+            ctx.fillStyle = 'rgba(89,224,94,0.35)'
+            ctx.fillRect(ex + 2, ey + 3, TS - 4, TS * 2 - 6)  // inner light
 
             // lemmings
             for (const L of gs.lemmings) {
@@ -203,6 +246,9 @@ const LemGame = () => {
                 }
                 ctx.fillStyle = LEM_COLORS.head; ctx.fillRect(px + 1, py, 5, 3)
                 ctx.fillStyle = LEM_COLORS.hair; ctx.fillRect(px + 1, py, 5, 1)
+                ctx.fillStyle = '#1b2a3a'                     // two eyes, offset toward the facing
+                const eo = L.dir > 0 ? 1 : 0
+                ctx.fillRect(px + 2 + eo, py + 1, 1, 1); ctx.fillRect(px + 4 + eo, py + 1, 1, 1)
                 ctx.fillStyle = LEM_COLORS.body; ctx.fillRect(px + 1, py + 3, 5, 3)
                 ctx.fillStyle = LEM_COLORS.pants
                 const leg = L.state === 'walk' ? (Math.floor(gs.tick / 8 + L.id) % 2) : 0
