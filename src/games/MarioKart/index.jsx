@@ -176,10 +176,12 @@ function buildSprites() {
 export default function MarioKart() {
     const canvasRef = useRef(null)
     const [paused, setPaused] = useState(false)
+    const [padOn, setPadOn] = useState(false)
     const pausedRef = useRef(false)
     const gameRef = useRef(null)
     const screenRef = useRef('attract')
     const keysRef = useRef({})
+    const tapRef = useRef(null)
 
     const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
 
@@ -198,6 +200,14 @@ export default function MarioKart() {
         const keys = keysRef.current
         const st = { screen: 'attract', endT: 0 }
         screenRef.current = 'attract'
+
+        // best-lap persistence: the renderer's memory, never the sim's
+        // (determinism in Node stays hash-for-hash; this only decorates)
+        const BEST_KEY = 'arcade.kart.bestLap'
+        const readBest = () => {
+            try { return Number(localStorage.getItem(BEST_KEY)) || 0 } catch { return 0 }
+        }
+        st.best = readBest()
 
         let raf = 0; let acc = 0; let last = performance.now()
         let camA = g.karts[0].a
@@ -374,10 +384,14 @@ export default function MarioKart() {
             ctx.fillText('MARIO CIRCUIT - 5 LAPS', W / 2, 98)
             if ((g.tick >> 5) % 2) {
                 ctx.fillStyle = '#f8f8f8'
-                ctx.fillText('PRESS ANY KEY', W / 2, 124)
+                ctx.fillText('PRESS ANY KEY / TAP', W / 2, 124)
             }
             ctx.fillStyle = '#88a8d8'; ctx.font = '8px monospace'
             ctx.fillText('attract: autopilot demo (its own proven win)', W / 2, 140)
+            if (st.best) {
+                ctx.fillStyle = '#f8d800'
+                ctx.fillText('BEST LAP ' + fmtTime(st.best), W / 2, 154)
+            }
             ctx.textAlign = 'left'
         }
 
@@ -390,8 +404,8 @@ export default function MarioKart() {
             ctx.fillText(g.end === 'win' ? 'YOU WIN!' : `${P.place}TH PLACE`, W / 2, 74)
             ctx.font = 'bold 12px monospace'
             ctx.fillStyle = '#f8f8f8'
-            ctx.fillText(`TIME ${fmtTime(P.finishT || g.tick)}  BEST LAP ${P.lapTimes.length ? fmtTime(Math.min(...P.lapTimes)) : '--'}`, W / 2, 96)
-            if ((g.tick >> 5) % 2) ctx.fillText('PRESS ANY KEY', W / 2, 118)
+            ctx.fillText(`TIME ${fmtTime(P.finishT || g.tick)}  BEST ${st.best ? fmtTime(st.best) : '--'}`, W / 2, 96)
+            if ((g.tick >> 5) % 2) ctx.fillText('TAP OR ANY KEY', W / 2, 118)
             ctx.textAlign = 'left'
         }
 
@@ -407,8 +421,18 @@ export default function MarioKart() {
                 if (log.length > 2000) log.splice(0, log.length - 2000)
             }
             sfx(evs, live)
+            if (live) {
+                for (const ev of evs) {
+                    if (ev.e === 'lap' && ev.who === 'PLAYER' && ev.t > 60) {
+                        if (!st.best || ev.t < st.best) {
+                            st.best = ev.t
+                            try { localStorage.setItem(BEST_KEY, String(ev.t)) } catch { /* private mode: session-only */ }
+                        }
+                    }
+                }
+            }
             if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame()); st.endT = 0 } }
-            if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0 }
+            if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0; setPadOn(false) }
         }
 
         const loop = (now) => {
@@ -439,6 +463,17 @@ export default function MarioKart() {
             st.screen = screen; screenRef.current = screen
             st.endT = 0
             camA = g.karts[0].a
+            // the pad would only cover the canvas on attract/end — withdraw
+            // it there (the tap lands on the canvas itself, see tapRef)
+            setPadOn(screen === 'race')
+        }
+
+        // Phone players have no keys to press: a tap on the bare canvas is
+        // the attract/end actuator while the pad is withdrawn.
+        tapRef.current = () => {
+            if (pausedRef.current) return
+            if (st.screen === 'attract') { audioController.init(); resetTo('race') }
+            else if (st.screen === 'end') resetTo('attract')
         }
 
         const kd = (e) => {
@@ -488,6 +523,7 @@ export default function MarioKart() {
             screen: () => st.screen,
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
+            best: () => st.best,
         }
 
         return () => {
@@ -500,9 +536,12 @@ export default function MarioKart() {
     }, [])
 
     return (
-        <div className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none">
+        <div
+            className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none"
+            onPointerDown={() => tapRef.current && tapRef.current()}
+        >
             <canvas ref={canvasRef} width={W} height={H} className="max-w-full max-h-full" style={{ imageRendering: 'pixelated' }} />
-            <VirtualControls secondAction={{ label: 'B', code: 'KeyX' }} visible={!paused} />
+            <VirtualControls secondAction={{ label: 'B', code: 'KeyX' }} visible={padOn && !paused} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'SUPER MARIO KART')} onResume={handleResume} />}
         </div>
     )
