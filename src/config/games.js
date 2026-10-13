@@ -89,6 +89,10 @@ const WizardryGame = lazy(() => import('../games/Wizardry'))
 // that proves them (and scripts/huntercheck.mjs audits) ride in their own
 // chunk; the harness imports sim/script/planner unchanged in Node.
 const SpyHunterGame = lazy(() => import('../games/SpyHunter'))
+// EXCITEBIKE: same lesson — the heightmap, the pure sim and the rolling autopilot
+// that scripts the attract demo (and scripts/excitecheck.mjs audits tick-for-tick)
+// ride in their own chunk; the harness imports levels/sim/planner unchanged in Node.
+const ExcitebikeGame = lazy(() => import('../games/Excitebike'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -292,6 +296,15 @@ export const GAMES = [
         builtBy: 'forge',
         description: 'The G-6155 against two hand-scripted stages of the original arcade highway — every spawn is a named event a Node harness audits BEFORE you drive on it, so "readable" is a proof, not a vibe. Three lanes of Killers that match your speed and fire back, Road Lakers painting oil that spins you, a Sweeper that shoves you into the oil, a helicopter walking bombs down your lane, and the gunboat in the river the road cannon can never reach — that one is the missiles\' job. Shoot the Supporter to drop GUN/MISSILE/repair crates and catch the drop; every stage ends with the 2000-point bonus car. The attract demo is the autopilot\'s own proven run, tick for tick — and the campaign is re-proven with one fewer missile, one fewer life, and with no missiles at all.',
         controls: ['Arrows / D-pad: steer across three lanes — grass kills slowly, the wall kills fast', 'SPACE / A: machine gun — watch the HEAT gauge, an overheated gun is a parked car', 'X / B: homing MISSILE — the gunboat in the river only answers to these', 'Shoot the white SUPPORTER, then catch its crate: GUN, MISSILE or repair', 'Oil spins you; Sweepers push you toward it — never sit in the oil lane with traffic coming', '?: pause and read the rules'],
+    },
+    {
+        path: '/excitebike',
+        builtBy: 'forge',
+        component: ExcitebikeGame,
+        label: 'EXCITEBIKE',
+        theme: 'dark',
+        description: 'The 1984 motocross, rebuilt as an NES cartridge that leans on physics, not sprites. The throttle is the whole game: hold it and you go faster, hold it too long and the engine BOILS and drops you to a limp. Every jump is a ramp off a hand-carved heightmap — go airborne and the bike answers only to your weight, so you must lean it to meet the slope you are about to land on, or eat dirt. Mud and water holes suck the speed out and can stall you outright (pump the throttle to walk it back to life); the boost arrows throw you clear over the far one. Two circuits against rival pace lines; the attract demo is the autopilot\'s own proven lap — it rolls the same pure sim every tick to pick its lean — replayed tick for tick, and a Node harness audits the terrain, the ledger and the whole race offline (80 checks, 9 mutants that must all die).',
+        controls: ['↑ / D-pad up: the GAS on the ground — and while airborne this LEANS the nose UP', '↓ / D-pad down: the BRAKE on the ground — and while airborne this LEANS the nose DOWN', 'Space / A-button: hop off a ramp · pump a stalled bike back to life in mud or water', 'G / GEAR button: high gear for the long straights, low gear will not boil as fast', 'Land flat: the bike self-tracks the slope it sees, but a big air needs YOU on the lean', '?: pause and read the engine gauges'],
     },
     {
         path: '/arena-archery',

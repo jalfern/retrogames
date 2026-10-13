@@ -101,7 +101,10 @@
         "builtbycheck": "node scripts/builtbycheck.mjs",
         "lint:hunter": "eslint src/games/SpyHunter src/components src/utils src/config src/main.jsx scripts",
         "huntercheck": "node scripts/huntercheck.mjs",
-        "hunterplay": "node scripts/hunterplay.mjs"
+        "hunterplay": "node scripts/hunterplay.mjs",
+        "lint:excite": "eslint src/games/Excitebike src/components src/utils src/config src/main.jsx scripts",
+        "excitecheck": "node scripts/excitecheck.mjs",
+        "exciteplay": "node scripts/exciteplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
