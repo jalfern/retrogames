@@ -15,6 +15,12 @@
 #   QA      — same, for the QA MASTER process.
 #   WARDEN  — the newest warden tick log.
 # Each pane redraws every 5 s, so it follows new sessions on its own.
+#
+# NEVER put a lane's process pattern (e.g. "opencode run.*THE FORGE") into a
+# pane's command text. `pgrep -f` matches full command lines, so the pane
+# itself would match: the warden and forge.sh / forge-qa.sh would then think
+# the lane is busy and never start it (that bug shipped once, 2026-10-12).
+# The panes pass the pattern in two halves through the environment instead.
 
 SESSION=forge
 
@@ -27,13 +33,13 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
     exec tmux attach -t "$SESSION"
 fi
 
-# lane_pane LABEL PATTERN: show the last lines of the log that the process
-# matching PATTERN has open; say so plainly when the lane is idle.
+# lane_pane LABEL: show the last lines of the log that the process matching
+# "$P1$P2" (set per pane, see above) has open; say so plainly when idle.
 lane_pane() {
     cat <<PANE
 while true; do
     clear
-    pid=\$(pgrep -f '$2' | head -1)
+    pid=\$(pgrep -f "\$P1\$P2" | head -1)
     if [[ -z "\$pid" ]]; then
         echo "$1: idle (no process)"
     else
@@ -55,8 +61,8 @@ WARDEN_PANE='while true; do
     sleep 5
 done'
 
-tmux new-session -d -s "$SESSION" zsh -c "$(lane_pane BUILDER 'opencode run.*THE FORGE')"
-tmux split-window -v -t "$SESSION" zsh -c "$(lane_pane QA 'opencode run.*QA MASTER')"
+tmux new-session -d -s "$SESSION" -e P1='opencode run.*THE' -e P2=' FORGE' zsh -c "$(lane_pane BUILDER)"
+tmux split-window -v -t "$SESSION" -e P1='opencode run.*QA' -e P2=' MASTER' zsh -c "$(lane_pane QA)"
 tmux split-window -v -t "$SESSION" zsh -c "$WARDEN_PANE"
 tmux select-layout -t "$SESSION" even-vertical
 exec tmux attach -t "$SESSION"
