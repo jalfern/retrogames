@@ -1,5 +1,4 @@
-import React, { useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useEffect, useRef, useState } from 'react'
 import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
@@ -164,10 +163,11 @@ function drawHud(ctx, s) {
 
 export default function Zelda() {
     const canvasRef = useRef(null)
-    const navigate = useNavigate()
     const gameRef = useRef(null)
     const stateRef = useRef({ screen: 'attract' })
     const keysRef = useRef({})
+    const pausedRef = useRef(false)
+    const [paused, setPaused] = useState(false)
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -206,6 +206,7 @@ export default function Zelda() {
         const frame = (now) => {
             raf = requestAnimationFrame(frame)
             const st = stateRef.current
+            if (pausedRef.current) { draw(ctx, g, st, game.tick); last = now; return }
             acc += Math.min(now - last, 250); last = now
             while (acc >= 1000 / 60) {
                 acc -= 1000 / 60
@@ -274,7 +275,8 @@ export default function Zelda() {
         const kd = (e) => {
             const st = stateRef.current
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault()
-            if (e.code === 'Slash') { navigate(`/mario?game=ZELDA`); return }
+            const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
+            if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (st.screen === 'attract') { audioController.unlock && audioController.unlock(); st.screen = 'play'; return }
             if (st.screen === 'win' || st.screen === 'gameover') { st.screen = 'attract'; return }
             keys[e.code] = true
@@ -283,15 +285,15 @@ export default function Zelda() {
         window.addEventListener('keydown', kd)
         window.addEventListener('keyup', ku)
         raf = requestAnimationFrame(frame)
-        window.__zeldaTest = { game: () => gameRef.current, keys, press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 120) } }
+        window.__zeldaTest = { game: () => gameRef.current, screen: () => stateRef.current.screen, paused: () => pausedRef.current, keys, press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 120) } }
         return () => { cancelAnimationFrame(raf); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); delete window.__zeldaTest }
-    }, [navigate])
+    }, [])
 
     return (
         <div className="flex flex-col items-center justify-center w-full h-full bg-black select-none">
             <canvas ref={canvasRef} width={W} height={H} className="max-w-full max-h-full" style={{ imageRendering: 'pixelated' }} />
-            <VirtualControls secondAction={{ label: 'B', code: 'KeyX' }} />
-            <PauseOverlay gameId={GAMES.find((x) => x.label === 'ZELDA')?.path} />
+            <VirtualControls visible={!paused} secondAction={{ label: 'B', code: 'KeyX' }} />
+            {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'ZELDA')} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
         </div>
     )
 }

@@ -57,6 +57,7 @@ const suite = [
     node('sweepplay.mjs'),
     node('papercheck.mjs'),
     node('paperplay.mjs'),
+    node('zeldaplay.mjs'),
     full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '500']),
 ]
 
