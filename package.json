@@ -35,6 +35,7 @@
         "keepplay": "node scripts/keepplay.mjs",
         "verify": "node scripts/verify.mjs",
         "aicheck": "node scripts/aicheck.mjs",
+        "sentinelcheck": "zsh scripts/sentinelcheck.sh",
         "prodsmoke": "node scripts/prodsmoke.mjs",
         "heistsmoke": "node scripts/heistsmoke.mjs",
         "heisttiming": "node scripts/heisttiming.mjs",

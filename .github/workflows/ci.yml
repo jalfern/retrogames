@@ -215,6 +215,11 @@ jobs:
       # checkpoint gate) must die. ~3 s, blocks merges.
       - run: npm run lint:kart
       - run: npm run kartcheck
+      # The lanes' watchdog (issue #180): the sentinel's decision battery in
+      # plain zsh — the 5-min dead request (silence + oMLX idle + no running
+      # child), the server-restart case, and the 25-min builder silence that
+      # must NOT kill a 40-min tool call. ~1 s.
+      - run: npm run sentinelcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

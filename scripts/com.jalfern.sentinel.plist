@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jalfern.sentinel</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null; git -C /Users/jon/Dev/retrogames show origin/main:scripts/sentinel.sh | exec /bin/zsh -s -- "$@"</string>
+        <string>sentinel.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/jon/Dev/retrogames</string>
+    <key>StartInterval</key>
+    <integer>180</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/forge/sentinel-launchd.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/forge/sentinel-launchd.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</string>
+    </dict>
+</dict>
+</plist>
