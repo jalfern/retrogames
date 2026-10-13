@@ -290,6 +290,10 @@ jobs:
         run: npm run exciteplay
         env:
           SHOT_CHANNEL: chromium
+      - name: Zelda smoke (real keys — a cell-for-cell walk on the world grid, "?" pause opens and the frozen world ignores a held key, play resumes)
+        run: npm run zeldaplay
+        env:
+          SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)
         if: failure()
         run: cat /tmp/vite.log
