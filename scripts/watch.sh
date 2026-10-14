@@ -6,15 +6,21 @@
 #
 # Works from anywhere you can SSH into the Studio (phone over Tailscale too):
 # the tmux session lives here, so every device attaches to the same panes.
-# Detach with Ctrl-b then d; it keeps running.
+# From the MacBook Pro, one line:
+#   ssh -t jon@100.67.32.98 'zsh -lc ~/Dev/retrogames/scripts/watch.sh'
+# Detach with Ctrl-b then d; everything keeps running.
 #
-# Panes, top to bottom:
+# Panes: left column, top to bottom, refreshed every 5 s:
 #   BUILDER — the log the running builder process actually has open. Not
 #             /tmp/forge/last.log: a launchd fire that skips (a session is
 #             already running) repoints last.log at a one-line stub.
 #   QA      — same, for the QA MASTER process.
 #   WARDEN  — the newest warden tick log.
-# Each pane redraws every 5 s, so it follows new sessions on its own.
+# Right: RETRO — Jon's own tmux session "retro" (his chat with Qwen), attached
+#   inside this pane, or created in the repo if it does not exist yet. It is a
+#   separate session, so `--kill` and detaching never end that chat. Typing
+#   goes straight to it; its own tmux keys need Ctrl-b twice (Ctrl-b Ctrl-b d).
+# Click a pane (mouse is on) or Ctrl-b + arrow to move between panes.
 #
 # NEVER put a lane's process pattern (e.g. "opencode run.*THE FORGE") into a
 # pane's command text. `pgrep -f` matches full command lines, so the pane
@@ -65,4 +71,9 @@ tmux new-session -d -s "$SESSION" -e P1='opencode run.*THE' -e P2=' FORGE' zsh -
 tmux split-window -v -t "$SESSION" -e P1='opencode run.*QA' -e P2=' MASTER' zsh -c "$(lane_pane QA)"
 tmux split-window -v -t "$SESSION" zsh -c "$WARDEN_PANE"
 tmux select-layout -t "$SESSION" even-vertical
+# RETRO: a full-height pane on the right, 60% wide. `env -u TMUX` lets tmux
+# nest; -A attaches to "retro" if it exists, otherwise creates it in the repo.
+tmux split-window -h -f -l 60% -t "$SESSION" \
+    "env -u TMUX tmux new-session -A -s retro -c $HOME/Dev/retrogames"
+tmux set-option -t "$SESSION" mouse on
 exec tmux attach -t "$SESSION"
