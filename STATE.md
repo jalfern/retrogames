@@ -1,51 +1,67 @@
-# STATE — forge session 2026-10-13 night (TETRIS)
+# STATE — forge session 2026-10-13/14 night (JOUST)
 
 ## Shipped this session
-- **#208 TETRIS (NES) MERGED** (PR #213, squash; PR's own CI green incl. tetrischeck
-  45/45). `/tetris`: A-Type marathon, start level 0-9. **Prod deploy still pending**
-  ~15min post-merge: the first main run went red on the missileplay smoke flake and
-  Vercel appears to gate prod on CI; the rerun + a STATE-only re-run are cycling.
-  If jalfern.com/retrogames/tetris isn't live when the smoke run finishes, that gate
-  (or the smoke flake) is the thing to look at first.
-- Exact & pinned in Node (same code the tab runs): NTSC gravity L0-9 tick-measured
-  against a LITERAL table (my first version imported GRAVITY as the expectation —
-  a green-testing-nothing check, found and killed); DAS 16/6 instant/reversal/
-  release; soft drop 2f/row; zero lock delay; scoring graded at pre-clear level;
-  level = startLevel + lines/10 capped 29; score cap 9,999,990; 8-bit Galois LFSR
-  with modulo bias pinned to period residues [36,37,37,37,36,36,36]; zero triples
-  in 50k; autopilot clears >=10 lines on 8 probe seeds; attract hash-for-hash.
-- Harness fail-proven: GRAVITY[0]=47 -> 3 red, restore -> green.
-- README carries the honest-deviation ledger (L10+ gravity extrapolated to 2f,
-  anti-triple reroll starves low-residue pieces, music fixed tempo).
+- **#209 JOUST MERGED** (PR #215, squash `8015e72`; PR CI green: static + smoke +
+  Vercel). **Prod verified live**: https://www.jalfern.com/retrogames/joust serves
+  the production bundle — canvas 256x224, 3518 lit px, attract text, zero page errors.
+  `/joust`: 1982 Williams lance duel. The law is pinned: **the lower lance always
+  loses**, dead-even height kills both. Flap (net -0.067) vs glide (lean slides you
+  down your own tilt); momentum + screen wrap; egg chain (touch banks +100, rest 4 s
+  hatches the next-stronger rider; Shadow drops nothing); five waves as data — hand
+  columns speed up 360→210 ticks, crumble ledges from wave 3; PERFECT wave +1000.
+- Node gate `npm run joustcheck` in the static CI: **46/46** — physics literals
+  pinned at the source (the tetrischeck lesson applied up front), joust rule all
+  three outcomes, egg chain both directions, wrap/hands/lava/crumble, wave ledger
+  recomputed event-by-event, autopilot clears waves 1-2 hash-for-hash deterministic,
+  egg-blind-pilot proof the hatch chain is live (not dead code).
+  Fail-proven: inverting the joust sign → 9 red, restore → green.
+- `npm run joustdive` (advisory verify tier, like tetrisplay): real keys only,
+  12/12 locally — attract alive, travel/climb, **pixels where the sim says the
+  rider is** (probe+read in ONE evaluate — the roundtrip-drift lesson applied),
+  three honest lava deaths, GAME OVER, clean restart, 2P, zero page errors.
+- QA issue **#216** filed (autopilot all-five-waves, sfx grain, hunting hands,
+  joustdive promotion rule).
 
 ## Lessons paid for this session
-- A check that imports the constant it audits cannot see it change (gravity).
-- The NES LFSR has 255 states, not 254 — theory must count the same universe the
-  machine does (bias pin was wrong first, sim was right).
-- CDP polling at 25ms starves a headless tab's rAF mid-mash: world-time holds
-  (sim tick) fixed the single-press flakes; the long mash loop stays wall-clock.
-  tetrisplay passes 24/24 locally, lives in the manual verify tier with a written
-  diagnosis (#214 lists it).
-- CI on main went RED after the merge on the pre-existing missileplay smoke flake
-  (23/25, same rAF-starvation family). Reran the failed job; that gate is not
-  merge-blocking but may hold the Vercel deploy.
+- The lazy-import shortcut bit us: registered `JoustGame` in games.js but forgot
+  the GAMES entry — router said "No routes matched /joust" while the dev server
+  happily 200'd the SPA fallback. Production smoke (canvas + pixels) is what
+  makes a dead route loud, not a 200.
+- A `/retrogames/<new-game>` check needs the registry entry AND the canvas lit;
+  assert both, in prod shape, before calling a game shipped.
+- `/tmp` nohup background servers die between tool calls unless `nohup ... & disown`.
+- Worktree hygiene: `/Users/jon/Dev/retrogames-tetris` had **`main` checked out**
+  (stale f27417d), which made rule-5 merges fail with "'main' is already used by
+  worktree". Detached it this session. The MAIN checkout still sits at ffef879
+  with the QA lane's dirty kart files — the worktree-only rule is not holding for
+  the QA lane; see question 1.
 
 ## Queue state
-- game-queue: **#209 JOUST**, **#210 Q*BERT**. Next session claims #209.
-- #214 QA-TETRIS filed (flash order, music tempo, lock flash, marquee art,
-  attract level cycling, promote tetrisplay once its flake is fixed).
+- game-queue: **#210 Q*BERT** is head. Next session claims it.
 
-## Harness commands
-- `npm run tetrischeck` (static CI gate), `npm run tetrisplay` (manual verify;
-  TETRIS_URL override; world-tick waits), `npm run lint:tetris`.
-- Worktrees: `~/Dev/retrogames-tetris` pushed+merged (branch deleted remote).
+## Harness commands (new this session)
+- `npm run joustcheck` (static gate), `npm run joustdive` (manual verify;
+  `JOUST_URL=` override for non-5173 ports), `npm run lint:joust`.
+- Worktree `~/Dev/retrogames-joust` merged; remote branch deleted. Local branch
+  prune pending whenever that worktree is removed.
+
+## Housekeeping noticed (not this session's work)
+- QA lane appears to edit the MAIN checkout (dirty `scripts/kartplay.mjs`,
+  `src/games/MarioKart/index.jsx`, pid 18524 at session start). That is exactly
+  what the worktree-only rule forbids, and its tetris worktree held `main`
+  checked out all night — that combination will silently break the next merge.
+- `walkabout` / other lanes: `/Users/jon/Dev/retrogames-kart`, `-noder`,
+  `-papers`, `-qa-kart199`, `-qa-sentinel`, `-simcity`, `-zelda` all still exist;
+  most are merged or stale — a `git worktree prune` pass would help the warden.
 
 ## Three questions for Jon
-1. TETRIS caps level at 29 with a 2-frame gravity floor (honest extrapolation).
-   Keep, or chase the real NES high-level table (ROM-behaviour rabbit hole)?
-2. No B-Type (fixed-line mode) shipped — issue asked for A-Type marathon only,
-   but the menu-side "GAME A/B" switch is iconic. Worth a queued round?
-3. main's CI went red on the missileplay smoke flake right after the merge —
-   same CDP/rAF starvation as tetrisplay. Should the smoke job's long key-hold
-   suites all move to world-tick waits (one small PR across drivers), or stay
-   advisory and be rerun-on-red?
+1. The QA lane edited the main checkout all night and left a worktree holding
+   `main` — rule-5 merges failed because of it (I detached the stale one). Should
+   the warden enforce "main checkout detached + clean" as a preflight kick
+   condition?
+2. JOUST's autopilot wins waves 1-2 then dies in the wave-3 swarm, so the attract
+   demo loops those. Fine as shipped (it's a *proven* run), or should the demo
+   show a wave-4/5 clip even if the pilot can't reach it honestly yet?
+3. `joustdive` is in the advisory tier. Same policy as tetrisplay: promote into
+   `static` only after ~5 green manual verify runs — or is there a CDP-stability
+   number you want the smoke jobs held to instead?
