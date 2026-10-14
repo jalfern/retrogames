@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { TRACK, BOOSTS, BOXES, CHECKPOINTS, surfaceAt } from '../src/games/MarioKart/track.js'
-import { makeGame, step, stateHash, fmtTime } from '../src/games/MarioKart/sim.js'
+import { makeGame, step, stateHash, fmtTime, CFG } from '../src/games/MarioKart/sim.js'
 import { decide } from '../src/games/MarioKart/planner.js'
 
 const R = { fail: 0 }
@@ -133,6 +133,13 @@ console.log('— human thumbs (a crude driver must finish the GP) —')
     check('crude driver finishes all five laps', P2.lap >= 5, `lap ${P2.lap} ${g2.end}`)
     check('crude driver finishes under 100 s', P2.finished && P2.finishT < 60 * 100, P2.finished ? fmtTime(P2.finishT) : 'dnf')
     check('crude driver taps the wall <= 3 times', taps <= 3, `taps ${taps}`)
+    // the lap table makes every banked lap PUBLIC: a lap faster than the
+    // physics allows (T.len at the boost cap) is a machine lie, not a fast
+    // player. The browser's brake-less driver banked 3.9 s laps because a
+    // spent boost never bled its overspeed back down.
+    check('no banked lap beats the physics (every lap >= T.len / v_max)',
+        P2.lapTimes.length === 5 && P2.lapTimes.every((t) => t >= T.len / (CFG.top + CFG.boostOver) - 10),
+        P2.lapTimes.map((t) => (t / 60).toFixed(1) + 's').join(' '))
 }
 
 console.log('— rules (proven by state, not prose) —')

@@ -208,10 +208,27 @@ export default function MarioKart() {
         // best-lap persistence: the renderer's memory, never the sim's
         // (determinism in Node stays hash-for-hash; this only decorates)
         const BEST_KEY = 'arcade.kart.bestLap'
+        const TOP_KEY = 'arcade.kart.topLaps'
+        const GHOST_KEY = 'arcade.kart.ghost'
         const readBest = () => {
             try { return Number(localStorage.getItem(BEST_KEY)) || 0 } catch { return 0 }
         }
         st.best = readBest()
+        // top-3 lap table: the cabinet's memory, kept sorted and trimmed
+        const readTop = () => {
+            try {
+                const t = JSON.parse(localStorage.getItem(TOP_KEY) || '[]')
+                return Array.isArray(t) ? t.filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b).slice(0, 3) : []
+            } catch { return [] }
+        }
+        st.top = readTop()
+        // the ghost: the certified GP line as a phantom — a second, pure
+        // instance of the SAME machine stepped in lockstep, rendered
+        // semi-transparent. It lives in its own world, so it can never
+        // bump the player or be bumped, take items, or touch the sim that
+        // decides who wins the real race.
+        st.ghost = (() => { try { return localStorage.getItem(GHOST_KEY) === '1' } catch { return false } })()
+        let gGhost = null
 
         let raf = 0; let acc = 0; let last = performance.now()
         let camA = g.karts[0].a
@@ -296,6 +313,12 @@ export default function MarioKart() {
             ctx.beginPath(); ctx.rect(0, 0, W, PLAY_H); ctx.clip()
             const items = []
             for (const k of g.karts.slice(1)) items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color], w: 56, h: 64, o: k })
+            // the ghost races in its own world and vanishes at its own
+            // finish line — a finished phantom would freeze mid-track
+            if (gGhost && !gGhost.end) {
+                const G = gGhost.karts[0]
+                items.push({ x: G.x, y: G.y, a: G.a, img: S.mario, w: 56, h: 64, o: G, ghost: true })
+            }
             for (const b of g.bananas) items.push({ x: b.x, y: b.y, a: 0, img: S.banana, w: 26, h: 20 })
             for (const s of g.shells) items.push({ x: s.x, y: s.y, a: s.a, img: S.shell, w: 30, h: 26 })
             for (const b of g.boxes) if (!b.taken) items.push({ x: b.x, y: b.y, a: 0, img: S.box, w: 40, h: 40, bob: true })
@@ -311,10 +334,11 @@ export default function MarioKart() {
                 const w = Math.min(300, it.w * s * 0.9); const h = Math.min(320, it.h * s * 0.9)
                 const bob = it.bob ? Math.sin(g.tick * 0.1 + it.x) * 3 * s : 0
                 if (sx + w < 0 || sx - w > W) continue
-                ctx.globalAlpha = 0.25
+                const ga = it.ghost ? 0.45 : 1
+                ctx.globalAlpha = 0.25 * ga
                 ctx.fillStyle = '#000'
                 ctx.fillRect(sx - w / 2, sy - 3 * s, w, 6 * s)
-                ctx.globalAlpha = 1
+                ctx.globalAlpha = ga
                 ctx.save()
                 ctx.translate(sx, sy - h / 2 + bob)
                 if (it.o) ctx.rotate(it.o.a - camA)
@@ -378,8 +402,11 @@ export default function MarioKart() {
         }
 
         const drawAttract = () => {
+            // the band covers the top-table rows too: the world under them
+            // paints gold dash panels, so the BEST row would lose its gold
+            // against a live track
             ctx.fillStyle = 'rgba(0,0,0,0.45)'
-            ctx.fillRect(0, 30, W, 74)
+            ctx.fillRect(0, 30, W, 82)
             ctx.textAlign = 'center'
             ctx.fillStyle = '#e02020'
             ctx.font = 'bold 26px monospace'
@@ -391,30 +418,48 @@ export default function MarioKart() {
             ctx.font = 'bold 11px monospace'
             ctx.fillStyle = '#a8c8f8'
             ctx.fillText('MARIO CIRCUIT - 5 LAPS', W / 2, 98)
+            // the cabinet's memory: a top-3 table, best in gold
+            if (st.top.length) {
+                ctx.font = 'bold 8px monospace'
+                for (let i = 0; i < st.top.length; i++) {
+                    ctx.fillStyle = i === 0 ? '#f8d800' : '#88a8d8'
+                    ctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, 109 + i * 9)
+                }
+            }
+            if (st.ghost) {
+                ctx.font = 'bold 8px monospace'
+                ctx.fillStyle = '#f8d800'
+                ctx.fillText('GHOST ON - the certified line', W / 2, 136)
+            }
             if ((g.tick >> 5) % 2) {
+                ctx.font = 'bold 11px monospace'
                 ctx.fillStyle = '#f8f8f8'
-                ctx.fillText('PRESS ANY KEY / TAP', W / 2, 124)
+                ctx.fillText('PRESS ANY KEY / TAP', W / 2, 145)
             }
             ctx.fillStyle = '#88a8d8'; ctx.font = '8px monospace'
-            ctx.fillText('attract: autopilot demo (its own proven win)', W / 2, 140)
-            if (st.best) {
-                ctx.fillStyle = '#f8d800'
-                ctx.fillText('BEST LAP ' + fmtTime(st.best), W / 2, 154)
-            }
+            ctx.fillText('attract: autopilot demo (its own proven win)', W / 2, 159)
             ctx.textAlign = 'left'
         }
 
         const drawEnd = () => {
             const P = g.karts[0]
-            ctx.fillStyle = 'rgba(0,0,20,0.7)'; ctx.fillRect(0, 40, W, 90)
+            ctx.fillStyle = 'rgba(0,0,20,0.7)'; ctx.fillRect(0, 30, W, 116)
             ctx.textAlign = 'center'
             ctx.font = 'bold 24px monospace'
             ctx.fillStyle = g.end === 'win' ? '#f8d800' : '#f85800'
-            ctx.fillText(g.end === 'win' ? 'YOU WIN!' : `${P.place}TH PLACE`, W / 2, 74)
+            ctx.fillText(g.end === 'win' ? 'YOU WIN!' : `${P.place}TH PLACE`, W / 2, 66)
             ctx.font = 'bold 12px monospace'
             ctx.fillStyle = '#f8f8f8'
-            ctx.fillText(`TIME ${fmtTime(P.finishT || g.tick)}  BEST ${st.best ? fmtTime(st.best) : '--'}`, W / 2, 96)
-            if ((g.tick >> 5) % 2) ctx.fillText('TAP OR ANY KEY', W / 2, 118)
+            ctx.fillText(`TIME ${fmtTime(P.finishT || g.tick)}  BEST ${st.best ? fmtTime(st.best) : '--'}`, W / 2, 88)
+            if (P.lapTimes.length) {
+                ctx.font = 'bold 8px monospace'
+                ctx.fillStyle = '#a8c8f8'
+                ctx.fillText('SPLITS ' + P.lapTimes.map((t) => (t / 60).toFixed(1)).join(' '), W / 2, 102)
+            }
+            ctx.font = 'bold 10px monospace'
+            ctx.fillStyle = st.ghost ? '#f8d800' : '#8898b8'
+            ctx.fillText(`GHOST [G]: ${st.ghost ? 'ON' : 'OFF'}`, W / 2, 118)
+            if ((g.tick >> 5) % 2) { ctx.fillStyle = '#f8f8f8'; ctx.font = 'bold 12px monospace'; ctx.fillText('TAP OR ANY KEY', W / 2, 136) }
             ctx.textAlign = 'left'
         }
 
@@ -423,6 +468,7 @@ export default function MarioKart() {
                 ? decide(g)
                 : { u: !!keys.ArrowUp, d: !!keys.ArrowDown, l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyX || keys.KeyC), item: !!keys.Space }
             step(g, live ? inp : decide(g))
+            if (live && gGhost && !gGhost.end) step(gGhost, decide(gGhost))
             const evs = g.events.splice(0)
             if (import.meta.env.DEV) {
                 const log = (window.__kartLog ||= [])
@@ -437,6 +483,8 @@ export default function MarioKart() {
                             st.best = ev.t
                             try { localStorage.setItem(BEST_KEY, String(ev.t)) } catch { /* private mode: session-only */ }
                         }
+                        st.top.push(ev.t); st.top.sort((a, b) => a - b); st.top = st.top.slice(0, 3)
+                        try { localStorage.setItem(TOP_KEY, JSON.stringify(st.top)) } catch { /* private mode */ }
                     }
                 }
             }
@@ -474,6 +522,7 @@ export default function MarioKart() {
             camA = g.karts[0].a
             // the pad would only cover the canvas on attract/end — withdraw
             // it there (the tap lands on the canvas itself, see tapRef)
+            gGhost = screen === 'race' && st.ghost ? makeGame() : null
             setPadOn(screen === 'race')
         }
 
@@ -495,6 +544,11 @@ export default function MarioKart() {
                 return
             }
             if (st.screen === 'end') {
+                if (e.code === 'KeyG') {
+                    st.ghost = !st.ghost
+                    try { localStorage.setItem(GHOST_KEY, st.ghost ? '1' : '0') } catch { /* private mode */ }
+                    return
+                }
                 st.endT++
                 if (st.endT > 20) resetTo('attract')
                 return
@@ -528,6 +582,10 @@ export default function MarioKart() {
 
         window.__kartTest = {
             game: () => g,
+            ghostGame: () => gGhost,
+            ghost: () => st.ghost,
+            top: () => [...st.top],
+            camAt: () => camA,
             keys,
             screen: () => st.screen,
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },

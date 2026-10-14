@@ -132,13 +132,19 @@ function drive(g, k, inp) {
         k.hint = surf.i; k.idx = surf.i
         k.offroad = surf.surf === 'grass' || surf.surf === 'kerb'
         const top = surf.surf === 'grass' ? CFG.grassTop : surf.surf === 'kerb' ? CFG.kerbTop : CFG.top
+        const cap = top + CFG.boostOver
         const boost = k.boostT > 0
-        if (boost) { k.boostT--; k.v += CFG.boostAcc }
-        if (inp.u && k.v < (boost ? top + CFG.boostOver : top)) k.v += CFG.acc
+        if (boost) { k.boostT--; if (k.v < cap) k.v += CFG.boostAcc }
+        if (inp.u && k.v < (boost ? cap : top)) k.v += CFG.acc
         else if (!inp.u && k.v > top && !boost) k.v -= CFG.coast * 6
         if (inp.d) k.v -= CFG.brake
         if (!inp.u && !inp.d && k.v <= top && !boost) k.v -= CFG.coast
         if (surf.surf === 'grass' && k.v > top) k.v -= 0.2
+        // a spent boost leaves the kart above the cap; throttle or no, bleed
+        // the overspeed back down. Unbounded, stacked mushrooms rode v to
+        // 33 px/tick (3x top speed) and banked 3-second "laps" — the boost
+        // is a surge TO the boost cap, not an escalator past it
+        if (k.v > (boost ? cap : top)) k.v -= 0.2
         k.steerVis = (inp.l ? -1 : 0) + (inp.r ? 1 : 0)
         const grip = Math.min(1, k.v / 2.2)
         const dr = inp.drift && Math.abs(k.steerVis) > 0 && k.v > 4.5
