@@ -345,7 +345,6 @@ export function step(gs, inp) {
     }
 
     // ---- balls
-    let killedThisTick = false
     for (const b of gs.balls) {
         if (b.stuck) continue
         b.x += b.vx

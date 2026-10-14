@@ -33,7 +33,6 @@ const ArkanoidGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
-    const [end, setEnd] = useState(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -93,7 +92,6 @@ const ArkanoidGame = () => {
 
         const finish = (win) => {
             const sc = gs.score
-            setEnd({ win, score: sc })
             if (win) localStorage.setItem('arkanoid.board', JSON.stringify([...board(), { score: sc, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
             setMode('over')
@@ -290,7 +288,6 @@ const ArkanoidGame = () => {
         // ---------------------------------------------------------------- input ----
         const startPlay = () => {
             gs = makeGame(0)
-            setEnd(null)
             setMode('play')
             say(ROUNDS[0].name)
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
@@ -331,6 +328,11 @@ const ArkanoidGame = () => {
                 restart: () => { gs = makeGame(0) },
                 setRound: (n) => { gs.round = n; gs.clearAt = 0; gs.bricks = []; const R = ROUNDS[n]; if (!R.boss) { let id = 0; for (let r = 0; r < R.rows.length; r++) for (let c = 0; c < R.rows[r].length; c++) { const ch = R.rows[r][c]; if (ch === '.') continue; gs.bricks.push({ id: id++, col: c, row: r, x: CFG.wallX + c * CFG.colW, y: CFG.ceilY + r * CFG.rowH, kind: ch === 'g' ? 'gold' : ch === 's' ? 'silver' : 'normal', hp: ch === 's' ? 3 : 1, alive: true, capsule: 'LSDCB+E'.includes(ch) ? ch : null }) } } },
                 events: () => evLog,
+                probe: () => ({
+                    tick: gs.tick, screen: screenRef.current, score: gs.score, lives: gs.lives, round: gs.round,
+                    hash: stateHash(gs), paddle: gs.paddle.x,
+                    ball: gs.balls[0] ? { x: gs.balls[0].x, y: gs.balls[0].y, vx: gs.balls[0].vx, vy: gs.balls[0].vy, stuck: !!gs.balls[0].stuck } : null,
+                }),
                 gameTime: () => gs.tick / 60,
             }
             mountDbg('arkanoid')
@@ -340,6 +342,7 @@ const ArkanoidGame = () => {
         raf = requestAnimationFrame(frame)
         return () => {
             cancelAnimationFrame(raf)
+            if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('virtualcontrols', onPad)
@@ -360,7 +363,7 @@ const ArkanoidGame = () => {
                 <span>LIVES <span ref={setHud('lives')} className="text-[#5dc8ff]">3</span></span>
             </div>
             <VirtualControls visible={screen === 'play' && !paused} />
-            {paused && <PauseOverlay entry={entry} onResume={() => setPaused(false)} />}
+            {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>
     )
 }
