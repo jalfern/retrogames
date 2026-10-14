@@ -111,6 +111,10 @@ const JoustGame = lazy(() => import('../games/Joust'))
 // scripts/qbertcheck.mjs audits the round the player actually gets in Node.
 const QBertGame = lazy(() => import('../games/QBert'))
 
+// ARKANOID: the wall, the capsules and DOH are data + a pure step(), so
+// scripts/arkanoidcheck.mjs audits geometry, rules and a proven full clear in Node.
+const ArkanoidGame = lazy(() => import('../games/Arkanoid'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -358,6 +362,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'The 1982 Gottlieb pyramid, rebuilt honest: hop the diagonals over 28 isometric cubes and turn every top green — the apex counts at the start, and a diagonal that leaves the pyramid is a fall. Coily the snake drops in after your 9th flip and hops one cube per drop straight at you. The flying discs carry you from the apex back to the top, and a snake within reach follows the disc off the edge (+500). Red balls ricochet down the sides; from round 2 Ugg and Wrongway run the rows, and from round 3 Sam & Slick slide through and wipe your green away. Later rounds trade the flip for the 5-colour cycle: clear the round when every cube matches. Chain the hops — single 25, round-trip 50, heli-jump 100. The attract demo is the same autopilot a Node harness audits: geometry, snake chase, disc lure and the score ledger included.',
         controls: ['Hop the diagonals with ARROW PAIRS: UP+LEFT, UP+RIGHT, DOWN+LEFT, DOWN+RIGHT (the touch pad shows the four corners)', 'Land on every cube to turn it green — the round ends when all 28 match (apex already counts)', 'Do NOT hop off the pyramid edges — the skirt corners are falls (the apex up-hop rides a passing disc instead)', 'Coily hops at you once the round gets going — ride a disc and a nearby snake follows it off the edge (+500)', 'Chain: two hops back onto the cube you came from = 50 (round trip); 2+ up-hops = 100 (heli)', 'Every round after the first cycles five colours — match them all · ? pauses'],
+    },
+    {
+        path: '/arkanoid',
+        builtBy: 'forge',
+        component: ArkanoidGame,
+        label: 'ARKANOID',
+        theme: 'dark',
+        description: 'The 1976 wall, rebuilt honest: one ball, one paddle, physics you can learn — where the ball leaves the paddle depends on where it lands, so the edge hits wide angles and the center sends it straight. Six hand-carved walls rise from classic rows to hollow fortresses (silver columns shrug two hits, gold never breaks but never counts), and every round hides capsules in the rubble: laser, sticky catch, slow ball, extra ball, multiball — and one life. Enemies patrol the skies and dive; shooting them pays double. And at the end DOH waits with three faces of eyes: 3, then 5, then 7, hissin\' fireballs. The attract demo is the same autopilot a Node harness audits — geometry flood-check, the 15-eye ledger and a zero-death full clear included.',
+        controls: ['Arrow Left/Right (or the pad): slide the paddle — the ball\'s exit angle depends on WHERE it lands', 'SPACE (or A): launch the ball, and fire the laser once you have caught the B capsule', 'Catch falling capsules: L sticky · S slow · D direction · C extra ball · B laser · E expand · + extra life (each appears exactly once)', 'Gold bricks never break — they are the fortress; silver takes three hits, everything else one', 'Clear a wall to face DOH: three phases, eyes 3 -> 5 -> 7 · ? pauses', 'Lives: 3 — the + capsule is the only extra · 1UP every 10,000'],
     },
     {
         path: '/arena-archery',

@@ -243,6 +243,11 @@ jobs:
       # pinned against literal numbers in the pure sim.
       - run: npm run lint:qbert
       - run: npm run qbertcheck
+      # ARKANOID: geometry flood-check, capsule uniqueness, paddle/silver/gold
+      # rule pins, the 15-eye boss ledger, determinism and the pilot's
+      # zero-death full clear, all in Node.
+      - run: npm run lint:ark
+      - run: npm run arkcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

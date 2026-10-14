@@ -120,7 +120,10 @@
         "lint:qbert": "eslint src/games/QBert src/components src/utils src/config src/main.jsx scripts",
         "qbertcheck": "node scripts/qbertcheck.mjs",
         "qbertdive": "node scripts/qbertdive.mjs",
-        "vpadcheck": "node scripts/vpadcheck.mjs"
+        "vpadcheck": "node scripts/vpadcheck.mjs",
+        "lint:ark": "eslint src/games/Arkanoid src/components src/utils src/config src/main.jsx scripts/arkanoidcheck.mjs scripts/arkanoidplay.mjs scripts/lib",
+        "arkcheck": "node scripts/arkanoidcheck.mjs",
+        "arkplay": "node scripts/arkanoidplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
