@@ -46,6 +46,7 @@
         "lemcheck": "node scripts/lemcheck.mjs",
         "zeldacheck": "node scripts/zeldacheck.mjs",
         "zeldaplay": "node scripts/zeldaplay.mjs",
+        "nodercheck": "node scripts/nodercheck.mjs",
         "lemplay": "node scripts/lemplay.mjs",
         "lint:dash": "eslint src/games/BoulderDash src/components src/utils src/config src/main.jsx scripts",
         "dashcheck": "node scripts/dashcheck.mjs",

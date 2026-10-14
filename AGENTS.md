@@ -84,6 +84,7 @@ npm run heistmutate # put fourteen fixed bugs back and prove heistplay notices (
 npm run cornerprobe # signed depth of the raccoon vs the level, per frame, at N x slow CPU
 npm run zorkpulse   # Zork: one line/second from the agent loop's own counters (slow box repro)
 npm run aicheck    # src/ai spine contract (watchdog / rejections / honest arms), Node, ~1s
+npm run nodercheck # the fleet router (:8010): capability union, hot-load stickiness, busy spill, honest failover, per-node keys — fake fleet, Node, ~35s
 npm run zorkcheck  # Zork in **Node**: sensor seams, then the real agent's invariants (no Chrome)
 npm run zorkuicheck  # the ▶ AI button in a browser: click, it plays; one key, you win
 npm run doscheck   # DOS/IF seams in Chrome: js-dos boots in dev, keys captured, framebuffer readable
@@ -628,3 +629,17 @@ launchctl load ~/Library/LaunchAgents/com.jalfern.forge.plist   # install (after
 scripts/forge.sh                                                # force a session now
 tail -f /tmp/forge/last.log                                     # watch a session
 ```
+
+### The fleet router (`scripts/node-router.mjs`, launchd `com.jalfern.noderouter`, :8010)
+One OpenAI-compatible door in front of the MLX nodes (config
+`~/.config/noderouter/nodes.json`, keys never in the repo): the union of
+`/v1/models` is only what ONLINE nodes declared — a node that stops answering
+leaves within one heartbeat and rejoins alone (that is how the MacBook Pro
+joins: see `scripts/MBP-NODE.md`; the door never hangs on it). Consecutive
+same-model requests stick to the node that last served it (oMLX reloads on
+switch — stickiness is the whole game), a busy sticky node spills to the
+other holder, and failures BEFORE any response byte are replayed on the next
+candidate while mid-stream deaths propagate honestly. `GET :8010/router/status`
+is the live map. Gate: `npm run nodercheck` (static CI). The opencode
+provider `omlxnet` is this door; `omlx`/`omlxmini` remain direct escape
+hatches if the router ever dies.
