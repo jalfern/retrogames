@@ -113,7 +113,10 @@
         "kartplay": "node scripts/kartplay.mjs",
         "lint:tetris": "eslint src/games/Tetris src/components src/utils src/config src/main.jsx scripts",
         "tetrischeck": "node scripts/tetrischeck.mjs",
-        "tetrisplay": "node scripts/tetrisplay.mjs"
+        "tetrisplay": "node scripts/tetrisplay.mjs",
+        "lint:joust": "eslint src/games/Joust src/components src/utils src/config src/main.jsx scripts",
+        "joustcheck": "node scripts/joustcheck.mjs",
+        "joustdive": "node scripts/joustdive.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",

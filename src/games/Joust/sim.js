@@ -38,7 +38,7 @@ export const CFG = {
     deadT: 90,
     invuln: 120,
     banner: 100,
-    eggV: 1.1,
+    eggV: 1.8,
     eggHatch: 240,
     handRise: 70,
     handHold: 50,
@@ -82,7 +82,7 @@ function startWave(gs, w) {
     gs.eggsGot = 0
     gs.deaths = 0
     gs.killsThisWave = 0
-    def.roster.forEach((r, i) => {
+    def.roster.forEach((r) => {
         gs.riders.push(spawn(gs, r.kind, r.x, -14, 0.55, false, r.delay))
     })
     gs.players.forEach((p, i) => {
@@ -298,7 +298,7 @@ export function step(gs, input = {}) {
 
     // ---- eggs ----
     for (const egg of gs.eggs) {
-        egg.fall = Math.min(egg.fall + 0.02, CFG.eggV)
+        egg.fall = Math.min(egg.fall + 0.05, CFG.eggV)
         egg.y += egg.fall
         egg.x = wrapX(egg.x)
         if (egg.fall >= CFG.eggV - 1e-9) {
@@ -484,7 +484,7 @@ function killRider(gs, e, cause, owner) {
     const nk = nextEggKind(e.kind)
     if (nk && cause !== 'terrain') {
         gs.eggDrops++
-        gs.eggs.push({ kind: e.kind, x: e.x, y: e.y + 6, fall: 0.4, rest: false, timer: CFG.eggHatch, got: false })
+        gs.eggs.push({ kind: e.kind, x: e.x, y: e.y + 6, fall: 0.6, rest: false, timer: CFG.eggHatch, got: false })
         gs.events.push({ t: 'eggdrop', x: e.x, y: e.y + 6, kind: e.kind })
     }
 }

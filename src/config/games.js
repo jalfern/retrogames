@@ -102,6 +102,10 @@ const MarioKartGame = lazy(() => import('../games/MarioKart'))
 // demo (and scripts/tetrischeck.mjs audits: gravity, DAS, the score ledger)
 // ride in their own chunk; the harness imports sim/planner unchanged in Node.
 const TetrisGame = lazy(() => import('../games/Tetris'))
+// JOUST: same lesson — the pure sim, the terrain data and the autopilot that
+// scripts/joustcheck.mjs audits (joust rule, egg chain, wave ledger) ride in
+// their own chunk; the harness imports sim/waves/planner unchanged in Node.
+const JoustGame = lazy(() => import('../games/Joust'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)

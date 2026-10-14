@@ -33,7 +33,7 @@ function nearestFoe(gs, rd) {
 
 function nearestEgg(gs, rd) {
     let best = null
-    let bd = 100 * 100
+    let bd = 170 * 170
     for (const egg of gs.eggs) {
         const dx = wrapDelta(egg.x - rd.x)
         const d = dx * dx + (egg.y - rd.y) * (egg.y - rd.y)
@@ -122,11 +122,12 @@ export function planRider(gs, rd) {
         }
     }
 
-    // never finish a vector BELOW an outstretched hand — reaching across a
-    // hand's column is fine as long as the approach stays above its tip
+    // never finish a vector BELOW an outstretched hand: hold above its tip
+    // and dive when it sinks (detouring sideways lost eggs; hovering above
+    // the column is safe — the hand only eats riders below the tip)
     if (!dodging) {
         for (const h of gs.hands) {
-            if (h.out && ty > h.y - 8 && Math.abs(wrapDelta(tx - h.x)) < 30) tx = h.x + (tx >= h.x ? 44 : -44)
+            if (h.out && ty > h.y - 12 && Math.abs(wrapDelta(tx - h.x)) < 30) ty = Math.min(ty, h.y - 16)
         }
     }
 
@@ -147,20 +148,18 @@ export function planRider(gs, rd) {
     if (gtx && ty > gtx.y - CFG.foot - 2) ty = gtx.y - CFG.foot - 2
 
     const dx = wrapDelta(tx - rd.x)
-    // proportional tilt: lean toward the target, never past half-safe.
-    // (A far target pressed as a hard r/left spins the mount through the
-    // nose while the flap is on — the runaway that killed the first build.)
-    const desiredA = Math.max(-0.5, Math.min(0.5, dx * 0.018))
-    if (rd.a < desiredA - 0.05) out.r = true
-    else if (rd.a > desiredA + 0.05) out.l = true
+    // travel like the original: sideways happens on a lean — glide down the
+    // tilt, flap only when the target is ABOVE us. (An earlier build flapped
+    // to steer and the net lift pinned the mount to the ceiling: it hovered
+    // at y=12 for a whole wave while eggs fell past it.)
+    const desiredA = Math.max(-0.8, Math.min(0.8, dx * 0.02))
+    if (rd.a < desiredA - 0.06) out.r = true
+    else if (rd.a > desiredA + 0.06) out.l = true
 
     const predict = rd.y + rd.vy * 14
-    if (predict > ty + 4) out.f = true
-    else if (predict < ty - 10) out.f = false
-    else out.f = rd.vy > 0.15
-    // steering needs thrust: the tilt only pushes while the wing is beating
-    if (Math.abs(dx) > 14) out.f = true
-    if (out.f && rd.onGround) out.f = true
+    out.f = predict > ty + 4
+    if (rd.onGround && Math.abs(dx) < 30 && predict > ty - 40) out.f = true
+    if (rd.onGround && ty < rd.y - 20) out.f = true
     return out
 }
 
