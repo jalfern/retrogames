@@ -109,6 +109,45 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     r.check('round trip (down, then back up onto the cube you came from) scores 50', JSON.stringify(pts) === JSON.stringify([25, 50]), JSON.stringify(pts))
 }
 
+// ----------------------------------------------------------------- 1-up ----
+{
+    // a hop that stays under 10,000 must NOT award a life
+    const gs = makeGame({ seed: 5, lives: 3 })
+    gs.score = 9900; gs.total = 9900
+    clearEv(gs)
+    play(gs, { dl: true }); until(gs, () => !gs.player.hop)
+    const ev = clearEv(gs)
+    r.check('a hop that stays under 10,000 awards no 1-up', gs.lives === 3 && !ev.some((e) => e.t === 'oneup'), `lives=${gs.lives} score=${gs.score}`)
+}
+{
+    // the first 10,000 boundary, crossed on an ordinary 25-point hop, awards
+    // exactly one extra life (and prints a oneup event, for the HUD/ledger)
+    const gs = makeGame({ seed: 5, lives: 3 })
+    gs.score = 9990; gs.total = 9990
+    clearEv(gs)
+    play(gs, { dl: true }); until(gs, () => !gs.player.hop)
+    const ev = clearEv(gs)
+    r.check('crossing 10,000 awards exactly one extra life (oneup event)', gs.lives === 4 && ev.some((e) => e.t === 'oneup' && e.lives === 4), `lives=${gs.lives} score=${gs.score}`)
+}
+{
+    // each further 10,000 boundary awards one more life (here: 19,990 -> 20,015)
+    const gs = makeGame({ seed: 5, lives: 3 })
+    gs.score = 19990; gs.total = 19990
+    clearEv(gs)
+    play(gs, { dl: true }); until(gs, () => !gs.player.hop)
+    const ev = clearEv(gs)
+    r.check('a later 10,000 boundary awards one more life', gs.lives === 4 && ev.some((e) => e.t === 'oneup' && e.lives === 4), `lives=${gs.lives} score=${gs.score}`)
+}
+{
+    // 1-ups stop at the 9-life cap: a boundary crossed at the cap awards nothing
+    const gs = makeGame({ seed: 5, lives: 9 })
+    gs.score = 99990; gs.total = 99990
+    clearEv(gs)
+    play(gs, { dl: true }); until(gs, () => !gs.player.hop)
+    const ev = clearEv(gs)
+    r.check('1-ups stop at the 9-life cap (a boundary crossed at the cap awards nothing)', gs.lives === 9 && !ev.some((e) => e.t === 'oneup'), `lives=${gs.lives} score=${gs.score}`)
+}
+
 // ------------------------------------------------------------ Coily ----
 {
     // the harness's OWN walker (independent of planner.js): BFS to the nearest

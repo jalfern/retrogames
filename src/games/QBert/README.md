@@ -43,9 +43,10 @@ the player actually gets, in plain Node.
   chained hops is simplified: any consecutive hops chain (originals required
   roughly a one-second window).
 - Levels escalate snake count/speed and switch the flip mode, but there is no
-  original point-value table match beyond the documented singles/roundtrip/heli,
-  no 1UP every 10k, no alternating hot-seat 2P, no bonus-stage green-field,
-  and the disc drop destination is apex-or-row-0/1 (original picks from a wider
+  original point-value table match beyond the documented singles/roundtrip/heli.
+  (1-UP every 10,000 is now in: a life per 10k boundary crossed, capped at 9.)
+  Still missing: alternating hot-seat 2P, the bonus-stage green-field, and the
+  disc drop destination is apex-or-row-0/1 (original picks from a wider
   random row list).
 - Music is an original bouncy riff, not the Gottlieb melody.
 - `qbertdive` rides the advisory tier (like `joustdive`/`tetrisplay`), not the
