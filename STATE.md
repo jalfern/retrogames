@@ -1,67 +1,62 @@
-# STATE — forge session 2026-10-13/14 night (JOUST)
+# STATE — forge session 2026-10-14 (Q*BERT)
 
 ## Shipped this session
-- **#209 JOUST MERGED** (PR #215, squash `8015e72`; PR CI green: static + smoke +
-  Vercel). **Prod verified live**: https://www.jalfern.com/retrogames/joust serves
-  the production bundle — canvas 256x224, 3518 lit px, attract text, zero page errors.
-  `/joust`: 1982 Williams lance duel. The law is pinned: **the lower lance always
-  loses**, dead-even height kills both. Flap (net -0.067) vs glide (lean slides you
-  down your own tilt); momentum + screen wrap; egg chain (touch banks +100, rest 4 s
-  hatches the next-stronger rider; Shadow drops nothing); five waves as data — hand
-  columns speed up 360→210 ticks, crumble ledges from wave 3; PERFECT wave +1000.
-- Node gate `npm run joustcheck` in the static CI: **46/46** — physics literals
-  pinned at the source (the tetrischeck lesson applied up front), joust rule all
-  three outcomes, egg chain both directions, wrap/hands/lava/crumble, wave ledger
-  recomputed event-by-event, autopilot clears waves 1-2 hash-for-hash deterministic,
-  egg-blind-pilot proof the hatch chain is live (not dead code).
-  Fail-proven: inverting the joust sign → 9 red, restore → green.
-- `npm run joustdive` (advisory verify tier, like tetrisplay): real keys only,
-  12/12 locally — attract alive, travel/climb, **pixels where the sim says the
-  rider is** (probe+read in ONE evaluate — the roundtrip-drift lesson applied),
-  three honest lava deaths, GAME OVER, clean restart, 2P, zero page errors.
-- QA issue **#216** filed (autopilot all-five-waves, sfx grain, hunting hands,
-  joustdive promotion rule).
+- **#210 Q*BERT MERGED** (PR #219, squash; PR CI green: static + smoke + Vercel).
+  **Prod verified live**: https://www.jalfern.com/retrogames/qbert — canvas 256x224
+  mounted on the production bundle (9151 lit attract px), real-key hops flip cubes
+  green, zero page errors, no DEV hooks used against prod.
+  `/qbert`: Gottlieb 1982. 28-cube iso pyramid rows 1-6+4,3, diagonal-only hops;
+  round 1 all-green (apex counts, 27 to go), round 2+ the 5-colour cycle. Coily
+  drops at flip 9, hops at you, contact kills; discs ride you to the apex and a
+  snake within two edges follows them off (+500). Red balls ricochet the edges,
+  Ugg/Wrongway run rows (round 2+), Sam & Slick wipe green back (round 3+).
+  Chain scoring 25/50/100 (single/roundtrip/heli), round clear +1000, the
+  "@!#?@!" balloon on every death. Phone play via a NEW VirtualControls `diag`
+  prop (2x2 corner pad dispatching arrow pairs — shared, backwards-compatible).
+- Node gate `npm run qbertcheck` in the static CI: **71/71** — geometry literals
+  + symmetry + reachability, fall/blocked-apex edges, flip machines (no
+  double-count), chase spawns-at-9/strictly-closes, lure radius pins, ball /
+  runner / slick kills, cycle clears only at all-match, chain script 25/25/25/25/100,
+  tour clears on flip 27, pilot graded by the harness's OWN BFS referee: round-1
+  win + **lives-1 slack** on 8 seeds, ledger event-by-event, hash-for-hash.
+  Fail-proven: corrupt one adjacency line -> **24 red**, restore -> green.
+- `npm run qbertdive` (advisory verify tier): 15/15 real arrow-pair keys in
+  Chrome — attract alive, hop flips the read-back cube, lit sprite at the sim's
+  coords (probe+read in ONE evaluate), snake death + balloon, falls burn the
+  remaining lives, Enter restart clean, disc boards and delivers.
+- QA issue **#220** filed (cube seams, tunnel art, pose/sprite juice, chain
+  timing window, 1UP, disc-drop row list, qbertdive promotion rule).
 
 ## Lessons paid for this session
-- The lazy-import shortcut bit us: registered `JoustGame` in games.js but forgot
-  the GAMES entry — router said "No routes matched /joust" while the dev server
-  happily 200'd the SPA fallback. Production smoke (canvas + pixels) is what
-  makes a dead route loud, not a 200.
-- A `/retrogames/<new-game>` check needs the registry entry AND the canvas lit;
-  assert both, in prod shape, before calling a game shipped.
-- `/tmp` nohup background servers die between tool calls unless `nohup ... & disown`.
-- Worktree hygiene: `/Users/jon/Dev/retrogames-tetris` had **`main` checked out**
-  (stale f27417d), which made rule-5 merges fail with "'main' is already used by
-  worktree". Detached it this session. The MAIN checkout still sits at ffef879
-  with the QA lane's dirty kart files — the worktree-only rule is not holding for
-  the QA lane; see question 1.
+- **The apex up-hop is a verb, not a move.** Up-diagonals at the apex are the
+  disc attempt (blocked when no disc is near); the only way off the top is
+  down-diagonal. The dive driver learned this by failing, and the sim was right.
+  Same family as "an unmoving frame is not a broken actuator."
+- Invulnerability windows silently eat scripted deaths — harness place hooks
+  must zero `invuln` (and wait for `dying === 0`) before arming a scripted kill.
+- First harness draft used the wrong diagonal *names* at the pyramid edge (ul
+  from col 0 is a fall by design); a failing check is a conversation about the
+  board, not just the code.
 
 ## Queue state
-- game-queue: **#210 Q*BERT** is head. Next session claims it.
+- game-queue: **#none** — #210 was the last item. Queue is EMPTY. Next session
+  reports "nothing to forge" unless Jon files more (the /forge board accepts
+  requests). QA lane has #220 (Q*BERT polish) and #216 (Joust polish).
 
 ## Harness commands (new this session)
-- `npm run joustcheck` (static gate), `npm run joustdive` (manual verify;
-  `JOUST_URL=` override for non-5173 ports), `npm run lint:joust`.
-- Worktree `~/Dev/retrogames-joust` merged; remote branch deleted. Local branch
-  prune pending whenever that worktree is removed.
-
-## Housekeeping noticed (not this session's work)
-- QA lane appears to edit the MAIN checkout (dirty `scripts/kartplay.mjs`,
-  `src/games/MarioKart/index.jsx`, pid 18524 at session start). That is exactly
-  what the worktree-only rule forbids, and its tetris worktree held `main`
-  checked out all night — that combination will silently break the next merge.
-- `walkabout` / other lanes: `/Users/jon/Dev/retrogames-kart`, `-noder`,
-  `-papers`, `-qa-kart199`, `-qa-sentinel`, `-simcity`, `-zelda` all still exist;
-  most are merged or stale — a `git worktree prune` pass would help the warden.
+- `npm run qbertcheck` (static gate), `npm run qbertdive` (manual verify;
+  `QBERT_URL=` override), `npm run lint:qbert`.
+- Worktree `~/Dev/retrogames-qbert` — merged; remove with
+  `git worktree remove` + `git branch -D forge-qbert` (remote branch already gone).
 
 ## Three questions for Jon
-1. The QA lane edited the main checkout all night and left a worktree holding
-   `main` — rule-5 merges failed because of it (I detached the stale one). Should
-   the warden enforce "main checkout detached + clean" as a preflight kick
-   condition?
-2. JOUST's autopilot wins waves 1-2 then dies in the wave-3 swarm, so the attract
-   demo loops those. Fine as shipped (it's a *proven* run), or should the demo
-   show a wave-4/5 clip even if the pilot can't reach it honestly yet?
-3. `joustdive` is in the advisory tier. Same policy as tetrisplay: promote into
-   `static` only after ~5 green manual verify runs — or is there a CDP-stability
-   number you want the smoke jobs held to instead?
+1. The queue is now empty (#208 Tetris, #209 Joust, #210 Q*BERT all shipped).
+   Should the next forge round be your picks from the /forge board, or want me
+   to keep queueing era-classics (Frogger? Mr. Do!? Pengo?) under the same
+   harness discipline?
+2. `VirtualControls` now has a `diag` prop — iso isometric titles are a
+   recurring shape. Good as a shared primitive, or should the diagonal pad move
+   into its own component before more titles use it?
+3. Carried over from 2026-10-13 (unanswered): promote the real-key smokes
+   (tetrisplay/joustdive/qbertdive) into the merge-blocking tier after ~5 green
+   manual verify runs, or keep them advisory and rerun-on-red?
