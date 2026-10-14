@@ -11,6 +11,7 @@ loses**. No enemy bullets, no power-ups: a joust, a troll hand, or the lava.
 | `sim.js` | The whole game as pure `step(gs, input)` at 60 Hz. Zero `Math.random`, zero DOM, zero `Date` — the same tick sequence in Node and in the tab. This is what `scripts/joustcheck.mjs` imports. |
 | `waves.js` | The five waves as DATA: ledge segments, hand columns, spawn rosters, rider start lines. Terrain is geometry, not tiles, so the harness can audit pit widths offline. |
 | `planner.js` | The deterministic autopilot. It scripts the attract demo and *is* the winnability proof the harness runs. Threat-first: dodge the hand, escape the lava, leave the column of a rider that could arrive above you, then bank the egg, then joust — in that strict order. |
+| `sounds.js` | The SFX table, as pure data. Each event class maps to a recipe of `AudioController` voices — the cabinet's growl, wing-flap crash and egg-tinkle grain — so `joustcheck` can pin the timbres in Node (a recipe is a list of `tone`/`sweep`/`noise`/`fanfare`/`death` voices; no two event classes may share one). `index.jsx` plays it, it owns no inline audio params. |
 | `art.js` | Every sprite drawn at runtime: pterodactyl riders (3 wing frames per palette), speckled eggs with late cracks, the three-fingered troll hand, brickledges, lava with flicker crust, gradient sky with deterministic stars and two mountain ridges, 3x5 font. |
 | `index.jsx` | The React shell: fixed timestep (250 ms catch-up cap), attract/pause/over screens, keyboard + touch, the `__joustTest` DEV hook and the DebugKit panel (F1: live state; cheats: smite foes, next wave, drop ledge). |
 
@@ -55,11 +56,13 @@ loses**. No enemy bullets, no power-ups: a joust, a troll hand, or the lava.
 ## Verifying
 
 ```bash
-npm run joustcheck    # Node, no browser: 46 checks — physics literals, joust
+npm run joustcheck    # Node, no browser: 55 checks — physics literals, joust
                       # rule, egg chain, wrap, hands, lava, crumble, wave
                       # ledger recomputed event-by-event, autopilot clears
                       # waves 1-2, hash-for-hash determinism, egg-blind pilot
-                      # proof that the hatch chain is live
+                      # proof that the hatch chain is live, and the SFX table
+                      # (every event class present, no two share a recipe, the
+                      # growl / wing-flap / egg-tinkle are the pinned timbres)
 npm run joustdive     # Chrome, real keys only (advisory tier, JOUST_URL to
                       # point at another port): attract alive → 1P start →
                       # wings+arrow travel → flap climbs → pixels where the
@@ -73,10 +76,15 @@ Fail-proven: inverting the joust sign (`diff < -CFG.joustTol`) turns
 
 ## Known gaps (queued for the QA polish pass)
 
-- The autopilot clears waves 1–2 and dies in the wave-3 hunter swarm; the
-  attract demo therefore loops the first two waves' worth. A pilot that wins
-  all five is polish, not shipping-blocking (the ledger + wave-5 content are
-  in the sim and the harness pins the roster).
-- Single sfx per event; the cabinet's growls and wing-flaps had more grain.
+- The autopilot clears waves 1–2 and dies in wave 3; the attract demo
+  therefore loops the first two waves' worth. A pilot that wins all five is
+  polish, not shipping-blocking (the ledger + wave-5 content are in the sim
+  and the harness pins the roster). A QA trace pinned the death to a *bounder*
+  joust — before wave 3's hunters even spawn: a foe starts below and to the
+  side, dives up into our column, and the threat model only wakes inside 44 px
+  (already dead-even). The dodge model has no "foe below, climbing into my
+  column" case; a naive one trades the joust loss for a crooked-landing crash
+  or parks the rider under a rising hand. Winning five cleanly wants a
+  collision look-ahead (the Spy Hunter approach), not one more reactive rule.
 - Hands do not punish riders *above* the tip while sinking; the tip-only kill
   rule is simpler and readable.
