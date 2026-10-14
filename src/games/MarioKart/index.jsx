@@ -25,6 +25,10 @@ const CAM_H = 55
 const PP = 520
 const BACK = 92
 const FOG_C = [0xa8, 0xc8, 0xf8]
+// The touchpad is for thumbs: on a desktop it used to sit over the page.
+// A touch device answers one of these; a keyboard-and-mouse box, neither.
+const TOUCH = typeof window !== 'undefined' &&
+    (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
 
 const T = TRACK
 
@@ -335,6 +339,11 @@ export default function MarioKart() {
 
         const drawHud = () => {
             const P = g.karts[0]
+            // on the start line the gantry's course banner runs straight
+            // across this corner — a solid bar keeps the lap clock readable
+            // over the world (SNES SMK's HUD bars work the same way)
+            ctx.fillStyle = 'rgba(0,0,16,0.85)'
+            ctx.fillRect(0, 0, 98, 32)
             ctx.fillStyle = '#000'
             ctx.font = 'bold 12px monospace'
             ctx.fillStyle = '#f8f8f8'
@@ -540,8 +549,8 @@ export default function MarioKart() {
             className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none"
             onPointerDown={() => tapRef.current && tapRef.current()}
         >
-            <canvas ref={canvasRef} width={W} height={H} className="max-w-full max-h-full" style={{ imageRendering: 'pixelated' }} />
-            <VirtualControls secondAction={{ label: 'B', code: 'KeyX' }} visible={padOn && !paused} />
+            <canvas ref={canvasRef} width={W} height={H} className="block w-full h-full" style={{ imageRendering: 'pixelated', objectFit: 'contain' }} />
+            <VirtualControls secondAction={{ label: 'B', code: 'KeyX' }} visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'SUPER MARIO KART')} onResume={handleResume} />}
         </div>
     )
