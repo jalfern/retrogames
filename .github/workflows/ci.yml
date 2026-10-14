@@ -231,6 +231,16 @@ jobs:
       # attract demo clears waves 1-2 with the score ledger recomputed.
       - run: npm run lint:joust
       - run: npm run joustcheck
+      # Thirtieth scoped gate: Q*BERT (Gottlieb 1982). The 28-cube geometry
+      # (symmetric diagonals, the fall-off-the-skirt edges, the disc-at-apex
+      # rule), the flip state machines (all-green round 1, 5-colour cycle
+      # round 2+), the Coily chase (spawns at flip 9, strictly closes, kills
+      # on contact), the disc lure radius (+500, distant snakes stay), the
+      # balls/row-runners/slick, the 25/50/100 chain ledger and the pilot
+      # (clears round 1 with lives-1 slack on 8 seeds, hash-for-hash) are all
+      # pinned against literal numbers in the pure sim.
+      - run: npm run lint:qbert
+      - run: npm run qbertcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -368,6 +378,14 @@ jobs:
       # The deterministic gate is joustcheck in `static`.
       - name: Joust smoke (real keys — the drawn rider sits where the sim says it is, flapping climbs, lava takes three lives, restart is clean)
         run: npm run joustdive
+        env:
+          SHOT_CHANNEL: chromium
+      # Q*BERT play-driver: real arrow-pair keys, pixels vs the sim, the
+      # balloon rides a snake death, falls burn the lives, restart is clean.
+      # 15/15 locally; rides the advisory tier like joustdive/tetrisplay.
+      # The deterministic gate is qbertcheck in `static`.
+      - name: Q*BERT smoke (real keys — the drawn bird sits where the sim says it is, a diagonal hop flips a cube, balloon, falls, restart clean)
+        run: npm run qbertdive
         env:
           SHOT_CHANNEL: chromium
       # The scripted heist: Chrome plays job 1 end to end and asserts it can walk,
