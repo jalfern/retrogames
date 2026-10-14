@@ -152,6 +152,18 @@ console.log('— human thumbs (a crude driver must finish the GP) —')
 
 console.log('— rules (proven by state, not prose) —')
 {
+    // rocket start: holding gas during the countdown fires a boost at GO
+    const g2 = makeGame()
+    for (let i = 0; i < CFG.count; i++) step(g2, { u: true })
+    const P2 = g2.karts[0]
+    check('rocket: gas held at countdown fires a boost at GO',
+        g2.events.some((e) => e.e === 'rocket') && P2.boostT > 0,
+        `boostT ${P2.boostT}`)
+    const g3 = makeGame()
+    for (let i = 0; i < CFG.count; i++) step(g3, {})
+    check('rocket: no gas held = no boost', g3.events.every((e) => e.e !== 'rocket') && g3.karts[0].boostT === 0)
+}
+{
     const g2 = makeGame()
     g2.phase = 'race'
     const k = g2.karts[1]

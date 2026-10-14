@@ -107,6 +107,7 @@ export default function MarioKart() {
                 if (ev.e === 'shell') audioController.playSweep(1000, 220, 0.18, 'sawtooth', 0.12)
                 if (ev.e === 'banana') audioController.playNoise(0.08, 0.1)
                 if (ev.e === 'boost') audioController.playSweep(300, 1100, 0.4, 'square', 0.12)
+                if (ev.e === 'rocket') audioController.playSweep(200, 1200, 0.5, 'sawtooth', 0.14)
                 if (ev.e === 'dash') audioController.playSweep(500, 1400, 0.22, 'triangle', 0.1)
                 if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); shake = 26 }
                 if (ev.e === 'bump' && ev.who === 'PLAYER') { audioController.playNoise(0.12, 0.15); shake = 10 }
@@ -313,7 +314,7 @@ export default function MarioKart() {
             // paints gold dash panels, so the BEST row would lose its gold
             // against a live track
             ctx.fillStyle = 'rgba(0,0,0,0.45)'
-            ctx.fillRect(0, 30, W, 82)
+            ctx.fillRect(0, 30, W, 100)
             ctx.textAlign = 'center'
             ctx.fillStyle = '#e02020'
             ctx.font = 'bold 26px monospace'
@@ -325,26 +326,28 @@ export default function MarioKart() {
             ctx.font = 'bold 11px monospace'
             ctx.fillStyle = '#a8c8f8'
             ctx.fillText('MARIO CIRCUIT - 5 LAPS', W / 2, 98)
+            ctx.font = 'bold 8px monospace'
+            ctx.fillStyle = '#c8d8f8'
+            ctx.fillText('X GAS  S BRAKE  ←→ STEER', W / 2, 108)
+            ctx.fillText('Z ITEM  R DRIFT  HOLD X AT 3-2-1 = ROCKET', W / 2, 117)
             // the cabinet's memory: a top-3 table, best in gold
             if (st.top.length) {
-                ctx.font = 'bold 8px monospace'
                 for (let i = 0; i < st.top.length; i++) {
                     ctx.fillStyle = i === 0 ? '#f8d800' : '#88a8d8'
-                    ctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, 109 + i * 9)
+                    ctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, 127 + i * 9)
                 }
             }
             if (st.ghost) {
-                ctx.font = 'bold 8px monospace'
                 ctx.fillStyle = '#f8d800'
-                ctx.fillText('GHOST ON - the certified line', W / 2, 136)
+                ctx.fillText('GHOST ON - the certified line', W / 2, 152)
             }
             if ((g.tick >> 5) % 2) {
                 ctx.font = 'bold 11px monospace'
                 ctx.fillStyle = '#f8f8f8'
-                ctx.fillText('PRESS ANY KEY / TAP', W / 2, 145)
+                ctx.fillText('PRESS ANY KEY / TAP', W / 2, 161)
             }
             ctx.fillStyle = '#88a8d8'; ctx.font = '8px monospace'
-            ctx.fillText('attract: autopilot demo (its own proven win)', W / 2, 159)
+            ctx.fillText('attract: autopilot demo (its own proven win)', W / 2, 175)
             ctx.textAlign = 'left'
         }
 
@@ -373,7 +376,7 @@ export default function MarioKart() {
         const tickWorld = (live) => {
             const inp = st.plan
                 ? decide(g)
-                : { u: !!keys.ArrowUp, d: !!keys.ArrowDown, l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyX || keys.KeyC), item: !!keys.Space }
+                : { u: !!(keys.KeyX || keys.ArrowUp), d: !!(keys.KeyS || keys.ArrowDown), l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyR || keys.KeyC), item: !!(keys.KeyZ || keys.Space) }
             step(g, live ? inp : decide(g))
             if (live && gGhost && !gGhost.end) step(gGhost, decide(gGhost))
             const evs = g.events.splice(0)
@@ -444,7 +447,7 @@ export default function MarioKart() {
         }
 
         const kd = (e) => {
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault()
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyX', 'KeyS', 'KeyZ', 'KeyR', 'KeyA'].includes(e.code)) e.preventDefault()
             if (e.code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (pausedRef.current) return
             if (st.screen === 'attract') {
@@ -523,7 +526,7 @@ export default function MarioKart() {
             onPointerDown={() => tapRef.current && tapRef.current()}
         >
             <canvas ref={canvasRef} width={W} height={H} className="block w-full h-full" style={{ imageRendering: 'pixelated', objectFit: 'contain' }} />
-            <VirtualControls secondAction={{ label: 'B', code: 'KeyX' }} visible={padOn && !paused && TOUCH} />
+            <VirtualControls secondAction={{ label: 'B', code: 'KeyR' }} visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'SUPER MARIO KART')} onResume={handleResume} />}
         </div>
     )
