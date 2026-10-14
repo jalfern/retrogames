@@ -24,6 +24,8 @@ export const HELI = 100
 export const LURE = 500
 export const CLEAR_BONUS = 1000
 export const CYCLE = 5
+export const ONE_UP_AT = 10000
+export const MAX_LIVES = 9
 
 export const id = (r, c) => r * 8 + c
 export const rowOf = (i) => i >> 3
@@ -158,8 +160,14 @@ function land(gs, tr, tc, up) {
 }
 
 function addScore(gs, n) {
+    const before = Math.floor(gs.total / ONE_UP_AT)
     gs.score = Math.min(999999, gs.score + n)
     gs.total = gs.score
+    const after = Math.floor(gs.total / ONE_UP_AT)
+    if (after > before && gs.lives < MAX_LIVES) {
+        gs.lives = Math.min(MAX_LIVES, gs.lives + (after - before))
+        gs.events.push({ t: 'oneup', lives: gs.lives, score: gs.score })
+    }
 }
 
 function flipCube(gs, cube) {
