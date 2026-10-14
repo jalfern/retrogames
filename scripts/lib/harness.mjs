@@ -80,8 +80,12 @@ export async function openMario(browser, { url = URL_DEFAULT, viewport = { width
     return openGame(browser, { url, viewport, start, wait, hook: '__marioTest' })
 }
 
-export async function openGame(browser, { url, viewport = { width: 900, height: 760 }, start = false, wait = 400, hook = '__marioTest' } = {}) {
-    const page = await browser.newPage({ viewport, deviceScaleFactor: 2 })
+export async function openGame(browser, { url, viewport = { width: 900, height: 760 }, start = false, wait = 400, hook = '__marioTest', touch = false } = {}) {
+    // `touch: true` is the phone driver's way in: hasTouch flips the
+    // page's touch capabilities and isMobile makes the primary pointer
+    // coarse, so a game that withholds its pad from desktops still shows
+    // it here — and a game that shows it everywhere fails the desktop page.
+    const page = await browser.newPage({ viewport, deviceScaleFactor: 2, hasTouch: touch, isMobile: touch })
     page.setDefaultTimeout(60000)
     page.on('pageerror', e => console.log('[pageerror]', e.message))
     page.on('console', m => { if (m.type() === 'error') console.log('[console.error]', m.text()) })

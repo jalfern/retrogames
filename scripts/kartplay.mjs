@@ -12,7 +12,10 @@ const { throttleCPU } = await import('./lib/harness.mjs')
 
 const r = new Report('kartplay')
 const browser = await launch()
-const page = await openGame(browser, { url: URL, hook: '__kartTest', viewport: { width: 640, height: 560 } })
+// this is the PHONE driver: touch on, so the pad it asserts is the one a
+// thumb gets. The desktop assertion (pad must stay away) runs on its own
+// non-touch page at the end.
+const page = await openGame(browser, { url: URL, hook: '__kartTest', viewport: { width: 640, height: 560 }, touch: true })
 if (throttle > 1) await throttleCPU(page, throttle)
 
 const state = () => page.evaluate(() => {
@@ -36,6 +39,9 @@ const padBtns = () => page.evaluate(() => document.querySelectorAll('.fixed.bott
 r.check('attract: touchpad withdrawn from the canvas', (await padBtns()) === 0)
 
 const cbox = await (await page.$('canvas')).boundingBox()
+// the #204 bug: the canvas painted at its intrinsic 256x224 CSS px on every
+// screen — `max-w/max-h` can shrink, never grow. It must fill the viewport.
+r.check('canvas fills the phone viewport (scaled, not 256x224)', cbox.width >= 512 && cbox.height >= 448, `${cbox.width}x${cbox.height}`)
 await page.mouse.click(cbox.x + cbox.width / 2, cbox.y + cbox.height / 2)
 await page.waitForTimeout(3500)
 let s = await state()
@@ -106,6 +112,16 @@ const px = await page.evaluate(() => {
 })
 r.check('road pixels painted under the kart (not black)', px.row[0] + px.row[1] + px.row[2] > 90, px.row.join(','))
 r.check('player kart sprite is on screen', px.lit >= 6, `lit ${px.lit}/16`)
+// the gantry's "MARIO CIRCUIT" banner used to run straight across the lap
+// clock on the start line — the clock now sits on a solid bar. Sample the
+// bar's empty corner (the text glyphs themselves are #f8f8f8, like clouds):
+// brightest world colour under the bar reads ≤128, dimmest world without it
+// (gantry red) reads ≥256, so 160 separates the two.
+const bar = await page.evaluate(() => {
+    const d = document.querySelector('canvas').getContext('2d').getImageData(92, 28, 1, 1).data
+    return d[0] + d[1] + d[2]
+})
+r.check('lap clock sits on its solid bar (readable over the gantry banner)', bar < 160, `rgb sum ${bar}`)
 r.info('spin seen during the lap', String(spinSeen))
 
 const best = await page.evaluate(() => ({
@@ -121,6 +137,18 @@ r.check('end screen withdraws the pad', (await padBtns()) === 0, `pad ${(await p
 await page.mouse.click(cbox.x + cbox.width / 2, cbox.y + cbox.height / 2)
 await page.waitForTimeout(250)
 r.check('tap on the end screen returns to attract', (await state()).screen === 'attract')
+
+// the same race on a desktop box: the touchpad must stay away — the finding
+// was a D-pad and A/B buttons floating over the page at 1280x800.
+const desk = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })
+desk.on('pageerror', e => console.log('[pageerror:desk]', e.message))
+await desk.goto(URL, { waitUntil: 'load' })
+await desk.waitForFunction(() => !!window.__kartTest, { timeout: 15000 })
+await desk.keyboard.press('ArrowUp')
+await desk.waitForTimeout(1000)
+r.check('desktop: no touchpad during the race', (await desk.evaluate(() => document.querySelectorAll('.fixed.bottom-8 button').length)) === 0)
+await desk.close()
+
 if (throttle > 1) r.info('throttle', `${throttle}x (advisory frame rate)`)
 
 r.exit(browser)
