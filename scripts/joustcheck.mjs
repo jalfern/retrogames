@@ -13,6 +13,7 @@ import {
     makeGame, step, stateHash, WAVES,
 } from '../src/games/Joust/sim.js'
 import { plan } from '../src/games/Joust/planner.js'
+import { SFX, SFX_IDS } from '../src/games/Joust/sounds.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('joustcheck')
@@ -355,6 +356,42 @@ r.check('the autopilot run is hash-for-hash deterministic', B.hash === A.hash, `
         gs.events.length = 0
     }
     r.check('eggs left by an egg-blind pilot really do hatch mid-run (the chain is live)', sawHunterFromEgg >= 1, `hatched=${sawHunterFromEgg}`)
+}
+
+// ------------------------------------------------------------ sound table ----
+// The cabinet's SFX had grain — a growl, a wing-flap crash, an egg-tinkle. The
+// flat one-beep-per-event was the gap. sounds.js maps each event class to a
+// recipe of voices; index.jsx plays them. Pinned here in Node so a regression
+// (two events merged to one timbre, a growl deleted, the tinkle flattened) is
+// red, not a shrug.
+{
+    const need = ['joust', 'smite', 'death', 'egg-get', 'egg-drop', 'hatch', 'crumble', 'clear', 'oneup', 'over', 'win']
+    const PRIMS = ['tone', 'sweep', 'noise', 'fanfare', 'death']
+    r.check('the sound table covers every event class that makes a sound', need.every((id) => Array.isArray(SFX[id]) && SFX[id].length >= 1), SFX_IDS.join(','))
+    r.check('every recipe voice names a known AudioController primitive', Object.values(SFX).every((rec) => rec.every((v) => PRIMS.includes(v.k))))
+
+    // no two event classes may share an identical recipe — the distinction IS the grain
+    const sig = (id) => JSON.stringify(SFX[id])
+    const seen = {}
+    let dup = null
+    for (const id of need) { if (seen[sig(id)]) dup = `${id} == ${seen[sig(id)]}`; seen[sig(id)] = id }
+    r.check('no two event classes share an identical SFX recipe', dup === null, dup || `${need.length} recipes all distinct`)
+
+    // the low growl: hatch is a sawtooth down-sweep that ends below 100 Hz
+    const hatch = SFX.hatch[0]
+    r.check('hatch is the low growl (sawtooth down-sweep, ends below 100 Hz)', hatch.k === 'sweep' && hatch.w === 'sawtooth' && hatch.f0 > hatch.f1 && hatch.f1 < 100, JSON.stringify(hatch))
+    // the wing-flap crash: death carries a noise voice
+    r.check('the death is a wing-flap crash (carries a noise voice)', SFX.death.some((v) => v.k === 'noise'))
+    // the lance growl: the joust carries a sawtooth voice
+    r.check('the joust carries the growl (a sawtooth voice)', SFX.joust.some((v) => v.k === 'sweep' && v.w === 'sawtooth'))
+
+    // the egg-tinkle vs the egg plop: two high notes, brighter than the drop
+    const peak = (rec) => rec.reduce((m, v) => Math.max(m, v.f || 0, v.f0 || 0, v.f1 || 0), 0)
+    const tinkle = SFX['egg-get']
+    r.check('the egg-tinkle is two high-register notes (>700 Hz each)', tinkle.length === 2 && tinkle.every((v) => v.f > 700), JSON.stringify(tinkle))
+    r.check('the tinkle is brighter than the drop (egg-get peaks above egg-drop)', peak(SFX['egg-get']) > peak(SFX['egg-drop']), `get=${peak(SFX['egg-get'])} drop=${peak(SFX['egg-drop'])}`)
+    // the victory outdoes the wave-clear
+    r.check('the victory outdoes the wave-clear (win recipe is longer than clear)', SFX.win.length > SFX.clear.length, `win=${SFX.win.length} clear=${SFX.clear.length}`)
 }
 
 r.exit()

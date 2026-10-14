@@ -13,6 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, stateHash, WAVES, LAVA_TOP, GROUND_Y, FIXED_DT } from './sim.js'
 import { plan } from './planner.js'
+import { SFX } from './sounds.js'
 import { riderSprite, eggSprite, handSprite, stoneTile, text5, textWidth, paintSky, paintLava, lifeGlyph } from './art.js'
 
 const SIM_MS = FIXED_DT
@@ -58,6 +59,21 @@ const JoustGame = () => {
 
         const say = (m, c = '#f8d800') => { toastMsg = m; toast = 110; toastCol = c }
 
+        // the sound table (sounds.js) maps each event class to a recipe of
+        // voices; play them in order. No inline audio params in here — the
+        // timbres are pinned in scripts/joustcheck.mjs.
+        const playSfx = (id) => {
+            const recipe = SFX[id]
+            if (!recipe) return
+            for (const v of recipe) {
+                if (v.k === 'tone') audioController.playTone(v.f, v.d, v.w, v.v)
+                else if (v.k === 'sweep') audioController.playSweep(v.f0, v.f1, v.d, v.w, v.v)
+                else if (v.k === 'noise') audioController.playNoise(v.d, v.v)
+                else if (v.k === 'fanfare') audioController.playFanfare()
+                else if (v.k === 'death') audioController.playDeath()
+            }
+        }
+
         const burst = (x, y, col, n = 12) => {
             for (let i = 0; i < n; i++) {
                 const a = (i / n) * Math.PI * 2
@@ -77,21 +93,22 @@ const JoustGame = () => {
                     if (e.pts) popups.push({ x: e.x, y: e.y, msg: `+${e.pts}`, ttl: 50 })
                 }
                 if (!audible) continue
-                if (e.t === 'joustwin') audioController.playSweep(300, 720, 0.14, 'square', 0.08)
-                else if (e.t === 'kill' && e.cause === 'terrain') audioController.playSweep(420, 220, 0.12, 'square', 0.06)
-                else if (e.t === 'death') audioController.playNoise(0.25, 0.18)
-                else if (e.t === 'eggget') audioController.playSweep(500, 980, 0.12, 'square', 0.09)
-                else if (e.t === 'eggdrop') audioController.playTone(220, 0.05, 'triangle', 0.06)
-                else if (e.t === 'hatch') audioController.playSweep(160, 90, 0.2, 'sawtooth', 0.08)
-                else if (e.t === 'crumble') audioController.playNoise(0.2, 0.12)
-                else if (e.t === 'clear') {
-                    audioController.playFanfare()
-                    if (e.perfect) say('PERFECT! BONUS ' + e.bonus, '#58f878')
-                    else say('WAVE CLEAR +' + e.bonus)
-                } else if (e.t === 'wave') say(e.name, '#00e8f8')
-                else if (e.t === '1up') audioController.playTone(880, 0.09, 'square', 0.08)
-                else if (e.t === 'over') audioController.playDeath()
-                else if (e.t === 'win') { audioController.playFanfare(); say('THE REALMS ARE YOURS!', '#f8d800') }
+                const sfx = e.t === 'joustwin' ? 'joust'
+                    : e.t === 'kill' && e.cause === 'terrain' ? 'smite'
+                    : e.t === 'death' ? 'death'
+                    : e.t === 'eggget' ? 'egg-get'
+                    : e.t === 'eggdrop' ? 'egg-drop'
+                    : e.t === 'hatch' ? 'hatch'
+                    : e.t === 'crumble' ? 'crumble'
+                    : e.t === 'clear' ? 'clear'
+                    : e.t === '1up' ? 'oneup'
+                    : e.t === 'over' ? 'over'
+                    : e.t === 'win' ? 'win'
+                    : null
+                if (sfx) playSfx(sfx)
+                if (e.t === 'clear') { if (e.perfect) say('PERFECT! BONUS ' + e.bonus, '#58f878'); else say('WAVE CLEAR +' + e.bonus) }
+                else if (e.t === 'wave') say(e.name, '#00e8f8')
+                else if (e.t === 'win') say('THE REALMS ARE YOURS!', '#f8d800')
             }
         }
 
@@ -403,6 +420,7 @@ const JoustGame = () => {
                     <p className="text-yellow-300 font-mono font-bold mt-1 animate-pulse text-sm">PRESS ANY KEY / TAP &mdash; PRESS 2 FOR TWO RIDERS</p>
                     <p className="text-white/70 font-mono text-[11px] mt-1 leading-4">
                         &larr; &rarr; turn &middot; UP / X / SPACE beat the wings &middot; momentum is real, the sky is wide<br />
+                        2P is a keyboard rider: A / D turn &middot; W / F wings &mdash; the on-screen pad is P1 only<br />
                         the lower lance loses a joust &mdash; meet a rider dead-even and you both fall<br />
                         defeated riders drop eggs: touch one to bank it, leave it and it hatches into something worse<br />
                         troll hands rise from the lava. five waves. the pterodactyl does not get a parachute<br />
