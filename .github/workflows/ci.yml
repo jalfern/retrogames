@@ -215,6 +215,14 @@ jobs:
       # checkpoint gate) must die. ~3 s, blocks merges.
       - run: npm run lint:kart
       - run: npm run kartcheck
+      # Twenty-eighth scoped gate: TETRIS (NES). The NTSC gravity table is pinned
+      # against the literal NES numbers (not the sim's own constants — a check that
+      # imports the number it audits cannot see the number change), DAS 16/6 and
+      # the 2f soft drop are measured tick-exact, the score ledger is recomputed
+      # per clear, the RNG is pinned to the LFSR period residues, and the
+      # autopilot that drives the attract demo clears lines on every probe seed.
+      - run: npm run lint:tetris
+      - run: npm run tetrischeck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -301,6 +309,10 @@ jobs:
           SHOT_CHANNEL: chromium
       - name: Zelda smoke (real keys — a cell-for-cell walk on the world grid, "?" pause opens and the frozen world ignores a held key, play resumes)
         run: npm run zeldaplay
+        env:
+          SHOT_CHANNEL: chromium
+      - name: Tetris smoke (real keys — the drawn piece sits where the DAS says it is, a rotated piece changes shape on screen, soft drop is 2 frames a row, well over, restart clean)
+        run: npm run tetrisplay
         env:
           SHOT_CHANNEL: chromium
       - name: Dev server log (on failure)

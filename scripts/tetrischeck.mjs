@@ -1,0 +1,316 @@
+// tetrischeck — TETRIS (NES) audited in plain Node, no browser.
+//
+// The contract: sim.js is pure (state, input), so the gravity table, DAS,
+// soft-drop cadence, the scoring ledger, the level curve and the RNG are all
+// provable offline against the SAME code the tab runs. The autopilot that the
+// attract demo replays must clear lines and keep the well alive (the game can
+// be won), and every run must be hash-for-hash deterministic.
+//
+// The modulo bias of the piece generator is PINNED, not just band-checked:
+// piece = r % 7 over the LFSR's 255-state period gives residues
+// [36,37,37,36,36,36,36] — that skew is a documented NES property, and a
+// "cleaner" generator that erased it would be a different game.
+
+import {
+    newGame, step, gravityFrames, GRAVITY, DAS_DELAY, DAS_REPEAT, SOFT_FRAMES,
+    SCORE_LINES, SCORE_CAP, COLS, ROWS, SPAWN_X, SPAWN_Y, cellsOf, fits,
+    drawPiece, lfsr8, stateHash, SHAPES, LEVEL_CAP, PIECE_NAMES,
+} from '../src/games/Tetris/sim.js'
+import { choosePlan, driveInput } from '../src/games/Tetris/planner.js'
+import { Report } from './lib/harness.mjs'
+
+const r = new Report('tetrischeck')
+r.info('boot', 'sim.js + planner.js imported in Node, zero DOM, zero Math.random')
+
+// ---------------------------------------------------------- gravity table ----
+// Expectation is the literal NTSC table, NOT the sim's own GRAVITY constant —
+// a check that imports the number it audits cannot see the number change.
+const NES_TABLE = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6]
+for (let L = 0; L <= 9; L++) {
+    const s = newGame(L, 7)
+    const y0 = s.cur.y
+    let t = 0
+    while (s.cur.y === y0 && !s.over && t < 1000) { step(s, {}); t++ }
+    r.check(`gravity L${L} = ${NES_TABLE[L]} frames/row`, t === NES_TABLE[L], `first row after ${t} ticks`)
+}
+let mono = true
+for (let L = 10; L <= LEVEL_CAP; L++) if (gravityFrames(L) > gravityFrames(L - 1) || gravityFrames(L) < 2) mono = false
+r.check('gravity past L9 is non-increasing and never below 2f (extrapolation cap)', mono)
+
+// ------------------------------------------------------------------ DAS ----
+{
+    const s = newGame(0, 7)
+    Object.assign(s.cur, { type: 2, rot: 0, x: 0, y: 5 }) // O with an 8-wide corridor right
+    const moves = []
+    let t = 0
+    while (t < 40) { step(s, { right: true }); moves.push(s.cur.x); t++ }
+    const shifted = []
+    let prev = 0
+    for (let i = 0; i < moves.length; i++) { if (moves[i] !== prev) shifted.push(i + 1); prev = moves[i] }
+    const wantCapped = [1]
+    for (let f = 1 + DAS_DELAY; f <= 35; f += DAS_REPEAT) wantCapped.push(f) // 1,17,23,29,35
+    r.check(`DAS: first move immediate, then every ${DAS_REPEAT}f after the ${DAS_DELAY}f delay`, JSON.stringify(shifted) === JSON.stringify(wantCapped), `moved at ${shifted.join(',')} vs ${wantCapped.join(',')}`)
+
+    // reversing direction moves immediately and restarts the delay
+    const held = { right: true }
+    const s2 = newGame(0, 7)
+    let tt = 0
+    while (tt < DAS_DELAY - 1) { step(s2, held); tt++ }
+    const xBefore = s2.cur.x
+    step(s2, { left: true })
+    r.check('DAS: reversal moves on the tick it is pressed', s2.cur.x === xBefore - 1, `x ${xBefore} -> ${s2.cur.x}`)
+
+    // releasing and re-pressing restarts the initial delay
+    const s3 = newGame(0, 7)
+    let t3 = 0
+    while (t3 < 5) { step(s3, { left: true }); t3++ }
+    for (let i = 0; i < 40; i++) step(s3, {})
+    const xAfter = s3.cur.x
+    let t4 = 0
+    while (t4 < DAS_DELAY + 2 && s3.cur.x === xAfter) { step(s3, { left: true }); t4++ }
+    r.check('DAS: release resets the delay', t4 === 1, `moved after ${t4}`)
+}
+
+// ------------------------------------------------------------ soft drop ----
+{
+    const s = newGame(0, 7)
+    const y0 = s.cur.y
+    const ticks = []
+    let lastY = y0
+    for (let t = 1; t <= SOFT_FRAMES * 6; t++) {
+        step(s, { down: true })
+        if (s.cur.y !== lastY) { ticks.push(t); lastY = s.cur.y }
+    }
+    const want = []
+    for (let k = 1; k <= 6; k++) want.push(k * SOFT_FRAMES)
+    r.check(`soft drop = one row every ${SOFT_FRAMES} frames while held`, JSON.stringify(ticks) === JSON.stringify(want), ticks.join(','))
+    r.check('soft drop awards no points', s.score === 0)
+}
+
+// ---------------------------------------------------------------- lock ----
+{
+    // A piece on the floor locks on the first gravity tick that cannot move down.
+    const s = newGame(0, 7)
+    const type = s.cur.type
+    const cells = cellsOf(type, 0, SPAWN_X, SPAWN_Y)
+    let lowRow = 0
+    for (const [rr] of cells) lowRow = Math.max(lowRow, rr)
+    const rowsToFall = ROWS - 1 - lowRow
+    let t = 0
+    while (s.locks === 0 && t < 5000) { step(s, {}); t++ }
+    r.check('locks exactly on the first failed downward attempt', t === (rowsToFall + 1) * GRAVITY[0], `locked after ${t}, expected ${(rowsToFall + 1) * GRAVITY[0]}`)
+}
+
+// ------------------------------------------------------- scoring ledger ----
+// NOTE: the case above is invalid by construction (an I alone never fills a row);
+// the two real cases below fill the well. Keep the audit honest: verify the
+// invalid one really does NOT score.
+{
+    const s = newGame(0, 3)
+    s.board.fill(0)
+    Object.assign(s.cur, { type: 5, rot: 0, x: 6, y: 0 })
+    let g = 0
+    while (!s.over && g++ < 4000) step(s, {})
+    r.check('an unfilled well never pays (no phantom clears)', s.score === 0 && s.lines === 0)
+}
+{
+    // single: row 19 cols 0-5 filled, drop horizontal I into cols 6-9
+    const s = newGame(5, 3)
+    s.board.fill(0)
+    for (let c = 0; c <= 5; c++) s.board[19 * COLS + c] = 1
+    Object.assign(s.cur, { type: 5, rot: 0, x: 6, y: 0 })
+    let g = 0
+    while (!s.over && s.lines === 0 && g++ < 5000) step(s, {})
+    r.check('single at L5 = 40x6 = 240', s.score === 240 && s.lines === 1, `score ${s.score}`)
+}
+{
+    // double crossing the level line: 9 lines banked, clear 2 more at L0
+    const s = newGame(0, 3)
+    s.board.fill(0)
+    s.lines = 9
+    for (let r0 = 18; r0 <= 19; r0++) for (let c = 0; c <= 7; c++) s.board[r0 * COLS + c] = 1
+    Object.assign(s.cur, { type: 2, rot: 0, x: 8, y: 0 })
+    let g = 0
+    while (!s.over && s.lines < 11 && g++ < 5000) step(s, {})
+    r.check('double at L0 (9 banked) = 100, graded at the PREVIOUS level', s.score === 100 && s.lines === 11, `score ${s.score}, lines ${s.lines}`)
+    r.check('level 0 -> 1 at 10 lines', s.level === 1, `level ${s.level}`)
+}
+{
+    // triple
+    const s = newGame(9, 3)
+    s.board.fill(0)
+    for (let r0 = 17; r0 <= 19; r0++) for (let c = 0; c <= 8; c++) s.board[r0 * COLS + c] = 1
+    Object.assign(s.cur, { type: 5, rot: 1, x: 7, y: 0 })
+    let g = 0
+    while (!s.over && s.lines === 0 && g++ < 5000) step(s, {})
+    r.check('triple at L9 = 300x10', s.score === 3000 && s.lines === 3, `score ${s.score}`)
+}
+{
+    // tetris: vertical I into a 4-deep single-wide shaft at col 9
+    const s = newGame(9, 3)
+    s.board.fill(0)
+    for (let r0 = 16; r0 <= 19; r0++) for (let c = 0; c <= 8; c++) s.board[r0 * COLS + c] = 1
+    Object.assign(s.cur, { type: 5, rot: 1, x: 7, y: 0 })
+    let g = 0
+    while (!s.over && s.lines === 0 && g++ < 5000) step(s, {})
+    r.check('tetris at L9 = 1200x10 = 12000', s.score === 12000 && s.lines === 4, `score ${s.score}`)
+}
+{
+    // rows shift down correctly, and only the filled rows clear
+    const s = newGame(0, 3)
+    s.board.fill(0)
+    s.board[18 * COLS + 3] = 3
+    for (let c = 0; c <= 5; c++) s.board[19 * COLS + c] = 1
+    Object.assign(s.cur, { type: 5, rot: 0, x: 6, y: 0 })
+    let g = 0
+    while (!s.over && s.lines === 0 && g++ < 5000) step(s, {})
+    r.check('clearing shifts the stack down by exactly one row', s.board[19 * COLS + 3] === 3 && s.board[18 * COLS + 3] === 0, `id3 now at row ${s.board[19 * COLS + 3] ? 19 : 18}`)
+}
+{
+    // score cap
+    const s = newGame(9, 3)
+    s.board.fill(0)
+    for (let r0 = 16; r0 <= 19; r0++) for (let c = 0; c <= 8; c++) s.board[r0 * COLS + c] = 1
+    s.score = SCORE_CAP - 1
+    Object.assign(s.cur, { type: 5, rot: 1, x: 7, y: 0 })
+    let g = 0
+    while (!s.over && s.score < SCORE_CAP && g++ < 5000) step(s, {})
+    r.check('score caps at 9,999,990', s.score === SCORE_CAP, `score ${s.score}`)
+}
+{
+    // level cap and start-level offset
+    const s = newGame(9, 3)
+    s.board.fill(0)
+    s.lines = 9
+    s.startLevel = 9
+    for (let c = 0; c <= 8; c++) s.board[19 * COLS + c] = 1
+    Object.assign(s.cur, { type: 5, rot: 1, x: 7, y: 0 })
+    let g = 0
+    while (!s.over && s.lines === 9 && g++ < 5000) step(s, {})
+    r.check('start L9, line 10 of the run -> L10 (level counts from the start level)', s.level === 10, `level ${s.level}`)
+    const s2 = newGame(9, 3)
+    s2.startLevel = 9
+    s2.lines = 205
+    s2.level = LEVEL_CAP
+    s2.board.fill(0)
+    for (let c = 0; c <= 5; c++) s2.board[19 * COLS + c] = 1
+    Object.assign(s2.cur, { type: 5, rot: 0, x: 6, y: 0 })
+    let g2 = 0
+    while (!s2.over && s2.lines === 205 && g2++ < 5000) step(s2, {})
+    r.check(`level caps at ${LEVEL_CAP}`, s2.level === LEVEL_CAP, `level ${s2.level}`)
+}
+
+// ----------------------------------------------------------------- RNG ----
+{
+    const s = newGame(0, 42)
+    const seq = []
+    for (let i = 0; i < 50000; i++) seq.push(drawPiece(s))
+    let triples = 0
+    for (let i = 2; i < seq.length; i++) if (seq[i] === seq[i - 1] && seq[i] === seq[i - 2]) triples++
+    r.check('no piece appears three times in a row (50k draws)', triples === 0, `triples=${triples}`)
+    const counts = new Array(7).fill(0)
+    for (const p of seq) counts[p]++
+    // Honest tolerance: the anti-triple reroll starves low-residue pieces more
+    // than the raw modulo bias alone (the raw stream IS uniform — pinned below).
+    // What must never happen: a piece becoming rare enough to feel missing.
+    const spread = Math.max(...counts) - Math.min(...counts)
+    r.check('all seven pieces stay well above 10% share (none feels missing)', Math.min(...counts) > 5000 && spread < 3000, counts.join('/'))
+}
+{
+    // the documented NES modulo bias, pinned exactly: over the 255-state period
+    const counts = new Array(7).fill(0)
+    let v = 0x5e
+    for (let i = 0; i < 255; i++) { v = lfsr8(v); counts[v % 7]++ }
+    const theory = new Array(7).fill(0)
+    for (let x = 1; x <= 255; x++) theory[x % 7]++
+    r.check('modulo bias pinned to the LFSR period residues [36,37,37,37,36,36,36]',
+        JSON.stringify(counts) === JSON.stringify([36, 37, 37, 37, 36, 36, 36]) && JSON.stringify(counts) === JSON.stringify(theory),
+        counts.join(','))
+}
+{
+    const a = newGame(0, 123), b = newGame(0, 123), c = newGame(0, 124)
+    let same = true, diff = false, firstDiff = -1
+    for (let i = 0; i < 2000; i++) {
+        const pa = drawPiece(a), pb = drawPiece(b), pc = drawPiece(c)
+        if (pa !== pb) { same = false; if (firstDiff < 0) firstDiff = i }
+        if (pc !== pb) diff = true
+    }
+    r.check('same seed -> same piece stream', same, firstDiff < 0 ? '' : `diverged at draw ${firstDiff}`)
+    r.check('different seed -> different stream', diff)
+}
+
+// ------------------------------------------------------- pieces & walls ----
+{
+    const lens = SHAPES.map((s) => s.length).join(',')
+    r.check('rotation states: O=1, I=2, JLSTZ=4', lens === '4,4,1,4,4,2,4', lens)
+    let inBounds = true
+    for (let t = 0; t < 7; t++) {
+        for (const [r0, c0] of cellsOf(t, 0, SPAWN_X, SPAWN_Y)) if (r0 >= ROWS || c0 < 0 || c0 >= COLS) inBounds = false
+    }
+    r.check('every piece fits inside the well at spawn', inBounds)
+}
+{
+    // top-out: a spawn that collides ends the game
+    const s = newGame(0, 7)
+    s.board.fill(1)
+    s.board[0] = 0 // irrelevant — spawn cols 3-5 rows 0/1 are all buried
+    const before = s.over
+    s.cur = { type: 0, rot: 0, x: SPAWN_X, y: SPAWN_Y }
+    if (!fits(s, s.cur.type, 0, SPAWN_X, SPAWN_Y)) { s.over = true }
+    r.check('a blocked spawn collides (top-out condition holds)', before === false && s.over === true)
+    // through step(): lock with the spawn buried -> over event
+    const s2 = newGame(0, 7)
+    for (let r0 = 0; r0 < 14; r0++) for (let c = 0; c < COLS; c++) s2.board[r0 * COLS + c] = 1
+    s2.board.fill(0)
+    for (let r0 = 1; r0 < ROWS; r0++) for (let c = 0; c < COLS; c++) s2.board[r0 * COLS + c] = 1
+    Object.assign(s2.cur, { type: 5, rot: 0, x: SPAWN_X, y: -1 }) // I flat in the only open row
+    let g = 0
+    while (!s2.over && g++ < 4000) step(s2, { down: true })
+    r.check('top-out fires through the real step loop', s2.over && s2.events.some((e) => e.t === 'over'))
+}
+
+// ------------------------------------------------------- autopilot demo ----
+function autoplay(level, seed, maxPieces) {
+    const s = newGame(level, seed)
+    let mem = { lastLocks: -1 }
+    let plan = choosePlan(s)
+    let g = 0
+    while (!s.over && s.locks < maxPieces && g++ < 200000) {
+        step(s, driveInput(s, plan, mem))
+        if (s.locks !== mem.lastLocks) { mem = { lastLocks: s.locks }; plan = choosePlan(s) }
+    }
+    return s
+}
+{
+    const seeds = [1, 7, 42, 999, 20261013, 3, 5, 11]
+    let allClear = true, minLines = 1e9, allAlive = true
+    for (const seed of seeds) {
+        const s = autoplay(0, seed, 150)
+        if (s.lines < 10) allClear = false
+        if (s.lines < minLines) minLines = s.lines
+        if (s.over && s.locks < 60) allAlive = false
+    }
+    r.check('autopilot clears >=10 lines on every probe seed (150 pieces)', allClear, `min ${minLines}`)
+    r.check('autopilot never tops out before 60 pieces on any probe seed', allAlive)
+}
+{
+    const a = autoplay(0, 20261013, 150)
+    const b = autoplay(0, 20261013, 150)
+    r.check('the attract demo replays hash-for-hash', stateHash(a) === stateHash(b) && a.score === b.score, `hash ${stateHash(a)} / ${stateHash(b)}`)
+    const c = autoplay(9, 20261013, 150)
+    r.check('higher level = faster game: L9 reaches the same piece count with more lines or earlier over', c.lines >= a.lines || c.over, `L9 lines ${c.lines} vs L0 ${a.lines}`)
+}
+
+// --------------------------------------------------------- honesty pins ----
+{
+    // gravity claim from the README, restated here so drift fails loudly:
+    r.check('NTSC table is exactly 48,43,...,8,6', GRAVITY.join(',') === '48,43,38,33,28,23,18,13,8,6', GRAVITY.join(','))
+    r.check('DAS constants are the NES 16/6', DAS_DELAY === 16 && DAS_REPEAT === 6)
+    r.check('soft drop is the NES 2-frame rate', SOFT_FRAMES === 2)
+    const s = newGame(0, 7)
+    for (let i = 0; i < 10; i++) step(s, { hard: true })
+    r.check('there is no hard drop: a "hard" input moves nothing', s.cur.y === SPAWN_Y)
+    r.check('seven tetrominoes L J O S Z I T', PIECE_NAMES.join('') === 'LJOSZIT')
+}
+
+r.exit()
