@@ -13,10 +13,11 @@
 
 import {
     newGame, step, gravityFrames, GRAVITY, DAS_DELAY, DAS_REPEAT, SOFT_FRAMES,
-    SCORE_LINES, SCORE_CAP, COLS, ROWS, SPAWN_X, SPAWN_Y, cellsOf, fits,
-    drawPiece, lfsr8, stateHash, SHAPES, LEVEL_CAP, PIECE_NAMES,
+    CLEAR_FRAMES, SCORE_LINES, SCORE_CAP, COLS, ROWS, SPAWN_X, SPAWN_Y, cellsOf, fits,
+    drawPiece, lfsr8, stateHash, SHAPES, LEVEL_CAP, PIECE_NAMES, resting,
 } from '../src/games/Tetris/sim.js'
-import { choosePlan, driveInput } from '../src/games/Tetris/planner.js'
+import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from '../src/games/Tetris/planner.js'
+import { musicStep, TET_MUSIC_STEPS } from '../src/games/Tetris/music.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('tetrischeck')
@@ -99,6 +100,81 @@ r.check('gravity past L9 is non-increasing and never below 2f (extrapolation cap
     let t = 0
     while (s.locks === 0 && t < 5000) { step(s, {}); t++ }
     r.check('locks exactly on the first failed downward attempt', t === (rowsToFall + 1) * GRAVITY[0], `locked after ${t}, expected ${(rowsToFall + 1) * GRAVITY[0]}`)
+}
+
+// -------------------------------------------------- line-clear window ----
+// The NES flashes the full rows BEFORE anything shifts: the board freezes,
+// the score waits for the shift, the input is ignored, and the next piece
+// does not even spawn until the shift lands.
+{
+    const mk = () => {
+        const s = newGame(0, 3)
+        s.board.fill(0)
+        for (let c = 0; c <= 5; c++) s.board[19 * COLS + c] = 1
+        s.board[18 * COLS + 0] = 2 // marker riding the shift
+        Object.assign(s.cur, { type: 5, rot: 0, x: 6, y: 0 }) // horizontal I over cols 6-9
+        return s
+    }
+    const s = mk()
+    const snap = (x) => JSON.stringify(x.board)
+    let clearTick = -1, clearedTick = -1
+    let frozen = true, refBoard = null
+    let scoreAtClear = -1, curAtClear = null, nextAtClear = -1
+    let t = 0
+    while (!s.over && clearedTick < 0 && t++ < 2000) {
+        step(s, {})
+        for (const e of s.events) {
+            if (e.t === 'clear' && clearTick < 0) { clearTick = s.tick; refBoard = snap(s); scoreAtClear = s.score; curAtClear = { type: s.cur.type, x: s.cur.x }; nextAtClear = s.next }
+            if (e.t === 'cleared' && clearedTick < 0) clearedTick = s.tick
+        }
+        if (clearTick > 0 && clearedTick < 0 && snap(s) !== refBoard) frozen = false
+    }
+    r.check('clear window: a single flashes, then shifts', clearTick > 0 && clearedTick > 0, `clear@${clearTick} cleared@${clearedTick}`)
+    r.check('the board is frozen for the whole flash window', frozen, 'board changed mid-flash')
+    r.check('the shift lands exactly 30 ticks after the flash starts (0.5s at 60Hz)', clearedTick - clearTick === 30 && CLEAR_FRAMES === 30, `${clearedTick - clearTick} ticks`)
+    r.check('the score waits for the shift (0 during the flash, 40 after)', scoreAtClear === 0 && s.score === 40, `atClear ${scoreAtClear}, after ${s.score}`)
+    r.check('the locked piece stays on screen through the flash; the next spawns only after',
+        curAtClear && curAtClear.type === 5 && curAtClear.x === 6 && s.cur.type === nextAtClear,
+        `during flash: ${curAtClear ? PIECE_NAMES[curAtClear.type] + '@' + curAtClear.x : 'n/a'}, after: ${PIECE_NAMES[s.cur.type]}`)
+    r.check('the marker rides the shift: row 18 -> 19, and only then', s.board[19 * COLS + 0] === 2 && s.board[18 * COLS + 0] === 0, `marker at 19=${s.board[19 * COLS + 0]}, 18=${s.board[18 * COLS + 0]}`)
+
+    // input is ignored inside the window
+    const s2 = mk()
+    let t2 = 0
+    while (!s2.clearing && t2++ < 2000) step(s2, { down: true })
+    const x0 = s2.cur.x, ev0 = s2.events.length, t0 = s2.clearing.t
+    step(s2, { left: true, right: true, down: true, rot: true })
+    r.check('input is ignored during the clear window (no move, no event, timer ticks)', s2.clearing && s2.cur.x === x0 && s2.events.length === ev0 && s2.clearing.t === t0 - 1, `x ${s2.cur.x}, events ${s2.events.length - ev0}, t ${s2.clearing && s2.clearing.t}`)
+}
+{
+    // the lock event carries the locked cells (the shell's lock flash reads them)
+    const s = newGame(0, 7)
+    let t = 0
+    while (!s.events.some((e) => e.t === 'lock') && t++ < 5000) step(s, { down: true })
+    const ev = s.events.find((e) => e.t === 'lock')
+    const id = PIECE_NAMES.indexOf(ev.piece) + 1
+    const onBoard = ev.cells.every(([r, c]) => r >= 0 && r < ROWS && c >= 0 && c < COLS && s.board[r * COLS + c] === id)
+    r.check('lock event carries the locked cells, and they are on the board', ev.cells.length === 4 && onBoard, `piece ${ev.piece}, ${ev.cells.length} cells`)
+}
+{
+    // the music tempo table (music.js): faster every level, honest floor
+    r.check('tetris music: L0 step is the pinned 0.15', TET_MUSIC_STEPS[0] === 0.15 && musicStep(0) === 0.15)
+    let nonInc = true
+    for (let L = 1; L < TET_MUSIC_STEPS.length; L++) if (TET_MUSIC_STEPS[L] > TET_MUSIC_STEPS[L - 1]) nonInc = false
+    r.check('tetris music speeds up every level (non-increasing step L0-9)', nonInc, TET_MUSIC_STEPS.join(','))
+    r.check('tetris music tempo floors at 0.06 (L5=0.1, L29/L99=floor)', musicStep(5) === 0.1 && TET_MUSIC_STEPS[9] === 0.06 && musicStep(29) === 0.06 && musicStep(99) === 0.06)
+}
+{
+    // the attract demo cycles its start level so the gravity range is visible
+    r.check('attract demo cycles its start level 0 -> 5 -> 9 -> 0', DEMO_LEVELS.join(',') === '0,5,9' && nextDemoLevel(0) === 5 && nextDemoLevel(5) === 9 && nextDemoLevel(9) === 0)
+}
+{
+    // the landing tick reads resting(): no room one row down
+    const s = newGame(0, 7)
+    Object.assign(s.cur, { type: 2, rot: 0, x: 4, y: 18 })
+    r.check('resting: an O on the floor is resting', resting(s) === true)
+    Object.assign(s.cur, { y: 0 })
+    r.check('resting: the same O at spawn is not', resting(s) === false)
 }
 
 // ------------------------------------------------------- scoring ledger ----
@@ -277,7 +353,7 @@ function autoplay(level, seed, maxPieces) {
     let g = 0
     while (!s.over && s.locks < maxPieces && g++ < 200000) {
         step(s, driveInput(s, plan, mem))
-        if (s.locks !== mem.lastLocks) { mem = { lastLocks: s.locks }; plan = choosePlan(s) }
+        if (s.locks !== mem.lastLocks && !s.clearing) { mem = { lastLocks: s.locks }; plan = choosePlan(s) }
     }
     return s
 }
