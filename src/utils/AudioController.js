@@ -50,6 +50,19 @@ const MUSIC = {
             38, 38, 0, 38, 38, 0, 38, 38, 33, 33, 0, 33, 33, 0, 31, 31,
         ],
     },
+    // TETRIS (NES): "Korobeiniki" — a traditional Russian folk melody (public
+    // domain), arranged here in our own notation. A-section, 32 steps.
+    tetris: {
+        step: 0.15,
+        lead: [
+            76, 71, 72, 74, 76, 74, 72, 71, 72, 69, 69, 0, 72, 76, 74, 72,
+            71, 72, 74, 76, 79, 76, 74, 72, 71, 74, 72, 69, 69, 0, 0, 0,
+        ],
+        bass: [
+            52, 0, 45, 0, 40, 0, 45, 0, 43, 0, 45, 0, 40, 0, 45, 0,
+            52, 0, 45, 0, 40, 0, 45, 0, 43, 0, 40, 0, 28, 0, 0, 0,
+        ],
+    },
 }
 
 class AudioController {

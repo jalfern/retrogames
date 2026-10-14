@@ -98,6 +98,10 @@ const ExcitebikeGame = lazy(() => import('../games/Excitebike'))
 // that proves the 5-lap GP win (and scripts/kartcheck.mjs audits) ride in
 // their own chunk; the harness imports track/sim/planner unchanged in Node.
 const MarioKartGame = lazy(() => import('../games/MarioKart'))
+// TETRIS: same lesson — the pure sim and the autopilot that scripts the attract
+// demo (and scripts/tetrischeck.mjs audits: gravity, DAS, the score ledger)
+// ride in their own chunk; the harness imports sim/planner unchanged in Node.
+const TetrisGame = lazy(() => import('../games/Tetris'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -319,6 +323,15 @@ export const GAMES = [
         theme: 'light',
         description: 'The SNES classic rebuilt on its own trick: the whole circuit is ONE textured plane rotated and scaled under your kart scanline by scanline — real Mode 7, in canvas, no assets. Five laps of MARIO CIRCUIT from last on the grid against four CPU karts: clip the apex, hold the drift through the hairpin, catch the dash panels on the straight, and take what the ? boxes hand you — a Shell to spin the leader, a Banana for the corner behind you, a Mushroom when the road goes straight. Standing last buys the best items, and the whole GP is proven winnable by the autopilot that scripts the attract demo, tick for tick (it even wins with every item box deleted).',
         controls: ['↑: GAS · ↓: BRAKE · ← → : steer (you cannot turn standing still — the karts work on speed)', 'X / B button: DRIFT — hold through a corner for a tighter arc, and expect the slide', 'SPACE / A button: use your ITEM — Shell fires forward, Banana drops behind, Mushroom launches', 'Hit a ? box for an item: last place gets the good ones, and Lap 5 is chaos', 'Hold the dashed DASH PANELS on the straights — they throw you forward', '?: pause and read the rules of the circuit'],
+    },
+    {
+        path: '/tetris',
+        builtBy: 'forge',
+        component: TetrisGame,
+        label: 'TETRIS',
+        theme: 'dark',
+        description: 'The 1989 NES cartridge, rebuilt honest: the NTSC gravity table (48 frames a row at level 0 down to 6 at level 9), DAS 16/6, soft drop every 2 frames — and none of the modern crutches: no hard drop, no hold, no ghost, no rotation kicks. 40/100/300/1200 points times the level, a new level every 10 lines, start at any level 0-9. The well does not negotiate: the piece locks the instant a downward move fails, and a blocked spawn ends the game. The attract demo is the same autopilot a Node harness audits gravity, DAS and the score ledger against, live.',
+        controls: ['Arrow Left/Right: slide (16-frame DAS delay, every 6 after — exactly like the NES)', 'UP / X / SPACE: rotate clockwise — the NES had one rotate button and no kicks', 'Arrow Down: soft drop, one row every 2 frames — there is NO hard drop', '?: pause and read the rules · 0-9 on the title pick the start level', '40 / 100 / 300 / 1200 x (level+1) — and gravity only speeds up'],
     },
     {
         path: '/arena-archery',

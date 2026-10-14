@@ -215,6 +215,14 @@ jobs:
       # checkpoint gate) must die. ~3 s, blocks merges.
       - run: npm run lint:kart
       - run: npm run kartcheck
+      # Twenty-eighth scoped gate: TETRIS (NES). The NTSC gravity table is pinned
+      # against the literal NES numbers (not the sim's own constants — a check that
+      # imports the number it audits cannot see the number change), DAS 16/6 and
+      # the 2f soft drop are measured tick-exact, the score ledger is recomputed
+      # per clear, the RNG is pinned to the LFSR period residues, and the
+      # autopilot that drives the attract demo clears lines on every probe seed.
+      - run: npm run lint:tetris
+      - run: npm run tetrischeck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -337,6 +345,16 @@ jobs:
 
       - name: Run the self-verifying suite
         run: npm run verify -- --full
+
+      # TETRIS play-driver: real keys, pixels vs the DAS ledger, honest top-out.
+      # It passes 24/24 locally but goes flaky under sustained CDP polling on the
+      # shared runner (the tab's rAF starves and the world stalls mid-mash) —
+      # until that is debugged it rides the advisory tier, not the PR gate.
+      # The deterministic gate is tetrischeck in `static`.
+      - name: Tetris smoke (real keys — the drawn piece sits where the DAS says it is, a rotated piece changes shape on screen, soft drop is 2 frames a row, well over, restart clean)
+        run: npm run tetrisplay
+        env:
+          SHOT_CHANNEL: chromium
       # The scripted heist: Chrome plays job 1 end to end and asserts it can walk,
       # steal, get spotted, get caught, get rescued and get out.
       - name: Play the heist
