@@ -1,8 +1,12 @@
 # STATE — forge session 2026-10-13 night (TETRIS)
 
 ## Shipped this session
-- **#208 TETRIS (NES) MERGED + pushed to prod** (PR #213, squash; PR's own CI green
-  incl. tetrischeck 45/45). `/tetris`: A-Type marathon, start level 0-9.
+- **#208 TETRIS (NES) MERGED** (PR #213, squash; PR's own CI green incl. tetrischeck
+  45/45). `/tetris`: A-Type marathon, start level 0-9. **Prod deploy still pending**
+  ~15min post-merge: the first main run went red on the missileplay smoke flake and
+  Vercel appears to gate prod on CI; the rerun + a STATE-only re-run are cycling.
+  If jalfern.com/retrogames/tetris isn't live when the smoke run finishes, that gate
+  (or the smoke flake) is the thing to look at first.
 - Exact & pinned in Node (same code the tab runs): NTSC gravity L0-9 tick-measured
   against a LITERAL table (my first version imported GRAVITY as the expectation —
   a green-testing-nothing check, found and killed); DAS 16/6 instant/reversal/
