@@ -155,7 +155,8 @@ for i in open_issues + shipped:
     if not i.get('pull_request'):
         by[i['number']] = issue(i)
 
-prs = [{'number': p['number'], 'title': p['title'], 'html_url': p['html_url']}
+prs = [{'number': p['number'], 'title': p['title'], 'html_url': p['html_url'],
+        'created_at': p.get('created_at')}
        for p in (gh(f'{R}/pulls?state=open&per_page=10') or [])]
 
 def comments(n, per):
