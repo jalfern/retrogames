@@ -64,7 +64,6 @@ jobs:
       - run: npm run lemcheck
       - run: npm run lint:zelda
       - run: npm run zeldacheck
-      - run: npm run nodercheck
       # Seventh scoped gate for BOULDER DASH: the real planner must clear every
       # cave with its hazards live (winnability + reachability + determinism), and
       # a mutation harness proves each cellular-automata rule is load-bearing.

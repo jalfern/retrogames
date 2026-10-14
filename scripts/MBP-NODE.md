@@ -1,46 +1,45 @@
-# Making the MacBook Pro a fleet node
+# Fleet nodes: what is what, and adding the MacBook Pro
 
-The router (`scripts/node-router.mjs`, launchd `com.jalfern.noderouter`,
-`:8010`) already carries an `mbp` slot and heartbeats it every 6 s. When
-oMLX starts serving there, it joins `/v1/models` by itself; lid shut, it
-leaves. No router change needed — `nodercheck` proves both directions.
-
-## One-time (needs a human once)
-
-1. From the Studio: `ssh-copy-id calistogamacpro` (tailscale alias, key
-   auth from here was never authorized).
-2. Install the same oMLX on the MBP (`brew install omlx` — the Mac Studio
-   runs `/opt/homebrew/bin/omlx`).
-
-## On the MBP, when you want it serving
+**Honesty first:** this file previously claimed `100.67.39.74` was the
+MacBook Pro. It is the tailnet address of **`calistogamacpro`**, which per
+Claude's #201 review is the **Mac Pro tower in Calistoga** — a node worth
+having too (better thermals than a laptop), but not the MBP. Identity of
+every node comes from the machine itself, never from a name guess:
 
 ```bash
-omlx serve --host 100.67.39.74 --port 8000 --model-dir <a model it can hold>
+tailscale ip -4        # run ON the machine and name it yourself
 ```
 
-`--host <tailscale-ip>` binds the mesh directly — no ssh tunnel, and the
-Studio reaches it at `http://100.67.39.74:8000` (the address already in
-`~/.config/noderouter/nodes.json` on the Studio — put the MBP's real oMLX
-key in that node's `key` field once it prints one).
+Until the MBP's real tailnet IP is known there is **no MBP entry** in
+`~/.config/noderouter/nodes.json` — the router needs no change when one
+appears: a new node block joins `/v1/models` by itself on the next
+heartbeat and leaves the same way when the lid shuts (nodercheck proves
+both directions).
 
-## Battery rule (do not skip on a laptop)
+## No ssh-copy-id anywhere
 
-Do not put `omlx serve` in a plain LaunchAgent: it will run inference on
-battery and flatten the battery in an afternoon. Gate it:
+The router reaches every node over Tailscale **directly over HTTP** —
+the old "ssh-copy-id calistogamacpro" step was doubly wrong (wrong
+machine, and unneeded transport). Nothing here should ever need ssh to a
+node; if it does, that is a design smell, not a setup step.
+
+## Starting a Mac as a serving node (MBP or the Calistoga tower)
+
+```bash
+omlx serve --host <tailscale-ip-from-above> --port 8000 --model-dir <model>
+```
+
+Then add a node block on the Studio with that IP, the printed key, a prio,
+a max, and — load-bearing — an `allow` list (the role map, see AGENTS.md:
+Studio = Flash/gemma class; mini/laptop = 27B).
+
+## Battery rule (laptops only)
+
+`omlx serve` on battery flattens it in an afternoon. Gate the LaunchAgent:
 
 ```zsh
 pmset -g batt | grep -q "AC Power" || exit 0   # first line of the wrapper
 ```
 
-Then `omlx serve ...` behind it, RunAtLoad+KeepAlive like
-`com.jalfern.noderouter.plist`, and `sudo pmset -a ttyskeepawake 1` if
-the lid is closed while plugged in.
-
-## What the router does with it
-
-- Only models the MBP actually declares become routable to it (`prio 3` —
-  it is the overflow valve, not the workhorse: Studio first, mini second,
-  MBP when it is alive and someone is busy or it holds the model).
-- `GET :8010/router/status` shows it flip online/offline between heartbeats.
-- Requests that started there while the lid was closed die like any stream:
-  honest truncation, never a silent wrong answer.
+`sudo pmset -a ttyskeepawake 1` if the lid stays closed while plugged.
+The tower does not need this; it is the better overnight node.

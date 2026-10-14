@@ -84,7 +84,7 @@ npm run heistmutate # put fourteen fixed bugs back and prove heistplay notices (
 npm run cornerprobe # signed depth of the raccoon vs the level, per frame, at N x slow CPU
 npm run zorkpulse   # Zork: one line/second from the agent loop's own counters (slow box repro)
 npm run aicheck    # src/ai spine contract (watchdog / rejections / honest arms), Node, ~1s
-npm run nodercheck # the fleet router (:8010): capability union, hot-load stickiness, busy spill, honest failover, per-node keys — fake fleet, Node, ~35s
+npm run nodercheck # fleet router (:8010): role map (27B never on Studio), join/leave, stickiness, busy spill, honest failover — fake fleet, Node, ~15s, run when router/config changes
 npm run zorkcheck  # Zork in **Node**: sensor seams, then the real agent's invariants (no Chrome)
 npm run zorkuicheck  # the ▶ AI button in a browser: click, it plays; one key, you win
 npm run doscheck   # DOS/IF seams in Chrome: js-dos boots in dev, keys captured, framebuffer readable
@@ -632,14 +632,20 @@ tail -f /tmp/forge/last.log                                     # watch a sessio
 
 ### The fleet router (`scripts/node-router.mjs`, launchd `com.jalfern.noderouter`, :8010)
 One OpenAI-compatible door in front of the MLX nodes (config
-`~/.config/noderouter/nodes.json`, keys never in the repo): the union of
-`/v1/models` is only what ONLINE nodes declared — a node that stops answering
-leaves within one heartbeat and rejoins alone (that is how the MacBook Pro
-joins: see `scripts/MBP-NODE.md`; the door never hangs on it). Consecutive
-same-model requests stick to the node that last served it (oMLX reloads on
-switch — stickiness is the whole game), a busy sticky node spills to the
-other holder, and failures BEFORE any response byte are replayed on the next
-candidate while mid-stream deaths propagate honestly. `GET :8010/router/status`
-is the live map. Gate: `npm run nodercheck` (static CI). The opencode
-provider `omlxnet` is this door; `omlx`/`omlxmini` remain direct escape
-hatches if the router ever dies.
+`~/.config/noderouter/nodes.json`, keys never in the repo). Two maps, both
+load-bearing: the **capability map** is only what ONLINE nodes declared —
+a node that stops answering leaves within one heartbeat and rejoins alone
+(`/v1/models` is the catalog a node CAN load, NOT what it serves; the
+Studio declares 13). The **role map** (`allow` per node) is Jon's fleet
+policy: Studio builds games (Flash/gemma class), mini serves QA's 27B, a
+laptop node (when awake, on AC — see `scripts/MBP-NODE.md`) takes 27B
+fixes, and when it is away that work **503s naming the role map rather
+than silently landing on the Studio** — prio-only routing there is the
+Oct 11 memory-guard crash waiting to be re-created. Consecutive same-model
+requests stick to the node that last served it; a busy sticky node spills
+to the other *allowed* holder; failures BEFORE any response byte are
+replayed on the next candidate, mid-stream deaths propagate honestly.
+`GET :8010/router/status` shows nodes, allow-lists and sticky pins.
+Gate: `npm run nodercheck` (NOT static CI — run it whenever the router or
+its config changes). The opencode provider `omlxnet` is this door;
+`omlx`/`omlxmini` remain direct escape hatches if the router ever dies.

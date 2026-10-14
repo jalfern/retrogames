@@ -9,15 +9,26 @@
 //     "token":  "router-local bearer token the opencode provider sends",
 //     "nodes": [
 //       { "name": "studio", "url": "http://127.0.0.1:8000",
-//         "key": "sk-...", "prio": 1, "max": 4 },
+//         "key": "sk-...", "prio": 1, "max": 4,
+//         "allow": ["Flash-Next", "gemma", "Coder", "DeepSeek", "27B-oQ8e"] },
 //       { "name": "mini",   "url": "http://127.0.0.1:18000",
-//         "key": "sk-...", "prio": 2, "max": 2 },
-//       { "name": "mbp",    "url": "http://100.67.39.74:8000",
-//         "key": "sk-...", "prio": 3, "max": 2, "dynamic": true }
+//         "key": "sk-...", "prio": 2, "max": 2, "allow": ["27B"] },
+//       { "name": "mbp",    "url": "http://<tailscale-ip>:8000",
+//         "key": "sk-...", "prio": 3, "max": 2, "dynamic": true,
+//         "allow": ["27B"] }
 //     ]
 //   }
 //
-// The three behaviours that make it "intelligent" rather than a round-robin:
+// The four behaviours that make it "intelligent" rather than a round-robin:
+//
+// 0. ROLE MAP — /v1/models is the catalog a node CAN load, not what it
+//    serves (the Studio declares 13). Without policy, prio alone would
+//    pull QA's 27B onto the Studio beside Flash-Next and re-create the
+//    Oct 11 memory-guard crash. `allow` (substring patterns) is the
+//    machine contract: Studio builds games (Flash-Next class), the mini
+//    serves QA's 27B, the MBP (when awake, on AC) takes 27B fixes — and
+//    when it is away that work 503s rather than silently landing on the
+//    Studio. A model nobody is ALLOWED is a loud 503 naming the map.
 //
 // 1. CAPABILITY MAP — every node is polled (/v1/models) on a heartbeat; a
 //    node is offerable only while it answers, and only for the models it
@@ -25,12 +36,13 @@
 //    lid shut -> gone from the union in <=1 probe interval, oMLX back up
 //    -> back in, no human, no restart, nothing else pays a timeout.
 //
-// 2. HOT-LOAD STICKINESS — oMLX serves one loaded model; switching costs
-//    the whole reload. Consecutive requests for model X stick to the node
-//    that last served X while that node is online and below its concurrency
-//    cap, so the common case (one agent hammering one model) never pays a
-//    reload. Only a busy/offline sticky node forces a cold node, and the
-//    cold node then becomes the sticky one.
+// 2. HOT-LOAD STICKINESS — oMLX caches several loaded models, but switching
+//    costs a load and thrash evicts. Consecutive requests for model X
+//    stick to the node that last served X while that node is online,
+//    allowed, and below its concurrency cap, so the common case (one
+//    agent hammering one model) never pays a reload. Only a busy/offline/
+//    disallowed sticky node forces a move, and the new node becomes
+//    sticky.
 //
 // 3. HONEST FAILOVER — if a chosen node fails BEFORE a single response
 //    byte (refused/5xx), the request is replayed once per remaining
@@ -62,6 +74,7 @@ const nodes = cfg.nodes.map((n) => ({
 }))
 const byName = Object.fromEntries(nodes.map((n) => [n.name, n]))
 const sticky = new Map()
+const allowed = (n, model) => !n.allow || !model || n.allow.some((p) => model.includes(p))
 
 const url = (u) => new URL(u)
 
@@ -93,13 +106,13 @@ function markDown(n, why) {
     n.lastErr = why
 }
 
-const HEARTBEAT_MS = 6000
+const HEARTBEAT_MS = Number(process.env.NODE_ROUTER_HB || 6000)
 setInterval(() => { for (const n of nodes) probe(n) }, HEARTBEAT_MS)
 for (const n of nodes) probe(n)
 
 function candidates(model) {
     return nodes
-        .filter((n) => n.online && (model ? n.models.has(model) : true))
+        .filter((n) => n.online && (model ? n.models.has(model) && allowed(n, model) : true))
         .sort((a, b) => (a.inFlight - b.inFlight) || (a.prio - b.prio))
 }
 
@@ -108,7 +121,7 @@ function pick(model) {
     if (!cands.length) return null
     const s = model && sticky.get(model)
     const sNode = s && byName[s]
-    if (sNode && sNode.online && sNode.models.has(model) && sNode.inFlight < (sNode.max || 2)) return sNode
+    if (sNode && cands.includes(sNode) && sNode.inFlight < (sNode.max || 2)) return sNode
     const pickNode = cands[0]
     if (model && (!s || s !== pickNode.name)) {
         if (model && sticky.get(model) && byName[sticky.get(model)]?.online) byName[sticky.get(model)].reloads++
@@ -150,7 +163,7 @@ async function proxy(req, res) {
         res.end(JSON.stringify({
             sticky: Object.fromEntries(sticky),
             nodes: nodes.map((n) => ({
-                name: n.name, online: n.online, models: [...n.models], inFlight: n.inFlight,
+                name: n.name, online: n.online, models: [...n.models], allow: n.allow || null, inFlight: n.inFlight,
                 served: n.served, prio: n.prio, lastErr: n.lastErr,
                 seen: n.lastOk ? Math.round((Date.now() - n.lastOk) / 1000) + 's ago' : 'never',
             })),
@@ -190,8 +203,11 @@ async function proxy(req, res) {
             node = candidates(model).find((c) => !tried.has(c.name))
         }
     }
-    res.writeHead(lastErr.startsWith('no node') ? 503 : 502)
-    res.end(JSON.stringify({ error: { message: `node-router: ${lastErr}`, tried: [...tried] } }))
+    const blocked = model ? nodes.filter((n) => n.online && n.models.has(model) && !allowed(n, model)).map((n) => n.name) : []
+    res.writeHead(blocked.length || lastErr.startsWith('no node') ? 503 : 502)
+    res.end(JSON.stringify({ error: { message: blocked.length
+        ? `node-router: role map — ${model} is declared online by ${blocked.join(',')} but allowed on nobody`
+        : `node-router: ${lastErr}`, tried: [...tried] } }))
 }
 
 const server = http.createServer((req, res) => {
