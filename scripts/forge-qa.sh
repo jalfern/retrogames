@@ -22,7 +22,7 @@ cd "$REPO" || exit 1
 # builder for the studio GPU. If the tunnel/mini is down, SKIP this run rather
 # than falling back to the studio: a second stream on the builder's model
 # disables MTP and drops both to single-digit tok/s. The warden retries later.
-MODEL="omlxmini/Qwen3.8-27B-oQ4e-mtp"
+MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"   # Jundot oQ8e on oMLX 0.7.1 (2026-10-13)
 if ! curl -s -m 3 http://127.0.0.1:18000/v1/models >/dev/null 2>&1; then
     echo "$(date): mini unreachable, skipping QA this run (no studio fallback)" >> "$LOG"
     exit 0
