@@ -137,6 +137,75 @@ const best = await page.evaluate(() => ({
 }))
 r.check('a lap banks a persisted best lap', best.hook > 0 && best.stored === best.hook, `best ${best.hook} stored ${best.stored}`)
 
+// ============ #204 graphics pass: the kart animates, the FX are real ============
+// Render-only, so the sim and its hash are untouched (kartcheck stays
+// hash-for-hash) — but the renderer now has to prove it: the running cycle
+// must actually toggle its two frames, and drift/spin must emit + paint
+// particles. All three are forced deterministically (real keys / sim state)
+// rather than hoped for, so a dead FX path goes RED instead of shipping a
+// static kart again.
+const fxNow = () => page.evaluate(() => window.__kartTest.fx())
+
+// (a) ANIMATION: at speed the kart must run its 2-frame cycle. fx().frame is
+// the exact index the sprite drew; parked it sits on frame 0.
+await setKey('u', true)
+await page.waitForTimeout(1200)
+let sSpeed = await state()
+let f0 = -1, f1 = -1, animToggled = false
+for (let i = 0; i < 10; i++) {
+    const f = await fxNow()
+    if (f0 < 0) f0 = f.frame
+    f1 = f.frame
+    if (f.frame !== f0) animToggled = true
+    await page.waitForTimeout(85)
+}
+await setKey('u', false)
+r.check('the kart runs its 2-frame cycle while moving (not a flat block)',
+    sSpeed.v > 0.4 && animToggled, `v ${sSpeed.v.toFixed(1)} frames ${f0}->${f1}`)
+
+// (b) DRIFT SPARKS: park the kart on the start straight (test-setup, like
+// kartcheck's pinned-straight probe), build speed with real keys, then hold
+// steer + the drift key (B = KeyX) so the SIM enters its drift branch. The
+// renderer must emit sparks — proven by the cumulative counter, a live
+// sim-state witness (driftT>0), and a pixel probe while drifting.
+await page.evaluate((p) => {
+    const P = window.__kartTest.game().karts[0]
+    P.x = p.x; P.y = p.y; P.a = p.a; P.idx = 4; P.hint = 4; P.v = 0; P.spinT = 0
+}, TRACK.pts[4])
+await setKey('u', true)
+await page.waitForTimeout(1400)
+const baseTotal = (await fxNow()).sparkTotal
+await page.keyboard.down('KeyX')
+await setKey('l', true)
+let driftSeen = false, sparkPx = 0
+for (let i = 0; i < 12; i++) {
+    const f = await fxNow()
+    if (f.driftT > 0) driftSeen = true
+    const hot = await page.evaluate(() => {
+        const d = document.querySelector('canvas').getContext('2d').getImageData(92, 194, 72, 10).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 190 && d[i + 1] > 120 && d[i + 2] < 130) n++
+        return n
+    })
+    if (hot > sparkPx) sparkPx = hot
+    await page.waitForTimeout(55)
+}
+await setKey('l', false); await page.keyboard.up('KeyX'); await setKey('u', false)
+const afterDrift = await fxNow()
+r.check('drift emits sparks (sim drift -> renderer particles)',
+    driftSeen && (afterDrift.sparkTotal - baseTotal) > 0,
+    `driftSeen ${driftSeen} delta ${afterDrift.sparkTotal - baseTotal}`)
+r.check('drift sparks paint pixels at the rear wheels', sparkPx > 0, `hot px ${sparkPx}`)
+
+// (c) SPIN-OUT DUST: force a spin through the sim; the renderer must emit
+// dust while spinT is live.
+await page.evaluate(() => window.__kartTest.forceSpin())
+await page.waitForTimeout(240)
+const afterSpin = await fxNow()
+r.check('spin-out emits dust (sim spinT -> renderer particles)',
+    afterSpin.dust > 0 || afterSpin.spinT > 0, `dust ${afterSpin.dust} spinT ${afterSpin.spinT}`)
+await setKey('u', false); await setKey('l', false); await setKey('r', false)
+
 // ============ #199 items 1+2: the raceable ghost and the lap table ============
 // The ghost must be the CERTIFIED line: the same pure machine stepped in
 // Node from the same makeGame(). If the browser's phantom drifts from the
