@@ -120,15 +120,23 @@ function sprite(w, h, paint) {
     return c
 }
 function buildSprites() {
-    const body = (col, helmet) => sprite(56, 64, (x) => {
-        x.fillStyle = '#181818'; x.fillRect(2, 40, 14, 22); x.fillRect(40, 40, 14, 22)
-        x.fillStyle = '#303030'; x.fillRect(16, 52, 24, 10)
-        x.fillStyle = col; x.fillRect(10, 16, 36, 34)
-        x.fillStyle = '#00000044'; x.fillRect(10, 16, 36, 6)
-        x.fillStyle = '#f8d8a8'; x.fillRect(20, 2, 16, 14)
-        x.fillStyle = helmet; x.fillRect(18, 0, 20, 8)
-        x.fillStyle = '#f8f8f8'; x.fillRect(14, 44, 28, 6)
-    })
+    const body = (col, helmet) => {
+        // two frames: on the rev frame the driver+body hop up while the rear
+        // wheels sink — a real running cycle, not a flat block (the #204
+        // "biggest visual gap"). Frame 0 is the parked/straight pose.
+        const mk = (ph) => sprite(56, 64, (x) => {
+            const bob = ph ? -3 : 0
+            const sink = ph ? 2 : 0
+            x.fillStyle = '#181818'; x.fillRect(2, 40 + sink, 14, 22 - sink); x.fillRect(40, 40 + sink, 14, 22 - sink)
+            x.fillStyle = '#303030'; x.fillRect(16, 52, 24, 10)
+            x.fillStyle = col; x.fillRect(10, 16 + bob, 36, 34)
+            x.fillStyle = '#00000044'; x.fillRect(10, 16 + bob, 36, 6)
+            x.fillStyle = '#f8d8a8'; x.fillRect(20, 2 + bob, 16, 14)
+            x.fillStyle = helmet; x.fillRect(18, 0 + bob, 20, 8)
+            x.fillStyle = '#f8f8f8'; x.fillRect(14, 44, 28, 6)
+        })
+        return [mk(0), mk(1)]
+    }
     return {
         mario: body('#e02020', '#e02020'),
         daisy: body('#f8b800', '#f8b800'),
@@ -312,12 +320,12 @@ export default function MarioKart() {
             ctx.save()
             ctx.beginPath(); ctx.rect(0, 0, W, PLAY_H); ctx.clip()
             const items = []
-            for (const k of g.karts.slice(1)) items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color], w: 56, h: 64, o: k })
+            for (const k of g.karts.slice(1)) items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color][((k.anim >> 2) + (k.row & 1)) & 1], w: 56, h: 64, o: k })
             // the ghost races in its own world and vanishes at its own
             // finish line — a finished phantom would freeze mid-track
             if (gGhost && !gGhost.end) {
                 const G = gGhost.karts[0]
-                items.push({ x: G.x, y: G.y, a: G.a, img: S.mario, w: 56, h: 64, o: G, ghost: true })
+                items.push({ x: G.x, y: G.y, a: G.a, img: S.mario[0], w: 56, h: 64, o: G, ghost: true })
             }
             for (const b of g.bananas) items.push({ x: b.x, y: b.y, a: 0, img: S.banana, w: 26, h: 20 })
             for (const s of g.shells) items.push({ x: s.x, y: s.y, a: s.a, img: S.shell, w: 30, h: 26 })
@@ -353,11 +361,54 @@ export default function MarioKart() {
             ctx.translate(W / 2, PLAY_H - 30 + bounce)
             ctx.rotate(tilt)
             ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-34, 22, 68, 9)
-            ctx.drawImage(S.mario, -38, -40, 76, 88)
+            ctx.drawImage(S.mario[P.v > 0.4 ? ((P.anim >> 2) & 1) : 0], -38, -40, 76, 88)
             if (P.boostT > 0) {
                 ctx.fillStyle = (g.tick >> 1) % 2 ? '#f8d800' : '#f85800'
                 ctx.fillRect(-30, 40, 12, 10 + (g.tick % 6)); ctx.fillRect(18, 40, 12, 10 + ((g.tick + 3) % 6))
             }
+            ctx.restore()
+        }
+
+        // ---- render-only FX: drift sparks + spin-out dust. Renderer
+        // memory (like the camera and shake), never the sim — kartcheck
+        // stays hash-for-hash. Jitter is a pure function of the tick, so a
+        // replayed attract demo jitters identically (no Math.random). ----
+        const fx = { sparks: [], dust: [], sparkTotal: 0 }
+        const jit = (n) => { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v) }
+        const stepFx = (P) => {
+            if (P.driftT > 0 && P.v > 1) {
+                const dir = P.steerVis || 1
+                for (let i = 0; i < 2; i++) {
+                    const side = i ? 1 : -1
+                    fx.sparks.push({ x: W / 2 + side * 26, y: PLAY_H - 8,
+                        vx: -dir * (0.3 + jit(g.tick + i) * 0.7) + side * 0.7,
+                        vy: 0.5 + jit(g.tick * 1.7 + i) * 1.3, life: 12 })
+                }
+                fx.sparkTotal += 2
+            } else if (P.spinT > 0) {
+                for (let i = 0; i < 3; i++) fx.dust.push({ x: W / 2 + (jit(g.tick * 3.1 + i) - 0.5) * 44,
+                    y: PLAY_H - 10, vx: (jit(g.tick * 1.3 + i) - 0.5) * 1.3, vy: 0.2 + jit(g.tick * 2.1 + i) * 0.5, life: 18 })
+            }
+            for (const s of fx.sparks) { s.x += s.vx; s.y += s.vy; s.vy += 0.12; s.life-- }
+            fx.sparks = fx.sparks.filter((s) => s.life > 0 && s.y < PLAY_H + 4)
+            for (const d of fx.dust) { d.x += d.vx; d.y += d.vy; d.life-- }
+            fx.dust = fx.dust.filter((d) => d.life > 0)
+            if (fx.sparks.length > 160) fx.sparks.splice(0, fx.sparks.length - 160)
+            if (fx.dust.length > 120) fx.dust.splice(0, fx.dust.length - 120)
+        }
+        const drawFx = () => {
+            ctx.save()
+            ctx.beginPath(); ctx.rect(0, 0, W, PLAY_H); ctx.clip()
+            for (const d of fx.dust) {
+                ctx.globalAlpha = Math.max(0, d.life / 24) * 0.6
+                ctx.fillStyle = '#9a8a68'; ctx.fillRect(d.x, d.y, 3, 3)
+            }
+            for (const s of fx.sparks) {
+                ctx.globalAlpha = Math.max(0, s.life / 12)
+                ctx.fillStyle = s.life > 7 ? '#fff2a0' : s.life > 3 ? '#f8b020' : '#f85800'
+                ctx.fillRect(s.x, s.y, 2, 2)
+            }
+            ctx.globalAlpha = 1
             ctx.restore()
         }
 
@@ -505,9 +556,11 @@ export default function MarioKart() {
                 camA += da * 0.12
             }
             const shk = shake > 0 ? ((shake-- % 4) - 1.5) : 0
+            stepFx(g.karts[0])
             ctx.save()
             ctx.translate(shk, 0)
             raster()
+            drawFx()
             drawSprites()
             ctx.restore()
             drawHud()
@@ -591,6 +644,12 @@ export default function MarioKart() {
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
             best: () => st.best,
+            fx: () => {
+                const P = g.karts[0]
+                return { sparks: fx.sparks.length, dust: fx.dust.length, sparkTotal: fx.sparkTotal,
+                    frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, spinT: P.spinT, v: P.v }
+            },
+            forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
         }
 
         return () => {
