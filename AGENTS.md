@@ -88,6 +88,8 @@ npm run zorkcheck  # Zork in **Node**: sensor seams, then the real agent's invar
 npm run zorkuicheck  # the ▶ AI button in a browser: click, it plays; one key, you win
 npm run doscheck   # DOS/IF seams in Chrome: js-dos boots in dev, keys captured, framebuffer readable
 npm run joustcheck   # JOUST: joust rule, egg chain, wrap/hands/lava/crumble, wave ledger + autopilot determinism, in Node (~2s)
+npm run qbertcheck   # Q*BERT: 28-cube geometry, flip state machines, Coily chase, disc lure, balls/runners/slick, 25/50/100 ledger, pilot + slack, in Node (~2s)
+npm run qbertdive    # Q*BERT in Chrome, real arrow-pair keys only: pixels vs the sim, balloon on death, falls burn lives, restart clean (advisory tier)
 npm run prodsmoke    # builds + serves the PRODUCTION bundle and drives it (no DEV hooks exist there)
 ```
 
@@ -626,6 +628,24 @@ is `planner.js`'s own proven run (it clears waves 1-2; the pilot ceiling-pin
 bug and its fix are documented in the game README). Verify with
 `npm run joustcheck` (`static` gate) and `npm run joustdive` (Chrome, real
 keys; advisory tier).
+
+## Q*BERT
+
+**Q*BERT** (`/qbert`) is the 1982 Gottlieb cube-hop: a 28-cube isometric
+pyramid (rows 1-6 + skirt 4,3), diagonal-only hops, every landing flips the
+cube top — round 1 is all-green (apex counts, 27 to go), round 2+ is the
+5-colour cycle (clear when all match). Coily drops at flip 9 and strictly
+closes on you; the apex up-hop boards a disc and a snake within two edges
+follows it off (+500); red balls ricochet the edges, Ugg/Wrongway run rows
+(round 2+), Sam & Slick wipe green back (round 3+); the "@!#?@!" balloon
+rides every death. `sim.js` is pure and `planner.js`'s proven pilot drives the
+attract demo; `npm run qbertcheck` grades the pilot with its OWN walker as
+referee (71 checks: geometry literals, chase/lure radius, chain ledger 25/50/100,
+pilot clears round 1 with lives-1 slack on 8 seeds, hash-for-hash). Verify with
+`npm run qbertcheck` (`static` gate) and `npm run qbertdive` (Chrome, real
+arrow-pair keys; advisory tier). Note: at the apex, up-diagonals are the disc
+attempt — the way off the top is down-diagonal (the harness learned this the
+honest way).
 
 ## The Forge (autonomous game production)
 `/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the
