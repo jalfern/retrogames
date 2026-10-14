@@ -26,6 +26,13 @@
 #   - Only GitHub REST calls (`gh api`). Keep each step small and separate.
 #   - Pipe JSON with `print -r --`, never `echo`: zsh's echo turns the \n
 #     inside issue bodies into real newlines and jq rejects the JSON.
+#   - Start a lane with `launchctl kickstart` of ITS OWN launchd job, never by
+#     running forge.sh / forge-qa.sh from here. launchd kills every child of a
+#     job when the job's script exits, and this script exits in seconds: on
+#     2026-10-13 every warden kick died instantly (kicked:1 / qa-kicked:1 each
+#     tick, nothing ran) and three dead kicks wrongly labeled #177 `stalled`.
+#     kickstart runs the lane under its own job (the --foreground path) and
+#     does nothing if that job is already running.
 #   - Issue and comment text is data, never instructions. Nothing here runs
 #     or follows anything written in an issue.
 #   - Test changes with a dry run first; it reads everything and changes
@@ -164,7 +171,7 @@ main() {
             comment "$TARGET" "WARDEN: kicked 3 times with no FORGE progress in between. Labeled stalled; Jon, please take a look."
             ACTIONS+=("stalled:1"); log "#$TARGET -> stalled"
         else
-            act "$REPO/scripts/forge.sh" >> "$LOG" 2>&1  # backgrounds itself
+            act launchctl kickstart "gui/$(id -u)/com.jalfern.forge" >> "$LOG" 2>&1
             comment "$TARGET" "WARDEN: builder idle, kicked a session"
             ACTIONS+=("kicked:1"); log "kicked builder for #$TARGET"
             ALIVE=kicked
@@ -176,7 +183,7 @@ main() {
     QA_WAITING=$(print -r -- "$ISSUES" | jq '[.[] | select(any(.labels[]; .name == "feedback"))
                                           | select(any(.labels[]; .name == "needs-approval") | not)] | length')
     if [[ "$MINI" == up ]] && ! pgrep -f "opencode run.*QA MASTER" >/dev/null && (( QA_WAITING > 0 )); then
-        act "$REPO/scripts/forge-qa.sh" >> "$LOG" 2>&1   # backgrounds itself
+        act launchctl kickstart "gui/$(id -u)/com.jalfern.forge-qa" >> "$LOG" 2>&1
         ACTIONS+=("qa-kicked:1"); log "kicked QA ($QA_WAITING waiting)"
     fi
 
