@@ -223,6 +223,14 @@ jobs:
       # autopilot that drives the attract demo clears lines on every probe seed.
       - run: npm run lint:tetris
       - run: npm run tetrischeck
+      # Twenty-ninth scoped gate: JOUST (Williams 1982). The joust rule (the
+      # lower lance loses; dead-even kills both), the egg chain (kill -> egg ->
+      # collect or hatch into the next-stronger rider), the wrap, the troll
+      # hand, crumble timing and the wave ledger are all pinned against
+      # literal numbers in the pure sim, and the autopilot that drives the
+      # attract demo clears waves 1-2 with the score ledger recomputed.
+      - run: npm run lint:joust
+      - run: npm run joustcheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -353,6 +361,13 @@ jobs:
       # The deterministic gate is tetrischeck in `static`.
       - name: Tetris smoke (real keys — the drawn piece sits where the DAS says it is, a rotated piece changes shape on screen, soft drop is 2 frames a row, well over, restart clean)
         run: npm run tetrisplay
+        env:
+          SHOT_CHANNEL: chromium
+      # JOUST play-driver: real keys, pixels vs the sim, three honest lava
+      # deaths and a clean restart. 12/12 locally; rides the advisory tier.
+      # The deterministic gate is joustcheck in `static`.
+      - name: Joust smoke (real keys — the drawn rider sits where the sim says it is, flapping climbs, lava takes three lives, restart is clean)
+        run: npm run joustdive
         env:
           SHOT_CHANNEL: chromium
       # The scripted heist: Chrome plays job 1 end to end and asserts it can walk,

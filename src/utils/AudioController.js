@@ -63,6 +63,19 @@ const MUSIC = {
             52, 0, 45, 0, 40, 0, 45, 0, 43, 0, 40, 0, 28, 0, 0, 0,
         ],
     },
+    // JOUST — original heroic march, D minor (not the Rachmaninoff quote
+    // the cabinet used; composed for this build)
+    joust: {
+        step: 0.14,
+        lead: [
+            62, 65, 69, 74, 72, 69, 65, 62, 67, 70, 74, 79, 77, 74, 70, 67,
+            69, 72, 76, 81, 79, 76, 72, 69, 74, 0, 77, 0, 76, 74, 69, 0,
+        ],
+        bass: [
+            38, 0, 45, 0, 38, 0, 45, 0, 43, 0, 50, 0, 43, 0, 50, 0,
+            36, 0, 43, 0, 36, 0, 43, 0, 38, 0, 41, 0, 45, 0, 38, 0,
+        ],
+    },
 }
 
 class AudioController {
