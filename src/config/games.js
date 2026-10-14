@@ -107,6 +107,10 @@ const TetrisGame = lazy(() => import('../games/Tetris'))
 // their own chunk; the harness imports sim/waves/planner unchanged in Node.
 const JoustGame = lazy(() => import('../games/Joust'))
 
+// Q*BERT: the pyramid, the snake and the disc lure are data + a pure step(), so
+// scripts/qbertcheck.mjs audits the round the player actually gets in Node.
+const QBertGame = lazy(() => import('../games/QBert'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -345,6 +349,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'The 1982 Williams cabinet, rebuilt honest: you and every enemy rider obey the same lance — in any collision the LOWER rider dies, and dead-even height kills you both. There are no enemy bullets; death is a joust, a troll hand rising from the lava, or arriving at the ground crooked. Beat the wings to climb, glide on a lean to travel — momentum carries and the screen wraps. Defeated riders drop eggs: touch one to bank 100, leave it on a ledge and it hatches into the next-stronger rider (bounder -> hunter -> shadow lord; the shadow drops nothing). Five waves: more riders, crumbling ledges from wave 3, a third hand, and shadow lords in wave 5. Perfect waves (all eggs banked, no death) pay a 1000 bonus. The attract demo is the same autopilot a 46-check Node harness audits — joust rule, egg chain, crumble timing and the wave ledger included.',
         controls: ['Arrow Left/Right: turn the mount (released, it auto-uprights)', 'UP / X / SPACE (or the A button): beat the wings — thrust beats gravity; sideways is a GLIDE, flap only for height', 'Land upright (about 30 deg) on any ledge or you crash; lava and the rising hands kill anything that hangs below', 'Ride above a rider and drop onto its lance — the lower lance always loses', '1 = one rider · 2 = two riders on one keyboard (P2: A/D turn, W/F flap) · touch: pad + A on phones', 'PERFECT wave = every egg banked and no death: +1000 · 1UP every 10,000'],
+    },
+    {
+        path: '/qbert',
+        builtBy: 'forge',
+        component: QBertGame,
+        label: 'Q*BERT',
+        theme: 'dark',
+        description: 'The 1982 Gottlieb pyramid, rebuilt honest: hop the diagonals over 28 isometric cubes and turn every top green — the apex counts at the start, and a diagonal that leaves the pyramid is a fall. Coily the snake drops in after your 9th flip and hops one cube per drop straight at you. The flying discs carry you from the apex back to the top, and a snake within reach follows the disc off the edge (+500). Red balls ricochet down the sides; from round 2 Ugg and Wrongway run the rows, and from round 3 Sam & Slick slide through and wipe your green away. Later rounds trade the flip for the 5-colour cycle: clear the round when every cube matches. Chain the hops — single 25, round-trip 50, heli-jump 100. The attract demo is the same autopilot a Node harness audits: geometry, snake chase, disc lure and the score ledger included.',
+        controls: ['Hop the diagonals with ARROW PAIRS: UP+LEFT, UP+RIGHT, DOWN+LEFT, DOWN+RIGHT (the touch pad shows the four corners)', 'Land on every cube to turn it green — the round ends when all 28 match (apex already counts)', 'Do NOT hop off the pyramid edges — the skirt corners are falls (the apex up-hop rides a passing disc instead)', 'Coily hops at you once the round gets going — ride a disc and a nearby snake follows it off the edge (+500)', 'Chain: two hops back onto the cube you came from = 50 (round trip); 2+ up-hops = 100 (heli)', 'Every round after the first cycles five colours — match them all · ? pauses'],
     },
     {
         path: '/arena-archery',

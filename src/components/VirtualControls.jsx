@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const VirtualControls = ({ secondPad, secondAction, visible = true }) => {
+const VirtualControls = ({ secondPad, secondAction, visible = true, diag = false }) => {
     // We'll use these to track active states for visual feedback
     const [activeKeys, setActiveKeys] = useState({});
 
@@ -8,6 +8,29 @@ const VirtualControls = ({ secondPad, secondAction, visible = true }) => {
     // would only cover the canvas (defaults to true — every existing caller is
     // always-playing, so nothing changes for them).
     if (!visible) return null;
+
+    // Isometric titles (Q*BERT) play on diagonals: `diag` swaps the cross for a
+    // 2x2 corner pad, each button pressing its arrow pair together.
+    const DIAG = {
+        ul: ['ArrowUp', 'ArrowLeft'],
+        ur: ['ArrowUp', 'ArrowRight'],
+        dl: ['ArrowDown', 'ArrowLeft'],
+        dr: ['ArrowDown', 'ArrowRight'],
+    };
+    const sendCode = (code, type) => {
+        window.dispatchEvent(new KeyboardEvent(type === 'down' ? 'keydown' : 'keyup', { code, key: code, bubbles: true }));
+    };
+    const handleDiag = (key, type) => {
+        setActiveKeys(prev => ({ ...prev, [key]: type === 'down' }));
+        for (const code of DIAG[key]) sendCode(code, type);
+    };
+    const bindDiag = (key) => ({
+        onMouseDown: (e) => { e.preventDefault(); handleDiag(key, 'down'); },
+        onMouseUp: (e) => { e.preventDefault(); handleDiag(key, 'up'); },
+        onMouseLeave: () => { if (activeKeys[key]) handleDiag(key, 'up'); },
+        onTouchStart: (e) => { e.preventDefault(); handleDiag(key, 'down'); },
+        onTouchEnd: (e) => { e.preventDefault(); handleDiag(key, 'up'); }
+    });
 
     const handleInput = (key, type) => {
         // Map visual controls to keyboard codes
@@ -60,6 +83,22 @@ const VirtualControls = ({ secondPad, secondAction, visible = true }) => {
     return (
         <div className="fixed bottom-8 left-0 right-0 px-8 flex justify-between items-end z-50 pointer-events-auto">
             {/* D-Pad */}
+            {diag ? (
+                <div className="grid grid-cols-2 gap-1">
+                    <button className={`${dPadClass} ${activeKeys.ul ? 'bg-neutral-600/90' : ''}`} {...bindDiag('ul')}>
+                        <span className="text-white/80 font-bold text-lg">&#8598;</span>
+                    </button>
+                    <button className={`${dPadClass} ${activeKeys.ur ? 'bg-neutral-600/90' : ''}`} {...bindDiag('ur')}>
+                        <span className="text-white/80 font-bold text-lg">&#8599;</span>
+                    </button>
+                    <button className={`${dPadClass} ${activeKeys.dl ? 'bg-neutral-600/90' : ''}`} {...bindDiag('dl')}>
+                        <span className="text-white/80 font-bold text-lg">&#8601;</span>
+                    </button>
+                    <button className={`${dPadClass} ${activeKeys.dr ? 'bg-neutral-600/90' : ''}`} {...bindDiag('dr')}>
+                        <span className="text-white/80 font-bold text-lg">&#8600;</span>
+                    </button>
+                </div>
+            ) : (
             <div className="grid grid-cols-3 gap-1">
                 <div />
                 <button
@@ -101,6 +140,7 @@ const VirtualControls = ({ secondPad, secondAction, visible = true }) => {
                 </button>
                 <div />
             </div>
+            )}
 
             {/* Action Buttons */}
             <div className="pb-2 pr-4 flex items-end gap-3">
