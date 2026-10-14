@@ -11,10 +11,12 @@ Verify with `npm run tetrischeck` — Node, no browser, the same code the tab ru
   score waits for the shift, input is ignored, and the next piece does not
   even spawn until the shift lands. The sim owns the window (`s.clearing`);
   the shell only blinks.
-- **NTSC A-Type gravity, L0-9**: 48, 43, 38, 33, 28, 23, 18, 13, 8, 6 frames
-  per row — measured tick-for-tick against a **literal table in the harness**,
-  not against the sim's own constants (a check that imports the number
-  it audits cannot see the number change).
+- **NTSC A-Type gravity, the full known table (L0-28)**: 48, 43, 38, 33, 28,
+  23, 18, 13, 8, 6 (L0-9), then 5,5,5 (L10-12), 4,4,4 (L13-15), 3,3,3
+  (L16-18), 2 (L19-28), and 1 frame/row at L29+ — measured tick-for-tick
+  against a **literal table in the harness**, not against the sim's own
+  constants (a check that imports the number it audits cannot see the number
+  change).
 - **DAS 16/6**: first move on press, then every 6 frames after a 16-frame
   delay; reversal moves immediately; release resets the delay.
 - **Soft drop**: one row every 2 frames while DOWN is held; awards nothing.
@@ -22,19 +24,20 @@ Verify with `npm run tetrischeck` — Node, no browser, the same code the tab ru
   The piece locks on the first downward attempt that fails — the NES has zero
   lock delay. Top-out is a spawn that collides.
 - **Scoring**: 40/100/300/1200 x (level+1), graded at the level **before**
-  the clear; a new level every 10 lines, counted from the start level; score
-  caps at 9,999,990.
-- **Pieces**: 8-bit Galois LFSR (period 255), piece = r % 7. The modulo bias
-  is *pinned* to the period residues [36,37,37,37,36,36,36] — that skew is a
-  documented NES property. The anti-triple reroll (no piece three times in a
-  row in 50k draws) additionally starves low-residue pieces; the stream is
-  deterministic per seed and the harness says so with real numbers.
+  the clear; score caps at 999,999.
+- **Level curve, no cap**: the counter keeps going past 29. Starting at L0 a
+  level comes every 10 lines; starting above L0 the FIRST level-up is delayed
+  to `min(start*10+10, max(100, start*10-50))` lines, then every 10 (L9 waits
+  until line 100).
+- **Pieces**: 16-bit Galois LFSR (`x^16+x^14+x^13+x^11+1`, period 65535),
+  piece = state % 7. The bias is *pinned* to the period residues
+  [9362,9363,9362,9362,9362,9362,9362] against an independent count — that
+  skew is a documented NES property. A piece equal to the previous one is
+  rerolled once (repeats are rarer, not banned); the harness pins the rule
+  with an exact shadow model, and the stream is deterministic per seed.
 
 ## Honest deviations (deliberate, flagged)
 
-- **Levels past 9**: the real NES high-level table is not reproduced; gravity
-  extrapolates down to a 2-frame floor, and the level caps at 29. Only L0-9
-  is claimed exact, and only L0-9 is pinned.
 - **Music**: Korobeiniki is the public-domain folk melody, arranged in our
   own notation. It now speeds up with the level (`music.js`: 0.15s step at
   L0 down to a 0.06s floor at L9 — the exact ROM tempo values are not

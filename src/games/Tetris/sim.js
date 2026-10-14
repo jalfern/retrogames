@@ -3,33 +3,37 @@
 // table, DAS, soft-drop cadence, the scoring ledger and the line-clear rules
 // in plain Node, tick-for-tick, with the SAME code the renderer runs.
 //
-// Fidelity contract (issue #208):
-//   NTSC A-Type gravity, levels 0-9: 48,43,38,33,28,23,18,13,8,6 frames/row.
-//   Past level 9 the arcade keeps accelerating; the exact NES high-level table
-//   is NOT reproduced here — it is an honest extrapolation (down to 2f at L29)
-//   and the harness only pins the documented L0-9 rows. See README.md.
+// Fidelity contract (issues #208, #228):
+//   NTSC A-Type gravity, the full KNOWN table (frames/row):
+//   L0-9: 48,43,38,33,28,23,18,13,8,6
+//   L10-12: 5    L13-15: 4    L16-18: 3    L19-28: 2    L29+: 1
 //   DAS 16/6 (16-frame initial delay, every 6 frames after). Soft drop = one
 //   row every 2 frames while held. No hard drop, no hold, no ghost, no kicks.
 //   Line clear: the NES flashes the full rows BEFORE anything shifts — the
 //   board freezes for CLEAR_FRAMES (0.5s at 60Hz), the score and the next
 //   piece wait for the shift.
-//   Scoring 40/100/300/1200 x (level+1), capped at 9,999,990; level up every
-//   10 lines; the piece locks on the first downward attempt that fails (the
-//   NES has zero lock delay). Top-out = a spawn that collides.
-//   Pieces: 8-bit Galois LFSR (period 255), piece = r % 7 (this keeps the
-//   NES's documented modulo bias), reroll while it would form a triple.
+//   Scoring 40/100/300/1200 x (level+1), capped at 999,999. There is NO level
+//   cap — the counter keeps going past 29. Starting above L0, the FIRST
+//   level-up is delayed to min(start*10+10, max(100, start*10-50)) lines;
+//   after that it comes every 10. The piece locks on the first downward
+//   attempt that fails (the NES has zero lock delay). Top-out = a spawn that
+//   collides.
+//   Pieces: 16-bit Galois LFSR (x^16+x^14+x^13+x^11+1, period 65535),
+//   piece = state % 7 (this keeps the NES's documented modulo bias). A piece
+//   equal to the previous one is rerolled once — repeats are rarer, not banned.
 
 export const COLS = 10
 export const ROWS = 20
 export const FIXED_DT = 1000 / 60
-export const GRAVITY = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6]
-export const LEVEL_CAP = 29
+// Full NES NTSC gravity table, L0..L28 (frames/row). L29 and above hold at 1.
+export const GRAVITY = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6,
+    5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
 export const DAS_DELAY = 16
 export const DAS_REPEAT = 6
 export const SOFT_FRAMES = 2
 export const CLEAR_FRAMES = 30
 export const SCORE_LINES = [0, 40, 100, 300, 1200]
-export const SCORE_CAP = 9999990
+export const SCORE_CAP = 999999
 export const PIECE_NAMES = ['L', 'J', 'O', 'S', 'Z', 'I', 'T']
 
 function shapeSet(box, cells) {
@@ -56,25 +60,36 @@ export const SPAWN_X = 3
 export const SPAWN_Y = 0
 
 export function gravityFrames(level) {
-    if (level <= 9) return GRAVITY[level]
-    return Math.max(2, 6 - Math.floor((level - 9) / 5))
+    const L = level | 0
+    if (L < 0) return GRAVITY[0]
+    if (L < GRAVITY.length) return GRAVITY[L]
+    return 1  // L29+ holds at 1 frame/row (the NES floor)
 }
 
-// 8-bit Galois LFSR, taps x^8+x^6+x^5+x^4+1 -> 0xB8, period 255.
-export function lfsr8(r) {
+// NES level curve. L0: a level every 10 lines. Starting above L0, the FIRST
+// level-up is delayed to min(start*10+10, max(100, start*10-50)) lines, then
+// every 10. No cap — the counter keeps going past 29.
+export function levelFromLines(start, lines) {
+    const firstUp = start > 0 ? Math.min(start * 10 + 10, Math.max(100, start * 10 - 50)) : 10
+    if (lines < firstUp) return start
+    return start + Math.floor((lines - firstUp) / 10) + 1
+}
+
+// 16-bit Galois LFSR, taps x^16+x^14+x^13+x^11+1 -> 0xB400, period 65535.
+export function lfsr16(r) {
     const fb = r & 1
     r >>= 1
-    if (fb) r ^= 0xB8
-    return r & 0xFF
+    if (fb) r ^= 0xB400
+    return r & 0xFFFF
 }
 
 export function newGame(startLevel = 0, seed = 1) {
     let s = {
         board: new Uint8Array(ROWS * COLS),
         cur: null, next: 0,
-        rng: 0, last1: -1, last2: -1,
-        level: Math.max(0, Math.min(LEVEL_CAP, startLevel | 0)),
-        startLevel: Math.max(0, Math.min(LEVEL_CAP, startLevel | 0)),
+        rng: 0, last1: -1,
+        level: Math.max(0, startLevel | 0),
+        startLevel: Math.max(0, startLevel | 0),
         lines: 0, score: 0,
         g: 0, dasDir: 0, dasF: 0, softF: 0,
         clearing: null,
@@ -85,7 +100,7 @@ export function newGame(startLevel = 0, seed = 1) {
         events: [],
         seed: seed >>> 0 || 0x9e37,
     }
-    s.rng = s.seed & 0xFF || 0x1d
+    s.rng = (s.seed & 0xFFFF) || 0xB400
     s.next = drawPiece(s)
     s.cur = spawn(s.next)
     s.next = drawPiece(s)
@@ -93,12 +108,12 @@ export function newGame(startLevel = 0, seed = 1) {
 }
 
 export function drawPiece(s) {
-    let p
-    do {
-        s.rng = lfsr8(s.rng)
+    s.rng = lfsr16(s.rng)
+    let p = s.rng % 7
+    if (p === s.last1) {  // a piece equal to the previous one: reroll once
+        s.rng = lfsr16(s.rng)
         p = s.rng % 7
-    } while (p === s.last1 && p === s.last2)
-    s.last2 = s.last1
+    }
     s.last1 = p
     return p
 }
@@ -161,7 +176,7 @@ function finishClear(s) {
     }
     s.score = Math.min(SCORE_CAP, s.score + SCORE_LINES[n] * (before + 1))
     s.lines += n
-    s.level = Math.min(LEVEL_CAP, s.startLevel + Math.floor(s.lines / 10))
+    s.level = levelFromLines(s.startLevel, s.lines)
     s.events.push({ t: 'cleared', n, rows, gained: SCORE_LINES[n] * (before + 1) })
     if (s.level > before) s.events.push({ t: 'level', level: s.level })
     s.cur = spawn(s.next)

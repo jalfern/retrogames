@@ -6,15 +6,17 @@
 // attract demo replays must clear lines and keep the well alive (the game can
 // be won), and every run must be hash-for-hash deterministic.
 //
-// The modulo bias of the piece generator is PINNED, not just band-checked:
-// piece = r % 7 over the LFSR's 255-state period gives residues
-// [36,37,37,36,36,36,36] — that skew is a documented NES property, and a
-// "cleaner" generator that erased it would be a different game.
+// The piece generator is a 16-bit LFSR, pinned to its maximal 65535-state
+// period: over that period piece = state % 7 gives residues
+// [9362,9363,9362,9362,9362,9362,9362] — the skew is a documented NES
+// property, and a "cleaner" generator that erased it would be a different
+// game. The reroll rule (a piece equal to the previous is rerolled once) is
+// pinned both as an exact shadow model and as "repeats are rarer, not banned".
 
 import {
     newGame, step, gravityFrames, GRAVITY, DAS_DELAY, DAS_REPEAT, SOFT_FRAMES,
     CLEAR_FRAMES, SCORE_LINES, SCORE_CAP, COLS, ROWS, SPAWN_X, SPAWN_Y, cellsOf, fits,
-    drawPiece, lfsr8, stateHash, SHAPES, LEVEL_CAP, PIECE_NAMES, resting,
+    drawPiece, lfsr16, levelFromLines, stateHash, SHAPES, PIECE_NAMES, resting,
 } from '../src/games/Tetris/sim.js'
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from '../src/games/Tetris/planner.js'
 import { musicStep, TET_MUSIC_STEPS } from '../src/games/Tetris/music.js'
@@ -26,17 +28,20 @@ r.info('boot', 'sim.js + planner.js imported in Node, zero DOM, zero Math.random
 // ---------------------------------------------------------- gravity table ----
 // Expectation is the literal NTSC table, NOT the sim's own GRAVITY constant —
 // a check that imports the number it audits cannot see the number change.
-const NES_TABLE = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6]
-for (let L = 0; L <= 9; L++) {
+// The literal NES NTSC table, L0..L28 — NOT the sim's own GRAVITY constant,
+// a check that imports the number it audits cannot see the number change.
+const NES_TABLE = [48, 43, 38, 33, 28, 23, 18, 13, 8, 6,
+    5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+for (let L = 0; L <= 28; L++) {
     const s = newGame(L, 7)
     const y0 = s.cur.y
     let t = 0
     while (s.cur.y === y0 && !s.over && t < 1000) { step(s, {}); t++ }
     r.check(`gravity L${L} = ${NES_TABLE[L]} frames/row`, t === NES_TABLE[L], `first row after ${t} ticks`)
 }
-let mono = true
-for (let L = 10; L <= LEVEL_CAP; L++) if (gravityFrames(L) > gravityFrames(L - 1) || gravityFrames(L) < 2) mono = false
-r.check('gravity past L9 is non-increasing and never below 2f (extrapolation cap)', mono)
+r.check('gravity L29+ holds at 1 frame/row (the NES floor, no level cap below it)',
+    gravityFrames(29) === 1 && gravityFrames(50) === 1 && gravityFrames(99) === 1,
+    `L29=${gravityFrames(29)} L50=${gravityFrames(50)} L99=${gravityFrames(99)}`)
 
 // ------------------------------------------------------------------ DAS ----
 {
@@ -251,57 +256,79 @@ r.check('gravity past L9 is non-increasing and never below 2f (extrapolation cap
     Object.assign(s.cur, { type: 5, rot: 1, x: 7, y: 0 })
     let g = 0
     while (!s.over && s.score < SCORE_CAP && g++ < 5000) step(s, {})
-    r.check('score caps at 9,999,990', s.score === SCORE_CAP, `score ${s.score}`)
+    r.check('score caps at 999,999', s.score === 999999, `score ${s.score}`)
 }
 {
-    // level cap and start-level offset
-    const s = newGame(9, 3)
+    // rule 5: the start-level level curve, pinned against the NES formula —
+    // the FIRST up at min(start*10+10, max(100, start*10-50)) lines, then
+    // every 10. No cap: the counter keeps going past 29.
+    r.check('L0: level-up every 10 lines',
+        levelFromLines(0, 0) === 0 && levelFromLines(0, 9) === 0 && levelFromLines(0, 10) === 1 && levelFromLines(0, 19) === 1 && levelFromLines(0, 20) === 2,
+        [0, 9, 10, 19, 20].map((l) => levelFromLines(0, l)).join(','))
+    r.check('start L5: first up at min(60,100)=60 lines, then every 10',
+        levelFromLines(5, 59) === 5 && levelFromLines(5, 60) === 6 && levelFromLines(5, 69) === 6 && levelFromLines(5, 70) === 7,
+        [59, 60, 69, 70].map((l) => levelFromLines(5, l)).join(','))
+    r.check('start L9: first up at min(100,100)=100 lines (line 10 is still L9)',
+        levelFromLines(9, 10) === 9 && levelFromLines(9, 99) === 9 && levelFromLines(9, 100) === 10 && levelFromLines(9, 110) === 11,
+        [10, 99, 100, 110].map((l) => levelFromLines(9, l)).join(','))
+    r.check('no level cap: the counter keeps going past 29',
+        levelFromLines(9, 200) === 20 && levelFromLines(9, 240) === 24 && levelFromLines(0, 1000) === 100,
+        [levelFromLines(9, 200), levelFromLines(9, 240), levelFromLines(0, 1000)].join(','))
+    // and through the real step loop: 300 lines must land on level 30, not clamp
+    const s = newGame(0, 3)
     s.board.fill(0)
-    s.lines = 9
-    s.startLevel = 9
-    for (let c = 0; c <= 8; c++) s.board[19 * COLS + c] = 1
-    Object.assign(s.cur, { type: 5, rot: 1, x: 7, y: 0 })
+    for (let c = 0; c <= 5; c++) s.board[19 * COLS + c] = 1
+    s.lines = 299
+    s.level = levelFromLines(0, 299)
+    Object.assign(s.cur, { type: 5, rot: 0, x: 6, y: 0 })
     let g = 0
-    while (!s.over && s.lines === 9 && g++ < 5000) step(s, {})
-    r.check('start L9, line 10 of the run -> L10 (level counts from the start level)', s.level === 10, `level ${s.level}`)
-    const s2 = newGame(9, 3)
-    s2.startLevel = 9
-    s2.lines = 205
-    s2.level = LEVEL_CAP
-    s2.board.fill(0)
-    for (let c = 0; c <= 5; c++) s2.board[19 * COLS + c] = 1
-    Object.assign(s2.cur, { type: 5, rot: 0, x: 6, y: 0 })
-    let g2 = 0
-    while (!s2.over && s2.lines === 205 && g2++ < 5000) step(s2, {})
-    r.check(`level caps at ${LEVEL_CAP}`, s2.level === LEVEL_CAP, `level ${s2.level}`)
+    while (!s.over && s.lines === 299 && g++ < 5000) step(s, {})
+    r.check('no cap in the live sim: 300 lines -> level 30', s.lines === 300 && s.level === 30, `lines ${s.lines} level ${s.level}`)
 }
 
 // ----------------------------------------------------------------- RNG ----
 {
-    const s = newGame(0, 42)
-    const seq = []
-    for (let i = 0; i < 50000; i++) seq.push(drawPiece(s))
-    let triples = 0
-    for (let i = 2; i < seq.length; i++) if (seq[i] === seq[i - 1] && seq[i] === seq[i - 2]) triples++
-    r.check('no piece appears three times in a row (50k draws)', triples === 0, `triples=${triples}`)
+    // 16-bit LFSR: maximal 65535-state period, pinned exactly. Over the full
+    // period piece = state % 7 gives the documented residues, and the count
+    // must also equal the INDEPENDENT theory (iterate x=1..65535, count x%7) —
+    // a non-primitive or 8-bit generator could not match both.
     const counts = new Array(7).fill(0)
-    for (const p of seq) counts[p]++
-    // Honest tolerance: the anti-triple reroll starves low-residue pieces more
-    // than the raw modulo bias alone (the raw stream IS uniform — pinned below).
-    // What must never happen: a piece becoming rare enough to feel missing.
-    const spread = Math.max(...counts) - Math.min(...counts)
-    r.check('all seven pieces stay well above 10% share (none feels missing)', Math.min(...counts) > 5000 && spread < 3000, counts.join('/'))
+    let v = 0xB400
+    for (let i = 0; i < 65535; i++) { v = lfsr16(v); counts[v % 7]++ }
+    const theory = new Array(7).fill(0)
+    for (let x = 1; x <= 65535; x++) theory[x % 7]++
+    r.check('16-bit LFSR: maximal period 65535, bias [9362,9363,9362,9362,9362,9362,9362]',
+        JSON.stringify(counts) === JSON.stringify([9362, 9363, 9362, 9362, 9362, 9362, 9362]) && JSON.stringify(counts) === JSON.stringify(theory),
+        counts.join(','))
 }
 {
-    // the documented NES modulo bias, pinned exactly: over the 255-state period
-    const counts = new Array(7).fill(0)
-    let v = 0x5e
-    for (let i = 0; i < 255; i++) { v = lfsr8(v); counts[v % 7]++ }
-    const theory = new Array(7).fill(0)
-    for (let x = 1; x <= 255; x++) theory[x % 7]++
-    r.check('modulo bias pinned to the LFSR period residues [36,37,37,37,36,36,36]',
-        JSON.stringify(counts) === JSON.stringify([36, 37, 37, 37, 36, 36, 36]) && JSON.stringify(counts) === JSON.stringify(theory),
-        counts.join(','))
+    // reroll-once, pinned two ways. (1) A shadow model re-derives every draw
+    // from the raw LFSR + the documented rule and must match the sim's piece
+    // AND its rng state — an 8-bit LFSR, a ban-triple, a double reroll, or a
+    // different mapping all diverge. (2) Behaviourally, repeats are rarer than
+    // the raw generator (the reroll fires) but not banned (a double still lands).
+    const s = newGame(0, 42)
+    let shadowRng = s.rng, shadowLast = s.last1
+    let agree = true
+    for (let i = 0; i < 20000; i++) {
+        const got = drawPiece(s)
+        shadowRng = lfsr16(shadowRng)
+        let p = shadowRng % 7
+        if (p === shadowLast) { shadowRng = lfsr16(shadowRng); p = shadowRng % 7 }
+        if (p !== got || shadowRng !== s.rng) { agree = false; break }
+        shadowLast = p
+    }
+    r.check('reroll-once is exact: shadow model re-derives every piece + rng state', agree)
+    const s2 = newGame(0, 42)
+    const seq = []
+    for (let i = 0; i < 50000; i++) seq.push(drawPiece(s2))
+    const raw = []
+    let rv = 42
+    for (let i = 0; i < 50000; i++) { rv = lfsr16(rv); raw.push(rv % 7) }
+    const doubles = (a) => { let c = 0; for (let i = 1; i < a.length; i++) if (a[i] === a[i - 1]) c++; return c }
+    const pieceDoubles = doubles(seq), rawDoubles = doubles(raw)
+    r.check('reroll-once: repeats are rarer than the raw generator (50k draws)', pieceDoubles < rawDoubles, `piece ${pieceDoubles} vs raw ${rawDoubles}`)
+    r.check('reroll-once: repeats are not banned (a double still occurs)', pieceDoubles > 0, `doubles=${pieceDoubles}`)
 }
 {
     const a = newGame(0, 123), b = newGame(0, 123), c = newGame(0, 124)
@@ -380,7 +407,7 @@ function autoplay(level, seed, maxPieces) {
 // --------------------------------------------------------- honesty pins ----
 {
     // gravity claim from the README, restated here so drift fails loudly:
-    r.check('NTSC table is exactly 48,43,...,8,6', GRAVITY.join(',') === '48,43,38,33,28,23,18,13,8,6', GRAVITY.join(','))
+    r.check('NTSC table is exactly the full known L0-28 rows', GRAVITY.join(',') === '48,43,38,33,28,23,18,13,8,6,5,5,5,4,4,4,3,3,3,2,2,2,2,2,2,2,2,2,2', GRAVITY.join(','))
     r.check('DAS constants are the NES 16/6', DAS_DELAY === 16 && DAS_REPEAT === 6)
     r.check('soft drop is the NES 2-frame rate', SOFT_FRAMES === 2)
     const s = newGame(0, 7)
