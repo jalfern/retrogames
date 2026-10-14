@@ -29,7 +29,7 @@ export const ROUNDS = [
             '.....#sBs#.....',
             '....#s###s#....',
             '...#s#E##s#....',
-            '..#s#######s#..',
+            '..#s#.....#s#..',
         ],
     },
     {
@@ -38,7 +38,7 @@ export const ROUNDS = [
         enemyPeriod: 640,
         enemyCap: 3,
         rows: [
-            '.gggggg.gggggg.',
+            '.######.######.',
             '.g#s#s#+#s#s#g.',
             '.g#.........#g.',
             '.g#s#s###s#s#g.',
@@ -63,10 +63,11 @@ export const ROUNDS = [
         enemyPeriod: 460,
         enemyCap: 4,
         rows: [
-            'ggg.....ggg..gg',
-            '#s#s..g..s#s.#s',
-            '#s#s..g..s#s.#s',
-            'ggg.....ggg..gg',
+            'g#g#g#g#g#g#g#g',
+            '#s###s###s###s#',
+            '##s###s###s###s',
+            '#s###s###s###s#',
+            '##s###s###s###s',
         ],
     },
     {
@@ -76,10 +77,10 @@ export const ROUNDS = [
         enemyCap: 5,
         rows: [
             'g#g#g#g#g#g#g#g',
-            'sssssssssssssss',
             '#s#s#s#s#s#s#s#',
+            '###############',
             '#s#s#s#s#s#s#s#',
-            'sssssssssssssss',
+            '###############',
         ],
     },
     {

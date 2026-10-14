@@ -58,13 +58,22 @@ function shaftMode(gs) {
 
 function target(gs, hintX) {
     if (gs.boss) {
+        const bo = gs.boss
+        const eyeY = CFG.bossY + CFG.bossH
+        const ball = gs.balls.find((b) => !b.stuck)
+        const climb = CFG.paddleY - CFG.ballR - eyeY
+        const sp = CFG.baseSpeed + CFG.speedStep * gs.round
+        const t = ball && ball.vy < 0
+            ? Math.max((CFG.paddleY - CFG.ballR - ball.y) / -ball.vy, 0)
+            : climb / (0.8 * sp)
         let best = null, bd = 1e9
-        for (const e of gs.boss.eyes) {
+        for (const e of bo.eyes) {
             if (!e.alive) continue
-            const d = Math.abs(gs.boss.x + e.dx - W / 2)
-            if (d < bd) { bd = d; best = gs.boss.x + e.dx }
+            const ex = W / 2 + Math.sin((bo.swayT + t) / CFG.bossSwaySpeed) * CFG.bossSway + e.dx
+            const d = Math.abs(ex - (hintX === undefined ? W / 2 : hintX))
+            if (d < bd) { bd = d; best = ex }
         }
-        return { x: best === null ? W / 2 : best, precise: true }
+        return { x: best === null ? W / 2 : best, y: eyeY, precise: true }
     }
     const rows = ROUNDS[gs.round].rows
     let best = null, score = 1e9

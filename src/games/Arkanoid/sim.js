@@ -269,35 +269,15 @@ function stepBoss(gs, sp) {
     }
     for (const b of gs.balls) {
         if (b.stuck) continue
-        let hitEye = null
-        for (const e of bo.eyes) {
-            if (!e.alive) continue
-            const ex = bo.x + e.dx
-            const ey = bo.y + 30
-            if ((b.x - ex) ** 2 + (b.y - ey) ** 2 <= (CFG.bossEyeR + CFG.ballR) ** 2) { hitEye = e; break }
-        }
-        if (hitEye) {
-            hitEye.alive = false
-            b.y = bo.y + 30 + CFG.bossEyeR + CFG.ballR
-            b.vy = Math.abs(b.vy)
-            clampSpeed(b, sp)
-            addScore(gs, { type: 'bossEye', value: 100, phase: bo.phase, left: bo.eyes.filter((e) => e.alive).length })
-            if (bo.eyes.every((e) => !e.alive)) {
-                addScore(gs, { type: 'bossPhase', value: 500, phase: bo.phase })
-                bo.phase++
-                if (bo.phase > 2) {
-                    gs.boss = null
-                    gs.events.push({ type: 'bossDead' })
-                    addScore(gs, { type: 'win', value: 2000 })
-                    gs.end = 'win'
-                    return
-                }
-                bo.eyes = CFG.bossPhases[bo.phase].map((dx) => ({ dx, alive: true }))
-            }
-            continue
-        }
         const ax = hitRect(b.x, b.y, CFG.ballR, bo.x - CFG.bossHalfW, bo.y, CFG.bossHalfW * 2, CFG.bossH)
         if (ax) {
+            let hitEye = null
+            if (b.y >= bo.y + CFG.bossH / 2) {
+                for (const e of bo.eyes) {
+                    if (!e.alive) continue
+                    if (Math.abs(b.x - (bo.x + e.dx)) <= CFG.bossEyeR + CFG.ballR) { hitEye = e; break }
+                }
+            }
             if (ax === 'x') {
                 b.vx = b.x < bo.x ? -Math.abs(b.vx) : Math.abs(b.vx)
                 b.x = b.x < bo.x ? bo.x - CFG.bossHalfW - CFG.ballR : bo.x + CFG.bossHalfW + CFG.ballR
@@ -306,8 +286,25 @@ function stepBoss(gs, sp) {
                 b.y = b.y < bo.y + CFG.bossH / 2 ? bo.y - CFG.ballR : bo.y + CFG.bossH + CFG.ballR
             }
             clampSpeed(b, sp)
-            gs.dry++
-            gs.events.push({ type: 'bossThud' })
+            if (hitEye) {
+                hitEye.alive = false
+                addScore(gs, { type: 'bossEye', value: 100, phase: bo.phase, left: bo.eyes.filter((e) => e.alive).length })
+                if (bo.eyes.every((e) => !e.alive)) {
+                    addScore(gs, { type: 'bossPhase', value: 500, phase: bo.phase })
+                    bo.phase++
+                    if (bo.phase > 2) {
+                        gs.boss = null
+                        gs.events.push({ type: 'bossDead' })
+                        addScore(gs, { type: 'win', value: 2000 })
+                        gs.end = 'win'
+                        return
+                    }
+                    bo.eyes = CFG.bossPhases[bo.phase].map((dx) => ({ dx, alive: true }))
+                }
+            } else {
+                gs.dry++
+                gs.events.push({ type: 'bossThud' })
+            }
         }
     }
 }
@@ -389,7 +386,7 @@ export function step(gs, inp) {
                 b.vx = rel * CFG.maxVxFrac * sp
                 if (Math.abs(b.vx) < 0.08 * sp) b.vx = (gs.tick % 2 ? 1 : -1) * 0.12 * sp
                 gs.dry++
-                if (gs.dry >= 10) b.vx = (gs.dry % 2 ? 1 : -1) * (0.30 + (gs.dry % 5) * 0.1) * sp
+                if (gs.dry >= 60 && Math.abs(b.vx) < 0.2 * sp) b.vx = (gs.dry % 2 ? 1 : -1) * (0.30 + (gs.dry % 5) * 0.1) * sp
                 b.vy = -Math.sqrt(Math.max(sp * sp - b.vx * b.vx, 0))
                 if (Math.abs(b.vy) < CFG.minVyFrac * sp) b.vy = -CFG.minVyFrac * sp
                 b.y = CFG.paddleY - CFG.ballR
