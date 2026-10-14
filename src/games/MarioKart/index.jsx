@@ -6,7 +6,8 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
-import { TRACK, BOOSTS, SCENERY, TX, TY, ROAD_R, KERB_R, WALL_R } from './track.js'
+import { TRACK, SCENERY, TX, TY } from './track.js'
+import { buildGround, buildSky, buildSprites, KART } from './art.js'
 
 // =====================================================================
 // SUPER MARIO KART — the arcade's Mode 7 title. The ground is ONE 2048²
@@ -31,159 +32,14 @@ const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
 
 const T = TRACK
+// the player kart is drawn a touch bigger than the CPU pack; keep the new
+// wider-than-tall aspect so it stays the same car, just closer
+const PW = Math.round(KART.w * 1.35)
+const PH = Math.round(PW * KART.h / KART.w)
+const PBOT = 34   // the player kart's ground line, below the camera anchor
 
-// ---- ground texture: the whole circuit painted once ----
-function buildGround() {
-    const c = document.createElement('canvas')
-    c.width = TX; c.height = TY
-    const x = c.getContext('2d')
-    x.fillStyle = '#30a028'; x.fillRect(0, 0, TX, TY)
-    x.fillStyle = '#289020'
-    for (let gy = 0; gy < TY; gy += 64) for (let gx = ((gy / 64) % 2) * 64; gx < TX; gx += 128) x.fillRect(gx, gy, 64, 64)
-    x.fillStyle = '#248018'
-    for (let i = 0; i < TX * TY / 900; i++) x.fillRect((i * 149) % TX, (i * 383) % TY, 2, 3)
+// ---- ground / sky / sprites now live in ./art.js (the SNES palette) ----
 
-    const path = new Path2D()
-    path.moveTo(T.pts[0].x, T.pts[0].y)
-    for (let i = 1; i < T.N; i++) path.lineTo(T.pts[i].x, T.pts[i].y)
-    path.closePath()
-
-    x.lineJoin = 'round'; x.lineCap = 'round'
-    x.strokeStyle = '#248018'; x.lineWidth = (WALL_R - ROAD_R) * 2
-    x.stroke(path)
-    x.strokeStyle = '#d82800'; x.lineWidth = (KERB_R - ROAD_R) * 2 + 6
-    x.stroke(path)
-    x.strokeStyle = '#e8d8b8'; x.lineWidth = ROAD_R * 2
-    x.stroke(path)
-    x.save(); x.clip(path)
-    x.strokeStyle = '#d0c098'; x.lineWidth = 3
-    for (let gx = 0; gx < TX; gx += 46) { x.beginPath(); x.moveTo(gx, 0); x.lineTo(gx, TY); x.stroke() }
-    for (let gy = 0; gy < TY; gy += 46) { x.beginPath(); x.moveTo(0, gy); x.lineTo(TX, gy); x.stroke() }
-    x.restore()
-    x.setLineDash([46, 46])
-    x.strokeStyle = '#f8f8f8'; x.lineWidth = KERB_R - ROAD_R + 4
-    x.stroke(path)
-    x.setLineDash([])
-    x.strokeStyle = '#f8f8f8'; x.lineWidth = 16
-    x.stroke(path)
-    x.setLineDash([34, 34])
-    x.strokeStyle = '#d82800'; x.lineWidth = 16
-    x.stroke(path)
-    x.setLineDash([])
-
-    for (const b of BOOSTS) {
-        x.save(); x.translate(b.x, b.y); x.rotate(b.a)
-        x.fillStyle = '#f8d800'; x.fillRect(-54, -ROAD_R + 16, 108, 2 * ROAD_R - 32)
-        x.fillStyle = '#d85800'
-        for (let k = 0; k < 3; k++) {
-            const cx = -36 + k * 36
-            x.beginPath()
-            x.moveTo(cx, -60); x.lineTo(cx + 22, 0); x.lineTo(cx, 60); x.lineTo(cx + 8, 60); x.lineTo(cx + 30, 0); x.lineTo(cx + 8, -60)
-            x.closePath(); x.fill()
-        }
-        x.restore()
-    }
-    const s0 = T.pts[0]
-    x.save(); x.translate(s0.x, s0.y); x.rotate(s0.a)
-    for (let r = 0; r < 3; r++) for (let col = 0; col < 16; col++) {
-        x.fillStyle = (r + col) % 2 ? '#f8f8f8' : '#181818'
-        x.fillRect(-24 + r * 16, -ROAD_R + col * 24, 16, 24)
-    }
-    x.restore()
-    x.fillStyle = '#585868'; x.fillRect(1040, 1060, 260, 130)
-    x.fillStyle = '#383848'; x.fillRect(1040, 1060, 260, 26)
-    x.fillStyle = '#d82800'
-    for (let i = 0; i < 6; i++) x.fillRect(1052 + i * 42, 1108, 24, 44)
-    return x.getImageData(0, 0, TX, TY)
-}
-
-// ---- sky: fixed parallax mask, sampled against camera heading ----
-function buildSky() {
-    const mtn = new Float32Array(512)
-    for (let i = 0; i < 512; i++) {
-        const t = (i / 512) * Math.PI * 2
-        mtn[i] = 26 + 14 * Math.abs(Math.sin(t * 3 + 1)) + 10 * Math.abs(Math.sin(t * 7 + 2)) + 6 * Math.abs(Math.sin(t * 13))
-    }
-    const cloud = new Uint8Array(60 * 256)
-    for (let y = 0; y < 60; y++) for (let xx = 0; xx < 256; xx++) {
-        const v = Math.sin(xx * 0.10 + y * 0.04) + Math.sin(xx * 0.047 - y * 0.11 + 2) + Math.sin(xx * 0.021 + y * 0.18)
-        cloud[y * 256 + xx] = y >= 6 && y <= 52 && v > 1.0 ? 1 : 0
-    }
-    return { mtn, cloud }
-}
-
-// ---- sprites, painted here like everything else ----
-function sprite(w, h, paint) {
-    const c = document.createElement('canvas')
-    c.width = w; c.height = h
-    paint(c.getContext('2d'))
-    return c
-}
-function buildSprites() {
-    const body = (col, helmet) => {
-        // two frames: on the rev frame the driver+body hop up while the rear
-        // wheels sink — a real running cycle, not a flat block (the #204
-        // "biggest visual gap"). Frame 0 is the parked/straight pose.
-        const mk = (ph) => sprite(56, 64, (x) => {
-            const bob = ph ? -3 : 0
-            const sink = ph ? 2 : 0
-            x.fillStyle = '#181818'; x.fillRect(2, 40 + sink, 14, 22 - sink); x.fillRect(40, 40 + sink, 14, 22 - sink)
-            x.fillStyle = '#303030'; x.fillRect(16, 52, 24, 10)
-            x.fillStyle = col; x.fillRect(10, 16 + bob, 36, 34)
-            x.fillStyle = '#00000044'; x.fillRect(10, 16 + bob, 36, 6)
-            x.fillStyle = '#f8d8a8'; x.fillRect(20, 2 + bob, 16, 14)
-            x.fillStyle = helmet; x.fillRect(18, 0 + bob, 20, 8)
-            x.fillStyle = '#f8f8f8'; x.fillRect(14, 44, 28, 6)
-        })
-        return [mk(0), mk(1)]
-    }
-    return {
-        mario: body('#e02020', '#e02020'),
-        daisy: body('#f8b800', '#f8b800'),
-        yoshi: body('#20b020', '#e05028'),
-        peach: body('#f878b8', '#f8d8f8'),
-        bowser: body('#58a818', '#d89000'),
-        banana: sprite(26, 20, (x) => {
-            x.fillStyle = '#f8d800'
-            x.beginPath(); x.ellipse(13, 12, 11, 6, -0.4, 0, 7); x.fill()
-            x.fillStyle = '#a87800'; x.fillRect(3, 12, 5, 4); x.fillRect(18, 6, 5, 4)
-        }),
-        shell: sprite(30, 26, (x) => {
-            x.fillStyle = '#20c020'; x.beginPath(); x.ellipse(15, 13, 13, 10, 0, 0, 7); x.fill()
-            x.fillStyle = '#a8f8a8'; x.beginPath(); x.ellipse(15, 10, 8, 5, 0, 0, 7); x.fill()
-            x.fillStyle = '#186000'; x.fillRect(2, 18, 26, 4)
-        }),
-        box: sprite(40, 40, (x) => {
-            x.fillStyle = '#f8b800'; x.fillRect(2, 2, 36, 36)
-            x.fillStyle = '#d87800'; x.fillRect(2, 2, 36, 4); x.fillRect(2, 34, 36, 4); x.fillRect(2, 2, 4, 36); x.fillRect(34, 2, 4, 36)
-            x.fillStyle = '#f8f8f8'; x.font = 'bold 26px monospace'; x.fillText('?', 12, 30)
-        }),
-        mushroom: sprite(30, 26, (x) => {
-            x.fillStyle = '#e02020'; x.beginPath(); x.ellipse(15, 12, 13, 10, 0, Math.PI, 0); x.fill()
-            x.fillStyle = '#f8e8c8'; x.fillRect(8, 12, 14, 12)
-            x.fillStyle = '#f8f8f8'; x.beginPath(); x.arc(8, 7, 3, 0, 7); x.arc(21, 6, 4, 0, 7); x.fill()
-        }),
-        tree: sprite(70, 96, (x) => {
-            x.fillStyle = '#784818'; x.fillRect(30, 58, 10, 38)
-            x.fillStyle = '#186810'; x.beginPath(); x.arc(35, 40, 26, 0, 7); x.fill()
-            x.fillStyle = '#208018'; x.beginPath(); x.arc(27, 32, 16, 0, 7); x.arc(45, 36, 14, 0, 7); x.fill()
-        }),
-        stand: sprite(110, 74, (x) => {
-            x.fillStyle = '#585868'; x.fillRect(4, 20, 102, 54)
-            x.fillStyle = '#303040'; x.fillRect(4, 20, 102, 8)
-            for (let r = 0; r < 3; r++) for (let c2 = 0; c2 < 12; c2++) {
-                x.fillStyle = ['#e02020', '#2050e0', '#f8d800', '#f8f8f8', '#20a020'][(r * 7 + c2 * 3) % 5]
-                x.fillRect(8 + c2 * 8, 32 + r * 14, 5, 8)
-            }
-            x.fillStyle = '#d82800'; x.fillRect(4, 8, 102, 10)
-        }),
-        gantry: sprite(120, 120, (x) => {
-            x.fillStyle = '#e8e8e8'; x.fillRect(6, 10, 12, 110); x.fillRect(102, 10, 12, 110)
-            x.fillStyle = '#d82800'; x.fillRect(0, 0, 120, 26)
-            x.fillStyle = '#f8f8f8'; x.font = 'bold 11px monospace'; x.fillText('MARIO CIRCUIT', 12, 17)
-        }),
-    }
-}
 
 export default function MarioKart() {
     const canvasRef = useRef(null)
@@ -320,12 +176,12 @@ export default function MarioKart() {
             ctx.save()
             ctx.beginPath(); ctx.rect(0, 0, W, PLAY_H); ctx.clip()
             const items = []
-            for (const k of g.karts.slice(1)) items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color][((k.anim >> 2) + (k.row & 1)) & 1], w: 56, h: 64, o: k })
+            for (const k of g.karts.slice(1)) items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color][((k.anim >> 2) + (k.row & 1)) & 1], w: KART.w, h: KART.h, o: k })
             // the ghost races in its own world and vanishes at its own
             // finish line — a finished phantom would freeze mid-track
             if (gGhost && !gGhost.end) {
                 const G = gGhost.karts[0]
-                items.push({ x: G.x, y: G.y, a: G.a, img: S.mario[0], w: 56, h: 64, o: G, ghost: true })
+                items.push({ x: G.x, y: G.y, a: G.a, img: S.mario[0], w: KART.w, h: KART.h, o: G, ghost: true })
             }
             for (const b of g.bananas) items.push({ x: b.x, y: b.y, a: 0, img: S.banana, w: 26, h: 20 })
             for (const s of g.shells) items.push({ x: s.x, y: s.y, a: s.a, img: S.shell, w: 30, h: 26 })
@@ -360,11 +216,11 @@ export default function MarioKart() {
             ctx.save()
             ctx.translate(W / 2, PLAY_H - 30 + bounce)
             ctx.rotate(tilt)
-            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-34, 22, 68, 9)
-            ctx.drawImage(S.mario[P.v > 0.4 ? ((P.anim >> 2) & 1) : 0], -38, -40, 76, 88)
+            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-PW * 0.42, PBOT - 4, PW * 0.84, 7)
+            ctx.drawImage(S.mario[P.v > 0.4 ? ((P.anim >> 2) & 1) : 0], -PW / 2, PBOT - PH, PW, PH)
             if (P.boostT > 0) {
                 ctx.fillStyle = (g.tick >> 1) % 2 ? '#f8d800' : '#f85800'
-                ctx.fillRect(-30, 40, 12, 10 + (g.tick % 6)); ctx.fillRect(18, 40, 12, 10 + ((g.tick + 3) % 6))
+                ctx.fillRect(-PW * 0.3, PBOT - 8, 12, 10 + (g.tick % 6)); ctx.fillRect(PW * 0.3 - 12, PBOT - 8, 12, 10 + ((g.tick + 3) % 6))
             }
             ctx.restore()
         }

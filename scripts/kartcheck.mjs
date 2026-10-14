@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { TRACK, BOOSTS, BOXES, CHECKPOINTS, surfaceAt } from '../src/games/MarioKart/track.js'
 import { makeGame, step, stateHash, fmtTime, CFG } from '../src/games/MarioKart/sim.js'
 import { decide } from '../src/games/MarioKart/planner.js'
+import { SNES, KART } from '../src/games/MarioKart/art.js'
 
 const R = { fail: 0 }
 const check = (label, ok, detail = '') => {
@@ -24,6 +25,11 @@ const check = (label, ok, detail = '') => {
 
 const T = TRACK
 const WALL = T.WALL_R
+
+// a "grey" is a low-saturation mid tone: the road must read as asphalt, and
+// this is the predicate that turns "someone put the tan back" into a red line.
+const rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
+const isGrey = (h) => { const [r, g, b] = rgb(h); return Math.abs(r - g) < 16 && Math.abs(g - b) < 16 && r > 70 && r < 210 }
 
 console.log('— circuit (data audit) —')
 let minR = Infinity; let minI = 0
@@ -232,6 +238,19 @@ console.log('— rules (proven by state, not prose) —')
     check('crossing the line off-checkpoints banks nothing', k.lap === lapBefore || k.cp === 7,
         `lap ${k.lap} cp ${k.cp.toString(2)}`)
 }
+
+console.log('— art (#226: the SNES redraw) —')
+// the road is the whole point of #226: it must be GREY asphalt, not the old
+// tan, and it is the one color a screenshot cannot audit in Node — so the
+// palette is pinned here. Every role is named, so "make the road grey" is a
+// one-line change the harness can see.
+check('named SNES palette (~16 colours)', SNES && Object.keys(SNES).length >= 14 && Object.keys(SNES).length <= 24,
+    `${Object.keys(SNES).length} named`)
+check('road is GREY asphalt, not the old tan #e8d8b8', isGrey(SNES.road) && SNES.road !== '#e8d8b8', SNES.road)
+check('kerb carries red AND white', !!SNES.kerbRed && !!SNES.kerbWhite, `${SNES.kerbRed} / ${SNES.kerbWhite}`)
+check('a low barrier ring is named', !!SNES.barrier && !!SNES.barrierTop, `${SNES.barrier} / ${SNES.barrierTop}`)
+check('the kart reads WIDER than tall', KART.w > KART.h, `${KART.w} x ${KART.h}`)
+check('the kart animates 2+ frames', KART.frames >= 2, `${KART.frames} frames`)
 
 console.log('— determinism —')
 const a = race(); const b = race()
