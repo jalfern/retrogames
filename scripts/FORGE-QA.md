@@ -29,7 +29,13 @@ confuse the two queues.
    /tmp/forge/STATE.parked.md && git checkout -- STATE.md`), pull, and copy
    it back — a round trip, not an edit; the forge lane's step 1 expects it
    in the tree.
-2. **Pick an item.** Open issues labeled `feedback` (not `building-qa`).
+ 2. **Pick an item.** **Resume before you claim:** if any open issue carries
+    `building-qa` with a pushed `qa/<slug>` branch (a previous session's step 6
+    checkpoint), check out that branch and continue that item — never start a new
+    one while one is half-built. An open `building-qa` issue with NO pushed
+    branch is dead work, not a claim: strip `building-qa` (the item returns to
+    `feedback`) and say so in one comment line.
+    Then pick from open issues labeled `feedback` (not `building-qa`).
    Never pick an issue labeled `needs-approval`. An issue labeled
    `waiting-jon` is parked on Jon: skip it, UNLESS it has a comment newer
    than your `QA: waiting on Jon` note that does not start with `QA:`,
@@ -56,10 +62,12 @@ confuse the two queues.
    session; otherwise remove `building-qa`.
 5. **Fix, gate, ship** — the same path as the forge lane: feature branch,
    a harness that can fail (extend an existing check; do not build a new
-   framework), commit, `gh pr create --base main`, then ONLY:
-   `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
-   Close the issue and comment the proof: what was broken, the check that
-   now catches it, and the PR number.
+    framework), commit, `gh pr create --base main --body-file <b>` with `Closes #<n>`
+    in <b> (the merge then closes the issue itself — a fix that ships while its
+    issue stays open strands a `building-qa` label no one can clear), then ONLY:
+    `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
+    Comment the proof on the issue: what was broken, the check that
+    now catches it, and the PR number.
 5b. **Waiting on Jon? Release it.** When the next step needs Jon (a PR
    marked WIP for his review, a decision, a question), do not hold the
    claim: `gh issue edit <n> --remove-label building-qa --add-label
@@ -68,8 +76,8 @@ confuse the two queues.
    item just to re-check it: on 2026-10-13 four sessions in a row resumed
    #180 only to write "still parked on your review", and the queue behind
    it sat untouched for hours.
-6. **Time-box: 60 minutes.** If you cannot finish, push the branch, comment
-   `QA: checkpoint <state>`, and exit — your next session resumes via step 1b
-   of the claim scan (an open `building-qa` issue with a pushed
-   `qa/<slug>` branch is always resumed before claiming anything new).
+ 6. **Time-box: 60 minutes.** If you cannot finish, push the branch, comment
+    `QA: checkpoint <state>`, and exit — your next session resumes it via the
+    resume-before-you-claim rule in step 2 (an open `building-qa` issue with a
+    pushed `qa/<slug>` branch is always resumed before claiming anything new).
 7. Report one line and exit: `QA lane: <done|idle|blocked: why>`.
