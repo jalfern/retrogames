@@ -119,7 +119,8 @@
         "joustdive": "node scripts/joustdive.mjs",
         "lint:qbert": "eslint src/games/QBert src/components src/utils src/config src/main.jsx scripts",
         "qbertcheck": "node scripts/qbertcheck.mjs",
-        "qbertdive": "node scripts/qbertdive.mjs"
+        "qbertdive": "node scripts/qbertdive.mjs",
+        "vpadcheck": "node scripts/vpadcheck.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",

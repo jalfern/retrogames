@@ -47,6 +47,8 @@ jobs:
       # not, so it stays manual.
       - run: npm run aicheck
       - run: npm run zorkcheck
+      # Shared VirtualControls direction logic + sliding sequence, in Node (~1s).
+      - run: npm run vpadcheck
       # Fourth scoped gate: the 3D stealth title (engine/world/art/levels/stealth +
       # its two harnesses).
       - run: npm run lint:heist
