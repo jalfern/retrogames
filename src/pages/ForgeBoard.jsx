@@ -121,6 +121,16 @@ const ForgeBoard = () => {
         .sort((a, b) => (b.reactions?.total_count ?? 0) - (a.reactions?.total_count ?? 0) || a.number - b.number)
     const qaBusy = qa.some(i => labelOf(i, 'building-qa'))
 
+    // What needs Jon on GitHub: the lanes merge their own green PRs within
+    // minutes, so an open PR older than 30 min is waiting on him (WIP for
+    // review, a decision); plus issues parked on him (`waiting-jon`) and
+    // outside requests (`needs-approval`). PRs without created_at (older
+    // board.json) all count.
+    const waitingPrs = prs.filter(p => !p.created_at || now - Date.parse(p.created_at) > 30 * 60 * 1000)
+    const waitingIssues = (issues ?? []).filter(i => i.state === 'open' && !i.pull_request
+        && (labelOf(i, 'waiting-jon') || labelOf(i, 'needs-approval')))
+    const waitingCount = waitingPrs.length + waitingIssues.length
+
     // Drag re-order per column: the user's order is applied on top of the live
     // list (see useLocalOrder) and remembered in localStorage. A shared ref names
     // the issue being dragged; the click-suppress ref swallows the one spurious
@@ -183,7 +193,7 @@ const ForgeBoard = () => {
                 </div>
 
                 {issues && (
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
                         <Lamp label="BUILDER" ok={building.length > 0}>
                             {building[0] ? building[0].title.replace(/^GAME.*?—\s*/, '') : 'idle — next warden tick kicks'}
                         </Lamp>
@@ -200,6 +210,16 @@ const ForgeBoard = () => {
                                     #{prs[0].number} {prs[0].title}
                                 </a>
                             ) : pulse?.gate && pulse.gate !== 'none' ? pulse.gate : 'gate clear'}
+                        </Lamp>
+                        <Lamp label="WAITING ON YOU" ok={waitingCount === 0}>
+                            {waitingCount === 0 ? 'nothing — all clear' : (<>
+                                <span className="text-[#f80]">{waitingCount} need you</span><br />
+                                {waitingPrs.length > 0 && <a className="text-[#0ff] hover:underline" target="_blank" rel="noreferrer"
+                                    href={`https://github.com/${REPO}/pulls`}>{waitingPrs.length} PR{waitingPrs.length > 1 ? 's' : ''}: {waitingPrs.map(p => `#${p.number}`).join(' ')}</a>}
+                                {waitingPrs.length > 0 && waitingIssues.length > 0 && <br />}
+                                {waitingIssues.length > 0 && <a className="text-[#0ff] hover:underline" target="_blank" rel="noreferrer"
+                                    href={`https://github.com/${REPO}/issues?q=is%3Aopen+label%3Awaiting-jon%2Cneeds-approval`}>{waitingIssues.length} issue{waitingIssues.length > 1 ? 's' : ''}: {waitingIssues.map(i => `#${i.number}`).join(' ')}</a>}
+                            </>)}
                         </Lamp>
                         <Lamp label="MAIN" ok>
                             {pulse?.main || '…'}<br />{GAMES.length} in arcade<br />{shipped.length} forge-built · {queued.length} queued
