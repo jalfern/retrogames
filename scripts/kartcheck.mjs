@@ -135,8 +135,10 @@ console.log('— human thumbs (a crude driver must finish the GP) —')
     check('crude driver taps the wall <= 3 times', taps <= 3, `taps ${taps}`)
     // the lap table makes every banked lap PUBLIC: a lap faster than the
     // physics allows (T.len at the boost cap) is a machine lie, not a fast
-    // player. The browser's brake-less driver banked 3.9 s laps because a
-    // spent boost never bled its overspeed back down.
+    // player — a bad timer, a teleport or a track shortcut would land here.
+    // (The boost regression that first banked fake 3.9 s laps does NOT show
+    // up in these lap times — the overspeed wastes itself off-course — so it
+    // is pinned directly by the cap gate further down.)
     check('no banked lap beats the physics (every lap >= T.len / v_max)',
         P2.lapTimes.length === 5 && P2.lapTimes.every((t) => t >= T.len / (CFG.top + CFG.boostOver) - 10),
         P2.lapTimes.map((t) => (t / 60).toFixed(1) + 's').join(' '))
@@ -176,6 +178,28 @@ console.log('— rules (proven by state, not prose) —')
     for (let i = 0; i < 30; i++) step(g3, { u: true })
     check('throttle alone cannot exceed it that fast', g3.karts[0].v < g2.karts[0].v - 1,
         `plain ${g3.karts[0].v.toFixed(2)} vs boost ${g2.karts[0].v.toFixed(2)}`)
+}
+{
+    // the boost is a surge TO the boost cap, not an escalator past it. With
+    // the cap removed, each boost tick adds boostAcc unboundedly, so a single
+    // mushroom rode v to ~3x top speed and banked 3-second "laps" (the browser
+    // driver did this for real). Pin the kart to the start straight so the
+    // surface stays asphalt and ONLY the accel rule is under test — a lap-time
+    // probe cannot see it, because the overspeed wastes itself off-course.
+    const g2 = makeGame(); g2.phase = 'race'
+    const k = g2.karts[0]
+    for (const o of g2.karts.slice(1)) { o.x = -5000; o.y = -5000 }
+    const px = k.x, py = k.y, pa = k.a
+    k.v = CFG.top; k.boostT = CFG.boostDur
+    let vMax = k.v
+    for (let i = 0; i < CFG.boostDur; i++) {
+        k.x = px; k.y = py; k.a = pa
+        step(g2, { u: true })
+        if (k.v > vMax) vMax = k.v
+    }
+    const cap = CFG.top + CFG.boostOver
+    check('a mushroom cannot ride v past the boost cap (top+boostOver)', vMax <= cap + 0.5,
+        `vMax ${vMax.toFixed(2)} vs cap ${cap.toFixed(2)}`)
 }
 {
     const g2 = makeGame()
