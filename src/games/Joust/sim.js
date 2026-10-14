@@ -11,9 +11,9 @@
 //   EGG CHAIN — a defeated rider drops an egg; touch collects it (+100),
 //   leave it resting and it hatches into the next-stronger rider.
 
-import { WAVES, LAVA_TOP } from './waves.js'
+import { WAVES, LAVA_TOP, GROUND_Y } from './waves.js'
 
-export { WAVES, LAVA_TOP }
+export { WAVES, LAVA_TOP, GROUND_Y }
 export const W = 256, H = 224
 export const FIXED_DT = 1000 / 60
 

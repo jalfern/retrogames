@@ -338,6 +338,15 @@ export const GAMES = [
         controls: ['Arrow Left/Right: slide (16-frame DAS delay, every 6 after — exactly like the NES)', 'UP / X / SPACE: rotate clockwise — the NES had one rotate button and no kicks', 'Arrow Down: soft drop, one row every 2 frames — there is NO hard drop', '?: pause and read the rules · 0-9 on the title pick the start level', '40 / 100 / 300 / 1200 x (level+1) — and gravity only speeds up'],
     },
     {
+        path: '/joust',
+        builtBy: 'forge',
+        component: JoustGame,
+        label: 'JOUST',
+        theme: 'dark',
+        description: 'The 1982 Williams cabinet, rebuilt honest: you and every enemy rider obey the same lance — in any collision the LOWER rider dies, and dead-even height kills you both. There are no enemy bullets; death is a joust, a troll hand rising from the lava, or arriving at the ground crooked. Beat the wings to climb, glide on a lean to travel — momentum carries and the screen wraps. Defeated riders drop eggs: touch one to bank 100, leave it on a ledge and it hatches into the next-stronger rider (bounder -> hunter -> shadow lord; the shadow drops nothing). Five waves: more riders, crumbling ledges from wave 3, a third hand, and shadow lords in wave 5. Perfect waves (all eggs banked, no death) pay a 1000 bonus. The attract demo is the same autopilot a 46-check Node harness audits — joust rule, egg chain, crumble timing and the wave ledger included.',
+        controls: ['Arrow Left/Right: turn the mount (released, it auto-uprights)', 'UP / X / SPACE (or the A button): beat the wings — thrust beats gravity; sideways is a GLIDE, flap only for height', 'Land upright (about 30 deg) on any ledge or you crash; lava and the rising hands kill anything that hangs below', 'Ride above a rider and drop onto its lance — the lower lance always loses', '1 = one rider · 2 = two riders on one keyboard (P2: A/D turn, W/F flap) · touch: pad + A on phones', 'PERFECT wave = every egg banked and no death: +1000 · 1UP every 10,000'],
+    },
+    {
         path: '/arena-archery',
         builtBy: 'forge',
         component: ArenaArcheryGame,

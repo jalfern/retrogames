@@ -87,6 +87,7 @@ npm run aicheck    # src/ai spine contract (watchdog / rejections / honest arms)
 npm run zorkcheck  # Zork in **Node**: sensor seams, then the real agent's invariants (no Chrome)
 npm run zorkuicheck  # the ▶ AI button in a browser: click, it plays; one key, you win
 npm run doscheck   # DOS/IF seams in Chrome: js-dos boots in dev, keys captured, framebuffer readable
+npm run joustcheck   # JOUST: joust rule, egg chain, wrap/hands/lava/crumble, wave ledger + autopilot determinism, in Node (~2s)
 npm run prodsmoke    # builds + serves the PRODUCTION bundle and drives it (no DEV hooks exist there)
 ```
 
@@ -610,6 +611,21 @@ s per candidate lane** (hand-drawn threat rings lost to the real box twice
 — see `src/games/SpyHunter/README.md`), and the attract demo is that
 proven run replayed tick-for-tick. Verify with `npm run huntercheck --
 --mutate` (in the `static` gate) and `npm run hunterplay`.
+
+## Joust
+
+**JOUST** (`/joust`) is the 1982 Williams lance duel, rebuilt on a pure
+deterministic sim (`sim.js`): flap-vs-glide momentum physics where the
+**lower lance always loses** (dead-even kills both), a five-wave roster
+(Bounder/Hunter/Shadow Lord), and the egg chain — kills drop eggs, touch
+banks them, left resting they hatch into the next-stronger rider. Terrain
+(ledges, lava pits, troll-hand columns) is data (`waves.js`), which is what
+lets `npm run joustcheck` pin the joust rule, the hatch timer, crumble
+timing and the wave score ledger before a browser exists; the attract demo
+is `planner.js`'s own proven run (it clears waves 1-2; the pilot ceiling-pin
+bug and its fix are documented in the game README). Verify with
+`npm run joustcheck` (`static` gate) and `npm run joustdive` (Chrome, real
+keys; advisory tier).
 
 ## The Forge (autonomous game production)
 `/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the

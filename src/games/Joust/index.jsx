@@ -102,7 +102,7 @@ const JoustGame = () => {
                 try { localStorage.setItem('arcade.joust.top', String(topScore)) } catch { /* private mode */ }
             }
             overAtRef.current = performance.now()
-            setFinalInfo({ score: s.total, wave: s.wave, win: s.end === 'win', p2: s.players.length === 2, s1: s.players[0].score, s2: s.players[1] ? s.players[1].score : 0 })
+            setFinalInfo({ score: s.total, wave: s.wave, win: s.end === 'win', p2: s.players.length === 2, s1: s.players[0].score, s2: s.players[1] ? s.players[1].score : 0, top: topScore })
             setSc('over')
         }
 
@@ -334,6 +334,11 @@ const JoustGame = () => {
                 },
                 start: (players = 1) => startPlay(players),
                 hash: () => (gs ? stateHash(gs) : 0),
+                place: (x, y) => {
+                    const rd = gs && gs.players[0].rider
+                    if (rd && rd.state === 'alive') Object.assign(rd, { x, y, vx: 0, vy: 1, a: 0, invuln: 0, onGround: false })
+                    return !!rd
+                },
                 gameTime: () => (gs ? gs.tick / 60 : 0),
                 simSleep: (secs) => new Promise((res) => {
                     const target = gs ? gs.tick + Math.round(secs * 60) : 0
@@ -414,7 +419,7 @@ const JoustGame = () => {
                     ) : (
                         <p className="text-lg">{String(finalInfo.score).padStart(6, '0')}</p>
                     )}
-                    <p className="text-sm text-cyan-300/80 mb-4">TOP {String(topScore).padStart(6, '0')} &middot; fell in wave {finalInfo.wave + 1}</p>
+                    <p className="text-sm text-cyan-300/80 mb-4">TOP {String(finalInfo.top).padStart(6, '0')} &middot; {finalInfo.win ? 'all five waves conquered' : `fell in wave ${finalInfo.wave + 1}`}</p>
                     <p className="text-sm text-cyan-100/80 mb-2">ENTER / R runs it back</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>

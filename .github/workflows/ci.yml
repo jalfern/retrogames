@@ -363,6 +363,13 @@ jobs:
         run: npm run tetrisplay
         env:
           SHOT_CHANNEL: chromium
+      # JOUST play-driver: real keys, pixels vs the sim, three honest lava
+      # deaths and a clean restart. 12/12 locally; rides the advisory tier.
+      # The deterministic gate is joustcheck in `static`.
+      - name: Joust smoke (real keys — the drawn rider sits where the sim says it is, flapping climbs, lava takes three lives, restart is clean)
+        run: npm run joustdive
+        env:
+          SHOT_CHANNEL: chromium
       # The scripted heist: Chrome plays job 1 end to end and asserts it can walk,
       # steal, get spotted, get caught, get rescued and get out.
       - name: Play the heist
