@@ -39,8 +39,18 @@ AGENTS.md wins.
     claimed <date>"`. Then open the worktree you build in and `cd` into it for
     every step below — the main checkout is plumbing, not a workspace:
     `git worktree add "$HOME/Dev/retrogames-forge-<slug>" -b forge/<slug> origin/main`.
-    If the candidate list is empty, STOP — nothing to
-    forge; say so in STATE.md and exit.
+    If the candidate list is empty, do not idle the studio — **borrow the QA
+    lane's job instead.** Only if `pgrep -f "QA MASTER"` finds no live QA
+    session (the two lanes must never double-claim): take ONE open `feedback`
+    item — the QA lane's own priority order (`/priority` by `jalfern` first,
+    then `+1`s, then oldest) — and execute `scripts/FORGE-QA.md` steps 2–5 on
+    it: claim `building-qa`, own `qa/<slug>` worktree, reproduce, fix, gate,
+    ship with `Closes #<n>` in the PR body. You run the *procedure* on your
+    own model; the mini stays out of it (you are the studio's only stream).
+    One ship per session still holds: a game if you claimed one, else this one
+    QA fix. Report it in STATE.md as `QA: fixed #<n> via PR #<m>`. If the QA
+    lane has nothing claimable either, STOP — nothing to forge; say so in
+    STATE.md and exit.
 3. **Design in one paragraph.** Name the original (machine and year) and
    list its 5 signature features, mechanics AND look. Those five are the
    spec; respect anything extra the issue body asks for. Build the real game,
