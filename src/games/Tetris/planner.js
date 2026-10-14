@@ -65,6 +65,15 @@ function reachable(s, type, rot, x, y) {
     return true
 }
 
+// The attract demo cycles its start level so the gravity range is visible:
+// slow (0), medium (5), fast (9), then around again.
+export const DEMO_LEVELS = [0, 5, 9]
+
+export function nextDemoLevel(level) {
+    const i = DEMO_LEVELS.indexOf(level)
+    return DEMO_LEVELS[(i + 1) % DEMO_LEVELS.length]
+}
+
 export function choosePlan(s) {
     const type = s.cur.type
     let best = null
@@ -95,7 +104,7 @@ function fitsLocal(b, type, rot, x, y) {
 // you do not want one.
 export function driveInput(s, plan, mem = { lastLocks: -1, stuck: 0 }) {
     const input = { left: false, right: false, down: false, rot: false }
-    if (!plan || s.over) return input
+    if (!plan || s.over || s.clearing) return input
     if (mem.lastLocks !== s.locks) { mem.lastLocks = s.locks; mem.same = 0 }
     const posKey = s.cur.x + ',' + s.cur.rot + ',' + s.cur.y
     if (mem.posKey !== posKey) { mem.posKey = posKey; mem.same = 0 } else mem.same++

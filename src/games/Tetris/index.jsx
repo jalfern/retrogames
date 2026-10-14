@@ -11,8 +11,9 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { newGame, step, cellsOf, stateHash, PIECE_NAMES, SPAWN_X, SPAWN_Y, FIXED_DT } from './sim.js'
-import { choosePlan, driveInput } from './planner.js'
+import { newGame, step, cellsOf, stateHash, PIECE_NAMES, SPAWN_X, SPAWN_Y, FIXED_DT, resting } from './sim.js'
+import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from './planner.js'
+import { musicStep } from './music.js'
 import { blockTile, text5, artColumn } from './art.js'
 
 const SIM_MS = FIXED_DT
@@ -49,10 +50,12 @@ const TetrisGame = () => {
 
         let gs = null
         let demo = null, demoMem = {}, demoPlan = null
+        let demoLevel = DEMO_LEVELS[0]
         let raf = 0, last = 0, acc = 0
         let seedCounter = (Date.now() >>> 0) ^ 0x5eed
         const keys = { left: false, right: false, down: false, rot: false }
-        let flash = []
+        let lockFlash = { cells: null, t: 0 }
+        let wasResting = false
         let toast = 0, toastMsg = ''
         let scoreFlash = 0
         let topScore = 0
@@ -63,14 +66,21 @@ const TetrisGame = () => {
         const handleEvents = (s, audible) => {
             while (s.events.length) {
                 const e = s.events.shift()
+                if (e.t === 'lock') lockFlash = { cells: e.cells, t: 9 }
                 if (!audible) continue
                 if (e.t === 'rot') audioController.playTone(620, 0.04, 'square', 0.05)
                 else if (e.t === 'lock') audioController.playNoise(0.035, 0.1)
-                else if (e.t === 'clear') {
-                    flash.push({ rows: e.rows, t: 7 })
+                else if (e.t === 'cleared') {
+                    // The shift just landed after the NES flash window: the
+                    // rows are gone, the score lands, the tempo steps up.
                     scoreFlash = 20
                     audioController.playSweep(260 + e.n * 90, 620 + e.n * 160, 0.16 + e.n * 0.05, 'square', 0.08)
-                    if (e.n === 4) say('TETRIS!')
+                    if (e.n === 4) {
+                        say('TETRIS!')
+                        setTimeout(() => audioController.playTone(1319, 0.06, 'square', 0.07), 60)
+                        setTimeout(() => audioController.playTone(1760, 0.09, 'square', 0.07), 120)
+                    }
+                    audioController.setMusicStep(musicStep(s.level))
                 } else if (e.t === 'level') {
                     audioController.playTone(880, 0.09, 'square', 0.07)
                     setTimeout(() => audioController.playTone(1175, 0.14, 'square', 0.07), 90)
@@ -95,14 +105,16 @@ const TetrisGame = () => {
             lastLevelRef.current = level
             seedCounter = (seedCounter * 1103515245 + 12345) >>> 0
             gs = newGame(level, seed === undefined ? seedCounter : seed >>> 0)
-            flash = []
+            lockFlash = { cells: null, t: 0 }
+            wasResting = false
             setFinalInfo(null)
             setSc('play')
             audioController.startMusic('tetris')
+            audioController.setMusicStep(musicStep(level))
         }
 
-        const buildDemo = () => {
-            demo = newGame(9, DEMO_SEED)
+        const buildDemo = (level = DEMO_LEVELS[0]) => {
+            demo = newGame(level, DEMO_SEED)
             demoMem = {}
             demoPlan = choosePlan(demo)
         }
@@ -126,9 +138,20 @@ const TetrisGame = () => {
                     }
                 }
             }
-            for (const f of flash) {
-                ctx.fillStyle = f.t > 3 ? 'rgba(248,248,248,0.9)' : 'rgba(248,248,248,0.35)'
-                for (const r of f.rows) ctx.fillRect(FX, FY + r * CELL, 10 * CELL, CELL)
+            if (s.clearing) {
+                // The NES pre-shift flash: the full rows blink white while the
+                // board is frozen. The sim owns the timer; this only blinks.
+                const on = Math.floor(s.tick / 4) % 2 === 0
+                ctx.fillStyle = on ? 'rgba(248,248,248,0.9)' : 'rgba(248,248,248,0.35)'
+                for (const r of s.clearing.rows) ctx.fillRect(FX, FY + r * CELL, 10 * CELL, CELL)
+            }
+            if (lockFlash.cells && lockFlash.t > 0) {
+                ctx.fillStyle = lockFlash.t > 4 ? 'rgba(248,248,248,0.95)' : 'rgba(248,248,248,0.5)'
+                for (const [r, c] of lockFlash.cells) {
+                    if (r < 0 || r >= 20) continue
+                    ctx.fillRect(FX + c * CELL, FY + r * CELL, CELL, CELL)
+                }
+                lockFlash.t--
             }
             if (!s.over && s.cur) {
                 for (const [r, c] of cellsOf(s.cur.type, s.cur.rot, s.cur.x, s.cur.y)) {
@@ -186,7 +209,6 @@ const TetrisGame = () => {
                 toast--
             }
             if (scoreFlash > 0) scoreFlash--
-            flash = flash.filter((f) => (f.t-- > 0))
         }
 
         const textW = (str, scale) => String(str).length * 4 * scale - scale
@@ -203,11 +225,14 @@ const TetrisGame = () => {
                 acc -= SIM_MS
                 if (screenRef.current === 'attract' && demo) {
                     step(demo, driveInput(demo, demoPlan, demoMem))
-                    if (demo.over) { buildDemo() }
-                    else if (demoPlan && demo.locks !== demoMem.lastLocks) { demoMem = { lastLocks: demo.locks }; demoPlan = choosePlan(demo) }
+                    if (demo.over) { demoLevel = nextDemoLevel(demoLevel); buildDemo(demoLevel) }
+                    else if (demoPlan && demo.locks !== demoMem.lastLocks && !demo.clearing) { demoMem = { lastLocks: demo.locks }; demoPlan = choosePlan(demo) }
                     handleEvents(demo, false)
                 } else if (screenRef.current === 'play' && gs && !gs.over) {
                     step(gs, { ...keys })
+                    const rest = resting(gs)
+                    if (rest && !wasResting) audioController.playTone(140, 0.03, 'square', 0.05)
+                    wasResting = rest
                     handleEvents(gs, true)
                     finish(gs)
                 }
@@ -288,14 +313,27 @@ const TetrisGame = () => {
                         screen: screenRef.current,
                         level: s.level, startLevel: s.startLevel, score: s.score, lines: s.lines,
                         over: s.over, tick: s.tick, locks: s.locks,
+                        clearing: s.clearing ? { rows: s.clearing.rows, t: s.clearing.t } : null,
                         next: PIECE_NAMES[s.next], cur: s.cur ? {
                             type: PIECE_NAMES[s.cur.type], rot: s.cur.rot, x: s.cur.x, y: s.cur.y,
                             cells: cellsOf(s.cur.type, s.cur.rot, s.cur.x, s.cur.y),
                         } : null,
                         hash: stateHash(s), topScore,
+                        musicStep: audioController.music && audioController.music.playing ? audioController.music.stepDur : null,
                     }
                 },
                 start: (lvl = 0, sd) => startPlay(lvl, sd),
+                seedClear: (banked = 0) => {
+                    if (!gs || gs.over || screenRef.current !== 'play') return 'no live well'
+                    gs.board.fill(0)
+                    gs.lines = banked
+                    for (let c = 0; c <= 5; c++) gs.board[19 * 10 + c] = 1
+                    gs.board[18 * 10 + 0] = 2 // marker: must ride the shift down one row
+                    gs.cur = { type: 5, rot: 0, x: 6, y: 0 } // horizontal I over cols 6-9
+                    gs.next = 2
+                    gs.g = 0
+                    return 'row 19 waiting for the I (cols 6-9), marker at 18,0'
+                },
                 hash: () => (gs ? stateHash(gs) : 0),
             }
             mountDbg({

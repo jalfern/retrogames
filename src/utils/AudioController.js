@@ -97,6 +97,7 @@ class AudioController {
         this.musicGain = null
         this.analyser = null
         this.music = null
+        this.pendingStep = null
     }
 
     init() {
@@ -184,7 +185,17 @@ class AudioController {
         if (this.music && this.music.track === track && this.music.playing) return
         this.stopMusic()
         this.music = { track, step: 0, nextTime: this.ctx.currentTime + 0.06, stepDur: P.step, playing: true }
+        if (this.pendingStep) { this.music.stepDur = this.pendingStep; this.pendingStep = null }
         this.music.timer = setInterval(() => this._schedule(), 25)
+    }
+
+    // Change the step duration (seconds) of the playing track, or stage one
+    // for the next startMusic of any track. The NES speeds its music up with
+    // the level; this is the seam that lets a title do the same.
+    setMusicStep(sec) {
+        if (!(sec > 0)) return
+        if (this.music && this.music.playing) this.music.stepDur = sec
+        else this.pendingStep = sec
     }
 
     _schedule() {

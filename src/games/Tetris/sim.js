@@ -10,6 +10,9 @@
 //   and the harness only pins the documented L0-9 rows. See README.md.
 //   DAS 16/6 (16-frame initial delay, every 6 frames after). Soft drop = one
 //   row every 2 frames while held. No hard drop, no hold, no ghost, no kicks.
+//   Line clear: the NES flashes the full rows BEFORE anything shifts — the
+//   board freezes for CLEAR_FRAMES (0.5s at 60Hz), the score and the next
+//   piece wait for the shift.
 //   Scoring 40/100/300/1200 x (level+1), capped at 9,999,990; level up every
 //   10 lines; the piece locks on the first downward attempt that fails (the
 //   NES has zero lock delay). Top-out = a spawn that collides.
@@ -24,6 +27,7 @@ export const LEVEL_CAP = 29
 export const DAS_DELAY = 16
 export const DAS_REPEAT = 6
 export const SOFT_FRAMES = 2
+export const CLEAR_FRAMES = 30
 export const SCORE_LINES = [0, 40, 100, 300, 1200]
 export const SCORE_CAP = 9999990
 export const PIECE_NAMES = ['L', 'J', 'O', 'S', 'Z', 'I', 'T']
@@ -73,6 +77,7 @@ export function newGame(startLevel = 0, seed = 1) {
         startLevel: Math.max(0, Math.min(LEVEL_CAP, startLevel | 0)),
         lines: 0, score: 0,
         g: 0, dasDir: 0, dasF: 0, softF: 0,
+        clearing: null,
         prevRot: false,
         over: false,
         tick: 0,
@@ -116,11 +121,12 @@ export function fits(s, type, rot, x, y) {
 
 function lockPiece(s) {
     const { type, rot, x, y } = s.cur
-    for (const [r, c] of cellsOf(type, rot, x, y)) {
+    const cells = cellsOf(type, rot, x, y)
+    for (const [r, c] of cells) {
         if (r >= 0 && r < ROWS && c >= 0 && c < COLS) s.board[r * COLS + c] = type + 1
     }
     s.locks++
-    s.events.push({ t: 'lock', piece: PIECE_NAMES[type] })
+    s.events.push({ t: 'lock', piece: PIECE_NAMES[type], cells })
     const full = []
     for (let r = 0; r < ROWS; r++) {
         let done = true
@@ -129,17 +135,35 @@ function lockPiece(s) {
     }
     const n = full.length
     if (n > 0) {
-        for (const r of full) {
-            for (let rr = r; rr > 0; rr--) s.board.copyWithin(rr * COLS, (rr - 1) * COLS, rr * COLS)
-            s.board.fill(0, 0, COLS)
-        }
-        const before = s.level
-        s.score = Math.min(SCORE_CAP, s.score + SCORE_LINES[n] * (s.level + 1))
-        s.lines += n
-        s.level = Math.min(LEVEL_CAP, s.startLevel + Math.floor(s.lines / 10))
-        s.events.push({ t: 'clear', n, rows: full, gained: SCORE_LINES[n] * (before + 1) })
-        if (s.level > before) s.events.push({ t: 'level', level: s.level })
+        // The NES flashes the full rows before anything moves: the board
+        // freezes, the score waits, the next piece does not even spawn until
+        // the shift lands. `clearing` owns that window (issue #214).
+        s.clearing = { rows: full, t: CLEAR_FRAMES, n, before: s.level }
+        s.events.push({ t: 'clear', n, rows: full })
+        return
     }
+    s.cur = spawn(s.next)
+    s.next = drawPiece(s)
+    s.g = 0
+    s.softF = 0
+    if (!fits(s, s.cur.type, s.cur.rot, s.cur.x, s.cur.y)) {
+        s.over = true
+        s.events.push({ t: 'over' })
+    }
+}
+
+function finishClear(s) {
+    const { rows, n, before } = s.clearing
+    s.clearing = null
+    for (const r of rows) {
+        for (let rr = r; rr > 0; rr--) s.board.copyWithin(rr * COLS, (rr - 1) * COLS, rr * COLS)
+        s.board.fill(0, 0, COLS)
+    }
+    s.score = Math.min(SCORE_CAP, s.score + SCORE_LINES[n] * (before + 1))
+    s.lines += n
+    s.level = Math.min(LEVEL_CAP, s.startLevel + Math.floor(s.lines / 10))
+    s.events.push({ t: 'cleared', n, rows, gained: SCORE_LINES[n] * (before + 1) })
+    if (s.level > before) s.events.push({ t: 'level', level: s.level })
     s.cur = spawn(s.next)
     s.next = drawPiece(s)
     s.g = 0
@@ -181,6 +205,12 @@ function tryDown(s) {
 export function step(s, input = {}) {
     if (s.over) return s
     s.tick++
+    if (s.clearing) {
+        // The clear window: the board is frozen, input is ignored, and the
+        // shift (with the score and the next piece) lands after the flash.
+        if (--s.clearing.t <= 0) finishClear(s)
+        return s
+    }
     const left = !!input.left, right = !!input.right, down = !!input.down
     const rot = !!input.rot
 
@@ -220,6 +250,12 @@ export function step(s, input = {}) {
 }
 
 export function idx(r, c) { return r * COLS + c }
+
+// Is the live piece resting on the floor or the stack (no room one row down)?
+// The shell uses the false->true edge for a landing tick.
+export function resting(s) {
+    return !fits(s, s.cur.type, s.cur.rot, s.cur.x, s.cur.y + 1)
+}
 
 export function stateHash(s) {
     let h = 0x811c9dc5
