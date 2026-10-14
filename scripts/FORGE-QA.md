@@ -18,20 +18,26 @@ confuse the two queues.
 
 ## Session procedure
 
-1. `git fetch --prune origin` then `git checkout main`. A modified
-   `STATE.md` is the FORGE lane's uncommitted report (its step 9) — never
-   author changes to it, and never count it as a corpse. Triage everything
-   else with `git status --porcelain -- . ':(exclude)STATE.md'`: untracked
-   `/tmp`-style harness scratch, ignore; tracked files modified, STOP and
-   comment on the newest open `building`/`building-qa` issue what you found.
-   Do not guess. Then `git pull --ff-only origin main`; if it aborts on
-   STATE.md alone, park it (`mkdir -p /tmp/forge && cp STATE.md
-   /tmp/forge/STATE.parked.md && git checkout -- STATE.md`), pull, and copy
-   it back — a round trip, not an edit; the forge lane's step 1 expects it
-   in the tree.
+1. **Worktrees only — the main checkout is plumbing, not your workspace.**
+   AGENTS.md ("the law") keeps `~/Dev/retrogames` detached at `origin/main`;
+   never check out or edit `main` there. `STATE.md` is the FORGE lane's file
+   (its step 9 leaves it dirty on purpose): never author changes to it, and
+   never count its dirt as a corpse. Refresh the main checkout:
+   `git -C "$HOME/Dev/retrogames" fetch --prune origin && git -C "$HOME/Dev/retrogames" checkout --detach origin/main`;
+   if anything tracked besides `STATE.md` is dirty there, STOP and comment on
+   the newest open `building`/`building-qa` issue what you found — do not
+   guess. Then run every step below inside a worktree of your own, opened as
+   soon as step 2 has named the item and named after it:
+   `git -C "$HOME/Dev/retrogames" worktree add "$HOME/Dev/retrogames-qa-<n>" -b qa/<slug> origin/main`
+   then `cd "$HOME/Dev/retrogames-qa-<n>"`. To resume a checkpointed item
+   (step 2), build the worktree from `origin/qa/<slug>` instead of
+   `origin/main`, using `-B` so the local ref catches up. When an item ships,
+   clean up after the merge:
+   `git -C "$HOME/Dev/retrogames" worktree remove "$HOME/Dev/retrogames-qa-<n>"`.
  2. **Pick an item.** **Resume before you claim:** if any open issue carries
     `building-qa` with a pushed `qa/<slug>` branch (a previous session's step 6
-    checkpoint), check out that branch and continue that item — never start a new
+    checkpoint), open it in its worktree from `origin/qa/<slug>` (step 1) and
+    continue that item — never start a new
     one while one is half-built. An open `building-qa` issue with NO pushed
     branch is dead work, not a claim: strip `building-qa` (the item returns to
     `feedback`) and say so in one comment line.
