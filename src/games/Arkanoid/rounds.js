@@ -39,10 +39,10 @@ export const ROUNDS = [
         enemyCap: 3,
         rows: [
             '.gggggg.gggggg.',
-            '.g#s#####s###g.',
             '.g#s#s#+#s#s#g.',
-            '.g#s#####s###g.',
-            '.gggggg.gggggg.',
+            '.g#.........#g.',
+            '.g#s#s###s#s#g.',
+            '.g...........g.',
         ],
     },
     {

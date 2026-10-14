@@ -76,6 +76,7 @@ export function makeGame(seed = 0) {
         laserCd: 0,
         enemySeq: 0,
         spawnT: 0,
+        dry: 0,
         clearAt: 0,
         end: null,
         events: [],
@@ -305,6 +306,7 @@ function stepBoss(gs, sp) {
                 b.y = b.y < bo.y + CFG.bossH / 2 ? bo.y - CFG.ballR : bo.y + CFG.bossH + CFG.ballR
             }
             clampSpeed(b, sp)
+            gs.dry++
             gs.events.push({ type: 'bossThud' })
         }
     }
@@ -346,14 +348,31 @@ export function step(gs, inp) {
     }
 
     // ---- balls
+    let killedThisTick = false
     for (const b of gs.balls) {
         if (b.stuck) continue
         b.x += b.vx
         b.y += b.vy
         // walls
-        if (b.x - CFG.ballR < CFG.wallX) { b.x = CFG.wallX + CFG.ballR; b.vx = Math.abs(b.vx); clampSpeed(b, sp) }
-        if (b.x + CFG.ballR > W - CFG.wallX) { b.x = W - CFG.wallX - CFG.ballR; b.vx = -Math.abs(b.vx); clampSpeed(b, sp) }
-        if (b.y - CFG.ballR < CFG.ceilY) { b.y = CFG.ceilY + CFG.ballR; b.vy = Math.abs(b.vy); gs.events.push({ type: 'ceiling' }) }
+        if (b.x - CFG.ballR < CFG.wallX) {
+            b.x = CFG.wallX + CFG.ballR
+            b.vx = Math.abs(b.vx)
+            if (gs.dry >= 10) b.vx = (0.30 + (gs.dry % 5) * 0.1) * sp
+            clampSpeed(b, sp)
+        }
+        if (b.x + CFG.ballR > W - CFG.wallX) {
+            b.x = W - CFG.wallX - CFG.ballR
+            b.vx = -Math.abs(b.vx)
+            if (gs.dry >= 10) b.vx = -(0.30 + (gs.dry % 5) * 0.1) * sp
+            clampSpeed(b, sp)
+        }
+        if (b.y - CFG.ballR < CFG.ceilY) {
+            b.y = CFG.ceilY + CFG.ballR
+            b.vy = Math.abs(b.vy)
+            if (gs.dry >= 10) b.vx = (gs.dry % 2 ? 1 : -1) * (0.30 + (gs.dry % 5) * 0.1) * sp
+            else if (Math.abs(b.vx) < 0.08 * sp) b.vx = (gs.tick % 2 ? 1 : -1) * 0.12 * sp
+            gs.events.push({ type: 'ceiling' })
+        }
 
         // paddle
         if (b.vy > 0 && b.y + CFG.ballR >= CFG.paddleY && b.y + CFG.ballR <= CFG.paddleY + CFG.paddleH + 2
@@ -368,6 +387,9 @@ export function step(gs, inp) {
             } else {
                 const rel = clamp((b.x - gs.paddle.x) / (gs.paddle.w / 2), -1, 1)
                 b.vx = rel * CFG.maxVxFrac * sp
+                if (Math.abs(b.vx) < 0.08 * sp) b.vx = (gs.tick % 2 ? 1 : -1) * 0.12 * sp
+                gs.dry++
+                if (gs.dry >= 10) b.vx = (gs.dry % 2 ? 1 : -1) * (0.30 + (gs.dry % 5) * 0.1) * sp
                 b.vy = -Math.sqrt(Math.max(sp * sp - b.vx * b.vx, 0))
                 if (Math.abs(b.vy) < CFG.minVyFrac * sp) b.vy = -CFG.minVyFrac * sp
                 b.y = CFG.paddleY - CFG.ballR
@@ -383,10 +405,11 @@ export function step(gs, inp) {
             if (ax === 'x') { b.vx = b.x < br.x + CFG.colW / 2 ? -Math.abs(b.vx) : Math.abs(b.vx); b.x = b.x < br.x + CFG.colW / 2 ? br.x - CFG.ballR : br.x + CFG.colW + CFG.ballR }
             else { b.vy = b.y < br.y + CFG.rowH / 2 ? -Math.abs(b.vy) : Math.abs(b.vy); b.y = b.y < br.y + CFG.rowH / 2 ? br.y - CFG.ballR : br.y + CFG.rowH + CFG.ballR }
             clampSpeed(b, sp)
-            if (br.kind === 'gold') { gs.events.push({ type: 'goldHit' }); break }
+            if (br.kind === 'gold') { gs.dry++; gs.events.push({ type: 'goldHit' }); break }
             br.hp--
-            if (br.hp > 0) { gs.events.push({ type: 'silverHit', x: br.x, y: br.y }); break }
+            if (br.hp > 0) { gs.dry = 0; gs.events.push({ type: 'silverHit', x: br.x, y: br.y }); break }
             br.alive = false
+            gs.dry = 0
             addScore(gs, { type: 'brick', value: CFG.roundScores[gs.round] * (br.kind === 'silver' ? 3 : 1), kind: br.kind, x: br.x + CFG.colW / 2, y: br.y + CFG.rowH / 2 })
             if (br.capsule) {
                 gs.capsules.push({ x: br.x + CFG.colW / 2, y: br.y + CFG.rowH, kind: br.capsule })
@@ -403,6 +426,15 @@ export function step(gs, inp) {
 
         if (gs.boss) stepBoss(gs, sp)
         if (gs.end === 'win') return gs
+    }
+
+    // ---- balls that fell past the floor
+    const before = gs.balls.length
+    gs.balls = gs.balls.filter((b) => b.y - CFG.ballR <= H)
+    if (gs.balls.length < before) {
+        gs.events.push({ type: 'ballLost' })
+        if (!gs.balls.length) killBall(gs)
+        if (gs.end) return gs
     }
 
     // ---- lasers

@@ -25,27 +25,38 @@ function predictX(b) {
     return x
 }
 
-function shaftX(gs) {
-    // a column that is open from below all the way up (never-placed or
-    // already-drilled cells only; gold blocks) — the drill corridor
+function shaftMode(gs) {
+    // no clear lane exists: aim the rebound through a gap in the lowest gold
+    // ring so the ball pierces up into the structure. rel is solved backwards
+    // from the needed slope: m = drift/px-of-climb, rel ~= m / 1.15
     const rows = ROUNDS[gs.round].rows
+    let lowRow = -1
+    for (let r = rows.length - 1; r >= 0; r--) if (rows[r].includes('g')) { lowRow = r; break }
+    if (lowRow < 0) return null
+    const climb = CFG.paddleY - CFG.ballR - (CFG.gridY0 + lowRow * CFG.rowH)
     let best = null, bd = 1e9
     for (let c = 0; c < COLS; c++) {
-        let open = true
-        for (let r = 0; r < rows.length; r++) {
-            if (rows[r][c] === 'g') { open = false; break }
-            const b = gs.bricks.find((x) => x.col === c && x.row === r && x.alive)
-            if (b) { open = false; break }
+        if (rows[lowRow][c] === 'g') continue
+        // prefer gaps near where the live bricks are
+        let bx = CFG.gridX0 + c * CFG.colW + CFG.colW / 2
+        let near = 0
+        for (const b of gs.bricks) {
+            if (!b.alive || b.kind === 'gold') continue
+            const d = Math.abs(b.x + CFG.colW / 2 - bx)
+            if (d < near || near === 0) near = d
         }
-        if (!open) continue
-        const cx = CFG.gridX0 + c * CFG.colW + CFG.colW / 2
-        const d = Math.abs(cx - W / 2)
-        if (d < bd) { bd = d; best = cx }
+        const cx = gs.balls[0] ? gs.balls[0].x : W / 2
+        for (const m of [0.42, -0.42]) {
+            const px = bx - m * climb
+            if (px < CFG.wallX || px > W - CFG.wallX) continue
+            const d = Math.abs(px - cx) + near * 0.25
+            if (d < bd) { bd = d; best = { x: px, rel: m / 1.15 } }
+        }
     }
     return best
 }
 
-function target(gs) {
+function target(gs, hintX) {
     if (gs.boss) {
         let best = null, bd = 1e9
         for (const e of gs.boss.eyes) {
@@ -66,12 +77,15 @@ function target(gs) {
             if (gs.bricks.some((x) => x.col === b.col && x.row === r && x.alive)) clear = false
         }
         if (!clear) continue
-        const s = b.y * 2 + Math.abs(b.x + CFG.colW / 2 - W / 2) * 0.15
-        if (s < score) { score = s; best = b.x + CFG.colW / 2 }
+        // dig bottom-up: lowest open brick, biased to the column the ball
+        // is already falling into (you clear what is above you)
+        const hx = hintX === undefined || hintX === null ? W / 2 : hintX
+        const s = -b.y * 2 + Math.abs(b.x + CFG.colW / 2 - hx) * 0.4
+        if (s < score) { score = s; best = { x: b.x + CFG.colW / 2, y: b.y + CFG.rowH } }
     }
-    if (best !== null) return { x: best, precise: true }
-    const sh = shaftX(gs)
-    return { x: sh === null ? W / 2 : sh, precise: false }
+    if (best !== null) return { x: best.x, y: best.y, precise: true }
+    const sh = shaftMode(gs)
+    return sh ? { shaft: sh } : { x: W / 2, precise: true }
 }
 
 export function decide(gs) {
@@ -81,43 +95,54 @@ export function decide(gs) {
     const stuck = gs.balls.find((b) => b.stuck)
     if (stuck) {
         const tg = target(gs)
-        const tx = tg.x
+        const tx = tg.shaft ? tg.shaft.x : tg.x
         out.l = P.x > tx + 1
         out.r = P.x < tx - 1
         // launch while still travelling: the sim turns paddle velocity into
-        // launch angle. Precise targets may fire vertical; shaft mode wants
-        // an angled entry so the ball shaves the fortress walls inside.
+        // launch angle; vertical is only acceptable for a precise target.
         out.fire = stuck.held > 30
-            && (((out.l || out.r) && Math.abs(P.x - tx) <= 24)
-                || (tg.precise && stuck.held > 60)
-                || (!tg.precise && stuck.held > 90))
+            && (((out.l || out.r) && Math.abs(P.x - tx) <= 24) || stuck.held > (tg.shaft ? 90 : 60))
         return out
     }
 
-    // dodge: anything falling near the paddle column gets sidestepped
+    // dodge: anything falling near the paddle column gets sidestepped — but
+    // never at the cost of the ball's own landing
     let tx = null
     let danger = null
+    const ball0 = gs.balls.find((b) => !b.stuck)
     for (const e of gs.enemies) {
-        if (e.state !== 'dive' || e.y < 150) continue
-        if (Math.abs(e.x - P.x) < 14) danger = e.x
+        if (e.state !== 'dive' || e.y < 158) continue
+        if (Math.abs(e.x - P.x) < 12) danger = e.x
     }
     for (const u of gs.bullets) {
-        if (u.y > 160 && Math.abs(u.x - P.x) < 12) danger = u.x
+        if (u.y > 168 && Math.abs(u.x - P.x) < 10) danger = u.x
     }
-    if (danger !== null) tx = danger > W / 2 ? P.x - 40 : P.x + 40
+    const ballSafe = !ball0 || ball0.vy <= 0 ||
+        Math.abs(predictX(ball0) - P.x) < ((CFG.paddleY - CFG.ballR - ball0.y) / ball0.vy) * CFG.paddleSpeed + P.w / 2 - 4
+    if (danger !== null && ballSafe) tx = danger > W / 2 ? P.x - 32 : P.x + 32
 
     if (tx === null) {
         const ball = gs.balls.find((b) => b.vy > 0) || gs.balls[0]
-        const tg = target(gs)
+        const px = ball && ball.vy > 0 ? predictX(ball) : P.x
+        const tg = target(gs, px)
         if (ball && ball.vy > 0) {
-            const px = predictX(ball)
-            // shaft mode: thread the drill corridor — the rebound must cross
-            // the lowest gold row (~109 px up) inside the open column, so the
-            // needed angle is (shaft - landing) / (drift-per-px * climb)
-            const rel = tg.precise ? clamp((tg.x - px) / 50, -0.7, 0.7) : clamp((tg.x - px) / 87, -0.7, 0.7)
-            tx = px - (rel * P.w) / 2
+            const ticksLeft = Math.max((CFG.paddleY - CFG.ballR - ball.y) / ball.vy, 1)
+            const reach = ticksLeft * CFG.paddleSpeed + P.w / 2 - 4
+            if (Math.abs(px - P.x) > reach) {
+                tx = px   // too far to do anything clever — just get under it
+            } else if (tg.shaft) {
+                tx = tg.shaft.x - (tg.shaft.rel * P.w) / 2
+            } else {
+                // solve the rebound slope that carries the ball to the target
+                // x at brick height: m = dx/climb; rel from m through the
+                // sim's own reflection formula (vx = rel*0.78*sp)
+                const climb = Math.max(CFG.paddleY - CFG.ballR - tg.y, 20)
+                const m = clamp((tg.x - px) / climb, -0.6, 0.6)
+                const rel = m / (CFG.maxVxFrac * Math.sqrt(1 + m * m))
+                tx = px - (rel * P.w) / 2
+            }
         } else {
-            tx = tg.x
+            tx = tg.shaft ? tg.shaft.x : tg.x
         }
     }
     tx = clamp(tx, CFG.wallX + P.w / 2, W - CFG.wallX - P.w / 2)
