@@ -4,19 +4,19 @@
 //              door and every ground spawn reachable from the entry drop
 //   rules    : trap -> float -> pop pays CHAIN_PAY by chain index; unpopped
 //              traps release angry and reset the chain; E,X,T,E,N,D = EXTEND
-//              1UP; LIGHTNING zaps every free enemy and clears Blubba; water
-//              turns floor walkers into snails (slow, still trappable); red
-//              power breathes fire (flat 200 kills); the boss takes three
+//              1UP; LIGHTNING zaps every free enemy (Blubba survives it);
+//              water turns floor walkers into snails (slow, still trappable);
+//              red power breathes fire (flat 200 kills); the boss takes three
 //              bubble hits; the door opens only when the roster is empty;
 //              max-size bubbles block walking; platforms are one-way (jump
-//              up through, drop down with down); von Blubba arrives on the
-//              level timer and is unkillable by anything but lightning
+//              up through, drop down with down); a HURRY UP! warning leads
+//              von Blubba, who is unkillable — even lightning
 //   win      : testbed clears level 100 -> end 'win'
 //   pilot    : seed 0 clears >= 1 level within its 3 lives; survives the
 //              lives-1 slack; the attract run's score equals its event ledger
 //   co-op    : two players drive without error and bank kills
 //   determinism : same seed twice -> identical digest
-// `-- --mutate` re-plants three fixed bugs in fresh child processes; each MUST die.
+// `-- --mutate` re-plants four fixed bugs in fresh child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -199,7 +199,7 @@ function walkIntoAndPop(gs) {
     ok(got === 6 && extended && gs.lives === 4, 'E,X,T,E,N,D -> EXTEND -> +1 life', `letters=${got} lives=${gs.lives}`)
 }
 {
-    // LIGHTNING zaps all free enemies + Blubba
+    // LIGHTNING zaps all free enemies — but never Blubba
     const gs = makeGame(0)
     const P = platformOf(gs)
     rig(gs, P.row, 2, 8)
@@ -218,7 +218,7 @@ function walkIntoAndPop(gs) {
         step(gs, {})
         gs.events.length = 0
     }
-    ok(gs.enemies.length === 0 && gs.blubbas.length === 0, 'LIGHTNING zaps every free enemy AND Blubba', `en ${gs.enemies.length} blubba ${gs.blubbas.length}`)
+    ok(gs.enemies.length === 0 && gs.blubbas.length === 1, 'LIGHTNING zaps every free enemy — Blubba survives it', `en ${gs.enemies.length} blubba ${gs.blubbas.length}`)
 }
 {
     // water -> snail on a wet theme (SEA FLOOR starts at level index 30)
@@ -281,16 +281,24 @@ function walkIntoAndPop(gs) {
     ok(hits >= 3 && killedev && gs.score >= L.BOSS_POINTS, 'the boss dies to three bubble hits and pays BIG', `hits=${hits}`)
 }
 {
-    // Blubba: arrives on the timer, lightning removes him
+    // Blubba: a HURRY UP! warning leads his arrival; nothing kills him
     const gs = makeGame(0)
     gs.lives = 9
-    gs.lingerT = gs.lv.blubbaAt
+    const p = gs.players[0]
+    p.invuln = 999999
+    gs.lingerT = gs.lv.blubbaAt - CFG.hurryTicks - 1
     step(gs, {})
-    ok(gs.events.some((e) => e.type === 'blubba') && gs.blubbas.length === 1, 'von Blubba arrives when the level timer runs out')
-    gs.items = [{ id: 5, kind: 'lightning', x: gs.players[0].x, y: gs.players[0].y, vy: 0, life: 100, grounded: true }]
-    gs.players[0].invuln = 99
+    ok(gs.events.some((e) => e.type === 'blubbaWarn') && gs.blubbas.length === 0, 'HURRY UP! flashes while Blubba is still off screen')
+    let arrived = null
+    for (let i = 0; i < CFG.hurryTicks + 10; i++) {
+        step(gs, {})
+        if (arrived === null && gs.events.some((e) => e.type === 'blubba')) arrived = gs.lingerT
+        gs.events.length = 0
+    }
+    ok(gs.blubbas.length === 1 && arrived === gs.lv.blubbaAt, 'von Blubba arrives exactly when the level timer runs out', `arrived ${arrived} vs ${gs.lv.blubbaAt}`)
+    gs.items = [{ id: 5, kind: 'lightning', x: p.x, y: p.y, vy: 0, life: 100, grounded: true }]
     step(gs, {})
-    ok(gs.blubbas.length === 0 && gs.events.some((e) => e.type === 'blubbaGone'), 'LIGHTNING clears Blubba off the screen')
+    ok(gs.blubbas.length === 1 && !gs.events.some((e) => e.type === 'blubbaGone'), 'Blubba is unkillable — even lightning leaves him on screen')
 }
 {
     // door discipline + the win path at level 100
@@ -392,6 +400,7 @@ if (process.argv.includes('--mutate')) {
         ['trapped enemies never escape', SIM, 'escapeTicks: 300,', 'escapeTicks: 9999999,'],
         ['door opens while enemies live', SIM, 'const cleared = gs.enemies.length === 0', 'const cleared = gs.enemies.length >= 0'],
         ['chain pay never escalates', LEVELS, 'CHAIN_PAY[Math.min(CHAIN_PAY.length - 1, chainIndex)]', 'CHAIN_PAY[0]'],
+        ['lightning clears Blubba again', SIM, '    // von Blubba is unkillable — the lightning passes right through him\n}', '    if (gs.blubbas.length) { gs.blubbas = []; gs.events.push({ type: \'blubbaGone\' }) }\n}'],
     ]
     const files = {}
     let died = 0
