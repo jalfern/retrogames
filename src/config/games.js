@@ -166,6 +166,12 @@ const BardsTaleGame = lazy(() => import('../games/BardsTale'))
 // chunk; the harness imports course/sim/planner unchanged in Node.
 const SSXGame = lazy(() => import('../games/SSX'))
 
+// PRINCE OF PERSIA: same lesson — the pure platform/duel sim and the autopilot
+// that wins all five screens (and scripts/popcheck.mjs audits: movement, traps,
+// ports, the three-height duel, the hour, slack and determinism) ride in their
+// own chunk; the harness imports sim/levels/planner unchanged in Node.
+const PrinceOfPersiaGame = lazy(() => import('../games/PrinceOfPersia'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -789,6 +795,16 @@ export const GAMES = [
         theme: 'dark',
         description: "EA Sports BIG's 2000 snowboard riot, rebuilt whole in code: three fantastical mountains — a sunlit alpine glade, a neon night city strung with rails, and a sunset basin of halfpipes and monster kickers — raced to the bottom against five CPU riders over three heats. Tricks are the economy: grabs, spins to 720, flips off every lip; clean landings bank the chain to x4 and fill the boost meter, and taking off with a FULL meter throws OVER — double points and the stupid-big names (Frontflip 720, Method 900). Spend the meter with SHIFT and the hill goes backwards faster. A half-done flip eats it, the rock wall eats it, a bail dumps half your meter. RACE is standings points over the three heats; SHOWOFF is 90 seconds against the house bank. Real 3D in three.js: vertex-coloured snow, spray off every carve, FOV kick and shake so speed reads on the body, an animated rig that crouches, grabs and tumbles, and a synth pulse that ducks in the air and drops back when you land — every mountain and note generated at runtime, and the whole race re-proven winnable (at full AND slack trick economy) by the same autopilot that rides the attract demo.",
         controls: ['← / →: steer — and SPIN in the air (180s score)', 'SPACE: hold to crouch, release to snap — off a kicker lip it launches you into big air', 'X grab · Z front flip · C back flip — complete the flip before you land or you bail', 'SHIFT / B: BOOST — spend the meter tricks fill; full meter at takeoff = OVER, double points', '3 heats vs the field (1 = RACE · 2 = SHOWOFF on the title); the field gets quicker every heat', '?: pause and read the trick book'],
+    },
+    {
+        path: '/prince-of-persia',
+        pad: { layout: 'dpad', buttons: [{ label: '⚔', code: 'KeyX' }], analog: false },
+        builtBy: 'forge',
+        component: PrinceOfPersiaGame,
+        label: 'PRINCE OF PERSIA',
+        theme: 'dark',
+        description: "Jordan Mechner's 1989 Brøderbund classic, rebuilt whole in code. One hour on the dungeon clock to reach the princess and fell the Vizier Jaffar. The movement is the game: a run that builds and skids to a stop, a careful step (SHIFT) that refuses to walk you off a ledge, crouch, standing and running jumps scaled by speed, and the auto-grab — run past a ledge and you hang from it, then pull up, shimmy or leap from the hang. Five torch-lit screens hide the traps: loose tiles that shake and drop a second after you step on them, spike ports that only lie flat once you stand on the pressure plate that opens them, and a guillotine gate that runs on a schedule — time it or it takes you. Steel too: draw on a guard and the duel is three heights — read the wind-up, hold the matching height to parry, strike at the height they are not guarding. Flasks on the floor: life, strength (a longer sword), levitation (a softer fall)… and poison, which is exactly as bad as it looks. Every stone, torch flame, animated runner and note is generated at runtime; the whole hour is re-proven winnable, at a shortened clock and one fewer hit on every guard, by the same autopilot that fences through the attract demo.",
+        controls: ['← / →: run, skid, walk (the first press walks, held it builds to a run)', 'SPACE / A: jump — hold it while rising to fly farther; a running jump clears more than a walking one', 'SHIFT / hold near a drop: careful step — you will not walk off the edge; run past a ledge and you grab it', 'While hanging: ↑ climb up · ↓ drop · ← / → shimmy · SPACE hang-jump', '↑ / ↓ with steel drawn: high / low guard; a matching-height guard parries, a mismatched one cuts you', 'X / Z / ⚔: strike (the B button) — hit the height the guard is NOT holding', 'Drink wisely: red life · purple strength · blue levitation · green poison · reach the far door before the hour rings'],
     }
 
 ]
