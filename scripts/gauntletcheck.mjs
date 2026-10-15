@@ -25,6 +25,7 @@ const ok = (cond, name, detail = '') => {
 }
 
 const { LEVELS, W, H, MONSTERS } = await import('../src/games/Gauntlet/levels.js')
+const { SPRITE_DATA } = await import('../src/games/Gauntlet/art.js')
 
 async function fresh() {
     const sim = await import(`../src/games/Gauntlet/sim.js?c=${Date.now()}`)
@@ -67,6 +68,23 @@ for (const lv of LEVELS) {
         if (!sAll.has(r * W + c)) ok(false, `L${lv.idx + 1}: ${t} unreachable`, `${c},${r}`)
     }
     ok(keyReach >= locks, `L${lv.idx + 1}: ${keyReach} keys sit outside the locks`)
+}
+
+// -------------------------------------------------------------------- art ----
+// The beasts are the arcade's spectacle: every monster reads as a >=14x14
+// hand-pixeled sprite and carries a 2-frame walk wobble (frame 2 is a bob).
+console.log('art')
+{
+    const mons = ['grunt', 'ghost', 'demon', 'sorcerer', 'lobber', 'death']
+    for (const n of mons) {
+        const { frames } = SPRITE_DATA[n]
+        const w = Math.max(...frames[0].map((r) => r.length))
+        const h = frames[0].length
+        const even = frames.every((f) => f.length === h && f.every((r) => r.length === w))
+        ok(w >= 14 && h >= 14, `art: ${n} sprite is ${w}x${h} (>=14x14)`)
+        ok(frames.length >= 2, `art: ${n} carries a 2-frame walk wobble`, `${frames.length} frames`)
+        ok(even, `art: ${n} frames are uniform grids`)
+    }
 }
 
 // ------------------------------------------------------------------ rules ----
