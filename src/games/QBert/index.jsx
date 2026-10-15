@@ -176,7 +176,7 @@ const QBertGame = () => {
             const p = s.player
             if (!(p.invuln > 0 && Math.floor(p.invuln / 4) % 2 === 0 && screenRef.current === 'play')) {
                 const pose = p.dying > 0 ? 3 : p.hop ? (p.hop.tr < p.hop.fr ? 1 : 2) : 0
-                const facing = p.hop ? (p.hop.tc >= p.hop.fc ? 1 : -1) : 1
+                const facing = p.facing
                 const bp = bertPos(s)
                 ctx.drawImage(bertSprite(pose, facing), Math.round(bp.x - 9), Math.round(bp.y - 14))
                 if (p.dying > 0 && s.balloon) {
