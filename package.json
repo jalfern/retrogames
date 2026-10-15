@@ -123,6 +123,8 @@
         "vpadcheck": "node scripts/vpadcheck.mjs",
         "lint:ark": "eslint src/games/Arkanoid src/components src/utils src/config src/main.jsx scripts/arkanoidcheck.mjs scripts/arkanoidplay.mjs scripts/lib",
         "arkcheck": "node scripts/arkanoidcheck.mjs",
+        "lint:dug": "eslint src/games/DigDug src/components src/utils src/config src/main.jsx scripts/dugcheck.mjs scripts/lib",
+        "dugcheck": "node scripts/dugcheck.mjs",
         "arkplay": "node scripts/arkanoidplay.mjs"
     },
     "dependencies": {

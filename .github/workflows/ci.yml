@@ -248,6 +248,11 @@ jobs:
       # zero-death full clear, all in Node.
       - run: npm run lint:ark
       - run: npm run arkcheck
+      # DIG DUG: pump-chain stage pins, depth-scaled payout ledger, ghost/flee
+      # rules, rock-crush column math, veggie gating, pilot win + lives-1 slack,
+      # determinism, and 4 mutants that must die — all in Node.
+      - run: npm run lint:dug
+      - run: npm run dugcheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
