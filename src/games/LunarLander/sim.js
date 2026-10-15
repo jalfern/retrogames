@@ -18,7 +18,6 @@
 //   endless; a terminal state is what a proof needs — see README).
 
 import { genTerrain, terrainY, padAt, WORLD_W } from './terrain.js'
-import { mulberry32 } from './rng.js'
 
 export const W = 512
 export const H = 384

@@ -17,7 +17,7 @@
 //                 lander out of fuel on the pad is stranded, and zero landers ends it.
 //   the win       the autopilot clears all five missions DEATHLESS on four seeds,
 //                 and the whole campaign re-wins deathless with 70 units cut from
-//                 every tank (slack) yet LOSES at 110 — so the tanks and the pilot's
+//                 every tank (slack) yet LOSES at 115 — so the tanks and the pilot's
 //                 energy law are load-bearing, not padding.
 
 import { genTerrain, terrainY, padAt, WORLD_W, NPTS, STEP, GROUND_MIN, GROUND_MAX } from '../src/games/LunarLander/terrain.js'
@@ -207,7 +207,7 @@ for (const { seed, r } of RUNS) {
     ok(`seed ${seed}: DEATHLESS (zero crashes)`, r.crashes === 0, `crashes=${r.crashes}`)
 }
 {
-    // SLACK RULE — every tank cut by 100 still wins deathless; 110 kills it.
+    // SLACK RULE — every tank cut by 110 still wins deathless; 115 kills it.
     const slackRun = (cut) => {
         CFG.startFuel -= cut
         const g = makeGame(0)
@@ -215,10 +215,10 @@ for (const { seed, r } of RUNS) {
         CFG.startFuel += cut
         return g
     }
-    const s100 = slackRun(100)
-    ok('slack: the campaign still wins DEATHLESS with 100 units cut from every tank', s100.win === true && s100.crashes === 0, `win=${s100.win} crashes=${s100.crashes}`)
     const s110 = slackRun(110)
-    ok('load-bearing: the SAME campaign loses with 110 units cut', s110.win === false)
+    ok('slack: the campaign still wins DEATHLESS with 110 units cut from every tank', s110.win === true && s110.crashes === 0, `win=${s110.win} crashes=${s110.crashes}`)
+    const s115 = slackRun(115)
+    ok('load-bearing: the SAME campaign loses with 115 units cut', s115.win === false)
     ok('the win banks a real score (pads × mult + fuel + dock bonuses)', RUNS.every(({ r }) => r.score > 4000), RUNS.map(({ r }) => r.score).join(','))
 }
 

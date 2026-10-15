@@ -5,6 +5,7 @@
 
 import { mulberry32 } from './rng.js'
 import { WORLD_W, STEP } from './terrain.js'
+import { ORBIT_Y } from './sim.js'
 
 export function makeStars(seed) {
     const rnd = mulberry32((seed ^ 0x5EED) >>> 0)
@@ -130,7 +131,7 @@ export function drawLander(ctx, g, cam, camX, camY, thrusting, tick) {
 // crossing the top of the sky.
 export function drawOrbiter(ctx, g, cam, camX, camY) {
     const x = cam.px(g.orb.x, camX)
-    const y = cam.py(310, camY)
+    const y = cam.py(ORBIT_Y, camY)
     if (x < -30 || x > 542) return
     ctx.save()
     ctx.translate(x, y)

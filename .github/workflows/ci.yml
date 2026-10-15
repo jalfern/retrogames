@@ -290,7 +290,7 @@ jobs:
       # LUNAR LANDER: terrain flatness/pad geometry across seeds, gravity/fuel/crash
       # rules through the same step() the player drives, the pad×multiplier + fuel
       # bonus ledger, the dock chain, a deathless five-mission autopilot win on four
-      # seeds, and the slack rule (−70 fuel still wins deathless, −80 loses). Four
+      # seeds, and the slack rule (−110 fuel still wins deathless, −115 loses). Four
       # mutants must die — all in Node.
       - run: npm run lint:lander
       - run: npm run landercheck -- --mutate
