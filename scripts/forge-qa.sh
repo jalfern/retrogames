@@ -31,7 +31,7 @@ case "$NODE" in
     mbp)  MODEL="omlxmbp/Qwen3.8-27B-oQ4e-mtp";  PORT=18001; TAG="mbp-"
           # The MBP is slow and the dev-server port (5173) is shared by every
           # lane, so it never drives a browser.
-          EXTRA=" Node checks only: never run browser suites (*play scripts, npm run verify, shot.mjs); they share one dev-server port with the other lanes." ;;
+          EXTRA=" Node checks only: never run browser suites (*play scripts, npm run verify, shot.mjs); they share one dev-server port with the other lanes. So pick only an item you can finish and verify with Node checks in one session; skip items that need screenshots or a browser, or touch many games, and leave those to the mini." ;;
 esac
 
 REPO="$HOME/Dev/retrogames"
@@ -75,21 +75,27 @@ PROMPT="You are THE QA MASTER on node $NODE. Open scripts/FORGE-QA.md and execut
 CAP_MIN=${QA_CAP_MIN:-75}
 SLUG=jalfern/retrogames
 save_checkpoint() {
-    local n wt br
+    # WHICH worktree: the one this session's own log says it worked in. The
+    # log records every file it read or edited by absolute path, and agents
+    # name worktrees by slug (retrogames-qa-digdug), not by issue number, so
+    # the path is the only reliable link (on 2026-10-15 a path-by-number lookup
+    # found nothing, saved nothing, and the MBP redid #227 from scratch twice).
+    local wt br n
+    wt=$(grep -o "$HOME/Dev/retrogames-qa-[^/ \"']*" "$LOG" 2>/dev/null | tail -1)
+    if [[ -z "$wt" || ! -d "$wt" ]]; then echo "$(date): no worktree in this session's log; nothing to save" >> "$LOG"; return; fi
+    br=$(git -C "$wt" branch --show-current)
+    [[ "$br" == qa/* ]] || { echo "$(date): $wt is on '$br', not a qa/ branch; not saving" >> "$LOG"; return; }
+    git -C "$wt" add -A >/dev/null 2>&1
+    git -C "$wt" commit -qm "QA ($NODE): WIP checkpoint at the ${CAP_MIN}-minute hard cap" >/dev/null 2>&1
+    git -C "$wt" push -q -u origin HEAD >/dev/null 2>&1 || { echo "$(date): push of $br failed" >> "$LOG"; return; }
+    echo "$(date): saved $wt to $br" >> "$LOG"
+    # the checkpoint comment goes on this node's claimed item, when there is one
     for n in $(gh api "repos/$SLUG/issues?state=open&labels=building-qa&per_page=50" --jq '.[].number' 2>/dev/null); do
         gh api "repos/$SLUG/issues/$n/comments?per_page=100" \
             --jq '[.[] | select(.body | startswith("QA (")) | select(.body | contains("): claimed"))] | last | .body // ""' \
             2>/dev/null | grep -q "^QA ($NODE): claimed" || continue
-        wt="$HOME/Dev/retrogames-qa-$n"
-        [[ -d "$wt" ]] || continue
-        br=$(git -C "$wt" branch --show-current)
-        [[ "$br" == qa/* ]] || continue
-        git -C "$wt" add -A >/dev/null 2>&1
-        git -C "$wt" commit -qm "QA ($NODE): WIP checkpoint at the ${CAP_MIN}-minute hard cap" >/dev/null 2>&1
-        if git -C "$wt" push -q -u origin HEAD >/dev/null 2>&1; then
-            gh api "repos/$SLUG/issues/$n/comments" --silent -f body="QA ($NODE): checkpoint. The ${CAP_MIN}-minute hard cap stopped the session; everything in its worktree is pushed to $br (unverified WIP). The next session resumes from it."
-            echo "$(date): saved #$n to $br" >> "$LOG"
-        fi
+        gh api "repos/$SLUG/issues/$n/comments" --silent -f body="QA ($NODE): checkpoint. The ${CAP_MIN}-minute hard cap stopped the session; its worktree is pushed to $br (unverified WIP). The next session resumes from it."
+        break
     done
 }
 if (( FG )); then
