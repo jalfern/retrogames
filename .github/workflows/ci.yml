@@ -266,6 +266,13 @@ jobs:
       # in Node. Mutant it: BREAKDROP=99 in levels.js turns red.
       - run: npm run lint:marble
       - run: npm run marblecheck
+      # Twenty-first scoped gate: GAUNTLET. Geometry (stairs key-locked, keys
+      # outside the locks), the slam/lock/potion/generator/Death rules through
+      # the same step() the player drives, the score ledger, the four-maze
+      # autopilot WIN on four seeds plus the slack re-win, and determinism.
+      # Mutant it: CFG.drainEvery -> never drains turns red.
+      - run: npm run lint:gauntlet
+      - run: npm run gauntletcheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

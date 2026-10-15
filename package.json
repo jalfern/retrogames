@@ -129,6 +129,8 @@
         "lint:marble": "eslint src/games/MarbleMadness src/components src/utils src/config src/main.jsx scripts/marblecheck.mjs scripts/lib",
         "bobcheck": "node scripts/bobcheck.mjs",
         "marblecheck": "node scripts/marblecheck.mjs",
+        "lint:gauntlet": "eslint src/games/Gauntlet src/components src/utils src/config src/main.jsx scripts/gauntletcheck.mjs scripts/lib",
+        "gauntletcheck": "node scripts/gauntletcheck.mjs",
         "bubbleplay": "node scripts/bubbleplay.mjs",
         "arkplay": "node scripts/arkanoidplay.mjs"
     },
