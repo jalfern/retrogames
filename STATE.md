@@ -1,60 +1,64 @@
-# STATE — 2026-10-15 (forge session, SMASH TV shipped)
+# STATE — 2026-10-15 (forge session, OUT RUN shipped)
 
 ## Shipped this session
-**SMASH TV** (#239) — PR #279, squash-merged at `2255733`, live at
-https://jalfern.com/retrogames/smash-tv (prod bundle verified).
-Williams 1990 twin-stick arena, top-down: Arrows move / IJKL fires its own
-8-way stick / Space fires facing / B firebombs (34 POWER). Nine rooms,
-**one-hit lethality** (the cabinet rule, harness-pinned), exits sealed until
-the room dies, weapon crates (SPREAD/LASER/MACHINE GUN) + POWER economy,
-two Blood-Bonus rooms (combo +50/kill), THE ANNOUNCER as room-9 boss.
-Attract replays the autopilot's proven run (seed 0). All art/audio synthesized.
+**OUT RUN** (#241) — PR #282, squash-merged at `042e198`, live at
+https://jalfern.com/retrogames/out-run (prod bundle verified: carries the
+OUT RUN route). The 1986 Sega highway per Jon's approved spec:
+segment-projected pseudo-3D road (curves slide, **real hills hide the road over
+the crest** — not Mode 7), red convertible + wind-in-hair couple seen from
+behind. **Checkpoint clock is the only killer**; **LOW/HIGH gears** (LOW caps
+speed + bites, HIGH ~305 km/h); speed-scaled **centrifugal force**; traffic
+bogs you and a **roadside object flips the car** (couple tumbles, seconds lost);
+**fork at every checkpoint** (LEFT easier / RIGHT harder) over a **merge-back
+lattice = 15 stages / 5 goals**; per-stage scenery (coast→desert→alpine→
+countryside→capital); radio pick of **three ORIGINAL synth tunes** before the
+start. Attract demo replays the autopilot's proven run. All art/audio synthesized.
 
-Gates: `lint:smash` + `smashcheck` (186 checks) + `--mutate` (5/5 die) wired
-into CI `static`. Pilot wins **all 9 seeds**, 2 deathless; slack re-win
-(one fewer crate/room, zero energy cells). Advisory `smashplay` 13/13 in
-headless Chrome (start→twin-stick→die→restart, zero page errors).
-QA polish filed as **#280**.
+Gates: `lint:outrun` + `outruncheck` (34 checks) wired into CI `static`.
+Autopilot wins **all 5 stages DEATHLESS**; slack re-wins with **3s off every
+checkpoint**, **dies at 4** (win is load-bearing). `-- --mutate` kills **4
+mutants** (gear ceiling, centrifugal, flip crash, the time budget itself).
+QA polish filed as **#283**.
 
 ## GOAL — next session
-Claim the oldest `game-queue` issue — **#241 Out Run** — unless Jon labels
-**#276** (`next`). #276 is Jon's own directive answering the Gauntlet
-fidelity ruling: build GAUNTLET top-down and rename the first-person one to
-FOUR HALLS. It outranks #241 in Jon's intent but carries no `next` label —
-see question 1. Before starting, read `#280` — if unclaimed and no QA lane
-is live, a quick polish PR on SMASH TV is also valid work.
+Claim the oldest `game-queue` issue — **#245 Lunar Lander** — unless Jon labels
+**#276** (`next`). #276 (top-down GAUNTLET + FOUR HALLS rename) is Jon's own
+standing directive (STATE carried it forward two sessions) but still carries no
+`next` label — see question 1. A quick SMASH TV polish (**#280**) or the new
+OUT RUN polish (**#283**) is also valid work if a QA lane isn't live.
 
 ## Board
-- Open QA: **#280** (SmashTV), #275 (Gauntlet), #270 (SimCity), #269/#220
-  (Kart), #265 (Marble), #263/#258 (Bubble Bobble).
-- Queue: **#276 (Gauntlet top-down + FOUR HALLS rename)**, #241 Out Run,
-  #245 Lunar Lander, #246 Tempest.
-- Other lanes: check `gh pr list` before touching arcade/QA areas.
+- Queue: **#276 Gauntlet top-down + FOUR HALLS rename**, **#245 Lunar Lander**,
+  **#246 Tempest**. (#241 Out Run → shipped.)
+- Open QA feedback: **#283** (OutRun), **#280** (SmashTV), #275 (Gauntlet),
+  #270 (SimCity), #269/#220 (Kart), #265 (Marble), #263/#258 (Bubble Bobble).
+- `gh pr list` before touching arcade/QA areas.
 
 ## Housekeeping done
-Worktree `retrogames-forge-smashtv` (branch merged+deleted) removed this
-session. Main checkout parked detached at `origin/main`. Accumulated stale
-worktrees worth pruning when idle: forge-arkanoid, forge-bobubble,
-forge-gauntlet, qa-mkart, qa-qbert, qa-jaoust-adjacent ones — verify each is
-merged before removing.
+Worktree `retrogames-forge-outrun` (branch merged+deleted) — remove it when idle
+(`git worktree remove`); symlinked node_modules there is disposable. Stale
+worktrees worth pruning when idle (verify merged first): forge-arkanoid,
+forge-bobubble, forge-gauntlet, forge-smashtv, qa-mkart, qa-qbert. Main checkout
+parked detached at `origin/main`.
 
-## How Smash TV is built (pointer, not a tutorial)
-`src/games/SmashTV/`: `levels.js` (seeded room generator: 4 wall patterns,
-exit ring, crate ladder, rosters), `sim.js` (pure `step`, seeded LCG, q8
-8-way, `blockedPx` asked by every walker; rules pinned by harness header
-comment), `planner.js` (engage-nearest + bullet-dodge + jink-under-boss;
-boss kill needs tight lane-tracking under the ANNOUNCER), `art.js`,
-`index.jsx` (256x248 canvas, HUD strip, announce barks). README has the
-fidelity notes + honest gaps.
+## How OUT RUN is built (pointer, not a tutorial)
+`src/games/OutRun/`: `road.js` (segment projector `scale=CAM_DEPTH/z` + the
+15-stage merge-back lattice + seeded props/cars + 5 `SCENES`), `sim.js` (pure
+`step`, gears/centrifugal/clock/traffic/flip/fork; `CFG` switches the harness
+mutates), `planner.js` (lane-commit + curve-counter + LEFT-fork autopilot),
+`art.js` (synth sprites + parallax backdrops), `index.jsx` (projection renderer
+with `p2.y>=p1.y` crest occlusion + painter props, attract/radio/HUD/DebugKit).
+Radio tracks `cruise/sunset/breeze` live in `src/utils/AudioController.js`.
+README has fidelity notes + honest gaps.
 
 ## Three questions for Jon
-1. **#276**: you asked for a top-down GAUNTLET + FOUR HALLS rename a day
-   after Gauntlet shipped. Should the next forge lane build #276 first (I'd
-   label it `next` when you're ready), before Out Run #241?
-2. **Attract demo style:** Smash TV's demo replays seed 0 which takes 2 hits
-   before winning; Gauntlet's was deathless; Marble showed hits for drama.
-   House rule: showcase deathless, or drama allowed?
-3. Still open from last session: **Gauntlet L4 generator cap** (keep 5-alive
-   cap for a provable win, or raise it) and **CPU partner default ON** for
-   phones (#275 items 6–8 assume ON) — ruling needed before the Gauntlet
-   QA lane executes those items.
+1. **#276 again**: it has now been the carried-forward intent for two sessions
+   but never the claimed oldest-queue issue. Want me to build it next (label it
+   `next`), or keep taking the oldest `game-queue` (#245 Lunar Lander) first?
+2. **Attract demo style** (open since last session): Smash TV showed hits,
+   Gauntlet/OUT RUN showcase deathless. Confirm the house rule — deathless
+   showcase, with drama allowed on the death screen only?
+3. **OUT RUN is very forgiving on HARD routes?** The autopilot only takes the
+   LEFT branch (col 0) and wins deathless with slack. Want a RIGHT-branch autopilot
+   win in the harness too (proves the harder columns are fair), or is proving
+   the easiest route enough?
