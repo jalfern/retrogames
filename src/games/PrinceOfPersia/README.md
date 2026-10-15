@@ -72,20 +72,23 @@ X or Z strike · ? pause · R restart after the hour is lost.
 
 ```bash
 npm run lint:pop     # scoped lint gate
-npm run popcheck     # 166 checks: the 75 Stage-1 rules + 24 Stage-2 look
-                     # clauses + 67 Stage-3 clauses. Champion run pinned:
-                     # autopilot clears all twelve levels at 0 deaths, and the
-                     # mirror / mouse-held gate / poisoned phantom shadow /
-                     # invisible bridge / sheathed merge all fire in that run.
+npm run popcheck     # 191 checks: the 75 Stage-1 rules + 24 Stage-2 look
+                     # clauses + 67 Stage-3 clauses + 25 Stage-4 sound clauses.
+                     # Champion run pinned: autopilot clears all twelve levels at
+                     # 0 deaths, the mirror / mouse-held gate / poisoned phantom
+                     # shadow / invisible bridge / sheathed merge all fire in that
+                     # run, and the event->SFX contract closes both ways.
 npm run popplay      # advisory headless drive (needs npm run dev): real keys
                      # start/run/jump, find the sword, die on the traps, the
-                     # level restarts under a running clock, R restarts, zero
-                     # page errors
+                     # level restarts under a running clock, R restarts, the
+                     # attract screen is silent, the hour rides a music bed
+                     # (analyser over the silence), and all twelve levels carry
+                     # the right bed — zero page errors
 ```
 
-Mutant proof at ship time: forcing the parry branch off in `stepGuards`
-(`if (false && p.block)`) turned `popcheck` red (1 failure — the parry pin)
-and was restored.
+Mutant proof at ship time: dropping `parry` from the SFX table turned
+`popcheck` red in two clauses (missing voice + orphan) and was restored.
+`popplay` 17/17 with audio checks.
 
 ## Stage 3 of #316 — all twelve levels (this merge)
 
@@ -115,9 +118,39 @@ and was restored.
   self-similarity keeps the gap honest: stalls shorter than the delay (a gate
   hold) do NOT let it catch you; longer ones DO, which is the whole threat.
 
+## Stage 4 of #316 — sound & feel (this merge)
+
+The 1989 original is *silence-first*: a dungeon you hear before you see, a
+sound on every action, no music on the title. That is what this stage builds.
+
+- **`music.js` — the sound spine (pure).** `trackFor(state)` decides which bed
+  the moment deserves: `pop` (dungeon), `popThrone` (palace levels),
+  `popJaffar` (while the vizier stands in your room), `null` on the attract
+  screen and when you die — the original drops to silence the moment you fall.
+  `SFX` is one recipe per event the sim can emit, as tiny synth steps
+  (`['tone'|'sweep'|'noise', ...]`); popcheck pins the table against `sim.js`
+  **both ways**, so a future event that ships without a voice fails the gate.
+- **Three original beds** (`AudioController`), composed for this build in the
+  Hijaz / "Persian" mode (D Eb F# G A Bb C#): the drip-stone dungeon, the
+  grander throne room an octave up, and Jaffar's fast chromatic-second
+  ostinato. Each carries a darbuka lane (1 = dum, 2 = tek) — the synth engine
+  grew a `perc` step to play it.
+- **The gait is in the sim**: `foot` events off a stride accumulator (one
+  footfall per ~42 px of travel), flagged `run`/`soft`, so running hammers,
+  careful steps whisper, and standing still is silent. `land` thuds the
+  landing; `chain` rattles while a portcullis is actually moving (brighter
+  rising, grittier falling, a click on the first tick of travel).
+- **Torch ambience** in the shell: a thin crackle every few ticks, denser in
+  rooms that carry flame, off on menus and death screens. Deterministic tick
+  arithmetic — no `Math.random` anywhere in the spine (pinned).
+- **Stings**: the big death descending line and the victory fanfare on the
+  last door; the sheathe/parry ring, potion glugs (all five flasks flavoured
+  apart), the mirror's glass sweep and the merge's rising fold all come off
+  the event table.
+
 ## Honest gaps (the deep pass continues — see #316)
 
 - Guards do not walk through doors with you between rooms (they patrol their
   own room); the original escorts you deeper.
 - Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
-  with the d-pad; desktop-first, as the original was. Sound is Stage 4.
+  with the d-pad; desktop-first, as the original was.

@@ -18,6 +18,8 @@ import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE } fro
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
 import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook } from '../src/games/PrinceOfPersia/art.js'
+import { SFX, trackFor, TRACKS } from '../src/games/PrinceOfPersia/music.js'
+import { MUSIC } from '../src/utils/AudioController.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -334,8 +336,8 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
     const c = cloneGame(a)
     ok('cloneGame snapshots without aliasing', stateHash(c) === stateHash(a) && c !== a)
     const here = dirname(fileURLToPath(import.meta.url))
-    const spine = ['sim.js', 'levels.js', 'planner.js'].map((f) => readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', f), 'utf8'))
-    ok('no Math.random in sim/levels/planner', spine.every((src) => !/Math\.random\s*\(/.test(src)))
+    const spine = ['sim.js', 'levels.js', 'planner.js', 'music.js'].map((f) => readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', f), 'utf8'))
+    ok('no Math.random in sim/levels/planner/music', spine.every((src) => !/Math\.random\s*\(/.test(src)))
 }
 
 // ---- 11. planner/CFG agreement ----------------------------------------------
@@ -611,6 +613,113 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         const asrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
         ok('the art draws the mirror, the mouse and the silhouette',
             /function drawMirror\(/.test(asrc) && /function drawMouse\(/.test(asrc) && asrc.includes('die_shadow') && asrc.includes('bridgeSeen'))
+    }
+}
+
+// ---- 14. Stage 4: the sound spine ---------------------------------------------
+{
+    const drain = (game) => { const e = game.events.slice(); game.events.length = 0; return e }
+
+    // which bed the moment deserves
+    ok('S4: the dungeon level sits on the drip-stone bed', trackFor(makeGame(0)) === 'pop')
+    ok('S4: palace levels sit on the throne bed', makeLevel(2).theme === 'palace' && trackFor(makeGame(2)) === 'popThrone')
+    {
+        const j = makeGame(11)
+        const boss = j.guards.find((q) => q.boss)
+        ok('S4: the lair carries the vizier', !!boss)
+        j.p.x = boss.x - 40; j.p.y = boss.y; j.room = boss.room
+        ok('S4: Jaffar in the room brings his own theme', trackFor(j) === 'popJaffar')
+        boss.dead = true
+        ok('S4: with the vizier down the palace bed returns', trackFor(j) === 'popThrone')
+    }
+    {
+        const d = makeGame(0); d.status = 'dying'
+        const w = makeGame(0); w.status = 'win'
+        const l = makeGame(0); l.status = 'lost'
+        ok('S4: death and the end of the hour drop to silence (as the original does)',
+            trackFor(d) === null && trackFor(w) === null && trackFor(l) === null)
+    }
+
+    // the event->voice contract, pinned both ways
+    const here = dirname(fileURLToPath(import.meta.url))
+    const simSrc = readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', 'sim.js'), 'utf8')
+    const simEvents = new Set([...simSrc.matchAll(/type: '([a-zA-Z]+)'/g)].map((m) => m[1]))
+    ok(`S4: every event the sim can emit has a voice (${simEvents.size} events)`, [...simEvents].every((t) => t in SFX))
+    ok('S4: the SFX table has no orphans the sim never emits', Object.keys(SFX).every((t) => simEvents.has(t)))
+    ok('S4: every recipe returns synth steps of known verbs',
+        Object.values(SFX).every((fn) => fn({ kind: 'r', run: true, soft: true, up: true, boss: true, floors: 2 })
+            .every((st) => ['tone', 'sweep', 'noise'].includes(st[0]))))
+
+    // the gait: leather on stone
+    {
+        const walkIv = []
+        const wg = makeGame(0)
+        setGround(wg, 1.5 * T, 8 * T)
+        let last = -1, t = 0
+        while (t++ < 400) { step(wg, { right: true, shift: true }); for (const e of drain(wg)) if (e.type === 'foot') { if (last >= 0) walkIv.push(wg.tick - last); last = wg.tick } }
+        const wantW = CFG.stride / CFG.walk
+        ok('S4: walking leaves footprints in the audio too',
+            walkIv.length >= 8 && walkIv.every((x) => x >= wantW - 4 && x <= wantW + 4))
+        const runIv = []
+        const rg = makeGame(0)
+        setGround(rg, 1.5 * T, 8 * T)
+        last = -1; t = 0
+        let runs = 0
+        while (t++ < 600) { step(rg, { right: true }); for (const e of drain(rg)) if (e.type === 'foot' && e.run) { runs++; if (last >= 0) runIv.push(rg.tick - last); last = rg.tick } }
+        const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length
+        ok('S4: running hammers a faster gait than walking', runs > 12 && avg(runIv) < avg(walkIv) * 0.85)
+        const ig = makeGame(0)
+        let feet = 0; t = 0
+        while (t++ < 300) { step(ig, {}); feet += drain(ig).filter((e) => e.type === 'foot').length }
+        ok('S4: standing still keeps quiet feet', feet === 0)
+    }
+
+    // the landing thud
+    {
+        const lg = makeGame(0)
+        lg.p.x = 1.5 * T; lg.p.y = 8 * T - 110; lg.p.fallFrom = lg.p.y; lg.p.vy = 1; lg.p.onGround = false; lg.p.noGrabUntil = lg.tick + 60
+        let t = 0, floors = -1
+        while (t++ < 240 && !lg.p.onGround) { step(lg, {}); for (const e of drain(lg)) if (e.type === 'land') floors = e.floors }
+        ok('S4: a one-floor hop reports its landing', floors === 1)
+    }
+
+    // the chain: gates rattle in both directions
+    {
+        const cg = makeGame(0)
+        const btn = cg.level.plates[0]
+        setGround(cg, (btn.c + 0.5) * T, 8 * T)
+        let up = 0, down = 0, t = 0
+        while (t++ < 60) { step(cg, { right: true }); for (const e of drain(cg)) { if (e.type === 'chain') (e.up ? up++ : down++) } }
+        ok('S4: the chain rattles as the gate climbs', up >= 1)
+        cg.p.x = (btn.c + 3.5) * T
+        t = 0
+        while (t++ < 500) { step(cg, {}); for (const e of drain(cg)) if (e.type === 'chain') down++ }
+        ok('S4: and grinds again on the way shut', down >= 2)
+    }
+
+    // the beds themselves: original Hijaz-mode melodies on the synth engine
+    {
+        ok('S4: all three Prince beds live in the synth engine', TRACKS.every((t) => t in MUSIC))
+        ok('S4: the beds march at distinct tempos', MUSIC.pop.step > MUSIC.popThrone.step && MUSIC.popThrone.step > MUSIC.popJaffar.step)
+        const hijaz = new Set([0, 1, 4, 5, 7, 8, 11])
+        const inMode = (arr) => arr.every((n) => !n || hijaz.has((((n - 62) % 12) + 12) % 12))
+        ok('S4: every Prince melody sits in the Hijaz mode (D Eb F# G A Bb C#)',
+            TRACKS.every((t) => inMode(MUSIC[t].lead) && inMode(MUSIC[t].bass)))
+        ok('S4: the darbuka lane taps dum and tek under every bed',
+            TRACKS.every((t) => MUSIC[t].perc && MUSIC[t].perc.length === MUSIC[t].lead.length
+                && MUSIC[t].perc.some((v) => v === 1) && MUSIC[t].perc.some((v) => v === 2)))
+        ok('S4: the beds stay out of each other\u2019s melody',
+            new Set(TRACKS.map((t) => MUSIC[t].lead.join(','))).size === TRACKS.length)
+    }
+
+    // the shell: recipes, attract silence, ambience, stings
+    {
+        const xsrc = readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+        ok('S4: the shell speaks through the SFX contract, not one-off beeps', xsrc.includes('SFX[ev.type]'))
+        ok('S4: the attract screen stays silent until the hour starts', /attract \? null : trackFor/.test(xsrc))
+        ok('S4: the shell carries the torch-crackle ambience', xsrc.includes('ambience'))
+        ok('S4: death and victory cue their big stings', xsrc.includes('playDeath') && xsrc.includes('playFanfare'))
+        ok('S4: the harness can hear the engine through the probe hook', xsrc.includes('musicState') && xsrc.includes('_peak'))
     }
 }
 

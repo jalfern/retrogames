@@ -41,6 +41,9 @@ export const CFG = {
     mirrorReach: 24,
     shadowDelay: 210, shadowWalk: 2.4, mergeRange: 26,
     mouseSpeed: 1.1,
+    // Stage 4: the sound spine — one footfall per stride of travel, one
+    // chain-rattle per few ticks of actual gate travel
+    stride: 42, chainEvery: 6,
     slack: false,
 }
 
@@ -85,6 +88,8 @@ function princeAt(g, pos) {
         lev: 0, flip: 0, dieT: 0, holdT: 0, fallFrom: null, noGrabUntil: 0,
         // Stage-2 pose timers (visual only — they never feed the physics)
         drinkT: 0, drawT: 0, sheatheT: 0, startT: 0, skidT: 0, turnT: 0, landT: 0,
+        // Stage-4 gait timer (emits `foot` events only — never feeds the physics)
+        stepPhase: 0,
         duelDrawn: false, careful: false, jumpStill: false,
     }
 }
@@ -227,7 +232,10 @@ function land(g, b, vyWas) {
             g.events.push({ t: g.tick, type: 'shadowFall' })
             if (b.hp <= 0) { shadowKill(g, 'fall'); return }
         }
-    } else if (b === g.p && floors >= 0.5 && vyWas > 2) { b.anim = 'land'; b.landT = 10 }
+    } else if (b === g.p && floors >= 0.5 && vyWas > 2) {
+        b.anim = 'land'; b.landT = 10
+        g.events.push({ t: g.tick, type: 'land', floors: Math.round(floors) })
+    }
     b.fallFrom = null
 }
 
@@ -302,14 +310,30 @@ export function step(g, inp = {}) {
 
     // ---- machinery: raise / drop / exit buttons for the room the prince is in -
     const btn = buttonsPressed(g)
-    if (btn.raise >= 0) g.gateOpen[btn.raise] = Math.min(1, g.gateOpen[btn.raise] + CFG.gateRise)
-    if (btn.drop >= 0) g.gateOpen[btn.drop] = Math.max(0, g.gateOpen[btn.drop] - CFG.gateSlam)
+    let gateUp = false, gateDown = false
+    if (btn.raise >= 0) {
+        const was = g.gateOpen[btn.raise]
+        g.gateOpen[btn.raise] = Math.min(1, was + CFG.gateRise)
+        if (g.gateOpen[btn.raise] > was) gateUp = true
+    }
+    if (btn.drop >= 0) {
+        const was = g.gateOpen[btn.drop]
+        g.gateOpen[btn.drop] = Math.max(0, was - CFG.gateSlam)
+        if (g.gateOpen[btn.drop] < was) gateDown = true
+    }
     stepMouse(g)                       // the princess's mouse holds a button too
     for (let k = 0; k < g.gateOpen.length; k++) {
         if (k === btn.raise || k === g.mouseHold) continue
         const fast = k === btn.drop ? CFG.gateSlam : CFG.gateFall
-        g.gateOpen[k] = Math.max(0, g.gateOpen[k] - fast)
+        const was = g.gateOpen[k]
+        g.gateOpen[k] = Math.max(0, was - fast)
+        if (was > 0 && g.gateOpen[k] < was) gateDown = true
     }
+    const dir = gateUp ? 1 : gateDown ? -1 : 0
+    if (dir !== 0 && (dir !== g.gateMotion || g.tick % CFG.chainEvery === 0)) {
+        g.events.push({ t: g.tick, type: 'chain', up: dir === 1 })
+    }
+    g.gateMotion = dir
     if (btn.plate >= 0 && !g.exitOpen) { g.exitOpen = true; g.events.push({ t: g.tick, type: 'door' }) }
 
     const dueling = g.guards.some((gd) => !gd.dead && gd.room === g.room && Math.abs(gd.x - p.x) < 8 * T && Math.abs(gd.y - p.y) < FH)
@@ -456,6 +480,15 @@ export function step(g, inp = {}) {
         else if (Math.abs(p.vx) > 0.2) p.anim = 'walk'
         else p.anim = p.crouch ? 'crouch' : 'idle'
         p.animT++
+        // Stage-4 gait: one footfall per stride of travel while the feet are
+        // actually walking (a careful step is softer, a run hammers faster).
+        if (Math.abs(p.vx) > 0.2 && (p.anim === 'walk' || p.anim === 'run' || p.anim === 'start' || p.anim === 'careful')) {
+            p.stepPhase += Math.abs(p.vx)
+            if (p.stepPhase >= CFG.stride) {
+                p.stepPhase = 0
+                g.events.push({ t: g.tick, type: 'foot', run: p.anim === 'run', soft: p.anim === 'careful' })
+            }
+        } else p.stepPhase = 0
     } else if (p.vy < 0) p.anim = 'jump'
     else if (!p.hang) p.anim = 'fall'
 

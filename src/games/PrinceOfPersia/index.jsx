@@ -7,7 +7,8 @@ import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { drawScene, VW, VH } from './art.js'
-import { LEVEL_COUNT, LEVEL_NAMES } from './levels.js'
+import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
+import { SFX, trackFor } from './music.js'
 
 const ATTRACT_MSGS = [
     'PRINCE OF PERSIA',
@@ -108,8 +109,10 @@ const PrinceOfPersiaGame = () => {
                 x: g.p.x, y: g.p.y, vx: g.p.vx, vy: g.p.vy, hp: g.p.hp, maxHP: g.p.maxHP,
                 sword: g.sword, hang: !!g.p.hang, block: !!p_block(), gate: g.gateOpen[g.room],
                 exit: g.exitOpen, clock: g.clock, events: g.events.length,
+                music: trackFor(g),
             }),
             hash: () => stateHash(g),
+            musicState: () => ({ ...audioController._musicState(), peak: audioController._peak() }),
         }
         const p_block = () => g.p.block
 
@@ -150,34 +153,46 @@ const PrinceOfPersiaGame = () => {
             if (!pausedRef.current && e.code === 'KeyR' && (g.status === 'lost' || g.status === 'win')) g = makeGame(0)
         }
 
-        // ---- audio driven off sim events ------------------------------------
+        // ---- audio driven off sim events ----------------------------------------
+        // Every sim event gets a voice via the SFX table in music.js; popcheck
+        // pins that table against the sim, so nothing can ship silently muted.
+        const play = (steps) => {
+            for (const st of steps) {
+                if (st[0] === 'tone') audioController.playTone(st[1], st[2], st[3], st[4], st[5])
+                else if (st[0] === 'sweep') audioController.playSweep(st[1], st[2], st[3], st[4], st[5])
+                else if (st[0] === 'noise') audioController.playNoise(st[1], st[2])
+            }
+        }
         const sfx = (before) => {
             const events = g.events.slice(before)
             for (const ev of events) {
-                if (ev.type === 'jump') audioController.playTone(300, 0.07, 'triangle', 0.12)
-                else if (ev.type === 'grab') audioController.playTone(220, 0.05, 'square', 0.1)
-                else if (ev.type === 'climb') audioController.playSweep(240, 420, 0.12, 'triangle', 0.12)
-                else if (ev.type === 'swing') audioController.playSweep(900, 300, 0.08, 'sawtooth', 0.06)
-                else if (ev.type === 'hit') { audioController.playNoise(0.08, 0.2); audioController.playTone(180, 0.1, 'square', 0.14) }
-                else if (ev.type === 'parry') audioController.playNoise(0.06, 0.25)
-                else if (ev.type === 'guardWind') audioController.playTone(ev.boss ? 190 : 140, 0.06, 'square', 0.07)
-                else if (ev.type === 'guardDown') audioController.playSweep(400, 80, 0.25, 'sawtooth', 0.18)
-                else if (ev.type === 'loose') audioController.playNoise(0.15, 0.18)
-                else if (ev.type === 'door') audioController.playSweep(120, 60, 0.3, 'square', 0.12)
-                else if (ev.type === 'sword') audioController.playSweep(500, 1400, 0.2, 'sawtooth', 0.12)
-                else if (ev.type === 'potion') audioController.playSweep(ev.kind === 'b' ? 300 : 400, ev.kind === 'b' ? 90 : 900, 0.2, 'sine', 0.14)
-                else if (ev.type === 'checkpoint') audioController.playTone(760, 0.1, 'square', 0.1)
-                else if (ev.type === 'die') audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.2)
-                else if (ev.type === 'clear') audioController.playSweep(400, 800, 0.3, 'square', 0.14)
-                else if (ev.type === 'timeup') audioController.playSweep(200, 60, 0.8, 'sawtooth', 0.2)
-                else if (ev.type === 'win') audioController.playSweep(400, 1200, 0.6, 'square', 0.16)
-                else if (ev.type === 'mirror') audioController.playSweep(1200, 500, 0.35, 'sine', 0.12)
-                else if (ev.type === 'bridge') { audioController.playTone(520, 0.06, 'triangle', 0.1); audioController.playTone(780, 0.08, 'triangle', 0.1) }
-                else if (ev.type === 'mouse') audioController.playTone(980, 0.05, 'square', 0.08)
-                else if (ev.type === 'shadowDrink') audioController.playSweep(300, 700, 0.15, 'sine', 0.08)
-                else if (ev.type === 'shadowFall') audioController.playNoise(0.1, 0.1)
-                else if (ev.type === 'shadowDown') audioController.playSweep(500, 120, 0.3, 'triangle', 0.12)
-                else if (ev.type === 'merge') audioController.playSweep(200, 900, 0.5, 'sine', 0.14)
+                const recipe = SFX[ev.type]
+                if (recipe) play(recipe(ev))
+                if (ev.type === 'die') audioController.playDeath()
+                if (ev.type === 'win') audioController.playFanfare()
+            }
+        }
+
+        // the bed under the hour: silence on the attract screen and when you die
+        // (the original drops to silence); the vizier's theme while Jaffar
+        // stands in the room; palace stone gets its own grander bed.
+        let musicTrack = null
+        const music = () => {
+            const wanted = attract ? null : trackFor(g)
+            if (wanted === musicTrack) return
+            musicTrack = wanted
+            if (wanted) audioController.startMusic(wanted)
+            else audioController.stopMusic()
+        }
+
+        // torch ambience: a thin crackle, denser where the room carries flame.
+        // Deterministic pseudo-crackle (tick arithmetic) keeps replays honest.
+        const ambience = () => {
+            if (attract || g.status !== 'play' || g.tick % 18 !== 0) return
+            const roomTorches = g.level.torches.filter((t) => Math.floor(t.c / RW) === g.room).length
+            const beat = g.tick / 18
+            if (beat % 7 < 2 + Math.min(3, roomTorches)) {
+                play([['noise', 0.02 + ((g.tick * 13) % 5) * 0.004, 0.028]])
             }
         }
 
@@ -208,6 +223,8 @@ const PrinceOfPersiaGame = () => {
                 step(g, readInputs())
             }
             sfx(before)
+            music()
+            ambience()
         }
 
         const draw = () => {
@@ -289,6 +306,9 @@ const PrinceOfPersiaGame = () => {
                 while (acc >= FIXED_DT && n < 6) { update(); acc -= FIXED_DT; n++ }
                 if (n === 6) acc = 0
                 draw()
+            } else if (musicTrack) {
+                audioController.stopMusic()
+                musicTrack = null
             }
             raf = requestAnimationFrame(loop)
         }
@@ -308,6 +328,7 @@ const PrinceOfPersiaGame = () => {
             window.removeEventListener('keydown', handleRestartKey)
             window.removeEventListener('keyup', handleKeyUp)
             unmountDbg()
+            audioController.stopMusic()
             delete window.__popTest
         }
     }, [])
