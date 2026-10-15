@@ -150,6 +150,19 @@ for (let i = 0; i < 30; i++) { await wait(100); if ((await probe()).lit > lit0 +
 lit1 = (await probe()).lit
 r.check(`power spreads down the road graph (${lit0} -> ${lit1} lit cells)`, lit1 > lit0 + 2)
 
+// 4b — the script now strikes the city WHERE THE CITY IS: a fire ignites the
+// nearest DEVELOPED block, and a corner with nothing built is an honest dud.
+// So the smoke builds one industry tile on the wire (it bootstraps to level 1
+// — the RCI job base) to become the block the year-13 SMOKESTACK fire ignites.
+// No zone at all = a dud = nothing to grade in pixels, which is what regressed.
+let indOn = false
+for (const [zx, zy] of [[spot.x, spot.y - 1], [spot.x, spot.y + 1], [spot.x + wire1, spot.y - 1], [spot.x + wire1, spot.y + 1]]) {
+    await page.evaluate(([x, y]) => window.__scTest.place(x, y, 4), [zx, zy])
+    await wait(90)
+    if ((await cellAt(zx, zy)).t === 7) { indOn = true; break }
+}
+r.check('an industry tile stands on the wire (a developed cell for the script to burn)', indOn)
+
 // 5 — the script burns on SMOKESTACK: fast-forward years through the real
 // step() and grade the event log AND a fire-coloured pixel. dudfire counts:
 // it is the script firing at ground the player never built on — honest.
