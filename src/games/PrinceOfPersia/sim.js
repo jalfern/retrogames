@@ -114,6 +114,7 @@ function loadLevel(g, i, fromCheckpoint = false) {
         boss: gd.boss, type: gd.type || 'green', room: gd.room, patrol: gd.patrol,
         ...GUARD_STYLE[gd.type] || GUARD_STYLE.green,
         engaged: false, wind: 0, cool: 30, recoil: 0, anim: 'idle', hurtT: 0, dead: false,
+        follow: false, followT: 0, homeRoom: gd.room,
     }))
     g.pots = g.level.pots.map((p) => ({ ...p, taken: false, shadowTaken: false }))
     g.chomps = g.level.chomps.map((c) => ({ ...c }))
@@ -716,6 +717,27 @@ function stepGuards(g, dueling) {
             } else if (Math.abs(gd.x - p.x) > close) { gd.x += gd.dir * gd.speed; gd.anim = 'advance' }
             else gd.anim = 'ready'
             if (gd.cool > 0) gd.cool--
+        } else if (gd.follow) {
+            // the prince left its room while you fought — so it escorts you,
+            // walking toward him on its own floor, stopping at a wall or the lip
+            // of a shaft (it has no legs for falling). It never leaves the world.
+            const spd = Math.min(gd.speed, CFG.walk)
+            const dirToward = sign(p.x - gd.x) || gd.dir
+            const nx = gd.x + dirToward * spd
+            const feetRow = Math.floor((gd.y + 2) / T)            // the floor it stands on
+            const bodyLow = Math.floor((gd.y - 4) / T)             // lowest body row
+            const bodyHigh = Math.floor((gd.y - CFG.PH + 2) / T)  // highest body row
+            const edgeCol = Math.floor((nx + CFG.HW * dirToward) / T)
+            const bodyBlocked = blocksH(g, cell(g, edgeCol, bodyLow), edgeCol) || blocksH(g, cell(g, edgeCol, bodyHigh), edgeCol)
+            const floorAhead = cell(g, edgeCol, feetRow)
+            const hasFloor = blocks(g, floorAhead, edgeCol) || floorAhead === PLATFORM || floorAhead === LOOSE || floorAhead === BRIDGE
+            if (!bodyBlocked && hasFloor) gd.x = clamp(nx, CFG.HW, (g.level.W - 1) * T)
+            gd.dir = dirToward
+            gd.anim = 'advance'
+            gd.followT++
+            const nr = roomOf(Math.floor(gd.x / T))
+            if (nr !== gd.room) gd.room = nr
+            if (gd.followT > 600) { gd.follow = false; gd.room = gd.homeRoom }
         } else {
             gd.x += gd.dir * 0.5
             if (gd.x < gd.patrol[0] * T) gd.dir = 1
@@ -723,7 +745,7 @@ function stepGuards(g, dueling) {
             gd.anim = 'patrol'
             if (gd.cool > 0) gd.cool--
         }
-        gd.x = clamp(gd.x, gd.patrol[0] * T, gd.patrol[1] * T)
+        if (!gd.follow) gd.x = clamp(gd.x, gd.patrol[0] * T, gd.patrol[1] * T)
 
         // the prince's strike lands when the sword is out and the guard is close
         if (g.sword && p.atk > 0 && !p.atkHitDone && p.atk <= CFG.strikeDur - CFG.strikeHit0 && p.atk >= CFG.strikeDur - CFG.strikeHit1) {
@@ -739,7 +761,18 @@ function stepGuards(g, dueling) {
 
 function syncRoom(g) {
     const r = clamp(Math.floor(Math.floor(g.p.x / T) / RW), 0, g.level.nRooms - 1)
-    if (r !== g.room) { g.room = r; g.events.push({ t: g.tick, type: 'room', room: r }) }
+    if (r !== g.room) {
+        const prev = g.room
+        g.room = r
+        g.events.push({ t: g.tick, type: 'room', room: r })
+        // a guard left standing in the room you just walked out of takes up the
+        // chase through the doorway behind you (as in the original)
+        for (const gd of g.guards) {
+            if (!gd.dead && gd.room === prev && Math.floor(gd.y / T) === GROUND) {
+                gd.follow = true; gd.followT = 0
+            }
+        }
+    }
 }
 
 export function cloneGame(g) { return JSON.parse(JSON.stringify(g)) }

@@ -37,6 +37,45 @@ const shade = (hex) => {
     const r = Math.max(0, (n >> 16) - 40), g = Math.max(0, ((n >> 8) & 255) - 40), b = Math.max(0, (n & 255) - 40)
     return `rgb(${r},${g},${b})`
 }
+const c8 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v)
+// nudge a hex colour toward light (d>0) or dark (d<0), all channels together
+const tone = (hex, d) => {
+    const n = parseInt(hex.slice(1), 16)
+    return `rgb(${c8((n >> 16) + d)},${c8(((n >> 8) & 255) + d)},${c8((n & 255) + d)})`
+}
+// a lit bevel along the top/left and a shadow bevel along the bottom/right —
+// the cheap trick that makes a flat fill read as a cut block catching light.
+function bevel(ctx, x, y, w, h, light, dark) {
+    ctx.fillStyle = light
+    ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h)
+    ctx.fillStyle = dark
+    ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x + w - 1, y, 1, h)
+}
+// deterministic speckle — mineral grain, so stone never reads as a flat fill
+function grain(ctx, x, y, w, h, seed, n) {
+    for (let i = 0; i < n; i++) {
+        const px = x + Math.floor(hash(seed * 3.1 + i * 7.7) * (w - 1))
+        const py = y + Math.floor(hash(seed * 5.3 + i * 13.1) * (h - 1))
+        ctx.fillStyle = hash(seed + i * 2.9) > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.12)'
+        ctx.fillRect(px, py, 2, 1)
+    }
+}
+// one cut brick: jittered tone, grain, a bevel, and an occasional hairline crack
+function brickFace(ctx, x, y, w, h, seed, base) {
+    ctx.fillStyle = tone(base, Math.round((hash(seed) - 0.5) * 14))
+    ctx.fillRect(x, y, w, h)
+    grain(ctx, x, y, w, h, seed, Math.max(3, Math.floor((w * h) / 70)))
+    bevel(ctx, x, y, w, h, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.24)')
+    if (hash(seed * 1.7) > 0.8 && h > 8) {
+        ctx.strokeStyle = 'rgba(0,0,0,0.30)'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        const cx = x + 2 + Math.floor(hash(seed * 2.3) * Math.max(1, w - 5))
+        ctx.moveTo(cx, y + 1)
+        ctx.lineTo(cx + Math.round(hash(seed * 4.1) * 4 - 2), y + h - 1)
+        ctx.stroke()
+    }
+}
 
 // ---- pose tables --------------------------------------------------------------
 // One frame = joint targets, angles measured from straight-down, + toward the
@@ -166,13 +205,19 @@ export function poseOf(name, k = 0) {
 }
 
 // ---- tiles --------------------------------------------------------------------
-function floorLedge(ctx, x, y, top, front, crack) {
-    ctx.fillStyle = top
-    ctx.fillRect(x, y, T, 4)
+function floorLedge(ctx, x, y, top, front, crack, seed) {
+    // a lit wearing-surface, a shaded front face hung below it, and a cast
+    // shadow the lip throws onto the wall behind — this is what reads as depth.
+    ctx.fillStyle = 'rgba(0,0,0,0.28)'
+    ctx.fillRect(x + 1, y + 4, T, 3)
+    brickFace(ctx, x, y, T, 4, seed || 1, top)
     ctx.fillStyle = front
     ctx.fillRect(x, y + 4, T, T - 4)
+    grain(ctx, x, y + 5, T, T - 5, (seed || 1) * 7.3, 6)
     ctx.fillStyle = 'rgba(0,0,0,0.35)'
     ctx.fillRect(x, y + 4, T, 3)
+    ctx.fillStyle = 'rgba(255,255,255,0.06)'
+    ctx.fillRect(x, y + T - 1, T, 1)
     if (crack) {
         ctx.strokeStyle = 'rgba(0,0,0,0.45)'
         ctx.lineWidth = 1
@@ -185,80 +230,137 @@ function floorLedge(ctx, x, y, top, front, crack) {
 
 function stone(ctx, c, r, code, g) {
     const x = c * T, y = r * T
-    const h = hash(c * 31 + r * 7)
+    const seed = c * 31 + r * 7
     if (code === SOLID) {
-        ctx.fillStyle = h > 0.5 ? '#4a4a5e' : '#42425a'
+        // running-bond masonry: mortar bed + alternately offset perpends, each
+        // brick jittered, bevelled and grained — no flat grey fields anywhere.
+        ctx.fillStyle = '#26263a'
         ctx.fillRect(x, y, T, T)
-        ctx.fillStyle = '#34344a'
-        ctx.fillRect(x, y + T - 3, T, 3)
-        ctx.fillRect(x + ((c + r) % 2 ? T - 3 : 0), y, 3, T)
-        ctx.fillStyle = '#585872'
-        ctx.fillRect(x + 2, y + 2, T - 4, 2)
-        for (let i = 0; i < 3; i++) {
-            const hx = Math.floor(hash(c * 13 + r * 17 + i * 3) * (T - 6))
-            const hy = Math.floor(hash(c * 7 + r * 23 + i) * (T - 8))
-            ctx.fillStyle = 'rgba(255,255,255,0.04)'
-            ctx.fillRect(x + hx, y + hy, 3, 2)
-        }
+        const off = (r & 1) ? Math.floor(T / 2) : 0
+        brickFace(ctx, x + 1, y + 1, off ? off - 2 : T - 2, T - 3, seed + 1, '#45455c')
+        if (off) brickFace(ctx, x + off + 1, y + 1, T - off - 2, T - 3, seed + 2, '#45455c')
     } else if (code === PLATFORM) {
-        floorLedge(ctx, x, y, '#70708a', '#50506a')
+        floorLedge(ctx, x, y, '#6e6e88', '#4c4c66', false, seed)
     } else if (code === LOOSE) {
-        floorLedge(ctx, x, y, '#7d6b50', '#5c4c38', true)
+        floorLedge(ctx, x, y, '#7d6b50', '#5c4c38', true, seed)
     } else if (code === SPIKE) {
-        ctx.fillStyle = '#20202e'
+        ctx.fillStyle = '#191926'
         ctx.fillRect(x, y + T - 6, T, 6)
-        ctx.fillStyle = '#b8c0cc'
+        grain(ctx, x, y + T - 6, T, 6, seed, 4)
         for (let i = 0; i < 4; i++) {
             const sx = x + 2 + i * 8
+            ctx.fillStyle = '#6f7684'
             ctx.beginPath()
-            ctx.moveTo(sx, y + T - 5)
-            ctx.lineTo(sx + 3, y + T - 23)
-            ctx.lineTo(sx + 6, y + T - 5)
-            ctx.fill()
+            ctx.moveTo(sx, y + T - 5); ctx.lineTo(sx + 3, y + T - 23); ctx.lineTo(sx + 6, y + T - 5)
+            ctx.closePath(); ctx.fill()
+            ctx.fillStyle = '#cdd3de'
+            ctx.beginPath()
+            ctx.moveTo(sx + 1, y + T - 5); ctx.lineTo(sx + 3, y + T - 22); ctx.lineTo(sx + 3, y + T - 5)
+            ctx.closePath(); ctx.fill()
         }
     } else if (code === RAISE) {
         ctx.fillStyle = '#3c3c50'
         ctx.fillRect(x + 3, y + T - 10, T - 6, 10)
+        bevel(ctx, x + 3, y + T - 10, T - 6, 10, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.30)')
         ctx.fillStyle = '#e8b04a'
         ctx.fillRect(x + 6, y + T - 9, T - 12, 4)
+        ctx.fillStyle = '#fff0b0'
+        ctx.fillRect(x + 6, y + T - 9, T - 12, 1)
     } else if (code === DROP) {
         ctx.fillStyle = '#3c3c50'
         ctx.fillRect(x + 3, y + T - 10, T - 6, 10)
+        bevel(ctx, x + 3, y + T - 10, T - 6, 10, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.30)')
         ctx.fillStyle = '#c04040'
         ctx.fillRect(x + 6, y + T - 9, T - 12, 4)
+        ctx.fillStyle = '#ff9090'
+        ctx.fillRect(x + 6, y + T - 9, T - 12, 1)
     } else if (code === EXITPLATE) {
         const pressed = g.exitOpen
         ctx.fillStyle = '#3c3c50'
         ctx.fillRect(x + 2, y + T - 8, T - 4, 8)
+        bevel(ctx, x + 2, y + T - 8, T - 4, 8, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.30)')
         ctx.fillStyle = pressed ? '#e8d060' : '#8a8aa0'
         ctx.fillRect(x + 5, y + T - (pressed ? 4 : 7), T - 10, 3)
+        if (pressed) { ctx.fillStyle = '#fff0b0'; ctx.fillRect(x + 5, y + T - 4, T - 10, 1) }
     } else if (code === EXIT) {
-        ctx.fillStyle = '#15151f'
+        ctx.fillStyle = '#12121c'
         ctx.fillRect(x + 2, y - T, T - 4, T * 2)
-        ctx.fillStyle = g.exitOpen ? '#e8d060' : '#4a3a22'
+        const door = g.exitOpen ? '#e8d060' : '#4a3a22'
+        ctx.fillStyle = door
         ctx.fillRect(x + 4, y - T + 4, T - 8, T * 2 - 6)
+        ctx.fillStyle = 'rgba(0,0,0,0.30)'
+        ctx.fillRect(x + 4 + (T - 8) / 2 - 1, y - T + 4, 2, T * 2 - 6)
+        ctx.fillStyle = g.exitOpen ? '#fff0b0' : '#6a5230'
+        ctx.fillRect(x + 4, y - T + 4, T - 8, 2)
         if (g.exitOpen) {
             ctx.fillStyle = 'rgba(255,220,120,0.25)'
             ctx.fillRect(x + 4, y - T + 4, T - 8, T * 2 - 6)
         }
         ctx.fillStyle = '#2e2e42'
         ctx.fillRect(x + 2, y - T, T - 4, 4)
+        ctx.fillStyle = '#545468'
+        ctx.fillRect(x + 2, y - T, T - 4, 1)
     }
 }
 
-// ---- palace dressing: pale walls, pillars, arched windows, tapestries --------
+// ---- palace dressing: courses of pale stone, light, pillars, arched windows --
 function palaceWall(ctx, c0, decos, tick) {
     for (let rm = 0; rm < decos.length; rm++) {
         const base = (c0 / RW + rm) * RW * T
         const d = decos[rm]
-        ctx.fillStyle = '#8f8f7a'
-        ctx.fillRect(base + d.pillar * T - 7, 24, 14, VH - 24 - 8)
-        ctx.fillStyle = '#a8a890'
-        ctx.fillRect(base + d.pillar * T - 7, 24, 5, VH - 24 - 8)
+        // pale ashlar wall with mortar coursing and per-block tone, cool at the
+        // top warming toward the floor
+        const wallGrad = ctx.createLinearGradient(0, 24, 0, VH)
+        wallGrad.addColorStop(0, '#8a8a76')
+        wallGrad.addColorStop(1, '#9c9c86')
+        ctx.fillStyle = wallGrad
+        ctx.fillRect(base, 24, RW * T, VH - 24)
+        for (let ry = 24; ry < VH - 12; ry += 16) {
+            ctx.fillStyle = 'rgba(0,0,0,0.16)'
+            ctx.fillRect(base, ry, RW * T, 1)
+            ctx.fillStyle = 'rgba(255,255,255,0.10)'
+            ctx.fillRect(base, ry + 1, RW * T, 1)
+            const jog = (((ry - 24) / 16) | 0) & 1
+            for (let bx = (jog ? 16 : 0); bx < RW * T; bx += 32) {
+                ctx.fillStyle = 'rgba(0,0,0,0.14)'
+                ctx.fillRect(base + bx, ry, 1, 16)
+                ctx.fillStyle = `rgba(0,0,0,${(0.05 + hash(rm * 9 + bx + ry) * 0.08).toFixed(2)})`
+                ctx.fillRect(base + bx + 1, ry + 1, 30, 15)
+            }
+        }
+        // a gilded string course and a tiled floor line ground the wall
+        ctx.fillStyle = '#c8a050'
+        ctx.fillRect(base, 96, RW * T, 2)
         ctx.fillStyle = '#6e6e5c'
-        ctx.fillRect(base + d.pillar * T - 10, 20, 20, 8)
-        ctx.fillRect(base + d.pillar * T - 10, VH - 12, 20, 8)
+        ctx.fillRect(base, VH - 12, RW * T, 12)
+        for (let tx = 0; tx < RW * T; tx += 20) {
+            ctx.fillStyle = tx % 40 ? '#5e5e4c' : '#7a7a66'
+            ctx.fillRect(base + tx, VH - 12, 19, 12)
+            ctx.fillStyle = 'rgba(255,255,255,0.06)'
+            ctx.fillRect(base + tx, VH - 12, 19, 1)
+        }
+        // fluted pillar catching a warm rim of torchlight
+        const px = base + d.pillar * T
+        ctx.fillStyle = '#6e6e5c'
+        ctx.fillRect(px - 10, 20, 20, 8)
+        ctx.fillRect(px - 10, VH - 12, 20, 8)
+        ctx.fillStyle = '#8f8f7a'
+        ctx.fillRect(px - 7, 24, 14, VH - 24 - 8)
+        ctx.fillStyle = '#a8a890'
+        ctx.fillRect(px - 7, 24, 5, VH - 24 - 8)
+        ctx.fillStyle = '#5c5c4a'
+        ctx.fillRect(px + 4, 24, 3, VH - 24 - 8)
+        for (let fl = 30; fl < VH - 16; fl += 10) {
+            ctx.fillStyle = 'rgba(0,0,0,0.18)'
+            ctx.fillRect(px - 3, fl, 1, 7)
+            ctx.fillRect(px + 1, fl, 1, 7)
+        }
+        ctx.fillStyle = '#d8c078'
+        ctx.fillRect(px - 10, 26, 20, 2)
+        // arched window with a moonlit sky pane
         const wx = base + d.window * T + 8
+        ctx.fillStyle = '#5c5c4a'
+        ctx.fillRect(wx - 3, 40, 22, 46)
         ctx.fillStyle = '#1b1f33'
         ctx.beginPath()
         ctx.moveTo(wx, 84); ctx.lineTo(wx, 44)
@@ -269,13 +371,22 @@ function palaceWall(ctx, c0, decos, tick) {
         const moon = 0.4 + 0.2 * Math.sin(tick * 0.02 + rm)
         ctx.fillStyle = `rgba(120,140,220,${moon.toFixed(2)})`
         ctx.fillRect(wx + 2, 60, 12, 22)
+        ctx.fillStyle = '#c8a050'
+        ctx.fillRect(wx + 7, 40, 2, 44)
+        // tapestry with a woven motif and a fringed, swaying hem
         const tx = base + d.tapestry * T + 4
+        ctx.fillStyle = '#3f1830'
+        ctx.fillRect(tx - 2, 28, 28, 54)
         ctx.fillStyle = '#5a2540'
         ctx.fillRect(tx, 30, 24, 52)
         ctx.fillStyle = '#7a3558'
         ctx.fillRect(tx + 3, 34, 18, 44)
         ctx.fillStyle = '#c8a050'
         ctx.fillRect(tx + 8, 42, 8, 20)
+        ctx.fillStyle = '#e8d060'
+        ctx.fillRect(tx + 10, 46, 4, 12)
+        ctx.fillStyle = '#3f1830'
+        ctx.fillRect(tx - 2, 28, 28, 3)
         ctx.fillStyle = '#5a2540'
         for (let i = 0; i < 3; i++) ctx.fillRect(tx + 3 + i * 8, 82, 4, 6 + Math.sin(tick * 0.1 + i + rm) * 1.5)
     }
@@ -287,6 +398,21 @@ function lightPool(ctx, x, y, fl) {
     grad.addColorStop(1, 'rgba(255,150,60,0)')
     ctx.fillStyle = grad
     ctx.fillRect(x - 110, y - 110, 220, 220)
+}
+
+// a soft contact shadow that grounds whoever stands on the floor
+function groundShadow(ctx, x, y, w) {
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.scale(1, 0.32)
+    const gr = ctx.createRadialGradient(0, 0, 1, 0, 0, w)
+    gr.addColorStop(0, 'rgba(0,0,0,0.32)')
+    gr.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.fillStyle = gr
+    ctx.beginPath()
+    ctx.arc(0, 0, w, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
 }
 
 function drawTorch(ctx, c, r, tick) {
@@ -568,6 +694,27 @@ function figure(ctx, st, p, opts) {
     ctx.moveTo(-3, -hip - 4)
     ctx.lineTo(5, -hip - 10)
     ctx.stroke()
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(-3, -hip - 2)
+    ctx.lineTo(5, -hip - 8)
+    ctx.stroke()
+
+    // torso shading: rim light down the facing edge, shadow up the back, so the
+    // body reads as a lit cylinder rather than a flat stroke
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(3, -hip - 2)
+    ctx.lineTo(5, -head + 11)
+    ctx.stroke()
+    ctx.strokeStyle = 'rgba(0,0,0,0.20)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.moveTo(-2, -hip - 1)
+    ctx.lineTo(0, -head + 11)
+    ctx.stroke()
 
     // back arm
     limb(ctx, 2, -head + 12, pose.armB, armLen, 4, shade(cloth))
@@ -607,6 +754,13 @@ function figure(ctx, st, p, opts) {
         ctx.moveTo(-4, -head + 3)
         ctx.quadraticCurveTo(-12, -head + 6 + Math.sin(t * 0.2) * 2, -14, -head + 12)
         ctx.stroke()
+        // face lighting: lit brow, shaded back of the head, and an eye
+        ctx.fillStyle = 'rgba(255,255,255,0.16)'
+        ctx.fillRect(4, -head + 1, 4, 1)
+        ctx.fillStyle = 'rgba(0,0,0,0.20)'
+        ctx.fillRect(-2, -head + 2, 2, 6)
+        ctx.fillStyle = '#2a2018'
+        ctx.fillRect(5, -head + 4, 1.5, 1.5)
     }
     if (opts.hat) {
         ctx.fillStyle = '#1a1026'
@@ -808,6 +962,7 @@ export function drawScene(ctx, g, opts = {}) {
             : gd.recoil > 0 ? 'recoil' : gd.engaged ? 'ready' : gd.anim === 'advance' ? 'walk' : 'patrol'
         const swing = gd.wind > 0 && gd.wind <= gd.windT - CFG.guardHit0 ? style.windT - gd.wind : 0
         const frame = gd.wind > 0 ? Math.floor((gd.windT - gd.wind) / 6) : Math.floor(tick / 8)
+        groundShadow(ctx, gd.x, gd.y + 1, 15 * (look.wide || 1))
         figure(ctx, st === 'patrol' ? 'walk' : st, { x: gd.x, y: gd.y, facing: gd.dir || -1, onGround: true, hang: null, crouch: false },
             {
                 tick: tick + gd.id * 13, frame, skin: look.skin, cloth: look.cloth, trim: look.trim,
@@ -848,6 +1003,10 @@ export function drawScene(ctx, g, opts = {}) {
             swing: p.atk, hurt: p.hurtT, die: dying ? p.dieT : 0,
             prog: p.climb / CFG.climbT, crouch: p.crouch,
             frame: st.startsWith('die') ? Math.min(2, Math.floor(p.dieT / 12)) : gaitFrame,
+        }
+        if (p.onGround) {
+            const sc2 = Math.floor(p.x / T), sr2 = Math.floor(p.y / T) + 1
+            if (sr2 < lvl.H && lvl.grid[sr2 * lvl.W + sc2] !== 0) groundShadow(ctx, p.x, p.y + 1, 15)
         }
         if (st === 'die_slice') {
             // the jaws' mark: two halves parting where the blade met

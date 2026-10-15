@@ -752,6 +752,40 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         ok('S5: drawn-open agrees with blocks() at every gate value', agree)
     }
     {
+        // guards escort you between rooms: leave a live ground guard behind and
+        // it walks through the doorway after you, then re-homes to your room
+        const g = makeGame(1)
+        const gd = g.guards.find((q) => q.room === 0 && !q.dead)
+        ok('S5: the port level starts with a guard on the ground floor', !!gd && Math.floor(gd.y / T) === GROUND)
+        setGround(g, 1.5 * T, 8 * T)
+        step(g, {})                                  // in room 0, guard at peace
+        ok('S5: a guard at peace in your room does not follow yet', gd.follow === false)
+        g.p.x = 11.5 * T                          // cross into room 1
+        step(g, {})
+        ok('S5: the moment you leave its room the guard takes up the chase', gd.follow === true)
+        let reached = gd.room
+        for (let t = 0; t < 400 && reached < 1; t++) { step(g, {}); reached = gd.room }
+        ok('S5: it really walks through the doorway into your room', reached === 1)
+        ok('S5: a follower is not pinned to its old patrol line',
+            gd.x > gd.patrol[1] * T)
+    }
+    {
+        // a follower stops at the lip of a shaft rather than walking into the void
+        const g = makeGame(4)                            // L5 room 0 floor opens a shaft at cols 3-4
+        let shaft = -1
+        for (let c = 0; c < RW; c++) if (g.level.grid[8 * g.level.W + c] === 0) { shaft = c; break }
+        ok('S5: level 5 opens a shaft on the ground floor', shaft > 0)
+        const gd = mkGuard((shaft - 1 + 0.5) * T, 8 * T, 0)
+        g.guards.push(gd)
+        gd.follow = true
+        g.room = 0
+        setGround(g, (RW + 1.5) * T, 8 * T)            // prince across the shaft, in room 1
+        let maxX = gd.x
+        for (let t = 0; t < 200; t++) { g.room = 1; step(g, {}); maxX = Math.max(maxX, gd.x) }
+        ok('S5: a follower halts at the shaft lip instead of falling in',
+            maxX < shaft * T + CFG.HW + 1)
+    }
+    {
         const xsrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
         ok('S5: the attract banner shows one message at a time under the HUD',
             !/fillRect\(0, VH \/ 2 - 34/.test(xsrc) && /bandTop = 22/.test(xsrc))
