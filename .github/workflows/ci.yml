@@ -280,6 +280,13 @@ jobs:
       # Mutant it: exits opening early turns red.
       - run: npm run lint:smash
       - run: npm run smashcheck -- --mutate
+      # OUT RUN: segment-projection perspective + hill crests, the merge-back fork
+      # lattice (ids 1-15, five goals), the checkpoint-clock economy, LOW/HIGH gear
+      # ceilings, centrifugal force, the traffic-bog vs roadside-flip crash rules, a
+      # deathless five-stage autopilot win, and the slack rule (re-wins with 3s off
+      # every checkpoint, dies at 4). Four mutants must die — all in Node.
+      - run: npm run lint:outrun
+      - run: npm run outruncheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
