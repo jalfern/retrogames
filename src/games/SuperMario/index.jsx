@@ -2196,7 +2196,7 @@ const SuperMarioGame = () => {
 
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SUPER MARIO BROS')} onResume={handleResume} />}
             </div>
-            {ui.screen === 'none' && <VirtualControls secondAction={{ code: 'KeyF', label: 'F' }} />}
+            {ui.screen === 'none' && <VirtualControls />}
         </div>
     )
 }

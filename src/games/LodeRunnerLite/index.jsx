@@ -542,7 +542,7 @@ const LodeRunnerLiteGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'LODE RUNNER-LITE')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: 'DIG', code: 'ArrowDown' }} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

@@ -509,7 +509,6 @@ const MinesweeperGame = () => {
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'MINESWEEPER')} onResume={handleResume} />}
             <VirtualControls
                 visible={play && !paused}
-                secondAction={{ label: '⚑', code: 'KeyB' }}
             />
         </div>
     )

@@ -328,7 +328,7 @@ const LunarLanderGame = () => {
                 <span>FUEL <span ref={setHud('fuel')} className="text-[#ffd76b]">100</span></span>
                 <span>MULT <span ref={setHud('mult')} className="text-[#8fff9f]">×1</span></span>
             </div>
-            <VirtualControls visible={screen === 'play' && !paused} secondAction={{ label: 'ZOOM', code: 'KeyX' }} />
+            <VirtualControls visible={screen === 'play' && !paused} />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>
     )

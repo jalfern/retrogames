@@ -407,7 +407,7 @@ const SimCityMinGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SIMCITY-MIN')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: 'TOOL', code: 'KeyT' }} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

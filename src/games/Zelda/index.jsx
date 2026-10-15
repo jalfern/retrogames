@@ -292,7 +292,7 @@ export default function Zelda() {
     return (
         <div className="flex flex-col items-center justify-center w-full h-full bg-black select-none">
             <canvas ref={canvasRef} width={W} height={H} className="max-w-full max-h-full" style={{ imageRendering: 'pixelated' }} />
-            <VirtualControls visible={!paused} secondAction={{ label: 'B', code: 'KeyX' }} />
+            <VirtualControls visible={!paused} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'ZELDA')} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
         </div>
     )

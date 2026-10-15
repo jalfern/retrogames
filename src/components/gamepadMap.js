@@ -67,3 +67,31 @@ export function gamepadToCodes(pad, opts = {}, state = { engaged: false, lastCod
 
     return { codes, state }
 }
+
+// --- Per-game pad declarations (the optional `pad` field in src/config/games.js) ---
+//
+// Shape: { layout: 'dpad' | 'stick' | 'stick+dpad', buttons: [{ label, code }], analog: bool }
+// `buttons[0]` is the B (second-action) button. These pure helpers are shared by
+// the GamepadBridge, VirtualControls and vpadcheck so the registry is the single
+// source of truth for what the B button does and says.
+
+const PAD_LAYOUTS = ['dpad', 'stick', 'stick+dpad']
+
+// True when `pad` is a well-formed declaration (or null/undefined, which is a
+// legitimate "no pad" answer and is accepted by the callers, not here).
+export function validPad(pad) {
+    if (!pad || typeof pad !== 'object') return false
+    if (!PAD_LAYOUTS.includes(pad.layout)) return false
+    if (!Array.isArray(pad.buttons)) return false
+    for (const b of pad.buttons) {
+        if (!b || typeof b.label !== 'string' || typeof b.code !== 'string') return false
+    }
+    if (pad.analog !== undefined && typeof pad.analog !== 'boolean') return false
+    return true
+}
+
+// The B (second-action) button of a pad declaration, or null when there is none.
+export function padButton(pad) {
+    if (!validPad(pad) || !pad.buttons.length) return null
+    return pad.buttons[0]
+}

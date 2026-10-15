@@ -523,7 +523,6 @@ const SmashTVGame = () => {
             </div>
             <VirtualControls
                 visible={screen === 'play' && !paused}
-                secondAction={{ label: 'BOMB', code: 'KeyB' }}
             />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>

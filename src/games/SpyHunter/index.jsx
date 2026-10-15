@@ -491,7 +491,7 @@ const SpyHunterGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SPY HUNTER')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: 'MSL', code: 'KeyX' }} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

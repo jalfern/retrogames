@@ -1294,7 +1294,6 @@ const IronKeepGame = () => {
             </div>
             <VirtualControls
                 visible={screen === 'play' || screen === 'clear'}
-                secondAction={{ label: 'B', code: 'ShiftLeft' }}
             />
         </div>
     )
