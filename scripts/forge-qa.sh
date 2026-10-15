@@ -63,10 +63,21 @@ PROMPT="You are THE QA MASTER on node $NODE. Open scripts/FORGE-QA.md and execut
 # far was started by the warden (a live parent), never by launchd itself.
 # So: launchd must run opencode IN THE FOREGROUND (--foreground); the warden
 # calls this script plain and gets the old non-blocking behaviour.
+#
+# HARD CAP. "Time-box yourself to 60 minutes" is only a sentence: the model
+# has no clock, and on 2026-10-14 an MBP session ran 2 h without pushing. So a
+# plain watchdog kills the session at QA_CAP_MIN (default 75) minutes. Work it
+# already pushed survives (resume-before-claim, FORGE-QA.md step 2); work it
+# never pushed is what the cap costs, so the playbook says push as you go.
+CAP_MIN=${QA_CAP_MIN:-75}
 if (( FG )); then
-    echo "$(date): FOREGROUND $NODE session pid=$$ log=$LOG" >> "$LOG"
-    /opt/homebrew/bin/opencode run --auto --model "$MODEL" "$PROMPT" >> "$LOG" 2>&1
-    STATUS=$?
+    echo "$(date): FOREGROUND $NODE session pid=$$ log=$LOG cap=${CAP_MIN}m" >> "$LOG"
+    /opt/homebrew/bin/opencode run --auto --model "$MODEL" "$PROMPT" >> "$LOG" 2>&1 &
+    OC=$!
+    ( sleep $(( CAP_MIN * 60 )); kill -0 $OC 2>/dev/null && echo "$(date): HARD CAP ${CAP_MIN}m — killing the session" >> "$LOG" && kill $OC ) &
+    WD=$!
+    wait $OC; STATUS=$?
+    kill $WD 2>/dev/null
     echo "$(date): session exit=$STATUS" >> "$LOG"
     exit $STATUS
 fi
