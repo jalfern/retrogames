@@ -16,7 +16,8 @@
 #             session is already running) repoints last.log at a stub.
 #   QA·MINI  (model via the :18000 tunnel) — the session using omlxmini/...
 #   QA·MBP   (model via the :18001 tunnel) — the session using omlxmbp/...
-#   WARDEN   — the newest warden tick log.
+#   WARDEN   — the newest warden tick log; it also resizes this column so
+#             idle machines shrink to 3 rows and busy ones get the space.
 # Each lane header says whether that machine's model server answers (up/DOWN),
 # so a sleeping MacBook shows as DOWN instead of a session that looks busy.
 # Every session runs on the Studio; the machine named is where its model runs.
@@ -43,44 +44,106 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
     exec tmux attach -t "$SESSION"
 fi
 
-# lane_pane LABEL PORT: show the last lines of the log that the process
-# matching "$P1$P2" (set per pane, see above) has open, under a header saying
-# whether the model server on 127.0.0.1:PORT answers at all (any HTTP code,
-# even 401, means up).
+# The lane pane. Per pane, from the environment: L (label), PORT (that
+# machine's oMLX, via its tunnel), PROV (its provider in opencode.json, for
+# the API key) and P1/P2 (the session pattern in halves). Header line, live
+# from oMLX's own dashboard feed (/admin/api/activity, API key as Bearer):
+#   QA·MBP  up  gen 11.4 t/s  ctx 31k  ▃▅▇▆▄▅▆      (generating)
+#   QA·MBP  up  prefill 62% @ 150 t/s               (reading the prompt)
+#   QA·MBP  DOWN                                    (no answer: asleep/off)
+# The sparkline is gen t/s sampled every 5 s (last 2 minutes). "ctx" is the
+# prompt size: watch it grow and the t/s fall. An oMLX without that feed
+# still shows up/DOWN.
 lane_pane() {
-    cat <<PANE
+    cat <<'PANE'
+G=$'\e[32m' R=$'\e[1;31m' Y=$'\e[33m' C=$'\e[36m' D=$'\e[2m' B=$'\e[1m' N=$'\e[0m'
+bars=(▁ ▂ ▃ ▄ ▅ ▆ ▇ █); hist=(); integer i v max
+key=$(jq -r ".provider.$PROV.options.apiKey // empty" ~/.config/opencode/opencode.json 2>/dev/null)
 while true; do
-    clear
-    code=\$(curl -s -o /dev/null -m 2 -w '%{http_code}' http://127.0.0.1:$2/v1/models)
-    [[ "\$code" == 000 ]] && host=DOWN || host=up
-    pid=\$(pgrep -f "\$P1\$P2" | head -1)
-    if [[ -z "\$pid" ]]; then
-        echo "$1 [model \$host]: idle (no process)"
+    rows=("${(@f)$(curl -s -m 2 -H "Authorization: Bearer $key" "http://127.0.0.1:$PORT/admin/api/activity" \
+        | jq -r '.active_models.models[]? | (.generating[]? | "G \(.tokens_per_second|floor) \(.prompt_tokens // 0)"),
+                 (.prefilling[]? | "P \(.processed // 0) \(.total // 0) \(.speed // 0 | floor)")' 2>/dev/null)}")
+    code=$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$PORT/v1/models")
+    if [[ "$code" == 000 ]]; then state="${R}DOWN${N}"; hist=()
     else
-        log=\$(lsof -p "\$pid" 2>/dev/null | awk '/\/tmp\/forge\/.*\.log/ {print \$NF; exit}')
-        echo "$1 [model \$host]: pid \$pid, up \$(ps -o etime= -p \$pid | tr -d ' '), \${log:-no log}"
-        echo "----"
-        [[ -n "\$log" ]] && tail -n \$(( \$(tput lines) - 3 )) "\$log" | cut -c1-\$(tput cols)
+        state="${G}up${N}"; g=""; p=""
+        for r in $rows; do [[ $r == G* && -z $g ]] && g=$r; [[ $r == P* && -z $p ]] && p=$r; done
+        n=${#${(M)rows:#[GP]*}}; more=""; (( n > 1 )) && more="  ${D}(+$(( n - 1 )) more)${N}"
+        if [[ -n $g ]]; then
+            set -- ${=g}; hist+=($2); (( ${#hist} > 24 )) && hist=(${hist[2,-1]})
+            state+="  ${Y}gen $2 t/s${N}  ${D}ctx $(( $3 / 1000 ))k${N}$more"
+        elif [[ -n $p ]]; then
+            set -- ${=p}; pct=0; (( $3 > 0 )) && (( pct = 100 * $2 / $3 ))
+            state+="  ${C}prefill ${pct}% @ $4 t/s${N}$more"
+        else state+="  ${D}idle${N}"; fi
+    fi
+    spark=""; max=1
+    for v in $hist; do (( v > max )) && max=$v; done
+    for v in $hist; do (( i = v * 7 / max + 1 )); spark+=${bars[$i]}; done
+    pid=$(pgrep -f "$P1$P2" | head -1)
+    clear
+    print -r -- "${B}$L${N}  $state  ${C}${spark}${N}"
+    if [[ -z "$pid" ]]; then
+        print -r -- "${D}no session${N}"
+    else
+        log=$(lsof -p "$pid" 2>/dev/null | awk '/\/tmp\/forge\/.*\.log/ {print $NF; exit}')
+        print -r -- "${D}pid $pid · up $(ps -o etime= -p $pid | tr -d ' ') · ${log:-no log}${N}"
+        [[ -n "$log" ]] && tail -n $(( $(tput lines) - 3 )) "$log" | cut -c1-$(tput cols)
     fi
     sleep 5
 done
 PANE
 }
 
-WARDEN_PANE='while true; do
+# WARDEN also owns the layout of the left column. Every 5 s it checks which
+# machines have a live session; when that changes it resizes the column:
+# an idle machine shrinks to 3 rows, the warden itself to 4, and the busy
+# machines share the rest equally. (Lane patterns arrive in halves through
+# the environment, the same as the lane panes, so this pane never matches.)
+warden_pane() {
+    cat <<'PANE'
+live() { pgrep -f "$1$2" >/dev/null && echo 1 || echo 0; }
+last=""
+while true; do
     clear
     w=$(ls -t /tmp/forge/warden-2*.log 2>/dev/null | head -1)
-    echo "WARDEN: ${w:-no log yet}"; echo "----"
-    [[ -n "$w" ]] && tail -n $(( $(tput lines) - 3 )) "$w"
+    echo "WARDEN ${w##*/}"
+    [[ -n "$w" ]] && tail -n $(( $(tput lines) - 2 )) "$w" | cut -c1-$(tput cols)
+    state="$(live "$B1" "$B2")$(live "$M1" "$M2")$(live "$Q1" "$Q2")"
+    if [[ "$state" != "$last" ]]; then
+        last=$state
+        # left-column panes, top to bottom: builder, mini, mbp, warden
+        cols=("${(@f)$(tmux list-panes -F '#{pane_left} #{pane_top} #{pane_id} #{pane_height}' | awk '$1==0' | sort -n -k2)}")
+        if (( ${#cols} == 4 )); then
+            ids=(); total=3
+            for c in "${cols[@]}"; do set -- ${=c}; ids+=($3); total=$(( total + $4 )); done
+            busy=$(( ${state[1]} + ${state[2]} + ${state[3]} ))
+            free=$(( total - 3 - 4 - 3 * (3 - busy) ))
+            for i in 1 2 3; do
+                if (( ${state[$i]} )); then h=$(( free / busy ))
+                elif (( busy == 0 && i == 1 )); then h=$(( free + 3 ))
+                else h=3; fi
+                tmux resize-pane -t "${ids[$i]}" -y $h
+            done
+        fi
+    fi
     sleep 5
-done'
+done
+PANE
+}
 
-# Left column: WARDEN gets a fixed 6 lines at the bottom (it rarely says
-# more); the three machine panes split the rest equally.
-tmux new-session -d -s "$SESSION" -e P1='opencode run.*THE' -e P2=' FORGE' zsh -c "$(lane_pane BUILDER 8000)"
-tmux split-window -v -l 6 -t "$SESSION:0.0" zsh -c "$WARDEN_PANE"
-tmux split-window -v -l 66% -t "$SESSION:0.0" -e P1='opencode run.*omlx' -e P2='mini' zsh -c "$(lane_pane QA·MINI 18000)"
-tmux split-window -v -l 50% -t "$SESSION:0.1" -e P1='opencode run.*omlx' -e P2='mbp' zsh -c "$(lane_pane QA·MBP 18001)"
+# Left column, top to bottom: BUILDER, QA·MINI, QA·MBP, WARDEN (sizes are
+# set by the warden pane, above).
+LANE="$(lane_pane)"
+tmux new-session -d -s "$SESSION" -e L=BUILDER -e PORT=8000 -e PROV=omlx \
+    -e P1='opencode run.*THE' -e P2=' FORGE' zsh -c "$LANE"
+tmux split-window -v -l 4 -t "$SESSION:0.0" \
+    -e B1='opencode run.*THE' -e B2=' FORGE' -e M1='opencode run.*omlx' -e M2='mini' \
+    -e Q1='opencode run.*omlx' -e Q2='mbp' zsh -c "$(warden_pane)"
+tmux split-window -v -l 66% -t "$SESSION:0.0" -e L=QA·MINI -e PORT=18000 -e PROV=omlxmini \
+    -e P1='opencode run.*omlx' -e P2='mini' zsh -c "$LANE"
+tmux split-window -v -l 50% -t "$SESSION:0.1" -e L=QA·MBP -e PORT=18001 -e PROV=omlxmbp \
+    -e P1='opencode run.*omlx' -e P2='mbp' zsh -c "$LANE"
 # RETRO: a full-height pane on the right, 60% wide. `env -u TMUX` lets tmux
 # nest; -A attaches to "retro" if it exists, otherwise creates it in the repo.
 tmux split-window -h -f -l 60% -t "$SESSION" \
