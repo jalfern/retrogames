@@ -75,11 +75,12 @@ WARDEN_PANE='while true; do
     sleep 5
 done'
 
+# Left column: WARDEN gets a fixed 6 lines at the bottom (it rarely says
+# more); the three machine panes split the rest equally.
 tmux new-session -d -s "$SESSION" -e P1='opencode run.*THE' -e P2=' FORGE' zsh -c "$(lane_pane BUILDER 8000)"
-tmux split-window -v -t "$SESSION" -e P1='opencode run.*omlx' -e P2='mini' zsh -c "$(lane_pane QA·MINI 18000)"
-tmux split-window -v -t "$SESSION" -e P1='opencode run.*omlx' -e P2='mbp' zsh -c "$(lane_pane QA·MBP 18001)"
-tmux split-window -v -t "$SESSION" zsh -c "$WARDEN_PANE"
-tmux select-layout -t "$SESSION" even-vertical
+tmux split-window -v -l 6 -t "$SESSION:0.0" zsh -c "$WARDEN_PANE"
+tmux split-window -v -l 66% -t "$SESSION:0.0" -e P1='opencode run.*omlx' -e P2='mini' zsh -c "$(lane_pane QA·MINI 18000)"
+tmux split-window -v -l 50% -t "$SESSION:0.1" -e P1='opencode run.*omlx' -e P2='mbp' zsh -c "$(lane_pane QA·MBP 18001)"
 # RETRO: a full-height pane on the right, 60% wide. `env -u TMUX` lets tmux
 # nest; -A attaches to "retro" if it exists, otherwise creates it in the repo.
 tmux split-window -h -f -l 60% -t "$SESSION" \
