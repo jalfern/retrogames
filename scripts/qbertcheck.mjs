@@ -96,6 +96,23 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     r.check('chain scoring: 25/25/25 down, up 25 (chain 1), HELI-JUMP 100 (chain 2)', JSON.stringify(pts) === JSON.stringify([25, 25, 25, 25, 100]), JSON.stringify(pts))
 }
 {
+    // slow chain: the same climb as the heli pin, but the last two up-hops are
+    // separated by a long hesitation (well past the ~1s chain window) -> the
+    // up-chain resets, so the second up-hop scores a single, not the heli-jump 100
+    const gs = makeGame({ seed: 5 })
+    const pts = []
+    const doHop = (s) => {
+        clearEv(gs); play(gs, s); until(gs, () => !gs.player.hop)
+        pts.push(...clearEv(gs).filter((e) => e.t === 'points').map((e) => e.pts))
+    }
+    doHop({ dl: true }); doHop({ dl: true }); doHop({ dr: true }); doHop({ ur: true }) // 25,25,25,25 -> (2,1)
+    for (let i = 0; i < 90; i++) play(gs)   // stand well over the one-second window
+    r.check('the hesitation is real and the climb survives it (no death, no extra flip)', gs.player.dying === 0 && gs.flips === 4, `flips=${gs.flips} dying=${gs.player.dying}`)
+    doHop({ ur: true })   // up to (1,1): gap > window resets the chain -> SINGLE 25, not 100
+    r.check('a slow chain (gap past the ~1s window) scores a single, not the heli-jump 100',
+        JSON.stringify(pts) === JSON.stringify([25, 25, 25, 25, 25]), JSON.stringify(pts))
+}
+{
     // round trip: down (apex -> (1,0)), then back UP onto the apex you came from
     const gs = makeGame({ seed: 5 })
     const seq = [{ dl: true }, { ur: true }]

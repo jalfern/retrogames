@@ -26,6 +26,10 @@ export const CLEAR_BONUS = 1000
 export const CYCLE = 5
 export const ONE_UP_AT = 10000
 export const MAX_LIVES = 9
+// The original only chains the 25/50/100 ledger when consecutive hops land
+// within a short window (~1s). A hop landing later than this resets the up-chain
+// so a slow climb scores singles instead of building to the heli-jump 100.
+export const CHAIN_WINDOW = 60
 
 export const id = (r, c) => r * 8 + c
 export const rowOf = (i) => i >> 3
@@ -93,7 +97,7 @@ export function makeGame({ seed = 7, level = 1, lives = 3 } = {}) {
         ballTimer: 170, runnerTimer: 380, slickTimer: 520,
         nextSnakeAt: FIRST_SNAKE_FLIPS,
         flips: 0, snakesWanted: 1, pending: null, phase: 'play', phaseT: 0,
-        tick: 0, end: null, balloon: null, events: [],
+        tick: 0, lastLandTick: -1, end: null, balloon: null, events: [],
     }
     resetRound(gs)
     return gs
@@ -117,6 +121,7 @@ function resetRound(gs) {
     gs.player.hop = null; gs.player.ride = null; gs.player.dying = 0
     gs.player.invuln = 40; gs.player.upChain = 0; gs.player.lastCube = -1; gs.player.prevCube = -1
     gs.colors[id(0, 0)] = flipTarget(gs)
+    gs.lastLandTick = -1
     gs.pending = null; gs.phase = 'play'; gs.phaseT = 0
 }
 
@@ -146,14 +151,17 @@ function land(gs, tr, tc, up) {
     const cube = id(tr, tc)
     const to = cubeXY(tr, tc)
     gs.events.push({ t: 'land', cube, x: to.x, y: to.y })
-    if (up) p.upChain++
-    else p.upChain = 0
+    if (up) {
+        if (gs.lastLandTick >= 0 && gs.tick - gs.lastLandTick > CHAIN_WINDOW) p.upChain = 0
+        p.upChain++
+    } else p.upChain = 0
     let pts = 0
     if (up && p.prevCube === cube) pts = ROUNDTRIP
     else if (up && p.upChain >= 2) pts = HELI
     else pts = SINGLE
     addScore(gs, pts)
     gs.events.push({ t: 'points', pts, cube, x: to.x, y: to.y })
+    gs.lastLandTick = gs.tick
     flipCube(gs, cube)
     checkSnakeContact(gs)
     checkClear(gs)
