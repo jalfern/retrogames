@@ -1,25 +1,30 @@
-// PRINCE OF PERSIA — every pixel generated in code. The dungeon as the 1989
-// game looks at it: blue-grey cut stone with mortar grain, floors that read as
-// ledges (lit top, dark front face), torches that pool trembling light on the
-// wall, rooms without torches sunk into shadow. The prince is most of a floor
-// tall, weighted, eight-frame run, separate skid / crouch / land / hang / climb
-// / block poses, sword drawn only when there is steel to meet. The HUD is the
-// row of little flasks. Portcullis bars lift into the ceiling, chomper jaws
-// snap between pillars, loose tiles crack, stay and pile into rubble. No assets.
+// PRINCE OF PERSIA — every pixel generated in code (Stage 2: the look and the
+// animation). Blue-grey cut stone with mortar grain; floors read as ledges with
+// a lit top and a dark front face; torches flicker and tint the wall warm, and
+// rooms without one sink into shadow; palace levels are pale stone with pillars,
+// arched windows and tapestries. The prince is most of a floor tall, driven by
+// a pose table: an 8-frame run on two-segment legs with real knee bends, plus
+// separate start / skid / turn / jump-crouch / land / hang / climb / careful /
+// drink / draw / sheathe poses. Deaths carry weight per cause — impaled bodies
+// stay on the spikes, jaws slice, long falls crumple, the sword cuts you down.
+// Guards rank at a glance: turban colour by skill, the fat guard's wide frame,
+// the skeleton all bone, Jaffar in robes and a tall hat. No assets, no random.
 
 import { RW, H, T, SOLID, PLATFORM, LOOSE, SPIKE, GATE, RAISE, DROP, EXITPLATE, TORCH, EXIT, SWORD, POTION } from './levels.js'
-import { CFG, chompDown, clockText } from './sim.js'
+import { CFG, chompDown, clockText, GUARD_STYLE } from './sim.js'
 
 export const VW = RW * T
 export const VH = H * T
 
-// per-guard-type look: tunic, trim, skin, sword metal. Jaffar adds a robe + hat.
+// per-guard look: turban, tunic, trim, skin, sword metal — colour by skill.
 export const PALETTES = {
-    green: { cloth: '#2a5038', trim: '#70a080', skin: '#c89878', sword: '#c8ccd8' },
+    green: { turban: '#2e6b46', cloth: '#2a5038', trim: '#70a080', skin: '#c89878', sword: '#c8ccd8' },
+    red: { turban: '#a82828', cloth: '#7a2020', trim: '#d06050', skin: '#c0906c', sword: '#d8dce8' },
+    fat: { turban: '#8a5a2a', cloth: '#6a4420', trim: '#d0a860', skin: '#d8a880', sword: '#dce2ee', wide: 1.55 },
     fibula: { cloth: '#8a5a2a', trim: '#d0a860', skin: '#d8a880', sword: '#dce2ee' },
-    skeleton: { cloth: '#d8d8cc', trim: '#9a9a8c', skin: '#eceada', sword: '#b0b8c8' },
+    skeleton: { cloth: '#c9c9bb', trim: '#9a9a8c', skin: '#eceada', sword: '#b0b8c8', bone: true },
     shadow: { cloth: '#16161f', trim: '#3a3a4e', skin: '#5a5a6a', sword: '#525a6a' },
-    jaffar: { cloth: '#5a1f72', trim: '#d24ad2', skin: '#c89878', sword: '#e0d0ff', robe: true, hat: true },
+    jaffar: { turban: '#3a1050', cloth: '#5a1f72', trim: '#d24ad2', skin: '#c89878', sword: '#e0d0ff', robe: true, hat: true },
 }
 export const guardLook = (type, boss) => PALETTES[type] || PALETTES[boss ? 'jaffar' : 'green'] || PALETTES.green
 
@@ -33,8 +38,129 @@ const shade = (hex) => {
     return `rgb(${r},${g},${b})`
 }
 
+// ---- pose tables --------------------------------------------------------------
+// One frame = joint targets, angles measured from straight-down, + toward the
+// facing direction. Legs are two-segment: thigh (t) + knee bend (k). The run
+// table is a full 8-frame cycle; guards and the prince share the vocabulary.
+const RUN_T = [0.55, 0.38, 0.05, -0.28, -0.52, -0.30, 0.06, 0.34]
+const RUN_K = [0.08, 0.12, 0.42, 0.95, 1.15, 0.65, 0.18, 0.05]
+const ARM_R = [-0.42, -0.25, 0.0, 0.28, 0.42, 0.25, 0.0, -0.28]
+const runFrame = (k, sp) => ({
+    lean: 0.12 * sp, bob: -Math.abs(Math.sin(k / 8 * Math.PI * 2)) * (sp > 0.6 ? 3 : 1.5),
+    hip: 26 - (sp > 0.6 ? 1.5 : 0), tA: RUN_T[k] * sp, kA: RUN_K[k] * sp,
+    tB: RUN_T[(k + 4) % 8] * sp, kB: RUN_K[(k + 4) % 8] * sp, armB: ARM_R[k] * sp,
+})
+
+export const POSES = {
+    idle: [{ lean: 0, bob: 0, hip: 26, tA: 0.10, kA: 0.05, tB: -0.10, kB: 0.05, armB: -0.25 }],
+    walk: [0, 1, 2, 3, 4, 5, 6, 7].map((k) => runFrame(k, 0.55)),
+    run: [0, 1, 2, 3, 4, 5, 6, 7].map((k) => runFrame(k, 1)),
+    careful: [
+        { lean: 0.1, bob: 0, hip: 24, tA: 0.42, kA: 0.22, tB: -0.05, kB: 0.10, armB: -0.6 },
+        { lean: 0.12, bob: -1, hip: 23, tA: 0.5, kA: 0.3, tB: 0.1, kB: 0.25, armB: -0.85 },
+        { lean: 0.1, bob: 0, hip: 24, tA: 0.05, kA: 0.15, tB: -0.3, kB: 0.5, armB: -0.7 },
+        { lean: 0.08, bob: -1, hip: 23, tA: 0.2, kA: 0.35, tB: -0.1, kB: 0.2, armB: -0.95 },
+    ],
+    start: [
+        { lean: 0.22, bob: 0, hip: 25, tA: 0.15, kA: 0.2, tB: -0.35, kB: 0.55, armB: -0.1 },
+        { lean: 0.26, bob: -1, hip: 24, tA: 0.45, kA: 0.3, tB: -0.5, kB: 0.7, armB: 0.15 },
+        { lean: 0.18, bob: 0, hip: 25, tA: 0.55, kA: 0.15, tB: -0.3, kB: 0.4, armB: 0.3 },
+    ],
+    skid: [
+        { lean: -0.26, bob: 0, hip: 25, tA: 0.42, kA: 0.15, tB: -0.5, kB: 0.75, armB: 0.5 },
+        { lean: -0.2, bob: -1, hip: 24, tA: 0.3, kA: 0.1, tB: -0.4, kB: 0.6, armB: 0.4 },
+    ],
+    turn: [
+        { lean: -0.08, bob: -1, hip: 25, tA: 0.15, kA: 0.25, tB: -0.15, kB: 0.25, armB: 0.1 },
+        { lean: 0.06, bob: 0, hip: 24, tA: 0.25, kA: 0.3, tB: -0.2, kB: 0.3, armB: -0.15 },
+    ],
+    crouch: [{ lean: 0.1, bob: 0, hip: 15, tA: 0.3, kA: 1.15, tB: -0.3, kB: 1.15, armB: -0.15 }],
+    jump: [
+        { lean: 0.12, bob: -2, hip: 18, tA: 0.3, kA: 1.25, tB: -0.35, kB: 1.1, armB: 0.55 },
+        { lean: 0.1, bob: 0, hip: 24, tA: 0.4, kA: 0.7, tB: -0.45, kB: 0.85, armB: 0.45 },
+    ],
+    fall: [{ lean: 0.06, bob: 0, hip: 24, tA: 0.28, kA: 0.5, tB: -0.32, kB: 0.7, armB: 0.75 }],
+    land: [
+        { lean: 0.16, bob: 2, hip: 17, tA: 0.34, kA: 1.05, tB: -0.34, kB: 1.0, armB: 0.3 },
+        { lean: 0.08, bob: 0, hip: 22, tA: 0.2, kA: 0.5, tB: -0.22, kB: 0.45, armB: 0.1 },
+    ],
+    hang: [
+        { lean: -0.05, bob: 0, hip: 14, tA: 0.3, kA: 0.45, tB: -0.12, kB: 0.3, armB: -0.25 },
+        { lean: 0.04, bob: 1.5, hip: 12, tA: 0.22, kA: 0.5, tB: -0.2, kB: 0.35, armB: -0.18 },
+    ],
+    climb: [
+        { lean: 0.2, bob: 0, hip: 14, tA: 0.5, kA: 1.2, tB: -0.2, kB: 0.9, armB: -0.5 },
+        { lean: 0.3, bob: -3, hip: 12, tA: 0.7, kA: 1.35, tB: 0.1, kB: 1.0, armB: -0.75 },
+        { lean: 0.22, bob: -6, hip: 11, tA: 0.4, kA: 1.1, tB: -0.3, kB: 0.8, armB: -0.6 },
+        { lean: 0.12, bob: -9, hip: 16, tA: 0.2, kA: 0.7, tB: -0.4, kB: 0.6, armB: -0.35 },
+    ],
+    shimmy: [
+        { lean: -0.02, bob: 0, hip: 13, tA: 0.35, kA: 0.5, tB: -0.15, kB: 0.35, armB: -0.2 },
+        { lean: 0.05, bob: 1, hip: 12, tA: 0.2, kA: 0.4, tB: -0.25, kB: 0.45, armB: -0.3 },
+    ],
+    block: [{ lean: -0.06, bob: 0, hip: 24, tA: 0.18, kA: 0.25, tB: -0.22, kB: 0.35, armB: -1.3 }],
+    ready: [{ lean: 0.04, bob: 0, hip: 25, tA: 0.2, kA: 0.2, tB: -0.24, kB: 0.3, armB: -0.55 }],
+    windup: [{ lean: -0.22, bob: -1, hip: 25, tA: 0.12, kA: 0.2, tB: -0.3, kB: 0.4, armB: -1.9 }],
+    strike: [
+        { lean: 0.1, bob: 0, hip: 24, tA: 0.25, kA: 0.2, tB: -0.35, kB: 0.4, armB: -1.2 },
+        { lean: 0.34, bob: 0, hip: 23, tA: 0.5, kA: 0.15, tB: -0.5, kB: 0.5, armB: 0.35 },
+        { lean: 0.24, bob: 0, hip: 24, tA: 0.4, kA: 0.2, tB: -0.42, kB: 0.45, armB: 0.15 },
+    ],
+    recoil: [{ lean: -0.3, bob: 1, hip: 25, tA: 0.1, kA: 0.3, tB: -0.4, kB: 0.6, armB: 0.8 }],
+    attack: [
+        { lean: -0.12, bob: 0, hip: 25, tA: 0.15, kA: 0.2, tB: -0.3, kB: 0.4, armB: -1.05 },
+        { lean: 0.3, bob: 0, hip: 23, tA: 0.55, kA: 0.15, tB: -0.55, kB: 0.55, armB: 0.45 },
+        { lean: 0.22, bob: 0, hip: 24, tA: 0.42, kA: 0.2, tB: -0.44, kB: 0.45, armB: 0.2 },
+        { lean: 0.08, bob: 0, hip: 25, tA: 0.22, kA: 0.2, tB: -0.26, kB: 0.3, armB: -0.2 },
+    ],
+    drink: [
+        { lean: -0.1, bob: 0, hip: 25, tA: 0.12, kA: 0.15, tB: -0.16, kB: 0.2, armB: -0.3 },
+        { lean: -0.22, bob: 0, hip: 25, tA: 0.1, kA: 0.12, tB: -0.14, kB: 0.18, armB: -0.2 },
+        { lean: 0.08, bob: 0, hip: 25, tA: 0.14, kA: 0.18, tB: -0.18, kB: 0.22, armB: -0.5 },
+    ],
+    draw: [
+        { lean: -0.12, bob: 0, hip: 25, tA: 0.14, kA: 0.18, tB: -0.2, kB: 0.25, armB: 0.9 },
+        { lean: 0.05, bob: 0, hip: 25, tA: 0.18, kA: 0.2, tB: -0.22, kB: 0.3, armB: -0.6 },
+    ],
+    sheathe: [
+        { lean: 0.05, bob: 0, hip: 25, tA: 0.16, kA: 0.2, tB: -0.2, kB: 0.25, armB: -0.4 },
+        { lean: -0.08, bob: 0, hip: 25, tA: 0.14, kA: 0.18, tB: -0.18, kB: 0.22, armB: 0.75 },
+    ],
+    // --- deaths, one per cause (weight, not a generic topple) --------------
+    die_impale: [
+        { lean: 0.9, bob: -7, hip: 20, tA: 0.25, kA: 0.55, tB: -0.1, kB: 0.45, armB: 0.95 },
+        { lean: 1.05, bob: -6, hip: 19, tA: 0.3, kA: 0.6, tB: -0.05, kB: 0.5, armB: 1.05 },
+        { lean: 1.0, bob: -6.5, hip: 19, tA: 0.28, kA: 0.58, tB: -0.08, kB: 0.48, armB: 1.0 },
+    ],
+    die_slice: [
+        { lean: 0.18, bob: 0, hip: 22, tA: 0.55, kA: 0.3, tB: -0.55, kB: 0.3, armB: 0.6 },
+        { lean: 0.3, bob: 1, hip: 20, tA: 0.7, kA: 0.4, tB: -0.7, kB: 0.4, armB: 0.8 },
+    ],
+    die_crumple: [
+        { lean: 0.5, bob: 1, hip: 16, tA: 0.6, kA: 1.2, tB: -0.3, kB: 1.0, armB: 0.5 },
+        { lean: 0.85, bob: 3, hip: 8, tA: 0.95, kA: 1.5, tB: 0.2, kB: 1.2, armB: 1.1 },
+        { lean: 0.95, bob: 4, hip: 6, tA: 1.05, kA: 1.55, tB: 0.35, kB: 1.25, armB: 1.3 },
+    ],
+    die_cut: [
+        { lean: -0.25, bob: 0, hip: 14, tA: 0.35, kA: 1.2, tB: -0.25, kB: 1.15, armB: 0.6 },
+        { lean: -0.8, bob: 2, hip: 9, tA: 0.5, kA: 1.3, tB: -0.1, kB: 1.1, armB: 1.0 },
+        { lean: -1.25, bob: 3, hip: 6, tA: 0.6, kA: 1.3, tB: 0.1, kB: 1.1, armB: 1.25 },
+    ],
+    die_poison: [
+        { lean: -0.15, bob: 0, hip: 20, tA: 0.2, kA: 0.8, tB: -0.25, kB: 0.7, armB: 1.35 },
+        { lean: -0.4, bob: 2, hip: 12, tA: 0.4, kA: 1.3, tB: -0.2, kB: 1.1, armB: 1.5 },
+        { lean: -0.55, bob: 3, hip: 8, tA: 0.5, kA: 1.4, tB: -0.1, kB: 1.15, armB: 1.55 },
+    ],
+}
+export const RUN_FRAMES = POSES.run.length
+export const DEATH_ANIMS = { spikes: 'die_impale', chomper: 'die_slice', fall: 'die_crumple', sword: 'die_cut', poison: 'die_poison' }
+
+export function poseOf(name, k = 0) {
+    const list = POSES[name] || POSES.idle
+    return list[((k % list.length) + list.length) % list.length]
+}
+
 // ---- tiles --------------------------------------------------------------------
-// floors read as ledges: a lit top edge and a dark front face under it
 function floorLedge(ctx, x, y, top, front, crack) {
     ctx.fillStyle = top
     ctx.fillRect(x, y, T, 4)
@@ -115,6 +241,41 @@ function stone(ctx, c, r, code, g) {
     }
 }
 
+// ---- palace dressing: pale walls, pillars, arched windows, tapestries --------
+function palaceWall(ctx, c0, decos, tick) {
+    for (let rm = 0; rm < decos.length; rm++) {
+        const base = (c0 / RW + rm) * RW * T
+        const d = decos[rm]
+        ctx.fillStyle = '#8f8f7a'
+        ctx.fillRect(base + d.pillar * T - 7, 24, 14, VH - 24 - 8)
+        ctx.fillStyle = '#a8a890'
+        ctx.fillRect(base + d.pillar * T - 7, 24, 5, VH - 24 - 8)
+        ctx.fillStyle = '#6e6e5c'
+        ctx.fillRect(base + d.pillar * T - 10, 20, 20, 8)
+        ctx.fillRect(base + d.pillar * T - 10, VH - 12, 20, 8)
+        const wx = base + d.window * T + 8
+        ctx.fillStyle = '#1b1f33'
+        ctx.beginPath()
+        ctx.moveTo(wx, 84); ctx.lineTo(wx, 44)
+        ctx.arc(wx + 8, 44, 8, Math.PI, 0)
+        ctx.lineTo(wx + 16, 84)
+        ctx.closePath()
+        ctx.fill()
+        const moon = 0.4 + 0.2 * Math.sin(tick * 0.02 + rm)
+        ctx.fillStyle = `rgba(120,140,220,${moon.toFixed(2)})`
+        ctx.fillRect(wx + 2, 60, 12, 22)
+        const tx = base + d.tapestry * T + 4
+        ctx.fillStyle = '#5a2540'
+        ctx.fillRect(tx, 30, 24, 52)
+        ctx.fillStyle = '#7a3558'
+        ctx.fillRect(tx + 3, 34, 18, 44)
+        ctx.fillStyle = '#c8a050'
+        ctx.fillRect(tx + 8, 42, 8, 20)
+        ctx.fillStyle = '#5a2540'
+        for (let i = 0; i < 3; i++) ctx.fillRect(tx + 3 + i * 8, 82, 4, 6 + Math.sin(tick * 0.1 + i + rm) * 1.5)
+    }
+}
+
 function lightPool(ctx, x, y, fl) {
     const grad = ctx.createRadialGradient(x, y, 4, x, y, 90 + fl * 14)
     grad.addColorStop(0, 'rgba(255,180,80,0.20)')
@@ -138,10 +299,15 @@ function drawTorch(ctx, c, r, tick) {
     ctx.beginPath()
     ctx.ellipse(x, y - 3 - fl, 2.5, 4.5 + fl, 0, 0, Math.PI * 2)
     ctx.fill()
+    for (let i = 0; i < 3; i++) {
+        const sp = (tick * 0.7 + i * 13) % 30
+        ctx.fillStyle = `rgba(255,${Math.max(0, 140 - sp * 3)},60,${Math.max(0, 0.5 - sp / 60).toFixed(2)})`
+        ctx.fillRect(x - 3 + ((hash(c * 5 + i) - 0.5) * 8), y - 10 - sp, 2, 2)
+    }
 }
 
 // ---- portcullis over a gate column: bars lift into the ceiling ---------------
-function drawGate(ctx, c, lowRow, open, tick) {
+function drawGate(ctx, c, lowRow, open) {
     const span = (lowRow + 1) * T
     const vis = span * (1 - Math.min(1, open))
     if (vis < 3) return
@@ -155,7 +321,6 @@ function drawGate(ctx, c, lowRow, open, tick) {
     ctx.fillStyle = '#242434'
     ctx.fillRect(x + 2, lowRow * T + vis - 4, T - 4, 4)
     ctx.restore()
-    void tick
 }
 
 // ---- chomper jaws: teeth rise from the floor, a blade drops from the ceiling -
@@ -225,143 +390,150 @@ function drawSwordPickup(ctx, sw, tick) {
 }
 
 // ---- figure -------------------------------------------------------------------
-// origin = feet (x, y). Angles: 0 = straight down, + toward the facing dir.
+// origin = feet (x, y). Two-segment legs: thigh from the hip, shin from the
+// knee. Angles: 0 = straight down, + toward the facing direction.
 function limb(ctx, x, y, ang, len, w, col) {
     ctx.strokeStyle = col
     ctx.lineWidth = w
     ctx.lineCap = 'round'
     ctx.beginPath()
     ctx.moveTo(x, y)
-    ctx.lineTo(x + Math.sin(ang) * len * 1.0, y + Math.cos(ang) * len)
+    ctx.lineTo(x + Math.sin(ang) * len, y + Math.cos(ang) * len)
     ctx.stroke()
 }
 
-const q8 = (t, sp) => (Math.floor(t * sp) % 8) / 8 * Math.PI * 2
+function leg2(ctx, hx, hy, t, k, len, w, col) {
+    const kx = hx + Math.sin(t) * len
+    const ky = hy + Math.cos(t) * len
+    limb(ctx, hx, hy, t, len, w, col)
+    limb(ctx, kx, ky, t - k, len, w - 1, col)
+    ctx.fillStyle = col
+    ctx.fillRect(kx - 1.5, ky - 1.5, 3, 3)
+}
 
 function figure(ctx, st, p, opts) {
     const f = p.facing
     const t = opts.tick
     const skin = opts.skin, cloth = opts.cloth, trim = opts.trim
-    let lean = 0, bob = 0, hip = 18, head = 44, legLen = 18
-    let legA = 0.12, legB = -0.12, armB = -0.3, armF = null
-    let swordAng = -0.9, swordOut = opts.sword
-    if (opts.crouch) { hip = 12; head = 30; legLen = 12 }
-    if (p.hang) {
-        const lift = Math.max(10, p.y - p.hang.r * T)
-        legA = 0.35; legB = -0.15
-        legLen = 16
-        hip = Math.min(30, lift * 0.55)
-        armB = -0.12 - lift / 24
-        swordOut = false
-        bob = Math.sin(t * 0.09) * 1.5
-    }
-    if (st === 'climb') {
-        armB = -0.2
-        legA = 0.7; legB = -0.5
-        hip = 12 + (1 - opts.prog) * 14
-        bob = -(opts.prog * 10)
-        legLen = 14 + opts.prog * 4
-    }
-    if (st === 'walk' || st === 'run') {
-        const sp = st === 'run' ? 0.38 : 0.26
-        const ph = q8(t, st === 'run' ? 0.3 : 0.22)
-        legA = Math.sin(ph) * sp + 0.05
-        legB = -Math.sin(ph) * sp + 0.05
-        armB = Math.sin(ph) * 0.3 - 0.3
-        bob = -Math.abs(Math.sin(ph)) * (st === 'run' ? 3 : 1.5)
-        lean = st === 'run' ? 0.16 : 0.06
-    }
-    if (st === 'skid') { lean = -0.22; legA = 0.4; legB = -0.5; armB = 0.5 }
-    if (st === 'jump') { legA = 0.5; legB = -0.6; armB = 0.4; lean = 0.1 }
-    if (st === 'fall') { legA = 0.25; legB = -0.35; armB = 0.6 }
-    if (st === 'land') { hip = 12; head = 30; legLen = 12; legA = 0.35; legB = -0.35; lean = 0.12 }
-    if (st === 'shimmy') { armB = -0.15; legA = 0.4 * Math.sin(t * 0.3); legB = -0.2 }
-    if (st === 'crouch') { hip = 12; head = 30; legLen = 12 }
-    if (st === 'block') { armF = -1.35; swordAng = -1.5; lean = -0.05 }
-    if (opts.hurt > 0) { lean = -0.3 * f; armB = 0.7 }
-    if (opts.die > 0) {
-        const k = Math.min(1, opts.die / 40)
-        lean = -1.4 * k
-        bob = 14 * k
-        legA = 0.9; legB = 0.3
-        swordOut = false
-    }
+    const pose = opts.pose || poseOf(st, opts.frame || 0)
+    const wide = opts.wide || 1
+    const hip = pose.hip
+    const head = hip + 24
+    const thigh = hip * 0.55
+    const armLen = 15
+    const bob = pose.bob + (opts.dieBob || 0)
+    const lean = pose.lean + (opts.dieLean || 0)
+    let swordOut = opts.sword
+    if (p.hang) swordOut = false
+    if (opts.die > 0 && st.startsWith('die')) swordOut = false
 
     ctx.save()
     ctx.translate(p.x, p.y + bob)
     ctx.scale(f, 1)
     ctx.rotate(lean)
 
-    const hx = 0, hy = -hip
-    limb(ctx, hx, hy, legA, legLen, 5, cloth)
-    limb(ctx, hx, hy, legB, legLen, 5, shade(cloth))
+    // far leg first (shaded), near leg after the torso
+    leg2(ctx, 0, -hip, pose.tB, pose.kB, thigh, 5, shade(cloth))
     if (opts.robe) {
         const sway = Math.sin(t * 0.18) * 3
         ctx.fillStyle = cloth
         ctx.beginPath()
-        ctx.moveTo(-6, hy)
-        ctx.lineTo(-9, 2 + sway)
-        ctx.lineTo(9, 2 - sway)
-        ctx.lineTo(6, hy)
+        ctx.moveTo(-6 * wide, -hip)
+        ctx.lineTo(-10 * wide, 2 + sway)
+        ctx.lineTo(10 * wide, 2 - sway)
+        ctx.lineTo(6 * wide, -hip)
         ctx.closePath()
         ctx.fill()
         ctx.strokeStyle = trim
         ctx.lineWidth = 2
         ctx.beginPath()
-        ctx.moveTo(-9, 2 + sway); ctx.lineTo(9, 2 - sway)
+        ctx.moveTo(-10 * wide, 2 + sway); ctx.lineTo(10 * wide, 2 - sway)
         ctx.stroke()
     }
+    leg2(ctx, 0, -hip, pose.tA, pose.kA, thigh, 5, cloth)
+
+    // torso (the fat guard gets a belly), trim sash across it
     ctx.strokeStyle = cloth
-    ctx.lineWidth = 9
+    ctx.lineWidth = 9 * wide
     ctx.beginPath()
-    ctx.moveTo(0, hy)
+    ctx.moveTo(0, -hip)
     ctx.lineTo(2, -head + 10)
     ctx.stroke()
+    if (wide > 1) {
+        ctx.fillStyle = cloth
+        ctx.beginPath()
+        ctx.ellipse(1, -hip + 4, 8 * wide, 9, 0, 0, Math.PI * 2)
+        ctx.fill()
+    }
     ctx.strokeStyle = trim
     ctx.lineWidth = 3
     ctx.beginPath()
-    ctx.moveTo(-3, hy - 4)
-    ctx.lineTo(5, hy - 10)
+    ctx.moveTo(-3, -hip - 4)
+    ctx.lineTo(5, -hip - 10)
     ctx.stroke()
-    limb(ctx, 2, -head + 12, armB, 16, 4, shade(cloth))
 
-    ctx.fillStyle = skin
-    ctx.beginPath()
-    ctx.arc(3, -head + 4, 6.5, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = trim
-    ctx.fillRect(-4, -head + 1, 13, 4)
-    ctx.beginPath()
-    ctx.arc(3, -head + 2, 6.5, Math.PI, Math.PI * 2)
-    ctx.fill()
-    ctx.strokeStyle = trim
-    ctx.lineWidth = 2.5
-    ctx.beginPath()
-    ctx.moveTo(-4, -head + 3)
-    ctx.quadraticCurveTo(-12, -head + 6 + Math.sin(t * 0.2) * 2, -14, -head + 12)
-    ctx.stroke()
+    // back arm
+    limb(ctx, 2, -head + 12, pose.armB, armLen, 4, shade(cloth))
+
+    // head: skin + turban (wrapped, with a tail); skeletons get a bone skull
+    if (opts.bone) {
+        ctx.fillStyle = skin
+        ctx.beginPath()
+        ctx.arc(3, -head + 4, 6.5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = '#2a2a30'
+        ctx.fillRect(1, -head + 2, 3, 3)
+        ctx.fillRect(6, -head + 2, 3, 3)
+        ctx.fillRect(3, -head + 7, 4, 2)
+        ctx.strokeStyle = '#9a9a8c'
+        ctx.lineWidth = 2
+        for (let i = 0; i < 3; i++) {
+            ctx.beginPath()
+            ctx.moveTo(-3, -hip - 2 - i * 5)
+            ctx.lineTo(6, -hip - 2 - i * 5)
+            ctx.stroke()
+        }
+    } else {
+        ctx.fillStyle = skin
+        ctx.beginPath()
+        ctx.arc(3, -head + 4, 6.5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = opts.turban || trim
+        ctx.fillRect(-4, -head + 1, 13, 4)
+        ctx.beginPath()
+        ctx.arc(3, -head + 2, 6.5, Math.PI, Math.PI * 2)
+        ctx.fill()
+        ctx.fillRect(-2, -head - 2, 10, 3)
+        ctx.strokeStyle = opts.turban || trim
+        ctx.lineWidth = 2.5
+        ctx.beginPath()
+        ctx.moveTo(-4, -head + 3)
+        ctx.quadraticCurveTo(-12, -head + 6 + Math.sin(t * 0.2) * 2, -14, -head + 12)
+        ctx.stroke()
+    }
     if (opts.hat) {
-        ctx.fillStyle = trim
+        ctx.fillStyle = '#1a1026'
         ctx.beginPath()
         ctx.moveTo(-3, -head - 1)
-        ctx.lineTo(3, -head - 17)
+        ctx.lineTo(3, -head - 19)
         ctx.lineTo(9, -head - 1)
         ctx.closePath()
         ctx.fill()
-        ctx.fillStyle = '#f0e0a0'
-        ctx.fillRect(-1, -head - 2, 8, 2)
+        ctx.fillStyle = '#d24ad2'
+        ctx.fillRect(-1, -head - 4, 8, 2)
     }
 
-    // sword arm: sheathed at the hip, or a timing arc through a strike
+    // sword arm: sheathed at the hip, drawing, or a timing arc through a strike
     const shY = -head + 12
     if (!swordOut) {
         if (opts.sheath) {
             ctx.strokeStyle = '#6a6a80'
             ctx.lineWidth = 2.5
             ctx.beginPath()
-            ctx.moveTo(-2, hy + 2)
-            ctx.lineTo(-12, hy + 14)
+            ctx.moveTo(-2, -hip + 2)
+            ctx.lineTo(-12, -hip + 14)
             ctx.stroke()
+            limb(ctx, 2, shY, st === 'sheathe' ? 1.1 : pose.armB, armLen * 0.8, 4, skin)
         }
         ctx.restore()
         return
@@ -371,14 +543,17 @@ function figure(ctx, st, p, opts) {
         const k = 1 - opts.swing / CFG.strikeDur
         swing = k < 0.3 ? 0.9 * (k / 0.3) : 0.9 - 2.1 * Math.min(1, (k - 0.3) / 0.35)
     }
-    const stAng = swordAng + swing
-    if (armF !== null) armB = armF
+    if (st === 'windup') swing = -0.9
+    if (st === 'strike') swing = pose.armB > 0 ? 1.3 : 0.4
+    const swordAng = (st === 'block' ? -1.5 : -0.9) + swing
+    let armA = st === 'block' ? -1.3 : pose.armB
+    if (st === 'draw') armA = pose.armB > 0.5 ? -0.1 : 0.9
     ctx.strokeStyle = opts.swing > 0 ? '#ffffff' : shade(cloth)
     ctx.lineWidth = 4
     ctx.beginPath()
     ctx.moveTo(2, shY)
-    const hxp = 2 + Math.sin(stAng + 0.9) * 12
-    const hyp = shY - Math.cos(stAng + 0.9) * 12 + 4
+    const hxp = 2 + Math.sin(armA + 0.9) * 12
+    const hyp = shY - Math.cos(armA + 0.9) * 12 + 4
     ctx.lineTo(hxp, hyp)
     ctx.stroke()
     const biting = opts.swing > 0 && opts.swing <= CFG.strikeDur - CFG.strikeHit0
@@ -386,7 +561,7 @@ function figure(ctx, st, p, opts) {
     ctx.lineWidth = 3
     ctx.beginPath()
     ctx.moveTo(hxp, hyp)
-    ctx.lineTo(hxp + Math.sin(stAng) * 26, hyp - Math.cos(stAng) * 26)
+    ctx.lineTo(hxp + Math.sin(swordAng) * 26, hyp - Math.cos(swordAng) * 26)
     ctx.stroke()
     ctx.fillStyle = '#d8b040'
     ctx.fillRect(hxp - 2, hyp - 2, 4, 4)
@@ -397,7 +572,6 @@ function figure(ctx, st, p, opts) {
 export function drawScene(ctx, g, opts = {}) {
     const { attract = false } = opts
     const tick = g.tick
-    // background (screen space, no shake — the dungeon shakes, the hour does not)
     const grad = ctx.createLinearGradient(0, 0, 0, VH)
     grad.addColorStop(0, '#0b0b16')
     grad.addColorStop(1, '#16162a')
@@ -416,6 +590,8 @@ export function drawScene(ctx, g, opts = {}) {
         ctx.translate(-(camX + VW / 2), -VH / 2)
     }
 
+    if (lvl.theme === 'palace') palaceWall(ctx, g.room * RW, lvl.deco.slice(g.room, g.room + 1), tick)
+
     const c0 = g.room * RW, c1 = c0 + RW
     for (let r = 0; r < H; r++) for (let c = c0; c < c1; c++) {
         const code = lvl.grid[r * lvl.W + c]
@@ -429,13 +605,11 @@ export function drawScene(ctx, g, opts = {}) {
         }
         stone(ctx, c, r, code, g)
     }
-    // gates, lifted per room
     for (let c = c0; c < c1; c++) {
         let lowRow = -1
         for (let r = 0; r < H; r++) if (lvl.grid[r * lvl.W + c] === GATE) lowRow = r
-        if (lowRow >= 0) drawGate(ctx, c, lowRow, g.gateOpen[g.room], tick)
+        if (lowRow >= 0) drawGate(ctx, c, lowRow, g.gateOpen[g.room])
     }
-    // loose tiles still standing but trembling; fallen ones pile into rubble
     for (const k in g.loose) {
         if (g.fallen[k]) continue
         const c = Number(k % lvl.W), r = Number((k - c) / lvl.W)
@@ -485,12 +659,15 @@ export function drawScene(ctx, g, opts = {}) {
     for (const gd of g.guards) {
         if (gd.dead || gd.room !== g.room) continue
         const look = guardLook(gd.type, gd.boss)
-        const st = gd.wind > 0 ? 'wind' : gd.recoil > 0 ? 'recoil' : gd.engaged ? 'ready' : gd.anim === 'advance' ? 'walk' : 'patrol'
-        const swing = gd.wind > 0 && gd.wind <= CFG.guardWind - CFG.guardHit0 ? CFG.guardWind - gd.wind : 0
-        figure(ctx, st === 'patrol' ? 'walk' : st === 'wind' ? 'idle' : st === 'recoil' ? 'skid' : st === 'ready' ? 'block' : 'walk',
-            { x: gd.x, y: gd.y, facing: gd.dir || -1, onGround: true, hang: null, crouch: false },
+        const style = GUARD_STYLE[gd.type] || GUARD_STYLE.green
+        const st = gd.wind > 0 ? (gd.wind > gd.windT - CFG.guardHit0 ? 'windup' : 'strike')
+            : gd.recoil > 0 ? 'recoil' : gd.engaged ? 'ready' : gd.anim === 'advance' ? 'walk' : 'patrol'
+        const swing = gd.wind > 0 && gd.wind <= gd.windT - CFG.guardHit0 ? style.windT - gd.wind : 0
+        const frame = gd.wind > 0 ? Math.floor((gd.windT - gd.wind) / 6) : Math.floor(tick / 8)
+        figure(ctx, st === 'patrol' ? 'walk' : st, { x: gd.x, y: gd.y, facing: gd.dir || -1, onGround: true, hang: null, crouch: false },
             {
-                tick: tick + gd.id * 13, skin: look.skin, cloth: look.cloth, trim: look.trim,
+                tick: tick + gd.id * 13, frame, skin: look.skin, cloth: look.cloth, trim: look.trim,
+                turban: look.turban, bone: look.bone, wide: look.wide || 1,
                 swordMetal: look.sword, robe: look.robe, hat: look.hat,
                 sword: true, sheath: false, swing, hurt: gd.hurtT, die: 0, prog: 0,
             })
@@ -504,22 +681,62 @@ export function drawScene(ctx, g, opts = {}) {
             const w = 26
             ctx.fillStyle = '#20202e'
             ctx.fillRect(gd.x - w / 2, gd.y - CFG.PH - 14, w, 3)
-            ctx.fillStyle = gd.boss ? '#d040d0' : '#c04040'
+            ctx.fillStyle = gd.boss ? '#d040d0' : (look.turban || '#c04040')
             ctx.fillRect(gd.x - w / 2, gd.y - CFG.PH - 14, w * (gd.hp / gd.maxHp), 3)
         }
     }
 
     // the prince
-    if (g.status !== 'lost' && !(g.status === 'dying' && g.p.dieT % 8 < 4)) {
+    if (g.status !== 'lost' && !(g.status === 'dying' && g.p.dieT % 8 < 4 && g.p.anim !== 'die_impale')) {
         const p = g.p
-        const dueling = g.guards.some((q) => !q.dead && q.room === g.room && Math.abs(q.x - p.x) < 8 * T && Math.abs(q.y - p.y) < 3 * T)
-        figure(ctx, p.anim || 'idle', p, {
+        const dying = g.status === 'dying'
+        const st = p.anim || 'idle'
+        const gaitFrame = st === 'run' ? Math.floor(tick * 0.42)
+            : st === 'walk' ? Math.floor(tick * 0.26)
+                : st === 'careful' ? Math.floor(tick * 0.14)
+                    : st === 'climb' ? Math.min(POSES.climb.length - 1, Math.floor((p.climb / CFG.climbT) * POSES.climb.length))
+                        : st === 'hang' || st === 'shimmy' ? Math.floor(tick * 0.07)
+                            : Math.floor(tick * 0.25)
+        const opts = {
             tick, skin: '#e0b898', cloth: '#e8e8f0', trim: '#c03028',
-            sword: g.sword && (p.atk > 0 || p.block || dueling),
-            sheath: g.sword && !(p.atk > 0 || p.block || dueling),
-            swing: p.atk, hurt: p.hurtT, die: g.status === 'dying' ? p.dieT : 0,
+            sword: g.sword && (p.atk > 0 || p.block || p.duelDrawn),
+            sheath: g.sword && !(p.atk > 0 || p.block || p.duelDrawn),
+            swing: p.atk, hurt: p.hurtT, die: dying ? p.dieT : 0,
             prog: p.climb / CFG.climbT, crouch: p.crouch,
-        })
+            frame: st.startsWith('die') ? Math.min(2, Math.floor(p.dieT / 12)) : gaitFrame,
+        }
+        if (st === 'die_slice') {
+            // the jaws' mark: two halves parting where the blade met
+            const gap = 2 + p.dieT * 0.12
+            for (const half of [0, 1]) {
+                ctx.save()
+                ctx.beginPath()
+                ctx.rect(p.x + (half ? 1 : -40), 0, 40, VH)
+                ctx.clip()
+                const q = { ...p, x: p.x + (half ? gap : -gap) }
+                figure(ctx, 'die_slice', q, { ...opts, dieLean: half ? 0.12 : -0.05 })
+                ctx.restore()
+            }
+            ctx.fillStyle = '#8a1818'
+            ctx.fillRect(p.x - 3, p.y - 34 + p.dieT * 0.2, 6, Math.min(20, p.dieT * 0.5))
+        } else {
+            figure(ctx, st, p, opts)
+        }
+        if (st === 'die_impale') {
+            ctx.fillStyle = '#8a1818'
+            ctx.fillRect(p.x + 2, p.y - 26, 4, 8)
+            for (let i = 0; i < 3; i++) {
+                const d = (p.dieT + i * 9) % 26
+                ctx.fillRect(p.x + 3 + (i - 1) * 2, p.y - 18 + d, 2, 3)
+            }
+        }
+        if (st === 'die_cut') {
+            for (let i = 0; i < 2; i++) {
+                const d = (p.dieT + i * 7) % 20
+                ctx.fillStyle = '#8a1818'
+                ctx.fillRect(p.x - 6 + i * 8, p.y - 22 + d, 2, 3)
+            }
+        }
         if (p.lev > 0 && tick % 6 < 3) {
             ctx.fillStyle = 'rgba(120,220,255,0.5)'
             ctx.fillRect(p.x - 10, p.y - 2 + Math.sin(tick * 0.3) * 2, 20, 2)

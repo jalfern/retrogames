@@ -16,10 +16,10 @@ import {
 
 export const CFG = {
     T,
-    HW: 9, PH: 44, CH: 26,
+    HW: 9, PH: 60, CH: 36,
     walk: 1.45, run: 2.6, accel: 0.11, runAfter: 26, skid: 0.45, friction: 0.2,
     g: 0.45, jumpV: 8.4, holdG: 0.22, holdMax: 12, levG: 0.14, maxFall: 12,
-    climbT: 34, shimmy: 0.9,
+    climbT: 56, shimmy: 0.9,
     clock: 60 * 60 * 60, startHP: 2,
     reach: 44,
     strikeDur: 24, strikeHit0: 8, strikeHit1: 16, lunge: 1.6, lungeT: 10,
@@ -28,12 +28,24 @@ export const CFG = {
     gateOpen: 0.7, gateRise: 0.12, gateFall: 0.004, gateSlam: 0.5,
     chompPeriod: 150, chompWait: 96, chompDrop: 30, chompRest: 8,
     flipDur: 300, levDur: 600,
+    drinkT: 26, drawT: 16, sheatheT: 16, startT: 12, skidT: 8, turnT: 10,
     slack: false,
 }
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
 const sign = (v) => (v > 0 ? 1 : v < 0 ? -1 : 0)
 const keyOf = (g, c, r) => r * g.level.W + c
+
+// per-guard skill: how fast they footwork, how short their wind-up telegraph,
+// how quickly they strike again. Turban colour lives in art.js.
+export const GUARD_STYLE = {
+    green: { speed: 1.4, windT: 18, coolT: 44 },
+    red: { speed: 1.55, windT: 14, coolT: 34 },
+    fat: { speed: 1.0, windT: 24, coolT: 52 },
+    skeleton: { speed: 1.2, windT: 16, coolT: 40 },
+    shadow: { speed: 1.45, windT: 16, coolT: 38 },
+    jaffar: { speed: 1.7, windT: 13, coolT: 24 },
+}
 
 export function makeGame(levelIndex = 0) {
     const g = {
@@ -58,6 +70,9 @@ function princeAt(g, pos) {
         invuln: 0, hurtT: 0, block: false,
         atk: 0, atkDir: 1, atkHitDone: false,
         lev: 0, flip: 0, dieT: 0, holdT: 0, fallFrom: null, noGrabUntil: 0,
+        // Stage-2 pose timers (visual only — they never feed the physics)
+        drinkT: 0, drawT: 0, sheatheT: 0, startT: 0, skidT: 0, turnT: 0, landT: 0,
+        duelDrawn: false, careful: false, jumpStill: false,
     }
 }
 
@@ -79,6 +94,7 @@ function loadLevel(g, i, fromCheckpoint = false) {
         x: (gd.c + 0.5) * T, y: gd.r * T, vx: 0, dir: -1,
         hp: CFG.slack ? Math.max(1, gd.hp - 1) : gd.hp, maxHp: gd.hp,
         boss: gd.boss, type: gd.type || 'green', room: gd.room, patrol: gd.patrol,
+        ...GUARD_STYLE[gd.type] || GUARD_STYLE.green,
         engaged: false, wind: 0, cool: 30, recoil: 0, anim: 'idle', hurtT: 0, dead: false,
     }))
     g.pots = g.level.pots.map((p) => ({ ...p, taken: false }))
@@ -105,6 +121,14 @@ const blocks = (g, code, c) => {
     return false
 }
 
+// horizontal wall-check: one-way floors (the '=' ledges and loose tiles) land
+// you from above but never wall you off from the side — the original lets you
+// walk straight under them at any body height
+const blocksH = (g, code, c) => {
+    if (code === PLATFORM || code === LOOSE) return false
+    return blocks(g, code, c)
+}
+
 function moveX(g, nx) {
     const p = g.p
     const d = sign(nx - p.x)
@@ -113,7 +137,7 @@ function moveX(g, nx) {
     const col = Math.floor((nx + CFG.HW * d) / T)
     let blocked = false
     for (const yy of [p.y - 4, p.y - h * 0.45, p.y - h + 4]) {
-        if (blocks(g, cell(g, col, Math.floor(yy / T)), col)) { blocked = true; break }
+        if (blocksH(g, cell(g, col, Math.floor(yy / T)), col)) { blocked = true; break }
     }
     if (blocked) { p.x = d > 0 ? col * T - CFG.HW - 0.01 : (col + 1) * T + CFG.HW + 0.01; p.vx = 0; return true }
     p.x = nx
@@ -158,13 +182,16 @@ function land(g, vyWas) {
         p.hp -= 1; p.hurtT = 22; g.shake = 9
         g.events.push({ t: g.tick, type: 'hurtoffall', floors: Math.round(floors) })
         if (p.hp <= 0) { kill(g, 'fall'); return }
-    } else if (floors >= 0.5 && vyWas > 2) { p.anim = 'land'; p.animT = 8 }
+    } else if (floors >= 0.5 && vyWas > 2) { p.anim = 'land'; p.landT = 10 }
     p.fallFrom = null
 }
+
+const DEATH_ANIM = { spikes: 'die_impale', chomper: 'die_slice', fall: 'die_crumple', sword: 'die_cut', poison: 'die_poison' }
 
 function kill(g, why) {
     if (g.status !== 'play') return
     g.deathReason = why
+    g.p.anim = DEATH_ANIM[why] || 'die_cut'
     g.status = 'dying'
     g.statusT = 0
     g.events.push({ t: g.tick, type: 'die', why })
@@ -234,6 +261,8 @@ export function step(g, inp = {}) {
 
     const dueling = g.guards.some((gd) => !gd.dead && gd.room === g.room && Math.abs(gd.x - p.x) < 8 * T && Math.abs(gd.y - p.y) < FH)
     p.block = up && p.onGround && !p.hang && dueling
+    if (g.sword && dueling && !p.duelDrawn) { p.duelDrawn = true; p.drawT = CFG.drawT }
+    else if (p.duelDrawn && !dueling) { p.duelDrawn = false; p.sheatheT = CFG.sheatheT }
 
     // ---- checkpoint: passing it on its floor latches the restart point --------
     if (g.level.checkpoint && !g.cpReached && p.x >= g.level.checkpoint.c * T) {
@@ -285,6 +314,12 @@ export function step(g, inp = {}) {
     if (p.atk > CFG.strikeDur - CFG.lungeT && !p.atkHitDone) p.vx = p.atkDir * CFG.lunge
     if (dirIn !== 0 && p.atk === 0) {
         const braking = sign(p.vx) !== 0 && sign(p.vx) !== dirIn
+        if (braking) {
+            if (Math.abs(p.vx) > 0.6) p.skidT = CFG.skidT
+            else p.turnT = CFG.turnT
+        }
+        if (Math.abs(p.vx) < 0.3 && !braking) p.startT = CFG.startT
+        if (p.facing !== dirIn && !braking) p.turnT = CFG.turnT
         p.facing = braking ? p.facing : dirIn
         p.dirTicks++
         const cap = shift ? CFG.walk : p.dirTicks > CFG.runAfter ? CFG.run : CFG.walk
@@ -299,6 +334,7 @@ export function step(g, inp = {}) {
 
     // ---- jump (hold to extend) --------------------------------------------------
     if (dj && p.onGround) {
+        p.jumpStill = Math.abs(p.vx) < 0.6
         p.vy = -CFG.jumpV; p.onGround = false; p.holdT = CFG.holdMax; p.fallFrom = p.y; p.anim = 'jump'
         g.events.push({ t: g.tick, type: 'jump', speed: Math.abs(p.vx) })
     } else if (jump && !p.onGround && p.vy < 0 && p.holdT > 0) { p.vy -= CFG.holdG; p.holdT-- }
@@ -332,18 +368,33 @@ export function step(g, inp = {}) {
     }
 
     // ---- animation --------------------------------------------------------------
+    // precedence: a story pose (drink, draw, sheathe, strike, block) outranks a
+    // gait; a gait outranks the little transition accents (start/skid/turn/land);
+    // careful stepping takes over whenever the next footfall would find no floor.
+    const stand = Math.floor(p.y / T)
+    const fc = Math.floor(p.x / T)
+    p.careful = p.onGround && dirIn !== 0 && !p.crouch && p.atk === 0 && !p.block &&
+        Math.abs(p.vx) <= CFG.walk + 0.3 && !blocks(g, cell(g, fc + dirIn, stand), fc + dirIn)
+    if (g.status !== 'play') { p.animT++; syncRoom(g); g.prev = { left, right, up, down, jump, shift, atk }; return }
     if (p.onGround) {
-        if (p.atk > 0) p.anim = 'attack'
-        else if (Math.abs(p.vx) > CFG.walk + 0.4 && p.anim !== 'land') p.anim = 'run'
-        else if (Math.abs(p.vx) > 0.2 && p.anim !== 'land') p.anim = 'walk'
-        else if (p.anim !== 'land' && p.atk === 0) p.anim = p.block ? 'block' : (p.crouch ? 'crouch' : 'idle')
+        if (p.drinkT > 0) p.anim = 'drink'
+        else if (p.drawT > 0) p.anim = 'draw'
+        else if (p.sheatheT > 0) p.anim = 'sheathe'
+        else if (p.atk > 0) p.anim = 'attack'
+        else if (p.block) p.anim = 'block'
+        else if (p.landT > 0) p.anim = 'land'
+        else if (p.startT > 0 && Math.abs(p.vx) > 0.2) p.anim = 'start'
+        else if (p.skidT > 0 && Math.abs(p.vx) > 0.2) p.anim = 'skid'
+        else if (p.turnT > 0 && Math.abs(p.vx) <= 0.2) p.anim = 'turn'
+        else if (p.careful) p.anim = 'careful'
+        else if (Math.abs(p.vx) > CFG.walk + 0.4) p.anim = 'run'
+        else if (Math.abs(p.vx) > 0.2) p.anim = 'walk'
+        else p.anim = p.crouch ? 'crouch' : 'idle'
         p.animT++
     } else if (p.vy < 0) p.anim = 'jump'
     else if (!p.hang) p.anim = 'fall'
 
     // ---- loose floors -----------------------------------------------------------
-    const stand = Math.floor(p.y / T)
-    const fc = Math.floor(p.x / T)
     if (p.onGround && cell(g, fc, stand) === LOOSE) {
         const k = keyOf(g, fc, stand)
         if (!(k in g.loose)) g.loose[k] = g.tick
@@ -359,6 +410,7 @@ export function step(g, inp = {}) {
         if (pot.taken) continue
         if (Math.abs(p.x - (pot.c + 0.5) * T) < CFG.HW + 8 && Math.abs(stand - pot.r) <= 1) {
             pot.taken = true
+            p.drinkT = CFG.drinkT
             g.events.push({ t: g.tick, type: 'potion', kind: pot.type })
             if (pot.type === 'r') p.hp = Math.min(p.maxHP, p.hp + 1)
             else if (pot.type === '+') { g.bonusMax += 1; p.maxHP += 1; p.hp += 1 }
@@ -373,6 +425,7 @@ export function step(g, inp = {}) {
         const s = g.level.sword
         if (p.onGround && Math.abs(p.x - (s.c + 0.5) * T) < CFG.HW + 8 && Math.abs(stand - s.r) <= 1) {
             g.sword = true
+            p.drawT = CFG.drawT
             g.events.push({ t: g.tick, type: 'sword' })
         }
     }
@@ -386,6 +439,13 @@ export function step(g, inp = {}) {
     if (p.hurtT > 0) p.hurtT--
     if (p.lev > 0) p.lev--
     if (p.flip > 0) p.flip--
+    if (p.drinkT > 0) p.drinkT--
+    if (p.drawT > 0) p.drawT--
+    if (p.sheatheT > 0) p.sheatheT--
+    if (p.startT > 0) p.startT--
+    if (p.skidT > 0) p.skidT--
+    if (p.turnT > 0) p.turnT--
+    if (p.landT > 0) p.landT--
     syncRoom(g)
     g.prev = { left, right, up, down, jump, shift, atk }
 }
@@ -426,7 +486,7 @@ function stepGuards(g, dueling) {
         if (gd.recoil > 0) { gd.anim = 'recoil'; gd.x += sign(gd.x - p.x) * 1.2; gd.cool = Math.max(gd.cool, 20) }
         else if (gd.wind > 0) {
             gd.wind--
-            const inHit = gd.wind <= CFG.guardWind - CFG.guardHit0 && gd.wind >= CFG.guardWind - CFG.guardHit1
+            const inHit = gd.wind <= gd.windT - CFG.guardHit0 && gd.wind >= gd.windT - CFG.guardHit1
             if (inHit && Math.abs(gd.x - p.x) <= CFG.reach + 4 && !p.hang) {
                 if (p.block) { gd.recoil = CFG.parryStun; gd.wind = 0; g.events.push({ t: g.tick, type: 'parry' }); gd.anim = 'recoil' }
                 else if (p.invuln === 0) {
@@ -437,14 +497,14 @@ function stepGuards(g, dueling) {
                 }
             }
             if (gd.wind > 0) gd.anim = 'strike'
-            else gd.cool = gd.boss ? 24 : CFG.guardCool
+            else gd.cool = gd.coolT
         } else if (gd.engaged) {
             gd.dir = sign(p.x - gd.x) || gd.dir
             const close = CFG.reach - 6
             if (gd.cool <= 0 && Math.abs(gd.x - p.x) <= CFG.reach + 8 && gd.recoil <= 0) {
-                gd.wind = gd.boss ? CFG.guardWind - 5 : CFG.guardWind; gd.anim = 'wind'
+                gd.wind = gd.windT; gd.anim = 'wind'
                 g.events.push({ t: g.tick, type: 'guardWind', boss: gd.boss })
-            } else if (Math.abs(gd.x - p.x) > close) { gd.x += gd.dir * (gd.boss ? 1.7 : 1.4); gd.anim = 'advance' }
+            } else if (Math.abs(gd.x - p.x) > close) { gd.x += gd.dir * gd.speed; gd.anim = 'advance' }
             else gd.anim = 'ready'
             if (gd.cool > 0) gd.cool--
         } else {

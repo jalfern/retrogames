@@ -12,9 +12,10 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { makeGame, step, CFG, cloneGame, stateHash, chompDown } from '../src/games/PrinceOfPersia/sim.js'
+import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
-import { LEVEL_COUNT, makeLevel, RW, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
+import { LEVEL_COUNT, makeLevel, RW, FH, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook } from '../src/games/PrinceOfPersia/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -34,6 +35,7 @@ const setGround = (g, x, y) => {
 }
 const mkGuard = (x, y, room, hp = 3) => ({
     id: 9, x, y, vx: 0, dir: -1, hp, maxHp: hp, boss: false, type: 'green', room,
+    ...GUARD_STYLE.green,
     patrol: [x / T - 2, x / T + 2], engaged: false, wind: 0, cool: 30, recoil: 0,
     anim: 'idle', hurtT: 0, dead: false,
 })
@@ -345,6 +347,103 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
     ok('planner mirrors CFG.reach', grab('REACH') === CFG.reach)
     ok('planner mirrors the gate-open threshold', src.includes('CFG.gateOpen'))
     void SOLID; void RW; void P
+}
+
+// ---- 12. Stage 2: the look and the animation contract ----------------------
+{
+    ok('PH: the prince is most of a floor tall', CFG.PH >= 56 && CFG.PH <= FH * 0.75 && CFG.CH < CFG.PH)
+    ok('the climb-up takes about a second', CFG.climbT * 1000 / 60 >= 700 && CFG.climbT * 1000 / 60 <= 1100)
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+    ok('legs are two-segment (thigh + shin + knee)', /function leg2\(/.test(src))
+    const REQUIRED = ['idle', 'walk', 'run', 'start', 'skid', 'turn', 'jump', 'land', 'hang', 'climb',
+        'careful', 'crouch', 'drink', 'draw', 'sheathe', 'block', 'attack',
+        'die_impale', 'die_slice', 'die_crumple', 'die_cut', 'die_poison']
+    const missing = REQUIRED.filter((n) => !(n in POSES))
+    ok(`every named pose exists (${missing.length ? 'missing: ' + missing.join(',') : 'all'})`, missing.length === 0)
+    ok('the run cycle has at least 8 distinct frames',
+        RUN_FRAMES >= 8 && new Set(POSES.run.map((f) => JSON.stringify(f))).size >= 8)
+    ok('climb-up animates through several frames', POSES.climb.length >= 4)
+    ok('hang sways between frames', POSES.hang.length >= 2 && JSON.stringify(POSES.hang[0]) !== JSON.stringify(POSES.hang[1]))
+    ok('poseOf wraps frames cyclically', JSON.stringify(poseOf('run', 8)) === JSON.stringify(poseOf('run', 0)))
+    ok('each death has its own animation', Object.keys(DEATH_ANIMS).length === 5
+        && new Set(Object.values(DEATH_ANIMS)).size === 5)
+
+    // deaths really take their own pose in the sim
+    const g2 = makeGame(0)
+    setGround(g2, 1.5 * T, 8 * T - 250); g2.p.fallFrom = g2.p.y; g2.p.vy = 1; g2.p.onGround = false
+    let t2 = 0; while (g2.status === 'play' && t2++ < 300) step(g2, {})
+    ok('a long fall crumples (die_crumple)', g2.p.anim === DEATH_ANIMS.fall)
+
+    // chomper and spikes set their death poses
+    const gc = makeGame(0)
+    const ch = gc.level.chomps[0]
+    gc.tick = CFG.chompWait + 1 - ch.phase
+    setGround(gc, (ch.c + 0.5) * T, 8 * T)
+    step(gc, {})
+    ok('the jaws slice (die_slice)', gc.p.anim === DEATH_ANIMS.chomper)
+    const lvA = makeLevel(1)
+    let spC = -1, spR = -1
+    for (let r = 0; r < lvA.H; r++) for (let c = 0; c < lvA.W; c++) if (lvA.grid[r * lvA.W + c] === SPIKE) { spC = c; spR = r }
+    const gp = makeGame(1)
+    setGround(gp, (spC + 0.5) * T, spR * T)
+    step(gp, {})
+    ok('spikes impale (die_impale)', gp.p.anim === DEATH_ANIMS.spikes)
+    const gw = makeGame(0); gw.sword = true
+    const wd = mkGuard(3 * T, 8 * T, 0, 1)
+    gw.guards.push(wd)
+    setGround(gw, 3 * T - 40, 8 * T)
+    gw.p.hp = 1
+    wd.wind = wd.windT - CFG.guardHit0
+    step(gw, {})
+    ok('the sword cuts you down (die_cut)', gw.p.anim === DEATH_ANIMS.sword)
+
+    // guards rank at a glance
+    ok('green, red, fat, skeleton and Jaffar all have their own palette',
+        ['green', 'red', 'fat', 'skeleton', 'jaffar'].every((k) => k in PALETTES))
+    const turbans = ['green', 'red', 'fat', 'jaffar'].map((k) => PALETTES[k].turban)
+    ok('turban colours are distinct by skill', new Set(turbans).size === turbans.length)
+    ok('the fat guard is really wider', PALETTES.fat.wide > 1)
+    ok('the skeleton is bone, Jaffar robes and a tall hat',
+        guardLook('skeleton').bone === true && guardLook('jaffar').robe === true && guardLook('jaffar').hat === true)
+    ok('guards keep distinct speed/telegraph by skill',
+        GUARD_STYLE.red.speed > GUARD_STYLE.green.speed && GUARD_STYLE.red.windT < GUARD_STYLE.green.windT
+        && GUARD_STYLE.fat.windT > GUARD_STYLE.green.windT)
+
+    // themes: dungeon and palace both exist, rooms carry stable decoration seeds
+    ok('the dungeon has blue-grey levels and the arcade reaches the palace',
+        makeLevel(0).theme === 'dungeon' && makeLevel(LEVEL_COUNT - 1).theme === 'palace')
+    ok('rooms carry stable decoration seeds', (() => {
+        const a = makeLevel(2), b = makeLevel(2)
+        return a.deco.length === a.nRooms && JSON.stringify(a.deco) === JSON.stringify(b.deco)
+    })())
+
+    // careful / drink / draw / sheathe states are reachable in the sim
+    {
+        const gg = makeGame(0)
+        setGround(gg, 14.5 * T, 5 * T)              // the room-2 ledge at row 5
+        let t3 = 0
+        while (t3++ < 40 && !gg.p.careful) step(gg, { right: true })
+        ok('the prince steps carefully at a pit edge', gg.p.careful === true && gg.p.anim === 'careful')
+    }
+    {
+        const gg = makeGame(0)
+        gg.pots.push({ c: 1, r: 8, room: 0, type: 'r', taken: false })
+        setGround(gg, 1 * T + 4, 8 * T)
+        run(gg, 3, { right: true })
+        ok('a potion is drunk with its own pose', gg.p.drinkT > 0 && gg.p.anim === 'drink')
+    }
+    {
+        const gg = makeGame(0); gg.sword = true
+        const gd = mkGuard(3 * T, 8 * T, 0)
+        gg.guards.push(gd)
+        setGround(gg, 3 * T - 40, 8 * T)
+        run(gg, 2)
+        ok('the duel opens with the draw', gg.p.duelDrawn && gg.p.drawT > 0 && gg.p.anim === 'draw')
+        run(gg, CFG.drawT + 2)
+        gd.dead = true
+        run(gg, 2)
+        ok('walking away sheathes the sword', gg.p.sheatheT > 0 && gg.p.anim === 'sheathe')
+    }
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
