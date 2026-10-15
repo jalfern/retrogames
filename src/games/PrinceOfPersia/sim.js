@@ -39,7 +39,7 @@ export const CFG = {
     drinkT: 26, drawT: 16, sheatheT: 16, startT: 12, skidT: 8, turnT: 10,
     // Stage 3: the twelve levels' signatures
     mirrorReach: 24,
-    shadowDelay: 210, shadowWalk: 1.45, mergeRange: 26,
+    shadowDelay: 210, shadowWalk: 2.4, mergeRange: 26,
     mouseSpeed: 1.1,
     slack: false,
 }
@@ -120,7 +120,7 @@ function loadLevel(g, i, fromCheckpoint = false) {
     // world (a shadow seeps through the starting wall) and re-enacts from there.
     // Its touch only turns lethal once it has fully woken (one replay delay).
     g.shadow = g.level.shadow ? {
-        x: (g.level.start.c + 0.5) * T - 15 * T, y: g.level.start.r * T,
+        x: (g.level.start.c + 0.5) * T - 18 * T, y: g.level.start.r * T,
         vx: 0, vy: 0, facing: 1, onGround: true, anim: 'idle', animT: 0,
         hp: 1, maxHp: 2, dead: false, dieT: 0, dieWhy: '', fallFrom: null, lev: 0,
         bornAt: g.tick,
@@ -564,7 +564,11 @@ function stepShadow(g) {
     const s = g.shadow
     if (!s || g.status !== 'play') return
     if (s.dead) { s.dieT++; return }
-    const inp = g.hist[Math.max(0, g.hist.length - 1 - CFG.shadowDelay)] || { left: false, right: false, up: false, down: false }
+    if (g.p.duelDrawn) {
+        s.vx = 0; s.animT++; s.anim = 'idle'
+        return
+    }
+    const inp = g.hist[g.hist.length - 1 - CFG.shadowDelay] || { left: false, right: false, up: false, down: false }
 
     const dirIn = (inp.right ? 1 : 0) - (inp.left ? 1 : 0)
     if (dirIn !== 0) {
@@ -609,7 +613,7 @@ function stepShadow(g) {
     // shadow peels off the replay and catches up with the sheathed prince.
     const p = g.p
     if (g.level.merge && !p.duelDrawn && g.level.exit && roomOf(Math.floor(p.x / T)) === g.level.exit.room) {
-        s.x += sign(p.x - s.x) * 2.4
+        s.x += sign(p.x - s.x) * 6
     }
     if (g.tick > s.bornAt + CFG.shadowDelay && Math.abs(s.x - p.x) < CFG.mergeRange && Math.abs(s.y - p.y) < FH) {
         if (g.level.merge && !p.duelDrawn) {

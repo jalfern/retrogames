@@ -36,7 +36,7 @@ original's full height: twelve levels, the real duel, the look.
   pile into rubble. HUD: health as little flasks bottom-left, the duel guard's
   flasks bottom-right, room counter + hour on top.
 
-## Stage 2 of #316 — the look and the animation (this merge)
+## Stage 2 of #316 — the look and the animation
 
 - **Pose table** (`art.js` `POSES`): the prince runs on an 8-frame cycle of
   two-segment legs (thigh + shin + knee), plus separate start / skid / turn /
@@ -72,16 +72,11 @@ X or Z strike · ? pause · R restart after the hour is lost.
 
 ```bash
 npm run lint:pop     # scoped lint gate
-npm run popcheck     # 99 checks (75 rules + 24 look): no-lives restart, unarmed
-                     # start (no fight before the sword), parry-the-lunge,
-                     # falls-by-floors, held-grab only, gates/chompers/rubble/
-                     # plate-door, the five 1989 flasks, autopilot clears every
-                     # level inside the hour at 0 deaths, slack (0.75x clock +
-                     # every guard hp-1 still wins), hash-for-hash determinism,
-                     # no-Math.random, planner/CFG constants; plus stage-2:
-                      # proportions/climb-time, full pose-set, >=8 distinct run
-                      # frames, distinct death anim per cause, guard palettes &
-                      # styles, dungeon+palace themes, careful/drink/draw/sheathe
+npm run popcheck     # 166 checks: the 75 Stage-1 rules + 24 Stage-2 look
+                     # clauses + 67 Stage-3 clauses. Champion run pinned:
+                     # autopilot clears all twelve levels at 0 deaths, and the
+                     # mirror / mouse-held gate / poisoned phantom shadow /
+                     # invisible bridge / sheathed merge all fire in that run.
 npm run popplay      # advisory headless drive (needs npm run dev): real keys
                      # start/run/jump, find the sword, die on the traps, the
                      # level restarts under a running clock, R restarts, zero
@@ -92,15 +87,37 @@ Mutant proof at ship time: forcing the parry branch off in `stepGuards`
 (`if (false && p.block)`) turned `popcheck` red (1 failure — the parry pin)
 and was restored.
 
+## Stage 3 of #316 — all twelve levels (this merge)
+
+- **Twelve named levels**, 4–5 rooms each on an 11-row grid: the ground floor
+  is row `GROUND=8` and two pit rows live below it (row 10 auto-solid unless
+  authored). `_` opens a shaft through the ground row; row 10 fills solid
+  except authored cells.
+- **The magic mirror** (`m`/`M`, L4): stepping to the glass teleports you to
+  its far side, once per level entry — the barred corridor has other ways.
+- **The shadow** (L5+): a black silhouette gathers behind the starting wall
+  and re-enacts your inputs `CFG.shadowDelay` ticks late. It never jumps, so
+  shafts are its death; it drinks phantom flasks (L5's poison kills it, not
+  you — `shadowDrink`/`shadowDown` events); it freezes while your sword is
+  drawn; and its touch kills — except in the lair.
+- **The princess's mouse** (L8, `h`): scurries to a raise button and holds it
+  so the gate stays open for you (`mouseHold` gates the button's room).
+- **The feather** (L7): with `lev > 0` a killing drop (≥2.5 floors) costs a
+  point of blood instead of the run.
+- **The invisible bridge** (L12, `i`): planks that are solid underfoot from
+  above but paint nothing until the first step finds them (`bridgeSeen`).
+- **The merge** (L12): at the exit threshold the shadow peels off its replay
+  and catches up; a touch with the sword sheathed folds it back into you
+  (`merge` event, `g.merged`) and the story ends without killing yourself.
+- **Interludes**: twelve crossing cards between levels (`INTERLUDES` in
+  `index.jsx`); the frame is 10/11 to seat the pit rows.
+- Shadow spawn gap is 18 tiles ≈ `shadowDelay × prince speed` — replay-lag
+  self-similarity keeps the gap honest: stalls shorter than the delay (a gate
+  hold) do NOT let it catch you; longer ones DO, which is the whole threat.
+
 ## Honest gaps (the deep pass continues — see #316)
 
-- Three multi-room levels so far; twelve with their signature moments is
-  Stage 3 — the fat guard's level, the mirror/shadow, the invisible bridge
-  and Jaffar's lair arrive with them (`needBoss` is wired; the fat-guard
-  *look* exists, its level does not).
-- Floors sit 3 tiles apart in a 9-row viewport, so the prince at `PH=60` is
-  ~2/3 of a floor — "most of a floor" in spirit. True original proportions
-  (prince ≈ 0.9 of the floor spacing) need the room grid re-cut to 2-row
-  floors; parked on the Stage-3 list with the twelve layouts.
+- Guards do not walk through doors with you between rooms (they patrol their
+  own room); the original escorts you deeper.
 - Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
   with the d-pad; desktop-first, as the original was. Sound is Stage 4.

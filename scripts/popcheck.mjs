@@ -1,4 +1,6 @@
-// PRINCE OF PERSIA — the Node audit (Stage 1 of #316: the rules of 1989).
+// PRINCE OF PERSIA — the Node audit (#316). Stage 1 pinned the rules of
+// 1989; Stage 2 the look; Stage 3 the twelve levels and their signatures —
+// mirror, mouse, shadow, invisible bridge, feather, and the sheathed merge.
 // Boots the pure sim and pins the rules of the deep pass: multi-room levels
 // with a hard screen flip, no lives (death restarts the level while the hour
 // keeps running), a mid-level checkpoint, unarmed start (no steel before the
@@ -357,7 +359,7 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
     ok('legs are two-segment (thigh + shin + knee)', /function leg2\(/.test(src))
     const REQUIRED = ['idle', 'walk', 'run', 'start', 'skid', 'turn', 'jump', 'land', 'hang', 'climb',
         'careful', 'crouch', 'drink', 'draw', 'sheathe', 'block', 'attack',
-        'die_impale', 'die_slice', 'die_crumple', 'die_cut', 'die_poison']
+        'die_impale', 'die_slice', 'die_crumple', 'die_cut', 'die_poison', 'die_shadow']
     const missing = REQUIRED.filter((n) => !(n in POSES))
     ok(`every named pose exists (${missing.length ? 'missing: ' + missing.join(',') : 'all'})`, missing.length === 0)
     ok('the run cycle has at least 8 distinct frames',
@@ -365,8 +367,8 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
     ok('climb-up animates through several frames', POSES.climb.length >= 4)
     ok('hang sways between frames', POSES.hang.length >= 2 && JSON.stringify(POSES.hang[0]) !== JSON.stringify(POSES.hang[1]))
     ok('poseOf wraps frames cyclically', JSON.stringify(poseOf('run', 8)) === JSON.stringify(poseOf('run', 0)))
-    ok('each death has its own animation', Object.keys(DEATH_ANIMS).length === 5
-        && new Set(Object.values(DEATH_ANIMS)).size === 5)
+    ok('each death has its own animation', Object.keys(DEATH_ANIMS).length === 6
+        && new Set(Object.values(DEATH_ANIMS)).size === 6)
 
     // deaths really take their own pose in the sim
     const g2 = makeGame(0)
@@ -443,6 +445,172 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         gd.dead = true
         run(gg, 2)
         ok('walking away sheathes the sword', gg.p.sheatheT > 0 && gg.p.anim === 'sheathe')
+    }
+}
+
+
+// ---- 13. Stage 3: twelve levels and their signatures -------------------------
+{
+    ok('there are twelve levels, each named', LEVEL_COUNT === 12 && new Set(Array.from({ length: 12 }, (_, i) => makeLevel(i).name)).size === 12)
+
+    // the magic mirror teleports, once per entry
+    {
+        const lv = makeLevel(3)
+        ok('the fourth level carries a mirror and a far side', !!lv.mirror && !!lv.mirrorTo)
+        const g = makeGame(3)
+        const m = lv.mirror
+        setGround(g, (m.c + 0.5) * T, m.r * T)
+        clearEv(g)
+        run(g, 2)
+        ok('stepping to the glass sends you through the barred corridor',
+            hasEv(g, 'mirror') && Math.abs(g.p.x - (lv.mirrorTo.c + 0.5) * T) < 2)
+        const x2 = g.p.x
+        run(g, 5)
+        ok('the glass only carries you once per entry', g.p.x === x2)
+    }
+
+    // the shadow wakes in level 4 and re-enacts your moves late
+    {
+        ok('the shadow sleeps through the first three levels',
+            [0, 1, 2].every((i) => makeGame(i).shadow === null))
+        ok('from the mirror onward the shadow follows', makeGame(3).shadow !== null)
+        const g = makeGame(4)
+        ok('it gathers behind the starting wall', g.shadow.x < g.p.x - 14 * T)
+        run(g, 60, { right: true })
+        ok('while you run it is still asleep', Math.abs(g.shadow.vx) < 0.01)
+        run(g, CFG.shadowDelay + 120, { right: true })
+        ok('then it re-enacts your run', g.shadow.x > (makeLevel(4).start.c + 0.5) * T - 14 * T + 100 && g.shadow.vx > 1)
+    }
+
+    // its phantom flasks are its own; poison is its death, not yours
+    {
+        const g = makeGame(4)
+        const s = g.shadow
+        const bp = g.pots.find((pt) => pt.type === 'b')
+        ok('its level carries a phantom poison', !!bp)
+        g.tick = s.bornAt + CFG.shadowDelay + 1
+        s.x = (bp.c + 0.5) * T; s.y = bp.r * T; s.hp = 1
+        clearEv(g)
+        run(g, 3)
+        ok('the shadow drinks the poison and dies alone',
+            hasEv(g, 'shadowDrink', (e) => e.kind === 'b') && hasEv(g, 'shadowDown', (e) => e.why === 'poison')
+            && s.dead && g.status === 'play' && g.p.hp === CFG.startHP)
+    }
+
+    // its touch kills — outside the lair
+    {
+        const g = makeGame(4)
+        g.tick = g.shadow.bornAt + CFG.shadowDelay + 2
+        g.shadow.x = g.p.x + 10
+        clearEv(g)
+        step(g, {})
+        ok('the shadow touch is death', g.status === 'dying' && g.deathReason === 'shadow')
+        ok('and it has its own animation', g.p.anim === DEATH_ANIMS.shadow)
+    }
+
+    // the mouse runs ahead and holds the button
+    {
+        const lv = makeLevel(7)
+        ok('the mouse level names its helper', !!lv.mouse && lv.name === 'THE MOUSE')
+        const g = makeGame(7)
+        let t = 0, held = false
+        while (!(g.status === 'clear' || g.status === 'lost') && t++ < 6000) {
+            step(g, decide(g))
+            if (g.mouse && g.mouse.onButton && g.gateOpen[g.mouse.room] > CFG.gateOpen) held = true
+            g.events.length = 0
+        }
+        ok('the mouse really reaches and holds the raise button', held && g.status === 'clear')
+    }
+
+    // the invisible bridge holds weight and reveals itself underfoot
+    {
+        const lv = makeLevel(11)
+        let bc = -1, br = -1
+        for (let r = 0; r < lv.H; r++) for (let c = 0; c < lv.W; c++) if (lv.grid[r * lv.W + c] === 15) { bc = c; br = r }
+        ok('the lair spans its pit with planks the eyes cannot see', bc >= 0)
+        const g = makeGame(11)
+        setGround(g, (bc - 2.5) * T, br * T)
+        clearEv(g)
+        run(g, 60, { right: true })
+        ok('the first step finds the plank, and the plank shows', g.status === 'play' && hasEv(g, 'bridge') && Object.keys(g.bridgeSeen).length >= 1)
+    }
+
+    // the feather softens what would kill
+    {
+        const lvF = makeLevel(0)
+        const dropC = (() => { for (let c = 2; c < lvF.W - 2; c++) { let free = true; for (const r of [1, 2, 3, 4, 5, 6, 7]) if (lvF.grid[r * lvF.W + c] !== 0) free = false; if (free && lvF.grid[8 * lvF.W + c] !== 0) return c } return -1 })()
+        ok('the dungeon has a three-floor drop', dropC >= 0)
+        const drop = (feather) => {
+            const d = makeGame(0)
+            if (feather) {
+                d.pots.push({ c: 1, r: 8, room: 0, type: 'f', taken: false })
+                d.p.hp = CFG.startHP
+                setGround(d, 1 * T + 4, 8 * T)
+                run(d, 3, { right: true })
+            }
+            setGround(d, (dropC + 0.5) * T, T - 16)
+            d.p.fallFrom = d.p.y; d.p.vy = 1; d.p.onGround = false; d.p.noGrabUntil = d.tick + 60
+            let t = 0
+            while (!d.p.onGround && d.status === 'play' && t++ < 400) step(d, {})
+            return d
+        }
+        const fe = drop(true)
+        ok('feather in the blood', fe.p.lev > 0 || CFG.levG < CFG.g)
+        ok('a three-floor fall with the feather costs blood, not the run',
+            fe.status === 'play' && fe.p.hp === CFG.startHP - 1)
+        ok('without it, the same fall kills', (() => { const h = drop(false); return h.status === 'dying' && h.deathReason === 'fall' })())
+    }
+
+    // the lair ends in the merge, not the sword
+    {
+        const lv = makeLevel(11)
+        ok('the lair is the merge level', lv.merge === true && lv.shadow === true)
+        ok('Jaffar waits at the end of the twelfth level', makeLevel(11).guards.some((q) => q.boss))
+        const g = makeGame(11)
+        g.sword = true
+        let t = 0, mergedAt = -1
+        while (!(g.status === 'win' || g.status === 'lost') && t++ < 20000) {
+            step(g, decide(g))
+            if (hasEv(g, 'merge')) mergedAt = g.tick
+            g.events.length = 0
+        }
+        ok('PROVEN: in the lair the sheathed shadow merges back into you',
+            mergedAt > 0 && g.merged && g.shadow.dead && g.shadow.dieWhy === 'merge')
+    }
+
+    // champion run: all twelve in one sitting, no deaths
+    {
+        const g = makeGame(0)
+        let t = 0, doors = 0, deaths = 0
+        const kinds = { mirror: false, bridge: false, merge: false, shadowPoison: false, mouse: false }
+        while (!(g.status === 'win' || g.status === 'lost') && t++ < 60 * 60 * 60) {
+            step(g, decide(g))
+            for (const e of g.events) {
+                if (e.type === 'clear') doors++
+                if (e.type === 'die') deaths++
+                if (e.type === 'mirror') kinds.mirror = true
+                if (e.type === 'bridge') kinds.bridge = true
+                if (e.type === 'merge') kinds.merge = true
+                if (e.type === 'shadowDown' && e.why === 'poison') kinds.shadowPoison = true
+                if (e.type === 'mouse') kinds.mouse = true
+            }
+            g.events.length = 0
+        }
+        ok('PROVEN: the autopilot rescues her through all twelve levels', g.status === 'win' && doors === 12)
+        ok('PROVEN: the champion run takes no deaths', deaths === 0)
+        ok('PROVEN: mirror, mouse, poisoned shadow, bridge and merge all fire in the run',
+            Object.values(kinds).every(Boolean))
+    }
+
+    // the shell: twelve interludes, a shadow death line, the taller frame
+    {
+        const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+        ok('the shell carries an interlude for every crossing', (src.match(/^\s*'/gm) || []).length >= 22 && src.includes('INTERLUDES') && src.includes('CLEARED'))
+        ok('the shell knows how the shadow ends you', src.includes('shadow:'))
+        ok('the frame grew for the two pit rows', src.includes('aspect-[10/11]'))
+        const asrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+        ok('the art draws the mirror, the mouse and the silhouette',
+            /function drawMirror\(/.test(asrc) && /function drawMouse\(/.test(asrc) && asrc.includes('die_shadow') && asrc.includes('bridgeSeen'))
     }
 }
 

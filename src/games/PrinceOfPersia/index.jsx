@@ -7,7 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { drawScene, VW, VH } from './art.js'
-import { LEVEL_COUNT } from './levels.js'
+import { LEVEL_COUNT, LEVEL_NAMES } from './levels.js'
 
 const ATTRACT_MSGS = [
     'PRINCE OF PERSIA',
@@ -23,7 +23,35 @@ const DEATH_WHY = {
     sword: 'SLAIN BY THE SWORD',
     poison: 'POISONED',
     gate: 'THE PORTCULLIS CLAIMS YOU',
+    shadow: 'THE SHADOW OVERTOOK YOU',
 }
+
+const INTERLUDES = [
+    '"Sultan, your vizier has locked the palace.',
+    'Only the prince can save her now."',
+    '"The port gate is barred from within —',
+    'find the hidden lever, or a way around."',
+    '"Guards patrol the checkpoint. Steel,',
+    'not speed, opens the way through."',
+    '"A magic mirror stands in the barred',
+    'corridor. Some glass shows other ways."',
+    '"A shadow gathers behind you —',
+    'what it drinks, you cannot."',
+    '"The fat guard never tires. Time',
+    'his swing; answer with your own."',
+    '"The palace floor has fallen away.',
+    'With grace, the fall will not kill."',
+    '"The princess\'s mouse has escaped',
+    'her cage. It knows the buttons."',
+    '"In the inverted hall the world',
+    'turns over. Trust your feet."',
+    '"Two blades guard the inner court.',
+    'Parry first — Persia favors patience."',
+    '"There is no way back, prince.',
+    'Only forward, and the hour drains."',
+    '"Jaffar waits with your own face.',
+    'Sheathe your sword and take it back."',
+]
 
 const PrinceOfPersiaGame = () => {
     const canvasRef = useRef(null)
@@ -143,6 +171,13 @@ const PrinceOfPersiaGame = () => {
                 else if (ev.type === 'clear') audioController.playSweep(400, 800, 0.3, 'square', 0.14)
                 else if (ev.type === 'timeup') audioController.playSweep(200, 60, 0.8, 'sawtooth', 0.2)
                 else if (ev.type === 'win') audioController.playSweep(400, 1200, 0.6, 'square', 0.16)
+                else if (ev.type === 'mirror') audioController.playSweep(1200, 500, 0.35, 'sine', 0.12)
+                else if (ev.type === 'bridge') { audioController.playTone(520, 0.06, 'triangle', 0.1); audioController.playTone(780, 0.08, 'triangle', 0.1) }
+                else if (ev.type === 'mouse') audioController.playTone(980, 0.05, 'square', 0.08)
+                else if (ev.type === 'shadowDrink') audioController.playSweep(300, 700, 0.15, 'sine', 0.08)
+                else if (ev.type === 'shadowFall') audioController.playNoise(0.1, 0.1)
+                else if (ev.type === 'shadowDown') audioController.playSweep(500, 120, 0.3, 'triangle', 0.12)
+                else if (ev.type === 'merge') audioController.playSweep(200, 900, 0.5, 'sine', 0.14)
             }
         }
 
@@ -198,9 +233,24 @@ const PrinceOfPersiaGame = () => {
                 ctx.fillStyle = '#8a8ab0'
                 ctx.fillText('THE HOUR KEEPS RUNNING', VW / 2, VH / 2 + 2)
             } else if (g.status === 'clear') {
-                ctx.font = 'bold 13px monospace'
+                const last = g.levelIndex === LEVEL_COUNT - 1
+                ctx.fillStyle = 'rgba(0,0,0,0.72)'
+                ctx.fillRect(0, VH / 2 - 54, VW, 108)
+                ctx.font = 'bold 14px monospace'
                 ctx.fillStyle = '#80e0a0'
-                ctx.fillText(g.levelIndex === LEVEL_COUNT - 1 ? 'THE DOOR OPENS' : 'THIS LEVEL IS BEHIND YOU', VW / 2, VH / 2)
+                ctx.fillText(last ? 'JAFFAR HAS FALLEN' : `LEVEL ${g.levelIndex + 1} CLEARED`, VW / 2, VH / 2 - 30)
+                if (!last) {
+                    ctx.font = 'bold 12px monospace'
+                    ctx.fillStyle = '#e8d060'
+                    ctx.fillText(LEVEL_NAMES[g.levelIndex + 1], VW / 2, VH / 2 - 8)
+                }
+                ctx.font = '8px monospace'
+                ctx.fillStyle = '#8a8ab0'
+                const pair = last
+                    ? ['"The shadow folds into you. The hour is', 'nearly spent — she is waiting."']
+                    : INTERLUDES.slice(g.levelIndex * 2, g.levelIndex * 2 + 2)
+                ctx.fillText(pair[0] || '', VW / 2, VH / 2 + 14)
+                ctx.fillText(pair[1] || '', VW / 2, VH / 2 + 26)
             } else if (g.status === 'win') {
                 ctx.fillStyle = 'rgba(0,0,0,0.6)'
                 ctx.fillRect(0, VH / 2 - 40, VW, 80)
@@ -264,7 +314,7 @@ const PrinceOfPersiaGame = () => {
 
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center p-4">
-            <div ref={containerRef} className="relative w-full max-w-[640px] aspect-[10/9] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
+            <div ref={containerRef} className="relative w-full max-w-[640px] aspect-[10/11] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" tabIndex={0} />
                 {paused && <PauseOverlay game={GAMES.find((game) => game.label === 'PRINCE OF PERSIA')} onResume={handleResume} />}
             </div>
