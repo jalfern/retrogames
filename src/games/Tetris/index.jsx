@@ -14,7 +14,8 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { newGame, step, cellsOf, stateHash, PIECE_NAMES, SPAWN_X, SPAWN_Y, FIXED_DT, resting } from './sim.js'
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from './planner.js'
 import { musicStep } from './music.js'
-import { blockTile, text5, artColumn } from './art.js'
+import { blockTile, text5, marqueePieces } from './art.js'
+import { SFX, clearSfx } from './sounds.js'
 
 const SIM_MS = FIXED_DT
 const W = 256, H = 240
@@ -63,30 +64,32 @@ const TetrisGame = () => {
 
         const say = (m) => { toastMsg = m; toast = 120 }
 
+        const playSfx = (spec) => {
+            if (!spec) return
+            if (spec.kind === 'tone') audioController.playTone(spec.f, spec.dur, spec.wave || 'square', spec.vol)
+            else if (spec.kind === 'noise') audioController.playNoise(spec.dur, spec.vol)
+            else if (spec.kind === 'seq') spec.notes.forEach((f, i) => setTimeout(() => audioController.playTone(f, spec.dur, spec.wave || 'square', spec.vol), i * spec.gap * 1000))
+            else if (spec.kind === 'death') audioController.playDeath()
+        }
+
         const handleEvents = (s, audible) => {
             while (s.events.length) {
                 const e = s.events.shift()
                 if (e.t === 'lock') lockFlash = { cells: e.cells, t: 9 }
                 if (!audible) continue
-                if (e.t === 'rot') audioController.playTone(620, 0.04, 'square', 0.05)
-                else if (e.t === 'lock') audioController.playNoise(0.035, 0.1)
+                if (e.t === 'rot') playSfx(SFX.rot)
+                else if (e.t === 'lock') playSfx(SFX.lock)
                 else if (e.t === 'cleared') {
                     // The shift just landed after the NES flash window: the
-                    // rows are gone, the score lands, the tempo steps up.
+                    // rows are gone, the score lands, the tempo steps up. The
+                    // clear plays a per-line-count arpeggio (sounds.js) — a
+                    // Tetris gets its own fanfare.
                     scoreFlash = 20
-                    audioController.playSweep(260 + e.n * 90, 620 + e.n * 160, 0.16 + e.n * 0.05, 'square', 0.08)
-                    if (e.n === 4) {
-                        say('TETRIS!')
-                        setTimeout(() => audioController.playTone(1319, 0.06, 'square', 0.07), 60)
-                        setTimeout(() => audioController.playTone(1760, 0.09, 'square', 0.07), 120)
-                    }
+                    playSfx(clearSfx(e.n))
+                    if (e.n === 4) say('TETRIS!')
                     audioController.setMusicStep(musicStep(s.level))
-                } else if (e.t === 'level') {
-                    audioController.playTone(880, 0.09, 'square', 0.07)
-                    setTimeout(() => audioController.playTone(1175, 0.14, 'square', 0.07), 90)
-                } else if (e.t === 'over') {
-                    audioController.playDeath()
-                }
+                } else if (e.t === 'level') playSfx(SFX.level)
+                else if (e.t === 'over') playSfx(SFX.over)
             }
         }
 
@@ -197,8 +200,8 @@ const TetrisGame = () => {
             const s = screenRef.current === 'attract' ? demo : gs
             if (!s) return
             const t = s.tick
-            artColumn(ctx, 240, 0, H, t)
-            artColumn(ctx, 0, 0, H, t + 24)
+            marqueePieces(ctx, 240, 0, H, t)
+            marqueePieces(ctx, 0, 0, H, t + 24)
             text5(ctx, 'TETRIS', FX + (10 * CELL - textW('TETRIS', 3)) / 2, 12, '#00e8f8', 3)
             text5(ctx, '20 ROWS  7 PIECES  NO MERCY', FX, 34, '#787878', 1)
             paintField(s)
@@ -231,7 +234,7 @@ const TetrisGame = () => {
                 } else if (screenRef.current === 'play' && gs && !gs.over) {
                     step(gs, { ...keys })
                     const rest = resting(gs)
-                    if (rest && !wasResting) audioController.playTone(140, 0.03, 'square', 0.05)
+                    if (rest && !wasResting) playSfx(SFX.drop)
                     wasResting = rest
                     handleEvents(gs, true)
                     finish(gs)

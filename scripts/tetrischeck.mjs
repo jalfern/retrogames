@@ -14,10 +14,11 @@
 import {
     newGame, step, gravityFrames, GRAVITY, DAS_DELAY, DAS_REPEAT, SOFT_FRAMES,
     CLEAR_FRAMES, SCORE_LINES, SCORE_CAP, COLS, ROWS, SPAWN_X, SPAWN_Y, cellsOf, fits,
-    drawPiece, lfsr8, stateHash, SHAPES, LEVEL_CAP, PIECE_NAMES, resting,
+    drawPiece, lfsr8, stateHash, SHAPES, LEVEL_CAP, PIECE_NAMES, resting, pieceGlyph,
 } from '../src/games/Tetris/sim.js'
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from '../src/games/Tetris/planner.js'
 import { musicStep, TET_MUSIC_STEPS } from '../src/games/Tetris/music.js'
+import { SFX, clearSfx, sig } from '../src/games/Tetris/sounds.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('tetrischeck')
@@ -163,6 +164,36 @@ r.check('gravity past L9 is non-increasing and never below 2f (extrapolation cap
     for (let L = 1; L < TET_MUSIC_STEPS.length; L++) if (TET_MUSIC_STEPS[L] > TET_MUSIC_STEPS[L - 1]) nonInc = false
     r.check('tetris music speeds up every level (non-increasing step L0-9)', nonInc, TET_MUSIC_STEPS.join(','))
     r.check('tetris music tempo floors at 0.06 (L5=0.1, L29/L99=floor)', musicStep(5) === 0.1 && TET_MUSIC_STEPS[9] === 0.06 && musicStep(29) === 0.06 && musicStep(99) === 0.06)
+}
+// ------------------------------------------- marquee piece illustration ----
+// The side column is the cartridge's seven tetrominoes (issue #214), not a
+// generic stacked-blocks stripe. The glyph data is pure (pieceGlyph); this
+// pins that it is the SEVEN distinct tetrominoes and nothing else.
+{
+    const glyphs = PIECE_NAMES.map((_, t) => pieceGlyph(t))
+    r.check('marquee: all seven pieces are illustrated (one glyph each)', glyphs.length === 7)
+    r.check('marquee: every glyph is a tetromino (exactly 4 cells)', glyphs.every((g) => g.cells.length === 4), glyphs.map((g) => g.cells.length).join(','))
+    r.check('marquee: every glyph fits a 4x4 box (a tetromino at rest)', glyphs.every((g) => g.w >= 1 && g.w <= 4 && g.h >= 1 && g.h <= 4), glyphs.map((g) => `${g.w}x${g.h}`).join(','))
+    const keys = glyphs.map((g) => `${g.w}x${g.h}:${g.cells.map(([a, b]) => a + ',' + b).join(';')}`)
+    r.check('marquee: the seven glyphs are seven DISTINCT shapes (not a repeated stripe)', new Set(keys).size === 7, keys.join(' | '))
+    const o = pieceGlyph(2)
+    r.check('marquee: the O reads as a 2x2 block', o.w === 2 && o.h === 2 && o.cells.length === 4)
+    const i = pieceGlyph(5)
+    r.check('marquee: the I reads as a full 4-cell line', (i.w === 4 && i.h === 1) || (i.w === 1 && i.h === 4), `${i.w}x${i.h}`)
+}
+// ---------------------------------------------------- per-action sound set ----
+// sounds.js is the pure SFX table (music.js owns the tempo). The pin is the
+// VARIETY: no two actions share a signature, and a line-clear gets a longer,
+// higher arpeggio as it clears more rows — a Tetris is its own fanfare.
+{
+    const base = ['rot', 'drop', 'lock', 'level', 'over']
+    const all = [...base.map((a) => SFX[a]), ...[1, 2, 3, 4].map(clearSfx)]
+    const sigs = all.map(sig)
+    r.check('sound set: every action + every line-count clear has a signature', sigs.every((s) => s.length > 2), sigs.join(' | '))
+    r.check('sound set: no two actions share a signature (variety)', new Set(sigs).size === sigs.length, sigs.join(' | '))
+    r.check('sound set: a clear grows with the count (1,2,3,4 notes)', [1, 2, 3, 4].every((n) => clearSfx(n).notes.length === n), [1, 2, 3, 4].map((n) => clearSfx(n).notes.length).join(','))
+    r.check('sound set: the Tetris fanfare peaks above any 3-line clear', Math.max(...clearSfx(4).notes) > Math.max(...clearSfx(3).notes), `tetris ${Math.max(...clearSfx(4).notes)} vs triple ${Math.max(...clearSfx(3).notes)}`)
+    r.check('sound set: the Tetris is a distinct signature from a triple', sig(clearSfx(4)) !== sig(clearSfx(3)))
 }
 {
     // the attract demo cycles its start level so the gravity range is visible

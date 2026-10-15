@@ -41,17 +41,22 @@ Verify with `npm run tetrischeck` — Node, no browser, the same code the tab ru
   reproduced; the shape is pinned, the numbers are ours).
 - **Attract**: the demo cycles its start level 0 -> 5 -> 9 -> 0 so the
   gravity range is visible, not a level-9 loop.
-- **Look**: 8px beveled blocks, the side panel, the marquee art column and the
-  3x5 font are drawn from the NES's style, not traced from its ROM.
+- **Look**: 8px beveled blocks, the side panel, the marquee's piece
+  illustration (the seven tetrominoes cycling the side columns) and the 3x5
+  font are drawn from the NES's style, not traced from its ROM.
 
 ## Files
 
-- `sim.js` — the whole game as pure `(state, input)`; zero Math.random.
+- `sim.js` — the whole game as pure `(state, input)`; zero Math.random. Also
+  owns the marquee piece glyph (the pin-able half of the side-column art).
 - `planner.js` — the autopilot (placement heuristic + honest key-driving, so
   the attract demo obeys the same DAS as your thumb) and the demo's level
   cycle (0/5/9).
-- `art.js` — block tiles, 3x5 bitmap font, marquee column; runtime-generated.
+- `art.js` — block tiles, 3x5 bitmap font, the marquee's piece illustration;
+  runtime-generated.
 - `music.js` — the Korobeiniki tempo table by level (pinned data).
+- `sounds.js` — the per-action SFX table (rotate/lock/drop/level/over + the
+  per-line-count clear arpeggio); pure data, pinned in tetrischeck.
 - `index.jsx` — 256x240 shell, attract/pause/over, touch start, DEV hook
   (`window.__tetrisTest`) and DebugKit.
 
@@ -64,8 +69,9 @@ Verify with `npm run tetrischeck` — Node, no browser, the same code the tab ru
   but the section is still advisory-tier until it is green on the shared
   runner a handful of times (promotion is Jon's call — STATE question 3).
   The deterministic gate is tetrischeck in `static`.
-- The NES's right-edge marquee art column is our stacked-blocks stripe, not
-  the cartridge's piece illustration (visual, no Node pin).
+- The marquee's piece illustration is pinned as DATA (`pieceGlyph` in
+  sim.js); its pixel rendering is only light-probed by tetrisplay (advisory),
+  not graded pixel-for-pixel.
 - Rotating pieces can slide behind overhangs like the real NES (no kicks), but
   the planner's reachability heuristic is approximate — that is the attract
   demo's ceiling, not the well's.

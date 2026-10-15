@@ -111,6 +111,21 @@ export function cellsOf(type, rot, x, y) {
     return SHAPES[type][rot % SHAPES[type].length].map(([r, c]) => [y + r, x + c])
 }
 
+// The tight bounding-box glyph of a piece at rest (rot 0), normalized to the
+// origin — what the marquee column illustrates (issue #214): the cartridge's
+// seven tetrominoes, not a generic stripe. Pure: the shell paints it
+// (art.js) and the harness pins it (scripts/tetrischeck.mjs).
+export function pieceGlyph(type) {
+    const cells = cellsOf(type, 0, 0, 0)
+    let minR = 99, maxR = -1, minC = 99, maxC = -1
+    for (const [r, c] of cells) {
+        minR = Math.min(minR, r); maxR = Math.max(maxR, r)
+        minC = Math.min(minC, c); maxC = Math.max(maxC, c)
+    }
+    const list = cells.map(([r, c]) => [r - minR, c - minC]).sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    return { type, w: maxC - minC + 1, h: maxR - minR + 1, cells: list }
+}
+
 export function fits(s, type, rot, x, y) {
     for (const [r, c] of cellsOf(type, rot, x, y)) {
         if (c < 0 || c >= COLS || r >= ROWS) return false

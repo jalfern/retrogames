@@ -1,5 +1,9 @@
-// TETRIS (NES) — runtime art. Blocks, panel chrome and a 3x5 bitmap font,
-// all generated in code. Imports nothing browser-hostile except the canvas.
+// TETRIS (NES) — runtime art. Blocks, panel chrome, a 3x5 bitmap font and the
+// marquee's piece illustration, all generated in code. Imports the pure piece
+// glyph from sim.js (the pin-able half of the marquee) and nothing
+// browser-hostile beyond the canvas.
+
+import { pieceGlyph } from './sim.js'
 
 export const NES = [
     null,
@@ -88,16 +92,28 @@ export function textWidth(str, scale = 1) {
     return String(str).length * 4 * scale - scale
 }
 
-// The marquee column of coloured blocks, like the NES side art.
-export function artColumn(ctx, x, y, h, t, s = 8) {
-    const seq = [1, 5, 6, 3, 7, 2, 4]
-    let yy = y - (t % s)
-    let i = Math.floor(t / s)
+// The NES side marquee, drawn as the cartridge's piece illustration (issue
+// #214): a dim field with the seven tetrominoes cycling through it, not a
+// generic stacked-blocks stripe. The glyph data is pure (pieceGlyph in
+// sim.js) and pinned by tetrischeck; this is the paint-only half. Each slot is
+// 16px tall and holds one piece centred at 2px per logical cell, so a 4-wide
+// I reads as an 8px bar in the 16px column.
+export function marqueePieces(ctx, x, y, h, t, s = 8) {
+    const col = s * 2
+    const slot = s * 2
+    const pp = 2
+    ctx.fillStyle = '#080818'
+    ctx.fillRect(x, y, col, h)
+    let yy = y - (t % slot)
+    let i = Math.floor(t / slot)
     while (yy < y + h) {
-        const id = (((seq[((i % seq.length) + seq.length) % seq.length]) - 1) % 7) + 1
-        ctx.drawImage(blockTile(id), x, yy, s, s)
-        ctx.drawImage(blockTile(id), x + s, yy, s, s)
-        yy += s
+        const type = ((i % 7) + 7) % 7
+        const g = pieceGlyph(type)
+        const ox = x + (col - g.w * pp) / 2
+        const oy = yy + (slot - g.h * pp) / 2
+        ctx.fillStyle = NES[type + 1]
+        for (const [rr, cc] of g.cells) ctx.fillRect(ox + cc * pp, oy + rr * pp, pp, pp)
+        yy += slot
         i++
     }
 }
