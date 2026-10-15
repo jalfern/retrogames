@@ -147,24 +147,32 @@ export function decideYear(g, ctx) {
             }
         }
         if (done) continue
-        for (const xc of [fx, fx + 1, fx - 1, fx + 2, fx - 2]) {
-            const s1 = [xc, fy + d], s2 = [xc, fy + 2 * d]
-            if (!grass(g, s1[0], s1[1]) || !grass(g, s2[0], s2[1])) continue
-            for (const [sx, sy] of [[xc, fy + 3 * d], [xc - 1, fy + 2 * d], [xc + 1, fy + 2 * d]]) {
-                if (!grass(g, sx, sy)) continue
-                const adj = N4.some(([ax, ay]) => inB(sx + ax, sy + ay) && (
-                    g.grid[idx(sx + ax, sy + ay)].t === T.ROAD || ctx.roads.has(idx(sx + ax, sy + ay)) ||
-                    (sx + ax === s1[0] && sy + ay === s1[1]) || (sx + ax === s2[0] && sy + ay === s2[1])))
-                if (!adj) continue
-                ctx.queue.push({ tool: T.ROAD, place: s1 })
-                ctx.queue.push({ tool: T.ROAD, place: s2 })
-                ctx.roads.add(idx(s1[0], s1[1]))
-                ctx.roads.add(idx(s2[0], s2[1]))
-                ctx.queue.push({ tool: T.FIRE, place: [sx, sy] })
-                ctx.firesPlaced++
-                ctx.doneFireSite[f.year] = true
-                done = true
-                break
+        // a dense corridor is a three-row slab (road + two zoned rows): the
+        // only open grass can sit on EITHER side of it, so the spur must try
+        // both directions. One-sided, a fire striking the slab's own zone
+        // row dug into the slab, found no station cell, and the city never
+        // guarded a disaster it was doomed to see.
+        for (const sd of [d, -d]) {
+            for (const xc of [fx, fx + 1, fx - 1, fx + 2, fx - 2]) {
+                const s1 = [xc, fy + sd], s2 = [xc, fy + 2 * sd]
+                if (!grass(g, s1[0], s1[1]) || !grass(g, s2[0], s2[1])) continue
+                for (const [sx, sy] of [[xc, fy + 3 * sd], [xc - 1, fy + 2 * sd], [xc + 1, fy + 2 * sd]]) {
+                    if (!grass(g, sx, sy)) continue
+                    const adj = N4.some(([ax, ay]) => inB(sx + ax, sy + ay) && (
+                        g.grid[idx(sx + ax, sy + ay)].t === T.ROAD || ctx.roads.has(idx(sx + ax, sy + ay)) ||
+                        (sx + ax === s1[0] && sy + ay === s1[1]) || (sx + ax === s2[0] && sy + ay === s2[1])))
+                    if (!adj) continue
+                    ctx.queue.push({ tool: T.ROAD, place: s1 })
+                    ctx.queue.push({ tool: T.ROAD, place: s2 })
+                    ctx.roads.add(idx(s1[0], s1[1]))
+                    ctx.roads.add(idx(s2[0], s2[1]))
+                    ctx.queue.push({ tool: T.FIRE, place: [sx, sy] })
+                    ctx.firesPlaced++
+                    ctx.doneFireSite[f.year] = true
+                    done = true
+                    break
+                }
+                if (done) break
             }
             if (done) break
         }
@@ -256,16 +264,18 @@ export function decideYear(g, ctx) {
     // 5. out of room AND out of queue with cash idle? open the next avenue:
     //    one connector off the current corridor, then the pattern repeats.
     //    (A one-row city tops out below the targets; inventory is the map.)
-    //    "Out of queue" means out of POWERED queue: dark cells waiting for
-    //    a relay must NOT block the tier — that was a deadlock where the
-    //    tier needed the queue empty, the queue needed power, the power
-    //    needed the tier, and the city sat on idle cash until the deadline.
+    //    The trigger is the DARK STALL, never placeable===0 on its own: a
+    //    corridor whose queued cells are merely AWAITING a relay (or simply
+    //    not built to yet) is not exhausted, and opening a tier the moment
+    //    the queue went dark cascaded — every tier row opened in ~8 years,
+    //    its one-cell connector never inside any plant's range, ~$770 of
+    //    unconnected roads and a bankruptcy while the old corridor's pop
+    //    sat at 96. The five-year grace is the relay's window; only a stall
+    //    that outlasts it (no plant coming, nothing placeable, nothing
+    //    becoming placeable) proves the avenue exhausted.
     const placeable = ctx.zoneQueue.filter(([, x, y]) => g.grid[idx(x, y)].t === T.GRASS && poweredNear(x, y)).length
-    // dark stall: cells wait in the queue with no power and no plant coming —
-    // that avenue is exhausted as surely as an empty queue (this deadlock
-    // capped one scenario at exactly the row inventory, 408 souls)
     ctx.darkStall = placeable === 0 ? (ctx.darkStall || 0) + 1 : 0
-    if ((placeable === 0 || ctx.darkStall >= 5) && plants > 0 && can(CFG.cost.plant + 150) && ctx.tier < ctx.tierRows.length &&
+    if (ctx.darkStall >= 5 && plants > 0 && can(CFG.cost.plant + 150) && ctx.tier < ctx.tierRows.length &&
         g.year < SCEN[g.sc].deadline - 10) {
         const y2 = ctx.tierRows[ctx.tier]
         if (y2 >= 1 && y2 <= H - 2) {

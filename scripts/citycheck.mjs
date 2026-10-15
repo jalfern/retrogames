@@ -101,21 +101,26 @@ section('ENGINE PINS')
     ok(c.pop === 0 && c.jobs > 0, `commerce and industry alone produced ${c.pop} residents / ${c.jobs} jobs — POP must count RES only`)
     ok(c.grid[idx(5, 7)].lvl > 0 && c.grid[idx(7, 7)].lvl > 0, 'powered industry next to a road never developed')
 
-    // block-by-block: one level per cooldown at most
+    // block-by-block: one level per cooldown at most. "Grew" is tracked as
+    // a high-water mark: a scripted fire can reduce the fixture's lone tile
+    // (it strikes the city where the city is, and one tile is a city), but
+    // that tests disasters, not growth — the anti-vacuity pin is "it ever
+    // rose", and the mechanic pin is "never more than one level a year".
     const b = newCity(0)
     step(b, { tool: T.ROAD, place: [6, 8] })
     step(b, { tool: T.PLANT, place: [6, 7] })
     step(b, { tool: T.IND, place: [7, 8] })
-    let last = 0, big = 0
+    let peak = 0, prev = 0, big = 0
     for (let t = 0; t < CFG.yearTicks * 14; t++) {
         step(b, {})
         if (b.events.find((e) => e.type === 'year')) {
             const lvl = b.grid[idx(7, 8)].lvl
-            if (lvl - last > 1) big++
-            last = lvl
+            if (lvl - prev > 1) big++
+            prev = lvl
+            peak = Math.max(peak, lvl)
         }
     }
-    ok(last > 0, 'block-by-block fixture never grew at all — the pin was vacuous')
+    ok(peak > 0, 'block-by-block fixture never grew at all — the pin was vacuous')
     ok(big === 0, 'a block jumped more than one level in a year — growth is not block-by-block')
 }
 
@@ -247,7 +252,12 @@ section('DISASTERS ARE SEEN IN A COMPETENT GAME')
         }
         ok(S.fires.length > 0, `s${sc} ${S.name}: no scripted disasters — a map with nothing to answer for`)
         ok(fired.length > 0, `s${sc} ${S.name}: no scripted fire ever ignited in a competent game — the disasters are invisible`)
-        ok(fired.some((yy) => yy < g.year), `s${sc}: fires at [${fired.join(',')}] all at/after the end (y${g.year}) — a late decoration, not a mid-game threat`)
+        // a fire in the WIN year still counts as seen: inside yearTick the
+        // disasters strike before the end check, so the player sees the
+        // strike and the answer in the same year the city takes the crown.
+        // A fire AFTER the end never ignites at all — that is the
+        // "late decoration" this pin hunts.
+        ok(fired.some((yy) => yy <= g.year), `s${sc}: fires at [${fired.join(',')}] all after the end (y${g.year}) — a late decoration, not a mid-game threat`)
         ok(fired.length && Math.min(...fired) <= Math.floor(S.deadline / 2), `s${sc}: first strike y${Math.min(...fired) || '?'} — past mid-deadline (${S.deadline})`)
         ok(duds === 0, `s${sc}: ${duds} fire(s) duded — the city existed, the strike found nothing`)
     }
@@ -411,12 +421,17 @@ if (MUT) {
         return ev.length > 0 && ev[ev.length - 1].expense === 20
     })
 
-    // 5. fires fizzle: burn=0 ignition is silently nothing
+    // 5. fires fizzle: burn=0 ignition is silently nothing. The probe must
+    //    give the strike a DEVELOPED block — plants are concrete and never
+    //    burn (the tornado rule is the fire rule), and s1's rock cluster
+    //    eats naive row-7 fixtures, so this mirrors the mk() disaster
+    //    fixture's row-12 layout: jobs that make the blocks develop.
     tryMut('fireYears 2 -> 0 (scripted fires fizzle)', { fireYears: 0 }, () => {
         const g = newCity(1)
-        for (let x = 4; x <= 18; x++) step(g, { tool: T.ROAD, place: [x, 8] })
-        step(g, { tool: T.PLANT, place: [10, 9] })
-        for (const [x, y] of [[9, 7], [10, 7], [11, 7], [12, 7]]) step(g, { tool: T.RES, place: [x, y] })
+        for (let x = 4; x <= 18; x++) step(g, { tool: T.ROAD, place: [x, 12] })
+        step(g, { tool: T.PLANT, place: [10, 11] })
+        for (const [x, y] of [[9, 11], [11, 11], [12, 11]]) step(g, { tool: T.IND, place: [x, y] })
+        for (const [x, y] of [[10, 13], [11, 13], [13, 13], [14, 11]]) step(g, { tool: T.RES, place: [x, y] })
         for (let t = 0; t < CFG.yearTicks * 16; t++) step(g, {})
         return g.grid.filter((c) => c.scar > 0).length > 0
     })

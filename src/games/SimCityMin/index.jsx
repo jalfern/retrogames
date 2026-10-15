@@ -165,8 +165,13 @@ const SimCityMinGame = () => {
                 ctx.fillRect(px + 8, py + 2, 5, 5); ctx.fillRect(px + 16, py + 3, 4, 4)
                 ctx.fillStyle = '#8f2f2f'; ctx.fillRect(px + 6, py + TILE - 8, TILE - 12, 4)
             } else if (c.t === T.FIRE) {
-                ctx.fillStyle = '#8f2f2f'; ctx.fillRect(px + 4, py + 8, TILE - 8, TILE - 12)
-                ctx.fillStyle = '#f2f2f2'; ctx.fillRect(px + 12, py + 10, 4, 10); ctx.fillRect(px + 9, py + 13, 10, 4)
+                // a station, not a hospital: a flame over the roof line, same
+                // fire palette as the burning cells (a white cross read as a
+                // clinic and players bypassed it)
+                ctx.fillStyle = '#8f2f2f'; ctx.fillRect(px + 4, py + 10, TILE - 8, TILE - 14)
+                ctx.fillStyle = '#5e1d1d'; ctx.fillRect(px + 11, py + 17, 6, TILE - 17)
+                ctx.fillStyle = '#ff7d3d'; ctx.fillRect(px + 10, py + 3, 8, 7)
+                ctx.fillStyle = '#ffcf3d'; ctx.fillRect(px + 12, py + 5, 4, 5)
             } else if (T.RES <= c.t && c.t <= T.IND) {
                 const base = ['#3a5a6b', '#274a5e', '#33465e', '#1e3a4e'][Math.min(3, c.lvl)]
                 ctx.fillStyle = base; ctx.fillRect(px + 3, py + 3, TILE - 6, TILE - 6)

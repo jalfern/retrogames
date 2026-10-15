@@ -36,9 +36,11 @@ export const SCEN = [
         ],
         // one mid-game fire down the growth corridor — map 1 used to have no
         // disasters at all, so stations were theatre here (and the fire
-        // strikes the city where the city is, wherever that turns out)
+        // strikes the city where the city is, wherever that turns out).
+        // Year 9: the competent city is mid-build when it strikes, seven
+        // years of lead time for the station, and BEFORE a competent win.
         fires: [
-            { year: 14, x: 13, y: 3 },
+            { year: 9, x: 13, y: 3 },
         ],
         tornado: null,
     },
