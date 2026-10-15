@@ -184,7 +184,7 @@ function yearTick(g) {
                 // while homes stand within reach. A bare stack of factories with
                 // no neighbourhood stalls at one level: the one-street trap.
                 const qv0 = 0.85 + (c.lit ? 0.3 : -1.6) + (roadA ? 0 : -1.3) - taxPen(g.tax) - (g.tax > 13 ? 0.6 : 0)
-                qv = (c.lvl >= 1 && resNear(g, x, y) < 2) ? qv0 - 1.5 : qv0
+                qv = (c.lvl >= 1 && resNear(g, x, y) < 1) ? qv0 - 1.5 : qv0
             }
             // growth is BLOCK BY BLOCK: a level only rises when the demand
             // says yes AND the construction cooldown has run out, so a city
