@@ -140,6 +140,7 @@ const SmashTVGame = lazy(() => import('../games/SmashTV'))
 // scripts/landercheck.mjs audits) ride in their own chunk; the harness imports
 // sim/terrain/planner unchanged in Node.
 const LunarLanderGame = lazy(() => import('../games/LunarLander'))
+const TempestGame = lazy(() => import('../games/Tempest'))
 
 // OUT RUN: same lesson — the pure segment-projected sim and the autopilot that
 // proves the five-stage fork route (and scripts/outruncheck.mjs audits) ride in
@@ -699,6 +700,15 @@ export const GAMES = [
         theme: 'dark',
         description: "Atari's 1979 vector classic, rebuilt honest: the stick rotates the gold lander and the main engine fires along the ship's own axis, gravity is one-sixth of nowhere and the tank is finite. The ALT / VERT / HORIZ / FUEL readouts are the whole game — you cannot eyeball a soft touchdown on a jagged white line. Set it down slow, straight and flat: the lit pads pay 100 · 50 · 20 · 50 · 100 times the multiplier, plus a bonus for the fuel you spared; too fast, too tilted or on a slope and the legs fold. Then relight and climb: catch the lunar orbiter crossing the sky to refuel, and each new terrain carries a bigger multiplier (×1 to ×10). The attract demo is the autopilot's own proven five-mission chain, audited tick-for-tick by a Node harness — energy-descent approach, timed launch, orbit wait, and the slack rule: the campaign still wins deathless with 70 units cut from every tank, and loses at 80.",
         controls: ['◀ ▶ / D-pad: rotate the lander — the thrust follows the nose', '▲ / SPACE / A: main engine (it burns — watch FUEL)', 'The landing window: VERT under 28, HORIZ under 14, tilt under 15° — on a lit pad or any flat ground', 'After landing, lift off and catch the orbiter on the dashed line to refuel', 'X / ZOOM button: narrow the view for the touchdown; L works too', '?: pause and read the flight manual'],
+    },
+    {
+        path: '/tempest',
+        builtBy: 'forge',
+        component: TempestGame,
+        label: 'TEMPEST',
+        theme: 'dark',
+        description: "Atari's 1981 vector classic, rebuilt honest: you ride the glowing rim of a polygonal tube, the camera locked to your color-cycling ship, and the whole tube rotates when you slide. Flippers hinge up the faces, pulsers peel off the far end and fly straight at you, spinners spiral the deep and then dive — and NOTHING that reaches the rim survives, yours included. Fire down the face you stand on; line up an edge and the shot becomes the super bullet, raking both faces it touches. Four waves cycle the cabinet's geometry — 16 faces, a ridged diamond tube, 32 faces, the near-infinite 96 — at the classic pace, with an extra ship every 10,000. The attract demo is the autopilot's own proven four-wave clear, audited tick-for-tick by a Node harness — slack-scheduled intercepts, edge super-bullets, and the slack rule: the campaign still wins deathless with the guns jammed to nearly half speed, and loses the moment the tube outruns them.",
+        controls: ['◀ ▶ / D-pad: slide the rim — it wraps all the way around', 'SPACE / Z / A: fire down the face you stand on', 'Stand exactly on an edge line and the shot goes down the edge — it kills everything riding it', 'Nothing may reach the rim alive: flippers, pulsers and diving spinners all kill on arrival', 'Clear a wave to bank the bonus — four waves, then the tube is yours', '?: pause and read the tube rules'],
     }
 
 ]
