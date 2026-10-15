@@ -176,6 +176,7 @@ export function step(g, inp) {
     if (g.rot > Math.PI) g.rot -= Math.PI * 2
     if (g.rot < -Math.PI) g.rot += Math.PI * 2
 
+    if (inp.thrust && g.fuel <= 0 && !g.fuelOut) { g.fuelOut = true; push(g, { type: 'fuelout' }) }
     const burning = !!inp.thrust && g.fuel > 0
     if (burning) {
         g.fuel -= CFG.burn * dt
@@ -194,7 +195,7 @@ export function step(g, inp) {
     // side walls of the valley: soft
     if (g.x < 14) { g.x = 14; g.vx = Math.max(0, g.vx) }
     if (g.x > WORLD_W - 14) { g.x = WORLD_W - 14; g.vx = Math.min(0, g.vx) }
-    if (g.y > 300) { g.y = 292; g.vy = Math.min(0, g.vy) }
+    if (g.y > 330) { g.y = 330; g.vy = Math.min(0, g.vy) }
 
     // ------- docking: the way to the next terrain -------
     if (g.phase === 'ascent' && Math.abs(g.y - ORBIT_Y) <= CFG.dockVert && Math.abs(g.x - g.orb.x) <= CFG.dockHoriz) {
@@ -211,7 +212,9 @@ export function step(g, inp) {
             push(g, { type: 'over', win: true })
             return
         }
+        const prevFuel = g.fuel
         spawnLander(g)
+        g.fuel = CFG.refuel ? CFG.startFuel : prevFuel
         return
     }
 

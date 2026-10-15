@@ -135,6 +135,12 @@ const BubbleBobbleGame = lazy(() => import('../games/BubbleBobble'))
 // (and scripts/smashcheck.mjs audits) rides in the chunk with the pure sim.
 const SmashTVGame = lazy(() => import('../games/SmashTV'))
 
+// LUNAR LANDER: same lesson — the pure sim, the seeded terrain and the
+// powered-descent autopilot that scripts the attract campaign (and
+// scripts/landercheck.mjs audits) ride in their own chunk; the harness imports
+// sim/terrain/planner unchanged in Node.
+const LunarLanderGame = lazy(() => import('../games/LunarLander'))
+
 // OUT RUN: same lesson — the pure segment-projected sim and the autopilot that
 // proves the five-stage fork route (and scripts/outruncheck.mjs audits) ride in
 // the chunk; the harness imports road/sim/planner unchanged in Node.
@@ -684,6 +690,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'The 1986 Sega highway, rebuilt as a segment-projected pseudo-3D road — curves that slide the tarmac sideways and REAL hills that hide the road over the crest (not Mode 7) — with the red convertible and its wind-in-the-hair couple seen from behind. The clock is the only killer: it drains every second, and each checkpoint banked buys more. LOW gear claws the hairpins, HIGH carries the 300 km/h top end, and the centrifugal force of a bend will shovel you off the line into the grass unless you counter-steer. Traffic bogs you down; a roadside palm or signpost FLIPS the car and the couple tumble out, costing you the seconds you cannot spare. At the end of every stage the road forks — LEFT is easier, RIGHT is longer, meaner and pays a tighter clock — so over five stages the branches give fifteen different roads and five different finish goals. Scenery changes with the country: palm coast, desert windmills, alpine pines, green fields, the capital skyline. Pick one of three original synth radio tunes before the light goes green. The attract demo is the autopilot\'s own proven deathless five-stage run, audited by a Node harness — geometry, the timer/fork economy, the crash rules and the slack re-win (the whole route still wins with three seconds shaved off every checkpoint, and dies at four).',
         controls: ['◀ ▶ / D-pad left-right: steer — hold the line, the curves throw you outward', '▲ / SPACE / A: GAS   ·   ▼: BRAKE', 'B / SHIFT / GEAR button: toggle LOW ⇄ HIGH (LOW bites off the line and in corners)', 'Reach each CHECKPOINT before the clock dies — it buys you the next stretch', 'At the FORK, steer LEFT for the easier route or RIGHT for the harder, faster-paying one', 'Do NOT leave the tarmac: off-road grass drags you, and a roadside object flips the car', '?: pause and read the road book'],
+    },
+    {
+        path: '/lunar-lander',
+        builtBy: 'forge',
+        component: LunarLanderGame,
+        label: 'LUNAR LANDER',
+        theme: 'dark',
+        description: "Atari's 1979 vector classic, rebuilt honest: the stick rotates the gold lander and the main engine fires along the ship's own axis, gravity is one-sixth of nowhere and the tank is finite. The ALT / VERT / HORIZ / FUEL readouts are the whole game — you cannot eyeball a soft touchdown on a jagged white line. Set it down slow, straight and flat: the lit pads pay 100 · 50 · 20 · 50 · 100 times the multiplier, plus a bonus for the fuel you spared; too fast, too tilted or on a slope and the legs fold. Then relight and climb: catch the lunar orbiter crossing the sky to refuel, and each new terrain carries a bigger multiplier (×1 to ×10). The attract demo is the autopilot's own proven five-mission chain, audited tick-for-tick by a Node harness — energy-descent approach, timed launch, orbit wait, and the slack rule: the campaign still wins deathless with 70 units cut from every tank, and loses at 80.",
+        controls: ['◀ ▶ / D-pad: rotate the lander — the thrust follows the nose', '▲ / SPACE / A: main engine (it burns — watch FUEL)', 'The landing window: VERT under 28, HORIZ under 14, tilt under 15° — on a lit pad or any flat ground', 'After landing, lift off and catch the orbiter on the dashed line to refuel', 'X / ZOOM button: narrow the view for the touchdown; L works too', '?: pause and read the flight manual'],
     }
 
 ]
