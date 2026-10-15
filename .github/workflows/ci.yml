@@ -278,6 +278,14 @@ jobs:
       # the white-page win. Proven to bite: forcing a locked door open reds it.
       - run: npm run lint:myst
       - run: npm run mystcheck
+      # THE BARD'S TALE: independent-BFS floor audit (locked doors are true
+      # chokepoints hiding their key), engine pins (potion/ale/heal cost, the
+      # tower gate refuses without the key, the Board grants it only once all five
+      # tower floors are proven), the attract campaign winning Mangar on the live
+      # sim, the slack rule (re-wins with one fewer ale and one fewer potion), and
+      # determinism. All in Node.
+      - run: npm run lint:bards
+      - run: npm run bardscheck
       # SMASH TV: geometry of every room, one-hit lethality + the sealed-until-
       # clear exits, the crate->gun ladder and POWER economy, the firebomb tax,
       # the bonus-room clock and combo ledger, the ANNOUNCER win, the pilot WIN
