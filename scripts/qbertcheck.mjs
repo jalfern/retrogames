@@ -247,7 +247,34 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     r.check('an up-hop from the apex with a disc crossing boards it', gs.player.ride !== null && ev.some((e) => e.t === 'discride'))
     r.check('the disc carries a nearby snake off the edge (+500) and leaves a distant one', gs.snakes.length === 1 && gs.snakes[0].r === 5 && ev.some((e) => e.t === 'snakelure') && gs.score === 500, `snakes=${gs.snakes.length} score=${gs.score}`)
     until(gs, () => !gs.player.ride, 60)
-    r.check('the disc ride drops Q*BERT back on top of the pyramid', gs.player.r <= 2 && gs.player.dying === 0, `landed @${gs.player.r},${gs.player.c}`)
+    // the drop's contract is "on a valid cube" — landing on the distant snake
+    // (still at 5,5) is a legitimate death, so dying is NOT asserted here.
+    r.check('the disc ride drops Q*BERT back onto a valid cube on the pyramid (never off-board)', valid(gs.player.r, gs.player.c), `landed @${gs.player.r},${gs.player.c}`)
+}
+{
+    // the original's disc drop picks a RANDOM ROW across the whole pyramid, not
+    // just the top two rows. Stub the RNG to a high roll and prove the drop
+    // reaches the bottom skirt — the old apex-biased rule (rng<0.3 ? top : apex)
+    // could never leave the top, so this pin is red on the old code.
+    const gs = makeGame({ seed: 13 })
+    gs.discs[0].x = W / 2
+    gs.rng = () => 0.99
+    clearEv(gs)
+    play(gs, { ul: true })
+    until(gs, () => !gs.player.ride, 60)
+    r.check('a high RNG roll sends the disc drop to a bottom row (the wider row list, not apex-only)', gs.player.r === 7 && valid(gs.player.r, gs.player.c) && gs.player.dying === 0, `landed @${gs.player.r},${gs.player.c}`)
+}
+{
+    // and a low roll still reaches the top — the drop spans the whole board,
+    // it is not just "always the bottom". Row 0 has one cube, so any col roll
+    // lands the apex.
+    const gs = makeGame({ seed: 13 })
+    gs.discs[0].x = W / 2
+    gs.rng = () => 0.0
+    clearEv(gs)
+    play(gs, { ul: true })
+    until(gs, () => !gs.player.ride, 60)
+    r.check('a low RNG roll sends the disc drop to the apex row', gs.player.r === 0 && valid(gs.player.r, gs.player.c) && gs.player.dying === 0, `landed @${gs.player.r},${gs.player.c}`)
 }
 
 // -------------------------------------------------------------- red ball ----

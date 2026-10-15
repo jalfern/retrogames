@@ -39,15 +39,17 @@ the player actually gets, in plain Node.
 
 ## Honest deviations / known gaps (the QA lane's starting list)
 
-- Chain scoring honours 25/50/100 but the original's *timing window* between
-  chained hops is simplified: any consecutive hops chain (originals required
-  roughly a one-second window).
+- Chain scoring honours 25/50/100 and the original's *timing window*: an up-hop
+  landing more than ~1s (CHAIN_WINDOW) after the last resets the up-chain, so a
+  slow climb scores singles instead of the heli-jump 100.
 - Levels escalate snake count/speed and switch the flip mode, but there is no
   original point-value table match beyond the documented singles/roundtrip/heli.
-  (1-UP every 10,000 is now in: a life per 10k boundary crossed, capped at 9.)
-  Still missing: alternating hot-seat 2P, the bonus-stage green-field, and the
-  disc drop destination is apex-or-row-0/1 (original picks from a wider
-  random row list).
+  (1-UP every 10,000 is now in: a life per 10k boundary crossed, capped at 9.
+  The disc drop destination is now in: a random row across the whole pyramid,
+  then a random cube in that row — the original's wider row list, not the old
+  apex-or-row-0/1 bias. `qbertcheck` pins both ends: a high RNG roll reaches
+  the bottom skirt, a low roll the apex.)
+  Still missing: alternating hot-seat 2P, the bonus-stage green-field.
 - Music is an original bouncy riff, not the Gottlieb melody.
 - `qbertdive` rides the advisory tier (like `joustdive`/`tetrisplay`), not the
   PR gate.

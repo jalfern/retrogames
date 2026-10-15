@@ -128,7 +128,11 @@ r.check('Enter restarts clean (score zeroed, round 1, lives back)', q.screen ===
     await page.keyboard.up('ArrowUp')
     r.check('the apex up-hop boards the disc the moment it crosses', !!q.ride, `ride=${q.ride}`)
     q = await settle((p) => !p.ride && !p.hop, 3000)
-    r.check('the disc delivers the bird back onto the pyramid', q.r <= 2 && q.dying === 0, `landed @${q.r},${q.c}`)
+    // the drop's contract is "back on a valid cube" — the original lands a
+    // random row across the whole pyramid, and landing on a snake is a
+    // legitimate death, so only the on-board invariant is asserted here.
+    const ROWLEN = [1, 2, 3, 4, 5, 6, 4, 3]
+    r.check('the disc delivers the bird back onto the pyramid (a valid cube)', q.r >= 0 && q.r < ROWLEN.length && q.c >= 0 && q.c < ROWLEN[q.r], `landed @${q.r},${q.c}`)
 }
 
 r.check('zero page errors across the whole drive', errors.length === 0, errors.join(' | '))
