@@ -6,7 +6,7 @@
 
 export const NODES = {
   dock: {
-    pos: [0, 1.7, 34], yaw: 0, sky: 'dusk', amb: 'sea',
+    pos: [0, 1.7, 28], yaw: 0, sky: 'dusk', amb: 'sea',
     caption: 'The dock at Myst — you have arrived',
     spots: [
       { id: 'dockBeach', label: 'climb the path', yaw: 0, w: 90, h: 40, to: 'cliffPath' },
@@ -14,7 +14,7 @@ export const NODES = {
     ],
   },
   cliffPath: {
-    pos: [0, 4.2, 24], yaw: 0, sky: 'dusk', amb: 'wind',
+    pos: [0, 4.2, 18], yaw: 0, sky: 'dusk', amb: 'wind',
     caption: 'A path cut into the cliffs above the sea',
     spots: [
       { id: 'backDock', label: 'back to the dock', yaw: 180, w: 80, h: 40, to: 'dock' },
@@ -23,7 +23,7 @@ export const NODES = {
     ],
   },
   beach: {
-    pos: [-14, 0.6, 26], yaw: -60, sky: 'dusk', amb: 'sea',
+    pos: [-14, 0.6, 18], yaw: -60, sky: 'dusk', amb: 'sea',
     caption: 'The beach below the cliffs — a rotted boat',
     spots: [
       { id: 'backPath', label: 'back up the path', yaw: 60, w: 70, h: 40, to: 'cliffPath' },
@@ -40,7 +40,7 @@ export const NODES = {
     ],
   },
   stairTop: {
-    pos: [0, 10.5, 2], yaw: 0, sky: 'day', amb: 'birds',
+    pos: [0, 10.5, -10], yaw: 0, sky: 'day', amb: 'birds',
     caption: 'At the top of the stairway, Myst\'s library stands open',
     spots: [
       { id: 'backLanding', label: 'down the stairway', yaw: 180, w: 80, h: 40, to: 'landing' },
@@ -50,7 +50,7 @@ export const NODES = {
     ],
   },
   library: {
-    pos: [0, 1.7, -6], yaw: 0, sky: 'interior', amb: 'fire',
+    pos: [0, 1.7, 0], yaw: 0, sky: 'interior', amb: 'fire',
     caption: 'The library of Myst — shelves of Ages in every direction',
     spots: [
       { id: 'outLibrary', label: 'out to the stairway', yaw: 180, w: 80, h: 40, to: 'stairTop' },
@@ -63,7 +63,7 @@ export const NODES = {
     ],
   },
   cave: {
-    pos: [0, 1.7, -18], yaw: 0, sky: 'interior', amb: 'drip',
+    pos: [0, 1.7, -10], yaw: 0, sky: 'interior', amb: 'drip',
     caption: 'A cavern beneath the library — star charts glow overhead',
     spots: [
       { id: 'ladderUp', label: 'up the ladder', yaw: 180, w: 80, h: 40, to: 'library' },
@@ -73,7 +73,7 @@ export const NODES = {
     ],
   },
   towerBase: {
-    pos: [6, 1.7, -2], yaw: 0, sky: 'interior', amb: 'gears',
+    pos: [6, 1.7, -4], yaw: 0, sky: 'interior', amb: 'gears',
     caption: 'Inside the clock tower — a great brass mechanism',
     spots: [
       { id: 'outTower', label: 'back out', yaw: 180, w: 80, h: 40, to: 'stairTop' },
@@ -81,7 +81,7 @@ export const NODES = {
     ],
   },
   towerTop: {
-    pos: [6, 9.7, -2], yaw: 0, sky: 'day', amb: 'gears',
+    pos: [6, 9.7, -4], yaw: 0, sky: 'day', amb: 'gears',
     caption: 'The belfry: a book with cogs for a clasp, and a great lever',
     spots: [
       { id: 'downTower', label: 'climb down', yaw: 180, w: 80, h: 40, to: 'towerBase' },
@@ -90,7 +90,7 @@ export const NODES = {
     ],
   },
   cabin: {
-    pos: [-10, 1.7, 6], yaw: 30, sky: 'interior', amb: 'wind',
+    pos: [-10, 1.7, -4.5], yaw: 30, sky: 'interior', amb: 'wind',
     caption: 'A wooden cabin — Atrus\'s workshop',
     spots: [
       { id: 'outCabin', label: 'step back outside', yaw: 180, w: 80, h: 40, to: 'stairTop' },
@@ -101,7 +101,7 @@ export const NODES = {
 
   // ---- Ages -------------------------------------------------------------
   selenitic: {
-    pos: [0, 1.7, 0], yaw: 0, sky: 'selenitic', amb: 'sphere',
+    pos: [0, 1.7, -16], yaw: 0, sky: 'selenitic', amb: 'sphere',
     caption: 'SELENITIC — a green world of concentric rings and sound',
     spots: [
       { id: 'retSelenitic', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'library' },
@@ -111,7 +111,7 @@ export const NODES = {
     ],
   },
   stoneship: {
-    pos: [0, 1.7, 0], yaw: 0, sky: 'stoneship', amb: 'sea',
+    pos: [0, 1.7, -24], yaw: 0, sky: 'stoneship', amb: 'sea',
     caption: 'STONESHIP — a grey island in a still, glass sea',
     spots: [
       { id: 'retStoneship', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'library' },
@@ -121,7 +121,7 @@ export const NODES = {
     ],
   },
   mechanical: {
-    pos: [0, 1.7, 0], yaw: 0, sky: 'mechanical', amb: 'gears',
+    pos: [0, 1.7, -14], yaw: 0, sky: 'mechanical', amb: 'gears',
     caption: 'MECHANICAL — a world of brass, steam and turning cogs',
     spots: [
       { id: 'retMechanical', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'library' },
@@ -132,7 +132,7 @@ export const NODES = {
     ],
   },
   channelwood: {
-    pos: [0, 1.7, 0], yaw: 0, sky: 'channelwood', amb: 'falls',
+    pos: [0, 1.7, -20], yaw: 0, sky: 'channelwood', amb: 'falls',
     caption: 'CHANNELWOOD — a world of waterfalls and slow stone stars',
     spots: [
       { id: 'retChannelwood', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'cave' },

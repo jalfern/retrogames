@@ -46,6 +46,7 @@ const MystGame = () => {
     renderer.setPixelRatio(1)
     const canvas = renderer.domElement
     canvas.dataset.mystStage = '1'
+    canvas.id = 'myst-stage'
     canvas.className = 'block w-full h-full'
     canvas.style.touchAction = 'none'
     wrap.appendChild(canvas)
@@ -61,7 +62,6 @@ const MystGame = () => {
     scene.add(root)
 
     let gs = freshState()
-    ctl.current = { action: doAction, click: doClick }
     let raf = 0, last = 0, acc = 0, wt = 0
     let fade = 1, fadeDir = -1
     let attractIx = 0, attractT = 0, hudStamp = -1
@@ -73,7 +73,7 @@ const MystGame = () => {
     }
     const aim = () => {
       const n = NODES[gs.node]
-      const yaw = THREE.MathUtils.degToRad(n.yaw + gs.turn * 90 + lookYaw)
+      const yaw = Math.PI + THREE.MathUtils.degToRad(n.yaw + gs.turn * 90 + lookYaw)
       camera.rotation.set(0.02, yaw, 0)
     }
     gotoNode(gs.node); aim()
@@ -91,11 +91,11 @@ const MystGame = () => {
       if (gs.ending && screenRef.current !== 'ending') setMode('ending')
       hudStamp = -1
     }
-
     const doClick = (spotId) => {
       if (gs.panelOpen || gs.bookOpen) return
       doAction({ t: 'click', id: spotId })
     }
+    ctl.current = { action: doAction, click: doClick }
 
     const centerSpot = () => {
       const view = NODES[gs.node].yaw + gs.turn * 90
@@ -233,7 +233,7 @@ const MystGame = () => {
         state: () => gs,
         action: (a) => { doAction(a); return gs.message },
         click: (id) => doClick(id),
-        solve: () => { gs = runSolver(); gotoNode(gs.node); aim(); hudStamp = -1; return gs.ending },
+        solve: () => { gs = runSolver(); gotoNode(gs.node); aim(); hudStamp = -1; if (gs.ending) setMode('ending'); return gs.ending },
         script: solveScript,
         fresh: () => { gs = freshState(); gotoNode('dock'); aim() },
         probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending }),

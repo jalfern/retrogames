@@ -146,7 +146,8 @@
         "bubbleplay": "node scripts/bubbleplay.mjs",
         "arkplay": "node scripts/arkanoidplay.mjs",
         "lint:myst": "eslint src/games/Myst src/components src/utils src/config src/main.jsx scripts",
-        "mystcheck": "node scripts/mystcheck.mjs"
+        "mystcheck": "node scripts/mystcheck.mjs",
+        "mystplay": "node scripts/mystplay.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",

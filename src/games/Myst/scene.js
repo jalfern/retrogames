@@ -5,6 +5,7 @@
 
 import * as THREE from 'three'
 import { texNoise, texSky, texPages, PAL } from './textures.js'
+import { NODES } from './nodes.js'
 
 const GAP = 4000
 
@@ -116,23 +117,23 @@ const BUILDERS = {
     rocks(g, TX.stoneD, [[12, 11, 4, 5, 8, 5, 0]])
   },
   stairTop(g) {
-    rocks(g, TX.stoneD, [[0, 9, 0.5, 14, 6, 4, 0], [-12, 8, 2, 8, 10, 6, 0.4], [12, 9, 1, 7, 9, 5, -0.4]])
-    const lib = mesh(new THREE.CylinderGeometry(5.4, 6, 8, 12), mat(TX.stoneD), 0, 14, -4, g)
+    rocks(g, TX.stoneD, [[0, 6.2, 2.5, 18, 1.6, 4, 0], [-12, 8, 2, 8, 10, 6, 0.4], [12, 9, 1, 7, 9, 5, -0.4], [-7, 8.4, -1, 5, 5, 3, 0.3], [7, 8.4, -1, 5, 5, 3, -0.3]])
+    const lib = mesh(new THREE.CylinderGeometry(5.4, 6, 8, 12), mat(TX.stoneD), 0, 14, 6, g)
     lib.userData.noPick = true
-    mesh(new THREE.ConeGeometry(6.4, 3.4, 12), mat(TX.stoneD), 0, 19.6, -4, g)
-    const door = mesh(new THREE.BoxGeometry(1.8, 2.8, 0.3), mat(TX.wood), 0, 11.4, 1.2, g)
+    mesh(new THREE.ConeGeometry(6.4, 3.4, 12), mat(TX.stoneD), 0, 19.6, 6, g)
+    const door = mesh(new THREE.BoxGeometry(1.8, 2.8, 0.3), mat(TX.wood), 0, 11.4, 12.1, g)
     door.userData.spot = 'libraryDoor'
-    const tower = mesh(new THREE.CylinderGeometry(1.8, 2.1, 10, 10), mat(TX.stoneD), 8.5, 14.5, 1.5, g)
+    const tower = mesh(new THREE.CylinderGeometry(1.8, 2.1, 10, 10), mat(TX.stoneD), 8.5, 14.5, 8, g)
     tower.userData.noPick = true
-    mesh(new THREE.ConeGeometry(2.4, 2, 10), mat(TX.stoneD), 8.5, 20.4, 1.5, g)
-    const tdoor = mesh(new THREE.BoxGeometry(1.2, 2.2, 0.3), mat(TX.iron), 8.5, 11.1, 3.3, g)
+    mesh(new THREE.ConeGeometry(2.4, 2, 10), mat(TX.stoneD), 8.5, 20.4, 8, g)
+    const tdoor = mesh(new THREE.BoxGeometry(1.2, 2.2, 0.3), mat(TX.iron), 8.5, 11.1, 9.9, g)
     tdoor.userData.spot = 'towerDoor'
     const cab = new THREE.Group()
     mesh(new THREE.BoxGeometry(4, 3, 3.4), mat(TX.plank), 0, 1.5, 0, cab)
     mesh(new THREE.ConeGeometry(3, 1.6, 4), mat(TX.wood), 0, 3.8, 0, cab).rotation.y = Math.PI / 4
-    cab.position.set(-9, 11, 2)
+    cab.position.set(-9, 11, 6)
     g.add(cab)
-    const cdoor = mesh(new THREE.BoxGeometry(1, 2, 0.25), mat(TX.wood), -9, 12, 3.75, g)
+    const cdoor = mesh(new THREE.BoxGeometry(1, 2, 0.25), mat(TX.wood), -9, 12, 7.75, g)
     cdoor.userData.spot = 'cabinDoor'
     seaPlane(g, -4, 1600, 0.9)
     tree(g, -4, 12, 4, 1.3); tree(g, 5, 12, 6, 1.1); tree(g, -13, 11, 4, 1.4)
@@ -242,8 +243,6 @@ const BUILDERS = {
     const panel = mesh(new THREE.BoxGeometry(2, 1.4, 0.2), mat(TX.iron, { metalness: 0.6 }), 0, 1.4, -5, g)
     panel.userData.spot = 'switchPanel'
     for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.16, 0.5, 0.16), mat(TX.iron, { metalness: 0.7 }), -0.7 + i * 0.35, 1.6, -4.85, g).userData.spot = 'switchPanel'
-    const mb = mesh(new THREE.BoxGeometry(0.5, 0.14, 0.36), new THREE.MeshStandardMaterial({ color: 0xb85a30, roughness: 0.8 }), -3.2, 1.2, -3.4, g)
-    mb.userData.spot = 'matchbook'
     const alcove = mesh(new THREE.BoxGeometry(1.6, 1.4, 0.4), mat(TX.iron), 4.6, 0.7, -3.4, g)
     alcove.userData.spot = 'pageMechanicalRed'
     const vent = mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 10), mat(TX.iron), -4.4, 0.2, 2.6, g)
@@ -282,6 +281,20 @@ export function buildWorld(ids) {
     g.position.x = idx * GAP
     skyDome(g, idSky(id))
     if (BUILDERS[id]) BUILDERS[id](g)
+    const cam = NODES[id].pos
+    for (const sp of NODES[id].spots) {
+      if (sp.act === 'takePage') {
+        const a = THREE.MathUtils.degToRad(sp.yaw)
+        const q = mesh(new THREE.PlaneGeometry(0.7, 0.9), new THREE.MeshStandardMaterial({ map: sp.page.startsWith('red') ? TX.pageR : TX.pageB, side: THREE.DoubleSide, emissive: 0x120505 }), cam[0] + Math.sin(a) * 7, 1.1, cam[2] + Math.cos(a) * 7, g)
+        q.userData.spot = sp.id
+        q.rotation.y = a
+      }
+      if (sp.act === 'takeMatch') {
+        const a = THREE.MathUtils.degToRad(sp.yaw)
+        const q = mesh(new THREE.BoxGeometry(0.5, 0.14, 0.36), new THREE.MeshStandardMaterial({ color: 0xb85a30, roughness: 0.8 }), cam[0] + Math.sin(a) * 6, 1.2, cam[2] + Math.cos(a) * 6, g)
+        q.userData.spot = sp.id
+      }
+    }
     root.add(g)
     g.traverse((o) => {
       if (o.userData.spot) hot.push({ mesh: o, id: o.userData.spot, node: id })
