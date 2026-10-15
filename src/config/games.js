@@ -160,6 +160,12 @@ const OutRunGame = lazy(() => import('../games/OutRun'))
 // ride in the chunk; the harness imports sim/dungeons/solver unchanged in Node.
 const BardsTaleGame = lazy(() => import('../games/BardsTale'))
 
+// SSX: same lesson — the seeded mountains, the pure riding sim and the
+// autopilot that IS the CPU field (and scripts/ssxcheck.mjs audits: trick
+// ledger, boost economy, three proven heats, slack, determinism) ride in the
+// chunk; the harness imports course/sim/planner unchanged in Node.
+const SSXGame = lazy(() => import('../games/SSX'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -773,6 +779,16 @@ export const GAMES = [
         theme: 'dark',
         description: "The 1985 first-person RPG, rebuilt whole in code: six heroes — warrior, paladin, rogue, bard, hunter, magician — walk out of Skara Brae and down through five seeded dark levels to Mangar's throne. The town is the town: Garth's arms, the tavern, the Temple's healing and raising, the Review Board that spends your skill points and finally grants the tower key. Dungeons are coloured raycast corridors, monsters stand ten to forty feet away so spells outrun steel until you ADVANCE, and a bard's song on a tankard of ale heals and hardens the whole party. Every swing, heal, coin and level is booked to a ledger that a Node harness recomputes line for line; every maze is seeded and re-proved reachable by independent BFS — locked doors are real chokepoints hiding their key on the floor. The thing demoing on this title screen is the same autopilot CI grades, and the campaign is re-proven winnable with one fewer potion and one fewer ale than it spends. Clear the five floors, take the key, climb Mangar's tower and thaw Skara Brae.",
         controls: ['Arrows / D-pad: walk and turn the corridor; SPACE / A uses doors, stairs, gates and shop doorways', 'In battle: SPACE attacks · A / B closes (ADVANCE) · arrows pick the target · P drinks a potion · F flees (never from Mangar)', 'Click a spell or song on the right — four-letter codes cast as in 1985; songs cost an ALE', 'Monsters stand 10–40 ft: spell them at range, or ADVANCE into steel; the Hunter shoots at any band', 'In a shop or the Temple, click the option or press its number · LEAVE (or SPACE) steps out', 'Clear every floor then talk to the Review Board for the tower key · ?: pause and read the rules'],
+    },
+    {
+        path: '/ssx',
+        pad: { layout: 'dpad', buttons: [{ label: 'BST', code: 'ShiftLeft' }], analog: false },
+        builtBy: 'forge',
+        component: SSXGame,
+        label: 'SSX',
+        theme: 'dark',
+        description: "EA Sports BIG's 2000 snowboard riot, rebuilt whole in code: three fantastical mountains — a sunlit alpine glade, a neon night city strung with rails, and a sunset basin of halfpipes and monster kickers — raced to the bottom against five CPU riders over three heats. Tricks are the economy: grabs, spins to 720, flips off every lip; clean landings bank the chain to x4 and fill the boost meter, and taking off with a FULL meter throws OVER — double points and the stupid-big names (Frontflip 720, Method 900). Spend the meter with SHIFT and the hill goes backwards faster. A half-done flip eats it, the rock wall eats it, a bail dumps half your meter. RACE is standings points over the three heats; SHOWOFF is 90 seconds against the house bank. Real 3D in three.js: vertex-coloured snow, spray off every carve, FOV kick and shake so speed reads on the body, an animated rig that crouches, grabs and tumbles, and a synth pulse that ducks in the air and drops back when you land — every mountain and note generated at runtime, and the whole race re-proven winnable (at full AND slack trick economy) by the same autopilot that rides the attract demo.",
+        controls: ['← / →: steer — and SPIN in the air (180s score)', 'SPACE: hold to crouch, release to snap — off a kicker lip it launches you into big air', 'X grab · Z front flip · C back flip — complete the flip before you land or you bail', 'SHIFT / B: BOOST — spend the meter tricks fill; full meter at takeoff = OVER, double points', '3 heats vs the field (1 = RACE · 2 = SHOWOFF on the title); the field gets quicker every heat', '?: pause and read the trick book'],
     }
 
 ]

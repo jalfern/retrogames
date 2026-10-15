@@ -286,6 +286,15 @@ jobs:
       # determinism. All in Node.
       - run: npm run lint:bards
       - run: npm run bardscheck
+      # SSX: downhill riding pins (gravity/carving/powder/wall), the trick
+      # ledger (spin+grab banks, half-done flips bail, chains to x4, OVER
+      # doubles), the boost economy (drain, ceiling, crash dumps half), rails,
+      # finish/standings bookkeeping, the autopilot WINNING all three heats
+      # AND Showoff, the slack rule (0.75x trick economy + chain x3 still
+      # wins), hash-for-hash determinism, and the no-Math.random ban on the
+      # spine. All in Node. Mutant it: the bail rule off turns red.
+      - run: npm run lint:ssx
+      - run: npm run ssxcheck
       # SMASH TV: geometry of every room, one-hit lethality + the sealed-until-
       # clear exits, the crate->gun ladder and POWER economy, the firebomb tax,
       # the bonus-room clock and combo ledger, the ANNOUNCER win, the pilot WIN

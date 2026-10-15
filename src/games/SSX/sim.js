@@ -167,11 +167,12 @@ function riderStep(g, r, inp) {
         r.v = Math.max(r.v, 12)
         r.y = terrainY(c, r.s, rail.x) + 0.18
         r.s += r.v * dt
+        const gp = Math.round(90 * dt * 10) / 10
+        r.score += gp
+        r.meter = Math.min(100, r.meter + gp * CFG.boostGain * (CFG.slack ? 0.75 : 1))
         if (r.s > rail.i1 * DS + 1) {
-            const gp = Math.round(60 + r.grindT * 90)
-            r.score += gp
-            r.meter = Math.min(100, r.meter + gp * CFG.boostGain * (CFG.slack ? 0.75 : 1))
-            push(g, { type: 'grind', who: r.id, pts: gp })
+            const tot = Math.round(60 + r.grindT * 90)
+            push(g, { type: 'grind', who: r.id, pts: tot })
             r.grind = null
         }
         return
