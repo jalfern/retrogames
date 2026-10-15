@@ -19,7 +19,6 @@ import { CELL, COLS, AIR_TOP, DIRT_BOT, layerOf } from './levels.js'
 const R = 44 // harpoon reach (matches CFG.harpoonLen)
 const rowOf = (y) => Math.floor((y - 16) / CELL)
 const colOf = (x) => Math.floor(x / CELL)
-const cx = (c) => c * CELL + CELL / 2
 const cy = (r) => 16 + r * CELL + CELL / 2
 
 function openCell(gs, r, c) {
@@ -48,9 +47,7 @@ function bestStep(gs, sr, sc, targets) {
         if (d > (dist.get(key(r, c)) ?? Infinity)) continue
         if (goal.has(key(r, c))) {
             let k = key(r, c)
-            let prev = key(r, c)
             while (from.get(k) !== undefined && from.get(k) !== key(sr, sc)) k = from.get(k)
-            prev = from.get(k)
             if (from.get(k) === undefined) return null
             return { r: Math.floor(k / COLS), c: k % COLS }
         }
@@ -97,7 +94,7 @@ export function decide(gs) {
                 }
             }
             if (avoid) {
-                const er = rowOf(avoid.y), ec = colOf(avoid.x)
+                const er = rowOf(avoid.y)
                 if (dr === Math.sign(er - pr) && Math.abs(avoid.y - p.y) < 40) score -= 2.5
                 if (dc === Math.sign(avoid.x - p.x) && Math.abs(avoid.x - p.x) < 40) score -= 2.5
             }

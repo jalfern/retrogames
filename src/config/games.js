@@ -115,6 +115,11 @@ const QBertGame = lazy(() => import('../games/QBert'))
 // scripts/arkanoidcheck.mjs audits geometry, rules and a proven full clear in Node.
 const ArkanoidGame = lazy(() => import('../games/Arkanoid'))
 
+// DIG DUG: layered dirt, pump chain, rocks and the fleeing last enemy are all
+// a pure step(state,input), so scripts/dugcheck.mjs audits rules, ledger and a
+// proven deathless clear in Node; the attract demo replays that same pilot run.
+const DigDugGame = lazy(() => import('../games/DigDug'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -605,6 +610,15 @@ export const GAMES = [
         theme: "dark",
         description: "Richard Garriott's Warriors of Destiny (1988). Lord British has vanished and the tyrant Blackthorn has corrupted the virtues into oppressive laws. Lead the Avatar's party through a dark and morally complex Britannia. The last keyboard-driven Ultima and widely considered the series' storytelling peak. 1996 freeware distribution.",
         controls: ["Arrow Keys: Move", "A: Attack", "B: Board/Mount", "C: Cast Spell", "D: Descend", "E: Enter", "F: Fire", "G: Get", "I: Ignite torch", "J: Jimmy lock", "K: Klimb", "L: Look", "M: Mix reagents", "O: Open", "P: Push", "R: Ready weapon", "S: Search", "T: Talk", "U: Use item", "V: View (cycle views)", "W: Wear armor", "X: eXit", "Z: Ztats", "Q: Save and quit"]
+    },
+    {
+        path: '/dig-dug',
+        builtBy: 'forge',
+        component: DigDugGame,
+        label: 'DIG DUG',
+        theme: 'dark',
+        description: 'Namco\'s 1982 tunnel dig, rebuilt honest: four colored dirt layers under an open air strip — dig left, right, up (slow) and down, and where you dig is where the fight happens. Harpoon a Pooka or Fygar and pump: four pumps and it pops, and the deeper the dirt the bigger the payout (1000 deep, half in the open air) — stop pumping and it deflates, so pump fast. Buried enemies hunt you as eyes through solid ground and only become flesh in open tunnels. Boulders hang on dirt columns: dig out the support and the rock drops, crushing everything below and paying more for a crowd crush — and after two dropped rocks vegetables sprout for the bonus. Fygars breathe fire straight down open tunnels — step out of the row and it misses. When only one enemy is left it re-inflates, drops the spear and RUNS for the top corner. The walking tune plays only while you move. Three rounds; the attract demo is the autopilot\'s own proven deathless clear, audited by a Node harness (pump chain, crush ledger, ghost rules, flee rule, determinism).',
+        controls: ['Arrows / the pad: dig and move — down is the fast dig, up is the slow one', 'SPACE / A: fire the harpoon, then keep tapping to pump — four stages and the enemy pops', 'An inflated enemy shoves back and deflates if you stop — keep your distance and keep pumping', 'Dig the dirt above a boulder to drop it — falling rocks crush enemies under them (crowds pay more)', 'Fygar fire runs down an open tunnel row: dig up or down to leave the row', 'Watch for ghost eyes in the dirt — buried enemies are untouchable until they reach open ground · ? pauses'],
     }
 
 ]
