@@ -66,15 +66,39 @@ PROMPT="You are THE QA MASTER on node $NODE. Open scripts/FORGE-QA.md and execut
 #
 # HARD CAP. "Time-box yourself to 60 minutes" is only a sentence: the model
 # has no clock, and on 2026-10-14 an MBP session ran 2 h without pushing. So a
-# plain watchdog kills the session at QA_CAP_MIN (default 75) minutes. Work it
-# already pushed survives (resume-before-claim, FORGE-QA.md step 2); work it
-# never pushed is what the cap costs, so the playbook says push as you go.
+# plain watchdog stops the session at QA_CAP_MIN (default 75) minutes, and it
+# SAVES FIRST, because the model cannot be trusted to have pushed: it finds
+# this node's claimed item (its newest claim comment is "QA (<node>): claimed"),
+# commits everything in that item's worktree, pushes the qa/ branch, posts
+# "QA (<node>): checkpoint", and only then kills. The next session resumes the
+# branch (FORGE-QA.md step 2), so a cap costs minutes, not the hour.
 CAP_MIN=${QA_CAP_MIN:-75}
+SLUG=jalfern/retrogames
+save_checkpoint() {
+    local n wt br
+    for n in $(gh api "repos/$SLUG/issues?state=open&labels=building-qa&per_page=50" --jq '.[].number' 2>/dev/null); do
+        gh api "repos/$SLUG/issues/$n/comments?per_page=100" \
+            --jq '[.[] | select(.body | startswith("QA (")) | select(.body | contains("): claimed"))] | last | .body // ""' \
+            2>/dev/null | grep -q "^QA ($NODE): claimed" || continue
+        wt="$HOME/Dev/retrogames-qa-$n"
+        [[ -d "$wt" ]] || continue
+        br=$(git -C "$wt" branch --show-current)
+        [[ "$br" == qa/* ]] || continue
+        git -C "$wt" add -A >/dev/null 2>&1
+        git -C "$wt" commit -qm "QA ($NODE): WIP checkpoint at the ${CAP_MIN}-minute hard cap" >/dev/null 2>&1
+        if git -C "$wt" push -q -u origin HEAD >/dev/null 2>&1; then
+            gh api "repos/$SLUG/issues/$n/comments" --silent -f body="QA ($NODE): checkpoint. The ${CAP_MIN}-minute hard cap stopped the session; everything in its worktree is pushed to $br (unverified WIP). The next session resumes from it."
+            echo "$(date): saved #$n to $br" >> "$LOG"
+        fi
+    done
+}
 if (( FG )); then
     echo "$(date): FOREGROUND $NODE session pid=$$ log=$LOG cap=${CAP_MIN}m" >> "$LOG"
     /opt/homebrew/bin/opencode run --auto --model "$MODEL" "$PROMPT" >> "$LOG" 2>&1 &
     OC=$!
-    ( sleep $(( CAP_MIN * 60 )); kill -0 $OC 2>/dev/null && echo "$(date): HARD CAP ${CAP_MIN}m — killing the session" >> "$LOG" && kill $OC ) &
+    ( sleep $(( CAP_MIN * 60 )); kill -0 $OC 2>/dev/null || exit 0
+      echo "$(date): HARD CAP ${CAP_MIN}m: saving, then stopping the session" >> "$LOG"
+      save_checkpoint; kill $OC ) &
     WD=$!
     wait $OC; STATUS=$?
     kill $WD 2>/dev/null
