@@ -1,135 +1,122 @@
 // PRINCE OF PERSIA — the autopilot. This IS the attract demo, and
-// scripts/popcheck.mjs runs this exact code to prove the whole dungeon is
-// winnable (and winnable again at slack). A tiny reactive pilot: read the
-// room a few tiles ahead, hold for the guillotine, hop the pits and the
-// poison, and duel by reading the guard's stance telegraph.
-// The numeric constants mirror CFG in sim.js — popcheck pins the agreement.
+// scripts/popcheck.mjs runs this exact code to prove every level is clearable
+// (and clearable again at slack). A reactive pilot: hold right through the
+// doorways, climb a step or hop a pit when the floor ahead is not there, wait
+// behind a chomper until its jaws are up, walk onto the raise button and race
+// the gate before it slams, and duel by reading the guard's wind-up — block the
+// lunge, then strike while he recoils. The numeric constants mirror CFG in
+// sim.js — popcheck pins the agreement.
 
-import { W, SOLID, SPIKE, SPIKE_PORTED, PLATE } from './levels.js'
-import { CFG } from './sim.js'
+import { RW, SOLID, PLATFORM, LOOSE, SPIKE, GATE, RAISE, EXIT } from './levels.js'
+import { CFG, chompDown } from './sim.js'
 
 export const P = {
     G: 0.45,
     WALK: 1.45,
     RUN: 2.6,
-    JUMP: 8.6,
-    REACH: 46,
-    GAP_MAX: 3,
-    GUARD_NEAR: 8 * 32,
+    JUMP: 8.4,
+    REACH: 44,
+    NEAR: 5 * 32,
 }
 
 const T = 32
+
 const cell = (g, c, r) => {
-    if (c < 0 || c >= W) return SOLID
-    if (r < 0 || r >= g.level.grid.length / W) return 0
-    return g.level.grid[r * W + c]
+    if (c < 0 || c >= g.level.W) return SOLID
+    if (r < 0) return 0
+    if (r >= g.level.H) return SOLID
+    return g.level.grid[r * g.level.W + c]
 }
-const portOpen = (g) => g.portLatch
+const roomSolid = (g, code, c) => {
+    if (code === GATE) return g.gateOpen[Math.floor(c / RW)] < CFG.gateOpen
+    if (code === EXIT) return !g.exitOpen
+    return code === SOLID || code === PLATFORM || code === LOOSE || code === SPIKE
+        || code === RAISE || code === 7 || code === 8 || code === 11 || code === 13
+}
+const groundAt = (g, c, r) => cell(g, c, r)
 
 export function decide(g) {
     const inp = { left: false, right: false, up: false, down: false, jump: false, shift: false, atk: false }
     const p = g.p
     if (g.status !== 'play') return inp
-    const fr = Math.floor((p.y - 1) / T)
+    const fr = Math.floor(p.y / T)
     const fc = Math.floor(p.x / T)
+    const room = Math.floor(fc / RW)
 
-    // ---- if hanging, pull up --------------------------------------------------
     if (p.hang) { inp.up = true; return inp }
-
-    // ---- hop over poison wherever it stands on our line ----------------------
-    for (const pot of g.pots) {
-        if (pot.taken || pot.type !== 'X') continue
-        const dx = (pot.c + 0.5) * T - p.x
-        if (dx > 0 && dx < 1.6 * T && Math.abs(pot.r - fr) <= 1) {
-            inp.right = true
-            if (p.onGround && dx < 1.15 * T) inp.jump = true
-            return inp
-        }
-    }
+    if (fc >= g.level.W - 1) return inp   // at the far wall
 
     // ---- duel ---------------------------------------------------------------
-    let gd = null
-    let best = 1e9
+    let gd = null, best = 1e9
     for (const q of g.guards) {
-        if (q.dead) continue
+        if (q.dead || q.room !== room) continue
         const d = Math.abs(q.x - p.x)
-        if (d < P.GUARD_NEAR && d < best && Math.abs(q.y - p.y) < 2 * T) { best = d; gd = q }
+        if (d < P.NEAR && d < best) { best = d; gd = q }
     }
     if (gd) {
         const dir = gd.x > p.x ? 1 : -1
-        const reach = gd.boss ? P.REACH + 6 : P.REACH
-        if (gd.wind > 0) {
-            // hold the height the blade is coming in at: parry
-            if (gd.stance === 2) inp.up = true
-            else if (gd.stance === 0) inp.down = true
-            if (best > reach - 4) inp[dir > 0 ? 'right' : 'left'] = true
-        } else if (best > reach - 12) {
-            inp[dir > 0 ? 'right' : 'left'] = true
-        } else if (best <= reach + 8 && g.tick % 20 < 2) {
-            // strike at a height the guard is NOT holding
-            const s = gd.stance === 2 ? 0 : gd.stance + 1
-            if (s === 2) inp.up = true
-            else if (s === 0) inp.down = true
-            inp.atk = true
-        } else if (best > reach - 26) {
-            inp[dir > 0 ? 'right' : 'left'] = true
+        if (gd.wind > 0) { inp.up = true; return inp }                 // block the lunge
+        if (best > P.REACH - 4) { inp[dir > 0 ? 'right' : 'left'] = true; return inp }
+        if (g.tick % 7 < 2) inp.atk = true                             // strike the opening
+        return inp
+    }
+
+    // ---- gate: walk onto the raise button, then race the slow close ---------
+    let gateAhead = null
+    for (const gc of columnsOf(g, 'gate')) {
+        if (Math.floor(gc / RW) === room && gc > fc && gc - fc <= RW && g.gateOpen[room] < CFG.gateOpen) {
+            gateAhead = gateAhead === null ? gc : Math.min(gateAhead, gc)
         }
-        return inp
+    }
+    if (gateAhead !== null) {
+        const openSoon = g.gateOpen[room] >= 0.5
+        if (openSoon) { inp.right = true; return inp }                  // door up — go
+        const btn = g.level.plates.find((b) => b.room === room && b.c >= fc && b.c < gateAhead)
+        if (btn) { inp.right = true; return inp }                        // step onto the button
+        inp.right = true; return inp
     }
 
-    // ---- exit close: walk in ------------------------------------------------
-    const ex = g.level.exit
-    if (ex && Math.abs(p.x - (ex.c + 0.5) * T) < 3 * T) {
-        inp.right = true
-        return inp
-    }
-
-    // ---- guillotine ----------------------------------------------------------
-    for (const gu of g.level.guills) {
-        const gx = (gu.c + 0.5) * T
-        const ahead = gx - p.x
-        if (ahead > -T * 0.4 && ahead < 4.4 * T) {
-            const ph = g.tick % CFG.guillPeriod
-            const safe = ph < CFG.guillWait - 10 || ph >= CFG.guillWait + CFG.guillDrop + 8
-            if (!safe) {
-                if (p.x > gx - T * 0.5) { inp.right = true; return inp }  // commit, get out
-                return inp                                           // hold behind the blade
+    // ---- chomper: wait for the jaws, then cross -----------------------------
+    for (const ch of g.chomps) {
+        if (ch.room !== room) continue
+        const ahead = ch.c - fc
+        if (ahead > 0 && ahead <= 3) {
+            if (chompDown(g, ch)) {
+                if (p.x > ch.c * T) { inp.right = true; return inp }     // committed — get clear
+                return inp                                                // wait behind the jaws
             }
-            if (ahead < 2.6 * T) { inp.right = true; return inp }
+            inp.right = true; return inp
         }
     }
 
-    // ---- spikes: wait for the port, or walk to the plate that opens it ------
-    for (let a = 1; a <= 2; a++) {
-        const c = fc + a
-        const foot = cell(g, c, fr)
-        const spikeNow = foot === SPIKE || (foot === SPIKE_PORTED && !portOpen(g))
-        if (spikeNow && !(a === 1 && !p.onGround)) {
-            if (portOpen(g)) continue
-            const plateAhead = g.level.plates.some((pl) => pl.r === fr && pl.c > fc && pl.c <= fc + 6)
-            if (plateAhead) { inp.right = true; return inp }
-            return inp
-        }
+    // ---- exit: press the plate then climb into the door (all on the path) ---
+    // fall through to floor logic; the plate and stairs are walked/jumped.
+
+    // ---- escape a pit (fell below the ground floor) -------------------------
+    if (p.y > (g.level.H - 1) * T + 8) { inp.right = true; inp.jump = p.onGround; return inp }
+
+    // ---- floor obstacles straight ahead: spikes, a step up, or a gap --------
+    const footAhead = groundAt(g, fc + 1, fr)
+    const stepUp = roomSolid(g, cell(g, fc + 1, fr - 1), fc + 1) && !roomSolid(g, cell(g, fc + 1, fr), fc + 1)
+    const spikeAhead = footAhead === SPIKE || groundAt(g, fc + 2, fr) === SPIKE
+    const wallAhead = roomSolid(g, footAhead, fc + 1)
+    const gapAhead = !roomSolid(g, footAhead, fc + 1) && !roomSolid(g, cell(g, fc + 1, fr + 1), fc + 1)
+    if (spikeAhead || stepUp || gapAhead || wallAhead) {
+        inp.right = true
+        inp.jump = p.onGround
+        return inp
     }
 
-    // ---- pit ahead: hop the lip (hold while rising for distance) ------------
-    for (let a = 1; a <= P.GAP_MAX; a++) {
-        const c = fc + a
-        const foot = cell(g, c, fr)
-        const below = cell(g, c, fr + 1)
-        const openCell = foot !== SOLID && foot !== SPIKE && !(foot === SPIKE_PORTED && !portOpen(g)) && !g.fallen[fr * W + c]
-        const openBelow = below !== SOLID && below !== SPIKE && below !== PLATE && !g.fallen[(fr + 1) * W + c]
-        const gap = openCell && openBelow
-        if (!gap && a === 1) break
-        if (gap && a === 1) {
-            inp.right = true
-            inp.jump = p.onGround
-            return inp
-        }
-    }
-
-    // ---- default: run right -----------------------------------------------------
+    // ---- default: run right ---------------------------------------------------
     inp.right = true
-    if (ex && p.x > (ex.c + 0.5) * T) inp.right = false
     return inp
+}
+
+function columnsOf(g, kind) {
+    if (kind === 'gate') {
+        const out = []
+        for (let r = 0; r < g.level.H; r++) for (let c = 0; c < g.level.W; c++) if (g.level.grid[r * g.level.W + c] === GATE) out.push(c)
+        return out
+    }
+    return []
 }

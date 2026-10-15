@@ -1,69 +1,81 @@
 # PRINCE OF PERSIA
 
 Jordan Mechner's 1989 Brøderbund dungeon escape, rebuilt whole in code — no
-assets. One hour of dungeon clock, five torch-lit screens, and the Vizier
-Jaffar at the end of them.
+assets. One hour of dungeon clock; the deep pass (#316) is taking it to the
+original's full height: twelve levels, the real duel, the look.
 
 `https://jalfern.com/retrogames/prince-of-persia`
 
-## What's here
+## Stage 1 of #316 — the rules of 1989 (this merge)
 
-- `sim.js` — the pure deterministic engine. `step(state, input)` at 60 Hz:
-  weighted drive (walk → run acceleration, skid on reverse press, friction),
-  careful step (Shift refuses an open edge), crouch, standing/running jumps
-  with hold-to-extend (distance scales with speed), auto-grab hang on ledge
-  faces, pull-up / drop / shimmy / hang-jump, loose tiles (shake, then drop
-  `CFG.looseT` ticks after you step on them), spike ports that latch open
-  when a pressure plate is stood on, the scheduled guillotine (its phase
-  cycle sums exactly to its period — seam-free, pinned by the check), the
-  three-height duel (stance high/middle/low; a windup is telegraphed by the
-  guard's held height and a red pip; matching height parries, mismatch cuts),
-  potions (Life +1, Strength = longer sword, Levitation = soft gravity,
-  Poison = instant loss), hearts, three lives, and the 60-minute clock.
-- `levels.js` — five hand-built 19x12 ASCII screens: THE DUNGEON (pits, a
-  crumbling tile, a spike step-up), THE PORT (first duel + plate/retractable
-  spikes + portcullis), THE GUILLOTINE (timed blade + crumbling bridge),
-  THE STOREHOUSE (four flasks — one of them poisoned), JAFFAR'S THRONEROOM
-  (boss duel; the princess door will not open while a boss lives).
-- `planner.js` — the autopilot. It IS the attract demo: pulls up from hangs,
-  hops pits and poison, holds behind the guillotine until its phase is safe,
-  walks to the plate that opens the spikes, and duels by reading the windup
-  (parry at the incoming height, strike at the height the guard is not
-  holding). The same code is what `popcheck` runs.
-- `art.js` — every pixel in code: mortar-grained stone, torch flames with
-  flickering light pools, animated runners (walk/run/jump/fall/hang/climb/
-  shimmy/crouch/duel/hurt/die poses), spikes, portcullis bars, plate,
-  sparks/knockback shake, princess in the doorway, HUD (hearts, lives, clock,
-  STRENGTH/LEVITATION tags).
-- `index.jsx` — the shell: attract first, fixed-timestep loop, `'?'` pause,
-  `VirtualControls` d-pad + ⚔ (KeyX) for phones, DEV-only DebugKit (F1) with
-  cheat actions + live state, synth sfx off sim events.
+- `sim.js` — the pure deterministic engine, `step(state, input)` at 60 Hz.
+  Multi-room dungeons: rooms are 10 tiles wide, the screen **flips** (hard cut)
+  at a doorway. **No lives** — death restarts the level while the 60-minute
+  clock keeps running; level 3 has a mid-level checkpoint. You start **unarmed**
+  (the sword lies in level 1; outside a fight it stays sheathed). The duel is
+  timing, not heights: advance/retreat on the arrows, **Strike (X)** and
+  **Block (Up)** — a guard's telegraphed lunge is parried by blocking in time,
+  and a parry stuns him long enough to counter. Falls are measured in floors:
+  one lands safe, two costs blood, three kills. A ledge is caught only by
+  **holding Shift** while falling — no auto-grab; Up climbs, Down releases.
+  Machinery: raise buttons lift gates that then close slowly (race them), drop
+  buttons slam them, chomper jaws snap on a schedule, loose floors fall and
+  stay as rubble, the exit plate opens the door for good. The flasks are the
+  1989 set: small red +1, large red +1 max, blue poison −1, slow-fall,
+  upside-down — no strength potion. Sunrise ends the run (`status='lost'`).
+- `levels.js` — rooms as ASCII into one wide grid (legend in the file header;
+  gate columns extend to ceiling-height portcullises, room-edge doorways are
+  cleared automatically, ground floor is continuous).
+- `planner.js` — the autopilot / attract brain: waits for chomper jaws, steps
+  on the raise button and races the closing gate, blocks the lunge and strikes
+  the recoil. `popcheck` runs this exact code.
+- `art.js` — every pixel in code: mortar-grained blue-grey stone; floors read
+  as ledges (lit top, dark front face); rooms without torches sit in shadow;
+  torches pool trembling light. Portcullis bars lift into the ceiling, chomper
+  teeth rise from the floor as a blade drops, loose tiles tremble, crack and
+  pile into rubble. The prince carries ~8 distinct poses plus an 8-frame run;
+  sword appears at the hip (sheath) outside a fight and in the hand inside
+  one. HUD: health as little flasks bottom-left, the duel guard's flasks
+  bottom-right, room counter + hour on top.
+- `index.jsx` — attract first, fixed-timestep loop, `'?'` pause,
+  `VirtualControls` pad + ⚔ (KeyX) for phones, DEV-only DebugKit (F1) with
+  cheats including **prognosis** (re-runs the autopilot solver on the live
+  mutated state), synth sfx off sim events.
 
 ## Controls
 
-Arrows move / guard-height / climb · SPACE jump (hold = farther) · SHIFT
-careful step · X or Z strike · ? pause · R restart after win/death.
+Arrows move · SPACE jump (hold = farther) · SHIFT hold while falling = grab
+(run modifier on the ground) · UP block / climb · DOWN crouch / release hang ·
+X or Z strike · ? pause · R restart after the hour is lost.
 
 ## Verify
 
 ```bash
 npm run lint:pop     # scoped lint gate
-npm run popcheck     # ~57 checks: rules pinned, full 5-screen win proof,
-                     # slack (0.75x clock + every guard at hp−1 still wins),
-                     # hash-for-hash determinism, no-Math.random grep,
-                     # planner/CFG constant agreement
+npm run popcheck     # 73 checks: no-lives restart with running clock, unarmed
+                     # start (no fight before the sword), parry-the-lunge,
+                     # falls-by-floors, held-grab only, gates/chompers/rubble/
+                     # plate-door, the five 1989 flasks, autopilot clears every
+                     # level inside the hour at 0 deaths, slack (0.75x clock +
+                     # every guard hp-1 still wins), hash-for-hash determinism,
+                     # no-Math.random, planner/CFG constant agreement
+npm run popplay      # advisory headless drive (needs npm run dev): real keys
+                     # start/run/jump, find the sword, die on the traps, the
+                     # level restarts under a running clock, R restarts, zero
+                     # page errors
 ```
 
-Mutant proof done at ship time: breaking the parry rule (`p.stance !==
-gd.stance` in `stepGuards`) turned the run red (6 failures) and was restored.
+Mutant proof at ship time: forcing the parry branch off in `stepGuards`
+(`if (false && p.block)`) turned `popcheck` red (1 failure — the parry pin)
+and was restored.
 
-## Honest gaps (filed to QA)
+## Honest gaps (the deep pass continues — see #316)
 
-- Five screens, not the original twelve (every mechanic the twelve teach is
-  present; levels 6-12 are content, not systems).
-- Guards telegraph only with height + a red pip; the original also had
-  distinct lunge patterns. Boss Jaffar is faster/harder, no teleport.
-- Animation is procedural limb-swing (~4-6 frames per move), not
-  rotoscoped-grade; polish pass will thicken the frame counts.
-- Phone controls cover run/jump/careful/strike; hang-climb on touch leans on
-  the d-pad up (works, but the original's mouse-grab feel is desktop-first).
+- Three multi-room levels so far; twelve with their signature moments is
+  Stage 3, and Jaffar's lair arrives with them (`needBoss` is wired but no
+  boss is placed yet).
+- Animation is procedural limb work; Stage 2 thickens the pose set (separate
+  run-start, turn-around, drink, draw/sheathe frames) and the deaths with
+  weight (impaled, sliced, crumpled).
+- Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
+  with the d-pad; desktop-first, as the original was.
