@@ -253,6 +253,12 @@ jobs:
       # determinism, and 4 mutants that must die — all in Node.
       - run: npm run lint:dug
       - run: npm run dugcheck -- --mutate
+      # BUBBLE BOBBLE: independent reachability audit of all 100 generated
+      # caves, trap/pop/chain ledger, EXTEND letters, water snails, transforms,
+      # lightning, von Blubba, the boss and door discipline, win path, pilot +
+      # lives-1 slack, determinism, and 3 mutants that must die — all in Node.
+      - run: npm run lint:bob
+      - run: npm run bobcheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
@@ -398,6 +404,13 @@ jobs:
       # The deterministic gate is qbertcheck in `static`.
       - name: Q*BERT smoke (real keys — the drawn bird sits where the sim says it is, a diagonal hop flips a cube, balloon, falls, restart clean)
         run: npm run qbertdive
+        env:
+          SHOT_CHANNEL: chromium
+      # BUBBLE BOBBLE play-driver: real keys, pixels vs the sim, a real walker
+      # takes a life, two-player seating works. Advisory tier like joustdive.
+      # The deterministic gate is bobcheck in `static`.
+      - name: Bubble Bobble smoke (real keys — the drawn dragon sits where the sim says it is, SPACE blows a real bubble, a walker takes a life, key 3 seats two players)
+        run: npm run bubbleplay
         env:
           SHOT_CHANNEL: chromium
       # The scripted heist: Chrome plays job 1 end to end and asserts it can walk,

@@ -119,6 +119,11 @@ const ArkanoidGame = lazy(() => import('../games/Arkanoid'))
 // a pure step(state,input), so scripts/dugcheck.mjs audits rules, ledger and a
 // proven deathless clear in Node; the attract demo replays that same pilot run.
 const DigDugGame = lazy(() => import('../games/DigDug'))
+// BUBBLE BOBBLE (Taito 1986): blow bubbles, trap, pop for escalating chains.
+// The sim is a pure step(state,inputs), so scripts/bobcheck.mjs audits all 100
+// generated caves, the trap/pop/chain ledger, letters, water, lightning, the
+// boss and Blubba in Node; the attract demo replays the pilot's proven run.
+const BubbleBobbleGame = lazy(() => import('../games/BubbleBobble'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -619,6 +624,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'Namco\'s 1982 tunnel dig, rebuilt honest: four colored dirt layers under an open air strip — dig left, right, up (slow) and down, and where you dig is where the fight happens. Harpoon a Pooka or Fygar and pump: four pumps and it pops, and the deeper the dirt the bigger the payout (1000 deep, half in the open air) — stop pumping and it deflates, so pump fast. Buried enemies hunt you as eyes through solid ground and only become flesh in open tunnels. Boulders hang on dirt columns: dig out the support and the rock drops, crushing everything below and paying more for a crowd crush — and after two dropped rocks vegetables sprout for the bonus. Fygars breathe fire straight down open tunnels — step out of the row and it misses. When only one enemy is left it re-inflates, drops the spear and RUNS for the top corner. The walking tune plays only while you move. Three rounds; the attract demo is the autopilot\'s own proven deathless clear, audited by a Node harness (pump chain, crush ledger, ghost rules, flee rule, determinism).',
         controls: ['Arrows / the pad: dig and move — down is the fast dig, up is the slow one', 'SPACE / A: fire the harpoon, then keep tapping to pump — four stages and the enemy pops', 'An inflated enemy shoves back and deflates if you stop — keep your distance and keep pumping', 'Dig the dirt above a boulder to drop it — falling rocks crush enemies under them (crowds pay more)', 'Fygar fire runs down an open tunnel row: dig up or down to leave the row', 'Watch for ghost eyes in the dirt — buried enemies are untouchable until they reach open ground · ? pauses'],
+    },
+    {
+        path: '/bubble-bobble',
+        builtBy: 'forge',
+        component: BubbleBobbleGame,
+        label: 'BUBBLE BOBBLE',
+        theme: 'dark',
+        description: 'Taito\'s 1986 cave clear-out, rebuilt honest: blow a bubble, and any enemy that wanders into it is TRAPPED — the bubble floats up with its passenger; touch it to pop and the catch pays by CHAIN (100, 200, 300... the consecutive pops climb the classic pay table) and drops fruit. Leave a trap too long and the enemy bursts out ANGRY and the chain resets. Max-size bubbles block your own walk, platforms are one-way (jump up through, drop down with DOWN), ladders run from floor to ceiling. Every 7th bubble carries a letter — E,X,T,E,N,D spells EXTEND for a 1UP. Chain four-plus for transforms: red breathes fire, cyan doubles bubbles, green speeds you up, pink throws long. Chain nine drops LIGHTNING, which zaps the whole screen — even Baron von Blubba, the bat who arrives when a level runs long and rides you down until the lightning. Water in ten of the themes turns walkers into snails. Every 20th cave holds a boss who needs three direct hits; the door opens when the roster is empty. One screen per cave, one hundred caves; solo, with CPU partner Bob, or two players on one keyboard.',
+        controls: ['Arrows / the pad: move — UP jumps and climbs ladders, DOWN drops through a platform', 'SPACE / B / A: blow a bubble — walk into a trapped bubble to pop it', 'Chain pops in one cave to climb the pay table; 4+ chains drop power-ups, 9+ drops lightning', 'Collect E-X-T-E-N-D for an extra life; the door opens when every enemy is down', 'At start: 1 solo · 2 solo + CPU Bob · 3 two players (P2: WASD + F)', 'Linger too long and von Blubba comes — only lightning moves him · ? pauses'],
     }
 
 ]
