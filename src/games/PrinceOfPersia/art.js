@@ -420,7 +420,6 @@ function figure(ctx, st, p, opts) {
     const hip = pose.hip
     const head = hip + 24
     const thigh = hip * 0.55
-    const shin = hip * 0.52
     const armLen = 15
     const bob = pose.bob + (opts.dieBob || 0)
     const lean = pose.lean + (opts.dieLean || 0)
@@ -690,7 +689,6 @@ export function drawScene(ctx, g, opts = {}) {
     // the prince
     if (g.status !== 'lost' && !(g.status === 'dying' && g.p.dieT % 8 < 4 && g.p.anim !== 'die_impale')) {
         const p = g.p
-        const dueling = g.guards.some((q) => !q.dead && q.room === g.room && Math.abs(q.x - p.x) < 8 * T && Math.abs(q.y - p.y) < 3 * T)
         const dying = g.status === 'dying'
         const st = p.anim || 'idle'
         const gaitFrame = st === 'run' ? Math.floor(tick * 0.42)
