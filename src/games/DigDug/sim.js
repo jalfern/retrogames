@@ -108,16 +108,32 @@ function seedRot(seed) {
     return base.slice(n).concat(base.slice(0, n))
 }
 
+// the air spawn columns are scarce: two enemies on one tile read as a single
+// blob (the round-2 double Fygar), so a spawn rotates to the nearest clear
+// air column and gives up (the caller retries) if all three are occupied
+const airBlocked = (gs, c) => gs.enemies.some((e) => e.state !== 'gone' && colOf(e.x) === c && rowOf(e.y) <= AIR_BOT)
+function pickSpawnCol(gs, prefer) {
+    const rot = seedRot(gs.seed)
+    const i0 = rot.indexOf(prefer)
+    for (let i = 0; i < 3; i++) {
+        const c = rot[(i0 + i) % 3]
+        if (!airBlocked(gs, c)) return c
+    }
+    return -1
+}
 function spawnEnemy(gs, col) {
+    const c = pickSpawnCol(gs, col)
+    if (c < 0) return false
     const kind = gs.queue.shift()
-    if (!kind) return
+    if (!kind) return true
     const R = ROUNDS[gs.round]
     gs.enemies.push({
-        id: gs._nextId++, kind, x: cx(col), y: cy(AIR_TOP),
+        id: gs._nextId++, kind, x: cx(c), y: cy(AIR_TOP),
         stage: 0, defl: CFG.deflateTicks, attached: false,
         ghost: false, path: [], repathT: 0, state: 'walk', breathT: R.breathCd,
         flee: false, fireLen: 0, fireDir: 0, fireT: 0,
     })
+    return true
 }
 
 // ---------------------------------------------------------------- scoring ----
@@ -370,7 +386,10 @@ function updateEnemies(gs) {
     // respawn the roster while the goal is unmet
     if (gs.queue.length && gs.enemies.length < R.cap) {
         gs.respawnT--
-        if (gs.respawnT <= 0) { spawnEnemy(gs, seedRot(gs.seed)[(gs._nextId + gs.kills) % 3]); gs.respawnT = CFG.respawn }
+        if (gs.respawnT <= 0) {
+            // every air column can still be occupied: retry next tick, never stack
+            gs.respawnT = spawnEnemy(gs, seedRot(gs.seed)[(gs._nextId + gs.kills) % 3]) ? CFG.respawn : 1
+        }
     }
     if (gs.escapeT > 0) {
         gs.escapeT--

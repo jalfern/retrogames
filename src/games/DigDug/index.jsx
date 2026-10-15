@@ -57,8 +57,8 @@ const DigDugGame = () => {
         const parts = []
         const pops = []
 
-        const say = (m) => { toastMsg = m; toast = 110 }
-        const pop = (px, py, msg) => pops.push({ x: px, y: py, t: 0, msg })
+        const say = (m) => { if (screenRef.current === 'attract') return; toastMsg = m; toast = 110 }
+        const pop = (px, py, msg) => { if (screenRef.current === 'attract') return; pops.push({ x: px, y: py, t: 0, msg }) }
         const burst = (px, py, n, col, s = 2) => {
             for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 2.4
@@ -292,6 +292,12 @@ const DigDugGame = () => {
 
             ctx.fillStyle = 'rgba(0,0,0,0.14)'
             for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1)
+            // the last survivor runs: a brief warm flash while it does
+            if (tintT > 0) {
+                ctx.fillStyle = 'rgba(255,93,47,0.10)'
+                ctx.fillRect(0, 0, W, H)
+                tintT--
+            }
 
             text(`1UP ${String(gs.score).padStart(6, '0')}`, 44, 11, 9, '#ff5d5d', 3)
             text(`HI ${String(Math.max(gs.score, board()[0]?.score || 0)).padStart(6, '0')}`, W - 44, 11, 9, '#ffd23f', 3)
@@ -302,6 +308,16 @@ const DigDugGame = () => {
             }
             text(`${gs.kills}/${ROUNDS[gs.round].goal}`, W - 16, H - 4, 8, '#5dff8f', 3)
             if (toast > 0) { text(toastMsg, W / 2, H / 2 - 26, 10, '#e9f7ff', 6); toast-- }
+            // score popups: float up from the kill/pickup point and fade
+            for (const q of pops) {
+                q.t++
+                if (q.t < 70) {
+                    ctx.globalAlpha = q.t > 40 ? (70 - q.t) / 30 : 1
+                    text(q.msg, q.x, q.y - 10 - q.t * 0.35, 8, '#ffd23f', 2)
+                    ctx.globalAlpha = 1
+                }
+            }
+            while (pops.length && pops[0].t >= 70) pops.shift()
 
             const sc = screenRef.current
             if (sc === 'attract') {
