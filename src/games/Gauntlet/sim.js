@@ -38,7 +38,7 @@ export const CFG = {
     slamForce: 2,
     lockForce: 1,
     contactR: 0.52,
-    monsterAtkCd: 70,
+    monsterAtkCd: 90,
     castCd: 150,
     fireSpeed: 0.16,
     rockSpeed: 0.12,
@@ -186,6 +186,16 @@ function killHero(gs, how) {
     gs.events.push({ type: 'death', how, lives: gs.lives })
 }
 
+function losClear(gs, x0, y0, x1, y1) {
+    const d = Math.hypot(x1 - x0, y1 - y0)
+    const steps = Math.ceil(d / 0.25)
+    for (let i = 1; i < steps; i++) {
+        const t = i / steps
+        if (cellChar(gs, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t) === '#') return false
+    }
+    return true
+}
+
 function heroHits(gs) {
     const h = gs.hero
     h.atkAnim = CFG.swordCool
@@ -194,8 +204,11 @@ function heroHits(gs) {
         const dx = m.x - h.x, dy = m.y - h.y
         const d = Math.hypot(dx, dy)
         if (d > CFG.swordReach + 0.4) continue
-        const dot = (dx * Math.cos(h.a) + dy * Math.sin(h.a)) / (d || 1)
-        if (dot < CFG.swordArc) continue
+        if (d > 0.6) {
+            const dot = (dx * Math.cos(h.a) + dy * Math.sin(h.a)) / d
+            if (dot < CFG.swordArc) continue
+            if (!losClear(gs, h.x, h.y, m.x, m.y)) continue
+        }
         damageMonster(gs, m, h.power + 1, 'sword')
         hitAny = true
     }
@@ -257,7 +270,7 @@ function losToHero(gs, x, y, range) {
 // ---------------------------------------------------------------- doors ----
 function tryDoors(gs, nx, ny) {
     const c = Math.floor(nx), r = Math.floor(ny)
-    const ch = gs.level.grid[r] ? gs.level.grid[r][c] : '#'
+    const ch = gs.levelData.grid[r] ? gs.levelData.grid[r][c] : '#'
     if (ch !== 'D' && ch !== 'L') return true
     const d = doorAt(gs, c, r)
     if (!d || d.open || d.broken) return true
@@ -334,8 +347,9 @@ function moveMonster(gs, m, speed) {
     const h = gs.hero
     const kind = MONSTERS[m.kind]
     if (kind.ghost) {
-        const dx = h.x - m.x, dy = h.y - m.y
-        const d = Math.hypot(dx, dy) || 1
+        let dx = h.x - m.x, dy = h.y - m.y
+        let d = Math.hypot(dx, dy)
+        if (d < 0.05) { dx = Math.cos(gs.tick) ; dy = Math.sin(gs.tick); d = 1 }
         m.x += (dx / d) * speed
         m.y += (dy / d) * speed
         return
@@ -495,6 +509,7 @@ function updateItems(gs) {
             say(gs, `${h.who} IS RESTORED`)
             gs.events.push({ type: 'pickup', t: 'food', heal: CFG.foodHeal })
         } else if (it.t === 'potion') {
+            if (h.hp > h.maxHp * 0.6 && gs.monsters.filter((m) => !MONSTERS[m.kind].drain).length < 3) continue
             let cleared = 0
             const roamers = gs.monsters.filter((m) => !MONSTERS[m.kind].drain)
             for (const m of roamers) {
@@ -563,16 +578,22 @@ export function step(gs, inp) {
         const nx = h.x + Math.cos(h.a) * sp
         const ny = h.y + Math.sin(h.a) * sp
         const R = CFG.radius
+        // corner probes are STONE only — doors must stay enterable so the hero
+        // can reach the door cell and push it open (the center-cell rule below
+        // decides door interaction).
+        const stone = (x, y) => cellChar(gs, x, y) === '#'
         const wallHit =
-            blocked(gs, nx + Math.sign(Math.cos(h.a)) * R, ny) ||
-            blocked(gs, nx, ny + Math.sign(Math.sin(h.a)) * R) ||
-            blocked(gs, nx + Math.sign(Math.cos(h.a)) * R, ny + Math.sign(Math.sin(h.a)) * R)
+            stone(nx + Math.sign(Math.cos(h.a)) * R, ny) ||
+            stone(nx, ny + Math.sign(Math.sin(h.a)) * R) ||
+            stone(nx + Math.sign(Math.cos(h.a)) * R, ny + Math.sign(Math.sin(h.a)) * R)
         if (!wallHit) {
             const cc = Math.floor(nx), cr = Math.floor(ny)
             const ch = gs.levelData.grid[cr][cc]
             if ((ch === 'D' || ch === 'L') && mv > 0) { if (tryDoors(gs, nx, ny)) { h.x = nx; h.y = ny } }
-            else if (ch !== 'D' && ch !== 'L') { h.x = nx; h.y = ny }
-            else if (gs.doors.some((d) => d.x === cc && d.y === cr && (d.open || d.broken))) { h.x = nx; h.y = ny }
+            else if ((ch === 'D' || ch === 'L') && mv < 0) {
+                if (gs.doors.some((d) => d.x === cc && d.y === cr && (d.open || d.broken))) { h.x = nx; h.y = ny }
+            }
+            else { h.x = nx; h.y = ny }
         }
     }
     gs._fwd = inp.fwd

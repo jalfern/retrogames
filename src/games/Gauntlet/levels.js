@@ -13,19 +13,19 @@ export const W = 24, H = 24
 export const CELL = 8 // px per cell on the side map
 
 export const HEROES = {
-    warrior: { name: 'WARRIOR', who: 'THOR', hp: 170, speed: 1.0, power: 4, arrow: 60, label: 'BRUTE FORCE' },
-    valkyrie: { name: 'VALKYRIE', who: 'NIKO', hp: 150, speed: 1.12, power: 3, arrow: 85, label: 'SWIFT SWORD' },
-    wizard: { name: 'WIZARD', who: 'MERLIN', hp: 130, speed: 0.95, power: 2, arrow: 140, label: 'HIGH MAGIC' },
-    elf: { name: 'ELF', who: 'ATTOR', hp: 150, speed: 1.06, power: 3, arrow: 110, label: 'SHARPEST EYE' },
+    warrior: { name: 'WARRIOR', who: 'THOR', hp: 170, speed: 1.0, power: 4, arrow: 8, label: 'BRUTE FORCE' },
+    valkyrie: { name: 'VALKYRIE', who: 'NIKO', hp: 150, speed: 1.12, power: 3, arrow: 10, label: 'SWIFT SWORD' },
+    wizard: { name: 'WIZARD', who: 'MERLIN', hp: 130, speed: 0.95, power: 2, arrow: 18, label: 'HIGH MAGIC' },
+    elf: { name: 'ELF', who: 'ATTOR', hp: 150, speed: 1.06, power: 3, arrow: 14, label: 'SHARPEST EYE' },
 }
 export const HERO_ORDER = ['warrior', 'valkyrie', 'wizard', 'elf']
 
 export const MONSTERS = {
     grunt: { hp: 3, dmg: 12, speed: 0.028, ghost: false, pts: 400 },
-    ghost: { hp: 4, dmg: 16, speed: 0.030, ghost: true, pts: 400 },
+    ghost: { hp: 4, dmg: 16, speed: 0.024, ghost: true, pts: 400 },
     demon: { hp: 8, dmg: 22, speed: 0.022, ghost: false, pts: 500 },
     sorcerer: { hp: 5, dmg: 18, speed: 0.020, ghost: false, pts: 600, casts: 'fire' },
-    lobber: { hp: 6, dmg: 16, speed: 0.020, ghost: false, pts: 300, casts: 'rock' },
+    lobber: { hp: 6, dmg: 14, speed: 0.020, ghost: false, pts: 300, casts: 'rock' },
     death: { hp: 24, dmg: 0, speed: 0.052, ghost: true, pts: 0, drain: true },
 }
 
@@ -48,13 +48,15 @@ function baseGrid(remove, extra = []) {
     return g
 }
 
-// A sealed exit room at the given corner: two walls + a door cell in one wall.
+// A sealed exit room at the given corner: the outer two sides are the field
+// border; two inner walls (with a shared corner cell) close the pocket, and
+// the door (given in `doors`) sits in one of them. Interior is punched open
+// so overlapping pillars can't wall off the stairs.
 function exitRoom(corner) {
-    const extra = []
-    if (corner === 'br') extra.push([17, 17, 4, 1, '#'], [17, 17, 1, 4, '#'])
-    if (corner === 'tl') extra.push([1, 1, 4, 1, '#'], [1, 1, 1, 4, '#'])
-    if (corner === 'bl') extra.push([1, 19, 4, 1, '#'], [4, 19, 1, 4, '#'])
-    return extra
+    if (corner === 'br') return [[18, 18, 3, 3, '.'], [17, 17, 5, 1, '#'], [17, 21, 5, 1, '#'], [17, 17, 1, 5, '#'], [21, 17, 1, 5, '#']]
+    if (corner === 'tl') return [[1, 1, 4, 4, '.'], [5, 1, 1, 5, '#'], [1, 5, 5, 1, '#']]
+    if (corner === 'bl') return [[1, 20, 3, 3, '.'], [1, 19, 4, 1, '#'], [4, 19, 1, 4, '#']]
+    return []
 }
 
 // L1 — THE FIRE WORLD: grunts and ghosts, one locked exit pocket.
@@ -93,7 +95,7 @@ const L2 = {
     start: { x: 21.5, y: 21.5, a: Math.PI * 0.75 },
     exit: [2, 2],
     doors: [
-        { x: 2, y: 4, lock: 'L' },
+        { x: 2, y: 5, lock: 'L' },
         { x: 6, y: 21, lock: null },
         { x: 11, y: 12, lock: null },
         { x: 17, y: 11, lock: null },
@@ -122,7 +124,7 @@ const L3 = {
     start: { x: 11.5, y: 21.5, a: -Math.PI / 2 },
     exit: [2, 2],
     doors: [
-        { x: 2, y: 4, lock: 'L' },
+        { x: 2, y: 5, lock: 'L' },
         { x: 11, y: 11, lock: null },
         { x: 17, y: 17, lock: 'L' },
         { x: 6, y: 12, lock: null },
@@ -139,7 +141,7 @@ const L3 = {
         ['potion', 6.5, 6.5], ['potion', 19.5, 21.5],
         ['gold', 11.5, 9.5], ['gold', 15.5, 11.5], ['gold', 11.5, 15.5], ['gold', 21.5, 2.5],
     ],
-    gen: { comp: ['grunt', 'ghost', 'demon', 'sorcerer'], cap: 6, every: 165 },
+    gen: { comp: ['grunt', 'ghost', 'demon', 'sorcerer'], cap: 5, every: 175 },
     deathAt: 1100,
 }
 
@@ -170,7 +172,7 @@ const L4 = {
         ['potion', 2.5, 15.5], ['potion', 15.5, 2.5],
         ['gold', 9.5, 11.5], ['gold', 11.5, 9.5], ['gold', 21.5, 19.5], ['gold', 19.5, 21.5],
     ],
-    gen: { comp: ['grunt', 'ghost', 'demon', 'sorcerer', 'lobber'], cap: 7, every: 140 },
+    gen: { comp: ['grunt', 'ghost', 'demon', 'lobber'], cap: 5, every: 170 },
     deathAt: 900,
 }
 
