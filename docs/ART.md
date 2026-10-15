@@ -2,7 +2,7 @@
 
 Read this before you draw anything. Then read the exemplars: they are the bar.
 
-## Exemplars (match these, not adjectives)
+## Exemplars (the quality bar to match, not a style to copy)
 
 - **SUPER MARIO** — `src/games/SuperMario/index.jsx`, `drawMario` / `drawGoomba`
   (~line 1565). Built in one shot and still the best-looking 2D title here:

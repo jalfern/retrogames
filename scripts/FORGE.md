@@ -63,9 +63,11 @@ AGENTS.md wins.
    (it is law, not a log, and lives under a 150-line budget).
 4. **Build it** per the AGENTS.md conventions:
    `src/games/<Name>/index.jsx`, register in `src/config/games.js`, fixed
-   internal resolution, fixed timestep, attract mode, `?` PauseOverlay,
-   `VirtualControls` with tap-to-start (`pointerdown`) so it is playable on a
-   phone, all art/audio synthesized at runtime (no assets).
+   timestep, attract mode, `?` PauseOverlay, `VirtualControls` with
+   tap-to-start (`pointerdown`) so it is playable on a phone, all art/audio
+   synthesized at runtime (no assets). That plumbing is all you reuse: never
+   copy another game's art, HUD, palette or drawing code. Design the look
+   from the original.
    **Read `docs/ART.md` before drawing anything** and match its exemplars.
    **Mount `src/utils/DebugKit.js`** (DEV-only F1 panel: live state, cheat
    buttons, and for puzzle/level games a PROGNOSIS action that re-runs your
