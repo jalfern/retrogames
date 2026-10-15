@@ -90,6 +90,10 @@ AGENTS.md wins.
     git push -u origin forge-<slug>
    gh pr create --base main --title "<NAME>" --body-file /tmp/pr.md
    gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch
+   git checkout --detach origin/main   # gh auto-switches the worktree onto `main` after
+                                       # --delete-branch — re-detach at once (the law keeps
+                                       # `main` checked out nowhere; a held `main` makes the
+                                       # next lane's merge die on local bookkeeping)
    ```
 8. **Verify prod:** poll `https://jalfern.com/retrogames/` assets until the
    bundle hash contains the new game; comment the live URL on the issue;
