@@ -48,3 +48,16 @@ npm run lint:galaga
 
 `__galagaTest` (dev only): `probe()` (positions, band x, pt, evLog),
 `start()`, `hash()`, `setup({wave, player, lives})`.
+
+## Galaga
+
+**GALAGA** (`/galaga`) is the scripted-swarm shooter: every enemy flight is a
+**named sampled path** (`paths.js`) so the harness can audit dives offline —
+continuity ≤9 px/step, entries landing on their slot, loops closing. The sim
+(`sim.js`) is pure `(state, input)` with zero `Math.random()`; the behavior
+tree is pinned by live audit (captive dives first, beam once/stage, max 2
+divers). The title's feature is the capture chain: Flagship's tractor beam →
+captive escort next stage → shoot your own escort down → catch the pod for the
+DOUBLE. Attract mode replays the autopilot's proven run tick-for-tick. Deep
+notes in **[`src/games/Galaga/README.md`](src/games/Galaga/README.md)**; verify
+with `npm run galactcheck` (in the `static` CI gate) and `npm run galactplay`.

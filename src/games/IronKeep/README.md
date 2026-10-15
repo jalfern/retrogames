@@ -230,3 +230,17 @@ that bug violates — a tap registers, and the cooldown still throttles (2–3 s
   `lint:games` that widens as the DOS/IF titles get clean.
 - **No mouse-look sensitivity option**, and pointer lock is silent if the browser
   refuses (headless Chrome does sometimes) — keyboard turning is the fallback.
+
+## IronKeep
+
+**IRONKEEP** (`/ironkeep`) is the arcade's first-person shooter: a Wolfenstein-3D-style
+software raycaster (320x200 framebuffer, DDA walls, depth-buffered billboards) with a
+fantasy skin — legionaries, hounds, occultists and a Warden across three key-gated halls.
+Every texture, sprite and font glyph is generated at runtime (`art.js`), and levels are
+*carved* out of solid rock rather than typed as ASCII (`levels.js`), which is what makes
+an un-leaky map the default.
+
+Deep notes — the frame pipeline, why Wolf rather than Doom/Quake, the door texel rule,
+BFS pathfinding, the `__keepTest` hook, and the honest known gaps — are in
+**[`src/games/IronKeep/README.md`](src/games/IronKeep/README.md)**. Verify it with
+`npm run fpscheck` (it is part of `npm run verify`).

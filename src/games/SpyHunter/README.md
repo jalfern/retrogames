@@ -78,3 +78,16 @@ proof — so the slack claim is not vacuous.
 
 `huntercheck` (Node) is in the `static` CI gate with `--mutate`;
 `hunterplay` (real keys, pixels) runs in `smoke`.
+
+## Spy Hunter
+
+**SPY HUNTER** (`/spy-hunter`) is the arcade's driving title: two hand-
+scripted stages of the 1984 highway at 256x224, every sprite and the music
+riff synthesized at runtime. `script.js` is the traffic as *data*
+(`{t, type, x}`), which is what lets `huntercheck` audit the road before
+anyone drives it; `sim.js` is pure `step(state, input)` with zero
+`Math.random`; the autopilot decides by **rolling the real sim forward ~1.3
+s per candidate lane** (hand-drawn threat rings lost to the real box twice
+— see `src/games/SpyHunter/README.md`), and the attract demo is that
+proven run replayed tick-for-tick. Verify with `npm run huntercheck --
+--mutate` (in the `static` gate) and `npm run hunterplay`.

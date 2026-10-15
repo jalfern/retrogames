@@ -333,3 +333,19 @@ nearby watcher's `los / align / cover / light / rate / det`.
   cone palette.
 - The raccoon's fur blows out under its own fill light in open lamplight. Tuned down,
   not solved.
+
+## Raccoon Heist
+
+**RACCOON HEIST** (`/raccoon-heist`) is the arcade's first 3D title: a third-person
+stealth-heist in three hand-carved night maps, in three.js, with every texture, mesh and
+note generated at runtime. Lazy-loaded so nothing else on the site pays for a 3D engine.
+
+The contract that keeps it honest is that `levels.js` and `stealth.js` import into **plain
+Node** — which is why `npm run heistcheck` can prove a job is winnable before a browser
+exists, and why `npm run heistplay` can fail a level design rather than a render. Note the
+world scale (`CELL = 2.2` m): at 1 m per cell a third-person camera cannot fit in a
+corridor, and the grid logic deliberately stays in cells.
+
+Full notes — the file boundaries, the carving, the three load-bearing sim rules, the
+draw-call budget, and the honest gaps — are in
+**[`src/games/RaccoonHeist/README.md`](src/games/RaccoonHeist/README.md)**.

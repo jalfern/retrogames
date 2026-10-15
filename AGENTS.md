@@ -1,6 +1,8 @@
 # AGENTS.md — RetroGames Arcade
 
 Guidance for working in this repo (and, by extension, shipping to jalfern.com).
+The arcade (React + Vite) is one half of the site: `jalfern.com/retrogames/...` proxies
+here via `jalfern/vercel.json` — keep Vite `base` and router `basename` both at `/retrogames`.
 
 ## Rules for unattended runs (read first)
 
@@ -34,633 +36,100 @@ History: `docs/qwen-run-2026-09-postmortem.md` explains why these rules exist.
 - **Multiplayer titles:** a CPU opponent is the default (works on phones, gives the harness an
   autopilot). Two players is a desktop keyboard option. No second on-screen touchpad.
 
-## What this is
-The **arcade** app — a collection of browser-playable retro games (React + Vite).
-It is one half of a two-repo site:
-
-| Repo | Vercel project | Serves |
-|------|----------------|--------|
-| `retrogames` (this repo) | `retrogames` | `retrogames-psi.vercel.app` |
-| [`jalfern`](https://github.com/jalfern/jalfern) | `jalfern` | `jalfern.com` (the portfolio/home) |
-
-`jalfern/vercel.json` proxies `/retrogames/*` → `retrogames-psi.vercel.app/retrogames/*`,
-so this app is reached in production at **`jalfern.com/retrogames/...`**. The Vite
-`base` is `/retrogames/` and the router uses `basename="/retrogames"` (see `vite.config.js`
-and `src/App.jsx`). Keep those two in sync if the path ever changes.
-
 ## Stack
-- React 19 + Vite 7, React Router 7, Tailwind CSS 4.
-- `js-dos` + `ifvms` for DOS / interactive-fiction titles (Ultima, King's Quest, Zork…).
-- All game audio is synthesized at runtime via `src/utils/AudioController.js` (no audio assets).
+React 19 + Vite 7 + React Router 7 + Tailwind CSS 4. `js-dos` + `ifvms` for DOS/IF titles
+(Ultima, King's Quest, Zork…). All game audio is synthesized at runtime via
+`src/utils/AudioController.js` (`audioController.playTone / playSweep / playNoise`) — no assets.
 
 ## Commands
 ```bash
-npm install        # runs postinstall -> patches ifvms (see Gotchas)
-npm run dev        # dev server -> http://localhost:5173/retrogames/
-npm run build      # production build -> dist/
-npm run lint       # eslint, whole repo (currently ~740 pre-existing errors in the DOS/IF titles)
-npm run lint:mario # eslint scoped to Mario + shared shell + scripts — a CI gate
-npm run lint:fps   # eslint scoped to IronKeep (the raycaster) + shared shell + scripts — the other gate
-npm run lint:ai    # eslint scoped to src/ai + Zork + King's Quest + shared utils + scripts — the AI gate
-npm run preview    # preview the production build
-npm run shot -- --out scripts/.shots/x.png --eval "..."   # visual capture (see Self-verifying)
-npm run audcheck   # assert the chiptune engine is producing signal (exits non-zero on fail)
-npm run verify     # the whole self-verifying suite (needs `npm run dev` running)
-npm run mariocheck / autopilotcheck / plantcheck / levelcheck / evocheck / evoprobe   # Mario checks
-npm run fpscheck   # IronKeep: level audit + raycaster play-through (see its README)
-npm run keepplay   # IronKeep feel probe driven by real key events only (no sim shortcuts)
-npm run huntercheck # Spy Hunter: road projected as data (oil never seals 3 lanes), score ledger recomputed, slack (zero missiles / lives-1), 6 mutants, in Node (~8s)
-npm run hunterplay  # Spy Hunter in Chrome, real keys only: pixels at the sim's coords, scripted oil spins the car, real-key missile kills the gunboat
-npm run heistcheck # Raccoon Heist level + stealth audit in Node (~1s, no browser)
-npm run galactcheck  # Galaga: path audit + live trajectory + behavior-tree pins + capture/rescue chain + determinism, in Node (~2s); `-- --mutate` adds 4 mutants that MUST die
-npm run dogfightcheck # WWI Dogfight: energy ledgers (trim/stall/zoom/glide), bullet-integrator parity, per-tick round ledger, pilot wins both patrols + slack rule, in Node (~1s); `-- --mutate` = 7 mutants that MUST die
-npm run dogfightplay # WWI Dogfight in Chrome, real keys only: instruments==sim, bandit pixels==projection, replay hash in the page (`DOG_LITE=1 -- --throttle 16` reproduces the CI runner)
-npm run galactplay   # Galaga in Chrome with real key events only: pixels vs physics, capture chain end-to-end (needs `npm run dev`)
-npm run sweepcheck   # Minesweeper: fairness battery + brute-force oracle (independent of the solver) + 4 mutants that MUST die, in Node (~4s)
-npm run sweepplay    # Minesweeper in Chrome, real keys only: first click plants, canvas reads back, plays COLT to a win (needs `npm run dev`)
-npm run heistplay  # Chrome plays job 1: 110 assertions (needs `npm run dev`); `-- --throttle 32` = a 32x slower CPU
-npm run heistclock # does the fixed timestep keep real time? one line per CPU throttle
-npm run heistmutate # put fourteen fixed bugs back and prove heistplay notices (~40 min)
-npm run cornerprobe # signed depth of the raccoon vs the level, per frame, at N x slow CPU
-npm run zorkpulse   # Zork: one line/second from the agent loop's own counters (slow box repro)
-npm run aicheck    # src/ai spine contract (watchdog / rejections / honest arms), Node, ~1s
-npm run zorkcheck  # Zork in **Node**: sensor seams, then the real agent's invariants (no Chrome)
-npm run zorkuicheck  # the ▶ AI button in a browser: click, it plays; one key, you win
-npm run doscheck   # DOS/IF seams in Chrome: js-dos boots in dev, keys captured, framebuffer readable
-npm run joustcheck   # JOUST: joust rule, egg chain, wrap/hands/lava/crumble, wave ledger + autopilot determinism, in Node (~2s)
-npm run qbertcheck   # Q*BERT: 28-cube geometry, flip state machines, Coily chase, disc lure, balls/runners/slick, 25/50/100 ledger, pilot + slack, in Node (~2s)
-npm run qbertdive    # Q*BERT in Chrome, real arrow-pair keys only: pixels vs the sim, balloon on death, falls burn lives, restart clean (advisory tier)
-npm run prodsmoke    # builds + serves the PRODUCTION bundle and drives it (no DEV hooks exist there)
+npm run dev / build / preview          # dev server at localhost:5173/retrogames/
+npm run lint:mario / lint:fps / lint:ai   # the three scoped lint gates (repo-wide lint is ~740
+npm run aicheck / zorkcheck          #   pre-existing DOS/IF errors on purpose — not a gate)
+npm run verify [-- --full]           # browser suite (needs `npm run dev`; advisory)
+npm run shot -- --out x.png --eval "..."  # visual capture via system Chrome
+gh pr checks --watch                 # the merge gate = CI `static`; `verify` job is manual:
+                                     #   gh workflow run ci.yml --ref <branch>
 ```
+Per-game `*check` / `*play` aliases: `package.json` + each game's README.
 
 ## How the app is structured
-- `src/App.jsx` — router + layout. Routes for every game are generated by mapping `GAMES`.
-- `src/config/games.js` — **the game registry.** Single source of truth for what exists.
-- `src/games/<Name>/index.jsx` — one self-contained component per game.
-- `src/components/` — shared: `GamesList`, `PauseOverlay`, `VirtualControls`, `Weather`, etc.
-- `src/utils/AudioController.js` — `audioController` singleton: `playTone / playSweep / playNoise`.
-- `public/games/` and `public/js-dos/` — committed emulator + game bundles (`.jsdos`, `.z3`, wasm).
-  **`index.html` no longer loads js-dos**: `src/utils/jsdos.js` injects it on demand (see Gotchas).
-- `src/ai/` — the sensor/brain spine (see *AI agents* below): `percept.js` (the one interface
-  every sensor returns and every brain reads), `arms.js` (`transcript` / `eye` / `ram` / `hybrid`
-  lab switch), `loop.js` (`AgentLoop` — diary, stuck watchdog, rejected-skill counter). Brains
-  never touch the canvas, the emulator heap or the DOM; sensors never decide anything.
-- `src/games/<Game>/sensors/` — per-game sensors. `src/games/<Game>/agent/` arrives with the
-  first brain; **no brain is mounted yet.**
-- `src/utils/dosKeys.js` (one DOS keyboard path for player, harness *and* agent),
-  `src/utils/dosCanvas.js` (canvas lookup, exact 320×200 sampling, block fingerprints),
-  `src/utils/jsdos.js` (js-dos loader + `mountDos`).
+- `src/App.jsx` generates every route by mapping `src/config/games.js` — **the registry**,
+  single source of truth for what exists.
+- `src/games/<Name>/index.jsx` — one self-contained component per game (bigger engines may
+  grow sibling modules — see `IronKeep/{index,art,levels}.js`).
+- `src/components/` — shared UI (`GamesList`, `PauseOverlay`, `VirtualControls`, …).
+- `public/games/` + `public/js-dos/` — committed emulator + game bundles (see Gotchas).
+- `src/ai/` + `src/games/<Game>/{sensors,agent}/` — the sensor/brain spine: **docs/AI.md**.
+- `src/utils/{dosKeys,dosCanvas,jsdos}.js` — the only DOS keyboard/pixel/loader paths.
 
-### Adding a new game
-1. Create `src/games/<Name>/index.jsx` exporting a default React component.
-2. Register it in `src/config/games.js`: import it, then add an entry to `GAMES` with
-   `{ path, component, label, theme, description, controls }`.
-3. That's it — the route (`App.jsx`) and the Arcade Menu (`GamesList`) pick it up automatically.
+## Adding a game
+1. Create `src/games/<Name>/index.jsx` (default export); register in `src/config/games.js`
+   with `{ path, component, label, theme, description, controls }` — route + Arcade Menu follow.
+2. Match existing conventions (copy `Defender` or `Adventure`): canvas inside one `useEffect`;
+   fixed timestep (`FIXED_DT = 1000/60`); fixed internal resolution scaled to fit,
+   `imageSmoothingEnabled = false`; attract mode ("PRESS ANY KEY TO START") first; `'?'`
+   toggles `PauseOverlay` (pause entry via `GAMES.find(g => g.label === '<LABEL>')`).
+3. Render `<VirtualControls />` for mobile — it dispatches `Arrow{Left,Right,Up,Down}` +
+   `Space` (the "A" button); pass `secondAction={{ label, code }}` for "B",
+   `visible={false}` on menus/death. Handle those `e.code` values.
+4. Engine notes go in the game's own `README.md` — **never in AGENTS.md** (law, not a log).
 
-Match the existing game conventions (copy `Defender` or `Adventure` as a template):
-- Canvas game inside a single `useEffect`; fixed-timestep loop (`FIXED_DT = 1000/60`).
-- Fixed internal resolution scaled to fit the container; `imageSmoothingEnabled = false`.
-- Attract mode ("PRESS ANY KEY TO START") first; `'?'` toggles `PauseOverlay`.
-- Render `<VirtualControls />` for mobile — it dispatches `ArrowLeft/Right/Up/Down` + `Space`
-  (`Space` = the "A" action button). Handle those `e.code` values. Pass
-  `secondAction={{ label, code }}` for a "B" button, and `visible={false}` to withdraw the
-  pad on menus/death screens (default `true`, so existing games are unchanged).
-- Look up the pause entry with `GAMES.find(g => g.label === '<LABEL>')`.
-- One `index.jsx` is the convention, but a game folder may grow sibling modules when the
-  engine is big enough to want it — see `src/games/IronKeep/{index,art,levels}.js`.
+## Git & merge
+Feature branch → PR → squash-merge to `main`; never push to `main`. From the PR's branch,
+merge **only** with the rule-5 command above. Only `static` blocks merges.
+**Never stack a PR on an unmerged branch** — squash-merge deletes the base, GitHub closes
+the child and refuses to reopen it. Recovery: `git rebase --onto origin/main <old-base-tip>
+<branch>`, `git push --force-with-lease`, re-file `--base main`. Pass `--body-file` to
+`gh pr create|comment` (the shell eats backticks). Pushing `.github/workflows/*` needs the
+`workflow` scope: `gh auth refresh -s workflow`. `gh` is authenticated as `jalfern`; if a
+push prompts for credentials, run `gh auth setup-git` once.
 
-### AI agents (`src/ai/`) — and what is deliberately *not* in here
+## Deployment
+Vercel Git integration: merge to `main` deploys production automatically; branches/PRs get
+previews. Build `npm run build` → `dist/`; `vercel.json` carries the SPA rewrites + wasm header.
+After merging, `gh pr checks --watch` for Vercel, then open `https://jalfern.com/retrogames/<game>`.
 
-There is **no remote AI backend**. Two earlier agents shipped pointing at a Hetzner box
-(`5.78.145.117:3099` / `:3101`) that no longer answers, so both "🤖 AI" buttons on the site were
-dead — King's Quest was screenshotting itself, POSTing a JPEG to a dead host, parsing an `answer`
-field, and its parse-failure fallback **summoned the game's debug wizard** (`testEsc`, which
-Types `DEBUG` then `F7`/`F9`). All of `api/*.js` is deleted. Any brain in this repo runs **in the
-tab, locally, from on-site code**; if a server-side brain ever comes back it lives in a cloneable
-repo and its URL is an env var, never a hardcoded IP.
-
-The spine (reasoning and the staged plan in `docs/archive/qwen-run-2026-09/AI-PLAN.md`):
-
-- `src/ai/percept.js` — the one interface between sensors and brains: a `Percept` with a
-  **per-field confidence**. Brains never touch canvas / heap / DOM / transcript directly, and no
-  field is optional — a hole must show as `null` + `conf: 0`, never as a missing key.
-- `src/ai/arms.js` — `transcript` (Zork: the prose *is* the state) / `eye` (pixels + OCR) /
-  `ram` (peek the emulator) / `hybrid` (default where a game declares both). Precedence
-  `window.__aiSensor` → `?sensor=eye` → `localStorage['arcade.ai.sensor']` → default, so an A/B
-  run is a query param rather than a rebuild. `components/AiBadge.jsx` always prints the arm,
-  and `games.js`' `sensors:` list is the ceiling — the badge cannot claim a sense the game lacks.
-- `src/ai/loop.js` — `AgentLoop`: one tick = percept → decide → act → settle. Owns the move
-  budget, the stuck watchdog, and a counter for **rejected unknown skills**: a brain naming a
-  skill the game does not implement must fail loudly, because that is exactly how both old
-  agents died silently (unknown intent → parse fallback → debug wizard).
-- `src/games/<Game>/sensors/` and `src/games/<Game>/agent/` — per-game sensors and brains.
-  `src/games/Zork/agent/` is the first brain (see below). **No title plays itself in the
-  browser yet** — the Zork brain runs in Node only, and the King's Quest strip prints
-  `SENSING: NOT IMPLEMENTED` instead of pretending otherwise. `scripts/aicheck.mjs` is what keeps
-  the spine honest in the meantime — it runs `AgentLoop` against fake brains that reproduce the
-  failures this repo has already lived through, so the watchdog and the rejection counter are
-  proven before there is a brain to protect.
-- `src/games/Zork/sensors/transcript.js` — prose → `Percept`: room heading, verdict (`moved` /
-  `blocked` / `taken` / `deadend` / `ambiguous`), exits, darkness, score, inventory. A room name
-  is accepted only from a heading row actually printed after a *move*, so a document title (the
-  leaflet) or a complaint cannot become a room — that was a real bug the first version shipped.
-- `src/utils/dosKeys.js` is the *only* DOS key path, so the harness, the agent and the player's
-  fingers share one codebase (a harness that cheats with frozen frames cannot pass for play).
-
-### The harness must be able to fail — and a mutant that survives everywhere is a report about the code
-
-Before blaming an unreproducible machine for a surviving mutant, ask what makes the mutated
-line **run**. A cone-sampling mutant here stayed green at 60 fps, 32x and 64x, and was
-written up as "the CI runner is the only box that sees this" — until `grep` showed the line
-read `w.yawFrom` and nothing assigned `yawFrom`, so `slices` was always 1 and the mutant
-compared an expression with itself. The fix it "proved" is reverted. Dead code carrying a
-green test is worse than no code: it ships a causal story with it. (The real cause of the CI
-red turned out to be four driver bugs: polling a suspicion meter the alert wipes, polling one
-belonging to a raccoon in a sack, parking the courier inside the guard's grabbing range, and
-"emptying a yard" by teleport when a patrol is a route and routes walk home.)
-
-### The harness must be able to fail
-
-Every suite here was green with bugs in it at first, so two mutations are tried by
-hand before a Zork change is believed:
-
-```bash
-# 1. drop `|| inert` from the refusal rule          -> infinite re-open, Kitchen unreached
-# 2. make darkness sticky (`this.dark = true`)       -> "a LIT lamp outranks the word dark"
-# 3. hardcode `turnOn('lamp')` (the deleted WANT sin) -> "the game never said lamp"
-# 4. fire needLight without a dark exit              -> "the goal formed from a hint"
-npm run zorkcheck
-# 5. make describeAfter match the heading by LINE instead of substring
-npm run zorkuicheck   # MUST fail: 1 room mapped in the browser, 13 in Node
-```
-
-Three of those four **survived their first attempt**, and every survival was the same
-diagnosis — the mutated line was unreachable, so the test never touched it: darkness
-that the brain never walks into; a fixture that never entered the branch; an
-experiment rule that could not run because the agent did not know what it was
-carrying. **A surviving mutant is usually a report about the test, not the code.**
-
-Fixing mutation 3's survival exposed the real bug: `p.inventory` only refreshes when
-the game prints a carry list, which is only in reply to `inventory`, which this brain
-never types — so it had no idea what was in its hands. It now tracks its own
-`Taken.` replies (`held`), and the experiment it has always wanted to run finally
-runs, and the game answers it:
-
-Mutation 2 survived **twice**, and both reasons are the lesson: first the brain
-never enters the dark, so a sensor lying about global darkness is behaviourally
-invisible; then the probe said *"It is too dark"* while the detector matched only
-*`it's dark`* — the fixture never entered the branch it was testing (and that regex
-is why Zork's actual phrasing had been sailing past the sensor all along). **A
-mutant that survives is usually telling you the test never got near the code.**
-
-```
-> turn on elongated brown sack
-  If you wish to burn the brown sack, you should say so.
-```
-
-### The Zork brain (`src/games/Zork/agent/`)
-
-`map.js` + `skills.js` + `explorer.js`. Three things about it are load-bearing and
-non-obvious; all three were learned by the map being wrong, not by design:
-
-- **Rooms are identified by their DESCRIPTION, not their name.** Zork heads two
-  different rooms "Forest" (and two more "Forest Path"), and its Clearing
-  physically **moves** ("the clearing spins in the forest, and when it stops, you
-  are somewhere different"). Keying on the heading merged the twins, so the map
-  inherited an exit from the wrong room and the explorer walked forever toward a
-  direction that room did not have, while its own map insisted the way was open.
-  Identity is now a fingerprint of the room's first sentence; a heading is a
-  *candidate*. Same-named rooms that disagree get `Forest#2`, and past
-  `MAX_TWINS` the area is declared **unstable** — the map admits it cannot hold
-  that ground, and the agent stops and says so rather than inventing rooms.
-- **An edge belongs to the room you stood in.** The first version filed the walk
-  onto the destination (`Kitchen --north--> Kitchen`), so origins never recorded
-  attempts, `untried()` kept offering the same way, and the agent paced one
-  corridor until the watchdog stopped it.
-- **A refusal that is not phrased as a refusal still counts.** "The forest becomes
-  impenetrable to the north." / "Storm-tossed trees block your way." are clean
-  *no*s with no "can't" in them, so the prose classifier said `ok`, the direction
-  stayed on the frontier, and the agent asked twenty times. The map no longer
-  consults the prose: **asked to go that way and did not arrive ⇒ the way is
-  closed.** Derived from the model, not from the phrasing.
-
-**Two rules shipped dead for a whole stage.** Rules 3 and 3b (`open` what is shut;
-`open` the noun blocking a refused way) set state and **fell through without a
-`return`**, so they could never act — and the suite still "proved" the brain opened
-the Kitchen window, because the scripted warm-up had opened it and the inherited
-world looked like the brain's work. Both fixed, and load-bearing:
-
-- The brain phase begins with Zork's own `restart`. **A check that hands the agent
-  a world its script already unlocked proves nothing.**
-- Refusals are derived from *state*, not prose: an ask that changes nothing
-  perceptible (`snap()`) is finished, whatever the game said. The regex of
-  refusals died to *"Have your eyes checked."* — you cannot enumerate a text
-  adventure's sarcasm.
-
-**There is no `WANT` list anymore.** Stage 1 shipped
-`const WANT = ['lamp', 'lantern', 'matches']` — a walkthrough smuggled in through the
-*goal* rather than the route, while we took credit for the agent "looking for a light
-source". Gone. The goal is now derived: the map holds exits **the game itself called
-dark** and nothing in hand burns (`needLight`), and the run must produce a receipt —
-`fired at 2 dark way(s), game had mentioned a light: false`. Two gates enforce that
-no noun ever enters a command unless the game printed it first, in an earlier **live**
-reply (95 commands, all traceable). Fixtures may not lie to the arm either: the
-`turn on lamp` probe used to leave `lit = true` for the whole brain run, which
-switched the grue rule off, because every dark check ANDs with `!lit` — a fixture
-that lies to the sensor is worse than one that lies to the check, so the harness now
-resets the sensor when it restarts the world.
-
-Assumed edges (the reverse of a walked move) are hypotheses and the brain
-*verifies* them — that is how it got indoors at all: east from North of House
-filed `west → North of House` as a guess, west from Behind House is actually a
-window, and testing the guess is what led to `open window` → **the Kitchen**.
-The run reports `verified=N` so "evidence vs guesswork" is a number.
-
-Two rules the next stage must keep. **The parser is gated, the map is not:** legality may come
-from `games.js`-style vocabulary, but a room may only be entered by walking into it, an unknown
-exit stays unknown (never `#ng` — in Zork that is a legal *spell*), and two rooms that read
-identically are not aliased. Refusing to merge costs one re-walk; merging silently deletes every
-frontier behind the merge. And **prose is the referee**: `open window` is proved by
-`nailed and boarded` disappearing, never by a score bump — in Zork I that move is worth 0 points.
-
-## Git workflow
-Feature branch → PR → squash-merge to `main`. **Do not push directly to `main`.**
-```bash
-git switch -c add-<thing>
-git add <files> && git commit -m "Imperative summary"
-git push -u origin add-<thing>
-gh pr create --fill
-gh pr merge --squash --delete-branch
-```
-`gh` is authenticated as `jalfern`. If a `git push` ever prompts for credentials, run
-`gh auth setup-git` once to wire the token into git.
-
-### Don't stack a PR on an unmerged branch
-
-`gh pr merge --squash --delete-branch` deletes the base branch of anything pointed at it,
-and **GitHub closes those child PRs** — then refuses to reopen one ("Could not open the
-pull request"), because its base ref no longer exists. This is not recoverable in the UI.
-
-Recover by re-filing against `main` (the commits are fine, only the PR is dead):
-
-```bash
-git fetch origin
-git rebase --onto origin/main <old-base-tip> <your-branch>   # replays just your commit(s)
-git push --force-with-lease origin <your-branch>
-gh pr create --base main --title "..." --body-file /tmp/body.md
-```
-
-If you genuinely must stack, stack on a *pushed* branch and plan to re-file it after the
-parent merges. Also: pass `gh pr create|comment --body-file` rather than a double-quoted
-`--body` — the shell eats backticks, so your `code spans` silently vanish from the comment.
-
-## Deployment (automated — do not deploy by hand)
-Both repos use **Vercel Git integration**:
-- Push/merge to **`main` → automatic production deploy** (this repo → `retrogames-psi.vercel.app`).
-- Push to a **feature branch / PR → preview deployment** (URL shown by `gh pr checks` / `gh pr view`).
-- Build command is `npm run build`; output dir `dist/`. Vercel honors `vercel.json` here
-  (SPA rewrites under `/retrogames`, plus the `application/wasm` content-type header that
-  js-dos needs).
-
-Ship a change end-to-end:
-```bash
-gh pr merge --squash --delete-branch   # triggers prod build
-gh pr checks --watch                    # wait for Vercel
-open https://jalfern.com/retrogames/<game>
-```
-
-## Gotchas
-- **DOS titles load js-dos on demand — there is no emulator `<script>` in `index.html`.**
-  `src/utils/jsdos.js` injects `/retrogames/js-dos/js-dos.js` and mounts `.jsdos` bundles via
-  `mountDos()`. Two reasons, both learned the hard way: (a) Vite *prepends the base to absolute
-  URLs in `index.html`*, so the old hard-referenced `/retrogames/js-dos/js-dos.js` was requested
-  as `/retrogames/retrogames/...`, the SPA fallback answered with **HTML at status 200**, and
-  `window.Dos` stayed undefined — every DOS title rendered "DOSBox emulator failed to load" in
-  `npm run dev` while working in production, so nobody noticed; (b) the ~300 KB + 1.4 MB wasm
-  download should not happen on Pong. If you re-add a script tag, you break dev.
-- **js-dos draws with WebGL without `preserveDrawingBuffer`, so canvas readback is black.** The
-  game looks perfect while `drawImage`/`getImageData`/`toDataURL` return solid black (measured:
-  0 lit pixels of 64,000 on a canvas whose element-screenshot showed the intro). `jsdos.js`
-  patches `HTMLCanvasElement.prototype.getContext` to force the flag before the emulator asks
-  for a context. Without it the entire pixel/OCR sensor arm senses nothing.
-- **js-dos 8 binds keydown/keyup on `window`, not the canvas**, and drops keys while blurred.
-  `dosKeys.installDosKeys()` patches `EventTarget.prototype.addEventListener` *before* the
-  emulator script runs and `focusEmulator()` focuses before injecting. The old canvas-prototype
-  patch never saw a handler, so scripted keypresses silently did nothing.
+## Gotchas that still bite (each once)
+- **js-dos is injected, never in `index.html`.** `src/utils/jsdos.js` loads
+  `/retrogames/js-dos/js-dos.js` on demand: Vite prepends base to absolute script srcs, so a
+  hard tag requests `/retrogames/retrogames/...`, the SPA fallback answers HTML@200, and
+  dev silently breaks while prod works. Re-adding a script tag breaks dev.
+- **js-dos draws WebGL without `preserveDrawingBuffer`** — `drawImage`/`getImageData`/
+  `toDataURL` all return solid black. `jsdos.js` forces the flag before the emulator asks, or
+  the entire pixel/OCR sensor arm senses nothing.
+- **js-dos 8 binds keys on `window`**, not the canvas, and drops them while blurred.
+  `dosKeys.installDosKeys()` patches `addEventListener` before the emulator loads;
+  `focusEmulator()` focuses before injecting.
 - **An unmoving frame is not a broken actuator.** King's Quest sits on the AGI copy-protection
-  box ("Cracked Version !!! Weiter mit ESC") where arrows do nothing *by design* — only ESC
-  advances. `doscheck` presses ESC first for that reason.
-- **The player has never once been inside a wall, and `near()` said it was because `near()`
-  lists meshes.** "8 cm inside `fur1` at 6 fps" was the raccoon's *own forearm* (crew 1's fur
-  material is `fur1`), and every reading in that report was honest — the collider bottoms out
-  at exactly its own radius, 0 buried camera frames at 5 fps. Rig meshes now carry
-  `userData.rig` and `near()` skips them; `bodyDepth()` is the number that actually means
-  "inside the level", and it is a **signed** depth (colliders are an inflation, so "any overlap"
-  is a check that cannot pass for any radius). Two rules came out of it: the collider diameter
-  is asserted, not assumed (`heistplay`: "a raccoon is 0.64 m wide" — that is the check that
-  makes a shrunken `RADIUS`, which moves no other number, loud), and **anything that moves asks
-  `blocked()`**: `updateWatchers` wrote `w.x += ...` straight, so guards walked through lampposts,
-  hydrants and bins in all three jobs while the *direct chase* branch — the only one six rounds of
-  testing ever exercised — did ask. See `docs/archive/qwen-run-2026-09/FEEDBACK.md`.
-- **One driver per loop.** `startAi` (Zork) ran `while (running) await loop.tick()` *and*
-  `loop.start()`, so two `tick()` chains raced, two `agentSend`s fought over the one pending
-  prompt, a `resume()` reached a machine that was not asking, and the interpreter waited forever
-  for a keystroke nobody sent — while the HUD said `running`. The loop owns its own clock now and
-  the component only watches via `onStatus`; `agentSend` refuses to overlap and binds the loop it
-  was created for. A component driver *plus* a loop timer is the same bug in any game.
-- **A fixed timestep has a frame-rate floor, and the harness must speak its clock.**
-  `RaccoonHeist/index.jsx` caps catch-up at `MAX_CATCHUP` (250 ms) of world per frame. The cap
-  used to be five ticks (83 ms), which is invisible at 60 fps and means the world runs at
-  *half speed at 6 fps* — guards, torch timers and the job clock included — so on a CI runner
-  `heistplay` waited a wall second, saw 0.17 s of raccoon move, and reported ten red checks
-  about the **game** while the laptop was green. Two rules follow: the cap is real-time down
-  to 4 fps (below that `heistplay` reports the frame rate instead of asserting), and any wait
-  or budget in a browser harness is in **world** seconds (`__simSleep` / `__gameTime`), never
-  `setTimeout` / `performance.now()`. Diagnose with `npm run heistclock -- --throttle 1,8,32,64`.
-  The runner is also **software-rendered**: `heistplay` asks for `?lite=1` (no MSAA, no shadow
-  maps, pixel ratio 1 — a real weak-phone path in `RaccoonHeist/index.jsx`, not a test-only
-  back door) plus a 640x426 window on CI, because the full pipeline draws **1 fps** there.
-  Headless Chrome also drops a page it thinks is backgrounded to a few rAF ticks a second —
-  `scripts/lib/harness.mjs` passes `--disable-background-timer-throttling`,
-  `--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding` for that, and
-  deliberately does **not** pass `--disable-frame-rate-limit` (that spins rAF at 600+ fps and
-  stops `--throttle` from being a reproduction of a slow box).
-- **ifvms postinstall patch:** `patches/fix-ifvms.cjs` (run via `npm install`) fixes a
-  CJS→ESM `this` bug in `ifvms/src/zvm/opcodes.js`. If you bypass `npm install`, Zork breaks.
-- **DOS titles load js-dos on demand — there is no emulator `<script>` in `index.html`.**
-  `src/utils/jsdos.js` injects `/retrogames/js-dos/js-dos.js` and mounts `.jsdos` bundles via
-  `mountDos()`. Two reasons, both learned the hard way: (a) Vite *prepends the base to absolute
-  URLs in `index.html`*, so the old hard-referenced `/retrogames/js-dos/js-dos.js` was fetched as
-  `/retrogames/retrogames/...`, the SPA fallback answered with **HTML at status 200** (so no
-  console error stood out), and `window.Dos` stayed undefined — every DOS title rendered "DOSBox
-  emulator failed to load" in `npm run dev` while working in production, which is why nobody
-  noticed; (b) ~300 KB + 1.4 MB of wasm should not download on Pong. Re-adding a script tag
-  breaks dev.
-- **js-dos draws with WebGL without `preserveDrawingBuffer`, so canvas readback is black.** The
-  game looks perfect while `drawImage` / `getImageData` / `toDataURL` all return solid black
-  (measured: 0 lit pixels of 64,000 on a canvas whose element screenshot showed the intro). That
-  made the whole pixel/OCR sensor arm impossible — a sensor reading black. `jsdos.js` patches
-  `HTMLCanvasElement.prototype.getContext` to force the flag before the emulator asks for a context.
-- **js-dos 8 binds keydown/keyup on `window`, not the canvas**, and drops keys while blurred.
-  `dosKeys.installDosKeys()` patches `EventTarget.prototype.addEventListener` *before* the
-  emulator script runs; `focusEmulator()` focuses before injecting. The old canvas-prototype patch
-  never saw a handler, so scripted keypresses silently did nothing and the manual buttons needed
-  a real click.
-- **An unmoving frame is not a broken actuator.** King's Quest sits on the AGI copy-protection
-  box ("Cracked Version !!! Weiter mit ESC") where arrows do nothing *by design* — only ESC
-  advances. `doscheck` presses ESC first for exactly that reason.
-- **WASM assets:** `public/js-dos/**` and `public/games/**` are committed and large. The
-  `application/wasm` header in `vercel.json` is required or js-dos titles fail to boot.
-- **Base path:** `vite.config.js` `base` and `App.jsx` `basename` must both be `/retrogames`.
-- **Audio autoplay:** browsers require a user gesture before sound; `App.jsx` unlocks the
-  AudioContext on first click/keydown/touch. Don't play audio before that.
-- **npm >= 11 required (node >= 22.9; dev box is node 25, CI is node 24).** `js-dos`
-  bundles `react-redux@8.1.3`, whose peer range caps at React **18** while this app is React
-  **19**. npm 11 tolerates that and prunes the nested tree; npm 10 tries to install a second
-  React and dies on the lockfile:
-  `npm error Missing: react-dom@18.3.1 from lock file` (also `@types/react@18.3.31`,
-  `scheduler@0.23.2`). So `npm ci` is only reproducible on npm >= 11 — if a fresh clone or a
-  CI runner on node 20/22 fails there, that is the cause, not your change. Diagnose with
-  `npx npm@10 ci --dry-run`. The alternative fix (`.npmrc` with `legacy-peer-deps=true`, then
-  regen the lock) would make installs work on any npm but changes how Vercel installs too —
-  do it deliberately, not as a drive-by.
-- **package-lock churn:** `npm install` may drop optional peer type packages. Commit those
-  lockfile updates alongside the change that needs them, and re-check `npm ci --dry-run`
-  after any dependency bump.
+  box ("Weiter mit ESC") where arrows do nothing *by design* — `doscheck` presses ESC first.
+- **Anything that moves must ask `blocked()`**, and buried-depth is **signed**: guards once
+  walked through lampposts because only the chase branch asked, and `near()` once blamed a
+  raccoon's own forearm (rig meshes now carry `userData.rig`). See
+  `docs/archive/qwen-run-2026-09/FEEDBACK.md`.
+- **One driver per loop.** A component `while (running) await tick()` *plus* a loop timer
+  races two chains over one pending prompt (the Zork double-driver): the loop owns its clock;
+  components watch via `onStatus`.
+- **A fixed timestep has a frame-rate floor.** The catch-up cap is real-time down to ~4 fps;
+  a smaller cap runs the world at half speed on slow boxes. Harness waits/budgets are WORLD
+  seconds (`__simSleep` / `__gameTime`), never `setTimeout`. CI Chrome is software-rendered:
+  use `?lite=1` at 640x426; `harness.mjs` disables background throttling. Diagnose with
+  `npm run heistclock -- --throttle 1,8,32,64`.
+- **ifvms postinstall patch:** `patches/fix-ifvms.cjs` (via `npm install`) fixes a CJS→ESM
+  `this` bug in `ifvms` zvm opcodes. Bypass `npm install` and Zork breaks.
+- **WASM needs its MIME** (`application/wasm` in `vercel.json`) or DOS titles fail to boot.
+- **Audio autoplay:** the AudioContext unlocks on first click/keydown/touch (App.jsx); never
+  play before that.
+- **npm >= 11 (node >= 22.9):** js-dos pins a React-18 peer against this React-19 app; npm 10
+  dies on the lockfile (`Missing: react-dom@18.3.1`). Diagnose: `npx npm@10 ci --dry-run`.
+- **package-lock churn:** commit lockfile updates with the change that needs them; re-check
+  `npm ci --dry-run` after any dependency bump.
 
-## Self-verifying (vendored test harness)
-The visual + audio verification loop lives **in the repo** under `scripts/` so any
-model/machine can reproduce it (it is not an external tool):
-
-| Script | What it does |
-|--------|--------------|
-| `scripts/shot.mjs` | Drives **system Chrome** (via `playwright-core`) to screenshot the dev server and drive the game through `window.__marioTest`. |
-| `scripts/audcheck.mjs` | Starts the game and asserts the chiptune engine steps + produces an `AnalyserNode` signal; exits **non-zero** on failure (CI-friendly). |
-| `scripts/verify.mjs` | Runs the browser suite and summarises; non-zero exit on any failure (`npm run verify [-- --full]`). |
-| `scripts/mariocheck.mjs` | Title/menu/touch regression: lone Shift must not start, `?`/OPTIONS open the menu, keys 1–4, BACK/ESC, gamepad hidden on menus. |
-| `scripts/autopilotcheck.mjs` | Mario option 3 must clear 1-1 twice: as it plays (must reach Fire Mario) and with fire taken away (must jump the plants). |
-| `scripts/plantcheck.mjs` | Piranha plants: cycle, hitbox == emerged part, hurts only when out, safe when retracted, never stompable. |
-| `scripts/levelcheck.mjs` | Geometry audit of every world in `LEVELS`: no pit wider than a running jump, a landing chain that actually reaches the flagpole, every firebar clear of the tilemap, lava over real holes. Catches the one level bug a screenshot cannot — a jump that is simply impossible. |
-| `scripts/evocheck.mjs` | Mario option 4 must learn (clean cold-start fitness after 60 gens, and ≥1.5x its own gen-1 — the ratio is the real gate, the GA is stochastic; post-#107 `evoTrain` goes through `startEpisode` so fitness is per-episode, not cumulative coins) and its HUD must actually render. |
-| `scripts/evoprobe.mjs` | Per-genome scalpel: one episode with a named/random/evolved controller → `maxCol`, jumps, trace. |
-| `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), DEV-hook wait (`openMario`, or `openGame(browser, { hook })` for other titles), pass/fail `Report`. |
-| `scripts/fpscheck.mjs` | IronKeep (the FPS): key-gated reachability audit of all three halls, then a driven play-through — collision, doors and keys, hitscan, pathfinding without line of sight, lives, the Warden, reaching `win`, and a frame-time budget. |
-| `scripts/keepplay.mjs` | IronKeep feel probe: real key events only (no frozen-frame shortcuts), so input-path bugs that deterministic stepping cannot see — a quick tap swallowed between two 60Hz samples — still show up. |
-| `scripts/heistcheck.mjs` | Raccoon Heist **in Node** (no browser): every job's carved grid audited for reachability of the cart, the gate, every marker and every coin; that each locked door is *load-bearing* (run the reachability twice, once with doors shut — the difference is the proof); patrol routes that actually walk; torch beams that cross floor; cover within two cells of every loot pile; and the stealth model itself. `--map N` dumps a job as ASCII, `--mutate` seals the vault and requires the audit to complain. |
-| `scripts/heistplay.mjs` | Chrome **plays** job 1: walks with an actual thumbstick vector, steals, delivers, chews a vault, stands in a torch beam until bagged, chews a friend loose, empties the cart, escapes. Asserts the cast is a visible mesh in the scene graph (the cast once passed every numeric check while never being added to the scene), that the verb shown is the verb that fires, that every verb has a *mesh* where it points, and that a rescue takes under 4 s. **Every wait is `window.__simSleep(worldSeconds)` and every budget is `window.__gameTime()`** — the driver waits in *world* seconds, because `setTimeout` measures the runner: ten CI reds came from waiting a wall second and asserting a game second. `--throttle N` runs the whole suite on a deliberately slow CPU, and on CI it drives the
-  documented `?lite=1` pipeline at 640x426 because the runner rasterises in software and drew
-  **1 fps** at 1100x700 with shadows. It counts the *pound*, never `probe().caged` (being caught hands you the next raccoon, so the one you are watching is free again a frame after a good arrest), and it fills the pound to two itself rather than letting the rescue section loop over an empty list. |
-| `scripts/heistclock.mjs` | One line per CDP CPU throttle: `1.00x loop 1.00x job @ 60 fps`. This is the instrument that turns "CI is red, local is green" into a number — with the old five-tick catch-up cap it read **0.59x @ 7 fps**, i.e. the heist literally ran at half speed and every check in seconds became a measurement of the machine. Measures loop time (`st.t`, which advances even on menus) *and* the job clock separately, and refuses to assert a ratio below 4 fps rather than reporting a slow box as a broken game. |
-| `scripts/heistmutate.mjs` | The mutation harness for the above: fourteen mutants (a mutant may carry `throttle: N`, because the camera-floor overshoot literally does not exist at 60 fps), each one a previously fixed bug put back by an anchored text swap, each run through the real `heistplay`, each restored from a `/tmp` copy (never `git checkout` on a dirty tree). Exits non-zero if any mutant survives, i.e. if a check has quietly stopped touching the code; an anchor that does not match is a **failure**, not a skip, because a silently skipped mutant is a green suite that tested nothing. `--dry` re-checks the anchors. One mutant is *equivalent* and documented in its header (the camera-floor overshoot — unreachable at any frame rate `heistplay` runs, covered by the escape check); an earlier one (hiding a lock with `visible = false`) was a lie about being equivalent and is now a real gate. |
-| `scripts/cornerprobe.mjs` | Answers "is the player inside the level?" with numbers instead of an opinion. Walks a raccoon into the worst corner in job 1 under a CDP CPU throttle, sampling every mesh in range each frame with a **signed depth** (metres past the collider edge, positive = outside), so "the mesh is too big" and "the simulation fell behind" become different, checkable claims instead of vibes. Reports the walk in **world** seconds, never wall (`frames=`). |
-| `scripts/zorkpulse.mjs` | The Zork equivalent, and the instrument that found the double-driver bug: one line per second of wall time from the loop's own counters — exchanges closed, seconds since the last one, whether the interpreter is at the prompt, ticks, failures, idle, the command→prompt median. `en=Y` with `frz` climbing means the actuator is waiting on nothing (a bug); a large `med` with `frz=0` is simply a slow box behaving correctly. Not a gate — `zorkuicheck` is. |
-| `scripts/aicheck.mjs` | The **spine's own contract**, in Node, ~1 s. No brain exists yet, so `AgentLoop` is driven by fake brains that reproduce the failures this repo has already lived: an unknown skill must be **rejected and counted** (not thrown, not ignored), a brain that stops advancing must trip the watchdog and then stop *with a reason*, a throwing skill must not kill the loop, a brain with no move must stop rather than spin, every `Percept` field must ship a confidence defaulting to 0 (never a hole), and a title that declares no sensors must get no arm to advertise. |
-| `scripts/zorkcheck.mjs` | Zork **in Node** (no Chrome, no dev server), two phases. **Seams:** every command the scripted walk sent was legal, `open window` proved **by prose** (`nailed and boarded` before, absent after — a score bump is not proof, that move is worth 0 points here), a complaint does not invent a room, reading the leaflet does not invent a room, darkness detected, a refused move classified `blocked` not `moved`, no Glk/VM error. **Brain:** mounts the real `ZorkExplorer` in the real `AgentLoop` and asserts its invariants — never re-entered a dark room unlit, never died, never said a word the parser rejected, every merged room noticed (`splits`) and reported, ≥10 rooms mapped, and it stopped **with a reason it states**. `--map` prints the map the agent believes; `--trace` prints `verdict > command > first line of reply`. **Prose phase (2a):** grades the **first sight** of a room — Zork prints a long description once and never repeats it, so knowledge must be caught or re-`look`ed — and asserts the game's own exit labels were read: `west, up, down, east out, dark: up, down`, with west **not** dark, which is per-clause attribution (per-sentence would teach the agent to fear the lit way out). Also pinned: darkness **clears** when the light does, and a **lit lamp outranks the word "dark"**.
-| `scripts/zorkuicheck.mjs` | The AI behind a **real button**, in a real browser, driven only by one mouse click and one keypress. Budgets are in the agent's **turns**, not the wall (`untilRooms` keeps waiting while turns keep arriving, and the wall is only a stall detector), arbitration is sampled N times with the loop demonstrably driving instead of glimpsed once, `--throttle N` reproduces a busy CI runner, and a stalled loop dumps its own diagnostics into the failure line instead of just `1 rooms`. Asserts the affordance exists (a badge with no control is a brain nobody can start), that it plays **by itself** after the click (a check that watched the key turn instead of the car move passed while the map sat still), that the input field is disabled while it drives so no keystroke lands inside a half-typed word, that **one key takes the keyboard back and it never creeps back**, and that it prints what happened. This is also the only gate whose transport matches production: the Node harness hands the sensor newline-separated replies, the browser hands it Glk **chunks glued together**, and a parser that assumes its transport's shape (see `describeAfter`) maps 13 rooms in Node and 1 in the page. |
-| `scripts/prodsmoke.mjs` || The same titles against the **production build** (`vite preview`, port 4173). Every other browser check runs against `npm run dev`, where Vite resolves `/retrogames/...` for you and `import.meta.env.DEV` grants the `__*Test` hooks — so the shipping bundle had never been driven. This one has no hooks: it proves the emulator is fetched exactly once under `/retrogames/` (never `retrogames/retrogames`), that non-DOS titles never download js-dos at all, that the canvas survives readback outside dev, and that **real** keyboard input moves Graham and types into the Z-machine. Asserts contracts, not chosen futures: `north` may legally be answered "The way is blocked", so the check requires an echo + a reply + a `LOOK` description. |
-| `scripts/doscheck.mjs` | The seams every DOS/IF title depends on: js-dos boots under the dev server (it did not — see Gotchas), the keyboard handler is captured off `window`, the framebuffer is *readable* (not composited-and-cleared), ESC gets past the AGI copy-protection box, injected arrows move Graham, and Mario still renders **without** downloading js-dos. Retries frames because AGI legitimately fades through black. |
-
-```bash
-npm install                 # installs playwright-core (no browser download)
-npm run dev                 # in another terminal
-npm run shot -- --out scripts/.shots/fire.png --eval "window.__marioTest.setPower('fire');window.__marioTest.teleport(6)"
-npm run audcheck            # PASS/FAIL on the audio engine
-npm run verify              # the whole browser suite
-npm run evoprobe -- --preset pitwide-run --trace
-npm run fpscheck            # IronKeep audit + play-through
-npm run zorkcheck           # Zork agent in Node (no browser) — also a CI merge gate
-npm run doscheck -- --quick # Zork + King's Quest seams in Chrome (--quick skips Ultima/Mario)
-```
-
-- **Prereqs:** Google Chrome installed (harness uses `channel:'chrome'`, no download).
-  Override with `--channel chromium` after `npx playwright install chromium`, or set
-  `SHOT_CHANNEL`.
-- **`scripts/.shots/` is for captured images ONLY — never a script.** It used to be
-  gitignored wholesale, which silently swallowed ten driver scripts written during
-  iterations 11–13. The ignore now covers `*.png`/`*.jpg` only, so a stray `.mjs` shows up
-  as untracked instead of vanishing. Harness code is tracked code: put it in `scripts/`
-  and give it an npm alias.
-- **DEV-only:** `window.__marioTest` exists only under `import.meta.env.DEV`, so the harness
-  must target the **dev server**, not the production build.
-- Options: `--url --out --eval --steps --w --h --settle --prewait --channel --no-start`.
-  `--steps` is a JSON array of `{down|up, wait}` for real keyboard input.
-  `--no-start` skips the initial keypress, so attract/menu shots are possible.
-
-### CI
-`.github/workflows/ci.yml` has two jobs:
-
-| Job | Trigger | What it does |
-|-----|---------|--------------|
-| `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `lint:fps` → `lint:ai` → `aicheck` → `zorkcheck` → `build`. No browser, fast, this is the gate. |
-| `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + aicheck + zorkcheck + fpscheck + evocheck + doscheck), then builds and `npm run prodsmoke` against the production bundle; uploads `scripts/.shots/`, dumps the vite/preview logs on failure. |
-
-```bash
-gh pr checks --watch                      # the static gate on your PR
-gh workflow run ci.yml --ref <branch>     # opt into the browser suite
-gh run download <run-id> -n mario-frames  # grab the captured frames
-```
-
-The browser suite is manual on purpose: headless audio on a shared runner is the flaky
-part. Promote it to `pull_request` once it has been green a handful of times.
-
-Repo-wide `npm run lint` is deliberately *not* a gate: ~740 pre-existing errors in the
-DOS/IF adapters would make it permanently red. Widen `lint:mario` as those get fixed.
-`lint:ai` exists so the AI spine and its harness are covered *now* rather than whenever
-that tail is cleaned up.
-
-> **New machine / CI bot:** pushing `.github/workflows/*` needs the `workflow` OAuth
-> scope, which GitHub hard-blocks otherwise. Check with `gh auth status`; add it with
-> `gh auth refresh -s workflow` (gh ≥2.40 — it was renamed from `auth refresh-scopes`),
-> then enter the device code at github.com/login/device. Additive and reversible via
-> `--remove-scopes`.
-
-## Raccoon Heist
-
-**RACCOON HEIST** (`/raccoon-heist`) is the arcade's first 3D title: a third-person
-stealth-heist in three hand-carved night maps, in three.js, with every texture, mesh and
-note generated at runtime. Lazy-loaded so nothing else on the site pays for a 3D engine.
-
-The contract that keeps it honest is that `levels.js` and `stealth.js` import into **plain
-Node** — which is why `npm run heistcheck` can prove a job is winnable before a browser
-exists, and why `npm run heistplay` can fail a level design rather than a render. Note the
-world scale (`CELL = 2.2` m): at 1 m per cell a third-person camera cannot fit in a
-corridor, and the grid logic deliberately stays in cells.
-
-Full notes — the file boundaries, the carving, the three load-bearing sim rules, the
-draw-call budget, and the honest gaps — are in
-**[`src/games/RaccoonHeist/README.md`](src/games/RaccoonHeist/README.md)**.
-
-## Galaga
-
-**GALAGA** (`/galaga`) is the scripted-swarm shooter: every enemy flight is a
-**named sampled path** (`paths.js`) so the harness can audit dives offline —
-continuity ≤9 px/step, entries landing on their slot, loops closing. The sim
-(`sim.js`) is pure `(state, input)` with zero `Math.random()`; the behavior
-tree is pinned by live audit (captive dives first, beam once/stage, max 2
-divers). The title's feature is the capture chain: Flagship's tractor beam →
-captive escort next stage → shoot your own escort down → catch the pod for the
-DOUBLE. Attract mode replays the autopilot's proven run tick-for-tick. Deep
-notes in **[`src/games/Galaga/README.md`](src/games/Galaga/README.md)**; verify
-with `npm run galactcheck` (in the `static` CI gate) and `npm run galactplay`.
-
-## IronKeep
-
-**IRONKEEP** (`/ironkeep`) is the arcade's first-person shooter: a Wolfenstein-3D-style
-software raycaster (320x200 framebuffer, DDA walls, depth-buffered billboards) with a
-fantasy skin — legionaries, hounds, occultists and a Warden across three key-gated halls.
-Every texture, sprite and font glyph is generated at runtime (`art.js`), and levels are
-*carved* out of solid rock rather than typed as ASCII (`levels.js`), which is what makes
-an un-leaky map the default.
-
-Deep notes — the frame pipeline, why Wolf rather than Doom/Quake, the door texel rule,
-BFS pathfinding, the `__keepTest` hook, and the honest known gaps — are in
-**[`src/games/IronKeep/README.md`](src/games/IronKeep/README.md)**. Verify it with
-`npm run fpscheck` (it is part of `npm run verify`).
-
-## Super Mario
-
-Deep engine notes moved to **[`src/games/SuperMario/README.md`](src/games/SuperMario/README.md)**
-— this section had grown to a third of this file. Read that first for:
-
-- the OPTIONS menu / `syncUi()` + `apiRef` contract and the four play modes
-- **worlds**: `LEVELS = [1-1, 1-3, 1-4]` (1-2 and the bonus room are pipe detours that warp
-  back), the level builder API, and the two castle hazards — lava and rotating firebars
-- **piranha plants**: motion, the hitbox-is-the-emerged-part rule, and why the autopilot must
-  never stall near one
-- **option 3 autopilot** (deterministic, clears 1-1 perfectly) and **option 4 neuroevolution**
-  (recurrent 24→10→5 tanh MLP, GA, turbo + showcase replays, `localStorage` persistence)
-- the *honest* cold-start fitness baseline and why the GA still stops at ~col 140 of 212
-- `forwardNN` index-base gotcha (`bi/bh/bo/ob`) that silently produces an unjoppable agent
-- the full `window.__marioTest` DEV hook reference
-- capture-timing, teleport-onto-enemy and minified-live-verify gotchas
-- known gaps / next steps (evolve can't finish 1-1, autopilot never reaches Fire Mario,
-  no 1-up, no moving platforms, no 1-3/1-4)
-
-Quick orientation: `src/games/SuperMario/index.jsx` is the live build, and
-`src/games/SuperMarioClassic/index.jsx` is the vendored pristine v1 (route `/mario-classic`,
-`hidden: true`, reached only from the menu; its `?` returns to `/mario?menu=1`).
-Verify Mario work with `npm run verify` (see *Self-verifying* above).
-
-## Minesweeper
-
-**MINESWEEPER** (`/minesweeper`) is the arcade's logic-only title: three
-difficulties (COLT/SAPPER/GENERAL), every board **guess-free by construction** —
-the generator ships a board only after a solver playing *just the rules the
-player learns* (single-square + subset-pair, chord as a strippable shortcut)
-proves it closes with zero forced guesses, then re-proves it with chord
-**forbidden** (the slack gate). Cursor + tap play, attract autopilot.
-
-The one contract that keeps it honest: **the solver is the gate, so the solver
-must not be its own referee.** Two solver lies found and killed; the browser
-harness then found a third the Node battery structurally could not see (a first
-click gated behind `screen:'play'` that `dig()` itself was refusing to set —
-planting was unreachable in the app, while `plantAt` called directly passed every
-Node check). Full notes — the stale-scratch bug, the oracle that had to stop
-trusting the solver's ledger to become able to fail, and the two green-tested-nothing
-oracle versions — are in **[`src/games/Minesweeper/README.md`](src/games/Minesweeper/README.md)**.
-Verify with `npm run sweepcheck` (`-- --mutate` = 4/4 mutants die; in the `static`
-gate) and `npm run sweepplay` (Chrome, real keys only; in `verify`).
-
-## Spy Hunter
-
-**SPY HUNTER** (`/spy-hunter`) is the arcade's driving title: two hand-
-scripted stages of the 1984 highway at 256x224, every sprite and the music
-riff synthesized at runtime. `script.js` is the traffic as *data*
-(`{t, type, x}`), which is what lets `huntercheck` audit the road before
-anyone drives it; `sim.js` is pure `step(state, input)` with zero
-`Math.random`; the autopilot decides by **rolling the real sim forward ~1.3
-s per candidate lane** (hand-drawn threat rings lost to the real box twice
-— see `src/games/SpyHunter/README.md`), and the attract demo is that
-proven run replayed tick-for-tick. Verify with `npm run huntercheck --
---mutate` (in the `static` gate) and `npm run hunterplay`.
-
-## Joust
-
-**JOUST** (`/joust`) is the 1982 Williams lance duel, rebuilt on a pure
-deterministic sim (`sim.js`): flap-vs-glide momentum physics where the
-**lower lance always loses** (dead-even kills both), a five-wave roster
-(Bounder/Hunter/Shadow Lord), and the egg chain — kills drop eggs, touch
-banks them, left resting they hatch into the next-stronger rider. Terrain
-(ledges, lava pits, troll-hand columns) is data (`waves.js`), which is what
-lets `npm run joustcheck` pin the joust rule, the hatch timer, crumble
-timing and the wave score ledger before a browser exists; the attract demo
-is `planner.js`'s own proven run (it clears waves 1-2; the pilot ceiling-pin
-bug and its fix are documented in the game README). Verify with
-`npm run joustcheck` (`static` gate) and `npm run joustdive` (Chrome, real
-keys; advisory tier).
-
-## Q*BERT
-
-**Q*BERT** (`/qbert`) is the 1982 Gottlieb cube-hop: a 28-cube isometric
-pyramid (rows 1-6 + skirt 4,3), diagonal-only hops, every landing flips the
-cube top — round 1 is all-green (apex counts, 27 to go), round 2+ is the
-5-colour cycle (clear when all match). Coily drops at flip 9 and strictly
-closes on you; the apex up-hop boards a disc and a snake within two edges
-follows it off (+500); red balls ricochet the edges, Ugg/Wrongway run rows
-(round 2+), Sam & Slick wipe green back (round 3+); the "@!#?@!" balloon
-rides every death. `sim.js` is pure and `planner.js`'s proven pilot drives the
-attract demo; `npm run qbertcheck` grades the pilot with its OWN walker as
-referee (71 checks: geometry literals, chase/lure radius, chain ledger 25/50/100,
-pilot clears round 1 with lives-1 slack on 8 seeds, hash-for-hash). Verify with
-`npm run qbertcheck` (`static` gate) and `npm run qbertdive` (Chrome, real
-arrow-pair keys; advisory tier). Note: at the apex, up-diagonals are the disc
-attempt — the way off the top is down-diagonal (the harness learned this the
-honest way).
-
-## The Forge (autonomous game production)
-`/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the
-`game-queue/building/shipped` GitHub labels, and "＋ PROPOSE A GAME" is a prefilled
-new-issue link — anything Jon files joins the queue. The loop: **launchd**
-(`scripts/com.jalfern.forge.plist` → `scripts/forge.sh`) runs `opencode run` at
-09/13/17/21 with one instruction — execute `scripts/FORGE.md` (the playbook: claim oldest
-issue → build per conventions + a harness that can fail → the only allowed merge path →
-verify prod → rewrite STATE.md). One game per session, 3-hour cap, stalled-loop exits.
-**The warden** (`scripts/warden.sh`, launchd every 10 min) is a plain shell script, not an
-agent: pulse line, trust gate + triage, kick the builder / QA when idle, `stalled` after 3
-kicks with no progress. It never calls a model, so it never slows the builder or hangs on oMLX.
-Test any change with `WARDEN_DRY=1 zsh scripts/warden.sh` (reads everything, changes nothing).
-```bash
-launchctl load ~/Library/LaunchAgents/com.jalfern.forge.plist   # install (after cp)
-scripts/forge.sh                                                # force a session now
-tail -f /tmp/forge/last.log                                     # watch a session
-```
+## Where the rest lives
+- **docs/AI.md** — the `src/ai` spine, the no-remote-AI-backend history, the Zork brain.
+- **docs/HARNESS.md** — the self-verifying suite script by script, the mutant essays, CI detail,
+  and the forge loop + warden.
+- **Per-game deep notes** — each game's own README (RaccoonHeist, Galaga, IronKeep, SuperMario,
+  Minesweeper, SpyHunter, Joust, QBert).
+- **Playbooks** — `scripts/FORGE.md` (builder), `scripts/FORGE-QA.md` (QA), `scripts/warden.sh`.
+- Live board: `https://jalfern.com/retrogames/forge`.

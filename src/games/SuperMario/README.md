@@ -323,3 +323,27 @@ symbol name.
 - `LEVELS = [LEVEL_1, LEVEL_3, LEVEL_4]`. 1-2 and the bonus room stay pipe detours that
   warp back, which is also how the original reaches them.
   so "WORLD 1-1 CLEAR" leads nowhere — 1-3 (athletic) and 1-4 (castle) would close World 1.
+
+## Super Mario
+
+Deep engine notes moved to **[`src/games/SuperMario/README.md`](src/games/SuperMario/README.md)**
+— this section had grown to a third of this file. Read that first for:
+
+- the OPTIONS menu / `syncUi()` + `apiRef` contract and the four play modes
+- **worlds**: `LEVELS = [1-1, 1-3, 1-4]` (1-2 and the bonus room are pipe detours that warp
+  back), the level builder API, and the two castle hazards — lava and rotating firebars
+- **piranha plants**: motion, the hitbox-is-the-emerged-part rule, and why the autopilot must
+  never stall near one
+- **option 3 autopilot** (deterministic, clears 1-1 perfectly) and **option 4 neuroevolution**
+  (recurrent 24→10→5 tanh MLP, GA, turbo + showcase replays, `localStorage` persistence)
+- the *honest* cold-start fitness baseline and why the GA still stops at ~col 140 of 212
+- `forwardNN` index-base gotcha (`bi/bh/bo/ob`) that silently produces an unjoppable agent
+- the full `window.__marioTest` DEV hook reference
+- capture-timing, teleport-onto-enemy and minified-live-verify gotchas
+- known gaps / next steps (evolve can't finish 1-1, autopilot never reaches Fire Mario,
+  no 1-up, no moving platforms, no 1-3/1-4)
+
+Quick orientation: `src/games/SuperMario/index.jsx` is the live build, and
+`src/games/SuperMarioClassic/index.jsx` is the vendored pristine v1 (route `/mario-classic`,
+`hidden: true`, reached only from the menu; its `?` returns to `/mario?menu=1`).
+Verify Mario work with `npm run verify` (see *Self-verifying* above).
