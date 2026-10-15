@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR } from '../src/games/PrinceOfPersia/art.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -793,6 +793,55 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
             xsrc.includes('AUTOPILOT DEMONSTRATION') && !/AUTOPILOT DEMONSTRATION', VW \/ 2, VH - 30/.test(xsrc))
     }
     void GATE_CLEAR
+}
+
+// ---- 16. Stage 6: the second art pass — per-torch light, directional key ------
+{
+    // torch pools fall off smoothly from a firm core to nothing at the radius
+    ok('S6: a torch is brightest at its flame and gone at its radius',
+        torchGlow(0) === 1 && torchGlow(TORCH_RADIUS) === 0)
+    let mono = true
+    for (let d = 0; d < TORCH_RADIUS; d += 16) if (!(torchGlow(d) > torchGlow(d + 1))) mono = false
+    ok('S6: a torch pool dims monotonically as you move away', mono)
+    ok('S6: the falloff is a smooth curve, not a hard cut-off',
+        torchGlow(TORCH_RADIUS / 2) > 0.3 && torchGlow(TORCH_RADIUS * 0.9) < 0.12)
+
+    // one directional key light: facing normals agree, opposite ones disagree
+    ok('S6: one directional key lights the facing normal and shadows the back',
+        facet(LIGHT_DIR.x, LIGHT_DIR.y) > 0.9 && facet(-LIGHT_DIR.x, -LIGHT_DIR.y) < -0.9)
+    ok('S6: a surface broadside to the key is neither lit nor shaded',
+        Math.abs(facet(LIGHT_DIR.y, -LIGHT_DIR.x)) < 1e-6)
+
+    // an unlit corner is dark but not black; pools lift it back, per-torch
+    ok('S6: ambient keeps the dark readable (deep blue, not black)',
+        LIGHT_AMBIENT >= 0.1 && lightAt(1e5, 1e5, []) === LIGHT_AMBIENT)
+    const one = [[200, 120]]
+    ok('S6: the flame pool lifts brightness well past ambient',
+        lightAt(200, 120, one) > LIGHT_AMBIENT + 0.8)
+    const two = [[120, 120], [300, 120]]
+    ok('S6: light is per-torch — two sconces brighten between them, one cannot',
+        lightAt(210, 120, two) > lightAt(210, 120, [[300, 120]]))
+    ok('S6: overlapping pools meet in the middle but the far corner stays ambient',
+        lightAt(210, 120, two) > LIGHT_AMBIENT + 0.4 && lightAt(1500, 900, two) === LIGHT_AMBIENT)
+    ok('S6: the darkness veil is the inverse — deepest where no pool reaches',
+        darkAlpha(200, 120, one) < darkAlpha(1500, 900, one)
+        && darkAlpha(1500, 900, one) === 0.66 * (1 - LIGHT_AMBIENT))
+
+    // the source really moved from a room-wide wash to per-torch pools
+    const artSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+    ok('S6: the flat room-wide dark wash is gone', !/rgba\(0,\s*0,\s*8,\s*0\.32\)/.test(artSrc))
+    ok('S6: pools and the vignette are painted with radial gradients',
+        (artSrc.match(/createRadialGradient/g) || []).length >= 3)
+    ok('S6: the scene lights per-torch — additive pools, and figures via atLight',
+        /function lightPool\(/.test(artSrc) && /atLight\(/.test(artSrc)
+        && /globalCompositeOperation = 'lighter'/.test(artSrc))
+
+    // deeper colour: per-channel hue mixing replaced the equal-luminance nudge
+    ok('S6: stone mixes hue per-channel (a chromatic lit/shadow side), not flat tone',
+        /const mix = /.test(artSrc) && (artSrc.match(/mix\(/g) || []).length >= 4
+        && !/function tone\(/.test(artSrc))
+    ok('S6: figures are rim-lit from the room they stand in (warm + litSide)',
+        /opts\.litSide/.test(artSrc) && /litSide: /.test(artSrc) && /warm: /.test(artSrc))
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
