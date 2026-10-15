@@ -72,17 +72,16 @@ export function buildStage(depth, col) {
     const rand = rng(id * 2654435761 + 12345)
     const diff = col + depth * 0.35                     // 0 .. ~5.4, right-and-deep is hardest
     const segs = []
-    addRoad(segs, 40, 60, 40, 0, 0)                      // a straight to feel the throttle
-    const curves = 4 + Math.round(depth)                 // more corners the deeper you go
+    addRoad(segs, 24, 34, 24, 0, 0)                      // a straight to feel the throttle
+    const curves = 3 + depth                             // more corners the deeper you go
     for (let s = 0; s < curves; s++) {
         const dir = rand() < 0.5 ? -1 : 1
-        const mag = (0.9 + rand() * (1.4 + diff * 0.22)) * dir
-        const hill = (rand() < 0.55 ? -1 : 1) * Math.round(8 + rand() * (12 + diff * 3))
-        const len = 40 + Math.round(rand() * 40)
-        addRoad(segs, len, Math.round(len * 0.8), len, mag, hill)
-        if (rand() < 0.5) addRoad(segs, 20, 20, 20, 0, 0)   // a short link straight
+        const mag = (0.8 + rand() * (1.2 + diff * 0.20)) * dir
+        const hill = (rand() < 0.55 ? -1 : 1) * Math.round(8 + rand() * (10 + diff * 2))
+        const len = 22 + Math.round(rand() * 16)
+        addRoad(segs, len, Math.round(len * 0.7), len, mag, hill)
     }
-    addRoad(segs, 30, FORK_SEGS, 4, 0, 0)              // the run-in to the fork, dead straight
+    addRoad(segs, 20, FORK_SEGS, 4, 0, 0)               // the run-in to the fork, dead straight
     const segCount = segs.length
     const length = segCount * SEG_LEN
     const theme = SCENES[Math.min(depth, SCENES.length - 1)]
@@ -103,17 +102,17 @@ export function buildStage(depth, col) {
 
     // traffic: slower cars scattered down the stage, each in a lane at a fixed pace
     const cars = []
-    const nCars = 5 + Math.round(diff)
+    const nCars = 4 + Math.round(diff)
     for (let k = 0; k < nCars; k++) {
         cars.push({
-            f: 0.12 + rand() * 0.82,                     // starting fraction along the stage
+            f: 0.14 + rand() * 0.80,                     // starting fraction along the stage
             lane: Math.floor(rand() * LANES),
-            spd: 0.30 + rand() * 0.26,                   // fraction of HIGH top speed
+            spd: 0.34 + rand() * 0.22,                   // fraction of HIGH top speed
             hue: Math.floor(rand() * 6),
         })
     }
 
-    const timeBonus = Math.max(24, Math.round(46 - diff * 3.4))   // harder = a tighter purse
+    const timeBonus = Math.max(16, Math.round(26 - diff * 1.6))   // harder = a tighter purse
 
     return { id, depth, col, diff, theme, segs, segCount, length, cars, timeBonus, forkFrom: segCount - FORK_SEGS }
 }
