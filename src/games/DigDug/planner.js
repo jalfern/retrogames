@@ -80,16 +80,26 @@ export function decide(gs) {
     const escapeDir = (avoid) => {
         let bestD = null, bestScore = -1
         for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+            // 4-step flood from the neighbor: dead ends score low, open ground high
             let score = 0
-            for (let s = 1; s <= 2; s++) {
-                const rr = pr + dr * s, cc = pc + dc * s
-                if (openCell(gs, rr, cc)) score += 2 - s * 0.4
-                else break
+            const start = [pr + dr, pc + dc]
+            if (openCell(gs, start[0], start[1])) {
+                const seen = new Set([start.join(',')])
+                const q = [[start[0], start[1], 1]]
+                while (q.length) {
+                    const [r, c, d] = q.shift()
+                    score += 1 / d
+                    if (d >= 4) continue
+                    for (const [rr2, cc2] of [[r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]]) {
+                        const k2 = rr2 + ',' + cc2
+                        if (!seen.has(k2) && openCell(gs, rr2, cc2)) { seen.add(k2); q.push([rr2, cc2, d + 1]) }
+                    }
+                }
             }
             if (avoid) {
                 const er = rowOf(avoid.y), ec = colOf(avoid.x)
-                if (dr === Math.sign(er - pr)) score -= 2.5
-                if (dc === Math.sign(ec - pc)) score -= 2.5
+                if (dr === Math.sign(er - pr) && Math.abs(avoid.y - p.y) < 40) score -= 2.5
+                if (dc === Math.sign(avoid.x - p.x) && Math.abs(avoid.x - p.x) < 40) score -= 2.5
             }
             if (score > bestScore) { bestScore = score; bestD = [dr, dc] }
         }
@@ -119,19 +129,31 @@ export function decide(gs) {
     }
 
     // 2) engage the nearest solid enemy: aim (independent of movement) and
-    //    fire whenever the axis is aligned; back off whenever it gets close
+    //    fire whenever the axis is aligned; back off when a hunter gets close,
+    //    chase when it is the fleeing last survivor
     const stage0 = solid.filter((o) => o.stage === 0)
     if (stage0.length) {
         const o = stage0.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0]
         const dx = o.x - p.x, dy = o.y - p.y, dist = Math.hypot(dx, dy)
-        const alignedH = Math.abs(dy) < 11 && Math.abs(dx) <= R + 6 && losClear(gs, pr, pc, colOf(o.x))
-        const alignedV = Math.abs(dx) < 9 && Math.abs(dy) <= R + 6 && colClear(gs, pc, pr, rowOf(o.y))
+        const canFire = !gs.harpoon && gs._cool === 0
+        const alignedH = Math.abs(dy) < 13 && Math.abs(dx) <= R + 6 && losClear(gs, pr, pc, colOf(o.x))
+        const alignedV = Math.abs(dx) < 13 && Math.abs(dy) <= R + 6 && colClear(gs, pc, pr, rowOf(o.y))
         if (alignedH) inp.aim = [Math.sign(dx), 0]
         else if (alignedV) inp.aim = [0, Math.sign(dy)]
-        if (alignedH || alignedV) inp.fire = true
+        const shooting = (alignedH || alignedV) && canFire && dist >= 18
+        if (shooting) inp.fire = true
+        if (o.flee) {
+            // run it down: chase horizontally, climb to its row when aligned in column
+            if (!shooting) {
+                if (Math.abs(dx) > 10) { if (dx > 0) inp.right = true; else inp.left = true }
+                else if (dy < 0 && pr > AIR_TOP) inp.up = true
+                else if (dy > 0 && pr < DIRT_BOT) inp.down = true
+            }
+            return inp
+        }
         if (dist < 34) press(escapeDir(o))
-        else if (!inp.fire && dist < 60) press(escapeDir(o))
-        if (inp.fire || dist < 60) return inp
+        else if (!shooting && dist < 60) press(escapeDir(o))
+        if (shooting || dist < 60) return inp
     }
 
     // 3) escape imminent Fygar fire on this row

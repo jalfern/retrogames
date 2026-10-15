@@ -103,7 +103,7 @@ function startRound(gs, round) {
 }
 
 function seedRot(seed) {
-    const base = [2, 15, 8]
+    const base = [2, 15, 4]
     const n = seed % 3
     return base.slice(n).concat(base.slice(0, n))
 }
@@ -211,7 +211,7 @@ function updateHarpoon(gs) {
         }
         for (const e of gs.enemies) {
             if (e.ghost || e.stage > 0) continue
-            if (Math.abs(e.x - tipx) < 9 && Math.abs(e.y - tipy) < 11) {
+            if (Math.abs(e.x - tipx) < 13 && Math.abs(e.y - tipy) < 13) {
                 h.attached = e.id; h.state = 'hold'; e.attached = true
                 e.stage = 1; e.defl = CFG.deflateTicks
                 gs.events.push({ type: 'hook', id: e.id, x: e.x, y: e.y })
@@ -299,24 +299,26 @@ function updateEnemies(gs) {
 
         // movement toward target
         e.repathT--
+        const fleeCorner = p.x > W / 2 ? 0 : COLS - 1
         const tgt = e.flee
-            ? { r: AIR_TOP, c: ec <= COLS / 2 ? 0 : COLS - 1 }
+            ? { r: AIR_TOP, c: fleeCorner }
             : { r: rowOf(p.y), c: colOf(p.x) }
         if (e.repathT <= 0 || e.path.length === 0) {
             e.path = bfsPath(gs, er, ec, tgt.r, tgt.c, e.flee)
             e.repathT = 24
         }
         if (e.flee && er <= AIR_TOP && (ec <= 0 || ec >= COLS - 1)) {
-            // exits the corner: re-enters later from the other side
+            // exits the corner: re-enters a lap later near the OTHER side
             e.state = 'gone'
+            e.exitCol = ec
             gs.events.push({ type: 'escaped', id: e.id })
-            gs.escapeT = CFG.respawn
+            gs.escapeT = 90
             continue
         }
         const [nr, nc] = e.path.length ? e.path[0] : [er, ec]
         const tx = cx(nc), ty = cy(nr)
         const sp = gs.dirt[clamp(er, 0, ROWS - 1)][clamp(ec, 0, COLS - 1)] ? R.ghostSpeed : R.walkSpeed
-        const fleeSp = e.flee ? sp * 1.5 : sp
+        const fleeSp = e.flee ? sp * 1.2 : sp
         const dx = tx - e.x, dy = ty - e.y
         const dist = Math.abs(dx) + Math.abs(dy)
         if (dist < 1) { e.path.shift() }
@@ -374,9 +376,10 @@ function updateEnemies(gs) {
         if (gs.escapeT === 0) {
             const e = gs.enemies.find((x) => x.state === 'gone')
             if (e) {
-                const otherSide = colOf(e.x) <= COLS / 2 ? COLS - 3 : 2
-                e.state = 'walk'; e.flee = false
-                e.x = cx(otherSide); e.y = cy(AIR_TOP); e.path = []
+                // re-enters from the side it left, then runs the full lap away
+                const backCol = e.exitCol <= COLS / 2 ? 1 : COLS - 2
+                e.state = 'walk'; e.flee = gs.queue.length === 0
+                e.x = cx(backCol); e.y = cy(AIR_TOP); e.path = []
             }
         }
     }

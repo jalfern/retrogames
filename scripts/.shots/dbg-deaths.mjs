@@ -3,7 +3,7 @@ import { decide } from '../../src/games/DigDug/planner.js'
 const seed = Number(process.argv[2] || 0)
 const gs = makeGame(seed)
 let lastLives = gs.lives
-for (let i = 0; i < 900; i++) {
+for (let i = 0; i < 6000; i++) {
     const inp = decide(gs)
     step(gs, inp)
     const d = gs.events.filter((e) => e.type === 'death')
