@@ -207,7 +207,14 @@ export function step(g, inp = {}) {
     if (g.status !== 'play') return
 
     g.clock -= 1
-    if (g.clock <= 0) { g.clock = 0; kill(g, 'time'); return }
+    if (g.clock <= 0) {
+        g.clock = 0
+        g.deathReason = 'time'
+        g.status = 'lost'
+        g.statusT = 0
+        g.events.push({ t: g.tick, type: 'timeup' })
+        return
+    }
 
     const left = !!inp.left, right = !!inp.right, up = !!inp.up, down = !!inp.down
     const jump = !!inp.jump, shift = !!inp.shift, atk = !!inp.atk

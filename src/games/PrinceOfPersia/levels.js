@@ -55,13 +55,13 @@ const EXIT_ROOM = [
 
 const L1 = [
     ['..........', '.o......o.', '..........', '..........', '..........', '..........', '..........', '..........', '#w########'],
-    ['..........', '.o......o.', '..........', '..........', '..........', '....==....', '..........', '..........', '###B###Gu#'],
+    ['..........', '.o......o.', '..........', '..........', '..........', '....==....', '..........', '..........', '###B###GD#'],
     ['..........', '.o......o.', '..........', '..........', '..........', '....~~....', '..........', '..........', '###...x..#'],
     EXIT_ROOM,
 ]
 
 const L2 = [
-    ['..........', '.o......o.', '..........', '..........', '..........', '..........', '..........', '..........', '#+###g####'],
+    ['..........', '.o......o.', '..........', '..........', '..........', '..........', '..........', '..........', '#+###g##u#'],
     ['..........', '.o......o.', '..........', '..........', '..........', '..........', '..........', '..........', '#^######r#'],
     ['..........', '.o......o.', '..........', '..........', '....==....', '..........', '..........', '..........', '##B###G###'],
     EXIT_ROOM,
@@ -137,11 +137,14 @@ export function makeLevel(i) {
     }
     // guarantee a continuous ground floor
     for (let c = 0; c < W; c++) if (grid[key(c, H - 1)] === EMPTY) grid[key(c, H - 1)] = SOLID
-    // extend any gate marker into a ceiling-to-floor portcullis (not jumpable)
+    // extend any gate marker into a ceiling-to-floor portcullis (not jumpable);
+    // the ground row under a gate stays solid floor, so a lowering gate can
+    // never swallow you into the void
     for (let c = 0; c < W; c++) {
         let lowGate = -1
         for (let r = 0; r < H; r++) if (grid[key(c, r)] === GATE) lowGate = r
         if (lowGate >= 0) for (let r = 0; r <= lowGate; r++) grid[key(c, r)] = GATE
+        if (grid[key(c, H - 1)] === GATE) grid[key(c, H - 1)] = SOLID
     }
     // the level's left edge is a wall; the exit door is locked until the plate
     for (let r = 0; r < H - 1; r++) if (grid[key(0, r)] !== GATE && grid[key(0, r)] !== EXIT) grid[key(0, r)] = SOLID

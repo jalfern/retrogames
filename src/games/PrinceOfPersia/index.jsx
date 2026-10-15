@@ -4,17 +4,26 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
-import { makeGame, step, CFG, clockText, stateHash } from './sim.js'
+import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { drawScene, VW, VH } from './art.js'
 import { LEVEL_COUNT } from './levels.js'
 
 const ATTRACT_MSGS = [
     'PRINCE OF PERSIA',
-    'THE VIZIER JAFFAR HAS CAST YOU INTO THE DUNGEON',
-    'ONE HOUR. ONE PRINCE. A SWORD IF YOU CAN DRAW ONE.',
+    'JAFFAR HAS THROWN YOU INTO THE DUNGEON',
+    'ONE HOUR  ·  A SWORD, IF YOU FIND ONE',
     'PRESS ANY KEY TO START',
 ]
+
+const DEATH_WHY = {
+    spikes: 'IMPALED ON THE SPIKES',
+    chomper: 'THE JAWS CLOSE ON YOU',
+    fall: 'A BAD LANDING',
+    sword: 'SLAIN BY THE SWORD',
+    poison: 'POISONED',
+    gate: 'THE PORTCULLIS CLAIMS YOU',
+}
 
 const PrinceOfPersiaGame = () => {
     const canvasRef = useRef(null)
@@ -35,36 +44,46 @@ const PrinceOfPersiaGame = () => {
         let g = makeGame(0)
         let attract = true
         let attractT = 0
-        let deadAttract = 0
+        let endAttract = 0
         const keys = { left: false, right: false, up: false, down: false, jump: false, shift: false, atk: false }
-        let lastSeen = false
+        let endSeen = false
+
+        const prognose = () => {
+            const c = cloneGame(g)
+            let t = 0
+            while (!(c.status === 'win' || c.status === 'lost') && t < 60 * 60 * 12) { step(c, decide(c)); t++ }
+            return c.status
+        }
 
         const unmountDbg = mountDbg({
             title: 'PRINCE OF PERSIA',
             getState: () => [
-                `status=${g.status} level=${g.levelIndex} lives=${g.lives} hp=${g.p.hp}`,
-                `pos=${g.p.x.toFixed(1)},${g.p.y.toFixed(1)} vx=${g.p.vx.toFixed(2)} vy=${g.p.vy.toFixed(2)}`,
-                `anim=${g.p.anim} stance=${p_stance()} hang=${g.p.hang ? 'y' : 'n'} port=${g.portLatch} clock=${clockText(g)}`,
-                `guards=${g.guards.map((q) => `${q.dead ? 'x' : q.hp + '@' + (q.x / 32).toFixed(1) + (q.wind > 0 ? '!w' + q.stance : '')}`).join(' ')}`,
+                `status=${g.status} level=${g.levelIndex} room=${g.room}/${g.level.nRooms} hp=${g.p.hp}/${g.p.maxHP} sword=${g.sword ? 'y' : 'n'}`,
+                `pos=${g.p.x.toFixed(1)},${g.p.y.toFixed(1)} vx=${g.p.vx.toFixed(2)} vy=${g.p.vy.toFixed(2)} anim=${g.p.anim}`,
+                `hang=${g.p.hang ? 'y' : 'n'} block=${g.p.block} atk=${g.p.atk} gate=${(g.gateOpen[g.room] || 0).toFixed(2)} exit=${g.exitOpen ? 'open' : 'shut'}`,
+                `guards=${g.guards.map((q) => `${q.dead ? 'x' : q.hp + '@' + (q.x / 32).toFixed(1) + (q.wind > 0 ? '!w' : '')}`).join(' ')}`,
+                `clock=${clockText(g)} cp=${g.cpReached ? 'y' : 'n'} lev=${g.p.lev} flip=${g.p.flip}`,
             ],
             actions: [
                 { label: 'skip level', run: () => { g.status = 'clear'; g.statusT = 69 } },
                 { label: 'win', run: () => { g.levelIndex = LEVEL_COUNT - 1; g.guards.forEach((q) => { q.dead = true }); g.status = 'clear'; g.statusT = 69 } },
-                { label: 'strength', run: () => { g.p.strength = true } },
-                { label: 'open port', run: () => { g.portLatch = true } },
-                { label: 'lose life', run: () => { g.p.hp = 1 } },
+                { label: 'give sword', run: () => { g.sword = true } },
+                { label: 'open gate', run: () => { g.gateOpen[g.room] = 1 } },
+                { label: 'prognosis', run: () => { prognose() === 'win' ? audioController.playTone(880, 0.1, 'square', 0.1) : audioController.playTone(110, 0.2, 'square', 0.12) } },
+                { label: 'hurt', run: () => { g.p.hp = 1 } },
             ],
         })
-        const p_stance = () => g.p.stance
 
         window.__popTest = {
             probe: () => ({
-                attract, status: g.status, level: g.levelIndex, lives: g.lives,
-                x: g.p.x, y: g.p.y, vx: g.p.vx, vy: g.p.vy, hp: g.p.hp,
-                hang: !!g.p.hang, port: !!g.portLatch, events: g.events.length, clock: g.clock,
+                attract, status: g.status, level: g.levelIndex, room: g.room,
+                x: g.p.x, y: g.p.y, vx: g.p.vx, vy: g.p.vy, hp: g.p.hp, maxHP: g.p.maxHP,
+                sword: g.sword, hang: !!g.p.hang, block: !!p_block(), gate: g.gateOpen[g.room],
+                exit: g.exitOpen, clock: g.clock, events: g.events.length,
             }),
             hash: () => stateHash(g),
         }
+        const p_block = () => g.p.block
 
         const readInputs = () => ({ ...keys })
 
@@ -100,9 +119,7 @@ const PrinceOfPersiaGame = () => {
             if (e.code === 'KeyX' || e.code === 'KeyZ') keys.atk = false
         }
         const handleRestartKey = (e) => {
-            if (!pausedRef.current && (e.code === 'KeyR') && (g.status === 'win' || g.status === 'lost')) {
-                g = makeGame(0)
-            }
+            if (!pausedRef.current && e.code === 'KeyR' && (g.status === 'lost' || g.status === 'win')) g = makeGame(0)
         }
 
         // ---- audio driven off sim events ------------------------------------
@@ -115,17 +132,20 @@ const PrinceOfPersiaGame = () => {
                 else if (ev.type === 'swing') audioController.playSweep(900, 300, 0.08, 'sawtooth', 0.06)
                 else if (ev.type === 'hit') { audioController.playNoise(0.08, 0.2); audioController.playTone(180, 0.1, 'square', 0.14) }
                 else if (ev.type === 'parry') audioController.playNoise(0.06, 0.25)
-                else if (ev.type === 'guardWind') audioController.playTone(140 + ev.stance * 40, 0.06, 'square', 0.07)
-                else if (ev.type === 'guardDown') { audioController.playSweep(400, 80, 0.25, 'sawtooth', 0.18) }
+                else if (ev.type === 'guardWind') audioController.playTone(ev.boss ? 190 : 140, 0.06, 'square', 0.07)
+                else if (ev.type === 'guardDown') audioController.playSweep(400, 80, 0.25, 'sawtooth', 0.18)
                 else if (ev.type === 'loose') audioController.playNoise(0.15, 0.18)
-                else if (ev.type === 'potion') audioController.playSweep(ev.kind === 'X' ? 400 : 300, ev.kind === 'X' ? 90 : 900, 0.2, 'sine', 0.14)
+                else if (ev.type === 'door') audioController.playSweep(120, 60, 0.3, 'square', 0.12)
+                else if (ev.type === 'sword') audioController.playSweep(500, 1400, 0.2, 'sawtooth', 0.12)
+                else if (ev.type === 'potion') audioController.playSweep(ev.kind === 'b' ? 300 : 400, ev.kind === 'b' ? 90 : 900, 0.2, 'sine', 0.14)
+                else if (ev.type === 'checkpoint') audioController.playTone(760, 0.1, 'square', 0.1)
                 else if (ev.type === 'die') audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.2)
                 else if (ev.type === 'clear') audioController.playSweep(400, 800, 0.3, 'square', 0.14)
-                else if (ev.type === 'win') { audioController.playSweep(400, 1200, 0.6, 'square', 0.16) }
+                else if (ev.type === 'timeup') audioController.playSweep(200, 60, 0.8, 'sawtooth', 0.2)
+                else if (ev.type === 'win') audioController.playSweep(400, 1200, 0.6, 'square', 0.16)
             }
         }
 
-        let viewW = VW, viewH = VH
         const resize = () => {
             if (!containerRef.current) return
             const { width, height } = containerRef.current.getBoundingClientRect()
@@ -136,7 +156,6 @@ const PrinceOfPersiaGame = () => {
             canvas.style.height = `${height}px`
             ctx.setTransform(dpr * (width / VW), 0, 0, dpr * (height / VH), 0, 0)
             ctx.imageSmoothingEnabled = false
-            viewW = VW; viewH = VH
         }
 
         const update = () => {
@@ -145,61 +164,64 @@ const PrinceOfPersiaGame = () => {
                 attractT++
                 step(g, decide(g))
                 if (g.status === 'win' || g.status === 'lost') {
-                    deadAttract++
-                    if (deadAttract > 100 || attractT > 60 * 60 * 3) { g = makeGame(0); attractT = 0; deadAttract = 0 }
-                } else deadAttract = 0
+                    endAttract++
+                    if (endAttract > 100 || attractT > 60 * 60 * 3) { g = makeGame(0); attractT = 0; endAttract = 0 }
+                } else endAttract = 0
             } else {
-                if ((g.status === 'win' || g.status === 'lost') && !lastSeen) lastSeen = true
-                if (lastSeen && (g.status === 'win' || g.status === 'lost')) {
-                    if (keys.jump || keys.atk || keys.right || keys.left) { g = makeGame(0); lastSeen = false }
-                }
+                if ((g.status === 'win' || g.status === 'lost') && !endSeen) endSeen = true
+                if (endSeen && (keys.jump || keys.atk || keys.right || keys.left)) { g = makeGame(0); endSeen = false }
                 step(g, readInputs())
             }
             sfx(before)
         }
 
         const draw = () => {
-            ctx.clearRect(-4, -4, VW + 8, VH + 8)
+            ctx.clearRect(0, 0, VW, VH)
             drawScene(ctx, g, { attract })
 
             ctx.textAlign = 'center'
             if (attract) {
                 const msg = ATTRACT_MSGS[Math.floor(attractT / 150) % ATTRACT_MSGS.length]
-                ctx.font = 'bold 22px monospace'
+                ctx.font = 'bold 18px monospace'
+                ctx.fillStyle = '#000'
+                ctx.fillRect(0, VH / 2 - 34, VW, 44)
                 ctx.fillStyle = '#e8d060'
-                ctx.fillText(msg, viewW / 2, viewH - 40)
-                ctx.font = '12px monospace'
+                ctx.fillText(msg, VW / 2, VH / 2 - 14)
+                ctx.font = '9px monospace'
                 ctx.fillStyle = '#8a8ab0'
-                ctx.fillText('AUTOPILOT DEMONSTRATION', viewW / 2, viewH - 18)
+                ctx.fillText('AUTOPILOT DEMONSTRATION', VW / 2, VH - 30)
             } else if (g.status === 'dying') {
-                ctx.font = 'bold 20px monospace'
+                ctx.font = 'bold 13px monospace'
                 ctx.fillStyle = '#e04040'
-                const why = { spikes: 'IMPALED', gate: 'THE PORTCULLIS CLAIMS YOU', fall: 'A BAD LANDING', sword: 'SLAIN BY THE SWORD', poison: 'POISONED', time: 'SUNRISE' }[g.deathReason] || 'YOU PERISH'
-                ctx.fillText(why, viewW / 2, viewH / 2 - 10)
-                ctx.font = '12px monospace'
+                ctx.fillText(DEATH_WHY[g.deathReason] || 'YOU PERISH', VW / 2, VH / 2 - 16)
+                ctx.font = '9px monospace'
                 ctx.fillStyle = '#8a8ab0'
-                ctx.fillText(g.lives > 0 ? `LIVES REMAINING ${g.lives}` : '', viewW / 2, viewH / 2 + 14)
+                ctx.fillText('THE HOUR KEEPS RUNNING', VW / 2, VH / 2 + 2)
             } else if (g.status === 'clear') {
-                ctx.font = 'bold 20px monospace'
+                ctx.font = 'bold 13px monospace'
                 ctx.fillStyle = '#80e0a0'
-                ctx.fillText(g.levelIndex === LEVEL_COUNT - 1 ? 'THE DOOR OPENS' : 'YOU ESCAPE THE CELL', viewW / 2, viewH / 2)
+                ctx.fillText(g.levelIndex === LEVEL_COUNT - 1 ? 'THE DOOR OPENS' : 'THIS LEVEL IS BEHIND YOU', VW / 2, VH / 2)
             } else if (g.status === 'win') {
-                ctx.font = 'bold 26px monospace'
+                ctx.fillStyle = 'rgba(0,0,0,0.6)'
+                ctx.fillRect(0, VH / 2 - 40, VW, 80)
+                ctx.font = 'bold 17px monospace'
                 ctx.fillStyle = '#e8d060'
-                ctx.fillText('THE PRINCESS IS FREE', viewW / 2, viewH / 2 - 24)
-                ctx.font = 'bold 16px monospace'
+                ctx.fillText('THE PRINCESS IS FREE', VW / 2, VH / 2 - 16)
+                ctx.font = 'bold 11px monospace'
                 ctx.fillStyle = '#ffffff'
-                ctx.fillText(`TIME LEFT ${clockText(g)}`, viewW / 2, viewH / 2 + 6)
-                ctx.font = '12px monospace'
+                ctx.fillText(`TIME LEFT ${clockText(g)}`, VW / 2, VH / 2 + 4)
+                ctx.font = '9px monospace'
                 ctx.fillStyle = '#8a8ab0'
-                ctx.fillText('PRESS R TO RIDE AGAIN', viewW / 2, viewH / 2 + 34)
+                ctx.fillText('PRESS R TO RIDE AGAIN', VW / 2, VH / 2 + 24)
             } else if (g.status === 'lost') {
-                ctx.font = 'bold 24px monospace'
+                ctx.fillStyle = 'rgba(0,0,0,0.6)'
+                ctx.fillRect(0, VH / 2 - 36, VW, 72)
+                ctx.font = 'bold 15px monospace'
                 ctx.fillStyle = '#e04040'
-                ctx.fillText('THE SANDS RUN OUT', viewW / 2, viewH / 2 - 12)
-                ctx.font = '12px monospace'
+                ctx.fillText('THE SANDS RUN OUT', VW / 2, VH / 2 - 12)
+                ctx.font = '9px monospace'
                 ctx.fillStyle = '#8a8ab0'
-                ctx.fillText('PRESS R TO TRY AGAIN', viewW / 2, viewH / 2 + 16)
+                ctx.fillText('PRESS R TO TRY AGAIN', VW / 2, VH / 2 + 8)
             }
         }
 
@@ -242,7 +264,7 @@ const PrinceOfPersiaGame = () => {
 
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center p-4">
-            <div ref={containerRef} className="relative w-full max-w-[820px] aspect-[19/12] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
+            <div ref={containerRef} className="relative w-full max-w-[640px] aspect-[10/9] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" tabIndex={0} />
                 {paused && <PauseOverlay game={GAMES.find((game) => game.label === 'PRINCE OF PERSIA')} onResume={handleResume} />}
             </div>
