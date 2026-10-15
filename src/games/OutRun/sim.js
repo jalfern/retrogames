@@ -19,7 +19,7 @@
 //   lighter — you bog down. Both cost time; only the clock can end the run.
 // - THE FORK decides your column, and your column decides the country.
 
-import { buildStage, SEG_LEN, ROAD_W, LANES, laneX, rng } from './road.js'
+import { buildStage, SEG_LEN, ROAD_W, LANES, laneX } from './road.js'
 
 export const W = 512
 export const H = 288
