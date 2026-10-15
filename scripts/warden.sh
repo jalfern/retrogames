@@ -163,8 +163,11 @@ main() {
     if [[ "$ALIVE" == no && -n "$TARGET" ]]; then
         # Three kicks with no FORGE: comment in between = the builder keeps
         # dying before it reports anything. Stop kicking; that is Jon's call.
+        # Any comment that is not the warden's own (a FORGE: report, or Jon's
+        # go-ahead after un-stalling) restarts the count: on 2026-10-15 #295
+        # was re-stalled the moment Jon cleared it, by kicks from that morning.
         KICKS=$(gh api "repos/$GH/issues/$TARGET/comments?per_page=100" --jq '
-            [.[] | .body] | (map(startswith("FORGE")) | rindex(true)) as $last
+            [.[] | .body] | (map(startswith("WARDEN") | not) | rindex(true)) as $last
             | .[(($last // -1) + 1):] | map(select(startswith("WARDEN: builder idle"))) | length')
         if (( KICKS >= 3 )); then
             add_label "$TARGET" stalled
