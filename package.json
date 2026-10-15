@@ -139,6 +139,9 @@
         "lint:lander": "eslint src/games/LunarLander src/components src/utils src/config src/main.jsx scripts/landercheck.mjs scripts/landerplay.mjs scripts/lib",
         "landercheck": "node scripts/landercheck.mjs",
         "landerplay": "node scripts/landerplay.mjs",
+    "lint:tempest": "eslint src/games/Tempest src/components src/utils src/config src/main.jsx scripts/tempestcheck.mjs scripts/tempestplay.mjs scripts/lib",
+    "tempestcheck": "node scripts/tempestcheck.mjs",
+    "tempestplay": "node scripts/tempestplay.mjs",
         "bubbleplay": "node scripts/bubbleplay.mjs",
         "arkplay": "node scripts/arkanoidplay.mjs"
     },
