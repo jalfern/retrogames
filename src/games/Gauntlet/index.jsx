@@ -219,8 +219,9 @@ const GauntletGame = () => {
         }
 
         const drawSprite = (name, wx, wy, scale, yOff, glowCol) => {
-            const img = SP[name]
-            if (!img) return
+            const frames = SP[name]
+            if (!frames || !frames.length) return
+            const img = frames[(gs.tick >> 4) % frames.length]
             const h = gs.hero
             const dx = wx - h.x, dy = wy - h.y
             const dirX = Math.cos(h.a), dirY = Math.sin(h.a)
@@ -306,7 +307,7 @@ const GauntletGame = () => {
             const h = gs.hero
             const hero = HEROES[gs.heroKey]
             text(hero.name, VW + PW / 2, VH - 68, 8, '#ffd23f', 2)
-            const p = SP[PORTRAITS[gs.heroKey]]
+            const p = SP[PORTRAITS[gs.heroKey]][0]
             ctx.drawImage(p, VW + PW / 2 - 14, VH - 62, 28, 28)
             const hy = VH - 30
             ctx.fillStyle = '#301010'
@@ -411,7 +412,7 @@ const GauntletGame = () => {
                         ctx.lineWidth = sel ? 2 : 1
                         ctx.strokeRect(cx - 30, 108, 60, 78)
                         ctx.lineWidth = 1
-                        ctx.drawImage(SP[PORTRAITS[hk]], cx - 14, 116, 28, 28)
+                        ctx.drawImage(SP[PORTRAITS[hk]][0], cx - 14, 116, 28, 28)
                         text(hd.name, cx, 156, 7, sel ? '#ffd23f' : '#cfd8ff', sel ? 4 : 0)
                         text(`${i + 1}`, cx - 22, 120, 8, '#8fa3d8')
                         ctx.fillStyle = '#301010'; ctx.fillRect(cx - 24, 162, 48, 4)
