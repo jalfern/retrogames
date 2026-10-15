@@ -23,7 +23,9 @@ Read this before you draw anything. Then read the exemplars: they are the bar.
 4. A sound on every action (jump, hit, pickup, death), synthesized via
    `AudioController`.
 5. Juice: flashes, particles, screen shake on impact, a death animation.
-6. The attract mode shows the game off, not a static title.
+6. The attract mode shows the game off, not a static title. It shows one
+   message at a time, cycling; text is never drawn over the HUD or over
+   another message.
 
 Original pixel art in the era's style, generated in code. Never copy sprites
 or artwork from the original game.
