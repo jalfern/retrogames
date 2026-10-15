@@ -159,6 +159,7 @@ function fireHarpoon(gs, inp) {
         if (ax === 0 && ay === 0) { ax = p.dir[0]; ay = p.dir[1] }
     }
     gs.harpoon = { x: p.x, y: p.y, dx: ax, dy: ay, len: 0, state: 'out', attached: null, cool: 0 }
+    gs.events.push({ type: 'harpoon', dir: [ax, ay] })
 }
 
 function pump(gs) {

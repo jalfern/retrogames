@@ -124,17 +124,18 @@ class AudioController {
     }
 
     // ---- one-shot SFX ----
-    playTone(freq, duration, type = 'square', vol = 0.1) {
+    playTone(freq, duration, type = 'square', vol = 0.1, delay = 0) {
         if (this.muted || !this.ctx) return
         if (this.ctx.state === 'suspended') this.ctx.resume()
+        const t = this.ctx.currentTime + delay
         const osc = this.ctx.createOscillator()
         const gain = this.ctx.createGain()
         osc.type = type
-        osc.frequency.setValueAtTime(freq, this.ctx.currentTime)
-        gain.gain.setValueAtTime(vol, this.ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration)
+        osc.frequency.setValueAtTime(freq, t)
+        gain.gain.setValueAtTime(vol, t)
+        gain.gain.exponentialRampToValueAtTime(0.01, t + duration)
         osc.connect(gain); gain.connect(this.ctx.destination)
-        osc.start(); osc.stop(this.ctx.currentTime + duration)
+        osc.start(t); osc.stop(t + duration)
     }
 
     playNoise(duration, vol = 0.2) {
