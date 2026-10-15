@@ -25,6 +25,7 @@ export const CFG = {
     guardWind: 16, guardHit0: 12, guardHit1: 18, guardDur: 30, guardCool: 46,
     looseT: 70,
     guillPeriod: 158, guillWait: 92, guillDrop: 34, guillUp: 24,
+    teleport: 300, teleBlink: 22, teleGap: 5,
     slack: false,
 }
 
@@ -98,12 +99,15 @@ function loadLevel(g, i, fresh) {
         hp: CFG.slack ? Math.max(1, gd.hp - 1) : gd.hp,
         maxHp: gd.hp,
         boss: gd.boss,
+        type: gd.type || 'green',
         patrol: gd.patrol,
         engaged: false,
         stance: 1,
         pat: 0,
         cool: 30,
         wind: 0,
+        tele: gd.boss ? CFG.teleport : 0,
+        telegraph: false,
         anim: 'idle', animT: 0,
         hurtT: 0,
         dead: false,
@@ -480,8 +484,31 @@ function stepGuards(g, dueling) {
     for (const gd of g.guards) {
         if (gd.dead) continue
         if (gd.hurtT > 0) gd.hurtT--
-        gd.engaged = dueling && Math.abs(gd.x - p.x) < 8 * CFG.T
-        if (gd.wind > 0) {
+        if (gd.boss) {
+            gd.tele--
+            if (gd.tele <= CFG.teleBlink) {
+                gd.telegraph = true
+                gd.wind = 0
+            }
+            if (gd.tele <= 0) {
+                const leftX = (gd.patrol[0] + 0.5) * CFG.T
+                const rightX = (gd.patrol[1] + 0.5) * CFG.T
+                gd.x = Math.abs(gd.x - leftX) >= Math.abs(gd.x - rightX) ? leftX : rightX
+                gd.dir = sign(p.x - gd.x) || gd.dir
+                gd.tele = CFG.teleport
+                gd.telegraph = false
+                gd.cool = Math.max(gd.cool, CFG.guardCool)
+                gd.stance = 1
+                gd.anim = 'blink'
+                g.shake = Math.max(g.shake, 6)
+                g.events.push({ t: g.tick, type: 'teleport', boss: true })
+            }
+        }
+        const phased = gd.telegraph
+        gd.engaged = dueling && Math.abs(gd.x - p.x) < 8 * CFG.T && !phased
+        if (phased) {
+            gd.anim = 'blink'
+        } else if (gd.wind > 0) {
             gd.wind--
             if (gd.wind <= 0) gd.cool = gd.boss ? 28 : CFG.guardCool
             const inHit = gd.wind <= CFG.guardDur - CFG.guardHit0 && gd.wind >= CFG.guardDur - CFG.guardHit1
@@ -528,7 +555,7 @@ function stepGuards(g, dueling) {
         gd.x = clamp(gd.x, CFG.HW, (W - 1) * CFG.T)
 
         // player swing resolution
-        if (p.atk > 0 && !p.atkHitDone && p.atk <= CFG.swingDur - CFG.swingHit0 && p.atk >= CFG.swingDur - CFG.swingHit1) {
+        if (p.atk > 0 && !p.atkHitDone && p.atk <= CFG.swingDur - CFG.swingHit0 && p.atk >= CFG.swingDur - CFG.swingHit1 && !phased) {
             const reach = p.strength ? CFG.reachStrong : CFG.reach
             if (Math.abs(gd.x - p.x) <= reach) {
                 p.atkHitDone = true
@@ -562,7 +589,7 @@ export function stateHash(g) {
     return JSON.stringify([
         g.tick, g.clock, g.status, g.levelIndex, g.lives,
         r3(p.x), r3(p.y), r3(p.vx), r3(p.vy), p.hp, p.stance, p.atk, !!p.hang,
-        g.guards.map((gd) => [r3(gd.x), gd.hp, gd.stance, gd.wind, gd.dead]),
+        g.guards.map((gd) => [r3(gd.x), gd.hp, gd.stance, gd.wind, gd.dead, gd.type, !!gd.telegraph]),
         Object.keys(g.fallen).sort().join(','),
         g.pots.map((pt) => pt.taken),
     ])

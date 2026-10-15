@@ -57,7 +57,7 @@ const LEVELS = [
             '###################',
             '###################',
         ],
-        guards: [{ c: 13, patrol: [10, 16], hp: 3 }],
+        guards: [{ c: 13, patrol: [10, 16], hp: 3, type: 'fibula' }],
         pots: [{ c: 3, type: 'L' }],
         guills: [],
         start: { c: 1.5, r: 8 },
@@ -78,7 +78,7 @@ const LEVELS = [
             '#############^^^###',
             '###################',
         ],
-        guards: [{ c: 4, patrol: [2, 6], hp: 2 }],
+        guards: [{ c: 4, patrol: [2, 6], hp: 2, type: 'skeleton' }],
         pots: [{ c: 10, type: 'S' }],
         guills: [{ c: 8, rTop: 5, rBot: 8 }],
         start: { c: 1.5, r: 8 },
@@ -99,7 +99,7 @@ const LEVELS = [
             '###################',
             '###################',
         ],
-        guards: [{ c: 11, patrol: [11, 15], hp: 3 }],
+        guards: [{ c: 11, patrol: [11, 15], hp: 3, type: 'shadow' }],
         pots: [{ c: 5, type: 'L' }, { c: 7, type: 'X' }, { c: 9, type: 'V' }],
         guills: [],
         start: { c: 1.5, r: 8 },
@@ -120,7 +120,7 @@ const LEVELS = [
             '###################',
             '###################',
         ],
-        guards: [{ c: 14, patrol: [12, 16], hp: 6, boss: true }],
+        guards: [{ c: 14, patrol: [12, 16], hp: 6, boss: true, type: 'jaffar' }],
         pots: [{ c: 4, type: 'L' }],
         guills: [],
         start: { c: 1.5, r: 8 },
@@ -150,6 +150,7 @@ export function makeLevel(i) {
                     patrol: spec?.patrol || [c - 2, c + 2],
                     hp: spec?.hp || 2,
                     boss: ch === 'J' || !!spec?.boss,
+                    type: spec?.type || (ch === 'J' ? 'jaffar' : 'green'),
                 })
             }
             if (ch === 'L' || ch === 'S' || ch === 'V' || ch === 'X') pots.push({ c, r, type: ch })
