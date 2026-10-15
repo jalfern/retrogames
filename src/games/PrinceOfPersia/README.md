@@ -148,9 +148,40 @@ sound on every action, no music on the title. That is what this stage builds.
   apart), the mirror's glass sweep and the merge's rising fold all come off
   the event table.
 
+## Stage 5 of #316 — the gate, the banner, the stone, and escorts (this merge)
+
+Jon played it and named four things. This stage ships all four.
+
+- **Gates drawn from the truth.** The old `drawGate` hung its bars to
+  `lowRow*T + (lowRow+1)*T*(1-open)`, which overshot the floor and left a
+  *looks-shut-but-you-walk-through* gate. A gate is now drawn from the same
+  number `blocks()` consults: `art.gateBottom(lowRow, open)` hangs the bars to
+  the floor while `open < CFG.gateOpen` (the column is solid to your feet) and
+  lifts them clear above `CFG.PH` headroom the instant it is passable;
+  `gateDrawOpen(open) === open >= CFG.gateOpen` — the drawn state *is* the
+  collision state. popcheck pins geometry both ways (reverting the formula turns
+  the gate clause red).
+- **Attract banner that never covers the demo.** One message at a time on a
+  slim band *under* the HUD, framed in gold; the autopilot plays in the clear
+  below it. `AUTOPILOT DEMONSTRATION` moved up off the footer watermark.
+- **A real art pass.** Cut-stone masonry with mortar coursing, per-brick tone
+  jitter, mineral grain, lit/shadow bevels and hairline cracks; a palace of
+  ashlar courses with gilding, fluted pillars and lit arched windows; the
+  prince and guards pick up a facing rim-light, a shaded back, an eye and a soft
+  ground contact shadow. Everything stays deterministic (`sin`-hash noise).
+- **Guards escort you between rooms.** Leave a live ground guard behind and it
+  takes up the chase through the doorway after you (`follow`), walking toward
+  you on its own floor. It stops at a wall or the lip of a shaft (it never
+  walks into the void), and re-homes to patrol if it loses the trail. The
+  champion autopilot still clears all twelve levels at zero deaths with the
+  escorts running.
+
 ## Honest gaps (the deep pass continues — see #316)
 
-- Guards do not walk through doors with you between rooms (they patrol their
-  own room); the original escorts you deeper.
+- Escort visuals are functional, not dramatic: a follower walks in from the
+  edge rather than being seen through the doorway it came from, and two
+  escorts don't yet coordinate a pincer. QA may want a door-crossing cue.
+- Stage 6 is Jon's requested **second art pass** — more colour and light on the
+  stone and palace, and the prince.
 - Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
   with the d-pad; desktop-first, as the original was.

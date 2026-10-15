@@ -14,10 +14,10 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE } from '../src/games/PrinceOfPersia/sim.js'
+import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
-import { LEVEL_COUNT, makeLevel, RW, FH, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook } from '../src/games/PrinceOfPersia/art.js'
+import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -721,6 +721,78 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         ok('S4: death and victory cue their big stings', xsrc.includes('playDeath') && xsrc.includes('playFanfare'))
         ok('S4: the harness can hear the engine through the probe hook', xsrc.includes('musicState') && xsrc.includes('_peak'))
     }
+}
+
+// ---- 15. Stage 5: the gate draws open exactly when blocks() lets you through
+{
+    const lv = makeLevel(0)
+    let gCol = -1, gRow = -1
+    for (let c = 0; c < lv.W; c++) {
+        let low = -1
+        for (let r = 0; r < lv.H; r++) if (lv.grid[r * lv.W + c] === GATE) low = r
+        if (low >= 0) { gCol = c; gRow = low; break }
+    }
+    ok('S5: a level carries a portcullis on a column with solid floor beneath',
+        gCol >= 0 && gRow >= 0 && lv.grid[(gRow + 1) * lv.W + gCol] === SOLID)
+    const span = (gRow + 1) * T
+    ok('S5: a shut gate hangs all the way to the floor (no floating gap)',
+        gateBottom(gRow, 0) === span && gateBottom(gRow, CFG.gateOpen - 0.001) === span)
+    ok('S5: the instant it is passable the bars clear the prince headroom',
+        gateBottom(gRow, CFG.gateOpen) <= span - CFG.PH && gateBottom(gRow, 1) < 3)
+    ok('S5: the bars rise monotonically as the gate opens',
+        gateBottom(gRow, 0.7) > gateBottom(gRow, 0.85) && gateBottom(gRow, 0.85) > gateBottom(gRow, 1))
+    {
+        const g = makeGame(0)
+        const room = roomOf(gCol)
+        let agree = true
+        for (const open of [0, 0.3, CFG.gateOpen - 0.01, CFG.gateOpen, 0.9, 1]) {
+            g.gateOpen[room] = open
+            if (gateDrawOpen(open) !== gateOpenHere(g, GATE, gCol)) agree = false
+        }
+        ok('S5: drawn-open agrees with blocks() at every gate value', agree)
+    }
+    {
+        // guards escort you between rooms: leave a live ground guard behind and
+        // it walks through the doorway after you, then re-homes to your room
+        const g = makeGame(1)
+        const gd = g.guards.find((q) => q.room === 0 && !q.dead)
+        ok('S5: the port level starts with a guard on the ground floor', !!gd && Math.floor(gd.y / T) === GROUND)
+        setGround(g, 1.5 * T, 8 * T)
+        step(g, {})                                  // in room 0, guard at peace
+        ok('S5: a guard at peace in your room does not follow yet', gd.follow === false)
+        g.p.x = 11.5 * T                          // cross into room 1
+        step(g, {})
+        ok('S5: the moment you leave its room the guard takes up the chase', gd.follow === true)
+        let reached = gd.room
+        for (let t = 0; t < 400 && reached < 1; t++) { step(g, {}); reached = gd.room }
+        ok('S5: it really walks through the doorway into your room', reached === 1)
+        ok('S5: a follower is not pinned to its old patrol line',
+            gd.x > gd.patrol[1] * T)
+    }
+    {
+        // a follower stops at the lip of a shaft rather than walking into the void
+        const g = makeGame(4)                            // L5 room 0 floor opens a shaft at cols 3-4
+        let shaft = -1
+        for (let c = 0; c < RW; c++) if (g.level.grid[8 * g.level.W + c] === 0) { shaft = c; break }
+        ok('S5: level 5 opens a shaft on the ground floor', shaft > 0)
+        const gd = mkGuard((shaft - 1 + 0.5) * T, 8 * T, 0)
+        g.guards.push(gd)
+        gd.follow = true
+        g.room = 0
+        setGround(g, (RW + 1.5) * T, 8 * T)            // prince across the shaft, in room 1
+        let maxX = gd.x
+        for (let t = 0; t < 200; t++) { g.room = 1; step(g, {}); maxX = Math.max(maxX, gd.x) }
+        ok('S5: a follower halts at the shaft lip instead of falling in',
+            maxX < shaft * T + CFG.HW + 1)
+    }
+    {
+        const xsrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+        ok('S5: the attract banner shows one message at a time under the HUD',
+            !/fillRect\(0, VH \/ 2 - 34/.test(xsrc) && /bandTop = 22/.test(xsrc))
+        ok('S5: the autopilot caption sits high, clear of the footer watermark',
+            xsrc.includes('AUTOPILOT DEMONSTRATION') && !/AUTOPILOT DEMONSTRATION', VW \/ 2, VH - 30/.test(xsrc))
+    }
+    void GATE_CLEAR
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
