@@ -1,62 +1,45 @@
-# STATE — forge session 2026-10-14 (Q*BERT)
+# STATE — forge session 2026-10-14 late (ARKANOID)
 
 ## Shipped this session
-- **#210 Q*BERT MERGED** (PR #219, squash; PR CI green: static + smoke + Vercel).
-  **Prod verified live**: https://www.jalfern.com/retrogames/qbert — canvas 256x224
-  mounted on the production bundle (9151 lit attract px), real-key hops flip cubes
-  green, zero page errors, no DEV hooks used against prod.
-  `/qbert`: Gottlieb 1982. 28-cube iso pyramid rows 1-6+4,3, diagonal-only hops;
-  round 1 all-green (apex counts, 27 to go), round 2+ the 5-colour cycle. Coily
-  drops at flip 9, hops at you, contact kills; discs ride you to the apex and a
-  snake within two edges follows them off (+500). Red balls ricochet the edges,
-  Ugg/Wrongway run rows (round 2+), Sam & Slick wipe green back (round 3+).
-  Chain scoring 25/50/100 (single/roundtrip/heli), round clear +1000, the
-  "@!#?@!" balloon on every death. Phone play via a NEW VirtualControls `diag`
-  prop (2x2 corner pad dispatching arrow pairs — shared, backwards-compatible).
-- Node gate `npm run qbertcheck` in the static CI: **71/71** — geometry literals
-  + symmetry + reachability, fall/blocked-apex edges, flip machines (no
-  double-count), chase spawns-at-9/strictly-closes, lure radius pins, ball /
-  runner / slick kills, cycle clears only at all-match, chain script 25/25/25/25/100,
-  tour clears on flip 27, pilot graded by the harness's OWN BFS referee: round-1
-  win + **lives-1 slack** on 8 seeds, ledger event-by-event, hash-for-hash.
-  Fail-proven: corrupt one adjacency line -> **24 red**, restore -> green.
-- `npm run qbertdive` (advisory verify tier): 15/15 real arrow-pair keys in
-  Chrome — attract alive, hop flips the read-back cube, lit sprite at the sim's
-  coords (probe+read in ONE evaluate), snake death + balloon, falls burn the
-  remaining lives, Enter restart clean, disc boards and delivers.
-- QA issue **#220** filed (cube seams, tunnel art, pose/sprite juice, chain
-  timing window, 1UP, disc-drop row list, qbertdive promotion rule).
+- **#233 ARKANOID MERGED** (PR #248 squash; CI green: static + smoke + Vercel).
+  **Prod verified**: https://jalfern.com/retrogames/arkanoid answers 200.
+  256x224. Six walls + DOH (eyes 3->5->7). Capsules L/S/D/C/B/E/+ ship exactly
+  once. Pure deterministic sim (`sim.js`, zero Math.random, `stateHash` proven).
+  The attract demo is the pilot's OWN proven run: full clear, 8/8 seeds,
+  **zero deaths**, 15 eyes / 3 phases, replayed tick-for-tick through real `step()`.
+- New CI static gate entries: `lint:ark` + `arkcheck` (30 checks + `--mutate`
+  5/5 die). Advisory `arkplay` (Chrome, real keys): 10/10 green locally.
 
-## Lessons paid for this session
-- **The apex up-hop is a verb, not a move.** Up-diagonals at the apex are the
-  disc attempt (blocked when no disc is near); the only way off the top is
-  down-diagonal. The dive driver learned this by failing, and the sim was right.
-  Same family as "an unmoving frame is not a broken actuator."
-- Invulnerability windows silently eat scripted deaths — harness place hooks
-  must zero `invuln` (and wait for `dying === 0`) before arming a scripted kill.
-- First harness draft used the wrong diagonal *names* at the pyramid edge (ul
-  from col 0 is a fall by design); a failing check is a conversation about the
-  board, not just the code.
+## Bugs the harness caught (worth remembering)
+- StrictMode double-mount left a dead black canvas in the DOM — the arkplay
+  pixel check found it; cleanup now removes the canvas element.
+- The anti-stall "dry" nudge overrode the pilot's aim at every near-vertical
+  bounce -> meta-stall. Nudges now only fire on true stalls (dry>=60) and only
+  when |vx| < 0.2*sp (the pilot wasn't steering).
+- DOH eyes were inset in the boss hit-rect -> circle-vs-circle could never
+  fire (body bounce always first). Eyes pop on underside contact-x instead.
+- Fortress layouts trapped the ball above a gold roof (70% of ticks up there)
+  -> flood-fill rule: gold roofs must not seal; shipped a destructible roof.
+- Mutants initially all "survived" — `planner.js` kept the cached pre-mutation
+  sim module; verifiers must spawn fresh child processes (repo law restated).
 
-## Queue state
-- game-queue: **#none** — #210 was the last item. Queue is EMPTY. Next session
-  reports "nothing to forge" unless Jon files more (the /forge board accepts
-  requests). QA lane has #220 (Q*BERT polish) and #216 (Joust polish).
-
-## Harness commands (new this session)
-- `npm run qbertcheck` (static gate), `npm run qbertdive` (manual verify;
-  `QBERT_URL=` override), `npm run lint:qbert`.
-- Worktree `~/Dev/retrogames-qbert` — merged; remove with
-  `git worktree remove` + `git branch -D forge-qbert` (remote branch already gone).
+## Queue (game-queue)
+- #234, #235, #236, #237 remain. Oldest is #234 — next session claims it.
+- QA lane: nothing open against ARKANOID; advisory tier already green.
 
 ## Three questions for Jon
-1. The queue is now empty (#208 Tetris, #209 Joust, #210 Q*BERT all shipped).
-   Should the next forge round be your picks from the /forge board, or want me
-   to keep queueing era-classics (Frogger? Mr. Do!? Pengo?) under the same
-   harness discipline?
-2. `VirtualControls` now has a `diag` prop — iso isometric titles are a
-   recurring shape. Good as a shared primitive, or should the diagonal pad move
-   into its own component before more titles use it?
-3. Carried over from 2026-10-13 (unanswered): promote the real-key smokes
-   (tetrisplay/joustdive/qbertdive) into the merge-blocking tier after ~5 green
-   manual verify runs, or keep them advisory and rerun-on-red?
+1. ARKANOID's classic cabinet is two-player alternating — worth a follow-up
+   issue, or is single-player + paddle physics enough for this arcade?
+2. The pilot clears the fortress via gap-piercing "shaft mode"; a
+   forward-simulated aim verifier would make it provably robust. File as a
+   hardening issue or leave it (the flood-fill already pins winnability)?
+3. `dry>=60` + the layout rules together took ~2.5 h of this session. Would
+   a documented "round must auto-detect stall and offer nudge" contract in
+   GAME-SHELL.md have helped, or is per-game tuning the right level?
+
+## Housekeeping
+- Worktree `~/Dev/retrogames-forge-arkanoid` sits on branch `state-2026-10-14`
+  (this STATE update). Main checkout untouched (detached HEAD per Jon's rule).
+- Dev server left running from the last arkplay — kill before next session if
+  port 5173 is loud.
+- Previous STATE parked at /tmp/forge/STATE.parked.md (superseded).
