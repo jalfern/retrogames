@@ -34,6 +34,7 @@ const GamepadBridge = ({ secondAction }) => {
         }
 
         let raf = 0
+        let padActive = false
         const poll = () => {
             raf = requestAnimationFrame(poll)
             const pads = navigator.getGamepads()
@@ -42,6 +43,14 @@ const GamepadBridge = ({ secondAction }) => {
             const { codes, state } = gamepadToCodes(pad, { secondAction }, stickState)
             Object.assign(stickState, state)
             sync(codes)
+            // Signal the touch pad to hide the moment a gamepad is used (#290 step 5).
+            const active = codes.size > 0
+            if (active && !padActive) {
+                padActive = true
+                window.dispatchEvent(new CustomEvent('retrogames:pad-active'))
+            } else if (!active) {
+                padActive = false
+            }
         }
 
         const onDisconnect = () => releaseAll()

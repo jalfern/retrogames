@@ -8,7 +8,7 @@
 //   4. Space dispatches key=' ' (not key='Space')
 
 import { readFileSync } from 'fs'
-import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE } from '../src/components/virtualDir.js'
+import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD } from '../src/components/virtualDir.js'
 import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton } from '../src/components/gamepadMap.js'
 
 let pass = 0, fail = 0
@@ -238,6 +238,81 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
         if (!block) continue
         ok(/pad: \{/.test(block), `games.js ${path} declares a pad`)
         ok(new RegExp(`pad: .*code: '${code}'`).test(block), `games.js ${path} pad B code is ${code}`)
+    }
+}
+
+// --- 20. stickVec: floating-stick offset -> clamped knob + analog vector ---
+// Centre / dead zone: not engaged, zero vector, zero knob offset.
+{
+    const c = stickVec(0, 0)
+    ok(c.engaged === false, 'stickVec centre: not engaged')
+    ok(c.x === 0 && c.y === 0 && c.push === 0 && c.px === 0 && c.py === 0, 'stickVec centre: zero vector + knob')
+    ok(stickVec(STICK_DEAD - 1, 0).engaged === false, `stickVec |d|=${STICK_DEAD - 1} (< dead) stays at rest`)
+    ok(stickVec(0, STICK_DEAD - 1).engaged === false, 'stickVec small dy (< dead) stays at rest')
+    ok(stickVec(STICK_DEAD, 0).engaged === true, `stickVec |d|==${STICK_DEAD} (edge) engages`)
+}
+// A push past the travel circle clamps to push===1 with a unit analog vector.
+{
+    const v = stickVec(100, 0)   // 100px right; travel radius is STICK_TRAVEL
+    ok(v.engaged === true, 'stickVec right push: engaged')
+    ok(Math.abs(v.push - 1) < 1e-9, `stickVec over-travel clamps push to 1 (got ${v.push})`)
+    ok(Math.hypot(v.x, v.y) === 1, `stickVec over-travel yields a unit analog vector (got ${Math.hypot(v.x, v.y)})`)
+    ok(v.x === 1 && v.y === 0, 'stickVec right: analog vector is +x')
+    ok(Math.abs(v.px - STICK_TRAVEL) < 1e-9 && v.py === 0, 'stickVec over-travel clamps the knob to the travel circle')
+}
+// A half push gives push 0.5 with a proportional (non-unit) vector + raw knob offset.
+{
+    const half = STICK_TRAVEL / 2
+    const v = stickVec(half, 0)
+    ok(Math.abs(v.push - 0.5) < 1e-9, `stickVec |d|==travel/2 -> push 0.5 (got ${v.push})`)
+    ok(Math.abs(v.x - 0.5) < 1e-9 && v.y === 0, 'stickVec |d|==travel/2 -> vector 0.5 +x')
+    ok(Math.abs(v.px - half) < 1e-9, 'stickVec under-travel: knob offset equals the raw offset')
+}
+// Diagonal over-travel clamps to the circle: unit vector, symmetric knob.
+{
+    const v = stickVec(100, 100)   // down-right, well past travel
+    ok(Math.abs(Math.hypot(v.x, v.y) - 1) < 1e-9, 'stickVec diagonal over-travel: unit vector')
+    ok(v.x > 0 && v.y > 0, 'stickVec diagonal: +x +y (screen down-right)')
+    ok(Math.abs(v.px) === Math.abs(v.py), 'stickVec diagonal: knob clamps symmetrically on the circle')
+}
+// All 8 directions produce the expected analog-vector signs (what a game reads).
+{
+    const dirTests = [
+        [1, 0, 'right'], [0, 1, 'down'], [-1, 0, 'left'], [0, -1, 'up'],
+        [1, 1, 'down-right'], [1, -1, 'up-right'], [-1, 1, 'down-left'], [-1, -1, 'up-left'],
+    ]
+    for (const [sx, sy, label] of dirTests) {
+        const v = stickVec(sx * 40, sy * 40)
+        ok(Math.sign(v.x) === sx && Math.sign(v.y) === sy, `stickVec ${label}: analog vector signs match (${v.x.toFixed(2)},${v.y.toFixed(2)})`)
+    }
+}
+
+// --- 21. Mutant that dies: the knob is NOT clamped to the travel circle ---
+// Without clamping, a push far beyond the travel radius would report a vector
+// whose magnitude exceeds 1 (a game steering on it would over-steer) and push>1.
+// The real logic clamps both. Prove they diverge on an over-travel push.
+{
+    const real = stickVec(100, 0)
+    const mag = Math.hypot(100, 0)
+    const mutant = { px: 100, py: 0, x: 100 / STICK_TRAVEL, y: 0, push: mag / STICK_TRAVEL, engaged: true }
+    ok(Math.abs(real.push - 1) < 1e-9 && mutant.push > 1, 'no-clamp mutant reports push > 1 (the bug)')
+    ok(Math.hypot(mutant.x, mutant.y) > 1, 'no-clamp mutant reports an over-unit analog vector (the bug)')
+    ok(JSON.stringify(real) !== JSON.stringify(mutant), 'no-clamp mutant diverges from real stickVec')
+}
+
+// --- 22. games.js: the first analog game opts in to the floating stick ---
+// MarioKart is the first title flipped to layout 'stick' (it drives purely from
+// VirtualControls — no canvas touch). Guard the registry so a silent revert to
+// 'dpad' (which would drop the floating stick) is caught.
+{
+    const gamesSrc = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    const i = gamesSrc.indexOf("path: '/mario-kart'")
+    ok(i !== -1, 'games.js has an entry for /mario-kart')
+    if (i !== -1) {
+        const j = gamesSrc.indexOf('path: ', i + 1)
+        const block = gamesSrc.slice(i, j === -1 ? gamesSrc.length : j)
+        ok(/layout: 'stick'/.test(block), 'games.js /mario-kart uses layout: stick (the floating stick)')
+        ok(/analog: true/.test(block), 'games.js /mario-kart opts in to analog input')
     }
 }
 

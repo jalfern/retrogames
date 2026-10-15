@@ -389,7 +389,7 @@ export const GAMES = [
     },
     {
         path: '/mario-kart',
-        pad: { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyR' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyR' }], analog: true },
         builtBy: 'forge',
         component: MarioKartGame,
         label: 'SUPER MARIO KART',

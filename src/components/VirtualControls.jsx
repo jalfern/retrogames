@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback, useContext } from 'react'
-import { dirsFrom } from './virtualDir'
+import { dirsFrom, stickVec, STICK_TRAVEL } from './virtualDir'
 import { PadContext } from './padContext'
 import { padButton } from './gamepadMap'
+import { setStick, clearStick } from '../utils/padState'
 
 const DIAG = {
     ul: ['ArrowUp', 'ArrowLeft'],
@@ -19,6 +20,15 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     // declaration from the registry (the single source of truth for step 2).
     const secondAction = secondActionProp || (pad ? padButton(pad) : null)
 
+    // Step 3 (#290): a floating stick replaces the fixed d-pad for games that
+    // declare layout 'stick' / 'stick+dpad'. It anchors wherever the thumb lands
+    // on the left half and emits the same 8-way arrows — plus an analog vector
+    // for games that set analog: true.
+    const useStick = !!(pad && (pad.layout === 'stick' || pad.layout === 'stick+dpad'))
+    // Step 5 (#290, feel): the touch pad hides as soon as a keyboard or gamepad is
+    // used, and comes back on the next touch.
+    const [hidden, setHidden] = useState(false)
+
     const dPadRef = useRef(null)
     const actZoneRef = useRef(null)
     const dirCodes = useRef([])
@@ -29,12 +39,24 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const diagCodes = useRef(new Set())
     const diagKeys = useRef(new Set())
 
+    // Floating-stick state. The anchor is where the thumb first landed (viewport
+    // coords); the knob offset is pushed straight to the DOM (no re-render per
+    // touchmove) and the direction + analog vector are published on every move.
+    const stickPtr = useRef(null)
+    const stickAnchor = useRef(null)
+    const knobRef = useRef(null)
+    const [stickUI, setStickUI] = useState({ active: false, ax: 0, ay: 0 })
+
     const fire = useCallback((code, type) => {
         window.dispatchEvent(new KeyboardEvent(type, {
             code,
             key: code === 'Space' ? ' ' : code,
             bubbles: true,
         }))
+    }, [])
+
+    const tick = useCallback(() => {
+        try { if (navigator.vibrate) navigator.vibrate(8) } catch { /* no haptics */ }
     }, [])
 
     const syncHeld = useCallback(() => {
@@ -101,6 +123,10 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
         setDiagKeysState(new Set())
         dPtr.current = null
         aPtr.current = null
+        stickPtr.current = null
+        stickAnchor.current = null
+        clearStick()
+        setStickUI({ active: false, ax: 0, ay: 0 })
         syncHeld()
     }, [fire, syncHeld])
 
@@ -118,7 +144,22 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
         }
     }, [releaseAll])
 
-    if (!visible) return null
+    // Step 5 (feel): hide on real keyboard input or gamepad activity, show on touch.
+    useEffect(() => {
+        const onKey = (e) => { if (e.isTrusted && e.type === 'keydown') setHidden(true) }
+        const onPad = () => setHidden(true)
+        const onShow = () => setHidden(false)
+        window.addEventListener('keydown', onKey)
+        window.addEventListener('retrogames:pad-active', onPad)
+        window.addEventListener('touchstart', onShow, { passive: true })
+        return () => {
+            window.removeEventListener('keydown', onKey)
+            window.removeEventListener('retrogames:pad-active', onPad)
+            window.removeEventListener('touchstart', onShow)
+        }
+    }, [])
+
+    if (!visible || hidden) return null
 
     // --- D-pad: single touch zone, 8-way ---
     const dDirs = (x, y) => {
@@ -144,13 +185,53 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const dMM = (e) => { dMove(e.clientX, e.clientY, 'm') }
     const dMU = () => { dEnd('m') }
 
+    // --- Floating stick: anchor on touch in the left half, knob follows clamped ---
+    const sUpdate = (cx, cy) => {
+        const a = stickAnchor.current
+        if (!a) return
+        const v = stickVec(cx - a.x, cy - a.y)
+        if (knobRef.current) knobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
+        setDirCodes(dirsFrom(v.px, v.py))
+        setStick(v.x, v.y, v.push, v.engaged)
+    }
+    const sStart = (cx, cy, id) => {
+        if (stickPtr.current !== null) return
+        stickPtr.current = id
+        stickAnchor.current = { x: cx, y: cy }
+        setStickUI({ active: true, ax: cx, ay: cy })
+        sUpdate(cx, cy)
+    }
+    const sMove = (cx, cy, id) => { if (id === stickPtr.current) sUpdate(cx, cy) }
+    const sEnd = (id) => {
+        if (id !== stickPtr.current) return
+        stickPtr.current = null
+        stickAnchor.current = null
+        setStickUI({ active: false, ax: 0, ay: 0 })
+        setDirCodes([])
+        clearStick()
+    }
+    const sTS = (e) => {
+        e.preventDefault()
+        for (const t of e.changedTouches) if (stickPtr.current === null) sStart(t.clientX, t.clientY, t.identifier)
+    }
+    const sTM = (e) => {
+        e.preventDefault()
+        for (const t of e.changedTouches) sMove(t.clientX, t.clientY, t.identifier)
+    }
+    const sTE = (e) => {
+        for (const t of e.changedTouches) sEnd(t.identifier)
+    }
+    const sMD = (e) => { e.preventDefault(); if (stickPtr.current === null) sStart(e.clientX, e.clientY, 'm') }
+    const sMM = (e) => { sMove(e.clientX, e.clientY, 'm') }
+    const sMU = () => { sEnd('m') }
+
     // --- Action zone: A/B one zone ---
     const aCodeAt = (x) => {
         if (!secondAction) return 'Space'
         const r = actZoneRef.current.getBoundingClientRect()
         return x < r.left + r.width / 2 ? 'Space' : secondAction.code
     }
-    const aStart = (x, id) => { aPtr.current = id; setActCode(aCodeAt(x)) }
+    const aStart = (x, id) => { aPtr.current = id; tick(); setActCode(aCodeAt(x)) }
     const aMove = (x, id) => { if (id === aPtr.current) setActCode(aCodeAt(x)) }
     const aEnd = (id) => { if (id === aPtr.current) { aPtr.current = null; setActCode(null) } }
 
@@ -197,94 +278,130 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const dBtnCls = (c) => `${dBtnBase} ${isHeld(c) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`
     const actBase = 'w-14 h-14 rounded-full flex items-center justify-center select-none backdrop-blur-sm border border-white/10 shadow-lg transition-all'
 
-    return (
-        <div className="fixed bottom-8 left-0 right-0 px-8 flex justify-between items-end z-50 pointer-events-auto">
-            {/* D-Pad */}
-            {diag ? (
-                <div className="grid grid-cols-2 gap-1">
-                    {[['ul', '↖'], ['ur', '↗'], ['dl', '↙'], ['dr', '↘']].map(([k, sym]) => (
-                        <button
-                            key={k}
-                            className={`${dBtnBase} ${diagKeysState.has(k) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`}
-                            {...diagBind(k)}
-                        >
-                            <span className="text-white/80 font-bold text-lg">{sym}</span>
-                        </button>
-                    ))}
-                </div>
-            ) : (
-                <div
-                    ref={dPadRef}
-                    className="relative w-[150px] h-[150px] touch-none"
-                    onTouchStart={dTS}
-                    onTouchMove={dTM}
-                    onTouchEnd={dTE}
-                    onMouseDown={dMD}
-                    onMouseMove={dMM}
-                    onMouseUp={dMU}
-                    onMouseLeave={dMU}
-                >
-                    <div className={`absolute top-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowUp')}`}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowUp') ? 'text-white' : 'text-white/50'}>
-                            <path d="M12 19V5M5 12l7-7 7 7" />
-                        </svg>
-                    </div>
-                    <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowDown')}`}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowDown') ? 'text-white' : 'text-white/50'}>
-                            <path d="M12 5v14M19 12l-7 7-7-7" />
-                        </svg>
-                    </div>
-                    <div className={`absolute left-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowLeft')}`}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowLeft') ? 'text-white' : 'text-white/50'}>
-                            <path d="M19 12H5M12 19l-7-7 7-7" />
-                        </svg>
-                    </div>
-                    <div className={`absolute right-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowRight')}`}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowRight') ? 'text-white' : 'text-white/50'}>
-                            <path d="M5 12h14M12 5l7 7-7 7" />
-                        </svg>
-                    </div>
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-neutral-600/40 rounded-full" />
-                </div>
-            )}
-
-            {/* Action Buttons (A/B one zone) */}
-            <div
-                ref={actZoneRef}
-                className="flex items-end gap-2 pb-2 pr-4 touch-none"
-                onTouchStart={aTS}
-                onTouchMove={aTM}
-                onTouchEnd={aTE}
-                onMouseDown={aMD}
-                onMouseMove={aMM}
-                onMouseUp={aMU}
-                onMouseLeave={aMU}
-            >
-                {secondAction && (
-                    <div className={`${actBase} shadow-orange-900/20 ${isHeld(secondAction.code) ? 'bg-orange-400/90 scale-95' : 'bg-orange-500/50'}`}>
-                        <span className="text-white font-bold text-lg">{secondAction.label || 'B'}</span>
-                    </div>
-                )}
-                <div className={`${actBase} shadow-red-900/20 ${isHeld('Space') ? 'bg-red-400/90 scale-95' : 'bg-red-500/50'}`}>
-                    <span className="text-white font-bold text-lg">A</span>
-                </div>
-            </div>
-
-            {/* Second-player pad (local 2P titles) */}
-            {secondPad && (
-                <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-end gap-2 pointer-events-auto">
-                    <button className={`w-10 h-10 rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 text-white/80 font-bold transition-colors ${isHeld(p2Code('left')) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`} {...p2Bind('left')}>◀</button>
-                    <div className="flex flex-col gap-1">
-                        <button className={`w-10 h-10 rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 text-white/80 font-bold transition-colors ${isHeld(p2Code('up')) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`} {...p2Bind('up')}>▲</button>
-                        <button className={`w-10 h-10 rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 text-white/80 font-bold transition-colors ${isHeld(p2Code('down')) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`} {...p2Bind('down')}>▼</button>
-                    </div>
-                    <button className={`w-10 h-10 rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 text-white/80 font-bold transition-colors ${isHeld(p2Code('right')) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`} {...p2Bind('right')}>▶</button>
-                    <button className={`w-14 h-14 rounded-full flex items-center justify-center select-none backdrop-blur-sm border border-white/10 shadow-lg shadow-sky-900/20 transition-all ${isHeld(p2Code('action')) ? 'bg-sky-400/90 scale-95' : 'bg-sky-500/50'}`} {...p2Bind('action')}>
-                        <span className="text-white font-bold text-lg">J</span>
-                    </button>
+    const stickZone = useStick && (
+        <div
+            className="fixed left-0 top-0 bottom-0 w-1/2 z-40 touch-none"
+            style={{ pointerEvents: 'auto' }}
+            onTouchStart={sTS}
+            onTouchMove={sTM}
+            onTouchEnd={sTE}
+            onTouchCancel={sTE}
+            onMouseDown={sMD}
+            onMouseMove={sMM}
+            onMouseUp={sMU}
+        >
+            {stickUI.active && (
+                <div className="absolute" style={{ left: stickUI.ax, top: stickUI.ay, width: 0, height: 0 }}>
+                    <div
+                        className="absolute rounded-full border-2 border-white/25 bg-white/5"
+                        style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2, transform: 'translate(-50%, -50%)' }}
+                    />
+                    <div
+                        ref={knobRef}
+                        className="absolute rounded-full bg-white/70 border border-white/40 shadow-lg"
+                        style={{ width: 54, height: 54, transform: 'translate(-50%, -50%)' }}
+                    />
                 </div>
             )}
         </div>
+    )
+
+    return (
+        <>
+            {stickZone}
+            <div
+                className="fixed left-0 right-0 flex justify-between items-end z-50 pointer-events-auto"
+                style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))', padding: '0 calc(2rem + env(safe-area-inset-right)) 0 calc(2rem + env(safe-area-inset-left))' }}
+            >
+                {/* Left control: floating-stick spacer, d-pad, or 2x2 diag pad */}
+                {useStick ? (
+                    <div className="w-24" />
+                ) : diag ? (
+                    <div className="grid grid-cols-2 gap-1">
+                        {[['ul', '↖'], ['ur', '↗'], ['dl', '↙'], ['dr', '↘']].map(([k, sym]) => (
+                            <button
+                                key={k}
+                                className={`${dBtnBase} ${diagKeysState.has(k) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`}
+                                {...diagBind(k)}
+                            >
+                                <span className="text-white/80 font-bold text-lg">{sym}</span>
+                            </button>
+                        ))}
+                    </div>
+                ) : (
+                    <div
+                        ref={dPadRef}
+                        className="relative w-[150px] h-[150px] touch-none"
+                        onTouchStart={dTS}
+                        onTouchMove={dTM}
+                        onTouchEnd={dTE}
+                        onMouseDown={dMD}
+                        onMouseMove={dMM}
+                        onMouseUp={dMU}
+                        onMouseLeave={dMU}
+                    >
+                        <div className={`absolute top-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowUp')}`}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowUp') ? 'text-white' : 'text-white/50'}>
+                                <path d="M12 19V5M5 12l7-7 7 7" />
+                            </svg>
+                        </div>
+                        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowDown')}`}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowDown') ? 'text-white' : 'text-white/50'}>
+                                <path d="M12 5v14M19 12l-7 7-7-7" />
+                            </svg>
+                        </div>
+                        <div className={`absolute left-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowLeft')}`}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowLeft') ? 'text-white' : 'text-white/50'}>
+                                <path d="M19 12H5M12 19l-7-7 7-7" />
+                            </svg>
+                        </div>
+                        <div className={`absolute right-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowRight')}`}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowRight') ? 'text-white' : 'text-white/50'}>
+                                <path d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        </div>
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-neutral-600/40 rounded-full" />
+                    </div>
+                )}
+
+                {/* Action Buttons (A/B one zone) */}
+                <div
+                    ref={actZoneRef}
+                    className="flex items-end gap-2 pb-2 pr-4 touch-none"
+                    onTouchStart={aTS}
+                    onTouchMove={aTM}
+                    onTouchEnd={aTE}
+                    onMouseDown={aMD}
+                    onMouseMove={aMM}
+                    onMouseUp={aMU}
+                    onMouseLeave={aMU}
+                >
+                    {secondAction && (
+                        <div className={`${actBase} shadow-orange-900/20 ${isHeld(secondAction.code) ? 'bg-orange-400/90 scale-95' : 'bg-orange-500/50'}`}>
+                            <span className="text-white font-bold text-lg">{secondAction.label || 'B'}</span>
+                        </div>
+                    )}
+                    <div className={`${actBase} shadow-red-900/20 ${isHeld('Space') ? 'bg-red-400/90 scale-95' : 'bg-red-500/50'}`}>
+                        <span className="text-white font-bold text-lg">A</span>
+                    </div>
+                </div>
+
+                {/* Second-player pad (local 2P titles) */}
+                {secondPad && (
+                    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-end gap-2 pointer-events-auto">
+                        <button className={`w-10 h-10 rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 text-white/80 font-bold transition-colors ${isHeld(p2Code('left')) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`} {...p2Bind('left')}>◀</button>
+                        <div className="flex flex-col gap-1">
+                            <button className={`w-10 h-10 rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 text-white/80 font-bold transition-colors ${isHeld(p2Code('up')) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`} {...p2Bind('up')}>▲</button>
+                            <button className={`w-10 h-10 rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 text-white/80 font-bold transition-colors ${isHeld(p2Code('down')) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`} {...p2Bind('down')}>▼</button>
+                        </div>
+                        <button className={`w-10 h-10 rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 text-white/80 font-bold transition-colors ${isHeld(p2Code('right')) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`} {...p2Bind('right')}>▶</button>
+                        <button className={`w-14 h-14 rounded-full flex items-center justify-center select-none backdrop-blur-sm border border-white/10 shadow-lg shadow-sky-900/20 transition-all ${isHeld(p2Code('action')) ? 'bg-sky-400/90 scale-95' : 'bg-sky-500/50'}`} {...p2Bind('action')}>
+                            <span className="text-white font-bold text-lg">J</span>
+                        </button>
+                    </div>
+                )}
+            </div>
+        </>
     )
 }
 
