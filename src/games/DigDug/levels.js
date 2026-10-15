@@ -6,9 +6,9 @@
 //   rocks      : {col,row} boulders; support = dirt cells directly above them.
 //                support -> 0 and the rock falls, crushing what it lands on.
 //   vegSpots   : after two rocks drop in a round, veggies sprout at these cells.
-//   comp       : the round's roster in spawn order (respawns keep coming from
-//                it until the kill goal is met).
-//   goal       : enemies defeated to clear the round.
+//   comp       : the round's roster; the round clears when every enemy in it
+//                has fallen (cap = how many may be on the field at once).
+//   goal       : enemies defeated to clear the round (= comp.length).
 
 export const CELL = 16
 export const COLS = 18
@@ -35,7 +35,7 @@ export const ROUNDS = [
     {
         name: 'ROUND 1',
         goal: 8,
-        comp: ['pooka', 'pooka', 'fygar'],
+        comp: ['pooka', 'pooka', 'fygar', 'pooka', 'fygar', 'pooka', 'pooka', 'fygar'],
         cap: 3,
         ghostSpeed: 0.5,
         walkSpeed: 0.95,
@@ -46,7 +46,7 @@ export const ROUNDS = [
     {
         name: 'ROUND 2',
         goal: 10,
-        comp: ['pooka', 'fygar', 'pooka', 'fygar'],
+        comp: ['pooka', 'fygar', 'pooka', 'pooka', 'fygar', 'pooka', 'fygar', 'pooka', 'fygar', 'pooka'],
         cap: 3,
         ghostSpeed: 0.58,
         walkSpeed: 1.05,
@@ -57,7 +57,7 @@ export const ROUNDS = [
     {
         name: 'ROUND 3',
         goal: 12,
-        comp: ['fygar', 'pooka', 'fygar', 'pooka', 'fygar'],
+        comp: ['fygar', 'pooka', 'pooka', 'fygar', 'pooka', 'fygar', 'pooka', 'pooka', 'fygar', 'pooka', 'fygar', 'pooka'],
         cap: 4,
         ghostSpeed: 0.66,
         walkSpeed: 1.15,

@@ -30,7 +30,7 @@ export const CFG = {
     playerSpeed: 1.6,
     digH: 8, digDown: 12, digUp: 20,   // ticks per dirt cell by direction
     centerLerp: 0.3,
-    harpoonLen: 40, harpoonSpeed: 5, harpoonCool: 12,
+    harpoonLen: 44, harpoonSpeed: 6, harpoonCool: 3,
     pumpStages: 4, deflateTicks: 90, shove: 0.7,
     killR: 9,
     fireSpeed: 3, fireMax: 96, fireTail: 22,
@@ -144,14 +144,21 @@ function rockKillPoints(e, nCrushed) {
 }
 
 // ---------------------------------------------------------------- harpoon ----
-function fireHarpoon(gs) {
+function fireHarpoon(gs, inp) {
     const h = gs.harpoon
     const p = gs.player
     if (h) {
         if (h.attached && h.state === 'hold') { pump(gs) }
         return
     }
-    gs.harpoon = { x: p.x, y: p.y, dx: p.dir[0], dy: p.dir[1], len: 0, state: 'out', attached: null, cool: 0 }
+    // aim is independent of the movement keys: you can fire and back away
+    let ax = p.dir[0], ay = p.dir[1]
+    if (inp && inp.aim) {
+        ax = inp.aim[0]; ay = inp.aim[1]
+        if (ax !== 0 && ay !== 0) { if (Math.abs(ax) >= Math.abs(ay)) ay = 0; else ax = 0 }
+        if (ax === 0 && ay === 0) { ax = p.dir[0]; ay = p.dir[1] }
+    }
+    gs.harpoon = { x: p.x, y: p.y, dx: ax, dy: ay, len: 0, state: 'out', attached: null, cool: 0 }
 }
 
 function pump(gs) {
@@ -177,8 +184,10 @@ function updateHarpoon(gs) {
     if (h.state === 'hold') {
         const e = gs.enemies.find((x) => x.id === h.attached)
         if (!e) { gs.harpoon = null; return }
-        // walking away releases the hook (the inflation stays)
-        if (Math.hypot(e.x - gs.player.x, e.y - gs.player.y) > CFG.harpoonLen + 8) {
+        const dist = Math.hypot(e.x - gs.player.x, e.y - gs.player.y)
+        // the harpoon telescopes with the inflation; it snaps off only at full reach
+        if (e.stage > 0 && dist > h.len) h.len = Math.min(70, dist)
+        if (dist > 70) {
             e.attached = false
             gs.harpoon = null
             return
@@ -218,8 +227,9 @@ function updateHarpoon(gs) {
 }
 
 // ---------------------------------------------------------------- enemies ----
-function bfsPath(gs, sr, sc, tr, tc) {
-    // ghost pathing: through dirt and open cells alike; rocks/floor block
+function bfsPath(gs, sr, sc, tr, tc, openOnly = false) {
+    // ghost pathing: through dirt and open cells alike; rocks/floor block.
+    // openOnly (a fleeing enemy) sticks to dug/air ground so it stays catchable.
     if (!inField(tr, tc)) return []
     const prev = new Map()
     const q = [[sr, sc]]
@@ -228,12 +238,12 @@ function bfsPath(gs, sr, sc, tr, tc) {
     while (q.length) {
         const [r, c] = q.shift()
         if (r === tr && c === tc) {
+            // waypoints after the start, ending at the goal cell itself
             const path = []
             let k = `${r},${c}`
-            while (k !== `${sr},${sc}`) {
-                const [pr, pc] = prev.get(k)
-                path.unshift([pr, pc])
-                k = `${pr},${pc}`
+            while (k !== undefined && k !== `${sr},${sc}`) {
+                path.unshift(k.split(',').map(Number))
+                k = prev.get(k)
             }
             return path
         }
@@ -242,10 +252,11 @@ function bfsPath(gs, sr, sc, tr, tc) {
             const key = `${nr},${nc}`
             if (seen.has(key) || nr < AIR_TOP || nr > DIRT_BOT || nc < 0 || nc >= COLS) continue
             if (isRockCell(gs, nr, nc)) continue
-            seen.add(key); prev.set(key, [r, c]); q.push([nr, nc])
+            if (openOnly && gs.dirt[nr][nc]) continue
+            seen.add(key); prev.set(key, `${r},${c}`); q.push([nr, nc])
         }
     }
-    return []
+    return openOnly ? bfsPath(gs, sr, sc, tr, tc, false) : []
 }
 
 function updateEnemies(gs) {
@@ -292,7 +303,7 @@ function updateEnemies(gs) {
             ? { r: AIR_TOP, c: ec <= COLS / 2 ? 0 : COLS - 1 }
             : { r: rowOf(p.y), c: colOf(p.x) }
         if (e.repathT <= 0 || e.path.length === 0) {
-            e.path = bfsPath(gs, er, ec, tgt.r, tgt.c)
+            e.path = bfsPath(gs, er, ec, tgt.r, tgt.c, e.flee)
             e.repathT = 24
         }
         if (e.flee && er <= AIR_TOP && (ec <= 0 || ec >= COLS - 1)) {
@@ -315,8 +326,8 @@ function updateEnemies(gs) {
         }
         e.ghost = isDirt(gs, rowOf(e.y), colOf(e.x))
 
-        // touching a solid, uninflated enemy kills the player
-        if (!e.ghost && e.state === 'walk' && Math.abs(e.x - p.x) < CFG.killR && Math.abs(e.y - p.y) < CFG.killR + 2) {
+        // touching a solid, uninflated, unhooked enemy kills the player
+        if (!e.ghost && !e.attached && e.state === 'walk' && Math.abs(e.x - p.x) < CFG.killR && Math.abs(e.y - p.y) < CFG.killR + 2) {
             killPlayer(gs, 'touch')
             return
         }
@@ -487,7 +498,7 @@ function updatePlayer(gs, inp) {
     }
     p.x = clamp(p.x, CELL / 2, W - CELL / 2)
     p.y = clamp(p.y, cy(AIR_TOP), cy(DIRT_BOT))
-    if (inp.fire && (gs._cool || 0) <= 0) fireHarpoon(gs)
+    if (inp.fire && (gs._cool || 0) <= 0) fireHarpoon(gs, inp)
     if ((gs._cool || 0) > 0) gs._cool--
 }
 
