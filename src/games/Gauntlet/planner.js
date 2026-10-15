@@ -128,6 +128,20 @@ export function decide(gs) {
         if (d < 0.65) { inp.sword = true; return inp }
         const want = Math.atan2(dy, dx)
         const diff = norm(want - h.a)
+        if (gs.topDown) {
+            // overhead: the pilot points absolutely (aim) and only travels down
+            // the barrel it is looking through; the sim re-faces before it
+            // swings, so aim + attack lands the same tick.
+            if (Math.abs(diff) > 2.2 && d < 3.2) { inp.aim = want + Math.PI; inp.fwd = true; return inp }
+            inp.aim = want
+            if (d < 1.45) { inp.sword = true; return inp }
+            if (d <= h.arrowRange) {
+                inp.arrow = true
+                if (MONSTERS[threat.kind].drain && d < 4.5) inp.back = true
+                else inp.fwd = d > 3
+            }
+            return inp
+        }
         const aiming = Math.abs(diff) <= 0.18
         if (aiming && d < 1.45) { inp.sword = true; return inp }
         if (aiming && d <= h.arrowRange) {
@@ -175,6 +189,7 @@ export function decide(gs) {
     const straight = path.length > 1 && Math.abs(path[1][0] - pc) + Math.abs(path[1][1] - pr) === 2
     const [tc, tr] = straight ? path[1] : path[0]
     const want = Math.atan2(tr + 0.5 - h.y, tc + 0.5 - h.x)
+    if (gs.topDown) { inp.aim = want; inp.fwd = true; return inp }
     const diff = norm(want - h.a)
     if (Math.abs(diff) > 0.1) {
         const dir = diff < 0 ? -1 : 1
@@ -191,7 +206,7 @@ export function decide(gs) {
 }
 
 export function plan(seed = 0, opts = {}) {
-    const gs = makeGame(seed, opts.hero || 'warrior', { slack: !!opts.slack, partner: !!opts.partner })
+    const gs = makeGame(seed, opts.hero || 'warrior', { slack: !!opts.slack, partner: !!opts.partner, topDown: !!opts.topDown })
     const script = []
     let deaths = 0
     const max = opts.maxTicks || 40000

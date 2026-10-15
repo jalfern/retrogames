@@ -109,7 +109,7 @@ console.log('rules')
 {
     const gs = makeGame(0, 'warrior')
     const hp0 = gs.hero.hp
-    for (let i = 0; i < 48; i++) { step(gs, {}); gs.events.length = 0 }
+    for (let i = 0; i < 130; i++) { step(gs, {}); gs.events.length = 0 }
     ok(hp0 - gs.hero.hp >= 2, 'health drains on the clock')
     gs.hero.hp = 60
     const food = gs.items.find((it) => it.t === 'food')
@@ -229,6 +229,54 @@ console.log('rules')
     ok(gs.monsters.length === m0, 'a sword through a pillar hits nothing')
 }
 
+// ---------------------------------------------------------- overhead mode ----
+// The top-down GAUNTLET rides the same sim: arrows are an 8-way stick (each
+// sets facing AND moves), diagonals slide along the free axis, and the pilot
+// lane aims absolutely without losing the door/collision rules.
+console.log('overhead')
+{
+    const gs = makeGame(0, 'warrior', { topDown: true })
+    gs.monsters = []
+    gs.gens.forEach((g) => { g.alive = false })
+    const y0 = gs.hero.y
+    for (let i = 0; i < 40; i++) { step(gs, { fwd: true }); gs.events.length = 0 }
+    ok(gs.hero.y < y0 - 1, 'overhead: UP walks north and faces north', `a ${gs.hero.a.toFixed(2)}`)
+    ok(Math.abs(gs.hero.a + Math.PI / 2) < 0.01, 'overhead: facing follows the stick')
+    for (let i = 0; i < 40; i++) { step(gs, { fwd: true, right: true }); gs.events.length = 0 }
+    ok(Math.abs(gs.hero.a - (-Math.PI / 4)) < 0.01, 'overhead: UP+RIGHT faces north-east')
+    // pin against the north border, then a blocked diagonal slides east
+    for (let i = 0; i < 400 && gs.hero.y > 1.3; i++) { step(gs, { fwd: true }); gs.events.length = 0 }
+    const xP = gs.hero.x
+    for (let i = 0; i < 40; i++) { step(gs, { fwd: true, right: true }); gs.events.length = 0 }
+    ok(gs.hero.x > xP + 1 && gs.hero.y < 1.35, 'overhead: a blocked diagonal slides along the free axis',
+        `${gs.hero.x.toFixed(2)},${gs.hero.y.toFixed(2)}`)
+    // aim without motion (pilot lane): facing turns, position holds
+    const xa = gs.hero.x, ya = gs.hero.y
+    for (let i = 0; i < 10; i++) { step(gs, { aim: 0.5 }); gs.events.length = 0 }
+    ok(Math.abs(gs.hero.a - 0.5) < 1e-9 && gs.hero.x === xa && gs.hero.y === ya, 'overhead: aim points without walking')
+    // an arrow loosed down the aim hits what it points at (south down col 6)
+    gs.hero.x = 6.5; gs.hero.y = 2.5; gs.hero.a = Math.PI / 2
+    gs.monsters = [{ id: 9501, kind: 'grunt', x: 6.5, y: 6.5, hp: 3, atkT: 9999, castT: 9999, path: [], repathT: 0, drainT: 0 }]
+    let killed = false
+    for (let i = 0; i < 60 && !killed; i++) { step(gs, { aim: Math.PI / 2, arrow: i === 0 }); killed = gs.monsters.length === 0; gs.events.length = 0 }
+    ok(killed, 'overhead: arrows fly down the facing')
+    // stone stops the arrow: fire NE across a pillar block at a monster beyond it
+    gs.hero.x = 2.5; gs.hero.y = 4.5
+    gs.monsters = [{ id: 9502, kind: 'grunt', x: 7.5, y: 1.5, hp: 3, atkT: 9999, castT: 9999, path: [], repathT: 0, drainT: 0 }]
+    let through = false
+    for (let i = 0; i < 60; i++) { step(gs, { aim: Math.atan2(-3, 5), arrow: i === 0 }); if (gs.monsters.length === 0) through = true; gs.events.length = 0 }
+    ok(!through, 'overhead: stone stops an arrow')
+    // the slam door behaves identically overhead
+    {
+        const g2 = makeGame(0, 'warrior', { topDown: true })
+        const d = g2.doors.find((x) => !x.locked)
+        g2.hero.x = d.x + 1.5; g2.hero.y = d.y + 0.5
+        let opened = false
+        for (let i = 0; i < 60 && !opened; i++) { step(g2, { aim: Math.PI, fwd: true }); opened = d.open; g2.events.length = 0 }
+        ok(opened, 'overhead: slam doors open on contact too')
+    }
+}
+
 // ----------------------------------------------------------------- pilot ----
 console.log('pilot')
 for (const seed of [0, 1, 2, 3]) {
@@ -243,6 +291,18 @@ console.log('slack')
 {
     const r = S.plan(2, { slack: true })
     ok(r.won, 'the quest is still won with one fewer food AND potion per maze', `deaths=${r.deaths}`)
+}
+
+console.log('overhead pilot')
+{
+    for (const seed of [0, 1, 2, 3]) {
+        const r = S.plan(seed, { topDown: true })
+        ok(r.won, `overhead pilot clears all four mazes (seed ${seed})`, `deaths=${r.deaths} level=${r.gs.level}`)
+    }
+    const t = [0, 1, 2, 3].map((s) => S.plan(s, { topDown: true }).deaths)
+    ok(t.some((d) => d === 0), 'the overhead pilot can run deathless', `deaths ${t.join('/')}`)
+    const r = S.plan(2, { topDown: true, slack: true })
+    ok(r.won, 'the overhead quest is still won with one fewer food AND potion per maze', `deaths=${r.deaths}`)
 }
 
 // ---------------------------------------------------------------- ledger ----
@@ -281,6 +341,7 @@ if (process.argv.includes('--mutate')) {
         ['potion kills Death too', 'gs.monsters = gs.monsters.filter((m) => MONSTERS[m.kind].drain)', 'gs.monsters = []'],
         ['generators respawn when smashed', 'if (!g.alive) continue\n        g.t--', 'g.t--'],
         ['health never drains', 'if (gs.tick % CFG.drainEvery === 0)', 'if (gs.tick % 1000000 === 0)'],
+        ['overhead pilot cannot aim', 'if (typeof inp.aim === \'number\') {', 'if (false) {'],
     ]
     const orig = readFileSync(SIM, 'utf8')
     let died = 0

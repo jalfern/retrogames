@@ -26,7 +26,7 @@ export const CFG = {
     turn: 0.042,
     walk: 0.045,
     radius: 0.28,
-    drainEvery: 24,
+    drainEvery: 60,
     foodHeal: 45,
     swordCool: 18,
     swordReach: 1.15,
@@ -88,6 +88,7 @@ const walkable = (gs, c, r) => {
 export function makeGame(seed = 0, heroKey = 'warrior', opts = {}) {
     const gs = {
         seed, heroKey, slack: !!opts.slack, partnerOn: !!opts.partner,
+        topDown: !!opts.topDown,
         rng: seed | 0, tick: 0, playT: 0, level: 0,
         lives: CFG.lives, score: 0, gold: 0, keys: 0,
         end: null, events: [], _nextId: 1, upTo: CFG.extraLife,
@@ -182,6 +183,28 @@ function losClear(gs, x0, y0, x1, y1) {
         if (cellChar(gs, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t) === '#') return false
     }
     return true
+}
+
+// sliding 8-way move for the overhead game: each axis is probed against stone
+// (doors handled separately), so a diagonal slide keeps the free axis.
+function moveHero(gs, ux, uy, sp) {
+    const h = gs.hero, R = CFG.radius
+    const stone = (x, y) => cellChar(gs, x, y) === '#'
+    const nx = h.x + ux * sp, ny = h.y + uy * sp
+    const sx = Math.sign(ux), sy = Math.sign(uy)
+    const okX = !stone(nx + sx * R, ny) && (sy === 0 || !stone(nx + sx * R, h.y))
+    const okY = !stone(nx, ny + sy * R) && (sx === 0 || !stone(h.x, ny + sy * R))
+    let mx = okX ? nx : h.x
+    let my = okY ? ny : h.y
+    const cc = Math.floor(mx), cr = Math.floor(my)
+    const oc = Math.floor(h.x), or_ = Math.floor(h.y)
+    if ((cc !== oc || cr !== or_) && gs.levelData.grid[cr] && (gs.levelData.grid[cr][cc] === 'D' || gs.levelData.grid[cr][cc] === 'L')) {
+        if (!tryDoors(gs, mx, my)) {
+            if (cc !== oc) mx = h.x
+            if (cr !== or_) my = h.y
+        }
+    }
+    h.x = mx; h.y = my
 }
 
 function heroHits(gs) {
@@ -556,32 +579,50 @@ export function step(gs, inp) {
     }
 
     gs.playT++
-    if (inp.left) h.a -= CFG.turn
-    if (inp.right) h.a += CFG.turn
-    let mv = 0
-    if (inp.fwd) mv = 1
-    else if (inp.back) mv = -0.6
-    if (mv !== 0) {
-        const sp = CFG.walk * h.speed * mv
-        const nx = h.x + Math.cos(h.a) * sp
-        const ny = h.y + Math.sin(h.a) * sp
-        const R = CFG.radius
-        // corner probes are STONE only — doors must stay enterable so the hero
-        // can reach the door cell and push it open (the center-cell rule below
-        // decides door interaction).
-        const stone = (x, y) => cellChar(gs, x, y) === '#'
-        const wallHit =
-            stone(nx + Math.sign(Math.cos(h.a)) * R, ny) ||
-            stone(nx, ny + Math.sign(Math.sin(h.a)) * R) ||
-            stone(nx + Math.sign(Math.cos(h.a)) * R, ny + Math.sign(Math.sin(h.a)) * R)
-        if (!wallHit) {
-            const cc = Math.floor(nx), cr = Math.floor(ny)
-            const ch = gs.levelData.grid[cr][cc]
-            if ((ch === 'D' || ch === 'L') && mv > 0) { if (tryDoors(gs, nx, ny)) { h.x = nx; h.y = ny } }
-            else if ((ch === 'D' || ch === 'L') && mv < 0) {
-                if (gs.doors.some((d) => d.x === cc && d.y === cr && (d.open || d.broken))) { h.x = nx; h.y = ny }
+    if (gs.topDown) {
+        // overhead cabinet: each arrow sets facing AND moves (8-way); the pilot
+        // may also aim absolutely (inp.aim) while it moves or holds ground.
+        const vx = (inp.right ? 1 : 0) - (inp.left ? 1 : 0)
+        const vy = (inp.back ? 1 : 0) - (inp.fwd ? 1 : 0)
+        const sp = CFG.walk * h.speed
+        if (typeof inp.aim === 'number') {
+            // pilot lane: point absolutely, travel along the barrel (fwd/back)
+            h.a = inp.aim
+            if (inp.fwd) moveHero(gs, Math.cos(inp.aim), Math.sin(inp.aim), sp)
+            else if (inp.back) moveHero(gs, -Math.cos(inp.aim), -Math.sin(inp.aim), sp * 0.6)
+        } else if (vx || vy) {
+            const a = Math.atan2(vy, vx)
+            h.a = a
+            moveHero(gs, Math.cos(a), Math.sin(a), sp)
+        }
+    } else {
+        if (inp.left) h.a -= CFG.turn
+        if (inp.right) h.a += CFG.turn
+        let mv = 0
+        if (inp.fwd) mv = 1
+        else if (inp.back) mv = -0.6
+        if (mv !== 0) {
+            const sp = CFG.walk * h.speed * mv
+            const nx = h.x + Math.cos(h.a) * sp
+            const ny = h.y + Math.sin(h.a) * sp
+            const R = CFG.radius
+            // corner probes are STONE only — doors must stay enterable so the hero
+            // can reach the door cell and push it open (the center-cell rule below
+            // decides door interaction).
+            const stone = (x, y) => cellChar(gs, x, y) === '#'
+            const wallHit =
+                stone(nx + Math.sign(Math.cos(h.a)) * R, ny) ||
+                stone(nx, ny + Math.sign(Math.sin(h.a)) * R) ||
+                stone(nx + Math.sign(Math.cos(h.a)) * R, ny + Math.sign(Math.sin(h.a)) * R)
+            if (!wallHit) {
+                const cc = Math.floor(nx), cr = Math.floor(ny)
+                const ch = gs.levelData.grid[cr][cc]
+                if ((ch === 'D' || ch === 'L') && mv > 0) { if (tryDoors(gs, nx, ny)) { h.x = nx; h.y = ny } }
+                else if ((ch === 'D' || ch === 'L') && mv < 0) {
+                    if (gs.doors.some((d) => d.x === cc && d.y === cr && (d.open || d.broken))) { h.x = nx; h.y = ny }
+                }
+                else { h.x = nx; h.y = ny }
             }
-            else { h.x = nx; h.y = ny }
         }
     }
     gs._fwd = inp.fwd
