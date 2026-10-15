@@ -10,12 +10,16 @@
 #   ssh -t jon@100.67.32.98 'zsh -lc ~/Dev/retrogames/scripts/watch.sh'
 # Detach with Ctrl-b then d; everything keeps running.
 #
-# Panes: left column, top to bottom, refreshed every 5 s:
-#   BUILDER — the log the running builder process actually has open. Not
-#             /tmp/forge/last.log: a launchd fire that skips (a session is
-#             already running) repoints last.log at a one-line stub.
-#   QA      — same, for the QA MASTER process.
-#   WARDEN  — the newest warden tick log.
+# Panes: left column, one per machine, top to bottom, refreshed every 5 s:
+#   BUILDER  (Studio, model on :8000)  — the log the builder process actually
+#             has open. Not /tmp/forge/last.log: a launchd fire that skips (a
+#             session is already running) repoints last.log at a stub.
+#   QA·MINI  (model via the :18000 tunnel) — the session using omlxmini/...
+#   QA·MBP   (model via the :18001 tunnel) — the session using omlxmbp/...
+#   WARDEN   — the newest warden tick log.
+# Each lane header says whether that machine's model server answers (up/DOWN),
+# so a sleeping MacBook shows as DOWN instead of a session that looks busy.
+# Every session runs on the Studio; the machine named is where its model runs.
 # Right: RETRO — Jon's own tmux session "retro" (his chat with Qwen), attached
 #   inside this pane, or created in the repo if it does not exist yet. It is a
 #   separate session, so `--kill` and detaching never end that chat. Typing
@@ -39,20 +43,24 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
     exec tmux attach -t "$SESSION"
 fi
 
-# lane_pane LABEL: show the last lines of the log that the process matching
-# "$P1$P2" (set per pane, see above) has open; say so plainly when idle.
+# lane_pane LABEL PORT: show the last lines of the log that the process
+# matching "$P1$P2" (set per pane, see above) has open, under a header saying
+# whether the model server on 127.0.0.1:PORT answers at all (any HTTP code,
+# even 401, means up).
 lane_pane() {
     cat <<PANE
 while true; do
     clear
+    code=\$(curl -s -o /dev/null -m 2 -w '%{http_code}' http://127.0.0.1:$2/v1/models)
+    [[ "\$code" == 000 ]] && host=DOWN || host=up
     pid=\$(pgrep -f "\$P1\$P2" | head -1)
     if [[ -z "\$pid" ]]; then
-        echo "$1: idle (no process)"
+        echo "$1 [model \$host]: idle (no process)"
     else
         log=\$(lsof -p "\$pid" 2>/dev/null | awk '/\/tmp\/forge\/.*\.log/ {print \$NF; exit}')
-        echo "$1: pid \$pid, up \$(ps -o etime= -p \$pid | tr -d ' '), log \${log:-none}"
+        echo "$1 [model \$host]: pid \$pid, up \$(ps -o etime= -p \$pid | tr -d ' '), \${log:-no log}"
         echo "----"
-        [[ -n "\$log" ]] && tail -n 25 "\$log"
+        [[ -n "\$log" ]] && tail -n \$(( \$(tput lines) - 3 )) "\$log" | cut -c1-\$(tput cols)
     fi
     sleep 5
 done
@@ -63,12 +71,13 @@ WARDEN_PANE='while true; do
     clear
     w=$(ls -t /tmp/forge/warden-2*.log 2>/dev/null | head -1)
     echo "WARDEN: ${w:-no log yet}"; echo "----"
-    [[ -n "$w" ]] && tail -n 15 "$w"
+    [[ -n "$w" ]] && tail -n $(( $(tput lines) - 3 )) "$w"
     sleep 5
 done'
 
-tmux new-session -d -s "$SESSION" -e P1='opencode run.*THE' -e P2=' FORGE' zsh -c "$(lane_pane BUILDER)"
-tmux split-window -v -t "$SESSION" -e P1='opencode run.*QA' -e P2=' MASTER' zsh -c "$(lane_pane QA)"
+tmux new-session -d -s "$SESSION" -e P1='opencode run.*THE' -e P2=' FORGE' zsh -c "$(lane_pane BUILDER 8000)"
+tmux split-window -v -t "$SESSION" -e P1='opencode run.*omlx' -e P2='mini' zsh -c "$(lane_pane QA·MINI 18000)"
+tmux split-window -v -t "$SESSION" -e P1='opencode run.*omlx' -e P2='mbp' zsh -c "$(lane_pane QA·MBP 18001)"
 tmux split-window -v -t "$SESSION" zsh -c "$WARDEN_PANE"
 tmux select-layout -t "$SESSION" even-vertical
 # RETRO: a full-height pane on the right, 60% wide. `env -u TMUX` lets tmux
