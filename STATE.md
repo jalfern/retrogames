@@ -1,67 +1,73 @@
-# STATE — 2026-10-15 (forge session, PRINCE OF PERSIA shipped)
+# STATE — 2026-10-15 (forge session, PoP deep pass #316 — Stage 1 WIP)
 
-## Shipped this session
-**PRINCE OF PERSIA** (#296) — PR #311, squash-merged at `817c1bc`, live:
-https://jalfern.com/retrogames/prince-of-persia
-- Mechner 1989 rebuilt whole in code: weighted run/skid, careful step,
-  speed-scaled jumps, auto-grab hang + pull-up/shimmy/hang-jump; loose tiles,
-  plate-latched spike ports, seam-free guillotine; three-height sword duel
-  (telegraphed windup, match-height parry); 60-min clock, hearts/lives,
-  life/strength/levitation/poison flasks; five screens ending in Jaffar's
-  throne (boss gates the princess door).
-- Gates added to CI `static` (follow-up PR #313 at `6992e00`): `lint:pop` +
-  `popcheck` → **57/57 PASS**
-  (rule pins · autopilot wins all 5 screens zero deaths · slack rule
-  0.75x clock + every guard hp−1 still wins · determinism · no-Math.random ·
-  planner/CFG agreement). Parry-rule mutant proven red (6 fails) then
-  restored. `popplay` headless drive: 11/11 real keys, zero page errors.
-  `npm run build` clean, all four scoped lint gates clean.
-- QA polish pass filed: **#312** (animation density, lighting tint, Jaffar
-  teleport, mirror-shadow idea, 12-screen expansion — content-only).
+## In progress (NOT shipped)
+**#316 Prince of Persia: the deep pass** — Stage 1, branch `forge/pop-deep`
+(worktree `~/Dev/retrogames-forge-pop-deep`, node_modules symlinked). Draft PR
+filed, marked WIP. Keep the `building` label; do NOT reset to `next` until a
+stage actually merges.
 
-## GOAL — next session
-Oldest open `game-queue` item: **#295 Civ V** — standing scope question, now
-the THIRD time retired-without-answer (see Q1). Do NOT build it without Jon.
-If Jon hasn't answered by then, borrow the QA lane if no `QA MASTER` process
-is live: #312 item 3 (Jaffar teleport + guard palettes) or #310 (SSX polish)
-are the highest-value fallbacks.
+## Done this session (engine spine — provably wins, lint-clean)
+Rewrote the 1989 rules from scratch in `sim.js` + `levels.js` + `planner.js`
+(three heights/auto-grab/single-screen model deleted):
+- **Multi-room levels**: 10-wide × 3-floor rooms, hard screen flip on doorway
+  (`roomOf(c)`, camera offset = `room*RW`). 3 levels × 4 rooms each, all clear.
+- **No lives**: death → level restart (checkpoint on L3), clock keeps running;
+  `sword`/`clock`/`bonusMax` persist across levels + restarts.
+- **Unarmed start**: sword pickup in L1 room0; sheath outside a duel.
+- **Timing duel**: Strike `X` / Block `Up`, parry→counter, recoil; no heights.
+- **Falls by floors**: 1 safe, 2 = −1 hp, 3+ death (in `land()`).
+- **Grab only while Shift held** (no auto-grab); Shift = run on ground.
+- **Machinery**: raise-button → gate that closes slowly (`gateFall`),
+  chompers (scheduled jaws), loose floor→rubble, exit plate→door→stairs.
+- **Potions 1989**: small red +1, large red +1 max, blue −1, slow-fall,
+  upside-down; NO strength.
+- Autopilot clears all 3 levels: **win, 0 deaths, clockLeft 3573s**. eslint
+  clean on all three spine files. Ground-fill + ceiling-to-floor gate-extent +
+  room-clamped patrols are the level post-passes.
+
+## Blocked — the React layer is RED (next session starts here)
+`art.js` + `index.jsx` still target the deleted API, so `npm run build` fails:
+- `art.js` imports `W, SPIKE_PORTED, PLATE` from levels (now `RW,H,T` + new
+  codes) and `portOpen` from sim (gone).
+- `index.jsx` uses `g.lives`, `g.p.strength`, old `SPIKE_PORTED` art path.
+Todo, in order:
+1. `art.js`: room-camera (`room*RW*T` offset, `imageSmoothingEnabled=false`),
+   sheath/draw sword, health-as-flasks bottom-left + guard hp bottom-right,
+   slow-open gate bars, chomper jaws, spikes, torches, upside-down flip (scaleY
+   −1). Draw at `RW*T`×`H*T`, floor rows `[8,5,2]`.
+2. `index.jsx`: controls Arrow move / `Down` crouch-hang / `Up` block / `X`
+   strike / `Shift` run+grab; remove lives+strength HUD; no-lives death→level
+   restart UI; container aspect ~10/9. Update `src/config/games.js` PoP entry
+   (aspect/description/controls).
+3. Rewrite `scripts/popcheck.mjs` to the Stage-1 gate (no-lives restart, no
+   fight before sword, block-parries, falls-by-floors, held-grab, room flip,
+   machinery, potions, autopilot wins, slack, determinism, no-Math.random).
+   Delete the old 57-assertion file (it tests the removed model).
+4. `npm run build` + `npm run lint:pop` + `node scripts/popcheck.mjs` green,
+   then `npm run dev` + `popplay` headless drive. Merge as `Part of #316`, then
+   reset #316 to `next` and comment which Stage-1 boxes are proven.
+
+## Do NOT regress
+- Ground row is forced continuous solid → no pit falls on the ground floor;
+  falls come only from elevated ledges/chompers/loose. Loose floors live on
+  middle/top rows, never ground (ground loose = death pit that contradicts fill).
+- Spikes are single-width with clear landing (2-wide is un-hoppable by autopilot).
+- Floor buttons trigger on horizontal overlap (ground row), not `onGround` — a
+  running/tapping player crosses a plate mid-jump; requiring `onGround` missed
+  the exit plate and deadlocked the run.
+- Exit fires on position (far room + door column), not `onGround`.
+- `gateFall` must be slow enough to cross the gate column after the button.
 
 ## Board (last read)
-- Queue: #295 Civ V only.
-- Open QA: **#312 (PoP polish — fresh)**, #310 (SSX), #304 (MYST),
-  #302 (Gauntlet/FourHalls), #298 (Tempest), #287 (LunarLander), #283
-  (OutRun), #280 (SmashTV), #275 (Gauntlet), #270 (SimCity), #269/#220
-  (Kart), #265 (Marble), #263/#258 (Bubble Bobble).
-- Two QA MASTER sessions were live all of this session (mini + mbp); forge
-  did NOT borrow a QA item.
-
-## Notes for whoever picks this up
-- PoP architecture: `sim.js` pure step(state,input) (feet-position px, grid
-  tiles 32px, one 19x12 screen per level — no camera), `levels.js` ASCII
-  rooms (plate presses LATCH the port open forever — sticky, do not make it
-  momentary or the route is impossible), `planner.js` reactive autopilot
-  (mirror-constants pinned by popcheck), `art.js` paint-only, index.jsx
-  shell. Copy for any future platform/duel title.
-- Two bugs this session worth remembering: guards spawn `r` must be carried
-  in `makeLevel` (missing y made duels dead code), and the guillotine phase
-  cycle must SUM exactly to its period or the blade parks mid-slot.
-- Holding AWAY from a hang now releases it (learned from popplay's blind
-  sprint: a hanging player holding right was stuck forever).
-- Main checkout stayed detached (Jon's rule); build ran in worktree
-  `~/Dev/retrogames-forge-prince-of-persia` (left in place, HEAD re-detached
-  at 817c1bc, node_modules symlinked).
-- Prod verification: index HTML only lists the hashed entry bundle; poll the
-  entry `assets/index-*.js` for the slug, not the HTML (`prince-of-persia`
-  matched inside the JS).
+- #316 `building` (this work). #295 Civ V `stalled` — do NOT build, escalate.
+- QA MASTER live all session → no QA borrow.
 
 ## Three questions for Jon
-1. #295 Civ V is now the only thing left in `game-queue` and this STATE file
-   has flagged it three sessions running. Retire it, or name the cabinet-scope
-   4X you'd accept? (Until then forge has no queue item and leans on QA.)
-2. PoP ships 5 screens; the original's final third (levels 6-12, mirror room,
-   Jaffar's teleport) is content-only per QA #312 item 11 — OK to spend the
-   next gameless forge slot expanding PoP to 12, or hold for a new title?
-3. `popplay` drives real keys but its blind sprint *escapes* L1 without the
-   duel (jumping clears the pits). Should the play script force a duel
-   (walk into the guard, survive) as a merge-blocking proof, or stay advisory
-   as it is now?
+1. Stage 1 is engine-only so far (art/index/popcheck unwired) — OK to ship the
+   full 1989 rework as ONE PR once the React layer lands, or split engine
+   (now) + art (next) into two `Part of #316` PRs?
+2. 3 levels for Stage 1 vs the issue's 12 for Stage 3 — happy with incremental
+   (3→6→12 across stages), or do you want the full 12 in one shot?
+3. Original auto-grabbed; the issue mandates held-Shift grab. I followed the
+   issue (held-grab) — confirm that's the intent, since it's less forgiving on
+   touch than the original?
