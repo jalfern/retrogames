@@ -225,8 +225,6 @@ const SimCityMinGame = () => {
                 ctx.fillText(nm, bx, PXH - 6)
                 if (i === toolIdx && screenRef.current === 'play') { ctx.fillRect(bx - 3, PXH - 16, 50, 2) }
             })
-            ctx.fillStyle = '#c9d2e3'
-            ctx.fillText(`TAX ${gs.tax}%`, PXW - 60, PXH - 6)
         }
 
         let lastHud = 0
@@ -240,6 +238,7 @@ const SimCityMinGame = () => {
             if (h.funds) h.funds.textContent = `$${gs.funds}`
             if (h.year) h.year.textContent = `Y${gs.year}/${S.deadline}`
             if (h.jobs) h.jobs.textContent = `J ${gs.jobs}`
+            if (h.tax) h.tax.textContent = `tax ${gs.tax}%`
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
         }
@@ -382,6 +381,7 @@ const SimCityMinGame = () => {
                     <span ref={setHud('funds')} className="text-yellow-200">$1200</span>
                     <span ref={setHud('year')} className="text-cyan-200">Y0/45</span>
                     <span ref={setHud('jobs')} className="text-orange-200/90">J 0</span>
+                    <span ref={setHud('tax')} className="text-cyan-100/70">tax 7%</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center text-amber-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #f60' }} />
             </div>
