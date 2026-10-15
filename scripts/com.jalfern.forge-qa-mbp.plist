@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The MacBook QA lane. No timer: only the warden starts it (kickstart),
+         when the MBP model answers on :18001 and 2+ items are unclaimed. -->
+    <key>Label</key>
+    <string>com.jalfern.forge-qa-mbp</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null; git -C /Users/jon/Dev/retrogames show origin/main:scripts/forge-qa.sh | exec /bin/zsh -s -- "$@"</string>
+        <string>forge-qa.sh</string>
+        <string>--foreground</string>
+        <string>mbp</string>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/tmp/forge/qa-mbp-launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/forge/qa-mbp-launchd.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+        <key>HOME</key>
+        <string>/Users/jon</string>
+    </dict>
+</dict>
+</plist>

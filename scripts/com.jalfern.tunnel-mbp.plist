@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The MacBook Pro's model, forwarded to the Studio's :18001 (same shape
+         as com.jalfern.tunnel for the mini). ServerAliveInterval=60 x
+         CountMax=30 = a 30-minute tolerance: a short lid-close only PAUSES
+         the QA session (tested 2026-10-14: 10 min asleep, the request
+         resumed); a longer absence drops the tunnel, the session errors out,
+         and its claim goes stale for the mini. The loop reconnects when the
+         MBP is back. Needs key auth (BatchMode): ssh-copy-id jon@100.116.224.56 -->
+    <key>Label</key>
+    <string>com.jalfern.tunnel-mbp</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>while true; do ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=30 -L 18001:127.0.0.1:8000 jon@100.116.224.56; sleep 5; done</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardErrorPath</key>
+    <string>/tmp/forge/tunnel-mbp.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+        <key>HOME</key>
+        <string>/Users/jon</string>
+    </dict>
+</dict>
+</plist>
