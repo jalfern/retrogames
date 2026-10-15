@@ -1,74 +1,65 @@
-# STATE — 2026-10-15 late-2 (forge session, GAUNTLET top-down + FOUR HALLS shipped)
+# STATE — 2026-10-15 late-3 (forge session, MYST shipped)
 
 ## Shipped this session
-**GAUNTLET top-down + FOUR HALLS rename** (#276) — PR #300, squash-merged at
-`2d8c305`, live: https://jalfern.com/retrogames/gauntlet and
-https://jalfern.com/retrogames/four-halls (prod bundle `index-OsEGMSCO.js`
-verified to carry both routes). One PR, both issue items:
-- Rename: first-person #237 build → **FOUR HALLS** (`/four-halls`), with the
-  issue's HUD fixes — KEYS/LVL no longer overlap, level name centered on the
-  narrator strip, panel GOLD line back inside the panel, opaque hero-select
-  (no HUD ghosting), drain slowed to arcade ~1 hp/s.
-- Shared engine: `src/games/Gauntlet/{sim,levels,planner,art,sound}.js` stay
-  camera-agnostic; FourHalls imports them. `step()` gains `topDown` mode:
-  arrows are an 8-way stick (facing follows the stick), blocked diagonals
-  slide on the free axis; `inp.aim` is the documented pilot lane.
-- **GAUNTLET** at `/gauntlet`: scrolling overhead camera clamped to the maze,
-  8-way stick, sword-arc sweep rendered honestly, swarms from generators,
-  slam/locked doors, food/keys/potion economy, Death on the timer, narrator
-  lines, four heroes, CPU partner toggle (C), attract = the autopilot's own
-  proven deathless run.
-
-Gates: `lint:gauntlet` + `gauntletcheck` (86 checks; new *overhead* section:
-stick facing, corner-slide, aim lane, arrows down the facing stopped by stone,
-slam overhead) in CI `static`. Pilot wins seeds 0-3 in BOTH cameras, deathless
-available on both; slack re-wins both. `--mutate` kills **6 mutants** (added:
-"overhead pilot cannot aim"). Advisory `gauntletplay` 11/11 zero page errors.
-Polish pass filed as **#302**.
+**MYST** (#292) — PR #303, squash-merged at `87495f3`, live:
+https://jalfern.com/retrogames/myst (prod bundle `index-CEpa-tq_.js` +
+engine chunk `index-MaFbyBNg.js` verified to carry MYST).
+- First-person node graph, 14 views: dock→cliffs→landing→stairway→library;
+  clock tower behind the palm illusion; cavern star dome + waterfall door;
+  cabin with the iron safe; four Ages (Selenitic, Stoneship, Mechanical,
+  Channelwood), each hiding a red and a blue page.
+- Full spine: pages restore brothers' corrupted lines; matchbook→fireplace→
+  Selenitic; stars 4-1-3-2→Channelwood; safe 8-5-2→Stoneship; switch chain;
+  sphere tones 3-1-4-2. Eight pages→white page→Atrus; freeing a brother
+  (needs white page first) traps you. Three endings.
+- All art/audio synthesized: fbm palette textures, animated surf/fire/gears/
+  illusion/starlight, ambient layers scheduled off the fixed-timestep loop.
+- Gates: `lint:myst` + `mystcheck` (85 checks) added to CI `static`; proven to
+  fail (deleting the tower-door lock check → red, restored green). Advisory
+  `mystplay` 10/10 zero page errors (real arrow keys climb the island; live
+  solver wins 8/8→atrus; Space restarts).
+- Polish pass filed as **#304**.
 
 ## GOAL — next session
-Claim the oldest `game-queue` issue: **#292 MYST** (then #293 Bard's Tale).
-Both are DOS era — MYST (1993) fits the js-dos spine (see AGENTS gotchas:
-injected loader, preserveDrawingBuffer, window-level keys, wasm MIME, ESC/
-click-to-advance quirks like the KQ box). If MYST proves un-runnable in js-dos
-in this box, STOP with a diagnosis comment, don't silently swap titles.
-QA polish items (#302, #298, #287, #283 …) are valid work if no queue item is
-workable.
+Claim the oldest `game-queue` issue: **#293 THE BARD'S TALE** (then #294 SSX,
+#295 Civ V — scope question below still open; PoP #296 IS a cabinet title if
+the board order can skip the non-cabinet two). BARD'S TALE is 1985 DOS — either
+the js-dos spine (AGENTS gotchas) or a first-person dungeon-crawl rebuild in
+three.js (MYST now proves the three.js spine: nodes + textures + sound +
+harness patterns are fresh). QA items (#304 MYST, #302, #298 …) are valid
+fallbacks.
 
 ## Board
-- Queue: #292 MYST, #293 Bard's Tale, #294 SSX, #295 Civ V, #296 PoP.
-  SSX/Civ V are console/PC-scale, not arcade cabinets — scope question pending
-  with Jon (below). PoP (arcade 1989) IS a cabinet title.
-- Open QA feedback: #302 (Gauntlet/FourHalls), #298 (Tempest), #287
+- Queue: #293 Bard's Tale, #294 SSX, #295 Civ V, #296 PoP.
+- Open QA: #304 (MYST new), #302 (Gauntlet/FourHalls), #298 (Tempest), #287
   (LunarLander), #283 (OutRun), #280 (SmashTV), #275 (Gauntlet), #270
   (SimCity), #269/#220 (Kart), #265 (Marble), #263/#258 (Bubble Bobble).
-- QA lane live on `retrogames-qa-258` (branch qa/bobblubba) — dev port 5173
-  is theirs; forge dev servers fall through to 5174+ (this session used 5177,
-  killed on exit). `*play` scripts take URL via env (`GAUNTLET_URL=…`).
+- QA lane lives on `retrogames-qa-258` (dev 5173 theirs); forge dev falls
+  through (used 5175 this session; killed on exit). `*play` scripts take
+  URL via env (`MYST_URL=…`).
 
 ## Housekeeping done
-Worktree `retrogames-forge-gauntlet` pruned (branch gone, merged). Main
+Worktree `retrogames-forge-myst` pruned (branch deleted on merge). Main
 checkout parked detached at `origin/main`; STATE.md committed per rule-9.
-Carry-over: `forge-bobubble` still refuses removal (dead-session dirt) —
-Jon may want to look before force-remove.
+Carry-over: `forge-bobubble` worktree still refuses removal (dead-session
+dirt) — same note as last session; Jon may want to look before force-remove.
 
-## How the two-camera engine works (pointer, not a tutorial)
-`src/games/Gauntlet/`: `sim.js` (`step` with `gs.topDown`; `moveHero` is the
-sliding 8-way path, FP keeps its own corner-probe branch; `CFG.drainEvery=60`
-= 1 hp/s), `planner.js` (`decide` emits turn-deltas FP / absolute `aim`+
-fwd overhead — same doctrine), `levels.js` (24×24 pillar mazes, key-before-lock
-geometry), `art.js` (pixel-string sprites shared by both cameras), `sound.js`
-(narrator buzzes). FourHalls = raycaster shell only. READMEs carry the honest
-gaps (no shop/resurrection/potion variants, partner no door logic, uniform
-wall blocks).
+## How MYST works (pointer, not a tutorial)
+`src/games/Myst/`: `nodes.js` (14 camera poses + hotspots; convention: a
+node's camera faces world +z at yaw 0, spot bearings are relative degrees);
+`state.js` (pure `dispatch(state,action)`, gates + endings + `solveScript()`
+shared by attract and harness); `scene.js` (sibling groups spaced GAP=4000 on
+X, camera teleports; page/match meshes auto-placed from spot yaws);
+`textures.js` (fbm palettes + sky gradients); `sound.js` (sfx + ambience via
+audioController). READMEs carry the honest gaps (single-view Ages, fixed
+codes, no rocket ride, no starfield travel animation).
 
 ## Three questions for Jon
-1. **Queue shapes** (repeat, unanswered): #294 SSX and #295 Civ V are not
-   arcade-cabinet titles and dwarf the forge's one-game-per-session loop.
-   Want them descoped/backlog-labeled before the forge reaches them?
-2. **Pilot aim lane**: the overhead autopilot aims absolutely (`inp.aim`)
-   while a player's facing is stick-snapped. OK as harness affordance
-   (documented in README + gauntletcheck "overhead" section), or should the
-   pilot be restricted to the 8 stick directions like a real player?
-3. Attract house rule still open (deathless showcase + drama only on death
-   screens) — #302/#298 both assume it; a one-line ruling would unblock both.
+1. Queue shapes (third ask, unanswered): #294 SSX and #295 Civ V dwarf the
+   one-game-per-session loop and are not arcade cabinets. Descope/backlog
+   them before the forge reaches them? (#296 PoP 1989 IS a cabinet.)
+2. MYST codes are fixed (safe 8-5-2, dome stars 4-1-3-2, sphere tones
+   3-1-4-2). Keep fixed for harness provability, or randomize per save like
+   some originals did (solver would read the state instead of constants)?
+3. Attract house rule (third ask): deathless showcase + drama only on death
+   screens — a one-line ruling would unblock #302/#298/#304 assumptions.
