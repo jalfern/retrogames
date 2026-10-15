@@ -273,6 +273,13 @@ jobs:
       # Mutant it: CFG.drainEvery -> never drains turns red.
       - run: npm run lint:gauntlet
       - run: npm run gauntletcheck -- --mutate
+      # SMASH TV: geometry of every room, one-hit lethality + the sealed-until-
+      # clear exits, the crate->gun ladder and POWER economy, the firebomb tax,
+      # the bonus-room clock and combo ledger, the ANNOUNCER win, the pilot WIN
+      # on nine seeds plus the slack re-win, the score ledger and determinism.
+      # Mutant it: exits opening early turns red.
+      - run: npm run lint:smash
+      - run: npm run smashcheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
