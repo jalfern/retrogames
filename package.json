@@ -131,6 +131,9 @@
         "marblecheck": "node scripts/marblecheck.mjs",
         "lint:gauntlet": "eslint src/games/Gauntlet src/components src/utils src/config src/main.jsx scripts/gauntletcheck.mjs scripts/lib",
         "gauntletcheck": "node scripts/gauntletcheck.mjs",
+        "lint:smash": "eslint src/games/SmashTV src/components src/utils src/config src/main.jsx scripts/smashcheck.mjs scripts/smashplay.mjs scripts/lib",
+        "smashcheck": "node scripts/smashcheck.mjs",
+        "smashplay": "node scripts/smashplay.mjs",
         "bubbleplay": "node scripts/bubbleplay.mjs",
         "arkplay": "node scripts/arkanoidplay.mjs"
     },
