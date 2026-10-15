@@ -28,7 +28,7 @@ done
 
 case "$NODE" in
     mini) MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"; PORT=18000; TAG=""; EXTRA="" ;;
-    mbp)  MODEL="omlxmbp/Qwen3.8-27B-oQ8e-mtp";  PORT=18001; TAG="mbp-"
+    mbp)  MODEL="omlxmbp/Qwen3.8-27B-oQ4e-mtp";  PORT=18001; TAG="mbp-"
           # The MBP is slow and the dev-server port (5173) is shared by every
           # lane, so it never drives a browser.
           EXTRA=" Node checks only: never run browser suites (*play scripts, npm run verify, shot.mjs); they share one dev-server port with the other lanes." ;;
