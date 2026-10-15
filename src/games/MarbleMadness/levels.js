@@ -43,6 +43,10 @@ export const RACES = [
             run(b, 14, 4, 21, 10, 8, 6)
             run(b, 6, 10, 21, 14, 6, 6)
             run(b, 14, 14, 21, 18, 6, 6)
+            run(b, 12, 14, 13, 19, 6, 6)   // west spur past hammer 1
+            run(b, 12, 18, 15, 19, 6, 6)   // spur foot into the ramp
+            run(b, 12, 20, 13, 25, 6, 4)   // bypass column past hammer 2
+            run(b, 12, 24, 15, 25, 4, 4)   // rejoin apron
             run(b, 14, 18, 21, 24, 6, 4)
             run(b, 14, 24, 21, 28, 4, 4)
         },
@@ -57,11 +61,11 @@ export const RACES = [
         blocks: (b) => {
             run(b, 2, 1, 9, 4, 8, 8)
             run(b, 2, 4, 9, 9, 8, 6)
-            run(b, 2, 9, 20, 13, 6, 6)
+            run(b, 2, 9, 21, 14, 6, 6)
             run(b, 17, 9, 20, 2, 8, 6)
             run(b, 20, 3, 32, 6, 8, 8)
             run(b, 26, 6, 32, 12, 8, 6)
-            run(b, 20, 12, 32, 16, 6, 6)
+            run(b, 19, 12, 32, 16, 6, 6)
         },
         start: { c: 5, r: 2 }, goal: { c: 28, r: 15 },
         hammers: [],
@@ -75,18 +79,18 @@ export const RACES = [
         blocks: (b) => {
             run(b, 26, 1, 33, 4, 10, 10)
             run(b, 26, 4, 33, 8, 10, 8)
-            run(b, 16, 8, 33, 11, 8, 8)
+            run(b, 16, 7, 33, 11, 8, 8)
             run(b, 16, 11, 19, 16, 8, 6)
             run(b, 4, 16, 19, 19, 6, 6)
             run(b, 4, 19, 7, 26, 6, 4)
             run(b, 4, 26, 16, 30, 4, 4)
-            run(b, 12, 26, 16, 21, 6, 4)
+            run(b, 12, 26, 18, 21, 6, 4)
             run(b, 16, 21, 28, 24, 6, 6)
         },
         start: { c: 29, r: 2 }, goal: { c: 26, r: 23 },
-        hammers: [{ c: 22, r: 9, phase: 20 }],
+        hammers: [{ c: 22, r: 7, phase: 20 }],
         steelies: [{ c: 6, r: 17 }],
-        slinkies: [{ c: 24, r: 10, acid: true }, { c: 30, r: 10, acid: false }, { c: 9, r: 28, acid: true }],
+        slinkies: [{ c: 24, r: 7, acid: true }, { c: 30, r: 8, acid: false }, { c: 9, r: 28, acid: true }],
         munchers: [{ c: 5, r: 17, phase: 0 }, { c: 14, r: 28, phase: 60 }],
         waves: [],
     },
@@ -119,15 +123,15 @@ export const RACES = [
             run(b, 2, 4, 9, 8, 6, 8)
             run(b, 2, 8, 20, 12, 8, 8)
             run(b, 17, 8, 20, 2, 8, 6)
-            run(b, 20, 3, 32, 6, 6, 6)
+            run(b, 19, 3, 32, 6, 6, 6)
             run(b, 26, 6, 32, 11, 6, 8)
-            run(b, 20, 11, 32, 15, 8, 8)
+            run(b, 20, 10, 32, 15, 8, 8)
             run(b, 26, 15, 32, 20, 8, 6)
             run(b, 22, 20, 32, 24, 6, 6)
             run(b, 22, 24, 30, 28, 6, 6)
         },
         start: { c: 5, r: 2 }, goal: { c: 28, r: 27 },
-        hammers: [{ c: 22, r: 13, phase: 0 }],
+        hammers: [{ c: 22, r: 11, phase: 0 }],
         steelies: [{ c: 10, r: 10 }],
         slinkies: [{ c: 14, r: 10, acid: false }, { c: 28, r: 17, acid: true }],
         munchers: [{ c: 24, r: 22, phase: 0 }],
@@ -140,6 +144,7 @@ export const RACES = [
             run(b, 14, 4, 21, 9, 12, 10)
             run(b, 4, 9, 21, 12, 10, 10)
             run(b, 4, 12, 7, 18, 10, 8)
+            run(b, 2, 12, 3, 18, 10, 8)    // bypass spur around the drop hammer
             run(b, 4, 18, 20, 21, 8, 8)
             run(b, 16, 21, 19, 28, 8, 6)
             run(b, 16, 28, 30, 31, 6, 6)
@@ -147,7 +152,7 @@ export const RACES = [
             run(b, 24, 22, 30, 25, 8, 8)
         },
         start: { c: 17, r: 2 }, goal: { c: 27, r: 23 },
-        hammers: [{ c: 12, r: 10, phase: 0 }, { c: 6, r: 15, phase: 38 }],
+        hammers: [{ c: 12, r: 9, phase: 0 }, { c: 5, r: 15, phase: 38 }],
         steelies: [{ c: 18, r: 23 }, { c: 28, r: 26 }],
         slinkies: [{ c: 10, r: 10, acid: true }, { c: 8, r: 19, acid: false }, { c: 22, r: 29, acid: true }],
         munchers: [{ c: 14, r: 19, phase: 0 }, { c: 17, r: 26, phase: 45 }, { c: 28, r: 24, phase: 90 }],
