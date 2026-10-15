@@ -13,6 +13,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT } from './sim.js'
 import { plan } from './planner.js'
+import { sfxFor } from './sound.js'
 import {
     cubeSprite, cubeTopCol, cubeDarkCol, bertSprite, ballSprite, discSprite,
     coilySprite, runnerSprite, slickSprite, tunnelSprite, text5, textWidth,
@@ -67,26 +68,26 @@ const QBertGame = () => {
             }
         }
 
+        // The SFX table is the pure contract (sound.js), pinned by qbertcheck:
+        // the shell is a dumb player and plays exactly what the table says.
+        const playSfx = (e) => {
+            for (const op of sfxFor(e)) {
+                if (op.k === 'tone') audioController.playTone(op.f, op.d, op.type, op.v, op.at)
+                else if (op.k === 'sweep') audioController.playSweep(op.f0, op.f1, op.d, op.type, op.v)
+                else if (op.k === 'fanfare') audioController.playFanfare()
+                else if (op.k === 'jingle') audioController.playDeath()
+            }
+        }
+
         const handleEvents = (s, audible) => {
             while (s.events.length) {
                 const e = s.events.shift()
                 if (e.t === 'points' && e.pts >= 50) popups.push({ x: e.x, y: e.y - 14, msg: `+${e.pts}`, ttl: 55 })
                 if (e.t === 'death') { burst(e.x, e.y, '#f88000', 14); shake = 12; flash = 6 }
                 if (e.t === 'snakelure') { burst(e.x, e.y, '#00c850', 10); popups.push({ x: e.x, y: e.y - 12, msg: '+500', ttl: 60 }) }
+                if (e.t === 'clear') say(`ROUND ${e.level} CLEAR  +${e.bonus}`, '#58f878')
                 if (!audible) continue
-                if (e.t === 'hop') audioController.playSweep(520, 880, 0.07, 'square', 0.05)
-                else if (e.t === 'points' && e.pts === 25) audioController.playTone(980, 0.05, 'square', 0.06)
-                else if (e.t === 'points' && e.pts >= 50) audioController.playSweep(660, 1320, 0.14, 'square', 0.08)
-                else if (e.t === 'discride') audioController.playSweep(300, 900, 0.25, 'triangle', 0.08)
-                else if (e.t === 'snakespawn') audioController.playSweep(180, 90, 0.25, 'sawtooth', 0.08)
-                else if (e.t === 'snakelure') audioController.playSweep(900, 200, 0.3, 'triangle', 0.09)
-                else if (e.t === 'ballspawn') audioController.playTone(240, 0.05, 'square', 0.05)
-                else if (e.t === 'runnerspawn') audioController.playSweep(220, 320, 0.12, 'square', 0.05)
-                else if (e.t === 'slickspawn') audioController.playSweep(140, 60, 0.3, 'sawtooth', 0.07)
-                else if (e.t === 'slickwipe') audioController.playTone(180, 0.04, 'triangle', 0.04)
-                else if (e.t === 'death') audioController.playSweep(600, 120, 0.4, 'square', 0.1)
-                else if (e.t === 'clear') { audioController.playFanfare(); say(`ROUND ${e.level} CLEAR  +${e.bonus}`, '#58f878') }
-                else if (e.t === 'over') audioController.playDeath()
+                playSfx(e)
             }
         }
 
