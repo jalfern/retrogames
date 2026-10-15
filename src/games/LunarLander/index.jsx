@@ -16,12 +16,20 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './sim.js'
 import { terrainY, WORLD_W } from './terrain.js'
 import { plan } from './planner.js'
+import { policyProbs, mulberry32, sampleAction, obsFrom, episodeOutcome, ACTION_LABELS } from './policy.js'
 import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } from './art.js'
 
 const SIM_MS = 1000 / 60
 const REPLAY_PATH = 'replays/lander-ppo.json'
+const POLICY_PATH = 'replays/lander-ppo-policy.json'
 const BTN = { nothing: [0, false], rotate_left: [-1, false], rotate_right: [1, false], thrust: [0, true] }
 const replayRequested = () => new URLSearchParams(window.location.search).get('replay') === '1'
+const labRequested = () => new URLSearchParams(window.location.search).get('lab') === '1'
+const HEAT_XS = Array.from({ length: 32 }, (_, i) => Math.round(32 + i * (992 - 32) / 31))
+const HEAT_VXS = Array.from({ length: 17 }, (_, i) => -40 + i * 5)
+const HEAT_COL = { pad: '#39d353', off_pad: '#e8b64a', crash: '#ff5d5d', timeout: '#5d7094' }
+const LAB_CYCLE = [[96, 0], [272, -15], [512, 20], [752, -30], [928, 10], [200, 35],
+                  [650, -40], [350, 5], [850, 25], [512, -40]]
 let cachedRun = null
 const provenRun = () => { if (!cachedRun) cachedRun = plan({ seed: 0 }); return cachedRun }
 
@@ -36,6 +44,23 @@ const LunarLanderGame = () => {
     const hud = useRef({})
     const setHud = (k) => (el) => { hud.current[k] = el }
     const board = () => { try { return JSON.parse(localStorage.getItem('lander.board') || '[]') } catch { return [] } }
+
+    const labMode = labRequested()
+    const [labX, setLabX] = useState(512)
+    const [labVx, setLabVx] = useState(0)
+    const [labCycle, setLabCycle] = useState(-1)
+    const [heatRows, setHeatRows] = useState(null)
+    const labCfgRef = useRef({ x: 512, vx: 0, seed: 7, restart: 0 })
+    const fly = (x, vx) => {
+        setLabX(Math.round(x)); setLabVx(Math.round(vx))
+        const c = labCfgRef.current
+        labCfgRef.current = { ...c, x, vx, restart: c.restart + 1 }
+    }
+    const cycle = () => {
+        const i = (labCycle + 1) % LAB_CYCLE.length
+        setLabCycle(i)
+        fly(...LAB_CYCLE[i])
+    }
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -74,6 +99,37 @@ const LunarLanderGame = () => {
                     setMode('play')
                 })
                 .catch(() => { replayFailed = true })
+        }
+
+        const labOn = labRequested()
+        let labPolicy = null, labFailed = false, labRng = mulberry32(7), labHold = 0, labRestart = -1
+
+        const startLabFlight = () => {
+            const c = labCfgRef.current
+            gs = makeGame(c.seed)
+            gs.x = Math.max(20, Math.min(WORLD_W - 20, c.x))
+            gs.vx = c.vx
+            stars = makeStars(c.seed)
+            parts.length = 0
+            shake = 0; flash = 0; zoom = false
+            labRng = mulberry32((c.seed ^ Math.imul(Math.round(gs.x), 7919)
+                ^ Math.imul(Math.round(c.vx * 97) + 4096, 104729)) >>> 0)
+            labHold = 0
+            if (screenRef.current !== 'play') setMode('play')
+        }
+
+        if (labOn) {
+            fetch(`${import.meta.env.BASE_URL}${POLICY_PATH}`)
+                .then((r) => { if (!r.ok) throw new Error(`policy http ${r.status}`); return r.json() })
+                .then((pol) => {
+                    labPolicy = pol
+                    setHeatRows(HEAT_VXS.map((v) => ({
+                        v,
+                        cells: HEAT_XS.map((x) => ({ x, col: HEAT_COL[episodeOutcome(pol, 7, x, v)] })),
+                    })))
+                    startLabFlight()
+                })
+                .catch(() => { labFailed = true })
         }
 
         const say = (m) => { toastMsg = m; toast = 160 }
@@ -153,6 +209,20 @@ const LunarLanderGame = () => {
 
         const doFrameSim = () => {
             const sc = screenRef.current
+            if (labOn && !labFailed) {
+                if (!labPolicy) return
+                if (labCfgRef.current.restart !== labRestart) { labRestart = labCfgRef.current.restart; startLabFlight() }
+                if (gs.phase === 'landed' || gs.phase === 'crashed') {
+                    labHold++
+                    if (labHold > 90) startLabFlight()
+                    return
+                }
+                const probs = policyProbs(labPolicy, obsFrom(gs))
+                const [rot, thrust] = BTN[ACTION_LABELS[sampleAction(probs, labRng)]]
+                thrustVis = thrust && gs.fuel > 0 && gs.phase !== 'crashed'
+                doSim({ rot, thrust })
+                return
+            }
             if (replayOn && !replayFailed) {
                 if (sc !== 'play' || !replay) return
                 const [rot, thrust] = BTN[replay.actions[replayIdx]] || [0, false]
@@ -229,6 +299,11 @@ const LunarLanderGame = () => {
             drawWorld()
             drawHud()
             if (replayOn && replay && !replayFailed) text('PPO POLICY · REPLAY', W / 2, H - 12, 10, '#8fff9f', 6)
+            if (labOn && labPolicy && !labFailed) {
+                text('PPO POLICY · LAB', W / 2, H - 12, 10, '#8fff9f', 6)
+                text(`START x ${Math.round(labCfgRef.current.x)} · SIDEWAYS ${labCfgRef.current.vx > 0 ? '+' : ''}${Math.round(labCfgRef.current.vx)}`,
+                    W / 2, H - 24, 8, '#8fa3d8')
+            }
             if (toast > 0) { text(toastMsg, W / 2, H - 34, 11, '#ffd76b', 6); toast-- }
 
             const sc = screenRef.current
@@ -277,6 +352,7 @@ const LunarLanderGame = () => {
         const onKeyDown = (ev) => {
             if (ev.key === '?' || ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p); return }
             if (replayOn && !replayFailed) { ev.preventDefault(); return }
+            if (labOn && !labFailed) { ev.preventDefault(); return }
             const sc = screenRef.current
             if (sc === 'attract') { goPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
@@ -286,7 +362,7 @@ const LunarLanderGame = () => {
         }
         const onKeyUp = (ev) => { held.delete(ev.code) }
         const onPointer = () => {
-            if (replayOn && !replayFailed) return
+            if ((replayOn && !replayFailed) || (labOn && !labFailed)) return
             const sc = screenRef.current
             if (sc === 'attract') goPlay()
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
@@ -359,8 +435,47 @@ const LunarLanderGame = () => {
                 <span>FUEL <span ref={setHud('fuel')} className="text-[#ffd76b]">100</span></span>
                 <span>MULT <span ref={setHud('mult')} className="text-[#8fff9f]">×1</span></span>
             </div>
-            <VirtualControls visible={screen === 'play' && !paused && !replayMode} />
+            <VirtualControls visible={screen === 'play' && !paused && !replayMode && !labMode} />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
+            {labMode && (
+                <div className="mt-2 flex items-center gap-5 font-mono text-[11px] tracking-widest text-[#8fa3d8]">
+                    <label className="flex items-center gap-2">START X
+                        <input type="range" min={32} max={992} step={4} value={labX}
+                            onChange={(e) => fly(+e.target.value, labVx)} className="accent-[#ffd76b]" />
+                        <span className="w-8 text-[#e9f7ff]">{labX}</span>
+                    </label>
+                    <label className="flex items-center gap-2">SIDEWAYS
+                        <input type="range" min={-40} max={40} step={1} value={labVx}
+                            onChange={(e) => fly(labX, +e.target.value)} className="accent-[#ffd76b]" />
+                        <span className="w-8 text-[#e9f7ff]">{labVx}</span>
+                    </label>
+                    <button type="button" onClick={cycle}
+                        className="border border-[#5d7094] px-3 py-1 hover:border-[#ffd76b] hover:text-[#ffd76b] cursor-pointer">
+                        CYCLE START
+                    </button>
+                </div>
+            )}
+            {labMode && heatRows && (
+                <div className="mt-3 flex flex-col items-center font-mono text-[9px] tracking-widest text-[#8fa3d8]">
+                    <div className="mb-1">GENERALISATION MAP — START X × SIDEWAYS V · CLICK A CELL TO FLY IT</div>
+                    {heatRows.map((row) => (
+                        <div key={row.v} className="flex items-center">
+                            <span className="w-9 pr-1 text-right">{row.v > 0 ? `+${row.v}` : row.v}</span>
+                            {row.cells.map((c) => (
+                                <button key={c.x} type="button" title={`x ${c.x} v ${row.v} → ${c.col}`}
+                                    onClick={() => fly(c.x, row.v)} aria-label={`fly x ${c.x} vx ${row.v}`}
+                                    style={{ background: c.col }}
+                                    className="w-[19px] h-[9px] m-[1px] border-0 cursor-pointer hover:outline hover:outline-1 hover:outline-white" />
+                            ))}
+                        </div>
+                    ))}
+                    <div className="mt-1 flex gap-4">
+                        <span style={{ color: HEAT_COL.pad }}>PAD</span>
+                        <span style={{ color: HEAT_COL.off_pad }}>OFF-PAD</span>
+                        <span style={{ color: HEAT_COL.crash }}>CRASH</span>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

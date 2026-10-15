@@ -36,6 +36,11 @@ complete.
 - `art.js` — vector style drawn in code: seeded starfield, glow-stroked terrain
   polyline, amber pad bars with value tags, the gold lander with cyan cabin and
   two-frame flame, the silver orbiter with a docking probe.
+- `policy.js` — JS forward pass for the exported PPO policy
+  (`public/replays/lander-ppo-policy.json`: SB3 MlpPolicy [64,64] tanh weights +
+  the training obs scale): raw obs → scale → tanh·tanh → linear → softmax.
+  Seeded mulberry32 sampling + `episodeOutcome` run whole episodes headlessly,
+  in the browser and in Node alike.
 - `index.jsx` — cabinet shell: attract replays the autopilot's proven run;
   four-corner HUD (FUEL / ALT / VERT / HORIZ L/R), lander icons, multiplier and
   mission counter; zoom (`X`/`L` or the ZOOM button) doubles scale and follows;
@@ -49,6 +54,12 @@ complete.
   from the tape instead of the keyboard (keys/pad ignored, `?` still pauses),
   and stamps `PPO POLICY · REPLAY` on screen. The tape reproduces a 245-point
   pad landing tick-for-tick because `sim.js` is deterministic and seeded.
+  **Policy lab** (`/lunar-lander?lab=1`): the exported network flies the real
+  game live — sampled actions from a seeded RNG, sliders for start x and
+  sideways speed, a CYCLE START button, and a generalisation heatmap
+  (start x × sideways −40..+40, one headless episode per cell, coloured
+  pad/off-pad/crash); clicking a cell flies that start. The banner reads
+  `PPO POLICY · LAB`.
 
 ## Controls
 
@@ -66,6 +77,8 @@ npm run landercheck -- --mutate  # + 4 mutants (gravity off, softVert gate off,
                                # refuel off, frozen multiplier) — all must die
 npm run landerreplay           # PPO button tape in public/replays/lander-ppo.json
                                # must reach a PAD landing at exactly score 245
+npm run landerpolicy           # JS forward pass vs SB3 probs (public/replays/
+                               # lander-ppo-parity.json): max |Δp| < 1e-5
 npm run landerplay             # advisory browser drive (needs npm run dev):
                                # start/thrust/rotate/zoom/crash/restart, HUD mirrors sim
 ```
