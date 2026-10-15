@@ -41,7 +41,9 @@ confuse the two queues.
     continue that item — never start a new one while one is half-built.
     **Your node** is the one your prompt names ("on node mini|mbp"; no node
     named = `mini`). Two QA sessions can run at once, one per node: an item
-    another node claimed is not yours — skip it. A claim is **dead** only when
+    another node claimed is not yours — skip it, and never open, inspect,
+    commit in or clean another node's worktree (`~/Dev/retrogames-qa-*`): it
+    is live work in progress. A claim is **dead** only when
     the issue's newest comment starting `QA` is more than 90 minutes old:
     then strip `building-qa` (the item returns to `feedback`) and say so in
     one comment line; any node may resume its pushed branch from then on.
