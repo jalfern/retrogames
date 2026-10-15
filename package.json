@@ -150,7 +150,9 @@
         "mystplay": "node scripts/mystplay.mjs",
         "lint:bards": "eslint src/games/BardsTale src/components src/utils src/config src/main.jsx scripts/bardscheck.mjs scripts/bardsplay.mjs scripts/lib",
         "bardscheck": "node scripts/bardscheck.mjs",
-        "bardsplay": "node scripts/bardsplay.mjs"
+        "bardsplay": "node scripts/bardsplay.mjs",
+        "lint:ssx": "eslint src/games/SSX src/components src/utils src/config src/main.jsx scripts/ssxcheck.mjs scripts/lib",
+        "ssxcheck": "node scripts/ssxcheck.mjs"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
