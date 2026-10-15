@@ -46,6 +46,12 @@ export function decide(g) {
     if (p.hang) { inp.up = true; return inp }
     if (fc >= g.level.W - 1) return inp   // at the far wall
 
+    // ---- lair of the shadow: at the exit threshold stand and let it merge ---
+    if (g.level.merge && g.shadow && !g.shadow.dead && !g.merged
+        && room === Math.floor(g.level.exit.c / RW) && !p.duelDrawn) {
+        return inp
+    }
+
     // ---- duel ---------------------------------------------------------------
     let gd = null, best = 1e9
     for (const q of g.guards) {
@@ -61,18 +67,36 @@ export function decide(g) {
         return inp
     }
 
+    // ---- a poison flask on the path: hop it (the shadow behind will drink) --
+    for (const pot of g.pots) {
+        if (pot.type !== 'b' || pot.taken || pot.room !== room) continue
+        const ahead = pot.c - fc
+        if (ahead >= 2 && ahead <= 4 && pot.r === fr && p.onGround) {
+            inp.right = true; inp.jump = true; return inp
+        }
+    }
+
     // ---- gate: walk onto the raise button, then race the slow close ---------
     let gateAhead = null
     for (const gc of columnsOf(g, 'gate')) {
-        if (Math.floor(gc / RW) === room && gc > fc && gc - fc <= RW && g.gateOpen[room] < CFG.gateOpen) {
+        if (Math.floor(gc / RW) === room && gc > fc && gc - fc <= RW) {
             gateAhead = gateAhead === null ? gc : Math.min(gateAhead, gc)
         }
     }
     if (gateAhead !== null) {
-        const openSoon = g.gateOpen[room] >= 0.5
-        if (openSoon) { inp.right = true; return inp }                  // door up — go
-        const btn = g.level.plates.find((b) => b.room === room && b.c >= fc && b.c < gateAhead)
-        if (btn) { inp.right = true; return inp }                        // step onto the button
+        const btn = g.level.plates.find((b) => b.room === room && b.c < gateAhead)
+        const sd = [1, 2, 3].map((d) => (g.level.grid[fr * g.level.W + fc + d] === SPIKE ? d : 9)).reduce((a, b) => Math.min(a, b), 9)
+        if (sd <= 3) {
+            inp.right = true
+            if (p.onGround && ((Math.abs(p.vx) > CFG.run - 0.4 && sd <= 2) || sd <= 1)) inp.jump = true
+            return inp                                                                                   // jump the spikes on the way
+        }
+        if (btn) {
+            if (g.gateOpen[room] >= CFG.gateOpen) { inp.right = true; return inp }   // door up — race the close
+            if (btn.c < fc && g.gateOpen[room] < CFG.gateOpen) { inp.left = true; return inp }  // back onto the button
+            if (btn.c === fc && p.onGround && g.gateOpen[room] < 0.99) return inp    // hold it fully up
+            inp.right = true; return inp                                               // step onto the button
+        }
         inp.right = true; return inp
     }
 
@@ -93,15 +117,26 @@ export function decide(g) {
     // fall through to floor logic; the plate and stairs are walked/jumped.
 
     // ---- escape a pit (fell below the ground floor) -------------------------
-    if (p.y > (g.level.H - 1) * T + 8) { inp.right = true; inp.jump = p.onGround; return inp }
+    if (p.y >= (g.level.H - 1) * T) { inp.right = true; inp.jump = p.onGround; return inp }
 
     // ---- floor obstacles straight ahead: spikes, a step up, or a gap --------
     const footAhead = groundAt(g, fc + 1, fr)
     const stepUp = roomSolid(g, cell(g, fc + 1, fr - 1), fc + 1) && !roomSolid(g, cell(g, fc + 1, fr), fc + 1)
-    const spikeAhead = footAhead === SPIKE || groundAt(g, fc + 2, fr) === SPIKE
+    const ledgeAhead = roomSolid(g, cell(g, fc + 1, fr - 2), fc + 1) && !roomSolid(g, cell(g, fc + 1, fr - 1), fc + 1)
+    const spikeDist = [1, 2, 3].map((d) => (groundAt(g, fc + d, fr) === SPIKE ? d : 9)).reduce((a, b) => Math.min(a, b), 9)
+    const spikeAhead = spikeDist <= 3
     const wallAhead = roomSolid(g, footAhead, fc + 1)
     const gapAhead = !roomSolid(g, footAhead, fc + 1) && !roomSolid(g, cell(g, fc + 1, fr + 1), fc + 1)
-    if (spikeAhead || stepUp || gapAhead || wallAhead) {
+    const lethal = spikeAhead || gapAhead
+    const speedReady = Math.abs(p.vx) > P.RUN - 0.4
+    // a lethal jump (spikes, a pit) must be taken at full speed, or a short
+    // standing hop sets the prince down on the teeth — build up first, then go
+    if (lethal) {
+        inp.right = true
+        if (p.onGround && ((speedReady && spikeDist <= 2) || spikeDist <= 1 || gapAhead)) inp.jump = true
+        return inp
+    }
+    if (stepUp || ledgeAhead || wallAhead) {
         inp.right = true
         inp.jump = p.onGround
         return inp

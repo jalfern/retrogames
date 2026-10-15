@@ -1,75 +1,69 @@
-# STATE — 2026-10-15 (forge session, PoP Stage 2 look+animation shipped)
+# STATE — 2026-10-15 (forge session, PoP Stage 3: all twelve levels shipped)
 
 ## Shipped this session
-**PoP deep pass — Stage 2: the look and the animation** (#316, PR #321
-squash-landed at `ceffc24`, live): https://jalfern.com/retrogames/prince-of-persia
-- Pose-table animation (`art.js` `POSES`/`poseOf`): 8-frame run on
-  two-segment legs + separate start/skid/turn/jump-crouch/land/hang/climb
-  (~1s, 4 frames)/careful/crouch/drink/draw/sheathe/block/attack poses.
-  Sim carries visual-only timers (drinkT/drawT/sheatheT/startT/skidT/turnT/
-  landT) — physics untouched, all 75 Stage-1 rules still pass.
-- Weighted deaths per cause (`DEATH_ANIMS`): impale (stays on spikes, drips),
-  slice (two parting halves), crumple, cut-down, poison.
-- Taller prince `PH=44→60` (~2/3 floor). Fixed latent bug this exposed:
-  one-way `=` ledges walled him from the side → new `blocksH` (ledges land,
-  never wall). Climb 34→56 ticks.
-- Guard skill tiers: `GUARD_STYLE` (speed/windT/coolT) + turban palettes
-  green/red + fat(wide)/skeleton(bone)/jaffar(robe+hat). Red guard placed L2.
-- L3 theme `palace`: pale walls, pillars, moonlit arched windows, tapestries
-  (`palaceWall`, per-room `deco` seeds in levels.js).
-- Gates: `popcheck` **99/99** (75 rules + 24 Stage-2 clauses: proportions/
-  climb-time, pose-set, ≥8 distinct run frames, distinct death anim per cause
-  reachable in sim, palettes/styles, themes/deco, careful/drink/draw/sheathe).
-  Run-cycle mutant (flat RUN_T/RUN_K) proven red then restored. `popplay`
-  13/13 real keys zero page errors. lint:pop/mario/fps/ai + aicheck + build
-  green. #316 back to `next` (NOT shipped — Stages 3–4 remain).
+**PoP deep pass — Stage 3: the twelve levels** (#316, branch `forge/pop-stage3`,
+PR squash-landed): https://jalfern.com/retrogames/prince-of-persia
+- Twelve named levels (L1 DUNGEON … L12 LAIR) on an 11-row grid: ground row
+  `GROUND=8`, two pit rows below (`_` opens a shaft; row 10 auto-solid except
+  authored cells). 4–5 rooms each.
+- **Mirror** (L4): step to the glass → teleport past the barred corridor, once
+  per entry (`mirror` event).
+- **Shadow** (L5+): silhouette re-enacts your inputs `shadowDelay=210` ticks
+  late; never jumps (shafts kill it); drinks phantom flasks (L5's poison is its
+  death, `shadowDrink`/`shadowDown`); freezes while your sword is drawn; touch
+  kills — except the lair. Spawn gap 18T ≈ delay×speed keeps replay-lag honest.
+- **Mouse** (L8): runs to a raise button and holds the gate open (`mouseHold`).
+- **Feather** (L7): ≥2.5-floor drop costs 1 blood while `lev>0` instead of death.
+- **Invisible bridge** (L12, `i`): solid from above, paints only after the
+  first step finds it (`bridgeSeen`).
+- **Merge** (L12): at the exit threshold the shadow homes (6px/t) and folds
+  into the sheathed prince (`merge`, `g.merged`) — the story ends without
+  killing yourself. Jaffar (boss, hp6) + princess in the doorway.
+- Interlude cards between all 12 levels; aspect now 10/11; `die_shadow` pose +
+  death-reason line; synth sfx for mirror/mouse/bridge/shadow/merge.
+- Gates: `popcheck` **166/166** (67 Stage-3 clauses incl. champion run pinned:
+  autopilot clears all twelve at 0 deaths in ~8.5k ticks of 216k, and mirror/
+  mouse/poisoned-shadow/bridge/merge all fire in that run; + slack + determinism
+  + no-Math.random). lint:pop + build green.
 
 ## GOAL — next session
-**#316 Stage 3 — all twelve levels** (labeled `next`; claim first). L1 sword ·
-L2 guards+gates · L3 skeleton+cp · L4 mirror(→shadow) · L5 shadow drinks ·
-L6 fat guard · L7 slow-fall before the long drop · L8 princess's mouse opens
-gate · L9 upside-down · L10/L11 hardest guards · L12 sheathe-to-merge with
-shadow, invisible bridge, Jaffar + princess; interludes between levels. New
-systems: shadow clone, mirror teleport, mouse, invisible bridge, sheathe-merge.
-Gate grows: popcheck must demand 12 levels × ≥4 rooms, autopilot wins all 12
-+ Jaffar inside the hour. Keep slack + determinism clauses. Interludes are
-cheap DOM/canvas cards between levels. If #316 is gone by then, oldest
-`game-queue` is #295 Civ V — STILL do NOT build without Jon (5 sessions).
+**#316 Stage 4 — sound & feel** (claim it back to `next` if needed): per-event
+1989-flavoured music bed (runtime synth only, AudioController), gate/chain and
+torch ambience, footstep gait audio, Jaffar theme, and a `popplay` pass over
+the twelve levels. Also candidates on #316's box list: guards escorting through
+doors, 2-row-floor true proportions (big sim re-cut — park unless Jon asks).
+If #316 is gone, oldest `game-queue` is #295 Civ V — STILL do NOT build
+without Jon (6 sessions).
 
 ## Board (last read)
-- `next`: #316 (Stage 1+2 done; box list in my issue comments).
-- Queue: #295 Civ V only (standing scope question, Q1).
-- Open QA: #312 (fully absorbed by #316 — close as done-by-#316?), #310 SSX,
-  #304 MYST, #302 Gauntlet/FourHalls, #298 Tempest, #287 LunarLander, #283
-  OutRun, #280 SmashTV, #275 Gauntlet, #270 SimCity, #269/#220 Kart, #265
-  Marble, #263/#258 Bubble Bobble.
+- `building`: none claimed at end of session (#316 → `next`, Stage 4 remains).
+- Queue: #295 Civ V only.
+- Open QA: #312 (absorbed by #316 — close as done-by-#316?), #310 SSX, #304
+  MYST, #302 Gauntlet/FourHalls, #298 Tempest, #287 LunarLander, #283 OutRun,
+  #280 SmashTV, #275 Gauntlet, #270 SimCity, #269/#220 Kart, #265 Marble,
+  #263/#258 Bubble Bobble.
 
 ## Notes for whoever picks this up
-- PoP architecture now: `sim.js` pure `step(state,input)` + `GUARD_STYLE` +
-  `DEATH_ANIM` maps + `blocksH` (one-way floors never wall horizontally —
-  keep! the taller prince dies on the button room without it);
-  `levels.js` per-level `theme` + `deco` seeds, legend adds `R` red guard
-  (`F` fat parsed but unused until L6); `art.js` `POSES`+`poseOf`+
-  `DEATH_ANIMS`+`PALETTES`+`RUN_FRAMES` — popcheck imports these as the
-  look contract, keep the exports stable.
-- Worktree per stage: `git worktree add ~/Dev/retrogames-forge-pop-stage3
-  -b forge/pop-stage3 origin/main`, symlink node_modules from main checkout.
-  Prior stage worktrees still exist (pop-deep, pop-stage2) — prune when sure.
-- Watch: my edit-tool path discipline slipped twice this session (edited the
-  MAIN checkout by mistake, one clobber recovered via git checkout). Edits
-  belong in the WORKTREE path only; main checkout is plumbing.
-- Rule-4 watch: last three merged PRs = #319 (board), #320 (game), #321
-  (game) — not stalled.
-- 8b not filed: #316 IS the polish/depth pass for PoP (#312 superseded);
-  Stage-2 shortfalls (2-row-floor proportions, fat-guard level, sound) are
-  boxes on #316, not a new issue.
+- PoP spine now: `sim.js` (pure step + shadow/mouse/mirror/bridge/feather/
+  merge; `moveXShadow` seeps col≤0 walls but obeys every other wall; `land()`
+  carries the feather rule; `buttonsPressed` uses the GROUND row so airborne
+  presses count), `levels.js` (chars `m M i h _ R F J s x c p w B` + flasks;
+  `LEVEL_NAMES` export used by interludes), `planner.js` (gate-hold-until-0.99
+  then race; speed-gated spike/gap jumps — jump at sd≤2 running or sd≤1;
+  merge-wait at the lair exit; pit-escape at row ≥ H−1), `art.js`
+  (`drawMirror`/`drawMouse`/shadow silhouette with glow + eyes; POSES gained
+  `die_shadow`; keep exports stable — popcheck imports them).
+- Autopilot tuning is data-sensitive: moving a guard/spike ±1 column can flip
+  a clean run into a death loop. Always re-run `node scripts/popcheck.mjs`
+  (champion clause) after ANY levels.js edit.
+- Worktree: `~/Dev/retrogames-forge-pop-stage3` (this stage). Prior stage
+  worktrees (pop-deep, pop-stage2) can be pruned once this PR is merged.
+- Rule-4 watch: last three merged PRs all touched `src/games/**` — not stalled.
 
 ## Three questions for Jon
-1. #295 Civ V has sat alone in `game-queue` five sessions. Retire it, or
-   name a cabinet-scope 4X you'd accept? Meanwhile #316 keeps the forge fed —
-   confirm Stage 3 is the right next build.
-2. Stage 3 packs four new systems (shadow clone, mirror teleport, invisible
-   bridge, sheathe-merge) into one issue. Split it into child issues per
-   system, or keep as written and let it ship across multiple PRs anyway?
-3. OK to close #312 (PoP polish pass) as done-by-#316 so the QA board stops
-   counting it? Its items are all merged or absorbed.
+1. #295 Civ V has sat alone in `game-queue` six sessions. Retire it, or name
+   a cabinet-scope 4X you'd accept?
+2. Stage 3 invented the shadow-clone rules (replay lag, duel-freeze,
+   18T spawn gap, merge-at-exit). Happy with how the threat reads — or should
+   the touch-kill bite harder (e.g. duels no longer freeze it)?
+3. OK to close #312 as done-by-#316 so the QA board stops counting it?

@@ -10,7 +10,7 @@
 // Guards rank at a glance: turban colour by skill, the fat guard's wide frame,
 // the skeleton all bone, Jaffar in robes and a tall hat. No assets, no random.
 
-import { RW, H, T, SOLID, PLATFORM, LOOSE, SPIKE, GATE, RAISE, DROP, EXITPLATE, TORCH, EXIT, SWORD, POTION } from './levels.js'
+import { RW, H, T, GROUND, SOLID, PLATFORM, LOOSE, SPIKE, GATE, RAISE, DROP, EXITPLATE, TORCH, EXIT, SWORD, POTION, MIRROR, BRIDGE } from './levels.js'
 import { CFG, chompDown, clockText, GUARD_STYLE } from './sim.js'
 
 export const VW = RW * T
@@ -151,9 +151,14 @@ export const POSES = {
         { lean: -0.4, bob: 2, hip: 12, tA: 0.4, kA: 1.3, tB: -0.2, kB: 1.1, armB: 1.5 },
         { lean: -0.55, bob: 3, hip: 8, tA: 0.5, kA: 1.4, tB: -0.1, kB: 1.15, armB: 1.55 },
     ],
+    die_shadow: [
+        { lean: 0.1, bob: 0, hip: 22, tA: 0.3, kA: 0.6, tB: -0.3, kB: 0.55, armB: 0.7 },
+        { lean: 0.3, bob: 2, hip: 14, tA: 0.55, kA: 1.1, tB: -0.2, kB: 0.9, armB: 1.0 },
+        { lean: 0.5, bob: 4, hip: 7, tA: 0.8, kA: 1.4, tB: 0.1, kB: 1.2, armB: 1.3 },
+    ],
 }
 export const RUN_FRAMES = POSES.run.length
-export const DEATH_ANIMS = { spikes: 'die_impale', chomper: 'die_slice', fall: 'die_crumple', sword: 'die_cut', poison: 'die_poison' }
+export const DEATH_ANIMS = { spikes: 'die_impale', chomper: 'die_slice', fall: 'die_crumple', sword: 'die_cut', poison: 'die_poison', shadow: 'die_shadow' }
 
 export function poseOf(name, k = 0) {
     const list = POSES[name] || POSES.idle
@@ -387,6 +392,73 @@ function drawSwordPickup(ctx, sw, tick) {
     ctx.moveTo(x - 8, y - 10)
     ctx.lineTo(x - 4, y - 4)
     ctx.stroke()
+}
+
+// ---- the magic mirror: arched gold frame, rippling glass ---------------------
+function drawMirror(ctx, m, tick) {
+    const x = (m.c + 0.5) * T, base = (m.r + 1) * T
+    ctx.fillStyle = '#6a5220'
+    ctx.beginPath()
+    ctx.moveTo(x - 13, base)
+    ctx.lineTo(x - 13, base - 64)
+    ctx.arc(x, base - 64, 13, Math.PI, 0)
+    ctx.lineTo(x + 13, base)
+    ctx.closePath()
+    ctx.fill()
+    const grad = ctx.createLinearGradient(x - 9, base - 74, x + 9, base)
+    grad.addColorStop(0, '#3a4a6e')
+    grad.addColorStop(0.5, '#7a92c8')
+    grad.addColorStop(1, '#26304a')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.moveTo(x - 9, base - 2)
+    ctx.lineTo(x - 9, base - 64)
+    ctx.arc(x, base - 64, 9, Math.PI, 0)
+    ctx.lineTo(x + 9, base - 2)
+    ctx.closePath()
+    ctx.fill()
+    const sh = ((tick * 0.6) % 90) - 20
+    ctx.strokeStyle = 'rgba(220,230,255,0.55)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(x - 8, base - 6 - sh)
+    ctx.lineTo(x + 2, base - 16 - sh)
+    ctx.moveTo(x - 8, base - 14 - sh)
+    ctx.lineTo(x + 6, base - 28 - sh)
+    ctx.stroke()
+    ctx.fillStyle = '#e8d060'
+    ctx.fillRect(x - 2, base - 82, 4, 5)
+}
+
+// ---- the princess's mouse -------------------------------------------------------
+function drawMouse(ctx, m, tick) {
+    const x = m.x, y = m.y
+    const hop = Math.abs(Math.sin(tick * 0.35)) * 2
+    ctx.fillStyle = '#9a9aa8'
+    ctx.beginPath()
+    ctx.ellipse(x, y - 5 - hop, 8, 5, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.arc(x + 6 * m.dir, y - 7 - hop, 3.5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.arc(x + 4 * m.dir, y - 11 - hop, 2.2, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = '#9a9aa8'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(x - 8 * m.dir, y - 6 - hop)
+    ctx.quadraticCurveTo(x - 14 * m.dir, y - 10 - hop + Math.sin(tick * 0.3) * 2, x - 16 * m.dir, y - 4 - hop)
+    ctx.stroke()
+    ctx.fillStyle = '#1a1a26'
+    ctx.beginPath()
+    ctx.arc(x + 7.5 * m.dir, y - 7.5 - hop, 0.9, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = '#d0d0dc'
+    ctx.lineWidth = 0.7
+    for (const wy of [-8, -6]) {
+        ctx.beginPath(); ctx.moveTo(x + 8 * m.dir, y + wy - hop); ctx.lineTo(x + 12 * m.dir, y + wy - 1 - hop); ctx.stroke()
+    }
 }
 
 // ---- figure -------------------------------------------------------------------
@@ -646,6 +718,53 @@ export function drawScene(ctx, g, opts = {}) {
 
     if (!g.sword && lvl.sword) drawSwordPickup(ctx, lvl.sword, tick)
     for (const pot of g.pots) if (!pot.taken) drawFlask(ctx, pot, tick)
+
+    // planks the eyes could not see, once the feet found them
+    for (const k in g.bridgeSeen) {
+        const c = Number(k % lvl.W), r = Number((k - c) / lvl.W)
+        const x = c * T, y = (r + 1) * T
+        ctx.fillStyle = '#5a4a34'
+        ctx.fillRect(x, y - 4, T, 4)
+        ctx.fillStyle = '#3c3022'
+        ctx.fillRect(x + 6, y - 3, 2, 2)
+        ctx.fillRect(x + 22, y - 3, 2, 2)
+    }
+    // the magic mirror (and its far side, shimmering faintly)
+    if (lvl.mirror && lvl.mirror.room === g.room) drawMirror(ctx, lvl.mirror, tick)
+    if (lvl.mirrorTo && lvl.mirrorTo.room === g.room && !g.mirrorUsed) {
+        ctx.fillStyle = 'rgba(120,146,200,0.12)'
+        ctx.fillRect(lvl.mirrorTo.c * T, (lvl.mirrorTo.r - 2) * T, T, T * 3)
+    }
+    // the princess's mouse, hurrying to the button
+    if (g.mouse && g.mouse.room === g.room) drawMouse(ctx, g.mouse, tick)
+
+    // the shadow — your own silhouette, repeating you a little too late
+    if (g.shadow && (!g.shadow.dead || g.shadow.dieT < 72)) {
+        const s = g.shadow
+        const sc = Math.floor(s.x / T)
+        if (sc >= c0 - 1 && sc < c1 + 1) {
+            ctx.save()
+            if (s.dead) ctx.globalAlpha = Math.max(0, 1 - s.dieT / 72)
+            const glow = ctx.createRadialGradient(s.x, s.y - 24, 2, s.x, s.y - 24, 30)
+            glow.addColorStop(0, 'rgba(80,60,140,0.25)')
+            glow.addColorStop(1, 'rgba(80,60,140,0)')
+            ctx.fillStyle = glow
+            ctx.fillRect(s.x - 30, s.y - 54, 60, 60)
+            const sframe = s.anim.startsWith('die') ? Math.min(2, Math.floor(s.dieT / 12)) : Math.floor(tick * 0.42)
+            figure(ctx, s.anim, { x: s.x, y: s.y, facing: s.facing, onGround: s.onGround, hang: null, crouch: false },
+                {
+                    tick, frame: sframe, skin: '#2e2e3e', cloth: '#14141e', trim: '#32324a',
+                    turban: '#1e1e2c', sword: false, sheath: false, swing: 0, hurt: 0,
+                    die: s.dead ? s.dieT : 0, prog: 0,
+                })
+            if (!s.dead) {
+                ctx.fillStyle = '#9090e0'
+                ctx.fillRect(s.x + s.facing * 3 - 1, s.y - CFG.PH + 4, 2, 2)
+                ctx.fillRect(s.x + s.facing * 7 - 1, s.y - CFG.PH + 4, 2, 2)
+            }
+            ctx.restore()
+        }
+    }
 
     // princess in the doorway once the boss has fallen
     if (lvl.needBoss && g.guards.every((q) => !q.boss || q.dead) && lvl.exit && lvl.exit.room === g.room) {

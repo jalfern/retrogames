@@ -5,13 +5,21 @@
 // advance and retreat on the arrows, Strike (X) and Block (Up); a guard's
 // telegraphed lunge is parried by blocking in time, and a parry opens a
 // counter. Falls are measured in floors (one safe, two costs blood, three is
-// death). A ledge is caught only by holding Shift while falling. Rooms flip the
-// screen at their doorways. No Math.random, no DOM, no audio — the tab paints
-// this and scripts/popcheck.mjs audits the very same module.
+// death — unless the slow-fall flask softens the world). A ledge is caught only
+// by holding Shift while falling. Rooms flip the screen at their doorways.
+// Stage 3 adds the twelve levels' signatures: the magic mirror (step through
+// the barred corridor), the princess's mouse (runs ahead and holds the raise
+// button), the shadow (a black silhouette re-enacting your moves ~3.5 s late —
+// its touch kills; steel passes through it; in the lair, a sheathed touch
+// merges it back into you; and it will drink a phantom poison that you hop),
+// the invisible bridge (feet find planks the eyes cannot see), and the feather
+// that turns a certain drop into a survivable one. No Math.random, no DOM, no
+// audio — the tab paints this and scripts/popcheck.mjs audits the very same
+// module.
 
 import {
-    RW, T, FH, LEVEL_COUNT, makeLevel, EMPTY, SOLID, PLATFORM, LOOSE, SPIKE, GATE,
-    RAISE, DROP, EXITPLATE, EXIT, SWORD, POTION, roomOf,
+    RW, T, FH, GROUND, LEVEL_COUNT, makeLevel, EMPTY, SOLID, PLATFORM, LOOSE, SPIKE, GATE,
+    RAISE, DROP, EXITPLATE, EXIT, SWORD, POTION, MIRROR, BRIDGE, roomOf,
 } from './levels.js'
 
 export const CFG = {
@@ -27,8 +35,12 @@ export const CFG = {
     looseT: 60,
     gateOpen: 0.7, gateRise: 0.12, gateFall: 0.004, gateSlam: 0.5,
     chompPeriod: 150, chompWait: 96, chompDrop: 30, chompRest: 8,
-    flipDur: 300, levDur: 600,
+    flipDur: 600, levDur: 600,
     drinkT: 26, drawT: 16, sheatheT: 16, startT: 12, skidT: 8, turnT: 10,
+    // Stage 3: the twelve levels' signatures
+    mirrorReach: 24,
+    shadowDelay: 210, shadowWalk: 2.4, mergeRange: 26,
+    mouseSpeed: 1.1,
     slack: false,
 }
 
@@ -54,6 +66,7 @@ export function makeGame(levelIndex = 0) {
         exitOpen: false, gateOpen: [], room: 0, shake: 0,
         p: null, guards: [], pots: [], chomps: [], level: null,
         loose: {}, fallen: {},
+        hist: [], shadow: null, merged: false, mouse: null, mirrorUsed: false, bridgeSeen: {},
         prev: { left: false, right: false, up: false, down: false, jump: false, shift: false, atk: false },
     }
     loadLevel(g, levelIndex)
@@ -97,8 +110,25 @@ function loadLevel(g, i, fromCheckpoint = false) {
         ...GUARD_STYLE[gd.type] || GUARD_STYLE.green,
         engaged: false, wind: 0, cool: 30, recoil: 0, anim: 'idle', hurtT: 0, dead: false,
     }))
-    g.pots = g.level.pots.map((p) => ({ ...p, taken: false }))
+    g.pots = g.level.pots.map((p) => ({ ...p, taken: false, shadowTaken: false }))
     g.chomps = g.level.chomps.map((c) => ({ ...c }))
+    g.hist = []
+    g.merged = false
+    g.mirrorUsed = false
+    g.bridgeSeen = {}
+    // the shadow gathers 15 tiles behind the prince — off the left edge of the
+    // world (a shadow seeps through the starting wall) and re-enacts from there.
+    // Its touch only turns lethal once it has fully woken (one replay delay).
+    g.shadow = g.level.shadow ? {
+        x: (g.level.start.c + 0.5) * T - 18 * T, y: g.level.start.r * T,
+        vx: 0, vy: 0, facing: 1, onGround: true, anim: 'idle', animT: 0,
+        hp: 1, maxHp: 2, dead: false, dieT: 0, dieWhy: '', fallFrom: null, lev: 0,
+        bornAt: g.tick,
+    } : null
+    g.mouse = g.level.mouse ? {
+        x: (g.level.mouse.c + 0.5) * T, y: g.level.mouse.r * T, dir: 1,
+        onButton: false, room: g.level.mouse.room,
+    } : null
     g.status = 'play'
     g.statusT = 0
     g.prev = { left: false, right: false, up: false, down: false, jump: false, shift: false, atk: false }
@@ -118,75 +148,90 @@ const blocks = (g, code, c) => {
     if (code === EXIT) return !g.exitOpen
     if (code === SOLID || code === PLATFORM || code === LOOSE || code === SPIKE) return true
     if (code === RAISE || code === DROP || code === EXITPLATE || code === SWORD || code === POTION) return true
+    if (code === BRIDGE) return true     // invisible, but solid underfoot
     return false
 }
 
-// horizontal wall-check: one-way floors (the '=' ledges and loose tiles) land
-// you from above but never wall you off from the side — the original lets you
-// walk straight under them at any body height
+// horizontal wall-check: one-way floors (the '=' ledges, loose tiles and the
+// invisible bridge) land you from above but never wall you off from the side —
+// the original lets you walk straight under them at any body height
 const blocksH = (g, code, c) => {
-    if (code === PLATFORM || code === LOOSE) return false
+    if (code === PLATFORM || code === LOOSE || code === BRIDGE) return false
     return blocks(g, code, c)
 }
 
-function moveX(g, nx) {
-    const p = g.p
-    const d = sign(nx - p.x)
-    if (!d) { p.x = nx; return false }
-    const h = p.crouch ? CFG.CH : CFG.PH
+function moveX(g, b, nx) {
+    const d = sign(nx - b.x)
+    if (!d) { b.x = nx; return false }
+    const h = b === g.p && b.crouch ? CFG.CH : CFG.PH
     const col = Math.floor((nx + CFG.HW * d) / T)
     let blocked = false
-    for (const yy of [p.y - 4, p.y - h * 0.45, p.y - h + 4]) {
+    for (const yy of [b.y - 4, b.y - h * 0.45, b.y - h + 4]) {
         if (blocksH(g, cell(g, col, Math.floor(yy / T)), col)) { blocked = true; break }
     }
-    if (blocked) { p.x = d > 0 ? col * T - CFG.HW - 0.01 : (col + 1) * T + CFG.HW + 0.01; p.vx = 0; return true }
-    p.x = nx
+    if (blocked) { b.x = d > 0 ? col * T - CFG.HW - 0.01 : (col + 1) * T + CFG.HW + 0.01; b.vx = 0; return true }
+    b.x = nx
     return false
 }
 
-function moveY(g) {
-    const p = g.p
-    const vyWas = p.vy
-    p.vy = clamp(p.vy + (p.lev > 0 ? CFG.levG : CFG.g), -CFG.maxFall, CFG.maxFall)
-    const ny = p.y + p.vy
-    if (p.vy > 0) {
+function moveY(g, b) {
+    const vyWas = b.vy
+    b.vy = clamp(b.vy + (b.lev > 0 ? CFG.levG : CFG.g), -CFG.maxFall, CFG.maxFall)
+    const ny = b.y + b.vy
+    if (b.vy > 0) {
         const rf = Math.floor(ny / T)
-        const c0 = Math.floor((p.x - CFG.HW + 1) / T)
-        const c1 = Math.floor((p.x + CFG.HW - 1) / T)
+        const c0 = Math.floor((b.x - CFG.HW + 1) / T)
+        const c1 = Math.floor((b.x + CFG.HW - 1) / T)
         for (let c = c0; c <= c1; c++) {
             const code = cell(g, c, rf)
             const topEdge = rf * T
-            const oneWay = code === PLATFORM || code === LOOSE
-            const landing = blocks(g, code, c) && (!oneWay || p.y - 1 <= topEdge + 2)
-            if (landing) { p.y = topEdge; p.vy = 0; land(g, vyWas); return }
+            const oneWay = code === PLATFORM || code === LOOSE || code === BRIDGE
+            const landing = blocks(g, code, c) && (!oneWay || b.y - 1 <= topEdge + 2)
+            if (landing) {
+                if (code === BRIDGE) {
+                    const k = keyOf(g, c, rf)
+                    if (!(k in g.bridgeSeen)) {
+                        g.bridgeSeen[k] = true
+                        g.events.push({ t: g.tick, type: 'bridge' })
+                    }
+                }
+                b.y = topEdge; b.vy = 0; land(g, b, vyWas); return
+            }
         }
-        p.y = ny; p.onGround = false
-    } else if (p.vy < 0) {
-        const h = p.crouch ? CFG.CH : CFG.PH
+        b.y = ny; b.onGround = false
+    } else if (b.vy < 0) {
+        const h = b === g.p && b.crouch ? CFG.CH : CFG.PH
         const rh = Math.floor((ny - h) / T)
-        const c0 = Math.floor((p.x - CFG.HW + 2) / T)
-        const c1 = Math.floor((p.x + CFG.HW - 2) / T)
+        const c0 = Math.floor((b.x - CFG.HW + 2) / T)
+        const c1 = Math.floor((b.x + CFG.HW - 2) / T)
         let bump = false
         for (let c = c0; c <= c1; c++) if (blocks(g, cell(g, c, rh), c)) { bump = true; break }
-        if (bump) { p.y = (rh + 1) * T + h; p.vy = 0 } else p.y = ny
+        if (bump) { b.y = (rh + 1) * T + h; b.vy = 0 } else b.y = ny
     }
 }
 
-function land(g, vyWas) {
-    const p = g.p
-    p.onGround = true
-    const floors = p.fallFrom === null ? 0 : (p.y - p.fallFrom) / FH
-    p.crouch = false
-    if (floors >= 2.5) { kill(g, 'fall'); return }
-    if (floors >= 1.5) {
-        p.hp -= 1; p.hurtT = 22; g.shake = 9
-        g.events.push({ t: g.tick, type: 'hurtoffall', floors: Math.round(floors) })
-        if (p.hp <= 0) { kill(g, 'fall'); return }
-    } else if (floors >= 0.5 && vyWas > 2) { p.anim = 'land'; p.landT = 10 }
-    p.fallFrom = null
+function land(g, b, vyWas) {
+    b.onGround = true
+    const floors = b.fallFrom === null ? 0 : (b.y - b.fallFrom) / FH
+    if (b === g.p) b.crouch = false
+    // the slow-fall flask softens what would otherwise be a killing drop
+    const soft = b.lev > 0 && floors >= 2.5
+    if (floors >= 2.5 && !soft) { b === g.p ? kill(g, 'fall') : shadowKill(g, 'fall'); return }
+    const eff = soft ? 2 : floors
+    if (eff >= 1.5) {
+        b.hp -= 1; b.hurtT = 22; g.shake = 9
+        if (b === g.p) {
+            g.events.push({ t: g.tick, type: 'hurtoffall', floors: Math.round(floors) })
+            if (b.hp <= 0) { kill(g, 'fall'); return }
+        } else {
+            g.events.push({ t: g.tick, type: 'shadowFall' })
+            if (b.hp <= 0) { shadowKill(g, 'fall'); return }
+        }
+    } else if (b === g.p && floors >= 0.5 && vyWas > 2) { b.anim = 'land'; b.landT = 10 }
+    b.fallFrom = null
 }
 
-const DEATH_ANIM = { spikes: 'die_impale', chomper: 'die_slice', fall: 'die_crumple', sword: 'die_cut', poison: 'die_poison' }
+const DEATH_ANIM = { spikes: 'die_impale', chomper: 'die_slice', fall: 'die_crumple', sword: 'die_cut', poison: 'die_poison', shadow: 'die_shadow' }
 
 function kill(g, why) {
     if (g.status !== 'play') return
@@ -197,10 +242,17 @@ function kill(g, why) {
     g.events.push({ t: g.tick, type: 'die', why })
 }
 
+function shadowKill(g, why) {
+    const s = g.shadow
+    if (!s || s.dead) return
+    s.dead = true; s.dieT = 0; s.dieWhy = why
+    g.events.push({ t: g.tick, type: 'shadowDown', why })
+}
+
 export function buttonsPressed(g) {
     const p = g.p
     const out = { raise: -1, drop: -1, plate: -1 }
-    const fr = g.level.H - 1
+    const fr = GROUND                 // buttons live on the ground floor; hopping over counts
     const fc = Math.floor(p.x / T)
     for (let dc = -1; dc <= 1; dc++) {
         const c = fc + dc
@@ -252,8 +304,9 @@ export function step(g, inp = {}) {
     const btn = buttonsPressed(g)
     if (btn.raise >= 0) g.gateOpen[btn.raise] = Math.min(1, g.gateOpen[btn.raise] + CFG.gateRise)
     if (btn.drop >= 0) g.gateOpen[btn.drop] = Math.max(0, g.gateOpen[btn.drop] - CFG.gateSlam)
+    stepMouse(g)                       // the princess's mouse holds a button too
     for (let k = 0; k < g.gateOpen.length; k++) {
-        if (k === btn.raise) continue
+        if (k === btn.raise || k === g.mouseHold) continue
         const fast = k === btn.drop ? CFG.gateSlam : CFG.gateFall
         g.gateOpen[k] = Math.max(0, g.gateOpen[k] - fast)
     }
@@ -270,6 +323,18 @@ export function step(g, inp = {}) {
         g.events.push({ t: g.tick, type: 'checkpoint' })
     }
 
+    // ---- the magic mirror: step through the barred corridor, once per entry ---
+    if (g.level.mirror && g.level.mirrorTo && !g.mirrorUsed && g.status === 'play') {
+        const m = g.level.mirror
+        if (Math.abs(p.x - (m.c + 0.5) * T) < CFG.mirrorReach && Math.abs(Math.floor(p.y / T) - m.r) <= 1) {
+            g.mirrorUsed = true
+            p.x = (g.level.mirrorTo.c + 0.5) * T
+            p.y = g.level.mirrorTo.r * T
+            p.vx = 0; p.vy = 0; p.hang = null; p.fallFrom = null
+            g.events.push({ t: g.tick, type: 'mirror' })
+        }
+    }
+
     // ---- hanging on a ledge (climb / drop / shimmy / hang-jump) ---------------
     if (p.hang) {
         p.vx = 0; p.vy = 0; p.anim = 'hang'
@@ -282,7 +347,7 @@ export function step(g, inp = {}) {
                 p.x = clamp(p.x + hg.side * 6, CFG.HW, (g.level.W - 1) * T)
                 p.onGround = false; p.vy = -0.01
                 g.events.push({ t: g.tick, type: 'climb' }); p.noGrabUntil = g.tick + 30
-                moveY(g)
+                moveY(g, p)
             }
         } else if (down) { p.hang = null; p.climb = 0; p.fallFrom = p.y }
         else if (dj) { p.hang = null; p.climb = 0; p.vy = -CFG.jumpV; p.vx = hg.side * 1.4; p.fallFrom = p.y; g.events.push({ t: g.tick, type: 'hangjump' }) }
@@ -292,7 +357,7 @@ export function step(g, inp = {}) {
             const below = cell(g, edgeCol, hg.r)
             const stillWall = (below === SOLID || below === PLATFORM || below === LOOSE || below === GATE)
             const moveOk = (hg.side > 0 && d === 1) || (hg.side < 0 && d === -1)
-            if (moveOk && stillWall) { moveX(g, p.x + d * CFG.shimmy); p.anim = 'shimmy' }
+            if (moveOk && stillWall) { moveX(g, p, p.x + d * CFG.shimmy); p.anim = 'shimmy' }
             else if (moveOk && !stillWall) { p.hang = null; p.fallFrom = p.y }
             else if (!moveOk) { p.hang = null; p.climb = 0; p.fallFrom = p.y }
         }
@@ -344,9 +409,9 @@ export function step(g, inp = {}) {
     if (p.crouch) p.anim = 'crouch'
 
     // ---- integrate ------------------------------------------------------------
-    moveX(g, p.x + p.vx)
+    moveX(g, p, p.x + p.vx)
     p.onGround = false
-    moveY(g)
+    moveY(g, p)
 
     // ---- held grab: catch a ledge only while Shift is held, falling ----------
     if (!p.onGround && p.vy > 0 && shift && g.tick > (p.noGrabUntil || 0)) {
@@ -375,7 +440,7 @@ export function step(g, inp = {}) {
     const fc = Math.floor(p.x / T)
     p.careful = p.onGround && dirIn !== 0 && !p.crouch && p.atk === 0 && !p.block &&
         Math.abs(p.vx) <= CFG.walk + 0.3 && !blocks(g, cell(g, fc + dirIn, stand), fc + dirIn)
-    if (g.status !== 'play') { p.animT++; syncRoom(g); g.prev = { left, right, up, down, jump, shift, atk }; return }
+    if (g.status !== 'play') { p.animT++; syncRoom(g); g.prev = { left, right, up, down, jump, shift, atk }; stepShadow(g); return }
     if (p.onGround) {
         if (p.drinkT > 0) p.anim = 'drink'
         else if (p.drawT > 0) p.anim = 'draw'
@@ -448,6 +513,117 @@ export function step(g, inp = {}) {
     if (p.landT > 0) p.landT--
     syncRoom(g)
     g.prev = { left, right, up, down, jump, shift, atk }
+    stepShadow(g)
+}
+
+// ---- the princess's mouse: runs ahead and holds the raise button ------------
+function stepMouse(g) {
+    g.mouseHold = -1
+    const m = g.mouse
+    if (!m) return
+    if (!m.onButton) {
+        m.x += m.dir * CFG.mouseSpeed
+        const mc = Math.floor(m.x / T)
+        if (cell(g, mc, Math.floor(m.y / T)) === RAISE) {
+            m.onButton = true
+            g.events.push({ t: g.tick, type: 'mouse' })
+        }
+        if (Math.floor(m.x / T) >= (m.room + 1) * RW - 1) m.dir = -1
+        if (m.x <= m.room * RW * T) m.dir = 1
+    }
+    if (m.onButton) g.mouseHold = m.room
+}
+
+// the shadow seeps through the level's left wall (negative columns are open
+// air for it), but obeys every other wall on the grid
+function moveXShadow(g, s, nx) {
+    const d = sign(nx - s.x)
+    if (!d) { s.x = nx; return false }
+    const col = Math.floor((nx + CFG.HW * d) / T)
+    if (col > 0 && s.x >= 0) {   // the level's left wall (col 0) is no barrier for the shadow
+        const h = CFG.PH
+        let blocked = false
+        for (const yy of [s.y - 4, s.y - h * 0.45, s.y - h + 4]) {
+            if (blocksH(g, cell(g, col, Math.floor(yy / T)), col)) { blocked = true; break }
+        }
+        if (blocked) { s.x = d > 0 ? col * T - CFG.HW - 0.01 : (col + 1) * T + CFG.HW + 0.01; s.vx = 0; return true }
+    }
+    s.x = nx
+    return false
+}
+
+// ---- the shadow ------------------------------------------------------------
+// The shadow re-enacts the prince's moves late: it replays the movement inputs
+// from CFG.shadowDelay ticks ago on the same grid. It never jumps (it is a
+// coward), it walks into phantom flasks — L5's poison is its death, not yours —
+// falls kill it, steel passes through it, and its touch kills you. In Jaffar's
+// lair, a touch with the sword sheathed merges it back into the prince.
+function stepShadow(g) {
+    g.hist.push({ left: !!g.prev.left, right: !!g.prev.right, up: !!g.prev.up, down: !!g.prev.down })
+    if (g.hist.length > CFG.shadowDelay + 400) g.hist.splice(0, g.hist.length - CFG.shadowDelay - 400)
+    const s = g.shadow
+    if (!s || g.status !== 'play') return
+    if (s.dead) { s.dieT++; return }
+    if (g.p.duelDrawn) {
+        s.vx = 0; s.animT++; s.anim = 'idle'
+        return
+    }
+    const inp = g.hist[g.hist.length - 1 - CFG.shadowDelay] || { left: false, right: false, up: false, down: false }
+
+    const dirIn = (inp.right ? 1 : 0) - (inp.left ? 1 : 0)
+    if (dirIn !== 0) {
+        s.facing = dirIn
+        if (Math.abs(s.vx) < CFG.shadowWalk) s.vx = clamp(s.vx + CFG.accel * dirIn, -CFG.shadowWalk, CFG.shadowWalk)
+        else s.vx = sign(s.vx) * Math.max(CFG.shadowWalk, Math.abs(s.vx) - CFG.friction)
+    } else if (s.onGround) {
+        s.vx = Math.abs(s.vx) < CFG.friction ? 0 : s.vx - CFG.friction * sign(s.vx)
+    }
+    moveXShadow(g, s, s.x + s.vx)
+    s.onGround = false
+    moveY(g, s)
+
+    // phantom flasks: the shadow drinks even the ones already taken
+    const stand = Math.floor(s.y / T)
+    for (const pot of g.pots) {
+        if (pot.shadowTaken) continue
+        if (Math.abs(s.x - (pot.c + 0.5) * T) < CFG.HW + 8 && Math.abs(stand - pot.r) <= 1) {
+            pot.shadowTaken = true
+            g.events.push({ t: g.tick, type: 'shadowDrink', kind: pot.type })
+            if (pot.type === 'b') { s.hp -= 1; if (s.hp <= 0) { shadowKill(g, 'poison'); return } }
+            else if (pot.type === 'r' || pot.type === '+') s.hp = Math.min(s.maxHp, s.hp + 1)
+            else if (pot.type === 'f') s.lev = CFG.levDur
+        }
+    }
+
+    // its own hazards
+    if (s.onGround) {
+        const fc = Math.floor(s.x / T)
+        if (cell(g, fc, stand) === SPIKE) { shadowKill(g, 'spikes'); return }
+        for (const ch of g.chomps) {
+            if (fc === ch.c && stand === ch.r && chompDown(g, ch)) { shadowKill(g, 'chomper'); return }
+        }
+    }
+    if (s.lev > 0) s.lev--
+    s.animT++
+    if (s.onGround) s.anim = Math.abs(s.vx) > 0.2 ? (Math.abs(s.vx) > CFG.walk + 0.2 ? 'run' : 'walk') : 'idle'
+    else s.anim = s.vy < 0 ? 'jump' : 'fall'
+
+    // the touch of the shadow: death — or, in the lair with the sword
+    // sheathed, the merge that ends the story. At the exit threshold the
+    // shadow peels off the replay and catches up with the sheathed prince.
+    const p = g.p
+    if (g.level.merge && !p.duelDrawn && g.level.exit && roomOf(Math.floor(p.x / T)) === g.level.exit.room) {
+        s.x += sign(p.x - s.x) * 6
+    }
+    if (g.tick > s.bornAt + CFG.shadowDelay && Math.abs(s.x - p.x) < CFG.mergeRange && Math.abs(s.y - p.y) < FH) {
+        if (g.level.merge && !p.duelDrawn) {
+            s.dead = true; s.dieT = 0; s.dieWhy = 'merge'
+            g.merged = true
+            g.events.push({ t: g.tick, type: 'merge' })
+        } else if (p.invuln === 0) {
+            kill(g, 'shadow')
+        }
+    }
 }
 
 function checkExit(g) {
@@ -542,9 +718,12 @@ export function stateHash(g) {
         g.tick, g.clock, g.status, g.levelIndex, g.sword, g.room,
         r3(p.x), r3(p.y), r3(p.vx), r3(p.vy), p.hp, p.maxHP, p.atk, !!p.hang, p.block,
         g.guards.map((gd) => [r3(gd.x), gd.hp, gd.wind, !!gd.recoil, gd.dead]),
-        g.pots.map((pt) => pt.taken),
+        g.pots.map((pt) => [pt.taken, pt.shadowTaken]),
         g.exitOpen, g.gateOpen.map((v) => Math.round(v * 100)),
         Object.keys(g.fallen).sort().join(','),
+        g.shadow ? [r3(g.shadow.x), r3(g.shadow.y), g.shadow.hp, g.shadow.dead, !!g.merged] : null,
+        g.mouse ? r3(g.mouse.x) : null, g.mirrorUsed,
+        Object.keys(g.bridgeSeen).sort().join(','),
     ])
 }
 
