@@ -20,9 +20,9 @@ import { RACES, GRID, BREAKDROP, WIN_BONUS, EXTRA_LIFE, buildHeights } from './l
 export { RACES, GRID, BREAKDROP }
 
 export const CFG = {
-    acc: 0.0011,          // tiles/tick² from the trackball
+    acc: 0.005,           // tiles/tick² from the trackball
     fric: 0.992,
-    brakeBoost: 2.5,     // pushing against the roll is a hard reverse
+    brakeBoost: 1.8,     // pushing against the roll is a hard reverse
     brakeFric: 0.96,     // pushing against the roll stops you, eventually
     slopeK: 0.004,        // gravity along d(z)/d(tile)
     sillyBias: 0.0009,    // SILLY extra pull toward the far edge
