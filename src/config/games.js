@@ -131,6 +131,10 @@ const GauntletGame = lazy(() => import('../games/Gauntlet'))
 // boss and Blubba in Node; the attract demo replays the pilot's proven run.
 const BubbleBobbleGame = lazy(() => import('../games/BubbleBobble'))
 
+// SMASH TV: same lesson — the autopilot that proves the nine-room arena chain
+// (and scripts/smashcheck.mjs audits) rides in the chunk with the pure sim.
+const SmashTVGame = lazy(() => import('../games/SmashTV'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -657,6 +661,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'Atari\'s 1985 first-person dungeon crawl, rebuilt honest: choose your hero (Warrior, Valkyrie, Wizard, Elf — speed, power and range differ), walk four pillar-hall mazes in the arcade\'s own split-screen (corridor view, side map, narrator strip). Health drains the moment you spawn — food restores it, and when it runs low the hall itself shouts "WARRIOR NEEDS FOOD, BADLY!". Slam doors crash shut behind you and locked doors eat the keys you find along the way. Generators pulse grunts, wall-passing ghosts, demons, fire-throwing sorcerers and rock-lobbers until YOU smash the generator; a potion flares and clears the halls of everything but Death — and when the treasure timer runs out, DEATH walks the maze and drains you point by point. The stairs at the end of the fourth maze end the quest. The attract demo replays the autopilot\'s own proven full-quest clear, audited tick-for-tick by a Node harness (key-before-lock geometry, the slam and potion rules, the Death drain, the slack rule: it wins again with less food and fewer potions).',
         controls: ['Arrow Left/Right: turn · Arrow Up: forward · Down: back (the arcade layout)', 'SPACE / A: swing the sword — it hits what is in front of you', 'X / F / B button: loose an arrow or spell at what you can see down the lane', 'Walk into doors to open them; locked doors need a KEY; closed slam doors can be battered open', 'Eat food the moment health runs low; step on a POTION when the halls swarm', 'Keys carry between mazes — the far door is the whole point · ? pauses'],
+    },
+    {
+        path: '/smash-tv',
+        builtBy: 'forge',
+        component: SmashTVGame,
+        label: 'SMASH TV',
+        theme: 'dark',
+        description: 'The 1990 Williams game-show death arena, rebuilt twin-stick: Arrows move, IJKL fires its own 8-way stick (Space shoots the way you face) — and ONE HIT KILLS, exactly like the cabinet. Nine rooms of camera-droids, sprinters, turrets, grenade lobbers and heavies; the exit doors unlock only when the room is dead. Smash glass crates for SPREAD, LASER and the MACHINE GUN, and when the swarm gets fat the B button drops a FIREBOMB on the studio (it burns POWER — the bar refills when a room falls). Every fourth room is the BLOOD BONUS: ten seconds, panicked contestants, the audience adores you, and the combo pays double. At the end of the run waits THE ANNOUNCER. The attract demo is the autopilot\'s own proven nine-room clear, audited in a Node harness (one-hit lethality, sealed-until-clear exits, the crate ladder, the firebomb tax, the bonus ledger, the slack rule — and five planted bugs that must all die).',
+        controls: ['Arrows / D-pad: run the arena — 8-way, and you never stop dead', 'IJKL: the FIRING stick — shoot any way, even while running the other way', 'SPACE / Z / A: fire the way you face · B / X / B button: FIREBOMB (costs 34 POWER)', 'LASER also burns POWER (2 a shot) but pierces; power refills when the room falls', 'Exits stay sealed until every enemy dies — then any open door leads to the next room', 'Bonus rooms: 10 seconds on the crowd, chain your shots, combo pays +50 each', '?: pause and read the rules of the show'],
     }
 
 ]
