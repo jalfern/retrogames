@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, portOpen, cloneGame, stateHash } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, SOLID, SPIKE, SPIKE_PORTED, PLATE } from '../src/games/PrinceOfPersia/levels.js'
+import { guardLook } from '../src/games/PrinceOfPersia/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -174,6 +175,69 @@ const setGround = (g, x, y) => { g.p.x = x; g.p.y = y; g.p.vx = 0; g.p.vy = 0; g
     }
     ok('relentless correct-height strikes fell the guard', gd.dead && hasEv(g, 'guardDown'))
     ok('the princess door stays locked while a boss lives', makeLevel(4).needBoss === true)
+}
+
+// ---- 4b. guard variety & Jaffar's teleport --------------------------------
+{
+    const cloths = ['fibula', 'skeleton', 'shadow', 'green'].map((t) => guardLook(t, false).cloth)
+    ok('guards carry distinct palettes per type', new Set(cloths).size === 4)
+    const swords = ['fibula', 'skeleton', 'shadow', 'green'].map((t) => guardLook(t, false).sword)
+    ok('each guard type carries its own sword metal', new Set(swords).size >= 3)
+    const jd = makeLevel(4).guards.find((q) => q.boss)
+    ok('Jaffar is the robed vizier', jd.type === 'jaffar' && guardLook(jd.type, true).robe === true && guardLook(jd.type, true).hat === true)
+    const clothset = new Set([1, 2, 3, 4].flatMap((i) => makeLevel(i).guards.map((q) => guardLook(q.type, q.boss).cloth)))
+    ok('the four rooms field four differently-clad fighters', clothset.size === 4)
+}
+{
+    const g = makeGame(4)
+    const boss = g.guards.find((q) => q.boss)
+    const span = (boss.patrol[1] - boss.patrol[0]) * CFG.T
+    let prev = boss.x, jump = 0
+    for (let i = 0; i < CFG.teleport * 2 + CFG.teleBlink + 10 && !boss.dead; i++) {
+        step(g, {})
+        jump = Math.max(jump, Math.abs(boss.x - prev))
+        prev = boss.x
+    }
+    const tele = g.events.filter((e) => e.type === 'teleport' && e.boss)
+    ok('Jaffar blinks across the room', tele.length >= 2)
+    ok('the blink jumps him at least half the room', jump >= span / 2)
+}
+{ // intangible while phasing: a correct-height, in-window swing finds only air
+    const g = makeGame(4)
+    g.portLatch = true
+    const boss = g.guards.find((q) => q.boss)
+    setGround(g, boss.x - 34, boss.y)
+    boss.stance = 0
+    boss.wind = 0
+    boss.tele = CFG.teleBlink
+    const p = g.p
+    p.stance = 2
+    p.atk = CFG.swingDur - CFG.swingHit0
+    p.atkHitDone = false
+    clearEv(g)
+    step(g, {})
+    ok('steel passes through the shimmer (no hit while blinking)', boss.telegraph && boss.hp === boss.maxHp && !hasEv(g, 'hit'))
+}
+{ // sanity: the very same swing lands when he is solid (so the proof above bites)
+    const g = makeGame(4)
+    g.portLatch = true
+    const boss = g.guards.find((q) => q.boss)
+    setGround(g, boss.x - 34, boss.y)
+    boss.stance = 0
+    boss.wind = 0
+    boss.tele = CFG.teleport
+    const p = g.p
+    p.stance = 2
+    p.atk = CFG.swingDur - CFG.swingHit0
+    p.atkHitDone = false
+    clearEv(g)
+    step(g, {})
+    ok('and bites when he is solid', boss.hp === boss.maxHp - 1 && hasEv(g, 'hit'))
+}
+{ // determinism holds through the teleport schedule
+    const a = makeGame(4), b = makeGame(4)
+    for (let i = 0; i < CFG.teleport * 2; i++) { step(a, { right: false }); step(b, { right: false }) }
+    ok('the blink schedule replays identically', stateHash(a) === stateHash(b))
 }
 
 // ---- 5. potions and the clock --------------------------------------------------

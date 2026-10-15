@@ -9,6 +9,16 @@ import { CFG, portOpen, clockText } from './sim.js'
 export const VW = W * CFG.T
 export const VH = H * CFG.T
 
+// per-guard-type look: tunic, trim, skin, sword metal. Jaffar adds a robe + hat.
+export const PALETTES = {
+    green: { cloth: '#2a5038', trim: '#70a080', skin: '#c89878', sword: '#c8ccd8' },
+    fibula: { cloth: '#8a5a2a', trim: '#d0a860', skin: '#d8a880', sword: '#dce2ee' },
+    skeleton: { cloth: '#d8d8cc', trim: '#9a9a8c', skin: '#eceada', sword: '#b0b8c8' },
+    shadow: { cloth: '#16161f', trim: '#3a3a4e', skin: '#5a5a6a', sword: '#525a6a' },
+    jaffar: { cloth: '#5a1f72', trim: '#d24ad2', skin: '#c89878', sword: '#e0d0ff', robe: true, hat: true },
+}
+export const guardLook = (type, boss) => PALETTES[type] || PALETTES[boss ? 'jaffar' : 'green'] || PALETTES.green
+
 const hash = (n) => {
     let x = Math.sin(n * 127.1 + 311.7) * 43758.5453
     return x - Math.floor(x)
@@ -167,6 +177,24 @@ function figure(ctx, st, p, opts) {
     // legs
     limb(ctx, hx, hy, legA, 18 - (opts.crouch ? 6 : 0), 5, cloth)
     limb(ctx, hx, hy, legB, 18 - (opts.crouch ? 6 : 0), 5, shade(cloth))
+    if (opts.robe) {
+        const sway = Math.sin(t * 0.18) * 3
+        ctx.fillStyle = cloth
+        ctx.beginPath()
+        ctx.moveTo(-6, hy)
+        ctx.lineTo(-9, 2 + sway)
+        ctx.lineTo(9, 2 - sway)
+        ctx.lineTo(6, hy)
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillStyle = shade(cloth)
+        ctx.fillRect(-2, hy, 4, 22)
+        ctx.strokeStyle = trim
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(-9, 2 + sway); ctx.lineTo(9, 2 - sway)
+        ctx.stroke()
+    }
     // torso
     ctx.strokeStyle = cloth
     ctx.lineWidth = 9
@@ -201,6 +229,18 @@ function figure(ctx, st, p, opts) {
     ctx.quadraticCurveTo(-12, -head + 6 + Math.sin(t * 0.2) * 2, -14, -head + 12)
     ctx.stroke()
 
+    if (opts.hat) {
+        ctx.fillStyle = trim
+        ctx.beginPath()
+        ctx.moveTo(-3, -head - 1)
+        ctx.lineTo(3, -head - 17)
+        ctx.lineTo(9, -head - 1)
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillStyle = '#f0e0a0'
+        ctx.fillRect(-1, -head - 2, 8, 2)
+    }
+
     // sword arm + blade, by stance / swing progress
     const shY = -head + 12
     let swing = 0
@@ -220,7 +260,7 @@ function figure(ctx, st, p, opts) {
     ctx.lineTo(hxp, hyp)
     ctx.stroke()
     const bl = 26 * reach
-    ctx.strokeStyle = opts.swing > 0 && opts.swing < CFG.swingDur - CFG.swingHit0 ? '#fff8d8' : '#c8ccd8'
+    ctx.strokeStyle = opts.swing > 0 && opts.swing < CFG.swingDur - CFG.swingHit0 ? '#fff8d8' : (opts.swordMetal || '#c8ccd8')
     ctx.lineWidth = 3
     ctx.beginPath()
     ctx.moveTo(hxp, hyp)
@@ -285,21 +325,32 @@ export function drawScene(ctx, g, opts = {}) {
     // guards
     for (const gd of g.guards) {
         if (gd.dead) continue
+        const look = guardLook(gd.type, gd.boss)
         const st = gd.wind > 0 ? 'wind' : gd.engaged ? 'ready' : 'patrol'
-        figure(ctx, st === 'patrol' ? 'walk' : st, {
+        const blink = gd.telegraph
+        if (blink) ctx.globalAlpha = tick % 6 < 3 ? 0.35 : 0.12
+        figure(ctx, blink ? 'ready' : (st === 'patrol' ? 'walk' : st), {
             x: gd.x, y: gd.y, facing: gd.dir || -1, onGround: true, hang: null, crouch: false,
         }, {
-            tick: tick + gd.id * 13, skin: '#c89878', cloth: gd.boss ? '#502a68' : '#2a5038',
-            trim: gd.boss ? '#d040d0' : '#70a080', stance: gd.stance,
+            tick: tick + gd.id * 13, skin: look.skin, cloth: look.cloth, trim: look.trim,
+            stance: gd.stance, swordMetal: look.sword, robe: look.robe, hat: look.hat,
             swing: gd.wind > CFG.guardWind - 4 ? gd.wind : 0, hurt: gd.hurtT, die: 0, prog: 0, strong: gd.boss,
         })
+        if (blink) {
+            ctx.globalAlpha = 1
+            ctx.fillStyle = '#e0d0ff'
+            for (let i = 0; i < 5; i++) {
+                const a = tick * 0.5 + i * 1.3
+                ctx.fillRect(gd.x + Math.cos(a) * (10 + i * 2), gd.y - CFG.PH * 0.6 + Math.sin(a) * 14, 2, 2)
+            }
+        }
         if (gd.wind > 0 && gd.wind % 6 < 3) {
             ctx.fillStyle = '#ff5050'
             ctx.beginPath()
             ctx.arc(gd.x, gd.y - CFG.PH - 6, 2.5, 0, Math.PI * 2)
             ctx.fill()
         }
-        if (gd.engaged && !gd.dead) {
+        if ((gd.engaged || blink) && !gd.dead) {
             const w = 26
             ctx.fillStyle = '#20202e'
             ctx.fillRect(gd.x - w / 2, gd.y - CFG.PH - 14, w, 3)
