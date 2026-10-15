@@ -106,6 +106,25 @@ function indNear(g, x, y) {
     }
     return n
 }
+
+// developed residents within reach — the workforce industry consumes. An
+// industry tile bootstraps at level 1 (the jobs that residents follow), but it
+// only rises PAST level 1 while homes stand nearby; a bare stack of factories
+// with no neighbourhood stalls at one level, so industry can no longer
+// outgrow the city. This is the RCI leg the one-street trap exploited.
+function resNear(g, x, y) {
+    let n = 0
+    for (let dy = -3; dy <= 3; dy++) {
+        for (let dx = -3; dx <= 3; dx++) {
+            if (dx * dx + dy * dy > 9) continue
+            const nx = x + dx, ny = y + dy
+            if (!inB(nx, ny)) continue
+            const c = g.grid[idx(nx, ny)]
+            if (c.t === T.RES && c.lvl > 0) n++
+        }
+    }
+    return n
+}
 const adjOf = (g, x, y, t) => N4.filter(([dx, dy]) => inB(x + dx, y + dy) && g.grid[idx(x + dx, y + dy)].t === t).length
 
 function nearDeveloped(g, x, y) {
@@ -159,7 +178,13 @@ function yearTick(g) {
             } else if (c.t === T.COM) {
                 qv = (P >= c.lvl * 24 + 16 ? 1.15 : -0.85) + (c.lit ? 0.45 : -1.6) + (roadA ? 0 : -1.3) + 0.1 * parks - taxPen(g.tax)
             } else {
-                qv = 0.85 + (c.lit ? 0.3 : -1.6) + (roadA ? 0 : -1.3) - taxPen(g.tax) - (g.tax > 13 ? 0.6 : 0)
+                // IND is the one zone that can outgrow the city. It bootstraps
+                // at level 1 (no workforce needed to break ground — that is the
+                // job base residents then follow), but rises PAST level 1 only
+                // while homes stand within reach. A bare stack of factories with
+                // no neighbourhood stalls at one level: the one-street trap.
+                const qv0 = 0.85 + (c.lit ? 0.3 : -1.6) + (roadA ? 0 : -1.3) - taxPen(g.tax) - (g.tax > 13 ? 0.6 : 0)
+                qv = (c.lvl >= 1 && resNear(g, x, y) < 2) ? qv0 - 1.5 : qv0
             }
             // growth is BLOCK BY BLOCK: a level only rises when the demand
             // says yes AND the construction cooldown has run out, so a city
