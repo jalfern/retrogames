@@ -1,63 +1,60 @@
-# STATE — 2026-10-14 (forge session, GAUNTLET shipped)
+# STATE — 2026-10-15 (forge session, SMASH TV shipped)
 
 ## Shipped this session
-**GAUNTLET** (#237) — PR #273, squash-merged at `3a7a262`, live at
-https://jalfern.com/retrogames/gauntlet. First-person raycaster dungeon
-crawl: 4 pillar-hall mazes, 4 heroes, drain/food economy, slam doors, keys,
-generators (grunt/ghost/demon/sorcerer/lobber), screen-clear potion, Death on
-the treasure timer, side map + narrator strip, hero select, attract replays the
-autopilot's deathless full-quest run (seed 2). All art/audio synthesized.
-Fidelity call: issue said "top-down"; the cabinet is first-person and
-AGENTS.md's ruling wins — recorded in the PR + game README.
+**SMASH TV** (#239) — PR #279, squash-merged at `2255733`, live at
+https://jalfern.com/retrogames/smash-tv (prod bundle verified).
+Williams 1990 twin-stick arena, top-down: Arrows move / IJKL fires its own
+8-way stick / Space fires facing / B firebombs (34 POWER). Nine rooms,
+**one-hit lethality** (the cabinet rule, harness-pinned), exits sealed until
+the room dies, weapon crates (SPREAD/LASER/MACHINE GUN) + POWER economy,
+two Blood-Bonus rooms (combo +50/kill), THE ANNOUNCER as room-9 boss.
+Attract replays the autopilot's proven run (seed 0). All art/audio synthesized.
 
-Gates: `lint:gauntlet` + `gauntletcheck` (48 checks) + `--mutate` (5/5 die)
-wired into CI `static`. Advisory `scripts/gauntletplay.mjs` 11/11 in a real
-browser (start→play→die→restart, zero page errors). QA polish filed as **#275**.
-Also shipped post-merge by the other machine: Dig Dug polish #274 (`a4ab034`).
+Gates: `lint:smash` + `smashcheck` (186 checks) + `--mutate` (5/5 die) wired
+into CI `static`. Pilot wins **all 9 seeds**, 2 deathless; slack re-win
+(one fewer crate/room, zero energy cells). Advisory `smashplay` 13/13 in
+headless Chrome (start→twin-stick→die→restart, zero page errors).
+QA polish filed as **#280**.
 
 ## GOAL — next session
-**QA — GAUNTLET polish pass, issue #275.** Claim with a comment
-(`FORGE-QA: claimed …`), work top-to-bottom, small PRs (one item ≈ one PR),
-each gated by `npm run lint:gauntlet && npm run gauntletcheck` (add checks for
-new rules; keep all 48 green + 5 mutants dead). Priority:
-1. #275 items 1–2 (14px sprites w/ wobble, two-tone brick walls) — ART.md bar.
-2. Items 6–8: CPU partner default ON + opens slam doors; human 2P (WASD+F,
-   desktop); minimap shows seen monsters + stairs pulse.
-3. Items 3–5: generator pulse/telegraph, HP-low vignette, narrator per-line
-   buzzes, stairs fanfare.
-Don't touch mechanics the harness proves; if polish tempts a rule change,
-it goes to Jon first.
-
-If #275 is already claimed: claim the oldest open `game-queue` issue —
-#239 SmashTV, #241 Out Run, #245 Lunar Lander, #246 Tempest.
+Claim the oldest `game-queue` issue — **#241 Out Run** — unless Jon labels
+**#276** (`next`). #276 is Jon's own directive answering the Gauntlet
+fidelity ruling: build GAUNTLET top-down and rename the first-person one to
+FOUR HALLS. It outranks #241 in Jon's intent but carries no `next` label —
+see question 1. Before starting, read `#280` — if unclaimed and no QA lane
+is live, a quick polish PR on SMASH TV is also valid work.
 
 ## Board
-- Open QA: #275 (Gauntlet), #270 (SimCity), #269/#220-adjacent (Kart),
-  #268 (attract one-message — mostly done via #267), #265 (Marble polish),
-  #263/#258 (Bubble Bobble), #227 (arcade fill-crisp, in flight by other lane).
-- Queue: #239, #241, #245, #246.
-- Other lanes active on the mini: qa/arcade-fill-crisp, qa/sentinel,
-  fix/mobile-stick-inverted, flame-centre (SimCity). Check `gh pr list`
-  before starting anything in those areas.
+- Open QA: **#280** (SmashTV), #275 (Gauntlet), #270 (SimCity), #269/#220
+  (Kart), #265 (Marble), #263/#258 (Bubble Bobble).
+- Queue: **#276 (Gauntlet top-down + FOUR HALLS rename)**, #241 Out Run,
+  #245 Lunar Lander, #246 Tempest.
+- Other lanes: check `gh pr list` before touching arcade/QA areas.
 
 ## Housekeeping done
-Pruned worktrees `retrogames-forge-digdug` + `retrogames-forge-marble-madness`
-(both merged); deleted stale `forge/digdug` local+remote. Forge worktree
-`retrogames-forge-gauntlet` remains at detached `origin/main` — reuse or
-remove before the next forge lane.
+Worktree `retrogames-forge-smashtv` (branch merged+deleted) removed this
+session. Main checkout parked detached at `origin/main`. Accumulated stale
+worktrees worth pruning when idle: forge-arkanoid, forge-bobubble,
+forge-gauntlet, qa-mkart, qa-qbert, qa-jaoust-adjacent ones — verify each is
+merged before removing.
 
-## How Gauntlet is built (pointer, not a tutorial)
-`src/games/Gauntlet/`: `levels.js` (char-grid mazes, keys always outside locks),
-`sim.js` (pure `step`, seeded LCG, `blocked()` asked by every walker),
-`planner.js` (objectives food→keys→stairs; engage close/aligned only —
-never chase across the maze), `art.js`, `index.jsx` (DDA cast + z-buffered
-billboards). README has the fidelity notes + honest gaps.
+## How Smash TV is built (pointer, not a tutorial)
+`src/games/SmashTV/`: `levels.js` (seeded room generator: 4 wall patterns,
+exit ring, crate ladder, rosters), `sim.js` (pure `step`, seeded LCG, q8
+8-way, `blockedPx` asked by every walker; rules pinned by harness header
+comment), `planner.js` (engage-nearest + bullet-dodge + jink-under-boss;
+boss kill needs tight lane-tracking under the ANNOUNCER), `art.js`,
+`index.jsx` (256x248 canvas, HUD strip, announce barks). README has the
+fidelity notes + honest gaps.
 
 ## Three questions for Jon
-1. **L4 economy:** endless-world generators are capped at 5 alive so the
-   autopilot can prove a win — arcade L4 is a meat-grinder. Keep the cap
-   (provable win) or raise it and accept a pilot that "wins" by attrition?
-2. **Partner default:** issue body implied ON; we shipped OFF (CPU hero takes
-   food). #275 proposes default ON for phones — confirm?
-3. **Attract demo:** ours is the deathless showcase loop; Marble's showed
-   the hero taking hits for drama. Which house style do you want?
+1. **#276**: you asked for a top-down GAUNTLET + FOUR HALLS rename a day
+   after Gauntlet shipped. Should the next forge lane build #276 first (I'd
+   label it `next` when you're ready), before Out Run #241?
+2. **Attract demo style:** Smash TV's demo replays seed 0 which takes 2 hits
+   before winning; Gauntlet's was deathless; Marble showed hits for drama.
+   House rule: showcase deathless, or drama allowed?
+3. Still open from last session: **Gauntlet L4 generator cap** (keep 5-alive
+   cap for a provable win, or raise it) and **CPU partner default ON** for
+   phones (#275 items 6–8 assume ON) — ruling needed before the Gauntlet
+   QA lane executes those items.
