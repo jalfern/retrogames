@@ -295,6 +295,16 @@ jobs:
       # spine. All in Node. Mutant it: the bail rule off turns red.
       - run: npm run lint:ssx
       - run: npm run ssxcheck
+      # PRINCE OF PERSIA: the movement economy (run/skid/careful-step/jump-
+      # scaling/hang+climb), the traps (loose tiles, plate-latched spike ports,
+      # the seam-free guillotine), the three-height duel (match-height parry,
+      # strike-the-open-height), potions and the 60-minute clock, the autopilot
+      # WINNING all five screens, the slack rule (0.75x clock + every guard
+      # hp-1 still rescues her), hash-for-hash determinism and the
+      # no-Math.random ban on the spine. All in Node. Mutant it: the parry
+      # height check off turns red.
+      - run: npm run lint:pop
+      - run: npm run popcheck
       # SMASH TV: geometry of every room, one-hit lethality + the sealed-until-
       # clear exits, the crate->gun ladder and POWER economy, the firebomb tax,
       # the bonus-room clock and combo ledger, the ANNOUNCER win, the pilot WIN
