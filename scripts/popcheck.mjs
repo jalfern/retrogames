@@ -14,10 +14,10 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE } from '../src/games/PrinceOfPersia/sim.js'
+import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
-import { LEVEL_COUNT, makeLevel, RW, FH, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook } from '../src/games/PrinceOfPersia/art.js'
+import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -721,6 +721,44 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         ok('S4: death and victory cue their big stings', xsrc.includes('playDeath') && xsrc.includes('playFanfare'))
         ok('S4: the harness can hear the engine through the probe hook', xsrc.includes('musicState') && xsrc.includes('_peak'))
     }
+}
+
+// ---- 15. Stage 5: the gate draws open exactly when blocks() lets you through
+{
+    const lv = makeLevel(0)
+    let gCol = -1, gRow = -1
+    for (let c = 0; c < lv.W; c++) {
+        let low = -1
+        for (let r = 0; r < lv.H; r++) if (lv.grid[r * lv.W + c] === GATE) low = r
+        if (low >= 0) { gCol = c; gRow = low; break }
+    }
+    ok('S5: a level carries a portcullis on a column with solid floor beneath',
+        gCol >= 0 && gRow >= 0 && lv.grid[(gRow + 1) * lv.W + gCol] === SOLID)
+    const span = (gRow + 1) * T
+    ok('S5: a shut gate hangs all the way to the floor (no floating gap)',
+        gateBottom(gRow, 0) === span && gateBottom(gRow, CFG.gateOpen - 0.001) === span)
+    ok('S5: the instant it is passable the bars clear the prince headroom',
+        gateBottom(gRow, CFG.gateOpen) <= span - CFG.PH && gateBottom(gRow, 1) < 3)
+    ok('S5: the bars rise monotonically as the gate opens',
+        gateBottom(gRow, 0.7) > gateBottom(gRow, 0.85) && gateBottom(gRow, 0.85) > gateBottom(gRow, 1))
+    {
+        const g = makeGame(0)
+        const room = roomOf(gCol)
+        let agree = true
+        for (const open of [0, 0.3, CFG.gateOpen - 0.01, CFG.gateOpen, 0.9, 1]) {
+            g.gateOpen[room] = open
+            if (gateDrawOpen(open) !== gateOpenHere(g, GATE, gCol)) agree = false
+        }
+        ok('S5: drawn-open agrees with blocks() at every gate value', agree)
+    }
+    {
+        const xsrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+        ok('S5: the attract banner shows one message at a time under the HUD',
+            !/fillRect\(0, VH \/ 2 - 34/.test(xsrc) && /bandTop = 22/.test(xsrc))
+        ok('S5: the autopilot caption sits high, clear of the footer watermark',
+            xsrc.includes('AUTOPILOT DEMONSTRATION') && !/AUTOPILOT DEMONSTRATION', VW \/ 2, VH - 30/.test(xsrc))
+    }
+    void GATE_CLEAR
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

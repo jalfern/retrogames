@@ -312,19 +312,44 @@ function drawTorch(ctx, c, r, tick) {
 }
 
 // ---- portcullis over a gate column: bars lift into the ceiling ---------------
-function drawGate(ctx, c, lowRow, open) {
+// Drawn from the SAME number blocks() consults (g.gateOpen). A gate the sim
+// treats as passable (open >= CFG.gateOpen) is drawn with its bars lifted clear
+// above the prince's head; one it treats as solid hangs all the way to the
+// floor. gateBottom() is the pure geometry popcheck pins against blocks().
+export const GATE_CLEAR = CFG.PH + 4          // headroom a lifted gate must clear
+export function gateBottom(lowRow, open) {
     const span = (lowRow + 1) * T
-    const vis = span * (1 - Math.min(1, open))
-    if (vis < 3) return
+    if (open < CFG.gateOpen) return span      // shut: the bars meet the floor
+    const lift = (open - CFG.gateOpen) / (1 - CFG.gateOpen)
+    return (span - GATE_CLEAR) * (1 - lift)
+}
+export const gateDrawOpen = (open) => open >= CFG.gateOpen
+
+function drawGate(ctx, c, lowRow, open) {
+    const bottom = gateBottom(lowRow, open)
+    if (bottom < 3) return
     const x = c * T
     ctx.save()
     ctx.beginPath()
-    ctx.rect(x, 0, T, lowRow * T + vis)
+    ctx.rect(x, 0, T, bottom)
     ctx.clip()
-    ctx.fillStyle = '#2c2c3c'
-    for (let i = 0; i < 3; i++) ctx.fillRect(x + 4 + i * 10, 0, 4, lowRow * T + vis)
-    ctx.fillStyle = '#242434'
-    ctx.fillRect(x + 2, lowRow * T + vis - 4, T - 4, 4)
+    const run = lowRow * T + T
+    for (let i = 0; i < 3; i++) {
+        const bx = x + 4 + i * 10
+        ctx.fillStyle = '#16161f'
+        ctx.fillRect(bx - 1, 0, 6, run)
+        ctx.fillStyle = '#3c3c50'
+        ctx.fillRect(bx, 0, 2, run)
+        ctx.fillStyle = '#545468'
+        ctx.fillRect(bx, 0, 1, run)
+    }
+    const wy = bottom - 4
+    ctx.fillStyle = '#16161f'
+    ctx.fillRect(x + 2, wy, T - 4, 5)
+    ctx.fillStyle = '#4a4a60'
+    ctx.fillRect(x + 2, wy, T - 4, 2)
+    ctx.fillStyle = '#d8b040'
+    for (let i = 0; i < 3; i++) ctx.fillRect(x + 5 + i * 10, wy - 1, 2, 2)
     ctx.restore()
 }
 

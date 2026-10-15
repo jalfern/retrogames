@@ -234,14 +234,21 @@ const PrinceOfPersiaGame = () => {
             ctx.textAlign = 'center'
             if (attract) {
                 const msg = ATTRACT_MSGS[Math.floor(attractT / 150) % ATTRACT_MSGS.length]
+                // one message at a time, on a slim band under the HUD — never a
+                // curtain across the playfield, so the autopilot demo stays seen
+                const bandTop = 22
+                const bandH = 48
+                ctx.fillStyle = 'rgba(6,6,14,0.82)'
+                ctx.fillRect(0, bandTop, VW, bandH)
+                ctx.strokeStyle = 'rgba(232,208,96,0.55)'
+                ctx.beginPath(); ctx.moveTo(0, bandTop + 0.5); ctx.lineTo(VW, bandTop + 0.5)
+                ctx.moveTo(0, bandTop + bandH - 0.5); ctx.lineTo(VW, bandTop + bandH - 0.5); ctx.stroke()
                 ctx.font = 'bold 18px monospace'
-                ctx.fillStyle = '#000'
-                ctx.fillRect(0, VH / 2 - 34, VW, 44)
                 ctx.fillStyle = '#e8d060'
-                ctx.fillText(msg, VW / 2, VH / 2 - 14)
+                ctx.fillText(msg, VW / 2, bandTop + 22)
                 ctx.font = '9px monospace'
                 ctx.fillStyle = '#8a8ab0'
-                ctx.fillText('AUTOPILOT DEMONSTRATION', VW / 2, VH - 30)
+                ctx.fillText('AUTOPILOT DEMONSTRATION', VW / 2, bandTop + 38)
             } else if (g.status === 'dying') {
                 ctx.font = 'bold 13px monospace'
                 ctx.fillStyle = '#e04040'
