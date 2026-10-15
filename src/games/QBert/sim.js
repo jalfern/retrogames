@@ -241,7 +241,12 @@ export function step(gs, input = {}) {
         p.ride.t++
         p.ride.discX = d.x
         if (p.ride.t >= 44) {
-            const drop = gs.rng() < 0.3 ? CUBES[Math.floor(gs.rng() * 3)] : id(0, 0)
+            // the original's disc drop: a RANDOM ROW across the whole pyramid
+            // (the old rule only ever reached the top two rows), then a random
+            // cube in that row — so the ride can deposit Q*BERT anywhere on the
+            // board, which is what makes the +50 round-trip a real gamble.
+            const row = Math.floor(gs.rng() * ROWS.length)
+            const drop = id(row, Math.floor(gs.rng() * ROWS[row]))
             p.ride = null
             land(gs, rowOf(drop), colOf(drop), true)
         }
