@@ -128,6 +128,11 @@ const DigDugGame = lazy(() => import('../games/DigDug'))
 // four-maze quest (scripts/gauntletcheck.mjs audits) rides in the chunk too.
 const GauntletGame = lazy(() => import('../games/Gauntlet'))
 const FourHallsGame = lazy(() => import('../games/FourHalls'))
+// MYST: the biggest chunk yet — three.js plus four procedurally built Ages —
+// so it earns its lazy route more than anyone: the island loads only when
+// someone actually opens it, and the pure rules spine it shares with
+// scripts/mystcheck.mjs rides along in the same chunk.
+const MystGame = lazy(() => import('../games/Myst'))
 // BUBBLE BOBBLE (Taito 1986): blow bubbles, trap, pop for escalating chains.
 // The sim is a pure step(state,inputs), so scripts/bobcheck.mjs audits all 100
 // generated caves, the trap/pop/chain ledger, letters, water, lightning, the
@@ -712,6 +717,15 @@ export const GAMES = [
         theme: 'dark',
         description: "Atari's 1979 vector classic, rebuilt honest: the stick rotates the gold lander and the main engine fires along the ship's own axis, gravity is one-sixth of nowhere and the tank is finite. The ALT / VERT / HORIZ / FUEL readouts are the whole game — you cannot eyeball a soft touchdown on a jagged white line. Set it down slow, straight and flat: the lit pads pay 100 · 50 · 20 · 50 · 100 times the multiplier, plus a bonus for the fuel you spared; too fast, too tilted or on a slope and the legs fold. Then relight and climb: catch the lunar orbiter crossing the sky to refuel, and each new terrain carries a bigger multiplier (×1 to ×10). The attract demo is the autopilot's own proven five-mission chain, audited tick-for-tick by a Node harness — energy-descent approach, timed launch, orbit wait, and the slack rule: the campaign still wins deathless with 70 units cut from every tank, and loses at 80.",
         controls: ['◀ ▶ / D-pad: rotate the lander — the thrust follows the nose', '▲ / SPACE / A: main engine (it burns — watch FUEL)', 'The landing window: VERT under 28, HORIZ under 14, tilt under 15° — on a lit pad or any flat ground', 'After landing, lift off and catch the orbiter on the dashed line to refuel', 'X / ZOOM button: narrow the view for the touchdown; L works too', '?: pause and read the flight manual'],
+    },
+    {
+        path: '/myst',
+        builtBy: 'forge',
+        component: MystGame,
+        label: 'MYST',
+        theme: 'dark',
+        description: "Cyan's 1993 island, rebuilt whole in code: a first-person, node-to-node adventure where every view is a still, living scene — the sea heaves, the hearth flickers, gears turn, an illusion shimmers over a hidden door. You arrive at the dock with nothing: no map, no inventory, no hints — take notes, as in 1993. Climb to the library and read the RED and BLUE books, whose brothers' pleas grow clearer with every page you return; find the SAFE (three numbers, and Atrus leaves notes), burn the wooden book in the FIREPLACE to reveal the link to SELENITIC, climb the CLOCK TOWER hidden behind the palm illusion to MECHANICAL, match the STAR PANEL to open CHANNELWOOD, and sail the safe's blue cover to STONESHIP. Each Age hides a red and a blue page — return all eight and a WHITE page appears. Free either brother and take his place forever; seat the white page on the pedestal and bring ATRUS home. Every surface, sky and sound is synthesized — three.js scenes with procedural textures, wind, surf and machinery. The attract mode walks the island on the solver's own rails; a Node harness audits the graph, every gate, both bad endings and the white-page win.",
+        controls: ['Click / tap what you see to move, turn, and use — hot spots glow under the cursor', '◀ ▶ arrows: turn in place 90° · ▲ / W: step or use what you are facing', 'SPACE / A: use the center target · X / B / ↺: turn left', 'Books, the safe, the sphere and the star panels open as panels — A / Enter / Esc closes them', 'Walk every Age and bring the red & blue pages back to their books upstairs', 'Read everything twice. The island gives its secrets to those who take notes · ? pauses'],
     },
     {
         path: '/tempest',
