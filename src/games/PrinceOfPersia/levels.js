@@ -18,7 +18,7 @@
 //   '<' exit door (locked until the plate; walk up the stairs into it)
 //   'w' the sword          'x' chomper jaws (scheduled blade between pillars)
 //   'c' mid-level checkpoint tile
-//   'o' torch (decor)      'g' guard  's' skeleton  'J' Jaffar
+//   'o' torch (decor)      'g' green guard  'R' red guard  's' skeleton  'F' fat  'J' Jaffar
 //   'r' small red (+1)     '+' large red (+1 max)   'b' blue poison (-1)
 //   'f' slow-fall          'u' upside-down
 // Ground row is forced solid everywhere, so a feature char always sits on floor.
@@ -38,7 +38,7 @@ export const SOLIDISH = new Set([SOLID, PLATFORM, LOOSE, SPIKE, GATE, RAISE, DRO
 export const CODE = {
     '.': EMPTY, '#': SOLID, '=': PLATFORM, '~': LOOSE, '^': SPIKE, 'G': GATE,
     'B': RAISE, 'D': DROP, 'p': EXITPLATE, 'o': TORCH, '<': EXIT, 'w': SWORD, 'x': SOLID, 'c': SOLID,
-    'g': SOLID, 's': SOLID, 'J': SOLID, 'r': SOLID, '+': SOLID, 'b': SOLID, 'f': SOLID, 'u': SOLID,
+    'g': SOLID, 'R': SOLID, 'F': SOLID, 's': SOLID, 'J': SOLID, 'r': SOLID, '+': SOLID, 'b': SOLID, 'f': SOLID, 'u': SOLID,
 }
 
 const EXIT_ROOM = [
@@ -61,8 +61,8 @@ const L1 = [
 ]
 
 const L2 = [
-    ['..........', '.o......o.', '..........', '..........', '..........', '..........', '..........', '..........', '#+###g##u#'],
-    ['..........', '.o......o.', '..........', '..........', '..........', '..........', '..........', '..........', '#^######r#'],
+    ['..........', '.o......o.', '..........', '..........', '..........', '..........', '..........', '..........', '#+###g###u'],
+    ['..........', '.o......o.', '..........', '..........', '..........', '..........', '..........', '..........', '#^#####Rr#'],
     ['..........', '.o......o.', '..........', '..........', '....==....', '..........', '..........', '..........', '##B###G###'],
     EXIT_ROOM,
 ]
@@ -75,9 +75,9 @@ const L3 = [
 ]
 
 const LEVELS = [
-    { name: 'THE DUNGEON', rooms: L1, start: { room: 0, c: 1, r: 8 } },
-    { name: 'THE PORT', rooms: L2, start: { room: 0, c: 1, r: 8 } },
-    { name: 'THE CHECKPOINT', rooms: L3, start: { room: 0, c: 1, r: 8 } },
+    { name: 'THE DUNGEON', theme: 'dungeon', rooms: L1, start: { room: 0, c: 1, r: 8 } },
+    { name: 'THE PORT', theme: 'dungeon', rooms: L2, start: { room: 0, c: 1, r: 8 } },
+    { name: 'THE CHECKPOINT', theme: 'palace', rooms: L3, start: { room: 0, c: 1, r: 8 } },
 ]
 
 export const LEVEL_COUNT = LEVELS.length
@@ -151,9 +151,16 @@ export function makeLevel(i) {
     // clamp guard patrols to their own room
     for (const gd of guards) gd.patrol = [Math.max(gd.room * RW + 1, gd.c - 2), Math.min((gd.room + 1) * RW - 2, gd.c + 2)]
 
+    // room decoration seeds: pillars, arched windows and tapestries get stable
+    // columns per room (pure math on the room index — no Math.random)
+    const deco = []
+    for (let rm = 0; rm < nRooms; rm++) {
+        deco.push({ window: 2 + (rm * 3) % 6, tapestry: 7 - (rm * 2) % 5, pillar: rm % 2 ? 1 : 8 })
+    }
+
     return {
-        id: i, name: src.name, W, H, nRooms, grid,
-        guards, pots, chomps, plates, torches, exit, sword, checkpoint,
+        id: i, name: src.name, theme: src.theme || 'dungeon', W, H, nRooms, grid,
+        guards, pots, chomps, plates, torches, deco, exit, sword, checkpoint,
         start: { ...src.start },
         needBoss: !!guards.find((g) => g.boss),
     }
