@@ -13,17 +13,17 @@ export const TOWN_H = 14
 // s sewer entrance (open)   m Mangar's tower gate (needs the tower key)
 const TOWN_ROWS = [
     '################',
-    '#.##.##.##.....#',
-    '#.g#.#e#.#t#...#',
-    '#.##.##.##.....#',
+    '#.....#.....#..#',
+    '#..g..#..e..#t.#',
+    '#.....#.....#..#',
     '#..............#',
-    '####.######.####',
+    '###.###.####.###',
     '#..............#',
-    '#.##.##.##.###.#',
-    '#.p#.#r#.#s#m#.#',
-    '#.##.##.##.###.#',
+    '#..p..#..r..#s.#',
+    '#.....#.....#m.#',
     '#..............#',
-    '####.######.####',
+    '###.###.####.###',
+    '#..............#',
     '#..............#',
     '################',
 ]
@@ -251,28 +251,26 @@ export function genFloor(fi) {
     const far = open[0]
     const goal = { x: far.x, y: far.y }
     const used = new Set([idx(entrance.x, entrance.y), idx(goal.x, goal.y)])
-    const pick = (minD) => {
-        const cand = open.filter((c) => !used.has(idx(c.x, c.y)) && dist[idx(c.x, c.y)] >= minD)
-        const c = cand[Math.floor(rnd() * cand.length)]
-        used.add(idx(c.x, c.y))
-        return c
-    }
     const minD = Math.max(4, Math.floor(dist[idx(goal.x, goal.y)] / 4))
-    const pots = [], ales = [], treasure = [], ambushes = []
-    for (let i = 0; i < f.pots; i++) pots.push(pick(minD))
-    for (let i = 0; i < f.ales; i++) ales.push(pick(minD))
-    for (let i = 0; i < f.treasure; i++) treasure.push(pick(minD))
-    let id = 0
-    for (let i = 0; i < f.ambushes; i++) {
-        const c = pick(minD)
-        const n = 1 + Math.floor(rnd() * 3)
-        const group = []
-        for (let k = 0; k < n; k++) group.push(f.mobs[Math.floor(rnd() * f.mobs.length)])
-        ambushes.push({ id: id++, x: c.x, y: c.y, group })
-    }
     let locked = null, key = null
     let strongCell = { x: goal.x, y: goal.y }
     if (f.locked) {
+        // Build a true chokepoint: seal a keep around the goal with a single door
+        // so the strong/stairs cannot be reached without the key, regardless of maze loops.
+        const cheb = (c) => Math.max(Math.abs(c.x - goal.x), Math.abs(c.y - goal.y))
+        const keepR = 2
+        const inKeep = (x, y) => cheb({ x, y }) <= keepR
+        for (let y = goal.y - keepR; y <= goal.y + keepR; y++)
+            for (let x = goal.x - keepR; x <= goal.x + keepR; x++)
+                if (x > 0 && y > 0 && x < size - 1 && y < size - 1) grid[idx(x, y)] = 0
+        const ring = []
+        for (let y = goal.y - keepR - 1; y <= goal.y + keepR + 1; y++)
+            for (let x = goal.x - keepR - 1; x <= goal.x + keepR + 1; x++) {
+                if (x < 0 || y < 0 || x >= size || y >= size) continue
+                if (inKeep(x, y)) continue
+                grid[idx(x, y)] = 1
+                ring.push({ x, y })
+            }
         const path = []
         let cx = goal.x, cy = goal.y
         while (!(cx === entrance.x && cy === entrance.y)) {
@@ -282,24 +280,67 @@ export function genFloor(fi) {
                 const nx = cx + dx, ny = cy + dy
                 if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue
                 const t = idx(nx, ny)
-                if (grid[t] === 0 && dist[t] !== -1 && dist[t] === dist[idx(cx, cy)] - 1) { best = { x: nx, y: ny }; break }
+                if (dist[t] !== -1 && dist[t] === dist[idx(cx, cy)] - 1) { best = { x: nx, y: ny }; break }
             }
             if (!best) break
             cx = best.x; cy = best.y
         }
-        const doorIdx = Math.max(1, Math.floor(path.length / 2))
-        const door = path[doorIdx]
-        const keyPool = path.slice(doorIdx + 1)
-        locked = { x: door.x, y: door.y }
-        key = keyPool.length ? keyPool[Math.floor(rnd() * keyPool.length)] : pick(minD)
-        used.add(idx(locked.x, locked.y))
-        used.add(idx(key.x, key.y))
-        const goalSide = path.slice(0, doorIdx).filter((c) => Math.abs(c.x - locked.x) + Math.abs(c.y - locked.y) === 1 && !(c.x === goal.x && c.y === goal.y))
-        if (goalSide.length) strongCell = goalSide[0]
+        const touchesKeep = (c) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inKeep(c.x + dx, c.y + dy))
+        const doorCandidates = ring.filter((c) => touchesKeep(c))
+        const onPath = doorCandidates.filter((c) => path.some((p) => p.x === c.x && p.y === c.y))
+        const ordered = (onPath.length ? onPath : doorCandidates).concat(doorCandidates)
+        // choose a door that (open) connects entrance→goal and (barred) disconnects them
+        let chosenDoor = null
+        for (const cand of ordered) {
+            grid[idx(cand.x, cand.y)] = 0
+            const open = bfsDist(grid, size, entrance.x, entrance.y)
+            if (open[idx(goal.x, goal.y)] < 0) { grid[idx(cand.x, cand.y)] = 1; continue }
+            const barred = grid.slice(); barred[idx(cand.x, cand.y)] = 1
+            const bd = bfsDist(barred, size, entrance.x, entrance.y)
+            if (bd[idx(goal.x, goal.y)] >= 0) { grid[idx(cand.x, cand.y)] = 1; continue }
+            chosenDoor = cand; grid[idx(cand.x, cand.y)] = 0; break
+        }
+        if (chosenDoor) {
+            locked = { x: chosenDoor.x, y: chosenDoor.y }
+            const barredG = grid.slice(); barredG[idx(chosenDoor.x, chosenDoor.y)] = 1
+            const bd = bfsDist(barredG, size, entrance.x, entrance.y)
+            const outside = []
+            for (let y = 1; y < size - 1; y++)
+                for (let x = 1; x < size - 1; x++) {
+                    const t = idx(x, y)
+                    if (grid[t] === 0 && !inKeep(x, y) && bd[t] >= 0 && !(x === entrance.x && y === entrance.y)) outside.push({ x, y })
+                }
+            key = outside.length ? outside[Math.floor(rnd() * outside.length)] : null
+            if (key) used.add(idx(key.x, key.y))
+            used.add(idx(chosenDoor.x, chosenDoor.y))
+            strongCell = { x: goal.x, y: goal.y }
+        }
+    }
+    // supplies on cells reachable AFTER the seal (door treated open)
+    const dOpen = bfsDist(grid, size, entrance.x, entrance.y)
+    const open2 = openCells(grid, size).filter((c) => dOpen[idx(c.x, c.y)] >= 0 && !(c.x === entrance.x && c.y === entrance.y))
+    const pick2 = (minDc) => {
+        const cand = open2.filter((c) => !used.has(idx(c.x, c.y)) && dOpen[idx(c.x, c.y)] >= minDc)
+        const c = cand[Math.floor(rnd() * cand.length)]
+        used.add(idx(c.x, c.y))
+        return c
+    }
+    const pots = [], ales = [], treasure = [], ambushes = []
+    for (let i = 0; i < f.pots; i++) pots.push(pick2(minD))
+    for (let i = 0; i < f.ales; i++) ales.push(pick2(minD))
+    for (let i = 0; i < f.treasure; i++) treasure.push(pick2(minD))
+    let id = 0
+    for (let i = 0; i < f.ambushes; i++) {
+        const c = pick2(minD)
+        const n = 1 + Math.floor(rnd() * 3)
+        const group = []
+        for (let k = 0; k < n; k++) group.push(f.mobs[Math.floor(rnd() * f.mobs.length)])
+        ambushes.push({ id: id++, x: c.x, y: c.y, group })
     }
     return {
         fi, name: f.name, size, grid, palette: f.palette,
-        entrance, stairs: f.boss ? null : goal, boss: f.boss ? { x: goal.x, y: goal.y } : null,
+        entrance, stairs: f.boss || fi === 4 ? null : goal, boss: f.boss ? { x: goal.x, y: goal.y } : null,
+        exit: fi >= 1 && !f.boss ? { x: entrance.x, y: entrance.y } : null,
         strong: { x: strongCell.x, y: strongCell.y, key: f.strong },
         pots, ales, treasure, ambushes, locked, key,
         wall: (x, y) => x < 0 || y < 0 || x >= size || y >= size || grid[y * size + x] === 1,

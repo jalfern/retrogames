@@ -155,6 +155,11 @@ const TempestGame = lazy(() => import('../games/Tempest'))
 // the chunk; the harness imports road/sim/planner unchanged in Node.
 const OutRunGame = lazy(() => import('../games/OutRun'))
 
+// THE BARD'S TALE: the seeded floors, the ledger sim, and the solver that
+// proves every depth reachable/replenished (and scripts/bardscheck.mjs audits)
+// ride in the chunk; the harness imports sim/dungeons/solver unchanged in Node.
+const BardsTaleGame = lazy(() => import('../games/BardsTale'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -735,6 +740,15 @@ export const GAMES = [
         theme: 'dark',
         description: "Atari's 1981 vector classic, rebuilt honest: you ride the glowing rim of a polygonal tube, the camera locked to your color-cycling ship, and the whole tube rotates when you slide. Flippers hinge up the faces, pulsers peel off the far end and fly straight at you, spinners spiral the deep and then dive — and NOTHING that reaches the rim survives, yours included. Fire down the face you stand on; line up an edge and the shot becomes the super bullet, raking both faces it touches. Four waves cycle the cabinet's geometry — 16 faces, a ridged diamond tube, 32 faces, the near-infinite 96 — at the classic pace, with an extra ship every 10,000. The attract demo is the autopilot's own proven four-wave clear, audited tick-for-tick by a Node harness — slack-scheduled intercepts, edge super-bullets, and the slack rule: the campaign still wins deathless with the guns jammed to nearly half speed, and loses the moment the tube outruns them.",
         controls: ['◀ ▶ / D-pad: slide the rim — it wraps all the way around', 'SPACE / Z / A: fire down the face you stand on', 'Stand exactly on an edge line and the shot goes down the edge — it kills everything riding it', 'Nothing may reach the rim alive: flippers, pulsers and diving spinners all kill on arrival', 'Clear a wave to bank the bonus — four waves, then the tube is yours', '?: pause and read the tube rules'],
+    },
+    {
+        path: '/bards-tale',
+        builtBy: 'forge',
+        component: BardsTaleGame,
+        label: "THE BARD'S TALE",
+        theme: 'dark',
+        description: "The 1985 first-person RPG, rebuilt whole in code: six heroes — warrior, paladin, rogue, bard, hunter, magician — walk out of Skara Brae and down through five seeded dark levels to Mangar's throne. The town is the town: Garth's arms, the tavern, the Temple's healing and raising, the Review Board that spends your skill points and finally grants the tower key. Dungeons are coloured raycast corridors, monsters stand ten to forty feet away so spells outrun steel until you ADVANCE, and a bard's song on a tankard of ale heals and hardens the whole party. Every swing, heal, coin and level is booked to a ledger that a Node harness recomputes line for line; every maze is seeded and re-proved reachable by independent BFS — locked doors are real chokepoints hiding their key on the floor. The thing demoing on this title screen is the same autopilot CI grades, and the campaign is re-proven winnable with one fewer potion and one fewer ale than it spends. Clear the five floors, take the key, climb Mangar's tower and thaw Skara Brae.",
+        controls: ['Arrows / D-pad: walk and turn the corridor; SPACE / A uses doors, stairs, gates and shop doorways', 'In battle: SPACE attacks · A / B closes (ADVANCE) · arrows pick the target · P drinks a potion · F flees (never from Mangar)', 'Click a spell or song on the right — four-letter codes cast as in 1985; songs cost an ALE', 'Monsters stand 10–40 ft: spell them at range, or ADVANCE into steel; the Hunter shoots at any band', 'In a shop or the Temple, click the option or press its number · LEAVE (or SPACE) steps out', 'Clear every floor then talk to the Review Board for the tower key · ?: pause and read the rules'],
     }
 
 ]
