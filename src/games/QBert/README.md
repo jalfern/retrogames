@@ -53,3 +53,21 @@ the player actually gets, in plain Node.
 - Music is an original bouncy riff, not the Gottlieb melody.
 - `qbertdive` rides the advisory tier (like `joustdive`/`tetrisplay`), not the
   PR gate.
+
+## Q*BERT
+
+**Q*BERT** (`/qbert`) is the 1982 Gottlieb cube-hop: a 28-cube isometric
+pyramid (rows 1-6 + skirt 4,3), diagonal-only hops, every landing flips the
+cube top — round 1 is all-green (apex counts, 27 to go), round 2+ is the
+5-colour cycle (clear when all match). Coily drops at flip 9 and strictly
+closes on you; the apex up-hop boards a disc and a snake within two edges
+follows it off (+500); red balls ricochet the edges, Ugg/Wrongway run rows
+(round 2+), Sam & Slick wipe green back (round 3+); the "@!#?@!" balloon
+rides every death. `sim.js` is pure and `planner.js`'s proven pilot drives the
+attract demo; `npm run qbertcheck` grades the pilot with its OWN walker as
+referee (71 checks: geometry literals, chase/lure radius, chain ledger 25/50/100,
+pilot clears round 1 with lives-1 slack on 8 seeds, hash-for-hash). Verify with
+`npm run qbertcheck` (`static` gate) and `npm run qbertdive` (Chrome, real
+arrow-pair keys; advisory tier). Note: at the apex, up-diagonals are the disc
+attempt — the way off the top is down-diagonal (the harness learned this the
+honest way).

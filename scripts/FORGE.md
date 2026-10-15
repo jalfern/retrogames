@@ -55,7 +55,9 @@ AGENTS.md wins.
    list its 5 signature features, mechanics AND look. Those five are the
    spec; respect anything extra the issue body asks for. Build the real game,
    not a reduced one: no "-Lite"/"-Min" in names unless the issue asks for a
-   cut-down version. Write the game's own `README.md` if it's a big one.
+   cut-down version. **Write the game's own `README.md`** — engine notes, verify
+   commands and honest gaps go THERE; new games never add notes to `AGENTS.md`
+   (it is law, not a log, and lives under a 150-line budget).
 4. **Build it** per the AGENTS.md conventions:
    `src/games/<Name>/index.jsx`, register in `src/config/games.js`, fixed
    internal resolution, fixed timestep, attract mode, `?` PauseOverlay,

@@ -88,3 +88,18 @@ Fail-proven: inverting the joust sign (`diff < -CFG.joustTol`) turns
   collision look-ahead (the Spy Hunter approach), not one more reactive rule.
 - Hands do not punish riders *above* the tip while sinking; the tip-only kill
   rule is simpler and readable.
+
+## Joust
+
+**JOUST** (`/joust`) is the 1982 Williams lance duel, rebuilt on a pure
+deterministic sim (`sim.js`): flap-vs-glide momentum physics where the
+**lower lance always loses** (dead-even kills both), a five-wave roster
+(Bounder/Hunter/Shadow Lord), and the egg chain — kills drop eggs, touch
+banks them, left resting they hatch into the next-stronger rider. Terrain
+(ledges, lava pits, troll-hand columns) is data (`waves.js`), which is what
+lets `npm run joustcheck` pin the joust rule, the hatch timer, crumble
+timing and the wave score ledger before a browser exists; the attract demo
+is `planner.js`'s own proven run (it clears waves 1-2; the pilot ceiling-pin
+bug and its fix are documented in the game README). Verify with
+`npm run joustcheck` (`static` gate) and `npm run joustdive` (Chrome, real
+keys; advisory tier).

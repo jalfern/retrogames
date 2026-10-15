@@ -79,3 +79,23 @@ battery passed because it calls `plantAt` directly.
 
 Verify: `npm run sweepcheck` (and `-- --mutate`) for the engine,
 `npm run sweepplay` for the browser.
+
+## Minesweeper
+
+**MINESWEEPER** (`/minesweeper`) is the arcade's logic-only title: three
+difficulties (COLT/SAPPER/GENERAL), every board **guess-free by construction** —
+the generator ships a board only after a solver playing *just the rules the
+player learns* (single-square + subset-pair, chord as a strippable shortcut)
+proves it closes with zero forced guesses, then re-proves it with chord
+**forbidden** (the slack gate). Cursor + tap play, attract autopilot.
+
+The one contract that keeps it honest: **the solver is the gate, so the solver
+must not be its own referee.** Two solver lies found and killed; the browser
+harness then found a third the Node battery structurally could not see (a first
+click gated behind `screen:'play'` that `dig()` itself was refusing to set —
+planting was unreachable in the app, while `plantAt` called directly passed every
+Node check). Full notes — the stale-scratch bug, the oracle that had to stop
+trusting the solver's ledger to become able to fail, and the two green-tested-nothing
+oracle versions — are in **[`src/games/Minesweeper/README.md`](src/games/Minesweeper/README.md)**.
+Verify with `npm run sweepcheck` (`-- --mutate` = 4/4 mutants die; in the `static`
+gate) and `npm run sweepplay` (Chrome, real keys only; in `verify`).
