@@ -13,11 +13,23 @@ const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
 const probe = () => page.evaluate(() => window.__popTest.probe())
 const hash = () => page.evaluate(() => window.__popTest.hash())
+const mus = () => page.evaluate(() => window.__popTest.musicState())
 
 let p = await probe()
 r.check('boots into attract', p.attract === true && p.status === 'play', `${p.attract} ${p.status}`)
 r.check('the prince starts unarmed', p.sword === false)
 const h1 = await hash()
+
+// the analyser taps the MUSIC bus only — footsteps and ambience go straight to
+// the speakers — so this baseline really measures the attract silence.
+let silencePeak = 0
+for (let i = 0; i < 10; i++) {
+    silencePeak = Math.max(silencePeak, (await mus()).peak)
+    await page.waitForTimeout(50)
+}
+r.check('the attract screen sits in silence, like the original', silencePeak <= 6, `peak ${silencePeak}`)
+
+await hash()
 await page.waitForTimeout(700)
 const h2 = await hash()
 r.check('attract demo is alive (autopilot in the dungeon)', h1 !== h2)
@@ -105,6 +117,45 @@ await page.keyboard.press('KeyR')
 await page.waitForTimeout(300)
 p = await probe()
 r.check('R restarts the hour', p.status === 'play' && p.level === 0 && p.clock > 200000, `${p.status} L${p.level} clock=${p.clock.toFixed(0)}`)
+
+// ---- the sound pass: the hour rides a music bed, and the twelve levels flip -
+// it with their stone (dungeon drip under the dark, the throne bed in the
+// palace). Skips ride the DEV panel; the tracks are read back from the live
+// engine, not recomputed.
+await page.waitForTimeout(1500)
+const m1 = await mus()
+let peak = 0
+for (let i = 0; i < 24; i++) {
+    peak = Math.max(peak, (await mus()).peak)
+    await page.waitForTimeout(60)
+}
+r.check('the hour rides a music bed (engine stepping, analyser over the attract silence)',
+    m1.playing && m1.track === 'pop' && m1.step > 0 && peak > silencePeak + 3, `track ${m1.track} step ${m1.step} peak ${peak} vs ${silencePeak}`)
+
+const PALACE = new Set([2, 7, 9, 10, 11])
+const expectTrack = (i) => (PALACE.has(i) ? 'popThrone' : 'pop')
+let bedOk = true, bedDetail = ''
+for (let lvl = 1; lvl < 12; lvl++) {
+    await page.evaluate(() => window.__dbg && window.__dbg.act('skip level'))
+    let seen = null
+    for (let i = 0; i < 60; i++) {
+        seen = await probe()
+        if (seen.level === lvl && !seen.attract) break
+        await page.waitForTimeout(80)
+    }
+    const mm = await mus()
+    const want = expectTrack(lvl)
+    if (seen.level !== lvl || mm.track !== want) {
+        bedOk = false
+        bedDetail = `L${lvl}: probe L${seen.level} track ${mm.track} (want ${want})`
+        break
+    }
+}
+r.check('all twelve levels carry the right bed (dungeon pop / palace throne)', bedOk, bedDetail || 'twelve beds, twelve levels')
+await page.evaluate(() => window.__dbg && window.__dbg.act('win'))
+await page.waitForTimeout(1200)
+const mEnd = await mus()
+r.check('the rescued hour drops the bed at the princess door', mEnd.track !== 'pop' || !mEnd.playing, `track ${mEnd.track} playing ${mEnd.playing}`)
 
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)
