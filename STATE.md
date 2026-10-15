@@ -1,65 +1,50 @@
-# STATE — 2026-10-15 late-3 (forge session, MYST shipped)
+# STATE — 2026-10-15 (forge session, THE BARD'S TALE shipped)
 
 ## Shipped this session
-**MYST** (#292) — PR #303, squash-merged at `87495f3`, live:
-https://jalfern.com/retrogames/myst (prod bundle `index-CEpa-tq_.js` +
-engine chunk `index-MaFbyBNg.js` verified to carry MYST).
-- First-person node graph, 14 views: dock→cliffs→landing→stairway→library;
-  clock tower behind the palm illusion; cavern star dome + waterfall door;
-  cabin with the iron safe; four Ages (Selenitic, Stoneship, Mechanical,
-  Channelwood), each hiding a red and a blue page.
-- Full spine: pages restore brothers' corrupted lines; matchbook→fireplace→
-  Selenitic; stars 4-1-3-2→Channelwood; safe 8-5-2→Stoneship; switch chain;
-  sphere tones 3-1-4-2. Eight pages→white page→Atrus; freeing a brother
-  (needs white page first) traps you. Three endings.
-- All art/audio synthesized: fbm palette textures, animated surf/fire/gears/
-  illusion/starlight, ambient layers scheduled off the fixed-timestep loop.
-- Gates: `lint:myst` + `mystcheck` (85 checks) added to CI `static`; proven to
-  fail (deleting the tower-door lock check → red, restored green). Advisory
-  `mystplay` 10/10 zero page errors (real arrow keys climb the island; live
-  solver wins 8/8→atrus; Space restarts).
-- Polish pass filed as **#304**.
+**THE BARD'S TALE** (#293) — PR #306, squash-merged at `b9ee5e0`, live:
+https://jalfern.com/retrogames/bards-tale
+- First-person RPG rebuilt whole in code (no assets): 6-hero party, five seeded
+  dark levels (Wine Cellars → Mangar's Tower) out of a hand-authored Skara Brae.
+- Coloured raycast corridors (per-floor palette), overhead town map, fog automap,
+  animated procedural monster portraits sized by range band, all sounds synthesized.
+- Round-based combat at 10–40 ft bands: spells outrun steel until ADVANCE; Hunter
+  bow reaches any band; bard songs on ALE (heal/harden/sharpen/soften/slow).
+- Four-letter spell codes (authentic). Temple heals+raises, Garth's arms, Tavern
+  ale, Review Board spends skill points + advances mages.
+- Tower gate needs the **tower key**, granted by the Board only after all five
+  tower floors are proven. Locked floors are sealed keeps with a single door whose
+  key hides outside — a real chokepoint, not decoration.
+- Gates added to CI `static` (merge gate): `lint:bards` + `bardscheck` → **125/125
+  PASS** (no-random · independent-BFS floor audit incl. the door-bar check ·
+  engine pins · proven campaign · slack rule · determinism). Advisory `bardsplay`
+  11/11, zero page errors. `npm run build` clean.
 
 ## GOAL — next session
-Claim the oldest `game-queue` issue: **#293 THE BARD'S TALE** (then #294 SSX,
-#295 Civ V — scope question below still open; PoP #296 IS a cabinet title if
-the board order can skip the non-cabinet two). BARD'S TALE is 1985 DOS — either
-the js-dos spine (AGENTS gotchas) or a first-person dungeon-crawl rebuild in
-three.js (MYST now proves the three.js spine: nodes + textures + sound +
-harness patterns are fresh). QA items (#304 MYST, #302, #298 …) are valid
-fallbacks.
+No explicit goal was set. Claim the oldest open `game-queue` issue and confirm
+with Jon before building. Candidates from last board read: **#294 SSX**,
+**#296 Prince of Persia** (#295 Civ V is the standing scope-question — likely
+not a cabinet title). Open QA items are valid fallbacks if the queue is quiet.
+Read `docs/qwen-run-2026-09-postmortem.md` and the FORGE playbooks first.
 
-## Board
-- Queue: #293 Bard's Tale, #294 SSX, #295 Civ V, #296 PoP.
-- Open QA: #304 (MYST new), #302 (Gauntlet/FourHalls), #298 (Tempest), #287
-  (LunarLander), #283 (OutRun), #280 (SmashTV), #275 (Gauntlet), #270
-  (SimCity), #269/#220 (Kart), #265 (Marble), #263/#258 (Bubble Bobble).
-- QA lane lives on `retrogames-qa-258` (dev 5173 theirs); forge dev falls
-  through (used 5175 this session; killed on exit). `*play` scripts take
-  URL via env (`MYST_URL=…`).
+## Board (last read)
+- Queue: #294 SSX, #295 Civ V, #296 PoP.
+- Open QA: #304 (MYST), #302 (Gauntlet/FourHalls), #298 (Tempest), #287
+  (LunarLander), #283 (OutRun), #280 (SmashTV), #275 (Gauntlet), #270 (SimCity),
+  #269/#220 (Kart), #265 (Marble), #263/#258 (Bubble Bobble).
+- QA lane lives on `retrogames-qa-258` (dev 5173 theirs); forge dev falls through
+  (used 5173 this session, killed on exit). `*play` scripts take URL via env
+  (`BARDS_URL=… node scripts/bardsplay.mjs`).
 
-## Housekeeping done
-Worktree `retrogames-forge-myst` pruned (branch deleted on merge). Main
-checkout parked detached at `origin/main`; STATE.md committed per rule-9.
-Carry-over: `forge-bobubble` worktree still refuses removal (dead-session
-dirt) — same note as last session; Jon may want to look before force-remove.
-
-## How MYST works (pointer, not a tutorial)
-`src/games/Myst/`: `nodes.js` (14 camera poses + hotspots; convention: a
-node's camera faces world +z at yaw 0, spot bearings are relative degrees);
-`state.js` (pure `dispatch(state,action)`, gates + endings + `solveScript()`
-shared by attract and harness); `scene.js` (sibling groups spaced GAP=4000 on
-X, camera teleports; page/match meshes auto-placed from spot yaws);
-`textures.js` (fbm palettes + sky gradients); `sound.js` (sfx + ambience via
-audioController). READMEs carry the honest gaps (single-view Ages, fixed
-codes, no rocket ride, no starfield travel animation).
-
-## Three questions for Jon
-1. Queue shapes (third ask, unanswered): #294 SSX and #295 Civ V dwarf the
-   one-game-per-session loop and are not arcade cabinets. Descope/backlog
-   them before the forge reaches them? (#296 PoP 1989 IS a cabinet.)
-2. MYST codes are fixed (safe 8-5-2, dome stars 4-1-3-2, sphere tones
-   3-1-4-2). Keep fixed for harness provability, or randomize per save like
-   some originals did (solver would read the state instead of constants)?
-3. Attract house rule (third ask): deathless showcase + drama only on death
-   screens — a one-line ruling would unblock #302/#298/#304 assumptions.
+## Notes for whoever picks this up
+- Two distinct dungeon crawlers now coexist: Wizardry = green wireframe, 3 floors,
+  tight ledger; Bard's Tale = coloured raycast, 5 floors + shops/songs/gate economy.
+  Keep them visually and mechanically separate.
+- `src/config/games.js` now carries a per-game `pad` field (#305); new entries
+  should declare one. BARD'S TALE currently sets `controls` only — wire a `pad` if
+  the arcade bridge starts requiring it.
+- Locked-door generator is the load-bearing trick for any future "key behind a
+  locked door" floor: seal a keep, wall the ring, reopen one door that provably
+  disconnects the goal when barred. Copy `dungeons.js` + the bardscheck bar audit.
+- The main checkout stayed detached at `origin/main` all session (Jon's rule); the
+  build ran in worktree `~/Dev/retrogames-forge-bards-tale` via a symlinked
+  `node_modules` to `~/Dev/retrogames/node_modules` (worktrees share no deps).
