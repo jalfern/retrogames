@@ -72,8 +72,10 @@ X or Z strike · ? pause · R restart after the hour is lost.
 
 ```bash
 npm run lint:pop     # scoped lint gate
-npm run popcheck     # 191 checks: the 75 Stage-1 rules + 24 Stage-2 look
-                     # clauses + 67 Stage-3 clauses + 25 Stage-4 sound clauses.
+npm run popcheck     # 220 checks: the 75 Stage-1 rules + 24 Stage-2 look
+                     # clauses + 67 Stage-3 clauses + 25 Stage-4 sound clauses
+                     # + 14 Stage-5 gate/banner/escort clauses + 15 Stage-6
+                     # light-model clauses.
                      # Champion run pinned: autopilot clears all twelve levels at
                      # 0 deaths, the mirror / mouse-held gate / poisoned phantom
                      # shadow / invisible bridge / sheathed merge all fire in that
@@ -176,12 +178,52 @@ Jon played it and named four things. This stage ships all four.
   champion autopilot still clears all twelve levels at zero deaths with the
   escorts running.
 
+## Stage 6 of #316 — the second art pass: light, direction, colour (this merge)
+
+Jon asked to keep iterating the graphics until he says stop. This pass turns the
+flat, evenly-lit dungeon into one that is *lit* — by named sources, from one
+direction, in colour rather than just brightness.
+
+- **A real light model (`art.js`, pure & exported so `popcheck` can pin it).**
+  `lightAt(x, y, torchPx)` returns the brightness at any pixel as a cool
+  `LIGHT_AMBIENT` floor plus the sum of every torch's `torchGlow(dist)` — a
+  smoothstep that is 1 at the flame and 0 at `TORCH_RADIUS`. `darkAlpha` is its
+  inverse (the veil laid over the scene). Nothing about the room is one flat
+  value: light **pools** around sconces and sinks into shadow at the edges and
+  corners. Two torches read brighter between them than either alone.
+- **Per-torch pools, not a room-wide wash.** The old flat
+  `rgba(0,0,8,0.32)` fill over torchless rooms is gone. Darkness is now a
+  centre-weighted radial vignette (deeper for a torchless room), and the warm
+  light comes from `lightPool` blooming additively (`globalCompositeOperation =
+  'lighter'`) under each sconce — a hot core plus a wide halo that breathes with
+  the flame. `popcheck` asserts the flat literal is absent and that the pools are
+  radial + additive.
+- **One directional key.** `LIGHT_DIR` (upper-left) and `facet(nx, ny)` = dot
+  of a surface's normal with the key. Every brick face now carries a lit/dark
+  gradient toward that direction; the palace wall gets a matching key wash; pillar
+  bodies are shaded as cylinders (gold-lit on the key side, cool in the far
+  shade). The whole scene — dungeon and palace alike — agrees where light comes
+  from.
+- **Deeper colour.** An equal-luminance `tone()` nudge was replaced with a
+  per-channel `mix()`: brick mortar moved to a cool violet-blue and each face
+  tints warm on its lit corner / cool in its shadow, with a lit top course on the
+  masonry. The palette now has hue, not just value.
+- **Figures take the light.** Each prince/guard/princess asks `atLight(x, y)` for
+  the room light at its feet and gets a `warm` amount plus a `litSide`: the rim
+  light runs down whichever side the nearest torch is on, warms near a sconce and
+  cools in the dark, and a warm wash crosses the torso under strong flame.
+- **Determinism holds** — all of it is `sin`-hash and pure arithmetic; no
+  `Math.random`. Stage-6 added 15 `popcheck` clauses (falloff, the directional
+  sign, per-torch combination, veil inverse, the wash-gone, chromatic mix,
+  figure warm/litSide). Mutant proof at ship time: strip `torchGlow`'s smoothstep
+  to a hard cut-off and three clauses go red.
+
 ## Honest gaps (the deep pass continues — see #316)
 
 - Escort visuals are functional, not dramatic: a follower walks in from the
   edge rather than being seen through the doorway it came from, and two
-  escorts don't yet coordinate a pincer. QA may want a door-crossing cue.
-- Stage 6 is Jon's requested **second art pass** — more colour and light on the
-  stone and palace, and the prince.
+  escorts don't yet coordinate a pincer. **Stage 7** is the escort *feel* pass
+  (door-crossing cue, two-escort pincer).
 - Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
   with the d-pad; desktop-first, as the original was.
+
