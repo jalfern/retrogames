@@ -122,9 +122,12 @@ const ArkanoidGame = lazy(() => import('../games/Arkanoid'))
 // a pure step(state,input), so scripts/dugcheck.mjs audits rules, ledger and a
 // proven deathless clear in Node; the attract demo replays that same pilot run.
 const DigDugGame = lazy(() => import('../games/DigDug'))
-// GAUNTLET: same lesson — the autopilot that proves the four-maze quest (and
-// scripts/gauntletcheck.mjs audits) rides in the chunk with the pure sim.
+// GAUNTLET (Atari 1985) and FOUR HALLS share one camera-agnostic engine
+// (src/games/Gauntlet/{sim,levels,planner,art}.js): GAUNTLET renders it
+// overhead, FOUR HALLS in first person. The autopilot that proves the
+// four-maze quest (scripts/gauntletcheck.mjs audits) rides in the chunk too.
 const GauntletGame = lazy(() => import('../games/Gauntlet'))
+const FourHallsGame = lazy(() => import('../games/FourHalls'))
 // BUBBLE BOBBLE (Taito 1986): blow bubbles, trap, pop for escalating chains.
 // The sim is a pure step(state,inputs), so scripts/bobcheck.mjs audits all 100
 // generated caves, the trap/pop/chain ledger, letters, water, lightning, the
@@ -671,7 +674,16 @@ export const GAMES = [
         component: GauntletGame,
         label: 'GAUNTLET',
         theme: 'dark',
-        description: 'Atari\'s 1985 first-person dungeon crawl, rebuilt honest: choose your hero (Warrior, Valkyrie, Wizard, Elf — speed, power and range differ), walk four pillar-hall mazes in the arcade\'s own split-screen (corridor view, side map, narrator strip). Health drains the moment you spawn — food restores it, and when it runs low the hall itself shouts "WARRIOR NEEDS FOOD, BADLY!". Slam doors crash shut behind you and locked doors eat the keys you find along the way. Generators pulse grunts, wall-passing ghosts, demons, fire-throwing sorcerers and rock-lobbers until YOU smash the generator; a potion flares and clears the halls of everything but Death — and when the treasure timer runs out, DEATH walks the maze and drains you point by point. The stairs at the end of the fourth maze end the quest. The attract demo replays the autopilot\'s own proven full-quest clear, audited tick-for-tick by a Node harness (key-before-lock geometry, the slam and potion rules, the Death drain, the slack rule: it wins again with less food and fewer potions).',
+        description: 'Atari\'s 1985 overhead dungeon crawl, rebuilt honest: the camera rides above the rim of the maze and scrolls with your hero — the real cabinet view. Choose your hero (Warrior, Valkyrie, Wizard, Elf — speed, power and range differ), 8-way stick: each arrow turns AND moves, the sword sweeps the arc you face and arrows fly down it. Health drains the moment you spawn — food restores it, and when it runs low the hall itself shouts "WARRIOR NEEDS FOOD, BADLY!". Slam doors crash shut behind you, locked doors eat the keys you find along the way. Generators pulse grunts, wall-passing ghosts, demons, fire-throwing sorcerers and rock-lobbers in swarms until YOU smash the generator; a potion flares and clears the halls of everything but Death — and when the treasure timer runs out, DEATH walks the maze and drains you point by point. The stairs at the end of the fourth maze end the quest, narrator lines and all. A CPU partner (press C) covers your back on phones and desktop alike. The attract demo replays the autopilot\'s own proven full-quest clear, audited tick-for-tick by a Node harness (key-before-lock geometry, the slam and potion rules, the Death drain, the slack rule: it wins again with less food and fewer potions).',
+        controls: ['Arrows / the stick: move 8-way — facing follows your stick', 'SPACE / A: swing the sword at what you face · X / F / B: loose an arrow down the barrel', 'Walk into doors to open them; locked doors need a KEY; closed slam doors can be battered open', 'Eat food the moment health runs low; step on a POTION when the halls swarm', 'Keys carry between mazes — the far door is the whole point · ? pauses'],
+    },
+    {
+        path: '/four-halls',
+        builtBy: 'forge',
+        component: FourHallsGame,
+        label: 'FOUR HALLS',
+        theme: 'dark',
+        description: 'The first-person dungeon crawl this arcade shipped first — same four pillar-hall mazes, same shared engine, now under its own name. Choose your hero (Warrior, Valkyrie, Wizard, Elf), walk four mazes in a split-screen of corridor view, side map and narrator strip. Health drains the moment you spawn — food restores it, and when it runs low the hall itself shouts "WARRIOR NEEDS FOOD, BADLY!". Slam doors crash shut behind you and locked doors eat the keys you find along the way. Generators pulse grunts, wall-passing ghosts, demons, fire-throwing sorcerers and rock-lobbers until YOU smash the generator; a potion flares and clears the halls of everything but Death — and when the treasure timer runs out, DEATH walks the maze and drains you point by point. The stairs at the end of the fourth staircase end the quest. The attract demo replays the autopilot\'s own proven full-quest clear, audited tick-for-tick by the same Node harness that guards GAUNTLET.',
         controls: ['Arrow Left/Right: turn · Arrow Up: forward · Down: back (the arcade layout)', 'SPACE / A: swing the sword — it hits what is in front of you', 'X / F / B button: loose an arrow or spell at what you can see down the lane', 'Walk into doors to open them; locked doors need a KEY; closed slam doors can be battered open', 'Eat food the moment health runs low; step on a POTION when the halls swarm', 'Keys carry between mazes — the far door is the whole point · ? pauses'],
     },
     {

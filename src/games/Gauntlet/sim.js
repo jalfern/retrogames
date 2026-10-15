@@ -192,9 +192,8 @@ function moveHero(gs, ux, uy, sp) {
     const stone = (x, y) => cellChar(gs, x, y) === '#'
     const nx = h.x + ux * sp, ny = h.y + uy * sp
     const sx = Math.sign(ux), sy = Math.sign(uy)
-    const corner = sx && sy ? stone(nx + sx * R, ny + sy * R) : false
-    const okX = !stone(nx + sx * R, ny) && !(sx && sy && corner)
-    const okY = !stone(nx, ny + sy * R) && !(sx && sy && corner)
+    const okX = !stone(nx + sx * R, ny) && (sy === 0 || !stone(nx + sx * R, h.y))
+    const okY = !stone(nx, ny + sy * R) && (sx === 0 || !stone(h.x, ny + sy * R))
     let mx = okX ? nx : h.x
     let my = okY ? ny : h.y
     const cc = Math.floor(mx), cr = Math.floor(my)
