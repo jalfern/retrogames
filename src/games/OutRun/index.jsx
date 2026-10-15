@@ -21,6 +21,7 @@ import { SEG_LEN, ROAD_W, CAM_H, CAM_DEPTH, DRAW, SCENES } from './road.js'
 import { makeGame, step, stateHash, KMH, HIGH_TOP, LOW_TOP, W, H } from './sim.js'
 import { plan } from './planner.js'
 import { buildSprites, makeBackdrop } from './art.js'
+import { padState, steerPedals } from '../../utils/padState'
 
 const SIM_MS = 1000 / 60
 const HORIZON = Math.round(H * 0.42)
@@ -117,6 +118,13 @@ const OutRunGame = () => {
             const gas = held.has('ArrowUp') || held.has('Space') || held.has('KeyZ')
             const brake = held.has('ArrowDown')
             if (gearEdge) { gearRef.current = gearRef.current ? 0 : 1; gearEdge = false }
+            // Analog opt-in (#290 step 4): the stick is the wheel; the triggers
+            // (or the stick's push on touch) are the pedals.
+            const p = padState
+            if (p.engaged || p.rt > 0.05 || p.lt > 0.05) {
+                const s = steerPedals(p)
+                return { steer: s.steer, gas: s.thr, brake: s.brk, gear: gearRef.current }
+            }
             return { steer, gas, brake, gear: gearRef.current }
         }
 

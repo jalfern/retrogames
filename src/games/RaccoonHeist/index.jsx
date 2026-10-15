@@ -35,6 +35,7 @@ import { makeAlley } from './alley.js'
 import { buildWorld } from './world.js'
 import { createEngine } from './engine.js'
 import { heistAudio } from './audio.js'
+import { padState } from '../../utils/padState'
 
 /**
  * The one key table. Handlers read it, the attract card and the pause card are written
@@ -306,8 +307,10 @@ const RaccoonHeistGame = () => {
                 const m = Math.hypot(mx, my)
                 if (m > 1) { mx /= m; my /= m }
             }
-            const lookX = inp.look.x + (k.has('KeyJ') ? -1 : 0) + (k.has('KeyL') ? 1 : 0)
-            const lookY = inp.look.y
+            // The right stick orbits the camera — the same rate the J/L keys feed
+            // the engine, so a gamepad plays as the twin-stick the title is built for.
+            const lookX = inp.look.x + (k.has('KeyJ') ? -1 : 0) + (k.has('KeyL') ? 1 : 0) + padState.rx
+            const lookY = inp.look.y + padState.ry
             inp.look.x = 0
             inp.look.y = 0
             const acts = inp.actions.slice()

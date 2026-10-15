@@ -7,6 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG } from './sim.js'
 import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2 } from './levels.js'
 import { plan, bfsPath, press } from './planner.js'
+import { padState } from '../../utils/padState'
 
 // MARBLE MADNESS (Atari 1984) — iso heightmap course, inertial trackball.
 // All physics/rules live in sim.js (pure, deterministic); this file is painter
@@ -48,7 +49,13 @@ const MarbleMadnessGame = () => {
         let scriptT = 0
         let unmountDbg = null
         const keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false }
-        const inp = () => ({ left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown })
+        // The arrows are the digital read; padState.engaged means the floating
+        // stick or a gamepad stick is pushed, and its vector is the trackball.
+        const inp = () => {
+            const o = { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown }
+            if (padState.engaged) o.analog = { x: padState.x, y: padState.y }
+            return o
+        }
 
         let particles = []
         let banner = null

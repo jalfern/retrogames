@@ -127,7 +127,7 @@ function endGame(g, win) {
     push(g, { type: win ? 'win' : 'over', score: g.score, timeLeft: Math.max(0, g.timeLeft) })
 }
 
-// inp = { steer: -1|0|1, gas: bool, brake: bool, gear: 0|1 }
+// inp = { steer: -1..1, gas: 0..1 (a bool is fine), brake: 0..1 (a bool is fine), gear: 0|1 }
 export function step(g, inp = {}) {
     if (g.end) return
     const dt = 1 / 60
@@ -144,9 +144,13 @@ export function step(g, inp = {}) {
         if (g.flip > 0) g.flip--
     } else {
         g.gear = inp.gear === 0 ? 0 : 1
-        if (inp.gas) g.speed += accel * dt
+        // Gas/brake accept 0..1 (the trigger values, #290 step 4); booleans
+        // are exactly 1, so the digital path is unchanged.
+        const gas = typeof inp.gas === 'number' ? inp.gas : (inp.gas ? 1 : 0)
+        const brake = typeof inp.brake === 'number' ? inp.brake : (inp.brake ? 1 : 0)
+        if (gas > 0) g.speed += accel * dt * gas
         else g.speed -= COAST * dt
-        if (inp.brake && CFG.brake) g.speed -= BRAKE * dt
+        if (brake > 0 && CFG.brake) g.speed -= BRAKE * dt * brake
     }
     g.speed = Math.max(0, Math.min(top, g.speed))
 

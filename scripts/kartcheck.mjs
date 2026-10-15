@@ -338,5 +338,28 @@ if (process.argv.includes('--mutate')) {
     }
 }
 
+{
+    // Analog opt-in (#290 step 4): steer/thr/brk are the pad-state read of the
+    // same physics. At 0/1 they must be bit-identical to the digital keys the
+    // CPUs and the planner still use, and they scale strictly between.
+    const a = makeGame(); a.phase = 'race'
+    const b = makeGame(); b.phase = 'race'
+    for (const g of [a, b]) for (const o of g.karts.slice(1)) { o.x = -5000; o.y = -5000 }
+    step(a, { u: true, l: true })
+    step(b, { thr: 1, steer: -1 })
+    const ka = a.karts[0], kb = b.karts[0]
+    check('analog thr/steer at 1.0 is bit-identical to the digital keys',
+        ka.v === kb.v && ka.a === kb.a && ka.x === kb.x && ka.y === kb.y,
+        `v ${ka.v.toFixed(4)} a ${ka.a.toFixed(4)} vs v ${kb.v.toFixed(4)} a ${kb.a.toFixed(4)}`)
+    const c = makeGame(); c.phase = 'race'
+    const d = makeGame(); d.phase = 'race'
+    for (const g of [c, d]) for (const o of g.karts.slice(1)) { o.x = -5000; o.y = -5000 }
+    step(c, { u: true })
+    step(d, { thr: 0.5 })
+    check('half throttle is strictly between coasting and full throttle',
+        d.karts[0].v > 0 && d.karts[0].v < c.karts[0].v,
+        `half ${d.karts[0].v.toFixed(4)} vs full ${c.karts[0].v.toFixed(4)}`)
+}
+
 console.log(`\nkartcheck: ${R.fail === 0 ? 'ALL GREEN' : R.fail + ' FAILED'}`)
 process.exit(R.fail ? 1 : 0)

@@ -174,6 +174,36 @@ ok('win scores at least a full carry ladder', run.score > 100000, `score ${run.s
     ok('winning replay lands in WIN state', gs.end === 'win' && gs.clears === 6, stateHash(gs))
 }
 
+// ------------------------------------------------ analog trackball (#290) ----
+// The sim takes an optional inp.analog {x, y} (the trackball vector from the
+// pad state). Pins: full push is bit-identical to the digital arrow in the
+// same direction, a sub-dead-zone push is bit-identical to no input, and the
+// force grows with the push (the marble is proportional, not binary).
+{
+    const full = makeGame(0), digital = makeGame(0)
+    step(full, { analog: { x: 1, y: 0 } })
+    step(digital, { right: true })
+    ok('analog full push is bit-identical to the digital arrow',
+        full.m.vx === digital.m.vx && full.m.vy === digital.m.vy,
+        `${full.m.vx},${full.m.vy} vs ${digital.m.vx},${digital.m.vy}`)
+
+    const tiny = makeGame(0), idle = makeGame(0)
+    step(tiny, { analog: { x: 0.02, y: 0 } })
+    step(idle, {})
+    ok('sub-dead-zone analog is bit-identical to no input',
+        tiny.m.vx === idle.m.vx && tiny.m.vy === idle.m.vy,
+        `${tiny.m.vx},${tiny.m.vy} vs ${idle.m.vx},${idle.m.vy}`)
+
+    const speeds = [0, 0.25, 0.5, 1].map((p) => {
+        const gs = makeGame(0)
+        step(gs, { analog: { x: p, y: 0 } })
+        return Math.hypot(gs.m.vx, gs.m.vy)
+    })
+    ok('analog force grows with the push (proportional trackball)',
+        speeds[0] < speeds[1] && speeds[1] < speeds[2] && speeds[2] < speeds[3],
+        speeds.map((s) => s.toFixed(4)).join(' < '))
+}
+
 // harness CAN fail: assert the pieces we rely on are real
 ok('stepOk refuses void steps', !stepOk(g0, 0, 0, -1, 0) && stepOk(g0, RACES[0].start.r, RACES[0].start.c, RACES[0].start.r + 1, RACES[0].start.c))
 ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)

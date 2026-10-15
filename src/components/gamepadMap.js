@@ -68,6 +68,32 @@ export function gamepadToCodes(pad, opts = {}, state = { engaged: false, lastCod
     return { codes, state }
 }
 
+// The analog read of one stick: axes (a -1..1 pair, diagonals may exceed
+// unit length) -> { x, y, push, engaged } in the same space the floating
+// touch stick publishes (|v| == push, clamped to the unit circle). `engaged`
+// uses the same dead zone as the digital arrows so a resting thumb publishes
+// nothing. Importable in Node (vpadcheck) and the browser (GamepadBridge).
+export function stickFromAxes(axes, deadZone = GPAD_DEAD_ZONE) {
+    let x = (axes && axes[0]) || 0
+    let y = (axes && axes[1]) || 0
+    const m = Math.hypot(x, y)
+    if (m > 1) { x /= m; y /= m }
+    return { x, y, push: Math.min(1, m), engaged: m >= deadZone }
+}
+
+// Trigger values 0..1 from buttons 6 (LT) and 7 (RT). W3C pads report an
+// analog `value`; a plain { pressed } fake (or a digital pad) falls back to
+// 0/1. Missing buttons read as 0.
+export function triggersFromPad(pad) {
+    const value = (i) => {
+        const b = pad && pad.buttons && pad.buttons[i]
+        if (!b) return 0
+        if (typeof b.value === 'number') return Math.max(0, Math.min(1, b.value))
+        return b.pressed ? 1 : 0
+    }
+    return { lt: value(6), rt: value(7) }
+}
+
 // --- Per-game pad declarations (the optional `pad` field in src/config/games.js) ---
 //
 // Shape: { layout: 'dpad' | 'stick' | 'stick+dpad', buttons: [{ label, code }], analog: bool }

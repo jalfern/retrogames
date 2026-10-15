@@ -9,7 +9,8 @@
 
 import { readFileSync } from 'fs'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD } from '../src/components/virtualDir.js'
-import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton } from '../src/components/gamepadMap.js'
+import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad } from '../src/components/gamepadMap.js'
+import { steerPedals } from '../src/utils/padState.js'
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error(`  FAIL: ${msg}`) } }
@@ -313,6 +314,104 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
         const block = gamesSrc.slice(i, j === -1 ? gamesSrc.length : j)
         ok(/layout: 'stick'/.test(block), 'games.js /mario-kart uses layout: stick (the floating stick)')
         ok(/analog: true/.test(block), 'games.js /mario-kart opts in to analog input')
+    }
+}
+
+// --- 23. stickFromAxes: the analog read of a gamepad stick (#290 step 4) ---
+// Same space the floating touch stick publishes: |v| == push, clamped to the
+// unit circle, engaged past the (shared) dead zone.
+{
+    const r = stickFromAxes([0.8, 0])
+    ok(r.engaged === true && Math.abs(r.x - 0.8) < 1e-9 && r.y === 0 && Math.abs(r.push - 0.8) < 1e-9,
+        `stickFromAxes right push 0.8 -> engaged (0.8, 0) push 0.8 (got ${r.x},${r.y} push ${r.push} eng ${r.engaged})`)
+    const c = stickFromAxes([0, 0])
+    ok(c.engaged === false && c.x === 0 && c.y === 0 && c.push === 0, 'stickFromAxes centre -> not engaged, zero vector')
+    const d = stickFromAxes([GPAD_DEAD_ZONE - 0.05, 0])
+    ok(d.engaged === false, `stickFromAxes |v|=${GPAD_DEAD_ZONE - 0.05} (< dead zone) -> not engaged`)
+    const e = stickFromAxes([GPAD_DEAD_ZONE, 0])
+    ok(e.engaged === true, `stickFromAxes |v|==${GPAD_DEAD_ZONE} (edge) -> engaged`)
+    const diag = stickFromAxes([0.8, 0.8])
+    ok(Math.abs(Math.hypot(diag.x, diag.y) - 1) < 1e-9 && Math.abs(diag.push - 1) < 1e-9,
+        'stickFromAxes diagonal (|v|=1.13) clamps to the unit circle, push 1')
+    ok(diag.x === diag.y && diag.x > 0, 'stickFromAxes diagonal keeps the 45-degree bearing')
+    const sparse = stickFromAxes(undefined)
+    ok(sparse.engaged === false && sparse.x === 0 && sparse.push === 0, 'stickFromAxes missing axes -> rest, no crash')
+}
+
+// --- 24. triggersFromPad: buttons 6 (LT) / 7 (RT), analog value with a digital fallback ---
+{
+    const b = (i, value, pressed) => ({ pressed: !!pressed, value })
+    const pads = { buttons: Array.from({ length: 8 }, (_, i) => b(i, 0, false)) }
+    ok(triggersFromPad(pads).lt === 0 && triggersFromPad(pads).rt === 0, 'triggersFromPad resting pad -> 0/0')
+    pads.buttons[7].value = 0.5
+    ok(triggersFromPad(pads).rt === 0.5, 'triggersFromPad RT half-squeezed -> 0.5')
+    pads.buttons[6].value = 1
+    ok(triggersFromPad(pads).lt === 1, 'triggersFromPad LT full -> 1')
+    const digital = { buttons: Array.from({ length: 8 }, (_, i) => ({ pressed: false })) }
+    digital.buttons[7].pressed = true
+    ok(triggersFromPad(digital).rt === 1, 'triggersFromPad digital RT (no value) -> 1')
+    const over = { buttons: Array.from({ length: 8 }, (_, i) => ({ pressed: false, value: i === 6 ? 1.7 : 0 })) }
+    ok(triggersFromPad(over).lt === 1, 'triggersFromPad clamps an over-range value to 1')
+    ok(triggersFromPad(null).rt === 0 && triggersFromPad(null).lt === 0, 'triggersFromPad null pad -> 0/0, no crash')
+}
+
+// --- 25. steerPedals: steering + pedals from the pad state ---
+// The stick's x is the steering; the pedals are the triggers, with the stick's
+// y as the touch fallback (push forward = gas, pull back = brake).
+{
+    const up = steerPedals({ x: 0, y: -1, rt: 0, lt: 0 })
+    ok(up.steer === 0 && up.thr === 1 && up.brk === 0, 'steerPedals stick fully forward -> thr 1, no brake')
+    const down = steerPedals({ x: 0, y: 0.5, rt: 0, lt: 0 })
+    ok(down.thr === 0 && Math.abs(down.brk - 0.5) < 1e-9, 'steerPedals stick pulled back halfway -> brk 0.5')
+    const rt = steerPedals({ x: -0.7, y: -0.3, rt: 0.8, lt: 0 })
+    ok(Math.abs(rt.steer + 0.7) < 1e-9 && rt.thr === 0.8, 'steerPedals RT beats a weaker stick-forward (0.8 > 0.3)')
+    const both = steerPedals({ x: 0.4, y: 0.9, rt: 0.2, lt: 0.6 })
+    ok(both.thr === 0.2 && Math.abs(both.brk - 0.9) < 1e-9,
+        'steerPedals the larger of trigger/stick wins (stick brake 0.9 > lt 0.6)')
+    const rest = steerPedals({ x: 0, y: 0, rt: 0, lt: 0 })
+    ok(rest.steer === 0 && rest.thr === 0 && rest.brk === 0, 'steerPedals at rest -> all zero')
+}
+
+// --- 26. Mutant that dies: the y-axis pedal fallback removed ---
+// A mutant that reads the pedals from the triggers alone loses the whole touch
+// driving experience (a phone has no triggers). Prove it diverges on a
+// stick-forward push with no triggers.
+{
+    const real = steerPedals({ x: 0, y: -1, rt: 0, lt: 0 })
+    const mutant = (p) => ({ steer: p.x, thr: p.rt, brk: p.lt })
+    const m = mutant({ x: 0, y: -1, rt: 0, lt: 0 })
+    ok(real.thr === 1 && m.thr === 0, 'no-y-pedal mutant coasts on the touch stick (this is the bug)')
+    ok(JSON.stringify(real) !== JSON.stringify(m), 'no-y-pedal mutant diverges from real steerPedals')
+}
+
+// --- 27. The first analog adopters actually opt in (#290 step 4) ---
+// Two guards: the registry declares them analog, and their code reads
+// padState (a silent removal of either would ship the stick as digital-only).
+{
+    const gamesSrc = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    const blockFor = (path) => {
+        const i = gamesSrc.indexOf(`path: '${path}'`)
+        if (i === -1) return null
+        const j = gamesSrc.indexOf('path: ', i + 1)
+        return gamesSrc.slice(i, j === -1 ? gamesSrc.length : j)
+    }
+    for (const path of ['/marble-madness', '/mario-kart', '/out-run']) {
+        const block = blockFor(path)
+        ok(block !== null, `games.js has an entry for ${path}`)
+        if (block) {
+            ok(/layout: 'stick'/.test(block), `games.js ${path} uses the floating stick`)
+            ok(/analog: true/.test(block), `games.js ${path} opts in to analog`)
+        }
+    }
+    const readers = [
+        ['../src/games/MarbleMadness/index.jsx', 'marble madness'],
+        ['../src/games/MarioKart/index.jsx', 'mario kart'],
+        ['../src/games/OutRun/index.jsx', 'out run'],
+        ['../src/games/RaccoonHeist/index.jsx', 'raccoon heist (right stick = camera)'],
+    ]
+    for (const [file, label] of readers) {
+        const src = readFileSync(new URL(file, import.meta.url), 'utf8')
+        ok(/from '\.\.\/\.\.\/utils\/padState'/.test(src), `${label} imports the padState analog channel`)
     }
 }
 

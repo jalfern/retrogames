@@ -269,7 +269,17 @@ function updateMarble(gs, inp) {
             m.air = true; m.zFrom = m.z; m.vz = Math.min(m.vz, 0)
             gs.events.push({ type: 'overEdge', x: m.x, y: m.y })
         } else {
-            if (ix !== 0 || iy !== 0) {
+            const an = inp.analog
+            const amag = an ? Math.hypot(an.x, an.y) : 0
+            if (an && amag > 0.05) {
+                // Analog push (the trackball, #290 step 4): projected direction
+                // scaled by the push magnitude — at full push this is exactly the
+                // digital force, with proportional force in between. Takes priority
+                // over the arrows, which the same stick also emits digitally.
+                const [wx, wy] = screenToWorld(an.x, an.y)
+                ax += wx * amag * CFG.acc; ay += wy * amag * CFG.acc
+                m.dir = [Math.sign(wx) || m.dir[0], Math.sign(wy) || m.dir[1]]
+            } else if (ix !== 0 || iy !== 0) {
                 const [wx, wy] = screenToWorld(ix, iy)
                 ax += wx * CFG.acc; ay += wy * CFG.acc
                 m.dir = [Math.sign(wx) || m.dir[0], Math.sign(wy) || m.dir[1]]

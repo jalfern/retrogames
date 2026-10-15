@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { gamepadToCodes } from './gamepadMap'
+import { gamepadToCodes, stickFromAxes, triggersFromPad } from './gamepadMap'
+import { setStick, setRight, clearPad } from '../utils/padState'
 
 // Gamepad bridge: polls navigator.getGamepads() every frame and dispatches the
 // same KeyboardEvents VirtualControls does, so every game that reads keyboard
@@ -31,6 +32,7 @@ const GamepadBridge = ({ secondAction }) => {
             held.clear()
             stickState.engaged = false
             stickState.lastCodes = []
+            clearPad()
         }
 
         let raf = 0
@@ -43,6 +45,14 @@ const GamepadBridge = ({ secondAction }) => {
             const { codes, state } = gamepadToCodes(pad, { secondAction }, stickState)
             Object.assign(stickState, state)
             sync(codes)
+            // Analog channel (#290 step 4): publish both sticks + the triggers so
+            // games that opt in with pad.analog read them. The digital arrows the
+            // stick also emits above are the coarser read of the same axes.
+            const left = stickFromAxes([pad.axes && pad.axes[0], pad.axes && pad.axes[1]])
+            const right = stickFromAxes([pad.axes && pad.axes[2], pad.axes && pad.axes[3]])
+            const trig = triggersFromPad(pad)
+            setStick(left.x, left.y, left.push, left.engaged)
+            setRight(right.x, right.y, trig.rt, trig.lt)
             // Signal the touch pad to hide the moment a gamepad is used (#290 step 5).
             const active = codes.size > 0
             if (active && !padActive) {
