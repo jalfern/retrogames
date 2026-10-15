@@ -69,7 +69,7 @@ const ArcadeShowcase = () => {
                         <span><b className="text-zinc-200">{games.length}</b> GAMES</span>
                         <span className="hidden md:inline">100% SYNTHESIZED</span>
                         <Link to="/forge" className="text-[#ffb347] hover:text-white transition-colors">⚒ FORGE</Link>
-                        <Link to="/games" className="text-zinc-500 hover:text-white transition-colors">CLASSIC MENU</Link>
+                        <Link to="/games-classic" className="text-zinc-500 hover:text-white transition-colors">CLASSIC MENU</Link>
                     </div>
                 </div>
                 <div className="mt-5 h-px bg-gradient-to-r from-[#ff5470] via-[#4dffb8] to-[#66b3ff] opacity-50" />
@@ -115,7 +115,7 @@ const ArcadeShowcase = () => {
 
                 <footer className="mt-12 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-[9px] tracking-[0.4em] text-zinc-600">
                     <span>SELECT ANY CARD TO PLAY</span>
-                    <span className="opacity-70">GAMES-V2 PREVIEW · NOT IN NAV</span>
+                    <span className="opacity-70">THE ARCADE MENU · v3 · CLASSIC AT /games-classic</span>
                 </footer>
             </main>
         </div>
