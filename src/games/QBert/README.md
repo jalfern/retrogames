@@ -40,8 +40,13 @@ the player actually gets, in plain Node.
 ## Honest deviations / known gaps (the QA lane's starting list)
 
 - Chain scoring honours 25/50/100 and the original's *timing window*: an up-hop
-  landing more than ~1s (CHAIN_WINDOW) after the last resets the up-chain, so a
+   landing more than ~1s (CHAIN_WINDOW) after the last resets the up-chain, so a
   slow climb scores singles instead of the heli-jump 100.
+- Q*BERT faces the direction he travels on screen: `facing` lives in `sim.js` as
+  the sign of each hop's horizontal displacement (not the key pressed). The old
+  render rule (`tc >= fc`) pointed him right on every down-left hop and on a
+  skirt up-right hop. `qbertcheck` pins all four hop directions, including the
+  skirt cases where the row below/above is narrower.
 - Levels escalate snake count/speed and switch the flip mode, but there is no
   original point-value table match beyond the documented singles/roundtrip/heli.
   (1-UP every 10,000 is now in: a life per 10k boundary crossed, capped at 9.

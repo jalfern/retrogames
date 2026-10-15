@@ -79,6 +79,26 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     r.check('an up-hop from the apex with no disc nearby is blocked (never a fall off the top)', gs.player.hop === null && gs.lives === 3)
 }
 
+// ------------------------------------------------------------ facing ----
+{
+    // Q*BERT faces the direction he TRAVELS on screen, not the key you pressed.
+    // The old render rule (tc >= fc) pointed him right on every down-left hop and
+    // on a skirt up-right hop. The sim now owns `facing` as the sign of the
+    // horizontal hop displacement; these pins pin that rule, not a key-table.
+    const face = (seed, r, c, input) => {
+        const gs = makeGame({ seed })
+        Object.assign(gs.player, { r, c, invuln: 0 })
+        play(gs, input)
+        until(gs, () => !gs.player.hop)
+        return gs.player.facing
+    }
+    r.check('apex down-left hop faces LEFT (the bug: the old tc>=fc rule said right)', face(5, 0, 0, { dl: true }) === -1)
+    r.check('apex down-right hop faces RIGHT', face(5, 0, 0, { dr: true }) === 1)
+    r.check('up-left hop faces LEFT', face(5, 1, 1, { ul: true }) === -1)
+    r.check('skirt down-left hop faces RIGHT (the row below is narrower; a naive down-left=left fix would get this wrong)', face(5, 5, 3, { dl: true }) === 1)
+    r.check('skirt up-right hop faces LEFT (the row above is narrower; the old tc>=fc rule said right)', face(5, 6, 2, { ur: true }) === -1)
+}
+
 // --------------------------------------------------------- chain scoring ----
 {
     // dl,dl,dr: three downs to (3,1) (the apex round-trips on the edges, so go
