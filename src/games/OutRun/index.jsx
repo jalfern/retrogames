@@ -427,7 +427,7 @@ const OutRunGame = () => {
                 <span>GEAR <span ref={setHud('gear')} className="text-[#5dc8ff]">HIGH</span></span>
                 <span>STAGE <span ref={setHud('stage')} className="text-[#ffd23f]">1/5</span></span>
             </div>
-            <VirtualControls visible={screen === 'play' && !paused} secondAction={{ label: 'GEAR', code: 'KeyB' }} />
+            <VirtualControls visible={screen === 'play' && !paused} />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>
     )

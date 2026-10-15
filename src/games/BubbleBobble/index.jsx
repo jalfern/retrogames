@@ -588,7 +588,7 @@ const Bob = () => {
                 <span>LEVEL <span ref={setHud('level')} className="text-[#e9f7ff]">LV 1</span></span>
                 <span>LIVES <span ref={setHud('lives')} className="text-[#5dff8f]">3</span></span>
             </div>
-            <VirtualControls visible={screen === 'play' && !paused} secondAction={{ label: 'BUB', code: 'KeyB' }} />
+            <VirtualControls visible={screen === 'play' && !paused} />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>
     )

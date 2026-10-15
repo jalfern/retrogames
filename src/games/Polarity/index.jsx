@@ -440,7 +440,7 @@ const PolarityGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'POLARITY')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: 'X', code: 'KeyX' }} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

@@ -1,5 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { dirsFrom } from './virtualDir'
+import { PadContext } from './padContext'
+import { padButton } from './gamepadMap'
 
 const DIAG = {
     ul: ['ArrowUp', 'ArrowLeft'],
@@ -8,9 +10,14 @@ const DIAG = {
     dr: ['ArrowDown', 'ArrowRight'],
 }
 
-const VirtualControls = ({ secondPad, secondAction, visible = true, diag = false }) => {
+const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = true, diag = false }) => {
     const [held, setHeld] = useState(() => new Set())
     const [diagKeysState, setDiagKeysState] = useState(() => new Set())
+
+    const pad = useContext(PadContext)
+    // An explicit secondAction prop still wins; otherwise read the game's `pad`
+    // declaration from the registry (the single source of truth for step 2).
+    const secondAction = secondActionProp || (pad ? padButton(pad) : null)
 
     const dPadRef = useRef(null)
     const actZoneRef = useRef(null)

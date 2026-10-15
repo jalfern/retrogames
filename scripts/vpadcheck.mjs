@@ -7,8 +7,9 @@
 //      keydown/keyup events (the spec's acceptance check)
 //   4. Space dispatches key=' ' (not key='Space')
 
+import { readFileSync } from 'fs'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE } from '../src/components/virtualDir.js'
-import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED } from '../src/components/gamepadMap.js'
+import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton } from '../src/components/gamepadMap.js'
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error(`  FAIL: ${msg}`) } }
@@ -179,6 +180,66 @@ ok(setEq(gamepadToCodes(padWith([13], [0.8, 0])).codes, ['ArrowDown', 'ArrowRigh
 // --- 15. Gamepad: mapping tables are the standard layout ---
 ok(GPAD_DPAD[12] === 'ArrowUp' && GPAD_DPAD[13] === 'ArrowDown' && GPAD_DPAD[14] === 'ArrowLeft' && GPAD_DPAD[15] === 'ArrowRight', 'd-pad table is the W3C layout (12 up,13 down,14 left,15 right)')
 ok(GPAD_FIXED[0] === 'Space' && GPAD_FIXED[8] === 'Question' && GPAD_FIXED[9] === 'Enter', 'fixed-button table: A=Space, Select=Question, Start=Enter')
+
+// --- 16. Pad declaration (games.js `pad` field): validPad shape ---
+const goodPad = { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyX' }], analog: false }
+ok(validPad(goodPad) === true, 'validPad: well-formed dpad accepted')
+ok(validPad({ layout: 'stick', buttons: [{ label: 'A', code: 'KeyW' }], analog: true }) === true, 'validPad: stick + analog accepted')
+ok(validPad({ layout: 'stick+dpad', buttons: [] }) === true, 'validPad: stick+dpad with no buttons accepted')
+ok(validPad(null) === false, 'validPad: null (no pad) rejected as a declaration')
+ok(validPad({ layout: 'joystick', buttons: [] }) === false, 'validPad: unknown layout rejected')
+ok(validPad({ layout: 'dpad' }) === false, 'validPad: missing buttons rejected')
+ok(validPad({ layout: 'dpad', buttons: [{ label: 'B' }] }) === false, 'validPad: button missing code rejected')
+ok(validPad({ layout: 'dpad', buttons: [{ code: 'KeyB' }] }) === false, 'validPad: button missing label rejected')
+ok(validPad({ layout: 'dpad', buttons: [], analog: 'yes' }) === false, 'validPad: non-boolean analog rejected')
+
+// --- 17. padButton: the B (second-action) button ---
+ok(padButton(goodPad) && padButton(goodPad).code === 'KeyX' && padButton(goodPad).label === 'B', 'padButton: returns buttons[0] {label,code}')
+ok(padButton(null) === null, 'padButton: null pad -> null')
+ok(padButton({ layout: 'dpad' }) === null, 'padButton: invalid pad -> null')
+ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -> null')
+
+// --- 18. Mutant that dies: padButton picks the LAST button ---
+// The B button is buttons[0]; a mutant that returns the last button silently
+// binds the physical B to the wrong key on any multi-button declaration. Prove
+// the two diverge on a two-button pad so the regression is caught.
+{
+    const multi = { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyX' }, { label: 'C', code: 'KeyC' }] }
+    const real = padButton(multi)
+    const mutant = (p) => (validPad(p) && p.buttons.length ? p.buttons[p.buttons.length - 1] : null)
+    ok(real.code === 'KeyX', 'padButton real picks the FIRST button (the B)')
+    ok(mutant(multi).code === 'KeyC', 'mutant picks the LAST button (this is the bug)')
+    ok(JSON.stringify(real) !== JSON.stringify(mutant(multi)), 'last-button mutant diverges from real padButton')
+}
+
+// --- 19. games.js: every folded game declares a pad with the right B code ---
+// The step-2 fold removed the per-game secondAction prop, so the registry is now
+// the only place the B code lives. If a game lost its pad entry, its B button and
+// physical-pad binding vanish — this guard reads the registry text and fails.
+{
+    const gamesSrc = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    const blockFor = (path) => {
+        const i = gamesSrc.indexOf(`path: '${path}'`)
+        if (i === -1) return null
+        const j = gamesSrc.indexOf('path: ', i + 1)
+        return gamesSrc.slice(i, j === -1 ? gamesSrc.length : j)
+    }
+    const folded = [
+        ['/mario', 'KeyF'], ['/ironkeep', 'ShiftLeft'], ['/beezee', 'KeyV'], ['/lemmings', 'KeyE'],
+        ['/metroid', 'KeyX'], ['/simcity-min', 'KeyT'], ['/outpost', 'KeyT'], ['/papers-please', 'KeyD'],
+        ['/lode-runner', 'ArrowDown'], ['/dogfight', 'KeyE'], ['/paperboy', 'KeyF'], ['/wizardry', 'KeyF'],
+        ['/spy-hunter', 'KeyX'], ['/excitebike', 'KeyG'], ['/mario-kart', 'KeyR'], ['/zelda', 'KeyX'],
+        ['/minesweeper', 'KeyB'], ['/bubble-bobble', 'KeyB'], ['/gauntlet', 'KeyX'], ['/four-halls', 'KeyX'],
+        ['/smash-tv', 'KeyB'], ['/out-run', 'KeyB'], ['/lunar-lander', 'KeyX'], ['/polarity', 'KeyX'],
+    ]
+    for (const [path, code] of folded) {
+        const block = blockFor(path)
+        ok(block !== null, `games.js has an entry for ${path}`)
+        if (!block) continue
+        ok(/pad: \{/.test(block), `games.js ${path} declares a pad`)
+        ok(new RegExp(`pad: .*code: '${code}'`).test(block), `games.js ${path} pad B code is ${code}`)
+    }
+}
 
 // --- Summary ---
 const total = pass + fail

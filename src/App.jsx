@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { GAMES } from './config/games'
 import GamesList from './components/GamesList'
 import GamepadBridge from './components/GamepadBridge'
+import { PadContext } from './components/padContext'
+import { padButton } from './components/gamepadMap'
 import ArcadeShowcase from './pages/ArcadeShowcase'
 import ForgeBoard from './pages/ForgeBoard'
 import { audioController } from './utils/AudioController'
@@ -42,18 +44,20 @@ function LoadingCard() {
 }
 
 // Wrapper for direct routes
-function GameRoute({ component: Component, label, theme }) {
+function GameRoute({ game }) {
   const { setGameInfo } = useContext(GameLabelContext)
+  const Component = game.component
+  const pad = game.pad || null
   useEffect(() => {
-    setGameInfo(label, theme)
-  }, [label, theme, setGameInfo])
+    setGameInfo(game.label, game.theme)
+  }, [game.label, game.theme, setGameInfo])
   return (
-    <>
-      <GamepadBridge />
+    <PadContext.Provider value={pad}>
+      <GamepadBridge secondAction={padButton(pad)?.code} />
       <Suspense fallback={<LoadingCard />}>
         <Component />
       </Suspense>
-    </>
+    </PadContext.Provider>
   )
 }
 
@@ -166,7 +170,7 @@ function App() {
             <Route
               key={game.path}
               path={game.path}
-              element={<GameRoute component={game.component} label={game.label} theme={game.theme} />}
+              element={<GameRoute game={game} />}
             />
           ))}
         </Routes>

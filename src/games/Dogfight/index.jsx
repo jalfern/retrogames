@@ -589,7 +589,7 @@ const DogfightGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'WWI DOGFIGHT')} onResume={handleResume} />}
-            <VirtualControls secondAction={{ label: 'TH', code: 'KeyE' }} visible={play && !paused} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

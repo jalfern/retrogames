@@ -589,7 +589,6 @@ const FourHallsGame = () => {
             </div>
             <VirtualControls
                 visible={screen === 'play' && !paused}
-                secondAction={{ label: 'BOW', code: 'KeyX' }}
             />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>

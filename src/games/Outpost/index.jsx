@@ -373,7 +373,7 @@ const OutpostGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'OUTPOST')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: 'T', code: 'KeyT' }} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

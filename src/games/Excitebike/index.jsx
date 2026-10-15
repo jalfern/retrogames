@@ -500,7 +500,7 @@ const ExcitebikeGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'EXCITEBIKE')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: 'GEAR', code: 'KeyG' }} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

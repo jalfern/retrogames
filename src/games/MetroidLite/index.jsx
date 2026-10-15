@@ -523,7 +523,7 @@ const MetroidGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'METROID-LITE')} onResume={handleResume} />}
-            <VirtualControls secondAction={{ label: 'B', code: 'KeyX' }} visible={play && !paused} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

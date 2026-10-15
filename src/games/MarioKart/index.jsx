@@ -526,7 +526,7 @@ export default function MarioKart() {
             onPointerDown={() => tapRef.current && tapRef.current()}
         >
             <canvas ref={canvasRef} width={W} height={H} className="block w-full h-full" style={{ imageRendering: 'pixelated', objectFit: 'contain' }} />
-            <VirtualControls secondAction={{ label: 'B', code: 'KeyR' }} visible={padOn && !paused && TOUCH} />
+            <VirtualControls visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'SUPER MARIO KART')} onResume={handleResume} />}
         </div>
     )

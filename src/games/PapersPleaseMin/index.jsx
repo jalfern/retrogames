@@ -405,7 +405,7 @@ const PapersPleaseMinGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'PAPERS, PLEASE-MIN')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: 'D', code: 'KeyD' }} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }
