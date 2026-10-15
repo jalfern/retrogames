@@ -49,6 +49,8 @@ jobs:
       - run: npm run zorkcheck
       # Shared VirtualControls direction logic + sliding sequence, in Node (~1s).
       - run: npm run vpadcheck
+      # Shared fitCanvas whole-multiple × dpr scale decision, in Node (~1s).
+      - run: npm run fitcanvascheck
       # Fourth scoped gate: the 3D stealth title (engine/world/art/levels/stealth +
       # its two harnesses).
       - run: npm run lint:heist
