@@ -1,73 +1,75 @@
-# STATE — 2026-10-15 (forge session, PoP deep pass #316 — Stage 1 WIP)
+# STATE — 2026-10-15 (forge session, PoP deep pass STAGE 1 shipped)
 
-## In progress (NOT shipped)
-**#316 Prince of Persia: the deep pass** — Stage 1, branch `forge/pop-deep`
-(worktree `~/Dev/retrogames-forge-pop-deep`, node_modules symlinked). Draft PR
-filed, marked WIP. Keep the `building` label; do NOT reset to `next` until a
-stage actually merges.
+## Shipped this session
+**PoP deep pass — Stage 1: the rules of 1989** (#316, PR #320 squash-landed
+at `9c5e32d`, live): https://jalfern.com/retrogames/prince-of-persia
+- Resumed a corpse: the previous session died mid-Stage-1 (engine spine pushed
+  to draft PR #320, `art.js`/`index.jsx` still on the old API → build red).
+  This session wired React+art to the new sim, rewrote `popcheck`, and merged.
+- Stage 1 = no lives (death restarts the level, hour keeps running; L3
+  checkpoint), unarmed start + sheathed sword, timing duel (Strike X / Block
+  Up, parry→counter; heights removed), falls by floors (1/2/3), held-Shift
+  grab only, 10-wide multi-room flip, raise/drop buttons + slow gates,
+  chompers, loose→rubble, plate→door→stairs, the five 1989 flasks,
+  sunrise=lost. 3 levels × 4 rooms.
+- Gates: `popcheck` **75/75** (rules pinned · autopilot wins all levels 0
+  deaths · slack 0.75x clock + guard hp−1 still wins · determinism ·
+  no-Math.random · planner/CFG mirror). Parry-rule mutant proven red then
+  restored. `popplay` 13/13 real keys, zero page errors. lint:pop +
+  mario/fps/ai + aicheck + build green. #316 → `next` (not `shipped`;
+  Stages 2–4 remain).
+- Bugs found this session (all fixed): open gate swallowed the prince into the
+  void (ground row under a gate is now solid); `u` legend collision
+  (L1's drop button was being collected as the upside-down potion → `D`);
+  sunrise soft-lock (`kill('time')` reloaded onto a zeroed clock forever →
+  clock 0 sets `lost`).
 
-## Done this session (engine spine — provably wins, lint-clean)
-Rewrote the 1989 rules from scratch in `sim.js` + `levels.js` + `planner.js`
-(three heights/auto-grab/single-screen model deleted):
-- **Multi-room levels**: 10-wide × 3-floor rooms, hard screen flip on doorway
-  (`roomOf(c)`, camera offset = `room*RW`). 3 levels × 4 rooms each, all clear.
-- **No lives**: death → level restart (checkpoint on L3), clock keeps running;
-  `sword`/`clock`/`bonusMax` persist across levels + restarts.
-- **Unarmed start**: sword pickup in L1 room0; sheath outside a duel.
-- **Timing duel**: Strike `X` / Block `Up`, parry→counter, recoil; no heights.
-- **Falls by floors**: 1 safe, 2 = −1 hp, 3+ death (in `land()`).
-- **Grab only while Shift held** (no auto-grab); Shift = run on ground.
-- **Machinery**: raise-button → gate that closes slowly (`gateFall`),
-  chompers (scheduled jaws), loose floor→rubble, exit plate→door→stairs.
-- **Potions 1989**: small red +1, large red +1 max, blue −1, slow-fall,
-  upside-down; NO strength.
-- Autopilot clears all 3 levels: **win, 0 deaths, clockLeft 3573s**. eslint
-  clean on all three spine files. Ground-fill + ceiling-to-floor gate-extent +
-  room-clamped patrols are the level post-passes.
-
-## Blocked — the React layer is RED (next session starts here)
-`art.js` + `index.jsx` still target the deleted API, so `npm run build` fails:
-- `art.js` imports `W, SPIKE_PORTED, PLATE` from levels (now `RW,H,T` + new
-  codes) and `portOpen` from sim (gone).
-- `index.jsx` uses `g.lives`, `g.p.strength`, old `SPIKE_PORTED` art path.
-Todo, in order:
-1. `art.js`: room-camera (`room*RW*T` offset, `imageSmoothingEnabled=false`),
-   sheath/draw sword, health-as-flasks bottom-left + guard hp bottom-right,
-   slow-open gate bars, chomper jaws, spikes, torches, upside-down flip (scaleY
-   −1). Draw at `RW*T`×`H*T`, floor rows `[8,5,2]`.
-2. `index.jsx`: controls Arrow move / `Down` crouch-hang / `Up` block / `X`
-   strike / `Shift` run+grab; remove lives+strength HUD; no-lives death→level
-   restart UI; container aspect ~10/9. Update `src/config/games.js` PoP entry
-   (aspect/description/controls).
-3. Rewrite `scripts/popcheck.mjs` to the Stage-1 gate (no-lives restart, no
-   fight before sword, block-parries, falls-by-floors, held-grab, room flip,
-   machinery, potions, autopilot wins, slack, determinism, no-Math.random).
-   Delete the old 57-assertion file (it tests the removed model).
-4. `npm run build` + `npm run lint:pop` + `node scripts/popcheck.mjs` green,
-   then `npm run dev` + `popplay` headless drive. Merge as `Part of #316`, then
-   reset #316 to `next` and comment which Stage-1 boxes are proven.
-
-## Do NOT regress
-- Ground row is forced continuous solid → no pit falls on the ground floor;
-  falls come only from elevated ledges/chompers/loose. Loose floors live on
-  middle/top rows, never ground (ground loose = death pit that contradicts fill).
-- Spikes are single-width with clear landing (2-wide is un-hoppable by autopilot).
-- Floor buttons trigger on horizontal overlap (ground row), not `onGround` — a
-  running/tapping player crosses a plate mid-jump; requiring `onGround` missed
-  the exit plate and deadlocked the run.
-- Exit fires on position (far room + door column), not `onGround`.
-- `gateFall` must be slow enough to cross the gate column after the button.
+## GOAL — next session
+**#316 Stage 2 — the look and the animation** (labeled `next`, claim first).
+Proportions (prince most of a floor tall, 3 floors/room, lit-top ledges),
+≥8-frame run + separate start/skid/turn/crouch/land/hang/climb/careful/drink/
+sheathe/draw poses, deaths with weight (impaled/sliced/crumpled/cut), torch
+light tinting, distinct guard turbans + fat guard + skeleton + robed Jaffar.
+Extend `popcheck` stage clauses as each Stage-3 box lands. If #316 is gone by
+then, oldest `game-queue` is #295 Civ V — STILL do NOT build without Jon
+(flagged 4 sessions running).
 
 ## Board (last read)
-- #316 `building` (this work). #295 Civ V `stalled` — do NOT build, escalate.
-- QA MASTER live all session → no QA borrow.
+- `next`: #316 (PoP deep pass, Stage 1 done — box list on the issue).
+- Queue: #295 Civ V only (standing scope question, Q1 below).
+- Open QA: #312 (superseded by #316 — could close as done by #316), #310 SSX,
+  #304 MYST, #302 Gauntlet/FourHalls, #298 Tempest, #287 LunarLander, #283
+  OutRun, #280 SmashTV, #275 Gauntlet, #270 SimCity, #269/#220 Kart, #265
+  Marble, #263/#258 Bubble Bobble.
+- Two QA MASTER sessions were live all session (mini + mbp); forge did not
+  borrow a QA item.
+
+## Notes for whoever picks this up
+- PoP architecture post-Stage-1: `sim.js` pure `step(state,input)` — room =
+  `p.x/T/RW`, per-room `gateOpen[]`, `fallen{}` rubble map, `exitOpen`,
+  `cpReached`, `status: play|dying|clear|win|lost`; `levels.js` ASCII rooms
+  (legend header; ground row under gates forced solid; 'D' drop button, 'B'
+  raise, 'p' plate, '<' door, 'x' chomper, 'c' checkpoint); `planner.js`
+  reactive autopilot (mirror constants pinned); `art.js` room-camera painter
+  (VW=320,VH=288); index.jsx shell. Copy for any platform/duel title.
+- Viewport is 10×9 tiles (320×288) — container aspect-[10/9], NOT the old
+  19×12. Attract text is painted inside the playfield, sized for 320px.
+- L1's chomper phase = (col%3)*22 with CFG 150/96/30/8; popplay derives
+  `tick` from `216000-clock` to time a real-key hop onto the jaws.
+- The forge worktree `~/Dev/retrogames-forge-pop-deep` holds the merged
+  branch `forge/pop-deep`; re-create fresh per stage:
+  `git worktree add ~/Dev/retrogames-forge-pop-stage2 -b forge/pop-stage2 origin/main`
+  and symlink node_modules from the main checkout.
+- Rule-4 watch: last three merged PRs = #318 (game code), #319 (board),
+  #320 (game code) — not stalled.
 
 ## Three questions for Jon
-1. Stage 1 is engine-only so far (art/index/popcheck unwired) — OK to ship the
-   full 1989 rework as ONE PR once the React layer lands, or split engine
-   (now) + art (next) into two `Part of #316` PRs?
-2. 3 levels for Stage 1 vs the issue's 12 for Stage 3 — happy with incremental
-   (3→6→12 across stages), or do you want the full 12 in one shot?
-3. Original auto-grabbed; the issue mandates held-Shift grab. I followed the
-   issue (held-grab) — confirm that's the intent, since it's less forgiving on
-   touch than the original?
+1. #295 Civ V has sat alone in `game-queue` now for FOUR sessions. Retire it,
+   or name the cabinet-scope 4X you'd accept? Meanwhile #316 Stages 2–4 are
+   labeled `next` and keep the forge fed — confirm that's the right filler.
+2. #312 (PoP polish pass) is now fully absorbed by #316's boxes. OK to close
+   #312 as done-by-#316 so the QA board stops counting it?
+3. Stage 3 wants twelve levels with mirror room, shadow-drinks-potion,
+   invisible bridge etc. — new systems (shadow clone, mirror teleport) in one
+   issue. OK to split Stage 3 into its own child issue when we get there, or
+   keep it all in #316 as written?
