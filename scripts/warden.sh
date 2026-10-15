@@ -179,13 +179,29 @@ main() {
     fi
 
     # ---- 5. QA ----------------------------------------------------------
-    # forge-qa.sh picks its own item. QA thinks on the mini, so no mini, no kick.
+    # One QA lane per machine (forge-qa.sh mini|mbp; each picks its own item).
+    # A lane is kicked when its model answers through its tunnel, it has no
+    # session of its own (identity = the --model provider), its launchd job is
+    # installed, and enough work is waiting:
+    #   mini — any feedback item (that includes a checkpoint to resume)
+    #   mbp  — 2+ UNCLAIMED items, so the part-time laptop never races the
+    #          mini for the last one. A checkpoint the MBP leaves behind is
+    #          picked up by the mini once it goes stale (FORGE-QA.md step 2).
     QA_WAITING=$(print -r -- "$ISSUES" | jq '[.[] | select(any(.labels[]; .name == "feedback"))
                                           | select(any(.labels[]; .name == "needs-approval") | not)] | length')
-    if [[ "$MINI" == up ]] && ! pgrep -f "opencode run.*QA MASTER" >/dev/null && (( QA_WAITING > 0 )); then
-        act launchctl kickstart "gui/$(id -u)/com.jalfern.forge-qa" >> "$LOG" 2>&1
-        ACTIONS+=("qa-kicked:1"); log "kicked QA ($QA_WAITING waiting)"
-    fi
+    UNCLAIMED=$(print -r -- "$ISSUES" | jq '[.[] | select(any(.labels[]; .name == "feedback"))
+        | select(any(.labels[]; .name == "needs-approval" or .name == "building-qa" or .name == "waiting-jon") | not)] | length')
+    for spec in "mini 18000 QA_WAITING 1 com.jalfern.forge-qa" \
+                "mbp 18001 UNCLAIMED 2 com.jalfern.forge-qa-mbp"; do
+        lane=(${=spec}); node=${lane[1]} port=${lane[2]} var=${lane[3]} need=${lane[4]} job=${lane[5]}
+        have=${(P)var}
+        curl -s -m 3 "http://127.0.0.1:$port/v1/models" >/dev/null 2>&1 || continue
+        pgrep -f "opencode run.*--model omlx$node/" >/dev/null && continue
+        (( have >= need )) || continue
+        launchctl print "gui/$(id -u)/$job" >/dev/null 2>&1 || continue
+        act launchctl kickstart "gui/$(id -u)/$job" >> "$LOG" 2>&1
+        ACTIONS+=("qa-kicked:$node"); log "kicked QA on $node ($have waiting)"
+    done
 
     # ---- 6. FOLLOW-UP PULSE -----------------------------------------------
     if (( ${#ACTIONS[@]} > 0 )); then
