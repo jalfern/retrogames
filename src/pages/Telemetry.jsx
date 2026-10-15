@@ -1,4 +1,4 @@
-const TASKS = [['forge', '#ffb347'], ['qa', '#ff6600'], ['warden', '#4dffb8'], ['omlx', '#66b3ff'], ['mini', '#c58aff']]
+const TASKS = [['builder', '#ffb347', 'BUILDER'], ['mini', '#c58aff', 'QA·MINI'], ['mbp', '#ff66b3', 'QA·MBP']]
 export const Spark = ({ values, color, label, unit }) => {
     const w = 220, h = 34
     const max = Math.max(1, ...values)
@@ -6,7 +6,7 @@ export const Spark = ({ values, color, label, unit }) => {
         `${(i / Math.max(1, values.length - 1)) * w},${h - (v / max) * (h - 4) - 2}`).join(' ')
     return (
         <div className="flex items-center gap-2">
-            <span className="w-14 text-[9px] tracking-wider opacity-80">{label}</span>
+            <span className="w-20 text-[9px] tracking-wider opacity-80">{label}</span>
             <svg width={w} height={h} className="shrink-0">
                 <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" opacity="0.9" />
             </svg>
@@ -33,17 +33,19 @@ const Telemetry = ({ now, samples, generated }) => {
                     {generated ? `${age}s ago` : 'never fetched'}
                 </span>
             </div>
-            {TASKS.filter(([k]) => samples.some(s => s.tasks?.[k])).map(([k, c]) => (
-                <Spark key={k} label={k} color={c} unit="%"
+            {TASKS.filter(([k]) => samples.some(s => s.tasks?.[k])).map(([k, c, name]) => (
+                <Spark key={k} label={name} color={c} unit="%"
                     values={samples.filter(s => s.tasks?.[k]).map(s => s.tasks[k].cpu)} />
             ))}
             <div className="flex justify-between mt-2 pt-2 border-t border-[#66b3ff]/20 text-gray-400">
                 <span>free: {last.free}% · load: {last.load}</span>
                 <span className="opacity-90">
                     {last.commit && <span className="text-[#ffb347]">⚒ {last.commit}<br /></span>}
-                    {last.act?.qa && last.act.qa.split('\n').map((l, i) => <div key={`q${i}`}>🔨 {l}</div>)}
+                    {last.act?.builder && last.act.builder.split('\n').map((l, i) => <div key={`b${i}`}>⚒ {l}</div>)}
                     {last.act?.forge && last.act.forge.split('\n').map((l, i) => <div key={`f${i}`}>⚒ {l}</div>)}
-                    {!last.act?.forge && !last.act?.qa && !last.commit && 'lanes quiet'}
+                    {last.act?.qa && last.act.qa.split('\n').map((l, i) => <div key={`q${i}`}>🔨 {l}</div>)}
+                    {last.act?.mbp && last.act.mbp.split('\n').map((l, i) => <div key={`m${i}`}>💻 {l}</div>)}
+                    {!last.act?.builder && !last.act?.forge && !last.act?.qa && !last.act?.mbp && !last.commit && 'lanes quiet'}
                 </span>
             </div>
         </div>
