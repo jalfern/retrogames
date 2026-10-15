@@ -47,35 +47,34 @@ COMMIT=""
 LOAD=$(sysctl -n vm.loadavg | awk '{print $2}')
 FREE=$(memory_pressure -Q 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d '%')
 
-# The Mac mini answers over the ssh tunnel (launchd com.jalfern.tunnel);
-# remote returns two plain numbers (cpu%, omlx-server rss MB) so no JSON
-# survives more than one shell boundary. Unreachable => zeros, board shows flat.
-LOAD=$(sysctl -n vm.loadavg | awk '{print $2}')
-FREE=$(memory_pressure -Q 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d '%')
-
-# The Mac mini answers over the ssh tunnel (launchd com.jalfern.tunnel);
-# remote returns two plain numbers (cpu%, omlx-server rss MB) so no JSON
-# survives more than one shell boundary. Unreachable => zeros, board shows flat.
-MC=0
-MR=0
-
-# The mini answers over the ssh tunnel (launchd com.jalfern.tunnel): two plain
-# numbers (cpu%, omlx-server rss MB). NO `read` here — this script is piped to
-# zsh -s by launchd, and read would eat the rest of the script as stdin
-# (that silent death cost the board 14 h of vitals, 2026-10-11). And ssh is
-# nailed shut: ssh inherits the script's stdin, so the remote shell swallows
-# every command that comes after it unless its stdin is closed.
-MINI=$(ssh -n -o ConnectTimeout=2 -o BatchMode=yes sfm5mini \
+# The two QA boxes answer over ssh (mini: launchd com.jalfern.tunnel -> sfm5mini;
+# MBP: com.jalfern.tunnel-mbp -> tailscale peer, asleep-laptop => zeros, the board
+# shows flat). The remote returns two plain numbers (cpu%, omlx-server rss MB) —
+# no JSON survives more than one shell boundary. NO `read` anywhere: this script is
+# piped to zsh -s by launchd, and read would eat the rest of the script as stdin
+# (that silent death cost the board 14 h of vitals, 2026-10-11). And ssh is nailed
+# shut: ssh inherits the script's stdin, so the remote shell swallows every command
+# that comes after it unless its stdin is closed.
+remote_vitals() {   # $1 = ssh target -> "cpu rss", zeros when unreachable
+    local out c r
+    out=$(ssh -n -o ConnectTimeout=2 -o BatchMode=yes "$1" \
 'p=$(pgrep -f omlx-server | head -1); c=$(ps -A -o %cpu= | awk "{s+=\$1} END {printf \"%.0f\", s}"); r=0; [ -n "$p" ] && r=$(ps -p $p -o rss= | awk "{print int(\$1/1024)}"); echo $c $r' \
 2>/dev/null </dev/null)
-MC=${MINI%% *}; MR=${MINI##* }
-case "$MC" in (''|*[!0-9]*) MC=0;; esac
-case "$MR" in (''|*[!0-9]*) MR=0;; esac
+    c=${out%% *}; r=${out##* }
+    case "$c" in (''|*[!0-9]*) c=0;; esac
+    case "$r" in (''|*[!0-9]*) r=0;; esac
+    echo "$c $r"
+}
+set -- $(remote_vitals sfm5mini);            MC=$1; MR=$2
+set -- $(remote_vitals jon@100.116.224.56); BC=$1; BR=$2
 
+# Three panes, same names as the home terminal: Builder / QA·Mini / QA·MBP.
+# The studio's own oMLX server and the warden are plumbing, not lanes — they
+# used to be series here and only confused the board.
 S="{\"t\":\"$(date +%H:%M:%S)\",\"ts\":$(date +%s),\"load\":$LOAD,\"free\":${FREE:-0},\
-\"tasks\":{$(task 'opencode run.*THE FORGE' forge),$(task 'opencode run.*QA MASTER' qa),\
-$(task 'zsh -s -- warden.sh' warden),$(task 'omlx-server' omlx),\"mini\":{\"cpu\":$MC,\"rss\":$MR}},\
-\"commit\":$(printf '%s' "$COMMIT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"act\":{\"forge\":$(act "$(readlink /tmp/forge/last.log)" ),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)")}}"
+\"tasks\":{$(task 'opencode run.*THE FORGE' builder),\
+\"mini\":{\"cpu\":$MC,\"rss\":$MR},\"mbp\":{\"cpu\":$BC,\"rss\":$BR}},\
+\"commit\":$(printf '%s' "$COMMIT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"act\":{\"builder\":$(act "$(readlink /tmp/forge/last.log)"),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)"),\"mbp\":$(act "$(readlink /tmp/forge/last-qa-mbp.log)")}}"
 
 python3 - "$LOCAL" "$S" <<'PYS'
 import os, sys
