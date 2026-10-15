@@ -26,6 +26,7 @@ const ok = (cond, name, detail = '') => {
 
 const { LEVELS, W, H, MONSTERS } = await import('../src/games/Gauntlet/levels.js')
 const { SPRITE_DATA } = await import('../src/games/Gauntlet/art.js')
+const { NARRATOR, STAIRS_FANFARE } = await import('../src/games/Gauntlet/sound.js')
 
 async function fresh() {
     const sim = await import(`../src/games/Gauntlet/sim.js?c=${Date.now()}`)
@@ -85,6 +86,21 @@ console.log('art')
         ok(frames.length >= 2, `art: ${n} carries a 2-frame walk wobble`, `${frames.length} frames`)
         ok(even, `art: ${n} frames are uniform grids`)
     }
+}
+
+// ------------------------------------------------------------------ sound ----
+// The narrator's lines each carry their own buzz signature, and the
+// stairs-clear is a 4-note fanfare rather than a single sweep.
+console.log('sound')
+{
+    const sigs = Object.entries(NARRATOR)
+    const canon = (s) => `${s.wave}:${s.notes.join(',')}`
+    const uniq = new Set(sigs.map(([, s]) => canon(s)))
+    ok(uniq.size === sigs.length, 'sound: every narrator line type has a distinct buzz', `${uniq.size}/${sigs.length}`)
+    ok(sigs.every(([, s]) => s.notes.length > 0 && s.wave), 'sound: every buzz has notes + a waveform')
+    ok(STAIRS_FANFARE.length === 4, 'sound: the stairs-clear is a 4-note fanfare', `${STAIRS_FANFARE.length} notes`)
+    ok(new Set(STAIRS_FANFARE).size === STAIRS_FANFARE.length, 'sound: the fanfare notes are distinct')
+    ok(STAIRS_FANFARE.every((f, i) => i === 0 || f > STAIRS_FANFARE[i - 1]), 'sound: the fanfare rises')
 }
 
 // ------------------------------------------------------------------ rules ----

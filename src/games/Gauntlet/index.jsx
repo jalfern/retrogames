@@ -16,6 +16,7 @@ import { LEVELS, W, H, HEROES, HERO_ORDER, MONSTERS } from './levels.js'
 import { makeGame, step, stateHash, CFG, doorAt } from './sim.js'
 import { plan, decide } from './planner.js'
 import { buildSprites, MATERIALS } from './art.js'
+import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 
 const VW = 224, VH = 200, PW = 96, HT = 40
 const CW = VW + PW, CH = VH + HT
@@ -58,7 +59,11 @@ const GauntletGame = () => {
         const evLog = []
         const parts = []
 
-        const say = (m) => { toastMsg = m; toast = 150 }
+        const say = (m, kind) => {
+            toastMsg = m; toast = 150
+            const sig = buzz(kind || narratorKind(m))
+            sig.notes.forEach((f, i) => audioController.playTone(f, 0.08, sig.wave, 0.05, i * 0.07))
+        }
         const burst = (px, py, n, col) => {
             for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 2.4
@@ -92,7 +97,7 @@ const GauntletGame = () => {
                 else if (e.type === 'spawn') audioController.playSweep(80, 220, 0.14, 'triangle', 0.04)
                 else if (e.type === 'deathSpawn') { audioController.playSweep(220, 55, 0.8, 'sawtooth', 0.09); say('DEATH WALKS THE MAZE!') }
                 else if (e.type === 'death') { audioController.playDeath(); shake = 9; flash = 14 }
-                else if (e.type === 'levelClear') { audioController.playSweep(330, 990, 0.4, 'square', 0.08); say(LEVELS[e.level].name.replace(/^LEVEL \d+ · /, '') + ' CLEARED') }
+                else if (e.type === 'levelClear') { STAIRS_FANFARE.forEach((f, i) => audioController.playTone(f, 0.13, 'square', 0.08, i * 0.11)); say(LEVELS[e.level].name.replace(/^LEVEL \d+ · /, '') + ' CLEARED') }
                 else if (e.type === 'level') audioController.playSweep(220, 440, 0.3, 'triangle', 0.07)
                 else if (e.type === '1up') audioController.playSweep(440, 1760, 0.5, 'square', 0.08)
                 else if (e.type === 'respawn') audioController.playSweep(110, 330, 0.3, 'triangle', 0.06)
