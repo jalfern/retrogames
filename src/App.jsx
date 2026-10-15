@@ -2,6 +2,7 @@ import { useState, useEffect, createContext, useContext, useCallback, useMemo, S
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { GAMES } from './config/games'
 import GamesList from './components/GamesList'
+import GamepadBridge from './components/GamepadBridge'
 import ArcadeShowcase from './pages/ArcadeShowcase'
 import ForgeBoard from './pages/ForgeBoard'
 import { audioController } from './utils/AudioController'
@@ -47,9 +48,12 @@ function GameRoute({ component: Component, label, theme }) {
     setGameInfo(label, theme)
   }, [label, theme, setGameInfo])
   return (
-    <Suspense fallback={<LoadingCard />}>
-      <Component />
-    </Suspense>
+    <>
+      <GamepadBridge />
+      <Suspense fallback={<LoadingCard />}>
+        <Component />
+      </Suspense>
+    </>
   )
 }
 
