@@ -16,7 +16,6 @@ import { W, H, SCEN, terrainOf } from './scen.js'
 export const T = { GRASS: 0, WATER: 1, ROCK: 2, ROAD: 3, PLANT: 4, RES: 5, COM: 6, IND: 7, FIRE: 8, PARK: 9 }
 export const isZone = (t) => t >= T.RES && t <= T.IND
 const conducts = (t) => t === T.ROAD || t === T.PLANT
-export const BURNABLE = (t) => isZone(t) || t === T.PLANT
 
 export const CFG = {
     yearTicks: 240,          // 4 s per year at 60 Hz
@@ -128,19 +127,21 @@ function resNear(g, x, y) {
 const adjOf = (g, x, y, t) => N4.filter(([dx, dy]) => inB(x + dx, y + dy) && g.grid[idx(x + dx, y + dy)].t === t).length
 
 function nearDeveloped(g, x, y) {
-    for (let r = 1; r <= 3; r++) {
-        for (let dy = -r; dy <= r; dy++) {
-            for (let dx = -r; dx <= r; dx++) {
-                if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
-                const nx = x + dx, ny = y + dy
-                if (!inB(nx, ny)) continue
-                const c = g.grid[idx(nx, ny)]
-                if (c.burn) continue
-                if (BURNABLE(c.t) && (c.t === T.PLANT || c.lvl > 0)) return [nx, ny]
-            }
-        }
+    // the strike cell: a scripted fire hits the city WHERE THE CITY IS —
+    // the nearest developed burnable cell anywhere on the map, not just at
+    // the script's corner (a city that never built at the corner never
+    // burned at all). Fixed scan order, strict < on distance: the pick is
+    // deterministic and ties go to the lower cell index.
+    let best = null, bd = Infinity
+    for (let i = 0; i < g.grid.length; i++) {
+        const c = g.grid[i]
+        if (c.burn) continue
+        if (!isZone(c.t) || c.lvl <= 0) continue
+        const nx = i % W, ny = (i - nx) / W
+        const d = (nx - x) * (nx - x) + (ny - y) * (ny - y)
+        if (d < bd) { bd = d; best = [nx, ny] }
     }
-    return null
+    return best
 }
 
 // --------------------------------------------------------------- the economy ----
@@ -208,13 +209,16 @@ function yearTick(g) {
     // disasters: scripted ignition, deterministic spread, stations douse
     for (let i = 0; i < S.fires.length; i++) {
         const f = S.fires[i]
-        // a seed stays armed until it finds something to burn: a city that
-        // never builds near the script's corner is not a city on fire — it is
-        // a city that never saw the fire. One dudfire is announced; the retry
-        // after that is silent, and the script itself is never mutated.
+        // a seed stays armed until it finds something to burn: it strikes
+        // the nearest developed cell on the map — the city where the city
+        // is — so a competent game always sees its disasters. A city with
+        // nothing built anywhere gets one announced dud; the retry after
+        // that is silent, and the script itself is never mutated.
         if (f.year > g.year || g.doneFire?.includes(i + 'i')) continue
+        // plants are concrete — they stand (the tornado rule is the fire
+        // rule): an undoused fire burns blocks and scar, never the grid
         const at = g.grid[idx(f.x, f.y)]
-        const cell = BURNABLE(at.t) && (at.t === T.PLANT || at.lvl > 0) ? [f.x, f.y] : nearDeveloped(g, f.x, f.y)
+        const cell = isZone(at.t) && at.lvl > 0 ? [f.x, f.y] : nearDeveloped(g, f.x, f.y)
         if (cell) {
             g.doneFire.push(i + 'i')
             g.grid[idx(cell[0], cell[1])].burn = CFG.fireYears
@@ -261,7 +265,7 @@ function yearTick(g) {
                 const nx = x + dx, ny = y + dy
                 if (!inB(nx, ny)) continue
                 const n = g.grid[idx(nx, ny)]
-                if (n.burn || !BURNABLE(n.t) || (n.t !== T.PLANT && n.lvl <= 0)) continue
+                if (n.burn || !isZone(n.t) || n.lvl <= 0) continue
                 if ((nx * 7 + ny * 13 + g.year) % CFG.spreadMod === 0) {
                     n.burn = CFG.fireYears
                     g.events.push({ type: 'spread', x: nx, y: ny, year: g.year })

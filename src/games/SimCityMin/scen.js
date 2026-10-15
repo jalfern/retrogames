@@ -34,7 +34,12 @@ export const SCEN = [
             '................~~~~~...',
             '.................~~~....',
         ],
-        fires: [],
+        // one mid-game fire down the growth corridor — map 1 used to have no
+        // disasters at all, so stations were theatre here (and the fire
+        // strikes the city where the city is, wherever that turns out)
+        fires: [
+            { year: 14, x: 13, y: 3 },
+        ],
         tornado: null,
     },
     {

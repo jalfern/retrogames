@@ -143,13 +143,15 @@ section('LEDGER CONSERVES TO THE DOLLAR')
 // ---------------------------------------------------------------- disaster pins ----
 section('DISASTER PINS')
 {
-    // a scripted fire IGNITES, burns neighbours (deterministic mod), and a
-    // station within radius DOUSES — unattended it must reach ash.
+    // a scripted fire IGNITES a developed block (plants stand — they are
+    // concrete), burns neighbours (deterministic mod), and a station within
+    // radius DOUSES — unattended it must reach ash.
     const mk = (withStation) => {
         const g = newCity(1)
         for (let x = 4; x <= 18; x++) step(g, { tool: T.ROAD, place: [x, 12] })
         step(g, { tool: T.PLANT, place: [10, 11] })
-        for (const [x, y] of [[10, 11], [12, 11], [11, 13], [9, 11], [13, 13], [10, 13], [14, 11]]) step(g, { tool: T.RES, place: [x, y] })
+        for (const [x, y] of [[9, 11], [11, 11], [12, 11]]) step(g, { tool: T.IND, place: [x, y] })
+        for (const [x, y] of [[10, 13], [11, 13], [13, 13], [14, 11]]) step(g, { tool: T.RES, place: [x, y] })
         if (withStation) step(g, { tool: T.FIRE, place: [12, 13] })
         for (let t = 0; t < CFG.yearTicks * 16; t++) { step(g, {}); if (g.end) break }
         return g
@@ -182,6 +184,73 @@ section('DISASTER PINS')
     }
     ok(eastLitBefore === true, 'the far bank was never lit to begin with — the cut test is vacuous')
     ok(eastLitAfter === false, 'the tornado cut the corridor and the far bank stayed powered — power does not ride the road')
+}
+
+// ---------------------------------------------------- the dumb recipe (#270) ----
+section('THE DUMB ONE-STREET RECIPE NOW LOSES')
+{
+    // The recipe from the issue: one main street, a plant mid-street, 8
+    // industry at one end, ~22 homes at the other, nothing after. It used to
+    // win every map inside a fifth of the deadline; the RCI leg (industry
+    // stalls at level 1 without a neighbourhood) must kill it on all three.
+    for (const sc of [0, 1, 2]) {
+        const S = SCEN[sc]
+        const g = newCity(sc)
+        let bestY = 8, bestLen = 0
+        for (let y = 1; y < H - 1; y++) {
+            let run = 0
+            for (let x = 0; x <= W; x++) {
+                const isG = x < W && S.map[y][x] === '.'
+                if (isG) run++; else { if (run > bestLen) { bestLen = run; bestY = y }; run = 0 }
+            }
+        }
+        const y = bestY
+        for (let x = 1; x < W - 1; x++) if (S.map[y][x] === '.') g.grid[idx(x, y)].t = T.ROAD
+        const py = S.map[y - 1] && S.map[y - 1][12] === '.' ? y - 1 : y + 1
+        g.grid[idx(12, py)].t = T.PLANT
+        const placeZ = (zx, tool) => {
+            for (const dy of [-1, 1]) {
+                const zy = y + dy
+                if (!inB(zx, zy) || S.map[zy][zx] !== '.' || g.grid[idx(zx, zy)].t !== T.GRASS) continue
+                g.grid[idx(zx, zy)].t = tool; return true
+            }
+            return false
+        }
+        let ind = 0, res = 0
+        for (let x = 2; x <= 10 && ind < 8; x++) if (placeZ(x, T.IND)) ind++
+        for (let x = 14; x <= 22; x++) { if (placeZ(x, T.RES)) res++; if (res < 22 && placeZ(x, T.RES)) res++ }
+        for (let t = 0; t < CFG.yearTicks * 80 && !g.end; t++) step(g, {})
+        ok(g.end === 'lose', `s${sc} ${S.name}: the one-street recipe (I${ind}/R${res}) ended ${g.end} @y${g.year} pop ${g.pop} — the trap still pays`)
+    }
+}
+
+// ------------------------------------------------- disasters are actually seen ----
+section('DISASTERS ARE SEEN IN A COMPETENT GAME')
+{
+    // A scripted fire no longer waits at its corner: it strikes the nearest
+    // developed cell to the seed — the city where the city is. So a competent
+    // run must actually see its disasters: every map scripts fires, at least
+    // one ignites before the run ends, the first strike lands by mid-deadline,
+    // and nothing duds (a city that exists has something to burn).
+    for (const sc of [0, 1, 2]) {
+        const S = SCEN[sc]
+        const g = newCity(sc)
+        const r = plan(sc)
+        const fired = []
+        let duds = 0
+        for (const inp of r.script) {
+            step(g, inp)
+            for (const e of g.events) {
+                if (e.type === 'fire') fired.push(e.year)
+                if (e.type === 'dudfire') duds++
+            }
+        }
+        ok(S.fires.length > 0, `s${sc} ${S.name}: no scripted disasters — a map with nothing to answer for`)
+        ok(fired.length > 0, `s${sc} ${S.name}: no scripted fire ever ignited in a competent game — the disasters are invisible`)
+        ok(fired.some((yy) => yy < g.year), `s${sc}: fires at [${fired.join(',')}] all at/after the end (y${g.year}) — a late decoration, not a mid-game threat`)
+        ok(fired.length && Math.min(...fired) <= Math.floor(S.deadline / 2), `s${sc}: first strike y${Math.min(...fired) || '?'} — past mid-deadline (${S.deadline})`)
+        ok(duds === 0, `s${sc}: ${duds} fire(s) duded — the city existed, the strike found nothing`)
+    }
 }
 
 // ------------------------------------------------------------- doing nothing ----

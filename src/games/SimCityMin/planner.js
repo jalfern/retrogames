@@ -24,14 +24,21 @@ const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 const grass = (g, x, y) => inB(x, y) && g.grid[idx(x, y)].t === T.GRASS
 
 export function bestAvenue(g) {
-    let best = { y: 8, len: -1, x0: 1, x1: W - 2 }
+    // ties on run length go to the row NEAREST A STANDING PLANT: a map that
+    // ships a derelict substation is shipping free power, and a city that
+    // builds six rows away from it pays for what the map gave
+    const plantRows = []
+    for (let i = 0; i < g.grid.length; i++) if (g.grid[i].t === T.PLANT) plantRows.push((i - (i % W)) / W)
+    const pd = (y) => (plantRows.length ? Math.min(...plantRows.map((py) => Math.abs(py - y))) : Infinity)
+    let best = { y: 8, len: -1, x0: 1, x1: W - 2, pd: Infinity }
     for (let y = 1; y < H - 1; y++) {
         let run = 0, bx = 0
         for (let x = 0; x <= W; x++) {
             const isG = x < W && g.grid[idx(x, y)].t === T.GRASS
             if (isG) { if (run === 0) bx = x; run++ }
             else {
-                if (run > best.len) best = { y, len: run, x0: bx, x1: x - 1 }
+                const d = pd(y)
+                if (run > best.len || (run === best.len && d < best.pd)) best = { y, len: run, x0: bx, x1: x - 1, pd: d }
                 run = 0
             }
         }
@@ -72,6 +79,24 @@ function fireCovered(g, fx, fy) {
     return false
 }
 
+// where the sim will actually light the fire: the nearest developed
+// burnable cell to the seed (the sim strikes the city where the city is),
+// or the seed itself when nothing stands yet. The station has to guard the
+// STRIKE point — a station at the script's corner is useless when the city
+// grew elsewhere.
+function strikePoint(g, x, y) {
+    let best = null, bd = Infinity
+    for (let i = 0; i < g.grid.length; i++) {
+        const c = g.grid[i]
+        if (c.burn) continue
+        if (c.t < T.RES || c.t > T.IND || c.lvl <= 0) continue
+        const nx = i % W, ny = (i - nx) / W
+        const d = (nx - x) * (nx - x) + (ny - y) * (ny - y)
+        if (d < bd) { bd = d; best = [nx, ny] }
+    }
+    return best || [x, y]
+}
+
 const MIX = [T.RES, T.RES, T.RES, T.COM, T.IND]
 
 export function decideYear(g, ctx) {
@@ -91,17 +116,20 @@ export function decideYear(g, ctx) {
         ctx.roads.add(idx(x, y))
     }
 
-    // 1. fire stations before the fire year. A straight avenue leaves no
-    //    grass next to a road off-corridor, so if no site exists the planner
-    //    spurs two road cells down the fire's column and hangs the station
-    //    off that — seven years of lead time on a disaster the script named.
+    // 1. fire stations before the fire year, guarding the PREDICTED STRIKE
+    //    POINT (nearest developed cell to the seed — the sim strikes the
+    //    city where the city is). A straight avenue leaves no grass next to
+    //    a road off-corridor, so if no site exists the planner spurs two
+    //    road cells down the fire's column and hangs the station off that —
+    //    seven years of lead time on a disaster the script named.
     for (const f of S.fires) {
         if (ctx.doneFireSite[f.year]) continue
         const due = f.year - g.year
         if (due > 7 || due < -1) continue
-        if (fireCovered(g, f.x, f.y)) { ctx.doneFireSite[f.year] = true; continue }
+        const [fx, fy] = strikePoint(g, f.x, f.y)
+        if (fireCovered(g, fx, fy)) { ctx.doneFireSite[f.year] = true; continue }
         if (ctx.firesPlaced >= ctx.fireCap || !can(CFG.cost.fire + 60)) continue
-        const d = f.y <= ctx.avenue.y ? 1 : -1
+        const d = fy <= ctx.avenue.y ? 1 : -1
         const site = (x, y) => grass(g, x, y) && N4.some(([ax, ay]) => inB(x + ax, y + ay) &&
             (g.grid[idx(x + ax, y + ay)].t === T.ROAD || ctx.roads.has(idx(x + ax, y + ay))))
         let done = false
@@ -109,8 +137,8 @@ export function decideYear(g, ctx) {
             for (let dy = -r; dy <= r && !done; dy++) {
                 for (let dx = -r; dx <= r && !done; dx++) {
                     if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
-                    if (site(f.x + dx, f.y + dy)) {
-                        ctx.queue.push({ tool: T.FIRE, place: [f.x + dx, f.y + dy] })
+                    if (site(fx + dx, fy + dy)) {
+                        ctx.queue.push({ tool: T.FIRE, place: [fx + dx, fy + dy] })
                         ctx.firesPlaced++
                         ctx.doneFireSite[f.year] = true
                         done = true
@@ -119,10 +147,10 @@ export function decideYear(g, ctx) {
             }
         }
         if (done) continue
-        for (const xc of [f.x, f.x + 1, f.x - 1, f.x + 2, f.x - 2]) {
-            const s1 = [xc, f.y + d], s2 = [xc, f.y + 2 * d]
+        for (const xc of [fx, fx + 1, fx - 1, fx + 2, fx - 2]) {
+            const s1 = [xc, fy + d], s2 = [xc, fy + 2 * d]
             if (!grass(g, s1[0], s1[1]) || !grass(g, s2[0], s2[1])) continue
-            for (const [sx, sy] of [[xc, f.y + 3 * d], [xc - 1, f.y + 2 * d], [xc + 1, f.y + 2 * d]]) {
+            for (const [sx, sy] of [[xc, fy + 3 * d], [xc - 1, fy + 2 * d], [xc + 1, fy + 2 * d]]) {
                 if (!grass(g, sx, sy)) continue
                 const adj = N4.some(([ax, ay]) => inB(sx + ax, sy + ay) && (
                     g.grid[idx(sx + ax, sy + ay)].t === T.ROAD || ctx.roads.has(idx(sx + ax, sy + ay)) ||
@@ -173,7 +201,7 @@ export function decideYear(g, ctx) {
             }
         }
     } else if (plants > 0 && ctx.plantsPlaced < ctx.plantCap && ctx.year - (ctx.lastPlantYear || 0) >= 3 &&
-        can(CFG.cost.plant + 120)) {
+        can(CFG.cost.plant + 60)) {
         // demand far from ANY standing plant — not just unlit: the frontier
         // cells right next to a relay's reach are already served, and
         // counting them was relaying the same block twice per cooldown
@@ -181,7 +209,7 @@ export function decideYear(g, ctx) {
         for (let i = 0; i < g.grid.length; i++) if (g.grid[i].t === T.PLANT) plantCells.push([i % W, (i - (i % W)) / W])
         const nearPlant = (x, y) => plantCells.some(([px, py]) => Math.max(Math.abs(px - x), Math.abs(py - y)) <= 8)
         const outOfReach = ctx.zoneQueue.filter(([tool, x, y]) => tool !== T.PARK && !poweredNear(x, y) && !nearPlant(x, y))
-        if (outOfReach.length >= 4) {
+        if (outOfReach.length >= 3) {
             const [, fx, fy] = outOfReach[0]
             // the plant must stand beside the avenue THAT zone's row is
             // served by — not the newest avenue the planner happens to be
