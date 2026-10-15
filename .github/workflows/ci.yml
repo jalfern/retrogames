@@ -287,6 +287,13 @@ jobs:
       # every checkpoint, dies at 4). Four mutants must die — all in Node.
       - run: npm run lint:outrun
       - run: npm run outruncheck -- --mutate
+      # LUNAR LANDER: terrain flatness/pad geometry across seeds, gravity/fuel/crash
+      # rules through the same step() the player drives, the pad×multiplier + fuel
+      # bonus ledger, the dock chain, a deathless five-mission autopilot win on four
+      # seeds, and the slack rule (−110 fuel still wins deathless, −115 loses). Four
+      # mutants must die — all in Node.
+      - run: npm run lint:lander
+      - run: npm run landercheck -- --mutate
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
