@@ -88,7 +88,7 @@ export function makeGame({ seed = 7, level = 1, lives = 3 } = {}) {
         seed: seed >>> 0, rng: makeRng(seed ^ (level * 2654435761)),
         level, mode: level === 1 ? 1 : 2, lives, score: 0, total: 0,
         colors: new Array(64).fill(0),
-        player: { r: 0, c: 0, hop: null, ride: null, dying: 0, invuln: 0, upChain: 0, lastCube: -1, prevCube: -1 },
+        player: { r: 0, c: 0, hop: null, ride: null, dying: 0, invuln: 0, upChain: 0, lastCube: -1, prevCube: -1, facing: 1 },
         snakes: [], balls: [], runners: [], slicks: [],
         discs: [
             { x: -40, y: 34, v: 0.85, off: 0 },
@@ -119,7 +119,7 @@ function resetRound(gs) {
     gs.slickTimer = gs.level >= 3 ? 420 : 1e9
     gs.player.r = 0; gs.player.c = 0
     gs.player.hop = null; gs.player.ride = null; gs.player.dying = 0
-    gs.player.invuln = 40; gs.player.upChain = 0; gs.player.lastCube = -1; gs.player.prevCube = -1
+    gs.player.invuln = 40; gs.player.upChain = 0; gs.player.lastCube = -1; gs.player.prevCube = -1; gs.player.facing = 1
     gs.colors[id(0, 0)] = flipTarget(gs)
     gs.lastLandTick = -1
     gs.pending = null; gs.phase = 'play'; gs.phaseT = 0
@@ -139,6 +139,8 @@ function kill(gs, cause) {
 function hopTo(gs, tr, tc) {
     const p = gs.player
     const from = px(gs)
+    const to = cubeXY(tr, tc)
+    p.facing = to.x > from.x ? 1 : to.x < from.x ? -1 : p.facing
     p.prevCube = p.lastCube
     p.lastCube = id(p.r, p.c)
     p.hop = { fr: p.r, fc: p.c, tr, tc, t: 0, x0: from.x, y0: from.y }

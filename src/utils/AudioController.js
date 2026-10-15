@@ -87,6 +87,45 @@ const MUSIC = {
             47, 0, 0, 47, 0, 0, 55, 0, 43, 0, 0, 43, 0, 0, 50, 0,
         ],
     },
+    // OUT RUN radio — three ORIGINAL tunes composed for this build in the sunlit
+    // 1986 beach-cruiser idiom (bright major-key synth-pop lines over a walking
+    // bass). These are our own melodies, deliberately NOT the cabinet's tracks.
+    // "MAGICAL COAST" — bouncy, syncopated, F major.
+    cruise: {
+        step: 0.135,
+        lead: [
+            65, 69, 72, 76, 74, 72, 69, 72, 67, 71, 74, 79, 76, 74, 71, 74,
+            65, 69, 72, 77, 76, 72, 69, 65, 69, 72, 76, 81, 79, 76, 72, 69,
+        ],
+        bass: [
+            41, 0, 53, 0, 41, 0, 53, 0, 43, 0, 55, 0, 43, 0, 55, 0,
+            41, 0, 53, 0, 41, 0, 53, 0, 45, 0, 57, 0, 45, 0, 41, 0,
+        ],
+    },
+    // "SUNSET RUN" — warmer, wider intervals, C major with a seventh lift.
+    sunset: {
+        step: 0.16,
+        lead: [
+            72, 0, 76, 79, 81, 79, 76, 74, 76, 0, 79, 83, 81, 79, 76, 72,
+            74, 0, 77, 81, 83, 81, 77, 76, 77, 0, 81, 84, 83, 79, 76, 0,
+        ],
+        bass: [
+            48, 0, 0, 55, 0, 0, 43, 0, 45, 0, 0, 52, 0, 0, 43, 0,
+            46, 0, 0, 53, 0, 0, 41, 0, 43, 0, 0, 55, 0, 0, 48, 0,
+        ],
+    },
+    // "BREEZE BOULEVARD" — the fastest of the three, a bright G-major skip.
+    breeze: {
+        step: 0.12,
+        lead: [
+            67, 71, 74, 79, 76, 74, 71, 74, 69, 72, 76, 81, 79, 76, 72, 76,
+            67, 71, 74, 79, 81, 79, 76, 74, 72, 76, 79, 83, 81, 76, 71, 0,
+        ],
+        bass: [
+            43, 43, 0, 55, 43, 0, 50, 0, 45, 45, 0, 57, 45, 0, 52, 0,
+            43, 43, 0, 55, 43, 0, 57, 0, 41, 41, 0, 53, 45, 0, 43, 0,
+        ],
+    },
 }
 
 class AudioController {
@@ -124,17 +163,18 @@ class AudioController {
     }
 
     // ---- one-shot SFX ----
-    playTone(freq, duration, type = 'square', vol = 0.1) {
+    playTone(freq, duration, type = 'square', vol = 0.1, delay = 0) {
         if (this.muted || !this.ctx) return
         if (this.ctx.state === 'suspended') this.ctx.resume()
+        const t = this.ctx.currentTime + delay
         const osc = this.ctx.createOscillator()
         const gain = this.ctx.createGain()
         osc.type = type
-        osc.frequency.setValueAtTime(freq, this.ctx.currentTime)
-        gain.gain.setValueAtTime(vol, this.ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration)
+        osc.frequency.setValueAtTime(freq, t)
+        gain.gain.setValueAtTime(vol, t)
+        gain.gain.exponentialRampToValueAtTime(0.01, t + duration)
         osc.connect(gain); gain.connect(this.ctx.destination)
-        osc.start(); osc.stop(this.ctx.currentTime + duration)
+        osc.start(t); osc.stop(t + duration)
     }
 
     playNoise(duration, vol = 0.2) {

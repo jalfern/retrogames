@@ -122,11 +122,23 @@ const ArkanoidGame = lazy(() => import('../games/Arkanoid'))
 // a pure step(state,input), so scripts/dugcheck.mjs audits rules, ledger and a
 // proven deathless clear in Node; the attract demo replays that same pilot run.
 const DigDugGame = lazy(() => import('../games/DigDug'))
+// GAUNTLET: same lesson — the autopilot that proves the four-maze quest (and
+// scripts/gauntletcheck.mjs audits) rides in the chunk with the pure sim.
+const GauntletGame = lazy(() => import('../games/Gauntlet'))
 // BUBBLE BOBBLE (Taito 1986): blow bubbles, trap, pop for escalating chains.
 // The sim is a pure step(state,inputs), so scripts/bobcheck.mjs audits all 100
 // generated caves, the trap/pop/chain ledger, letters, water, lightning, the
 // boss and Blubba in Node; the attract demo replays the pilot's proven run.
 const BubbleBobbleGame = lazy(() => import('../games/BubbleBobble'))
+
+// SMASH TV: same lesson — the autopilot that proves the nine-room arena chain
+// (and scripts/smashcheck.mjs audits) rides in the chunk with the pure sim.
+const SmashTVGame = lazy(() => import('../games/SmashTV'))
+
+// OUT RUN: same lesson — the pure segment-projected sim and the autopilot that
+// proves the five-stage fork route (and scripts/outruncheck.mjs audits) ride in
+// the chunk; the harness imports road/sim/planner unchanged in Node.
+const OutRunGame = lazy(() => import('../games/OutRun'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -645,6 +657,33 @@ export const GAMES = [
         theme: 'dark',
         description: 'Atari\'s 1984 trackball classic, rebuilt honest: an isometric checkered course and a marble with real inertia — arrows are FORCE, not velocity, so everything you do drifts. Six races (Practice, Beginner, Intermediate, Aerial, Silly with its reversed gravity, Ultimate) against a countdown whose LEFTOVER time carries into the next race and banks as score by race weight. Wipe out: roll off an edge, fall a hard drop, get caught by the black steelie\'s knock, the acid slinkies, the marble munchers\' jaws, the swinging hammers, or the wave floor that hurls you — and you lose a life and restart the race. A green slinky is a free bounce if you can steer onto it. 50 seconds left at the end banks a 5,000 bonus; 50k buys a 1UP.',
         controls: ['Arrows: push the marble (inertia — anticipate)', 'On phones: drag anywhere on the course to push, like the trackball', 'Reach the gold ring before the clock dies — leftover time carries and scores', 'Falls and hazards cost a life, not the run — the clock is the real enemy', '? pauses'],
+    },
+    {
+        path: '/gauntlet',
+        builtBy: 'forge',
+        component: GauntletGame,
+        label: 'GAUNTLET',
+        theme: 'dark',
+        description: 'Atari\'s 1985 first-person dungeon crawl, rebuilt honest: choose your hero (Warrior, Valkyrie, Wizard, Elf — speed, power and range differ), walk four pillar-hall mazes in the arcade\'s own split-screen (corridor view, side map, narrator strip). Health drains the moment you spawn — food restores it, and when it runs low the hall itself shouts "WARRIOR NEEDS FOOD, BADLY!". Slam doors crash shut behind you and locked doors eat the keys you find along the way. Generators pulse grunts, wall-passing ghosts, demons, fire-throwing sorcerers and rock-lobbers until YOU smash the generator; a potion flares and clears the halls of everything but Death — and when the treasure timer runs out, DEATH walks the maze and drains you point by point. The stairs at the end of the fourth maze end the quest. The attract demo replays the autopilot\'s own proven full-quest clear, audited tick-for-tick by a Node harness (key-before-lock geometry, the slam and potion rules, the Death drain, the slack rule: it wins again with less food and fewer potions).',
+        controls: ['Arrow Left/Right: turn · Arrow Up: forward · Down: back (the arcade layout)', 'SPACE / A: swing the sword — it hits what is in front of you', 'X / F / B button: loose an arrow or spell at what you can see down the lane', 'Walk into doors to open them; locked doors need a KEY; closed slam doors can be battered open', 'Eat food the moment health runs low; step on a POTION when the halls swarm', 'Keys carry between mazes — the far door is the whole point · ? pauses'],
+    },
+    {
+        path: '/smash-tv',
+        builtBy: 'forge',
+        component: SmashTVGame,
+        label: 'SMASH TV',
+        theme: 'dark',
+        description: 'The 1990 Williams game-show death arena, rebuilt twin-stick: Arrows move, IJKL fires its own 8-way stick (Space shoots the way you face) — and ONE HIT KILLS, exactly like the cabinet. Nine rooms of camera-droids, sprinters, turrets, grenade lobbers and heavies; the exit doors unlock only when the room is dead. Smash glass crates for SPREAD, LASER and the MACHINE GUN, and when the swarm gets fat the B button drops a FIREBOMB on the studio (it burns POWER — the bar refills when a room falls). Every fourth room is the BLOOD BONUS: ten seconds, panicked contestants, the audience adores you, and the combo pays double. At the end of the run waits THE ANNOUNCER. The attract demo is the autopilot\'s own proven nine-room clear, audited in a Node harness (one-hit lethality, sealed-until-clear exits, the crate ladder, the firebomb tax, the bonus ledger, the slack rule — and five planted bugs that must all die).',
+        controls: ['Arrows / D-pad: run the arena — 8-way, and you never stop dead', 'IJKL: the FIRING stick — shoot any way, even while running the other way', 'SPACE / Z / A: fire the way you face · B / X / B button: FIREBOMB (costs 34 POWER)', 'LASER also burns POWER (2 a shot) but pierces; power refills when the room falls', 'Exits stay sealed until every enemy dies — then any open door leads to the next room', 'Bonus rooms: 10 seconds on the crowd, chain your shots, combo pays +50 each', '?: pause and read the rules of the show'],
+    },
+    {
+        path: '/out-run',
+        builtBy: 'forge',
+        component: OutRunGame,
+        label: 'OUT RUN',
+        theme: 'dark',
+        description: 'The 1986 Sega highway, rebuilt as a segment-projected pseudo-3D road — curves that slide the tarmac sideways and REAL hills that hide the road over the crest (not Mode 7) — with the red convertible and its wind-in-the-hair couple seen from behind. The clock is the only killer: it drains every second, and each checkpoint banked buys more. LOW gear claws the hairpins, HIGH carries the 300 km/h top end, and the centrifugal force of a bend will shovel you off the line into the grass unless you counter-steer. Traffic bogs you down; a roadside palm or signpost FLIPS the car and the couple tumble out, costing you the seconds you cannot spare. At the end of every stage the road forks — LEFT is easier, RIGHT is longer, meaner and pays a tighter clock — so over five stages the branches give fifteen different roads and five different finish goals. Scenery changes with the country: palm coast, desert windmills, alpine pines, green fields, the capital skyline. Pick one of three original synth radio tunes before the light goes green. The attract demo is the autopilot\'s own proven deathless five-stage run, audited by a Node harness — geometry, the timer/fork economy, the crash rules and the slack re-win (the whole route still wins with three seconds shaved off every checkpoint, and dies at four).',
+        controls: ['◀ ▶ / D-pad left-right: steer — hold the line, the curves throw you outward', '▲ / SPACE / A: GAS   ·   ▼: BRAKE', 'B / SHIFT / GEAR button: toggle LOW ⇄ HIGH (LOW bites off the line and in corners)', 'Reach each CHECKPOINT before the clock dies — it buys you the next stretch', 'At the FORK, steer LEFT for the easier route or RIGHT for the harder, faster-paying one', 'Do NOT leave the tarmac: off-road grass drags you, and a roadside object flips the car', '?: pause and read the road book'],
     }
 
 ]

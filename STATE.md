@@ -1,66 +1,64 @@
-# STATE — forge session 2026-10-14 (3rd) — MARBLE MADNESS SHIPPED
+# STATE — 2026-10-15 (forge session, OUT RUN shipped)
 
-## Shipped
-- **MARBLE MADNESS** (#236) merged as PR #264 (squash `40739f5`).
-  Prod verified: `https://jalfern.com/retrogames/marble-madness` → 200,
-  bundle `index-BkMx7sxt.js` contains it. Labels: `shipped`.
-  CI on main: `completed success`. Smoke was flaky on the PR run
-  (Missile Battle step — unrelated, advisory per rule 3); it passed clean on
-  the main push. `static` green both times.
+## Shipped this session
+**OUT RUN** (#241) — PR #282, squash-merged at `042e198`, live at
+https://jalfern.com/retrogames/out-run (prod bundle verified: carries the
+OUT RUN route). The 1986 Sega highway per Jon's approved spec:
+segment-projected pseudo-3D road (curves slide, **real hills hide the road over
+the crest** — not Mode 7), red convertible + wind-in-hair couple seen from
+behind. **Checkpoint clock is the only killer**; **LOW/HIGH gears** (LOW caps
+speed + bites, HIGH ~305 km/h); speed-scaled **centrifugal force**; traffic
+bogs you and a **roadside object flips the car** (couple tumbles, seconds lost);
+**fork at every checkpoint** (LEFT easier / RIGHT harder) over a **merge-back
+lattice = 15 stages / 5 goals**; per-stage scenery (coast→desert→alpine→
+countryside→capital); radio pick of **three ORIGINAL synth tunes** before the
+start. Attract demo replays the autopilot's proven run. All art/audio synthesized.
 
-## What the game is
-Atari 1984 iso trackball classic, complete: six races (Practice, Beginner,
-Intermediate, Aerial, Silly reversed-gravity, Ultimate), carrying clock that
-banks by race weight, full hazard roster (steelie knock, acid/green slinkies,
-munchers, swinging hammers, wave-floor hurl), attract replaying a scripted
-six-race win, drag-anywhere trackball on phones, all art/audio synthesized.
-Files: `src/games/MarbleMadness/{sim,levels,planner,index}.js(x)` + README.
-Gate: `npm run lint:marble` + `npm run marblecheck` (new CI static steps);
-`npm run marbleplay` is the advisory browser drive.
+Gates: `lint:outrun` + `outruncheck` (34 checks) wired into CI `static`.
+Autopilot wins **all 5 stages DEATHLESS**; slack re-wins with **3s off every
+checkpoint**, **dies at 4** (win is load-bearing). `-- --mutate` kills **4
+mutants** (gear ceiling, centrifugal, flip crash, the time budget itself).
+QA polish filed as **#283**.
 
-## The engine lesson (see the game README, it's written there in full)
-The BFS's `stepOk` promised Δz≤1 steps as walkable, but the original
-`acc: 0.0011` against `slopeK: 0.004` made every Δz≥1 ramp physically
-unclimbable — the autopilot froze at a slope base, and the real player would
-too. `acc` is now 0.005 so the graph and the force agree. Two more pilot
-truths worth reusing: the achievable push directions are the sim's 8
-`screenToWorld` octants (an anisotropic screen projection is NOT the inverse
-and flips the lateral sign at lips), and brake rays must be bisected —
-0.25-quantized detection lands *past* the stopping distance.
+## GOAL — next session
+Claim the oldest `game-queue` issue — **#245 Lunar Lander** — unless Jon labels
+**#276** (`next`). #276 (top-down GAUNTLET + FOUR HALLS rename) is Jon's own
+standing directive (STATE carried it forward two sessions) but still carries no
+`next` label — see question 1. A quick SMASH TV polish (**#280**) or the new
+OUT RUN polish (**#283**) is also valid work if a QA lane isn't live.
 
-## Queue (game-queue)
-- #237 GAUNTLET, #239 SmashTV, #241 Out Run, #245 Lunar Lander, #246
-  Tempest, #258 Bubble Bobble polish.
-- Fresh QA: #265 QA — MARBLE MADNESS polish pass (art, music, fidelity).
+## Board
+- Queue: **#276 Gauntlet top-down + FOUR HALLS rename**, **#245 Lunar Lander**,
+  **#246 Tempest**. (#241 Out Run → shipped.)
+- Open QA feedback: **#283** (OutRun), **#280** (SmashTV), #275 (Gauntlet),
+  #270 (SimCity), #269/#220 (Kart), #265 (Marble), #263/#258 (Bubble Bobble).
+- `gh pr list` before touching arcade/QA areas.
+
+## Housekeeping done
+Worktree `retrogames-forge-outrun` (branch merged+deleted) — remove it when idle
+(`git worktree remove`); symlinked node_modules there is disposable. Stale
+worktrees worth pruning when idle (verify merged first): forge-arkanoid,
+forge-bobubble, forge-gauntlet, forge-smashtv, qa-mkart, qa-qbert. Main checkout
+parked detached at `origin/main`.
+
+## How OUT RUN is built (pointer, not a tutorial)
+`src/games/OutRun/`: `road.js` (segment projector `scale=CAM_DEPTH/z` + the
+15-stage merge-back lattice + seeded props/cars + 5 `SCENES`), `sim.js` (pure
+`step`, gears/centrifugal/clock/traffic/flip/fork; `CFG` switches the harness
+mutates), `planner.js` (lane-commit + curve-counter + LEFT-fork autopilot),
+`art.js` (synth sprites + parallax backdrops), `index.jsx` (projection renderer
+with `p2.y>=p1.y` crest occlusion + painter props, attract/radio/HUD/DebugKit).
+Radio tracks `cruise/sunset/breeze` live in `src/utils/AudioController.js`.
+README has fidelity notes + honest gaps.
 
 ## Three questions for Jon
-1. Marble Madness physics is now trackball-strong (`acc` 0.005) so Δz=1
-   slopes are climbable — that was required for the graph to be truthful, but
-   it makes the marble accelerate hard in a straight line. Want a lower top
-   speed (`maxV` 0.24 → ~0.18) to trade climb authority for less "skatey"
-   straights?
-2. The scripted attract run takes 5 lives across the six races. Is a
-   dying-but-finishing demo acceptable (shows the hazards honestly), or
-   should I spend a session grinding a deathless pilot line to replay?
-3. Steelie post radius is capped at 9 tiles with 1-step climbs, so the
-   arcade's wide-roaming steelies aren't represented. Keep the tame cap (it
-   keeps the courses winnable by the harness pilot), or widen it and accept a
-   harder pilot problem?
-
-## Housekeeping
-- Main checkout is detached at `origin/main` (`40739f5`); clean.
-- Lane worktree `~/Dev/retrogames-forge-marble-madness` still holds
-  `forge/marble-madness` — PR merged + branch deleted on origin, so that
-  worktree is done; `git worktree remove` it (needs `--force`, the local
-  branch is now behind/at the squash).
-- Other stale worktrees from prior sessions are listed in `git worktree
-  list` (arkanoid, bobubble, digdug, kart, papers, qa-*, tetris, zelda,
-  simcity, noder) — several look finished. Worth a prune pass; I left them
-  alone to avoid touching lanes that may still be live.
-- My merge command `gh pr checks --watch --fail-fast && gh pr merge` was
-  piped through `tail`, which swallowed `--fail-fast`'s exit code — the
-  merge proceeded while `smoke` was red on that run. Only `static` gates
-  merges (rule 3) and `static` was green, but the pipeline should be split
-  so `--fail-fast` can actually stop the chain. FORGE.md step 7 shows the
-  command un-piped; that's correct — the piping was my addition, not the
-  playbook's.
+1. **#276 again**: it has now been the carried-forward intent for two sessions
+   but never the claimed oldest-queue issue. Want me to build it next (label it
+   `next`), or keep taking the oldest `game-queue` (#245 Lunar Lander) first?
+2. **Attract demo style** (open since last session): Smash TV showed hits,
+   Gauntlet/OUT RUN showcase deathless. Confirm the house rule — deathless
+   showcase, with drama allowed on the death screen only?
+3. **OUT RUN is very forgiving on HARD routes?** The autopilot only takes the
+   LEFT branch (col 0) and wins deathless with slack. Want a RIGHT-branch autopilot
+   win in the harness too (proves the harder columns are fair), or is proving
+   the easiest route enough?
