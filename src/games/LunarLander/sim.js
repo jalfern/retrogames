@@ -22,23 +22,23 @@ import { mulberry32 } from './rng.js'
 
 export const W = 512
 export const H = 384
-export const ORBIT_Y = 332
-export const ORBIT_SPD = 42
+export const ORBIT_Y = 310
+export const ORBIT_SPD = 90
 export const TARGET_CYCLES = 5
 
 export const CFG = {
     gravity: 15.6,                 // u/s² — one-sixth of nowhere
-    thrust: 32,                    // engine accel along the ship axis
+    thrust: 34,                    // engine accel along the ship axis
     rotRate: 2.3,                  // rad/s stick rotation
-    burn: 26,                      // fuel / second at full burn
-    startFuel: 70,
+    burn: 10,                      // fuel / second at full burn
+    startFuel: 240,
     softVert: 28,                  // max descent speed (u/s) for a soft touch
     softHoriz: 14,                 // max sideways speed for a soft touch
     tiltMax: 0.26,                 // ~15° — feet spread wider than that and you tip
     flatTol: 2.2,                 // ground height delta across the feet = "flat"
-    dockHoriz: 18,                 // dock capture half-window at the orbiter
+    dockHoriz: 20,                 // dock capture half-window at the orbiter
     dockRelV: 50,                  // max |Δvx| against the orbiter
-    dockVert: 70,
+    dockVert: 30,                  // grapple reach above and below the orbit line
     landers: 4,
     padScoring: true,              // pad value × multiplier + fuel bonus
     refuel: true,                  // docking refills the tanks (it must)
@@ -53,7 +53,7 @@ export function push(g, e) { if (!g.search) g.events.push(e) }
 
 function spawnLander(g) {
     g.x = WORLD_W / 2
-    g.y = 352
+    g.y = 300
     g.vx = (rnd(g) * 2 - 1) * 3
     g.vy = -4
     g.rot = 0
@@ -73,10 +73,10 @@ export function makeGame(seed = 0) {
         seed, tick: 0, _rs: (Math.imul(seed + 1, 2246822519) ^ 0x9e3779b9) >>> 0,
         terrainIdx: 0, terrain: genTerrain(seed, 0),
         mult: 1, score: 0, banked: 0, landers: CFG.landers, crashes: 0, cycle: 0,
-        x: WORLD_W / 2, y: 352, vx: 0, vy: -4, rot: 0,
+        x: WORLD_W / 2, y: 300, vx: 0, vy: -4, rot: 0,
         fuel: CFG.startFuel, fuelOut: false,
         phase: 'descent', phaseT: 0, landedPad: null, lastPts: 0,
-        orb: null, end: null, win: false, events: [], search: false,
+        orb: null, end: null, win: false, events: [], search: false, holdAt: null,
     }
     spawnLander(g)
     newOrbiter(g)
@@ -159,9 +159,15 @@ export function step(g, inp) {
             g.phase = 'ascent'
             g.phaseT = 0
             push(g, { type: 'launch' })
-        } else {
             return
         }
+        if (g.fuel <= 0 && g.phaseT > 120) {          // stranded: no tank to reach orbit
+            g.landers--
+            push(g, { type: 'stranded', landers: g.landers })
+            if (g.landers <= 0) { g.end = 'over'; g.win = false; push(g, { type: 'over', win: false }); return }
+            spawnLander(g)
+        }
+        return
     }
 
     // ------- flight (descent / ascent) -------
@@ -188,12 +194,10 @@ export function step(g, inp) {
     // side walls of the valley: soft
     if (g.x < 14) { g.x = 14; g.vx = Math.max(0, g.vx) }
     if (g.x > WORLD_W - 14) { g.x = WORLD_W - 14; g.vx = Math.min(0, g.vx) }
-    if (g.y > 372) { g.y = 372; g.vy = Math.min(0, g.vy) }
+    if (g.y > 300) { g.y = 292; g.vy = Math.min(0, g.vy) }
 
     // ------- docking: the way to the next terrain -------
-    if (g.phase === 'ascent' && g.y >= ORBIT_Y - 8 && g.y <= ORBIT_Y + 12
-        && Math.abs(g.x - g.orb.x) <= CFG.dockHoriz
-        && Math.abs(g.vx - g.orb.vx) <= CFG.dockRelV && g.vy <= CFG.dockVert) {
+    if (g.phase === 'ascent' && Math.abs(g.y - ORBIT_Y) <= CFG.dockVert && Math.abs(g.x - g.orb.x) <= CFG.dockHoriz) {
         g.cycle++
         g.score += 200 * g.mult                          // docking bonus
         if (CFG.refuel) g.fuel = CFG.startFuel
@@ -215,7 +219,7 @@ export function step(g, inp) {
     let touching = false
     for (const f of FEET) {
         const [fx, fy] = footWorld(g, f)
-        if (fy <= terrainY(g.terrain.pts, fx)) { touching = true; break }
+        if (fy <= terrainY(g.terrain.pts, fx) - 0.01) { touching = true; break }   // epsilon: a foot resting exactly on the pad is NOT a new touchdown
     }
     if (!touching) return
 
@@ -226,8 +230,8 @@ export function step(g, inp) {
     const fyL = terrainY(g.terrain.pts, g.x - 9.5)
     const fyR = terrainY(g.terrain.pts, g.x + 9.5)
     const flat = allOnPad || Math.abs(fyR - fyL) <= CFG.flatTol
-    const gentle = -g.vy <= CFG.softVert && Math.abs(g.vx) <= CFG.softHoriz && Math.abs(g.rot) <= CFG.tiltMax
+    const gentle = g.vy <= 0.1 && -g.vy <= CFG.softVert && Math.abs(g.vx) <= CFG.softHoriz && Math.abs(g.rot) <= CFG.tiltMax
 
     if (flat && gentle) land(g)
-    else crash(g, !flat ? 'slope' : -g.vy > CFG.softVert ? 'impact' : Math.abs(g.vx) > CFG.softHoriz ? 'drift' : 'tilt')
+    else crash(g, !flat ? 'slope' : g.vy > 0.1 ? 'climb' : -g.vy > CFG.softVert ? 'impact' : Math.abs(g.vx) > CFG.softHoriz ? 'drift' : 'tilt')
 }
