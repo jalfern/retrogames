@@ -326,7 +326,10 @@ export function step(gs, input = {}) {
                 const d = edgeDist(m, pc)
                 if (d < bestD || (d === bestD && gs.rng() < 0.35)) { bestD = d; best = m }
             }
-            if (best !== null) { s.r = rowOf(best); s.c = colOf(best) }
+            if (best !== null) {
+                s.r = rowOf(best); s.c = colOf(best)
+                gs.events.push({ t: 'coilyhop' })
+            }
             const to = cubeXY(s.r, s.c)
             s.x = to.x; s.y = to.y
             if (id(s.r, s.c) === pc && !p.ride) kill(gs, 'snake')

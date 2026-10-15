@@ -15,6 +15,7 @@ import {
     valid, cubeXY, neededCubes, edgeDist, W, HOP_TICKS,
 } from '../src/games/QBert/sim.js'
 import { plan } from '../src/games/QBert/planner.js'
+import { sfxFor, VOICED, SILENT } from '../src/games/QBert/sound.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('qbertcheck')
@@ -432,6 +433,105 @@ for (const seed of [1, 7, 42, 101, 777, 0xbeef, 2026, 1982]) {
     gs.snakes.push({ r: 1, c: 0, enter: 0, dropT: 10, x: cubeXY(1, 0).x, y: cubeXY(1, 0).y })
     const inp = plan(gs)
     r.check('the pilot freezes rather than hopping at a snake one hop away, dropping soon', !(inp.dl === true), JSON.stringify(inp))
+}
+
+// ------------------------------------------------------ sound contract ----
+// The SFX table (sound.js) is the contract between the sim's events and the
+// shell's player, pinned here both ways:
+//   (1) every event type in VOICED + SILENT is emitted by the sim — no dead
+//       voices (the sim renamed/removed an event -> red)
+//   (2) every event type the sim emits is in the contract — a NEW event with
+//       no voice fails the gate (the "event without a voice" rule from the
+//       Prince of Persia sound pass)
+// The forced tour below makes each type happen; any event that fires by
+// accident along the way is graded too.
+{
+    const seen = new Set()
+    const watch = (g) => { for (const e of g.events) seen.add(e.t) }
+    const g = makeGame({ seed: 5, lives: 9 })
+
+    // hop / land / points(25)
+    play(g, { dl: true }); watch(g)
+    until(g, () => !g.player.hop); watch(g)
+    // points(50) round trip, and 9990 + 50 crosses 10,000 -> oneup
+    // (below the 9-life cap, or the ledger stays silent by design)
+    g.lives = 3
+    g.score = 9990; g.total = 9990
+    play(g, { ur: true }); watch(g)
+    until(g, () => !g.player.hop); watch(g)
+    // fall + death, then the respawn
+    Object.assign(g.player, { r: 5, c: 5, invuln: 0, hop: null })
+    play(g, { dr: true }); watch(g)
+    until(g, () => g.player.dying === 0); watch(g)
+    // snakespawn: arm the snake, then flip an unflipped cube ((1,1) is fresh)
+    g.nextSnakeAt = 1
+    play(g, { dr: true }); watch(g)
+    until(g, () => !g.player.hop); watch(g)
+    // coilyhop: the snake (spawned at the apex) chases a far, invulnerable player
+    Object.assign(g.player, { r: 5, c: 0, invuln: 400 })
+    for (let i = 0; i < 240; i++) { play(g); watch(g) }
+    // discride + snakelure: board the disc with a snake one hop from the apex
+    g.snakes.length = 0
+    g.snakes.push({ r: 1, c: 0, enter: 0, dropT: 9999, x: cubeXY(1, 0).x, y: cubeXY(1, 0).y })
+    Object.assign(g.player, { r: 0, c: 0, hop: null, ride: null, invuln: 0 })
+    g.discs[0].x = W / 2
+    play(g, { ul: true }); watch(g)
+    until(g, () => !g.player.ride, 60); watch(g)
+    // park the player somewhere safe for the rest of the tour
+    g.balls.length = 0
+    Object.assign(g.player, { r: 2, c: 0, hop: null, ride: null, invuln: 120 })
+    // ballspawn / runnerspawn / slickspawn: force the timers
+    g.ballTimer = 1; play(g); watch(g)
+    g.runnerTimer = 1; play(g); watch(g)
+    g.slickTimer = 1; play(g); watch(g)
+    // slickwipe: a green cube directly on the slick's path
+    g.colors[id(5, 4)] = 1
+    g.slicks[0].stepT = 1; play(g); watch(g)
+    // clear: everything green except the cube the player hops onto
+    for (const i of CUBES) g.colors[i] = 1
+    g.colors[id(3, 1)] = 0
+    play(g, { dr: true }); watch(g)
+    until(g, () => !g.player.hop); watch(g)
+    r.check('the tour cleared the round before the game could end (clear was seen live)', seen.has('clear') && g.pending !== null, `pending=${g.pending && g.pending.t}`)
+    until(g, () => !g.pending, 120); watch(g)
+    // over: one life left, fall off the skirt
+    g.lives = 1
+    Object.assign(g.player, { r: 5, c: 5, invuln: 0, hop: null })
+    play(g, { dr: true }); watch(g)
+    until(g, () => g.end, 300); watch(g)
+
+    const deadVoices = [...VOICED, ...SILENT].filter((t) => !seen.has(t))
+    r.check('the sim emits every event in the sound contract (no dead voice)', deadVoices.length === 0, `missing: ${deadVoices.join(',')}`)
+    const unlisted = [...seen].filter((t) => !VOICED.includes(t) && !SILENT.includes(t))
+    r.check('every event the sim emits is voiced or explicitly silent (a new event without a voice fails the gate)', unlisted.length === 0, `unlisted: ${unlisted.join(',')}`)
+    r.check('silent events make no sound', sfxFor({ t: 'land' }).length === 0 && sfxFor({ t: 'fall' }).length === 0)
+}
+{
+    // the shapes that define the pass — fail-proven: the pre-fix code played ONE
+    // sweep(660->1320) for every score >= 50 and had no coilyhop/oneup voice at
+    // all, so the heli/round-trip/boing/oneup pins below are all red on it.
+    const up = (ops) => ops.every((o, i) => o.k === 'tone' && (i === 0 || o.f > ops[i - 1].f))
+    const heli = sfxFor({ t: 'points', pts: 100 })
+    r.check('the heli-jump 100 is a coin-timbre up-arpeggio: 4 bright, ascending, spaced notes',
+        heli.length === 4 && up(heli) && heli.every((o) => o.f >= 800) && heli.every((o, i) => i === 0 || o.at >= heli[i - 1].at + 0.03),
+        JSON.stringify(heli))
+    const rt = sfxFor({ t: 'points', pts: 50 })
+    r.check('the round-trip 50 is a shorter up-arpeggio (2 ascending notes, plainly smaller than the heli)',
+        rt.length === 2 && up(rt) && rt.length < heli.length, JSON.stringify(rt))
+    const single = sfxFor({ t: 'points', pts: 25 })
+    r.check('an ordinary 25 stays a single note (no arpeggio for an ordinary hop)',
+        single.length === 1 && single[0].k === 'tone', JSON.stringify(single))
+    const boing = sfxFor({ t: 'coilyhop' })
+    r.check("Coily's drop tick is one soft descending boing",
+        boing.length === 1 && boing[0].k === 'sweep' && boing[0].f0 > boing[0].f1 && boing[0].v <= 0.08, JSON.stringify(boing))
+    const oneup = sfxFor({ t: 'oneup' })
+    r.check('the 1-up has a voice: an ascending jingle of at least 3 notes',
+        oneup.length >= 3 && up(oneup), JSON.stringify(oneup))
+    r.check('death stays a descending sweep; clear keeps the fanfare; over keeps the death jingle',
+        sfxFor({ t: 'death' })[0].k === 'sweep' && sfxFor({ t: 'death' })[0].f0 > sfxFor({ t: 'death' })[0].f1
+        && sfxFor({ t: 'clear' }).some((o) => o.k === 'fanfare')
+        && sfxFor({ t: 'over' }).some((o) => o.k === 'jingle'))
+    r.check('every voiced event type resolves to a non-empty recipe', VOICED.every((t) => sfxFor({ t, pts: 25 }).length > 0), VOICED.join(','))
 }
 
 r.exit()
