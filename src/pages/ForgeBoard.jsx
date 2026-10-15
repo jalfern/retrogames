@@ -77,9 +77,10 @@ const ForgeBoard = () => {
     // refetches the moment you actually look at it.
     useEffect(() => {
         const wake = () => { if (Date.now() - lastFetch.current > 20000) reload.current() }
+        const onVis = () => { if (!document.hidden) wake() }
         window.addEventListener('focus', wake)
-        document.addEventListener('visibilitychange', () => { if (!document.hidden) wake() })
-        return () => { window.removeEventListener('focus', wake); document.removeEventListener('visibilitychange', wake) }
+        document.addEventListener('visibilitychange', onVis)
+        return () => { window.removeEventListener('focus', wake); document.removeEventListener('visibilitychange', onVis) }
     }, [])
 
     useEffect(() => {
@@ -103,11 +104,16 @@ const ForgeBoard = () => {
                 if (!alive) return
                 setError(`${e.message} — the machine pushes this file every 5 min; if it is down, check launchctl list com.jalfern.telemetry`)
             }
-            if (alive) timer = setInterval(load, 60000)
+            // ONE pending refresh at a time. This used to be setInterval inside
+            // load(), so every tick added another interval: the refresh count
+            // doubled each minute (257 fetches by minute 8) and an open board
+            // took a Safari tab to ~12 GB at 100% CPU.
+            clearTimeout(timer)
+            if (alive) timer = setTimeout(load, 60000)
         }
         load()
         reload.current = load
-        return () => { alive = false; clearInterval(timer) }
+        return () => { alive = false; clearTimeout(timer) }
     }, [])
 
     // One derivation for lamps, floor and cards alike — forgecheck.mjs asserts
