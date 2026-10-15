@@ -273,6 +273,11 @@ jobs:
       # Mutant it: CFG.drainEvery -> never drains turns red.
       - run: npm run lint:gauntlet
       - run: npm run gauntletcheck -- --mutate
+      # MYST: the whole island graph, every puzzle gate (lever, stars, safe,
+      # switches, sphere, fireplace), all eight pages, both trap endings and
+      # the white-page win. Proven to bite: forcing a locked door open reds it.
+      - run: npm run lint:myst
+      - run: npm run mystcheck
       # SMASH TV: geometry of every room, one-hit lethality + the sealed-until-
       # clear exits, the crate->gun ladder and POWER economy, the firebomb tax,
       # the bonus-room clock and combo ledger, the ANNOUNCER win, the pilot WIN
