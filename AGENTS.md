@@ -66,10 +66,12 @@ Per-game `*check` / `*play` aliases: `package.json` + each game's README.
 ## Adding a game
 1. Create `src/games/<Name>/index.jsx` (default export); register in `src/config/games.js`
    with `{ path, component, label, theme, description, controls }` — route + Arcade Menu follow.
-2. Match existing conventions (copy `Defender` or `Adventure`): canvas inside one `useEffect`;
-   fixed timestep (`FIXED_DT = 1000/60`); fixed internal resolution scaled to fit,
-   `imageSmoothingEnabled = false`; attract mode ("PRESS ANY KEY TO START") first; `'?'`
-   toggles `PauseOverlay` (pause entry via `GAMES.find(g => g.label === '<LABEL>')`).
+2. Reuse the plumbing, never the look. Shared: one `useEffect` loop with a fixed timestep
+   (`FIXED_DT = 1000/60`), scaling to fit, attract first (any key or tap starts), `'?'`
+   toggles `PauseOverlay` (entry via `GAMES.find(g => g.label === '<LABEL>')`), the pad,
+   DEV test hooks. Never copy another game's art, HUD, palette, fonts or drawing code:
+   design the look from the original. Pixel titles draw at the original's resolution with
+   `imageSmoothingEnabled = false`; 3D and vector titles render at screen resolution.
 3. Render `<VirtualControls />` for mobile — it dispatches `Arrow{Left,Right,Up,Down}` +
    `Space` (the "A" button); pass `secondAction={{ label, code }}` for "B",
    `visible={false}` on menus/death. Handle those `e.code` values.
