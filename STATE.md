@@ -1,72 +1,74 @@
-# STATE — 2026-10-15 late (forge session, TEMPEST shipped)
+# STATE — 2026-10-15 late-2 (forge session, GAUNTLET top-down + FOUR HALLS shipped)
 
 ## Shipped this session
-**TEMPEST** (#246) — PR #297, squash-merged at `7138165`, live at
-https://jalfern.com/retrogames/tempest (prod bundle `index-Cko--ASE.js`
-verified). Atari 1981 per the queue item: rim of a polygonal tube with the
-camera locked to the ship; **the face is the lane**; edge-line shots are the
-**super bullet** (pierces, rakes both flanking faces); flippers hinge, pulsers
-converge, spinners dive; the rim kills at any longitude (cabinet rule); four
-waves cycle 16·16·32·96 faces at a constant-angular-rate wrap; +1 ship/10k.
+**GAUNTLET top-down + FOUR HALLS rename** (#276) — PR #300, squash-merged at
+`2d8c305`, live: https://jalfern.com/retrogames/gauntlet and
+https://jalfern.com/retrogames/four-halls (prod bundle `index-OsEGMSCO.js`
+verified to carry both routes). One PR, both issue items:
+- Rename: first-person #237 build → **FOUR HALLS** (`/four-halls`), with the
+  issue's HUD fixes — KEYS/LVL no longer overlap, level name centered on the
+  narrator strip, panel GOLD line back inside the panel, opaque hero-select
+  (no HUD ghosting), drain slowed to arcade ~1 hp/s.
+- Shared engine: `src/games/Gauntlet/{sim,levels,planner,art,sound}.js` stay
+  camera-agnostic; FourHalls imports them. `step()` gains `topDown` mode:
+  arrows are an 8-way stick (facing follows the stick), blocked diagonals
+  slide on the free axis; `inp.aim` is the documented pilot lane.
+- **GAUNTLET** at `/gauntlet`: scrolling overhead camera clamped to the maze,
+  8-way stick, sword-arc sweep rendered honestly, swarms from generators,
+  slam/locked doors, food/keys/potion economy, Death on the timer, narrator
+  lines, four heroes, CPU partner toggle (C), attract = the autopilot's own
+  proven deathless run.
 
-Gates: `lint:tempest` + `tempestcheck` (40 checks) wired into CI `static`.
-Autopilot wins all 4 waves **deathless on 4 seeds**; slack rule is a **uniform
-2-unit handicap** (cooldown/bullet-speed/spawn-gap/climb together) still wins
-deathless, **3 loses** — single knobs don't bite (pilot wins by scheduling),
-documented in the README. `--mutate` kills **4 mutants** (rim kill, lane kill,
-super pierce, scoring). Advisory `tempestplay`: 11/11, zero page errors.
-Polish pass filed as **#298**.
+Gates: `lint:gauntlet` + `gauntletcheck` (86 checks; new *overhead* section:
+stick facing, corner-slide, aim lane, arrows down the facing stopped by stone,
+slam overhead) in CI `static`. Pilot wins seeds 0-3 in BOTH cameras, deathless
+available on both; slack re-wins both. `--mutate` kills **6 mutants** (added:
+"overhead pilot cannot aim"). Advisory `gauntletplay` 11/11 zero page errors.
+Polish pass filed as **#302**.
 
 ## GOAL — next session
-Claim the oldest `game-queue` issue: **#276 GAUNTLET (top-down) + rename the
-first-person one to FOUR HALLS** — it is now the OLDEST, so plain rule-2 claim
-order reaches it without a `next` label. (If more queue items were added
-earlier than #276 by the time you read this, take the oldest.) Expect a
-two-title PR: the rename is a registry change, the game is a new title.
-QA polish items (#298 Tempest, #287 LunarLander, #283 OutRun …) are valid work
-if a QA lane isn't live.
+Claim the oldest `game-queue` issue: **#292 MYST** (then #293 Bard's Tale).
+Both are DOS era — MYST (1993) fits the js-dos spine (see AGENTS gotchas:
+injected loader, preserveDrawingBuffer, window-level keys, wasm MIME, ESC/
+click-to-advance quirks like the KQ box). If MYST proves un-runnable in js-dos
+in this box, STOP with a diagnosis comment, don't silently swap titles.
+QA polish items (#302, #298, #287, #283 …) are valid work if no queue item is
+workable.
 
 ## Board
-- Queue: **#276 Gauntlet top-down + FOUR HALLS rename**, #292 MYST,
-  #293 Bard's Tale, #294 SSX, #295 Civilization V, #296 Prince of Persia.
-  (MyST/Bard's-Tale/PoP likely want DOS/IF emulation — check `src/utils/jsdos`
-  paths and the AGENTS gotchas before committing to one; SSX and Civ V are not
-  arcade-cabinet titles and may deserve a scope question first.)
-- Open QA feedback: **#298** (Tempest), #287 (LunarLander), #283 (OutRun),
-  #280 (SmashTV), #275 (Gauntlet), #270 (SimCity), #269/#220 (Kart),
-  #265 (Marble), #263/#258 (Bubble Bobble).
-- `gh pr list` before touching arcade/QA areas. QA lane was live on
-  `retrogames-qa-227` (dev port 5173) — don't steal it; forge dev servers fall
-  through to 5174+, point `*play` scripts at the right port via env.
+- Queue: #292 MYST, #293 Bard's Tale, #294 SSX, #295 Civ V, #296 PoP.
+  SSX/Civ V are console/PC-scale, not arcade cabinets — scope question pending
+  with Jon (below). PoP (arcade 1989) IS a cabinet title.
+- Open QA feedback: #302 (Gauntlet/FourHalls), #298 (Tempest), #287
+  (LunarLander), #283 (OutRun), #280 (SmashTV), #275 (Gauntlet), #270
+  (SimCity), #269/#220 (Kart), #265 (Marble), #263/#258 (Bubble Bobble).
+- QA lane live on `retrogames-qa-258` (branch qa/bobblubba) — dev port 5173
+  is theirs; forge dev servers fall through to 5174+ (this session used 5177,
+  killed on exit). `*play` scripts take URL via env (`GAUNTLET_URL=…`).
 
 ## Housekeeping done
-Worktree `retrogames-forge-tempest` pruned (branch gone, merged).
-`forge-bobubble` still refuses removal (modified/untracked files from a dead
-session) — Jon may want to look before force-remove. Main checkout parked
-detached at `origin/main`.
+Worktree `retrogames-forge-gauntlet` pruned (branch gone, merged). Main
+checkout parked detached at `origin/main`; STATE.md committed per rule-9.
+Carry-over: `forge-bobubble` still refuses removal (dead-session dirt) —
+Jon may want to look before force-remove.
 
-## How TEMPEST is built (pointer, not a tutorial)
-`src/games/Tempest/`: `sim.js` (pure `step`: A×t world coords, face-lane kills,
-edge-snap super bullet that rakes both faces + chain-kills, flipper/pulser/
-spinner behaviours with angular scaling by `faces/16` — pulser homing, edge
-tolerances, player rev rate all scale with ring size; rim-kill rule; waves;
-`CFG` = harness knobs incl. `rimKill/superPierce/laneKill/scoreOn` mutant
-flags), `planner.js` (slack scheduler + commitment + arrival seizure + per-type
-aim prediction + crossfire; exports `decide` for honesty checks), `art.js`
-(projection: angle around vanishing point, near ring RN=372, camera rotates with
-player; hue-cycling ship), `index.jsx` (HUD, attract = `plan(0)` replay,
-DebugKit). README has fidelity notes + honest gaps (approximate score table, no
-saucers/fuse, auto-advance not warp-select, 96-ring pulser mix and why).
+## How the two-camera engine works (pointer, not a tutorial)
+`src/games/Gauntlet/`: `sim.js` (`step` with `gs.topDown`; `moveHero` is the
+sliding 8-way path, FP keeps its own corner-probe branch; `CFG.drainEvery=60`
+= 1 hp/s), `planner.js` (`decide` emits turn-deltas FP / absolute `aim`+
+fwd overhead — same doctrine), `levels.js` (24×24 pillar mazes, key-before-lock
+geometry), `art.js` (pixel-string sprites shared by both cameras), `sound.js`
+(narrator buzzes). FourHalls = raycaster shell only. READMEs carry the honest
+gaps (no shop/resurrection/potion variants, partner no door logic, uniform
+wall blocks).
 
 ## Three questions for Jon
-1. **Queue shapes**: the new entries are #292 MYST, #293 Bard's Tale, #294 SSX,
-   #295 Civ V, #296 Prince of Persia — beyond PoP they're not arcade-vector
-   titles. MYST/Bard's-Tale fit the js-dos spine; SSX/Civ V are console/PC
-   scale — want a scope note on those two before the forge burns a session?
-2. **Slack-rule precedent**: Tempest's single knobs wouldn't bite, so I
-   handicapped four economy dials at once (2 wins, 3 loses). OK as the
-   house interpretation of the slack rule, or prefer single-knob slack even when
-   it requires harder tuning?
-3. Still open from last session, unanswered: attract demo house rule
-   (deathless showcase + drama only on death screens — #287/#298 items depend
-   on it), and tighter-vs-forgiving difficulty as house preference.
+1. **Queue shapes** (repeat, unanswered): #294 SSX and #295 Civ V are not
+   arcade-cabinet titles and dwarf the forge's one-game-per-session loop.
+   Want them descoped/backlog-labeled before the forge reaches them?
+2. **Pilot aim lane**: the overhead autopilot aims absolutely (`inp.aim`)
+   while a player's facing is stick-snapped. OK as harness affordance
+   (documented in README + gauntletcheck "overhead" section), or should the
+   pilot be restricted to the 8 stick directions like a real player?
+3. Attract house rule still open (deathless showcase + drama only on death
+   screens) — #302/#298 both assume it; a one-line ruling would unblock both.
