@@ -4,6 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
+import { makeFitCanvas } from '../../utils/fitCanvas'
 import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
 import { TRACK, SCENERY, TX, TY } from './track.js'
@@ -57,6 +58,9 @@ export default function MarioKart() {
         const canvas = canvasRef.current
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
+        // #227: the ref canvas is now the W×H "source" — the harness reads it.
+        // fitCanvas publishes a crisp integer-scaled display canvas on top of it.
+        const fit = makeFitCanvas(canvas, canvas.parentElement)
         const ground = buildGround()
         const gnd = new Uint32Array(ground.data.buffer)
         const sky = buildSky()
@@ -425,6 +429,7 @@ export default function MarioKart() {
             drawHud()
             if (st.screen === 'attract') drawAttract()
             if (st.screen === 'end') drawEnd()
+            fit.blit()
         }
 
         const resetTo = (screen) => {
@@ -513,6 +518,7 @@ export default function MarioKart() {
 
         return () => {
             cancelAnimationFrame(raf)
+            fit.destroy()
             window.removeEventListener('keydown', kd)
             window.removeEventListener('keyup', ku)
             unmount()
@@ -525,7 +531,7 @@ export default function MarioKart() {
             className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none"
             onPointerDown={() => tapRef.current && tapRef.current()}
         >
-            <canvas ref={canvasRef} width={W} height={H} className="block w-full h-full" style={{ imageRendering: 'pixelated', objectFit: 'contain' }} />
+            <canvas ref={canvasRef} data-fit="source" width={W} height={H} className="block w-full h-full" style={{ imageRendering: 'pixelated', objectFit: 'contain', opacity: 0 }} />
             <VirtualControls visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'SUPER MARIO KART')} onResume={handleResume} />}
         </div>
