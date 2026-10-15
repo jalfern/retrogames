@@ -36,6 +36,9 @@ const LemmingsGame = lazy(() => import('../games/Lemmings'))
 // Boulder Dash too: the planner runs in the tab to drive the attract demo, and
 // the caves are a compiled grid, so it earns its own chunk.
 const BoulderDashGame = lazy(() => import('../games/BoulderDash'))
+// Marble Madness too: the autopilot scripts the attract demo in-tab (a full
+// six-race plan run), so it earns its own chunk.
+const MarbleMadnessGame = lazy(() => import('../games/MarbleMadness'))
 // Sonar Abyss: same lesson — its planner scripts the attract demo and the
 // caves are generated at load, so it keeps its own chunk.
 const SonarGame = lazy(() => import('../games/Sonar'))
@@ -633,6 +636,15 @@ export const GAMES = [
         theme: 'dark',
         description: 'Taito\'s 1986 cave clear-out, rebuilt honest: blow a bubble, and any enemy that wanders into it is TRAPPED — the bubble floats up with its passenger; touch it to pop and the catch pays by CHAIN (100, 200, 300... the consecutive pops climb the classic pay table) and drops fruit. Leave a trap too long and the enemy bursts out ANGRY and the chain resets. Max-size bubbles block your own walk, platforms are one-way (jump up through, drop down with DOWN), ladders run from floor to ceiling. Every 7th bubble carries a letter — E,X,T,E,N,D spells EXTEND for a 1UP. Chain four-plus for transforms: red breathes fire, cyan doubles bubbles, green speeds you up, pink throws long. Chain nine drops LIGHTNING, which zaps the whole screen — even Baron von Blubba, the bat who arrives when a level runs long and rides you down until the lightning. Water in ten of the themes turns walkers into snails. Every 20th cave holds a boss who needs three direct hits; the door opens when the roster is empty. One screen per cave, one hundred caves; solo, with CPU partner Bob, or two players on one keyboard.',
         controls: ['Arrows / the pad: move — UP jumps and climbs ladders, DOWN drops through a platform', 'SPACE / B / A: blow a bubble — walk into a trapped bubble to pop it', 'Chain pops in one cave to climb the pay table; 4+ chains drop power-ups, 9+ drops lightning', 'Collect E-X-T-E-N-D for an extra life; the door opens when every enemy is down', 'At start: 1 solo · 2 solo + CPU Bob · 3 two players (P2: WASD + F)', 'Linger too long and von Blubba comes — only lightning moves him · ? pauses'],
+    },
+    {
+        path: '/marble-madness',
+        builtBy: 'forge',
+        component: MarbleMadnessGame,
+        label: 'MARBLE MADNESS',
+        theme: 'dark',
+        description: 'Atari\'s 1984 trackball classic, rebuilt honest: an isometric checkered course and a marble with real inertia — arrows are FORCE, not velocity, so everything you do drifts. Six races (Practice, Beginner, Intermediate, Aerial, Silly with its reversed gravity, Ultimate) against a countdown whose LEFTOVER time carries into the next race and banks as score by race weight. Wipe out: roll off an edge, fall a hard drop, get caught by the black steelie\'s knock, the acid slinkies, the marble munchers\' jaws, the swinging hammers, or the wave floor that hurls you — and you lose a life and restart the race. A green slinky is a free bounce if you can steer onto it. 50 seconds left at the end banks a 5,000 bonus; 50k buys a 1UP.',
+        controls: ['Arrows: push the marble (inertia — anticipate)', 'On phones: drag anywhere on the course to push, like the trackball', 'Reach the gold ring before the clock dies — leftover time carries and scores', 'Falls and hazards cost a life, not the run — the clock is the real enemy', '? pauses'],
     }
 
 ]
