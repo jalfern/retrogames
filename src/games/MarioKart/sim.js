@@ -137,17 +137,20 @@ function drive(g, k, inp) {
         const cap = top + CFG.boostOver
         const boost = k.boostT > 0
         if (boost) { k.boostT--; if (k.v < cap) k.v += CFG.boostAcc }
-        if (inp.u && k.v < (boost ? cap : top)) k.v += CFG.acc
-        else if (!inp.u && k.v > top && !boost) k.v -= CFG.coast * 6
-        if (inp.d) k.v -= CFG.brake
-        if (!inp.u && !inp.d && k.v <= top && !boost) k.v -= CFG.coast
+        const steer = typeof inp.steer === 'number' ? inp.steer : ((inp.l ? -1 : 0) + (inp.r ? 1 : 0))
+        const thr = typeof inp.thr === 'number' ? inp.thr : (inp.u ? 1 : 0)
+        const brk = typeof inp.brk === 'number' ? inp.brk : (inp.d ? 1 : 0)
+        if (thr > 0 && k.v < (boost ? cap : top)) k.v += CFG.acc * thr
+        else if (thr <= 0 && k.v > top && !boost) k.v -= CFG.coast * 6
+        if (brk > 0) k.v -= CFG.brake * brk
+        if (thr <= 0 && brk <= 0 && k.v <= top && !boost) k.v -= CFG.coast
         if (surf.surf === 'grass' && k.v > top) k.v -= 0.2
         // a spent boost leaves the kart above the cap; throttle or no, bleed
         // the overspeed back down. Unbounded, stacked mushrooms rode v to
         // 33 px/tick (3x top speed) and banked 3-second "laps" — the boost
         // is a surge TO the boost cap, not an escalator past it
         if (k.v > (boost ? cap : top)) k.v -= 0.2
-        k.steerVis = (inp.l ? -1 : 0) + (inp.r ? 1 : 0)
+        k.steerVis = steer
         const grip = Math.min(1, k.v / 2.2)
         const dr = inp.drift && Math.abs(k.steerVis) > 0 && k.v > 4.5
         if (dr) {
@@ -327,7 +330,7 @@ export function step(g, inp) {
     if (g.end) return
     const P = g.karts[0]
     if (g.phase === 'count') {
-        if (inp && inp.u) g.rocket = true
+        if (inp && (inp.u || (typeof inp.thr === 'number' && inp.thr > 0))) g.rocket = true
         const prev = Math.ceil(g.count / 60)
         g.count--
         const now = Math.ceil(g.count / 60)
@@ -341,7 +344,13 @@ export function step(g, inp) {
     }
     const locked = g.phase !== 'race'
     const pin = locked ? {} : inp || {}
-    drive(g, P, { u: !!pin.u, d: !!pin.d, l: !!pin.l, r: !!pin.r, drift: !!pin.drift })
+    // Digital keys always normalise to 0/1 booleans; analog fields (steer/thr/
+    // brk, #290 step 4) pass through untouched when present.
+    const pd = { u: !!pin.u, d: !!pin.d, l: !!pin.l, r: !!pin.r, drift: !!pin.drift }
+    if (typeof pin.steer === 'number') pd.steer = pin.steer
+    if (typeof pin.thr === 'number') pd.thr = pin.thr
+    if (typeof pin.brk === 'number') pd.brk = pin.brk
+    drive(g, P, pd)
     if (pin.item && g.phase === 'race') spendItem(g, P)
     for (let i = 1; i < g.karts.length; i++) {
         const k = g.karts[i]

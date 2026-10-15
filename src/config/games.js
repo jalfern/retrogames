@@ -702,12 +702,13 @@ export const GAMES = [
     },
     {
         path: '/marble-madness',
+        pad: { layout: 'stick', buttons: [], analog: true },
         builtBy: 'forge',
         component: MarbleMadnessGame,
         label: 'MARBLE MADNESS',
         theme: 'dark',
         description: 'Atari\'s 1984 trackball classic, rebuilt honest: an isometric checkered course and a marble with real inertia — arrows are FORCE, not velocity, so everything you do drifts. Six races (Practice, Beginner, Intermediate, Aerial, Silly with its reversed gravity, Ultimate) against a countdown whose LEFTOVER time carries into the next race and banks as score by race weight. Wipe out: roll off an edge, fall a hard drop, get caught by the black steelie\'s knock, the acid slinkies, the marble munchers\' jaws, the swinging hammers, or the wave floor that hurls you — and you lose a life and restart the race. A green slinky is a free bounce if you can steer onto it. 50 seconds left at the end banks a 5,000 bonus; 50k buys a 1UP.',
-        controls: ['Arrows: push the marble (inertia — anticipate)', 'On phones: drag anywhere on the course to push, like the trackball', 'Reach the gold ring before the clock dies — leftover time carries and scores', 'Falls and hazards cost a life, not the run — the clock is the real enemy', '? pauses'],
+        controls: ['Arrows: push the marble (inertia — anticipate)', 'On phones: the floating stick IS the trackball — anchor it anywhere on the left half, push soft for a tap, hard for a shove', 'Reach the gold ring before the clock dies — leftover time carries and scores', 'Falls and hazards cost a life, not the run — the clock is the real enemy', '? pauses'],
     },
     {
         path: '/gauntlet',
@@ -741,13 +742,13 @@ export const GAMES = [
     },
     {
         path: '/out-run',
-        pad: { layout: 'dpad', buttons: [{ label: 'GEAR', code: 'KeyB' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'GEAR', code: 'KeyB' }], analog: true },
         builtBy: 'forge',
         component: OutRunGame,
         label: 'OUT RUN',
         theme: 'dark',
         description: 'The 1986 Sega highway, rebuilt as a segment-projected pseudo-3D road — curves that slide the tarmac sideways and REAL hills that hide the road over the crest (not Mode 7) — with the red convertible and its wind-in-the-hair couple seen from behind. The clock is the only killer: it drains every second, and each checkpoint banked buys more. LOW gear claws the hairpins, HIGH carries the 300 km/h top end, and the centrifugal force of a bend will shovel you off the line into the grass unless you counter-steer. Traffic bogs you down; a roadside palm or signpost FLIPS the car and the couple tumble out, costing you the seconds you cannot spare. At the end of every stage the road forks — LEFT is easier, RIGHT is longer, meaner and pays a tighter clock — so over five stages the branches give fifteen different roads and five different finish goals. Scenery changes with the country: palm coast, desert windmills, alpine pines, green fields, the capital skyline. Pick one of three original synth radio tunes before the light goes green. The attract demo is the autopilot\'s own proven deathless five-stage run, audited by a Node harness — geometry, the timer/fork economy, the crash rules and the slack re-win (the whole route still wins with three seconds shaved off every checkpoint, and dies at four).',
-        controls: ['◀ ▶ / D-pad left-right: steer — hold the line, the curves throw you outward', '▲ / SPACE / A: GAS   ·   ▼: BRAKE', 'B / SHIFT / GEAR button: toggle LOW ⇄ HIGH (LOW bites off the line and in corners)', 'Reach each CHECKPOINT before the clock dies — it buys you the next stretch', 'At the FORK, steer LEFT for the easier route or RIGHT for the harder, faster-paying one', 'Do NOT leave the tarmac: off-road grass drags you, and a roadside object flips the car', '?: pause and read the road book'],
+        controls: ['Stick / ◀ ▶: steer the wheel — hold the line, the curves throw you outward', 'RT / push the stick forward (or SPACE): GAS · LT / pull back (or ▼): BRAKE', 'B / SHIFT / GEAR button: toggle LOW ⇄ HIGH (LOW bites off the line and in corners)', 'Reach each CHECKPOINT before the clock dies — it buys you the next stretch', 'At the FORK, steer LEFT for the easier route or RIGHT for the harder, faster-paying one', 'Do NOT leave the tarmac: off-road grass drags you, and a roadside object flips the car', '?: pause and read the road book'],
     },
     {
         path: '/lunar-lander',

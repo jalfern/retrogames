@@ -9,6 +9,7 @@ import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { buildGround, buildSky, buildSprites, KART } from './art.js'
+import { padState, steerPedals } from '../../utils/padState'
 
 // =====================================================================
 // SUPER MARIO KART — the arcade's Mode 7 title. The ground is ONE 2048²
@@ -378,9 +379,20 @@ export default function MarioKart() {
         }
 
         const tickWorld = (live) => {
-            const inp = st.plan
-                ? decide(g)
-                : { u: !!(keys.KeyX || keys.ArrowUp), d: !!(keys.KeyS || keys.ArrowDown), l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyR || keys.KeyC), item: !!(keys.KeyZ || keys.Space) }
+            // Analog opt-in (#290 step 4): a pushed stick or a pressed trigger
+            // drives steering + pedals from the pad state; otherwise the keys
+            // drive it exactly as before.
+            const p = padState
+            const padLive = p.engaged || p.rt > 0.05 || p.lt > 0.05
+            let inp
+            if (st.plan) {
+                inp = decide(g)
+            } else if (padLive) {
+                const s = steerPedals(p)
+                inp = { steer: s.steer, thr: s.thr, brk: s.brk, drift: !!(keys.KeyR || keys.KeyC), item: !!(keys.KeyZ || keys.Space) }
+            } else {
+                inp = { u: !!(keys.KeyX || keys.ArrowUp), d: !!(keys.KeyS || keys.ArrowDown), l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyR || keys.KeyC), item: !!(keys.KeyZ || keys.Space) }
+            }
             step(g, live ? inp : decide(g))
             if (live && gGhost && !gGhost.end) step(gGhost, decide(gGhost))
             const evs = g.events.splice(0)
