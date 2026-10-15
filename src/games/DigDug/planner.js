@@ -1,7 +1,7 @@
 // DIG DUG — the autopilot pilot. decide(gs) reads the pure sim state and
 // returns one input frame; plan(seed) rolls the REAL sim forward and records
 // the script. The attract demo replays this proven run, and dugcheck grades
-// it (clears every round, zero deaths, lives-1 slack).
+// it (clears every round, zero deaths, on every spawn rotation).
 //
 // Tactics, in order:
 //   1. attached to an enemy  -> pump-pulse every 10 ticks; dodge sideways if
@@ -12,11 +12,21 @@
 //   4. otherwise walk/dig toward the nearest enemy through the cheapest grid
 //      (open tunnel costs 1, dirt costs 6, so the pilot prefers existing
 //      tunnels but happily burrows when that is shorter).
+//
+// The model IS the sim: every dodge and every approach step is scored by
+// cloning the world and rolling it forward ROLLOUT ticks under the real
+// step() with that move held (plus the pilot's own firing policy). Anything
+// that can kill the player — a hunter rounding the tunnel corner, Fygar fire
+// down the row, a rock on the column — shows up in the rollout because it is
+// the game, not a model of it. The hand-drawn threat rings of v1 lost to the
+// real box on six of nine spawn rotations: the flood-scored dodger walked the
+// pilot into the other hunter's path because it only saw dirt.
 
 import { makeGame, step } from './sim.js'
 import { CELL, COLS, AIR_TOP, DIRT_BOT, layerOf } from './levels.js'
 
 const R = 44 // harpoon reach (matches CFG.harpoonLen)
+const ROLLOUT = 48
 const rowOf = (y) => Math.floor((y - 16) / CELL)
 const colOf = (x) => Math.floor(x / CELL)
 const cy = (r) => 16 + r * CELL + CELL / 2
@@ -74,33 +84,65 @@ export function decide(gs) {
     const live = gs.enemies.filter((e) => e.state !== 'gone')
     const solid = live.filter((e) => !e.ghost)
 
-    const escapeDir = (avoid) => {
-        let bestD = null, bestScore = -1
-        for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-            // 4-step flood from the neighbor: dead ends score low, open ground high
-            let score = 0
-            const start = [pr + dr, pc + dc]
-            if (openCell(gs, start[0], start[1])) {
-                const seen = new Set([start.join(',')])
-                const q = [[start[0], start[1], 1]]
-                while (q.length) {
-                    const [r, c, d] = q.shift()
-                    score += 1 / d
-                    if (d >= 4) continue
-                    for (const [rr2, cc2] of [[r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]]) {
-                        const k2 = rr2 + ',' + cc2
-                        if (!seen.has(k2) && openCell(gs, rr2, cc2)) { seen.add(k2); q.push([rr2, cc2, d + 1]) }
-                    }
-                }
-            }
-            if (avoid) {
-                const er = rowOf(avoid.y)
-                if (dr === Math.sign(er - pr) && Math.abs(avoid.y - p.y) < 40) score -= 2.5
-                if (dc === Math.sign(avoid.x - p.x) && Math.abs(avoid.x - p.x) < 40) score -= 2.5
-            }
-            if (score > bestScore) { bestScore = score; bestD = [dr, dc] }
+    // The pilot's firing policy, re-applied inside a rollout: pump the hooked
+    // enemy on the real tick cadence, otherwise shoot the nearest aligned foe.
+    const rollFire = (c) => {
+        const p = c.player
+        if (p.deadT > 0 || c.end) return false
+        const h = c.harpoon
+        if (h && h.state === 'hold') return c.tick % 4 === 0
+        if (h || (c._cool || 0) > 0) return false
+        const solid = c.enemies.filter((e) => e.state !== 'gone' && !e.ghost && e.stage === 0)
+        if (!solid.length) return false
+        let o = solid[0], bd = Infinity
+        for (const e of solid) { const d = Math.hypot(e.x - p.x, e.y - p.y); if (d < bd) { bd = d; o = e } }
+        const dx = o.x - p.x, dy = o.y - p.y
+        const pr = rowOf(p.y), pc = colOf(p.x)
+        const ah = Math.abs(dy) < 13 && Math.abs(dx) <= R + 6 && losClear(c, pr, pc, colOf(o.x))
+        const av = Math.abs(dx) < 13 && Math.abs(dy) <= R + 6 && colClear(c, pc, pr, rowOf(o.y))
+        return (ah || av) && bd >= 18
+    }
+
+    // roll the real sim forward with one movement held; death anywhere in the
+    // window loses, and the earlier the death the worse the score
+    const rollout = (dir) => {
+        const c = structuredClone(gs)
+        c.events.length = 0
+        const inp = { left: false, right: false, up: false, down: false, fire: false }
+        if (dir[0] > 0) inp.down = true
+        else if (dir[0] < 0) inp.up = true
+        else if (dir[1] > 0) inp.right = true
+        else inp.left = true
+        for (let k = 0; k < ROLLOUT; k++) {
+            inp.fire = rollFire(c)
+            step(c, inp)
+            if (c.player.deadT > 0) return { died: true, score: -1e9 - k }
+            if (c.end) break
+            c.events.length = 0
         }
-        return bestD || [1, 0]
+        const p = c.player
+        const h = c.harpoon
+        const att = h && h.state === 'hold' ? c.enemies.find((e) => e.id === h.attached) : null
+        let s = (c.kills - gs.kills) * 300
+        if (att) s += 20 + att.stage * 25
+        let nd = Infinity
+        for (const e of c.enemies) {
+            if (e.state === 'gone' || e.ghost || (att && e.id === att.id)) continue
+            nd = Math.min(nd, Math.hypot(e.x - p.x, e.y - p.y))
+        }
+        s -= Math.max(0, 60 - nd) * 2
+        return { died: false, score: s }
+    }
+    // the surviving candidate wins; on a full-board kill-fight the direction
+    // that dies last wins (it still gets its shots off)
+    const DIRS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
+    const bestMove = () => {
+        let best = DIRS[0], bs = -Infinity
+        for (const d of DIRS) {
+            const r = rollout(d)
+            if (r.score > bs) { bs = r.score; best = d }
+        }
+        return best
     }
     const press = (d) => {
         if (d[0] > 0) inp.down = true
@@ -108,10 +150,24 @@ export function decide(gs) {
         else if (d[1] > 0) inp.right = true
         else inp.left = true
     }
+    // the BFS step toward a foe is the cheapest route, not the safest one: a
+    // hunter can round the tunnel corner mid-step. Rollout-test the step and,
+    // when it dies, fall back to the survival move.
+    const guard = () => {
+        const dr = inp.down ? 1 : inp.up ? -1 : 0
+        const dc = inp.right ? 1 : inp.left ? -1 : 0
+        if (!dr && !dc) return
+        const threatened = solid.some((e) => Math.hypot(e.x - p.x, e.y - p.y) < 72) ||
+            solid.some((e) => e.kind === 'fygar' && !e.ghost && rowOf(e.y) === pr && Math.abs(e.x - p.x) < 120)
+        if (threatened && rollout([dr, dc]).died) {
+            inp.left = false; inp.right = false; inp.up = false; inp.down = false
+            press(bestMove())
+        }
+    }
 
     // step out of a column a rock is dropping in
     const fallingRock = gs.rocks.find((k) => (k.state === 'fall' || k.state === 'warn') && k.col === pc && cy(k.row) < p.y)
-    if (fallingRock) { press(escapeDir(null)); return inp }
+    if (fallingRock) { press(bestMove()); return inp }
 
     // 1) pump an attached enemy; hit-and-run while pumping
     const h = gs.harpoon
@@ -119,7 +175,7 @@ export function decide(gs) {
         const e = gs.enemies.find((x) => x.id === h.attached)
         if (e) {
             const other = solid.find((o) => o.id !== e.id && o.stage === 0 && Math.hypot(o.x - p.x, o.y - p.y) < 52)
-            if (other) press(escapeDir(other))
+            if (other) press(bestMove())
             if (gs.tick % 4 === 0) inp.fire = true
             return inp
         }
@@ -146,10 +202,11 @@ export function decide(gs) {
                 else if (dy < 0 && pr > AIR_TOP) inp.up = true
                 else if (dy > 0 && pr < DIRT_BOT) inp.down = true
             }
+            guard()
             return inp
         }
-        if (dist < 34) press(escapeDir(o))
-        else if (!shooting && dist < 60) press(escapeDir(o))
+        if (dist < 34) press(bestMove())
+        else if (!shooting && dist < 60) press(bestMove())
         if (shooting || dist < 60) return inp
     }
 
@@ -158,8 +215,7 @@ export function decide(gs) {
         ((e.fireT > 0 && Math.sign(e.x - p.x) === e.fireDir) ||
             (e.breathT < 80 && losClear(gs, pr, pc, colOf(e.x)) && Math.abs(e.x - p.x) < 110)))
     if (threat) {
-        if (pr < DIRT_BOT) inp.down = true
-        else inp.up = true
+        press(bestMove())
         return inp
     }
 
@@ -181,12 +237,14 @@ export function decide(gs) {
         } else if (pr > AIR_TOP && openCell(gs, pr - 1, pc)) inp.up = true
         else if (pr < DIRT_BOT && openCell(gs, pr + 1, pc)) inp.down = true
         else { inp.left = pc > 0 && openCell(gs, pr, pc - 1); inp.right = !inp.left }
+        guard()
         return inp
     }
     if (stepTo.c < pc) inp.left = true
     else if (stepTo.c > pc) inp.right = true
     else if (stepTo.r < pr) inp.up = true
     else if (stepTo.r > pr) inp.down = true
+    guard()
     return inp
 }
 

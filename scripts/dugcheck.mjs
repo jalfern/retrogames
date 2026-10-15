@@ -7,10 +7,15 @@
 //              after TWO rocks, Fygar fire kills on-row and misses after a row
 //              dodge, the last survivor re-inflates and flees upward
 //   ledger   : final score == sum of every scored event, pilot run included
-//   pilot    : seeds 0/3/6 clear all three rounds with zero deaths; round 1
-//              survives the lives-1 slack (1 life) on all 8 seeds
+//   pilot    : every spawn rotation (seeds 0-8) clears all three rounds with
+//              zero deaths — the dodge is a forward rollout of the real sim,
+//              so the check demands it on all of them; round 1 survives the
+//              lives-1 slack (1 life) on all 8 seeds
+//   spawns   : no two live enemies sit within 6px of each other for 10+
+//              ticks (a sustained overlap reads as a single blob — the
+//              round-2 double Fygar), across all 9 graded runs
 //   determinism : same seed twice -> identical final digest
-// `-- --mutate` re-plants four fixed bugs in fresh child processes; each MUST die.
+// `-- --mutate` re-plants five fixed bugs in fresh child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -191,13 +196,49 @@ function rig(p, o, row, pcol, ocol) {
 
 // ----------------------------------------------------------------- pilot ----
 console.log('pilot')
-for (const seed of [0, 3, 6]) {
+const runs = []
+for (let seed = 0; seed < 9; seed++) {
     const r = S.plan(seed)
+    runs.push(r)
     ok(r.won && r.deaths === 0, `pilot clears all three rounds deathless (seed ${seed})`, `won=${r.won} deaths=${r.deaths}`)
 }
 for (let seed = 0; seed < 8; seed++) {
     const r = S.plan(seed, { livesOverride: 1 })
     ok(r.gs.round >= 1 || r.gs.end === 'win', `round 1 survives the lives-1 slack (seed ${seed})`, `deaths=${r.deaths}`)
+}
+
+// --------------------------------------------------------------- spawns ----
+console.log('spawns')
+{
+    // two live enemies on (near) the same spot read as a single blob (the
+    // round-2 double Fygar sat stacked for ~70 ticks); side-by-side walking
+    // in one tunnel is legitimate. So: replay every graded run and flag any
+    // pair within 6px of each other for 10+ consecutive ticks
+    let stacked = 0
+    for (let seed = 0; seed < 9; seed++) {
+        const g = makeGame(seed)
+        const run = runs[seed].script
+        const hot = new Map() // "idA-idB" -> consecutive near-overlap ticks
+        for (let t = 0; t < run.length; t++) {
+            step(g, run[t])
+            g.events.length = 0
+            if (g.end) break
+            const now = new Set()
+            for (let i = 0; i < g.enemies.length; i++)
+                for (let j = i + 1; j < g.enemies.length; j++) {
+                    const a = g.enemies[i], b = g.enemies[j]
+                    if (a.state === 'gone' || b.state === 'gone') continue
+                    if (Math.hypot(a.x - b.x, a.y - b.y) < 6) now.add(a.id < b.id ? `${a.id}-${b.id}` : `${b.id}-${a.id}`)
+                }
+            for (const k of now) {
+                const n = (hot.get(k) || 0) + 1
+                hot.set(k, n)
+                if (n === 10) stacked++
+            }
+            for (const k of [...hot.keys()]) if (!now.has(k)) hot.delete(k)
+        }
+    }
+    ok(stacked === 0, 'no two enemies sit within 6px for 10+ ticks (9 full-run replays)', `${stacked} sustained overlaps`)
 }
 
 // ---------------------------------------------------------------- ledger ----
@@ -231,22 +272,27 @@ console.log('determinism')
 if (process.argv.includes('--mutate')) {
     console.log('mutants (must die)')
     const SIM = 'src/games/DigDug/sim.js'
+    const PLAN = 'src/games/DigDug/planner.js'
     const MUTANTS = [
-        ['pump never pops at stage 4', 'if (e.stage >= CFG.pumpStages)', 'if (e.stage > CFG.pumpStages)'],
-        ['rock support ignored', 'if (gs.dirt[r][k.col]) n++', 'if (gs.dirt[r][k.col]) n += 0'],
-        ['fygar pays pooka', 'PUMP_POINTS[e.kind]', 'PUMP_POINTS.pooka'],
-        ['pumped enemies never deflate', 'deflateTicks: 90,', 'deflateTicks: 99999,'],
+        ['pump never pops at stage 4', SIM, 'if (e.stage >= CFG.pumpStages)', 'if (e.stage > CFG.pumpStages)'],
+        ['rock support ignored', SIM, 'if (gs.dirt[r][k.col]) n++', 'if (gs.dirt[r][k.col]) n += 0'],
+        ['fygar pays pooka', SIM, 'PUMP_POINTS[e.kind]', 'PUMP_POINTS.pooka'],
+        ['pumped enemies never deflate', SIM, 'deflateTicks: 90,', 'deflateTicks: 99999,'],
+        // a dodger that PREFERS dying lanes walks straight into the hunters;
+        // the -1e9 death penalty is what keeps it on the living side
+        ['dodger prefers dying lanes', PLAN, 'return { died: true, score: -1e9 - k }', 'return { died: true, score: 1e9 - k }'],
     ]
-    const orig = readFileSync(SIM, 'utf8')
+    const originals = new Map()
+    for (const [, file] of MUTANTS) if (!originals.has(file)) originals.set(file, readFileSync(file, 'utf8'))
     let died = 0
-    for (const [name, from, to] of MUTANTS) {
-        if (!orig.includes(from)) { ok(false, `mutant ${name}: anchor missing`); continue }
-        writeFileSync(SIM, orig.replace(from, to))
+    for (const [name, file, from, to] of MUTANTS) {
+        if (!originals.get(file).includes(from)) { ok(false, `mutant ${name}: anchor missing`); continue }
+        writeFileSync(file, originals.get(file).replace(from, to))
         const res = spawnSync('node', ['scripts/dugcheck.mjs'], { encoding: 'utf8' })
+        writeFileSync(file, originals.get(file))
         if (res.status !== 0) { died++; ok(true, `mutant ${name} caught`) }
         else ok(false, `mutant ${name} SURVIVED`)
     }
-    writeFileSync(SIM, orig)
     ok(died === MUTANTS.length, 'all mutants die', `${died}/${MUTANTS.length}`)
 }
 

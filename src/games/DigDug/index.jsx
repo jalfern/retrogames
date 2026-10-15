@@ -51,16 +51,18 @@ const DigDugGame = () => {
 
         let gs = makeGame(0)
         let raf = 0, last = 0, acc = 0
-        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, walkNote = 0
+        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, walkNote = 0, tintT = 0
         const keys = { l: false, r: false, u: false, d: false, fEdge: false }
         const evLog = []
         const parts = []
+        const pops = []
 
-        const say = (m) => { toastMsg = m; toast = 110 }
-        const burst = (px, py, n, col) => {
+        const say = (m) => { if (screenRef.current === 'attract') return; toastMsg = m; toast = 110 }
+        const pop = (px, py, msg) => { if (screenRef.current === 'attract') return; pops.push({ x: px, y: py, t: 0, msg }) }
+        const burst = (px, py, n, col, s = 2) => {
             for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 2.4
-                parts.push({ x: px, y: py, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, col })
+                parts.push({ x: px, y: py, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, col, s })
             }
         }
 
@@ -68,23 +70,27 @@ const DigDugGame = () => {
             for (const e of evts) evLog.push({ ...e, tick: gs.tick })
             if (evLog.length > 240) evLog.splice(0, evLog.length - 240)
             for (const e of evts) {
-                if (e.type === 'dig') { audioController.playNoise(0.03, 0.035); burst(e.col * CELL + 8, FIELD_Y0 + e.row * CELL + 8, 2, LAYERS[e.layer]) }
+                if (e.type === 'dig') { audioController.playNoise(0.03, 0.035); burst(e.col * CELL + 8, FIELD_Y0 + e.row * CELL + 8, 4, LAYERS[e.layer], 3) }
+                else if (e.type === 'harpoon') audioController.playSweep(900, 300, 0.06, 'square', 0.04)
                 else if (e.type === 'hook') { audioController.playSweep(240, 520, 0.1, 'square', 0.06) }
                 else if (e.type === 'puff') { audioController.playSweep(300 + e.stage * 140, 380 + e.stage * 180, 0.07, 'square', 0.07) }
-                else if (e.type === 'pumpKill') { say(`+${e.pts}`); audioController.playNoise(0.08, 0.08); audioController.playSweep(600, 1400, 0.2, 'square', 0.08); burst(e.x, e.y, 10, '#ffd23f') }
+                else if (e.type === 'pumpKill') { say(`+${e.pts}`); pop(e.x, e.y, `+${e.pts}`); audioController.playNoise(0.08, 0.08); audioController.playSweep(600, 1400, 0.2, 'square', 0.08); burst(e.x, e.y, 10, '#ffd23f') }
                 else if (e.type === 'deflate') audioController.playSweep(420 - (3 - e.stage) * 60, 260, 0.08, 'triangle', 0.05)
                 else if (e.type === 'rockWarn') audioController.playTone(160, 0.06, 'square', 0.05)
                 else if (e.type === 'rockFall') audioController.playNoise(0.12, 0.06)
-                else if (e.type === 'rockKill') { say(`CRUSHED +${e.pts}`); audioController.playNoise(0.14, 0.09); burst(e.x, e.y, 12, '#cfd8ff') }
-                else if (e.type === 'rockLand') { shake = 6; audioController.playTone(90, 0.12, 'square', 0.08) }
+                else if (e.type === 'rockKill') { say(`CRUSHED +${e.pts}`); pop(e.x, e.y, `+${e.pts}`); audioController.playNoise(0.14, 0.09); burst(e.x, e.y, 12, '#cfd8ff') }
+                // landing: low rumble under a debris noise bed, not one tone
+                else if (e.type === 'rockLand') { shake = 6; audioController.playNoise(0.22, 0.1); audioController.playTone(55, 0.26, 'sine', 0.1) }
                 else if (e.type === 'veggieSpawn') audioController.playSweep(520, 980, 0.2, 'triangle', 0.06)
-                else if (e.type === 'veggie') { say(`VEGGIE +${e.pts}`); audioController.playSweep(660, 1320, 0.25, 'square', 0.07) }
+                // pickup jingle: rising three, not one sweep
+                else if (e.type === 'veggie') { say(`VEGGIE +${e.pts}`); pop(e.col * CELL + 8, FIELD_Y0 + e.row * CELL + 8, `+${e.pts}`); audioController.playTone(660, 0.08, 'square', 0.07); audioController.playTone(880, 0.08, 'square', 0.07, 0.08); audioController.playTone(1100, 0.14, 'square', 0.07, 0.16) }
                 else if (e.type === 'fire') audioController.playNoise(0.3, 0.05)
-                else if (e.type === 'flee') say('LAST ONE RUNS!')
+                else if (e.type === 'flee') { say('LAST ONE RUNS!'); tintT = 60 }
                 else if (e.type === 'escaped') say('IT ESCAPED!')
                 else if (e.type === 'death') { say('LOST!'); audioController.playDeath(); shake = 8 }
-                else if (e.type === 'roundClear') { say(`${ROUNDS[e.round].name} CLEAR +${e.pts}`); audioController.playSweep(330, 990, 0.4, 'square', 0.08) }
-                else if (e.type === 'round') { say(ROUNDS[gs.round].name); audioController.playSweep(330, 660, 0.25, 'square', 0.07) }
+                else if (e.type === 'roundClear') { say(`${ROUNDS[e.round].name} CLEAR +${e.pts}`); audioController.playTone(523, 0.12, 'square', 0.08); audioController.playTone(659, 0.12, 'square', 0.08, 0.12); audioController.playTone(784, 0.22, 'square', 0.08, 0.24) }
+                // the beat that drops the READY board and starts the dig
+                else if (e.type === 'round') { say(ROUNDS[gs.round].name); audioController.playTone(660, 0.07, 'square', 0.07); audioController.playTone(880, 0.1, 'square', 0.07, 0.07) }
                 else if (e.type === '1up') { say('1UP!'); audioController.playSweep(440, 1760, 0.5, 'square', 0.08) }
                 else if (e.type === 'win') { say('THE DIG IS DONE!'); audioController.playSweep(220, 1760, 0.9, 'square', 0.1); shake = 10 }
             }
@@ -286,6 +292,12 @@ const DigDugGame = () => {
 
             ctx.fillStyle = 'rgba(0,0,0,0.14)'
             for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1)
+            // the last survivor runs: a brief warm flash while it does
+            if (tintT > 0) {
+                ctx.fillStyle = 'rgba(255,93,47,0.10)'
+                ctx.fillRect(0, 0, W, H)
+                tintT--
+            }
 
             text(`1UP ${String(gs.score).padStart(6, '0')}`, 44, 11, 9, '#ff5d5d', 3)
             text(`HI ${String(Math.max(gs.score, board()[0]?.score || 0)).padStart(6, '0')}`, W - 44, 11, 9, '#ffd23f', 3)
@@ -296,6 +308,16 @@ const DigDugGame = () => {
             }
             text(`${gs.kills}/${ROUNDS[gs.round].goal}`, W - 16, H - 4, 8, '#5dff8f', 3)
             if (toast > 0) { text(toastMsg, W / 2, H / 2 - 26, 10, '#e9f7ff', 6); toast-- }
+            // score popups: float up from the kill/pickup point and fade
+            for (const q of pops) {
+                q.t++
+                if (q.t < 70) {
+                    ctx.globalAlpha = q.t > 40 ? (70 - q.t) / 30 : 1
+                    text(q.msg, q.x, q.y - 10 - q.t * 0.35, 8, '#ffd23f', 2)
+                    ctx.globalAlpha = 1
+                }
+            }
+            while (pops.length && pops[0].t >= 70) pops.shift()
 
             const sc = screenRef.current
             if (sc === 'attract') {
