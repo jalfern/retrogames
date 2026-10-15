@@ -53,7 +53,10 @@ AGENTS.md wins.
     STATE.md and exit.
 3. **Design in one paragraph.** Name the original (machine and year) and
    list its 5 signature features, mechanics AND look. Those five are the
-   spec; respect anything extra the issue body asks for. Build the real game,
+   spec; respect anything extra the issue body asks for. **Where the issue
+   describes the original, the issue wins:** if you believe it is wrong, build
+   what it says and note the disagreement in your design comment (#237 built a
+   first-person GAUNTLET from a wrong memory; the arcade is top-down). Build the real game,
    not a reduced one: no "-Lite"/"-Min" in names unless the issue asks for a
    cut-down version. **Write the game's own `README.md`** — engine notes, verify
    commands and honest gaps go THERE; new games never add notes to `AGENTS.md`
