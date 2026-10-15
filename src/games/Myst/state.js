@@ -46,7 +46,6 @@ export function freshState() {
 }
 
 const AGE_OF = { selenitic: 'selenitic', stoneship: 'stoneship', mechanical: 'mechanical', channelwood: 'channelwood' }
-const ageOpen = (s, age) => AGE_LIST.filter((a) => s.flags[`link_${a}`])
 
 function has(s, f) { return !!s.flags[f] }
 
