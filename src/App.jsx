@@ -163,7 +163,8 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<RandomHome />} />
-          <Route path="/games" element={<GamesList />} />
+          <Route path="/games" element={<ArcadeShowcase />} />
+          <Route path="/games-classic" element={<GamesList />} />
           <Route path="/games-v2" element={<ArcadeShowcase />} />
           <Route path="/forge" element={<div className="w-full h-full relative"><ForgeBoard /></div>} />
           {GAMES.map(game => (
