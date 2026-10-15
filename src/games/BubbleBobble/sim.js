@@ -12,10 +12,11 @@
 //   - water turns walkers into snails (slow, still deadly, still trappable);
 //     blowing a bubble in the water makes it rise.
 //   - chain 4..7 drops a transform (red fire / cyan double / green speed /
-//     pink long); chain 9+ drops LIGHTNING, which zaps every free enemy (and
-//     Blubba) on screen into fruit.
-//   - linger past lv.blubbaAt and BARON VON BLUBBA arrives, fast and
-//     unkillable by bubbles/flames — only lightning moves him.
+//     pink long); chain 9+ drops LIGHTNING, which zaps every free enemy on
+//     screen into fruit. von Blubba is the one thing it does not touch.
+//   - linger past lv.blubbaAt and BARON VON BLUBBA arrives — a HURRY UP!
+//     warning leads him by hurryTicks. He is unkillable; the door is the
+//     only answer.
 //   - the door opens when the roster is dead; walk in to take the level.
 //     100 levels -> win. Bosses (every 20th) need three bubble hits.
 
@@ -36,7 +37,7 @@ export const CFG = {
     flameV: 3, flameLife: 40, flamePts: 200,
     fruitLife: 540, letterLife: 420, powerLife: 600,
     respawn: 120, invuln: 150, clearPause: 150,
-    blubbaSpd: 2.05, blubbaMore: 700, blubbaMax: 3,
+    blubbaSpd: 2.05, hurryTicks: 90,
     extraLife: 20000, maxLives: 6,
     bossHp: 3, bossHitPts: 500, bossDiveSpd: 1.8,
 }
@@ -67,7 +68,7 @@ export function makeGame(seed = 0, { players = 1 } = {}) {
         seed, playersN: Math.max(1, Math.min(2, players)),
         tick: 0, score: 0, lives: 3, level: 0, chain: 0, letterProg: 0,
         kills: 0, end: null, events: [], _nextId: 1, upTo: CFG.extraLife,
-        levelPhase: 'play', phaseT: 0, lingerT: 0, blubbaN: 0, bubbleSeq: 0,
+        levelPhase: 'play', phaseT: 0, lingerT: 0, blubbaWarned: false, bubbleSeq: 0,
         blubbaNext: 0, players: [], bubbles: [], enemies: [], items: [], blubbas: [],
         door: { x: 0, y: 0, open: false },
     }
@@ -86,7 +87,7 @@ function startLevel(gs, level) {
     gs.bubbles = []
     gs.items = []
     gs.blubbas = []
-    gs.blubbaN = 0
+    gs.blubbaWarned = false
     gs.blubbaNext = gs.lv.blubbaAt
     gs.door = { x: (gs.lv.door.col * CELL + half), y: platTop(gs.lv.door.row) - 12, open: false }
     gs.players = []
@@ -501,25 +502,20 @@ function zap(gs) {
             releaseDrop(gs, e.x, e.y, 1, null)
         }
     }
-    if (gs.blubbas.length) {
-        gs.events.push({ type: 'blubbaGone', n: gs.blubbas.length })
-        gs.blubbas = []
-        gs.lingerT = 0
-        gs.blubbaNext = gs.lv.blubbaAt
-        gs.blubbaN = 0
-    }
+    // von Blubba is unkillable — the lightning passes right through him
 }
 
 // ---------------------------------------------------------------- blubba ----
 function updateBlubba(gs) {
     if (gs.levelPhase !== 'play') return
     gs.lingerT++
-    if (gs.lingerT >= gs.blubbaNext && gs.blubbaN < CFG.blubbaMax) {
-        gs.blubbaN++
-        gs.blubbaNext = gs.lingerT + CFG.blubbaMore
-        const fromLeft = gs.blubbaN % 2 === 1
-        gs.blubbas.push({ id: gs._nextId++, x: fromLeft ? -12 : W + 12, y: FIELD_Y0 + 24 })
-        gs.events.push({ type: 'blubba', n: gs.blubbaN })
+    if (!gs.blubbaWarned && gs.lingerT >= gs.blubbaNext - CFG.hurryTicks) {
+        gs.blubbaWarned = true
+        gs.events.push({ type: 'blubbaWarn' })
+    }
+    if (!gs.blubbas.length && gs.lingerT >= gs.blubbaNext) {
+        gs.blubbas.push({ id: gs._nextId++, x: -12, y: FIELD_Y0 + 24 })
+        gs.events.push({ type: 'blubba' })
     }
     for (const b of gs.blubbas) {
         const p = nearestPlayer(gs, b)

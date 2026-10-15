@@ -81,8 +81,8 @@ const Bob = () => {
                 else if (e.type === 'flame') audioController.playNoise(0.08, 0.05)
                 else if (e.type === 'flameKill') { say(`+${e.pts}`); burst(e.x, e.y, 8, '#ff9f3f') }
                 else if (e.type === 'snail') say('SPLASH! SNAIL')
+                else if (e.type === 'blubbaWarn') { say('HURRY UP!'); audioController.playTone(990, 0.08, 'square', 0.08); audioController.playTone(990, 0.08, 'square', 0.06, 0.1) }
                 else if (e.type === 'blubba') { say('BARON VON BLUBBA!'); audioController.playSweep(160, 90, 0.5, 'sawtooth', 0.09); shake = 6 }
-                else if (e.type === 'blubbaGone') say('HE IS GONE!')
                 else if (e.type === 'bossHit') { audioController.playNoise(0.08, 0.07); burst(e.x, e.y, 8, '#e08fff') }
                 else if (e.type === 'bossKill') { say('BOSS DOWN +' + e.pts); audioController.playSweep(220, 1400, 0.5, 'square', 0.1); shake = 10 }
                 else if (e.type === 'doorOpen') { say('DOOR OPEN!'); audioController.playSweep(520, 1040, 0.3, 'triangle', 0.07) }
