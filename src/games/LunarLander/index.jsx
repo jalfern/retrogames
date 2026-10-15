@@ -19,6 +19,9 @@ import { plan } from './planner.js'
 import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } from './art.js'
 
 const SIM_MS = 1000 / 60
+const REPLAY_PATH = 'replays/lander-ppo.json'
+const BTN = { nothing: [0, false], rotate_left: [-1, false], rotate_right: [1, false], thrust: [0, true] }
+const replayRequested = () => new URLSearchParams(window.location.search).get('replay') === '1'
 let cachedRun = null
 const provenRun = () => { if (!cachedRun) cachedRun = plan({ seed: 0 }); return cachedRun }
 
@@ -57,6 +60,21 @@ const LunarLanderGame = () => {
         const evLog = []
         const parts = []
         let thrustVis = false
+
+        const replayOn = replayRequested()
+        let replay = null, replayIdx = 0, replayFailed = false
+        if (replayOn) {
+            fetch(`${import.meta.env.BASE_URL}${REPLAY_PATH}`)
+                .then((r) => { if (!r.ok) throw new Error(`replay http ${r.status}`); return r.json() })
+                .then((rec) => {
+                    replay = rec; replayIdx = 0
+                    gs = makeGame(rec.seed)
+                    stars = makeStars(rec.seed)
+                    parts.length = 0
+                    setMode('play')
+                })
+                .catch(() => { replayFailed = true })
+        }
 
         const say = (m) => { toastMsg = m; toast = 160 }
 
@@ -135,6 +153,14 @@ const LunarLanderGame = () => {
 
         const doFrameSim = () => {
             const sc = screenRef.current
+            if (replayOn && !replayFailed) {
+                if (sc !== 'play' || !replay) return
+                const [rot, thrust] = BTN[replay.actions[replayIdx]] || [0, false]
+                if (replayIdx < replay.actions.length) replayIdx++
+                thrustVis = thrust && gs.fuel > 0 && gs.phase !== 'crashed'
+                doSim({ rot, thrust })
+                return
+            }
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
             doSim(computeInput())
@@ -202,6 +228,7 @@ const LunarLanderGame = () => {
             ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, W, H)
             drawWorld()
             drawHud()
+            if (replayOn && replay && !replayFailed) text('PPO POLICY · REPLAY', W / 2, H - 12, 10, '#8fff9f', 6)
             if (toast > 0) { text(toastMsg, W / 2, H - 34, 11, '#ffd76b', 6); toast-- }
 
             const sc = screenRef.current
@@ -249,6 +276,7 @@ const LunarLanderGame = () => {
         }
         const onKeyDown = (ev) => {
             if (ev.key === '?' || ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p); return }
+            if (replayOn && !replayFailed) { ev.preventDefault(); return }
             const sc = screenRef.current
             if (sc === 'attract') { goPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
@@ -258,6 +286,7 @@ const LunarLanderGame = () => {
         }
         const onKeyUp = (ev) => { held.delete(ev.code) }
         const onPointer = () => {
+            if (replayOn && !replayFailed) return
             const sc = screenRef.current
             if (sc === 'attract') goPlay()
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
@@ -288,6 +317,7 @@ const LunarLanderGame = () => {
                     zoom, end: gs.end, hash: stateHash(gs),
                 }),
                 gameTime: () => gs.tick / 60,
+                replay: () => ({ on: replayOn, failed: replayFailed, idx: replayIdx, seed: replay ? replay.seed : null }),
             }
             mountDbg({
                 title: 'LUNAR LANDER',
@@ -319,6 +349,7 @@ const LunarLanderGame = () => {
     useEffect(() => { pausedRef.current = paused }, [paused])
 
     const entry = GAMES.find((g) => g.label === 'LUNAR LANDER')
+    const replayMode = replayRequested()
 
     return (
         <div className="relative w-full h-full flex flex-col items-center justify-center bg-[#05070d] select-none">
@@ -328,7 +359,7 @@ const LunarLanderGame = () => {
                 <span>FUEL <span ref={setHud('fuel')} className="text-[#ffd76b]">100</span></span>
                 <span>MULT <span ref={setHud('mult')} className="text-[#8fff9f]">×1</span></span>
             </div>
-            <VirtualControls visible={screen === 'play' && !paused} />
+            <VirtualControls visible={screen === 'play' && !paused && !replayMode} />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>
     )
