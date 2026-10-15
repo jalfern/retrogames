@@ -71,7 +71,7 @@ const KEYS = [
     { dx: 0.707, dy: -0.707, k: ['right'] },
 ]
 
-function press(vx, vy) {
+export function press(vx, vy) {
     const o = { left: false, right: false, up: false, down: false }
     const n = Math.hypot(vx, vy)
     if (n < 1e-6) return o

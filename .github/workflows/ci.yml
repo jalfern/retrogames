@@ -259,6 +259,13 @@ jobs:
       # lives-1 slack, determinism, and 3 mutants that must die — all in Node.
       - run: npm run lint:bob
       - run: npm run bobcheck -- --mutate
+      # Twentieth scoped gate: MARBLE MADNESS. Determinism (identical inputs,
+      # identical stateHash), the six-course connectivity proof, the carry/bank
+      # clock contract, void/breakdrop/muncher/steelie rules through the same
+      # step() the player drives, and the autopilot six-race WIN replay — all
+      # in Node. Mutant it: BREAKDROP=99 in levels.js turns red.
+      - run: npm run lint:marble
+      - run: npm run marblecheck
       - run: npm run build
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty

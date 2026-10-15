@@ -41,8 +41,6 @@ export const CFG = {
     respawnInvuln: 90,
 }
 
-const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
-
 function fnv(str) {
     let h = 0x811c9dc5
     for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
@@ -256,6 +254,7 @@ function updateWave(gs) {
 // ---------------------------------------------------------------- marble ----
 function updateMarble(gs, inp) {
     const m = gs.m
+    if (gs.invulnT > 0) gs.invulnT--
     let ix = 0, iy = 0
     if (inp.left) ix -= 1
     if (inp.right) ix += 1
@@ -313,7 +312,6 @@ function updateMarble(gs, inp) {
         const g2 = groundAt(gs, m.x, m.y)
         if (g2 != null) m.z = g2
     }
-    if (gs.invulnT > 0) gs.invulnT--
 }
 
 // ---------------------------------------------------------------- clock ----

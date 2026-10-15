@@ -126,7 +126,9 @@
         "lint:dug": "eslint src/games/DigDug src/components src/utils src/config src/main.jsx scripts/dugcheck.mjs scripts/lib",
         "dugcheck": "node scripts/dugcheck.mjs",
         "lint:bob": "eslint src/games/BubbleBobble src/components src/utils src/config src/main.jsx scripts/bobcheck.mjs scripts/bubbleplay.mjs scripts/lib",
+        "lint:marble": "eslint src/games/MarbleMadness src/components src/utils src/config src/main.jsx scripts/marblecheck.mjs scripts/lib",
         "bobcheck": "node scripts/bobcheck.mjs",
+        "marblecheck": "node scripts/marblecheck.mjs",
         "bubbleplay": "node scripts/bubbleplay.mjs",
         "arkplay": "node scripts/arkanoidplay.mjs"
     },
