@@ -72,6 +72,8 @@ confuse the two queues.
     in <b> (the merge then closes the issue itself — a fix that ships while its
     issue stays open strands a `building-qa` label no one can clear), then ONLY:
     `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
+    then `git checkout --detach origin/main` at once — gh auto-switches the worktree onto
+    `main` after `--delete-branch`, and the law keeps `main` checked out nowhere.
     Comment the proof on the issue: what was broken, the check that
     now catches it, and the PR number.
 5b. **Waiting on Jon? Release it.** When the next step needs Jon (a PR
