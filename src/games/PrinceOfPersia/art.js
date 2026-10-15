@@ -37,11 +37,14 @@ const shade = (hex) => {
     const r = Math.max(0, (n >> 16) - 40), g = Math.max(0, ((n >> 8) & 255) - 40), b = Math.max(0, (n & 255) - 40)
     return `rgb(${r},${g},${b})`
 }
-const c8 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v)
-// nudge a hex colour toward light (d>0) or dark (d<0), all channels together
-const tone = (hex, d) => {
-    const n = parseInt(hex.slice(1), 16)
-    return `rgb(${c8((n >> 16) + d)},${c8(((n >> 8) & 255) + d)},${c8((n & 255) + d)})`
+// per-channel mix toward a second colour — lets stone get *warmer* on the lit
+// side and *cooler* in shadow, not just lighter/darker (Stage 6: deeper colour)
+const mix = (a, b, t) => {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16)
+    const r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * t)
+    const g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t)
+    const bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * t)
+    return `rgb(${r},${g},${bl})`
 }
 // a lit bevel along the top/left and a shadow bevel along the bottom/right —
 // the cheap trick that makes a flat fill read as a cut block catching light.
@@ -60,12 +63,20 @@ function grain(ctx, x, y, w, h, seed, n) {
         ctx.fillRect(px, py, 2, 1)
     }
 }
-// one cut brick: jittered tone, grain, a bevel, and an occasional hairline crack
+// one cut brick: jittered chromatic tone, a directional key gradient, grain, a
+// bevel, and an occasional hairline crack. The lit corner warms, the far corner
+// cools — so a wall of these never reads as one flat grey field.
 function brickFace(ctx, x, y, w, h, seed, base) {
-    ctx.fillStyle = tone(base, Math.round((hash(seed) - 0.5) * 14))
+    const warmSide = hash(seed * 1.3) > 0.42
+    ctx.fillStyle = mix(base, warmSide ? '#6c5c74' : '#2b3150', 0.16 + hash(seed * 2.7) * 0.14)
     ctx.fillRect(x, y, w, h)
-    grain(ctx, x, y, w, h, seed, Math.max(3, Math.floor((w * h) / 70)))
-    bevel(ctx, x, y, w, h, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.24)')
+    const dir = ctx.createLinearGradient(x, y, x + w, y + h)
+    dir.addColorStop(0, 'rgba(255,232,192,0.10)')
+    dir.addColorStop(1, 'rgba(8,8,26,0.20)')
+    ctx.fillStyle = dir
+    ctx.fillRect(x, y, w, h)
+    grain(ctx, x, y, w, h, seed, Math.max(4, Math.floor((w * h) / 60)))
+    bevel(ctx, x, y, w, h, 'rgba(255,244,214,0.16)', 'rgba(0,0,14,0.32)')
     if (hash(seed * 1.7) > 0.8 && h > 8) {
         ctx.strokeStyle = 'rgba(0,0,0,0.30)'
         ctx.lineWidth = 1
@@ -75,6 +86,43 @@ function brickFace(ctx, x, y, w, h, seed, base) {
         ctx.lineTo(cx + Math.round(hash(seed * 4.1) * 4 - 2), y + h - 1)
         ctx.stroke()
     }
+}
+
+// ---- Stage 6: the light model (pure, so popcheck can pin it) ----------------
+// One fixed key light (upper-left) gives every surface the same direction to lean
+// toward. On top of it, each wall torch throws a warm pool whose pull falls off
+// smoothly to nothing at TORCH_RADIUS. The room's brightness at any point is the
+// ambient plus whichever pools reach it — never a flat wash — so light pools
+// around sconces and sinks into shadow at the edges and corners.
+export const LIGHT_DIR = { x: -0.55, y: -0.82 }        // key direction (points up-left)
+export const LIGHT_AMBIENT = 0.18                       // an unlit corner stays dark, not black
+export const TORCH_RADIUS = 176                         // px: a sconce's warm reach
+
+export function torchGlow(distPx) {
+    if (distPx >= TORCH_RADIUS) return 0
+    const t = 1 - distPx / TORCH_RADIUS
+    return t * t * (3 - 2 * t)                          // smoothstep: firm core, soft edge
+}
+// brightness at pixel (x,y) from the given torch pixel-centres [ [x,y], … ]
+export function lightAt(x, y, keyPx) {
+    let l = LIGHT_AMBIENT
+    for (let i = 0; i < keyPx.length; i++) {
+        const dx = x - keyPx[i][0], dy = y - keyPx[i][1]
+        l += torchGlow(Math.sqrt(dx * dx + dy * dy))
+    }
+    return l > 1 ? 1 : l
+}
+// how much darkness veil to lay at (x,y) — the inverse of the pools, capped so
+// unlit stone reads deep blue rather than pure black
+export function darkAlpha(x, y, keyPx) {
+    const a = 0.66 * (1 - lightAt(x, y, keyPx))
+    return a < 0 ? 0 : a > 0.66 ? 0.66 : a
+}
+// directional shading of a surface whose outward normal is (nx,ny): + faces the
+// key, − faces away. This is what makes brick, pillar and shoulder read 3-D.
+export function facet(nx, ny) {
+    const m = Math.hypot(nx, ny) || 1
+    return (nx * LIGHT_DIR.x + ny * LIGHT_DIR.y) / m
 }
 
 // ---- pose tables --------------------------------------------------------------
@@ -211,12 +259,15 @@ function floorLedge(ctx, x, y, top, front, crack, seed) {
     ctx.fillStyle = 'rgba(0,0,0,0.28)'
     ctx.fillRect(x + 1, y + 4, T, 3)
     brickFace(ctx, x, y, T, 4, seed || 1, top)
-    ctx.fillStyle = front
+    const face = ctx.createLinearGradient(0, y + 4, 0, y + T)
+    face.addColorStop(0, mix(front, '#6a5a72', 0.18))
+    face.addColorStop(1, mix(front, '#141428', 0.22))
+    ctx.fillStyle = face
     ctx.fillRect(x, y + 4, T, T - 4)
     grain(ctx, x, y + 5, T, T - 5, (seed || 1) * 7.3, 6)
     ctx.fillStyle = 'rgba(0,0,0,0.35)'
     ctx.fillRect(x, y + 4, T, 3)
-    ctx.fillStyle = 'rgba(255,255,255,0.06)'
+    ctx.fillStyle = 'rgba(255,236,200,0.08)'
     ctx.fillRect(x, y + T - 1, T, 1)
     if (crack) {
         ctx.strokeStyle = 'rgba(0,0,0,0.45)'
@@ -232,28 +283,31 @@ function stone(ctx, c, r, code, g) {
     const x = c * T, y = r * T
     const seed = c * 31 + r * 7
     if (code === SOLID) {
-        // running-bond masonry: mortar bed + alternately offset perpends, each
-        // brick jittered, bevelled and grained — no flat grey fields anywhere.
-        ctx.fillStyle = '#26263a'
+        // running-bond masonry: a cool violet-blue mortar bed, alternately offset
+        // perpends each chromatically jittered, bevelled and grained, and a lit top
+        // course — the wall catches the key light along its joints. No flat fields.
+        ctx.fillStyle = '#181830'
         ctx.fillRect(x, y, T, T)
+        ctx.fillStyle = 'rgba(120,120,170,0.10)'
+        ctx.fillRect(x, y, T, 1)
         const off = (r & 1) ? Math.floor(T / 2) : 0
-        brickFace(ctx, x + 1, y + 1, off ? off - 2 : T - 2, T - 3, seed + 1, '#45455c')
-        if (off) brickFace(ctx, x + off + 1, y + 1, T - off - 2, T - 3, seed + 2, '#45455c')
+        brickFace(ctx, x + 1, y + 1, off ? off - 2 : T - 2, T - 3, seed + 1, '#3e3e58')
+        if (off) brickFace(ctx, x + off + 1, y + 1, T - off - 2, T - 3, seed + 2, '#3e3e58')
     } else if (code === PLATFORM) {
-        floorLedge(ctx, x, y, '#6e6e88', '#4c4c66', false, seed)
+        floorLedge(ctx, x, y, '#73738f', '#484862', false, seed)
     } else if (code === LOOSE) {
-        floorLedge(ctx, x, y, '#7d6b50', '#5c4c38', true, seed)
+        floorLedge(ctx, x, y, '#82705a', '#574734', true, seed)
     } else if (code === SPIKE) {
-        ctx.fillStyle = '#191926'
+        ctx.fillStyle = '#12121f'
         ctx.fillRect(x, y + T - 6, T, 6)
         grain(ctx, x, y + T - 6, T, 6, seed, 4)
         for (let i = 0; i < 4; i++) {
             const sx = x + 2 + i * 8
-            ctx.fillStyle = '#6f7684'
+            ctx.fillStyle = '#59606e'
             ctx.beginPath()
             ctx.moveTo(sx, y + T - 5); ctx.lineTo(sx + 3, y + T - 23); ctx.lineTo(sx + 6, y + T - 5)
             ctx.closePath(); ctx.fill()
-            ctx.fillStyle = '#cdd3de'
+            ctx.fillStyle = '#d6dcea'
             ctx.beginPath()
             ctx.moveTo(sx + 1, y + T - 5); ctx.lineTo(sx + 3, y + T - 22); ctx.lineTo(sx + 3, y + T - 5)
             ctx.closePath(); ctx.fill()
@@ -311,8 +365,8 @@ function palaceWall(ctx, c0, decos, tick) {
         // pale ashlar wall with mortar coursing and per-block tone, cool at the
         // top warming toward the floor
         const wallGrad = ctx.createLinearGradient(0, 24, 0, VH)
-        wallGrad.addColorStop(0, '#8a8a76')
-        wallGrad.addColorStop(1, '#9c9c86')
+        wallGrad.addColorStop(0, '#7c8178')
+        wallGrad.addColorStop(1, '#a49a80')
         ctx.fillStyle = wallGrad
         ctx.fillRect(base, 24, RW * T, VH - 24)
         for (let ry = 24; ry < VH - 12; ry += 16) {
@@ -328,6 +382,14 @@ function palaceWall(ctx, c0, decos, tick) {
                 ctx.fillRect(base + bx + 1, ry + 1, 30, 15)
             }
         }
+        // a single directional key wash across the wall: lit toward the upper-left,
+        // falling into shade toward the lower-right, so the palace shares the
+        // dungeon's light direction
+        const keyWash = ctx.createLinearGradient(base, 24, base + RW * T, VH)
+        keyWash.addColorStop(0, 'rgba(255,238,200,0.10)')
+        keyWash.addColorStop(1, 'rgba(10,10,28,0.20)')
+        ctx.fillStyle = keyWash
+        ctx.fillRect(base, 24, RW * T, VH - 24)
         // a gilded string course and a tiled floor line ground the wall
         ctx.fillStyle = '#c8a050'
         ctx.fillRect(base, 96, RW * T, 2)
@@ -336,26 +398,33 @@ function palaceWall(ctx, c0, decos, tick) {
         for (let tx = 0; tx < RW * T; tx += 20) {
             ctx.fillStyle = tx % 40 ? '#5e5e4c' : '#7a7a66'
             ctx.fillRect(base + tx, VH - 12, 19, 12)
-            ctx.fillStyle = 'rgba(255,255,255,0.06)'
+            ctx.fillStyle = 'rgba(255,236,200,0.08)'
             ctx.fillRect(base + tx, VH - 12, 19, 1)
         }
-        // fluted pillar catching a warm rim of torchlight
+        // fluted pillar: the cylinder is lit on its key-facing side and falls to
+        // shade on the far side, with a warm gold band at the capital
         const px = base + d.pillar * T
         ctx.fillStyle = '#6e6e5c'
         ctx.fillRect(px - 10, 20, 20, 8)
         ctx.fillRect(px - 10, VH - 12, 20, 8)
-        ctx.fillStyle = '#8f8f7a'
+        const col = ctx.createLinearGradient(px - 7, 0, px + 7, 0)
+        col.addColorStop(0, mix('#8f8f7a', '#d8c898', 0.5))
+        col.addColorStop(0.5, '#8f8f7a')
+        col.addColorStop(1, mix('#8f8f7a', '#2c2c3c', 0.55))
+        ctx.fillStyle = col
         ctx.fillRect(px - 7, 24, 14, VH - 24 - 8)
-        ctx.fillStyle = '#a8a890'
+        ctx.fillStyle = '#b8ab86'
         ctx.fillRect(px - 7, 24, 5, VH - 24 - 8)
-        ctx.fillStyle = '#5c5c4a'
+        ctx.fillStyle = '#4c4c3c'
         ctx.fillRect(px + 4, 24, 3, VH - 24 - 8)
         for (let fl = 30; fl < VH - 16; fl += 10) {
-            ctx.fillStyle = 'rgba(0,0,0,0.18)'
+            ctx.fillStyle = 'rgba(0,0,0,0.20)'
             ctx.fillRect(px - 3, fl, 1, 7)
+            ctx.fillStyle = 'rgba(255,238,200,0.10)'
+            ctx.fillRect(px - 2, fl, 1, 7)
             ctx.fillRect(px + 1, fl, 1, 7)
         }
-        ctx.fillStyle = '#d8c078'
+        ctx.fillStyle = '#e0cc88'
         ctx.fillRect(px - 10, 26, 20, 2)
         // arched window with a moonlit sky pane
         const wx = base + d.window * T + 8
@@ -392,12 +461,25 @@ function palaceWall(ctx, c0, decos, tick) {
     }
 }
 
+// a torch's warm bloom, added over the (already darkened) scene: a hot core and a
+// wide soft halo whose radius breathes with the flame — the source of the light
+// pools. Composited additively so stone under it glows rather than being veiled.
 function lightPool(ctx, x, y, fl) {
-    const grad = ctx.createRadialGradient(x, y, 4, x, y, 90 + fl * 14)
-    grad.addColorStop(0, 'rgba(255,180,80,0.20)')
-    grad.addColorStop(1, 'rgba(255,150,60,0)')
-    ctx.fillStyle = grad
-    ctx.fillRect(x - 110, y - 110, 220, 220)
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    const r = 78 + fl * 12
+    const outer = ctx.createRadialGradient(x, y, 6, x, y, r)
+    outer.addColorStop(0, 'rgba(255,176,84,0.30)')
+    outer.addColorStop(0.5, 'rgba(255,140,60,0.12)')
+    outer.addColorStop(1, 'rgba(255,120,50,0)')
+    ctx.fillStyle = outer
+    ctx.fillRect(x - r, y - r, r * 2, r * 2)
+    const core = ctx.createRadialGradient(x, y, 1, x, y, 34 + fl * 6)
+    core.addColorStop(0, 'rgba(255,232,168,0.55)')
+    core.addColorStop(1, 'rgba(255,180,90,0)')
+    ctx.fillStyle = core
+    ctx.fillRect(x - 44, y - 44, 88, 88)
+    ctx.restore()
 }
 
 // a soft contact shadow that grounds whoever stands on the floor
@@ -649,6 +731,11 @@ function figure(ctx, st, p, opts) {
     let swordOut = opts.sword
     if (p.hang) swordOut = false
     if (opts.die > 0 && st.startsWith('die')) swordOut = false
+    // light this body receives from the room: `warm` = how near a torch is
+    // (0 cool … 1 hot); `s` = the local side the light falls on (the geometry is
+    // mirrored by facing, so convert the world light side back to local space).
+    const warm = opts.warm != null ? opts.warm : 0.5
+    const s = (opts.litSide != null ? opts.litSide : f) * f
 
     ctx.save()
     ctx.translate(p.x, p.y + bob)
@@ -701,20 +788,29 @@ function figure(ctx, st, p, opts) {
     ctx.lineTo(5, -hip - 8)
     ctx.stroke()
 
-    // torso shading: rim light down the facing edge, shadow up the back, so the
-    // body reads as a lit cylinder rather than a flat stroke
-    ctx.strokeStyle = 'rgba(255,255,255,0.14)'
+    // torso shading: a rim light down whichever side the nearest torch is on and a
+    // shadow up the other, so the body reads as a lit cylinder. The rim warms near
+    // a sconce and cools in the dark; a warm wash crosses it under strong light.
+    ctx.strokeStyle = `rgba(255,${Math.round(238 - (1 - warm) * 34)},${Math.round(200 - (1 - warm) * 64)},${(0.12 + warm * 0.20).toFixed(3)})`
     ctx.lineWidth = 2
     ctx.beginPath()
-    ctx.moveTo(3, -hip - 2)
-    ctx.lineTo(5, -head + 11)
+    ctx.moveTo(s * 3, -hip - 2)
+    ctx.lineTo(s * 5, -head + 11)
     ctx.stroke()
-    ctx.strokeStyle = 'rgba(0,0,0,0.20)'
+    ctx.strokeStyle = `rgba(0,0,${Math.round(12 + (1 - warm) * 14)},${(0.18 + (1 - warm) * 0.12).toFixed(3)})`
     ctx.lineWidth = 3
     ctx.beginPath()
-    ctx.moveTo(-2, -hip - 1)
+    ctx.moveTo(-s * 2, -hip - 1)
     ctx.lineTo(0, -head + 11)
     ctx.stroke()
+    if (warm > 0.5) {
+        ctx.strokeStyle = `rgba(255,168,84,${((warm - 0.5) * 0.42).toFixed(3)})`
+        ctx.lineWidth = 4 * wide
+        ctx.beginPath()
+        ctx.moveTo(s * 2, -hip)
+        ctx.lineTo(s * 3, -head + 11)
+        ctx.stroke()
+    }
 
     // back arm
     limb(ctx, 2, -head + 12, pose.armB, armLen, 4, shade(cloth))
@@ -754,13 +850,14 @@ function figure(ctx, st, p, opts) {
         ctx.moveTo(-4, -head + 3)
         ctx.quadraticCurveTo(-12, -head + 6 + Math.sin(t * 0.2) * 2, -14, -head + 12)
         ctx.stroke()
-        // face lighting: lit brow, shaded back of the head, and an eye
-        ctx.fillStyle = 'rgba(255,255,255,0.16)'
-        ctx.fillRect(4, -head + 1, 4, 1)
-        ctx.fillStyle = 'rgba(0,0,0,0.20)'
-        ctx.fillRect(-2, -head + 2, 2, 6)
+        // face lighting: lit brow toward the light, shade on the far side, an eye;
+        // the lit brow warms when the torch is close
+        ctx.fillStyle = `rgba(255,${Math.round(240 - (1 - warm) * 30)},${Math.round(210 - (1 - warm) * 50)},${(0.12 + warm * 0.14).toFixed(3)})`
+        ctx.fillRect(s > 0 ? 4 : -8, -head + 1, 4, 1)
+        ctx.fillStyle = `rgba(0,0,10,${(0.16 + (1 - warm) * 0.12).toFixed(3)})`
+        ctx.fillRect(s > 0 ? -2 : 4, -head + 2, 2, 6)
         ctx.fillStyle = '#2a2018'
-        ctx.fillRect(5, -head + 4, 1.5, 1.5)
+        ctx.fillRect(s > 0 ? 5 : -6.5, -head + 4, 1.5, 1.5)
     }
     if (opts.hat) {
         ctx.fillStyle = '#1a1026'
@@ -883,16 +980,35 @@ export function drawScene(ctx, g, opts = {}) {
         ctx.fillStyle = '#34344a'
         ctx.fillRect(x + 8, y - 3, 10, 3)
     }
+    // torches standing in this room, as pixel centres — the light sources the
+    // pools and the figures below are lit by. Pure per-torch: no flat room wash.
+    const torchPx = []
     for (let r = 0; r < H; r++) for (let c = c0; c < c1; c++) {
-        if (lvl.grid[r * lvl.W + c] === TORCH) {
-            drawTorch(ctx, c, r, tick)
-            lightPool(ctx, c * T + T / 2, r * T + 8, Math.sin(tick * 0.2 + c))
-        }
+        if (lvl.grid[r * lvl.W + c] === TORCH) torchPx.push([c * T + T / 2, r * T + 12])
     }
-    // a room without torches is darker
-    if (!lvl.torches.some((tc) => tc.c >= c0 && tc.c < c1)) {
-        ctx.fillStyle = 'rgba(0,0,8,0.32)'
-        ctx.fillRect(c0 * T, 0, RW * T, VH)
+    // centre-weighted shadow: the room sinks into darkness toward its edges, and a
+    // room without a single torch sinks deeper — but the light itself, where it
+    // comes at all, arrives per-torch (the pools below), never as a flat wash.
+    const litRoom = torchPx.length > 0
+    const vg = ctx.createRadialGradient(c0 * T + VW / 2, VH * 0.44, VW * 0.18, c0 * T + VW / 2, VH * 0.44, VW * 0.72)
+    vg.addColorStop(0, litRoom ? 'rgba(4,6,22,0.10)' : 'rgba(3,4,16,0.30)')
+    vg.addColorStop(1, litRoom ? 'rgba(4,6,22,0.50)' : 'rgba(2,3,12,0.62)')
+    ctx.fillStyle = vg
+    ctx.fillRect(c0 * T, 0, RW * T, VH)
+    // sconce flames + their warm pools (additive: stone under them glows)
+    for (const tp of torchPx) {
+        const c = Math.round((tp[0] - T / 2) / T), r = Math.round((tp[1] - 12) / T)
+        drawTorch(ctx, c, r, tick)
+        lightPool(ctx, tp[0], tp[1], Math.sin(tick * 0.2 + c))
+    }
+    // how much warm light lands on a figure, and from which side (null if none)
+    const atLight = (x, y) => {
+        let best = 0, side = null
+        for (const tp of torchPx) {
+            const dx = tp[0] - x, w = torchGlow(Math.hypot(dx, tp[1] - y))
+            if (w > best) { best = w; side = dx >= 0 ? 1 : -1 }
+        }
+        return { warm: lightAt(x, y, torchPx), side }
     }
 
     if (!g.sword && lvl.sword) drawSwordPickup(ctx, lvl.sword, tick)
@@ -949,8 +1065,9 @@ export function drawScene(ctx, g, opts = {}) {
     if (lvl.needBoss && g.guards.every((q) => !q.boss || q.dead) && lvl.exit && lvl.exit.room === g.room) {
         const px = lvl.exit.c * T + 8
         const py = (lvl.exit.r + 1) * T
+        const pl = atLight(px - 14, py)
         figure(ctx, 'idle', { x: px - 14, y: py, facing: 1, onGround: true, hang: null, crouch: false },
-            { tick, skin: '#e0b090', cloth: '#b04a8a', trim: '#e8d060', sword: false, swing: 0, hurt: 0, die: 0, prog: 0 })
+            { tick, skin: '#e0b090', cloth: '#b04a8a', trim: '#e8d060', sword: false, swing: 0, hurt: 0, die: 0, prog: 0, warm: pl.warm, litSide: pl.side })
     }
 
     // guards
@@ -963,12 +1080,14 @@ export function drawScene(ctx, g, opts = {}) {
         const swing = gd.wind > 0 && gd.wind <= gd.windT - CFG.guardHit0 ? style.windT - gd.wind : 0
         const frame = gd.wind > 0 ? Math.floor((gd.windT - gd.wind) / 6) : Math.floor(tick / 8)
         groundShadow(ctx, gd.x, gd.y + 1, 15 * (look.wide || 1))
+        const gl = atLight(gd.x, gd.y)
         figure(ctx, st === 'patrol' ? 'walk' : st, { x: gd.x, y: gd.y, facing: gd.dir || -1, onGround: true, hang: null, crouch: false },
             {
                 tick: tick + gd.id * 13, frame, skin: look.skin, cloth: look.cloth, trim: look.trim,
                 turban: look.turban, bone: look.bone, wide: look.wide || 1,
                 swordMetal: look.sword, robe: look.robe, hat: look.hat,
                 sword: true, sheath: false, swing, hurt: gd.hurtT, die: 0, prog: 0,
+                warm: gl.warm, litSide: gl.side,
             })
         if (gd.wind > 0 && gd.wind % 6 < 3) {
             ctx.fillStyle = '#ff5050'
@@ -996,6 +1115,7 @@ export function drawScene(ctx, g, opts = {}) {
                     : st === 'climb' ? Math.min(POSES.climb.length - 1, Math.floor((p.climb / CFG.climbT) * POSES.climb.length))
                         : st === 'hang' || st === 'shimmy' ? Math.floor(tick * 0.07)
                             : Math.floor(tick * 0.25)
+        const pl = atLight(p.x, p.y)
         const opts = {
             tick, skin: '#e0b898', cloth: '#e8e8f0', trim: '#c03028',
             sword: g.sword && (p.atk > 0 || p.block || p.duelDrawn),
@@ -1003,6 +1123,7 @@ export function drawScene(ctx, g, opts = {}) {
             swing: p.atk, hurt: p.hurtT, die: dying ? p.dieT : 0,
             prog: p.climb / CFG.climbT, crouch: p.crouch,
             frame: st.startsWith('die') ? Math.min(2, Math.floor(p.dieT / 12)) : gaitFrame,
+            warm: pl.warm, litSide: pl.side,
         }
         if (p.onGround) {
             const sc2 = Math.floor(p.x / T), sr2 = Math.floor(p.y / T) + 1
