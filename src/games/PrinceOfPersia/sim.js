@@ -285,6 +285,9 @@ export function step(g, inp = {}) {
                 p.anim = 'shimmy'
             } else if (moveOk && !stillWall) {
                 p.hang = null; p.fallFrom = p.y
+            } else if (!moveOk) {
+                p.hang = null; p.climb = 0
+                p.fallFrom = p.y
             }
         }
         g.prev = { atk, jump, up, down }

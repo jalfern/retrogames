@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
-import { makeGame, step, CFG, clockText } from './sim.js'
+import { makeGame, step, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { drawScene, VW, VH } from './art.js'
 import { LEVEL_COUNT } from './levels.js'
@@ -57,7 +57,14 @@ const PrinceOfPersiaGame = () => {
         })
         const p_stance = () => g.p.stance
 
-        window.__popTest = () => g
+        window.__popTest = {
+            probe: () => ({
+                attract, status: g.status, level: g.levelIndex, lives: g.lives,
+                x: g.p.x, y: g.p.y, vx: g.p.vx, vy: g.p.vy, hp: g.p.hp,
+                hang: !!g.p.hang, port: !!g.portLatch, events: g.events.length, clock: g.clock,
+            }),
+            hash: () => stateHash(g),
+        }
 
         const readInputs = () => ({ ...keys })
 
