@@ -1,53 +1,63 @@
-# GAUNTLET (Atari, 1985)
+# GAUNTLET (Atari, 1985) — overhead
 
-First-person dungeon crawl: four hero mazes, slam doors, keys, generators and
-Death. Route `/gauntlet`.
+The real cabinet view: a scrolling top-down camera above four pillar-hall
+mazes. 8-way stick, swarms from generators, slam/locked doors, food economy,
+potions, keys, stairs, and Death when the timer dies. Route `/gauntlet`.
+The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
 
 ## What is where
 
-- `levels.js` — the four pillar-hall mazes (24×24 char grids carved from an
-  open field), hero stat table, monster table, exit-room walls. Exit pockets
-  are sealed by locked doors whose keys always sit outside the locks.
-- `sim.js` — the pure engine: `step(state, input)`, zero `Math.random()`
-  (seeded LCG only) so `scripts/gauntletcheck.mjs` can audit rules and replay
-  the pilot hash-for-hash. `blocked()` is asked by every walker; the hero's
-  corner probes are stone-only so doors stay enterable.
-- `planner.js` — the autopilot. Doctrine: walk the objectives (food when low →
-  keys the stairs need → stairs), engage only what is close or aligned; never
-  chase spawns across the maze (attrition is the honest way to lose, and the
-  pilot proves it can win anyway).
-- `art.js` — every sprite punched from pixel strings, per-level wall palettes.
-- `index.jsx` — raycaster (DDA, 224×200 view + 96px side panel + narrator
-  strip), hero select, attract replaying `plan(2)`'s deathless run.
+- `levels.js` / `sim.js` / `planner.js` / `art.js` / `sound.js` — the shared,
+  camera-agnostic engine (FOUR HALLS imports these from here). `step()` takes
+  a mode from `opts.topDown`:
+  - **first-person (default)** — left/right turn, fwd/back along the facing.
+  - **overhead (`topDown: true`)** — each arrow sets facing AND moves (8-way);
+    a blocked diagonal slides along the free axis; doors, slam, keys, arrow
+    and Death rules are the same code paths. `inp.aim` is the pilot lane: the
+    autopilot points absolutely (a player does this with the stick), then
+    travels down the barrel it is looking through.
+- `index.jsx` — the overhead renderer: camera follows the hero (clamped to the
+  level), raised wall blocks with mortar + drop shadow, two-tone floor grain,
+  slam/locked/broken door faces, glowing stairs, sprites punched at runtime,
+  facing-dagger + sword-arc sweep, vignette and scanlines, side panel (mini
+  map, portrait, health, keys/gold), narrator strip, hero select, CPU partner
+  toggle (`C`), attract replaying `plan(2, {topDown:true})`'s proven run.
 
 ## Fidelity notes
 
-- The issue body said "top-down"; the 1985 cabinet is **first-person** and
-  AGENTS.md (Jon's ruling) puts the original's rules above the issue's phrasing.
-  Everything else the issue asked for is in: 4 heroes with different stats,
-  health drain + food + the narrator's "NEEDS FOOD, BADLY!", generators that
-  spawn until smashed, Death draining health, keys/doors, potion clears the
-  screen (not Death), synthesized audio, touch controls.
-- Original quirks kept: the constant health drain (food is the economy), slam
-  doors shut behind you (batter them open or find another way), keys carry
-  across mazes, the last-lane sorcerer/lobber fire.
-- Simplifications (honest gaps): no shop, no Valkyrie resurrection, no
-  levitation/invisibility potion variants, one potion effect (screen clear),
-  CPU partner is a first pass (follows and stabs, no door/Key logic of its
-  own), two-player is desktop-only. Filed for QA polish.
+- The issue body asked for top-down — and the 1985 cabinet IS top-down; the
+  previous first-person build keeps every rule it had and now ships under
+  FOUR HALLS with the issue's HUD fixes (see `../FourHalls/README.md`).
+- Kept from the original: overhead scroll that follows the hero, 8-way
+  movement where facing follows the stick, arrows fire down the facing, the
+  four heroes (stats differ), constant health drain + food + the narrator's
+  "NEEDS FOOD, BADLY!", slam doors sealing behind you (sword-batter opens
+  them), locked doors eating keys that carry between mazes, generators that
+  pulse the level roster until smashed, potion clearing every roamer but not
+  Death, Death walking in on the treasure timer and draining point by point,
+  stairs up ending each world and the fourth ending the quest.
+- Simplifications (honest gaps): no shop, no Valkyrie resurrection, one potion
+  effect (screen clear), no fire/water/bomb item variants, CPU partner follows
+  and stabs but has no door/key logic of its own, two-player is desktop-only,
+  monster swarm caps follow the level roster rather than the cabinet's screen
+  limits, wall tiles are uniform blocks rather than the original's themed
+  per-world textures. Filed as a QA polish pass.
 
 ## Controls
 
-Arrows: turn / walk · Space: sword · X/F: arrow or spell · C on the hero
-screen: CPU partner · ?: pause.
+Arrows / the stick: move 8-way (facing follows) · Space / A: sword at what you
+face · X / F / B: arrow down the facing · C on the hero screen: CPU partner ·
+?: pause.
 
 ## Verify
 
 ```bash
-npm run lint:gauntlet      # eslint gate for the game + harness
-npm run gauntletcheck      # 48 checks: geometry, rules, ledger, pilot, slack, determinism
-npm run gauntletcheck -- --mutate   # 5 mutants, all must die
+npm run lint:gauntlet               # eslint gate for both games + harness
+npm run gauntletcheck             # 86 checks: geometry, art, sound, rules,
+                                  # overhead mode, ledger, pilot, slack, determinism
+npm run gauntletcheck -- --mutate # 6 mutants, all must die
+npm run gauntletplay              # advisory browser drive (needs npm run dev)
 ```
 
-The demo on the title screen is `plan(2)` — the same deathless full-quest run
-the harness grades.
+The attract demo is `plan(2, {topDown:true})` — the same deathless full-quest
+run the harness grades.
