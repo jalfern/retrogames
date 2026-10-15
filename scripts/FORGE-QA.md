@@ -91,10 +91,11 @@ confuse the two queues.
    item just to re-check it: on 2026-10-13 four sessions in a row resumed
    #180 only to write "still parked on your review", and the queue behind
    it sat untouched for hours.
- 6. **Time-box: 60 minutes; a watchdog kills the session at 75.** Commit and push
-    your branch after every working step, not only at the end: anything not pushed
-    when the watchdog fires is lost. If you cannot finish, push the branch, comment
-    `QA: checkpoint <state>`, and exit — your next session resumes it via the
+ 6. **Time-box: 60 minutes; a watchdog stops the session at 75.** Before it
+    stops you it commits and pushes your worktree and posts the checkpoint, so do
+    not push after every step (every push is a Vercel build). If you cannot
+    finish, push the branch, comment `QA (<your node>): checkpoint <state>` (what
+    works, what doesn't, what you tried that failed), and exit — your next session resumes it via the
     resume-before-you-claim rule in step 2 (an open `building-qa` issue with a
     pushed `qa/<slug>` branch is always resumed before claiming anything new).
 7. Report one line and exit: `QA lane: <done|idle|blocked: why>`.
