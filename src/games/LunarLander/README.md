@@ -42,6 +42,13 @@ complete.
   explosion/dust particles + shake; `?` pauses; DEV hook `__landerTest` and the
   DebugKit (PROGNOSIS re-rolls the pilot and reports whether the campaign is
   still winnable deathless).
+  **Replay mode** (`/lunar-lander?replay=1`): loads
+  `public/replays/lander-ppo.json` — a trained PPO policy's seed plus one button
+  per tick (`nothing/rotate_left/rotate_right/thrust`, mapped to `{rot,thrust}`
+  exactly like the RL bridge) — starts straight into play, drives the real sim
+  from the tape instead of the keyboard (keys/pad ignored, `?` still pauses),
+  and stamps `PPO POLICY · REPLAY` on screen. The tape reproduces a 245-point
+  pad landing tick-for-tick because `sim.js` is deterministic and seeded.
 
 ## Controls
 
@@ -57,6 +64,8 @@ npm run landercheck            # 44 Node checks: determinism, terrain flatness,
                                # 4-seed deathless campaign wins, the slack rule
 npm run landercheck -- --mutate  # + 4 mutants (gravity off, softVert gate off,
                                # refuel off, frozen multiplier) — all must die
+npm run landerreplay           # PPO button tape in public/replays/lander-ppo.json
+                               # must reach a PAD landing at exactly score 245
 npm run landerplay             # advisory browser drive (needs npm run dev):
                                # start/thrust/rotate/zoom/crash/restart, HUD mirrors sim
 ```
