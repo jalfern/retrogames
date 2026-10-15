@@ -58,15 +58,24 @@ export function genLevel(level) {
         const c1 = Math.min(COLS - 1, c0 + wide)
         platforms.push({ row, c0, c1 })
     }
-    // ladders: every platform row gets a way up/down (audit checks this too)
-    for (const p of platforms) {
-        const col = p.c0 + (h(40 + p.row) % Math.max(1, p.c1 - p.c0 + 1))
-        const upRow = rowsUsed.filter((r) => r < p.row).pop()
-        if (upRow !== undefined) ladders.push({ col, rowTop: upRow, rowBot: p.row })
-        else ladders.push({ col, rowTop: 2, rowBot: p.row })
+    // ladders: a CHAIN from the floor up through every platform row, so every
+    // platform is climbable by construction (the audit re-checks independently)
+    const rowsDesc = rowsUsed.slice().sort((a, b) => b - a)
+    let prev = { row: FLOOR_ROW, c0: 0, c1: COLS - 1 }
+    for (const row of rowsDesc) {
+        const p = platforms.find((pp) => pp.row === row)
+        const lo = Math.max(p.c0, prev.c0), hi = Math.min(p.c1, prev.c1)
+        const col = lo + (h(40 + row) % Math.max(1, hi - lo + 1))
+        ladders.push({ col, rowTop: row, rowBot: prev.row })
+        prev = p
     }
-    // extra side ladder to the floor
-    ladders.push({ col: 1 + (h(50) % (COLS - 2)), rowTop: rowsUsed.length ? Math.min(...rowsUsed) : 3, rowBot: FLOOR_ROW })
+    // one extra ladder where two rows overlap, for flow
+    if (rowsDesc.length >= 2) {
+        const a = platforms.find((pp) => pp.row === rowsDesc[0])
+        const b = platforms.find((pp) => pp.row === rowsDesc[1])
+        const lo = Math.max(a.c0, b.c0), hi = Math.min(a.c1, b.c1)
+        if (hi > lo) ladders.push({ col: lo + h(55) % (hi - lo + 1), rowTop: b.row, rowBot: a.row })
+    }
 
     // spawns: enemies on platform tops + floor, deterministic
     const spawns = []
@@ -74,12 +83,23 @@ export function genLevel(level) {
     const kinds = isBossLevel(level) ? ['boss'] : []
     const pool = ['zenchan', 'zenchan', 'pulppul', 'tongling', 'zenchan', 'pulppul']
     while (kinds.length < roster) kinds.push(pool[h(60 + kinds.length) % pool.length])
-    const surf = platforms.slice()
+    // spread walker spawns across their span so two riders never stack on one
+    // column (a stacked pair is a meat wall the attract demo can't answer)
+    const used = new Map()
+    // two floor-walkers per level keep the ground alive and feed the water
+    // rule on wet themes (they spawn in the shallows and emerge as snails)
+    const surf = platforms.concat([{ row: FLOOR_ROW, c0: 0, c1: COLS - 1 }, { row: FLOOR_ROW, c0: 0, c1: COLS - 1 }])
     for (const k of kinds) {
         if (k === 'boss') { spawns.push({ kind: k, col: COLS / 2 | 0, row: 3 }); continue }
         const s = k === 'pulppul' ? { col: 1 + h(70 + spawns.length) % (COLS - 2), row: 4 + h(80 + spawns.length) % 7 }
             : surf[h(90 + spawns.length) % surf.length]
-        const col = s.c0 !== undefined ? s.c0 + h(100 + spawns.length) % (s.c1 - s.c0 + 1) : s.col
+        let col
+        if (s.c0 !== undefined) {
+            const width = s.c1 - s.c0 + 1
+            const n = used.get(`${s.row},${s.c0},${s.c1}`) || 0
+            used.set(`${s.row},${s.c0},${s.c1}`, n + 1)
+            col = s.c0 + Math.min(width - 1, (h(100 + spawns.length) + n * Math.ceil(width / 3)) % width)
+        } else col = s.col
         spawns.push({ kind: k, col, row: s.row })
     }
 
@@ -99,7 +119,7 @@ export function genLevel(level) {
         entry,
         door,
         roster: kinds.length,
-        blubbaAt: Math.max(900, 1600 - level * 8), // linger too long and HE arrives
+        blubbaAt: Math.max(2400, 5400 - level * 30), // linger too long and HE arrives
     }
 }
 

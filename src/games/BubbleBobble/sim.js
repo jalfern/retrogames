@@ -55,9 +55,9 @@ function fnv(str) {
 function makePlayer(gs, idx) {
     const lv = gs.lv
     return {
-        id: idx, x: (lv.entry.col + half), y: FIELD_Y0 + lv.entry.row * CELL + 8,
+        id: idx, x: (lv.entry.col * CELL + half), y: FIELD_Y0 + lv.entry.row * CELL + 8,
         vx: 0, vy: 0, dir: 1, onGround: false, climbing: false, dropT: 0,
-        deadT: 0, invuln: 0, power: null, powerT: 0, cool: 0,
+        deadT: 0, invuln: 90, power: null, powerT: 0, cool: 0,
         moving: false, inWater: false, walkT: 0,
     }
 }
@@ -88,7 +88,7 @@ function startLevel(gs, level) {
     gs.blubbas = []
     gs.blubbaN = 0
     gs.blubbaNext = gs.lv.blubbaAt
-    gs.door = { x: (gs.lv.door.col + half), y: platTop(gs.lv.door.row) - 12, open: false }
+    gs.door = { x: (gs.lv.door.col * CELL + half), y: platTop(gs.lv.door.row) - 12, open: false }
     gs.players = []
     for (let i = 0; i < gs.playersN; i++) {
         const p = makePlayer(gs, i)
@@ -100,13 +100,16 @@ function startLevel(gs, level) {
 }
 
 function spawnEnemy(gs, s, i) {
+    let col = s.col
+    // never materialise on top of the entry column — the classic spawns away
+    if (s.kind === 'pulppul' && Math.abs(col - gs.lv.entry.col) <= 3) col = COLS - 1 - col
     const e = {
         id: gs._nextId++, kind: s.kind,
-        x: (s.col + half), y: platTop(s.row) - 8,
+        x: (col * CELL + half), y: platTop(s.row) - 8,
         dir: (gs.seed + i) % 2 === 0 ? 1 : -1,
         state: s.kind === 'pulppul' ? 'float' : s.kind === 'boss' ? 'boss' : 'walk',
         trapT: 0, angry: false, snail: false, hp: s.kind === 'boss' ? CFG.bossHp : 1,
-        span: null, phase: i * 41, diveT: 0, home: { x: (s.col + half), y: platTop(s.row) - 8 },
+        span: null, phase: i * 41, diveT: 0, home: { x: (col * CELL + half), y: platTop(s.row) - 8 },
     }
     if (e.state === 'walk') {
         e.span = gs.lv.platforms.find((p) => p.row === s.row && s.col >= p.c0 && s.col <= p.c1) ||
@@ -140,7 +143,7 @@ function landSurface(gs, x, feetPrev, feetNew) {
 
 function ladderAt(gs, p) {
     for (const l of gs.lv.ladders) {
-        const lx = (l.col + half)
+        const lx = (l.col * CELL + half)
         const topY = platTop(l.rowTop)
         const botY = l.rowBot >= FLOOR_ROW ? H : platTop(l.rowBot)
         if (Math.abs(p.x - lx) < 7 && p.y + 8 >= topY - 6 && p.y + 8 <= botY + 4) return { l, lx, topY, botY }
@@ -257,7 +260,7 @@ function enemyTouch(gs, e, b) {
 
 function updateBubbles(gs) {
     for (const b of gs.bubbles) {
-        b.life--
+        if (!b.trapped) b.life--
         if (b.kind === 'flame') {
             b.x += b.vx
             if (b.x < 6 || b.x > W - 6) b.life = 0
@@ -276,7 +279,7 @@ function updateBubbles(gs) {
         b.r = Math.min(b.max, b.r + CFG.bubbleGrow)
         if (b.trapped) {
             b.vy = CFG.floatV
-            b.vx = Math.sin((gs.tick + b.id * 31) / 34) * 0.5
+            b.vx = Math.sin((gs.tick + b.id * 31) / 34) * 0.28
             if (b.y < FIELD_Y0 + 18) { b.y = FIELD_Y0 + 18; b.vy = 0 }
             const e = gs.enemies.find((x) => x.id === b.trapped)
             if (!e) { b.dead = true; continue }
@@ -324,6 +327,12 @@ function updateBubbles(gs) {
         }
         // free enemy into a bubble
         if (!b.trapped) {
+            const boss = gs.enemies.find((e) => e.kind === 'boss')
+            if (boss && Math.abs(boss.x - b.x) < 18 + b.r && Math.abs(boss.y - b.y) < 18) {
+                hitBoss(gs, boss, 1)
+                b.dead = true
+                continue
+            }
             for (const e of gs.enemies) {
                 if (e.state === 'trap' || e.kind === 'boss') continue
                 if (enemyTouch(gs, e, b)) {
@@ -382,8 +391,8 @@ function updateEnemies(gs) {
         if (e.state === 'trap') continue
         const speedMul = e.angry ? CFG.angryMul : 1
         if (e.state === 'float') {
-            e.x += Math.cos((gs.tick + e.phase) / (e.angry ? 40 : 60)) * (e.angry ? 1.6 : 0.9)
-            e.y += Math.sin((gs.tick + e.phase) / (e.angry ? 26 : 44)) * (e.angry ? 1.0 : 0.6)
+            e.x += Math.cos((gs.tick + e.phase) / (e.angry ? 46 : 64)) * (e.angry ? 1.3 : 0.75)
+            e.y += Math.sin((gs.tick + e.phase) / (e.angry ? 30 : 52)) * (e.angry ? 0.85 : 0.55)
             if (e.x < half) e.x = half
             if (e.x > W - half) e.x = W - half
             e.y = clamp(e.y, FIELD_Y0 + 12, H - 12)
@@ -610,5 +619,7 @@ export function stateHash(gs) {
 }
 
 export function clone(gs) {
-    return JSON.parse(JSON.stringify(gs))
+    const c = JSON.parse(JSON.stringify(gs))
+    if (c.lv) c.lv._g = null // the planner graph cache is a Map — rebuild, don't stringify
+    return c
 }
