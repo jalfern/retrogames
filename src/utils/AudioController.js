@@ -5,8 +5,10 @@
 // MIDI note -> frequency
 const f = (n) => 440 * Math.pow(2, (n - 69) / 12)
 
+// Perc steps for the `perc` lanes: 0 rest, 1 dum (low thump), 2 tek (dry click).
+
 // Patterns: `lead` (square) + `bass` (triangle) share a step grid. 0 = rest.
-const MUSIC = {
+export const MUSIC = {
     // Cheerful overworld loop, C major
     overworld: {
         step: 0.13,
@@ -85,6 +87,58 @@ const MUSIC = {
         bass: [
             43, 0, 0, 43, 0, 0, 50, 0, 45, 0, 0, 45, 0, 0, 52, 0,
             47, 0, 0, 47, 0, 0, 55, 0, 43, 0, 0, 43, 0, 0, 50, 0,
+        ],
+    },
+    // PRINCE OF PERSIA — three original beds in the Hijaz mode (D Eb F# G A Bb C#),
+    // composed for this build. Silence stays the default voice of the dungeon:
+    // these run under it, sparse and slow, with a darbuka pulse (1=dum 2=tek).
+    // "THE DUNGEON" — drip-stone slow, wide rests, root pedal.
+    pop: {
+        step: 0.24,
+        lead: [
+            62, 0, 66, 0, 67, 0, 66, 0, 63, 0, 62, 0, 0, 0, 62, 0,
+            66, 0, 69, 0, 67, 0, 66, 63, 62, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        bass: [
+            38, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 0, 0, 0, 0, 0,
+            34, 0, 0, 0, 0, 0, 0, 0, 38, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        perc: [
+            1, 0, 0, 2, 0, 0, 1, 0, 0, 2, 0, 0, 1, 0, 0, 0,
+            1, 0, 0, 2, 0, 0, 1, 0, 0, 2, 0, 1, 0, 0, 0, 0,
+        ],
+    },
+    // "THE THRONE ROOM" — palace levels: grander, an octave up, wider leaps.
+    popThrone: {
+        step: 0.19,
+        lead: [
+            74, 0, 78, 0, 79, 0, 78, 0, 75, 0, 74, 0, 0, 74, 0, 0,
+            78, 0, 81, 0, 79, 0, 78, 0, 75, 0, 78, 0, 79, 78, 75, 0,
+        ],
+        bass: [
+            38, 0, 50, 0, 38, 0, 50, 0, 46, 0, 0, 46, 0, 0, 38, 0,
+            38, 0, 50, 0, 38, 0, 50, 0, 45, 0, 0, 0, 45, 0, 38, 0,
+        ],
+        perc: [
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 1, 0,
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 1, 0, 1, 2, 1, 0,
+        ],
+    },
+    // "JAFFAR" — the vizier's theme: a fast chromatic-second ostinato, the
+    // b2 grinding against the root. Plays while he stands between you and her.
+    popJaffar: {
+        step: 0.105,
+        lead: [
+            74, 75, 74, 0, 78, 0, 75, 0, 74, 0, 75, 78, 79, 0, 78, 0,
+            75, 0, 74, 0, 78, 0, 81, 0, 82, 0, 81, 0, 79, 0, 75, 0,
+        ],
+        bass: [
+            38, 0, 38, 0, 38, 0, 38, 0, 38, 0, 38, 0, 46, 0, 46, 0,
+            38, 0, 38, 0, 38, 0, 38, 0, 45, 0, 45, 0, 45, 0, 46, 0,
+        ],
+        perc: [
+            1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 1,
+            1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 1, 2, 1, 2, 1,
         ],
     },
     // OUT RUN radio — three ORIGINAL tunes composed for this build in the sunlit
@@ -238,6 +292,31 @@ class AudioController {
         else this.pendingStep = sec
     }
 
+    _perc(v, t) {
+        if (!this.ctx || !this.musicGain) return
+        if (v === 1) {
+            const o = this.ctx.createOscillator()
+            const g = this.ctx.createGain()
+            o.type = 'sine'
+            o.frequency.setValueAtTime(160, t)
+            o.frequency.exponentialRampToValueAtTime(55, t + 0.09)
+            g.gain.setValueAtTime(0.5, t)
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12)
+            o.connect(g); g.connect(this.musicGain)
+            o.start(t); o.stop(t + 0.14)
+        } else if (v === 2) {
+            const dur = 0.04
+            const buffer = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate)
+            const d = buffer.getChannelData(0)
+            for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length)
+            const src = this.ctx.createBufferSource(); src.buffer = buffer
+            const hp = this.ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500
+            const g = this.ctx.createGain(); g.gain.value = 0.22
+            src.connect(hp); hp.connect(g); g.connect(this.musicGain)
+            src.start(t)
+        }
+    }
+
     _schedule() {
         const m = this.music
         if (!m || !m.playing || !this.ctx) return
@@ -248,6 +327,8 @@ class AudioController {
             if (ln) this._note(f(ln), m.nextTime, m.stepDur * 0.9, 'square', 0.5)
             const bn = P.bass && P.bass[i]
             if (bn) this._note(f(bn), m.nextTime, m.stepDur * 1.1, 'triangle', 0.6)
+            const pv = P.perc && P.perc[i]
+            if (pv) this._perc(pv, m.nextTime)
             m.nextTime += m.stepDur
             m.step++
         }
