@@ -16,6 +16,7 @@ export const CFG = {
     steer: 0.055, driftMul: 1.5, slide: 0.13,
     spinT: 50, bumpV: 0.42, wallLimit: 200,
     boostAcc: 0.17, boostOver: 4.2, boostDur: 95,
+    rocketT: 40,
     shellV: 13.5, shellLife: 85, hitR: 30, bananaR: 24,
     respawnBox: 170, kartR: 27,
     count: 190,
@@ -69,6 +70,7 @@ export function makeGame() {
         shells: [], bananas: [],
         boxes: BOXES.map((b, i) => ({ ...b, id: i, taken: 0 })),
         events: [], end: null,
+        rocket: false,
     }
 }
 
@@ -325,11 +327,17 @@ export function step(g, inp) {
     if (g.end) return
     const P = g.karts[0]
     if (g.phase === 'count') {
+        if (inp && inp.u) g.rocket = true
         const prev = Math.ceil(g.count / 60)
         g.count--
         const now = Math.ceil(g.count / 60)
         if (now !== prev && now > 0) g.events.push({ e: 'count', n: now })
-        if (g.count <= 0) { g.phase = 'race'; g.events.push({ e: 'go' }); for (const k of g.karts) k.lapStart = g.tick }
+        if (g.count <= 0) {
+            g.phase = 'race'
+            g.events.push({ e: 'go' })
+            for (const k of g.karts) k.lapStart = g.tick
+            if (g.rocket) { P.boostT = CFG.rocketT; g.events.push({ e: 'rocket', who: 'PLAYER' }) }
+        }
     }
     const locked = g.phase !== 'race'
     const pin = locked ? {} : inp || {}

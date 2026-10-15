@@ -175,7 +175,7 @@ await page.evaluate((p) => {
 await setKey('u', true)
 await page.waitForTimeout(1400)
 const baseTotal = (await fxNow()).sparkTotal
-await page.keyboard.down('KeyX')
+await page.keyboard.down('KeyR')
 await setKey('l', true)
 let driftSeen = false, sparkPx = 0
 for (let i = 0; i < 12; i++) {
@@ -190,7 +190,7 @@ for (let i = 0; i < 12; i++) {
     if (hot > sparkPx) sparkPx = hot
     await page.waitForTimeout(55)
 }
-await setKey('l', false); await page.keyboard.up('KeyX'); await setKey('u', false)
+await setKey('l', false); await page.keyboard.up('KeyR'); await setKey('u', false)
 const afterDrift = await fxNow()
 r.check('drift emits sparks (sim drift -> renderer particles)',
     driftSeen && (afterDrift.sparkTotal - baseTotal) > 0,
