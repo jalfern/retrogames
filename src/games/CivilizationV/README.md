@@ -16,7 +16,7 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
                                     farms, mines, resource tokens, HP bars, arrows, siege, FX
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research + worker panels
 scripts/civcheck.mjs                Node harness (npm run civcheck) — 185 checks
-scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay)
+scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 28 checks
 ```
 
 ## Engine notes
@@ -78,7 +78,8 @@ npm run civcheck          # 185 Node checks: boot, determinism, founding, econom
                           # cities, production, tech (§16-18), improvement gates (§19), build turns +
                           # yields + roads + pillage (§20), resources reveal/connect/pay (§21),
                           # resource-gated units + end-to-end labour (§22), win/loss/slack
-npm run civplay           # Chrome, real keys: panel W/F/O, worker trains and builds, 0 errors
+npm run civplay           # Chrome, real keys: queue worker by 4, WORK panel (W/F/Escape), farms appear,
+                          # science completes in real time, autopilot wins, 0 page errors — 28 checks
 npm run lint:civ          # eslint gate for the game + its scripts
 ```
 

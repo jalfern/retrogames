@@ -1,11 +1,12 @@
-// CIVILIZATION V — Stage 3 "The Tech Tree": the arcade shell.
+// CIVILIZATION V — Stage 4 "Land": the arcade shell.
 // The whole world is the pure sim in ./sim.js; the tilted 3D hex map is
 // ./art.js; the attract demo (and the harness witness) is the autopilot in
 // ./planner.js replayed tick-for-tick through the real step(). One
 // fixed-timestep loop owns the clock (the SimCity/heist lesson); React only
 // mirrors the HUD. Playable with mouse/touch: tap a tile to select your unit or
-// move it, tap END TURN (Space) to advance, E settles your settler, drag to
-// orbit, wheel/pinch to zoom. Art rule for 3D titles: render at screen res.
+// move it, tap END TURN (Space) to advance, E settles your settler, W opens
+// the WORK panel for a selected worker, drag to orbit, wheel/pinch to zoom.
+// Art rule for 3D titles: render at screen res.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
@@ -14,13 +15,13 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed } from './sim.js'
 import { decide } from './planner.js'
 import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
 
 const SIM_MS = 1000 / 60
 const GOAL = CFG.capitalSizeToWin
-const RESEARCH_ORDER = ['ARCHERY', 'BRONZE_WORKING', 'MASONRY', 'THE_WHEEL', 'POTTERY', 'AGRICULTURE', 'WRITING', 'CURRENCY', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
+const RESEARCH_ORDER = ['POTTERY', 'THE_WHEEL', 'ARCHERY', 'MASONRY', 'BRONZE_WORKING', 'AGRICULTURE', 'WRITING', 'CURRENCY', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
 
 const CivilizationVGame = () => {
     const stageRef = useRef(null)
@@ -30,6 +31,9 @@ const CivilizationVGame = () => {
     const [panel, setPanel] = useState(null)
     const [panelOpen, setPanelOpen] = useState(false)
     const panelOpenRef = useRef(false)
+    const [wpanel, setWpanel] = useState(null)
+    const [wOpen, setWOpen] = useState(false)
+    const wOpenRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -113,6 +117,17 @@ const CivilizationVGame = () => {
                         audioController.playTone(587, 0.14, 'sine', 0.05)
                     }
                 }
+                else if (e.type === 'improveStart' && e.civ === 0) { say(`${IMP[e.kind].name.toUpperCase()} IN PROGRESS · ${IMP[e.kind].turns} TURN${IMP[e.kind].turns > 1 ? 'S' : ''}`); audioController.playTone(196, 0.07, 'triangle', 0.05) }
+                else if (e.type === 'improved') {
+                    if (e.civ === 0) { say(`${IMP[e.kind].name.toUpperCase()} COMPLETE`); audioController.playSweep(330, 660, 0.3, 'triangle', 0.08); audioController.playTone(494, 0.1, 'sine', 0.05) }
+                    else if (known(e.c, e.r)) spawnImpact(view, gs, e.c, e.r, false)
+                }
+                else if (e.type === 'pillage') {
+                    if (known(e.c, e.r)) { spawnImpact(view, gs, e.c, e.r, true); shake.v = Math.max(shake.v, 3); audioController.playNoise(0.14, 0.07) }
+                    if (gs.tiles[e.r * CFG.W + e.c].owner === 0) say('RAIDERS PILLAGE OUR LAND!')
+                }
+                else if (e.type === 'luxury' && e.civ === 0) { say(`${RES[e.id].name.toUpperCase()} CONNECTED · +${CFG.luxGold} GOLD +${CFG.luxCult} CULTURE`); audioController.playSweep(523, 784, 0.35, 'sine', 0.08) }
+                else if (e.type === 'strategic' && e.civ === 0) { say(`${RES[e.id].name.toUpperCase()} SEAM CONNECTED`); audioController.playSweep(392, 523, 0.3, 'square', 0.06) }
             }
         }
 
@@ -184,6 +199,7 @@ const CivilizationVGame = () => {
             if (now - lastHud < 90) return
             lastHud = now
             if (panelOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshPanel() }
+            if (wOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshWPanel() }
             const C = gs.civs[0]
             const cap = gs.cities.find((c) => c.civ === 0 && c.capital)
             const h = hud.current
@@ -197,7 +213,19 @@ const CivilizationVGame = () => {
             if (h.build) {
                 const city = gs.cities.find((c) => c.civ === 0 && c.alive)
                 const q = city && city.queue && city.queue[0]
-                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${UNIT[q].cost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · C catapult'
+                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${UNIT[q].cost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult'
+            }
+            if (h.worker) {
+                const w = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'WORKER')
+                if (w && w.busy != null) { const b = gs.tiles[w.busy].build; h.worker.textContent = b ? `WORKER: ${IMP[b.kind].name.toUpperCase()} ${b.left} TURN${b.left > 1 ? 'S' : ''} LEFT` : 'WORKER: idle' }
+                else h.worker.textContent = w ? 'WORKER idle — press W to build' : ''
+                h.worker.style.display = w ? '' : 'none'
+            }
+            if (h.lux) {
+                const lux = connectedResources(gs, 0).filter((id) => RES[id].lux).map((id) => RES[id].name)
+                const strat = connectedResources(gs, 0).filter((id) => !RES[id].lux).map((id) => RES[id].name.toUpperCase())
+                h.lux.textContent = (lux.length ? `LUX ${lux.join(' ')}` : '') + (strat.length ? ` · ${strat.join(' ')} CONNECTED` : '')
+                h.lux.style.display = lux.length || strat.length ? '' : 'none'
             }
             if (h.research) {
                 const R = gs.tech[0]
@@ -290,7 +318,38 @@ const CivilizationVGame = () => {
             for (const id of RESEARCH_ORDER) if (av.includes(id)) { pickResearch(id); return }
             if (!av.length) say('EVERY KNOWN TECH IS LEARNED')
         }
-        actRef.current = { togglePanel, closePanel, pickResearch }
+        const refreshWPanel = () => {
+            const w = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'WORKER')
+            if (!w) { setWpanel(null); return }
+            const tl = gs.tiles[w.r * CFG.W + w.c]
+            const terrName = ['Ocean', 'Coast', 'Grassland', 'Plains', 'Desert', 'Hills', 'Mountain'][tl.terr]
+            setWpanel({
+                at: `${w.c},${w.r}`, terr: terrName + (tl.river ? ' · river' : '') + (tl.forest ? ' · forest' : ''),
+                owned: tl.owner === 0, city: tl.city >= 0, imp: tl.imp || (tl.road ? 'ROAD' : null),
+                build: tl.build ? { kind: tl.build.kind, left: tl.build.left } : null,
+                res: tl.res >= 0 && resRevealed(gs, 0, w.r * CFG.W + w.c) ? RES[RES_IDS[tl.res]].name : null,
+                rows: IMP_IDS.map((k) => ({ k, name: IMP[k].name, tech: IMP[k].tech ? TECH[IMP[k].tech].name : null, turns: IMP[k].turns, why: canImprove(gs, 0, w, k) })),
+            })
+        }
+        const closeWPanel = () => { wOpenRef.current = false; setWOpen(false); audioController.playTone(240, 0.04, 'sine', 0.04) }
+        const toggleWPanel = () => {
+            const w = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'WORKER')
+            if (!w && !wOpenRef.current) { say('SELECT A WORKER FIRST'); audioController.playTone(110, 0.07, 'square', 0.05); return }
+            wOpenRef.current = !wOpenRef.current
+            setWOpen(wOpenRef.current)
+            if (wOpenRef.current) refreshWPanel()
+            audioController.playTone(wOpenRef.current ? 480 : 240, 0.04, 'sine', 0.04)
+        }
+        const pickImprove = (kind) => {
+            const w = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'WORKER')
+            if (!w) { say('SELECT A WORKER'); audioController.playTone(110, 0.07, 'square', 0.05); return }
+            const why = canImprove(gs, 0, w, kind)
+            if (why !== true) { say(why.toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            pending = { ...pending, improve: kind }
+            closeWPanel()
+            audioController.playSweep(300, 480, 0.16, 'triangle', 0.05)
+        }
+        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove }
 
         let drag = null
         const onDown = (e) => {
@@ -306,10 +365,17 @@ const CivilizationVGame = () => {
             if (e.code === 'Digit1') { pending = { ...pending, queue: 'WARRIOR' }; audioController.playTone(330, 0.03, 'sine', 0.03); return }
             if (e.code === 'Digit2') { pending = { ...pending, queue: 'ARCHER' }; audioController.playTone(370, 0.03, 'sine', 0.03); return }
             if (e.code === 'Digit3') { pending = { ...pending, queue: 'SETTLER' }; audioController.playTone(290, 0.03, 'sine', 0.03); return }
+            if (e.code === 'Digit4') { pending = { ...pending, queue: 'WORKER' }; audioController.playTone(250, 0.03, 'sine', 0.03); return }
             if (e.code === 'KeyC') { pending = { ...pending, queue: 'CATAPULT' }; audioController.playTone(250, 0.03, 'sine', 0.03); return }
+            if (e.code === 'KeyV') { pending = { ...pending, queue: 'LEGION' }; audioController.playTone(210, 0.03, 'square', 0.03); return }
+            if (e.code === 'KeyH') { pending = { ...pending, queue: 'CHARIOT' }; audioController.playTone(270, 0.03, 'triangle', 0.03); return }
             if (e.code === 'KeyT') { if (screenRef.current === 'play') togglePanel(); return }
             if (e.code === 'KeyR') { if (screenRef.current === 'play') researchNext(); return }
-            if (e.code === 'Escape') { if (panelOpenRef.current) closePanel(); return }
+            if (e.code === 'KeyW') { if (screenRef.current === 'play') toggleWPanel(); return }
+            if (e.code === 'KeyF') { if (screenRef.current === 'play') pickImprove('FARM'); return }
+            if (e.code === 'KeyM') { if (screenRef.current === 'play') pickImprove('MINE'); return }
+            if (e.code === 'KeyO') { if (screenRef.current === 'play') pickImprove('ROAD'); return }
+            if (e.code === 'Escape') { if (panelOpenRef.current) closePanel(); if (wOpenRef.current) closeWPanel(); return }
             if (e.code === 'ArrowLeft') { cam.az -= 0.12; return }
             if (e.code === 'ArrowRight') { cam.az += 0.12; return }
             if (e.code === 'ArrowUp') { cam.el = Math.min(1.4, cam.el + 0.06); return }
@@ -359,12 +425,16 @@ const CivilizationVGame = () => {
                     queue: gs.cities.filter((c) => c.civ === 0 && c.alive).map((c) => ({ name: c.name, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0) })),
                     tech: { known: TECH_IDS.filter((id) => hasTech(gs, 0, id)), research: gs.tech[0].research, prog: Math.floor(gs.tech[0].prog),
                         ai: CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => ({ civ: c.id, name: c.name, n: Object.keys(gs.tech[c.id].known).length, researching: gs.tech[c.id].research })) },
+                    workers: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').map((u) => ({ id: u.id, c: u.c, r: u.r, busy: u.busy })),
+                    land: { imps: gs.tiles.filter((t) => t.imp).length, roads: gs.tiles.filter((t) => t.road).length, connected: connectedResources(gs, 0), revealed: gs.tiles.filter((t, i) => resRevealed(gs, 0, i)).length },
                     explored0: countArr(gs.explored[0]) }),
                 start: startPlay, hash: () => stateHash(gs), select: (id) => { pending = { select: id } },
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
                 attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k) => { pending = { ...pending, queue: k } },
                 research: (id) => { pending = { ...pending, research: id } }, learn: (id) => { grantTech(gs, 0, id) },
+                improve: (kind) => { pending = { ...pending, improve: kind } },
                 auto: (turns = 100) => { let n = 0; while (!gs.end && n < turns * 400 && screenRef.current === 'play') { doSim(decide(gs)); n++ } return { end: gs.end, turns: gs.turn, size: capSize() } },
+                turn: () => { const t0 = gs.turn; let n = 0; while (gs.turn === t0 && !gs.end && screenRef.current === 'play' && n++ < 800) doSim(decide(gs)); return { turn: gs.turn, end: gs.end, size: capSize() } },
             }
             mountDbg({
                 title: 'CIVILIZATION V',
@@ -374,6 +444,7 @@ const CivilizationVGame = () => {
                     `player cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}  total ${gs.cities.filter((c) => c.alive).length}  units0 ${gs.units.filter((u) => u.civ === 0 && u.alive).length}  explored ${countArr(gs.explored[0])}`,
                     `camps alive ${gs.camps.filter((c) => c.alive).length}/${gs.camps.length}  wars ${Object.keys(gs.wars).length}  barbs alive ${gs.units.filter((u) => u.alive && u.civ === BARB).length}  queue ${JSON.stringify((gs.cities.find((c) => c.civ === 0 && c.alive) || { queue: [] }).queue)}`,
                     `research ${gs.tech[0].research ? TECH[gs.tech[0].research].name + ' ' + Math.floor(gs.tech[0].prog) + '/' + TECH[gs.tech[0].research].cost : 'idle'}  known ${TECH_IDS.filter((id) => hasTech(gs, 0, id)).length}/12  ai ${CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => c.name + ':' + Object.keys(gs.tech[c.id].known).length).join(' ')}`,
+                    `land: workers ${gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').length}  improvements ${gs.tiles.filter((t) => t.imp).length}  roads ${gs.tiles.filter((t) => t.road).length}  connected ${connectedResources(gs, 0).join(',') || 'none'}`,
                     `selected ${gs.selected}  tick ${gs.tick}`,
                 ],
                 actions: [
@@ -382,6 +453,8 @@ const CivilizationVGame = () => {
                     { label: 'SETTLE HERE', run: () => { doSettle(); return 'issued settle' } },
                     { label: '+300 GOLD', run: () => { gs.civs[0].gold += 300; return '+300 gold (the ledger is real: gold only buys AI settlers)' } },
                     { label: 'QUEUE WARRIOR', run: () => { pending = { ...pending, queue: 'WARRIOR' }; return 'warrior queued at your first city' } },
+                    { label: 'QUEUE WORKER', run: () => { pending = { ...pending, queue: 'WORKER' }; return 'worker queued at your first city' } },
+                    { label: 'IMPROVE HERE', run: () => { const w = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'WORKER'); if (!w) return 'select a worker first'; for (const k of IMP_IDS) { const why = canImprove(gs, 0, w, k); if (why === true) { pending = { ...pending, improve: k }; return `worker starts ${IMP[k].name} at ${w.c},${w.r}` } else if (/requires/.test(why)) return why } return 'this tile cannot be improved' } },
                     { label: 'HEAL ALL', run: () => { gs.units.filter((u) => u.alive && u.civ === 0).forEach((u) => { u.hp = 100 }); return 'legions made whole' } },
                 ],
             })
@@ -424,9 +497,12 @@ const CivilizationVGame = () => {
                     <span ref={setHud('cult')} className="text-fuchsia-300" title="Culture">❦0</span>
                     <span ref={setHud('cities')} className="text-emerald-200/80">cities 0</span>
                     <span ref={setHud('war')} className="text-red-300/90">at peace</span>
-                    <span ref={setHud('build')} className="text-white/50">BUILD: 1 warrior · 2 archer · 3 settler · C catapult</span>
+                    <span ref={setHud('build')} className="text-white/50">BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult</span>
                     <span ref={setHud('research')} className="text-sky-200/90">TECH: press T</span>
+                    <span ref={setHud('worker')} className="text-lime-200/90" style={{ display: 'none' }} />
+                    <span ref={setHud('lux')} className="text-fuchsia-200/90" style={{ display: 'none' }} />
                     <button onClick={() => actRef.current.togglePanel && actRef.current.togglePanel()} className="pointer-events-auto border border-sky-300/50 rounded px-2 py-0.5 bg-black/40 text-sky-100 text-[11px]">T · RESEARCH</button>
+                    <button onClick={() => actRef.current.toggleWPanel && actRef.current.toggleWPanel()} className="pointer-events-auto border border-lime-300/50 rounded px-2 py-0.5 bg-black/40 text-lime-100 text-[11px]">W · WORK</button>
                     <span ref={setHud('sel')} className="text-white/70 ml-auto">tap a unit</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, color: '#ffe9a8', textShadow: '0 0 12px #c80' }} />
@@ -467,15 +543,48 @@ const CivilizationVGame = () => {
                 </div>
             )}
 
+            {screen === 'play' && wOpen && wpanel && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none" onPointerDown={(e) => e.stopPropagation()}>
+                    <div className="pointer-events-auto w-[min(94vw,460px)] rounded-lg border border-lime-300/40 bg-[#0a1408]/95 shadow-[0_18px_60px_#000] px-4 py-3 font-mono text-lime-100">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <h3 className="text-lg font-black tracking-[0.25em] text-lime-300">WORK</h3>
+                            <button onClick={() => actRef.current.closeWPanel && actRef.current.closeWPanel()} className="text-[11px] border border-lime-300/40 rounded px-2 py-0.5 hover:bg-lime-300/10">CLOSE ✕</button>
+                        </div>
+                        <div className="text-[11px] text-lime-200/80 mb-2">
+                            worker at {wpanel.at} · {wpanel.terr}{wpanel.res ? ` · ${wpanel.res.toUpperCase()} here` : ''} · {wpanel.owned ? 'inside your borders' : 'foreign land'}
+                            {wpanel.build ? <span className="text-amber-200"> · {IMP[wpanel.build.kind].name.toUpperCase()} {wpanel.build.left} turn{wpanel.build.left > 1 ? 's' : ''} left</span> : null}
+                            {wpanel.imp ? <span className="text-emerald-300"> · already {wpanel.imp}</span> : null}
+                            {wpanel.city ? <span className="text-red-300"> · city centre (never worked)</span> : null}
+                        </div>
+                        {wpanel.rows.map((r) => (
+                            <button key={r.k} onClick={() => actRef.current.pickImprove && actRef.current.pickImprove(r.k)}
+                                className={`w-full text-left mb-1.5 rounded border px-2 py-1 transition-colors ${r.why === true ? 'border-lime-300/60 bg-lime-900/30 hover:bg-lime-800/40' : 'border-white/10 bg-black/30 text-white/35'}`}>
+                                <div className="flex justify-between text-[12px] font-bold">
+                                    <span>{r.k === 'FARM' ? 'F' : r.k === 'MINE' ? 'M' : 'O'} · {r.name}</span>
+                                    <span className="opacity-70">{r.turns} turn{r.turns > 1 ? 's' : ''}</span>
+                                </div>
+                                <div className="text-[10px] opacity-70 mt-0.5">
+                                    {r.k === 'FARM' ? '+2 food on grassland, +1 on plains' : r.k === 'MINE' ? '+1 production on hills (+1 more with Engineering)' : 'half movement on the hex · links resources to your cities'}
+                                    {r.tech ? ` · needs ${r.tech}` : ''}
+                                </div>
+                                {r.why !== true && <div className="text-[10px] text-red-300/80 mt-0.5">{r.why}</div>}
+                            </button>
+                        ))}
+                        <div className="text-[10px] text-lime-200/60 mt-2">stand the worker on the tile, then pick the job · barbarians pillage what they cross</div>
+                    </div>
+                </div>
+            )}
+
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-5xl font-black tracking-wide" style={{ color: '#e8c56a', textShadow: '0 2px 0 #6b4a12, 0 10px 26px #000' }}>CIVILIZATION</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">STAGE 3 · THE TECH TREE</p>
+                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">STAGE 4 · THE LAND</p>
                     <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
                     <p className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-4">
-                        settle your capital, then light the lab — science buys techs that unlock units and harden cities<br />
-                        tap a tile to move · tap a hostile hex to strike it · E settles · Space ends the turn · T opens RESEARCH<br />
-                        Archery unlocks archers, Engineering catapults, Bronze arms warriors, Horseback rides them faster<br />
+                        settle your capital, put workers on the soil — farms feed, mines forge, roads halve the march<br />
+                        luxuries pay gold once connected; iron and horses arm the Legion and the Chariot Archer<br />
+                        tap a tile to move · E settles · W opens the WORK panel · T opens RESEARCH · Space ends the turn<br />
+                        barbarians pillage every road and field they cross — hold the land you name<br />
                         grow your capital to size {GOAL}, or take every rival capital for DOMINATION · turn limit {CFG.turnLimit}<br />
                         drag to orbit the world · wheel or pinch to zoom · the demo is the autopilot&apos;s own proven campaign
                     </p>
@@ -492,7 +601,7 @@ const CivilizationVGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'CIVILIZATION V')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused && !panelOpen} secondAction={{ label: 'E', code: 'KeyE' }} />
+            <VirtualControls visible={play && !paused && !panelOpen && !wOpen} secondAction={{ label: 'E', code: 'KeyE' }} />
         </div>
     )
 }

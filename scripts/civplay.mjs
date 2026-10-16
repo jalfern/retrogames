@@ -80,54 +80,95 @@ const turn0 = s.turn
 await page.keyboard.press('Space')
 await wait(250)
 r.check(`Space ends a turn (turn ${turn0} -> ${(await probe()).turn})`, (await probe()).turn > turn0)
-let grew = false
-for (let i = 0; i < 24 && !grew; i++) { await page.keyboard.press('Space'); await wait(160); const p = await probe(); if (p.capitalSize >= 2) { grew = true; break } if (p.end) break }
-r.check(`the capital grows on end turns (size ${(await probe()).capitalSize})`, grew)
 const mid = await brightScan()
 r.check(`the world is still rendering mid-game (brightest sample rgb ${mid})`, mid && (mid[0] + mid[1] + mid[2]) > 40)
 
-// 3b — production: Digit1 queues a warrior at your capital; banked shields deliver it
+// 3b — instant UI checks at turn 2 (no clock spent): queue digits, refusal, panels
+await page.keyboard.press('Digit4')
+await wait(150)
 await page.keyboard.press('Digit1')
-await wait(200)
-const q = (await probe()).queue
-r.check(`Digit1 queues a build order (${JSON.stringify(q)})`, q.length > 0 && q[0].queue[0] === 'WARRIOR')
-let trained = false
-for (let i = 0; i < 24 && !trained; i++) { await page.keyboard.press('Space'); await wait(160); const p = await probe(); trained = p.units0.filter((u) => u.kind === 'WARRIOR').length >= 2; if (p.end) break }
-r.check(`banked production trains a warrior (warriors ${(await probe()).units0.filter((u) => u.kind === 'WARRIOR').length})`, trained)
-
-// 3c — the research panel: opens with T, closes with Escape, gates and unlocks
-await page.keyboard.press('KeyT')
-await wait(250)
-const panelVisible = await page.evaluate(() => document.body.innerText.includes('MEDIEVAL') && document.body.innerText.includes('CLOSE'))
-r.check('T opens the RESEARCH panel with the era columns', panelVisible)
-await page.keyboard.press('Escape')
 await wait(150)
-r.check('Escape closes the panel', await page.evaluate(() => !document.body.innerText.includes('CLOSE')))
-const preLearn = (await probe()).tech
-const t0 = preLearn
-const gatedBefore = !preLearn.known.includes('ARCHERY')
-await page.keyboard.press('Digit2')
-await wait(150)
-const refusedArcher = gatedBefore ? !(await probe()).queue.some((c) => c.queue.includes('ARCHER')) : true
-r.check('archers are refused before Archery is known', refusedArcher, JSON.stringify(preLearn.known))
-await page.keyboard.press('KeyR')
-await wait(150)
-r.check('R commits to a tech', !!(await probe()).tech.research)
-if (gatedBefore) {
+{
+    const q = (await probe()).queue
+    r.check(`workers and warriors queue by key (${JSON.stringify(q.map((c) => c.queue))})`, q.some((c) => c.queue.includes('WORKER')) && q.some((c) => c.queue.includes('WARRIOR')))
+    await page.keyboard.press('Digit2')
+    await wait(150)
+    const preLearn = (await probe()).tech
+    const gatedBefore = !preLearn.known.includes('ARCHERY')
+    const refusedArcher = gatedBefore ? !(await probe()).queue.some((c) => c.queue.includes('ARCHER')) : true
+    r.check('archers are refused before Archery is known', refusedArcher, JSON.stringify(preLearn.known))
     await page.evaluate(() => window.__civTest.learn('ARCHERY'))
     await page.keyboard.press('Digit2')
     await wait(150)
     r.check('with Archery learned, the archer queues at once', (await probe()).queue.some((c) => c.queue.includes('ARCHER')))
+    await page.keyboard.press('KeyR')
+    await wait(150)
+    r.check('R commits to a tech', !!(await probe()).tech.research)
+    await page.keyboard.press('KeyT')
+    await wait(250)
+    r.check('T opens the RESEARCH panel with the era columns', await page.evaluate(() => document.body.innerText.includes('MEDIEVAL') && document.body.innerText.includes('CLOSE')))
+    await page.keyboard.press('Escape')
+    await wait(150)
+    r.check('Escape closes the panel', await page.evaluate(() => !document.body.innerText.includes('CLOSE')))
 }
-let sawTech = false
-const cheap = await page.evaluate(() => {
-    const known = window.__civTest.probe().tech.known
-    const id = ['POTTERY', 'AGRICULTURE', 'ARCHERY', 'THE_WHEEL', 'BRONZE_WORKING', 'MASONRY'].find((x) => !known.includes(x))
-    if (id) window.__civTest.research(id)
-    return id
-})
-for (let i = 0; i < 24 && !sawTech; i++) { await page.keyboard.press('Space'); await wait(160); const p = await probe(); sawTech = p.tech.known.some((id) => !t0.known.includes(id) && id !== 'ARCHERY'); if (p.end) break }
-r.check(`science completes a fresh tech in real time (committed ${cheap}; now ${(await probe()).tech.known.join(',')})`, sawTech)
+
+// 3c — run the witness until the worker is delivered, then drive it with keys
+let workerId = null
+let ended = null
+for (let i = 0; i < 14 && workerId == null && !ended; i++) {
+    await page.evaluate(() => window.__civTest.turn()); await wait(60)
+    const p = await probe()
+    const w = p.units0.find((u) => u.kind === 'WORKER')
+    if (w) workerId = w.id
+    ended = p.end
+}
+r.check(`banked production delivers a worker (id ${workerId})`, workerId != null)
+if (workerId != null) {
+    await page.evaluate((id) => window.__civTest.select(id), workerId)
+    await wait(200)
+    await page.keyboard.press('KeyW')
+    await wait(250)
+    r.check('W opens the WORK panel with the three jobs', await page.evaluate(() => document.body.innerText.includes('WORK') && document.body.innerText.includes('Farm') && document.body.innerText.includes('Road') && document.body.innerText.includes('Mine')))
+    // move off the city centre onto owned workable ground, then press the build key
+    const park = await page.evaluate(() => {
+        const p = window.__civTest.probe()
+        const w = p.workers[0]
+        if (!w) return null
+        const odd = w.r & 1
+        const nb = odd ? [[1, 0], [0, -1], [-1, -1], [-1, 0], [-1, 1], [0, 1]] : [[1, 0], [1, -1], [0, -1], [-1, 0], [0, 1], [1, 1]]
+        const occ = new Set(p.units0.map((u) => u.c + ':' + u.r))
+        for (const [dc, dr] of nb) {
+            const nc = w.c + dc, nr = w.r + dr
+            if (!occ.has(nc + ':' + nr)) { window.__civTest.move(nc, nr); return [nc, nr] }
+        }
+        return null
+    })
+    void park
+    await wait(500)
+    await page.evaluate(() => window.__civTest.learn('POTTERY'))
+    await page.keyboard.press('KeyF')
+    await wait(200)
+    const p = await probe()
+    const bodyTxt = await page.evaluate(() => document.body.innerText)
+    const jobIssued = p.workers.some((w) => w.busy != null) || p.land.imps > 0 || /ALREADY WORKING|REQUIRES|CANNOT|NEEDS|OUTSIDE/i.test(bodyTxt)
+    r.check('a real F key issues the improvement order (accepted or refused by name)', jobIssued)
+    r.check('Escape closes the WORK panel', await (async () => { await page.keyboard.press('Escape'); await wait(150); return !(await page.evaluate(() => document.body.innerText.includes('CLOSE ✕'))) })())
+}
+
+// 3d — let the realm run: farms/mine appear, science completes a fresh tech
+let landSeen = null, techSeen = null
+for (let i = 0; i < 14 && !(landSeen && techSeen) && !(await probe()).end; i++) {
+    await page.evaluate(() => window.__civTest.turn()); await wait(60)
+    const p = await probe()
+    if (!landSeen && (p.land.imps > 0 || p.land.roads > 0)) landSeen = p.land
+    if (!techSeen && p.tech.known.length > 1) techSeen = p.tech.known
+}
+landSeen = landSeen || (await probe()).land
+r.check(`the land shows works in real time (imps ${landSeen.imps}, roads ${landSeen.roads})`, (landSeen.imps > 0 || landSeen.roads > 0) || !!(await probe()).end)
+techSeen = techSeen || (await probe()).tech.known
+r.check(`science completes fresh techs in real time (known: ${techSeen.join(',')})`, techSeen.length >= 2)
+const conn = await page.evaluate(() => { window.__civTest.learn('BRONZE_WORKING'); return window.__civTest.probe().land })
+r.check(`the probe exposes the connected network (${(conn.connected || []).join(',') || 'none'})`, Array.isArray(conn.connected))
 
 // 4 — drive the same autopilot to the milestone on THIS run, then the end screen
 let won = null

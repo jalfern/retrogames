@@ -458,7 +458,7 @@ export function newGame(seed = 1, scenario = 0) {
         fog: [], explored: [], visible: [],
         civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, alive: true })),
         tech: CIVS.map(() => ({ known: {}, research: null, prog: 0 })),
-        luxKnown: CIVS.map(() => ({})),
+        resKnown: CIVS.map(() => ({})),
         capitalOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
     }
@@ -901,12 +901,14 @@ function resolveCiv(gs, civ) {
         }
     }
     // luxury caravans: each unique connected luxury pays once, empire-wide
-    const KN = gs.luxKnown[civ]
+    const KN = gs.resKnown ? gs.resKnown[civ] : null
     let lux = 0
     for (const id of cr) {
-        if (!RES[id].lux) continue
-        lux++
-        if (!KN[id]) { KN[id] = 1; gs.events.push({ type: 'luxury', civ, id }) }
+        if (KN && !KN[id]) {
+            KN[id] = 1
+            gs.events.push({ type: RES[id].lux ? 'luxury' : 'strategic', civ, id })
+        }
+        if (RES[id].lux) lux++
     }
     gold += CFG.luxGold * lux; cult += CFG.luxCult * lux
     C.gold += gold; C.science += sci; C.culture += cult
