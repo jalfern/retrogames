@@ -488,9 +488,9 @@ const QBertGame = () => {
                         'arrow pairs hop the diagonals: UP+LEFT, UP+RIGHT, DOWN+LEFT, DOWN+RIGHT · touch pad on phones',
                         'land on every cube to turn the pyramid green; hop off an edge and you fall',
                         'Coily drops in after 9 flips — the discs carry you to the top, and he follows, off the edge (+500)',
-                            'red balls ricochet the sides; Ugg and Wrongway run the rows; Sam & Slick wipe your green away',
-                            'rounds after the first cycle five colours — clear it when every cube matches',
-                            'two players, one keyboard: you alternate turns — run out of lives and your rival takes the pyramid',
+                        'red balls ricochet the sides; Ugg and Wrongway run the rows; Sam & Slick wipe your green away',
+                        'rounds after the first cycle five colours — clear it when every cube matches',
+                        'two players, one keyboard: you alternate turns — run out of lives and your rival takes the pyramid',
                     ]} />
                 </div>
             )}
