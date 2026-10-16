@@ -1,4 +1,4 @@
-// CIVILIZATION V — Stage 4 "Land". Pure deterministic sim.
+// CIVILIZATION V — Stage 5 "Culture & Happiness". Pure deterministic sim.
 // No three, no DOM, no Math.random: this module is the single source of truth
 // the Node harness (scripts/civcheck.mjs) and the in-browser autopilot import
 // unchanged. Turn-based: the player orders units, presses END TURN, then each
@@ -38,6 +38,10 @@
 //     Legion (Bronze+Iron). A resource counts when it is inside your borders
 //     and road-connected to (or adjacent to) one of your cities; roads also
 //     halve movement cost on your network.
+//   - Stage 5 adds the realm's two ledgers: cities bank culture and borders
+//     creep outward ring by ring (40/120), and happiness (palace +2, luxury +1,
+//     city −1, war −2) swings growth, gold and city defence; culture points buy
+//     social policies from three real branches, adopted in branch order.
 
 export const CFG = {
     W: 40, H: 25,
@@ -59,6 +63,9 @@ export const CFG = {
     warChance: 0.34,            // deterministic pseudo-odds per AI civ per turn
     luxGold: 1, luxCult: 1,     // per unique connected luxury type, empire-wide
     ironProd: 1, horseFood: 1,  // per city sitting on connected iron / horses
+    border2: 40, border3: 120,  // city culture needed to claim ring 2 / ring 3
+    palaceHappy: 2, cityUnhappy: 1, warWeariness: 2,   // the happiness ledger
+    happyGrowth: 0.25, happyGold: 0.1, angryDef: 0.75, // happy bonuses / angry penalty
 }
 
 export const UNIT = {
@@ -129,6 +136,23 @@ export const RES = {
     IRON: { name: 'Iron', lux: false, strategic: true, tech: 'BRONZE_WORKING', terr: [T.HILLS], color: 0x8f9aa8 },
 }
 export const RES_IDS = Object.keys(RES)
+
+// ---- social policies (Stage 5) ---------------------------------------------------
+// Three real Civ V policy branches, each trimmed to two of its real policies,
+// adopted in branch order and paid for with culture points from the empire
+// pool (as in the original, culture buys policies). Effects are the real
+// policies' numbers, simplified: no tech gate, no policy unlock chains beyond
+// branch order (full Civ V trees are the later-stage refinement).
+export const POLICY = {
+    FOUNDATIONS: { branch: 'TRADITION', i: 0, name: 'Foundations of the State', cost: 15, effect: '+3 culture in every city' },
+    CEREMONY: { branch: 'TRADITION', i: 1, name: 'Ceremony', cost: 40, effect: '+1 happiness per connected luxury' },
+    COLONIAL: { branch: 'LIBERTY', i: 0, name: 'Colonial Offices', cost: 15, effect: 'settlers cost 25 less' },
+    COLLEGE: { branch: 'LIBERTY', i: 1, name: 'National College', cost: 40, effect: '+1 science in every city' },
+    TRADING_POSTS: { branch: 'COMMERCE', i: 0, name: 'Trading Posts', cost: 15, effect: '+1 gold in every city' },
+    TREATIES: { branch: 'COMMERCE', i: 1, name: 'Treaties', cost: 40, effect: 'war weariness halved' },
+}
+export const POLICY_IDS = ['FOUNDATIONS', 'CEREMONY', 'COLONIAL', 'COLLEGE', 'TRADING_POSTS', 'TREATIES']
+export const BRANCHES = ['TRADITION', 'LIBERTY', 'COMMERCE']
 
 // ---- terrain yields (Stage 1 approximation of the Civ V table) --------------
 const BASE_YIELD = {
@@ -289,6 +313,45 @@ export function queueDeny(gs, civ, kind) {
     if (st.tech && !hasTech(gs, civ, st.tech)) return 'requires ' + TECH[st.tech].name
     if (st.res && !connectedResources(gs, civ).includes(st.res)) return 'requires ' + RES[st.res].name
     return null
+}
+
+// ---- happiness + policies (Stage 5) -----------------------------------------------
+export function hasPolicy(gs, civ, id) { return !!(gs.policies[civ] && gs.policies[civ][id]) }
+export function happinessOf(gs, civ) {
+    if (civ == null || civ >= BARB) return { net: 0, happy: false, unhappy: false, lux: 0, cities: 0, wars: 0, weary: 0 }
+    let lux = 0
+    for (const id of connectedResources(gs, civ)) if (RES[id].lux) lux++
+    const cities = gs.cities.filter((c) => c.alive && c.civ === civ).length
+    const palace = gs.cities.some((c) => c.alive && c.civ === civ && c.capital) ? CFG.palaceHappy : 0
+    let wars = 0
+    for (const x of [0, 1, 2, 3]) if (x !== civ && gs.civs[x].alive && atWar(gs, civ, x)) wars++
+    const weary = hasPolicy(gs, civ, 'TREATIES') ? Math.ceil(wars * CFG.warWeariness / 2) : wars * CFG.warWeariness
+    const net = palace + lux + (hasPolicy(gs, civ, 'CEREMONY') ? lux : 0) - CFG.cityUnhappy * cities - weary
+    return { net, happy: net >= 1, unhappy: net < 0, lux, cities, wars, weary }
+}
+export function unitCost(gs, civ, kind) {
+    const c = UNIT[kind] ? UNIT[kind].cost : 0
+    return kind === 'SETTLER' && hasPolicy(gs, civ, 'COLONIAL') ? Math.max(10, c - 25) : c
+}
+export function canAdopt(gs, civ, id) {
+    const p = POLICY[id]
+    if (!p) return 'unknown policy'
+    const P = gs.policies[civ]
+    if (P[id]) return 'already adopted'
+    if (p.i > 0) {
+        const prev = POLICY_IDS.find((x) => POLICY[x].branch === p.branch && POLICY[x].i === p.i - 1)
+        if (!P[prev]) return 'requires ' + POLICY[prev].name
+    }
+    if (gs.civs[civ].culture < p.cost) return 'not enough culture'
+    return true
+}
+export function adoptPolicy(gs, civ, id) {
+    const why = canAdopt(gs, civ, id)
+    if (why !== true) { if (civ === 0) gs.events.push({ type: 'deny', reason: why, c: -1, r: -1 }); return false }
+    gs.civs[civ].culture -= POLICY[id].cost
+    gs.policies[civ][id] = true
+    gs.events.push({ type: 'policy', civ, id })
+    return true
 }
 
 // ---- odd-r hex geometry -------------------------------------------------------
@@ -456,8 +519,9 @@ export function newGame(seed = 1, scenario = 0) {
         seed: seed + scenario * 977, scenario, tick: 0, turn: 1, phase: 'player',
         tiles: [], units: [], cities: [], camps: [], wars: {},
         fog: [], explored: [], visible: [],
-        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, alive: true })),
+        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, happyNet: 0, alive: true })),
         tech: CIVS.map(() => ({ known: {}, research: null, prog: 0 })),
+        policies: CIVS.map(() => ({})),
         resKnown: CIVS.map(() => ({})),
         capitalOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
@@ -585,10 +649,15 @@ export function cityYield(gs, city) {
     out.f += 2; out.p += 2; out.g += 1          // inherent city-centre yields
     if (gs.tiles[cy].river) out.cult += 1       // river city bonus
     out.sci += 1                                // palace-equivalent baseline
+    out.cult += 1                             // the capital's court sings too
     if (hasTech(gs, city.civ, 'THE_WHEEL')) out.p += 1      // wheeled transport
     if (hasTech(gs, city.civ, 'CURRENCY')) out.g += 2        // markets
     if (hasTech(gs, city.civ, 'WRITING')) out.sci += 1      // scribes
     if (hasTech(gs, city.civ, 'PHILOSOPHY')) out.cult += 1  // academies
+    // Stage 5 policy modifiers
+    if (hasPolicy(gs, city.civ, 'FOUNDATIONS')) out.cult += 3
+    if (hasPolicy(gs, city.civ, 'COLLEGE')) out.sci += 1
+    if (hasPolicy(gs, city.civ, 'TRADING_POSTS')) out.g += 1
     // Stage 4: strategic resources in the connected network feed the city
     const net = resourceNetwork(gs, city.civ)
     const seat = [cy, ...neighbors(city.c, city.r).map(([c, r]) => idx(c, r))]
@@ -608,7 +677,7 @@ export function canFound(gs, civ, c, r, self) {
 }
 function foundCity(gs, civ, c, r) {
     const tl = gs.tiles[idx(c, r)]
-    const city = { id: gs.cities.length, civ, c, r, size: 1, storedFood: 0, alive: true, name: cityName(civ, gs.civs[civ].cities || 0), capital: (gs.civs[civ].cities || 0) === 0, culture: 0, hp: CFG.cityHp, wallMax: CFG.cityHp, buildP: 0, queue: [] }
+    const city = { id: gs.cities.length, civ, c, r, size: 1, storedFood: 0, alive: true, name: cityName(civ, gs.civs[civ].cities || 0), capital: (gs.civs[civ].cities || 0) === 0, culture: 0, border: 1, hp: CFG.cityHp, wallMax: CFG.cityHp, buildP: 0, queue: [] }
     gs.cities.push(city)
     tl.city = city.id
     gs.civs[civ].cities = (gs.civs[civ].cities || 0) + 1
@@ -620,14 +689,23 @@ function foundCity(gs, civ, c, r) {
     return city
 }
 function spreadBorders(gs, civ) {
+    // Stage 5: borders creep outward with the city's own culture — first ring
+    // at founding, ring 2 at CFG.border2, ring 3 at CFG.border3. Unowned
+    // ground is claimed first-come; a rival's tile is never taken by culture.
     for (const city of gs.cities) {
         if (city.civ !== civ || !city.alive) continue
-        const rad = CFG.cityRingWork + Math.min(2, Math.floor(city.culture || 0) / 40)
+        const cult = city.culture || 0
+        const rad = cult >= CFG.border3 ? 3 : cult >= CFG.border2 ? 2 : CFG.cityRingWork
+        let claimed = 0
         for (let rr = city.r - rad; rr <= city.r + rad; rr++) for (let cc = city.c - rad; cc <= city.c + rad; cc++) {
             if (!inMap(cc, rr)) continue
             if (hexDist([cc, rr], [city.c, city.r]) > rad) continue
             const tl = gs.tiles[idx(cc, rr)]
-            if (tl.owner < 0) tl.owner = civ
+            if (tl.owner < 0) { tl.owner = civ; claimed++ }
+        }
+        if (rad > (city.border || 1)) {
+            city.border = rad
+            if (claimed > 0) gs.events.push({ type: 'borderGrow', civ, city: city.id, rad, c: city.c, r: city.r })
         }
     }
 }
@@ -696,7 +774,11 @@ export function defenseBonus(gs, u) {
     if (tl.city >= 0) b += 0.5
     return b
 }
-export function cityDefense(gs, city) { return CFG.cityBaseDef + 3 * city.size }
+export function cityDefense(gs, city) {
+    let d = CFG.cityBaseDef + 3 * city.size
+    if (city.civ != null && city.civ < BARB && happinessOf(gs, city.civ).unhappy) d = Math.floor(d * CFG.angryDef)   // angry cities dig in worse
+    return d
+}
 
 export function doAttack(gs, u, tc, tr) {
     if (!u || !u.alive || u.str <= 0 || u.moves <= 0) return false
@@ -862,21 +944,24 @@ function resolveCiv(gs, civ) {
     const C = gs.civs[civ]
     const net = resourceNetwork(gs, civ)
     const cr = connectedResources(gs, civ, net)
+    const hs = happinessOf(gs, civ)          // Stage 5: the realm's mood for this turn
     let fSur = 0, gold = 0, sci = 0, cult = 0, prod = 0
     for (const city of gs.cities) {
         if (city.civ !== civ || !city.alive) continue
-        const y = cityYield(gs, city)   // includes connected strategic bonuses
+        const y = cityYield(gs, city)   // includes connected strategic bonuses + policy modifiers
         fSur += y.f - city.size * 2            // each citizen eats 2
         gold += y.g; sci += y.sci; cult += y.cult; prod += y.p
-        city.storedFood += y.f - city.size * 2
+        city.culture = (city.culture || 0) + y.cult   // culture banks per city, borders eat it later
+        const fsur = y.f - city.size * 2
+        city.storedFood += fsur + (hs.happy && fsur > 0 ? Math.ceil(fsur * CFG.happyGrowth) : 0)   // happy people have big families
         const need = CFG.growBase + CFG.growStep * (city.size - 1) - (hasTech(gs, civ, 'POTTERY') ? 2 : 0)
-        while (city.storedFood >= need && city.size < 9) { city.storedFood -= need; city.size++; city.culture = city.culture || 0; gs.events.push({ type: 'grow', civ, city: city.id, size: city.size }) }
+        if (!hs.unhappy) while (city.storedFood >= need && city.size < 9) { city.storedFood -= need; city.size++; gs.events.push({ type: 'grow', civ, city: city.id, size: city.size }) }
         if (city.storedFood < 0) city.storedFood = 0
         // production queue: bank shields, deliver units when the cost is met
         city.buildP = (city.buildP || 0) + y.p
         city.queue = city.queue || []
         while (city.queue.length) {
-            const kind = city.queue[0], cost = UNIT[kind].cost
+            const kind = city.queue[0], cost = unitCost(gs, civ, kind)
             if (city.buildP < cost) break
             const at = landFree(gs, city.c, city.r) ? [city.c, city.r] : firstFreeAround(gs, city.c, city.r)
             if (unitAt(gs, at[0], at[1]) || !landFree(gs, at[0], at[1])) break   // no room: points keep banking
@@ -911,8 +996,11 @@ function resolveCiv(gs, civ) {
         if (RES[id].lux) lux++
     }
     gold += CFG.luxGold * lux; cult += CFG.luxCult * lux
+    if (hs.happy) gold = Math.round(gold * (1 + CFG.happyGold))   // happy markets tip the till
     C.gold += gold; C.science += sci; C.culture += cult
-    C.culture = (C.culture || 0) + cult
+    const mood = hs.net >= 1 ? 'happy' : hs.net < 0 ? 'unhappy' : 'content'
+    if (mood !== C.happyState) { C.happyState = mood; C.happyNet = hs.net; gs.events.push({ type: 'happy', civ, net: hs.net, state: mood }) }
+    C.happyNet = hs.net
     // research: spend this turn's science on the current tech (overflow carries)
     const R = gs.tech[civ]
     if (!R.research) { const av = availableTechs(gs, civ); if (av.length) R.research = av[0] }
@@ -1033,6 +1121,11 @@ function aiTurn(gs, civ) {
             if (tgt) { const s = stepToward(gs, u, tgt); if (s) { u.c = s[0]; u.r = s[1]; u.moves--; u.acted = true } }
         }
     }
+    // Stage 5: rivals adopt their own deterministic policy line when culture pays
+    const AI_POLICY = { 1: ['TRADING_POSTS', 'TREATIES'], 2: ['COLONIAL', 'COLLEGE'], 3: ['FOUNDATIONS', 'CEREMONY'] }
+    for (const id of AI_POLICY[civ] || ['FOUNDATIONS', 'CEREMONY']) {
+        if (canAdopt(gs, civ, id) === true) { adoptPolicy(gs, civ, id); break }
+    }
     // city production choices (points are banked/delivered in resolveCiv)
     // research: a stable per-civ priority path, rotated so rivals diverge
     const R = gs.tech[civ]
@@ -1119,6 +1212,7 @@ export function step(gs, input = {}) {
     const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0) || null
     if (input.endTurn) { endPlayerTurn(gs); return }
     if (input.research) setResearch(gs, 0, input.research)
+    if (input.policy) adoptPolicy(gs, 0, input.policy)
     if (input.queue && UNIT[input.queue]) {
         const deny = queueDeny(gs, 0, input.queue)
         if (deny) gs.events.push({ type: 'deny', reason: deny, c: -1, r: -1 })
@@ -1140,7 +1234,7 @@ export function stateHash(gs) {
     const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4, WORKER: 5, CHARIOT: 6, LEGION: 7 }
     let h = gs.turn * 31 + gs.units.length
     for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 9) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19) | 0
-    for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71) | 0
+    for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71 + (ct.culture || 0) * 13) | 0
     for (const cp of gs.camps) h = (h * 33 + cp.c + cp.r * 13 + (cp.alive ? 1 : 0) * 173) | 0
     let L = 0
     for (const tl of gs.tiles) L = (L * 7 + (tl.imp ? IMP_IDS.indexOf(tl.imp) + 1 : 0) + (tl.road ? 4 : 0) + (tl.res + 1) * 11 + (tl.build ? tl.build.left * 3 + tl.build.civ : 0)) | 0
@@ -1152,7 +1246,9 @@ export function stateHash(gs) {
         for (let i = 0; i < TECH_IDS.length; i++) if (R.known[TECH_IDS[i]]) m |= 1 << i
         let rm = 0
         for (const id of connectedResources(gs, civ)) rm |= 1 << RES_IDS.indexOf(id)
-        h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3 + rm * 29) | 0
+        let pm = 0
+        for (let i = 0; i < POLICY_IDS.length; i++) if (gs.policies[civ][POLICY_IDS[i]]) pm |= 1 << i
+        h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3 + rm * 29 + pm * 17 + (gs.civs[civ].culture | 0)) | 0
     }
     return (h >>> 0).toString(16)
 }

@@ -1,4 +1,4 @@
-// CIVILIZATION V — Stage 4 "Land": the arcade shell.
+// CIVILIZATION V — Stage 5 "Culture & Happiness": the arcade shell.
 // The whole world is the pure sim in ./sim.js; the tilted 3D hex map is
 // ./art.js; the attract demo (and the harness witness) is the autopilot in
 // ./planner.js replayed tick-for-tick through the real step(). One
@@ -15,7 +15,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt } from './sim.js'
 import { decide } from './planner.js'
 import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
 
@@ -34,6 +34,9 @@ const CivilizationVGame = () => {
     const [wpanel, setWpanel] = useState(null)
     const [wOpen, setWOpen] = useState(false)
     const wOpenRef = useRef(false)
+    const [ppanel, setPpanel] = useState(null)
+    const [pOpen, setPOpen] = useState(false)
+    const pOpenRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -128,6 +131,14 @@ const CivilizationVGame = () => {
                 }
                 else if (e.type === 'luxury' && e.civ === 0) { say(`${RES[e.id].name.toUpperCase()} CONNECTED · +${CFG.luxGold} GOLD +${CFG.luxCult} CULTURE`); audioController.playSweep(523, 784, 0.35, 'sine', 0.08) }
                 else if (e.type === 'strategic' && e.civ === 0) { say(`${RES[e.id].name.toUpperCase()} SEAM CONNECTED`); audioController.playSweep(392, 523, 0.3, 'square', 0.06) }
+                else if (e.type === 'policy') {
+                    if (e.civ === 0) { say(`${POLICY[e.id].name.toUpperCase()} ADOPTED — ${POLICY[e.id].effect.toUpperCase()}`); audioController.playSweep(392, 587, 0.3, 'triangle', 0.08); audioController.playTone(784, 0.16, 'sine', 0.05) }
+                }
+                else if (e.type === 'borderGrow' && e.civ === 0) { say('CULTURE CLAIMS NEW GROUND'); audioController.playTone(660, 0.05, 'sine', 0.04); audioController.playTone(880, 0.08, 'sine', 0.03) }
+                else if (e.type === 'happy' && e.civ === 0) {
+                    if (e.state === 'unhappy') { say(`${-e.net} UNHAPPY — THE MOBS GRUMBLE`); audioController.playSweep(220, 110, 0.4, 'sawtooth', 0.06) }
+                    else if (e.state === 'happy') { say('THE PEOPLE REJOICE · +25% GROWTH +10% GOLD'); audioController.playSweep(523, 1046, 0.4, 'triangle', 0.07) }
+                }
             }
         }
 
@@ -200,6 +211,7 @@ const CivilizationVGame = () => {
             lastHud = now
             if (panelOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshPanel() }
             if (wOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshWPanel() }
+            if (pOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshPPanel() }
             const C = gs.civs[0]
             const cap = gs.cities.find((c) => c.civ === 0 && c.capital)
             const h = hud.current
@@ -226,6 +238,12 @@ const CivilizationVGame = () => {
                 const strat = connectedResources(gs, 0).filter((id) => !RES[id].lux).map((id) => RES[id].name.toUpperCase())
                 h.lux.textContent = (lux.length ? `LUX ${lux.join(' ')}` : '') + (strat.length ? ` · ${strat.join(' ')} CONNECTED` : '')
                 h.lux.style.display = lux.length || strat.length ? '' : 'none'
+            }
+            if (h.happy) {
+                const hs = happinessOf(gs, 0)
+                const adopted = POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)).length
+                h.happy.textContent = `${hs.net >= 1 ? '☺ HAPPY +' : hs.net < 0 ? '☹ UNHAPPY ' : '😐 CONTENT '}${hs.net}${adopted ? ` · ${adopted} polic${adopted === 1 ? 'y' : 'ies'}` : ''}`
+                h.happy.style.color = hs.net >= 1 ? '#ffe9a8' : hs.net < 0 ? '#ff9a8a' : '#cfe0c8'
             }
             if (h.research) {
                 const R = gs.tech[0]
@@ -349,7 +367,35 @@ const CivilizationVGame = () => {
             closeWPanel()
             audioController.playSweep(300, 480, 0.16, 'triangle', 0.05)
         }
-        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove }
+        const refreshPPanel = () => {
+            setPpanel({
+                pool: Math.floor(gs.civs[0].culture || 0),
+                mood: happinessOf(gs, 0),
+                branches: BRANCHES.map((b) => ({
+                    b,
+                    rows: POLICY_IDS.filter((id) => POLICY[id].branch === b).map((id) => ({
+                        id, name: POLICY[id].name, cost: POLICY[id].cost, effect: POLICY[id].effect,
+                        adopted: hasPolicy(gs, 0, id), why: canAdopt(gs, 0, id),
+                    })),
+                })),
+                ai: CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => ({ name: c.name, n: POLICY_IDS.filter((id) => hasPolicy(gs, c.id, id)).length })),
+            })
+        }
+        const closePPanel = () => { pOpenRef.current = false; setPOpen(false); audioController.playTone(240, 0.04, 'sine', 0.04) }
+        const togglePPanel = () => {
+            pOpenRef.current = !pOpenRef.current
+            setPOpen(pOpenRef.current)
+            if (pOpenRef.current) refreshPPanel()
+            audioController.playTone(pOpenRef.current ? 620 : 240, 0.04, 'sine', 0.04)
+        }
+        const pickPolicy = (id) => {
+            const why = canAdopt(gs, 0, id)
+            if (why !== true) { say(why.toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            pending = { ...pending, policy: id }
+            closePPanel()
+            audioController.playSweep(440, 880, 0.22, 'sine', 0.05)
+        }
+        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy }
 
         let drag = null
         const onDown = (e) => {
@@ -372,10 +418,11 @@ const CivilizationVGame = () => {
             if (e.code === 'KeyT') { if (screenRef.current === 'play') togglePanel(); return }
             if (e.code === 'KeyR') { if (screenRef.current === 'play') researchNext(); return }
             if (e.code === 'KeyW') { if (screenRef.current === 'play') toggleWPanel(); return }
+            if (e.code === 'KeyP') { if (screenRef.current === 'play') togglePPanel(); return }
             if (e.code === 'KeyF') { if (screenRef.current === 'play') pickImprove('FARM'); return }
             if (e.code === 'KeyM') { if (screenRef.current === 'play') pickImprove('MINE'); return }
             if (e.code === 'KeyO') { if (screenRef.current === 'play') pickImprove('ROAD'); return }
-            if (e.code === 'Escape') { if (panelOpenRef.current) closePanel(); if (wOpenRef.current) closeWPanel(); return }
+            if (e.code === 'Escape') { if (panelOpenRef.current) closePanel(); if (wOpenRef.current) closeWPanel(); if (pOpenRef.current) closePPanel(); return }
             if (e.code === 'ArrowLeft') { cam.az -= 0.12; return }
             if (e.code === 'ArrowRight') { cam.az += 0.12; return }
             if (e.code === 'ArrowUp') { cam.el = Math.min(1.4, cam.el + 0.06); return }
@@ -427,12 +474,15 @@ const CivilizationVGame = () => {
                         ai: CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => ({ civ: c.id, name: c.name, n: Object.keys(gs.tech[c.id].known).length, researching: gs.tech[c.id].research })) },
                     workers: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').map((u) => ({ id: u.id, c: u.c, r: u.r, busy: u.busy })),
                     land: { imps: gs.tiles.filter((t) => t.imp).length, roads: gs.tiles.filter((t) => t.road).length, connected: connectedResources(gs, 0), revealed: gs.tiles.filter((t, i) => resRevealed(gs, 0, i)).length },
+                    happy: happinessOf(gs, 0), policies: POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)), culturePool: Math.floor(gs.civs[0].culture || 0),
+                    owned: gs.tiles.filter((t) => t.owner === 0).length,
                     explored0: countArr(gs.explored[0]) }),
                 start: startPlay, hash: () => stateHash(gs), select: (id) => { pending = { select: id } },
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
                 attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k) => { pending = { ...pending, queue: k } },
                 research: (id) => { pending = { ...pending, research: id } }, learn: (id) => { grantTech(gs, 0, id) },
                 improve: (kind) => { pending = { ...pending, improve: kind } },
+                policy: (id) => { pending = { ...pending, policy: id } },
                 auto: (turns = 100) => { let n = 0; while (!gs.end && n < turns * 400 && screenRef.current === 'play') { doSim(decide(gs)); n++ } return { end: gs.end, turns: gs.turn, size: capSize() } },
                 turn: () => { const t0 = gs.turn; let n = 0; while (gs.turn === t0 && !gs.end && screenRef.current === 'play' && n++ < 800) doSim(decide(gs)); return { turn: gs.turn, end: gs.end, size: capSize() } },
             }
@@ -445,6 +495,7 @@ const CivilizationVGame = () => {
                     `camps alive ${gs.camps.filter((c) => c.alive).length}/${gs.camps.length}  wars ${Object.keys(gs.wars).length}  barbs alive ${gs.units.filter((u) => u.alive && u.civ === BARB).length}  queue ${JSON.stringify((gs.cities.find((c) => c.civ === 0 && c.alive) || { queue: [] }).queue)}`,
                     `research ${gs.tech[0].research ? TECH[gs.tech[0].research].name + ' ' + Math.floor(gs.tech[0].prog) + '/' + TECH[gs.tech[0].research].cost : 'idle'}  known ${TECH_IDS.filter((id) => hasTech(gs, 0, id)).length}/12  ai ${CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => c.name + ':' + Object.keys(gs.tech[c.id].known).length).join(' ')}`,
                     `land: workers ${gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').length}  improvements ${gs.tiles.filter((t) => t.imp).length}  roads ${gs.tiles.filter((t) => t.road).length}  connected ${connectedResources(gs, 0).join(',') || 'none'}`,
+                    `happiness ${(() => { const hs = happinessOf(gs, 0); return `${hs.net} (${hs.net >= 1 ? 'happy' : hs.net < 0 ? 'UNHAPPY' : 'content'}) lux ${hs.lux} cities ${hs.cities} wars ${hs.wars}` })()}  policies ${POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)).join(',') || 'none'}  culture pool ${Math.floor(gs.civs[0].culture || 0)}  owned ${gs.tiles.filter((t) => t.owner === 0).length}`,
                     `selected ${gs.selected}  tick ${gs.tick}`,
                 ],
                 actions: [
@@ -455,6 +506,8 @@ const CivilizationVGame = () => {
                     { label: 'QUEUE WARRIOR', run: () => { pending = { ...pending, queue: 'WARRIOR' }; return 'warrior queued at your first city' } },
                     { label: 'QUEUE WORKER', run: () => { pending = { ...pending, queue: 'WORKER' }; return 'worker queued at your first city' } },
                     { label: 'IMPROVE HERE', run: () => { const w = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'WORKER'); if (!w) return 'select a worker first'; for (const k of IMP_IDS) { const why = canImprove(gs, 0, w, k); if (why === true) { pending = { ...pending, improve: k }; return `worker starts ${IMP[k].name} at ${w.c},${w.r}` } else if (/requires/.test(why)) return why } return 'this tile cannot be improved' } },
+                    { label: '+200 CULTURE', run: () => { gs.civs[0].culture = (gs.civs[0].culture || 0) + 200; return '+200 culture — the policy pool is real, spend it with P' } },
+                    { label: 'ADOPT POLICY', run: () => { for (const id of POLICY_IDS) { const why = canAdopt(gs, 0, id); if (why === true) { pending = { ...pending, policy: id }; return `will adopt ${POLICY[id].name} (${POLICY[id].effect})` } } return 'nothing adoptable: need the branch opener and the culture' } },
                     { label: 'HEAL ALL', run: () => { gs.units.filter((u) => u.alive && u.civ === 0).forEach((u) => { u.hp = 100 }); return 'legions made whole' } },
                 ],
             })
@@ -501,8 +554,10 @@ const CivilizationVGame = () => {
                     <span ref={setHud('research')} className="text-sky-200/90">TECH: press T</span>
                     <span ref={setHud('worker')} className="text-lime-200/90" style={{ display: 'none' }} />
                     <span ref={setHud('lux')} className="text-fuchsia-200/90" style={{ display: 'none' }} />
+                    <span ref={setHud('happy')} className="font-bold">😐 CONTENT 0</span>
                     <button onClick={() => actRef.current.togglePanel && actRef.current.togglePanel()} className="pointer-events-auto border border-sky-300/50 rounded px-2 py-0.5 bg-black/40 text-sky-100 text-[11px]">T · RESEARCH</button>
                     <button onClick={() => actRef.current.toggleWPanel && actRef.current.toggleWPanel()} className="pointer-events-auto border border-lime-300/50 rounded px-2 py-0.5 bg-black/40 text-lime-100 text-[11px]">W · WORK</button>
+                    <button onClick={() => actRef.current.togglePPanel && actRef.current.togglePPanel()} className="pointer-events-auto border border-violet-300/50 rounded px-2 py-0.5 bg-black/40 text-violet-100 text-[11px]">P · POLICY</button>
                     <span ref={setHud('sel')} className="text-white/70 ml-auto">tap a unit</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, color: '#ffe9a8', textShadow: '0 0 12px #c80' }} />
@@ -575,16 +630,48 @@ const CivilizationVGame = () => {
                 </div>
             )}
 
+            {screen === 'play' && pOpen && ppanel && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none" onPointerDown={(e) => e.stopPropagation()}>
+                    <div className="pointer-events-auto w-[min(94vw,760px)] rounded-lg border border-violet-300/40 bg-[#0d0a18]/95 shadow-[0_18px_60px_#000] px-4 py-3 font-mono text-violet-100">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <h3 className="text-lg font-black tracking-[0.25em] text-violet-300">POLICY</h3>
+                            <div className="text-[11px] text-violet-200/80">❦ {ppanel.pool} culture · {ppanel.mood.net >= 1 ? `☺ HAPPY +${ppanel.mood.net}` : ppanel.mood.net < 0 ? `☹ UNHAPPY ${ppanel.mood.net}` : `😐 CONTENT ${ppanel.mood.net}`}</div>
+                            <div className="text-[10px] text-violet-200/60 hidden sm:block">{ppanel.ai.map((a) => `${a.name} · ${a.n} polic${a.n === 1 ? 'y' : 'ies'}`).join('   ')}</div>
+                            <button onClick={() => actRef.current.closePPanel && actRef.current.closePPanel()} className="text-[11px] border border-violet-300/40 rounded px-2 py-0.5 hover:bg-violet-300/10">CLOSE ✕</button>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {ppanel.branches.map((br) => (
+                                <div key={br.b}>
+                                    <div className="text-[10px] tracking-[0.3em] text-violet-400/80 border-b border-violet-300/20 pb-1 mb-2">{br.b}</div>
+                                    {br.rows.map((r) => (
+                                        <button key={r.id} onClick={() => actRef.current.pickPolicy && actRef.current.pickPolicy(r.id)}
+                                            className={`w-full text-left mb-1.5 rounded border px-2 py-1 transition-colors ${r.adopted ? 'border-emerald-400/50 bg-emerald-900/30 text-emerald-200' : r.why === true ? 'border-violet-300/60 bg-violet-700/30 hover:bg-violet-600/30' : 'border-white/10 bg-black/30 text-white/30'}`}>
+                                            <div className="flex justify-between text-[11px] font-bold">
+                                                <span>{r.adopted ? '✓ ' : ''}{r.name}</span>
+                                                <span className="opacity-70">{r.adopted ? 'LAW' : `❦${r.cost}`}</span>
+                                            </div>
+                                            <div className="text-[10px] opacity-70 mt-0.5">{r.effect}</div>
+                                            {r.why !== true && !r.adopted && <div className="text-[10px] text-red-300/80 mt-0.5">{r.why}</div>}
+                                        </button>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="text-[10px] text-violet-200/60 mt-2">culture buys government · branches open at their first policy · happiness: palace +2, luxury +1, city −1, war −2 · happy +25% growth +10% gold, unhappy no growth</div>
+                    </div>
+                </div>
+            )}
+
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-5xl font-black tracking-wide" style={{ color: '#e8c56a', textShadow: '0 2px 0 #6b4a12, 0 10px 26px #000' }}>CIVILIZATION</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">STAGE 4 · THE LAND</p>
+                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">STAGE 5 · CULTURE & HAPPINESS</p>
                     <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
                     <p className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-4">
-                        settle your capital, put workers on the soil — farms feed, mines forge, roads halve the march<br />
-                        luxuries pay gold once connected; iron and horses arm the Legion and the Chariot Archer<br />
-                        tap a tile to move · E settles · W opens the WORK panel · T opens RESEARCH · Space ends the turn<br />
-                        barbarians pillage every road and field they cross — hold the land you name<br />
+                        your cities bank culture and the borders creep outward — ring 2, then ring 3<br />
+                        the people judge you: luxuries and the palace please, cities and wars sadden — happy realms grow 25% faster<br />
+                        culture buys government: P opens POLICY — Tradition, Liberty, Commerce, real Civ V trees<br />
+                        tap a tile to move · E settles · W works the land · T researches · Space ends the turn<br />
                         grow your capital to size {GOAL}, or take every rival capital for DOMINATION · turn limit {CFG.turnLimit}<br />
                         drag to orbit the world · wheel or pinch to zoom · the demo is the autopilot&apos;s own proven campaign
                     </p>
@@ -595,13 +682,13 @@ const CivilizationVGame = () => {
                 <div className="absolute inset-0 bg-black/72 flex flex-col items-center justify-center text-amber-50 font-mono px-6">
                     <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? (end.domination ? 'DOMINATION' : 'AN AGE OF GOLD') : 'HISTORY PASSED YOU BY'}</h2>
                     <p className="text-lg mb-1">{end.win ? (end.domination ? 'Every rival capital flies your colours.' : `Your capital reached size ${end.size} by turn ${end.turn}`) : `${end.why}`}</p>
-                    <p className="text-sm text-amber-200/80 mb-4">The age of reason dawns. City buildings, policies and the other victories are the next stages.</p>
+                    <p className="text-sm text-amber-200/80 mb-4">The age of reason dawns. Wonders, great people, city-states and the three other victories are the next stages.</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'CIVILIZATION V')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused && !panelOpen && !wOpen} secondAction={{ label: 'E', code: 'KeyE' }} />
+            <VirtualControls visible={play && !paused && !panelOpen && !wOpen && !pOpen} secondAction={{ label: 'E', code: 'KeyE' }} />
         </div>
     )
 }

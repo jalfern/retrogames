@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost } from '../src/games/CivilizationV/sim.js'
 import { decide, plan } from '../src/games/CivilizationV/planner.js'
 
 let pass = 0, fail = 0
@@ -662,11 +662,189 @@ console.log('22. resource-gated units')
     ok(gs2.tiles.some((tl) => tl.res === RES_IDS.indexOf('HORSES')), 'seed 13 carries horses')
     ok(gs2.tiles.some((tl) => tl.res === RES_IDS.indexOf('IRON')), 'seed 13 carries iron')
     // the autopilot actually builds and works a labourer, end to end
-    const g3 = newGame(13, 0)
+    // (Stage 5 note: happy growth speeds the open scenario past the farms, so
+    // the labour proof runs on a resistant scenario where barbarians slow the win)
+    const g3 = newGame(13, 3)
     let sawWorker = false, sawBuilt = false, n = 0
     while (!g3.end && n++ < 40000) { step(g3, decide(g3)); if (g3.units.some((u) => u.alive && u.civ === 0 && u.kind === 'WORKER')) sawWorker = true; if (g3.events.some((ev) => ev.type === 'improved' && ev.civ === 0)) sawBuilt = true }
     ok(sawWorker, 'the witness trains a worker')
     ok(sawBuilt, 'and puts it to work in a real game')
+}
+
+// ---- 23. culture borders: rings creep at thresholds ----
+console.log('23. culture borders')
+{
+    const gs = newGame(6, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0)
+    eq(cap.border, 1, 'founding claims one ring')
+    const cult0 = cap.culture
+    step(gs, { endTurn: true })
+    ok(cap.culture > cult0, `the city banks culture every turn (${cult0} → ${cap.culture})`)
+    cap.culture = CFG.border2 - 10
+    step(gs, { endTurn: true })
+    eq(cap.border, 1, 'ring 2 stays locked below the culture threshold')
+    ok(gs.tiles.every((t) => t.owner !== 0 || hexDist([t.c, t.r], [cap.c, cap.r]) <= CFG.cityRingWork), 'no ring-2 tile is Roman yet')
+    cap.culture = CFG.border2
+    gs.events = []
+    step(gs, { endTurn: true })
+    eq(cap.border, 2, 'the culture threshold opens ring 2')
+    ok(gs.tiles.some((t) => t.owner === 0 && hexDist([t.c, t.r], [cap.c, cap.r]) === 2), 'ring 2 ground is claimed')
+    ok(gs.events.some((ev) => ev.type === 'borderGrow' && ev.rad === 2 && ev.civ === 0), 'the expansion is announced')
+    cap.culture = CFG.border3
+    step(gs, { endTurn: true })
+    eq(cap.border, 3, 'the great threshold opens ring 3')
+    ok(gs.tiles.some((t) => t.owner === 0 && hexDist([t.c, t.r], [cap.c, cap.r]) === 3), 'ring 3 ground is claimed')
+    // borders only take unowned ground — a neighbour's tile stays its own
+    const g2 = newGame(6, 0)
+    const s2 = g2.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g2, { select: s2.id, found: true })
+    const cap2 = g2.cities.find((c) => c.civ === 0)
+    const foreign = g2.tiles.find((t) => t.owner === 0 && hexDist([t.c, t.r], [cap2.c, cap2.r]) === 1)
+    ok(!!foreign, 'the ring offers a tile to steal')
+    foreign.owner = 2
+    cap2.culture = CFG.border3
+    step(g2, { endTurn: true })
+    eq(foreign.owner, 2, 'culture never annexes a claimed tile — only unowned ground')
+}
+
+// ---- 24. the happiness ledger and what mood does ----
+console.log('24. happiness')
+{
+    const gs = newGame(6, 0)
+    let hs = happinessOf(gs, 0)
+    eq(hs.net, 0, 'a wandering tribe feels nothing (no palace, no cities)')
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    hs = happinessOf(gs, 0)
+    eq(hs.net, CFG.palaceHappy - CFG.cityUnhappy, 'the capital pays palace +2 minus city −1')
+    ok(hs.happy, 'a lone capital with the palace is HAPPY')
+    declareWar(gs, 0, 1)
+    hs = happinessOf(gs, 0)
+    eq(hs.net, CFG.palaceHappy - CFG.cityUnhappy - CFG.warWeariness, 'one war costs two weariness')
+    ok(!hs.happy && hs.unhappy, 'and the mood curdles to UNHAPPY')
+    const cap = gs.cities.find((c) => c.civ === 0)
+    const ring = neighbors(cap.c, cap.r).map(([c, r]) => gs.tiles[idx(c, r)]).filter((t) => t.city < 0 && t.camp < 0)
+    const wine = ring.find((t) => t.res === RES_IDS.indexOf('WINE')) || ring.find((t) => walk(t.terr))
+    wine.res = RES_IDS.indexOf('WINE'); wine.owner = 0
+    hs = happinessOf(gs, 0)
+    eq(hs.lux, 1, 'the vineyard counts as a connected luxury')
+    gs.civs[0].culture = 300
+    ok(adoptPolicy(gs, 0, 'FOUNDATIONS') && adoptPolicy(gs, 0, 'CEREMONY'), 'Ceremony is adoptable once Tradition opens')
+    hs = happinessOf(gs, 0)
+    ok(hs.net >= 1, 'Ceremony doubles the luxury cheer back into the black')
+    ok(adoptPolicy(gs, 0, 'TRADING_POSTS') && adoptPolicy(gs, 0, 'TREATIES'), 'Commerce opens and Treaties follows')
+    hs = happinessOf(gs, 0)
+    eq(hs.weary, 1, 'Treaties halves the weariness of one war')
+    // angry cities are worse walls
+    const g3 = newGame(6, 0)
+    const s3 = g3.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g3, { select: s3.id, found: true })
+    const cap3 = g3.cities.find((c) => c.civ === 0)
+    const defContent = cityDefense(g3, cap3)
+    const savedUnhappy = CFG.cityUnhappy
+    CFG.cityUnhappy = 5
+    ok(happinessOf(g3, 0).unhappy, 'a heavier tax of cities makes the realm unhappy')
+    ok(cityDefense(g3, cap3) < defContent, 'unhappy cities dig in worse')
+    // growth follows mood (happy +25% surplus): isolate with the city tax
+    const grow = (unhappy) => {
+        CFG.cityUnhappy = unhappy ? 5 : 1
+        const gg = newGame(6, 0)
+        const ss = gg.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(gg, { select: ss.id, found: true })
+        const cc = gg.cities.find((c) => c.civ === 0)
+        let t = 0
+        while (cc.size < 2 && gg.turn <= CFG.turnLimit && t++ < 600) step(gg, { endTurn: true })
+        return cc.size >= 2 ? gg.turn : 999
+    }
+    let strict = false
+    for (const seed of [2, 3, 4]) {
+        const h = grow(false), u = grow(true)
+        ok(h <= u, `seed ${seed}: the happy realm grows no slower (${h} vs ${u})`)
+        if (h < u) strict = true
+    }
+    CFG.cityUnhappy = savedUnhappy
+    ok(strict, 'and for at least one seed happiness is strictly faster')
+    // happy markets tip the till: with the bonus visible at +100% the books differ
+    const savedHG = CFG.happyGold
+    CFG.happyGold = 1
+    const goldTurn = (unhappy) => {
+        CFG.cityUnhappy = unhappy ? 5 : 1
+        const gg = newGame(6, 0)
+        const ss = gg.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(gg, { select: ss.id, found: true })
+        gg.events = []
+        step(gg, { endTurn: true })
+        const te = gg.events.find((ev) => ev.type === 'turnEnd' && ev.civ === 0)
+        return te ? te.gold : 0
+    }
+    const gHappy = goldTurn(false), gSad = goldTurn(true)
+    CFG.happyGold = savedHG
+    CFG.cityUnhappy = savedUnhappy
+    ok(gHappy > gSad, `a happy turn books more gold than an unhappy one (${gHappy} vs ${gSad})`)
+    // the mood flips are announced
+    const g5 = newGame(6, 0)
+    const s5 = g5.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g5, { select: s5.id, found: true })
+    g5.events = []
+    step(g5, { endTurn: true })
+    ok(g5.events.some((ev) => ev.type === 'happy' && ev.civ === 0 && ev.state === 'happy'), 'the rejoicing is an event')
+}
+
+// ---- 25. policies: culture buys government ----
+console.log('25. policies')
+{
+    eq(POLICY_IDS.length, 6, 'six policies on three branches')
+    ok(BRANCHES.length === 3 && BRANCHES.every((b) => ['TRADITION', 'LIBERTY', 'COMMERCE'].includes(b)), 'the branches are the real early Civ V trees')
+    ok(POLICY_IDS.every((id) => POLICY[id].name && POLICY[id].effect && POLICY[id].cost > 0), 'every policy has a name, an effect and a price')
+    const gs = newGame(6, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0)
+    eq(canAdopt(gs, 0, 'FOUNDATIONS'), 'not enough culture', 'the first law costs culture you have not earned')
+    eq(canAdopt(gs, 0, 'CEREMONY'), 'requires Foundations of the State', 'branches open at their first policy')
+    gs.events = []
+    ok(!adoptPolicy(gs, 0, 'TRADING_POSTS'), 'an unaffordable adoption fails')
+    ok(gs.events.some((ev) => ev.type === 'deny' && /culture/i.test(ev.reason || '')), 'the refusal says why')
+    // the empire banks culture from city output on its own
+    let n = 0
+    while (gs.civs[0].culture < POLICY.FOUNDATIONS.cost && n++ < 80) step(gs, { endTurn: true })
+    ok(gs.civs[0].culture >= POLICY.FOUNDATIONS.cost, `the realm earns ${POLICY.FOUNDATIONS.cost} culture inside the stage clock (took ${n} turns)`)
+    const cultBefore = cityYield(gs, cap).cult
+    const pool = gs.civs[0].culture
+    ok(adoptPolicy(gs, 0, 'FOUNDATIONS'), 'once the pool pays, Tradition opens')
+    eq(gs.civs[0].culture, pool - POLICY.FOUNDATIONS.cost, 'culture is spent, not reset')
+    ok(gs.events.some((ev) => ev.type === 'policy' && ev.id === 'FOUNDATIONS' && ev.civ === 0), 'the adoption is an event')
+    ok(cityYield(gs, cap).cult === cultBefore + 3, 'Foundations pays +3 culture to every city')
+    // Colonial Offices cheapens settlers; National College writes more
+    gs.civs[0].culture += 300
+    ok(adoptPolicy(gs, 0, 'COLONIAL'), 'Liberty opens')
+    eq(unitCost(gs, 0, 'SETTLER'), UNIT.SETTLER.cost - 25, 'Colonial Offices cuts the settler price')
+    eq(unitCost(gs, 0, 'WARRIOR'), UNIT.WARRIOR.cost, 'and only the settler price')
+    const sciBefore = cityYield(gs, cap).sci
+    ok(adoptPolicy(gs, 0, 'COLLEGE'), 'the National College opens')
+    eq(cityYield(gs, cap).sci, sciBefore + 1, 'the College writes +1 science in every city')
+    const gBefore = cityYield(gs, cap).g
+    ok(adoptPolicy(gs, 0, 'TRADING_POSTS'), 'Commerce opens')
+    eq(cityYield(gs, cap).g, gBefore + 1, 'Trading Posts coin +1 gold in every city')
+    // step() obeys the same law the panel does
+    const g7 = newGame(6, 0)
+    const s7 = g7.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g7, { select: s7.id, found: true })
+    g7.events = []
+    step(g7, { policy: 'TRADING_POSTS' })
+    ok(g7.events.some((ev) => ev.type === 'deny'), 'a poor adoption through step() is refused too')
+    // rivals are governed too: someone across the sea legislates in a real game
+    const g8 = newGame(13, 0)
+    let aiLaw = false, m = 0
+    while (!g8.end && m++ < 40000) { step(g8, decide(g8)); if (g8.events.some((ev) => ev.type === 'policy' && ev.civ !== 0)) aiLaw = true }
+    ok(aiLaw, 'rival civs adopt policies in a real game')
+    // the whole fold: policy law changes the replay hash
+    const a = newGame(9, 0), b = newGame(9, 0)
+    a.civs[0].culture = 100
+    adoptPolicy(a, 0, 'FOUNDATIONS')
+    ok(stateHash(a) !== stateHash(b), 'adopted laws fold into the state hash')
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
