@@ -14,7 +14,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './sim.js'
-import { terrainY, WORLD_W } from './terrain.js'
+import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
 import { plan } from './planner.js'
 import { policyProbs, mulberry32, sampleAction, obsFrom, episodeOutcome, ACTION_LABELS } from './policy.js'
 import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } from './art.js'
@@ -27,7 +27,10 @@ const replayRequested = () => new URLSearchParams(window.location.search).get('r
 const labRequested = () => new URLSearchParams(window.location.search).get('lab') === '1'
 const HEAT_XS = Array.from({ length: 32 }, (_, i) => Math.round(32 + i * (992 - 32) / 31))
 const HEAT_VXS = Array.from({ length: 17 }, (_, i) => -40 + i * 5)
-const HEAT_COL = { pad: '#39d353', off_pad: '#e8b64a', crash: '#ff5d5d', timeout: '#5d7094' }
+const HEAT_EPISODES = 8
+const PAD_MARKS = PAD_SLOTS.map((s) => ({ cx: s.i * STEP, val: s.val }))
+const PAD_COL = HEAT_XS.map((x) => PAD_MARKS.find((p) => Math.abs(x - p.cx) <= 15) || null)
+const heatColor = (t) => `rgb(${Math.round(255 - 198 * t)},${Math.round(93 + 118 * t)},${Math.round(93 - 10 * t)})`
 const LAB_CYCLE = [[96, 0], [272, -15], [512, 20], [752, -30], [928, 10], [200, 35],
                   [650, -40], [350, 5], [850, 25], [512, -40]]
 let cachedRun = null
@@ -125,7 +128,14 @@ const LunarLanderGame = () => {
                     labPolicy = pol
                     setHeatRows(HEAT_VXS.map((v) => ({
                         v,
-                        cells: HEAT_XS.map((x) => ({ x, col: HEAT_COL[episodeOutcome(pol, 7, x, v)] })),
+                        cells: HEAT_XS.map((x) => {
+                            let pads = 0
+                            for (let j = 0; j < HEAT_EPISODES; j++) {
+                                const rs = (Math.imul(j + 1, 2654435761) + Math.imul(x + 1, 97) + v + 64) >>> 0
+                                if (episodeOutcome(pol, 7, x, v, 1200, rs) === 'pad') pads++
+                            }
+                            return { x, pads, col: heatColor(pads / HEAT_EPISODES) }
+                        }),
                     })))
                     startLabFlight()
                 })
@@ -428,8 +438,8 @@ const LunarLanderGame = () => {
     const replayMode = replayRequested()
 
     return (
-        <div className="relative w-full h-full flex flex-col items-center justify-center bg-[#05070d] select-none">
-            <div ref={stageRef} className="relative w-full max-w-[900px] aspect-[512/384] shadow-[0_0_44px_rgba(255,215,107,0.18)]" />
+        <div className={`relative w-full h-full flex flex-col items-center justify-center bg-[#05070d] select-none ${labMode ? 'pb-24' : ''}`}>
+            <div ref={stageRef} className={`relative w-full ${labMode ? 'max-w-[640px]' : 'max-w-[900px]'} aspect-[512/384] shadow-[0_0_44px_rgba(255,215,107,0.18)]`} />
             <div className="flex gap-6 mt-2 text-[11px] font-mono tracking-widest text-[#8fa3d8]">
                 <span>ALT <span ref={setHud('alt')} className="text-[#e9f7ff]">---</span></span>
                 <span>FUEL <span ref={setHud('fuel')} className="text-[#ffd76b]">100</span></span>
@@ -456,23 +466,34 @@ const LunarLanderGame = () => {
                 </div>
             )}
             {labMode && heatRows && (
-                <div className="mt-3 flex flex-col items-center font-mono text-[9px] tracking-widest text-[#8fa3d8]">
-                    <div className="mb-1">GENERALISATION MAP — START X × SIDEWAYS V · CLICK A CELL TO FLY IT</div>
+                <div className="mt-2 flex flex-col items-center font-mono text-[9px] tracking-widest text-[#8fa3d8]">
+                    <div className="mb-[3px]">PAD-LANDING RATE — START X × SIDEWAYS V ({HEAT_EPISODES} EPISODES PER CELL) · CLICK TO FLY</div>
                     {heatRows.map((row) => (
                         <div key={row.v} className="flex items-center">
                             <span className="w-9 pr-1 text-right">{row.v > 0 ? `+${row.v}` : row.v}</span>
                             {row.cells.map((c) => (
-                                <button key={c.x} type="button" title={`x ${c.x} v ${row.v} → ${c.col}`}
-                                    onClick={() => fly(c.x, row.v)} aria-label={`fly x ${c.x} vx ${row.v}`}
+                                <button key={c.x} type="button" title={`x ${c.x} v ${row.v} → ${c.pads}/${HEAT_EPISODES} pads`}
+                                    onClick={() => fly(c.x, row.v)} aria-label={`fly x ${c.x} vx ${row.v} rate ${c.pads} of ${HEAT_EPISODES}`}
                                     style={{ background: c.col }}
-                                    className="w-[19px] h-[9px] m-[1px] border-0 cursor-pointer hover:outline hover:outline-1 hover:outline-white" />
+                                    className="w-[13px] h-[6px] m-[1px] border-0 cursor-pointer hover:outline hover:outline-1 hover:outline-white" />
                             ))}
                         </div>
                     ))}
-                    <div className="mt-1 flex gap-4">
-                        <span style={{ color: HEAT_COL.pad }}>PAD</span>
-                        <span style={{ color: HEAT_COL.off_pad }}>OFF-PAD</span>
-                        <span style={{ color: HEAT_COL.crash }}>CRASH</span>
+                    <div className="flex items-center">
+                        <span className="w-9 pr-1 text-right text-[7px]">x</span>
+                        {PAD_COL.map((p, i) => (
+                            <span key={i} className="w-[13px] m-[1px] text-center text-[8px] leading-[10px] text-[#ffd76b]">
+                                {p ? p.val : ''}
+                            </span>
+                        ))}
+                    </div>
+                    <div className="mt-[3px] flex items-center gap-2">
+                        <span>0/8</span>
+                        <span style={{ background: heatColor(0) }} className="inline-block w-8 h-[8px]" />
+                        <span style={{ background: heatColor(0.5) }} className="inline-block w-8 h-[8px]" />
+                        <span style={{ background: heatColor(1) }} className="inline-block w-8 h-[8px]" />
+                        <span>8/8 pads</span>
+                        <span className="ml-3">numbers below axis = pad positions × value</span>
                     </div>
                 </div>
             )}
