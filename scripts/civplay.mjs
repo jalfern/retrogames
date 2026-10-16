@@ -59,6 +59,7 @@ let s = await probe()
 r.check('attract mode is showing', s && s.screen === 'attract')
 const c1 = await centerPx()
 r.check(`attract canvas is not black (centre rgb ${c1})`, c1 && (c1[0] + c1[1] + c1[2]) > 24)
+r.check(`the world is seeded with barbarian camps (${s.campsAlive})`, s.campsAlive >= 3)
 let aiFound = false
 for (let i = 0; i < 40 && !aiFound; i++) { await wait(700); aiFound = (await probe()).totalCities > 1 }
 r.check('the attract world is a CIVILISING map (capitals rise unprompted)', aiFound)
@@ -84,6 +85,15 @@ for (let i = 0; i < 24 && !grew; i++) { await page.keyboard.press('Space'); awai
 r.check(`the capital grows on end turns (size ${(await probe()).capitalSize})`, grew)
 const mid = await brightScan()
 r.check(`the world is still rendering mid-game (brightest sample rgb ${mid})`, mid && (mid[0] + mid[1] + mid[2]) > 40)
+
+// 3b — production: Digit1 queues a warrior at your capital; banked shields deliver it
+await page.keyboard.press('Digit1')
+await wait(200)
+const q = (await probe()).queue
+r.check(`Digit1 queues a build order (${JSON.stringify(q)})`, q.length > 0 && q[0].queue[0] === 'WARRIOR')
+let trained = false
+for (let i = 0; i < 24 && !trained; i++) { await page.keyboard.press('Space'); await wait(160); const p = await probe(); trained = p.units0.filter((u) => u.kind === 'WARRIOR').length >= 2; if (p.end) break }
+r.check(`banked production trains a warrior (warriors ${(await probe()).units0.filter((u) => u.kind === 'WARRIOR').length})`, trained)
 
 // 4 — drive the same autopilot to the milestone on THIS run, then the end screen
 let won = null
