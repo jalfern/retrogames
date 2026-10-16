@@ -22,6 +22,11 @@ The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
   facing-dagger + sword-arc sweep, vignette and scanlines, side panel (mini
   map, portrait, health, keys/gold), narrator strip, hero select, CPU partner
   toggle (`C`), attract replaying `plan(2, {topDown:true})`'s proven run.
+- `minimap.js` — the pure half of the map panel (issue #275 item 8): the
+  shared camera (`viewRect`, used by the view AND the map so "seen" can't
+  drift from the screen), the beasts the view shows (`mapMonsters`), and the
+  stairs' key-pulse (`stairsPulse`). drawPanel renders exactly its decisions;
+  gauntletcheck proves them in plain Node.
 
 ## Fidelity notes
 
@@ -53,9 +58,10 @@ face · X / F / B: arrow down the facing · C on the hero screen: CPU partner ·
 
 ```bash
 npm run lint:gauntlet               # eslint gate for both games + harness
-npm run gauntletcheck             # 86 checks: geometry, art, sound, rules,
-                                  # overhead mode, ledger, pilot, slack, determinism
-npm run gauntletcheck -- --mutate # 6 mutants, all must die
+npm run gauntletcheck             # 87 checks: geometry, art, sound, minimap,
+                                  # rules, overhead mode, ledger, pilot,
+                                  # slack, determinism
+npm run gauntletcheck -- --mutate # 8 mutants, all must die
 npm run gauntletplay              # advisory browser drive (needs npm run dev)
 ```
 

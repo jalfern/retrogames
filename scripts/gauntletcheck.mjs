@@ -9,11 +9,13 @@
 //               spawning; Death spawns on the timer and drains; stairs clear
 //               the level and the fourth clear ends the quest.
 //   ledger    : final score == sum of scored events, pilot run included.
+//   minimap   : the map shows beasts only while the view shows them; the
+//               stairs pulse only once a key is held.
 //   pilot     : seeds 0-3 clear all four mazes; 2/3 do it deathless;
 //   slack     : the quest is re-won with one fewer food AND one fewer potion
 //               per maze.
 //   determinism : same seed twice -> identical digest.
-// `-- --mutate` re-plants four fixed bugs in child processes; each MUST die.
+// `-- --mutate` re-plants eight fixed bugs in child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -101,6 +103,35 @@ console.log('sound')
     ok(STAIRS_FANFARE.length === 4, 'sound: the stairs-clear is a 4-note fanfare', `${STAIRS_FANFARE.length} notes`)
     ok(new Set(STAIRS_FANFARE).size === STAIRS_FANFARE.length, 'sound: the fanfare notes are distinct')
     ok(STAIRS_FANFARE.every((f, i) => i === 0 || f > STAIRS_FANFARE[i - 1]), 'sound: the fanfare rises')
+}
+
+// --------------------------------------------------------------- minimap ----
+// The side map admits only what the cabinet saw: a beast is mapped while the
+// view shows it and unmapped when the view leaves, and the stairs pulse only
+// once a key is in the pocket.
+console.log('minimap')
+{
+    const mm = await import('../src/games/Gauntlet/minimap.js')
+    const gs = makeGame(0, 'warrior', { topDown: true })
+    gs.monsters = []
+    const rect0 = mm.viewRect(gs.hero)
+    ok(rect0.camX === 0 && rect0.camY === H * mm.PX - mm.VH, 'minimap: the camera clamps to the maze', `${rect0.camX},${rect0.camY}`)
+    const mk = (id, kind, x, y) => ({ id, kind, x, y, hp: 1, atkT: 9999, castT: 9999, path: [], repathT: 0, drainT: 0 })
+    gs.monsters.push(
+        mk(9201, 'grunt', 5.5, 20.5), // in the hero's view
+        mk(9202, 'death', 10.5, 15.5), // in the hero's view
+        mk(9203, 'demon', 21.5, 2.5), // far corner, out of view
+    )
+    const seen = mm.mapMonsters(gs, rect0)
+    ok(seen.length === 2, 'minimap: only beasts in the view are mapped', seen.map((m) => m.kind).join(','))
+    ok(seen.some((m) => m.kind === 'death'), 'minimap: Death is mapped while in view')
+    gs.hero.x = 21.5; gs.hero.y = 2.5
+    const rect1 = mm.viewRect(gs.hero)
+    ok(mm.mapMonsters(gs, rect1).some((m) => m.kind === 'demon'), 'minimap: the same beast maps once the view reaches it')
+    ok(!mm.mapMonsters(gs, rect1).some((m) => m.kind === 'grunt'), 'minimap: a beast leaves the map when the view leaves it')
+    ok(mm.stairsPulse(0, 0) === null && mm.stairsPulse(0, 16) === null, 'minimap: no stairs pulse without a key')
+    ok([0, 4, 8, 12, 16, 20].every((t) => mm.stairsPulse(1, t) === mm.stairsPulse(1, t + 16)), 'minimap: the stairs pulse runs on a 16-tick period')
+    ok(new Set([0, 4, 8, 12].map((t) => mm.stairsPulse(2, t))).size === 3 && mm.stairsPulse(1, 8) === 1, 'minimap: the pulse dims and peaks', [0, 1, 2, 3, 4].map((t) => mm.stairsPulse(1, t)).join(','))
 }
 
 // ------------------------------------------------------------------ rules ----
@@ -334,25 +365,26 @@ console.log('determinism')
 // ------------------------------------------------------------- mutants ----
 if (process.argv.includes('--mutate')) {
     console.log('mutants (must die)')
-    const SIM = 'src/games/Gauntlet/sim.js'
     const MUTANTS = [
-        ['slam doors never close', 'd.closeT = CFG.slamClose', 'd.closeT = -2'],
-        ['locked doors open without keys', 'if (gs.keys >= CFG.lockForce)', 'if (gs.keys >= 0 && !gs.keys)'],
-        ['potion kills Death too', 'gs.monsters = gs.monsters.filter((m) => MONSTERS[m.kind].drain)', 'gs.monsters = []'],
-        ['generators respawn when smashed', 'if (!g.alive) continue\n        g.t--', 'g.t--'],
-        ['health never drains', 'if (gs.tick % CFG.drainEvery === 0)', 'if (gs.tick % 1000000 === 0)'],
-        ['overhead pilot cannot aim', 'if (typeof inp.aim === \'number\') {', 'if (false) {'],
+        ['slam doors never close', 'src/games/Gauntlet/sim.js', 'd.closeT = CFG.slamClose', 'd.closeT = -2'],
+        ['locked doors open without keys', 'src/games/Gauntlet/sim.js', 'if (gs.keys >= CFG.lockForce)', 'if (gs.keys >= 0 && !gs.keys)'],
+        ['potion kills Death too', 'src/games/Gauntlet/sim.js', 'gs.monsters = gs.monsters.filter((m) => MONSTERS[m.kind].drain)', 'gs.monsters = []'],
+        ['generators respawn when smashed', 'src/games/Gauntlet/sim.js', 'if (!g.alive) continue\n        g.t--', 'g.t--'],
+        ['health never drains', 'src/games/Gauntlet/sim.js', 'if (gs.tick % CFG.drainEvery === 0)', 'if (gs.tick % 1000000 === 0)'],
+        ['overhead pilot cannot aim', 'src/games/Gauntlet/sim.js', 'if (typeof inp.aim === \'number\') {', 'if (false) {'],
+        ['the map shows beasts outside the view', 'src/games/Gauntlet/minimap.js', 'gs.monsters.filter((m) => inView(rect, m.x, m.y))', 'gs.monsters'],
+        ['the stairs pulse without a key', 'src/games/Gauntlet/minimap.js', 'if (keys <= 0) return null', 'if (false) return null'],
     ]
-    const orig = readFileSync(SIM, 'utf8')
     let died = 0
-    for (const [name, from, to] of MUTANTS) {
+    for (const [name, file, from, to] of MUTANTS) {
+        const orig = readFileSync(file, 'utf8')
         if (!orig.includes(from)) { ok(false, `mutant ${name}: anchor missing`); continue }
-        writeFileSync(SIM, orig.replace(from, to))
+        writeFileSync(file, orig.replace(from, to))
         const res = spawnSync('node', ['scripts/gauntletcheck.mjs'], { encoding: 'utf8' })
         if (res.status !== 0) { died++; ok(true, `mutant ${name} caught`) }
         else ok(false, `mutant ${name} SURVIVED`)
+        writeFileSync(file, orig)
     }
-    writeFileSync(SIM, orig)
     ok(died === MUTANTS.length, 'all mutants die', `${died}/${MUTANTS.length}`)
 }
 
