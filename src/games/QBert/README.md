@@ -81,8 +81,16 @@ the player actually gets, in plain Node.
   The disc drop destination is now in: a random row across the whole pyramid,
   then a random cube in that row — the original's wider row list, not the old
   apex-or-row-0/1 bias. `qbertcheck` pins both ends: a high RNG roll reaches
-  the bottom skirt, a low roll the apex.)
-    Still missing: alternating hot-seat 2P, the bonus-stage green-field.
+   the bottom skirt, a low roll the apex.)
+- Hot-seat 2P (alternating turns) is in: each player keeps their own score,
+  10,000-point 1-up ledger and lives; only the active player's bird is on the
+  board (one keyboard, no second touchpad). When the active player runs out of
+  lives the OTHER takes a fresh pyramid keeping their own score and lives, and
+  only when BOTH are out does the game end. The HUD brightens the active
+  player's score line and shows the active player's lives; `qbertcheck` pins
+  the handoff, the per-player 1-up and the both-out game over (a shared life
+  pool or a missing handoff goes red).
+  Still missing: the bonus-stage green-field.
 - Music is an original bouncy riff, not the Gottlieb melody. Its step grid is
   locked to the sim's 60Hz hop cadence (`MUSIC.qbert.step = 0.1` = exactly 2
   steps per 12-tick hop; the 32-step loop = exactly 16 hops), so the bed and

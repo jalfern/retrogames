@@ -96,8 +96,10 @@ r.check('any key starts the round', q.screen === 'play', q.screen)
     r.check('after the death the bird sits at the apex with one life spent', q.r === 0 && q.c === 0 && q.lives === lives0 - 1, `@${q.r},${q.c} lives=${q.lives}`)
 }
 {
-    const lives0 = q.lives
-    let died = 0
+    // 2P: P1's remaining lives burn on honest falls; the LAST one hands the
+    // turn to P2 (fresh at the apex, P2's own 3 lives) rather than ending the
+    // run — only when BOTH players are out does it go to GAME OVER.
+    const lives0 = q.lives    // P1's remaining lives (2, after the snake death)
     for (let i = 0; i < lives0; i++) {
         await settle((p) => p.dying === 0 && p.screen === 'play', 3000)
         await page.evaluate(() => window.__qbertTest.place(5, 5))
@@ -106,17 +108,32 @@ r.check('any key starts the round', q.screen === 'play', q.screen)
         await page.waitForTimeout(120)
         await page.keyboard.up('ArrowRight')
         await page.keyboard.up('ArrowDown')
-        q = await settle((p) => p.lives === lives0 - (i + 1) || p.screen === 'over', 4000)
-        if (q.lives === lives0 - (i + 1) || q.screen === 'over') died++
+        await settle((p) => p.dying === 0 && p.screen === 'play', 4000)
     }
-    r.check('the remaining lives burn on honest falls off the skirt', died === lives0 && lives0 === 2, `deaths=${died} of ${lives0}`)
+    q = await settle((p) => p.active === 1 && p.r === 0 && p.c === 0, 3000)
+    r.check('P1 out of lives hands the turn to P2 (active=1, fresh at the apex, P2 at 3 lives)',
+        q.active === 1 && q.r === 0 && q.c === 0 && q.lives === 3,
+        JSON.stringify({ a: q.active, r: q.r, c: q.c, lives: q.lives }))
+    const p2lives = q.lives
+    for (let i = 0; i < p2lives; i++) {
+        await settle((p) => p.dying === 0 && p.screen === 'play', 3000)
+        await page.evaluate(() => window.__qbertTest.place(5, 5))
+        await page.keyboard.down('ArrowDown')
+        await page.keyboard.down('ArrowRight')
+        await page.waitForTimeout(120)
+        await page.keyboard.up('ArrowRight')
+        await page.keyboard.up('ArrowDown')
+        await settle((p) => p.dying === 0 || p.screen === 'over', 4000)
+    }
     q = await settle((p) => p.screen === 'over', 4000)
-    r.check('GAME OVER screen after the last life', q.screen === 'over', q.screen)
+    r.check('GAME OVER only once BOTH players are out of lives', q.screen === 'over', q.screen)
 }
 await page.waitForTimeout(1000)
 await page.keyboard.press('Enter')
 q = await settle((p) => p.screen === 'play', 3000)
-r.check('Enter restarts clean (score zeroed, round 1, lives back)', q.screen === 'play' && q.score === 0 && q.level === 1 && q.lives === 3, JSON.stringify({ s: q.screen, sc: q.score, l: q.lives }))
+r.check('Enter restarts clean (P1 active, scores zeroed, round 1, both back to 3 lives)',
+    q.screen === 'play' && q.active === 0 && q.score === 0 && q.level === 1 && q.lives === 3 && q.players[1].score === 0 && q.players[1].lives === 3,
+    JSON.stringify({ s: q.screen, a: q.active, sc: q.score, l: q.lives, p2: q.players[1] }))
 
 // ------------------------------------------------------------- disc ride ----
 {

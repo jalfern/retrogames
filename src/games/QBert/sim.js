@@ -97,7 +97,14 @@ export function neededCubes(gs) {
 export function makeGame({ seed = 7, level = 1, lives = 3 } = {}) {
     const gs = {
         seed: seed >>> 0, rng: makeRng(seed ^ (level * 2654435761)),
-        level, mode: level === 1 ? 1 : 2, lives, score: 0, total: 0,
+        level, mode: level === 1 ? 1 : 2,
+        // Hot-seat 2P (alternating turns): each player keeps their own score,
+        // total (the 10,000 1-up ledger) and lives. Only the ACTIVE player's
+        // bird is on the board; when that player runs out of lives the turn
+        // passes to the other (a fresh pyramid), and only when BOTH are out
+        // does the game end. 1P is just "player 1 never runs out first".
+        players: [ { score: 0, total: 0, lives }, { score: 0, total: 0, lives } ],
+        active: 0,
         colors: new Array(64).fill(0),
         player: { r: 0, c: 0, hop: null, ride: null, dying: 0, invuln: 0, upChain: 0, lastCube: -1, prevCube: -1, facing: 1, lastLandDown: false },
         snakes: [], balls: [], runners: [], slicks: [],
@@ -137,14 +144,15 @@ function resetRound(gs) {
 }
 
 const px = (gs) => cubeXY(gs.player.r, gs.player.c)
+const ap = (gs) => gs.players[gs.active]
 
 function kill(gs, cause) {
     const p = gs.player
     if (p.invuln > 0 || p.dying || gs.end) return
     p.dying = DEATH_TICKS
-    gs.lives--
+    ap(gs).lives--
     gs.balloon = '@!#?@!'
-    gs.events.push({ t: 'death', cause, x: px(gs).x, y: px(gs).y })
+    gs.events.push({ t: 'death', cause, x: px(gs).x, y: px(gs).y, player: gs.active })
 }
 
 function hopTo(gs, tr, tc) {
@@ -183,13 +191,14 @@ function land(gs, tr, tc, up) {
 }
 
 function addScore(gs, n) {
-    const before = Math.floor(gs.total / ONE_UP_AT)
-    gs.score = Math.min(999999, gs.score + n)
-    gs.total = gs.score
-    const after = Math.floor(gs.total / ONE_UP_AT)
-    if (after > before && gs.lives < MAX_LIVES) {
-        gs.lives = Math.min(MAX_LIVES, gs.lives + (after - before))
-        gs.events.push({ t: 'oneup', lives: gs.lives, score: gs.score })
+    const p = ap(gs)
+    const before = Math.floor(p.total / ONE_UP_AT)
+    p.score = Math.min(999999, p.score + n)
+    p.total = p.score
+    const after = Math.floor(p.total / ONE_UP_AT)
+    if (after > before && p.lives < MAX_LIVES) {
+        p.lives = Math.min(MAX_LIVES, p.lives + (after - before))
+        gs.events.push({ t: 'oneup', lives: p.lives, score: p.score, player: gs.active })
     }
 }
 
@@ -272,8 +281,19 @@ export function step(gs, input = {}) {
         p.dying--
         if (p.dying === 0) {
             gs.balloon = null
-            if (gs.lives <= 0) { gs.end = 'over'; gs.events.push({ t: 'over' }) }
-            else { p.r = 0; p.c = 0; p.invuln = 50 }
+            if (ap(gs).lives <= 0) {
+                const other = 1 - gs.active
+                if (gs.players[other].lives > 0) {
+                    // the active player is out: the OTHER takes the pyramid,
+                    // fresh, keeping their own score and their own lives
+                    gs.active = other
+                    resetRound(gs)
+                } else {
+                    gs.end = 'over'; gs.events.push({ t: 'over' })
+                }
+            } else {
+                p.r = 0; p.c = 0; p.invuln = 50
+            }
         }
         return finish(gs)
     }
@@ -446,7 +466,8 @@ function finish(gs) {
 export function stateHash(gs) {
     let h = 0x811c9dc5
     const mix = (n) => { h ^= n & 0xff; h = Math.imul(h, 0x01000193) >>> 0 }
-    mix(gs.level); mix(gs.score); mix(gs.lives); mix(gs.flips); mix(gs.tick)
+    mix(gs.level); mix(gs.flips); mix(gs.tick); mix(gs.active)
+    for (const pl of gs.players) { mix(pl.score); mix(pl.total); mix(pl.lives) }
     for (const i of CUBES) mix(gs.colors[i])
     mix(gs.player.r * 8 + gs.player.c); mix(gs.player.upChain); mix(gs.player.dying ? 1 : 0)
     for (const s of gs.snakes) mix(s.r * 8 + s.c)
