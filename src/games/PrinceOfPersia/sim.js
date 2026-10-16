@@ -760,7 +760,8 @@ function stepGuards(g, dueling) {
         } else if (gd.engaged) {
             gd.dir = sign(p.x - gd.x) || gd.dir
             const close = CFG.reach - 6
-            if (gd === duelist && gd.cool <= 0 && Math.abs(gd.x - p.x) <= CFG.reach + 8 && gd.recoil <= 0) {
+            if (gd === duelist && gd.cool <= 0 && !g.guards.some((o) => o !== gd && !o.dead && o.wind > 0)
+                && Math.abs(gd.x - p.x) <= CFG.reach + 8 && gd.recoil <= 0) {
                 gd.wind = gd.windT; gd.anim = 'wind'
                 g.events.push({ t: g.tick, type: 'guardWind', boss: gd.boss })
             } else if (Math.abs(gd.x - p.x) > close) { gd.x += gd.dir * gd.speed; gd.anim = 'advance' }
