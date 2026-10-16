@@ -4,8 +4,10 @@
 // bobcheck grades it.
 //
 // Movement rides a graph the harness audits too (graphOf, exported): nodes are
-// stand cells (platform rows + the floor), edges are walks, falls, drop-throughs,
-// two-row jumps and ladder climbs — the same verbs the sim obeys.
+// stand cells (platform rows + the floor), edges are walks, falls,
+// drop-throughs and two-row jumps — the same verbs the sim obeys. No ladders:
+// the arcade has none, and the levels are generated so the jump chain reaches
+// every row.
 //
 // Tactics, in order: dodge a close free enemy, pop the nearest trapped bubble,
 // grab nearby loot (letters and lightning first), otherwise close on the
@@ -43,12 +45,6 @@ export function graphOf(lv) {
             }
         }
     }
-    for (const l of lv.ladders) {
-        const lo = Math.min(l.rowTop, l.rowBot), hi = Math.max(l.rowTop, l.rowBot)
-        const rows = [l.rowTop, l.rowBot]
-        for (const p of lv.platforms) if (p.row > lo && p.row < hi && l.col >= p.c0 && l.col <= p.c1) rows.push(p.row)
-        for (const a of rows) for (const b of rows) if (a !== b && stand(lv, a, l.col) && stand(lv, b, l.col)) add(key(a, l.col), key(b, l.col))
-    }
     lv._g = { edges, key }
     return lv._g
 }
@@ -83,7 +79,44 @@ export function decide(gs, idx = 0) {
     const free = gs.enemies.filter((e) => e.state !== 'trap')
     const threats = [...free, ...gs.blubbas]
 
-    // 1) dodge by rolling the REAL sim forward per candidate input (the Spy
+    // 1) BARON VON BLUBBA is unkillable and faster than a walk — when he is on
+    //    screen and the door is open, the door is the only answer (the
+    //    arcade's own pressure): rollout every direction and take the one
+    //    that survives AND gains the most ground on the door
+    if (gs.blubbas.length && gs.door.open) {
+        const candidates = []
+        for (const cx2 of [-1, 0, 1]) {
+            for (const cy2 of [-1, 0, 1]) {
+                if (cy2 > 0 && p.onGround && p.y + 8 < H - 2) continue // never drop through our own platform
+                if (cy2 < 0 && !p.onGround) continue // no jump in mid-air
+                candidates.push({ left: cx2 < 0, right: cx2 > 0, up: cy2 < 0, down: cy2 > 0, fire: false })
+            }
+        }
+        let bestIn = null, bestScore = -Infinity
+        for (const cand of candidates) {
+            const c = clone(gs)
+            let score = 0
+            let died = false
+            for (let k = 0; k < 30; k++) {
+                step(c, [cand])
+                const cp = c.players[idx]
+                if (!cp || cp.deadT > 0 || c.end) { died = true; score = k - 1000; break }
+                if (k % 9 === 8) {
+                    let d = Infinity
+                    for (const e of c.enemies) d = Math.min(d, Math.hypot(e.x - cp.x, e.y - cp.y))
+                    for (const bb of c.blubbas) d = Math.min(d, Math.hypot(bb.x - cp.x, bb.y - cp.y))
+                    const toDoor = Math.hypot(c.door.x - cp.x, c.door.y - cp.y)
+                    score += 1.5 * Math.min(d, 60) - 0.5 * toDoor
+                }
+            }
+            if (!died && score > bestScore) { bestScore = score; bestIn = cand }
+        }
+        if (bestIn) return bestIn
+        steer(gs, p, pr, pc, clamp(rowFeet(gs.door.y + 12), 1, FLOOR_ROW), Math.floor(gs.door.x / CELL), inp)
+        return inp
+    }
+
+    // 2) dodge by rolling the REAL sim forward per candidate input (the Spy
     //    Hunter lesson: hand-drawn threat models lose to the actual box) —
     //    keep the candidate that survives longest and stays far from enemies
     const near = threats.filter((t) => Math.hypot(t.x - p.x, t.y - p.y) < 52)
@@ -93,7 +126,7 @@ export function decide(gs, idx = 0) {
             for (const cy2 of [-1, 0, 1]) {
                 if (cx2 === 0 && cy2 === 0) continue
                 if (cy2 > 0 && p.onGround && p.y + 8 < H - 2) continue // never drop through our own platform
-                if (cy2 < 0 && !p.onGround && !p.climbing) continue // no jump in mid-air
+                if (cy2 < 0 && !p.onGround) continue // no jump in mid-air
                 candidates.push({ left: cx2 < 0, right: cx2 > 0, up: cy2 < 0, down: cy2 > 0, fire: false })
             }
         }
@@ -123,7 +156,7 @@ export function decide(gs, idx = 0) {
         if (bestIn) return bestIn
     }
 
-    // 2) pop a trapped bubble: hop when it hovers just above, steer under it
+    // 3) pop a trapped bubble: hop when it hovers just above, steer under it
     //    when it is high, walk into it when level
     const trapped = gs.bubbles.filter((b) => b.trapped)
     if (trapped.length) {
@@ -139,7 +172,7 @@ export function decide(gs, idx = 0) {
         return inp
     }
 
-    // 3) loot when close (letters and lightning outrank fruit)
+    // 4) loot when close (letters and lightning outrank fruit)
     const rank = { lightning: 0, letter: 1, power: 2, fruit: 3 }
     const loot = gs.items.filter((it) => Math.hypot(it.x - p.x, it.y - p.y) < 90 && !gs.blubbas.length)
     if (loot.length) {
@@ -148,13 +181,13 @@ export function decide(gs, idx = 0) {
         return inp
     }
 
-    // 4) door first if open
+    // 5) door first if open
     if (gs.door.open) {
         steer(gs, p, pr, pc, clamp(rowFeet(gs.door.y + 12), 1, FLOOR_ROW), Math.floor(gs.door.x / CELL), inp)
         return inp
     }
 
-    // 5) engage nearest enemy: line up and blow
+    // 6) engage nearest enemy: line up and blow
     if (free.length) {
         const e = free.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0]
         const targetRow = e.state === 'walk' ? clamp(e.span.row, 1, FLOOR_ROW) : clamp(rowFeet(e.y + 8), 1, FLOOR_ROW)
@@ -170,7 +203,7 @@ export function decide(gs, idx = 0) {
     return inp
 }
 
-function steer(gs, p, pr, pc, tr, tc, inp) {
+function steer(gs, _p, pr, pc, tr, tc, inp) {
     if (pr === tr && Math.abs(pc - tc) <= 1 && (tc === pc || stand(gs.lv, pr, tc))) {
         if (tc > pc) inp.right = true
         else if (tc < pc) inp.left = true
@@ -189,19 +222,14 @@ function steer(gs, p, pr, pc, tr, tc, inp) {
         else if (nc < pc) inp.left = true
         return
     }
-    // vertical leg: ladder? jump? drop?
-    const lad = gs.lv.ladders.find((l) => l.col === pc && Math.min(l.rowTop, l.rowBot) <= Math.min(pr, nr) && Math.max(l.rowTop, l.rowBot) >= Math.max(pr, nr))
+    // vertical leg: jump up (with lateral drift) or drop down
     if (nr < pr) {
-        if (lad) { const lx = (lad.col + 0.5) * CELL; inp.up = true; if (lx > p.x + 3) inp.right = true; else if (lx < p.x - 3) inp.left = true }
-        else { inp.up = true; if (nc > pc) inp.right = true; else if (nc < pc) inp.left = true }
+        inp.up = true
+        if (nc > pc) inp.right = true
+        else if (nc < pc) inp.left = true
     } else {
-        const ldx = lad ? (lad.col + 0.5) * CELL - p.x : 0
-        if (lad && p.onGround && Math.abs(p.y + 8 - (FIELD_Y0 + Math.min(pr, nr) * CELL)) < 8) inp.down = true // climb down from a ladder top
-        else if (lad) { inp.down = true; if (ldx > 3) inp.right = true; else if (ldx < -3) inp.left = true }
-        else {
-            if (nc !== pc) { if (nc > pc) inp.right = true; else inp.left = true }
-            else inp.down = true
-        }
+        if (nc !== pc) { if (nc > pc) inp.right = true; else inp.left = true }
+        else inp.down = true
     }
 }
 

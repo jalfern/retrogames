@@ -29,7 +29,7 @@ import {
 export { W, H, CELL, COLS, ROWS, FIELD_Y0, FLOOR_ROW }
 
 export const CFG = {
-    gravity: 0.22, jumpV: -4.4, walkSpd: 1.1, fastSpd: 1.55, climbSpd: 1.1,
+    gravity: 0.22, jumpV: -4.4, walkSpd: 1.1, fastSpd: 1.55,
     terminal: 3.6,
     bubbleV: 1.6, bubbleGrow: 0.09, bubbleMax: 10, bubbleLife: 260,
     bubbleCool: 14, popR: 8,
@@ -57,7 +57,7 @@ function makePlayer(gs, idx) {
     const lv = gs.lv
     return {
         id: idx, x: (lv.entry.col * CELL + half), y: FIELD_Y0 + lv.entry.row * CELL + 8,
-        vx: 0, vy: 0, dir: 1, onGround: false, climbing: false, dropT: 0,
+        vx: 0, vy: 0, dir: 1, onGround: false, dropT: 0,
         deadT: 0, invuln: 90, power: null, powerT: 0, cool: 0,
         moving: false, inWater: false, walkT: 0,
     }
@@ -142,16 +142,6 @@ function landSurface(gs, x, feetPrev, feetNew) {
     return best
 }
 
-function ladderAt(gs, p) {
-    for (const l of gs.lv.ladders) {
-        const lx = (l.col * CELL + half)
-        const topY = platTop(l.rowTop)
-        const botY = l.rowBot >= FLOOR_ROW ? H : platTop(l.rowBot)
-        if (Math.abs(p.x - lx) < 7 && p.y + 8 >= topY - 6 && p.y + 8 <= botY + 4) return { l, lx, topY, botY }
-    }
-    return null
-}
-
 function updatePlayer(gs, p, inp) {
     if (p.deadT > 0) return
     const waterTop = gs.lv.water ? H - CELL : H + 1
@@ -159,42 +149,28 @@ function updatePlayer(gs, p, inp) {
     const left = !!inp.left, right = !!inp.right, up = !!inp.up, down = !!inp.down
     p.moving = false
 
-    const lad = ladderAt(gs, p)
-    if (lad && up && p.y + 8 > lad.topY + 2) p.climbing = true
-    if (lad && down && p.onGround && Math.abs(p.y + 8 - lad.topY) < 4) p.climbing = true
-
-    if (p.climbing && lad) {
-        p.vy = 0
-        if (up) p.vy = -CFG.climbSpd
-        else if (down) p.vy = CFG.climbSpd
-        if (left) { p.vx = -0.8 } else if (right) { p.vx = 0.8 } else p.vx = 0
-        p.y += p.vy
-        p.x = clamp(p.x + p.vx, half, W - half)
-        if (p.y + 8 <= lad.topY) { p.y = lad.topY - 8; p.climbing = false; p.onGround = true; p.vy = 0 }
-        if (p.y + 8 >= lad.botY) { p.y = lad.botY - 8; p.climbing = false; p.onGround = lad.botY >= H; p.vy = 0 }
-        if (Math.abs(p.x - lad.lx) >= 8) p.climbing = false
-    } else {
-        const spd = p.power === 'green' ? CFG.fastSpd : CFG.walkSpd
-        if (left) { p.vx = -spd; p.dir = -1; p.moving = true }
-        else if (right) { p.vx = spd; p.dir = 1; p.moving = true }
-        else p.vx = 0
-        const g = p.inWater ? CFG.gravity * 0.22 : CFG.gravity
-        p.vy = Math.min(CFG.terminal * (p.inWater ? 0.35 : 1), p.vy + g)
-        if (p.inWater && up) p.vy = -1.0
-        if (p.onGround) {
-            if (up) { p.vy = CFG.jumpV * (p.inWater ? 0.45 : 1); p.onGround = false }
-            else if (down && p.dropT <= 0) { p.onGround = false; p.dropT = 14 }
-        }
-        const feetPrev = p.y + 8
-        p.x = clamp(p.x + p.vx, half, W - half)
-        p.y += p.vy
-        if (p.dropT > 0) p.dropT--
-        const surf = p.vy >= 0 && p.dropT <= 0 ? landSurface(gs, p.x, feetPrev, p.y + 8) : null
-        if (surf !== null && p.vy >= 0) { p.y = surf - 8; p.vy = 0; p.onGround = true }
-        else p.onGround = false
-        p.y = clamp(p.y, FIELD_Y0 + 8, H - 8)
-        if (p.y >= H - 8) p.onGround = true
+    // no ladders (the arcade has none): the cave climbs by jumps through the
+    // one-way platforms; `half` is the inner face of the thick side walls
+    const spd = p.power === 'green' ? CFG.fastSpd : CFG.walkSpd
+    if (left) { p.vx = -spd; p.dir = -1; p.moving = true }
+    else if (right) { p.vx = spd; p.dir = 1; p.moving = true }
+    else p.vx = 0
+    const g = p.inWater ? CFG.gravity * 0.22 : CFG.gravity
+    p.vy = Math.min(CFG.terminal * (p.inWater ? 0.35 : 1), p.vy + g)
+    if (p.inWater && up) p.vy = -1.0
+    if (p.onGround) {
+        if (up) { p.vy = CFG.jumpV * (p.inWater ? 0.45 : 1); p.onGround = false }
+        else if (down && p.dropT <= 0) { p.onGround = false; p.dropT = 14 }
     }
+    const feetPrev = p.y + 8
+    p.x = clamp(p.x + p.vx, half, W - half)
+    p.y += p.vy
+    if (p.dropT > 0) p.dropT--
+    const surf = p.vy >= 0 && p.dropT <= 0 ? landSurface(gs, p.x, feetPrev, p.y + 8) : null
+    if (surf !== null && p.vy >= 0) { p.y = surf - 8; p.vy = 0; p.onGround = true }
+    else p.onGround = false
+    p.y = clamp(p.y, FIELD_Y0 + 8, H - 8)
+    if (p.y >= H - 8) p.onGround = true
     if (p.invuln > 0) p.invuln--
     if (p.cool > 0) p.cool--
     if (p.powerT > 0) { p.powerT--; if (p.powerT === 0) p.power = null }
@@ -264,7 +240,7 @@ function updateBubbles(gs) {
         if (!b.trapped) b.life--
         if (b.kind === 'flame') {
             b.x += b.vx
-            if (b.x < 6 || b.x > W - 6) b.life = 0
+            if (b.x < half || b.x > W - half) b.life = 0
             for (const e of gs.enemies) {
                 if (e.state === 'trap' || b.hitIds.includes(e.id)) continue
                 const hitR = e.kind === 'boss' ? 18 : 9
@@ -300,8 +276,12 @@ function updateBubbles(gs) {
         }
         b.x += b.vx
         b.y += b.vy
-        if (b.x < b.r + 1) { b.x = b.r + 1; b.vx = 0 }
-        if (b.x > W - b.r - 1) { b.x = W - b.r - 1; b.vx = 0 }
+        // the cave is boxed in: thick side walls bounce bubbles back into the
+        // field (damped), and the ceiling under the HUD does the same — a
+        // trapped bubble at the ceiling so drifts along it, arcade style
+        if (b.x < b.r + half) { b.x = b.r + half; if (b.vx < 0) b.vx = -b.vx * 0.5 }
+        if (b.x > W - b.r - half) { b.x = W - b.r - half; if (b.vx > 0) b.vx = -b.vx * 0.5 }
+        if (b.y < FIELD_Y0 + b.r) { b.y = FIELD_Y0 + b.r; if (b.vy < 0) b.vy = -b.vy * 0.3 }
         if (b.r <= 0) {
             b.dead = true
             if (b.letter) gs.items.push({ id: gs._nextId++, kind: 'letter', ch: b.letter, x: b.x, y: b.y, vy: 0, life: CFG.letterLife, grounded: false })
@@ -604,7 +584,7 @@ export function step(gs, inputs) {
 export function stateHash(gs) {
     const parts = [
         gs.tick, gs.level, gs.lives, gs.score, gs.chain, gs.letterProg, gs.kills, gs.end || '-', gs.levelPhase,
-        ...gs.players.map((p) => `${p.id}${p.x.toFixed(2)},${p.y.toFixed(2)}${p.onGround ? 'G' : ''}${p.climbing ? 'C' : ''}${p.power || ''}${p.deadT}`),
+        ...gs.players.map((p) => `${p.id}${p.x.toFixed(2)},${p.y.toFixed(2)}${p.onGround ? 'G' : ''}${p.power || ''}${p.deadT}`),
         ...gs.bubbles.map((b) => `${b.id}${b.kind}${b.x.toFixed(1)},${b.y.toFixed(1)}r${b.r.toFixed(1)}t${b.trapped || 0}${b.letter || ''}`),
         ...gs.enemies.map((e) => `${e.id}${e.kind}${e.state}${e.x.toFixed(1)},${e.y.toFixed(1)}d${e.dir}${e.angry ? 'A' : ''}${e.snail ? 'S' : ''}h${e.hp}${e.trapT}`),
         ...gs.items.map((it) => `${it.id}${it.kind}${it.x.toFixed(1)},${it.y.toFixed(1)}l${it.life}`),
