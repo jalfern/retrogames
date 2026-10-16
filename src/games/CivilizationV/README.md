@@ -95,8 +95,8 @@ npm run lint:civ          # eslint gate for the game + its scripts
 `CIV_URL=http://127.0.0.1:<port>/retrogames/civilization-v npm run civplay`.
 
 **Mutant proof.** In `sim.js` `doAttack`, flip the march-in condition
-`if (!ranged && u.alive)` → `if (ranged && u.alive)`: the one-unit-per-tile
-battle check (§11) and the autopilot win path go red, restore returns green.
+`if (!ranged && u.alive)` → `if (ranged && u.alive)`: §11's "killer marches
+into the captured hex" goes red (88/89), restore returns 89/89 green.
 (Stage-1 mutant: centre food `+2→0` breaks growth/win/slack.)
 
 ## Honest gaps (Stage 2 boundaries — the deep pass closes these)
