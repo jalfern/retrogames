@@ -15,7 +15,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { TRACK, BOOSTS, BOXES, CHECKPOINTS, surfaceAt } from '../src/games/MarioKart/track.js'
 import { makeGame, step, stateHash, fmtTime, CFG } from '../src/games/MarioKart/sim.js'
 import { decide } from '../src/games/MarioKart/planner.js'
-import { SNES, KART } from '../src/games/MarioKart/art.js'
+import { SNES, KART, buildSky } from '../src/games/MarioKart/art.js'
 
 const R = { fail: 0 }
 const check = (label, ok, detail = '') => {
@@ -262,7 +262,18 @@ check('road is GREY asphalt, not the old tan #e8d8b8', isGrey(SNES.road) && SNES
 check('kerb carries red AND white', !!SNES.kerbRed && !!SNES.kerbWhite, `${SNES.kerbRed} / ${SNES.kerbWhite}`)
 check('a low barrier ring is named', !!SNES.barrier && !!SNES.barrierTop, `${SNES.barrier} / ${SNES.barrierTop}`)
 check('the kart reads WIDER than tall', KART.w > KART.h, `${KART.w} x ${KART.h}`)
-check('the kart animates 2+ frames', KART.frames >= 2, `${KART.frames} frames`)
+check('the kart has 3+ steering poses (left/straight/right)', KART.frames >= 3, `${KART.frames} poses`)
+// #269: the grandstands left the grass — the far scenery is a parallax
+// background band. buildSky() is pure (no document), so its skyline is
+// gradeable in Node: a few stands (max well above the horizon line) but
+// sparse (most of the circle is hills, min === 0). A solid wall or no
+// skyline at all both go red here.
+const sky = buildSky()
+const standMax = Math.max(...sky.stand)
+const standMin = Math.min(...sky.stand)
+check('the grandstand skyline is a sparse background band (present, not a wall)',
+    sky.stand.length === 512 && standMax > 8 && standMin === 0,
+    `max ${standMax.toFixed(0)}px, min ${standMin}`)
 
 console.log('— determinism —')
 const a = race(); const b = race()
