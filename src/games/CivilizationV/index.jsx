@@ -14,9 +14,9 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked } from './sim.js'
 import { decide } from './planner.js'
-import { createView, updateView } from './art.js'
+import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
 
 const SIM_MS = 1000 / 60
 const GOAL = CFG.capitalSizeToWin
@@ -54,6 +54,8 @@ const CivilizationVGame = () => {
         const ndc = new THREE.Vector2()
 
         const say = (m) => { toastMsg = m; toast = 170 }
+        const shake = { v: 0 }
+        const known = (c, r) => c >= 0 && r >= 0 && c < CFG.W && r < CFG.H && gs.explored[0][r * CFG.W + c]
 
         const handleEvents = (evts) => {
             for (const e of evts) {
@@ -62,6 +64,39 @@ const CivilizationVGame = () => {
                 else if (e.type === 'deny') { audioController.playTone(90, 0.09, 'square', 0.05) }
                 else if (e.type === 'turnEnd' && e.civ === 0) { audioController.playTone(240, 0.03, 'sine', 0.03) }
                 else if (e.type === 'explored' && e.civ === 0 && (e.c + e.r) % 3 === 0) { audioController.playTone(660, 0.02, 'sine', 0.02) }
+                else if (e.type === 'strike') {
+                    if (e.ranged && known(e.from[0], e.from[1])) spawnArrow(view, gs, e.from, e.to)
+                    else if (known(e.to[0], e.to[1])) spawnImpact(view, gs, e.to[0], e.to[1], false)
+                }
+                else if (e.type === 'siege' && known(e.at[0], e.at[1])) { spawnImpact(view, gs, e.at[0], e.at[1], true); shake.v = 5; audioController.playNoise(0.08, 0.06) }
+                else if (e.type === 'raid' && known(e.at[0], e.at[1])) { spawnImpact(view, gs, e.at[0], e.at[1], true); audioController.playNoise(0.06, 0.05) }
+                else if (e.type === 'kill') {
+                    if (known(e.at[0], e.at[1])) spawnImpact(view, gs, e.at[0], e.at[1], true)
+                    shake.v = Math.max(shake.v, 4)
+                    audioController.playNoise(0.12, 0.08)
+                    if (e.civ === 0 && e.victim === BARB) say('ENEMY SLAIN')
+                    else if (e.victim === 0) say(`${e.victimKind} LOST IN BATTLE`)
+                }
+                else if (e.type === 'cityStrike' && known(e.at[0], e.at[1])) { spawnImpact(view, gs, e.at[0], e.at[1], true); audioController.playTone(140, 0.07, 'square', 0.06) }
+                else if (e.type === 'barbSpawn' && known(e.c, e.r)) { spawnImpact(view, gs, e.c, e.r, false); audioController.playTone(110, 0.05, 'sawtooth', 0.03) }
+                else if (e.type === 'campRazed') {
+                    spawnImpact(view, gs, e.c, e.r, true); shake.v = 6
+                    audioController.playNoise(0.18, 0.09); audioController.playSweep(220, 520, 0.25, 'triangle', 0.07)
+                    if (e.civ === 0) say('BARBARIAN CAMP RAZED · +12 GOLD')
+                }
+                else if (e.type === 'war') {
+                    const foe = e.a === 0 ? e.b : e.a
+                    say(`${CIVS[foe].name} DECLARES WAR`)
+                    audioController.playSweep(220, 90, 0.5, 'sawtooth', 0.08)
+                }
+                else if (e.type === 'capture') {
+                    spawnImpact(view, gs, gs.cities[e.city].c, gs.cities[e.city].r, true); shake.v = 8
+                    audioController.playSweep(e.civ === 0 ? 330 : 330, e.civ === 0 ? 780 : 120, 0.5, 'triangle', 0.1)
+                    say(e.civ === 0 ? `${gs.cities[e.city].name.toUpperCase()} CAPTURED!` : `${gs.cities[e.city].name.toUpperCase()} HAS FALLEN!`)
+                }
+                else if (e.type === 'civDead') { say(`${CIVS[e.civ].name} IS NO MORE`); audioController.playDeath() }
+                else if (e.type === 'build') { if (e.civ === 0) { say(`${e.unit} TRAINED AT ${gs.cities[e.city].name.toUpperCase()}`); audioController.playTone(440, 0.05, 'square', 0.05) } }
+                else if (e.type === 'queued') { audioController.playTone(330, 0.03, 'sine', 0.03) }
             }
         }
 
@@ -79,6 +114,7 @@ const CivilizationVGame = () => {
                     const tl = gs.tiles[i]
                     if (tl.terr < T.GRASS || tl.terr > T.HILLS) continue
                     if (gs.units.some((u) => u.alive && u.c === nc && u.r === nr)) continue
+                    if (tileBlocked(gs, nc, nr)) continue
                     ring.add(i); next.push([nc, nr])
                 }
                 ringCur = next
@@ -92,7 +128,7 @@ const CivilizationVGame = () => {
         const NN_ODD = [[1, 0], [0, -1], [-1, -1], [-1, 0], [-1, 1], [0, 1]]
         const neigh = (c, r) => (r & 1 ? NN_ODD : NN_EVEN).map(([dc, dr]) => [c + dc, r + dr]).filter(([nc, nr]) => inb(nc, nr))
 
-        const finish = (win) => { setEnd({ win, why: gs.endWhy, turn: gs.turn, size: capSize() }); overAtRef.current = performance.now(); setMode('over'); if (win) audioController.playFanfare(); else audioController.playDeath() }
+        const finish = (win) => { setEnd({ win, why: gs.endWhy, turn: gs.turn, size: capSize(), domination: /Domination/.test(gs.endWhy || '') }); overAtRef.current = performance.now(); setMode('over'); if (win) audioController.playFanfare(); else audioController.playDeath() }
         const capSize = () => { const cap = gs.cities.find((c) => c.civ === 0 && c.capital); return cap ? cap.size : 0 }
 
         let demoSc = 0, attractN = 0
@@ -114,7 +150,10 @@ const CivilizationVGame = () => {
 
         const applyCam = () => {
             const d = cam.dist
-            camera.position.set(cam.tx + d * Math.sin(cam.el) * Math.sin(cam.az), cam.dist * Math.cos(cam.el), cam.tz + d * Math.sin(cam.el) * Math.cos(cam.az))
+            const sk = shake.v > 0 ? shake.v * 0.012 : 0
+            if (shake.v > 0) shake.v = Math.max(0, shake.v - 0.5)
+            const sx = sk * Math.sin(gs.tick * 1.7), sy = sk * Math.sin(gs.tick * 2.3 + 1)
+            camera.position.set(cam.tx + d * Math.sin(cam.el) * Math.sin(cam.az) + sx, cam.dist * Math.cos(cam.el) + sy, cam.tz + d * Math.sin(cam.el) * Math.cos(cam.az) + sx * 0.5)
             camera.lookAt(cam.tx, 2, cam.tz)
         }
 
@@ -137,7 +176,16 @@ const CivilizationVGame = () => {
             if (h.turn) h.turn.textContent = `TURN ${gs.turn}/${CFG.turnLimit}`
             if (h.cap) h.cap.textContent = cap ? `CAPITAL ${cap.name} · size ${cap.size}/${GOAL}` : 'NO CITY — press E to settle'
             if (h.cities) h.cities.textContent = `cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}`
-            if (h.sel) h.sel.textContent = (() => { const s = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0); return s ? `${s.kind} · ${s.moves}/${s.maxMoves} moves` : 'tap a unit' })()
+            if (h.sel) h.sel.textContent = (() => { const s = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0); return s ? `${s.kind} · ${s.moves}/${s.maxMoves} moves · hp ${s.hp}` : 'tap a unit' })()
+            if (h.build) {
+                const city = gs.cities.find((c) => c.civ === 0 && c.alive)
+                const q = city && city.queue && city.queue[0]
+                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${UNIT[q].cost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler'
+            }
+            if (h.war) {
+                const w = [1, 2, 3].filter((i) => atWar(gs, 0, i)).map((i) => CIVS[i].name)
+                h.war.textContent = w.length ? `⚔ AT WAR: ${w.join(' ')}` : gs.camps.some((c) => c.alive) ? 'barbarian camps roam' : 'at peace'
+            }
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
         }
@@ -167,6 +215,20 @@ const CivilizationVGame = () => {
             const own = gs.units.find((u) => u.alive && u.civ === 0 && u.c === c && u.r === r)
             if (own) { gs.selected = own.id; pending = { select: own.id }; audioController.playTone(440, 0.03, 'sine', 0.04); return }
             const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0)
+            const hostile = gs.units.find((u) => u.alive && u.c === c && u.r === r && atWar(gs, 0, u.civ))
+            const tl = gs.tiles[r * CFG.W + c]
+            const campHit = tl.camp >= 0 && gs.camps[tl.camp] && gs.camps[tl.camp].alive
+            const cityHit = tl.city >= 0 && gs.cities[tl.city].alive && atWar(gs, 0, gs.cities[tl.city].civ)
+            if (sel && sel.moves > 0 && sel.str > 0) {
+                const d = hexDist([sel.c, sel.r], [c, r])
+                if ((hostile || campHit || cityHit) && d >= 1 && d <= Math.max(1, UNIT[sel.kind].range)) {
+                    pending = { attack: [c, r] }
+                    audioController.playTone(hostile || cityHit ? 180 : 260, 0.05, 'square', 0.05)
+                    return
+                }
+            }
+            if (hostile) { say(hostile.civ === BARB ? 'BARBARIANS! ATTACK WITH A UNIT IN RANGE' : 'AT WAR — ATTACK WITH A UNIT IN RANGE'); audioController.playTone(120, 0.06, 'square', 0.04); return }
+            if (campHit) { say('RANGE THE CAMP (ADJACENT OR ARCHER)'); audioController.playTone(120, 0.05, 'square', 0.04); return }
             if (sel && sel.moves > 0) { const ok = findPath(gs, sel, c, r); if (ok && ok.length) { pending = { move: [c, r] }; audioController.playTone(300, 0.02, 'sine', 0.03) } else audioController.playTone(120, 0.05, 'square', 0.04) }
         }
         const doSettle = () => {
@@ -189,6 +251,9 @@ const CivilizationVGame = () => {
             if (pausedRef.current) return
             if (e.code === 'Space' || e.code === 'Enter') { endTurn(); return }
             if (e.code === 'KeyE' || e.code === 'KeyB') { doSettle(); return }
+            if (e.code === 'Digit1') { pending = { ...pending, queue: 'WARRIOR' }; audioController.playTone(330, 0.03, 'sine', 0.03); return }
+            if (e.code === 'Digit2') { pending = { ...pending, queue: 'ARCHER' }; audioController.playTone(370, 0.03, 'sine', 0.03); return }
+            if (e.code === 'Digit3') { pending = { ...pending, queue: 'SETTLER' }; audioController.playTone(290, 0.03, 'sine', 0.03); return }
             if (e.code === 'ArrowLeft') { cam.az -= 0.12; return }
             if (e.code === 'ArrowRight') { cam.az += 0.12; return }
             if (e.code === 'ArrowUp') { cam.el = Math.min(1.4, cam.el + 0.06); return }
@@ -232,10 +297,14 @@ const CivilizationVGame = () => {
                 probe: () => ({ screen: screenRef.current, tick: gs.tick, turn: gs.turn, phase: gs.phase, end: gs.end, why: gs.endWhy,
                     gold: gs.civs[0].gold, science: gs.civs[0].science, culture: gs.civs[0].culture || 0,
                     capitalSize: capSize(), playerCities: gs.cities.filter((c) => c.civ === 0 && c.alive).length, totalCities: gs.cities.filter((c) => c.alive).length,
-                    selected: gs.selected, units0: gs.units.filter((u) => u.civ === 0 && u.alive).map((u) => ({ id: u.id, kind: u.kind, c: u.c, r: u.r, moves: u.moves })),
+                    selected: gs.selected, units0: gs.units.filter((u) => u.civ === 0 && u.alive).map((u) => ({ id: u.id, kind: u.kind, c: u.c, r: u.r, moves: u.moves, hp: u.hp })),
+                    barbsVisible: gs.units.filter((u) => u.alive && u.civ === BARB && gs.visible[0][u.r * CFG.W + u.c]).length,
+                    campsAlive: gs.camps.filter((c) => c.alive).length, wars: Object.keys(gs.wars).length,
+                    queue: gs.cities.filter((c) => c.civ === 0 && c.alive).map((c) => ({ name: c.name, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0) })),
                     explored0: countArr(gs.explored[0]) }),
                 start: startPlay, hash: () => stateHash(gs), select: (id) => { pending = { select: id } },
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
+                attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k) => { pending = { ...pending, queue: k } },
                 auto: (turns = 100) => { let n = 0; while (!gs.end && n < turns * 400 && screenRef.current === 'play') { doSim(decide(gs)); n++ } return { end: gs.end, turns: gs.turn, size: capSize() } },
             }
             mountDbg({
@@ -244,12 +313,15 @@ const CivilizationVGame = () => {
                     `TURN ${gs.turn}/${CFG.turnLimit}  phase ${gs.phase}  end ${gs.end || '-'} ${gs.endWhy || ''}`,
                     `ROME gold ${gs.civs[0].gold}  sci ${gs.civs[0].science}  culture ${gs.civs[0].culture || 0}  goal capital size ${capSize()}/${GOAL}`,
                     `player cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}  total ${gs.cities.filter((c) => c.alive).length}  units0 ${gs.units.filter((u) => u.civ === 0 && u.alive).length}  explored ${countArr(gs.explored[0])}`,
+                    `camps alive ${gs.camps.filter((c) => c.alive).length}/${gs.camps.length}  wars ${Object.keys(gs.wars).length}  barbs alive ${gs.units.filter((u) => u.alive && u.civ === BARB).length}  queue ${JSON.stringify((gs.cities.find((c) => c.civ === 0 && c.alive) || { queue: [] }).queue)}`,
                     `selected ${gs.selected}  tick ${gs.tick}`,
                 ],
                 actions: [
                     { label: 'PROGNOSIS', run: () => { if (gs.end) return `already ${gs.end}`; const clone = structuredClone(gs); clone.events = []; let n = 0; while (!clone.end && n < 40000) step(clone, decide(clone)); return `$ planner replays THIS map from here to ${clone.end} at turn ${clone.turn} (capital ${capSizeOf(clone)})` } },
                     { label: 'SETTLE HERE', run: () => { doSettle(); return 'issued settle' } },
                     { label: '+300 GOLD', run: () => { gs.civs[0].gold += 300; return '+300 gold (the ledger is real: gold only buys AI settlers)' } },
+                    { label: 'QUEUE WARRIOR', run: () => { pending = { ...pending, queue: 'WARRIOR' }; return 'warrior queued at your first city' } },
+                    { label: 'HEAL ALL', run: () => { gs.units.filter((u) => u.alive && u.civ === 0).forEach((u) => { u.hp = 100 }); return 'legions made whole' } },
                 ],
             })
         }
@@ -290,6 +362,8 @@ const CivilizationVGame = () => {
                     <span ref={setHud('sci')} className="text-sky-300" title="Science">✦0</span>
                     <span ref={setHud('cult')} className="text-fuchsia-300" title="Culture">❦0</span>
                     <span ref={setHud('cities')} className="text-emerald-200/80">cities 0</span>
+                    <span ref={setHud('war')} className="text-red-300/90">at peace</span>
+                    <span ref={setHud('build')} className="text-white/50">BUILD: 1 warrior · 2 archer · 3 settler</span>
                     <span ref={setHud('sel')} className="text-white/70 ml-auto">tap a unit</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, color: '#ffe9a8', textShadow: '0 0 12px #c80' }} />
@@ -301,23 +375,23 @@ const CivilizationVGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-5xl font-black tracking-wide" style={{ color: '#e8c56a', textShadow: '0 2px 0 #6b4a12, 0 10px 26px #000' }}>CIVILIZATION</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">STAGE 1 · THE FOUNDING</p>
+                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">STAGE 2 · WAR</p>
                     <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
                     <p className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-4">
-                        one settler, one warrior — walk out through the fog and pick your ground<br />
-                        tap a tile to move · E settles your capital · Space ends the turn<br />
-                        cities work their ring, grow on surplus food, spread coloured borders<br />
-                        grow your capital to size {GOAL} before turn {CFG.turnLimit} · three rival civs are founding too<br />
-                        drag to orbit the world · wheel or pinch to zoom · the demo is the autopilot&apos;s own proven founding
+                        settle your capital, then steel it — barbarian camps spawn warriors; rival civs declare war<br />
+                        tap a tile to move · tap a hostile hex to strike it · E settles · Space ends the turn<br />
+                        hills and cities defend, archers fire from two hexes, wounded heal at home (keys 1/2/3 build)<br />
+                        grow your capital to size {GOAL}, or take every rival capital for DOMINATION · turn limit {CFG.turnLimit}<br />
+                        drag to orbit the world · wheel or pinch to zoom · the demo is the autopilot&apos;s own proven campaign
                     </p>
                 </div>
             )}
 
             {screen === 'over' && end && (
                 <div className="absolute inset-0 bg-black/72 flex flex-col items-center justify-center text-amber-50 font-mono px-6">
-                    <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'AN AGE OF GOLD' : 'HISTORY PASSED YOU BY'}</h2>
-                    <p className="text-lg mb-1">{end.win ? `Your capital reached size ${end.size} by turn ${end.turn}` : `${end.why}`}</p>
-                    <p className="text-sm text-amber-200/80 mb-4">Stage 1 proves the founding loop: explore, settle, work, grow. Tech, war, wonders and the four victories are the next stages.</p>
+                    <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? (end.domination ? 'DOMINATION' : 'AN AGE OF GOLD') : 'HISTORY PASSED YOU BY'}</h2>
+                    <p className="text-lg mb-1">{end.win ? (end.domination ? 'Every rival capital flies your colours.' : `Your capital reached size ${end.size} by turn ${end.turn}`) : `${end.why}`}</p>
+                    <p className="text-sm text-amber-200/80 mb-4">War is proven. Tech tree, buildings, wonders and the other three victories are the next stages.</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
             )}

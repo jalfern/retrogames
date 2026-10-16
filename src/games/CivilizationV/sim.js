@@ -466,6 +466,7 @@ export function doAttack(gs, u, tc, tr) {
     const ti = idx(tc, tr)
     const tl = gs.tiles[ti]
     const ranged = d >= 2
+    const ox = u.c, oy = u.r, ociv = u.civ
     const target = unitAt(gs, tc, tr)
     if (target && target.alive && atWar(gs, u.civ, target.civ)) {
         let strikes = 0
@@ -488,6 +489,7 @@ export function doAttack(gs, u, tc, tr) {
             }
         }
         u.moves = 0; u.acted = true; u.fortified = false
+        gs.events.push({ type: 'strike', civ: ociv, kind: u.kind, from: [ox, oy], to: [tc, tr], ranged })
         if (target.civ > 0 && target.civ < BARB && u.civ < BARB) declareWar(gs, u.civ, target.civ)
         return true
     }
@@ -509,6 +511,7 @@ export function doAttack(gs, u, tc, tr) {
             }
         }
         u.moves = 0; u.acted = true
+        gs.events.push({ type: 'strike', civ: ociv, kind: u.kind, from: [ox, oy], to: [tc, tr], ranged })
         if (city.civ < BARB && u.civ < BARB) declareWar(gs, u.civ, city.civ)
         return true
     }
