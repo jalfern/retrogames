@@ -10,7 +10,7 @@
 // grow to the milestone. It does not conquergoal: domination stays a player
 // ambition, the autopilot's job is to survive the frontier it was proven on.
 
-import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, unitAt, atWar, BARB, UNIT, stepToward, tileBlocked, availableTechs, canImprove } from './sim.js'
+import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, unitAt, atWar, BARB, UNIT, stepToward, tileBlocked, availableTechs, canImprove, canAdopt } from './sim.js'
 
 const SITE = (tl) => (tl.terr === T.GRASS ? 3 : tl.terr === T.PLAINS ? 2 : 0)
     + (tl.river ? 2 : 0) + (tl.forest ? 1 : 0) + (tl.terr === T.HILLS ? 1 : 0)
@@ -19,6 +19,10 @@ const SITE = (tl) => (tl.terr === T.GRASS ? 3 : tl.terr === T.PLAINS ? 2 : 0)
 // work first (Pottery → farms, The Wheel → roads), then the arms. Issued only
 // when research is idle (just learned).
 const RESEARCH_ORDER = ['POTTERY', 'THE_WHEEL', 'ARCHERY', 'MASONRY', 'BRONZE_WORKING', 'AGRICULTURE', 'WRITING', 'CURRENCY', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
+
+// Stage 5: culture buys government too — the witness lines up Tradition first
+// (borders + luxury joy), then Liberty's colonial push, then Commerce.
+const POLICY_ORDER = ['FOUNDATIONS', 'CEREMONY', 'COLONIAL', 'COLLEGE', 'TRADING_POSTS', 'TREATIES']
 
 function bestSiteNeighbor(gs, civ, c, r) {
     let best = null, bs = -1e9
@@ -88,6 +92,8 @@ export function decide(gs) {
             const av = availableTechs(gs, 0)
             for (const id of RESEARCH_ORDER) if (av.includes(id)) return { research: id }
         }
+        // spend culture on government when the pool can pay
+        for (const id of POLICY_ORDER) if (canAdopt(gs, 0, id) === true) return { policy: id }
         // Stage 4 labour: train one worker, then keep it working the heartland
         const workers = gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER')
         if (!workers.length && !(cap.queue || []).includes('WORKER') && cap.queue.length < 3) return { queue: 'WORKER' }

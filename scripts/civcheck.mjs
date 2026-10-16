@@ -662,7 +662,9 @@ console.log('22. resource-gated units')
     ok(gs2.tiles.some((tl) => tl.res === RES_IDS.indexOf('HORSES')), 'seed 13 carries horses')
     ok(gs2.tiles.some((tl) => tl.res === RES_IDS.indexOf('IRON')), 'seed 13 carries iron')
     // the autopilot actually builds and works a labourer, end to end
-    const g3 = newGame(13, 0)
+    // (Stage 5 note: happy growth speeds the open scenario past the farms, so
+    // the labour proof runs on a resistant scenario where barbarians slow the win)
+    const g3 = newGame(13, 3)
     let sawWorker = false, sawBuilt = false, n = 0
     while (!g3.end && n++ < 40000) { step(g3, decide(g3)); if (g3.units.some((u) => u.alive && u.civ === 0 && u.kind === 'WORKER')) sawWorker = true; if (g3.events.some((ev) => ev.type === 'improved' && ev.civ === 0)) sawBuilt = true }
     ok(sawWorker, 'the witness trains a worker')
