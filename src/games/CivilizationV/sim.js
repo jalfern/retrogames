@@ -1429,7 +1429,6 @@ function resolveCiv(gs, civ) {
     C.happyNet = hs.net
     // research: spend this turn's science on the current tech (overflow carries)
     const R = gs.tech[civ]
-    const eraBefore = highestEra(gs, civ)
     if (!R.research) { const av = availableTechs(gs, civ); if (av.length) R.research = av[0] }
     if (R.research) {
         R.prog += sci
@@ -1452,7 +1451,7 @@ function resolveCiv(gs, civ) {
         if (gs.ark[civ] >= CFG.arkScience) gs.events.push({ type: 'arkLaunch', civ })
     }
     const eraNow = highestEra(gs, civ)
-    if (eraNow > eraBefore) gs.events.push({ type: 'era', civ, era: eraNow })
+    if (eraNow > (C.era == null ? -1 : C.era)) { C.era = eraNow; if (eraNow >= 1) gs.events.push({ type: 'era', civ, era: eraNow }) }
     spreadBorders(gs, civ)
     gs.events.push({ type: 'turnEnd', civ, gold, sci, cult, prod, fSur })
 }
