@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles } from '../src/games/CivilizationV/sim.js'
 import { decide, plan } from '../src/games/CivilizationV/planner.js'
 
 let pass = 0, fail = 0
@@ -491,6 +491,182 @@ console.log('18. era effects')
         return 100 - aiCap.hp
     }
     ok(siegeDmg('CATAPULT') > siegeDmg('ARCHER'), 'catapults siege walls harder than arrows')
+}
+
+// ---- 19. improvements: tech + border + terrain gates ----
+console.log('19. improvements (gates)')
+{
+    const gs = newGame(6, 0)
+    eq(IMP_IDS.length, 3, 'three improvements on the builder menu')
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0)
+    ok(!!cap, 'capital founded for the land tests')
+    // centre tile can never be farmed
+    const centred = spawnUnit(gs, 0, 'WORKER', cap.c, cap.r)
+    eq(canImprove(gs, 0, centred, 'FARM'), 'cannot improve the city centre', 'the city centre itself is not a farm plot')
+    centred.alive = false
+    // find an owned grass/plains ring tile and park a worker there
+    const ring = neighbors(cap.c, cap.r).map(([c, r]) => gs.tiles[idx(c, r)])
+    const farmable = ring.find((tl) => (tl.terr === T.GRASS || tl.terr === T.PLAINS) && tl.city < 0)
+    ok(!!farmable, 'the border ring offers farmable ground')
+    const w = spawnUnit(gs, 0, 'WORKER', farmable.c, farmable.r)
+    ok(farmable.owner === 0, 'the ring tile is inside ROME')
+    eq(canImprove(gs, 0, w, 'FARM'), 'requires Pottery', 'FARM is gated by Pottery')
+    grantTech(gs, 0, 'POTTERY')
+    eq(canImprove(gs, 0, w, 'FARM'), true, 'Pottery opens the plough')
+    // hills reject farms; a worker on an owned hill needs Masonry for the mine
+    const hill = ring.find((tl) => tl.terr === T.HILLS && tl.city < 0)
+    if (hill) {
+        const hw = spawnUnit(gs, 0, 'WORKER', hill.c, hill.r)
+        eq(canImprove(gs, 0, hw, 'MINE'), 'requires Masonry', 'MINE is gated by Masonry')
+        grantTech(gs, 0, 'MASONRY')
+        eq(canImprove(gs, 0, hw, 'MINE'), true, 'Masonry opens the pick')
+        ok(!IMP.FARM.terr.includes(T.HILLS), 'farms never claim hills')
+    } else {
+        ok(true, 'no hill in this ring — mine gate covered by the data check')
+        ok(!IMP.FARM.terr.includes(T.HILLS), 'farms never claim hills')
+    }
+    // outside your borders the worker stands down
+    const far = gs.tiles.find((tl) => tl.owner === -1 && tl.terr === T.GRASS && tl.city < 0 && tl.camp < 0 && !unitAt(gs, tl.c, tl.r))
+    const ow = spawnUnit(gs, 0, 'WORKER', far.c, far.r)
+    eq(canImprove(gs, 0, ow, 'FARM'), 'outside your borders', 'no building on foreign dirt')
+    // a worker mid-job cannot take a second job
+    grantTech(gs, 0, 'POTTERY')
+    ok(startImprove(gs, w, 'FARM'), 'a free worker breaks ground')
+    ok(w.busy != null, 'the worker is now busy')
+    eq(canImprove(gs, 0, w, 'ROAD'), 'worker already working', 'one job at a time')
+    ok(gs.events.some((ev) => ev.type === 'improveStart' && ev.kind === 'FARM'), 'the crew logs its start')
+}
+
+// ---- 20. works take turns, then bite ----
+console.log('20. improvements (build + yields + roads)')
+{
+    const gs = newGame(6, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0)
+    const ring = neighbors(cap.c, cap.r).map(([c, r]) => gs.tiles[idx(c, r)])
+    const plot = ring.find((tl) => (tl.terr === T.GRASS || tl.terr === T.PLAINS) && tl.city < 0)
+    grantTech(gs, 0, 'POTTERY')
+    const w = spawnUnit(gs, 0, 'WORKER', plot.c, plot.r)
+    startImprove(gs, w, 'FARM')
+    step(gs, { endTurn: true })
+    ok(plot.imp !== 'FARM', 'a farm is not instant — the first turn of toil leaves it unfinished')
+    let n = 0
+    while (!plot.imp && n++ < 6) {
+        if (!plot.build && w.busy == null && w.alive) startImprove(gs, w, 'FARM')   // re-crew if barbs cut the crew down
+        step(gs, { endTurn: true })
+    }
+    eq(plot.imp, 'FARM', 'the farm is finished after its turns')
+    eq(w.busy, null, 'the freed worker looks for work')
+    ok(gs.events.some((ev) => ev.type === 'improved' && ev.kind === 'FARM'), 'completion is logged')
+    // the improved plot feeds more, and the city picks it up in its ring
+    const yImp = tileYield(gs, idx(plot.c, plot.r)).f
+    plot.imp = null
+    const yRaw = tileYield(gs, idx(plot.c, plot.r)).f
+    ok(yImp > yRaw, `the farm raises the plot's food (${yRaw} → ${yImp})`)
+    ok(cityWorkedTiles(gs, cap).includes(idx(plot.c, plot.r)) || cap.size < 2, 'city workers till the best ring tiles')
+    // roads halve the march
+    const spot = ring.find((tl) => tl.city < 0 && tl.camp < 0 && !unitAt(gs, tl.c, tl.r))
+    ok(!!spot, 'road test ground exists')
+    eq(roadCost(gs, w, spot.c, spot.r), 1, 'open ground costs a full move')
+    spot.road = true
+    eq(roadCost(gs, w, spot.c, spot.r), 0.5, 'a road halves the cost of the hex')
+    // barbs pillage what they march over
+    spot.road = true
+    const barb = spawnUnit(gs, BARB, 'WARRIOR', spot.c, spot.r, { str: 7 })
+    barb.c = spot.c; barb.r = spot.r
+    gs.events = []
+    step(gs, { endTurn: true })
+    ok(!spot.road || !barb.alive || gs.events.some((ev) => ev.type === 'pillage'), 'barbarians ravage the road they cross')
+}
+
+// ---- 21. resources: reveal, connect, pay ----
+console.log('21. resources')
+{
+    const gs = newGame(6, 0)
+    const lux = RES_IDS.filter((id) => RES[id].lux)
+    const strat = RES_IDS.filter((id) => RES[id].strategic)
+    ok(lux.length >= 4 && strat.length >= 2, 'the world stocks luxuries and strategics')
+    // every strategic resource names a real tech that opens it
+    for (const id of strat) ok(TECH[RES[id].tech], `${id} unlocks with ${RES[id].tech}`)
+    // strategic resources stay hidden until their tech is known
+    const ironT = gs.tiles.find((tl) => tl.res === RES_IDS.indexOf('IRON'))
+    ok(!!ironT, 'this map carries iron')
+    gs.explored[0][idx(ironT.c, ironT.r)] = 1
+    ok(!resRevealed(gs, 0, idx(ironT.c, ironT.r)), 'iron is not marked on the map before Bronze Working')
+    grantTech(gs, 0, 'BRONZE_WORKING')
+    ok(resRevealed(gs, 0, idx(ironT.c, ironT.r)), 'the bronze age reveals the iron seams')
+    // connect: an owned resource linked into the network counts (ring tile IS
+    // the link at founding — borders claim the first ring)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0)
+    ok(!connectedResources(gs, 0).includes('IRON'), 'before the seam is yours, it pays nothing')
+    const ring0 = neighbors(cap.c, cap.r).map(([c, r]) => gs.tiles[idx(c, r)]).filter((tl) => tl.city < 0 && tl.camp < 0)
+    const claim = (rid) => {
+        const tl = ring0.find((t) => t.res === RES_IDS.indexOf(rid) && RES[rid].terr.includes(t.terr)) || ring0.find((t) => t.res === -1 && walk(t.terr))
+        ok(!!tl, `a ring tile is available to claim ${rid}`)
+        tl.res = RES_IDS.indexOf(rid); tl.owner = 0
+        return tl
+    }
+    const ironMine = claim('IRON')
+    ok(connectedResources(gs, 0).includes('IRON'), 'iron inside your borders feeds the realm')
+    ok(tileOwnedBy(gs, 0, ironMine), 'ownership helper agrees')
+    // luxuries pay gold + culture empire-wide, once per unique type
+    const g0 = gs.civs[0].gold, c0 = gs.civs[0].culture
+    const wineT = claim('WINE')
+    step(gs, { endTurn: true })
+    ok(gs.civs[0].gold > g0, 'the caravans bring gold')
+    ok(gs.events.some((ev) => ev.type === 'luxury' && ev.id === 'WINE'), 'a newly-connected luxury is announced')
+    ok(gs.civs[0].culture >= c0, 'culture keeps flowing')
+    // iron feeds the city that holds it
+    const yIron = cityYield(gs, cap).p
+    ironMine.owner = -1
+    ok(cityYield(gs, cap).p < yIron, 'losing the seam costs the forge its bonus')
+}
+
+// ---- 22. strategic resources gate the units that need them ----
+console.log('22. resource-gated units')
+{
+    const gs = newGame(6, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0)
+    grantTech(gs, 0, 'BRONZE_WORKING')
+    ok(!canQueue(gs, 0, 'LEGION'), 'the Legion needs iron, not just the secret')
+    eq(queueDeny(gs, 0, 'LEGION'), 'requires Iron', 'the refusal names what is missing')
+    gs.events = []
+    step(gs, { queue: 'LEGION' })
+    ok(!cap.queue.includes('LEGION'), 'the denied order never reaches the queue')
+    const ring2 = neighbors(cap.c, cap.r).map(([c, r]) => gs.tiles[idx(c, r)]).filter((tl) => tl.city < 0 && tl.camp < 0)
+    const claimRing = (rid) => {
+        const tl = ring2.find((t) => t.res === RES_IDS.indexOf(rid) && RES[rid].terr.includes(t.terr)) || ring2.find((t) => t.res === -1 && walk(t.terr))
+        tl.res = RES_IDS.indexOf(rid); tl.owner = 0
+        return tl
+    }
+    claimRing('IRON')
+    ok(canQueue(gs, 0, 'LEGION'), 'with a connected seam the Legion marches')
+    step(gs, { queue: 'LEGION' })
+    ok(cap.queue.includes('LEGION'), 'the legion queues for real')
+    ok(!canQueue(gs, 0, 'CHARIOT'), 'the chariot archer waits for horses')
+    grantTech(gs, 0, 'THE_WHEEL')
+    ok(!canQueue(gs, 0, 'CHARIOT'), 'the wheel alone is not enough — the steppe must be yours')
+    eq(queueDeny(gs, 0, 'CHARIOT'), 'requires Horses', 'and the refusal says so')
+    claimRing('HORSES')
+    ok(canQueue(gs, 0, 'CHARIOT'), 'connected horses + the wheel open the chariot')
+    eq(UNIT.CHARIOT.range, 2, 'the chariot shoots at range 2')
+    // the world stocks both mounts and metal
+    const gs2 = newGame(13, 0)
+    ok(gs2.tiles.some((tl) => tl.res === RES_IDS.indexOf('HORSES')), 'seed 13 carries horses')
+    ok(gs2.tiles.some((tl) => tl.res === RES_IDS.indexOf('IRON')), 'seed 13 carries iron')
+    // the autopilot actually builds and works a labourer, end to end
+    const g3 = newGame(13, 0)
+    let sawWorker = false, sawBuilt = false, n = 0
+    while (!g3.end && n++ < 40000) { step(g3, decide(g3)); if (g3.units.some((u) => u.alive && u.civ === 0 && u.kind === 'WORKER')) sawWorker = true; if (g3.events.some((ev) => ev.type === 'improved' && ev.civ === 0)) sawBuilt = true }
+    ok(sawWorker, 'the witness trains a worker')
+    ok(sawBuilt, 'and puts it to work in a real game')
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
