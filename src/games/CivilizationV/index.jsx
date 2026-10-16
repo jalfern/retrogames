@@ -357,7 +357,7 @@ const CivilizationVGame = () => {
                     : `${gs.camps.some((c) => c.alive) ? 'barbarian camps roam' : 'at peace'}${pacts ? ` · 🤝 pacts ${pacts}` : ''}${metN ? ` · ☘ ${metN}/${CS_IDS.length} courts${allies ? ` (${allies} allied)` : ''}` : ''}`
             }
             if (h.victory) {
-                const taken = [1, 2, 3].filter((i) => gs.civs[i].alive && !gs.cities.some((c) => c.alive && c.civ === i && c.capital)).length
+                const taken = [1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length
                 const cult = Math.floor(gs.civs[0].cultureEarned || 0)
                 const cw = Math.min(999, Math.round((cult / CFG.cultureWin) * 100))
                 const aw = Math.round((gs.ark[0] / CFG.arkScience) * 100)
@@ -629,7 +629,7 @@ const CivilizationVGame = () => {
             audioController.playTone(587, 0.08, 'triangle', 0.05)
         }
         const refreshVPanel = () => {
-            const taken = [1, 2, 3].filter((i) => gs.civs[i].alive && !gs.cities.some((c) => c.alive && c.civ === i && c.capital)).length
+            const taken = [1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length
             const cult = Math.floor(gs.civs[0].cultureEarned || 0)
             setVpanel({
                 turn: gs.turn,
@@ -743,7 +743,7 @@ const CivilizationVGame = () => {
                     wonders: WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => ({ id, by: gs.wonders[id] })),
                     world: { cities: CIVS.filter((c) => c.cs).map((c) => ({ id: c.id, name: c.name, alive: gs.civs[c.id].alive, c: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.c ?? -1, r: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.r ?? -1 })), rome: CS_IDS.map((id) => ({ cs: id, ...(csInfo(gs, 0, id) || { met: false, influence: 0, ally: false }) })), pacts: Object.keys(gs.trade).filter((k) => gs.trade[k]), wars: Object.keys(gs.wars), truce: Object.keys(gs.peaceTurn), naval: gs.units.filter((u) => u.alive && u.civ === 0 && u.naval).map((u) => ({ id: u.id, c: u.c, r: u.r })), coastal: !!coastalCityOf(gs, 0) },
                     gp: GP_TYPES.map((t) => ({ t, pts: Math.floor(gs.gp[0].pts[t]), need: gpThreshold(gs, 0, t), held: gs.gp[0].held[t], ready: gpReady(gs, 0, t), cost: gpCost(gs, 0, t) })),
-                    victory: { capsTaken: [1, 2, 3].filter((i) => gs.civs[i].alive && !gs.cities.some((c) => c.alive && c.civ === i && c.capital)).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkScience, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, culturedLead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].cultureEarned || 0) < (gs.civs[0].cultureEarned || 0)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])) },
+                    victory: { capsTaken: [1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkScience, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, culturedLead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].cultureEarned || 0) < (gs.civs[0].cultureEarned || 0)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])) },
                     late: { knownLate: ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT'].filter((id) => hasTech(gs, 0, id)), muskets: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'MUSKET').length, galleons: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'GALLEON').length },
                     owned: gs.tiles.filter((t) => t.owner === 0).length,
                     explored0: countArr(gs.explored[0]) }),
@@ -770,7 +770,7 @@ const CivilizationVGame = () => {
                     `player cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}  total ${gs.cities.filter((c) => c.alive).length}  units0 ${gs.units.filter((u) => u.civ === 0 && u.alive).length}  explored ${countArr(gs.explored[0])}`,
                     `camps alive ${gs.camps.filter((c) => c.alive).length}/${gs.camps.length}  wars ${Object.keys(gs.wars).length}  barbs alive ${gs.units.filter((u) => u.alive && u.civ === BARB).length}  queue ${JSON.stringify((gs.cities.find((c) => c.civ === 0 && c.alive) || { queue: [] }).queue)}`,
                     `research ${gs.tech[0].research ? TECH[gs.tech[0].research].name + ' ' + Math.floor(gs.tech[0].prog) + '/' + TECH[gs.tech[0].research].cost : 'idle'}  known ${TECH_IDS.filter((id) => hasTech(gs, 0, id)).length}/${TECH_IDS.length}  ai ${CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => c.name + ':' + Object.keys(gs.tech[c.id].known).length).join(' ')}`,
-                    `victory: caps ${[1, 2, 3].filter((i) => gs.civs[i].alive && !gs.cities.some((c) => c.alive && c.civ === i && c.capital)).length}/3  ark ${Math.floor(gs.ark[0])}/${CFG.arkScience}${hasTech(gs, 0, 'SPACEFLIGHT') ? '' : ' (needs Spaceflight)'}  lifetime culture ${Math.floor(gs.civs[0].cultureEarned || 0)}/${CFG.cultureWin}${[1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].cultureEarned || 0) < (gs.civs[0].cultureEarned || 0)) ? ' LEAD' : ''}`,
+                    `victory: caps ${[1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length}/3  ark ${Math.floor(gs.ark[0])}/${CFG.arkScience}${hasTech(gs, 0, 'SPACEFLIGHT') ? '' : ' (needs Spaceflight)'}  lifetime culture ${Math.floor(gs.civs[0].cultureEarned || 0)}/${CFG.cultureWin}${[1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].cultureEarned || 0) < (gs.civs[0].cultureEarned || 0)) ? ' LEAD' : ''}`,
                     `land: workers ${gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').length}  improvements ${gs.tiles.filter((t) => t.imp).length}  roads ${gs.tiles.filter((t) => t.road).length}  connected ${connectedResources(gs, 0).join(',') || 'none'}`,
                     `happiness ${(() => { const hs = happinessOf(gs, 0); return `${hs.net} (${hs.net >= 1 ? 'happy' : hs.net < 0 ? 'UNHAPPY' : 'content'}) lux ${hs.lux} cities ${hs.cities} wars ${hs.wars}` })()}  policies ${POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)).join(',') || 'none'}  culture pool ${Math.floor(gs.civs[0].culture || 0)}  owned ${gs.tiles.filter((t) => t.owner === 0).length}`,
                     `wonders ${WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => id + '→' + CIVS[gs.wonders[id]].name).join(',') || 'none'}  gp ${GP_TYPES.map((t) => `${t[0]}:${Math.floor(gs.gp[0].pts[t])}/${gpThreshold(gs, 0, t)}${gs.gp[0].held[t] ? `(${gs.gp[0].held[t]} held)` : ''}`).join(' ')}`,

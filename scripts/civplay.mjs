@@ -15,6 +15,9 @@
 //      point pools bank, a wonder queues and the board fills on live turns.
 //   6. THE WORLD (Stage 7) — D opens DIPLOMACY with the two coastal courts,
 //      pacts sign and wars come and go on live turns, and a Trireme answers N.
+//   7. THE FINAL AGES (Stage 8) — Y opens VICTORY with the three race tracks,
+//      K/L answer with Musket and Galleon, and after Spaceflight the Ark banks
+//      beakers on live turns.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const URL = process.env.CIV_URL || 'http://localhost:5173/retrogames/civilization-v'
@@ -258,6 +261,46 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
     const p7 = await probe()
     r.check('the probe exposes the world (courts, pacts, seas)', Array.isArray(p7.world.rome) && Array.isArray(p7.world.pacts) && typeof p7.world.coastal === 'boolean')
     r.check(`the Stage 7 ledger survived to here (pacts ${p7.world.pacts.join(',') || 'none'}, courts met ${p7.world.rome.filter((s) => s.met).length})`, Array.isArray(p7.world.rome))
+}
+
+// 3h — the Stage 8 layer: victory panel, the new arms, the Ark funding live
+{
+    // earlier blocks may already have driven this run to its end — take a fresh
+    // capital so the panel and the young-game cheats have a live play screen
+    await page.evaluate(() => window.__civTest.start())
+    await wait(300)
+    await page.keyboard.press('KeyE')
+    await wait(300)
+    r.check(`Stage 8 opens on a fresh run (screen ${(await probe()).screen}, capital ${(await probe()).capitalSize})`, (await probe()).screen === 'play' && (await probe()).capitalSize >= 1)
+    await page.keyboard.press('KeyY')
+    await wait(250)
+    const vb = await page.evaluate(() => document.body.innerText)
+    r.check('Y opens VICTORY with the three races and the rival tracks', vb.includes('VICTORY') && vb.includes('DOMINATION') && vb.includes('SCIENCE') && vb.includes('CULTURE') && vb.includes('THE RIVAL TRACKS'))
+    await page.keyboard.press('Escape')
+    await wait(150)
+    r.check('Escape closes the VICTORY panel', !(await page.evaluate(() => document.body.innerText.includes('THE RIVAL TRACKS'))))
+    await page.evaluate(() => window.__civTest.learn('GUNPOWDER'))
+    await page.keyboard.press('KeyK')
+    let musketQ = false
+    for (let i = 0; i < 10 && !musketQ; i++) {
+        const pk = await probe()
+        musketQ = pk.queue.some((c) => c.queue.includes('MUSKET')) || !!pk.end
+        if (!musketQ) await wait(120)
+    }
+    r.check('K queues the Musket once Gunpowder is known', musketQ)
+    await page.evaluate(() => window.__civTest.learn('ASTRONOMY'))
+    await page.keyboard.press('KeyL')
+    await wait(150)
+    {
+        const g8 = await probe()
+        r.check(`L lays a Galleon keel at a coastal city (galleons ${g8.late.galleons}, coastal ${g8.world.coastal})`, g8.queue.some((c) => c.queue.includes('GALLEON')) || g8.late.galleons > 0 || g8.world.coastal === false)
+    }
+    await page.evaluate(() => { for (const id of ['EDUCATION', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']) window.__civTest.learn(id) })
+    let p8 = await probe()
+    for (let i = 0; i < 6 && !p8.end && p8.victory.ark < 20; i++) { await page.evaluate(() => window.__civTest.turn()); await wait(60); p8 = await probe() }
+    r.check(`after Spaceflight the Ark banks beakers on live turns (${p8.victory.ark}/${p8.victory.needArk})`, p8.victory.ark > 0 || !!p8.end)
+    p8 = p8 || (await probe())
+    r.check(`the victory probe reports the tracks (caps ${p8.victory.capsTaken}/3 · ❦ ${p8.victory.cultEarned}/${p8.victory.needCult})`, p8.victory.capsTaken === 0 && Number.isFinite(p8.victory.cultEarned) && p8.victory.needCult === 350 && p8.victory.needArk === 70)
 }
 
 // 4 — drive the same autopilot to the milestone on THIS run, then the end screen
