@@ -10,14 +10,15 @@
 // grow to the milestone. It does not conquergoal: domination stays a player
 // ambition, the autopilot's job is to survive the frontier it was proven on.
 
-import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, atWar, BARB, UNIT, stepToward, tileBlocked, availableTechs } from './sim.js'
+import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, unitAt, atWar, BARB, UNIT, stepToward, tileBlocked, availableTechs, canImprove } from './sim.js'
 
 const SITE = (tl) => (tl.terr === T.GRASS ? 3 : tl.terr === T.PLAINS ? 2 : 0)
     + (tl.river ? 2 : 0) + (tl.forest ? 1 : 0) + (tl.terr === T.HILLS ? 1 : 0)
 
-// research path the witness steers the player down: arms first, then the
-// economy-of-scale techs. Issued only when research is idle (just learned).
-const RESEARCH_ORDER = ['ARCHERY', 'BRONZE_WORKING', 'MASONRY', 'THE_WHEEL', 'POTTERY', 'AGRICULTURE', 'WRITING', 'CURRENCY', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
+// research path the witness steers the player down: Stage 4 puts the land to
+// work first (Pottery → farms, The Wheel → roads), then the arms. Issued only
+// when research is idle (just learned).
+const RESEARCH_ORDER = ['POTTERY', 'THE_WHEEL', 'ARCHERY', 'MASONRY', 'BRONZE_WORKING', 'AGRICULTURE', 'WRITING', 'CURRENCY', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
 
 function bestSiteNeighbor(gs, civ, c, r) {
     let best = null, bs = -1e9
@@ -86,6 +87,21 @@ export function decide(gs) {
         if (!R0.research) {
             const av = availableTechs(gs, 0)
             for (const id of RESEARCH_ORDER) if (av.includes(id)) return { research: id }
+        }
+        // Stage 4 labour: train one worker, then keep it working the heartland
+        const workers = gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER')
+        if (!workers.length && !(cap.queue || []).includes('WORKER') && cap.queue.length < 3) return { queue: 'WORKER' }
+        const w = workers.find((x) => x.busy == null && x.moves > 0)
+        if (w) {
+            for (const k of ['MINE', 'FARM', 'ROAD']) if (canImprove(gs, 0, w, k) === true) return { select: w.id, improve: k }
+            const spot = neighbors(w.c, w.r).find(([c, r]) => {
+                const tl = tileAt(gs, c, r)
+                return tl && tl.terr >= T.GRASS && tl.terr <= T.HILLS && !tl.imp && !tl.road && !unitAt(gs, c, r) && !tileBlocked(gs, c, r) && tl.owner === 0
+            }) || neighbors(w.c, w.r).find(([c, r]) => {
+                const tl = tileAt(gs, c, r)
+                return tl && tl.terr >= T.GRASS && tl.terr <= T.HILLS && !unitAt(gs, c, r) && !tileBlocked(gs, c, r)
+            })
+            if (spot) return { select: w.id, move: spot }
         }
         // fight: any unit that can strike now, strongest target first
         const mil = gs.units.filter((u) => u.alive && u.civ === 0 && u.str > 0 && u.moves > 0)

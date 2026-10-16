@@ -1,9 +1,9 @@
-# CIVILIZATION V — Stage 3 "The Tech Tree"
+# CIVILIZATION V — Stage 4 "Land"
 
-Firaxis's 2010 4X. Stage 1 shipped the founding loop, Stage 2 the war; Stage 3
-adds the arrow of progress: science is now *spent* on a researchable tech tree
-with real Civ V prerequisites, and techs unlock the units and upgrades that make
-an era feel like an era.
+Firaxis's 2010 4X. Stage 1 shipped founding, Stage 2 war, Stage 3 the arrow of
+progress; Stage 4 settles the map itself: workers break ground, improvements
+take real turns, and the resources underfoot — luxuries and strategics — decide
+which era's units a city may field.
 
 `https://jalfern.com/retrogames/civilization-v`
 
@@ -12,64 +12,74 @@ an era feel like an era.
 ```
 src/games/CivilizationV/sim.js      pure deterministic sim (no three, no DOM, no Math.random)
 src/games/CivilizationV/planner.js  the autopilot — the attract demo AND the harness witness
-src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog, borders, camps, HP bars, arrows, siege, FX
-src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research panel, fixed-timestep loop
-scripts/civcheck.mjs                Node harness (npm run civcheck) — 132 checks
-scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 24 checks
+src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog, borders, camps, roads,
+                                    farms, mines, resource tokens, HP bars, arrows, siege, FX
+src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research + worker panels
+scripts/civcheck.mjs                Node harness (npm run civcheck) — 185 checks
+scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 28 checks
 ```
 
 ## Engine notes
 
-**The tech tree (Stage 3).** Twelve real Civ V techs across three eras with the
-original's prerequisite edges: Pottery, Agriculture, Archery, The Wheel, Bronze
-Working, Masonry → Writing, Currency, Horseback Riding, Philosophy, Engineering →
-Mathematics. Every city's beakers pour into the chosen tech; on completion the
-overflow carries into the next. Costs ascend by era (Ancient 24–34, Classical
-70–100, Medieval 150) so a single capital tastes Ancient techs by ~turn 10.
+**Workers and improvements.** WORKER is a civilian (cost 20, ungated) that
+builds on tiles inside your borders, one job at a time: Farm (needs Pottery)
++2 food on grass / +1 on plains, Mine (needs Masonry) +1 production on hills
+(+1 more with Engineering, as in the original), Road (needs The Wheel). Each
+job takes real turns (farm/mine 2, road 1): the first turn of toil leaves the
+plot unfinished. The city's worked-ring always tills the juiciest tiles, so a
+finished farm changes the capital's growth. Barbarians pillage every
+improvement and road they march over — and an improvement under a dead or
+marched-off worker's feet is abandoned.
 
-**What techs unlock (the mechanic, not a tooltip).**
-- `Archery` → the ARCHER is buildable; `Engineering` → the CATAPULT (range 2,
-  ×2 strength vs city walls). Queueing a gated unit is *refused* with a
-  "requires Archery" deny — the unit cannot exist before its era.
-- `Bronze Working` +2 strength for living *and* future warriors; `Horseback
-  Riding` +1 movement for military (settlers stay oxcart-slow).
-- `Pottery` −2 food per new citizen (granary-lite); `Agriculture` +1 food on
-  worked grassland; `Masonry` +100 city walls (walls scale defence, bombardment
-  and capture); `Currency`/`Writing`/`Philosophy` +2g/+1 sci/+1 culture per city.
-- `Mathematics` +4 city bombardment.
+**Resources.** Six luxuries (Wine, Gems, Silver, Dyes, Incense, Spices) and two
+strategics (Horses, Iron) scatter on fitting terrain, spread apart. A resource
+counts when it is inside your borders and land-connected: the civilisation's
+road-and-territory network, grown outward from its cities, must touch it. Each
+unique connected luxury pays +1 gold +1 culture empire-wide (happiness proper
+is Stage 5 — this is the honest stand-in, and the README says so). Connected
+strategics feed the city that holds them (+1 food grazing / +1 production
+smithing) and gate two real Civ V units:
 
-**Gating lives in the sim** (`canQueue`, the `queue` branch of `step`, the AI's
-production block), so the browser, the harness and the autopilot all obey the
-same rule. Tech state — per-civ known-mask, current research, progress — is in
-`stateHash`; replays stay hash-for-hash.
+- **Chariot Archer** — The Wheel + connected Horses: str 9, range 2, moves 3.
+- **Legion** — Bronze Working + connected Iron: str 12, the ancient Wall.
 
-**AI research.** Each rival follows a stable priority path rotated by civ id
-(`AI_TECH_ORDER`), so Egypt, China and the Aztecs diverge and the frontier
-hardens era by era; barbarians stay timeless. The witness commits the player to
-arms first (Archery → Bronze → Masonry…).
+Queueing a unit whose resource is missing is refused by name (`requires
+Horses`), in the sim — so the browser, the harness and the AI all obey it.
+Strategic seams stay hidden on the map until the era's tech is known, exactly
+as the original conceals them.
 
-**Carried from Stage 2** unchanged: 100-HP deterministic-strength combat with
-terrain/fortification/city/river modifiers, march-in, barbarian camps, city
-bombardment + capture + domination, banked production, healing at rest.
+**Roads move armies.** Any unit marching onto a road pays half a move, so a
+road net is a force multiplier for defence — and a tempting target for
+raiders.
 
-**Camera & FX.** Orbit/pan/zoom + raycast pick as before. New: the Catapult
-model (timber frame, iron-rimmed wheels, throwing arm with a stone), discovery
-fanfare + toast, a dark-parchment RESEARCH panel with era columns, prereq
-labels, a live progress bar and tap-to-research rows.
+**AI.** Rival workers farm, mine and road toward their own unconnected seams;
+their war ladders now field Legions and Chariot Archers when the land and the
+era both allow it. The witness commits the player economy-first (Pottery →
+The Wheel → arms), trains a labourer and works the capital ring, so the attract
+demo shows Stage 4 by itself.
+
+**Determinism.** Improvements, roads, in-progress builds, resource ownership and
+each civ's connected set all fold into `stateHash`; same-seed replays stay
+hash-for-hash (§2), and the autopilot still wins the shipped scenarios (§8,
+now turn 15–17 — the farms pay for the labourer).
 
 ## Controls
 
 Click/tap a tile to move; a hostile hex to strike. Keys: Space/Enter end turn ·
-E settle · 1/2/3 warrior/archer/settler · C catapult (needs Engineering) ·
-**T** opens/closes the RESEARCH panel · **R** commits to the next available tech
-· arrows orbit/tilt · wheel/pinch zoom · `?` help. `VirtualControls`: A = END
-TURN, B = settle; the research panel is tappable on phones.
+E settle · 1/2/3 warrior/archer/settler · 4 worker · C catapult ·
+**W** opens/closes the WORK panel · F farm · M mine · O road ·
+**T** research panel · **R** next tech · arrows orbit/tilt · wheel/pinch zoom ·
+`?` help. `VirtualControls`: A = END TURN, B = settle.
 
 ## Verify
 
 ```bash
-npm run civcheck          # 132 Node checks: boot, determinism, founding, economy, combat, barbarians, cities, production, tech data (§16), science+gating+AI research (§17), era effects (§18), win/loss/slack
-npm run civplay           # Chrome, real keys: founding + panel (T/Escape/R), gated archer refuse→unlock, live tech completion, rival research, win, 0 errors
+npm run civcheck          # 185 Node checks: boot, determinism, founding, economy, combat, barbarians,
+                          # cities, production, tech (§16-18), improvement gates (§19), build turns +
+                          # yields + roads + pillage (§20), resources reveal/connect/pay (§21),
+                          # resource-gated units + end-to-end labour (§22), win/loss/slack
+npm run civplay           # Chrome, real keys: queue worker by 4, WORK panel (W/F/Escape), farms appear,
+                          # science completes in real time, autopilot wins, 0 page errors — 28 checks
 npm run lint:civ          # eslint gate for the game + its scripts
 ```
 
@@ -77,23 +87,20 @@ npm run lint:civ          # eslint gate for the game + its scripts
 `CIV_URL=http://127.0.0.1:<port>/retrogames/civilization-v npm run civplay`.
 
 **Mutant proofs.**
-1. In `sim.js` `step`, break the queue gate `if (need && !hasTech(...))` →
-   `if (false && ...)` and §17 goes red (130/132); restore returns 132/132.
-2. In `doAttack`, flip march-in `if (!ranged && u.alive)` → `if (ranged && ...)`
-   and §11 goes red (stage-2 proof still holds).
+1. In `sim.js` `connectedResources`, replace the network walk with "every tile
+   counts" (`for (let i = 0; ...)`) → §21/§22 go red (179/185); restore = 185.
+2. Carried from Stage 3: the queue gate mutant still reds §17.
 
 ## Honest gaps (stage boundaries — later stages close these)
 
-- **12 techs, not 70+.** The shipped tree is the spine of three eras; the full
-  Civ V grid (and the units/buildings hanging off it) grows in later stages.
-- **No buildings/city screen yet.** Production is units-only; Granary/Walls etc.
-  exist as tech *effects*, not as built wonders.
-- **One and a bit of the victories.** Domination + the founding milestone ship;
-  science/culture/diplomatic victories are later stages.
-- Combat stays deterministic-strength (Civ V's stacked-odds dice can't replay
-  hash-for-hash); its *feel* — HP, terrain, fortification, retaliation,
-  march-in, siege — is reproduced.
-- No promotions/experience, ZOC, raze/annex choice, peace treaties, spies,
-  great people, road improvements.
+- **Luxuries pay gold, not happiness.** Unhappiness and the happiness-balanced
+  border come in Stage 5 with policies.
+- **8 resource types, 3 improvements.** Pasture/Landing Site/quarries and the
+  full Civ V resource board grow with the later eras.
+- **Connection is land-linked** (borders or roads); Civ V's strict
+  road-only connection plus trade-unit convoys is a later refinement.
+- Workers are not captured, improvements cannot be repaired automatically, and
+  roads do not speed AI pathing (only the player's move cost halves).
+- Still no buildings/city screen, no great people, no diplomatic victories.
 
-These are intentional stage cuts, not omissions of promised Stage-3 behaviour.
+These are intentional stage cuts, not omissions of promised Stage-4 behaviour.

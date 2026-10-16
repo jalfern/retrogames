@@ -7,7 +7,7 @@
 // Math.random at render time (terrain jitter is a hash of the tile).
 
 import * as THREE from 'three'
-import { CFG, T, CIVS } from './sim.js'
+import { CFG, T, CIVS, RES, RES_IDS, resRevealed } from './sim.js'
 
 const SQ3 = Math.sqrt(3)
 export const HEX = 1
@@ -93,6 +93,39 @@ function buildUnit(u) {
         arm.position.set(-0.04, 0.42, 0); arm.rotation.z = 0.7; g.add(arm)
         const bucket = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), new THREE.MeshStandardMaterial({ color: 0x2c2c30, roughness: 0.6 }))
         bucket.position.set(0.16, 0.58, 0); g.add(bucket)
+    } else if (u.kind === 'WORKER') {
+        const cart = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.2, 0.3), new THREE.MeshStandardMaterial({ color: 0x8a6a3e, flatShading: true, roughness: 0.9 }))
+        cart.position.y = 0.16; g.add(cart)
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x4a3418, roughness: 0.9 })
+        const w1 = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.03, 6, 10), wheelMat)
+        w1.rotation.y = Math.PI / 2; w1.position.set(0.18, 0.11, 0.14); g.add(w1)
+        const w2 = w1.clone(); w2.position.x = -0.18; w2.position.z = -0.14; g.add(w2)
+        const spade = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.4, 0.04), new THREE.MeshStandardMaterial({ color: 0x9aa2ab, metalness: 0.5, roughness: 0.4 }))
+        spade.position.set(-0.16, 0.34, 0); spade.rotation.z = 0.55; g.add(spade)
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.02), new THREE.MeshStandardMaterial({ color: 0xb8c0ca, metalness: 0.6, roughness: 0.3 }))
+        blade.position.set(-0.34, 0.5, 0); blade.rotation.z = 0.55; g.add(blade)
+    } else if (u.kind === 'CHARIOT') {
+        const hull = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.26), new THREE.MeshStandardMaterial({ color: 0x7a5a30, flatShading: true, roughness: 0.85 }))
+        hull.position.y = 0.18; g.add(hull)
+        const curb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.3), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0xffffff), 0.2), flatShading: true }))
+        curb.position.set(-0.14, 0.3, 0); g.add(curb)
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x4a3418, roughness: 0.9 })
+        const w1 = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.028, 6, 12), wheelMat)
+        w1.rotation.y = Math.PI / 2; w1.position.set(0.12, 0.15, 0.18); g.add(w1)
+        const w2 = w1.clone(); w2.position.z = -0.18; g.add(w2)
+        const bow = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.018, 5, 10, Math.PI * 1.1), new THREE.MeshStandardMaterial({ color: 0x6b4a24 }))
+        bow.position.set(0.2, 0.4, 0.02); bow.rotation.z = -Math.PI / 2; g.add(bow)
+    } else if (u.kind === 'LEGION') {
+        const body = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.46, 7), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0x000000), 0.05), flatShading: true, roughness: 0.65 }))
+        body.position.y = 0.29; g.add(body)
+        const helm = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshStandardMaterial({ color: 0xd8b23a, metalness: 0.6, roughness: 0.35 }))
+        helm.position.y = 0.52; g.add(helm)
+        const crest = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.26), new THREE.MeshStandardMaterial({ color: 0xa02020, roughness: 0.8 }))
+        crest.position.y = 0.62; g.add(crest)
+        const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.03, 10), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0xffd76a), 0.4), metalness: 0.4, roughness: 0.4 }))
+        shield.position.set(0.2, 0.34, 0.08); shield.rotation.z = Math.PI / 2; shield.rotation.x = -0.3; g.add(shield)
+        const gladius = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.03), new THREE.MeshStandardMaterial({ color: 0xdfe6ee, metalness: 0.8, roughness: 0.25 }))
+        gladius.position.set(-0.2, 0.32, 0); gladius.rotation.z = 0.45; g.add(gladius)
     } else {
         const body = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.44, 7), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0x000000), 0.15), flatShading: true, roughness: 0.7 }))
         body.position.y = 0.28; g.add(body)
@@ -125,6 +158,99 @@ function buildCamp(camp, h) {
     const ember = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), new THREE.MeshStandardMaterial({ color: 0xff7a2a, emissive: 0xff5a10, emissiveIntensity: 1.4 }))
     ember.position.set(0, h + 0.05, 0.36); g.add(ember)
     g.userData = { x, z, h, id: camp.id, ember }
+    return g
+}
+
+// ---- Stage 4 ground works: roads, farms, mines, resource tokens ----
+const NN6 = [[+1, 0], [0, -1], [-1, -1], [-1, 0], [-1, +1], [0, +1]]
+const NN6E = [[+1, 0], [+1, -1], [0, -1], [-1, 0], [0, +1], [+1, +1]]
+
+function buildRoads(gs) {
+    const g = new THREE.Group()
+    const mat = new THREE.MeshStandardMaterial({ color: 0x8a6f47, roughness: 1, flatShading: true })
+    for (const tl of gs.tiles) {
+        if (!tl.road) continue
+        if (!gs.explored[0][tl.r * CFG.W + tl.c]) continue
+        const { x, z } = hexToWorld(tl.c, tl.r)
+        const h = (tl._h || 0.14) + 0.02
+        const nb = (tl.r & 1 ? NN6 : NN6E).filter(([dc, dr]) => {
+            const c = tl.c + dc, r = tl.r + dr
+            if (c < 0 || r < 0 || c >= CFG.W || r >= CFG.H) return false
+            const q = gs.tiles[r * CFG.W + c]
+            return q.road || q.city >= 0 || q.res >= 0
+        })
+        const box = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.025, 0.3), mat)
+        box.position.set(x, h, z); g.add(box)
+        for (const [dc, dr] of nb) {
+            const b = hexToWorld(tl.c + dc, tl.r + dr)
+            const dx = b.x - x, dz = b.z - z
+            const len = Math.sqrt(dx * dx + dz * dz)
+            const seg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.022, len / 2 + 0.18), mat)
+            seg.position.set(x + dx * 0.36, h, z + dz * 0.36)
+            seg.rotation.y = Math.atan2(dx, dz)
+            g.add(seg)
+        }
+    }
+    return g
+}
+
+function buildWorks(gs) {
+    const g = new THREE.Group()
+    const soil = new THREE.MeshStandardMaterial({ color: 0x9c7b33, roughness: 1, flatShading: true })
+    const furrow = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 1 })
+    const rock = new THREE.MeshStandardMaterial({ color: 0x2e2a26, roughness: 1, flatShading: true })
+    const timber = new THREE.MeshStandardMaterial({ color: 0x6b4a24, roughness: 0.95 })
+    for (const tl of gs.tiles) {
+        if (!tl.imp) continue
+        if (!gs.explored[0][tl.r * CFG.W + tl.c]) continue
+        const { x, z } = hexToWorld(tl.c, tl.r)
+        const h = (tl._h || 0.14)
+        if (tl.imp === 'FARM') {
+            const patch = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.03, 0.62), soil)
+            patch.position.set(x, h + 0.015, z); g.add(patch)
+            for (let n = 0; n < 3; n++) {
+                const f = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.022, 0.06), furrow)
+                f.position.set(x, h + 0.03, z - 0.17 + n * 0.17); g.add(f)
+            }
+        } else if (tl.imp === 'MINE') {
+            const pit = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.36), rock)
+            pit.position.set(x, h + 0.06, z); g.add(pit)
+            for (const sgn of [-1, 1]) {
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 5), timber)
+                leg.position.set(x + sgn * 0.14, h + 0.24, z)
+                leg.rotation.z = -sgn * 0.38; g.add(leg)
+            }
+            const beam = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.05, 0.05), timber)
+            beam.position.set(x, h + 0.42, z); g.add(beam)
+            const tail = new THREE.Mesh(new THREE.DodecahedronGeometry(0.09), rock)
+            tail.position.set(x + 0.26, h + 0.05, z + 0.14); g.add(tail)
+        }
+    }
+    return g
+}
+
+function buildResources(gs, civ) {
+    const g = new THREE.Group()
+    for (const tl of gs.tiles) {
+        if (tl.res < 0) continue
+        const i = tl.r * CFG.W + tl.c
+        if (!resRevealed(gs, civ, i)) continue
+        const spec = RES[RES_IDS[tl.res]]
+        const { x, z } = hexToWorld(tl.c, tl.r)
+        const h = (tl._h || 0.14)
+        const lit = gs.visible[0][i] ? 1 : 0.55
+        const mat = new THREE.MeshStandardMaterial({ color: spec.color, emissive: spec.color, emissiveIntensity: 0.55 * lit, roughness: 0.4, metalness: spec.strategic ? 0.7 : 0.15 })
+        let tok
+        if (spec.strategic) {
+            tok = new THREE.Mesh(tl.res === RES_IDS.indexOf('HORSES') ? new THREE.ConeGeometry(0.12, 0.26, 6) : new THREE.BoxGeometry(0.24, 0.14, 0.2), mat)
+            tok.rotation.y = 0.5
+            tok.position.set(x, h + (tl.res === RES_IDS.indexOf('HORSES') ? 0.13 : 0.08), z)
+        } else {
+            tok = new THREE.Mesh(new THREE.OctahedronGeometry(0.14), mat)
+            tok.position.set(x, h + 0.16, z)
+        }
+        g.add(tok)
+    }
     return g
 }
 
@@ -196,6 +322,9 @@ export function createView(gs) {
     const campGroup = new THREE.Group(); scene.add(campGroup)
     const unitGroup = new THREE.Group(); scene.add(unitGroup)
     const fxGroup = new THREE.Group(); scene.add(fxGroup)   // selection / range rings
+    const roadGroup = new THREE.Group(); scene.add(roadGroup)
+    const workGroup = new THREE.Group(); scene.add(workGroup)
+    const resGroup = new THREE.Group(); scene.add(resGroup)
 
     const unitMeshes = new Map()
     const unitAnim = new Map()
@@ -226,7 +355,7 @@ export function createView(gs) {
     }
 
     return {
-        scene, hexes, cones, ribbons, cityGroup, campGroup, unitGroup, fxGroup, selRing, reachPool,
+        scene, hexes, cones, ribbons, cityGroup, campGroup, unitGroup, fxGroup, roadGroup, workGroup, resGroup, selRing, reachPool,
         unitMeshes, unitAnim, cityMeshes, campMeshes, fxPool, arrowPool,
         hexToWorld, worldToHex,
     }
@@ -260,7 +389,7 @@ export function spawnArrow(view, gs, from, to) {
 
 // Per-frame sync of every visual against authoritative sim state.
 export function updateView(view, gs, extra = {}) {
-    const { hexes, cones, cityGroup, campGroup, unitGroup } = view
+    const { hexes, cones, cityGroup, campGroup, unitGroup, roadGroup, workGroup, resGroup } = view
     const col = new THREE.Color()
     const sunK = (i) => { const c = i % CFG.W, r = (i - c) / CFG.W; return 0.82 + 0.18 * (1 - r / CFG.H) }   // gentle north light
     for (let i = 0; i < gs.tiles.length; i++) {
@@ -325,6 +454,19 @@ export function updateView(view, gs, extra = {}) {
         if (m.userData.ember) m.userData.ember.material.emissiveIntensity = 1.0 + 0.6 * Math.sin(gs.tick * 0.22 + id)
         if (!cp || !cp.alive) { disposeObj(m); campGroup.remove(m); view.campMeshes.delete(id) }
     }
+
+    // Stage 4 ground layers: rebuild only when the land itself changes
+    let rsig = '', wsig = '', xsig = ''
+    for (const tl of gs.tiles) {
+        const i = tl.r * CFG.W + tl.c
+        const ex = gs.explored[0][i] ? 1 : 0
+        rsig += tl.road ? String(ex) : '0'
+        wsig += tl.imp ? (tl.imp === 'FARM' ? 'f' : 'm') + ex : (tl.build ? 'b' + tl.build.left : '0')
+        xsig += tl.res >= 0 ? (resRevealed(gs, 0, i) ? String(tl.res) : 'x') : '-'
+    }
+    if (rsig !== view._roadSig) { view._roadSig = rsig; for (const c of [...roadGroup.children]) { disposeObj(c); roadGroup.remove(c) }; roadGroup.add(buildRoads(gs)) }
+    if (wsig !== view._workSig) { view._workSig = wsig; for (const c of [...workGroup.children]) { disposeObj(c); workGroup.remove(c) }; workGroup.add(buildWorks(gs)) }
+    if (xsig !== view._resSig) { view._resSig = xsig; for (const c of [...resGroup.children]) { disposeObj(c); resGroup.remove(c) }; resGroup.add(buildResources(gs, 0)) }
 
     // units: create/remove, animate position toward logical tile
     const liveIds = new Set()

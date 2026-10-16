@@ -1,4 +1,4 @@
-// CIVILIZATION V — Stage 3 "The Tech Tree". Pure deterministic sim.
+// CIVILIZATION V — Stage 4 "Land". Pure deterministic sim.
 // No three, no DOM, no Math.random: this module is the single source of truth
 // the Node harness (scripts/civcheck.mjs) and the in-browser autopilot import
 // unchanged. Turn-based: the player orders units, presses END TURN, then each
@@ -28,6 +28,16 @@
 //     apply era effects (Bronze +str, Horseback +move, Pottery/Agriculture
 //     growth, Masonry walls, Currency/Writing/Philosophy yields). The AI
 //     researches its own deterministic paths; barbarians stay timeless.
+//   - Stage 4 adds the land itself: WORKER civilians build improvements on your
+//     tiles (Farm needs Pottery, Mine needs Masonry, Road needs The Wheel) and
+//     each job takes real turns; barbarians pillage whatever they walk over.
+//     Luxury resources (Wine/Gems/Silver/Dyes/Incense/Spices) sit on fitting
+//     terrain and pay +1 gold +1 culture per connected unique type; strategic
+//     resources (Horses, Iron) reveal themselves only with their era's tech and
+//     gate two original units — the Chariot Archer (Wheel+Horses) and the
+//     Legion (Bronze+Iron). A resource counts when it is inside your borders
+//     and road-connected to (or adjacent to) one of your cities; roads also
+//     halve movement cost on your network.
 
 export const CFG = {
     W: 40, H: 25,
@@ -47,6 +57,8 @@ export const CFG = {
     healHome: 12, healField: 5, healFortify: 8,
     warDeclareTurn: 12,         // rival AI may declare war from here
     warChance: 0.34,            // deterministic pseudo-odds per AI civ per turn
+    luxGold: 1, luxCult: 1,     // per unique connected luxury type, empire-wide
+    ironProd: 1, horseFood: 1,  // per city sitting on connected iron / horses
 }
 
 export const UNIT = {
@@ -54,6 +66,11 @@ export const UNIT = {
     ARCHER: { str: 11, moves: 2, sight: 2, range: 2, cost: 22, tech: 'ARCHERY' },
     SETTLER: { str: 0, moves: 2, sight: 2, range: 0, cost: 35 },
     CATAPULT: { str: 7, moves: 2, sight: 2, range: 2, cost: 45, tech: 'ENGINEERING' },
+    WORKER: { str: 0, moves: 2, sight: 2, range: 0, cost: 20 },
+    // Stage 4: units of the original gated by a strategic resource you must
+    // actually own and connect, not just research.
+    CHARIOT: { str: 9, moves: 3, sight: 2, range: 2, cost: 32, tech: 'THE_WHEEL', res: 'HORSES' },
+    LEGION: { str: 12, moves: 2, sight: 2, range: 1, cost: 38, tech: 'BRONZE_WORKING', res: 'IRON' },
 }
 
 // ---- the tech tree (Stage 3) ---------------------------------------------------
@@ -87,6 +104,31 @@ export const CIVS = [
     { id: 4, name: 'BARBARIANS', hex: '#6b6b6b', player: false, barb: true },
 ]
 export const BARB = 4
+
+// ---- improvements (Stage 4) -----------------------------------------------------
+// Civ V build order: Pottery opens the Farm, Masonry the Mine, The Wheel the
+// Road. Each job takes the worker real turns on the tile.
+export const IMP = {
+    FARM: { name: 'Farm', tech: 'POTTERY', turns: 2, terr: [T.GRASS, T.PLAINS] },
+    MINE: { name: 'Mine', tech: 'MASONRY', turns: 2, terr: [T.HILLS] },
+    ROAD: { name: 'Road', tech: 'THE_WHEEL', turns: 1, terr: null },
+}
+export const IMP_IDS = ['FARM', 'MINE', 'ROAD']
+
+// ---- resources (Stage 4) --------------------------------------------------------
+// Luxury types pay empire-wide when connected; strategic ones reveal themselves
+// only once the era's tech is known and gate the units that need them.
+export const RES = {
+    WINE: { name: 'Wine', lux: true, terr: [T.HILLS], color: 0xa8447f },
+    GEMS: { name: 'Gems', lux: true, terr: [T.HILLS], color: 0x53d6d0 },
+    SILVER: { name: 'Silver', lux: true, terr: [T.HILLS], color: 0xcfd6e2 },
+    DYES: { name: 'Dyes', lux: true, terr: [T.GRASS], forest: true, color: 0xd060b8 },
+    INCENSE: { name: 'Incense', lux: true, terr: [T.DESERT], color: 0xe8c884 },
+    SPICES: { name: 'Spices', lux: true, terr: [T.DESERT], color: 0xe08a3c },
+    HORSES: { name: 'Horses', lux: false, strategic: true, tech: 'HORSEBACK', terr: [T.PLAINS], color: 0x9a6a3a },
+    IRON: { name: 'Iron', lux: false, strategic: true, tech: 'BRONZE_WORKING', terr: [T.HILLS], color: 0x8f9aa8 },
+}
+export const RES_IDS = Object.keys(RES)
 
 // ---- terrain yields (Stage 1 approximation of the Civ V table) --------------
 const BASE_YIELD = {
@@ -133,8 +175,11 @@ export function setResearch(gs, civ, id) {
     return true
 }
 export function canQueue(gs, civ, kind) {
-    const need = UNIT[kind] && UNIT[kind].tech
-    return !need || hasTech(gs, civ, need)
+    const st = UNIT[kind]
+    if (!st) return false
+    if (st.tech && !hasTech(gs, civ, st.tech)) return false
+    if (st.res && !connectedResources(gs, civ).includes(st.res)) return false
+    return true
 }
 function applyLearn(gs, civ, id) {
     if (id === 'BRONZE_WORKING') for (const u of gs.units) if (u.alive && u.civ === civ && u.kind === 'WARRIOR') u.str += 2
@@ -149,6 +194,101 @@ export function grantTech(gs, civ, id) {   // test/cheat path: learn instantly
     gs.events.push({ type: 'tech', civ, id })
     applyLearn(gs, civ, id)
     return true
+}
+
+// ---- land: improvements, resources, connectivity (Stage 4) ----------------------
+export function tileOwnedBy(gs, civ, tl) {
+    return tl.owner === civ || (tl.city >= 0 && gs.cities[tl.city] && gs.cities[tl.city].alive && gs.cities[tl.city].civ === civ)
+}
+export function canImprove(gs, civ, unit, kind) {
+    const imp = IMP[kind]
+    if (!imp) return 'unknown improvement'
+    if (!unit || unit.kind !== 'WORKER' || !unit.alive) return 'needs a worker'
+    if (unit.busy != null) return 'worker already working'
+    const tl = tileAt(gs, unit.c, unit.r)
+    if (!tl || !WALKABLE(tl.terr)) return 'cannot build here'
+    if (tl.city >= 0) return 'cannot improve the city centre'
+    if (kind === 'ROAD') { if (tl.road) return 'already a road' }
+    else {
+        if (tl.imp) return 'already improved'
+        if (!imp.terr.includes(tl.terr)) return `${imp.name.toLowerCase()} needs different ground`
+    }
+    if (imp.tech && !hasTech(gs, civ, imp.tech)) return 'requires ' + TECH[imp.tech].name
+    if (!tileOwnedBy(gs, civ, tl)) return 'outside your borders'
+    return true
+}
+export function startImprove(gs, unit, kind) {
+    const why = canImprove(gs, unit.civ, unit, kind)
+    if (why !== true) { if (unit.civ === 0) gs.events.push({ type: 'deny', reason: why, c: unit.c, r: unit.r }); return false }
+    const tl = gs.tiles[idx(unit.c, unit.r)]
+    tl.build = { kind, civ: unit.civ, left: IMP[kind].turns, by: unit.id }
+    unit.busy = idx(unit.c, unit.r)
+    unit.moves = 0; unit.acted = true
+    gs.events.push({ type: 'improveStart', civ: unit.civ, c: unit.c, r: unit.r, kind })
+    return true
+}
+function advanceBuilds(gs) {
+    for (const tl of gs.tiles) {
+        const b = tl.build
+        if (!b) continue
+        const w = gs.units.find((u) => u.id === b.by)
+        if (!w || !w.alive || w.c !== tl.c || w.r !== tl.r) { tl.build = null; if (w && !w.alive) w.busy = null; continue }
+        b.left--
+        if (b.left <= 0) {
+            if (b.kind === 'ROAD') tl.road = true
+            else tl.imp = b.kind
+            tl.build = null
+            w.busy = null
+            gs.events.push({ type: 'improved', civ: b.civ, c: tl.c, r: tl.r, kind: b.kind })
+        }
+    }
+}
+// Contiguous network of owned-or-road tiles touching this civ's cities; a
+// resource inside it counts, as Civ V's land connection demands.
+export function resourceNetwork(gs, civ) {
+    const seen = new Set()
+    const q = []
+    for (const ct of gs.cities) if (ct.alive && ct.civ === civ) { const i = idx(ct.c, ct.r); seen.add(i); q.push(i) }
+    while (q.length) {
+        const i = q.pop()
+        const c = i % CFG.W, r = (i - (i % CFG.W)) / CFG.W
+        for (const [nc, nr] of neighbors(c, r)) {
+            const ni = idx(nc, nr)
+            if (seen.has(ni)) continue
+            const tl = gs.tiles[ni]
+            if (!WALKABLE(tl.terr)) continue
+            if (tl.owner === civ || tl.road) { seen.add(ni); q.push(ni) }
+        }
+    }
+    return seen
+}
+export function connectedResources(gs, civ, net) {
+    const N = net || resourceNetwork(gs, civ)
+    const out = []
+    for (const i of N) {
+        const tl = gs.tiles[i]
+        if (tl.res < 0) continue
+        const id = RES_IDS[tl.res]
+        if (!out.includes(id)) out.push(id)
+    }
+    return out
+}
+export function resRevealed(gs, civ, i) {
+    const tl = gs.tiles[i]
+    if (tl.res < 0 || !gs.explored[civ][i]) return false
+    const spec = RES[RES_IDS[tl.res]]
+    return !spec.strategic || hasTech(gs, civ, spec.tech)
+}
+export function roadCost(gs, u, c, r) {
+    const tl = tileAt(gs, c, r)
+    return tl && tl.road ? 0.5 : 1
+}
+export function queueDeny(gs, civ, kind) {
+    const st = UNIT[kind]
+    if (!st) return null
+    if (st.tech && !hasTech(gs, civ, st.tech)) return 'requires ' + TECH[st.tech].name
+    if (st.res && !connectedResources(gs, civ).includes(st.res)) return 'requires ' + RES[st.res].name
+    return null
 }
 
 // ---- odd-r hex geometry -------------------------------------------------------
@@ -264,8 +404,29 @@ function generateMap(gs) {
     }
     gs.tiles = t.map((terr, i) => ({
         c: i % W, r: (i - (i % W)) / W, terr, forest: forest[i], river: river[i],
-        owner: -1, city: -1, camp: -1,
+        owner: -1, city: -1, camp: -1, res: -1, imp: null, road: false, build: null,
     }))
+    placeResources(gs)
+}
+
+// ---- Stage 4: scatter resources on fitting terrain, spread apart --------------
+const RES_TARGET = { WINE: 2, GEMS: 2, SILVER: 2, DYES: 2, INCENSE: 2, SPICES: 2, HORSES: 3, IRON: 4 }
+function placeResources(gs) {
+    const rng = makeRng(gs.seed * 9701 + 41)
+    const placed = []
+    for (const id of RES_IDS) {
+        const spec = RES[id]
+        const cand = gs.tiles.filter((tl) => spec.terr.includes(tl.terr) && (!spec.forest || tl.forest) && !tl.river && tl.camp < 0)
+        for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp }
+        let n = 0
+        for (const tl of cand) {
+            if (n >= RES_TARGET[id]) break
+            if (placed.some((p) => hexDist([p.c, p.r], [tl.c, tl.r]) < 3)) continue
+            tl.res = RES_IDS.indexOf(id)
+            placed.push(tl)
+            n++
+        }
+    }
 }
 
 // ---------------------------------------------------------------- fog/units --
@@ -297,6 +458,7 @@ export function newGame(seed = 1, scenario = 0) {
         fog: [], explored: [], visible: [],
         civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, alive: true })),
         tech: CIVS.map(() => ({ known: {}, research: null, prog: 0 })),
+        resKnown: CIVS.map(() => ({})),
         capitalOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
     }
@@ -388,7 +550,7 @@ export function spawnUnit(gs, civ, kind, c, r, opts = {}) {
         str, hp: 100, maxHp: 100,
         moves, maxMoves: moves,
         path: [], anim: { px: 0, pz: 0, moving: false },
-        alive: true, fortified: false, acted: false,
+        alive: true, fortified: false, acted: false, busy: null,
     }
     gs.units.push(u)
     return u
@@ -400,6 +562,8 @@ export function tileYield(gs, i) {
     const y = { ...BASE_YIELD[tl.terr] }
     if (tl.forest) y.p += 1
     if (tl.river) y.g += 1
+    if (tl.imp === 'FARM') y.f += tl.terr === T.GRASS ? 2 : 1
+    if (tl.imp === 'MINE') y.p += 1 + (hasTech(gs, tl.owner, 'ENGINEERING') ? 1 : 0)
     return y
 }
 export function cityWorkedTiles(gs, city) {
@@ -425,6 +589,12 @@ export function cityYield(gs, city) {
     if (hasTech(gs, city.civ, 'CURRENCY')) out.g += 2        // markets
     if (hasTech(gs, city.civ, 'WRITING')) out.sci += 1      // scribes
     if (hasTech(gs, city.civ, 'PHILOSOPHY')) out.cult += 1  // academies
+    // Stage 4: strategic resources in the connected network feed the city
+    const net = resourceNetwork(gs, city.civ)
+    const seat = [cy, ...neighbors(city.c, city.r).map(([c, r]) => idx(c, r))]
+    const onRes = (rid) => seat.some((i) => net.has(i) && gs.tiles[i].res === RES_IDS.indexOf(rid))
+    if (onRes('HORSES')) out.f += CFG.horseFood
+    if (onRes('IRON')) out.p += CFG.ironProd
     return out
 }
 export function canFound(gs, civ, c, r, self) {
@@ -548,7 +718,7 @@ export function doAttack(gs, u, tc, tr) {
             if (target.hp <= 0) {
                 target.hp = 0; target.alive = false; target.moves = 0; target.path = []
                 gs.events.push({ type: 'kill', civ: u.civ, kind: u.kind, victim: target.civ, victimKind: target.kind, at: [tc, tr], ranged })
-                if (!ranged && u.alive) { u.c = tc; u.r = tr }        // march in — one unit per tile holds
+                if (!ranged && u.alive) { u.c = tc; u.r = tr; if (u.civ === BARB) pillageAt(gs, gs.tiles[ti]) }        // march in — one unit per tile holds
                 if (u.alive && u.civ === 0) reveal(gs, 0, tc, tr, st.sight)
                 break
             }
@@ -646,11 +816,12 @@ function animateUnits(gs) {
             u._p = (u._p || 0) + 1
             if (u._p >= 9) {
                 u._p = 0
-                if (u.moves <= 0) { u.path = []; continue }
                 const [nc, nr] = u.path[0]
+                const cost = roadCost(gs, u, nc, nr)
+                if (u.moves < cost) { u.path = []; continue }
                 if (unitAt(gs, nc, nr)) { u.path = []; continue }
                 u._from = [u.c, u.r]
-                u.c = nc; u.r = nr; u.moves--; u.path.shift(); u.acted = true
+                u.c = nc; u.r = nr; u.moves -= cost; u.path.shift(); u.acted = true
                 gs._anim.push({ id: u.id, civ: u.civ, kind: u.kind })
                 if (u.civ === 0) reveal(gs, 0, nc, nr, u.kind === 'WARRIOR' ? CFG.sightWarrior : CFG.sightSettler)
             }
@@ -665,6 +836,7 @@ function endPlayerTurn(gs) {
     for (const u of gs.units) { if (u.civ === 0 && u.alive) { u.path = []; u.fortified = !u.acted } }
     for (const civ of gs.civs) { if (!civ.player && !civ.barb && civ.alive) aiTurn(gs, civ.id) }
     barbarianTurn(gs)
+    advanceBuilds(gs)
     for (const civ of gs.civs) if (!civ.barb) resolveCiv(gs, civ.id)
     gs.turn++
     gs.phase = 'player'
@@ -688,10 +860,12 @@ function endPlayerTurn(gs) {
 
 function resolveCiv(gs, civ) {
     const C = gs.civs[civ]
+    const net = resourceNetwork(gs, civ)
+    const cr = connectedResources(gs, civ, net)
     let fSur = 0, gold = 0, sci = 0, cult = 0, prod = 0
     for (const city of gs.cities) {
         if (city.civ !== civ || !city.alive) continue
-        const y = cityYield(gs, city)
+        const y = cityYield(gs, city)   // includes connected strategic bonuses
         fSur += y.f - city.size * 2            // each citizen eats 2
         gold += y.g; sci += y.sci; cult += y.cult; prod += y.p
         city.storedFood += y.f - city.size * 2
@@ -726,6 +900,17 @@ function resolveCiv(gs, civ) {
             }
         }
     }
+    // luxury caravans: each unique connected luxury pays once, empire-wide
+    const KN = gs.resKnown ? gs.resKnown[civ] : null
+    let lux = 0
+    for (const id of cr) {
+        if (KN && !KN[id]) {
+            KN[id] = 1
+            gs.events.push({ type: RES[id].lux ? 'luxury' : 'strategic', civ, id })
+        }
+        if (RES[id].lux) lux++
+    }
+    gold += CFG.luxGold * lux; cult += CFG.luxCult * lux
     C.gold += gold; C.science += sci; C.culture += cult
     C.culture = (C.culture || 0) + cult
     // research: spend this turn's science on the current tech (overflow carries)
@@ -754,6 +939,15 @@ function checkEnd(gs) {
     if (cap && cap.alive && cap.civ === 0 && cap.size >= CFG.capitalSizeToWin) { gs.end = 'win'; gs.endWhy = `${cap.name} reached size ${cap.size}`; return }
     if (!gs.civs[0].alive || (gs.capitalOf[0] != null && gs.cities[gs.capitalOf[0]].civ !== 0)) { gs.end = 'lose'; gs.endWhy = 'your capital has fallen'; return }
     if (gs.turn > CFG.turnLimit) { gs.end = 'lose'; gs.endWhy = `turn limit ${CFG.turnLimit} passed before size ${CFG.capitalSizeToWin}` }
+}
+
+function pillageAt(gs, tl) {
+    let hit = false
+    if (tl.imp) { tl.imp = null; hit = true }
+    if (tl.road) { tl.road = false; hit = true }
+    if (tl.build) { const w = gs.units.find((u) => u.id === tl.build.by); if (w) w.busy = null; tl.build = null; hit = true }
+    if (hit) gs.events.push({ type: 'pillage', c: tl.c, r: tl.r })
+    return hit
 }
 
 // ------------------------------------------------------------------- AI turn --
@@ -821,6 +1015,24 @@ function aiTurn(gs, civ) {
             }
         }
     }
+    // Stage 4: workers farm, mine and road toward unconnected resources
+    const aiNet = resourceNetwork(gs, civ)
+    for (const u of gs.units) {
+        if (!u.alive || u.civ !== civ || u.kind !== 'WORKER' || u.busy != null) continue
+        const tl = gs.tiles[idx(u.c, u.r)]
+        const ground = tl.terr === T.HILLS ? 'MINE' : tl.terr === T.GRASS || tl.terr === T.PLAINS ? 'FARM' : null
+        if (ground && canImprove(gs, civ, u, ground) === true) { startImprove(gs, u, ground); continue }
+        if (canImprove(gs, civ, u, 'ROAD') === true && tl.res >= 0) { startImprove(gs, u, 'ROAD'); continue }
+        if (u.moves > 0) {
+            let tgt = null, bd = 10
+            for (const q of gs.tiles) {
+                if (q.res < 0 || aiNet.has(idx(q.c, q.r)) || !WALKABLE(q.terr)) continue
+                const d = hexDist([u.c, u.r], [q.c, q.r])
+                if (d < bd) { bd = d; tgt = [q.c, q.r] }
+            }
+            if (tgt) { const s = stepToward(gs, u, tgt); if (s) { u.c = s[0]; u.r = s[1]; u.moves--; u.acted = true } }
+        }
+    }
     // city production choices (points are banked/delivered in resolveCiv)
     // research: a stable per-civ priority path, rotated so rivals diverge
     const R = gs.tech[civ]
@@ -837,9 +1049,13 @@ function aiTurn(gs, civ) {
         city.queue = city.queue || []
         if (city.queue.length >= 3) continue
         const wantSettler = city.size >= 2 && C.gold >= 40 && (C.cities || 0) < 6
+        const workers = gs.units.filter((x) => x.alive && x.civ === civ && x.kind === 'WORKER').length + city.queue.filter((k) => k === 'WORKER').length
         if (wantSettler && !city.queue.includes('SETTLER')) city.queue.push('SETTLER')
-        else if (warring && city.queue.filter((k) => k !== 'SETTLER').length < 2) {
-            if (hasTech(gs, civ, 'ENGINEERING') && hash2(city.id, gs.turn, civ ^ 11) < 0.3) city.queue.push('CATAPULT')
+        else if (workers < 2 && hash2(city.id, gs.turn, civ ^ 3) < 0.5) city.queue.push('WORKER')
+        else if (warring && city.queue.filter((k) => k !== 'SETTLER' && k !== 'WORKER').length < 2) {
+            if (canQueue(gs, civ, 'CATAPULT') && hash2(city.id, gs.turn, civ ^ 11) < 0.3) city.queue.push('CATAPULT')
+            else if (canQueue(gs, civ, 'LEGION') && hash2(city.id, gs.turn, civ ^ 17) < 0.35) city.queue.push('LEGION')
+            else if (canQueue(gs, civ, 'CHARIOT') && hash2(city.id, gs.turn, civ ^ 23) < 0.35) city.queue.push('CHARIOT')
             else if (canQueue(gs, civ, 'ARCHER') && hash2(city.id, gs.turn, civ) < 0.5) city.queue.push('ARCHER')
             else city.queue.push('WARRIOR')
         }
@@ -875,8 +1091,10 @@ function barbarianTurn(gs) {
             const step = stepToward(gs, u, tgt)
             if (!step) break
             u.c = step[0]; u.r = step[1]; u.moves--; u.acted = true
+            pillageAt(gs, gs.tiles[idx(u.c, u.r)])
         }
         if (u.alive && hexDist([u.c, u.r], tgt) <= 1) doAttack(gs, u, tgt[0], tgt[1])
+        if (u.alive) pillageAt(gs, gs.tiles[idx(u.c, u.r)])
     }
 }
 function firstFreeAround(gs, c, r) { for (const [nc, nr] of neighbors(c, r)) if (landFree(gs, nc, nr)) return [nc, nr]; return [c, r] }
@@ -902,8 +1120,8 @@ export function step(gs, input = {}) {
     if (input.endTurn) { endPlayerTurn(gs); return }
     if (input.research) setResearch(gs, 0, input.research)
     if (input.queue && UNIT[input.queue]) {
-        const need = UNIT[input.queue].tech
-        if (need && !hasTech(gs, 0, need)) { gs.events.push({ type: 'deny', reason: 'requires ' + TECH[need].name, c: -1, r: -1 }) }
+        const deny = queueDeny(gs, 0, input.queue)
+        if (deny) gs.events.push({ type: 'deny', reason: deny, c: -1, r: -1 })
         else {
             const city = input.city != null ? gs.cities[input.city] : gs.cities.find((c) => c.civ === 0 && c.alive)
             if (city && city.alive && city.civ === 0 && city.queue.length < 3) { city.queue.push(input.queue); gs.events.push({ type: 'queued', civ: 0, unit: input.queue }) }
@@ -912,23 +1130,29 @@ export function step(gs, input = {}) {
     if (sel) {
         if (input.move) orderMove(gs, sel, input.move[0], input.move[1])
         if (input.attack) doAttack(gs, sel, input.attack[0], input.attack[1])
+        if (input.improve) startImprove(gs, sel, input.improve)
         if (input.found) { tryFound(gs, sel); gs.selected = gs.units.find((u) => u.civ === 0 && u.alive && u.kind === 'SETTLER')?.id ?? gs.units.find((u) => u.civ === 0 && u.alive)?.id ?? -1 }
     }
     animateUnits(gs)
 }
 
 export function stateHash(gs) {
-    const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4 }
+    const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4, WORKER: 5, CHARIOT: 6, LEGION: 7 }
     let h = gs.turn * 31 + gs.units.length
-    for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 9) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53) | 0
+    for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 9) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19) | 0
     for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71) | 0
     for (const cp of gs.camps) h = (h * 33 + cp.c + cp.r * 13 + (cp.alive ? 1 : 0) * 173) | 0
+    let L = 0
+    for (const tl of gs.tiles) L = (L * 7 + (tl.imp ? IMP_IDS.indexOf(tl.imp) + 1 : 0) + (tl.road ? 4 : 0) + (tl.res + 1) * 11 + (tl.build ? tl.build.left * 3 + tl.build.civ : 0)) | 0
+    h = (h * 33 + L) | 0
     h = (h * 33 + Object.keys(gs.wars).length * 613) | 0
     for (const civ of [0, 1, 2, 3]) {
         const R = gs.tech[civ]
         let m = 0
         for (let i = 0; i < TECH_IDS.length; i++) if (R.known[TECH_IDS[i]]) m |= 1 << i
-        h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3) | 0
+        let rm = 0
+        for (const id of connectedResources(gs, civ)) rm |= 1 << RES_IDS.indexOf(id)
+        h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3 + rm * 29) | 0
     }
     return (h >>> 0).toString(16)
 }
