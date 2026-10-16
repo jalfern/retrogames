@@ -72,10 +72,12 @@ X or Z strike · ? pause · R restart after the hour is lost.
 
 ```bash
 npm run lint:pop     # scoped lint gate
-npm run popcheck     # 220 checks: the 75 Stage-1 rules + 24 Stage-2 look
+npm run popcheck     # 253 checks: the 75 Stage-1 rules + 24 Stage-2 look
                      # clauses + 67 Stage-3 clauses + 25 Stage-4 sound clauses
                      # + 14 Stage-5 gate/banner/escort clauses + 15 Stage-6
-                     # light-model clauses.
+                     # light-model clauses + 17 Stage-7 escort clauses + 16
+                     # Stage-8 colour-temperature / floor-bounce / phone-light
+                     # clauses.
                      # Champion run pinned: autopilot clears all twelve levels at
                      # 0 deaths, the mirror / mouse-held gate / poisoned phantom
                      # shadow / invisible bridge / sheathed merge all fire in that
@@ -248,6 +250,38 @@ direction, in colour rather than just brightness.
   `popcheck` clauses; the champion (autopilot, no deaths, all twelve levels +
   slack) re-proved with the sim touched. Mutant proof at ship time: relax the
   etiquette gate and two clauses go red.
+
+## Stage 8 — the third art pass: colour temperature, floor bounce, phone light
+
+Jon said keep pushing the graphics. This pass stays on the Stage-6 light spine and
+takes it from *how bright* to *what colour the light is*, and fixes two things QA
+flagged about small screens.
+
+- **Colour temperature (`art.js`, pure & exported).** Stage 6 measured brightness;
+  Stage 8 separates brightness from warmth. `torchSum(x,y,key)` is the flame's
+  own contribution, and `tempAt(x,y,key,amb)` = its share of the light — 0 in a
+  cold ambient corner, ~1 in a pool. A figure asks `atLight` for `temp` and paints
+  its rim amber under a sconce and cool blue-violet where only ambient reaches, so
+  warm-fire and cool-dark split by *hue*, not just value. Two distant sconces read
+  cooler between them than standing in one flame.
+- **Floor bounce (`bounceAt`).** A warm uplight on the flagstones under each torch,
+  a 1-D pull on horizontal distance that ignores height — the flame grounds itself
+  on the floor instead of floating above a flat dark band. Painted additively.
+- **Phone readability (QA relay).** `ambientFor(lite)` lifts the ambient floor from
+  `LIGHT_AMBIENT=0.18` to `LIGHT_AMBIENT_LITE=0.27` under `?lite=1` (the 640×426 CI
+  / small-screen mode; `index.jsx` reads `?lite`). Torchless rooms stay readable on
+  a dim phone, while desktop keeps the deep mood. A lifted ambient also cools the
+  temperature (brighter-but-cooler), which is the honest tradeoff, pinned both ways.
+- **Bloom vs HUD band (QA relay).** Light pools are now clipped to the playfield
+  below `HUD_LINE=22`, and the HUD rides a gradient scrim instead of a flat slab —
+  additive bloom no longer washes the clock/room text the demo plays under.
+- **Determinism holds** — `tempAt`, `bounceAt`, `torchSum`, `poolVisibleAt` are all
+  `sin`-hash-free pure arithmetic; popcheck re-asserts no `Math.random` in `art.js`.
+  Stage-8 added 16 `popcheck` clauses (lite floor, ambient-aware `lightAt`, the
+  temperature sign + monotonic cool-falloff + ambient dilution, `torchSum` additivity,
+  bounce height-invariance + monotonic decay, pool clip + scrim, figures carry `temp`,
+  the `?lite` route). Mutant proof at ship time: `ambientFor` forced to ignore lite
+  turns the readability clause red; restored → green.
 
 ## Honest gaps (the deep pass continues — see #316)
 

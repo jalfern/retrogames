@@ -10,6 +10,8 @@ import { drawScene, VW, VH } from './art.js'
 import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
 import { SFX, trackFor } from './music.js'
 
+const LITE = typeof window !== 'undefined' && /[?&]lite=/.test(window.location.search)
+
 const ATTRACT_MSGS = [
     'PRINCE OF PERSIA',
     'JAFFAR HAS THROWN YOU INTO THE DUNGEON',
@@ -229,7 +231,7 @@ const PrinceOfPersiaGame = () => {
 
         const draw = () => {
             ctx.clearRect(0, 0, VW, VH)
-            drawScene(ctx, g, { attract })
+            drawScene(ctx, g, { attract, lite: LITE })
 
             ctx.textAlign = 'center'
             if (attract) {
