@@ -12,11 +12,11 @@
 
 import {
     makeGame, step, stateHash, ROWS, CUBES, id, rowOf, colOf, neighbors,
-    valid, cubeXY, neededCubes, edgeDist, W, HOP_TICKS,
+    valid, cubeXY, neededCubes, edgeDist, W, HOP_TICKS, TUNNEL, tunnelCx,
 } from '../src/games/QBert/sim.js'
 import { plan } from '../src/games/QBert/planner.js'
 import { sfxFor, VOICED, SILENT } from '../src/games/QBert/sound.js'
-import { COILS, coilX, coilY, discHalfW, DISC_FRAMES, ballScale, BALL_FRAMES, BALL_R, bertFrame, BERT_GEO, BERT_LAND_TICKS, CUBE_SIDE, sideMargin } from '../src/games/QBert/art.js'
+import { COILS, coilX, coilY, discHalfW, DISC_FRAMES, ballScale, BALL_FRAMES, BALL_R, bertFrame, BERT_GEO, BERT_LAND_TICKS, CUBE_SIDE, sideMargin, tunnelArch } from '../src/games/QBert/art.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('qbertcheck')
@@ -456,6 +456,93 @@ const HW_ = 12
     r.check('touching the slick kills', gs.player.dying > 0 && gs.lives < 3)
 }
 
+// --------------------------------------------------- the tunnel mouths ----
+// The cabinet's bottom-corner portals: the sim owns the spans (TUNNEL), the
+// runners emerge from one mouth and enter the other, Slick slides in from the
+// right mouth out through the left, and tunnelArch is the PURE opening
+// profile the painter draws. Pins are LITERAL (the TETRIS lesson): mouths that
+// drift off the pyramid edges, a runner that materialises mid-edge, a Slick
+// that pops on/off the board, or an arch that flattens to a bar/square, all
+// go red.
+{
+    r.check('the mouths sit flush against the widest row edges (left 38, right 218, 26px wide)',
+        TUNNEL.left.x1 === Math.round(cubeXY(5, 0).x) - 15 && TUNNEL.right.x0 === Math.round(cubeXY(5, 5).x) + 15
+        && TUNNEL.left.x0 === TUNNEL.left.x1 - 26 && TUNNEL.right.x1 === TUNNEL.right.x0 + 26,
+        `L=${TUNNEL.left.x0}..${TUNNEL.left.x1} R=${TUNNEL.right.x0}..${TUNNEL.right.x1}`)
+    const spawnRunner = (roll) => {
+        const gs = makeGame({ seed: 19, level: 2 })
+        gs.rng = () => roll
+        gs.runnerTimer = 1
+        play(gs)
+        return gs
+    }
+    const ugg = spawnRunner(0.4)    // row 4, dir +1
+    const ww = spawnRunner(0.6)     // row 5, dir -1
+    // (a freshly spawned runner already takes its first tick inside step, so
+    // pin the mouth centre plus at most one level-2 speed increment of 1.16)
+    r.check('Ugg emerges from the LEFT mouth centre (25), not mid-edge (-12)',
+        ugg.runners.length === 1 && ugg.runners[0].x > 25 && ugg.runners[0].x < 27 && ugg.runners[0].kind === 'ugg', JSON.stringify(ugg.runners))
+    r.check('Wrongway emerges from the RIGHT mouth centre (231), not mid-edge (268)',
+        ww.runners.length === 1 && ww.runners[0].x > 229 && ww.runners[0].x < 231 && ww.runners[0].kind === 'wrongway', JSON.stringify(ww.runners))
+}
+{
+    // the full crossing: the runner is alive mid-board and despawns only once
+    // it has reached the opposite mouth — no mid-screen vanish
+    const gs = makeGame({ seed: 19, level: 2 })
+    gs.rng = () => 0.4
+    gs.runnerTimer = 1
+    play(gs)
+    let seenMid = false, lastX = 0
+    let guard = 0
+    while (guard++ < 600) {
+        const u = gs.runners[0]
+        if (!u) break
+        if (u.x > 100) seenMid = true
+        lastX = u.x
+        play(gs)
+    }
+    r.check('a runner crosses the whole board (alive past mid-board) and despawns only at the opposite mouth (x > 218)',
+        seenMid && lastX > 218, `lastX=${Math.round(lastX * 10) / 10}`)
+}
+{
+    // Slick: slides in from the right mouth onto the end cube (no pop), and
+    // exits the bottom-left into the left mouth (no pop-off on (7,0))
+    const gs = makeGame({ seed: 23, level: 3 })
+    gs.slickTimer = 1
+    play(gs)
+    const sl = gs.slicks[0]
+    // (the spawn tick already slides the entry 2.5px, so pin 231 - 2.5 exactly)
+    r.check('Slick spawns inside the RIGHT mouth (x=228.5, in>0), not on the end cube (203)',
+        sl && sl.in > 0 && sl.x === 228.5 && sl.r === 5 && sl.c === 5, JSON.stringify(sl && { x: sl.x, in: sl.in }))
+    let entered = null, exited = false, lastX = 0
+    let guard = 0
+    while (guard++ < 1200) {
+        const s2 = gs.slicks[0]
+        if (!s2) break
+        if (s2.in === 0 && entered === null) entered = s2.x === cubeXY(5, 5).x
+        if (s2.out > 0) { exited = true; lastX = s2.x }
+        play(gs)
+    }
+    r.check("Slick's entry slide ends exactly on the end cube (203) before it starts wiping", entered === true, `entered=${entered}`)
+    r.check('Slick exits through the LEFT mouth (vanishes at the mouth centre, not on (7,0) at x=98)',
+        exited && lastX > 12 && lastX < 38, `lastX=${Math.round(lastX * 10) / 10}`)
+}
+{
+    // the arch profile: a doorway that flares from an 8px keystone to the
+    // full 20px portal, and the opening frames every enemy path that must
+    // pass through the mouth
+    const aR = tunnelArch(26, 40)
+    const aL = tunnelArch(26, 70)
+    const ow = (a) => a[1] - a[0]
+    r.check('the arch flares from an 8px keystone to the full 20px portal (a doorway, not a bar or square)',
+        ow(aR[0]) === 8 && ow(aR[39]) === 20 && ow(aR[0]) < ow(aR[20]),
+        `top=${ow(aR[0])} mid=${ow(aR[20])} bot=${ow(aR[39])}`)
+    const band = Array.from({ length: 28 }, (_, i) => 112 + i)    // the runner y bands (rows 4 and 5)
+    const frames = (a, y0, ys) => ys.every((y) => y - y0 >= 0 && y - y0 < a.length && ow(a[y - y0]) >= 8)
+    r.check('the right opening frames the runner bands (y 112..139)', frames(aR, TUNNEL.right.y0, band))
+    r.check('the left opening frames the runner bands AND Slick bottom exit (y 161)', frames(aL, TUNNEL.left.y0, [...band, 161]))
+}
+
 // ------------------------------------------------ round modes + the round ----
 r.check('round 1 is the single-flip mode', makeGame({ level: 1 }).mode === 1)
 r.check('round 2 is the five-colour cycle mode', makeGame({ level: 2 }).mode === 2)
@@ -602,9 +689,12 @@ for (const seed of [1, 7, 42, 101, 777, 0xbeef, 2026, 1982]) {
     g.ballTimer = 1; play(g); watch(g)
     g.runnerTimer = 1; play(g); watch(g)
     g.slickTimer = 1; play(g); watch(g)
-    // slickwipe: a green cube directly on the slick's path
-    g.colors[id(5, 4)] = 1
-    g.slicks[0].stepT = 1; play(g); watch(g)
+        // slickwipe: a green cube directly on the slick's path (finish the
+        // tunnel entry so the slick is a cube-stepper again)
+        g.slicks[0].in = 0
+        g.slicks[0].x = cubeXY(5, 5).x
+        g.colors[id(5, 4)] = 1
+        g.slicks[0].stepT = 1; play(g); watch(g)
     // clear: everything green except the cube the player hops onto
     for (const i of CUBES) g.colors[i] = 1
     g.colors[id(3, 1)] = 0

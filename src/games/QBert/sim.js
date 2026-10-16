@@ -42,6 +42,17 @@ export function cubeXY(r, c) {
     return { x: W / 2 + (c - (ROWS[r] - 1) / 2) * TILE_W, y: TOP_Y + r * TILE_H }
 }
 
+// The tunnel mouths at the pyramid's bottom corners (art.js paints the arches
+// to exactly these spans; qbertcheck pins them). Ugg emerges from the left
+// mouth and enters the right one; Wrongway the reverse; Slick slides in from
+// the right mouth and exits the bottom-left into the left one. The inner
+// edges sit flush against the widest row's edges (53-15=38 and 203+15=218).
+export const TUNNEL = {
+    left: { x0: 12, x1: 38, y0: 104, y1: 174 },
+    right: { x0: 218, x1: 244, y0: 104, y1: 144 },
+}
+export const tunnelCx = (t) => (t.x0 + t.x1) / 2
+
 export function neighbors(i) {
     const r = rowOf(i), c = colOf(i)
     const out = []
@@ -370,7 +381,7 @@ export function step(gs, input = {}) {
         gs.runnerTimer = Math.max(260, 520 - gs.level * 30)
         const row = gs.rng() < 0.5 ? 4 : 5
         const dir = gs.rng() < 0.5 ? 1 : -1
-        gs.runners.push({ row, dir, x: dir > 0 ? -12 : W + 12, kind: dir > 0 ? 'ugg' : 'wrongway' })
+        gs.runners.push({ row, dir, x: dir > 0 ? tunnelCx(TUNNEL.left) : tunnelCx(TUNNEL.right), kind: dir > 0 ? 'ugg' : 'wrongway' })
         gs.events.push({ t: 'runnerspawn', row, dir })
     }
     for (const u of gs.runners) {
@@ -380,31 +391,42 @@ export function step(gs, input = {}) {
             const left = row.x - TILE_W / 2, right = row.x + (ROWS[u.row] - 1) * TILE_W + TILE_W / 2
             if (u.x > left && u.x < right && Math.abs(u.x - px(gs).x) < 11) kill(gs, 'runner')
         }
-        if (u.x < -20 || u.x > W + 20) u.done = true
+        if (u.dir > 0 ? u.x > tunnelCx(TUNNEL.right) : u.x < tunnelCx(TUNNEL.left)) u.done = true
     }
     gs.runners = gs.runners.filter((u) => !u.done)
 
-    // Sam & Slick: slide across a row and down the left edge, reverting cubes
+    // Sam & Slick: slides in from the right tunnel mouth, across the row and
+    // down the left edge reverting cubes, then out the bottom-left into the
+    // left mouth (the entry/exit slides are per-tick, 2.5px — a snappy two-
+    // cube run at the cube's 30px/step pace)
     gs.slickTimer--
     if (gs.slickTimer <= 0) {
         gs.slickTimer = Math.max(360, 700 - gs.level * 40)
-        gs.slicks.push({ r: 5, c: ROWS[5] - 1, stepT: 24, trail: [], done: false })
+        gs.slicks.push({ r: 5, c: ROWS[5] - 1, x: tunnelCx(TUNNEL.right), in: 1, out: 0, stepT: 24, trail: [], done: false })
         gs.events.push({ t: 'slickspawn' })
     }
     for (const sl of gs.slicks) {
-        sl.stepT--
-        if (sl.stepT <= 0) {
-            sl.stepT = 24
-            let nr = sl.r, nc = sl.c
-            if (sl.c > 0) nc = sl.c - 1
-            else if (sl.r < ROWS.length - 1 && valid(sl.r + 1, 0)) { nr = sl.r + 1; nc = 0 }
-            else { sl.done = true }
-            if (!sl.done) {
-                sl.r = nr; sl.c = nc
-                const cube = id(nr, nc)
-                if (gs.colors[cube] !== 0) { gs.colors[cube] = 0; gs.events.push({ t: 'slickwipe', cube }) }
-                sl.trail.push({ cube, t: 0 })
-                if (cube === id(p.r, p.c) && !p.ride) kill(gs, 'slick')
+        if (sl.in > 0) {
+            sl.x -= 2.5
+            if (sl.x <= cubeXY(sl.r, sl.c).x) { sl.x = cubeXY(sl.r, sl.c).x; sl.in = 0 }
+        } else if (sl.out > 0) {
+            sl.x -= 2.5
+            if (sl.x <= tunnelCx(TUNNEL.left)) sl.done = true
+        } else {
+            sl.stepT--
+            if (sl.stepT <= 0) {
+                sl.stepT = 24
+                let nr = sl.r, nc = sl.c
+                if (sl.c > 0) nc = sl.c - 1
+                else if (sl.r < ROWS.length - 1 && valid(sl.r + 1, 0)) { nr = sl.r + 1; nc = 0 }
+                else { sl.out = 1; sl.x = cubeXY(sl.r, sl.c).x }
+                if (!sl.out) {
+                    sl.r = nr; sl.c = nc
+                    const cube = id(nr, nc)
+                    if (gs.colors[cube] !== 0) { gs.colors[cube] = 0; gs.events.push({ t: 'slickwipe', cube }) }
+                    sl.trail.push({ cube, t: 0 })
+                    if (cube === id(p.r, p.c) && !p.ride) kill(gs, 'slick')
+                }
             }
         }
         for (const t of sl.trail) t.t++
