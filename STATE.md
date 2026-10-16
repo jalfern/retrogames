@@ -1,70 +1,71 @@
-# STATE — 2026-10-16d (forge session, GAME CONTRACT shipped — #377 closed; Civ V polish resumes next)
+# STATE — 2026-10-16e (forge session, #379 visibility tag shipped; studio parked by Jon — nothing claimable left)
 
 ## Shipped this session
-**GAME CONTRACT — one `window.__game` API** (#377, `next` label; PR #378
-squash-landed as 0ddb34f; static+smoke+Vercel green; prod deploy verified on
-main@0ddb34f):
+**VISIBILITY TAG — registry contract for the public/private split** (#379, `game-queue`):
 
-- `src/utils/gameContract.js`: `exposeGame(spec)`/`unexposeGame()` build the
-  uniform DEV-only surface + a module-level loop lock. First `step(pad, n)`
-  closes the lock — the rAF loop stops simulating (keeps drawing) until
-  `release()`; the driver owns the clock. Prod bundles contain ZERO `__game`
-  refs (grep-proven in dist and live).
-- API: `meta{id,buttons}`, `reset(seed)` (all sim randomness from the seed),
-  `step(pad,n)`→`state()` (`pad={up,down,left,right,a,b,start,x,y}`),
-  `state()` JSON ⊇ `{tick,score,done}`, `frame()` PNG data URL, optional
-  `snapshot()/restore()`. Documented in **docs/GAME-SHELL.md** (new file —
-  AGENTS.md referenced it but it never existed).
-- Pilots: LUNAR LANDER (`x/left/right`→rot, `a/up`→thrust) + TEMPEST
-  (`left/right`→rim, `a/up`→fire). `__landerTest`/`__tempestTest` kept.
-- `npm run contractcheck` **26/26**: boot, meta, API surface, frame PNG,
-  reset→tick 0, 600-tick live run, seed-7-twice identical final JSON AND
-  per-100-tick hashes, seed-9 differs, snapshot/restore round-trip,
-  release resumes rAF loop, zero page errors. Mutant: `Math.random()` into
-  Lander `spawnLander` vx → both seed-7 checks red; restore green.
-- Issue says stop there: no other games wired, no Python, no AGENTS.md rule.
+- PR #383 squash-landed as c11ebfb; PR #385 (CI wiring) as b4afded. static+smoke+Vercel
+  green on both; prod verified (www.jalfern.com/retrogames/ 200 at main@c11ebfb via
+  Vercel commit status — entry-hash trap again: content-neutral prep keeps the hash).
+- `src/config/games.js`: header documents `visibility: 'public' | 'private'`; missing
+  means `'private'`; nothing reads the field (no hiding/routes/auth — by design); no
+  existing entry tagged (Jon decides those).
+- `scripts/FORGE.md` step 4: new games register `visibility: 'private'`; only Jon
+  promotes to `'public'`.
+- `npm run visibilitycheck` 139/139 (builtbycheck pattern: esbuild the real registry,
+  game components stubbed): value legality, ZERO entries `'public'` before Jon's first
+  promotion, field provably unread outside the registry (DOM `visibilitychange`
+  listeners pass), docs carry the rules. Mutant proven: `/pong` tagged `'public'` →
+  2 red; restore → green.
+- #385 puts visibilitycheck in CI's `static` job next to builtbycheck (~1 s local;
+  CI static grew 5:46→9:48 — noise or cold esbuild cache, watch next run).
+- Not a game, so no 8b polish-pass issue (nothing visual shipped).
 
-Gates: lint:mario/fps/ai + build green. Dev servers: 5173 belongs to the
-civv-polish lane — contractcheck ran against a private `:5199`
-(`CONTRACT_URL=http://localhost:5199/retrogames`).
+## Did NOT touch: #375 Civ V polish — PARKED BY JON
+STATE said "resume #375" but the issue carries Jon's 19:36 park: "Studio is reserved
+for an RL training run. Remove `stalled` to let the warden resume this from
+`forge/civv-polish`." The label is still on, so it stayed parked. **Lesson: Jon's
+live issue labels beat a STATE.md goal line — check the board, not just STATE.**
+Corpse stays ready at `origin/forge/civv-polish` @ bd878a5 (transports + amphibious
+assault, civcheck 469/469, capacity mutant proven); worktree
+`~/Dev/retrogames-forge-civv-polish` exists. Remaining there: civplay item-6
+de-vacuum (seed 1 capital is inland — force a coastal city), README, gates, PR.
 
 ## GOAL — next session
-**Resume #375 — Civ V polish** (Jon paused it at engine+§34 pending #377).
-Corpse-ready branch `origin/forge/civv-polish` @ bd878a5: transports +
-amphibious assault (Galleon hold 2, embark/land/drown, cargo in the hash),
-civcheck 469/469, capacity mutant proven. Remaining per its last FORGE
-comment: civplay (item 6 de-vacuum — seed 1 capital inland, poll-K pattern),
-README, gates, PR. Open in worktree `~/Dev/retrogames-forge-civv-polish`
-(branch already checked out there). #372 (stage-7 polish, QA lane) and #373
-(Marble Madness, other lane) stay put.
+Nothing is claimable while the park holds: `game-queue` is EMPTY, no `next` label, and
+`building`+`stalled` #375 is Jon's hold, not a corpse.
+- If `stalled` is removed → resume #375 from `forge/civv-polish` (FORGE.md 1b).
+- Else if no QA session is live (`pgrep -f "QA MASTER"`) → borrow ONE `feedback` item
+  per FORGE.md step 2. Heaviest open QA: #365 (attract-controls sweep across the
+  arcade — small, game-visible, would reset the rule-4 counter).
+- Else STOP — nothing to forge; say so here and exit.
 
-## Board (last read)
-- #377 Game contract — CLOSED this session (`shipped`).
-- #375 Civ V polish `game-queue` — **the next goal** (branch has the engine).
-- #372 Civ V polish `feedback` (QA lane). #373 Marble Madness `building` (other lane).
-- Rule-4 satisfied: PR #378 touched src/games/** (both pilots).
+## Rule-4 signal (report, per AGENTS.md #4)
+Three merged PRs in a row without `src/games/**` changes: #380 (STATE), #383 (registry
+prep), #385 (CI). This is the "stop and report" trip — reporting to Jon below. Prior
+sessions did ship game code (#378 pilots lived in src/games/**), so this is not the
+FORGE 3-session STALL condition; but the fix is the same: CivV (#375) is the next
+game code, and only Jon can unpark it.
 
 ## Notes for whoever picks this up
-- Contract lock lives in `gameContract.js` (`contractHoldsLoop()`); pilots
-  check it in `frame()` (`acc=0` while held). New game adopters: wire inside
-  the existing `if (import.meta.env.DEV)` block, `unexposeGame()` in cleanup.
-- Determinism law: sim randomness from rng.js mulberry32 only; `Math.random`
-  allowed for juice (particles/shake/stars) — anything reaching `state()` is
-  a contractcheck-red bug. Include the game's own hash in `state()` (Lander/
-  Tempest do; hash equality is the sharpest determinism probe).
-- contractcheck entry-hash trap: prod `index-*.js` may keep its hash across a
-  merge when entry content doesn't change — verify deploys via
-  `gh api repos/jalfern/retrogames/commits/<sha>/status` (Vercel context),
-  not by polling the entry hash.
-- Rollout is Jon's call (issue's stop point) — don't wire other games unprompted.
+- New-session trap #1: check issue labels before honoring a STATE goal — Jon parks with
+  labels (`stalled`) and unlabeled parks don't exist; `building` WITHOUT `stalled` IS
+  a resumable corpse (FORGE.md 1b).
+- Lanes with only plumbing diffs still ride the normal pipeline: claim → worktree from
+  origin/main → PR → rule-5 merge (`gh pr checks --watch --fail-fast && gh pr merge
+  --squash --delete-branch`) → re-detach the worktree at once.
+- Mutants via `git checkout -- <file>` eat UNCOMMITTED work in the same file —
+  checkpoint the increment BEFORE mutating (this session ate the registry header edit
+  once; re-applied, then committed).
+- contractcheck (last session) is DEV/browser-bound so it is not in CI; visibilitycheck
+  is Node-only so it is. Keep new contract checks Node-only when possible.
+- New games: add `visibility: 'private'` to their registry entry (FORGE.md step 4).
 
 ## Three questions for Jon
-1. Contract pilot is live in the repo. Roll `__game` out to the rest of the
-   catalog (which order — is the RL wrapper waiting on Tempest-class 3D or
-   pixel titles first), or hold until you've driven the two pilots yourself?
-2. Civ V polish resumes next session on forge/civv-polish — confirm, since
-   you paused it ("resume after #377 ships")?
-3. Tempest's human `goPlay()` still rerolls its seed with Math.random (arcade
-   law), while `__game.reset(seed)` bypasses that. Keep both laws, or should a
-   human run be replayable by exposing the rolled seed (e.g. `state().seed`
-   already does — is that enough)?
+1. #375 CivV is parked for your RL run — when should the studio resume it? Removing
+   `stalled` is all it takes; the branch is corpse-ready (civcheck 469/469).
+2. Rule-4 counter is at 3 plumbing-only PRs (#380/#383/#385). While the park holds,
+   OK to borrow QA items (e.g. #365 attract sweep — game-visible), or hold the forge
+   completely until CivV unparasites?
+3. Catalog visibility: zero entries are tagged today. Tag the current catalog
+   public/private when the vault split lands, or is some subset public from day one
+   (and who drafts the list — me proposing, you approving)?
