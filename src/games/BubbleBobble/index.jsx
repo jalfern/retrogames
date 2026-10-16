@@ -56,7 +56,8 @@ const Bob = () => {
         const evLog = []
         const parts = []
 
-        const say = (m) => { toastMsg = m; toast = 110 }
+        // toasts are gameplay text — never over the attract screen (ART.md rule 6)
+        const say = (m) => { if (screenRef.current === 'attract') return; toastMsg = m; toast = 110 }
         const burst = (px, py, n, col) => {
             for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 2.4
@@ -441,12 +442,14 @@ const Bob = () => {
                 ctx.fillRect(0, 0, W, H)
                 text('BUBBLE', W / 2, 70, 24, '#7fe8ff', 12)
                 text('BOBBLE', W / 2, 92, 24, '#ff9fd8', 12)
-                text('TRAP • POP • CHAIN — 100 CAVES', W / 2, 110, 8, '#8fa3d8', 0)
-                if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY TO START', W / 2, 134, 9, '#ffd23f', 5)
-                text('1 SOLO   2 +CPU BOB   3 TWO PLAYERS', W / 2, 150, 8, '#e9f7ff', 0)
+                // one message at a time, cycling (ART.md rule 6)
+                const msg = Math.floor(gs.tick / 120) % 3
+                if (msg === 0) text('TRAP • POP • CHAIN — 100 CAVES', W / 2, 118, 8, '#8fa3d8', 0)
+                else if (msg === 1) text('1 SOLO   2 +CPU BOB   3 TWO PLAYERS', W / 2, 118, 8, '#e9f7ff', 0)
+                else text('DEMO PLAYS THE PROVEN RUN', W / 2, 118, 7, '#5d7094', 0)
+                if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY TO START', W / 2, 140, 9, '#ffd23f', 5)
                 const b = board()[0]
-                if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 168, 8, '#5dc8ff', 3)
-                text('DEMO PLAYS THE PROVEN RUN', W / 2, H - 22, 7, '#5d7094', 0)
+                if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 158, 8, '#5dc8ff', 3)
             }
             if (sc === 'over') {
                 ctx.fillStyle = 'rgba(3,3,12,0.72)'

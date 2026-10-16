@@ -324,11 +324,13 @@ const DigDugGame = () => {
                 ctx.fillStyle = 'rgba(3,3,12,0.62)'
                 ctx.fillRect(0, 0, W, H)
                 text('DIG DUG', W / 2, 74, 26, '#5dff8f', 12)
-                text('PUMP THE POOKAS — DROP THE ROCKS', W / 2, 94, 8, '#8fa3d8', 0)
                 if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY TO START', W / 2, 130, 9, '#ffd23f', 5)
                 const b = board()[0]
                 if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 150, 8, '#5dc8ff', 3)
-                text('DEMO PLAYS THE PROVEN FULL CLEAR', W / 2, H - 24, 7, '#5d7094', 0)
+                // one message at a time, cycling (ART.md rule 6)
+                const msg = Math.floor(gs.tick / 120) % 2
+                if (msg === 0) text('PUMP THE POOKAS — DROP THE ROCKS', W / 2, 180, 8, '#8fa3d8', 0)
+                else text('DEMO PLAYS THE PROVEN FULL CLEAR', W / 2, 180, 7, '#5d7094', 0)
             }
             if (sc === 'over') {
                 ctx.fillStyle = 'rgba(3,3,12,0.72)'
