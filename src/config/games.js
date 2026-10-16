@@ -181,6 +181,11 @@ const CivilizationVGame = lazy(() => import('../games/CivilizationV'))
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
+// Visibility (#379): an entry may carry `visibility: 'public' | 'private'`;
+// missing means 'private'. This is prep for the site's public/private split —
+// nothing reads the field yet (no hiding, no routes, no auth). New games
+// register `visibility: 'private'`; only Jon promotes a title to 'public',
+// and existing entries stay untagged until he decides each one.
 export const GAMES = [
     {
         path: '/mario',

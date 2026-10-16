@@ -62,12 +62,14 @@ AGENTS.md wins.
    commands and honest gaps go THERE; new games never add notes to `AGENTS.md`
    (it is law, not a log, and lives under a 150-line budget).
 4. **Build it** per the AGENTS.md conventions:
-   `src/games/<Name>/index.jsx`, register in `src/config/games.js`, fixed
-   timestep, attract mode, `?` PauseOverlay, `VirtualControls` with
-   tap-to-start (`pointerdown`) so it is playable on a phone, all art/audio
-   synthesized at runtime (no assets). That plumbing is all you reuse: never
-   copy another game's art, HUD, palette or drawing code. Design the look
-   from the original.
+    `src/games/<Name>/index.jsx`, register in `src/config/games.js`, fixed
+    timestep, attract mode, `?` PauseOverlay, `VirtualControls` with
+    tap-to-start (`pointerdown`) so it is playable on a phone, all art/audio
+    synthesized at runtime (no assets). Register every new game with
+    `visibility: 'private'` (#379 — missing means private too; only Jon
+    promotes a game to `'public'`). That plumbing is all you reuse: never
+    copy another game's art, HUD, palette or drawing code. Design the look
+    from the original.
    **Read `docs/ART.md` before drawing anything** and match its exemplars.
    **Mount `src/utils/DebugKit.js`** (DEV-only F1 panel: live state, cheat
    buttons, and for puzzle/level games a PROGNOSIS action that re-runs your
