@@ -597,11 +597,11 @@ export function spendGP(gs, civ, t, cityId) {
 
 // ---- odd-r hex geometry -------------------------------------------------------
 const ODD_R_NEIGH = [
-    [[+1, 0], [0, -1], [-1, -1], [-1, 0], [-1, +1], [0, +1]],   // odd row
-    [[+1, 0], [+1, -1], [0, -1], [-1, 0], [0, +1], [+1, +1]],   // even row
+    [[+1, 0], [0, -1], [-1, -1], [-1, 0], [-1, +1], [0, +1]],   // even row
+    [[+1, 0], [0, -1], [+1, -1], [-1, 0], [0, +1], [+1, +1]],   // odd row (shifted right, matches hexToWorld + cube distance)
 ]
 export function neighbors(col, row) {
-    const tbl = ODD_R_NEIGH[((row & 1) === 1 ? 0 : 1)]
+    const tbl = ODD_R_NEIGH[((row & 1) === 1 ? 1 : 0)]
     const out = []
     for (const [dc, dr] of tbl) {
         const c = col + dc, r = row + dr
@@ -839,11 +839,12 @@ function placeCityStates(gs, seats) {
     }
     for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp }
     const picked = []
-    let minSep = 4
-    while (picked.length < CS_IDS.length && minSep >= 1) {
+    let minSep = CS_IDS.length > 1 ? 6 : 1
+    while (picked.length < CS_IDS.length && minSep >= 3) {
         for (const p of cand) {
             if (picked.length >= CS_IDS.length) break
             if (picked.some((q) => hexDist(q, p) < minSep)) continue
+            if (picked.includes(p)) continue
             picked.push(p)
         }
         minSep--
@@ -881,10 +882,15 @@ function nearestGoodLand(gs, c0, r0) {
         const tl = gs.tiles[idx(c, r)]
         if (!WALKABLE(tl.terr)) continue
         const d = hexDist([c, r], [c0, r0])
-        let score = -d * 3 + (tl.terr === T.GRASS ? 3 : 0) + (tl.river ? 2 : 0) - (tl.terr === T.HILLS ? 1 : 0)
-        // prefer a spot with several fertile neighbours (a real capital site)
-        const good = neighbors(c, r).filter(([nc, nr]) => gs.tiles[idx(nc, nr)].terr === T.GRASS).length
-        score += good * 1.5
+        // score the true working ring: a capital must sit where its first ring
+        // can actually feed it (grass yields dominate; river and corn add up)
+        let ring = 0
+        for (const [nc, nr] of neighbors(c, r)) {
+            const q = gs.tiles[idx(nc, nr)]
+            ring += q.terr === T.GRASS ? 2 : q.terr === T.PLAINS ? 1 : q.terr === T.HILLS ? 1 : 0
+            ring += (q.river ? 1 : 0) + (q.forest ? 0.5 : 0)
+        }
+        let score = -d * 3 + ring + (tl.terr === T.GRASS ? 4 : tl.terr === T.PLAINS ? 2 : tl.terr === T.HILLS ? -2 : 0) + (tl.river ? 2 : 0) - (tl.terr === T.MOUNTAIN ? 99 : 0)
         if (score > bs || (score === bs && d < bd)) { bs = score; bd = d; best = [c, r] }
     }
     return best || [Math.round(c0), Math.round(r0)]
@@ -1086,9 +1092,10 @@ export function doAttack(gs, u, tc, tr) {
     const ox = u.c, oy = u.r, ociv = u.civ
     const target = unitAt(gs, tc, tr)
     if (target && target.alive && atWar(gs, u.civ, target.civ)) {
-        // Stage 7 naval law: a galley strikes ships anywhere and land units
-        // only on coastal ground; land units may board ships beside the shore.
-        if (u.naval && !target.naval && !coastalTile(gs, tc, tr)) return false
+        // Stage 7 naval law, faithful to the original: a Trireme masters the
+        // sea and strikes ships; only ships may fight ships. Land units beach
+        // and board any vessel that comes alongside the shore.
+        if (u.naval && !target.naval) return false
         let strikes = 0
         while (strikes++ < 4) {
             const atkEff = u.str * (0.5 + 0.5 * u.hp / u.maxHp) * (tl.river ? 0.9 : 1)
@@ -1115,7 +1122,7 @@ export function doAttack(gs, u, tc, tr) {
     }
     const cityI = tl.city
     if (cityI >= 0 && gs.cities[cityI].alive && atWar(gs, u.civ, gs.cities[cityI].civ)) {
-        if (u.naval && !coastalTile(gs, tc, tr)) return false    // sail to raid a port, or don't
+        if (u.naval) return false    // ancient ships do not storm ports — that is the age of sail
         const city = gs.cities[cityI]
         const wallMax = city.wallMax || CFG.cityHp
         let strikes = 0
@@ -1202,18 +1209,12 @@ function stepTowardSea(gs, u, tgt) {
     return best
 }
 function navalTarget(gs, civ, u) {
-    let best = null, bs = 1e9
+    // a Trireme's prey is other ships — hunt enemy vessels across the sea
+    let best = null, bd = 9
     for (const x of gs.units) {
-        if (!x.alive || x.naval || x.civ >= CS0 || !atWar(gs, civ, x.civ)) continue
-        if (!coastalTile(gs, x.c, x.r)) continue
+        if (!x.alive || !x.naval || !atWar(gs, civ, x.civ)) continue
         const d = hexDist([u.c, u.r], [x.c, x.r])
-        if (d <= 7 && d < bs) { bs = d; best = [x.c, x.r] }
-    }
-    for (const ct of gs.cities) {
-        if (!ct.alive || ct.civ === civ || ct.civ >= CS0 || !atWar(gs, civ, ct.civ)) continue
-        if (!coastalTile(gs, ct.c, ct.r)) continue
-        const d = hexDist([u.c, u.r], [ct.c, ct.r])
-        if (d <= 7 && d * 1.6 < bs) { bs = d * 1.6; best = [ct.c, ct.r] }
+        if (d < bd) { bd = d; best = [x.c, x.r] }
     }
     return best
 }

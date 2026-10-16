@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked } from '../src/games/CivilizationV/sim.js'
 import { decide, plan } from '../src/games/CivilizationV/planner.js'
 
 let pass = 0, fail = 0
@@ -40,14 +40,14 @@ console.log('1. boot')
 {
     const gs = newGame(1, 0)
     eq(gs.tiles.length, CFG.W * CFG.H, 'map is W*H tiles')
-    eq(gs.civs.length, 5, 'four civs plus barbarians')
+    eq(gs.civs.length, 7, 'four civs, barbarians, two city-states')
     eq(gs.civs.filter((c) => c.player).length, 1, 'exactly one player civ')
-    eq(gs.units.length, 8, 'each real civ starts settler+warrior, none for barbs')
-    eq(gs.fog.length, 5, 'fog per civ slot')
+    eq(gs.units.length, 8, 'each real civ starts settler+warrior, none for barbs or city-states')
+    eq(gs.fog.length, 7, 'fog per civ slot')
     eq(gs.phase, 'player', 'starts on player turn')
     ok(gs.turn === 1, 'turn begins at 1')
     eq(Object.keys(gs.wonders).length, 0, 'no wonder stands yet at boot')
-    eq(gs.gp.length, 5, 'great-person pools tracked per civ slot')
+    eq(gs.gp.length, 7, 'great-person pools tracked per civ slot')
     ok(GP_TYPES.every((t) => gs.gp[0].pts[t] === 0 && gs.gp[0].held[t] === 0), 'every legend pool starts empty')
 }
 
@@ -299,7 +299,7 @@ console.log('14. city defense + capture + domination')
     const g2 = newGame(4, 0)
     g2.units.find((u) => u.civ === 0 && u.kind === 'SETTLER').alive = false
     step(g2, { endTurn: true })
-    const aiCap = g2.cities.find((c) => c.alive && c.civ !== 0)
+    const aiCap = g2.cities.find((c) => c.alive && c.civ > 0 && c.civ < CS0)
     ok(!!aiCap, 'AI capitals exist to take')
     if (aiCap) {
         const oldOwner = aiCap.civ
@@ -568,8 +568,11 @@ console.log('20. improvements (build + yields + roads)')
     const yImp = tileYield(gs, idx(plot.c, plot.r)).f
     plot.imp = null
     const yRaw = tileYield(gs, idx(plot.c, plot.r)).f
-    ok(yImp > yRaw, `the farm raises the plot's food (${yRaw} → ${yImp})`)
-    ok(cityWorkedTiles(gs, cap).includes(idx(plot.c, plot.r)) || cap.size < 2, 'city workers till the best ring tiles')
+    ok(yImp > yRaw, `the farm raises the plot's food (${yRaw} → ${yRaw === yImp ? '-' : yImp})`)
+    plot.imp = 'FARM'
+    const worked = cityWorkedTiles(gs, cap)
+    plot.imp = null
+    ok(worked.includes(idx(plot.c, plot.r)) || cap.size < 2, 'city workers till the best ring tiles')
     // roads halve the march
     const spot = ring.find((tl) => tl.city < 0 && tl.camp < 0 && !unitAt(gs, tl.c, tl.r))
     ok(!!spot, 'road test ground exists')
@@ -1094,6 +1097,195 @@ console.log('28. stage-6 integration + slack')
     while (!b.end && y++ < 40000) step(b, decide(b))
     ok(stateHash(a) === stateHash(b) && a.turn === b.turn, 'wonders and legends replay hash-for-hash')
     eq(JSON.stringify(a.wonders), JSON.stringify(b.wonders), 'the same race outcome every time')
+}
+
+// ---- 29. city-states: coast courts, gifts, alliances, the sack ----
+console.log('29. city-states')
+{
+    const gs = newGame(21, 0)
+    eq(cityStates(gs).length, 2, 'two city-states alive at game start')
+    eq(CIVS.filter((c) => c.cs).length, 2, 'the CIVS table marks Tyre and Venice as city-states')
+    const csCities = gs.cities.filter((c) => c.cs && c.alive)
+    eq(csCities.length, 2, 'both city-states open with a home city on turn 1')
+    ok(csCities.every((c) => coastalTile(gs, c.c, c.r)), 'city-states sit on the coast')
+    ok(!gs.units.some((u) => u.civ >= CS0), 'city-states keep no armies')
+    ok(csCities.every((c) => [0, 1, 2, 3].every((x) => !atWar(gs, x, c.civ))), 'neutral to every empire at the start')
+    // discovery: a Roman warrior walks up to Tyre's walls
+    const tyre = gs.cities.find((c) => c.civ === 5)
+    const land = gs.tiles.find((t) => walk(t.terr) && !unitAt(gs, t.c, t.r) && !tileBlocked(gs, t.c, t.r) && hexDist([t.c, t.r], [tyre.c, tyre.r]) === 1)
+    const w = gs.units.find((u) => u.civ === 0 && u.kind === 'WARRIOR')
+    w.c = land.c; w.r = land.r
+    step(gs, { endTurn: true })
+    ok(gs.cs[0][5] && gs.cs[0][5].met, 'Rome discovers Tyre by reaching its walls')
+    ok(gs.events.some((e) => e.type === 'csMeet' && e.civ === 0 && e.cs === 5), 'the contact is announced')
+    ok(!gs.cs[0][6] || !gs.cs[0][6].met, 'Venice stays unknown until someone reaches it')
+    ok(gs.explored[0][idx(tyre.c, tyre.r)] === 1, 'discovery draws Tyre onto your map')
+    // gifts: the gate, the influence, the alliance
+    gs.civs[0].gold = 10
+    eq(canGift(gs, 0, 5), 'not enough gold', 'a gift needs the gold up front')
+    gs.civs[0].gold = 80
+    ok(giftCS(gs, 0, 5), 'a gift of gold is accepted')
+    eq(gs.cs[0][5].influence, CFG.csInfl, 'the gift buys influence')
+    eq(gs.civs[0].gold, 80 - CFG.csGift, 'the gift is paid for once')
+    ok(!gs.cs[0][5].ally, 'one gift does not buy an alliance')
+    gs.civs[0].gold = 200
+    giftCS(gs, 0, 5); giftCS(gs, 0, 5)
+    ok(gs.cs[0][5].ally, 'influence past the threshold seals the alliance')
+    ok(gs.events.some((e) => e.type === 'csAlly' && e.civ === 0 && e.cs === 5), 'the alliance is announced')
+    eq(canGift(gs, 0, 5), 'already your ally', 'an ally needs no more gifts')
+    eq(canGift(gs, 0, 3), 'not a city-state', 'you cannot gift an empire')
+    // Tyre's pension, isolated by delete/restore (growth poisons raw diffs)
+    const base0 = gs.civs[0].gold
+    step(gs, { endTurn: true })
+    const withAlly = gs.civs[0].gold - base0
+    const gsB = structuredClone(gs)
+    gsB.cs[0][5].ally = false
+    const baseB = gsB.civs[0].gold
+    step(gsB, { endTurn: true })
+    const without = gsB.civs[0].gold - baseB
+    ok(withAlly >= without + CIVS[5].allyGold && withAlly <= without + CIVS[5].allyGold + 1, `the Tyre pension pays its stated gold (${without} -> ${withAlly})`)
+    // war: Tyre's walls fight back; the sack pays tribute and ends the alliance
+    step(gs, { declare: 5 })
+    ok(atWar(gs, 0, 5), 'a declared war on a city-state is a real war')
+    const wA = gs.units.find((u) => u.civ === 0 && u.kind === 'WARRIOR' && u.alive)
+    const nearT = gs.tiles.find((t) => walk(t.terr) && !unitAt(gs, t.c, t.r) && !tileBlocked(gs, t.c, t.r) && hexDist([t.c, t.r], [tyre.c, tyre.r]) === 1)
+    wA.c = nearT.c; wA.r = nearT.r; wA.hp = 100
+    step(gs, { endTurn: true })
+    ok(gs.events.some((e) => e.type === 'cityStrike' && e.civ === 5), 'city-state walls bombard a besieger')
+    wA.hp = 100
+    tyre.hp = 8
+    let guard = 0
+    while (tyre.alive && tyre.civ === 5 && guard++ < 10) { wA.moves = 2; wA.hp = 100; if (!doAttack(gs, wA, tyre.c, tyre.r)) break }
+    eq(tyre.civ, 0, 'the city-state falls to siege')
+    ok(!gs.civs[5].alive, 'Tyre is no more')
+    ok(gs.events.some((e) => e.type === 'csTaken' && e.by === 0 && e.tribute === CFG.csTribute), 'the sack pays tribute gold')
+    ok(!cityStates(gs).some((c) => c.id === 5), 'the fallen city-state leaves the council of the world')
+    ok(gs.cs[0][5] && !gs.cs[0][5].ally, 'allies lose the pension when their city burns')
+    // city-states never block domination
+    const g6 = newGame(9, 0)
+    const s6 = g6.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g6, { select: s6.id, found: true })
+    for (const c of g6.civs) if (!c.barb && !c.player && !c.cs) c.alive = false
+    step(g6, { endTurn: true })
+    eq(g6.end, 'win', 'city-states alive do not block a domination victory')
+}
+
+// ---- 30. diplomacy: war, peace, trade pacts ----
+console.log('30. diplomacy')
+{
+    const gs = newGame(31, 0)
+    eq(canDeclareWar(gs, 0, BARB), 'barbarians need no declaration', 'no declaration for barbarians')
+    eq(canDeclareWar(gs, 0, 0), 'cannot war yourself', 'no war against yourself')
+    eq(canDeclareWar(gs, 0, 1), true, 'war can be declared on a living rival')
+    step(gs, { declare: 1 })
+    ok(atWar(gs, 0, 1), 'the declaration bites')
+    ok(gs.events.some((e) => e.type === 'war' && e.by === 0), 'the world learns you declared it')
+    eq(canTrade(gs, 0, 1), 'you are at war with them', 'trade is dead in wartime')
+    const hsWar = happinessOf(gs, 0).net
+    step(gs, { peace: 1 })
+    const hsPeace = happinessOf(gs, 0).net
+    eq(hsPeace - hsWar, CFG.warWeariness, 'peace erases the war weariness from the ledger')
+    ok(gs.events.some((e) => e.type === 'peace'), 'the truce is announced')
+    ok(!atWar(gs, 0, 1), 'the war is over')
+    eq(canMakePeace(gs, 0, 1), 'not at war', 'no truce without a war')
+    eq(canMakePeace(gs, 0, BARB), 'no truce with barbarians', 'barbarians sit outside the table')
+    ok(gs.peaceTurn['0-1'] != null, 'the peace clock starts ticking')
+    eq(canTrade(gs, 0, 1), `peace must hold ${CFG.peaceCool} turns first (${CFG.peaceCool} to go)`, 'fresh peace is not yet a trade route')
+    gs.peaceTurn['0-1'] = gs.turn - CFG.peaceCool
+    eq(canTrade(gs, 0, 1), true, 'after three honest turns of peace the market opens')
+    makeTrade(gs, 0, 1)
+    ok(gs.trade['0-1'], 'the trade agreement is signed')
+    eq(canTrade(gs, 0, 1), 'a trade agreement is already signed', 'one pact per neighbour')
+    eq(canTrade(gs, 0, 5), 'trade pacts are between empires', 'city-states take gifts, not pacts')
+    // the pact pays Rome its gold — twin games, one with the key, one locked out
+    const gA = newGame(31, 0); step(gA, { endTurn: true }); const gA0 = gA.civs[0].gold
+    gA.trade['0-1'] = true
+    step(gA, { endTurn: true })
+    const dA = gA.civs[0].gold - gA0
+    const gB = newGame(31, 0); step(gB, { endTurn: true }); const gB0 = gB.civs[0].gold
+    gB.peaceTurn['0-1'] = gB.turn
+    step(gB, { endTurn: true })
+    const dB = gB.civs[0].gold - gB0
+    ok(dA - dB >= CFG.tradeGold && dA - dB <= CFG.tradeGold + 1, `a signed pact pays ${CFG.tradeGold} gold a turn (${dB} -> ${dA})`)
+    // rivals trade with Rome on their own deterministic lines
+    let pacted = 0
+    for (const sc of [0, 1, 3]) {
+        const g = newGame(13, sc)
+        let n = 0
+        while (!g.end && n++ < 40000) step(g, decide(g))
+        if (Object.keys(g.trade).length) pacted++
+    }
+    ok(pacted >= 2, `the autopilot's world ends with trade pacts (${pacted}/3)`)
+}
+
+// ---- 31. naval: the Trireme's domain ----
+console.log('31. naval')
+{
+    const gs = newGame(41, 0)
+    ok(!!UNIT.GALLEY && !!UNIT.GALLEY.naval, 'the Trireme is a ship')
+    eq(queueDeny(gs, 0, 'GALLEY'), 'requires Bronze Working', 'ships wait for Bronze Working')
+    grantTech(gs, 0, 'BRONZE_WORKING')
+    // settle the capital on coastal ground so the yards can open
+    const site = gs.tiles.find((t) => canFound(gs, 0, t.c, t.r, null) === true && neighbors(t.c, t.r).some(([c, r]) => isWater(gs, c, r)))
+    ok(!!site, 'the continent offers a coastal capital site')
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    s.c = site.c; s.r = site.r
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0 && c.alive)
+    ok(!!cap, 'a capital rises on the coast')
+    ok(!!coastalCityOf(gs, 0), 'the coastal city opens the sea yards')
+    eq(queueDeny(gs, 0, 'GALLEY'), null, 'tech plus coast: the keel is laid')
+    step(gs, { queue: 'GALLEY' })
+    ok(cap.queue.includes('GALLEY'), 'the Trireme joins the build queue')
+    cap.buildP = 99
+    step(gs, { endTurn: true })
+    const galley = gs.units.find((u) => u.civ === 0 && u.kind === 'GALLEY' && u.alive)
+    ok(!!galley, 'a Trireme slides off the slipway')
+    ok(isWater(gs, galley.c, galley.r), 'ships launch onto water, never land')
+    eq(galley.moves, UNIT.GALLEY.moves, 'the Trireme rows with three moves')
+    // the frontier is loud: clear roamers so the duel below is the only war
+    for (const u of gs.units) if (u.alive && u.civ === BARB && hexDist([u.c, u.r], [galley.c, galley.r]) < 8) u.alive = false
+    galley.alive = true; galley.hp = 100; galley.moves = 3; galley.path = []
+    // one domain law
+    ok(orderMove(gs, galley, cap.c, cap.r) === false, 'a galley never sails onto land')
+    ok(findPath(gs, galley, cap.c, cap.r) === null, 'and cannot path inland across the land')
+    const freeW = neighbors(galley.c, galley.r).find(([c, r]) => isWater(gs, c, r) && !unitAt(gs, c, r))
+    ok(orderMove(gs, galley, freeW[0], freeW[1]) === true, 'and moves freely over the waves')
+    // ships fight ships only; land units board anything alongside the shore
+    // (spots are chosen by hexDist()==1 so placement respects the sim's metric)
+    const foeSpot = gs.tiles.find((t) => isWater(gs, t.c, t.r) && !unitAt(gs, t.c, t.r) && hexDist([t.c, t.r], [galley.c, galley.r]) === 1)
+    ok(!!foeSpot, 'the coast offers an offshore battle ground')
+    const foe = spawnUnit(gs, 1, 'GALLEY', foeSpot.c, foeSpot.r, { str: 8 })
+    declareWar(gs, 0, 1)
+    galley.moves = 3
+    const foeHp0 = foe.hp
+    ok(doAttack(gs, galley, foe.c, foe.r), 'Triremes duel on the high seas')
+    ok(foe.hp < foeHp0, 'the duel draws blood')
+    const land = gs.tiles.find((t) => walk(t.terr) && !unitAt(gs, t.c, t.r) && !tileBlocked(gs, t.c, t.r) && hexDist([t.c, t.r], [foe.c, foe.r]) === 1)
+    const musk = spawnUnit(gs, 0, 'WARRIOR', land.c, land.r, { str: 8 })
+    musk.moves = 2
+    ok(doAttack(gs, musk, foe.c, foe.r), 'land units beach and board an enemy ship')
+    // ports stay unattackable from the sea — storming them is the age of sail
+    const venice = gs.cities.find((c) => c.alive && c.civ === 6)
+    declareWar(gs, 0, 6)
+    const vSea = gs.tiles.find((t) => isWater(gs, t.c, t.r) && hexDist([t.c, t.r], [venice.c, venice.r]) === 1 && !unitAt(gs, t.c, t.r))
+    galley.c = vSea.c; galley.r = vSea.r; galley.moves = 3
+    const vHp0 = venice.hp
+    ok(!doAttack(gs, galley, venice.c, venice.r), 'ancient ships do not storm ports — that is the age of sail')
+    eq(venice.hp, vHp0, 'the harbour stays whole')
+    // the new world folds into the hash
+    const h0 = stateHash(gs)
+    gs.trade['0-1'] = true
+    const h1 = stateHash(gs)
+    gs.cs[0][6] = { met: true, influence: CFG.csInfl, ally: false }
+    const h2 = stateHash(gs)
+    ok(h0 !== h1 && h1 !== h2, 'pacts, peace and city-state influence all move stateHash')
+    // the whole Stage-7 world replays hash-for-hash
+    const a = newGame(7, 0), b = newGame(7, 0)
+    let x = 0, y = 0
+    while (!a.end && x++ < 40000) step(a, decide(a))
+    while (!b.end && y++ < 40000) step(b, decide(b))
+    ok(stateHash(a) === stateHash(b) && a.turn === b.turn && a.end === b.end, 'the world replays identically: same sea, same treaties, same end')
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
