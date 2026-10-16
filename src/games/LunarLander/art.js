@@ -82,13 +82,17 @@ export function drawTerrain(ctx, terrain, cam, camX, camY) {
 
 // the lander: gold descent stage, cyan cabin, two splayed legs, nozzle below.
 // Drawn at world scale so it stays vector-sharp at either zoom.
+// The shape below is in BODY coords, y-UP like the sim (legs at y −10 = the
+// sim's FEET). The canvas is y-down, so: rotate by +rot, then scale y by −s.
+// That maps body (bx,by) to exactly the sim's footWorld() point on screen.
+// (#287: it used to rotate(−rot)+scale(s,s), which drew the craft upside down.)
 export function drawLander(ctx, g, cam, camX, camY, thrusting, tick) {
     const x = cam.px(g.x, camX)
     const y = cam.py(g.y, camY)
     ctx.save()
     ctx.translate(x, y)
-    ctx.rotate(-g.rot)
-    ctx.scale(cam.s, cam.s)
+    ctx.rotate(g.rot)
+    ctx.scale(cam.s, -cam.s)
     ctx.lineJoin = 'round'
     ctx.lineCap = 'round'
     // legs
