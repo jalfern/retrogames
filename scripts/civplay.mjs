@@ -95,10 +95,46 @@ let trained = false
 for (let i = 0; i < 24 && !trained; i++) { await page.keyboard.press('Space'); await wait(160); const p = await probe(); trained = p.units0.filter((u) => u.kind === 'WARRIOR').length >= 2; if (p.end) break }
 r.check(`banked production trains a warrior (warriors ${(await probe()).units0.filter((u) => u.kind === 'WARRIOR').length})`, trained)
 
+// 3c — the research panel: opens with T, closes with Escape, gates and unlocks
+await page.keyboard.press('KeyT')
+await wait(250)
+const panelVisible = await page.evaluate(() => document.body.innerText.includes('MEDIEVAL') && document.body.innerText.includes('CLOSE'))
+r.check('T opens the RESEARCH panel with the era columns', panelVisible)
+await page.keyboard.press('Escape')
+await wait(150)
+r.check('Escape closes the panel', await page.evaluate(() => !document.body.innerText.includes('CLOSE')))
+const preLearn = (await probe()).tech
+const t0 = preLearn
+const gatedBefore = !preLearn.known.includes('ARCHERY')
+await page.keyboard.press('Digit2')
+await wait(150)
+const refusedArcher = gatedBefore ? !(await probe()).queue.some((c) => c.queue.includes('ARCHER')) : true
+r.check('archers are refused before Archery is known', refusedArcher, JSON.stringify(preLearn.known))
+await page.keyboard.press('KeyR')
+await wait(150)
+r.check('R commits to a tech', !!(await probe()).tech.research)
+if (gatedBefore) {
+    await page.evaluate(() => window.__civTest.learn('ARCHERY'))
+    await page.keyboard.press('Digit2')
+    await wait(150)
+    r.check('with Archery learned, the archer queues at once', (await probe()).queue.some((c) => c.queue.includes('ARCHER')))
+}
+let sawTech = false
+const cheap = await page.evaluate(() => {
+    const known = window.__civTest.probe().tech.known
+    const id = ['POTTERY', 'AGRICULTURE', 'ARCHERY', 'THE_WHEEL', 'BRONZE_WORKING', 'MASONRY'].find((x) => !known.includes(x))
+    if (id) window.__civTest.research(id)
+    return id
+})
+for (let i = 0; i < 24 && !sawTech; i++) { await page.keyboard.press('Space'); await wait(160); const p = await probe(); sawTech = p.tech.known.some((id) => !t0.known.includes(id) && id !== 'ARCHERY'); if (p.end) break }
+r.check(`science completes a fresh tech in real time (committed ${cheap}; now ${(await probe()).tech.known.join(',')})`, sawTech)
+
 // 4 — drive the same autopilot to the milestone on THIS run, then the end screen
 let won = null
 for (let i = 0; i < 12; i++) { won = await page.evaluate(() => window.__civTest.auto(40)); if (won.end) break }
 r.check(`the autopilot wins THIS run (end=${won.end} size=${won.size} turn=${won.turns})`, won.end === 'win' && won.size >= 4)
+const aiProg = (await probe()).tech.ai
+r.check(`rival civs are researching too (${aiProg.map((a) => `${a.name}:${a.n || '…' + a.researching}`).join(' ')})`, aiProg.some((a) => a.n > 0 || a.researching))
 await wait(1300)
 s = await probe()
 r.check('the end screen shows (screen=over)', s && s.screen === 'over')
