@@ -62,6 +62,7 @@ const QBertGame = () => {
         let shake = 0
         let flash = 0
         let topScore = 0
+        let lastActive = 0
         try { topScore = Number(localStorage.getItem('arcade.qbert.top') || 0) || 0 } catch { /* private mode */ }
 
         const say = (m, c = '#f8d800') => { toastMsg = m; toast = 110; toastCol = c }
@@ -98,12 +99,13 @@ const QBertGame = () => {
 
         const finish = (s) => {
             if (!s.end) return
-            if (s.total > topScore) {
-                topScore = s.total
+            const best = Math.max(s.players[0].total, s.players[1].total)
+            if (best > topScore) {
+                topScore = best
                 try { localStorage.setItem('arcade.qbert.top', String(topScore)) } catch { /* private mode */ }
             }
             overAtRef.current = performance.now()
-            setFinalInfo({ score: s.total, level: s.level, top: topScore })
+            setFinalInfo({ p1: s.players[0].score, p2: s.players[1].score, level: s.level, top: topScore })
             setSc('over')
         }
 
@@ -111,6 +113,7 @@ const QBertGame = () => {
             gs = makeGame({ seed: (Date.now() & 0xffff) | 1 })
             parts = []
             popups = []
+            lastActive = 0
             setFinalInfo(null)
             setSc('play')
             audioController.startMusic('qbert')
@@ -223,14 +226,16 @@ const QBertGame = () => {
         }
 
         const paintHud = (s) => {
-            text5(ctx, String(s.score).padStart(6, '0'), 4, 3, '#f8f8f8', 1)
-            text5(ctx, `TOP ${String(Math.max(topScore, s.total)).padStart(6, '0')}`, 4, 11, '#787878', 1)
+            const on1 = s.active === 0, on2 = s.active === 1
+            // both players' scores; the active one is bright (the 2P turn cue)
+            text5(ctx, `1 ${String(s.players[0].score).padStart(6, '0')}`, 4, 3, on1 ? '#f8f8f8' : '#6a6a6a', 1)
+            text5(ctx, `2 ${String(s.players[1].score).padStart(6, '0')}`, 4, 11, on2 ? '#f8f8f8' : '#6a6a6a', 1)
             const lv = `ROUND ${s.level}`
             text5(ctx, lv, W / 2 - textWidth(lv, 1) / 2, 3, '#f8d800', 1)
             const left = 28 - neededCubes(s).length
             const pr = `${left}/28`
             text5(ctx, pr, W / 2 - textWidth(pr, 1) / 2, 11, '#58d8f8', 1)
-            for (let i = 0; i < s.lives; i++) lifeGlyph(ctx, W - 8 - (i + 1) * 9, 3)
+            for (let i = 0; i < s.players[s.active].lives; i++) lifeGlyph(ctx, W - 8 - (i + 1) * 9, 3)
         }
 
         const paint = () => {
@@ -296,6 +301,10 @@ const QBertGame = () => {
                     step(gs, input)
                     handleEvents(gs, true)
                     finish(gs)
+                    if (gs && !gs.end && gs.active !== lastActive) {
+                        lastActive = gs.active
+                        say(`PLAYER ${gs.active + 1}`, '#58d8f8')
+                    }
                 }
             }
             paint()
@@ -365,7 +374,9 @@ const QBertGame = () => {
                     const bp = bertPos(s)
                     return {
                         screen: screenRef.current,
-                        level: s.level, mode: s.mode, score: s.score, lives: s.lives, flips: s.flips,
+                        level: s.level, mode: s.mode, active: s.active,
+                        score: s.players[s.active].score, lives: s.players[s.active].lives, flips: s.flips,
+                        players: s.players.map((p) => ({ score: p.score, total: p.total, lives: p.lives })),
                         needed: neededCubes(s).length,
                         cubes: CUBES.map((i) => s.colors[i]).join(''),
                         r: s.player.r, c: s.player.c, px: Math.round(bp.x), py: Math.round(bp.y),
@@ -424,8 +435,9 @@ const QBertGame = () => {
             mountDbg({
                 title: 'Q*BERT',
                 getState: () => gs ? [
-                    `round=${gs.level} mode=${gs.mode} score=${gs.score} tick=${gs.tick} end=${gs.end || '-'}`,
-                    `@${gs.player.r},${gs.player.c} up=${gs.player.upChain} lives=${gs.lives} flips=${gs.flips} needed=${neededCubes(gs).length}`,
+                    `round=${gs.level} mode=${gs.mode} P${gs.active + 1} score=${gs.players[gs.active].score} tick=${gs.tick} end=${gs.end || '-'}`,
+                    `@${gs.player.r},${gs.player.c} up=${gs.player.upChain} flips=${gs.flips} needed=${neededCubes(gs).length}`,
+                    `P1 ${gs.players[0].score}/${gs.players[0].lives}L  P2 ${gs.players[1].score}/${gs.players[1].lives}L`,
                     `snakes=${gs.snakes.map((s) => `${s.r},${s.c}`).join(' ')} balls=${gs.balls.length} runners=${gs.runners.length} slicks=${gs.slicks.length}`,
                 ] : ['no game'],
                 actions: [
@@ -476,17 +488,21 @@ const QBertGame = () => {
                         'arrow pairs hop the diagonals: UP+LEFT, UP+RIGHT, DOWN+LEFT, DOWN+RIGHT · touch pad on phones',
                         'land on every cube to turn the pyramid green; hop off an edge and you fall',
                         'Coily drops in after 9 flips — the discs carry you to the top, and he follows, off the edge (+500)',
-                        'red balls ricochet the sides; Ugg and Wrongway run the rows; Sam & Slick wipe your green away',
-                        'rounds after the first cycle five colours — clear it when every cube matches',
+                            'red balls ricochet the sides; Ugg and Wrongway run the rows; Sam & Slick wipe your green away',
+                            'rounds after the first cycle five colours — clear it when every cube matches',
+                            'two players, one keyboard: you alternate turns — run out of lives and your rival takes the pyramid',
                     ]} />
                 </div>
             )}
 
             {screen === 'over' && finalInfo && (
                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-cyan-100 font-mono px-6">
-                    <h2 className="text-4xl font-black mb-2 text-red-400" style={{ textShadow: '3px 3px 0 #000' }}>GAME OVER</h2>
-                    <p className="text-lg">{String(finalInfo.score).padStart(6, '0')}</p>
-                    <p className="text-sm text-cyan-300/80 mb-4">TOP {String(finalInfo.top).padStart(6, '0')} &middot; fell on round {finalInfo.level}</p>
+                    <h2 className="text-4xl font-black mb-3 text-red-400" style={{ textShadow: '3px 3px 0 #000' }}>GAME OVER</h2>
+                    <div className="flex gap-10 text-lg mb-2">
+                        <p className={finalInfo.p1 >= finalInfo.p2 ? 'text-yellow-300' : 'text-cyan-100/70'}>PLAYER 1<br/>{String(finalInfo.p1).padStart(6, '0')}</p>
+                        <p className={finalInfo.p2 > finalInfo.p1 ? 'text-yellow-300' : 'text-cyan-100/70'}>PLAYER 2<br/>{String(finalInfo.p2).padStart(6, '0')}</p>
+                    </div>
+                    <p className="text-sm text-cyan-300/80 mb-4">{finalInfo.p1 === finalInfo.p2 ? 'A TIE' : `PLAYER ${finalInfo.p1 > finalInfo.p2 ? 1 : 2} WINS`}&middot; TOP {String(finalInfo.top).padStart(6, '0')} &middot; round {finalInfo.level}</p>
                     <p className="text-sm text-cyan-100/80 mb-2">ENTER / R runs it back</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>

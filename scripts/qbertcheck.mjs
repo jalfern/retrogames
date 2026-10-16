@@ -74,7 +74,7 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     r.check('one dl press starts a hop (airborne, cube not yet changed)', gs.player.hop !== null && gs.player.r === 0)
     until(gs, () => !gs.player.hop, HOP_TICKS + 5)
     r.check('the hop lands on (1,0) after 12 ticks and flips it', gs.player.r === 1 && gs.player.c === 0 && gs.colors[id(1, 0)] === 1, `@${gs.player.r},${gs.player.c} col=${gs.colors[id(1, 0)]}`)
-    r.check('a single landing scores exactly 25 and counts one flip', gs.score === 25 && gs.flips === 1, `score=${gs.score} flips=${gs.flips}`)
+    r.check('a single landing scores exactly 25 and counts one flip', gs.players[0].score === 25 && gs.flips === 1, `score=${gs.players[0].score} flips=${gs.flips}`)
     r.check('a green cube re-landed does NOT double-count flips', (() => {
         play(gs, { ur: true }); until(gs, () => !gs.player.hop)
         play(gs, { dl: true }); until(gs, () => !gs.player.hop)
@@ -87,14 +87,14 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     play(gs, { dr: true })
     until(gs, () => !gs.player.hop)
     const ev = clearEv(gs)
-    r.check('a diagonal that leaves the skirt is a fall: life lost with the balloon', gs.lives === 2 && gs.player.dying > 0 && gs.balloon === '@!#?@!' && ev.some((e) => e.t === 'death' && e.cause === 'fall'), `lives=${gs.lives} balloon=${gs.balloon}`)
+    r.check('a diagonal that leaves the skirt is a fall: life lost with the balloon', gs.players[0].lives === 2 && gs.player.dying > 0 && gs.balloon === '@!#?@!' && ev.some((e) => e.t === 'death' && e.cause === 'fall'), `lives=${gs.players[0].lives} balloon=${gs.balloon}`)
     until(gs, () => gs.player.dying === 0)
     r.check('the death animation ends by respawning at the apex, invulnerable', gs.player.r === 0 && gs.player.c === 0 && gs.player.invuln > 0)
 }
 {
     const gs = makeGame({ seed: 5 })
     play(gs, { ul: true })
-    r.check('an up-hop from the apex with no disc nearby is blocked (never a fall off the top)', gs.player.hop === null && gs.lives === 3)
+    r.check('an up-hop from the apex with no disc nearby is blocked (never a fall off the top)', gs.player.hop === null && gs.players[0].lives === 3)
 }
 
 // ------------------------------------------------------------ facing ----
@@ -168,39 +168,103 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
 {
     // a hop that stays under 10,000 must NOT award a life
     const gs = makeGame({ seed: 5, lives: 3 })
-    gs.score = 9900; gs.total = 9900
+    gs.players[0].score = 9900; gs.players[0].total = 9900
     clearEv(gs)
     play(gs, { dl: true }); until(gs, () => !gs.player.hop)
     const ev = clearEv(gs)
-    r.check('a hop that stays under 10,000 awards no 1-up', gs.lives === 3 && !ev.some((e) => e.t === 'oneup'), `lives=${gs.lives} score=${gs.score}`)
+    r.check('a hop that stays under 10,000 awards no 1-up', gs.players[0].lives === 3 && !ev.some((e) => e.t === 'oneup'), `lives=${gs.players[0].lives} score=${gs.players[0].score}`)
 }
 {
     // the first 10,000 boundary, crossed on an ordinary 25-point hop, awards
     // exactly one extra life (and prints a oneup event, for the HUD/ledger)
     const gs = makeGame({ seed: 5, lives: 3 })
-    gs.score = 9990; gs.total = 9990
+    gs.players[0].score = 9990; gs.players[0].total = 9990
     clearEv(gs)
     play(gs, { dl: true }); until(gs, () => !gs.player.hop)
     const ev = clearEv(gs)
-    r.check('crossing 10,000 awards exactly one extra life (oneup event)', gs.lives === 4 && ev.some((e) => e.t === 'oneup' && e.lives === 4), `lives=${gs.lives} score=${gs.score}`)
+    r.check('crossing 10,000 awards exactly one extra life (oneup event)', gs.players[0].lives === 4 && ev.some((e) => e.t === 'oneup' && e.lives === 4), `lives=${gs.players[0].lives} score=${gs.players[0].score}`)
 }
 {
     // each further 10,000 boundary awards one more life (here: 19,990 -> 20,015)
     const gs = makeGame({ seed: 5, lives: 3 })
-    gs.score = 19990; gs.total = 19990
+    gs.players[0].score = 19990; gs.players[0].total = 19990
     clearEv(gs)
     play(gs, { dl: true }); until(gs, () => !gs.player.hop)
     const ev = clearEv(gs)
-    r.check('a later 10,000 boundary awards one more life', gs.lives === 4 && ev.some((e) => e.t === 'oneup' && e.lives === 4), `lives=${gs.lives} score=${gs.score}`)
+    r.check('a later 10,000 boundary awards one more life', gs.players[0].lives === 4 && ev.some((e) => e.t === 'oneup' && e.lives === 4), `lives=${gs.players[0].lives} score=${gs.players[0].score}`)
 }
 {
     // 1-ups stop at the 9-life cap: a boundary crossed at the cap awards nothing
     const gs = makeGame({ seed: 5, lives: 9 })
-    gs.score = 99990; gs.total = 99990
+    gs.players[0].score = 99990; gs.players[0].total = 99990
     clearEv(gs)
     play(gs, { dl: true }); until(gs, () => !gs.player.hop)
     const ev = clearEv(gs)
-    r.check('1-ups stop at the 9-life cap (a boundary crossed at the cap awards nothing)', gs.lives === 9 && !ev.some((e) => e.t === 'oneup'), `lives=${gs.lives} score=${gs.score}`)
+    r.check('1-ups stop at the 9-life cap (a boundary crossed at the cap awards nothing)', gs.players[0].lives === 9 && !ev.some((e) => e.t === 'oneup'), `lives=${gs.players[0].lives} score=${gs.players[0].score}`)
+}
+
+// ------------------------------------------------------ hot-seat 2P ----
+// Alternating turns: each player keeps their own score / total (the 10,000
+// 1-up ledger) / lives. Only the ACTIVE player's bird is on the board; when
+// that player runs out of lives the OTHER takes a FRESH pyramid (keeping their
+// own score and lives); both out = game over. One keyboard (one active player),
+// so the input model is unchanged. Pins are behavioural (a wrong handoff, a
+// shared life pool, or a per-player 1-up leak all go red).
+{
+    const gs = makeGame({ seed: 5, lives: 3 })
+    r.check('2P: two players, 3 lives each, player 1 active at the start',
+        gs.players.length === 2 && gs.players[0].lives === 3 && gs.players[1].lives === 3 && gs.active === 0,
+        `lives=${JSON.stringify(gs.players.map((p) => p.lives))} active=${gs.active}`)
+}
+{
+    // a death costs the ACTIVE player a life, never the other
+    const gs = makeGame({ seed: 5, lives: 3 })
+    Object.assign(gs.player, { r: 5, c: 5, invuln: 0 })
+    clearEv(gs)
+    play(gs, { dr: true })   // fall off the skirt -> P1 loses a life
+    const ev = clearEv(gs)
+    r.check('2P: a death costs the ACTIVE (P1) a life and the event is tagged player 0',
+        gs.players[0].lives === 2 && gs.players[1].lives === 3 && ev.some((e) => e.t === 'death' && e.player === 0),
+        `p1=${gs.players[0].lives} p2=${gs.players[1].lives}`)
+}
+{
+    // P1 out of lives -> the turn passes to P2 on a FRESH pyramid; P2 keeps their score
+    const gs = makeGame({ seed: 5, lives: 3 })
+    gs.players[1].score = 425; gs.players[1].total = 425
+    gs.players[0].lives = 1
+    Object.assign(gs.player, { r: 5, c: 5, invuln: 0 })
+    play(gs, { dr: true })
+    until(gs, () => gs.player.dying === 0, 200)
+    r.check('2P: when P1 is out, the turn passes to P2 (active becomes 1)', gs.active === 1, `active=${gs.active}`)
+    r.check('2P: the handoff resets the pyramid fresh for the new player (apex green, 27 to go, bird at the apex)',
+        neededCubes(gs).length === 27 && gs.colors[id(0, 0)] === 1 && gs.player.r === 0 && gs.player.c === 0,
+        `needed=${neededCubes(gs).length} @${gs.player.r},${gs.player.c}`)
+    r.check('2P: the incoming player keeps their own score and lives (P2: 425, 3 lives)',
+        gs.players[1].score === 425 && gs.players[1].lives === 3, `p2score=${gs.players[1].score} p2lives=${gs.players[1].lives}`)
+}
+{
+    // per-player 1-up: P2's OWN 10,000 boundary awards P2 a life, P1 untouched
+    const gs = makeGame({ seed: 5, lives: 3 })
+    gs.active = 1
+    gs.players[1].score = 9990; gs.players[1].total = 9990
+    clearEv(gs)
+    play(gs, { dl: true }); until(gs, () => !gs.player.hop)
+    const ev = clearEv(gs)
+    r.check('2P: a 1-up is per-player — P2 crossing 10,000 lifts only P2 (P1 stays at 3)',
+        gs.players[1].lives === 4 && gs.players[0].lives === 3 && ev.some((e) => e.t === 'oneup' && e.player === 1 && e.lives === 4),
+        `p1=${gs.players[0].lives} p2=${gs.players[1].lives}`)
+}
+{
+    // both players out of lives = game over (and only then)
+    const gs = makeGame({ seed: 5, lives: 3 })
+    gs.players[0].lives = 1; gs.players[1].lives = 1
+    Object.assign(gs.player, { r: 5, c: 5, invuln: 0 })
+    play(gs, { dr: true }); until(gs, () => gs.player.dying === 0, 200)
+    r.check('2P: P1 out hands off to P2 — NOT game over while P2 still has a life',
+        gs.active === 1 && !gs.end, `active=${gs.active} end=${gs.end || '-'}`)
+    Object.assign(gs.player, { r: 5, c: 5, invuln: 0 })
+    play(gs, { dr: true }); until(gs, () => gs.end, 200)
+    r.check('2P: once BOTH players are out of lives it is game over', gs.end === 'over', `end=${gs.end}`)
 }
 
 // ------------------------------------------------------------ Coily ----
@@ -250,7 +314,7 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     while (gs.player.dying === 0 && guard++ < 60 * 20) { play(gs); ev.push(...clearEv(gs)) }
     const dists = []
     r.check('a standing target is eaten by the chase', gs.player.dying > 0 && ev.some((e) => e.t === 'death' && e.cause === 'snake'), `dying=${gs.player.dying} after ${guard} ticks`)
-    r.check('the snake chase took a life and printed the balloon', gs.lives === 2 && gs.balloon === '@!#?@!')
+    r.check('the snake chase took a life and printed the balloon', gs.players[0].lives === 2 && gs.balloon === '@!#?@!')
 }
 {
     // the chase closes distance: pin that each drop the snake gets no further
@@ -380,12 +444,12 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     gs.discs[0].x = W / 2
     gs.snakes.push({ r: 1, c: 0, enter: 0, dropT: 9999, x: cubeXY(1, 0).x, y: cubeXY(1, 0).y })
     gs.snakes.push({ r: 5, c: 5, enter: 0, dropT: 9999, x: cubeXY(5, 5).x, y: cubeXY(5, 5).y })
-    gs.score = 0
+    gs.players[0].score = 0
     clearEv(gs)
     play(gs, { ul: true })
     const ev = clearEv(gs)
     r.check('an up-hop from the apex with a disc crossing boards it', gs.player.ride !== null && ev.some((e) => e.t === 'discride'))
-    r.check('the disc carries a nearby snake off the edge (+500) and leaves a distant one', gs.snakes.length === 1 && gs.snakes[0].r === 5 && ev.some((e) => e.t === 'snakelure') && gs.score === 500, `snakes=${gs.snakes.length} score=${gs.score}`)
+    r.check('the disc carries a nearby snake off the edge (+500) and leaves a distant one', gs.snakes.length === 1 && gs.snakes[0].r === 5 && ev.some((e) => e.t === 'snakelure') && gs.players[0].score === 500, `snakes=${gs.snakes.length} score=${gs.players[0].score}`)
     until(gs, () => !gs.player.ride, 60)
     // the drop's contract is "on a valid cube" — landing on the distant snake
     // (still at 5,5) is a legitimate death, so dying is NOT asserted here.
@@ -454,7 +518,7 @@ const HW_ = 12
     Object.assign(gs.player, { r: 5, c: 2, invuln: 0 })
     guard = 0
     while (gs.player.dying === 0 && guard++ < 200) play(gs)
-    r.check('touching the slick kills', gs.player.dying > 0 && gs.lives < 3)
+    r.check('touching the slick kills', gs.player.dying > 0 && gs.players[0].lives < 3)
 }
 
 // --------------------------------------------------- the tunnel mouths ----
@@ -625,9 +689,9 @@ function pilotRun(seed, lives) {
 
 for (const seed of [1, 7, 42, 101, 777, 0xbeef, 2026, 1982]) {
     const A = pilotRun(seed, 3)
-    r.check(`seed ${seed}: the pilot clears round 1 (the game can be won by its own demo)`, !!A.gs.pending, `flips=${A.gs.flips} lives=${A.gs.lives} t=${A.t}`)
+    r.check(`seed ${seed}: the pilot clears round 1 (the game can be won by its own demo)`, !!A.gs.pending, `flips=${A.gs.flips} lives=${A.gs.players[0].lives} t=${A.t}`)
     r.check(`seed ${seed}: the pilot runs with ONE FEWER LIFE than the player is dealt (slack)`, !!pilotRun(seed, 2).gs.pending)
-    r.check(`seed ${seed}: the score ledger adds up event-by-event`, A.gs.score === A.ledger, `score=${A.gs.score} ledger=${A.ledger}`)
+    r.check(`seed ${seed}: the score ledger adds up event-by-event`, (A.gs.players[0].score + A.gs.players[1].score) === A.ledger, `score=${A.gs.players[0].score} ledger=${A.ledger}`)
     const B = pilotRun(seed, 3)
     r.check(`seed ${seed}: the pilot run is hash-for-hash deterministic`, B.hash === A.hash && B.t === A.t, `${A.hash}@${A.t} vs ${B.hash}@${B.t}`)
 }
@@ -661,8 +725,8 @@ for (const seed of [1, 7, 42, 101, 777, 0xbeef, 2026, 1982]) {
     until(g, () => !g.player.hop); watch(g)
     // points(50) round trip, and 9990 + 50 crosses 10,000 -> oneup
     // (below the 9-life cap, or the ledger stays silent by design)
-    g.lives = 3
-    g.score = 9990; g.total = 9990
+    g.players[0].lives = 3
+    g.players[0].score = 9990; g.players[0].total = 9990
     play(g, { ur: true }); watch(g)
     until(g, () => !g.player.hop); watch(g)
     // fall + death, then the respawn
@@ -703,8 +767,11 @@ for (const seed of [1, 7, 42, 101, 777, 0xbeef, 2026, 1982]) {
     until(g, () => !g.player.hop); watch(g)
     r.check('the tour cleared the round before the game could end (clear was seen live)', seen.has('clear') && g.pending !== null, `pending=${g.pending && g.pending.t}`)
     until(g, () => !g.pending, 120); watch(g)
-    // over: one life left, fall off the skirt
-    g.lives = 1
+    // over: BOTH players out — P1 falls (the turn passes to P2), then P2 falls
+    g.players[0].lives = 1; g.players[1].lives = 1
+    Object.assign(g.player, { r: 5, c: 5, invuln: 0, hop: null })
+    play(g, { dr: true }); watch(g)
+    until(g, () => g.active === 1 && g.player.dying === 0, 300); watch(g)
     Object.assign(g.player, { r: 5, c: 5, invuln: 0, hop: null })
     play(g, { dr: true }); watch(g)
     until(g, () => g.end, 300); watch(g)
