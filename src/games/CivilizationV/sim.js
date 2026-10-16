@@ -439,7 +439,7 @@ export function canUseGP(gs, civ, t, cityId) {
     if (t === 'SCIENTIST' && !gs.tech[civ].research) return 'choose something to research first'
     return true
 }
-export function useGP(gs, civ, t, cityId) {
+export function spendGP(gs, civ, t, cityId) {
     const why = canUseGP(gs, civ, t, cityId)
     if (why !== true) { if (civ === 0) gs.events.push({ type: 'deny', reason: why, c: -1, r: -1 }); return false }
     gs.gp[civ].held[t] -= 1
@@ -1293,9 +1293,9 @@ function aiTurn(gs, civ) {
     }
     const aiCap = gs.cities.find((c) => c.alive && c.civ === civ)
     const aiR = gs.tech[civ]
-    if (G.held.SCIENTIST > 0 && aiR.research && aiR.prog * 2 < TECH[aiR.research].cost) useGP(gs, civ, 'SCIENTIST')
-    else if (G.held.ENGINEER > 0 && aiCap && aiCap.queue && aiCap.queue.length && WONDER[aiCap.queue[0]]) useGP(gs, civ, 'ENGINEER', aiCap.id)
-    else if (G.held.MERCHANT > 0 && C.gold < 300) useGP(gs, civ, 'MERCHANT')
+    if (G.held.SCIENTIST > 0 && aiR.research && aiR.prog * 2 < TECH[aiR.research].cost) spendGP(gs, civ, 'SCIENTIST')
+    else if (G.held.ENGINEER > 0 && aiCap && aiCap.queue && aiCap.queue.length && WONDER[aiCap.queue[0]]) spendGP(gs, civ, 'ENGINEER', aiCap.id)
+    else if (G.held.MERCHANT > 0 && C.gold < 300) spendGP(gs, civ, 'MERCHANT')
     // city production choices (points are banked/delivered in resolveCiv)
     // research: a stable per-civ priority path, rotated so rivals diverge
     const R = gs.tech[civ]
@@ -1389,7 +1389,7 @@ export function step(gs, input = {}) {
     if (input.research) setResearch(gs, 0, input.research)
     if (input.policy) adoptPolicy(gs, 0, input.policy)
     if (input.recruit) recruitGP(gs, 0, input.recruit)
-    if (input.useGP) useGP(gs, 0, input.useGP.kind, input.useGP.city)
+    if (input.useGP) spendGP(gs, 0, input.useGP.kind, input.useGP.city)
     if (input.queue && (UNIT[input.queue] || WONDER[input.queue])) {
         const deny = queueDeny(gs, 0, input.queue)
         if (deny) gs.events.push({ type: 'deny', reason: deny, c: -1, r: -1 })
