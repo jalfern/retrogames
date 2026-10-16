@@ -16,6 +16,7 @@ import {
 } from '../src/games/QBert/sim.js'
 import { plan } from '../src/games/QBert/planner.js'
 import { sfxFor, VOICED, SILENT } from '../src/games/QBert/sound.js'
+import { MUSIC } from '../src/utils/AudioController.js'
 import { COILS, coilX, coilY, discHalfW, DISC_FRAMES, ballScale, BALL_FRAMES, BALL_R, bertFrame, BERT_GEO, BERT_LAND_TICKS, CUBE_SIDE, sideMargin, tunnelArch } from '../src/games/QBert/art.js'
 import { Report } from './lib/harness.mjs'
 
@@ -740,6 +741,25 @@ for (const seed of [1, 7, 42, 101, 777, 0xbeef, 2026, 1982]) {
         && sfxFor({ t: 'clear' }).some((o) => o.k === 'fanfare')
         && sfxFor({ t: 'over' }).some((o) => o.k === 'jingle'))
     r.check('every voiced event type resolves to a non-empty recipe', VOICED.every((t) => sfxFor({ t, pts: 25 }).length > 0), VOICED.join(','))
+}
+
+// --------------------------------------------------------- music grid ----
+// The BGM is a step sequencer in the shared AudioController (MUSIC.qbert). Its
+// step grid was 0.12s, which drifts against the sim's 60Hz hop cadence (a hop
+// is 12 ticks = 0.2s; 0.2/0.12 = 5/3, non-integer, so the hops never land on a
+// step and the loop reads "stiff"). The grid is now LOCKED to the hop: 0.1s =
+// exactly 2 steps per hop, and the 32-step loop = exactly 16 hops, so music and
+// hops stay in phase. Pinned against LITERALS (the TETRIS lesson) — not the
+// track's own number. Fail-proven: the old 0.12 reds both pins below.
+{
+    const HOP = 12 / 60 // a hop is 12 ticks on the fixed 60Hz timestep = 0.2s
+    const LOOP = 32     // the qbert pattern is 32 steps (lead and bass)
+    const stepsPerHop = HOP / MUSIC.qbert.step
+    const hopsPerLoop = (LOOP * MUSIC.qbert.step) / HOP
+    r.check('the music grid is a whole number of steps per hop (no drift against the 60Hz hop)',
+        Number.isInteger(stepsPerHop) && stepsPerHop === 2, `stepsPerHop=${stepsPerHop}`)
+    r.check('the 32-step loop is a whole number of hops (music and hops stay in phase across the loop)',
+        Number.isInteger(hopsPerLoop) && hopsPerLoop === 16, `hopsPerLoop=${hopsPerLoop}`)
 }
 
 r.exit()

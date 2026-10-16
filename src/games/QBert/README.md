@@ -83,7 +83,11 @@ the player actually gets, in plain Node.
   apex-or-row-0/1 bias. `qbertcheck` pins both ends: a high RNG roll reaches
   the bottom skirt, a low roll the apex.)
     Still missing: alternating hot-seat 2P, the bonus-stage green-field.
-- Music is an original bouncy riff, not the Gottlieb melody.
+- Music is an original bouncy riff, not the Gottlieb melody. Its step grid is
+  locked to the sim's 60Hz hop cadence (`MUSIC.qbert.step = 0.1` = exactly 2
+  steps per 12-tick hop; the 32-step loop = exactly 16 hops), so the bed and
+  the hops stay in phase — the old 0.12s grid drifted (5/3 steps per hop) and
+  read stiff against the 60Hz clock. `qbertcheck` pins both integers.
 - `qbertdive` rides the advisory tier (like `joustdive`/`tetrisplay`), not the
   PR gate.
 
