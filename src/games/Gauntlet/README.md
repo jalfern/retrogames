@@ -37,8 +37,9 @@ The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
   movement where facing follows the stick, arrows fire down the facing, the
   four heroes (stats differ), constant health drain + food + the narrator's
   "NEEDS FOOD, BADLY!", slam doors sealing behind you (sword-batter opens
-  them), locked doors eating keys that carry between mazes, generators that
-  pulse the level roster until smashed, potion clearing every roamer but not
+   them), locked doors eating keys that carry between mazes, generators that
+   wind up with a visible pulse + flash (issue #275 item 3) before belching the
+   level roster, until smashed, potion clearing every roamer but not
   Death, Death walking in on the treasure timer and draining point by point,
   stairs up ending each world and the fourth ending the quest.
 - Simplifications (honest gaps): no shop, no Valkyrie resurrection, one potion
@@ -58,10 +59,10 @@ face · X / F / B: arrow down the facing · C on the hero screen: CPU partner ·
 
 ```bash
 npm run lint:gauntlet               # eslint gate for both games + harness
-npm run gauntletcheck             # 87 checks: geometry, art, sound, minimap,
-                                  # rules, overhead mode, ledger, pilot,
-                                  # slack, determinism
-npm run gauntletcheck -- --mutate # 8 mutants, all must die
+npm run gauntletcheck             # 91 checks: geometry, art, sound, minimap,
+                                   # generators (the wind-up), rules, overhead
+                                   # mode, ledger, pilot, slack, determinism
+npm run gauntletcheck -- --mutate # 9 mutants, all must die
 npm run gauntletplay              # advisory browser drive (needs npm run dev)
 ```
 

@@ -134,6 +134,35 @@ console.log('minimap')
     ok(new Set([0, 4, 8, 12].map((t) => mm.stairsPulse(2, t))).size === 3 && mm.stairsPulse(1, 8) === 1, 'minimap: the pulse dims and peaks', [0, 1, 2, 3, 4].map((t) => mm.stairsPulse(1, t)).join(','))
 }
 
+// ---------------------------------------------------------- generators ----
+// A generator winds up before it belches: it pulses for a fixed telegraph
+// (genPulse ticks) and no beast exists in the hall during that window — the
+// monster appears only at the end of the charge, never out of nowhere.
+console.log('generators')
+{
+    const gs = makeGame(0, 'warrior')
+    const g = gs.gens[0]
+    for (const o of gs.gens) if (o !== g) o.alive = false
+    gs.monsters = []
+    gs.deathSpawned = true
+    gs.hero.hp = 1e9
+    let pulseTicks = 0, belched = false, beastDuringPulse = false
+    for (let i = 0; i < 900 && !belched; i++) {
+        step(gs, {})
+        if (g.charge > 0) {
+            pulseTicks++
+            if (gs.monsters.some((m) => m.x === g.x && m.y === g.y)) beastDuringPulse = true
+        }
+        if (gs.events.some((e) => e.type === 'spawn')) belched = true
+        gs.monsters = []
+        gs.events.length = 0
+    }
+    ok(belched, 'a generator winds up, then belches a beast')
+    ok(pulseTicks === S.CFG.genPulse, 'the wind-up lasts exactly the configured telegraph', `${pulseTicks} vs ${S.CFG.genPulse}`)
+    ok(S.CFG.genPulse >= 15, 'the telegraph is a real delay, not an instant pop', `${S.CFG.genPulse} ticks`)
+    ok(!beastDuringPulse, 'no beast exists while the generator is pulsing')
+}
+
 // ------------------------------------------------------------------ rules ----
 console.log('rules')
 // drain + food
@@ -369,7 +398,8 @@ if (process.argv.includes('--mutate')) {
         ['slam doors never close', 'src/games/Gauntlet/sim.js', 'd.closeT = CFG.slamClose', 'd.closeT = -2'],
         ['locked doors open without keys', 'src/games/Gauntlet/sim.js', 'if (gs.keys >= CFG.lockForce)', 'if (gs.keys >= 0 && !gs.keys)'],
         ['potion kills Death too', 'src/games/Gauntlet/sim.js', 'gs.monsters = gs.monsters.filter((m) => MONSTERS[m.kind].drain)', 'gs.monsters = []'],
-        ['generators respawn when smashed', 'src/games/Gauntlet/sim.js', 'if (!g.alive) continue\n        g.t--', 'g.t--'],
+        ['generators respawn when smashed', 'src/games/Gauntlet/sim.js', 'if (!g.alive) continue\n        if (g.charge > 0) {', 'if (g.charge > 0) {'],
+        ['generators pop with no wind-up', 'src/games/Gauntlet/sim.js', 'genPulse: 36', 'genPulse: 1'],
         ['health never drains', 'src/games/Gauntlet/sim.js', 'if (gs.tick % CFG.drainEvery === 0)', 'if (gs.tick % 1000000 === 0)'],
         ['overhead pilot cannot aim', 'src/games/Gauntlet/sim.js', 'if (typeof inp.aim === \'number\') {', 'if (false) {'],
         ['the map shows beasts outside the view', 'src/games/Gauntlet/minimap.js', 'gs.monsters.filter((m) => inView(rect, m.x, m.y))', 'gs.monsters'],
