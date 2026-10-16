@@ -16,6 +16,7 @@ import {
 } from '../src/games/QBert/sim.js'
 import { plan } from '../src/games/QBert/planner.js'
 import { sfxFor, VOICED, SILENT } from '../src/games/QBert/sound.js'
+import { COILS, coilX, coilY } from '../src/games/QBert/art.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('qbertcheck')
@@ -253,6 +254,34 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
         d0 = Math.min(d0, d)
     }
     r.check('each Coily drop moves strictly toward you (never wanders off), and closes to contact', closed >= 2 && !everGrew && gs.player.dying > 0, `closes=${closed} grew=${everGrew}`)
+}
+
+// ---------------------------------------------------- the coily spring ----
+// Coily's body is a real spring, not a stack of bars: several oval coils whose
+// stack wiggles by a travelling sinusoid that advances one phase per frame.
+// coilX/coilY are a PURE model in art.js (importable in Node, like the PoP
+// light model), so the "it is a coil, it wiggles, it stays in bounds" contract
+// is provable offline. The pins use LITERAL bounds, not the model's own
+// constants (the TETRIS lesson): a static stack of bars — no per-coil variation
+// or no per-frame advance — goes red.
+{
+    const xs0 = Array.from({ length: 5 }, (_, i) => coilX(i, 0))
+    const xs1 = Array.from({ length: 5 }, (_, i) => coilX(i, 1))
+    const maxAbs = Math.max(...xs0.map(Math.abs), ...xs1.map(Math.abs))
+    r.check('Coily is a stack of multiple oval coils, not one bar', COILS >= 4, `coils=${COILS}`)
+    r.check('the coil offsets vary across the stack (a wave, not a flat line)',
+        xs0.some((x) => Math.abs(x) > 0.2) && new Set(xs0.map((x) => Math.round(x * 100))).size >= 3, JSON.stringify(xs0))
+    r.check('the coil wiggle stays within a 2px amplitude (the spring never leaves the sprite)',
+        maxAbs <= 2, `max=${Math.round(maxAbs * 100) / 100}`)
+    r.check('the coil wiggle advances with the frame (frame 0 != frame 1 — the spring shimmers as it hops)',
+        xs1.some((x, i) => Math.abs(x - xs0[i]) > 0.1), `d=${xs1.map((x, i) => Math.round((x - xs0[i]) * 100)).join(',')}`)
+    // the whole spring fits the 22x22 sprite: each 15-wide / 4-tall coil oval,
+    // centred at x=11, never clips for either frame.
+    const fits = [0, 1].every((f) => Array.from({ length: COILS }, (_, i) => {
+        const cx = 11 + coilX(i, f), cy = coilY(i)
+        return cx - 7.5 >= 0 && cx + 7.5 <= 22 && cy - 2 >= 0 && cy + 2 <= 22
+    }).every(Boolean))
+    r.check('every coil oval fits inside the 22x22 sprite (no clipping on either frame)', fits)
 }
 
 // --------------------------------------------------- the disc + snake lure ----
