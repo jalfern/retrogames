@@ -171,7 +171,7 @@ export function torchSum(x, y, keyPx) {
 // share of the light, so two distant sconces read cooler than one you stand in.
 export function tempAt(x, y, keyPx, amb = LIGHT_AMBIENT, moonPx = []) {
     const s = torchSum(x, y, keyPx)
-    return s / (s + amb + MOON_STRENGTH * coolAt(x, y, moonPx))
+    return s / (s + amb + MOON_DILUTE * MOON_STRENGTH * coolAt(x, y, moonPx))
 }
 // warm bounce thrown back off the flagstones by the sconces overhead: a 1-D pull
 // on horizontal distance, so the floor directly under a torch glows and grounds
@@ -225,7 +225,10 @@ export function moonSources(decos, base) {
     const out = []
     for (let rm = 0; rm < (decos || []).length; rm++) {
         const d = decos[rm]
-        if (d && d.window != null) out.push([base + rm * RW * T + d.window * T + 16, 60])
+        if (d && d.window != null) {
+            const px = base + rm * RW * T + d.window * T + 16
+            out.push([px, 60, hash(Math.round((px - 16) / T) * 2.7 + 5)])
+        }
     }
     return out
 }
@@ -250,6 +253,51 @@ export function bandAt(x, keyPx, tile = T) {
 // but lets lit ones catch the flame. Bounded so a flask never blows out.
 export function propShade(warm) {
     return 0.55 + warm * 0.45
+}
+
+// ---- Stage 10: warm-dominant overlap, seeded sky, cool shafts, stepped lips -----
+// Stage 9 made cool light a second source; Stage 10 makes the two sources *interact*
+// like real light (QA #341). A body caught between a torch and a window greyed out,
+// every window was the same violet, the moon threw no shaft onto the floor, lit steps
+// read as a flat band, and the violet rim could tint bone. Each fix is pure + pinned.
+//
+// Warm dominance: moonlight still dilutes warmth (the S9 proof stands) but *softly*,
+// so the flame-adjacent side of a body near both sources stays amber instead of
+// pulling to neutral grey. MOON_DILUTE<1 thins the cool term in the temperature
+// denominator; the default-empty-moon path is untouched, so every S8/S9 value holds.
+export const MOON_DILUTE = 0.55                  // how hard cool light cools warmth (<1 = soft)
+// a per-window sky, deterministic from the window's column: a cool key shifting from
+// deep indigo to pale moon-blue that breathes its own intensity — a palace with a
+// sky, not a stencil. Blue stays dominant so it never reads warm. Same seed → tint.
+export function moonTint(seed) {
+    const s = seed - Math.floor(seed)
+    return {
+        r: Math.round(120 + s * 70),
+        g: Math.round(150 + s * 40),
+        b: 255,
+        s: 0.78 + s * 0.22,
+    }
+}
+// the moon's cool bounce off the flagstones under a window — the shaft's foot,
+// quantised to the tile so the cool floor breaks into stone like the warm band.
+export function coolBandAt(x, moonPx, tile = T) {
+    const cx = Math.floor(x / tile) * tile + tile / 2
+    let s = 0
+    for (let i = 0; i < moonPx.length; i++) {
+        const dx = Math.abs(cx - moonPx[i][0])
+        const t = 1 - dx / (MOON_RADIUS * 0.7)
+        if (t > 0) s += t * t * (3 - 2 * t)
+    }
+    return s > 1 ? 1 : s
+}
+// how strongly the rim light may tint a figure: bone and the prince's pale tunic sit
+// at temp 0 in dark corners where the rim hue is violet — damp the rim on pale
+// palettes so skeleton and tunic stay bone-white, never purple. Non-pale is unchanged
+// (identical to the Stage 8/9 inline alpha), so the clothed cast is byte-for-byte.
+export function rimAlpha(pale, warm) {
+    const base = 0.12 + warm * 0.22
+    const a = pale ? base * 0.32 : base
+    return Math.round(a * 1000) / 1000
 }
 
 // ---- pose tables --------------------------------------------------------------
@@ -612,20 +660,23 @@ function lightPool(ctx, x, y, fl) {
     ctx.restore()
 }
 
-// a window's cold bloom: the moon's key, wide and violet-blue, composited additively
-// like the flame pools so palace stone under a window reads moonlit, not firelit.
-// Clipped below the HUD band by the same rule the warm pools obey.
-function coolPool(ctx, x, y, fl) {
+// a window's cold bloom: the moon's key, wide and blue, composited additively like
+// the flame pools so palace stone under a window reads moonlit, not firelit. Its hue
+// and strength come from the window's own seeded sky (moonTint), so a row of windows
+// reads as different skies, not one stencil. Clipped below the HUD like warm pools.
+function coolPool(ctx, x, y, fl, seed = 0) {
+    const tint = moonTint(seed)
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
     ctx.beginPath()
     ctx.rect(x - MOON_RADIUS, HUD_LINE, MOON_RADIUS * 2, VH - HUD_LINE)
     ctx.clip()
     const r = 120 + fl * 10
+    const a = tint.s
     const outer = ctx.createRadialGradient(x, y, 8, x, y, r)
-    outer.addColorStop(0, 'rgba(150,170,255,0.20)')
-    outer.addColorStop(0.5, 'rgba(110,130,220,0.08)')
-    outer.addColorStop(1, 'rgba(90,110,200,0)')
+    outer.addColorStop(0, `rgba(${tint.r},${tint.g},${tint.b},${(0.20 * a).toFixed(3)})`)
+    outer.addColorStop(0.5, `rgba(${Math.max(0, tint.r - 40)},${Math.max(0, tint.g - 40)},${Math.min(255, tint.b - 35)},${(0.08 * a).toFixed(3)})`)
+    outer.addColorStop(1, `rgba(${Math.max(0, tint.r - 60)},${Math.max(0, tint.g - 60)},${Math.min(255, tint.b - 55)},0)`)
     ctx.fillStyle = outer
     ctx.fillRect(x - r, y - r, r * 2, r * 2)
     ctx.restore()
@@ -908,6 +959,7 @@ function figure(ctx, st, p, opts) {
     const warm = opts.warm != null ? opts.warm : 0.5
     const temp = opts.temp != null ? opts.temp : warm
     const s = (opts.litSide != null ? opts.litSide : f) * f
+    const pale = !!(opts.bone || opts.pale)
 
     ctx.save()
     ctx.translate(p.x, p.y + bob)
@@ -965,7 +1017,7 @@ function figure(ctx, st, p, opts) {
     // follows the colour temperature — amber under a sconce, cool blue in the dark
     // — while its strength follows the light's brightness.
     const rim = rimColor(temp)
-    ctx.strokeStyle = `rgba(${rim.r},${rim.g},${rim.b},${(0.12 + warm * 0.22).toFixed(3)})`
+    ctx.strokeStyle = `rgba(${rim.r},${rim.g},${rim.b},${rimAlpha(pale, warm).toFixed(3)})`
     ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(s * 3, -hip - 2)
@@ -1195,6 +1247,10 @@ export function drawScene(ctx, g, opts = {}) {
             if (b <= 0.02) continue
             ctx.fillStyle = `rgba(255,150,70,${(b * 0.11).toFixed(3)})`
             ctx.fillRect(c * T + 1, fy - 5, T - 2, 10)
+            // lit front-lip: the top 2px of each lit step catches more flame, so the
+            // band reads as stepped stone (a lip per flagstone) not one flat glow.
+            ctx.fillStyle = `rgba(255,190,120,${(b * 0.16).toFixed(3)})`
+            ctx.fillRect(c * T + 1, fy - 5, T - 2, 2)
         }
     }
     ctx.restore()
@@ -1204,8 +1260,36 @@ export function drawScene(ctx, g, opts = {}) {
         drawTorch(ctx, c, r, tick)
         lightPool(ctx, tp[0], tp[1], Math.sin(tick * 0.2 + c))
     }
-    // windows' cold pools (additive cool keys, so fire-vs-moon is the room language)
-    for (const mp of moonPx) coolPool(ctx, mp[0], mp[1], Math.sin(tick * 0.04))
+    // windows' cold pools (additive cool keys, so fire-vs-moon is the room language),
+    // each window tinted by its own seeded sky. Under every window the moon lays a
+    // faint cool shaft down to the floor and a quantised cool band across the stone
+    // (coolBandAt), mirroring the warm bounce — so the shaft reads as light *cast*
+    // from the pane, not a bloom centred on it. Windows never sit in the HUD band,
+    // so the shaft is already clear of it.
+    for (const mp of moonPx) coolPool(ctx, mp[0], mp[1], Math.sin(tick * 0.04), mp[2] || 0)
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    const creach = Math.ceil(MOON_RADIUS * 0.7 / T)
+    for (const mp of moonPx) {
+        const tint = moonTint(mp[2] || 0)
+        const sg = ctx.createLinearGradient(0, mp[1], 0, fy)
+        sg.addColorStop(0, `rgba(${tint.r},${tint.g},${tint.b},${(0.10 * tint.s).toFixed(3)})`)
+        sg.addColorStop(1, `rgba(${Math.max(0, tint.r - 50)},${Math.max(0, tint.g - 50)},${Math.min(255, tint.b - 40)},0)`)
+        ctx.fillStyle = sg
+        ctx.fillRect(mp[0] - 14, mp[1], 28, fy - mp[1])
+        const mc = Math.round(mp[0] / T)
+        for (let k = -creach; k <= creach; k++) {
+            const c = mc + k
+            if (c < c0 || c >= c1) continue
+            const b = coolBandAt(c * T + T / 2, moonPx)
+            if (b <= 0.02) continue
+            ctx.fillStyle = `rgba(${tint.r},${tint.g},${tint.b},${(b * 0.09 * tint.s).toFixed(3)})`
+            ctx.fillRect(c * T + 1, fy - 5, T - 2, 10)
+            ctx.fillStyle = `rgba(${Math.min(255, tint.r + 40)},${Math.min(255, tint.g + 40)},255,${(b * 0.13 * tint.s).toFixed(3)})`
+            ctx.fillRect(c * T + 1, fy - 5, T - 2, 2)
+        }
+    }
+    ctx.restore()
     // how much light lands on a figure, from which side, and how warm that light
     // is (cold where only ambient reaches, amber under a sconce, cool at a window)
     const atLight = (x, y) => {
@@ -1352,7 +1436,7 @@ export function drawScene(ctx, g, opts = {}) {
                             : Math.floor(tick * 0.25)
         const pl = atLight(p.x, p.y)
         const opts = {
-            tick, skin: '#e0b898', cloth: '#e8e8f0', trim: '#c03028',
+            tick, skin: '#e0b898', cloth: '#e8e8f0', trim: '#c03028', pale: true,
             sword: g.sword && (p.atk > 0 || p.block || p.duelDrawn),
             sheath: g.sword && !(p.atk > 0 || p.block || p.duelDrawn),
             swing: p.atk, hurt: p.hurtT, die: dying ? p.dieT : 0,
