@@ -66,6 +66,15 @@ export default function MarioKart() {
         const gnd = new Uint32Array(ground.data.buffer)
         const sky = buildSky()
         const S = buildSprites()
+        // the grandstand band's crowd: a fixed 6-colour palette, addressed by
+        // world heading + depth so it scrolls with the stand (no Math.random).
+        const CROWD = [0xffe02020, 0xff2050e0, 0xfff8d800, 0xfff8f8f8, 0xff20a020, 0xffe05028]
+        const standPixel = (wx, dy) => {
+            if (dy === 0) return 0xffe8e8f0        // the roof top
+            if (dy === 1) return 0xffd82800        // the red roof trim
+            if ((wx % 10) === 9) return 0xff2a2a3a // a vertical support
+            return CROWD[(((wx * 7) + (dy * 13)) % 6 + 6) % 6]
+        }
         const frame = ctx.createImageData(W, PLAY_H)
         const px = new Uint32Array(frame.data.buffer)
         const g = makeGame()
@@ -141,7 +150,10 @@ export default function MarioKart() {
                 const row = (sr) | (sg << 8) | (sb << 16) | 0xff000000
                 let o = y * W
                 for (let x = 0; x < W; x++) {
-                    const mh = sky.mtn[(x + aN | 0) & 511]
+                    const wx = (x + aN | 0) & 511
+                    const sh = sky.stand[wx]
+                    if (sh > 0.5 && y >= HORIZON - sh) { px[o++] = standPixel(wx, y - (HORIZON - sh)); continue }
+                    const mh = sky.mtn[wx]
                     if (y > HORIZON - mh) {
                         px[o++] = y > HORIZON - mh + 5 ? 0xffa87868 : 0xff906050
                         continue
@@ -182,17 +194,20 @@ export default function MarioKart() {
             ctx.save()
             ctx.beginPath(); ctx.rect(0, 0, W, PLAY_H); ctx.clip()
             const items = []
-            for (const k of g.karts.slice(1)) items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color][((k.anim >> 2) + (k.row & 1)) & 1], w: KART.w, h: KART.h, o: k })
+            for (const k of g.karts.slice(1)) { const sf = k.steerVis < 0 ? 0 : k.steerVis > 0 ? 2 : 1; items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color][sf][(k.anim >> 2) & 1], w: KART.w, h: KART.h, o: k }) }
             // the ghost races in its own world and vanishes at its own
             // finish line — a finished phantom would freeze mid-track
             if (gGhost && !gGhost.end) {
                 const G = gGhost.karts[0]
-                items.push({ x: G.x, y: G.y, a: G.a, img: S.mario[0], w: KART.w, h: KART.h, o: G, ghost: true })
+                items.push({ x: G.x, y: G.y, a: G.a, img: S.mario[1][0], w: KART.w, h: KART.h, o: G, ghost: true })
             }
             for (const b of g.bananas) items.push({ x: b.x, y: b.y, a: 0, img: S.banana, w: 26, h: 20 })
             for (const s of g.shells) items.push({ x: s.x, y: s.y, a: s.a, img: S.shell, w: 30, h: 26 })
             for (const b of g.boxes) if (!b.taken) items.push({ x: b.x, y: b.y, a: 0, img: S.box, w: 40, h: 40, bob: true })
-            for (const sc of SCENERY) items.push({ x: sc.x, y: sc.y, a: 0, img: S[sc.kind === 'tree' ? 'tree' : 'stand'], w: sc.kind === 'tree' ? 70 : 110, h: sc.kind === 'tree' ? 96 : 74 })
+            // trees stay true road sprites at a believable size; the
+            // grandstands are no longer grass-standing cards but the far
+            // skyline in the parallax background band (raster).
+            for (const sc of SCENERY) if (sc.kind === 'tree') items.push({ x: sc.x, y: sc.y, a: 0, img: S.tree, w: 70, h: 96 })
             const s0 = T.pts[0]
             items.push({ x: s0.x + 120, y: s0.y - 25, a: 0, img: S.gantry, w: 120, h: 120 })
             for (const it of items) {
@@ -223,7 +238,9 @@ export default function MarioKart() {
             ctx.translate(W / 2, PLAY_H - 30 + bounce)
             ctx.rotate(tilt)
             ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-PW * 0.42, PBOT - 4, PW * 0.84, 7)
-            ctx.drawImage(S.mario[P.v > 0.4 ? ((P.anim >> 2) & 1) : 0], -PW / 2, PBOT - PH, PW, PH)
+            const sf = P.steerVis < 0 ? 0 : P.steerVis > 0 ? 2 : 1
+            const rf = P.v > 0.4 ? (P.anim >> 2) & 1 : 0
+            ctx.drawImage(S.mario[sf][rf], -PW / 2, PBOT - PH, PW, PH)
             if (P.boostT > 0) {
                 ctx.fillStyle = (g.tick >> 1) % 2 ? '#f8d800' : '#f85800'
                 ctx.fillRect(-PW * 0.3, PBOT - 8, 12, 10 + (g.tick % 6)); ctx.fillRect(PW * 0.3 - 12, PBOT - 8, 12, 10 + ((g.tick + 3) % 6))

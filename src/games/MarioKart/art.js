@@ -42,13 +42,17 @@ export const SNES = {
     // the kart's own structure
     wheel:     '#141418',
     wheelHub:  '#9a9aa2',
+    bumper:    '#2a2a34',   // the rear bumper
+    exhaust:   '#20202a',   // exhaust pipes + the steering wheel
     outline:   '#101018',
+    skin:      '#f0c090',   // the driver's face and hands
 }
 
-// The kart's aspect contract: WIDER than tall, two animation frames. The
-// player and every CPU use the same sprite bank, so "wider than tall" is one
-// number, and the harness pins it.
-export const KART = { w: 76, h: 54, frames: 2 }
+// The kart's aspect contract: WIDER than tall. The sprite bank is
+// [steering pose][rev frame] — three steering poses (left / straight /
+// right) each with a two-frame rev cycle, so "wider than tall" and "it
+// animates" are both one number the harness can pin.
+export const KART = { w: 76, h: 54, frames: 3 }
 
 const SPR = new Map()
 function sprite(key, w, h, draw) {
@@ -149,11 +153,9 @@ export function buildGround() {
     }
     x.restore()
 
-    // the grandstand: a fixed block on the inside of the start straight
-    x.fillStyle = SNES.barrier; x.fillRect(1040, 1060, 260, 130)
-    x.fillStyle = SNES.outline; x.fillRect(1040, 1060, 260, 26)
-    x.fillStyle = SNES.kerbRed
-    for (let i = 0; i < 6; i++) x.fillRect(1052 + i * 42, 1108, 24, 44)
+    // the grandstands no longer stand on the grass as flat cards — they live
+    // in the parallax background band (buildSky.stand), where the far scenery
+    // belongs. The ground texture is road / kerb / barrier / grass only now.
     return x.getImageData(0, 0, TX, TY)
 }
 
@@ -169,51 +171,117 @@ export function buildSky() {
         const v = Math.sin(xx * 0.10 + y * 0.04) + Math.sin(xx * 0.047 - y * 0.11 + 2) + Math.sin(xx * 0.021 + y * 0.18)
         cloud[y * 256 + xx] = y >= 6 && y <= 52 && v > 1.0 ? 1 : 0
     }
-    return { mtn, cloud }
+    // the grandstand skyline: a few far stands rising from the horizon line,
+    // parallax with the camera heading (sampled in index.jsx against the same
+    // aN as the hills). Kept SHORTER than the mtn band (hills reach ~56px,
+    // stands reach ~20px) so the hills read behind them — the SNES look where
+    // the far scenery is a background band, not cards on the grass.
+    const stand = new Float32Array(512)
+    const block = (c0, c1, h) => {
+        for (let i = c0; i < c1; i++) {
+            const f = (i - c0) / (c1 - c0)
+            const ramp = Math.max(0, Math.min(1, Math.min(f, 1 - f) * 8))
+            stand[i] = Math.max(stand[i], h * ramp)
+        }
+    }
+    block(8, 96, 21)      // home stand, tallest and widest
+    block(182, 250, 15)   // the far corner
+    block(356, 434, 18)   // the back straight
+    return { mtn, cloud, stand }
 }
 
-// ---- the kart: wider than tall, round wheels, a helmeted driver, a dark
-// outline, and a two-frame running cycle (the rev frame hops the body while
-// the wheels sink). col = chassis, helmet = the cap. ----
-function kartSprite(col, helmet) {
+// ---- the kart: a rear view of a proper car and a proper driver. The
+// chassis has a nose (front fender), a rear bumper and twin exhaust; the
+// driver is a figure — coloured suit, arms on a steering wheel, a cap over a
+// face — not a helmet ball. Three steering poses (the nose and the driver's
+// hands work the wheel) cross a two-frame rev cycle (the body hops, the
+// wheels sink, the exhaust pops). col = chassis, helmet = the cap, suit =
+// the driver's overalls. ----
+function kartSprite(col, helmet, suit) {
     const dark = SNES.outline
-    const mk = (frame) => {
-        const bob = frame ? -2 : 0
-        const sink = frame ? 2 : 0
-        return sprite(`mkart-${col}-${helmet}-${frame}`, KART.w, KART.h, (g) => {
-            // two round wheels, dark with a hub — they sink on the rev frame
-            const wy = 41 + sink
+    const skin = SNES.skin
+    const mk = (steer, rev) => {
+        const so = steer * 3        // nose + the driver's hands shift with the steer
+        const bob = rev ? -1 : 0    // the body hops on the rev frame
+        const sink = rev ? 1 : 0    // the wheels sink a touch
+        return sprite(`mkart-${col}-${helmet}-${suit}-${steer}-${rev}`, KART.w, KART.h, (g) => {
+            // the front (far) wheels peek over the top, shifted with the steer
+            const fwy = 25 + bob
+            for (const fx of [28 + so * 0.5, 48 - so * 0.5]) {
+                g.fillStyle = SNES.wheel
+                g.beginPath(); g.arc(fx, fwy, 5, 0, Math.PI * 2); g.fill()
+                g.fillStyle = SNES.wheelHub; g.beginPath(); g.arc(fx, fwy, 2, 0, Math.PI * 2); g.fill()
+            }
+            // the nose / front fender: the far end of the kart, lighter, at the
+            // top — shifted with the steer so a turn reads
+            g.fillStyle = shade(col, 1.22)
+            roundRect(g, 28 + so * 0.5, 22 + bob, 20, 9, 3); g.fill()
+            g.strokeStyle = dark; g.lineWidth = 1.5; roundRect(g, 28 + so * 0.5, 22 + bob, 20, 9, 3); g.stroke()
+            // the rear (near) wheels: big, dark, at the sides, with a hub
+            const wy = 43 + sink
             for (const wx of [15, 61]) {
                 g.fillStyle = SNES.wheel
                 g.beginPath(); g.arc(wx, wy, 11, 0, Math.PI * 2); g.fill()
                 g.strokeStyle = dark; g.lineWidth = 2; g.beginPath(); g.arc(wx, wy, 11, 0, Math.PI * 2); g.stroke()
                 g.fillStyle = SNES.wheelHub; g.beginPath(); g.arc(wx, wy, 4.5, 0, Math.PI * 2); g.fill()
             }
-            // a wide, rounded chassis in the kart colour, dark-outlined
+            // the wide body in the kart colour, dark-outlined
             g.fillStyle = col
-            roundRect(g, 20, 24 + bob, 36, 22, 5); g.fill()
-            g.strokeStyle = dark; g.lineWidth = 2; roundRect(g, 20, 24 + bob, 36, 22, 5); g.stroke()
-            g.fillStyle = shade(col, 0.62); g.fillRect(24, 40 + bob, 28, 5)   // engine / rear
-            // the driver: shoulders up to a rounded, dark-outlined helmet
-            g.fillStyle = col; roundRect(g, 31, 14 + bob, 14, 12, 4); g.fill()
+            roundRect(g, 18, 26 + bob, 40, 19, 5); g.fill()
+            g.strokeStyle = dark; g.lineWidth = 2; roundRect(g, 18, 26 + bob, 40, 19, 5); g.stroke()
+            // the worn engine fairing along the rear
+            g.fillStyle = shade(col, 0.6); g.fillRect(22, 40 + bob, 32, 5)
+            // the rear bumper, then the twin exhaust pipes
+            g.fillStyle = SNES.bumper; roundRect(g, 22, 44 + bob, 32, 5, 2); g.fill()
+            g.fillStyle = shade(SNES.bumper, 1.6); g.fillRect(24, 44 + bob, 28, 1.5)
+            for (const ex of [30, 46]) {
+                g.fillStyle = SNES.exhaust; g.beginPath(); g.arc(ex, 48 + bob, 2.2, 0, Math.PI * 2); g.fill()
+            }
+            if (rev) {  // the rev frame pops a little exhaust
+                g.fillStyle = '#f8d800'; g.fillRect(29, 50 + bob, 2, 3); g.fillRect(45, 50 + bob, 2, 3)
+            }
+            // the driver's torso in the coloured suit
+            g.fillStyle = suit
+            roundRect(g, 30, 17 + bob, 16, 14, 4); g.fill()
+            g.strokeStyle = dark; g.lineWidth = 1.5; roundRect(g, 30, 17 + bob, 16, 14, 4); g.stroke()
+            // the steering wheel, in front of the driver, works with the steer
+            g.strokeStyle = SNES.exhaust; g.lineWidth = 2
+            g.beginPath(); g.arc(38 + so * 0.5, 27 + bob, 4, 0, Math.PI * 2); g.stroke()
+            g.fillStyle = SNES.exhaust; g.beginPath(); g.arc(38 + so * 0.5, 27 + bob, 1.3, 0, Math.PI * 2); g.fill()
+            // the arms: from each shoulder to a hand on the rim — both shift
+            const handL = 32 + so, handR = 44 + so, handY = 27 + bob
+            g.strokeStyle = suit; g.lineWidth = 3
+            g.beginPath(); g.moveTo(33, 20 + bob); g.lineTo(handL, handY); g.stroke()
+            g.beginPath(); g.moveTo(43, 20 + bob); g.lineTo(handR, handY); g.stroke()
+            g.fillStyle = skin
+            g.beginPath(); g.arc(handL, handY, 1.8, 0, Math.PI * 2); g.fill()
+            g.beginPath(); g.arc(handR, handY, 1.8, 0, Math.PI * 2); g.fill()
+            // the head: a face (skin) under a coloured cap
+            g.fillStyle = skin
+            g.beginPath(); g.arc(38, 12 + bob, 7, 0, Math.PI * 2); g.fill()
             g.fillStyle = helmet
-            g.beginPath(); g.arc(38, 12 + bob, 9, 0, Math.PI * 2); g.fill()
-            g.strokeStyle = dark; g.lineWidth = 2; g.beginPath(); g.arc(38, 12 + bob, 9, 0, Math.PI * 2); g.stroke()
-            g.fillStyle = shade(helmet, 0.45); g.fillRect(31, 11 + bob, 14, 3)  // visor band
-            g.fillStyle = shade(helmet, 1.5); g.fillRect(33, 5 + bob, 6, 2)      // cap highlight
+            g.beginPath(); g.arc(38, 10 + bob, 7, Math.PI, 0); g.closePath(); g.fill()
+            g.fillStyle = shade(helmet, 0.8); g.fillRect(31, 10 + bob, 14, 2.5)  // the brim band
+            g.fillStyle = shade(helmet, 1.5); g.fillRect(36, 4 + bob, 5, 2)      // the cap top
+            g.fillStyle = shade(helmet, 0.7); g.beginPath(); g.arc(38, 5 + bob, 1.3, 0, Math.PI * 2); g.fill()
+            g.strokeStyle = dark; g.lineWidth = 2; g.beginPath(); g.arc(38, 11 + bob, 7, 0, Math.PI * 2); g.stroke()
         })
     }
-    return [mk(0), mk(1)]
+    return [
+        [mk(-1, 0), mk(-1, 1)],   // steering left
+        [mk(0, 0), mk(0, 1)],     // straight
+        [mk(1, 0), mk(1, 1)],     // steering right
+    ]
 }
 
 // ---- the full sprite bank ----
 export function buildSprites() {
     return {
-        mario:  kartSprite('#e02020', '#e02020'),
-        daisy:  kartSprite('#f8b800', '#f878b8'),
-        yoshi:  kartSprite('#20b020', '#e05028'),
-        peach:  kartSprite('#f878b8', '#f8d8f8'),
-        bowser: kartSprite('#58a818', '#d89000'),
+        mario:  kartSprite('#e02020', '#e02020', '#2858e0'),
+        daisy:  kartSprite('#f8b800', '#f878b8', '#f8f8f8'),
+        yoshi:  kartSprite('#20b020', '#e05028', '#f8e8c8'),
+        peach:  kartSprite('#f878b8', '#f8d8f8', '#f8d8f8'),
+        bowser: kartSprite('#58a818', '#d89000', '#702808'),
         banana: sprite('banana', 26, 20, (x) => {
             x.fillStyle = '#f8d800'
             x.beginPath(); x.ellipse(13, 12, 11, 6, -0.4, 0, 7); x.fill()
@@ -238,15 +306,6 @@ export function buildSprites() {
             x.fillStyle = SNES.trunk; x.fillRect(30, 58, 10, 38)
             x.fillStyle = SNES.leaf; x.beginPath(); x.arc(35, 40, 26, 0, 7); x.fill()
             x.fillStyle = SNES.leafLight; x.beginPath(); x.arc(27, 32, 16, 0, 7); x.arc(45, 36, 14, 0, 7); x.fill()
-        }),
-        stand: sprite('stand', 110, 74, (x) => {
-            x.fillStyle = '#585868'; x.fillRect(4, 20, 102, 54)
-            x.fillStyle = '#303040'; x.fillRect(4, 20, 102, 8)
-            for (let r = 0; r < 3; r++) for (let c2 = 0; c2 < 12; c2++) {
-                x.fillStyle = ['#e02020', '#2050e0', '#f8d800', '#f8f8f8', '#20a020'][(r * 7 + c2 * 3) % 5]
-                x.fillRect(8 + c2 * 8, 32 + r * 14, 5, 8)
-            }
-            x.fillStyle = SNES.kerbRed; x.fillRect(4, 8, 102, 10)
         }),
         gantry: sprite('gantry', 120, 120, (x) => {
             x.fillStyle = '#e8e8e8'; x.fillRect(6, 10, 12, 110); x.fillRect(102, 10, 12, 110)
