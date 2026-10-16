@@ -60,6 +60,17 @@
 //     touch the sea, sails Coast/Ocean only, and raids coastal cities and
 //     ships; adjacent land units can board it. City-states can be taken by
 //     siege — the sack pays tribute, allies lose the pension.
+//   - Stage 8 closes the circle with LATER ERAS and REAL VICTORIES. Nine techs
+//     carry the lab from the RENAISSANCE (Education, Banking, Gunpowder) through
+//     the INDUSTRIAL age (Steam Power, Astronomy, Railroad) into the MODERN
+//     (Industrialization, Electricity, Spaceflight), each with real era effects.
+//     Three victories end the game: DOMINATION (every rival capital), SCIENCE
+//     (Spaceflight unlocks THE ARK — every beaker after it banks toward launch)
+//     and CULTURE (lifetime culture past the threshold, strictly ahead of every
+//     living rival). The arcade milestone (capital size N) remains as the
+//     golden-age win. The Musket (Gunpowder) and the Galleon (Astronomy — the
+//     age of sail storms ports, unlike the Trireme) answer the new era. A rival
+//     completing any of the three first loses the world the other way.
 
 export const CFG = {
     W: 40, H: 25,
@@ -91,6 +102,7 @@ export const CFG = {
     stoneCult: 2, librarySci: 2, gardenFood: 1, colossusGold: 1, wallDefMult: 1.5,   // wonder effects
     csGift: 25, csInfl: 30, csAlly: 60, csTribute: 40,    // city-state courts: gift cost, influence per gift, alliance threshold, sack tribute
     tradeGold: 3, peaceCool: 3,                             // gold per signed trade pact per turn; turns peace must hold before trade
+    arkScience: 70, cultureWin: 350,       // Stage 8 victories: beakers banked into the Ark after Spaceflight; lifetime culture that must lead every rival
 }
 
 export const UNIT = {
@@ -105,13 +117,19 @@ export const UNIT = {
     LEGION: { str: 12, moves: 2, sight: 2, range: 1, cost: 38, tech: 'BRONZE_WORKING', res: 'IRON' },
     // Stage 7: the Trireme — Bronze Working; a ship of the coastal waters.
     GALLEY: { str: 10, moves: 3, sight: 3, range: 1, cost: 30, tech: 'BRONZE_WORKING', naval: true },
+    // Stage 8: the age of gunpowder and sail. The Musket is the line infantry
+    // of the new era; the Galleon is the first ship bold enough to storm ports.
+    MUSKET: { str: 15, moves: 2, sight: 2, range: 1, cost: 45, tech: 'GUNPOWDER' },
+    GALLEON: { str: 14, moves: 4, sight: 3, range: 1, cost: 48, tech: 'ASTRONOMY', naval: true, ports: true },
 }
 
-// ---- the tech tree (Stage 3) ---------------------------------------------------
-// 12 real Civ V techs, real prerequisite edges, three eras. Costs rise by era
-// so a frontier town tastes Ancient techs by ~turn 10 and Classical by ~20.
+// ---- the tech tree (Stage 3, grown through Stage 8) ----------------------------
+// Real Civ V techs with real prerequisite edges across six eras. Costs rise by
+// era but stay tuned to this arcade's 40-turn clock: the science path from
+// Pottery to Spaceflight plus the Ark's beakers is provably bankable by turn
+// ~38 (civcheck §32), where the original would need centuries.
 // `effect` is prose for the UI; the mechanic lives where it is applied
-// (growth need, cityYield, doAttack, spawnUnit, applyLearn, resolveCiv).
+// (growth need, cityYield, doAttack, spawnUnit, applyLearn, resolveCiv, checkEnd).
 export const TECH = {
     POTTERY: { name: 'Pottery', era: 0, cost: 24, prereq: [], effect: 'Granaries: -2 food per new citizen' },
     AGRICULTURE: { name: 'Agriculture', era: 0, cost: 24, prereq: [], effect: '+1 food on worked grassland' },
@@ -125,9 +143,19 @@ export const TECH = {
     PHILOSOPHY: { name: 'Philosophy', era: 1, cost: 90, prereq: ['WRITING'], effect: '+1 culture in every city' },
     ENGINEERING: { name: 'Engineering', era: 1, cost: 100, prereq: ['THE_WHEEL', 'MASONRY'], effect: 'unlocks the Catapult (x2 vs cities)' },
     MATHEMATICS: { name: 'Mathematics', era: 2, cost: 150, prereq: ['PHILOSOPHY', 'ENGINEERING'], effect: '+4 city bombardment' },
+    // Stage 8 — Renaissance, Industrial, Modern
+    EDUCATION: { name: 'Education', era: 3, cost: 25, prereq: ['WRITING'], effect: '+2 science in every city' },
+    BANKING: { name: 'Banking', era: 3, cost: 35, prereq: ['CURRENCY'], effect: '+2 gold in every city' },
+    GUNPOWDER: { name: 'Gunpowder', era: 3, cost: 45, prereq: ['PHILOSOPHY'], effect: 'unlocks the Musket' },
+    STEAM_POWER: { name: 'Steam Power', era: 4, cost: 40, prereq: ['EDUCATION'], effect: '+2 production in every city' },
+    ASTRONOMY: { name: 'Astronomy', era: 4, cost: 35, prereq: ['EDUCATION'], effect: 'unlocks the Galleon — the age of sail storms ports' },
+    RAILROAD: { name: 'Railroad', era: 4, cost: 50, prereq: ['STEAM_POWER', 'THE_WHEEL'], effect: 'roads are free to move on' },
+    INDUSTRIALIZATION: { name: 'Industrialization', era: 5, cost: 45, prereq: ['STEAM_POWER'], effect: '+3 production in every city' },
+    ELECTRICITY: { name: 'Electricity', era: 5, cost: 50, prereq: ['INDUSTRIALIZATION'], effect: '+2 science +1 gold in every city' },
+    SPACEFLIGHT: { name: 'Spaceflight', era: 5, cost: 55, prereq: ['ELECTRICITY', 'ASTRONOMY'], effect: 'unlocks THE ARK — bank 70 science to launch' },
 }
 export const TECH_IDS = Object.keys(TECH)
-export const ERAS = ['ANCIENT', 'CLASSICAL', 'MEDIEVAL']
+export const ERAS = ['ANCIENT', 'CLASSICAL', 'MEDIEVAL', 'RENAISSANCE', 'INDUSTRIAL', 'MODERN']
 
 export const T = { OCEAN: 0, COAST: 1, GRASS: 2, PLAINS: 3, DESERT: 4, HILLS: 5, MOUNTAIN: 6 }
 // ---- the world beyond the border (Stage 7) --------------------------------------
@@ -475,7 +503,8 @@ export function resRevealed(gs, civ, i) {
 }
 export function roadCost(gs, u, c, r) {
     const tl = tileAt(gs, c, r)
-    return tl && tl.road ? 0.5 : 1
+    if (!tl || !tl.road) return 1
+    return hasTech(gs, u.civ, 'RAILROAD') ? 0 : 0.5   // Stage 8: the rail age travels free
 }
 export function queueDeny(gs, civ, kind) {
     const st = UNIT[kind]
@@ -762,13 +791,14 @@ export function newGame(seed = 1, scenario = 0) {
         seed: seed + scenario * 977, scenario, tick: 0, turn: 1, phase: 'player',
         tiles: [], units: [], cities: [], camps: [], wars: {},
         fog: [], explored: [], visible: [],
-        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, happyNet: 0, alive: true })),
+        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, cultureEarned: 0, happyNet: 0, alive: true })),
         tech: CIVS.map(() => ({ known: {}, research: null, prog: 0 })),
         policies: CIVS.map(() => ({})),
         resKnown: CIVS.map(() => ({})),
         wonders: {},
         cs: CIVS.map(() => ({})),
         trade: {}, peaceTurn: {},
+        ark: CIVS.map(() => 0),
         gp: CIVS.map(() => ({ pts: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, held: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, ready: { ENGINEER: false, SCIENTIST: false, MERCHANT: false }, bought: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 } })),
         capitalOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
@@ -952,6 +982,12 @@ export function cityYield(gs, city) {
     if (hasTech(gs, city.civ, 'CURRENCY')) out.g += 2        // markets
     if (hasTech(gs, city.civ, 'WRITING')) out.sci += 1      // scribes
     if (hasTech(gs, city.civ, 'PHILOSOPHY')) out.cult += 1  // academies
+    // Stage 8: the engines of the later eras
+    if (hasTech(gs, city.civ, 'EDUCATION')) out.sci += 2         // schools
+    if (hasTech(gs, city.civ, 'BANKING')) out.g += 2             // banks
+    if (hasTech(gs, city.civ, 'STEAM_POWER')) out.p += 2         // mills
+    if (hasTech(gs, city.civ, 'INDUSTRIALIZATION')) out.p += 3   // factories
+    if (hasTech(gs, city.civ, 'ELECTRICITY')) { out.sci += 2; out.g += 1 }   // the grid lights the labs and the till
     // Stage 5 policy modifiers
     if (hasPolicy(gs, city.civ, 'FOUNDATIONS')) out.cult += 3
     if (hasPolicy(gs, city.civ, 'COLLEGE')) out.sci += 1
@@ -1124,7 +1160,7 @@ export function doAttack(gs, u, tc, tr) {
     }
     const cityI = tl.city
     if (cityI >= 0 && gs.cities[cityI].alive && atWar(gs, u.civ, gs.cities[cityI].civ)) {
-        if (u.naval) return false    // ancient ships do not storm ports — that is the age of sail
+        if (u.naval && !(UNIT[u.kind] && UNIT[u.kind].ports)) return false   // the Trireme hovers; the age of sail storms ports
         const city = gs.cities[cityI]
         const wallMax = city.wallMax || CFG.cityHp
         let strikes = 0
@@ -1211,12 +1247,19 @@ function stepTowardSea(gs, u, tgt) {
     return best
 }
 function navalTarget(gs, civ, u) {
-    // a Trireme's prey is other ships — hunt enemy vessels across the sea
+    // a ship's prey is other ships; Stage 8 galleons also hunt ports from the sea
     let best = null, bd = 9
     for (const x of gs.units) {
         if (!x.alive || !x.naval || !atWar(gs, civ, x.civ)) continue
         const d = hexDist([u.c, u.r], [x.c, x.r])
         if (d < bd) { bd = d; best = [x.c, x.r] }
+    }
+    if (UNIT[u.kind] && UNIT[u.kind].ports) {
+        for (const ct of gs.cities) {
+            if (!ct.alive || !atWar(gs, civ, ct.civ)) continue
+            const d = hexDist([u.c, u.r], [ct.c, ct.r])
+            if (d >= 1 && d * 1.4 < bd) { bd = d * 1.4; best = [ct.c, ct.r] }
+        }
     }
     return best
 }
@@ -1398,18 +1441,55 @@ function resolveCiv(gs, civ) {
             R.research = null
         }
     }
+    // Stage 8: lifetime culture outlives every policy purchase — it is the
+    // ledger the culture victory reads, and it never gets spent.
+    C.cultureEarned = (C.cultureEarned || 0) + cult
+    // Stage 8: after Spaceflight, every beaker pours into THE ARK.
+    if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] < CFG.arkScience) {
+        gs.ark[civ] = Math.min(CFG.arkScience, gs.ark[civ] + sci)
+        gs.events.push({ type: 'ark', civ, prog: gs.ark[civ], need: CFG.arkScience })
+        if (gs.ark[civ] >= CFG.arkScience) gs.events.push({ type: 'arkLaunch', civ })
+    }
+    const eraNow = highestEra(gs, civ)
+    if (eraNow > (C.era == null ? -1 : C.era)) { C.era = eraNow; if (eraNow >= 1) gs.events.push({ type: 'era', civ, era: eraNow }) }
     spreadBorders(gs, civ)
     gs.events.push({ type: 'turnEnd', civ, gold, sci, cult, prod, fSur })
 }
 
-function checkEnd(gs) {
-    if (gs.civs[0].alive && gs.civs.every((c) => c.barb || c.cs || c.player || !c.alive)) {
-        gs.end = 'win'; gs.endWhy = 'Domination — every rival capital flies your colours'; return
+function highestEra(gs, civ) {
+    let e = -1
+    const K = gs.tech[civ].known
+    for (const id of TECH_IDS) if (K[id] && TECH[id].era > e) e = TECH[id].era
+    return e
+}
+
+// Stage 8: the three real victories, judged for any major. DOMINATION first
+// (the pen and the sword), then SCIENCE (the Ark), then CULTURE (lifetime
+// culture past the threshold, strictly ahead of every living rival). Rome's
+// arcade milestone (golden age) stays behind them; a rival achieving any of
+// the three first ends the game the other way.
+function victoryFor(gs, civ) {
+    if (!gs.civs[civ].alive) return null
+    if (gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive)) return 'Domination — every rival capital flies your colours'
+    if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkScience) return 'Science — the Ark leaves the ground; the future is yours'
+    const mine = gs.civs[civ].cultureEarned || 0
+    if (mine >= CFG.cultureWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.cultureEarned || 0) < mine)) {
+        return 'Culture — the world remembers your name above all others'
     }
+    return null
+}
+
+function checkEnd(gs) {
+    const mine = victoryFor(gs, 0)
+    if (mine) { gs.end = 'win'; gs.endWhy = mine; return }
     const cap = gs.capitalOf[0] != null ? gs.cities[gs.capitalOf[0]] : null
     if (cap && cap.alive && cap.civ === 0 && cap.size >= CFG.capitalSizeToWin) { gs.end = 'win'; gs.endWhy = `${cap.name} reached size ${cap.size}`; return }
+    for (const c of [1, 2, 3]) {
+        const rv = victoryFor(gs, c)
+        if (rv) { gs.end = 'lose'; gs.endWhy = `${CIVS[c].name} won by ${rv.split('—')[0].trim().toLowerCase()} first`; return }
+    }
     if (!gs.civs[0].alive || (gs.capitalOf[0] != null && gs.cities[gs.capitalOf[0]].civ !== 0)) { gs.end = 'lose'; gs.endWhy = 'your capital has fallen'; return }
-    if (gs.turn > CFG.turnLimit) { gs.end = 'lose'; gs.endWhy = `turn limit ${CFG.turnLimit} passed before size ${CFG.capitalSizeToWin}` }
+    if (gs.turn > CFG.turnLimit) { gs.end = 'lose'; gs.endWhy = `turn limit ${CFG.turnLimit} passed with no victory` }
 }
 
 function pillageAt(gs, tl) {
@@ -1447,6 +1527,10 @@ function findTarget(gs, civ, u, radius) {
 }
 
 const AI_TECH_ORDER = ['ARCHERY', 'BRONZE_WORKING', 'THE_WHEEL', 'POTTERY', 'AGRICULTURE', 'MASONRY', 'CURRENCY', 'WRITING', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
+// Stage 8: the later eras on the rack. Rivals walk the old road first (their
+// rotation and early choices are untouched); once the medieval shelf is full
+// they climb toward the Ark on a fixed line — a real, if slow, race.
+const AI_TECH_ORDER_LATE = ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']
 
 function aiTurn(gs, civ) {
     const C = gs.civs[civ]
@@ -1555,14 +1639,17 @@ function aiTurn(gs, civ) {
             const id = AI_TECH_ORDER[(rot + k) % AI_TECH_ORDER.length]
             if (av.includes(id)) { setResearch(gs, civ, id); break }
         }
+        if (!R.research) for (const id of AI_TECH_ORDER_LATE) if (av.includes(id)) { setResearch(gs, civ, id); break }
     }
     for (const city of gs.cities) {
         if (city.civ !== civ || !city.alive) continue
         city.queue = city.queue || []
         if (city.queue.length >= 3) continue
-        // Stage 7: coastal cities lay a keel — wartime fleets, peace patrols
-        if (!city.queue.includes('GALLEY') && canQueue(gs, civ, 'GALLEY') === true && coastalTile(gs, city.c, city.r)
-            && hash2(city.id, gs.turn, civ ^ 41) < (warring ? 0.4 : 0.15)) { city.queue.push('GALLEY'); continue }
+        // Stage 7: coastal cities lay a keel — wartime fleets, peace patrols.
+        // Stage 8: once Astronomy is in, the yard prefers the port-storming Galleon.
+        const ship = canQueue(gs, civ, 'GALLEON') === true && hash2(city.id, gs.turn, civ ^ 43) < 0.5 ? 'GALLEON' : 'GALLEY'
+        if (!city.queue.includes(ship) && canQueue(gs, civ, ship) === true && coastalTile(gs, city.c, city.r)
+            && hash2(city.id, gs.turn, civ ^ 41) < (warring ? 0.4 : 0.15)) { city.queue.push(ship); continue }
         // Stage 6: every rival is in the race — one wonder at a time, per city
         if (!city.queue.some((k) => WONDER[k]) && !WONDER_IDS.some((id) => gs.wonders[id] === civ)) {
             const pick = WONDER_IDS.filter((id) => canBuildWonder(gs, civ, id) === true)
@@ -1573,7 +1660,8 @@ function aiTurn(gs, civ) {
         if (wantSettler && !city.queue.includes('SETTLER')) city.queue.push('SETTLER')
         else if (workers < 2 && hash2(city.id, gs.turn, civ ^ 3) < 0.5) city.queue.push('WORKER')
         else if (warring && city.queue.filter((k) => k !== 'SETTLER' && k !== 'WORKER').length < 2) {
-            if (canQueue(gs, civ, 'CATAPULT') && hash2(city.id, gs.turn, civ ^ 11) < 0.3) city.queue.push('CATAPULT')
+            if (canQueue(gs, civ, 'MUSKET') && hash2(city.id, gs.turn, civ ^ 53) < 0.5) city.queue.push('MUSKET')
+            else if (canQueue(gs, civ, 'CATAPULT') && hash2(city.id, gs.turn, civ ^ 11) < 0.3) city.queue.push('CATAPULT')
             else if (canQueue(gs, civ, 'LEGION') && hash2(city.id, gs.turn, civ ^ 17) < 0.35) city.queue.push('LEGION')
             else if (canQueue(gs, civ, 'CHARIOT') && hash2(city.id, gs.turn, civ ^ 23) < 0.35) city.queue.push('CHARIOT')
             else if (canQueue(gs, civ, 'ARCHER') && hash2(city.id, gs.turn, civ) < 0.5) city.queue.push('ARCHER')
@@ -1690,9 +1778,9 @@ export function step(gs, input = {}) {
 }
 
 export function stateHash(gs) {
-    const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4, WORKER: 5, CHARIOT: 6, LEGION: 7, GALLEY: 8 }
+    const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4, WORKER: 5, CHARIOT: 6, LEGION: 7, GALLEY: 8, MUSKET: 9, GALLEON: 10 }
     let h = gs.turn * 31 + gs.units.length
-    for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 9) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19) | 0
+    for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 99) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19) | 0
     for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71 + (ct.culture || 0) * 13) | 0
     for (const cp of gs.camps) h = (h * 33 + cp.c + cp.r * 13 + (cp.alive ? 1 : 0) * 173) | 0
     let L = 0
@@ -1717,6 +1805,7 @@ export function stateHash(gs) {
         const G = gs.gp[civ]
         h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3 + rm * 29 + pm * 17 + (gs.civs[civ].culture | 0)) | 0
         h = (h * 33 + (Math.floor(G.pts.ENGINEER) + Math.floor(G.pts.SCIENTIST) * 7 + Math.floor(G.pts.MERCHANT) * 11 + G.held.ENGINEER * 17 + G.held.SCIENTIST * 19 + G.held.MERCHANT * 23)) | 0
+        h = (h * 33 + Math.floor(gs.ark[civ]) * 41 + ((gs.civs[civ].cultureEarned || 0) | 0) * 23) | 0
     }
     return (h >>> 0).toString(16)
 }

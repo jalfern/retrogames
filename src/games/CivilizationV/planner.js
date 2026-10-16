@@ -17,8 +17,12 @@ const SITE = (tl) => (tl.terr === T.GRASS ? 3 : tl.terr === T.PLAINS ? 2 : 0)
 
 // research path the witness steers the player down: Stage 4 puts the land to
 // work first (Pottery → farms, The Wheel → roads), then the arms. Issued only
-// when research is idle (just learned).
-const RESEARCH_ORDER = ['POTTERY', 'THE_WHEEL', 'ARCHERY', 'MASONRY', 'BRONZE_WORKING', 'AGRICULTURE', 'WRITING', 'CURRENCY', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
+// when research is idle (just learned). Stage 8 appends the later eras at the
+// tail — the old line keeps its exact order so every proven witness run replays
+// unchanged; a science-race harness (civcheck §32) re-prioritises this very
+// array to drive the Ark home.
+export const RESEARCH_ORDER = ['POTTERY', 'THE_WHEEL', 'ARCHERY', 'MASONRY', 'BRONZE_WORKING', 'AGRICULTURE', 'WRITING', 'CURRENCY', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS',
+    'EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']
 
 // Stage 5: culture buys government too — the witness lines up Tradition first
 // (borders + luxury joy), then Liberty's colonial push, then Commerce.

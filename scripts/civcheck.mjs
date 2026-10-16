@@ -3,7 +3,7 @@
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
 import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked } from '../src/games/CivilizationV/sim.js'
-import { decide, plan } from '../src/games/CivilizationV/planner.js'
+import { decide, plan, RESEARCH_ORDER } from '../src/games/CivilizationV/planner.js'
 
 let pass = 0, fail = 0
 const ok = (cond, name) => { if (cond) { pass++ } else { fail++; console.error('  ✗ ' + name) } }
@@ -157,11 +157,17 @@ console.log('8. winnable (autopilot reaches the Stage-1 milestone)')
 console.log('9. loss branch (turn limit)')
 {
     const saved = CFG.capitalSizeToWin
+    const savedCW = CFG.cultureWin
+    const savedArk = CFG.arkScience
     CFG.capitalSizeToWin = 99
+    CFG.cultureWin = 1e9        // isolate the clock: the Stage-8 alternatives are §33's job
+    CFG.arkScience = 1e9
     const r = plan(0, 1)
     eq(r.end, 'lose', 'unreachable goal => the turn-limit loss fires')
     eq(r.turns, CFG.turnLimit + 1, 'loss at turn limit + 1')
     CFG.capitalSizeToWin = saved
+    CFG.cultureWin = savedCW
+    CFG.arkScience = savedArk
 }
 
 // ---- 10. slack analogue: the win survives a slightly worse capital site ----
@@ -349,27 +355,38 @@ console.log('15. production + healing')
 // ---- 16. tech tree data: real names, real prereqs, era costs ----
 console.log('16. tech tree data')
 {
-    eq(TECH_IDS.length, 12, 'twelve techs on the tree')
-    const canon = ['Pottery', 'Agriculture', 'Archery', 'Bronze Working', 'Writing', 'Currency', 'Horseback Riding', 'Philosophy', 'Engineering', 'Mathematics', 'The Wheel', 'Masonry']
+    eq(TECH_IDS.length, 21, 'twenty-one techs on the tree (Stage 8 grows it to the modern age)')
+    const canon = ['Pottery', 'Agriculture', 'Archery', 'Bronze Working', 'Writing', 'Currency', 'Horseback Riding', 'Philosophy', 'Engineering', 'Mathematics', 'The Wheel', 'Masonry',
+        'Education', 'Banking', 'Gunpowder', 'Steam Power', 'Astronomy', 'Railroad', 'Industrialization', 'Electricity', 'Spaceflight']
     ok(canon.every((n) => TECH_IDS.some((id) => TECH[id].name === n)), 'tech names are Civ V techs')
     ok(TECH_IDS.every((id) => TECH[id].effect && TECH[id].effect.length > 4), 'every tech describes its unlock')
+    eq(ERAS.length, 6, 'six eras: ancient to modern')
     let dirty = false
     for (const id of TECH_IDS) {
         for (const p of TECH[id].prereq) {
             if (!TECH[p]) { dirty = true; break }
             if (TECH[p].era > TECH[id].era) dirty = true
-            if (TECH[p].cost >= TECH[id].cost) dirty = true
+            // inside the ancient/classical/medieval tree the old law holds: a
+            // prereq must be cheaper. Stage 8 prices break that curve ON PURPOSE
+            // — the later eras are tuned to the 40-turn arcade clock (the reach
+            // budget is asserted in §32), not Civ V's centuries.
+            if (TECH[p].era <= 2 && TECH[id].era <= 2 && TECH[p].cost >= TECH[id].cost) dirty = true
         }
     }
-    ok(!dirty, 'prereqs point at cheaper, same-or-earlier-era techs (no cycles, no backwards edges)')
+    ok(!dirty, 'prereqs exist, point at same-or-earlier eras, and stay cheaper inside the old tree')
     ok(TECH_IDS.every((id) => TECH[id].era >= 0 && TECH[id].era < ERAS.length), 'every tech sits in a named era')
     const ancientCost = Math.max(...TECH_IDS.filter((id) => TECH[id].era === 0).map((id) => TECH[id].cost))
     const classicalCost = Math.min(...TECH_IDS.filter((id) => TECH[id].era === 1).map((id) => TECH[id].cost))
     const medievalCost = Math.min(...TECH_IDS.filter((id) => TECH[id].era === 2).map((id) => TECH[id].cost))
     ok(ancientCost < classicalCost && classicalCost < medievalCost, 'era costs ascend: ancient < classical < medieval')
+    ok(TECH_IDS.every((id) => TECH[id].era < 3 || (TECH[id].cost >= 25 && TECH[id].cost <= 60)), 'Stage 8 techs carry arcade prices (25..60)')
     eq(UNIT.ARCHER.tech, 'ARCHERY', 'the Archer is gated by Archery')
     eq(UNIT.CATAPULT.tech, 'ENGINEERING', 'the Catapult is gated by Engineering')
     eq(UNIT.CATAPULT.range, 2, 'the Catapult is a siege engine (range 2)')
+    eq(UNIT.MUSKET.tech, 'GUNPOWDER', 'the Musket is gated by Gunpowder')
+    eq(UNIT.MUSKET.str, 15, 'the Musket is the era’s strongest line infantry')
+    ok(!!UNIT.GALLEON && !!UNIT.GALLEON.naval && UNIT.GALLEON.ports === true, 'the Galleon is a ship of the age of sail')
+    eq(UNIT.GALLEON.tech, 'ASTRONOMY', 'the Galleon is gated by Astronomy')
 }
 
 // ---- 17. science spends, gating holds, the AI researches ----
@@ -1291,6 +1308,190 @@ console.log('31. naval')
     while (!a.end && x++ < 40000) step(a, decide(a))
     while (!b.end && y++ < 40000) step(b, decide(b))
     ok(stateHash(a) === stateHash(b) && a.turn === b.turn && a.end === b.end, 'the world replays identically: same sea, same treaties, same end')
+}
+
+// ---- 32. Stage 8: later eras, THE ARK, science victory ----
+console.log('32. later eras + science victory')
+{
+    // gates: the new arms wait on their age
+    const gs = newGame(2, 0)
+    ok(!canQueue(gs, 0, 'MUSKET'), 'the Musket waits on Gunpowder')
+    ok(!canQueue(gs, 0, 'GALLEON'), 'the Galleon waits on Astronomy')
+    ok(/gunpowder/i.test(queueDeny(gs, 0, 'MUSKET') || ''), 'the yard names Gunpowder')
+    ok(/astronomy/i.test(queueDeny(gs, 0, 'GALLEON') || ''), 'and the shipyard names Astronomy')
+    grantTech(gs, 0, 'GUNPOWDER')
+    ok(canQueue(gs, 0, 'MUSKET') === true, 'powder opens the line infantry')
+    grantTech(gs, 0, 'ASTRONOMY')
+    ok((canQueue(gs, 0, 'GALLEON') === true) === !!coastalCityOf(gs, 0), 'the Galleon obeys the coastal-yard law')
+
+    // the era effects bite on a worked ring
+    const g2 = newGame(2, 0)
+    const s2 = g2.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g2, { select: s2.id, found: true })
+    const cap2 = g2.cities.find((c) => c.civ === 0)
+    const y0 = cityYield(g2, cap2)
+    grantTech(g2, 0, 'EDUCATION')
+    ok(cityYield(g2, cap2).sci >= y0.sci + 2, 'Education seats schools in every city')
+    grantTech(g2, 0, 'BANKING')
+    ok(cityYield(g2, cap2).g >= y0.g + 2, 'Banking raises the markets')
+    grantTech(g2, 0, 'STEAM_POWER')
+    grantTech(g2, 0, 'INDUSTRIALIZATION')
+    ok(cityYield(g2, cap2).p >= y0.p + 5, 'steam and industry drive the mills')
+    grantTech(g2, 0, 'ELECTRICITY')
+    const yE = cityYield(g2, cap2)
+    ok(yE.sci >= y0.sci + 4 && yE.g >= y0.g + 3, 'the grid lights labs and tills')
+    // the rail age travels free
+    const rail = newGame(2, 0)
+    const rTile = rail.tiles.find((t) => t.road)
+    if (rTile) {
+        const ru = { civ: 0, naval: false }
+        ok(roadCost(rail, ru, rTile.c, rTile.r) === 0.5, 'a road costs half a step before the rails')
+        grantTech(rail, 0, 'RAILROAD')
+        ok(roadCost(rail, ru, rTile.c, rTile.r) === 0, 'and nothing at all once Railroad is known')
+    } else ok(true, '(no seed road on this board — half-step law proven in §20)')
+
+    // THE ARK: science pours in only after Spaceflight, and launch is victory
+    const keepCap = CFG.capitalSizeToWin
+    CFG.capitalSizeToWin = 99            // take the arcade milestone out of the way
+    const g3 = newGame(2, 0)
+    const s3 = g3.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g3, { select: s3.id, found: true })
+    for (let i = 0; i < 3; i++) step(g3, { endTurn: true })
+    eq(g3.ark[0], 0, 'before Spaceflight the Ark stays empty')
+    grantTech(g3, 0, 'SPACEFLIGHT')
+    for (let i = 0; i < 3 && !g3.end; i++) step(g3, { endTurn: true })
+    ok(g3.ark[0] > 0, 'after Spaceflight every beaker pours into the Ark')
+    ok(g3.events.some((e) => e.type === 'ark' && e.civ === 0 && e.need === CFG.arkScience), 'the program reports its funding')
+    g3.ark[0] = CFG.arkScience - 1
+    let launched = false
+    for (let i = 0; i < 8 && !launched && !g3.end; i++) { step(g3, { endTurn: true }); launched = g3.events.some((e) => e.type === 'arkLaunch') }
+    ok(launched, 'the last beaker funds the launch')
+    ok(g3.end === 'win' && /Science/.test(g3.endWhy || ''), 'and the launch is a SCIENCE VICTORY')
+    CFG.capitalSizeToWin = keepCap
+
+    // the whole science path fits the arcade clock — the pace lesson, as math
+    const chain = ['POTTERY', 'WRITING', 'EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']
+    const chainCost = chain.reduce((a, id) => a + TECH[id].cost, 0)
+    ok(chainCost + CFG.arkScience <= CFG.turnLimit * 12, `Pottery→launch costs ${chainCost + CFG.arkScience} beakers ≤ a ${CFG.turnLimit}-turn race at 12/turn`)
+    // era dawns are announced
+    const g4 = newGame(2, 0)
+    const s4 = g4.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g4, { select: s4.id, found: true })
+    grantTech(g4, 0, 'WRITING')
+    for (let i = 0; i < 4 && !g4.end; i++) step(g4, { endTurn: true })
+    ok(g4.events.some((e) => e.type === 'era' && e.civ === 0 && e.era >= 1), 'learning a Classical tech dawns a new era for the realm')
+    // hash: ark + lifetime culture move the state
+    const h0 = stateHash(g3)
+    g3.ark[0] = CFG.arkScience - 2
+    const h1 = stateHash(g3)
+    g3.civs[0].cultureEarned = 123
+    const h2 = stateHash(g3)
+    ok(h0 !== h1 && h1 !== h2, 'Ark progress and lifetime culture fold into stateHash')
+    // the witness's old research line is untouched at the head of the list
+    const legacy = ['POTTERY', 'THE_WHEEL', 'ARCHERY', 'MASONRY', 'BRONZE_WORKING', 'AGRICULTURE', 'WRITING', 'CURRENCY', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
+    ok(legacy.every((id, i) => RESEARCH_ORDER[i] === id), 'RESEARCH_ORDER keeps the proven head — stages 1–7 proofs still describe the demo')
+}
+
+// ---- 33. culture & domination victories, order of judgment, the race ----
+console.log('33. victories: order, culture ledger, domination, race reachability')
+{
+    // lifetime culture is not the spendable pool
+    const gs = newGame(2, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    step(gs, { endTurn: true })
+    const earned0 = gs.civs[0].cultureEarned || 0
+    ok(earned0 > 0, 'lifetime culture banks from turn one')
+    gs.civs[0].culture = 100
+    adoptPolicy(gs, 0, 'FOUNDATIONS')
+    ok(gs.civs[0].culture === 85 && gs.civs[0].cultureEarned === earned0, 'buying a policy spends the pool but never the lifetime ledger')
+    // threshold + strict lead: below the bar nothing fires; past it, only the
+    // living rivals count (the dead are history, not opposition)
+    const keepCW = CFG.cultureWin
+    CFG.cultureWin = 120
+    gs.civs[0].cultureEarned = 100
+    step(gs, { endTurn: true })
+    ok(!gs.end, 'below the threshold — no victory, however admired')
+    // strictly ahead means a LIVING rival ahead of you still beats the bar
+    const gb = newGame(3, 0)
+    const sb = gb.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gb, { select: sb.id, found: true })
+    gb.civs[0].cultureEarned = CFG.cultureWin + 5
+    gb.civs[1].cultureEarned = CFG.cultureWin + 9
+    step(gb, { endTurn: true })
+    ok(gb.end === 'lose' && /culture/i.test(gb.endWhy || ''), 'past the bar but a living rival shines brighter — the loss names it')
+    gs.civs[0].cultureEarned = CFG.cultureWin + 5
+    gs.civs[1].cultureEarned = CFG.cultureWin + 9
+    gs.civs[1].alive = false
+    step(gs, { endTurn: true })
+    ok(gs.end === 'win' && /Culture/.test(gs.endWhy || ''), 'past the bar, ahead of every LIVING rival — CULTURE VICTORY (the dead cannot out-shine you)')
+    CFG.cultureWin = keepCW
+
+    // domination stays the law and wins ahead of everything
+    const g2 = newGame(2, 0)
+    const s2 = g2.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g2, { select: s2.id, found: true })
+    g2.civs[1].alive = false; g2.civs[2].alive = false; g2.civs[3].alive = false
+    step(g2, { endTurn: true })
+    ok(g2.end === 'win' && /Domination/.test(g2.endWhy || ''), 'every rival gone — DOMINATION still names itself')
+
+    // a rival achieving first ends the game the other way
+    const g3 = newGame(2, 0)
+    const s3 = g3.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g3, { select: s3.id, found: true })
+    grantTech(g3, 1, 'SPACEFLIGHT')
+    g3.ark[1] = CFG.arkScience
+    step(g3, { endTurn: true })
+    ok(g3.end === 'lose' && /science/i.test(g3.endWhy || ''), 'China launches first — the world is theirs')
+    const g4 = newGame(2, 0)
+    const s4 = g4.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g4, { select: s4.id, found: true })
+    g4.civs[2].cultureEarned = CFG.cultureWin + 10
+    step(g4, { endTurn: true })
+    ok(g4.end === 'lose' && /culture/i.test(g4.endWhy || ''), 'China out-shines Rome — a culture loss')
+
+    // the races are real: with the milestone out of the way and the later eras
+    // prioritised, the autopilot brings the Ark home well inside the clock
+    const keepCap = CFG.capitalSizeToWin
+    const keepOrder = [...RESEARCH_ORDER]
+    CFG.capitalSizeToWin = 99
+    CFG.cultureWin = 100000
+    RESEARCH_ORDER.length = 0
+    RESEARCH_ORDER.push('POTTERY', 'WRITING', 'EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT',
+        'BANKING', 'GUNPOWDER', 'RAILROAD', ...keepOrder.filter((id) => !['POTTERY', 'WRITING', 'EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT', 'BANKING', 'GUNPOWDER', 'RAILROAD'].includes(id)))
+    let sciWins = 0, latest = 0
+    for (const sc of [1, 2, 3]) {
+        const r = plan(sc, 13)
+        if (r.end === 'win' && /Science/.test(r.why || '') && r.turns <= CFG.turnLimit) sciWins++
+        latest = Math.max(latest, r.turns)
+    }
+    ok(sciWins >= 2, `the autopilot wins the science race on most boards (${sciWins}/3, latest t${latest})`)
+    // culture race on the same harness
+    CFG.cultureWin = keepCW
+    RESEARCH_ORDER.length = 0
+    RESEARCH_ORDER.push('POTTERY', 'WRITING', 'PHILOSOPHY', 'ARCHERY', 'THE_WHEEL', 'MASONRY', 'BRONZE_WORKING', 'AGRICULTURE', 'CURRENCY', 'HORSEBACK', 'ENGINEERING', 'MATHEMATICS', 'EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT')
+    let cultWins = 0
+    for (const sc of [1, 2, 3]) {
+        const r = plan(sc, 13)
+        if (r.end === 'win' && /Culture/.test(r.why || '') && r.turns <= CFG.turnLimit) cultWins++
+    }
+    ok(cultWins >= 2, `the culture line wins on most boards too (${cultWins}/3)`)
+    RESEARCH_ORDER.length = 0
+    RESEARCH_ORDER.push(...keepOrder)
+    CFG.capitalSizeToWin = keepCap
+    // and the shipped witness is untouched: the golden-age milestone still wins
+    const w1 = plan(1, 13), w3 = plan(3, 13)
+    ok(w1.ok && w3.ok && w1.turns <= 12 && w3.turns <= 12, 'the default demo still wins by golden age at t11-12')
+    // science beats the arcade milestone when both cross the same turn
+    const g5 = newGame(2, 0)
+    const s5 = g5.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g5, { select: s5.id, found: true })
+    grantTech(g5, 0, 'SPACEFLIGHT')
+    g5.ark[0] = CFG.arkScience
+    const capC = g5.cities.find((c) => c.civ === 0)
+    capC.size = CFG.capitalSizeToWin
+    step(g5, { endTurn: true })
+    ok(/Science/.test(g5.endWhy || ''), 'same-turn crossings judge Science before the arcade milestone')
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)

@@ -133,6 +133,37 @@ function buildUnit(u) {
         shield.position.set(0.2, 0.34, 0.08); shield.rotation.z = Math.PI / 2; shield.rotation.x = -0.3; g.add(shield)
         const gladius = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.03), new THREE.MeshStandardMaterial({ color: 0xdfe6ee, metalness: 0.8, roughness: 0.25 }))
         gladius.position.set(-0.2, 0.32, 0); gladius.rotation.z = 0.45; g.add(gladius)
+    } else if (u.kind === 'MUSKET') {
+        const body = new THREE.Mesh(new THREE.ConeGeometry(0.21, 0.46, 7), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0x101828), 0.35), flatShading: true, roughness: 0.65 }))
+        body.position.y = 0.29; g.add(body)
+        const shako = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.2, 8), new THREE.MeshStandardMaterial({ color: 0x1c2230, roughness: 0.7 }))
+        shako.position.y = 0.58; g.add(shako)
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.04, 0.16), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0xffffff), 0.35), metalness: 0.5, roughness: 0.4 }))
+        plate.position.y = 0.7; g.add(plate)
+        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.05), new THREE.MeshStandardMaterial({ color: 0x5a3d1e, roughness: 0.85 }))
+        stock.position.set(0.16, 0.38, 0.14); stock.rotation.z = 0.28; g.add(stock)
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 0.46, 6), new THREE.MeshStandardMaterial({ color: 0x9aa2ab, metalness: 0.8, roughness: 0.3 }))
+        barrel.rotation.z = Math.PI / 2 - 0.28; barrel.position.set(0.52, 0.5, 0.14); g.add(barrel)
+        const flash = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 5), new THREE.MeshStandardMaterial({ color: 0xffd870, emissive: 0xff9020, emissiveIntensity: 0.0 }))
+        flash.position.set(0.76, 0.57, 0.14); g.add(flash)
+        g.userData.flash = flash
+    } else if (u.kind === 'GALLEON') {
+        const hull = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.18, 0.26), new THREE.MeshStandardMaterial({ color: 0x5a3d1e, flatShading: true, roughness: 0.9 }))
+        hull.position.y = 0.13; g.add(hull)
+        const stern = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.24, 0.24), new THREE.MeshStandardMaterial({ color: 0x6b4a24, flatShading: true }))
+        stern.position.set(-0.34, 0.3, 0); g.add(stern)
+        const prow = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.32, 4), new THREE.MeshStandardMaterial({ color: 0x7a5a30, flatShading: true }))
+        prow.rotation.z = -Math.PI / 2; prow.position.set(0.52, 0.16, 0); g.add(prow)
+        for (const mx of [-0.14, 0.08, 0.3]) for (const s of [-1, 1]) {
+            const port = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.02), new THREE.MeshStandardMaterial({ color: 0x2a2018 }))
+            port.position.set(mx, 0.16, s * 0.135); g.add(port)
+        }
+        for (const [mx, hgt] of [[-0.12, 0.62], [0.26, 0.48]]) {
+            const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.03, hgt, 6), new THREE.MeshStandardMaterial({ color: 0x4a3418 }))
+            mast.position.set(mx, 0.2 + hgt / 2, 0); g.add(mast)
+            const sail = new THREE.Mesh(new THREE.PlaneGeometry(hgt * 0.55, hgt * 0.5), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0xffffff), 0.5), side: THREE.DoubleSide, emissive: col, emissiveIntensity: 0.12 }))
+            sail.position.set(mx - 0.02, 0.24 + hgt * 0.55, 0); sail.rotation.y = Math.PI / 2; g.add(sail)
+        }
     } else if (u.kind === 'GALLEY') {
         const hull = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 0.22), new THREE.MeshStandardMaterial({ color: 0x6b4a24, flatShading: true, roughness: 0.9 }))
         hull.position.y = 0.12; g.add(hull)
