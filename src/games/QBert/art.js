@@ -113,12 +113,49 @@ export function bertSprite(pose, facing) {
     })
 }
 
-export function ballSprite() {
-    return sprite('ball', 10, 10, (g) => {
+// The red ball ricochets cube by cube down the edge. On each cube it compresses
+// on impact (a squash) and springs back to round — the rubber-ball "boing" the
+// old static 10x10 circle never had. ballScale is a PURE model of that per-cube
+// bounce (no DOM, no Math.random), pinned in Node by qbertcheck exactly like the
+// Coily coil and the spinning-disc models; ballSprite below is only the painter.
+export const BALL_FRAMES = 8     // squash frames per cube (one full boing cycle)
+export const BALL_R = 4.5        // the round ball's radius (the old 10x10 circle)
+export const BALL_SQUASH = 0.5   // vertical scale at impact (the deepest flatten)
+export const BALL_DECAY = 5.0    // how fast the boing damps back toward round
+export const BALL_W = 22         // sprite box: wide enough for the impact flare
+export const BALL_H = 18         // sprite box: tall enough for the rebound stretch
+export const BALL_BOT = 15       // the surface line: the ball's rest bottom (sprite y)
+export function ballScale(f) {
+    // f in [0, BALL_FRAMES): one boing. p=0 is impact (the deepest squash); the
+    // ball springs past round (a stretch) and damps back toward round before the
+    // cube ahead, so the next impact starts a fresh squash. sx keeps the footprint.
+    const p = f / BALL_FRAMES
+    const sy = 1 + (BALL_SQUASH - 1) * Math.cos(p * Math.PI * 2) * Math.exp(-p * BALL_DECAY)
+    return { sy, sx: 1 / sy }
+}
+
+// one boing frame of the ball: a bottom-anchored, rimmed ellipse that flattens
+// wide on impact and stretches tall on the rebound. Its bottom stays on the
+// surface line (BALL_BOT) so it reads as compressing AGAINST the cube it hits.
+export function ballSprite(frame) {
+    const f = ((frame % BALL_FRAMES) + BALL_FRAMES) % BALL_FRAMES
+    const { sy, sx } = ballScale(f)
+    return sprite(`ball-${f}`, BALL_W, BALL_H, (g) => {
+        const cx = BALL_W / 2
+        const ry = BALL_R * sy
+        const rx = BALL_R * sx
+        const cy = BALL_BOT - ry
+        // rim: a touch darker and one px proud, so the ball has an edge
+        g.fillStyle = shade(PAL.ball, 0.72)
+        g.beginPath(); g.ellipse(cx, cy, rx + 1, ry + 1, 0, 0, Math.PI * 2); g.fill()
+        // body
         g.fillStyle = PAL.ball
-        g.beginPath(); g.arc(5, 5, 4.5, 0, Math.PI * 2); g.fill()
-        px(g, 3, 2, 2, 2, '#f8a878')
-        px(g, 2, 7, 5, 1, '#901000')
+        g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill()
+        // lit top cap: a paler, raised ellipse reads as the 3D sphere
+        if (ry > 2) {
+            g.fillStyle = '#f8a878'
+            g.beginPath(); g.ellipse(cx - rx * 0.25, cy - ry * 0.4, Math.max(1, rx * 0.4), Math.max(1, ry * 0.35), 0, 0, Math.PI * 2); g.fill()
+        }
     })
 }
 

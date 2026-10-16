@@ -16,7 +16,7 @@ import {
 } from '../src/games/QBert/sim.js'
 import { plan } from '../src/games/QBert/planner.js'
 import { sfxFor, VOICED, SILENT } from '../src/games/QBert/sound.js'
-import { COILS, coilX, coilY, discHalfW, DISC_FRAMES } from '../src/games/QBert/art.js'
+import { COILS, coilX, coilY, discHalfW, DISC_FRAMES, ballScale, BALL_FRAMES, BALL_R } from '../src/games/QBert/art.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('qbertcheck')
@@ -303,6 +303,34 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
         mn <= 3, `min=${Math.round(mn * 10) / 10}`)
     r.check('the rotating disc stays inside its 28px sprite (2 x half-width <= 28, no clipping)',
         mx * 2 <= 28, `max=${Math.round(mx * 10) / 10}`)
+}
+
+// ------------------------------------------------------ the bouncing ball ----
+// The red ball ricochets cube by cube down the edge. On each cube it compresses
+// on impact (a squash) and springs back to round — the rubber-ball "boing" the
+// old static 10x10 circle never had. ballScale is a PURE model of that per-cube
+// bounce in art.js, pinned in Node against LITERAL bounds (the TETRIS lesson): a
+// static ball — no squash at impact, no spring past round, or an out-of-bounds
+// flare — goes red.
+{
+    const sc = Array.from({ length: BALL_FRAMES }, (_, i) => ballScale(i))
+    const sy = sc.map((s) => s.sy)
+    const sx = sc.map((s) => s.sx)
+    const mny = Math.min(...sy), mxy = Math.max(...sy)
+    const maxW = Math.max(...sx)
+    r.check('the ball bounces: its height oscillates across the cube (not a static ball)',
+        mxy - mny > 0.3, JSON.stringify(sy.map((v) => Math.round(v * 100) / 100)))
+    r.check('the ball squashes hard on impact: the impact frame is the deepest, and under round',
+        ballScale(0).sy <= mny + 1e-9 && mny < 1,
+        `f0=${Math.round(ballScale(0).sy * 100) / 100} min=${Math.round(mny * 100) / 100}`)
+    r.check('the ball springs PAST round as it rebounds (a real boing, not a flat press)',
+        mxy > 1, `max=${Math.round(mxy * 100) / 100}`)
+    r.check('the boing damps back toward round before the next impact (it settles, not a metronome)',
+        Math.abs(ballScale(BALL_FRAMES - 1).sy - 1) < 0.05, `fLast=${Math.round(ballScale(BALL_FRAMES - 1).sy * 100) / 100}`)
+    r.check('the squash flare stays inside the 22px sprite (2 x r x sx <= 22, no clipping)',
+        2 * BALL_R * maxW <= 22, `maxW=${Math.round(2 * BALL_R * maxW * 10) / 10}`)
+    r.check('the rebound stretch fits above the surface line in the sprite (2 x r x sy <= 15, no clipping)',
+        2 * BALL_R * mxy <= 15, `maxH=${Math.round(2 * BALL_R * mxy * 10) / 10}`)
 }
 
 // --------------------------------------------------- the disc + snake lure ----
