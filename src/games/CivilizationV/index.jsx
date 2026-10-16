@@ -358,7 +358,7 @@ const CivilizationVGame = () => {
                     campsAlive: gs.camps.filter((c) => c.alive).length, wars: Object.keys(gs.wars).length,
                     queue: gs.cities.filter((c) => c.civ === 0 && c.alive).map((c) => ({ name: c.name, queue: [...(c.queue || [])], p: Math.floor(c.buildP || 0) })),
                     tech: { known: TECH_IDS.filter((id) => hasTech(gs, 0, id)), research: gs.tech[0].research, prog: Math.floor(gs.tech[0].prog),
-                        ai: CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => ({ civ: c.id, name: c.name, n: Object.keys(gs.tech[c.id].known).length })) },
+                        ai: CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => ({ civ: c.id, name: c.name, n: Object.keys(gs.tech[c.id].known).length, researching: gs.tech[c.id].research })) },
                     explored0: countArr(gs.explored[0]) }),
                 start: startPlay, hash: () => stateHash(gs), select: (id) => { pending = { select: id } },
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
