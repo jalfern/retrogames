@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -403,11 +404,11 @@ const SSXGame = () => {
                     <h1 className="text-6xl font-black italic" style={{ color: '#fff', textShadow: '4px 0 0 #b0147a, -4px 0 0 #1490b0, 0 12px 30px #000' }}>SSX</h1>
                     <p className="text-cyan-100/90 font-mono mt-1 text-sm">tricks fill the boost · boost wins the mountain</p>
                     <p className="text-white font-mono font-bold mt-5 animate-pulse">TAP / PRESS ANY KEY — RACE &middot; PRESS 2 FOR SHOWOFF</p>
-                    <p className="text-cyan-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
-                        &larr;/&rarr; steer &middot; SPACE crouch &amp; ollie (release off a lip) &middot; X grab &middot; Z/C flip &middot; SHIFT boost<br />
-                        chains pay to x4 · a FULL meter at takeoff throws OVER — double points, stupid-big tricks<br />
-                        three heats vs the field: ALPINE GLADE · NEON HEIGHTS · BIG AIR BASIN &middot; ? pause
-                    </p>
+                    <AttractMessage className="mt-2 px-8 text-cyan-100/80" messages={[
+                        '←/→ steer · SPACE crouch & ollie (release off a lip) · X grab · Z/C flip · SHIFT boost',
+                        'chains pay to x4 · a FULL meter at takeoff throws OVER — double points, stupid-big tricks',
+                        'three heats vs the field: ALPINE GLADE · NEON HEIGHTS · BIG AIR BASIN · ? pause',
+                    ]} />
                 </div>
             )}
 
