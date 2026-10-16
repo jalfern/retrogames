@@ -47,6 +47,10 @@ the player actually gets, in plain Node.
   render rule (`tc >= fc`) pointed him right on every down-left hop and on a
   skirt up-right hop. `qbertcheck` pins all four hop directions, including the
   skirt cases where the row below/above is narrower.
+- Coily is a coiled spring, not a stack of bars: `art.js` models the body as
+  five oval coils whose stack wiggles by a pure travelling sinusoid
+  (`coilX`/`coilY`, pinned in `qbertcheck` — a static stack of bars goes red),
+  with a flicking head tongue.
 - Levels escalate snake count/speed and switch the flip mode, but there is no
   original point-value table match beyond the documented singles/roundtrip/heli.
   (1-UP every 10,000 is now in: a life per 10k boundary crossed, capped at 9.

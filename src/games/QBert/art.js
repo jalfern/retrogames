@@ -133,20 +133,51 @@ export function discSprite(phase) {
     })
 }
 
-// Coily: coiled spring body with a head; `frame` wiggles the coil
+// Coily's body is a real spring, not a stack of bars: N thin oval coils whose
+// whole stack wiggles by a travelling sinusoid (coilX) that advances one phase
+// per frame, so the near/far edges shimmer as he hops. This model is PURE (no
+// DOM, no Math.random), so qbertcheck pins it in Node exactly like the PoP
+// light model; coilySprite below is only the painter.
+export const COILS = 5
+export const COIL_W = 15
+export const COIL_H = 4
+export const COIL_TOP = 7
+export const COIL_SPACING = 3
+export const COIL_AMPL = 1.6
+export const COIL_WAVE = Math.PI / 2
+export function coilX(i, f = 0) {
+    return COIL_AMPL * Math.sin((i / (COILS - 1)) * Math.PI * 2 + f * COIL_WAVE)
+}
+export function coilY(i) {
+    return COIL_TOP + i * COIL_SPACING
+}
+
+// Coily: a coiled spring (a Slinky seen from the side) with a head. Each coil is
+// a dark-rimmed oval with a bright front and a pale belly band, and the whole
+// stack wiggles by coilX(i, frame). The head's tongue flicks out on alternate
+// frames.
 export function coilySprite(frame) {
     return sprite(`coily-${frame}`, 22, 22, (g) => {
-        for (let i = 0; i < 4; i++) {
-            const yy = 6 + i * 4 + ((i + frame) % 2)
-            px(g, 4, yy, 14, 3, i % 2 ? PAL.coilyDark : PAL.coily)
-            px(g, 3, yy + 1, 16, 1, PAL.coilyBelly)
+        const rx = COIL_W / 2, ry = COIL_H / 2
+        for (let i = 0; i < COILS; i++) {
+            const cx = 11 + coilX(i, frame)
+            const cy = coilY(i)
+            g.fillStyle = PAL.coilyDark
+            g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill()
+            g.fillStyle = PAL.coily
+            g.beginPath(); g.ellipse(cx, cy - 0.5, rx - 1, ry - 0.5, 0, 0, Math.PI * 2); g.fill()
+            px(g, cx - rx + 2, cy, COIL_W - 4, 1, PAL.coilyBelly)
         }
         // head
         px(g, 8, 0, 8, 6, PAL.coily)
         px(g, 8, 5, 8, 1, PAL.coilyBelly)
         px(g, 9, 1, 2, 2, '#f8f8f8'); px(g, 13, 1, 2, 2, '#f8f8f8')
         px(g, 9, 2, 1, 1, '#101010'); px(g, 13, 2, 1, 1, '#101010')
+        // mouth + a flicking forked tongue (longer on alternate frames)
         px(g, 10, 4, 4, 1, '#f83800')
+        const tl = 1 + (frame % 2)
+        px(g, 12, 5, 1, tl, '#f83800')
+        if (tl > 1) { px(g, 11, 5 + tl, 1, 1, '#f83800'); px(g, 13, 5 + tl, 1, 1, '#f83800') }
     })
 }
 
