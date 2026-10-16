@@ -227,7 +227,7 @@ export function moonSources(decos, base) {
         const d = decos[rm]
         if (d && d.window != null) {
             const px = base + rm * RW * T + d.window * T + 16
-            out.push([px, 60, hash(Math.round((px - 16) / T) * 2.7 + 5)])
+            out.push([px, paneKeyY(d), hash(Math.round((px - 16) / T) * 2.7 + 5)])
         }
     }
     return out
@@ -294,10 +294,86 @@ export function coolBandAt(x, moonPx, tile = T) {
 // at temp 0 in dark corners where the rim hue is violet — damp the rim on pale
 // palettes so skeleton and tunic stay bone-white, never purple. Non-pale is unchanged
 // (identical to the Stage 8/9 inline alpha), so the clothed cast is byte-for-byte.
-export function rimAlpha(pale, warm) {
+export function rimAlpha(pale, warm, temp = 0) {
     const base = 0.12 + warm * 0.22
-    const a = pale ? base * 0.32 : base
+    // the pale damp only holds in the dark; deep in a flame pool (high temp) the
+    // amber is strong enough to read on bone/tunic, so the damp releases with the
+    // colour temperature — a tunic under a torch still catches amber (#343-7).
+    const damp = 0.32 + Math.min(0.55, Math.max(0, temp) * 0.55)
+    const a = pale ? base * damp : base
     return Math.round(a * 1000) / 1000
+}
+
+// ---- Stage 11: the palace breathes — temporal sky, shaft motes, arch veil ------
+// Stage 10 gave every window its own frozen sky. Stage 11 sets that sky in slow
+// motion and lets the moon shaft carry dust, so a palace level is alive rather than
+// a still frame (QA #343-4/5). It also stops the mirror's light veil from boxing
+// past its arched glass (#343-1), gives props the same two-source rim the bodies
+// get (#343-6), and derives the window's key height from the deco instead of baking
+// y=60 (#343-2). All pure + exported, deterministic — sin-hash only, no randomness.
+//
+// A window's key height is derived from its deco row, not hard-wired: a level that
+// raises or drops a pane moves the cool key with it so the shaft stays lit.
+export const WINDOW_ROW_PX = T                   // one floor step a pane can be raised/dropped
+export function paneKeyY(d) {
+    return 60 + (d && d.windowRow ? d.windowRow * WINDOW_ROW_PX : 0)
+}
+// the vertical offset of a pane from the canonical row, shared by the wall paint and
+// the cool key so the drawn window and the light it throws never disagree.
+export const paneShift = (d) => paneKeyY(d) - 60
+
+// a slow cloud crossing a pane: a fractional position across the sky that wraps,
+// with a soft density that is 0 at the edges and peaks mid-crossing — a cloud
+// passes, then clear sky again. Deterministic in tick + seed (#343-4).
+export const SKY_DRIFT = 0.0007                 // pane-widths per tick: barely perceptible
+export function cloudCross(tick, seed = 0) {
+    let p = (tick * SKY_DRIFT + seed * 0.37) % 1
+    if (p < 0) p += 1
+    return Math.sin(p * Math.PI)                 // 0 → 1 → 0 across one crossing
+}
+// a fixed star field inside one pane (fractional coords), each with its own twinkle
+// phase. Positions are hash-pinned to the seed, so the same window keeps its stars.
+export function starField(seed = 0, n = 4) {
+    const out = []
+    for (let i = 0; i < n; i++) {
+        out.push({
+            fx: 0.12 + hash(seed * 4.7 + i * 1.9) * 0.76,
+            fy: 0.10 + hash(seed * 7.3 + i * 3.1) * 0.55,
+            ph: hash(seed * 2.9 + i * 5.7),
+        })
+    }
+    return out
+}
+// a star's twinkle: never fully dark, a soft pulse, so the sky shimmers, not strobes.
+export function skyTwinkle(tick, ph = 0) {
+    return 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(tick * 0.05 + ph * Math.PI * 2))
+}
+// dust motes drifting down the moon shaft: slow, seeded, fading as they near the
+// floor. Returns lateral offset (px), fractional height down the shaft, and alpha.
+export const SHAFT_MOTES = 5                    // motes per window shaft
+export function shaftMotes(tick, seed = 0, count = SHAFT_MOTES) {
+    const out = []
+    for (let i = 0; i < count; i++) {
+        const base = hash(seed * 3.7 + i * 8.3)
+        const y = (base + tick * 0.0016 + hash(seed + i) * 0.3) % 1   // slow fall, wraps
+        const a = Math.sin(y * Math.PI)                                  // soft in and out
+        out.push({
+            dx: (hash(seed * 5.1 + i * 2.7) - 0.5) * 24,               // shaft half-width
+            y,
+            a: a * (0.4 + hash(seed * 1.7 + i * 6.1) * 0.4),
+        })
+    }
+    return out
+}
+// trace the arched silhouette of a prop (rounded top over straight jambs) so a light
+// veil clipped to it follows the glass instead of boxing onto the frame (#343-1).
+export function archPath(ctx, x, base, w, h) {
+    ctx.beginPath()
+    ctx.moveTo(x - w, base)
+    ctx.lineTo(x - w, base - h + w)
+    ctx.arc(x, base - h + w, w, Math.PI, 0)
+    ctx.lineTo(x + w, base)
+    ctx.closePath()
 }
 
 // ---- pose tables --------------------------------------------------------------
@@ -601,8 +677,16 @@ function palaceWall(ctx, c0, decos, tick) {
         }
         ctx.fillStyle = '#e0cc88'
         ctx.fillRect(px - 10, 26, 20, 2)
-        // arched window with a moonlit sky pane
+        // arched window with a moonlit sky pane. Its height comes from the deco row
+        // (paneShift), so a level that raises/drops the window moves the frame and
+        // the light key together (#343-2). The sky itself breathes: hash-pinned stars
+        // twinkle and a faint cloud drifts across the pane (#343-4). Same seed as
+        // moonSources, so the stars belong to this window and never reshuffle.
         const wx = base + d.window * T + 8
+        const wy = paneShift(d)
+        const pseed = hash(Math.round((wx + 8 - 16) / T) * 2.7 + 5)
+        ctx.save()
+        ctx.translate(0, wy)
         ctx.fillStyle = '#5c5c4a'
         ctx.fillRect(wx - 3, 40, 22, 46)
         ctx.fillStyle = '#1b1f33'
@@ -615,8 +699,26 @@ function palaceWall(ctx, c0, decos, tick) {
         const moon = 0.4 + 0.2 * Math.sin(tick * 0.02 + rm)
         ctx.fillStyle = `rgba(120,140,220,${moon.toFixed(2)})`
         ctx.fillRect(wx + 2, 60, 12, 22)
+        // a cloud crossing the pane, denser mid-transit, clipped to the glass column
+        ctx.save()
+        ctx.beginPath(); ctx.rect(wx + 2, 44, 12, 40); ctx.clip()
+        const cp = cloudCross(tick, pseed)
+        if (cp > 0.02) {
+            const cxp = wx - 4 + cp * 24
+            ctx.fillStyle = `rgba(150,165,205,${(cp * 0.16).toFixed(3)})`
+            ctx.fillRect(cxp - 6, 52 + Math.round(hash(pseed) * 8), 12, 6)
+        }
+        ctx.restore()
+        // stars above the moon glow, each twinkling on its own phase
+        for (const st of starField(pseed)) {
+            const sx = wx + 2 + Math.round(st.fx * 11)
+            const sy = 46 + Math.round(st.fy * 12)
+            ctx.fillStyle = `rgba(220,228,255,${(skyTwinkle(tick, st.ph) * 0.7).toFixed(2)})`
+            ctx.fillRect(sx, sy, 1, 1)
+        }
         ctx.fillStyle = '#c8a050'
         ctx.fillRect(wx + 7, 40, 2, 44)
+        ctx.restore()
         // tapestry with a woven motif and a fringed, swaying hem
         const tx = base + d.tapestry * T + 4
         ctx.fillStyle = '#3f1830'
@@ -799,18 +901,34 @@ const FLASK_INK = { r: '#e04040', '+': '#ff6050', b: '#4080e0', f: '#80d0ff', u:
 // (propShade) + sign of the light side, so light is consistent across the scene.
 function propLight(ctx, x, y, w, h, light) {
     const warm = light ? light.warm : 0.5
+    const cool = light && light.cool != null ? light.cool : 0
     const sh = propShade(warm)
-    const veil = ctx.createLinearGradient(x - w, 0, x + w, 0)
+    ctx.save()
+    // an arched prop clips its veil to the glass, so the corners stop hanging onto
+    // the frame (the mirror passes an arch; rectangular props keep the flat box).
+    if (light && light.arch) archPath(ctx, x, y, light.arch.w, light.arch.h)
+    else ctx.beginPath(), ctx.rect(x - w, y - h, w * 2, h)
+    ctx.clip()
     const side = light && light.side ? light.side : 0
+    const coolSide = light && light.coolSide != null ? light.coolSide : 0
+    const veil = ctx.createLinearGradient(x - w, 0, x + w, 0)
     const darkSide = side >= 0 ? -1 : 1
     veil.addColorStop(0, `rgba(6,10,30,${((1 - sh) * (darkSide < 0 ? 0.6 : 0.2)).toFixed(3)})`)
     veil.addColorStop(1, `rgba(6,10,30,${((1 - sh) * (darkSide > 0 ? 0.6 : 0.2)).toFixed(3)})`)
     ctx.fillStyle = veil
     ctx.fillRect(x - w, y - h, w * 2, h)
+    // two-source props (QA #343-6): near both fire and window a prop carries a warm
+    // rim on the flame side AND a cool rim on the window side, matching the two-
+    // source bodies. Single-source props keep exactly their former single rim.
     if (warm > 0.35 && side !== 0) {
         ctx.fillStyle = `rgba(255,180,90,${((warm - 0.35) * 0.5).toFixed(3)})`
         ctx.fillRect(x + (side > 0 ? w * 0.5 : -w * 0.5) - 1, y - h, 2, h)
     }
+    if (cool > 0.22 && coolSide !== 0) {
+        ctx.fillStyle = `rgba(150,175,255,${((cool - 0.22) * 0.5).toFixed(3)})`
+        ctx.fillRect(x + (coolSide > 0 ? w * 0.5 : -w * 0.5) - 1, y - h, 2, h)
+    }
+    ctx.restore()
 }
 
 function drawFlask(ctx, pot, tick, light) {
@@ -880,7 +998,7 @@ function drawMirror(ctx, m, tick, light) {
     ctx.moveTo(x - 8, base - 14 - sh)
     ctx.lineTo(x + 6, base - 28 - sh)
     ctx.stroke()
-    propLight(ctx, x, base, 13, 40, light)
+    propLight(ctx, x, base, 13, 40, { ...(light || {}), arch: { w: 9, h: 72 } })
     ctx.fillStyle = '#e8d060'
     ctx.fillRect(x - 2, base - 82, 4, 5)
 }
@@ -1017,7 +1135,7 @@ function figure(ctx, st, p, opts) {
     // follows the colour temperature — amber under a sconce, cool blue in the dark
     // — while its strength follows the light's brightness.
     const rim = rimColor(temp)
-    ctx.strokeStyle = `rgba(${rim.r},${rim.g},${rim.b},${rimAlpha(pale, warm).toFixed(3)})`
+    ctx.strokeStyle = `rgba(${rim.r},${rim.g},${rim.b},${rimAlpha(pale, warm, temp).toFixed(3)})`
     ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(s * 3, -hip - 2)
@@ -1277,6 +1395,15 @@ export function drawScene(ctx, g, opts = {}) {
         sg.addColorStop(1, `rgba(${Math.max(0, tint.r - 50)},${Math.max(0, tint.g - 50)},${Math.min(255, tint.b - 40)},0)`)
         ctx.fillStyle = sg
         ctx.fillRect(mp[0] - 14, mp[1], 28, fy - mp[1])
+        // dust motes drifting down the shaft — slow, seeded, fading toward the floor
+        // (QA #343-5): the moonlit hall shimmers rather than sitting perfectly still.
+        const mh = fy - mp[1]
+        for (const mo of shaftMotes(tick, mp[2] || 0)) {
+            const my = mp[1] + mo.y * mh
+            if (my < HUD_LINE || my > fy) continue
+            ctx.fillStyle = `rgba(${Math.min(255, tint.r + 60)},${Math.min(255, tint.g + 60)},255,${(mo.a * tint.s * 0.5).toFixed(3)})`
+            ctx.fillRect(mp[0] + mo.dx, my, 1.5, 1.5)
+        }
         const mc = Math.round(mp[0] / T)
         for (let k = -creach; k <= creach; k++) {
             const c = mc + k
@@ -1303,7 +1430,14 @@ export function drawScene(ctx, g, opts = {}) {
                 if (coolGlow(Math.hypot(mp[0] - x, mp[1] - y)) > 0.05) { side = mp[0] >= x ? 1 : -1; break }
             }
         }
-        return { warm: lightAt(x, y, torchPx, amb, moonPx), side, temp: tempAt(x, y, torchPx, amb, moonPx) }
+        // the cool channel, so props can carry a window-side rim as well as a
+        // flame-side one (two-source props, #343-6): strongest window + its side.
+        let cbest = 0, cside = 0
+        for (const mp of moonPx) {
+            const cg = coolGlow(Math.hypot(mp[0] - x, mp[1] - y))
+            if (cg > cbest) { cbest = cg; cside = mp[0] >= x ? 1 : -1 }
+        }
+        return { warm: lightAt(x, y, torchPx, amb, moonPx), side, temp: tempAt(x, y, torchPx, amb, moonPx), cool: cbest, coolSide: cside }
     }
 
     if (!g.sword && lvl.sword) drawSwordPickup(ctx, lvl.sword, tick, atLight((lvl.sword.c + 0.5) * T, (lvl.sword.r + 1) * T))
