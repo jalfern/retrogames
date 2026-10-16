@@ -1,4 +1,4 @@
-// CIVILIZATION V — Stage 5 "Culture & Happiness". Pure deterministic sim.
+// CIVILIZATION V — Stage 6 "Wonders & Great People". Pure deterministic sim.
 // No three, no DOM, no Math.random: this module is the single source of truth
 // the Node harness (scripts/civcheck.mjs) and the in-browser autopilot import
 // unchanged. Turn-based: the player orders units, presses END TURN, then each
@@ -42,6 +42,14 @@
 //     creep outward ring by ring (40/120), and happiness (palace +2, luxury +1,
 //     city −1, war −2) swings growth, gold and city defence; culture points buy
 //     social policies from three real branches, adopted in branch order.
+//   - Stage 6 adds the marvels: six real wonders (Pyramids, Stonehenge, Hanging
+//     Gardens, Great Library, Colossus, Great Wall) are queued in a city like a
+//     unit and paid in shields — the first civ to finish one takes it forever
+//     and rivals' in-progress copies are torn out of their queues. Cities also
+//     bank great-person points (engineer/scientist/merchant; palace +1 engineer,
+//     each connected luxury +1 merchant). At threshold a great person can be
+//     bought with gold and spent: the engineer finishes a city's current build,
+//     the scientist finishes the current research, the merchant trades +200g.
 
 export const CFG = {
     W: 40, H: 25,
@@ -66,6 +74,11 @@ export const CFG = {
     border2: 40, border3: 120,  // city culture needed to claim ring 2 / ring 3
     palaceHappy: 2, cityUnhappy: 1, warWeariness: 2,   // the happiness ledger
     happyGrowth: 0.25, happyGold: 0.1, angryDef: 0.75, // happy bonuses / angry penalty
+    gpThreshold: 8, gpStep: 5,           // points needed for a great person, rising per acquisition
+    gpCost: 30, gpCostStep: 25,        // gold to recruit, rising per acquisition
+    merchantGold: 200,                  // a Great Merchant's trade mission
+    gpPalace: 1, gpLux: 1,            // extra engineer points at the palace, merchant points per luxury
+    stoneCult: 2, librarySci: 2, gardenFood: 1, colossusGold: 1, wallDefMult: 1.5,   // wonder effects
 }
 
 export const UNIT = {
@@ -154,6 +167,33 @@ export const POLICY = {
 export const POLICY_IDS = ['FOUNDATIONS', 'CEREMONY', 'COLONIAL', 'COLLEGE', 'TRADING_POSTS', 'TREATIES']
 export const BRANCHES = ['TRADITION', 'LIBERTY', 'COMMERCE']
 
+// ---- wonders (Stage 6) ---------------------------------------------------------
+// Six real Civ V wonders gated by real (in-tree) techs. A wonder is queued in a
+// city like a unit and paid in accumulated production; the first civ to finish
+// takes it for the whole game — everyone else's half-built copy is abandoned.
+// Effects are the real wonders' mechanics, simplified to this sim's levers.
+export const WONDER = {
+    PYRAMIDS: { name: 'Pyramids', tech: 'THE_WHEEL', cost: 45, effect: 'workers finish improvements one turn sooner' },
+    STONEHENGE: { name: 'Stonehenge', tech: 'POTTERY', cost: 18, effect: '+2 culture in every city' },
+    HANGING_GARDENS: { name: 'Hanging Gardens', tech: 'AGRICULTURE', cost: 60, effect: '+1 food on every worked farm' },
+    GREAT_LIBRARY: { name: 'Great Library', tech: 'WRITING', cost: 65, effect: '+2 science in every city' },
+    COLOSSUS: { name: 'Colossus', tech: 'BRONZE_WORKING', cost: 55, effect: '+1 gold per connected luxury' },
+    GREAT_WALL: { name: 'Great Wall', tech: 'MASONRY', cost: 50, effect: '+50% city defence' },
+}
+export const WONDER_IDS = Object.keys(WONDER)
+
+// ---- great people (Stage 6) ----------------------------------------------------
+// Every city banks one point per type each turn; the palace seats an extra
+// engineer and each connected luxury sends a merchant. When a pool crosses the
+// threshold the great person can be recruited for gold (price and threshold
+// climb with every acquisition, as Civ V's costs escalate) and spent once.
+export const GP_TYPES = ['ENGINEER', 'SCIENTIST', 'MERCHANT']
+export const GP = {
+    ENGINEER: { name: 'Great Engineer', icon: '⚙', effect: 'complete a city\u0027s current build at once' },
+    SCIENTIST: { name: 'Great Scientist', icon: '🔭', effect: 'complete the current research at once' },
+    MERCHANT: { name: 'Great Merchant', icon: '⚖', effect: 'open a trade mission: +200 gold' },
+}
+
 // ---- terrain yields (Stage 1 approximation of the Civ V table) --------------
 const BASE_YIELD = {
     [T.OCEAN]: { f: 0, p: 0, g: 0 },
@@ -200,7 +240,7 @@ export function setResearch(gs, civ, id) {
 }
 export function canQueue(gs, civ, kind) {
     const st = UNIT[kind]
-    if (!st) return false
+    if (!st) return !!WONDER[kind] && canBuildWonder(gs, civ, kind) === true
     if (st.tech && !hasTech(gs, civ, st.tech)) return false
     if (st.res && !connectedResources(gs, civ).includes(st.res)) return false
     return true
@@ -245,7 +285,8 @@ export function startImprove(gs, unit, kind) {
     const why = canImprove(gs, unit.civ, unit, kind)
     if (why !== true) { if (unit.civ === 0) gs.events.push({ type: 'deny', reason: why, c: unit.c, r: unit.r }); return false }
     const tl = gs.tiles[idx(unit.c, unit.r)]
-    tl.build = { kind, civ: unit.civ, left: IMP[kind].turns, by: unit.id }
+    const impTurns = Math.max(1, IMP[kind].turns - (gs.wonders && gs.wonders.PYRAMIDS === unit.civ ? 1 : 0))
+    tl.build = { kind, civ: unit.civ, left: impTurns, by: unit.id }
     unit.busy = idx(unit.c, unit.r)
     unit.moves = 0; unit.acted = true
     gs.events.push({ type: 'improveStart', civ: unit.civ, c: unit.c, r: unit.r, kind })
@@ -309,7 +350,10 @@ export function roadCost(gs, u, c, r) {
 }
 export function queueDeny(gs, civ, kind) {
     const st = UNIT[kind]
-    if (!st) return null
+    if (!st) {
+        if (WONDER[kind]) { const w = canBuildWonder(gs, civ, kind); return w === true ? null : w }
+        return null
+    }
     if (st.tech && !hasTech(gs, civ, st.tech)) return 'requires ' + TECH[st.tech].name
     if (st.res && !connectedResources(gs, civ).includes(st.res)) return 'requires ' + RES[st.res].name
     return null
@@ -351,6 +395,75 @@ export function adoptPolicy(gs, civ, id) {
     gs.civs[civ].culture -= POLICY[id].cost
     gs.policies[civ][id] = true
     gs.events.push({ type: 'policy', civ, id })
+    return true
+}
+
+// ---- wonders + great people (Stage 6) ---------------------------------------------
+export function hasWonder(gs, civ, id) { return gs.wonders[id] === civ }
+export function canBuildWonder(gs, civ, id) {
+    const w = WONDER[id]
+    if (!w) return 'unknown wonder'
+    if (gs.wonders[id] != null) return gs.wonders[id] === civ ? 'already yours' : `${w.name} was built by ${CIVS[gs.wonders[id]].name}`
+    if (!hasTech(gs, civ, w.tech)) return 'requires ' + TECH[w.tech].name
+    return true
+}
+export function gpThreshold(gs, civ, t) { return CFG.gpThreshold + CFG.gpStep * gs.gp[civ].bought[t] }
+export function gpCost(gs, civ, t) { return CFG.gpCost + CFG.gpCostStep * gs.gp[civ].bought[t] }
+export function gpReady(gs, civ, t) { return gs.gp[civ].pts[t] >= gpThreshold(gs, civ, t) }
+export function gpHeld(gs, civ, t) { return gs.gp[civ].held[t] }
+export function canRecruit(gs, civ, t) {
+    if (!GP[t]) return 'unknown type'
+    if (!gpReady(gs, civ, t)) return 'not enough great person points'
+    if (gs.civs[civ].gold < gpCost(gs, civ, t)) return 'not enough gold'
+    return true
+}
+export function recruitGP(gs, civ, t) {
+    const why = canRecruit(gs, civ, t)
+    if (why !== true) { if (civ === 0) gs.events.push({ type: 'deny', reason: why, c: -1, r: -1 }); return false }
+    gs.civs[civ].gold -= gpCost(gs, civ, t)
+    gs.gp[civ].pts[t] = 0
+    gs.gp[civ].ready[t] = false
+    gs.gp[civ].held[t] += 1
+    gs.gp[civ].bought[t] += 1
+    gs.events.push({ type: 'gpAcquired', civ, kind: t, cost: gpCost(gs, civ, t) })
+    return true
+}
+export function canUseGP(gs, civ, t, cityId) {
+    if (!GP[t]) return 'unknown type'
+    if (gs.gp[civ].held[t] <= 0) return 'no ' + GP[t].name.toLowerCase() + ' yet'
+    if (t === 'ENGINEER') {
+        const city = cityId != null ? gs.cities[cityId] : gs.cities.find((c) => c.alive && c.civ === civ)
+        if (!city || !city.alive || city.civ !== civ) return 'no city of yours there'
+        if (!city.queue || !city.queue.length) return 'nothing is under construction there'
+    }
+    if (t === 'SCIENTIST' && !gs.tech[civ].research) return 'choose something to research first'
+    return true
+}
+export function spendGP(gs, civ, t, cityId) {
+    const why = canUseGP(gs, civ, t, cityId)
+    if (why !== true) { if (civ === 0) gs.events.push({ type: 'deny', reason: why, c: -1, r: -1 }); return false }
+    gs.gp[civ].held[t] -= 1
+    if (t === 'MERCHANT') {
+        gs.civs[civ].gold += CFG.merchantGold
+        gs.events.push({ type: 'gpUsed', civ, kind: t, gold: CFG.merchantGold })
+        return true
+    }
+    if (t === 'SCIENTIST') {
+        const R = gs.tech[civ]
+        const id = R.research
+        R.prog = 0; R.research = null
+        R.known[id] = true
+        gs.events.push({ type: 'tech', civ, id, instant: true })
+        applyLearn(gs, civ, id)
+        gs.events.push({ type: 'gpUsed', civ, kind: t, tech: id })
+        return true
+    }
+    const city = cityId != null ? gs.cities[cityId] : gs.cities.find((c) => c.alive && c.civ === civ)
+    const kind = city.queue[0]
+    const cost = WONDER[kind] ? WONDER[kind].cost : unitCost(gs, civ, kind)
+    city.buildP = Math.max(city.buildP || 0, cost)
+    pumpCityQueue(gs, city)
+    gs.events.push({ type: 'gpUsed', civ, kind: t, city: city.id })
     return true
 }
 
@@ -523,6 +636,8 @@ export function newGame(seed = 1, scenario = 0) {
         tech: CIVS.map(() => ({ known: {}, research: null, prog: 0 })),
         policies: CIVS.map(() => ({})),
         resKnown: CIVS.map(() => ({})),
+        wonders: {},
+        gp: CIVS.map(() => ({ pts: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, held: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, ready: { ENGINEER: false, SCIENTIST: false, MERCHANT: false }, bought: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 } })),
         capitalOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
     }
@@ -626,7 +741,10 @@ export function tileYield(gs, i) {
     const y = { ...BASE_YIELD[tl.terr] }
     if (tl.forest) y.p += 1
     if (tl.river) y.g += 1
-    if (tl.imp === 'FARM') y.f += tl.terr === T.GRASS ? 2 : 1
+    if (tl.imp === 'FARM') {
+        y.f += tl.terr === T.GRASS ? 2 : 1
+        if (gs.wonders && tl.owner >= 0 && gs.wonders.HANGING_GARDENS === tl.owner) y.f += CFG.gardenFood
+    }
     if (tl.imp === 'MINE') y.p += 1 + (hasTech(gs, tl.owner, 'ENGINEERING') ? 1 : 0)
     return y
 }
@@ -658,6 +776,9 @@ export function cityYield(gs, city) {
     if (hasPolicy(gs, city.civ, 'FOUNDATIONS')) out.cult += 3
     if (hasPolicy(gs, city.civ, 'COLLEGE')) out.sci += 1
     if (hasPolicy(gs, city.civ, 'TRADING_POSTS')) out.g += 1
+    // Stage 6 wonders
+    if (gs.wonders && gs.wonders.STONEHENGE === city.civ) out.cult += CFG.stoneCult
+    if (gs.wonders && gs.wonders.GREAT_LIBRARY === city.civ) out.sci += CFG.librarySci
     // Stage 4: strategic resources in the connected network feed the city
     const net = resourceNetwork(gs, city.civ)
     const seat = [cy, ...neighbors(city.c, city.r).map(([c, r]) => idx(c, r))]
@@ -777,6 +898,7 @@ export function defenseBonus(gs, u) {
 export function cityDefense(gs, city) {
     let d = CFG.cityBaseDef + 3 * city.size
     if (city.civ != null && city.civ < BARB && happinessOf(gs, city.civ).unhappy) d = Math.floor(d * CFG.angryDef)   // angry cities dig in worse
+    if (city.civ != null && gs.wonders && gs.wonders.GREAT_WALL === city.civ) d = Math.round(d * CFG.wallDefMult)     // the wall is the city
     return d
 }
 
@@ -940,6 +1062,37 @@ function endPlayerTurn(gs) {
     checkEnd(gs)
 }
 
+function pumpCityQueue(gs, city) {
+    city.queue = city.queue || []
+    while (city.queue.length) {
+        const kind = city.queue[0]
+        if (WONDER[kind] && gs.wonders[kind] != null) {           // lost the race while it sat in the queue
+            city.queue.shift()
+            gs.events.push({ type: 'wonderLost', civ: city.civ, id: kind, by: gs.wonders[kind] })
+            continue
+        }
+        const cost = WONDER[kind] ? WONDER[kind].cost : unitCost(gs, city.civ, kind)
+        if (city.buildP < cost) break
+        if (WONDER[kind]) {
+            city.buildP -= cost; city.queue.shift()
+            gs.wonders[kind] = city.civ
+            gs.events.push({ type: 'wonderBuilt', civ: city.civ, id: kind, city: city.id, c: city.c, r: city.r })
+            for (const q of gs.cities) {
+                if (q.alive && q !== city && q.queue && q.queue.includes(kind)) {
+                    q.queue = q.queue.filter((k) => k !== kind)
+                    gs.events.push({ type: 'wonderLost', civ: q.civ, id: kind, by: city.civ })
+                }
+            }
+            continue
+        }
+        const at = landFree(gs, city.c, city.r) ? [city.c, city.r] : firstFreeAround(gs, city.c, city.r)
+        if (unitAt(gs, at[0], at[1]) || !landFree(gs, at[0], at[1])) break   // no room: points keep banking
+        city.buildP -= cost; city.queue.shift()
+        spawnUnit(gs, city.civ, kind, at[0], at[1])
+        gs.events.push({ type: 'build', civ: city.civ, city: city.id, unit: kind })
+    }
+}
+
 function resolveCiv(gs, civ) {
     const C = gs.civs[civ]
     const net = resourceNetwork(gs, civ)
@@ -957,18 +1110,10 @@ function resolveCiv(gs, civ) {
         const need = CFG.growBase + CFG.growStep * (city.size - 1) - (hasTech(gs, civ, 'POTTERY') ? 2 : 0)
         if (!hs.unhappy) while (city.storedFood >= need && city.size < 9) { city.storedFood -= need; city.size++; gs.events.push({ type: 'grow', civ, city: city.id, size: city.size }) }
         if (city.storedFood < 0) city.storedFood = 0
-        // production queue: bank shields, deliver units when the cost is met
+        // production queue: bank shields, deliver units/wonders when the cost is met
         city.buildP = (city.buildP || 0) + y.p
         city.queue = city.queue || []
-        while (city.queue.length) {
-            const kind = city.queue[0], cost = unitCost(gs, civ, kind)
-            if (city.buildP < cost) break
-            const at = landFree(gs, city.c, city.r) ? [city.c, city.r] : firstFreeAround(gs, city.c, city.r)
-            if (unitAt(gs, at[0], at[1]) || !landFree(gs, at[0], at[1])) break   // no room: points keep banking
-            city.buildP -= cost; city.queue.shift()
-            spawnUnit(gs, civ, kind, at[0], at[1])
-            gs.events.push({ type: 'build', civ, city: city.id, unit: kind })
-        }
+        pumpCityQueue(gs, city)
         // city bombardment: one adjacent enemy unit per turn, weakest first
         let victim = null, vh = 1e9
         for (const [nc, nr] of neighbors(city.c, city.r)) {
@@ -996,7 +1141,21 @@ function resolveCiv(gs, civ) {
         if (RES[id].lux) lux++
     }
     gold += CFG.luxGold * lux; cult += CFG.luxCult * lux
+    if (gs.wonders && gs.wonders.COLOSSUS === civ) gold += CFG.colossusGold * lux   // bronze giants guard the caravans
     if (hs.happy) gold = Math.round(gold * (1 + CFG.happyGold))   // happy markets tip the till
+    // Stage 6: every city sings its people toward legend — one point of each
+    // type per city, an extra engineer at the palace, a merchant per luxury.
+    const G = gs.gp[civ]
+    const myCities = gs.cities.filter((c) => c.alive && c.civ === civ).length
+    const gpPalace = gs.cities.some((c) => c.alive && c.civ === civ && c.capital) ? CFG.gpPalace : 0
+    G.pts.ENGINEER += myCities + gpPalace
+    G.pts.SCIENTIST += myCities
+    G.pts.MERCHANT += myCities + CFG.gpLux * lux
+    for (const t of GP_TYPES) {
+        const now = G.pts[t] >= gpThreshold(gs, civ, t)
+        if (now && !G.ready[t]) { G.ready[t] = true; gs.events.push({ type: 'gpReady', civ, kind: t, need: gpThreshold(gs, civ, t), cost: gpCost(gs, civ, t) }) }
+        if (!now) G.ready[t] = false
+    }
     C.gold += gold; C.science += sci; C.culture += cult
     const mood = hs.net >= 1 ? 'happy' : hs.net < 0 ? 'unhappy' : 'content'
     if (mood !== C.happyState) { C.happyState = mood; C.happyNet = hs.net; gs.events.push({ type: 'happy', civ, net: hs.net, state: mood }) }
@@ -1126,6 +1285,17 @@ function aiTurn(gs, civ) {
     for (const id of AI_POLICY[civ] || ['FOUNDATIONS', 'CEREMONY']) {
         if (canAdopt(gs, civ, id) === true) { adoptPolicy(gs, civ, id); break }
     }
+    // Stage 6: rivals chase wonders on deterministic lines, recruit their great
+    // people the moment the price is paid, and spend them without hesitating.
+    const G = gs.gp[civ]
+    for (const t of GP_TYPES) {
+        if (canRecruit(gs, civ, t) === true) { recruitGP(gs, civ, t); break }
+    }
+    const aiCap = gs.cities.find((c) => c.alive && c.civ === civ)
+    const aiR = gs.tech[civ]
+    if (G.held.SCIENTIST > 0 && aiR.research && aiR.prog * 2 < TECH[aiR.research].cost) spendGP(gs, civ, 'SCIENTIST')
+    else if (G.held.ENGINEER > 0 && aiCap && aiCap.queue && aiCap.queue.length && WONDER[aiCap.queue[0]]) spendGP(gs, civ, 'ENGINEER', aiCap.id)
+    else if (G.held.MERCHANT > 0 && C.gold < 300) spendGP(gs, civ, 'MERCHANT')
     // city production choices (points are banked/delivered in resolveCiv)
     // research: a stable per-civ priority path, rotated so rivals diverge
     const R = gs.tech[civ]
@@ -1141,6 +1311,11 @@ function aiTurn(gs, civ) {
         if (city.civ !== civ || !city.alive) continue
         city.queue = city.queue || []
         if (city.queue.length >= 3) continue
+        // Stage 6: every rival is in the race — one wonder at a time, per city
+        if (!city.queue.some((k) => WONDER[k]) && !WONDER_IDS.some((id) => gs.wonders[id] === civ)) {
+            const pick = WONDER_IDS.filter((id) => canBuildWonder(gs, civ, id) === true)
+            if (pick.length && hash2(city.id, gs.turn, civ ^ 29) < 0.45) city.queue.push(pick[(civ + city.id) % pick.length])
+        }
         const wantSettler = city.size >= 2 && C.gold >= 40 && (C.cities || 0) < 6
         const workers = gs.units.filter((x) => x.alive && x.civ === civ && x.kind === 'WORKER').length + city.queue.filter((k) => k === 'WORKER').length
         if (wantSettler && !city.queue.includes('SETTLER')) city.queue.push('SETTLER')
@@ -1213,7 +1388,9 @@ export function step(gs, input = {}) {
     if (input.endTurn) { endPlayerTurn(gs); return }
     if (input.research) setResearch(gs, 0, input.research)
     if (input.policy) adoptPolicy(gs, 0, input.policy)
-    if (input.queue && UNIT[input.queue]) {
+    if (input.recruit) recruitGP(gs, 0, input.recruit)
+    if (input.useGP) spendGP(gs, 0, input.useGP.kind, input.useGP.city)
+    if (input.queue && (UNIT[input.queue] || WONDER[input.queue])) {
         const deny = queueDeny(gs, 0, input.queue)
         if (deny) gs.events.push({ type: 'deny', reason: deny, c: -1, r: -1 })
         else {
@@ -1240,6 +1417,7 @@ export function stateHash(gs) {
     for (const tl of gs.tiles) L = (L * 7 + (tl.imp ? IMP_IDS.indexOf(tl.imp) + 1 : 0) + (tl.road ? 4 : 0) + (tl.res + 1) * 11 + (tl.build ? tl.build.left * 3 + tl.build.civ : 0)) | 0
     h = (h * 33 + L) | 0
     h = (h * 33 + Object.keys(gs.wars).length * 613) | 0
+    for (const id of WONDER_IDS) h = (h * 31 + (gs.wonders[id] != null ? gs.wonders[id] + 2 : 0)) | 0
     for (const civ of [0, 1, 2, 3]) {
         const R = gs.tech[civ]
         let m = 0
@@ -1248,7 +1426,9 @@ export function stateHash(gs) {
         for (const id of connectedResources(gs, civ)) rm |= 1 << RES_IDS.indexOf(id)
         let pm = 0
         for (let i = 0; i < POLICY_IDS.length; i++) if (gs.policies[civ][POLICY_IDS[i]]) pm |= 1 << i
+        const G = gs.gp[civ]
         h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3 + rm * 29 + pm * 17 + (gs.civs[civ].culture | 0)) | 0
+        h = (h * 33 + (Math.floor(G.pts.ENGINEER) + Math.floor(G.pts.SCIENTIST) * 7 + Math.floor(G.pts.MERCHANT) * 11 + G.held.ENGINEER * 17 + G.held.SCIENTIST * 19 + G.held.MERCHANT * 23)) | 0
     }
     return (h >>> 0).toString(16)
 }

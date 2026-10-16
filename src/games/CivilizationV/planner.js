@@ -10,7 +10,7 @@
 // grow to the milestone. It does not conquergoal: domination stays a player
 // ambition, the autopilot's job is to survive the frontier it was proven on.
 
-import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, unitAt, atWar, BARB, UNIT, stepToward, tileBlocked, availableTechs, canImprove, canAdopt } from './sim.js'
+import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, unitAt, atWar, BARB, UNIT, TECH, stepToward, tileBlocked, availableTechs, canImprove, canAdopt, WONDER, WONDER_IDS, canBuildWonder, canRecruit, canUseGP, GP_TYPES } from './sim.js'
 
 const SITE = (tl) => (tl.terr === T.GRASS ? 3 : tl.terr === T.PLAINS ? 2 : 0)
     + (tl.river ? 2 : 0) + (tl.forest ? 1 : 0) + (tl.terr === T.HILLS ? 1 : 0)
@@ -94,6 +94,21 @@ export function decide(gs) {
         }
         // spend culture on government when the pool can pay
         for (const id of POLICY_ORDER) if (canAdopt(gs, 0, id) === true) return { policy: id }
+        // Stage 6: spend a great person in hand (save the engineer for a wonder,
+        // the scientist for something that will take a while), then recruit, then
+        // chase the first wonder whose tech the lab has handed down.
+        for (const t of GP_TYPES) {
+            if (gs.gp[0].held[t] > 0 && canUseGP(gs, 0, t) === true) {
+                if (t === 'SCIENTIST' && gs.tech[0].research && gs.tech[0].prog * 2 < TECH[gs.tech[0].research].cost) return { useGP: { kind: t } }
+                if (t === 'ENGINEER' && cap.queue && cap.queue.length && WONDER[cap.queue[0]]) return { useGP: { kind: t } }
+                if (t === 'MERCHANT') return { useGP: { kind: t } }
+            }
+        }
+        for (const t of GP_TYPES) if (canRecruit(gs, 0, t) === true) return { recruit: t }
+        if (cap.queue.length < 3 && !cap.queue.some((k) => WONDER[k]) && !WONDER_IDS.some((id) => gs.wonders[id] === 0)) {
+            const pick = WONDER_IDS.filter((id) => canBuildWonder(gs, 0, id) === true)
+            if (pick.length) return { queue: pick[0] }
+        }
         // Stage 4 labour: train one worker, then keep it working the heartland
         const workers = gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER')
         if (!workers.length && !(cap.queue || []).includes('WORKER') && cap.queue.length < 3) return { queue: 'WORKER' }

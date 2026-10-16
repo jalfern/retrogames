@@ -7,7 +7,7 @@
 // Math.random at render time (terrain jitter is a hash of the tile).
 
 import * as THREE from 'three'
-import { CFG, T, CIVS, RES, RES_IDS, resRevealed } from './sim.js'
+import { CFG, T, CIVS, RES, RES_IDS, resRevealed, WONDER_IDS } from './sim.js'
 
 const SQ3 = Math.sqrt(3)
 export const HEX = 1
@@ -140,6 +140,62 @@ function buildUnit(u) {
     const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.055), new THREE.MeshStandardMaterial({ color: 0x49d24a, emissive: 0x1c6b1e, emissiveIntensity: 0.6 }))
     bar.position.set(0, 0.72, 0); g.add(bar)
     g.userData.bar = bar
+    return g
+}
+
+// ---- Stage 6: completed wonders rise as landmarks over their city ----
+function buildWonder(id, city, h) {
+    const g = new THREE.Group()
+    const { x, z } = hexToWorld(city.c, city.r)
+    const ox = 0.52, oz = -0.5
+    if (id === 'PYRAMIDS') {
+        const mat = new THREE.MeshStandardMaterial({ color: 0xd8bd85, flatShading: true, roughness: 0.9 })
+        const p = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.95, 4), mat)
+        p.rotation.y = Math.PI / 4; p.position.set(ox, h + 0.47, oz); g.add(p)
+        const p2 = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.55, 4), mat)
+        p2.rotation.y = Math.PI / 4; p2.position.set(ox + 0.55, h + 0.27, oz + 0.28); g.add(p2)
+    } else if (id === 'STONEHENGE') {
+        const mat = new THREE.MeshStandardMaterial({ color: 0x9aa08c, flatShading: true, roughness: 0.95 })
+        for (let i = 0; i < 5; i++) {
+            const a = (i / 5) * Math.PI * 2
+            const st = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.42 + (i % 2) * 0.08, 0.1), mat)
+            st.position.set(ox + Math.cos(a) * 0.34, h + 0.21, oz + Math.sin(a) * 0.34)
+            st.rotation.y = a; g.add(st)
+            if (i % 2 === 0) { const lin = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.12), mat); lin.position.set(ox + Math.cos(a) * 0.34, h + 0.47, oz + Math.sin(a) * 0.34); lin.rotation.y = a; g.add(lin) }
+        }
+    } else if (id === 'HANGING_GARDENS') {
+        const stoneMat = new THREE.MeshStandardMaterial({ color: 0xb9ae92, flatShading: true, roughness: 0.9 })
+        const leaf = new THREE.MeshStandardMaterial({ color: 0x3e8a3e, flatShading: true, roughness: 0.9 })
+        const tiers = [[0.78, 0.22], [0.56, 0.34], [0.36, 0.46]]
+        for (const [w, y] of tiers) {
+            const t = new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, w), stoneMat); t.position.set(ox, h + y, oz); g.add(t)
+            const gr = new THREE.Mesh(new THREE.BoxGeometry(w * 0.82, 0.08, w * 0.82), leaf); gr.position.set(ox, h + y + 0.09, oz); g.add(gr)
+        }
+    } else if (id === 'GREAT_LIBRARY') {
+        const marble = new THREE.MeshStandardMaterial({ color: 0xe2dcc8, flatShading: true, roughness: 0.7 })
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.42, 0.5), marble); body.position.set(ox, h + 0.21, oz); g.add(body)
+        for (const s of [-1, 1]) { const col = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.5, 6), marble); col.position.set(ox + s * 0.22, h + 0.25, oz + 0.28); g.add(col) }
+        const ped = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.22, 4), marble); ped.rotation.y = Math.PI / 4; ped.scale.set(1, 1, 0.72); ped.position.set(ox, h + 0.52, oz); g.add(ped)
+    } else if (id === 'COLOSSUS') {
+        const bronze = new THREE.MeshStandardMaterial({ color: 0xb0782e, metalness: 0.65, roughness: 0.4, flatShading: true })
+        const legs = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.5, 0.18), bronze); legs.position.set(ox, h + 0.25, oz); g.add(legs)
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.42, 0.2), bronze); torso.position.set(ox, h + 0.7, oz); g.add(torso)
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), bronze); head.position.set(ox, h + 0.98, oz); g.add(head)
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.38, 0.08), bronze); arm.position.set(ox + 0.24, h + 0.86, oz); arm.rotation.z = -0.9; g.add(arm)
+        const flame = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 5), new THREE.MeshStandardMaterial({ color: 0xffcf5a, emissive: 0xffaa20, emissiveIntensity: 1.6 })); flame.position.set(ox + 0.4, h + 1.06, oz); g.add(flame)
+        g.userData.flame = flame
+    } else if (id === 'GREAT_WALL') {
+        const grey = new THREE.MeshStandardMaterial({ color: 0xa8a294, flatShading: true, roughness: 0.95 })
+        for (let i = 0; i < 4; i++) {
+            const a = (i / 4) * Math.PI * 2 + 0.4
+            const seg = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.24, 0.1), grey)
+            seg.position.set(ox + Math.cos(a) * 0.4, h + 0.12, oz + Math.sin(a) * 0.4); seg.rotation.y = a + Math.PI / 2; g.add(seg)
+            if (i === 0) { const tower = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.44, 0.18), grey); tower.position.set(ox + Math.cos(a) * 0.4, h + 0.22, oz + Math.sin(a) * 0.4); g.add(tower) }
+        }
+    }
+    const halo = new THREE.Mesh(new THREE.RingGeometry(0.52, 0.68, 22), new THREE.MeshBasicMaterial({ color: 0xffd76a, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }))
+    halo.rotation.x = -Math.PI / 2; halo.position.set(ox, h + 0.02, oz); g.add(halo)
+    g.userData.x = x; g.userData.z = z; g.userData.h = h
     return g
 }
 
@@ -325,6 +381,7 @@ export function createView(gs) {
     const roadGroup = new THREE.Group(); scene.add(roadGroup)
     const workGroup = new THREE.Group(); scene.add(workGroup)
     const resGroup = new THREE.Group(); scene.add(resGroup)
+    const wonderGroup = new THREE.Group(); scene.add(wonderGroup)
 
     const unitMeshes = new Map()
     const unitAnim = new Map()
@@ -355,7 +412,7 @@ export function createView(gs) {
     }
 
     return {
-        scene, hexes, cones, ribbons, cityGroup, campGroup, unitGroup, fxGroup, roadGroup, workGroup, resGroup, selRing, reachPool,
+        scene, hexes, cones, ribbons, cityGroup, campGroup, unitGroup, fxGroup, roadGroup, workGroup, resGroup, wonderGroup, selRing, reachPool,
         unitMeshes, unitAnim, cityMeshes, campMeshes, fxPool, arrowPool,
         hexToWorld, worldToHex,
     }
@@ -389,7 +446,7 @@ export function spawnArrow(view, gs, from, to) {
 
 // Per-frame sync of every visual against authoritative sim state.
 export function updateView(view, gs, extra = {}) {
-    const { hexes, cones, cityGroup, campGroup, unitGroup, roadGroup, workGroup, resGroup } = view
+    const { hexes, cones, cityGroup, campGroup, unitGroup, roadGroup, workGroup, resGroup, wonderGroup } = view
     const col = new THREE.Color()
     const sunK = (i) => { const c = i % CFG.W, r = (i - c) / CFG.W; return 0.82 + 0.18 * (1 - r / CFG.H) }   // gentle north light
     for (let i = 0; i < gs.tiles.length; i++) {
@@ -467,6 +524,31 @@ export function updateView(view, gs, extra = {}) {
     if (rsig !== view._roadSig) { view._roadSig = rsig; for (const c of [...roadGroup.children]) { disposeObj(c); roadGroup.remove(c) }; roadGroup.add(buildRoads(gs)) }
     if (wsig !== view._workSig) { view._workSig = wsig; for (const c of [...workGroup.children]) { disposeObj(c); workGroup.remove(c) }; workGroup.add(buildWorks(gs)) }
     if (xsig !== view._resSig) { view._resSig = xsig; for (const c of [...resGroup.children]) { disposeObj(c); resGroup.remove(c) }; resGroup.add(buildResources(gs, 0)) }
+
+    // Stage 6 landmarks: rebuild when the wonder board (or what you can see) changes
+    let mwsig = ''
+    for (const id of WONDER_IDS) {
+        const b = gs.wonders[id]
+        if (b == null) { mwsig += '-'; continue }
+        const home = gs.cities.find((c) => c.alive && c.civ === b && c.capital) || gs.cities.find((c) => c.alive && c.civ === b)
+        mwsig += home ? id[0] + b + (gs.explored[0][home.r * CFG.W + home.c] ? '1' : '0') : id[0] + 'x'
+    }
+    mwsig += '#' + gs.turn
+    if (mwsig !== view._wonderSig) {
+        view._wonderSig = mwsig
+        for (const c of [...wonderGroup.children]) { disposeObj(c); wonderGroup.remove(c) }
+        for (const id of WONDER_IDS) {
+            const b = gs.wonders[id]
+            if (b == null) continue
+            const home = gs.cities.find((c) => c.alive && c.civ === b && c.capital) || gs.cities.find((c) => c.alive && c.civ === b)
+            if (!home || !gs.explored[0][home.r * CFG.W + home.c]) continue
+            wonderGroup.add(buildWonder(id, home, gs.tiles[home.r * CFG.W + home.c]._h))
+        }
+    }
+    for (const m of wonderGroup.children) {
+        const flame = m.userData.flame
+        if (flame) flame.material.emissiveIntensity = 1.4 + 0.5 * Math.sin(gs.tick * 0.18)
+    }
 
     // units: create/remove, animate position toward logical tile
     const liveIds = new Set()

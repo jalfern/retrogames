@@ -11,6 +11,8 @@
 //      rendering (never black) the whole time, zero page errors.
 //   4. THE WIN SCREEN AND RETURN — the autopilot reaches the milestone and one
 //      key rides back to attract.
+//   5. THE MARVELS (Stage 6) — U/G open the WONDERS and LEGENDS panels, the
+//      point pools bank, a wonder queues and the board fills on live turns.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const URL = process.env.CIV_URL || 'http://localhost:5173/retrogames/civilization-v'
@@ -121,6 +123,21 @@ await wait(150)
         await page.keyboard.press('Escape')
         await wait(150)
         r.check('Escape closes the POLICY panel', !(await page.evaluate(() => document.body.innerText.includes('CLOSE ✕'))))
+        // Stage 6 instant panel checks at turn ~2 (the game can be over by t12)
+        await page.keyboard.press('KeyU')
+        await wait(250)
+        const ub = await page.evaluate(() => document.body.innerText)
+        r.check('U opens the WONDERS panel with the real six', ub.includes('WONDERS') && ub.includes('Stonehenge') && ub.includes('Pyramids') && ub.includes('Great Wall'))
+        await page.keyboard.press('Escape')
+        await wait(150)
+        r.check('Escape closes the WONDERS panel', !(await page.evaluate(() => document.body.innerText.includes('first builder takes it forever'))))
+        await page.keyboard.press('KeyG')
+        await wait(250)
+        const gb = await page.evaluate(() => document.body.innerText)
+        r.check('G opens the LEGENDS panel with the three types', gb.includes('LEGENDS') && gb.includes('Great Engineer') && gb.includes('Great Scientist') && gb.includes('Great Merchant'))
+        await page.keyboard.press('Escape')
+        await wait(150)
+        r.check('Escape closes the LEGENDS panel', !(await page.evaluate(() => document.body.innerText.includes('EXPULSE'))))
     }
 }
 
@@ -188,6 +205,21 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
     for (let i = 0; i < 8 && !(pe.policies.length > 0 && pe.owned > 7) && !pe.end; i++) { await page.evaluate(() => window.__civTest.turn()); await wait(60); pe = await probe() }
     r.check(`culture buys government for real (${pe.policies.join(',') || 'none yet'})`, pe.policies.length > 0 || !!pe.end)
     r.check(`culture widens the borders on live turns (${pe.owned} Roman tiles)`, pe.owned > 7 || !!pe.end)
+}
+
+// 3f — the Stage 6 layer: wonders race and legends stir
+{
+    let p6 = await probe()
+    r.check(`the legend pools bank on live turns (engineer ${p6.gp[0].pts}/${p6.gp[0].need})`, p6.gp[0].pts > 0 || !!p6.end)
+    await page.evaluate(() => window.__civTest.learn('POTTERY'))
+    await page.evaluate(() => window.__civTest.queue('STONEHENGE'))
+    await wait(200)
+    p6 = await probe()
+    r.check('a wonder queues in the capital by hook', p6.queue.some((c) => c.queue.includes('STONEHENGE')) || !!p6.end)
+    let built6 = null
+    for (let i = 0; i < 10 && !built6 && !(await probe()).end; i++) { await page.evaluate(() => window.__civTest.turn()); await wait(60); const w = (await probe()).wonders; if (w.length) built6 = w }
+    r.check(`the wonder board fills on live turns (${built6 ? built6.map((w) => `${w.id}\u2192civ${w.by}`).join(',') : 'none before the end'})`, !!built6 || !!(await probe()).end)
+    r.check(`the happiness face survived Stage 6 (${p6.happy.net})`, typeof p6.happy.net === 'number')
 }
 
 // 4 — drive the same autopilot to the milestone on THIS run, then the end screen
