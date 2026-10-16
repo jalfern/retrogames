@@ -2,6 +2,10 @@
 //   geometry : all 100 generated levels audited with an INDEPENDENT walker
 //              (this file's own reachability model, not the planner's graph):
 //              door and every ground spawn reachable from the entry drop
+//              BY JUMPS ALONE — no ladders exist, so the generator's
+//              two-row jump chain floor->apex is re-walked, not trusted
+//   walls    : the cave is boxed in — bubbles bounce off the thick side
+//              walls, and a trapped bubble at the ceiling drifts along it
 //   rules    : trap -> float -> pop pays CHAIN_PAY by chain index; unpopped
 //              traps release angry and reset the chain; E,X,T,E,N,D = EXTEND
 //              1UP; LIGHTNING zaps every free enemy (Blubba survives it);
@@ -16,7 +20,7 @@
 //              lives-1 slack; the attract run's score equals its event ledger
 //   co-op    : two players drive without error and bank kills
 //   determinism : same seed twice -> identical digest
-// `-- --mutate` re-plants four fixed bugs in fresh child processes; each MUST die.
+// `-- --mutate` re-plants six fixed bugs in fresh child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -39,8 +43,10 @@ const S = await fresh()
 const { makeGame, step, CFG } = S
 
 // ---------------------------------------------------------------- geometry ----
-// independent reachability: stand cells, walks, falls, 2-row jumps, ladders,
-// drop-throughs (down) — written from the rules, not from planner.graphOf
+// independent reachability: stand cells, walks, falls, 2-row jumps,
+// drop-throughs (down) — written from the rules, not from planner.graphOf.
+// No ladder edges: the arcade has no ladders, so a level is only as
+// reachable as its jump chain.
 console.log('geometry')
 {
     const stand = (lv, r, c) => c >= 0 && c < COLS && (r === FLOOR_ROW || lv.platforms.some((p) => p.row === r && c >= p.c0 && c <= p.c1))
@@ -54,11 +60,6 @@ console.log('geometry')
             for (let r2 = r + 1; r2 <= FLOOR_ROW; r2++) if (stand(lv, r2, c)) { out.push([r2, c]); break }
             for (const dr of [-1, -2]) for (let dc = -2; dc <= 2; dc++) {
                 if (stand(lv, r + dr, c + dc)) out.push([r + dr, c + dc])
-            }
-            for (const l of lv.ladders) {
-                if (l.col !== c) continue
-                const lo = Math.min(l.rowTop, l.rowBot), hi = Math.max(l.rowTop, l.rowBot)
-                if (r >= lo && r <= hi) for (const r2 of [lo, hi]) if (r2 !== r && stand(lv, r2, c)) out.push([r2, c])
             }
             return out
         }
@@ -82,6 +83,66 @@ console.log('geometry')
     ok(bad === 0, 'all 100 levels: door + ground spawns reachable from entry', `${bad} levels failed`)
 }
 
+// ------------------------------------------------------------------ walls ----
+console.log('walls')
+{
+    // the cave is boxed in: a bubble blown into the left wall bounces back
+    const gs = makeGame(0)
+    const P = platformOf(gs)
+    rig(gs, P.row, 2, 8)
+    gs.enemies[0].x = (12 + 0.5) * CELL // out of the bubble's road
+    const p = gs.players[0]
+    p.x = 100; p.dir = -1 // far enough that the bubble reaches the wall first
+    step(gs, { fire: true })
+    let bounced = false
+    for (let i = 0; i < 120 && !bounced; i++) {
+        step(gs, {})
+        gs.events.length = 0
+        const b = gs.bubbles[0]
+        if (b && b.vx > 0 && b.x > 16) bounced = true
+    }
+    ok(bounced, 'a bubble bounces off the thick side wall and back into the field', gs.bubbles[0] ? `x=${gs.bubbles[0].x.toFixed(0)} vx=${gs.bubbles[0].vx.toFixed(2)}` : 'bubble gone')
+}
+{
+    // a trapped bubble parked at the ceiling drifts along it (arcade style)
+    const gs = makeGame(0)
+    const P = platformOf(gs)
+    rig(gs, P.row, 2, 8)
+    trapOnce(gs)
+    const b0 = gs.bubbles.find((b) => b.trapped)
+    ok(!!b0, 'a trap formed for the ceiling test')
+    b0.x = W / 2; b0.y = FIELD_Y0 + 18
+    gs.players[0].x = 12
+    let minX = Infinity, maxX = -Infinity, offCeiling = false
+    for (let i = 0; i < 60; i++) {
+        step(gs, {})
+        gs.events.length = 0
+        const b = gs.bubbles.find((x) => x.trapped)
+        if (!b) break
+        minX = Math.min(minX, b.x); maxX = Math.max(maxX, b.x)
+        if (Math.abs(b.y - (FIELD_Y0 + 18)) > 1) offCeiling = true
+    }
+    ok(maxX - minX > 2 && !offCeiling, 'a trapped bubble at the ceiling drifts along it', `drift ${(maxX - minX).toFixed(1)}px in 60t`)
+}
+{
+    // a water bubble rises and bounces off the ceiling instead of leaving the field
+    const gs = makeGame(0)
+    gs.lv = L.genLevel(30)
+    gs.lv._g = null
+    gs.door = { x: (gs.lv.door.col + 0.5) * CELL, y: FIELD_Y0 + gs.lv.door.row * CELL - 12, open: false }
+    const p = gs.players[0]
+    p.x = 60; p.y = H - 8; p.onGround = true; p.dir = 1; p.cool = 0
+    gs.bubbles = []
+    step(gs, { fire: true })
+    let minY = Infinity, seen = false
+    for (let i = 0; i < 120; i++) {
+        step(gs, {})
+        gs.events.length = 0
+        for (const b of gs.bubbles) { seen = true; minY = Math.min(minY, b.y) }
+    }
+    ok(seen && minY >= FIELD_Y0 + 4, 'a water bubble bounces off the ceiling, never leaves the field', `minY=${seen ? minY.toFixed(0) : 'n/a'}`)
+}
+
 // ------------------------------------------------------------------- rules ----
 console.log('rules')
 const rowOf = (y) => Math.round((y - FIELD_Y0) / CELL)
@@ -90,7 +151,6 @@ function platformOf(gs) { return gs.lv.platforms.find((p) => p.c1 - p.c0 >= 4) }
 function rig(gs, prow, pcol, ecol, kind = 'zenchan') {
     const p = gs.players[0]
     gs.lv.platforms.forEach((pl) => { if (pl.row === prow) { pl.c0 = 0; pl.c1 = COLS - 1 } })
-    gs.lv.ladders.length = 0
     p.x = (pcol + 0.5) * CELL; p.y = FIELD_Y0 + prow * CELL - 8; p.vy = 0; p.onGround = true; p.dir = ecol > pcol ? 1 : -1
     gs.enemies = [{
         id: 900, kind, x: (ecol + 0.5) * CELL, y: FIELD_Y0 + prow * CELL - 8,
@@ -269,11 +329,15 @@ function walkIntoAndPop(gs) {
     let hits = 0, killedev = false
     for (let i = 0; i < 900 && !killedev; i++) {
         const p = gs.players[0]
-        p.x = gs.enemies[0] ? gs.enemies[0].x : p.x
-        p.y = Math.max(FIELD_Y0 + 24, (gs.enemies[0] ? gs.enemies[0].y : p.y) + 20)
-        p.invuln = 999
-        gs.bubbles = []
-        step(gs, { fire: i % 15 === 0 })
+        const boss = gs.enemies[0]
+        if (boss) {
+            p.x = boss.x; p.y = Math.max(FIELD_Y0 + 24, boss.y + 20)
+            p.invuln = 999
+            gs.bubbles = []
+            // a full bubble dead on the boss — the hit rule, not the layout
+            if (i % 15 === 0) gs.bubbles.push({ id: 9500 + i, kind: 'bubble', owner: 1, x: boss.x, y: boss.y, vx: 0, vy: 0, r: CFG.bubbleMax, max: CFG.bubbleMax, life: 14, letter: null, trapped: null, hitIds: null })
+        }
+        step(gs, {})
         hits += gs.events.filter((e) => e.type === 'bossHit').length
         killedev = gs.events.some((e) => e.type === 'bossKill')
         gs.events.length = 0
@@ -326,7 +390,6 @@ function walkIntoAndPop(gs) {
     gs.lv = L.genLevel(0)
     gs.lv._g = null
     gs.lv.platforms = [{ row: 6, c0: 2, c1: 12 }, { row: 8, c0: 2, c1: 12 }]
-    gs.lv.ladders = []
     gs.bubbles = []
     gs.players[0].invuln = 9999
     gs.door.open = false
@@ -401,6 +464,8 @@ if (process.argv.includes('--mutate')) {
         ['door opens while enemies live', SIM, 'const cleared = gs.enemies.length === 0', 'const cleared = gs.enemies.length >= 0'],
         ['chain pay never escalates', LEVELS, 'CHAIN_PAY[Math.min(CHAIN_PAY.length - 1, chainIndex)]', 'CHAIN_PAY[0]'],
         ['lightning clears Blubba again', SIM, '    // von Blubba is unkillable — the lightning passes right through him\n}', '    if (gs.blubbas.length) { gs.blubbas = []; gs.events.push({ type: \'blubbaGone\' }) }\n}'],
+        ['bubbles stick to the side walls', SIM, 'if (b.vx < 0) b.vx = -b.vx * 0.5', 'b.vx = 0'],
+        ['ceiling bubbles stop drifting', SIM, 'b.vx = Math.sin((gs.tick + b.id * 31) / 34) * 0.28', 'b.vx = 0'],
     ]
     const files = {}
     let died = 0

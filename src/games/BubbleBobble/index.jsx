@@ -1,10 +1,11 @@
 // BUBBLE BOBBLE — the arcade shell. Everything visible is drawn at runtime
-// from the pure sim in ./sim.js at 1:1 on a 256x224 canvas: themed caves,
-// one-way platforms, ladders, shallows, the dragons, and the attract demo is
+// from the pure sim in ./sim.js at 1:1 on a 256x224 canvas: themed caves
+// boxed in by thick side walls, one-way platforms (no ladders — the arcade
+// has none), shallows, the dragons, and the attract demo is
 // planner.js's OWN proven run replayed tick-for-tick through real step().
 //
 // Layout: 1. painters 2. fixed-timestep loop (250ms catch-up — the heist
-// lesson) 3. input (arrows + SPACE = blow; UP doubles as jump/climb;
+// lesson) 3. input (arrows + SPACE = blow; UP = jump;
 // 1 = solo, 2 = solo + CPU partner Bob, 3 = two-player keyboard)
 // 4. DEV hook + DebugKit 5. React + HUD.
 
@@ -174,17 +175,16 @@ const Bob = () => {
             ctx.fillStyle = t.plat
             ctx.fillRect(0, H - 4, W, 1)
         }
-        const drawLadders = (t) => {
-            for (const l of gs.lv.ladders) {
-                const x = l.col * CELL + 3
-                const y0 = FIELD_Y0 + Math.min(l.rowTop, l.rowBot) * CELL
-                const y1 = (Math.max(l.rowTop, l.rowBot) >= FLOOR_ROW ? H : FIELD_Y0 + Math.max(l.rowTop, l.rowBot) * CELL) + 4
-                ctx.fillStyle = t.deco
-                ctx.globalAlpha = 0.8
-                ctx.fillRect(x, y0, 2, y1 - y0)
-                ctx.fillRect(x + 8, y0, 2, y1 - y0)
-                for (let y = y0 + 3; y < y1 - 1; y += 8) ctx.fillRect(x, y, 10, 2)
-                ctx.globalAlpha = 1
+        const drawWalls = (t) => {
+            // the cave is boxed in: thick brick walls on both sides, drawn over
+            // the platform ends and the waterline so the box reads as one shell
+            for (const x0 of [0, W - 8]) {
+                ctx.fillStyle = t.platDark
+                ctx.fillRect(x0, 0, 8, H)
+                ctx.fillStyle = t.plat
+                for (let y = 0; y < H; y += 10) ctx.fillRect(x0 + 1, y + 2, 6, 3)
+                ctx.fillStyle = t.platLite
+                ctx.fillRect(x0 === 0 ? 7 : x0, 0, 1, H)
             }
         }
         const drawWater = () => {
@@ -218,7 +218,7 @@ const Bob = () => {
             const body = i === 0 ? '#4fd24f' : '#4f9fef'
             const belly = i === 0 ? '#c9f5a8' : '#c8ecff'
             const stepF = p.moving ? Math.floor(gs.tick / 6) % 2 : 0
-            const fly = p.climbing || !p.onGround
+            const fly = !p.onGround
             ctx.fillStyle = body
             ctx.beginPath(); ctx.ellipse(p.x, p.y, 6.4, 7, 0, 0, Math.PI * 2); ctx.fill()
             ctx.fillStyle = belly
@@ -324,6 +324,30 @@ const Bob = () => {
                 ctx.fillRect(e.x + 3, e.y + (wf2 ? 5 : 4), 2.6, 2)
                 return
             }
+            if (e.kind === 'zenchan') {
+                // the round-1 wind-up toy: big round head, huge eyes, stubby
+                // body, waddling feet, and a key that keeps winding on the side
+                const stepF = Math.floor(gs.tick / 6 + e.id) % 2
+                const bobY = Math.sin(gs.tick / 6 + e.id) * 0.6
+                ctx.fillStyle = blinkA ? '#b8d878' : '#8fb85f'
+                ctx.beginPath(); ctx.ellipse(e.x, e.y + 3 + bobY * 0.4, 4.6, 3.4, 0, 0, Math.PI * 2); ctx.fill()
+                ctx.fillStyle = blinkA ? '#d8ee9f' : '#b8d878'
+                ctx.beginPath(); ctx.arc(e.x, e.y - 3.4 + bobY, 5.4, 0, Math.PI * 2); ctx.fill()
+                ctx.fillStyle = '#fff'
+                ctx.beginPath(); ctx.arc(e.x - 2.2, e.y - 4 + bobY, 2.4, 0, Math.PI * 2); ctx.arc(e.x + 2.2, e.y - 4 + bobY, 2.4, 0, Math.PI * 2); ctx.fill()
+                ctx.fillStyle = '#0b0b1c'
+                ctx.fillRect(e.x - 2.6 + (e.dir > 0 ? 0.8 : -0.4), e.y - 4.6 + bobY, 1.3, 1.6)
+                ctx.fillRect(e.x + 1.4 + (e.dir > 0 ? 0.8 : -0.4), e.y - 4.6 + bobY, 1.3, 1.6)
+                ctx.fillStyle = '#5f7d3f'
+                ctx.fillRect(e.x - 4 + (stepF ? 0.9 : 0), e.y + 6.4 - (stepF ? 0.9 : 0), 2.4, 1.8)
+                ctx.fillRect(e.x + 1.6 - (stepF ? 0.9 : 0), e.y + 6.4 - (stepF ? 0 : 0.9), 2.4, 1.8)
+                const kx = e.x - e.dir * 5.6, ky = e.y + 2.2 + bobY * 0.4
+                const tw = Math.abs(Math.cos(gs.tick / 4 + e.id)) * 2.6 + 0.4
+                ctx.fillStyle = '#e8c85f'
+                ctx.fillRect(kx - 0.6, ky - 1.3, 1.2, 2.6)
+                ctx.fillRect(kx - tw, ky - 0.6, tw * 2, 1.2)
+                return
+            }
             ctx.fillStyle = blinkA ? '#8fe07f' : '#3faf5f'
             ctx.beginPath(); ctx.ellipse(e.x, e.y, 7, 6, 0, 0, Math.PI * 2); ctx.fill()
             ctx.fillStyle = '#fff'
@@ -392,8 +416,8 @@ const Bob = () => {
             drawBackdrop(t)
             drawDoor()
             drawPlatforms(t)
-            drawLadders(t)
             drawWater()
+            drawWalls(t)
             for (const it of gs.items) drawItem(it)
             for (const e of gs.enemies) drawEnemy(e)
             for (const b of gs.bubbles) drawBubble(b)
@@ -421,19 +445,20 @@ const Bob = () => {
 
             ctx.fillStyle = 'rgba(0,0,0,0.55)'
             ctx.fillRect(0, 0, W, FIELD_Y0 - 2)
-            text(`1UP ${String(gs.score).padStart(6, '0')}`, 46, 11, 9, '#ff5d5d', 3)
-            text(`HI ${String(Math.max(gs.score, board()[0]?.score || 0)).padStart(6, '0')}`, W - 46, 11, 9, '#ffd23f', 3)
-            text(gs.lv.name, W / 2, 11, 8, '#8fa3d8', 0)
+            // the HUD band carries every readout — nothing sits on the play floor
+            text(`1UP ${String(gs.score).padStart(6, '0')}`, 42, 8, 8, '#ff5d5d', 3)
+            text(`HI ${String(Math.max(gs.score, board()[0]?.score || 0)).padStart(6, '0')}`, W - 42, 8, 8, '#ffd23f', 3)
+            text(`${gs.enemies.length} left`, 42, 15, 7, gs.enemies.length ? '#8fa3d8' : '#5dff8f', gs.enemies.length ? 0 : 3)
+            text(gs.lv.name, W / 2, 15, 7, '#8fa3d8', 0)
+            for (let i = 0; i < LETTERS.length; i++) {
+                ctx.fillStyle = i < gs.letterProg ? '#fff2b0' : 'rgba(255,255,255,0.18)'
+                ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center'
+                ctx.fillText(LETTERS[i], W - 40 - 17.5 + i * 7, 15)
+            }
             for (let i = 0; i < gs.lives; i++) {
                 ctx.fillStyle = i === 0 ? '#4fd24f' : '#4f9fef'
                 ctx.beginPath(); ctx.arc(9 + i * 10, H - 7, 3.4, 0, Math.PI * 2); ctx.fill()
             }
-            for (let i = 0; i < LETTERS.length; i++) {
-                ctx.fillStyle = i < gs.letterProg ? '#fff2b0' : 'rgba(255,255,255,0.18)'
-                ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
-                ctx.fillText(LETTERS[i], W - 60 + i * 9, H - 4)
-            }
-            text(`${gs.enemies.length} left`, W / 2, H - 4, 8, gs.enemies.length ? '#8fa3d8' : '#5dff8f', gs.enemies.length ? 0 : 4)
             if (toast > 0) { text(toastMsg, W / 2, H / 2 - 26, 10, '#e9f7ff', 6); toast-- }
 
             const sc = screenRef.current

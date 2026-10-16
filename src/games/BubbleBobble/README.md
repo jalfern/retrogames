@@ -10,7 +10,7 @@ font and note is drawn/synthesized at runtime (`index.jsx` painters +
 
 | File | Job | Purity |
 |------|-----|--------|
-| `levels.js` | 100 generated caves: platform/ladder/water layout, enemy roster, spawn spread | pure data + deterministic generator |
+| `levels.js` | 100 generated caves: platform/water layout (no ladders — jump-reachable by construction), enemy roster, spawn spread; cave 1 is the arcade's round-1 cave, by hand | pure data + deterministic generator |
 | `sim.js` | the whole game as `step(state, inputs)` — physics, traps, chains, letters, water, lightning, Blubba, boss, door | **pure, zero `Math.random()` after seeding; no DOM, no canvas** |
 | `planner.js` | the autopilot: rollout-based dodge + graph BFS movement + pop/engage/loot priorities | pure; `plan(seed)` returns a proven script |
 | `index.jsx` | React shell: fixed-timestep loop, painters, HUD, attract replay, VirtualControls, DEV hook | the only file that touches the browser |
@@ -46,10 +46,13 @@ a scripted animation.
 - **Door discipline.** The exit door stays welded shut until `enemies.length
   === 0` *including Blubba*, and `end` requires the player to be at the open
   door. A cave is never winnable by timer.
-- **One-way platforms + ladders.** Up moves pass through platforms; `down`
-  drops through; ladders run floor-to-ceiling and the sim distinguishes
-  climb-start from jump-on-platform by requiring the player to overlap the
-  ladder's top span.
+- **One-way platforms, no ladders.** The arcade has no ladders: up moves pass
+  through platforms; `down` drops through; the generator keeps every row
+  exactly a jump (2 rows) above a reachable row and each span meeting the one
+  below within 2 columns, so every cave is climbable by jumps alone. The cave
+  is boxed in by thick side walls and the ceiling: bubbles **bounce** off the
+  walls and off the ceiling under the HUD, and a trapped bubble at the
+  ceiling drifts along it.
 - **Max-size bubbles block your own walk**, exactly like the original's wall
   of bubbles.
 - **Bosses** (every 20th cave): 3 direct bubble-hits, +BOSS_POINTS, then the
@@ -57,12 +60,15 @@ a scripted animation.
 
 ## Harness honesty
 
-`bobcheck.mjs` (38 checks, in the CI `static` gate as `bobcheck -- --mutate`):
+`bobcheck.mjs` (39 checks, in the CI `static` gate as `bobcheck -- --mutate`):
 
 - an **independent** geometry pass over all 100 caves (it re-derives
-  reachability from the platform graph without running the sim — the generator
-  promises a chain-ladder route floor→apex, and the audit recomputes it rather
-  than trusting the promise);
+  reachability from the platform graph **by jumps alone** — no ladders exist —
+  without running the sim: the generator promises a two-row jump chain
+  floor→apex, and the audit recomputes it rather than trusting the promise);
+- a **walls** pass: a bubble blown into the side wall bounces back into the
+  field, a trapped bubble at the ceiling drifts along it, and a rising water
+  bubble bounces off the ceiling instead of leaving the field;
 - rule pins written against hand-made states (trap→pop ledger, escape-angry,
   letter sequence, water→snail revert, fire kill, transform table, lightning
   clears screen, Blubba spawn/caps/untouchable, boss 3-hit, door shut while a
@@ -71,8 +77,9 @@ a scripted animation.
   chain ≥ 2), and die no more than 3 times (lives-1 slack);
 - determinism: same seed + same inputs ⇒ identical `stateHash`;
 - a testbed win-path that chains all 100 caves through their doors;
-- 3 mutants (chain reset removed, door opens while enemies live, trapped
-  bubbles age anyway) that **must** turn the suite red.
+- 6 mutants (traps never escape, door opens while enemies live, chain pay
+  never escalates, lightning clears Blubba, bubbles stick to the side walls,
+  ceiling bubbles stop drifting) that **must** turn the suite red.
 
 ## Honest gaps / deviations (flagged for Jon)
 
@@ -80,12 +87,15 @@ a scripted animation.
    from the arcade ROM (the real table is per-enemy and undocumented here).
    Polish issue asks Jon to confirm or replace.
 2. **Pilot ceiling:** the autopilot reliably clears cave 1 on seed 0 (audited,
-   hash-for-hash) but not deeper caves — cave 2+ needs coordinated ladder
-   combat under angry enemies. Attract = the proven cave-1 run replayed, which
-   is honest but short.
-3. Single-screen caves with generated layouts, not the original's 100
-   hand-authored rooms; enemy *kinds* are homages (Zen-Chan/Pulpul/Gouyu
-   analogues: walker/hopper/swimmer + Batoya + Pengu), not sprite reproductions.
+   hash-for-hash) but not deeper caves — level 2+ needs faster multi-tier
+   clears before von Blubba's timer. When Blubba is on screen and the door is
+   open, the pilot runs for the door with a dodge-scored rollout (the arcade's
+   own answer). Attract = the proven cave-1 run replayed, which is honest but
+   short.
+3. Cave 1 is the arcade's round-1 cave, re-laid by hand; the other 99 are
+   single-screen generated layouts, not the original's hand-authored rooms;
+   enemy *kinds* are homages (Zen-Chan/Pulpul/Gouyu analogues:
+   walker/hopper/swimmer + Batoya + Pengu), not sprite reproductions.
 4. No item-shop, no bonuses timers per fruit decay stages, no two-player *screen*
    split (both dragons share the cave — co-op is the original's shape; P2 is
    keyboard WASD+F, CPU partner mode exists for phones/harness).
