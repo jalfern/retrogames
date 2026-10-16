@@ -281,7 +281,45 @@ flagged about small screens.
   temperature sign + monotonic cool-falloff + ambient dilution, `torchSum` additivity,
   bounce height-invariance + monotonic decay, pool clip + scrim, figures carry `temp`,
   the `?lite` route). Mutant proof at ship time: `ambientFor` forced to ignore lite
-  turns the readability clause red; restored → green.
+   turns the readability clause red; restored → green.
+
+## Stage 9 — the fourth art pass: two light sources, moonlit palace (this merge)
+
+Stage 8 split warm-fire from cool-dark by hue. Stage 9 makes the *source* of the
+cool light explicit, so fire and moon become the level language (answers STATE
+Q1/Q2: widen the split rather than dim the pool). `sim.js` untouched — the 1989
+rules and the champion run are unchanged. All new helpers are pure + exported so
+`popcheck` pins them.
+
+- **Moonlight as a cool key (`coolGlow`, `coolAt`, `moonSources`).** Arched palace
+  windows are cool light sources: they *brighten* a room (`lightAt`) without ever
+  *heating* it (`tempAt` drops to 0 in pure moonlight). `lightAt`/`tempAt` gained an
+  optional `moonPx` channel (default `[]`, so every S8 value is bit-identical).
+  `moonSources(deco, base)` reads window columns out of a palace band; the scene
+  builds cool keys **only** when `lvl.theme === 'palace'`, so the dungeon stays
+  firelit. `coolPool` paints each window's cold bloom additively, clipped below the
+  HUD by the same rule as the warm pools.
+- **Floor bounce is a per-flagstone band (`bandAt`).** The single glow blob is gone:
+  the warm uplight is quantised to the flagstone the point stands on, so the lit
+  floor steps down tile by tile and reads as stone catching light.
+- **Rim hue widened (`rimColor`).** Cool end pushed to violet (b>r>g at temp 0),
+  warm end to amber-white (r>g>b at temp 1), monotonic in `temp`. Rim-only, so the
+  prince's white tunic never muddies.
+- **Props catch the light (`propShade`, `propLight`).** Flasks, the sword pickup and
+  the mirror now take the room light (`atLight`) — a cool veil sinks an unlit prop,
+  a warm rim grounds a lit one. Light is consistent across the scene, not just figures.
+
+Stage-9 added 26 `popcheck` clauses (279 total): moon reach/strength, `coolGlow`
+monotonicity, `coolAt` additivity, `moonSources` window extraction + empty-guard +
+room offset, moon-lights-without-heating, cool-dilutes-warmth, the default moon
+channel leaves S8 unchanged, `rimColor` violet/amber/monotonic, `bandAt` quantise +
+step + reach-death + height-invariance, `propShade` monotonic and bounded, plus the
+drawScene wiring (palace-only keys, clipped cool pools, per-tile band, lit props,
+`rimColor(temp)` rim, moon-fed `atLight`) and no `Math.random`. Mutant proof at ship
+time: dropping `MOON_STRENGTH*coolAt` from the `tempAt` denominator turns the
+cool-dilutes-warmth clause red (278/279); restored → 279/279. On-canvas the frame
+carries warm fire *and* cool dark/moon pixels; `popplay` 17/17 through the palace
+levels with zero page errors.
 
 ## Honest gaps (the deep pass continues — see #316)
 
