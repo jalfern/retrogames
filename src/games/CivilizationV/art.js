@@ -82,6 +82,17 @@ function buildUnit(u) {
         bow.position.set(0.18, 0.3, 0.05); bow.rotation.z = -Math.PI / 2; g.add(bow)
         const quiv = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.24, 6), new THREE.MeshStandardMaterial({ color: 0x4a3820 }))
         quiv.position.set(-0.12, 0.3, -0.1); quiv.rotation.x = 0.4; g.add(quiv)
+    } else if (u.kind === 'CATAPULT') {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.3), new THREE.MeshStandardMaterial({ color: 0x6b4a24, flatShading: true, roughness: 0.9 }))
+        frame.position.y = 0.16; g.add(frame)
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x4a3418, roughness: 0.9 })
+        const w1 = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.035, 6, 12), wheelMat)
+        w1.rotation.y = Math.PI / 2; w1.position.set(0.2, 0.13, 0.17); g.add(w1)
+        const w2 = w1.clone(); w2.position.x = -0.2; w2.position.z = -0.17; g.add(w2)
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.52, 0.05), new THREE.MeshStandardMaterial({ color: 0x8a6a3e, flatShading: true, roughness: 0.8 }))
+        arm.position.set(-0.04, 0.42, 0); arm.rotation.z = 0.7; g.add(arm)
+        const bucket = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), new THREE.MeshStandardMaterial({ color: 0x2c2c30, roughness: 0.6 }))
+        bucket.position.set(0.16, 0.58, 0); g.add(bucket)
     } else {
         const body = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.44, 7), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0x000000), 0.15), flatShading: true, roughness: 0.7 }))
         body.position.y = 0.28; g.add(body)

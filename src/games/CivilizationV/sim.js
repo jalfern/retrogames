@@ -141,6 +141,15 @@ function applyLearn(gs, civ, id) {
     if (id === 'HORSEBACK') for (const u of gs.units) if (u.alive && u.civ === civ && UNIT[u.kind].str > 0) { u.maxMoves += 1; u.moves += 1 }
     if (id === 'MASONRY') for (const ct of gs.cities) if (ct.alive && ct.civ === civ) { ct.wallMax = (ct.wallMax || CFG.cityHp) + 100 }
 }
+export function grantTech(gs, civ, id) {   // test/cheat path: learn instantly
+    const R = gs.tech[civ]
+    if (R.known[id]) return false
+    R.known[id] = true
+    if (R.research === id) { R.research = null; R.prog = 0 }
+    gs.events.push({ type: 'tech', civ, id })
+    applyLearn(gs, civ, id)
+    return true
+}
 
 // ---- odd-r hex geometry -------------------------------------------------------
 const ODD_R_NEIGH = [

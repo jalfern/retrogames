@@ -75,6 +75,26 @@ await wait(300)
 s = await probe()
 r.check(`E settles your capital (capitalSize ${s.capitalSize}, playerCities ${s.playerCities})`, s.capitalSize >= 1 && s.playerCities >= 1)
 
+// 2b — the research panel: opens with T, closes with Escape, sets a real research
+await page.keyboard.press('KeyT')
+await wait(250)
+const panelVisible = await page.evaluate(() => document.body.innerText.includes('MEDIEVAL') && document.body.innerText.includes('CLOSE'))
+r.check('T opens the RESEARCH panel with the era columns', panelVisible)
+await page.keyboard.press('Escape')
+await wait(150)
+r.check('Escape closes the panel', await page.evaluate(() => !document.body.innerText.includes('CLOSE')))
+const gated = (await probe()).queue
+await page.keyboard.press('Digit2')
+await wait(150)
+r.check('archers are refused before Archery is known', !(await probe()).queue.some((c) => c.queue.includes('ARCHER')), JSON.stringify(gated))
+await page.keyboard.press('KeyR')
+await wait(150)
+r.check('R commits to the first tech on the autopilot path', (await probe()).tech.research === 'ARCHERY')
+await page.evaluate(() => window.__civTest.learn('ARCHERY'))
+await page.keyboard.press('Digit2')
+await wait(150)
+r.check('with Archery learned, the archer queues at once', (await probe()).queue.some((c) => c.queue.includes('ARCHER')))
+
 // 3 — real Space ends turns; the capital grows; canvas stays lit
 const turn0 = s.turn
 await page.keyboard.press('Space')

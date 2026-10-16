@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech } from '../src/games/CivilizationV/sim.js'
 import { decide, plan } from '../src/games/CivilizationV/planner.js'
 
 let pass = 0, fail = 0
@@ -341,6 +341,156 @@ console.log('15. production + healing')
     w.moves = 0; w.acted = false
     step(gs, { endTurn: true })
     ok(w.hp > 60, `wounded unit heals on home soil (hp ${w.hp})`)
+}
+
+// ---- 16. tech tree data: real names, real prereqs, era costs ----
+console.log('16. tech tree data')
+{
+    eq(TECH_IDS.length, 12, 'twelve techs on the tree')
+    const canon = ['Pottery', 'Agriculture', 'Archery', 'Bronze Working', 'Writing', 'Currency', 'Horseback Riding', 'Philosophy', 'Engineering', 'Mathematics', 'The Wheel', 'Masonry']
+    ok(canon.every((n) => TECH_IDS.some((id) => TECH[id].name === n)), 'tech names are Civ V techs')
+    ok(TECH_IDS.every((id) => TECH[id].effect && TECH[id].effect.length > 4), 'every tech describes its unlock')
+    let dirty = false
+    for (const id of TECH_IDS) {
+        for (const p of TECH[id].prereq) {
+            if (!TECH[p]) { dirty = true; break }
+            if (TECH[p].era > TECH[id].era) dirty = true
+            if (TECH[p].cost >= TECH[id].cost) dirty = true
+        }
+    }
+    ok(!dirty, 'prereqs point at cheaper, same-or-earlier-era techs (no cycles, no backwards edges)')
+    ok(TECH_IDS.every((id) => TECH[id].era >= 0 && TECH[id].era < ERAS.length), 'every tech sits in a named era')
+    const ancientCost = Math.max(...TECH_IDS.filter((id) => TECH[id].era === 0).map((id) => TECH[id].cost))
+    const classicalCost = Math.min(...TECH_IDS.filter((id) => TECH[id].era === 1).map((id) => TECH[id].cost))
+    const medievalCost = Math.min(...TECH_IDS.filter((id) => TECH[id].era === 2).map((id) => TECH[id].cost))
+    ok(ancientCost < classicalCost && classicalCost < medievalCost, 'era costs ascend: ancient < classical < medieval')
+    eq(UNIT.ARCHER.tech, 'ARCHERY', 'the Archer is gated by Archery')
+    eq(UNIT.CATAPULT.tech, 'ENGINEERING', 'the Catapult is gated by Engineering')
+    eq(UNIT.CATAPULT.range, 2, 'the Catapult is a siege engine (range 2)')
+}
+
+// ---- 17. science spends, gating holds, the AI researches ----
+console.log('17. science, gating, AI research')
+{
+    const gs = newGame(2, 0)
+    eq(Object.keys(gs.tech[0].known).length, 0, 'everyone starts ignorant')
+    eq(gs.tech[0].research, null, 'nothing is being researched at boot')
+    ok(!canQueue(gs, 0, 'ARCHER'), 'archers cannot be built before Archery')
+    ok(canQueue(gs, 0, 'WARRIOR'), 'warriors are the age-old arm')
+    // refusing a gated order: deny event, queue untouched
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0)
+    gs.events = []
+    step(gs, { queue: 'ARCHER' })
+    ok(gs.events.some((ev) => ev.type === 'deny' && /requires archery/i.test(ev.reason || '')), 'queueing a gated unit is refused with a reason')
+    ok(!cap.queue.includes('ARCHER'), 'the refused order never reaches the build queue')
+    step(gs, { queue: 'WARRIOR' })
+    ok(cap.queue.includes('WARRIOR'), 'an ungated order still queues')
+    // research validity + spend
+    ok(!setResearch(gs, 0, 'WRITING'), 'Writing is locked behind Pottery')
+    ok(setResearch(gs, 0, 'POTTERY'), 'an available tech can be chosen')
+    eq(gs.events[gs.events.length - 1].type, 'research', 'choosing research is an event')
+    let learned = null, n = 0
+    while (!learned && n++ < 60) { step(gs, { endTurn: true }); learned = gs.events.find((ev) => ev.type === 'tech' && ev.civ === 0 && ev.id === 'POTTERY') }
+    ok(!!learned, 'banked science completes Pottery')
+    ok(gs.tech[0].prog < TECH.WRITING.cost, 'overflow is smaller than any tech cost (carry, not reset)')
+    ok(hasTech(gs, 0, 'POTTERY'), 'the tech is recorded as known')
+    ok(availableTechs(gs, 0).includes('WRITING'), 'Pottery opens Writing')
+    ok(setResearch(gs, 0, 'WRITING'), 'the opened tech is now researchable')
+    // gate opens for real: archers queue once Archery is known
+    const g4 = newGame(4, 0)
+    const s4 = g4.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g4, { select: s4.id, found: true })
+    grantTech(g4, 0, 'ARCHERY')
+    const cap4 = g4.cities.find((c) => c.civ === 0)
+    step(g4, { queue: 'ARCHER' })
+    ok(cap4.queue.includes('ARCHER'), 'archers queue once Archery is discovered')
+    // the AI researches, and rivals take different paths
+    const g7 = newGame(3, 0)
+    let m = 0
+    while (!g7.end && m++ < 40000) step(g7, decide(g7))
+    const aiKnown = [1, 2, 3].map((c) => Object.keys(g7.tech[c].known).length)
+    ok(aiKnown.some((k) => k >= 1), 'the AI civs are researching too')
+    ok(new Set([1, 2, 3].map((c) => TECH_IDS.filter((id) => g7.tech[c].known[id]).join(','))).size > 1, 'rival research paths diverge')
+}
+
+// ---- 18. tech effects actually bite ----
+console.log('18. era effects')
+{
+    const g = newGame(2, 0)
+    const s = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g, { select: s.id, found: true })
+    const cap = g.cities.find((c) => c.civ === 0)
+    for (const [nc, nr] of neighbors(cap.c, cap.r)) { const tl = g.tiles[idx(nc, nr)]; tl.terr = T.GRASS; tl.forest = false; tl.river = false }
+    cap.size = 2
+    const f0 = cityYield(g, cap).f
+    grantTech(g, 0, 'AGRICULTURE')
+    ok(cityYield(g, cap).f > f0, 'Agriculture adds food to worked grassland')
+    grantTech(g, 0, 'CURRENCY'); grantTech(g, 0, 'WRITING'); grantTech(g, 0, 'PHILOSOPHY')
+    const y1 = cityYield(g, cap)
+    ok(y1.g >= 3, 'Currency puts coin in the till')
+    ok(y1.sci >= 4, 'Writing puts scribes in the city')
+    ok(y1.cult >= 3, 'Philosophy lifts culture')
+    grantTech(g, 0, 'MASONRY')
+    eq(cap.wallMax, CFG.cityHp + 100, 'Masonry raises 100 more wall')
+    // Pottery: growth is cheaper (same surplus, faster citizen with pottery)
+    const sizeAt = (seed, pottery) => {
+        const gg = newGame(seed, 0)
+        const ss = gg.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(gg, { select: ss.id, found: true })
+        const cc = gg.cities.find((c) => c.civ === 0)
+        if (pottery) grantTech(gg, 0, 'POTTERY')
+        let t = 0
+        while (cc.size < 2 && gg.turn <= CFG.turnLimit && t++ < 600) step(gg, { endTurn: true })
+        return cc.size >= 2 ? gg.turn : 999
+    }
+    let strict = false
+    for (const seed of [1, 2, 3, 4]) {
+        const p = sizeAt(seed, true), q = sizeAt(seed, false)
+        ok(p <= q, `seed ${seed}: Pottery grows the town no slower (${p} vs ${q})`)
+        if (p < q) strict = true
+    }
+    ok(strict, 'and for at least one seed Pottery is strictly faster')
+    // Bronze: warriors get harder metal; Horseback: mounts carry them further
+    const g8 = newGame(8, 0)
+    const w8 = g8.units.find((u) => u.civ === 0 && u.kind === 'WARRIOR')
+    grantTech(g8, 0, 'BRONZE_WORKING')
+    eq(w8.str, UNIT.WARRIOR.str + 2, 'Bronze Working arms a living warrior +2')
+    const bspot = neighbors(w8.c, w8.r).find(([c, r]) => walk(g8.tiles[idx(c, r)].terr) && !unitAt(g8, c, r))
+    eq(spawnUnit(g8, 0, 'WARRIOR', bspot[0], bspot[1]).str, UNIT.WARRIOR.str + 2, 'bronze forges fresh warriors at full strength too')
+    const g9 = newGame(9, 0)
+    const w9 = g9.units.find((u) => u.civ === 0 && u.kind === 'WARRIOR')
+    const s9 = g9.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    grantTech(g9, 0, 'HORSEBACK')
+    eq(w9.maxMoves, UNIT.WARRIOR.moves + 1, 'Horseback Riding gives riders a faster march')
+    eq(s9.maxMoves, UNIT.SETTLER.moves, 'settlers stay oxcart-slow')
+    // Mathematics: bombardment hits harder
+    const strikeDmg = (math) => {
+        const gg = newGame(2, 0)
+        const ss = gg.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(gg, { select: ss.id, found: true })
+        const cc = gg.cities.find((c) => c.civ === 0)
+        if (math) grantTech(gg, 0, 'MATHEMATICS')
+        const spot = neighbors(cc.c, cc.r).find(([c, r]) => walk(gg.tiles[idx(c, r)].terr) && !unitAt(gg, c, r))
+        const bv = spawnUnit(gg, BARB, 'WARRIOR', spot[0], spot[1], { str: 7 })
+        step(gg, { endTurn: true })
+        return 100 - bv.hp
+    }
+    ok(strikeDmg(true) > strikeDmg(false), 'Mathematics sharpens the city bombardment')
+    // Catapult: siege multiplier vs walls
+    const siegeDmg = (kind) => {
+        const gg = newGame(4, 0)
+        gg.units.find((u) => u.civ === 0 && u.kind === 'SETTLER').alive = false
+        step(gg, { endTurn: true })
+        const aiCap = gg.cities.find((c) => c.alive && c.civ !== 0)
+        declareWar(gg, 0, aiCap.civ)
+        const spot = neighbors(aiCap.c, aiCap.r).find(([c, r]) => walk(gg.tiles[idx(c, r)].terr) && !unitAt(gg, c, r))
+        const u = spawnUnit(gg, 0, kind, spot[0], spot[1])
+        doAttack(gg, u, aiCap.c, aiCap.r)
+        return 100 - aiCap.hp
+    }
+    ok(siegeDmg('CATAPULT') > siegeDmg('ARCHER'), 'catapults siege walls harder than arrows')
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
