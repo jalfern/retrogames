@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor } from '../src/games/PrinceOfPersia/art.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -1014,12 +1014,87 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
     ok('S8: figures get a colour temperature from the room they stand in',
         /opts\.temp/.test(artSrc) && /temp: /.test(artSrc) && /tempAt\(/.test(artSrc))
     ok('S8: the scene lights at the ambient the mode asks for',
-        /ambientFor\(/.test(artSrc) && /lightAt\(x, y, torchPx, amb\)/.test(artSrc))
+        /ambientFor\(/.test(artSrc) && /lightAt\(x, y, torchPx, amb(?:, moonPx)?\)/.test(artSrc))
     ok('S8: the shell routes ?lite through to the renderer',
         /LITE = .*lite/.test(idxSrc) && /lite: LITE/.test(idxSrc))
 
     // determinism still holds across the whole spine
     ok('S8: determinism holds — no Math.random anywhere in art.js', !/Math\.random/.test(artSrc))
+}
+
+// ---- 19. Stage 9: two-source light — cool moon keys, stone-band floor, lit props
+{
+    const artSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+    const T = VW / RW
+    ok('S9: the moon reach is wider than a torch reach', MOON_RADIUS > TORCH_RADIUS)
+    ok('S9: a window is a soft key, never a flare (MOON_STRENGTH below 1)',
+        MOON_STRENGTH > 0 && MOON_STRENGTH < 1)
+    ok('S9: coolGlow is maximal at the pane and gone past the moon reach',
+        coolGlow(0) === 1 && coolGlow(MOON_RADIUS) === 0)
+    let cMono = true
+    for (let d = 0; d < MOON_RADIUS; d += 11) if (!(coolGlow(d) > coolGlow(d + 11))) cMono = false
+    ok('S9: coolGlow falls off monotonically from the pane', cMono)
+    ok('S9: coolAt is 1 at a window, 0 far away, additive between two',
+        coolAt(200, 60, [[200, 60]]) === 1 && coolAt(1500, 900, [[200, 60]]) === 0
+        && coolAt(200, 60, [[200, 60], [260, 60]]) > coolAt(200, 60, [[260, 60]]))
+    ok('S9: moonSources reads arched windows out of a palace deco band',
+        moonSources([{ window: 3 }], 0)[0][0] === 3 * T + 16
+        && moonSources([{ window: 3 }], 0)[0][1] === 60)
+    ok('S9: no windows → no cool keys; two rooms separate their keys by RW*T',
+        moonSources([], 0).length === 0 && moonSources([{}, {}], 0).length === 0
+        && Math.abs(moonSources([{ window: 1 }, { window: 1 }], 0)[1][0] - moonSources([{ window: 1 }, { window: 1 }], 0)[0][0] - RW * T) < 1e-9)
+    ok('S9: a window lights without heating — temp 0 in moonlight, but brighter than ambient',
+        tempAt(200, 60, [], LIGHT_AMBIENT, [[200, 60]]) === 0
+        && lightAt(200, 60, [], LIGHT_AMBIENT, [[200, 60]]) > LIGHT_AMBIENT)
+    ok('S9: cool light dilutes warmth — a torch stays hotter with no window beside it',
+        tempAt(200, 120, [[200, 120]], LIGHT_AMBIENT, []) > tempAt(200, 120, [[200, 120]], LIGHT_AMBIENT, [[200, 60]]))
+    ok('S9: the default moon channel is empty — every S8 value is unchanged',
+        tempAt(200, 120, [[200, 120]]) === tempAt(200, 120, [[200, 120]], LIGHT_AMBIENT, [])
+        && lightAt(200, 120, [[200, 120]]) === lightAt(200, 120, [[200, 120]], LIGHT_AMBIENT, []))
+
+    const cool = rimColor(0), hot = rimColor(1), mid = rimColor(0.5)
+    ok('S9: the cool rim is violet (blue-dominant), not flat grey',
+        cool.b > cool.r && cool.r > cool.g && cool.b > 200)
+    ok('S9: the warm rim is amber (red-dominant)',
+        hot.r > hot.g && hot.g > hot.b && hot.r > 240)
+    ok('S9: rim hue runs monotonically warm as temp rises (red up, blue down)',
+        cool.r < mid.r && mid.r < hot.r && cool.b > mid.b && mid.b > hot.b)
+    ok('S9: rim stays a rim, never a fill (green never saturates toward white)',
+        mid.g < 175)
+
+    const tileC = Math.floor(200 / T) * T + T / 2
+    ok('S9: floor bounce is quantised to the flagstone — points on one tile match',
+        bandAt(tileC - (T / 2 - 1), [[200, 500]]) === bandAt(tileC, [[200, 500]])
+        && bandAt(tileC + (T / 2 - 1), [[200, 500]]) === bandAt(tileC, [[200, 500]]))
+    ok('S9: the lit floor steps down tile by tile and dies past the reach',
+        bandAt(tileC, [[200, 500]]) > bandAt(tileC + T, [[200, 500]])
+        && bandAt(tileC + Math.ceil(TORCH_RADIUS * 0.9 / T) * T, [[200, 500]]) === 0)
+    ok('S9: the band is a floor signal — height does not matter',
+        bandAt(200, [[200, 100]]) === bandAt(200, [[200, 500]]))
+
+    ok('S9: a prop keeps visible in the dark but catches the flame',
+        propShade(0) > 0.5 && propShade(0) < 0.6 && propShade(1) === 1)
+    ok('S9: prop shade rises monotonically with light',
+        propShade(0) < propShade(0.5) && propShade(0.5) < propShade(1))
+
+    ok('S9: the scene builds cool keys only in a palace, never in the dungeon',
+        /lvl\.theme === 'palace'/.test(artSrc) && /moonSources\(lvl\.deco/.test(artSrc))
+    ok('S9: cool pools paint the windows additively, clipped below the HUD',
+        /function coolPool\(/.test(artSrc) && /coolPool\(ctx, mp\[0\]/.test(artSrc)
+        && /rect\(x - MOON_RADIUS, HUD_LINE/.test(artSrc))
+    ok('S9: the floor bounce is painted per-tile via bandAt, not one ellipse',
+        /bandAt\(/.test(artSrc) && /fillRect\(c \* T \+ 1, fy - 5/.test(artSrc))
+    ok('S9: props are lit by the room — flasks/sword/mirror take a light arg',
+        /function drawFlask\([^)]*light\)/.test(artSrc)
+        && /function drawSwordPickup\([^)]*light\)/.test(artSrc)
+        && /function drawMirror\([^)]*light\)/.test(artSrc)
+        && /function propLight\(/.test(artSrc))
+    ok('S9: the figure rim uses the widened rimColor by temperature',
+        /rimColor\(temp\)/.test(artSrc) && /const rim = rimColor/.test(artSrc))
+    ok('S9: figures get light through the moon channel too',
+        /lightAt\(x, y, torchPx, amb, moonPx\)/.test(artSrc)
+        && /tempAt\(x, y, torchPx, amb, moonPx\)/.test(artSrc))
+    ok('S9: determinism holds — still no Math.random anywhere in art.js', !/Math\.random/.test(artSrc))
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

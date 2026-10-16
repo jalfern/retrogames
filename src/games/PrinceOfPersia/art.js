@@ -124,11 +124,15 @@ export function torchGlow(distPx) {
 // brightness at pixel (x,y) from the given torch pixel-centres [ [x,y], … ].
 // `amb` lets a small/dim screen (lite mode) lift the floor so a torchless room
 // stays readable; the deep desktop mood keeps LIGHT_AMBIENT.
-export function lightAt(x, y, keyPx, amb = LIGHT_AMBIENT) {
+export function lightAt(x, y, keyPx, amb = LIGHT_AMBIENT, moonPx = []) {
     let l = amb
     for (let i = 0; i < keyPx.length; i++) {
         const dx = x - keyPx[i][0], dy = y - keyPx[i][1]
         l += torchGlow(Math.sqrt(dx * dx + dy * dy))
+    }
+    for (let i = 0; i < moonPx.length; i++) {
+        const dx = x - moonPx[i][0], dy = y - moonPx[i][1]
+        l += MOON_STRENGTH * coolGlow(Math.sqrt(dx * dx + dy * dy))
     }
     return l > 1 ? 1 : l
 }
@@ -165,9 +169,9 @@ export function torchSum(x, y, keyPx) {
 }
 // colour temperature 0 (cold ambient) → 1 (deep in a flame pool): the flame's
 // share of the light, so two distant sconces read cooler than one you stand in.
-export function tempAt(x, y, keyPx, amb = LIGHT_AMBIENT) {
+export function tempAt(x, y, keyPx, amb = LIGHT_AMBIENT, moonPx = []) {
     const s = torchSum(x, y, keyPx)
-    return s / (s + amb)
+    return s / (s + amb + MOON_STRENGTH * coolAt(x, y, moonPx))
 }
 // warm bounce thrown back off the flagstones by the sconces overhead: a 1-D pull
 // on horizontal distance, so the floor directly under a torch glows and grounds
@@ -191,6 +195,62 @@ export function poolVisibleAt(y) {
 // lite mode lifts the ambient floor only, never the pools — mood on desktop,
 // readability on a small dim phone.
 export const ambientFor = (lite) => (lite ? LIGHT_AMBIENT_LITE : LIGHT_AMBIENT)
+
+// ---- Stage 9: moonlight as a cool key, stone-band bounce, rim hue, prop light --
+// Stage 8 split warm-fire from cool-dark by hue. Stage 9 makes the *source* of the
+// cool light explicit: arched palace windows throw a cold key, so the palace reads
+// moonlit while the dungeon reads firelit. A flame and a window are both "light", but
+// only the flame is warm — so cool light dilutes warmth in tempAt (as ambient does)
+// and brightens in lightAt, without ever heating a surface. All pure + exported.
+export const MOON_RADIUS = TORCH_RADIUS * 1.15   // px: a window's wider, colder reach
+export const MOON_STRENGTH = 0.7                 // a window is a soft key, never a flare
+// the cool twin of torchGlow: firm core, smoothstep edge, but cold.
+export function coolGlow(distPx) {
+    if (distPx >= MOON_RADIUS) return 0
+    const t = 1 - distPx / MOON_RADIUS
+    return t * t * (3 - 2 * t)
+}
+// how much moonlight lands at (x,y) from the given window pixel-centres.
+export function coolAt(x, y, moonPx) {
+    let s = 0
+    for (let i = 0; i < moonPx.length; i++) {
+        const dx = x - moonPx[i][0], dy = y - moonPx[i][1]
+        s += coolGlow(Math.sqrt(dx * dx + dy * dy))
+    }
+    return s > 1 ? 1 : s
+}
+// arched windows in a palace deco band, as cool key sources (pixel-centres of the
+// panes the moon shines through). Pure function of the deco + the band's first col.
+export function moonSources(decos, base) {
+    const out = []
+    for (let rm = 0; rm < (decos || []).length; rm++) {
+        const d = decos[rm]
+        if (d && d.window != null) out.push([base + rm * RW * T + d.window * T + 16, 60])
+    }
+    return out
+}
+// rim hue of a lit figure by colour temperature: the cool end is pushed toward
+// violet (b > r > g), the warm end to amber-white — a wider split than Stage 8 so
+// warm/cool reads at arm's length. Rim-only, so a white tunic never muddies.
+export function rimColor(temp) {
+    const t = temp < 0 ? 0 : temp > 1 ? 1 : temp
+    return {
+        r: Math.round(150 + t * 105),
+        g: Math.round(120 + t * 50),
+        b: Math.round(240 - t * 148),
+    }
+}
+// the warm bounce quantised to the flagstone the point stands on, so the lit floor
+// breaks into per-tile highlights (stone) instead of one soft glow blob.
+export function bandAt(x, keyPx, tile = T) {
+    const cx = Math.floor(x / tile) * tile + tile / 2
+    return bounceAt(cx, keyPx)
+}
+// how bright a prop reads in a given light — a floor that keeps unlit props visible
+// but lets lit ones catch the flame. Bounded so a flask never blows out.
+export function propShade(warm) {
+    return 0.55 + warm * 0.45
+}
 
 // ---- pose tables --------------------------------------------------------------
 // One frame = joint targets, angles measured from straight-down, + toward the
@@ -552,6 +612,25 @@ function lightPool(ctx, x, y, fl) {
     ctx.restore()
 }
 
+// a window's cold bloom: the moon's key, wide and violet-blue, composited additively
+// like the flame pools so palace stone under a window reads moonlit, not firelit.
+// Clipped below the HUD band by the same rule the warm pools obey.
+function coolPool(ctx, x, y, fl) {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.beginPath()
+    ctx.rect(x - MOON_RADIUS, HUD_LINE, MOON_RADIUS * 2, VH - HUD_LINE)
+    ctx.clip()
+    const r = 120 + fl * 10
+    const outer = ctx.createRadialGradient(x, y, 8, x, y, r)
+    outer.addColorStop(0, 'rgba(150,170,255,0.20)')
+    outer.addColorStop(0.5, 'rgba(110,130,220,0.08)')
+    outer.addColorStop(1, 'rgba(90,110,200,0)')
+    ctx.fillStyle = outer
+    ctx.fillRect(x - r, y - r, r * 2, r * 2)
+    ctx.restore()
+}
+
 // a soft contact shadow that grounds whoever stands on the floor
 function groundShadow(ctx, x, y, w) {
     ctx.save()
@@ -664,7 +743,26 @@ function drawChomp(ctx, ch, tick) {
 
 // ---- flasks and the sword on the floor ----------------------------------------
 const FLASK_INK = { r: '#e04040', '+': '#ff6050', b: '#4080e0', f: '#80d0ff', u: '#c060e0' }
-function drawFlask(ctx, pot, tick) {
+// props catch the room's light too: a cool veil sinks an unlit prop into the dark,
+// a warm rim highlight on the lit side grounds it in the flame. Pure brightness
+// (propShade) + sign of the light side, so light is consistent across the scene.
+function propLight(ctx, x, y, w, h, light) {
+    const warm = light ? light.warm : 0.5
+    const sh = propShade(warm)
+    const veil = ctx.createLinearGradient(x - w, 0, x + w, 0)
+    const side = light && light.side ? light.side : 0
+    const darkSide = side >= 0 ? -1 : 1
+    veil.addColorStop(0, `rgba(6,10,30,${((1 - sh) * (darkSide < 0 ? 0.6 : 0.2)).toFixed(3)})`)
+    veil.addColorStop(1, `rgba(6,10,30,${((1 - sh) * (darkSide > 0 ? 0.6 : 0.2)).toFixed(3)})`)
+    ctx.fillStyle = veil
+    ctx.fillRect(x - w, y - h, w * 2, h)
+    if (warm > 0.35 && side !== 0) {
+        ctx.fillStyle = `rgba(255,180,90,${((warm - 0.35) * 0.5).toFixed(3)})`
+        ctx.fillRect(x + (side > 0 ? w * 0.5 : -w * 0.5) - 1, y - h, 2, h)
+    }
+}
+
+function drawFlask(ctx, pot, tick, light) {
     const x = (pot.c + 0.5) * T, y = (pot.r + 1) * T
     const bob = Math.sin(tick * 0.1 + pot.c) * 1
     ctx.fillStyle = '#2a2a3c'
@@ -678,9 +776,10 @@ function drawFlask(ctx, pot, tick) {
     ctx.fill()
     ctx.fillStyle = '#c8ccd8'
     ctx.fillRect(x - 2, y - 18 + bob, 4, 5)
+    propLight(ctx, x, y + bob, 8, 18, light)
 }
 
-function drawSwordPickup(ctx, sw, tick) {
+function drawSwordPickup(ctx, sw, tick, light) {
     const x = (sw.c + 0.5) * T, y = (sw.r + 1) * T
     const gl = 0.6 + 0.4 * Math.sin(tick * 0.12)
     ctx.strokeStyle = `rgba(240,244,255,${gl.toFixed(2)})`
@@ -695,10 +794,11 @@ function drawSwordPickup(ctx, sw, tick) {
     ctx.moveTo(x - 8, y - 10)
     ctx.lineTo(x - 4, y - 4)
     ctx.stroke()
+    propLight(ctx, x, y, 12, 14, light)
 }
 
 // ---- the magic mirror: arched gold frame, rippling glass ---------------------
-function drawMirror(ctx, m, tick) {
+function drawMirror(ctx, m, tick, light) {
     const x = (m.c + 0.5) * T, base = (m.r + 1) * T
     ctx.fillStyle = '#6a5220'
     ctx.beginPath()
@@ -729,6 +829,7 @@ function drawMirror(ctx, m, tick) {
     ctx.moveTo(x - 8, base - 14 - sh)
     ctx.lineTo(x + 6, base - 28 - sh)
     ctx.stroke()
+    propLight(ctx, x, base, 13, 40, light)
     ctx.fillStyle = '#e8d060'
     ctx.fillRect(x - 2, base - 82, 4, 5)
 }
@@ -863,7 +964,8 @@ function figure(ctx, st, p, opts) {
     // cool shadow up the other, so the body reads as a lit cylinder. The rim's hue
     // follows the colour temperature — amber under a sconce, cool blue in the dark
     // — while its strength follows the light's brightness.
-    ctx.strokeStyle = `rgba(${Math.round(150 + temp * 105)},${Math.round(182 - temp * 22)},${Math.round(240 - temp * 130)},${(0.12 + warm * 0.22).toFixed(3)})`
+    const rim = rimColor(temp)
+    ctx.strokeStyle = `rgba(${rim.r},${rim.g},${rim.b},${(0.12 + warm * 0.22).toFixed(3)})`
     ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(s * 3, -hip - 2)
@@ -1060,6 +1162,12 @@ export function drawScene(ctx, g, opts = {}) {
     for (let r = 0; r < H; r++) for (let c = c0; c < c1; c++) {
         if (lvl.grid[r * lvl.W + c] === TORCH) torchPx.push([c * T + T / 2, r * T + 12])
     }
+    // arched windows in the rooms this band crosses — the cool moon keys. A palace
+    // reads moonlit (cool keys + cold pools); the dungeon never has them, so it
+    // stays firelit. Empty off-palace, so every other room is unchanged.
+    const moonPx = lvl.theme === 'palace'
+        ? moonSources(lvl.deco.slice(Math.floor(c0 / RW), Math.ceil(c1 / RW)), Math.floor(c0 / RW) * RW * T)
+        : []
     // centre-weighted shadow: the room sinks into darkness toward its edges, and a
     // room without a single torch sinks deeper — but the light itself, where it
     // comes at all, arrives per-torch (the pools below), never as a flat wash.
@@ -1071,19 +1179,23 @@ export function drawScene(ctx, g, opts = {}) {
     vg.addColorStop(1, `rgba(4,6,22,${vEdge.toFixed(3)})`)
     ctx.fillStyle = vg
     ctx.fillRect(c0 * T, 0, RW * T, VH)
-    // warm bounce off the flagstones under each sconce — the flame grounds itself
+    // warm bounce off the flagstones under each sconce — painted as a per-tile BAND
+    // (bandAt quantised to the flagstone), so the ground catches light as stone,
+    // one lit tile per step, rather than floating on one soft glow blob.
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
+    const fy = GROUND * T + 4
+    const reach = Math.ceil(TORCH_RADIUS * 0.9 / T)
     for (const tp of torchPx) {
-        const b = bounceAt(tp[0], torchPx)
-        const fy = GROUND * T + 4
-        const bg = ctx.createRadialGradient(tp[0], fy, 2, tp[0], fy, 60)
-        bg.addColorStop(0, `rgba(255,150,70,${(b * 0.14).toFixed(3)})`)
-        bg.addColorStop(1, 'rgba(255,120,50,0)')
-        ctx.fillStyle = bg
-        ctx.beginPath()
-        ctx.ellipse(tp[0], fy, 60, 16, 0, 0, Math.PI * 2)
-        ctx.fill()
+        const tc = Math.round((tp[0] - T / 2) / T)
+        for (let k = -reach; k <= reach; k++) {
+            const c = tc + k
+            if (c < c0 || c >= c1) continue
+            const b = bandAt(c * T + T / 2, torchPx)
+            if (b <= 0.02) continue
+            ctx.fillStyle = `rgba(255,150,70,${(b * 0.11).toFixed(3)})`
+            ctx.fillRect(c * T + 1, fy - 5, T - 2, 10)
+        }
     }
     ctx.restore()
     // sconce flames + their warm pools (additive: stone under them glows)
@@ -1092,19 +1204,26 @@ export function drawScene(ctx, g, opts = {}) {
         drawTorch(ctx, c, r, tick)
         lightPool(ctx, tp[0], tp[1], Math.sin(tick * 0.2 + c))
     }
+    // windows' cold pools (additive cool keys, so fire-vs-moon is the room language)
+    for (const mp of moonPx) coolPool(ctx, mp[0], mp[1], Math.sin(tick * 0.04))
     // how much light lands on a figure, from which side, and how warm that light
-    // is (cold where only ambient reaches, amber under a sconce)
+    // is (cold where only ambient reaches, amber under a sconce, cool at a window)
     const atLight = (x, y) => {
         let best = 0, side = null
         for (const tp of torchPx) {
             const dx = tp[0] - x, w = torchGlow(Math.hypot(dx, tp[1] - y))
             if (w > best) { best = w; side = dx >= 0 ? 1 : -1 }
         }
-        return { warm: lightAt(x, y, torchPx, amb), side, temp: tempAt(x, y, torchPx, amb) }
+        if (side == null) {
+            for (const mp of moonPx) {
+                if (coolGlow(Math.hypot(mp[0] - x, mp[1] - y)) > 0.05) { side = mp[0] >= x ? 1 : -1; break }
+            }
+        }
+        return { warm: lightAt(x, y, torchPx, amb, moonPx), side, temp: tempAt(x, y, torchPx, amb, moonPx) }
     }
 
-    if (!g.sword && lvl.sword) drawSwordPickup(ctx, lvl.sword, tick)
-    for (const pot of g.pots) if (!pot.taken) drawFlask(ctx, pot, tick)
+    if (!g.sword && lvl.sword) drawSwordPickup(ctx, lvl.sword, tick, atLight((lvl.sword.c + 0.5) * T, (lvl.sword.r + 1) * T))
+    for (const pot of g.pots) if (!pot.taken) drawFlask(ctx, pot, tick, atLight((pot.c + 0.5) * T, (pot.r + 1) * T))
 
     // planks the eyes could not see, once the feet found them
     for (const k in g.bridgeSeen) {
@@ -1117,7 +1236,7 @@ export function drawScene(ctx, g, opts = {}) {
         ctx.fillRect(x + 22, y - 3, 2, 2)
     }
     // the magic mirror (and its far side, shimmering faintly)
-    if (lvl.mirror && lvl.mirror.room === g.room) drawMirror(ctx, lvl.mirror, tick)
+    if (lvl.mirror && lvl.mirror.room === g.room) drawMirror(ctx, lvl.mirror, tick, atLight((lvl.mirror.c + 0.5) * T, (lvl.mirror.r + 1) * T))
     if (lvl.mirrorTo && lvl.mirrorTo.room === g.room && !g.mirrorUsed) {
         ctx.fillStyle = 'rgba(120,146,200,0.12)'
         ctx.fillRect(lvl.mirrorTo.c * T, (lvl.mirrorTo.r - 2) * T, T, T * 3)
