@@ -13,6 +13,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './sim.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
 import { plan } from './planner.js'
@@ -342,8 +343,8 @@ const LunarLanderGame = () => {
             raf = requestAnimationFrame(frame)
             const dt = Math.min(now - last, 250); last = now
             if (pausedRef.current) return
-            acc += dt
-            while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+            if (contractHoldsLoop()) { acc = 0 }
+            else { acc += dt; while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS } }
             draw()
             const hh = hud.current
             if (hh.alt) hh.alt.textContent = String(Math.max(0, Math.round(gs.y - 10 - terrainY(gs.terrain.pts, gs.x))))
@@ -405,6 +406,34 @@ const LunarLanderGame = () => {
                 gameTime: () => gs.tick / 60,
                 replay: () => ({ on: replayOn, failed: replayFailed, idx: replayIdx, seed: replay ? replay.seed : null }),
             }
+            exposeGame({
+                id: 'lunar-lander',
+                buttons: ['left', 'right', 'up', 'a', 'x'],
+                reset: (seed) => {
+                    gs = makeGame(seed)
+                    stars = makeStars(seed)
+                    parts.length = 0
+                    shake = 0; flash = 0; zoom = false
+                    demoAt = 0
+                    setMode('play')
+                },
+                tick: (pad) => doSim({
+                    rot: typeof pad.x === 'number' && pad.x !== 0
+                        ? Math.max(-1, Math.min(1, pad.x))
+                        : (pad.right ? 1 : 0) - (pad.left ? 1 : 0),
+                    thrust: !!(pad.a || pad.up),
+                }),
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: gs.end !== null,
+                    phase: gs.phase, x: gs.x, y: gs.y, vx: gs.vx, vy: gs.vy, rot: gs.rot,
+                    fuel: gs.fuel, mult: gs.mult, cycle: gs.cycle, landers: gs.landers,
+                    crashes: gs.crashes, terrainIdx: gs.terrainIdx,
+                    orbX: gs.orb.x, orbVx: gs.orb.vx, seed: gs.seed, hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => JSON.parse(JSON.stringify(gs)),
+                restore: (s) => { gs = s },
+            })
             mountDbg({
                 title: 'LUNAR LANDER',
                 getState: () => [
@@ -428,7 +457,7 @@ const LunarLanderGame = () => {
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
-            if (import.meta.env.DEV) { unmountDbg(); delete window.__landerTest }
+            if (import.meta.env.DEV) { unmountDbg(); unexposeGame(); delete window.__landerTest }
         }
     }, [setMode])
 

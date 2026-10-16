@@ -11,6 +11,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateHash, TARGET_WAVES, LEVELS } from './sim.js'
 import { plan } from './planner.js'
 import { W, H, makeStars, drawStars, drawTube, drawPlayer, drawEnemies, drawBullets, posAt } from './art.js'
@@ -202,8 +203,8 @@ const TempestGame = () => {
             raf = requestAnimationFrame(frame)
             const dt = Math.min(now - last, 250); last = now
             if (pausedRef.current) return
-            acc += dt
-            while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+            if (contractHoldsLoop()) { acc = 0 }
+            else { acc += dt; while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS } }
             draw()
             const hh = hud.current
             if (hh.score) hh.score.textContent = String(Math.round(gs.score))
@@ -258,6 +259,28 @@ const TempestGame = () => {
                 }),
                 gameTime: () => gs.tick / 60,
             }
+            exposeGame({
+                id: 'tempest',
+                buttons: ['left', 'right', 'up', 'a'],
+                reset: (seed) => {
+                    gs = makeGame(seed)
+                    stars = makeStars(seed)
+                    parts.length = 0
+                    shake = 0; flash = 0
+                    demoAt = 0
+                    setMode('play')
+                },
+                tick: (pad) => doSim({ left: !!pad.left, right: !!pad.right, fire: !!(pad.a || pad.up) }),
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: gs.end !== null,
+                    level: gs.level, loop: gs.loop, lives: gs.lives, faces: gs.faces, p: gs.p,
+                    enemies: gs.enemies.length, bullets: gs.bullets.length, spawned: gs.spawned,
+                    superKills: gs.superKills, seed: gs.seed, hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => JSON.parse(JSON.stringify(gs)),
+                restore: (s) => { gs = s },
+            })
             mountDbg({
                 title: 'TEMPEST',
                 getState: () => [
@@ -280,7 +303,7 @@ const TempestGame = () => {
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
-            if (import.meta.env.DEV) { unmountDbg(); delete window.__tempestTest }
+            if (import.meta.env.DEV) { unmountDbg(); unexposeGame(); delete window.__tempestTest }
         }
     }, [setMode])
 
