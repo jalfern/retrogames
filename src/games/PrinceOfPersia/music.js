@@ -13,6 +13,20 @@ import { T } from './levels.js'
 
 export const TRACKS = ['pop', 'popThrone', 'popJaffar']
 
+// ---- chase-sound duck (QA #341-8 / #343-2) --------------------------------------
+// During a chase the escort/doorCross cues have to cut through the pop bed. The
+// faint escort rustle is buried by the raw music bus; ducking the bed for the
+// length of the cue lifts the cue above it. Pure mixing policy — popcheck pins the
+// peak relationship (cue vs ducked bed) without a browser; AudioController.duckMusic
+// applies it for real over the analyser.
+export const MUSIC_BUS_REF = 0.16               // documentation only; the live bus is AudioController.MUSIC_BUS
+export const BED_VOICE = 0.6                    // the loudest bed voice unit (_note/bass)
+export const DUCK_LEVEL = 0.5                   // how far the bed ducks while a chase cue plays
+export const CHASE_CUES = ['escort', 'doorCross']
+export function duckFor(cueType) {
+    return CHASE_CUES.includes(cueType) ? DUCK_LEVEL : 1
+}
+
 // the bed for a moment: silent menus/deaths (the original drops to silence
 // when you die), Jaffar's theme while the vizier stands between you and the
 // princess, palace stone for the palace levels, dungeon drip everywhere else.

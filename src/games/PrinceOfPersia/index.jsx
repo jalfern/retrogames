@@ -8,7 +8,7 @@ import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { drawScene, VW, VH } from './art.js'
 import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
-import { SFX, trackFor } from './music.js'
+import { SFX, trackFor, duckFor } from './music.js'
 
 const LITE = typeof window !== 'undefined' && /[?&]lite=/.test(window.location.search)
 
@@ -170,6 +170,8 @@ const PrinceOfPersiaGame = () => {
             for (const ev of events) {
                 const recipe = SFX[ev.type]
                 if (recipe) play(recipe(ev))
+                // a chase cue ducks the bed so it peaks over the music, not into it
+                if (duckFor(ev.type) < 1) audioController.duckMusic(duckFor(ev.type))
                 if (ev.type === 'die') audioController.playDeath()
                 if (ev.type === 'win') audioController.playFanfare()
             }
