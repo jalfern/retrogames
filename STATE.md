@@ -1,86 +1,88 @@
-# STATE — 2026-10-15/16 (forge session, CIVILIZATION V Stage 3 shipped — TECH TREE)
+# STATE — 2026-10-16 (forge session, CIVILIZATION V Stage 4 shipped — LAND)
 
 ## Shipped this session
-**CIVILIZATION V — Stage 3 "The Tech Tree"** (deep pass on #295; PR #351
-squash-landed as 5e9f77b; static+smoke+Vercel green; prod confirmed: entry
-`index-Cd2OjJE3.js`, CivV chunk `index-C7hAuOMt.js` carries the tree):
+**CIVILIZATION V — Stage 4 "Land"** (#355 deep pass; PR #357 squash-landed as
+0c42fd0; static+smoke+Vercel green; prod confirmed: entry `index-i96h6A8F.js`,
+CivV chunk `index-DFut9Ata.js` carries Legion/Chariot/pillage/WORK panel):
 https://jalfern.com/retrogames/civilization-v
 
-What landed on top of Stage 2 (pure sim + deterministic; autopilot still
-replays hash-for-hash):
-- **Tree:** 12 real Civ V techs, 3 eras, real prereqs — Pottery/Agriculture/
-  Archery/The Wheel/Bronze Working/Masonry → Writing→Philosophy, Currency,
-  Horseback Riding, Engineering → Mathematics. Costs ascend by era (24–34 /
-  70–100 / 150); science spent per turn; overflow carries.
-- **Gating in the sim:** ARCHER needs Archery, CATAPULT needs Engineering;
-  queueing a gated unit → `deny` + toast. `canQueue`/`setResearch`/`grantTech`
-  exported; `step` honours `input.research`.
-- **Effects:** Bronze +2 warrior str (living+new spawns); Horseback +1 military
-  move (settlers unchanged); Pottery −2 growth food; Agriculture +1 grass food;
-  Masonry +100 walls (`city.wallMax` — defence/bombard/capture all scale);
-  Currency/Writing/Philosophy +2g/+1sci/+1cult per city; Mathematics +4 bombard.
-- **Catapult unit:** str 7, range 2, ×2 vs cities, 3D model (frame/wheels/arm).
-- **AI research:** `AI_TECH_ORDER` rotated by civ id → rivals diverge and the
-  frontier hardens; barbarians timeless. Player witness researches
-  arms-first (`RESEARCH_ORDER` in planner.js).
-- **Shell:** RESEARCH panel (era columns, prereq labels, progress bar,
-  tap-to-research), keys T panel / R next tech / C catapult, research HUD pill,
-  discovery fanfare+toast, DebugKit PROGNOSIS + NEXT TECH, `__civTest.learn/
-  research`, probe exposes `tech{known,research,prog,ai[]}`.
+What landed on top of Stage 3 (pure sim + deterministic; autopilot = witness):
+- **Workers:** civilian unit (cost 20, ungated); FARM (Pottery) +2/+1 food,
+  MINE (Masonry) +1 prod (+1 more Engineering), ROAD (The Wheel); jobs take
+  real turns (2/2/1), one per worker; abandoned if the worker dies/moves off.
+- **Pillage:** barbarians strip improvements/roads/builds on every tile they
+  march onto (`pillageAt` in barbarianTurn + march-in).
+- **Resources:** 6 luxuries + Horses/IRON on fitting terrain (spread ≥3).
+  Land-connection BFS from cities (`resourceNetwork`, owned-or-road tiles);
+  unique connected luxuries pay +1g/+1c empire-wide; connected strategic
+  feeds its holding city (+1f horses / +1p iron).
+- **Resource-gated units (real Civ V):** CHARIOT (Wheel+Horses, str 9, rng 2,
+  mv 3) and LEGION (Bronze+Iron, str 12) — canQueue/queueDeny enforce in the
+  sim; refusals name the missing resource; AI ladder uses both when land+era
+  allow. Strategic seams stay hidden until their tech (`resRevealed`).
+- **Roads** halve movement cost for any unit (`roadCost` in animateUnits).
+- **stateHash** now folds per-tile imp/road/build/res + per-civ connected mask
+  + worker busy — §2 replay determinism preserved.
+- **Witness:** economy-first research (Pottery→Wheel→arms), queues a worker,
+  works the ring; wins scenarios 0/1/3 by t15–17 (was t18).
+- **Shell/art:** WORKER cart/spade, CHARIOT, crested LEGION models; road
+  ribbons joining hex-to-hex; furrowed farm patches; timbered mine; fogged
+  glowing resource tokens; WORK panel (W, F/M/O, tappable); worker + luxury
+  pills; land sounds (start/complete/pillage/luxury/strategic); DebugKit
+  QUEUE WORKER + IMPROVE HERE + probe `workers/land`; hooks `__civTest.turn()`
+  (one witness turn) and `.improve(k)`.
 
-Gates: `civcheck` **132/132** (§16 tree data/acyclic/era costs, §17 spend +
-gating + AI paths, §18 every effect bites incl. siege×2 and Math bombard).
-Mutant proof: gate `if (need && !hasTech…)`→`if (false && …)` ⇒ 130/132 red,
-restore green; stage-2 march-in mutant still reds §11. `civplay` **24/24**, zero
-page errors (T/Escape/R live-key panel, refuse→unlock archer, fresh tech
-completes in real time, rivals observed researching, win t17).
-`lint:civ/mario/fps/ai` + `build` green. Scenarios 0/1/3 still WIN at t18.
-Rule-4: not stalled. QA polish filed as #352.
+Gates: `civcheck` **185/185** (new §19 improvement gates incl. city-centre +
+borders + busy; §20 build turns/yields/roads/pillage; §21 reveal/connect/pay;
+§22 resource-gated units + end-to-end labour). Mutant: `connectedResources`
+counts every tile ⇒ 179/185 red (§21+§22); restore green. Stage-3 queue-gate
+mutant still reds §17. `civplay` **28/28**, zero page errors (Digit4 worker,
+W panel, real F key, farms in real time). lint:civ/mario/fps/ai + build green.
 
 ## GOAL — next session
-#295 Civ V (label `shipped`; deep pass continues). **Stage 4 candidates (in
-order):** (1) BUILDINGS + city screen — Granary/Walls/Library/Market/Forge as
-real queue items consuming banked production, per-city build UI, the "walls"
-tech finally builds a wall model; (2) POLICIES/culture tree (Stage 5) then the
-science + culture victories; (3) full-tree expansion (more units, roads via
-The Wheel). Ship one stage per PR. Keep sim pure + deterministic; autopilot =
-witness; prove one mutant red. If #295 is paused by Jon, there are NO
-`next`/`game-queue` issues on the board — take a `feedback` item via FORGE.md
-step 2 (QA lane first: check `pgrep -f "QA MASTER"`).
+#355 Civ V back on `game-queue`, retitled **stages 5–8** (4 shipped). Stage 5
+candidates (in order): (1) CULTURE & HAPPINESS — borders by culture, a few
+social policies, happiness/unhappiness (luxuries currently pay gold as the
+honest stand-in); (2) WONDERS + great people points; (3) city-states/diplomacy
+(war/peace/trade) + naval units on coasts; (4) later eras + domination/
+science/culture victories. Ship one stage per PR; keep sim pure + deterministic;
+prove one mutant red per stage. If #355 paused by Jon, take `feedback` via
+FORGE.md step 2 — QA lane is usually active (check `pgrep -f "QA MASTER"`);
+fresh polish pass filed as **#358** (stage-4 look/juice/tooltips/sound mix).
 
 ## Board (last read)
-- #295 Civ V `shipped` (Stages 1–3 live; next: buildings + city screen).
-- CivV polish backlog: #347 (stage 1 look), #350 (stage 2 war), #352 (stage 3
-  tech tree). No `next`/`game-queue` items. Rule-4: not stalled — game code shipped.
+- #355 Civ V `game-queue` (stages 5–8; stage 4 live).
+- CivV polish backlog: #347, #350, #352, #358 (stage 4). No `next` items.
+  Rule-4: not stalled — game code shipped this session.
 
 ## Notes for whoever picks this up
-- **sim.js tech spine:** `TECH`/`TECH_IDS`/`ERAS`; `gs.tech[civ] = {known,
-  research, prog}`; `hasTech/availableTechs/setResearch/canQueue/grantTech`;
-  `applyLearn` mutates live units/cities on learn; `city.wallMax` replaces
-  `CFG.cityHp` in city scaling (found/capture/doAttack/resolveCiv bombard);
-  `UNIT[kind].tech` marks gated units — **every** queue path (player step,
-  aiTurn, harness) must consult `canQueue`. `stateHash` includes per-civ known-
-  mask + research idx + floor(prog) — never drop those bits or §17/§2 drift.
-- **Turn order unchanged** (endPlayerTurn): aiTurn sets research *before*
-  resolveCiv spends science; resolveCiv auto-picks cheapest available if
-  research is null (keeps AI labs lit; the player's UI pill reflects it).
-- **Shell:** `__civTest.learn(id)` cheat + `research(id)`; panel refreshes at
-  200ms while open (`actRef.current.togglePanel/pickResearch` — handlers live
-  in the effect, JSX reaches them via `actRef`).
+- **sim.js land spine:** `IMP`/`RES`/`IMP_IDS`/`RES_IDS` live after `BARB`
+  (need `T`); tiles carry `res/imp/road/build`; `canImprove`/`startImprove`/
+  `advanceBuilds` (runs in endPlayerTurn after barbarianTurn),
+  `resourceNetwork`/`connectedResources`/`resRevealed`/`roadCost`/`queueDeny`;
+  strategic bonuses applied in `cityYield`; luxury caravans + `resKnown`
+  one-shot events in `resolveCiv`. WORKER `busy` = tile index; `KC` in
+  stateHash extended (WORKER/CHARIOT/LEGION).
+- **Don't break §2:** any new world state must fold into `stateHash` before
+  shipping (land fold is the `L` accumulator + `rm` per-civ mask).
+- **civplay timing lesson:** Space-spamming end-turn idles the capital and
+  barbs take it (~t15); drive waits with `__civTest.turn()` (one defended
+  witness turn) and do instant UI checks at turn 2 BEFORE long runs. Worker
+  spawns on the capital centre (never workable) — move it off before F.
 - **Drive note (unchanged):** `npx vite --host 127.0.0.1 --port <p>
   --strictPort`, poll, `CIV_URL=... npm run civplay` in ONE shell call; kill
-  the port after. Prod check must use **www.jalfern.com** (bare host 308s, and
-  asset 404s look like "not deployed").
+  the port after. Prod check: game code lives in a lazy per-game chunk
+  referenced inside the entry `index-*.js` — fetch the entry, collect
+  `index-*.js` refs, grep the chunk (this session: index-DFut9Ata.js).
 - Worktree `~/Dev/retrogames-forge-civilization-v` free (detached at
   origin/main); node_modules symlinked from the main checkout.
 
 ## Three questions for Jon
-1. Stage 4 = BUILDINGS + city screen (my pick above), or would you rather the
-   next pass deepen the tree first (full ~70-tech grid + more units)?
-   (Carried over from the Stage-2 report — still unanswered.)
-2. Barbarian pressure (carried over): today cap 7 / spawn 6 / seek 6. Keep the
-   friendly-to-phones frontier, or crank it now that Bronze/Horseback make war
-   two-way?
-3. Prod verification greps minified shared `index-*.js` chunks (this session:
-   index-C7hAuOMt.js). Want stable per-game `manualChunks` names so prod checks
-   are grep-stable, or keep vendor-shared chunks?
+1. Stage 5 = culture + happiness + policies (my pick), or jump to wonders/
+   great people first? (#355 lists culture as 5, wonders as 6.)
+2. Connection rule today is owned-OR-road BFS (a resource on owned land counts
+   without a road). Civ V is stricter: road connection required. Tighten it now
+   (and rebuild civplay fixtures) or keep the friendlier rule?
+3. Carried: prod verification greps minified shared `index-*.js` chunks
+   (now a lazy CivV chunk inside the entry list). Still want stable per-game
+   `manualChunks` names for grep-stable prod checks?
