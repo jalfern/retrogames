@@ -255,7 +255,8 @@ const CivilizationVGame = () => {
             if (h.build) {
                 const city = gs.cities.find((c) => c.civ === 0 && c.alive)
                 const q = city && city.queue && city.queue[0]
-                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${UNIT[q].cost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult'
+                const qcost = q ? (UNIT[q] ? UNIT[q].cost : WONDER[q].cost) : 0
+                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · U wonders'
             }
             if (h.worker) {
                 const w = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'WORKER')
@@ -660,7 +661,7 @@ const CivilizationVGame = () => {
                     <span ref={setHud('cult')} className="text-fuchsia-300" title="Culture">❦0</span>
                     <span ref={setHud('cities')} className="text-emerald-200/80">cities 0</span>
                     <span ref={setHud('war')} className="text-red-300/90">at peace</span>
-                    <span ref={setHud('build')} className="text-white/50">BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult</span>
+                    <span ref={setHud('build')} className="text-white/50">BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · U wonders</span>
                     <span ref={setHud('research')} className="text-sky-200/90">TECH: press T</span>
                     <span ref={setHud('worker')} className="text-lime-200/90" style={{ display: 'none' }} />
                     <span ref={setHud('lux')} className="text-fuchsia-200/90" style={{ display: 'none' }} />

@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP } from '../src/games/CivilizationV/sim.js'
 import { decide, plan } from '../src/games/CivilizationV/planner.js'
 
 let pass = 0, fail = 0
@@ -46,6 +46,9 @@ console.log('1. boot')
     eq(gs.fog.length, 5, 'fog per civ slot')
     eq(gs.phase, 'player', 'starts on player turn')
     ok(gs.turn === 1, 'turn begins at 1')
+    eq(Object.keys(gs.wonders).length, 0, 'no wonder stands yet at boot')
+    eq(gs.gp.length, 5, 'great-person pools tracked per civ slot')
+    ok(GP_TYPES.every((t) => gs.gp[0].pts[t] === 0 && gs.gp[0].held[t] === 0), 'every legend pool starts empty')
 }
 
 // ---- 2. determinism ----
@@ -845,6 +848,252 @@ console.log('25. policies')
     a.civs[0].culture = 100
     adoptPolicy(a, 0, 'FOUNDATIONS')
     ok(stateHash(a) !== stateHash(b), 'adopted laws fold into the state hash')
+}
+
+// ---- 26. wonders: real table, tech gates, race, effects ----
+console.log('26. wonders')
+{
+    eq(WONDER_IDS.length, 6, 'six wonders on the board')
+    const canon = ['Pyramids', 'Stonehenge', 'Hanging Gardens', 'Great Library', 'Colossus', 'Great Wall']
+    ok(canon.every((n) => WONDER_IDS.some((id) => WONDER[id].name === n)), 'the wonders are the real Civ V wonders')
+    ok(WONDER_IDS.every((id) => TECH[WONDER[id].tech] && WONDER[id].effect && WONDER[id].cost > UNIT.WARRIOR.cost), 'each names a real tech, an effect, and costs more than a warrior')
+    const gs = newGame(6, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0)
+    eq(canBuildWonder(gs, 0, 'STONEHENGE'), 'requires Pottery', 'a wonder is gated behind its tech')
+    gs.events = []
+    step(gs, { queue: 'STONEHENGE' })
+    ok(gs.events.some((ev) => ev.type === 'deny' && /pottery/i.test(ev.reason || '')), 'queueing a locked wonder is refused with a reason')
+    ok(!cap.queue.includes('STONEHENGE'), 'the refused wonder never enters the build queue')
+    // it builds for real and lands the effect
+    grantTech(gs, 0, 'POTTERY')
+    ok(canBuildWonder(gs, 0, 'STONEHENGE') === true, 'Pottery opens Stonehenge')
+    ok(canQueue(gs, 0, 'STONEHENGE'), 'wonders are queueable like units')
+    step(gs, { queue: 'STONEHENGE' })
+    ok(cap.queue.includes('STONEHENGE'), 'the wonder queues at the capital')
+    const savedGoal = CFG.capitalSizeToWin
+    CFG.capitalSizeToWin = 99   // keep the game alive through the wonder tests
+    let built = null, n = 0
+    while (!built && gs.turn < 30 && n++ < 400) { step(gs, { endTurn: true }); built = gs.events.find((ev) => ev.type === 'wonderBuilt' && ev.id === 'STONEHENGE' && ev.civ === 0) }
+    ok(!!built, 'banked shields raise Stonehenge')
+    ok(hasWonder(gs, 0, 'STONEHENGE'), 'the wonder is recorded as Rome\'s')
+    const cultNo = (() => { const w = gs.wonders.STONEHENGE; delete gs.wonders.STONEHENGE; const v = cityYield(gs, cap).cult; gs.wonders.STONEHENGE = w; return v })()
+    eq(cityYield(gs, cap).cult, cultNo + CFG.stoneCult, 'Stonehenge pays +2 culture to every city')
+    // first builder takes it forever — rivals lock out and lose their progress
+    eq(canBuildWonder(gs, 0, 'STONEHENGE'), 'already yours', 'you cannot raise it twice')
+    ok(/built by/i.test(canBuildWonder(gs, 1, 'STONEHENGE')), 'a rival is told who owns it')
+    const eg = gs.cities.find((c) => c.alive && c.civ === 1)
+    if (eg) {
+        gs.wonders.GREAT_WALL = 0
+        eg.queue.push('GREAT_WALL'); eg.buildP = 49
+        gs.events = []
+        step(gs, { endTurn: true })
+        ok(!eg.queue.includes('GREAT_WALL'), 'a taken wonder is torn from the rival queue')
+        ok(gs.events.some((ev) => ev.type === 'wonderLost' && ev.civ === 1 && ev.id === 'GREAT_WALL'), 'the rival is told it lost the race')
+    } else ok(true, 'no rival city founded this early — queue-abandon is covered by the Rome test below')
+    // abandon a queued wonder when someone beats you: buildP is kept
+    const g2 = newGame(6, 0)
+    const s2 = g2.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g2, { select: s2.id, found: true })
+    const cap2 = g2.cities.find((c) => c.civ === 0)
+    grantTech(g2, 0, 'POTTERY')
+    step(g2, { queue: 'STONEHENGE' })
+    cap2.buildP = WONDER.STONEHENGE.cost - 1
+    g2.wonders.STONEHENGE = 3
+    const pBefore = cap2.buildP
+    g2.events = []
+    step(g2, { endTurn: true })
+    ok(!cap2.queue.includes('STONEHENGE'), 'the losing copy drops out of the queue')
+    ok(g2.events.some((ev) => ev.type === 'wonderLost' && ev.id === 'STONEHENGE' && ev.civ === 0 && ev.by === 3), 'the loss is announced with the winner')
+    ok(cap2.buildP >= pBefore, 'shields already spent carry on (no refund theft)')
+    CFG.capitalSizeToWin = savedGoal
+    // the other five effects bite
+    const g3 = newGame(6, 0)
+    const s3 = g3.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g3, { select: s3.id, found: true })
+    const cap3 = g3.cities.find((c) => c.civ === 0)
+    const y0 = cityYield(g3, cap3)
+    g3.wonders.GREAT_LIBRARY = 0
+    eq(cityYield(g3, cap3).sci, y0.sci + CFG.librarySci, 'the Great Library writes +2 science in every city')
+    g3.wonders.GREAT_WALL = 0
+    eq(cityDefense(g3, cap3), Math.round((CFG.cityBaseDef + 3 * cap3.size) * CFG.wallDefMult), 'the Great Wall stands 50% taller over the ledger')
+    const ring3 = neighbors(cap3.c, cap3.r).map(([c, r]) => g3.tiles[idx(c, r)]).filter((tl) => tl.city < 0 && tl.camp < 0)
+    const plot = ring3.find((tl) => (tl.terr === T.GRASS || tl.terr === T.PLAINS))
+    ok(!!plot, 'a ring plot exists for the garden test')
+    plot.imp = 'FARM'
+    const f0 = tileYield(g3, idx(plot.c, plot.r)).f
+    g3.wonders.HANGING_GARDENS = 0
+    eq(tileYield(g3, idx(plot.c, plot.r)).f, f0 + CFG.gardenFood, 'the Hanging Gardens green every worked farm +1')
+    g3.wonders.HANGING_GARDENS = undefined
+    plot.owner = 0
+    const lux = ring3.find((tl) => tl.city < 0 && tl.camp < 0)
+    lux.res = RES_IDS.indexOf('WINE'); lux.owner = 0
+    const goldWith = (w) => {
+        const gg = newGame(6, 0)
+        const ss = gg.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(gg, { select: ss.id, found: true })
+        const cc = gg.cities.find((c) => c.civ === 0)
+        const rr = neighbors(cc.c, cc.r).map(([c, r]) => gg.tiles[idx(c, r)]).filter((tl) => tl.city < 0 && tl.camp < 0)
+        const t = rr.find((x) => x.res === RES_IDS.indexOf('WINE')) || rr.find((x) => x.res === -1)
+        t.res = RES_IDS.indexOf('WINE'); t.owner = 0
+        if (w) gg.wonders.COLOSSUS = 0
+        gg.events = []
+        step(gg, { endTurn: true })
+        const te = gg.events.find((ev) => ev.type === 'turnEnd' && ev.civ === 0)
+        return te ? te.gold : 0
+    }
+    ok(goldWith(true) > goldWith(false), 'the Colossus tolls richer for every connected luxury')
+    // Pyramids speed the crew
+    const py = newGame(6, 0)
+    const spy = py.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(py, { select: spy.id, found: true })
+    grantTech(py, 0, 'POTTERY')
+    const capp = py.cities.find((c) => c.civ === 0)
+    const ringP = neighbors(capp.c, capp.r).map(([c, r]) => py.tiles[idx(c, r)]).filter((tl) => (tl.terr === T.GRASS || tl.terr === T.PLAINS) && tl.city < 0)[0]
+    const w0 = spawnUnit(py, 0, 'WORKER', ringP.c, ringP.r)
+    startImprove(py, w0, 'FARM')
+    eq(ringP.build.left, 2, 'a farm takes two turns without the Pyramids')
+    ringP.build = null; w0.busy = null
+    py.wonders.PYRAMIDS = 0
+    startImprove(py, w0, 'FARM')
+    eq(ringP.build.left, IMP.FARM.turns - 1, 'the Pyramids shave a turn off every job')
+    // rivals really race: in a real game someone raises something
+    const g5 = newGame(13, 1)
+    let sawBuilt = false, m = 0
+    while (!g5.end && m++ < 40000) { step(g5, decide(g5)); if (g5.events.some((ev) => ev.type === 'wonderBuilt')) sawBuilt = true }
+    ok(sawBuilt, 'in a real game at least one wonder is raised')
+    ok(Object.keys(g5.wonders).length >= 1, 'the wonder board carries the race result')
+}
+
+// ---- 27. great people: points, recruit, spend ----
+console.log('27. great people')
+{
+    eq(GP_TYPES.length, 3, 'engineer, scientist, merchant — the three working legends')
+    ok(GP_TYPES.every((t) => GP[t].name.startsWith('Great ') && GP[t].effect), 'every legend is a real Great person with an effect')
+    const gs = newGame(6, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    let sawReady = null, n = 0
+    while (!sawReady && gs.turn < 15 && n++ < 400) { step(gs, { endTurn: true }); sawReady = gs.events.find((ev) => ev.type === 'gpReady' && ev.civ === 0 && ev.kind === 'ENGINEER') }
+    ok(!!sawReady, 'the palace seats an engineer early enough to matter')
+    ok(gs.gp[0].pts.ENGINEER > gs.gp[0].pts.SCIENTIST, 'the capital palace biases the engineer pool')
+    eq(canRecruit(gs, 0, 'SCIENTIST'), gs.gp[0].pts.SCIENTIST >= gpThreshold(gs, 0, 'SCIENTIST') ? 'not enough gold' : 'not enough great person points', 'a too-early recruit names what is missing')
+    gs.events = []
+    ok(!recruitGP(gs, 0, 'MERCHANT') || gs.gp[0].held.MERCHANT === 1, 'recruiting obeys its gates')
+    // pay up and recruit for real
+    gs.civs[0].gold = 0
+    eq(canRecruit(gs, 0, 'ENGINEER'), 'not enough gold', 'points alone do not buy a legend — the purse must answer too')
+    ok(!recruitGP(gs, 0, 'ENGINEER'), 'and the recruit fails at zero gold')
+    gs.civs[0].gold = 500
+    gs.gp[0].pts.SCIENTIST = gpThreshold(gs, 0, 'SCIENTIST')
+    const c0 = gs.civs[0].gold
+    const price0 = gpCost(gs, 0, 'SCIENTIST')
+    ok(recruitGP(gs, 0, 'SCIENTIST'), 'at threshold and price the scientist is recruited')
+    eq(gs.civs[0].gold, c0 - price0, 'recruiting costs gold')
+    eq(gs.gp[0].held.SCIENTIST, 1, 'the legend is in hand')
+    eq(gs.gp[0].pts.SCIENTIST, 0, 'the pool empties at recruitment')
+    const need2 = gpThreshold(gs, 0, 'SCIENTIST'), cost2 = gpCost(gs, 0, 'SCIENTIST')
+    gs.civs[0].gold = 500; gs.gp[0].pts.SCIENTIST = need2
+    ok(recruitGP(gs, 0, 'SCIENTIST'), 'the ladder climbs: a second scientist needs a full refreshed pool')
+    ok(need2 > CFG.gpThreshold && cost2 >= CFG.gpCost + CFG.gpCostStep, 'threshold and price both escalate per acquisition')
+    // refusals
+    const g2 = newGame(6, 0)
+    const s2 = g2.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g2, { select: s2.id, found: true })
+    g2.events = []
+    ok(!spendGP(g2, 0, 'MERCHANT'), 'you cannot expulse a legend you do not have')
+    ok(g2.events.some((ev) => ev.type === 'deny' && /merchant/i.test(ev.reason || '')), 'and the refusal says who is missing')
+    ok(canUseGP(g2, 0, 'ENGINEER') !== true, 'no engineer in hand — no instant build')
+    ok(canUseGP(g2, 0, 'SCIENTIST') !== true, 'with the lab idle even a scientist is refused')
+    // merchant: gold on the spot
+    g2.gp[0].held.MERCHANT = 1
+    const g0 = g2.civs[0].gold
+    ok(spendGP(g2, 0, 'MERCHANT'), 'the merchant rides out')
+    eq(g2.civs[0].gold, g0 + CFG.merchantGold, 'the trade mission pays +200 gold')
+    eq(g2.gp[0].held.MERCHANT, 0, 'and is spent once')
+    // scientist: the current research completes at once
+    const g3 = newGame(6, 0)
+    const s3 = g3.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g3, { select: s3.id, found: true })
+    setResearch(g3, 0, 'POTTERY')
+    g3.gp[0].held.SCIENTIST = 1
+    g3.events = []
+    ok(spendGP(g3, 0, 'SCIENTIST'), 'the scientist takes the current problem')
+    ok(hasTech(g3, 0, 'POTTERY'), 'the research completes instantly')
+    eq(g3.tech[0].research, null, 'the lab resets for the next question')
+    ok(g3.events.some((ev) => ev.type === 'tech' && ev.instant), 'the instant completion is flagged as such')
+    // engineer: the city's current job finishes at once
+    const g4 = newGame(6, 0)
+    const s4 = g4.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g4, { select: s4.id, found: true })
+    const cap4 = g4.cities.find((c) => c.civ === 0)
+    step(g4, { queue: 'WARRIOR' })
+    g4.gp[0].held.ENGINEER = 1
+    const unitsBefore = g4.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WARRIOR').length
+    ok(spendGP(g4, 0, 'ENGINEER'), 'the engineer walks the site')
+    eq(cap4.queue.length, 0, 'the job is finished — the queue clears')
+    eq(g4.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WARRIOR').length, unitsBefore + 1, 'and the unit stands ready on the spot')
+    // step() drives the same doors
+    const g5 = newGame(6, 0)
+    const s5 = g5.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g5, { select: s5.id, found: true })
+    g5.civs[0].gold = 500
+    g5.gp[0].pts.MERCHANT = gpThreshold(g5, 0, 'MERCHANT')
+    const goldBefore = g5.civs[0].gold
+    step(g5, { recruit: 'MERCHANT' })
+    eq(g5.gp[0].held.MERCHANT, 1, 'step() recruits')
+    step(g5, { useGP: { kind: 'MERCHANT' } })
+    ok(g5.civs[0].gold > goldBefore, 'step() spends')
+    // the fold: legends change the replay hash
+    const a = newGame(9, 0), b = newGame(9, 0)
+    a.civs[0].gold = 500
+    a.gp[0].pts.ENGINEER = gpThreshold(a, 0, 'ENGINEER')
+    recruitGP(a, 0, 'ENGINEER')
+    ok(stateHash(a) !== stateHash(b), 'great-person state folds into the state hash')
+    const c = newGame(9, 0), d = newGame(9, 0)
+    c.wonders.STONEHENGE = 0
+    ok(stateHash(c) !== stateHash(d), 'wonders fold into the state hash too')
+}
+
+// ---- 28. Stage 6 in the long game: races, recruits, and slack ----
+console.log('28. stage-6 integration + slack')
+{
+    let romanWonder = 0, romanLegend = 0, anyWonder = 0
+    for (const sc of [0, 1, 3]) {
+        const gs = newGame(13, sc)
+        let m = 0
+        while (!gs.end && m++ < 40000) {
+            step(gs, decide(gs))
+            if (gs.events.some((ev) => ev.type === 'wonderBuilt' && ev.civ === 0)) romanWonder++
+            if (gs.events.some((ev) => ev.type === 'gpAcquired' && ev.civ === 0)) romanLegend++
+        }
+        if (Object.keys(gs.wonders).length) anyWonder++
+    }
+    ok(anyWonder === 3, 'every shipped scenario ends with a wonder in the ground')
+    ok(romanWonder >= 2, `the witness itself raises a wonder in most scenarios (${romanWonder}/3)`)
+    ok(romanLegend >= 2, `the witness recruits a great person in most scenarios (${romanLegend}/3)`)
+    // slack analogue: demote the capital's best ring and the game is still won
+    let survived = false
+    for (const sc of [0, 1, 3]) {
+        if (!plan(sc, 13).ok) continue
+        const gs = newGame(13, sc)
+        let built = 0
+        while (!gs.cities.some((c) => c.civ === 0) && built++ < 40000) step(gs, decide(gs))
+        const cap = gs.cities.find((c) => c.civ === 0)
+        if (cap) { for (const [nc, nr] of neighbors(cap.c, cap.r)) { if (gs.tiles[idx(nc, nr)].terr === T.GRASS) { gs.tiles[idx(nc, nr)].terr = T.PLAINS; break } } }
+        let n = 0
+        while (!gs.end && n++ < 40000) step(gs, decide(gs))
+        if (gs.end === 'win') { survived = true; break }
+    }
+    ok(survived, 'with the Stage-6 race running, one demuted ring still ends in victory')
+    // determinism of the new state machines
+    const a = newGame(5, 0), b = newGame(5, 0)
+    let x = 0, y = 0
+    while (!a.end && x++ < 40000) step(a, decide(a))
+    while (!b.end && y++ < 40000) step(b, decide(b))
+    ok(stateHash(a) === stateHash(b) && a.turn === b.turn, 'wonders and legends replay hash-for-hash')
+    eq(JSON.stringify(a.wonders), JSON.stringify(b.wonders), 'the same race outcome every time')
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
