@@ -122,14 +122,40 @@ export function ballSprite() {
     })
 }
 
+// The flying disc is a flat disc spinning about its vertical axis. Seen at the
+// cabinet's shallow angle its projected width oscillates as it turns (broadside
+// -> a thin edge-on sliver -> broadside); that oscillation is the "it is
+// spinning" cue the old 26x8 bar of shifting dashes never had. discHalfW is a
+// PURE model (no DOM, no Math.random) so qbertcheck pins it in Node exactly
+// like the Coily coil model; discSprite below is only the painter.
+export const DISC_FRAMES = 8
+export const DISC_R = 14          // broadside half-width -> 28px across, larger than the old 26px bar
+export const DISC_RY = 4          // the ellipse's vertical half (the shallow camera angle)
+export const DISC_MINW = 2        // the edge-on floor, so the disc never fully vanishes
+export function discHalfW(i) {
+    return Math.max(DISC_MINW, DISC_R * Math.abs(Math.cos((i / DISC_FRAMES) * Math.PI * 2)))
+}
+
+// one spin frame of the disc: a rimmed, hubbed ellipse whose width is
+// discHalfW(f) — full and lit when broadside, a thin spindle sliver edge-on.
 export function discSprite(phase) {
-    return sprite(`disc-${phase}`, 26, 8, (g) => {
-        for (let i = 0; i < 13; i++) {
-            const on = (i + phase) % 2 === 0
-            px(g, i * 2, 2, 2, 4, on ? PAL.discA : PAL.discB)
+    const f = ((phase % DISC_FRAMES) + DISC_FRAMES) % DISC_FRAMES
+    return sprite(`disc-${f}`, DISC_R * 2, DISC_RY * 2 + 2, (g) => {
+        const cx = DISC_R, cy = DISC_RY + 1
+        const rx = Math.max(1, discHalfW(f))
+        // rim: the disc's edge, a touch darker and one px proud
+        g.fillStyle = shade(PAL.discA, 0.62)
+        g.beginPath(); g.ellipse(cx, cy, rx, DISC_RY + 1, 0, 0, Math.PI * 2); g.fill()
+        // body
+        g.fillStyle = PAL.discA
+        g.beginPath(); g.ellipse(cx, cy, rx, DISC_RY, 0, 0, Math.PI * 2); g.fill()
+        // lit top face: a paler, slightly raised ellipse reads as the 3D top
+        if (rx > 2) {
+            g.fillStyle = shade(PAL.discA, 1.5)
+            g.beginPath(); g.ellipse(cx, cy - 1, Math.max(1, rx - 1.5), Math.max(1, DISC_RY - 1.5), 0, 0, Math.PI * 2); g.fill()
         }
-        px(g, 0, 1, 26, 1, '#f8f8f8')
-        px(g, 0, 6, 26, 1, '#182078')
+        // the spindle hub: stays visible even when the disc is edge-on
+        px(g, cx - 1, cy - 2, 2, 4, PAL.discB)
     })
 }
 

@@ -16,7 +16,7 @@ import {
 } from '../src/games/QBert/sim.js'
 import { plan } from '../src/games/QBert/planner.js'
 import { sfxFor, VOICED, SILENT } from '../src/games/QBert/sound.js'
-import { COILS, coilX, coilY } from '../src/games/QBert/art.js'
+import { COILS, coilX, coilY, discHalfW, DISC_FRAMES } from '../src/games/QBert/art.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('qbertcheck')
@@ -282,6 +282,27 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
         return cx - 7.5 >= 0 && cx + 7.5 <= 22 && cy - 2 >= 0 && cy + 2 <= 22
     }).every(Boolean))
     r.check('every coil oval fits inside the 22x22 sprite (no clipping on either frame)', fits)
+}
+
+// ----------------------------------------------------- the spinning disc ----
+// The flying disc is a flat disc spinning about its vertical axis; at the
+// cabinet's shallow angle its projected width oscillates as it turns
+// (broadside -> edge-on -> broadside). That oscillation is the "it is spinning"
+// cue the old 26x8 bar of shifting dashes never had. discHalfW is a PURE model
+// in art.js, pinned in Node against LITERAL bounds (the TETRIS lesson): a
+// static-width bar — no oscillation, no edge-on thinning, or a small disc —
+// goes red.
+{
+    const ws = Array.from({ length: DISC_FRAMES }, (_, i) => discHalfW(i))
+    const mx = Math.max(...ws), mn = Math.min(...ws)
+    r.check('the disc spins: its projected width oscillates across the spin (not a static-width bar)',
+        mx - mn > 4, JSON.stringify(ws.map((w) => Math.round(w * 10) / 10)))
+    r.check('the disc is a real disc at broadside (larger than the old 26px bar: half-width >= 13)',
+        mx >= 13, `max=${Math.round(mx * 10) / 10}`)
+    r.check('the disc thins toward edge-on as it rotates (a real spin, not a fixed width)',
+        mn <= 3, `min=${Math.round(mn * 10) / 10}`)
+    r.check('the rotating disc stays inside its 28px sprite (2 x half-width <= 28, no clipping)',
+        mx * 2 <= 28, `max=${Math.round(mx * 10) / 10}`)
 }
 
 // --------------------------------------------------- the disc + snake lure ----

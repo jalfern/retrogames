@@ -15,7 +15,7 @@ import { makeGame, step, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, 
 import { plan } from './planner.js'
 import { sfxFor } from './sound.js'
 import {
-    cubeSprite, cubeTopCol, cubeDarkCol, bertSprite, ballSprite, discSprite,
+    cubeSprite, cubeTopCol, cubeDarkCol, bertSprite, ballSprite, discSprite, DISC_FRAMES, DISC_R, DISC_RY,
     coilySprite, runnerSprite, slickSprite, tunnelSprite, text5, textWidth,
     paintBg, lifeGlyph, HW, HH,
 } from './art.js'
@@ -137,7 +137,7 @@ const QBertGame = () => {
             ctx.drawImage(tunnelSprite(-1), cubeXY(6, 0).x - HW - 20, cubeXY(6, 0).y + 2)
             ctx.drawImage(tunnelSprite(1), cubeXY(5, ROWS[5] - 1).x + HW + 2, cubeXY(5, ROWS[5] - 1).y + 2)
             // discs
-            for (const d of s.discs) ctx.drawImage(discSprite(Math.floor(t / 4) % 2), Math.round(d.x - 13), Math.round(d.y - 4))
+            for (const d of s.discs) ctx.drawImage(discSprite(Math.floor(t / 4) % DISC_FRAMES), Math.round(d.x - DISC_R), Math.round(d.y - (DISC_RY + 1)))
             // cubes back row to front
             const slickCubes = new Set()
             for (const sl of s.slicks) {

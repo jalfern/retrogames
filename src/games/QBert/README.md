@@ -48,9 +48,15 @@ the player actually gets, in plain Node.
   skirt up-right hop. `qbertcheck` pins all four hop directions, including the
   skirt cases where the row below/above is narrower.
 - Coily is a coiled spring, not a stack of bars: `art.js` models the body as
-  five oval coils whose stack wiggles by a pure travelling sinusoid
-  (`coilX`/`coilY`, pinned in `qbertcheck` — a static stack of bars goes red),
-  with a flicking head tongue.
+   five oval coils whose stack wiggles by a pure travelling sinusoid
+   (`coilX`/`coilY`, pinned in `qbertcheck` — a static stack of bars goes red),
+   with a flicking head tongue.
+- The flying disc is a real spinning disc, not a bar of dashes: `art.js` models
+   its projected half-width as a pure function of the spin frame (`discHalfW`,
+   broadside -> edge-on -> broadside, pinned in `qbertcheck` — a static-width
+   bar goes red), drawn larger (28px across) as a rimmed, lit, hubbed ellipse
+   so it reads as a 1982 spinning disc. The red ball's per-cube bounce-squash
+   is still a follow-up.
 - Levels escalate snake count/speed and switch the flip mode, but there is no
   original point-value table match beyond the documented singles/roundtrip/heli.
   (1-UP every 10,000 is now in: a life per 10k boundary crossed, capped at 9.
@@ -58,7 +64,8 @@ the player actually gets, in plain Node.
   then a random cube in that row — the original's wider row list, not the old
   apex-or-row-0/1 bias. `qbertcheck` pins both ends: a high RNG roll reaches
   the bottom skirt, a low roll the apex.)
-  Still missing: alternating hot-seat 2P, the bonus-stage green-field.
+   Still missing: the red ball's per-cube bounce-squash, alternating hot-seat
+   2P, the bonus-stage green-field.
 - Music is an original bouncy riff, not the Gottlieb melody.
 - `qbertdive` rides the advisory tier (like `joustdive`/`tetrisplay`), not the
   PR gate.
