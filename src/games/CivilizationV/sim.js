@@ -1,4 +1,4 @@
-// CIVILIZATION V — Stage 6 "Wonders & Great People". Pure deterministic sim.
+// CIVILIZATION V — Stage 7 "The World". Pure deterministic sim.
 // No three, no DOM, no Math.random: this module is the single source of truth
 // the Node harness (scripts/civcheck.mjs) and the in-browser autopilot import
 // unchanged. Turn-based: the player orders units, presses END TURN, then each
@@ -50,6 +50,16 @@
 //     each connected luxury +1 merchant). At threshold a great person can be
 //     bought with gold and spent: the engineer finishes a city's current build,
 //     the scientist finishes the current research, the merchant trades +200g.
+//   - Stage 7 adds the world beyond your border: two neutral CITY-STATES (Tyre,
+//     Venice) wait on the coast — discover them with a unit, gift gold for
+//     influence, and at 60 influence an ALLIANCE pays a pension every turn.
+//     DIPLOMACY between majors is a real ledger: declare war, make peace (peace
+//     erases war-weariness from the happiness ledger), and after three honest
+//     turns of peace a TRADE AGREEMENT signs, paying both crowns every turn.
+//     NAVAL units: the Trireme (Bronze Working) is built only by cities that
+//     touch the sea, sails Coast/Ocean only, and raids coastal cities and
+//     ships; adjacent land units can board it. City-states can be taken by
+//     siege — the sack pays tribute, allies lose the pension.
 
 export const CFG = {
     W: 40, H: 25,
@@ -79,6 +89,8 @@ export const CFG = {
     merchantGold: 200,                  // a Great Merchant's trade mission
     gpPalace: 1, gpLux: 1,            // extra engineer points at the palace, merchant points per luxury
     stoneCult: 2, librarySci: 2, gardenFood: 1, colossusGold: 1, wallDefMult: 1.5,   // wonder effects
+    csGift: 25, csInfl: 30, csAlly: 60, csTribute: 40,    // city-state courts: gift cost, influence per gift, alliance threshold, sack tribute
+    tradeGold: 3, peaceCool: 3,                             // gold per signed trade pact per turn; turns peace must hold before trade
 }
 
 export const UNIT = {
@@ -91,6 +103,8 @@ export const UNIT = {
     // actually own and connect, not just research.
     CHARIOT: { str: 9, moves: 3, sight: 2, range: 2, cost: 32, tech: 'THE_WHEEL', res: 'HORSES' },
     LEGION: { str: 12, moves: 2, sight: 2, range: 1, cost: 38, tech: 'BRONZE_WORKING', res: 'IRON' },
+    // Stage 7: the Trireme — Bronze Working; a ship of the coastal waters.
+    GALLEY: { str: 10, moves: 3, sight: 3, range: 1, cost: 30, tech: 'BRONZE_WORKING', naval: true },
 }
 
 // ---- the tech tree (Stage 3) ---------------------------------------------------
@@ -116,14 +130,24 @@ export const TECH_IDS = Object.keys(TECH)
 export const ERAS = ['ANCIENT', 'CLASSICAL', 'MEDIEVAL']
 
 export const T = { OCEAN: 0, COAST: 1, GRASS: 2, PLAINS: 3, DESERT: 4, HILLS: 5, MOUNTAIN: 6 }
+// ---- the world beyond the border (Stage 7) --------------------------------------
+// Two neutral city-states sit on the coast from turn 1. Discover one with a
+// unit, gift gold for influence, and at CFG.csAlly an alliance pays pensions
+// every turn. They can be taken by siege (the sack pays tribute) — and allies
+// lose the pension when their city falls.
 export const CIVS = [
     { id: 0, name: 'ROME', hex: '#b8412f', player: true },
     { id: 1, name: 'EGYPT', hex: '#c9a227', player: false },
     { id: 2, name: 'CHINA', hex: '#2f7fb8', player: false },
     { id: 3, name: 'AZTEC', hex: '#3f9e4f', player: false },
     { id: 4, name: 'BARBARIANS', hex: '#6b6b6b', player: false, barb: true },
+    { id: 5, name: 'TYRE', hex: '#c084d8', cs: true, allyGold: 2, allyDesc: '+2 gold every turn' },
+    { id: 6, name: 'VENICE', hex: '#7fd4c1', cs: true, allySci: 1, allyCult: 1, allyDesc: '+1 science +1 culture every turn' },
 ]
 export const BARB = 4
+export const CS0 = 5
+export const CS_IDS = [5, 6]
+export const isCS = (id) => id >= CS0
 
 // ---- improvements (Stage 4) -----------------------------------------------------
 // Civ V build order: Pottery opens the Farm, Masonry the Mine, The Wheel the
@@ -205,6 +229,8 @@ const BASE_YIELD = {
     [T.MOUNTAIN]: { f: 0, p: 0, g: 0 },
 }
 const WALKABLE = (t) => t >= T.GRASS && t <= T.HILLS   // not ocean/coast/mountain
+const SEA_OK = (t) => t === T.OCEAN || t === T.COAST   // the trireme's domain
+const domainOK = (u, t) => (u && u.naval ? SEA_OK(t) : WALKABLE(t))
 
 // ---- war relations -------------------------------------------------------------
 export function atWar(gs, a, b) {
@@ -212,10 +238,110 @@ export function atWar(gs, a, b) {
     if (a === BARB || b === BARB) return true
     return !!gs.wars[Math.min(a, b) + '-' + Math.max(a, b)]
 }
-export function declareWar(gs, a, b) {
+export function declareWar(gs, a, b, by) {
     if (a === b) return
     const k = Math.min(a, b) + '-' + Math.max(a, b)
-    if (!gs.wars[k]) { gs.wars[k] = true; gs.events.push({ type: 'war', a: Math.min(a, b), b: Math.max(a, b) }) }
+    if (!gs.wars[k]) { gs.wars[k] = true; delete gs.trade[k]; gs.peaceTurn[k] = null; gs.events.push({ type: 'war', a: Math.min(a, b), b: Math.max(a, b), by: by == null ? b : by }) }
+}
+
+// ---- diplomacy (Stage 7) --------------------------------------------------------
+// One law per rule: panel, harness and AI all pass through these gates.
+export function canDeclareWar(gs, a, b) {
+    if (a === b) return 'cannot war yourself'
+    if (a === BARB || b === BARB) return 'barbarians need no declaration'
+    if (!gs.civs[b] || !gs.civs[b].alive) return 'they are already gone'
+    if (atWar(gs, a, b)) return 'already at war'
+    return true
+}
+export function canMakePeace(gs, a, b) {
+    if (a === BARB || b === BARB) return 'no truce with barbarians'
+    if (!atWar(gs, a, b)) return 'not at war'
+    return true
+}
+export function makePeace(gs, a, b) {
+    const why = canMakePeace(gs, a, b)
+    if (why !== true) { if (a === 0 || b === 0) gs.events.push({ type: 'deny', reason: why, c: -1, r: -1 }); return false }
+    const k = Math.min(a, b) + '-' + Math.max(a, b)
+    delete gs.wars[k]
+    gs.peaceTurn[k] = gs.turn
+    gs.events.push({ type: 'peace', a: Math.min(a, b), b: Math.max(a, b) })
+    return true
+}
+export function canTrade(gs, a, b) {
+    if (a === b || a >= CS0 || b >= CS0) return 'trade pacts are between empires'
+    if (!gs.civs[a].alive || !gs.civs[b].alive) return 'they are already gone'
+    if (atWar(gs, a, b)) return 'you are at war with them'
+    const k = Math.min(a, b) + '-' + Math.max(a, b)
+    if (gs.trade[k]) return 'a trade agreement is already signed'
+    const pt = gs.peaceTurn[k]
+    if (pt != null && gs.turn - pt < CFG.peaceCool) return `peace must hold ${CFG.peaceCool} turns first (${CFG.peaceCool - (gs.turn - pt)} to go)`
+    return true
+}
+export function makeTrade(gs, a, b) {
+    const why = canTrade(gs, a, b)
+    if (why !== true) { if (a === 0 || b === 0) gs.events.push({ type: 'deny', reason: why, c: -1, r: -1 }); return false }
+    gs.trade[Math.min(a, b) + '-' + Math.max(a, b)] = true
+    gs.events.push({ type: 'trade', a: Math.min(a, b), b: Math.max(a, b) })
+    return true
+}
+
+// ---- city-states (Stage 7) ------------------------------------------------------
+export function cityStates(gs) { return CIVS.filter((c) => c.cs && gs.civs[c.id].alive) }
+export function csInfo(gs, civ, csId) { return gs.cs[civ][csId] || null }
+export function canGift(gs, civ, csId) {
+    if (!isCS(csId)) return 'not a city-state'
+    if (!gs.civs[csId].alive) return 'their city has fallen'
+    const info = gs.cs[civ][csId]
+    if (!info || !info.met) return 'you have not met their envoys'
+    if (info.ally) return 'already your ally'
+    if (gs.civs[civ].gold < CFG.csGift) return 'not enough gold'
+    return true
+}
+export function giftCS(gs, civ, csId) {
+    const why = canGift(gs, civ, csId)
+    if (why !== true) { if (civ === 0) gs.events.push({ type: 'deny', reason: why, c: -1, r: -1 }); return false }
+    gs.civs[civ].gold -= CFG.csGift
+    const info = gs.cs[civ][csId]
+    info.influence += CFG.csInfl
+    gs.events.push({ type: 'csGift', civ, cs: csId, influence: info.influence })
+    if (!info.ally && info.influence >= CFG.csAlly) {
+        info.ally = true
+        gs.events.push({ type: 'csAlly', civ, cs: csId })
+    }
+    return true
+}
+// A unit that reaches a city-state's home hex (or next to it) discovers it.
+function sweepMeetings(gs) {
+    for (const cs of CIVS) {
+        if (!cs.cs || !gs.civs[cs.id].alive) continue
+        const home = gs.cities.find((c) => c.alive && c.civ === cs.id)
+        if (!home) continue
+        for (const u of gs.units) {
+            if (!u.alive || u.civ >= CS0) continue
+            if (hexDist([u.c, u.r], [home.c, home.r]) > 1) continue
+            const info = gs.cs[u.civ][cs.id] || (gs.cs[u.civ][cs.id] = { met: false, influence: 0, ally: false })
+            if (!info.met) {
+                info.met = true
+                reveal(gs, u.civ, home.c, home.r, CFG.sightCity)
+                gs.events.push({ type: 'csMeet', civ: u.civ, cs: cs.id, c: home.c, r: home.r })
+            }
+        }
+    }
+}
+
+// ---- naval domain (Stage 7) -----------------------------------------------------
+export function isWater(gs, c, r) { const tl = tileAt(gs, c, r); return !!tl && SEA_OK(tl.terr) }
+export function coastalTile(gs, c, r) {
+    const tl = tileAt(gs, c, r)
+    if (!tl || !WALKABLE(tl.terr)) return false
+    return neighbors(c, r).some(([nc, nr]) => isWater(gs, nc, nr))
+}
+export function coastalCityOf(gs, civ) {
+    return gs.cities.find((ct) => ct.alive && ct.civ === civ && coastalTile(gs, ct.c, ct.r)) || null
+}
+function firstFreeSea(gs, c, r) {
+    for (const [nc, nr] of neighbors(c, r)) if (isWater(gs, nc, nr) && !unitAt(gs, nc, nr)) return [nc, nr]
+    return null
 }
 export function tileBlocked(gs, c, r) {
     if (!inMap(c, r)) return true
@@ -243,6 +369,7 @@ export function canQueue(gs, civ, kind) {
     if (!st) return !!WONDER[kind] && canBuildWonder(gs, civ, kind) === true
     if (st.tech && !hasTech(gs, civ, st.tech)) return false
     if (st.res && !connectedResources(gs, civ).includes(st.res)) return false
+    if (st.naval && !coastalCityOf(gs, civ)) return false
     return true
 }
 function applyLearn(gs, civ, id) {
@@ -356,6 +483,7 @@ export function queueDeny(gs, civ, kind) {
     }
     if (st.tech && !hasTech(gs, civ, st.tech)) return 'requires ' + TECH[st.tech].name
     if (st.res && !connectedResources(gs, civ).includes(st.res)) return 'requires ' + RES[st.res].name
+    if (st.naval && !coastalCityOf(gs, civ)) return 'needs a coastal city'
     return null
 }
 
@@ -637,6 +765,8 @@ export function newGame(seed = 1, scenario = 0) {
         policies: CIVS.map(() => ({})),
         resKnown: CIVS.map(() => ({})),
         wonders: {},
+        cs: CIVS.map(() => ({})),
+        trade: {}, peaceTurn: {},
         gp: CIVS.map(() => ({ pts: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, held: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, ready: { ENGINEER: false, SCIENTIST: false, MERCHANT: false }, bought: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 } })),
         capitalOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
@@ -650,12 +780,13 @@ export function newGame(seed = 1, scenario = 0) {
     }
     // starting land: largest connected walkable blob gets the capitals
     const seats = capitalSeats(gs)
-    gs.civs.filter((c) => !c.barb).forEach((civ, i) => {
+    gs.civs.filter((c) => !c.barb && !c.cs).forEach((civ, i) => {
         const seat = seats[i] || nearestGoodLand(gs, CFG.W >> 1, CFG.H >> 1)
         spawnUnit(gs, civ.id, 'SETTLER', seat[0], seat[1])
         spawnUnit(gs, civ.id, 'WARRIOR', ...firstFreeNeighbor(gs, seat[0], seat[1]))
     })
     placeCamps(gs, seats)
+    placeCityStates(gs, seats)
     gs.civs.forEach((civ) => {
         const s = gs.units.find((u) => u.alive && u.civ === civ.id && u.kind === 'SETTLER')
         if (s) reveal(gs, civ.id, s.c, s.r, Math.max(CFG.sightWarrior, CFG.sightSettler))
@@ -690,6 +821,46 @@ function placeCamps(gs, seats) {
         gs.camps.push(camp)
         gs.tiles[idx(c, r)].camp = camp.id
     }
+}
+
+// Stage 7: the city-states. Tyre and Venice are founded before the first turn
+// on coastal land — clear of capital seats, camps and each other — and their
+// home hexes stay hidden until an empire's unit reaches them.
+function placeCityStates(gs, seats) {
+    const rng = makeRng(gs.seed * 6151 + 17)
+    const cand = []
+    for (let r = 1; r < CFG.H - 1; r++) for (let c = 1; c < CFG.W - 1; c++) {
+        const tl = gs.tiles[idx(c, r)]
+        if (!WALKABLE(tl.terr) || tl.river || tl.camp >= 0 || unitAt(gs, c, r)) continue
+        if (!neighbors(c, r).some(([nc, nr]) => isWater(gs, nc, nr))) continue
+        if (seats.some((s) => hexDist(s, [c, r]) < 4)) continue
+        if (gs.camps.some((cp) => cp.alive && hexDist([cp.c, cp.r], [c, r]) < 3)) continue
+        cand.push([c, r])
+    }
+    for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp }
+    const picked = []
+    let minSep = 4
+    while (picked.length < CS_IDS.length && minSep >= 1) {
+        for (const p of cand) {
+            if (picked.length >= CS_IDS.length) break
+            if (picked.some((q) => hexDist(q, p) < minSep)) continue
+            picked.push(p)
+        }
+        minSep--
+    }
+    CS_IDS.forEach((csId, i) => {
+        const p = picked[i]
+        if (!p) return
+        const city = foundCity(gs, csId, p[0], p[1])
+        city.cs = true
+        city.size = 2
+        city.name = CIVS[csId].name
+        for (let cc = p[0] - 1; cc <= p[0] + 1; cc++) for (let rr = p[1] - 1; rr <= p[1] + 1; rr++) {
+            if (!inMap(cc, rr)) continue
+            const tl = gs.tiles[idx(cc, rr)]
+            if (tl.owner < 0 && WALKABLE(tl.terr)) tl.owner = csId
+        }
+    })
 }
 
 function firstFreeNeighbor(gs, c, r) {
@@ -728,6 +899,7 @@ export function spawnUnit(gs, civ, kind, c, r, opts = {}) {
         id: unitSeq++, civ, kind, c, r,
         str, hp: 100, maxHp: 100,
         moves, maxMoves: moves,
+        naval: !!st.naval,
         path: [], anim: { px: 0, pz: 0, moving: false },
         alive: true, fortified: false, acted: false, busy: null,
     }
@@ -837,7 +1009,7 @@ function cityName(civ, n) { return (NAMES[civ] || ['City'])[n % 4] }
 export function orderMove(gs, unit, tc, tr) {
     if (!unit || !unit.alive || unit.moves <= 0) return false
     const tl = tileAt(gs, tc, tr)
-    if (!tl || !WALKABLE(tl.terr)) return false
+    if (!tl || !domainOK(unit, tl.terr)) return false
     if (tileBlocked(gs, tc, tr)) return false
     if (unitAt(gs, tc, tr)) return false
     const path = findPath(gs, unit, tc, tr)
@@ -860,7 +1032,7 @@ export function findPath(gs, unit, tc, tr) {
             const ni = idx(nc, nr)
             if (prev[ni] !== -2) continue
             const tl = gs.tiles[ni]
-            if (!WALKABLE(tl.terr)) continue
+            if (!domainOK(unit, tl.terr)) continue
             if (tl.camp >= 0 && gs.camps[tl.camp] && gs.camps[tl.camp].alive) continue
             if (unitAt(gs, nc, nr) && !(nc === tc && nr === tr)) continue
             prev[ni] = idx(c, r)
@@ -914,6 +1086,9 @@ export function doAttack(gs, u, tc, tr) {
     const ox = u.c, oy = u.r, ociv = u.civ
     const target = unitAt(gs, tc, tr)
     if (target && target.alive && atWar(gs, u.civ, target.civ)) {
+        // Stage 7 naval law: a galley strikes ships anywhere and land units
+        // only on coastal ground; land units may board ships beside the shore.
+        if (u.naval && !target.naval && !coastalTile(gs, tc, tr)) return false
         let strikes = 0
         while (strikes++ < 4) {
             const atkEff = u.str * (0.5 + 0.5 * u.hp / u.maxHp) * (tl.river ? 0.9 : 1)
@@ -922,7 +1097,7 @@ export function doAttack(gs, u, tc, tr) {
             if (target.hp <= 0) {
                 target.hp = 0; target.alive = false; target.moves = 0; target.path = []
                 gs.events.push({ type: 'kill', civ: u.civ, kind: u.kind, victim: target.civ, victimKind: target.kind, at: [tc, tr], ranged })
-                if (!ranged && u.alive) { u.c = tc; u.r = tr; if (u.civ === BARB) pillageAt(gs, gs.tiles[ti]) }        // march in — one unit per tile holds
+                if (!ranged && u.alive && domainOK(u, tl.terr)) { u.c = tc; u.r = tr; if (u.civ === BARB) pillageAt(gs, gs.tiles[ti]) }        // march in — one unit per tile holds
                 if (u.alive && u.civ === 0) reveal(gs, 0, tc, tr, st.sight)
                 break
             }
@@ -935,11 +1110,12 @@ export function doAttack(gs, u, tc, tr) {
         }
         u.moves = 0; u.acted = true; u.fortified = false
         gs.events.push({ type: 'strike', civ: ociv, kind: u.kind, from: [ox, oy], to: [tc, tr], ranged })
-        if (target.civ > 0 && target.civ < BARB && u.civ < BARB) declareWar(gs, u.civ, target.civ)
+        if (target.civ > 0 && target.civ !== BARB && u.civ < BARB) declareWar(gs, u.civ, target.civ)
         return true
     }
     const cityI = tl.city
     if (cityI >= 0 && gs.cities[cityI].alive && atWar(gs, u.civ, gs.cities[cityI].civ)) {
+        if (u.naval && !coastalTile(gs, tc, tr)) return false    // sail to raid a port, or don't
         const city = gs.cities[cityI]
         const wallMax = city.wallMax || CFG.cityHp
         let strikes = 0
@@ -958,7 +1134,7 @@ export function doAttack(gs, u, tc, tr) {
         }
         u.moves = 0; u.acted = true
         gs.events.push({ type: 'strike', civ: ociv, kind: u.kind, from: [ox, oy], to: [tc, tr], ranged })
-        if (city.civ < BARB && u.civ < BARB) declareWar(gs, u.civ, city.civ)
+        if (city.civ !== BARB && u.civ < BARB) declareWar(gs, u.civ, city.civ)
         return true
     }
     const ci = tl.camp
@@ -978,17 +1154,23 @@ export function doAttack(gs, u, tc, tr) {
 
 function captureCity(gs, city, civ) {
     const old = city.civ
+    const wasCS = !!city.cs
     city.civ = civ
     city.wallMax = city.wallMax || CFG.cityHp
     city.hp = Math.floor(city.wallMax * 0.6)
     city.size = Math.max(1, Math.floor(city.size / 2))
     city.storedFood = 0; city.buildP = 0; city.queue = []
+    if (wasCS) { city.cs = false; delete city.capital }
     for (const [nc, nr] of neighbors(city.c, city.r)) {
         const tl = gs.tiles[idx(nc, nr)]
         if (tl.owner === old) tl.owner = civ
     }
     gs.tiles[idx(city.c, city.r)].owner = civ
     gs.events.push({ type: 'capture', city: city.id, civ, old, capital: city.capital })
+    if (wasCS) {
+        if (civ < CIVS.length) { if (civ < CS0) gs.civs[civ].gold += CFG.csTribute; gs.events.push({ type: 'csTaken', cs: old, by: civ, tribute: civ < CS0 ? CFG.csTribute : 0 }) }
+        for (let x = 0; x < CS0; x++) if (gs.cs[x][old]) { gs.cs[x][old].ally = false; gs.cs[x][old].fallen = true }
+    }
     declareWar(gs, civ, old)
     if (civ < BARB) reveal(gs, civ, city.c, city.r, CFG.sightCity)
     checkCivDeath(gs)
@@ -1007,6 +1189,31 @@ export function stepToward(gs, u, tgt) {
         if (!landFree(gs, nc, nr)) continue
         const d = hexDist([nc, nr], tgt)
         if (d < bd) { bd = d; best = [nc, nr] }
+    }
+    return best
+}
+function stepTowardSea(gs, u, tgt) {
+    let best = null, bd = hexDist([u.c, u.r], tgt)
+    for (const [nc, nr] of neighbors(u.c, u.r)) {
+        if (!isWater(gs, nc, nr) || unitAt(gs, nc, nr)) continue
+        const d = hexDist([nc, nr], tgt)
+        if (d < bd) { bd = d; best = [nc, nr] }
+    }
+    return best
+}
+function navalTarget(gs, civ, u) {
+    let best = null, bs = 1e9
+    for (const x of gs.units) {
+        if (!x.alive || x.naval || x.civ >= CS0 || !atWar(gs, civ, x.civ)) continue
+        if (!coastalTile(gs, x.c, x.r)) continue
+        const d = hexDist([u.c, u.r], [x.c, x.r])
+        if (d <= 7 && d < bs) { bs = d; best = [x.c, x.r] }
+    }
+    for (const ct of gs.cities) {
+        if (!ct.alive || ct.civ === civ || ct.civ >= CS0 || !atWar(gs, civ, ct.civ)) continue
+        if (!coastalTile(gs, ct.c, ct.r)) continue
+        const d = hexDist([u.c, u.r], [ct.c, ct.r])
+        if (d <= 7 && d * 1.6 < bs) { bs = d * 1.6; best = [ct.c, ct.r] }
     }
     return best
 }
@@ -1038,10 +1245,12 @@ function animateUnits(gs) {
 // advance the turn.
 function endPlayerTurn(gs) {
     for (const u of gs.units) { if (u.civ === 0 && u.alive) { u.path = []; u.fortified = !u.acted } }
-    for (const civ of gs.civs) { if (!civ.player && !civ.barb && civ.alive) aiTurn(gs, civ.id) }
+    for (const civ of gs.civs) { if (!civ.player && !civ.barb && !civ.cs && civ.alive) aiTurn(gs, civ.id) }
     barbarianTurn(gs)
+    sweepMeetings(gs)
+    for (const cs of CIVS) if (cs.cs && gs.civs[cs.id].alive) cityStateTurn(gs, cs.id)
     advanceBuilds(gs)
-    for (const civ of gs.civs) if (!civ.barb) resolveCiv(gs, civ.id)
+    for (const civ of gs.civs) if (!civ.barb && !civ.cs) resolveCiv(gs, civ.id)
     gs.turn++
     gs.phase = 'player'
     for (const u of gs.units) {
@@ -1085,8 +1294,10 @@ function pumpCityQueue(gs, city) {
             }
             continue
         }
-        const at = landFree(gs, city.c, city.r) ? [city.c, city.r] : firstFreeAround(gs, city.c, city.r)
-        if (unitAt(gs, at[0], at[1]) || !landFree(gs, at[0], at[1])) break   // no room: points keep banking
+        const st = UNIT[kind]
+        const at = st && st.naval ? firstFreeSea(gs, city.c, city.r)
+            : landFree(gs, city.c, city.r) ? [city.c, city.r] : firstFreeAround(gs, city.c, city.r)
+        if (!at || unitAt(gs, at[0], at[1]) || (st && st.naval ? !isWater(gs, at[0], at[1]) : !landFree(gs, at[0], at[1]))) break   // no room: points keep banking
         city.buildP -= cost; city.queue.shift()
         spawnUnit(gs, city.civ, kind, at[0], at[1])
         gs.events.push({ type: 'build', civ: city.civ, city: city.id, unit: kind })
@@ -1141,6 +1352,16 @@ function resolveCiv(gs, civ) {
         if (RES[id].lux) lux++
     }
     gold += CFG.luxGold * lux; cult += CFG.luxCult * lux
+    // Stage 7: signed trade pacts pay both crowns; allied city-states pay pensions
+    for (const k of Object.keys(gs.trade)) {
+        const [x, y] = k.split('-').map(Number)
+        if (x === civ || y === civ) gold += CFG.tradeGold
+    }
+    for (const cs of CIVS) {
+        if (!cs.cs || !gs.civs[cs.id].alive) continue
+        const info = gs.cs[civ][cs.id]
+        if (info && info.ally) { gold += cs.allyGold || 0; sci += cs.allySci || 0; cult += cs.allyCult || 0 }
+    }
     if (gs.wonders && gs.wonders.COLOSSUS === civ) gold += CFG.colossusGold * lux   // bronze giants guard the caravans
     if (hs.happy) gold = Math.round(gold * (1 + CFG.happyGold))   // happy markets tip the till
     // Stage 6: every city sings its people toward legend — one point of each
@@ -1179,7 +1400,7 @@ function resolveCiv(gs, civ) {
 }
 
 function checkEnd(gs) {
-    if (gs.civs[0].alive && gs.civs.every((c) => c.barb || c.player || !c.alive)) {
+    if (gs.civs[0].alive && gs.civs.every((c) => c.barb || c.cs || c.player || !c.alive)) {
         gs.end = 'win'; gs.endWhy = 'Domination — every rival capital flies your colours'; return
     }
     const cap = gs.capitalOf[0] != null ? gs.cities[gs.capitalOf[0]] : null
@@ -1232,6 +1453,15 @@ function aiTurn(gs, civ) {
         const cities = gs.cities.filter((c) => c.alive && c.civ === civ).length
         if (power + cities >= 5 && hash2(civ, gs.turn, gs.seed ^ 0x9e37) < CFG.warChance) declareWar(gs, civ, 0)
     }
+    // Stage 7 diplomacy: sue for peace when outmatched or the clock bites,
+    // sign trade when peace has held long enough. Same law as the D panel.
+    if (atWar(gs, civ, 0)) {
+        const mine = gs.units.filter((u) => u.alive && u.civ === civ && u.str > 0).length
+        const theirs = gs.units.filter((u) => u.alive && u.civ === 0 && u.str > 0).length
+        if ((mine < theirs || gs.turn >= CFG.turnLimit - 8) && hash2(civ, gs.turn, gs.seed ^ 0x51af) < 0.22) makePeace(gs, civ, 0)
+    } else if (canTrade(gs, civ, 0) === true && hash2(civ, gs.turn, gs.seed ^ 0x77b1) < 0.3) {
+        makeTrade(gs, civ, 0)
+    }
     // settlers expand; military units fight or scout
     for (const u of gs.units) {
         if (!u.alive || u.civ !== civ) continue
@@ -1244,6 +1474,22 @@ function aiTurn(gs, civ) {
                 u.c = step[0]; u.r = step[1]; u.moves--; u.acted = true
             }
             if (canFound(gs, civ, u.c, u.r, u) === true) tryFound(gs, u)
+        } else if (u.naval) {
+            // Stage 7: galleys hunt coastal targets across the water, else roam
+            const tgt = navalTarget(gs, civ, u)
+            if (tgt) {
+                let guard = 0
+                while (u.moves > 0 && guard++ < 3) {
+                    const d = hexDist([u.c, u.r], tgt)
+                    if (d <= 1) { doAttack(gs, u, tgt[0], tgt[1]); break }
+                    const step = stepTowardSea(gs, u, tgt)
+                    if (!step) break
+                    u.c = step[0]; u.r = step[1]; u.moves--; u.acted = true
+                }
+            } else {
+                const dirs = neighbors(u.c, u.r).filter(([nc, nr]) => isWater(gs, nc, nr) && !unitAt(gs, nc, nr))
+                if (dirs.length) { const pick = dirs[Math.floor(hash2(u.id, gs.turn, civ ^ 61) * dirs.length)]; u.c = pick[0]; u.r = pick[1]; u.moves = 0; u.acted = true }
+            }
         } else if (u.str > 0) {
             const tgt = findTarget(gs, civ, u, warring ? 7 : 3)
             if (tgt) {
@@ -1311,6 +1557,9 @@ function aiTurn(gs, civ) {
         if (city.civ !== civ || !city.alive) continue
         city.queue = city.queue || []
         if (city.queue.length >= 3) continue
+        // Stage 7: coastal cities lay a keel — wartime fleets, peace patrols
+        if (!city.queue.includes('GALLEY') && canQueue(gs, civ, 'GALLEY') === true && coastalTile(gs, city.c, city.r)
+            && hash2(city.id, gs.turn, civ ^ 41) < (warring ? 0.4 : 0.15)) { city.queue.push('GALLEY'); continue }
         // Stage 6: every rival is in the race — one wonder at a time, per city
         if (!city.queue.some((k) => WONDER[k]) && !WONDER_IDS.some((id) => gs.wonders[id] === civ)) {
             const pick = WONDER_IDS.filter((id) => canBuildWonder(gs, civ, id) === true)
@@ -1378,6 +1627,26 @@ function bestExpandHex(gs, civ, c, r) {
     return best
 }
 
+// Stage 7: a city-state is neutral until war comes — but its walls fight back.
+function cityStateTurn(gs, csId) {
+    const city = gs.cities.find((c) => c.alive && c.civ === csId)
+    if (!city) return
+    city.hp = Math.min(city.wallMax || CFG.cityHp, city.hp + 4)   // the militia repairs
+    let victim = null, vh = 1e9
+    for (const [nc, nr] of neighbors(city.c, city.r)) {
+        const en = unitAt(gs, nc, nr)
+        if (en && en.alive && en.civ < CS0 && atWar(gs, csId, en.civ) && en.hp < vh) { vh = en.hp; victim = en }
+    }
+    if (victim) {
+        victim.hp -= Math.max(5, Math.round(CFG.cityStrike * 0.8 * (0.5 + 0.5 * city.hp / (city.wallMax || CFG.cityHp))))
+        gs.events.push({ type: 'cityStrike', civ: csId, city: city.id, at: [victim.c, victim.r] })
+        if (victim.hp <= 0) {
+            victim.alive = false; victim.hp = 0; victim.path = []
+            gs.events.push({ type: 'kill', civ: csId, kind: 'CITY', victim: victim.civ, victimKind: victim.kind, at: [victim.c, victim.r] })
+        }
+    }
+}
+
 // --------------------------------------------------------------------- step --
 export function step(gs, input = {}) {
     gs.tick++
@@ -1390,11 +1659,21 @@ export function step(gs, input = {}) {
     if (input.policy) adoptPolicy(gs, 0, input.policy)
     if (input.recruit) recruitGP(gs, 0, input.recruit)
     if (input.useGP) spendGP(gs, 0, input.useGP.kind, input.useGP.city)
+    if (input.declare != null) {
+        const why = canDeclareWar(gs, 0, input.declare)
+        if (why !== true) gs.events.push({ type: 'deny', reason: why, c: -1, r: -1 })
+        else declareWar(gs, 0, input.declare, 0)
+    }
+    if (input.peace != null) makePeace(gs, 0, input.peace)
+    if (input.trade != null) makeTrade(gs, 0, input.trade)
+    if (input.gift != null) giftCS(gs, 0, input.gift)
     if (input.queue && (UNIT[input.queue] || WONDER[input.queue])) {
         const deny = queueDeny(gs, 0, input.queue)
         if (deny) gs.events.push({ type: 'deny', reason: deny, c: -1, r: -1 })
         else {
-            const city = input.city != null ? gs.cities[input.city] : gs.cities.find((c) => c.civ === 0 && c.alive)
+            const city = input.city != null ? gs.cities[input.city]
+                : UNIT[input.queue] && UNIT[input.queue].naval ? coastalCityOf(gs, 0)
+                    : gs.cities.find((c) => c.civ === 0 && c.alive)
             if (city && city.alive && city.civ === 0 && city.queue.length < 3) { city.queue.push(input.queue); gs.events.push({ type: 'queued', civ: 0, unit: input.queue }) }
         }
     }
@@ -1408,7 +1687,7 @@ export function step(gs, input = {}) {
 }
 
 export function stateHash(gs) {
-    const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4, WORKER: 5, CHARIOT: 6, LEGION: 7 }
+    const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4, WORKER: 5, CHARIOT: 6, LEGION: 7, GALLEY: 8 }
     let h = gs.turn * 31 + gs.units.length
     for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 9) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19) | 0
     for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71 + (ct.culture || 0) * 13) | 0
@@ -1417,8 +1696,14 @@ export function stateHash(gs) {
     for (const tl of gs.tiles) L = (L * 7 + (tl.imp ? IMP_IDS.indexOf(tl.imp) + 1 : 0) + (tl.road ? 4 : 0) + (tl.res + 1) * 11 + (tl.build ? tl.build.left * 3 + tl.build.civ : 0)) | 0
     h = (h * 33 + L) | 0
     h = (h * 33 + Object.keys(gs.wars).length * 613) | 0
+    h = (h * 33 + Object.keys(gs.trade).filter((k) => gs.trade[k]).length * 733) | 0
+    h = (h * 33 + Object.keys(gs.peaceTurn).filter((k) => gs.peaceTurn[k] != null).length * 179) | 0
     for (const id of WONDER_IDS) h = (h * 31 + (gs.wonders[id] != null ? gs.wonders[id] + 2 : 0)) | 0
     for (const civ of [0, 1, 2, 3]) {
+        for (const csId of CS_IDS) {
+            const info = gs.cs[civ][csId]
+            h = (h * 31 + (info ? (info.met ? 1 : 0) + (info.ally ? 2 : 0) + info.influence * 5 : 0)) | 0
+        }
         const R = gs.tech[civ]
         let m = 0
         for (let i = 0; i < TECH_IDS.length; i++) if (R.known[TECH_IDS[i]]) m |= 1 << i
