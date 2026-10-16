@@ -8,10 +8,8 @@
 // capital, then press END TURN each turn and let the capital grow on food
 // surplus until it reaches size 4 (the Stage-1 milestone).
 
-import { CFG, T, canFound, cityYield, neighbors, hexDist, newGame, step, tileAt } from './sim.js'
+import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt } from './sim.js'
 
-const inMap = (c, r) => c >= 0 && r >= 0 && c < CFG.W && r < CFG.H
-const idx = (c, r) => r * CFG.W + c
 const SITE = (tl) => (tl.terr === T.GRASS ? 3 : tl.terr === T.PLAINS ? 2 : 0)
     + (tl.river ? 2 : 0) + (tl.forest ? 1 : 0) + (tl.terr === T.HILLS ? 1 : 0)
 

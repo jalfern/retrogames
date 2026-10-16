@@ -185,6 +185,7 @@ export function isExplored(gs, civ, c, r) { return inMap(c, r) && gs.explored[ci
 
 // ------------------------------------------------------------------- newGame --
 export function newGame(seed = 1, scenario = 0) {
+    unitSeq = 1
     const gs = {
         seed: seed + scenario * 977, scenario, tick: 0, turn: 1, phase: 'player',
         tiles: [], units: [], cities: [], fog: [], explored: [], visible: [],

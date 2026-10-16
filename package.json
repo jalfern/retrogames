@@ -157,7 +157,10 @@
         "lint:ssx": "eslint src/games/SSX src/components src/utils src/config src/main.jsx scripts/ssxcheck.mjs scripts/lib",
         "ssxcheck": "node scripts/ssxcheck.mjs",
         "lint:pop": "eslint src/games/PrinceOfPersia src/components src/utils src/config src/main.jsx scripts/popcheck.mjs scripts/lib",
+        "lint:civ": "eslint src/games/CivilizationV src/components src/utils src/config src/main.jsx scripts/civcheck.mjs scripts/civplay.mjs scripts/lib",
         "popcheck": "node scripts/popcheck.mjs",
+        "civcheck": "node scripts/civcheck.mjs",
+        "civplay": "node scripts/civplay.mjs",
         "popplay": "node scripts/popplay.mjs"
     },
     "dependencies": {

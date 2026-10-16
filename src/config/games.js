@@ -172,6 +172,12 @@ const SSXGame = lazy(() => import('../games/SSX'))
 // own chunk; the harness imports sim/levels/planner unchanged in Node.
 const PrinceOfPersiaGame = lazy(() => import('../games/PrinceOfPersia'))
 
+// CIVILIZATION V: the biggest lazy chunk of all — three.js plus a hex-map
+// generator, fog, city/economy sim and the autopilot that founds and grows a
+// capital (scripts/civcheck.mjs audits) ride in its own chunk; the harness
+// imports sim/planner unchanged in Node.
+const CivilizationVGame = lazy(() => import('../games/CivilizationV'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -806,6 +812,16 @@ export const GAMES = [
         theme: 'dark',
         description: "Jordan Mechner's 1989 Brøderbund classic, rebuilt whole in code. One hour on the dungeon clock, and no lives: when you die the level starts over while the hour keeps running — that is the whole tension. You begin UNARMED; the sword lies in the first dungeon, and outside a fight it stays sheathed. The movement is the game: a run that builds and skids, speed-scaled jumps you can hold to extend, and a ledge you catch only by holding SHIFT as you fall, then climb, shimmy or hang-jump from. Levels are chains of rooms — walk through a doorway and the screen flips. Raise buttons lift gates that then close slowly, so you race them; chomper jaws snap on a schedule; loose floors fall and stay as rubble; a floor plate opens the exit door for good. The duel is timing: read the guard's wind-up, BLOCK it in time, and the parry opens your counter. The flasks are the originals — small red, large red, poison, slow-fall, upside-down. Every stone, torch flame, animated runner and note is generated at runtime; the whole hour is re-proven winnable, at a shortened clock and one fewer hit on every guard, by the same autopilot that fences through the attract demo.",
         controls: ['← / →: walk, then run — the first press walks, held it builds; reverse presses skid', 'SPACE / A: jump — hold while rising to fly farther; speed scales the distance', 'SHIFT: grab — hold it while falling to catch a ledge (it also keeps you to a walk on the ground)', 'While hanging: ↑ climb up · ↓ let go · ← / → shimmy · SPACE hang-jump', 'In a duel: ↑ block — a lunge blocked in time is parried, and the parry opens your counter', 'X / Z / ⚔: strike — close in and time it against the wind-up; you need the sword first', 'Flasks: small red heals · big red raises the maximum · blue is poison · pale blue slow-fall · purple flips the world · R restarts after sunrise'],
+    },
+    {
+        path: '/civilization-v',
+        pad: { layout: 'stick', buttons: [{ label: 'E', code: 'KeyE' }], analog: false },
+        builtBy: 'forge',
+        component: CivilizationVGame,
+        label: 'CIVILIZATION V',
+        theme: 'dark',
+        description: "Firaxis's 2010 4X, opened at its first and purest decision: where to make your home. One settler and one warrior step out onto a tilted, animated hex continent — ocean, coast, plains, forest, hills, rivers and mountains rising in real relief — into a fog that lifts only where your eyes have been. Tap a tile to walk, walk onto good ground and press E to found your capital; it claims its ring of land, works the fertile tiles, grows each time the fields feed more mouths than it has, and colours the map in ROME-red borders as culture spreads. Grow the capital to size 4 before turn 40 while three rival capitals — Egypt, China, the Aztecs — rise on their own across the same continent, researched and growing without you. The look is the original's: a slanted 3D hex world of terrain you can read at a glance, animated units, coloured borders and a clean turn HUD, all geometry and synth in code. This is Stage 1 of the deep pass — the founding. Tech tree, war units, wonders and the four victories follow.",
+        controls: ['Tap a tile: select the unit there, or walk your selected unit onto it (tap the fog to learn — one warrior scouts)', 'E / B: settle — your settler founds a city (capitals need 3 clear hexes from any other)', 'SPACE / A / ENTER: END TURN — cities work their ring, grow on food surplus, borders spread', 'Drag: orbit the world · wheel or pinch: zoom · ↑↓ tilt, ←→ rotate', 'Goal: grow your capital to size 4 before turn 40 · gold ◈ · science ✦ · culture ❦ tick each turn', '?: pause and read the rules'],
     }
 
 ]
