@@ -1,88 +1,81 @@
-# STATE — 2026-10-16 (forge session, CIVILIZATION V Stage 4 shipped — LAND)
+# STATE — 2026-10-16 (forge session, CIVILIZATION V Stage 5 shipped — CULTURE & HAPPINESS)
 
 ## Shipped this session
-**CIVILIZATION V — Stage 4 "Land"** (#355 deep pass; PR #357 squash-landed as
-0c42fd0; static+smoke+Vercel green; prod confirmed: entry `index-i96h6A8F.js`,
-CivV chunk `index-DFut9Ata.js` carries Legion/Chariot/pillage/WORK panel):
+**CIVILIZATION V — Stage 5 "Culture & Happiness"** (#355; PR #360 squash-landed
+as 3009944; static+smoke+Vercel green; prod confirmed: CivV chunk
+`index-DslZEyo2.js` carries the six policy names + borderGrow):
 https://jalfern.com/retrogames/civilization-v
 
-What landed on top of Stage 3 (pure sim + deterministic; autopilot = witness):
-- **Workers:** civilian unit (cost 20, ungated); FARM (Pottery) +2/+1 food,
-  MINE (Masonry) +1 prod (+1 more Engineering), ROAD (The Wheel); jobs take
-  real turns (2/2/1), one per worker; abandoned if the worker dies/moves off.
-- **Pillage:** barbarians strip improvements/roads/builds on every tile they
-  march onto (`pillageAt` in barbarianTurn + march-in).
-- **Resources:** 6 luxuries + Horses/IRON on fitting terrain (spread ≥3).
-  Land-connection BFS from cities (`resourceNetwork`, owned-or-road tiles);
-  unique connected luxuries pay +1g/+1c empire-wide; connected strategic
-  feeds its holding city (+1f horses / +1p iron).
-- **Resource-gated units (real Civ V):** CHARIOT (Wheel+Horses, str 9, rng 2,
-  mv 3) and LEGION (Bronze+Iron, str 12) — canQueue/queueDeny enforce in the
-  sim; refusals name the missing resource; AI ladder uses both when land+era
-  allow. Strategic seams stay hidden until their tech (`resRevealed`).
-- **Roads** halve movement cost for any unit (`roadCost` in animateUnits).
-- **stateHash** now folds per-tile imp/road/build/res + per-civ connected mask
-  + worker busy — §2 replay determinism preserved.
-- **Witness:** economy-first research (Pottery→Wheel→arms), queues a worker,
-  works the ring; wins scenarios 0/1/3 by t15–17 (was t18).
-- **Shell/art:** WORKER cart/spade, CHARIOT, crested LEGION models; road
-  ribbons joining hex-to-hex; furrowed farm patches; timbered mine; fogged
-  glowing resource tokens; WORK panel (W, F/M/O, tappable); worker + luxury
-  pills; land sounds (start/complete/pillage/luxury/strategic); DebugKit
-  QUEUE WORKER + IMPROVE HERE + probe `workers/land`; hooks `__civTest.turn()`
-  (one witness turn) and `.improve(k)`.
+What landed on top of Stage 4 (pure sim + deterministic; autopilot = witness):
+- **Culture borders:** city banks culture per turn; ring 2 @ 40, ring 3 @ 120;
+  unowned-first claiming (rival tiles never annexed); `borderGrow` events;
+  court baseline `out.cult += 1` in cityYield.
+- **Happiness ledger** `happinessOf(gs,civ)`: palace +2, unique connected
+  luxury +1, city −1, war −2 weariness. Happy (net≥1): +25% growth on surplus,
+  +10% gold. Unhappy (net<0): no growth, cityDef ×0.75. Mood flips emit
+  `happy` events (C.happyState/happyNet).
+- **Policies:** POLICY table — Tradition (FOUNDATIONS +3 cult/city @15,
+  CEREMONY +1 happy/luxury @40), Liberty (COLONIAL settlers 35→10 @15,
+  COLLEGE +1 sci/city @40), Commerce (TRADING_POSTS +1 gold/city @15,
+  TREATIES weariness halved @40). `canAdopt/adoptPolicy/hasPolicy/unitCost`;
+  branch order + pool enforced in sim, refusals name reason; AI civs adopt
+  deterministic lines (1 Commerce, 2 Liberty, 3 Tradition). `input.policy` in
+  step(); witness policy line in planner; fixed a pre-existing double-add of
+  C.culture in resolveCiv.
+- **Shell:** happiness face pill in HUD; POLICY panel (P, violet, branches,
+  pool, AI law counts, refusal lines); adoption/growth/mood cues + toasts;
+  DebugKit happiness line + ADOPT POLICY/+200 CULTURE cheats; probe adds
+  `happy/policies/culturePool/owned`; hooks `__civTest.policy(id)`.
+- **stateHash** now folds city.culture, per-civ policy mask + culture pool
+  (§2 replay determinism preserved).
 
-Gates: `civcheck` **185/185** (new §19 improvement gates incl. city-centre +
-borders + busy; §20 build turns/yields/roads/pillage; §21 reveal/connect/pay;
-§22 resource-gated units + end-to-end labour). Mutant: `connectedResources`
-counts every tile ⇒ 179/185 red (§21+§22); restore green. Stage-3 queue-gate
-mutant still reds §17. `civplay` **28/28**, zero page errors (Digit4 worker,
-W panel, real F key, farms in real time). lint:civ/mario/fps/ai + build green.
+Gates: `civcheck` **236/236** (new §23 border thresholds + first-come; §24
+ledger math, mood bonuses via CFG.cityUnhappy/happyGold isolation, mood
+events; §25 cost/order/effects, step() refusals, AI law, hash fold).
+Mutants: spreadBorders rad-clamp ⇒ §23×5 red; canAdopt order-check deletion ⇒
+§25 red; restore green. `civplay` **33/33**, zero page errors. lint:civ/
+mario/fps/ai + build green.
 
 ## GOAL — next session
-#355 Civ V back on `game-queue`, retitled **stages 5–8** (4 shipped). Stage 5
-candidates (in order): (1) CULTURE & HAPPINESS — borders by culture, a few
-social policies, happiness/unhappiness (luxuries currently pay gold as the
-honest stand-in); (2) WONDERS + great people points; (3) city-states/diplomacy
-(war/peace/trade) + naval units on coasts; (4) later eras + domination/
-science/culture victories. Ship one stage per PR; keep sim pure + deterministic;
-prove one mutant red per stage. If #355 paused by Jon, take `feedback` via
-FORGE.md step 2 — QA lane is usually active (check `pgrep -f "QA MASTER"`);
-fresh polish pass filed as **#358** (stage-4 look/juice/tooltips/sound mix).
+#355 is back on `game-queue`, retitled **stages 6–8** (5 shipped). Stage 6
+candidates per issue body: **WONDERS + great-people points** (a handful of real
+wonders; GP points generate per city, a great person is spendable — engineer =
+hasty production, scientist = instant tech, merchant = trade gold). Keep sim
+pure + deterministic, fold new state into stateHash, prove one mutant red, ship
+one stage per PR. QA lane: fresh stage-5 polish pass filed as **#362** (border
+FX, adoption ceremony, happiness faces, tooltips, sound mix); older CivV polish
+backlog #347/#350/#352/#358, #220 building-qa.
 
 ## Board (last read)
-- #355 Civ V `game-queue` (stages 5–8; stage 4 live).
-- CivV polish backlog: #347, #350, #352, #358 (stage 4). No `next` items.
-  Rule-4: not stalled — game code shipped this session.
+- #355 Civ V `game-queue` (stages 6–8; stage 5 live).
+- No `next` items. Rule-4 satisfied — game code shipped this session.
 
 ## Notes for whoever picks this up
-- **sim.js land spine:** `IMP`/`RES`/`IMP_IDS`/`RES_IDS` live after `BARB`
-  (need `T`); tiles carry `res/imp/road/build`; `canImprove`/`startImprove`/
-  `advanceBuilds` (runs in endPlayerTurn after barbarianTurn),
-  `resourceNetwork`/`connectedResources`/`resRevealed`/`roadCost`/`queueDeny`;
-  strategic bonuses applied in `cityYield`; luxury caravans + `resKnown`
-  one-shot events in `resolveCiv`. WORKER `busy` = tile index; `KC` in
-  stateHash extended (WORKER/CHARIOT/LEGION).
-- **Don't break §2:** any new world state must fold into `stateHash` before
-  shipping (land fold is the `L` accumulator + `rm` per-civ mask).
-- **civplay timing lesson:** Space-spamming end-turn idles the capital and
-  barbs take it (~t15); drive waits with `__civTest.turn()` (one defended
-  witness turn) and do instant UI checks at turn 2 BEFORE long runs. Worker
-  spawns on the capital centre (never workable) — move it off before F.
-- **Drive note (unchanged):** `npx vite --host 127.0.0.1 --port <p>
-  --strictPort`, poll, `CIV_URL=... npm run civplay` in ONE shell call; kill
-  the port after. Prod check: game code lives in a lazy per-game chunk
-  referenced inside the entry `index-*.js` — fetch the entry, collect
-  `index-*.js` refs, grep the chunk (this session: index-DFut9Ata.js).
-- Worktree `~/Dev/retrogames-forge-civilization-v` free (detached at
-  origin/main); node_modules symlinked from the main checkout.
+- **sim.js Stage-5 spine:** CFG.border2/3 + palaceHappy/cityUnhappy/warWeariness/
+  happyGrowth/happyGold/angryDef; POLICY/POLICY_IDS/BRANCHES after RES_IDS;
+  hasPolicy/happinessOf/unitCost/canAdopt/adoptPolicy after queueDeny; policy
+  modifiers inside cityYield; growth/gold/mood in resolveCiv (hs computed once);
+  spreadBorders thresholds + city.border; AI policy block in aiTurn; KC mask +
+  L fold unchanged — new folds are ct.culture, pm, civ culture pool.
+- **Timeline shift:** happy growth makes the witness win at **t12** (was 15–17);
+  §22 labour proof runs on scenario 3 now. civplay instant UI checks live in §3b
+  (turn ~2) — the game can be OVER before turn 14, any late browser check needs
+  `|| p.end` fallback or move it early.
+- **Civplay lesson:** jalfern.com 308-redirects without trailing slash — curl
+  prod greps need `-L`; entry lists lazy chunks as bare `index-*.js` refs —
+  fetch `https://jalfern.com/retrogames/assets/<chunk>` with -L.
+- **Mutant discipline:** commit + push BEFORE mutation testing (a `git checkout`
+  mid-session wiped uncommitted balance tweaks this session and had to be
+  re-applied by hand).
+- Worktree `~/Dev/retrogames-forge-civilization-v` now detached at origin/main
+  (3009944); node_modules symlinked from the main checkout.
 
 ## Three questions for Jon
-1. Stage 5 = culture + happiness + policies (my pick), or jump to wonders/
-   great people first? (#355 lists culture as 5, wonders as 6.)
-2. Connection rule today is owned-OR-road BFS (a resource on owned land counts
-   without a road). Civ V is stricter: road connection required. Tighten it now
-   (and rebuild civplay fixtures) or keep the friendlier rule?
-3. Carried: prod verification greps minified shared `index-*.js` chunks
-   (now a lazy CivV chunk inside the entry list). Still want stable per-game
-   `manualChunks` names for grep-stable prod checks?
+1. Stage 6 = wonders + great people (my pick, follows the issue order) — or is
+   the 12-tech tree too thin for wonders? I'd gate wonders on era-2 techs and
+   add ~6 more techs to bridge (Engineering→Renaissance runway).
+2. Happiness is one empire-wide face here (per-city faces is the real rule).
+   Keep the single ledger for stages 6–8 simplicity, or make faces per-city
+   now? (Per-city changes growth math ~everywhere.)
+3. Carried: still want stable per-game `manualChunks` names for grep-stable
+   prod checks? (Prod CivV chunk this session: index-DslZEyo2.js.)
