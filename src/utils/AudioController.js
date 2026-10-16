@@ -82,8 +82,13 @@ export const MUSIC = {
             36, 0, 43, 0, 36, 0, 43, 0, 38, 0, 41, 0, 45, 0, 38, 0,
         ],
     },
+    // Q*BERT — original bouncy loop, G major. The step grid is LOCKED to the
+    // sim's 60Hz hop cadence (a hop is 12 ticks = 0.2s): 0.1s = exactly 2 steps
+    // per hop, and the 32-step loop = exactly 16 hops, so the music and the
+    // hops stay in phase instead of drifting (0.12 = 5/3 steps per hop read as
+    // "stiff" against the 60Hz clock). Pinned in qbertcheck against literals.
     qbert: {
-        step: 0.12,
+        step: 0.1,
         lead: [
             67, 0, 72, 74, 0, 72, 0, 67, 69, 0, 74, 76, 0, 74, 0, 69,
             71, 0, 76, 79, 0, 76, 0, 71, 67, 0, 64, 67, 71, 0, 74, 0,
