@@ -1,6 +1,8 @@
 // Q*BERT — runtime art. Every cube, creature and glyph is drawn in code,
 // Gottlieb-arcade palette, no assets.
 
+import { TUNNEL } from './sim.js'
+
 export const PAL = {
     side1: '#f8a800', side2: '#c05800', rim: '#f8f858',
     green: '#00d800', greenDark: '#009000',
@@ -328,12 +330,41 @@ export function slickSprite() {
     })
 }
 
+// The tunnel mouths (#220 item 2): the cabinet's bottom-corner portals — a
+// dark arch with a rim highlight, not a placeholder black square. The spans
+// are the sim's TUNNEL rects (flush with the widest row's edges, pinned in
+// qbertcheck); tunnelArch is the PURE opening profile (no DOM, pinned in Node
+// exactly like the Coily coil and the spinning disc): for each sprite row,
+// the [x0, x1] the dark opening covers. The arch flares from an 8px keystone
+// to the full 20px portal so the runner bands (y 112..139) and, at the left
+// mouth, Slick's bottom exit (y 161) pass through the opening, not the rim.
+export function tunnelArch(w, h) {
+    const out = []
+    for (let y = 0; y < h; y++) {
+        const t = y / Math.max(1, h - 1)
+        const ow = 8 + 12 * Math.min(1, t * 2.5)
+        out.push([(w - ow) / 2, (w + ow) / 2])
+    }
+    return out
+}
+
 export function tunnelSprite(side) {
-    return sprite(`tun-${side}`, 18, 14, (g) => {
-        px(g, 0, 0, 18, 14, '#101018')
-        g.fillStyle = '#000000'
-        g.beginPath(); g.ellipse(9, 7, 7, 5, 0, 0, Math.PI * 2); g.fill()
-        px(g, side > 0 ? 0 : 16, 2, 2, 10, '#383850')
+    const t = side < 0 ? TUNNEL.left : TUNNEL.right
+    const w = t.x1 - t.x0, h = t.y1 - t.y0
+    return sprite(`tun-${side}`, w, h, (g) => {
+        px(g, 0, 0, w, h, '#404058')
+        // rim highlight: the crown and the outer jamb catch the light
+        const outer = side < 0 ? 0 : w - 2
+        px(g, 0, 0, w, 1, '#8888b0')
+        px(g, outer, 0, 2, h - 1, '#8888b0')
+        // the dark opening, row by row, per the pure arch profile
+        const arch = tunnelArch(w, h)
+        for (let y = 1; y < h; y++) {
+            const [a, b] = arch[y]
+            px(g, a, y, b - a, 1, '#050510')
+        }
+        // a sliver of depth at the back of the portal
+        px(g, (w - 8) / 2, h - 5, 8, 1, '#181830')
     })
 }
 

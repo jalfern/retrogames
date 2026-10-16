@@ -11,7 +11,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { makeGame, step, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT, HOP_TICKS } from './sim.js'
+import { makeGame, step, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT, HOP_TICKS, TUNNEL } from './sim.js'
 import { plan } from './planner.js'
 import { sfxFor } from './sound.js'
 import {
@@ -138,14 +138,16 @@ const QBertGame = () => {
         const paintWorld = (s) => {
             const t = s.tick
             paintBg(ctx, W, H)
-            ctx.drawImage(tunnelSprite(-1), cubeXY(6, 0).x - HW - 20, cubeXY(6, 0).y + 2)
-            ctx.drawImage(tunnelSprite(1), cubeXY(5, ROWS[5] - 1).x + HW + 2, cubeXY(5, ROWS[5] - 1).y + 2)
+            ctx.drawImage(tunnelSprite(-1), TUNNEL.left.x0, TUNNEL.left.y0)
+            ctx.drawImage(tunnelSprite(1), TUNNEL.right.x0, TUNNEL.right.y0)
             // discs
             for (const d of s.discs) ctx.drawImage(discSprite(Math.floor(t / 4) % DISC_FRAMES), Math.round(d.x - DISC_R), Math.round(d.y - (DISC_RY + 1)))
             // cubes back row to front
             const slickCubes = new Set()
+            const slickSliders = []
             for (const sl of s.slicks) {
-                slickCubes.add(id(sl.r, sl.c))
+                if (sl.in > 0 || sl.out > 0) slickSliders.push(sl)
+                else slickCubes.add(id(sl.r, sl.c))
                 for (const tr of sl.trail) slickCubes.add(tr.cube)
             }
             for (let r = 0; r < ROWS.length; r++) {
@@ -162,6 +164,14 @@ const QBertGame = () => {
                         ctx.globalAlpha = 1
                     }
                 }
+            }
+            // Slick in its tunnel slides (entry/exit): the diamond travels on
+            // its own x, so it draws free of the cube it is leaving or joining
+            for (const sl of slickSliders) {
+                const y = cubeXY(sl.r, sl.c).y
+                ctx.globalAlpha = 0.8
+                ctx.drawImage(slickSprite(), Math.round(sl.x - HW), Math.round(y - HH))
+                ctx.globalAlpha = 1
             }
             // snakes
             for (const sn of s.snakes) {
