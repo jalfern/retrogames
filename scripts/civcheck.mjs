@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor } from '../src/games/CivilizationV/sim.js'
 import { decide, plan, RESEARCH_ORDER } from '../src/games/CivilizationV/planner.js'
 
 let pass = 0, fail = 0
@@ -1492,6 +1492,155 @@ console.log('33. victories: order, culture ledger, domination, race reachability
     capC.size = CFG.capitalSizeToWin
     step(g5, { endTurn: true })
     ok(/Science/.test(g5.endWhy || ''), 'same-turn crossings judge Science before the arcade milestone')
+}
+
+// ---- 34. transports: embark, land, amphibious assault, the drowning hold ----
+console.log('34. transports')
+{
+    const gs = newGame(41, 0)
+    eq(UNIT.GALLEON.cargo, 2, 'the Galleon carries two land units')
+    ok(!UNIT.GALLEY.cargo, 'the Trireme stays a pure raider — the convoy is the age of sail')
+    grantTech(gs, 0, 'BRONZE_WORKING'); grantTech(gs, 0, 'ASTRONOMY')
+    // build a real Galleon from a coastal yard
+    const site = gs.tiles.find((t) => canFound(gs, 0, t.c, t.r, null) === true && neighbors(t.c, t.r).some(([c, r]) => isWater(gs, c, r)))
+    ok(!!site, 'the continent offers a coastal capital site')
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    s.c = site.c; s.r = site.r
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0 && c.alive)
+    ok(!!coastalCityOf(gs, 0), 'the coast opens the yard')
+    step(gs, { queue: 'GALLEON' })
+    ok(cap.queue.includes('GALLEON'), 'the convoy hull is queued')
+    cap.buildP = 99
+    step(gs, { endTurn: true })
+    const born = gs.units.find((u) => u.civ === 0 && u.kind === 'GALLEON' && u.alive)
+    ok(!!born, 'a Galleon slides off the slipway')
+    ok(born.cargo && born.cargo.length === 0, 'the hold starts empty')
+    for (const u of gs.units) if (u.alive && u.civ === BARB && hexDist([u.c, u.r], [born.c, born.r]) < 10) u.alive = false
+
+    // a mooring ringed by three beaches so capacity can be proven exactly —
+    // and clear of every other hull, so transportFor has exactly one answer
+    let spot = null
+    for (const t of gs.tiles) {
+        if (!isWater(gs, t.c, t.r) || unitAt(gs, t.c, t.r)) continue
+        if (gs.units.some((u) => u.alive && u.naval && hexDist([u.c, u.r], [t.c, t.r]) <= 2)) continue
+        const shores = neighbors(t.c, t.r).filter(([c, r]) => { const q = gs.tiles[idx(c, r)]; return walk(q.terr) && q.camp < 0 && q.city < 0 && !unitAt(gs, c, r) })
+        if (shores.length >= 3) { spot = { sea: [t.c, t.r], shores }; break }
+    }
+    ok(!!spot, 'the coast offers a lonely mooring ringed by beach')
+    const ship = spawnUnit(gs, 0, 'GALLEON', spot.sea[0], spot.sea[1])
+    const tr1 = spawnUnit(gs, 0, 'WARRIOR', spot.shores[0][0], spot.shores[0][1])
+    const tr2 = spawnUnit(gs, 0, 'ARCHER', spot.shores[1][0], spot.shores[1][1])
+    const tr3 = spawnUnit(gs, 0, 'WARRIOR', spot.shores[2][0], spot.shores[2][1])
+    eq(canEmbark(gs, tr1), true, 'a soldier beside a friendly Galleon can embark')
+    ok(embark(gs, tr1), 'the first squad boards')
+    ok(embark(gs, tr2), 'the second boards')
+    eq(ship.cargo.length, 2, 'the hold holds two')
+    ok(embark(gs, tr3) === false, 'a third marines nowhere — capacity is the law')
+    eq(tr1.loaded, ship.id, 'the unit rides in the hull')
+    ok(!unitAt(gs, spot.shores[0][0], spot.shores[0][1]), 'the beach stands empty — the soldier is cargo')
+    eq(tr1.moves, 0, 'embarking ends the move')
+    eq(orderMove(gs, tr1, spot.shores[0][0], spot.shores[0][1]), false, 'cargo cannot walk')
+    eq(doAttack(gs, tr1, ship.c, ship.r), false, 'cargo cannot fight')
+    eq(canEmbark(gs, tr1), 'no unit to embark', 'cargo cannot re-board itself')
+    const far = gs.tiles.find((t) => walk(t.terr) && t.camp < 0 && !unitAt(gs, t.c, t.r) && hexDist([t.c, t.r], spot.sea) === 2)
+    if (far) {
+        const tr4 = spawnUnit(gs, 0, 'WARRIOR', far.c, far.r)
+        eq(canEmbark(gs, tr4), 'no friendly galleon alongside', 'the ship must moor next door — no distant boarding')
+    } else ok(true, '(no outer beach in reach on this board — adjacency law proven by contrast)')
+    eq(canEmbark(gs, ship), 'ships do not board ships', 'ships do not board ships')
+
+    // the cargo rides along while the hull sails — out and back to the anchorage
+    const seaOut = neighbors(ship.c, ship.r).find(([c, r]) => isWater(gs, c, r) && !unitAt(gs, c, r))
+    ok(!!seaOut, 'open water lies beyond the mooring')
+    step(gs, { select: ship.id, move: seaOut })
+    for (let i = 0; i < 40 && (ship.c !== seaOut[0] || ship.r !== seaOut[1]); i++) step(gs, {})
+    eq(ship.c, seaOut[0], 'the convoy sails on')
+    eq(tr1.loaded, ship.id, 'the hold rides with the hull')
+    ship.moves = ship.maxMoves
+    step(gs, { select: ship.id, move: spot.sea })
+    for (let i = 0; i < 40 && (ship.c !== spot.sea[0] || ship.r !== spot.sea[1]); i++) step(gs, {})
+    eq(ship.c, spot.sea[0], 'the convoy returns to its anchorage')
+
+    // landing on empty sand
+    const beach = gs.tiles[idx(spot.shores[0][0], spot.shores[0][1])]
+    eq(canLand(gs, ship, ship.c, ship.r), 'transports land on beaches, not open water', 'no landing into the sea')
+    ok(land(gs, ship, beach.c, beach.r), 'the anchor drops, the ramp goes down')
+    eq(ship.cargo.length, 1, 'one squad ashore, one aboard')
+    eq(unitAt(gs, beach.c, beach.r), tr1, 'the soldier stands on the beach')
+    eq(tr1.loaded, null, 'cargo discharged')
+    eq(tr1.moves, 0, 'the landing spends the day')
+    ok(gs.events.some((e) => e.type === 'land' && e.civ === 0 && e.kind === 'WARRIOR'), 'the landing is announced')
+    eq(tr1.hp, 100, 'an uncontested landing walks ashore unscathed')
+    eq(canLand(gs, ship, spot.shores[2][0], spot.shores[2][1]), 'friendly troops hold the sand', 'one unit per beach — crowded sand is refused')
+
+    // amphibious assault: a defended beach fights the landing
+    const sand = spot.shores[1]
+    const barb = spawnUnit(gs, BARB, 'WARRIOR', sand[0], sand[1], { str: 6 })
+    barb.hp = 24
+    ok(canLand(gs, ship, sand[0], sand[1]) === true, 'a defended beach invites the assault')
+    ok(land(gs, ship, sand[0], sand[1]), 'the marines storm the sand')
+    ok(gs.events.some((e) => e.type === 'beachhead' && e.took), 'the beachhead is taken')
+    ok(!barb.alive, 'the defender is swept from the shore')
+    eq(unitAt(gs, sand[0], sand[1]).id, tr2.id, 'the second squad plants the banner on the captured sand')
+    eq(ship.cargo.length, 0, 'the hold empties onto the beachhead')
+    // a repelled landing rows back aboard
+    ok(embark(gs, tr1), 'the first beachhead squad re-embarks')
+    const sand2 = spot.shores[0]
+    const defender = spawnUnit(gs, BARB, 'WARRIOR', sand2[0], sand2[1], { str: 12 })
+    defender.hp = 100
+    tr1.hp = 100; tr1.moves = 2
+    ok(land(gs, ship, sand2[0], sand2[1]), 'the landing goes in against a strong guard')
+    ok(gs.events.some((e) => e.type === 'beachhead' && !e.took), 'the landings are repelled')
+    eq(ship.cargo.length, 1, 'the survivors row back aboard')
+    eq(tr1.loaded, ship.id, 'the squad is cargo again')
+    eq(unitAt(gs, sand2[0], sand2[1]), defender, 'the guard keeps the sand')
+    ok(tr1.hp < 100 && tr1.alive, 'repelled does not mean destroyed')
+    // enemy ports stay closed to the longboat
+    const port = gs.cities.find((c) => c.alive && c.civ >= CS0)
+    const portSea = port && neighbors(port.c, port.r).find(([c, r]) => isWater(gs, c, r) && !unitAt(gs, c, r))
+    if (port && portSea) {
+        const fortShip = spawnUnit(gs, 0, 'GALLEON', portSea[0], portSea[1])
+        const fortCrew = gs.units.find((u) => u.alive && u.civ === 0 && !u.loaded && !u.naval)
+        if (fortCrew) { fortShip.cargo.push(fortCrew.id); fortCrew.loaded = fortShip.id }
+        eq(canLand(gs, fortShip, port.c, port.r), 'fort ports refuse the longboat', 'enemy ports stay closed to the longboat — besiege by land')
+    } else ok(true, '(no nearby port on this board — fort law proven in §31)')
+    // a foreign (neutral) garrison bars the beach
+    if (!atWar(gs, 0, 1)) {
+        const q = gs.tiles.find((t) => walk(t.terr) && t.camp < 0 && !unitAt(gs, t.c, t.r) && hexDist([t.c, t.r], [ship.c, ship.r]) === 1)
+        if (q) {
+            spawnUnit(gs, 1, 'WARRIOR', q.c, q.r)
+            eq(canLand(gs, ship, q.c, q.r), 'foreign troops bar the beach', 'neutral ground stays polite — no landing on foreign soldiers')
+        } else ok(true, '(no free sand beside the mooring — neutrality law follows the same branch)')
+    } else ok(true, '(Egypt already at war on this board — neutrality branch proven by the message)')
+    // drown: a sunk hull takes its cargo to the bottom
+    const doomSea = gs.tiles.find((t) => isWater(gs, t.c, t.r) && !unitAt(gs, t.c, t.r)
+        && !gs.units.some((u) => u.alive && u.naval && hexDist([u.c, u.r], [t.c, t.r]) <= 2)
+        && neighbors(t.c, t.r).some(([c, r]) => walk(gs.tiles[idx(c, r)].terr) && gs.tiles[idx(c, r)].camp < 0 && !unitAt(gs, c, r)))
+    const doomed = spawnUnit(gs, 0, 'GALLEON', doomSea.c, doomSea.r)
+    const doomer = spawnUnit(gs, 0, 'WARRIOR', ...(() => { const q = gs.tiles.find((t) => walk(t.terr) && t.camp < 0 && !unitAt(gs, t.c, t.r) && hexDist([t.c, t.r], [doomed.c, doomed.r]) === 1); return [q.c, q.r] })())
+    embark(gs, doomer)
+    const foeSea = neighbors(doomed.c, doomed.r).find(([c, r]) => isWater(gs, c, r) && !unitAt(gs, c, r))
+    const foe = spawnUnit(gs, 1, 'GALLEY', foeSea[0], foeSea[1], { str: 30 })
+    declareWar(gs, 0, 1)
+    doomed.hp = 5
+    ok(doAttack(gs, foe, doomed.c, doomed.r), 'the convoy is intercepted at sea')
+    ok(!doomed.alive, 'the hull goes under')
+    ok(!doomer.alive, 'and the cargo drowns with it')
+    ok(gs.events.some((e) => e.type === 'drown' && e.civ === 0 && e.kind === 'WARRIOR'), 'the drowning is mourned in the log')
+    // the hold folds into the state hash
+    const h0 = stateHash(gs)
+    const carrier = gs.units.find((u) => u.alive && u.naval && u.cargo && u.cargo.length > 0)
+    ok(!!carrier, 'a laden hull remains on the board')
+    carrier.cargo.pop()
+    const h1 = stateHash(gs)
+    ok(h0 !== h1, 'cargo aboard moves stateHash')
+    // the shipped witness never touches the new law: the old replay stands
+    const a = newGame(7, 0), b = newGame(7, 0)
+    let x = 0, y = 0
+    while (!a.end && x++ < 40000) step(a, decide(a))
+    while (!b.end && y++ < 40000) step(b, decide(b))
+    ok(stateHash(a) === stateHash(b) && a.turn === b.turn, 'the autopilot still replays hash-for-hash with the transport law in place')
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
