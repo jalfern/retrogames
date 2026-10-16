@@ -59,7 +59,7 @@ export const CFG = {
     warChance: 0.34,            // deterministic pseudo-odds per AI civ per turn
     luxGold: 1, luxCult: 1,     // per unique connected luxury type, empire-wide
     ironProd: 1, horseFood: 1,  // per city sitting on connected iron / horses
-    border2: 100, border3: 300, // city culture needed to claim ring 2 / ring 3
+    border2: 40, border3: 120,  // city culture needed to claim ring 2 / ring 3
     palaceHappy: 2, cityUnhappy: 1, warWeariness: 2,   // the happiness ledger
     happyGrowth: 0.25, happyGold: 0.1, angryDef: 0.75, // happy bonuses / angry penalty
 }
@@ -140,12 +140,12 @@ export const RES_IDS = Object.keys(RES)
 // policies' numbers, simplified: no tech gate, no policy unlock chains beyond
 // branch order (full Civ V trees are the later-stage refinement).
 export const POLICY = {
-    FOUNDATIONS: { branch: 'TRADITION', i: 0, name: 'Foundations of the State', cost: 50, effect: '+3 culture in every city' },
-    CEREMONY: { branch: 'TRADITION', i: 1, name: 'Ceremony', cost: 110, effect: '+1 happiness per connected luxury' },
-    COLONIAL: { branch: 'LIBERTY', i: 0, name: 'Colonial Offices', cost: 50, effect: 'settlers cost 25 less' },
-    COLLEGE: { branch: 'LIBERTY', i: 1, name: 'National College', cost: 110, effect: '+1 science in every city' },
-    TRADING_POSTS: { branch: 'COMMERCE', i: 0, name: 'Trading Posts', cost: 50, effect: '+1 gold in every city' },
-    TREATIES: { branch: 'COMMERCE', i: 1, name: 'Treaties', cost: 110, effect: 'war weariness halved' },
+    FOUNDATIONS: { branch: 'TRADITION', i: 0, name: 'Foundations of the State', cost: 15, effect: '+3 culture in every city' },
+    CEREMONY: { branch: 'TRADITION', i: 1, name: 'Ceremony', cost: 40, effect: '+1 happiness per connected luxury' },
+    COLONIAL: { branch: 'LIBERTY', i: 0, name: 'Colonial Offices', cost: 15, effect: 'settlers cost 25 less' },
+    COLLEGE: { branch: 'LIBERTY', i: 1, name: 'National College', cost: 40, effect: '+1 science in every city' },
+    TRADING_POSTS: { branch: 'COMMERCE', i: 0, name: 'Trading Posts', cost: 15, effect: '+1 gold in every city' },
+    TREATIES: { branch: 'COMMERCE', i: 1, name: 'Treaties', cost: 40, effect: 'war weariness halved' },
 }
 export const POLICY_IDS = ['FOUNDATIONS', 'CEREMONY', 'COLONIAL', 'COLLEGE', 'TRADING_POSTS', 'TREATIES']
 export const BRANCHES = ['TRADITION', 'LIBERTY', 'COMMERCE']
@@ -645,6 +645,7 @@ export function cityYield(gs, city) {
     out.f += 2; out.p += 2; out.g += 1          // inherent city-centre yields
     if (gs.tiles[cy].river) out.cult += 1       // river city bonus
     out.sci += 1                                // palace-equivalent baseline
+    out.cult += 1                             // the capital's court sings too
     if (hasTech(gs, city.civ, 'THE_WHEEL')) out.p += 1      // wheeled transport
     if (hasTech(gs, city.civ, 'CURRENCY')) out.g += 2        // markets
     if (hasTech(gs, city.civ, 'WRITING')) out.sci += 1      // scribes
