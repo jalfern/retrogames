@@ -1,4 +1,4 @@
-// CIVILIZATION V — Stage 4 "Land". Pure deterministic sim.
+// CIVILIZATION V — Stage 5 "Culture & Happiness". Pure deterministic sim.
 // No three, no DOM, no Math.random: this module is the single source of truth
 // the Node harness (scripts/civcheck.mjs) and the in-browser autopilot import
 // unchanged. Turn-based: the player orders units, presses END TURN, then each
@@ -38,6 +38,10 @@
 //     Legion (Bronze+Iron). A resource counts when it is inside your borders
 //     and road-connected to (or adjacent to) one of your cities; roads also
 //     halve movement cost on your network.
+//   - Stage 5 adds the realm's two ledgers: cities bank culture and borders
+//     creep outward ring by ring (40/120), and happiness (palace +2, luxury +1,
+//     city −1, war −2) swings growth, gold and city defence; culture points buy
+//     social policies from three real branches, adopted in branch order.
 
 export const CFG = {
     W: 40, H: 25,

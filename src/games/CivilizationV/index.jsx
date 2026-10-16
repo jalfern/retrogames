@@ -1,4 +1,4 @@
-// CIVILIZATION V — Stage 4 "Land": the arcade shell.
+// CIVILIZATION V — Stage 5 "Culture & Happiness": the arcade shell.
 // The whole world is the pure sim in ./sim.js; the tilted 3D hex map is
 // ./art.js; the attract demo (and the harness witness) is the autopilot in
 // ./planner.js replayed tick-for-tick through the real step(). One

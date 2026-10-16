@@ -110,6 +110,18 @@ await wait(150)
     await page.keyboard.press('Escape')
     await wait(150)
     r.check('Escape closes the panel', await page.evaluate(() => !document.body.innerText.includes('CLOSE')))
+    // Stage 5 instant checks at turn ~2 (the real game can be won by t12 — no clock spent here)
+    {
+        const hp = await probe()
+        r.check(`the happiness ledger is live in the probe (net ${hp.happy.net}, lux ${hp.happy.lux})`, typeof hp.happy.net === 'number' && typeof hp.happy.lux === 'number' && Array.isArray(hp.policies))
+        await page.keyboard.press('KeyP')
+        await wait(250)
+        const pbody = await page.evaluate(() => document.body.innerText)
+        r.check('P opens the POLICY panel with the three real branches', pbody.includes('TRADITION') && pbody.includes('LIBERTY') && pbody.includes('COMMERCE') && pbody.includes('Ceremony'))
+        await page.keyboard.press('Escape')
+        await wait(150)
+        r.check('Escape closes the POLICY panel', !(await page.evaluate(() => document.body.innerText.includes('CLOSE ✕'))))
+    }
 }
 
 // 3c — run the witness until the worker is delivered, then drive it with keys
@@ -169,6 +181,14 @@ techSeen = techSeen || (await probe()).tech.known
 r.check(`science completes fresh techs in real time (known: ${techSeen.join(',')})`, techSeen.length >= 2)
 const conn = await page.evaluate(() => { window.__civTest.learn('BRONZE_WORKING'); return window.__civTest.probe().land })
 r.check(`the probe exposes the connected network (${(conn.connected || []).join(',') || 'none'})`, Array.isArray(conn.connected))
+
+// 3e — the Stage 5 layer: culture buys government and widens borders on live turns
+{
+    let pe = await probe()
+    for (let i = 0; i < 8 && !(pe.policies.length > 0 && pe.owned > 7) && !pe.end; i++) { await page.evaluate(() => window.__civTest.turn()); await wait(60); pe = await probe() }
+    r.check(`culture buys government for real (${pe.policies.join(',') || 'none yet'})`, pe.policies.length > 0 || !!pe.end)
+    r.check(`culture widens the borders on live turns (${pe.owned} Roman tiles)`, pe.owned > 7 || !!pe.end)
+}
 
 // 4 — drive the same autopilot to the milestone on THIS run, then the end screen
 let won = null
