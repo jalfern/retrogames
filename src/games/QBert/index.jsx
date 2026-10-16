@@ -18,9 +18,13 @@ import {
     cubeSprite, cubeTopCol, cubeDarkCol, bertSprite, ballSprite, discSprite, DISC_FRAMES, DISC_R, DISC_RY,
     coilySprite, runnerSprite, slickSprite, tunnelSprite, text5, textWidth,
     paintBg, lifeGlyph, HW, HH,
+    BALL_FRAMES, BALL_W,
 } from './art.js'
 
 const SIM_MS = FIXED_DT
+// sim.js hops a red ball one cube per BALL_STEP ticks (b.stepT = 20); the render
+// boings once per cube, keyed off that same step.
+const BALL_STEP = 20
 
 const QBertGame = () => {
     const stageRef = useRef(null)
@@ -171,8 +175,13 @@ const QBertGame = () => {
                 const { y } = cubeXY(u.row, 0)
                 ctx.drawImage(runnerSprite(u.kind, Math.floor(t / 5) % 2), Math.round(u.x - 11), Math.round(y - 4))
             }
-            // red balls
-            for (const b of s.balls) ctx.drawImage(ballSprite(), Math.round(b.x - 5), Math.round(b.y - HH - 4))
+            // red balls — one boing per cube (ballScale, pinned by qbertcheck). The
+            // frame runs off the ball's own tick so the squash lands on each cube
+            // impact (sim.js hops a ball one cube per BALL_STEP ticks).
+            for (const b of s.balls) {
+                const bf = Math.floor(((b.t % BALL_STEP) / BALL_STEP) * BALL_FRAMES) % BALL_FRAMES
+                ctx.drawImage(ballSprite(bf), Math.round(b.x - BALL_W / 2), Math.round(b.y - 18))
+            }
             // Q*BERT
             const p = s.player
             if (!(p.invuln > 0 && Math.floor(p.invuln / 4) % 2 === 0 && screenRef.current === 'play')) {
