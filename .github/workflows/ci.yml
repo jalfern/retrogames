@@ -193,6 +193,11 @@ jobs:
       # valid builtBy — and the real GamesList is rendered in Node: one tag per
       # visible card, agreeing with the registry per path. ~1 s, blocks merges.
       - run: npm run builtbycheck
+      # Registry audit (#379): every entry's visibility is absent (='private')
+      # or exactly 'public'/'private', nothing is 'public' before Jon's first
+      # promotion, no code outside the registry reads the field, and the docs
+      # carry the contract. ~1 s, blocks merges.
+      - run: npm run visibilitycheck
       # Twenty-fifth scoped gate: SPY HUNTER. The two stages are audited as
       # DATA before anyone drives them (oil may never seal three lanes,
       # nothing spawns off-road, every scripted car reaches the driving row);
