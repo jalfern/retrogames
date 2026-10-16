@@ -11,11 +11,11 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { makeGame, step, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT } from './sim.js'
+import { makeGame, step, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT, HOP_TICKS } from './sim.js'
 import { plan } from './planner.js'
 import { sfxFor } from './sound.js'
 import {
-    cubeSprite, cubeTopCol, cubeDarkCol, bertSprite, ballSprite, discSprite, DISC_FRAMES, DISC_R, DISC_RY,
+    cubeSprite, cubeTopCol, cubeDarkCol, bertSprite, bertFrame, BERT_LAND_TICKS, ballSprite, discSprite, DISC_FRAMES, DISC_R, DISC_RY,
     coilySprite, runnerSprite, slickSprite, tunnelSprite, text5, textWidth,
     paintBg, lifeGlyph, HW, HH,
     BALL_FRAMES, BALL_W,
@@ -182,13 +182,17 @@ const QBertGame = () => {
                 const bf = Math.floor(((b.t % BALL_STEP) / BALL_STEP) * BALL_FRAMES) % BALL_FRAMES
                 ctx.drawImage(ballSprite(bf), Math.round(b.x - BALL_W / 2), Math.round(b.y - 18))
             }
-            // Q*BERT
+            // Q*BERT — the hop is a real leap (bertFrame, pinned by qbertcheck):
+            // the up-hop tucks + smiles at the apex, the down-hop stretches, and
+            // a down-landing plays the two-frame splayed squash before idle.
             const p = s.player
             if (!(p.invuln > 0 && Math.floor(p.invuln / 4) % 2 === 0 && screenRef.current === 'play')) {
-                const pose = p.dying > 0 ? 3 : p.hop ? (p.hop.tr < p.hop.fr ? 1 : 2) : 0
-                const facing = p.facing
+                let ph = 'idle', k = 0
+                if (p.dying > 0) ph = 'dying'
+                else if (p.hop) { ph = p.hop.tr < p.hop.fr ? 'up' : 'down'; k = p.hop.t / HOP_TICKS }
+                else if (!p.ride && p.lastLandDown && s.tick - s.lastLandTick < BERT_LAND_TICKS) { ph = 'land'; k = (s.tick - s.lastLandTick) / BERT_LAND_TICKS }
                 const bp = bertPos(s)
-                ctx.drawImage(bertSprite(pose, facing), Math.round(bp.x - 9), Math.round(bp.y - 14))
+                ctx.drawImage(bertSprite(bertFrame(ph, k), p.facing), Math.round(bp.x - 9), Math.round(bp.y - 14))
                 if (p.dying > 0 && s.balloon) {
                     const bw = textWidth(s.balloon, 1) + 6
                     const bx = Math.round(bp.x - bw / 2), by = Math.round(bp.y - 30)

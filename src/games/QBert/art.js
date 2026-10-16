@@ -78,38 +78,72 @@ export function cubeSprite(topCol, darkCol) {
 export const CUBE_W = HW * 2
 export const CUBE_TOP_H = HH * 2
 
-// Q*BERT. pose: 0 idle, 1 hop-up, 2 hop-down, 3 dying
-export function bertSprite(pose, facing) {
-    return sprite(`bert-${pose}-${facing}`, 18, 20, (g) => {
+// Q*BERT's hop used to read as one static figure: poses 1/2 differed by a px
+// of foot height, so the up-hop and the idle were indistinguishable at 18px.
+// Now the hop is a real leap — the up-hop TUCKS (feet up, body compact) and
+// holds the tuck with a smile at the apex; the down-hop stretches toward the
+// landing; and every down-landing is a two-frame splayed SQUASH (deep, then
+// recover) before he settles to idle. bertFrame is the PURE schedule (no DOM,
+// no Math.random) pinned in Node by qbertcheck exactly like the Coily coil,
+// the spinning-disc and the bouncing-ball models; BERT_GEO holds each frame's
+// literal geometry and bertSprite below is only the painter.
+export const BERT_LAND_TICKS = 8   // the landing squash: 4 ticks deep + 4 recover
+export function bertFrame(ph, k = 0) {
+    if (ph === 'dying') return 6
+    if (ph === 'up') return k < 0.5 ? 1 : 2
+    if (ph === 'down') return 3
+    if (ph === 'land') return k < 0.5 ? 4 : (k < 1 ? 5 : 0)
+    return 0
+}
+// per-frame geometry: fy = the foot baseline (sprite y), bh = the body height,
+// splay = how far the hind feet spread. The apex tuck is the most compact, the
+// stretch the tallest, the squash the flattest and widest.
+export const BERT_GEO = [
+    { fy: 18, bh: 10, splay: 0 }, // 0 idle
+    { fy: 16, bh: 9, splay: 0 },  // 1 up: rising, feet pulled up
+    { fy: 15, bh: 8, splay: 0 },  // 2 up: apex tuck (max compact, the smile)
+    { fy: 17, bh: 11, splay: 0 }, // 3 down: stretched to the landing
+    { fy: 18, bh: 8, splay: 1 },  // 4 land: the deep splayed squash
+    { fy: 18, bh: 9, splay: 1 },  // 5 land: the recover
+    { fy: 18, bh: 10, splay: 0 }, // 6 dying
+]
+
+export function bertSprite(frame, facing) {
+    const f = ((frame % 7) + 7) % 7
+    return sprite(`bert-${f}-${facing}`, 18, 20, (g) => {
         const b = PAL.bert, d = PAL.bertDark
-        const footY = pose === 1 ? 15 : pose === 2 ? 17 : 18
-        // big hind feet
-        px(g, 1, footY, 6, 3, PAL.bertFoot)
-        px(g, 11, footY, 6, 3, PAL.bertFoot)
-        if (pose === 1) { px(g, 2, footY + 2, 5, 1, shade(PAL.bertFoot, 0.7)); px(g, 11, footY + 2, 5, 1, shade(PAL.bertFoot, 0.7)) }
+        const { fy, bh, splay } = BERT_GEO[f]
+        const bt = fy - bh
+        // neck: only when the compressed body drops below the head
+        if (bt > 8) px(g, 7, 8, 4, bt - 8, b)
+        // big hind feet (splayed outward in the squash frames)
+        px(g, 1 - splay, fy, 6, 3, PAL.bertFoot)
+        px(g, 11 + splay, fy, 6, 3, PAL.bertFoot)
+        if (f === 1 || f === 2) { px(g, 2, fy + 2, 5, 1, shade(PAL.bertFoot, 0.7)); px(g, 11, fy + 2, 5, 1, shade(PAL.bertFoot, 0.7)) }
         // body
-        px(g, 3, 8, 12, 10, b)
-        px(g, 2, 10, 14, 6, b)
-        px(g, 3, 16, 12, 2, d)
+        px(g, 3, bt, 12, bh - 2, b)
+        px(g, 2 - splay, bt + 2, 14 + splay * 2, bh - 2, b)
+        px(g, 3, fy - 2, 12, 2, d)
         // long snout (faces `facing`: 1 right, -1 left)
         const fx = facing > 0 ? 13 : -1
-        px(g, fx < 0 ? 1 : 14, 10, 4, 3, b)
-        px(g, fx < 0 ? 0 : 16, 11, 2, 2, b)
+        px(g, fx < 0 ? 1 : 14, fy - 8, 4, 3, b)
+        px(g, fx < 0 ? 0 : 16, fy - 7, 2, 2, b)
         // eyes on the stalk
         px(g, 5, 4, 3, 5, b)
         px(g, 10, 4, 3, 5, b)
         px(g, 4, 1, 4, 4, '#f8f8f8')
         px(g, 10, 1, 4, 4, '#f8f8f8')
-        if (pose === 3) {
+        if (f === 6) {
             px(g, 5, 2, 2, 1, '#101010'); px(g, 4, 2, 1, 1, '#101010'); px(g, 6, 2, 1, 1, '#101010')
             px(g, 11, 2, 2, 1, '#101010'); px(g, 10, 2, 1, 1, '#101010'); px(g, 12, 2, 1, 1, '#101010')
         } else {
             px(g, 5 + (facing > 0 ? 1 : 0), 2, 1, 2, '#101010')
             px(g, 11 + (facing > 0 ? 1 : 0) - 1, 2, 1, 2, '#101010')
+            if (f === 2) px(g, 7, 6, 4, 1, d)  // the apex-tuck smile
         }
         // little arms
-        px(g, 1, 12, 2, 3, d)
-        px(g, 15, 12, 2, 3, d)
+        px(g, 1 - splay, fy - 6, 2, 3, d)
+        px(g, 15 + splay, fy - 6, 2, 3, d)
     })
 }
 

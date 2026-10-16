@@ -16,7 +16,7 @@ import {
 } from '../src/games/QBert/sim.js'
 import { plan } from '../src/games/QBert/planner.js'
 import { sfxFor, VOICED, SILENT } from '../src/games/QBert/sound.js'
-import { COILS, coilX, coilY, discHalfW, DISC_FRAMES, ballScale, BALL_FRAMES, BALL_R } from '../src/games/QBert/art.js'
+import { COILS, coilX, coilY, discHalfW, DISC_FRAMES, ballScale, BALL_FRAMES, BALL_R, bertFrame, BERT_GEO, BERT_LAND_TICKS } from '../src/games/QBert/art.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('qbertcheck')
@@ -331,6 +331,31 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
         2 * BALL_R * maxW <= 22, `maxW=${Math.round(2 * BALL_R * maxW * 10) / 10}`)
     r.check('the rebound stretch fits above the surface line in the sprite (2 x r x sy <= 15, no clipping)',
         2 * BALL_R * mxy <= 15, `maxH=${Math.round(2 * BALL_R * mxy * 10) / 10}`)
+}
+
+// ---------------------------------------------------- Q*Bert's hop poses ----
+// The hop reads as a real leap, not a static figure: the up-hop TUCKS (feet up,
+// body compact) and holds the tuck + smile at the apex; the down-hop stretches;
+// and a down-landing plays a two-frame splayed SQUASH (deep, then recover) that
+// settles back to idle. bertFrame is the PURE schedule and BERT_GEO each
+// frame's literal geometry, pinned against LITERAL bounds (the TETRIS lesson):
+// a flat pose set — no tuck, no stretch, no squash, or an out-of-bounds pose —
+// goes red.
+{
+    const [idle, rise, apex, stretch, squash, recover] = BERT_GEO
+    r.check('Q*Bert idle reads idle (frame 0)', bertFrame('idle') === 0, `f=${bertFrame('idle')}`)
+    r.check('the up-hop rises tucked, then holds the tuck at the apex', bertFrame('up', 0.25) === 1 && bertFrame('up', 0.75) === 2, `a=${bertFrame('up', 0.25)} p=${bertFrame('up', 0.75)}`)
+    r.check('the down-hop stretches toward the landing', bertFrame('down', 0.5) === 3, `f=${bertFrame('down', 0.5)}`)
+    r.check('a down-landing squashes (deep) then recovers, and settles back to idle', bertFrame('land', 0.25) === 4 && bertFrame('land', 0.75) === 5 && bertFrame('land', 1) === 0, `d=${bertFrame('land', 0.25)} r=${bertFrame('land', 0.75)} s=${bertFrame('land', 1)}`)
+    r.check('dying overrides every hop phase', bertFrame('dying') === 6 && bertFrame('dying', 0.5) === 6, `f=${bertFrame('dying')}`)
+    r.check('the apex tuck is the most compact pose (feet up, body short of idle)', apex.fy < idle.fy && apex.bh < idle.bh && rise.fy < idle.fy, JSON.stringify([apex, rise]))
+    r.check('the down-hop stretch is taller than idle (a real reach)', stretch.bh > idle.bh, `stretch=${stretch.bh} idle=${idle.bh}`)
+    r.check('the landing squash is flatter and wider than idle (splayed feet)', squash.bh < idle.bh && squash.splay > idle.splay, JSON.stringify(squash))
+    r.check('the squash recovers toward idle (the spring back)', recover.bh > squash.bh && recover.bh <= idle.bh && recover.splay === squash.splay, JSON.stringify(recover))
+    r.check('the landing squash is a couple of frames, not instant and not a full hop', BERT_LAND_TICKS >= 4 && BERT_LAND_TICKS < HOP_TICKS, `land=${BERT_LAND_TICKS} hop=${HOP_TICKS}`)
+    r.check('every pose stays inside the 18x20 sprite (feet, body and splay in bounds)',
+        BERT_GEO.every((g) => g.fy + 3 <= 21 && g.fy - g.bh >= 6 && 1 - g.splay >= 0 && 11 + g.splay + 6 <= 18),
+        JSON.stringify(BERT_GEO.map((g) => [g.fy, g.bh, g.splay])))
 }
 
 // --------------------------------------------------- the disc + snake lure ----
