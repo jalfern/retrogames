@@ -1,18 +1,27 @@
-// CIVILIZATION V — Stage 1 "The Founding". Pure deterministic sim.
+// CIVILIZATION V — Stage 2 "War". Pure deterministic sim.
 // No three, no DOM, no Math.random: this module is the single source of truth
 // the Node harness (scripts/civcheck.mjs) and the in-browser autopilot import
 // unchanged. Turn-based: the player orders units, presses END TURN, then each
-// AI civ acts, cities yield + grow, borders expand, the turn advances.
+// AI civ acts, barbarians roam from their camps, cities yield + grow +
+// bombard, borders expand, the turn advances.
 //
-// The ruleset (Stage 1 scope, faithful to the 2010 original):
-//   - hex map (odd-r pointy-top), varied terrain, one unit per land tile.
+// The ruleset (Stage 2 scope, faithful to the 2010 original):
+//   - hex map (odd-r pointy-top), varied terrain, one unit per land tile —
+//     enforced in battle: a melee killer marches in, never two survivors/tile.
 //   - fog of war: unseen=black, explored-but-unseen=dimmed memory.
 //   - settlers found cities (>= 3 hex from any city, on passable land).
 //   - cities work `size` tiles (centre always), produce food/production/gold/
-//     science/culture, and GROW on stored food surplus.
-//   - borders spread in the owner's colour up to a city's work radius.
-//   - Stage-1 milestone/win: your capital reaches size 4 before turn limit.
-//     (Tech tree, war units, wonders, the four victories are later stages.)
+//     science/culture, GROW on stored food surplus, and bombard one adjacent
+//     enemy each turn. Walls at 0 => captured; last city lost => civ destroyed.
+//   - combat: 100 HP units, deterministic effective-strength exchanges.
+//     Modifiers: hills +25%, fortified +25%, city-tile support +50%,
+//     attacking across a river -10%. Ranged (range 2) takes no retaliation.
+//   - barbarian camps spawn roamers always at war; burning a camp stops it.
+//   - cities bank production into queued units (WARRIOR/ARCHER/SETTLER).
+//   - wounded units heal at rest (faster on home soil, faster still fortified).
+//   - victories: founding milestone (capital size 4) or DOMINATION (every
+//     rival capital captured). Loss: capital falls or the turn limit passes.
+//     (Tech tree, wonders, the other three victories are later stages.)
 
 export const CFG = {
     W: 40, H: 25,
@@ -24,6 +33,20 @@ export const CFG = {
     growBase: 8, growStep: 3,   // stored food needed for the next citizen
     sightWarrior: 2, sightSettler: 2, sightCity: 2,
     cityRingWork: 1,            // Stage 1 works centre + adjacent ring only
+    cityBaseDef: 10,            // city defence strength 10 + 3*size
+    cityHp: 100,
+    cityStrike: 16,             // city bombardment damage vs adjacent units
+    barbCap: 7, barbSpawn: 6, barbSeek: 6,   // global live-barbarian cap, spawn cadence, roam radius
+    campCount: 3, campHp: 60,
+    healHome: 12, healField: 5, healFortify: 8,
+    warDeclareTurn: 12,         // rival AI may declare war from here
+    warChance: 0.34,            // deterministic pseudo-odds per AI civ per turn
+}
+
+export const UNIT = {
+    WARRIOR: { str: 8, moves: 2, sight: 2, range: 1, cost: 15 },
+    ARCHER: { str: 11, moves: 2, sight: 2, range: 2, cost: 22 },
+    SETTLER: { str: 0, moves: 2, sight: 2, range: 0, cost: 35 },
 }
 
 export const T = { OCEAN: 0, COAST: 1, GRASS: 2, PLAINS: 3, DESERT: 4, HILLS: 5, MOUNTAIN: 6 }
@@ -32,7 +55,9 @@ export const CIVS = [
     { id: 1, name: 'EGYPT', hex: '#c9a227', player: false },
     { id: 2, name: 'CHINA', hex: '#2f7fb8', player: false },
     { id: 3, name: 'AZTEC', hex: '#3f9e4f', player: false },
+    { id: 4, name: 'BARBARIANS', hex: '#6b6b6b', player: false, barb: true },
 ]
+export const BARB = 4
 
 // ---- terrain yields (Stage 1 approximation of the Civ V table) --------------
 const BASE_YIELD = {
@@ -45,6 +70,23 @@ const BASE_YIELD = {
     [T.MOUNTAIN]: { f: 0, p: 0, g: 0 },
 }
 const WALKABLE = (t) => t >= T.GRASS && t <= T.HILLS   // not ocean/coast/mountain
+
+// ---- war relations -------------------------------------------------------------
+export function atWar(gs, a, b) {
+    if (a === b) return false
+    if (a === BARB || b === BARB) return true
+    return !!gs.wars[Math.min(a, b) + '-' + Math.max(a, b)]
+}
+export function declareWar(gs, a, b) {
+    if (a === b) return
+    const k = Math.min(a, b) + '-' + Math.max(a, b)
+    if (!gs.wars[k]) { gs.wars[k] = true; gs.events.push({ type: 'war', a: Math.min(a, b), b: Math.max(a, b) }) }
+}
+export function tileBlocked(gs, c, r) {
+    if (!inMap(c, r)) return true
+    const ci = gs.tiles[idx(c, r)].camp
+    return ci >= 0 && gs.camps[ci] && gs.camps[ci].alive
+}
 
 // ---- odd-r hex geometry -------------------------------------------------------
 const ODD_R_NEIGH = [
@@ -159,7 +201,7 @@ function generateMap(gs) {
     }
     gs.tiles = t.map((terr, i) => ({
         c: i % W, r: (i - (i % W)) / W, terr, forest: forest[i], river: river[i],
-        owner: -1, city: -1,
+        owner: -1, city: -1, camp: -1,
     }))
 }
 
@@ -188,7 +230,8 @@ export function newGame(seed = 1, scenario = 0) {
     unitSeq = 1
     const gs = {
         seed: seed + scenario * 977, scenario, tick: 0, turn: 1, phase: 'player',
-        tiles: [], units: [], cities: [], fog: [], explored: [], visible: [],
+        tiles: [], units: [], cities: [], camps: [], wars: {},
+        fog: [], explored: [], visible: [],
         civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, alive: true })),
         capitalOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
@@ -202,14 +245,15 @@ export function newGame(seed = 1, scenario = 0) {
     }
     // starting land: largest connected walkable blob gets the capitals
     const seats = capitalSeats(gs)
-    gs.civs.forEach((civ, i) => {
+    gs.civs.filter((c) => !c.barb).forEach((civ, i) => {
         const seat = seats[i] || nearestGoodLand(gs, CFG.W >> 1, CFG.H >> 1)
         spawnUnit(gs, civ.id, 'SETTLER', seat[0], seat[1])
         spawnUnit(gs, civ.id, 'WARRIOR', ...firstFreeNeighbor(gs, seat[0], seat[1]))
     })
+    placeCamps(gs, seats)
     gs.civs.forEach((civ) => {
         const s = gs.units.find((u) => u.alive && u.civ === civ.id && u.kind === 'SETTLER')
-        reveal(gs, civ.id, s.c, s.r, Math.max(CFG.sightWarrior, CFG.sightSettler))
+        if (s) reveal(gs, civ.id, s.c, s.r, Math.max(CFG.sightWarrior, CFG.sightSettler))
     })
     // player auto-owns around capital later; nothing founded yet.
     gs.phase = 'player'
@@ -218,11 +262,36 @@ export function newGame(seed = 1, scenario = 0) {
     return gs
 }
 
+function placeCamps(gs, seats) {
+    // barbarian camps: walkable open land >= 4 hex from any capital seat,
+    // >= 3 from starting units, spread >= 6 apart. Deterministic shuffle.
+    const rng = makeRng(gs.seed * 7919 + 13)
+    const cand = []
+    for (let r = 1; r < CFG.H - 1; r++) for (let c = 1; c < CFG.W - 1; c++) {
+        const tl = gs.tiles[idx(c, r)]
+        if (!WALKABLE(tl.terr) || tl.river || tl.forest) continue
+        if (seats.some((s) => hexDist(s, [c, r]) < 4)) continue
+        if (gs.units.some((u) => u.alive && hexDist([u.c, u.r], [c, r]) < 3)) continue
+        cand.push([c, r])
+    }
+    for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); const tmp = cand[i]; cand[i] = cand[j]; cand[j] = tmp }
+    const picked = []
+    for (const p of cand) {
+        if (picked.length >= CFG.campCount) break
+        if (picked.every((q) => hexDist(q, p) >= 6)) picked.push(p)
+    }
+    for (const [c, r] of picked) {
+        const camp = { id: gs.camps.length, c, r, hp: CFG.campHp, alive: true }
+        gs.camps.push(camp)
+        gs.tiles[idx(c, r)].camp = camp.id
+    }
+}
+
 function firstFreeNeighbor(gs, c, r) {
     for (const [nc, nr] of neighbors(c, r)) if (landFree(gs, nc, nr)) return [nc, nr]
     return [c, r]
 }
-function landFree(gs, c, r) { const tl = tileAt(gs, c, r); return tl && WALKABLE(tl.terr) && !unitAt(gs, c, r) }
+function landFree(gs, c, r) { const tl = tileAt(gs, c, r); return tl && WALKABLE(tl.terr) && !unitAt(gs, c, r) && !tileBlocked(gs, c, r) }
 
 function capitalSeats(gs) {
     // one seat per civ: spread the 4 civs over distinct fertile land clusters
@@ -246,9 +315,15 @@ function nearestGoodLand(gs, c0, r0) {
 }
 
 let unitSeq = 1
-function spawnUnit(gs, civ, kind, c, r) {
-    const moves = kind === 'SETTLER' ? CFG.movesSettler : CFG.movesWarrior
-    const u = { id: unitSeq++, civ, kind, c, r, moves, maxMoves: moves, path: [], anim: { px: 0, pz: 0, moving: false }, alive: true, fortified: false }
+export function spawnUnit(gs, civ, kind, c, r, opts = {}) {
+    const st = UNIT[kind]
+    const u = {
+        id: unitSeq++, civ, kind, c, r,
+        str: opts.str != null ? opts.str : st.str, hp: 100, maxHp: 100,
+        moves: st.moves, maxMoves: st.moves,
+        path: [], anim: { px: 0, pz: 0, moving: false },
+        alive: true, fortified: false, acted: false,
+    }
     gs.units.push(u)
     return u
 }
@@ -286,17 +361,18 @@ export function canFound(gs, civ, c, r, self) {
     if (!tl || !WALKABLE(tl.terr)) return 'water or mountain'
     if (unitAt(gs, c, r) && unitAt(gs, c, r) !== self) return 'occupied'
     if (tl.city >= 0) return 'already a city'
+    if (tileBlocked(gs, c, r)) return 'barbarian camp'
     for (const ct of gs.cities) if (ct.alive && hexDist([ct.c, ct.r], [c, r]) < CFG.minCitySpacing) return 'too close to a city'
     return true
 }
 function foundCity(gs, civ, c, r) {
     const tl = gs.tiles[idx(c, r)]
-    const city = { id: gs.cities.length, civ, c, r, size: 1, storedFood: 0, alive: true, name: cityName(civ, gs.civs[civ].cities || 0), capital: (gs.civs[civ].cities || 0) === 0, culture: 0 }
+    const city = { id: gs.cities.length, civ, c, r, size: 1, storedFood: 0, alive: true, name: cityName(civ, gs.civs[civ].cities || 0), capital: (gs.civs[civ].cities || 0) === 0, culture: 0, hp: CFG.cityHp, buildP: 0, queue: [] }
     gs.cities.push(city)
     tl.city = city.id
     gs.civs[civ].cities = (gs.civs[civ].cities || 0) + 1
-    gs.capitalOf[civ] = city.id
-    gs.tiles[idx(c, r)].owner = civ
+    if (city.capital) gs.capitalOf[civ] = city.id
+    tl.owner = civ
     spreadBorders(gs, civ)
     reveal(gs, civ, c, r, CFG.sightCity)
     gs.events.push({ type: 'found', civ, c, r, city: city.id, capital: city.capital })
@@ -322,6 +398,7 @@ export function orderMove(gs, unit, tc, tr) {
     if (!unit || !unit.alive || unit.moves <= 0) return false
     const tl = tileAt(gs, tc, tr)
     if (!tl || !WALKABLE(tl.terr)) return false
+    if (tileBlocked(gs, tc, tr)) return false
     if (unitAt(gs, tc, tr)) return false
     const path = findPath(gs, unit, tc, tr)
     if (!path || path.length === 0) return false
@@ -344,6 +421,7 @@ export function findPath(gs, unit, tc, tr) {
             if (prev[ni] !== -2) continue
             const tl = gs.tiles[ni]
             if (!WALKABLE(tl.terr)) continue
+            if (tl.camp >= 0 && gs.camps[tl.camp] && gs.camps[tl.camp].alive) continue
             if (unitAt(gs, nc, nr) && !(nc === tc && nr === tr)) continue
             prev[ni] = idx(c, r)
             q.push([nc, nr])
@@ -366,6 +444,123 @@ export function tryFound(gs, unit) {
     return true
 }
 
+// ------------------------------------------------------------------- combat --
+// Deterministic effective-strength exchanges — fidelity to Civ V's feel
+// (HP, terrain, fortification, city walls, retaliation) without its dice.
+export function defenseBonus(gs, u) {
+    const tl = tileAt(gs, u.c, u.r)
+    let b = 0
+    if (tl.terr === T.HILLS) b += 0.25
+    if (u.fortified) b += 0.25
+    if (tl.city >= 0) b += 0.5
+    return b
+}
+export function cityDefense(gs, city) { return CFG.cityBaseDef + 3 * city.size }
+
+export function doAttack(gs, u, tc, tr) {
+    if (!u || !u.alive || u.str <= 0 || u.moves <= 0) return false
+    const d = hexDist([u.c, u.r], [tc, tr])
+    const st = UNIT[u.kind]
+    if (d < 1 || d > Math.max(1, st.range)) return false
+    if (!inMap(tc, tr)) return false
+    const ti = idx(tc, tr)
+    const tl = gs.tiles[ti]
+    const ranged = d >= 2
+    const target = unitAt(gs, tc, tr)
+    if (target && target.alive && atWar(gs, u.civ, target.civ)) {
+        let strikes = 0
+        while (strikes++ < 4) {
+            const atkEff = u.str * (0.5 + 0.5 * u.hp / u.maxHp) * (tl.river ? 0.9 : 1)
+            const defEff = target.str * (0.5 + 0.5 * target.hp / target.maxHp) * (1 + defenseBonus(gs, target))
+            target.hp -= Math.max(4, Math.round(34 * atkEff / (atkEff + defEff)))
+            if (target.hp <= 0) {
+                target.hp = 0; target.alive = false; target.moves = 0; target.path = []
+                gs.events.push({ type: 'kill', civ: u.civ, kind: u.kind, victim: target.civ, victimKind: target.kind, at: [tc, tr], ranged })
+                if (!ranged && u.alive) { u.c = tc; u.r = tr }        // march in — one unit per tile holds
+                if (u.alive && u.civ === 0) reveal(gs, 0, tc, tr, st.sight)
+                break
+            }
+            if (!ranged) u.hp -= Math.max(2, Math.round(30 * defEff / (atkEff + defEff)))
+            if (u.hp <= 0) {
+                u.hp = 0; u.alive = false; u.path = []
+                gs.events.push({ type: 'kill', civ: target.civ, kind: target.kind, victim: u.civ, victimKind: u.kind, at: [u.c, u.r], ranged: false })
+                break
+            }
+        }
+        u.moves = 0; u.acted = true; u.fortified = false
+        if (target.civ > 0 && target.civ < BARB && u.civ < BARB) declareWar(gs, u.civ, target.civ)
+        return true
+    }
+    const cityI = tl.city
+    if (cityI >= 0 && gs.cities[cityI].alive && atWar(gs, u.civ, gs.cities[cityI].civ)) {
+        const city = gs.cities[cityI]
+        let strikes = 0
+        while (strikes++ < 4) {
+            const atkEff = u.str * (0.5 + 0.5 * u.hp / u.maxHp)
+            const defEff = cityDefense(gs, city) * (0.5 + 0.5 * city.hp / CFG.cityHp)
+            city.hp -= Math.max(3, Math.round(26 * atkEff / (atkEff + defEff)))
+            gs.events.push({ type: 'siege', civ: u.civ, city: city.id, at: [tc, tr] })
+            if (city.hp <= 0) { captureCity(gs, city, u.civ); break }
+            if (!ranged) u.hp -= Math.max(2, Math.round(22 * defEff / (atkEff + defEff)))
+            if (u.hp <= 0) {
+                u.hp = 0; u.alive = false; u.path = []
+                gs.events.push({ type: 'kill', civ: city.civ, kind: 'CITY', victim: u.civ, victimKind: u.kind, at: [u.c, u.r], ranged: false })
+                break
+            }
+        }
+        u.moves = 0; u.acted = true
+        if (city.civ < BARB && u.civ < BARB) declareWar(gs, u.civ, city.civ)
+        return true
+    }
+    const ci = tl.camp
+    if (ci >= 0 && gs.camps[ci] && gs.camps[ci].alive) {
+        const camp = gs.camps[ci]
+        camp.hp -= Math.max(15, Math.round(30 * (0.5 + 0.5 * u.hp / u.maxHp)))
+        gs.events.push({ type: 'raid', civ: u.civ, at: [tc, tr] })
+        if (camp.hp <= 0) {
+            camp.alive = false
+            if (u.civ < BARB) { gs.civs[u.civ].gold += 12; gs.events.push({ type: 'campRazed', civ: u.civ, c: tc, r: tr }) }
+        }
+        u.moves = 0; u.acted = true
+        return true
+    }
+    return false
+}
+
+function captureCity(gs, city, civ) {
+    const old = city.civ
+    city.civ = civ
+    city.hp = Math.floor(CFG.cityHp * 0.6)
+    city.size = Math.max(1, Math.floor(city.size / 2))
+    city.storedFood = 0; city.buildP = 0; city.queue = []
+    for (const [nc, nr] of neighbors(city.c, city.r)) {
+        const tl = gs.tiles[idx(nc, nr)]
+        if (tl.owner === old) tl.owner = civ
+    }
+    gs.tiles[idx(city.c, city.r)].owner = civ
+    gs.events.push({ type: 'capture', city: city.id, civ, old, capital: city.capital })
+    declareWar(gs, civ, old)
+    if (civ < BARB) reveal(gs, civ, city.c, city.r, CFG.sightCity)
+    checkCivDeath(gs)
+}
+
+function checkCivDeath(gs) {
+    for (const civ of gs.civs) {
+        if (civ.barb || !civ.alive) continue
+        if (!gs.cities.some((c) => c.alive && c.civ === civ.id)) { civ.alive = false; gs.events.push({ type: 'civDead', civ: civ.id }) }
+    }
+}
+
+export function stepToward(gs, u, tgt) {
+    let best = null, bd = hexDist([u.c, u.r], tgt)
+    for (const [nc, nr] of neighbors(u.c, u.r)) {
+        if (!landFree(gs, nc, nr)) continue
+        const d = hexDist([nc, nr], tgt)
+        if (d < bd) { bd = d; best = [nc, nr] }
+    }
+    return best
+}
+
 // advance every unit's animation one tick: walk along its path spending moves.
 function animateUnits(gs) {
     gs._anim = []
@@ -379,7 +574,7 @@ function animateUnits(gs) {
                 const [nc, nr] = u.path[0]
                 if (unitAt(gs, nc, nr)) { u.path = []; continue }
                 u._from = [u.c, u.r]
-                u.c = nc; u.r = nr; u.moves--; u.path.shift()
+                u.c = nc; u.r = nr; u.moves--; u.path.shift(); u.acted = true
                 gs._anim.push({ id: u.id, civ: u.civ, kind: u.kind })
                 if (u.civ === 0) reveal(gs, 0, nc, nr, u.kind === 'WARRIOR' ? CFG.sightWarrior : CFG.sightSettler)
             }
@@ -387,14 +582,27 @@ function animateUnits(gs) {
     }
 }
 
-// end the player's visible unit moves: stop everyone, run AI, resolve cities.
+// end the player's visible unit moves: stop everyone, run AI, run barbarians,
+// resolve cities (economy, production, bombardment), heal the unwounded,
+// advance the turn.
 function endPlayerTurn(gs) {
-    for (const u of gs.units) { if (u.civ === 0) { u.path = []; u.fortified = u.moves <= 0 } }
-    for (const civ of gs.civs) { if (!civ.player && civ.alive) aiTurn(gs, civ.id) }
-    for (const civ of gs.civs) resolveCiv(gs, civ.id)
+    for (const u of gs.units) { if (u.civ === 0 && u.alive) { u.path = []; u.fortified = !u.acted } }
+    for (const civ of gs.civs) { if (!civ.player && !civ.barb && civ.alive) aiTurn(gs, civ.id) }
+    barbarianTurn(gs)
+    for (const civ of gs.civs) if (!civ.barb) resolveCiv(gs, civ.id)
     gs.turn++
     gs.phase = 'player'
-    for (const u of gs.units) if (u.alive) u.moves = u.maxMoves
+    for (const u of gs.units) {
+        if (!u.alive) continue
+        if (!u.acted) {
+            const home = inMap(u.c, u.r) && gs.tiles[idx(u.c, u.r)].owner === u.civ
+            const h = (home ? CFG.healHome : CFG.healField) + (u.fortified && home ? CFG.healFortify : 0)
+            u.hp = Math.min(u.maxHp, u.hp + h)
+        }
+        u.acted = false
+        u.moves = u.maxMoves
+        if (u.civ !== 0) u.fortified = false
+    }
     gs.selected = gs.units.find((u) => u.civ === 0 && u.alive)?.id ?? -1
     for (const civ of gs.civs) { clearVisible(gs, civ.id); const own = gs.units.filter((u) => u.civ === civ.id && u.alive)
         for (const u of own) reveal(gs, civ.id, u.c, u.r, u.kind === 'WARRIOR' ? CFG.sightWarrior : CFG.sightSettler)
@@ -414,6 +622,32 @@ function resolveCiv(gs, civ) {
         const need = CFG.growBase + CFG.growStep * (city.size - 1)
         while (city.storedFood >= need && city.size < 9) { city.storedFood -= need; city.size++; city.culture = city.culture || 0; gs.events.push({ type: 'grow', civ, city: city.id, size: city.size }) }
         if (city.storedFood < 0) city.storedFood = 0
+        // production queue: bank shields, deliver units when the cost is met
+        city.buildP = (city.buildP || 0) + y.p
+        city.queue = city.queue || []
+        while (city.queue.length) {
+            const kind = city.queue[0], cost = UNIT[kind].cost
+            if (city.buildP < cost) break
+            const at = landFree(gs, city.c, city.r) ? [city.c, city.r] : firstFreeAround(gs, city.c, city.r)
+            if (unitAt(gs, at[0], at[1]) || !landFree(gs, at[0], at[1])) break   // no room: points keep banking
+            city.buildP -= cost; city.queue.shift()
+            spawnUnit(gs, civ, kind, at[0], at[1])
+            gs.events.push({ type: 'build', civ, city: city.id, unit: kind })
+        }
+        // city bombardment: one adjacent enemy unit per turn, weakest first
+        let victim = null, vh = 1e9
+        for (const [nc, nr] of neighbors(city.c, city.r)) {
+            const en = unitAt(gs, nc, nr)
+            if (en && en.alive && atWar(gs, civ, en.civ) && en.hp < vh) { vh = en.hp; victim = en }
+        }
+        if (victim) {
+            victim.hp -= Math.max(6, Math.round(CFG.cityStrike * (0.5 + 0.5 * city.hp / CFG.cityHp)))
+            gs.events.push({ type: 'cityStrike', civ, city: city.id, at: [victim.c, victim.r] })
+            if (victim.hp <= 0) {
+                victim.alive = false; victim.hp = 0; victim.path = []
+                gs.events.push({ type: 'kill', civ, kind: 'CITY', victim: victim.civ, victimKind: victim.kind, at: [victim.c, victim.r] })
+            }
+        }
     }
     C.gold += gold; C.science += sci; C.culture += cult
     C.culture = (C.culture || 0) + cult
@@ -422,46 +656,122 @@ function resolveCiv(gs, civ) {
 }
 
 function checkEnd(gs) {
-    const cap = gs.cities[gs.capitalOf[0]]
-    if (cap && cap.alive && cap.size >= CFG.capitalSizeToWin) { gs.end = 'win'; gs.endWhy = `${cap.name} reached size ${cap.size}`; return }
-    if (!gs.civs[0].alive || (gs.capitalOf[0] != null && !gs.cities[gs.capitalOf[0]].alive)) { gs.end = 'lose'; gs.endWhy = 'your capital has fallen'; return }
+    if (gs.civs[0].alive && gs.civs.every((c) => c.barb || c.player || !c.alive)) {
+        gs.end = 'win'; gs.endWhy = 'Domination — every rival capital flies your colours'; return
+    }
+    const cap = gs.capitalOf[0] != null ? gs.cities[gs.capitalOf[0]] : null
+    if (cap && cap.alive && cap.civ === 0 && cap.size >= CFG.capitalSizeToWin) { gs.end = 'win'; gs.endWhy = `${cap.name} reached size ${cap.size}`; return }
+    if (!gs.civs[0].alive || (gs.capitalOf[0] != null && gs.cities[gs.capitalOf[0]].civ !== 0)) { gs.end = 'lose'; gs.endWhy = 'your capital has fallen'; return }
     if (gs.turn > CFG.turnLimit) { gs.end = 'lose'; gs.endWhy = `turn limit ${CFG.turnLimit} passed before size ${CFG.capitalSizeToWin}` }
 }
 
 // ------------------------------------------------------------------- AI turn --
-// Each AI civ: settlers expand to good nearby land; after settling a city, it
-// rebuilds a settler from production and keeps colonising. Warrior scouts.
+// Each AI civ: settlers expand to good nearby land; warriors/archers seek
+// enemies and (once strong) capitals when at war; cities queue settlers and,
+// in wartime, military units. From CFG.warDeclareTurn a healthy rival may
+// declare war on you on a deterministic pseudo-roll.
+function findTarget(gs, civ, u, radius) {
+    let best = null, bs = 1e9
+    for (const x of gs.units) {
+        if (!x.alive || !atWar(gs, civ, x.civ)) continue
+        const d = hexDist([u.c, u.r], [x.c, x.r])
+        if (d <= radius && d < bs) { bs = d; best = [x.c, x.r] }
+    }
+    for (const ct of gs.cities) {
+        if (!ct.alive || !atWar(gs, civ, ct.civ)) continue
+        const d = hexDist([u.c, u.r], [ct.c, ct.r])
+        if (d <= radius && d * 1.6 < bs) { bs = d * 1.6; best = [ct.c, ct.r] }
+    }
+    if (civ !== BARB) for (const cp of gs.camps) {
+        if (!cp.alive) continue
+        const d = hexDist([u.c, u.r], [cp.c, cp.r])
+        if (d <= radius && d * 1.25 < bs) { bs = d * 1.25; best = [cp.c, cp.r] }
+    }
+    return best
+}
+
 function aiTurn(gs, civ) {
     const C = gs.civs[civ]
-    // settlers found where they stand if legal, else hop toward fertile land
+    const warring = gs.civs.some((x) => !x.barb && x.id !== civ && x.alive && atWar(gs, civ, x.id))
+    if (!warring && gs.turn >= CFG.warDeclareTurn) {
+        const power = gs.units.filter((u) => u.alive && u.civ === civ && u.str > 0).length
+        const cities = gs.cities.filter((c) => c.alive && c.civ === civ).length
+        if (power + cities >= 5 && hash2(civ, gs.turn, gs.seed ^ 0x9e37) < CFG.warChance) declareWar(gs, civ, 0)
+    }
+    // settlers expand; military units fight or scout
     for (const u of gs.units) {
         if (!u.alive || u.civ !== civ) continue
         u.moves = u.maxMoves
         if (u.kind === 'SETTLER') {
-            // move a couple of hexes toward a good site, then found
             let tries = 0
             while (canFound(gs, civ, u.c, u.r, u) !== true && u.moves > 0 && tries++ < 4) {
                 const step = bestExpandHex(gs, civ, u.c, u.r)
                 if (!step) break
-                u.c = step[0]; u.r = step[1]; u.moves--
+                u.c = step[0]; u.r = step[1]; u.moves--; u.acted = true
             }
-            if (canFound(gs, civ, u.c, u.r, u) === true) { tryFound(gs, u) }
-        } else if (u.kind === 'WARRIOR') {
-            const step = bestExpandHex(gs, civ, u.c, u.r)
-            if (step) { u.c = step[0]; u.r = step[1] }
+            if (canFound(gs, civ, u.c, u.r, u) === true) tryFound(gs, u)
+        } else if (u.str > 0) {
+            const tgt = findTarget(gs, civ, u, warring ? 7 : 3)
+            if (tgt) {
+                const st = UNIT[u.kind]
+                let guard = 0
+                while (u.moves > 0 && guard++ < 3) {
+                    const d = hexDist([u.c, u.r], tgt)
+                    if (d <= Math.max(1, st.range)) { doAttack(gs, u, tgt[0], tgt[1]); break }
+                    const step = stepToward(gs, u, tgt)
+                    if (!step) break
+                    u.c = step[0]; u.r = step[1]; u.moves--; u.acted = true
+                }
+            } else {
+                const step = bestExpandHex(gs, civ, u.c, u.r)
+                if (step) { u.c = step[0]; u.r = step[1]; u.acted = true }
+            }
         }
     }
-    // cities queue settlers: when production has banked enough, build a settler
+    // city production choices (points are banked/delivered in resolveCiv)
     for (const city of gs.cities) {
         if (city.civ !== civ || !city.alive) continue
         city.queue = city.queue || []
-        city.buildP = (city.buildP || 0) + cityYield(gs, city).p
-        const cost = 14
-        if (city.size >= 2 && C.gold >= 40 && (C.cities || 0) < 6) {
-            city.buildP -= cost
-            spawnUnit(gs, civ, 'SETTLER', city.c, firstFreeAround(gs, city.c, city.r))
-            gs.events.push({ type: 'build', civ, city: city.id, unit: 'SETTLER' })
+        if (city.queue.length >= 3) continue
+        const wantSettler = city.size >= 2 && C.gold >= 40 && (C.cities || 0) < 6
+        if (wantSettler && !city.queue.includes('SETTLER')) city.queue.push('SETTLER')
+        else if (warring && city.queue.filter((k) => k !== 'SETTLER').length < 2) {
+            city.queue.push(hash2(city.id, gs.turn, civ) < 0.5 ? 'ARCHER' : 'WARRIOR')
         }
+    }
+}
+
+// ---------------------------------------------------------- barbarian turn --
+// Camps spew warriors on CFG.barbSpawn turns (global cap barbCap); roamers
+// seek the nearest soft target — a unit, or a border city — and throw
+// themselves at it. Always at war with everyone.
+function barbarianTurn(gs) {
+    const barbs = gs.units.filter((u) => u.alive && u.civ === BARB)
+    if (gs.turn % CFG.barbSpawn === 0) {
+        for (const camp of gs.camps) {
+            if (!camp.alive || barbs.length >= CFG.barbCap) continue
+            const spot = firstFreeAround(gs, camp.c, camp.r)
+            if (unitAt(gs, spot[0], spot[1])) continue
+            if (tileBlocked(gs, spot[0], spot[1]) && !(spot[0] === camp.c && spot[1] === camp.r)) continue
+            const nb = spawnUnit(gs, BARB, 'WARRIOR', spot[0], spot[1], { str: 7 })
+            gs.events.push({ type: 'barbSpawn', c: spot[0], r: spot[1] })
+            barbs.push(nb)
+        }
+    }
+    for (const u of barbs) {
+        if (!u.alive) continue
+        u.moves = u.maxMoves
+        const tgt = findTarget(gs, BARB, u, CFG.barbSeek)
+        if (!tgt) continue
+        let guard = 0
+        while (u.moves > 0 && guard++ < 3) {
+            const d = hexDist([u.c, u.r], tgt)
+            if (d <= 1) { doAttack(gs, u, tgt[0], tgt[1]); break }
+            const step = stepToward(gs, u, tgt)
+            if (!step) break
+            u.c = step[0]; u.r = step[1]; u.moves--; u.acted = true
+        }
+        if (u.alive && hexDist([u.c, u.r], tgt) <= 1) doAttack(gs, u, tgt[0], tgt[1])
     }
 }
 function firstFreeAround(gs, c, r) { for (const [nc, nr] of neighbors(c, r)) if (landFree(gs, nc, nr)) return [nc, nr]; return [c, r] }
@@ -485,16 +795,24 @@ export function step(gs, input = {}) {
     if (input.select != null) { const u = gs.units.find((x) => x.id === input.select && x.alive && x.civ === 0); if (u) gs.selected = u.id }
     const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0) || null
     if (input.endTurn) { endPlayerTurn(gs); return }
+    if (input.queue && UNIT[input.queue]) {
+        const city = input.city != null ? gs.cities[input.city] : gs.cities.find((c) => c.civ === 0 && c.alive)
+        if (city && city.alive && city.civ === 0 && city.queue.length < 3) { city.queue.push(input.queue); gs.events.push({ type: 'queued', civ: 0, unit: input.queue }) }
+    }
     if (sel) {
         if (input.move) orderMove(gs, sel, input.move[0], input.move[1])
-        if (input.found) { tryFound(gs, sel); gs.selected = gs.units.find((u) => u.civ === 0 && u.alive && u.kind === 'SETTLER')?.id ?? -1 }
+        if (input.attack) doAttack(gs, sel, input.attack[0], input.attack[1])
+        if (input.found) { tryFound(gs, sel); gs.selected = gs.units.find((u) => u.civ === 0 && u.alive && u.kind === 'SETTLER')?.id ?? gs.units.find((u) => u.civ === 0 && u.alive)?.id ?? -1 }
     }
     animateUnits(gs)
 }
 
 export function stateHash(gs) {
+    const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3 }
     let h = gs.turn * 31 + gs.units.length
-    for (const u of gs.units) h = (h * 33 + u.id * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131) | 0
-    for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0)) | 0
+    for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 9) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53) | 0
+    for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71) | 0
+    for (const cp of gs.camps) h = (h * 33 + cp.c + cp.r * 13 + (cp.alive ? 1 : 0) * 173) | 0
+    h = (h * 33 + Object.keys(gs.wars).length * 613) | 0
     return (h >>> 0).toString(16)
 }
