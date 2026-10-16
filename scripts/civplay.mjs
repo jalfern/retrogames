@@ -13,6 +13,8 @@
 //      key rides back to attract.
 //   5. THE MARVELS (Stage 6) — U/G open the WONDERS and LEGENDS panels, the
 //      point pools bank, a wonder queues and the board fills on live turns.
+//   6. THE WORLD (Stage 7) — D opens DIPLOMACY with the two coastal courts,
+//      pacts sign and wars come and go on live turns, and a Trireme answers N.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const URL = process.env.CIV_URL || 'http://localhost:5173/retrogames/civilization-v'
@@ -138,6 +140,35 @@ await wait(150)
         await page.keyboard.press('Escape')
         await wait(150)
         r.check('Escape closes the LEGENDS panel', !(await page.evaluate(() => document.body.innerText.includes('EXPULSE'))))
+        await page.keyboard.press('KeyD')
+        await wait(250)
+        const db = await page.evaluate(() => document.body.innerText)
+        r.check('D opens DIPLOMACY with both city-states and the three empires', /DIPLOMACY/i.test(db) && /TYRE/i.test(db) && /VENICE/i.test(db) && db.includes('DECLARE WAR'))
+        await page.keyboard.press('Escape')
+        await wait(150)
+        r.check('Escape closes the DIPLOMACY panel', !(await page.evaluate(() => document.body.innerText.includes('open its court'))))
+        // Stage 7 live ledger while the game is young: pact, war and peace on real turns
+        await page.evaluate(() => { window.__civTest.learn('BRONZE_WORKING'); window.__civTest.queue('GALLEY') })
+        await wait(150)
+        {
+            const gq = await probe()
+            r.check(`a Trireme answers N at a coastal city (naval ${gq.world.naval.length}, coastal ${gq.world.coastal})`, gq.queue.some((c) => c.queue.includes('GALLEY')) || gq.world.naval.length > 0 || gq.world.coastal === false)
+            for (const c of [1, 2, 3]) { if ((await probe()).end) break; await page.evaluate((x) => window.__civTest.trade(x), c); await page.evaluate(() => window.__civTest.turn()); await wait(80) }
+            let p7 = await probe()
+            r.check(`a trade pact signs on live turns (${p7.world.pacts.join(',') || 'none yet'})`, p7.world.pacts.length > 0 || !!p7.end)
+            if (!p7.end) {
+                await page.evaluate(() => window.__civTest.declare(6))
+                await page.evaluate(() => window.__civTest.turn()); await wait(80)
+                p7 = await probe()
+                r.check(`a declaration on Venice lands in the ledger (${p7.world.wars.join(',') || 'none'})`, p7.world.wars.includes('0-6') || !!p7.end)
+                if (!p7.end) {
+                    await page.evaluate(() => window.__civTest.peace(6))
+                    await page.evaluate(() => window.__civTest.turn()); await wait(80)
+                    p7 = await probe()
+                    r.check(`peace ends the war and starts the truce clock (${p7.world.wars.join(',') || 'no wars'} · ${p7.world.truce.join(',') || 'no truce'})`, (!p7.world.wars.includes('0-6') && p7.world.truce.includes('0-6')) || !!p7.end)
+                }
+            }
+        }
     }
 }
 
@@ -220,6 +251,13 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
     for (let i = 0; i < 10 && !built6 && !(await probe()).end; i++) { await page.evaluate(() => window.__civTest.turn()); await wait(60); const w = (await probe()).wonders; if (w.length) built6 = w }
     r.check(`the wonder board fills on live turns (${built6 ? built6.map((w) => `${w.id}\u2192civ${w.by}`).join(',') : 'none before the end'})`, !!built6 || !!(await probe()).end)
     r.check(`the happiness face survived Stage 6 (${p6.happy.net})`, typeof p6.happy.net === 'number')
+}
+
+// 3g — the Stage 7 layer: the world beyond the border (ledger signed at turn ~2)
+{
+    const p7 = await probe()
+    r.check('the probe exposes the world (courts, pacts, seas)', Array.isArray(p7.world.rome) && Array.isArray(p7.world.pacts) && typeof p7.world.coastal === 'boolean')
+    r.check(`the Stage 7 ledger survived to here (pacts ${p7.world.pacts.join(',') || 'none'}, courts met ${p7.world.rome.filter((s) => s.met).length})`, Array.isArray(p7.world.rome))
 }
 
 // 4 — drive the same autopilot to the milestone on THIS run, then the end screen

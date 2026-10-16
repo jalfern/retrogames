@@ -58,6 +58,13 @@ function buildCity(city, h) {
     flag.position.set(0.58, 1.02 + h, -0.32); g.add(flag)
     if (city.capital) { const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), new THREE.MeshStandardMaterial({ color: 0xffe66b, emissive: 0xffcf4a, emissiveIntensity: 0.9 }))
         star.position.set(0, 1.35 + h, 0); g.add(star) }
+    if (city.cs) {
+        const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.66, 8), new THREE.MeshStandardMaterial({ color: 0xe8e4d8, flatShading: true, roughness: 0.85 }))
+        tower.position.set(-0.42, 0.33 + h, 0.3); g.add(tower)
+        const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), new THREE.MeshStandardMaterial({ color: 0xfff0c0, emissive: 0xffd870, emissiveIntensity: 1.4 }))
+        beacon.position.set(-0.42, 0.72 + h, 0.3); g.add(beacon)
+        g.userData.beacon = beacon
+    }
     g.userData = { x, z, h, id: city.id }
     return g
 }
@@ -126,6 +133,20 @@ function buildUnit(u) {
         shield.position.set(0.2, 0.34, 0.08); shield.rotation.z = Math.PI / 2; shield.rotation.x = -0.3; g.add(shield)
         const gladius = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.03), new THREE.MeshStandardMaterial({ color: 0xdfe6ee, metalness: 0.8, roughness: 0.25 }))
         gladius.position.set(-0.2, 0.32, 0); gladius.rotation.z = 0.45; g.add(gladius)
+    } else if (u.kind === 'GALLEY') {
+        const hull = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 0.22), new THREE.MeshStandardMaterial({ color: 0x6b4a24, flatShading: true, roughness: 0.9 }))
+        hull.position.y = 0.12; g.add(hull)
+        const prow = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.3, 4), new THREE.MeshStandardMaterial({ color: 0x8a6a3e, flatShading: true }))
+        prow.rotation.z = -Math.PI / 2; prow.position.set(0.42, 0.14, 0); g.add(prow)
+        const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.5, 6), new THREE.MeshStandardMaterial({ color: 0x4a3418 }))
+        mast.position.y = 0.4; g.add(mast)
+        const sail = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.3), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0xffffff), 0.45), side: THREE.DoubleSide, emissive: col, emissiveIntensity: 0.12 }))
+        sail.position.set(-0.06, 0.46, 0); sail.rotation.y = Math.PI / 2; g.add(sail)
+        const oarMat = new THREE.MeshStandardMaterial({ color: 0x9a7a4a })
+        for (const s of [-1, 1]) for (let k = 0; k < 3; k++) {
+            const oar = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.02, 0.02), oarMat)
+            oar.position.set(-0.18 + k * 0.16, 0.08, s * 0.2); oar.rotation.y = s * 0.5; g.add(oar)
+        }
     } else {
         const body = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.44, 7), new THREE.MeshStandardMaterial({ color: col.clone().lerp(new THREE.Color(0x000000), 0.15), flatShading: true, roughness: 0.7 }))
         body.position.y = 0.28; g.add(body)
@@ -511,6 +532,9 @@ export function updateView(view, gs, extra = {}) {
         if (m.userData.ember) m.userData.ember.material.emissiveIntensity = 1.0 + 0.6 * Math.sin(gs.tick * 0.22 + id)
         if (!cp || !cp.alive) { disposeObj(m); campGroup.remove(m); view.campMeshes.delete(id) }
     }
+    for (const [, m] of view.cityMeshes) {
+        if (m.userData.beacon) m.userData.beacon.material.emissiveIntensity = 1.1 + 0.55 * Math.sin(gs.tick * 0.09 + m.position.x)
+    }
 
     // Stage 4 ground layers: rebuild only when the land itself changes
     let rsig = '', wsig = '', xsig = ''
@@ -566,6 +590,7 @@ export function updateView(view, gs, extra = {}) {
         m.visible = !!visible
         if (visible) {
             m.position.set(a.x, gs.tiles[ti]._h, a.z)
+            if (u.naval) m.position.y += 0.02 + Math.sin(gs.tick * 0.12 + u.id) * 0.03
             m.rotation.y = gs.tick * 0.02 + u.id
             if (u.path && u.path.length) m.position.y += 0.02 + Math.abs(Math.sin(gs.tick * 0.3)) * 0.05
             const bar = m.userData.bar
