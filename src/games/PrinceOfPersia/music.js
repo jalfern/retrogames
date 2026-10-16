@@ -52,6 +52,9 @@ export const SFX = {
 
     loose: () => [noise(0.15, 0.18), tone(130, 0.12, 'triangle', 0.1)],
     door: () => [sweep(120, 60, 0.3, 'square', 0.12)],
+    // Stage 7 escorts: boots starting behind you, and stone under crossing feet
+    escort: () => [noise(0.05, 0.06), tone(160, 0.05, 'square', 0.05), tone(120, 0.09, 'square', 0.05, 0.07)],
+    doorCross: () => [sweep(140, 70, 0.28, 'triangle', 0.12), noise(0.16, 0.12), tone(55, 0.22, 'sine', 0.1, 0.06)],
     sword: () => [sweep(500, 1400, 0.2, 'sawtooth', 0.12), tone(1880, 0.08, 'sine', 0.05, 0.16)],
     checkpoint: () => [tone(760, 0.1, 'square', 0.1)],
     potion: (e) => {

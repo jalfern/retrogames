@@ -218,12 +218,39 @@ direction, in colour rather than just brightness.
   figure warm/litSide). Mutant proof at ship time: strip `torchGlow`'s smoothstep
   to a hard cut-off and three clauses go red.
 
+## Stage 7 — the escort feel (door cues, bodies, the pincer)
+
+- **The chase announces itself.** Leaving a room with a live ground guard behind
+  emits an `escort` event (a leather-and-mail rustle), and as its feet cross the
+  threshold into your room a `doorCross` event rumbles (stone-slide recipe). No
+  silent arrivals — the S4 contract pins both voices.
+- **The arch fills behind you.** `escortSilhouettes(g)` (pure, exported from
+  `art.js`) reports any follower within `DOOR_ZONE = 3` columns of the boundary
+  you came through; the scene paints it as a clipped dark figure in the
+  door-frame — you see it coming a beat before it enters the room.
+- **Bodies hold the corridor.** `bodyBlock` stops the prince at `CFG.bodyGap =
+  40` px (blade distance) from a standing guard; a clean running leap still
+  clears the head. The pin refuses to land on spikes, chomper cells, or walls —
+  a guard can corner you, never shove you onto teeth or into stone.
+- **The jaws take both sides.** A live guard standing on a chomper cell when the
+  jaws close dies in them (`guardDown`), escort included — traps are the great
+  equaliser, as in the original.
+- **Duel etiquette.** One blade at a time: the closest engaged guard is the
+  elected duelist and only it may wind up, and a second lunge never *starts*
+  while another is in flight. Escorts stalk, wait, and cut the corridor — they
+  don't spear you from two sides in the same breath.
+- **The escort dashes.** Beyond duel range a follower closes at `min(run,
+  speed + escortDash)` — it genuinely runs a shuffling prince down instead of
+  strolling behind him.
+- **Hardened pilot.** The autopilot now refuses to cross or duel-chase across
+  jaws unless the jaws will stay up long enough to clear the cell (pixel math,
+  skid-aware), and never commits at a short window. Stage-7 added 17
+  `popcheck` clauses; the champion (autopilot, no deaths, all twelve levels +
+  slack) re-proved with the sim touched. Mutant proof at ship time: relax the
+  etiquette gate and two clauses go red.
+
 ## Honest gaps (the deep pass continues — see #316)
 
-- Escort visuals are functional, not dramatic: a follower walks in from the
-  edge rather than being seen through the doorway it came from, and two
-  escorts don't yet coordinate a pincer. **Stage 7** is the escort *feel* pass
-  (door-crossing cue, two-escort pincer).
 - Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
   with the d-pad; desktop-first, as the original was.
 

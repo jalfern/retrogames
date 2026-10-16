@@ -44,6 +44,9 @@ export const CFG = {
     // Stage 4: the sound spine — one footfall per stride of travel, one
     // chain-rattle per few ticks of actual gate travel
     stride: 42, chainEvery: 6,
+    // Stage 7: the escort feel — living bodies hold the corridor at blade
+    // distance, and the escort dashes to actually run you down
+    bodyGap: 40, escortDash: 0.65,
     slack: false,
 }
 
@@ -213,6 +216,36 @@ function moveY(g, b) {
         let bump = false
         for (let c = c0; c <= c1; c++) if (blocks(g, cell(g, c, rh), c)) { bump = true; break }
         if (bump) { b.y = (rh + 1) * T + h; b.vy = 0 } else b.y = ny
+    }
+}
+
+// Stage 7: living bodies hold the corridor. The prince cannot walk or run
+// through a standing guard — a guard left between you and the far door is a
+// wall you must answer with steel. Feet within a cell of the guard's floor are
+// blocked; a clean running leap clears the head.
+function bodyBlock(g, p) {
+    for (const q of g.guards) {
+        if (q.dead) continue
+        if (p.y <= q.y - T || p.y >= q.y + 8) continue
+        const d = p.x - q.x
+        if (Math.abs(d) >= CFG.bodyGap) continue
+        const side = d !== 0 ? sign(d) : (sign(p.vx) || 1)
+        const pinX = q.x + CFG.bodyGap * side
+        const pc = Math.floor(pinX / T)
+        const pr = Math.floor(p.y / T)
+        if (pc < 0 || pc >= g.level.W) continue
+        // never let a body pin anyone onto teeth…
+        if (cell(g, pc, pr) === SPIKE) continue
+        if (g.chomps.some((ch) => ch.c === pc && ch.r === pr)) continue
+        // …nor into a wall
+        const h = p.crouch ? CFG.CH : CFG.PH
+        let wall = false
+        for (const yy of [p.y - 4, p.y - h * 0.45, p.y - h + 4]) {
+            if (blocksH(g, cell(g, pc, Math.floor(yy / T)), pc)) { wall = true; break }
+        }
+        if (wall) continue
+        p.x = pinX
+        if (sign(p.vx) === side) p.vx = 0
     }
 }
 
@@ -435,6 +468,7 @@ export function step(g, inp = {}) {
 
     // ---- integrate ------------------------------------------------------------
     moveX(g, p, p.x + p.vx)
+    bodyBlock(g, p)
     p.onGround = false
     moveY(g, p)
 
@@ -689,6 +723,21 @@ export function chompDown(g, ch) {
 function stepGuards(g, dueling) {
     const p = g.p
     for (const gd of g.guards) {
+        if (!gd.dead) gd.engaged = dueling && gd.room === g.room && Math.abs(gd.x - p.x) < 8 * T
+    }
+    // duel etiquette (as in the original): one blade at a time. The closest
+    // engaged guard duels — the rest escort, stalk and wait their turn, so two
+    // followers corner you without spearing you in the back simultaneously.
+    let duelist = null
+    {
+        let bestD = 1e9
+        for (const gd of g.guards) {
+            if (gd.dead || !gd.engaged) continue
+            const d = Math.abs(gd.x - p.x)
+            if (d < bestD - 0.5 || (Math.abs(d - bestD) <= 0.5 && duelist !== null && gd.id < duelist.id)) { bestD = d; duelist = gd }
+        }
+    }
+    for (const gd of g.guards) {
         if (gd.dead) continue
         if (gd.hurtT > 0) gd.hurtT--
         if (gd.recoil > 0) gd.recoil--
@@ -711,7 +760,8 @@ function stepGuards(g, dueling) {
         } else if (gd.engaged) {
             gd.dir = sign(p.x - gd.x) || gd.dir
             const close = CFG.reach - 6
-            if (gd.cool <= 0 && Math.abs(gd.x - p.x) <= CFG.reach + 8 && gd.recoil <= 0) {
+            if (gd === duelist && gd.cool <= 0 && !g.guards.some((o) => o !== gd && !o.dead && o.wind > 0)
+                && Math.abs(gd.x - p.x) <= CFG.reach + 8 && gd.recoil <= 0) {
                 gd.wind = gd.windT; gd.anim = 'wind'
                 g.events.push({ t: g.tick, type: 'guardWind', boss: gd.boss })
             } else if (Math.abs(gd.x - p.x) > close) { gd.x += gd.dir * gd.speed; gd.anim = 'advance' }
@@ -719,9 +769,9 @@ function stepGuards(g, dueling) {
             if (gd.cool > 0) gd.cool--
         } else if (gd.follow) {
             // the prince left its room while you fought — so it escorts you,
-            // walking toward him on its own floor, stopping at a wall or the lip
+            // dashing toward him on its own floor, stopping at a wall or the lip
             // of a shaft (it has no legs for falling). It never leaves the world.
-            const spd = Math.min(gd.speed, CFG.walk)
+            const spd = Math.min(CFG.run, gd.speed + CFG.escortDash)
             const dirToward = sign(p.x - gd.x) || gd.dir
             const nx = gd.x + dirToward * spd
             const feetRow = Math.floor((gd.y + 2) / T)            // the floor it stands on
@@ -736,7 +786,11 @@ function stepGuards(g, dueling) {
             gd.anim = 'advance'
             gd.followT++
             const nr = roomOf(Math.floor(gd.x / T))
-            if (nr !== gd.room) gd.room = nr
+            if (nr !== gd.room) {
+                gd.room = nr
+                // its feet cross the threshold behind you — you hear the stone
+                g.events.push({ t: g.tick, type: 'doorCross', room: nr, guard: gd.id })
+            }
             if (gd.followT > 600) { gd.follow = false; gd.room = gd.homeRoom }
         } else {
             gd.x += gd.dir * 0.5
@@ -746,6 +800,17 @@ function stepGuards(g, dueling) {
             if (gd.cool > 0) gd.cool--
         }
         if (!gd.follow) gd.x = clamp(gd.x, gd.patrol[0] * T, gd.patrol[1] * T)
+
+        // the jaws do not care whose feet they close on — a guard that chases
+        // you across a trap dies in it, as they do in the original
+        if (!gd.dead && Math.floor(gd.y / T) === GROUND) {
+            const gc = Math.floor(gd.x / T)
+            if (g.chomps.some((ch) => ch.c === gc && chompDown(g, ch))) {
+                gd.dead = true; gd.hp = 0
+                g.events.push({ t: g.tick, type: 'guardDown', boss: gd.boss })
+                continue
+            }
+        }
 
         // the prince's strike lands when the sword is out and the guard is close
         if (g.sword && p.atk > 0 && !p.atkHitDone && p.atk <= CFG.strikeDur - CFG.strikeHit0 && p.atk >= CFG.strikeDur - CFG.strikeHit1) {
@@ -766,10 +831,12 @@ function syncRoom(g) {
         g.room = r
         g.events.push({ t: g.tick, type: 'room', room: r })
         // a guard left standing in the room you just walked out of takes up the
-        // chase through the doorway behind you (as in the original)
+        // chase through the doorway behind you (as in the original) — and the
+        // chase announces itself: boots you never saw start moving
         for (const gd of g.guards) {
             if (!gd.dead && gd.room === prev && Math.floor(gd.y / T) === GROUND) {
                 gd.follow = true; gd.followT = 0
+                g.events.push({ t: g.tick, type: 'escort', room: prev, guard: gd.id })
             }
         }
     }

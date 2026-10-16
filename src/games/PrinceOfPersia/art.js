@@ -28,6 +28,24 @@ export const PALETTES = {
 }
 export const guardLook = (type, boss) => PALETTES[type] || PALETTES[boss ? 'jaffar' : 'green'] || PALETTES.green
 
+// Stage 7: the door-frame silhouette. An escort still in the next room reads
+// as a dark shape in the arch at the screen edge — you see it coming through
+// the doorway a beat before its feet reach your floor. Pure function of the
+// sim state (same state, same answer — the harness pins it).
+export const DOOR_ZONE = 3
+export function escortSilhouettes(g) {
+    const out = []
+    const c0 = g.room * RW
+    const left = c0, right = c0 + RW - 1
+    for (const gd of g.guards) {
+        if (gd.dead || !gd.follow || Math.floor(gd.y / T) !== GROUND) continue
+        const col = Math.floor(gd.x / T)
+        if (col < c0 && col >= c0 - DOOR_ZONE) out.push({ id: gd.id, doorCol: left, side: -1, type: gd.type, boss: !!gd.boss })
+        else if (col > right && col <= right + DOOR_ZONE) out.push({ id: gd.id, doorCol: right, side: 1, type: gd.type, boss: !!gd.boss })
+    }
+    return out
+}
+
 const hash = (n) => {
     let x = Math.sin(n * 127.1 + 311.7) * 43758.5453
     return x - Math.floor(x)
@@ -1102,6 +1120,30 @@ export function drawScene(ctx, g, opts = {}) {
             ctx.fillStyle = gd.boss ? '#d040d0' : (look.turban || '#c04040')
             ctx.fillRect(gd.x - w / 2, gd.y - CFG.PH - 14, w * (gd.hp / gd.maxHp), 3)
         }
+    }
+
+    // escorts still one room away: a shape filling the arch behind you — the
+    // doorway you came through, no longer empty
+    for (const sil of escortSilhouettes(g)) {
+        const look = guardLook(sil.type, sil.boss)
+        const dx = sil.doorCol * T
+        const archTop = (GROUND - 2) * T
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(dx + 2, archTop, T - 4, 2 * T + 2)
+        ctx.clip()
+        ctx.fillStyle = 'rgba(2,3,10,0.92)'
+        ctx.fillRect(dx, archTop, T, 2 * T + 2)
+        figure(ctx, 'walk', { x: sil.doorCol * T + T / 2, y: GROUND * T, facing: -sil.side, onGround: true, hang: null, crouch: false },
+            {
+                tick: tick + sil.id * 13, frame: Math.floor(tick / 9), skin: '#0d0d16', cloth: '#10101c', trim: '#22223a',
+                turban: mix(look.turban || '#2e6b46', '#08080f', 0.72), sword: false, sheath: false,
+                swing: 0, hurt: 0, die: 0, prog: 0, warm: 0, litSide: sil.side,
+            })
+        ctx.restore()
+        ctx.strokeStyle = 'rgba(4,5,14,0.9)'
+        ctx.lineWidth = 2
+        ctx.strokeRect(dx + 1.5, archTop + 0.5, T - 3, 2 * T + 1)
     }
 
     // the prince

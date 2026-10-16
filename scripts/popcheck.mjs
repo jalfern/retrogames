@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR } from '../src/games/PrinceOfPersia/art.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -42,6 +42,7 @@ const mkGuard = (x, y, room, hp = 3) => ({
     ...GUARD_STYLE.green,
     patrol: [x / T - 2, x / T + 2], engaged: false, wind: 0, cool: 30, recoil: 0,
     anim: 'idle', hurtT: 0, dead: false,
+    follow: false, followT: 0, homeRoom: room,
 })
 
 // ---- 1. boots ---------------------------------------------------------------
@@ -842,6 +843,130 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         && !/function tone\(/.test(artSrc))
     ok('S6: figures are rim-lit from the room they stand in (warm + litSide)',
         /opts\.litSide/.test(artSrc) && /litSide: /.test(artSrc) && /warm: /.test(artSrc))
+}
+
+// ---- 17. Stage 7: the escort feel — door cues, bodies, the pincer ----------
+{
+    const drain = (game) => { const e = game.events.slice(); game.events.length = 0; return e }
+
+    // the chase announces itself the moment you leave a guard breathing behind
+    {
+        const g = makeGame(10)
+        const gd = g.guards.find((q) => q.room === 0 && Math.floor(q.y / T) === GROUND)
+        setGround(g, 1.5 * T, 8 * T)
+        step(g, {}); drain(g)
+        g.p.x = 10.5 * T
+        const ev = []
+        for (let t = 0; t < 600 && g.status === 'play'; t++) { step(g, {}); ev.push(...drain(g)) }
+        ok('S7: leaving a guard alive behind books an escort cue', ev.some((e) => e.type === 'escort' && e.guard === gd.id))
+        ok('S7: the escort crossing the threshold rumbles through the stone', ev.some((e) => e.type === 'doorCross' && e.room === 1 && e.guard === gd.id))
+    }
+
+    // bodies hold the corridor — you cannot walk through a standing guard
+    {
+        const g = makeGame(0)
+        g.sword = true
+        const gd = mkGuard(6 * T, 8 * T, 0)
+        g.guards.push(gd)
+        setGround(g, 3 * T, 8 * T)
+        g.p.hp = 9; g.p.maxHP = 9
+        let minGap = 1e9
+        for (let t = 0; t < 240 && g.status === 'play'; t++) {
+            step(g, { right: true })
+            if (!gd.dead) minGap = Math.min(minGap, Math.abs(gd.x - g.p.x))
+        }
+        ok('S7: a living body never lets you inside blade distance', minGap >= CFG.bodyGap - 2)
+        const heldAt = g.p.x
+        gd.dead = true
+        for (let t = 0; t < 120 && g.status === 'play'; t++) step(g, { right: true })
+        ok('S7: only steel opens the corridor — the same run passes over the fallen', g.p.x > heldAt + 2 * T)
+    }
+
+    // the pincer: one ahead, one behind, the corridor is closed
+    {
+        const g = makeGame(0)
+        g.sword = true
+        const ahead = mkGuard(6.5 * T, 8 * T, 0)
+        const behind = mkGuard(1 * T, 8 * T, 0)
+        ahead.id = 11; behind.id = 12
+        ahead.patrol = [14, 18]; behind.patrol = [4, 8]
+        behind.follow = true
+        g.guards.push(ahead, behind)
+        setGround(g, 4 * T, 8 * T)
+        g.p.hp = 9; g.p.maxHP = 9
+        const start = g.p.x
+        let closed = false, pinned = false, bothWind = false
+        for (let t = 0; t < 300 && g.status === 'play'; t++) {
+            step(g, { right: true })
+            if (ahead.hp > 0 && behind.hp > 0) {
+                if (ahead.x - g.p.x > 0 && g.p.x - behind.x > 0) closed = true
+                if (ahead.wind > 0 && behind.wind > 0) bothWind = true
+                if (ahead.x - g.p.x > 0 && g.p.vx === 0 && Math.abs(g.p.x - start) < 3 * T) pinned = true
+            }
+        }
+        ok('S7: an escort plus a guard ahead close the corridor on you', closed)
+        ok('S7: pressed right against the pincer, you go nowhere', pinned)
+        ok('S7: duel etiquette — two blades never swing in the same breath', !bothWind)
+    }
+
+    // the escort dashes: faster than its walk, it actually runs you down
+    {
+        const g = makeGame(0)
+        const gd = mkGuard(1 * T, 8 * T, 0)
+        g.guards.push(gd)
+        setGround(g, 12 * T, 8 * T)           // 352px and another room away: pure escort range
+        gd.follow = true
+        const x0 = gd.x, t0 = g.tick
+        let t = 0
+        while (t++ < 400 && !gd.engaged && g.status === 'play') step(g, {})
+        const secs = g.tick - t0
+        const speed = (gd.x - x0) / secs
+        ok('S7: an escort beyond duel range dashes, not strolls', speed > CFG.walk + 0.4 && secs > 20 && secs < 200)
+    }
+
+    // the jaws do not choose sides — an escort that chases across them dies there
+    {
+        const g = makeGame(4)                       // L5 room 1 carries jaws at col 16
+        const ch = g.level.chomps.find((c) => Math.floor(c.c / RW) === 1)
+        ok('S7: level 5 has jaws on the corridor', !!ch)
+        g.guards.length = 0
+        setGround(g, 9.5 * T, 8 * T)               // prince in room 0, left of the jaws
+        const gd = mkGuard(700, 8 * T, 2, 3)   // positioned so its dash arrives on the jaws' down-beat
+        gd.patrol = [20, 29]
+        gd.follow = true
+        g.guards.push(gd)
+        let eaten = false
+        for (let t = 0; t < 400 && g.status === 'play'; t++) { step(g, {}); if (gd.dead) { eaten = true; break } }
+        ok('S7: jaws claim the guard that chases you across them', eaten)
+    }
+
+    // the door-frame silhouette: pure, honest, and painted
+    {
+        const g = makeGame(10)
+        const gd = g.guards.find((q) => q.room === 0 && Math.floor(q.y / T) === GROUND)
+        g.room = 1
+        gd.follow = true
+        gd.x = 8.5 * T                              // two columns out in the room behind
+        const sil = escortSilhouettes(g)
+        ok('S7: the arch behind you fills with a shape while the escort is in the door zone',
+            sil.length === 1 && sil[0].doorCol === RW && sil[0].side === -1 && sil[0].id === gd.id)
+        ok('S7: the silhouette is pure — same state, same answer',
+            JSON.stringify(escortSilhouettes(g)) === JSON.stringify(sil))
+        ok('S7: the zone is short — an escort far down the hall stays unseen',
+            (gd.x = 3.5 * T, escortSilhouettes(g).length === 0))
+        ok(`S7: the door zone spans ${DOOR_ZONE} columns, not the whole room`, DOOR_ZONE >= 2 && DOOR_ZONE <= 4)
+        const artSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+        ok('S7: the scene paints the silhouette clipped into the door-frame',
+            /escortSilhouettes\(g\)/.test(artSrc) && /ctx\.rect\(dx \+ 2, archTop/.test(artSrc))
+    }
+
+    // the etiquette and the hazard refusals live in the sim, not just in luck
+    {
+        const simSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'sim.js'), 'utf8')
+        ok('S7: only the elected duelist may wind up', /gd === duelist && gd\.cool <= 0/.test(simSrc))
+        ok('S7: a body never pins the prince onto teeth', /chomps\.some\(\(ch\) => ch\.c === pc && ch\.r === pr\)/.test(simSrc)
+            && /never shove him into a wall|nor into a wall/.test(simSrc))
+    }
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
