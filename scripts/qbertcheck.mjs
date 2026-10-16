@@ -16,7 +16,7 @@ import {
 } from '../src/games/QBert/sim.js'
 import { plan } from '../src/games/QBert/planner.js'
 import { sfxFor, VOICED, SILENT } from '../src/games/QBert/sound.js'
-import { COILS, coilX, coilY, discHalfW, DISC_FRAMES, ballScale, BALL_FRAMES, BALL_R, bertFrame, BERT_GEO, BERT_LAND_TICKS } from '../src/games/QBert/art.js'
+import { COILS, coilX, coilY, discHalfW, DISC_FRAMES, ballScale, BALL_FRAMES, BALL_R, bertFrame, BERT_GEO, BERT_LAND_TICKS, CUBE_SIDE, sideMargin } from '../src/games/QBert/art.js'
 import { Report } from './lib/harness.mjs'
 
 const r = new Report('qbertcheck')
@@ -47,6 +47,21 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     r.check('the iso layout centres every row: widest row spans 53..203, apex centred at 128, last row at y=161',
         Math.abs(a.x - 128) < 1 && Math.abs(l.x - 53) < 1 && Math.abs(rr.x - 203) < 1 && Math.abs(bot.y - 161) < 1,
         `apex=${a.x} l5=${l.x} r5=${rr.x} y7=${bot.y}`)
+}
+
+// ------------------------------------------------------ cube tiling ----
+// The cabinet's surfaces tile contiguously: the front neighbour's top vertex
+// sits one row-pitch below ours at the same x, so our side faces must reach
+// its top edge. sideMargin is the pure coverage test in art.js (no DOM): the
+// minimum, across the face, of (our side-bottom edge) minus (the front top
+// edge). A shallow face (the old 10px) leaves the background showing through
+// as a seam between diagonally adjacent tops; fail-proven below.
+{
+    r.check('the side faces are deep enough to reach the front top edge (no background seam)',
+        sideMargin() >= 1, `margin=${Math.round(sideMargin() * 100) / 100}`)
+    r.check('the side-face depth is at least the row pitch (15px)', CUBE_SIDE >= 15, `depth=${CUBE_SIDE}`)
+    r.check('a shallow face (the old 10px) leaves a seam (the fix is load-bearing)',
+        sideMargin(10) < 0, `margin@10=${Math.round(sideMargin(10) * 100) / 100}`)
 }
 
 // ------------------------------------------------------- hop + flip rule ----
