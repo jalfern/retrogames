@@ -5,6 +5,10 @@
 // MIDI note -> frequency
 const f = (n) => 440 * Math.pow(2, (n - 69) / 12)
 
+// the music bus level — the ceiling every bed plays under. Exported so a title's
+// duck contract and the analyser verification agree on one number (not a mirror).
+export const MUSIC_BUS = 0.16
+
 // Perc steps for the `perc` lanes: 0 rest, 1 dum (low thump), 2 tek (dry click).
 
 // Patterns: `lead` (square) + `bass` (triangle) share a step grid. 0 = rest.
@@ -201,7 +205,7 @@ class AudioController {
         if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume()
         if (!this.musicGain) {
             this.musicGain = this.ctx.createGain()
-            this.musicGain.gain.value = this.muted ? 0 : 0.16
+            this.musicGain.gain.value = this.muted ? 0 : MUSIC_BUS
             this.musicGain.connect(this.ctx.destination)
             this.analyser = this.ctx.createAnalyser()
             this.analyser.fftSize = 256
@@ -213,7 +217,19 @@ class AudioController {
     setMuted(muted) {
         this.muted = muted
         if (!muted && this.ctx && this.ctx.state === 'suspended') this.ctx.resume()
-        if (this.musicGain) this.musicGain.gain.setTargetAtTime(muted ? 0 : 0.16, this.ctx.currentTime, 0.02)
+        if (this.musicGain) this.musicGain.gain.setTargetAtTime(muted ? 0 : MUSIC_BUS, this.ctx.currentTime, 0.02)
+    }
+
+    // Duck the music bus for a moment so a one-shot cue (a chase rustle, a door
+    // rumble) peaks over the bed instead of into it. `to` is the fraction of the
+    // bus held during the cue; the bed then recovers. No-op with no bed/muted.
+    duckMusic(to, hold = 0.35) {
+        if (!this.ctx || !this.musicGain || this.muted) return
+        const t = this.ctx.currentTime
+        this.musicGain.gain.cancelScheduledValues(t)
+        this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t)
+        this.musicGain.gain.linearRampToValueAtTime(to * MUSIC_BUS, t + 0.03)
+        this.musicGain.gain.linearRampToValueAtTime(MUSIC_BUS, t + hold)
     }
 
     // ---- one-shot SFX ----

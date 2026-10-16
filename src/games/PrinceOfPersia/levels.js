@@ -268,7 +268,7 @@ export function makeLevel(i) {
     // columns per room (pure math on the room index — no Math.random)
     const deco = []
     for (let rm = 0; rm < nRooms; rm++) {
-        deco.push({ window: 2 + (rm * 3) % 6, tapestry: 7 - (rm * 2) % 5, pillar: rm % 2 ? 1 : 8 })
+        deco.push({ window: 2 + (rm * 3) % 6, windowRow: 0, tapestry: 7 - (rm * 2) % 5, pillar: rm % 2 ? 1 : 8 })
     }
 
     return {
