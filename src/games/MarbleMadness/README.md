@@ -66,5 +66,7 @@ The harness proves it can fail: set `BREAKDROP = 99` in `levels.js` and the
 - Steely knocks don't impart spin/visual wobble on the marble.
 - SILLY bounciness is uniform; the cabinet varies trampoline strength per
   section.
-- One camera framing (whole course fits 512×384); the original pans between
-  sections and zooms on the narrow parts.
+- The camera now follows the marble at 2× zoom and scrolls the course off every
+  screen edge (the whole-course diorama is gone, #265); the attract screen no
+  longer bleeds the live race/timer/score HUD. Still flat vs the cabinet: no
+  per-section push-in on the narrow bridges.

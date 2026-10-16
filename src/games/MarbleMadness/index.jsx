@@ -19,6 +19,14 @@ const OY = 118
 const isoX = (x, y) => OX + (x - y) * (TW / 2)
 const isoY = (x, y, z) => OY + (x + y) * (TH / 2) - z * TZ
 
+// Follow camera (#265): the course is drawn at ZOOM and the marble is held at
+// ANCHOR, so each race scrolls several screens and the course runs off every
+// edge — the cabinet's long downhill run, not a diorama. Painter-side only;
+// the deterministic sim in sim.js never sees it.
+const ZOOM = 2
+const ANCHOR_X = W / 2
+const ANCHOR_Y = Math.round(H * 0.40)
+
 let attractPlan = null
 const attractScript = () => {
     if (!attractPlan) attractPlan = plan(0, { maxTicks: 60 * 60 * 9 }).script
@@ -61,6 +69,14 @@ const MarbleMadnessGame = () => {
         let banner = null
         let shake = 0
         let demoTicks = 0
+        // follow-camera state: smoothed marble position in tile space + the iso
+        // center it currently maps to the anchor. Painter-side, never in the sim.
+        const cam = { wx: 0, wy: 0, z: 0, init: false }
+        let camIsoX = 0
+        let camIsoY = 0
+        const resetCam = () => { cam.wx = gs.m.x; cam.wy = gs.m.y; cam.z = gs.m.z; cam.init = true }
+        const toScreen = (x, y, z) => [ANCHOR_X + ZOOM * (isoX(x, y) - camIsoX), ANCHOR_Y + ZOOM * (isoY(x, y, z) - camIsoY)]
+        const marblePx = () => { const mm = gs.m; const s = toScreen(mm.x, mm.y, mm.z); return { x: s[0], y: s[1] - 5 * ZOOM } }
         const stars = []
         for (let i = 0; i < 70; i++) stars.push([(i * 173) % W, (i * 97) % 100, (i * 37) % 3])
 
@@ -123,6 +139,7 @@ const MarbleMadnessGame = () => {
             mode = 'play'
             script = null
             particles = []
+            resetCam()
             banner = { text: RACES[0].name, t: 110, big: true }
         }
 
@@ -133,6 +150,7 @@ const MarbleMadnessGame = () => {
             demoTicks = 0
             mode = 'attract'
             particles = []
+            resetCam()
             banner = null
         }
 
@@ -165,6 +183,19 @@ const MarbleMadnessGame = () => {
                 shake--
                 ctx.translate((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4)
             }
+
+            // follow camera: smooth the marble's position, hold it at ANCHOR so
+            // the course scrolls under it and runs off every screen edge
+            const cm = gs.m
+            if (!cam.init) { cam.wx = cm.x; cam.wy = cm.y; cam.z = cm.z; cam.init = true }
+            cam.wx += (cm.x - cam.wx) * 0.28
+            cam.wy += (cm.y - cam.wy) * 0.28
+            cam.z += (cm.z - cam.z) * 0.34
+            camIsoX = isoX(cam.wx, cam.wy)
+            camIsoY = isoY(cam.wx, cam.wy, cam.z)
+            ctx.translate(ANCHOR_X, ANCHOR_Y)
+            ctx.scale(ZOOM, ZOOM)
+            ctx.translate(-camIsoX, -camIsoY)
 
             const pair = PAIRS[gs.race.pairs % PAIRS.length]
             const minZ = gs.heights.flat().reduce((a, b) => Math.min(a, b), 99)
@@ -300,25 +331,28 @@ const MarbleMadnessGame = () => {
             particles = particles.filter((p) => p.life > 0)
             ctx.restore()
 
-            // ---- HUD ----
-            ctx.fillStyle = 'rgba(8,8,24,0.85)'
-            ctx.fillRect(0, 0, W, 20)
-            ctx.font = 'bold 11px monospace'
-            ctx.textAlign = 'left'
-            ctx.fillStyle = '#8fd8c8'
-            ctx.fillText(`RACE ${gs.raceIdx + 1}/6 ${gs.race.name}`, 6, 14)
-            const secs = Math.max(0, Math.ceil(gs.timeT / 60))
-            ctx.textAlign = 'center'
-            ctx.fillStyle = secs <= 10 ? (secs & 1 ? '#ff4050' : '#ffd75e') : '#ffffff'
-            ctx.fillText(`TIME ${secs}${gs.carry ? ` (+${Math.round(gs.carry / 60)} CARRY)` : ''}`, W / 2, 14)
-            ctx.textAlign = 'right'
-            ctx.fillStyle = '#ffffff'
-            ctx.fillText(`SCORE ${gs.score}`, W - 60, 14)
-            for (let i = 0; i < gs.lives; i++) {
-                ctx.fillStyle = '#ff4050'
-                ctx.beginPath(); ctx.arc(W - 44 + i * 11, 10, 4, 0, Math.PI * 2); ctx.fill()
-                ctx.fillStyle = 'rgba(255,255,255,0.7)'
-                ctx.beginPath(); ctx.arc(W - 45 + i * 11, 9, 1.2, 0, Math.PI * 2); ctx.fill()
+            // ---- HUD (gameplay only: the attract screen shows one message at a
+            // time, never the live race/timer/score of the running demo — #265)
+            if (mode !== 'attract') {
+                ctx.fillStyle = 'rgba(8,8,24,0.85)'
+                ctx.fillRect(0, 0, W, 20)
+                ctx.font = 'bold 11px monospace'
+                ctx.textAlign = 'left'
+                ctx.fillStyle = '#8fd8c8'
+                ctx.fillText(`RACE ${gs.raceIdx + 1}/6 ${gs.race.name}`, 6, 14)
+                const secs = Math.max(0, Math.ceil(gs.timeT / 60))
+                ctx.textAlign = 'center'
+                ctx.fillStyle = secs <= 10 ? (secs & 1 ? '#ff4050' : '#ffd75e') : '#ffffff'
+                ctx.fillText(`TIME ${secs}${gs.carry ? ` (+${Math.round(gs.carry / 60)} CARRY)` : ''}`, W / 2, 14)
+                ctx.textAlign = 'right'
+                ctx.fillStyle = '#ffffff'
+                ctx.fillText(`SCORE ${gs.score}`, W - 60, 14)
+                for (let i = 0; i < gs.lives; i++) {
+                    ctx.fillStyle = '#ff4050'
+                    ctx.beginPath(); ctx.arc(W - 44 + i * 11, 10, 4, 0, Math.PI * 2); ctx.fill()
+                    ctx.fillStyle = 'rgba(255,255,255,0.7)'
+                    ctx.beginPath(); ctx.arc(W - 45 + i * 11, 9, 1.2, 0, Math.PI * 2); ctx.fill()
+                }
             }
 
             if (banner && banner.t > 0) {
@@ -470,7 +504,7 @@ const MarbleMadnessGame = () => {
                 { label: 'PROGNOSIS', run: () => (bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 1).length || bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 2).length) ? 'WINNABLE' : 'DEAD END' },
             ],
         })
-        window.__marble = { CFG, getGs: () => gs, mode: () => mode }
+        window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx }
 
         startAttract()
         raf = requestAnimationFrame(loop)
