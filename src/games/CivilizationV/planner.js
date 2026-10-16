@@ -10,10 +10,14 @@
 // grow to the milestone. It does not conquergoal: domination stays a player
 // ambition, the autopilot's job is to survive the frontier it was proven on.
 
-import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, atWar, BARB, UNIT, stepToward, tileBlocked } from './sim.js'
+import { CFG, T, canFound, neighbors, hexDist, newGame, step, tileAt, atWar, BARB, UNIT, stepToward, tileBlocked, availableTechs } from './sim.js'
 
 const SITE = (tl) => (tl.terr === T.GRASS ? 3 : tl.terr === T.PLAINS ? 2 : 0)
     + (tl.river ? 2 : 0) + (tl.forest ? 1 : 0) + (tl.terr === T.HILLS ? 1 : 0)
+
+// research path the witness steers the player down: arms first, then the
+// economy-of-scale techs. Issued only when research is idle (just learned).
+const RESEARCH_ORDER = ['ARCHERY', 'BRONZE_WORKING', 'MASONRY', 'THE_WHEEL', 'POTTERY', 'AGRICULTURE', 'WRITING', 'CURRENCY', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
 
 function bestSiteNeighbor(gs, civ, c, r) {
     let best = null, bs = -1e9
@@ -77,6 +81,12 @@ export function decide(gs) {
         if (s.moves > 0) { const t = bestSiteNeighbor(gs, 0, s.c, s.r); if (t) return { select: s.id, move: t } }
     }
     if (cap) {
+        // keep the lab lit: choose the next tech whenever research is idle
+        const R0 = gs.tech[0]
+        if (!R0.research) {
+            const av = availableTechs(gs, 0)
+            for (const id of RESEARCH_ORDER) if (av.includes(id)) return { research: id }
+        }
         // fight: any unit that can strike now, strongest target first
         const mil = gs.units.filter((u) => u.alive && u.civ === 0 && u.str > 0 && u.moves > 0)
         for (const u of mil) {

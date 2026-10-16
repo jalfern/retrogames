@@ -1,4 +1,4 @@
-// CIVILIZATION V — Stage 2 "War". Pure deterministic sim.
+// CIVILIZATION V — Stage 3 "The Tech Tree". Pure deterministic sim.
 // No three, no DOM, no Math.random: this module is the single source of truth
 // the Node harness (scripts/civcheck.mjs) and the in-browser autopilot import
 // unchanged. Turn-based: the player orders units, presses END TURN, then each
@@ -21,7 +21,13 @@
 //   - wounded units heal at rest (faster on home soil, faster still fortified).
 //   - victories: founding milestone (capital size 4) or DOMINATION (every
 //     rival capital captured). Loss: capital falls or the turn limit passes.
-//     (Tech tree, wonders, the other three victories are later stages.)
+//     (Wonders and the other three victories are later stages.)
+//   - Stage 3 adds the tech tree: city science is spent on a researchable tree
+//     (12 techs across Ancient/Classical/Medieval, real Civ V prerequisites).
+//     Techs gate units (ARCHER needs Archery, CATAPULT needs Engineering) and
+//     apply era effects (Bronze +str, Horseback +move, Pottery/Agriculture
+//     growth, Masonry walls, Currency/Writing/Philosophy yields). The AI
+//     researches its own deterministic paths; barbarians stay timeless.
 
 export const CFG = {
     W: 40, H: 25,
@@ -45,9 +51,32 @@ export const CFG = {
 
 export const UNIT = {
     WARRIOR: { str: 8, moves: 2, sight: 2, range: 1, cost: 15 },
-    ARCHER: { str: 11, moves: 2, sight: 2, range: 2, cost: 22 },
+    ARCHER: { str: 11, moves: 2, sight: 2, range: 2, cost: 22, tech: 'ARCHERY' },
     SETTLER: { str: 0, moves: 2, sight: 2, range: 0, cost: 35 },
+    CATAPULT: { str: 7, moves: 2, sight: 2, range: 2, cost: 45, tech: 'ENGINEERING' },
 }
+
+// ---- the tech tree (Stage 3) ---------------------------------------------------
+// 12 real Civ V techs, real prerequisite edges, three eras. Costs rise by era
+// so a frontier town tastes Ancient techs by ~turn 10 and Classical by ~20.
+// `effect` is prose for the UI; the mechanic lives where it is applied
+// (growth need, cityYield, doAttack, spawnUnit, applyLearn, resolveCiv).
+export const TECH = {
+    POTTERY: { name: 'Pottery', era: 0, cost: 24, prereq: [], effect: 'Granaries: -2 food per new citizen' },
+    AGRICULTURE: { name: 'Agriculture', era: 0, cost: 24, prereq: [], effect: '+1 food on worked grassland' },
+    ARCHERY: { name: 'Archery', era: 0, cost: 28, prereq: [], effect: 'unlocks the Archer' },
+    THE_WHEEL: { name: 'The Wheel', era: 0, cost: 30, prereq: [], effect: '+1 production in every city' },
+    BRONZE_WORKING: { name: 'Bronze Working', era: 0, cost: 32, prereq: [], effect: '+2 strength for warriors' },
+    MASONRY: { name: 'Masonry', era: 0, cost: 34, prereq: [], effect: '+100 city walls' },
+    WRITING: { name: 'Writing', era: 1, cost: 70, prereq: ['POTTERY'], effect: '+1 science in every city' },
+    CURRENCY: { name: 'Currency', era: 1, cost: 75, prereq: ['BRONZE_WORKING'], effect: '+2 gold in every city' },
+    HORSEBACK: { name: 'Horseback Riding', era: 1, cost: 80, prereq: ['THE_WHEEL'], effect: '+1 movement for military' },
+    PHILOSOPHY: { name: 'Philosophy', era: 1, cost: 90, prereq: ['WRITING'], effect: '+1 culture in every city' },
+    ENGINEERING: { name: 'Engineering', era: 1, cost: 100, prereq: ['THE_WHEEL', 'MASONRY'], effect: 'unlocks the Catapult (x2 vs cities)' },
+    MATHEMATICS: { name: 'Mathematics', era: 2, cost: 150, prereq: ['PHILOSOPHY', 'ENGINEERING'], effect: '+4 city bombardment' },
+}
+export const TECH_IDS = Object.keys(TECH)
+export const ERAS = ['ANCIENT', 'CLASSICAL', 'MEDIEVAL']
 
 export const T = { OCEAN: 0, COAST: 1, GRASS: 2, PLAINS: 3, DESERT: 4, HILLS: 5, MOUNTAIN: 6 }
 export const CIVS = [
@@ -86,6 +115,31 @@ export function tileBlocked(gs, c, r) {
     if (!inMap(c, r)) return true
     const ci = gs.tiles[idx(c, r)].camp
     return ci >= 0 && gs.camps[ci] && gs.camps[ci].alive
+}
+
+// ---- tech tree ---------------------------------------------------------------
+export function hasTech(gs, civ, id) { return !!(gs.tech[civ] && gs.tech[civ].known[id]) }
+export function availableTechs(gs, civ) {
+    const R = gs.tech[civ]
+    return TECH_IDS.filter((id) => !R.known[id] && TECH[id].prereq.every((p) => R.known[p]))
+}
+export function setResearch(gs, civ, id) {
+    const R = gs.tech[civ]
+    if (!id) return false
+    if (R.known[id]) return false
+    if (!TECH[id].prereq.every((p) => R.known[p])) return false
+    R.research = id
+    gs.events.push({ type: 'research', civ, id })
+    return true
+}
+export function canQueue(gs, civ, kind) {
+    const need = UNIT[kind] && UNIT[kind].tech
+    return !need || hasTech(gs, civ, need)
+}
+function applyLearn(gs, civ, id) {
+    if (id === 'BRONZE_WORKING') for (const u of gs.units) if (u.alive && u.civ === civ && u.kind === 'WARRIOR') u.str += 2
+    if (id === 'HORSEBACK') for (const u of gs.units) if (u.alive && u.civ === civ && UNIT[u.kind].str > 0) { u.maxMoves += 1; u.moves += 1 }
+    if (id === 'MASONRY') for (const ct of gs.cities) if (ct.alive && ct.civ === civ) { ct.wallMax = (ct.wallMax || CFG.cityHp) + 100 }
 }
 
 // ---- odd-r hex geometry -------------------------------------------------------
@@ -233,6 +287,7 @@ export function newGame(seed = 1, scenario = 0) {
         tiles: [], units: [], cities: [], camps: [], wars: {},
         fog: [], explored: [], visible: [],
         civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, alive: true })),
+        tech: CIVS.map(() => ({ known: {}, research: null, prog: 0 })),
         capitalOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
     }
@@ -317,10 +372,12 @@ function nearestGoodLand(gs, c0, r0) {
 let unitSeq = 1
 export function spawnUnit(gs, civ, kind, c, r, opts = {}) {
     const st = UNIT[kind]
+    const str = opts.str != null ? opts.str : st.str + (kind === 'WARRIOR' && hasTech(gs, civ, 'BRONZE_WORKING') ? 2 : 0)
+    const moves = st.moves + (st.str > 0 && hasTech(gs, civ, 'HORSEBACK') ? 1 : 0)
     const u = {
         id: unitSeq++, civ, kind, c, r,
-        str: opts.str != null ? opts.str : st.str, hp: 100, maxHp: 100,
-        moves: st.moves, maxMoves: st.moves,
+        str, hp: 100, maxHp: 100,
+        moves, maxMoves: moves,
         path: [], anim: { px: 0, pz: 0, moving: false },
         alive: true, fortified: false, acted: false,
     }
@@ -348,12 +405,17 @@ export function cityYield(gs, city) {
     const out = { f: 0, p: 0, g: 0, sci: 0, cult: 0 }
     for (const i of cityWorkedTiles(gs, city)) {
         const y = tileYield(gs, i)
+        if (gs.tiles[i].terr === T.GRASS && hasTech(gs, city.civ, 'AGRICULTURE')) y.f += 1
         out.f += y.f; out.p += y.p; out.g += y.g; out.sci += 1; out.cult += 1
     }
     const cy = idx(city.c, city.r)
     out.f += 2; out.p += 2; out.g += 1          // inherent city-centre yields
     if (gs.tiles[cy].river) out.cult += 1       // river city bonus
     out.sci += 1                                // palace-equivalent baseline
+    if (hasTech(gs, city.civ, 'THE_WHEEL')) out.p += 1      // wheeled transport
+    if (hasTech(gs, city.civ, 'CURRENCY')) out.g += 2        // markets
+    if (hasTech(gs, city.civ, 'WRITING')) out.sci += 1      // scribes
+    if (hasTech(gs, city.civ, 'PHILOSOPHY')) out.cult += 1  // academies
     return out
 }
 export function canFound(gs, civ, c, r, self) {
@@ -367,7 +429,7 @@ export function canFound(gs, civ, c, r, self) {
 }
 function foundCity(gs, civ, c, r) {
     const tl = gs.tiles[idx(c, r)]
-    const city = { id: gs.cities.length, civ, c, r, size: 1, storedFood: 0, alive: true, name: cityName(civ, gs.civs[civ].cities || 0), capital: (gs.civs[civ].cities || 0) === 0, culture: 0, hp: CFG.cityHp, buildP: 0, queue: [] }
+    const city = { id: gs.cities.length, civ, c, r, size: 1, storedFood: 0, alive: true, name: cityName(civ, gs.civs[civ].cities || 0), capital: (gs.civs[civ].cities || 0) === 0, culture: 0, hp: CFG.cityHp, wallMax: CFG.cityHp, buildP: 0, queue: [] }
     gs.cities.push(city)
     tl.city = city.id
     gs.civs[civ].cities = (gs.civs[civ].cities || 0) + 1
@@ -496,10 +558,11 @@ export function doAttack(gs, u, tc, tr) {
     const cityI = tl.city
     if (cityI >= 0 && gs.cities[cityI].alive && atWar(gs, u.civ, gs.cities[cityI].civ)) {
         const city = gs.cities[cityI]
+        const wallMax = city.wallMax || CFG.cityHp
         let strikes = 0
         while (strikes++ < 4) {
-            const atkEff = u.str * (0.5 + 0.5 * u.hp / u.maxHp)
-            const defEff = cityDefense(gs, city) * (0.5 + 0.5 * city.hp / CFG.cityHp)
+            const atkEff = u.str * (0.5 + 0.5 * u.hp / u.maxHp) * (u.kind === 'CATAPULT' ? 2 : 1)
+            const defEff = cityDefense(gs, city) * (0.5 + 0.5 * city.hp / wallMax)
             city.hp -= Math.max(3, Math.round(26 * atkEff / (atkEff + defEff)))
             gs.events.push({ type: 'siege', civ: u.civ, city: city.id, at: [tc, tr] })
             if (city.hp <= 0) { captureCity(gs, city, u.civ); break }
@@ -533,7 +596,8 @@ export function doAttack(gs, u, tc, tr) {
 function captureCity(gs, city, civ) {
     const old = city.civ
     city.civ = civ
-    city.hp = Math.floor(CFG.cityHp * 0.6)
+    city.wallMax = city.wallMax || CFG.cityHp
+    city.hp = Math.floor(city.wallMax * 0.6)
     city.size = Math.max(1, Math.floor(city.size / 2))
     city.storedFood = 0; city.buildP = 0; city.queue = []
     for (const [nc, nr] of neighbors(city.c, city.r)) {
@@ -622,7 +686,7 @@ function resolveCiv(gs, civ) {
         fSur += y.f - city.size * 2            // each citizen eats 2
         gold += y.g; sci += y.sci; cult += y.cult; prod += y.p
         city.storedFood += y.f - city.size * 2
-        const need = CFG.growBase + CFG.growStep * (city.size - 1)
+        const need = CFG.growBase + CFG.growStep * (city.size - 1) - (hasTech(gs, civ, 'POTTERY') ? 2 : 0)
         while (city.storedFood >= need && city.size < 9) { city.storedFood -= need; city.size++; city.culture = city.culture || 0; gs.events.push({ type: 'grow', civ, city: city.id, size: city.size }) }
         if (city.storedFood < 0) city.storedFood = 0
         // production queue: bank shields, deliver units when the cost is met
@@ -644,7 +708,8 @@ function resolveCiv(gs, civ) {
             if (en && en.alive && atWar(gs, civ, en.civ) && en.hp < vh) { vh = en.hp; victim = en }
         }
         if (victim) {
-            victim.hp -= Math.max(6, Math.round(CFG.cityStrike * (0.5 + 0.5 * city.hp / CFG.cityHp)))
+            const strike = CFG.cityStrike + (hasTech(gs, civ, 'MATHEMATICS') ? 4 : 0)
+            victim.hp -= Math.max(6, Math.round(strike * (0.5 + 0.5 * city.hp / (city.wallMax || CFG.cityHp))))
             gs.events.push({ type: 'cityStrike', civ, city: city.id, at: [victim.c, victim.r] })
             if (victim.hp <= 0) {
                 victim.alive = false; victim.hp = 0; victim.path = []
@@ -654,6 +719,20 @@ function resolveCiv(gs, civ) {
     }
     C.gold += gold; C.science += sci; C.culture += cult
     C.culture = (C.culture || 0) + cult
+    // research: spend this turn's science on the current tech (overflow carries)
+    const R = gs.tech[civ]
+    if (!R.research) { const av = availableTechs(gs, civ); if (av.length) R.research = av[0] }
+    if (R.research) {
+        R.prog += sci
+        const t = TECH[R.research]
+        if (R.prog >= t.cost) {
+            R.prog -= t.cost
+            R.known[R.research] = true
+            gs.events.push({ type: 'tech', civ, id: R.research })
+            applyLearn(gs, civ, R.research)
+            R.research = null
+        }
+    }
     spreadBorders(gs, civ)
     gs.events.push({ type: 'turnEnd', civ, gold, sci, cult, prod, fSur })
 }
@@ -692,6 +771,8 @@ function findTarget(gs, civ, u, radius) {
     }
     return best
 }
+
+const AI_TECH_ORDER = ['ARCHERY', 'BRONZE_WORKING', 'THE_WHEEL', 'POTTERY', 'AGRICULTURE', 'MASONRY', 'CURRENCY', 'WRITING', 'HORSEBACK', 'PHILOSOPHY', 'ENGINEERING', 'MATHEMATICS']
 
 function aiTurn(gs, civ) {
     const C = gs.civs[civ]
@@ -732,6 +813,16 @@ function aiTurn(gs, civ) {
         }
     }
     // city production choices (points are banked/delivered in resolveCiv)
+    // research: a stable per-civ priority path, rotated so rivals diverge
+    const R = gs.tech[civ]
+    if (!R.research) {
+        const av = availableTechs(gs, civ)
+        const rot = (civ * 5) % AI_TECH_ORDER.length
+        for (let k = 0; k < AI_TECH_ORDER.length; k++) {
+            const id = AI_TECH_ORDER[(rot + k) % AI_TECH_ORDER.length]
+            if (av.includes(id)) { setResearch(gs, civ, id); break }
+        }
+    }
     for (const city of gs.cities) {
         if (city.civ !== civ || !city.alive) continue
         city.queue = city.queue || []
@@ -739,7 +830,9 @@ function aiTurn(gs, civ) {
         const wantSettler = city.size >= 2 && C.gold >= 40 && (C.cities || 0) < 6
         if (wantSettler && !city.queue.includes('SETTLER')) city.queue.push('SETTLER')
         else if (warring && city.queue.filter((k) => k !== 'SETTLER').length < 2) {
-            city.queue.push(hash2(city.id, gs.turn, civ) < 0.5 ? 'ARCHER' : 'WARRIOR')
+            if (hasTech(gs, civ, 'ENGINEERING') && hash2(city.id, gs.turn, civ ^ 11) < 0.3) city.queue.push('CATAPULT')
+            else if (canQueue(gs, civ, 'ARCHER') && hash2(city.id, gs.turn, civ) < 0.5) city.queue.push('ARCHER')
+            else city.queue.push('WARRIOR')
         }
     }
 }
@@ -798,9 +891,14 @@ export function step(gs, input = {}) {
     if (input.select != null) { const u = gs.units.find((x) => x.id === input.select && x.alive && x.civ === 0); if (u) gs.selected = u.id }
     const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0) || null
     if (input.endTurn) { endPlayerTurn(gs); return }
+    if (input.research) setResearch(gs, 0, input.research)
     if (input.queue && UNIT[input.queue]) {
-        const city = input.city != null ? gs.cities[input.city] : gs.cities.find((c) => c.civ === 0 && c.alive)
-        if (city && city.alive && city.civ === 0 && city.queue.length < 3) { city.queue.push(input.queue); gs.events.push({ type: 'queued', civ: 0, unit: input.queue }) }
+        const need = UNIT[input.queue].tech
+        if (need && !hasTech(gs, 0, need)) { gs.events.push({ type: 'deny', reason: 'requires ' + TECH[need].name, c: -1, r: -1 }) }
+        else {
+            const city = input.city != null ? gs.cities[input.city] : gs.cities.find((c) => c.civ === 0 && c.alive)
+            if (city && city.alive && city.civ === 0 && city.queue.length < 3) { city.queue.push(input.queue); gs.events.push({ type: 'queued', civ: 0, unit: input.queue }) }
+        }
     }
     if (sel) {
         if (input.move) orderMove(gs, sel, input.move[0], input.move[1])
@@ -811,11 +909,17 @@ export function step(gs, input = {}) {
 }
 
 export function stateHash(gs) {
-    const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3 }
+    const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4 }
     let h = gs.turn * 31 + gs.units.length
     for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 9) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53) | 0
     for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71) | 0
     for (const cp of gs.camps) h = (h * 33 + cp.c + cp.r * 13 + (cp.alive ? 1 : 0) * 173) | 0
     h = (h * 33 + Object.keys(gs.wars).length * 613) | 0
+    for (const civ of [0, 1, 2, 3]) {
+        const R = gs.tech[civ]
+        let m = 0
+        for (let i = 0; i < TECH_IDS.length; i++) if (R.known[TECH_IDS[i]]) m |= 1 << i
+        h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3) | 0
+    }
     return (h >>> 0).toString(16)
 }
