@@ -102,6 +102,7 @@
         "wizcheck": "node scripts/wizcheck.mjs",
         "wizplay": "node scripts/wizplay.mjs",
         "builtbycheck": "node scripts/builtbycheck.mjs",
+        "visibilitycheck": "node scripts/visibilitycheck.mjs",
         "lint:hunter": "eslint src/games/SpyHunter src/components src/utils src/config src/main.jsx scripts",
         "huntercheck": "node scripts/huntercheck.mjs",
         "hunterplay": "node scripts/hunterplay.mjs",
