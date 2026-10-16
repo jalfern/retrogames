@@ -88,7 +88,7 @@ export function makeGame({ seed = 7, level = 1, lives = 3 } = {}) {
         seed: seed >>> 0, rng: makeRng(seed ^ (level * 2654435761)),
         level, mode: level === 1 ? 1 : 2, lives, score: 0, total: 0,
         colors: new Array(64).fill(0),
-        player: { r: 0, c: 0, hop: null, ride: null, dying: 0, invuln: 0, upChain: 0, lastCube: -1, prevCube: -1, facing: 1 },
+        player: { r: 0, c: 0, hop: null, ride: null, dying: 0, invuln: 0, upChain: 0, lastCube: -1, prevCube: -1, facing: 1, lastLandDown: false },
         snakes: [], balls: [], runners: [], slicks: [],
         discs: [
             { x: -40, y: 34, v: 0.85, off: 0 },
@@ -119,7 +119,7 @@ function resetRound(gs) {
     gs.slickTimer = gs.level >= 3 ? 420 : 1e9
     gs.player.r = 0; gs.player.c = 0
     gs.player.hop = null; gs.player.ride = null; gs.player.dying = 0
-    gs.player.invuln = 40; gs.player.upChain = 0; gs.player.lastCube = -1; gs.player.prevCube = -1; gs.player.facing = 1
+    gs.player.invuln = 40; gs.player.upChain = 0; gs.player.lastCube = -1; gs.player.prevCube = -1; gs.player.facing = 1; gs.player.lastLandDown = false
     gs.colors[id(0, 0)] = flipTarget(gs)
     gs.lastLandTick = -1
     gs.pending = null; gs.phase = 'play'; gs.phaseT = 0
@@ -149,7 +149,9 @@ function hopTo(gs, tr, tc) {
 
 function land(gs, tr, tc, up) {
     const p = gs.player
+    const fromR = p.r
     p.r = tr; p.c = tc
+    p.lastLandDown = tr > fromR
     const cube = id(tr, tc)
     const to = cubeXY(tr, tc)
     gs.events.push({ t: 'land', cube, x: to.x, y: to.y })
