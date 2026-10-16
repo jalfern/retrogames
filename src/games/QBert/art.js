@@ -29,6 +29,28 @@ const px = (g, x, y, w, h, col) => { g.fillStyle = col; g.fillRect(Math.round(x)
 // cube top half-w / half-h for the iso diamond
 export const HW = 15, HH = 8
 
+// side-face depth: how far the sides run below the top diamond. The front
+// neighbour's top vertex sits one row-pitch (TILE_H) below ours at the same x,
+// so the sides must reach its top edge or the background shows through as a
+// seam between diagonally adjacent tops (the 1982 cabinet tiles contiguously).
+// 16 = pitch 15 + 1px anti-aliasing overlap; it also matches the original's
+// cube proportions (a cube as deep as its top is tall).
+export const CUBE_SIDE = 16
+
+// the tiling test, pure (no DOM): the minimum, across the side face, of
+// (our side-bottom edge) minus (the front neighbour's top edge). >= 0 tiles
+// contiguously; >= 1 leaves an AA overlap; < 0 is a background seam, widest at
+// the outer corner (x = 2*HW) where the front edge is lowest.
+export function sideMargin(d = CUBE_SIDE, pitch = 15) {
+    let m = Infinity
+    for (let x = HW; x <= HW * 2 + 1e-9; x += 0.5) {
+        const bottom = HH * 2 + d - (x - HW) * (HH / HW)
+        const front = pitch + (x - HW) * (HH / HW)
+        m = Math.min(m, bottom - front)
+    }
+    return m
+}
+
 // top color for a cube state: mode1 -> checker(0) or green(1); mode2 -> cycle
 export function cubeTopCol(mode, color, checker) {
     if (mode === 1) return color === 1 ? PAL.green : (checker ? PAL.blue : PAL.orange)
@@ -49,17 +71,17 @@ function shade(hex, k) {
 // one iso cube: diamond top + two side faces. Keyed by look, cached.
 export function cubeSprite(topCol, darkCol) {
     const key = `cube-${topCol}-${darkCol}`
-    return sprite(key, HW * 2, HH * 2 + 10, (g) => {
-        // sides
+    return sprite(key, HW * 2, HH * 2 + CUBE_SIDE, (g) => {
+        // sides (CUBE_SIDE deep: they must reach the front top edge, see above)
         g.fillStyle = PAL.side1
         g.beginPath()
-        g.moveTo(0, HH); g.lineTo(HW, HH * 2); g.lineTo(HW, HH * 2 + 10); g.lineTo(0, HH + 10)
+        g.moveTo(0, HH); g.lineTo(HW, HH * 2); g.lineTo(HW, HH * 2 + CUBE_SIDE); g.lineTo(0, HH + CUBE_SIDE)
         g.closePath(); g.fill()
         g.fillStyle = PAL.side2
         g.beginPath()
-        g.moveTo(HW * 2, HH); g.lineTo(HW, HH * 2); g.lineTo(HW, HH * 2 + 10); g.lineTo(HW * 2, HH + 10)
+        g.moveTo(HW * 2, HH); g.lineTo(HW, HH * 2); g.lineTo(HW, HH * 2 + CUBE_SIDE); g.lineTo(HW * 2, HH + CUBE_SIDE)
         g.closePath(); g.fill()
-        px(g, HW - 1, HH * 2, 1, 10, shade(PAL.side2, 0.75))
+        px(g, HW - 1, HH * 2, 1, CUBE_SIDE, shade(PAL.side2, 0.75))
         // top diamond
         g.fillStyle = topCol
         g.beginPath()

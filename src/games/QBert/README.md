@@ -65,8 +65,16 @@ the player actually gets, in plain Node.
   apex, the down-hop stretches, and a down-landing (the sim records
   `lastLandDown`, kept out of `stateHash`) plays the two-frame splayed squash
   for `BERT_LAND_TICKS` before idle. `qbertcheck` pins the schedule and every
-  pose's literal bounds — a flat pose set (no tuck, no stretch, no squash)
-  goes red.
+   pose's literal bounds — a flat pose set (no tuck, no stretch, no squash)
+   goes red.
+- The cube tops tile contiguously, the way the 1982 cabinet does: each iso
+   cube's side faces run `CUBE_SIDE` (16) below the top diamond — deep enough
+   to reach the front neighbour's top edge, which sits one row-pitch (15)
+   below at the same x. `sideMargin` in `art.js` is the pure coverage test
+   (the minimum of our side-bottom edge over the front top edge, across the
+   face); `qbertcheck` pins it >= 1px (an anti-aliasing overlap) and pins the
+   old 10px depth red — the shallow face left the background gradient showing
+   through as a seam at every cube's bottom corners.
 - Levels escalate snake count/speed and switch the flip mode, but there is no
   original point-value table match beyond the documented singles/roundtrip/heli.
   (1-UP every 10,000 is now in: a life per 10k boundary crossed, capped at 9.
