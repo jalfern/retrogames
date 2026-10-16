@@ -57,9 +57,11 @@ complete.
   **Policy lab** (`/lunar-lander?lab=1`): the exported network flies the real
   game live — sampled actions from a seeded RNG, sliders for start x and
   sideways speed, a CYCLE START button, and a generalisation heatmap
-  (start x × sideways −40..+40, one headless episode per cell, coloured
-  pad/off-pad/crash); clicking a cell flies that start. The banner reads
-  `PPO POLICY · LAB`.
+  (start x × sideways −40..+40): each cell shades red→green by the fraction of
+  **8 headless episodes** that end on a pad, the row under the x-axis marks the
+  five pads by position and value, and clicking a cell flies that start. The
+  whole lab (game + controls + map) fits a 1440×900 screen and ends above the
+  footer watermark band. Banner: `PPO POLICY · LAB`.
 
 ## Controls
 

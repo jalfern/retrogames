@@ -60,11 +60,13 @@ export function obsFrom(gs) {
 }
 
 // headless episode: fly the policy from a start point; returns the outcome tag
-export function episodeOutcome(policy, seed, x, vx, maxTicks = 1200) {
+export function episodeOutcome(policy, seed, x, vx, maxTicks = 1200, rngSeed = null) {
     const gs = makeGame(seed)
     gs.x = Math.max(20, Math.min(1008, x))
     gs.vx = vx
-    const rng = mulberry32((seed ^ Math.imul(Math.round(x), 7919) ^ Math.imul(Math.round(vx * 97), 104729)) >>> 0)
+    const rs = rngSeed !== null ? rngSeed >>> 0
+        : (seed ^ Math.imul(Math.round(x), 7919) ^ Math.imul(Math.round(vx * 97), 104729)) >>> 0
+    const rng = mulberry32(rs)
     for (let i = 0; i < maxTicks; i++) {
         const probs = policyProbs(policy, obsFrom(gs))
         const [rot, thrust] = BTN[ACTION_LABELS[sampleAction(probs, rng)]]
