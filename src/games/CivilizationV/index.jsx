@@ -1,11 +1,12 @@
-// CIVILIZATION V — Stage 6 "Wonders & Great People": the arcade shell.
+// CIVILIZATION V — Stage 7 "The World": the arcade shell.
 // The whole world is the pure sim in ./sim.js; the tilted 3D hex map is
 // ./art.js; the attract demo (and the harness witness) is the autopilot in
 // ./planner.js replayed tick-for-tick through the real step(). One
 // fixed-timestep loop owns the clock (the SimCity/heist lesson); React only
 // mirrors the HUD. Playable with mouse/touch: tap a tile to select your unit or
 // move it, tap END TURN (Space) to advance, E settles your settler, W opens
-// the WORK panel for a selected worker, drag to orbit, wheel/pinch to zoom.
+// the WORK panel for a selected worker, D opens DIPLOMACY (war/peace/trade and
+// the city-state courts), drag to orbit, wheel/pinch to zoom.
 // Art rule for 3D titles: render at screen res.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
@@ -15,7 +16,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf } from './sim.js'
 import { decide } from './planner.js'
 import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
 
@@ -43,6 +44,9 @@ const CivilizationVGame = () => {
     const [gpanel, setGpanel] = useState(null)
     const [gOpen, setGOpen] = useState(false)
     const gOpenRef = useRef(false)
+    const [dpanel, setDpanel] = useState(null)
+    const [dOpen, setDOpen] = useState(false)
+    const dOpenRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -80,7 +84,7 @@ const CivilizationVGame = () => {
                 if (e.type === 'found') { say(`${e.capital ? 'CAPITAL' : 'CITY'} ${gs.cities[e.city].name.toUpperCase()} FOUNDED`); audioController.playSweep(300, 720, 0.35, 'triangle', 0.09) }
                 else if (e.type === 'grow') { say(`${gs.cities[e.city].name.toUpperCase()} GROWS TO ${e.size}`); audioController.playTone(520 + e.size * 40, 0.06, 'square', 0.05) }
                 else if (e.type === 'deny') {
-                    if (e.reason && /requires/i.test(e.reason)) say(e.reason.toUpperCase())
+                    if (e.reason) say(e.reason.toUpperCase())
                     audioController.playTone(90, 0.09, 'square', 0.05)
                 }
                 else if (e.type === 'turnEnd' && e.civ === 0) { audioController.playTone(240, 0.03, 'sine', 0.03) }
@@ -107,7 +111,7 @@ const CivilizationVGame = () => {
                 }
                 else if (e.type === 'war') {
                     const foe = e.a === 0 ? e.b : e.a
-                    say(`${CIVS[foe].name} DECLARES WAR`)
+                    say(e.by === 0 ? `WAR DECLARED ON ${CIVS[foe].name}` : `${CIVS[foe].name} DECLARES WAR`)
                     audioController.playSweep(220, 90, 0.5, 'sawtooth', 0.08)
                 }
                 else if (e.type === 'capture') {
@@ -116,7 +120,7 @@ const CivilizationVGame = () => {
                     say(e.civ === 0 ? `${gs.cities[e.city].name.toUpperCase()} CAPTURED!` : `${gs.cities[e.city].name.toUpperCase()} HAS FALLEN!`)
                 }
                 else if (e.type === 'civDead') { say(`${CIVS[e.civ].name} IS NO MORE`); audioController.playDeath() }
-                else if (e.type === 'build') { if (e.civ === 0) { say(`${e.unit} TRAINED AT ${gs.cities[e.city].name.toUpperCase()}`); audioController.playTone(440, 0.05, 'square', 0.05) } }
+                else if (e.type === 'build') { if (e.civ === 0) { say(e.unit === 'GALLEY' ? 'A TRIREME TAKES THE WATER' : `${e.unit} TRAINED AT ${gs.cities[e.city].name.toUpperCase()}`); audioController.playTone(e.unit === 'GALLEY' ? 294 : 440, 0.05, 'square', 0.05) } }
                 else if (e.type === 'queued') { audioController.playTone(330, 0.03, 'sine', 0.03) }
                 else if (e.type === 'research' && e.civ === 0) { audioController.playTone(500, 0.03, 'sine', 0.03) }
                 else if (e.type === 'tech') {
@@ -167,6 +171,29 @@ const CivilizationVGame = () => {
                     else if (e.kind === 'ENGINEER') say('THE ENGINEER FINISHES THE JOB')
                     audioController.playSweep(523, 1046, 0.3, 'sine', 0.07)
                 }
+                else if (e.type === 'peace') {
+                    const other = e.a === 0 ? e.b : e.a
+                    say(`PEACE SIGNED WITH ${CIVS[other].name}`)
+                    audioController.playSweep(392, 587, 0.4, 'triangle', 0.07); audioController.playTone(784, 0.16, 'sine', 0.04)
+                }
+                else if (e.type === 'trade') {
+                    const other = e.a === 0 ? e.b : e.a
+                    say(`TRADE AGREEMENT WITH ${CIVS[other].name} · +${CFG.tradeGold} GOLD/TURN`)
+                    audioController.playSweep(494, 740, 0.35, 'triangle', 0.07)
+                }
+                else if (e.type === 'csMeet') {
+                    if (e.civ === 0) { say(`${CIVS[e.cs].name.toUpperCase()} — A COASTAL COURT RECOGNIZES ROME`); audioController.playSweep(330, 660, 0.3, 'sine', 0.06); audioController.playTone(880, 0.12, 'sine', 0.03) }
+                }
+                else if (e.type === 'csGift' && e.civ === 0) { say(`${CIVS[e.cs].name.toUpperCase()} · INFLUENCE ${e.influence}/${CFG.csAlly}`); audioController.playTone(587, 0.06, 'triangle', 0.05) }
+                else if (e.type === 'csAlly' && e.civ === 0) {
+                    say(`${CIVS[e.cs].name.toUpperCase()} ALLIES WITH ROME — ${CIVS[e.cs].allyDesc.toUpperCase()}`)
+                    audioController.playSweep(523, 1046, 0.5, 'triangle', 0.08); audioController.playTone(659, 0.2, 'sine', 0.05)
+                }
+                else if (e.type === 'csTaken') {
+                    say(`${CIVS[e.cs].name.toUpperCase()} HAS FALLEN${e.tribute ? ` · +${e.tribute} TRIBUTE` : ''}`)
+                    shake.v = 7
+                    audioController.playSweep(330, 110, 0.5, 'sawtooth', 0.08)
+                }
             }
         }
 
@@ -182,7 +209,7 @@ const CivilizationVGame = () => {
                     const i = nr * CFG.W + nc
                     if (ring.has(i)) continue
                     const tl = gs.tiles[i]
-                    if (tl.terr < T.GRASS || tl.terr > T.HILLS) continue
+                    if (sel.naval ? !(tl.terr === T.OCEAN || tl.terr === T.COAST) : (tl.terr < T.GRASS || tl.terr > T.HILLS)) continue
                     if (gs.units.some((u) => u.alive && u.c === nc && u.r === nr)) continue
                     if (tileBlocked(gs, nc, nr)) continue
                     ring.add(i); next.push([nc, nr])
@@ -242,6 +269,7 @@ const CivilizationVGame = () => {
             if (pOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshPPanel() }
             if (uOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshUPanel() }
             if (gOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshGPanel() }
+            if (dOpenRef.current && now - lastPanel > 200) { lastPanel = now; refreshDPanel() }
             const C = gs.civs[0]
             const cap = gs.cities.find((c) => c.civ === 0 && c.capital)
             const h = hud.current
@@ -256,7 +284,7 @@ const CivilizationVGame = () => {
                 const city = gs.cities.find((c) => c.civ === 0 && c.alive)
                 const q = city && city.queue && city.queue[0]
                 const qcost = q ? (UNIT[q] ? UNIT[q].cost : WONDER[q].cost) : 0
-                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · U wonders'
+                h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · N trireme · U wonders'
             }
             if (h.worker) {
                 const w = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'WORKER')
@@ -289,7 +317,12 @@ const CivilizationVGame = () => {
             }
             if (h.war) {
                 const w = [1, 2, 3].filter((i) => atWar(gs, 0, i)).map((i) => CIVS[i].name)
-                h.war.textContent = w.length ? `⚔ AT WAR: ${w.join(' ')}` : gs.camps.some((c) => c.alive) ? 'barbarian camps roam' : 'at peace'
+                const pacts = Object.keys(gs.trade).filter((k) => gs.trade[k]).length
+                const allies = CS_IDS.filter((id) => gs.cs[0][id] && gs.cs[0][id].ally).length
+                const metN = CS_IDS.filter((id) => gs.cs[0][id] && gs.cs[0][id].met).length
+                h.war.textContent = w.length
+                    ? `⚔ AT WAR: ${w.join(' ')}`
+                    : `${gs.camps.some((c) => c.alive) ? 'barbarian camps roam' : 'at peace'}${pacts ? ` · 🤝 pacts ${pacts}` : ''}${metN ? ` · ☘ ${metN}/${CS_IDS.length} courts${allies ? ` (${allies} allied)` : ''}` : ''}`
             }
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
@@ -326,6 +359,8 @@ const CivilizationVGame = () => {
             const cityHit = tl.city >= 0 && gs.cities[tl.city].alive && atWar(gs, 0, gs.cities[tl.city].civ)
             if (sel && sel.moves > 0 && sel.str > 0) {
                 const d = hexDist([sel.c, sel.r], [c, r])
+                if (cityHit && sel.naval) { say('PORTS YIELD TO LAND FORCES — BRING LEGIONS'); audioController.playTone(120, 0.06, 'square', 0.04); return }
+                if (hostile && sel.naval && !hostile.naval) { say('THE TRIREME RULES THE SEA — ONLY SHIPS FIGHT SHIPS'); audioController.playTone(120, 0.06, 'square', 0.04); return }
                 if ((hostile || campHit || cityHit) && d >= 1 && d <= Math.max(1, UNIT[sel.kind].range)) {
                     pending = { attack: [c, r] }
                     audioController.playTone(hostile || cityHit ? 180 : 260, 0.05, 'square', 0.05)
@@ -495,7 +530,66 @@ const CivilizationVGame = () => {
             closeGPanel()
             audioController.playSweep(523, 1046, 0.24, 'triangle', 0.06)
         }
-        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP }
+        const refreshDPanel = () => {
+            setDpanel({
+                gold: gs.civs[0].gold,
+                rivals: CIVS.filter((c) => !c.barb && !c.cs && c.id !== 0).map((c) => ({
+                    id: c.id, name: c.name, hex: c.hex,
+                    war: atWar(gs, 0, c.id),
+                    trade: !!gs.trade[Math.min(0, c.id) + '-' + Math.max(0, c.id)],
+                    declareWhy: canDeclareWar(gs, 0, c.id),
+                    peaceWhy: canMakePeace(gs, 0, c.id),
+                    tradeWhy: canTrade(gs, 0, c.id),
+                })),
+                states: CIVS.filter((c) => c.cs).map((c) => {
+                    const info = csInfo(gs, 0, c.id)
+                    const alive = gs.civs[c.id].alive
+                    return {
+                        id: c.id, name: c.name, hex: c.hex, desc: c.allyDesc, alive,
+                        met: !!(info && info.met), ally: !!(info && info.ally),
+                        influence: info ? info.influence : 0,
+                        giftWhy: canGift(gs, 0, c.id),
+                    }
+                }),
+                pacts: Object.keys(gs.trade).filter((k) => gs.trade[k]).length,
+            })
+        }
+        const closeDPanel = () => { dOpenRef.current = false; setDOpen(false); audioController.playTone(240, 0.04, 'sine', 0.04) }
+        const toggleDPanel = () => {
+            dOpenRef.current = !dOpenRef.current
+            setDOpen(dOpenRef.current)
+            if (dOpenRef.current) refreshDPanel()
+            audioController.playTone(dOpenRef.current ? 392 : 240, 0.04, 'sine', 0.04)
+        }
+        const pickDeclare = (id) => {
+            const why = canDeclareWar(gs, 0, id)
+            if (why !== true) { say(why.toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            pending = { ...pending, declare: id }
+            closeDPanel()
+            audioController.playSweep(330, 130, 0.35, 'sawtooth', 0.06)
+        }
+        const pickPeace = (id) => {
+            const why = canMakePeace(gs, 0, id)
+            if (why !== true) { say(why.toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            pending = { ...pending, peace: id }
+            refreshDPanel()
+            audioController.playSweep(392, 587, 0.25, 'triangle', 0.05)
+        }
+        const pickTrade = (id) => {
+            const why = canTrade(gs, 0, id)
+            if (why !== true) { say(why.toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            pending = { ...pending, trade: id }
+            refreshDPanel()
+            audioController.playSweep(494, 740, 0.22, 'triangle', 0.05)
+        }
+        const pickGift = (id) => {
+            const why = canGift(gs, 0, id)
+            if (why !== true) { say(why.toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            pending = { ...pending, gift: id }
+            refreshDPanel()
+            audioController.playTone(587, 0.08, 'triangle', 0.05)
+        }
+        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP, toggleDPanel, closeDPanel, pickDeclare, pickPeace, pickTrade, pickGift }
 
         let drag = null
         const onDown = (e) => {
@@ -515,16 +609,18 @@ const CivilizationVGame = () => {
             if (e.code === 'KeyC') { pending = { ...pending, queue: 'CATAPULT' }; audioController.playTone(250, 0.03, 'sine', 0.03); return }
             if (e.code === 'KeyV') { pending = { ...pending, queue: 'LEGION' }; audioController.playTone(210, 0.03, 'square', 0.03); return }
             if (e.code === 'KeyH') { pending = { ...pending, queue: 'CHARIOT' }; audioController.playTone(270, 0.03, 'triangle', 0.03); return }
+            if (e.code === 'KeyN') { pending = { ...pending, queue: 'GALLEY' }; audioController.playTone(230, 0.03, 'sine', 0.03); return }
             if (e.code === 'KeyT') { if (screenRef.current === 'play') togglePanel(); return }
             if (e.code === 'KeyR') { if (screenRef.current === 'play') researchNext(); return }
             if (e.code === 'KeyW') { if (screenRef.current === 'play') toggleWPanel(); return }
             if (e.code === 'KeyP') { if (screenRef.current === 'play') togglePPanel(); return }
             if (e.code === 'KeyU') { if (screenRef.current === 'play') toggleUPanel(); return }
             if (e.code === 'KeyG') { if (screenRef.current === 'play') toggleGPanel(); return }
+            if (e.code === 'KeyD') { if (screenRef.current === 'play') toggleDPanel(); return }
             if (e.code === 'KeyF') { if (screenRef.current === 'play') pickImprove('FARM'); return }
             if (e.code === 'KeyM') { if (screenRef.current === 'play') pickImprove('MINE'); return }
             if (e.code === 'KeyO') { if (screenRef.current === 'play') pickImprove('ROAD'); return }
-            if (e.code === 'Escape') { if (panelOpenRef.current) closePanel(); if (wOpenRef.current) closeWPanel(); if (pOpenRef.current) closePPanel(); if (uOpenRef.current) closeUPanel(); if (gOpenRef.current) closeGPanel(); return }
+            if (e.code === 'Escape') { if (panelOpenRef.current) closePanel(); if (wOpenRef.current) closeWPanel(); if (pOpenRef.current) closePPanel(); if (uOpenRef.current) closeUPanel(); if (gOpenRef.current) closeGPanel(); if (dOpenRef.current) closeDPanel(); return }
             if (e.code === 'ArrowLeft') { cam.az -= 0.12; return }
             if (e.code === 'ArrowRight') { cam.az += 0.12; return }
             if (e.code === 'ArrowUp') { cam.el = Math.min(1.4, cam.el + 0.06); return }
@@ -578,6 +674,7 @@ const CivilizationVGame = () => {
                     land: { imps: gs.tiles.filter((t) => t.imp).length, roads: gs.tiles.filter((t) => t.road).length, connected: connectedResources(gs, 0), revealed: gs.tiles.filter((t, i) => resRevealed(gs, 0, i)).length },
                     happy: happinessOf(gs, 0), policies: POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)), culturePool: Math.floor(gs.civs[0].culture || 0),
                     wonders: WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => ({ id, by: gs.wonders[id] })),
+                    world: { cities: CIVS.filter((c) => c.cs).map((c) => ({ id: c.id, name: c.name, alive: gs.civs[c.id].alive, c: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.c ?? -1, r: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.r ?? -1 })), rome: CS_IDS.map((id) => ({ cs: id, ...(csInfo(gs, 0, id) || { met: false, influence: 0, ally: false }) })), pacts: Object.keys(gs.trade).filter((k) => gs.trade[k]), wars: Object.keys(gs.wars), truce: Object.keys(gs.peaceTurn), naval: gs.units.filter((u) => u.alive && u.civ === 0 && u.naval).map((u) => ({ id: u.id, c: u.c, r: u.r })), coastal: !!coastalCityOf(gs, 0) },
                     gp: GP_TYPES.map((t) => ({ t, pts: Math.floor(gs.gp[0].pts[t]), need: gpThreshold(gs, 0, t), held: gs.gp[0].held[t], ready: gpReady(gs, 0, t), cost: gpCost(gs, 0, t) })),
                     owned: gs.tiles.filter((t) => t.owner === 0).length,
                     explored0: countArr(gs.explored[0]) }),
@@ -589,6 +686,10 @@ const CivilizationVGame = () => {
                 policy: (id) => { pending = { ...pending, policy: id } },
                 recruit: (t) => { pending = { ...pending, recruit: t } },
                 useGP: (kind) => { pending = { ...pending, useGP: { kind } } },
+                declare: (civ) => { pending = { ...pending, declare: civ } },
+                peace: (civ) => { pending = { ...pending, peace: civ } },
+                trade: (civ) => { pending = { ...pending, trade: civ } },
+                gift: (cs) => { pending = { ...pending, gift: cs } },
                 auto: (turns = 100) => { let n = 0; while (!gs.end && n < turns * 400 && screenRef.current === 'play') { doSim(decide(gs)); n++ } return { end: gs.end, turns: gs.turn, size: capSize() } },
                 turn: () => { const t0 = gs.turn; let n = 0; while (gs.turn === t0 && !gs.end && screenRef.current === 'play' && n++ < 800) doSim(decide(gs)); return { turn: gs.turn, end: gs.end, size: capSize() } },
             }
@@ -603,6 +704,7 @@ const CivilizationVGame = () => {
                     `land: workers ${gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').length}  improvements ${gs.tiles.filter((t) => t.imp).length}  roads ${gs.tiles.filter((t) => t.road).length}  connected ${connectedResources(gs, 0).join(',') || 'none'}`,
                     `happiness ${(() => { const hs = happinessOf(gs, 0); return `${hs.net} (${hs.net >= 1 ? 'happy' : hs.net < 0 ? 'UNHAPPY' : 'content'}) lux ${hs.lux} cities ${hs.cities} wars ${hs.wars}` })()}  policies ${POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)).join(',') || 'none'}  culture pool ${Math.floor(gs.civs[0].culture || 0)}  owned ${gs.tiles.filter((t) => t.owner === 0).length}`,
                     `wonders ${WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => id + '→' + CIVS[gs.wonders[id]].name).join(',') || 'none'}  gp ${GP_TYPES.map((t) => `${t[0]}:${Math.floor(gs.gp[0].pts[t])}/${gpThreshold(gs, 0, t)}${gs.gp[0].held[t] ? `(${gs.gp[0].held[t]} held)` : ''}`).join(' ')}`,
+                    `world: courts ${CS_IDS.map((id) => { const i = csInfo(gs, 0, id); return CIVS[id].name[0] + ':' + (i ? (i.ally ? 'ally' : i.met ? String(i.influence) : '?') : '-') }).join(' ')}  pacts ${Object.keys(gs.trade).filter((k) => gs.trade[k]).join(',') || 'none'}  wars ${Object.keys(gs.wars).join(',') || 'none'}  galleys ${gs.units.filter((u) => u.alive && u.civ === 0 && u.naval).length}  coastal ${coastalCityOf(gs, 0) ? 'yes' : 'no'}`,
                     `selected ${gs.selected}  tick ${gs.tick}`,
                 ],
                 actions: [
@@ -619,6 +721,10 @@ const CivilizationVGame = () => {
                     { label: 'RECRUIT GP', run: () => { for (const t of GP_TYPES) { const why = canRecruit(gs, 0, t); if (why === true) { pending = { ...pending, recruit: t }; return `will recruit ${GP[t].name} for ${gpCost(gs, 0, t)} gold (${GP[t].effect})` } } return 'nothing recruitable: fill a point bar (G) and pay the gold' } },
                     { label: 'EXPULSE GP', run: () => { for (const t of GP_TYPES) { const why = canUseGP(gs, 0, t); if (why === true) { pending = { ...pending, useGP: { kind: t } }; return `will spend the ${GP[t].name} (${GP[t].effect})` } } return 'no great person in hand — recruit one on G' } },
                     { label: 'QUEUE WONDER', run: () => { const cap = gs.cities.find((c) => c.civ === 0 && c.alive); if (!cap) return 'found a city first'; for (const id of WONDER_IDS) { const why = canBuildWonder(gs, 0, id); if (why === true && !cap.queue.includes(id)) { pending = { ...pending, queue: id }; return `will queue ${WONDER[id].name} (${WONDER[id].cost} shields, ${WONDER[id].effect})` } else if (why === true) return `${WONDER[id].name} is already queued` } return 'no wonder is unlocked yet: research its tech (T)' } },
+                    { label: 'GIFT CITY-STATE', run: () => { for (const id of CS_IDS) { const why = canGift(gs, 0, id); if (why === true) { pending = { ...pending, gift: id }; return `will gift ${CIVS[id].name} ${CFG.csGift} gold (+${CFG.csInfl} influence, ally at ${CFG.csAlly})` } else if (csInfo(gs, 0, id) && csInfo(gs, 0, id).met) return why } return 'no court is open yet: walk a unit beside a city-state capital' } },
+                    { label: 'TRADE PACT', run: () => { for (const c of [1, 2, 3]) { if (!gs.civs[c].alive) continue; const why = canTrade(gs, 0, c); if (why === true) { pending = { ...pending, trade: c }; return `will sign a trade pact with ${CIVS[c].name} (+${CFG.tradeGold}g/turn)` } else if (!atWar(gs, 0, c)) return `${CIVS[c].name}: ${why}` } return 'every neighbour is at war: make peace on D first' } },
+                    { label: 'MAKE PEACE', run: () => { for (const c of [1, 2, 3]) if (atWar(gs, 0, c)) { pending = { ...pending, peace: c }; return `will sue for peace with ${CIVS[c].name}` } return 'Rome is not at war with any empire' } },
+                    { label: 'QUEUE TRIREME', run: () => { const c = coastalCityOf(gs, 0); if (!c) return 'no coastal city yet: settle beside the sea'; pending = { ...pending, queue: 'GALLEY' }; return `will launch a Trireme from ${c.name} (needs Bronze Working)` } },
                     { label: 'HEAL ALL', run: () => { gs.units.filter((u) => u.alive && u.civ === 0).forEach((u) => { u.hp = 100 }); return 'legions made whole' } },
                 ],
             })
@@ -672,6 +778,7 @@ const CivilizationVGame = () => {
                     <button onClick={() => actRef.current.togglePPanel && actRef.current.togglePPanel()} className="pointer-events-auto border border-violet-300/50 rounded px-2 py-0.5 bg-black/40 text-violet-100 text-[11px]">P · POLICY</button>
                     <button onClick={() => actRef.current.toggleUPanel && actRef.current.toggleUPanel()} className="pointer-events-auto border border-amber-300/50 rounded px-2 py-0.5 bg-black/40 text-amber-100 text-[11px]">U · WONDERS</button>
                     <button onClick={() => actRef.current.toggleGPanel && actRef.current.toggleGPanel()} className="pointer-events-auto border border-rose-300/50 rounded px-2 py-0.5 bg-black/40 text-rose-100 text-[11px]">G · LEGENDS</button>
+                    <button onClick={() => actRef.current.toggleDPanel && actRef.current.toggleDPanel()} className="pointer-events-auto border border-teal-300/50 rounded px-2 py-0.5 bg-black/40 text-teal-100 text-[11px]">D · DIPLOMACY</button>
                     <span ref={setHud('sel')} className="text-white/70 ml-auto">tap a unit</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, color: '#ffe9a8', textShadow: '0 0 12px #c80' }} />
@@ -831,15 +938,59 @@ const CivilizationVGame = () => {
                 </div>
             )}
 
+            {screen === 'play' && dOpen && dpanel && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none" onPointerDown={(e) => e.stopPropagation()}>
+                    <div className="pointer-events-auto max-h-[88vh] overflow-y-auto w-[min(94vw,760px)] rounded-lg border border-teal-300/40 bg-[#071210]/95 shadow-[0_18px_60px_#000] px-4 py-3 font-mono text-teal-100">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <h3 className="text-lg font-black tracking-[0.25em] text-teal-300">DIPLOMACY</h3>
+                            <div className="text-[11px] text-teal-200/80">◈ {dpanel.gold} gold · 🤝 {dpanel.pacts} pact{dpanel.pacts === 1 ? '' : 's'}</div>
+                            <button onClick={() => actRef.current.closeDPanel && actRef.current.closeDPanel()} className="text-[11px] border border-teal-300/40 rounded px-2 py-0.5 hover:bg-teal-300/10">CLOSE ✕</button>
+                        </div>
+                        <div className="text-[10px] tracking-[0.3em] text-teal-400/80 border-b border-teal-300/20 pb-1 mb-2">EMPIRES</div>
+                        {dpanel.rivals.map((r) => (
+                            <div key={r.id} className={`mb-1.5 rounded border px-2 py-1.5 ${r.war ? 'border-red-400/50 bg-red-950/40' : r.trade ? 'border-emerald-400/50 bg-emerald-950/40' : 'border-white/15 bg-black/30'}`}>
+                                <div className="flex justify-between items-center text-[12px] font-bold">
+                                    <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5 align-middle" style={{ background: r.hex }} />{r.name}
+                                        <span className={`ml-2 text-[10px] ${r.war ? 'text-red-300' : r.trade ? 'text-emerald-300' : 'text-white/50'}`}>{r.war ? '⚔ AT WAR' : r.trade ? `🤝 TRADE +${CFG.tradeGold}g/turn` : 'at peace'}</span>
+                                    </span>
+                                    <span className="flex gap-1">
+                                        {!r.war && <button onClick={() => actRef.current.pickDeclare && actRef.current.pickDeclare(r.id)} className={`text-[10px] border rounded px-2 py-0.5 ${r.declareWhy === true ? 'border-red-300 bg-red-900/50 hover:bg-red-800/50 text-red-100' : 'border-white/15 text-white/30'}`}>DECLARE WAR</button>}
+                                        {r.war && <button onClick={() => actRef.current.pickPeace && actRef.current.pickPeace(r.id)} className={`text-[10px] border rounded px-2 py-0.5 ${r.peaceWhy === true ? 'border-teal-300 bg-teal-900/50 hover:bg-teal-800/50 text-teal-100' : 'border-white/15 text-white/30'}`}>MAKE PEACE</button>}
+                                        {!r.war && !r.trade && <button onClick={() => actRef.current.pickTrade && actRef.current.pickTrade(r.id)} className={`text-[10px] border rounded px-2 py-0.5 ${r.tradeWhy === true ? 'border-emerald-300 bg-emerald-900/50 hover:bg-emerald-800/50 text-emerald-100' : 'border-white/15 text-white/30'}`}>TRADE +{CFG.tradeGold}g</button>}
+                                    </span>
+                                </div>
+                                {r.war && r.peaceWhy !== true && <div className="text-[10px] text-red-300/70 mt-0.5">{r.peaceWhy}</div>}
+                                {!r.war && !r.trade && r.tradeWhy !== true && <div className="text-[10px] text-teal-200/50 mt-0.5">{r.tradeWhy}</div>}
+                            </div>
+                        ))}
+                        <div className="text-[10px] tracking-[0.3em] text-teal-400/80 border-b border-teal-300/20 pb-1 mb-2 mt-3">CITY-STATES · gifts {CFG.csGift}g → +{CFG.csInfl} influence · alliance at {CFG.csAlly}</div>
+                        {dpanel.states.map((s) => (
+                            <div key={s.id} className={`mb-1.5 rounded border px-2 py-1.5 ${s.ally ? 'border-yellow-300/60 bg-yellow-900/25' : s.met ? 'border-teal-300/50 bg-teal-900/25' : 'border-white/10 bg-black/30 text-white/35'}`}>
+                                <div className="flex justify-between items-center text-[12px] font-bold">
+                                    <span><span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5 align-middle" style={{ background: s.hex }} />{s.name}
+                                        {!s.alive ? <span className="ml-2 text-[10px] text-red-400">FALLEN</span> : s.ally ? <span className="ml-2 text-[10px] text-yellow-300">☘ ALLY — {s.desc}</span> : s.met ? <span className="ml-2 text-[10px] text-teal-300">court open</span> : <span className="ml-2 text-[10px] opacity-60">unexplored coast</span>}
+                                    </span>
+                                    {s.met && !s.ally && s.alive && <button onClick={() => actRef.current.pickGift && actRef.current.pickGift(s.id)} className={`text-[10px] border rounded px-2 py-0.5 ${s.giftWhy === true ? 'border-yellow-300 bg-yellow-800/50 hover:bg-yellow-700/50 text-yellow-100' : 'border-white/15 text-white/30'}`}>GIFT ◈{CFG.csGift}</button>}
+                                </div>
+                                {s.met && s.alive && <div className="h-1 rounded bg-black/60 mt-1"><div className={`h-full ${s.ally ? 'bg-yellow-300' : 'bg-teal-300'}`} style={{ width: `${Math.min(100, Math.round((s.influence / CFG.csAlly) * 100))}%` }} /></div>}
+                                {s.met && !s.ally && s.alive && <div className="text-[9px] opacity-60 mt-0.5">influence {s.influence}/{CFG.csAlly}{s.giftWhy !== true ? ` · ${s.giftWhy}` : ''}</div>}
+                            </div>
+                        ))}
+                        <div className="text-[10px] text-teal-200/60 mt-2">send a unit beside a city-state to open its court · peace must hold {CFG.peaceCool} turns before trade · galleys need a coastal city (N) · D closes</div>
+                    </div>
+                </div>
+            )}
+
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-5xl font-black tracking-wide" style={{ color: '#e8c56a', textShadow: '0 2px 0 #6b4a12, 0 10px 26px #000' }}>CIVILIZATION</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">STAGE 6 · WONDERS & GREAT PEOPLE</p>
+                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">STAGE 7 · THE WORLD</p>
                     <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
                     <p className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-4">
-                        six real wonders — the first civ to finish one takes it forever; U opens WONDERS and queues them in your capital<br />
-                        cities bank engineer, scientist &amp; merchant points — G recruits legends: instant build, instant tech, +200 gold<br />
-                        borders creep, the people judge, culture buys government — every ledger from the earlier stages still runs<br />
+                        the world beyond your border: Tyre and Venice wait on the coast — reach them, gift them, ally them<br />
+                        D opens DIPLOMACY: declare war, sign peace, trade +3 gold a turn once peace has held three turns<br />
+                        N launches the Trireme from any coastal city — ships rule the sea, and only ships can fight ships<br />
+                        wonders, legends, borders, policies — every ledger from the earlier stages still runs<br />
                         tap a tile to move · E settles · W works the land · T researches · Space ends the turn<br />
                         grow your capital to size {GOAL}, or take every rival capital for DOMINATION · turn limit {CFG.turnLimit}<br />
                         drag to orbit the world · wheel or pinch to zoom · the demo is the autopilot&apos;s own proven campaign
@@ -851,13 +1002,13 @@ const CivilizationVGame = () => {
                 <div className="absolute inset-0 bg-black/72 flex flex-col items-center justify-center text-amber-50 font-mono px-6">
                     <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? (end.domination ? 'DOMINATION' : 'AN AGE OF GOLD') : 'HISTORY PASSED YOU BY'}</h2>
                     <p className="text-lg mb-1">{end.win ? (end.domination ? 'Every rival capital flies your colours.' : `Your capital reached size ${end.size} by turn ${end.turn}`) : `${end.why}`}</p>
-                    <p className="text-sm text-amber-200/80 mb-4">The age of reason dawns. City-states, naval diplomacy and the later eras — science and culture victories — are the next stages.</p>
+                    <p className="text-sm text-amber-200/80 mb-4">The world turns. Later eras and the science &amp; culture victories — plus galleons that raid from the sea — are the final stage.</p>
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'CIVILIZATION V')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused && !panelOpen && !wOpen && !pOpen && !uOpen && !gOpen} secondAction={{ label: 'E', code: 'KeyE' }} />
+            <VirtualControls visible={play && !paused && !panelOpen && !wOpen && !pOpen && !uOpen && !gOpen && !dOpen} secondAction={{ label: 'E', code: 'KeyE' }} />
         </div>
     )
 }

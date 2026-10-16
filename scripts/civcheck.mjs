@@ -1190,6 +1190,11 @@ console.log('30. diplomacy')
     eq(canMakePeace(gs, 0, 1), 'not at war', 'no truce without a war')
     eq(canMakePeace(gs, 0, BARB), 'no truce with barbarians', 'barbarians sit outside the table')
     ok(gs.peaceTurn['0-1'] != null, 'the peace clock starts ticking')
+    const truceWhy = canDeclareWar(gs, 0, 1)
+    ok(typeof truceWhy === 'string' && /truce/.test(truceWhy), 'a fresh truce forbids an instant re-declaration')
+    gs.peaceTurn['0-1'] = gs.turn - CFG.peaceCool
+    eq(canDeclareWar(gs, 0, 1), true, 'once the truce has aged, the war option returns')
+    gs.peaceTurn['0-1'] = gs.turn
     eq(canTrade(gs, 0, 1), `peace must hold ${CFG.peaceCool} turns first (${CFG.peaceCool} to go)`, 'fresh peace is not yet a trade route')
     gs.peaceTurn['0-1'] = gs.turn - CFG.peaceCool
     eq(canTrade(gs, 0, 1), true, 'after three honest turns of peace the market opens')

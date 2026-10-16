@@ -251,6 +251,8 @@ export function canDeclareWar(gs, a, b) {
     if (a === BARB || b === BARB) return 'barbarians need no declaration'
     if (!gs.civs[b] || !gs.civs[b].alive) return 'they are already gone'
     if (atWar(gs, a, b)) return 'already at war'
+    const pt = gs.peaceTurn[Math.min(a, b) + '-' + Math.max(a, b)]
+    if (pt != null && gs.turn - pt < CFG.peaceCool) return `truce holds ${CFG.peaceCool - (gs.turn - pt)} more turn${CFG.peaceCool - (gs.turn - pt) === 1 ? '' : 's'}`
     return true
 }
 export function canMakePeace(gs, a, b) {
@@ -1452,7 +1454,7 @@ function aiTurn(gs, civ) {
     if (!warring && gs.turn >= CFG.warDeclareTurn) {
         const power = gs.units.filter((u) => u.alive && u.civ === civ && u.str > 0).length
         const cities = gs.cities.filter((c) => c.alive && c.civ === civ).length
-        if (power + cities >= 5 && hash2(civ, gs.turn, gs.seed ^ 0x9e37) < CFG.warChance) declareWar(gs, civ, 0)
+        if (power + cities >= 5 && hash2(civ, gs.turn, gs.seed ^ 0x9e37) < CFG.warChance && canDeclareWar(gs, civ, 0) === true) declareWar(gs, civ, 0)
     }
     // Stage 7 diplomacy: sue for peace when outmatched or the clock bites,
     // sign trade when peace has held long enough. Same law as the D panel.
