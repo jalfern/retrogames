@@ -20,10 +20,10 @@ import { makeGame, step, stateHash, CFG, doorAt } from './sim.js'
 import { plan, decide } from './planner.js'
 import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
+import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
 
-const VW = 256, VH = 200, PW = 64, HT = 40
+const PW = 64, HT = 40
 const CW = VW + PW, CH = VH + HT
-const PX = 16
 const SIM_MS = 1000 / 60
 let proven = null
 const provenRun = () => { if (!proven) proven = plan(2, { topDown: true, maxTicks: 60000 }); return proven }
@@ -164,9 +164,7 @@ const GauntletGame = () => {
         const drawView = () => {
             const h = gs.hero
             const mat = MATERIALS[gs.levelData.material]
-            let camX = h.x * PX - VW / 2, camY = h.y * PX - VH / 2
-            camX = Math.max(0, Math.min(W * PX - VW, camX))
-            camY = Math.max(0, Math.min(H * PX - VH, camY))
+            const { camX, camY } = viewRect(h)
             ctx.fillStyle = '#05050c'
             ctx.fillRect(0, 0, VW, VH)
             const c0 = Math.floor(camX / PX), r0 = Math.floor(camY / PX)
@@ -303,22 +301,34 @@ const GauntletGame = () => {
             ctx.fillRect(VW, 0, PW, VH)
             ctx.strokeStyle = '#2b3348'
             ctx.strokeRect(VW + 0.5, 0.5, PW - 1, VH - 1)
-            const px = VW + 8, py = 8, s = 2
+            const px = VW + MAP_MARGIN, py = MAP_MARGIN, s = MAP_CELL
             ctx.fillStyle = '#05050c'
             ctx.fillRect(px - 2, py - 2, W * s + 4, H * s + 4)
+            const h = gs.hero
             const map = gs.explored[gs.level]
             for (let r = 0; r < H; r++) {
                 for (let c = 0; c < W; c++) {
                     if (!map[r * W + c]) continue
                     const ch = gs.levelData.grid[r][c]
-                    ctx.fillStyle = ch === '#' ? '#4a5568'
-                        : ch === 'X' ? ((gs.tick >> 3) % 2 === 0 ? '#54c8ff' : '#1d5a7d')
-                            : ch === 'D' ? '#c96a3a'
-                                : ch === 'L' ? '#ffd23f' : '#1a2436'
+                    const pulse = ch === 'X' ? stairsPulse(gs.keys, gs.tick) : null
+                    if (pulse !== null) {
+                        // keys held: the stairs pulse gold, ringing past the cell at the peak
+                        if (pulse > 0.75) { ctx.fillStyle = 'rgba(255,210,63,0.55)'; ctx.fillRect(px + c * s - 1, py + r * s - 1, s + 2, s + 2) }
+                        ctx.fillStyle = pulse > 0.75 ? '#fff2b0' : pulse > 0.25 ? '#ffd23f' : '#8a5f16'
+                    } else {
+                        ctx.fillStyle = ch === '#' ? '#4a5568'
+                            : ch === 'X' ? ((gs.tick >> 3) % 2 === 0 ? '#54c8ff' : '#1d5a7d')
+                                : ch === 'D' ? '#c96a3a'
+                                    : ch === 'L' ? '#ffd23f' : '#1a2436'
+                    }
                     ctx.fillRect(px + c * s, py + r * s, s, s)
                 }
             }
-            const h = gs.hero
+            // the beasts the view shows: red roamers, Death in his green
+            for (const m of mapMonsters(gs, viewRect(h))) {
+                ctx.fillStyle = m.kind === 'death' ? '#8fff9f' : '#ff5d5d'
+                ctx.fillRect(px + m.x * s - 1, py + m.y * s - 1, s, s)
+            }
             ctx.fillStyle = '#ff5d5d'
             ctx.fillRect(px + h.x * s - 1, py + h.y * s - 1, 2, 2)
             const hy = VH - 58
@@ -399,7 +409,7 @@ const GauntletGame = () => {
                 ctx.fillRect(0, 0, CW, CH)
                 text(gs.end === 'win' ? 'THE GAUNTLET IS DONE!' : 'THE MAZE CLAIMS YOU', CW / 2, 96, 18, gs.end === 'win' ? '#5dff8f' : '#ff5d5d', 10)
                 text(`SCORE ${String(gs.score).padStart(6, '0')}  GOLD ${gs.gold}`, CW / 2, 122, 10, '#ffd23f', 4)
-                text(gs.end === 'win' ? `${HEROES[gs.heroKey].WHO} SURVIVES ALL FOUR MAZES` : `${HEROES[gs.heroKey].WHO} IS DEAD`, CW / 2, 140, 8, '#8fa3d8')
+                text(gs.end === 'win' ? `${HEROES[gs.heroKey].who} SURVIVES ALL FOUR MAZES` : `${HEROES[gs.heroKey].who} IS DEAD`, CW / 2, 140, 8, '#8fa3d8')
                 if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY', CW / 2, 168, 9, '#e9f7ff', 4)
             }
             ctx.fillStyle = 'rgba(0,0,0,0.12)'
@@ -432,7 +442,7 @@ const GauntletGame = () => {
             gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn, topDown: true })
             gs.partnerOn = pOn
             setMode('play')
-            say(`${HEROES[hk].WHO} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · /, '')}`)
+            say(`${HEROES[hk].who} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · THE /, '')}`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
         }
         const onKeyDown = (ev) => {
