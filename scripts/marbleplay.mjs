@@ -28,23 +28,40 @@ await page.keyboard.up('ArrowDown')
 st = await page.evaluate(() => { const g = window.__marble.getGs(); return { lives: g.lives, deaths: g.deaths, phase: g.phase } })
 ok('rolling east off the practice lip costs a life', st.lives <= 2 && st.deaths >= 1, JSON.stringify(st))
 
-// sprite matches logical state: sample the pixel the iso projection predicts
-const px = await page.evaluate(() => {
-    const g = window.__marble.getGs()
+// the follow camera (#265) zooms the course ~2x and scrolls it, so 10 world
+// tiles apart must span a large screen distance (the old diorama mapped 10
+// tiles to ~67px; the camera maps them to ~134px). Translation-invariant, so
+// this is a pure zoom test — it goes red if the ZOOM is removed.
+const zoom = await page.evaluate(() => {
+    const ts = window.__marble.toScreen
+    const a = ts(10, 10, 0)
+    const b = ts(20, 10, 0)
+    return Math.hypot(b[0] - a[0], b[1] - a[1])
+})
+ok('camera zooms the course (no diorama)', zoom > 100, `10 tiles ≈ ${Math.round(zoom)}px`)
+
+// sprite matches the camera: the painter holds the marble at the anchor, so the
+// drawn red body must sit where marblePx() says (retry across a blink frame).
+const px = await page.evaluate(async () => {
     const c = document.querySelector('canvas')
     const ctx = c.getContext('2d')
-    const sx = 256 + (g.m.x - g.m.y) * 6
-    const sy = 118 + (g.m.x + g.m.y) * 3 - g.m.z * 5 - 5
-    if (g.phase === 'dying') return { ok: true, why: 'dying — sprite hidden by design' }
-    for (let dy = -4; dy <= 4; dy++) {
-        for (let dx = -4; dx <= 4; dx++) {
-            const d = ctx.getImageData(Math.round(sx + dx), Math.round(sy + dy), 1, 1).data
-            if (d[0] > 150 && d[0] > d[1] + 40 && d[1] < 120) return { ok: true, why: `red at ${Math.round(sx)},${Math.round(sy)}` }
+    for (let attempt = 0; attempt < 8; attempt++) {
+        if (window.__marble.getGs().phase === 'dying') return { ok: true, why: 'dying — sprite hidden by design' }
+        const { x: sx, y: sy } = window.__marble.marblePx()
+        for (let dy = -11; dy <= 11; dy++) {
+            for (let dx = -11; dx <= 11; dx++) {
+                const X = Math.round(sx + dx), Y = Math.round(sy + dy)
+                if (X < 0 || Y < 0 || X >= c.width || Y >= c.height) continue
+                const d = ctx.getImageData(X, Y, 1, 1).data
+                if (d[0] > 150 && d[0] > d[1] + 40 && d[1] < 120) return { ok: true, why: `red at ${Math.round(sx)},${Math.round(sy)}` }
+            }
         }
+        await new Promise((r) => setTimeout(r, 40))
     }
-    return { ok: false, why: `no red near ${Math.round(sx)},${Math.round(sy)} (pos ${g.m.x.toFixed(1)},${g.m.y.toFixed(1)} z ${g.m.z.toFixed(1)})` }
+    const { x: sx, y: sy } = window.__marble.marblePx()
+    return { ok: false, why: `no red near the marble anchor ${Math.round(sx)},${Math.round(sy)}` }
 })
-ok('drawn marble sits where the state says', px.ok, px.why)
+ok('drawn marble sits where the camera says', px.ok, px.why)
 
 // game-over restart path: burn lives through the hook-free route is slow, so
 // check the OVER banner logic by draining time-free deaths via respawn state
