@@ -1,77 +1,81 @@
-# STATE — 2026-10-15 (forge session, PoP Stage 9 shipped: two-source light, moonlit palace)
+# STATE — 2026-10-15 (forge session, PoP Stage 10 shipped: interacting two-source light)
 
 ## Shipped this session
-**PoP Stage 9 — two-source light** (#316 deep pass; PR #340 squash-landed as 6a19df9;
-static+smoke+Vercel green; live confirmed HTTP 200):
+**PoP Stage 10 — interacting two-source light** (#316 deep pass; PR #342 squash-landed as
+b23ed26; static+smoke+Vercel green; live confirmed HTTP 200 + the minify-surviving lit-lip
+literal `255,190,120` present in production chunk index-Dc6wGzeo.js):
 https://jalfern.com/retrogames/prince-of-persia
 
-Art-only pass — `sim.js` untouched, so the 1989 rules + champion run are unchanged.
-Made the *source* of cool light explicit so fire-vs-moon becomes the level language:
-- **Moonlight as a cool key.** `coolGlow`/`coolAt`/`moonSources`: arched palace windows
-  brighten without heating (`tempAt`→0 in pure moon). `lightAt`/`tempAt` gained an
-  optional `moonPx` channel (default `[]` → every S8 value bit-identical). `coolPool`
-  paints windows additively, clipped below the HUD like the warm pools. Keys built ONLY
-  when `lvl.theme==='palace'` → dungeon stays firelit, palace reads moonlit.
-- **Per-flagstone floor band.** `bandAt` quantises the warm bounce to the tile; the lit
-  floor steps down tile by tile (stone) instead of one glow blob.
-- **Widened rim hue.** `rimColor`: violet (b>r>g) at temp 0 → amber-white (r>g>b) at 1,
-  monotonic. Rim-only, so the white tunic never muddies (answers STATE Q2: widen, don't dim).
-- **Props catch the light.** `propShade`/`propLight`: flasks/sword/mirror take `atLight`
-  — cool veil sinks unlit, warm rim grounds lit. Light consistent across the scene.
+Art-only pass — `sim.js` untouched, so the 1989 rules + champion run are unchanged. Stage 10
+makes the fire + moon sources *interact* (QA #341):
+- **Warm-dominant overlap.** `tempAt`'s cool term scaled by `MOON_DILUTE=0.55`, so a body deep
+  in a torch pool beside a window stays amber on the flame side instead of greying out. Overlap
+  drop <0.2 world-temp; default-empty moon keeps every S8/S9 value bit-identical.
+- **A per-window sky (`moonTint`).** `moonSources` carries a deterministic seed (pane column →
+  `hash`). Each cool pool takes its own hue+intensity — indigo→pale-blue, 0.78–1.0, always
+  blue-dominant (never warm). Same seed→same tint; no Math.random. Palace = a sky, not a stencil.
+- **The moon casts (`coolBandAt`).** Faint cool shaft down to the floor + a flagstone-quantised
+  cool band under each window, mirroring the warm `bandAt` — light *cast* from the pane.
+- **Stepped stone.** Lit flagstones get a brighter 2px front-lip (warm + cool) so the band reads
+  as stepped steps, not one flat glow.
+- **Bone stays bone (`rimAlpha`).** temp-0 violet rim damped to 32% on pale palettes (`opts.bone`
+  skeleton + `opts.pale` prince tunic); non-pale is byte-for-byte the Stage 8 inline value.
 
-Gates: `popcheck` **279/279** (26 new S9 clauses; champion+slack re-proved). One mutant
-proof — drop `MOON_STRENGTH*coolAt` from the `tempAt` denominator → cool-dilutes-warmth
-clause red (278/279), restored green. `lint:pop/mario/fps/ai` clean, `build` green.
-`popplay` **17/17**, 0 page errors (reaches the palace levels). On-canvas colour proof:
-a live frame carries warm fire (≈99k px) AND cool dark/moon pixels — the hue model is
-visible, not just pinned.
+Gates: `popcheck` **302/302** (+23 S10 clauses). One mutant proof — kill the `rimAlpha` pale damp
+→ "pale takes a damped rim" red (301/302), restored green. `lint:pop/mario/fps/ai` clean,
+`build` green. `popplay` **17/17**, zero page errors (reaches the palace levels).
 
 ## GOAL — next session
-#316 back on `next`; deep pass continues until Jon says stop. **Stage 10 candidates**
-(see QA #341 filed this session): clean up the warm/cool *overlap* grey-out near bodies
-caught between fire and moon; vary moon hue/intensity per window (seeded) so the palace
-has a sky, not a stencil; cast a faint cool light-shaft onto the floor beneath windows;
-add a 2px lit-lip per floor tile so the band reads as stepped stone; arch-aware prop veil
-on the mirror; confirm the widened violet rim never tints bone-white / the tunic. If Jon
-retires #316, oldest `game-queue` is **#295 Civ V** — plan the breakdown first
-(map/cities → tech/units → diplomacy/victory), ship in stages.
+#316 back on `next`; deep pass continues until Jon says stop. **Stage 11 candidates**
+(QA #343 filed this session + carryovers from #341): mirror arch-aware veil (#341-6),
+chase-sound duck test (#341-8), deco-derived window key height (#341-2), a slow seeded sky
+drift / stars so the palace breathes, drifting cool motes down the moon shaft, two-source props
+(warm rim fire-side + cool rim window-side), gate the pale damp on temp so a tunic under a torch
+still catches amber. If Jon retires #316, oldest `game-queue` is **#295 Civ V** — plan the
+breakdown first (map/cities → tech/units → diplomacy/victory), ship in stages.
 
 ## Board (last read)
-- #316 on `next` (deep pass continues, 9 stages shipped). Queue: #295 Civ V.
-- #339 CLOSED by #340. #341 filed (feedback): Stage-9 light-model polish — 8 items.
+- #316 on `next` (deep pass continues, 10 stages shipped). Queue: #295 Civ V.
+- #341 partially closed by #342 (items 1,3,4,5,7); items 2,6,8 left open (documented as gaps).
+- #343 filed (feedback): Stage-10 light-model polish — 7 items.
 - Rule-4: not stalled (merged game code src/games/**: art.js this session).
 
 ## Notes for whoever picks this up
-- **Stage 9 spine (art.js, pure & exported):** `coolGlow(dist)` (reach MOON_RADIUS=
-  TORCH_RADIUS*1.15), `coolAt(x,y,moonPx)`, `moonSources(decos,base)` (pane y=60,
-  x = base + rm*RW*T + window*T + 16), `rimColor(temp)→{r,g,b}`, `bandAt(x,keyPx,tile=T)`
-  (= bounceAt at tile centre), `propShade(warm)`=0.55+0.45*warm. `MOON_STRENGTH=0.7`
-  (soft key, never flares). `lightAt`/`tempAt` last arg `moonPx=[]` — default keeps S8.
-- **Two-source call:** drawScene builds `moonPx` ONLY in palace; `atLight(x,y)` returns
-  `{warm,side,temp}` with moon baked into warm + temp; cool pools paint after warm pools;
-  floor band replaces the old single ellipse (loop `k=-reach..reach`, `fillRect(c*T+1,
-  fy-5, T-2, 10)`). Keep the palace-only guard and the HUD clip in coolPool.
-- **popcheck S9 pins:** moon reach/strength, coolGlow monotone, coolAt additivity,
-  moonSources window-extract + empty-guard + RW*T offset, moon-lights-without-heating,
-  cool-dilutes-warmth, default-moon-leaves-S8, rim violet/amber/monotonic (g<175 mid),
-  bandAt quantise+step+reach-death+height-invariant, propShade bounds+monotone, drawScene
-  wiring regexes, no Math.random. `VW` imported into popcheck for the tile size (T=VW/RW=32).
-- **Drive note (this sandbox):** headless Chrome needs dev on IPv4: start with
-  `--host 127.0.0.1 --port <p> --strictPort` and pass `POP_URL=http://127.0.0.1:<p>/
-  retrogames/prince-of-persia`, ALL in one shell call (detached dev dies when it returns).
-  `openGame` returns the `page` directly (not `{page}`).
-- **Deploy proof:** jalfern IS reachable from this box this session (live HTTP 200); plus
-  Vercel green on #340 and the cool-pool literal `150,170,255` survives minify in the
-  fresh dist bundle. Identifiers minify away, so string literals are the marker.
-- Main checkout detached at 6a19df9. Many stale pop-stage2..8 + bobubble/ssx/prince-of-
-  persia worktrees remain — prune when confirmed free (other lanes may still hold them).
+- **Stage 10 spine (art.js, pure & exported):** `MOON_DILUTE=0.55` (tempAt denominator);
+  `moonTint(seed)→{r,g,b,s}` (r=120+70·frac, g=150+40·frac, b=255, s=0.78+0.22·frac; frac=seed-
+  floor(seed) so integer seeds wrap to 0 — hash output is [0,1) so never exactly 1);
+  `coolBandAt(x,moonPx,tile=T)` (= smoothstep cool bounce at tile centre, reach MOON_RADIUS*0.7);
+  `rimAlpha(pale,warm)` = round3(base or base*0.32), base=0.12+warm*0.22. `moonSources` now
+  returns `[px, 60, seed]` (seed = `hash(round((px-16)/T)*2.7+5)`).
+- **DrawScene wiring:** `coolPool(ctx,x,y,fl,seed)` uses `moonTint(seed)`; cool-shaft loop paints a
+  `createLinearGradient(0, mp[1], 0, fy)` + per-tile `coolBandAt` band + bright lip, all under the
+  palace-only `moonPx`. Warm band loop adds the lit front-lip `rgba(255,190,120,b*0.16)`. Prince
+  opts carry `pale: true`; figure rim uses `rimAlpha(!!(opts.bone||opts.pale), warm)`. Keep the
+  palace-only guard, the HUD clip in coolPool, and the non-pale parity (never touch the else branch).
+- **popcheck S10 pins:** MOON_DILUTE bounds + warm-dominance (flame+moon temp>0.62 AND
+  tNoMoon−tMoon<0.2) + never-reversed + default-moon-unchanged; moonTint determinism/wrap/
+  cool-dominant(span 0..0.9)/soft-key bound; moonSources seeded index2 + pane geometry intact +
+  two-rooms-differ; coolBandAt quantise/step/reach-death/height/empty; rimAlpha pale-damp +
+  non-pale parity (0.12 at w=0, 0.34 at w=1) + monotone; drawScene regexes (seeded coolPool,
+  shaft gradient, cool lip, pale damp, palace-only), no Math.random. `RW` imported from levels.js
+  in popcheck (art.js does NOT re-export RW; VW does).
+- **Drive note (this sandbox):** headless Chrome needs dev on IPv4 — start vite
+  `--host 127.0.0.1 --port <p> --strictPort`, poll `/retrogames/prince-of-persia`, then
+  `POP_URL=http://127.0.0.1:<p>/retrogames/prince-of-persia npm run popplay`, ALL in one shell
+  call (detached dev dies when the call returns). Worktree `~/Dev/retrogames-forge-prince-of-persia`
+  has node_modules (vite + playwright-core); reuse it — `git worktree add` fails if the dir exists,
+  so `git checkout forge/<slug>` inside it (create the branch first).
+- **Prod proof:** jalfern reachable; entry `index-BZPes5Hy.js` is the app shell — PoP is a lazy
+  per-game chunk. Verify via: grep the entry for `index-*.js` refs, fetch each, look for the new
+  literal (Stage 10 = `255,190,120`; Stage 9 was `150,170,255`). Vite hashing is deterministic —
+  local `index-Dc6wGzeo.js` matched production exactly.
+- Main checkout detached at b23ed26. Stale pop-stage2..9 + forge-* worktrees remain — prune when
+  confirmed free (other lanes may still hold them).
 
 ## Three questions for Jon
-1. Stage 9 made the palace moonlit vs the dungeon firelit. Is that the right read of the
-   original's two zones, or should the palace ALSO carry warm torches (mixed light)? It
-   changes whether Stage 10 refines the fire/moon contrast or blends them.
-2. Every window currently glows the same violet. Want per-window sky variation (seeded
-   moon hue/intensity) for a richer palace, or keep the uniform cool key for a cleaner
-   palette? (Variation risks reading as noise on a dim phone.)
-3. Civ V (#295) is still queued behind an open-ended #316. Green-light the map/cities
-   stage now, or keep the deep pass going on PoP until you call it done?
+1. Stage 10 varied the sky per window but each window's sky is still frozen in time. Want a slow
+   seeded sky drift / faint stars (palace breathes), or is a static per-window tint the target?
+2. Props are lit by the room's dominant source. Push two-source props (warm rim fire-side + cool
+   rim window-side, like the bodies) — or keep props single-source for a calmer read?
+3. #316 is now 10 stages deep and open-ended. Keep going (Stage 11 = the #343 list), or green-light
+   the Civ V #295 map/cities stage now?
