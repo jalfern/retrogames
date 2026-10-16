@@ -62,7 +62,19 @@ export function decide(g) {
     if (gd) {
         const dir = gd.x > p.x ? 1 : -1
         if (gd.wind > 0) { inp.up = true; return inp }                 // block the lunge
-        if (best > P.REACH - 4) { inp[dir > 0 ? 'right' : 'left'] = true; return inp }
+        if (best > P.REACH - 4) {
+            // never chase a recoiling blade across open teeth — hold at the lip
+            const nc = fc + dir
+            if (groundAt(g, nc, fr) === SPIKE) return inp
+            for (const ch of g.chomps) {
+                if (ch.c === nc && ch.r === fr) {
+                    const ph = (g.tick + ch.phase) % CFG.chompPeriod
+                    if (ph < CFG.chompWait && CFG.chompWait - ph < T / P.RUN + 10) return inp
+                    if (ph >= CFG.chompWait) return inp
+                }
+            }
+            inp[dir > 0 ? 'right' : 'left'] = true; return inp
+        }
         if (g.tick % 7 < 2) inp.atk = true                             // strike the opening
         return inp
     }
@@ -108,6 +120,19 @@ export function decide(g) {
             if (chompDown(g, ch)) {
                 if (p.x > ch.c * T) { inp.right = true; return inp }     // committed — get clear
                 return inp                                                // wait behind the jaws
+            }
+            // Only step in when the jaws will stay up long enough to clear the
+            // whole cell at a run; hold while still stoppable, commit once the
+            // skid distance rules the stop out.
+            const ph = (g.tick + ch.phase) % CFG.chompPeriod
+            const upLeft = ph < CFG.chompWait ? CFG.chompWait - ph : 0
+            const edge = ch.c * T
+            const far = (ch.c + 1) * T + CFG.HW
+            const stopDist = Math.abs(p.vx) > P.WALK + 0.2 ? Math.abs(p.vx) * 5 : 0
+            const crossTime = (far - p.x) / P.RUN + 8
+            if (p.x + stopDist < edge) {
+                if (upLeft < crossTime) return inp
+                inp.right = true; return inp
             }
             inp.right = true; return inp
         }
