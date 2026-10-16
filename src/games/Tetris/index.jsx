@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -377,12 +378,11 @@ const TetrisGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 bottom-8 text-center pointer-events-none px-6">
                     <p className="text-cyan-300 font-mono font-bold mt-1 animate-pulse text-sm">PRESS ANY KEY / TAP &mdash; 0-9 PICKS THE START LEVEL</p>
-                    <p className="text-white/70 font-mono text-[11px] mt-1 leading-4">
-                        arrows slide &middot; UP / X / SPACE turns &middot; DOWN soft-drops<br />
-                        the NES ruleset: DAS 16/6, soft drop every 2 frames, no hard drop, no hold, no kicks<br />
-                        40 / 100 / 300 / 1200 points &times; level &middot; a new level every 10 lines &middot; lines clear, gravity does not forgive<br />
-                        this demo is the autopilot that scripts/tetrischeck.mjs audits, live
-                    </p>
+                    <AttractMessage className="mt-1 text-white/70" messages={[
+                        'arrows slide · UP / X / SPACE turns · DOWN soft-drops',
+                        'the NES ruleset: DAS 16/6, soft drop every 2 frames, no hard drop, no hold, no kicks',
+                        '40 / 100 / 300 / 1200 points × level · a new level every 10 lines · lines clear, gravity does not forgive',
+                    ]} />
                 </div>
             )}
 

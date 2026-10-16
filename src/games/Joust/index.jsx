@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -418,14 +419,13 @@ const JoustGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 bottom-8 text-center pointer-events-none px-6">
                     <p className="text-yellow-300 font-mono font-bold mt-1 animate-pulse text-sm">PRESS ANY KEY / TAP &mdash; PRESS 2 FOR TWO RIDERS</p>
-                    <p className="text-white/70 font-mono text-[11px] mt-1 leading-4">
-                        &larr; &rarr; turn &middot; UP / X / SPACE beat the wings &middot; momentum is real, the sky is wide<br />
-                        2P is a keyboard rider: A / D turn &middot; W / F wings &mdash; the on-screen pad is P1 only<br />
-                        the lower lance loses a joust &mdash; meet a rider dead-even and you both fall<br />
-                        defeated riders drop eggs: touch one to bank it, leave it and it hatches into something worse<br />
-                        troll hands rise from the lava. five waves. the pterodactyl does not get a parachute<br />
-                        this demo is the autopilot that scripts/joustcheck.mjs audits, live
-                    </p>
+                    <AttractMessage className="mt-1 text-white/70" messages={[
+                        '← → turn · UP / X / SPACE beat the wings · momentum is real, the sky is wide',
+                        '2P is a keyboard rider: A / D turn · W / F wings — the on-screen pad is P1 only',
+                        'the lower lance loses a joust — meet a rider dead-even and you both fall',
+                        'defeated riders drop eggs: touch one to bank it, leave it and it hatches into something worse',
+                        'troll hands rise from the lava · five waves · the pterodactyl does not get a parachute',
+                    ]} />
                 </div>
             )}
 

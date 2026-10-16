@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -471,14 +472,13 @@ const QBertGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 bottom-8 text-center pointer-events-none px-6">
                     <p className="text-yellow-300 font-mono font-bold mt-1 animate-pulse text-sm">PRESS ANY KEY / TAP TO HOP</p>
-                    <p className="text-white/70 font-mono text-[11px] mt-1 leading-4">
-                        arrow pairs hop the diagonals: UP+LEFT, UP+RIGHT, DOWN+LEFT, DOWN+RIGHT &middot; touch pad on phones<br />
-        land on every cube to turn the pyramid green; hop off an edge and you fall<br />
-                        Coily drops in after 9 flips and hops straight at you &mdash; the discs carry you to the top, and he follows, off the edge (+500)<br />
-                        red balls ricochet the sides; Ugg and Wrongway run the rows; Sam &amp; Slick wipe your green away<br />
-                        rounds after the first cycle five colours &mdash; clear it when every cube matches<br />
-                        this demo is the autopilot that scripts/qbertcheck.mjs audits, live
-                    </p>
+                    <AttractMessage className="mt-1 text-white/70" messages={[
+                        'arrow pairs hop the diagonals: UP+LEFT, UP+RIGHT, DOWN+LEFT, DOWN+RIGHT · touch pad on phones',
+                        'land on every cube to turn the pyramid green; hop off an edge and you fall',
+                        'Coily drops in after 9 flips — the discs carry you to the top, and he follows, off the edge (+500)',
+                        'red balls ricochet the sides; Ugg and Wrongway run the rows; Sam & Slick wipe your green away',
+                        'rounds after the first cycle five colours — clear it when every cube matches',
+                    ]} />
                 </div>
             )}
 

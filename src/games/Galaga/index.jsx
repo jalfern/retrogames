@@ -15,6 +15,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -387,15 +388,14 @@ const GalagaGame = () => {
                     <h1 className="text-4xl font-black text-red-400" style={{ textShadow: '0 4px 0 #400, 0 10px 24px #000' }}>GALAGA</h1>
                     <p className="text-yellow-200/90 font-mono mt-1 text-sm">fighting formation of the bee species</p>
                     <p className="text-white font-mono font-bold mt-4 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-cyan-100/80 font-mono text-[11px] mt-3 px-8 leading-4">
-                        ARROWS to fly (you own the bottom band), SPACE to fire<br />
-                        divers hunt your lane — every dive path is scripted, readable, dodgeable<br />
-                        the red FLAGSHIP drops a tractor beam: dodge it, or lose a fighter<br />
-                        a captured fighter flies the next stage as an escort — shoot YOUR OWN<br />
-                        escort down, then CATCH the falling fighter for a DOUBLE (two shots)<br />
-                        never corner yourself at the walls; the hive aims its dives at you<br />
-                        this demo is the autopilot&apos;s own proven run, tick for tick
-                    </p>
+                    <AttractMessage className="mt-3 px-8 text-cyan-100/80" messages={[
+                        'ARROWS to fly (you own the bottom band), SPACE to fire',
+                        'divers hunt your lane — every dive path is scripted, readable, dodgeable',
+                        'the red FLAGSHIP drops a tractor beam: dodge it, or lose a fighter',
+                        'a captured fighter flies the next stage as an escort — shoot YOUR OWN',
+                        'escort down, then CATCH the falling fighter for a DOUBLE (two shots)',
+                        'never corner yourself at the walls; the hive aims its dives at you',
+                    ]} />
                 </div>
             )}
 
