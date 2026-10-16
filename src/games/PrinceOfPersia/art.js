@@ -121,9 +121,11 @@ export function torchGlow(distPx) {
     const t = 1 - distPx / TORCH_RADIUS
     return t * t * (3 - 2 * t)                          // smoothstep: firm core, soft edge
 }
-// brightness at pixel (x,y) from the given torch pixel-centres [ [x,y], … ]
-export function lightAt(x, y, keyPx) {
-    let l = LIGHT_AMBIENT
+// brightness at pixel (x,y) from the given torch pixel-centres [ [x,y], … ].
+// `amb` lets a small/dim screen (lite mode) lift the floor so a torchless room
+// stays readable; the deep desktop mood keeps LIGHT_AMBIENT.
+export function lightAt(x, y, keyPx, amb = LIGHT_AMBIENT) {
+    let l = amb
     for (let i = 0; i < keyPx.length; i++) {
         const dx = x - keyPx[i][0], dy = y - keyPx[i][1]
         l += torchGlow(Math.sqrt(dx * dx + dy * dy))
@@ -132,8 +134,8 @@ export function lightAt(x, y, keyPx) {
 }
 // how much darkness veil to lay at (x,y) — the inverse of the pools, capped so
 // unlit stone reads deep blue rather than pure black
-export function darkAlpha(x, y, keyPx) {
-    const a = 0.66 * (1 - lightAt(x, y, keyPx))
+export function darkAlpha(x, y, keyPx, amb = LIGHT_AMBIENT) {
+    const a = 0.66 * (1 - lightAt(x, y, keyPx, amb))
     return a < 0 ? 0 : a > 0.66 ? 0.66 : a
 }
 // directional shading of a surface whose outward normal is (nx,ny): + faces the
@@ -142,6 +144,53 @@ export function facet(nx, ny) {
     const m = Math.hypot(nx, ny) || 1
     return (nx * LIGHT_DIR.x + ny * LIGHT_DIR.y) / m
 }
+
+// ---- Stage 8: colour temperature, floor bounce, phone readability ------------
+// Stage 6 lit the room by *brightness*; Stage 8 separates how much light lands
+// somewhere from how *warm* it is. Where a flame reaches, light is amber; where
+// only ambient does, it is cold violet-blue. That warm-fire / cool-dark split is
+// the next step on the colour spine and it is pure, so popcheck can pin it.
+export const LIGHT_AMBIENT_LITE = 0.27          // the floor a phone screen gets
+export const HUD_LINE = 22                      // px: the band the HUD text lives in
+
+// the flame's own contribution at (x,y), independent of ambient — the numerator
+// of the colour temperature and the pulse the pools breathe with.
+export function torchSum(x, y, keyPx) {
+    let s = 0
+    for (let i = 0; i < keyPx.length; i++) {
+        const dx = x - keyPx[i][0], dy = y - keyPx[i][1]
+        s += torchGlow(Math.sqrt(dx * dx + dy * dy))
+    }
+    return s
+}
+// colour temperature 0 (cold ambient) → 1 (deep in a flame pool): the flame's
+// share of the light, so two distant sconces read cooler than one you stand in.
+export function tempAt(x, y, keyPx, amb = LIGHT_AMBIENT) {
+    const s = torchSum(x, y, keyPx)
+    return s / (s + amb)
+}
+// warm bounce thrown back off the flagstones by the sconces overhead: a 1-D pull
+// on horizontal distance, so the floor directly under a torch glows and grounds
+// the flame rather than floating on a flat dark band.
+export function bounceAt(x, keyPx) {
+    let s = 0
+    for (let i = 0; i < keyPx.length; i++) {
+        const dx = Math.abs(x - keyPx[i][0])
+        const t = 1 - dx / (TORCH_RADIUS * 0.9)
+        if (t > 0) s += t * t * (3 - 2 * t)
+    }
+    return s > 1 ? 1 : s
+}
+// the additive bloom must not wash out the HUD text: pools fade to nothing by the
+// top of the band, so `poolVisibleAt` gates how much of a pool paints at a y.
+export function poolVisibleAt(y) {
+    if (y >= HUD_LINE) return 1
+    if (y <= 0) return 0.1
+    return 0.1 + (y / HUD_LINE) * 0.9
+}
+// lite mode lifts the ambient floor only, never the pools — mood on desktop,
+// readability on a small dim phone.
+export const ambientFor = (lite) => (lite ? LIGHT_AMBIENT_LITE : LIGHT_AMBIENT)
 
 // ---- pose tables --------------------------------------------------------------
 // One frame = joint targets, angles measured from straight-down, + toward the
@@ -485,6 +534,9 @@ function palaceWall(ctx, c0, decos, tick) {
 function lightPool(ctx, x, y, fl) {
     ctx.save()
     ctx.globalCompositeOperation = 'lighter'
+    ctx.beginPath()
+    ctx.rect(x - TORCH_RADIUS, HUD_LINE, TORCH_RADIUS * 2, VH - HUD_LINE)
+    ctx.clip()                            // bloom stays below the HUD band (S8)
     const r = 78 + fl * 12
     const outer = ctx.createRadialGradient(x, y, 6, x, y, r)
     outer.addColorStop(0, 'rgba(255,176,84,0.30)')
@@ -753,6 +805,7 @@ function figure(ctx, st, p, opts) {
     // (0 cool … 1 hot); `s` = the local side the light falls on (the geometry is
     // mirrored by facing, so convert the world light side back to local space).
     const warm = opts.warm != null ? opts.warm : 0.5
+    const temp = opts.temp != null ? opts.temp : warm
     const s = (opts.litSide != null ? opts.litSide : f) * f
 
     ctx.save()
@@ -807,22 +860,23 @@ function figure(ctx, st, p, opts) {
     ctx.stroke()
 
     // torso shading: a rim light down whichever side the nearest torch is on and a
-    // shadow up the other, so the body reads as a lit cylinder. The rim warms near
-    // a sconce and cools in the dark; a warm wash crosses it under strong light.
-    ctx.strokeStyle = `rgba(255,${Math.round(238 - (1 - warm) * 34)},${Math.round(200 - (1 - warm) * 64)},${(0.12 + warm * 0.20).toFixed(3)})`
+    // cool shadow up the other, so the body reads as a lit cylinder. The rim's hue
+    // follows the colour temperature — amber under a sconce, cool blue in the dark
+    // — while its strength follows the light's brightness.
+    ctx.strokeStyle = `rgba(${Math.round(150 + temp * 105)},${Math.round(182 - temp * 22)},${Math.round(240 - temp * 130)},${(0.12 + warm * 0.22).toFixed(3)})`
     ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(s * 3, -hip - 2)
     ctx.lineTo(s * 5, -head + 11)
     ctx.stroke()
-    ctx.strokeStyle = `rgba(0,0,${Math.round(12 + (1 - warm) * 14)},${(0.18 + (1 - warm) * 0.12).toFixed(3)})`
+    ctx.strokeStyle = `rgba(6,10,${Math.round(44 + (1 - temp) * 40)},${(0.18 + (1 - warm) * 0.12).toFixed(3)})`
     ctx.lineWidth = 3
     ctx.beginPath()
     ctx.moveTo(-s * 2, -hip - 1)
     ctx.lineTo(0, -head + 11)
     ctx.stroke()
-    if (warm > 0.5) {
-        ctx.strokeStyle = `rgba(255,168,84,${((warm - 0.5) * 0.42).toFixed(3)})`
+    if (temp > 0.5) {
+        ctx.strokeStyle = `rgba(255,160,72,${((temp - 0.5) * 0.44 * warm).toFixed(3)})`
         ctx.lineWidth = 4 * wide
         ctx.beginPath()
         ctx.moveTo(s * 2, -hip)
@@ -868,11 +922,11 @@ function figure(ctx, st, p, opts) {
         ctx.moveTo(-4, -head + 3)
         ctx.quadraticCurveTo(-12, -head + 6 + Math.sin(t * 0.2) * 2, -14, -head + 12)
         ctx.stroke()
-        // face lighting: lit brow toward the light, shade on the far side, an eye;
-        // the lit brow warms when the torch is close
-        ctx.fillStyle = `rgba(255,${Math.round(240 - (1 - warm) * 30)},${Math.round(210 - (1 - warm) * 50)},${(0.12 + warm * 0.14).toFixed(3)})`
+        // face lighting: lit brow toward the light (amber near flame, cool in the
+        // dark), shade on the far side, an eye.
+        ctx.fillStyle = `rgba(${Math.round(180 + temp * 75)},${Math.round(190 + temp * 40)},${Math.round(240 - temp * 120)},${(0.12 + warm * 0.14).toFixed(3)})`
         ctx.fillRect(s > 0 ? 4 : -8, -head + 1, 4, 1)
-        ctx.fillStyle = `rgba(0,0,10,${(0.16 + (1 - warm) * 0.12).toFixed(3)})`
+        ctx.fillStyle = `rgba(4,6,${Math.round(26 + (1 - temp) * 22)},${(0.16 + (1 - warm) * 0.12).toFixed(3)})`
         ctx.fillRect(s > 0 ? -2 : 4, -head + 2, 2, 6)
         ctx.fillStyle = '#2a2018'
         ctx.fillRect(s > 0 ? 5 : -6.5, -head + 4, 1.5, 1.5)
@@ -936,7 +990,9 @@ function figure(ctx, st, p, opts) {
 
 // ---- the scene -----------------------------------------------------------------
 export function drawScene(ctx, g, opts = {}) {
-    const { attract = false } = opts
+    const { attract = false, lite = false } = opts
+    const amb = ambientFor(lite)
+    const dark = lite ? 0.62 : 1            // lite pulls the whole veil up for phones
     const tick = g.tick
     const grad = ctx.createLinearGradient(0, 0, 0, VH)
     grad.addColorStop(0, '#0b0b16')
@@ -1008,25 +1064,43 @@ export function drawScene(ctx, g, opts = {}) {
     // room without a single torch sinks deeper — but the light itself, where it
     // comes at all, arrives per-torch (the pools below), never as a flat wash.
     const litRoom = torchPx.length > 0
+    const vCore = (litRoom ? 0.10 : 0.30) * dark
+    const vEdge = (litRoom ? 0.50 : 0.62) * dark
     const vg = ctx.createRadialGradient(c0 * T + VW / 2, VH * 0.44, VW * 0.18, c0 * T + VW / 2, VH * 0.44, VW * 0.72)
-    vg.addColorStop(0, litRoom ? 'rgba(4,6,22,0.10)' : 'rgba(3,4,16,0.30)')
-    vg.addColorStop(1, litRoom ? 'rgba(4,6,22,0.50)' : 'rgba(2,3,12,0.62)')
+    vg.addColorStop(0, `rgba(4,6,22,${vCore.toFixed(3)})`)
+    vg.addColorStop(1, `rgba(4,6,22,${vEdge.toFixed(3)})`)
     ctx.fillStyle = vg
     ctx.fillRect(c0 * T, 0, RW * T, VH)
+    // warm bounce off the flagstones under each sconce — the flame grounds itself
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    for (const tp of torchPx) {
+        const b = bounceAt(tp[0], torchPx)
+        const fy = GROUND * T + 4
+        const bg = ctx.createRadialGradient(tp[0], fy, 2, tp[0], fy, 60)
+        bg.addColorStop(0, `rgba(255,150,70,${(b * 0.14).toFixed(3)})`)
+        bg.addColorStop(1, 'rgba(255,120,50,0)')
+        ctx.fillStyle = bg
+        ctx.beginPath()
+        ctx.ellipse(tp[0], fy, 60, 16, 0, 0, Math.PI * 2)
+        ctx.fill()
+    }
+    ctx.restore()
     // sconce flames + their warm pools (additive: stone under them glows)
     for (const tp of torchPx) {
         const c = Math.round((tp[0] - T / 2) / T), r = Math.round((tp[1] - 12) / T)
         drawTorch(ctx, c, r, tick)
         lightPool(ctx, tp[0], tp[1], Math.sin(tick * 0.2 + c))
     }
-    // how much warm light lands on a figure, and from which side (null if none)
+    // how much light lands on a figure, from which side, and how warm that light
+    // is (cold where only ambient reaches, amber under a sconce)
     const atLight = (x, y) => {
         let best = 0, side = null
         for (const tp of torchPx) {
             const dx = tp[0] - x, w = torchGlow(Math.hypot(dx, tp[1] - y))
             if (w > best) { best = w; side = dx >= 0 ? 1 : -1 }
         }
-        return { warm: lightAt(x, y, torchPx), side }
+        return { warm: lightAt(x, y, torchPx, amb), side, temp: tempAt(x, y, torchPx, amb) }
     }
 
     if (!g.sword && lvl.sword) drawSwordPickup(ctx, lvl.sword, tick)
@@ -1085,7 +1159,7 @@ export function drawScene(ctx, g, opts = {}) {
         const py = (lvl.exit.r + 1) * T
         const pl = atLight(px - 14, py)
         figure(ctx, 'idle', { x: px - 14, y: py, facing: 1, onGround: true, hang: null, crouch: false },
-            { tick, skin: '#e0b090', cloth: '#b04a8a', trim: '#e8d060', sword: false, swing: 0, hurt: 0, die: 0, prog: 0, warm: pl.warm, litSide: pl.side })
+            { tick, skin: '#e0b090', cloth: '#b04a8a', trim: '#e8d060', sword: false, swing: 0, hurt: 0, die: 0, prog: 0, warm: pl.warm, litSide: pl.side, temp: pl.temp })
     }
 
     // guards
@@ -1105,7 +1179,7 @@ export function drawScene(ctx, g, opts = {}) {
                 turban: look.turban, bone: look.bone, wide: look.wide || 1,
                 swordMetal: look.sword, robe: look.robe, hat: look.hat,
                 sword: true, sheath: false, swing, hurt: gd.hurtT, die: 0, prog: 0,
-                warm: gl.warm, litSide: gl.side,
+                warm: gl.warm, litSide: gl.side, temp: gl.temp,
             })
         if (gd.wind > 0 && gd.wind % 6 < 3) {
             ctx.fillStyle = '#ff5050'
@@ -1165,7 +1239,7 @@ export function drawScene(ctx, g, opts = {}) {
             swing: p.atk, hurt: p.hurtT, die: dying ? p.dieT : 0,
             prog: p.climb / CFG.climbT, crouch: p.crouch,
             frame: st.startsWith('die') ? Math.min(2, Math.floor(p.dieT / 12)) : gaitFrame,
-            warm: pl.warm, litSide: pl.side,
+            warm: pl.warm, litSide: pl.side, temp: pl.temp,
         }
         if (p.onGround) {
             const sc2 = Math.floor(p.x / T), sr2 = Math.floor(p.y / T) + 1
@@ -1239,7 +1313,10 @@ function flasks(ctx, x, y, n, max, dir) {
 }
 
 function drawHUD(ctx, g, attract) {
-    ctx.fillStyle = 'rgba(8,8,16,0.72)'
+    const scrim = ctx.createLinearGradient(0, 0, 0, HUD_LINE)
+    scrim.addColorStop(0, 'rgba(3,3,9,0.86)')
+    scrim.addColorStop(1, 'rgba(9,9,18,0.52)')
+    ctx.fillStyle = scrim
     ctx.fillRect(0, 0, VW, 22)
     ctx.strokeStyle = '#2e2e46'
     ctx.beginPath(); ctx.moveTo(0, 22); ctx.lineTo(VW, 22); ctx.stroke()

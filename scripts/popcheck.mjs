@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE } from '../src/games/PrinceOfPersia/art.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -967,6 +967,59 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         ok('S7: a body never pins the prince onto teeth', /chomps\.some\(\(ch\) => ch\.c === pc && ch\.r === pr\)/.test(simSrc)
             && /never shove him into a wall|nor into a wall/.test(simSrc))
     }
+}
+
+// ---- 18. Stage 8: colour temperature, floor bounce, phone readability --------
+{
+    const artSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+    const idxSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+
+    // phone readability: lite lifts the floor, desktop keeps the deep mood
+    ok('S8: lite lifts the ambient floor; desktop keeps the deep mood',
+        ambientFor(false) === LIGHT_AMBIENT && ambientFor(true) === LIGHT_AMBIENT_LITE
+        && LIGHT_AMBIENT_LITE > LIGHT_AMBIENT)
+    ok('S8: lightAt takes the ambient floor, so a torchless room can be lifted',
+        lightAt(1e5, 1e5, []) === LIGHT_AMBIENT && lightAt(1e5, 1e5, [], LIGHT_AMBIENT_LITE) === LIGHT_AMBIENT_LITE)
+
+    // colour temperature: cold where only ambient reaches, amber in a pool
+    ok('S8: temperature is 0 in a cold ambient corner and high at a flame',
+        tempAt(1e5, 1e5, []) === 0 && tempAt(200, 120, [[200, 120]]) > 0.7)
+    const one = [[200, 120]]
+    ok('S8: the further from the flame, the cooler the light',
+        tempAt(200, 120, one) > tempAt(200, 120, [[260, 120]]))
+    ok('S8: a lifted ambient dilutes warmth — brighter and cooler on a phone',
+        tempAt(300, 120, one, LIGHT_AMBIENT) > tempAt(300, 120, one, LIGHT_AMBIENT_LITE))
+    ok('S8: torchSum is the flame alone — additive between two, gone far away',
+        Math.abs(torchSum(200, 120, one) - 1) < 1e-9 && torchSum(1500, 900, one) === 0
+        && torchSum(200, 120, [[200, 120], [240, 120]]) > torchSum(200, 120, one))
+
+    // floor bounce: a horizontal ground lift that ignores height, dies with distance
+    ok('S8: bounce is maximal directly under a sconce and gone past its reach',
+        bounceAt(200, [[200, 500]]) === 1 && bounceAt(200 + TORCH_RADIUS, [[200, 500]]) === 0)
+    ok('S8: bounce is a floor signal — height does not matter, horizontal distance does',
+        bounceAt(200, [[200, 100]]) === 1 && bounceAt(200, [[200, 100]]) > bounceAt(150, [[200, 100]]))
+    let bMono = true
+    for (let d = 0; d < TORCH_RADIUS * 0.9; d += 12) if (!(bounceAt(200, [[200, 500]]) > bounceAt(200 + d + 12, [[200, 500]]))) bMono = false
+    ok('S8: bounce falls off monotonically away from the sconce', bMono)
+
+    // bloom must not wash the HUD band
+    ok('S8: pools fade to nothing above the HUD band and are full below it',
+        poolVisibleAt(0) < 0.2 && poolVisibleAt(HUD_LINE) === 1 && poolVisibleAt(200) === 1)
+    ok('S8: the light pool is clipped to the playfield below the HUD',
+        /ctx\.clip\(\)/.test(artSrc) && /rect\(x - TORCH_RADIUS, HUD_LINE/.test(artSrc))
+    ok('S8: the HUD rides a gradient scrim, not a flat slab',
+        /const scrim = ctx\.createLinearGradient/.test(artSrc))
+
+    // figures carry a hue, not just a brightness
+    ok('S8: figures get a colour temperature from the room they stand in',
+        /opts\.temp/.test(artSrc) && /temp: /.test(artSrc) && /tempAt\(/.test(artSrc))
+    ok('S8: the scene lights at the ambient the mode asks for',
+        /ambientFor\(/.test(artSrc) && /lightAt\(x, y, torchPx, amb\)/.test(artSrc))
+    ok('S8: the shell routes ?lite through to the renderer',
+        /LITE = .*lite/.test(idxSrc) && /lite: LITE/.test(idxSrc))
+
+    // determinism still holds across the whole spine
+    ok('S8: determinism holds — no Math.random anywhere in art.js', !/Math\.random/.test(artSrc))
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
