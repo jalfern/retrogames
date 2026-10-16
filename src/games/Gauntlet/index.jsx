@@ -242,10 +242,20 @@ const GauntletGame = () => {
             }
             for (const g of gs.gens) {
                 if (!g.alive) continue
+                // the spout winds up before it belches: it grows and sways as the
+                // charge empties, and a warm flash blooms over the last third.
+                const p = g.charge > 0 ? 1 - g.charge / CFG.genPulse : 0
+                const pulse = 1 + 0.5 * p + Math.sin(gs.tick / 2) * 0.25 * p
                 ctx.save()
-                ctx.shadowColor = '#ff4f4f'
-                ctx.shadowBlur = 6 + Math.sin(gs.tick / 6) * 3
-                sprite('gen', sx(g.x), sy(g.y), 12, false)
+                ctx.shadowColor = p > 0.66 ? '#ffb03f' : '#ff4f4f'
+                ctx.shadowBlur = 6 + Math.sin(gs.tick / 6) * 3 + p * (10 + Math.sin(gs.tick / 2) * 5)
+                if (p > 0.5) {
+                    ctx.fillStyle = `rgba(255,160,70,${(p - 0.5) * 0.7})`
+                    ctx.beginPath()
+                    ctx.arc(sx(g.x), sy(g.y), 7 + p * 7, 0, Math.PI * 2)
+                    ctx.fill()
+                }
+                sprite('gen', sx(g.x), sy(g.y), 12 * pulse, false)
                 ctx.restore()
             }
             for (const s of gs.shots) {
@@ -525,7 +535,7 @@ const GauntletGame = () => {
                     `${gs.levelData.name} hp ${gs.hero.hp}/${gs.hero.maxHp} lives ${gs.lives} keys ${gs.keys} gold ${gs.gold} score ${gs.score}`,
                     `hero ${gs.hero.x.toFixed(2)},${gs.hero.y.toFixed(2)} a ${gs.hero.a.toFixed(2)} deadT ${gs.hero.deadT} death ${gs.deathSpawned ? 'walks' : 'sleeps'}`,
                     gs.monsters.map((m) => `${m.kind}@${m.x.toFixed(1)},${m.y.toFixed(1)} h${m.hp}`).join('\n') || 'halls are quiet',
-                    gs.gens.map((g) => `gen ${g.alive ? 'spawning' : 'dead'} hp${g.hp}`).join(' '),
+                    gs.gens.map((g) => `gen ${g.alive ? (g.charge > 0 ? `charging ${g.charge}` : 'spawning') : 'dead'} hp${g.hp}`).join(' '),
                 ],
                 actions: [
                     { label: 'PROGNOSIS', run: () => { const r = plan(gs.seed, { hero: gs.heroKey, topDown: true, maxTicks: 40000 }); return r.won ? `fresh sim still winnable (deaths ${r.deaths})` : 'fresh sim NOT winnable' } },

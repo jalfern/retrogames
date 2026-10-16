@@ -34,6 +34,7 @@ export const CFG = {
     arrowCool: 22,
     arrowSpeed: 0.30,
     genHp: 10,
+    genPulse: 36,
     slamClose: 40,
     slamForce: 2,
     lockForce: 1,
@@ -116,7 +117,7 @@ function loadLevel(gs, idx) {
     for (const [t, x, y] of lv.props) {
         if (t === 'food' && foodCut > 0) { foodCut--; continue }
         if (t === 'potion' && potionCut > 0) { potionCut--; continue }
-        if (t === 'generator') { gs.gens.push({ id: gs._nextId++, x, y, hp: CFG.genHp, alive: true, t: Math.floor(lv.gen.every / 2) }); continue }
+        if (t === 'generator') { gs.gens.push({ id: gs._nextId++, x, y, hp: CFG.genHp, alive: true, t: Math.floor(lv.gen.every / 2), charge: 0 }); continue }
         if (MONSTERS[t]) { spawnMonster(gs, t, x, y); continue }
         gs.items.push({ id: gs._nextId++, t, x, y })
     }
@@ -480,17 +481,26 @@ function updateShots(gs) {
 }
 
 // ---------------------------------------------------------------- generators ----
+// A generator winds up before it belches: the countdown runs out, the spout
+// then PULSES for a fixed telegraph (genPulse ticks — drawn as a grow/shrink +
+// flash), and only at the end of that pulse does the beast appear. A smashed
+// generator never charges; a full cap holds the charge until a slot frees.
 function updateGens(gs) {
     const lv = gs.levelData
     for (const g of gs.gens) {
         if (!g.alive) continue
-        g.t--
-        if (g.t <= 0 && gs.monsters.length < lv.gen.cap) {
-            g.t = lv.gen.every
-            const kind = lv.gen.comp[Math.floor(rand(gs) * lv.gen.comp.length)]
-            spawnMonster(gs, kind, g.x, g.y)
-            gs.events.push({ type: 'spawn', kind, x: g.x, y: g.y })
+        if (g.charge > 0) {
+            g.charge--
+            if (g.charge === 0 && gs.monsters.length < lv.gen.cap) {
+                const kind = lv.gen.comp[Math.floor(rand(gs) * lv.gen.comp.length)]
+                spawnMonster(gs, kind, g.x, g.y)
+                gs.events.push({ type: 'spawn', kind, x: g.x, y: g.y })
+                g.t = lv.gen.every
+            }
+            continue
         }
+        g.t--
+        if (g.t <= 0 && gs.monsters.length < lv.gen.cap) g.charge = CFG.genPulse
     }
 }
 
