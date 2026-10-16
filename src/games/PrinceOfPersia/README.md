@@ -72,13 +72,16 @@ X or Z strike · ? pause · R restart after the hour is lost.
 
 ```bash
 npm run lint:pop     # scoped lint gate
-npm run popcheck     # 302 checks: the 75 Stage-1 rules + 24 Stage-2 look
+npm run popcheck     # 333 checks: the 75 Stage-1 rules + 24 Stage-2 look
                      # clauses + 67 Stage-3 clauses + 25 Stage-4 sound clauses
                      # + 14 Stage-5 gate/banner/escort clauses + 15 Stage-6
                      # light-model clauses + 17 Stage-7 escort clauses + 16
                      # Stage-8 colour-temperature / floor-bounce / phone-light
                      # clauses + 26 Stage-9 two-source (moon) clauses + 23
-                     # Stage-10 interacting-source clauses.
+                     # Stage-10 interacting-source clauses + 31 Stage-11
+                     # breathing-palace clauses (temporal sky, shaft motes,
+                     # arch veil, two-source props, temp-gated tunic, derived
+                     # window key, chase-sound duck).
                      # Champion run pinned: autopilot clears all twelve levels at
                      # 0 deaths, the mirror / mouse-held gate / poisoned phantom
                      # shadow / invisible bridge / sheathed merge all fire in that
@@ -359,15 +362,67 @@ lips, `pale` rim damp, palace-only) plus no `Math.random`. Mutant proof at ship 
 killing the pale damp in `rimAlpha` turns the "pale takes a damped rim" clause red
 (301/302); restored → 302/302.
 
+## Stage 11 — the palace breathes (this merge)
+
+Stage 10 gave every window its own frozen sky. Stage 11 sets that sky in slow
+motion, lets the moon shaft carry dust, and finishes the light model the last
+three stages built — all seven QA #343 items. `sim.js` untouched — rules +
+champion run unchanged. All new helpers pure + exported + deterministic.
+
+- **Temporal sky (#343-4).** Each pane now breathes: hash-pinned `starField`
+  stars twinkle on their own phase (`skyTwinkle`, never fully black) and a faint
+  cloud crosses the glass (`cloudCross`, sin-shaped density that passes and then
+  clears). Deterministic in `tick` + the window's own seed — the palace is alive,
+  not a still frame. Same seed → same stars; no `Math.random`.
+- **Drifting shaft motes (#343-5).** `shaftMotes` seeds slow cool dust down the
+  moon shaft, fading toward the floor, painted additively inside the palace-only
+  guard — the hall shimmers rather than sitting perfectly still.
+- **Arch-aware prop veil (#343-1).** `archPath` traces a rounded-top silhouette;
+  `propLight` clips its veil to it when the prop carries an `arch`, and the mirror
+  hands it one (`arch: {w:9,h:72}`). The light veil now follows the arched glass
+  instead of boxing onto the gold frame. Rectangular props keep their flat box.
+- **Two-source props (#343-6).** `atLight` gained a `cool`/`coolSide` channel; a
+  prop near both fire and window now takes a warm rim on the flame side AND a cool
+  rim on the window side — props match the two-source bodies the last stages gave
+  figures. Single-source props are unchanged.
+- **Temp-gated tunic (#343-7).** `rimAlpha(pale, warm, temp)` releases the pale
+  damp as colour temperature rises (`0.32 → up to 0.87`), so the prince's white
+  tunic still catches amber under a torch instead of staying purple-proof grey —
+  while the pale rim never out-amps the clothed rim. `temp` is optional and
+  defaults to 0, so every S10 pale value is byte-for-byte (bone stays bone).
+- **Derived window key (#343-2).** `paneKeyY(d)` derives the pane key height from
+  the deco's `windowRow` (added to every deco) instead of baking y=60; the wall
+  paint (`paneShift`) and the cool key (`moonSources`) share it, so a level that
+  raises/drops a window keeps its shaft lit and the two never disagree. Canonical
+  levels use row 0 → pixels are identical to Stage 10.
+- **Chase-sound duck (#343-2, carried from #341-8).** `duckFor(cue)` ducks the
+  music bus to `DUCK_LEVEL=0.5` for `escort`/`doorCross` cues; `popcheck` proves
+  the faint escort rustle is buried by the raw bed (`BED_VOICE·MUSIC_BUS`) but
+  peaks over the ducked bed — and `AudioController.duckMusic` applies it for real
+  via `index.jsx` so the shipped mix actually ducks. `MUSIC_BUS` is exported once
+  (the live bus), not mirrored.
+
+Stage-11 added 31 `popcheck` clauses (333 total): `paneKeyY`/`paneShift`
+parity + derivation; `cloudCross` determinism/wrap/pass-and-clear; `starField`
+seeded/inside-pane/varying + `skyTwinkle` shimmer; `shaftMotes` determinism/count/
+bounds/fall + palace-only paint; `archPath` geometry + `propLight` arch clip +
+mirror arch + two-source rim literals; `atLight` cool channel; `rimAlpha` temp gate
+(parity, tunic-amber, never out-amps, figure wiring); the duck contract
+(duckFor semantics, DUCK bounds, PROVEN peak-over-ducked-bed, buried-by-raw-bed
+earns-keep, applied-for-real wiring, purity); plus no `Math.random` in art/music.
+Mutant proof at ship time: pin the temp gate to a constant `0.32` turns
+"a tunic under a torch catches amber" red (332/333); restored → 333/333.
+`popplay` 17/17, zero page errors (reaches the palace levels).
+
 ## Honest gaps (the deep pass continues — see #316)
 
 - Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
   with the d-pad; desktop-first, as the original was.
-- Mirror veil (#341-6): `propLight` paints a rectangular veil over the arched
-  mirror; the corners hang past the glass onto the frame. Needs an arch-aware clip.
-- Chase-sound mix (#341-8): whether the `escort`/`doorCross` cues cut through the
-  `pop` bed during a chase is unproven — a headless analyser duck test would settle it.
-- Window key height (#341-2): `moonSources` keys every pane at pane-row y=60; this
-  level set places all windows on that row. A level that raised/dropped a window would
-  mis-key the light — the single-height assumption is baked in, not derived from deco.
+- The sky is alive but minimal: one cloud band and a handful of pinned stars per
+  pane. A richer sky (multiple clouds, a horizon, a passing moon disc) is polish,
+  not a gap against the 1989 look — the original's windows were a flat blue.
+- The duck is proven by a pure peak model (cue vol vs bus·voice); `popplay` does
+  not yet assert the duck on the live analyser. The `duckMusic` path is wired and
+  exercised (chase cues fire it), but a measured duck-over-bed popplay check is a
+  follow-up if Jon wants the browser-side proof too.
 

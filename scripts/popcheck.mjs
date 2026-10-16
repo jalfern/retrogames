@@ -17,9 +17,9 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha } from '../src/games/PrinceOfPersia/art.js'
-import { SFX, trackFor, TRACKS } from '../src/games/PrinceOfPersia/music.js'
-import { MUSIC } from '../src/utils/AudioController.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha, paneKeyY, paneShift, WINDOW_ROW_PX, cloudCross, SKY_DRIFT, starField, skyTwinkle, shaftMotes, SHAFT_MOTES, archPath } from '../src/games/PrinceOfPersia/art.js'
+import { SFX, trackFor, TRACKS, duckFor, DUCK_LEVEL, BED_VOICE, CHASE_CUES } from '../src/games/PrinceOfPersia/music.js'
+import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -1165,10 +1165,123 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         /rgba\(255,190,120,/.test(artSrc))
     ok('S10: figures damp the rim by pale (bone + the prince tunic)',
         /const pale = !!\(opts\.bone \|\| opts\.pale\)/.test(artSrc)
-        && /rimAlpha\(pale, warm\)/.test(artSrc) && /pale: true/.test(artSrc))
+        && /rimAlpha\(pale, warm, temp\)/.test(artSrc) && /pale: true/.test(artSrc))
     ok('S10: the cool shaft paints only for palace windows (dungeon stays firelit)',
         /lvl\.theme === 'palace'/.test(artSrc) && /moonPx\.length/.test(artSrc))
     ok('S10: determinism holds — still no Math.random anywhere in art.js', !/Math\.random/.test(artSrc))
+}
+
+// ---- 21. Stage 11: the palace breathes — temporal sky, motes, arch veil, two-source props
+{
+    const artSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+    const musicSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'music.js'), 'utf8')
+    const ctrlSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'utils', 'AudioController.js'), 'utf8')
+    const idxSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+    const T = VW / RW
+
+    // #343-2 — the pane key height is DERIVED from the deco window row, not baked at y=60
+    ok('S11: paneKeyY keys the canonical row at y=60 (S9/S10 parity holds)', paneKeyY({}) === 60 && paneKeyY({ windowRow: 0 }) === 60)
+    ok('S11: raising/lowering the deco row moves the pane key by whole floor steps',
+        paneKeyY({ windowRow: 1 }) === 60 + WINDOW_ROW_PX && paneKeyY({ windowRow: -1 }) === 60 - WINDOW_ROW_PX)
+    ok('S11: moonSources takes its key height from the deco, not a literal 60',
+        moonSources([{ window: 3, windowRow: 1 }], 0)[0][1] === 60 + WINDOW_ROW_PX
+        && moonSources([{ window: 3 }], 0)[0][1] === 60)
+    ok('S11: paneShift agrees with paneKeyY (draw + light never disagree)',
+        paneShift({}) === 0 && paneShift({ windowRow: 2 }) === 2 * WINDOW_ROW_PX
+        && /paneShift\(d\)/.test(artSrc) && /paneKeyY\(d\)/.test(artSrc))
+
+    // #343-4 — the sky moves: a slow cloud crossing, deterministic, wraps, soft-edged
+    ok('S11: cloudCross is deterministic and clears at the start of a crossing',
+        cloudCross(0, 0) === 0 && cloudCross(500, 0.3) === cloudCross(500, 0.3))
+    let cRange = [1, 0], cWrap = false
+    for (let t = 0; t <= 3000; t++) { const c = cloudCross(t, 0.11); cRange[0] = Math.min(cRange[0], c); cRange[1] = Math.max(cRange[1], c) }
+    ok('S11: a cloud really passes and then clears (the sky is not frozen)',
+        cRange[0] < 0.05 && cRange[1] > 0.9)
+    ok('S11: cloudCross stays a soft 0..1 density and wraps its exact period',
+        cloudCross(0, 0) === 0 && cloudCross(1 / SKY_DRIFT, 0) === 0)
+    ok('S11: the palace paint drifts a cloud + twinkles stars in the pane',
+        /cloudCross\(/.test(artSrc) && /starField\(/.test(artSrc) && /skyTwinkle\(/.test(artSrc))
+
+    // #343-4 — hash-pinned stars with a twinkle that never fully blacks out
+    ok('S11: starField is deterministic, seeded, and its coords stay inside the pane',
+        JSON.stringify(starField(0.4)) === JSON.stringify(starField(0.4))
+        && starField(0.4).every((s) => s.fx >= 0 && s.fx <= 1 && s.fy >= 0 && s.fy <= 1 && s.ph >= 0 && s.ph < 1))
+    ok('S11: starField default carries several stars and different seeds differ',
+        starField(0.2).length >= 3 && JSON.stringify(starField(0.2)) !== JSON.stringify(starField(0.7)))
+    ok('S11: skyTwinkle shimmers (varies, but never drops to nothing — no strobe)',
+        skyTwinkle(0, 0) > 0.3 && new Set(Array.from({ length: 200 }, (_, i) => Math.round(skyTwinkle(i, 0.3) * 100))).size > 5)
+
+    // #343-5 — dust motes drift down the moon shaft: slow, seeded, fading, wraps
+    ok('S11: shaftMotes is deterministic and carries the seeded count',
+        JSON.stringify(shaftMotes(120, 0.5)) === JSON.stringify(shaftMotes(120, 0.5))
+        && shaftMotes(0, 0.5).length === SHAFT_MOTES && SHAFT_MOTES >= 3)
+    ok('S11: every mote sits inside the shaft column and fades in/out (soft alpha)',
+        shaftMotes(50, 0.3).every((m) => Math.abs(m.dx) <= 12 && m.y >= 0 && m.y < 1 && m.a >= 0 && m.a <= 1))
+    let moteFall = false
+    const m0 = shaftMotes(0, 0.42), m1 = shaftMotes(400, 0.42)
+    moteFall = JSON.stringify(m0.map((m) => m.y.toFixed(4))) !== JSON.stringify(m1.map((m) => m.y.toFixed(4)))
+    ok('S11: the motes really fall (their heights change over time)', moteFall)
+    ok('S11: the shaft paints the motes additively, palace-only guard intact',
+        /shaftMotes\(tick,/.test(artSrc) && /lvl\.theme === 'palace'/.test(artSrc))
+
+    // #343-1 — the mirror's veil follows its arched glass, not a rectangle
+    {
+        const calls = []
+        const mock = {
+            beginPath: () => calls.push('beginPath'),
+            moveTo: (...a) => calls.push(['moveTo', ...a]),
+            lineTo: (...a) => calls.push(['lineTo', ...a]),
+            arc: (...a) => calls.push(['arc', ...a]),
+            closePath: () => calls.push('closePath'),
+        }
+        archPath(mock, 100, 200, 9, 72)
+        const arc = calls.find((c) => Array.isArray(c) && c[0] === 'arc')
+        ok('S11: archPath traces a rounded-top arch (an arc of the jamb width, then closes)',
+            calls.includes('beginPath') && !!arc && arc[3] === 9 && arc[1] === 100 && arc[2] === 200 - 72 + 9 && calls.includes('closePath'))
+    }
+    ok('S11: propLight clips to an arch when the light carries one, else stays rectangular',
+        /light && light\.arch/.test(artSrc) && /archPath\(ctx, x, y, light\.arch/.test(artSrc))
+    ok('S11: the mirror hands propLight its arch (veil stops boxing onto the frame)',
+        /arch: \{ w: 9, h: 72 \}/.test(artSrc))
+
+    // #343-6 — two-source props: warm rim fire-side AND cool rim window-side
+    ok('S11: atLight reports a cool channel and its side for two-source props',
+        /cool: cbest/.test(artSrc) && /coolSide: cside/.test(artSrc))
+    ok('S11: a lit prop gets a warm rim; a window-side prop gets a cool rim',
+        /rgba\(255,180,90,/.test(artSrc) && /rgba\(150,175,255,/.test(artSrc)
+        && /warm > 0\.35 && side !== 0/.test(artSrc) && /cool > 0\.22 && coolSide !== 0/.test(artSrc))
+
+    // #343-7 — the pale rim damp releases with temperature (tunic catches amber)
+    ok('S11: rimAlpha still defaults to the dark damp (S10 parity, temp arg optional)',
+        rimAlpha(false, 0) === 0.12 && rimAlpha(false, 1) === 0.34
+        && rimAlpha(true, 1) === Math.round(0.34 * 0.32 * 1000) / 1000)
+    ok('S11: a tunic under a torch catches amber — the damp releases as temp rises',
+        rimAlpha(true, 0.8, 0.9) > rimAlpha(true, 0.8, 0) && rimAlpha(true, 0.5, 1) > rimAlpha(true, 0.5, 0))
+    ok('S11: the pale rim never out-amps the clothed rim (tunic stays tamer than skin)',
+        rimAlpha(true, 0.8, 1) < rimAlpha(false, 0.8, 1))
+    ok('S11: figures pass their colour temperature into the pale damp',
+        /rimAlpha\(pale, warm, temp\)/.test(artSrc))
+
+    // #343-2 (music) — the chase-sound duck: the cue peaks over the ducked bed
+    const bedRaw = BED_VOICE * MUSIC_BUS
+    const recipePeak = (type) => Math.max(...SFX[type]({}).map((st) => (st[0] === 'noise' ? st[2] : st[0] === 'sweep' ? st[5] : st[4])))
+    ok('S11: duckFor ducks the bed only for chase cues, never for ordinary ones',
+        duckFor('escort') === DUCK_LEVEL && duckFor('doorCross') === DUCK_LEVEL
+        && duckFor('foot') === 1 && duckFor('potion') === 1 && duckFor('sword') === 1)
+    ok('S11: duck never raises the bed and is a genuine drop (0 < DUCK_LEVEL < 1)',
+        DUCK_LEVEL > 0 && DUCK_LEVEL < 1 && BED_VOICE > 0 && MUSIC_BUS > 0 && MUSIC_BUS <= 1)
+    ok('S11: PROVEN — a chase cue peaks over the ducked bed',
+        recipePeak('escort') > bedRaw * duckFor('escort')
+        && recipePeak('doorCross') > bedRaw * duckFor('doorCross'))
+    ok('S11: the duck earns its keep — the faint escort rustle is buried by the raw bed but clears the duck',
+        recipePeak('escort') < bedRaw && recipePeak('escort') > bedRaw * DUCK_LEVEL)
+    ok('S11: the duck is applied for real (AudioController.duckMusic) and wired into the cue path',
+        /duckMusic\(to/.test(ctrlSrc) && /MUSIC_BUS/.test(ctrlSrc) && /duckMusic\(duckFor\(ev\.type\)\)/.test(idxSrc))
+    ok('S11: the music duck contract is pure — no Math.random, no DOM in music.js',
+        !/Math\.random/.test(musicSrc) && !/document\./.test(musicSrc) && !/window\./.test(musicSrc))
+
+    // determinism + palace-only guards hold across the whole stage
+    ok('S11: determinism holds — still no Math.random anywhere in art.js', !/Math\.random/.test(artSrc))
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
