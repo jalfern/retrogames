@@ -1014,7 +1014,7 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
     ok('S8: figures get a colour temperature from the room they stand in',
         /opts\.temp/.test(artSrc) && /temp: /.test(artSrc) && /tempAt\(/.test(artSrc))
     ok('S8: the scene lights at the ambient the mode asks for',
-        /ambientFor\(/.test(artSrc) && /lightAt\(x, y, torchPx, amb\)/.test(artSrc))
+        /ambientFor\(/.test(artSrc) && /lightAt\(x, y, torchPx, amb(?:, moonPx)?\)/.test(artSrc))
     ok('S8: the shell routes ?lite through to the renderer',
         /LITE = .*lite/.test(idxSrc) && /lite: LITE/.test(idxSrc))
 
