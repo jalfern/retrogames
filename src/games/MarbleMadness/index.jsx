@@ -91,10 +91,14 @@ const MarbleMadnessGame = () => {
         const consumeEvents = () => {
             for (const ev of gs.events) {
                 sfx(ev)
-                if (ev.type === 'raceStart') banner = { text: RACES[ev.race].name + (ev.carry ? `  +${Math.round(ev.carry / 60)}s CARRY` : ''), t: 110, big: true }
-                if (ev.type === 'raceClear') banner = { text: `RACE CLEAR  +${ev.pts}`, t: 120, big: true }
-                if (ev.type === '1up') banner = { text: '1UP!', t: 90, big: true }
-                if (ev.type === 'win') banner = { text: 'COURSE COMPLETE!', t: 240, big: true }
+                // the race banners are gameplay text — they never stack onto
+                // the attract screen (ART.md rule 6)
+                if (mode !== 'attract') {
+                    if (ev.type === 'raceStart') banner = { text: RACES[ev.race].name + (ev.carry ? `  +${Math.round(ev.carry / 60)}s CARRY` : ''), t: 110, big: true }
+                    if (ev.type === 'raceClear') banner = { text: `RACE CLEAR  +${ev.pts}`, t: 120, big: true }
+                    if (ev.type === '1up') banner = { text: '1UP!', t: 90, big: true }
+                    if (ev.type === 'win') banner = { text: 'COURSE COMPLETE!', t: 240, big: true }
+                }
                 if (ev.type === 'shatter' || ev.type === 'void' || ev.type === 'munch') {
                     shake = 12
                     for (let i = 0; i < 16; i++) particles.push({
@@ -329,7 +333,7 @@ const MarbleMadnessGame = () => {
 
             if (mode === 'attract') {
                 ctx.fillStyle = 'rgba(5,5,20,0.55)'
-                ctx.fillRect(0, 60, W, 118)
+                ctx.fillRect(0, 60, W, 136)
                 ctx.textAlign = 'center'
                 ctx.font = 'bold 34px monospace'
                 ctx.fillStyle = '#ff4050'

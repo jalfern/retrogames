@@ -305,7 +305,9 @@ export default function MarioKart() {
             ctx.fillStyle = '#282838'; ctx.fillRect(150, PLAY_H + 10, 84, 8)
             ctx.fillStyle = P.boostT > 0 ? '#f8d800' : P.offroad ? '#f85800' : '#20c020'
             ctx.fillRect(150, PLAY_H + 10, barW, 8)
-            if (g.phase === 'count' || (g.phase === 'race' && g.tick - g.karts[0].lapStart < 40)) {
+            // the demo's 3-2-1 runs under the attract band — the 48px overlay
+            // would sit on top of the attract messages, so it is play-only
+            if (st.screen !== 'attract' && (g.phase === 'count' || (g.phase === 'race' && g.tick - g.karts[0].lapStart < 40))) {
                 ctx.textAlign = 'center'
                 ctx.font = 'bold 48px monospace'
                 ctx.fillStyle = g.phase === 'race' ? '#20e020' : '#f8f8f8'
@@ -319,7 +321,7 @@ export default function MarioKart() {
             // paints gold dash panels, so the BEST row would lose its gold
             // against a live track
             ctx.fillStyle = 'rgba(0,0,0,0.45)'
-            ctx.fillRect(0, 30, W, 100)
+            ctx.fillRect(0, 30, W, 120)
             ctx.textAlign = 'center'
             ctx.fillStyle = '#e02020'
             ctx.font = 'bold 26px monospace'
@@ -328,31 +330,26 @@ export default function MarioKart() {
             ctx.fillText('SUPER', W / 2, 56)
             ctx.fillStyle = '#f8d800'
             ctx.fillText('KART', W / 2, 84)
+            // one message at a time, cycling (ART.md rule 6)
+            const msgs = ['MARIO CIRCUIT - 5 LAPS', 'X GAS  S BRAKE  ←→ STEER', 'Z ITEM  R DRIFT  HOLD X AT 3-2-1 = ROCKET']
+            if (st.ghost) msgs.push('GHOST ON - the certified line')
+            msgs.push('autopilot demo (its own proven win)')
             ctx.font = 'bold 11px monospace'
             ctx.fillStyle = '#a8c8f8'
-            ctx.fillText('MARIO CIRCUIT - 5 LAPS', W / 2, 98)
-            ctx.font = 'bold 8px monospace'
-            ctx.fillStyle = '#c8d8f8'
-            ctx.fillText('X GAS  S BRAKE  ←→ STEER', W / 2, 108)
-            ctx.fillText('Z ITEM  R DRIFT  HOLD X AT 3-2-1 = ROCKET', W / 2, 117)
+            ctx.fillText(msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, 104)
             // the cabinet's memory: a top-3 table, best in gold
             if (st.top.length) {
+                ctx.font = 'bold 8px monospace'
                 for (let i = 0; i < st.top.length; i++) {
                     ctx.fillStyle = i === 0 ? '#f8d800' : '#88a8d8'
-                    ctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, 127 + i * 9)
+                    ctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, 122 + i * 9)
                 }
-            }
-            if (st.ghost) {
-                ctx.fillStyle = '#f8d800'
-                ctx.fillText('GHOST ON - the certified line', W / 2, 152)
             }
             if ((g.tick >> 5) % 2) {
                 ctx.font = 'bold 11px monospace'
                 ctx.fillStyle = '#f8f8f8'
                 ctx.fillText('PRESS ANY KEY / TAP', W / 2, 161)
             }
-            ctx.fillStyle = '#88a8d8'; ctx.font = '8px monospace'
-            ctx.fillText('attract: autopilot demo (its own proven win)', W / 2, 175)
             ctx.textAlign = 'left'
         }
 
