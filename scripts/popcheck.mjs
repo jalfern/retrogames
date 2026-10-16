@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW } from '../src/games/PrinceOfPersia/art.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
@@ -1095,6 +1095,80 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         /lightAt\(x, y, torchPx, amb, moonPx\)/.test(artSrc)
         && /tempAt\(x, y, torchPx, amb, moonPx\)/.test(artSrc))
     ok('S9: determinism holds — still no Math.random anywhere in art.js', !/Math\.random/.test(artSrc))
+}
+
+// ---- 20. Stage 10: warm-dominant overlap, seeded sky, cool shafts, stepped lips
+{
+    const artSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+    const T = VW / RW
+    // warm dominance: moon still cools warmth (S9 proof) but softly, so a body deep
+    // in a flame next to a window stays amber — the overlap no longer greys out.
+    ok('S10: cool light cools warmth only softly (0 < MOON_DILUTE < 1)',
+        MOON_DILUTE > 0 && MOON_DILUTE < 1)
+    const torch = [[200, 120]], win = [[200, 60]]
+    const tNoMoon = tempAt(200, 120, torch, LIGHT_AMBIENT, [])
+    const tMoon = tempAt(200, 120, torch, LIGHT_AMBIENT, win)
+    ok('S10: warmth still dilutes at a flame-and-window overlap (never reversed)', tMoon < tNoMoon)
+    ok('S10: warm dominance — moon barely cools a flame (the amber side survives)',
+        (tNoMoon - tMoon) < 0.2 && tMoon > 0.62)
+    ok('S10: default moon channel leaves the temperature untouched',
+        tempAt(200, 120, torch) === tNoMoon)
+
+    // seeded sky: a per-window cool key that shifts hue and breathes intensity,
+    // deterministic, always blue-dominant (never warm), and repeatable across frames.
+    ok('S10: moonTint is deterministic and wraps its seed',
+        moonTint(0.3).r === moonTint(0.3).r && moonTint(1.3).r === moonTint(0.3).r)
+    ok('S10: moonTint stays a cool key (blue dominant, g not below r)',
+        [0, 0.5, 0.9].every((s) => { const t = moonTint(s); return t.b === 255 && t.b > t.r && t.g >= t.r }))
+    ok('S10: windows vary — tint hue and intensity both span a range over the seed',
+        moonTint(0).r < moonTint(0.9).r && moonTint(0).g < moonTint(0.9).g
+        && moonTint(0).s < moonTint(0.9).s)
+    ok('S10: moon intensity stays a soft key (never flares past 1)',
+        moonTint(0).s >= 0.7 && moonTint(1).s <= 1)
+    ok('S10: windows carry a seed out of moonSources (index 2), pane geometry intact',
+        moonSources([{ window: 3 }], 0)[0][0] === 3 * T + 16
+        && moonSources([{ window: 3 }], 0)[0][1] === 60
+        && typeof moonSources([{ window: 3 }], 0)[0][2] === 'number'
+        && moonSources([{ window: 3 }], 0)[0][2] >= 0 && moonSources([{ window: 3 }], 0)[0][2] < 1)
+    ok('S10: two windows in different rooms seed differently (a sky, not a stencil)',
+        moonSources([{ window: 2 }, { window: 2 }], 0)[0][2] !== moonSources([{ window: 2 }, { window: 2 }], 0)[1][2])
+
+    // the moon's foot on the floor: quantised to the tile like the warm band, and gone
+    // past the cool reach — so the shaft lands as stone, not a blob.
+    const mtile = Math.floor(200 / T) * T + T / 2
+    ok('S10: the cool floor band is quantised to the flagstone',
+        coolBandAt(mtile - (T / 2 - 1), win) === coolBandAt(mtile, win)
+        && coolBandAt(mtile + (T / 2 - 1), win) === coolBandAt(mtile, win))
+    ok('S10: the cool band steps down tile by tile and dies past the reach',
+        coolBandAt(mtile, win) > coolBandAt(mtile + T, win)
+        && coolBandAt(mtile + Math.ceil(MOON_RADIUS * 0.7 / T) * T, win) === 0)
+    ok('S10: the cool band ignores height (it is a floor signal)',
+        coolBandAt(200, [[200, 100]]) === coolBandAt(200, [[200, 500]]))
+    ok('S10: no windows → no cool band', coolBandAt(200, []) === 0)
+
+    // bone and the white tunic sit at temp 0 in the dark; the violet rim must not
+    // tint them. Non-pale is byte-for-byte the Stage 8/9 alpha — clothed cast unchanged.
+    ok('S10: a pale figure takes a damped rim (bone/tunic never purple)',
+        rimAlpha(true, 0) < rimAlpha(false, 0) && rimAlpha(true, 1) < rimAlpha(false, 1))
+    ok('S10: non-pale rim equals the inherited Stage 8 brightness path',
+        rimAlpha(false, 0) === 0.12 && rimAlpha(false, 1) === 0.34)
+    ok('S10: rim alpha rises with light for both pale and clothed',
+        rimAlpha(false, 0) < rimAlpha(false, 1) && rimAlpha(true, 0) < rimAlpha(true, 1))
+
+    // scene wiring: the fixes are actually painted, palace-only, determinism intact.
+    ok('S10: each window pool takes its seeded tint',
+        /function coolPool\([^)]*seed/.test(artSrc) && /moonTint\(seed\)/.test(artSrc))
+    ok('S10: windows cast a cool floor shaft + band, seeded and quantised',
+        /coolBandAt\(/.test(artSrc) && /createLinearGradient\(0, mp\[1\], 0, fy\)/.test(artSrc)
+        && /coolPool\(ctx, mp\[0\], mp\[1\], Math\.sin\(tick \* 0\.04\), mp\[2\]/.test(artSrc))
+    ok('S10: lit flagstones get a bright front-lip (stepped stone)',
+        /rgba\(255,190,120,/.test(artSrc))
+    ok('S10: figures damp the rim by pale (bone + the prince tunic)',
+        /const pale = !!\(opts\.bone \|\| opts\.pale\)/.test(artSrc)
+        && /rimAlpha\(pale, warm\)/.test(artSrc) && /pale: true/.test(artSrc))
+    ok('S10: the cool shaft paints only for palace windows (dungeon stays firelit)',
+        /lvl\.theme === 'palace'/.test(artSrc) && /moonPx\.length/.test(artSrc))
+    ok('S10: determinism holds — still no Math.random anywhere in art.js', !/Math\.random/.test(artSrc))
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

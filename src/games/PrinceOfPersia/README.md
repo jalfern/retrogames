@@ -72,12 +72,13 @@ X or Z strike · ? pause · R restart after the hour is lost.
 
 ```bash
 npm run lint:pop     # scoped lint gate
-npm run popcheck     # 253 checks: the 75 Stage-1 rules + 24 Stage-2 look
+npm run popcheck     # 302 checks: the 75 Stage-1 rules + 24 Stage-2 look
                      # clauses + 67 Stage-3 clauses + 25 Stage-4 sound clauses
                      # + 14 Stage-5 gate/banner/escort clauses + 15 Stage-6
                      # light-model clauses + 17 Stage-7 escort clauses + 16
                      # Stage-8 colour-temperature / floor-bounce / phone-light
-                     # clauses.
+                     # clauses + 26 Stage-9 two-source (moon) clauses + 23
+                     # Stage-10 interacting-source clauses.
                      # Champion run pinned: autopilot clears all twelve levels at
                      # 0 deaths, the mirror / mouse-held gate / poisoned phantom
                      # shadow / invisible bridge / sheathed merge all fire in that
@@ -321,8 +322,52 @@ cool-dilutes-warmth clause red (278/279); restored → 279/279. On-canvas the fr
 carries warm fire *and* cool dark/moon pixels; `popplay` 17/17 through the palace
 levels with zero page errors.
 
+## Stage 10 — the fifth art pass: sources that interact (this merge)
+
+Stage 9 lit the palace from two kinds of source. Stage 10 makes those sources
+*interact* like real light (QA #341): a body no longer greys out between fire and
+moon, the windows become a sky, the moon casts onto the floor, steps catch a lit
+lip, and violet stops tinting bone. `sim.js` untouched — rules + champion run unchanged.
+All new helpers are pure + exported.
+
+- **Warm-dominant overlap (`MOON_DILUTE`).** Cool light still dilutes warmth (the
+  S9 proof stands) but *softly* — `tempAt`'s cool term is scaled by `MOON_DILUTE=0.55`
+  in the denominator, so a body deep in a torch pool beside a window stays amber on the
+  flame side instead of pulling to neutral grey. Default-empty moon keeps every S8/S9
+  value identical; the drop at a flame-and-window overlap is <0.2 world-temp.
+- **A per-window sky (`moonTint`, seeded).** `moonSources` now carries a third
+  channel: a deterministic seed from the window's absolute column (`hash`). `coolPool`
+  paints each window with its own cool hue + intensity from `moonTint(seed)` — indigo→
+  pale-blue, intensity 0.78–1.0, always blue-dominant (never warm). A row of windows
+  reads as a sky, not a stencil. Fully deterministic: same seed → same tint, no `Math.random`.
+- **The moon casts (`coolBandAt`).** Under each window the shaft lays a faint cool
+  vertical gradient down to the floor and a cool floor band quantised to the flagstone
+  (mirroring the warm `bandAt`), so the shaft reads as light *cast* from the pane.
+- **Stepped stone (lit front-lip).** Each lit flagstone now gets a brighter 2px top
+  lip (warm and cool) so the band reads as a stepped step, not a flat glow.
+- **Bone stays bone (`rimAlpha`).** The figure rim alpha is damped to 32% on pale
+  palettes (`opts.bone` skeleton + `opts.pale` prince tunic) so the temp-0 violet rim
+  never purples bone or the white tunic. Non-pale is byte-for-byte the Stage 8 value.
+
+Stage-10 added 23 `popcheck` clauses (302 total): `MOON_DILUTE` bounds + warm-dominance
+(delta<0.2, temp>0.62 at flame+window) + never-reversed + default-moon-unchanged;
+`moonTint` determinism/wrap, cool-dominance, hue+intensity span, soft-key bound;
+seeded `moonSources` (pane geometry intact, two rooms seed differently); `coolBandAt`
+quantise/step/reach-death/height-invariant/empty; `rimAlpha` pale-damp + non-pale parity
++ monotonicity; and the drawScene wiring (seeded `coolPool`, cast shaft + cool band, lit
+lips, `pale` rim damp, palace-only) plus no `Math.random`. Mutant proof at ship time:
+killing the pale damp in `rimAlpha` turns the "pale takes a damped rim" clause red
+(301/302); restored → 302/302.
+
 ## Honest gaps (the deep pass continues — see #316)
 
 - Touch: the pad has no Shift, so hang-grab on a phone leans on climbing
   with the d-pad; desktop-first, as the original was.
+- Mirror veil (#341-6): `propLight` paints a rectangular veil over the arched
+  mirror; the corners hang past the glass onto the frame. Needs an arch-aware clip.
+- Chase-sound mix (#341-8): whether the `escort`/`doorCross` cues cut through the
+  `pop` bed during a chase is unproven — a headless analyser duck test would settle it.
+- Window key height (#341-2): `moonSources` keys every pane at pane-row y=60; this
+  level set places all windows on that row. A level that raised/dropped a window would
+  mis-key the light — the single-height assumption is baked in, not derived from deco.
 
