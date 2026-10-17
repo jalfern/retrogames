@@ -16,6 +16,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
     ZONES, groundY, maybeEnterLoop, makeGame, step, planRun,
     FIXED_DT, VIEW_W, VIEW_H, BODY_R, RUN_TOP, VMAX,
@@ -77,6 +78,8 @@ const MomentumGame = () => {
         let gs = makeGame()
         let demoAt = 0, raf = 0, last = 0, acc = 0
         let toast = 0, toastMsg = '', shake = 0, wheelAng = 0
+        let contractSeed = 0
+        let cprev = {}
         const keys = { left: false, right: false }
         let jumpEdge = false, jumpCut = false
         const dbg = { kp: 0 }
@@ -341,8 +344,11 @@ const MomentumGame = () => {
             const ft = Math.min(ts - last, 250)   // world-second catch-up cap (heist lesson)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doSim(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= SIM_MS) { doSim(); acc -= SIM_MS }
+                }
             }
             paint()
             syncHud()
@@ -459,10 +465,53 @@ const MomentumGame = () => {
                     } },
                 ],
             })
+            exposeGame({
+                id: 'momentum',
+                buttons: ['left', 'right', 'up', 'a'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    gs = makeGame()
+                    evLog.length = 0
+                    parts.length = 0
+                    hist.length = 0
+                    cprev = {}
+                    keys.left = keys.right = false
+                    jumpEdge = jumpCut = false
+                    demoAt = 0
+                    shake = 0
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const before = gs.ev.length
+                    const aNow = !!pad.a || !!pad.up
+                    step(gs, {
+                        right: !!pad.right, left: !!pad.left,
+                        jumpEdge: aNow && !(cprev.a || cprev.up),
+                        jumpCut: !aNow && (cprev.a || cprev.up) && gs.p.mode === 'air',
+                    })
+                    maybeEnterLoop(gs)
+                    handleEvents(gs.ev.slice(before))
+                    cprev = { a: !!pad.a, up: !!pad.up }
+                },
+                state: () => {
+                    const p = gs.p
+                    const s = `${gs.tick}|${p.x.toFixed(2)},${p.y.toFixed(2)},${(p.s || 0).toFixed(2)},${p.mode}|` +
+                        `${gs.zone}|${gs.rings}|${gs.score}|${gs.deaths}|${gs.loopTaken ? 1 : 0}|${gs.end || '-'}`
+                    let h = 2166136261
+                    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619)
+                    return {
+                        tick: gs.tick, score: gs.score, done: !!gs.end,
+                        seed: contractSeed, zone: gs.zone, rings: gs.rings,
+                        deaths: gs.deaths, hash: h >>> 0,
+                    }
+                },
+                canvas: () => canvas,
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__runnerTest) delete window.__runnerTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__runnerTest) delete window.__runnerTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
