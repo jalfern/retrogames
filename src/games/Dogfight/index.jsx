@@ -23,6 +23,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { CFG, FIXED_DT, newGame, step, pilotInput, recordMission, replay, stateHash, cloneGame } from './sim.js'
 import { MISSION_COUNT } from './levels.js'
 
@@ -214,6 +215,7 @@ const DogfightGame = () => {
         let raf = 0, last = 0, acc = 0
         let gs = newGame(0)
         let mission = 0
+        let contractSeed = 0
         let throttle = 0.85
         const keys = new Set()
         let demoCmds = null, demoBy = null, demoMission = 0
@@ -312,10 +314,13 @@ const DogfightGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                let guard = 0
-                while (acc >= FIXED_DT * 1000 && guard < 20) { doSim(); acc -= FIXED_DT * 1000; guard++ }
-                if (guard >= 20) acc = 0
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    let guard = 0
+                    while (acc >= FIXED_DT * 1000 && guard < 20) { doSim(); acc -= FIXED_DT * 1000; guard++ }
+                    if (guard >= 20) acc = 0
+                }
             }
 
             const p = gs.p
@@ -482,6 +487,34 @@ const DogfightGame = () => {
                         : `NOT WINNABLE from here: ${g2.end} — ${g2.why}`
                 },
             }
+            exposeGame({
+                id: 'dogfight',
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    startPlay(contractSeed)
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    if (pad.b) throttle = Math.min(1, throttle + 0.01)
+                    const inp = {
+                        roll: (pad.right ? 1 : 0) - (pad.left ? 1 : 0),
+                        pitch: (pad.up ? 1 : 0) - (pad.down ? 1 : 0),
+                        throttle,
+                        fire: !!pad.a,
+                    }
+                    gs.cmds.push({ tick: gs.tick, in: inp })
+                    step(gs, inp)
+                    handleEvents(gs.events.splice(0))
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.foes.filter((f) => !f.alive).length, done: !!gs.end,
+                    seed: contractSeed, mission, end: gs.end, why: gs.why,
+                    hp: gs.p.hp, belt: gs.p.belt, bullets: gs.bullets.length,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
             mountDbg({
                 title: 'WWI DOGFIGHT',
                 getState: () => [
@@ -498,7 +531,7 @@ const DogfightGame = () => {
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__dogTest) delete window.__dogTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__dogTest) delete window.__dogTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

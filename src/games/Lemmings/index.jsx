@@ -16,6 +16,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { LEVELS, buildLevel } from './levels.js'
 import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
 
@@ -150,8 +151,11 @@ const LemGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= FIXED_DT * 1000) { doSim(); acc -= FIXED_DT * 1000 }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= FIXED_DT * 1000) { doSim(); acc -= FIXED_DT * 1000 }
+                }
             }
             paint()
             syncHud()
@@ -408,6 +412,32 @@ const LemGame = () => {
                     return true
                 },
             }
+            exposeGame({
+                id: 'lemmings',
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+                reset: (seed) => {
+                    loadLevel((seed >>> 0) % LEVELS.length, true)
+                    keys.clear()
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const sp = 11 * FIXED_DT
+                    if (pad.left) cursor.x = Math.max(0.5, cursor.x - sp)
+                    if (pad.right) cursor.x = Math.min(W - 0.5, cursor.x + sp)
+                    if (pad.up) cursor.y = Math.max(2, cursor.y - sp)
+                    if (pad.down) cursor.y = Math.min(H - 1, cursor.y + sp)
+                    if (pad.b) cycleSkill()
+                    if (pad.a) applySkill(cursor.x, cursor.y)
+                    handleEvents(step(gs, { x: cursor.x, y: cursor.y }).events)
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: !!gs.end,
+                    seed: levelIdx, level: meta.name, exited: gs.exited, dead: gs.dead, spawned: gs.spawned,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
 
             // F1 surgery panel: live state + the question Jon asked the
             // hard way: "can this level STILL be won from exactly here?"
@@ -456,7 +486,7 @@ const LemGame = () => {
 
         return () => {
             if (import.meta.env.DEV && window.__lemTest) delete window.__lemTest
-            if (import.meta.env.DEV) unmountDbg()
+            if (import.meta.env.DEV) { unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

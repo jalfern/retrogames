@@ -17,6 +17,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { W, H, CFG, L, makeGame, step, stateHash } from './sim.js'
 import { plan } from './planner.js'
 
@@ -56,6 +57,7 @@ const PolarityGame = () => {
 
         let gs = makeGame(0)
         let raf = 0, last = 0, acc = 0
+        let contractSeed = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0
         const keys = { l: false, r: false, u: false, d: false, f: false, fTap: false, sEdge: false }
         const evLog = []
@@ -260,8 +262,11 @@ const PolarityGame = () => {
             const ft = Math.min(ts - last, 250)   // world-second catch-up cap (heist lesson)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                }
             }
             paint()
             syncHud()
@@ -346,6 +351,28 @@ const PolarityGame = () => {
                     return true
                 },
             }
+            exposeGame({
+                id: 'polarity',
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    gs = makeGame(contractSeed % 3)
+                    evLog.length = 0; parts.length = 0; tele.length = 0
+                    keys.l = keys.r = keys.u = keys.d = keys.f = keys.fTap = keys.sEdge = false
+                    shake = 0; toast = 0
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    doSim({ l: !!pad.left, r: !!pad.right, u: !!pad.up, d: !!pad.down, f: !!pad.a, s: !!pad.b })
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: !!gs.end,
+                    seed: contractSeed, wave: gs.wave, lives: gs.lives, charge: gs.charge,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
             mountDbg({
                 title: 'POLARITY',
                 getState: () => [
@@ -375,7 +402,7 @@ const PolarityGame = () => {
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__polarTest) delete window.__polarTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__polarTest) delete window.__polarTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

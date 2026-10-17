@@ -13,6 +13,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { CW, CH, HUD_H, CELL, GW, GH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS } from './levels.js'
 import { makeGame, step, stateHash, CFG } from './sim.js'
 import { plan } from './planner.js'
@@ -442,8 +443,11 @@ const SmashTVGame = () => {
             const dt = Math.min(now - last, 250)
             last = now
             if (pausedRef.current) return
-            acc += dt
-            while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+            if (contractHoldsLoop()) { acc = 0 }
+            else {
+                acc += dt
+                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+            }
             draw()
             const h = hudRef.current
             if (h.score) h.score.textContent = String(gs.score).padStart(6, '0')
@@ -502,6 +506,37 @@ const SmashTVGame = () => {
                 }),
                 gameTime: () => gs.tick / 60,
             }
+            exposeGame({
+                id: 'smash-tv',
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+                reset: (seed) => {
+                    gs = makeGame(seed >>> 0)
+                    floor = buildFloor(0, gs.seed)
+                    demoAt = 0
+                    parts.length = 0; pops.length = 0; evLog.length = 0
+                    held.clear(); bombEdge = false
+                    shake = 0; flash = 0; toast = 0
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const inp = {
+                        mx: (pad.right ? 1 : 0) - (pad.left ? 1 : 0),
+                        my: (pad.down ? 1 : 0) - (pad.up ? 1 : 0),
+                        fx: 0, fy: 0,
+                        fire: !!pad.a,
+                        bomb: !!pad.b,
+                    }
+                    moving = !!(inp.mx || inp.my)
+                    doSim(inp)
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: !!gs.end,
+                    seed: gs.seed, room: gs.room, lives: gs.lives, weapon: gs.weapon,
+                    enemies: gs.enemies.length, hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
             mountDbg({
                 title: 'SMASH TV',
                 getState: () => [
@@ -525,7 +560,7 @@ const SmashTVGame = () => {
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
-            if (import.meta.env.DEV) { unmountDbg(); delete window.__smashTest }
+            if (import.meta.env.DEV) { unmountDbg(); unexposeGame(); delete window.__smashTest }
         }
     }, [setMode])
 
