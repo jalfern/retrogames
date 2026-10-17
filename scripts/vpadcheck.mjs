@@ -521,6 +521,26 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
             ok(!!b && b.code === code && nonEmpty(b.label), `games.js ${path} B button is ${code}, labelled '${b && b.label}'`)
         }
     }
+    // Step 2 batch 2: the next ten undeclared canvas titles. Every one is a
+    // move-/fire-only original whose primary action is the A button (Space), so
+    // each takes the floating stick (the default) and declares no B button.
+    const batch2 = {
+        '/boulder-dash': null, '/sonar': null, '/momentum': null, '/frogger': null,
+        '/tempest': null, '/dig-dug': null, '/adventure': null, '/joust': null,
+        '/arkanoid': null, '/missile-battle': null,
+    }
+    for (const [path, code] of Object.entries(batch2)) {
+        const g = GAMES.find((e) => e.path === path)
+        ok(!!g && g.pad !== undefined, `games.js ${path} declares a pad (step 2 batch 2)`)
+        if (!g || g.pad === undefined) continue
+        ok(g.pad.layout === 'stick', `games.js ${path} uses the floating stick (the default)`)
+        if (code === null) {
+            ok(g.pad.buttons.length === 0, `games.js ${path} declares no B button (move-/fire-only original)`)
+        } else {
+            const b = padButton(g.pad)
+            ok(!!b && b.code === code && nonEmpty(b.label), `games.js ${path} B button is ${code}, labelled '${b && b.label}'`)
+        }
+    }
 }
 
 // --- Summary ---

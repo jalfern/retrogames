@@ -249,6 +249,7 @@ export const GAMES = [
     },
     {
         path: '/boulder-dash',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: BoulderDashGame,
         label: 'BOULDER DASH',
@@ -258,6 +259,7 @@ export const GAMES = [
     },
     {
         path: '/sonar',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: SonarGame,
         label: 'SONAR ABYSS',
@@ -277,6 +279,7 @@ export const GAMES = [
     },
     {
         path: '/momentum',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: MomentumRunnerGame,
         label: 'MOMENTUM RUNNER',
@@ -315,6 +318,7 @@ export const GAMES = [
     },
     {
         path: '/missile-battle',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: MissileBattleGame,
         label: 'MISSILE BATTLE',
@@ -434,6 +438,7 @@ export const GAMES = [
     },
     {
         path: '/joust',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: JoustGame,
         label: 'JOUST',
@@ -453,6 +458,7 @@ export const GAMES = [
     },
     {
         path: '/arkanoid',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: ArkanoidGame,
         label: 'ARKANOID',
@@ -571,6 +577,7 @@ export const GAMES = [
     },
     {
         path: '/frogger',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: FroggerGame,
         label: 'FROGGER',
@@ -589,6 +596,7 @@ export const GAMES = [
     },
     {
         path: '/adventure',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: AdventureGame,
         label: 'ADVENTURE',
@@ -706,6 +714,7 @@ export const GAMES = [
     },
     {
         path: '/dig-dug',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: DigDugGame,
         label: 'DIG DUG',
@@ -795,6 +804,7 @@ export const GAMES = [
     },
     {
         path: '/tempest',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: TempestGame,
         label: 'TEMPEST',
