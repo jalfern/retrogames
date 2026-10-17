@@ -12,6 +12,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateHash, WAVES, LAVA_TOP, GROUND_Y, FIXED_DT } from './sim.js'
 import { plan } from './planner.js'
 import { SFX } from './sounds.js'
@@ -48,6 +49,7 @@ const JoustGame = () => {
 
         let gs = null
         let demo = null
+        let contractSeed = 0
         let raf = 0, last = 0, acc = 0
         let keys = { l: false, r: false, f: false, l2: false, r2: false, f2: false }
         let parts = []
@@ -253,17 +255,20 @@ const JoustGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (pausedRef.current) return
-            acc += ft
-            while (acc >= SIM_MS) {
-                acc -= SIM_MS
-                if (screenRef.current === 'attract' && demo) {
-                    step(demo, plan(demo))
-                    if (demo.end) buildDemo()
-                    handleEvents(demo, false)
-                } else if (screenRef.current === 'play' && gs && !gs.end) {
-                    step(gs, { ...keys })
-                    handleEvents(gs, true)
-                    finish(gs)
+            if (contractHoldsLoop()) { acc = 0 }
+            else {
+                acc += ft
+                while (acc >= SIM_MS) {
+                    acc -= SIM_MS
+                    if (screenRef.current === 'attract' && demo) {
+                        step(demo, plan(demo))
+                        if (demo.end) buildDemo()
+                        handleEvents(demo, false)
+                    } else if (screenRef.current === 'play' && gs && !gs.end) {
+                        step(gs, { ...keys })
+                        handleEvents(gs, true)
+                        finish(gs)
+                    }
                 }
             }
             paint()
@@ -395,10 +400,37 @@ const JoustGame = () => {
                     } },
                 ],
             })
+            exposeGame({
+                id: 'joust',
+                buttons: ['left', 'right', 'a'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    playersRef.current = 1
+                    gs = makeGame({ players: 1 })
+                    parts = []; popups = []
+                    keys = { l: false, r: false, f: false, l2: false, r2: false, f2: false }
+                    toast = 0; shake = 0; flash = 0
+                    setSc('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    step(gs, { l: !!pad.left, r: !!pad.right, f: !!pad.a })
+                    handleEvents(gs, false)
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.total, done: !!gs.end,
+                    seed: contractSeed, wave: gs.wave, eggsGot: gs.eggsGot,
+                    p1: { score: gs.players[0].score, lives: gs.players[0].lives, out: gs.players[0].out },
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => JSON.parse(JSON.stringify(gs)),
+                restore: (s) => { gs = s },
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__joustTest) delete window.__joustTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__joustTest) delete window.__joustTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('pointerdown', onPointer)

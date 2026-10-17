@@ -1,6 +1,7 @@
 // contractcheck.mjs — the window.__game contract is real on every wired game
 // (pilots #377; rollout batch 1 #391: arkanoid, galaga, dig-dug,
-// missile-battle, spy-hunter, paperboy).
+// missile-battle, spy-hunter, paperboy; batch 2: tetris, boulder-dash,
+// bubble-bobble, ice-climber, joust, qbert).
 //
 // Per game, in headless Chrome against the DEV server:
 //   boot (window.__game exists, zero page errors) · meta · state shape ·
@@ -25,6 +26,12 @@ const GAMES = [
     { id: 'missile-battle', path: '/missile-battle' },
     { id: 'spy-hunter', path: '/spy-hunter' },
     { id: 'paperboy', path: '/paperboy' },
+    { id: 'tetris', path: '/tetris' },
+    { id: 'boulder-dash', path: '/boulder-dash' },
+    { id: 'bubble-bobble', path: '/bubble-bobble' },
+    { id: 'ice-climber', path: '/ice-climber' },
+    { id: 'joust', path: '/joust' },
+    { id: 'qbert', path: '/qbert' },
     { id: 'comet-drift', path: '/comet-drift' },
 ]
 const TICKS = 600
@@ -39,6 +46,12 @@ const PATTERNS = {
     'missile-battle': (i) => ({ left: i % 31 < 14, right: i % 31 >= 16 && i % 31 < 28, up: i % 41 < 9, a: i % 13 < 2 }),
     'spy-hunter': (i) => ({ left: i % 37 < 15, right: i % 37 >= 19 && i % 37 < 31, a: i % 5 < 3, b: i % 23 < 2 }),
     paperboy: (i) => ({ left: i % 41 < 17, right: i % 41 >= 22 && i % 41 < 36, up: i % 3 === 0, down: i % 89 < 4, a: i % 17 < 2 }),
+    tetris: (i) => ({ left: i % 43 < 18, right: i % 43 >= 22 && i % 43 < 38, down: i % 17 < 4, a: i % 11 < 2 }),
+    'boulder-dash': (i) => ({ left: i % 53 < 14, right: i % 53 >= 18 && i % 53 < 32, up: i % 61 < 10, down: i % 61 >= 28 && i % 61 < 40, a: i % 7 < 3 }),
+    'bubble-bobble': (i) => ({ left: i % 47 < 16, right: i % 47 >= 20 && i % 47 < 36, up: i % 59 < 8, down: i % 59 >= 30 && i % 59 < 38, a: i % 13 < 2 }),
+    'ice-climber': (i) => ({ left: i % 41 < 15, right: i % 41 >= 19 && i % 41 < 33, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 36, a: i % 9 < 3 }),
+    joust: (i) => ({ left: i % 37 < 14, right: i % 37 >= 17 && i % 37 < 30, a: i % 5 < 2 }),
+    qbert: (i) => ({ left: i % 43 < 18 && i % 89 < 50, right: i % 43 >= 20 && i % 43 < 38, up: i % 29 < 14, down: i % 29 >= 15 && i % 29 < 28, a: i % 31 < 2 }),
     'comet-drift': (i) => ({ left: i % 43 < 15, right: i % 43 >= 21 && i % 43 < 34, up: i % 59 !== 0, a: i % 11 < 4 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))

@@ -12,6 +12,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { newGame, step, cellsOf, stateHash, PIECE_NAMES, SPAWN_X, SPAWN_Y, FIXED_DT, resting } from './sim.js'
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from './planner.js'
 import { musicStep } from './music.js'
@@ -221,21 +222,24 @@ const TetrisGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (pausedRef.current) return
-            acc += ft
-            while (acc >= SIM_MS) {
-                acc -= SIM_MS
-                if (screenRef.current === 'attract' && demo) {
-                    step(demo, driveInput(demo, demoPlan, demoMem))
-                    if (demo.over) { demoLevel = nextDemoLevel(demoLevel); buildDemo(demoLevel) }
-                    else if (demoPlan && demo.locks !== demoMem.lastLocks && !demo.clearing) { demoMem = { lastLocks: demo.locks }; demoPlan = choosePlan(demo) }
-                    handleEvents(demo, false)
-                } else if (screenRef.current === 'play' && gs && !gs.over) {
-                    step(gs, { ...keys })
-                    const rest = resting(gs)
-                    if (rest && !wasResting) audioController.playTone(140, 0.03, 'square', 0.05)
-                    wasResting = rest
-                    handleEvents(gs, true)
-                    finish(gs)
+            if (contractHoldsLoop()) { acc = 0 }
+            else {
+                acc += ft
+                while (acc >= SIM_MS) {
+                    acc -= SIM_MS
+                    if (screenRef.current === 'attract' && demo) {
+                        step(demo, driveInput(demo, demoPlan, demoMem))
+                        if (demo.over) { demoLevel = nextDemoLevel(demoLevel); buildDemo(demoLevel) }
+                        else if (demoPlan && demo.locks !== demoMem.lastLocks && !demo.clearing) { demoMem = { lastLocks: demo.locks }; demoPlan = choosePlan(demo) }
+                        handleEvents(demo, false)
+                    } else if (screenRef.current === 'play' && gs && !gs.over) {
+                        step(gs, { ...keys })
+                        const rest = resting(gs)
+                        if (rest && !wasResting) audioController.playTone(140, 0.03, 'square', 0.05)
+                        wasResting = rest
+                        handleEvents(gs, true)
+                        finish(gs)
+                    }
                 }
             }
             paint()
@@ -354,10 +358,33 @@ const TetrisGame = () => {
                     } },
                 ],
             })
+            exposeGame({
+                id: 'tetris',
+                buttons: ['left', 'right', 'down', 'a'],
+                reset: (seed) => {
+                    startPlay(0, seed >>> 0)
+                    keys.left = keys.right = keys.down = keys.rot = false
+                    lockFlash = { cells: null, t: 0 }
+                    wasResting = false; toast = 0; scoreFlash = 0
+                },
+                tick: (pad) => {
+                    if (gs.over) { gs.tick += 1; return }
+                    step(gs, { left: !!pad.left, right: !!pad.right, down: !!pad.down, rot: !!pad.a })
+                    handleEvents(gs, false)
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: !!gs.over,
+                    seed: gs.seed, level: gs.level, lines: gs.lines, locks: gs.locks,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => JSON.parse(JSON.stringify({ ...gs, board: Array.from(gs.board) })),
+                restore: (s) => { gs = { ...s, board: Uint8Array.from(s.board) } },
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__tetrisTest) delete window.__tetrisTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__tetrisTest) delete window.__tetrisTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('pointerdown', onPointer)

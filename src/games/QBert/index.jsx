@@ -12,6 +12,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT, HOP_TICKS, TUNNEL } from './sim.js'
 import { plan } from './planner.js'
 import { sfxFor } from './sound.js'
@@ -284,26 +285,29 @@ const QBertGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (pausedRef.current) return
-            acc += ft
-            while (acc >= SIM_MS) {
-                acc -= SIM_MS
-                const input = {
-                    ul: held.up && held.lf,
-                    ur: held.up && held.rt,
-                    dl: held.dn && held.lf,
-                    dr: held.dn && held.rt,
-                }
-                if (screenRef.current === 'attract' && demo) {
-                    step(demo, plan(demo))
-                    if (demo.end || (demo.pending && demo.pending.t <= 0)) buildDemo()
-                    handleEvents(demo, false)
-                } else if (screenRef.current === 'play' && gs && !gs.end) {
-                    step(gs, input)
-                    handleEvents(gs, true)
-                    finish(gs)
-                    if (gs && !gs.end && gs.active !== lastActive) {
-                        lastActive = gs.active
-                        say(`PLAYER ${gs.active + 1}`, '#58d8f8')
+            if (contractHoldsLoop()) { acc = 0 }
+            else {
+                acc += ft
+                while (acc >= SIM_MS) {
+                    acc -= SIM_MS
+                    const input = {
+                        ul: held.up && held.lf,
+                        ur: held.up && held.rt,
+                        dl: held.dn && held.lf,
+                        dr: held.dn && held.rt,
+                    }
+                    if (screenRef.current === 'attract' && demo) {
+                        step(demo, plan(demo))
+                        if (demo.end || (demo.pending && demo.pending.t <= 0)) buildDemo()
+                        handleEvents(demo, false)
+                    } else if (screenRef.current === 'play' && gs && !gs.end) {
+                        step(gs, input)
+                        handleEvents(gs, true)
+                        finish(gs)
+                        if (gs && !gs.end && gs.active !== lastActive) {
+                            lastActive = gs.active
+                            say(`PLAYER ${gs.active + 1}`, '#58d8f8')
+                        }
                     }
                 }
             }
@@ -460,10 +464,38 @@ const QBertGame = () => {
                     } },
                 ],
             })
+            exposeGame({
+                id: 'qbert',
+                buttons: ['left', 'right', 'up', 'down', 'a'],
+                reset: (seed) => {
+                    gs = makeGame({ seed: seed >>> 0 || 1 })
+                    parts = []; popups = []; lastActive = 0
+                    held.up = held.dn = held.lf = held.rt = false
+                    toast = 0; shake = 0; flash = 0
+                    setSc('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    step(gs, {
+                        ul: !!pad.up && !!pad.left,
+                        ur: !!pad.up && !!pad.right,
+                        dl: !!pad.down && !!pad.left,
+                        dr: !!pad.down && !!pad.right,
+                    })
+                    handleEvents(gs, false)
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.players[gs.active].score, done: !!gs.end,
+                    seed: gs.seed, level: gs.level, mode: gs.mode, flips: gs.flips,
+                    needed: neededCubes(gs).length, p1: gs.players[0].score, lives: gs.players[0].lives,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__qbertTest) delete window.__qbertTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__qbertTest) delete window.__qbertTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('pointerdown', onPointer)
