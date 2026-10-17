@@ -67,7 +67,8 @@
 //     the INDUSTRIAL age (Steam Power, Astronomy, Railroad) into the MODERN
 //     (Industrialization, Electricity, Spaceflight), each with real era effects.
 //     Three victories end the game: DOMINATION (every rival capital), SCIENCE
-//     (Spaceflight unlocks THE ARK — every beaker after it banks toward launch)
+//     (Spaceflight unlocks THE ARK — beakers then weld its four named parts:
+//      Cockpit, Booster, Stasis and Launch; the completed hull lifts off)
 //     and CULTURE (lifetime culture past the threshold, strictly ahead of every
 //     living rival). The arcade milestone (capital size N) remains as the
 //     golden-age win. The Musket (Gunpowder) and the Galleon (Astronomy — the
@@ -104,8 +105,33 @@ export const CFG = {
     stoneCult: 2, librarySci: 2, gardenFood: 1, colossusGold: 1, wallDefMult: 1.5,   // wonder effects
     csGift: 25, csInfl: 30, csAlly: 60, csTribute: 40,    // city-state courts: gift cost, influence per gift, alliance threshold, sack tribute
     tradeGold: 3, peaceCool: 3,                             // gold per signed trade pact per turn; turns peace must hold before trade
-    arkScience: 70, cultureWin: 350,       // Stage 8 victories: beakers banked into the Ark after Spaceflight; lifetime culture that must lead every rival
+    arkScience: 70, cultureWin: 350,       // Stage 8 victories: beakers banked into the Ark after Spaceflight (= the sum of ARK_PARTS); lifetime culture that must lead every rival
 }
+
+// ---- the Ark, part by part (polish pass #375-3: the Science win assembles a
+// ship, not a number) -----------------------------------------------------------
+// Spaceflight opens the yard; beakers then weld four NAMED parts in order, each
+// with its own track. The ledger stays gs.ark[civ] (the proven §32/§33 pool);
+// the parts are a pure derivation of it — ordered fill with spill, so the
+// weld boundaries are milestones: 15 + 20 + 15 + 20 = the 70-beaker launch.
+export const ARK_PARTS = [
+    { id: 'COCKPIT', name: 'Cockpit', cost: 15 },
+    { id: 'BOOSTER', name: 'Booster', cost: 20 },
+    { id: 'STASIS', name: 'Stasis', cost: 15 },
+    { id: 'LAUNCH', name: 'Launch', cost: 20 },
+]
+
+export function arkPartsOf(gs, civ) {
+    const total = Math.max(0, Math.min(CFG.arkScience, Math.floor(gs.ark[civ])))
+    let acc = 0
+    return ARK_PARTS.map((p) => {
+        const funded = Math.max(0, Math.min(p.cost, total - acc))
+        acc += p.cost
+        return { id: p.id, name: p.name, cost: p.cost, funded, done: funded >= p.cost }
+    })
+}
+
+export function arkPartsDone(gs, civ) { return arkPartsOf(gs, civ).filter((p) => p.done).length }
 
 export const UNIT = {
     WARRIOR: { str: 8, moves: 2, sight: 2, range: 1, cost: 15 },
@@ -156,7 +182,7 @@ export const TECH = {
     RAILROAD: { name: 'Railroad', era: 4, cost: 50, prereq: ['STEAM_POWER', 'THE_WHEEL'], effect: 'roads are free to move on' },
     INDUSTRIALIZATION: { name: 'Industrialization', era: 5, cost: 45, prereq: ['STEAM_POWER'], effect: '+3 production in every city' },
     ELECTRICITY: { name: 'Electricity', era: 5, cost: 50, prereq: ['INDUSTRIALIZATION'], effect: '+2 science +1 gold in every city' },
-    SPACEFLIGHT: { name: 'Spaceflight', era: 5, cost: 55, prereq: ['ELECTRICITY', 'ASTRONOMY'], effect: 'unlocks THE ARK — bank 70 science to launch' },
+    SPACEFLIGHT: { name: 'Spaceflight', era: 5, cost: 55, prereq: ['ELECTRICITY', 'ASTRONOMY'], effect: 'unlocks THE ARK — weld Cockpit, Booster, Stasis & Launch (70 science)' },
 }
 export const TECH_IDS = Object.keys(TECH)
 export const ERAS = ['ANCIENT', 'CLASSICAL', 'MEDIEVAL', 'RENAISSANCE', 'INDUSTRIAL', 'MODERN']
@@ -1590,10 +1616,18 @@ function resolveCiv(gs, civ) {
     // Stage 8: lifetime culture outlives every policy purchase — it is the
     // ledger the culture victory reads, and it never gets spent.
     C.cultureEarned = (C.cultureEarned || 0) + cult
-    // Stage 8: after Spaceflight, every beaker pours into THE ARK.
+    // Stage 8: after Spaceflight, every beaker pours into THE ARK — welding its
+    // four named parts in order (Cockpit → Booster → Stasis → Launch). A weld
+    // that closes mid-turn is announced by name; overflow spills to the next.
     if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] < CFG.arkScience) {
+        const before = gs.ark[civ]
         gs.ark[civ] = Math.min(CFG.arkScience, gs.ark[civ] + sci)
         gs.events.push({ type: 'ark', civ, prog: gs.ark[civ], need: CFG.arkScience })
+        let acc = 0
+        for (let pi = 0; pi < ARK_PARTS.length; pi++) {
+            acc += ARK_PARTS[pi].cost
+            if (before < acc && gs.ark[civ] >= acc) gs.events.push({ type: 'arkPart', civ, part: pi, name: ARK_PARTS[pi].name, prog: gs.ark[civ], need: CFG.arkScience })
+        }
         if (gs.ark[civ] >= CFG.arkScience) gs.events.push({ type: 'arkLaunch', civ })
     }
     const eraNow = highestEra(gs, civ)
@@ -1617,7 +1651,7 @@ function highestEra(gs, civ) {
 function victoryFor(gs, civ) {
     if (!gs.civs[civ].alive) return null
     if (gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive)) return 'Domination — every rival capital flies your colours'
-    if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkScience) return 'Science — the Ark leaves the ground; the future is yours'
+    if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkScience) return 'Science — Cockpit, Booster, Stasis and Launch are welded; the Ark leaves the ground, and the future is yours'
     const mine = gs.civs[civ].cultureEarned || 0
     if (mine >= CFG.cultureWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.cultureEarned || 0) < mine)) {
         return 'Culture — the world remembers your name above all others'

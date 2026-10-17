@@ -15,8 +15,8 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
                                     musketeers, CS beacons, HP bars, arrows, FX
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research/worker/policy/
                                     wonders/legends/diplomacy/victory panels
-scripts/civcheck.mjs                Node harness (npm run civcheck) — 486 checks
-scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 60 checks
+scripts/civcheck.mjs                Node harness (npm run civcheck) — 512 checks
+scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 61 checks
 ```
 
 ## Engine notes
@@ -34,9 +34,15 @@ fit the arcade's 40-turn clock (§16, §32), not Civ V's centuries.
 every rival, in order:
  1. **DOMINATION** — every rival CAPITAL has fallen (polish #2 made this the
     literal law; see below — a rival is beaten the moment its capital flips).
-2. **SCIENCE** — Spaceflight unlocks **THE ARK**: every beaker earned after it
-   banks into `gs.ark[civ]`; when the Ark funds CFG.arkScience (70) it launches
-   and the game ends mid-turn, whoever is funding it.
+2. **SCIENCE** — Spaceflight unlocks **THE ARK**, and the Ark is a *ship*, not a
+   number (polish #3): beakers earned after Spaceflight bank into `gs.ark[civ]`
+   and weld **four named parts** in order — **Cockpit (15), Booster (20), Stasis
+   (15), Launch (20)** — summing to CFG.arkScience (70). An overflowing weld
+   spills into the next; each completed weld fires an `arkPart` event named for
+   the plate. Only when all four are shut (ledger ≥ 70) does the hull lift
+   (`arkLaunch`) and the game ends mid-turn, whoever is funding it. The parts are
+   a pure derivation of the ledger (`arkPartsOf` / `arkPartsDone`) — no parallel
+   state to drift. See §36.
 3. **CULTURE** — every civ now tracks *lifetime* culture (`cultureEarned`,
    never spent; the spendable pool stays the policy ledger). Past
    CFG.cultureWin (350) and strictly ahead of every **living** rival, the world
@@ -81,9 +87,9 @@ pill honest: `X/3 rival capitals taken` now *is* the domination score, and three
 falls trip `victoryFor` → DOMINATION. Rome keeps exactly one capital (the prize
 city never counts as a second seat for the golden-age milestone). See §35.
 
-**Determinism.** Ark progress, lifetime culture, the six-era bitmask, the new
-unit kinds, the transports' cargo manifests and the capital-fall conquest all
-fold into `stateHash`; same-seed
+**Determinism.** Ark progress (and its derived four-part reading), lifetime
+culture, the six-era bitmask, the new unit kinds, the transports' cargo
+manifests and the capital-fall conquest all fold into `stateHash`; same-seed
 replays stay hash-for-hash (§2, §32). Costs/thresholds are tuned so the science
 line lands at t35–36 and the culture line at t33–36 on the witness boards (§33)
 — the 40-turn clock is the design constraint, proven not assumed.
@@ -105,7 +111,7 @@ the hold. The Y panel is reachable by touch (on-screen button).
 ## Verify
 
 ```bash
-npm run civcheck          # 469 Node checks: boot, determinism, founding, economy, combat, barbarians,
+npm run civcheck          # 512 Node checks: boot, determinism, founding, economy, combat, barbarians,
                           # cities, production, tech (§16-18, now 21 techs / 6 eras), improvements (§19-20),
                           # resources (§21-22), borders (§23), happiness (§24), policies (§25), wonders
                           # (§26), great people (§27), stage-6 integration + slack (§28), city-states §29,
@@ -114,10 +120,14 @@ npm run civcheck          # 469 Node checks: boot, determinism, founding, econom
                            # transports §34 (embark/land/assault/drown laws, capacity, hash fold)
                            # capital capture ≠ extinction §35 (capital fall vassalizes a living army, not
                            # the every-city-lost path; three falls trip DOMINATION; conquest deterministic)
+                           # spaceship parts §36 (four named plates split the 70 ledger, ordered fill +
+                           # spill, named weld events, launch only when all four are shut, clamps,
+                           # rival tracks, replay determinism)
 npm run civplay           # Chrome, real keys: Y opens VICTORY (three tracks + rivals), K/L answer with
                           # Musket/Galleon on a seed-4 COASTAL capital (real keel, no escape clause),
                           # J/E refuse the transport paths by name, the Ark banks beakers on live
-                          # turns, win screen names the victory type, zero errors
+                          # turns and reads as four named part tracks, win screen names the victory type,
+                          # zero errors
 npm run lint:civ          # eslint gate for the game + its scripts
 ```
 
@@ -138,7 +148,10 @@ npm run lint:civ          # eslint gate for the game + its scripts
     = !!city.capital && …` → `false`) → §35's vassalization, one-capital and
     domination-by-capitals checks go red (the reign still needs a body count);
     restore.
- 5. Carried: the truce-line mutant reds §30; wonder race-check reds §26×4; the
+ 5. In `sim.js`, make the Ark lift early (`gs.ark[civ] >= CFG.arkScience` →
+    `arkPartsDone(gs, civ) >= 1`) → §36's "a half-built hull does not lift"
+    goes red (a single welded plate cannot launch a ship); restore.
+ 6. Carried: the truce-line mutant reds §30; wonder race-check reds §26×4; the
    recruit gold-gate reds §27×2; border-clamp reds §23; branch-order reds §25;
    Stage-3 queue-gate reds §17; Stage-4 connectivity reds §21/§22.
 
@@ -150,8 +163,10 @@ npm run lint:civ          # eslint gate for the game + its scripts
   and the realm folds (a deliberate cut so the domination pill stays one number).
 - **No naval supply or sea combat flavor beyond hulls** — transports cross any
   coast-to-coast sea in path range; no supply lines, no naval tactics stack.
-- **No spaceship parts** — the Ark is one funded program, not four parts built
-  in named cities; no Apollo-timeline flavor.
+- **The Ark parts are one program, not city industry** — the four named plates
+  (Cockpit, Booster, Stasis, Launch) weld from the empire-wide science ledger in
+  order; Civ V builds each component in a city with production, one part at a
+  time per city, on an Apollo-style timeline. No per-city spaceship yards here.
 - **Tourism is lifetime culture** — Civ V separates culture from tourism and
   gates the culture win on tourism per-turn dominance; here one ledger decides.
 - Wonders stay six, great people three, policies six, city-states two, happiness
