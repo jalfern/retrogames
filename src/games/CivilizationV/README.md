@@ -15,8 +15,8 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
                                     musketeers, CS beacons, HP bars, arrows, FX
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research/worker/policy/
                                     wonders/legends/diplomacy/victory panels
-scripts/civcheck.mjs                Node harness (npm run civcheck) — 413 checks
-scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 56 checks
+scripts/civcheck.mjs                Node harness (npm run civcheck) — 469 checks
+scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 60 checks
 ```
 
 ## Engine notes
@@ -50,11 +50,24 @@ shields) is the age of sail: same coastal-yard law and sea-only domain as the
 Trireme, but `ports: true` — it storms ports, which the Trireme may never do
 (`doAttack` keeps one law, `UNIT[kind].ports`).
 
-**Determinism.** Ark progress, lifetime culture, the six-era bitmask and the
-new unit kinds fold into `stateHash`; same-seed replays stay hash-for-hash (§2,
-§32). Costs/thresholds are tuned so the science line lands at t35–36 and the
-culture line at t33–36 on the witness boards (§33) — the 40-turn clock is the
-design constraint, proven not assumed.
+**Transports + amphibious assault (polish #1).** The Galleon carries two land
+units (`UNIT.GALLEON.cargo = 2`). Embark happens at a coastal tile beside a
+friendly, empty-slot hull and ends the soldier's move; a third squad is refused
+by capacity law. Land on any GRASS..HILLS beach in reach with `canLand`; an
+enemy unit on that sand fights the landing right there (amphibious assault) and
+a repelled squad rows back aboard. A sunk hull takes its cargo to the bottom —
+cargo ids live in `u.cargo`, fold into `stateHash`, and die with the ship.
+Enemy ports still refuse the longboat (`PORTS YIELD TO LAND FORCES`): storm
+with the Galleon's guns or besiege by land. Embark denies by name (`no unit to
+embark`, `no friendly galleon alongside`, `ships do not board ships`).
+Touch: tap a beach beside a laden Galleon to land; E embarks the selected
+squad; J lands at the nearest open beach.
+
+**Determinism.** Ark progress, lifetime culture, the six-era bitmask, the new
+unit kinds and the transports' cargo manifests fold into `stateHash`; same-seed
+replays stay hash-for-hash (§2, §32). Costs/thresholds are tuned so the science
+line lands at t35–36 and the culture line at t33–36 on the witness boards (§33)
+— the 40-turn clock is the design constraint, proven not assumed.
 
 ## Controls
 
@@ -64,21 +77,26 @@ H chariot · **K musket** · N trireme · **L galleon** (coastal cities) ·
 **W** WORK panel (F farm · M mine · O road) · **T** RESEARCH (R next) ·
 **P** POLICY · **U** WONDERS · **G** LEGENDS · **D** DIPLOMACY ·
 **Y** VICTORY (three race tracks + rival progress) ·
+**E** settle — or EMBARK when a friendly Galleon rides alongside ·
+**J** LAND at the nearest open beach (laden Galleon) ·
 arrows orbit/tilt · wheel/pinch zoom · `?` help. `VirtualControls`:
-A = END TURN, B = settle. The Y panel is reachable by touch (on-screen button).
+A = END TURN, B = settle/embark. Tapping a beach beside a laden Galleon lands
+the hold. The Y panel is reachable by touch (on-screen button).
 
 ## Verify
 
 ```bash
-npm run civcheck          # 413 Node checks: boot, determinism, founding, economy, combat, barbarians,
+npm run civcheck          # 469 Node checks: boot, determinism, founding, economy, combat, barbarians,
                           # cities, production, tech (§16-18, now 21 techs / 6 eras), improvements (§19-20),
                           # resources (§21-22), borders (§23), happiness (§24), policies (§25), wonders
                           # (§26), great people (§27), stage-6 integration + slack (§28), city-states §29,
                           # diplomacy §30, naval §31, later eras + Ark mechanics + clock budget §32,
-                          # victory order + culture ledger + race reachability §33
+                          # victory order + culture ledger + race reachability §33,
+                          # transports §34 (embark/land/assault/drown laws, capacity, hash fold)
 npm run civplay           # Chrome, real keys: Y opens VICTORY (three tracks + rivals), K/L answer with
-                          # Musket/Galleon, the Ark banks beakers on live turns, win screen names the
-                          # victory type, zero errors
+                          # Musket/Galleon on a seed-4 COASTAL capital (real keel, no escape clause),
+                          # J/E refuse the transport paths by name, the Ark banks beakers on live
+                          # turns, win screen names the victory type, zero errors
 npm run lint:civ          # eslint gate for the game + its scripts
 ```
 
@@ -89,14 +107,20 @@ npm run lint:civ          # eslint gate for the game + its scripts
 **Mutant proofs.**
 1. In `sim.js` `victoryFor`, neuter the culture strict-lead (`< mine` → `true`)
    → §33's living-rival loss goes red; restore.
-2. Carried: the truce-line mutant reds §30; wonder race-check reds §26×4; the
+2. In `sim.js` `canEmbark`, drop the capacity check (`s.cargo.length <
+   UNIT[s.kind].cargo` → `true`) → §34's "a third marine nowhere" goes red;
+   restore.
+3. In `civplay.mjs`, swap the Stage-8 seed back to inland (`start(4)` →
+   `start(1)`) → the coastal-seat and real-keel checks go red (the old vacuous
+   escape clause could not); restore.
+4. Carried: the truce-line mutant reds §30; wonder race-check reds §26×4; the
    recruit gold-gate reds §27×2; border-clamp reds §23; branch-order reds §25;
    Stage-3 queue-gate reds §17; Stage-4 connectivity reds §21/§22.
 
 ## Honest gaps (what the full original has that this arcade run does not)
 
-- **No transports or naval invasion** — the Galleon storms ports but carries no
-  army; Civ V's troop transports and amphibious assault are not simulated.
+- **No naval supply or sea combat flavor beyond hulls** — transports cross any
+  coast-to-coast sea in path range; no supply lines, no naval tactics stack.
 - **No spaceship parts** — the Ark is one funded program, not four parts built
   in named cities; no Apollo-timeline flavor.
 - **Tourism is lifetime culture** — Civ V separates culture from tourism and

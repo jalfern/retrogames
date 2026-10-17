@@ -266,12 +266,16 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
 // 3h — the Stage 8 layer: victory panel, the new arms, the Ark funding live
 {
     // earlier blocks may already have driven this run to its end — take a fresh
-    // capital so the panel and the young-game cheats have a live play screen
-    await page.evaluate(() => window.__civTest.start())
+    // capital so the panel and the young-game cheats have a live play screen.
+    // Seed 4 rises on the COAST (verified in Node): the Galleon keel below is
+    // a real keel, not the inland escape clause (polish item 6).
+    await page.evaluate(() => window.__civTest.start(4))
     await wait(300)
     await page.keyboard.press('KeyE')
     await wait(300)
     r.check(`Stage 8 opens on a fresh run (screen ${(await probe()).screen}, capital ${(await probe()).capitalSize})`, (await probe()).screen === 'play' && (await probe()).capitalSize >= 1)
+    const cp8 = await probe()
+    r.check(`seed 4 seats the capital beside the sea (coastal ${cp8.world.coastal})`, cp8.world.coastal === true)
     await page.keyboard.press('KeyY')
     await wait(250)
     const vb = await page.evaluate(() => document.body.innerText)
@@ -293,7 +297,29 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
     await wait(150)
     {
         const g8 = await probe()
-        r.check(`L lays a Galleon keel at a coastal city (galleons ${g8.late.galleons}, coastal ${g8.world.coastal})`, g8.queue.some((c) => c.queue.includes('GALLEON')) || g8.late.galleons > 0 || g8.world.coastal === false)
+        r.check(`L lays a Galleon keel at the coastal capital (galleons ${g8.late.galleons}, coastal ${g8.world.coastal})`, g8.queue.some((c) => c.queue.includes('GALLEON')) || g8.late.galleons > 0)
+    }
+    // transports: the deny paths run through the real keys before the hull exists
+    {
+        const inf = (await probe()).units0.find((u) => u.kind === 'WARRIOR')
+        if (inf) await page.evaluate((id) => window.__civTest.select(id), inf.id)
+        await wait(150)
+        await page.keyboard.press('KeyJ')
+        await wait(200)
+        r.check('J with no laden galleon is refused by name', /SELECT A GALLEON WITH CARGO/i.test(await page.evaluate(() => document.body.innerText)))
+        await page.keyboard.press('KeyE')
+        await wait(200)
+        r.check('E on a soldier far from any hull names the missing mooring', /NO FRIENDLY GALLEON ALONGSIDE/i.test(await page.evaluate(() => document.body.innerText)))
+    }
+    // the laden-hull probe shape exists and the keel reaches the water on live turns
+    {
+        let afloat = null
+        for (let i = 0; i < 12 && !afloat; i++) {
+            const pk = await probe()
+            afloat = pk.world.naval.find((u) => u.kind === 'GALLEON' && u.cargo === 0) ? pk.world.naval : (pk.end ? 'ended' : null)
+            if (!afloat) { await page.evaluate(() => window.__civTest.turn()); await wait(60) }
+        }
+        r.check(`the Galleon takes the water with its hold exposed (${afloat === 'ended' ? 'run ended first' : afloat ? 'afloat' : 'never'})`, !!afloat)
     }
     await page.evaluate(() => { for (const id of ['EDUCATION', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']) window.__civTest.learn(id) })
     let p8 = await probe()
