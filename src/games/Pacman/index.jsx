@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { press, release, currentPad } from '../../utils/onePad'
 
 const PacmanGame = () => {
     const canvasRef = useRef(null)
@@ -249,6 +250,15 @@ const PacmanGame = () => {
                     }
                     pacman.dir = pacman.nextDir || pacman.dir
                 } else {
+                    // #420: the one pad — a direction held on the touch d-pad, a
+                    // gamepad stick (via the shared quantizer) or a desktop key
+                    // sets the desired next direction. One pad per tick.
+                    const op = currentPad('dpad')
+                    if (op.up) pacman.nextDir = { x: 0, y: -1 }
+                    else if (op.down) pacman.nextDir = { x: 0, y: 1 }
+                    else if (op.left) pacman.nextDir = { x: -1, y: 0 }
+                    else if (op.right) pacman.nextDir = { x: 1, y: 0 }
+
                     // Manual Turn Logic
                     // Allow turning if valid
                     if (pacman.nextDir.x !== 0 || pacman.nextDir.y !== 0) {
@@ -783,20 +793,30 @@ const PacmanGame = () => {
                 score = 0
                 lives = 3
             }
-            if (e.code === 'ArrowUp') pacman.nextDir = { x: 0, y: -1 }
-            if (e.code === 'ArrowDown') pacman.nextDir = { x: 0, y: 1 }
-            if (e.code === 'ArrowLeft') pacman.nextDir = { x: -1, y: 0 }
-            if (e.code === 'ArrowRight') pacman.nextDir = { x: 1, y: 0 }
+            // #420: desktop keys write THE one pad (the touch d-pad does the same);
+            // update() reads currentPad('dpad') — one pad per tick, one source.
+            if (e.code === 'ArrowUp') press('up')
+            if (e.code === 'ArrowDown') press('down')
+            if (e.code === 'ArrowLeft') press('left')
+            if (e.code === 'ArrowRight') press('right')
+        }
+        const handleKeyUp = (e) => {
+            if (e.code === 'ArrowUp') release('up')
+            if (e.code === 'ArrowDown') release('down')
+            if (e.code === 'ArrowLeft') release('left')
+            if (e.code === 'ArrowRight') release('right')
         }
 
         // Init Logic
         resize()
         window.addEventListener('keydown', handleKeyDown)
+        window.addEventListener('keyup', handleKeyUp)
         window.addEventListener('resize', resize)
         animationFrameId = requestAnimationFrame(loop)
 
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
+            window.removeEventListener('keyup', handleKeyUp)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(animationFrameId)
         }

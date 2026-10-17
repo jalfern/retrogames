@@ -17,6 +17,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { currentPad } from '../../utils/onePad'
 import { LEVELS, buildLevel } from './levels.js'
 import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
 
@@ -145,11 +146,21 @@ const LemGame = () => {
             }
         }
 
+        let lemPrevB = false
         const frame = (ts) => {
             raf = requestAnimationFrame(frame)
             if (!last) last = ts
             const ft = Math.min(ts - last, 250)
             last = ts
+            // #420: the one pad — the touch CYCLE button (b) drives cycleSkill,
+            // edge-detected. A pointer game owns its taps (canvas aim + assign run
+            // through the game's own pointer handlers), and a gamepad's stick parks
+            // the cursor through the same one pad the harness step uses.
+            if (!pausedRef.current && screenRef.current === 'play') {
+                const op = currentPad('pointer')
+                if (op.b && !lemPrevB) cycleSkill()
+                lemPrevB = !!op.b
+            }
             if (!pausedRef.current) {
                 if (contractHoldsLoop()) { acc = 0 }
                 else {
@@ -414,7 +425,9 @@ const LemGame = () => {
             }
             exposeGame({
                 id: 'lemmings',
-                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+                method: 'pointer',
+                reads: ['pointer', 'b'],
+                buttons: ['b'],
                 reset: (seed) => {
                     loadLevel((seed >>> 0) % LEVELS.length, true)
                     keys.clear()
@@ -422,13 +435,15 @@ const LemGame = () => {
                 },
                 tick: (pad) => {
                     if (gs.end) { gs.tick += 1; return }
-                    const sp = 11 * FIXED_DT
-                    if (pad.left) cursor.x = Math.max(0.5, cursor.x - sp)
-                    if (pad.right) cursor.x = Math.min(W - 0.5, cursor.x + sp)
-                    if (pad.up) cursor.y = Math.max(2, cursor.y - sp)
-                    if (pad.down) cursor.y = Math.min(H - 1, cursor.y + sp)
+                    // #420 pointer: a tap (pointer.down) aims the cursor at the
+                    // normalized canvas point and assigns the selected skill;
+                    // B cycles the skill. Blank steps leave the cursor where it is.
                     if (pad.b) cycleSkill()
-                    if (pad.a) applySkill(cursor.x, cursor.y)
+                    if (pad.pointer && pad.pointer.down) {
+                        cursor.x = Math.max(0.5, Math.min(W - 0.5, pad.pointer.x * W))
+                        cursor.y = Math.max(2, Math.min(H - 1, pad.pointer.y * H))
+                        applySkill(cursor.x, cursor.y)
+                    }
                     handleEvents(step(gs, { x: cursor.x, y: cursor.y }).events)
                 },
                 state: () => ({

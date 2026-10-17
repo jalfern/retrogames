@@ -63,7 +63,7 @@ const PATTERNS = {
     joust: (i) => ({ left: i % 37 < 14, right: i % 37 >= 17 && i % 37 < 30, a: i % 5 < 2 }),
     qbert: (i) => ({ left: i % 43 < 18 && i % 89 < 50, right: i % 43 >= 20 && i % 43 < 38, up: i % 29 < 14, down: i % 29 >= 15 && i % 29 < 28, a: i % 31 < 2 }),
     'comet-drift': (i) => ({ left: i % 43 < 15, right: i % 43 >= 21 && i % 43 < 34, up: i % 59 !== 0, a: i % 11 < 4 }),
-    lemmings: (i) => ({ left: i % 43 < 18, right: i % 43 >= 22 && i % 43 < 38, up: i % 29 < 12, down: i % 29 >= 15 && i % 29 < 26, a: i % 13 < 2, b: i % 71 < 2 }),
+    lemmings: (i) => ({ pointer: { x: (i % 50) / 50, y: (i % 37) / 37, down: i % 97 === 0 }, b: i % 61 === 0 }),
     sonar: (i) => ({ left: i % 47 < 14, right: i % 47 >= 18 && i % 47 < 32, up: i % 53 < 10, down: i % 53 >= 28 && i % 53 < 40, a: i % 9 < 2 }),
     polarity: (i) => ({ left: i % 43 < 15, right: i % 43 >= 19 && i % 43 < 34, up: i % 59 < 8, down: i % 59 >= 30 && i % 59 < 38, a: i % 7 < 3, b: i % 23 < 2 }),
     outpost: (i) => ({ left: i % 41 < 16, right: i % 41 >= 20 && i % 41 < 36, up: i % 61 < 10, down: i % 61 >= 26 && i % 61 < 38, a: i % 11 < 3, b: i % 31 < 2 }),
@@ -115,7 +115,10 @@ for (const p of RUN) {
 
     const meta = await page.evaluate(() => window.__game.meta)
     r.check(`${p.id}: meta.id`, meta?.id === p.id, `id=${meta?.id}`)
-    r.check(`${p.id}: meta.buttons`, Array.isArray(meta?.buttons) && meta.buttons.includes('a'), JSON.stringify(meta?.buttons))
+    // A pointer game's action is the tap (an optional B), so it need not expose
+    // an 'a' button; every other method must expose at least the A action. (#420)
+    const isPointer = meta?.method === 'pointer'
+    r.check(`${p.id}: meta.buttons`, Array.isArray(meta?.buttons) && (isPointer || meta.buttons.includes('a')), JSON.stringify(meta?.buttons))
 
     const api = await page.evaluate(() => {
         const g = window.__game

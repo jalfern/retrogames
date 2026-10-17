@@ -30,7 +30,6 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const method = methodOf(pad)
     const hasMethod = !!(pad && pad.method)
     const reads = (pad && Array.isArray(pad.reads)) ? pad.reads : []
-    const mDpad = hasMethod && method === 'dpad'
     const mStick = hasMethod && method === 'stick'
     const mPointer = hasMethod && method === 'pointer'
     const showA = hasMethod ? reads.includes('a') : true
