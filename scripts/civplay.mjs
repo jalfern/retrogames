@@ -81,6 +81,17 @@ await page.keyboard.press('KeyE')
 await wait(300)
 s = await probe()
 r.check(`E settles your capital (capitalSize ${s.capitalSize}, playerCities ${s.playerCities})`, s.capitalSize >= 1 && s.playerCities >= 1)
+// #406 — the first-time-player blockers. Both are read from authoritative game/render
+// state via the probe, never from racy WebGL pixel reads (the buffer is not preserved).
+// 1. THE MAP IS NOT BLACK: the dimmest UNexplored tile must be a dim world, not the
+//    near-black UNSEEN the first-time player saw (old rgb sum ~0.07; dim ocean ~0.15).
+r.check(`the world beyond your vision is a dim world, not a black void (dimmest unseen tile ${s.unseenMin != null ? s.unseenMin.toFixed(3) : 'n/a'})`, s.unseenMin != null && s.unseenMin > 0.10)
+// 2. THE CAMERA IS ON THE CAPITAL: a fresh game centres on the settler and re-centres on
+//    the city the moment it is founded — the capital must sit at the camera's look-at.
+{
+  const camOff = s.camTgt && s.capitalWorld ? Math.hypot(s.camTgt[0] - s.capitalWorld[0], s.camTgt[1] - s.capitalWorld[1]) : Infinity
+  r.check(`the camera is centred on the capital (look-at offset ${camOff.toFixed(3)})`, camOff < 0.01)
+}
 
 // 3 — real Space ends turns; the capital grows; canvas stays lit
 const turn0 = s.turn

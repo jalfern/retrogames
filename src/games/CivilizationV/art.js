@@ -503,7 +503,6 @@ export function spawnArrow(view, gs, from, to) {
 const CIVCOL = CIVS.map((c) => new THREE.Color(c.hex))
 const REACHCOL = new THREE.Color(0x6fe3ff)
 const WHITE = new THREE.Color(0xffffff)
-const UNSEEN = new THREE.Color(0.015, 0.02, 0.035)
 
 export function updateView(view, gs, extra = {}) {
     const { hexes, cones, cityGroup, campGroup, unitGroup, roadGroup, workGroup, resGroup, wonderGroup } = view
@@ -514,12 +513,12 @@ export function updateView(view, gs, extra = {}) {
         const tl = gs.tiles[i]
         const base = COL[tl.terr]
         let k = sunK(i)
-        const fogv = gs.explored[0][i] ? (gs.visible[0][i] ? 1 : 0.52) : 0.0   // seen? current? unseen black
+        const fogv = gs.explored[0][i] ? (gs.visible[0][i] ? 1 : 0.52) : 0.0   // in-sight / explored / unexplored(dim world)
         if (animate && (tl.terr === T.OCEAN || tl.terr === T.COAST)) k *= 0.9 + 0.1 * Math.sin(gs.tick * 0.05 + (i % 7))
         col.setRGB(base[0] * k, base[1] * k, base[2] * k)
         const owner = tl.owner
         if (fogv > 0 && owner >= 0) col.lerp(CIVCOL[owner], gs.visible[0][i] ? 0.22 : 0.12)
-        if (fogv === 0) col.copy(UNSEEN)
+        if (fogv === 0) col.multiplyScalar(0.42)
         else col.multiplyScalar(fogv >= 1 ? 1 : 0.72)
         // selection reach highlight
         if (extra.reach && extra.reach.has(i) && gs.visible[0][i]) col.lerp(REACHCOL, 0.42)
