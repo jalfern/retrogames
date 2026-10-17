@@ -33,7 +33,7 @@ function bestSiteNeighbor(gs, civ, c, r) {
     for (const [nc, nr] of neighbors(c, r)) {
         const tl = tileAt(gs, nc, nr)
         if (!tl || tl.terr < T.GRASS || tl.terr > T.HILLS) continue
-        if (gs.units.some((u) => u.alive && u.c === nc && u.r === nr)) continue
+        if (gs.units.some((u) => u.alive && !u.loaded && u.c === nc && u.r === nr)) continue
         if (tileBlocked(gs, nc, nr)) continue
         // avoid founding too near existing cities (spacing) while scouting outward
         let s = SITE(tl)
@@ -54,7 +54,7 @@ function strikeTarget(gs, u) {
         const score = d * 10 - kindW          // nearer + meaner wins
         if (score > bd * 10 - bk) { bd = d; bk = kindW; best = [c, r] }
     }
-    for (const x of gs.units) if (x.alive && atWar(gs, 0, x.civ)) consider(x.c, x.r, x.kind === 'SETTLER' ? 5 : 3)
+    for (const x of gs.units) if (x.alive && !x.loaded && atWar(gs, 0, x.civ)) consider(x.c, x.r, x.kind === 'SETTLER' ? 5 : 3)
     for (const cp of gs.camps) if (cp.alive) consider(cp.c, cp.r, 4)
     return best
 }
@@ -64,7 +64,7 @@ function objective(gs, u, cap) {
     let best = null, bd = 5
     const anchor = cap || u
     for (const x of gs.units) {
-        if (!x.alive || !atWar(gs, 0, x.civ)) continue
+        if (!x.alive || x.loaded || !atWar(gs, 0, x.civ)) continue
         const near = hexDist([x.c, x.r], [anchor.c, anchor.r])
         const d = hexDist([u.c, u.r], [x.c, x.r])
         if (near <= 4 && d < bd) { bd = d; best = [x.c, x.r] }
@@ -129,7 +129,7 @@ export function decide(gs) {
             if (spot) return { select: w.id, move: spot }
         }
         // fight: any unit that can strike now, strongest target first
-        const mil = gs.units.filter((u) => u.alive && u.civ === 0 && u.str > 0 && u.moves > 0)
+        const mil = gs.units.filter((u) => u.alive && !u.loaded && u.civ === 0 && u.str > 0 && u.moves > 0)
         for (const u of mil) {
             const t = strikeTarget(gs, u)
             if (t) return { select: u.id, attack: t }
@@ -139,7 +139,7 @@ export function decide(gs) {
             const o = objective(gs, u, cap)
             if (o && u.moves > 0) { const t = stepToward(gs, u, o); if (t) return { select: u.id, move: t } }
         }
-        const extra = gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'SETTLER' && u.moves > 0 && cap.size >= 2)
+        const extra = gs.units.filter((u) => u.alive && !u.loaded && u.civ === 0 && u.kind === 'SETTLER' && u.moves > 0 && cap.size >= 2)
         for (const e of extra) {
             if (canFound(gs, 0, e.c, e.r, e) === true) return { select: e.id, found: true }
             const t = bestSiteNeighbor(gs, 0, e.c, e.r)

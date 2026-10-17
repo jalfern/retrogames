@@ -23,6 +23,7 @@ import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
 import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
 import { torch, litColor, mortarTones, css } from './walls.js'
+import { cardCenter, heroAt } from './select.js'
 
 const PW = 64, HT = 40
 const CW = VW + PW, CH = VH + HT
@@ -436,7 +437,7 @@ const GauntletGame = () => {
                     text('CHOOSE YOUR HERO', CW / 2, 96, 10, '#5dff8f', 4)
                     HERO_ORDER.forEach((hk, i) => {
                         const hd = HEROES[hk]
-                        const cx = CW / 2 - 108 + i * 72
+                        const cx = cardCenter(i)
                         const sel = i === selectHero
                         ctx.fillStyle = '#0b0e18'
                         ctx.fillRect(cx - 30, 108, 60, 78)
@@ -454,8 +455,8 @@ const GauntletGame = () => {
                         ctx.fillStyle = '#12261a'; ctx.fillRect(cx - 24, 174, 48, 4)
                         ctx.fillStyle = '#5dff8f'; ctx.fillRect(cx - 24, 174, 48 * (hd.arrow / 18), 4)
                     })
-                    text('ARROWS PICK · SPACE CONFIRM · C PARTNER ' + (gs._pSel === 1 ? 'ON' : 'OFF'), CW / 2, 202, 8, '#8fa3d8')
-                    text('HP · SPEED · RANGE', CW / 2, 214, 7, '#5d7094')
+                    text('ARROWS OR TAP PICK · SPACE OR TAP AGAIN START', CW / 2, 202, 8, '#8fa3d8')
+                    text('C PARTNER ' + (gs._pSel === 1 ? 'ON' : 'OFF') + ' · HP SPEED RANGE', CW / 2, 214, 7, '#5d7094')
                 }
             }
             if (sc === 'over') {
@@ -541,6 +542,13 @@ const GauntletGame = () => {
             if (sc === 'select') {
                 const r = canvas.getBoundingClientRect()
                 const x = (ev.clientX - r.left) / r.width * CW
+                const y = (ev.clientY - r.top) / r.height * CH
+                const hit = heroAt(x, y)
+                if (hit !== null) {
+                    if (hit === selectHero) startPlay(HERO_ORDER[hit])
+                    else selectHero = hit
+                    return
+                }
                 if (x > VW + 40) startPlay(HERO_ORDER[selectHero])
             }
         }
@@ -563,7 +571,7 @@ const GauntletGame = () => {
                 startHero: (hk) => startPlay(hk),
                 events: () => evLog,
                 probe: () => ({
-                    tick: gs.tick, screen: screenRef.current, score: gs.score, lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
+                    tick: gs.tick, screen: screenRef.current, select: selectHero, score: gs.score, lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
                     hash: stateHash(gs),
                     hero: { x: gs.hero.x, y: gs.hero.y, a: gs.hero.a, hp: gs.hero.hp, deadT: gs.hero.deadT },
                     monsters: gs.monsters.map((m) => ({ kind: m.kind, x: m.x, y: m.y, hp: m.hp })),

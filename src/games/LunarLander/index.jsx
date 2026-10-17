@@ -17,12 +17,13 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './sim.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
 import { plan } from './planner.js'
-import { policyProbs, mulberry32, sampleAction, obsFrom, episodeOutcome, actionVector, ACTION_VECS } from './policy.js'
+import { policyProbs, mulberry32, sampleAction, obsFrom, actionVector, ACTION_VECS,
+    HEAT_XS, HEAT_VXS, HEAT_EPISODES } from './policy.js'
 import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } from './art.js'
 
 const SIM_MS = 1000 / 60
 const REPLAY_PATH = 'replays/lander-ppo.json'
-const POLICIES = ['v2', 'v3', 'dagger6', 'clone1k', 'clone1k-noisy']
+const POLICIES = ['v3', 'v2', 'dagger6', 'bc1k', 'clone1k', 'clone1k-noisy']
 const policyName = () => {
     const p = new URLSearchParams(window.location.search).get('policy')
     return POLICIES.includes(p) ? p : 'v3'
@@ -35,9 +36,6 @@ const gravityScale = () => {
 const GRAV_BASE = CFG.gravity
 const replayRequested = () => new URLSearchParams(window.location.search).get('replay') === '1'
 const labRequested = () => new URLSearchParams(window.location.search).get('lab') === '1'
-const HEAT_XS = Array.from({ length: 32 }, (_, i) => Math.round(32 + i * (992 - 32) / 31))
-const HEAT_VXS = Array.from({ length: 17 }, (_, i) => -40 + i * 5)
-const HEAT_EPISODES = 8
 const PAD_MARKS = PAD_SLOTS.map((s) => ({ cx: s.i * STEP, val: s.val }))
 const PAD_COL = HEAT_XS.map((x) => PAD_MARKS.find((p) => Math.abs(x - p.cx) <= 15) || null)
 const heatColor = (t) => `rgb(${Math.round(255 - 198 * t)},${Math.round(93 + 118 * t)},${Math.round(93 - 10 * t)})`
@@ -121,6 +119,7 @@ const LunarLanderGame = () => {
 
         const labOn = labRequested()
         let labPolicy = null, labFailed = false, labRng = mulberry32(7), labHold = 0, labRestart = -1
+        let heatWorker = null
 
         const startLabFlight = () => {
             const c = labCfgRef.current
@@ -137,23 +136,42 @@ const LunarLanderGame = () => {
         }
 
         if (labOn) {
+            const applyHeat = (h) => setHeatRows(h.vxs.map((v, vi) => ({
+                v,
+                cells: h.xs.map((x, xi) => ({ x, pads: h.grid[vi][xi],
+                    col: heatColor(h.grid[vi][xi] / HEAT_EPISODES) })),
+            })))
+            const runHeatWorker = (pol) => {
+                setHeatRows(HEAT_VXS.map((v) => ({
+                    v, cells: HEAT_XS.map((x) => ({ x, pads: null, col: '#141b2b' })),
+                })))
+                heatWorker = new Worker(new URL('./heatWorker.js', import.meta.url), { type: 'module' })
+                heatWorker.onmessage = (e) => {
+                    const d = e.data
+                    if (d.done) { heatWorker.terminate(); heatWorker = null; return }
+                    setHeatRows((rows) => rows && rows.map((row, vi) => vi !== d.vi ? row : ({
+                        v: row.v,
+                        cells: row.cells.map((c, xi) => xi !== d.xi ? c
+                            : { x: c.x, pads: d.pads, col: heatColor(d.pads / HEAT_EPISODES) }),
+                    })))
+                }
+                heatWorker.postMessage({ policy: pol, gravity: gsScale,
+                    xs: HEAT_XS, vxs: HEAT_VXS, episodes: HEAT_EPISODES })
+            }
             fetch(`${import.meta.env.BASE_URL}${policyPath(policyName())}`)
                 .then((r) => { if (!r.ok) throw new Error(`policy http ${r.status}`); return r.json() })
                 .then((pol) => {
                     labPolicy = pol
                     setLabInfo({ name: pol.name || policyName(), pad_rate: pol.pad_rate })
-                    setHeatRows(HEAT_VXS.map((v) => ({
-                        v,
-                        cells: HEAT_XS.map((x) => {
-                            let pads = 0
-                            for (let j = 0; j < HEAT_EPISODES; j++) {
-                                const rs = (Math.imul(j + 1, 2654435761) + Math.imul(x + 1, 97) + v + 64) >>> 0
-                                if (episodeOutcome(pol, 7, x, v, 1200, rs) === 'pad') pads++
-                            }
-                            return { x, pads, col: heatColor(pads / HEAT_EPISODES) }
-                        }),
-                    })))
                     startLabFlight()
+                    if (gsScale === 1) {
+                        fetch(`${import.meta.env.BASE_URL}replays/lander-heat-${pol.name}.json`)
+                            .then((r) => { if (!r.ok) throw new Error(`heat http ${r.status}`); return r.json() })
+                            .then(applyHeat)
+                            .catch(() => runHeatWorker(pol))
+                    } else {
+                        runHeatWorker(pol)
+                    }
                 })
                 .catch(() => { labFailed = true })
         }
@@ -329,7 +347,7 @@ const LunarLanderGame = () => {
                 if (scaledLab) text(`GRAVITY ×${gsScale}`, W / 2, H - 24, 8, '#8fa3d8')
             }
             if (labOn && labPolicy && !labFailed) {
-                const pad = labPolicy.pad_rate != null ? ` · ${labPolicy.pad_rate}% PADS /500` : ''
+                const pad = labPolicy.pad_rate != null ? ` · ${labPolicy.pad_rate}% PADS /500·HO` : ''
                 text(`${(labPolicy.name || 'PPO').toUpperCase()} · LAB${pad}`, W / 2, H - 12, 10, '#8fff9f', 6)
                 text(`START x ${Math.round(labCfgRef.current.x)} · SIDEWAYS ${labCfgRef.current.vx > 0 ? '+' : ''}${Math.round(labCfgRef.current.vx)}`
                     + (scaledLab ? ` · GRAVITY ×${gsScale}` : ''),
@@ -474,6 +492,7 @@ const LunarLanderGame = () => {
         raf = requestAnimationFrame(frame)
         return () => {
             cancelAnimationFrame(raf)
+            if (heatWorker) heatWorker.terminate()
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
@@ -501,7 +520,7 @@ const LunarLanderGame = () => {
                 <div className="mt-2 flex items-center gap-5 font-mono text-[11px] tracking-widest text-[#8fa3d8]">
                     <span className="text-[#8fff9f]">
                         POLICY {labInfo ? labInfo.name.toUpperCase() : policyName().toUpperCase()}
-                        {labInfo && labInfo.pad_rate != null ? ` · ${labInfo.pad_rate}% PADS / 500 SEEDS` : ''}
+                        {labInfo && labInfo.pad_rate != null ? ` · ${labInfo.pad_rate}% PADS / 500 HELD-OUT SEEDS` : ''}
                         {gravityScale() !== 1 ? ` · GRAVITY ×${gravityScale()}` : ''}
                     </span>
                     <label className="flex items-center gap-2">START X
@@ -527,8 +546,9 @@ const LunarLanderGame = () => {
                         <div key={row.v} className="flex items-center">
                             <span className="w-9 pr-1 text-right">{row.v > 0 ? `+${row.v}` : row.v}</span>
                             {row.cells.map((c) => (
-                                <button key={c.x} type="button" title={`x ${c.x} v ${row.v} → ${c.pads}/${HEAT_EPISODES} pads`}
-                                    onClick={() => fly(c.x, row.v)} aria-label={`fly x ${c.x} vx ${row.v} rate ${c.pads} of ${HEAT_EPISODES}`}
+                                <button key={c.x} type="button" title={c.pads == null ? `x ${c.x} v ${row.v} → …`
+                                    : `x ${c.x} v ${row.v} → ${c.pads}/${HEAT_EPISODES} pads`}
+                                    onClick={() => fly(c.x, row.v)} aria-label={`fly x ${c.x} vx ${row.v}${c.pads == null ? '' : ` rate ${c.pads} of ${HEAT_EPISODES}`}`}
                                     style={{ background: c.col }}
                                     className="w-[13px] h-[6px] m-[1px] border-0 cursor-pointer hover:outline hover:outline-1 hover:outline-white" />
                             ))}

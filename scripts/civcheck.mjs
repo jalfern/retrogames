@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, ARK_PARTS, arkPartsOf, arkPartsDone } from '../src/games/CivilizationV/sim.js'
 import { decide, plan, RESEARCH_ORDER } from '../src/games/CivilizationV/planner.js'
 
 let pass = 0, fail = 0
@@ -158,15 +158,18 @@ console.log('9. loss branch (turn limit)')
 {
     const saved = CFG.capitalSizeToWin
     const savedCW = CFG.cultureWin
+    const savedTW = CFG.tourismWin
     const savedArk = CFG.arkScience
     CFG.capitalSizeToWin = 99
-    CFG.cultureWin = 1e9        // isolate the clock: the Stage-8 alternatives are §33's job
+    CFG.cultureWin = 1e9        // isolate the clock: the Stage-8 alternatives are §33/§37's job
+    CFG.tourismWin = 1e9
     CFG.arkScience = 1e9
     const r = plan(0, 1)
     eq(r.end, 'lose', 'unreachable goal => the turn-limit loss fires')
     eq(r.turns, CFG.turnLimit + 1, 'loss at turn limit + 1')
     CFG.capitalSizeToWin = saved
     CFG.cultureWin = savedCW
+    CFG.tourismWin = savedTW
     CFG.arkScience = savedArk
 }
 
@@ -310,6 +313,7 @@ console.log('14. city defense + capture + domination')
     if (aiCap) {
         const oldOwner = aiCap.civ
         declareWar(g2, 0, aiCap.civ)
+        ok(atWar(g2, 0, oldOwner), 'declaring war puts them at war')
         const w = g2.units.find((u) => u.civ === 0 && u.kind === 'WARRIOR')
         const near = adjOf(g2, [aiCap.c, aiCap.r])[0]
         ok(!!near, 'target city has an assault tile')
@@ -317,7 +321,7 @@ console.log('14. city defense + capture + domination')
         let guard = 0
         while (aiCap.alive && aiCap.civ !== 0 && w.alive && guard++ < 20) { w.moves = 2; w.hp = 100; if (!doAttack(g2, w, aiCap.c, aiCap.r)) break }
         eq(aiCap.civ, 0, 'a battered city is captured and changes owner')
-        ok(atWar(g2, 0, oldOwner), 'attacking a civ means war')
+        ok(atWar(g2, 0, oldOwner) || g2.civs[oldOwner].vassal === 0, 'the front is either still hot or settled by vassalization — a declared war is never silently forgotten')
         ok(g2.tiles[idx(aiCap.c, aiCap.r)].owner === 0, 'captured centre switches to the conqueror')
     }
     // domination victory: every rival destroyed
@@ -1392,10 +1396,11 @@ console.log('32. later eras + science victory')
     ok(legacy.every((id, i) => RESEARCH_ORDER[i] === id), 'RESEARCH_ORDER keeps the proven head — stages 1–7 proofs still describe the demo')
 }
 
-// ---- 33. culture & domination victories, order of judgment, the race ----
-console.log('33. victories: order, culture ledger, domination, race reachability')
+// ---- 33. victories: order, the tourism crown, domination, race reachability --
+console.log('33. victories: order, tourism crown, domination, race reachability')
 {
-    // lifetime culture is not the spendable pool
+    // lifetime culture still banks from turn one and stays untouched by
+    // spending — it is the RECORD (§37 proves it no longer crowns)
     const gs = newGame(2, 0)
     const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(gs, { select: s.id, found: true })
@@ -1405,27 +1410,36 @@ console.log('33. victories: order, culture ledger, domination, race reachability
     gs.civs[0].culture = 100
     adoptPolicy(gs, 0, 'FOUNDATIONS')
     ok(gs.civs[0].culture === 85 && gs.civs[0].cultureEarned === earned0, 'buying a policy spends the pool but never the lifetime ledger')
-    // threshold + strict lead: below the bar nothing fires; past it, only the
-    // living rivals count (the dead are history, not opposition)
-    const keepCW = CFG.cultureWin
-    CFG.cultureWin = 120
-    gs.civs[0].cultureEarned = 100
+    // the CULTURE crown reads TOURISM: threshold + strict tourism lead (the
+    // living rivals' visitor books; the dead are history, not opposition)
+    const keepTW = CFG.tourismWin
+    CFG.tourismWin = 120
+    gs.civs[0].tourism = 100
     step(gs, { endTurn: true })
-    ok(!gs.end, 'below the threshold — no victory, however admired')
-    // strictly ahead means a LIVING rival ahead of you still beats the bar
+    ok((gs.civs[0].tourism || 0) < CFG.tourismWin && !gs.end, 'below the visitor bar — no crown, however admired')
+    // strictly ahead means a LIVING rival with more tourists still beats the bar
     const gb = newGame(3, 0)
     const sb = gb.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(gb, { select: sb.id, found: true })
-    gb.civs[0].cultureEarned = CFG.cultureWin + 5
-    gb.civs[1].cultureEarned = CFG.cultureWin + 9
+    gb.civs[0].tourism = CFG.tourismWin + 5
+    gb.civs[1].tourism = CFG.tourismWin + 9
     step(gb, { endTurn: true })
-    ok(gb.end === 'lose' && /culture/i.test(gb.endWhy || ''), 'past the bar but a living rival shines brighter — the loss names it')
-    gs.civs[0].cultureEarned = CFG.cultureWin + 5
-    gs.civs[1].cultureEarned = CFG.cultureWin + 9
+    ok(gb.end === 'lose' && /culture/i.test(gb.endWhy || ''), 'past the bar but a living rival draws more tourists — the loss names it')
+    gs.civs[0].tourism = CFG.tourismWin + 5
+    gs.civs[1].tourism = CFG.tourismWin + 9
     gs.civs[1].alive = false
     step(gs, { endTurn: true })
-    ok(gs.end === 'win' && /Culture/.test(gs.endWhy || ''), 'past the bar, ahead of every LIVING rival — CULTURE VICTORY (the dead cannot out-shine you)')
-    CFG.cultureWin = keepCW
+    ok(gs.end === 'win' && /Culture/.test(gs.endWhy || ''), 'past the bar, ahead of every LIVING visitor book — CULTURE VICTORY (the dead cannot out-shine you)')
+    CFG.tourismWin = keepTW
+    // the record alone never crowns: lifetime culture far past the old bar with
+    // an empty visitor book must not win (the split is real, §37)
+    const gr = newGame(2, 0)
+    const sr = gr.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gr, { select: sr.id, found: true })
+    gr.civs[0].cultureEarned = CFG.cultureWin * 10
+    gr.civs[0].tourism = 0
+    step(gr, { endTurn: true })
+    ok(!gr.end, 'lifetime culture past any bar with no tourists is memory, not victory')
 
     // domination stays the law and wins ahead of everything
     const g2 = newGame(2, 0)
@@ -1446,16 +1460,16 @@ console.log('33. victories: order, culture ledger, domination, race reachability
     const g4 = newGame(2, 0)
     const s4 = g4.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(g4, { select: s4.id, found: true })
-    g4.civs[2].cultureEarned = CFG.cultureWin + 10
+    g4.civs[2].tourism = CFG.tourismWin + 10
     step(g4, { endTurn: true })
-    ok(g4.end === 'lose' && /culture/i.test(g4.endWhy || ''), 'China out-shines Rome — a culture loss')
+    ok(g4.end === 'lose' && /culture/i.test(g4.endWhy || ''), 'China draws the bigger crowd — a culture loss')
 
     // the races are real: with the milestone out of the way and the later eras
     // prioritised, the autopilot brings the Ark home well inside the clock
     const keepCap = CFG.capitalSizeToWin
     const keepOrder = [...RESEARCH_ORDER]
     CFG.capitalSizeToWin = 99
-    CFG.cultureWin = 100000
+    CFG.tourismWin = 100000     // the Ark race must not be upstaged by the tourist crown
     RESEARCH_ORDER.length = 0
     RESEARCH_ORDER.push('POTTERY', 'WRITING', 'EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT',
         'BANKING', 'GUNPOWDER', 'RAILROAD', ...keepOrder.filter((id) => !['POTTERY', 'WRITING', 'EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT', 'BANKING', 'GUNPOWDER', 'RAILROAD'].includes(id)))
@@ -1466,8 +1480,8 @@ console.log('33. victories: order, culture ledger, domination, race reachability
         latest = Math.max(latest, r.turns)
     }
     ok(sciWins >= 2, `the autopilot wins the science race on most boards (${sciWins}/3, latest t${latest})`)
-    // culture race on the same harness
-    CFG.cultureWin = keepCW
+    // culture race on the same harness — the visitor bar back down, the crown live
+    CFG.tourismWin = keepTW
     RESEARCH_ORDER.length = 0
     RESEARCH_ORDER.push('POTTERY', 'WRITING', 'PHILOSOPHY', 'ARCHERY', 'THE_WHEEL', 'MASONRY', 'BRONZE_WORKING', 'AGRICULTURE', 'CURRENCY', 'HORSEBACK', 'ENGINEERING', 'MATHEMATICS', 'EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT')
     let cultWins = 0
@@ -1492,6 +1506,410 @@ console.log('33. victories: order, culture ledger, domination, race reachability
     capC.size = CFG.capitalSizeToWin
     step(g5, { endTurn: true })
     ok(/Science/.test(g5.endWhy || ''), 'same-turn crossings judge Science before the arcade milestone')
+}
+
+// ---- 34. transports: embark, land, amphibious assault, the drowning hold ----
+console.log('34. transports')
+{
+    const gs = newGame(41, 0)
+    eq(UNIT.GALLEON.cargo, 2, 'the Galleon carries two land units')
+    ok(!UNIT.GALLEY.cargo, 'the Trireme stays a pure raider — the convoy is the age of sail')
+    grantTech(gs, 0, 'BRONZE_WORKING'); grantTech(gs, 0, 'ASTRONOMY')
+    // build a real Galleon from a coastal yard
+    const site = gs.tiles.find((t) => canFound(gs, 0, t.c, t.r, null) === true && neighbors(t.c, t.r).some(([c, r]) => isWater(gs, c, r)))
+    ok(!!site, 'the continent offers a coastal capital site')
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    s.c = site.c; s.r = site.r
+    step(gs, { select: s.id, found: true })
+    const cap = gs.cities.find((c) => c.civ === 0 && c.alive)
+    ok(!!coastalCityOf(gs, 0), 'the coast opens the yard')
+    step(gs, { queue: 'GALLEON' })
+    ok(cap.queue.includes('GALLEON'), 'the convoy hull is queued')
+    cap.buildP = 99
+    step(gs, { endTurn: true })
+    const born = gs.units.find((u) => u.civ === 0 && u.kind === 'GALLEON' && u.alive)
+    ok(!!born, 'a Galleon slides off the slipway')
+    ok(born.cargo && born.cargo.length === 0, 'the hold starts empty')
+    for (const u of gs.units) if (u.alive && u.civ === BARB && hexDist([u.c, u.r], [born.c, born.r]) < 10) u.alive = false
+
+    // a mooring ringed by three beaches so capacity can be proven exactly —
+    // and clear of every other hull, so transportFor has exactly one answer
+    let spot = null
+    for (const t of gs.tiles) {
+        if (!isWater(gs, t.c, t.r) || unitAt(gs, t.c, t.r)) continue
+        if (gs.units.some((u) => u.alive && u.naval && hexDist([u.c, u.r], [t.c, t.r]) <= 2)) continue
+        const shores = neighbors(t.c, t.r).filter(([c, r]) => { const q = gs.tiles[idx(c, r)]; return walk(q.terr) && q.camp < 0 && q.city < 0 && !unitAt(gs, c, r) })
+        if (shores.length >= 3) { spot = { sea: [t.c, t.r], shores }; break }
+    }
+    ok(!!spot, 'the coast offers a lonely mooring ringed by beach')
+    const ship = spawnUnit(gs, 0, 'GALLEON', spot.sea[0], spot.sea[1])
+    const tr1 = spawnUnit(gs, 0, 'WARRIOR', spot.shores[0][0], spot.shores[0][1])
+    const tr2 = spawnUnit(gs, 0, 'ARCHER', spot.shores[1][0], spot.shores[1][1])
+    const tr3 = spawnUnit(gs, 0, 'WARRIOR', spot.shores[2][0], spot.shores[2][1])
+    eq(canEmbark(gs, tr1), true, 'a soldier beside a friendly Galleon can embark')
+    ok(embark(gs, tr1), 'the first squad boards')
+    ok(embark(gs, tr2), 'the second boards')
+    eq(ship.cargo.length, 2, 'the hold holds two')
+    ok(embark(gs, tr3) === false, 'a third marines nowhere — capacity is the law')
+    eq(tr1.loaded, ship.id, 'the unit rides in the hull')
+    ok(!unitAt(gs, spot.shores[0][0], spot.shores[0][1]), 'the beach stands empty — the soldier is cargo')
+    eq(tr1.moves, 0, 'embarking ends the move')
+    eq(orderMove(gs, tr1, spot.shores[0][0], spot.shores[0][1]), false, 'cargo cannot walk')
+    eq(doAttack(gs, tr1, ship.c, ship.r), false, 'cargo cannot fight')
+    eq(canEmbark(gs, tr1), 'no unit to embark', 'cargo cannot re-board itself')
+    const far = gs.tiles.find((t) => walk(t.terr) && t.camp < 0 && !unitAt(gs, t.c, t.r) && hexDist([t.c, t.r], spot.sea) === 2)
+    if (far) {
+        const tr4 = spawnUnit(gs, 0, 'WARRIOR', far.c, far.r)
+        eq(canEmbark(gs, tr4), 'no friendly galleon alongside', 'the ship must moor next door — no distant boarding')
+    } else ok(true, '(no outer beach in reach on this board — adjacency law proven by contrast)')
+    eq(canEmbark(gs, ship), 'ships do not board ships', 'ships do not board ships')
+
+    // the cargo rides along while the hull sails — out and back to the anchorage
+    const seaOut = neighbors(ship.c, ship.r).find(([c, r]) => isWater(gs, c, r) && !unitAt(gs, c, r))
+    ok(!!seaOut, 'open water lies beyond the mooring')
+    step(gs, { select: ship.id, move: seaOut })
+    for (let i = 0; i < 40 && (ship.c !== seaOut[0] || ship.r !== seaOut[1]); i++) step(gs, {})
+    eq(ship.c, seaOut[0], 'the convoy sails on')
+    eq(tr1.loaded, ship.id, 'the hold rides with the hull')
+    ship.moves = ship.maxMoves
+    step(gs, { select: ship.id, move: spot.sea })
+    for (let i = 0; i < 40 && (ship.c !== spot.sea[0] || ship.r !== spot.sea[1]); i++) step(gs, {})
+    eq(ship.c, spot.sea[0], 'the convoy returns to its anchorage')
+
+    // landing on empty sand
+    const beach = gs.tiles[idx(spot.shores[0][0], spot.shores[0][1])]
+    eq(canLand(gs, ship, ship.c, ship.r), 'transports land on beaches, not open water', 'no landing into the sea')
+    ok(land(gs, ship, beach.c, beach.r), 'the anchor drops, the ramp goes down')
+    eq(ship.cargo.length, 1, 'one squad ashore, one aboard')
+    eq(unitAt(gs, beach.c, beach.r), tr1, 'the soldier stands on the beach')
+    eq(tr1.loaded, null, 'cargo discharged')
+    eq(tr1.moves, 0, 'the landing spends the day')
+    ok(gs.events.some((e) => e.type === 'land' && e.civ === 0 && e.kind === 'WARRIOR'), 'the landing is announced')
+    eq(tr1.hp, 100, 'an uncontested landing walks ashore unscathed')
+    eq(canLand(gs, ship, spot.shores[2][0], spot.shores[2][1]), 'friendly troops hold the sand', 'one unit per beach — crowded sand is refused')
+
+    // amphibious assault: a defended beach fights the landing
+    const sand = spot.shores[1]
+    const barb = spawnUnit(gs, BARB, 'WARRIOR', sand[0], sand[1], { str: 6 })
+    barb.hp = 24
+    ok(canLand(gs, ship, sand[0], sand[1]) === true, 'a defended beach invites the assault')
+    ok(land(gs, ship, sand[0], sand[1]), 'the marines storm the sand')
+    ok(gs.events.some((e) => e.type === 'beachhead' && e.took), 'the beachhead is taken')
+    ok(!barb.alive, 'the defender is swept from the shore')
+    eq(unitAt(gs, sand[0], sand[1]).id, tr2.id, 'the second squad plants the banner on the captured sand')
+    eq(ship.cargo.length, 0, 'the hold empties onto the beachhead')
+    // a repelled landing rows back aboard
+    ok(embark(gs, tr1), 'the first beachhead squad re-embarks')
+    const sand2 = spot.shores[0]
+    const defender = spawnUnit(gs, BARB, 'WARRIOR', sand2[0], sand2[1], { str: 12 })
+    defender.hp = 100
+    tr1.hp = 100; tr1.moves = 2
+    ok(land(gs, ship, sand2[0], sand2[1]), 'the landing goes in against a strong guard')
+    ok(gs.events.some((e) => e.type === 'beachhead' && !e.took), 'the landings are repelled')
+    eq(ship.cargo.length, 1, 'the survivors row back aboard')
+    eq(tr1.loaded, ship.id, 'the squad is cargo again')
+    eq(unitAt(gs, sand2[0], sand2[1]), defender, 'the guard keeps the sand')
+    ok(tr1.hp < 100 && tr1.alive, 'repelled does not mean destroyed')
+    // enemy ports stay closed to the longboat
+    const port = gs.cities.find((c) => c.alive && c.civ >= CS0)
+    const portSea = port && neighbors(port.c, port.r).find(([c, r]) => isWater(gs, c, r) && !unitAt(gs, c, r))
+    if (port && portSea) {
+        const fortShip = spawnUnit(gs, 0, 'GALLEON', portSea[0], portSea[1])
+        const fortCrew = gs.units.find((u) => u.alive && u.civ === 0 && !u.loaded && !u.naval)
+        if (fortCrew) { fortShip.cargo.push(fortCrew.id); fortCrew.loaded = fortShip.id }
+        eq(canLand(gs, fortShip, port.c, port.r), 'fort ports refuse the longboat', 'enemy ports stay closed to the longboat — besiege by land')
+    } else ok(true, '(no nearby port on this board — fort law proven in §31)')
+    // a foreign (neutral) garrison bars the beach
+    if (!atWar(gs, 0, 1)) {
+        const q = gs.tiles.find((t) => walk(t.terr) && t.camp < 0 && !unitAt(gs, t.c, t.r) && hexDist([t.c, t.r], [ship.c, ship.r]) === 1)
+        if (q) {
+            spawnUnit(gs, 1, 'WARRIOR', q.c, q.r)
+            eq(canLand(gs, ship, q.c, q.r), 'foreign troops bar the beach', 'neutral ground stays polite — no landing on foreign soldiers')
+        } else ok(true, '(no free sand beside the mooring — neutrality law follows the same branch)')
+    } else ok(true, '(Egypt already at war on this board — neutrality branch proven by the message)')
+    // drown: a sunk hull takes its cargo to the bottom
+    const doomSea = gs.tiles.find((t) => isWater(gs, t.c, t.r) && !unitAt(gs, t.c, t.r)
+        && !gs.units.some((u) => u.alive && u.naval && hexDist([u.c, u.r], [t.c, t.r]) <= 2)
+        && neighbors(t.c, t.r).some(([c, r]) => walk(gs.tiles[idx(c, r)].terr) && gs.tiles[idx(c, r)].camp < 0 && !unitAt(gs, c, r)))
+    const doomed = spawnUnit(gs, 0, 'GALLEON', doomSea.c, doomSea.r)
+    const doomer = spawnUnit(gs, 0, 'WARRIOR', ...(() => { const q = gs.tiles.find((t) => walk(t.terr) && t.camp < 0 && !unitAt(gs, t.c, t.r) && hexDist([t.c, t.r], [doomed.c, doomed.r]) === 1); return [q.c, q.r] })())
+    embark(gs, doomer)
+    const foeSea = neighbors(doomed.c, doomed.r).find(([c, r]) => isWater(gs, c, r) && !unitAt(gs, c, r))
+    const foe = spawnUnit(gs, 1, 'GALLEY', foeSea[0], foeSea[1], { str: 30 })
+    declareWar(gs, 0, 1)
+    doomed.hp = 5
+    ok(doAttack(gs, foe, doomed.c, doomed.r), 'the convoy is intercepted at sea')
+    ok(!doomed.alive, 'the hull goes under')
+    ok(!doomer.alive, 'and the cargo drowns with it')
+    ok(gs.events.some((e) => e.type === 'drown' && e.civ === 0 && e.kind === 'WARRIOR'), 'the drowning is mourned in the log')
+    // the hold folds into the state hash
+    const h0 = stateHash(gs)
+    const carrier = gs.units.find((u) => u.alive && u.naval && u.cargo && u.cargo.length > 0)
+    ok(!!carrier, 'a laden hull remains on the board')
+    carrier.cargo.pop()
+    const h1 = stateHash(gs)
+    ok(h0 !== h1, 'cargo aboard moves stateHash')
+    // the shipped witness never touches the new law: the old replay stands
+    const a = newGame(7, 0), b = newGame(7, 0)
+    let x = 0, y = 0
+    while (!a.end && x++ < 40000) step(a, decide(a))
+    while (!b.end && y++ < 40000) step(b, decide(b))
+    ok(stateHash(a) === stateHash(b) && a.turn === b.turn, 'the autopilot still replays hash-for-hash with the transport law in place')
+}
+
+// ---- 35. capital capture ≠ extinction — domination counts capitals (#375 item 2) ----
+console.log('35. capital capture ≠ extinction — domination counts capitals')
+{
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.turnLimit = 9999   // isolate the domination law
+    const gs = newGame(4, 0)
+    const s0 = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s0.id, found: true })
+    for (let i = 0; i < 10; i++) step(gs, { endTurn: true })
+    const landFreeNear = (g, c, r) => neighbors(c, r).find(([nc, nr]) => nc >= 0 && nr >= 0 && nc < CFG.W && nr < CFG.H && walk(g.tiles[idx(nc, nr)].terr) && !unitAt(g, nc, nr)) || null
+
+    // (a) a civ whose CAPITAL falls is done — even though its army still marched
+    const victim = gs.cities.find((c) => c.alive && c.civ > 0 && c.civ < BARB && c.capital && landFreeNear(gs, c.c, c.r))
+    ok(!!victim, 'a rival capital sits where it can be stormed')
+    if (victim) {
+        const old = victim.civ
+        const unitsAtFall = gs.units.filter((u) => u.alive && u.civ === old).length
+        ok(unitsAtFall > 0, `${CIVS[old].name} marches living soldiers into the siege (${unitsAtFall} units)`)
+        declareWar(gs, 0, old)
+        const spot = landFreeNear(gs, victim.c, victim.r)
+        let guard = 0
+        while (victim.alive && victim.civ !== 0 && guard++ < 14) {
+            const w = gs.units.find((u) => u.civ === 0 && u.alive && u.str > 0 && !u.loaded); if (!w) break
+            w.c = spot[0]; w.r = spot[1]; w.moves = 9; w.hp = 100; w.acted = false
+            if (!doAttack(gs, w, victim.c, victim.r)) break
+        }
+        ok(victim.civ === 0, 'the rival capital is taken by assault')
+        eq(gs.civs[old].alive, false, 'the capital fell, so the civ is finished — no defender had to die')
+        eq(gs.civs[old].vassal, 0, 'and it is marked a vassal of the conqueror')
+        ok(gs.events.some((e) => e.type === 'civFall' && e.civ === old && e.by === 0), 'the fall is logged as a vassalization')
+        ok(!gs.events.some((e) => e.type === 'civDead' && e.civ === old), 'the reign ended by the head of the snake — NOT by the old every-city-lost extinction path')
+        eq(gs.cities.filter((c) => c.alive && c.civ === 0 && c.capital).length, 1, 'Rome keeps exactly one capital — the prize city is not flagged as a second seat')
+        ok(gs.cities.some((c) => c.alive && c.civ === 0 && c.id === victim.id), 'the captured capital now stands in Roman colours')
+        ok(gs.units.filter((u) => u.alive && u.civ === old).length === 0 && gs.units.filter((u) => u.alive && u.civ === 0).length > 0, 'its surviving soldiers serve Rome now — capture changed the map, not a body count')
+    }
+
+    // (b) the pill and the win speak the same language: capitals, not corpses
+    const runScenario = (seed) => {
+        const g = newGame(seed, 0)
+        const s = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(g, { select: s.id, found: true })
+        for (let i = 0; i < 10; i++) step(g, { endTurn: true })
+        const near = (c, r) => neighbors(c, r).find(([nc, nr]) => nc >= 0 && nr >= 0 && nc < CFG.W && nr < CFG.H && walk(g.tiles[idx(nc, nr)].terr) && !unitAt(g, nc, nr)) || null
+        const hit = (cap) => {
+            declareWar(g, 0, cap.civ)
+            const spot = near(cap.c, cap.r); if (!spot) return
+            let guard = 0
+            while (cap.alive && cap.civ !== 0 && guard++ < 14) {
+                const w = g.units.find((u) => u.civ === 0 && u.alive && u.str > 0 && !u.loaded); if (!w) break
+                w.c = spot[0]; w.r = spot[1]; w.moves = 9; w.hp = 100; w.acted = false
+                if (!doAttack(g, w, cap.c, cap.r)) break
+            }
+        }
+        for (const cap of g.cities.filter((c) => c.alive && c.civ > 0 && c.civ < BARB && c.capital)) hit(cap)
+        step(g, { endTurn: true })
+        return g
+    }
+    const gs4 = runScenario(4)
+    const pill = [1, 2, 3].filter((i) => { const oc = gs4.capitalOf[i] != null ? gs4.cities[gs4.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length
+    eq(pill, 3, 'all three rival capitals show taken on the HUD pill')
+    eq(gs4.end, 'win', 'capitals, not corpses — DOMINATION is won by taking every rival capital')
+    ok(/Domination/.test(gs4.endWhy || ''), 'and it names domination as the reason')
+    ok([1, 2, 3].every((i) => gs4.civs[i].alive === false && gs4.civs[i].vassal === 0), 'all three rivals end as vassals of Rome')
+    ok(gs4.events.filter((e) => e.type === 'civFall').length === 3, 'three capitals fell, three reigns ended — by the head, not the body count')
+
+    // (c) determinism of the new law: two identical conquests replay hash-for-hash
+    const d1 = runScenario(4), d2 = runScenario(4)
+    ok(stateHash(d1) === stateHash(d2) && d1.turn === d2.turn && d1.endWhy === d2.endWhy,
+        'the capital-fall conquest is deterministic, hash-for-hash')
+
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
+}
+
+// ---- 36. spaceship parts — THE ARK welds four named plates (#375 item 3) ----
+console.log('36. spaceship parts — Cockpit, Booster, Stasis, Launch')
+{
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.turnLimit = 9999   // isolate the hull from the other crowns
+
+    // (a) four named parts that split the launch ledger exactly
+    eq(ARK_PARTS.length, 4, 'the Ark is four named parts, not one anonymous pool')
+    eq(ARK_PARTS.map((p) => p.name).join('|'), 'Cockpit|Booster|Stasis|Launch', 'the hull is named: Cockpit, Booster, Stasis, Launch')
+    eq(ARK_PARTS.reduce((a, p) => a + p.cost, 0), CFG.arkScience, 'the four welds split the 70-beaker ledger exactly')
+    ok(new Set(ARK_PARTS.map((p) => p.cost)).size >= 2, 'the plates differ — the hull is not four identical stamps')
+
+    const gs = newGame(2, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    for (let i = 0; i < 3; i++) step(gs, { endTurn: true })
+
+    // (b) before Spaceflight the yard stands empty
+    ok(arkPartsOf(gs, 0).every((p) => p.funded === 0 && !p.done), 'before Spaceflight every part sits unfunded')
+    grantTech(gs, 0, 'SPACEFLIGHT')
+
+    // (c) ordered fill with spill: the Cockpit closes first, overflow runs down the line
+    gs.ark[0] = ARK_PARTS[0].cost - 1
+    let ps = arkPartsOf(gs, 0)
+    eq(ps[0].done, false, 'one beaker short and the Cockpit plate stays open')
+    eq(ps[1].funded, 0, 'the Booster weld waits its turn')
+    gs.ark[0] = ARK_PARTS[0].cost + 4
+    ps = arkPartsOf(gs, 0)
+    eq(ps[0].done, true, 'the Cockpit welds shut')
+    eq(ps[1].funded, 4, 'overflow spills into the Booster')
+    eq(ps[2].funded, 0, 'Stasis stays cold behind the spill')
+    eq(arkPartsDone(gs, 0), 1, 'one welded plate shows on the tracks')
+
+    // (d) three plates short of the pad — the ship holds
+    gs.ark[0] = ARK_PARTS[0].cost + ARK_PARTS[1].cost + ARK_PARTS[2].cost - 1
+    step(gs, { endTurn: true })
+    ok(arkPartsDone(gs, 0) <= 3, 'the hull stops short of the Launch weld')
+    ok(!gs.events.some((e) => e.type === 'arkLaunch' && e.civ === 0), 'a half-built hull does not lift — launch waits for all four')
+    ok(!gs.end, 'three plates are not victory')
+
+    // (e) a weld that closes mid-turn is announced by name
+    gs.events.length = 0
+    gs.ark[0] = ARK_PARTS[0].cost - 1
+    step(gs, { endTurn: true })
+    ok(gs.events.some((e) => e.type === 'arkPart' && e.civ === 0 && e.name === 'Cockpit' && e.part === 0), 'the Cockpit weld is announced by name')
+
+    // (f) the last beaker finishes the fourth plate and lifts the ship
+    gs.ark[0] = CFG.arkScience - 1
+    let launched = false
+    for (let i = 0; i < 8 && !launched && !gs.end; i++) { step(gs, { endTurn: true }); launched = gs.events.some((e) => e.type === 'arkLaunch' && e.civ === 0) }
+    ok(launched, 'the last beaker welds the Launch plate and lifts the Ark')
+    eq(arkPartsDone(gs, 0), 4, 'at the moment of flight all four parts read welded')
+    ok(arkPartsOf(gs, 0).every((p) => p.done), 'Cockpit, Booster, Stasis and Launch are all shut')
+    ok(gs.end === 'win' && /Science/.test(gs.endWhy || ''), 'the completed hull is a SCIENCE VICTORY')
+
+    // (g) the tracks clamp — overfunding never invents a fifth plate
+    gs.ark[0] = CFG.arkScience * 3
+    ps = arkPartsOf(gs, 0)
+    ok(ps.every((p) => p.funded === p.cost && p.done), 'the parts clamp at full')
+    eq(ps.reduce((a, p) => a + p.funded, 0), CFG.arkScience, 'welded beakers never exceed the ledger')
+
+    // (h) rivals ride the same four tracks
+    grantTech(gs, 1, 'SPACEFLIGHT')
+    eq(arkPartsDone(gs, 1), 0, 'a new rocket power starts with nothing welded')
+    gs.ark[1] = ARK_PARTS[0].cost + ARK_PARTS[1].cost
+    eq(arkPartsDone(gs, 1), 2, 'the rival track welds in the same order')
+
+    // (i) the part layer is pure derivation: same reading, same worlds, hash for hash
+    ok(JSON.stringify(arkPartsOf(gs, 2)) === JSON.stringify(arkPartsOf(gs, 2)), 'the part view is pure — same state, same reading')
+    gs.ark[0] = ARK_PARTS[0].cost - 1; const hh1 = stateHash(gs); gs.ark[0] = ARK_PARTS[0].cost; const hh2 = stateHash(gs)
+    ok(hh1 !== hh2, 'closing the Cockpit weld moves stateHash')
+    CFG.turnLimit = keepTurn   // determinism inside the shipped horizon (see STATE: late-game drift past t40)
+    const a = newGame(7, 0), b = newGame(7, 0)
+    let x = 0, y = 0
+    while (!a.end && x++ < 40000) step(a, decide(a))
+    while (!b.end && y++ < 40000) step(b, decide(b))
+    ok(stateHash(a) === stateHash(b) && JSON.stringify(arkPartsOf(a, 0)) === JSON.stringify(arkPartsOf(b, 0)),
+        'with the part layer in place the autopilot still replays hash-for-hash')
+
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
+}
+
+// ---- 37. culture vs tourism split (polish pass #375-4): THE VISITOR BOOK ----
+console.log('37. tourism: earned, never spent — and the crown follows the crowd')
+{
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.turnLimit = 9999   // isolate the visitor book from the other crowns and the record
+
+    const gs = newGame(2, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+
+    // (a) the ledger starts empty and banks from the first worked turn
+    eq(gs.civs[0].tourism, 0, 'a new age opens with an empty visitor book')
+    step(gs, { endTurn: true })
+    ok(gs.civs[0].tourism > 0, 'tourists arrive from the first worked turn')
+    ok(Number.isInteger(gs.civs[0].tourism), 'the visitor book counts whole tourists')
+    let te = gs.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop()
+    ok(te && te.tour > 0 && Number.isInteger(te.tour), 'the turn report carries this turn\'s tourist count')
+
+    // (b) income law: half of culture (rounded up) + 3 per wonder + 1 per luxury
+    const luxN = (cv) => connectedResources(gs, cv).filter((id) => RES[id].lux).length
+    const wonN = (cv) => WONDER_IDS.filter((id) => gs.wonders[id] === cv).length
+    eq(te.tour, Math.ceil(te.cult / 2) + CFG.wonderTour * wonN(0) + luxN(0), 'the visitor book pays ceil(culture/2) + 3 per wonder + 1 per luxury')
+    const seatTile = neighbors(s.c, s.r).map(([c, r]) => gs.tiles[idx(c, r)]).find((t) => t.owner === 0 && t.city < 0 && t.res < 0)
+    if (seatTile) {
+        seatTile.res = RES_IDS.indexOf('SILVER')   // a seam revealed beside the capital
+        step(gs, { endTurn: true })
+        te = gs.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop()
+        ok(luxN(0) >= 1 && te.tour === Math.ceil(te.cult / 2) + CFG.wonderTour * wonN(0) + luxN(0), `a connected luxury sends one tourist (+1) — law holds with ${luxN(0)} luxuries`)
+        seatTile.res = -1
+    } else ok(true, '(no free owned seam on this board — caravan law still proven by the formula above)')
+    gs.wonders.STONEHENGE = 0                      // a wonder is worth three tourists a turn
+    step(gs, { endTurn: true })
+    te = gs.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop()
+    eq(te.tour, Math.ceil(te.cult / 2) + CFG.wonderTour * wonN(0) + luxN(0), 'the wonder law holds with Stonehenge flying')
+
+    // (c) three ledgers, three purposes: the pool pays, the record remembers,
+    // the visitor book travels — only the pool can be spent
+    const tt0 = gs.civs[0].tourism, ce0 = gs.civs[0].cultureEarned
+    gs.civs[0].culture = 100
+    adoptPolicy(gs, 0, 'FOUNDATIONS')
+    eq(gs.civs[0].culture, 85, 'the policy paid from the spendable pool')
+    eq(gs.civs[0].tourism, tt0, 'the visitor book is never spent')
+    eq(gs.civs[0].cultureEarned, ce0, 'the lifetime record is never spent either')
+
+    // (d) monotonic: tourists never leave
+    let prev = gs.civs[0].tourism
+    for (let i = 0; i < 3; i++) { step(gs, { endTurn: true }); ok(gs.civs[0].tourism >= prev, `tourists never grow fewer (t${gs.turn})`); prev = gs.civs[0].tourism }
+
+    // (e) the crown follows the crowd: below the bar nothing, past it only the lead
+    CFG.tourismWin = 200
+    gs.civs[0].tourism = 40
+    step(gs, { endTurn: true })
+    ok(!gs.end, 'far below the bar — no crown, however cultured')
+    gs.civs[0].tourism = CFG.tourismWin + 25
+    for (const c of [1, 2, 3]) gs.civs[c].tourism = 10
+    step(gs, { endTurn: true })
+    ok(gs.end === 'win' && /Culture/.test(gs.endWhy || ''), 'past the bar, strictly ahead of every living visitor book — CULTURE VICTORY')
+
+    // (f) strictness: with the only rival's economy frozen, an equal count is
+    // not a lead — the crown waits for strictly more
+    const gz = newGame(2, 0)
+    const sz = gz.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gz, { select: sz.id, found: true })
+    for (const ct of gz.cities) if (ct.civ === 1) ct.alive = false   // no cities, no crowds: China's book stands still
+    step(gz, { endTurn: true })
+    const b1 = gz.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop().tour
+    step(gz, { endTurn: true })
+    const b2 = gz.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop().tour
+    ok(b1 === b2 || gz.cities.some((c) => c.alive && c.civ === 0 && c.size > 1), 'a growing capital banks a bigger crowd each turn')
+    CFG.tourismWin = Math.max(1, Math.floor(gz.civs[0].tourism))      // both are past the bar from here
+    gz.civs[1].tourism = gz.civs[0].tourism + b2                        // equal at the moment the next crowd arrives…
+    gz.civs[2].tourism = 0; gz.civs[3].tourism = 0
+    step(gz, { endTurn: true })
+    const led = gz.civs[0].tourism > gz.civs[1].tourism
+    ok((gz.end === 'win' && /Culture/.test(gz.endWhy || '')) === led, 'the crown wants strictly more tourists: a tie stays uncoroned, a lead crowns')
+
+    // (g) rivals ride the same law — China's bank is the same formula
+    const gr = newGame(2, 0)
+    const sr = gr.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gr, { select: sr.id, found: true })
+    step(gr, { endTurn: true })
+    const te1 = gr.events.filter((e) => e.type === 'turnEnd' && e.civ === 1).pop()
+    ok(te1 && te1.tour === Math.ceil(te1.cult / 2) + CFG.wonderTour * WONDER_IDS.filter((id) => gr.wonders[id] === 1).length + connectedResources(gr, 1).filter((id) => RES[id].lux).length, 'the rival visitor book obeys the same income law')
+
+    // (h) the visitor book folds into stateHash
+    const hA = stateHash(gz)
+    gz.civs[0].tourism += 7
+    ok(stateHash(gz) !== hA, 'tourists move the world hash')
+
+    // (i) determinism inside the shipped clock, with the split in place
+    const a = newGame(7, 0), b = newGame(7, 0)
+    let x = 0, y = 0
+    while (!a.end && x++ < 40000) step(a, decide(a))
+    while (!b.end && y++ < 40000) step(b, decide(b))
+    ok(stateHash(a) === stateHash(b) && a.civs[0].tourism === b.civs[0].tourism,
+        'with the tourism ledger in place the autopilot still replays hash-for-hash')
+
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)

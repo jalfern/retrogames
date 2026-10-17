@@ -12,7 +12,9 @@
 //   - settlers found cities (>= 3 hex from any city, on passable land).
 //   - cities work `size` tiles (centre always), produce food/production/gold/
 //     science/culture, GROW on stored food surplus, and bombard one adjacent
-//     enemy each turn. Walls at 0 => captured; last city lost => civ destroyed.
+//     enemy each turn. Walls at 0 => captured; a civ whose CAPITAL falls is
+//     vassalized — its realm folds into the conqueror and the civ is done
+//     (capital capture ≠ needing every unit dead).
 //   - combat: 100 HP units, deterministic effective-strength exchanges.
 //     Modifiers: hills +25%, fortified +25%, city-tile support +50%,
 //     attacking across a river -10%. Ranged (range 2) takes no retaliation.
@@ -65,9 +67,12 @@
 //     the INDUSTRIAL age (Steam Power, Astronomy, Railroad) into the MODERN
 //     (Industrialization, Electricity, Spaceflight), each with real era effects.
 //     Three victories end the game: DOMINATION (every rival capital), SCIENCE
-//     (Spaceflight unlocks THE ARK — every beaker after it banks toward launch)
-//     and CULTURE (lifetime culture past the threshold, strictly ahead of every
-//     living rival). The arcade milestone (capital size N) remains as the
+//     (Spaceflight unlocks THE ARK — beakers then weld its four named parts:
+//      Cockpit, Booster, Stasis and Launch; the completed hull lifts off)
+//     and CULTURE (the TOURISM lead — visitors bank wonders, luxuries and half
+//     of every turn's culture; past the threshold and strictly ahead of every
+//     living rival. Lifetime culture remains the record, not the crown).
+//     The arcade milestone (capital size N) remains as the
 //     golden-age win. The Musket (Gunpowder) and the Galleon (Astronomy — the
 //     age of sail storms ports, unlike the Trireme) answer the new era. A rival
 //     completing any of the three first loses the world the other way.
@@ -102,8 +107,34 @@ export const CFG = {
     stoneCult: 2, librarySci: 2, gardenFood: 1, colossusGold: 1, wallDefMult: 1.5,   // wonder effects
     csGift: 25, csInfl: 30, csAlly: 60, csTribute: 40,    // city-state courts: gift cost, influence per gift, alliance threshold, sack tribute
     tradeGold: 3, peaceCool: 3,                             // gold per signed trade pact per turn; turns peace must hold before trade
-    arkScience: 70, cultureWin: 350,       // Stage 8 victories: beakers banked into the Ark after Spaceflight; lifetime culture that must lead every rival
+    arkScience: 70, cultureWin: 350,       // Stage 8 victories: beakers banked into the Ark after Spaceflight (= the sum of ARK_PARTS); lifetime culture the world still records (since polish pass #375-4 it no longer crowns)
+    tourismWin: 120, wonderTour: 3,       // polish pass #375-4: the CULTURE crown is the TOURISM lead — visitors bank what there is to see
 }
+
+// ---- the Ark, part by part (polish pass #375-3: the Science win assembles a
+// ship, not a number) -----------------------------------------------------------
+// Spaceflight opens the yard; beakers then weld four NAMED parts in order, each
+// with its own track. The ledger stays gs.ark[civ] (the proven §32/§33 pool);
+// the parts are a pure derivation of it — ordered fill with spill, so the
+// weld boundaries are milestones: 15 + 20 + 15 + 20 = the 70-beaker launch.
+export const ARK_PARTS = [
+    { id: 'COCKPIT', name: 'Cockpit', cost: 15 },
+    { id: 'BOOSTER', name: 'Booster', cost: 20 },
+    { id: 'STASIS', name: 'Stasis', cost: 15 },
+    { id: 'LAUNCH', name: 'Launch', cost: 20 },
+]
+
+export function arkPartsOf(gs, civ) {
+    const total = Math.max(0, Math.min(CFG.arkScience, Math.floor(gs.ark[civ])))
+    let acc = 0
+    return ARK_PARTS.map((p) => {
+        const funded = Math.max(0, Math.min(p.cost, total - acc))
+        acc += p.cost
+        return { id: p.id, name: p.name, cost: p.cost, funded, done: funded >= p.cost }
+    })
+}
+
+export function arkPartsDone(gs, civ) { return arkPartsOf(gs, civ).filter((p) => p.done).length }
 
 export const UNIT = {
     WARRIOR: { str: 8, moves: 2, sight: 2, range: 1, cost: 15 },
@@ -119,8 +150,10 @@ export const UNIT = {
     GALLEY: { str: 10, moves: 3, sight: 3, range: 1, cost: 30, tech: 'BRONZE_WORKING', naval: true },
     // Stage 8: the age of gunpowder and sail. The Musket is the line infantry
     // of the new era; the Galleon is the first ship bold enough to storm ports.
+    // Polish pass: the Galleon is also the convoy hull — the age of sail carries
+    // two land units in its hold (the Trireme stays a pure raider).
     MUSKET: { str: 15, moves: 2, sight: 2, range: 1, cost: 45, tech: 'GUNPOWDER' },
-    GALLEON: { str: 14, moves: 4, sight: 3, range: 1, cost: 48, tech: 'ASTRONOMY', naval: true, ports: true },
+    GALLEON: { str: 14, moves: 4, sight: 3, range: 1, cost: 48, tech: 'ASTRONOMY', naval: true, ports: true, cargo: 2 },
 }
 
 // ---- the tech tree (Stage 3, grown through Stage 8) ----------------------------
@@ -152,7 +185,7 @@ export const TECH = {
     RAILROAD: { name: 'Railroad', era: 4, cost: 50, prereq: ['STEAM_POWER', 'THE_WHEEL'], effect: 'roads are free to move on' },
     INDUSTRIALIZATION: { name: 'Industrialization', era: 5, cost: 45, prereq: ['STEAM_POWER'], effect: '+3 production in every city' },
     ELECTRICITY: { name: 'Electricity', era: 5, cost: 50, prereq: ['INDUSTRIALIZATION'], effect: '+2 science +1 gold in every city' },
-    SPACEFLIGHT: { name: 'Spaceflight', era: 5, cost: 55, prereq: ['ELECTRICITY', 'ASTRONOMY'], effect: 'unlocks THE ARK — bank 70 science to launch' },
+    SPACEFLIGHT: { name: 'Spaceflight', era: 5, cost: 55, prereq: ['ELECTRICITY', 'ASTRONOMY'], effect: 'unlocks THE ARK — weld Cockpit, Booster, Stasis & Launch (70 science)' },
 }
 export const TECH_IDS = Object.keys(TECH)
 export const ERAS = ['ANCIENT', 'CLASSICAL', 'MEDIEVAL', 'RENAISSANCE', 'INDUSTRIAL', 'MODERN']
@@ -347,7 +380,7 @@ function sweepMeetings(gs) {
         const home = gs.cities.find((c) => c.alive && c.civ === cs.id)
         if (!home) continue
         for (const u of gs.units) {
-            if (!u.alive || u.civ >= CS0) continue
+            if (!u.alive || u.loaded || u.civ >= CS0) continue
             if (hexDist([u.c, u.r], [home.c, home.r]) > 1) continue
             const info = gs.cs[u.civ][cs.id] || (gs.cs[u.civ][cs.id] = { met: false, influence: 0, ally: false })
             if (!info.met) {
@@ -377,6 +410,109 @@ export function tileBlocked(gs, c, r) {
     if (!inMap(c, r)) return true
     const ci = gs.tiles[idx(c, r)].camp
     return ci >= 0 && gs.camps[ci] && gs.camps[ci].alive
+}
+
+// ---- transports (polish pass: embark, land, amphibious assault) ---------------
+// Faithful to the 2010 original's convoy laws, scaled to this world: the
+// Galleon carries two land units. Embarking ends the soldier's move; landing
+// onto an enemy beach fights the landing right there; a sunk hull takes its
+// cargo to the bottom. Enemy ports still refuse the longboat — land beside
+// the fort and besiege by land.
+export function transportFor(gs, unit) {
+    return gs.units.find((s) => s.alive && !s.loaded && s.naval && s.civ === unit.civ
+        && (UNIT[s.kind].cargo || 0) > 0 && s.cargo.length < UNIT[s.kind].cargo
+        && hexDist([s.c, s.r], [unit.c, unit.r]) === 1) || null
+}
+export function canEmbark(gs, unit) {
+    if (!unit || !unit.alive || unit.loaded) return 'no unit to embark'
+    if (unit.naval) return 'ships do not board ships'
+    if (unit.busy != null) return 'worker already working'
+    if (!transportFor(gs, unit)) return 'no friendly galleon alongside'
+    return true
+}
+export function embark(gs, unit) {
+    const why = canEmbark(gs, unit)
+    if (why !== true) { if (unit && unit.civ === 0) gs.events.push({ type: 'deny', reason: why, c: unit.c, r: unit.r }); return false }
+    const ship = transportFor(gs, unit)
+    ship.cargo.push(unit.id)
+    unit.loaded = ship.id
+    unit.moves = 0; unit.acted = true; unit.path = []
+    gs.events.push({ type: 'embark', civ: unit.civ, kind: unit.kind, ship: ship.id, at: [unit.c, unit.r] })
+    return true
+}
+export function canLand(gs, ship, tc, tr) {
+    if (!ship || !ship.alive || !ship.naval) return 'no ship'
+    if (!(UNIT[ship.kind] && UNIT[ship.kind].cargo > 0)) return 'this hull carries nothing'
+    if (!ship.cargo.length) return 'the hold is empty'
+    if (!inMap(tc, tr)) return 'out of reach'
+    const tl = gs.tiles[idx(tc, tr)]
+    if (!WALKABLE(tl.terr)) return 'transports land on beaches, not open water'
+    if (hexDist([ship.c, ship.r], [tc, tr]) !== 1) return 'the ship must lie offshore'
+    if (tileBlocked(gs, tc, tr)) return 'a barbarian camp bars the beach'
+    const cityI = tl.city
+    if (cityI >= 0 && gs.cities[cityI].alive && gs.cities[cityI].civ !== ship.civ) return 'fort ports refuse the longboat'
+    const occ = unitAt(gs, tc, tr)
+    if (occ && occ.civ === ship.civ) return 'friendly troops hold the sand'
+    if (occ && !atWar(gs, ship.civ, occ.civ)) return 'foreign troops bar the beach'
+    if (occ) {
+        const first = gs.units.find((x) => x.id === ship.cargo[0])
+        if (first && first.str <= 0) return 'defenders need soldiers to storm a beach'
+    }
+    return true
+}
+export function land(gs, ship, tc, tr) {
+    const why = canLand(gs, ship, tc, tr)
+    if (why !== true) { if (ship && ship.civ === 0) gs.events.push({ type: 'deny', reason: why, c: tc, r: tr }); return false }
+    const def = unitAt(gs, tc, tr)
+    const uid = ship.cargo.shift()
+    const u = gs.units.find((x) => x.id === uid && x.alive)
+    if (!u) return ship.cargo.length ? land(gs, ship, tc, tr) : false
+    const ociv = u.civ
+    ship.moves = 0; ship.acted = true
+    if (def && def.alive && atWar(gs, ociv, def.civ)) {
+        // the amphibious assault: the beach fight settles in place — win and
+        // the beachhead is yours, lose and the squad is lost, the ship floats
+        let strikes = 0, took = false
+        while (strikes++ < 4) {
+            const atkEff = u.str * (0.5 + 0.5 * u.hp / u.maxHp) * 0.9
+            const defEff = def.str * (0.5 + 0.5 * def.hp / def.maxHp) * (1 + defenseBonus(gs, def))
+            def.hp -= Math.max(4, Math.round(34 * atkEff / (atkEff + defEff)))
+            if (def.hp <= 0) {
+                def.hp = 0; def.alive = false; def.moves = 0; def.path = []
+                gs.events.push({ type: 'kill', civ: ociv, kind: u.kind, victim: def.civ, victimKind: def.kind, at: [tc, tr], ranged: false })
+                took = true
+                break
+            }
+            u.hp -= Math.max(2, Math.round(30 * defEff / (atkEff + defEff)))
+            if (u.hp <= 0) break
+        }
+        gs.events.push({ type: 'strike', civ: ociv, kind: u.kind, from: [ship.c, ship.r], to: [tc, tr], ranged: false, landing: true })
+        if (def.civ > 0 && def.civ !== BARB && ociv < BARB) declareWar(gs, ociv, def.civ)
+        if (u.hp <= 0) {
+            u.hp = 0; u.alive = false; u.path = []; u.loaded = null
+            gs.events.push({ type: 'kill', civ: def.civ, kind: def.kind, victim: ociv, victimKind: u.kind, at: [tc, tr], ranged: false })
+            return true
+        }
+        gs.events.push({ type: 'beachhead', civ: ociv, kind: u.kind, at: [tc, tr], took })
+        if (!took) { ship.cargo.unshift(uid); return true }   // repelled — the squad rows back aboard
+    }
+    u.loaded = null
+    u.c = tc; u.r = tr
+    u.moves = 0; u.acted = true; u.path = []
+    gs.events.push({ type: 'land', civ: ociv, kind: u.kind, at: [tc, tr] })
+    if (ociv === 0) reveal(gs, 0, tc, tr, UNIT[u.kind].sight)
+    return true
+}
+function drownCargo(gs, ship) {
+    if (!ship.cargo || !ship.cargo.length) return
+    for (const cid of ship.cargo) {
+        const cu = gs.units.find((x) => x.id === cid)
+        if (cu && cu.alive) {
+            cu.alive = false; cu.hp = 0; cu.path = []; cu.loaded = null
+            gs.events.push({ type: 'drown', civ: cu.civ, kind: cu.kind, at: [ship.c, ship.r] })
+        }
+    }
+    ship.cargo = []
 }
 
 // ---- tech tree ---------------------------------------------------------------
@@ -766,7 +902,7 @@ function placeResources(gs) {
 
 // ---------------------------------------------------------------- fog/units --
 export function tileAt(gs, c, r) { return inMap(c, r) ? gs.tiles[idx(c, r)] : null }
-export function unitAt(gs, c, r) { return gs.units.find((u) => u.alive && u.c === c && u.r === r) || null }
+export function unitAt(gs, c, r) { return gs.units.find((u) => u.alive && !u.loaded && u.c === c && u.r === r) || null }
 export function cityAt(gs, c, r) { const i = idx(c, r); return inMap(c, r) ? gs.tiles[i].city : -1 }
 
 export function reveal(gs, civ, c, r, sight) {
@@ -791,7 +927,7 @@ export function newGame(seed = 1, scenario = 0) {
         seed: seed + scenario * 977, scenario, tick: 0, turn: 1, phase: 'player',
         tiles: [], units: [], cities: [], camps: [], wars: {},
         fog: [], explored: [], visible: [],
-        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, cultureEarned: 0, happyNet: 0, alive: true })),
+        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, cultureEarned: 0, tourism: 0, happyNet: 0, alive: true, vassal: null })),
         tech: CIVS.map(() => ({ known: {}, research: null, prog: 0 })),
         policies: CIVS.map(() => ({})),
         resKnown: CIVS.map(() => ({})),
@@ -938,6 +1074,7 @@ export function spawnUnit(gs, civ, kind, c, r, opts = {}) {
         str, hp: 100, maxHp: 100,
         moves, maxMoves: moves,
         naval: !!st.naval,
+        cargo: st.naval ? [] : null,
         path: [], anim: { px: 0, pz: 0, moving: false },
         alive: true, fortified: false, acted: false, busy: null,
     }
@@ -1051,7 +1188,7 @@ function cityName(civ, n) { return (NAMES[civ] || ['City'])[n % 4] }
 
 // ------------------------------------------------------------------ actions --
 export function orderMove(gs, unit, tc, tr) {
-    if (!unit || !unit.alive || unit.moves <= 0) return false
+    if (!unit || !unit.alive || unit.loaded || unit.moves <= 0) return false
     const tl = tileAt(gs, tc, tr)
     if (!tl || !domainOK(unit, tl.terr)) return false
     if (tileBlocked(gs, tc, tr)) return false
@@ -1119,7 +1256,7 @@ export function cityDefense(gs, city) {
 }
 
 export function doAttack(gs, u, tc, tr) {
-    if (!u || !u.alive || u.str <= 0 || u.moves <= 0) return false
+    if (!u || !u.alive || u.loaded || u.str <= 0 || u.moves <= 0) return false
     const d = hexDist([u.c, u.r], [tc, tr])
     const st = UNIT[u.kind]
     if (d < 1 || d > Math.max(1, st.range)) return false
@@ -1141,6 +1278,7 @@ export function doAttack(gs, u, tc, tr) {
             target.hp -= Math.max(4, Math.round(34 * atkEff / (atkEff + defEff)))
             if (target.hp <= 0) {
                 target.hp = 0; target.alive = false; target.moves = 0; target.path = []
+                if (target.naval) drownCargo(gs, target)
                 gs.events.push({ type: 'kill', civ: u.civ, kind: u.kind, victim: target.civ, victimKind: target.kind, at: [tc, tr], ranged })
                 if (!ranged && u.alive && domainOK(u, tl.terr)) { u.c = tc; u.r = tr; if (u.civ === BARB) pillageAt(gs, gs.tiles[ti]) }        // march in — one unit per tile holds
                 if (u.alive && u.civ === 0) reveal(gs, 0, tc, tr, st.sight)
@@ -1149,6 +1287,7 @@ export function doAttack(gs, u, tc, tr) {
             if (!ranged) u.hp -= Math.max(2, Math.round(30 * defEff / (atkEff + defEff)))
             if (u.hp <= 0) {
                 u.hp = 0; u.alive = false; u.path = []
+                if (u.naval) drownCargo(gs, u)
                 gs.events.push({ type: 'kill', civ: target.civ, kind: target.kind, victim: u.civ, victimKind: u.kind, at: [u.c, u.r], ranged: false })
                 break
             }
@@ -1173,6 +1312,7 @@ export function doAttack(gs, u, tc, tr) {
             if (!ranged) u.hp -= Math.max(2, Math.round(22 * defEff / (atkEff + defEff)))
             if (u.hp <= 0) {
                 u.hp = 0; u.alive = false; u.path = []
+                if (u.naval) drownCargo(gs, u)
                 gs.events.push({ type: 'kill', civ: city.civ, kind: 'CITY', victim: u.civ, victimKind: u.kind, at: [u.c, u.r], ranged: false })
                 break
             }
@@ -1216,9 +1356,43 @@ function captureCity(gs, city, civ) {
         if (civ < CIVS.length) { if (civ < CS0) gs.civs[civ].gold += CFG.csTribute; gs.events.push({ type: 'csTaken', cs: old, by: civ, tribute: civ < CS0 ? CFG.csTribute : 0 }) }
         for (let x = 0; x < CS0; x++) if (gs.cs[x][old]) { gs.cs[x][old].ally = false; gs.cs[x][old].fallen = true }
     }
+    // #375 item 2 — capital capture ≠ extinction, but it ENDS a reign: when a
+    // major civ's capital falls to another major, the realm submits. The fallen
+    // capital loses its banner (it is just a city of the victor now); the rest of
+    // the defeated civ's cities, garrisons and borders fold into the conqueror and
+    // the civ is vassalized. The arcade HUD pill tracks exactly these falls.
+    const fellCapital = !!city.capital && old < BARB && civ < BARB && civ !== old && old !== 0
+    if (fellCapital) delete city.capital
     declareWar(gs, civ, old)
+    if (fellCapital) {
+        collapseRealm(gs, old, civ)
+        gs.civs[old].vassal = civ
+        gs.civs[old].alive = false
+        gs.events.push({ type: 'civFall', civ: old, by: civ, capital: city.name })
+    }
     if (civ < BARB) reveal(gs, civ, city.c, city.r, CFG.sightCity)
     checkCivDeath(gs)
+}
+
+// A defeated realm submits: its cities, garrisons and claimed land pass to the
+// victor, its pacts and wars dissolve. The defeated civ keeps NO cities, so
+// checkCivDeath agrees it is gone and DOMINATION (counted on capitals) advances
+// one crown for this capital fall — no need to grind out every last unit.
+function collapseRealm(gs, old, captor) {
+    for (const ct of gs.cities) {
+        if (!ct.alive || ct.civ !== old) continue
+        if (ct.capital) delete ct.capital
+        ct.civ = captor
+        ct.wallMax = ct.wallMax || CFG.cityHp
+        ct.hp = Math.max(1, Math.min(ct.hp, Math.floor(ct.wallMax * 0.5)))
+        ct.queue = ct.queue || []
+        for (const [nc, nr] of neighbors(ct.c, ct.r)) { const tl = gs.tiles[idx(nc, nr)]; if (tl.owner === old) tl.owner = captor }
+        gs.tiles[idx(ct.c, ct.r)].owner = captor
+    }
+    for (const u of gs.units) if (u.alive && u.civ === old) u.civ = captor
+    for (const book of [gs.wars, gs.trade, gs.peaceTurn]) {
+        for (const k of Object.keys(book)) { const [a, b] = k.split('-').map(Number); if (a === old || b === old) delete book[k] }
+    }
 }
 
 function checkCivDeath(gs) {
@@ -1268,7 +1442,7 @@ function navalTarget(gs, civ, u) {
 function animateUnits(gs) {
     gs._anim = []
     for (const u of gs.units) {
-        if (!u.alive) continue
+        if (!u.alive || u.loaded) continue
         if (u.path && u.path.length) {
             u._p = (u._p || 0) + 1
             if (u._p >= 9) {
@@ -1290,7 +1464,7 @@ function animateUnits(gs) {
 // resolve cities (economy, production, bombardment), heal the unwounded,
 // advance the turn.
 function endPlayerTurn(gs) {
-    for (const u of gs.units) { if (u.civ === 0 && u.alive) { u.path = []; u.fortified = !u.acted } }
+    for (const u of gs.units) { if (u.civ === 0 && u.alive && !u.loaded) { u.path = []; u.fortified = !u.acted } }
     for (const civ of gs.civs) { if (!civ.player && !civ.barb && !civ.cs && civ.alive) aiTurn(gs, civ.id) }
     barbarianTurn(gs)
     sweepMeetings(gs)
@@ -1300,7 +1474,7 @@ function endPlayerTurn(gs) {
     gs.turn++
     gs.phase = 'player'
     for (const u of gs.units) {
-        if (!u.alive) continue
+        if (!u.alive || u.loaded) continue
         if (!u.acted) {
             const home = inMap(u.c, u.r) && gs.tiles[idx(u.c, u.r)].owner === u.civ
             const h = (home ? CFG.healHome : CFG.healField) + (u.fortified && home ? CFG.healFortify : 0)
@@ -1311,7 +1485,7 @@ function endPlayerTurn(gs) {
         if (u.civ !== 0) u.fortified = false
     }
     gs.selected = gs.units.find((u) => u.civ === 0 && u.alive)?.id ?? -1
-    for (const civ of gs.civs) { clearVisible(gs, civ.id); const own = gs.units.filter((u) => u.civ === civ.id && u.alive)
+    for (const civ of gs.civs) { clearVisible(gs, civ.id); const own = gs.units.filter((u) => u.civ === civ.id && u.alive && !u.loaded)
         for (const u of own) reveal(gs, civ.id, u.c, u.r, u.kind === 'WARRIOR' ? CFG.sightWarrior : CFG.sightSettler)
         for (const ct of gs.cities) if (ct.civ === civ.id && ct.alive) reveal(gs, civ.id, ct.c, ct.r, CFG.sightCity) }
     checkEnd(gs)
@@ -1383,6 +1557,7 @@ function resolveCiv(gs, civ) {
             gs.events.push({ type: 'cityStrike', civ, city: city.id, at: [victim.c, victim.r] })
             if (victim.hp <= 0) {
                 victim.alive = false; victim.hp = 0; victim.path = []
+                if (victim.naval) drownCargo(gs, victim)
                 gs.events.push({ type: 'kill', civ, kind: 'CITY', victim: victim.civ, victimKind: victim.kind, at: [victim.c, victim.r] })
             }
         }
@@ -1424,6 +1599,13 @@ function resolveCiv(gs, civ) {
         if (!now) G.ready[t] = false
     }
     C.gold += gold; C.science += sci; C.culture += cult
+    // Polish pass #375-4: culture and tourism split. The visitor book is a
+    // second, unspendable ledger: tourists come for what there IS to see —
+    // every completed wonder pays its crown, every connected luxury sends a
+    // caravan, and half of this turn's culture (rounded up) is plain fame.
+    const myWonders = WONDER_IDS.filter((id) => gs.wonders && gs.wonders[id] === civ).length
+    const tour = Math.ceil(cult / 2) + CFG.wonderTour * myWonders + lux
+    C.tourism = (C.tourism || 0) + tour
     const mood = hs.net >= 1 ? 'happy' : hs.net < 0 ? 'unhappy' : 'content'
     if (mood !== C.happyState) { C.happyState = mood; C.happyNet = hs.net; gs.events.push({ type: 'happy', civ, net: hs.net, state: mood }) }
     C.happyNet = hs.net
@@ -1444,16 +1626,24 @@ function resolveCiv(gs, civ) {
     // Stage 8: lifetime culture outlives every policy purchase — it is the
     // ledger the culture victory reads, and it never gets spent.
     C.cultureEarned = (C.cultureEarned || 0) + cult
-    // Stage 8: after Spaceflight, every beaker pours into THE ARK.
+    // Stage 8: after Spaceflight, every beaker pours into THE ARK — welding its
+    // four named parts in order (Cockpit → Booster → Stasis → Launch). A weld
+    // that closes mid-turn is announced by name; overflow spills to the next.
     if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] < CFG.arkScience) {
+        const before = gs.ark[civ]
         gs.ark[civ] = Math.min(CFG.arkScience, gs.ark[civ] + sci)
         gs.events.push({ type: 'ark', civ, prog: gs.ark[civ], need: CFG.arkScience })
+        let acc = 0
+        for (let pi = 0; pi < ARK_PARTS.length; pi++) {
+            acc += ARK_PARTS[pi].cost
+            if (before < acc && gs.ark[civ] >= acc) gs.events.push({ type: 'arkPart', civ, part: pi, name: ARK_PARTS[pi].name, prog: gs.ark[civ], need: CFG.arkScience })
+        }
         if (gs.ark[civ] >= CFG.arkScience) gs.events.push({ type: 'arkLaunch', civ })
     }
     const eraNow = highestEra(gs, civ)
     if (eraNow > (C.era == null ? -1 : C.era)) { C.era = eraNow; if (eraNow >= 1) gs.events.push({ type: 'era', civ, era: eraNow }) }
     spreadBorders(gs, civ)
-    gs.events.push({ type: 'turnEnd', civ, gold, sci, cult, prod, fSur })
+    gs.events.push({ type: 'turnEnd', civ, gold, sci, cult, prod, fSur, tour })
 }
 
 function highestEra(gs, civ) {
@@ -1464,17 +1654,18 @@ function highestEra(gs, civ) {
 }
 
 // Stage 8: the three real victories, judged for any major. DOMINATION first
-// (the pen and the sword), then SCIENCE (the Ark), then CULTURE (lifetime
-// culture past the threshold, strictly ahead of every living rival). Rome's
-// arcade milestone (golden age) stays behind them; a rival achieving any of
-// the three first ends the game the other way.
+// (the pen and the sword), then SCIENCE (the Ark), then CULTURE — which since
+// polish pass #375-4 is judged on TOURISM, not the lifetime culture record:
+// the visitor book past the threshold, strictly ahead of every living rival's
+// visitor book. Rome's arcade milestone (golden age) stays behind them; a
+// rival achieving any of the three first ends the game the other way.
 function victoryFor(gs, civ) {
     if (!gs.civs[civ].alive) return null
     if (gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive)) return 'Domination — every rival capital flies your colours'
-    if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkScience) return 'Science — the Ark leaves the ground; the future is yours'
-    const mine = gs.civs[civ].cultureEarned || 0
-    if (mine >= CFG.cultureWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.cultureEarned || 0) < mine)) {
-        return 'Culture — the world remembers your name above all others'
+    if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkScience) return 'Science — Cockpit, Booster, Stasis and Launch are welded; the Ark leaves the ground, and the future is yours'
+    const mine = gs.civs[civ].tourism || 0
+    if (mine >= CFG.tourismWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.tourism || 0) < mine)) {
+        return 'Culture — travellers cross seas for your wonders; no court in the world shines brighter'
     }
     return null
 }
@@ -1509,7 +1700,7 @@ function pillageAt(gs, tl) {
 function findTarget(gs, civ, u, radius) {
     let best = null, bs = 1e9
     for (const x of gs.units) {
-        if (!x.alive || !atWar(gs, civ, x.civ)) continue
+        if (!x.alive || x.loaded || !atWar(gs, civ, x.civ)) continue
         const d = hexDist([u.c, u.r], [x.c, x.r])
         if (d <= radius && d < bs) { bs = d; best = [x.c, x.r] }
     }
@@ -1551,7 +1742,7 @@ function aiTurn(gs, civ) {
     }
     // settlers expand; military units fight or scout
     for (const u of gs.units) {
-        if (!u.alive || u.civ !== civ) continue
+        if (!u.alive || u.loaded || u.civ !== civ) continue
         u.moves = u.maxMoves
         if (u.kind === 'SETTLER') {
             let tries = 0
@@ -1733,6 +1924,7 @@ function cityStateTurn(gs, csId) {
         gs.events.push({ type: 'cityStrike', civ: csId, city: city.id, at: [victim.c, victim.r] })
         if (victim.hp <= 0) {
             victim.alive = false; victim.hp = 0; victim.path = []
+            if (victim.naval) drownCargo(gs, victim)
             gs.events.push({ type: 'kill', civ: csId, kind: 'CITY', victim: victim.civ, victimKind: victim.kind, at: [victim.c, victim.r] })
         }
     }
@@ -1744,7 +1936,7 @@ export function step(gs, input = {}) {
     if (gs.end) return
     if (gs.phase !== 'player') { endPlayerTurn(gs); return }
     if (input.select != null) { const u = gs.units.find((x) => x.id === input.select && x.alive && x.civ === 0); if (u) gs.selected = u.id }
-    const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0) || null
+    const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && !u.loaded) || null
     if (input.endTurn) { endPlayerTurn(gs); return }
     if (input.research) setResearch(gs, 0, input.research)
     if (input.policy) adoptPolicy(gs, 0, input.policy)
@@ -1773,6 +1965,8 @@ export function step(gs, input = {}) {
         if (input.attack) doAttack(gs, sel, input.attack[0], input.attack[1])
         if (input.improve) startImprove(gs, sel, input.improve)
         if (input.found) { tryFound(gs, sel); gs.selected = gs.units.find((u) => u.civ === 0 && u.alive && u.kind === 'SETTLER')?.id ?? gs.units.find((u) => u.civ === 0 && u.alive)?.id ?? -1 }
+        if (input.embark) embark(gs, sel)
+        if (input.land) land(gs, sel, input.land[0], input.land[1])
     }
     animateUnits(gs)
 }
@@ -1780,7 +1974,7 @@ export function step(gs, input = {}) {
 export function stateHash(gs) {
     const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4, WORKER: 5, CHARIOT: 6, LEGION: 7, GALLEY: 8, MUSKET: 9, GALLEON: 10 }
     let h = gs.turn * 31 + gs.units.length
-    for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 99) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19) | 0
+    for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 99) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19 + (u.loaded || 0) * 29 + (u.cargo ? u.cargo.length * 71 : 0)) | 0
     for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71 + (ct.culture || 0) * 13) | 0
     for (const cp of gs.camps) h = (h * 33 + cp.c + cp.r * 13 + (cp.alive ? 1 : 0) * 173) | 0
     let L = 0
@@ -1805,7 +1999,7 @@ export function stateHash(gs) {
         const G = gs.gp[civ]
         h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3 + rm * 29 + pm * 17 + (gs.civs[civ].culture | 0)) | 0
         h = (h * 33 + (Math.floor(G.pts.ENGINEER) + Math.floor(G.pts.SCIENTIST) * 7 + Math.floor(G.pts.MERCHANT) * 11 + G.held.ENGINEER * 17 + G.held.SCIENTIST * 19 + G.held.MERCHANT * 23)) | 0
-        h = (h * 33 + Math.floor(gs.ark[civ]) * 41 + ((gs.civs[civ].cultureEarned || 0) | 0) * 23) | 0
+        h = (h * 33 + Math.floor(gs.ark[civ]) * 41 + ((gs.civs[civ].cultureEarned || 0) | 0) * 23 + ((gs.civs[civ].tourism || 0) | 0) * 29) | 0
     }
     return (h >>> 0).toString(16)
 }

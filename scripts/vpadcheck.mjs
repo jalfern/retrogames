@@ -7,9 +7,12 @@
 //      keydown/keyup events (the spec's acceptance check)
 //   4. Space dispatches key=' ' (not key='Space')
 
-import { readFileSync } from 'fs'
+import { readFileSync, writeFileSync } from 'fs'
+import { join, dirname } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { build } from 'esbuild'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD } from '../src/components/virtualDir.js'
-import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad } from '../src/components/gamepadMap.js'
+import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick } from '../src/components/gamepadMap.js'
 import { steerPedals } from '../src/utils/padState.js'
 
 let pass = 0, fail = 0
@@ -412,6 +415,111 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     for (const [file, label] of readers) {
         const src = readFileSync(new URL(file, import.meta.url), 'utf8')
         ok(/from '\.\.\/\.\.\/utils\/padState'/.test(src), `${label} imports the padState analog channel`)
+    }
+}
+
+// --- 28. Step 1 (#384): the floating stick is the DEFAULT touch layout ---
+// A game with no pad declaration (or a non-dpad one) gets the stick; only an
+// explicit layout 'dpad' opts out to the fixed d-pad (the grid-/menu titles).
+{
+    ok(shouldUseStick(null) === true, 'default: no pad declaration -> the floating stick')
+    ok(shouldUseStick(undefined) === true, 'default: undefined pad -> the floating stick')
+    ok(shouldUseStick({ layout: 'dpad', buttons: [] }) === false, 'layout dpad -> the fixed d-pad (the exception)')
+    ok(shouldUseStick({ layout: 'stick', buttons: [] }) === true, 'layout stick -> the floating stick')
+    ok(shouldUseStick({ layout: 'stick+dpad', buttons: [] }) === true, 'layout stick+dpad -> the floating stick')
+}
+// Mutant that dies: the default silently reverts to the pre-#384 d-pad, so every
+// title that declares no pad loses the floating stick. Prove the two diverge.
+{
+    const oldDefault = (pad) => !!(pad && (pad.layout === 'stick' || pad.layout === 'stick+dpad'))
+    ok(shouldUseStick(null) !== oldDefault(null), 'old d-pad-default mutant diverges (no pad is now stick)')
+    ok(shouldUseStick({ layout: 'dpad', buttons: [] }) === oldDefault({ layout: 'dpad', buttons: [] }),
+        'both agree dpad is the d-pad (only the default changed)')
+}
+// The d-pad exception set is exactly the grid- / menu-driven titles, and each
+// carries a one-line reason. A silent revert (drop the layout or the reason)
+// would put a grid game back on the floating stick, so the registry is pinned.
+{
+    const gamesSrc = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    const blockFor = (path) => {
+        const i = gamesSrc.indexOf(`path: '${path}'`)
+        if (i === -1) return null
+        const j = gamesSrc.indexOf('path: ', i + 1)
+        return gamesSrc.slice(i, j === -1 ? gamesSrc.length : j)
+    }
+    const dpadGames = ['/minesweeper', '/simcity-min', '/outpost', '/papers-please', '/wizardry', '/tetris', '/qbert', '/bards-tale']
+    for (const path of dpadGames) {
+        const block = blockFor(path)
+        ok(block !== null, `games.js has an entry for ${path}`)
+        if (!block) continue
+        ok(/layout: 'dpad'/.test(block), `games.js ${path} keeps the fixed d-pad`)
+        ok(/reason: '/.test(block), `games.js ${path} carries a one-line d-pad reason`)
+    }
+}
+
+// --- 29. Step 2 (#384): labelled pads in the registry (batch 1 of ~10/PR) ---
+// The real registry, bundled with the esbuild Vite ships (game components
+// stubbed — the visibilitycheck trick), so this proves the actual `pad` values
+// rather than a regex over the source. Every declared pad is well-formed, every
+// button carries a non-empty label + code, and a dpad opt-out carries a reason.
+// The batch-1 ten are pinned below; later steps extend the list until it is the
+// whole registry, then this section flips to "every entry declares a pad".
+{
+    const here = dirname(fileURLToPath(import.meta.url))
+    const root = join(here, '..')
+    const STUB = join(root, 'node_modules', '.vpad-stub.cjs')
+    const SRC = join(root, 'node_modules', '.vpad-A.src.js')
+    const OUT = join(root, 'node_modules', '.vpad-A.mjs')
+    writeFileSync(STUB, `module.exports = new Proxy({}, { get: (t, p) => () => null })\n`)
+    writeFileSync(SRC, `import { GAMES } from ${JSON.stringify(join(root, 'src', 'config', 'games.js'))}\nexport { GAMES }\n`)
+    await build({
+        entryPoints: [SRC],
+        absWorkingDir: root,
+        outfile: OUT,
+        bundle: true,
+        format: 'esm',
+        platform: 'node',
+        jsx: 'automatic',
+        banner: { js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);" },
+        logLevel: 'silent',
+        plugins: [{
+            name: 'stub-games',
+            setup(b) {
+                b.onResolve({ filter: /(^|\.\.\/)games\// }, () => ({ path: STUB, external: false }))
+                b.onResolve({ filter: /^\.\/games\// }, () => ({ path: STUB, external: false }))
+            },
+        }],
+    })
+    const { GAMES } = await import(pathToFileURL(OUT).href)
+    const nonEmpty = (s) => typeof s === 'string' && s.length > 0
+    for (const g of GAMES) {
+        if (g.pad === undefined) continue   // not yet declared (step 2 rolls out in batches)
+        ok(validPad(g.pad), `${g.path}: pad declaration is well-formed`)
+        for (const b of g.pad.buttons) {
+            ok(nonEmpty(b.label) && nonEmpty(b.code), `${g.path}: pad button carries a non-empty label + code (${JSON.stringify(b)})`)
+        }
+        if (g.pad.layout === 'dpad') {
+            ok(nonEmpty(g.pad.reason), `${g.path}: dpad opt-out carries a one-line reason`)
+        }
+    }
+    // The batch-1 ten: declared now. mario-classic's B is RUN on KeyX (the code
+    // accepts KeyX for run); the other nine are move-/fire-only originals with
+    // no second button, so an empty button list is the honest declaration.
+    const batch1 = {
+        '/mario-classic': 'KeyX', '/galaga': null, '/pong': null, '/invaders': null,
+        '/pacman': null, '/asteroids': null, '/donkeykong': null, '/centipede': null,
+        '/defender': null, '/pitfall': null,
+    }
+    for (const [path, code] of Object.entries(batch1)) {
+        const g = GAMES.find((e) => e.path === path)
+        ok(!!g && g.pad !== undefined, `games.js ${path} declares a pad (step 2 batch 1)`)
+        if (!g || g.pad === undefined) continue
+        if (code === null) {
+            ok(g.pad.buttons.length === 0, `games.js ${path} declares no B button (move-/fire-only original)`)
+        } else {
+            const b = padButton(g.pad)
+            ok(!!b && b.code === code && nonEmpty(b.label), `games.js ${path} B button is ${code}, labelled '${b && b.label}'`)
+        }
     }
 }
 

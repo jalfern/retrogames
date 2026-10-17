@@ -63,15 +63,25 @@ complete.
    whole lab (game + controls + map) fits a 1440×900 screen and ends above the
    footer watermark band.
   **Policy picker** (`?policy=<name>`, lab only): one of `v3` (default), `v2`,
-  `dagger6`, `clone1k`, `clone1k-noisy`, each loaded from
+  `dagger6`, `bc1k`, `clone1k`, `clone1k-noisy`, each loaded from
   `public/replays/lander-policy-<name>.json`. A policy JSON carries its own
   `actions` list, so 4-button PPO nets and 6-button nets (incl. rotate+thrust)
   both fly through the same `policyProbs`/`actionVector` path; `name` and
-  `pad_rate` (pads per 500 shared eval seeds) are stamped on screen and under
-  the canvas. `?gravity=<x>` scales sim gravity ×x on the lab and replay pages
+  `pad_rate` (pads per 500 **held-out** seeds, base 12,000,001 — a pool no
+  policy was trained, tuned or checkpoint-selected on; `pad_pool` names it) are
+  stamped on screen and under the canvas. `?gravity=<x>` scales sim gravity ×x on the lab and replay pages
   (e.g. `?lab=1&gravity=1.25`; restored on unmount; the policy never sees it —
   it is a generalisation probe). `npm run landerpolicy` parity-checks every
   policy against its `lander-parity-<name>.json` fixture (gate max |Δp| < 1e-5).
+  **Heatmap precompute**: `npm run landerheat` writes
+  `public/replays/lander-heat-<name>.json` (32×17×8 pad counts per policy —
+  4,352 headless episodes, too slow for page load); the lab paints from that
+  file the moment the policy loads and the game is playable immediately. If the
+  file is missing or `?gravity≠1`, a Web Worker (`heatWorker.js`) computes the
+  grid off the main thread and fills cells red→green as they finish. Worker,
+  precompute and `npm run landerheatcheck` all run the same `heatCell()` in
+  `policy.js`; the check recomputes v3 cell-for-cell against the shipped file
+  (544/544 must match) and runs in CI `static`.
 
 ## Controls
 

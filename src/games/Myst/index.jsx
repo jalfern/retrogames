@@ -237,6 +237,83 @@ const MystGame = () => {
         script: solveScript,
         fresh: () => { gs = freshState(); gotoNode('dock'); aim() },
         probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending }),
+        // Audit every node's framing against its caption: the camera must sit
+        // OUTSIDE all solids, no single surface may fill >=80% of the view, and
+        // the caption's landmark must be in frame (visible, not occluded).
+        views: (overrides) => {
+          root.updateMatrixWorld(true)
+          const cam = new THREE.PerspectiveCamera(72, VW / VH, 0.1, 2000)
+          const ray = new THREE.Raycaster()
+          const isEnv = (m) => !!m.userData.sky || (m.material && m.material.side === THREE.BackSide) || m.geometry.type === 'PlaneGeometry' || m.geometry.type === 'CircleGeometry'
+          const label = (m) => (m && (m.userData.landmark || m.userData.spot || m.geometry.type)) || null
+          const COLS = 10, ROWS = 6
+          const out = {}
+          NODE_IDS.forEach((id, idx) => {
+            const n = Object.assign({}, NODES[id], overrides && overrides[id])
+            const g = root.children[idx]
+            const meshes = []
+            g.traverse((o) => { if (o.isMesh) meshes.push(o) })
+            const solid = meshes.filter((m) => !isEnv(m))
+            const camPos = new THREE.Vector3(idx * GAP + n.pos[0], n.pos[1], n.pos[2])
+            cam.position.copy(camPos)
+            cam.rotation.set(0.02, Math.PI + THREE.MathUtils.degToRad(n.yaw), 0)
+            cam.updateMatrixWorld(true)
+            // buried: camera point inside a solid volume (room shells are BackSide -> the
+            // player is meant to be inside them, so they are excluded from `solid`). Only
+            // boxes are tested: the "inside a block" bug is a buried camera, and boxes are
+            // where the island's rock/plank/building volume lives (rings/rooms are the hole).
+            let buried = null
+            for (const m of solid) {
+              if (m.geometry.type !== 'BoxGeometry') continue
+              m.updateWorldMatrix(true, false)
+              const lp = camPos.clone().applyMatrix4(m.matrixWorld.clone().invert())
+              if (!m.geometry.boundingBox) m.geometry.computeBoundingBox()
+              if (m.geometry.boundingBox && m.geometry.boundingBox.containsPoint(lp)) { buried = m; break }
+            }
+            // view grid: first hit per cell over ALL meshes (occlusion-aware)
+            const cnt = {}
+            let dom = null
+            for (let i = 0; i < COLS; i++) for (let j = 0; j < ROWS; j++) {
+              const u = ((i + 0.5) / COLS) * 2 - 1
+              const v = -(((j + 0.5) / ROWS) * 2 - 1)
+              ray.setFromCamera(new THREE.Vector2(u, v), cam)
+              const h = ray.intersectObjects(meshes, false)[0]
+              if (!h || isEnv(h.object)) continue
+              cnt[h.object.uuid] = (cnt[h.object.uuid] || 0) + 1
+              if (dom === null || cnt[h.object.uuid] > cnt[dom]) dom = h.object.uuid
+            }
+            const maxFrac = dom ? cnt[dom] / (COLS * ROWS) : 0
+            const domMesh = dom ? meshes.find((m) => m.uuid === dom) : null
+            // the caption's landmark(s) in frame: a tagged mesh the camera sees before any occluder
+            const expect = n.expect || []
+            const lm = meshes.filter((m) => m.userData.landmark && expect.includes(m.userData.landmark))
+            let landmarkSeen = expect.length === 0
+            let dbgFirst = null
+            for (const m of lm) {
+              m.updateWorldMatrix(true, false)
+              const c = new THREE.Vector3()
+              m.getWorldPosition(c)
+              const dir = c.clone().sub(camPos)
+              if (dir.lengthSq() < 1e-6) continue
+              dir.normalize()
+              ray.set(camPos, dir)
+              const h = ray.intersectObjects(meshes, false)[0]
+              if (dbgFirst === null && h) dbgFirst = label(h.object)
+              if (h && h.object === m) { landmarkSeen = true; break }
+            }
+            out[id] = {
+              buried: !!buried,
+              buriedMesh: buried ? label(buried) : null,
+              maxFrac: Math.round(maxFrac * 100) / 100,
+              dominant: domMesh ? label(domMesh) : null,
+              expect,
+              landmarkSeen,
+              dbgFirst,
+              pass: !buried && maxFrac < 0.8 && landmarkSeen,
+            }
+          })
+          return out
+        },
       }
       mountDbg({
         title: 'MYST',

@@ -64,6 +64,18 @@ const brightScan = () => page.evaluate(() => {
 await wait(3500)
 let s = await probe()
 r.check('attract mode is showing', s && s.screen === 'attract')
+// #406 part 2 — the title screen is onboarding, not a patch-note dump: a
+// first-time player gets three lines (goal, move, end turn), not ten.
+{
+    const att = await page.evaluate(() => {
+        const h1 = [...document.querySelectorAll('h1')].find((el) => el.textContent === 'CIVILIZATION')
+        if (!h1) return null
+        const box = h1.parentElement
+        return { brs: box.querySelectorAll('br').length, text: box.innerText }
+    })
+    r.check(`the title screen is three onboarding lines, not patch notes (${att ? att.brs : 'n/a'} line breaks)`, att && att.brs <= 2)
+    r.check('the title screen names the goal, the move and the end turn (no stage patch notes)', att && !/STAGE \d/.test(att.text) && /grow your capital to size \d+ by turn \d+/.test(att.text) && /tap a tile to move/.test(att.text) && /space ends the turn/i.test(att.text))
+}
 const c1 = await centerPx()
 r.check(`attract canvas is not black (centre rgb ${c1})`, c1 && (c1[0] + c1[1] + c1[2]) > 24)
 r.check(`the world is seeded with barbarian camps (${s.campsAlive})`, s.campsAlive >= 3)
@@ -77,10 +89,35 @@ await wait(500)
 s = await probe()
 r.check('a key starts the game', s && s.screen === 'play')
 r.check('you begin with a settler selected and no city', s.capitalSize === 0 && s.units0.some((u) => u.kind === 'SETTLER'))
+// #406 part 2 — the pre-founding HUD: build/tech options are no-ops before the
+// first city (sim drops the queue input), so the rows stay hidden, and the
+// numbers carry their labels instead of reading as "20 0 0".
+{
+    const hud0 = await page.evaluate(() => document.body.innerText)
+    r.check('before the first city the BUILD row is hidden (no wall of hotkeys)', !hud0.includes('BUILD: 1 warrior') && !hud0.includes('BUILDING'))
+    r.check('before the first city the TECH row is hidden', !/TECH:|RESEARCHING/.test(hud0))
+    r.check('the HUD numbers are labelled, not bare digits (GOLD/SCI/CULT)', /GOLD \d+/.test(hud0) && /SCI \d+/.test(hud0) && /CULT \d+/.test(hud0))
+}
 await page.keyboard.press('KeyE')
 await wait(300)
 s = await probe()
 r.check(`E settles your capital (capitalSize ${s.capitalSize}, playerCities ${s.playerCities})`, s.capitalSize >= 1 && s.playerCities >= 1)
+{
+    const hud1 = await page.evaluate(() => document.body.innerText)
+    r.check('once a city stands, the BUILD row returns', hud1.includes('BUILD: 1 warrior') || hud1.includes('BUILDING'))
+    r.check('once a city stands, the TECH row returns', /TECH: \d+ available|RESEARCHING/.test(hud1))
+}
+// #406 — the first-time-player blockers. Both are read from authoritative game/render
+// state via the probe, never from racy WebGL pixel reads (the buffer is not preserved).
+// 1. THE MAP IS NOT BLACK: the dimmest UNexplored tile must be a dim world, not the
+//    near-black UNSEEN the first-time player saw (old rgb sum ~0.07; dim ocean ~0.15).
+r.check(`the world beyond your vision is a dim world, not a black void (dimmest unseen tile ${s.unseenMin != null ? s.unseenMin.toFixed(3) : 'n/a'})`, s.unseenMin != null && s.unseenMin > 0.10)
+// 2. THE CAMERA IS ON THE CAPITAL: a fresh game centres on the settler and re-centres on
+//    the city the moment it is founded — the capital must sit at the camera's look-at.
+{
+  const camOff = s.camTgt && s.capitalWorld ? Math.hypot(s.camTgt[0] - s.capitalWorld[0], s.camTgt[1] - s.capitalWorld[1]) : Infinity
+  r.check(`the camera is centred on the capital (look-at offset ${camOff.toFixed(3)})`, camOff < 0.01)
+}
 
 // 3 — real Space ends turns; the capital grows; canvas stays lit
 const turn0 = s.turn
@@ -266,16 +303,20 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
 // 3h — the Stage 8 layer: victory panel, the new arms, the Ark funding live
 {
     // earlier blocks may already have driven this run to its end — take a fresh
-    // capital so the panel and the young-game cheats have a live play screen
-    await page.evaluate(() => window.__civTest.start())
+    // capital so the panel and the young-game cheats have a live play screen.
+    // Seed 4 rises on the COAST (verified in Node): the Galleon keel below is
+    // a real keel, not the inland escape clause (polish item 6).
+    await page.evaluate(() => window.__civTest.start(4))
     await wait(300)
     await page.keyboard.press('KeyE')
     await wait(300)
     r.check(`Stage 8 opens on a fresh run (screen ${(await probe()).screen}, capital ${(await probe()).capitalSize})`, (await probe()).screen === 'play' && (await probe()).capitalSize >= 1)
+    const cp8 = await probe()
+    r.check(`seed 4 seats the capital beside the sea (coastal ${cp8.world.coastal})`, cp8.world.coastal === true)
     await page.keyboard.press('KeyY')
     await wait(250)
     const vb = await page.evaluate(() => document.body.innerText)
-    r.check('Y opens VICTORY with the three races and the rival tracks', vb.includes('VICTORY') && vb.includes('DOMINATION') && vb.includes('SCIENCE') && vb.includes('CULTURE') && vb.includes('THE RIVAL TRACKS'))
+    r.check('Y opens VICTORY with the three races and the rival tracks', vb.includes('VICTORY') && vb.includes('DOMINATION') && vb.includes('SCIENCE') && vb.includes('TOURISM') && vb.includes('lifetime culture') && vb.includes('THE RIVAL TRACKS'))
     await page.keyboard.press('Escape')
     await wait(150)
     r.check('Escape closes the VICTORY panel', !(await page.evaluate(() => document.body.innerText.includes('THE RIVAL TRACKS'))))
@@ -293,14 +334,37 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
     await wait(150)
     {
         const g8 = await probe()
-        r.check(`L lays a Galleon keel at a coastal city (galleons ${g8.late.galleons}, coastal ${g8.world.coastal})`, g8.queue.some((c) => c.queue.includes('GALLEON')) || g8.late.galleons > 0 || g8.world.coastal === false)
+        r.check(`L lays a Galleon keel at the coastal capital (galleons ${g8.late.galleons}, coastal ${g8.world.coastal})`, g8.queue.some((c) => c.queue.includes('GALLEON')) || g8.late.galleons > 0)
+    }
+    // transports: the deny paths run through the real keys before the hull exists
+    {
+        const inf = (await probe()).units0.find((u) => u.kind === 'WARRIOR')
+        if (inf) await page.evaluate((id) => window.__civTest.select(id), inf.id)
+        await wait(150)
+        await page.keyboard.press('KeyJ')
+        await wait(200)
+        r.check('J with no laden galleon is refused by name', /SELECT A GALLEON WITH CARGO/i.test(await page.evaluate(() => document.body.innerText)))
+        await page.keyboard.press('KeyE')
+        await wait(200)
+        r.check('E on a soldier far from any hull names the missing mooring', /NO FRIENDLY GALLEON ALONGSIDE/i.test(await page.evaluate(() => document.body.innerText)))
+    }
+    // the laden-hull probe shape exists and the keel reaches the water on live turns
+    {
+        let afloat = null
+        for (let i = 0; i < 12 && !afloat; i++) {
+            const pk = await probe()
+            afloat = pk.world.naval.find((u) => u.kind === 'GALLEON' && u.cargo === 0) ? pk.world.naval : (pk.end ? 'ended' : null)
+            if (!afloat) { await page.evaluate(() => window.__civTest.turn()); await wait(60) }
+        }
+        r.check(`the Galleon takes the water with its hold exposed (${afloat === 'ended' ? 'run ended first' : afloat ? 'afloat' : 'never'})`, !!afloat)
     }
     await page.evaluate(() => { for (const id of ['EDUCATION', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT']) window.__civTest.learn(id) })
     let p8 = await probe()
     for (let i = 0; i < 6 && !p8.end && p8.victory.ark < 20; i++) { await page.evaluate(() => window.__civTest.turn()); await wait(60); p8 = await probe() }
     r.check(`after Spaceflight the Ark banks beakers on live turns (${p8.victory.ark}/${p8.victory.needArk})`, p8.victory.ark > 0 || !!p8.end)
     p8 = p8 || (await probe())
-    r.check(`the victory probe reports the tracks (caps ${p8.victory.capsTaken}/3 · ❦ ${p8.victory.cultEarned}/${p8.victory.needCult})`, p8.victory.capsTaken === 0 && Number.isFinite(p8.victory.cultEarned) && p8.victory.needCult === 350 && p8.victory.needArk === 70)
+    r.check(`the victory probe reports the tracks (caps ${p8.victory.capsTaken}/3 · ☼ ${p8.victory.tourism}/${p8.victory.needTourism} · ❦ ${p8.victory.cultEarned}/${p8.victory.needCult})`, p8.victory.capsTaken === 0 && Number.isFinite(p8.victory.tourism) && p8.victory.needTourism === 120 && Array.isArray(p8.victory.rivalTourism) && p8.victory.rivalTourism.length === 3 && Number.isFinite(p8.victory.cultEarned) && p8.victory.needCult === 350 && p8.victory.needArk === 70)
+    r.check(`the Ark assembles as four named parts (${(p8.victory.parts || []).map((p) => `${p.name}${p.done ? '✓' : ':' + p.funded + '/' + p.cost}`).join(' ')})`, Array.isArray(p8.victory.parts) && p8.victory.parts.length === 4 && p8.victory.parts.map((p) => p.name).join('|') === 'Cockpit|Booster|Stasis|Launch' && p8.victory.partsDone === (p8.victory.parts || []).filter((p) => p.done).length)
 }
 
 // 4 — drive the same autopilot to the milestone on THIS run, then the end screen
@@ -316,6 +380,38 @@ await wait(500)
 await page.keyboard.press('Space')
 await wait(400)
 r.check('one key returns to attract', (await probe()).screen === 'attract')
+
+// 8 — the cheap pipeline (#375 item 5): `?lite=1` drops MSAA and device pixel
+// ratio, not content. The same world must paint on it, or the flag is a blindfold.
+{
+    const litePage = await browser.newPage({ viewport: { width: 640, height: 426 }, deviceScaleFactor: 2 })
+    litePage.setDefaultTimeout(60000)
+    const liteErrors = []
+    litePage.on('pageerror', (e) => liteErrors.push(e.message))
+    await litePage.goto(URL + '?lite=1', { waitUntil: 'domcontentloaded' })
+    for (let i = 0; i < 120; i++) { if (await litePage.evaluate(() => !!window.__civTest)) break; await wait(200) }
+    r.check('the cheap pipeline boots (?lite=1 answers the DEV hook)', await litePage.evaluate(() => !!window.__civTest))
+    const litPx = await litePage.evaluate(() => {
+        const c = document.querySelector('canvas')
+        if (!c) return null
+        const gl = c.getContext('webgl2') || c.getContext('webgl')
+        if (!gl) return null
+        let best = [0, 0, 0]
+        const px = new Uint8Array(4)
+        for (let fy = 0.25; fy <= 0.8; fy += 0.18) for (let fx = 0.2; fx <= 0.8; fx += 0.15) {
+            gl.readPixels(Math.floor(c.width * fx), Math.floor(c.height * fy), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+            if (px[0] + px[1] + px[2] > best[0] + best[1] + best[2]) best = [px[0], px[1], px[2]]
+        }
+        return best
+    })
+    r.check(`the cheap pipeline still paints the world (brightest rgb ${litPx})`, litPx && litPx[0] + litPx[1] + litPx[2] > 24)
+    r.check(`the cheap pipeline is honest about pixels (dpr capped to 1)`, await litePage.evaluate(() => {
+        const c = document.querySelector('canvas')
+        return !!c && c.width <= Math.ceil(c.getBoundingClientRect().width)
+    }))
+    r.check('lite introduces no page errors', liteErrors.length === 0, liteErrors.slice(0, 2).join(' | '))
+    await litePage.close()
+}
 
 const clean = errors.filter((e) => !/favicon|Download the React DevTools|WebGL|GPU stall|Automatic fallback|SwiftShader/i.test(e))
 r.check('zero page errors', clean.length === 0, clean.slice(0, 3).join(' | '))

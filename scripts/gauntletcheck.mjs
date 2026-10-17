@@ -11,6 +11,8 @@
 //   ledger    : final score == sum of scored events, pilot run included.
 //   minimap   : the map shows beasts only while the view shows them; the
 //               stairs pulse only once a key is held.
+//   select    : the four hero cards sit where the touch test says they do —
+//               a tap on a card can never miss its hero (issue #403).
 //   juice     : the view breathes — a red edge throb under 30% health, a
 //               sword light-arc trail mid-swing, and a green flush while
 //               Death drains you (issue #275 item 4).
@@ -21,7 +23,7 @@
 //   slack     : the quest is re-won with one fewer food AND one fewer potion
 //               per maze.
 //   determinism : same seed twice -> identical digest.
-// `-- --mutate` re-plants fourteen fixed bugs in child processes; each MUST die.
+// `-- --mutate` re-plants fifteen fixed bugs in child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -138,6 +140,26 @@ console.log('minimap')
     ok(mm.stairsPulse(0, 0) === null && mm.stairsPulse(0, 16) === null, 'minimap: no stairs pulse without a key')
     ok([0, 4, 8, 12, 16, 20].every((t) => mm.stairsPulse(1, t) === mm.stairsPulse(1, t + 16)), 'minimap: the stairs pulse runs on a 16-tick period')
     ok(new Set([0, 4, 8, 12].map((t) => mm.stairsPulse(2, t))).size === 3 && mm.stairsPulse(1, 8) === 1, 'minimap: the pulse dims and peaks', [0, 1, 2, 3, 4].map((t) => mm.stairsPulse(1, t)).join(','))
+}
+
+// ---------------------------------------------------------------- select ----
+// The character-select cards: one definition (select.js) feeds both the
+// painter and the touch test, and a tap must always land where the pixels
+// are (issue #403 — on a phone the old confirm zone was a 24px sliver and
+// the cards were dead).
+console.log('select')
+{
+    const sel = await import('../src/games/Gauntlet/select.js')
+    for (let i = 0; i < 4; i++) {
+        const r = sel.cardRect(i)
+        ok(sel.heroAt(r.x + r.w / 2, r.y + r.h / 2) === i, `select: card ${i + 1} center taps hero ${i + 1}`, `heroAt -> ${sel.heroAt(r.x + r.w / 2, r.y + r.h / 2)}`)
+    }
+    const a = sel.cardRect(0), b = sel.cardRect(1)
+    ok(b.x > a.x + a.w, 'select: the cards do not overlap', `${a} vs ${b}`)
+    ok(sel.heroAt((a.x + a.w + b.x) / 2, sel.CARD_Y + sel.CARD_H / 2) === null, 'select: the gap between cards taps nothing')
+    ok(sel.heroAt(sel.cardCenter(1), sel.CARD_Y - 10) === null, 'select: above the card row taps nothing')
+    ok(sel.heroAt(sel.cardCenter(1), sel.CARD_Y + sel.CARD_H + 10) === null, 'select: below the card row taps nothing')
+    ok(sel.heroAt(-5, sel.CARD_Y + sel.CARD_H / 2) === null && sel.heroAt(330, sel.CARD_Y + sel.CARD_H / 2) === null, 'select: past the card edges taps nothing')
 }
 
 // ----------------------------------------------------------------- juice ----
@@ -476,6 +498,7 @@ if (process.argv.includes('--mutate')) {
         ['Death drain never tints the view', 'src/games/Gauntlet/juice.js', 'if (!draining) return 0', 'return 0'],
         ['walls never fall off with the torch', 'src/games/Gauntlet/walls.js', 'return Math.max(0, Math.min(1, 1 - d / reach))', 'return 1'],
         ['the wall course is one tone', 'src/games/Gauntlet/walls.js', 'return { recess: mat.mortar, bevel: mat.lite }', 'return { recess: mat.mortar, bevel: mat.mortar }'],
+        ['a tap on a card picks no hero', 'src/games/Gauntlet/select.js', 'if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i', 'if (false) return i'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

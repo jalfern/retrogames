@@ -189,7 +189,7 @@ const CivilizationVGame = lazy(() => import('../games/CivilizationV'))
 export const GAMES = [
     {
         path: '/mario',
-        pad: { layout: 'dpad', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
         builtBy: 'qwen',
         component: SuperMarioGame,
         label: 'SUPER MARIO BROS',
@@ -199,6 +199,7 @@ export const GAMES = [
     },
     {
         path: '/mario-classic',
+        pad: { layout: 'stick', buttons: [{ label: 'RUN', code: 'KeyX' }], analog: false },
         builtBy: 'qwen',
         component: SuperMarioClassicGame,
         label: 'SUPER MARIO BROS (ORIGINAL)',
@@ -209,7 +210,7 @@ export const GAMES = [
     },
     {
         path: '/ironkeep',
-        pad: { layout: 'dpad', buttons: [{ label: 'B', code: 'ShiftLeft' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'ShiftLeft' }], analog: false },
         builtBy: 'qwen',
         component: IronKeepGame,
         label: 'IRONKEEP',
@@ -228,7 +229,7 @@ export const GAMES = [
     },
     {
         path: '/beezee',
-        pad: { layout: 'dpad', buttons: [{ label: 'UV', code: 'KeyV' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'UV', code: 'KeyV' }], analog: false },
         builtBy: 'forge',
         component: BeeGame,
         label: 'BEEZEE',
@@ -238,7 +239,7 @@ export const GAMES = [
     },
     {
         path: '/lemmings',
-        pad: { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyE' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyE' }], analog: false },
         builtBy: 'forge',
         component: LemmingsGame,
         label: 'LEMMINGS-LITE',
@@ -266,7 +267,7 @@ export const GAMES = [
     },
     {
         path: '/metroid',
-        pad: { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: MetroidLiteGame,
         label: 'METROID-LITE',
@@ -294,6 +295,7 @@ export const GAMES = [
     },
     {
         path: '/galaga',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: GalagaGame,
         label: 'GALAGA',
@@ -303,7 +305,7 @@ export const GAMES = [
     },
     {
         path: '/polarity',
-        pad: { layout: 'dpad', buttons: [{ label: 'X', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'X', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: PolarityGame,
         label: 'POLARITY',
@@ -322,7 +324,7 @@ export const GAMES = [
     },
     {
         path: '/simcity-min',
-        pad: { layout: 'dpad', buttons: [{ label: 'TOOL', code: 'KeyT' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: 'TOOL', code: 'KeyT' }], analog: false, reason: 'grid city builder — place the tool on the cursor' },
         builtBy: 'forge',
         component: SimCityMinGame,
         label: 'SIMCITY-MIN',
@@ -332,7 +334,7 @@ export const GAMES = [
     },
     {
         path: '/outpost',
-        pad: { layout: 'dpad', buttons: [{ label: 'T', code: 'KeyT' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: 'T', code: 'KeyT' }], analog: false, reason: 'grid colony builder — designate a job on the cursor' },
         builtBy: 'forge',
         component: OutpostGame,
         label: 'OUTPOST',
@@ -342,7 +344,7 @@ export const GAMES = [
     },
     {
         path: '/papers-please',
-        pad: { layout: 'dpad', buttons: [{ label: 'D', code: 'KeyD' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: 'D', code: 'KeyD' }], analog: false, reason: 'menu — ADMIT / DENY, no directional play' },
         builtBy: 'forge',
         component: PapersPleaseMinGame,
         label: 'PAPERS, PLEASE-MIN',
@@ -352,7 +354,7 @@ export const GAMES = [
     },
     {
         path: '/lode-runner',
-        pad: { layout: 'dpad', buttons: [{ label: 'DIG', code: 'ArrowDown' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'DIG', code: 'ArrowDown' }], analog: false },
         builtBy: 'forge',
         component: LodeRunnerLiteGame,
         label: 'LODE RUNNER-LITE',
@@ -362,7 +364,7 @@ export const GAMES = [
     },
     {
         path: '/dogfight',
-        pad: { layout: 'dpad', buttons: [{ label: 'TH', code: 'KeyE' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'TH', code: 'KeyE' }], analog: false },
         builtBy: 'forge',
         component: DogfightGame,
         label: 'WWI DOGFIGHT',
@@ -372,7 +374,7 @@ export const GAMES = [
     },
     {
         path: '/paperboy',
-        pad: { layout: 'dpad', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
         builtBy: 'forge',
         component: PaperboyGame,
         label: 'PAPERBOY',
@@ -382,7 +384,7 @@ export const GAMES = [
     },
     {
         path: '/wizardry',
-        pad: { layout: 'dpad', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: 'F', code: 'KeyF' }], analog: false, reason: 'turn-based battle — the arrows pick the target' },
         builtBy: 'forge',
         component: WizardryGame,
         label: 'WIZARDRY',
@@ -392,7 +394,7 @@ export const GAMES = [
     },
     {
         path: '/spy-hunter',
-        pad: { layout: 'dpad', buttons: [{ label: 'MSL', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'MSL', code: 'KeyX' }], analog: false },
         component: SpyHunterGame,
         label: 'SPY HUNTER',
         theme: 'dark',
@@ -402,7 +404,7 @@ export const GAMES = [
     },
     {
         path: '/excitebike',
-        pad: { layout: 'dpad', buttons: [{ label: 'GEAR', code: 'KeyG' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'GEAR', code: 'KeyG' }], analog: false },
         builtBy: 'forge',
         component: ExcitebikeGame,
         label: 'EXCITEBIKE',
@@ -422,6 +424,7 @@ export const GAMES = [
     },
     {
         path: '/tetris',
+        pad: { layout: 'dpad', buttons: [], analog: false, reason: 'grid piece placement — slide/rotate/soft-drop, no analog' },
         builtBy: 'forge',
         component: TetrisGame,
         label: 'TETRIS',
@@ -440,6 +443,7 @@ export const GAMES = [
     },
     {
         path: '/qbert',
+        pad: { layout: 'dpad', buttons: [], analog: false, reason: 'cube-grid diagonal hops — the 2x2 corner pad' },
         builtBy: 'forge',
         component: QBertGame,
         label: 'Q*BERT',
@@ -467,7 +471,7 @@ export const GAMES = [
     },
     {
         path: '/zelda',
-        pad: { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: ZeldaGame,
         label: 'ZELDA',
@@ -477,7 +481,7 @@ export const GAMES = [
     },
     {
         path: '/minesweeper',
-        pad: { layout: 'dpad', buttons: [{ label: '⚑', code: 'KeyB' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: '⚑', code: 'KeyB' }], analog: false, reason: 'cell cursor — flag or dig one tile at a time' },
         builtBy: 'forge',
         component: MinesweeperGame,
         label: 'MINESWEEPER',
@@ -487,6 +491,7 @@ export const GAMES = [
     },
     {
         path: '/pong',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: PongGame,
         label: 'PONG',
@@ -496,6 +501,7 @@ export const GAMES = [
     },
     {
         path: '/invaders',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: SpaceInvadersGame,
         label: 'SPACE INVADERS',
@@ -505,6 +511,7 @@ export const GAMES = [
     },
     {
         path: '/pacman',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: PacmanGame,
         label: 'PAC-MAN',
@@ -514,6 +521,7 @@ export const GAMES = [
     },
     {
         path: '/asteroids',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: AsteroidsGame,
         label: 'ASTEROIDS',
@@ -523,6 +531,7 @@ export const GAMES = [
     },
     {
         path: '/donkeykong',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: DonkeyKongGame,
         label: 'DONKEY KONG',
@@ -532,6 +541,7 @@ export const GAMES = [
     },
     {
         path: '/centipede',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: CentipedeGame,
         label: 'CENTIPEDE',
@@ -541,6 +551,7 @@ export const GAMES = [
     },
     {
         path: '/defender',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: DefenderGame,
         label: 'DEFENDER',
@@ -550,6 +561,7 @@ export const GAMES = [
     },
     {
         path: '/pitfall',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: PitfallGame,
         label: 'PITFALL',
@@ -703,7 +715,7 @@ export const GAMES = [
     },
     {
         path: '/bubble-bobble',
-        pad: { layout: 'dpad', buttons: [{ label: 'BUB', code: 'KeyB' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BUB', code: 'KeyB' }], analog: false },
         builtBy: 'forge',
         component: BubbleBobbleGame,
         label: 'BUBBLE BOBBLE',
@@ -723,7 +735,7 @@ export const GAMES = [
     },
     {
         path: '/gauntlet',
-        pad: { layout: 'dpad', buttons: [{ label: 'BOW', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BOW', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: GauntletGame,
         label: 'GAUNTLET',
@@ -733,7 +745,7 @@ export const GAMES = [
     },
     {
         path: '/four-halls',
-        pad: { layout: 'dpad', buttons: [{ label: 'BOW', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BOW', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: FourHallsGame,
         label: 'FOUR HALLS',
@@ -743,7 +755,7 @@ export const GAMES = [
     },
     {
         path: '/smash-tv',
-        pad: { layout: 'dpad', buttons: [{ label: 'BOMB', code: 'KeyB' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BOMB', code: 'KeyB' }], analog: false },
         builtBy: 'forge',
         component: SmashTVGame,
         label: 'SMASH TV',
@@ -763,7 +775,7 @@ export const GAMES = [
     },
     {
         path: '/lunar-lander',
-        pad: { layout: 'dpad', buttons: [{ label: 'ZOOM', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'ZOOM', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: LunarLanderGame,
         label: 'LUNAR LANDER',
@@ -777,6 +789,7 @@ export const GAMES = [
         component: MystGame,
         label: 'MYST',
         theme: 'dark',
+        footer: 'none',
         description: "Cyan's 1993 island, rebuilt whole in code: a first-person, node-to-node adventure where every view is a still, living scene — the sea heaves, the hearth flickers, gears turn, an illusion shimmers over a hidden door. You arrive at the dock with nothing: no map, no inventory, no hints — take notes, as in 1993. Climb to the library and read the RED and BLUE books, whose brothers' pleas grow clearer with every page you return; find the SAFE (three numbers, and Atrus leaves notes), burn the wooden book in the FIREPLACE to reveal the link to SELENITIC, climb the CLOCK TOWER hidden behind the palm illusion to MECHANICAL, match the STAR PANEL to open CHANNELWOOD, and sail the safe's blue cover to STONESHIP. Each Age hides a red and a blue page — return all eight and a WHITE page appears. Free either brother and take his place forever; seat the white page on the pedestal and bring ATRUS home. Every surface, sky and sound is synthesized — three.js scenes with procedural textures, wind, surf and machinery. The attract mode walks the island on the solver's own rails; a Node harness audits the graph, every gate, both bad endings and the white-page win.",
         controls: ['Click / tap what you see to move, turn, and use — hot spots glow under the cursor', '◀ ▶ arrows: turn in place 90° · ▲ / W: step or use what you are facing', 'SPACE / A: use the center target · X / B / ↺: turn left', 'Books, the safe, the sphere and the star panels open as panels — A / Enter / Esc closes them', 'Walk every Age and bring the red & blue pages back to their books upstairs', 'Read everything twice. The island gives its secrets to those who take notes · ? pauses'],
     },
@@ -791,6 +804,7 @@ export const GAMES = [
     },
     {
         path: '/bards-tale',
+        pad: { layout: 'dpad', buttons: [], analog: false, reason: 'turn-based battle — the arrows pick the target' },
         builtBy: 'forge',
         component: BardsTaleGame,
         label: "THE BARD'S TALE",
@@ -800,7 +814,7 @@ export const GAMES = [
     },
     {
         path: '/ssx',
-        pad: { layout: 'dpad', buttons: [{ label: 'BST', code: 'ShiftLeft' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BST', code: 'ShiftLeft' }], analog: false },
         builtBy: 'forge',
         component: SSXGame,
         label: 'SSX',
@@ -810,7 +824,7 @@ export const GAMES = [
     },
     {
         path: '/prince-of-persia',
-        pad: { layout: 'dpad', buttons: [{ label: '⚔', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: '⚔', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: PrinceOfPersiaGame,
         label: 'PRINCE OF PERSIA',
@@ -825,8 +839,8 @@ export const GAMES = [
         component: CivilizationVGame,
         label: 'CIVILIZATION V',
         theme: 'dark',
-        description: "Firaxis's 2010 4X, rebuilt as a running sim you can actually see think. One settler and one warrior step out onto a tilted, animated hex continent — relief terrain, forests, rivers, fog of war — and from that founding the whole arrow of progress moves: warriors and archers fight with HP, terrain and walls; a tech tree of real Civ V techs gates eras; workers break farms, mines and roads that take real turns and get pillaged by barbarians; luxuries and strategic seams scatter the map, and connected iron and horses arm the Legion and the Chariot Archer. Stage 5 adds the two ledgers that run an empire: cities bank culture and borders creep outward ring by ring, while happiness — palace +2, each luxury +1, city −1, war −2 — decides whether your people grow 25% faster or refuse to grow at all; culture buys government through three real policy branches (Tradition, Liberty, Commerce). Wonders race across the map, great people answer for gold, Tyre and Venice sell their courts on the coast, galleys — and later port-storming galleons — rule the sea, and nine later-era techs carry the lab from the Renaissance to Spaceflight. Then three crowns: take every rival capital for DOMINATION, fund THE ARK after Spaceflight for SCIENCE, or out-shine every living empire in lifetime culture for CULTURE — while the arcade golden age (capital size 4) waits for the swift. Egypt, China and the Aztecs pursue the same arrows on their own lines. All geometry and synth in code — all eight stages of the deep pass live.",
-        controls: ['Tap a tile: select the unit there, or walk your selected unit onto it (tap the fog to learn — one warrior scouts)', 'E / B: settle — your settler founds a city (capitals need 3 clear hexes from any other)', 'SPACE / A / ENTER: END TURN — cities work their ring, grow on food surplus, borders spread', '1/2/3/4: warrior · archer · settler · worker · C catapult · V legion · H chariot · K musket · N trireme · L galleon', 'W: WORK panel (F farm · M mine · O road) · T: RESEARCH (R next tech) · P: POLICY (culture buys Tradition/Liberty/Commerce) · U: WONDERS · G: LEGENDS · D: DIPLOMACY · Y: VICTORY (three race tracks)', 'Drag: orbit the world · wheel or pinch: zoom · ↑↓ tilt, ←→ rotate', 'Goal: win before turn 40 — domination, the Ark, culture, or the golden age at capital size 4 · gold ◈ · science ✦ · culture ❦ · happiness face in the HUD', '?: pause and read the rules'],
+        description: "Firaxis's 2010 4X, rebuilt as a running sim you can actually see think. One settler and one warrior step out onto a tilted, animated hex continent — relief terrain, forests, rivers, fog of war — and from that founding the whole arrow of progress moves: warriors and archers fight with HP, terrain and walls; a tech tree of real Civ V techs gates eras; workers break farms, mines and roads that take real turns and get pillaged by barbarians; luxuries and strategic seams scatter the map, and connected iron and horses arm the Legion and the Chariot Archer. Stage 5 adds the two ledgers that run an empire: cities bank culture and borders creep outward ring by ring, while happiness — palace +2, each luxury +1, city −1, war −2 — decides whether your people grow 25% faster or refuse to grow at all; culture buys government through three real policy branches (Tradition, Liberty, Commerce). Wonders race across the map, great people answer for gold, Tyre and Venice sell their courts on the coast, galleys — and later port-storming galleons — rule the sea, and nine later-era techs carry the lab from the Renaissance to Spaceflight. Then three crowns: take every rival capital for DOMINATION, fund THE ARK after Spaceflight for SCIENCE, or lead the world in TOURISM for CULTURE — the visitor book banks wonders, luxuries and half of every turn's culture, while lifetime culture remains the record and the arcade golden age (capital size 4) waits for the swift. Egypt, China and the Aztecs pursue the same arrows on their own lines. All geometry and synth in code — all eight stages of the deep pass live.",
+        controls: ['Tap a tile: select the unit there, or walk your selected unit onto it (tap the fog to learn — one warrior scouts)', 'E / B: settle — your settler founds a city (capitals need 3 clear hexes from any other); E also EMBARKS a land unit standing beside a friendly Galleon', 'SPACE / A / ENTER: END TURN — cities work their ring, grow on food surplus, borders spread', '1/2/3/4: warrior · archer · settler · worker · C catapult · V legion · H chariot · K musket · N trireme · L galleon · J: land the hold at the nearest beach', 'W: WORK panel (F farm · M mine · O road) · T: RESEARCH (R next tech) · P: POLICY (culture buys Tradition/Liberty/Commerce) · U: WONDERS · G: LEGENDS · D: DIPLOMACY · Y: VICTORY (three race tracks)', 'Drag: orbit the world · wheel or pinch: zoom · ↑↓ tilt, ←→ rotate', 'Amphibious: tap a beach beside your loaded Galleon to land — an enemy holding the sand fights the landing; a sunk hull takes its cargo down', 'Goal: win before turn 40 — domination, the Ark, the tourism lead, or the golden age at capital size 4 · gold ◈ · science ✦ · culture ❦ · tourism ☼ · happiness face in the HUD', '?: pause and read the rules'],
     }
 
 ]
