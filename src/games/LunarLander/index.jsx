@@ -17,13 +17,22 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './sim.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
 import { plan } from './planner.js'
-import { policyProbs, mulberry32, sampleAction, obsFrom, episodeOutcome, ACTION_LABELS } from './policy.js'
+import { policyProbs, mulberry32, sampleAction, obsFrom, episodeOutcome, actionVector, ACTION_VECS } from './policy.js'
 import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } from './art.js'
 
 const SIM_MS = 1000 / 60
 const REPLAY_PATH = 'replays/lander-ppo.json'
-const POLICY_PATH = 'replays/lander-ppo-policy.json'
-const BTN = { nothing: [0, false], rotate_left: [-1, false], rotate_right: [1, false], thrust: [0, true] }
+const POLICIES = ['v2', 'v3', 'dagger6', 'clone1k', 'clone1k-noisy']
+const policyName = () => {
+    const p = new URLSearchParams(window.location.search).get('policy')
+    return POLICIES.includes(p) ? p : 'v3'
+}
+const policyPath = (name) => `replays/lander-policy-${name}.json`
+const gravityScale = () => {
+    const g = parseFloat(new URLSearchParams(window.location.search).get('gravity'))
+    return Number.isFinite(g) && g > 0 ? g : 1
+}
+const GRAV_BASE = CFG.gravity
 const replayRequested = () => new URLSearchParams(window.location.search).get('replay') === '1'
 const labRequested = () => new URLSearchParams(window.location.search).get('lab') === '1'
 const HEAT_XS = Array.from({ length: 32 }, (_, i) => Math.round(32 + i * (992 - 32) / 31))
@@ -50,6 +59,7 @@ const LunarLanderGame = () => {
     const board = () => { try { return JSON.parse(localStorage.getItem('lander.board') || '[]') } catch { return [] } }
 
     const labMode = labRequested()
+    const [labInfo, setLabInfo] = useState(null)
     const [labX, setLabX] = useState(512)
     const [labVx, setLabVx] = useState(0)
     const [labCycle, setLabCycle] = useState(-1)
@@ -78,6 +88,10 @@ const LunarLanderGame = () => {
         wrap.appendChild(canvas)
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
+
+        const gsScale = gravityScale()
+        const scaledLab = (labRequested() || replayRequested()) && gsScale !== 1
+        if (scaledLab) CFG.gravity = GRAV_BASE * gsScale
 
         let gs = makeGame(0)
         let stars = makeStars(0)
@@ -123,10 +137,11 @@ const LunarLanderGame = () => {
         }
 
         if (labOn) {
-            fetch(`${import.meta.env.BASE_URL}${POLICY_PATH}`)
+            fetch(`${import.meta.env.BASE_URL}${policyPath(policyName())}`)
                 .then((r) => { if (!r.ok) throw new Error(`policy http ${r.status}`); return r.json() })
                 .then((pol) => {
                     labPolicy = pol
+                    setLabInfo({ name: pol.name || policyName(), pad_rate: pol.pad_rate })
                     setHeatRows(HEAT_VXS.map((v) => ({
                         v,
                         cells: HEAT_XS.map((x) => {
@@ -229,14 +244,14 @@ const LunarLanderGame = () => {
                     return
                 }
                 const probs = policyProbs(labPolicy, obsFrom(gs))
-                const [rot, thrust] = BTN[ACTION_LABELS[sampleAction(probs, labRng)]]
+                const [rot, thrust] = actionVector(labPolicy, sampleAction(probs, labRng))
                 thrustVis = thrust && gs.fuel > 0 && gs.phase !== 'crashed'
                 doSim({ rot, thrust })
                 return
             }
             if (replayOn && !replayFailed) {
                 if (sc !== 'play' || !replay) return
-                const [rot, thrust] = BTN[replay.actions[replayIdx]] || [0, false]
+                const [rot, thrust] = ACTION_VECS[replay.actions[replayIdx]] || [0, false]
                 if (replayIdx < replay.actions.length) replayIdx++
                 thrustVis = thrust && gs.fuel > 0 && gs.phase !== 'crashed'
                 doSim({ rot, thrust })
@@ -309,10 +324,15 @@ const LunarLanderGame = () => {
             ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, W, H)
             drawWorld()
             drawHud()
-            if (replayOn && replay && !replayFailed) text('PPO POLICY · REPLAY', W / 2, H - 12, 10, '#8fff9f', 6)
+            if (replayOn && replay && !replayFailed) {
+                text('POLICY · REPLAY', W / 2, H - 12, 10, '#8fff9f', 6)
+                if (scaledLab) text(`GRAVITY ×${gsScale}`, W / 2, H - 24, 8, '#8fa3d8')
+            }
             if (labOn && labPolicy && !labFailed) {
-                text('PPO POLICY · LAB', W / 2, H - 12, 10, '#8fff9f', 6)
-                text(`START x ${Math.round(labCfgRef.current.x)} · SIDEWAYS ${labCfgRef.current.vx > 0 ? '+' : ''}${Math.round(labCfgRef.current.vx)}`,
+                const pad = labPolicy.pad_rate != null ? ` · ${labPolicy.pad_rate}% PADS /500` : ''
+                text(`${(labPolicy.name || 'PPO').toUpperCase()} · LAB${pad}`, W / 2, H - 12, 10, '#8fff9f', 6)
+                text(`START x ${Math.round(labCfgRef.current.x)} · SIDEWAYS ${labCfgRef.current.vx > 0 ? '+' : ''}${Math.round(labCfgRef.current.vx)}`
+                    + (scaledLab ? ` · GRAVITY ×${gsScale}` : ''),
                     W / 2, H - 24, 8, '#8fa3d8')
             }
             if (toast > 0) { text(toastMsg, W / 2, H - 34, 11, '#ffd76b', 6); toast-- }
@@ -457,6 +477,7 @@ const LunarLanderGame = () => {
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
+            if (scaledLab) CFG.gravity = GRAV_BASE
             if (import.meta.env.DEV) { unmountDbg(); unexposeGame(); delete window.__landerTest }
         }
     }, [setMode])
@@ -478,6 +499,11 @@ const LunarLanderGame = () => {
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
             {labMode && (
                 <div className="mt-2 flex items-center gap-5 font-mono text-[11px] tracking-widest text-[#8fa3d8]">
+                    <span className="text-[#8fff9f]">
+                        POLICY {labInfo ? labInfo.name.toUpperCase() : policyName().toUpperCase()}
+                        {labInfo && labInfo.pad_rate != null ? ` · ${labInfo.pad_rate}% PADS / 500 SEEDS` : ''}
+                        {gravityScale() !== 1 ? ` · GRAVITY ×${gravityScale()}` : ''}
+                    </span>
                     <label className="flex items-center gap-2">START X
                         <input type="range" min={32} max={992} step={4} value={labX}
                             onChange={(e) => fly(+e.target.value, labVx)} className="accent-[#ffd76b]" />
