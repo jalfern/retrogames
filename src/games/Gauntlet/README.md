@@ -25,8 +25,13 @@ The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
 - `minimap.js` — the pure half of the map panel (issue #275 item 8): the
   shared camera (`viewRect`, used by the view AND the map so "seen" can't
   drift from the screen), the beasts the view shows (`mapMonsters`), and the
-  stairs' key-pulse (`stairsPulse`). drawPanel renders exactly its decisions;
-  gauntletcheck proves them in plain Node.
+   stairs' key-pulse (`stairsPulse`). drawPanel renders exactly its decisions;
+   gauntletcheck proves them in plain Node.
+- `juice.js` — the view's reactive overlays (issue #275 item 4): the screen-edge
+   throb under 30% health (`lowHpPulse`), the sword's light-arc trail on the
+   blade's own arc (`swordTrail`), and the green flush while Death drains you
+   (`isDraining` + `deathTint`). drawView renders exactly its decisions;
+   gauntletcheck proves them in plain Node.
 
 ## Fidelity notes
 
@@ -59,10 +64,11 @@ face · X / F / B: arrow down the facing · C on the hero screen: CPU partner ·
 
 ```bash
 npm run lint:gauntlet               # eslint gate for both games + harness
-npm run gauntletcheck             # 91 checks: geometry, art, sound, minimap,
+npm run gauntletcheck             # 107 checks: geometry, art, sound, minimap,
+                                   # juice (the view's reactive overlays),
                                    # generators (the wind-up), rules, overhead
                                    # mode, ledger, pilot, slack, determinism
-npm run gauntletcheck -- --mutate # 9 mutants, all must die
+npm run gauntletcheck -- --mutate # 12 mutants, all must die
 npm run gauntletplay              # advisory browser drive (needs npm run dev)
 ```
 
