@@ -8,6 +8,15 @@ import { terrainY } from './terrain.js'
 
 export const ACTION_LABELS = ['nothing', 'rotate_left', 'rotate_right', 'thrust']
 export const BTN = { nothing: [0, false], rotate_left: [-1, false], rotate_right: [1, false], thrust: [0, true] }
+export const ACTION_VECS = {
+    nothing: [0, false], rotate_left: [-1, false], rotate_right: [1, false], thrust: [0, true],
+    rotate_left_thrust: [-1, true], rotate_right_thrust: [1, true],
+}
+
+// an exported policy JSON carries its own action list — 4- and 6-action nets both run
+export function actionVector(policy, idx) {
+    return ACTION_VECS[policy.actions?.[idx]] || [0, false]
+}
 
 export function softmax(logits) {
     const m = Math.max(...logits)
@@ -69,7 +78,7 @@ export function episodeOutcome(policy, seed, x, vx, maxTicks = 1200, rngSeed = n
     const rng = mulberry32(rs)
     for (let i = 0; i < maxTicks; i++) {
         const probs = policyProbs(policy, obsFrom(gs))
-        const [rot, thrust] = BTN[ACTION_LABELS[sampleAction(probs, rng)]]
+        const [rot, thrust] = actionVector(policy, sampleAction(probs, rng))
         gs.events.length = 0
         step(gs, { rot, thrust })
         for (const e of gs.events) {

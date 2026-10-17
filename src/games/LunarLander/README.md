@@ -60,8 +60,18 @@ complete.
   (start x × sideways −40..+40): each cell shades red→green by the fraction of
   **8 headless episodes** that end on a pad, the row under the x-axis marks the
   five pads by position and value, and clicking a cell flies that start. The
-  whole lab (game + controls + map) fits a 1440×900 screen and ends above the
-  footer watermark band. Banner: `PPO POLICY · LAB`.
+   whole lab (game + controls + map) fits a 1440×900 screen and ends above the
+   footer watermark band.
+  **Policy picker** (`?policy=<name>`, lab only): one of `v3` (default), `v2`,
+  `dagger6`, `clone1k`, `clone1k-noisy`, each loaded from
+  `public/replays/lander-policy-<name>.json`. A policy JSON carries its own
+  `actions` list, so 4-button PPO nets and 6-button nets (incl. rotate+thrust)
+  both fly through the same `policyProbs`/`actionVector` path; `name` and
+  `pad_rate` (pads per 500 shared eval seeds) are stamped on screen and under
+  the canvas. `?gravity=<x>` scales sim gravity ×x on the lab and replay pages
+  (e.g. `?lab=1&gravity=1.25`; restored on unmount; the policy never sees it —
+  it is a generalisation probe). `npm run landerpolicy` parity-checks every
+  policy against its `lander-parity-<name>.json` fixture (gate max |Δp| < 1e-5).
 
 ## Controls
 
