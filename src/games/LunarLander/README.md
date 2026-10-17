@@ -72,6 +72,15 @@ complete.
   (e.g. `?lab=1&gravity=1.25`; restored on unmount; the policy never sees it —
   it is a generalisation probe). `npm run landerpolicy` parity-checks every
   policy against its `lander-parity-<name>.json` fixture (gate max |Δp| < 1e-5).
+  **Heatmap precompute**: `npm run landerheat` writes
+  `public/replays/lander-heat-<name>.json` (32×17×8 pad counts per policy —
+  4,352 headless episodes, too slow for page load); the lab paints from that
+  file the moment the policy loads and the game is playable immediately. If the
+  file is missing or `?gravity≠1`, a Web Worker (`heatWorker.js`) computes the
+  grid off the main thread and fills cells red→green as they finish. Worker,
+  precompute and `npm run landerheatcheck` all run the same `heatCell()` in
+  `policy.js`; the check recomputes v3 cell-for-cell against the shipped file
+  (544/544 must match) and runs in CI `static`.
 
 ## Controls
 

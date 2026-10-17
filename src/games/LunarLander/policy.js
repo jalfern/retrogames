@@ -68,6 +68,22 @@ export function obsFrom(gs) {
     return [gs.x, gs.y, gs.vx, gs.vy, gs.rot, gs.fuel, gs.x - padCx, gs.y - terrainY(gs.terrain.pts, gs.x)]
 }
 
+// generalisation heatmap grid + cell: pads out of N seeded headless episodes at (x, v).
+// exported so scripts/landerheat.mjs precomputes byte-identical grids and the lab's
+// Web Worker reuses the exact same path.
+export const HEAT_XS = Array.from({ length: 32 }, (_, i) => Math.round(32 + i * (992 - 32) / 31))
+export const HEAT_VXS = Array.from({ length: 17 }, (_, i) => -40 + i * 5)
+export const HEAT_EPISODES = 8
+
+export function heatCell(policy, x, v, episodes = HEAT_EPISODES) {
+    let pads = 0
+    for (let j = 0; j < episodes; j++) {
+        const rs = (Math.imul(j + 1, 2654435761) + Math.imul(x + 1, 97) + v + 64) >>> 0
+        if (episodeOutcome(policy, 7, x, v, 1200, rs) === 'pad') pads++
+    }
+    return pads
+}
+
 // headless episode: fly the policy from a start point; returns the outcome tag
 export function episodeOutcome(policy, seed, x, vx, maxTicks = 1200, rngSeed = null) {
     const gs = makeGame(seed)
