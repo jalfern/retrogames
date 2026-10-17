@@ -64,6 +64,18 @@ const brightScan = () => page.evaluate(() => {
 await wait(3500)
 let s = await probe()
 r.check('attract mode is showing', s && s.screen === 'attract')
+// #406 part 2 — the title screen is onboarding, not a patch-note dump: a
+// first-time player gets three lines (goal, move, end turn), not ten.
+{
+    const att = await page.evaluate(() => {
+        const h1 = [...document.querySelectorAll('h1')].find((el) => el.textContent === 'CIVILIZATION')
+        if (!h1) return null
+        const box = h1.parentElement
+        return { brs: box.querySelectorAll('br').length, text: box.innerText }
+    })
+    r.check(`the title screen is three onboarding lines, not patch notes (${att ? att.brs : 'n/a'} line breaks)`, att && att.brs <= 2)
+    r.check('the title screen names the goal, the move and the end turn (no stage patch notes)', att && !/STAGE \d/.test(att.text) && /grow your capital to size \d+ by turn \d+/.test(att.text) && /tap a tile to move/.test(att.text) && /space ends the turn/i.test(att.text))
+}
 const c1 = await centerPx()
 r.check(`attract canvas is not black (centre rgb ${c1})`, c1 && (c1[0] + c1[1] + c1[2]) > 24)
 r.check(`the world is seeded with barbarian camps (${s.campsAlive})`, s.campsAlive >= 3)
@@ -77,10 +89,24 @@ await wait(500)
 s = await probe()
 r.check('a key starts the game', s && s.screen === 'play')
 r.check('you begin with a settler selected and no city', s.capitalSize === 0 && s.units0.some((u) => u.kind === 'SETTLER'))
+// #406 part 2 — the pre-founding HUD: build/tech options are no-ops before the
+// first city (sim drops the queue input), so the rows stay hidden, and the
+// numbers carry their labels instead of reading as "20 0 0".
+{
+    const hud0 = await page.evaluate(() => document.body.innerText)
+    r.check('before the first city the BUILD row is hidden (no wall of hotkeys)', !hud0.includes('BUILD: 1 warrior') && !hud0.includes('BUILDING'))
+    r.check('before the first city the TECH row is hidden', !/TECH:|RESEARCHING/.test(hud0))
+    r.check('the HUD numbers are labelled, not bare digits (GOLD/SCI/CULT)', /GOLD \d+/.test(hud0) && /SCI \d+/.test(hud0) && /CULT \d+/.test(hud0))
+}
 await page.keyboard.press('KeyE')
 await wait(300)
 s = await probe()
 r.check(`E settles your capital (capitalSize ${s.capitalSize}, playerCities ${s.playerCities})`, s.capitalSize >= 1 && s.playerCities >= 1)
+{
+    const hud1 = await page.evaluate(() => document.body.innerText)
+    r.check('once a city stands, the BUILD row returns', hud1.includes('BUILD: 1 warrior') || hud1.includes('BUILDING'))
+    r.check('once a city stands, the TECH row returns', /TECH: \d+ available|RESEARCHING/.test(hud1))
+}
 // #406 — the first-time-player blockers. Both are read from authoritative game/render
 // state via the probe, never from racy WebGL pixel reads (the buffer is not preserved).
 // 1. THE MAP IS NOT BLACK: the dimmest UNexplored tile must be a dim world, not the

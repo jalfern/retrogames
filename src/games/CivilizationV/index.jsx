@@ -341,9 +341,9 @@ const CivilizationVGame = () => {
             const C = gs.civs[0]
             const cap = gs.cities.find((c) => c.civ === 0 && c.capital)
             const h = hud.current
-            if (h.gold) h.gold.textContent = `${C.gold}`
-            if (h.sci) h.sci.textContent = `${C.science}`
-            if (h.cult) h.cult.textContent = `${C.culture || 0}`
+            if (h.gold) h.gold.textContent = `GOLD ${C.gold}`
+            if (h.sci) h.sci.textContent = `SCI ${C.science}`
+            if (h.cult) h.cult.textContent = `CULT ${C.culture || 0}`
             if (h.turn) h.turn.textContent = `TURN ${gs.turn}/${CFG.turnLimit}`
             if (h.cap) h.cap.textContent = cap ? `CAPITAL ${cap.name} · size ${cap.size}/${GOAL}` : 'NO CITY — press E to settle'
             if (h.cities) h.cities.textContent = `cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}`
@@ -353,6 +353,7 @@ const CivilizationVGame = () => {
                 const q = city && city.queue && city.queue[0]
                 const qcost = q ? (UNIT[q] ? UNIT[q].cost : WONDER[q].cost) : 0
                 h.build.textContent = q ? `BUILDING ${q} ${Math.floor(city.buildP || 0)}/${qcost}${city.queue.length > 1 ? ` +${city.queue.length - 1}` : ''}` : 'BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · N trireme · K musket · L galleon · U wonders'
+                h.build.style.display = city ? '' : 'none'
             }
             if (h.worker) {
                 const w = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'WORKER')
@@ -382,7 +383,9 @@ const CivilizationVGame = () => {
             }
             if (h.research) {
                 const R = gs.tech[0]
+                const hasCity = gs.cities.some((c) => c.civ === 0 && c.alive)
                 h.research.textContent = R.research ? `RESEARCHING ${TECH[R.research].name.toUpperCase()} ${Math.floor(R.prog)}/${TECH[R.research].cost}` : `TECH: ${availableTechs(gs, 0).length} available · press T`
+                h.research.style.display = hasCity ? '' : 'none'
             }
             if (h.war) {
                 const w = [1, 2, 3].filter((i) => atWar(gs, 0, i)).map((i) => CIVS[i].name)
@@ -931,14 +934,14 @@ const CivilizationVGame = () => {
                     <span className="px-2 py-0.5 rounded bg-red-700/70 border border-red-300/50 text-red-50 font-bold">ROME</span>
                     <span ref={setHud('turn')} className="text-cyan-200">TURN 1/40</span>
                     <span ref={setHud('cap')} className="text-amber-200">NO CITY — press E to settle</span>
-                    <span ref={setHud('gold')} className="text-yellow-300" title="Gold">◈0</span>
-                    <span ref={setHud('sci')} className="text-sky-300" title="Science">✦0</span>
-                    <span ref={setHud('cult')} className="text-fuchsia-300" title="Culture">❦0</span>
+                    <span ref={setHud('gold')} className="text-yellow-300">GOLD 0</span>
+                    <span ref={setHud('sci')} className="text-sky-300">SCI 0</span>
+                    <span ref={setHud('cult')} className="text-fuchsia-300">CULT 0</span>
                     <span ref={setHud('cities')} className="text-emerald-200/80">cities 0</span>
                     <span ref={setHud('war')} className="text-red-300/90">at peace</span>
                     <span ref={setHud('victory')} className="text-yellow-200/90">🏆 caps 0/3 · ☼ 0% · ARC 🔒</span>
-                    <span ref={setHud('build')} className="text-white/50">BUILD: 1 warrior · 2 archer · 3 settler · 4 worker · C catapult · K musket · L galleon · U wonders</span>
-                    <span ref={setHud('research')} className="text-sky-200/90">TECH: press T</span>
+                    <span ref={setHud('build')} className="text-white/50" style={{ display: 'none' }} />
+                    <span ref={setHud('research')} className="text-sky-200/90" style={{ display: 'none' }} />
                     <span ref={setHud('worker')} className="text-lime-200/90" style={{ display: 'none' }} />
                     <span ref={setHud('lux')} className="text-fuchsia-200/90" style={{ display: 'none' }} />
                     <span ref={setHud('happy')} className="font-bold">😐 CONTENT 0</span>
@@ -1207,17 +1210,12 @@ const CivilizationVGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-5xl font-black tracking-wide" style={{ color: '#e8c56a', textShadow: '0 2px 0 #6b4a12, 0 10px 26px #000' }}>CIVILIZATION</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">STAGE 8 · LATER ERAS &amp; VICTORY</p>
+                    <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">FROM THE FIRST SETTLER TO THE LAST ROCKET</p>
                     <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-4">
-                        the final ages arrive: Education to Spaceflight, gunpowder to the electric grid<br />
-                        three crowns, three races — DOMINATION takes every capital, SCIENCE welds THE ARK part by part (Cockpit, Booster, Stasis, Launch), CULTURE counts the tourists: wonders, luxuries and fame must out-shine every rival<br />
-                        K lines up the Musket · L launches the port-storming Galleon — the age of sail makes the Trireme&apos;s rules obsolete<br />
-                        the Galleon is a convoy too: E embarks a land unit beside it (hold for two), tap a beach (or J) to land — enemy sand means an amphibious assault<br />
-                        Y opens VICTORY and shows every track, yours and theirs · era dawns are announced across the realm<br />
-                        tap a tile to move · E settles · T researches · Space ends the turn · drag to orbit · wheel to zoom<br />
-                        grow your capital to size {GOAL} for the golden age, or win the hard way before turn {CFG.turnLimit}<br />
-                        the demo is the autopilot&apos;s own proven campaign — every stage of the arcade, live
+                    <p className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-5">
+                        win one of the three crowns, or grow your capital to size {GOAL} by turn {CFG.turnLimit}<br />
+                        tap a tile to move your unit · E settles a city · T researches<br />
+                        Space ends the turn
                     </p>
                 </div>
             )}
