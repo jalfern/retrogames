@@ -11,11 +11,14 @@
 //   ledger    : final score == sum of scored events, pilot run included.
 //   minimap   : the map shows beasts only while the view shows them; the
 //               stairs pulse only once a key is held.
+//   juice     : the view breathes — a red edge throb under 30% health, a
+//               sword light-arc trail mid-swing, and a green flush while
+//               Death drains you (issue #275 item 4).
 //   pilot     : seeds 0-3 clear all four mazes; 2/3 do it deathless;
 //   slack     : the quest is re-won with one fewer food AND one fewer potion
 //               per maze.
 //   determinism : same seed twice -> identical digest.
-// `-- --mutate` re-plants eight fixed bugs in child processes; each MUST die.
+// `-- --mutate` re-plants twelve fixed bugs in child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -132,6 +135,39 @@ console.log('minimap')
     ok(mm.stairsPulse(0, 0) === null && mm.stairsPulse(0, 16) === null, 'minimap: no stairs pulse without a key')
     ok([0, 4, 8, 12, 16, 20].every((t) => mm.stairsPulse(1, t) === mm.stairsPulse(1, t + 16)), 'minimap: the stairs pulse runs on a 16-tick period')
     ok(new Set([0, 4, 8, 12].map((t) => mm.stairsPulse(2, t))).size === 3 && mm.stairsPulse(1, 8) === 1, 'minimap: the pulse dims and peaks', [0, 1, 2, 3, 4].map((t) => mm.stairsPulse(1, t)).join(','))
+}
+
+// ----------------------------------------------------------------- juice ----
+// The view breathes (issue #275 item 4): the screen edges throb red under 30%
+// health, a swing leaves a light-arc trail on the blade's own arc, and while
+// Death is in drain range the whole view flushes green, frame by frame.
+console.log('juice')
+{
+    const j = await import('../src/games/Gauntlet/juice.js')
+    // the low-health edge throb
+    ok(j.lowHpPulse(100, 100, 24) === 0, 'juice: full health, no screen-edge throb')
+    ok(j.lowHpPulse(30, 100, 24) === 0, 'juice: the throb is gated at exactly 30%', `${j.lowHpPulse(30, 100, 24)}`)
+    ok(j.lowHpPulse(29, 100, 24) === 1, 'juice: just under 30%, the throb peaks', `${j.lowHpPulse(29, 100, 24)}`)
+    ok(j.lowHpPulse(20, 100, 0) === 0 && j.lowHpPulse(20, 100, 24) === 1, 'juice: the throb breathes 0 -> 1 -> 0')
+    ok([0, 12, 36].every((t) => j.lowHpPulse(20, 100, t) === j.lowHpPulse(20, 100, t + 48)), 'juice: the throb runs on a fixed period')
+    // the sword's light-arc trail
+    ok(j.swordTrail(0) === null, 'juice: no trail between swings')
+    const s0 = j.swordTrail(S.CFG.swordCool), s1 = j.swordTrail(1)
+    ok(!!s0 && Math.abs(s0.lead + S.CFG.swordArc) < 1e-9, 'juice: the streak starts at the rear of the arc', `${s0 && s0.lead}`)
+    ok(!!s0 && !!s1 && s1.lead > s0.lead, 'juice: the streak sweeps ahead of the blade', `${s0 && s0.lead} -> ${s1 && s1.lead}`)
+    ok(!!s0 && !!s1 && s0.alpha > s1.alpha, 'juice: the streak fades as the swing settles', `${s0 && s0.alpha} -> ${s1 && s1.alpha}`)
+    ok(!!s0 && !!s1 && s0.reach > s1.reach, 'juice: the streak stretches as the swing opens', `${s0 && s0.reach} -> ${s1 && s1.reach}`)
+    // Death's green drain flush
+    const jgs = makeGame(0, 'warrior')
+    jgs.monsters = []
+    ok(!j.isDraining(jgs), 'juice: no flush while Death is absent')
+    jgs.monsters.push({ id: 9601, kind: 'death', x: jgs.hero.x + 2, y: jgs.hero.y, hp: 24, atkT: 9999, castT: 9999, path: [], repathT: 0, drainT: 0 })
+    ok(!j.isDraining(jgs), 'juice: no flush while Death is out of drain range')
+    jgs.monsters[0].x = jgs.hero.x + 0.3
+    ok(j.isDraining(jgs), 'juice: the flush arms once Death is in drain range')
+    ok(j.deathTint(false, 20) === 0, 'juice: no green the moment Death lifts')
+    ok(j.deathTint(true, 20) > 0 && j.deathTint(true, 20) <= 1, 'juice: a living green flush while he drains', `${j.deathTint(true, 20)}`)
+    ok([0, 13, 27].every((t) => j.deathTint(true, t) === j.deathTint(true, t + 40)), 'juice: the flush pulses frame by frame on a fixed period')
 }
 
 // ---------------------------------------------------------- generators ----
@@ -404,6 +440,9 @@ if (process.argv.includes('--mutate')) {
         ['overhead pilot cannot aim', 'src/games/Gauntlet/sim.js', 'if (typeof inp.aim === \'number\') {', 'if (false) {'],
         ['the map shows beasts outside the view', 'src/games/Gauntlet/minimap.js', 'gs.monsters.filter((m) => inView(rect, m.x, m.y))', 'gs.monsters'],
         ['the stairs pulse without a key', 'src/games/Gauntlet/minimap.js', 'if (keys <= 0) return null', 'if (false) return null'],
+        ['the low-HP vignette never throbs', 'src/games/Gauntlet/juice.js', 'if (hp >= maxHp * LOW_HP) return 0', 'return 0'],
+        ['the sword leaves no light-arc trail', 'src/games/Gauntlet/juice.js', 'if (atkAnim <= 0) return null', 'return null'],
+        ['Death drain never tints the view', 'src/games/Gauntlet/juice.js', 'if (!draining) return 0', 'return 0'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

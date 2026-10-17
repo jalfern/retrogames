@@ -21,6 +21,7 @@ import { plan, decide } from './planner.js'
 import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
+import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
 
 const PW = 64, HT = 40
 const CW = VW + PW, CH = VH + HT
@@ -283,13 +284,22 @@ const GauntletGame = () => {
             ctx.moveTo(hx + Math.cos(h.a) * 5, hy + Math.sin(h.a) * 5)
             ctx.lineTo(hx + Math.cos(h.a) * 10, hy + Math.sin(h.a) * 10)
             ctx.stroke()
-            if (h.atkAnim > 0) {
-                const t = 1 - h.atkAnim / CFG.swordCool
-                ctx.strokeStyle = 'rgba(232,238,248,0.8)'
-                ctx.lineWidth = 2
-                ctx.beginPath()
-                ctx.arc(hx, hy, 12, h.a - CFG.swordArc + t * CFG.swordArc * 2 - 0.3, h.a - CFG.swordArc + t * CFG.swordArc * 2 + 0.3)
-                ctx.stroke()
+            const trail = swordTrail(h.atkAnim)
+            if (trail) {
+                // a glowing light-arc trail: the fresh lead streak is brightest,
+                // two ghost streaks trail behind; it fades as the swing settles
+                ctx.save()
+                ctx.shadowColor = '#dfeeff'
+                for (let k = 0; k < 3; k++) {
+                    const aa = Math.max(0, trail.alpha - k * 0.25)
+                    ctx.strokeStyle = `rgba(223,238,255,${aa})`
+                    ctx.shadowBlur = 12 * aa
+                    ctx.lineWidth = Math.max(1, 2.6 - k)
+                    ctx.beginPath()
+                    ctx.arc(hx, hy, trail.reach, h.a + trail.lead - k * 0.14 - 0.32, h.a + trail.lead - k * 0.14 + 0.32)
+                    ctx.stroke()
+                }
+                ctx.restore()
                 ctx.lineWidth = 1
             }
             const blink = h.deadT > 0 && (gs.tick >> 2) % 2 === 0
@@ -304,6 +314,21 @@ const GauntletGame = () => {
             vg.addColorStop(1, 'rgba(0,0,0,0.62)')
             ctx.fillStyle = vg
             ctx.fillRect(0, 0, VW, VH)
+            // juice: the view breathes — a red edge throb under 30% health, and a
+            // green flush while Death is draining you (issue #275 item 4)
+            const low = lowHpPulse(h.hp, h.maxHp, gs.tick)
+            if (low > 0) {
+                const rg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.30, VW / 2, VH / 2, VH * 0.80)
+                rg.addColorStop(0, 'rgba(120,0,0,0)')
+                rg.addColorStop(1, `rgba(150,10,10,${low * 0.5})`)
+                ctx.fillStyle = rg
+                ctx.fillRect(0, 0, VW, VH)
+            }
+            const gt = deathTint(isDraining(gs), gs.tick)
+            if (gt > 0) {
+                ctx.fillStyle = `rgba(60,190,95,${gt * 0.20})`
+                ctx.fillRect(0, 0, VW, VH)
+            }
         }
 
         const drawPanel = () => {
