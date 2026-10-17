@@ -199,6 +199,7 @@ export const GAMES = [
     },
     {
         path: '/mario-classic',
+        pad: { layout: 'stick', buttons: [{ label: 'RUN', code: 'KeyX' }], analog: false },
         builtBy: 'qwen',
         component: SuperMarioClassicGame,
         label: 'SUPER MARIO BROS (ORIGINAL)',
@@ -294,6 +295,7 @@ export const GAMES = [
     },
     {
         path: '/galaga',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: GalagaGame,
         label: 'GALAGA',
@@ -489,6 +491,7 @@ export const GAMES = [
     },
     {
         path: '/pong',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: PongGame,
         label: 'PONG',
@@ -498,6 +501,7 @@ export const GAMES = [
     },
     {
         path: '/invaders',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: SpaceInvadersGame,
         label: 'SPACE INVADERS',
@@ -507,6 +511,7 @@ export const GAMES = [
     },
     {
         path: '/pacman',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: PacmanGame,
         label: 'PAC-MAN',
@@ -516,6 +521,7 @@ export const GAMES = [
     },
     {
         path: '/asteroids',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: AsteroidsGame,
         label: 'ASTEROIDS',
@@ -525,6 +531,7 @@ export const GAMES = [
     },
     {
         path: '/donkeykong',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: DonkeyKongGame,
         label: 'DONKEY KONG',
@@ -534,6 +541,7 @@ export const GAMES = [
     },
     {
         path: '/centipede',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: CentipedeGame,
         label: 'CENTIPEDE',
@@ -543,6 +551,7 @@ export const GAMES = [
     },
     {
         path: '/defender',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: DefenderGame,
         label: 'DEFENDER',
@@ -552,6 +561,7 @@ export const GAMES = [
     },
     {
         path: '/pitfall',
+        pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: PitfallGame,
         label: 'PITFALL',
