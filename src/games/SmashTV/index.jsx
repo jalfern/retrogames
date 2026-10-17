@@ -18,6 +18,7 @@ import { makeGame, step, stateHash, CFG } from './sim.js'
 import { plan } from './planner.js'
 import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
+import { playerFrame, GUN } from './sprite.js'
 
 const SIM_MS = 1000 / 60
 const ROOM_NAMES = [
@@ -62,6 +63,7 @@ const SmashTVGame = () => {
         let floor = buildFloor(0, 0)
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0
+        let moving = false
         const held = new Set()
         let bombEdge = false
         const evLog = []
@@ -138,7 +140,9 @@ const SmashTVGame = () => {
         const tickDemo = () => {
             const run = provenRun()
             if (demoAt >= run.script.length) { gs = makeGame(0); demoAt = 0; floor = buildFloor(0, 0); return }
-            doSim(run.script[demoAt++])
+            const inp = run.script[demoAt++]
+            moving = !!(inp.mx || inp.my)
+            doSim(inp)
             if (gs.end) { gs = makeGame(0); demoAt = 0; floor = buildFloor(0, 0) }
         }
 
@@ -157,7 +161,9 @@ const SmashTVGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim(computeInput())
+            const inp = computeInput()
+            moving = !!(inp.mx || inp.my)
+            doSim(inp)
         }
 
         // ---------------------------------------------------------------- render ----
@@ -247,25 +253,26 @@ const SmashTVGame = () => {
             const p = gs.player
             if (p.deadT > 0) return
             if (p.invuln > 0 && (gs.tick >> 2) % 2 === 0) return
-            const frame = Math.floor(p.walk / 6) % 2
-            // twin barrels along the aim vector
+            // LAYERS order: the body (boots lowest) renders under the gun layer
+            ctx.drawImage(SP[`player${playerFrame(p.walk, moving)}`], p.x - 6, p.y - 8)
+            const spec = GUN[gs.weapon]
             const [ax, ay] = p.aim
-            const ox = -ay * 3, oy = ax * 3
-            ctx.strokeStyle = '#8d99b5'
-            ctx.lineWidth = 2
-            ctx.beginPath()
-            ctx.moveTo(p.x + ox, p.y + oy); ctx.lineTo(p.x + ax * 8, p.y + ay * 8)
-            ctx.moveTo(p.x - ox, p.y - oy); ctx.lineTo(p.x - ax * 8, p.y - ay * 8)
-            ctx.stroke()
-            ctx.lineWidth = 1
-            const w = WEAPONS[gs.weapon]
-            if (p.fireT > w.interval - 3) {
-                ctx.fillStyle = '#ffd23f'
-                ctx.beginPath(); ctx.arc(p.x + ax * 9, p.y + ay * 9, 2, 0, Math.PI * 2); ctx.fill()
+            const ox = -ay, oy = ax
+            for (const o of spec.off) {
+                ctx.strokeStyle = spec.col
+                ctx.lineWidth = spec.w
+                ctx.beginPath()
+                ctx.moveTo(p.x + ox * o + ax * 2, p.y + oy * o + ay * 2)
+                ctx.lineTo(p.x + ox * o + ax * spec.len, p.y + oy * o + ay * spec.len)
+                ctx.stroke()
+                ctx.fillStyle = spec.tip
+                ctx.fillRect(p.x + ox * o + ax * spec.len - 1, p.y + oy * o + ay * spec.len - 1, 2, 2)
             }
-            ctx.drawImage(frame ? SP.civ11 : SP.civ00, p.x - 5, p.y - 7)
-            ctx.fillStyle = '#e8eef8'
-            ctx.fillRect(p.x - 3, p.y - 8, 6, 2)
+            ctx.lineWidth = 1
+            if (p.fireT > WEAPONS[gs.weapon].interval - 3) {
+                ctx.fillStyle = '#ffd23f'
+                ctx.beginPath(); ctx.arc(p.x + ax * spec.flash, p.y + ay * spec.flash, 2, 0, Math.PI * 2); ctx.fill()
+            }
         }
 
         const drawEnemies = () => {

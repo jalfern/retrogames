@@ -26,6 +26,7 @@ const ok = (cond, name, detail = '') => {
 
 const { GW, GH, EXITS, TOTAL_ROOMS, genRoom, START, isBonus } = await import('../src/games/SmashTV/levels.js')
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
+const { playerFrame, GUN, LAYERS, PLAYER_FRAMES } = await import('../src/games/SmashTV/sprite.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
 async function fresh() {
@@ -75,6 +76,22 @@ console.log('walls')
     ok(new Set(NEON_TOP).size >= 5, 'the arenas are tinted differently', `${new Set(NEON_TOP).size} distinct`)
     ok(lum(borderRivet.hi) > lum(borderRivet.body), 'border rivets catch a highlight', `${borderRivet.body} -> ${borderRivet.hi}`)
     ok(lum(a.rivetHi) > lum(a.rivet), 'cell rivets catch a highlight')
+}
+
+// ----------------------------------------------------------------- player ----
+console.log('player')
+{
+    const frames = [0, 6, 12, 18].map((w) => playerFrame(w, true))
+    ok(new Set(frames).size === PLAYER_FRAMES && PLAYER_FRAMES === 4, 'the run cycle runs four distinct frames', frames.join(','))
+    ok(playerFrame(24, true) === playerFrame(0, true), 'the cycle wraps, not stairs')
+    ok(playerFrame(999, false) === 0, 'a resting contestant holds the neutral frame')
+    ok(GUN.twin.off.length === 2 && GUN.twin.off[0] < 0 && GUN.twin.off[0] === -GUN.twin.off[1], 'twin is two barrels flanking the aim line', JSON.stringify(GUN.twin.off))
+    ok(['gun', 'spread', 'laser'].every((w) => GUN[w].off.length === 1), 'the other weapons carry a single barrel')
+    const sig = Object.values(GUN).map((g) => `${g.off.length}|${g.len}|${g.w}`)
+    ok(new Set(sig).size === 4, 'every weapon reads as its own silhouette', sig.join(' '))
+    ok(Object.values(GUN).every((g) => g.flash > g.len), 'the muzzle flash blooms beyond the muzzle')
+    ok(new Set(Object.values(GUN).map((g) => g.tip)).size === 4, 'each weapon has its own muzzle colour')
+    ok(LAYERS.indexOf('feet') < LAYERS.indexOf('gun') && LAYERS.indexOf('body') < LAYERS.indexOf('gun'), 'feet and body render under the gun layer', LAYERS.join('>'))
 }
 
 // ------------------------------------------------------------------ rules ----

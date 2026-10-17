@@ -27,6 +27,10 @@ extra life every 20,000. Respawn keeps the room but grants spawn invulnerability
   the pilot tick-for-tick and the attract demo is that proven run.
 - `planner.js` — the autopilot: engage nearest threat with LOS, dodge incoming
   fire, chase civilians in bonus rooms, strafe the boss.
+- `walls.js` — the wall paint decisions (two-tone chrome, mortar, per-room
+  neon top edge, rivet highlights); `drawWalls` renders exactly these.
+- `sprite.js` — the contestant's paint decisions (4-frame run cycle,
+  per-weapon gun silhouettes, layer order: feet under the gun layer).
 - `art.js` — every sprite/texture synthesized at runtime.
 - `index.jsx` — canvas loop (fixed 60 Hz timestep, 256x248 internal), attract,
   `'?'` PauseOverlay, VirtualControls (A = fire, B = firebomb).
