@@ -189,7 +189,7 @@ const CivilizationVGame = lazy(() => import('../games/CivilizationV'))
 export const GAMES = [
     {
         path: '/mario',
-        pad: { layout: 'dpad', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
         builtBy: 'qwen',
         component: SuperMarioGame,
         label: 'SUPER MARIO BROS',
@@ -209,7 +209,7 @@ export const GAMES = [
     },
     {
         path: '/ironkeep',
-        pad: { layout: 'dpad', buttons: [{ label: 'B', code: 'ShiftLeft' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'ShiftLeft' }], analog: false },
         builtBy: 'qwen',
         component: IronKeepGame,
         label: 'IRONKEEP',
@@ -228,7 +228,7 @@ export const GAMES = [
     },
     {
         path: '/beezee',
-        pad: { layout: 'dpad', buttons: [{ label: 'UV', code: 'KeyV' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'UV', code: 'KeyV' }], analog: false },
         builtBy: 'forge',
         component: BeeGame,
         label: 'BEEZEE',
@@ -238,7 +238,7 @@ export const GAMES = [
     },
     {
         path: '/lemmings',
-        pad: { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyE' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyE' }], analog: false },
         builtBy: 'forge',
         component: LemmingsGame,
         label: 'LEMMINGS-LITE',
@@ -266,7 +266,7 @@ export const GAMES = [
     },
     {
         path: '/metroid',
-        pad: { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: MetroidLiteGame,
         label: 'METROID-LITE',
@@ -303,7 +303,7 @@ export const GAMES = [
     },
     {
         path: '/polarity',
-        pad: { layout: 'dpad', buttons: [{ label: 'X', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'X', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: PolarityGame,
         label: 'POLARITY',
@@ -322,7 +322,7 @@ export const GAMES = [
     },
     {
         path: '/simcity-min',
-        pad: { layout: 'dpad', buttons: [{ label: 'TOOL', code: 'KeyT' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: 'TOOL', code: 'KeyT' }], analog: false, reason: 'grid city builder — place the tool on the cursor' },
         builtBy: 'forge',
         component: SimCityMinGame,
         label: 'SIMCITY-MIN',
@@ -332,7 +332,7 @@ export const GAMES = [
     },
     {
         path: '/outpost',
-        pad: { layout: 'dpad', buttons: [{ label: 'T', code: 'KeyT' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: 'T', code: 'KeyT' }], analog: false, reason: 'grid colony builder — designate a job on the cursor' },
         builtBy: 'forge',
         component: OutpostGame,
         label: 'OUTPOST',
@@ -342,7 +342,7 @@ export const GAMES = [
     },
     {
         path: '/papers-please',
-        pad: { layout: 'dpad', buttons: [{ label: 'D', code: 'KeyD' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: 'D', code: 'KeyD' }], analog: false, reason: 'menu — ADMIT / DENY, no directional play' },
         builtBy: 'forge',
         component: PapersPleaseMinGame,
         label: 'PAPERS, PLEASE-MIN',
@@ -352,7 +352,7 @@ export const GAMES = [
     },
     {
         path: '/lode-runner',
-        pad: { layout: 'dpad', buttons: [{ label: 'DIG', code: 'ArrowDown' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'DIG', code: 'ArrowDown' }], analog: false },
         builtBy: 'forge',
         component: LodeRunnerLiteGame,
         label: 'LODE RUNNER-LITE',
@@ -362,7 +362,7 @@ export const GAMES = [
     },
     {
         path: '/dogfight',
-        pad: { layout: 'dpad', buttons: [{ label: 'TH', code: 'KeyE' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'TH', code: 'KeyE' }], analog: false },
         builtBy: 'forge',
         component: DogfightGame,
         label: 'WWI DOGFIGHT',
@@ -372,7 +372,7 @@ export const GAMES = [
     },
     {
         path: '/paperboy',
-        pad: { layout: 'dpad', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
         builtBy: 'forge',
         component: PaperboyGame,
         label: 'PAPERBOY',
@@ -382,7 +382,7 @@ export const GAMES = [
     },
     {
         path: '/wizardry',
-        pad: { layout: 'dpad', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: 'F', code: 'KeyF' }], analog: false, reason: 'turn-based battle — the arrows pick the target' },
         builtBy: 'forge',
         component: WizardryGame,
         label: 'WIZARDRY',
@@ -392,7 +392,7 @@ export const GAMES = [
     },
     {
         path: '/spy-hunter',
-        pad: { layout: 'dpad', buttons: [{ label: 'MSL', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'MSL', code: 'KeyX' }], analog: false },
         component: SpyHunterGame,
         label: 'SPY HUNTER',
         theme: 'dark',
@@ -402,7 +402,7 @@ export const GAMES = [
     },
     {
         path: '/excitebike',
-        pad: { layout: 'dpad', buttons: [{ label: 'GEAR', code: 'KeyG' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'GEAR', code: 'KeyG' }], analog: false },
         builtBy: 'forge',
         component: ExcitebikeGame,
         label: 'EXCITEBIKE',
@@ -422,6 +422,7 @@ export const GAMES = [
     },
     {
         path: '/tetris',
+        pad: { layout: 'dpad', buttons: [], analog: false, reason: 'grid piece placement — slide/rotate/soft-drop, no analog' },
         builtBy: 'forge',
         component: TetrisGame,
         label: 'TETRIS',
@@ -440,6 +441,7 @@ export const GAMES = [
     },
     {
         path: '/qbert',
+        pad: { layout: 'dpad', buttons: [], analog: false, reason: 'cube-grid diagonal hops — the 2x2 corner pad' },
         builtBy: 'forge',
         component: QBertGame,
         label: 'Q*BERT',
@@ -467,7 +469,7 @@ export const GAMES = [
     },
     {
         path: '/zelda',
-        pad: { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: ZeldaGame,
         label: 'ZELDA',
@@ -477,7 +479,7 @@ export const GAMES = [
     },
     {
         path: '/minesweeper',
-        pad: { layout: 'dpad', buttons: [{ label: '⚑', code: 'KeyB' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: '⚑', code: 'KeyB' }], analog: false, reason: 'cell cursor — flag or dig one tile at a time' },
         builtBy: 'forge',
         component: MinesweeperGame,
         label: 'MINESWEEPER',
@@ -703,7 +705,7 @@ export const GAMES = [
     },
     {
         path: '/bubble-bobble',
-        pad: { layout: 'dpad', buttons: [{ label: 'BUB', code: 'KeyB' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BUB', code: 'KeyB' }], analog: false },
         builtBy: 'forge',
         component: BubbleBobbleGame,
         label: 'BUBBLE BOBBLE',
@@ -723,7 +725,7 @@ export const GAMES = [
     },
     {
         path: '/gauntlet',
-        pad: { layout: 'dpad', buttons: [{ label: 'BOW', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BOW', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: GauntletGame,
         label: 'GAUNTLET',
@@ -733,7 +735,7 @@ export const GAMES = [
     },
     {
         path: '/four-halls',
-        pad: { layout: 'dpad', buttons: [{ label: 'BOW', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BOW', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: FourHallsGame,
         label: 'FOUR HALLS',
@@ -743,7 +745,7 @@ export const GAMES = [
     },
     {
         path: '/smash-tv',
-        pad: { layout: 'dpad', buttons: [{ label: 'BOMB', code: 'KeyB' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BOMB', code: 'KeyB' }], analog: false },
         builtBy: 'forge',
         component: SmashTVGame,
         label: 'SMASH TV',
@@ -763,7 +765,7 @@ export const GAMES = [
     },
     {
         path: '/lunar-lander',
-        pad: { layout: 'dpad', buttons: [{ label: 'ZOOM', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'ZOOM', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: LunarLanderGame,
         label: 'LUNAR LANDER',
@@ -791,6 +793,7 @@ export const GAMES = [
     },
     {
         path: '/bards-tale',
+        pad: { layout: 'dpad', buttons: [], analog: false, reason: 'turn-based battle — the arrows pick the target' },
         builtBy: 'forge',
         component: BardsTaleGame,
         label: "THE BARD'S TALE",
@@ -800,7 +803,7 @@ export const GAMES = [
     },
     {
         path: '/ssx',
-        pad: { layout: 'dpad', buttons: [{ label: 'BST', code: 'ShiftLeft' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BST', code: 'ShiftLeft' }], analog: false },
         builtBy: 'forge',
         component: SSXGame,
         label: 'SSX',
@@ -810,7 +813,7 @@ export const GAMES = [
     },
     {
         path: '/prince-of-persia',
-        pad: { layout: 'dpad', buttons: [{ label: '⚔', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: '⚔', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: PrinceOfPersiaGame,
         label: 'PRINCE OF PERSIA',

@@ -374,6 +374,10 @@ jobs:
         env:
           SHOT_CHANNEL: chromium
           HEIST_LITE: "1"
+      - name: VPad boot (every #384-step-1 route boots clean; stick zone iff the registry says stick)
+        run: npm run vpadboot
+        env:
+          SHOT_CHANNEL: chromium
       - name: Polarity smoke (real keys, pixels graded against physics)
         run: npm run polarplay
         env:

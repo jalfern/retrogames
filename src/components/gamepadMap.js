@@ -121,3 +121,12 @@ export function padButton(pad) {
     if (!validPad(pad) || !pad.buttons.length) return null
     return pad.buttons[0]
 }
+
+// Step 1 (#384): the floating stick is the DEFAULT touch layout. A game keeps
+// the fixed d-pad only by declaring layout 'dpad' (the grid- / menu-driven
+// titles, each with a one-line reason in its pad entry). `pad` is the registry
+// entry's optional pad field — null/undefined when the game declares none, in
+// which case the stick wins. Pure so vpadcheck can pin the default in Node.
+export function shouldUseStick(pad) {
+    return !(pad && pad.layout === 'dpad')
+}

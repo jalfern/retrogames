@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { dirsFrom, stickVec, STICK_TRAVEL } from './virtualDir'
 import { PadContext } from './padContext'
-import { padButton } from './gamepadMap'
+import { padButton, shouldUseStick } from './gamepadMap'
 import { setStick, clearStick } from '../utils/padState'
 
 const DIAG = {
@@ -20,11 +20,11 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     // declaration from the registry (the single source of truth for step 2).
     const secondAction = secondActionProp || (pad ? padButton(pad) : null)
 
-    // Step 3 (#290): a floating stick replaces the fixed d-pad for games that
-    // declare layout 'stick' / 'stick+dpad'. It anchors wherever the thumb lands
-    // on the left half and emits the same 8-way arrows — plus an analog vector
-    // for games that set analog: true.
-    const useStick = !!(pad && (pad.layout === 'stick' || pad.layout === 'stick+dpad'))
+    // Step 1 (#384): the floating stick is the DEFAULT touch layout — it anchors
+    // wherever the thumb lands on the left half and emits the same 8-way arrows.
+    // A game keeps the fixed d-pad only by declaring layout 'dpad' — the grid- /
+    // menu-driven titles, each carrying a one-line reason in its pad entry.
+    const useStick = shouldUseStick(pad)
     // Step 5 (#290, feel): the touch pad hides as soon as a keyboard or gamepad is
     // used, and comes back on the next touch.
     const [hidden, setHidden] = useState(false)
