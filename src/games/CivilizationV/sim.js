@@ -69,8 +69,10 @@
 //     Three victories end the game: DOMINATION (every rival capital), SCIENCE
 //     (Spaceflight unlocks THE ARK — beakers then weld its four named parts:
 //      Cockpit, Booster, Stasis and Launch; the completed hull lifts off)
-//     and CULTURE (lifetime culture past the threshold, strictly ahead of every
-//     living rival). The arcade milestone (capital size N) remains as the
+//     and CULTURE (the TOURISM lead — visitors bank wonders, luxuries and half
+//     of every turn's culture; past the threshold and strictly ahead of every
+//     living rival. Lifetime culture remains the record, not the crown).
+//     The arcade milestone (capital size N) remains as the
 //     golden-age win. The Musket (Gunpowder) and the Galleon (Astronomy — the
 //     age of sail storms ports, unlike the Trireme) answer the new era. A rival
 //     completing any of the three first loses the world the other way.
@@ -105,7 +107,8 @@ export const CFG = {
     stoneCult: 2, librarySci: 2, gardenFood: 1, colossusGold: 1, wallDefMult: 1.5,   // wonder effects
     csGift: 25, csInfl: 30, csAlly: 60, csTribute: 40,    // city-state courts: gift cost, influence per gift, alliance threshold, sack tribute
     tradeGold: 3, peaceCool: 3,                             // gold per signed trade pact per turn; turns peace must hold before trade
-    arkScience: 70, cultureWin: 350,       // Stage 8 victories: beakers banked into the Ark after Spaceflight (= the sum of ARK_PARTS); lifetime culture that must lead every rival
+    arkScience: 70, cultureWin: 350,       // Stage 8 victories: beakers banked into the Ark after Spaceflight (= the sum of ARK_PARTS); lifetime culture the world still records (since polish pass #375-4 it no longer crowns)
+    tourismWin: 120, wonderTour: 3,       // polish pass #375-4: the CULTURE crown is the TOURISM lead — visitors bank what there is to see
 }
 
 // ---- the Ark, part by part (polish pass #375-3: the Science win assembles a
@@ -924,7 +927,7 @@ export function newGame(seed = 1, scenario = 0) {
         seed: seed + scenario * 977, scenario, tick: 0, turn: 1, phase: 'player',
         tiles: [], units: [], cities: [], camps: [], wars: {},
         fog: [], explored: [], visible: [],
-        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, cultureEarned: 0, happyNet: 0, alive: true, vassal: null })),
+        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, cultureEarned: 0, tourism: 0, happyNet: 0, alive: true, vassal: null })),
         tech: CIVS.map(() => ({ known: {}, research: null, prog: 0 })),
         policies: CIVS.map(() => ({})),
         resKnown: CIVS.map(() => ({})),
@@ -1596,6 +1599,13 @@ function resolveCiv(gs, civ) {
         if (!now) G.ready[t] = false
     }
     C.gold += gold; C.science += sci; C.culture += cult
+    // Polish pass #375-4: culture and tourism split. The visitor book is a
+    // second, unspendable ledger: tourists come for what there IS to see —
+    // every completed wonder pays its crown, every connected luxury sends a
+    // caravan, and half of this turn's culture (rounded up) is plain fame.
+    const myWonders = WONDER_IDS.filter((id) => gs.wonders && gs.wonders[id] === civ).length
+    const tour = Math.ceil(cult / 2) + CFG.wonderTour * myWonders + lux
+    C.tourism = (C.tourism || 0) + tour
     const mood = hs.net >= 1 ? 'happy' : hs.net < 0 ? 'unhappy' : 'content'
     if (mood !== C.happyState) { C.happyState = mood; C.happyNet = hs.net; gs.events.push({ type: 'happy', civ, net: hs.net, state: mood }) }
     C.happyNet = hs.net
@@ -1633,7 +1643,7 @@ function resolveCiv(gs, civ) {
     const eraNow = highestEra(gs, civ)
     if (eraNow > (C.era == null ? -1 : C.era)) { C.era = eraNow; if (eraNow >= 1) gs.events.push({ type: 'era', civ, era: eraNow }) }
     spreadBorders(gs, civ)
-    gs.events.push({ type: 'turnEnd', civ, gold, sci, cult, prod, fSur })
+    gs.events.push({ type: 'turnEnd', civ, gold, sci, cult, prod, fSur, tour })
 }
 
 function highestEra(gs, civ) {
@@ -1644,17 +1654,18 @@ function highestEra(gs, civ) {
 }
 
 // Stage 8: the three real victories, judged for any major. DOMINATION first
-// (the pen and the sword), then SCIENCE (the Ark), then CULTURE (lifetime
-// culture past the threshold, strictly ahead of every living rival). Rome's
-// arcade milestone (golden age) stays behind them; a rival achieving any of
-// the three first ends the game the other way.
+// (the pen and the sword), then SCIENCE (the Ark), then CULTURE — which since
+// polish pass #375-4 is judged on TOURISM, not the lifetime culture record:
+// the visitor book past the threshold, strictly ahead of every living rival's
+// visitor book. Rome's arcade milestone (golden age) stays behind them; a
+// rival achieving any of the three first ends the game the other way.
 function victoryFor(gs, civ) {
     if (!gs.civs[civ].alive) return null
     if (gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive)) return 'Domination — every rival capital flies your colours'
     if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkScience) return 'Science — Cockpit, Booster, Stasis and Launch are welded; the Ark leaves the ground, and the future is yours'
-    const mine = gs.civs[civ].cultureEarned || 0
-    if (mine >= CFG.cultureWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.cultureEarned || 0) < mine)) {
-        return 'Culture — the world remembers your name above all others'
+    const mine = gs.civs[civ].tourism || 0
+    if (mine >= CFG.tourismWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.tourism || 0) < mine)) {
+        return 'Culture — travellers cross seas for your wonders; no court in the world shines brighter'
     }
     return null
 }
@@ -1988,7 +1999,7 @@ export function stateHash(gs) {
         const G = gs.gp[civ]
         h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3 + rm * 29 + pm * 17 + (gs.civs[civ].culture | 0)) | 0
         h = (h * 33 + (Math.floor(G.pts.ENGINEER) + Math.floor(G.pts.SCIENTIST) * 7 + Math.floor(G.pts.MERCHANT) * 11 + G.held.ENGINEER * 17 + G.held.SCIENTIST * 19 + G.held.MERCHANT * 23)) | 0
-        h = (h * 33 + Math.floor(gs.ark[civ]) * 41 + ((gs.civs[civ].cultureEarned || 0) | 0) * 23) | 0
+        h = (h * 33 + Math.floor(gs.ark[civ]) * 41 + ((gs.civs[civ].cultureEarned || 0) | 0) * 23 + ((gs.civs[civ].tourism || 0) | 0) * 29) | 0
     }
     return (h >>> 0).toString(16)
 }
