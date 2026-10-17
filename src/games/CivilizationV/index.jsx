@@ -97,7 +97,7 @@ const CivilizationVGame = () => {
 
         const handleEvents = (evts) => {
             for (const e of evts) {
-                if (e.type === 'found') { say(`${e.capital ? 'CAPITAL' : 'CITY'} ${gs.cities[e.city].name.toUpperCase()} FOUNDED`); audioController.playSweep(300, 720, 0.35, 'triangle', 0.09) }
+                if (e.type === 'found') { say(`${e.capital ? 'CAPITAL' : 'CITY'} ${gs.cities[e.city].name.toUpperCase()} FOUNDED`); audioController.playSweep(300, 720, 0.35, 'triangle', 0.09); if (e.civ === 0) { const w = view.hexToWorld(e.c, e.r); cam.tx = w.x; cam.tz = w.z } }
                 else if (e.type === 'grow') { say(`${gs.cities[e.city].name.toUpperCase()} GROWS TO ${e.size}`); audioController.playTone(520 + e.size * 40, 0.06, 'square', 0.05) }
                 else if (e.type === 'deny') {
                     if (e.reason) say(e.reason.toUpperCase())
@@ -813,7 +813,14 @@ const CivilizationVGame = () => {
                     victory: { capsTaken: [1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkScience, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), parts: arkPartsOf(gs, 0).map((p) => ({ id: p.id, name: p.name, cost: p.cost, funded: p.funded, done: p.done })), partsDone: arkPartsDone(gs, 0), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, tourism: Math.floor(gs.civs[0].tourism || 0), needTourism: CFG.tourismWin, tourismLead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])), rivalPartsDone: [1, 2, 3].map((i) => arkPartsDone(gs, i)), rivalTourism: [1, 2, 3].map((i) => Math.floor(gs.civs[i].tourism || 0)) },
                     late: { knownLate: ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT'].filter((id) => hasTech(gs, 0, id)), muskets: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'MUSKET').length, galleons: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'GALLEON').length },
                     owned: gs.tiles.filter((t) => t.owner === 0).length,
-                    explored0: countArr(gs.explored[0]) }),
+                    explored0: countArr(gs.explored[0]),
+                    camTgt: [cam.tx, cam.tz],
+                    capitalWorld: (() => { const c = gs.cities.find((x) => x.civ === 0 && x.alive); if (!c) return null; const w = view.hexToWorld(c.c, c.r); return [w.x, w.z] })(),
+                    // #406 — the fog readback: the dimmest UNexplored tile's colour, straight from
+                    // the instanced colour buffer the renderer wrote (not a racy pixel read). The
+                    // old bug painted every unseen tile the near-black UNSEEN (rgb sum ~0.07); the
+                    // dim world keeps the faintest ocean well above 0.10.
+                    unseenMin: (() => { const a = view.hexes.instanceColor && view.hexes.instanceColor.array; if (!a) return null; let m = Infinity, n = 0; for (let i = 0; i < gs.tiles.length; i++) { if (gs.explored[0][i]) continue; const s = a[i * 3] + a[i * 3 + 1] + a[i * 3 + 2]; if (s < m) m = s; n++ } return n ? m : null })() }),
                 start: startPlay, hash: () => stateHash(gs), select: (id) => { pending = { select: id } },
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
                 attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k) => { pending = { ...pending, queue: k } },
