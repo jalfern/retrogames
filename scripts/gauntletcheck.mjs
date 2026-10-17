@@ -14,11 +14,14 @@
 //   juice     : the view breathes — a red edge throb under 30% health, a
 //               sword light-arc trail mid-swing, and a green flush while
 //               Death drains you (issue #275 item 4).
+//   walls     : the corridor reads as raised brick courses under the hero's
+//               torch — lit near him, dark at its reach, two-toned per
+//               material (issue #275 item 2).
 //   pilot     : seeds 0-3 clear all four mazes; 2/3 do it deathless;
 //   slack     : the quest is re-won with one fewer food AND one fewer potion
 //               per maze.
 //   determinism : same seed twice -> identical digest.
-// `-- --mutate` re-plants twelve fixed bugs in child processes; each MUST die.
+// `-- --mutate` re-plants fourteen fixed bugs in child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -168,6 +171,34 @@ console.log('juice')
     ok(j.deathTint(false, 20) === 0, 'juice: no green the moment Death lifts')
     ok(j.deathTint(true, 20) > 0 && j.deathTint(true, 20) <= 1, 'juice: a living green flush while he drains', `${j.deathTint(true, 20)}`)
     ok([0, 13, 27].every((t) => j.deathTint(true, t) === j.deathTint(true, t + 40)), 'juice: the flush pulses frame by frame on a fixed period')
+}
+
+// ----------------------------------------------------------------- walls ----
+// The corridor reads as raised brick courses under the hero's torch
+// (issue #275 item 2): a wall near the hero is lit, a wall at the torch's
+// reach is not, and every course is two-toned — a dark recess + a light
+// bevel, per material. A one-tone, evenly-lit wall is the flat look removed.
+console.log('walls')
+{
+    const w = await import('../src/games/Gauntlet/walls.js')
+    const M = (await import('../src/games/Gauntlet/art.js')).MATERIALS
+    // the torch: full at the hero, zero at its reach, monotonic in distance
+    ok(w.torch(0, 0) === 1, 'walls: the torch is full at the hero')
+    ok(w.torch(w.TORCH_REACH, 0) === 0, 'walls: the torch dies at its reach', `${w.torch(w.TORCH_REACH, 0)}`)
+    ok(w.torch(2, 0) > w.torch(6, 0) && w.torch(6, 0) > w.torch(10, 0), 'walls: the torch falls off with distance', [w.torch(2, 0), w.torch(6, 0), w.torch(10, 0)].join(','))
+    ok(w.torch(5, 5) >= 0 && w.torch(5, 5) <= 1, 'walls: the torch stays in [0,1]')
+    // lighting is monotonic in the torch level (never darkens a channel)
+    ok(w.lum(w.litColor('#8f2f28', 1)) > w.lum(w.litColor('#8f2f28', 0)), 'walls: lit stone is brighter than ambient stone')
+    // a wall near the hero out-shines the same wall at the torch reach
+    const near = w.litColor(M.red.base, w.torch(1, 0)), far = w.litColor(M.red.base, w.torch(10, 0))
+    ok(w.lum(near) > w.lum(far), 'walls: a wall near the hero out-shines one at the torch reach', `${w.lum(near)} vs ${w.lum(far)}`)
+    // the courses are two-toned per material, and the tones differ between
+    // materials (each world is its own stone)
+    for (const name of Object.keys(M)) {
+        const t = w.mortarTones(M[name])
+        ok(t.recess !== t.bevel, `walls: ${name} course is two-toned (recess != bevel)`)
+    }
+    ok(w.mortarTones(M.red).recess !== w.mortarTones(M.blue).recess, 'walls: the mortar tone differs between materials')
 }
 
 // ---------------------------------------------------------- generators ----
@@ -443,6 +474,8 @@ if (process.argv.includes('--mutate')) {
         ['the low-HP vignette never throbs', 'src/games/Gauntlet/juice.js', 'if (hp >= maxHp * LOW_HP) return 0', 'return 0'],
         ['the sword leaves no light-arc trail', 'src/games/Gauntlet/juice.js', 'if (atkAnim <= 0) return null', 'return null'],
         ['Death drain never tints the view', 'src/games/Gauntlet/juice.js', 'if (!draining) return 0', 'return 0'],
+        ['walls never fall off with the torch', 'src/games/Gauntlet/walls.js', 'return Math.max(0, Math.min(1, 1 - d / reach))', 'return 1'],
+        ['the wall course is one tone', 'src/games/Gauntlet/walls.js', 'return { recess: mat.mortar, bevel: mat.lite }', 'return { recess: mat.mortar, bevel: mat.mortar }'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

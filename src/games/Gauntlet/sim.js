@@ -35,6 +35,7 @@ export const CFG = {
     arrowSpeed: 0.30,
     genHp: 10,
     genPulse: 36,
+    torchReach: 11,
     slamClose: 40,
     slamForce: 2,
     lockForce: 1,
