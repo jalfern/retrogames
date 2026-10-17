@@ -67,8 +67,9 @@ complete.
   `public/replays/lander-policy-<name>.json`. A policy JSON carries its own
   `actions` list, so 4-button PPO nets and 6-button nets (incl. rotate+thrust)
   both fly through the same `policyProbs`/`actionVector` path; `name` and
-  `pad_rate` (pads per 500 shared eval seeds) are stamped on screen and under
-  the canvas. `?gravity=<x>` scales sim gravity ×x on the lab and replay pages
+  `pad_rate` (pads per 500 **held-out** seeds, base 12,000,001 — a pool no
+  policy was trained, tuned or checkpoint-selected on; `pad_pool` names it) are
+  stamped on screen and under the canvas. `?gravity=<x>` scales sim gravity ×x on the lab and replay pages
   (e.g. `?lab=1&gravity=1.25`; restored on unmount; the policy never sees it —
   it is a generalisation probe). `npm run landerpolicy` parity-checks every
   policy against its `lander-parity-<name>.json` fixture (gate max |Δp| < 1e-5).
