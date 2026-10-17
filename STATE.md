@@ -1,87 +1,84 @@
-# STATE — 2026-10-17 (forge session — CIV V polish #4 SHIPPED: culture vs tourism)
+# STATE — 2026-10-17 (forge session — CIV V polish #5 SHIPPED: mobile perf pass)
 
-## This session (#375 item 4, PR #414, merged e8d9c5a)
-- Claimed #375 (only `game-queue`; no `next`). Fresh from main; #398 still
-  HELD for Jon (no answer found on it — did NOT attempt).
-- **Culture vs tourism split**: the CULTURE win follows the crowd now. Every
-  civ keeps THREE ledgers — pool (`culture`, buys policies), record
-  (`cultureEarned`, lifetime, shown but inert for crowning) and the new
-  **visitor book `tourism`**: `ceil(cult/2) + 3/wonder + 1/luxury` per turn,
-  never spent. Crown = tourism ≥ `CFG.tourismWin` (120) AND strictly ahead of
-  every LIVING rival's tourism. Decision (loud, in design comment + README):
-  the win reads **tourism only**; the original weighs attractiveness vs rival
-  culture at World Congresses, the issue said "tourism lead", issue wins.
-- Tourism is REAL state (not derivation like #3's ark parts): it enters
-  newGame, resolveCiv, `turnEnd.tour` events and `stateHash`.
-- UI: HUD pill `☼ n%`; Y-panel named **TOURISM** track (bar + LEADING + ❦
-  record line); rival rows `☼ n`; attract/end/help/registry copy reworded;
-  DebugKit `+200 TOURISM` cheat; probe carries
-  `tourism/needTourism/tourismLead/rivalTourism` (replaces `culturedLead`).
-- Proof: **civcheck 533/533** (§37 +21: income law incl. forced luxury
-  seam + Stonehenge, never-spent ×3 ledgers, monotonic, bar+strict lead incl.
-  frozen-rival TIE-stays-uncoroned, rival law, hash, seed-7 replay inside the
-  40-turn clock). Mutant (drop strict-lead clause) reddened §33+§37 exactly
-  (2 checks) → restored. **civplay 61/61**. lint:civ/mario/fps/ai + build, CI
-  green FIRST try. Prod-verified: CivV chunk `index-D6favlGT.js` has
-  TOURISM/☼/travellers-cross; main chunk carries the new registry copy.
-- §33 was rewritten, not just extended: every prior `cultureWin = 1e9`
-  isolation (§9 clock, §35 domination, §36 hull, science race) now ALSO sets
-  `tourismWin` — else the live tourist crown upstages those races at ~t22 and
-  the suite self-sabotages. This is the mandatory pattern for any new crown.
-- Calibrated tourismWin=120 on plan(): culture line wins t21–22 seeds 1/2/3,
-  Aztec within ~10 tourists — race stays close.
-- #375 requeued `game-queue`, title bumped to item 5 (mobile perf).
+## This session (#375 item 5, PR #415, merged 05d8745)
+- Claimed #375 (only `game-queue`; no `next`). #398 still HELD — no answer to
+  the 3-strikes question anywhere (the "jalfern" holding comment on #398 is
+  the previous session's own note; `gh` auth IS jalfern — do NOT read it as
+  Jon's ruling).
+- **Lite pipeline** `?lite=1` (Heist doctrine, no shadows exist here): MSAA off,
+  dpr capped to 1; scene graph untouched. `civplay` +4 checks: hook boots on
+  lite, world still paints (readPixels), backing store dpr≤1, no errors (65).
+- **Allocation-free frame loop** (art.js): module-constant Color lerp targets
+  (was `new Color` per owned tile per frame), integer rolling rebuild
+  signatures (was per-frame `map().join()`), and the sigs no longer carry
+  `gs.turn` — the board used to rebuild EVERY city/camp/wonder EVERY turn;
+  now only on real change. Reach-ring cache + single `connectedResources`
+  per HUD sync (index.jsx).
+- **Catch-up cap 8 → 16** (index.jsx): with 8 the world lost real time below
+  ~7.5 fps (frame-floor lesson). Turn-based sim is cheap; world keeps seconds
+  to ~4 fps now.
+- **`scripts/civclock.mjs`** (new, `npm run civclock`, in lint:civ): late
+  board = `__civTest.clock(30)` (autopilot t30 + crowns disarmed 1e9 + musket
+  line/keel), fps/loop/p50/p95 at throttle 1/4/8, full vs lite. Gate:
+  loop ≥0.9x at full speed.
+- Proof: civcheck 533/533; lint civ/mario/fps/ai + build green; civclock loop
+  1.00–1.10x everywhere; **mutant** (30ms spin in `animateUnits`) → clock red
+  (0.55x, exit 1) → restored. CI green FIRST try. Prod: CivV chunk
+  `index-B2-LKuMv.js` (hash-identical to local build) carries `has("lite")`.
+- **Big instrument truth**: headless Chrome on macOS presents ~13–20 fps for
+  ANY page — a bare three.js canvas clearing one color measures ~13 fps here
+  (measured with /tmp probe; probe since deleted). CivV's own JS was already
+  only ~3ms/frame. So fps is the machine; only loop-ratio is the game. Never
+  write civplay/civclock checks that assert fps.
 
 ## Still open / held
-- **#398** (contract batch 2): HELD for Jon — 3-strikes Missile Battle smoke
-  flake; branch `forge/contract-rollout-b2` intact (b2afe8a). If Jon says
-  accept: from that branch `gh pr checks 398 --watch --fail-fast && gh pr
+- **#398** (contract batch 2): HELD for Jon — Missile Battle smoke flake
+  (3-strikes). Branch `forge/contract-rollout-b2` intact (b2afe8a). If Jon
+  says accept: from that branch `gh pr checks 398 --watch --fail-fast && gh pr
   merge --squash --delete-branch`, verify prod, relabel #391.
-- **#391** keeps `building`+`stalled` (rollout umbrella): batch 3 bases on main
-  AFTER #398 merges. Candidates: Lemmings, Sonar, Outpost, Polarity,
-  Dogfight, SmashTV — omit snapshot/restore where sim holds functions.
-- Queue: #375 (item 5 mobile perf, then item 6 Galleon seed check).
+- **#375** requeued `game-queue`: items 1–5 shipped; **item 6 looks already
+  shipped** by the seed-4 coastal civplay rework (README mutant #3 reds it) —
+  commented, asked Jon to close or append.
+- **#391** keeps `building`+`stalled`: batch 3 bases on main AFTER #398
+  merges. Candidates: Lemmings, Sonar, Outpost, Polarity, Dogfight, SmashTV.
+- Advisory flake (pre-existing, not ours): civplay "peace ends the war and
+  starts the truce clock" fails ~1 in 3 — Venice can re-declare war inside the
+  same turn window as the peace press. Rule 3: don't spend a PR on it unless
+  Jon asks.
 
 ## GOAL — next session
-1. If Jon answers the #398 question: merge from branch (rerun failed smoke if
-   accept) + verify prod + relabel #391. Else leave held.
-2. Else #375 **item 5: mobile perf pass** — 40-turn late game (musket lines +
-   6 wonders + galleons) under `?lite=1` on throttled Chrome; budget the
-   frame. Read the frame-floor lesson in AGENTS first (`__gameTime`, not
-   setTimeout; `npm run heistclock -- --throttle ...` is the diagnostic
-   pattern — a CivV analogue may be needed, keep it small, rule 6).
-3. Tourism note for whoever does polish: rival tourism AI is the same
-   economy loop — if item 5's late-game scenes show rivals' ☼ saturating,
-   check `resolveCiv` luxury double-dip (culture AND tourism both count lux).
+1. If Jon answers #398: merge from branch (rerun smoke first if accept) +
+   verify prod + relabel #391. Else leave held.
+2. If Jon closes #375 and queue is empty: nothing to forge — check the QA
+   lane per FORGE.md step 2 (borrow `feedback` only if no live `QA MASTER`),
+   else STOP with a report.
+3. If #375 gets a new item, take it.
 
 ## Notes for whoever picks this up
-- Main checkout detached at e8d9c5a, clean. Lane worktree
-  `~/Dev/retrogames-forge-civv-tourism` now detached at origin/main (node_modules
-  symlink to main — keep for item 5 context). Many stale `retrogames-forge-*`
-  + `retrogames-qa-*` worktrees listed by `git worktree list` — prune when
-  convenient (`git worktree remove --force`, then `git worktree prune`).
-- `gh pr checks --watch` hung >10 min silently on #414 while `static` was
-  pending (~11 min runtime). Poll
-  `gh pr checks <n> --json name,state --jq '.[]|select(.name=="static")|.state'`
-  (this gh build has NO `conclusion` field) until SUCCESS, THEN run the
-  rule-5 chain — it exits instantly when everything is green.
-- Prod-verify: jalfern.com 301s to **www.**; index hash changed only after
-  deploy; find lazy chunk by scanning referenced `index-*.js` for
-  `Cockpit`+`Stasis`, then `LC_ALL=C grep -a` literals (probe field names get
-  minified; UI strings don't).
-- Latent bug (not ours): sim not deterministic past turn 40 (seed 7 autopilot
-  drifts t59 with turnLimit:9999). §36/§37 keep replay checks inside the
-  shipped clock. Item 5 must do the same.
-- CivV seeds 1/2/3/5 inland, 4 coastal; seed 4 capital wins ~t12; live loops
-  accept `ended`. Never `git stash pop` in a lane worktree.
-- Dev server started on :5173 this session and killed at the end — still check
-  before reuse.
+- Main checkout detached at 05d8745, clean. Lane worktree
+  `~/Dev/retrogames-forge-civv-perf` (node_modules symlink to main) kept for
+  context. Many stale `retrogames-forge-*`/`retrogames-qa-*` worktrees —
+  prune when convenient (`git worktree remove --force` + `git worktree prune`).
+- `gh pr checks --watch` hung silently on #414-style pending static again;
+  polling `--json name,state --jq 'select(.name=="static")|.state'` until
+  SUCCESS then running the rule-5 chain works cleanly (this gh build has no
+  `conclusion` field).
+- Latent bug (not ours): sim not deterministic past turn 40; `clock`/§33/§37
+  all stay inside the shipped clock. Keep new scene builders ≤ t40.
+- `clock` DEV hook mutates module CFG (crowns to 1e9, turnLimit 999) — page-
+  scoped, DEV-only; never run pixel/probe determinism checks after clock() on
+  the same page.
+- Prod-verify pattern that worked: fetch jalfern index, scan referenced
+  `index-*.js` for `Cockpit`+`Stasis`, `LC_ALL=C grep -a` literals ("lite"
+  survives minify); compare chunk hash with local `npm run build` output.
+- Dev server was started this session and killed at the end — still check
+  :5173 before reuse.
 
 ## Three questions for Jon
-1. #398 attempt 4 still yours: accept the Missile Battle smoke flake
-   (rerun+merge) or make `smoke` continue-on-error so advisory flakes can't
-   wedge rule-5 merges?
-2. Late-game determinism bug (past t40, masked by the shipped clock): file
-   `feedback` for the QA lane, or won't-fix at the 40-turn ceiling?
-3. #375 convention (4th time): item shipped, umbrella requeued with title
-   bumped — still OK, or one issue per polish item now?
+1. #398 still yours: accept the Missile Battle smoke flake (rerun+merge) or
+   make `smoke` continue-on-error so advisory flakes can't wedge rule-5?
+2. #375: item 6 appears already shipped (seed-4 coastal keel). Close the
+   umbrella, or append item 6-verified + anything new?
+3. Headless-Chrome presents ~13–20 fps for ANY page on macOS runners — want a
+   QA-lane note in docs/HARNESS.md so nobody chases "fps" regressions that are
+   the runner, and the loop-ratio becomes the standard browser perf gate?
