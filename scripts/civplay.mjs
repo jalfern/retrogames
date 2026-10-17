@@ -326,7 +326,7 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
     for (let i = 0; i < 6 && !p8.end && p8.victory.ark < 20; i++) { await page.evaluate(() => window.__civTest.turn()); await wait(60); p8 = await probe() }
     r.check(`after Spaceflight the Ark banks beakers on live turns (${p8.victory.ark}/${p8.victory.needArk})`, p8.victory.ark > 0 || !!p8.end)
     p8 = p8 || (await probe())
-    r.check(`the victory probe reports the tracks (caps ${p8.victory.capsTaken}/3 · ❦ ${p8.victory.cultEarned}/${p8.victory.needCult})`, p8.victory.capsTaken === 0 && Number.isFinite(p8.victory.cultEarned) && p8.victory.needCult === 350 && p8.victory.needArk === 70)
+    r.check(`the victory probe reports the tracks (caps ${p8.victory.capsTaken}/3 · ☼ ${p8.victory.tourism}/${p8.victory.needTourism} · ❦ ${p8.victory.cultEarned}/${p8.victory.needCult})`, p8.victory.capsTaken === 0 && Number.isFinite(p8.victory.tourism) && p8.victory.needTourism === 120 && Array.isArray(p8.victory.rivalTourism) && p8.victory.rivalTourism.length === 3 && Number.isFinite(p8.victory.cultEarned) && p8.victory.needCult === 350 && p8.victory.needArk === 70)
     r.check(`the Ark assembles as four named parts (${(p8.victory.parts || []).map((p) => `${p.name}${p.done ? '✓' : ':' + p.funded + '/' + p.cost}`).join(' ')})`, Array.isArray(p8.victory.parts) && p8.victory.parts.length === 4 && p8.victory.parts.map((p) => p.name).join('|') === 'Cockpit|Booster|Stasis|Launch' && p8.victory.partsDone === (p8.victory.parts || []).filter((p) => p.done).length)
 }
 

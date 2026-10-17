@@ -15,7 +15,7 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
                                     musketeers, CS beacons, HP bars, arrows, FX
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research/worker/policy/
                                     wonders/legends/diplomacy/victory panels
-scripts/civcheck.mjs                Node harness (npm run civcheck) — 512 checks
+scripts/civcheck.mjs                Node harness (npm run civcheck) — 533 checks
 scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 61 checks
 ```
 
@@ -43,10 +43,14 @@ every rival, in order:
    (`arkLaunch`) and the game ends mid-turn, whoever is funding it. The parts are
    a pure derivation of the ledger (`arkPartsOf` / `arkPartsDone`) — no parallel
    state to drift. See §36.
-3. **CULTURE** — every civ now tracks *lifetime* culture (`cultureEarned`,
-   never spent; the spendable pool stays the policy ledger). Past
-   CFG.cultureWin (350) and strictly ahead of every **living** rival, the world
-   remembers your name.
+3. **CULTURE** — tourism crowns, culture records (polish pass #4). Every civ
+   keeps three ledgers: the spendable culture pool (policies), *lifetime*
+   culture (`cultureEarned`, the world's memory), and **tourism** (`tourism`,
+   the visitor book — `ceil(culture/2) + 3·wonders + 1·luxuries` every turn,
+   never spent). Past CFG.tourismWin (120) and strictly ahead of every
+   **living** rival's visitor book, the crown is yours; the old lifetime bar
+   alone no longer wins. §37 proves the split and the income law, §33 the
+   strict-lead rule.
 Behind them sits the arcade golden age (capital size 4). A rival achieving any
 of the three first loses the world the other way; the turn limit ends it
 otherwise.
@@ -111,7 +115,7 @@ the hold. The Y panel is reachable by touch (on-screen button).
 ## Verify
 
 ```bash
-npm run civcheck          # 512 Node checks: boot, determinism, founding, economy, combat, barbarians,
+npm run civcheck          # 533 Node checks: boot, determinism, founding, economy, combat, barbarians,
                           # cities, production, tech (§16-18, now 21 techs / 6 eras), improvements (§19-20),
                           # resources (§21-22), borders (§23), happiness (§24), policies (§25), wonders
                           # (§26), great people (§27), stage-6 integration + slack (§28), city-states §29,
@@ -167,8 +171,10 @@ npm run lint:civ          # eslint gate for the game + its scripts
   (Cockpit, Booster, Stasis, Launch) weld from the empire-wide science ledger in
   order; Civ V builds each component in a city with production, one part at a
   time per city, on an Apollo-style timeline. No per-city spaceship yards here.
-- **Tourism is lifetime culture** — Civ V separates culture from tourism and
-  gates the culture win on tourism per-turn dominance; here one ledger decides.
+- **Tourism is simplified, not BNW** — the culture/tourism split is live (the
+  visitor book banks half of culture, 3 per wonder, 1 per luxury and crowns on
+  the lead), but there is no World Congress, no Ideology gifting of tourism, no
+  great-work slotting and no tourism-scales-with-era curve.
 - Wonders stay six, great people three, policies six, city-states two, happiness
   one empire-wide face; no buildings/city screen, no world congress, no
   religion, no trade routes, no great-engineer wonders of the modern age.
