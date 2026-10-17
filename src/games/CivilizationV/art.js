@@ -497,28 +497,33 @@ export function spawnArrow(view, gs, from, to) {
 }
 
 // Per-frame sync of every visual against authoritative sim state.
+// The tile loop runs W*H times every frame, so nothing in it may allocate:
+// the lerp targets and the "never seen" colour are module constants, and the
+// rebuild signatures below are rolling integers instead of strings.
+const CIVCOL = CIVS.map((c) => new THREE.Color(c.hex))
+const REACHCOL = new THREE.Color(0x6fe3ff)
+const WHITE = new THREE.Color(0xffffff)
+const UNSEEN = new THREE.Color(0.015, 0.02, 0.035)
+
 export function updateView(view, gs, extra = {}) {
     const { hexes, cones, cityGroup, campGroup, unitGroup, roadGroup, workGroup, resGroup, wonderGroup } = view
     const col = new THREE.Color()
-    const sunK = (i) => { const c = i % CFG.W, r = (i - c) / CFG.W; return 0.82 + 0.18 * (1 - r / CFG.H) }   // gentle north light
+    const animate = !extra.lite
+    const sunK = (i) => { const r = Math.floor(i / CFG.W); return 0.82 + 0.18 * (1 - r / CFG.H) }   // gentle north light
     for (let i = 0; i < gs.tiles.length; i++) {
         const tl = gs.tiles[i]
-        let base = COL[tl.terr]
+        const base = COL[tl.terr]
         let k = sunK(i)
         const fogv = gs.explored[0][i] ? (gs.visible[0][i] ? 1 : 0.52) : 0.0   // seen? current? unseen black
-        if (tl.terr === T.OCEAN || tl.terr === T.COAST) {
-            const sh = 0.9 + 0.1 * Math.sin(gs.tick * 0.05 + (i % 7))
-            base = base.map((v) => v * sh)
-        }
-        // owner border tint
-        let owner = gs.tiles[i].owner
+        if (animate && (tl.terr === T.OCEAN || tl.terr === T.COAST)) k *= 0.9 + 0.1 * Math.sin(gs.tick * 0.05 + (i % 7))
         col.setRGB(base[0] * k, base[1] * k, base[2] * k)
-        if (fogv > 0 && owner >= 0) col.lerp(new THREE.Color(CIVS[owner].hex), gs.visible[0][i] ? 0.22 : 0.12)
-        if (fogv === 0) col.setRGB(0.015, 0.02, 0.035)
+        const owner = tl.owner
+        if (fogv > 0 && owner >= 0) col.lerp(CIVCOL[owner], gs.visible[0][i] ? 0.22 : 0.12)
+        if (fogv === 0) col.copy(UNSEEN)
         else col.multiplyScalar(fogv >= 1 ? 1 : 0.72)
         // selection reach highlight
-        if (extra.reach && extra.reach.has(i) && gs.visible[0][i]) col.lerp(new THREE.Color(0x6fe3ff), 0.42)
-        if (extra.hover === i) col.lerp(new THREE.Color(0xffffff), 0.35)
+        if (extra.reach && extra.reach.has(i) && gs.visible[0][i]) col.lerp(REACHCOL, 0.42)
+        if (extra.hover === i) col.lerp(WHITE, 0.35)
         hexes.setColorAt(i, col)
     }
     hexes.instanceColor.needsUpdate = true
@@ -532,10 +537,13 @@ export function updateView(view, gs, extra = {}) {
     }
     if (cones.instanceColor) cones.instanceColor.needsUpdate = true
 
-    // cities: rebuild when count/size changed
-    const sig = gs.cities.map((c) => `${c.id}:${c.size}:${c.alive ? 1 : 0}:${c.c},${c.r}:${c.civ}`).join('|') + '#' + gs.turn
-    if (sig !== view._citySig) {
-        view._citySig = sig
+    // cities: rebuild when count/size/ownership changed (rolling integer sig — a
+    // string per frame churned garbage; and the turn no longer rides in the sig,
+    // so an untouched board stops rebuilding every city every turn)
+    let cisig = 0
+    for (const c of gs.cities) cisig = (cisig * 33 + c.id + c.size * 13 + (c.alive ? 7 : 0) + c.c * 3 + c.r * 29 + c.civ * 71) | 0
+    if (cisig !== view._citySig) {
+        view._citySig = cisig
         for (const child of [...cityGroup.children]) { disposeObj(child); cityGroup.remove(child) }
         view.cityMeshes.clear()
         for (const city of gs.cities) {
@@ -546,9 +554,10 @@ export function updateView(view, gs, extra = {}) {
         }
     }
     // camps: rebuild when any changes
-    const csig = gs.camps.map((cp) => `${cp.id}:${cp.alive ? 1 : 0}:${Math.ceil(cp.hp / 20)}`).join('|') + '#' + gs.turn
-    if (csig !== view._campSig) {
-        view._campSig = csig
+    let capS = 0
+    for (const cp of gs.camps) capS = (capS * 33 + cp.id + (cp.alive ? 7 : 0) + Math.ceil(cp.hp / 20) * 101) | 0
+    if (capS !== view._campSig) {
+        view._campSig = capS
         for (const child of [...campGroup.children]) { disposeObj(child); campGroup.remove(child) }
         view.campMeshes.clear()
         for (const cp of gs.camps) {
@@ -560,35 +569,34 @@ export function updateView(view, gs, extra = {}) {
     }
     for (const [id, m] of view.campMeshes) {
         const cp = gs.camps[id]
-        if (m.userData.ember) m.userData.ember.material.emissiveIntensity = 1.0 + 0.6 * Math.sin(gs.tick * 0.22 + id)
+        if (animate && m.userData.ember) m.userData.ember.material.emissiveIntensity = 1.0 + 0.6 * Math.sin(gs.tick * 0.22 + id)
         if (!cp || !cp.alive) { disposeObj(m); campGroup.remove(m); view.campMeshes.delete(id) }
     }
     for (const [, m] of view.cityMeshes) {
-        if (m.userData.beacon) m.userData.beacon.material.emissiveIntensity = 1.1 + 0.55 * Math.sin(gs.tick * 0.09 + m.position.x)
+        if (animate && m.userData.beacon) m.userData.beacon.material.emissiveIntensity = 1.1 + 0.55 * Math.sin(gs.tick * 0.09 + m.position.x)
     }
 
     // Stage 4 ground layers: rebuild only when the land itself changes
-    let rsig = '', wsig = '', xsig = ''
+    let rsig = 0, wsig = 0, xsig = 0
     for (const tl of gs.tiles) {
         const i = tl.r * CFG.W + tl.c
         const ex = gs.explored[0][i] ? 1 : 0
-        rsig += tl.road ? String(ex) : '0'
-        wsig += tl.imp ? (tl.imp === 'FARM' ? 'f' : 'm') + ex : (tl.build ? 'b' + tl.build.left : '0')
-        xsig += tl.res >= 0 ? (resRevealed(gs, 0, i) ? String(tl.res) : 'x') : '-'
+        rsig = (rsig * 31 + (tl.road ? ex + 1 : 0)) | 0
+        wsig = (wsig * 31 + (tl.imp ? (tl.imp === 'FARM' ? 8 : 16) + ex + 1 : (tl.build ? 24 + (tl.build.left & 7) * 2 : 0))) | 0
+        xsig = (xsig * 31 + (tl.res >= 0 ? (resRevealed(gs, 0, i) ? tl.res + 2 : 1) : 0)) | 0
     }
     if (rsig !== view._roadSig) { view._roadSig = rsig; for (const c of [...roadGroup.children]) { disposeObj(c); roadGroup.remove(c) }; roadGroup.add(buildRoads(gs)) }
     if (wsig !== view._workSig) { view._workSig = wsig; for (const c of [...workGroup.children]) { disposeObj(c); workGroup.remove(c) }; workGroup.add(buildWorks(gs)) }
     if (xsig !== view._resSig) { view._resSig = xsig; for (const c of [...resGroup.children]) { disposeObj(c); resGroup.remove(c) }; resGroup.add(buildResources(gs, 0)) }
 
     // Stage 6 landmarks: rebuild when the wonder board (or what you can see) changes
-    let mwsig = ''
+    let mwsig = 0
     for (const id of WONDER_IDS) {
         const b = gs.wonders[id]
-        if (b == null) { mwsig += '-'; continue }
+        if (b == null) { mwsig = (mwsig * 31 + 0) | 0; continue }
         const home = gs.cities.find((c) => c.alive && c.civ === b && c.capital) || gs.cities.find((c) => c.alive && c.civ === b)
-        mwsig += home ? id[0] + b + (gs.explored[0][home.r * CFG.W + home.c] ? '1' : '0') : id[0] + 'x'
+        mwsig = (mwsig * 31 + (home ? 1 + b * 3 + (gs.explored[0][home.r * CFG.W + home.c] ? 8 : 0) : 100)) | 0
     }
-    mwsig += '#' + gs.turn
     if (mwsig !== view._wonderSig) {
         view._wonderSig = mwsig
         for (const c of [...wonderGroup.children]) { disposeObj(c); wonderGroup.remove(c) }
@@ -602,7 +610,7 @@ export function updateView(view, gs, extra = {}) {
     }
     for (const m of wonderGroup.children) {
         const flame = m.userData.flame
-        if (flame) flame.material.emissiveIntensity = 1.4 + 0.5 * Math.sin(gs.tick * 0.18)
+        if (animate && flame) flame.material.emissiveIntensity = 1.4 + 0.5 * Math.sin(gs.tick * 0.18)
     }
 
     // units: create/remove, animate position toward logical tile
@@ -638,14 +646,21 @@ export function updateView(view, gs, extra = {}) {
 
     // selection ring + reach pool
     const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0)
-    if (sel) { view.selRing.visible = true; view.selRing.position.set(a0(view, sel).x, gs.tiles[sel.r * CFG.W + sel.c]._h + 0.02, a0(view, sel).z); view.selRing.scale.setScalar(1 + Math.sin(gs.tick * 0.12) * 0.06) }
+    if (sel) { view.selRing.visible = true; view.selRing.position.set(a0(view, sel).x, gs.tiles[sel.r * CFG.W + sel.c]._h + 0.02, a0(view, sel).z); view.selRing.scale.setScalar(animate ? 1 + Math.sin(gs.tick * 0.12) * 0.06 : 1) }
     else view.selRing.visible = false
-    const reach = extra.reach && sel ? [...extra.reach] : []
-    for (let i = 0; i < view.reachPool.length; i++) {
-        const ring = view.reachPool[i]
-        if (i < reach.length) { const c = reach[i] % CFG.W, r = (reach[i] - c) / CFG.W; const { x, z } = hexToWorld(c, r); ring.visible = true; ring.position.set(x, gs.tiles[reach[i]]._h + 0.015, z); ring.scale.setScalar(0.9) }
-        else ring.visible = false
+    const reach = extra.reach
+    let ri = 0
+    if (reach && sel) {
+        for (const tIdx of reach) {
+            if (ri >= view.reachPool.length) break
+            const c = tIdx % CFG.W, r = (tIdx - (tIdx % CFG.W)) / CFG.W
+            const ring = view.reachPool[ri++]
+            ring.visible = true
+            ring.position.set(HEX * SQ3 * (c + 0.5 * (r & 1)), gs.tiles[tIdx]._h + 0.015, HEX * 1.5 * r)
+            ring.scale.setScalar(0.9)
+        }
     }
+    for (let i = ri; i < view.reachPool.length; i++) view.reachPool[i].visible = false
 
     // combat FX: impact rings + sparks + arrows, driven by the shell
     for (const f of view.fxPool) {

@@ -24,6 +24,17 @@ import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
 const SIM_MS = 1000 / 60
 const GOAL = CFG.capitalSizeToWin
 
+/**
+ * `?lite=1` — the documented cheap-pipeline path (the RaccoonHeist doctrine, same
+ * three fill costs): MSAA off, device pixel ratio capped at 1. There are no shadow
+ * maps here, so the two remaining levers are all of it. Nothing is removed from the
+ * scene graph — every tile, unit and wonder still draws — so a check that passes on
+ * lite means the same thing as one that passes on full. The per-frame animation
+ * pulses (sea shimmer, beacon/ember/flame flicker) also park on lite: they cost
+ * CPU, not fill, but a phone pays both.
+ */
+const liteMode = () => new URLSearchParams(location.search).has('lite')
+
 const CivilizationVGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
@@ -61,8 +72,9 @@ const CivilizationVGame = () => {
     useEffect(() => {
         const wrap = stageRef.current
         if (!wrap) return undefined
-        const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: !!import.meta.env.DEV })
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+        const LITE = liteMode()
+        const renderer = new THREE.WebGLRenderer({ antialias: !LITE, preserveDrawingBuffer: !!import.meta.env.DEV })
+        renderer.setPixelRatio(LITE ? 1 : Math.min(window.devicePixelRatio || 1, 2))
         renderer.domElement.style.touchAction = 'none'
         renderer.domElement.style.display = 'block'
         wrap.appendChild(renderer.domElement)
@@ -244,10 +256,13 @@ const CivilizationVGame = () => {
             }
         }
 
+        let reachRing = null, reachKey = ''
         const reachSet = () => {
             const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0)
+            const key = `${sel ? `${sel.id}:${sel.moves}:${sel.c}:${sel.r}` : '-'}#${gs.turn}/${gs.units.length}`
+            if (reachRing && reachKey === key) return reachRing
             const ring = new Set()
-            if (!sel || sel.moves <= 0) return ring
+            if (!sel || sel.moves <= 0) { reachRing = ring; reachKey = key; return ring }
             ring.add(sel.r * CFG.W + sel.c)
             let ringCur = [[sel.c, sel.r]]
             for (let stepN = 0; stepN < sel.moves; stepN++) {
@@ -264,6 +279,7 @@ const CivilizationVGame = () => {
                 ringCur = next
             }
             ring.delete(sel.r * CFG.W + sel.c)
+            reachRing = ring; reachKey = key
             return ring
         }
         const inb = (c, r) => c >= 0 && r >= 0 && c < CFG.W && r < CFG.H
@@ -306,7 +322,7 @@ const CivilizationVGame = () => {
         }
 
         const paint = () => {
-            updateView(view, gs, { reach: screenRef.current === 'play' ? reachSet() : null })
+            updateView(view, gs, { reach: screenRef.current === 'play' ? reachSet() : null, lite: LITE })
             renderer.render(view.scene, camera)
         }
 
@@ -345,8 +361,9 @@ const CivilizationVGame = () => {
                 h.worker.style.display = w ? '' : 'none'
             }
             if (h.lux) {
-                const lux = connectedResources(gs, 0).filter((id) => RES[id].lux).map((id) => RES[id].name)
-                const strat = connectedResources(gs, 0).filter((id) => !RES[id].lux).map((id) => RES[id].name.toUpperCase())
+                const cr = connectedResources(gs, 0)
+                const lux = cr.filter((id) => RES[id].lux).map((id) => RES[id].name)
+                const strat = cr.filter((id) => !RES[id].lux).map((id) => RES[id].name.toUpperCase())
                 h.lux.textContent = (lux.length ? `LUX ${lux.join(' ')}` : '') + (strat.length ? ` · ${strat.join(' ')} CONNECTED` : '')
                 h.lux.style.display = lux.length || strat.length ? '' : 'none'
             }
@@ -391,7 +408,12 @@ const CivilizationVGame = () => {
             raf = requestAnimationFrame(frame)
             if (!last) last = ts
             const ft = Math.min(ts - last, 250); last = ts
-            if (!pausedRef.current) { acc += ft; let g = 0; while (acc >= SIM_MS && g++ < 8) { doFrameSim(); acc -= SIM_MS } }
+            // Catch-up cap of 16 (not the arcade-default 8): a turn-based world is
+            // cheap to simulate but expensive to rasterise, and a phone at 4-8 fps
+            // must still run on real seconds — the frame-floor lesson in AGENTS.md.
+            // At 16 steps the world keeps time down to ~4 fps; below that no cap
+            // saves it and nothing should blame the game for the machine.
+            if (!pausedRef.current) { acc += ft; let g = 0; while (acc >= SIM_MS && g++ < 16) { doFrameSim(); acc -= SIM_MS } }
             applyCam(); paint(); syncHud()
         }
 
@@ -808,6 +830,22 @@ const CivilizationVGame = () => {
                 land: (c, r) => { pending = { ...pending, land: [c, r] } },
                 auto: (turns = 100) => { let n = 0; while (!gs.end && n < turns * 400 && screenRef.current === 'play') { doSim(decide(gs)); n++ } return { end: gs.end, turns: gs.turn, size: capSize() } },
                 turn: () => { const t0 = gs.turn; let n = 0; while (gs.turn === t0 && !gs.end && screenRef.current === 'play' && n++ < 800) doSim(decide(gs)); return { turn: gs.turn, end: gs.end, size: capSize() } },
+                clock: (turns = 30, musketLine = 4) => {
+                    // #375 item 5 — the board civclock measures: a live late game that cannot
+                    // crown (the same crowns-off isolation §33 uses in Node) so t30+ with
+                    // musket lines, wonders and a galleon keel can actually exist on screen.
+                    CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.arkScience = 1e9; CFG.capitalSizeToWin = 99; CFG.turnLimit = 999
+                    let n = 0
+                    while (gs.turn < turns && n++ < turns * 40 && screenRef.current === 'play') doSim(decide(gs))
+                    for (const id of ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY']) grantTech(gs, 0, id)
+                    for (let k = 0; k < musketLine; k++) { const t0 = gs.turn; doSim({ queue: 'MUSKET' }); while (gs.turn === t0 && n++ < 40000) doSim(decide(gs)) }
+                    if (coastalCityOf(gs, 0)) { const t0 = gs.turn; doSim({ queue: 'GALLEON' }); while (gs.turn === t0 && n++ < 40000) doSim(decide(gs)) }
+                    for (let k = 0; k < 2; k++) { const t0 = gs.turn; while (gs.turn === t0 && n++ < 40000) doSim(decide(gs)) }
+                    return { turn: gs.turn, muskets: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'MUSKET').length,
+                        galleons: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'GALLEON').length,
+                        wonders: WONDER_IDS.filter((id) => gs.wonders[id] != null).length,
+                        cities: gs.cities.filter((c) => c.alive).length, units: gs.units.filter((u) => u.alive).length, end: gs.end }
+                },
             }
             mountDbg({
                 title: 'CIVILIZATION V',
