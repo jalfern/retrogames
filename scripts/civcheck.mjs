@@ -310,6 +310,7 @@ console.log('14. city defense + capture + domination')
     if (aiCap) {
         const oldOwner = aiCap.civ
         declareWar(g2, 0, aiCap.civ)
+        ok(atWar(g2, 0, oldOwner), 'declaring war puts them at war')
         const w = g2.units.find((u) => u.civ === 0 && u.kind === 'WARRIOR')
         const near = adjOf(g2, [aiCap.c, aiCap.r])[0]
         ok(!!near, 'target city has an assault tile')
@@ -317,7 +318,7 @@ console.log('14. city defense + capture + domination')
         let guard = 0
         while (aiCap.alive && aiCap.civ !== 0 && w.alive && guard++ < 20) { w.moves = 2; w.hp = 100; if (!doAttack(g2, w, aiCap.c, aiCap.r)) break }
         eq(aiCap.civ, 0, 'a battered city is captured and changes owner')
-        ok(atWar(g2, 0, oldOwner), 'attacking a civ means war')
+        ok(atWar(g2, 0, oldOwner) || g2.civs[oldOwner].vassal === 0, 'the front is either still hot or settled by vassalization — a declared war is never silently forgotten')
         ok(g2.tiles[idx(aiCap.c, aiCap.r)].owner === 0, 'captured centre switches to the conqueror')
     }
     // domination victory: every rival destroyed
@@ -1641,6 +1642,79 @@ console.log('34. transports')
     while (!a.end && x++ < 40000) step(a, decide(a))
     while (!b.end && y++ < 40000) step(b, decide(b))
     ok(stateHash(a) === stateHash(b) && a.turn === b.turn, 'the autopilot still replays hash-for-hash with the transport law in place')
+}
+
+// ---- 35. capital capture ≠ extinction — domination counts capitals (#375 item 2) ----
+console.log('35. capital capture ≠ extinction — domination counts capitals')
+{
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.turnLimit = 9999   // isolate the domination law
+    const gs = newGame(4, 0)
+    const s0 = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s0.id, found: true })
+    for (let i = 0; i < 10; i++) step(gs, { endTurn: true })
+    const landFreeNear = (g, c, r) => neighbors(c, r).find(([nc, nr]) => nc >= 0 && nr >= 0 && nc < CFG.W && nr < CFG.H && walk(g.tiles[idx(nc, nr)].terr) && !unitAt(g, nc, nr)) || null
+
+    // (a) a civ whose CAPITAL falls is done — even though its army still marched
+    const victim = gs.cities.find((c) => c.alive && c.civ > 0 && c.civ < BARB && c.capital && landFreeNear(gs, c.c, c.r))
+    ok(!!victim, 'a rival capital sits where it can be stormed')
+    if (victim) {
+        const old = victim.civ
+        const unitsAtFall = gs.units.filter((u) => u.alive && u.civ === old).length
+        ok(unitsAtFall > 0, `${CIVS[old].name} marches living soldiers into the siege (${unitsAtFall} units)`)
+        declareWar(gs, 0, old)
+        const spot = landFreeNear(gs, victim.c, victim.r)
+        let guard = 0
+        while (victim.alive && victim.civ !== 0 && guard++ < 14) {
+            const w = gs.units.find((u) => u.civ === 0 && u.alive && u.str > 0 && !u.loaded); if (!w) break
+            w.c = spot[0]; w.r = spot[1]; w.moves = 9; w.hp = 100; w.acted = false
+            if (!doAttack(gs, w, victim.c, victim.r)) break
+        }
+        ok(victim.civ === 0, 'the rival capital is taken by assault')
+        eq(gs.civs[old].alive, false, 'the capital fell, so the civ is finished — no defender had to die')
+        eq(gs.civs[old].vassal, 0, 'and it is marked a vassal of the conqueror')
+        ok(gs.events.some((e) => e.type === 'civFall' && e.civ === old && e.by === 0), 'the fall is logged as a vassalization')
+        ok(!gs.events.some((e) => e.type === 'civDead' && e.civ === old), 'the reign ended by the head of the snake — NOT by the old every-city-lost extinction path')
+        eq(gs.cities.filter((c) => c.alive && c.civ === 0 && c.capital).length, 1, 'Rome keeps exactly one capital — the prize city is not flagged as a second seat')
+        ok(gs.cities.some((c) => c.alive && c.civ === 0 && c.id === victim.id), 'the captured capital now stands in Roman colours')
+        ok(gs.units.filter((u) => u.alive && u.civ === old).length === 0 && gs.units.filter((u) => u.alive && u.civ === 0).length > 0, 'its surviving soldiers serve Rome now — capture changed the map, not a body count')
+    }
+
+    // (b) the pill and the win speak the same language: capitals, not corpses
+    const runScenario = (seed) => {
+        const g = newGame(seed, 0)
+        const s = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(g, { select: s.id, found: true })
+        for (let i = 0; i < 10; i++) step(g, { endTurn: true })
+        const near = (c, r) => neighbors(c, r).find(([nc, nr]) => nc >= 0 && nr >= 0 && nc < CFG.W && nr < CFG.H && walk(g.tiles[idx(nc, nr)].terr) && !unitAt(g, nc, nr)) || null
+        const hit = (cap) => {
+            declareWar(g, 0, cap.civ)
+            const spot = near(cap.c, cap.r); if (!spot) return
+            let guard = 0
+            while (cap.alive && cap.civ !== 0 && guard++ < 14) {
+                const w = g.units.find((u) => u.civ === 0 && u.alive && u.str > 0 && !u.loaded); if (!w) break
+                w.c = spot[0]; w.r = spot[1]; w.moves = 9; w.hp = 100; w.acted = false
+                if (!doAttack(g, w, cap.c, cap.r)) break
+            }
+        }
+        for (const cap of g.cities.filter((c) => c.alive && c.civ > 0 && c.civ < BARB && c.capital)) hit(cap)
+        step(g, { endTurn: true })
+        return g
+    }
+    const gs4 = runScenario(4)
+    const pill = [1, 2, 3].filter((i) => { const oc = gs4.capitalOf[i] != null ? gs4.cities[gs4.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length
+    eq(pill, 3, 'all three rival capitals show taken on the HUD pill')
+    eq(gs4.end, 'win', 'capitals, not corpses — DOMINATION is won by taking every rival capital')
+    ok(/Domination/.test(gs4.endWhy || ''), 'and it names domination as the reason')
+    ok([1, 2, 3].every((i) => gs4.civs[i].alive === false && gs4.civs[i].vassal === 0), 'all three rivals end as vassals of Rome')
+    ok(gs4.events.filter((e) => e.type === 'civFall').length === 3, 'three capitals fell, three reigns ended — by the head, not the body count')
+
+    // (c) determinism of the new law: two identical conquests replay hash-for-hash
+    const d1 = runScenario(4), d2 = runScenario(4)
+    ok(stateHash(d1) === stateHash(d2) && d1.turn === d2.turn && d1.endWhy === d2.endWhy,
+        'the capital-fall conquest is deterministic, hash-for-hash')
+
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.turnLimit = keepTurn
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
