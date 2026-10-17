@@ -25,6 +25,8 @@ const ok = (cond, name, detail = '') => {
 }
 
 const { GW, GH, EXITS, TOTAL_ROOMS, genRoom, START, isBonus } = await import('../src/games/SmashTV/levels.js')
+const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
+const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
 async function fresh() {
     const sim = await import(`../src/games/SmashTV/sim.js?c=${Date.now()}`)
@@ -57,6 +59,22 @@ for (let idx = 0; idx < TOTAL_ROOMS; idx++) {
     for (const k of room.crates) ok(seen.has(`${k.c},${k.r}`), `room ${idx + 1}: crate reachable`)
     for (const e of EXITS) ok(seen.has(`${e.c},${e.r}`), `room ${idx + 1}: exit ${e.side} walkable`)
     if (isBonus(idx)) ok(room.civilians > 0 && room.bonusTime > 0, `room ${idx + 1}: bonus room has contestants and a clock`)
+}
+
+// ------------------------------------------------------------------- walls ----
+console.log('walls')
+{
+    const a = wallCell(0, 0, NEON_TOP[0])
+    const b = wallCell(1, 0, NEON_TOP[0])
+    ok(a.base !== b.base, 'interior cells are two-tone (neighbours differ)', `${a.base} vs ${b.base}`)
+    ok(wallCell(0, 0, NEON_TOP[0]).base !== wallCell(0, 1, NEON_TOP[0]).base, 'the checkerboard alternates both ways')
+    ok(a.neon === NEON_TOP[0], 'each cell carries its room neon top edge')
+    ok(lum(a.mortar) < lum(a.base) && lum(a.mortar) < lum(b.base), 'mortar seams sit darker than both chrome tones', `mortar ${a.mortar}`)
+    ok(lum(NEON_TOP[0]) > lum(CHROME.baseA), 'the neon top edge reads brighter than the chrome', NEON_TOP[0])
+    ok(NEON_TOP.length === TOTAL_ROOMS, 'one neon top edge per arena', `${NEON_TOP.length} vs ${TOTAL_ROOMS}`)
+    ok(new Set(NEON_TOP).size >= 5, 'the arenas are tinted differently', `${new Set(NEON_TOP).size} distinct`)
+    ok(lum(borderRivet.hi) > lum(borderRivet.body), 'border rivets catch a highlight', `${borderRivet.body} -> ${borderRivet.hi}`)
+    ok(lum(a.rivetHi) > lum(a.rivet), 'cell rivets catch a highlight')
 }
 
 // ------------------------------------------------------------------ rules ----

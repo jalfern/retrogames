@@ -17,6 +17,7 @@ import { CW, CH, HUD_H, CELL, GW, GH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS } fro
 import { makeGame, step, stateHash, CFG } from './sim.js'
 import { plan } from './planner.js'
 import { buildSprites, buildFloor } from './art.js'
+import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 
 const SIM_MS = 1000 / 60
 const ROOM_NAMES = [
@@ -178,27 +179,39 @@ const SmashTVGame = () => {
             for (const [bx, by, bw, bh] of [[0, HUD_H, CW, 8], [0, CH - 8, CW, 8], [0, HUD_H, 8, CH - HUD_H], [CW - 8, HUD_H, 8, CH - HUD_H]]) {
                 ctx.fillStyle = '#2b3348'
                 ctx.fillRect(bx, by, bw, bh)
-                ctx.fillStyle = '#3d4a66'
-                for (let i = bx + 4; i < bx + bw; i += 16) for (let j = by + 3; j < by + bh; j += 8) ctx.fillRect(i, j, 2, 2)
+                for (let i = bx + 4; i < bx + bw; i += 16) for (let j = by + 3; j < by + bh; j += 8) {
+                    ctx.fillStyle = borderRivet.body
+                    ctx.fillRect(i, j, 2, 2)
+                    ctx.fillStyle = borderRivet.hi
+                    ctx.fillRect(i, j, 1, 1)
+                }
                 ctx.fillStyle = '#161b2a'
                 ctx.fillRect(bx, by + bh - 2, bw, 2)
             }
-            // interior wall cells: chrome panels with neon top edge
+            // interior wall cells: two-tone chrome brick with mortar seams, a
+            // per-room neon top edge, and corner rivets that catch a highlight
+            const neon = NEON_TOP[gs.room]
             for (let r = 0; r < GH; r++) {
                 for (let c = 0; c < GW; c++) {
                     if (!cellWall(c, r)) continue
                     const x = c * CELL, y = HUD_H + r * CELL
-                    ctx.fillStyle = '#39415a'
-                    ctx.fillRect(x, y, CELL, CELL)
-                    ctx.fillStyle = '#515c7d'
+                    const w = wallCell(c, r, neon)
+                    ctx.fillStyle = CHROME.shade
+                    ctx.fillRect(x + 2, y + 2, CELL, CELL - 1)
+                    ctx.fillStyle = w.base
+                    ctx.fillRect(x, y, CELL, CELL - 2)
+                    ctx.fillStyle = w.neon
                     ctx.fillRect(x, y, CELL, 2)
-                    ctx.fillStyle = '#20263a'
-                    ctx.fillRect(x, y + CELL - 3, CELL, 3)
-                    ctx.fillStyle = '#2a3147'
-                    ctx.fillRect(x + 3, y + 5, CELL - 6, CELL - 10)
-                    ctx.fillStyle = '#6b78a0'
-                    ctx.fillRect(x + 1, y + 1, 1, 1); ctx.fillRect(x + CELL - 2, y + 1, 1, 1)
-                    ctx.fillRect(x + 1, y + CELL - 2, 1, 1); ctx.fillRect(x + CELL - 2, y + CELL - 2, 1, 1)
+                    ctx.fillStyle = w.mortar
+                    ctx.fillRect(x, y + 5, CELL, 1); ctx.fillRect(x, y + 10, CELL, 1)
+                    ctx.fillRect(x + ((r % 2) * 8) + 4, y + 2, 1, CELL - 4)
+                    ctx.fillRect(x, y + CELL - 2, CELL, 2)
+                    for (const [rx, ry] of [[2, 3], [12, 3], [2, 12], [12, 12]]) {
+                        ctx.fillStyle = w.rivet
+                        ctx.fillRect(x + rx, y + ry, 2, 2)
+                        ctx.fillStyle = w.rivetHi
+                        ctx.fillRect(x + rx, y + ry, 1, 1)
+                    }
                 }
             }
         }
