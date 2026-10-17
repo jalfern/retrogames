@@ -101,6 +101,7 @@ const ExcitebikeGame = lazy(() => import('../games/Excitebike'))
 // that proves the 5-lap GP win (and scripts/kartcheck.mjs audits) ride in
 // their own chunk; the harness imports track/sim/planner unchanged in Node.
 const MarioKartGame = lazy(() => import('../games/MarioKart'))
+const CometDriftGame = lazy(() => import('../games/CometDrift'))
 // TETRIS: same lesson — the pure sim and the autopilot that scripts the attract
 // demo (and scripts/tetrischeck.mjs audits: gravity, DAS, the score ledger)
 // ride in their own chunk; the harness imports sim/planner unchanged in Node.
@@ -421,6 +422,17 @@ export const GAMES = [
         theme: 'light',
         description: 'The SNES classic rebuilt on its own trick: the whole circuit is ONE textured plane rotated and scaled under your kart scanline by scanline — real Mode 7, in canvas, no assets. Five laps of MARIO CIRCUIT from last on the grid against four CPU karts: clip the apex, hold the drift through the hairpin, catch the dash panels on the straight, and take what the ? boxes hand you — a Shell to spin the leader, a Banana for the corner behind you, a Mushroom when the road goes straight. Standing last buys the best items, and the whole GP is proven winnable by the autopilot that scripts the attract demo, tick for tick (it even wins with every item box deleted).',
         controls: ['X: GAS · S: BRAKE · ← → : steer (you cannot turn standing still — the karts work on speed)', 'R / B button: DRIFT — hold through a corner for a tighter arc, and expect the slide', 'Z / A button: use your ITEM — Shell fires forward, Banana drops behind, Mushroom launches', 'HOLD X during the 3-2-1 countdown for a ROCKET START', 'Hit a ? box for an item: last place gets the good ones, and Lap 5 is chaos', 'Hold the dashed DASH PANELS on the straights — they throw you forward', '?: pause and read the rules of the circuit'],
+    },
+    {
+        path: '/comet-drift',
+        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], analog: true },
+        builtBy: 'forge',
+        visibility: 'private',
+        component: CometDriftGame,
+        label: 'COMET DRIFT GP',
+        theme: 'dark',
+        description: 'The arcade\'s ORIGINAL kart racer — no reskin, its own name, drivers and course. SUNSET GULCH at dusk: the whole canyon circuit is ONE textured plane rotated and scaled under your kart scanline by scanline (real Mode 7, in canvas, no assets). Four laps from last on the grid against six rivals that brake into apexes, defend the inside when you close, and make seeded mistakes when you breathe on them. The whole economy is the DRIFT: hold it through a bend and the sparks climb blue, violet, GOLD — release for a mini-turbo, and the Comet engine drinks deeper than any kit in the field. The attract demo is the autopilot\'s own proven win, replayed tick for tick; a Node harness (cometcheck) audits the circuit geometry, the deterministic machine and the win itself.',
+        controls: ['X / stick up: GAS · S / brake: slow — you cannot steer standing still', '← → / stick: steer (grip grows with speed)', 'SPACE / Z / R / B-button: DRIFT — hold it through a bend; the longer the hold, the bigger the turbo on release (blue, violet, GOLD pips)', 'Line matters: clip the inside, power the exit, bank a turbo down every straight', 'Rivals defend: they shuffle to the inside when you close within two lengths — set them up, then strike', '?: pause and read the rules of the Gulch'],
     },
     {
         path: '/tetris',
