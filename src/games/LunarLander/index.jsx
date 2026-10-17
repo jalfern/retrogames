@@ -23,7 +23,7 @@ import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } f
 
 const SIM_MS = 1000 / 60
 const REPLAY_PATH = 'replays/lander-ppo.json'
-const POLICIES = ['v2', 'v3', 'dagger6', 'clone1k', 'clone1k-noisy']
+const POLICIES = ['v3', 'v2', 'dagger6', 'bc1k', 'clone1k', 'clone1k-noisy']
 const policyName = () => {
     const p = new URLSearchParams(window.location.search).get('policy')
     return POLICIES.includes(p) ? p : 'v3'
@@ -347,7 +347,7 @@ const LunarLanderGame = () => {
                 if (scaledLab) text(`GRAVITY ×${gsScale}`, W / 2, H - 24, 8, '#8fa3d8')
             }
             if (labOn && labPolicy && !labFailed) {
-                const pad = labPolicy.pad_rate != null ? ` · ${labPolicy.pad_rate}% PADS /500` : ''
+                const pad = labPolicy.pad_rate != null ? ` · ${labPolicy.pad_rate}% PADS /500·HO` : ''
                 text(`${(labPolicy.name || 'PPO').toUpperCase()} · LAB${pad}`, W / 2, H - 12, 10, '#8fff9f', 6)
                 text(`START x ${Math.round(labCfgRef.current.x)} · SIDEWAYS ${labCfgRef.current.vx > 0 ? '+' : ''}${Math.round(labCfgRef.current.vx)}`
                     + (scaledLab ? ` · GRAVITY ×${gsScale}` : ''),
@@ -520,7 +520,7 @@ const LunarLanderGame = () => {
                 <div className="mt-2 flex items-center gap-5 font-mono text-[11px] tracking-widest text-[#8fa3d8]">
                     <span className="text-[#8fff9f]">
                         POLICY {labInfo ? labInfo.name.toUpperCase() : policyName().toUpperCase()}
-                        {labInfo && labInfo.pad_rate != null ? ` · ${labInfo.pad_rate}% PADS / 500 SEEDS` : ''}
+                        {labInfo && labInfo.pad_rate != null ? ` · ${labInfo.pad_rate}% PADS / 500 HELD-OUT SEEDS` : ''}
                         {gravityScale() !== 1 ? ` · GRAVITY ×${gravityScale()}` : ''}
                     </span>
                     <label className="flex items-center gap-2">START X
