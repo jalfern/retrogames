@@ -61,6 +61,10 @@ const suite = [
     node('kartcheck.mjs'),
     node('kartplay.mjs'),
     node('vpadcheck.mjs'),
+    // MYST is navigation by sight: frame every node's camera and fail on a
+    // buried camera, a single surface filling >=80% of the frame, or the
+    // caption's landmark missing from the view (#407).
+    node('mystviewcheck.mjs'),
     full ? node('evocheck.mjs') : node('evocheck.mjs', ['--gens', '30', '--min-fit', '500']),
 ]
 

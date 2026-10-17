@@ -11,7 +11,7 @@ export const NODES = {
     expect: ['dockPlank'],
     spots: [
       { id: 'dockBeach', label: 'climb the path', yaw: 0, w: 90, h: 40, to: 'cliffPath' },
-      { id: 'dockSea', label: 'the open sea', yaw: 0, w: 120, h: 20, msg: 'The ship that brought you is gone. There is no way off this island — yet.' },
+      { id: 'dockSea', label: 'the open sea', yaw: 90, w: 120, h: 20, msg: 'The ship that brought you is gone. There is no way off this island — yet.' },
     ],
   },
   cliffPath: {
@@ -19,9 +19,9 @@ export const NODES = {
     caption: 'A path cut into the cliffs above the sea',
     expect: ['cliffFace', 'sea'],
     spots: [
-      { id: 'backDock', label: 'back to the dock', yaw: 180, w: 80, h: 40, to: 'dock' },
+      { id: 'backDock', label: 'back to the dock', yaw: 0, w: 80, h: 40, to: 'dock' },
       { id: 'toBoat', label: 'the wrecked boat on the beach', yaw: 90, w: 70, h: 30, to: 'beach' },
-      { id: 'toLanding', label: 'the wooden landing', yaw: 0, w: 90, h: 40, to: 'landing' },
+      { id: 'toLanding', label: 'the wooden landing', yaw: 180, w: 90, h: 40, to: 'landing' },
     ],
   },
   beach: {
@@ -29,18 +29,18 @@ export const NODES = {
     caption: 'The beach below the cliffs — a rotted boat',
     expect: ['boat'],
     spots: [
-      { id: 'backPath', label: 'back up the path', yaw: 90, w: 70, h: 40, to: 'cliffPath' },
+      { id: 'backPath', label: 'back up the path', yaw: -45, w: 70, h: 40, to: 'cliffPath' },
       { id: 'boat', label: 'the boat', yaw: 0, w: 60, h: 30, msg: 'A fishing boat, salt-rotted. It will never sail again.' },
     ],
   },
   landing: {
-    pos: [0, 8.3, 12], yaw: 180, sky: 'day', amb: 'wind',
+    pos: [0, 8.3, 13.5], yaw: 180, sky: 'day', amb: 'wind',
     caption: 'The great stone stairway rises into the trees',
     expect: ['landingStair', 'landingTree'],
     spots: [
-      { id: 'backCliff', label: 'down to the path', yaw: 180, w: 80, h: 40, to: 'cliffPath' },
-      { id: 'palmIllusion', label: 'a palm tree that does not belong here', yaw: -45, w: 40, h: 60, msg: 'The palm flickers — an illusion. Its trunk hides something cold and iron.', reveal: 'towerLever' },
-      { id: 'toStairs', label: 'the stairway', yaw: 0, w: 80, h: 60, to: 'stairTop' },
+      { id: 'backCliff', label: 'down to the path', yaw: 0, w: 80, h: 40, to: 'cliffPath' },
+      { id: 'palmIllusion', label: 'a palm tree that does not belong here', yaw: -90, w: 40, h: 60, msg: 'The palm flickers — an illusion. Its trunk hides something cold and iron.', reveal: 'towerLever' },
+      { id: 'toStairs', label: 'the stairway', yaw: 180, w: 80, h: 60, to: 'stairTop' },
     ],
   },
   stairTop: {
@@ -80,32 +80,32 @@ export const NODES = {
     ],
   },
   towerBase: {
-    pos: [6, 1.7, -4], yaw: 0, sky: 'interior', amb: 'gears',
+    pos: [0.9, 1.7, 1.4], yaw: 180, sky: 'interior', amb: 'gears',
     caption: 'Inside the clock tower — a great brass mechanism',
     expect: ['towerGear'],
     spots: [
-      { id: 'outTower', label: 'back out', yaw: 180, w: 80, h: 40, to: 'stairTop' },
-      { id: 'towerClimb', label: 'climb the ladder to the top', yaw: 0, w: 40, h: 50, to: 'towerTop' },
+      { id: 'outTower', label: 'back out', yaw: 0, w: 80, h: 40, to: 'stairTop' },
+      { id: 'towerClimb', label: 'climb the ladder to the top', yaw: -90, w: 40, h: 50, to: 'towerTop' },
     ],
   },
   towerTop: {
-    pos: [6, 9.7, -4], yaw: 0, sky: 'day', amb: 'gears',
+    pos: [0.3, 1.8, 1.3], yaw: 180, sky: 'day', amb: 'gears',
     caption: 'The belfry: a book with cogs for a clasp, and a great lever',
     expect: ['towerLever'],
     spots: [
-      { id: 'downTower', label: 'climb down', yaw: 180, w: 80, h: 40, to: 'towerBase' },
-      { id: 'mechanicalBook', label: 'the book of cogs', yaw: 0, w: 30, h: 26, act: 'mechanicalBook' },
+      { id: 'downTower', label: 'climb down', yaw: 0, w: 80, h: 40, to: 'towerBase' },
+      { id: 'mechanicalBook', label: 'the book of cogs', yaw: 180, w: 30, h: 26, act: 'mechanicalBook' },
       { id: 'towerLever', label: 'pull the great lever', yaw: 60, w: 26, h: 30, act: 'towerLever' },
     ],
   },
   cabin: {
-    pos: [-10, 1.7, -4.5], yaw: -45, sky: 'interior', amb: 'wind',
+    pos: [0.3, 1.7, 1.6], yaw: -60, sky: 'interior', amb: 'wind',
     caption: 'A wooden cabin — Atrus\'s workshop',
     expect: ['cabinShelf'],
     spots: [
-      { id: 'outCabin', label: 'step back outside', yaw: 180, w: 80, h: 40, to: 'stairTop' },
-      { id: 'safe', label: 'a black iron safe', yaw: 0, w: 30, h: 26, act: 'safe' },
-      { id: 'cabinShelf', label: 'shelves of tools and link stones', yaw: -45, w: 30, h: 26, msg: 'Eight stone markers, each etched with a link-symbol. Four glow faintly — the Ages you have found.' },
+      { id: 'outCabin', label: 'step back outside', yaw: 0, w: 80, h: 40, to: 'stairTop' },
+      { id: 'safe', label: 'a black iron safe', yaw: 180, w: 30, h: 26, act: 'safe' },
+      { id: 'cabinShelf', label: 'shelves of tools and link stones', yaw: -90, w: 30, h: 26, msg: 'Eight stone markers, each etched with a link-symbol. Four glow faintly — the Ages you have found.' },
     ],
   },
 

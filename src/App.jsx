@@ -21,7 +21,7 @@ function RandomHome() {
   useEffect(() => {
     const randomGame = GAMES[Math.floor(Math.random() * GAMES.length)]
     setGameComponent(() => randomGame.component)
-    setGameInfo(randomGame.label, randomGame.theme)
+        setGameInfo(randomGame.label, randomGame.theme, randomGame.footer)
   }, [setGameInfo])
 
   if (!GameComponent) return null
@@ -49,8 +49,8 @@ function GameRoute({ game }) {
   const Component = game.component
   const pad = game.pad || null
   useEffect(() => {
-    setGameInfo(game.label, game.theme)
-  }, [game.label, game.theme, setGameInfo])
+    setGameInfo(game.label, game.theme, game.footer)
+  }, [game.label, game.theme, game.footer, setGameInfo])
   return (
     <PadContext.Provider value={pad}>
       <GamepadBridge secondAction={padButton(pad)?.code} />
@@ -62,13 +62,13 @@ function GameRoute({ game }) {
 }
 
 function Layout({ children }) {
-  const [info, setInfo] = useState({ label: '', theme: 'light' })
+  const [info, setInfo] = useState({ label: '', theme: 'light', footer: undefined })
 
   // Stabilize the setter to check for changes and prevent unnecessary updates
-  const setGameInfo = useCallback((l, t) => {
+  const setGameInfo = useCallback((l, t, f) => {
     setInfo(prev => {
-      if (prev.label === l && prev.theme === t) return prev
-      return { label: l, theme: t }
+      if (prev.label === l && prev.theme === t && prev.footer === f) return prev
+      return { label: l, theme: t, footer: f }
     })
   }, [])
 
@@ -87,17 +87,19 @@ function Layout({ children }) {
       <div className="w-full h-screen bg-white overflow-hidden relative">
         {children}
 
-        {/* Footer Label */}
-        <div className={`fixed bottom-8 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-100 transition-opacity duration-500 flex flex-col items-center gap-1`}>
-          <h1 className={`${textColor} font-mono text-sm tracking-widest border-b-2 border-transparent ${borderColor} inline-block pb-1`}>
-            JALFERN.COM
-          </h1>
-          {info.label && (
-            <p className={`${textColor} font-mono text-xs tracking-wider opacity-75`}>
-              {info.label}
-            </p>
-          )}
-        </div>
+        {/* Footer Label (a route can opt out — MYST's caption bar owns the bottom) */}
+        {info.footer !== 'none' && (
+          <div className={`fixed bottom-8 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-100 transition-opacity duration-500 flex flex-col items-center gap-1`}>
+            <h1 className={`${textColor} font-mono text-sm tracking-widest border-b-2 border-transparent ${borderColor} inline-block pb-1`}>
+              JALFERN.COM
+            </h1>
+            {info.label && (
+              <p className={`${textColor} font-mono text-xs tracking-wider opacity-75`}>
+                {info.label}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Mute Toggle (Positioned here to read Theme) */}
         <MuteToggle theme={info.theme} />

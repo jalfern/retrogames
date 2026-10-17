@@ -155,6 +155,7 @@
         "arkplay": "node scripts/arkanoidplay.mjs",
         "lint:myst": "eslint src/games/Myst src/components src/utils src/config src/main.jsx scripts",
         "mystcheck": "node scripts/mystcheck.mjs",
+        "mystviewcheck": "node scripts/mystviewcheck.mjs",
         "mystplay": "node scripts/mystplay.mjs",
         "lint:bards": "eslint src/games/BardsTale src/components src/utils src/config src/main.jsx scripts/bardscheck.mjs scripts/bardsplay.mjs scripts/lib",
         "bardscheck": "node scripts/bardscheck.mjs",

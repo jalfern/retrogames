@@ -288,6 +288,7 @@ const MystGame = () => {
             const expect = n.expect || []
             const lm = meshes.filter((m) => m.userData.landmark && expect.includes(m.userData.landmark))
             let landmarkSeen = expect.length === 0
+            let dbgFirst = null
             for (const m of lm) {
               m.updateWorldMatrix(true, false)
               const c = new THREE.Vector3()
@@ -297,6 +298,7 @@ const MystGame = () => {
               dir.normalize()
               ray.set(camPos, dir)
               const h = ray.intersectObjects(meshes, false)[0]
+              if (dbgFirst === null && h) dbgFirst = label(h.object)
               if (h && h.object === m) { landmarkSeen = true; break }
             }
             out[id] = {
@@ -306,6 +308,7 @@ const MystGame = () => {
               dominant: domMesh ? label(domMesh) : null,
               expect,
               landmarkSeen,
+              dbgFirst,
               pass: !buried && maxFrac < 0.8 && landmarkSeen,
             }
           })

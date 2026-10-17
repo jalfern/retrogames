@@ -164,6 +164,7 @@ function act(s, spot, ev) {
     case 'sphere': s.panelOpen = 'sphere'; s.message = `The sphere ring-dials read ${s.sphereDial.map((v) => (v < 0 ? '·' : v)).join('-')} — four rings, and the posts sing in sequence.`; ev.push('panel'); break
     case 'starPanel': s.panelOpen = 'star'; s.message = `Stone dials: ${s.starDial.join('-')} points of light each. The dome above shows the true stars.`; ev.push('panel'); break
     case 'starWheel': s.message = 'The great star turns its patient circles above the falls — a symbol of Channelwood, mirrored on the panel below.'; ev.push('look'); break
+    case 'towerLever': s.message = 'The great lever is braced solid in its stone well. Whatever bell it once rang, no bell hangs here anymore.'; ev.push('look'); break
     case 'switchPanel': s.panelOpen = 'switches'; s.message = `Five iron switches: ${s.switches.join(' ')}. Switches here move gears elsewhere.`; ev.push('panel'); break
     case 'observatory': {
       if (!has(s, 'obsNote')) { s.flags.obsNote = true; s.message = 'Inside the observatory, a chart and a note: "TRAPPED!!! — my father cannot hear us. Search the wood cabin — the safe holds the sea-world\'s book."'
