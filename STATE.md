@@ -1,71 +1,65 @@
-# STATE — 2026-10-16e (forge session, #379 visibility tag shipped; studio parked by Jon — nothing claimable left)
+# STATE — 2026-10-17 (forge session — CIV V polish #1 SHIPPED: transports + amphibious assault)
 
-## Shipped this session
-**VISIBILITY TAG — registry contract for the public/private split** (#379, `game-queue`):
+## This session (#375 item 1, PR #399, merged aba7f39)
+- Resumed the corpse branch `forge/civv-polish` per step 1b + Jon's unpark
+  comment (engine+§34 was already pushed at bd878a5: Galleon hold 2,
+  embark/land/assault/drown laws, cargo folds into stateHash).
+- Finished the handoff: civplay Stage-8 block de-vacuums (issue item 6) —
+  seed 4 rises on the COAST (Node-proven) so L's keel is real, the inland
+  escape clause (`|| coastal === false`) is gone; live deny paths drive real
+  keys (J → `SELECT A GALLEON WITH CARGO`, E far from a hull →
+  `NO FRIENDLY GALLEON ALONGSIDE`); laden-hull probe shape checked live.
+- README rewritten for transports (laws, controls E/J + tap-beach, gaps).
+- Proof: civplay 60/60, civcheck 469/469; mutants red & restored —
+  capacity-drop reds §34, `start(4)→start(1)` reds exactly the two
+  de-vacuum checks. eslint + lint:mario/fps/ai + build green.
+- CI all green FIRST try (smoke included — the flake did not repeat).
+- #375 requeued `game-queue` (items 2–5 left; title now points at item 2:
+  capital capture ≠ extinction).
 
-- PR #383 squash-landed as c11ebfb; PR #385 (CI wiring) as b4afded. static+smoke+Vercel
-  green on both; prod verified (www.jalfern.com/retrogames/ 200 at main@c11ebfb via
-  Vercel commit status — entry-hash trap again: content-neutral prep keeps the hash).
-- `src/config/games.js`: header documents `visibility: 'public' | 'private'`; missing
-  means `'private'`; nothing reads the field (no hiding/routes/auth — by design); no
-  existing entry tagged (Jon decides those).
-- `scripts/FORGE.md` step 4: new games register `visibility: 'private'`; only Jon
-  promotes to `'public'`.
-- `npm run visibilitycheck` 139/139 (builtbycheck pattern: esbuild the real registry,
-  game components stubbed): value legality, ZERO entries `'public'` before Jon's first
-  promotion, field provably unread outside the registry (DOM `visibilitychange`
-  listeners pass), docs carry the rules. Mutant proven: `/pong` tagged `'public'` →
-  2 red; restore → green.
-- #385 puts visibilitycheck in CI's `static` job next to builtbycheck (~1 s local;
-  CI static grew 5:46→9:48 — noise or cold esbuild cache, watch next run).
-- Not a game, so no 8b polish-pass issue (nothing visual shipped).
-
-## Did NOT touch: #375 Civ V polish — PARKED BY JON
-STATE said "resume #375" but the issue carries Jon's 19:36 park: "Studio is reserved
-for an RL training run. Remove `stalled` to let the warden resume this from
-`forge/civv-polish`." The label is still on, so it stayed parked. **Lesson: Jon's
-live issue labels beat a STATE.md goal line — check the board, not just STATE.**
-Corpse stays ready at `origin/forge/civv-polish` @ bd878a5 (transports + amphibious
-assault, civcheck 469/469, capacity mutant proven); worktree
-`~/Dev/retrogames-forge-civv-polish` exists. Remaining there: civplay item-6
-de-vacuum (seed 1 capital is inland — force a coastal city), README, gates, PR.
+## Still open / held
+- **#398** (contract batch 2): static green, smoke red 3× (Missile Battle
+  timing flake, not this branch's code). 3-strikes rule holds the merge —
+  Jon decides attempt 4. Branch `forge/contract-rollout-b2` intact in its
+  worktree (b2afe8a).
+- **#391** (keep `building`): 14/40 sim.js titles wired; batch 3 ready
+  (Lemmings, Sonar, Outpost, Polarity, Dogfight, SmashTV are candidates —
+  check each for function-bearing state, omit snapshot/restore there).
+  Batch 3 must base on main AFTER #398 merges (contractcheck conflict
+  otherwise).
+- No new `next`-labeled issues; queue: #375 only.
 
 ## GOAL — next session
-Nothing is claimable while the park holds: `game-queue` is EMPTY, no `next` label, and
-`building`+`stalled` #375 is Jon's hold, not a corpse.
-- If `stalled` is removed → resume #375 from `forge/civv-polish` (FORGE.md 1b).
-- Else if no QA session is live (`pgrep -f "QA MASTER"`) → borrow ONE `feedback` item
-  per FORGE.md step 2. Heaviest open QA: #365 (attract-controls sweep across the
-  arcade — small, game-visible, would reset the rule-4 counter).
-- Else STOP — nothing to forge; say so here and exit.
-
-## Rule-4 signal (report, per AGENTS.md #4)
-Three merged PRs in a row without `src/games/**` changes: #380 (STATE), #383 (registry
-prep), #385 (CI). This is the "stop and report" trip — reporting to Jon below. Prior
-sessions did ship game code (#378 pilots lived in src/games/**), so this is not the
-FORGE 3-session STALL condition; but the fix is the same: CivV (#375) is the next
-game code, and only Jon can unpark it.
+1. If Jon answers the #398 question: merge from the branch (rerun failed
+   smoke first if he says accept) + verify prod + relabel #391 list.
+   Otherwise leave #398 held — do NOT attempt #4 yourself.
+2. Else work #375 **item 2: capital capture ≠ extinction** — vassalize/
+   defeat instead of unit-extinction for domination; HUD pill already tracks
+   captured capitals; new civcheck section + mutant, own PR.
 
 ## Notes for whoever picks this up
-- New-session trap #1: check issue labels before honoring a STATE goal — Jon parks with
-  labels (`stalled`) and unlabeled parks don't exist; `building` WITHOUT `stalled` IS
-  a resumable corpse (FORGE.md 1b).
-- Lanes with only plumbing diffs still ride the normal pipeline: claim → worktree from
-  origin/main → PR → rule-5 merge (`gh pr checks --watch --fail-fast && gh pr merge
-  --squash --delete-branch`) → re-detach the worktree at once.
-- Mutants via `git checkout -- <file>` eat UNCOMMITTED work in the same file —
-  checkpoint the increment BEFORE mutating (this session ate the registry header edit
-  once; re-applied, then committed).
-- contractcheck (last session) is DEV/browser-bound so it is not in CI; visibilitycheck
-  is Node-only so it is. Keep new contract checks Node-only when possible.
-- New games: add `visibility: 'private'` to their registry entry (FORGE.md step 4).
+- Main checkout detached at aba7f39, clean. Worktree
+  `~/Dev/retrogames-forge-civv-polish` re-detached at aba7f39 (keep for
+  item 2 context; node_modules symlinked to main).
+- **Prod-verify gotcha hit:** ~20 min of 20s-interval polling of
+  www.jalfern.com/retrogames tripped Vercel attack-mode → 403 on all
+  requests. Site is fine for browsers; slow the poll (60s+), verify by chunk
+  name from `dist/` of the merge commit, and stop after ~5 tries.
+- CivV ships in the main index chunk (`dist/assets/index-*.js`) — marker
+  grep on the index bundle is the right prod probe for this game.
+- Never `git stash pop` in a lane worktree — stash@{0} belongs to whichever
+  lane parked it (nearly wiped an in-flight civplay edit this session).
+  CivV seeds: seed 1/2/3/5 start inland, seed 4 coastal; seed 4's capital
+  wins at t12 (size 4), so live-turn loops accept `ended`.
+- Dev server may linger on :5173 from this lane — kill before reusing.
 
 ## Three questions for Jon
-1. #375 CivV is parked for your RL run — when should the studio resume it? Removing
-   `stalled` is all it takes; the branch is corpse-ready (civcheck 469/469).
-2. Rule-4 counter is at 3 plumbing-only PRs (#380/#383/#385). While the park holds,
-   OK to borrow QA items (e.g. #365 attract sweep — game-visible), or hold the forge
-   completely until CivV unparasites?
-3. Catalog visibility: zero entries are tagged today. Tag the current catalog
-   public/private when the vault split lands, or is some subset public from day one
-   (and who drafts the list — me proposing, you approving)?
+1. #398 attempt 4: your call stands from yesterday — accept the Missile
+   Battle smoke flake (rerun + merge), or want `smoke` marked
+   continue-on-error so advisory flakes can't wedge rule-5 merges?
+2. #375 convention: shipping 1 of 6 polish items, I requeued the umbrella
+   issue to `game-queue` with the title bumped to item 2 rather than adding
+   `shipped`. OK, or do you want one issue per polish item?
+3. Prod-verify etiquette: is there a lighter-weight check you prefer than
+   bundle-hash polling (it tripped Vercel attack mode on the shared edge —
+   403s will confuse the next session's verification)?
