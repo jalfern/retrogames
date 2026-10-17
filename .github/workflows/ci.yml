@@ -333,6 +333,8 @@ jobs:
       # mutants must die — all in Node.
       - run: npm run lint:lander
       - run: npm run landercheck -- --mutate
+      - run: npm run landerpolicy
+      - run: npm run landerheatcheck
       - run: npm run lint:tempest
       - run: npm run tempestcheck -- --mutate
       - run: npm run build
