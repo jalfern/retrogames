@@ -17,7 +17,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import * as THREE from 'three'
-import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf } from './sim.js'
+import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
 import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
 
@@ -132,6 +132,20 @@ const CivilizationVGame = () => {
                     }
                 }
                 else if (e.type === 'queued') { audioController.playTone(330, 0.03, 'sine', 0.03) }
+                else if (e.type === 'embark') {
+                    if (e.civ === 0) { say(`${e.kind} ABOARD — HOLD TAKES THE WEIGHT`); audioController.playSweep(294, 196, 0.22, 'triangle', 0.05) }
+                }
+                else if (e.type === 'land') {
+                    if (e.civ === 0) { say(`${e.kind} LANDS ON THE BEACH`); audioController.playTone(220, 0.06, 'triangle', 0.05) }
+                }
+                else if (e.type === 'beachhead') {
+                    if (e.civ === 0) { say(e.took ? 'BEACHHEAD TAKEN!' : 'THE LANDINGS ARE REPELLED'); shake.v = 5; audioController.playNoise(0.12, 0.07); audioController.playSweep(e.took ? 330 : 260, e.took ? 780 : 130, 0.4, 'triangle', 0.08) }
+                }
+                else if (e.type === 'drown') {
+                    if (e.civ === 0) say(`${e.kind} GOES DOWN WITH THE HULL`)
+                    if (known(e.at[0], e.at[1])) spawnImpact(view, gs, e.at[0], e.at[1], true)
+                    audioController.playSweep(220, 60, 0.5, 'sawtooth', 0.07)
+                }
                 else if (e.type === 'research' && e.civ === 0) { audioController.playTone(500, 0.03, 'sine', 0.03) }
                 else if (e.type === 'tech') {
                     if (e.civ === 0) {
@@ -237,7 +251,7 @@ const CivilizationVGame = () => {
                     if (ring.has(i)) continue
                     const tl = gs.tiles[i]
                     if (sel.naval ? !(tl.terr === T.OCEAN || tl.terr === T.COAST) : (tl.terr < T.GRASS || tl.terr > T.HILLS)) continue
-                    if (gs.units.some((u) => u.alive && u.c === nc && u.r === nr)) continue
+                    if (gs.units.some((u) => u.alive && !u.loaded && u.c === nc && u.r === nr)) continue
                     if (tileBlocked(gs, nc, nr)) continue
                     ring.add(i); next.push([nc, nr])
                 }
@@ -311,7 +325,7 @@ const CivilizationVGame = () => {
             if (h.turn) h.turn.textContent = `TURN ${gs.turn}/${CFG.turnLimit}`
             if (h.cap) h.cap.textContent = cap ? `CAPITAL ${cap.name} · size ${cap.size}/${GOAL}` : 'NO CITY — press E to settle'
             if (h.cities) h.cities.textContent = `cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}`
-            if (h.sel) h.sel.textContent = (() => { const s = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0); return s ? `${s.kind} · ${s.moves}/${s.maxMoves} moves · hp ${s.hp}` : 'tap a unit' })()
+            if (h.sel) h.sel.textContent = (() => { const s = gs.units.find((u) => u.id === gs.selected && u.alive && !u.loaded && u.civ === 0); return s ? `${s.kind} · ${s.moves}/${s.maxMoves} moves · hp ${s.hp}${s.cargo ? ` · hold ${s.cargo.length}/${UNIT[s.kind].cargo || 0}` : ''}` : 'tap a unit' })()
             if (h.build) {
                 const city = gs.cities.find((c) => c.civ === 0 && c.alive)
                 const q = city && city.queue && city.queue[0]
@@ -389,13 +403,18 @@ const CivilizationVGame = () => {
         const clickTile = (c, r) => {
             if (!inb(c, r)) return
             if (!gs.explored[0][r * CFG.W + c]) { say('UNKNOWN LAND'); return }
-            const own = gs.units.find((u) => u.alive && u.civ === 0 && u.c === c && u.r === r)
+            const own = gs.units.find((u) => u.alive && !u.loaded && u.civ === 0 && u.c === c && u.r === r)
             if (own) { gs.selected = own.id; pending = { select: own.id }; audioController.playTone(440, 0.03, 'sine', 0.04); return }
-            const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0)
-            const hostile = gs.units.find((u) => u.alive && u.c === c && u.r === r && atWar(gs, 0, u.civ))
+            const sel = gs.units.find((u) => u.id === gs.selected && u.alive && !u.loaded && u.civ === 0)
+            const hostile = gs.units.find((u) => u.alive && !u.loaded && u.c === c && u.r === r && atWar(gs, 0, u.civ))
             const tl = gs.tiles[r * CFG.W + c]
             const campHit = tl.camp >= 0 && gs.camps[tl.camp] && gs.camps[tl.camp].alive
             const cityHit = tl.city >= 0 && gs.cities[tl.city].alive && atWar(gs, 0, gs.cities[tl.city].civ)
+            if (sel && sel.naval && sel.cargo && sel.cargo.length && tl.terr >= T.GRASS && tl.terr <= T.HILLS) {
+                const why = canLand(gs, sel, c, r)
+                if (why === true) { pending = { land: [c, r] }; audioController.playTone(260, 0.04, 'triangle', 0.05); return }
+                say(String(why).toUpperCase()); audioController.playTone(120, 0.05, 'square', 0.04); return
+            }
             if (sel && sel.moves > 0 && sel.str > 0) {
                 const d = hexDist([sel.c, sel.r], [c, r])
                 if (cityHit && sel.naval) { say('PORTS YIELD TO LAND FORCES — BRING LEGIONS'); audioController.playTone(120, 0.06, 'square', 0.04); return }
@@ -411,11 +430,24 @@ const CivilizationVGame = () => {
             if (sel && sel.moves > 0) { const ok = findPath(gs, sel, c, r); if (ok && ok.length) { pending = { move: [c, r] }; audioController.playTone(300, 0.02, 'sine', 0.03) } else audioController.playTone(120, 0.05, 'square', 0.04) }
         }
         const doSettle = () => {
-            const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && u.kind === 'SETTLER')
-            if (!sel) { say('SELECT A SETTLER'); return }
-            const why = canFound(gs, 0, sel.c, sel.r, sel)
-            if (why !== true) { say(why === 'too close to a city' ? 'TOO CLOSE TO A CITY' : why === 'water or mountain' ? 'CANNOT SETTLE THERE' : 'CANNOT SETTLE'); audioController.playTone(110, 0.08, 'square', 0.05); return }
-            pending = { found: true }
+            const any = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0)
+            if (!any) { say('SELECT A UNIT'); return }
+            if (any.kind === 'SETTLER') {
+                const why = canFound(gs, 0, any.c, any.r, any)
+                if (why === true) { pending = { found: true }; return }
+                if (canEmbark(gs, any) !== true) { say(why === 'too close to a city' ? 'TOO CLOSE TO A CITY' : why === 'water or mountain' ? 'CANNOT SETTLE THERE' : 'CANNOT SETTLE'); audioController.playTone(110, 0.08, 'square', 0.05); return }
+            }
+            const whyE = canEmbark(gs, any)
+            if (whyE === true) { pending = { ...pending, embark: true }; say(`${any.kind} EMBARKS`); audioController.playSweep(294, 196, 0.22, 'triangle', 0.05); return }
+            say(String(whyE).toUpperCase()); audioController.playTone(110, 0.08, 'square', 0.05)
+        }
+        const doLand = () => {
+            const sel = gs.units.find((u) => u.id === gs.selected && u.alive && !u.loaded && u.civ === 0)
+            if (!sel || !sel.naval || !sel.cargo || !sel.cargo.length) { say('SELECT A GALLEON WITH CARGO'); audioController.playTone(110, 0.07, 'square', 0.05); return }
+            const spots = neigh(sel.c, sel.r).filter(([c, r]) => { const tl = gs.tiles[r * CFG.W + c]; return tl.terr >= T.GRASS && tl.terr <= T.HILLS })
+            const open = spots.find(([c, r]) => canLand(gs, sel, c, r) === true)
+            if (open) { pending = { land: [open[0], open[1]] }; audioController.playTone(260, 0.04, 'triangle', 0.05); return }
+            say('NO BEACH IN REACH'); audioController.playTone(120, 0.05, 'square', 0.04)
         }
         const endTurn = () => { pending = { endTurn: true }; audioController.playTone(200, 0.05, 'sine', 0.04) }
 
@@ -676,6 +708,7 @@ const CivilizationVGame = () => {
             if (e.code === 'KeyN') { pending = { ...pending, queue: 'GALLEY' }; audioController.playTone(230, 0.03, 'sine', 0.03); return }
             if (e.code === 'KeyK') { pending = { ...pending, queue: 'MUSKET' }; audioController.playTone(190, 0.03, 'square', 0.03); return }
             if (e.code === 'KeyL') { pending = { ...pending, queue: 'GALLEON' }; audioController.playTone(250, 0.03, 'sine', 0.03); return }
+            if (e.code === 'KeyJ') { doLand(); return }
             if (e.code === 'KeyT') { if (screenRef.current === 'play') togglePanel(); return }
             if (e.code === 'KeyR') { if (screenRef.current === 'play') researchNext(); return }
             if (e.code === 'KeyW') { if (screenRef.current === 'play') toggleWPanel(); return }
@@ -741,7 +774,7 @@ const CivilizationVGame = () => {
                     land: { imps: gs.tiles.filter((t) => t.imp).length, roads: gs.tiles.filter((t) => t.road).length, connected: connectedResources(gs, 0), revealed: gs.tiles.filter((t, i) => resRevealed(gs, 0, i)).length },
                     happy: happinessOf(gs, 0), policies: POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)), culturePool: Math.floor(gs.civs[0].culture || 0),
                     wonders: WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => ({ id, by: gs.wonders[id] })),
-                    world: { cities: CIVS.filter((c) => c.cs).map((c) => ({ id: c.id, name: c.name, alive: gs.civs[c.id].alive, c: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.c ?? -1, r: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.r ?? -1 })), rome: CS_IDS.map((id) => ({ cs: id, ...(csInfo(gs, 0, id) || { met: false, influence: 0, ally: false }) })), pacts: Object.keys(gs.trade).filter((k) => gs.trade[k]), wars: Object.keys(gs.wars), truce: Object.keys(gs.peaceTurn), naval: gs.units.filter((u) => u.alive && u.civ === 0 && u.naval).map((u) => ({ id: u.id, c: u.c, r: u.r })), coastal: !!coastalCityOf(gs, 0) },
+                    world: { cities: CIVS.filter((c) => c.cs).map((c) => ({ id: c.id, name: c.name, alive: gs.civs[c.id].alive, c: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.c ?? -1, r: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.r ?? -1 })), rome: CS_IDS.map((id) => ({ cs: id, ...(csInfo(gs, 0, id) || { met: false, influence: 0, ally: false }) })), pacts: Object.keys(gs.trade).filter((k) => gs.trade[k]), wars: Object.keys(gs.wars), truce: Object.keys(gs.peaceTurn), naval: gs.units.filter((u) => u.alive && u.civ === 0 && u.naval).map((u) => ({ id: u.id, c: u.c, r: u.r, kind: u.kind, cargo: u.cargo ? u.cargo.length : 0 })), onboard: gs.units.filter((u) => u.alive && u.loaded).map((u) => ({ id: u.id, kind: u.kind, ship: u.loaded })), coastal: !!coastalCityOf(gs, 0) },
                     gp: GP_TYPES.map((t) => ({ t, pts: Math.floor(gs.gp[0].pts[t]), need: gpThreshold(gs, 0, t), held: gs.gp[0].held[t], ready: gpReady(gs, 0, t), cost: gpCost(gs, 0, t) })),
                     victory: { capsTaken: [1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkScience, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, culturedLead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].cultureEarned || 0) < (gs.civs[0].cultureEarned || 0)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])) },
                     late: { knownLate: ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT'].filter((id) => hasTech(gs, 0, id)), muskets: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'MUSKET').length, galleons: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'GALLEON').length },
@@ -759,6 +792,8 @@ const CivilizationVGame = () => {
                 peace: (civ) => { pending = { ...pending, peace: civ } },
                 trade: (civ) => { pending = { ...pending, trade: civ } },
                 gift: (cs) => { pending = { ...pending, gift: cs } },
+                embark: () => { pending = { ...pending, embark: true } },
+                land: (c, r) => { pending = { ...pending, land: [c, r] } },
                 auto: (turns = 100) => { let n = 0; while (!gs.end && n < turns * 400 && screenRef.current === 'play') { doSim(decide(gs)); n++ } return { end: gs.end, turns: gs.turn, size: capSize() } },
                 turn: () => { const t0 = gs.turn; let n = 0; while (gs.turn === t0 && !gs.end && screenRef.current === 'play' && n++ < 800) doSim(decide(gs)); return { turn: gs.turn, end: gs.end, size: capSize() } },
             }
@@ -799,7 +834,9 @@ const CivilizationVGame = () => {
                     { label: 'PUSH THE ARK', run: () => { if (!hasTech(gs, 0, 'SPACEFLIGHT')) return 'Spaceflight comes first (NEXT AGE TECH ×n)'; gs.ark[0] = Math.min(CFG.arkScience, gs.ark[0] + 15); return `Ark funded ${Math.floor(gs.ark[0])}/${CFG.arkScience}` } },
                     { label: '+200 LIFETIME CULTURE', run: () => { gs.civs[0].cultureEarned = (gs.civs[0].cultureEarned || 0) + 200; return `lifetime culture now ${Math.floor(gs.civs[0].cultureEarned)} — leads at ${CFG.cultureWin} if every rival sits behind` } },
                     { label: 'QUEUE MUSKET', run: () => { pending = { ...pending, queue: 'MUSKET' }; return 'will train a Musket (needs Gunpowder)' } },
-                    { label: 'QUEUE GALLEON', run: () => { const c = coastalCityOf(gs, 0); if (!c) return 'no coastal city yet: settle beside the sea'; pending = { ...pending, queue: 'GALLEON' }; return `will launch a Galleon from ${c.name} (needs Astronomy — it storms ports)` } },
+                    { label: 'QUEUE GALLEON', run: () => { const c = coastalCityOf(gs, 0); if (!c) return 'no coastal city yet: settle beside the sea'; pending = { ...pending, queue: 'GALLEON' }; return `will launch a Galleon from ${c.name} (needs Astronomy — it storms ports, carries 2)` } },
+                    { label: 'EMBARK HERE', run: () => { const s = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0); if (!s) return 'select a land unit first'; const why = canEmbark(gs, s); if (why !== true) return String(why); pending = { ...pending, embark: true }; return `${s.kind} will board the galleon alongside` } },
+                    { label: 'LAND AT BEACH', run: () => { const s = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0); if (!s || !s.naval) return 'select a galleon first'; if (!s.cargo || !s.cargo.length) return 'the hold is empty — embark a land unit beside the ship'; doLand(); return 'will drop the hold at the nearest reachable beach (defended sand means an amphibious assault)' } },
                     { label: 'HEAL ALL', run: () => { gs.units.filter((u) => u.alive && u.civ === 0).forEach((u) => { u.hp = 100 }); return 'legions made whole' } },
                 ],
             })
@@ -1111,6 +1148,7 @@ const CivilizationVGame = () => {
                         the final ages arrive: Education to Spaceflight, gunpowder to the electric grid<br />
                         three crowns, three races — DOMINATION takes every capital, SCIENCE banks 70 beakers into THE ARK, CULTURE leads the world&apos;s memory<br />
                         K lines up the Musket · L launches the port-storming Galleon — the age of sail makes the Trireme&apos;s rules obsolete<br />
+                        the Galleon is a convoy too: E embarks a land unit beside it (hold for two), tap a beach (or J) to land — enemy sand means an amphibious assault<br />
                         Y opens VICTORY and shows every track, yours and theirs · era dawns are announced across the realm<br />
                         tap a tile to move · E settles · T researches · Space ends the turn · drag to orbit · wheel to zoom<br />
                         grow your capital to size {GOAL} for the golden age, or win the hard way before turn {CFG.turnLimit}<br />

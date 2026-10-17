@@ -119,8 +119,10 @@ export const UNIT = {
     GALLEY: { str: 10, moves: 3, sight: 3, range: 1, cost: 30, tech: 'BRONZE_WORKING', naval: true },
     // Stage 8: the age of gunpowder and sail. The Musket is the line infantry
     // of the new era; the Galleon is the first ship bold enough to storm ports.
+    // Polish pass: the Galleon is also the convoy hull — the age of sail carries
+    // two land units in its hold (the Trireme stays a pure raider).
     MUSKET: { str: 15, moves: 2, sight: 2, range: 1, cost: 45, tech: 'GUNPOWDER' },
-    GALLEON: { str: 14, moves: 4, sight: 3, range: 1, cost: 48, tech: 'ASTRONOMY', naval: true, ports: true },
+    GALLEON: { str: 14, moves: 4, sight: 3, range: 1, cost: 48, tech: 'ASTRONOMY', naval: true, ports: true, cargo: 2 },
 }
 
 // ---- the tech tree (Stage 3, grown through Stage 8) ----------------------------
@@ -347,7 +349,7 @@ function sweepMeetings(gs) {
         const home = gs.cities.find((c) => c.alive && c.civ === cs.id)
         if (!home) continue
         for (const u of gs.units) {
-            if (!u.alive || u.civ >= CS0) continue
+            if (!u.alive || u.loaded || u.civ >= CS0) continue
             if (hexDist([u.c, u.r], [home.c, home.r]) > 1) continue
             const info = gs.cs[u.civ][cs.id] || (gs.cs[u.civ][cs.id] = { met: false, influence: 0, ally: false })
             if (!info.met) {
@@ -377,6 +379,109 @@ export function tileBlocked(gs, c, r) {
     if (!inMap(c, r)) return true
     const ci = gs.tiles[idx(c, r)].camp
     return ci >= 0 && gs.camps[ci] && gs.camps[ci].alive
+}
+
+// ---- transports (polish pass: embark, land, amphibious assault) ---------------
+// Faithful to the 2010 original's convoy laws, scaled to this world: the
+// Galleon carries two land units. Embarking ends the soldier's move; landing
+// onto an enemy beach fights the landing right there; a sunk hull takes its
+// cargo to the bottom. Enemy ports still refuse the longboat — land beside
+// the fort and besiege by land.
+export function transportFor(gs, unit) {
+    return gs.units.find((s) => s.alive && !s.loaded && s.naval && s.civ === unit.civ
+        && (UNIT[s.kind].cargo || 0) > 0 && s.cargo.length < UNIT[s.kind].cargo
+        && hexDist([s.c, s.r], [unit.c, unit.r]) === 1) || null
+}
+export function canEmbark(gs, unit) {
+    if (!unit || !unit.alive || unit.loaded) return 'no unit to embark'
+    if (unit.naval) return 'ships do not board ships'
+    if (unit.busy != null) return 'worker already working'
+    if (!transportFor(gs, unit)) return 'no friendly galleon alongside'
+    return true
+}
+export function embark(gs, unit) {
+    const why = canEmbark(gs, unit)
+    if (why !== true) { if (unit && unit.civ === 0) gs.events.push({ type: 'deny', reason: why, c: unit.c, r: unit.r }); return false }
+    const ship = transportFor(gs, unit)
+    ship.cargo.push(unit.id)
+    unit.loaded = ship.id
+    unit.moves = 0; unit.acted = true; unit.path = []
+    gs.events.push({ type: 'embark', civ: unit.civ, kind: unit.kind, ship: ship.id, at: [unit.c, unit.r] })
+    return true
+}
+export function canLand(gs, ship, tc, tr) {
+    if (!ship || !ship.alive || !ship.naval) return 'no ship'
+    if (!(UNIT[ship.kind] && UNIT[ship.kind].cargo > 0)) return 'this hull carries nothing'
+    if (!ship.cargo.length) return 'the hold is empty'
+    if (!inMap(tc, tr)) return 'out of reach'
+    const tl = gs.tiles[idx(tc, tr)]
+    if (!WALKABLE(tl.terr)) return 'transports land on beaches, not open water'
+    if (hexDist([ship.c, ship.r], [tc, tr]) !== 1) return 'the ship must lie offshore'
+    if (tileBlocked(gs, tc, tr)) return 'a barbarian camp bars the beach'
+    const cityI = tl.city
+    if (cityI >= 0 && gs.cities[cityI].alive && gs.cities[cityI].civ !== ship.civ) return 'fort ports refuse the longboat'
+    const occ = unitAt(gs, tc, tr)
+    if (occ && occ.civ === ship.civ) return 'friendly troops hold the sand'
+    if (occ && !atWar(gs, ship.civ, occ.civ)) return 'foreign troops bar the beach'
+    if (occ) {
+        const first = gs.units.find((x) => x.id === ship.cargo[0])
+        if (first && first.str <= 0) return 'defenders need soldiers to storm a beach'
+    }
+    return true
+}
+export function land(gs, ship, tc, tr) {
+    const why = canLand(gs, ship, tc, tr)
+    if (why !== true) { if (ship && ship.civ === 0) gs.events.push({ type: 'deny', reason: why, c: tc, r: tr }); return false }
+    const def = unitAt(gs, tc, tr)
+    const uid = ship.cargo.shift()
+    const u = gs.units.find((x) => x.id === uid && x.alive)
+    if (!u) return ship.cargo.length ? land(gs, ship, tc, tr) : false
+    const ociv = u.civ
+    ship.moves = 0; ship.acted = true
+    if (def && def.alive && atWar(gs, ociv, def.civ)) {
+        // the amphibious assault: the beach fight settles in place — win and
+        // the beachhead is yours, lose and the squad is lost, the ship floats
+        let strikes = 0, took = false
+        while (strikes++ < 4) {
+            const atkEff = u.str * (0.5 + 0.5 * u.hp / u.maxHp) * 0.9
+            const defEff = def.str * (0.5 + 0.5 * def.hp / def.maxHp) * (1 + defenseBonus(gs, def))
+            def.hp -= Math.max(4, Math.round(34 * atkEff / (atkEff + defEff)))
+            if (def.hp <= 0) {
+                def.hp = 0; def.alive = false; def.moves = 0; def.path = []
+                gs.events.push({ type: 'kill', civ: ociv, kind: u.kind, victim: def.civ, victimKind: def.kind, at: [tc, tr], ranged: false })
+                took = true
+                break
+            }
+            u.hp -= Math.max(2, Math.round(30 * defEff / (atkEff + defEff)))
+            if (u.hp <= 0) break
+        }
+        gs.events.push({ type: 'strike', civ: ociv, kind: u.kind, from: [ship.c, ship.r], to: [tc, tr], ranged: false, landing: true })
+        if (def.civ > 0 && def.civ !== BARB && ociv < BARB) declareWar(gs, ociv, def.civ)
+        if (u.hp <= 0) {
+            u.hp = 0; u.alive = false; u.path = []; u.loaded = null
+            gs.events.push({ type: 'kill', civ: def.civ, kind: def.kind, victim: ociv, victimKind: u.kind, at: [tc, tr], ranged: false })
+            return true
+        }
+        gs.events.push({ type: 'beachhead', civ: ociv, kind: u.kind, at: [tc, tr], took })
+        if (!took) { ship.cargo.unshift(uid); return true }   // repelled — the squad rows back aboard
+    }
+    u.loaded = null
+    u.c = tc; u.r = tr
+    u.moves = 0; u.acted = true; u.path = []
+    gs.events.push({ type: 'land', civ: ociv, kind: u.kind, at: [tc, tr] })
+    if (ociv === 0) reveal(gs, 0, tc, tr, UNIT[u.kind].sight)
+    return true
+}
+function drownCargo(gs, ship) {
+    if (!ship.cargo || !ship.cargo.length) return
+    for (const cid of ship.cargo) {
+        const cu = gs.units.find((x) => x.id === cid)
+        if (cu && cu.alive) {
+            cu.alive = false; cu.hp = 0; cu.path = []; cu.loaded = null
+            gs.events.push({ type: 'drown', civ: cu.civ, kind: cu.kind, at: [ship.c, ship.r] })
+        }
+    }
+    ship.cargo = []
 }
 
 // ---- tech tree ---------------------------------------------------------------
@@ -766,7 +871,7 @@ function placeResources(gs) {
 
 // ---------------------------------------------------------------- fog/units --
 export function tileAt(gs, c, r) { return inMap(c, r) ? gs.tiles[idx(c, r)] : null }
-export function unitAt(gs, c, r) { return gs.units.find((u) => u.alive && u.c === c && u.r === r) || null }
+export function unitAt(gs, c, r) { return gs.units.find((u) => u.alive && !u.loaded && u.c === c && u.r === r) || null }
 export function cityAt(gs, c, r) { const i = idx(c, r); return inMap(c, r) ? gs.tiles[i].city : -1 }
 
 export function reveal(gs, civ, c, r, sight) {
@@ -938,6 +1043,7 @@ export function spawnUnit(gs, civ, kind, c, r, opts = {}) {
         str, hp: 100, maxHp: 100,
         moves, maxMoves: moves,
         naval: !!st.naval,
+        cargo: st.naval ? [] : null,
         path: [], anim: { px: 0, pz: 0, moving: false },
         alive: true, fortified: false, acted: false, busy: null,
     }
@@ -1051,7 +1157,7 @@ function cityName(civ, n) { return (NAMES[civ] || ['City'])[n % 4] }
 
 // ------------------------------------------------------------------ actions --
 export function orderMove(gs, unit, tc, tr) {
-    if (!unit || !unit.alive || unit.moves <= 0) return false
+    if (!unit || !unit.alive || unit.loaded || unit.moves <= 0) return false
     const tl = tileAt(gs, tc, tr)
     if (!tl || !domainOK(unit, tl.terr)) return false
     if (tileBlocked(gs, tc, tr)) return false
@@ -1119,7 +1225,7 @@ export function cityDefense(gs, city) {
 }
 
 export function doAttack(gs, u, tc, tr) {
-    if (!u || !u.alive || u.str <= 0 || u.moves <= 0) return false
+    if (!u || !u.alive || u.loaded || u.str <= 0 || u.moves <= 0) return false
     const d = hexDist([u.c, u.r], [tc, tr])
     const st = UNIT[u.kind]
     if (d < 1 || d > Math.max(1, st.range)) return false
@@ -1141,6 +1247,7 @@ export function doAttack(gs, u, tc, tr) {
             target.hp -= Math.max(4, Math.round(34 * atkEff / (atkEff + defEff)))
             if (target.hp <= 0) {
                 target.hp = 0; target.alive = false; target.moves = 0; target.path = []
+                if (target.naval) drownCargo(gs, target)
                 gs.events.push({ type: 'kill', civ: u.civ, kind: u.kind, victim: target.civ, victimKind: target.kind, at: [tc, tr], ranged })
                 if (!ranged && u.alive && domainOK(u, tl.terr)) { u.c = tc; u.r = tr; if (u.civ === BARB) pillageAt(gs, gs.tiles[ti]) }        // march in — one unit per tile holds
                 if (u.alive && u.civ === 0) reveal(gs, 0, tc, tr, st.sight)
@@ -1149,6 +1256,7 @@ export function doAttack(gs, u, tc, tr) {
             if (!ranged) u.hp -= Math.max(2, Math.round(30 * defEff / (atkEff + defEff)))
             if (u.hp <= 0) {
                 u.hp = 0; u.alive = false; u.path = []
+                if (u.naval) drownCargo(gs, u)
                 gs.events.push({ type: 'kill', civ: target.civ, kind: target.kind, victim: u.civ, victimKind: u.kind, at: [u.c, u.r], ranged: false })
                 break
             }
@@ -1173,6 +1281,7 @@ export function doAttack(gs, u, tc, tr) {
             if (!ranged) u.hp -= Math.max(2, Math.round(22 * defEff / (atkEff + defEff)))
             if (u.hp <= 0) {
                 u.hp = 0; u.alive = false; u.path = []
+                if (u.naval) drownCargo(gs, u)
                 gs.events.push({ type: 'kill', civ: city.civ, kind: 'CITY', victim: u.civ, victimKind: u.kind, at: [u.c, u.r], ranged: false })
                 break
             }
@@ -1268,7 +1377,7 @@ function navalTarget(gs, civ, u) {
 function animateUnits(gs) {
     gs._anim = []
     for (const u of gs.units) {
-        if (!u.alive) continue
+        if (!u.alive || u.loaded) continue
         if (u.path && u.path.length) {
             u._p = (u._p || 0) + 1
             if (u._p >= 9) {
@@ -1290,7 +1399,7 @@ function animateUnits(gs) {
 // resolve cities (economy, production, bombardment), heal the unwounded,
 // advance the turn.
 function endPlayerTurn(gs) {
-    for (const u of gs.units) { if (u.civ === 0 && u.alive) { u.path = []; u.fortified = !u.acted } }
+    for (const u of gs.units) { if (u.civ === 0 && u.alive && !u.loaded) { u.path = []; u.fortified = !u.acted } }
     for (const civ of gs.civs) { if (!civ.player && !civ.barb && !civ.cs && civ.alive) aiTurn(gs, civ.id) }
     barbarianTurn(gs)
     sweepMeetings(gs)
@@ -1300,7 +1409,7 @@ function endPlayerTurn(gs) {
     gs.turn++
     gs.phase = 'player'
     for (const u of gs.units) {
-        if (!u.alive) continue
+        if (!u.alive || u.loaded) continue
         if (!u.acted) {
             const home = inMap(u.c, u.r) && gs.tiles[idx(u.c, u.r)].owner === u.civ
             const h = (home ? CFG.healHome : CFG.healField) + (u.fortified && home ? CFG.healFortify : 0)
@@ -1311,7 +1420,7 @@ function endPlayerTurn(gs) {
         if (u.civ !== 0) u.fortified = false
     }
     gs.selected = gs.units.find((u) => u.civ === 0 && u.alive)?.id ?? -1
-    for (const civ of gs.civs) { clearVisible(gs, civ.id); const own = gs.units.filter((u) => u.civ === civ.id && u.alive)
+    for (const civ of gs.civs) { clearVisible(gs, civ.id); const own = gs.units.filter((u) => u.civ === civ.id && u.alive && !u.loaded)
         for (const u of own) reveal(gs, civ.id, u.c, u.r, u.kind === 'WARRIOR' ? CFG.sightWarrior : CFG.sightSettler)
         for (const ct of gs.cities) if (ct.civ === civ.id && ct.alive) reveal(gs, civ.id, ct.c, ct.r, CFG.sightCity) }
     checkEnd(gs)
@@ -1383,6 +1492,7 @@ function resolveCiv(gs, civ) {
             gs.events.push({ type: 'cityStrike', civ, city: city.id, at: [victim.c, victim.r] })
             if (victim.hp <= 0) {
                 victim.alive = false; victim.hp = 0; victim.path = []
+                if (victim.naval) drownCargo(gs, victim)
                 gs.events.push({ type: 'kill', civ, kind: 'CITY', victim: victim.civ, victimKind: victim.kind, at: [victim.c, victim.r] })
             }
         }
@@ -1509,7 +1619,7 @@ function pillageAt(gs, tl) {
 function findTarget(gs, civ, u, radius) {
     let best = null, bs = 1e9
     for (const x of gs.units) {
-        if (!x.alive || !atWar(gs, civ, x.civ)) continue
+        if (!x.alive || x.loaded || !atWar(gs, civ, x.civ)) continue
         const d = hexDist([u.c, u.r], [x.c, x.r])
         if (d <= radius && d < bs) { bs = d; best = [x.c, x.r] }
     }
@@ -1551,7 +1661,7 @@ function aiTurn(gs, civ) {
     }
     // settlers expand; military units fight or scout
     for (const u of gs.units) {
-        if (!u.alive || u.civ !== civ) continue
+        if (!u.alive || u.loaded || u.civ !== civ) continue
         u.moves = u.maxMoves
         if (u.kind === 'SETTLER') {
             let tries = 0
@@ -1733,6 +1843,7 @@ function cityStateTurn(gs, csId) {
         gs.events.push({ type: 'cityStrike', civ: csId, city: city.id, at: [victim.c, victim.r] })
         if (victim.hp <= 0) {
             victim.alive = false; victim.hp = 0; victim.path = []
+            if (victim.naval) drownCargo(gs, victim)
             gs.events.push({ type: 'kill', civ: csId, kind: 'CITY', victim: victim.civ, victimKind: victim.kind, at: [victim.c, victim.r] })
         }
     }
@@ -1744,7 +1855,7 @@ export function step(gs, input = {}) {
     if (gs.end) return
     if (gs.phase !== 'player') { endPlayerTurn(gs); return }
     if (input.select != null) { const u = gs.units.find((x) => x.id === input.select && x.alive && x.civ === 0); if (u) gs.selected = u.id }
-    const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0) || null
+    const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0 && !u.loaded) || null
     if (input.endTurn) { endPlayerTurn(gs); return }
     if (input.research) setResearch(gs, 0, input.research)
     if (input.policy) adoptPolicy(gs, 0, input.policy)
@@ -1773,6 +1884,8 @@ export function step(gs, input = {}) {
         if (input.attack) doAttack(gs, sel, input.attack[0], input.attack[1])
         if (input.improve) startImprove(gs, sel, input.improve)
         if (input.found) { tryFound(gs, sel); gs.selected = gs.units.find((u) => u.civ === 0 && u.alive && u.kind === 'SETTLER')?.id ?? gs.units.find((u) => u.civ === 0 && u.alive)?.id ?? -1 }
+        if (input.embark) embark(gs, sel)
+        if (input.land) land(gs, sel, input.land[0], input.land[1])
     }
     animateUnits(gs)
 }
@@ -1780,7 +1893,7 @@ export function step(gs, input = {}) {
 export function stateHash(gs) {
     const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4, WORKER: 5, CHARIOT: 6, LEGION: 7, GALLEY: 8, MUSKET: 9, GALLEON: 10 }
     let h = gs.turn * 31 + gs.units.length
-    for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 99) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19) | 0
+    for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 99) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19 + (u.loaded || 0) * 29 + (u.cargo ? u.cargo.length * 71 : 0)) | 0
     for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71 + (ct.culture || 0) * 13) | 0
     for (const cp of gs.camps) h = (h * 33 + cp.c + cp.r * 13 + (cp.alive ? 1 : 0) * 173) | 0
     let L = 0
