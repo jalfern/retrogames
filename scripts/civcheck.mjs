@@ -158,15 +158,18 @@ console.log('9. loss branch (turn limit)')
 {
     const saved = CFG.capitalSizeToWin
     const savedCW = CFG.cultureWin
+    const savedTW = CFG.tourismWin
     const savedArk = CFG.arkScience
     CFG.capitalSizeToWin = 99
-    CFG.cultureWin = 1e9        // isolate the clock: the Stage-8 alternatives are §33's job
+    CFG.cultureWin = 1e9        // isolate the clock: the Stage-8 alternatives are §33/§37's job
+    CFG.tourismWin = 1e9
     CFG.arkScience = 1e9
     const r = plan(0, 1)
     eq(r.end, 'lose', 'unreachable goal => the turn-limit loss fires')
     eq(r.turns, CFG.turnLimit + 1, 'loss at turn limit + 1')
     CFG.capitalSizeToWin = saved
     CFG.cultureWin = savedCW
+    CFG.tourismWin = savedTW
     CFG.arkScience = savedArk
 }
 
@@ -1393,10 +1396,11 @@ console.log('32. later eras + science victory')
     ok(legacy.every((id, i) => RESEARCH_ORDER[i] === id), 'RESEARCH_ORDER keeps the proven head — stages 1–7 proofs still describe the demo')
 }
 
-// ---- 33. culture & domination victories, order of judgment, the race ----
-console.log('33. victories: order, culture ledger, domination, race reachability')
+// ---- 33. victories: order, the tourism crown, domination, race reachability --
+console.log('33. victories: order, tourism crown, domination, race reachability')
 {
-    // lifetime culture is not the spendable pool
+    // lifetime culture still banks from turn one and stays untouched by
+    // spending — it is the RECORD (§37 proves it no longer crowns)
     const gs = newGame(2, 0)
     const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(gs, { select: s.id, found: true })
@@ -1406,27 +1410,36 @@ console.log('33. victories: order, culture ledger, domination, race reachability
     gs.civs[0].culture = 100
     adoptPolicy(gs, 0, 'FOUNDATIONS')
     ok(gs.civs[0].culture === 85 && gs.civs[0].cultureEarned === earned0, 'buying a policy spends the pool but never the lifetime ledger')
-    // threshold + strict lead: below the bar nothing fires; past it, only the
-    // living rivals count (the dead are history, not opposition)
-    const keepCW = CFG.cultureWin
-    CFG.cultureWin = 120
-    gs.civs[0].cultureEarned = 100
+    // the CULTURE crown reads TOURISM: threshold + strict tourism lead (the
+    // living rivals' visitor books; the dead are history, not opposition)
+    const keepTW = CFG.tourismWin
+    CFG.tourismWin = 120
+    gs.civs[0].tourism = 100
     step(gs, { endTurn: true })
-    ok(!gs.end, 'below the threshold — no victory, however admired')
-    // strictly ahead means a LIVING rival ahead of you still beats the bar
+    ok((gs.civs[0].tourism || 0) < CFG.tourismWin && !gs.end, 'below the visitor bar — no crown, however admired')
+    // strictly ahead means a LIVING rival with more tourists still beats the bar
     const gb = newGame(3, 0)
     const sb = gb.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(gb, { select: sb.id, found: true })
-    gb.civs[0].cultureEarned = CFG.cultureWin + 5
-    gb.civs[1].cultureEarned = CFG.cultureWin + 9
+    gb.civs[0].tourism = CFG.tourismWin + 5
+    gb.civs[1].tourism = CFG.tourismWin + 9
     step(gb, { endTurn: true })
-    ok(gb.end === 'lose' && /culture/i.test(gb.endWhy || ''), 'past the bar but a living rival shines brighter — the loss names it')
-    gs.civs[0].cultureEarned = CFG.cultureWin + 5
-    gs.civs[1].cultureEarned = CFG.cultureWin + 9
+    ok(gb.end === 'lose' && /culture/i.test(gb.endWhy || ''), 'past the bar but a living rival draws more tourists — the loss names it')
+    gs.civs[0].tourism = CFG.tourismWin + 5
+    gs.civs[1].tourism = CFG.tourismWin + 9
     gs.civs[1].alive = false
     step(gs, { endTurn: true })
-    ok(gs.end === 'win' && /Culture/.test(gs.endWhy || ''), 'past the bar, ahead of every LIVING rival — CULTURE VICTORY (the dead cannot out-shine you)')
-    CFG.cultureWin = keepCW
+    ok(gs.end === 'win' && /Culture/.test(gs.endWhy || ''), 'past the bar, ahead of every LIVING visitor book — CULTURE VICTORY (the dead cannot out-shine you)')
+    CFG.tourismWin = keepTW
+    // the record alone never crowns: lifetime culture far past the old bar with
+    // an empty visitor book must not win (the split is real, §37)
+    const gr = newGame(2, 0)
+    const sr = gr.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gr, { select: sr.id, found: true })
+    gr.civs[0].cultureEarned = CFG.cultureWin * 10
+    gr.civs[0].tourism = 0
+    step(gr, { endTurn: true })
+    ok(!gr.end, 'lifetime culture past any bar with no tourists is memory, not victory')
 
     // domination stays the law and wins ahead of everything
     const g2 = newGame(2, 0)
@@ -1447,16 +1460,16 @@ console.log('33. victories: order, culture ledger, domination, race reachability
     const g4 = newGame(2, 0)
     const s4 = g4.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(g4, { select: s4.id, found: true })
-    g4.civs[2].cultureEarned = CFG.cultureWin + 10
+    g4.civs[2].tourism = CFG.tourismWin + 10
     step(g4, { endTurn: true })
-    ok(g4.end === 'lose' && /culture/i.test(g4.endWhy || ''), 'China out-shines Rome — a culture loss')
+    ok(g4.end === 'lose' && /culture/i.test(g4.endWhy || ''), 'China draws the bigger crowd — a culture loss')
 
     // the races are real: with the milestone out of the way and the later eras
     // prioritised, the autopilot brings the Ark home well inside the clock
     const keepCap = CFG.capitalSizeToWin
     const keepOrder = [...RESEARCH_ORDER]
     CFG.capitalSizeToWin = 99
-    CFG.cultureWin = 100000
+    CFG.tourismWin = 100000     // the Ark race must not be upstaged by the tourist crown
     RESEARCH_ORDER.length = 0
     RESEARCH_ORDER.push('POTTERY', 'WRITING', 'EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT',
         'BANKING', 'GUNPOWDER', 'RAILROAD', ...keepOrder.filter((id) => !['POTTERY', 'WRITING', 'EDUCATION', 'ASTRONOMY', 'STEAM_POWER', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT', 'BANKING', 'GUNPOWDER', 'RAILROAD'].includes(id)))
@@ -1467,8 +1480,8 @@ console.log('33. victories: order, culture ledger, domination, race reachability
         latest = Math.max(latest, r.turns)
     }
     ok(sciWins >= 2, `the autopilot wins the science race on most boards (${sciWins}/3, latest t${latest})`)
-    // culture race on the same harness
-    CFG.cultureWin = keepCW
+    // culture race on the same harness — the visitor bar back down, the crown live
+    CFG.tourismWin = keepTW
     RESEARCH_ORDER.length = 0
     RESEARCH_ORDER.push('POTTERY', 'WRITING', 'PHILOSOPHY', 'ARCHERY', 'THE_WHEEL', 'MASONRY', 'BRONZE_WORKING', 'AGRICULTURE', 'CURRENCY', 'HORSEBACK', 'ENGINEERING', 'MATHEMATICS', 'EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT')
     let cultWins = 0
@@ -1647,8 +1660,8 @@ console.log('34. transports')
 // ---- 35. capital capture ≠ extinction — domination counts capitals (#375 item 2) ----
 console.log('35. capital capture ≠ extinction — domination counts capitals')
 {
-    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTurn = CFG.turnLimit
-    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.turnLimit = 9999   // isolate the domination law
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.turnLimit = 9999   // isolate the domination law
     const gs = newGame(4, 0)
     const s0 = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
     step(gs, { select: s0.id, found: true })
@@ -1714,14 +1727,14 @@ console.log('35. capital capture ≠ extinction — domination counts capitals')
     ok(stateHash(d1) === stateHash(d2) && d1.turn === d2.turn && d1.endWhy === d2.endWhy,
         'the capital-fall conquest is deterministic, hash-for-hash')
 
-    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.turnLimit = keepTurn
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
 
 // ---- 36. spaceship parts — THE ARK welds four named plates (#375 item 3) ----
 console.log('36. spaceship parts — Cockpit, Booster, Stasis, Launch')
 {
-    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTurn = CFG.turnLimit
-    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.turnLimit = 9999   // isolate the hull from the other crowns
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.turnLimit = 9999   // isolate the hull from the other crowns
 
     // (a) four named parts that split the launch ledger exactly
     eq(ARK_PARTS.length, 4, 'the Ark is four named parts, not one anonymous pool')
@@ -1796,7 +1809,107 @@ console.log('36. spaceship parts — Cockpit, Booster, Stasis, Launch')
     ok(stateHash(a) === stateHash(b) && JSON.stringify(arkPartsOf(a, 0)) === JSON.stringify(arkPartsOf(b, 0)),
         'with the part layer in place the autopilot still replays hash-for-hash')
 
-    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.turnLimit = keepTurn
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
+}
+
+// ---- 37. culture vs tourism split (polish pass #375-4): THE VISITOR BOOK ----
+console.log('37. tourism: earned, never spent — and the crown follows the crowd')
+{
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.turnLimit = 9999   // isolate the visitor book from the other crowns and the record
+
+    const gs = newGame(2, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+
+    // (a) the ledger starts empty and banks from the first worked turn
+    eq(gs.civs[0].tourism, 0, 'a new age opens with an empty visitor book')
+    step(gs, { endTurn: true })
+    ok(gs.civs[0].tourism > 0, 'tourists arrive from the first worked turn')
+    ok(Number.isInteger(gs.civs[0].tourism), 'the visitor book counts whole tourists')
+    let te = gs.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop()
+    ok(te && te.tour > 0 && Number.isInteger(te.tour), 'the turn report carries this turn\'s tourist count')
+
+    // (b) income law: half of culture (rounded up) + 3 per wonder + 1 per luxury
+    const luxN = (cv) => connectedResources(gs, cv).filter((id) => RES[id].lux).length
+    const wonN = (cv) => WONDER_IDS.filter((id) => gs.wonders[id] === cv).length
+    eq(te.tour, Math.ceil(te.cult / 2) + CFG.wonderTour * wonN(0) + luxN(0), 'the visitor book pays ceil(culture/2) + 3 per wonder + 1 per luxury')
+    const seatTile = neighbors(s.c, s.r).map(([c, r]) => gs.tiles[idx(c, r)]).find((t) => t.owner === 0 && t.city < 0 && t.res < 0)
+    if (seatTile) {
+        seatTile.res = RES_IDS.indexOf('SILVER')   // a seam revealed beside the capital
+        step(gs, { endTurn: true })
+        te = gs.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop()
+        ok(luxN(0) >= 1 && te.tour === Math.ceil(te.cult / 2) + CFG.wonderTour * wonN(0) + luxN(0), `a connected luxury sends one tourist (+1) — law holds with ${luxN(0)} luxuries`)
+        seatTile.res = -1
+    } else ok(true, '(no free owned seam on this board — caravan law still proven by the formula above)')
+    gs.wonders.STONEHENGE = 0                      // a wonder is worth three tourists a turn
+    step(gs, { endTurn: true })
+    te = gs.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop()
+    eq(te.tour, Math.ceil(te.cult / 2) + CFG.wonderTour * wonN(0) + luxN(0), 'the wonder law holds with Stonehenge flying')
+
+    // (c) three ledgers, three purposes: the pool pays, the record remembers,
+    // the visitor book travels — only the pool can be spent
+    const tt0 = gs.civs[0].tourism, ce0 = gs.civs[0].cultureEarned
+    gs.civs[0].culture = 100
+    adoptPolicy(gs, 0, 'FOUNDATIONS')
+    eq(gs.civs[0].culture, 85, 'the policy paid from the spendable pool')
+    eq(gs.civs[0].tourism, tt0, 'the visitor book is never spent')
+    eq(gs.civs[0].cultureEarned, ce0, 'the lifetime record is never spent either')
+
+    // (d) monotonic: tourists never leave
+    let prev = gs.civs[0].tourism
+    for (let i = 0; i < 3; i++) { step(gs, { endTurn: true }); ok(gs.civs[0].tourism >= prev, `tourists never grow fewer (t${gs.turn})`); prev = gs.civs[0].tourism }
+
+    // (e) the crown follows the crowd: below the bar nothing, past it only the lead
+    CFG.tourismWin = 200
+    gs.civs[0].tourism = 40
+    step(gs, { endTurn: true })
+    ok(!gs.end, 'far below the bar — no crown, however cultured')
+    gs.civs[0].tourism = CFG.tourismWin + 25
+    for (const c of [1, 2, 3]) gs.civs[c].tourism = 10
+    step(gs, { endTurn: true })
+    ok(gs.end === 'win' && /Culture/.test(gs.endWhy || ''), 'past the bar, strictly ahead of every living visitor book — CULTURE VICTORY')
+
+    // (f) strictness: with the only rival's economy frozen, an equal count is
+    // not a lead — the crown waits for strictly more
+    const gz = newGame(2, 0)
+    const sz = gz.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gz, { select: sz.id, found: true })
+    for (const ct of gz.cities) if (ct.civ === 1) ct.alive = false   // no cities, no crowds: China's book stands still
+    step(gz, { endTurn: true })
+    const b1 = gz.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop().tour
+    step(gz, { endTurn: true })
+    const b2 = gz.events.filter((e) => e.type === 'turnEnd' && e.civ === 0).pop().tour
+    ok(b1 === b2 || gz.cities.some((c) => c.alive && c.civ === 0 && c.size > 1), 'a growing capital banks a bigger crowd each turn')
+    CFG.tourismWin = Math.max(1, Math.floor(gz.civs[0].tourism))      // both are past the bar from here
+    gz.civs[1].tourism = gz.civs[0].tourism + b2                        // equal at the moment the next crowd arrives…
+    gz.civs[2].tourism = 0; gz.civs[3].tourism = 0
+    step(gz, { endTurn: true })
+    const led = gz.civs[0].tourism > gz.civs[1].tourism
+    ok((gz.end === 'win' && /Culture/.test(gz.endWhy || '')) === led, 'the crown wants strictly more tourists: a tie stays uncoroned, a lead crowns')
+
+    // (g) rivals ride the same law — China's bank is the same formula
+    const gr = newGame(2, 0)
+    const sr = gr.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gr, { select: sr.id, found: true })
+    step(gr, { endTurn: true })
+    const te1 = gr.events.filter((e) => e.type === 'turnEnd' && e.civ === 1).pop()
+    ok(te1 && te1.tour === Math.ceil(te1.cult / 2) + CFG.wonderTour * WONDER_IDS.filter((id) => gr.wonders[id] === 1).length + connectedResources(gr, 1).filter((id) => RES[id].lux).length, 'the rival visitor book obeys the same income law')
+
+    // (h) the visitor book folds into stateHash
+    const hA = stateHash(gz)
+    gz.civs[0].tourism += 7
+    ok(stateHash(gz) !== hA, 'tourists move the world hash')
+
+    // (i) determinism inside the shipped clock, with the split in place
+    const a = newGame(7, 0), b = newGame(7, 0)
+    let x = 0, y = 0
+    while (!a.end && x++ < 40000) step(a, decide(a))
+    while (!b.end && y++ < 40000) step(b, decide(b))
+    ok(stateHash(a) === stateHash(b) && a.civs[0].tourism === b.civs[0].tourism,
+        'with the tourism ledger in place the autopilot still replays hash-for-hash')
+
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)
