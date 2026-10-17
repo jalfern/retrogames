@@ -38,7 +38,7 @@ export function exposeGame(spec) {
         },
     }
     if (spec.snapshot) api.snapshot = () => spec.snapshot()
-    if (spec.restore) api.restore = (s) => spec.restore(s)
+    if (spec.restore) api.restore = (s) => spec.restore(structuredClone(s))
     exposed = api
     window.__game = api
     return api

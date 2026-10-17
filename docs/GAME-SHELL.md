@@ -57,6 +57,8 @@ Resulting `window.__game` API:
 - `state()` → JSON `{ tick, score, done, ... }` (games add their own hash).
 - `frame()` → PNG data URL of the game canvas.
 - `snapshot()` / `restore(s)` → optional; present when the game wires them.
+  `restore` deep-copies `s` before the game sees it (#381), so a caller may
+  stash one snapshot and restore it any number of times.
 
 Determinism law: every random the SIM consumes comes from the seed (rng.js,
 mulberry32). `Math.random()` may drive juice only — particles, shake, star
