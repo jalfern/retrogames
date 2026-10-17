@@ -240,7 +240,7 @@ export const GAMES = [
     },
     {
         path: '/lemmings',
-        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyE' }], analog: false },
+        pad: { method: 'pointer', buttons: [{ label: 'CYCLE', code: 'KeyE' }], reads: ['pointer', 'b'], reason: 'cursor — tap / drag to aim the assignment, CYCLE picks the skill' },
         builtBy: 'forge',
         component: LemmingsGame,
         label: 'LEMMINGS-LITE',
@@ -419,7 +419,7 @@ export const GAMES = [
     },
     {
         path: '/mario-kart',
-        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyR' }], analog: true },
+        pad: { method: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'ITEM', reads: ['x', 'y', 'a', 'b'], analog: true, reason: 'analog — steer on stick x / y, pedals on stick y, DRIFT + ITEM on buttons' },
         builtBy: 'forge',
         component: MarioKartGame,
         label: 'SUPER MARIO KART',
@@ -529,7 +529,7 @@ export const GAMES = [
     },
     {
         path: '/pacman',
-        pad: { layout: 'stick', buttons: [], analog: false },
+        pad: { method: 'dpad', buttons: [], reads: ['up', 'down', 'left', 'right'], reason: 'grid maze — 4-way cell movement, no analog' },
         builtBy: 'claude',
         component: PacmanGame,
         label: 'PAC-MAN',

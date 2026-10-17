@@ -102,17 +102,25 @@ export function triggersFromPad(pad) {
 // source of truth for what the B button does and says.
 
 const PAD_LAYOUTS = ['dpad', 'stick', 'stick+dpad']
+// The #420 standard: a game declares ONE input method. `method` supersedes the
+// legacy `layout`; both are accepted so the two can coexist during rollout.
+const PAD_METHODS = ['dpad', 'stick', 'pointer']
 
 // True when `pad` is a well-formed declaration (or null/undefined, which is a
 // legitimate "no pad" answer and is accepted by the callers, not here).
 export function validPad(pad) {
     if (!pad || typeof pad !== 'object') return false
-    if (!PAD_LAYOUTS.includes(pad.layout)) return false
+    const hasMethod = pad.method !== undefined
+    const hasLayout = pad.layout !== undefined
+    if (!hasMethod && !hasLayout) return false
+    if (hasMethod && !PAD_METHODS.includes(pad.method)) return false
+    if (hasLayout && !PAD_LAYOUTS.includes(pad.layout)) return false
     if (!Array.isArray(pad.buttons)) return false
     for (const b of pad.buttons) {
         if (!b || typeof b.label !== 'string' || typeof b.code !== 'string') return false
     }
     if (pad.analog !== undefined && typeof pad.analog !== 'boolean') return false
+    if (pad.reads !== undefined && (!Array.isArray(pad.reads) || pad.reads.some((f) => typeof f !== 'string'))) return false
     return true
 }
 
