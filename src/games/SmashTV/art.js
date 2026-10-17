@@ -2,6 +2,8 @@
 // Chunky broadcast-arena pixel art: chrome walls, camera-droids, a crowned
 // ANNOUNCER, panicked dot-matrix contestants, glass weapon crates.
 
+import { PLAYER_FRAMES } from './sprite.js'
+
 function sheet(w, h) {
     const c = document.createElement('canvas')
     c.width = w; c.height = h
@@ -112,6 +114,24 @@ function civ(f, tint) {
     return c
 }
 
+// the contestant: white camera visor, sponsor jersey, pale boots — a 4-frame
+// run cycle, boots the lowest layer so the gun layer passes over the feet
+function player(f) {
+    const [c, g] = sheet(12, 16)
+    px(g, 3, 1, 6, 5, '#e8eef8')
+    px(g, 4, 3, 4, 2, '#10141f')
+    px(g, 4, 3, 1, 1, '#ff4f4f'); px(g, 7, 3, 1, 1, '#ff4f4f')
+    px(g, 3, 6, 6, 6, '#e8eef8')
+    px(g, 3, 6, 6, 1, '#2b3a5c'); px(g, 3, 6, 1, 6, '#2b3a5c'); px(g, 8, 6, 1, 6, '#2b3a5c')
+    px(g, 4, 8, 4, 1, '#d43a3a')
+    px(g, 1, 7, 2, 3, '#cfd8ff'); px(g, 9, 7, 2, 3, '#cfd8ff')
+    const LEGS = [[[0, 1], [1, -1]], [[0, 0], [0, 0]], [[1, -1], [0, 1]], [[1, 0], [0, 0]]]
+    const [[lx, ly], [rx, ry]] = LEGS[f % PLAYER_FRAMES]
+    px(g, 3 + lx, 12 + ly, 2, 3, '#cfd8ff')
+    px(g, 7 + rx, 12 + ry, 2, 3, '#cfd8ff')
+    return c
+}
+
 // glass weapon crate with the gun silhouette inside
 function crate(weapon, f) {
     const [c, g] = sheet(16, 16)
@@ -149,6 +169,7 @@ export function buildSprites() {
         SP[`boss${f}`] = boss(f)
         SP[`crate${f}`] = crate('spread', f)
     }
+    for (const f of [0, 1, 2, 3]) SP[`player${f}`] = player(f)
     const TINTS = [
         { skin: '#e8b04f', shirt: '#d43a3a' },
         { skin: '#f0c8a0', shirt: '#3a7dd4' },
