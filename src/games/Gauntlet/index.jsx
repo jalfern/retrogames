@@ -22,6 +22,7 @@ import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
 import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
+import { torch, litColor, mortarTones, css } from './walls.js'
 
 const PW = 64, HT = 40
 const CW = VW + PW, CH = VH + HT
@@ -217,19 +218,37 @@ const GauntletGame = () => {
                     }
                 }
             }
+            // the torch: the hero's light — bright around him, falling to the
+            // dim ambient at the screen's edge. Every wall colour is lit by it.
+            const gx = gs.hero.x, gy = gs.hero.y
+            const { recess, bevel } = mortarTones(mat)
             for (let r = r0; r <= r1; r++) {
                 for (let c = c0; c <= c1; c++) {
                     if (cell(c, r) !== '#') continue
                     const x = Math.round(c * PX - camX), y = Math.round(r * PX - camY)
+                    const L = torch(c + 0.5 - gx, r + 0.5 - gy)
+                    const rec = css(litColor(recess, L)), bev = css(litColor(bevel, L))
+                    const body = css(litColor((c + r) % 2 === 0 ? mat.dark : mat.base, L))
+                    const cap = css(litColor(mat.lite, L))
+                    // drop shadow (unlit stone)
                     ctx.fillStyle = 'rgba(0,0,0,0.55)'
                     ctx.fillRect(x + 2, y + 3, PX, PX)
-                    ctx.fillStyle = (c + r) % 2 === 0 ? mat.dark : mat.base
-                    ctx.fillRect(x, y, PX, PX - 2)
-                    ctx.fillStyle = mat.lite
+                    // raised top face, then the two brick courses (running bond)
+                    ctx.fillStyle = cap
                     ctx.fillRect(x, y, PX, 2)
-                    ctx.fillStyle = mat.mortar
-                    ctx.fillRect(x, y + 5, PX, 1); ctx.fillRect(x, y + 10, PX, 1)
-                    ctx.fillRect(x + ((r % 2) * 8) + 4, y, 1, PX - 2)
+                    ctx.fillStyle = body
+                    ctx.fillRect(x, y + 2, PX, PX - 2)
+                    // the course line is two-toned: a dark recess with a light
+                    // bevel shelf catching the torch just below it
+                    ctx.fillStyle = rec
+                    ctx.fillRect(x, y + 8, PX, 1)
+                    ctx.fillStyle = bev
+                    ctx.fillRect(x, y + 9, PX, 1)
+                    // vertical joints: the upper course breaks at the mid, the
+                    // lower course half a brick over — running bond
+                    ctx.fillStyle = rec
+                    ctx.fillRect(x + 8, y + 2, 1, 6)
+                    ctx.fillRect(x + 4, y + 10, 1, 6); ctx.fillRect(x + 12, y + 10, 1, 6)
                 }
             }
             const sx = (wx) => Math.round(wx * PX - camX), sy = (wy) => Math.round(wy * PX - camY)

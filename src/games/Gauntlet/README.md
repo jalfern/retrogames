@@ -17,7 +17,8 @@ The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
     autopilot points absolutely (a player does this with the stick), then
     travels down the barrel it is looking through.
 - `index.jsx` — the overhead renderer: camera follows the hero (clamped to the
-  level), raised wall blocks with mortar + drop shadow, two-tone floor grain,
+  level), raised two-tone brick courses lit by the hero's torch + drop shadow,
+  two-tone floor grain,
   slam/locked/broken door faces, glowing stairs, sprites punched at runtime,
   facing-dagger + sword-arc sweep, vignette and scanlines, side panel (mini
   map, portrait, health, keys/gold), narrator strip, hero select, CPU partner
@@ -28,10 +29,15 @@ The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
    stairs' key-pulse (`stairsPulse`). drawPanel renders exactly its decisions;
    gauntletcheck proves them in plain Node.
 - `juice.js` — the view's reactive overlays (issue #275 item 4): the screen-edge
-   throb under 30% health (`lowHpPulse`), the sword's light-arc trail on the
-   blade's own arc (`swordTrail`), and the green flush while Death drains you
-   (`isDraining` + `deathTint`). drawView renders exactly its decisions;
-   gauntletcheck proves them in plain Node.
+    throb under 30% health (`lowHpPulse`), the sword's light-arc trail on the
+    blade's own arc (`swordTrail`), and the green flush while Death drains you
+    (`isDraining` + `deathTint`). drawView renders exactly its decisions;
+    gauntletcheck proves them in plain Node.
+- `walls.js` — the corridor look (issue #275 item 2): the hero's torch
+    (`torch`, `litColor`) lights the stone bright around him and dark at its
+    reach, and each wall course is two-toned per material (`mortarTones` — a
+    dark recess + a light bevel). drawView renders exactly its decisions;
+    gauntletcheck proves them in plain Node.
 
 ## Fidelity notes
 
@@ -48,11 +54,11 @@ The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
   Death, Death walking in on the treasure timer and draining point by point,
   stairs up ending each world and the fourth ending the quest.
 - Simplifications (honest gaps): no shop, no Valkyrie resurrection, one potion
-  effect (screen clear), no fire/water/bomb item variants, CPU partner follows
-  and stabs but has no door/key logic of its own, two-player is desktop-only,
-  monster swarm caps follow the level roster rather than the cabinet's screen
-  limits, wall tiles are uniform blocks rather than the original's themed
-  per-world textures. Filed as a QA polish pass.
+   effect (screen clear), no fire/water/bomb item variants, CPU partner follows
+   and stabs but has no door/key logic of its own, two-player is desktop-only,
+   monster swarm caps follow the level roster rather than the cabinet's screen
+   limits, and the walls are one shared brick layout themed per-world by
+   palette alone (no distinct per-world wall art). Filed as a QA polish pass.
 
 ## Controls
 
@@ -64,11 +70,12 @@ face · X / F / B: arrow down the facing · C on the hero screen: CPU partner ·
 
 ```bash
 npm run lint:gauntlet               # eslint gate for both games + harness
-npm run gauntletcheck             # 107 checks: geometry, art, sound, minimap,
-                                   # juice (the view's reactive overlays),
-                                   # generators (the wind-up), rules, overhead
-                                   # mode, ledger, pilot, slack, determinism
-npm run gauntletcheck -- --mutate # 12 mutants, all must die
+npm run gauntletcheck             # 118 checks: geometry, art, sound, minimap,
+                                    # juice (the view's reactive overlays),
+                                    # walls (the torch + two-tone courses),
+                                    # generators (the wind-up), rules, overhead
+                                    # mode, ledger, pilot, slack, determinism
+npm run gauntletcheck -- --mutate # 14 mutants, all must die
 npm run gauntletplay              # advisory browser drive (needs npm run dev)
 ```
 
