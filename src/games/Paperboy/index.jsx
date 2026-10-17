@@ -14,6 +14,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { W, H, CFG, PEDAL, G, makeGame, step, stateHash } from './sim.js'
 import { STAGES, PALETTES } from './levels.js'
 import { solveGame } from './planner.js'
@@ -380,8 +381,11 @@ const PaperboyGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                }
             }
             paint()
             syncHud()
@@ -512,10 +516,40 @@ const PaperboyGame = () => {
                     { label: 'WARP 200', run: () => { gs.s += 200; return 'jumped ahead (script no longer matches)' } },
                 ],
             })
+            let prevA = false, contractSeed = 0
+            exposeGame({
+                id: 'paperboy',
+                buttons: ['left', 'right', 'up', 'down', 'a'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    gs = makeGame(0)
+                    evLog.length = 0; part.length = 0
+                    keys.l = keys.r = keys.u = keys.d = false
+                    throwQ = null; lastDir = -1
+                    prevA = false; demoAt = 0
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const steer = pad.right ? 1 : pad.left ? -1 : 0
+                    if (steer) lastDir = steer
+                    const thr = !!pad.a && !prevA
+                    prevA = !!pad.a
+                    doSim({ steer, pedal: pad.up ? 2 : pad.down ? 0 : 1, throw: thr ? lastDir : null })
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: gs.end !== null,
+                    seed: contractSeed, lives: gs.lives, delivered: gs.delivered,
+                    missed: gs.missed, papers: gs.papers, streak: gs.streak, hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => JSON.parse(JSON.stringify(gs)),
+                restore: (s) => { gs = s },
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__paperTest) delete window.__paperTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__paperTest) delete window.__paperTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

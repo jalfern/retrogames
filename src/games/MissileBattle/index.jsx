@@ -16,6 +16,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan, decide } from './planner.js'
 import { WAVES } from './waves.js'
@@ -256,8 +257,11 @@ const MissileBattleGame = () => {
             const ft = Math.min(ts - last, 250)   // world-second catch-up cap (heist lesson)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                }
             }
             paint()
             syncHud()
@@ -391,10 +395,40 @@ const MissileBattleGame = () => {
                     { label: 'SMARTEST BOMB', run: () => { gs.enemies.push({ id: 8100, kind: 'smart', x: 128, px: 128, y: 20, vx: 0, vy: 0.6, ti: 3, t: 0, alive: true, split: null, amp: 13, drops: null, spawnAt: gs.playT, score: CFG.score.smart }); return 'weaving at the middle city' } },
                 ],
             })
+            let prevA = false, contractSeed = 0
+            exposeGame({
+                id: 'missile-battle',
+                buttons: ['left', 'right', 'up', 'down', 'a'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    gs = makeGame(0)
+                    evLog.length = 0; parts.length = 0
+                    keys.l = keys.r = keys.u = keys.d = keys.f = keys.fTap = false
+                    tap.on = false
+                    prevA = false; demoAt = 0
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const fire = !!pad.a && !prevA
+                    prevA = !!pad.a
+                    doSim({ l: !!pad.left, r: !!pad.right, u: !!pad.up, d: !!pad.down, fire })
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: gs.end !== null,
+                    seed: contractSeed, wave: gs.wave, phase: gs.phase,
+                    cities: gs.cities.filter((c) => c.alive).length,
+                    ammo: gs.bases.reduce((n, b) => n + (b.alive ? b.ammo : 0), 0),
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => JSON.parse(JSON.stringify(gs)),
+                restore: (s) => { gs = s },
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__mbTest) delete window.__mbTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__mbTest) delete window.__mbTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

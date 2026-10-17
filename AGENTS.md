@@ -75,7 +75,11 @@ Per-game `*check` / `*play` aliases: `package.json` + each game's README.
 3. Render `<VirtualControls />` for mobile — it dispatches `Arrow{Left,Right,Up,Down}` +
    `Space` (the "A" button); pass `secondAction={{ label, code }}` for "B",
    `visible={false}` on menus/death. Handle those `e.code` values.
-4. Engine notes go in the game's own `README.md` — **never in AGENTS.md** (law, not a log).
+4. Call `exposeGame({ id, buttons, reset, tick, state, canvas })` + `unexposeGame()` in cleanup
+   (DEV-only, spec in `docs/GAME-SHELL.md`) so QA bots/replays/RL drive it; add it to
+   `contractcheck`'s `GAMES`. `snapshot`/`restore` are optional — omit them if the sim's state
+   holds functions that JSON can't copy (#391).
+5. Engine notes go in the game's own `README.md` — **never in AGENTS.md** (law, not a log).
 
 ## Git & merge
 Feature branch → PR → squash-merge to `main`; never push to `main`. From the PR's branch,
