@@ -344,6 +344,38 @@ await page.keyboard.press('Space')
 await wait(400)
 r.check('one key returns to attract', (await probe()).screen === 'attract')
 
+// 8 — the cheap pipeline (#375 item 5): `?lite=1` drops MSAA and device pixel
+// ratio, not content. The same world must paint on it, or the flag is a blindfold.
+{
+    const litePage = await browser.newPage({ viewport: { width: 640, height: 426 }, deviceScaleFactor: 2 })
+    litePage.setDefaultTimeout(60000)
+    const liteErrors = []
+    litePage.on('pageerror', (e) => liteErrors.push(e.message))
+    await litePage.goto(URL + '?lite=1', { waitUntil: 'domcontentloaded' })
+    for (let i = 0; i < 120; i++) { if (await litePage.evaluate(() => !!window.__civTest)) break; await wait(200) }
+    r.check('the cheap pipeline boots (?lite=1 answers the DEV hook)', await litePage.evaluate(() => !!window.__civTest))
+    const litPx = await litePage.evaluate(() => {
+        const c = document.querySelector('canvas')
+        if (!c) return null
+        const gl = c.getContext('webgl2') || c.getContext('webgl')
+        if (!gl) return null
+        let best = [0, 0, 0]
+        const px = new Uint8Array(4)
+        for (let fy = 0.25; fy <= 0.8; fy += 0.18) for (let fx = 0.2; fx <= 0.8; fx += 0.15) {
+            gl.readPixels(Math.floor(c.width * fx), Math.floor(c.height * fy), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+            if (px[0] + px[1] + px[2] > best[0] + best[1] + best[2]) best = [px[0], px[1], px[2]]
+        }
+        return best
+    })
+    r.check(`the cheap pipeline still paints the world (brightest rgb ${litPx})`, litPx && litPx[0] + litPx[1] + litPx[2] > 24)
+    r.check(`the cheap pipeline is honest about pixels (dpr capped to 1)`, await litePage.evaluate(() => {
+        const c = document.querySelector('canvas')
+        return !!c && c.width <= Math.ceil(c.getBoundingClientRect().width)
+    }))
+    r.check('lite introduces no page errors', liteErrors.length === 0, liteErrors.slice(0, 2).join(' | '))
+    await litePage.close()
+}
+
 const clean = errors.filter((e) => !/favicon|Download the React DevTools|WebGL|GPU stall|Automatic fallback|SwiftShader/i.test(e))
 r.check('zero page errors', clean.length === 0, clean.slice(0, 3).join(' | '))
 

@@ -16,7 +16,8 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research/worker/policy/
                                     wonders/legends/diplomacy/victory panels
 scripts/civcheck.mjs                Node harness (npm run civcheck) — 533 checks
-scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 61 checks
+scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 65 checks
+scripts/civclock.mjs                frame budget of the late game (npm run civclock)
 ```
 
 ## Engine notes
@@ -98,6 +99,27 @@ replays stay hash-for-hash (§2, §32). Costs/thresholds are tuned so the scienc
 line lands at t35–36 and the culture line at t33–36 on the witness boards (§33)
 — the 40-turn clock is the design constraint, proven not assumed.
 
+**Mobile perf (polish #5, `npm run civclock`).** The late board (autopilot to
+t30 with the crowns disarmed, musket line + keel on top — `__civTest.clock`)
+is the worst the renderer ever sees. `?lite=1` is the documented cheap
+pipeline (the RaccoonHeist doctrine): MSAA off, device pixel ratio capped to
+1 — no shadows exist here, and nothing is removed from the scene graph, so
+`civplay` proves the flag still paints the world and caps the backing store
+(`dpr≤1` is a real pixel check). Per-frame work was made allocation-free: the
+tile-colour loop lerps against module constants instead of `new Color` per
+tile, the rebuild signatures are rolling integers instead of strings, and the
+signatures no longer carry `gs.turn` — an untouched board used to rebuild
+every city, camp and wonder *every turn*; now they rebuild only when the board
+actually changed. The catch-up cap is **16** steps, not 8: at the arcade's
+8-step cap the world loses real time below ~7.5 fps (half speed at 4 fps —
+the frame-floor lesson in AGENTS.md), and a turn-based sim is cheap to
+simulate even when the GPU is slow, so the world keeps seconds down to ~4 fps.
+One measured truth about the instrument: headless Chrome on macOS presents at
+~13–20 fps for *any* page — a bare three.js canvas that only clears the
+screen measures ~13 fps here — so `civclock` never claims fps as a property
+of the game; it gates on the loop ratio (≥0.9x at full speed) and prints
+fps/p50/p95 for whoever tunes the pipeline. Mutant proof #6 below.
+
 ## Controls
 
 Click/tap a tile to move; a hostile hex to strike. Keys: Space/Enter end turn ·
@@ -128,10 +150,12 @@ npm run civcheck          # 533 Node checks: boot, determinism, founding, econom
                            # spill, named weld events, launch only when all four are shut, clamps,
                            # rival tracks, replay determinism)
 npm run civplay           # Chrome, real keys: Y opens VICTORY (three tracks + rivals), K/L answer with
-                          # Musket/Galleon on a seed-4 COASTAL capital (real keel, no escape clause),
+                          # Musket and Galleon on a seed-4 COASTAL capital (real keel, no escape clause),
                           # J/E refuse the transport paths by name, the Ark banks beakers on live
                           # turns and reads as four named part tracks, win screen names the victory type,
-                          # zero errors
+                          # zero errors; then a ?lite=1 page: same world painted, dpr capped to 1, no errors
+npm run civclock          # late-board frame budget, full vs ?lite=1 at CPU throttle 1/4/8:
+                          # fps, loop ratio (the gate: >=0.9x at full speed), p50/p95 frame ms
 npm run lint:civ          # eslint gate for the game + its scripts
 ```
 
@@ -155,7 +179,10 @@ npm run lint:civ          # eslint gate for the game + its scripts
  5. In `sim.js`, make the Ark lift early (`gs.ark[civ] >= CFG.arkScience` →
     `arkPartsDone(gs, civ) >= 1`) → §36's "a half-built hull does not lift"
     goes red (a single welded plate cannot launch a ship); restore.
- 6. Carried: the truce-line mutant reds §30; wonder race-check reds §26×4; the
+ 6. In `sim.js` `animateUnits`, add a 30 ms busy-wait to the tick path →
+    `civclock` reddens (`loop 0.55x … BELOW 0.9x`, exit 1) — a sim that eats
+    the frame budget loses real time even under the raised cap; restore.
+ 7. Carried: the truce-line mutant reds §30; wonder race-check reds §26×4; the
    recruit gold-gate reds §27×2; border-clamp reds §23; branch-order reds §25;
    Stage-3 queue-gate reds §17; Stage-4 connectivity reds §21/§22.
 
