@@ -2,7 +2,8 @@
 //
 // Per pilot, in headless Chrome against the DEV server:
 //   boot (window.__game exists, zero page errors) · meta · state shape ·
-//   frame() PNG · reset(seed) lands on tick 0 · snapshot/restore round-trip ·
+//   frame() PNG · reset(seed) lands on tick 0 · snapshot/restore round-trip,
+//   restoring the SAME snapshot twice must return the same state (#381) ·
 //   determinism: reset(7) + the same 600 scripted pad ticks run TWICE must
 //   produce an identical final state JSON AND identical sampled hashes every
 //   100 ticks — and a different seed must produce a DIFFERENT JSON ·
@@ -39,7 +40,10 @@ const DRIVE = ({ seed, script }) => {
     if (snap) {
         g.step(script[0], 37)
         g.restore(snap)
-        restoreOk = JSON.stringify(g.state()) === atSnap
+        const first = JSON.stringify(g.state()) === atSnap
+        g.step(script[0], 37)
+        g.restore(snap)
+        restoreOk = first && JSON.stringify(g.state()) === atSnap
     }
     g.release()
     return { zeroTick: zero.tick, zeroDone: !!zero.done, final: JSON.stringify(s), samples, heldTick, restoreOk }
