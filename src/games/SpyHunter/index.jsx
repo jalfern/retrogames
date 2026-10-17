@@ -13,6 +13,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { W, H, PY, ROAD_L, ROAD_R, RIVER_X, makeGame, step, stateHash } from './sim.js'
 import { STAGES } from './script.js'
 import { plan, decide } from './planner.js'
@@ -302,8 +303,11 @@ const SpyHunterGame = () => {
             const ft = Math.min(ts - last, 250)   // world-second catch-up cap (heist lesson)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doFrameSim(); music(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= SIM_MS) { doFrameSim(); music(); acc -= SIM_MS }
+                }
             }
             paint()
             syncHud()
@@ -424,11 +428,39 @@ const SpyHunterGame = () => {
                     { label: 'SPAWN BONUS', run: () => { gs.phase = 'bonus'; gs.bonusT = 0; gs.bonusX = undefined; gs.bonusAlive = false; return 'bonus car next' } },
                 ],
             })
+            let prevB = false, contractSeed = 0
+            exposeGame({
+                id: 'spy-hunter',
+                buttons: ['left', 'right', 'a', 'b'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    gs = makeGame(0)
+                    noteAt = gs.tick
+                    evLog.length = 0; parts.length = 0
+                    keys.l = keys.r = keys.f = keys.m = keys.mEdge = false
+                    prevB = false; demoAt = 0
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const missile = !!pad.b && !prevB
+                    prevB = !!pad.b
+                    doSim({ l: !!pad.left, r: !!pad.right, f: !!pad.a, m: missile })
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: gs.end !== null,
+                    seed: contractSeed, stage: gs.stage, lives: gs.lives,
+                    missiles: gs.missiles, gunUp: gs.gunUp, d: gs.d, hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => JSON.parse(JSON.stringify(gs)),
+                restore: (s) => { gs = s },
+            })
         }
 
         return () => {
             clearTimeout(t)
-            if (import.meta.env.DEV) { if (window.__spyTest) delete window.__spyTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__spyTest) delete window.__spyTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

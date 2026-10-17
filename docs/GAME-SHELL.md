@@ -64,6 +64,8 @@ Determinism law: every random the SIM consumes comes from the seed (rng.js,
 mulberry32). `Math.random()` may drive juice only — particles, shake, star
 twinkle — nothing that reaches `state()`.
 
-Pilots (the only games wired for now — Jon decides the rollout after them):
-Lunar Lander (`left/right/x` → rotation, `a/up` → thrust) and Tempest
-(`left/right` → rim slide, `a/up` → fire). Proof: `npm run contractcheck`.
+Wired games (rollout #391, `npm run contractcheck`): Lunar Lander, Tempest (pilots)
++ Arkanoid, Galaga, Dig Dug, Missile Battle, Spy Hunter, Paperboy. New games must wire
+it too (AGENTS.md, "Adding a game" step 4). Galaga omits `snapshot`/`restore` — its
+enemies carry functional Catmull paths that JSON can't copy.
+`CONTRACT_ONLY=<id> npm run contractcheck` runs a single game.

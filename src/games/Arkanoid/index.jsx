@@ -14,6 +14,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan } from './planner.js'
 import { ROUNDS } from './rounds.js'
@@ -276,8 +277,11 @@ const ArkanoidGame = () => {
             const dt = Math.min(now - last, 250)
             last = now
             if (pausedRef.current) return
-            acc += dt
-            while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+            if (contractHoldsLoop()) { acc = 0 }
+            else {
+                acc += dt
+                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+            }
             draw()
             const h = hudRef.current
             if (h.score) h.score.textContent = String(gs.score).padStart(6, '0')
@@ -336,6 +340,32 @@ const ArkanoidGame = () => {
                 gameTime: () => gs.tick / 60,
             }
             mountDbg('arkanoid')
+            let prevA = false
+            exposeGame({
+                id: 'arkanoid',
+                buttons: ['left', 'right', 'a'],
+                reset: (seed) => {
+                    gs = makeGame(seed >>> 0)
+                    evLog.length = 0; parts.length = 0
+                    keys.l = keys.r = keys.f = keys.fEdge = false
+                    prevA = false; demoAt = 0
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const fire = !!pad.a && !prevA
+                    prevA = !!pad.a
+                    doSim({ l: !!pad.left, r: !!pad.right, fire })
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: gs.end !== null,
+                    seed: gs.seed, lives: gs.lives, round: gs.round,
+                    paddle: gs.paddle.x, hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => JSON.parse(JSON.stringify(gs)),
+                restore: (s) => { gs = s },
+            })
         }
 
         last = performance.now()
@@ -346,7 +376,7 @@ const ArkanoidGame = () => {
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('virtualcontrols', onPad)
-            if (import.meta.env.DEV) { unmountDbg('arkanoid'); delete window.__arkTest }
+            if (import.meta.env.DEV) { unmountDbg('arkanoid'); unexposeGame(); delete window.__arkTest }
         }
     }, [setMode])
 

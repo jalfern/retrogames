@@ -19,6 +19,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan } from './planner.js'
 import { WAVES } from './waves.js'
@@ -238,8 +239,11 @@ const GalagaGame = () => {
             const ft = Math.min(ts - last, 250)   // world-second catch-up cap (heist lesson)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                }
             }
             paint()
             syncHud()
@@ -351,10 +355,38 @@ const GalagaGame = () => {
                     { label: 'GRANT DOUBLE', run: () => { gs.double = true; return 'double fighter' } },
                 ],
             })
+            let prevA = false, contractSeed = 0
+            exposeGame({
+                id: 'galaga',
+                buttons: ['left', 'right', 'up', 'down', 'a'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    gs = makeGame(0)
+                    evLog.length = 0; parts.length = 0
+                    keys.l = keys.r = keys.u = keys.d = keys.f = keys.fEdge = false
+                    prevA = false; demoAt = 0
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const fire = !!pad.a && !prevA
+                    prevA = !!pad.a
+                    doSim({ l: !!pad.left, r: !!pad.right, u: !!pad.up, d: !!pad.down, f: fire })
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: gs.end !== null,
+                    seed: contractSeed, wave: gs.wave, lives: gs.lives, phase: gs.phase,
+                    double: gs.double, playerX: gs.player.x, hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                // snapshot/restore intentionally omitted: Galaga enemies carry
+                // functional Catmull paths (path.fn) that a JSON round-trip would
+                // strip — the optional part of the contract is unsafe here (#391).
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__galagaTest) delete window.__galagaTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__galagaTest) delete window.__galagaTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
