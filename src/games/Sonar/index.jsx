@@ -16,6 +16,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
     CFG, W, H, ROCK, DIRS, idx, cx, cy,
     genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell,
@@ -71,6 +72,7 @@ const SonarGame = () => {
         let cave = null, gs = null
         let byTick = null
         let raf = 0, last = 0, acc = 0
+        let tickBase = 0
         let toast = 0
         let runScore = 0, livesCarry = CFG.lives
         const held = []
@@ -117,6 +119,7 @@ const SonarGame = () => {
         }
 
         const doSim = () => {
+            const prevTick = gs.tick
             const sc = screenRef.current
             if (sc === 'attract' || sc === 'play') {
                 const todo = sc === 'attract' && byTick ? byTick.get(gs.tick) : null
@@ -140,6 +143,7 @@ const SonarGame = () => {
                     } else finish()
                 }
             }
+            if (gs.tick < prevTick) tickBase += prevTick + 1
         }
 
         const frame = (ts) => {
@@ -148,8 +152,11 @@ const SonarGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doSim(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= SIM_MS) { doSim(); acc -= SIM_MS }
+                }
             }
             paint()
             syncHud()
@@ -363,10 +370,38 @@ const SonarGame = () => {
                 },
                 start: startPlay,
             }
+            exposeGame({
+                id: 'sonar',
+                buttons: ['left', 'right', 'up', 'down', 'a'],
+                reset: (s) => {
+                    tickBase = 0
+                    seed = s >>> 0
+                    runScore = 0; livesCarry = CFG.lives
+                    loadDepth(1, true)
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    held.length = 0
+                    if (pad.left) held.push('ArrowLeft')
+                    if (pad.right) held.push('ArrowRight')
+                    if (pad.up) held.push('ArrowUp')
+                    if (pad.down) held.push('ArrowDown')
+                    if (pad.a) { const before = gs.events.length; ping(gs); handleEvents(gs.events.slice(before)) }
+                    doSim()
+                },
+                state: () => ({
+                    tick: tickBase + gs.tick, score: runScore + gs.score, done: !!gs.end,
+                    seed, depth, lives: gs.lives, have: gs.have, pearls: gs.pearls.length,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
         }
 
         return () => {
             if (import.meta.env.DEV && window.__sonarTest) delete window.__sonarTest
+            if (import.meta.env.DEV) unexposeGame()
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

@@ -15,6 +15,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { CFG, newRun, step, stateHash } from './sim.js'
 import { W, H, ROCK, STAIRS } from './cave.js'
 import { plan, autopilot, decide as decideTick } from './planner.js'
@@ -203,8 +204,11 @@ const OutpostGame = () => {
             const ft = Math.min(ts - last, 250)   // world-second catch-up cap
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                }
             }
             paint()
             syncHud()
@@ -288,6 +292,30 @@ const OutpostGame = () => {
                 ticks: (n) => { for (let k = 0; k < n && !gs.end; k++) doSim({}) },
                 drive: (n) => { for (let k = 0; k < n && !gs.end; k++) doSim(decideTick(gs)) },
             }
+            exposeGame({
+                id: 'outpost',
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+                reset: (seed) => startPlay(seed >>> 0),
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    if (pad.left) cursor.x = Math.max(1, cursor.x - 1)
+                    if (pad.right) cursor.x = Math.min(W - 2, cursor.x + 1)
+                    if (pad.up) cursor.y = Math.max(1, cursor.y - 1)
+                    if (pad.down) cursor.y = Math.min(H - 2, cursor.y + 1)
+                    if (pad.b) toolIdx = (toolIdx + 1) % TOOLS.length
+                    if (pad.a) designTap = { x: cursor.x, y: cursor.y }
+                    const inp = {}
+                    if (designTap) { inp.tool = TOOLS[toolIdx]; inp.designate = [designTap.x, designTap.y]; designTap = null }
+                    doSim(inp)
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.ore, done: !!gs.end,
+                    seed: gs.baseSeed, depth: gs.depth, food: gs.food, dug: gs.dug,
+                    dwarves: gs.dwarves.filter((d) => d.alive).length,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
             mountDbg({
                 title: 'OUTPOST',
                 getState: () => [
@@ -320,7 +348,7 @@ const OutpostGame = () => {
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__opTest) delete window.__opTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__opTest) delete window.__opTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('pointerdown', onPointer)
             window.removeEventListener('resize', resize)
