@@ -15,7 +15,7 @@ src/games/CivilizationV/art.js      tilted 3D hex world (three.js): relief, fog,
                                     musketeers, CS beacons, HP bars, arrows, FX
 src/games/CivilizationV/index.jsx   the shell: renderer, camera, input, HUD, research/worker/policy/
                                     wonders/legends/diplomacy/victory panels
-scripts/civcheck.mjs                Node harness (npm run civcheck) — 469 checks
+scripts/civcheck.mjs                Node harness (npm run civcheck) — 486 checks
 scripts/civplay.mjs                 Chrome drive with real keys (npm run civplay) — 60 checks
 ```
 
@@ -32,7 +32,8 @@ fit the arcade's 40-turn clock (§16, §32), not Civ V's centuries.
 
 **Three victories.** `checkEnd` judges a shared `victoryFor(civ)` for Rome and
 every rival, in order:
-1. **DOMINATION** — every rival civ destroyed (kept from Stage 1, renamed law).
+ 1. **DOMINATION** — every rival CAPITAL has fallen (polish #2 made this the
+    literal law; see below — a rival is beaten the moment its capital flips).
 2. **SCIENCE** — Spaceflight unlocks **THE ARK**: every beaker earned after it
    banks into `gs.ark[civ]`; when the Ark funds CFG.arkScience (70) it launches
    and the game ends mid-turn, whoever is funding it.
@@ -63,8 +64,26 @@ embark`, `no friendly galleon alongside`, `ships do not board ships`).
 Touch: tap a beach beside a laden Galleon to land; E embarks the selected
 squad; J lands at the nearest open beach.
 
+**Capital capture ≠ extinction (polish #2).** In the original, razing every last
+unit is never how you win — the head of the snake is. In `captureCity`, when a
+major civ's CAPITAL falls to another major, the realm **submits**: the fallen
+capital loses its banner (it becomes an ordinary city of the victor), and the
+defeated civ's remaining cities, garrisons and claimed land fold into the
+conqueror (`collapseRealm`). The civ is marked `civ.alive = false` and
+`civ.vassal = <captor>`, and the log records a `civFall` — *not* the old
+`civDead` every-city-lost extinction. A rival that marched living soldiers into
+the siege is finished anyway; taking its heart ended the reign, not a body count.
+Wars/pacts with a finished civ are dissolved so no front points at a ghost.
+A NON-capital city falling changes nothing about the reign (only the capital
+decides it), and Barbarians seizing a capital raze-without-vassalizing (the law
+is majors-only: `civ < BARB && old < BARB && old !== 0`). This makes the HUD
+pill honest: `X/3 rival capitals taken` now *is* the domination score, and three
+falls trip `victoryFor` → DOMINATION. Rome keeps exactly one capital (the prize
+city never counts as a second seat for the golden-age milestone). See §35.
+
 **Determinism.** Ark progress, lifetime culture, the six-era bitmask, the new
-unit kinds and the transports' cargo manifests fold into `stateHash`; same-seed
+unit kinds, the transports' cargo manifests and the capital-fall conquest all
+fold into `stateHash`; same-seed
 replays stay hash-for-hash (§2, §32). Costs/thresholds are tuned so the science
 line lands at t35–36 and the culture line at t33–36 on the witness boards (§33)
 — the 40-turn clock is the design constraint, proven not assumed.
@@ -92,7 +111,9 @@ npm run civcheck          # 469 Node checks: boot, determinism, founding, econom
                           # (§26), great people (§27), stage-6 integration + slack (§28), city-states §29,
                           # diplomacy §30, naval §31, later eras + Ark mechanics + clock budget §32,
                           # victory order + culture ledger + race reachability §33,
-                          # transports §34 (embark/land/assault/drown laws, capacity, hash fold)
+                           # transports §34 (embark/land/assault/drown laws, capacity, hash fold)
+                           # capital capture ≠ extinction §35 (capital fall vassalizes a living army, not
+                           # the every-city-lost path; three falls trip DOMINATION; conquest deterministic)
 npm run civplay           # Chrome, real keys: Y opens VICTORY (three tracks + rivals), K/L answer with
                           # Musket/Galleon on a seed-4 COASTAL capital (real keel, no escape clause),
                           # J/E refuse the transport paths by name, the Ark banks beakers on live
@@ -113,12 +134,20 @@ npm run lint:civ          # eslint gate for the game + its scripts
 3. In `civplay.mjs`, swap the Stage-8 seed back to inland (`start(4)` →
    `start(1)`) → the coastal-seat and real-keel checks go red (the old vacuous
    escape clause could not); restore.
-4. Carried: the truce-line mutant reds §30; wonder race-check reds §26×4; the
+ 4. In `sim.js` `captureCity`, neuter the capital-fall rule (`const fellCapital
+    = !!city.capital && …` → `false`) → §35's vassalization, one-capital and
+    domination-by-capitals checks go red (the reign still needs a body count);
+    restore.
+ 5. Carried: the truce-line mutant reds §30; wonder race-check reds §26×4; the
    recruit gold-gate reds §27×2; border-clamp reds §23; branch-order reds §25;
    Stage-3 queue-gate reds §17; Stage-4 connectivity reds §21/§22.
 
 ## Honest gaps (what the full original has that this arcade run does not)
 
+- **Vassals are annexed, not puppets** — a civ whose capital falls hands its
+  cities and armies straight to the conqueror and leaves the board; Civ V lets a
+  vassal keep its cities as an AI puppet under its overlord. Here the reign ends
+  and the realm folds (a deliberate cut so the domination pill stays one number).
 - **No naval supply or sea combat flavor beyond hulls** — transports cross any
   coast-to-coast sea in path range; no supply lines, no naval tactics stack.
 - **No spaceship parts** — the Ark is one funded program, not four parts built

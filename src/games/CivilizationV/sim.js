@@ -12,7 +12,9 @@
 //   - settlers found cities (>= 3 hex from any city, on passable land).
 //   - cities work `size` tiles (centre always), produce food/production/gold/
 //     science/culture, GROW on stored food surplus, and bombard one adjacent
-//     enemy each turn. Walls at 0 => captured; last city lost => civ destroyed.
+//     enemy each turn. Walls at 0 => captured; a civ whose CAPITAL falls is
+//     vassalized — its realm folds into the conqueror and the civ is done
+//     (capital capture ≠ needing every unit dead).
 //   - combat: 100 HP units, deterministic effective-strength exchanges.
 //     Modifiers: hills +25%, fortified +25%, city-tile support +50%,
 //     attacking across a river -10%. Ranged (range 2) takes no retaliation.
@@ -896,7 +898,7 @@ export function newGame(seed = 1, scenario = 0) {
         seed: seed + scenario * 977, scenario, tick: 0, turn: 1, phase: 'player',
         tiles: [], units: [], cities: [], camps: [], wars: {},
         fog: [], explored: [], visible: [],
-        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, cultureEarned: 0, happyNet: 0, alive: true })),
+        civs: CIVS.map((c) => ({ ...c, gold: 20, science: 0, culture: 0, cultureEarned: 0, happyNet: 0, alive: true, vassal: null })),
         tech: CIVS.map(() => ({ known: {}, research: null, prog: 0 })),
         policies: CIVS.map(() => ({})),
         resKnown: CIVS.map(() => ({})),
@@ -1325,9 +1327,43 @@ function captureCity(gs, city, civ) {
         if (civ < CIVS.length) { if (civ < CS0) gs.civs[civ].gold += CFG.csTribute; gs.events.push({ type: 'csTaken', cs: old, by: civ, tribute: civ < CS0 ? CFG.csTribute : 0 }) }
         for (let x = 0; x < CS0; x++) if (gs.cs[x][old]) { gs.cs[x][old].ally = false; gs.cs[x][old].fallen = true }
     }
+    // #375 item 2 — capital capture ≠ extinction, but it ENDS a reign: when a
+    // major civ's capital falls to another major, the realm submits. The fallen
+    // capital loses its banner (it is just a city of the victor now); the rest of
+    // the defeated civ's cities, garrisons and borders fold into the conqueror and
+    // the civ is vassalized. The arcade HUD pill tracks exactly these falls.
+    const fellCapital = !!city.capital && old < BARB && civ < BARB && civ !== old && old !== 0
+    if (fellCapital) delete city.capital
     declareWar(gs, civ, old)
+    if (fellCapital) {
+        collapseRealm(gs, old, civ)
+        gs.civs[old].vassal = civ
+        gs.civs[old].alive = false
+        gs.events.push({ type: 'civFall', civ: old, by: civ, capital: city.name })
+    }
     if (civ < BARB) reveal(gs, civ, city.c, city.r, CFG.sightCity)
     checkCivDeath(gs)
+}
+
+// A defeated realm submits: its cities, garrisons and claimed land pass to the
+// victor, its pacts and wars dissolve. The defeated civ keeps NO cities, so
+// checkCivDeath agrees it is gone and DOMINATION (counted on capitals) advances
+// one crown for this capital fall — no need to grind out every last unit.
+function collapseRealm(gs, old, captor) {
+    for (const ct of gs.cities) {
+        if (!ct.alive || ct.civ !== old) continue
+        if (ct.capital) delete ct.capital
+        ct.civ = captor
+        ct.wallMax = ct.wallMax || CFG.cityHp
+        ct.hp = Math.max(1, Math.min(ct.hp, Math.floor(ct.wallMax * 0.5)))
+        ct.queue = ct.queue || []
+        for (const [nc, nr] of neighbors(ct.c, ct.r)) { const tl = gs.tiles[idx(nc, nr)]; if (tl.owner === old) tl.owner = captor }
+        gs.tiles[idx(ct.c, ct.r)].owner = captor
+    }
+    for (const u of gs.units) if (u.alive && u.civ === old) u.civ = captor
+    for (const book of [gs.wars, gs.trade, gs.peaceTurn]) {
+        for (const k of Object.keys(book)) { const [a, b] = k.split('-').map(Number); if (a === old || b === old) delete book[k] }
+    }
 }
 
 function checkCivDeath(gs) {

@@ -124,6 +124,7 @@ const CivilizationVGame = () => {
                     say(e.civ === 0 ? `${gs.cities[e.city].name.toUpperCase()} CAPTURED!` : `${gs.cities[e.city].name.toUpperCase()} HAS FALLEN!`)
                 }
                 else if (e.type === 'civDead') { say(`${CIVS[e.civ].name} IS NO MORE`); audioController.playDeath() }
+                else if (e.type === 'civFall') { say(`${CIVS[e.civ].name} VASSALIZED — ${CIVS[e.by].name.toUpperCase()} TAKES THE REALM`); audioController.playSweep(190, 70, 0.6, 'sawtooth', 0.12) }
                 else if (e.type === 'build') {
                     if (e.civ === 0) {
                         const label = e.unit === 'GALLEY' ? 'A TRIREME TAKES THE WATER' : e.unit === 'GALLEON' ? 'A GALLEON CATCHES THE WIND' : e.unit === 'MUSKET' ? 'MUSKETS IN THE LINE' : `${e.unit} TRAINED AT ${gs.cities[e.city].name.toUpperCase()}`
@@ -672,6 +673,7 @@ const CivilizationVGame = () => {
                 size: capSize(), goal: GOAL,
                 rivals: CIVS.filter((c) => !c.barb && !c.cs && c.id !== 0).map((c) => ({
                     id: c.id, name: c.name, hex: c.hex, alive: gs.civs[c.id].alive,
+                    vassal: gs.civs[c.id].vassal,
                     caps: gs.cities.some((ct) => ct.alive && ct.civ === c.id && ct.capital),
                     space: hasTech(gs, c.id, 'SPACEFLIGHT'), ark: Math.floor(gs.ark[c.id]),
                     cult: Math.floor(gs.civs[c.id].cultureEarned || 0),
@@ -1107,7 +1109,7 @@ const CivilizationVGame = () => {
                             <div className="rounded border border-red-300/40 bg-red-950/30 px-2 py-1.5">
                                 <div className="text-[11px] font-bold">⚔ DOMINATION</div>
                                 <div className="h-1.5 rounded bg-black/60 mt-1"><div className="h-full bg-red-400" style={{ width: `${Math.round((vpanel.taken / 3) * 100)}%` }} /></div>
-                                <div className="text-[9px] opacity-70 mt-1">{vpanel.taken}/3 rival capitals taken — the rest must fall</div>
+                                <div className="text-[9px] opacity-70 mt-1">{vpanel.taken}/3 rival capitals taken — take a capital and that realm submits</div>
                             </div>
                             <div className="rounded border border-sky-300/40 bg-sky-950/30 px-2 py-1.5">
                                 <div className="text-[11px] font-bold">🚀 SCIENCE</div>
@@ -1124,7 +1126,7 @@ const CivilizationVGame = () => {
                         {vpanel.rivals.map((r) => (
                             <div key={r.id} className={`mb-1 rounded border px-2 py-1 text-[11px] ${!r.alive ? 'border-white/10 bg-black/30 text-white/30' : 'border-white/15 bg-black/20'}`}>
                                 <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5 align-middle" style={{ background: r.hex }} />{r.name}
-                                {!r.alive ? ' — destroyed' : (
+                                {!r.alive ? (r.vassal != null ? <span className="ml-2 text-red-300">— vassal of {CIVS[r.vassal]?.name || 'a rival'}</span> : ' — destroyed') : (
                                     <>
                                         <span className="ml-2 opacity-80">❦ {r.cult}</span>
                                         {r.ark > 0 && <span className="ml-2 text-sky-300">ARC {Math.round((r.ark / vpanel.needArk) * 100)}%</span>}
