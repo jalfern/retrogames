@@ -63,7 +63,7 @@ complete.
    whole lab (game + controls + map) fits a 1440×900 screen and ends above the
    footer watermark band.
   **Policy picker** (`?policy=<name>`, lab only): one of `v3` (default), `v2`,
-  `dagger6`, `clone1k`, `clone1k-noisy`, each loaded from
+  `dagger6`, `bc1k`, `clone1k`, `clone1k-noisy`, each loaded from
   `public/replays/lander-policy-<name>.json`. A policy JSON carries its own
   `actions` list, so 4-button PPO nets and 6-button nets (incl. rotate+thrust)
   both fly through the same `policyProbs`/`actionVector` path; `name` and

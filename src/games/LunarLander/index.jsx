@@ -23,7 +23,7 @@ import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } f
 
 const SIM_MS = 1000 / 60
 const REPLAY_PATH = 'replays/lander-ppo.json'
-const POLICIES = ['v2', 'v3', 'dagger6', 'clone1k', 'clone1k-noisy']
+const POLICIES = ['v3', 'v2', 'dagger6', 'bc1k', 'clone1k', 'clone1k-noisy']
 const policyName = () => {
     const p = new URLSearchParams(window.location.search).get('policy')
     return POLICIES.includes(p) ? p : 'v3'

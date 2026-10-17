@@ -8,7 +8,7 @@ import { policyProbs } from '../src/games/LunarLander/policy.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const rep = (f) => JSON.parse(readFileSync(join(here, '..', 'public', 'replays', f), 'utf8'))
-const NAMES = ['v2', 'v3', 'dagger6', 'clone1k', 'clone1k-noisy']
+const NAMES = ['v2', 'v3', 'dagger6', 'bc1k', 'clone1k', 'clone1k-noisy']
 
 let allOk = true
 for (const name of NAMES) {
