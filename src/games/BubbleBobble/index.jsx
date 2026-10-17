@@ -15,6 +15,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { CELL, COLS, W, H, FIELD_Y0, FLOOR_ROW, LETTERS } from './levels.js'
 import { makeGame, step, stateHash, CFG } from './sim.js'
 import { plan, decide } from './planner.js'
@@ -493,8 +494,8 @@ const Bob = () => {
             const dt = Math.min(now - last, 250)
             last = now
             if (pausedRef.current) return
-            acc += dt
-            while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+            if (contractHoldsLoop()) { acc = 0 }
+            else { acc += dt; while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS } }
             draw()
             if (screenRef.current === 'play' && gs.levelPhase === 'play' && gs.players.every((p) => p.deadT === 0)) {
                 musicT++
@@ -590,6 +591,35 @@ const Bob = () => {
                     { label: 'blubba now', run: () => { gs.lingerT = gs.lv.blubbaAt; return 'timer set' } },
                 ],
             })
+            let prevA = false
+            exposeGame({
+                id: 'bubble-bobble',
+                buttons: ['left', 'right', 'up', 'down', 'a'],
+                reset: (seed) => {
+                    modeRef.current = 1
+                    gs = makeGame(seed >>> 0, { players: 1 })
+                    evLog.length = 0; parts.length = 0
+                    demoAt = 0; musicT = 0; shake = 0
+                    for (const k of [keys, p2keys]) { k.l = k.r = k.u = k.d = false; k.fEdge = false }
+                    prevA = false
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const fire = !!pad.a && !prevA
+                    prevA = !!pad.a
+                    doSim([{ left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down, fire }])
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: !!gs.end,
+                    seed: gs.seed, lives: gs.lives, level: gs.level, chain: gs.chain,
+                    enemies: gs.enemies.length, door: !!gs.door.open,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => JSON.parse(JSON.stringify(gs)),
+                restore: (s) => { gs = s },
+            })
         }
 
         last = performance.now()
@@ -600,7 +630,7 @@ const Bob = () => {
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('virtualcontrols', onPad)
-            if (import.meta.env.DEV) { unmountDbg(); delete window.__bobTest }
+            if (import.meta.env.DEV) { unmountDbg(); delete window.__bobTest; unexposeGame() }
         }
     }, [setMode])
 

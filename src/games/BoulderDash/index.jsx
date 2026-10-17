@@ -16,6 +16,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { LEVELS, buildLevel } from './levels.js'
 import { makeGame, planRun, planStep, step, playerMove, stateHash, CFG, W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL, FIRE } from './sim.js'
 
@@ -66,6 +67,7 @@ const DashGame = () => {
 
         // ---------- world / loop state ----------
         let levelIdx = 0
+        let contractSeed = 0
         let meta = null, grid = null, gs = null
         let plan = [], raf = 0, last = 0, acc = 0
         let runMoves = 0
@@ -138,8 +140,8 @@ const DashGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= CA_MS) { doSim(); acc -= CA_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else { acc += ft; while (acc >= CA_MS) { doSim(); acc -= CA_MS } }
             }
             paint()
             syncHud()
@@ -311,10 +313,34 @@ const DashGame = () => {
                 },
                 start: startPlay,
             }
+            exposeGame({
+                id: 'boulder-dash',
+                buttons: ['left', 'right', 'up', 'down', 'a'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    loadLevel(contractSeed % LEVELS.length, true)
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const heldDirs = [[pad.up, 'ArrowUp'], [pad.down, 'ArrowDown'], [pad.left, 'ArrowLeft'], [pad.right, 'ArrowRight']].filter((d) => d[0])
+                    if (heldDirs.length && gs.tick - lastMoveTick >= MOVE_STEP) movePlayer(heldDirs[heldDirs.length - 1][1])
+                    handleEvents(step(gs).events)
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: gs.end !== null,
+                    seed: contractSeed, level: levelIdx, have: gs.have, win: gs.win,
+                    player: { x: gs.player.x, y: gs.player.y, alive: gs.player.alive },
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => structuredClone(gs),
+                restore: (s) => { gs = s },
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV && window.__dashTest) delete window.__dashTest
+            if (import.meta.env.DEV) { delete window.__dashTest; unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

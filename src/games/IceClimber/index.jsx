@@ -21,8 +21,9 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { W, H, CELL, ICE, ROCK, PLAT, EMPTY, CFG, makeGame, step, stateHash, cloneGame } from './sim.js'
-import { buildLevel } from './levels.js'
+import { buildLevel, LEVELS } from './levels.js'
 import { plan, nextMountain } from './planner.js'
 
 const VIEW_W = W * CELL
@@ -70,6 +71,7 @@ const IceGame = () => {
         ctx.imageSmoothingEnabled = false
 
         let gs = makeGame(buildLevel(0))
+        let contractSeed = 0
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0
         const k1 = pad(), k2 = pad()
@@ -259,8 +261,8 @@ const IceGame = () => {
             const ft = Math.min(ts - last, 250)   // world-second catch-up cap (heist lesson)
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else { acc += ft; while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS } }
             }
             paint()
             syncHud()
@@ -387,10 +389,34 @@ const IceGame = () => {
                     },
                 ],
             })
+            exposeGame({
+                id: 'ice-climber',
+                buttons: ['left', 'right', 'up', 'down', 'a'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    gs = makeGame(buildLevel(contractSeed % LEVELS.length))
+                    evLog.length = 0; parts.length = 0; demoAt = 0; shake = 0
+                    for (const k of [k1, k2]) { k.l = k.r = k.u = k.j = false; k.jEdge = false }
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end && gs.end !== 'clear') { gs.tick += 1; return }
+                    const j = pad.a ? 1 : 0
+                    doSim({ a: { l: !!pad.left, r: !!pad.right, u: !!pad.up, j }, b: { l: false, r: false, u: false, j: 0 } })
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: gs.end !== null && gs.end !== 'clear',
+                    seed: contractSeed, level: gs.level, lives: gs.lives, carrotTaken: !!gs.carrotTaken,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+                snapshot: () => cloneGame(gs),
+                restore: (s) => { gs = s },
+            })
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__iceTest) delete window.__iceTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__iceTest) delete window.__iceTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
