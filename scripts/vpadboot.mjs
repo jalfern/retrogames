@@ -1,0 +1,109 @@
+// vpadboot — the #384 step-1 mount gate, in one real browser.
+//
+// vpadcheck pins the *decision* (shouldUseStick + the registry's d-pad
+// exceptions) in Node. This script pins the *mount*: every route this step
+// touched boots with zero page errors, and once its pad is on screen the
+// floating-stick zone is present exactly when the registry declares the stick
+// — absent for the grid-/menu-driven d-pad exceptions (which may render the
+// 150px d-pad or a title's own 2x2 corner pad; #384 only flips the stick
+// default, it never re-shapes a title's own left control).
+//
+// Getting a title to the pad-on-screen state needs its own start gesture
+// (tap, select-screen confirm, or a keyboard start), so a bounded ladder of
+// generic gestures is tried until the left control appears. A synthetic
+// (non-isTrusted) keydown is used for keyboard-only starts on purpose: it
+// starts the game without tripping VirtualControls' hide-on-real-keyboard.
+//
+//   npm run dev          (another terminal, or point VPAD_URL at any dev server)
+//   npm run vpadboot
+
+import { launch, requireDevServer, Report } from './lib/harness.mjs'
+
+const BASE = process.env.VPAD_URL || 'http://localhost:5173/retrogames'
+
+// The 27 routes #384 step 1 touches, with the layout each registry entry
+// declares. A drift here (a silent revert of the default, or a reason-less
+// d-pad) fails the boot, not just the Node pin.
+const TOUCHED = [
+    ['/mario', 'stick'], ['/ironkeep', 'stick'], ['/beezee', 'stick'],
+    ['/lemmings', 'stick'], ['/metroid', 'stick'], ['/polarity', 'stick'],
+    ['/simcity-min', 'dpad'], ['/outpost', 'dpad'], ['/papers-please', 'dpad'],
+    ['/lode-runner', 'stick'], ['/dogfight', 'stick'], ['/paperboy', 'stick'],
+    ['/wizardry', 'dpad'], ['/spy-hunter', 'stick'], ['/excitebike', 'stick'],
+    ['/tetris', 'dpad'], ['/qbert', 'dpad'], ['/zelda', 'stick'],
+    ['/minesweeper', 'dpad'], ['/bubble-bobble', 'stick'], ['/gauntlet', 'stick'],
+    ['/four-halls', 'stick'], ['/smash-tv', 'stick'], ['/lunar-lander', 'stick'],
+    ['/bards-tale', 'dpad'], ['/ssx', 'stick'], ['/prince-of-persia', 'stick'],
+]
+
+// The floating-stick zone is the only DOM the #384 default-flip adds or
+// removes: it renders iff shouldUseStick(pad) && the pad is visible. The two
+// d-pad shapes are pre-existing per-title choices and are both "no stick".
+const STICK_MARK = 'fixed left-0 top-0 bottom-0 w-1/2'
+const LEFT_MARKS = [STICK_MARK, 'relative w-[150px] h-[150px]', 'grid grid-cols-2']
+
+async function leftCtrl(page) {
+    const marks = await page.evaluate((ms) => {
+        const cls = [...document.querySelectorAll('div')].map(d => String(d.className))
+        return ms.map(m => cls.some(c => c.includes(m)))
+    }, LEFT_MARKS)
+    return { stick: marks[0], any: marks.some(Boolean) }
+}
+
+// Try generic start gestures until a left control is on screen. Bounded, so a
+// title that never gets there fails loudly instead of hanging the gate.
+async function enterPlay(page) {
+    const steps = [
+        async () => page.touchscreen.tap(215, 320),          // touch start
+        async () => page.evaluate(() => {                    // keyboard start (non-isTrusted)
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowRight', bubbles: true }))
+            window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowRight', bubbles: true }))
+        }),
+        async () => page.touchscreen.tap(380, 300),          // select-screen confirm (right side)
+        async () => page.evaluate(() => {                    // one more keyboard start
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', bubbles: true }))
+            window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Enter', bubbles: true }))
+        }),
+    ]
+    for (const step of steps) {
+        await step()
+        await page.waitForTimeout(1200)
+        if ((await leftCtrl(page)).any) return
+    }
+}
+
+await requireDevServer(BASE + '/mario')
+const browser = await launch()
+const r = new Report('vpadboot')
+
+for (const [path, layout] of TOUCHED) {
+    const errors = []
+    const page = await browser.newPage({
+        viewport: { width: 430, height: 932 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true,
+    })
+    page.setDefaultTimeout(60000)
+    page.on('pageerror', e => errors.push(String(e.message).slice(0, 200)))
+    page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text().slice(0, 200)) })
+    try {
+        await page.goto(BASE + path, { waitUntil: 'load' })
+        await page.waitForSelector('canvas', { timeout: 20000 })
+        await page.waitForTimeout(800) // let the mount settle past the first frames
+        await enterPlay(page)
+        const { stick, any } = await leftCtrl(page)
+        const pageErrors = errors.filter(e => !e.startsWith('console:'))
+        r.check(`${path} boots with zero page errors`, pageErrors.length === 0, pageErrors.join(' | ').slice(0, 300))
+        if (errors.some(e => e.startsWith('console:')))
+            r.info(`${path} console.error`, errors.filter(e => e.startsWith('console:')).join(' | ').slice(0, 200))
+        r.check(`${path} pad is on screen`, any, 'no left control after the start ladder')
+        r.check(`${path} stick zone ${layout === 'stick' ? 'present' : 'absent'}`, stick === (layout === 'stick'),
+            `stick=${stick} expected=${layout === 'stick'}`)
+    } catch (e) {
+        r.check(`${path} boots with zero page errors`, false, String(e.message).slice(0, 200))
+        r.check(`${path} pad is on screen`, false, 'boot failed')
+        r.check(`${path} stick zone ${layout === 'stick' ? 'present' : 'absent'}`, false, 'boot failed')
+    } finally {
+        await page.close()
+    }
+}
+
+await r.exit(browser)

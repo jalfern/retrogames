@@ -9,7 +9,7 @@
 
 import { readFileSync } from 'fs'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD } from '../src/components/virtualDir.js'
-import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad } from '../src/components/gamepadMap.js'
+import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick } from '../src/components/gamepadMap.js'
 import { steerPedals } from '../src/utils/padState.js'
 
 let pass = 0, fail = 0
@@ -412,6 +412,45 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     for (const [file, label] of readers) {
         const src = readFileSync(new URL(file, import.meta.url), 'utf8')
         ok(/from '\.\.\/\.\.\/utils\/padState'/.test(src), `${label} imports the padState analog channel`)
+    }
+}
+
+// --- 28. Step 1 (#384): the floating stick is the DEFAULT touch layout ---
+// A game with no pad declaration (or a non-dpad one) gets the stick; only an
+// explicit layout 'dpad' opts out to the fixed d-pad (the grid-/menu titles).
+{
+    ok(shouldUseStick(null) === true, 'default: no pad declaration -> the floating stick')
+    ok(shouldUseStick(undefined) === true, 'default: undefined pad -> the floating stick')
+    ok(shouldUseStick({ layout: 'dpad', buttons: [] }) === false, 'layout dpad -> the fixed d-pad (the exception)')
+    ok(shouldUseStick({ layout: 'stick', buttons: [] }) === true, 'layout stick -> the floating stick')
+    ok(shouldUseStick({ layout: 'stick+dpad', buttons: [] }) === true, 'layout stick+dpad -> the floating stick')
+}
+// Mutant that dies: the default silently reverts to the pre-#384 d-pad, so every
+// title that declares no pad loses the floating stick. Prove the two diverge.
+{
+    const oldDefault = (pad) => !!(pad && (pad.layout === 'stick' || pad.layout === 'stick+dpad'))
+    ok(shouldUseStick(null) !== oldDefault(null), 'old d-pad-default mutant diverges (no pad is now stick)')
+    ok(shouldUseStick({ layout: 'dpad', buttons: [] }) === oldDefault({ layout: 'dpad', buttons: [] }),
+        'both agree dpad is the d-pad (only the default changed)')
+}
+// The d-pad exception set is exactly the grid- / menu-driven titles, and each
+// carries a one-line reason. A silent revert (drop the layout or the reason)
+// would put a grid game back on the floating stick, so the registry is pinned.
+{
+    const gamesSrc = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    const blockFor = (path) => {
+        const i = gamesSrc.indexOf(`path: '${path}'`)
+        if (i === -1) return null
+        const j = gamesSrc.indexOf('path: ', i + 1)
+        return gamesSrc.slice(i, j === -1 ? gamesSrc.length : j)
+    }
+    const dpadGames = ['/minesweeper', '/simcity-min', '/outpost', '/papers-please', '/wizardry', '/tetris', '/qbert', '/bards-tale']
+    for (const path of dpadGames) {
+        const block = blockFor(path)
+        ok(block !== null, `games.js has an entry for ${path}`)
+        if (!block) continue
+        ok(/layout: 'dpad'/.test(block), `games.js ${path} keeps the fixed d-pad`)
+        ok(/reason: '/.test(block), `games.js ${path} carries a one-line d-pad reason`)
     }
 }
 
