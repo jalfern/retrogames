@@ -2,7 +2,7 @@
 // boots, its core rules hold, and it can be won. No browser, no three.
 // Run: npm run civcheck. Proven red-able (mutant) by hand — see README.
 
-import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor } from '../src/games/CivilizationV/sim.js'
+import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, ARK_PARTS, arkPartsOf, arkPartsDone } from '../src/games/CivilizationV/sim.js'
 import { decide, plan, RESEARCH_ORDER } from '../src/games/CivilizationV/planner.js'
 
 let pass = 0, fail = 0
@@ -1713,6 +1713,88 @@ console.log('35. capital capture ≠ extinction — domination counts capitals')
     const d1 = runScenario(4), d2 = runScenario(4)
     ok(stateHash(d1) === stateHash(d2) && d1.turn === d2.turn && d1.endWhy === d2.endWhy,
         'the capital-fall conquest is deterministic, hash-for-hash')
+
+    CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.turnLimit = keepTurn
+}
+
+// ---- 36. spaceship parts — THE ARK welds four named plates (#375 item 3) ----
+console.log('36. spaceship parts — Cockpit, Booster, Stasis, Launch')
+{
+    const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTurn = CFG.turnLimit
+    CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.turnLimit = 9999   // isolate the hull from the other crowns
+
+    // (a) four named parts that split the launch ledger exactly
+    eq(ARK_PARTS.length, 4, 'the Ark is four named parts, not one anonymous pool')
+    eq(ARK_PARTS.map((p) => p.name).join('|'), 'Cockpit|Booster|Stasis|Launch', 'the hull is named: Cockpit, Booster, Stasis, Launch')
+    eq(ARK_PARTS.reduce((a, p) => a + p.cost, 0), CFG.arkScience, 'the four welds split the 70-beaker ledger exactly')
+    ok(new Set(ARK_PARTS.map((p) => p.cost)).size >= 2, 'the plates differ — the hull is not four identical stamps')
+
+    const gs = newGame(2, 0)
+    const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(gs, { select: s.id, found: true })
+    for (let i = 0; i < 3; i++) step(gs, { endTurn: true })
+
+    // (b) before Spaceflight the yard stands empty
+    ok(arkPartsOf(gs, 0).every((p) => p.funded === 0 && !p.done), 'before Spaceflight every part sits unfunded')
+    grantTech(gs, 0, 'SPACEFLIGHT')
+
+    // (c) ordered fill with spill: the Cockpit closes first, overflow runs down the line
+    gs.ark[0] = ARK_PARTS[0].cost - 1
+    let ps = arkPartsOf(gs, 0)
+    eq(ps[0].done, false, 'one beaker short and the Cockpit plate stays open')
+    eq(ps[1].funded, 0, 'the Booster weld waits its turn')
+    gs.ark[0] = ARK_PARTS[0].cost + 4
+    ps = arkPartsOf(gs, 0)
+    eq(ps[0].done, true, 'the Cockpit welds shut')
+    eq(ps[1].funded, 4, 'overflow spills into the Booster')
+    eq(ps[2].funded, 0, 'Stasis stays cold behind the spill')
+    eq(arkPartsDone(gs, 0), 1, 'one welded plate shows on the tracks')
+
+    // (d) three plates short of the pad — the ship holds
+    gs.ark[0] = ARK_PARTS[0].cost + ARK_PARTS[1].cost + ARK_PARTS[2].cost - 1
+    step(gs, { endTurn: true })
+    ok(arkPartsDone(gs, 0) <= 3, 'the hull stops short of the Launch weld')
+    ok(!gs.events.some((e) => e.type === 'arkLaunch' && e.civ === 0), 'a half-built hull does not lift — launch waits for all four')
+    ok(!gs.end, 'three plates are not victory')
+
+    // (e) a weld that closes mid-turn is announced by name
+    gs.events.length = 0
+    gs.ark[0] = ARK_PARTS[0].cost - 1
+    step(gs, { endTurn: true })
+    ok(gs.events.some((e) => e.type === 'arkPart' && e.civ === 0 && e.name === 'Cockpit' && e.part === 0), 'the Cockpit weld is announced by name')
+
+    // (f) the last beaker finishes the fourth plate and lifts the ship
+    gs.ark[0] = CFG.arkScience - 1
+    let launched = false
+    for (let i = 0; i < 8 && !launched && !gs.end; i++) { step(gs, { endTurn: true }); launched = gs.events.some((e) => e.type === 'arkLaunch' && e.civ === 0) }
+    ok(launched, 'the last beaker welds the Launch plate and lifts the Ark')
+    eq(arkPartsDone(gs, 0), 4, 'at the moment of flight all four parts read welded')
+    ok(arkPartsOf(gs, 0).every((p) => p.done), 'Cockpit, Booster, Stasis and Launch are all shut')
+    ok(gs.end === 'win' && /Science/.test(gs.endWhy || ''), 'the completed hull is a SCIENCE VICTORY')
+
+    // (g) the tracks clamp — overfunding never invents a fifth plate
+    gs.ark[0] = CFG.arkScience * 3
+    ps = arkPartsOf(gs, 0)
+    ok(ps.every((p) => p.funded === p.cost && p.done), 'the parts clamp at full')
+    eq(ps.reduce((a, p) => a + p.funded, 0), CFG.arkScience, 'welded beakers never exceed the ledger')
+
+    // (h) rivals ride the same four tracks
+    grantTech(gs, 1, 'SPACEFLIGHT')
+    eq(arkPartsDone(gs, 1), 0, 'a new rocket power starts with nothing welded')
+    gs.ark[1] = ARK_PARTS[0].cost + ARK_PARTS[1].cost
+    eq(arkPartsDone(gs, 1), 2, 'the rival track welds in the same order')
+
+    // (i) the part layer is pure derivation: same reading, same worlds, hash for hash
+    ok(JSON.stringify(arkPartsOf(gs, 2)) === JSON.stringify(arkPartsOf(gs, 2)), 'the part view is pure — same state, same reading')
+    gs.ark[0] = ARK_PARTS[0].cost - 1; const hh1 = stateHash(gs); gs.ark[0] = ARK_PARTS[0].cost; const hh2 = stateHash(gs)
+    ok(hh1 !== hh2, 'closing the Cockpit weld moves stateHash')
+    CFG.turnLimit = keepTurn   // determinism inside the shipped horizon (see STATE: late-game drift past t40)
+    const a = newGame(7, 0), b = newGame(7, 0)
+    let x = 0, y = 0
+    while (!a.end && x++ < 40000) step(a, decide(a))
+    while (!b.end && y++ < 40000) step(b, decide(b))
+    ok(stateHash(a) === stateHash(b) && JSON.stringify(arkPartsOf(a, 0)) === JSON.stringify(arkPartsOf(b, 0)),
+        'with the part layer in place the autopilot still replays hash-for-hash')
 
     CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.turnLimit = keepTurn
 }
