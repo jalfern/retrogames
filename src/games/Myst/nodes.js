@@ -145,7 +145,7 @@ export const NODES = {
     ],
   },
   channelwood: {
-    pos: [0, 1.7, -20], yaw: 0, sky: 'channelwood', amb: 'falls',
+    pos: [0, 1.7, -24], yaw: 0, sky: 'channelwood', amb: 'falls',
     caption: 'CHANNELWOOD — a world of waterfalls and slow stone stars',
     expect: ['starWheel'],
     spots: [

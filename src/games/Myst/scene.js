@@ -257,10 +257,11 @@ const BUILDERS = {
   stoneship(g) {
     const ground = mesh(new THREE.CircleGeometry(70, 26), mat(TX.grey), 0, -0.05, 0, g); ground.rotation.x = -Math.PI / 2
     seaPlane(g, 0.02, 500, 0.9)
-    rocks(g, TX.grey, [[0, 3, -14, 14, 7, 8, 0], [-10, 2, -8, 6, 4, 4, 0.4], [11, 2.4, -9, 5, 5, 4, -0.5]])
-    const tower = mesh(new THREE.CylinderGeometry(1.8, 2.2, 3.8, 12), mat(TX.grey), 0, 8.3, -14, g)
+    // a low grey ridge: the observatory sits on top and is the island's clear landmark
+    rocks(g, TX.grey, [[0, 2, -14, 14, 4, 8, 0], [-10, 2, -8, 6, 4, 4, 0.4], [11, 2.4, -9, 5, 5, 4, -0.5]])
+    const tower = mesh(new THREE.CylinderGeometry(1.8, 2.2, 3.8, 12), mat(TX.grey), 0, 5.9, -14, g)
     tower.userData.landmark = 'observatory'
-    const dome = mesh(new THREE.SphereGeometry(2.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(TX.grey), 0, 10.2, -14, g)
+    const dome = mesh(new THREE.SphereGeometry(2.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(TX.grey), 0, 7.8, -14, g)
     dome.userData.spot = 'observatory'
     dome.userData.landmark = 'observatory'
     for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.6, 0.3, 1.6), mat(TX.plank), -2 + i * 1.2, 0.2, -4 + i * 0.9, g)
@@ -282,20 +283,21 @@ const BUILDERS = {
   channelwood(g) {
     const ground = mesh(new THREE.CircleGeometry(60, 24), mat(TX.chand), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
     seaPlane(g, 0.02, 240, 0.7)
-    const fall = mesh(new THREE.PlaneGeometry(14, 10, 1, 12), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.75, side: THREE.DoubleSide }), 0, 5, -12, g)
+    const fall = mesh(new THREE.PlaneGeometry(14, 5, 1, 12), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.75, side: THREE.DoubleSide }), 0, 2.5, -13, g)
     fall.userData.fall = true
-    rocks(g, TX.chand, [[0, 4, -13.4, 16, 8, 3, 0]])
+    rocks(g, TX.chand, [[0, 1.5, -14, 16, 3, 3, 0]])
+    // the great stone star wheel: the foremost landmark, turning over the falls behind it
     const star = new THREE.Group()
     for (let k = 0; k < 5; k++) {
       const arm = mesh(new THREE.BoxGeometry(0.8, 3.4, 0.5), mat(TX.grey), 0, 1.7, 0, star)
       arm.rotation.z = k * 1.2566
       arm.userData.landmark = 'starWheel'
     }
-    star.position.set(0, 5, -6.5)
+    star.position.set(0, 4, -16)
     star.userData.spinY = 0.12
     star.userData.spot = 'starWheel'
     g.add(star)
-    mesh(new THREE.BoxGeometry(0.7, 5.0, 0.7), mat(TX.grey), 0, 2.5, -6.5, g)
+    mesh(new THREE.BoxGeometry(0.7, 4.0, 0.7), mat(TX.grey), 0, 2, -16, g)
     const bridge = mesh(new THREE.BoxGeometry(10, 0.3, 1.4), mat(TX.plank), 3, 0.8, 2, g)
     bridge.rotation.y = 0.5; bridge.userData.spot = 'pageChannelwoodBlue'
     const pool = mesh(new THREE.CircleGeometry(2.4, 12), new THREE.MeshStandardMaterial({ color: 0x2a6a70, roughness: 0.2, metalness: 0.2 }), -3.4, 0.08, 2.6, g)
