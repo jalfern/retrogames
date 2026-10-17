@@ -14,6 +14,7 @@ import { build } from 'esbuild'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD } from '../src/components/virtualDir.js'
 import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick } from '../src/components/gamepadMap.js'
 import { steerPedals } from '../src/utils/padState.js'
+import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD } from '../src/utils/onePad.js'
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error(`  FAIL: ${msg}`) } }
@@ -304,10 +305,11 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     ok(JSON.stringify(real) !== JSON.stringify(mutant), 'no-clamp mutant diverges from real stickVec')
 }
 
-// --- 22. games.js: the first analog game opts in to the floating stick ---
-// MarioKart is the first title flipped to layout 'stick' (it drives purely from
-// VirtualControls — no canvas touch). Guard the registry so a silent revert to
-// 'dpad' (which would drop the floating stick) is caught.
+// --- 22. The first analog game opts in to the fixed stick (#420) ---
+// MarioKart is the stick pilot: it drives purely from the one pad (VirtualControls
+// writes it, the sim reads it). It now declares the new `method: 'stick'` (the
+// fixed always-visible stick, not the floating one). Guard the registry so a
+// silent revert is caught.
 {
     const gamesSrc = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
     const i = gamesSrc.indexOf("path: '/mario-kart'")
@@ -315,7 +317,7 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     if (i !== -1) {
         const j = gamesSrc.indexOf('path: ', i + 1)
         const block = gamesSrc.slice(i, j === -1 ? gamesSrc.length : j)
-        ok(/layout: 'stick'/.test(block), 'games.js /mario-kart uses layout: stick (the floating stick)')
+        ok(/method: 'stick'/.test(block), 'games.js /mario-kart declares method: stick (the fixed stick)')
         ok(/analog: true/.test(block), 'games.js /mario-kart opts in to analog input')
     }
 }
@@ -402,19 +404,21 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
         const block = blockFor(path)
         ok(block !== null, `games.js has an entry for ${path}`)
         if (block) {
-            ok(/layout: 'stick'/.test(block), `games.js ${path} uses the floating stick`)
+            ok(/layout: 'stick'/.test(block) || /method: 'stick'/.test(block), `games.js ${path} uses the stick`)
             ok(/analog: true/.test(block), `games.js ${path} opts in to analog`)
         }
     }
+    // The analog channel: legacy analog games read the padState holder; the #420
+    // stick pilot (Mario Kart) reads the new one-pad. Each must import its own.
     const readers = [
-        ['../src/games/MarbleMadness/index.jsx', 'marble madness'],
-        ['../src/games/MarioKart/index.jsx', 'mario kart'],
-        ['../src/games/OutRun/index.jsx', 'out run'],
-        ['../src/games/RaccoonHeist/index.jsx', 'raccoon heist (right stick = camera)'],
+        ['../src/games/MarbleMadness/index.jsx', "utils/padState", 'marble madness'],
+        ['../src/games/OutRun/index.jsx', "utils/padState", 'out run'],
+        ['../src/games/RaccoonHeist/index.jsx', "utils/padState", 'raccoon heist (right stick = camera)'],
+        ['../src/games/MarioKart/index.jsx', "utils/onePad", 'mario kart (the #420 one pad)'],
     ]
-    for (const [file, label] of readers) {
+    for (const [file, mod, label] of readers) {
         const src = readFileSync(new URL(file, import.meta.url), 'utf8')
-        ok(/from '\.\.\/\.\.\/utils\/padState'/.test(src), `${label} imports the padState analog channel`)
+        ok(new RegExp(`from '\\.\\./\\.\\./${mod}'`).test(src), `${label} imports the ${mod} analog channel`)
     }
 }
 
@@ -540,6 +544,115 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
             const b = padButton(g.pad)
             ok(!!b && b.code === code && nonEmpty(b.label), `games.js ${path} B button is ${code}, labelled '${b && b.label}'`)
         }
+    }
+}
+
+// --- 30. #420: the one pad per tick + the three input methods (the pilots) ---
+// The core: the shared quantizer, the one-pad normalizer, and the method
+// resolver. Then the registry: the three pilot games each declare a method,
+// read only the fields they use, and label their buttons by action — and each
+// game actually imports the one pad it drives from.
+
+// 30a. blankPad: the complete one-pad shape, at rest.
+{
+    const p = blankPad()
+    ok(p.up === false && p.down === false && p.left === false && p.right === false, 'blankPad: no direction held')
+    ok(p.a === false && p.b === false && p.start === false, 'blankPad: no button held')
+    ok(p.x === 0 && p.y === 0, 'blankPad: analog at rest')
+    ok(p.pointer && p.pointer.x === 0 && p.pointer.y === 0 && p.pointer.down === false && p.pointer.alt === false, 'blankPad: pointer at rest, not pressed')
+}
+
+// 30b. quantize: the ONE shared quantizer (analog x / y -> digital directions).
+{
+    ok(quantize(0.8, 0).right === true && quantize(0.8, 0).left === false, 'quantize +x -> right')
+    ok(quantize(-0.8, 0).left === true, 'quantize -x -> left')
+    ok(quantize(0, -0.8).up === true, 'quantize -y (screen up) -> up')
+    ok(quantize(0, 0.8).down === true, 'quantize +y (screen down) -> down')
+    ok(quantize(0.8, 0.8).right === true && quantize(0.8, 0.8).down === true, 'quantize a diagonal lights both axes (8-way)')
+    ok(quantize(0, 0).up === false && quantize(0, 0).right === false, `quantize centre (< ${DIR_DEAD}) -> no direction`)
+    ok(quantize(0.2, 0).right === false, `quantize |x|=${0.2} (inside the dead band) stays centre`)
+    ok(quantize(DIR_DEAD + 0.05, 0).right === true, 'quantize just past the dead band engages')
+}
+
+// 30c. normalizePad: one pad from any source. dpad directions OR in from x / y.
+{
+    const p = normalizePad({ x: 1 }, 'dpad')
+    ok(p.right === true && p.left === false && p.up === false && p.down === false, 'normalizePad dpad step({x:1}) reads as "right" (the one pad)')
+    const up = normalizePad({ x: 0, y: -1 }, 'dpad')
+    ok(up.up === true, 'normalizePad dpad step({y:-1}) reads as "up"')
+    const explicit = normalizePad({ left: true, x: 0, y: 0 }, 'dpad')
+    ok(explicit.left === true && explicit.right === false, 'normalizePad keeps an explicit digital direction')
+    const both = normalizePad({ up: true, x: 1 }, 'dpad')
+    ok(both.up === true && both.right === true, 'normalizePad ORs an explicit direction with quantize(x,y)')
+    const rest = normalizePad({}, 'stick')
+    ok(rest.x === 0 && rest.y === 0 && rest.up === false, 'normalizePad empty -> a resting pad')
+    const act = normalizePad({ a: true, b: true, x: -1 }, 'stick')
+    ok(act.a === true && act.b === true && act.left === true, 'normalizePad buttons + analog pass through, dirs quantized')
+}
+
+// 30d. normalizePad: pointer x / y clamp to 0..1; a gamepad stick parks the cursor.
+{
+    const p = normalizePad({ pointer: { x: 1.5, y: -0.5, down: true, alt: false } }, 'pointer')
+    ok(p.pointer.x === 1 && p.pointer.y === 0 && p.pointer.down === true, 'normalizePad clamps pointer x/y to 0..1 and keeps down')
+    const stick = normalizePad({ x: 1, y: -1 }, 'pointer')
+    ok(Math.abs(stick.pointer.x - 1) < 1e-9 && stick.pointer.y === 0, 'a pointer game driven by a gamepad stick parks the cursor at the stick position')
+}
+
+// 30e. methodOf: the declared method wins; the legacy layout maps across.
+{
+    ok(METHODS.join(',') === 'dpad,stick,pointer', 'METHODS is exactly dpad/stick/pointer')
+    ok(methodOf({ method: 'pointer', buttons: [] }) === 'pointer', 'methodOf: a declared method wins')
+    ok(methodOf({ method: 'dpad', buttons: [] }) === 'dpad', 'methodOf: dpad')
+    ok(methodOf({ layout: 'dpad', buttons: [] }) === 'dpad', 'methodOf: legacy layout dpad -> dpad')
+    ok(methodOf({ layout: 'stick', buttons: [] }) === 'stick', 'methodOf: legacy layout stick -> stick')
+    ok(methodOf({ layout: 'stick+dpad', buttons: [] }) === 'stick', 'methodOf: legacy stick+dpad -> stick')
+    ok(methodOf(null) === 'stick', 'methodOf: no pad -> stick (the default)')
+    ok(methodOf({ method: 'joystick', layout: 'dpad', buttons: [] }) === 'dpad', 'methodOf: an unknown method falls back to the legacy layout')
+}
+
+// 30f. The three pilots in the registry: method + reads + action-labeled B (and
+// A), and each game imports the one pad it drives from. Real registry, bundled
+// the way section 29 does — a silent revert of any declaration is caught.
+{
+    const here = dirname(fileURLToPath(import.meta.url))
+    const root = join(here, '..')
+    const OUT = join(root, 'node_modules', '.vpad-A.mjs')
+    const { GAMES } = await import(pathToFileURL(OUT).href)
+    const pilots = {
+        '/pacman': { method: 'dpad', reads: ['up', 'down', 'left', 'right'], b: null, file: '../src/games/Pacman/index.jsx' },
+        '/mario-kart': { method: 'stick', reads: ['x', 'y', 'a', 'b'], b: 'KeyR', bLabel: 'DRIFT', aLabel: 'ITEM', file: '../src/games/MarioKart/index.jsx' },
+        '/lemmings': { method: 'pointer', reads: ['pointer', 'b'], b: 'KeyE', bLabel: 'CYCLE', file: '../src/games/Lemmings/index.jsx' },
+    }
+    for (const [path, want] of Object.entries(pilots)) {
+        const g = GAMES.find((e) => e.path === path)
+        ok(!!g && g.pad && g.pad.method === want.method, `games.js ${path} declares method ${want.method}`)
+        if (!g || !g.pad) continue
+        ok(validPad(g.pad), `games.js ${path} pad is well-formed (method)`)
+        ok(JSON.stringify([...g.pad.reads].sort()) === JSON.stringify([...want.reads].sort()), `games.js ${path} reads ${JSON.stringify(want.reads)}`)
+        if (want.b === null) {
+            ok(g.pad.buttons.length === 0, `games.js ${path} declares no B button`)
+        } else {
+            const b = padButton(g.pad)
+            ok(!!b && b.code === want.b && b.label === want.bLabel, `games.js ${path} B button is ${want.b}, labelled '${want.bLabel}'`)
+        }
+        if (want.aLabel) ok(g.pad.aLabel === want.aLabel, `games.js ${path} A button is labelled '${want.aLabel}'`)
+        const src = readFileSync(new URL(want.file, import.meta.url), 'utf8')
+        ok(/from '\.\.\/\.\.\/utils\/onePad'/.test(src), `games.js ${path} game imports the one pad it drives from`)
+    }
+}
+
+// 30g. The three pilots' start prompts are touch-aware (#420): a phone has no
+// arrow keys, so the attract prompt must say TAP. The gate reads each pilot's
+// source and requires a TAP-carrying prompt, so a revert to keys-only is caught.
+{
+    const prompts = {
+        '/pacman': '../src/games/Pacman/index.jsx',
+        '/mario-kart': '../src/games/MarioKart/index.jsx',
+        '/lemmings': '../src/games/Lemmings/index.jsx',
+    }
+    for (const [path, file] of Object.entries(prompts)) {
+        const src = readFileSync(new URL(file, import.meta.url), 'utf8')
+        ok(/\bTAP\b/.test(src), `games.js ${path} start prompt is touch-aware (says TAP)`)
     }
 }
 

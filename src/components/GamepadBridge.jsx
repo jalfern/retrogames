@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { gamepadToCodes, stickFromAxes, triggersFromPad } from './gamepadMap'
 import { setStick, setRight, clearPad } from '../utils/padState'
+import { setStickVec } from '../utils/onePad'
 
 // Gamepad bridge: polls navigator.getGamepads() every frame and dispatches the
 // same KeyboardEvents VirtualControls does, so every game that reads keyboard
@@ -33,6 +34,7 @@ const GamepadBridge = ({ secondAction }) => {
             stickState.engaged = false
             stickState.lastCodes = []
             clearPad()
+            setStickVec(0, 0)
         }
 
         let raf = 0
@@ -52,6 +54,7 @@ const GamepadBridge = ({ secondAction }) => {
             const right = stickFromAxes([pad.axes && pad.axes[2], pad.axes && pad.axes[3]])
             const trig = triggersFromPad(pad)
             setStick(left.x, left.y, left.push, left.engaged)
+            setStickVec(left.x, left.y) // #420: the left stick also feeds THE one pad
             setRight(right.x, right.y, trig.rt, trig.lt)
             // Signal the touch pad to hide the moment a gamepad is used (#290 step 5).
             const active = codes.size > 0

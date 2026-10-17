@@ -21,12 +21,13 @@ import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const BASE = process.env.VPAD_URL || 'http://localhost:5173/retrogames'
 
-// The routes #384 touches (step 1's 27 + step 2 batch 1's nine + batch 2's ten),
-// with the layout each registry entry declares. A drift here (a silent revert of the
-// default, or a reason-less d-pad) fails the boot, not just the Node pin.
+// The routes #384/#420 touch, with the input method each registry entry
+// declares ('stick' | 'dpad' | 'pointer'). A drift here (a silent revert of the
+// default, a reason-less d-pad, or a pilot's method flipping) fails the boot,
+// not just the Node pin.
 const TOUCHED = [
     ['/mario', 'stick'], ['/ironkeep', 'stick'], ['/beezee', 'stick'],
-    ['/lemmings', 'stick'], ['/metroid', 'stick'], ['/polarity', 'stick'],
+    ['/lemmings', 'pointer'], ['/metroid', 'stick'], ['/polarity', 'stick'],
     ['/simcity-min', 'dpad'], ['/outpost', 'dpad'], ['/papers-please', 'dpad'],
     ['/lode-runner', 'stick'], ['/dogfight', 'stick'], ['/paperboy', 'stick'],
     ['/wizardry', 'dpad'], ['/spy-hunter', 'stick'], ['/excitebike', 'stick'],
@@ -35,7 +36,7 @@ const TOUCHED = [
     ['/four-halls', 'stick'], ['/smash-tv', 'stick'], ['/lunar-lander', 'stick'],
     ['/bards-tale', 'dpad'], ['/ssx', 'stick'], ['/prince-of-persia', 'stick'],
     ['/mario-classic', 'stick'], ['/pong', 'stick'], ['/invaders', 'stick'],
-    ['/pacman', 'stick'], ['/asteroids', 'stick'], ['/donkeykong', 'stick'],
+    ['/pacman', 'dpad'], ['/asteroids', 'stick'], ['/donkeykong', 'stick'],
     ['/centipede', 'stick'], ['/defender', 'stick'], ['/pitfall', 'stick'],
     ['/boulder-dash', 'stick'], ['/sonar', 'stick'], ['/momentum', 'stick'],
     ['/frogger', 'stick'], ['/tempest', 'stick'], ['/dig-dug', 'stick'],
@@ -44,8 +45,10 @@ const TOUCHED = [
 ]
 
 // The floating-stick zone is the only DOM the #384 default-flip adds or
-// removes: it renders iff shouldUseStick(pad) && the pad is visible. The two
-// d-pad shapes are pre-existing per-title choices and are both "no stick".
+// removes: it renders iff the method is 'stick' && the pad is visible. The two
+// d-pad shapes are pre-existing per-title choices and are both "no stick"; a
+// 'pointer' game has no left control at all (it taps the field directly), so
+// it expects neither a stick zone nor a d-pad.
 const STICK_MARK = 'fixed left-0 top-0 bottom-0 w-1/2'
 const LEFT_MARKS = [STICK_MARK, 'relative w-[150px] h-[150px]', 'grid grid-cols-2']
 
@@ -83,7 +86,7 @@ await requireDevServer(BASE + '/mario')
 const browser = await launch()
 const r = new Report('vpadboot')
 
-for (const [path, layout] of TOUCHED) {
+for (const [path, method] of TOUCHED) {
     const errors = []
     const page = await browser.newPage({
         viewport: { width: 430, height: 932 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true,
@@ -101,13 +104,15 @@ for (const [path, layout] of TOUCHED) {
         r.check(`${path} boots with zero page errors`, pageErrors.length === 0, pageErrors.join(' | ').slice(0, 300))
         if (errors.some(e => e.startsWith('console:')))
             r.info(`${path} console.error`, errors.filter(e => e.startsWith('console:')).join(' | ').slice(0, 200))
-        r.check(`${path} pad is on screen`, any, 'no left control after the start ladder')
-        r.check(`${path} stick zone ${layout === 'stick' ? 'present' : 'absent'}`, stick === (layout === 'stick'),
-            `stick=${stick} expected=${layout === 'stick'}`)
+        const isPointer = method === 'pointer'
+        r.check(`${path} pad is on screen`, any === !isPointer,
+            isPointer ? 'pointer game: no left control (tap the field)' : 'no left control after the start ladder')
+        r.check(`${path} stick zone ${method === 'stick' ? 'present' : 'absent'}`, stick === (method === 'stick'),
+            `stick=${stick} expected=${method === 'stick'}`)
     } catch (e) {
         r.check(`${path} boots with zero page errors`, false, String(e.message).slice(0, 200))
         r.check(`${path} pad is on screen`, false, 'boot failed')
-        r.check(`${path} stick zone ${layout === 'stick' ? 'present' : 'absent'}`, false, 'boot failed')
+        r.check(`${path} stick zone ${method === 'stick' ? 'present' : 'absent'}`, false, 'boot failed')
     } finally {
         await page.close()
     }

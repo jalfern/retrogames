@@ -9,7 +9,8 @@ import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { buildGround, buildSky, buildSprites, KART } from './art.js'
-import { padState, steerPedals } from '../../utils/padState'
+import { steerPedals } from '../../utils/padState'
+import { currentPad } from '../../utils/onePad'
 
 // =====================================================================
 // SUPER MARIO KART — the arcade's Mode 7 title. The ground is ONE 2048²
@@ -393,17 +394,17 @@ export default function MarioKart() {
         }
 
         const tickWorld = (live) => {
-            // Analog opt-in (#290 step 4): a pushed stick or a pressed trigger
-            // drives steering + pedals from the pad state; otherwise the keys
-            // drive it exactly as before.
-            const p = padState
-            const padLive = p.engaged || p.rt > 0.05 || p.lt > 0.05
+            // #420: THE one pad (the fixed touch stick or a gamepad's left stick
+            // for steering + pedals, the A/B buttons for ITEM/DRIFT). A pushed
+            // stick or a held button drives it; otherwise the keys drive it.
+            const op = currentPad('stick')
+            const padLive = Math.abs(op.x) > 0.05 || Math.abs(op.y) > 0.05 || op.a || op.b
             let inp
             if (st.plan) {
                 inp = decide(g)
             } else if (padLive) {
-                const s = steerPedals(p)
-                inp = { steer: s.steer, thr: s.thr, brk: s.brk, drift: !!(keys.KeyR || keys.KeyC), item: !!(keys.KeyZ || keys.Space) }
+                const s = steerPedals(op)
+                inp = { steer: s.steer, thr: s.thr, brk: s.brk, drift: !!(op.b || keys.KeyR || keys.KeyC), item: !!(op.a || keys.KeyZ || keys.Space) }
             } else {
                 inp = { u: !!(keys.KeyX || keys.ArrowUp), d: !!(keys.KeyS || keys.ArrowDown), l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyR || keys.KeyC), item: !!(keys.KeyZ || keys.Space) }
             }

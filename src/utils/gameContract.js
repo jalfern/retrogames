@@ -12,19 +12,33 @@
 // before simulating — the driver owns the clock while it is closed. The loop
 // keeps drawing, so frame() always shows the live canvas.
 
+import { normalizePad } from './onePad'
+
 let loopLock = false
 let exposed = null
 
 export const contractHoldsLoop = () => loopLock
 
+// `spec.method` is the game's input method ('dpad' | 'stick' | 'pointer', #420)
+// and `spec.reads` the one-pad fields it actually consumes. Both surface on
+// __game.meta so the harness and a remapper know what the game hears. `step`
+// folds whatever a caller passes into THE one pad for that method, so a dpad
+// game's step({x: 1}) reads as "right" exactly the way the on-screen d-pad does.
 export function exposeGame(spec) {
     if (!import.meta.env.DEV) return null
+    const method = spec.method || 'stick'
     const api = {
-        meta: { id: spec.id, buttons: spec.buttons || [] },
+        meta: {
+            id: spec.id,
+            method,
+            buttons: spec.buttons || [],
+            reads: spec.reads || [],
+        },
         reset: (seed = 0) => { spec.reset(seed); return api.state() },
         step: (pad = {}, n = 1) => {
             loopLock = true
-            for (let i = 0; i < n; i++) spec.tick(pad || {})
+            const one = normalizePad(pad || {}, method)
+            for (let i = 0; i < n; i++) spec.tick(one)
             return api.state()
         },
         release: () => { loopLock = false },
