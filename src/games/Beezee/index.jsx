@@ -19,7 +19,8 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
-import { newGame, step, autopilot, windAt, CFG, FIXED_DT } from './sim.js'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { newGame, step, autopilot, windAt, CFG, FIXED_DT, GARDENS } from './sim.js'
 
 const texFrom = (w, h, paint) => {
     const c = document.createElement('canvas')
@@ -315,6 +316,8 @@ const BeeGame = () => {
         let raf = 0
         let last = 0
         let acc = 0
+        let contractTick = 0
+        let contractSeed = 0
         const sunA = new THREE.Color(0xffd873)
         const sunDusk = new THREE.Color(0xff5a2a)
         const skyDay = new THREE.Color(0x8ec9ea)
@@ -356,6 +359,7 @@ const BeeGame = () => {
 
         let lastUv = false
         const doSim = () => {
+            contractTick += 1
             if (screenRef.current === 'attract') {
                 demoT += FIXED_DT
                 handleEvents(step(gs, autopilot(gs)).events)
@@ -378,8 +382,11 @@ const BeeGame = () => {
             const ft = Math.min(ts - last, 250)
             last = ts
             if (pausedRef.current) return
-            acc += ft
-            while (acc >= FIXED_DT * 1000) { doSim(); acc -= FIXED_DT * 1000 }
+            if (contractHoldsLoop()) { acc = 0 }
+            else {
+                acc += ft
+                while (acc >= FIXED_DT * 1000) { doSim(); acc -= FIXED_DT * 1000 }
+            }
 
             const b = gs.bee
             const dayF = Math.min(1, gs.t / CFG.day)
@@ -554,10 +561,53 @@ const BeeGame = () => {
                 },
                 start: startPlay,
             }
+            exposeGame({
+                id: 'beezee',
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    contractTick = 0
+                    gardenIdx = contractSeed % GARDENS.length
+                    gs = newGame(gardenIdx, contractSeed)
+                    buildWorldNodes(gs.world)
+                    paintUv(false)
+                    lastUv = false
+                    demoT = 0
+                    keys.clear()
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { contractTick += 1; return }
+                    input.yaw = (pad.left ? 1 : 0) - (pad.right ? 1 : 0)
+                    input.pitch = (pad.up ? 1 : 0) - (pad.down ? 1 : 0)
+                    input.thrust = !!pad.a
+                    input.sprint = false
+                    input.uv = !!pad.b
+                    handleEvents(step(gs, input).events)
+                    if (gs.uv !== lastUv) { lastUv = gs.uv; paintUv(gs.uv) }
+                    contractTick += 1
+                },
+                state: () => {
+                    const b = gs.bee
+                    const left = gs.world.flowers.reduce((n, f) => n + f.nectar, 0)
+                    const s = `${contractTick}|${b.x.toFixed(3)},${b.y.toFixed(3)},${b.z.toFixed(3)},` +
+                        `${b.yaw.toFixed(3)},${b.pitch.toFixed(3)},${b.nectar},${b.pollen}|` +
+                        `${gs.score}|${gs.delivered}|${gs.health}|${gs.uv ? 1 : 0}|${gs.end || '-'}|${left}`
+                    let h = 2166136261
+                    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619)
+                    return {
+                        tick: contractTick, score: gs.score, done: !!gs.end,
+                        seed: contractSeed, garden: gs.world.name,
+                        delivered: gs.delivered, health: gs.health, hash: h >>> 0,
+                    }
+                },
+                canvas: () => canvas,
+            })
         }
 
         const cleanup = () => {
             if (import.meta.env.DEV && window.__beeTest) delete window.__beeTest
+            if (import.meta.env.DEV) unexposeGame()
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

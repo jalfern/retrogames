@@ -16,6 +16,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
     TS, MW, MH, VIEW_W, VIEW_H, EMPTY, ROCK, CRACK, BULK, SPIKE,
     PLAYER, LAYERS, GROUND_GRACE, makeGame, planRun, step, footCell,
@@ -67,6 +68,8 @@ const MetroidGame = () => {
         let demoAt = 0
         let raf = 0, last = 0, acc = 0
         let toast = 0, toastMsg = ''
+        let contractSeed = 0
+        let cprev = {}
         const keys = { left: false, right: false, down: false }
         let jumpEdge = false, jumpCut = false, fireEdge = false, bombEdge = false
         const evLog = []
@@ -343,8 +346,11 @@ const MetroidGame = () => {
             const ft = Math.min(ts - last, 250)          // the heist lesson: world-second cap
             last = ts
             if (!pausedRef.current) {
-                acc += ft
-                while (acc >= SIM_MS) { doSim(); acc -= SIM_MS }
+                if (contractHoldsLoop()) { acc = 0 }
+                else {
+                    acc += ft
+                    while (acc >= SIM_MS) { doSim(); acc -= SIM_MS }
+                }
             }
             paint()
             syncHud()
@@ -455,10 +461,46 @@ const MetroidGame = () => {
                 start: startPlay,
                 board: () => board(),
             }
+            exposeGame({
+                id: 'metroid',
+                buttons: ['left', 'right', 'down', 'a', 'b'],
+                reset: (seed) => {
+                    contractSeed = seed >>> 0
+                    gs = makeGame()
+                    evLog.length = 0
+                    hist.length = 0
+                    cprev = {}
+                    keys.left = keys.right = keys.down = false
+                    jumpEdge = jumpCut = fireEdge = bombEdge = false
+                    toast = 0
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    if (gs.end) { gs.tick += 1; return }
+                    const before = gs.events.length
+                    step(gs, {
+                        left: !!pad.left, right: !!pad.right, down: !!pad.down,
+                        jumpEdge: !!pad.a && !cprev.a,
+                        jumpCut: !pad.a && !!cprev.a && gs.p.vy < 0,
+                        fireEdge: !!pad.b && !cprev.b && !pad.down,
+                        bombEdge: !!pad.b && !cprev.b && !!pad.down,
+                    })
+                    handleEvents(gs.events.slice(before))
+                    cprev = { a: !!pad.a, b: !!pad.b }
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: !!gs.end,
+                    seed: contractSeed, energy: gs.energy, deaths: gs.deaths,
+                    taken: gs.world.items.filter(i => i.taken).length,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
         }
 
         return () => {
             if (import.meta.env.DEV && window.__metroidTest) delete window.__metroidTest
+            if (import.meta.env.DEV) unexposeGame()
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)

@@ -2,7 +2,7 @@
 // (pilots #377; rollout batch 1 #391: arkanoid, galaga, dig-dug,
 // missile-battle, spy-hunter, paperboy; batch 2: tetris, boulder-dash,
 // bubble-bobble, ice-climber, joust, qbert; batch 3: lemmings, sonar,
-// polarity, outpost, dogfight, smash-tv).
+// polarity, outpost, dogfight, smash-tv; batch 4: beezee, metroid, momentum).
 //
 // Per game, in headless Chrome against the DEV server:
 //   boot (window.__game exists, zero page errors) · meta · state shape ·
@@ -40,6 +40,9 @@ const GAMES = [
     { id: 'outpost', path: '/outpost' },
     { id: 'dogfight', path: '/dogfight' },
     { id: 'smash-tv', path: '/smash-tv' },
+    { id: 'beezee', path: '/beezee' },
+    { id: 'metroid', path: '/metroid' },
+    { id: 'momentum', path: '/momentum' },
 ]
 const TICKS = 600
 const ONLY = process.env.CONTRACT_ONLY
@@ -66,6 +69,9 @@ const PATTERNS = {
     outpost: (i) => ({ left: i % 41 < 16, right: i % 41 >= 20 && i % 41 < 36, up: i % 61 < 10, down: i % 61 >= 26 && i % 61 < 38, a: i % 11 < 3, b: i % 31 < 2 }),
     'dogfight': (i) => ({ left: i % 37 < 14, right: i % 37 >= 17 && i % 37 < 30, up: i % 41 < 12, down: i % 41 >= 20 && i % 41 < 30, a: i % 5 < 2, b: i % 53 < 20 }),
     'smash-tv': (i) => ({ left: i % 41 < 16, right: i % 41 >= 20 && i % 41 < 36, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 38, a: i % 9 < 3, b: i % 29 < 2 }),
+    beezee: (i) => ({ left: i % 47 < 16, right: i % 47 >= 20 && i % 47 < 34, up: i % 53 < 12, down: i % 53 >= 28 && i % 53 < 38, a: i % 7 < 4, b: i % 61 < 20 }),
+    metroid: (i) => ({ left: i % 43 < 15, right: i % 43 >= 19 && i % 43 < 34, down: i % 67 < 6, a: i % 11 < 3, b: i % 17 < 2 }),
+    momentum: (i) => ({ left: i % 97 < 6, right: i % 97 >= 10, up: i % 17 < 4, a: i % 19 < 5 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 
