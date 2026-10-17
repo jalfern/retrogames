@@ -152,7 +152,7 @@ function drive(g, k, inp) {
                 const t = tierFor(k.charge)
                 if (t >= 0) {
                     // the Comet engine breathes deeper than the field's kits
-                    k.boostT = Math.round(TIERS[t].dur * (k.isPlayer ? 1.3 : 1)); k.boostTier = t
+                    k.boostT = Math.round(TIERS[t].dur * (k.isPlayer ? 1.45 : 1)); k.boostTier = t
                     g.events.push({ e: 'boost', who: k.name, tier: t })
                 }
             }
@@ -237,7 +237,7 @@ function brain(g, k, skill, driftSmart) {
     }
     // seeded mistakes: only the human rivals roll — the autopilot is the
     // certified line and never errs (the harness's win proof rides that)
-    if (!driftSmart && k.mist === 0 && k.spinT === 0 && kmax > 0.004 && rnd(g) < 0.0016 + (1 - skill) * 0.004) {
+    if (!driftSmart && k.mist === 0 && k.spinT === 0 && kmax > 0.0025 && rnd(g) < 0.0016 + (1 - skill) * 0.004) {
         k.mist = 26
         k.mistWide = rnd(g) < 0.72
         if (!k.mistWide && skill < 0.93) { spin(k, g, 'overdriven', 'itself'); return inp }
@@ -245,7 +245,7 @@ function brain(g, k, skill, driftSmart) {
     if (k.mist > 0) {
         k.mist--
         if (k.mistWide) lat *= 1.9
-        if (kmax > 0.004) { inp.d = false; inp.u = true }
+        if (kmax > 0.0025) { inp.d = false; inp.u = true }
     }
     const tx = t.x + Math.cos(t.a + Math.PI / 2) * lat
     const ty = t.y + Math.sin(t.a + Math.PI / 2) * lat
@@ -258,7 +258,7 @@ function brain(g, k, skill, driftSmart) {
     if (k.v > vmax + 0.4) { inp.d = true; inp.u = false }
     // drift is driven by the CORNER, not the current misalignment: hold it
     // through the bend, and the straight after it pays the turbo
-    const bend = kmax > (driftSmart ? 0.0018 : 0.0024)
+    const bend = kmax > (driftSmart ? 0.0015 : 0.0024)
     if (k.v > 5 && bend) inp.drift = true
     return inp
 }

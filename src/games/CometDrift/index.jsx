@@ -537,7 +537,7 @@ export default function CometDrift() {
 
         const kd = (e) => {
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'KeyX', 'KeyS', 'KeyZ', 'KeyR'].includes(e.code)) e.preventDefault()
-            if (e.code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
+            if (e.code === 'Question' || e.key === '?') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (pausedRef.current) return
             if (st.screen === 'attract') {
                 audioController.init()
