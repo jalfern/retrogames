@@ -5,6 +5,10 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
 
+// Touch devices have no arrow keys — the attract prompt must say TAP, not keys (#420).
+const TOUCH = typeof window !== 'undefined' &&
+    (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
+
 const PacmanGame = () => {
     const canvasRef = useRef(null)
     const containerRef = useRef(null)
@@ -736,7 +740,7 @@ const PacmanGame = () => {
                 ctx.fillStyle = '#ffffff'
                 ctx.font = '20px monospace'
                 ctx.textAlign = 'center'
-                ctx.fillText("PRESS ARROW KEYS TO START", COLS * CELL_SIZE / 2, ROWS * CELL_SIZE / 2)
+                ctx.fillText(TOUCH ? "TAP TO START" : "PRESS ARROW KEYS TO START", COLS * CELL_SIZE / 2, ROWS * CELL_SIZE / 2)
                 ctx.fillText("ATTRACT MODE", COLS * CELL_SIZE / 2, ROWS * CELL_SIZE / 2 - 30)
             }
 

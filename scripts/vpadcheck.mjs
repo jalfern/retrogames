@@ -641,6 +641,21 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     }
 }
 
+// 30g. The three pilots' start prompts are touch-aware (#420): a phone has no
+// arrow keys, so the attract prompt must say TAP. The gate reads each pilot's
+// source and requires a TAP-carrying prompt, so a revert to keys-only is caught.
+{
+    const prompts = {
+        '/pacman': '../src/games/Pacman/index.jsx',
+        '/mario-kart': '../src/games/MarioKart/index.jsx',
+        '/lemmings': '../src/games/Lemmings/index.jsx',
+    }
+    for (const [path, file] of Object.entries(prompts)) {
+        const src = readFileSync(new URL(file, import.meta.url), 'utf8')
+        ok(/\bTAP\b/.test(src), `games.js ${path} start prompt is touch-aware (says TAP)`)
+    }
+}
+
 // --- Summary ---
 const total = pass + fail
 console.log(`vpadcheck: ${pass}/${total} pass, ${fail} fail`)
