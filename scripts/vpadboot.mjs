@@ -21,8 +21,8 @@ import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const BASE = process.env.VPAD_URL || 'http://localhost:5173/retrogames'
 
-// The routes #384 touches (step 1's 27 + step 2 batch 1's nine), with the
-// layout each registry entry declares. A drift here (a silent revert of the
+// The routes #384 touches (step 1's 27 + step 2 batch 1's nine + batch 2's ten),
+// with the layout each registry entry declares. A drift here (a silent revert of the
 // default, or a reason-less d-pad) fails the boot, not just the Node pin.
 const TOUCHED = [
     ['/mario', 'stick'], ['/ironkeep', 'stick'], ['/beezee', 'stick'],
@@ -37,6 +37,10 @@ const TOUCHED = [
     ['/mario-classic', 'stick'], ['/pong', 'stick'], ['/invaders', 'stick'],
     ['/pacman', 'stick'], ['/asteroids', 'stick'], ['/donkeykong', 'stick'],
     ['/centipede', 'stick'], ['/defender', 'stick'], ['/pitfall', 'stick'],
+    ['/boulder-dash', 'stick'], ['/sonar', 'stick'], ['/momentum', 'stick'],
+    ['/frogger', 'stick'], ['/tempest', 'stick'], ['/dig-dug', 'stick'],
+    ['/adventure', 'stick'], ['/joust', 'stick'], ['/arkanoid', 'stick'],
+    ['/missile-battle', 'stick'],
 ]
 
 // The floating-stick zone is the only DOM the #384 default-flip adds or
