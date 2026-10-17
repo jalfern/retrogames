@@ -41,6 +41,7 @@ function skyDome(group, name) {
   const d = mesh(new THREE.SphereGeometry(900, 24, 16),
     new THREE.MeshBasicMaterial({ map: texSky(name), side: THREE.BackSide, fog: false }), 0, 0, 0, group)
   d.userData.noPick = true
+  d.userData.sky = true
 }
 
 function seaPlane(group, y = 0, size = 1600, tint) {
@@ -58,9 +59,10 @@ function rocks(group, tex, list) {
   }
 }
 
-function tree(group, x, y, z, s = 1, leaf = 0x2c5e2a) {
-  mesh(new THREE.CylinderGeometry(0.12 * s, 0.2 * s, 1.6 * s), mat(TX.wood), x, y + 0.8 * s, z, group)
-  mesh(new THREE.ConeGeometry(0.9 * s, 2.2 * s, 6), new THREE.MeshStandardMaterial({ color: leaf, roughness: 1 }), x, y + 2.4 * s, z, group)
+function tree(group, x, y, z, s = 1, leaf = 0x2c5e2a, tag) {
+  const trunk = mesh(new THREE.CylinderGeometry(0.12 * s, 0.2 * s, 1.6 * s), mat(TX.wood), x, y + 0.8 * s, z, group)
+  const crown = mesh(new THREE.ConeGeometry(0.9 * s, 2.2 * s, 6), new THREE.MeshStandardMaterial({ color: leaf, roughness: 1 }), x, y + 2.4 * s, z, group)
+  if (tag) { trunk.userData.landmark = tag; crown.userData.landmark = tag }
 }
 
 function gear(group, tex, r, x, y, z, speed) {
@@ -84,11 +86,15 @@ const BUILDERS = {
     tree(g, -5, 4.4, 39, 1.2); tree(g, 6, 4, 39.4, 1)
   },
   cliffPath(g) {
-    seaPlane(g, -1)
-    rocks(g, TX.rock, [[0, 2, 27, 12, 6, 4, 0], [-8, 6, 30, 10, 12, 6, 0.3], [9, 5, 30, 8, 10, 5, -0.4], [0, 5.4, 21, 10, 4, 4, 0]])
-    rocks(g, TX.moss, [[-3, 4.6, 27, 3, 1, 2, 0.2], [5, 5.8, 27.5, 2.4, 1.2, 1.4, -0.3]])
-    for (let i = 0; i < 4; i++) mesh(new THREE.BoxGeometry(2.4, 0.16, 1), mat(TX.stoneD), i % 2 * 0.6, 4.2 + i * 0.55, 24 - i * 1.2, g)
-    tree(g, -7, 6.4, 27, 1.4); tree(g, 7, 6, 26, 1.2); tree(g, 2, 6.2, 29, 1)
+    const sea = seaPlane(g, -1)
+    sea.userData.landmark = 'sea'
+    // the far cliff the path is cut into; side cliffs frame the corridor
+    const face = mesh(new THREE.BoxGeometry(12, 8, 5), mat(TX.rock), 0, 9.5, 6, g)
+    face.userData.landmark = 'cliffFace'
+    rocks(g, TX.rock, [[-6.5, 7, 14, 7, 14, 10, 0], [6.5, 6.5, 12, 7, 13, 10, 0]])
+    rocks(g, TX.moss, [[-6.5, 14, 13, 3, 1, 2, 0], [6.5, 13, 11, 2.6, 1.2, 1.8, 0], [2, 13.5, 4.5, 3, 1, 2, 0]])
+    for (let i = 0; i < 4; i++) mesh(new THREE.BoxGeometry(2.4, 0.16, 1), mat(TX.stoneD), i % 2 * 0.6, 4.75 + i * 0.55, 16.8 - i * 1.2, g)
+    tree(g, -7.5, 14, 12, 1.3); tree(g, 7.5, 13, 10.5, 1.2); tree(g, -2, 13.5, 4, 1.4)
   },
   beach(g) {
     seaPlane(g, 0, 1200)
