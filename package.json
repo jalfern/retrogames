@@ -111,6 +111,7 @@
         "exciteplay": "node scripts/exciteplay.mjs",
         "lint:kart": "eslint src/games/MarioKart src/components src/utils src/config src/main.jsx scripts",
         "kartcheck": "node scripts/kartcheck.mjs",
+        "cometcheck": "node scripts/cometcheck.mjs",
         "kartplay": "node scripts/kartplay.mjs",
         "lint:tetris": "eslint src/games/Tetris src/components src/utils src/config src/main.jsx scripts",
         "tetrischeck": "node scripts/tetrischeck.mjs",

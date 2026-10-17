@@ -32,6 +32,7 @@ const GAMES = [
     { id: 'ice-climber', path: '/ice-climber' },
     { id: 'joust', path: '/joust' },
     { id: 'qbert', path: '/qbert' },
+    { id: 'comet-drift', path: '/comet-drift' },
 ]
 const TICKS = 600
 const ONLY = process.env.CONTRACT_ONLY
@@ -51,6 +52,7 @@ const PATTERNS = {
     'ice-climber': (i) => ({ left: i % 41 < 15, right: i % 41 >= 19 && i % 41 < 33, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 36, a: i % 9 < 3 }),
     joust: (i) => ({ left: i % 37 < 14, right: i % 37 >= 17 && i % 37 < 30, a: i % 5 < 2 }),
     qbert: (i) => ({ left: i % 43 < 18 && i % 89 < 50, right: i % 43 >= 20 && i % 43 < 38, up: i % 29 < 14, down: i % 29 >= 15 && i % 29 < 28, a: i % 31 < 2 }),
+    'comet-drift': (i) => ({ left: i % 43 < 15, right: i % 43 >= 21 && i % 43 < 34, up: i % 59 !== 0, a: i % 11 < 4 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 
