@@ -279,7 +279,7 @@ r.check(`the probe exposes the connected network (${(conn.connected || []).join(
     await page.keyboard.press('KeyY')
     await wait(250)
     const vb = await page.evaluate(() => document.body.innerText)
-    r.check('Y opens VICTORY with the three races and the rival tracks', vb.includes('VICTORY') && vb.includes('DOMINATION') && vb.includes('SCIENCE') && vb.includes('CULTURE') && vb.includes('THE RIVAL TRACKS'))
+    r.check('Y opens VICTORY with the three races and the rival tracks', vb.includes('VICTORY') && vb.includes('DOMINATION') && vb.includes('SCIENCE') && vb.includes('TOURISM') && vb.includes('lifetime culture') && vb.includes('THE RIVAL TRACKS'))
     await page.keyboard.press('Escape')
     await wait(150)
     r.check('Escape closes the VICTORY panel', !(await page.evaluate(() => document.body.innerText.includes('THE RIVAL TRACKS'))))
