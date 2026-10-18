@@ -112,11 +112,12 @@ npm run doscheck -- --quick # Zork + King's Quest seams in Chrome (--quick skips
   `--no-start` skips the initial keypress, so attract/menu shots are possible.
 
 ### CI
-`.github/workflows/ci.yml` has two jobs:
+`.github/workflows/ci.yml` has three jobs:
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
-| `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `lint:fps` → `lint:ai` → `aicheck` → `zorkcheck` → `build`. No browser, fast, this is the gate. |
+| `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `lint:fps` → `lint:ai` → `aicheck` → `zorkcheck` → `build`. No browser, fast. **The only required check** (branch protection on `main`, set 2026-10-19) — the only one that can block a merge. |
+| `smoke` | every PR | `heistsmoke` + per-game real-key smokes (missile, polarity, simcity, outpost, …). Advisory: a flake means `gh run rerun <id> --failed` once, then move on — never fix-in-a-new-PR, never wait on it. |
 | `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + aicheck + zorkcheck + fpscheck + evocheck + doscheck), then builds and `npm run prodsmoke` against the production bundle; uploads `scripts/.shots/`, dumps the vite/preview logs on failure. |
 
 ```bash
@@ -138,6 +139,27 @@ that tail is cleaned up.
 > `gh auth refresh -s workflow` (gh ≥2.40 — it was renamed from `auth refresh-scopes`),
 > then enter the device code at github.com/login/device. Additive and reversible via
 > `--remove-scopes`.
+
+### WebGPU shaders: in-place workgroup butterflies need read → barrier → write
+An FFT stage that reads `a`/`b` out of `var<workgroup>` memory and writes **both** butterfly
+slots is racing unless a `workgroupBarrier()` sits **between the reads and the writes** —
+the stage-end barrier only orders writes before the *next* stage's reads. Butterfly partners
+occupy each other's write slots, and a lane in another SIMD group can land its write before
+its partner's read. The tell is **one-frame whole-surface corruption** in everything derived
+from the transform (ocean.html shipped exactly this: spikes for one frame, gone the next —
+never reproduce a deterministic way, which is why no CPU replica check could catch it).
+Pattern for every stage loop:
+```wgsl
+let a = sm[idx];
+let b = sm[other];
+workgroupBarrier();   // all stage reads complete before any stage write
+sm[idx]   = a + b;
+sm[other] = twiddle * (a - b);
+workgroupBarrier();   // all stage writes complete before next stage reads
+```
+`oceanfold` structurally pins the mid-stage barrier for both `cs_row` and `cs_col`; any new
+WebGPU shader with an in-place butterfly (COMET DRIFT HD included, if it ever adds one)
+should carry the same pattern — visual review alone will not see the race.
 
 ## The Forge (autonomous game production)
 `/forge` (route `ForgeBoard.jsx`) is the live progress board + request box: it reads the
