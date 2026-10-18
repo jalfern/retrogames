@@ -27,6 +27,45 @@ export function dirsFrom(dx, dy, deadZone = DEAD_ZONE) {
     return SECTOR_DIRS[sectorFrom(dx, dy)]
 }
 
+// --- 4 / 8-way "diamond gate" quantizer for the touch d-pad stick (#439) ---
+//
+// A cabinet's 4-way stick has a restrictor gate: the thumb slides freely in
+// the plane, but the OUTPUT snaps to the DOMINANT axis. Near the 45-degree
+// diagonal the last axis wins until the thumb clears it by more than a small
+// wedge (hysteresis, ~±15 degrees), so the output does not flicker between two
+// directions as the thumb crosses the diagonal. For `ways: 8` the thumb instead
+// picks the nearest 45-degree sector (diagonals allowed), matching the legacy
+// d-pad.
+//
+// Newest direction wins: every move re-derives from the current offset.
+// `state.axis` is the hysteresis memory (the last dominant axis, 'x' | 'y'),
+// carried across moves by the caller (a ref in the browser, a shared object in
+// Node). Pure: importable in Node (vpadcheck) and the browser.
+//
+//   x, y       the thumb's offset from the stick centre (screen coords, y down)
+//   ways       4 (dominant axis) or 8 (nearest sector)
+//   state      { axis } — the last dominant axis, for hysteresis
+//   deadZone   px before any direction engages (the shared DEAD_ZONE)
+// Returns: the arrow code(s) to hold — one for ways 4, up to two for ways 8.
+export const DPAD_HYST_RAD = 15 * Math.PI / 180
+export const DPAD_SWAP_HI = Math.tan(Math.PI / 4 + DPAD_HYST_RAD)  // |y|/|x| to take the vertical axis (60 deg)
+export const DPAD_SWAP_LO = Math.tan(Math.PI / 4 - DPAD_HYST_RAD)  // |y|/|x| to take the horizontal axis (30 deg)
+
+export function dpadDirs(x, y, ways = 4, state = {}, deadZone = DEAD_ZONE) {
+    if (Math.hypot(x, y) < deadZone) return []
+    if (ways === 8) return SECTOR_DIRS[sectorFrom(x, y)]
+    const ax = Math.abs(x), ay = Math.abs(y)
+    const r = ax === 0 ? Infinity : ay / ax
+    const last = state.axis
+    let axis
+    if (last === 'y') axis = r < DPAD_SWAP_LO ? 'x' : 'y'
+    else if (last === 'x') axis = r > DPAD_SWAP_HI ? 'y' : 'x'
+    else axis = r >= 1 ? 'y' : 'x'
+    state.axis = axis
+    if (axis === 'x') return [x >= 0 ? 'ArrowRight' : 'ArrowLeft']
+    return [y >= 0 ? 'ArrowDown' : 'ArrowUp']
+}
+
 // --- Floating-stick touch control (#290 step 3) ---
 //
 // A floating stick anchors wherever the thumb lands; the knob then follows the

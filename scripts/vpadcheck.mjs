@@ -11,8 +11,8 @@ import { readFileSync, writeFileSync } from 'fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
-import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD } from '../src/components/virtualDir.js'
-import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick } from '../src/components/gamepadMap.js'
+import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD, dpadDirs, DPAD_SWAP_HI, DPAD_SWAP_LO } from '../src/components/virtualDir.js'
+import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick, waysOf } from '../src/components/gamepadMap.js'
 import { steerPedals, steerResponse, STEER_GAIN } from '../src/utils/padState.js'
 import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD } from '../src/utils/onePad.js'
 
@@ -660,6 +660,156 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
         const src = readFileSync(new URL(file, import.meta.url), 'utf8')
         ok(/\bTAP\b/.test(src), `games.js ${path} start prompt is touch-aware (says TAP)`)
     }
+}
+
+// --- 31. #439: the 4/8-way "diamond gate" quantizer (dpadDirs) ---
+// A cabinet's 4-way stick has a restrictor gate: the thumb slides freely but the
+// output snaps to the DOMINANT axis, with ±15-degree hysteresis near the 45deg
+// diagonal so it does not flicker between two directions. ways 8 keeps the
+// legacy nearest-sector read (diagonals allowed). Newest direction wins.
+
+// 31a. 4-way pure axes (no hysteresis history needed).
+{
+    ok(JSON.stringify(dpadDirs(50, 0, 4, {})) === JSON.stringify(['ArrowRight']), 'dpadDirs 4-way +x -> right')
+    ok(JSON.stringify(dpadDirs(-50, 0, 4, {})) === JSON.stringify(['ArrowLeft']), 'dpadDirs 4-way -x -> left')
+    ok(JSON.stringify(dpadDirs(0, -50, 4, {})) === JSON.stringify(['ArrowUp']), 'dpadDirs 4-way -y (screen up) -> up')
+    ok(JSON.stringify(dpadDirs(0, 50, 4, {})) === JSON.stringify(['ArrowDown']), 'dpadDirs 4-way +y (screen down) -> down')
+}
+
+// 31b. 4-way dominant axis: the larger |component| wins off the diagonal.
+{
+    ok(JSON.stringify(dpadDirs(50, 20, 4, {})) === JSON.stringify(['ArrowRight']), 'dpadDirs 4-way |x|>|y| off-diagonal -> right (dominant x)')
+    ok(JSON.stringify(dpadDirs(20, 50, 4, {})) === JSON.stringify(['ArrowDown']), 'dpadDirs 4-way |y|>|x| off-diagonal -> down (dominant y)')
+    ok(JSON.stringify(dpadDirs(-45, 15, 4, {})) === JSON.stringify(['ArrowLeft']), 'dpadDirs 4-way sign follows the active axis (-x, small +y) -> left')
+}
+
+// 31c. Dead zone: inside DEAD_ZONE nothing engages (a resting thumb).
+{
+    ok(dpadDirs(0, 0, 4, {}).length === 0, 'dpadDirs centre -> []')
+    ok(dpadDirs(DEAD_ZONE - 1, 0, 4, {}).length === 0, `dpadDirs |d|=${DEAD_ZONE - 1} (< dead) -> []`)
+    ok(dpadDirs(0, DEAD_ZONE - 1, 8, {}).length === 0, 'dpadDirs 8-way small dy (< dead) -> []')
+}
+
+// 31d. ways 8: the nearest 45-degree sector, diagonals allowed (the legacy read).
+{
+    ok(JSON.stringify(dpadDirs(35, 35, 8, {})) === JSON.stringify(SECTOR_DIRS[sectorFrom(35, 35)]), 'dpadDirs 8-way down-right -> the down-right sector (both axes)')
+    ok(JSON.stringify(dpadDirs(35, 35, 8, {})) === JSON.stringify(['ArrowDown', 'ArrowRight']), 'dpadDirs 8-way down-right lights both axes')
+    ok(JSON.stringify(dpadDirs(-35, -35, 8, {})) === JSON.stringify(['ArrowUp', 'ArrowLeft']), 'dpadDirs 8-way up-left lights both axes')
+    ok(JSON.stringify(dpadDirs(35, 0, 8, {})) === JSON.stringify(['ArrowRight']), 'dpadDirs 8-way +x -> right')
+}
+
+// 31e. 4-way on an EXACT diagonal is deterministic (no history: vertical wins).
+{
+    ok(JSON.stringify(dpadDirs(35, 35, 4, {})) === JSON.stringify(['ArrowDown']), 'dpadDirs 4-way exact 45deg (no history) resolves deterministically (down)')
+}
+
+// 31f. Hysteresis — the core of the fix. Cross the diagonal from a dominant axis
+// and the last axis holds until the thumb clears it by more than the ±15deg
+// wedge (|y|/|x| past DPAD_SWAP_HI, ~1.73). This is what stops the flicker.
+{
+    const st = {}
+    ok(JSON.stringify(dpadDirs(50, 0, 4, st)) === JSON.stringify(['ArrowRight']), 'hysteresis: push right engages (axis x)')
+    // r = 60/50 = 1.2 (angle ~50deg, past the 45deg line but inside the wedge):
+    // the dominant axis is now vertical, yet the last axis (x) is kept.
+    ok(JSON.stringify(dpadDirs(50, 60, 4, st)) === JSON.stringify(['ArrowRight']),
+        `hysteresis: r=1.2 (past 45deg, < ${DPAD_SWAP_HI.toFixed(2)}) KEEPS the last axis (right, not down)`)
+    // Push clearly vertical (r = 100/50 = 2.0 > DPAD_SWAP_HI): the axis flips.
+    ok(JSON.stringify(dpadDirs(50, 100, 4, st)) === JSON.stringify(['ArrowDown']),
+        `hysteresis: r=2.0 (> ${DPAD_SWAP_HI.toFixed(2)}) takes the vertical axis (down)`)
+    // Ease back to r = 30/40 = 0.75 (angle ~37deg): dominant axis is now
+    // horizontal, but the last axis (y) is kept until it clears DPAD_SWAP_LO.
+    ok(JSON.stringify(dpadDirs(40, 30, 4, st)) === JSON.stringify(['ArrowDown']),
+        `hysteresis: r=0.75 (< 1 but > ${DPAD_SWAP_LO.toFixed(2)}) KEEPS the last axis (down, not right)`)
+    // Push clearly horizontal (r = 20/50 = 0.4 < DPAD_SWAP_LO): the axis flips.
+    ok(JSON.stringify(dpadDirs(50, 20, 4, st)) === JSON.stringify(['ArrowRight']),
+        `hysteresis: r=0.4 (< ${DPAD_SWAP_LO.toFixed(2)}) takes the horizontal axis (right)`)
+}
+
+// 31g. Newest direction wins: a clear push overrides the hysteresis memory.
+{
+    const st = {}
+    dpadDirs(50, 0, 4, st)   // right (axis x)
+    dpadDirs(50, 60, 4, st)  // still right (hysteresis)
+    ok(JSON.stringify(dpadDirs(0, -50, 4, st)) === JSON.stringify(['ArrowUp']),
+        'newest wins: a clear up push overrides the remembered horizontal axis')
+}
+
+// 31h. The wedge constants are tan(45deg ± 15deg): ~1.73 up, ~0.58 down.
+{
+    ok(Math.abs(DPAD_SWAP_HI - Math.tan(Math.PI / 4 + 15 * Math.PI / 180)) < 1e-9, 'DPAD_SWAP_HI == tan(60deg)')
+    ok(Math.abs(DPAD_SWAP_LO - Math.tan(Math.PI / 4 - 15 * Math.PI / 180)) < 1e-9, 'DPAD_SWAP_LO == tan(30deg)')
+    ok(DPAD_SWAP_HI > 1 && DPAD_SWAP_LO < 1, 'the hysteresis wedge straddles the 45deg line (HI>1>LO)')
+}
+
+// 31i. Mutant that dies: hysteresis removed. A no-memory version re-derives the
+// dominant axis from the raw offset every move, so the moment the thumb crosses
+// the diagonal it flips — the exact flicker the gate prevents. Prove they
+// diverge on the same sequence.
+{
+    const noHyst = (x, y, ways) => (ways === 8 ? SECTOR_DIRS[sectorFrom(x, y)]
+        : (Math.hypot(x, y) < DEAD_ZONE ? []
+            : (Math.abs(x) >= Math.abs(y) ? [x >= 0 ? 'ArrowRight' : 'ArrowLeft'] : [y >= 0 ? 'ArrowDown' : 'ArrowUp'])))
+    const seq = [[50, 0], [50, 60], [50, 100]]
+    const st = {}
+    const real = seq.map(([x, y]) => dpadDirs(x, y, 4, st))
+    const mutant = seq.map(([x, y]) => noHyst(x, y, 4))
+    ok(JSON.stringify(real) !== JSON.stringify(mutant), 'no-hysteresis mutant diverges from the real diamond gate')
+    ok(JSON.stringify(real[1]) === JSON.stringify(['ArrowRight']) && JSON.stringify(mutant[1]) === JSON.stringify(['ArrowDown']),
+        'at r=1.2 the real keeps the last axis (right) but the mutant flicks to the dominant axis (down)')
+}
+
+// --- 32. #439: `ways` on the pad declaration + the diamond-gate migration ---
+//
+// 32a. validPad accepts ways 4/8 and rejects anything else.
+{
+    ok(validPad({ method: 'dpad', ways: 4, buttons: [] }) === true, 'validPad: ways 4 accepted')
+    ok(validPad({ method: 'dpad', ways: 8, buttons: [] }) === true, 'validPad: ways 8 accepted')
+    ok(validPad({ method: 'dpad', ways: 5, buttons: [] }) === false, 'validPad: ways 5 rejected')
+    ok(validPad({ method: 'dpad', ways: '4', buttons: [] }) === false, 'validPad: a non-numeric ways rejected')
+    ok(validPad({ method: 'dpad', buttons: [] }) === true, 'validPad: no ways is still valid (the legacy d-pad)')
+}
+
+// 32b. waysOf: the declared ways, or null (the legacy 8-way cross d-pad).
+{
+    ok(waysOf({ method: 'dpad', ways: 4 }) === 4, 'waysOf: ways 4 -> 4')
+    ok(waysOf({ method: 'dpad', ways: 8 }) === 8, 'waysOf: ways 8 -> 8')
+    ok(waysOf({ method: 'dpad' }) === null, 'waysOf: no ways -> null (legacy d-pad)')
+    ok(waysOf({ method: 'dpad', ways: 5 }) === null, 'waysOf: an invalid ways -> null')
+    ok(waysOf(null) === null, 'waysOf: null pad -> null')
+}
+
+// 32c. The registry: PAC-MAN is migrated to the diamond gate (method dpad +
+// ways 4). Real registry, bundled the way the #420 pilot guard does — a silent
+// revert of the declaration is caught.
+{
+    const here = dirname(fileURLToPath(import.meta.url))
+    const root = join(here, '..')
+    const OUT = join(root, 'node_modules', '.vpad-A.mjs')
+    const { GAMES } = await import(pathToFileURL(OUT).href)
+    const pac = GAMES.find((e) => e.path === '/pacman')
+    ok(!!pac && pac.pad, 'games.js has a pad entry for /pacman')
+    if (pac && pac.pad) {
+        ok(pac.pad.method === 'dpad', 'games.js /pacman declares method dpad')
+        ok(pac.pad.ways === 4, 'games.js /pacman declares ways 4 (the diamond gate)')
+        ok(validPad(pac.pad), 'games.js /pacman pad is well-formed (with ways)')
+        ok(waysOf(pac.pad) === 4, 'games.js /pacman resolves to the 4-way diamond gate')
+    }
+    // The other dpad titles that have NOT been migrated declare no `ways` and so
+    // keep the legacy 8-way cross d-pad — pin that a migration is per-title.
+    const unmigrated = ['/minesweeper', '/tetris', '/qbert', '/bards-tale']
+    for (const path of unmigrated) {
+        const g = GAMES.find((e) => e.path === path)
+        if (!g || !g.pad) continue
+        ok(g.pad.ways === undefined, `games.js ${path} still declares no ways (kept the legacy d-pad)`)
+    }
+}
+
+// 32d. The contract surfaces `ways` on __game.meta when a game provides it (a
+// DEV-only surface; here guarded by source, the way the TAP-prompt guard does).
+{
+    const src = readFileSync(new URL('../src/utils/gameContract.js', import.meta.url), 'utf8')
+    ok(/\.\.\.\(spec\.ways \? \{ ways: spec\.ways \} : \{\}\)/.test(src),
+        'gameContract: __game.meta reports `ways` when the game declares it')
 }
 
 // --- Summary ---
