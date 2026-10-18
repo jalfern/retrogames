@@ -390,6 +390,12 @@ jobs:
         run: npm run vpadboot
         env:
           SHOT_CHANNEL: chromium
+      - name: Tap-to-start (#430: a real touch TAP starts every tapStart-flagged game via the shared shell)
+        run: npm run tapstartcheck
+        env:
+          SHOT_CHANNEL: chromium
+          TAP_ONLY: "1"
+          TAP_CANVAS: "1"
       - name: Polarity smoke (real keys, pixels graded against physics)
         run: npm run polarplay
         env:

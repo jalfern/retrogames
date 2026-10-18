@@ -6,6 +6,7 @@ import GamepadBridge from './components/GamepadBridge'
 import GameChrome from './components/GameChrome'
 import { PadContext } from './components/padContext'
 import { padButton } from './components/gamepadMap'
+import { methodOf } from './utils/onePad'
 import ArcadeShowcase from './pages/ArcadeShowcase'
 import ForgeBoard from './pages/ForgeBoard'
 import { audioController } from './utils/AudioController'
@@ -18,12 +19,16 @@ const GameLabelContext = createContext({
 function RandomHome() {
   const { setGameInfo } = useContext(GameLabelContext)
   const [GameComponent, setGameComponent] = useState(null)
+  const [randomGame, setRandomGame] = useState(null)
 
   useEffect(() => {
-    const randomGame = GAMES[Math.floor(Math.random() * GAMES.length)]
-    setGameComponent(() => randomGame.component)
-        setGameInfo(randomGame.label, randomGame.theme, randomGame.footer)
+    const g = GAMES[Math.floor(Math.random() * GAMES.length)]
+    setGameComponent(() => g.component)
+    setRandomGame(g)
+        setGameInfo(g.label, g.theme, g.footer)
   }, [setGameInfo])
+
+  useTapStart(randomGame)
 
   if (!GameComponent) return null
   return (
@@ -44,6 +49,28 @@ function LoadingCard() {
   )
 }
 
+// #430 — tap-to-start in the shared shell. A game that declares `tapStart`
+// gets the shell contract for real ("any keydown or pointerdown starts the
+// game"): a tap anywhere synthesizes the start key (Space), exactly like a
+// keyboard keydown — no per-game pointerdown handlers. Taps on the on-screen
+// controls ([data-vc]) and on UI chrome keep their own semantics; pointer-
+// method games own their canvas and opt out by declaration.
+function useTapStart(game) {
+  useEffect(() => {
+    if (!game || !game.tapStart) return
+    const pad = game.pad || null
+    if (pad && methodOf(pad) === 'pointer') return
+    const onPointerDown = (e) => {
+      const t = e.target
+      if (t instanceof Element && t.closest('[data-vc], button, a, input, select, textarea')) return
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }))
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }))
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [game])
+}
+
 // Wrapper for direct routes
 function GameRoute({ game }) {
   const { setGameInfo } = useContext(GameLabelContext)
@@ -52,6 +79,9 @@ function GameRoute({ game }) {
   useEffect(() => {
     setGameInfo(game.label, game.theme, game.footer)
   }, [game.label, game.theme, game.footer, setGameInfo])
+
+  useTapStart(game)
+
   return (
     <PadContext.Provider value={pad}>
       <GamepadBridge secondAction={padButton(pad)?.code} />
