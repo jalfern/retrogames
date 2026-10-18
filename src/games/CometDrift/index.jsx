@@ -63,6 +63,8 @@ export default function CometDrift() {
         let H = LAND_H
         let HORIZON = Math.round(H * 0.4)
         let u = 1
+        let hs = 1
+        let kscale = 1
         let frame = null
         let px = null
         let map = minimapPath(58, 50)
@@ -81,9 +83,13 @@ export default function CometDrift() {
             ctx.imageSmoothingEnabled = false
             HORIZON = Math.round(H * 0.4)
             u = H / 176
+            // the HUD scales with the SHORTER axis so it never explodes in
+            // portrait, where u runs away with the height
+            hs = Math.min(u, W / 256)
+            kscale = Math.min(u, W / 240)
             frame = ctx.createImageData(W, H)
             px = new Uint32Array(frame.data.buffer)
-            map = minimapPath(Math.round(58 * u), Math.round(50 * u))
+            map = minimapPath(Math.round(58 * hs), Math.round(50 * hs))
         }
         relayout()
         const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => relayout()) : null
@@ -323,12 +329,12 @@ export default function CometDrift() {
             const P = g.karts[0]
             const tilt = P.spinT > 0 ? g.tick * 0.32 : P.steerVis * 0.18 + (P.driftT ? P.steerVis * 0.24 : 0)
             const bounce = P.offroad && P.v > 1 ? (g.tick >> 1) % 2 : 0
-            const pw = Math.round(KART.w * 1.3 * u)
+            const pw = Math.round(KART.w * 1.3 * kscale)
             const ph = Math.round(pw * KART.h / KART.w)
             ctx.save()
-            ctx.translate(W / 2, H - Math.round(12 * u) + bounce)
+            ctx.translate(W / 2, H - Math.round(12 * kscale) + bounce)
             ctx.rotate(tilt)
-            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-pw * 0.44, -3, pw * 0.88, Math.round(6 * u))
+            ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-pw * 0.44, -3, pw * 0.88, Math.round(6 * kscale))
             const sf = P.steerVis < 0 ? 0 : P.steerVis > 0 ? 2 : 1
             const rf = P.v > 0.4 ? (P.anim >> 2) & 1 : 0
             ctx.drawImage(S.comet[sf][rf], -pw / 2, -ph, pw, ph)
@@ -336,10 +342,10 @@ export default function CometDrift() {
                 // the tier ladder, written in flame: short blue, violet, then
                 // the long gold comet
                 const hot = P.boostTier >= 2 ? '#58f8f8' : P.boostTier === 1 ? '#b888f8' : '#58b8f8'
-                const fl = Math.round((10 + P.boostTier * 9) * u)
+                const fl = Math.round((10 + P.boostTier * 9) * kscale)
                 ctx.fillStyle = (g.tick >> 1) % 2 ? hot : '#f8d800'
-                ctx.fillRect(-pw * 0.34, -6, Math.round(12 * u), fl)
-                ctx.fillRect(pw * 0.34 - Math.round(12 * u), -6, Math.round(12 * u), fl - ((g.tick >> 1) % 3))
+                ctx.fillRect(-pw * 0.34, -6, Math.round(12 * kscale), fl)
+                ctx.fillRect(pw * 0.34 - Math.round(12 * kscale), -6, Math.round(12 * kscale), fl - ((g.tick >> 1) % 3))
             }
             ctx.restore()
         }
@@ -353,18 +359,18 @@ export default function CometDrift() {
                 const dir = P.steerVis || 1
                 for (let i = 0; i < 2; i++) {
                     const side = i ? 1 : -1
-                    fx.sparks.push({ x: W / 2 + side * 26 * u, y: H - 8 * u,
+                    fx.sparks.push({ x: W / 2 + side * 26 * kscale, y: H - 8 * kscale,
                         vx: -dir * (0.3 + jit(g.tick + i) * 0.7) + side * 0.7,
                         vy: 0.5 + jit(g.tick * 1.7 + i) * 1.3, life: 12 })
                     // the canyons signature: held drifts kick apron dust
-                    fx.dust.push({ x: W / 2 + side * (20 + jit(g.tick * 2.3 + i) * 14) * u, y: H - (6 + jit(g.tick + i * 5) * 8) * u,
+                    fx.dust.push({ x: W / 2 + side * (20 + jit(g.tick * 2.3 + i) * 14) * kscale, y: H - (6 + jit(g.tick + i * 5) * 8) * kscale,
                         vx: side * (0.4 + jit(g.tick * 1.1 + i) * 0.6), vy: -0.2 - jit(g.tick * 1.9 + i) * 0.5, life: 20, r: 3 })
                 }
             } else if (P.spinT > 0) {
-                for (let i = 0; i < 3; i++) fx.dust.push({ x: W / 2 + (jit(g.tick * 3.1 + i) - 0.5) * 44 * u,
-                    y: H - 10 * u, vx: (jit(g.tick * 1.3 + i) - 0.5) * 1.3, vy: 0.2 + jit(g.tick * 2.1 + i) * 0.5, life: 18, r: 4 })
+                for (let i = 0; i < 3; i++) fx.dust.push({ x: W / 2 + (jit(g.tick * 3.1 + i) - 0.5) * 44 * kscale,
+                    y: H - 10 * kscale, vx: (jit(g.tick * 1.3 + i) - 0.5) * 1.3, vy: 0.2 + jit(g.tick * 2.1 + i) * 0.5, life: 18, r: 4 })
             }
-            if (P.offroad && P.v > 2 && (g.tick & 1) === 0) fx.dust.push({ x: W / 2 + (jit(g.tick) - 0.5) * 30 * u, y: H - 6 * u, vx: 0, vy: -0.3, life: 14, r: 3 })
+            if (P.offroad && P.v > 2 && (g.tick & 1) === 0) fx.dust.push({ x: W / 2 + (jit(g.tick) - 0.5) * 30 * kscale, y: H - 6 * kscale, vx: 0, vy: -0.3, life: 14, r: 3 })
             for (const s of fx.sparks) { s.x += s.vx; s.y += s.vy; s.vy += 0.12; s.life-- }
             fx.sparks = fx.sparks.filter((s) => s.life > 0 && s.y < H + 4)
             for (const d of fx.dust) { d.x += d.vx; d.y += d.vy; d.r += 0.22; d.life-- }
@@ -428,7 +434,7 @@ export default function CometDrift() {
             ctx.fillRect(x, y + h - 1, w, 1)
             ctx.fillRect(x + w - 1, y, 1, h)
         }
-        const fu = (sz) => `bold ${Math.max(1, Math.round(sz * u))}px monospace`
+        const fu = (sz) => `bold ${Math.max(1, Math.round(sz * hs))}px monospace`
 
         const tierReached = (charge) => {
             let t = -1
@@ -446,45 +452,45 @@ export default function CometDrift() {
         const drawHud = () => {
             const P = g.karts[0]
             // POS badge
-            panel(2 * u, 2 * u, 34 * u, 27 * u)
+            panel(2 * hs, 2 * hs, 34 * hs, 27 * hs)
             ctx.fillStyle = '#b08460'; ctx.font = fu(8)
-            ctx.fillText('POS', Math.round(5 * u), Math.round(11 * u))
+            ctx.fillText('POS', Math.round(5 * hs), Math.round(11 * hs))
             const suff = ['st', 'nd', 'rd', 'th', 'th', 'th', 'th'][P.place - 1]
             ctx.fillStyle = P.place === 1 ? '#ffd840' : '#f2e6d2'
             ctx.font = fu(17)
-            ctx.fillText(`${P.place}${suff}`, Math.round(5 * u), Math.round(25 * u))
+            ctx.fillText(`${P.place}${suff}`, Math.round(5 * hs), Math.round(25 * hs))
             // speed + drift ladder under the badge
-            panel(2 * u, 31 * u, 58 * u, 24 * u)
+            panel(2 * hs, 31 * hs, 58 * hs, 28 * hs)
             ctx.fillStyle = '#f2e6d2'; ctx.font = fu(9)
-            ctx.fillText(`${Math.round(P.v * 19.5)} KM/H`, Math.round(5 * u), Math.round(40 * u))
-            ctx.fillStyle = '#3a2430'; ctx.fillRect(Math.round(5 * u), Math.round(44 * u), Math.round(52 * u), Math.round(7 * u))
-            const barW = Math.round(P.v / (CFG.top + TIERS[Math.max(P.boostTier, 0)].over) * 52 * u)
+            ctx.fillText(`${Math.round(P.v * 19.5)} KM/H`, Math.round(5 * hs), Math.round(40 * hs))
+            ctx.fillStyle = '#3a2430'; ctx.fillRect(Math.round(5 * hs), Math.round(44 * hs), Math.round(52 * hs), Math.round(7 * hs))
+            const barW = Math.round(P.v / (CFG.top + TIERS[Math.max(P.boostTier, 0)].over) * 52 * hs)
             ctx.fillStyle = P.boostT > 0 ? '#ffd840' : P.offroad ? '#f85820' : '#38d898'
-            ctx.fillRect(Math.round(5 * u), Math.round(44 * u), Math.min(Math.round(52 * u), barW), Math.round(7 * u))
+            ctx.fillRect(Math.round(5 * hs), Math.round(44 * hs), Math.min(Math.round(52 * hs), barW), Math.round(7 * hs))
             // the drift ladder as chevrons, blue violet gold, brighter while
             // the current tier is being held
             for (let i = 0; i < 3; i++) {
                 const held = P.driftT > 0 && tierReached(P.charge) >= i
                 const pulse = held && tierReached(P.charge) === i && (g.tick >> 2) % 2 === 0
                 ctx.fillStyle = held ? (pulse ? '#ffffff' : i === 2 ? '#ffd840' : i === 1 ? '#c088ff' : '#58c8ff') : '#3a2430'
-                const cx = Math.round((11 + i * 8) * u); const cy = Math.round(54 * u)
+                const cx = Math.round((11 + i * 8) * hs); const cy = Math.round(54 * hs)
                 ctx.beginPath()
-                ctx.moveTo(cx - 3 * u, cy - 2 * u); ctx.lineTo(cx, cy); ctx.lineTo(cx - 3 * u, cy + 2 * u)
-                ctx.lineTo(cx - 1.5 * u, cy); ctx.closePath(); ctx.fill()
+                ctx.moveTo(cx - 3 * hs, cy - 2 * hs); ctx.lineTo(cx, cy); ctx.lineTo(cx - 3 * hs, cy + 2 * hs)
+                ctx.lineTo(cx - 1.5 * hs, cy); ctx.closePath(); ctx.fill()
             }
             // LAP plate, centre-top
-            panel(Math.round((W - 56 * u) / 2), 2 * u, Math.round(56 * u), Math.round(24 * u))
+            panel(Math.round((W - 78 * hs) / 2), Math.round(2 * hs), Math.round(78 * hs), Math.round(26 * hs))
             ctx.textAlign = 'center'
             ctx.fillStyle = '#b08460'; ctx.font = fu(8)
-            ctx.fillText('LAP', Math.round(W / 2), Math.round(10 * u))
-            ctx.fillStyle = '#f2e6d2'; ctx.font = fu(12)
-            ctx.fillText(`${Math.min(P.lap + 1, LAPS)}/${LAPS}  ${fmtTime(Math.max(0, g.tick - P.lapStart))}`, Math.round(W / 2), Math.round(22 * u))
+            ctx.fillText('LAP', Math.round(W / 2), Math.round(10 * hs))
+            ctx.fillStyle = '#f2e6d2'; ctx.font = fu(11)
+            ctx.fillText(`${Math.min(P.lap + 1, LAPS)}/${LAPS}  ${fmtTime(Math.max(0, g.tick - P.lapStart))}`, Math.round(W / 2), Math.round(23 * hs))
             ctx.textAlign = 'left'
             // minimap, right
-            const mw = Math.round(58 * u); const mh = Math.round(50 * u)
-            const mx = Math.round(W - mw - 2 * u); const my = Math.round(2 * u)
+            const mw = Math.round(58 * hs); const mh = Math.round(50 * hs)
+            const mx = Math.round(W - mw - 2 * hs); const my = Math.round(2 * hs)
             panel(mx, my, mw, mh)
-            ctx.strokeStyle = '#8a5c3c'; ctx.lineWidth = Math.max(1, Math.round(1.6 * u))
+            ctx.strokeStyle = '#8a5c3c'; ctx.lineWidth = Math.max(1, Math.round(1.6 * hs))
             ctx.beginPath()
             for (let i = 0; i < map.pts.length; i++) {
                 const [qx, qy] = map.pts[i]
@@ -495,14 +501,14 @@ export default function CometDrift() {
                 const k = g.karts[i]
                 const [qx, qy] = map.project(k.x, k.y)
                 ctx.fillStyle = k.isPlayer ? '#28c8e8' : (LIVERY_DOT[k.color] || '#e8dcc4')
-                const ds = Math.max(2, Math.round((k.isPlayer ? 4 : 3) * u))
+                const ds = Math.max(2, Math.round((k.isPlayer ? 4 : 3) * hs))
                 ctx.fillRect(mx + qx - ds / 2, my + qy - ds / 2, ds, ds)
             }
             if (st.screen !== 'attract' && (g.phase === 'count' || (g.phase === 'race' && g.tick - P.lapStart < 40))) {
                 ctx.textAlign = 'center'
                 ctx.font = fu(44)
                 ctx.fillStyle = g.phase === 'race' ? '#38e878' : '#f2e6d2'
-                ctx.fillText(g.phase === 'race' ? 'GO!' : String(Math.ceil(g.count / 60)), W / 2, HORIZON + Math.round(34 * u))
+                ctx.fillText(g.phase === 'race' ? 'GO!' : String(Math.ceil(g.count / 60)), W / 2, HORIZON + Math.round(34 * hs))
                 ctx.textAlign = 'left'
             }
         }
@@ -510,13 +516,13 @@ export default function CometDrift() {
         // attract / end screens ride the same carved panels, strata-trimmed
         const strataBar = (y, w) => {
             const cols = [PALETTE.rimLit, PALETTE.rockMid, PALETTE.rockDark]
-            cols.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(Math.round((W - w) / 2), Math.round(y + i * 2 * u), w, Math.max(1, Math.round(2 * u))) })
+            cols.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(Math.round((W - w) / 2), Math.round(y + i * 2 * hs), w, Math.max(1, Math.round(2 * hs))) })
         }
         const drawAttract = () => {
             ctx.fillStyle = 'rgba(20,8,12,0.62)'
             ctx.fillRect(0, Math.round(H * 0.18), W, Math.round(H * 0.6))
             strataBar(Math.round(H * 0.18), W)
-            strataBar(Math.round(H * 0.78) - Math.round(6 * u), W)
+            strataBar(Math.round(H * 0.78) - Math.round(6 * hs), W)
             ctx.textAlign = 'center'
             ctx.fillStyle = '#7c2010'
             ctx.font = fu(24)
@@ -524,7 +530,7 @@ export default function CometDrift() {
             ctx.fillStyle = '#f2e6d2'
             ctx.fillText('COMET', W / 2, Math.round(H * 0.33))
             ctx.fillStyle = '#ffd840'
-            ctx.fillText('DRIFT GP', W / 2, Math.round(H * 0.33 + 24 * u))
+            ctx.fillText('DRIFT GP', W / 2, Math.round(H * 0.33) + Math.round(24 * hs))
             const msgs = ['SUNSET GULCH - 4 LAPS', 'X GAS  S BRAKE  ←→ STEER', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'blue violet GOLD - the ladder pays']
             ctx.font = fu(10)
             ctx.fillStyle = '#f0b878'
@@ -533,7 +539,7 @@ export default function CometDrift() {
                 ctx.font = fu(8)
                 for (let i = 0; i < st.top.length; i++) {
                     ctx.fillStyle = i === 0 ? '#ffd840' : '#b090a8'
-                    ctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, Math.round(H * 0.62 + i * 9 * u))
+                    ctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, Math.round(H * 0.62 + i * 9 * hs))
                 }
             }
             if ((g.tick >> 5) % 2) {

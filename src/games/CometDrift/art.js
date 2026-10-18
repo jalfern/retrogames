@@ -197,9 +197,14 @@ export function buildGround() {
     // strata cracks: dashed strokes laying vertical fractures across the rock
     band(PALETTE.crack, WALL_R - 4, [4, 26])
     band(PALETTE.crack, KERB_R + 22, [3, 41])
-    // asphalt, then the sandstone crumble laid over its outer edge
+    // asphalt
     band(PALETTE.road, ROAD_R)
-    band(PALETTE.sandEdge, ROAD_R + 2, [22, 7])
+    // crumbled sandstone eating the road edge: thin dashed rings hugging the
+    // asphalt border (a wide dashed stroke would crossbar the whole road)
+    x.setLineDash([20, 9])
+    x.strokeStyle = PALETTE.sandEdge; x.lineWidth = 4
+    x.stroke(offsetPath(ROAD_R - 1)); x.stroke(offsetPath(-(ROAD_R - 1)))
+    x.setLineDash([])
 
     // worn racing grooves: twin tracks darker than the fresh asphalt
     x.strokeStyle = PALETTE.groove; x.lineWidth = 13
