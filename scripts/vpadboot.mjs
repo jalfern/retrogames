@@ -42,22 +42,30 @@ const TOUCHED = [
     ['/frogger', 'stick'], ['/tempest', 'stick'], ['/dig-dug', 'stick'],
     ['/adventure', 'stick'], ['/joust', 'stick'], ['/arkanoid', 'stick'],
     ['/missile-battle', 'stick'],
+    ['/mario-kart', 'stick'], ['/comet-drift', 'stick'],
 ]
 
-// The floating-stick zone is the only DOM the #384 default-flip adds or
-// removes: it renders iff the method is 'stick' && the pad is visible. The two
-// d-pad shapes are pre-existing per-title choices and are both "no stick"; a
-// 'pointer' game has no left control at all (it taps the field directly), so
-// it expects neither a stick zone nor a d-pad.
-const STICK_MARK = 'fixed left-0 top-0 bottom-0 w-1/2'
-const LEFT_MARKS = [STICK_MARK, 'relative w-[150px] h-[150px]', 'grid grid-cols-2']
+// The left control VirtualControls renders, tagged with data-vc (the
+// component's own testable-markup convention):
+//   stick       the legacy floating stick (anchors under the thumb)
+//   fixedstick  the always-visible fixed stick (method 'stick')
+//   dpadgate    the #439 diamond-gate stick (method 'dpad' + ways)
+//   dpad        the legacy fixed d-pad (layout 'dpad' without ways)
+//   diag        the 2x2 corner pad (Q*BERT's diag prop)
+// A 'stick' registry method renders `stick` or `fixedstick`; a 'dpad' method
+// renders one of the three d-pad shapes; a 'pointer' method renders none (the
+// canvas is the control surface).
+const STICK_VCS = ['stick', 'fixedstick']
+const DPAD_VCS = ['dpadgate', 'dpad', 'diag']
+const LEFT_VCS = [...STICK_VCS, ...DPAD_VCS]
 
 async function leftCtrl(page) {
-    const marks = await page.evaluate((ms) => {
-        const cls = [...document.querySelectorAll('div')].map(d => String(d.className))
-        return ms.map(m => cls.some(c => c.includes(m)))
-    }, LEFT_MARKS)
-    return { stick: marks[0], any: marks.some(Boolean) }
+    const vcs = await page.evaluate(() =>
+        [...document.querySelectorAll('[data-vc]')].map((d) => d.getAttribute('data-vc')))
+    return {
+        stick: vcs.some((v) => STICK_VCS.includes(v)),
+        any: vcs.some((v) => LEFT_VCS.includes(v)),
+    }
 }
 
 // Try generic start gestures until a left control is on screen. Bounded, so a

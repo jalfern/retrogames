@@ -94,6 +94,32 @@ export function triggersFromPad(pad) {
     return { lt: value(6), rt: value(7) }
 }
 
+// --- #384 step 4: the gamepad rumble ------------------------------------------
+//
+// One rumble(ms, strength) beside the touch haptic (VirtualControls'
+// navigator.vibrate(8)): the physical pad's twin. `ms` is the duration,
+// `strength` 0..1. The strength maps onto the dual-rumble motors — the strong
+// motor takes the full strength, the weak motor half — so a light tap reads as
+// light and a hit as heavy. It is a no-op (returns false) when no pad is
+// connected, the actuator is missing, or the browser refuses the effect; it
+// never throws. Importable in Node (vpadcheck): it only touches navigator at
+// call time.
+export function rumble(ms = 200, strength = 1) {
+    try {
+        const pads = (typeof navigator !== 'undefined' && navigator.getGamepads) ? navigator.getGamepads() : []
+        const pad = pads && pads.find((p) => p && p.connected)
+        const act = pad && pad.vibrationActuator
+        if (!act || typeof act.playEffect !== 'function') return false
+        const s = Math.max(0, Math.min(1, strength))
+        const d = Math.max(0, Math.min(5000, ms))
+        const p = act.playEffect('dual-rumble', { duration: d, strongMagnitude: s, weakMagnitude: s / 2 })
+        if (p && typeof p.catch === 'function') p.catch(() => {})
+        return true
+    } catch {
+        return false
+    }
+}
+
 // --- Per-game pad declarations (the optional `pad` field in src/config/games.js) ---
 //
 // Shape: { layout: 'dpad' | 'stick' | 'stick+dpad', buttons: [{ label, code }], analog: bool }

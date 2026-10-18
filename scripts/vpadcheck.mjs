@@ -12,7 +12,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD, dpadDirs, DPAD_SWAP_HI, DPAD_SWAP_LO } from '../src/components/virtualDir.js'
-import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick, waysOf } from '../src/components/gamepadMap.js'
+import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick, waysOf, rumble } from '../src/components/gamepadMap.js'
 import { steerPedals, steerResponse, STEER_GAIN } from '../src/utils/padState.js'
 import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD, POINTER_HIT_PX, pointerTarget, pointerGesture } from '../src/utils/onePad.js'
 
@@ -896,6 +896,81 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     ok((src.match(/abortGesture\(\)/g) || []).length >= 3,
         'lemmings: the gesture aborts on level load, pause and blur (a stale press never commits)')
     ok(/ROTATE YOUR PHONE/.test(src), 'lemmings: the portrait prompt')
+}
+
+// --- 34. #384 step 4: the gamepad rumble ----------------------------------
+//
+// One rumble(ms, strength) beside the touch haptic (VirtualControls'
+// navigator.vibrate(8)): the physical pad's twin, wired to the stick titles'
+// hit / death moments. The actuator path is the whole feature — no pad, a pad
+// without an actuator, and a browser that rejects or throws on playEffect must
+// all be a no-op, never a throw.
+
+// 34a. Behaviour against a stubbed navigator. Node 21+ ships a global navigator
+// without getGamepads (that is the "no pad" case); for the rest we swap in a
+// fake, then restore the original.
+{
+    const orig = globalThis.navigator
+    const calls = []
+    const actuator = (log) => ({
+        playEffect: (type, opts) => { log.push([type, opts]); return Promise.resolve() },
+    })
+    const fakePad = (act) => ({ connected: true, vibrationActuator: act })
+    const withPads = (pads) => {
+        Object.defineProperty(globalThis, 'navigator', { value: { getGamepads: () => pads }, configurable: true, writable: true })
+    }
+    try {
+        ok(rumble(200, 1) === false, 'rumble: no getGamepads (Node navigator) -> no-op false')
+        withPads([null])
+        ok(rumble(200, 1) === false, 'rumble: no connected pad -> no-op false')
+        withPads([fakePad(undefined)])
+        ok(rumble(200, 1) === false, 'rumble: pad without an actuator -> no-op false')
+        withPads([fakePad({})])
+        ok(rumble(200, 1) === false, 'rumble: actuator without playEffect -> no-op false')
+        withPads([fakePad(actuator(calls))])
+        ok(rumble(250, 1) === true, 'rumble: a connected pad with an actuator -> true')
+        ok(calls.length === 1 && calls[0][0] === 'dual-rumble', `rumble: playEffect is called with dual-rumble (got ${JSON.stringify(calls)})`)
+        ok(calls[0] && calls[0][1].duration === 250 && calls[0][1].strongMagnitude === 1 && calls[0][1].weakMagnitude === 0.5,
+            `rumble: ms and strength map onto duration / strong / weak (got ${JSON.stringify(calls[0] && calls[0][1])})`)
+        calls.length = 0
+        rumble(999999, 2)
+        ok(calls[0] && calls[0][1].duration === 5000 && calls[0][1].strongMagnitude === 1,
+            `rumble: oversized ms / strength clamp to 5000 / 1 (got ${JSON.stringify(calls[0] && calls[0][1])})`)
+        calls.length = 0
+        rumble(100, 0.5)
+        ok(calls[0] && calls[0][1].strongMagnitude === 0.5 && calls[0][1].weakMagnitude === 0.25,
+            `rumble: a light tap is a light rumble (got ${JSON.stringify(calls[0] && calls[0][1])})`)
+        withPads([fakePad({ playEffect: () => Promise.reject(new Error('not supported')) })])
+        ok(rumble(200, 1) === true, 'rumble: a rejecting playEffect is swallowed (no throw)')
+        await new Promise((res) => setTimeout(res, 10)) // let the rejection settle
+        withPads([fakePad({ playEffect: () => { throw new Error('no') } })])
+        ok(rumble(200, 1) === false, 'rumble: a synchronously throwing playEffect is caught -> false')
+    } finally {
+        Object.defineProperty(globalThis, 'navigator', { value: orig, configurable: true, writable: true })
+    }
+}
+
+// 34b. The wiring: the stick titles' hit / death moments call it. Source pins,
+// the way section 33e does — a silent revert (a rumble deleted from a crash)
+// is caught in the static gate.
+{
+    const wired = [
+        ['../src/games/MarioKart/index.jsx', /ev\.e === 'spin' && ev\.who === 'PLAYER'.*rumble\(/, 'mario-kart: the PLAYER spin-out rumbles'],
+        ['../src/games/MarioKart/index.jsx', /ev\.e === 'bump' && ev\.who === 'PLAYER'.*rumble\(/, 'mario-kart: the PLAYER bump rumbles'],
+        ['../src/games/CometDrift/index.jsx', /ev\.e === 'spin' && ev\.who === 'PLAYER'.*rumble\(/, 'comet-drift: the PLAYER spin-out rumbles'],
+        ['../src/games/CometDrift/index.jsx', /ev\.e === 'bump' && ev\.who === 'PLAYER'.*rumble\(/, 'comet-drift: the PLAYER bump rumbles'],
+        ['../src/games/Joust/index.jsx', /e\.t === 'death'.*rumble\(/, 'joust: the player death rumbles'],
+        ['../src/games/RaccoonHeist/index.jsx', /e\.type === 'caught'.*rumble\(/, 'raccoon-heist: a caught raccoon rumbles'],
+        ['../src/games/RaccoonHeist/index.jsx', /e\.type === 'bust'.*rumble\(/, 'raccoon-heist: a bust rumbles'],
+    ]
+    for (const [file, re, label] of wired) {
+        const src = readFileSync(new URL(file, import.meta.url), 'utf8')
+        ok(re.test(src), label)
+    }
+    for (const file of ['../src/games/MarioKart/index.jsx', '../src/games/CometDrift/index.jsx', '../src/games/Joust/index.jsx', '../src/games/RaccoonHeist/index.jsx']) {
+        const src = readFileSync(new URL(file, import.meta.url), 'utf8')
+        ok(/import\s*\{[^}]*\brumble\b[^}]*\}\s*from\s*'[^']*gamepadMap'/.test(src), `${file} imports rumble from the shared gamepadMap`)
+    }
 }
 
 // --- Summary ---
