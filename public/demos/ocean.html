@@ -19,17 +19,36 @@
     font: 14px/1.6 ui-monospace, Menlo, monospace; color: #ffd9b0; background: #10131f;
     text-align: center; padding: 2em;
   }
+  #sea {
+    position: fixed; top: 12px; right: 14px; z-index: 2; width: 196px;
+    background: rgba(8,10,22,.6); border: 1px solid rgba(255,215,175,.28); border-radius: 8px;
+    padding: 9px 11px 10px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase;
+    color: rgba(255,225,190,.85); text-shadow: 0 1px 3px rgba(0,0,0,.8);
+    transition: background .4s, border-color .4s;
+  }
+  #sea .row { display: flex; justify-content: space-between; }
+  #sea b { color: rgba(255,240,215,.95); font-weight: 700; }
+  #sea input[type=range] {
+    width: 100%; height: 24px; margin-top: 7px; accent-color: #ffb060;
+    touch-action: none; cursor: ew-resize;
+  }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="hud"><b>OCEAN</b> · WebGPU FFT &nbsp;·&nbsp; drag look &nbsp;·&nbsp; WASD / arrows move &nbsp;·&nbsp; Q / E down-up</div>
+<div id="sea">
+  <div class="row"><b>Sea state</b><span id="seaLbl">Calm</span></div>
+  <div class="row"><span>Wind</span><span id="windLbl">3 m/s</span></div>
+  <input id="storm" type="range" min="0" max="100" step="1" value="0" aria-label="Sea state, calm to storm">
+</div>
 <div id="fatal"></div>
 <script type="module">
 'use strict';
 
 const NI = 64, LOGN = 6;
-const SEG = 224, EXTENT = 520;
+const SEG = 288, EXTENT = 520;
 const qs = new URLSearchParams(location.search);
 const SEED = (qs.get('seed') | 0) || 1337;
 const LITE = qs.get('lite') === '1';
@@ -44,12 +63,47 @@ const OCT = [
   { L: 95,  A: 130.0, kc: 0.010, chop: 1.25 },
   { L: 14,  A: 55.0, kc: 0.07,  chop: 0.75 },
 ];
+const AMP0 = 0.31, AMP1 = 0.94;
+
+function seaParams(s) {
+  return OCT.map((o, i) => i === 0
+    ? { A: o.A * (0.75 + 5.5 * s * s), spread: 6.0 - 4.0 * s, dsp: 4.0 * (0.50 + 0.18 * s), amp: AMP0 * (1.35 + 2.6 * s * s) }
+    : { A: o.A * (0.75 + 16.0 * s * s), spread: 6.0 - 4.0 * s, dsp: 1.8 * (0.55 + 0.45 * s), amp: AMP1 * (1.35 + 3.4 * s * s) });
+}
 
 const cam = { pos: [0, 3.1, -14], yaw: 0, pitch: -0.05, touched: false };
+
+let storm = Math.max(0, Math.min(1, parseFloat(qs.get('storm')) || 0));
+let needSpec = true;
+const windU = () => 3 + 21 * storm;
+const SEA_NAMES = [[0.12, 'CALM'], [0.3, 'SLIGHT'], [0.5, 'MODERATE'], [0.7, 'ROUGH'], [0.85, 'VERY ROUGH'], [1.01, 'STORM']];
 
 const canvas = document.getElementById('c');
 const hud = document.getElementById('hud');
 const fatal = document.getElementById('fatal');
+const seaLbl = document.getElementById('seaLbl');
+const windLbl = document.getElementById('windLbl');
+const stormSl = document.getElementById('storm');
+
+function updateSeaUI() {
+  seaLbl.textContent = SEA_NAMES.find(x => storm < x[0])[1];
+  windLbl.textContent = Math.round(windU()) + ' m/s';
+  stormSl.value = String(Math.round(storm * 100));
+}
+function setStorm(v) {
+  storm = Math.max(0, Math.min(1, v));
+  needSpec = true;
+  updateSeaUI();
+}
+stormSl.addEventListener('input', () => setStorm(+stormSl.value / 100));
+stormSl.addEventListener('keydown', e => e.stopPropagation());
+document.getElementById('sea').addEventListener('pointerdown', e => e.stopPropagation());
+addEventListener('keydown', e => {
+  if (e.target === stormSl) return;
+  if (e.key === '[') setStorm(storm - 0.1);
+  if (e.key === ']') setStorm(storm + 0.1);
+});
+updateSeaUI();
 
 if (!navigator.gpu) {
   fatal.style.display = 'grid';
@@ -95,26 +149,31 @@ fn fbm(pIn: vec2f, octs: i32) -> f32 {
   for (var i: i32 = 0; i < octs; i = i + 1) { v += a * vnoise(p); p = p * 2.07 + vec2f(13.0, 7.0); a *= 0.5; }
   return v;
 }
+var<private> g_storm: f32 = 0.0;
 fn skyColor(dirIn: vec3f, t: f32) -> vec3f {
   let d = normalize(dirIn);
   let dy = d.y;
+  let st = g_storm;
   let mu = max(dot(d, SUNDIR), 0.0);
-  let zen = vec3f(0.040, 0.070, 0.190);
-  let mid = vec3f(0.30, 0.185, 0.360);
-  let ember = vec3f(1.08, 0.425, 0.155);
+  let zen = mix(vec3f(0.040, 0.070, 0.190), vec3f(0.050, 0.055, 0.080), st * 0.92);
+  let mid = mix(vec3f(0.30, 0.185, 0.360), vec3f(0.150, 0.155, 0.180), st * 0.92);
+  let ember = mix(vec3f(1.08, 0.425, 0.155), vec3f(0.15, 0.16, 0.20), st * 0.97);
   var sky = mix(mid, zen, pow(clamp(dy * 1.15, 0.0, 1.0), 0.72));
   sky = mix(ember, sky, smoothstep(-0.015, 0.32, dy));
-  sky += vec3f(1.0, 0.60, 0.26) * (pow(mu, 10.0) * 0.32 + pow(mu, 320.0) * 1.8);
-  sky += vec3f(1.0, 0.84, 0.60) * smoothstep(0.99955, 0.99978, mu) * 2.6;
+  let sunVis = 1.0 - st * 0.82;
+  let glowC = mix(vec3f(1.0, 0.60, 0.26), vec3f(0.50, 0.42, 0.40), st);
+  sky += glowC * (pow(mu, 10.0) * 0.32 + pow(mu, 320.0) * 1.8) * sunVis;
+  sky += vec3f(1.0, 0.84, 0.60) * smoothstep(0.99955, 0.99978, mu) * 2.6 * (1.0 - smoothstep(0.45, 0.92, st));
   let cloudY = max(dy, 0.004);
-  let cp = d.xz / (cloudY + 0.10) * 1.35 + vec2f(t * 0.010, t * 0.004);
+  let cp = d.xz / (cloudY + 0.10) * 1.35 + vec2f(t * (0.010 + 0.030 * st), t * (0.004 + 0.014 * st));
   var cld = fbm(cp, 5);
-  cld = smoothstep(0.44, 0.74, cld);
+  cld = smoothstep(0.44 - 0.22 * st, 0.74 - 0.15 * st, cld);
   let band = smoothstep(0.012, 0.30, dy) * smoothstep(0.88, 0.32, dy);
   let lit = pow(mu, 2.6);
-  let cCol = mix(vec3f(0.14, 0.11, 0.20), vec3f(0.98, 0.56, 0.30), 0.30 + 0.70 * lit);
-  sky = mix(sky, cCol, cld * band * 0.88);
-  sky += vec3f(1.0, 0.55, 0.28) * pow(1.0 - abs(dy), 16.0) * 0.18;
+  var cCol = mix(vec3f(0.14, 0.11, 0.20), vec3f(0.98, 0.56, 0.30), 0.30 + 0.70 * lit);
+  cCol = mix(cCol, mix(vec3f(0.10, 0.105, 0.13), vec3f(0.24, 0.25, 0.28), lit), st * 0.94);
+  sky = mix(sky, cCol, cld * band * (0.88 + 0.10 * st));
+  sky += mix(vec3f(1.0, 0.55, 0.28), vec3f(0.45, 0.40, 0.40), st) * pow(1.0 - abs(dy), 16.0) * 0.18 * (1.0 - 0.92 * st);
   return sky;
 }
 fn tonemap(vIn: vec3f) -> vec3f {
@@ -153,7 +212,7 @@ async function boot() {
   const cp = (mod, entry) => device.createComputePipeline({ layout: 'auto', compute: { module: mod, entryPoint: entry } });
 
   const M_FILL = `
-    struct FillU { sunA: vec3f, L: f32, A: f32, kc: f32, windAz: f32, seed: f32 };
+    struct FillU { L: f32, A: f32, kc: f32, windAz: f32, seed: f32, spreadB: f32 };
     @group(0) @binding(0) var<uniform> fu: FillU;
     @group(0) @binding(1) var out: texture_storage_2d<rg32float, write>;
     fn gauss(s: f32) -> vec2f {
@@ -169,12 +228,13 @@ async function boot() {
       let kx = kOf(x, fu.L); let ky = kOf(y, fu.L);
       let k = max(length(vec2f(kx, ky)), 1e-4);
       let cd = (kx * cos(fu.windAz) + ky * sin(fu.windAz)) / k;
-      let spread = exp(-(1.0 - cd * cd) * 5.5);
+      let spread = exp(-(1.0 - cd * cd) * fu.spreadB);
       let ph = fu.A / pow(k, 4.0) * exp(-pow(fu.kc / k, 2.0)) * spread;
       var h = vec2f(0.0);
       if (kx != 0.0 || ky != 0.0) { h = gauss(f32(x * 91u + y * 7717u) + fu.seed) * sqrt(ph * 0.5); }
       textureStore(out, vec2i(i32(x), i32(y)), vec4f(h.x, h.y, 0.0, 1.0));
     }`;
+
   const M_PREP = `
     struct PrepU { t: f32, L: f32, chop: f32, mode: f32 };
     @group(0) @binding(0) var specIn: texture_2d<f32>;
@@ -276,11 +336,12 @@ async function boot() {
 
   const buf = data => { const b = device.createBuffer({ size: data.byteLength, usage: U }); device.queue.writeBuffer(b, 0, data); return b; };
   const uFft = buf(new Float32Array([NI, 1 / (NI * NI), 0, 0]));
+  const uFill = OCT.map((o, i) => buf(new Float32Array([o.L, o.A, o.kc, WIND_AZ, SEED + i * 101, 6.0])));
   const bgFill = OCT.map((o, i) => device.createBindGroup({ layout: pFill.getBindGroupLayout(0), entries: [
-    { binding: 0, resource: { buffer: buf(new Float32Array([SUNDIR[0], SUNDIR[1], SUNDIR[2], o.L, o.A, o.kc, WIND_AZ, SEED + i * 101])) }, },
+    { binding: 0, resource: { buffer: uFill[i] } },
     { binding: 1, resource: spec[i] },
   ] }));
-  const uPrep = OCT.map(o => [0, 1, 2].map(mode => buf(new Float32Array([0, o.L, o.chop, mode]))));
+  const uPrep = OCT.map(o => [0, 1, 2].map(mode => buf(new Float32Array([0, o.L, o.chop, mode, 0, 0]))));
   const bgPrep = OCT.map((o, oi) => [0, 1, 2].map(fi => device.createBindGroup({ layout: pPrep.getBindGroupLayout(0), entries: [
     { binding: 0, resource: spec[oi] }, { binding: 1, resource: fftA }, { binding: 2, resource: { buffer: uPrep[oi][fi] } },
   ] })));
@@ -288,11 +349,12 @@ async function boot() {
     { binding: 0, resource: fftA }, { binding: 1, resource: fftB }], });
   const bgCol = device.createBindGroup({ layout: pCol.getBindGroupLayout(0), entries: [
     { binding: 0, resource: fftB }, { binding: 1, resource: fftA }], });
+  const uEnc = OCT.map(() => [0, 1, 2].map(fi => buf(new Float32Array([fi, 1.0, 0, 0]))));
   const bgEnc = OCT.map((o, oi) => [resH, tmpGX, tmpGZ].map((rt, fi) => device.createBindGroup({ layout: pEnc.getBindGroupLayout(0), entries: [
     { binding: 0, resource: fftA },
     { binding: 1, resource: rt[oi] },
     { binding: 2, resource: { buffer: uFft } },
-    { binding: 3, resource: { buffer: buf(new Float32Array([fi, 1.0, 0, 0])) } },
+    { binding: 3, resource: { buffer: uEnc[oi][fi] } },
   ] })));
   const bgComb = OCT.map((o, oi) => device.createBindGroup({ layout: pComb.getBindGroupLayout(0), entries: [
     { binding: 0, resource: tmpGX[oi] }, { binding: 1, resource: tmpGZ[oi] }, { binding: 2, resource: resG[oi] },
@@ -307,6 +369,7 @@ async function boot() {
       right: vec3f, upv: f32,
       oct: vec4f,
       oct2: vec4f,
+      wind: vec4f,
     };
     @group(0) @binding(0) var<uniform> su: SeaU;
     @group(0) @binding(1) var samp: sampler;
@@ -331,20 +394,26 @@ async function boot() {
       let gd0 = textureSampleLevel(g0, samp, uv0, 0.0);
       let gd1 = textureSampleLevel(g1, samp, uv1, 0.0);
       let hh = textureSampleLevel(h0, samp, uv0, 0.0).x + textureSampleLevel(h1, samp, uv1, 0.0).x;
-      world.x -= gd0.r * 4.0 + gd1.r * 1.8;
-      world.z -= gd0.g * 4.0 + gd1.g * 1.8;
+      let dsp0 = su.oct.y; let dsp1 = su.oct2.y;
+      world.x -= gd0.r * dsp0 + gd1.r * dsp1;
+      world.z -= gd0.g * dsp0 + gd1.g * dsp1;
       let rim = 1.0 - smoothstep(${EXTENT * 0.40}, ${EXTENT * 0.5}, length(off));
-      world.y = hh * rim;
+      let vd = length(world.xz - su.camPos.xz);
+      let yk = mix(0.15, 1.0, 1.0 - smoothstep(150.0, 340.0, vd));
+      world.y = hh * rim * yk;
       var o: VOut;
       o.pos = su.vp * vec4f(world, 1.0);
       o.world = world;
-      o.nrm = vec3f(-(gd0.r + gd1.r) * rim, 1.0, -(gd0.g + gd1.g) * rim);
-      o.h = hh * rim;
+      o.nrm = vec3f(-(gd0.r * dsp0 + gd1.r * dsp1) * rim * yk, 1.0, -(gd0.g * dsp0 + gd1.g * dsp1) * rim * yk);
+      o.h = hh * rim * yk;
       return o;
     }
 
+
     @fragment
     fn fs_main(in: VOut) -> @location(0) vec4f {
+      g_storm = su.wind.y;
+      let s = su.wind.y;
       let V = normalize(su.camPos - in.world);
       var n = normalize(in.nrm);
       let dist = length(su.camPos - in.world);
@@ -353,20 +422,20 @@ async function boot() {
                       vnoise(in.world.xz * 1.7 + vec2f(su.time * 0.9, -su.time * 0.6) + vec2f(57.3, 91.7))) * 2.0 - 1.0;
       let sp2 = vec2f(vnoise(in.world.xz * 5.1 - vec2f(su.time * 0.5, su.time * 1.15)),
                       vnoise(in.world.xz * 5.1 - vec2f(su.time * 0.5, su.time * 1.15) + vec2f(23.1, 17.9))) * 2.0 - 1.0;
-      n.x += (sp1.x * 0.10 + sp2.x * 0.05) * det;
-      n.z += (sp1.y * 0.10 + sp2.y * 0.05) * det;
+      n.x += (sp1.x * (0.10 + 0.08 * s) + sp2.x * (0.05 + 0.06 * s)) * det;
+      n.z += (sp1.y * (0.10 + 0.08 * s) + sp2.y * (0.05 + 0.06 * s)) * det;
       n = normalize(n);
       let cosT = max(dot(n, V), 0.0);
       let F = 0.02 + 0.98 * pow(1.0 - cosT, 5.0);
       let r = reflect(-V, n);
       var refl = skyColor(r, su.time);
       refl *= mix(0.28, 1.0, smoothstep(0.0, 0.30, r.y));
-      let deep = mix(vec3f(0.008, 0.035, 0.062), vec3f(0.018, 0.095, 0.120), smoothstep(-1.0, 1.5, in.h));
-      let sss = vec3f(0.03, 0.24, 0.26) * pow(max(dot(V, SUNDIR), 0.0), 3.0) * smoothstep(0.0, 1.1, in.h) * 0.8;
+      let deep = mix(mix(vec3f(0.008, 0.035, 0.062), vec3f(0.018, 0.095, 0.120), smoothstep(-1.0, 1.5, in.h)), vec3f(0.045, 0.070, 0.085), s * 0.55) * mix(1.0, 0.88, s);
+      let sss = vec3f(0.03, 0.24, 0.26) * pow(max(dot(V, SUNDIR), 0.0), 3.0) * smoothstep(0.0, 1.1, in.h) * 0.8 * (1.0 - 0.7 * s);
       var col = mix(deep + sss, refl, F);
       let mu = max(dot(r, SUNDIR), 0.0);
       let gmask = smoothstep(0.30, 0.72, fbm(in.world.xz * 0.22 + vec2f(su.time * 0.05, 0.0), 4));
-      col += vec3f(1.0, 0.70, 0.42) * (pow(mu, 520.0) * 4.0 + pow(mu, 90.0) * 0.5 + pow(mu, 14.0) * 0.06) * det * (0.25 + 0.75 * gmask);
+      col += mix(vec3f(1.0, 0.70, 0.42), vec3f(0.62, 0.52, 0.50), s) * (pow(mu, 520.0) * 4.0 + pow(mu, 90.0) * 0.5 + pow(mu, 14.0) * 0.06) * det * (0.25 + 0.75 * gmask) * (1.0 - 0.92 * smoothstep(0.15, 0.75, s));
       let ds0 = su.oct.x / f32(NI);
       let ds1 = su.oct2.x / f32(NI);
       let uv0 = vec2f(in.world.x / su.oct.x, in.world.z / su.oct.x);
@@ -379,8 +448,8 @@ async function boot() {
       let gx1b = textureSampleLevel(g1, samp, uv1 - vec2f(1.0 / f32(NI), 0.0), 0.0).r;
       let gz1a = textureSampleLevel(g1, samp, uv1 + vec2f(0.0, 1.0 / f32(NI)), 0.0).g;
       let gz1b = textureSampleLevel(g1, samp, uv1 - vec2f(0.0, 1.0 / f32(NI)), 0.0).g;
-      let a0 = 4.0;
-      let a1 = 1.8;
+      let a0 = su.oct.y;
+      let a1 = su.oct2.y;
       let gx0c = textureSampleLevel(g0, samp, uv0, 0.0).r;
       let gz0c = textureSampleLevel(g0, samp, uv0, 0.0).g;
       let gx1c = textureSampleLevel(g1, samp, uv1, 0.0).r;
@@ -390,12 +459,20 @@ async function boot() {
              - pow(a0 * (gx0a - gx0b) / (2.0 * ds0), 2.0) * pow(a0 * (gz0a - gz0b) / (2.0 * ds0), 2.0);
       let J1 = (1.0 + a1 * (gx1a - gx1b) / (2.0 * ds1)) * (1.0 + a1 * (gz1a - gz1b) / (2.0 * ds1))
              - pow(a1 * (gx1a - gx1b) / (2.0 * ds1), 2.0) * pow(a1 * (gz1a - gz1b) / (2.0 * ds1), 2.0);
-      var f = smoothstep(1.08, 1.18, J0) * 0.55 + smoothstep(1.03, 1.085, J1);
+      var f = smoothstep(1.06 - 0.012 * s, 1.16, J0) * 0.45
+            + smoothstep(1.025 - 0.010 * s, 1.08, J1);
+      let wdir = vec2f(cos(su.wind.z), sin(su.wind.z));
+      let walong = dot(in.world.xz, wdir) - su.time * su.wind.x * 0.045;
+      let wperp = dot(in.world.xz, vec2f(-wdir.y, wdir.x));
+      let streak = smoothstep(0.42 - 0.10 * s, 0.74 - 0.08 * s,
+                             vnoise(vec2f(walong * (0.08 + 0.04 * s), wperp * (0.75 + 1.10 * s))));
+      let foamP = smoothstep(0.32, 0.72, fbm(in.world.xz * 3.2 + vec2f(su.time * 0.30, su.time * 0.10), 3));
       f *= smoothstep(0.10, 0.6, steep) * (0.25 + 0.75 * vnoise(in.world.xz * 1.5 + vec2f(su.time * 0.25, 0.0)))
-           * (0.20 + 0.80 * vnoise(in.world.xz * 6.1 - vec2f(su.time * 0.40, su.time * 0.16)));
-      f = pow(clamp(f, 0.0, 1.0), 1.8);
-      f *= clamp(1.0 - dist / 320.0, 0.0, 1.0);
-      let foamLit = vec3f(0.93, 0.90, 0.85) * (0.30 + 0.70 * (0.25 + 0.75 * max(dot(n, SUNDIR), 0.0)));
+           * (0.18 + 0.82 * streak) * (0.55 + 0.85 * s);
+      f = smoothstep(0.14, 0.75, pow(clamp(f, 0.0, 1.0), 1.6));
+      f *= (0.35 + 0.65 * foamP) * clamp(1.0 - dist / 320.0, 0.0, 1.0);
+      let foamLit = mix(vec3f(0.93, 0.90, 0.85), vec3f(0.72, 0.75, 0.78), s * 0.45)
+                  * (0.30 + 0.70 * (0.25 + 0.75 * max(dot(n, SUNDIR), 0.0)));
       col = mix(col, foamLit, f);
       let fogD = normalize(vec3f(in.world.x - su.camPos.x, 0.0, in.world.z - su.camPos.z));
       let haze = skyColor(vec3f(fogD.x, 0.012, fogD.z), su.time);
@@ -409,6 +486,7 @@ async function boot() {
       fwd: vec3f, aspect: f32,
       right: vec3f, tanF: f32,
       up: vec3f, time: f32,
+      storm: f32,
     };
     @group(0) @binding(0) var<uniform> ku: SkyU;
     struct VOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
@@ -421,6 +499,7 @@ async function boot() {
     }
     @fragment
     fn fs_sky(in: VOut) -> @location(0) vec4f {
+      g_storm = ku.storm;
       let dir = normalize(ku.fwd + ku.right * (in.uv.x * ku.aspect * ku.tanF) + ku.up * (in.uv.y * ku.tanF));
       var c = skyColor(dir, ku.time);
       c = mix(c * 0.55, c, smoothstep(-0.12, 0.05, dir.y));
@@ -487,18 +566,6 @@ async function boot() {
     primitive: { topology: 'triangle-list' },
     depthStencil: { format: 'depth24plus', depthCompare: 'always', depthWriteEnabled: false },
   });
-
-  // spectral fill (once)
-  {
-    const enc = device.createCommandEncoder();
-    for (let i = 0; i < 2; i++) {
-      const p = enc.beginComputePass();
-      p.setPipeline(pFill); p.setBindGroup(0, bgFill[i]);
-      p.dispatchWorkgroups(1, 16, 1);
-      p.end();
-    }
-    device.queue.submit([enc.finish()]);
-  }
 
   // ---------- matrix helpers ----------
   function lookAt(eye, f, up) {
@@ -591,22 +658,45 @@ async function boot() {
     const asp = vw / Math.max(1, vh);
     const vp = mul(persp(62 * Math.PI / 180, asp, 0.2, 2500), lookAt(cam.pos, [cam.pos[0] + fwd[0], cam.pos[1] + fwd[1], cam.pos[2] + fwd[2]], [0, 1, 0]));
 
+    const s = storm;
+    const U = windU();
+    const pp = seaParams(s);
+    const refilling = needSpec;
+    if (refilling) {
+      needSpec = false;
+      for (let i = 0; i < 2; i++) {
+        device.queue.writeBuffer(uFill[i], 0, new Float32Array([OCT[i].L, pp[i].A, OCT[i].kc, WIND_AZ, SEED + i * 101, pp[i].spread]));
+      }
+    }
+
     device.queue.writeBuffer(uSea, 0, new Float32Array([
       ...vp,
       cam.pos[0], cam.pos[1], cam.pos[2], t,
       fwd[0], fwd[1], fwd[2], asp,
       right[0], right[1], right[2], 0,
-      OCT[0].L, OCT[0].chop, 0, 0,
-      OCT[1].L, OCT[1].chop, 0, 0,
+      OCT[0].L, pp[0].dsp, 0, 0,
+      OCT[1].L, pp[1].dsp, 0, 0,
+      U, s, WIND_AZ, 0,
     ]));
     device.queue.writeBuffer(uSky, 0, new Float32Array([
       fwd[0], fwd[1], fwd[2], asp,
       right[0], right[1], right[2], Math.tan(31 * Math.PI / 180),
-      ...norm3(cross(right, fwd)), t,
+      ...norm3(cross(right, fwd)), t, s, 0,
     ]));
 
     const enc = device.createCommandEncoder();
+    if (refilling) {
+      for (let i = 0; i < 2; i++) {
+        const fp = enc.beginComputePass();
+        fp.setPipeline(pFill); fp.setBindGroup(0, bgFill[i]);
+        fp.dispatchWorkgroups(1, 16, 1);
+        fp.end();
+      }
+    }
     for (let oi = 0; oi < 2; oi++) {
+      device.queue.writeBuffer(uEnc[oi][0], 0, new Float32Array([0, pp[oi].amp, 0, 0]));
+      device.queue.writeBuffer(uEnc[oi][1], 0, new Float32Array([1, pp[oi].amp * OCT[oi].chop, 0, 0]));
+      device.queue.writeBuffer(uEnc[oi][2], 0, new Float32Array([2, pp[oi].amp * OCT[oi].chop, 0, 0]));
       for (const fi of [0, 1, 2]) {
         device.queue.writeBuffer(uPrep[oi][fi], 0, new Float32Array([t, OCT[oi].L, OCT[oi].chop, fi]));
         let p = enc.beginComputePass(); p.setPipeline(pPrep); p.setBindGroup(0, bgPrep[oi][fi]); p.dispatchWorkgroups(1, 16, 1); p.end();
@@ -655,6 +745,9 @@ async function boot() {
     }),
     get frames() { return frames; },
     get time() { return t; },
+    get storm() { return storm; },
+    get wind() { return windU(); },
+    setStorm(v) { setStorm(v); },
     setPose(p) {
       if (p.pos) cam.pos = p.pos.slice();
       if (typeof p.yaw === 'number') cam.yaw = p.yaw;
