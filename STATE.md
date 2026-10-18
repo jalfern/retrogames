@@ -20,6 +20,13 @@
   four mutants RED). oceancheck ALL GREEN (foam floor 3000→1200: single chop
   halves foam; a pixel spike detector cannot separate fog/foam from folds).
   Storm screenshots z=0→35 camera-travel: zero spikes; calm keeps ripples.
+- **Ocean FFT butterfly race fixed (#469)** — Jon's diagnosis: each stage in
+  `cs_row`/`cs_col` read a and b from workgroup memory and wrote BOTH butterfly
+  slots with the only barrier *after* the writes; partners occupy each other's
+  write slots, so another SIMD group could clobber before the owner read →
+  one-frame whole-surface spikes. Added `workgroupBarrier()` between reads and
+  writes in both butterflies; oceanfold now structurally requires the mid-stage
+  barrier in rb and cb (deleting either → RED).
 
 ## Harness lessons (WebGPU is new ground — forge lane)
 - `WebGPURenderer` lives at `three/webgpu` (r180). A WebGPU canvas answers
@@ -31,6 +38,8 @@
   round-trip).
 - **Positive Jacobian ≠ smooth mesh**: vertical texel-scale zigzag spikes with
   no XZ fold (this is why `oceanfold` also band-limit-checks structurally).
+- **Stage-end barriers don't make in-place butterflies safe**: any stage where
+  lane X writes lane Y's read slot needs a barrier BETWEEN reads and writes.
 - CometDRiftHD: autopilot ladder pays via treadmill only (|steer|>0 rarely
   holds) — see #471 item 8.
 
