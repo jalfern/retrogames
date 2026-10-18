@@ -4,7 +4,9 @@
 //   1. It boots installable: dist/index.html carries the manifest link, iOS
 //      web-app meta, viewport-fit=cover, theme-color and the base-scoped asset
 //      reference, and the manifest resolves under /retrogames/.
-//   2. Core rules hold: manifest scope + start_url are exactly /retrogames/,
+//   2. Core rules hold: manifest scope is /retrogames/ and start_url opens the
+//      showcase /retrogames/games (#437 — a fullscreen install must not deal a
+//      random game with no way back),
 //      display is fullscreen, theme/background are black, the icons cover
 //      192/512/maskable and every referenced asset actually exists in dist;
 //      the service worker excludes /retrogames/forge from cache and keeps
@@ -50,7 +52,7 @@ const MANIFEST_PATH = join(DIST, 'manifest.webmanifest')
 ok(existsSync(MANIFEST_PATH), 'dist/manifest.webmanifest exists')
 let mf = {}
 try { mf = JSON.parse(read(MANIFEST_PATH)) } catch (e) { ok(false, `manifest parses (${e.message})`) }
-ok(mf.start_url === '/retrogames/', `start_url is /retrogames/ (got ${mf.start_url})`)
+ok(mf.start_url === '/retrogames/games', `start_url is /retrogames/games (#437: the installed app opens the showcase; got ${mf.start_url})`)
 ok(mf.scope === '/retrogames/', `scope is /retrogames/ (got ${mf.scope})`)
 ok(mf.display === 'fullscreen', `display is fullscreen (got ${mf.display})`)
 ok(mf.theme_color === '#000000', `theme_color black (got ${mf.theme_color})`)
