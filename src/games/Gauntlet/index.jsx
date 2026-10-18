@@ -61,8 +61,9 @@ const GauntletGame = () => {
 
         let gs = makeGame(0, 'warrior', { topDown: true })
         let raf = 0, last = 0, acc = 0
-        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, selectHero = 0
+        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, selectHero = 0, selectHero2 = 1
         const keys = { l: false, r: false, u: false, d: false, swordEdge: false, arrowEdge: false }
+        const p2 = { l: false, r: false, u: false, d: false, swordEdge: false }
         const evLog = []
         const parts = []
 
@@ -136,9 +137,11 @@ const GauntletGame = () => {
             const sc = screenRef.current
             if (sc === 'attract' || sc === 'select') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim({ left: keys.l, right: keys.r, fwd: keys.u, back: keys.d, sword: keys.swordEdge, arrow: keys.arrowEdge })
+            const pInp = gs.partnerHuman ? { left: p2.l, right: p2.r, fwd: p2.u, back: p2.d, sword: p2.swordEdge } : null
+            doSim({ left: keys.l, right: keys.r, fwd: keys.u, back: keys.d, sword: keys.swordEdge, arrow: keys.arrowEdge }, pInp)
             keys.swordEdge = false
             keys.arrowEdge = false
+            p2.swordEdge = false
         }
 
         // ---------------------------------------------------------------- render ----
@@ -396,6 +399,15 @@ const GauntletGame = () => {
             text('HEALTH', VW + PW / 2, hy + 33, 5, '#8fa3d8')
             text(`KEYS ${gs.keys}`, VW + PW / 2, hy + 44, 7, '#ffd23f', 2)
             text(`GOLD ${gs.gold}`, VW + PW / 2, hy + 53, 7, '#c9d4ea')
+            if (gs.partnerHuman && gs.partner && !gs.partner.down) {
+                // the second player's portrait, under the hero's (P2)
+                const pk = gs.partner.name.toLowerCase()
+                text('2P', VW + PW / 2, 72, 6, '#ff5d5d', 2)
+                sprite(pk, VW + PW / 2, 98, 18, false)
+                ctx.fillStyle = '#301010'; ctx.fillRect(VW + 10, 112, PW - 20, 3)
+                ctx.fillStyle = gs.partner.hp > gs.partner.maxHp * 0.3 ? '#e83a3a' : (gs.tick >> 2) % 2 ? '#ff8a5d' : '#7d1414'
+                ctx.fillRect(VW + 10, 112, (PW - 20) * Math.max(0, gs.partner.hp / gs.partner.maxHp), 3)
+            }
         }
 
         const draw = () => {
@@ -455,8 +467,16 @@ const GauntletGame = () => {
                         ctx.fillStyle = '#12261a'; ctx.fillRect(cx - 24, 174, 48, 4)
                         ctx.fillStyle = '#5dff8f'; ctx.fillRect(cx - 24, 174, 48 * (hd.arrow / 18), 4)
                     })
-                    text('ARROWS OR TAP PICK · SPACE OR TAP AGAIN START', CW / 2, 202, 8, '#8fa3d8')
-                    text('C PARTNER ' + (gs._pSel === 1 ? 'ON' : 'OFF') + ' · HP SPEED RANGE', CW / 2, 214, 7, '#5d7094')
+                    const pm = gs.partnerMode || 'off'
+                    text(pm === 'human' ? 'ARROWS P1 PICK · A/D P2 PICK · WASD+F P2 · SPACE START' : 'ARROWS OR TAP PICK · SPACE OR TAP AGAIN START', CW / 2, 202, 8, '#8fa3d8')
+                    text('C PARTNER ' + (pm === 'cpu' ? 'ON' : 'OFF') + ' · P 2-PLAYER ' + (pm === 'human' ? 'ON' : 'OFF') + ' · HP SPEED RANGE', CW / 2, 214, 7, '#5d7094')
+                    if (pm === 'human') {
+                        // the second portrait: P2's chosen hero, up in the panel
+                        const hk2 = HERO_ORDER[selectHero2]
+                        text('2P', VW + PW / 2, 72, 7, '#ff5d5d', 2)
+                        sprite(hk2, VW + PW / 2, 98, 20, false)
+                        text(HEROES[hk2].name, VW + PW / 2, 114, 6, '#ffd23f', 2)
+                    }
                 }
             }
             if (sc === 'over') {
@@ -488,14 +508,20 @@ const GauntletGame = () => {
 
         // ---------------------------------------------------------------- input ----
         const startSelect = () => {
+            const pm = gs.partnerMode || 'off'
             gs = makeGame(0, 'warrior', { topDown: true })
             gs.partnerOn = false
+            gs.partnerMode = pm
             setMode('select')
         }
         const startPlay = (hk) => {
-            const pOn = gs._pSel === 1
-            gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn, topDown: true })
-            gs.partnerOn = pOn
+            const pm = gs.partnerMode || 'off'
+            const two = pm === 'human'
+            const pOn = pm === 'cpu'
+            gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn || two, topDown: true, partnerKey: two ? HERO_ORDER[selectHero2] : undefined })
+            gs.partnerOn = pOn || two
+            gs.partnerMode = pm
+            gs.partnerHuman = two
             setMode('play')
             say(`${HEROES[hk].who} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · THE /, '')}`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
@@ -507,7 +533,12 @@ const GauntletGame = () => {
             if (sc === 'select') {
                 if (ev.code === 'ArrowLeft') selectHero = (selectHero + 3) % 4
                 if (ev.code === 'ArrowRight') selectHero = (selectHero + 1) % 4
-                if (ev.code === 'KeyC') gs._pSel = gs._pSel === 1 ? 0 : 1
+                if (ev.code === 'KeyC') gs.partnerMode = gs.partnerMode === 'cpu' ? 'off' : 'cpu'
+                if (ev.code === 'KeyP') gs.partnerMode = gs.partnerMode === 'human' ? 'off' : 'human'
+                if (gs.partnerMode === 'human') {
+                    if (ev.code === 'KeyA') selectHero2 = (selectHero2 + 3) % 4
+                    if (ev.code === 'KeyD') selectHero2 = (selectHero2 + 1) % 4
+                }
                 if (ev.code === 'Digit1' || ev.code === 'Space' || ev.code === 'Enter') startPlay(HERO_ORDER[selectHero])
                 if (ev.code === 'Digit2') startPlay('valkyrie')
                 if (ev.code === 'Digit3') startPlay('wizard')
@@ -520,13 +551,22 @@ const GauntletGame = () => {
             if (ev.code === 'ArrowUp') keys.u = true
             if (ev.code === 'ArrowDown') keys.d = true
             if (ev.code === 'Space') keys.swordEdge = true
-            if (ev.code === 'KeyX' || ev.code === 'KeyF') keys.arrowEdge = true
+            if (ev.code === 'KeyX') keys.arrowEdge = true
+            if (ev.code === 'KeyW') p2.u = true
+            if (ev.code === 'KeyS') p2.d = true
+            if (ev.code === 'KeyA') p2.l = true
+            if (ev.code === 'KeyD') p2.r = true
+            if (ev.code === 'KeyF') { if (gs.partnerHuman) p2.swordEdge = true; else keys.arrowEdge = true }
         }
         const onKeyUp = (ev) => {
             if (ev.code === 'ArrowLeft') keys.l = false
             if (ev.code === 'ArrowRight') keys.r = false
             if (ev.code === 'ArrowUp') keys.u = false
             if (ev.code === 'ArrowDown') keys.d = false
+            if (ev.code === 'KeyW') p2.u = false
+            if (ev.code === 'KeyS') p2.d = false
+            if (ev.code === 'KeyA') p2.l = false
+            if (ev.code === 'KeyD') p2.r = false
         }
         const onPad = (ev) => {
             const d = ev.detail
@@ -563,17 +603,20 @@ const GauntletGame = () => {
                 state: () => gs,
                 hash: () => stateHash(gs),
                 step: (n = 1) => { for (let i = 0; i < n; i++) doSim({ left: false, right: false, fwd: false, back: false, sword: false, arrow: false }) },
-                stepWith: (inp) => doSim(inp),
+                stepWith: (inp, pInp) => doSim(inp, pInp),
                 setKeys: (k) => { keys.l = !!k.l; keys.r = !!k.r; keys.u = !!k.u; keys.d = !!k.d; if (k.s) keys.swordEdge = true; if (k.a) keys.arrowEdge = true },
+                setP2: (k) => { p2.l = !!k.l; p2.r = !!k.r; p2.u = !!k.u; p2.d = !!k.d; if (k.s) p2.swordEdge = true },
+                start2P: (hk1 = 'warrior', hk2 = 'elf') => { const r = Math.floor(Math.random() * 1000) % 97; gs = makeGame(r, hk1, { partner: true, topDown: true, partnerKey: hk2 }); gs.partnerOn = true; gs.partnerMode = 'human'; gs.partnerHuman = true; setMode('play') },
                 plan: (seed = 0, opts) => plan(seed, { topDown: true, ...opts }),
                 decide: (s) => decide(s || gs),
                 restart: () => { gs = makeGame(0, 'warrior', { topDown: true }) },
                 startHero: (hk) => startPlay(hk),
                 events: () => evLog,
                 probe: () => ({
-                    tick: gs.tick, screen: screenRef.current, select: selectHero, score: gs.score, lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
+                    tick: gs.tick, screen: screenRef.current, select: selectHero, select2: selectHero2, partnerHuman: gs.partnerHuman, score: gs.score, lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
                     hash: stateHash(gs),
                     hero: { x: gs.hero.x, y: gs.hero.y, a: gs.hero.a, hp: gs.hero.hp, deadT: gs.hero.deadT },
+                    p2: gs.partner ? { x: gs.partner.x, y: gs.partner.y, a: gs.partner.a, hp: gs.partner.hp, name: gs.partner.name, down: gs.partner.down } : null,
                     monsters: gs.monsters.map((m) => ({ kind: m.kind, x: m.x, y: m.y, hp: m.hp })),
                     gens: gs.gens.map((g) => ({ alive: g.alive, hp: g.hp })),
                     items: gs.items.filter((i) => !i.taken).map((i) => i.t),

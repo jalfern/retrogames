@@ -66,22 +66,25 @@ The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
 
 ## Controls
 
-Arrows / the stick: move 8-way (facing follows) · Space / A: sword at what you
-face · X / F / B: arrow down the facing · hero screen: arrows or TAP a card to
-pick, Space or TAP the card again to start (issue #403), C: CPU partner ·
+P1: Arrows / the stick: move 8-way (facing follows) · Space / A: sword at what
+you face · X / F / B: arrow down the facing. P2 (desktop, issue #275 item 7):
+WASD: move 8-way · F: sword. Hero screen: arrows or TAP a card to pick P1,
+Space or TAP the card again to start (issue #403); C: CPU partner, P:
+two-player (P2 on WASD+F, A/D picks P2's hero, shown as a second portrait) ·
 ?: pause.
 
 ## Verify
 
 ```bash
 npm run lint:gauntlet               # eslint gate for both games + harness
-npm run gauntletcheck             # 127 checks: geometry, art, sound, minimap,
-                                     # select (the hero-card touch test),
-                                     # juice (the view's reactive overlays),
-                                     # walls (the torch + two-tone courses),
-                                     # generators (the wind-up), rules, overhead
-                                     # mode, ledger, pilot, slack, determinism
-npm run gauntletcheck -- --mutate # 15 mutants, all must die
+npm run gauntletcheck             # 133 checks: geometry, art, sound, minimap,
+                                      # select (the hero-card touch test),
+                                      # juice (the view's reactive overlays),
+                                      # walls (the torch + two-tone courses),
+                                      # generators (the wind-up), 2p (the human
+                                      # partner), rules, overhead mode, ledger,
+                                      # pilot, slack, determinism
+npm run gauntletcheck -- --mutate # 16 mutants, all must die
 npm run gauntletplay              # advisory browser drive (needs npm run dev)
 ```
 

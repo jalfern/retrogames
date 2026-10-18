@@ -89,8 +89,8 @@ const walkable = (gs, c, r) => {
 // ---------------------------------------------------------------- setup ----
 export function makeGame(seed = 0, heroKey = 'warrior', opts = {}) {
     const gs = {
-        seed, heroKey, slack: !!opts.slack, partnerOn: !!opts.partner,
-        topDown: !!opts.topDown,
+        seed, heroKey, partnerKey: opts.partnerKey, slack: !!opts.slack, partnerOn: !!opts.partner,
+        topDown: !!opts.topDown, partnerHuman: false,
         rng: seed | 0, tick: 0, playT: 0, level: 0,
         lives: CFG.lives, score: 0, gold: 0, keys: 0,
         end: null, events: [], _nextId: 1, upTo: CFG.extraLife,
@@ -566,12 +566,13 @@ function checkStairs(gs) {
         return
     }
     say(gs, LEVELS[gs.level + 1].name)
+    if (gs.partnerHuman) gs.partnerDone = false
     loadLevel(gs, gs.level + 1)
     gs.events.push({ type: 'level', level: gs.level })
 }
 
 // ---------------------------------------------------------------- step ----
-export function step(gs, inp) {
+export function step(gs, inp, partnerInp = null) {
     gs.tick++
     if (gs.end) return gs
     gs.foodWarnT = Math.max(0, gs.foodWarnT - 1)
@@ -660,7 +661,7 @@ export function step(gs, inp) {
     updateShots(gs)
     if (gs.end || gs.hero.deadT > 0) return gs
     updateGens(gs)
-    updatePartner(gs)
+    updatePartner(gs, partnerInp)
     updateItems(gs)
     checkStairs(gs)
 
@@ -679,9 +680,50 @@ export function step(gs, inp) {
     return gs
 }
 
-function updatePartner(gs) {
+function moveHuman(gs, p, dx, dy) {
+    const nx = p.x + dx, ny = p.y + dy
+    if (!blocked(gs, nx, ny)) { p.x = nx; p.y = ny }
+    else if (!blocked(gs, nx, p.y)) p.x = nx
+    else if (!blocked(gs, p.x, ny)) p.y = ny
+}
+
+function updatePartner(gs, partnerInp) {
     const p = gs.partner
     if (!p || p.down) return
+    if (gs.partnerHuman && partnerInp) {
+        // a HUMAN second hero: the same 8-way stick / turn + sword rules as the
+        // first player, but driven by its OWN input. It shares the CPU partner's
+        // stone + closed-door collision, and it does NOT trail the hero — it goes
+        // where its player points it. (Door-opening for the partner is a separate
+        // filed item, so a closed door still blocks it here.)
+        const sp = CFG.walk * p.speed
+        if (gs.topDown) {
+            const vx = (partnerInp.right ? 1 : 0) - (partnerInp.left ? 1 : 0)
+            const vy = (partnerInp.back ? 1 : 0) - (partnerInp.fwd ? 1 : 0)
+            if (vx || vy) {
+                const a = Math.atan2(vy, vx)
+                p.a = a
+                moveHuman(gs, p, Math.cos(a) * sp, Math.sin(a) * sp)
+            }
+        } else {
+            if (partnerInp.left) p.a -= CFG.turn
+            if (partnerInp.right) p.a += CFG.turn
+            if (partnerInp.fwd) moveHuman(gs, p, Math.cos(p.a) * sp, Math.sin(p.a) * sp)
+            else if (partnerInp.back) moveHuman(gs, p, -Math.cos(p.a) * sp * 0.6, -Math.sin(p.a) * sp * 0.6)
+        }
+        if (p.atkT > 0) { p.atkT--; return }
+        if (partnerInp.sword && p.atkT <= 0) {
+            p.atkT = CFG.swordCool
+            for (const m of gs.monsters) {
+                if (Math.hypot(m.x - p.x, m.y - p.y) < 1.25) {
+                    damageMonster(gs, m, p.power, 'partner')
+                    gs.events.push({ type: 'partnerHit', x: p.x, y: p.y })
+                    break
+                }
+            }
+        }
+        return
+    }
     const h = gs.hero
     const tx = h.x - Math.cos(h.a) * 1.1
     const ty = h.y - Math.sin(h.a) * 1.1
