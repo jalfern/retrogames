@@ -357,10 +357,12 @@ const LemGame = () => {
             if (hud.left) hud.left.textContent = `${gs.spawned - gs.exited - gs.dead}+${gs.dead}`
             for (const s of SKILLS) {
                 const el = hud['sk_' + s]
-                if (!el) continue
-                el.textContent = String(gs.skills[s])
-                el.style.opacity = gs.skills[s] > 0 ? '1' : '0.25'
-                el.style.outline = selected === s && screenRef.current === 'play' ? '2px solid #ffd83d' : 'none'
+                if (el) {
+                    el.textContent = String(gs.skills[s])
+                    el.style.opacity = gs.skills[s] > 0 ? '1' : '0.25'
+                }
+                const btn = document.querySelector(`[data-lem-skill="${s}"]`)
+                if (btn) btn.style.borderColor = selected === s && screenRef.current === 'play' ? '#fcd34d' : ''
             }
             if (hud.lvl) hud.lvl.textContent = `${levelIdx + 1}. ${meta.name}`
         }
@@ -379,6 +381,7 @@ const LemGame = () => {
         const togglePause = () => {
             if (screenRef.current !== 'play') return
             pausedRef.current = !pausedRef.current
+            if (pausedRef.current) ffHeld = false      // the panel unmounts while paused
             setPaused(pausedRef.current)
         }
         const onDown = (e) => {
@@ -400,7 +403,24 @@ const LemGame = () => {
             keys.add(e.code)
         }
         const onUp = (e) => keys.delete(e.code)
-        const onBlur = () => keys.clear()
+        const onBlur = () => { keys.clear(); ffHeld = false }
+        // #432: the panel's taps, delegated into THIS closure — the panel is
+        // static JSX (a render can't call effect-local handlers or read the
+        // effect-local `selected`), so the buttons carry data attributes and
+        // one window-level handler does the work.
+        const panelBtn = (e) => e.target.closest && e.target.closest('[data-lem-panel] button')
+        const onPanelDown = (e) => {
+            const b = panelBtn(e)
+            if (!b) return
+            e.preventDefault()
+            if (b.dataset.lemSkill) selectSkill(b.dataset.lemSkill)
+            else if (b.dataset.lemPause) togglePause()
+            else if (b.dataset.lemFf) ffHeld = true
+        }
+        const onPanelEnd = (e) => {
+            const b = panelBtn(e)
+            if (b && b.dataset.lemFf) ffHeld = false
+        }
         // #432: the finger points at the DISPLAYED (fit) canvas — the one the
         // player sees — and writes THE one pad's pointer (normalized 0..1). The
         // shared gesture in the loop does the press / slide / release.
@@ -442,10 +462,13 @@ const LemGame = () => {
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
         window.addEventListener('pointerdown', onStageDown)
+        window.addEventListener('pointerdown', onPanelDown)
         window.addEventListener('pointermove', onMove)
         window.addEventListener('pointermove', onStageMove)
         window.addEventListener('pointerup', endPress)
         window.addEventListener('pointercancel', endPress)
+        window.addEventListener('pointerup', onPanelEnd)
+        window.addEventListener('pointercancel', onPanelEnd)
 
         // #432: a portrait phone gets the rotate prompt (the stage is 48x27);
         // the same wrapper the fit shell observes owns this flag.
@@ -571,10 +594,13 @@ const LemGame = () => {
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
             window.removeEventListener('pointerdown', onStageDown)
+            window.removeEventListener('pointerdown', onPanelDown)
             window.removeEventListener('pointermove', onMove)
             window.removeEventListener('pointermove', onStageMove)
             window.removeEventListener('pointerup', endPress)
             window.removeEventListener('pointercancel', endPress)
+            window.removeEventListener('pointerup', onPanelEnd)
+            window.removeEventListener('pointercancel', onPanelEnd)
             if (ro) ro.disconnect()
             fit.destroy()
             cancelAnimationFrame(raf)
@@ -639,7 +665,9 @@ const LemGame = () => {
 
             {/* #432: the original's bottom panel — the skill bar with counts
                 (tap a skill to pick it) plus PAUSE and FAST-FORWARD, along the
-                bottom edge instead of floating over the crowd. */}
+                bottom edge instead of floating over the crowd. Static markup:
+                the effect delegates the taps (the handlers live in the loop's
+                closure) and paints the selection highlight on the button. */}
             {play && !paused && (
                 <div
                     data-lem-panel
@@ -650,24 +678,20 @@ const LemGame = () => {
                         <button
                             key={s}
                             data-lem-skill={s}
-                            onPointerDown={(e) => { e.preventDefault(); selectSkill(s) }}
-                            className={`bg-black/60 border rounded px-2 py-1 text-center leading-tight select-none ${selected === s ? 'border-amber-300' : 'border-amber-200/30'}`}
+                            className="bg-black/60 border border-amber-200/30 rounded px-2 py-1 text-center leading-tight select-none"
                         >
                             <div className="text-[10px] text-amber-100/80 whitespace-nowrap">{SKILL_NAME[s]}</div>
                             <div ref={setHud('sk_' + s)} className="text-base font-bold text-amber-50" />
                         </button>
                     ))}
                     <button
-                        onPointerDown={(e) => { e.preventDefault(); togglePause() }}
+                        data-lem-pause="1"
                         className="bg-black/60 border border-amber-200/30 rounded px-2.5 py-1 text-[11px] font-bold text-amber-50 leading-tight select-none"
                     >
                         PAUSE
                     </button>
                     <button
-                        onPointerDown={(e) => { e.preventDefault(); ffHeld = true }}
-                        onPointerUp={() => { ffHeld = false }}
-                        onPointerLeave={() => { ffHeld = false }}
-                        onPointerCancel={() => { ffHeld = false }}
+                        data-lem-ff="1"
                         className="bg-black/60 border border-amber-200/30 rounded px-2.5 py-1 text-[11px] font-bold text-amber-50 leading-tight select-none"
                     >
                         FF

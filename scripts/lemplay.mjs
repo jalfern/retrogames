@@ -61,12 +61,23 @@ r.check('a real key leaves attract and starts the run', (await probe()).screen =
     await page.keyboard.down('ArrowRight'); await wait(350); await page.keyboard.up('ArrowRight')
     const c1 = (await probe()).cursor
     r.check('ArrowRight moves the cursor', c1.x > c0.x + 0.8, `x ${c0.x.toFixed(1)} -> ${c1.x.toFixed(1)}`)
-    const p0 = await px()
-    await page.keyboard.down('ArrowUp'); await wait(300); await page.keyboard.up('ArrowUp')
+    // the marker is the gold dashed box + skill letter at the cursor (TS=8);
+    // count gold pixels in the box around the cursor instead of averaging the
+    // whole canvas (a moving marker over similar tones averages to ~0)
+    const goldAt = (pt) => page.evaluate(([x, y]) => {
+        const c = document.querySelector('canvas[data-lem-stage]')
+        const d = c.getContext('2d').getImageData(Math.max(0, Math.round(x * 8 - 12)), Math.max(0, Math.round(y * 8 - 16)), 26, 40).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 150 && d[i + 2] < 150) n++
+        return n
+    }, [pt.x, pt.y])
+    const gAt = await goldAt(c1)
+    r.check('the cursor marker is painted where the cursor is', gAt >= 8, `gold px=${gAt}`)
+    await page.keyboard.down('ArrowUp'); await wait(600); await page.keyboard.up('ArrowUp')
     const c2 = (await probe()).cursor
     r.check('ArrowUp moves the cursor', c2.y < c1.y - 0.5, `y ${c1.y.toFixed(1)} -> ${c2.y.toFixed(1)}`)
-    const p1 = await px()
-    r.check('the frame changes with the cursor', Math.abs(p1 - p0) > 0.2, `${p0.toFixed(1)} -> ${p1.toFixed(1)}`)
+    const gOld = await goldAt(c1)
+    r.check('moving the cursor moves its marker', gOld * 2 < gAt, `old spot ${gAt} -> ${gOld} gold px`)
 }
 
 {
@@ -76,7 +87,7 @@ r.check('a real key leaves attract and starts the run', (await probe()).screen =
     r.check('Digit3 selects CLIMBER', (await probe()).selected === 'climb')
     await key('Digit1')
     await key('KeyE')
-    r.check('B / KeyE cycles to an AVAILABLE skill', (await probe()).selected === 'climb', (await probe()).selected)
+    r.check('KeyE no longer cycles — CYCLE is gone, the panel picks (#432)', (await probe()).selected === 'block', (await probe()).selected)
 }
 
 // ---- drive the level with the solver's hint: hover the mouse to aim the
@@ -86,7 +97,11 @@ r.info('playing level 1 with the solver only as an aim-bot — keys do everythin
 let assigned = 0
 const done = new Set()
 const canvas = await page.evaluate(() => {
-    const r = document.querySelector('canvas[data-lem-stage]').getBoundingClientRect()
+    // aim at the DISPLAYED surface (the fit display canvas, or the source
+    // canvas pre-fit) — the one a thumb touches; the source fills the
+    // wrapper, the display is the letterboxed, integer-scaled one
+    const c = document.querySelector('canvas[data-fit="display"]') || document.querySelector('canvas[data-lem-stage]')
+    const r = c.getBoundingClientRect()
     return { left: r.left, top: r.top, w: r.width, h: r.height }
 })
 const at = (x, y) => ({ x: canvas.left + x / 48 * canvas.w, y: canvas.top + (y - 1) / 27 * canvas.h })
