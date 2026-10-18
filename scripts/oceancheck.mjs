@@ -212,9 +212,16 @@ async function main() {
       const stormSkyTop = analyze(stormImg, 0, Math.floor(stormImg.h * 0.25))
       const stormFoam = foamPix(stormImg, Math.floor(stormImg.h * 0.55), stormImg.h)
       ok('storm darkens the sky', stormSkyTop.mean < calmSkyTop.mean * 0.82, `sky mean ${calmSkyTop.mean.toFixed(0)} → ${stormSkyTop.mean.toFixed(0)}`)
-      ok('storm whitecaps obvious', stormFoam > calmFoam * 4 && stormFoam > 3000, `foam px ${calmFoam} → ${stormFoam}`)
+      // whitecap floor 1200: foam amplitude now rides the single chop (the pre-fix
+      // build doubled it in enc); single-chop storm foam measures ~1500-2800 px and
+      // fog/phase variance runs ~2x, so the old 3000 floor was tuned to doubled energy.
+      ok('storm whitecaps obvious', stormFoam > calmFoam * 4 && stormFoam > 1200, `foam px ${calmFoam} → ${stormFoam}`)
       const ui = await page.evaluate(() => ({ sea: document.getElementById('seaLbl').textContent, wind: document.getElementById('windLbl').textContent }))
       ok('UI reads STORM at full slider', ui.sea === 'STORM', `${ui.sea} · ${ui.wind}`)
+
+      // Spike/fold regression lives in scripts/oceanfold.mjs (deterministic
+      // Jacobian check on the real shader params) — a pixel detector here could
+      // not separate fog/foam variance from folds: both old and fixed scored ~90px.
 
       if (shots) {
         mkdirSync(shots, { recursive: true })

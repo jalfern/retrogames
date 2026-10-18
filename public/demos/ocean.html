@@ -66,9 +66,14 @@ const OCT = [
 const AMP0 = 0.31, AMP1 = 0.94;
 
 function seaParams(s) {
+  // oct-0 dsp is capped so its x-shear between two adjacent mesh vertices
+  // (~1.8 m apart) stays below their spacing at storm=1 — measured min Jacobian
+  // of x -> x - Dx at mesh spacing: -0.83 at the old 4.0 base (folds/spikes),
+  // +0.12 at 2.0 with the fill kMax band-limit (see oceanfold). Octave 1 is
+  // shading-only, so its dsp can stay high.
   return OCT.map((o, i) => i === 0
-    ? { A: o.A * (0.75 + 5.5 * s * s), spread: 6.0 - 4.0 * s, dsp: 4.0 * (0.50 + 0.18 * s), amp: AMP0 * (1.35 + 2.6 * s * s) }
-    : { A: o.A * (0.75 + 16.0 * s * s), spread: 6.0 - 4.0 * s, dsp: 1.8 * (0.55 + 0.45 * s), amp: AMP1 * (1.35 + 3.4 * s * s) });
+    ? { A: o.A * (0.75 + 5.5 * s * s), spread: 6.0 - 4.0 * s, dsp: 2.0 * (0.50 + 0.18 * s), amp: AMP0 * (1.35 + 2.6 * s * s) }
+    : { A: o.A * (0.75 + 16.0 * s * s), spread: 6.0 - 4.0 * s, dsp: 2.4 * (0.55 + 0.45 * s), amp: AMP1 * (1.35 + 3.4 * s * s) });
 }
 
 const cam = { pos: [0, 3.1, -14], yaw: 0, pitch: -0.05, touched: false };
@@ -212,7 +217,7 @@ async function boot() {
   const cp = (mod, entry) => device.createComputePipeline({ layout: 'auto', compute: { module: mod, entryPoint: entry } });
 
   const M_FILL = `
-    struct FillU { L: f32, A: f32, kc: f32, windAz: f32, seed: f32, spreadB: f32 };
+    struct FillU { L: f32, A: f32, kc: f32, windAz: f32, seed: f32, spreadB: f32, kMax: f32 };
     @group(0) @binding(0) var<uniform> fu: FillU;
     @group(0) @binding(1) var out: texture_storage_2d<rg32float, write>;
     fn gauss(s: f32) -> vec2f {
@@ -229,7 +234,7 @@ async function boot() {
       let k = max(length(vec2f(kx, ky)), 1e-4);
       let cd = (kx * cos(fu.windAz) + ky * sin(fu.windAz)) / k;
       let spread = exp(-(1.0 - cd * cd) * fu.spreadB);
-      let ph = fu.A / pow(k, 4.0) * exp(-pow(fu.kc / k, 2.0)) * spread;
+      let ph = fu.A / pow(k, 4.0) * exp(-pow(fu.kc / k, 2.0)) * spread * (1.0 - smoothstep(fu.kMax * 0.6, fu.kMax, k));
       var h = vec2f(0.0);
       if (kx != 0.0 || ky != 0.0) { h = gauss(f32(x * 91u + y * 7717u) + fu.seed) * sqrt(ph * 0.5); }
       textureStore(out, vec2i(i32(x), i32(y)), vec4f(h.x, h.y, 0.0, 1.0));
@@ -336,7 +341,8 @@ async function boot() {
 
   const buf = data => { const b = device.createBuffer({ size: data.byteLength, usage: U }); device.queue.writeBuffer(b, 0, data); return b; };
   const uFft = buf(new Float32Array([NI, 1 / (NI * NI), 0, 0]));
-  const uFill = OCT.map((o, i) => buf(new Float32Array([o.L, o.A, o.kc, WIND_AZ, SEED + i * 101, 6.0])));
+  const KMAX = [Math.PI * SEG / EXTENT, 1e9];
+  const uFill = OCT.map((o, i) => buf(new Float32Array([o.L, o.A, o.kc, WIND_AZ, SEED + i * 101, 6.0, KMAX[i]])));
   const bgFill = OCT.map((o, i) => device.createBindGroup({ layout: pFill.getBindGroupLayout(0), entries: [
     { binding: 0, resource: { buffer: uFill[i] } },
     { binding: 1, resource: spec[i] },
@@ -382,7 +388,8 @@ async function boot() {
 
     @vertex
     fn vs_main(@location(0) off: vec2f) -> VOut {
-      let step: f32 = ${OCT[1].L}.0 / f32(NI);
+      // snap to the mesh's own vertex spacing (~1.8 m), not the 0.22 m detail-grid cell
+      let step: f32 = ${EXTENT}.0 / f32(${SEG});
       let org = vec2f(round(su.camPos.x / step) * step, round(su.camPos.z / step) * step);
       var world = vec3f(org.x + off.x, 0.0, org.y + off.y);
       let uv0 = vec2f(
@@ -393,14 +400,18 @@ async function boot() {
         (org.y + off.y) / su.oct2.x - floor((org.y + off.y) / su.oct2.x));
       let gd0 = textureSampleLevel(g0, samp, uv0, 0.0);
       let gd1 = textureSampleLevel(g1, samp, uv1, 0.0);
-      let hh = textureSampleLevel(h0, samp, uv0, 0.0).x + textureSampleLevel(h1, samp, uv1, 0.0).x;
+      let h0v = textureSampleLevel(h0, samp, uv0, 0.0).x;
+      let hh = h0v + textureSampleLevel(h1, samp, uv1, 0.0).x;
       let dsp0 = su.oct.y; let dsp1 = su.oct2.y;
-      world.x -= gd0.r * dsp0 + gd1.r * dsp1;
-      world.z -= gd0.g * dsp0 + gd1.g * dsp1;
+      // displace the mesh with octave 0 only: its ~1.8 m vertex spacing cannot
+      // represent the 14 m detail octave — sampling it folded the grid into
+      // single-frame spikes. Octave 1 rides the normals and shading instead.
+      world.x -= gd0.r * dsp0;
+      world.z -= gd0.g * dsp0;
       let rim = 1.0 - smoothstep(${EXTENT * 0.40}, ${EXTENT * 0.5}, length(off));
       let vd = length(world.xz - su.camPos.xz);
       let yk = mix(0.15, 1.0, 1.0 - smoothstep(150.0, 340.0, vd));
-      world.y = hh * rim * yk;
+      world.y = h0v * rim * yk;
       var o: VOut;
       o.pos = su.vp * vec4f(world, 1.0);
       o.world = world;
@@ -665,7 +676,7 @@ async function boot() {
     if (refilling) {
       needSpec = false;
       for (let i = 0; i < 2; i++) {
-        device.queue.writeBuffer(uFill[i], 0, new Float32Array([OCT[i].L, pp[i].A, OCT[i].kc, WIND_AZ, SEED + i * 101, pp[i].spread]));
+        device.queue.writeBuffer(uFill[i], 0, new Float32Array([OCT[i].L, pp[i].A, OCT[i].kc, WIND_AZ, SEED + i * 101, pp[i].spread, KMAX[i]]));
       }
     }
 
@@ -695,8 +706,10 @@ async function boot() {
     }
     for (let oi = 0; oi < 2; oi++) {
       device.queue.writeBuffer(uEnc[oi][0], 0, new Float32Array([0, pp[oi].amp, 0, 0]));
-      device.queue.writeBuffer(uEnc[oi][1], 0, new Float32Array([1, pp[oi].amp * OCT[oi].chop, 0, 0]));
-      device.queue.writeBuffer(uEnc[oi][2], 0, new Float32Array([2, pp[oi].amp * OCT[oi].chop, 0, 0]));
+      // chop is already baked into the displacement spectra by cs_prep (× chop·k) —
+      // multiplying the encoder amp by chop too applied it twice.
+      device.queue.writeBuffer(uEnc[oi][1], 0, new Float32Array([1, pp[oi].amp, 0, 0]));
+      device.queue.writeBuffer(uEnc[oi][2], 0, new Float32Array([2, pp[oi].amp, 0, 0]));
       for (const fi of [0, 1, 2]) {
         device.queue.writeBuffer(uPrep[oi][fi], 0, new Float32Array([t, OCT[oi].L, OCT[oi].chop, fi]));
         let p = enc.beginComputePass(); p.setPipeline(pPrep); p.setBindGroup(0, bgPrep[oi][fi]); p.dispatchWorkgroups(1, 16, 1); p.end();
