@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD } from '../src/components/virtualDir.js'
 import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick } from '../src/components/gamepadMap.js'
-import { steerPedals } from '../src/utils/padState.js'
+import { steerPedals, steerResponse, STEER_GAIN } from '../src/utils/padState.js'
 import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD } from '../src/utils/onePad.js'
 
 let pass = 0, fail = 0
@@ -361,15 +361,21 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
 }
 
 // --- 25. steerPedals: steering + pedals from the pad state ---
-// The stick's x is the steering; the pedals are the triggers, with the stick's
-// y as the touch fallback (push forward = gas, pull back = brake).
+// The stick's x is the steering — through the #431 response curve + gain
+// (steer = G·((1−A)x + A·x³), full push locks at G, not 1); the pedals are
+// the triggers, with the stick's y as the touch fallback (push forward =
+// gas, pull back = brake). The radial dead zone rides upstream, at the
+// store writers (see steercheck).
 {
     const up = steerPedals({ x: 0, y: -1, rt: 0, lt: 0 })
     ok(up.steer === 0 && up.thr === 1 && up.brk === 0, 'steerPedals stick fully forward -> thr 1, no brake')
     const down = steerPedals({ x: 0, y: 0.5, rt: 0, lt: 0 })
     ok(down.thr === 0 && Math.abs(down.brk - 0.5) < 1e-9, 'steerPedals stick pulled back halfway -> brk 0.5')
     const rt = steerPedals({ x: -0.7, y: -0.3, rt: 0.8, lt: 0 })
-    ok(Math.abs(rt.steer + 0.7) < 1e-9 && rt.thr === 0.8, 'steerPedals RT beats a weaker stick-forward (0.8 > 0.3)')
+    ok(Math.abs(rt.steer - steerResponse(-0.7)) < 1e-9 && rt.steer < -0.2 && rt.steer > -STEER_GAIN && rt.thr === 0.8,
+        `steerPedals x=-0.7 maps through curve+gain (${rt.steer.toFixed(4)}), RT beats a weaker stick-forward`)
+    const lockR = steerPedals({ x: 1, y: 0, rt: 0, lt: 0 })
+    ok(Math.abs(lockR.steer - STEER_GAIN) < 1e-9, `full right push locks at G=${STEER_GAIN}`)
     const both = steerPedals({ x: 0.4, y: 0.9, rt: 0.2, lt: 0.6 })
     ok(both.thr === 0.2 && Math.abs(both.brk - 0.9) < 1e-9,
         'steerPedals the larger of trigger/stick wins (stick brake 0.9 > lt 0.6)')

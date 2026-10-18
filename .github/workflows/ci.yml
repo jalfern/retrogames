@@ -49,6 +49,9 @@ jobs:
       - run: npm run zorkcheck
       # Shared VirtualControls direction logic + sliding sequence, in Node (~1s).
       - run: npm run vpadcheck
+      # The #431 stick pipeline: radial dead zone + response curve + gain +
+      # smoothing, pinned at Jon's constants, at the right seams. In Node (~1s).
+      - run: npm run steercheck
       # Shared fitCanvas whole-multiple × dpr scale decision, in Node (~1s).
       - run: npm run fitcanvascheck
       # Fourth scoped gate: the 3D stealth title (engine/world/art/levels/stealth +
