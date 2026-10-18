@@ -19,6 +19,7 @@ import {
     GW, GH, CELL, HUD_H, CW, CH, EXITS, ENEMIES, WEAPONS,
     TOTAL_ROOMS, genRoom, isBonus, isBoss, START, lcg,
 } from './levels.js'
+import { TELEGRAPH } from './enemies.js'
 
 export { GW, GH, CELL, HUD_H, CW, CH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS, isBonus, isBoss }
 
@@ -202,7 +203,22 @@ function spawnQueued(gs) {
 }
 
 function makeEnemy(gs, kind, x, y) {
-    return { id: gs._nextId++, kind, x, y, hp: ENEMIES[kind].hp, cd: ENEMIES[kind].cd ? Math.floor(ENEMIES[kind].cd / 2) : 0, wanderT: 0, wdx: 0, wdy: 0, hitT: 0, dir: 1 }
+    return { id: gs._nextId++, kind, x, y, hp: ENEMIES[kind].hp, cd: ENEMIES[kind].cd ? Math.floor(ENEMIES[kind].cd / 2) : 0, wanderT: 0, wdx: 0, wdy: 0, hitT: 0, dir: 1, walk: 0, moving: false, chg: 0, aim: [0, 0] }
+}
+
+// the tracked aim: unit vector from the enemy to the player (sees through
+// walls once a charge has started — the cameras are everywhere)
+function trackAim(gs, e) {
+    const p = gs.player
+    const d = dist(e.x, e.y, p.x, p.y) || 1
+    e.aim = [(p.x - e.x) / d, (p.y - e.y) / d]
+}
+
+// the telegraph: TELEGRAPH ticks of visible tracking before the shot commits
+function beginCharge(gs, e) {
+    e.chg = TELEGRAPH
+    trackAim(gs, e)
+    gs.events.push({ type: 'charge', kind: e.kind })
 }
 
 function moveEnemy(gs, e, sp) {
@@ -210,9 +226,11 @@ function moveEnemy(gs, e, sp) {
     const [mx, my] = q8(p.x - e.x, p.y - e.y)
     const k = sp * (mx && my ? 0.7071 : 1)
     const nx = e.x + mx * k, ny = e.y + my * k
+    const x0 = e.x, y0 = e.y
     if (!blockedPx(gs, nx, ny, 6)) { e.x = nx; e.y = ny }
     else if (!blockedPx(gs, nx, e.y, 6)) e.x = nx
     else if (!blockedPx(gs, e.x, ny, 6)) e.y = ny
+    if (e.x !== x0 || e.y !== y0) { e.walk = (e.walk || 0) + k; e.moving = true }
 }
 
 function enemyShoot(gs, e, dx, dy, speed, kind, dmg) {
@@ -227,10 +245,17 @@ function updateEnemies(gs) {
         const def = ENEMIES[e.kind]
         if (e.hitT > 0) e.hitT--
         if (e.cd > 0) e.cd--
+        e.moving = false
         if (def.kind === 'chaser') {
             moveEnemy(gs, e, def.speed * (1 + gs.room * 0.03))
         } else if (def.kind === 'turret') {
-            if (e.cd <= 0 && p.deadT === 0 && los(gs, e.x, e.y, p.x, p.y)) {
+            if (e.chg > 0) {
+                trackAim(gs, e)
+                e.chg--
+                if (e.chg === 0) { e.cd = def.cd; enemyShoot(gs, e, e.aim[0], e.aim[1], 1.8) }
+            } else if (e.cd <= TELEGRAPH && e.cd > 0 && p.deadT === 0 && los(gs, e.x, e.y, p.x, p.y)) {
+                beginCharge(gs, e)
+            } else if (e.cd <= 0 && p.deadT === 0 && los(gs, e.x, e.y, p.x, p.y)) {
                 e.cd = def.cd
                 enemyShoot(gs, e, p.x - e.x, p.y - e.y, 1.8)
             }
@@ -243,7 +268,7 @@ function updateEnemies(gs) {
             }
             const k = def.speed * (e.wdx && e.wdy ? 0.7071 : 1)
             const nx = e.x + e.wdx * k, ny = e.y + e.wdy * k
-            if (!blockedPx(gs, nx, ny, 6)) { e.x = nx; e.y = ny } else e.wanderT = 0
+            if (!blockedPx(gs, nx, ny, 6)) { e.x = nx; e.y = ny; e.walk = (e.walk || 0) + k; e.moving = true } else e.wanderT = 0
             if (e.cd <= 0 && p.deadT === 0 && los(gs, e.x, e.y, p.x, p.y)) {
                 e.cd = def.cd
                 gs.grenades.push({ id: gs._nextId++, x: e.x, y: e.y, dx: (p.x - e.x) / (dist(e.x, e.y, p.x, p.y) || 1) * CFG.grenadeSpeed, dy: (p.y - e.y) / (dist(e.x, e.y, p.x, p.y) || 1) * CFG.grenadeSpeed, t: CFG.grenadeTicks })
@@ -251,7 +276,17 @@ function updateEnemies(gs) {
             }
         } else if (def.kind === 'heavy') {
             moveEnemy(gs, e, def.speed)
-            if (e.cd <= 0 && p.deadT === 0 && los(gs, e.x, e.y, p.x, p.y)) {
+            if (e.chg > 0) {
+                trackAim(gs, e)
+                e.chg--
+                if (e.chg === 0) {
+                    e.cd = def.cd
+                    const a = Math.atan2(e.aim[1], e.aim[0])
+                    for (const d of [-0.35, 0, 0.35]) enemyShoot(gs, e, Math.cos(a + d), Math.sin(a + d), 1.6)
+                }
+            } else if (e.cd <= TELEGRAPH && e.cd > 0 && p.deadT === 0 && los(gs, e.x, e.y, p.x, p.y)) {
+                beginCharge(gs, e)
+            } else if (e.cd <= 0 && p.deadT === 0 && los(gs, e.x, e.y, p.x, p.y)) {
                 e.cd = def.cd
                 const a = Math.atan2(p.y - e.y, p.x - e.x)
                 for (const d of [-0.35, 0, 0.35]) enemyShoot(gs, e, Math.cos(a + d), Math.sin(a + d), 1.6)
