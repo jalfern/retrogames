@@ -3,7 +3,7 @@
   "short_name": "Arcade",
   "description": "A pocket arcade of faithfully rebuilt retro games. Tap a cabinet, play instantly.",
   "id": "/retrogames/",
-  "start_url": "/retrogames/",
+  "start_url": "/retrogames/games",
   "scope": "/retrogames/",
   "display": "fullscreen",
   "display_override": ["fullscreen", "standalone", "minimal-ui"],

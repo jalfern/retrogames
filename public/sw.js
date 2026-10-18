@@ -6,6 +6,9 @@
  * Rules:
  *   - Same-origin only, and only inside the /retrogames/ scope the registration
  *     grants (the SW lives at /retrogames/sw.js, so its scope is /retrogames/).
+ *   - v2 (#437): the manifest start_url moved to /retrogames/games; the version
+ *     bump purges v1 caches so an installed app never reboots into a stale
+ *     manifest or start page.
  *   - The Forge board (/retrogames/forge) is live tooling — never intercepted,
  *     never cached.
  *   - Navigation is network-first (deployments roll out) with an offline shell
@@ -13,7 +16,7 @@
  *     scope is stale-while-revalidate.
  */
 
-const VERSION = 'retrogames-v1'
+const VERSION = 'retrogames-v2'
 const SHELL = `${VERSION}-shell`
 const IMMUTABLE = `${VERSION}-assets`
 const RUNTIME = `${VERSION}-runtime`
