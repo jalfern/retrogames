@@ -9,7 +9,7 @@ import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { buildGround, buildSky, buildSprites, KART } from './art.js'
-import { steerPedals } from '../../utils/padState'
+import { steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { currentPad } from '../../utils/onePad'
 
 // =====================================================================
@@ -393,10 +393,13 @@ export default function MarioKart() {
             ctx.textAlign = 'left'
         }
 
+        let steerSm = 0
         const tickWorld = (live) => {
             // #420: THE one pad (the fixed touch stick or a gamepad's left stick
             // for steering + pedals, the A/B buttons for ITEM/DRIFT). A pushed
             // stick or a held button drives it; otherwise the keys drive it.
+            // #431: the stick's steer is curve+gain mapped and smoothed R/tick;
+            // keyboard steering keeps its raw ±1.
             const op = currentPad('stick')
             const padLive = Math.abs(op.x) > 0.05 || Math.abs(op.y) > 0.05 || op.a || op.b
             let inp
@@ -404,8 +407,10 @@ export default function MarioKart() {
                 inp = decide(g)
             } else if (padLive) {
                 const s = steerPedals(op)
-                inp = { steer: s.steer, thr: s.thr, brk: s.brk, drift: !!(op.b || keys.KeyR || keys.KeyC), item: !!(op.a || keys.KeyZ || keys.Space) }
+                steerSm = smoothSteer(steerSm, s.steer)
+                inp = { steer: steerSm, thr: s.thr, brk: s.brk, drift: !!(op.b || keys.KeyR || keys.KeyC), item: !!(op.a || keys.KeyZ || keys.Space) }
             } else {
+                steerSm = 0
                 inp = { u: !!(keys.KeyX || keys.ArrowUp), d: !!(keys.KeyS || keys.ArrowDown), l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.KeyR || keys.KeyC), item: !!(keys.KeyZ || keys.Space) }
             }
             step(g, live ? inp : decide(g))
@@ -525,6 +530,7 @@ export default function MarioKart() {
         })
 
         window.__kartTest = {
+            steer: STEER_PIPELINE,
             game: () => g,
             ghostGame: () => gGhost,
             ghost: () => st.ghost,
