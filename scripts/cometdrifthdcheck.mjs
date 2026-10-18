@@ -163,22 +163,46 @@ if (!SKIP_BROWSER) {
 
         // slalom with drift held: serpentine keeps the kart on the asphalt,
         // and charge accrues through the whole weave (steer never hits 0)
-        await page.keyboard.down('Space')
-        let mid = { driftT: 0, charge: -1, sparks: 0 }
-        for (let i = 0; i < 8; i++) {
-            const key = i % 2 ? 'ArrowRight' : 'ArrowLeft'
-            await page.keyboard.down(key)
-            await page.waitForTimeout(230)
-            if (i === 5) mid = await page.evaluate(() => window.__cometHDTest.fx())
-            await page.keyboard.up(key)
-        }
-        ok(mid.driftT > 20, `held slalom builds a long drift (driftT ${mid.driftT}, charge ${mid.charge})`)
-        ok(mid.sparks > 0, `drift kicks GPU sparks (pool ${mid.sparks})`)
+        // drift through the contract loop: deterministic, no key-timing jitter
+        // (the old keyboard slalom sank into the sand on BOTH old and new sims
+        // depending on puppeteer key timing — it proved nothing). Drift legs
+        // are separated by 3-tick steer-neutral gaps: pre-#471 code released
+        // the drift in every gap (charge never reached 50, no bank); with the
+        // apex grace the hold survives and the release banks blue.
         await page.keyboard.up('Space')
         await page.keyboard.up('KeyX')
-        await page.waitForTimeout(150)
-        const b = await page.evaluate(() => window.__cometHDTest.fx())
-        ok(b.boostT > 0 && b.driftT === 0, `releasing the slalom banks a turbo (boostT ${b.boostT}, tier banked)`)
+        {
+            const t = (await import('../src/games/CometDrift/track.js')).TRACK
+            const p = t.pts[40]
+            await page.evaluate(() => window.__game.release())
+            const s = await page.evaluate(() => window.__game.snapshot())
+            const P = s.karts[0]
+            P.x = p.x; P.y = p.y; P.a = p.a; P.idx = 40; P.hint = 40; P.v = 6; P.lapStart = -9999
+            P.spinT = 0; P.driftT = 0; P.charge = -1; P.boostT = 0; P.offroad = false
+            await page.evaluate((ss) => window.__game.restore(ss), s)
+            // treadmill like the Node ladder: pin the kart each tick so the
+            // curved drift path can't wander into a wall and spin (which would
+            // clear the charge). Only the grace law is under test here.
+            const leg = (ticks, extra) => page.evaluate(({ x, y, a, ticks, extra }) => {
+                const P = window.__cometHDTest.game().karts[0]
+                for (let i = 0; i < ticks; i++) {
+                    P.x = x; P.y = y; P.a = a; P.idx = 40; P.hint = 40; P.v = Math.min(P.v, 7.5)
+                    window.__game.step({ up: true, ...extra }, 1)
+                }
+            }, { x: p.x, y: p.y, a: p.a, ticks, extra })
+            let mid = { driftT: 0, charge: -1 }
+            for (let i = 0; i < 6; i++) {
+                await leg(12, { right: true, a: true })
+                await leg(3, { a: true })
+                mid = await page.evaluate(() => window.__game.state())
+            }
+            const midFx = await page.evaluate(() => window.__cometHDTest.fx())
+            ok(mid.driftT > 40, `steer-neutral gaps no longer kill a held drift — apex grace bridges them (driftT ${mid.driftT}, charge ${mid.charge})`)
+            ok(midFx.sparks > 0, `drift kicks GPU sparks (pool ${midFx.sparks})`)
+            await leg(2, {})
+            const b = await page.evaluate(() => window.__game.state())
+            ok(b.boostT > 0 && b.driftT === 0, `releasing after gapped legs banks a turbo (boostT ${b.boostT}) — pre-grace code banked nothing here`)
+        }
 
         const p2 = await pixels()
         ok(p2.max - p2.min > 60, 'canvas still renders after a boost (not a dead black frame)')
