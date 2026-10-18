@@ -47,8 +47,20 @@ const hintOf = c => {
     return (b > 8 ? cut.slice(0, b) : cut).trim().toUpperCase()
 }
 
+const SECTIONS = [
+    { key: 'claude', title: 'CLAUDE', sub: 'THE EARLY ARCADE · FEB–MAR 2026', color: MAKER.claude },
+    { key: 'qwen', title: 'QWEN', sub: 'BY HAND · NO FORGE', color: MAKER.qwen },
+    { key: 'forge', title: 'THE FORGE', sub: 'BUILT BY THE FORGE', color: MAKER.forge },
+]
+
 const ArcadeShowcase = () => {
     const games = GAMES.filter(g => !g.hidden)
+    const sections = SECTIONS.map(s => ({
+        ...s,
+        games: games.filter(g => g.builtBy === s.key)
+            .sort((a, b) => (b.added || '').localeCompare(a.added || '')),
+    })).filter(s => s.games.length > 0)
+    let serial = 0
     return (
         <div className="absolute inset-0 overflow-y-auto bg-[#0a0a0c] text-zinc-100 font-mono">
             <style>{`
@@ -76,42 +88,53 @@ const ArcadeShowcase = () => {
             </header>
 
             <main className="mx-auto max-w-7xl px-5 pb-24">
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {games.map((g, i) => {
-                        const color = PALETTE[hash(g.label) % PALETTE.length]
-                        return (
-                            <Link key={g.path} to={g.path}
-                                className="tile group relative flex flex-col gap-2 border border-zinc-800/90 bg-[#0c0c0f] p-4
-                                    hover:-translate-y-0.5 hover:border-[var(--a)] transition-[transform,border-color] duration-300"
-                                style={{ '--a': color, '--d': `${Math.min(i, 20) * 30}ms` }}>
-                                <div className="flex items-start justify-between gap-3">
-                                    <span className="text-[9px] tracking-[0.3em] text-zinc-600 group-hover:text-zinc-400 transition-colors">
-                                        {String(i + 1).padStart(2, '0')}
-                                    </span>
-                                    <Mark seed={g.label} color={color} />
-                                </div>
-                                <h2 className="text-sm font-bold tracking-[0.14em] leading-snug">{g.label}</h2>
-                                <p className="text-[10px] leading-relaxed text-zinc-500 line-clamp-2 group-hover:text-zinc-400 transition-colors">
-                                    {tagline(g.description)}
-                                </p>
-                                <div className="mt-auto flex items-center justify-between pt-1 border-t border-zinc-800/70">
-                                    <span className="text-[9px] tracking-[0.25em]" style={{ color }}>
-                                        {hintOf(g.controls?.[0])}
-                                    </span>
-                                    <span className="flex items-center gap-1.5 text-[8px] tracking-[0.3em] text-zinc-600">
-                                        {g.builtBy && <i className="h-1 w-1 rounded-full" style={{ background: MAKER[g.builtBy] || '#71717a' }} />}
-                                        {(g.builtBy || '').toUpperCase()}
-                                    </span>
-                                </div>
-                                <span className="absolute bottom-0 left-0 h-px w-0 bg-[var(--a)] transition-all duration-300 group-hover:w-full" />
-                                <span className="absolute top-2 right-2 text-[9px] tracking-[0.3em] opacity-0 -translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300"
-                                    style={{ color }}>
-                                    PLAY ▸
-                                </span>
-                            </Link>
-                        )
-                    })}
-                </div>
+                {sections.map(s => (
+                    <section key={s.key} data-section={s.key} className="mb-12">
+                        <div className="mb-4 flex items-baseline gap-3">
+                            <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+                            <h2 className="text-sm font-bold tracking-[0.35em]" style={{ color: s.color }}>{s.title}</h2>
+                            <span className="text-[9px] tracking-[0.3em] text-zinc-600">{s.sub}</span>
+                            <span className="ml-auto text-[9px] tracking-[0.3em] text-zinc-600">{s.games.length} GAMES</span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+                            {s.games.map((g, i) => {
+                                const color = PALETTE[hash(g.label) % PALETTE.length]
+                                const n = ++serial
+                                return (
+                                    <Link key={g.path} to={g.path}
+                                        className="tile group relative flex flex-col gap-2 border border-zinc-800/90 bg-[#0c0c0f] p-4
+                                            hover:-translate-y-0.5 hover:border-[var(--a)] transition-[transform,border-color] duration-300"
+                                        style={{ '--a': color, '--d': `${Math.min(i, 20) * 30}ms` }}>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <span className="text-[9px] tracking-[0.3em] text-zinc-600 group-hover:text-zinc-400 transition-colors">
+                                                {String(n).padStart(2, '0')}
+                                            </span>
+                                            <Mark seed={g.label} color={color} />
+                                        </div>
+                                        <h3 className="text-sm font-bold tracking-[0.14em] leading-snug">{g.label}</h3>
+                                        <p className="text-[10px] leading-relaxed text-zinc-500 line-clamp-2 group-hover:text-zinc-400 transition-colors">
+                                            {tagline(g.description)}
+                                        </p>
+                                        <div className="mt-auto flex items-center justify-between pt-1 border-t border-zinc-800/70">
+                                            <span className="text-[9px] tracking-[0.25em]" style={{ color }}>
+                                                {hintOf(g.controls?.[0])}
+                                            </span>
+                                            <span className="flex items-center gap-1.5 text-[8px] tracking-[0.3em] text-zinc-600">
+                                                {g.builtBy && <i className="h-1 w-1 rounded-full" style={{ background: MAKER[g.builtBy] || '#71717a' }} />}
+                                                {(g.builtBy || '').toUpperCase()}
+                                            </span>
+                                        </div>
+                                        <span className="absolute bottom-0 left-0 h-px w-0 bg-[var(--a)] transition-all duration-300 group-hover:w-full" />
+                                        <span className="absolute top-2 right-2 text-[9px] tracking-[0.3em] opacity-0 -translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300"
+                                            style={{ color }}>
+                                            PLAY ▸
+                                        </span>
+                                    </Link>
+                                )
+                            })}
+                        </div>
+                    </section>
+                ))}
 
                 <footer className="mt-12 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-[9px] tracking-[0.4em] text-zinc-600">
                     <span>SELECT ANY CARD TO PLAY</span>
