@@ -27,6 +27,9 @@ const rel = (p) => new URL(p, SCOPE).pathname
 const SHELL_URLS = [rel('./'), rel('./index.html')]
 
 const isForge = (path) => path === rel('./forge') || path.startsWith(rel('./forge') + '/')
+// Standalone demo pages (public/demos/*.html) are not the shell: a navigation
+// there must not be cached AS index.html, or the offline arcade would open a demo.
+const isDemo = (path) => path.startsWith(rel('./demos/'))
 const isImmutable = (path) => path.startsWith(rel('./assets/'))
 
 self.addEventListener('install', (event) => {
@@ -86,7 +89,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url)
   if (url.origin !== self.location.origin) return
   const path = url.pathname
-  if (isForge(path)) return
+  if (isForge(path) || isDemo(path)) return
   if (!path.startsWith(SCOPE.replace(/\/$/, '')) && path !== SCOPE) return
   if (req.mode === 'navigate' || req.destination === 'document') {
     event.respondWith(networkFirstShell(req))
