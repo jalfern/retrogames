@@ -12,12 +12,15 @@ lessons below keep games from shipping broken; they are not the goal.
 
 1. Read `STATE.md` first. At the end of a session, **rewrite** it (don't append), under 150 lines.
 2. Work on the one goal in `STATE.md`. If there is none, ask; don't invent one.
-3. Only the CI `static` job blocks merges. Browser suites (`heistplay`, `verify`, …) are
-   advisory: never spend more than one PR fixing a harness timing problem.
+3. Only the CI `static` job blocks merges — now enforced by branch protection (`static` is the
+   sole required check). Browser suites (`heistplay`, `verify`, `smoke`, …) are advisory:
+   never spend more than one PR fixing a harness timing problem; a flaky advisory failure
+   means rerun once and move on, never waiting on it.
 4. If 3 PRs in a row don't change game code (`src/games/**` or demos in `public/demos/**`), stop and report to Jon.
 5. Never merge a PR whose own description says it is red or WIP. From the PR's branch, merge
-   **only** with this command, never any other way:
-   `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
+   **only** with this command, never any other way (waits on the required check — `static` —
+   and ignores advisory jobs; `smoke` flaking must not wedge the merge):
+   `while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch`
 6. Don't grow the harness past the code it tests. Prefer a new small check to a longer script.
 7. Every ~4 hours, stop with: what's playable now, what changed, three questions for Jon.
 8. Read your result before writing another probe. Before a second probe for the same error, write
@@ -51,8 +54,10 @@ npm run lint:mario / lint:fps / lint:ai   # the three scoped lint gates (repo-wi
 npm run aicheck / zorkcheck          #   pre-existing DOS/IF errors on purpose — not a gate)
 npm run verify [-- --full]           # browser suite (needs `npm run dev`; advisory)
 npm run shot -- --out x.png --eval "..."  # visual capture via system Chrome
-gh pr checks --watch                 # the merge gate = CI `static`; `verify` job is manual:
+gh pr checks --watch                 # watch all jobs, but the merge gate = required check
+                                     #   `static` only (branch protection); `verify` is manual:
                                      #   gh workflow run ci.yml --ref <branch>
+                                     #   (rule-5 merge loop waits on `static` alone)
 ```
 Per-game `*check` / `*play` aliases: `package.json` + each game's README.
 
@@ -86,7 +91,8 @@ Per-game `*check` / `*play` aliases: `package.json` + each game's README.
 
 ## Git & merge
 Feature branch → PR → squash-merge to `main`; never push to `main`. From the PR's branch,
-merge **only** with the rule-5 command above. Only `static` blocks merges.
+merge **only** with the rule-5 command above. Only `static` blocks merges (branch protection:
+`main` requires the `static` context; advisory jobs like `smoke` never block).
 **Never stack a PR on an unmerged branch** — squash-merge deletes the base, GitHub closes
 the child and refuses to reopen it. Recovery: `git rebase --onto origin/main <old-base-tip>
 <branch>`, `git push --force-with-lease`, re-file `--base main`. Pass `--body-file` to
