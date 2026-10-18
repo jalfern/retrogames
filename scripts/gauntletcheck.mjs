@@ -426,6 +426,38 @@ console.log('overhead')
     }
 }
 
+// -------------------------------------------------------------------- 2p ----
+// Human two-player (issue #275 item 7): the partner slot becomes a second
+// hero driven by its OWN input (partnerHuman + partnerInp) — it walks where
+// P2 points it, faces where it walks, and cuts beasts in reach, and it does
+// NOT trail the hero. With partnerHuman off the CPU partner still follows.
+console.log('2p')
+{
+    const gs = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
+    gs.partnerHuman = true
+    gs.monsters = []
+    gs.gens.forEach((g) => { g.alive = false })
+    const y0 = gs.partner.y
+    for (let i = 0; i < 40; i++) { step(gs, {}, { fwd: true }); gs.events.length = 0 }
+    ok(gs.partner.y < y0 - 1, '2p: a human partner walks by its own input', `${gs.partner.x.toFixed(2)},${gs.partner.y.toFixed(2)}`)
+    ok(gs.partner.name === 'ELF', '2p: P2 takes the hero picked on the select screen', gs.partner.name)
+    const fx = gs.partner.x, fy = gs.partner.y
+    for (let i = 0; i < 40; i++) { step(gs, { fwd: true, right: true }, {}); gs.events.length = 0 }
+    ok(Math.abs(gs.partner.x - fx) < 0.3 && Math.abs(gs.partner.y - fy) < 0.3, '2p: the partner does not trail the hero', `${gs.partner.x.toFixed(2)},${gs.partner.y.toFixed(2)}`)
+    for (let i = 0; i < 5; i++) { step(gs, {}, { fwd: true }); gs.events.length = 0 }
+    ok(Math.abs(gs.partner.a + Math.PI / 2) < 0.01, '2p: the partner faces where it walks', `a ${gs.partner.a.toFixed(2)}`)
+    gs.partner.x = 5.5; gs.partner.y = 5.5
+    gs.monsters = [{ id: 9601, kind: 'grunt', x: 5.6, y: 5.5, hp: 1, atkT: 9999, castT: 9999, path: [], repathT: 0, drainT: 0 }]
+    let cut = false
+    for (let i = 0; i < 40 && !cut; i++) { step(gs, {}, { sword: i === 0 }); cut = gs.monsters.length === 0; gs.events.length = 0 }
+    ok(cut, '2p: a partner swing cuts a beast in reach')
+    const g2 = makeGame(0, 'warrior', { topDown: true, partner: true })
+    g2.monsters = []; g2.gens.forEach((g) => { g.alive = false })
+    for (let i = 0; i < 60; i++) { step(g2, { fwd: true }, { right: true }); g2.events.length = 0 }
+    ok(Math.hypot(g2.partner.x - g2.hero.x, g2.partner.y - g2.hero.y) < 2, '2p: the CPU partner still follows when partnerHuman is off',
+        `dist ${(Math.hypot(g2.partner.x - g2.hero.x, g2.partner.y - g2.hero.y)).toFixed(2)}`)
+}
+
 // ----------------------------------------------------------------- pilot ----
 console.log('pilot')
 for (const seed of [0, 1, 2, 3]) {
@@ -499,6 +531,7 @@ if (process.argv.includes('--mutate')) {
         ['walls never fall off with the torch', 'src/games/Gauntlet/walls.js', 'return Math.max(0, Math.min(1, 1 - d / reach))', 'return 1'],
         ['the wall course is one tone', 'src/games/Gauntlet/walls.js', 'return { recess: mat.mortar, bevel: mat.lite }', 'return { recess: mat.mortar, bevel: mat.mortar }'],
         ['a tap on a card picks no hero', 'src/games/Gauntlet/select.js', 'if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i', 'if (false) return i'],
+        ['a human partner ignores its input', 'src/games/Gauntlet/sim.js', 'if (gs.partnerHuman && partnerInp) {', 'if (false) {'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
