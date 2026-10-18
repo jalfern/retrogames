@@ -146,11 +146,18 @@ function skyTex() {
     const c = texCanvas(64, 256)
     const x = c.getContext('2d')
     const gr = x.createLinearGradient(0, 0, 0, 256)
+    // sphere mapping: canvas fraction f lands at v = 1 - f, so the HORIZON
+    // (v=0.5) is the CANVAS MIDDLE. The shipped sky put its dusk band at the
+    // canvas bottom = under the south pole — the sun washed out invisible for
+    // the whole race (#471 item 1 root cause). Orange now straddles f=0.5.
     gr.addColorStop(0, '#1a0f24')
-    gr.addColorStop(0.38, '#4a2038')
-    gr.addColorStop(0.62, '#9c4430')
-    gr.addColorStop(0.8, '#e07838')
-    gr.addColorStop(1, '#ffb060')
+    gr.addColorStop(0.28, '#452038')
+    gr.addColorStop(0.38, '#7c3030')
+    gr.addColorStop(0.44, '#c05830')
+    gr.addColorStop(0.49, '#ff9050')
+    gr.addColorStop(0.53, '#e07038')
+    gr.addColorStop(0.62, '#8a3a28')
+    gr.addColorStop(1, '#40201a')
     x.fillStyle = gr; x.fillRect(0, 0, 64, 256)
     return c
 }
@@ -315,12 +322,13 @@ export default function CometDriftHD() {
             const c = texCanvas(128, 64)
             const x = c.getContext('2d')
             const gr = x.createLinearGradient(0, 0, 0, 64)
-            gr.addColorStop(0, '#241432'); gr.addColorStop(0.5, '#7c3a34')
-            gr.addColorStop(0.78, '#e07a38'); gr.addColorStop(1, '#40281c')
+            gr.addColorStop(0, '#241432'); gr.addColorStop(0.36, '#7c3a34')
+            gr.addColorStop(0.46, '#e07a38'); gr.addColorStop(0.56, '#8a4428')
+            gr.addColorStop(1, '#40281c')
             x.fillStyle = gr; x.fillRect(0, 0, 128, 64)
-            const sg = x.createRadialGradient(88, 40, 2, 88, 40, 22)
+            const sg = x.createRadialGradient(88, 28, 2, 88, 28, 20)
             sg.addColorStop(0, 'rgba(255,230,170,1)'); sg.addColorStop(1, 'rgba(255,150,70,0)')
-            x.fillStyle = sg; x.fillRect(66, 18, 44, 44)
+            x.fillStyle = sg; x.fillRect(68, 8, 40, 40)
             return c
         })()
         const envMap = new THREE.CanvasTexture(envCanvas)
@@ -344,8 +352,8 @@ export default function CometDriftHD() {
         // exhaust cones on the player's buggy (flame drawn by scale + tint)
         const flames = []
         for (const sx of [-0.26, 0.26]) {
-            const cone = new THREE.Mesh(new THREE.ConeGeometry(0.11, 1, 8),
-                new THREE.MeshBasicMaterial({ color: 0x60c0ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }))
+            const cone = new THREE.Mesh(new THREE.ConeGeometry(0.085, 1, 8),
+                new THREE.MeshBasicMaterial({ color: 0x60c0ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }))
             cone.rotation.x = -Math.PI / 2
             cone.position.set(sx, 0.3, -1.05)
             cone.visible = false
@@ -560,11 +568,11 @@ export default function CometDriftHD() {
             for (const f of flames) f.visible = P.boostT > 0
             if (P.boostT > 0) {
                 const flick = 0.7 + jit(g.tick * 2.9) * 0.6
-                const len = (0.8 + P.boostTier * 0.55) * flick
+                const len = (0.45 + P.boostTier * 0.3) * flick
                 for (const f of flames) {
                     f.scale.set(1, 1, len)
                     f.material.color.setHex(P.boostTier >= 2 ? 0xffd860 : P.boostTier === 1 ? 0xc090ff : 0x60c0ff)
-                    f.material.opacity = 0.75 + jit(g.tick) * 0.25
+                    f.material.opacity = 0.4 + jit(g.tick) * 0.2
                 }
             }
         }
@@ -651,17 +659,17 @@ export default function CometDriftHD() {
             const TOP = 42
             hctx.clearRect(0, 0, W, H)
             // speed streaks at the frame edges: density + tint ride v and boost
-            if (P.boostT > 0 || P.v > 7.4) {
+            if (P.boostT > 0 || P.v > 7.9) {
                 const boost = P.boostT > 0
-                const n = boost ? 16 : 9
+                const n = boost ? 14 : 7
                 hctx.save()
                 for (let i = 0; i < n; i++) {
                     const side = i % 2 ? 1 : -1
-                    const edge = W * (0.4 + jit(i * 7.3 + (g.tick >> 2)) * 0.1)
+                    const edge = W * (0.42 + jit(i * 7.3 + (g.tick >> 2)) * 0.1)
                     const x0 = W / 2 + side * edge
                     const y0 = H * (0.35 + jit(i * 3.1 + g.tick) * 0.6)
-                    const len = (26 + (boost ? 52 : 16) + jit(i + g.tick * 0.7) * 20) * u
-                    hctx.globalAlpha = 0.16 + 0.26 * jit(i + g.tick * 0.5)
+                    const len = (20 + (boost ? 40 : 12) + jit(i + g.tick * 0.7) * 16) * u
+                    hctx.globalAlpha = 0.08 + 0.14 * jit(i + g.tick * 0.5)
                     hctx.strokeStyle = boost && P.boostTier >= 1 ? '#ffe8c0' : '#d8e0f0'
                     hctx.lineWidth = Math.max(1, u * 1.2)
                     hctx.beginPath()

@@ -48,12 +48,13 @@ if (MUTATE) {
 
 // ---------------------------------------------------------------- geometry
 console.log('track geometry (the HD rebuild of the Gulch):')
-const { stats } = trackGeometryStats()
+const { stats, bounds } = trackGeometryStats()
+ok(bounds.offMin >= 220 && bounds.topMax <= 3.6, `walls sit set back outside the sim clamp (${bounds.offMin}px >= 220px > ${bounds.simClampPx}px) and under the sightline (top ${bounds.topMax.toFixed(2)}u)`)
 const ring = (TRACK.N + 1) * 2
 ok(stats.road.verts === ring, `road ribbon is a closed ring (${ring} verts)`)
 ok(stats.road.nan === 0 && stats.wallL.nan === 0 && stats.plateauR.nan === 0, 'no NaN anywhere in the track bands')
 ok(Math.abs(stats.road.minY - stats.road.maxY) < 1e-9, 'road surface is dead flat')
-ok(stats.wallL.maxY >= 3.0 && stats.wallR.maxY >= 3.0, `cliff walls rise over 3 units (L ${stats.wallL.maxY.toFixed(2)}, R ${stats.wallR.maxY.toFixed(2)})`)
+ok(stats.wallL.maxY >= 1.5 && stats.wallR.maxY >= 1.5 && stats.wallL.maxY <= 3.6 && stats.wallR.maxY <= 3.6, `cliff walls are low chase-cam bands, 1.5-3.6u (L ${stats.wallL.maxY.toFixed(2)}, R ${stats.wallR.maxY.toFixed(2)})`)
 ok(stats.wallL.minY < stats.road.minY, 'wall bases sit below the road plane (no floating cliffs)')
 ok(stats.plateauL.minY > stats.road.maxY && stats.plateauR.minY > stats.road.maxY, 'plateau rim stands above the road (scenery has ground)')
 ok(stats.kerbL.verts === ring && stats.gutterR.verts === ring, 'kerb + gutter rings cover the full lap')
@@ -101,8 +102,15 @@ console.log('reused sim keeps its rules under the new renderer:')
     const g = makeGame(0)
     const P = g.karts[0]
     let t = 0
-    while (!g.end && t < 60000) { step(g, decide(g)); t++ }
+    const banked = [0, 0, 0]
+    while (!g.end && t < 60000) {
+        step(g, decide(g))
+        for (const ev of g.events.splice(0)) if (ev.e === 'boost' && ev.who === 'COMET') banked[ev.tier]++
+        t++
+    }
     ok(g.end === 'win', `autopilot drives the field from P7 and WINS (${(t / 60).toFixed(1)}s world time, ${P.lap} laps)`)
+    ok(banked[0] + banked[1] + banked[2] >= 3, `the ladder pays in a REAL race, not just the treadmill: ${banked[0]} blue + ${banked[1]} violet + ${banked[2]} gold banked (#471 item 8)`)
+    ok(banked[2] >= 1, 'the autopilot banks the GOLD tier in-race')
 }
 
 // ---------------------------------------------------------------- browser

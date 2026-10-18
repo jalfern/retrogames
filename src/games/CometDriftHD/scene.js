@@ -19,10 +19,11 @@ const PERP = (a) => [-Math.sin(a), Math.cos(a)]
 
 // rockier than a sine: two detuned waves give the rim a natural profile.
 // #471: the shipped walls towered over the road and blocked the view — tops
-// dropped to ~1.6–3.4u and the face set back ~24px outside the sim's clamp,
-// so the near band reads as canyon wall, not a barricade.
-const wallTopAt = (i) => 2.5 + Math.sin(i * 0.37 + 1.7) * 0.55 + Math.sin(i * 0.131) * 0.4
-const wallOffAt = (i) => T.WALL_R + 24 + Math.sin(i * 0.53) * 6 + Math.sin(i * 0.19 + 4) * 4
+// dropped to ~1.7–3.3u and the face set back outside the sim's clamp. The
+// noise stays small: a big setback wobble self-intersects on tight inner
+// curves and grows jagged fins at the apexes.
+const wallTopAt = (i) => 2.5 + Math.sin(i * 0.37 + 1.7) * 0.45 + Math.sin(i * 0.131) * 0.35
+const wallOffAt = (i) => T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + Math.sin(i * 0.19 + 4) * 3
 export const plateauYAt = (i) => wallTopAt(i) - 0.25
 export const wallTopYAt = (i) => wallTopAt(i)
 
@@ -90,7 +91,13 @@ function wallGeo(side) {
     return buildRibbon((i) => {
         const p = T.pts[i]
         const [pxu, pyu] = PERP(p.a)
-        const w = wallOffAt(i)
+        // offsetting to the INSIDE of a bend collapses the ring once the
+        // offset exceeds the local turn radius — the ribbon folded into
+        // jagged fins at the hairpins. Clamp inside-wall offsets under the
+        // radius so the band stays a band.
+        let w = wallOffAt(i)
+        const R = 1 / Math.max(Math.abs(p.k), 1e-6)
+        if (p.k * side > 0) w = Math.max(170, Math.min(w, R * 0.8))
         return {
             ax: p.x + pxu * side * w, ay: 0.02, az: p.y + pyu * side * w,
             bx: p.x + pxu * side * w, by: wallTopAt(i), bz: p.y + pyu * side * w,
@@ -329,15 +336,16 @@ export function buildSceneryItem(sc) {
     return g
 }
 
-// far mesas: a dark silhouette ring on the ember horizon. Node-safe.
+// far mesas: a dark silhouette ring on the ember horizon. #471: pushed out
+// and trimmed down so they frame the sky instead of walling it off.
 export function buildMesas() {
     const g = new THREE.Group()
-    const rock = new THREE.MeshStandardMaterial({ color: 0x47202c, roughness: 1, metalness: 0 })
+    const rock = new THREE.MeshStandardMaterial({ color: 0x4e222c, roughness: 1, metalness: 0 })
     for (let i = 0; i < 14; i++) {
         const ang = (i / 14) * Math.PI * 2 + Math.sin(i * 3.1) * 0.2
-        const r = 46 + (i % 4) * 9 + Math.sin(i * 7.7) * 4
-        const h = 5 + ((i * 37) % 5) * 2.6
-        const w = 6 + ((i * 53) % 6) * 2.4
+        const r = 64 + (i % 4) * 10 + Math.sin(i * 7.7) * 4
+        const h = 3.5 + ((i * 37) % 4) * 1.9
+        const w = 5 + ((i * 53) % 5) * 2.2
         const m = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.9, w, h, 6), rock)
         m.position.set(17 + Math.cos(ang) * r, h / 2 - 1.4, 17 + Math.sin(ang) * r)
         m.rotation.y = ang

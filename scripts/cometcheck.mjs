@@ -74,6 +74,19 @@ const race = (seed) => {
     return g
 }
 const results = []
+{
+    const g = makeGame(3)
+    const banked = [0, 0, 0]
+    let n = 0
+    while (!g.end && n < 60 * 240) {
+        step(g, decide(g))
+        for (const ev of g.events.splice(0)) if (ev.e === 'boost' && ev.who === 'COMET') banked[ev.tier]++
+        n++
+    }
+    check('drift ladder pays in a REAL race, not just the treadmill (apex grace, #471)',
+        banked[0] + banked[1] + banked[2] >= 3 && banked[2] >= 1,
+        `banked ${banked[0]} blue, ${banked[1]} violet, ${banked[2]} gold`)
+}
 for (const seed of [0, 7, 9, 42]) {
     const g = race(seed)
     const P = g.karts[0]
