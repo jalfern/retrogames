@@ -1,72 +1,63 @@
-# STATE — 2026-10-17 (forge session — COMET DRIFT GP shipped; queue empty again)
+# STATE — 2026-10-18 (FORGE session: COMET DRIFT HD shipped — first MODERN title)
 
-## This session (kick ~15:55Z)
-- **SHIPPED: COMET DRIFT GP #419** → PR **#425** squash-merged as `1ef4abf`.
-  The arcade's original Mode 7 kart racer (no Nintendo IP): one course
-  SUNSET GULCH (4 laps, 7 karts), 6 rivals that brake apexes, defend the
-  inside, overtake and make seeded mistakes; drift ladder blue→violet→gold
-  pays a tiered mini-turbo; player's Comet engine ×1.45. sim.js + exposeGame
-  from commit one. Art, HUD (minimap, charge pips), attract autopilot,
-  placeholder engine buzz — all synthesized.
-- Evidence: `npm run cometcheck` GREEN (minR 288, zero crossings, bot wins
-  P7→P1 seeds 0/7/9/42, infield-cut gate probe, ladder pays gold at 165t,
-  determinism, palette pins); `--mutate` → RED `MUTANT DIED`; contractcheck
-  comet-drift 14/14; real-key headless drive 11/11 (tap-start, drift
-  charge+sparks, turbo, pause freezes clock, zero page errors); lint:mario/
-  fps/ai + build green.
-- QA polish pass filed: **#426** (rival articulation, boost FOV kick, crowd
-  rim, tier chirps, renderer shot-smoke). #419 → `shipped`, live URL
-  commented.
-- Prod note: route answers 200 but Vercel PROD bundle was still the old hash
-  ~12 min after merge (cache-busted; preview deploy had passed). Re-verify
-  before declaring visible — see GOAL 1.
+## This session
+- **#465 SHIPPED (#468)**: **COMET DRIFT HD** — the retro GP's sim/track
+  reused UNCHANGED under three.js **WebGPURenderer** (WebGL2 fallback):
+  extruded Gulch geometry, dusk lighting + ACES, pooled GPU sparks/dust/
+  flames, FOV punch + drift cam-lag, glass HUD, attract = autopilot win.
+  `/comet-drift-hd`, private. Verified live in real Chrome against
+  production. Board: #465 shipped; polish pass filed as **#471 (feedback)**.
+- `cometdrifthdcheck` (new, `npm run` alias): geometry audit + rules +
+  win + browser cycle — 29/0, RED on `--mutate` (particle-spawn kill).
+  contractcheck 14/14 for id `comet-drift-hd`. lint mario/fps/ai/hd 0,
+  build green.
+
+## Learned this session (WebGPU is new ground — the HARNESS lessons)
+- **`WebGPURenderer` lives at `three/webgpu`**, not `three` (r180).
+- **A WebGPU canvas answers BLACK to 2D drawImage/getImageData** no matter
+  what `preserveDrawingBuffer` says. Pixel checks must run on the WebGL2
+  path — the game accepts `?gl=webgl2` to pin it; screenshots cover WebGPU.
+- **three's WebGL-node-backend lost its device on this Mac** (forceWebGL,
+  even lite). The game now self-heals: render-failure/black-frame heartbeat
+  rebuilds on classic `WebGLRenderer`. Phones on that fallback are still
+  untested for real (in #471).
+- **Never replace a React-owned canvas element**: StrictMode re-attaches the
+  ref to the original node and resurrects a dead context (mount crash).
+  Substitute canvases are inserted BEFORE it, hidden siblings; cleanup
+  removes them at effect start.
+- **Contract `state()` must be pure sim** — a particle-pool count leaked in
+  and broke snapshot/restore round-trip (restore can't rebuild juice).
+- **Screenshot review is load-bearing**: it caught an empty minimap (integer
+  padding on fractions), a road-edge arch leg the karts could clip, a
+  floating wing, HUD under the #437 corner chrome — none caught by logic
+  checks.
+- The autopilot's ideal line barely triggers the drift-charge condition
+  (needs |steer|>0): ladder pays only via treadmill (same as retro twin;
+  race-event proof is impossible against the pinned sim — see #471 item 8).
 
 ## Held / open (unchanged unless noted)
-- **#398** contract batch 2: still Jon's. If accept: rerun smoke, then from
-  `retrogames-forge-contract-rollout-b2`: `gh pr checks 398 --watch
-  --fail-fast && gh pr merge --squash --delete-branch`, verify prod, relabel
-  #391 (drop stale `stalled`).
-- **#375** `stalled`: all items shipped, verified 3×. Needs Jon to CLOSE or
-  append item 7.
-- **#391** `building,stalled`: `stalled` stale. Batch 3 bases AFTER #398
-  merges; candidates: Lemmings, Sonar, Outpost, Polarity, Dogfight, SmashTV.
-- Queue after this session: **no `next`, no `game-queue`.** `feedback` is
-  QA's (#409, #410, #426, …) unless a forge session legitimately borrows
-  (no live QA MASTER).
+- **#391** `stalled` — awaiting Jon: close as shipped vs batch 5.
+- **#375** `stalled` — Civ parked per Jon.
+- **#443** open — idle-builder QA-borrow ruling pending.
+- **#456** — Ocean polish; #461 already shipped storm slider — check overlap
+  before commissioning.
+- QA backlog unchanged (#440/#426/#423/#421/#422/#409/#410/#405, #365,
+  #384); new: **#471** CometDriftHD polish pass.
 
 ## GOAL — next session
-1. Verify prod: `curl -sL https://jalfern.com/retrogames/ | grep -o
-   'assets/index-[^"]*\.js' | head -1`, then curl that chunk and grep
-   `comet-drift`. If stale >15 min after 1ef4abf, flag the Vercel
-   production deploy (question 3 below) on #419.
-2. If Jon answers #398: merge (per above) + relabel #391.
-3. If Jon labels anything `next`/`game-queue` (or appends #375 item 7): take
-   it. Else borrow ONE `feedback` item only if `pgrep -f "QA MASTER"` shows
-   no live QA session (confirm with `ps -axo pid,etime,pcpu,command`; bare
-   pgrep self-matches probing shells). Otherwise STOP with a report.
-
-## Notes for whoever picks this up
-- Main checkout detached at `1ef4abf`, clean; STATE committed to main (game
-  merged ✓). Worktree `~/Dev/retrogames-forge-kart-racer` re-detached to
-  origin/main post-merge — safe to reuse or `git worktree remove`.
-- Unattended-run lesson: this harness truncates bash stdout constantly —
-  redirect command output to /tmp files and read them with the Read tool;
-  it worked flawlessly all session.
-- `gh pr checks --watch` hung again on pending static (11 min CI); poll
-  `--json name,state --jq 'select(.name=="static")|.state'`, then run the
-  rule-5 chain (it returns fast once checks are terminal).
-- Balance: Gulch corners minR 288 → MK-borrowed kmax thresholds (0.004)
-  never fired; AI mistake/bend thresholds are tuned to 0.0025/0.0024 and
-  0.0015-smart. The autopilot only wins P7→P1 with the player's turbo
-  ×1.45 edge. Any AI retune shifts seeded outcomes — cometcheck seeds are
-  the regression net; expect to re-tune if you touch brain()/TIERS.
-- Latent (not ours): sim not deterministic past turn 40 in CIV (unrelated);
-  headless Chrome ~13–20 fps on these runners — never assert fps in checks.
+1. Re-check `next` / `game-queue` / `building` + pushed `forge/*` branches.
+   Expect nothing unless Jon feeds it; QA lane owns throughput meanwhile
+   (#443 unresolved — do not borrow while `QA MASTER` is live).
+2. If anything lands for the forge: remember rule 4 — this session broke
+   the streak (game code shipped).
 
 ## Three questions for Jon
-1. #398 is still yours: accept the Missile Battle smoke flake (rerun+merge),
-   or make `smoke` continue-on-error so advisory flakes can't wedge rule-5?
-2. #375: shipped, verified repeatedly — CLOSE it (or append item 7)?
-3. Merged 1ef4abf, but jalfern.com served the old bundle 12+ min after the
-   merge (preview deploy passed). Is the Vercel prod auto-deploy on main
-   healthy, or does prod need a kick?
+1. **WebGPU on phones**: the WebGL-node fallback lost its device on this
+   Mac; I shipped the classic-WebGL self-heal. Do you have an old-phone
+   target to test the auto-fallback path for real, or keep the pin-param?
+2. **#471 item 8**: the shared sim lets only treadmill-proven drift payouts
+   (autopilot rarely banks a tier in-race). Fix the sim (both twins change)
+   or leave the human-only ladder as designed?
+3. **MODERN standard**: first MODERN title shipped without TSL
+   post-processing (stability). Should bloom/AAA post be a requirement in
+   ART.md's MODERN bar, or earned per-game via polish passes?
