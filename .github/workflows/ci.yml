@@ -193,6 +193,10 @@ jobs:
       # valid builtBy — and the real GamesList is rendered in Node: one tag per
       # visible card, agreeing with the registry per path. ~1 s, blocks merges.
       - run: npm run builtbycheck
+      # PWA escape hatch (#437): manifest start_url in scope, sw cache version
+      # past v1, ARCADE/PAUSE chrome on every game route and nowhere else, and
+      # the synthetic '?' still speaking both pause dialects. ~1 s, blocks merges.
+      - run: npm run navcheck
       # Registry audit (#379): every entry's visibility is absent (='private')
       # or exactly 'public'/'private', nothing is 'public' before Jon's first
       # promotion, no code outside the registry reads the field, and the docs

@@ -1,8 +1,9 @@
 import { useState, useEffect, createContext, useContext, useCallback, useMemo, Suspense } from 'react'
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { GAMES } from './config/games'
 import GamesList from './components/GamesList'
 import GamepadBridge from './components/GamepadBridge'
+import GameChrome from './components/GameChrome'
 import { PadContext } from './components/padContext'
 import { padButton } from './components/gamepadMap'
 import ArcadeShowcase from './pages/ArcadeShowcase'
@@ -103,6 +104,10 @@ function Layout({ children }) {
 
         {/* Mute Toggle (Positioned here to read Theme) */}
         <MuteToggle theme={info.theme} />
+
+        {/* In-game corner buttons (#437): ARCADE back to the showcase, PAUSE
+            for thumbs with no '?' key — gated to game routes inside. */}
+        <GameChrome theme={info.theme} />
       </div>
     </GameLabelContext.Provider>
   )
