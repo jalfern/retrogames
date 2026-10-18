@@ -33,6 +33,7 @@ export function exposeGame(spec) {
             method,
             buttons: spec.buttons || [],
             reads: spec.reads || [],
+            ...(spec.ways ? { ways: spec.ways } : {}),
             ...(spec.steer ? { steer: spec.steer } : {}),
         },
         reset: (seed = 0) => { spec.reset(seed); return api.state() },

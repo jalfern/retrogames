@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useContext } from 'react'
-import { dirsFrom, stickVec, STICK_TRAVEL } from './virtualDir'
+import { dirsFrom, stickVec, STICK_TRAVEL, dpadDirs } from './virtualDir'
 import { PadContext } from './padContext'
-import { padButton, shouldUseStick } from './gamepadMap'
+import { padButton, shouldUseStick, waysOf } from './gamepadMap'
 import { setStick, clearStick } from '../utils/padState'
 import { methodOf, press, release, setStickVec, clearHeld } from '../utils/onePad'
 
@@ -11,6 +11,10 @@ const DIAG = {
     dl: ['ArrowDown', 'ArrowLeft'],
     dr: ['ArrowDown', 'ArrowRight'],
 }
+
+// #439: how far (px) a touch must travel before it is a swipe that sets a
+// direction. Below this a touch is a tap (tap-to-start keeps its own meaning).
+const SWIPE_MIN = 24
 
 const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = true, diag = false }) => {
     const [held, setHeld] = useState(() => new Set())
@@ -41,6 +45,14 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     // A game keeps the fixed d-pad only by declaring layout 'dpad' — the grid- /
     // menu-driven titles, each carrying a one-line reason in its pad entry.
     const useStick = !hasMethod && shouldUseStick(pad)
+
+    // #439: a dpad title that declares `ways` (4 | 8) gets the diamond-gate
+    // stick — the arcade restrictor gate (thumb slides freely, output snaps to
+    // the dominant axis with hysteresis) — plus swipe-on-the-playfield. A dpad
+    // title that declares none keeps the legacy 8-way cross d-pad, so the
+    // migration is per-title and cannot regress a game that has not opted in.
+    const ways = waysOf(pad)
+    const mDpadGate = hasMethod && method === 'dpad' && !!ways
     // Step 5 (#290, feel): the touch pad hides as soon as a keyboard or gamepad is
     // used, and comes back on the next touch.
     const [hidden, setHidden] = useState(false)
@@ -69,6 +81,20 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const fsPtr = useRef(null)
     const fsKnobRef = useRef(null)
     const fsZoneRef = useRef(null)
+
+    // #439 diamond-gate stick: the base zone, the sliding knob, the hysteresis
+    // memory (last dominant axis) and the last engaged direction — the latter
+    // is what a 4-way game keeps held after the thumb lifts (the buffered turn).
+    const dgZoneRef = useRef(null)
+    const dgKnobRef = useRef(null)
+    const dgPtr = useRef(null)
+    const dgHyst = useRef({})
+    const dgLast = useRef([])
+    // #439 swipe-on-the-playfield: the active swipe id, its start point, and a
+    // hysteresis memory of its own (a swipe and a stick push are two sources).
+    const swPtr = useRef(null)
+    const swStart = useRef(null)
+    const swHyst = useRef({})
 
     const fire = useCallback((code, type) => {
         window.dispatchEvent(new KeyboardEvent(type, {
@@ -163,6 +189,11 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
         stickAnchor.current = null
         fsPtr.current = null
         if (fsKnobRef.current) fsKnobRef.current.style.transform = 'translate(-50%, -50%)'
+        dgPtr.current = null
+        dgLast.current = []
+        if (dgKnobRef.current) dgKnobRef.current.style.transform = 'translate(-50%, -50%)'
+        swPtr.current = null
+        swStart.current = null
         clearStick()
         clearHeld()
         setStickUI({ active: false, ax: 0, ay: 0 })
@@ -180,6 +211,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
             window.removeEventListener('blur', onBlur)
             document.removeEventListener('visibilitychange', onVis)
             window.removeEventListener('touchcancel', onTC)
+            clearHeld()
         }
     }, [releaseAll])
 
@@ -295,6 +327,81 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const fsMM = (e) => { fsMove(e.clientX, e.clientY, 'm') }
     const fsMU = () => { fsEnd('m') }
 
+    // --- Diamond-gate 4/8-way stick (#439): the arcade restrictor gate ---
+    // The thumb slides freely in the base; the knob clamps to the travel circle
+    // and the analog x / y are written straight to the one pad (like the fixed
+    // stick). The DIGITAL direction, though, comes from the shared dpadDirs
+    // quantizer: the dominant axis with ±15-degree hysteresis near the diagonal
+    // (4-way) or the nearest sector (8-way). Newest direction wins — every move
+    // re-derives from the current offset.
+    const dgCenter = () => {
+        const r = dgZoneRef.current.getBoundingClientRect()
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    }
+    const dgUpdate = (cx, cy) => {
+        const c = dgCenter()
+        const ox = cx - c.x, oy = cy - c.y
+        const v = stickVec(ox, oy)
+        if (dgKnobRef.current) dgKnobRef.current.style.transform = `translate(-50%, -50%) translate(${v.px}px, ${v.py}px)`
+        setStickVec(v.x, v.y)
+        const codes = dpadDirs(ox, oy, ways, dgHyst.current)
+        dgLast.current = codes
+        setDirCodes(codes)
+    }
+    const dgStart = (cx, cy, id) => { if (dgPtr.current !== null) return; dgPtr.current = id; dgUpdate(cx, cy) }
+    const dgMove = (cx, cy, id) => { if (id === dgPtr.current) dgUpdate(cx, cy) }
+    const dgEnd = (id) => {
+        if (id !== dgPtr.current) return
+        dgPtr.current = null
+        setStickVec(0, 0)
+        if (dgKnobRef.current) dgKnobRef.current.style.transform = 'translate(-50%, -50%)'
+        // Buffered turn: a 4-way cabinet sticks to the last pushed direction —
+        // keep it held after the thumb lifts so an early flick lands on the next
+        // opening. An 8-way stick clears when you let go.
+        if (ways === 4) setDirCodes(dgLast.current)
+        else setDirCodes([])
+    }
+    const dgTS = (e) => { e.preventDefault(); for (const t of e.changedTouches) if (dgPtr.current === null) dgStart(t.clientX, t.clientY, t.identifier) }
+    const dgTM = (e) => { e.preventDefault(); for (const t of e.changedTouches) dgMove(t.clientX, t.clientY, t.identifier) }
+    const dgTE = (e) => { for (const t of e.changedTouches) dgEnd(t.identifier) }
+    const dgMD = (e) => { e.preventDefault(); if (dgPtr.current === null) dgStart(e.clientX, e.clientY, 'm') }
+    const dgMM = (e) => { dgMove(e.clientX, e.clientY, 'm') }
+    const dgMU = () => { dgEnd('m') }
+
+    // --- Swipe anywhere on the play field (#439) ---
+    // A second, coexisting input surface for diamond-gate titles (the official
+    // PAC-MAN app offers swipe and joystick modes; no settings toggle). A touch
+    // that travels past SWIPE_MIN sets the dominant direction through the SAME
+    // dpadDirs quantizer; a stationary touch is left alone (tap-to-start keeps
+    // working — the layer is NOT [data-vc] and does not preventDefault on start).
+    const swUpdate = (cx, cy) => {
+        const s = swStart.current
+        if (!s) return
+        const ox = cx - s.x, oy = cy - s.y
+        if (Math.hypot(ox, oy) < SWIPE_MIN) return
+        const v = stickVec(ox, oy)
+        setStickVec(v.x, v.y)
+        setDirCodes(dpadDirs(ox, oy, ways, swHyst.current))
+    }
+    const swTS = (e) => {
+        for (const t of e.changedTouches) if (swPtr.current === null) {
+            swPtr.current = t.identifier
+            swStart.current = { x: t.clientX, y: t.clientY }
+        }
+    }
+    const swTM = (e) => {
+        for (const t of e.changedTouches) if (t.identifier === swPtr.current) swUpdate(t.clientX, t.clientY)
+    }
+    const swTE = (e) => {
+        for (const t of e.changedTouches) if (t.identifier === swPtr.current) {
+            swPtr.current = null
+            swStart.current = null
+            setStickVec(0, 0)
+            if (ways === 4) setDirCodes(dirCodes.current)  // keep the buffered turn
+            else setDirCodes([])
+        }
+    }
+
     // --- Action zone: A/B one zone ---
     const aCodeAt = (x) => {
         const hasB = !!secondAction
@@ -383,6 +490,21 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
 
     return (
         <>
+            {/* #439: swipe-on-the-playfield for diamond-gate titles. A second
+                input surface that sits BEHIND every piece of chrome (z-40 < the
+                z-50 bar / z-60 corner buttons) but above the canvas. It is NOT
+                [data-vc] and does not preventDefault on start, so a plain tap
+                still reaches the shell's tap-to-start (the synthesized Space). */}
+            {mDpadGate ? (
+                <div
+                    className="fixed inset-0 z-40 touch-none"
+                    style={{ pointerEvents: 'auto' }}
+                    onTouchStart={swTS}
+                    onTouchMove={swTM}
+                    onTouchEnd={swTE}
+                    onTouchCancel={swTE}
+                />
+            ) : null}
             {stickZone}
             <div
                 data-vc="1"
@@ -430,6 +552,30 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                                 <span className="text-white/80 font-bold text-lg">{sym}</span>
                             </button>
                         ))}
+                    </div>
+                ) : mDpadGate ? (
+                    <div
+                        ref={dgZoneRef}
+                        className="relative w-[150px] h-[150px] touch-none"
+                        onTouchStart={dgTS}
+                        onTouchMove={dgTM}
+                        onTouchEnd={dgTE}
+                        onTouchCancel={dgTE}
+                        onMouseDown={dgMD}
+                        onMouseMove={dgMM}
+                        onMouseUp={dgMU}
+                        onMouseLeave={dgMU}
+                    >
+                        <div
+                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/25 bg-white/5"
+                            style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2 }}
+                        />
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-neutral-600/40 rounded-full" />
+                        <div
+                            ref={dgKnobRef}
+                            className="absolute top-1/2 left-1/2 rounded-full bg-white/70 border border-white/40 shadow-lg"
+                            style={{ width: 54, height: 54, transform: 'translate(-50%, -50%)' }}
+                        />
                     </div>
                 ) : (
                     <div

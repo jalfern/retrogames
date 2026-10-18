@@ -121,7 +121,18 @@ export function validPad(pad) {
     }
     if (pad.analog !== undefined && typeof pad.analog !== 'boolean') return false
     if (pad.reads !== undefined && (!Array.isArray(pad.reads) || pad.reads.some((f) => typeof f !== 'string'))) return false
+    if (pad.ways !== undefined && pad.ways !== 4 && pad.ways !== 8) return false
     return true
+}
+
+// #439: the number of directions a dpad game's touch stick quantizes to —
+// 4 (the arcade 4-way diamond gate, dominant axis + hysteresis) or 8 (nearest
+// sector, diagonals allowed). A pad that declares neither keeps the legacy
+// 8-way cross d-pad (no diamond gate), so a per-title migration can opt in
+// one at a time. Pure so vpadcheck can pin the registry.
+export function waysOf(pad) {
+    if (pad && (pad.ways === 4 || pad.ways === 8)) return pad.ways
+    return null
 }
 
 // The B (second-action) button of a pad declaration, or null when there is none.

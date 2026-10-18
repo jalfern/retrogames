@@ -536,7 +536,7 @@ export const GAMES = [
     {
         path: '/pacman',
         tapStart: true,
-        pad: { method: 'dpad', buttons: [], reads: ['up', 'down', 'left', 'right'], reason: 'grid maze — 4-way cell movement, no analog' },
+        pad: { method: 'dpad', ways: 4, buttons: [], reads: ['up', 'down', 'left', 'right'], reason: 'grid maze — 4-way cell movement; diamond-gate stick + swipe, buffered turns (#439)' },
         builtBy: 'claude',
         component: PacmanGame,
         label: 'PAC-MAN',
