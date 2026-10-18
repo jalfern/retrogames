@@ -1,4 +1,4 @@
-// oceancheck — self-verifying harness for public/demos/ocean.html (#451).
+// oceancheck — self-verifying harness for public/demos/ocean.html (#451, storm slider #458).
 //
 // Proves three things about the WebGPU sunset-ocean demo:
 //   1. BOOTS  — WebGPU adapter + device acquired, zero console/validation errors.
@@ -6,6 +6,9 @@
 //               the horizon is stable (sky does not move with the waves).
 //   3. WINS   — the drawn frame is pixel-diverse, contains a bright sun and a
 //               glitter path, and reacts to camera poses (moving camera → new frame).
+//   4. STORM  — the round-two slider (#458): setStorm(1) grows wave energy >8×,
+//               multiplies cool-white foam pixels, darkens the sky, reads STORM in
+//               the UI, and is reversible back to calm.
 //
 // Chrome is launched DIRECTLY (not via playwright's default args): playwright's
 // stock switches hide `navigator.gpu`; headless Chrome 155 exposes a real
@@ -14,13 +17,15 @@
 // the GPU. See STATE/issues: probed 2026-10-18.
 //
 // Usage:
-//   node scripts/oceancheck.mjs [--file <path>] [--json]
-// Exit 0 = all green. Proven-fail mutant: set `t` frozen (replace `t += dt`
-// with `t += 0`) → "time-varying" assertion goes red.
+//   node scripts/oceancheck.mjs [--file <path>] [--json] [--shots <dir>]
+// --shots writes calm.png / storm.png (full-storm pose) into <dir>.
+// Exit 0 = all green. Proven-fail mutants:
+//   a) freeze `t` (replace `t += dt` with `t += 0`) → "waves move in time" red.
+//   b) pin `storm = 0` in setStorm → all four STORM assertions go red.
 
 import { spawn } from 'node:child_process'
 import { inflateSync } from 'node:zlib'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -37,6 +42,7 @@ const args = process.argv.slice(2)
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d }
 const asJson = args.includes('--json')
 const file = resolve(ROOT, opt('--file', 'public/demos/ocean.html'))
+const shots = opt('--shots', null)
 if (!existsSync(file)) { console.error(`missing ${file}`); process.exit(1) }
 const url = 'file://' + file
 const PORT = opt('--port', '9377')
@@ -103,6 +109,18 @@ function analyze(img, yFrom, yTo) {
     }
   }
   return { uniq: uniq.size, mean: sum / n, bright, changes }
+}
+
+function foamPix(img, yFrom, yTo) {
+  let n = 0
+  for (let y = yFrom; y < yTo; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const i = (y * img.w + x) * img.bpp
+      const R = img.px[i], G = img.px[i + 1], B = img.px[i + 2]
+      if (R > 160 && G > 160 && B > 160 && R - B <= 8) n++
+    }
+  }
+  return n
 }
 
 async function main() {
@@ -172,6 +190,42 @@ async function main() {
       let d = 0
       for (let i = 0; i < a.px.length; i += 64) d += Math.abs(a.px[i] - b.px[i])
       ok('camera pose changes the world', d / (a.px.length / 64) > 8, `mean|Δ|=${(d / (a.px.length / 64)).toFixed(1)}`)
+
+      // 4. STORM (#458): the slider grows the sea, whips up foam, darkens the sky — reversibly
+      const hasSlider = await page.evaluate(() => !!document.getElementById('storm'))
+      ok('storm slider present', hasSlider)
+      await page.evaluate(() => window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: 0, pitch: -0.05 }))
+      await page.evaluate(() => window.__oceanTest.setStorm(0))
+      await page.waitForTimeout(1500)
+      const c1 = await page.evaluate(() => window.__oceanTest.stats())
+      const calmBuf = await page.screenshot()
+      const calmImg = decodePng(calmBuf)
+      const calmSkyTop = analyze(calmImg, 0, Math.floor(calmImg.h * 0.25))
+      const calmFoam = foamPix(calmImg, Math.floor(calmImg.h * 0.55), calmImg.h)
+
+      await page.evaluate(() => window.__oceanTest.setStorm(1))
+      await page.waitForTimeout(1500)
+      const vStorm = await page.evaluate(() => window.__oceanTest.stats())
+      ok('storm grows wave energy >8x', vStorm.variance > c1.variance * 8, `var ${c1.variance.toExponential(2)} → ${vStorm.variance.toFixed(3)}`)
+      const stormBuf = await page.screenshot()
+      const stormImg = decodePng(stormBuf)
+      const stormSkyTop = analyze(stormImg, 0, Math.floor(stormImg.h * 0.25))
+      const stormFoam = foamPix(stormImg, Math.floor(stormImg.h * 0.55), stormImg.h)
+      ok('storm darkens the sky', stormSkyTop.mean < calmSkyTop.mean * 0.82, `sky mean ${calmSkyTop.mean.toFixed(0)} → ${stormSkyTop.mean.toFixed(0)}`)
+      ok('storm whitecaps obvious', stormFoam > calmFoam * 4 && stormFoam > 3000, `foam px ${calmFoam} → ${stormFoam}`)
+      const ui = await page.evaluate(() => ({ sea: document.getElementById('seaLbl').textContent, wind: document.getElementById('windLbl').textContent }))
+      ok('UI reads STORM at full slider', ui.sea === 'STORM', `${ui.sea} · ${ui.wind}`)
+
+      if (shots) {
+        mkdirSync(shots, { recursive: true })
+        writeFileSync(resolve(shots, 'calm.png'), calmBuf)
+        writeFileSync(resolve(shots, 'storm.png'), stormBuf)
+      }
+
+      await page.evaluate(() => window.__oceanTest.setStorm(0))
+      await page.waitForTimeout(1500)
+      const c2 = await page.evaluate(() => window.__oceanTest.stats())
+      ok('slider reversible to calm', c2.variance < vStorm.variance * 0.5 && c2.variance > 1e-4, `var ${vStorm.variance.toFixed(3)} → ${c2.variance.toFixed(3)}`)
     }
 
     // page must stay clean overall (validation errors land in console)

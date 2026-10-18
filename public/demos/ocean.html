@@ -155,8 +155,8 @@ fn skyColor(dirIn: vec3f, t: f32) -> vec3f {
   let dy = d.y;
   let st = g_storm;
   let mu = max(dot(d, SUNDIR), 0.0);
-  let zen = mix(vec3f(0.040, 0.070, 0.190), vec3f(0.050, 0.055, 0.080), st * 0.92);
-  let mid = mix(vec3f(0.30, 0.185, 0.360), vec3f(0.150, 0.155, 0.180), st * 0.92);
+  let zen = mix(vec3f(0.040, 0.070, 0.190), vec3f(0.032, 0.036, 0.052), st);
+  let mid = mix(vec3f(0.30, 0.185, 0.360), vec3f(0.105, 0.110, 0.135), st);
   let ember = mix(vec3f(1.08, 0.425, 0.155), vec3f(0.15, 0.16, 0.20), st * 0.97);
   var sky = mix(mid, zen, pow(clamp(dy * 1.15, 0.0, 1.0), 0.72));
   sky = mix(ember, sky, smoothstep(-0.015, 0.32, dy));
@@ -171,7 +171,7 @@ fn skyColor(dirIn: vec3f, t: f32) -> vec3f {
   let band = smoothstep(0.012, 0.30, dy) * smoothstep(0.88, 0.32, dy);
   let lit = pow(mu, 2.6);
   var cCol = mix(vec3f(0.14, 0.11, 0.20), vec3f(0.98, 0.56, 0.30), 0.30 + 0.70 * lit);
-  cCol = mix(cCol, mix(vec3f(0.10, 0.105, 0.13), vec3f(0.24, 0.25, 0.28), lit), st * 0.94);
+  cCol = mix(cCol, mix(vec3f(0.055, 0.058, 0.075), vec3f(0.13, 0.135, 0.155), lit), st);
   sky = mix(sky, cCol, cld * band * (0.88 + 0.10 * st));
   sky += mix(vec3f(1.0, 0.55, 0.28), vec3f(0.45, 0.40, 0.40), st) * pow(1.0 - abs(dy), 16.0) * 0.18 * (1.0 - 0.92 * st);
   return sky;
