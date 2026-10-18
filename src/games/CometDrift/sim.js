@@ -18,6 +18,12 @@ export const CFG = {
     wallLimit: 216, kartR: 34,
     boostAcc: 0.16,
     count: 180,
+    // apex grace (#471): crossing zero steering mid-drift (heading aligned
+    // with the target for a tick) is not a drift release — while drift and
+    // speed are held, the slide survives that long of steering-zero. Without
+    // it, the ideal line (or a human's apex correction) dumps the charge at
+    // every apex and the ladder never pays in a real race.
+    driftGrace: 9,
 }
 
 // the drift charge ladder: hold 50 ticks for the blue spark and a small
@@ -65,7 +71,7 @@ function mkKart(def, row) {
         x: p.x + Math.cos(p.a + Math.PI / 2) * lat,
         y: p.y + Math.sin(p.a + Math.PI / 2) * lat,
         a: p.a, v: 0, idx: i, hint: i,
-        boostT: 0, boostTier: -1, spinT: 0, driftT: 0, charge: -1, steerVis: 0,
+        boostT: 0, boostTier: -1, spinT: 0, driftT: 0, charge: -1, steerVis: 0, driftG: 0,
         cp: 0, lap: 0, lapStart: 0, lapTimes: [], place: row + 1,
         finished: false, finishT: 0,
         offroad: false, bumpCd: 0, anim: 0, goT: 0,
@@ -97,8 +103,8 @@ function rank(g) {
 
 function spin(k, g, why, by) {
     if (k.spinT > 0 || k.finished) return
-    k.spinT = CFG.spinT
-    k.boostT = 0; k.boostTier = -1; k.driftT = 0; k.charge = -1
+        k.spinT = CFG.spinT
+    k.boostT = 0; k.boostTier = -1; k.driftT = 0; k.charge = -1; k.driftG = 0
     g.events.push({ e: 'spin', who: k.name, why, by })
 }
 
@@ -151,8 +157,9 @@ function drive(g, k, inp) {
         }
         k.steerVis = steer
         const grip = Math.min(1, k.v / CFG.gripV)
-        const dr = inp.drift && Math.abs(steer) > 0 && k.v > 4.5
+        const dr = inp.drift && k.v > 4.5 && (Math.abs(steer) > 0 || k.driftG > 0)
         if (dr) {
+            k.driftG = Math.abs(steer) > 0 ? CFG.driftGrace : k.driftG - 1
             k.driftT++
             k.charge = Math.max(k.charge, k.driftT)
             k.a += steer * CFG.steer * grip * CFG.driftMul
@@ -167,7 +174,7 @@ function drive(g, k, inp) {
                     g.events.push({ e: 'boost', who: k.name, tier: t })
                 }
             }
-            k.driftT = 0; k.charge = -1
+            k.driftT = 0; k.charge = -1; k.driftG = 0
             k.a += steer * CFG.steer * grip
         }
         if (surf.surf === 'wall') {
