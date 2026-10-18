@@ -1,8 +1,10 @@
 // SMASH TV — every sprite and texture synthesized at runtime (no assets).
 // Chunky broadcast-arena pixel art: chrome walls, camera-droids, a crowned
 // ANNOUNCER, panicked dot-matrix contestants, glass weapon crates.
+// Every enemy runs a four-frame cycle and wears its own 1px outline rim.
 
 import { PLAYER_FRAMES } from './sprite.js'
+import { OUTLINE } from './enemies.js'
 
 function sheet(w, h) {
     const c = document.createElement('canvas')
@@ -13,80 +15,118 @@ function sheet(w, h) {
 }
 const px = (g, x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h) }
 
-// walkcam: a rolling camera-droid on spider legs
+// 1px rim in the kind's outline colour, stamped around every opaque pixel
+function rim(c, col) {
+    const w = c.width, h = c.height
+    const g = c.getContext('2d')
+    const d = g.getImageData(0, 0, w, h).data
+    const mark = new Uint8Array(w * h)
+    for (let i = 0; i < w * h; i++) mark[i] = d[i * 4 + 3] > 0 ? 1 : 0
+    const n = parseInt(col.slice(1), 16)
+    const [cr, cg, cb] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+    const rc = document.createElement('canvas')
+    rc.width = w; rc.height = h
+    const rg = rc.getContext('2d')
+    const rd = rg.createImageData(w, h)
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = y * w + x
+            if (mark[i]) continue
+            if ((x > 0 && mark[i - 1]) || (x < w - 1 && mark[i + 1]) || (y > 0 && mark[i - w]) || (y < h - 1 && mark[i + w])) {
+                rd.data[i * 4] = cr; rd.data[i * 4 + 1] = cg; rd.data[i * 4 + 2] = cb; rd.data[i * 4 + 3] = 255
+            }
+        }
+    }
+    rg.putImageData(rd, 0, 0)
+    g.drawImage(rc, 0, 0)
+    return c
+}
+
+// walkcam: a rolling camera-droid on spider legs — a four-phase leg gait
+// (feet stay planted) with a flickering red lens, chrome outline
 function walkcam(f) {
     const [c, g] = sheet(18, 16)
+    const L = [[0, 1, 2], [1, 2, 0], [2, 0, 1], [0, 1, 2]][f]
     px(g, 3, 2, 12, 9, '#3b3f52')
     px(g, 3, 2, 12, 2, '#5a6079')
     px(g, 5, 4, 8, 5, '#10141f')
     px(g, 6, 5, 4, 3, f % 2 ? '#ff4f4f' : '#c92020')
     px(g, 11, 5, 2, 2, '#5dc8ff')
-    const lg = f % 2 ? [1, 0] : [0, 1]
-    px(g, 2 + lg[0], 11, 2, 4, '#8d99b5')
-    px(g, 8, 11 + lg[1], 2, 4, '#8d99b5')
-    px(g, 14 - lg[0], 11, 2, 4, '#8d99b5')
+    px(g, 2, 11 + L[0], 2, 5 - L[0], '#8d99b5')
+    px(g, 8, 11 + L[1], 2, 5 - L[1], '#8d99b5')
+    px(g, 14, 11 + L[2], 2, 5 - L[2], '#8d99b5')
     px(g, 1, 14, 3, 2, '#2b2f3d'); px(g, 7, 15, 3, 1, '#2b2f3d'); px(g, 14, 14, 3, 2, '#2b2f3d')
-    return c
+    return rim(c, OUTLINE.walkcam)
 }
 
-// runner: sprinting contestant-hunter, skull visor
+// runner: a sprinting contestant-hunter — a DARK skull helmet (never the
+// contestant's white head), red jersey, four-frame sprint, red outline
 function runner(f) {
     const [c, g] = sheet(14, 16)
-    px(g, 4, 1, 6, 5, '#e8eef8')
+    px(g, 4, 1, 6, 5, '#20242f')
     px(g, 5, 3, 4, 2, '#10141f')
     px(g, 5, 3, 1, 1, '#ff4f4f'); px(g, 8, 3, 1, 1, '#ff4f4f')
     px(g, 4, 6, 6, 6, '#d43a3a')
     px(g, 4, 6, 6, 1, '#ff7d6d')
-    const a = f % 2
-    px(g, 2, 7 + a, 2, 5, '#e8b04f')
-    px(g, 10, 12 - a, 2, 5, '#e8b04f')
-    px(g, 4 + a, 12, 3, 4, '#2b3a5c')
-    px(g, 8 - a, 12, 3, 4, '#2b3a5c')
-    return c
+    const ARM = [[0, 2], [2, 0], [1, 1], [2, 0]]
+    const LEG = [[[0, 1], [1, -1]], [[1, -1], [0, 1]], [[0, 0], [0, 0]], [[1, 0], [0, 0]]]
+    const [[lx, ly], [rx, ry]] = LEG[f]
+    px(g, 2, 7 + ARM[f][0], 2, 5, '#e8b04f')
+    px(g, 10, 12 - ARM[f][1], 2, 5, '#e8b04f')
+    px(g, 4 + lx, 12 + ly, 3, 4, '#2b3a5c')
+    px(g, 8 - rx, 12 + ry, 3, 4, '#2b3a5c')
+    return rim(c, OUTLINE.runner)
 }
 
-// turret: deployed tripod gun
+// turret: a deployed tripod gun — a four-frame dish sweep with a blinking
+// sight; while it charges, the renderer adds the tracking barrel + muzzle
+// glow on top of this idle body
 function turret(f) {
     const [c, g] = sheet(16, 16)
+    const DX = [5, 6, 9, 8]
     px(g, 5, 2, 6, 6, '#5a6079')
     px(g, 6, 4, 4, 2, f % 2 ? '#ffd23f' : '#ff8a3f')
-    px(g, 7, 0, 2, 3, '#8d99b5')
+    px(g, DX[f], 0, 2, 3, '#8d99b5')
     px(g, 3, 8, 10, 3, '#3b3f52')
     px(g, 2, 11, 2, 5, '#8d99b5')
     px(g, 8, 11, 2, 5, '#8d99b5')
     px(g, 12, 11, 2, 5, '#8d99b5')
-    return c
+    return rim(c, OUTLINE.turret)
 }
 
-// thrower: hunched grenade lobber
+// thrower: a hunched grenade lobber — the grenade arm winds up through the
+// four frames (highest on frame 2), green vest, green outline
 function thrower(f) {
     const [c, g] = sheet(16, 16)
+    const ARM = [3, 2, 0, 1]
     px(g, 4, 2, 8, 6, '#4a7d3a')
     px(g, 5, 3, 6, 2, '#10141f')
     px(g, 6, 3, 1, 1, '#8fff9f'); px(g, 9, 3, 1, 1, '#8fff9f')
     px(g, 3, 8, 10, 5, '#3a5c2b')
-    const a = f % 2
-    px(g, 12, 3 - a, 3, 3, '#9aa5bd')
-    px(g, 13, 1 - a, 2, 2, '#ffd23f')
+    px(g, 12, ARM[f], 3, 3, '#9aa5bd')
+    px(g, 13, ARM[f] - 1, 2, 2, '#ffd23f')
     px(g, 4, 13, 3, 3, '#2b3a1c'); px(g, 9, 13, 3, 3, '#2b3a1c')
-    return c
+    return rim(c, OUTLINE.thrower)
 }
 
-// heavy: walking tank with shoulder cannons
+// heavy: a walking tank — a four-frame tread roll (body bob 0/1/2/0 plus the
+// shoulder-cannon phase), gold outline
 function heavy(f) {
     const [c, g] = sheet(20, 18)
-    px(g, 5, 2, 10, 4, '#6b7285')
-    px(g, 6, 3, 8, 2, '#10141f')
-    px(g, 7, 3, 2, 1, '#ff4f4f'); px(g, 11, 3, 2, 1, '#ff4f4f')
-    px(g, 3, 6, 14, 8, '#4a5568')
-    px(g, 3, 6, 14, 1, '#8d99b5')
-    px(g, 4, 8, 3, 4, '#2b2f3d'); px(g, 13, 8, 3, 4, '#2b2f3d')
-    px(g, 1, 5 + f % 2, 3, 3, '#8d99b5'); px(g, 16, 5 + (1 - f % 2), 3, 3, '#8d99b5')
+    const b = [0, 1, 2, 0][f]
+    px(g, 5, 2 + b, 10, 4, '#6b7285')
+    px(g, 6, 3 + b, 8, 2, '#10141f')
+    px(g, 7, 3 + b, 2, 1, '#ff4f4f'); px(g, 11, 3 + b, 2, 1, '#ff4f4f')
+    px(g, 3, 6 + b, 14, 8, '#4a5568')
+    px(g, 3, 6 + b, 14, 1, '#8d99b5')
+    px(g, 4, 8 + b, 3, 4, '#2b2f3d'); px(g, 13, 8 + b, 3, 4, '#2b2f3d')
+    px(g, 1, 5 + (f % 2), 3, 3, '#8d99b5'); px(g, 16, 5 + (1 - f % 2), 3, 3, '#8d99b5')
     px(g, 5, 14, 4, 4, '#20242f'); px(g, 11, 14, 4, 4, '#20242f')
-    return c
+    return rim(c, OUTLINE.heavy)
 }
 
-// boss: THE ANNOUNCER — giant crowned monitor head over a chrome torso
+// boss: THE ANNOUNCER — giant crowned monitor head over a chrome torso,
+// a four-frame idle (mouth colour and eye heat cycle)
 function boss(f) {
     const [c, g] = sheet(40, 34)
     px(g, 8, 0, 24, 4, '#ffd23f')
@@ -95,11 +135,11 @@ function boss(f) {
     px(g, 9, 9, 22, 12, '#10141f')
     px(g, 12, 12, 5, 4, f % 2 ? '#ff4f4f' : '#ff8a3f')
     px(g, 23, 12, 5, 4, f % 2 ? '#ff4f4f' : '#ff8a3f')
-    px(g, 14, 18, 12, 2, f % 2 ? '#8fb0ff' : '#5d7094')
+    px(g, 14, 18, 12, 2, ['#8fb0ff', '#5d7094', '#8fb0ff', '#c8d8ff'][f])
     px(g, 10, 24, 20, 8, '#8d99b5')
     px(g, 10, 24, 20, 1, '#e8eef8')
     px(g, 4, 26, 5, 8, '#4a5568'); px(g, 31, 26, 5, 8, '#4a5568')
-    return c
+    return rim(c, OUTLINE.boss)
 }
 
 // civilians: dot-matrix contestants, arms up, two frames
@@ -160,14 +200,14 @@ function icon(weapon) {
 
 export function buildSprites() {
     const SP = {}
-    for (const f of [0, 1]) {
+    for (const f of [0, 1, 2, 3]) {
         SP[`walkcam${f}`] = walkcam(f)
         SP[`runner${f}`] = runner(f)
         SP[`turret${f}`] = turret(f)
         SP[`thrower${f}`] = thrower(f)
         SP[`heavy${f}`] = heavy(f)
         SP[`boss${f}`] = boss(f)
-        SP[`crate${f}`] = crate('spread', f)
+        if (f < 2) SP[`crate${f}`] = crate('spread', f)
     }
     for (const f of [0, 1, 2, 3]) SP[`player${f}`] = player(f)
     const TINTS = [

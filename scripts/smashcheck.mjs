@@ -24,9 +24,10 @@ const ok = (cond, name, detail = '') => {
     else { fails++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ''}`) }
 }
 
-const { GW, GH, EXITS, TOTAL_ROOMS, genRoom, START, isBonus } = await import('../src/games/SmashTV/levels.js')
+const { GW, GH, EXITS, TOTAL_ROOMS, genRoom, START, isBonus, ENEMIES } = await import('../src/games/SmashTV/levels.js')
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES } = await import('../src/games/SmashTV/sprite.js')
+const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame } = await import('../src/games/SmashTV/enemies.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
 async function fresh() {
@@ -92,6 +93,71 @@ console.log('player')
     ok(Object.values(GUN).every((g) => g.flash > g.len), 'the muzzle flash blooms beyond the muzzle')
     ok(new Set(Object.values(GUN).map((g) => g.tip)).size === 4, 'each weapon has its own muzzle colour')
     ok(LAYERS.indexOf('feet') < LAYERS.indexOf('gun') && LAYERS.indexOf('body') < LAYERS.indexOf('gun'), 'feet and body render under the gun layer', LAYERS.join('>'))
+}
+
+// --------------------------------------------------------------- enemies ----
+console.log('enemies')
+{
+    for (const kind of ['walkcam', 'runner']) {
+        const frames = [0, 6, 12, 18].map((w) => enemyFrame({ kind, walk: w, moving: true }, 0))
+        ok(new Set(frames).size === ENEMY_FRAMES && ENEMY_FRAMES === 4, `${kind} runs four distinct frames`, frames.join(','))
+        ok(enemyFrame({ kind, walk: 24, moving: true }, 0) === 0, `${kind} cycle wraps, not stairs`)
+        ok(enemyFrame({ kind, walk: 0, moving: false }, 0) === 0, `a resting ${kind} holds the neutral frame`)
+    }
+    ok(CHARGERS.turret && CHARGERS.heavy && Object.keys(CHARGERS).length === 2, 'turrets and heavies are the kinds that must charge')
+    ok(TELEGRAPH === 20, 'the charge runs 20 ticks — the cabinet telegraphs everything', `${TELEGRAPH}`)
+    const rims = Object.values(OUTLINE)
+    ok(new Set(rims).size === 6, 'every enemy kind wears its own outline', rims.join(' '))
+    ok(rims.every((c) => lum(c) > lum('#15151f')), 'outlines read brighter than the studio floor')
+    ok(Object.keys(CHARGE).every((k) => CHARGE[k].len > 0 && lum(CHARGE[k].glow) > lum('#15151f')), 'the charge barrel glows brighter than the floor')
+}
+// the telegraph: charge, track the player, then commit along the tracked aim
+{
+    const mk = (kind, x, y) => ({ id: 9100, kind, x, y, hp: ENEMIES[kind].hp, cd: TELEGRAPH + 1, wanderT: 999, wdx: 0, wdy: 0, hitT: 0, dir: 1, walk: 0, moving: false, chg: 0, aim: [0, 0] })
+    for (const kind of ['turret', 'heavy']) {
+        const gs = makeGame(0)
+        gs.enemies = []
+        gs.roomData.spawns = []
+        gs.spawnT = 0
+        gs.enemies.push(mk(kind, 40, 60))
+        gs.player.x = 140; gs.player.y = 60
+        gs.player.invuln = 99999
+        let sawCharge = false, gap = 0
+        for (let i = 0; i < 50; i++) {
+            gs.events.length = 0
+            step(gs, {})
+            if (gs.events.some((ev) => ev.type === 'charge')) { sawCharge = true; gap = 0 }
+            else if (sawCharge) gap++
+            if (gs.events.some((ev) => ev.type === 'eshoot' || ev.type === 'throw')) break
+            gs.player.x += 2
+        }
+        ok(sawCharge, `${kind} announces the charge before firing`)
+        ok(gap === TELEGRAPH, `${kind} waits exactly ${TELEGRAPH} ticks between charge and shot`, `gap ${gap}`)
+        ok(gs.ebullets.length > 0 && gs.ebullets.every((b) => b.dx > 0.5 && Math.abs(b.dy) < 0.6), `${kind} commits along the tracked aim, not the spawn aim`)
+    }
+    // a started charge commits even if the player breaks line of sight
+    {
+        const gs = makeGame(0)
+        gs.enemies = []
+        gs.roomData.spawns = []
+        gs.spawnT = 0
+        gs.enemies.push(mk('turret', 40, 60))
+        gs.player.x = 140; gs.player.y = 60
+        gs.player.invuln = 99999
+        let charged = false
+        for (let i = 0; i < 50; i++) {
+            gs.events.length = 0
+            step(gs, {})
+            if (gs.events.some((ev) => ev.type === 'charge')) { charged = true; gs.player.x = 120; gs.player.y = 128; break }
+        }
+        let fired = false
+        for (let i = 0; i < 40; i++) {
+            gs.events.length = 0
+            step(gs, {})
+            if (gs.events.some((ev) => ev.type === 'eshoot')) { fired = true; break }
+        }
+        ok(charged && fired, 'a started charge commits even if the player hides (the cameras see through)')
+    }
 }
 
 // ------------------------------------------------------------------ rules ----
@@ -271,6 +337,7 @@ if (process.argv.includes('--mutate')) {
         ['crates keep their gun inside', 'gs.items.push({ id: gs._nextId++, t: \'weapon\', w: k.weapon, x: k.x, y: k.y })', 'void k'],
         ['firebomb goes free', 'gs.energy -= CFG.firebombCost\n    let killed = 0', 'gs.energy -= 0\n    let killed = 0'],
         ['the bonus clock never runs out', 'if (gs.bonusT <= 0) {', 'if (gs.bonusT <= -1e9) {'],
+        ['the telegraph vanishes (guns fire blind)', 'e.chg = TELEGRAPH\n    trackAim(gs, e)\n    gs.events.push({ type: \'charge\', kind: e.kind })', 'void e'],
     ]
     const orig = readFileSync(SIM, 'utf8')
     let died = 0

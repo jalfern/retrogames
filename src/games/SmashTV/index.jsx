@@ -20,6 +20,7 @@ import { plan } from './planner.js'
 import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN } from './sprite.js'
+import { enemyFrame, CHARGE, TELEGRAPH } from './enemies.js'
 
 const SIM_MS = 1000 / 60
 const ROOM_NAMES = [
@@ -108,6 +109,7 @@ const SmashTVGame = () => {
                     else { audioController.playSweep(220, 880, 0.25, 'triangle', 0.08) }
                 } else if (e.type === 'wallHit') burst(e.x, e.y, 2, '#8d99b5', 1.2)
                 else if (e.type === 'eshoot') audioController.playSweep(300, 140, 0.06, 'sawtooth', 0.03)
+                else if (e.type === 'charge') audioController.playSweep(120, 460, 0.3, 'sawtooth', 0.035)
                 else if (e.type === 'throw') audioController.playSweep(180, 320, 0.1, 'triangle', 0.04)
                 else if (e.type === 'blast') { audioController.playNoise(0.2, 0.09); burst(e.x, e.y, 10, '#ff8a3f', 3); shake = 4 }
                 else if (e.type === 'spawn') audioController.playSweep(90, 240, 0.12, 'triangle', 0.04)
@@ -278,12 +280,29 @@ const SmashTVGame = () => {
 
         const drawEnemies = () => {
             for (const e of gs.enemies) {
-                const frame = (gs.tick >> 3) % 2
+                const frame = enemyFrame(e, gs.tick)
                 const img = SP[`${e.kind}${frame}`]
                 if (!img) continue
                 if (e.hitT > 0) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 10 }
                 ctx.drawImage(img, e.x - img.width / 2, e.y - img.height / 2)
                 ctx.shadowBlur = 0
+                // the telegraph: while a turret/heavy charges, its barrel
+                // tracks the player and the muzzle glow grows to full
+                if (CHARGE[e.kind] && e.chg > 0 && e.aim) {
+                    const cspec = CHARGE[e.kind]
+                    const t = 1 - e.chg / TELEGRAPH
+                    ctx.strokeStyle = cspec.col
+                    ctx.lineWidth = 2
+                    ctx.beginPath()
+                    ctx.moveTo(e.x, e.y)
+                    ctx.lineTo(e.x + e.aim[0] * cspec.len, e.y + e.aim[1] * cspec.len)
+                    ctx.stroke()
+                    ctx.lineWidth = 1
+                    ctx.globalAlpha = 0.35 + 0.65 * t
+                    ctx.fillStyle = cspec.glow
+                    ctx.beginPath(); ctx.arc(e.x + e.aim[0] * cspec.len, e.y + e.aim[1] * cspec.len, 1 + 2.5 * t, 0, Math.PI * 2); ctx.fill()
+                    ctx.globalAlpha = 1
+                }
                 if (e.kind === 'boss') {
                     ctx.fillStyle = '#301010'
                     ctx.fillRect(e.x - 20, e.y - 24, 40, 4)
@@ -499,7 +518,7 @@ const SmashTVGame = () => {
                     weapon: gs.weapon, energy: gs.energy, cleared: gs.cleared, end: gs.end,
                     hash: stateHash(gs),
                     player: { x: gs.player.x, y: gs.player.y, aim: gs.player.aim, invuln: gs.player.invuln, deadT: gs.player.deadT },
-                    enemies: gs.enemies.map((e) => ({ kind: e.kind, x: e.x, y: e.y, hp: e.hp })),
+                    enemies: gs.enemies.map((e) => ({ kind: e.kind, x: e.x, y: e.y, hp: e.hp, chg: e.chg })),
                     ebullets: gs.ebullets.length, bullets: gs.bullets.length,
                     crates: gs.crates.map((k) => k.hp), items: gs.items.filter((i) => !i.taken).map((i) => i.t),
                     civilians: gs.civilians.length, bonusT: gs.bonusT,
