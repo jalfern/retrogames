@@ -273,8 +273,12 @@ async function boot() {
         let j = l.x % (2u * h);
         let idx = l.x - select(0u, h, j >= h);
         let other = idx + h;
+        // partners occupy each other's write slots: all reads of this stage
+        // must complete before any lane writes, or a partner in another SIMD
+        // group clobbers the value before its owner reads it (one-frame spikes)
         let a = rb[l.y * 64u + idx];
         let b = rb[l.y * 64u + other];
+        workgroupBarrier();
         let th = PI * f32(j % h) / f32(h);
         rb[l.y * 64u + idx] = a + b;
         rb[l.y * 64u + other] = cmul(vec2f(a.x - b.x, a.y - b.y), vec2f(cos(th), sin(th)));
@@ -300,6 +304,7 @@ async function boot() {
         let other = idx + h;
         let a = cb[l.x * 64u + idx];
         let b = cb[l.x * 64u + other];
+        workgroupBarrier();
         let th = PI * f32(j % h) / f32(h);
         cb[l.x * 64u + idx] = a + b;
         cb[l.x * 64u + other] = cmul(vec2f(a.x - b.x, a.y - b.y), vec2f(cos(th), sin(th)));

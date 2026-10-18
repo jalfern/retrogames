@@ -17,7 +17,8 @@
 // Usage: node scripts/oceanfold.mjs [--file <path>] [--json]
 // Proven-fail mutants: re-add gd1 to `world.x -=` in vs_main, or multiply
 // uEnc[oi][1..2] amp by OCT[oi].chop, or raise oct-0 dsp base back to 4.0,
-// or drop the kMax band-limit from cs_fill (oct-0 zigzag spikes alias back in).
+// or drop the kMax band-limit from cs_fill (oct-0 zigzag spikes alias back in),
+// or delete the mid-stage workgroupBarrier() in cs_row/cs_col (FFT race).
 
 import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -63,6 +64,14 @@ const KNYQ = Math.PI / (EXTENT / SEG)
 ok('octave 0 band-limited to mesh Nyquist', KMAX && KMAX[0] <= KNYQ * 1.02 && KMAX[1] > 1e6,
   KMAX ? `KMAX=[${KMAX[0].toFixed(3)},${KMAX[1]}], pi/spacing=${KNYQ.toFixed(3)}` : 'KMAX const not found')
 ok('fill shader applies the kMax fade', /ph[^;]*smoothstep\(fu\.kMax/.test(src))
+
+// butterfly race guard: partners occupy each other's write slots, so every
+// stage needs workgroupBarrier() BETWEEN the a/b reads and the writes — the
+// stage-end barrier alone lets another SIMD group clobber a slot first.
+for (const buf of ['rb', 'cb']) {
+  ok(`fft butterflies barrier between reads and writes (${buf})`,
+    new RegExp(`let b = ${buf}\\[[^\\]]+\\];\\s*workgroupBarrier\\(\\);`).test(src))
+}
 
 const LOGN = Math.log2(NI)
 const MESH = EXTENT / SEG
