@@ -36,6 +36,7 @@ import { buildWorld } from './world.js'
 import { createEngine } from './engine.js'
 import { heistAudio } from './audio.js'
 import { padState } from '../../utils/padState'
+import { rumble } from '../../components/gamepadMap'
 
 /**
  * The one key table. Handlers read it, the attract card and the pause card are written
@@ -266,7 +267,9 @@ const RaccoonHeistGame = () => {
         const onEngineEvent = (e) => {
             seen.push({ ...e, t: +performance.now().toFixed(0) })
             if (seen.length > 200) seen.shift()
+            if (e.type === 'caught') rumble(300, 1)
             if (e.type === 'clear' || e.type === 'bust') {
+                if (e.type === 'bust') rumble(600, 1)
                 window.setTimeout(() => setMode(e.type), 900)
             }
         }

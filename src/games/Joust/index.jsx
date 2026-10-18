@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import { rumble } from '../../components/gamepadMap'
 import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -88,7 +89,7 @@ const JoustGame = () => {
             while (s.events.length) {
                 const e = s.events.shift()
                 if (e.t === 'kill' || e.t === 'joustwin' || e.t === 'hatch' || e.t === 'eggdrop' || e.t === 'eggget' || e.t === 'crumble' || e.t === 'death') {
-                    if (e.t === 'death') { burst(e.x, e.y, '#f8f8f8', 16); shake = 14; flash = 8 }
+                    if (e.t === 'death') { burst(e.x, e.y, '#f8f8f8', 16); shake = 14; flash = 8; rumble(400, 1) }
                     if (e.t === 'kill' || e.t === 'joustwin') burst(e.x, e.y, e.kind === 'shadow' ? '#7058b8' : '#f8a800')
                     if (e.t === 'hatch') burst(e.x, e.y, '#f8f800', 8)
                     if (e.t === 'eggget') burst(e.x, e.y, '#58d8f8', 8)

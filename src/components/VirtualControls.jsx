@@ -516,6 +516,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                     d-pad (method dpad) or the legacy d-pad / 2x2 diag pad */}
                 {mStick ? (
                     <div
+                        data-vc="fixedstick"
                         ref={fsZoneRef}
                         className="relative w-[150px] h-[150px] touch-none"
                         onTouchStart={fsTS}
@@ -542,7 +543,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                 ) : useStick ? (
                     <div className="w-24" />
                 ) : diag ? (
-                    <div className="grid grid-cols-2 gap-1">
+                    <div data-vc="diag" className="grid grid-cols-2 gap-1">
                         {[['ul', '↖'], ['ur', '↗'], ['dl', '↙'], ['dr', '↘']].map(([k, sym]) => (
                             <button
                                 key={k}
@@ -555,6 +556,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                     </div>
                 ) : mDpadGate ? (
                     <div
+                        data-vc="dpadgate"
                         ref={dgZoneRef}
                         className="relative w-[150px] h-[150px] touch-none"
                         onTouchStart={dgTS}
@@ -579,6 +581,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                     </div>
                 ) : (
                     <div
+                        data-vc="dpad"
                         ref={dPadRef}
                         className="relative w-[150px] h-[150px] touch-none"
                         onTouchStart={dTS}

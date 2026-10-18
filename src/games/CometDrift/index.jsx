@@ -9,6 +9,7 @@ import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from './
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { PALETTE, KART, buildGround, buildSky, buildSprites, minimapPath } from './art.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
+import { rumble } from '../../components/gamepadMap'
 
 // =====================================================================
 // COMET DRIFT GP — SUNSET GULCH, polished (#435). The canvas source is
@@ -149,8 +150,8 @@ export default function CometDrift() {
                     audioController.playSweep(300 + ev.tier * 190, 1150 + ev.tier * 170, 0.34 + ev.tier * 0.14, 'square', 0.11 + ev.tier * 0.02)
                     shake = Math.max(shake, 4 + ev.tier * 3)
                 }
-                if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); shake = 26 }
-                if (ev.e === 'bump' && ev.who === 'PLAYER') { audioController.playNoise(0.12, 0.15); shake = 10 }
+                if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); shake = 26; rumble(300, 1) }
+                if (ev.e === 'bump' && ev.who === 'PLAYER') { audioController.playNoise(0.12, 0.15); shake = 10; rumble(100, 0.4) }
                 if (ev.e === 'lap' && ev.who === 'PLAYER') { audioController.playTone(880, 0.1, 'square', 0.12); audioController.playTone(1320, 0.1, 'square', 0.08) }
                 if (ev.e === 'end') { if (ev.place === 1) audioController.playFanfare(); else audioController.playDeath() }
             }

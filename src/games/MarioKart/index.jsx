@@ -10,6 +10,7 @@ import { decide } from './planner'
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { buildGround, buildSky, buildSprites, KART } from './art.js'
 import { steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
+import { rumble } from '../../components/gamepadMap'
 import { currentPad } from '../../utils/onePad'
 
 // =====================================================================
@@ -124,8 +125,8 @@ export default function MarioKart() {
                 if (ev.e === 'boost') audioController.playSweep(300, 1100, 0.4, 'square', 0.12)
                 if (ev.e === 'rocket') audioController.playSweep(200, 1200, 0.5, 'sawtooth', 0.14)
                 if (ev.e === 'dash') audioController.playSweep(500, 1400, 0.22, 'triangle', 0.1)
-                if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); shake = 26 }
-                if (ev.e === 'bump' && ev.who === 'PLAYER') { audioController.playNoise(0.12, 0.15); shake = 10 }
+                if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); shake = 26; rumble(300, 1) }
+                if (ev.e === 'bump' && ev.who === 'PLAYER') { audioController.playNoise(0.12, 0.15); shake = 10; rumble(100, 0.4) }
                 if (ev.e === 'lap' && ev.who === 'PLAYER') { audioController.playTone(880, 0.1, 'square', 0.12); audioController.playTone(1320, 0.1, 'square', 0.08) }
                 if (ev.e === 'end') { if (ev.place === 1) audioController.playFanfare(); else audioController.playDeath() }
             }
