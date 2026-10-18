@@ -141,8 +141,15 @@ export function assign(g, id, skill) {
     if ((g.skills[skill] | 0) <= 0) return false
     const st = L.state
     if (skill === 'block' && st !== 'walk' && st !== 'dig') return false
-    if (skill === 'dig' && st !== 'walk') return false
-    if (skill === 'climb' && st === 'climb') return false
+    // A climber / digger keeps its skill for life. Refuse to hand it a second
+    // copy: the state checks alone are not enough, because a climber that has
+    // crested a wall (or a digger that has tunneled through) is back in 'walk'
+    // but already carries the flag — pressing its skill again would silently
+    // burn a supply, and on THE SPIRE one such clump drains every CLIMBER and
+    // the level becomes mathematically lost. (issue #422 item 2, the original
+    // Lemmings refuses to give a climber the climber skill twice.)
+    if (skill === 'climb' && (st === 'climb' || L.climber)) return false
+    if (skill === 'dig' && (st !== 'walk' || L.digger)) return false
     if (skill === 'bomb' && st === 'bomb') return false
     g.skills[skill]--
     g.cmds.push({ tick: g.tick, id, skill })

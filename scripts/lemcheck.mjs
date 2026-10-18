@@ -201,6 +201,31 @@ for (let i = 0; i < LEVELS.length; i++) {
         const before = g.lemmings[0].climber
         ok(!sim.assign(g, 0, 'climb') && g.lemmings[0].climber === before, 'a zero supply still granted a skill')
     }
+    // a climber / digger keeps its skill for life: re-granting it costs nothing.
+    // #422 item 2 (blocker): the guard only checked the current STATE, so a
+    // climber that had crested a wall — back in 'walk' but still a climber — ate
+    // another CLIMBER charge on every press, and on THE SPIRE a clump drained all
+    // six. The original Lemmings refuses to hand a climber the climber twice.
+    {
+        const g = mk()
+        for (let t = 0; t < 80; t++) sim.step(g)
+        const L = g.lemmings[0]
+        const have = g.skills.climb
+        ok(sim.assign(g, L.id, 'climb') && g.skills.climb === have - 1, 'setup: a first CLIMBER grant costs one supply')
+        const held = g.skills.climb
+        ok(!sim.assign(g, L.id, 'climb') && g.skills.climb === held,
+            're-granting CLIMBER to a lemming that already carries it still cost a supply — a clump can drain every climber and lose the level (#422)')
+        // the digger guard: a walking lemming that already carries the digger
+        // flag refuses a second DIG. (THE SPIRE ships no digs, so set the flag.)
+        const g2 = mk()
+        for (let t = 0; t < 80; t++) sim.step(g2)
+        const D = g2.lemmings[0]
+        g2.skills.dig = 3
+        D.digger = true; D.state = 'walk'
+        const dh = g2.skills.dig
+        ok(!sim.assign(g2, D.id, 'dig') && g2.skills.dig === dh,
+            'a walking digger still took a second DIG — the persistent-flag guard is missing (#422)')
+    }
     // the count is the whole goal (issue #110): once `need` have escaped the
     // ledge is over, even with lemmings still pacing on screen. Before the fix
     // the criteria was met at ~31s but the level paced to the 120s clock.
