@@ -1,63 +1,61 @@
-# STATE — 2026-10-18 (FORGE session: COMET DRIFT HD shipped — first MODERN title)
+# STATE — 2026-10-18 (two lanes: COMET DRIFT HD shipped; ocean spikes fixed)
 
-## This session
-- **#465 SHIPPED (#468)**: **COMET DRIFT HD** — the retro GP's sim/track
-  reused UNCHANGED under three.js **WebGPURenderer** (WebGL2 fallback):
-  extruded Gulch geometry, dusk lighting + ACES, pooled GPU sparks/dust/
-  flames, FOV punch + drift cam-lag, glass HUD, attract = autopilot win.
-  `/comet-drift-hd`, private. Verified live in real Chrome against
-  production. Board: #465 shipped; polish pass filed as **#471 (feedback)**.
-- `cometdrifthdcheck` (new, `npm run` alias): geometry audit + rules +
-  win + browser cycle — 29/0, RED on `--mutate` (particle-spawn kill).
-  contractcheck 14/14 for id `comet-drift-hd`. lint mario/fps/ai/hd 0,
-  build green.
+## Shipped this session
+- **COMET DRIFT HD #465 (#468)** — retro GP's sim/track reused UNCHANGED under
+  three.js **WebGPURenderer** (WebGL2 fallback): extruded Gulch, dusk + ACES,
+  pooled GPU sparks/dust/flames, FOV punch + drift cam-lag, glass HUD,
+  attract = autopilot win. `/comet-drift-hd`, private, verified live in prod.
+  `cometdrifthdcheck` 29/0 (RED on `--mutate`); contractcheck 14/14; lint +
+  build green. Polish pass filed **#471**.
+- **Ocean single-frame spikes fixed (#466; feeds #456)** — four compounding
+  bugs in `public/demos/ocean.html`: (1) mesh displaced by octave 1 (14 m grid
+  on 1.8 m vertices) → oct-0 only; (2) grid snap at 0.22 m → mesh spacing;
+  (3) chop applied twice (cs_prep ×chop·k AND enc amp) → once; (4) THE
+  RESIDUAL: oct-0 spectrum ran to texel Nyquist — λ≈3–6 m energy zigzags
+  VERTICALLY between 1.8 m vertices with *positive* Jacobian, so no fold check
+  could see it. Fix: `kMax` low-pass in `cs_fill`, oct-0 fades at mesh Nyquist
+  π·SEG/EXTENT, oct-1 unlimited (shading keeps ripple detail). dsp retune
+  oct-0 4.0→2.0, oct-1 1.8→2.4. New guard `npm run oceanfold` (parses the
+  demo; scans 3 texture periods × 6 phases; storm J +0.118, pre-fix −1.17;
+  four mutants RED). oceancheck ALL GREEN (foam floor 3000→1200: single chop
+  halves foam; a pixel spike detector cannot separate fog/foam from folds).
+  Storm screenshots z=0→35 camera-travel: zero spikes; calm keeps ripples.
 
-## Learned this session (WebGPU is new ground — the HARNESS lessons)
-- **`WebGPURenderer` lives at `three/webgpu`**, not `three` (r180).
-- **A WebGPU canvas answers BLACK to 2D drawImage/getImageData** no matter
-  what `preserveDrawingBuffer` says. Pixel checks must run on the WebGL2
-  path — the game accepts `?gl=webgl2` to pin it; screenshots cover WebGPU.
-- **three's WebGL-node-backend lost its device on this Mac** (forceWebGL,
-  even lite). The game now self-heals: render-failure/black-frame heartbeat
-  rebuilds on classic `WebGLRenderer`. Phones on that fallback are still
-  untested for real (in #471).
-- **Never replace a React-owned canvas element**: StrictMode re-attaches the
-  ref to the original node and resurrects a dead context (mount crash).
-  Substitute canvases are inserted BEFORE it, hidden siblings; cleanup
-  removes them at effect start.
-- **Contract `state()` must be pure sim** — a particle-pool count leaked in
-  and broke snapshot/restore round-trip (restore can't rebuild juice).
-- **Screenshot review is load-bearing**: it caught an empty minimap (integer
-  padding on fractions), a road-edge arch leg the karts could clip, a
-  floating wing, HUD under the #437 corner chrome — none caught by logic
-  checks.
-- The autopilot's ideal line barely triggers the drift-charge condition
-  (needs |steer|>0): ladder pays only via treadmill (same as retro twin;
-  race-event proof is impossible against the pinned sim — see #471 item 8).
+## Harness lessons (WebGPU is new ground — forge lane)
+- `WebGPURenderer` lives at `three/webgpu` (r180). A WebGPU canvas answers
+  BLACK to 2D drawImage/getImageData regardless of preserveDrawingBuffer —
+  pixel checks run on `?gl=webgl2`; screenshots cover WebGPU.
+- Never replace a React-owned canvas element (StrictMode resurrection);
+  substitute canvases as hidden earlier siblings.
+- Contract `state()` must be pure sim (particle-pool count broke snapshot
+  round-trip).
+- **Positive Jacobian ≠ smooth mesh**: vertical texel-scale zigzag spikes with
+  no XZ fold (this is why `oceanfold` also band-limit-checks structurally).
+- CometDRiftHD: autopilot ladder pays via treadmill only (|steer|>0 rarely
+  holds) — see #471 item 8.
 
 ## Held / open (unchanged unless noted)
 - **#391** `stalled` — awaiting Jon: close as shipped vs batch 5.
 - **#375** `stalled` — Civ parked per Jon.
 - **#443** open — idle-builder QA-borrow ruling pending.
-- **#456** — Ocean polish; #461 already shipped storm slider — check overlap
-  before commissioning.
-- QA backlog unchanged (#440/#426/#423/#421/#422/#409/#410/#405, #365,
-  #384); new: **#471** CometDriftHD polish pass.
+- **#456** Ocean polish — spikes are FIXED and merged; comment the root-cause
+  write-up on #456 before commissioning anything else Ocean.
+- QA backlog (#440/#426/#423/#421/#422/#409/#410/#405, #365, #384) + **#471**.
 
 ## GOAL — next session
 1. Re-check `next` / `game-queue` / `building` + pushed `forge/*` branches.
    Expect nothing unless Jon feeds it; QA lane owns throughput meanwhile
    (#443 unresolved — do not borrow while `QA MASTER` is live).
-2. If anything lands for the forge: remember rule 4 — this session broke
-   the streak (game code shipped).
+2. After #466 deploys: `curl -sL https://jalfern.com/retrogames/demos/ocean.html | grep KMAX`
+   (jalfern 308s to www — always `curl -L`).
+3. Rule 4 healthy: both lanes shipped game/demo code this session.
 
 ## Three questions for Jon
-1. **WebGPU on phones**: the WebGL-node fallback lost its device on this
-   Mac; I shipped the classic-WebGL self-heal. Do you have an old-phone
-   target to test the auto-fallback path for real, or keep the pin-param?
-2. **#471 item 8**: the shared sim lets only treadmill-proven drift payouts
-   (autopilot rarely banks a tier in-race). Fix the sim (both twins change)
-   or leave the human-only ladder as designed?
-3. **MODERN standard**: first MODERN title shipped without TSL
-   post-processing (stability). Should bloom/AAA post be a requirement in
-   ART.md's MODERN bar, or earned per-game via polish passes?
+1. **WebGPU on phones**: WebGL-node fallback lost its device on this Mac; the
+   self-heal to classic WebGL shipped untested. Old-phone target for real, or
+   keep the pin-param? (#471)
+2. **#471 item 8**: shared sim lets only treadmill-proven drift payouts — fix
+   the sim (both twins change) or leave the human-only ladder?
+3. **#398/#443**: Missile Battle `smoke` flaked on #466 (passed on rerun; the
+   only reason rule-5 needed a rerun). Make `smoke` continue-on-error so
+   advisory flakes can't wedge merges? (same ask as #398)
