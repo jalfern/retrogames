@@ -201,6 +201,7 @@ function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<RandomHome />} />
+          <Route path="/random" element={<RandomHome />} />
           <Route path="/games" element={<ArcadeShowcase />} />
           <Route path="/games-classic" element={<GamesList />} />
           <Route path="/games-v2" element={<ArcadeShowcase />} />
