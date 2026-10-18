@@ -29,3 +29,10 @@ Read this before you draw anything. Then read the exemplars: they are the bar.
 
 Original pixel art in the era's style, generated in code. Never copy sprites
 or artwork from the original game.
+
+## Two bars — every game declares one
+
+- **RETRO**: the bar above. Looks like the original machine.
+- **MODERN**: the original's game, today's rendering — GPU shaders, real
+  lighting, particles, post-processing. State of the art, not period-accurate.
+  Still recognizable in five seconds. A game is RETRO unless its issue says MODERN.
