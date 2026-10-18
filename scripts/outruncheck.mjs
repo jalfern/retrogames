@@ -167,6 +167,32 @@ section('THE RULES')
     ok('crossing the line RIGHT takes the harder column', gR.col === 1 && gR.depth === 1, `depth ${gR.depth} col ${gR.col}`)
 }
 
+section('BRAKE LIGHTS')
+{
+    // #283 item 6: the brake light follows the PHYSICAL rule — lit while the
+    // brake is applied to a moving car, out at rest, out under power, and out
+    // entirely when the brake rule is muted (the light must not lie about a
+    // pedal that does nothing).
+    CFG.centrifugal = false; CFG.offroadDrag = false
+    const g = makeGame(0)
+    step(g, { steer: 0, gas: false, brake: true, gear: 1 })
+    ok('no brake light at rest (brake held at speed 0)', g.braking === false, `braking=${g.braking}`)
+    for (let i = 0; i < 40; i++) step(g, { steer: 0, gas: true, brake: false, gear: 1 })
+    ok('no brake light under power', g.braking === false && g.speed > 0, `speed=${Math.round(g.speed)}`)
+    step(g, { steer: 0, gas: false, brake: true, gear: 1 })
+    ok('the brake light lights while the car is slowing', g.braking === true, `speed=${Math.round(g.speed)}`)
+    let stopped = false
+    for (let i = 0; i < 60 && !stopped; i++) { step(g, { steer: 0, gas: false, brake: true, gear: 1 }); if (g.speed === 0) stopped = true }
+    step(g, { steer: 0, gas: false, brake: true, gear: 1 })   // the stop tick still braked; the next one does not
+    ok('the brake light goes out again at the stop', stopped && g.braking === false, `speed=${g.speed} braking=${g.braking}`)
+    ok('a re-applied brake at rest stays out (no light without a moving car)', g.braking === false)
+    CFG.brake = false
+    for (let i = 0; i < 40; i++) step(g, { steer: 0, gas: true, brake: false, gear: 1 })
+    step(g, { steer: 0, gas: false, brake: true, gear: 1 })
+    ok('with the brake rule muted the light cannot light (a dead pedal is no brake)', g.braking === false)
+    CFG.brake = true; CFG.centrifugal = true; CFG.offroadDrag = true
+}
+
 section('IT CAN BE WON')
 {
     ok('the autopilot clears all 5 stages', RUN.stages === 5, `stages=${RUN.stages}`)
@@ -217,6 +243,15 @@ if (process.argv.includes('--mutate')) {
         step(gF, { steer: 0, gas: true, brake: false, gear: 1 })
         CFG.flipCrash = true
         return gF.crashes === 1 && gF.flip > 0   // normally a flip; without it, no flip
+    })
+    expectRed('brake rule muted (the light must die with the rule)', () => {
+        CFG.brake = false; CFG.centrifugal = false; CFG.offroadDrag = false
+        const g = makeGame(0)
+        for (let i = 0; i < 40; i++) step(g, { steer: 0, gas: true, brake: false, gear: 1 })
+        step(g, { steer: 0, gas: false, brake: true, gear: 1 })
+        const lit = g.braking
+        CFG.brake = true; CFG.centrifugal = true; CFG.offroadDrag = true
+        return lit === true   // normally the light is ON; a mute that the light ignores means the gate is gone
     })
     expectRed('inflated start time (the slack proof stops biting)', () => {
         CFG.START_TIME += 12

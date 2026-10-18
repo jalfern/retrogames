@@ -77,6 +77,7 @@ export function makeGame(seed = 0) {
         seed, tick: 0,
         depth: 0, col: 0, stage: null,
         position: 0, speed: 0, playerX: 0, gear: 1,
+        braking: false,
         timeLeft: CFG.START_TIME, score: 0, dist: 0, crashes: 0, distanceKm: 0,
         spin: 0, spinDir: 0, flip: 0, offroad: false,
         forkOpen: false, forkSide: 0, stagesDone: 0,
@@ -142,12 +143,17 @@ export function step(g, inp = {}) {
         g.speed -= COAST * 3 * dt
         g.spin--
         if (g.flip > 0) g.flip--
+        g.braking = false                      // mid-spin there is no driver on the pedals
     } else {
         g.gear = inp.gear === 0 ? 0 : 1
         // Gas/brake accept 0..1 (the trigger values, #290 step 4); booleans
         // are exactly 1, so the digital path is unchanged.
         const gas = typeof inp.gas === 'number' ? inp.gas : (inp.gas ? 1 : 0)
         const brake = typeof inp.brake === 'number' ? inp.brake : (inp.brake ? 1 : 0)
+        // #283 item 6: the brake light follows the PHYSICAL rule — lit while the
+        // brake is applied to a moving car, out at rest and with the rule muted.
+        // The renderer blits the glowing cluster off this flag.
+        g.braking = brake > 0 && CFG.brake && g.speed > 0
         if (gas > 0) g.speed += accel * dt * gas
         else g.speed -= COAST * dt
         if (brake > 0 && CFG.brake) g.speed -= BRAKE * dt * brake

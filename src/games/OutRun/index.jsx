@@ -268,6 +268,18 @@ const OutRunGame = () => {
             if (gs.flip > 0 && (Math.floor(gs.flip / 6) % 2 === 0)) ctx.scale(1, -1)
             ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(0, ph / 2 - 4, pw * 0.42, 6, 0, 0, Math.PI * 2); ctx.fill()
             ctx.drawImage(img, -pw / 2, -ph / 2, pw, ph)
+            if (gs.braking) {
+                // Brake lights lit (#283 item 6): a glowing cluster exactly over
+                // the dim tail lights carCanvas bakes (the same 0.12/0.52 rects).
+                const lw = pw * 0.12, lh = ph * 0.12
+                const lx = -pw / 2 + pw * 0.12, rx = pw / 2 - pw * 0.24, ly = -ph / 2 + ph * 0.52
+                ctx.fillStyle = 'rgba(255,64,52,0.40)'
+                ctx.fillRect(lx - 3, ly - 3, lw + 6, lh + 6); ctx.fillRect(rx - 3, ly - 3, lw + 6, lh + 6)
+                ctx.fillStyle = '#ff463c'
+                ctx.fillRect(lx, ly, lw, lh); ctx.fillRect(rx, ly, lw, lh)
+                ctx.fillStyle = '#ffd2cc'
+                ctx.fillRect(lx + lw * 0.3, ly + lh * 0.35, lw * 0.4, lh * 0.3); ctx.fillRect(rx + lw * 0.3, ly + lh * 0.35, lw * 0.4, lh * 0.3)
+            }
             ctx.restore()
         }
 
@@ -394,7 +406,7 @@ const OutRunGame = () => {
                     tick: gs.tick, screen: screenRef.current, depth: gs.depth, col: gs.col,
                     pos: Math.round(gs.position), speed: KMH(gs.speed), gear: gs.gear,
                     timeLeft: +gs.timeLeft.toFixed(1), score: Math.round(gs.score), crashes: gs.crashes,
-                    stagesDone: gs.stagesDone, offroad: gs.offroad, spin: gs.spin, end: gs.end,
+                    stagesDone: gs.stagesDone, offroad: gs.offroad, spin: gs.spin, braking: gs.braking, end: gs.end,
                     hash: stateHash(gs),
                 }),
                 gameTime: () => gs.tick / 60,
