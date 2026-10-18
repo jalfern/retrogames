@@ -1,1 +1,16 @@
 @import "tailwindcss";
+
+/* Installable-arcade safe areas (#433): expose the notch/home-bar insets to the
+   shell chrome and give the fullscreen app a black backdrop so the translucent
+   status bar (apple-mobile-web-app-status-bar-style) blends instead of clipping. */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+html,
+body {
+  background: #000;
+}

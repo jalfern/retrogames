@@ -337,7 +337,13 @@ jobs:
       - run: npm run landerheatcheck
       - run: npm run lint:tempest
       - run: npm run tempestcheck -- --mutate
+      # PWA scope gate (#433): lint the SW + contract scripts, then verify the
+      # BUILT shell is installable — manifest scope/start_url are /retrogames/,
+      # the SW excludes /retrogames/forge, vercel resolves the pwa assets ahead
+      # of the SPA catch-all, and every home-screen icon decodes at its size.
+      - run: npm run lint:pw
       - run: npm run build
+      - run: npm run pwacheck
 
   # The "a job never rendered" gate. Job 2 shipped having NEVER mounted (an empty
   # fence batch threw inside the mount effect) and both gates were green:

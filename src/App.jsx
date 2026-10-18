@@ -89,7 +89,7 @@ function Layout({ children }) {
 
         {/* Footer Label (a route can opt out — MYST's caption bar owns the bottom) */}
         {info.footer !== 'none' && (
-          <div className={`fixed bottom-8 left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-100 transition-opacity duration-500 flex flex-col items-center gap-1`}>
+          <div className={`fixed left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-100 transition-opacity duration-500 flex flex-col items-center gap-1`} style={{ bottom: 'calc(2rem + var(--sab, 0px))', paddingLeft: 'var(--sal, 0px)', paddingRight: 'var(--sar, 0px)' }}>
             <h1 className={`${textColor} font-mono text-sm tracking-widest border-b-2 border-transparent ${borderColor} inline-block pb-1`}>
               JALFERN.COM
             </h1>
@@ -126,7 +126,8 @@ function MuteToggle({ theme }) {
   return (
     <button
       onClick={toggleMute}
-      className={`fixed bottom-8 right-8 ${textColor} opacity-20 hover:opacity-100 transition-opacity duration-300 z-50 p-2`}
+      className={`${textColor} opacity-20 hover:opacity-100 transition-opacity duration-300 z-50 p-2`}
+      style={{ position: 'fixed', bottom: 'calc(2rem + var(--sab, 0px))', right: 'calc(2rem + var(--sar, 0px))' }}
     >
       {muted ? (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">

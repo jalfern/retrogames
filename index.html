@@ -3,8 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>jalfern</title>
+    <!--
+      Installable arcade (#433): the manifest and icons are scoped to /retrogames/
+      (Vite prepends the base to these absolute hrefs, so the same tags are correct
+      in dev and prod — the js-dos lesson inverted). iOS ignores manifest icons and
+      wants apple-touch-icon + the web-app meta below; black-translucent + the
+      safe-area insets in index.css keep the chrome clear of the notch and home bar.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Arcade" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152.png" />
     <!--
       js-dos is NOT loaded here on purpose. It used to be a hard <script> in this
       file, which (a) made Pong and Mario download a ~300 KB emulator and (b) was
