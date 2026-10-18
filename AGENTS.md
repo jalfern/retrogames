@@ -14,12 +14,15 @@ lessons below keep games from shipping broken; they are not the goal.
 2. Work on the one goal in `STATE.md`. If there is none, ask; don't invent one.
 3. Only the CI `static` job blocks merges. Browser suites (`heistplay`, `verify`, …) are
    advisory: never spend more than one PR fixing a harness timing problem.
-4. If 3 PRs in a row don't change game code (`src/games/**`), stop and report to Jon.
+4. If 3 PRs in a row don't change game code (`src/games/**` or demos in `public/demos/**`), stop and report to Jon.
 5. Never merge a PR whose own description says it is red or WIP. From the PR's branch, merge
    **only** with this command, never any other way:
    `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
 6. Don't grow the harness past the code it tests. Prefer a new small check to a longer script.
 7. Every ~4 hours, stop with: what's playable now, what changed, three questions for Jon.
+8. Read your result before writing another probe. Before a second probe for the same error, write
+   one line: what did the last output rule out? A result that should be impossible is the clue,
+   not noise. Third probe on the same error: post the outputs on the issue and stop.
 
 History: `docs/qwen-run-2026-09-postmortem.md` explains why these rules exist.
 
