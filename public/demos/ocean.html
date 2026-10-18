@@ -381,14 +381,19 @@ async function boot() {
       let gz1b = textureSampleLevel(g1, samp, uv1 - vec2f(0.0, 1.0 / f32(NI)), 0.0).g;
       let a0 = 4.0;
       let a1 = 1.8;
+      let gx0c = textureSampleLevel(g0, samp, uv0, 0.0).r;
+      let gz0c = textureSampleLevel(g0, samp, uv0, 0.0).g;
+      let gx1c = textureSampleLevel(g1, samp, uv1, 0.0).r;
+      let gz1c = textureSampleLevel(g1, samp, uv1, 0.0).g;
+      let steep = abs(gx0c) + abs(gz0c) + 0.7 * (abs(gx1c) + abs(gz1c));
       let J0 = (1.0 + a0 * (gx0a - gx0b) / (2.0 * ds0)) * (1.0 + a0 * (gz0a - gz0b) / (2.0 * ds0))
              - pow(a0 * (gx0a - gx0b) / (2.0 * ds0), 2.0) * pow(a0 * (gz0a - gz0b) / (2.0 * ds0), 2.0);
       let J1 = (1.0 + a1 * (gx1a - gx1b) / (2.0 * ds1)) * (1.0 + a1 * (gz1a - gz1b) / (2.0 * ds1))
              - pow(a1 * (gx1a - gx1b) / (2.0 * ds1), 2.0) * pow(a1 * (gz1a - gz1b) / (2.0 * ds1), 2.0);
-      var f = smoothstep(1.05, 1.13, J0) + smoothstep(1.032, 1.09, J1) * 0.8;
-      f *= smoothstep(-0.05, 0.5, in.h) * (0.30 + 0.70 * vnoise(in.world.xz * 1.3 + vec2f(su.time * 0.22, 0.0)))
-           * (0.25 + 0.75 * vnoise(in.world.xz * 5.3 - vec2f(su.time * 0.35, su.time * 0.14)));
-      f = pow(clamp(f, 0.0, 1.0), 1.6);
+      var f = smoothstep(1.08, 1.18, J0) * 0.55 + smoothstep(1.03, 1.085, J1);
+      f *= smoothstep(0.10, 0.6, steep) * (0.25 + 0.75 * vnoise(in.world.xz * 1.5 + vec2f(su.time * 0.25, 0.0)))
+           * (0.20 + 0.80 * vnoise(in.world.xz * 6.1 - vec2f(su.time * 0.40, su.time * 0.16)));
+      f = pow(clamp(f, 0.0, 1.0), 1.8);
       f *= clamp(1.0 - dist / 320.0, 0.0, 1.0);
       let foamLit = vec3f(0.93, 0.90, 0.85) * (0.30 + 0.70 * (0.25 + 0.75 * max(dot(n, SUNDIR), 0.0)));
       col = mix(col, foamLit, f);
