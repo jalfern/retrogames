@@ -13,6 +13,7 @@ import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/
 import { rumble } from '../../components/gamepadMap'
 import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt,
+    loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE,
 } from './scene.js'
 
 // =====================================================================
@@ -336,10 +337,16 @@ export default function CometDriftHD() {
         envMap.colorSpace = THREE.SRGBColorSpace
         const kartMeshes = []
         for (const k of g.karts) {
-            const m = buildKart(LIVERY[k.color] || 0xcccccc, ACCENT[k.color] || '#fff')
+            const m = new THREE.Group()
             m.userData.kart = k
-            m.userData.body.envMap = envMap
-            m.userData.body.envMapIntensity = 0.55
+            const view = buildKart(LIVERY[k.color] || 0xcccccc, ACCENT[k.color] || '#fff')
+            view.userData.body.envMap = envMap
+            view.userData.body.envMapIntensity = 0.55
+            m.add(view)
+            m.userData.view = view
+            m.userData.body = view.userData.body
+            m.userData.brakeMat = view.userData.brakes.length ? view.userData.brakes[0].material : null
+            m.userData.wheelDefs = view.userData.wheelDefs
             scene.add(m)
             const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.72, 14),
                 new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false }))
@@ -351,15 +358,36 @@ export default function CometDriftHD() {
         }
         // exhaust cones on the player's buggy (flame drawn by scale + tint)
         const flames = []
-        for (const sx of [-0.26, 0.26]) {
+        for (const sx of [-0.2, 0.2]) {
             const cone = new THREE.Mesh(new THREE.ConeGeometry(0.085, 1, 8),
                 new THREE.MeshBasicMaterial({ color: 0x60c0ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }))
             cone.rotation.x = -Math.PI / 2
-            cone.position.set(sx, 0.3, -1.05)
+            cone.position.set(sx, 0.3, -0.72)
             cone.visible = false
             kartMeshes[0].m.add(cone)
             flames.push(cone)
         }
+        // #477: swap the boxed fallback for Jon's authored dune buggy once the
+        // GLB lands (cached). If it fails to load the primitives stay — the
+        // race never dead-loads on a missing model.
+        ;(async () => {
+            const model = await loadBuggy()
+            if (!model || disposed) return
+            kartMeshes.forEach(({ m }, i) => {
+                const k = g.karts[i]
+                const dec = decorateBuggy(model.clone(true), LIVERY[k.color] || 0xcccccc, ACCENT[k.color] || '#fff')
+                if (!dec.wheels.length || !dec.body) return
+                dec.group.scale.setScalar(BUGGY_SCALE)
+                dec.body.envMap = envMap
+                dec.body.envMapIntensity = 0.55
+                m.remove(m.userData.view)
+                m.add(dec.group)
+                m.userData.view = dec.group
+                m.userData.body = dec.body
+                m.userData.brakeMat = dec.brakeMat
+                m.userData.wheelDefs = dec.wheels
+            })
+        })()
 
         const sparks = makePool(lite ? 260 : 700, lite ? 0.16 : 0.13)
         const dust = makePool(lite ? 200 : 520, lite ? 0.5 : 0.42)
@@ -547,7 +575,7 @@ export default function CometDriftHD() {
                 const k = g.karts[i]
                 const { m, shadow } = kartMeshes[i]
                 m.position.set(k.x * S, 0, k.y * S)
-                m.rotation.y = -k.a
+                m.rotation.y = kartYaw(k.a)
                 m.rotation.z = k.driftT > 0 ? (k.steerVis || 1) * 0.14 : 0
                 const rough = k.offroad && k.v > 1
                 const bob = rough ? (jit(g.tick * 7.7 + i) - 0.5) * 0.05 : 0
@@ -555,14 +583,20 @@ export default function CometDriftHD() {
                 // suspension squash through the washboard (#471 item 3)
                 m.scale.y = rough ? 0.93 + jit(g.tick * 11.3 + i) * 0.08 : 1
                 shadow.position.set(k.x * S, 0.052, k.y * S)
-                for (const w of m.userData.wheels) {
-                    w.rotation.y = -(k.steerVis || 0) * 0.45
-                    if (w.children[0]) w.children[0].rotation.x += k.v * 0.6
+                // wheel rig (#477): steer the front pivots about vertical, roll all
+                // four about their axle. baseQuat keeps the model's baked right-side
+                // flip; steer/roll signs undo it so both sides turn/spin alike.
+                k.rollA = (k.rollA || 0) + k.v * 0.6
+                const steerV = (k.steerVis || 0) * 0.45
+                for (const wd of m.userData.wheelDefs) {
+                    wd.node.quaternion.copy(wd.baseQuat)
+                    if (wd.front) wd.node.rotateOnAxis(UP, steerV * wd.steerSign)
+                    for (const mesh of wd.meshes) mesh.rotation.x = k.rollA * wd.rollSign
                 }
                 const braking = (k.pv !== undefined && k.v < k.pv - 0.08) ||
                     (i === 0 && (keys.KeyS || keys.ArrowDown))
                 k.pv = k.v
-                if (m.userData.brakes.length) m.userData.brakes[0].material.emissiveIntensity = braking && k.spinT === 0 ? 1.8 : 0
+                if (m.userData.brakeMat) m.userData.brakeMat.emissiveIntensity = braking && k.spinT === 0 ? 1.8 : 0
             }
             const P = g.karts[0]
             for (const f of flames) f.visible = P.boostT > 0
