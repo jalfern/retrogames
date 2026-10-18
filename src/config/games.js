@@ -242,13 +242,13 @@ export const GAMES = [
     },
     {
         path: '/lemmings',
-        pad: { method: 'pointer', buttons: [{ label: 'CYCLE', code: 'KeyE' }], reads: ['pointer', 'b'], reason: 'cursor — tap / drag to aim the assignment, CYCLE picks the skill' },
+        pad: { method: 'pointer', buttons: [], reads: ['pointer'], reason: 'cursor — press and hold a lemming to preview, release to assign; the panel picks the skill' },
         builtBy: 'forge',
         component: LemmingsGame,
         label: 'LEMMINGS-LITE',
         theme: 'dark',
         description: 'They walk, they fall, you decide otherwise. A stream of mindless lemmings shuffles out of a cave toward cliffs, voids and plugged steel doors — one key press assigns a skill to the nearest one: blocker, bomber, climber or digger. Four hand-carved levels, each proven solvable (and each skill proven load-bearing) by a solver that ships in the repo; the attract demo is that solution, replayed move for move. Fatal falls are the killer, and a tunnelling digger is the only safe way down.',
-        controls: ['Arrow Keys: Move the assignment cursor (or drag on touch)', '1 2 3 4: pick BLOCKER / BOMBER / CLIMBER / DIGGER (B button cycles)', 'Space / A button / click: assign the skill to the nearest lemming', 'Get at least the OUT quota of lemmings into the door before the clock runs out', '?: Pause and read the controls']
+        controls: ['Press and hold a lemming: a ring previews the pick, release assigns the selected skill (release on nothing does nothing)', 'Tap a skill on the bottom panel (or 1 2 3 4) to pick BLOCKER / BOMBER / CLIMBER / DIGGER', 'Arrows move the assignment cursor, Space assigns (keyboard)', 'PAUSE pauses; hold FF to fast-forward', 'Get at least the OUT quota of lemmings into the door before the clock runs out', '?: Pause and read the controls']
     },
     {
         path: '/boulder-dash',

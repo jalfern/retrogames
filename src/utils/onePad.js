@@ -161,3 +161,48 @@ export function clearHeld() { Object.assign(held, blankPad()) }
 
 // The one pad for a game of `method` from everything currently held.
 export function currentPad(method) { return normalizePad(held, method) }
+
+// --- Press, preview, release (#432): the shared pointer gesture ------------
+//
+// A pointer-method game aims with the finger, not a magic cursor: the PRESS
+// shows a preview on the candidate the finger will take, SLIDING re-targets,
+// the RELEASE commits — and a release over nothing commits nothing. The
+// candidate list and the commit are the game's; the gesture and the reach are
+// the shared half, so every pointer title (Lemmings, Civ, SimCity, …) picks
+// targets with the same thumb-sized model.
+//
+// POINTER_HIT_PX is the finger's reach in SCREEN px (about a fingertip), not
+// world cells: the same thumb-size at any zoom, on any phone. `scale` is the
+// stage's screen px per world unit (the game's fit scale); the game converts
+// the finger to world units the same way it converts any stage point.
+export const POINTER_HIT_PX = 24
+
+// The nearest candidate to the finger, in screen space. cands are plain
+// {x, y} in world units (the game attaches its own ids / fields); (wx, wy) is
+// the finger in world units; scale is screen px per world unit. Within the
+// reach the nearest wins; outside it, nothing (a miss is not a near-miss).
+export function pointerTarget(cands, wx, wy, scale, hitPx = POINTER_HIT_PX) {
+    const reach = hitPx / (scale > 0 ? scale : 1)
+    let best = null, bd = reach + 1e-9
+    for (const c of cands) {
+        const d = Math.hypot(c.x - wx, c.y - wy)
+        if (d < bd) { bd = d; best = c }
+    }
+    return best
+}
+
+// Step the gesture with THE one pad's pointer field. `gs` is the game's own
+// plain object (it keeps gs.pd / gs.aim); cands the live candidates; commit
+// gets the target or null on the release edge (null = release on nothing, a
+// no-op). Press and hold re-target every call, so a slide moves the preview.
+export function pointerGesture(gs, p, cands, wx, wy, scale, commit) {
+    const down = !!(p && p.down)
+    if (down) {
+        gs.aim = pointerTarget(cands, wx, wy, scale)
+    } else if (gs.pd) {
+        const a = gs.aim
+        gs.aim = null
+        if (commit) commit(a)
+    }
+    gs.pd = down
+}
