@@ -20,7 +20,7 @@
   four mutants RED). oceancheck ALL GREEN (foam floor 3000→1200: single chop
   halves foam; a pixel spike detector cannot separate fog/foam from folds).
   Storm screenshots z=0→35 camera-travel: zero spikes; calm keeps ripples.
-- **Ocean FFT butterfly race fixed (#469)** — Jon's diagnosis: each stage in
+- **Ocean FFT butterfly race fixed (#474)** — Jon's diagnosis: each stage in
   `cs_row`/`cs_col` read a and b from workgroup memory and wrote BOTH butterfly
   slots with the only barrier *after* the writes; partners occupy each other's
   write slots, so another SIMD group could clobber before the owner read →
