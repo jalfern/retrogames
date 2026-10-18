@@ -53,19 +53,19 @@ function texCanvas(w, h) {
 function asphaltTex() {
     const c = texCanvas(256, 256)
     const x = c.getContext('2d')
-    x.fillStyle = '#33313a'; x.fillRect(0, 0, 256, 256)
+    x.fillStyle = '#4a4754'; x.fillRect(0, 0, 256, 256)
     for (let i = 0; i < 2600; i++) {
-        const g = 40 + jit(i * 1.7) * 34
-        x.fillStyle = `rgba(${g + 8},${g},${g + 14},0.5)`
+        const g = 58 + jit(i * 1.7) * 48
+        x.fillStyle = `rgba(${g + 10},${g},${g + 18},0.5)`
         x.fillRect(jit(i * 3.1) * 256, jit(i * 5.3) * 256, 2, 2)
     }
     // worn wheel grooves, darker and slightly polished
-    x.fillStyle = 'rgba(18,16,22,0.55)'
+    x.fillStyle = 'rgba(30,26,36,0.5)'
     x.fillRect(78, 0, 20, 256); x.fillRect(158, 0, 20, 256)
-    x.fillStyle = 'rgba(90,86,104,0.25)'
+    x.fillStyle = 'rgba(118,112,132,0.3)'
     x.fillRect(82, 0, 3, 256); x.fillRect(162, 0, 3, 256)
     // sealed cracks with tar lines
-    x.strokeStyle = 'rgba(20,18,24,0.8)'; x.lineWidth = 1.4
+    x.strokeStyle = 'rgba(28,24,32,0.8)'; x.lineWidth = 1.4
     for (let k = 0; k < 7; k++) {
         x.beginPath()
         let px0 = jit(k * 7.7) * 256; let py0 = jit(k * 9.1) * 256
@@ -182,11 +182,19 @@ export default function CometDriftHD() {
     const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
 
     useEffect(() => {
-        const glCanvas = glRef.current
+        let glCanvas = glRef.current
         const hud = hudRef.current
         const host = glCanvas.parentElement
+        // a StrictMode remount arrives after the previous lane disposed its
+        // substitute canvas — clear it and show the React-owned one again
+        for (const old of host.querySelectorAll('canvas[data-hdgl]')) old.remove()
+        glCanvas.style.display = ''
         const hctx = hud.getContext('2d')
         const lite = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite')
+        // WebGPU is the product default; ?gl=webgl2 pins the fallback so
+        // pixel-reading harnesses (getImageData) see the frame — WebGPU
+        // canvases answer black to 2D copies regardless of the flag.
+        const forceGL = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('gl') === 'webgl2'
 
         const g = makeGame(0)
         gameRef.current = g
@@ -217,12 +225,12 @@ export default function CometDriftHD() {
         scene.fog = new THREE.FogExp2(0x5c2836, 0.011)
         const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 400)
 
-        const sunDir = new THREE.Vector3(Math.cos(-0.6), 0.32, Math.sin(-0.6)).normalize()
-        const sun = new THREE.DirectionalLight(0xffb078, 2.6)
+        const sunDir = new THREE.Vector3(Math.cos(-0.6), 0.12, Math.sin(-0.6)).normalize()
+        const sun = new THREE.DirectionalLight(0xffb078, 3.1)
         sun.position.copy(sunDir.clone().multiplyScalar(60))
         scene.add(sun)
-        scene.add(new THREE.HemisphereLight(0x8a4a5e, 0x2c1810, 1.1))
-        scene.add(new THREE.AmbientLight(0x40222c, 0.55))
+        scene.add(new THREE.HemisphereLight(0xa05a6e, 0x402418, 1.5))
+        scene.add(new THREE.AmbientLight(0x50303c, 0.8))
 
         const tex = (canvas, rx = 1, ry = 1) => {
             const t = new THREE.CanvasTexture(canvas)
@@ -235,7 +243,7 @@ export default function CometDriftHD() {
         const stats = trackGeometryStats()
         const M = stats.geos
         const mat = (map, extra = {}) => new THREE.MeshStandardMaterial({ map, roughness: 0.95, metalness: 0, side: THREE.DoubleSide, ...extra })
-        const roadMesh = new THREE.Mesh(M.road, mat(tex(asphaltTex()), { roughness: 0.55, metalness: 0.15 }))
+        const roadMesh = new THREE.Mesh(M.road, mat(tex(asphaltTex()), { roughness: 0.82, metalness: 0.05 }))
         scene.add(roadMesh)
         const kerbMat = mat(tex(kerbTex()))
         scene.add(new THREE.Mesh(M.kerbL, kerbMat))
@@ -256,7 +264,7 @@ export default function CometDriftHD() {
         floor.position.set(17, -0.4, 17)
         scene.add(floor)
 
-        scene.add(buildArch())
+        scene.add(buildArch(tex(strataTex())))
         const sceneryGroup = new THREE.Group()
         for (const sc of SCENERY) sceneryGroup.add(buildSceneryItem(sc))
         scene.add(sceneryGroup)
@@ -338,8 +346,36 @@ export default function CometDriftHD() {
         if (ro) ro.observe(host)
         window.addEventListener('resize', relayout)
 
+        // classic WebGL2 path: battle-tested pixel readback, and the runtime
+        // refuge when a WebGPU backend dies mid-race (lost-device on some
+        // drivers). The substitute goes IN FRONT of the React-owned canvas
+        // (never replacing it — React re-attaches its ref on remount and
+        // would silently resurrect a dead context); it becomes the first
+        // canvas in the DOM, so harnesses and contract frame() see it.
+        const buildLegacy = () => {
+            const fresh = document.createElement('canvas')
+            fresh.dataset.hdgl = '1'
+            fresh.className = glCanvas.className
+            fresh.style.cssText = glCanvas.style.cssText
+            host.insertBefore(fresh, glCanvas)
+            glCanvas.style.display = 'none'
+            for (const old of host.querySelectorAll('canvas[data-hdgl]')) {
+                if (old !== fresh) old.remove()
+            }
+            glCanvas = fresh
+            const r = new THREE.WebGLRenderer({ canvas: fresh, antialias: !lite, preserveDrawingBuffer: true })
+            r.setPixelRatio(dpr)
+            r.setSize(cssW, cssH, false)
+            r.toneMapping = THREE.ACESFilmicToneMapping
+            r.toneMappingExposure = 1.3
+            renderer = r
+            backendName = 'webgl2-legacy'
+            ready = true
+        }
+
         ;(async () => {
             try {
+                if (forceGL) throw new Error('pinned by ?gl=webgl2')
                 renderer = new WebGPURenderer({ canvas: glCanvas, antialias: !lite, alpha: false, preserveDrawingBuffer: true, forceWebGL: false })
                 await renderer.init()
                 if (disposed) { renderer.dispose(); return }
@@ -347,18 +383,11 @@ export default function CometDriftHD() {
                 renderer.setPixelRatio(dpr)
                 renderer.setSize(cssW, cssH, false)
                 renderer.toneMapping = THREE.ACESFilmicToneMapping
-                renderer.toneMappingExposure = 1.12
+                renderer.toneMappingExposure = 1.3
                 ready = true
             } catch {
-                // last-ditch: classic WebGL renderer so the title never dead-screens
                 try {
-                    renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: !lite, preserveDrawingBuffer: true })
-                    renderer.setPixelRatio(dpr)
-                    renderer.setSize(cssW, cssH, false)
-                    renderer.toneMapping = THREE.ACESFilmicToneMapping
-                    renderer.toneMappingExposure = 1.12
-                    backendName = 'webgl2-legacy'
-                    ready = true
+                    buildLegacy()
                 } catch {
                     backendName = 'none'
                 }
@@ -470,7 +499,7 @@ export default function CometDriftHD() {
             const back = 2.55 + fovK * 0.05
             const fx0 = Math.cos(camA); const fz0 = Math.sin(camA)
             const hx = P.x * S; const hz = P.y * S
-            camera.position.set(hx - fx0 * back, 1.12 + fovK * 0.012, hz - fz0 * back)
+            camera.position.set(hx - fx0 * back, 1.26 + fovK * 0.012, hz - fz0 * back)
             tmpF.set(fx0, 0, fz0)
             tmpR.crossVectors(tmpF, UP).normalize()
             if (shake > 0.05) {
@@ -481,7 +510,7 @@ export default function CometDriftHD() {
                 if (shake < 0.05) shake = 0
             }
             camera.up.set(0, 1, 0)
-            camera.lookAt(hx + fx0 * 4.2, 0.42, hz + fz0 * 4.2)
+            camera.lookAt(hx + fx0 * 4.2, 0.55, hz + fz0 * 4.2)
             camera.fov = 62 + fovK
             camera.updateProjectionMatrix()
         }
@@ -513,7 +542,7 @@ export default function CometDriftHD() {
                 minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x)
                 minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y)
             }
-            const padF = 8
+            const padF = 0.08
             const sx = (1 - padF * 2) / (maxX - minX)
             const sy = (1 - padF * 2) / (maxY - minY)
             const sc = Math.min(sx, sy)
@@ -530,6 +559,9 @@ export default function CometDriftHD() {
             const P = g.karts[0]
             const u = hs()
             const W = cssW; const H = cssH
+            // the app's #437 corner chrome floats over full-bleed canvases;
+            // drop the instrument row below it so nothing writes over nothing
+            const TOP = 42
             hctx.clearRect(0, 0, W, H)
             // speed streaks at the frame edges: density + tint ride v and boost
             if (P.boostT > 0 || P.v > 7.4) {
@@ -563,48 +595,48 @@ export default function CometDriftHD() {
             }
             hctx.globalAlpha = 1
             // POS
-            panel(2 * u, 2 * u, 40 * u, 30 * u)
+            panel(2 * u, TOP + 2 * u, 40 * u, 30 * u)
             hctx.fillStyle = '#78a0c0'; hctx.font = fu(8)
-            hctx.fillText('POS', Math.round(6 * u), Math.round(12 * u))
+            hctx.fillText('POS', Math.round(6 * u), Math.round(TOP + 12 * u))
             const suff = ['st', 'nd', 'rd', 'th', 'th', 'th', 'th'][P.place - 1]
             hctx.fillStyle = P.place === 1 ? '#ffd840' : '#e8f0fa'
             hctx.font = fu(18)
-            hctx.fillText(`${P.place}${suff}`, Math.round(6 * u), Math.round(28 * u))
+            hctx.fillText(`${P.place}${suff}`, Math.round(6 * u), Math.round(TOP + 28 * u))
             // speed + ladder
-            panel(2 * u, 35 * u, 66 * u, 30 * u)
+            panel(2 * u, TOP + 35 * u, 66 * u, 30 * u)
             hctx.fillStyle = '#e8f0fa'; hctx.font = fu(9)
-            hctx.fillText(`${Math.round(P.v * 19.5)} KM/H`, Math.round(6 * u), Math.round(45 * u))
+            hctx.fillText(`${Math.round(P.v * 19.5)} KM/H`, Math.round(6 * u), Math.round(TOP + 45 * u))
             hctx.fillStyle = 'rgba(120,160,200,0.25)'
-            round(Math.round(6 * u), Math.round(49 * u), Math.round(58 * u), Math.round(6 * u), 3 * u); hctx.fill()
+            round(Math.round(6 * u), Math.round(TOP + 49 * u), Math.round(58 * u), Math.round(6 * u), 3 * u); hctx.fill()
             const barW = Math.min(Math.round(58 * u), Math.round(P.v / (CFG.top + TIERS[Math.max(P.boostTier, 0)].over) * 58 * u))
             const bg = hctx.createLinearGradient(0, 0, Math.round(58 * u), 0)
             if (P.boostT > 0) { bg.addColorStop(0, '#4060ff'); bg.addColorStop(1, '#ffd840') } else if (P.offroad) { bg.addColorStop(0, '#f85820'); bg.addColorStop(1, '#f8a040') } else { bg.addColorStop(0, '#18c890'); bg.addColorStop(1, '#70f0c8') }
-            if (barW > 1) { round(Math.round(6 * u), Math.round(49 * u), barW, Math.round(6 * u), 3 * u); hctx.fillStyle = bg; hctx.fill() }
+            if (barW > 1) { round(Math.round(6 * u), Math.round(TOP + 49 * u), barW, Math.round(6 * u), 3 * u); hctx.fillStyle = bg; hctx.fill() }
             for (let i = 0; i < 3; i++) {
                 const held = P.driftT > 0 && tierReached(P.charge) >= i
                 const pulse = held && tierReached(P.charge) === i && (g.tick >> 2) % 2 === 0
                 hctx.fillStyle = held ? (pulse ? '#ffffff' : TIER_COL[i]) : 'rgba(120,160,200,0.25)'
-                const cx = Math.round((13 + i * 9) * u); const cy = Math.round(60 * u)
+                const cx = Math.round((13 + i * 9) * u); const cy = Math.round(TOP + 60 * u)
                 hctx.beginPath()
                 hctx.moveTo(cx - 3.4 * u, cy - 2.6 * u); hctx.lineTo(cx, cy); hctx.lineTo(cx - 3.4 * u, cy + 2.6 * u)
                 hctx.lineTo(cx - 1.7 * u, cy); hctx.closePath(); hctx.fill()
             }
             // LAP centre
-            panel(Math.round((W - 92 * u) / 2), 2 * u, Math.round(92 * u), Math.round(28 * u))
+            panel(Math.round((W - 92 * u) / 2), TOP + 2 * u, Math.round(92 * u), Math.round(28 * u))
             hctx.textAlign = 'center'
             hctx.fillStyle = '#78a0c0'; hctx.font = fu(8)
-            hctx.fillText('LAP', Math.round(W / 2), Math.round(11 * u))
+            hctx.fillText('LAP', Math.round(W / 2), Math.round(TOP + 11 * u))
             hctx.fillStyle = '#e8f0fa'; hctx.font = fu(11)
-            hctx.fillText(`${Math.min(P.lap + 1, LAPS)}/${LAPS}  ${fmtTime(Math.max(0, g.tick - P.lapStart))}`, Math.round(W / 2), Math.round(25 * u))
+            hctx.fillText(`${Math.min(P.lap + 1, LAPS)}/${LAPS}  ${fmtTime(Math.max(0, g.tick - P.lapStart))}`, Math.round(W / 2), Math.round(TOP + 25 * u))
             hctx.textAlign = 'left'
             // minimap right
             const mw = Math.round(62 * u)
-            panel(Math.round(W - mw - 2 * u), 2 * u, mw, mw)
+            panel(Math.round(W - mw - 2 * u), TOP + 2 * u, mw, mw)
             hctx.strokeStyle = 'rgba(150,190,220,0.55)'; hctx.lineWidth = Math.max(1, u)
             hctx.beginPath()
             for (let i = 0; i < T.N; i += 6) {
                 const [qx, qy] = MAP(T.pts[i].x, T.pts[i].y)
-                const px0 = Math.round(W - mw - 2 * u + qx * mw); const py0 = Math.round(2 * u + qy * mw)
+                const px0 = Math.round(W - mw - 2 * u + qx * mw); const py0 = Math.round(TOP + 2 * u + qy * mw)
                 if (i === 0) hctx.moveTo(px0, py0); else hctx.lineTo(px0, py0)
             }
             hctx.closePath(); hctx.stroke()
@@ -614,7 +646,7 @@ export default function CometDriftHD() {
                 hctx.fillStyle = k.isPlayer ? '#28d8f8' : `#${(LIVERY[k.color] || 0xcccccc).toString(16).padStart(6, '0')}`
                 const ds = Math.max(2, Math.round((k.isPlayer ? 4.5 : 3) * u))
                 hctx.beginPath()
-                hctx.arc(Math.round(W - mw - 2 * u + qx * mw), Math.round(2 * u + qy * mw), ds / 2, 0, Math.PI * 2)
+                hctx.arc(Math.round(W - mw - 2 * u + qx * mw), Math.round(TOP + 2 * u + qy * mw), ds / 2, 0, Math.PI * 2)
                 hctx.fill()
             }
             // countdown / GO
@@ -728,8 +760,36 @@ export default function CometDriftHD() {
                 }
             }
             if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame(0)); st.endT = 0; sparks.clear(); dust.clear() } }
-            if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0; setPadOn(false) }
+            if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0; st.endAt = performance.now(); setPadOn(false) }
             spawnTick()
+        }
+
+        // self-heal: some drivers lose the WebGL device under three's
+        // WebGPU-node backend while WebGPU itself renders fine. Count hard
+        // failures and black frames on GL-backed paths, then rebuild on the
+        // classic renderer once — the race must not die with the backend.
+        let renderFails = 0
+        let blackRuns = 0
+        const healIfNeeded = (why) => {
+            renderFails = 0; blackRuns = 0
+            if (disposed || backendName !== 'webgl2') return
+            try { renderer.dispose() } catch { /* already gone */ }
+            buildLegacy()
+            if (import.meta.env.DEV) console.warn('CometDriftHD: backend rebuilt after ' + why)
+        }
+        const onRenderFail = () => { if (++renderFails >= 3) healIfNeeded('render failures') }
+        const pixelHeartbeat = () => {
+            if (backendName !== 'webgl2' || g.tick % 120 !== 0) return
+            try {
+                const glc = glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
+                if (!glc) return
+                const buf = new Uint8Array(4 * 4)
+                glc.readPixels(Math.floor(glc.drawingBufferWidth / 2) - 2, Math.floor(glc.drawingBufferHeight / 2) - 2, 4, 4, glc.RGBA, glc.UNSIGNED_BYTE, buf)
+                let lum = 0
+                for (let i = 0; i < 16; i++) lum += buf[i]
+                if (lum === 0 && ++blackRuns >= 2) healIfNeeded('black frames')
+                else blackRuns = 0
+            } catch { /* no readback available */ }
         }
 
         const loop = (now) => {
@@ -744,8 +804,11 @@ export default function CometDriftHD() {
             }
             syncMeshes()
             if (ready && renderer) {
-                if (renderer.renderAsync) renderer.renderAsync(scene, camera).catch(() => { })
-                else renderer.render(scene, camera)
+                try {
+                    if (renderer.renderAsync) renderer.renderAsync(scene, camera).catch(onRenderFail)
+                    else renderer.render(scene, camera)
+                } catch { onRenderFail() }
+                pixelHeartbeat()
             }
             drawHud()
             if (st.screen === 'attract') drawAttract()
@@ -766,7 +829,7 @@ export default function CometDriftHD() {
         tapRef.current = () => {
             if (pausedRef.current) return
             if (st.screen === 'attract') { audioController.init(); resetTo('race') }
-            else if (st.screen === 'end') resetTo('attract')
+            else if (st.screen === 'end' && performance.now() - (st.endAt || 0) > 400) resetTo('attract')
         }
 
         const kd = (e) => {
@@ -780,7 +843,7 @@ export default function CometDriftHD() {
             }
             if (st.screen === 'end') {
                 st.endT++
-                if (st.endT > 20) resetTo('attract')
+                if (performance.now() - (st.endAt || 0) > 400) resetTo('attract')
                 return
             }
             keys[e.code] = true
@@ -857,7 +920,6 @@ export default function CometDriftHD() {
                     tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), done: !!g.end,
                     place: P.place, lap: P.lap, phase: g.phase, v: Math.round(P.v * 100) / 100,
                     driftT: P.driftT, charge: P.charge, boostT: P.boostT, spinT: P.spinT,
-                    sparks: sparks.aliveCount,
                     hash: stateHash(g),
                 }
             },

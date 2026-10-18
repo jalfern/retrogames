@@ -137,7 +137,7 @@ export function trackGeometryStats() {
 // driver. Node-safe: plain materials, no textures.
 export function buildKart(hex, accentHex) {
     const g = new THREE.Group()
-    const body = new THREE.MeshStandardMaterial({ color: hex, metalness: 0.45, roughness: 0.35 })
+    const body = new THREE.MeshStandardMaterial({ color: hex, metalness: 0.2, roughness: 0.4 })
     const dark = new THREE.MeshStandardMaterial({ color: 0x1c161e, metalness: 0.2, roughness: 0.7 })
     const chassis = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 1.0), body)
     chassis.position.y = 0.3
@@ -148,17 +148,23 @@ export function buildKart(hex, accentHex) {
     const pod = new THREE.BoxGeometry(0.14, 0.12, 0.55)
     const podL = new THREE.Mesh(pod, dark); podL.position.set(-0.3, 0.26, -0.05); g.add(podL)
     const podR = new THREE.Mesh(pod, dark); podR.position.set(0.3, 0.26, -0.05); g.add(podR)
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.05, 0.24), body)
-    wing.position.set(0, 0.56, -0.52)
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.05, 0.22), body)
+    wing.position.set(0, 0.5, -0.52)
     g.add(wing)
-    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.06), dark)
-    strut.position.set(0, 0.44, -0.5)
-    g.add(strut)
-    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 10),
+    const strutGeo = new THREE.BoxGeometry(0.05, 0.18, 0.05)
+    for (const sx of [-0.18, 0.18]) {
+        const strut = new THREE.Mesh(strutGeo, dark)
+        strut.position.set(sx, 0.4, -0.5)
+        g.add(strut)
+    }
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10),
         new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.3, roughness: 0.4 }))
-    helmet.position.set(0, 0.56, 0.05)
+    helmet.position.set(0, 0.5, 0.05)
     g.add(helmet)
-    const wheelGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.16, 14)
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.06), dark)
+    visor.position.set(0, 0.52, 0.14)
+    g.add(visor)
+    const wheelGeo = new THREE.CylinderGeometry(0.21, 0.21, 0.13, 14)
     wheelGeo.rotateZ(Math.PI / 2)
     const wheels = []
     const mk = (sx, sz, front) => {
@@ -238,26 +244,28 @@ export function makePool(count, size) {
 }
 
 // ---- the sandstone arch over the line: the Gulch's landmark, now standing
-// 5 metres off the asphalt. Browser-safe (plain materials).
-export function buildArch() {
+// 5 metres off the asphalt. Legs land in the sand gutter, safely outside the
+// sim's wall limit — the karts never touch it. Browser can pass a strata
+// texture for the rock; Node-safe without one.
+export function buildArch(strataMap) {
     const g = new THREE.Group()
-    const strata = new THREE.MeshStandardMaterial({ color: 0x8a5038, metalness: 0.05, roughness: 0.9 })
-    const darker = new THREE.MeshStandardMaterial({ color: 0x5c3222, metalness: 0.05, roughness: 0.95 })
+    const strata = new THREE.MeshStandardMaterial({ color: 0xb07050, map: strataMap || null, metalness: 0.05, roughness: 0.9 })
+    const darker = new THREE.MeshStandardMaterial({ color: 0x6e3c28, map: strataMap || null, metalness: 0.05, roughness: 0.95 })
     const p = T.pts[0]
-    const leg = new THREE.BoxGeometry(0.5, 2.3, 0.5)
+    const leg = new THREE.BoxGeometry(0.36, 2.3, 0.36)
     for (const s of [-1, 1]) {
         const m = new THREE.Mesh(leg, strata)
         g.add(m)
-        m.position.set(s * 2.7, 1.15, 0)
-        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.22, 0.72), darker)
-        foot.position.set(s * 2.7, 0.11, 0)
+        m.position.set(s * 3.15, 1.15, 0)
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.22, 0.6), darker)
+        foot.position.set(s * 3.15, 0.11, 0)
         g.add(foot)
     }
-    const span = new THREE.Mesh(new THREE.TorusGeometry(2.7, 0.28, 8, 20, Math.PI), strata)
+    const span = new THREE.Mesh(new THREE.TorusGeometry(3.15, 0.24, 8, 20, Math.PI), strata)
     g.add(span)
     span.position.y = 2.3
-    const key = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.6, 0.62), darker)
-    key.position.set(0, 2.3 + 2.7, 0)
+    const key = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.55, 0.56), darker)
+    key.position.set(0, 2.3 + 3.15, 0)
     g.add(key)
     // sit it on the line, squared to the road
     g.position.set(p.x * S, 0, p.y * S)
@@ -303,7 +311,7 @@ export function buildMesas() {
         const r = 46 + (i % 4) * 9 + Math.sin(i * 7.7) * 4
         const h = 5 + ((i * 37) % 5) * 2.6
         const w = 6 + ((i * 53) % 6) * 2.4
-        const m = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.82, w, h, 6), rock)
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.9, w, h, 6), rock)
         m.position.set(17 + Math.cos(ang) * r, h / 2 - 1.4, 17 + Math.sin(ang) * r)
         m.rotation.y = ang
         g.add(m)
