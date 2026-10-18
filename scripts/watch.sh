@@ -3,6 +3,9 @@
 #
 #   scripts/watch.sh          # open it (or re-attach if it is already running)
 #   scripts/watch.sh --kill   # close it
+#   scripts/watch.sh --live   # also show BUILDER's tokens as they generate
+#                             # (a pane right of BUILDER; needs the tap — see
+#                             # scripts/tap.mjs. Switching layouts: --kill first.)
 #
 # Works from anywhere you can SSH into the Studio (phone over Tailscale too):
 # the tmux session lives here, so every device attaches to the same panes.
@@ -40,7 +43,12 @@ if [[ "${1:-}" == "--kill" ]]; then
     exit 0
 fi
 
+LIVE=0
+[[ "${1:-}" == "--live" ]] && LIVE=1
+
 if tmux has-session -t "$SESSION" 2>/dev/null; then
+    (( LIVE )) && ! tmux list-panes -t "$SESSION" -F '#{pane_title}' | grep -q '^LIVE' \
+        && { echo "watch is already open without the live pane: scripts/watch.sh --kill, then --live"; sleep 2; }
     exec tmux attach -t "$SESSION"
 fi
 
@@ -132,6 +140,23 @@ done
 PANE
 }
 
+# LIVE pane (--live): the tap's copy of what the model is generating right
+# now — reasoning dimmed, output in plain text, tool calls in cyan. The
+# session log (BUILDER pane) only gets a step once it finishes; this shows it
+# while it is still being written. Empty = no session is routed through the tap.
+live_pane() {
+    cat <<'PANE'
+D=$'\e[2m' B=$'\e[1m' R=$'\e[1;31m' N=$'\e[0m'
+printf '\e]2;LIVE\e\\'
+f=/tmp/forge/stream-$LANE.log
+code=$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$TAPPORT/v1/models")
+if [[ "$code" == 000 ]]; then t="${R}tap DOWN${N}${D} (sessions go direct)"
+else t="tap :$TAPPORT"; fi
+print -r -- "${B}$L live${N}  ${D}$t${N}"
+touch "$f"; exec tail -n 400 -F "$f"
+PANE
+}
+
 # Left column, top to bottom: BUILDER, QA·MINI, QA·MBP, WARDEN (sizes are
 # set by the warden pane, above).
 LANE="$(lane_pane)"
@@ -146,7 +171,20 @@ tmux split-window -v -l 50% -t "$SESSION:0.1" -e L=QA·MBP -e PORT=18001 -e PROV
     -e P1='opencode run.*omlx' -e P2='mbp' zsh -c "$LANE"
 # RETRO: a full-height pane on the right, 60% wide. `env -u TMUX` lets tmux
 # nest; -A attaches to "retro" if it exists, otherwise creates it in the repo.
-tmux split-window -h -f -l 60% -t "$SESSION" \
+BUILDER_PANE=$(tmux display -p -t "$SESSION:0.0" '#{pane_id}')
+tmux split-window -h -f -l $(( LIVE ? 40 : 60 ))% -t "$SESSION" \
     "env -u TMUX tmux new-session -A -s retro -c $HOME/Dev/retrogames"
-tmux set-option -t "$SESSION" mouse on
+# LIVE: right half of the BUILDER row. It shares that row, so the warden's
+# resizing of BUILDER moves it too (the warden only lays out the x=0 column).
+(( LIVE )) && tmux split-window -h -l 50% -t "$BUILDER_PANE" \
+    -e L=BUILDER -e LANE=builder -e TAPPORT=8010 zsh -c "$(live_pane)"
+# Mouse: on server-wide (-g), so the nested RETRO session gets it too. With it
+# off there, the wheel over RETRO dropped the outer pane into copy-mode: the
+# chat froze, scrolled junk, and typing seemed dead until `q`. And scrolling a
+# lane pane enters copy-mode with -e, so scrolling back to the bottom exits it
+# and the pane is live again (q or Esc also exits).
+tmux set-option -g mouse on
+tmux bind-key -n WheelUpPane if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' \
+    'send-keys -M' 'copy-mode -e'
+tmux bind-key -T copy-mode Escape send-keys -X cancel
 exec tmux attach -t "$SESSION"

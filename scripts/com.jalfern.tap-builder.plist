@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- TAP for the builder: :8010 -> oMLX :8000, copying streamed tokens to
+     /tmp/forge/stream-builder.log for `watch.sh --live`. KeepAlive restarts it
+     within a second if it ever exits. See scripts/tap.mjs. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jalfern.tap-builder</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/node</string>
+        <string>/Users/jon/Dev/retrogames/scripts/tap.mjs</string>
+        <string>--listen</string>
+        <string>8010</string>
+        <string>--upstream</string>
+        <string>8000</string>
+        <string>--out</string>
+        <string>/tmp/forge/stream-builder.log</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>1</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/forge/tap-builder.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/forge/tap-builder.err</string>
+</dict>
+</plist>
