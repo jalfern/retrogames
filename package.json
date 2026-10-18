@@ -20,6 +20,7 @@
         "cornerprobe": "node scripts/cornerprobe.mjs",
         "preview": "vite preview",
         "shot": "node scripts/shot.mjs",
+        "oceancheck": "node scripts/oceancheck.mjs",
         "audcheck": "node scripts/audcheck.mjs",
         "mariocheck": "node scripts/mariocheck.mjs",
         "autopilotcheck": "node scripts/autopilotcheck.mjs",
