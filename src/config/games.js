@@ -102,6 +102,9 @@ const ExcitebikeGame = lazy(() => import('../games/Excitebike'))
 // their own chunk; the harness imports track/sim/planner unchanged in Node.
 const MarioKartGame = lazy(() => import('../games/MarioKart'))
 const CometDriftGame = lazy(() => import('../games/CometDrift'))
+// COMET DRIFT HD: the same certified sim and track data (#419) under a modern
+// three.js WebGPU renderer — real geometry, lighting and GPU particles.
+const CometDriftHDGame = lazy(() => import('../games/CometDriftHD'))
 // TETRIS: same lesson — the pure sim and the autopilot that scripts the attract
 // demo (and scripts/tetrischeck.mjs audits: gravity, DAS, the score ledger)
 // ride in their own chunk; the harness imports sim/planner unchanged in Node.
@@ -466,6 +469,18 @@ export const GAMES = [
         label: 'COMET DRIFT GP',
         theme: 'dark',
         description: 'The arcade\'s ORIGINAL kart racer. SUNSET GULCH at dusk: a canyon toll-road with layered sandstone strata closing in on both sides, flat-topped mesas on an ember horizon, the sun bleeding out behind them. The whole course is ONE textured plane rotated and scaled under your dune buggy scanline by scanline (real Mode 7, in canvas, no assets) — and it fills whatever screen you open it on: full-bleed landscape, full-width portrait. Four laps from last on the grid against six rivals that brake into apexes, defend the inside when you close, draft on the straights, and make seeded mistakes when you breathe on them. The whole economy is the DRIFT: hold it through a bend and the charge climbs blue, violet, GOLD — release for a mini-turbo, and the Comet engine drinks deeper than any kit in the field. The attract demo is the autopilot\'s own proven win, replayed tick for tick; a Node harness (cometcheck) audits the circuit geometry, the canyon look, the deterministic machine and the win itself.',
+        controls: ['X / stick up: GAS · S / brake: slow — you cannot steer standing still', '← → / stick: steer (grip grows with speed)', 'SPACE / Z / R / B-button: DRIFT — hold it through a bend; the longer the hold, the bigger the turbo on release (blue, violet, GOLD pips)', 'Line matters: clip the inside, power the exit, bank a turbo down every straight', 'Rivals defend: they shuffle to the inside when you close within two lengths — set them up, then strike', '?: pause and read the rules of the Gulch'],
+    },
+    {
+        path: '/comet-drift-hd',
+        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], analog: true },
+        builtBy: 'forge',
+        added: '2026-10-18',
+        visibility: 'private',
+        component: CometDriftHDGame,
+        label: 'COMET DRIFT HD',
+        theme: 'dark',
+        description: 'The arcade\'s ORIGINAL kart racer, rendered for today. The same certified SUNSET GULCH machine — same track data, same deterministic sim, same drift ladder — rebuilt in real 3D on WebGPU (WebGL2 fallback on phones): the circuit is extruded geometry now, an asphalt ribbon with worn wheel grooves between five-metre sandstone cliff walls, painted kerbs, a sand plateau rim lined with cacti and hoodoos, far mesas under a bleeding sunset sun. Real lighting: warm low sun, ember sky fill, ACES tone mapping. GPU particles write the drift in the air — blue, violet, gold sparks off the rear wheels, dust plumes off the sand, tier-colored turbo flames. Turbo punches the field of view, drifts lag the camera, crashes shake the world, and the whole race runs sharp at screen resolution. Four laps from P7 against the same six rivals; the attract demo is still the autopilot\'s proven win, tick for tick.',
         controls: ['X / stick up: GAS · S / brake: slow — you cannot steer standing still', '← → / stick: steer (grip grows with speed)', 'SPACE / Z / R / B-button: DRIFT — hold it through a bend; the longer the hold, the bigger the turbo on release (blue, violet, GOLD pips)', 'Line matters: clip the inside, power the exit, bank a turbo down every straight', 'Rivals defend: they shuffle to the inside when you close within two lengths — set them up, then strike', '?: pause and read the rules of the Gulch'],
     },
     {

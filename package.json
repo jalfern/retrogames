@@ -114,6 +114,7 @@
         "lint:kart": "eslint src/games/MarioKart src/components src/utils src/config src/main.jsx scripts",
         "kartcheck": "node scripts/kartcheck.mjs",
         "cometcheck": "node scripts/cometcheck.mjs",
+        "cometdrifthdcheck": "node scripts/cometdrifthdcheck.mjs",
         "kartplay": "node scripts/kartplay.mjs",
         "lint:tetris": "eslint src/games/Tetris src/components src/utils src/config src/main.jsx scripts",
         "tetrischeck": "node scripts/tetrischeck.mjs",
@@ -176,7 +177,8 @@
         "civclock": "node scripts/civclock.mjs",
         "lint:pw": "eslint scripts/pwacheck.mjs scripts/gen-pwa-icons.mjs src/main.jsx src/config public/sw.js",
         "pwacheck": "node scripts/pwacheck.mjs",
-        "lint:comet": "eslint src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometcheck.mjs scripts/lib"
+        "lint:comet": "eslint src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometcheck.mjs scripts/lib",
+        "lint:hd": "eslint src/games/CometDriftHD src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometdrifthdcheck.mjs scripts/lib"
     },
     "dependencies": {
         "ifvms": "^1.1.6",
