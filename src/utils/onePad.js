@@ -21,6 +21,8 @@
 // Pure: importable in Node (vpadcheck) and the browser (VirtualControls,
 // gameContract, GamepadBridge). No React, no DOM.
 
+import { radialDeadZone } from './padState.js'
+
 export const METHODS = ['dpad', 'stick', 'pointer']
 
 // The digital direction fields the shared quantizer fills in.
@@ -138,7 +140,13 @@ export function press(field) { held[field] = true }
 export function release(field) { held[field] = false }
 
 // The analog stick (a touch stick or a gamepad's left stick): x / y in -1..1.
-export function setStickVec(x, y) { held.x = x; held.y = y }
+// #431: the shared scaled radial dead zone is applied here too, so games
+// reading THE one pad (currentPad) get the same stick feel as padState readers.
+export function setStickVec(x, y) {
+    const dz = radialDeadZone(x, y)
+    held.x = dz.x
+    held.y = dz.y
+}
 
 // The pointer (a drag on the canvas for a pointer game): x / y normalized 0..1
 // to the canvas, down = pressed, alt = the second gesture. down false clears it.

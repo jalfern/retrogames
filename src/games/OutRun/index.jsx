@@ -21,7 +21,7 @@ import { SEG_LEN, ROAD_W, CAM_H, CAM_DEPTH, DRAW, SCENES } from './road.js'
 import { makeGame, step, stateHash, KMH, HIGH_TOP, LOW_TOP, W, H } from './sim.js'
 import { plan } from './planner.js'
 import { buildSprites, makeBackdrop } from './art.js'
-import { padState, steerPedals } from '../../utils/padState'
+import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 
 const SIM_MS = 1000 / 60
 const HORIZON = Math.round(H * 0.42)
@@ -113,18 +113,22 @@ const OutRunGame = () => {
             if (gs.end) { gs = makeGame(0); demoAt = 0; backdrop = makeBackdrop(gs.stage.theme) }
         }
 
+        let steerSm = 0
         const computeInput = () => {
             const steer = (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0)
             const gas = held.has('ArrowUp') || held.has('Space') || held.has('KeyZ')
             const brake = held.has('ArrowDown')
             if (gearEdge) { gearRef.current = gearRef.current ? 0 : 1; gearEdge = false }
             // Analog opt-in (#290 step 4): the stick is the wheel; the triggers
-            // (or the stick's push on touch) are the pedals.
+            // (or the stick's push on touch) are the pedals. #431: the wheel is
+            // curve+gain mapped and smoothed R/tick; keys keep their raw ±1.
             const p = padState
             if (p.engaged || p.rt > 0.05 || p.lt > 0.05) {
                 const s = steerPedals(p)
-                return { steer: s.steer, gas: s.thr, brake: s.brk, gear: gearRef.current }
+                steerSm = smoothSteer(steerSm, s.steer)
+                return { steer: steerSm, gas: s.thr, brake: s.brk, gear: gearRef.current }
             }
+            steerSm = 0
             return { steer, gas, brake, gear: gearRef.current }
         }
 
@@ -373,6 +377,7 @@ const OutRunGame = () => {
         // --------------------------------------------------------- DEV hook ----
         if (import.meta.env.DEV) {
             window.__outrunTest = {
+                steer: STEER_PIPELINE,
                 state: () => gs,
                 hash: () => stateHash(gs),
                 step: (n = 1) => { for (let i = 0; i < n; i++) doSim({ steer: 0, gas: true, brake: false, gear: gearRef.current }) },

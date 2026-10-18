@@ -8,7 +8,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from './sim'
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { PALETTE, KART, buildGround, buildSky, buildSprites, minimapPath } from './art.js'
-import { padState, steerPedals } from '../../utils/padState'
+import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 
 // =====================================================================
 // COMET DRIFT GP — SUNSET GULCH, polished (#435). The canvas source is
@@ -570,7 +570,10 @@ export default function CometDrift() {
             ctx.textAlign = 'left'
         }
 
+        let steerSm = 0
         const tickWorld = (live) => {
+            // #431: stick steering is curve+gain mapped and smoothed R/tick;
+            // keyboard steering keeps its raw ±1.
             const p = padState
             const padLive = p.engaged || p.rt > 0.05 || p.lt > 0.05
             let inp
@@ -578,8 +581,10 @@ export default function CometDrift() {
                 inp = decide(g)
             } else if (padLive) {
                 const s = steerPedals(p)
-                inp = { steer: s.steer, thr: s.thr, brk: s.brk, drift: !!(keys.Space || keys.KeyR || keys.KeyC) }
+                steerSm = smoothSteer(steerSm, s.steer)
+                inp = { steer: steerSm, thr: s.thr, brk: s.brk, drift: !!(keys.Space || keys.KeyR || keys.KeyC) }
             } else {
+                steerSm = 0
                 inp = { u: !!(keys.KeyX || keys.ArrowUp), d: !!(keys.KeyS || keys.ArrowDown), l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.Space || keys.KeyZ || keys.KeyR || keys.KeyC) }
             }
             step(g, live ? inp : decide(g))
@@ -722,6 +727,7 @@ export default function CometDrift() {
         exposeGame({
             id: 'comet-drift',
             buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+            steer: STEER_PIPELINE,
             reset: (seed) => {
                 Object.assign(g, makeGame(seed))
                 st.screen = 'race'; screenRef.current = 'race'
