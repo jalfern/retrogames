@@ -458,6 +458,30 @@ console.log('2p')
         `dist ${(Math.hypot(g2.partner.x - g2.hero.x, g2.partner.y - g2.hero.y)).toFixed(2)}`)
 }
 
+// ---------------------------------------------------------------- partner ----
+// The CPU partner opens the slam doors it walks into (issue #275 item 6): the
+// hero pushes a corridor open and it slams shut behind, and the partner
+// following the hero must push that closed door open and get through — before
+// the fix it was stranded on the near side. It opens on push, never by batter.
+console.log('partner')
+{
+    const gs = makeGame(0, 'warrior', { topDown: true, partner: true })
+    gs.monsters = []; gs.gens.forEach((g) => { g.alive = false }); gs.hero.hp = 1e9
+    const d = gs.doors.find((x) => !x.locked)
+    d.open = false; d.closeT = -1                    // the corridor is sealed
+    gs.hero.x = d.x + 3.0; gs.hero.y = d.y + 0.5; gs.hero.a = 0
+    gs.partner.x = d.x - 1.0; gs.partner.y = d.y + 0.5; gs.partner.a = 0
+    let opened = false
+    for (let i = 0; i < 400; i++) {
+        step(gs, {})
+        for (const ev of gs.events) if (ev.type === 'doorOpen') opened = true
+        gs.events.length = 0
+    }
+    ok(opened, 'partner: the partner pushes the sealed slam door open', `${opened}`)
+    ok(Math.floor(gs.partner.x) > d.x, 'partner: it follows the hero through the door it opened', `partner ${gs.partner.x.toFixed(2)} vs door ${d.x}`)
+    ok(!d.broken, 'partner: it opens the door on push, not by battering it', `${d.broken}`)
+}
+
 // ----------------------------------------------------------------- pilot ----
 console.log('pilot')
 for (const seed of [0, 1, 2, 3]) {
@@ -532,6 +556,7 @@ if (process.argv.includes('--mutate')) {
         ['the wall course is one tone', 'src/games/Gauntlet/walls.js', 'return { recess: mat.mortar, bevel: mat.lite }', 'return { recess: mat.mortar, bevel: mat.mortar }'],
         ['a tap on a card picks no hero', 'src/games/Gauntlet/select.js', 'if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i', 'if (false) return i'],
         ['a human partner ignores its input', 'src/games/Gauntlet/sim.js', 'if (gs.partnerHuman && partnerInp) {', 'if (false) {'],
+        ['the partner never opens a slam door', 'src/games/Gauntlet/sim.js', 'openSlamInWay(gs, p, ux, uy)\n        const differentCell', 'const differentCell'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

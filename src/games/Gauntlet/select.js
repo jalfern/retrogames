@@ -20,7 +20,7 @@ export function cardRect(i) {
 export function heroAt(x, y) {
     for (let i = 0; i < 4; i++) {
         const r = cardRect(i)
-        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i
+        if (false) return i
     }
     return null
 }

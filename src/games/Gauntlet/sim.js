@@ -687,6 +687,45 @@ function moveHuman(gs, p, dx, dy) {
     else if (!blocked(gs, p.x, ny)) p.y = ny
 }
 
+// A closed, un-broken slam door sitting on the cell (x, y) — the partner's
+// push-to-open target (issue #275 item 6). Locked doors are never returned:
+// the partner follows the hero and never spends a key on its own.
+const closedSlamAt = (gs, x, y) => {
+    const c = Math.floor(x), r = Math.floor(y)
+    const ch = gs.levelData.grid[r] ? gs.levelData.grid[r][c] : '#'
+    if (ch !== 'D') return null
+    const d = doorAt(gs, c, r)
+    return d && !d.open && !d.broken && !d.locked ? d : null
+}
+
+// Push open the slam door the partner stands in, or the one a step ahead in
+// its travel direction. Returns true if a door was opened.
+function openSlamInWay(gs, p, ux, uy) {
+    const here = closedSlamAt(gs, p.x, p.y)
+    if (here) { tryDoors(gs, here.x + 0.5, here.y + 0.5); return true }
+    const ahead = closedSlamAt(gs, p.x + ux, p.y + uy)
+    if (ahead) { tryDoors(gs, ahead.x + 0.5, ahead.y + 0.5); return true }
+    return false
+}
+
+// A closed door (slam or locked) standing on the segment p -> target: true
+// while the corridor the partner is crossing is still sealed, so the follow
+// loop can tell "must push through" apart from "resting at the right distance".
+const closedDoorOnPath = (gs, x0, y0, x1, y1) => {
+    const len = Math.hypot(x1 - x0, y1 - y0)
+    const n = Math.max(1, Math.ceil(len / 0.2))
+    for (let i = 1; i < n; i++) {
+        const t = i / n
+        const c = Math.floor(x0 + (x1 - x0) * t), r = Math.floor(y0 + (y1 - y0) * t)
+        const ch = gs.levelData.grid[r] ? gs.levelData.grid[r][c] : '#'
+        if (ch === 'D' || ch === 'L') {
+            const d = doorAt(gs, c, r)
+            if (d && !d.open && !d.broken) return true
+        }
+    }
+    return false
+}
+
 function updatePartner(gs, partnerInp) {
     const p = gs.partner
     if (!p || p.down) return
@@ -729,12 +768,21 @@ function updatePartner(gs, partnerInp) {
     const ty = h.y - Math.sin(h.a) * 1.1
     const dx = tx - p.x, dy = ty - p.y
     const d = Math.hypot(dx, dy)
-    if (d > 0.5) {
+    if (d > 1e-6) {
+        const ux = dx / d, uy = dy / d
         const sp = CFG.walk * p.speed * 1.15
-        const nx = p.x + (dx / d) * sp, ny = p.y + (dy / d) * sp
-        if (!blocked(gs, nx, ny)) { p.x = nx; p.y = ny }
-        else if (!blocked(gs, nx, p.y)) p.x = nx
-        else if (!blocked(gs, p.x, ny)) p.y = ny
+        const nx = p.x + ux * sp, ny = p.y + uy * sp
+        // a slam door the partner walks into (or stands in) opens for it — the
+        // hero's push-to-open (issue #275 item 6). It keeps stepping until it
+        // shares the follow point's cell, but only while no closed door still
+        // seals the corridor, so it pushes through rather than stops short.
+        openSlamInWay(gs, p, ux, uy)
+        const differentCell = Math.floor(p.x) !== Math.floor(tx) || Math.floor(p.y) !== Math.floor(ty)
+        if (d > 0.5 || (differentCell && !closedDoorOnPath(gs, p.x, p.y, tx, ty))) {
+            if (!blocked(gs, nx, ny)) { p.x = nx; p.y = ny }
+            else if (!blocked(gs, nx, p.y)) p.x = nx
+            else if (!blocked(gs, p.x, ny)) p.y = ny
+        }
     }
     if (p.atkT > 0) { p.atkT--; return }
     for (const m of gs.monsters) {
