@@ -892,6 +892,9 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
         'lemmings: sized by the shared fit shell (ResizeObserver), no window.resize')
     ok(/data-lem-panel/.test(src) && /data-lem-skill/.test(src), 'lemmings: the original bottom panel (skill bar with counts)')
     ok(/PAUSE/.test(src) && /ffHeld/.test(src), 'lemmings: PAUSE + FAST-FORWARD on the panel')
+    ok(/ffId = e\.pointerId/.test(src), 'lemmings: FF releases by pointer id (a slide-off release cannot leave 3x stuck)')
+    ok((src.match(/abortGesture\(\)/g) || []).length >= 3,
+        'lemmings: the gesture aborts on level load, pause and blur (a stale press never commits)')
     ok(/ROTATE YOUR PHONE/.test(src), 'lemmings: the portrait prompt')
 }
 

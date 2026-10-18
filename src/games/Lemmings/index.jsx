@@ -91,6 +91,16 @@ const LemGame = () => {
         const gest = { pd: false, aim: null }
         let pressId = null                        // the pointer id holding the press
         let ffHeld = false                        // the panel's FF button is down
+        let ffId = null                           // the pointer id holding FF (a slide-off release still releases it)
+        // A stale press must never commit later: when the run it belongs to is
+        // gone (level reload, pause, blur) the gesture is aborted and the one
+        // pad's pointer lifted, so a release after the fact finds no press.
+        const abortGesture = () => {
+            pressId = null
+            gest.pd = false
+            gest.aim = null
+            setPointer(0, 0, false)
+        }
 
         const loadLevel = (idx, freshScore) => {
             levelIdx = idx % LEVELS.length
@@ -102,6 +112,7 @@ const LemGame = () => {
             runCmds = []
             cursor.x = meta.spawn.x; cursor.y = meta.spawn.y - 1
             selected = (SKILLS.find(s => meta.skills[s] > 0)) || 'climb'
+            abortGesture()                        // no press from the previous run survives into this one
         }
         loadLevel(0, true)
 
@@ -381,7 +392,7 @@ const LemGame = () => {
         const togglePause = () => {
             if (screenRef.current !== 'play') return
             pausedRef.current = !pausedRef.current
-            if (pausedRef.current) ffHeld = false      // the panel unmounts while paused
+            if (pausedRef.current) { ffHeld = false; ffId = null; abortGesture() }  // the panel unmounts while paused
             setPaused(pausedRef.current)
         }
         const onDown = (e) => {
@@ -403,7 +414,7 @@ const LemGame = () => {
             keys.add(e.code)
         }
         const onUp = (e) => keys.delete(e.code)
-        const onBlur = () => { keys.clear(); ffHeld = false }
+        const onBlur = () => { keys.clear(); ffHeld = false; ffId = null; abortGesture() }
         // #432: the panel's taps, delegated into THIS closure — the panel is
         // static JSX (a render can't call effect-local handlers or read the
         // effect-local `selected`), so the buttons carry data attributes and
@@ -415,11 +426,12 @@ const LemGame = () => {
             e.preventDefault()
             if (b.dataset.lemSkill) selectSkill(b.dataset.lemSkill)
             else if (b.dataset.lemPause) togglePause()
-            else if (b.dataset.lemFf) ffHeld = true
+            else if (b.dataset.lemFf) { ffHeld = true; ffId = e.pointerId }
         }
         const onPanelEnd = (e) => {
-            const b = panelBtn(e)
-            if (b && b.dataset.lemFf) ffHeld = false
+            // Release by pointer id, not by release target: the finger may lift
+            // off the button after sliding away, and 3× must not stick.
+            if (e.pointerId === ffId) { ffHeld = false; ffId = null }
         }
         // #432: the finger points at the DISPLAYED (fit) canvas — the one the
         // player sees — and writes THE one pad's pointer (normalized 0..1). The
@@ -489,7 +501,7 @@ const LemGame = () => {
                     spawned: gs.spawned, exited: gs.exited, dead: gs.dead, need: meta.need,
                     end: gs.end, win: gs.win, score: gs.score, hash: stateHash(gs),
                     cmds: runCmds.length, board: board(),
-                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger })),
+                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, live: L.live })),
                 }),
                 // The next move the PROVEN solver makes at this point in the
                 // replay — as the live position of that live lemming. Read-only:
