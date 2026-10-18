@@ -14,6 +14,14 @@ own `src/games/<Name>/` and are designed from the original.
 - Attract first: any keydown or `pointerdown` starts the game. `'?'`
   (Esc / backquote too) toggles `PauseOverlay` with the registry entry from
   `GAMES.find(g => g.label === '<LABEL>')`.
+- Tap-to-start is wired in the shared shell, not per game (`#430`): a registry
+  entry may carry `tapStart: true`, and `App.jsx` then synthesizes the start
+  key (Space) on any tap outside the on-screen controls (`data-vc`) and UI
+  chrome — a tap behaves exactly like a keyboard keydown, so it starts the
+  game and restarts it after game over. Declare it only for games that own NO
+  touch/click input of their own: a title that already starts on its own
+  `touchstart`/`mousedown` (IronKeep, Missile Command) or a pointer-method
+  title opts out, or the shell's Space double-fires its actions.
 - `<VirtualControls />` covers phones: it dispatches `Arrow{Left,Right,Up,Down}`
   + `Space` ("A"); pass `secondAction` for "B", `visible={false}` on menus.
 - Audio: everything synthesized via `audioController`; nothing plays before

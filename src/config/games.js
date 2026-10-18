@@ -190,6 +190,7 @@ const CivilizationVGame = lazy(() => import('../games/CivilizationV'))
 export const GAMES = [
     {
         path: '/mario',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [{ label: 'F', code: 'KeyF' }], analog: false },
         builtBy: 'qwen',
         component: SuperMarioGame,
@@ -200,6 +201,7 @@ export const GAMES = [
     },
     {
         path: '/mario-classic',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [{ label: 'RUN', code: 'KeyX' }], analog: false },
         builtBy: 'qwen',
         component: SuperMarioClassicGame,
@@ -470,6 +472,7 @@ export const GAMES = [
     },
     {
         path: '/arkanoid',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: ArkanoidGame,
@@ -489,6 +492,7 @@ export const GAMES = [
     },
     {
         path: '/zelda',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: ZeldaGame,
@@ -509,6 +513,7 @@ export const GAMES = [
     },
     {
         path: '/pong',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: PongGame,
@@ -519,6 +524,7 @@ export const GAMES = [
     },
     {
         path: '/invaders',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: SpaceInvadersGame,
@@ -529,6 +535,7 @@ export const GAMES = [
     },
     {
         path: '/pacman',
+        tapStart: true,
         pad: { method: 'dpad', buttons: [], reads: ['up', 'down', 'left', 'right'], reason: 'grid maze — 4-way cell movement, no analog' },
         builtBy: 'claude',
         component: PacmanGame,
@@ -539,6 +546,7 @@ export const GAMES = [
     },
     {
         path: '/asteroids',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: AsteroidsGame,
@@ -549,6 +557,7 @@ export const GAMES = [
     },
     {
         path: '/donkeykong',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: DonkeyKongGame,
@@ -559,6 +568,7 @@ export const GAMES = [
     },
     {
         path: '/centipede',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: CentipedeGame,
@@ -569,6 +579,7 @@ export const GAMES = [
     },
     {
         path: '/defender',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: DefenderGame,
@@ -579,6 +590,7 @@ export const GAMES = [
     },
     {
         path: '/pitfall',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: PitfallGame,
@@ -608,6 +620,7 @@ export const GAMES = [
     },
     {
         path: '/adventure',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'claude',
         component: AdventureGame,
@@ -726,6 +739,7 @@ export const GAMES = [
     },
     {
         path: '/dig-dug',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [], analog: false },
         builtBy: 'forge',
         component: DigDugGame,
@@ -736,6 +750,7 @@ export const GAMES = [
     },
     {
         path: '/bubble-bobble',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [{ label: 'BUB', code: 'KeyB' }], analog: false },
         builtBy: 'forge',
         component: BubbleBobbleGame,
@@ -846,6 +861,7 @@ export const GAMES = [
     },
     {
         path: '/prince-of-persia',
+        tapStart: true,
         pad: { layout: 'stick', buttons: [{ label: '⚔', code: 'KeyX' }], analog: false },
         builtBy: 'forge',
         component: PrinceOfPersiaGame,

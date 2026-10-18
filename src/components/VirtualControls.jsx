@@ -354,6 +354,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
 
     const stickZone = useStick && (
         <div
+            data-vc="stick"
             className="fixed left-0 top-0 bottom-0 w-1/2 z-40 touch-none"
             style={{ pointerEvents: 'auto' }}
             onTouchStart={sTS}
@@ -384,6 +385,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
         <>
             {stickZone}
             <div
+                data-vc="1"
                 className="fixed left-0 right-0 flex justify-between items-end z-50 pointer-events-auto"
                 style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))', padding: '0 calc(2rem + env(safe-area-inset-right)) 0 calc(2rem + env(safe-area-inset-left))' }}
             >
