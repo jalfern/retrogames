@@ -178,5 +178,13 @@ tmux split-window -h -f -l $(( LIVE ? 40 : 60 ))% -t "$SESSION" \
 # resizing of BUILDER moves it too (the warden only lays out the x=0 column).
 (( LIVE )) && tmux split-window -h -l 50% -t "$BUILDER_PANE" \
     -e L=BUILDER -e LANE=builder -e TAPPORT=8010 zsh -c "$(live_pane)"
-tmux set-option -t "$SESSION" mouse on
+# Mouse: on server-wide (-g), so the nested RETRO session gets it too. With it
+# off there, the wheel over RETRO dropped the outer pane into copy-mode: the
+# chat froze, scrolled junk, and typing seemed dead until `q`. And scrolling a
+# lane pane enters copy-mode with -e, so scrolling back to the bottom exits it
+# and the pane is live again (q or Esc also exits).
+tmux set-option -g mouse on
+tmux bind-key -n WheelUpPane if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' \
+    'send-keys -M' 'copy-mode -e'
+tmux bind-key -T copy-mode Escape send-keys -X cancel
 exec tmux attach -t "$SESSION"
