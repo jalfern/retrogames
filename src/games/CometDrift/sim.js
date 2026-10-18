@@ -138,6 +138,17 @@ function drive(g, k, inp) {
         if (thr <= 0 && brk <= 0 && k.v <= top && !boost) k.v -= CFG.coast
         if (surf.surf === 'sand' && k.v > top) k.v -= 0.22
         if (k.v > cap) k.v -= 0.2
+        // slipstream: a kart in the narrow window dead ahead leaves a vacuum
+        // the chaser rides — pack racing closes on straights and overtakes
+        // happen in the open. Pure position math, no dice: deterministic for
+        // every seed, and the same law applies to the leader chasing traffic.
+        for (const o of g.karts) {
+            if (o === k || o.spinT > 0) continue
+            const dx = o.x - k.x; const dy = o.y - k.y
+            const f = dx * Math.cos(k.a) + dy * Math.sin(k.a)
+            const l = dx * -Math.sin(k.a) + dy * Math.cos(k.a)
+            if (f > 55 && f < 190 && Math.abs(l) < 46) { k.v += 0.02; break }
+        }
         k.steerVis = steer
         const grip = Math.min(1, k.v / CFG.gripV)
         const dr = inp.drift && Math.abs(steer) > 0 && k.v > 4.5

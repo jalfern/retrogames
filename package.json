@@ -171,7 +171,8 @@
         "popplay": "node scripts/popplay.mjs",
         "civclock": "node scripts/civclock.mjs",
         "lint:pw": "eslint scripts/pwacheck.mjs scripts/gen-pwa-icons.mjs src/main.jsx src/config public/sw.js",
-        "pwacheck": "node scripts/pwacheck.mjs"
+        "pwacheck": "node scripts/pwacheck.mjs",
+        "lint:comet": "eslint src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometcheck.mjs scripts/lib"
     },
     "dependencies": {
         "ifvms": "^1.1.6",

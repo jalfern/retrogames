@@ -161,16 +161,46 @@ console.log('— determinism —')
     check('seed 9 → different hash', c.final !== a.final, `${c.final} vs ${a.final}`)
 }
 
-console.log('— the look (palette pins) —')
+console.log('— the look (canyon pins, #435) —')
 {
-    const { PALETTE, KART, LIVERY } = await import('../src/games/CometDrift/art.js')
+    const { PALETTE, KART, LIVERY, MESA_FAR, MESA_NEAR, longestFlatRun } = await import('../src/games/CometDrift/art.js')
     const rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
+    const lum = (h) => { const [r, g, b] = rgb(h); return r * 0.299 + g * 0.587 + b * 0.114 }
     const [rr, rg, rb] = rgb(PALETTE.road)
     check('the road is slate (blue-dark, low saturation)', rb >= rr && Math.abs(rr - rg) < 20 && rr < 90, PALETTE.road)
-    const [kr, kg, kb] = rgb(PALETTE.kerbA)
-    check('the kerb is canyon orange', kr > 180 && kg > 30 && kg < 120 && kb < 80, PALETTE.kerbA)
+    const strata = ['rockShadow', 'rockDark', 'rockMid', 'rockLight', 'rimLit'].map((k) => PALETTE[k])
+    check('walls carry 5 strata brightening foot-to-rim', strata.every(Boolean) && strata.every((c, i) => i === 0 || lum(c) > lum(strata[i - 1])),
+        strata.map((c) => c && Math.round(lum(c))).join('<'))
+    check('no painted kerb or centre-line chrome (canyon, not circuit)', !('kerbA' in PALETTE) && !('center' in PALETTE))
+    check('asphalt wears into wheel grooves (darker than the road)', lum(PALETTE.groove) < lum(PALETTE.road), `${PALETTE.groove} vs ${PALETTE.road}`)
+    check('mesas are flat-topped (plateaus, not sine ridges)', longestFlatRun(MESA_FAR) >= 8 && longestFlatRun(MESA_NEAR) >= 8,
+        `runs ${longestFlatRun(MESA_FAR)}/${longestFlatRun(MESA_NEAR)}`)
+    check('the horizon has several distinct mesas', new Set([...MESA_FAR]).size >= 4 && new Set([...MESA_NEAR]).size >= 4)
     check('karts wider than tall, 3 poses', KART.w > KART.h && KART.frames === 3)
     check('seven liveries', Object.keys(LIVERY).length === 7)
+}
+
+console.log('— the boost payoff ladder —')
+{
+    const payFor = (ticksHeld) => {
+        const gg = makeGame(11)
+        gg.phase = 'race'
+        const Q = gg.karts[0]
+        Q.v = 6; Q.lapStart = -999
+        const p = T.pts[40]
+        const pin = () => { Q.x = p.x; Q.y = p.y; Q.a = p.a; Q.idx = 40; Q.hint = 40 }
+        pin()
+        for (let i = 0; i < ticksHeld; i++) { pin(); step(gg, { u: true, r: true, drift: true }) }
+        step(gg, { u: true })
+        return { tier: Q.boostTier, dur: Q.boostT }
+    }
+    const a = payFor(TIERS[0].t)
+    const b = payFor(TIERS[1].t)
+    const c = payFor(TIERS[2].t)
+    check('each higher tier pays a longer, stronger boost',
+        a.tier === 0 && b.tier === 1 && c.tier === 2 && b.dur > a.dur && c.dur > b.dur,
+        `${a.tier}:${a.dur} ${b.tier}:${b.dur} ${c.tier}:${c.dur}`)
+    check('over-cap speed rises with the tier', TIERS[1].over > TIERS[0].over && TIERS[2].over > TIERS[1].over)
 }
 
 if (process.argv.includes('--mutate')) {
