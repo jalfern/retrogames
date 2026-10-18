@@ -19,6 +19,22 @@ fi
 
 cd "$REPO" || exit 1
 
+# TAP (scripts/tap.mjs, launchd com.jalfern.tap-builder): when the tap answers
+# AND an `omlxtap` provider exists in ~/.config/opencode/opencode.json, route
+# this session through it so `watch.sh --live` shows tokens as they generate.
+# Fail-open: no tap, or no provider -> the session talks to oMLX directly, as
+# before. (The model string still contains no lane pattern: see watch.sh.)
+MODEL_ARGS=()
+# (Any HTTP answer counts, even a 401 from oMLX's key check; 000 = tap down,
+# 502 = tap up but oMLX behind it down.)
+TAP_CODE=$(curl -s -o /dev/null -m 2 -w '%{http_code}' http://127.0.0.1:8010/v1/models)
+if [[ "$TAP_CODE" != 000 && "$TAP_CODE" != 502 ]] \
+   && jq -e '.provider.omlxtap' "$HOME/.config/opencode/opencode.json" >/dev/null 2>&1; then
+    M=$(jq -r '.model' "$REPO/opencode.json")
+    MODEL_ARGS=(--model "omlxtap/${M#*/}")
+fi
+echo "$(date): model route: ${MODEL_ARGS[*]:-direct (no tap)}" >> "$LOG"
+
 PROMPT="You are THE FORGE. Open scripts/FORGE.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 3 hours."
 
 # --auto: headless runs cannot answer permission prompts (an auto-reject
@@ -33,13 +49,13 @@ PROMPT="You are THE FORGE. Open scripts/FORGE.md and execute its session procedu
 # calls this script plain and gets the old non-blocking behaviour.
 if [[ "${1:-}" == "--foreground" ]]; then
     echo "$(date): FOREGROUND session pid=$$ log=$LOG" >> "$LOG"
-    /opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1
+    /opt/homebrew/bin/opencode run "${MODEL_ARGS[@]}" --auto "$PROMPT" >> "$LOG" 2>&1
     STATUS=$?
     echo "$(date): session exit=$STATUS" >> "$LOG"
     exit $STATUS
 fi
 
-nohup /opt/homebrew/bin/opencode run --auto "$PROMPT" >> "$LOG" 2>&1 &
+nohup /opt/homebrew/bin/opencode run "${MODEL_ARGS[@]}" --auto "$PROMPT" >> "$LOG" 2>&1 &
 BG=$!
 STATUS=0
 echo "$(date): kicked forge session pid=$BG log=$LOG" >> "$LOG"
