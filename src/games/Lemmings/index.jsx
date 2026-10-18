@@ -17,13 +17,15 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
-import { currentPad } from '../../utils/onePad'
+import { currentPad, setPointer, pointerGesture } from '../../utils/onePad'
+import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
 import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
 
 const TS = 8                                   // internal pixels per tile
 const CW = W * TS
 const CH = H * TS
+const FF_SPEED = 3                             // fast-forward: world seconds per real second
 
 const planCache = new Map()
 const planFor = (idx) => {
@@ -45,6 +47,7 @@ const LemGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    const [portrait, setPortrait] = useState(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -59,11 +62,18 @@ const LemGame = () => {
         if (!wrap) return undefined
         const canvas = document.createElement('canvas')
         canvas.dataset.lemStage = '1'
+        canvas.dataset.fit = 'source'
         canvas.width = CW; canvas.height = CH
         canvas.className = 'block w-full h-full'
         canvas.style.imageRendering = 'pixelated'
         canvas.style.touchAction = 'none'
+        canvas.style.opacity = '0'            // the fit display canvas paints on top
         wrap.appendChild(canvas)
+        // #432: sizing from a ResizeObserver on the wrapper (the shared fitCanvas
+        // shell), not window.resize — on iOS the wrapper box is stale right after
+        // rotation or the URL bar moving, and the observer gets the fresh one.
+        const fit = makeFitCanvas(canvas, wrap)
+        if (fit.display) fit.display.style.touchAction = 'none'
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
 
@@ -76,6 +86,11 @@ const LemGame = () => {
         const cursor = { x: 8, y: 18 }
         let selected = 'climb'
         const keys = new Set()
+        // #432: the shared press-preview-release gesture (onePad.pointerGesture):
+        // the finger writes the one pad's pointer, this loop steps the gesture.
+        const gest = { pd: false, aim: null }
+        let pressId = null                        // the pointer id holding the press
+        let ffHeld = false                        // the panel's FF button is down
 
         const loadLevel = (idx, freshScore) => {
             levelIdx = idx % LEVELS.length
@@ -125,8 +140,30 @@ const LemGame = () => {
         const applySkill = (sx, sy) => {
             const L = nearestLemming(gs, sx, sy)
             if (!L) { audioController.playTone(140, 0.06, 'sawtooth', 0.05); return }
-            if (assign(gs, L.id, selected)) runCmds.push({ tick: gs.tick, id: L.id, skill: selected })
+            if (assign(gs, L.id, selected)) {
+                runCmds.push({ tick: gs.tick, id: L.id, skill: selected })
+                audioController.playTone(520 + SKILLS.indexOf(selected) * 90, 0.07, 'square', 0.07)
+            }
         }
+
+        // #432: the shared pointer gesture, driven by THE one pad's pointer.
+        // The reach is POINTER_HIT_PX screen px in the shared targeting, so the
+        // pick is the same thumb-size at any zoom (stageScale = screen px per
+        // world tile, from the fit display's live size).
+        const stageScale = () => {
+            const el = fit.display || canvas
+            const w = el && el.clientWidth ? el.clientWidth : CW
+            return w / W
+        }
+        const liveCands = () => gs.lemmings.filter(L => L.live).map(L => ({ x: L.x, y: L.y - 0.5, id: L.id }))
+        const commitAssign = (a) => {
+            if (!a) return                        // release on nothing: nothing
+            if (assign(gs, a.id, selected)) {
+                runCmds.push({ tick: gs.tick, id: a.id, skill: selected })
+                audioController.playTone(520 + SKILLS.indexOf(selected) * 90, 0.07, 'square', 0.07)
+            }
+        }
+        const stepGesture = (p) => pointerGesture(gest, p, liveCands(), p.x * W, p.y * H, stageScale(), commitAssign)
 
         const doSim = () => {
             if (screenRef.current === 'attract') {
@@ -146,30 +183,28 @@ const LemGame = () => {
             }
         }
 
-        let lemPrevB = false
         const frame = (ts) => {
             raf = requestAnimationFrame(frame)
             if (!last) last = ts
             const ft = Math.min(ts - last, 250)
             last = ts
-            // #420: the one pad — the touch CYCLE button (b) drives cycleSkill,
-            // edge-detected. A pointer game owns its taps (canvas aim + assign run
-            // through the game's own pointer handlers), and a gamepad's stick parks
-            // the cursor through the same one pad the harness step uses.
-            if (!pausedRef.current && screenRef.current === 'play') {
-                const op = currentPad('pointer')
-                if (op.b && !lemPrevB) cycleSkill()
-                lemPrevB = !!op.b
+            // #432: the one pad, one gesture — the finger (or a scripted
+            // __game.step) writes the pointer's down / x / y, and the shared
+            // press-preview-release gesture steps here: press previews, a slide
+            // re-targets, the release assigns. CYCLE is gone (the panel picks).
+            if (!pausedRef.current && screenRef.current === 'play' && !contractHoldsLoop()) {
+                stepGesture(currentPad('pointer').pointer)
             }
             if (!pausedRef.current) {
                 if (contractHoldsLoop()) { acc = 0 }
                 else {
-                    acc += ft
+                    acc += ft * (ffHeld ? FF_SPEED : 1)
                     while (acc >= FIXED_DT * 1000) { doSim(); acc -= FIXED_DT * 1000 }
                 }
             }
             paint()
             syncHud()
+            fit.blit()
         }
 
         // ---------- painter ----------
@@ -289,6 +324,25 @@ const LemGame = () => {
             ctx.fillStyle = playing ? '#ffd83d' : 'rgba(255,216,61,0.6)'
             ctx.font = '7px monospace'
             ctx.fillText(SKILL_NAME[skill][0], Math.round(cx * TS - 2), Math.round(cy * TS + 12))
+
+            // #432: press, preview, release — the ring on the lemming that WILL
+            // get the skill. Drawn last (above everything the finger covers) and
+            // sized to read around a thumb that is still on the target.
+            if (playing && gest.aim) {
+                const L = gs.lemmings[gest.aim.id]
+                if (L && L.live) {
+                    const rx = Math.round(L.x * TS)
+                    const ry = Math.round((L.y - 0.5) * TS)
+                    ctx.strokeStyle = '#ffd83d'
+                    ctx.lineWidth = 2
+                    ctx.setLineDash([4, 3])
+                    ctx.beginPath(); ctx.arc(rx, ry, 11 + Math.sin(gs.tick / 4) * 1.5, 0, Math.PI * 2); ctx.stroke()
+                    ctx.setLineDash([])
+                    ctx.fillStyle = '#ffd83d'
+                    ctx.font = 'bold 8px monospace'
+                    ctx.fillText(SKILL_NAME[selected][0], rx - 2, ry + 3)
+                }
+            }
         }
 
         const hud = hudRef.current
@@ -317,17 +371,20 @@ const LemGame = () => {
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
-        const cycleSkill = () => {
-            const avail = SKILLS.filter(s => meta.skills[s] > 0)
-            if (!avail.length) return
-            selected = avail[(avail.indexOf(selected) + 1) % avail.length]
-            audioController.playTone(660, 0.05, 'square', 0.05)
+        const selectSkill = (s) => {
+            if (screenRef.current !== 'play' || pausedRef.current) return
+            selected = s
+            audioController.playTone(520 + SKILLS.indexOf(selected) * 90, 0.05, 'square', 0.05)
+        }
+        const togglePause = () => {
+            if (screenRef.current !== 'play') return
+            pausedRef.current = !pausedRef.current
+            setPaused(pausedRef.current)
         }
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') {
-                pausedRef.current = !pausedRef.current
-                setPaused(pausedRef.current)
+                togglePause()
                 return
             }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
@@ -338,53 +395,64 @@ const LemGame = () => {
                 return
             }
             if (pausedRef.current) return
-            if (SKILL_KEY[e.code]) {
-                selected = SKILL_KEY[e.code]
-                audioController.playTone(520 + SKILLS.indexOf(selected) * 90, 0.05, 'square', 0.05)
-                return
-            }
-            if (e.code === 'KeyE') { cycleSkill(); return }
+            if (SKILL_KEY[e.code]) { selectSkill(SKILL_KEY[e.code]); return }
             if (e.code === 'Space' || e.code === 'KeyZ') { applySkill(cursor.x, cursor.y); return }
             keys.add(e.code)
         }
         const onUp = (e) => keys.delete(e.code)
         const onBlur = () => keys.clear()
-        const canvasPoint = (e) => {
-            const r = canvas.getBoundingClientRect()
-            return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }
+        // #432: the finger points at the DISPLAYED (fit) canvas — the one the
+        // player sees — and writes THE one pad's pointer (normalized 0..1). The
+        // shared gesture in the loop does the press / slide / release.
+        const stagePoint = (e) => {
+            const el = fit.display || canvas
+            const r = el.getBoundingClientRect()
+            if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return null
+            return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }
         }
         const onMove = (e) => {
-            if (screenRef.current !== 'play') return
-            const p = canvasPoint(e)
-            cursor.x = Math.max(0.5, Math.min(W - 0.5, p.x))
-            cursor.y = Math.max(2, Math.min(H - 1, p.y))
+            if (screenRef.current !== 'play' || pressId !== null) return
+            const p = stagePoint(e)
+            if (!p) return
+            cursor.x = Math.max(0.5, Math.min(W - 0.5, p.x * W))
+            cursor.y = Math.max(2, Math.min(H - 1, p.y * H))
         }
-        const onPointer = (e) => {
+        const onStageDown = (e) => {
             const sc = screenRef.current
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
-            if (sc === 'play' && e.target === canvas) {
-                const p = canvasPoint(e)
-                cursor.x = Math.max(0.5, Math.min(W - 0.5, p.x))
-                cursor.y = Math.max(2, Math.min(H - 1, p.y))
-                applySkill(cursor.x, cursor.y)
-            }
+            if (sc !== 'play' || pausedRef.current) return
+            if (e.target.closest && e.target.closest('[data-lem-panel]')) return   // the panel owns its taps
+            const p = stagePoint(e)
+            if (!p) return
+            pressId = e.pointerId
+            setPointer(p.x, p.y, true)
+        }
+        const onStageMove = (e) => {
+            if (e.pointerId !== pressId) return
+            const p = stagePoint(e)
+            if (p) setPointer(p.x, p.y, true)
+        }
+        const endPress = (e) => {
+            if (e.pointerId !== pressId) return
+            pressId = null
+            setPointer(0, 0, false)
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
-        window.addEventListener('pointerdown', onPointer)
-        canvas.addEventListener('pointermove', onMove)
+        window.addEventListener('pointerdown', onStageDown)
+        window.addEventListener('pointermove', onMove)
+        window.addEventListener('pointermove', onStageMove)
+        window.addEventListener('pointerup', endPress)
+        window.addEventListener('pointercancel', endPress)
 
-        const resize = () => {
-            const r = wrap.getBoundingClientRect()
-            if (!r.width || !r.height) return
-            const sc = Math.min(r.width / CW, r.height / CH)
-            canvas.style.width = `${CW * sc}px`
-            canvas.style.height = `${CH * sc}px`
-        }
-        window.addEventListener('resize', resize)
-        resize()
+        // #432: a portrait phone gets the rotate prompt (the stage is 48x27);
+        // the same wrapper the fit shell observes owns this flag.
+        const orient = () => setPortrait(wrap.clientHeight > wrap.clientWidth)
+        const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(orient) : null
+        if (ro) ro.observe(wrap)
+        orient()
         raf = requestAnimationFrame(frame)
 
         // ---------- DEV hook: read-only probe + solver hint ----------
@@ -392,7 +460,9 @@ const LemGame = () => {
             window.__lemTest = {
                 probe: () => ({
                     screen: screenRef.current, t: gs.t, tick: gs.tick, level: levelIdx, name: meta.name,
-                    cursor: { ...cursor }, selected, skills: { ...gs.skills },
+                    cursor: { ...cursor }, selected,
+                    aim: gest.aim ? { id: gest.aim.id, skill: selected } : null,
+                    skills: { ...gs.skills },
                     spawned: gs.spawned, exited: gs.exited, dead: gs.dead, need: meta.need,
                     end: gs.end, win: gs.win, score: gs.score, hash: stateHash(gs),
                     cmds: runCmds.length, board: board(),
@@ -426,8 +496,8 @@ const LemGame = () => {
             exposeGame({
                 id: 'lemmings',
                 method: 'pointer',
-                reads: ['pointer', 'b'],
-                buttons: ['b'],
+                reads: ['pointer'],
+                buttons: [],
                 reset: (seed) => {
                     loadLevel((seed >>> 0) % LEVELS.length, true)
                     keys.clear()
@@ -435,15 +505,10 @@ const LemGame = () => {
                 },
                 tick: (pad) => {
                     if (gs.end) { gs.tick += 1; return }
-                    // #420 pointer: a tap (pointer.down) aims the cursor at the
-                    // normalized canvas point and assigns the selected skill;
-                    // B cycles the skill. Blank steps leave the cursor where it is.
-                    if (pad.b) cycleSkill()
-                    if (pad.pointer && pad.pointer.down) {
-                        cursor.x = Math.max(0.5, Math.min(W - 0.5, pad.pointer.x * W))
-                        cursor.y = Math.max(2, Math.min(H - 1, pad.pointer.y * H))
-                        applySkill(cursor.x, cursor.y)
-                    }
+                    // #432 pointer: the scripted pad IS the finger — the same
+                    // shared press-preview-release gesture the touch path runs,
+                    // so a tap (down this tick, up the next) previews, then assigns.
+                    stepGesture(pad.pointer)
                     handleEvents(step(gs, { x: cursor.x, y: cursor.y }).events)
                 },
                 state: () => ({
@@ -505,9 +570,13 @@ const LemGame = () => {
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
-            window.removeEventListener('pointerdown', onPointer)
-            window.removeEventListener('resize', resize)
-            canvas.removeEventListener('pointermove', onMove)
+            window.removeEventListener('pointerdown', onStageDown)
+            window.removeEventListener('pointermove', onMove)
+            window.removeEventListener('pointermove', onStageMove)
+            window.removeEventListener('pointerup', endPress)
+            window.removeEventListener('pointercancel', endPress)
+            if (ro) ro.disconnect()
+            fit.destroy()
             cancelAnimationFrame(raf)
             canvas.remove()
         }
@@ -535,14 +604,6 @@ const LemGame = () => {
                         <span ref={setHud('score')}>00000</span>
                     </span>
                 </div>
-                <div className="absolute bottom-40 left-1/2 -translate-x-1/2 flex gap-3 font-mono text-xs text-amber-50">
-                    {SKILLS.map((s, i) => (
-                        <div key={s} className="bg-black/55 border border-amber-200/30 rounded px-2 py-1 text-center">
-                            <div className="opacity-70">{i + 1} {SKILL_NAME[s]}</div>
-                            <div id={'lem-sk-' + s} ref={setHud('sk_' + s)} className="text-lg font-bold" />
-                        </div>
-                    ))}
-                </div>
             </div>
 
             {screen === 'attract' && (
@@ -551,7 +612,7 @@ const LemGame = () => {
                     <p className="text-amber-100/90 font-mono mt-1 text-sm">they walk. they fall. you decide otherwise.</p>
                     <p className="text-white font-mono font-bold mt-8 animate-pulse">TAP / PRESS ANY KEY</p>
                     <p className="text-amber-200/80 font-mono text-xs mt-2 px-6">
-                        arrows move the cursor · 1-4 or B pick a skill · Space / A assigns it to the nearest lemming<br />
+                        hold a lemming to preview · release to assign · tap a skill to pick it · arrows + Space work on a keyboard<br />
                         this demo is a proven solution, replayed move for move — determinism, on screen
                     </p>
                 </div>
@@ -575,6 +636,55 @@ const LemGame = () => {
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'LEMMINGS-LITE')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} />
+
+            {/* #432: the original's bottom panel — the skill bar with counts
+                (tap a skill to pick it) plus PAUSE and FAST-FORWARD, along the
+                bottom edge instead of floating over the crowd. */}
+            {play && !paused && (
+                <div
+                    data-lem-panel
+                    className="absolute left-0 right-0 z-50 flex items-end justify-center gap-1.5 px-2 pointer-events-auto font-mono"
+                    style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}
+                >
+                    {SKILLS.map((s) => (
+                        <button
+                            key={s}
+                            data-lem-skill={s}
+                            onPointerDown={(e) => { e.preventDefault(); selectSkill(s) }}
+                            className={`bg-black/60 border rounded px-2 py-1 text-center leading-tight select-none ${selected === s ? 'border-amber-300' : 'border-amber-200/30'}`}
+                        >
+                            <div className="text-[10px] text-amber-100/80 whitespace-nowrap">{SKILL_NAME[s]}</div>
+                            <div ref={setHud('sk_' + s)} className="text-base font-bold text-amber-50" />
+                        </button>
+                    ))}
+                    <button
+                        onPointerDown={(e) => { e.preventDefault(); togglePause() }}
+                        className="bg-black/60 border border-amber-200/30 rounded px-2.5 py-1 text-[11px] font-bold text-amber-50 leading-tight select-none"
+                    >
+                        PAUSE
+                    </button>
+                    <button
+                        onPointerDown={(e) => { e.preventDefault(); ffHeld = true }}
+                        onPointerUp={() => { ffHeld = false }}
+                        onPointerLeave={() => { ffHeld = false }}
+                        onPointerCancel={() => { ffHeld = false }}
+                        className="bg-black/60 border border-amber-200/30 rounded px-2.5 py-1 text-[11px] font-bold text-amber-50 leading-tight select-none"
+                    >
+                        FF
+                    </button>
+                </div>
+            )}
+
+            {/* #432: portrait fills only part of the screen — say so. */}
+            {portrait && (
+                <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
+                    <div className="bg-black/70 border border-amber-300/50 rounded-lg px-6 py-4 text-center font-mono">
+                        <div className="text-3xl mb-1 text-amber-200">⟳</div>
+                        <div className="text-amber-100 font-bold tracking-widest text-sm">ROTATE YOUR PHONE</div>
+                        <div className="text-amber-200/70 text-xs mt-1">the ledge plays landscape</div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

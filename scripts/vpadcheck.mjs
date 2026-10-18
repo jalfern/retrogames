@@ -14,7 +14,7 @@ import { build } from 'esbuild'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD, dpadDirs, DPAD_SWAP_HI, DPAD_SWAP_LO } from '../src/components/virtualDir.js'
 import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick, waysOf } from '../src/components/gamepadMap.js'
 import { steerPedals, steerResponse, STEER_GAIN } from '../src/utils/padState.js'
-import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD } from '../src/utils/onePad.js'
+import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD, POINTER_HIT_PX, pointerTarget, pointerGesture } from '../src/utils/onePad.js'
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error(`  FAIL: ${msg}`) } }
@@ -230,7 +230,7 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
         return gamesSrc.slice(i, j === -1 ? gamesSrc.length : j)
     }
     const folded = [
-        ['/mario', 'KeyF'], ['/ironkeep', 'ShiftLeft'], ['/beezee', 'KeyV'], ['/lemmings', 'KeyE'],
+        ['/mario', 'KeyF'], ['/ironkeep', 'ShiftLeft'], ['/beezee', 'KeyV'],
         ['/metroid', 'KeyX'], ['/simcity-min', 'KeyT'], ['/outpost', 'KeyT'], ['/papers-please', 'KeyD'],
         ['/lode-runner', 'ArrowDown'], ['/dogfight', 'KeyE'], ['/paperboy', 'KeyF'], ['/wizardry', 'KeyF'],
         ['/spy-hunter', 'KeyX'], ['/excitebike', 'KeyG'], ['/mario-kart', 'KeyR'], ['/zelda', 'KeyX'],
@@ -627,7 +627,7 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     const pilots = {
         '/pacman': { method: 'dpad', reads: ['up', 'down', 'left', 'right'], b: null, file: '../src/games/Pacman/index.jsx' },
         '/mario-kart': { method: 'stick', reads: ['x', 'y', 'a', 'b'], b: 'KeyR', bLabel: 'DRIFT', aLabel: 'ITEM', file: '../src/games/MarioKart/index.jsx' },
-        '/lemmings': { method: 'pointer', reads: ['pointer', 'b'], b: 'KeyE', bLabel: 'CYCLE', file: '../src/games/Lemmings/index.jsx' },
+        '/lemmings': { method: 'pointer', reads: ['pointer'], b: null, file: '../src/games/Lemmings/index.jsx' },
     }
     for (const [path, want] of Object.entries(pilots)) {
         const g = GAMES.find((e) => e.path === path)
@@ -810,6 +810,89 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     const src = readFileSync(new URL('../src/utils/gameContract.js', import.meta.url), 'utf8')
     ok(/\.\.\.\(spec\.ways \? \{ ways: spec\.ways \} : \{\}\)/.test(src),
         'gameContract: __game.meta reports `ways` when the game declares it')
+}
+
+// --- 33. #432: the shared pointer press-preview-release gesture ------------
+//
+// Every pointer-method game aims with the finger: press previews, slide
+// re-targets, release commits, release on nothing commits nothing. The reach
+// is screen-space (a fingertip), not world cells — the same thumb-size at any
+// zoom. This pins the shared half in Node; the Lemmings mount (panel, ring,
+// portrait prompt, fit-shell sizing) is proven in lemplay / vpadboot.
+
+// 33a. The reach constant: about a fingertip, in SCREEN px.
+{
+    ok(POINTER_HIT_PX === 24, `POINTER_HIT_PX is 24 screen px (fingertip), got ${POINTER_HIT_PX}`)
+}
+
+// 33b. pointerTarget: nearest candidate wins, within the screen-space reach.
+{
+    const cands = [
+        { x: 10, y: 10 },
+        { x: 11.5, y: 10 },   // nearer to the finger at (11, 10)
+        { x: 20, y: 10 },     // far
+    ]
+    const t = pointerTarget(cands, 11, 10, 12)   // 12 screen px per world unit
+    ok(t && t.x === 11.5, 'pointerTarget: the nearest candidate within reach wins')
+    ok(pointerTarget(cands, 20, 10, 12) && pointerTarget(cands, 20, 10, 12).x === 20, 'pointerTarget: the finger ON a candidate takes it (0 < reach)')
+    ok(pointerTarget(cands, 30, 10, 12) === null, 'pointerTarget: nothing within the reach -> null (a miss is not a near-miss)')
+    ok(pointerTarget([], 10, 10, 12) === null, 'pointerTarget: no candidates -> null')
+}
+
+// 33c. The reach is SCREEN space: the same 2.0-world-unit gap is a hit when
+// the stage scale makes it 23.98 px, and a miss when it is 24.02 px — the
+// boundary is the 24 px fingertip, at any zoom.
+{
+    const c = [{ x: 12, y: 0 }]
+    ok(pointerTarget(c, 10, 0, 10) !== null, 'reach scales with the stage: 20 px gap is inside 24 px')
+    ok(pointerTarget(c, 10, 0, 11.99) !== null, 'reach scales with the stage: 23.98 px gap is inside 24 px')
+    ok(pointerTarget(c, 10, 0, 12.01) === null, 'reach scales with the stage: 24.02 px gap is outside 24 px')
+    ok(pointerTarget(c, 10, 0, 1e-6) !== null, 'reach: a degenerate scale still has a (huge) world reach, no crash')
+}
+
+// 33d. pointerGesture: press previews, a slide re-targets, release commits ONCE
+// with the target; a release over nothing commits null (a no-op).
+{
+    const near = { x: 10, y: 10, id: 'A' }
+    const far = { x: 11.2, y: 10, id: 'B' }
+    const commits = []
+    const gs = { pd: false, aim: null }
+    pointerGesture(gs, { x: 10, y: 10, down: true }, [near, far], 10, 10, 12, (a) => commits.push(a))
+    ok(gs.pd === true && gs.aim === near, 'gesture: the PRESS previews the candidate under the finger')
+    ok(commits.length === 0, 'gesture: a press does not commit (the preview is not the assignment)')
+    pointerGesture(gs, { x: 11.2, y: 10, down: true }, [near, far], 11.2, 10, 12, (a) => commits.push(a))
+    ok(gs.aim === far, 'gesture: SLIDING re-targets the preview to the new candidate')
+    pointerGesture(gs, { x: 11.2, y: 10, down: false }, [near, far], 11.2, 10, 12, (a) => commits.push(a))
+    ok(commits.length === 1 && commits[0] === far, 'gesture: the RELEASE commits the previewed target, exactly once')
+    ok(gs.aim === null && gs.pd === false, 'gesture: after the release the gesture is idle (no stale aim)')
+    // release on nothing: a press that finds no candidate commits null.
+    const gs2 = { pd: false, aim: null }
+    const commits2 = []
+    pointerGesture(gs2, { down: true }, [], 40, 40, 12, (a) => commits2.push(a))
+    ok(gs2.aim === null, 'gesture: a press over nothing previews nothing')
+    pointerGesture(gs2, { down: false }, [], 40, 40, 12, (a) => commits2.push(a))
+    ok(commits2.length === 1 && commits2[0] === null, 'gesture: releasing over nothing commits null (does nothing)')
+    // idle: a pad that is not down and was not down does nothing at all.
+    const gs3 = { pd: false, aim: null }
+    let idleCommits = 0
+    pointerGesture(gs3, { down: false }, [near], 10, 10, 12, () => idleCommits++)
+    ok(gs3.aim === null && idleCommits === 0, 'gesture: an idle pad never commits')
+}
+
+// 33e. The Lemmings mount: the game runs the SHARED gesture (not a private
+// tap-to-assign), writes the one pad's pointer from its own touch, drives the
+// sizing from the shared fit shell (ResizeObserver, not window.resize), carries
+// the original bottom panel, and says ROTATE in portrait. Source pins, the way
+// the pilot guard does — a silent revert to tap-to-assign is caught.
+{
+    const src = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+    ok(/pointerGesture\(/.test(src) && /setPointer\(/.test(src), 'lemmings: runs the shared gesture and writes the one pad pointer')
+    ok(!/cycleSkill/.test(src), 'lemmings: CYCLE is gone (the panel picks the skill)')
+    ok(/makeFitCanvas\(/.test(src) && !/window\.addEventListener\('resize'/.test(src),
+        'lemmings: sized by the shared fit shell (ResizeObserver), no window.resize')
+    ok(/data-lem-panel/.test(src) && /data-lem-skill/.test(src), 'lemmings: the original bottom panel (skill bar with counts)')
+    ok(/PAUSE/.test(src) && /ffHeld/.test(src), 'lemmings: PAUSE + FAST-FORWARD on the panel')
+    ok(/ROTATE YOUR PHONE/.test(src), 'lemmings: the portrait prompt')
 }
 
 // --- Summary ---
