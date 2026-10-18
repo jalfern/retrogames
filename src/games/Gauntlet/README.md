@@ -77,13 +77,14 @@ two-player (P2 on WASD+F, A/D picks P2's hero, shown as a second portrait) ·
 
 ```bash
 npm run lint:gauntlet               # eslint gate for both games + harness
-npm run gauntletcheck             # 127 checks: geometry, art, sound, minimap,
-                                     # select (the hero-card touch test),
-                                     # juice (the view's reactive overlays),
-                                     # walls (the torch + two-tone courses),
-                                     # generators (the wind-up), rules, overhead
-                                     # mode, ledger, pilot, slack, determinism
-npm run gauntletcheck -- --mutate # 15 mutants, all must die
+npm run gauntletcheck             # 133 checks: geometry, art, sound, minimap,
+                                      # select (the hero-card touch test),
+                                      # juice (the view's reactive overlays),
+                                      # walls (the torch + two-tone courses),
+                                      # generators (the wind-up), 2p (the human
+                                      # partner), rules, overhead mode, ledger,
+                                      # pilot, slack, determinism
+npm run gauntletcheck -- --mutate # 16 mutants, all must die
 npm run gauntletplay              # advisory browser drive (needs npm run dev)
 ```
 
