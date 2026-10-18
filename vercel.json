@@ -3,40 +3,102 @@
     {
       "source": "/js-dos/emulators/(.*).wasm",
       "headers": [
-        { "key": "Content-Type", "value": "application/wasm" }
+        {
+          "key": "Content-Type",
+          "value": "application/wasm"
+        }
       ]
     },
     {
       "source": "/manifest.webmanifest",
       "headers": [
-        { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
+        {
+          "key": "Content-Type",
+          "value": "application/manifest+json; charset=utf-8"
+        }
       ]
     },
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Content-Type", "value": "text/javascript; charset=utf-8" },
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "Content-Type",
+          "value": "text/javascript; charset=utf-8"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     }
   ],
   "redirects": [
-    { "source": "/", "destination": "/retrogames", "permanent": false }
+    {
+      "source": "/",
+      "destination": "/retrogames",
+      "permanent": false
+    }
   ],
   "rewrites": [
-    { "source": "/retrogames/assets/:path*", "destination": "/assets/:path*" },
-    { "source": "/retrogames/games/(.+)", "destination": "/games/$1" },
-    { "source": "/retrogames/js-dos/:path*", "destination": "/js-dos/:path*" },
-    { "source": "/retrogames/replays/:path*", "destination": "/replays/:path*" },
-    { "source": "/retrogames/manifest.webmanifest", "destination": "/manifest.webmanifest" },
-    { "source": "/retrogames/sw.js", "destination": "/sw.js" },
-    { "source": "/retrogames/icon-192.png", "destination": "/icon-192.png" },
-    { "source": "/retrogames/icon-512.png", "destination": "/icon-512.png" },
-    { "source": "/retrogames/maskable-512.png", "destination": "/maskable-512.png" },
-    { "source": "/retrogames/apple-touch-icon-180.png", "destination": "/apple-touch-icon-180.png" },
-    { "source": "/retrogames/apple-touch-icon-152.png", "destination": "/apple-touch-icon-152.png" },
-    { "source": "/retrogames", "destination": "/index.html" },
-    { "source": "/retrogames/", "destination": "/index.html" },
-    { "source": "/retrogames/:path*", "destination": "/index.html" }
+    {
+      "source": "/retrogames/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/retrogames/games/(.+)",
+      "destination": "/games/$1"
+    },
+    {
+      "source": "/retrogames/js-dos/:path*",
+      "destination": "/js-dos/:path*"
+    },
+    {
+      "source": "/retrogames/replays/:path*",
+      "destination": "/replays/:path*"
+    },
+    {
+      "source": "/retrogames/demos/:path*",
+      "destination": "/demos/:path*"
+    },
+    {
+      "source": "/retrogames/manifest.webmanifest",
+      "destination": "/manifest.webmanifest"
+    },
+    {
+      "source": "/retrogames/sw.js",
+      "destination": "/sw.js"
+    },
+    {
+      "source": "/retrogames/icon-192.png",
+      "destination": "/icon-192.png"
+    },
+    {
+      "source": "/retrogames/icon-512.png",
+      "destination": "/icon-512.png"
+    },
+    {
+      "source": "/retrogames/maskable-512.png",
+      "destination": "/maskable-512.png"
+    },
+    {
+      "source": "/retrogames/apple-touch-icon-180.png",
+      "destination": "/apple-touch-icon-180.png"
+    },
+    {
+      "source": "/retrogames/apple-touch-icon-152.png",
+      "destination": "/apple-touch-icon-152.png"
+    },
+    {
+      "source": "/retrogames",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/retrogames/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/retrogames/:path*",
+      "destination": "/index.html"
+    }
   ]
 }
