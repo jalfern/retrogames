@@ -1020,6 +1020,10 @@ export default function CometDriftHD() {
                 const P = g.karts[0]
                 return { sparks: sparks.aliveCount, dust: dust.aliveCount, driftT: P.driftT, charge: P.charge, boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
+            modelLoaded: () => {
+                const v = kartMeshes[0].m.userData.view
+                return !!(v && v.getObjectByName && v.getObjectByName('DuneBuggy'))
+            },
             forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
         }
 

@@ -189,6 +189,16 @@ if (!SKIP_BROWSER) {
         const backend = await page.evaluate(() => window.__cometHDTest.backend())
         ok(backend === 'webgl2' || backend === 'webgl2-legacy', `WebGL2 fallback backend active for pixel checks (${backend})`)
 
+        // #477: the authored dune buggy GLB must actually replace the primitive
+        // fallback (proves the async swap + material-clone + rig wiring run in a
+        // browser, not just in the Node contract).
+        try {
+            await page.waitForFunction(() => window.__cometHDTest.modelLoaded(), null, { timeout: 15000 })
+            ok(true, 'authored dune_buggy.glb swapped in for the primitive kart')
+        } catch {
+            ok(false, 'authored dune_buggy.glb swapped in for the primitive kart')
+        }
+
         const pixels = async () => page.evaluate(() => {
             const src = document.querySelector('canvas')
             const cv = document.createElement('canvas')
