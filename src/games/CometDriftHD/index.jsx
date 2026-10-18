@@ -8,11 +8,11 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from '../CometDrift/sim.js'
-import { TRACK, SCENERY } from '../CometDrift/track.js'
+import { TRACK, surfaceAt, SCENERY } from '../CometDrift/track.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 import {
-    S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas,
+    S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt,
 } from './scene.js'
 
 // =====================================================================
@@ -53,19 +53,19 @@ function texCanvas(w, h) {
 function asphaltTex() {
     const c = texCanvas(256, 256)
     const x = c.getContext('2d')
-    x.fillStyle = '#4a4754'; x.fillRect(0, 0, 256, 256)
+    x.fillStyle = '#585464'; x.fillRect(0, 0, 256, 256)
     for (let i = 0; i < 2600; i++) {
-        const g = 58 + jit(i * 1.7) * 48
+        const g = 76 + jit(i * 1.7) * 50
         x.fillStyle = `rgba(${g + 10},${g},${g + 18},0.5)`
         x.fillRect(jit(i * 3.1) * 256, jit(i * 5.3) * 256, 2, 2)
     }
     // worn wheel grooves, darker and slightly polished
-    x.fillStyle = 'rgba(30,26,36,0.5)'
+    x.fillStyle = 'rgba(40,34,46,0.45)'
     x.fillRect(78, 0, 20, 256); x.fillRect(158, 0, 20, 256)
-    x.fillStyle = 'rgba(118,112,132,0.3)'
+    x.fillStyle = 'rgba(150,144,164,0.32)'
     x.fillRect(82, 0, 3, 256); x.fillRect(162, 0, 3, 256)
     // sealed cracks with tar lines
-    x.strokeStyle = 'rgba(28,24,32,0.8)'; x.lineWidth = 1.4
+    x.strokeStyle = 'rgba(34,28,38,0.7)'; x.lineWidth = 1.4
     for (let k = 0; k < 7; k++) {
         x.beginPath()
         let px0 = jit(k * 7.7) * 256; let py0 = jit(k * 9.1) * 256
@@ -92,13 +92,13 @@ function kerbTex() {
 function sandTex() {
     const c = texCanvas(256, 256)
     const x = c.getContext('2d')
-    x.fillStyle = '#7d5236'; x.fillRect(0, 0, 256, 256)
+    x.fillStyle = '#8f6038'; x.fillRect(0, 0, 256, 256)
     for (let i = 0; i < 3400; i++) {
-        const r = 100 + jit(i * 1.3) * 60
+        const r = 112 + jit(i * 1.3) * 64
         x.fillStyle = `rgba(${r},${r * 0.66},${r * 0.4},0.45)`
         x.fillRect(jit(i * 2.7) * 256, jit(i * 4.9) * 256, 2, 2)
     }
-    x.strokeStyle = 'rgba(60,36,22,0.22)'; x.lineWidth = 2
+    x.strokeStyle = 'rgba(70,44,26,0.2)'; x.lineWidth = 2
     for (let k = 0; k < 9; k++) {
         x.beginPath()
         for (let px0 = 0; px0 <= 256; px0 += 16) x.lineTo(px0, k * 28 + jit(k * 5.1 + px0 * 0.01) * 10)
@@ -109,7 +109,7 @@ function sandTex() {
 function strataTex() {
     const c = texCanvas(256, 256)
     const x = c.getContext('2d')
-    const bands = ['#6e3c28', '#7d4a30', '#5c3020', '#86543a', '#4c2818', '#71402c', '#936046', '#59341f']
+    const bands = ['#8a4c32', '#9a5c3a', '#6e3826', '#a86848', '#5c3020', '#82503a', '#b47a54', '#66381f']
     let y0 = 0; let k = 0
     while (y0 < 256) {
         const hgt = 14 + jit(k * 7.1) * 30
@@ -117,9 +117,16 @@ function strataTex() {
         x.fillRect(0, y0, 256, Math.min(hgt, 256 - y0))
         x.fillStyle = 'rgba(0,0,0,0.28)'
         x.fillRect(0, y0, 256, 2)
-        x.fillStyle = 'rgba(255,190,140,0.10)'
+        x.fillStyle = 'rgba(255,190,140,0.12)'
         x.fillRect(0, y0 + 2, 256, 2)
         y0 += hgt; k++
+    }
+    // vertical erosion ribs (#471): the near wall band needs parallax detail
+    for (let s = 0; s < 16; s++) {
+        const rx0 = jit(s * 8.9) * 256
+        const wdt = 2 + jit(s * 4.1) * 4
+        x.fillStyle = s % 2 ? 'rgba(255,200,150,0.10)' : 'rgba(0,0,0,0.16)'
+        x.fillRect(rx0, 0, wdt, 256)
     }
     for (let i = 0; i < 1600; i++) {
         x.fillStyle = `rgba(0,0,0,${jit(i * 3.3) * 0.16})`
@@ -139,11 +146,18 @@ function skyTex() {
     const c = texCanvas(64, 256)
     const x = c.getContext('2d')
     const gr = x.createLinearGradient(0, 0, 0, 256)
-    gr.addColorStop(0, '#160d1e')
-    gr.addColorStop(0.42, '#3d1a30')
-    gr.addColorStop(0.72, '#8a3a2c')
-    gr.addColorStop(0.88, '#d86a30')
-    gr.addColorStop(1, '#f09a48')
+    // sphere mapping: canvas fraction f lands at v = 1 - f, so the HORIZON
+    // (v=0.5) is the CANVAS MIDDLE. The shipped sky put its dusk band at the
+    // canvas bottom = under the south pole — the sun washed out invisible for
+    // the whole race (#471 item 1 root cause). Orange now straddles f=0.5.
+    gr.addColorStop(0, '#1a0f24')
+    gr.addColorStop(0.28, '#452038')
+    gr.addColorStop(0.38, '#7c3030')
+    gr.addColorStop(0.44, '#c05830')
+    gr.addColorStop(0.49, '#ff9050')
+    gr.addColorStop(0.53, '#e07038')
+    gr.addColorStop(0.62, '#8a3a28')
+    gr.addColorStop(1, '#40201a')
     x.fillStyle = gr; x.fillRect(0, 0, 64, 256)
     return c
 }
@@ -155,6 +169,18 @@ function glowTex() {
     gr.addColorStop(0.35, 'rgba(255,150,70,0.55)')
     gr.addColorStop(1, 'rgba(255,110,50,0)')
     x.fillStyle = gr; x.fillRect(0, 0, 128, 128)
+    return c
+}
+// a readable sun: crisp disc inside the ember wash (#471 item 1)
+function discTex() {
+    const c = texCanvas(64, 64)
+    const x = c.getContext('2d')
+    const gr = x.createRadialGradient(32, 32, 1, 32, 32, 30)
+    gr.addColorStop(0, 'rgba(255,248,225,1)')
+    gr.addColorStop(0.55, 'rgba(255,206,120,0.95)')
+    gr.addColorStop(0.75, 'rgba(255,140,70,0.5)')
+    gr.addColorStop(1, 'rgba(255,110,50,0)')
+    x.fillStyle = gr; x.fillRect(0, 0, 64, 64)
     return c
 }
 function dotTex() {
@@ -222,15 +248,15 @@ export default function CometDriftHD() {
         const dpr = Math.min(window.devicePixelRatio || 1, lite ? 1 : 2)
 
         const scene = new THREE.Scene()
-        scene.fog = new THREE.FogExp2(0x5c2836, 0.011)
-        const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 400)
+        scene.fog = new THREE.FogExp2(0x8a4a3c, 0.0072)
+        const camera = new THREE.PerspectiveCamera(64, 16 / 9, 0.1, 400)
 
         const sunDir = new THREE.Vector3(Math.cos(-0.6), 0.12, Math.sin(-0.6)).normalize()
-        const sun = new THREE.DirectionalLight(0xffb078, 3.1)
+        const sun = new THREE.DirectionalLight(0xffc090, 3.6)
         sun.position.copy(sunDir.clone().multiplyScalar(60))
         scene.add(sun)
-        scene.add(new THREE.HemisphereLight(0xa05a6e, 0x402418, 1.5))
-        scene.add(new THREE.AmbientLight(0x50303c, 0.8))
+        scene.add(new THREE.HemisphereLight(0xd06a50, 0x553018, 1.8))
+        scene.add(new THREE.AmbientLight(0x6a4050, 0.95))
 
         const tex = (canvas, rx = 1, ry = 1) => {
             const t = new THREE.CanvasTexture(canvas)
@@ -254,12 +280,12 @@ export default function CometDriftHD() {
         const strataMat = mat(tex(strataTex()))
         scene.add(new THREE.Mesh(M.wallL, strataMat))
         scene.add(new THREE.Mesh(M.wallR, strataMat))
-        const plateauMat = mat(tex(sandTex()), { color: 0xc89878 })
+        const plateauMat = mat(tex(sandTex()), { color: 0xd8a888 })
         scene.add(new THREE.Mesh(M.plateauL, plateauMat))
         scene.add(new THREE.Mesh(M.plateauR, plateauMat))
 
         // canyon floor beyond the plateau rim, so no void opens under the mesas
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), mat(tex(sandTex()), { color: 0x9a6a48 }))
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), mat(tex(sandTex()), { color: 0xa87850 }))
         floor.rotation.x = -Math.PI / 2
         floor.position.set(17, -0.4, 17)
         scene.add(floor)
@@ -277,17 +303,43 @@ export default function CometDriftHD() {
         dome.position.set(17, 0, 17)
         scene.add(dome)
         const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-            map: tex(glowTex()), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true,
+            map: tex(glowTex()), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true, opacity: 0.95,
         }))
         sunGlow.position.copy(sunDir.clone().multiplyScalar(120)).add(new THREE.Vector3(17, 2, 17))
-        sunGlow.scale.set(46, 46, 1)
+        sunGlow.scale.set(84, 84, 1)
         scene.add(sunGlow)
+        const sunDisc = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: tex(discTex()), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true,
+        }))
+        sunDisc.position.copy(sunGlow.position.clone()).add(new THREE.Vector3(0, 1.5, 0))
+        sunDisc.scale.set(24, 24, 1)
+        scene.add(sunDisc)
 
         // karts + blob shadows
+        // dusk env-map (#471 item 4): a tiny equirect wash of the gulch sky
+        // gives the liveries sky-glass reflections without a real probe.
+        const envCanvas = (() => {
+            const c = texCanvas(128, 64)
+            const x = c.getContext('2d')
+            const gr = x.createLinearGradient(0, 0, 0, 64)
+            gr.addColorStop(0, '#241432'); gr.addColorStop(0.36, '#7c3a34')
+            gr.addColorStop(0.46, '#e07a38'); gr.addColorStop(0.56, '#8a4428')
+            gr.addColorStop(1, '#40281c')
+            x.fillStyle = gr; x.fillRect(0, 0, 128, 64)
+            const sg = x.createRadialGradient(88, 28, 2, 88, 28, 20)
+            sg.addColorStop(0, 'rgba(255,230,170,1)'); sg.addColorStop(1, 'rgba(255,150,70,0)')
+            x.fillStyle = sg; x.fillRect(68, 8, 40, 40)
+            return c
+        })()
+        const envMap = new THREE.CanvasTexture(envCanvas)
+        envMap.mapping = THREE.EquirectangularReflectionMapping
+        envMap.colorSpace = THREE.SRGBColorSpace
         const kartMeshes = []
         for (const k of g.karts) {
             const m = buildKart(LIVERY[k.color] || 0xcccccc, ACCENT[k.color] || '#fff')
             m.userData.kart = k
+            m.userData.body.envMap = envMap
+            m.userData.body.envMapIntensity = 0.55
             scene.add(m)
             const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.72, 14),
                 new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false }))
@@ -300,8 +352,8 @@ export default function CometDriftHD() {
         // exhaust cones on the player's buggy (flame drawn by scale + tint)
         const flames = []
         for (const sx of [-0.26, 0.26]) {
-            const cone = new THREE.Mesh(new THREE.ConeGeometry(0.11, 1, 8),
-                new THREE.MeshBasicMaterial({ color: 0x60c0ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }))
+            const cone = new THREE.Mesh(new THREE.ConeGeometry(0.085, 1, 8),
+                new THREE.MeshBasicMaterial({ color: 0x60c0ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }))
             cone.rotation.x = -Math.PI / 2
             cone.position.set(sx, 0.3, -1.05)
             cone.visible = false
@@ -317,8 +369,13 @@ export default function CometDriftHD() {
         scene.add(sparks.points)
         scene.add(dust.points)
 
-        // camera rig state (px-space chase like the retro twin, same lag law)
+        // camera rig state (px-space chase like the retro twin, same lag law).
+        // #471: the kart filled the bottom 40% of the frame — the cam sits
+        // further back and higher with a long look-ahead (modern chase cam),
+        // and it collides: sampling the gulch behind the kart lifts it over
+        // the near lip instead of burying it in the cliff.
         let camA = g.karts[0].a
+        let camLift = 0
         let shake = 0
         let fovK = 0
         let prevPlace = g.karts[0].place
@@ -367,7 +424,7 @@ export default function CometDriftHD() {
             r.setPixelRatio(dpr)
             r.setSize(cssW, cssH, false)
             r.toneMapping = THREE.ACESFilmicToneMapping
-            r.toneMappingExposure = 1.3
+            r.toneMappingExposure = 1.35
             renderer = r
             backendName = 'webgl2-legacy'
             ready = true
@@ -383,7 +440,7 @@ export default function CometDriftHD() {
                 renderer.setPixelRatio(dpr)
                 renderer.setSize(cssW, cssH, false)
                 renderer.toneMapping = THREE.ACESFilmicToneMapping
-                renderer.toneMappingExposure = 1.3
+                renderer.toneMappingExposure = 1.35
                 ready = true
             } catch {
                 try {
@@ -401,7 +458,10 @@ export default function CometDriftHD() {
                 if (ev.e === 'count') audioController.playTone(660, 0.12, 'square', 0.12)
                 if (ev.e === 'go') audioController.playSweep(440, 880, 0.4, 'square', 0.14)
                 if (ev.e === 'boost' && ev.who === 'COMET') {
-                    audioController.playSweep(300 + ev.tier * 190, 1150 + ev.tier * 170, 0.34 + ev.tier * 0.14, 'sawtooth', 0.1 + ev.tier * 0.02)
+                    // each tier gets its own voice, not just a higher pitch (#471 item 7)
+                    if (ev.tier === 0) audioController.playSweep(340, 900, 0.3, 'square', 0.1)
+                    else if (ev.tier === 1) { audioController.playSweep(240, 1150, 0.42, 'sawtooth', 0.11); audioController.playTone(1240, 0.09, 'square', 0.07) }
+                    else { audioController.playSweep(180, 1450, 0.55, 'sawtooth', 0.12); audioController.playNoise(0.22, 0.1); audioController.playTone(1568, 0.1, 'square', 0.08); audioController.playTone(2093, 0.12, 'square', 0.06) }
                     shake = Math.max(shake, 3 + ev.tier * 2.5)
                 }
                 if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); shake = 16; rumble(300, 1) }
@@ -414,8 +474,16 @@ export default function CometDriftHD() {
             if (!live || g.phase !== 'race') return
             const P = g.karts[0]
             if (P.v < 0.5) return
-            const period = Math.max(3, 15 - Math.round(P.v))
-            if (g.tick % period === 0) audioController.playTone(56 + P.v * 13 + (P.boostT > 0 ? 34 + P.boostTier * 52 : 0), 0.035, 'sawtooth', 0.026)
+            // layered saws on a gear curve: the pitch ladder steps with speed,
+            // turbo sits on top of the gear, not in place of it (#471 item 7)
+            const gear = Math.min(5, Math.floor(P.v / 1.6))
+            const pull = (P.v * 1.6) % 8
+            const base = 44 + gear * 13 + pull * 2.6 + (P.boostT > 0 ? 30 + P.boostTier * 42 : 0)
+            const period = Math.max(2, 14 - Math.round(P.v))
+            if (g.tick % period === 0) {
+                audioController.playTone(base, 0.03, 'sawtooth', 0.022)
+                audioController.playTone(base * 1.504, 0.026, 'sawtooth', 0.012)
+            }
         }
 
         // ---- particles: world-space, spawned from live sim state ----------
@@ -435,8 +503,13 @@ export default function CometDriftHD() {
                 const col = tier >= 0 ? parseInt(TIER_COL[tier].slice(1), 16) : SPARK_NOCOL
                 for (const side of [-1, 1]) {
                     const w = wheelWorld(P, side, 0.5)
-                    sparks.spawn(w.x, 0.12, w.z, -w.fx * 0.05 + (jit(g.tick + side) - 0.5) * 0.02, 0.02 + jit(g.tick * 1.7 + side) * 0.02, -w.fz * 0.05 + (jit(g.tick * 2.3 + side) - 0.5) * 0.02, 14, col)
+                    sparks.spawn(w.x, 0.12, w.z, -w.fx * 0.05 + (jit(g.tick + side) - 0.5) * 0.02, 0.02 + jit(g.tick * 1.7 + side) * 0.02, -w.fx * 0.05 + (jit(g.tick * 2.3 + side) - 0.5) * 0.02, 14, col)
                     dust.spawn(w.x, 0.16, w.z, -w.fx * 0.015, 0.008, -w.fz * 0.015, 24, 0xb08058)
+                    // gold tier paints short streaks, not just dots (#471 item 6)
+                    if (tier === 2) {
+                        sparks.spawn(w.x - w.fx * 0.5, 0.13, w.z - w.fz * 0.5, -w.fx * 0.05, 0.018, -w.fz * 0.05, 11, col)
+                        sparks.spawn(w.x - w.fx * 0.95, 0.13, w.z - w.fz * 0.95, -w.fx * 0.05, 0.015, -w.fz * 0.05, 9, col)
+                    }
                 }
             } else if (P.spinT > 0) {
                 for (let i = 0; i < 3; i++) {
@@ -448,14 +521,21 @@ export default function CometDriftHD() {
                 const w = wheelWorld(P, 1, 0.4)
                 dust.spawn(w.x, 0.14, w.z, 0, 0.006, 0, 18, 0xb08058)
             }
-            // the pack drifts too: rivals earn their sparks at half rate
+            // the pack drifts too: rivals earn their sparks at half rate,
+            // and boost leaves a smoke trail (#471 item 6)
             for (let i = 1; i < g.karts.length; i++) {
                 const k = g.karts[i]
-                if (!(k.driftT > 0 && k.v > 1) || (g.tick & 1) !== 0) continue
-                const kt = k.charge >= TIERS[2].t ? 2 : k.charge >= TIERS[1].t ? 1 : k.charge >= TIERS[0].t ? 0 : -1
+                if ((g.tick & 1) !== 0) continue
                 const side = (i % 2) * 2 - 1
-                const w = wheelWorld(k, side, 0.5)
-                sparks.spawn(w.x, 0.12, w.z, -w.fx * 0.04, 0.015, -w.fz * 0.04, 12, kt >= 0 ? parseInt(TIER_COL[kt].slice(1), 16) : SPARK_NOCOL)
+                if (k.driftT > 0 && k.v > 1) {
+                    const kt = k.charge >= TIERS[2].t ? 2 : k.charge >= TIERS[1].t ? 1 : k.charge >= TIERS[0].t ? 0 : -1
+                    const w = wheelWorld(k, side, 0.5)
+                    sparks.spawn(w.x, 0.12, w.z, -w.fx * 0.04, 0.015, -w.fz * 0.04, 12, kt >= 0 ? parseInt(TIER_COL[kt].slice(1), 16) : SPARK_NOCOL)
+                }
+                if (k.boostT > 0 && k.v > 2) {
+                    const wb = wheelWorld(k, side, 0.9)
+                    dust.spawn(wb.x, 0.3, wb.z, 0, 0.012, 0, 22, 0x8a7a82)
+                }
             }
             sparks.step(-0.0016)
             dust.step(-0.0004)
@@ -469,20 +549,30 @@ export default function CometDriftHD() {
                 m.position.set(k.x * S, 0, k.y * S)
                 m.rotation.y = -k.a
                 m.rotation.z = k.driftT > 0 ? (k.steerVis || 1) * 0.14 : 0
-                const bob = k.offroad && k.v > 1 ? (jit(g.tick * 7.7 + i) - 0.5) * 0.05 : 0
+                const rough = k.offroad && k.v > 1
+                const bob = rough ? (jit(g.tick * 7.7 + i) - 0.5) * 0.05 : 0
                 m.position.y = bob
+                // suspension squash through the washboard (#471 item 3)
+                m.scale.y = rough ? 0.93 + jit(g.tick * 11.3 + i) * 0.08 : 1
                 shadow.position.set(k.x * S, 0.052, k.y * S)
-                for (const w of m.userData.wheels) w.rotation.y = -(k.steerVis || 0) * 0.45
+                for (const w of m.userData.wheels) {
+                    w.rotation.y = -(k.steerVis || 0) * 0.45
+                    if (w.children[0]) w.children[0].rotation.x += k.v * 0.6
+                }
+                const braking = (k.pv !== undefined && k.v < k.pv - 0.08) ||
+                    (i === 0 && (keys.KeyS || keys.ArrowDown))
+                k.pv = k.v
+                if (m.userData.brakes.length) m.userData.brakes[0].material.emissiveIntensity = braking && k.spinT === 0 ? 1.8 : 0
             }
             const P = g.karts[0]
             for (const f of flames) f.visible = P.boostT > 0
             if (P.boostT > 0) {
                 const flick = 0.7 + jit(g.tick * 2.9) * 0.6
-                const len = (0.8 + P.boostTier * 0.55) * flick
+                const len = (0.45 + P.boostTier * 0.3) * flick
                 for (const f of flames) {
                     f.scale.set(1, 1, len)
                     f.material.color.setHex(P.boostTier >= 2 ? 0xffd860 : P.boostTier === 1 ? 0xc090ff : 0x60c0ff)
-                    f.material.opacity = 0.75 + jit(g.tick) * 0.25
+                    f.material.opacity = 0.4 + jit(g.tick) * 0.2
                 }
             }
         }
@@ -496,22 +586,27 @@ export default function CometDriftHD() {
             camA += da * (P.driftT > 0 ? 0.055 : 0.12)
             const fovTarget = P.boostT > 0 ? 7 + P.boostTier * 5.5 : 0
             fovK += (fovTarget - fovK) * 0.08
-            const back = 2.55 + fovK * 0.05
+            const back = 5.3 + fovK * 0.06
             const fx0 = Math.cos(camA); const fz0 = Math.sin(camA)
             const hx = P.x * S; const hz = P.y * S
-            camera.position.set(hx - fx0 * back, 1.26 + fovK * 0.012, hz - fz0 * back)
+            const baseUp = 2.75 + fovK * 0.02
+            const behind = surfaceAt((hx - fx0 * back) / S, (hz - fz0 * back) / S, P.hint)
+            const need = behind.surf === 'sand' || behind.surf === 'wall'
+                ? Math.max(0, wallTopYAt(behind.i) + 0.55 - baseUp) : 0
+            camLift += (need - camLift) * 0.22
+            camera.position.set(hx - fx0 * back, baseUp + camLift, hz - fz0 * back)
             tmpF.set(fx0, 0, fz0)
             tmpR.crossVectors(tmpF, UP).normalize()
             if (shake > 0.05) {
-                const s = shake
+                const s = shake * 0.55
                 camera.position.addScaledVector(tmpR, ((jit(g.tick * 1.3) - 0.5) * s))
                 camera.position.y += (jit(g.tick * 2.7) - 0.5) * s * 0.7
                 shake *= 0.86
                 if (shake < 0.05) shake = 0
             }
             camera.up.set(0, 1, 0)
-            camera.lookAt(hx + fx0 * 4.2, 0.55, hz + fz0 * 4.2)
-            camera.fov = 62 + fovK
+            camera.lookAt(hx + fx0 * 9, 1.3 + camLift * 0.5, hz + fz0 * 9)
+            camera.fov = 64 + fovK
             camera.updateProjectionMatrix()
         }
 
@@ -564,17 +659,17 @@ export default function CometDriftHD() {
             const TOP = 42
             hctx.clearRect(0, 0, W, H)
             // speed streaks at the frame edges: density + tint ride v and boost
-            if (P.boostT > 0 || P.v > 7.4) {
+            if (P.boostT > 0 || P.v > 7.9) {
                 const boost = P.boostT > 0
-                const n = boost ? 16 : 9
+                const n = boost ? 14 : 7
                 hctx.save()
                 for (let i = 0; i < n; i++) {
                     const side = i % 2 ? 1 : -1
-                    const edge = W * (0.4 + jit(i * 7.3 + (g.tick >> 2)) * 0.1)
+                    const edge = W * (0.42 + jit(i * 7.3 + (g.tick >> 2)) * 0.1)
                     const x0 = W / 2 + side * edge
                     const y0 = H * (0.35 + jit(i * 3.1 + g.tick) * 0.6)
-                    const len = (26 + (boost ? 52 : 16) + jit(i + g.tick * 0.7) * 20) * u
-                    hctx.globalAlpha = 0.16 + 0.26 * jit(i + g.tick * 0.5)
+                    const len = (20 + (boost ? 40 : 12) + jit(i + g.tick * 0.7) * 16) * u
+                    hctx.globalAlpha = 0.08 + 0.14 * jit(i + g.tick * 0.5)
                     hctx.strokeStyle = boost && P.boostTier >= 1 ? '#ffe8c0' : '#d8e0f0'
                     hctx.lineWidth = Math.max(1, u * 1.2)
                     hctx.beginPath()
@@ -803,6 +898,10 @@ export default function CometDriftHD() {
                 }
             }
             syncMeshes()
+            // heat shimmer on the sunset (#471 item 1)
+            const sh = 1 + Math.sin(g.tick * 0.05) * 0.045
+            sunGlow.scale.set(84 * sh, 84 * sh, 1)
+            sunDisc.scale.set(24 * (2 - sh), 24 * (2 - sh), 1)
             if (ready && renderer) {
                 try {
                     if (renderer.renderAsync) renderer.renderAsync(scene, camera).catch(onRenderFail)
@@ -822,6 +921,7 @@ export default function CometDriftHD() {
             st.endT = 0
             prevPlace = g.karts[0].place
             camA = g.karts[0].a
+            camLift = 0
             sparks.clear(); dust.clear()
             setPadOn(screen === 'race')
         }
@@ -900,6 +1000,7 @@ export default function CometDriftHD() {
                 st.endT = 0
                 prevPlace = g.karts[0].place
                 camA = g.karts[0].a
+                camLift = 0
                 sparks.clear(); dust.clear()
                 setPadOn(false)
             },
@@ -936,6 +1037,7 @@ export default function CometDriftHD() {
             window.removeEventListener('keydown', kd)
             window.removeEventListener('keyup', ku)
             if (renderer && renderer.dispose) renderer.dispose()
+            envMap.dispose()
             scene.traverse((o) => {
                 if (o.geometry) o.geometry.dispose()
                 if (o.material) { const ms = Array.isArray(o.material) ? o.material : [o.material]; for (const m of ms) { if (m.map) m.map.dispose(); m.dispose() } }

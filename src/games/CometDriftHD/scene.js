@@ -17,10 +17,15 @@ const T = TRACK
 const N = T.N
 const PERP = (a) => [-Math.sin(a), Math.cos(a)]
 
-// rockier than a sine: two detuned waves give the rim a natural profile
-const wallTopAt = (i) => 3.7 + Math.sin(i * 0.37 + 1.7) * 0.75 + Math.sin(i * 0.131) * 0.55
-const wallOffAt = (i) => T.WALL_R + Math.sin(i * 0.53) * 9 + Math.sin(i * 0.19 + 4) * 7
+// rockier than a sine: two detuned waves give the rim a natural profile.
+// #471: the shipped walls towered over the road and blocked the view — tops
+// dropped to ~1.7–3.3u and the face set back outside the sim's clamp. The
+// noise stays small: a big setback wobble self-intersects on tight inner
+// curves and grows jagged fins at the apexes.
+const wallTopAt = (i) => 2.5 + Math.sin(i * 0.37 + 1.7) * 0.45 + Math.sin(i * 0.131) * 0.35
+const wallOffAt = (i) => T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + Math.sin(i * 0.19 + 4) * 3
 export const plateauYAt = (i) => wallTopAt(i) - 0.25
+export const wallTopYAt = (i) => wallTopAt(i)
 
 // generic ribbon: sample(i) returns the two edge points in px (with height);
 // closed ring, seam duplicated once for continuous UVs.
@@ -86,7 +91,13 @@ function wallGeo(side) {
     return buildRibbon((i) => {
         const p = T.pts[i]
         const [pxu, pyu] = PERP(p.a)
-        const w = wallOffAt(i)
+        // offsetting to the INSIDE of a bend collapses the ring once the
+        // offset exceeds the local turn radius — the ribbon folded into
+        // jagged fins at the hairpins. Clamp inside-wall offsets under the
+        // radius so the band stays a band.
+        let w = wallOffAt(i)
+        const R = 1 / Math.max(Math.abs(p.k), 1e-6)
+        if (p.k * side > 0) w = Math.max(170, Math.min(w, R * 0.8))
         return {
             ax: p.x + pxu * side * w, ay: 0.02, az: p.y + pyu * side * w,
             bx: p.x + pxu * side * w, by: wallTopAt(i), bz: p.y + pyu * side * w,
@@ -130,14 +141,20 @@ export function trackGeometryStats() {
     }
     const out = {}
     for (const k of Object.keys(geos)) out[k] = probe(geos[k])
-    return { stats: out, geos, laps: { vertsExpected: (N + 1) * 2 } }
+    let offMin = Infinity; let offMax = -Infinity; let topMin = Infinity; let topMax = -Infinity
+    for (let i = 0; i < N; i++) {
+        const off = wallOffAt(i); const top = wallTopAt(i)
+        offMin = Math.min(offMin, off); offMax = Math.max(offMax, off)
+        topMin = Math.min(topMin, top); topMax = Math.max(topMax, top)
+    }
+    return { stats: out, geos, laps: { vertsExpected: (N + 1) * 2 }, bounds: { offMin, offMax, topMin, topMax, simClampPx: 216 } }
 }
 
 // ---- karts: exposed-wheel buggies assembled from primitives, livery per
 // driver. Node-safe: plain materials, no textures.
 export function buildKart(hex, accentHex) {
     const g = new THREE.Group()
-    const body = new THREE.MeshStandardMaterial({ color: hex, metalness: 0.2, roughness: 0.4 })
+    const body = new THREE.MeshStandardMaterial({ color: hex, metalness: 0.3, roughness: 0.32 })
     const dark = new THREE.MeshStandardMaterial({ color: 0x1c161e, metalness: 0.2, roughness: 0.7 })
     const chassis = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 1.0), body)
     chassis.position.y = 0.3
@@ -156,6 +173,22 @@ export function buildKart(hex, accentHex) {
         const strut = new THREE.Mesh(strutGeo, dark)
         strut.position.set(sx, 0.4, -0.5)
         g.add(strut)
+    }
+    // #471: the boxes read toy-like — cockpit hollow, nose stripe, brake lights
+    const cockpit = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.16, 0.5), dark)
+    cockpit.position.set(0, 0.36, 0.02)
+    g.add(cockpit)
+    const stripeMat = new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.25, roughness: 0.35 })
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.5), stripeMat)
+    stripe.position.set(0, 0.41, 0.55)
+    g.add(stripe)
+    const brakeMat = new THREE.MeshStandardMaterial({ color: 0x601010, emissive: 0xff2010, emissiveIntensity: 0, roughness: 0.6 })
+    const brakes = []
+    for (const sx of [-0.2, 0.2]) {
+        const bl = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.05, 0.02), brakeMat)
+        bl.position.set(sx, 0.5, -0.631)
+        g.add(bl)
+        brakes.push(bl)
     }
     const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10),
         new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.3, roughness: 0.4 }))
@@ -178,6 +211,7 @@ export function buildKart(hex, accentHex) {
     mk(-1, 0.52, true); mk(1, 0.52, true); mk(-1, -0.45, false); mk(1, -0.45, false)
     g.userData.wheels = wheels
     g.userData.body = body
+    g.userData.brakes = brakes
     return g
 }
 
@@ -302,15 +336,16 @@ export function buildSceneryItem(sc) {
     return g
 }
 
-// far mesas: a dark silhouette ring on the ember horizon. Node-safe.
+// far mesas: a dark silhouette ring on the ember horizon. #471: pushed out
+// and trimmed down so they frame the sky instead of walling it off.
 export function buildMesas() {
     const g = new THREE.Group()
-    const rock = new THREE.MeshStandardMaterial({ color: 0x47202c, roughness: 1, metalness: 0 })
+    const rock = new THREE.MeshStandardMaterial({ color: 0x4e222c, roughness: 1, metalness: 0 })
     for (let i = 0; i < 14; i++) {
         const ang = (i / 14) * Math.PI * 2 + Math.sin(i * 3.1) * 0.2
-        const r = 46 + (i % 4) * 9 + Math.sin(i * 7.7) * 4
-        const h = 5 + ((i * 37) % 5) * 2.6
-        const w = 6 + ((i * 53) % 6) * 2.4
+        const r = 64 + (i % 4) * 10 + Math.sin(i * 7.7) * 4
+        const h = 3.5 + ((i * 37) % 4) * 1.9
+        const w = 5 + ((i * 53) % 5) * 2.2
         const m = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.9, w, h, 6), rock)
         m.position.set(17 + Math.cos(ang) * r, h / 2 - 1.4, 17 + Math.sin(ang) * r)
         m.rotation.y = ang
