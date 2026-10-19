@@ -15,7 +15,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { CW, CH, HUD_H, CELL, GW, GH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS } from './levels.js'
-import { makeGame, step, stateHash, CFG } from './sim.js'
+import { makeGame, step, stateHash, CFG, comboColor, flickerPhase } from './sim.js'
 import { plan } from './planner.js'
 import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
@@ -101,7 +101,8 @@ const SmashTVGame = () => {
                     audioController.playSweep(300 + e.combo * 60, 90, 0.12, 'square', 0.06)
                     burst(e.x, e.y, 6, '#8fb0ff'); pop(e.x, e.y, `${e.pts}`, '#8fff9f')
                     if (e.combo === 5) say('THE CROWD GOES WILD!')
-                } else if (e.type === 'crateBreak') {
+                } else if (e.type === 'scream') audioController.playSweep(760 + Math.random() * 320, 1500, 0.09, 'square', 0.04)
+                else if (e.type === 'crateBreak') {
                     audioController.playNoise(0.14, 0.08); burst(e.x, e.y, 10, '#5dc8ff')
                     say(`${WEAPONS[e.weapon].name}!`)
                 } else if (e.type === 'pickup') {
@@ -340,8 +341,44 @@ const SmashTVGame = () => {
         const drawCivilians = () => {
             for (const v of gs.civilians) {
                 const frame = Math.floor(v.walk / 5) % 2
-                ctx.drawImage(SP[`civ${v.id % 3}${frame}`], v.x - 5, v.y - 7)
+                ctx.drawImage(SP[`civ${v.id % 3}${frame}`], v.x + v.sdir[0] * v.soff - 5, v.y + v.sdir[1] * v.soff - 7)
             }
+        }
+
+        // the studio lights: for the ten seconds of the bonus the house lights
+        // flicker (a darkening dip + a white spike) and a film-grain floor rolls
+        // over the arena, hunting for a blackout as the clock runs to zero
+        const drawBonusLights = () => {
+            if (!gs.roomData.bonus || gs.bonusT <= 0) return
+            const phase = flickerPhase(gs.bonusT, gs.roomData.bonusTime)
+            ctx.fillStyle = `rgba(6,4,14,${(phase * 0.5).toFixed(3)})`
+            ctx.fillRect(0, HUD_H, CW, CH - HUD_H)
+            if (phase > 0.14) {
+                ctx.fillStyle = `rgba(212,232,255,${((phase - 0.14) * 0.3).toFixed(3)})`
+                ctx.fillRect(0, HUD_H, CW, CH - HUD_H)
+            }
+            const gcount = Math.floor(60 + phase * 260)
+            ctx.fillStyle = `rgba(226,240,255,${(0.03 + phase * 0.06).toFixed(3)})`
+            let v = (gs.tick * 2654435761 + 17) | 0
+            const rnd = () => { v = (Math.imul(v, 1103515245) + 12345) & 0x7fffffff; return v / 0x7fffffff }
+            for (let i = 0; i < gcount; i++) {
+                const x = Math.floor(rnd() * CW), y = HUD_H + Math.floor(rnd() * (CH - HUD_H))
+                ctx.fillRect(x, y, 1, 1)
+            }
+        }
+
+        // the bonus combo: a big BONUS ×N board top-centre that climbs the warm
+        // end of the spectrum as the streak grows
+        const drawCombo = () => {
+            if (!gs.roomData.bonus || gs.combo < 2) return
+            const n = gs.combo
+            const col = comboColor(n)
+            const pulse = 1 + 0.08 * Math.sin(gs.tick / 3)
+            ctx.save()
+            ctx.translate(CW / 2, HUD_H + 30)
+            ctx.scale(pulse, pulse)
+            text(`BONUS ×${n}`, 0, 0, 20 + Math.min(8, n), col, 14)
+            ctx.restore()
         }
 
         const drawShots = () => {
@@ -411,6 +448,8 @@ const SmashTVGame = () => {
             drawEnemies()
             drawShots()
             drawPlayer()
+            drawBonusLights()
+            drawCombo()
             for (const p of parts) {
                 p.x += p.vx; p.y += p.vy; p.t++
                 if (p.t < 20) { ctx.fillStyle = p.col; ctx.globalAlpha = 1 - p.t / 20; ctx.fillRect(p.x, p.y, 2, 2); ctx.globalAlpha = 1 }

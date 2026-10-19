@@ -36,7 +36,7 @@ async function fresh() {
     return { ...sim, plan: planner.plan }
 }
 const S = await fresh()
-const { makeGame, step, stateHash, CFG } = S
+const { makeGame, step, stateHash, CFG, comboColor, flickerPhase, COMBO_COLORS } = S
 const cx = (c) => c * 16 + 8
 const cy = (r) => 24 + r * 16 + 8
 
@@ -247,6 +247,8 @@ console.log('rules')
     ok(gs.energy === CFG.maxEnergy - CFG.firebombCost, 'the firebomb takes 34 POWER')
     ok(gs.enemies.length === 0 && gs.ebullets.length === 0, 'the firebomb sweeps the studio')
     ok(gs.score - s0 === 50 + 150, 'firebomb kills still pay', `+${gs.score - s0}`)
+    const bk = gs.events.filter((e) => e.type === 'kill')
+    ok(bk.length === 2 && bk.every((k) => Number.isFinite(k.pts)), 'firebomb kills carry their pts for the popup', bk.map((k) => k.pts).join(' '))
     gs.energy = 10
     step(gs, { bomb: true })
     ok(gs.events.some((e) => e.type === 'bombFail') && gs.energy === 10, 'not enough POWER, not enough boom')
@@ -287,6 +289,38 @@ console.log('rules')
     const gs = makeGame(0)
     for (const inp of r.script) { step(gs, inp); gs.events.length = 0; if (gs.end) break }
     ok(gs.end === 'win' && gs.room === TOTAL_ROOMS - 1, 'the pilot beats the ANNOUNCER in room 9')
+}
+
+// --------------------------------------------------------- bonus theatre ----
+console.log('bonus theatre')
+{
+    // the combo board climbs the warm end of the spectrum as the streak grows
+    const seq = [1, 2, 3, 4, 5, 6].map(comboColor)
+    ok(seq[0] === COMBO_COLORS[0] && new Set(seq.slice(0, 4)).size >= 3, 'the BONUS combo escalates colour with the streak', seq.join(' '))
+    ok(comboColor(99) === COMBO_COLORS[COMBO_COLORS.length - 1], 'the combo colour holds at the hottest tier', comboColor(99))
+    // the house lights hold for nine of the ten seconds, then hunt for a blackout
+    ok(flickerPhase(600, 600) < 0.1, 'the studio lights hold steady at the start of the bonus', `${flickerPhase(600, 600)}`)
+    ok(flickerPhase(90, 600) > flickerPhase(600, 600), 'the flicker sharpens as the clock runs low', `${flickerPhase(90, 600)}`)
+    let inRange = true, drama = false
+    for (let t = 0; t <= 600; t++) { const ph = flickerPhase(t, 600); if (ph < 0 || ph > 1) inRange = false; if (t <= 180 && ph > 0.3) drama = true }
+    ok(inRange, 'the flicker phase stays within 0..1')
+    ok(drama, 'the lights dip in the final three seconds')
+}
+// civilians break into random sprints (with a scream) with no player threat near
+{
+    const r = S.plan(0)
+    const gs = makeGame(0)
+    let inBonus = false, screams = 0, sawSprint = false
+    for (const inp of r.script) {
+        step(gs, inp)
+        for (const e of gs.events) if (e.type === 'scream') screams++
+        if (gs.room === 3 && gs.roomData.bonus) inBonus = true
+        for (const v of gs.civilians) if (v.sprintT > 0) sawSprint = true
+        gs.events.length = 0
+    }
+    ok(inBonus, 'the pilot reaches a bonus room')
+    ok(sawSprint, 'a contestant breaks into a random sprint')
+    ok(screams > 0, 'the sprints carry a scream', `screams=${screams}`)
 }
 
 // ----------------------------------------------------------------- pilot ----
