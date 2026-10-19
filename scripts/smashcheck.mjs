@@ -30,6 +30,7 @@ const { playerFrame, GUN, LAYERS, PLAYER_FRAMES } = await import('../src/games/S
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
 const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore } = await import('../src/games/SmashTV/juice.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
+const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll } = await import('../src/games/SmashTV/hud.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
 async function fresh() {
@@ -455,6 +456,24 @@ console.log('audio')
         g2.events.length = 0
     }
     ok(alerts === 2, 'a closing gun stings once per alert cooldown', `${alerts} alerts in ${ALERT_CD + 1} ticks`)
+}
+
+// ------------------------------------------------------------------- hud ----
+console.log('hud')
+{
+    ok(labelClearsBar(), 'the POWER label clears the energy bar at 256 px', `label top ${POWER_LABEL.y - POWER_LABEL.size * 0.8} vs bar bottom ${BAR.y + BAR.h}`)
+    ok(pipFits(), 'the BOMB-ready pip sits in the strip beside the bar', JSON.stringify(PIP))
+    ok(bombReady(34, 34) && !bombReady(33, 34), 'the pip lights exactly at the firebomb cost')
+    ok(bombReady(CFG.maxEnergy, CFG.firebombCost) && !bombReady(0, CFG.firebombCost), 'the pip tracks the energy, not a fixed pose')
+    ok(RACK_FLASH === 60, 'the rack name flashes for one second after a pickup', `${RACK_FLASH}`)
+    let v = 0, frames = 0
+    const seq = []
+    while (v < 123456 && frames++ < 400) { v = hiRoll(v, 123456); seq.push(v) }
+    ok(v === 123456, 'the HI readout lands exactly on the new high', `${v}`)
+    ok(seq.length > 4, 'the HI rolls up over several frames, not an instant jump', `${seq.length} frames`)
+    ok(seq.every((x, i) => i === 0 || x > seq[i - 1]), 'the HI roll is monotonic')
+    ok(hiRoll(5, 5) === 5 && hiRoll(10, 5) === 5, 'the roll never moves at or past the target')
+    ok(hiRoll(0, 16) === 1, 'the roll always advances at least one digit tick')
 }
 
 // ----------------------------------------------------------------- pilot ----

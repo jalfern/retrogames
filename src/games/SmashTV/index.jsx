@@ -22,6 +22,7 @@ import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
 import { muzzleFlash, casingCol, killShake, shutterPhase, SHUTTER_TICKS } from './juice.js'
+import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, WHOOSH, ALERT } from './audio.js'
 
 const SIM_MS = 1000 / 60
@@ -66,7 +67,7 @@ const SmashTVGame = () => {
         let gs = makeGame(0)
         let floor = buildFloor(0, 0)
         let raf = 0, last = 0, acc = 0
-        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, roomTotal = 0, roomBump = 0, clearedAt = -1
+        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, roomTotal = 0, roomBump = 0, clearedAt = -1, rackFlash = 0, hiShown = board()[0]?.score || 0
         let moving = false
         const held = new Set()
         let bombEdge = false
@@ -120,7 +121,7 @@ const SmashTVGame = () => {
                     audioController.playNoise(0.14, 0.08); burst(e.x, e.y, 10, '#5dc8ff')
                     say(`${WEAPONS[e.weapon].name}!`)
                 } else if (e.type === 'pickup') {
-                    if (e.t === 'weapon') { audioController.playSweep(500, 1500, 0.2, 'square', 0.08); pop(gs.player.x, gs.player.y - 12, WEAPONS[e.w].name, '#8fff9f') }
+                    if (e.t === 'weapon') { audioController.playSweep(500, 1500, 0.2, 'square', 0.08); pop(gs.player.x, gs.player.y - 12, WEAPONS[e.w].name, '#8fff9f'); rackFlash = RACK_FLASH }
                     else { audioController.playSweep(220, 880, 0.25, 'triangle', 0.08) }
                 } else if (e.type === 'wallHit') burst(e.x, e.y, 2, '#8d99b5', 1.2)
                 else if (e.type === 'eshoot') audioController.playSweep(300, 140, 0.06, 'sawtooth', 0.03)
@@ -505,23 +506,27 @@ const SmashTVGame = () => {
             ctx.fillRect(0, 0, CW, HUD_H)
             ctx.strokeStyle = '#2b3348'
             ctx.strokeRect(0.5, 0.5, CW - 1, HUD_H - 1)
-            text(`HI ${String(Math.max(gs.score, board()[0]?.score || 0)).padStart(6, '0')}`, 8, 10, 8, '#ffd23f', 3, 'left')
+            text(`HI ${String(hiShown).padStart(6, '0')}`, 8, 10, 8, '#ffd23f', 3, 'left')
             text(`1UP ${String(gs.score).padStart(6, '0')}`, 8, 20, 8, '#ff5d5d', 3, 'left')
             text(gs.roomData.bonus ? `BONUS ${Math.ceil(gs.bonusT / 60)}` : `ROOM ${gs.room + 1}/${TOTAL_ROOMS}`, CW / 2, 10, 8, gs.roomData.bonus ? '#8fff9f' : '#5d7094', 2)
             for (let i = 0; i < Math.min(6, gs.lives); i++) {
                 ctx.fillStyle = '#e8eef8'
                 ctx.fillRect(CW / 2 - 14 + i * 6, 14, 4, 6)
             }
-            // weapon rack + energy
-            ctx.drawImage(SP[`icon_${gs.weapon}`], CW - 96, 4)
-            text(WEAPONS[gs.weapon].name.split(' ')[0], CW - 56, 11, 7, '#cfd8ff', 0, 'left')
+            // weapon rack + energy: icon over the bar, the BOMB-ready pip beside it,
+            // and the POWER label below the bar (it used to clip the bar's right end)
+            ctx.drawImage(SP[`icon_${gs.weapon}`], ICON.x, ICON.y)
+            const flashing = rackFlash > 0
+            text(WEAPONS[gs.weapon].name.split(' ')[0], 200, 10, 7, flashing ? ((gs.tick >> 2) % 2 ? '#8fff9f' : '#cfd8ff') : '#cfd8ff', flashing ? 4 : 0, 'left')
             ctx.fillStyle = '#101a33'
-            ctx.fillRect(CW - 96, 15, 84, 5)
-            ctx.fillStyle = gs.energy >= CFG.firebombCost ? ((gs.tick >> 3) % 2 ? '#ffd23f' : '#ff8a3f') : '#5d7094'
-            ctx.fillRect(CW - 96, 15, 84 * (gs.energy / CFG.maxEnergy), 5)
+            ctx.fillRect(BAR.x, BAR.y, BAR.w, BAR.h)
+            ctx.fillStyle = bombReady(gs.energy, CFG.firebombCost) ? ((gs.tick >> 3) % 2 ? '#ffd23f' : '#ff8a3f') : '#5d7094'
+            ctx.fillRect(BAR.x, BAR.y, BAR.w * (gs.energy / CFG.maxEnergy), BAR.h)
             ctx.fillStyle = '#10141f'
-            ctx.fillRect(CW - 96 + 84 * (CFG.firebombCost / CFG.maxEnergy), 15, 1, 5)
-            text('POWER', CW - 12, 20, 6, '#5d7094', 0, 'right')
+            ctx.fillRect(BAR.x + BAR.w * (CFG.firebombCost / CFG.maxEnergy), BAR.y, 1, BAR.h)
+            ctx.fillStyle = bombReady(gs.energy, CFG.firebombCost) ? ((gs.tick >> 2) % 2 ? '#ff4f4f' : '#ffd23f') : '#232c44'
+            ctx.fillRect(PIP.x, PIP.y, PIP.w, PIP.h)
+            text('POWER', POWER_LABEL.x, POWER_LABEL.y, POWER_LABEL.size, '#5d7094', 0, 'right')
             if (gs.roomData.bonus) {
                 ctx.fillStyle = 'rgba(143,255,159,0.15)'
                 ctx.fillRect(0, HUD_H, CW * Math.max(0, gs.bonusT / gs.roomData.bonusTime), 2)
@@ -609,6 +614,9 @@ const SmashTVGame = () => {
                 while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
             }
             draw()
+            if (rackFlash > 0) rackFlash--
+            const hiTarget = Math.max(gs.score, board()[0]?.score || 0)
+            if (hiShown < hiTarget) hiShown = hiRoll(hiShown, hiTarget)
             const h = hudRef.current
             if (h.score) h.score.textContent = String(gs.score).padStart(6, '0')
             if (h.lives) h.lives.textContent = String(gs.lives)
