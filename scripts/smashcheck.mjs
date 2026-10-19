@@ -27,7 +27,7 @@ const ok = (cond, name, detail = '') => {
 const { GW, GH, EXITS, TOTAL_ROOMS, genRoom, START, isBonus, ENEMIES } = await import('../src/games/SmashTV/levels.js')
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES } = await import('../src/games/SmashTV/sprite.js')
-const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame } = await import('../src/games/SmashTV/enemies.js')
+const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
 async function fresh() {
@@ -321,6 +321,52 @@ console.log('bonus theatre')
     ok(inBonus, 'the pilot reaches a bonus room')
     ok(sawSprint, 'a contestant breaks into a random sprint')
     ok(screams > 0, 'the sprints carry a scream', `screams=${screams}`)
+}
+
+// ------------------------------------------------------------ announcer ----
+console.log('announcer')
+// the mouth flaps for BOSS_MOUTH_FLAP ticks straight after each shot (rides the
+// fire cadence: a shot resets the reload clock cd to maxCd)
+{
+    const max = ENEMIES.boss.cd
+    ok(BOSS_MOUTH_FLAP === 12, 'the mouth flap window is pinned', `${BOSS_MOUTH_FLAP}`)
+    ok(bossMouth(max, max), 'the mouth is open the tick the announcer fires')
+    ok(bossMouth(max - BOSS_MOUTH_FLAP + 1, max), 'the mouth holds open through the flap window')
+    ok(!bossMouth(max - BOSS_MOUTH_FLAP, max), 'the mouth snaps shut once the flap runs out')
+    ok(!bossMouth(Math.floor(max / 2), max), 'the mouth is shut mid-reload')
+}
+// his adds materialize under a ring: each one the boss throws out carries a born tick
+{
+    const r = S.plan(0)
+    const gs = makeGame(0)
+    for (const inp of r.script) { step(gs, inp); gs.events.length = 0; if (gs.enemies.some((e) => e.kind === 'boss')) break }
+    const boss = gs.enemies.find((e) => e.kind === 'boss')
+    ok(!!boss, 'the pilot reaches THE ANNOUNCER')
+    gs.enemies = [boss]; gs.roomData.spawns = []; gs.spawnT = 0
+    boss.spawnT = 1; gs.player.invuln = 99999
+    const before = gs.enemies.length
+    step(gs, {}); gs.events.length = 0
+    const add = gs.enemies.find((e) => e.kind !== 'boss' && e.born !== undefined)
+    ok(ADD_TELEGRAPH > 0, 'the add materialization ring has a window', `${ADD_TELEGRAPH}`)
+    ok(!!add && add.born === gs.tick, 'the announcer tags each add with a born tick', add ? `born=${add.born} tick=${gs.tick}` : 'no add')
+    ok(gs.enemies.length === before + 1, 'the tagged add is the one the boss threw out', `${before} -> ${gs.enemies.length}`)
+}
+// he dies to a multi-explosion while the arena holds: the WIN banner waits out the sequence
+{
+    const r = S.plan(0)
+    const gs = makeGame(0)
+    for (const inp of r.script) { step(gs, inp); gs.events.length = 0; if (gs.enemies.some((e) => e.kind === 'boss')) break }
+    const boss = gs.enemies.find((e) => e.kind === 'boss')
+    gs.enemies = [boss]; gs.roomData.spawns = []; gs.spawnT = 0
+    boss.spawnT = 9999; boss.hp = 1; gs.player.invuln = 99999
+    gs.bullets.push({ id: 9900, x: boss.x, y: boss.y, dx: 0, dy: 0, pierce: 0, dmg: 1, kind: 'twin' })
+    for (let i = 0; i < 5; i++) { gs.events.length = 0; step(gs, {}); if (gs.events.some((ev) => ev.type === 'bossKill')) break }
+    gs.enemies = []
+    ok(BOSS_DEATH_T > 0, 'the death sequence has a length', `${BOSS_DEATH_T}`)
+    ok(gs.end !== 'win' && gs.bossDeath && gs.bossDeath.t > 0, 'the WIN banner waits out the death sequence', `end=${gs.end} t=${gs.bossDeath && gs.bossDeath.t}`)
+    let done = 0
+    while (gs.end !== 'win' && done++ < BOSS_DEATH_T + 10) step(gs, {})
+    ok(gs.end === 'win', 'the show ends once the sequence runs out', `ticks=${done}`)
 }
 
 // ----------------------------------------------------------------- pilot ----

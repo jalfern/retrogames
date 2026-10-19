@@ -19,7 +19,7 @@ import {
     GW, GH, CELL, HUD_H, CW, CH, EXITS, ENEMIES, WEAPONS,
     TOTAL_ROOMS, genRoom, isBonus, isBoss, START, lcg,
 } from './levels.js'
-import { TELEGRAPH } from './enemies.js'
+import { TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
 
 export { GW, GH, CELL, HUD_H, CW, CH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS, isBonus, isBoss }
 
@@ -113,7 +113,7 @@ export function makeGame(seed = 0, opts = {}) {
         items: [], civilians: [], grenades: [],
         energy: CFG.maxEnergy, weapon: 'twin',
         cleared: false, spawnT: 0, bonusT: 0, combo: 0, roomsCleared: 0,
-        bossDead: false, walls: null, roomData: null,
+        bossDead: false, bossDeath: null, walls: null, roomData: null,
     }
     loadRoom(gs, 0)
     return gs
@@ -325,6 +325,7 @@ function updateEnemies(gs) {
                 e.spawnT = 360
                 const kind = lcg(gs.rng) < 0.5 ? 'walkcam' : 'runner'
                 const e2 = makeEnemy(gs, kind, 24 + lcg(gs.rng) * (CW - 48), cy(2))
+                e2.born = gs.tick
                 gs.enemies.push(e2)
                 gs.events.push({ type: 'spawn', kind, x: e2.x, y: e2.y, bossAdd: true })
             }
@@ -343,7 +344,7 @@ function damageEnemy(gs, e, dmg, via) {
         addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind })
         gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: ENEMIES[e.kind].pts })
         gs.enemies = gs.enemies.filter((x) => x.id !== e.id)
-        if (e.kind === 'boss') { gs.bossDead = true; gs.events.push({ type: 'bossKill' }) }
+        if (e.kind === 'boss') { gs.bossDead = true; gs.bossDeath = { x: e.x, y: e.y, t: BOSS_DEATH_T }; gs.events.push({ type: 'bossKill' }) }
     }
 }
 
@@ -485,7 +486,7 @@ function checkClear(gs) {
         return
     }
     if (room.boss) {
-        if (gs.bossDead && gs.enemies.length === 0 && !room.spawns.length) {
+        if (gs.bossDead && (!gs.bossDeath || gs.bossDeath.t <= 0) && gs.enemies.length === 0 && !room.spawns.length) {
             gs.end = 'win'
             addScore(gs, CFG.roomBonus * 3, { kind: 'finalBonus' })
             gs.events.push({ type: 'win' })
@@ -518,6 +519,10 @@ function checkExit(gs) {
 export function step(gs, inp = {}) {
     gs.tick++
     if (gs.end) return gs
+    // THE ANNOUNCER's death sequence: the arena holds its breath as he
+    // explodes — nothing moves, no add can land a hit, until the sequence runs
+    // out and the world (and the WIN check) resumes.
+    if (gs.bossDeath && gs.bossDeath.t > 0) { gs.bossDeath.t--; return gs }
     const p = gs.player
 
     if (p.deadT > 0) {
