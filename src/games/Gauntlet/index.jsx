@@ -24,6 +24,9 @@ import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } 
 import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
 import { torch, litColor, mortarTones, css } from './walls.js'
 import { cardCenter, heroAt } from './select.js'
+import { p2From } from './p2input.js'
+import { slotPad, connectedSlots } from '../../utils/onePad'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 
 const PW = 64, HT = 40
 const CW = VW + PW, CH = VH + HT
@@ -120,8 +123,8 @@ const GauntletGame = () => {
             setMode('over')
         }
 
-        const doSim = (inp) => {
-            step(gs, inp)
+        const doSim = (inp, pInp = null) => {
+            step(gs, inp, pInp)
             handleEvents(gs.events.splice(0))
             if (gs.end) finish(gs.end === 'win')
         }
@@ -133,11 +136,28 @@ const GauntletGame = () => {
             if (gs.end) { gs = makeGame(2, 'warrior', { topDown: true }); demoAt = 0 }
         }
 
+        const p2Prev = { a: false, b: false }
+        const p2Sel = { l: false, r: false, a: false }
+        // P2 on the second pad at the hero screen: left/right pick the hero,
+        // A claims the slot (flips the partner to human) — mirrors WASD+F.
+        const pollP2Select = () => {
+            const s = slotPad(2, 'stick')
+            if (s.left && !p2Sel.l) selectHero2 = (selectHero2 + 3) % 4
+            if (s.right && !p2Sel.r) selectHero2 = (selectHero2 + 1) % 4
+            if (s.a && !p2Sel.a && gs.partnerMode !== 'human') gs.partnerMode = 'human'
+            p2Sel.l = s.left; p2Sel.r = s.right; p2Sel.a = s.a
+        }
+
         const doFrameSim = () => {
             const sc = screenRef.current
-            if (sc === 'attract' || sc === 'select') { tickDemo(); return }
+            if (sc === 'attract' || sc === 'select') { if (sc === 'select') pollP2Select(); tickDemo(); return }
             if (sc !== 'play') return
-            const pInp = gs.partnerHuman ? { left: p2.l, right: p2.r, fwd: p2.u, back: p2.d, sword: p2.swordEdge } : null
+            let pInp = null
+            if (gs.partnerHuman) {
+                const m = p2From(p2, slotPad(2, 'stick'), p2Prev)
+                p2Prev.a = m.a; p2Prev.b = m.b
+                pInp = { left: m.left, right: m.right, fwd: m.fwd, back: m.back, sword: m.sword }
+            }
             doSim({ left: keys.l, right: keys.r, fwd: keys.u, back: keys.d, sword: keys.swordEdge, arrow: keys.arrowEdge }, pInp)
             keys.swordEdge = false
             keys.arrowEdge = false
@@ -468,7 +488,7 @@ const GauntletGame = () => {
                         ctx.fillStyle = '#5dff8f'; ctx.fillRect(cx - 24, 174, 48 * (hd.arrow / 18), 4)
                     })
                     const pm = gs.partnerMode || 'off'
-                    text(pm === 'human' ? 'ARROWS P1 PICK · A/D P2 PICK · WASD+F P2 · SPACE START' : 'ARROWS OR TAP PICK · SPACE OR TAP AGAIN START', CW / 2, 202, 8, '#8fa3d8')
+                    text(pm === 'human' ? 'ARROWS P1 PICK · A/D P2 PICK · WASD+F P2 · PAD 2 = P2 · SPACE START' : 'ARROWS OR TAP PICK · SPACE OR TAP AGAIN START', CW / 2, 202, pm === 'human' ? 7 : 8, '#8fa3d8')
                     text('C PARTNER ' + (pm === 'cpu' ? 'ON' : 'OFF') + ' · P 2-PLAYER ' + (pm === 'human' ? 'ON' : 'OFF') + ' · HP SPEED RANGE', CW / 2, 214, 7, '#5d7094')
                     if (pm === 'human') {
                         // the second portrait: P2's chosen hero, up in the panel
@@ -497,8 +517,11 @@ const GauntletGame = () => {
             const dt = Math.min(now - last, 250)
             last = now
             if (pausedRef.current) return
-            acc += dt
-            while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+            if (contractHoldsLoop()) { acc = 0 }
+            else {
+                acc += dt
+                while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
+            }
             draw()
             const hud = hudRef.current
             if (hud.score) hud.score.textContent = String(gs.score).padStart(6, '0')
@@ -508,14 +531,16 @@ const GauntletGame = () => {
 
         // ---------------------------------------------------------------- input ----
         const startSelect = () => {
-            const pm = gs.partnerMode || 'off'
+            let pm = gs.partnerMode || 'off'
+            if (connectedSlots() >= 2) pm = 'human'
             gs = makeGame(0, 'warrior', { topDown: true })
             gs.partnerOn = false
             gs.partnerMode = pm
             setMode('select')
         }
         const startPlay = (hk) => {
-            const pm = gs.partnerMode || 'off'
+            let pm = gs.partnerMode || 'off'
+            if (pm === 'off' && connectedSlots() >= 2) pm = 'human'
             const two = pm === 'human'
             const pOn = pm === 'cpu'
             gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn || two, topDown: true, partnerKey: two ? HERO_ORDER[selectHero2] : undefined })
@@ -592,13 +617,51 @@ const GauntletGame = () => {
                 if (x > VW + 40) startPlay(HERO_ORDER[selectHero])
             }
         }
+        const onPads = (ev) => {
+            const c = ev.detail && ev.detail.count
+            if (c >= 2 && gs.partnerMode !== 'human' && (screenRef.current === 'attract' || screenRef.current === 'select')) gs.partnerMode = 'human'
+        }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
         window.addEventListener('virtualcontrols', onPad)
+        window.addEventListener('retrogames:pads', onPads)
         canvas.addEventListener('pointerdown', onPointer)
 
         // ------------------------------------------------------------- DEV hook ----
         if (import.meta.env.DEV) {
+            let cPrev = { a: false, b: false }
+            exposeGame({
+                id: 'gauntlet',
+                players: 2,
+                method: 'stick',
+                buttons: [{ label: 'BOW', code: 'KeyX' }],
+                reads: ['up', 'down', 'left', 'right', 'a', 'b'],
+                reset: (seed) => {
+                    gs = makeGame(((seed >>> 0) % 97) | 0, 'warrior', { topDown: true })
+                    gs.partnerOn = false; gs.partnerMode = 'off'; gs.partnerHuman = false
+                    demoAt = 0
+                    keys.l = keys.r = keys.u = keys.d = false
+                    keys.swordEdge = false; keys.arrowEdge = false
+                    p2.l = p2.r = p2.u = p2.d = false; p2.swordEdge = false
+                    cPrev = { a: false, b: false }
+                    setMode('play')
+                },
+                tick: (pad) => {
+                    keys.l = !!pad.left; keys.r = !!pad.right; keys.u = !!pad.up; keys.d = !!pad.down
+                    keys.swordEdge = !!pad.a && !cPrev.a
+                    keys.arrowEdge = !!pad.b && !cPrev.b
+                    cPrev = { a: !!pad.a, b: !!pad.b }
+                    doFrameSim()
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.score, done: !!gs.end,
+                    lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
+                    hp: gs.hero.hp, x: +gs.hero.x.toFixed(2), y: +gs.hero.y.toFixed(2),
+                    partner: gs.partner ? { x: +gs.partner.x.toFixed(2), y: +gs.partner.y.toFixed(2), hp: gs.partner.hp } : null,
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
             window.__gauntletTest = {
                 state: () => gs,
                 hash: () => stateHash(gs),
@@ -649,7 +712,8 @@ const GauntletGame = () => {
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('virtualcontrols', onPad)
-            if (import.meta.env.DEV) { unmountDbg(); delete window.__gauntletTest }
+            window.removeEventListener('retrogames:pads', onPads)
+            if (import.meta.env.DEV) { unmountDbg(); unexposeGame(); delete window.__gauntletTest }
         }
     }, [setMode])
 

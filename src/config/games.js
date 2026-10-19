@@ -826,6 +826,7 @@ export const GAMES = [
     {
         path: '/bubble-bobble',
         tapStart: true,
+        players: 2,
         pad: { layout: 'stick', buttons: [{ label: 'BUB', code: 'KeyB' }], analog: false },
         builtBy: 'forge',
         added: '2026-10-14',
@@ -849,6 +850,7 @@ export const GAMES = [
     {
         path: '/gauntlet',
         pad: { layout: 'stick', buttons: [{ label: 'BOW', code: 'KeyX' }], analog: false },
+        players: 2,
         builtBy: 'forge',
         added: '2026-10-14',
         component: GauntletGame,

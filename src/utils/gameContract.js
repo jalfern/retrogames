@@ -31,6 +31,7 @@ export function exposeGame(spec) {
         meta: {
             id: spec.id,
             method,
+            players: spec.players && spec.players > 1 ? spec.players : 1,
             buttons: spec.buttons || [],
             reads: spec.reads || [],
             ...(spec.ways ? { ways: spec.ways } : {}),
