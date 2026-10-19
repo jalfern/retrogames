@@ -1,49 +1,67 @@
-# STATE — forge session 2026-10-19 (COMET DRIFT references)
+# STATE — forge session 2026-10-19 (COMET DRIFT elevation)
 
 ## Shipped this session
-- **#513 COMET DRIFT: courses follow their reference layouts** — PR #529, squash `ec38b62`.
-  - `npm run cometrefs` (`scripts/extract-comet-references.mjs`): reproducible trace of
-    Daytona + Laguna Seca from Wikimedia maps → road mask → thinning → loop walk →
-    32-pt centerlines in `reference.js` (header declares provenance).
-  - **Provenance gate** in `cometcheck`: ≥98% of generated pts on the committed road
-    mask, alignment search over rotation/mirror, coverage + circuit-size floors.
-    Mutation-tested: one nudged pt → RED.
-  - Shape gate: avg deviation ≤3% (actual 1.69% / 2.37%) + worst-feature caps (12% / 18%).
-  - Asphalt 140 → 80 → 64px; controls re-tuned; `cometplay` 24/24 in real Chrome.
-  - Fixed pre-existing red: CometDriftHD cliff face had sunk inside the 216px sim
-    clamp when ROAD_R narrowed (main was failing `cometdrifthdcheck`); HD walls now
-    floor at 220px. `cometdrifthdcheck` 44/0.
-- #530 filed: CometDrift polish pass (camber/vertical, kerbs-to-plan, 3rd circuit,
-  `?ref=1` overlay).
+- **#518 COMET DRIFT: elevation — courses go up and down (HD first)** — PR #533, squash `4e1da16`.
+  - `track.js`: per-course closed height profiles (`ELEV` anchors → uniformize →
+    periodic Catmull-Rom → `p.h`/`p.grade`), h=0 at start/finish, auto-capped
+    at 9.5%. Relief: Gulch 56px, Sandbank 125px, Corkscomb 186px (the drop).
+  - `sim.js`: slope only — `v -= 0.42·grade·cos(heading−track)`. No jumps.
+  - HD: all five ribbons ride the height (road/kerb/gutter/wall/plateau); arch,
+    scenery, karts (+pitch, YXZ), shadows, particles, chase cam + collision all
+    follow; floor plane dropped to -1.5u under the dips.
+  - 2D: Mode 7 stays flat; smoothed ±6px horizon bob from grade+height.
+  - Gates: relief/datum/seam/cap audits + downhill-beats-uphill speed proof per
+    course; `--mutate` kills BOTH the lap gate and `slopeK` (RED 2/2).
+    `cometdrifthdcheck` re-pinned: road matches height float32-exact; hanging/
+    foot/rim checks now PER-INDEX (global min/max comparisons are meaningless on
+    a hilly lap — that trap ate a whole probe round). cometplay retuned the
+    drift-zigzag band (-45/-30, swap 6) for the new downhill slide speeds.
+- #530 (camber/kerbs polish) updated with elevation-specific residuals + `feedback` label.
 
 ## Playable now
-`jalfern.com/retrogames/comet-drift` — Sandbank reads Daytona's peanut + infield notch,
-Corkscomb reads Laguna's S + horseshoe (minimap proves it at a glance). HD: 44/0 checks.
+`jalfern.com/retrogames/comet-drift-hd` — Corkscomb drops 160px down the
+hillside, karts pitch over crests, walls ride the terrain (PR body has crest +
+dip shots). 2D twin at `/comet-drift` bobs its horizon on the same data.
 
 ## Next queued
-- **Oldest game-queue: #518 COMET DRIFT: elevation — courses go up and down (HD first).**
-  #530 (#polish camber) overlaps it — consider folding or ordering #518 first.
-- #521 DEMO 2 — Shore (lane:demos) is the other queue item.
+- Oldest game-queue: **#521 DEMO 2 — Shore (lane:demos)**.
+- #530 is the QA lane's polish pass (feedback), incl. real camber now that y exists.
 
 ## Lessons worth keeping
-- Extraction pipeline quirks (all fixed in-script, deterministic): walker needs
-  straight-ahead-first DFS + backtracking; a 3× downsample kills hairpin spurs but
-  dilate-after-thin re-fattens junctions; SVG rasterize needs a white matte (transparency
-  reads as dark road).
-- `CometDriftHD/scene.js` reads widths from `CometDrift/track.js` — **any ROAD_R/WALL_R
-  change must re-run `cometdrifthdcheck`**, and the HD gate's 220px floor is the keeper.
-- `cometcheck --mutate` still dies at the checkpoint gate, not the shape gate — fine, it's
-  load-bearing.
+- Spline anchors at uneven lap fractions overshoot the grade (30%!) — resample
+  onto a uniform knot grid first, then auto-scale the profile to a grade cap.
+- Scaling heights mid-loop mixes scaled/un-scaled neighbours (grade 3.06). Two
+  passes: scale, then grade.
+- `Float32BufferAttribute` geometry ⇒ exact-float geometry gates need 1e-6
+  tolerance, not 1e-9.
+- Elevation breaks GLOBAL min/max geometry claims ("road flat", "walls 1.5–3.6u").
+  Re-pin gates as per-index relations (wall-over-road, rim-over-road at each i).
+- Elevation changes real physics: cometplay's key-timed drift slalom now slid
+  into walls at downhill speeds — re-verify harness seeds against the changed
+  physics in Node before touching browser waits.
+- In `cometcheck`, `const sim = await loadSim()` sits AFTER the per-course
+  header checks — new checks earlier in the loop need their own loadSim().
+- `shot.mjs --eval` runs once then waits real-time; `__game.step()` while the
+  contract holds the loop freezes the chase cam (tick World+cam are in the same
+  rAF branch) — captures driven that way show the kart left behind. For camera-
+  honest screenshots, let the attract autopilot run real-time.
+- Prod-poll for a game change: match the lazy `sim-*.js` chunk (where sim code
+  lives), not `index-*.js`.
+- `gh pr create --body-file` uploads local PNG paths — crest/dip shots rode the
+  PR body with zero extra steps.
 
 ## Three questions for Jon
-1. #518 (elevation) vs #530 (camber/kerbs polish) — merge them into one "make the
-   Gulch have real terrain" issue, or keep elevation HD-only and polish flat-mode 2D first?
-2. Corkscomb without camber reads as a plain S. Is faked camber (shading + grip bonus,
-   no true vertical) enough for the fidelity bar, or does it need real y?
-3. #493 is tagged `shipped` but still open with a QA follow-up (#502). Close the chain
-   (#493/#502/#511 are all "Sandbank/Corkscomb polish round N") or keep feeding rounds?
+1. #518 shipped HD-first; the 2D twin only bobs its horizon. Is a fake-3D
+   elevation (Mode 7 scale/shear by grade) wanted for the retro twin, or is the
+   horizon bob the permanent 2D answer and #530's camber HD-only?
+2. Corkscomb's 186px drop auto-scaled the other courses down (cap 9.5%). Want a
+   per-course relief budget (Sandbank flatter by design, Corkscomb steeper) or
+   keep one uniform cap?
+3. Slope currently bypasses the drift ladder entirely (no y-dependent grip).
+   Should crests/dips interact with drift (less grip mid-air-ish over a crest?
+   more bite downhill) or is "speed only" the right arcade law?
 
 ## Housekeeping
-- Main checkout: detached at `ec38b62`, this STATE.md is committed (game merged ✓).
-- Worktree `~/Dev/retrogames-forge-comet-reference` removed post-merge.
+- Main checkout: detached at `4e1da16`; STATE.md committed here.
+- Worktree `~/Dev/retrogames-forge-comet-elevation` removed post-merge.
 - Dev server stopped. Nothing else dirty.
