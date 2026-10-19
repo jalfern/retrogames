@@ -94,6 +94,37 @@ export function triggersFromPad(pad) {
     return { lt: value(6), rt: value(7) }
 }
 
+// --- #492: one pad -> one player slot's raw fields ---------------------------
+//
+// The physical-pad read for a MULTIPLAYER slot (N >= 2). Slot 1 keeps the
+// keyboard-event path (every existing game already hears it); slot N >= 2
+// cannot dispatch global keys without colliding with player 1, so the bridge
+// writes this field set into the slot's held pad instead, and the game reads
+// it with slotPad(n, method). Same buttons, same d-pad, same stick hysteresis
+// as the keyboard path — but the face buttons stay semantic (a / b / start),
+// it is the game that decides what B means for its second player.
+// `state` carries this pad's stick hysteresis across frames (one per slot!).
+// Returns { fields, state } where fields is { left,right,up,down,a,b,start,x,y }.
+export function slotFieldsFrom(pad, state = { engaged: false, lastCodes: [] }) {
+    const buttons = (pad && pad.buttons) || []
+    const pressed = (i) => !!(buttons[i] && buttons[i].pressed)
+    const fields = {
+        left: pressed(14), right: pressed(15), up: pressed(12), down: pressed(13),
+        a: pressed(0), b: pressed(1), start: pressed(9),
+        x: 0, y: 0,
+    }
+    for (const c of stickDirections(pad.axes, state)) {
+        if (c === 'ArrowLeft') fields.left = true
+        else if (c === 'ArrowRight') fields.right = true
+        else if (c === 'ArrowUp') fields.up = true
+        else if (c === 'ArrowDown') fields.down = true
+    }
+    const left = stickFromAxes([pad && pad.axes && pad.axes[0], pad && pad.axes && pad.axes[1]])
+    fields.x = left.x
+    fields.y = left.y
+    return { fields, state }
+}
+
 // --- #384 step 4: the gamepad rumble ------------------------------------------
 //
 // One rumble(ms, strength) beside the touch haptic (VirtualControls'

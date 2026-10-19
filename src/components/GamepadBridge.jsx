@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
-import { gamepadToCodes, stickFromAxes, triggersFromPad } from './gamepadMap'
+import { gamepadToCodes, stickFromAxes, triggersFromPad, slotFieldsFrom } from './gamepadMap'
 import { setStick, setRight, clearPad } from '../utils/padState'
-import { setStickVec } from '../utils/onePad'
+import { setStickVec, setConnected, connectedSlots, pressSlot, releaseSlot, setStickVecSlot, clearAllSlots } from '../utils/onePad'
 
 // Gamepad bridge: polls navigator.getGamepads() every frame and dispatches the
 // same KeyboardEvents VirtualControls does, so every game that reads keyboard
@@ -10,6 +10,14 @@ import { setStickVec } from '../utils/onePad'
 // Browsers only expose a pad after its first button press; getGamepads() reads
 // as null until then. The bridge tracks the first connected pad and releases
 // every held key on blur, tab-hide or pad disconnect.
+//
+// #492 — EVERY connected pad drives a player slot. Pad 1 keeps the keyboard-
+// event path above (that is player 1: keys, touch and the first pad all funnel
+// into the one held pad). Pad N (N >= 2) writes its buttons and stick into
+// slot N's held pad (onePad slot layer) with its own stick hysteresis, and
+// multiplayer games read it with slotPad(N, method). When the online count
+// changes the bridge publishes `retrogames:pads { count }` so a game can flip
+// to its two-player mode the moment a second pad wakes up.
 const GamepadBridge = ({ secondAction }) => {
     useEffect(() => {
         const supported = typeof navigator !== 'undefined' && 'getGamepads' in navigator
@@ -17,6 +25,7 @@ const GamepadBridge = ({ secondAction }) => {
 
         const held = new Set()
         const stickState = { engaged: false, lastCodes: [] }
+        const slotStates = new Map()
 
         const keyFor = (code) => (code === 'Space' ? ' ' : code === 'Question' ? '?' : code)
         const fire = (code, type) => {
@@ -36,13 +45,28 @@ const GamepadBridge = ({ secondAction }) => {
             clearPad()
             setStickVec(0, 0)
         }
+        const writeSlot = (slotN, f) => {
+            for (const k of ['left', 'right', 'up', 'down', 'a', 'b', 'start']) {
+                if (f[k]) pressSlot(slotN, k)
+                else releaseSlot(slotN, k)
+            }
+            setStickVecSlot(slotN, f.x, f.y)
+        }
 
         let raf = 0
         let padActive = false
+        let lastCount = connectedSlots()
         const poll = () => {
             raf = requestAnimationFrame(poll)
             const pads = navigator.getGamepads()
-            const pad = pads && pads.find((p) => p && p.connected)
+            const live = []
+            if (pads) for (const p of pads) if (p && p.connected) live.push(p)
+            const count = setConnected(live.length)
+            if (count !== lastCount) {
+                lastCount = count
+                window.dispatchEvent(new CustomEvent('retrogames:pads', { detail: { count } }))
+            }
+            const pad = live[0]
             if (!pad) return
             const { codes, state } = gamepadToCodes(pad, { secondAction }, stickState)
             Object.assign(stickState, state)
@@ -64,6 +88,15 @@ const GamepadBridge = ({ secondAction }) => {
             } else if (!active) {
                 padActive = false
             }
+            // #492: player 2+ — every pad past the first drives its own slot.
+            for (let i = 1; i < live.length; i++) {
+                const slotN = i + 1
+                let st = slotStates.get(slotN)
+                if (!st) { st = { engaged: false, lastCodes: [] }; slotStates.set(slotN, st) }
+                const r = slotFieldsFrom(live[i], st)
+                slotStates.set(slotN, r.state)
+                writeSlot(slotN, r.fields)
+            }
         }
 
         const onDisconnect = () => releaseAll()
@@ -80,6 +113,7 @@ const GamepadBridge = ({ secondAction }) => {
             document.removeEventListener('visibilitychange', onVis)
             window.removeEventListener('gamepaddisconnect', onDisconnect)
             releaseAll()
+            clearAllSlots()
         }
     }, [secondAction])
 
