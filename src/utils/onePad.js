@@ -206,3 +206,82 @@ export function pointerGesture(gs, p, cands, wx, wy, scale, commit) {
     }
     gs.pd = down
 }
+
+// --- Player slots (#492): pad N drives player N -----------------------------
+//
+// One held pad per player slot. Slot 1 IS `held` above — every existing field
+// and function (press / release / setStickVec / setPointer / clearHeld /
+// currentPad) keeps writing and reading exactly slot 1, so the ~40
+// single-player titles are byte-identical. A second physical gamepad feeds
+// slot 2 through the GamepadBridge, and a multiplayer game reads slot N's pad
+// each tick with slotPad(n, method). Keyboard, touch and mouse stay slot 1
+// (Jon's ruling: no second on-screen touchpad).
+//
+// `connected` is the number of live player slots: pad N online (N > 1) makes
+// slots 1..N exist. Keyboard-only 2P titles keep connected 1; the count is
+// about pads, not about mode.
+
+export const MAX_SLOTS = 4
+
+const slotPads = [held]
+
+// The raw held pad of slot n (1-based), growing the table on demand.
+function slot(n) {
+    const i = Math.max(1, Math.min(MAX_SLOTS, n | 0)) - 1
+    while (slotPads.length <= i) slotPads.push(blankPad())
+    return slotPads[i]
+}
+
+// The one pad for slot n, normalized for a game of `method`. Slot 1 through
+// this is the same as currentPad(method).
+export function slotPad(n, method) { return normalizePad(slot(n), method) }
+
+export function pressSlot(n, field) { slot(n)[field] = true }
+export function releaseSlot(n, field) { slot(n)[field] = false }
+
+// Slot n's analog stick, with the same shared scaled radial dead zone.
+export function setStickVecSlot(n, x, y) {
+    const dz = radialDeadZone(x, y)
+    const p = slot(n)
+    p.x = dz.x
+    p.y = dz.y
+}
+
+export function setPointerSlot(n, x, y, down, alt) {
+    const p = slot(n)
+    p.pointer.x = clamp01(x)
+    p.pointer.y = clamp01(y)
+    p.pointer.down = !!down
+    p.pointer.alt = !!alt
+}
+
+export function clearSlot(n) { Object.assign(slot(n), blankPad()) }
+
+// True while slot n has anything held down (direction, button, stick, pointer).
+export function slotActive(n) {
+    const p = slot(n)
+    return p.up || p.down || p.left || p.right || p.a || p.b || p.start
+        || p.x !== 0 || p.y !== 0 || p.pointer.down || p.pointer.alt
+}
+
+let connected = 1
+
+// The live player-slot count (>= 1: keyboard is always slot 1).
+export function connectedSlots() { return connected }
+
+// Set the live slot count (the GamepadBridge reports one slot per connected
+// pad, at least 1). Clamped to 1..MAX_SLOTS. Clears the pads of slots that
+// went away, so a unplugged pad's held key never sticks at slot N.
+export function setConnected(n) {
+    const c = Math.max(1, Math.min(MAX_SLOTS, n | 0))
+    if (c === connected) return connected
+    for (let i = c; i < MAX_SLOTS; i++) if (slotPads[i]) Object.assign(slotPads[i], blankPad())
+    connected = c
+    return connected
+}
+
+// Release every slot and drop back to one (unmount / page teardown).
+export function clearAllSlots() {
+    for (let i = 0; i < slotPads.length; i++) Object.assign(slotPads[i], blankPad())
+    connected = 1
+}

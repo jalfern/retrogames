@@ -90,3 +90,21 @@ npm run gauntletplay              # advisory browser drive (needs npm run dev)
 
 The attract demo is `plan(2, {topDown:true})` — the same deathless full-quest
 run the harness grades.
+
+## Two players (#492 pilot)
+
+Player 2 has three ways in: the keyboard (WASD + F), and a second physical
+gamepad via the shared slot layer — pad 2 drives slot 2
+(`src/utils/onePad.js` `slotPad(2)`), mapped by `p2input.js`
+`p2From(kb, pad, prev)`, which folds both sources into the sim's
+partner input (sword is edge-triggered; `prev` carries the pad levels).
+Plugging a second pad in flips the partner to HUMAN at attract/select; pad 2
+d-pad/stick picks P2's hero, A claims the slot, A swings. Pad 1 keeps the
+keyboard-event path (VirtualControls-compatible); pad 2 never dispatches keys,
+so the two players cannot collide. `__game.meta.players` is 2. The `step`
+threading that makes any of this move (`step(gs, inp, pInp)`) is the #491
+root cause — driven for real by two fake pads in headless Chrome, and pinned
+in `vpadcheck` (slot isolation, the slot map, the merge, the wiring).
+
+Honest gap: a closed door still blocks P2 (door-opening for the partner is a
+separate filed item, see sim.js `updatePartner`).
