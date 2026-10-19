@@ -157,6 +157,39 @@ export function methodOf(pad) {
 // and a digital source never fight.
 export const held = blankPad()
 
+// --- The raw device view (#495) ----------------------------------------------
+//
+// What the device actually produced BEFORE the shared dead zone, quantizer and
+// clamp — the analog a recording must keep for training (Plaicraft) that the
+// normalized pad throws away: a 0.08 thumb nudge is invisible in the pad and
+// right here in the raw. One entry per slot, written by the same writers
+// (setStickVec* / setAimVec* / setPointer*) a moment before they apply the
+// zone, and cleared alongside the pads. Digital keys/buttons need no raw
+// mirror: they arrive in the pad verbatim.
+
+function blankRaw() { return { x: 0, y: 0, ax: 0, ay: 0, px: 0, py: 0 } }
+
+const numRaw = (v) => (typeof v === 'number' && isFinite(v) ? v : 0)
+
+const rawSlots = [blankRaw()]
+
+function rawSlot(n) {
+    const i = Math.max(1, Math.min(MAX_SLOTS, n | 0)) - 1
+    while (rawSlots.length <= i) rawSlots.push(blankRaw())
+    return rawSlots[i]
+}
+
+// A copy of slot n's raw device input: pre-zone stick (x/y) and aim (ax/ay),
+// pre-clamp pointer (px/py).
+export function rawPad(n = 1) { return { ...rawSlot(n) } }
+
+export function clearRawSlot(n) { Object.assign(rawSlot(n), blankRaw()) }
+
+export function clearAllRaw() {
+    for (let i = 0; i < rawSlots.length; i++) Object.assign(rawSlots[i], blankRaw())
+}
+
+
 export function press(field) { held[field] = true }
 export function release(field) { held[field] = false }
 
@@ -164,6 +197,8 @@ export function release(field) { held[field] = false }
 // #431: the shared scaled radial dead zone is applied here too, so games
 // reading THE one pad (currentPad) get the same stick feel as padState readers.
 export function setStickVec(x, y) {
+    rawSlot(1).x = numRaw(x)
+    rawSlot(1).y = numRaw(y)
     const dz = radialDeadZone(x, y)
     held.x = dz.x
     held.y = dz.y
@@ -172,6 +207,8 @@ export function setStickVec(x, y) {
 // #496: slot 1's AIM stick (a gamepad's right stick) — the same dead zone as
 // the movement stick, landing on the pad's ax / ay.
 export function setAimVec(x, y) {
+    rawSlot(1).ax = numRaw(x)
+    rawSlot(1).ay = numRaw(y)
     const dz = radialDeadZone(x, y)
     held.ax = dz.x
     held.ay = dz.y
@@ -180,6 +217,8 @@ export function setAimVec(x, y) {
 // The pointer (a drag on the canvas for a pointer game): x / y normalized 0..1
 // to the canvas, down = pressed, alt = the second gesture. down false clears it.
 export function setPointer(x, y, down, alt) {
+    rawSlot(1).px = numRaw(x)
+    rawSlot(1).py = numRaw(y)
     held.pointer.x = clamp01(x)
     held.pointer.y = clamp01(y)
     held.pointer.down = !!down
@@ -270,6 +309,9 @@ export function releaseSlot(n, field) { slot(n)[field] = false }
 
 // Slot n's analog stick, with the same shared scaled radial dead zone.
 export function setStickVecSlot(n, x, y) {
+    const rs = rawSlot(n)
+    rs.x = numRaw(x)
+    rs.y = numRaw(y)
     const dz = radialDeadZone(x, y)
     const p = slot(n)
     p.x = dz.x
@@ -278,6 +320,9 @@ export function setStickVecSlot(n, x, y) {
 
 // #496: slot n's AIM stick (that pad's right stick), same dead zone as movement.
 export function setAimVecSlot(n, x, y) {
+    const rs = rawSlot(n)
+    rs.ax = numRaw(x)
+    rs.ay = numRaw(y)
     const dz = radialDeadZone(x, y)
     const p = slot(n)
     p.ax = dz.x
@@ -285,6 +330,9 @@ export function setAimVecSlot(n, x, y) {
 }
 
 export function setPointerSlot(n, x, y, down, alt) {
+    const rs = rawSlot(n)
+    rs.px = numRaw(x)
+    rs.py = numRaw(y)
     const p = slot(n)
     p.pointer.x = clamp01(x)
     p.pointer.y = clamp01(y)
@@ -292,7 +340,10 @@ export function setPointerSlot(n, x, y, down, alt) {
     p.pointer.alt = !!alt
 }
 
-export function clearSlot(n) { Object.assign(slot(n), blankPad()) }
+export function clearSlot(n) {
+    Object.assign(slot(n), blankPad())
+    clearRawSlot(n)
+}
 
 // True while slot n has anything held down (direction, button, stick, aim, pointer).
 export function slotActive(n) {
@@ -314,7 +365,10 @@ export function connectedSlots() { return connected }
 export function setConnected(n) {
     const c = Math.max(1, Math.min(MAX_SLOTS, n | 0))
     if (c === connected) return connected
-    for (let i = c; i < MAX_SLOTS; i++) if (slotPads[i]) Object.assign(slotPads[i], blankPad())
+    for (let i = c; i < MAX_SLOTS; i++) {
+        if (slotPads[i]) Object.assign(slotPads[i], blankPad())
+        if (rawSlots[i]) Object.assign(rawSlots[i], blankRaw())
+    }
     connected = c
     return connected
 }
@@ -322,5 +376,6 @@ export function setConnected(n) {
 // Release every slot and drop back to one (unmount / page teardown).
 export function clearAllSlots() {
     for (let i = 0; i < slotPads.length; i++) Object.assign(slotPads[i], blankPad())
+    clearAllRaw()
     connected = 1
 }

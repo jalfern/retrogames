@@ -144,4 +144,36 @@ r.check('the corridor actually renders', px > 500, `${px} lit px`)
         cs.t1 === cs.t2 - 1, JSON.stringify(cs))
 }
 
+// #495 recording format on the REAL page: record a driven 2P run through the
+// contract, stop, and replay the file through the same live contract — every
+// checkpoint hash must land, and the raw channel must carry the sub-dead-zone
+// nudges the pads dropped.
+{
+    const rr = await page.evaluate(() => {
+        const g = window.__game
+        g.reset(11, 2)
+        g.recordStart(30)
+        for (let i = 0; i < 240; i++) {
+            const go = i % 97 < 40
+            g.step([{ x: go ? 0.9 : 0.08, y: go ? -0.3 : 0.03, a: i % 19 < 2 }, { up: go, right: !go }])
+        }
+        const rec = g.recordStop()
+        const res = g.replay(rec)
+        g.release()
+        return {
+            fmt: rec.format, seed: rec.seed, ticks: rec.ticks, build: rec.build,
+            src: rec.slots.map((s) => s.source.kind),
+            hashes: rec.hashes.length,
+            nudged: rec.slots[0].raw.filter((x) => x.x === 0.08).length,
+            ok: res.ok, mismatch: res.mismatch ? res.mismatch.tick : null, replayTicks: res.ticks,
+        }
+    })
+    r.check('#495: contract capture writes a v1 file (240 ticks, human-stream seats)',
+        rr.fmt === 'retrogames-rec/v1' && rr.seed === 11 && rr.ticks === 240 && rr.hashes >= 8 && rr.src.every((k) => k === 'model'),
+        JSON.stringify(rr))
+    r.check('#495: raw channel mirrors the contract stream analog per tick (pre-quantize)', rr.nudged > 3, `${rr.nudged} ticks`)
+    r.check('#495: recorded run replays hash-equal through __game.replay', rr.ok === true && rr.mismatch === null,
+        rr.mismatch !== null ? `diverged at tick ${rr.mismatch}` : JSON.stringify(rr))
+}
+
 r.exit(browser)

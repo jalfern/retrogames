@@ -66,7 +66,9 @@ Resulting `window.__game` API:
   `release()`. While locked the caller owns the clock — that is what makes
   scripted 600-tick runs reproducible next to a running rAF loop.
 - `release()` — hands the clock back to the rAF loop.
-- `state()` → JSON `{ tick, score, done, ... }` (games add their own hash).
+- `state()` → JSON `{ tick, score, done, players, ... }` (`players` is the seat
+  count the last `reset` opened, #495; games add their own hash and may override
+  `players` with their live count).
 - `frame()` → PNG data URL of the game canvas.
 - `snapshot()` / `restore(s)` → optional; present when the game wires them.
   `restore` deep-copies `s` before the game sees it (#381), so a caller may
@@ -81,3 +83,55 @@ Wired games (rollout #391, `npm run contractcheck`): Lunar Lander, Tempest (pilo
 it too (AGENTS.md, "Adding a game" step 4). Galaga omits `snapshot`/`restore` — its
 enemies carry functional Catmull paths that JSON can't copy.
 `CONTRACT_ONLY=<id> npm run contractcheck` runs a single game.
+
+## Recording format — `retrogames-rec/v1` (issue #495)
+
+ONE JSON file for a recorded multiplayer run — replayable exactly, trainable on
+(Plaicraft). Pure module: `src/utils/recording.js` (Node + browser).
+
+```json
+{
+  "format": "retrogames-rec/v1", "build": "c80a6bb",
+  "game": "gauntlet", "method": "stick", "seed": 42, "players": 2,
+  "ticks": 900, "hashEvery": 30,
+  "slots": [
+    { "source": { "kind": "human" }, "pads": [ {"right":true,"x":0.886} ], "raw": [ {"x":0.9} ] },
+    { "source": { "kind": "cpu" },   "pads": [ {"up":true} ],               "raw": [ {} ] }
+  ],
+  "hashes": [ { "t": 30, "h": 1234567890 }, { "t": 900, "h": 987654321 } ]
+}
+```
+
+- **Header** — `build` is the git commit stamped by a Vite define (`__BUILD_COMMIT__`,
+  DEV); `game` the registry id; `method` the input method (#420); `seed` the one
+  integer the sim resets from.
+- **`slots[]`** — one entry per seat. `source.kind` is the #494 slot kind
+  (`human`/`cpu`/`model`+`modelId`/`remote`/`off`) as it stood at capture time.
+  `pads` holds THE one pad per tick (#420), compact: false/zero fields are
+  omitted, decoding runs the pad through `normalizePad` — whose idempotence makes
+  `decode(encode(p)) === normalizePad(p)` exact. `pads.length === ticks` always.
+- **`raw[]`** — the device input BEFORE the shared dead zone / quantizer / clamp:
+  pre-zone stick `x/y` and aim `ax/ay`, pre-clamp pointer `px/py` (zeros omitted).
+  Written by the onePad writers into per-slot holders (`rawPad(n)`, #495). A 0.08
+  thumb nudge lives here while the pad idles — the analog nothing else keeps.
+  Keys/buttons are already verbatim in `pads`, so they need no raw mirror.
+  A seat driven through the contract has no live device: its raw mirrors the
+  analog its stream asked for (pre-clamp x/y, aim, pointer); idle seats stay zeros.
+- **`hashes[]`** — the game's `state.hash` every `hashEvery` ticks (default 30)
+  plus the final tick. A bad file must name its divergence tick, never silently
+  diverge.
+
+Replay: `verifyRecording(rec, driver)` with a contract-shaped driver
+(`reset(seed, players)`, `step(pads)` = exactly one tick with one pad per slot,
+`state()` carrying `{ tick, hash }`) re-runs seed + streams and compares hashes
+at every checkpoint. On `__game` (DEV): `recordStart(hashEvery)` (needs
+`state().seed`; seat kinds come from the optional `spec.sources()`),
+`recordStop()` → the file object (also `window.__lastRecording`), and
+`replay(rec)` → `{ ok, ticks, mismatch }`.
+
+Reference file: `public/replays/gauntlet-2p.json` — a real 900-tick GAUNTLET 2P
+run (human seat 1 driven through the device writers, cpu seat 2), replayed
+hash-equal through plain model seats by `npm run replaycheck` (`--mutate` drops
+one live pad mid-file and must be caught). The determinism law is the same one
+#494 states: seed + per-player pad streams ⇒ identical hashes, whatever
+produced the pads.

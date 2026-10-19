@@ -12,10 +12,13 @@
 // before simulating — the driver owns the clock while it is closed. The loop
 // keeps drawing, so frame() always shows the live canvas.
 
-import { normalizePad } from './onePad'
+import { normalizePad, rawPad } from './onePad'
+import { createRecorder, verifyRecording, DEFAULT_HASH_EVERY } from './recording'
 
 let loopLock = false
 let exposed = null
+let recorder = null
+let lastPlayers = 1
 
 export const contractHoldsLoop = () => loopLock
 
@@ -27,6 +30,26 @@ export const contractHoldsLoop = () => loopLock
 export function exposeGame(spec) {
     if (!import.meta.env.DEV) return null
     const method = spec.method || 'stick'
+    const BUILD = typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : 'dev'
+    // #495: while a recorder runs, every step tick is banked — one addTick per
+    // simulated tick, one pad per seat, the raw device view per seat, and the
+    // game's state.hash when the batch's last tick closes it.
+    const seatCount = spec.players && spec.players > 1 ? spec.players : 1
+    const rnum = (v) => (typeof v === 'number' && isFinite(v) ? v : 0)
+    const rawsFor = (pads) => Array.from({ length: seatCount }, (_, i) => {
+        const r = rawPad(i + 1)
+        if (r.x || r.y || r.ax || r.ay || r.px || r.py) return r
+        // A contract-driven seat has no live device: mirror the analog its
+        // stream asked for (pre-clamp x/y, aim, pointer) so a harness record
+        // still carries a raw channel; idle seats stay zeros.
+        const p = pads[i] || {}
+        const pt = p.pointer || {}
+        return { x: rnum(p.x), y: rnum(p.y), ax: rnum(p.ax), ay: rnum(p.ay), px: rnum(pt.x), py: rnum(pt.y) }
+    })
+    const hashNow = () => {
+        const st = spec.state()
+        return typeof st.hash === 'number' || typeof st.hash === 'string' ? st.hash : null
+    }
     const api = {
         meta: {
             id: spec.id,
@@ -39,27 +62,71 @@ export function exposeGame(spec) {
         },
         // `players` (#494): an optional seat count for games that support more
         // than one hero — single-player titles ignore it entirely.
-        reset: (seed = 0, players = 1) => { spec.reset(seed, players); return api.state() },
+        reset: (seed = 0, players = 1) => {
+            lastPlayers = Math.max(1, Math.min(4, players | 0 || 1))
+            spec.reset(seed, lastPlayers)
+            return api.state()
+        },
         step: (pad = {}, n = 1) => {
             loopLock = true
             // One pad PER PLAYER (#494): an array steps once with pads[0] for
             // player 1, pads[1] for player 2, ... A single pad still steps the
             // same way it always did — held for n ticks — so every legacy
             // call and every single-player game is byte-identical.
-            if (Array.isArray(pad)) {
+            const array = Array.isArray(pad)
+            if (array) {
                 const ones = pad.map((p) => normalizePad(p || {}, method))
                 if (!ones.length) ones.push(normalizePad({}, method))
                 spec.tick(ones[0], ones)
+                if (recorder) recorder.addTick(ones, rawsFor(ones), hashNow())
             } else {
                 const one = normalizePad(pad || {}, method)
-                for (let i = 0; i < n; i++) spec.tick(one, [one])
+                const len = n > 0 ? Math.ceil(n) : 0
+                for (let i = 0; i < len; i++) spec.tick(one, [one])
+                if (recorder) {
+                    const h = len > 0 ? hashNow() : null
+                    const raws = len > 0 ? rawsFor([one]) : null
+                    for (let i = 0; i < len; i++) recorder.addTick([one], raws, i === len - 1 ? h : null)
+                }
             }
             return api.state()
         },
         release: () => { loopLock = false },
+        // #495 RECORD/REPLAY. recordStart opens a `retrogames-rec/v1` capture
+        // (seed taken from the game's own state — the game must report it),
+        // every following step() is banked, recordStop returns the file object
+        // (also parked at window.__lastRecording). replay(rec) replays a file
+        // through this very contract and checks state.hash at every checkpoint.
+        recordStart: (hashEvery = DEFAULT_HASH_EVERY) => {
+            const s = spec.state()
+            if (!Number.isInteger(s.seed)) throw new Error('recordStart: state() must report an integer seed')
+            recorder = createRecorder({
+                gameId: spec.id,
+                method,
+                seed: s.seed,
+                players: spec.players && spec.players > 1 ? spec.players : 1,
+                build: spec.build || BUILD,
+                hashEvery,
+                sources: spec.sources || null,
+            })
+            return { recording: true, seed: s.seed, players: spec.players && spec.players > 1 ? spec.players : 1, hashEvery }
+        },
+        recordStop: () => {
+            if (!recorder) return null
+            const s = spec.state()
+            const rec = recorder.finish(typeof s.hash === 'number' || typeof s.hash === 'string' ? s.hash : null)
+            recorder = null
+            window.__lastRecording = rec
+            return rec
+        },
+        replay: (rec) => verifyRecording(rec, {
+            reset: (seed, players) => { api.reset(seed, players) },
+            step: (pads) => { api.step(pads) },
+            state: () => api.state(),
+        }),
         state: () => {
             const s = spec.state()
-            return { tick: 0, score: 0, done: false, ...s }
+            return { tick: 0, score: 0, done: false, players: lastPlayers, ...s }
         },
         frame: () => {
             const c = spec.canvas()
@@ -75,6 +142,7 @@ export function exposeGame(spec) {
 
 export function unexposeGame() {
     loopLock = false
+    recorder = null
     if (exposed && window.__game === exposed) delete window.__game
     exposed = null
 }

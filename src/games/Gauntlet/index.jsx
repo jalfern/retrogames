@@ -682,9 +682,13 @@ const GauntletGame = () => {
                 method: 'stick',
                 buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reads: ['up', 'down', 'left', 'right', 'a', 'b'],
-                reset: (seed) => {
-                    gs = makeGame(((seed >>> 0) % 97) | 0, 'warrior', { topDown: true })
-                    gs.partnerOn = false; gs.partnerMode = 'off'; gs.partnerHuman = false
+                // #495: who fills each seat right now, stamped into recordings
+                // at record-stop. Seat 1 arrives via the contract (external pad
+                // stream = model); seat 2 is model while the contract drives it.
+                sources: () => [{ kind: 'model' }, { kind: modelP2 ? 'model' : p2slot.kind }],
+                reset: (seed, players = 1) => {
+                    gs = makeGame(((seed >>> 0) % 97) | 0, 'warrior', players >= 2 ? { topDown: true, partner: true, partnerKey: 'elf' } : { topDown: true })
+                    gs.partnerOn = players >= 2; gs.partnerMode = players >= 2 ? 'cpu' : 'off'; gs.partnerHuman = false
                     demoAt = 0
                     keys.l = keys.r = keys.u = keys.d = false
                     keys.swordEdge = false; keys.arrowEdge = false
