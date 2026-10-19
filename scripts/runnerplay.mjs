@@ -71,6 +71,15 @@ await wait(400)
 {
     const a = await probe()
     r.check('a real key starts a fresh run', a.screen === 'play' && a.score === 0 && a.rings === 0, `screen=${a.screen} score=${a.score}`)
+
+    // THE SECTOR BED: an original synth loop per zone, from the shared music
+    // engine. The probe carries the engine's own state — pre-fix there is no
+    // bed at all (playing=false), so this check fails on the old build.
+    await wait(300)
+    const m = (await probe()).music
+    r.check('the sector bed is playing under the run (music engine state)',
+        m && m.playing === true && m.track === 'runnerCity' && m.ctx === 'running',
+        `playing=${m && m.playing} track=${m && m.track} ctx=${m && m.ctx}`)
     await page.keyboard.down('ArrowRight')
     await wait(900)
     const b = await probe()
@@ -205,6 +214,40 @@ await wait(400)
     const q = await probe()
     r.check('a pit death throws you back to the last totem, not the start',
         died && Math.abs(q.x - 1900) < 40 && q.screen === 'play', `died=${died} x=${q.x.toFixed(0)} screen=${q.screen}`)
+}
+
+// ---- per-zone beds: replay the PROVEN route in play mode on the contract
+// clock and watch the bed switch track as the sectors change. The pad emulates
+// the plan's jumpEdge/jumpCut as A-button transitions; the game's own contract
+// tick derives the edges exactly as a real key would.
+{
+    const res = await page.evaluate(async () => {
+        const sim = await import('/retrogames/src/games/MomentumRunner/sim.js')
+        const script = sim.planRun().script
+        window.__game.reset(0)
+        await new Promise(r => requestAnimationFrame(r))
+        const seen = {}
+        let prevA = false
+        for (let i = 0; i < script.length; i += 5) {
+            for (let k = 0; k < 5 && i + k < script.length; k++) {
+                const inp = script[i + k]
+                let a = prevA
+                if (inp.jumpEdge) a = true
+                if (inp.jumpCut) a = false
+                prevA = a
+                window.__game.step({ left: !!inp.left, right: !!inp.right, up: a, a }, 1)
+            }
+            await new Promise(r => requestAnimationFrame(r))
+            const p = window.__runnerTest.probe()
+            if (seen[p.zone] === undefined && p.music) seen[p.zone] = p.music.track
+            if (p.end) break
+        }
+        window.__game.release()
+        return { seen, end: window.__runnerTest.probe().end }
+    })
+    r.check('each sector plays its OWN bed (proven route replayed in play mode)',
+        res.seen[0] === 'runnerCity' && res.seen[1] === 'runnerForge' && res.seen[2] === 'runnerOrbit' && res.end === 'win',
+        `seen=${JSON.stringify(res.seen)} end=${res.end}`)
 }
 
 // ---- the pause door ----

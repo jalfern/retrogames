@@ -37,6 +37,9 @@ const HINTS = [
 // background, so runnerplay's paint-check can prove the body is painted where
 // the physics reports it without false positives from scenery.
 const HERO = '#66f6ff'
+// one original synth bed per sector (AudioController.MUSIC): the tempo IS the
+// map — city sprints, the foundry drives, orbit floats.
+const RUNNER_BEDS = ['runnerCity', 'runnerForge', 'runnerOrbit']
 const PALETTE = [
     // ZONE 1 — NEON MEGACITY (GREEN HILL): night city, sky traffic, green-cyan neon
     { sky0: '#04081a', sky1: '#0c1b38', accent: '#3dffa2', ring: '#8dffd6',
@@ -259,6 +262,7 @@ const MomentumGame = () => {
         let gs = makeGame()
         let demoAt = 0, raf = 0, last = 0, acc = 0
         let toast = 0, toastMsg = '', shake = 0, wheelAng = 0
+        let musicOn = false, musicZone = -1
         let contractSeed = 0
         let cprev = {}
         const keys = { left: false, right: false }
@@ -280,6 +284,32 @@ const MomentumGame = () => {
         }
         const say = (m) => { toastMsg = m; toast = 90 }
 
+        // the speed whoosh: ONE looping band-passed noise source whose gain and
+        // centre frequency track velocity past the flat-run cap — the engine
+        // note that tells you the slope is doing your work. Lazily built after
+        // the AudioContext has been unlocked by the first real gesture.
+        const whoosh = { src: null, gain: null, filter: null }
+        const ensureWhoosh = () => {
+            if (whoosh.src || !audioController.ctx || audioController.muted) return
+            const actx = audioController.ctx, sr = actx.sampleRate
+            const buf = actx.createBuffer(1, sr, sr)
+            const d = buf.getChannelData(0)
+            for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
+            const src = actx.createBufferSource(); src.buffer = buf; src.loop = true
+            const filter = actx.createBiquadFilter(); filter.type = 'bandpass'; filter.frequency.value = 300; filter.Q.value = 0.7
+            const gain = actx.createGain(); gain.gain.value = 0
+            src.connect(filter); filter.connect(gain); gain.connect(actx.destination)
+            src.start()
+            whoosh.src = src; whoosh.gain = gain; whoosh.filter = filter
+        }
+        const setWhoosh = (k) => {
+            if (!whoosh.gain) return
+            const a = audioController.muted ? 0 : Math.max(0, Math.min(1, k))
+            const t = audioController.ctx.currentTime
+            whoosh.gain.gain.setTargetAtTime(a * 0.12, t, 0.08)
+            whoosh.filter.frequency.setTargetAtTime(250 + a * 2600, t, 0.08)
+        }
+
         const burst = (x, y, n, col) => {
             for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 3
@@ -300,13 +330,14 @@ const MomentumGame = () => {
                 else if (e.type === 'crash') { audioController.playNoise(0.2, 0.1); shake = 10; say('TOO SLOW!') }
                 else if (e.type === 'save') { audioController.playTone(880, 0.12, 'sine', 0.06); audioController.playTone(1320, 0.18, 'sine', 0.05); say('CHECKPOINT') }
                 else if (e.type === 'die') audioController.playDeath()
-                else if (e.type === 'respawn') { audioController.playSweep(220, 700, 0.4, 'triangle', 0.07); say('BACK TO CHECKPOINT') }
+                else if (e.type === 'respawn') { audioController.playSweep(220, 700, 0.4, 'triangle', 0.07); audioController.startMusic(RUNNER_BEDS[gs.zone]); say('BACK TO CHECKPOINT') }
                 else if (e.type === 'goal') { audioController.playSweep(660, 1760, 0.5, 'square', 0.09) }
             }
         }
 
         const finish = () => {
             const sc = gs.score
+            audioController.playFanfare()
             setEnd({ score: sc, deaths: gs.deaths })
             if (sc > 0) localStorage.setItem('runner.board', JSON.stringify([...board(), { score: sc, deaths: gs.deaths, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
@@ -574,6 +605,9 @@ const MomentumGame = () => {
 
             // ---- afterimages, then the hero ----
             const spdNow = p.mode === 'air' ? Math.hypot(p.vx, p.vy) : Math.abs(p.s || 0)
+            ensureWhoosh()
+            setWhoosh(screenRef.current === 'play' && spdNow > RUN_TOP
+                ? (spdNow - RUN_TOP) / (VMAX - RUN_TOP) : 0)
             const hpx = Math.round(p.x - dx0), hpy = Math.round(p.y - BODY_R - dy0)
             if (spdNow > RUN_TOP * 0.8 && p.mode === 'track') {
                 trail.push({ x: hpx, y: hpy })
@@ -719,6 +753,17 @@ const MomentumGame = () => {
                     while (acc >= SIM_MS) { doSim(); acc -= SIM_MS }
                 }
             }
+            // bed lifecycle: plays only during a live run (attract has no
+            // gesture yet, so it stays silent); switches with the sector.
+            const wantMusic = screenRef.current === 'play' && !pausedRef.current && !gs.end
+            if (wantMusic !== musicOn) {
+                musicOn = wantMusic
+                if (wantMusic) { musicZone = gs.zone; audioController.startMusic(RUNNER_BEDS[gs.zone]) }
+                else audioController.stopMusic()
+            } else if (musicOn && gs.zone !== musicZone) {
+                musicZone = gs.zone
+                audioController.startMusic(RUNNER_BEDS[gs.zone])
+            }
             paint()
             syncHud()
         }
@@ -795,6 +840,7 @@ const MomentumGame = () => {
                         cut: !!p.cut,
                         save: { ...gs.save }, goal: ZONES[gs.zone].goal, end: gs.end,
                         invuln: p.invuln, speed: Math.round(Math.abs(p.s || 0)),
+                        music: audioController._musicState(),
                         taken: [...gs.taken], evLog: evLog.slice(-80),
                         hist: hist.slice(-60), dbg: { ...dbg },
                     }
@@ -891,6 +937,8 @@ const MomentumGame = () => {
 
         return () => {
             if (import.meta.env.DEV) { if (window.__runnerTest) delete window.__runnerTest; unmountDbg(); unexposeGame() }
+            if (whoosh.src) { try { whoosh.src.stop() } catch { /* already stopped */ } }
+            audioController.stopMusic()
             clearInterval(hintTimer)
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
