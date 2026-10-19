@@ -6,8 +6,8 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from './sim'
-import { TRACK, SCENERY, TX, TY } from './track.js'
-import { PALETTE, KART, buildGround, buildSky, buildSprites, minimapPath } from './art.js'
+import { TRACK, SCENERY, TX, TY, COURSE, COURSES, selectCourse } from './track.js'
+import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath } from './art.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 
@@ -36,9 +36,10 @@ const T = TRACK
 const hexRGB = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
 const ABGR = (h) => { const [r, g, b] = hexRGB(h); return 0xff000000 | (b << 16) | (g << 8) | r }
 
-// the dust the canyon kicks up, lifted straight from the apron palette
-const DUST_C = ABGR(PALETTE.apronMid)
-const HAZE = hexRGB(PALETTE.skyLow)
+// the dust the canyon kicks up, lifted straight from the apron palette —
+// re-anchored whenever the SELECTED course re-tints the world (#493)
+let DUST_C = 0
+let HAZE = [0, 0, 0]
 
 export default function CometDrift() {
     const canvasRef = useRef(null)
@@ -98,19 +99,47 @@ export default function CometDrift() {
         const onWinResize = () => relayout()
         window.addEventListener('resize', onWinResize)
 
-        const ground = buildGround()
-        const gnd = new Uint32Array(ground.data.buffer)
+        // per-course look (#493): the ground texture is baked per circuit and
+        // cached by course id; the sky/dust/haze constants re-anchor to the
+        // selected palette every time the selector moves.
         const sky = buildSky()
         const S = buildSprites()
-        const OUT_C = ABGR(PALETTE.apronMid)
-        const FAR_C = ABGR(PALETTE.mesaFar)
-        const NEAR_C = ABGR(PALETTE.mesaNear)
-        const SUN_C = ABGR(PALETTE.sun)
-        const GLOW_C = ABGR(PALETTE.sunGlow)
-        const GLINT_C = ABGR(PALETTE.glint)
-        const SKY_TOP = hexRGB(PALETTE.skyTop)
-        const SKY_MID = hexRGB(PALETTE.skyMid)
-        const SKY_LOW = hexRGB(PALETTE.skyLow)
+        const groundCache = {}
+        const archCache = {}
+        const sceneryCache = {}
+        let gnd = null
+        let OUT_C = 0
+        let FAR_C = 0
+        let NEAR_C = 0
+        let SUN_C = 0
+        let GLOW_C = 0
+        let GLINT_C = 0
+        let APRON_C = '#000000'
+        let SKY_TOP = [0, 0, 0]
+        let SKY_MID = [0, 0, 0]
+        let SKY_LOW = [0, 0, 0]
+        let sunLift = 30
+        const applyCourse = (id) => {
+            selectCourse(id)
+            const pal = paletteFor(COURSE.palette)
+            DUST_C = ABGR(pal.apronMid)
+            HAZE = hexRGB(pal.skyLow)
+            OUT_C = ABGR(pal.apronMid)
+            FAR_C = ABGR(pal.mesaFar)
+            NEAR_C = ABGR(pal.mesaNear)
+            SUN_C = ABGR(pal.sun)
+            GLOW_C = ABGR(pal.sunGlow)
+            GLINT_C = ABGR(pal.glint)
+            APRON_C = pal.apron
+            SKY_TOP = hexRGB(pal.skyTop)
+            SKY_MID = hexRGB(pal.skyMid)
+            SKY_LOW = hexRGB(pal.skyLow)
+            sunLift = COURSE.palette === 'noon' ? 74 : 30
+            if (!groundCache[COURSE.id]) groundCache[COURSE.id] = new Uint32Array(buildGround(pal).data.buffer)
+            gnd = groundCache[COURSE.id]
+            map = minimapPath(Math.round(58 * hs), Math.round(50 * hs))
+        }
+        applyCourse(COURSE.id)
 
         const g = makeGame(0)
         gameRef.current = g
@@ -186,7 +215,7 @@ export default function CometDrift() {
             const gN = ((camA / (Math.PI * 2)) * 512) % 512
             const cA = ((camA / (Math.PI * 2)) * 256 * 1.6 + g.tick * 0.03) % 256
             const sunX = W / 2 + wrapA(SUN_A - camA) * W * 0.66
-            const sunY = HORIZON - Math.round(30 * u)
+            const sunY = HORIZON - Math.round(sunLift * u)
             for (let y = 0; y < HORIZON; y++) {
                 const t = y / HORIZON
                 let sr, sg, sb
@@ -235,60 +264,69 @@ export default function CometDrift() {
             ctx.putImageData(frame, 0, 0)
         }
 
-        // the natural sandstone arch that marks the line — the Gulch's only
-        // "gantry", and it grew there
-        const S_arch = (() => {
+        // the natural sandstone arch that marks the line — each circuit's
+        // landmark grew there; the keystone carries the course name (#493)
+        const archFor = (name) => {
+            if (archCache[name]) return archCache[name]
+            const pal = paletteFor(COURSE.palette)
             const c = document.createElement('canvas'); c.width = 300; c.height = 170
             const x = c.getContext('2d'); x.imageSmoothingEnabled = false
             const leg = (lx) => {
-                x.fillStyle = PALETTE.rockMid; x.fillRect(lx, 40, 44, 130)
-                x.fillStyle = PALETTE.rimLit; x.fillRect(lx, 40, 44, 5)
-                x.fillStyle = PALETTE.rockDark; x.fillRect(lx + 30, 40, 14, 130)
-                x.fillStyle = PALETTE.crack
+                x.fillStyle = pal.rockMid; x.fillRect(lx, 40, 44, 130)
+                x.fillStyle = pal.rimLit; x.fillRect(lx, 40, 44, 5)
+                x.fillStyle = pal.rockDark; x.fillRect(lx + 30, 40, 14, 130)
+                x.fillStyle = pal.crack
                 for (let i = 0; i < 5; i++) x.fillRect(lx + 4 + (i * 17) % 36, 52 + i * 24, 2, 14)
-                x.strokeStyle = PALETTE.outline; x.lineWidth = 2; x.strokeRect(lx, 40, 44, 130)
+                x.strokeStyle = pal.outline; x.lineWidth = 2; x.strokeRect(lx, 40, 44, 130)
             }
             leg(8); leg(248)
             // the span: a weathered arching band with a darker underside
-            x.fillStyle = PALETTE.rockMid
+            x.fillStyle = pal.rockMid
             x.beginPath()
             x.moveTo(8, 52); x.quadraticCurveTo(150, -18, 292, 52); x.lineTo(292, 76); x.quadraticCurveTo(150, 10, 8, 76)
             x.closePath(); x.fill()
-            x.strokeStyle = PALETTE.outline; x.lineWidth = 2; x.stroke()
-            x.fillStyle = PALETTE.rimLit
+            x.strokeStyle = pal.outline; x.lineWidth = 2; x.stroke()
+            x.fillStyle = pal.rimLit
             x.beginPath()
             x.moveTo(8, 52); x.quadraticCurveTo(150, -18, 292, 52); x.lineTo(292, 58); x.quadraticCurveTo(150, -12, 8, 58)
             x.closePath(); x.fill()
             // the keystone
-            x.fillStyle = PALETTE.rockLight; x.fillRect(138, 12, 24, 26)
-            x.strokeStyle = PALETTE.outline; x.lineWidth = 1.6; x.strokeRect(138, 12, 24, 26)
-            x.fillStyle = PALETTE.bone; x.font = 'bold 11px monospace'; x.fillText('GULCH', 130, 30)
+            x.fillStyle = pal.rockLight; x.fillRect(138, 12, 24, 26)
+            x.strokeStyle = pal.outline; x.lineWidth = 1.6; x.strokeRect(138, 12, 24, 26)
+            x.fillStyle = pal.bone; x.font = 'bold 11px monospace'; x.fillText(name, Math.max(4, 150 - name.length * 3.6), 30)
+            archCache[name] = c
             return c
-        })()
-        const S_cactus = (() => {
+        }
+        const S_cactus = () => {
+            if (sceneryCache.cactus) return sceneryCache.cactus
             const c = document.createElement('canvas'); c.width = 46; c.height = 90
             const x = c.getContext('2d'); x.imageSmoothingEnabled = false
-            x.fillStyle = PALETTE.cactus; x.fillRect(19, 12, 8, 74)
-            x.fillStyle = PALETTE.cactusLt; x.fillRect(19, 12, 3, 74)
-            x.fillStyle = PALETTE.cactus; x.fillRect(6, 34, 8, 26); x.fillRect(6, 34, 21, 8)
+            const pal = paletteFor(COURSE.palette)
+            x.fillStyle = pal.cactus; x.fillRect(19, 12, 8, 74)
+            x.fillStyle = pal.cactusLt; x.fillRect(19, 12, 3, 74)
+            x.fillStyle = pal.cactus; x.fillRect(6, 34, 8, 26); x.fillRect(6, 34, 21, 8)
             x.fillRect(32, 46, 8, 22); x.fillRect(19, 46, 21, 8)
-            x.strokeStyle = PALETTE.outline; x.lineWidth = 1.5
+            x.strokeStyle = pal.outline; x.lineWidth = 1.5
             x.strokeRect(19, 12, 8, 74)
+            sceneryCache.cactus = c
             return c
-        })()
-        const S_hoodoo = (() => {
+        }
+        const S_hoodoo = () => {
+            if (sceneryCache.hoodoo) return sceneryCache.hoodoo
             const c = document.createElement('canvas'); c.width = 90; c.height = 150
             const x = c.getContext('2d'); x.imageSmoothingEnabled = false
-            x.fillStyle = PALETTE.hoodoo
+            const pal = paletteFor(COURSE.palette)
+            x.fillStyle = pal.hoodoo
             x.beginPath(); x.moveTo(24, 150); x.lineTo(36, 34); x.lineTo(56, 40); x.lineTo(64, 150); x.closePath(); x.fill()
-            x.fillStyle = PALETTE.rockDark
+            x.fillStyle = pal.rockDark
             x.beginPath(); x.moveTo(56, 40); x.lineTo(64, 150); x.lineTo(48, 150); x.closePath(); x.fill()
-            x.fillStyle = PALETTE.hoodooCap
+            x.fillStyle = pal.hoodooCap
             x.beginPath(); x.moveTo(22, 40); x.lineTo(36, 24); x.lineTo(60, 30); x.lineTo(70, 44); x.closePath(); x.fill()
-            x.strokeStyle = PALETTE.outline; x.lineWidth = 1.5; x.stroke()
-            x.fillStyle = PALETTE.crack; x.fillRect(40, 60, 2, 18); x.fillRect(48, 92, 2, 16)
+            x.strokeStyle = pal.outline; x.lineWidth = 1.5; x.stroke()
+            x.fillStyle = pal.crack; x.fillRect(40, 60, 2, 18); x.fillRect(48, 92, 2, 16)
+            sceneryCache.hoodoo = c
             return c
-        })()
+        }
 
         const drawSprites = () => {
             ctx.save()
@@ -299,11 +337,11 @@ export default function CometDrift() {
                 items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color][sf][(k.anim >> 2) & 1], w: KART.w, h: KART.h, o: k })
             }
             for (const sc of SCENERY) {
-                const img = sc.kind === 'cactus' ? S_cactus : S_hoodoo
+                const img = sc.kind === 'cactus' ? S_cactus() : S_hoodoo()
                 items.push({ x: sc.x, y: sc.y, a: 0, img, w: sc.kind === 'cactus' ? 46 : 90, h: sc.kind === 'cactus' ? 90 : 150 })
             }
             const s0 = T.pts[0]
-            items.push({ x: s0.x, y: s0.y, a: 0, img: S_arch, w: 300, h: 170 })
+            items.push({ x: s0.x, y: s0.y, a: 0, img: archFor(COURSE.short), w: 300, h: 170 })
             items.sort((a, b) => {
                 const fa = project(a.x, a.y).f; const fb = project(b.x, b.y).f
                 return fb - fa
@@ -385,7 +423,7 @@ export default function CometDrift() {
             ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip()
             for (const d of fx.dust) {
                 ctx.globalAlpha = Math.max(0, d.life / 24) * 0.55
-                ctx.fillStyle = PALETTE.apron
+                ctx.fillStyle = APRON_C
                 ctx.fillRect(d.x, d.y, d.r * u, d.r * u)
             }
             const tier = P.charge >= TIERS[2].t ? 2 : P.charge >= TIERS[1].t ? 1 : P.charge >= TIERS[0].t ? 0 : -1
@@ -486,6 +524,8 @@ export default function CometDrift() {
             ctx.fillText('LAP', Math.round(W / 2), Math.round(10 * hs))
             ctx.fillStyle = '#f2e6d2'; ctx.font = fu(11)
             ctx.fillText(`${Math.min(P.lap + 1, LAPS)}/${LAPS}  ${fmtTime(Math.max(0, g.tick - P.lapStart))}`, Math.round(W / 2), Math.round(23 * hs))
+            ctx.fillStyle = '#b08460'; ctx.font = fu(7)
+            ctx.fillText(COURSE.short, Math.round(W / 2), Math.round(37 * hs))
             ctx.textAlign = 'left'
             // minimap, right
             const mw = Math.round(58 * hs); const mh = Math.round(50 * hs)
@@ -516,7 +556,8 @@ export default function CometDrift() {
 
         // attract / end screens ride the same carved panels, strata-trimmed
         const strataBar = (y, w) => {
-            const cols = [PALETTE.rimLit, PALETTE.rockMid, PALETTE.rockDark]
+            const pal = paletteFor(COURSE.palette)
+            const cols = [pal.rimLit, pal.rockMid, pal.rockDark]
             cols.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(Math.round((W - w) / 2), Math.round(y + i * 2 * hs), w, Math.max(1, Math.round(2 * hs))) })
         }
         const drawAttract = () => {
@@ -532,7 +573,15 @@ export default function CometDrift() {
             ctx.fillText('COMET', W / 2, Math.round(H * 0.33))
             ctx.fillStyle = '#ffd840'
             ctx.fillText('DRIFT GP', W / 2, Math.round(H * 0.33) + Math.round(24 * hs))
-            const msgs = ['SUNSET GULCH - 4 LAPS', 'X GAS  S BRAKE  ←→ STEER', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'blue violet GOLD - the ladder pays']
+            // course selector (#493): ←/→ cycles the circuit, the line label
+            // names what you picked; every other key or a tap races it
+            ctx.font = fu(11)
+            ctx.fillStyle = '#8a5c3c'
+            ctx.fillText('<', Math.round(W / 2 - 92 * hs), Math.round(H * 0.47))
+            ctx.fillText('>', Math.round(W / 2 + 88 * hs), Math.round(H * 0.47))
+            ctx.fillStyle = '#f2e6d2'
+            ctx.fillText(COURSE.name, W / 2, Math.round(H * 0.47))
+            const msgs = [COURSE.tagline, '← → PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'blue violet GOLD - the ladder pays']
             ctx.font = fu(10)
             ctx.fillStyle = '#f0b878'
             ctx.fillText(msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55))
@@ -558,7 +607,7 @@ export default function CometDrift() {
             ctx.textAlign = 'center'
             ctx.font = fu(22)
             ctx.fillStyle = g.end === 'win' ? '#ffd840' : '#f85820'
-            ctx.fillText(g.end === 'win' ? 'GULCH CHAMPION!' : `${P.place}TH PLACE`, W / 2, Math.round(H * 0.36))
+            ctx.fillText(g.end === 'win' ? `${COURSE.short} CHAMPION!` : `${P.place}TH PLACE`, W / 2, Math.round(H * 0.36))
             ctx.font = fu(11)
             ctx.fillStyle = '#f2e6d2'
             ctx.fillText(`TIME ${fmtTime(P.finishT || g.tick)}  BEST ${st.best ? fmtTime(st.best) : '--'}`, W / 2, Math.round(H * 0.45))
@@ -663,6 +712,17 @@ export default function CometDrift() {
             setPadOn(screen === 'race')
         }
 
+        const cycleCourse = (dir) => {
+            const i = Math.max(0, COURSES.findIndex((c) => c.id === COURSE.id))
+            applyCourse(COURSES[(i + dir + COURSES.length) % COURSES.length].id)
+            Object.assign(g, makeGame(0))
+            st.endT = 0
+            prevPlace = g.karts[0].place
+            camA = g.karts[0].a
+            fx.sparks.length = 0; fx.dust.length = 0
+            audioController.playTone(540 + dir * 120, 0.06, 'square', 0.07)
+        }
+
         tapRef.current = () => {
             if (pausedRef.current) return
             if (st.screen === 'attract') { audioController.init(); resetTo('race') }
@@ -674,6 +734,7 @@ export default function CometDrift() {
             if (e.code === 'Question' || e.key === '?') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (pausedRef.current) return
             if (st.screen === 'attract') {
+                if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { cycleCourse(e.code === 'ArrowRight' ? 1 : -1); return }
                 audioController.init()
                 resetTo('race')
                 return
@@ -695,7 +756,7 @@ export default function CometDrift() {
             getState: () => {
                 const P = g.karts[0]
                 return [
-                    `screen ${st.screen}  phase ${g.phase}  end ${g.end}`,
+                    `screen ${st.screen}  phase ${g.phase}  end ${g.end}  course ${COURSE.id}`,
                     `pos ${P.place}/${g.karts.length}  lap ${P.lap}/${LAPS}  v ${P.v.toFixed(2)}`,
                     `surf ${T.nearest(P.x, P.y, P.hint).surf}  spin ${P.spinT}  boost ${P.boostT}/tier ${P.boostTier}`,
                     `drift ${P.driftT} charge ${P.charge}  view ${W}x${H}@${u.toFixed(2)}  tick ${g.tick}`,
@@ -716,6 +777,10 @@ export default function CometDrift() {
             view: () => ({ w: W, h: H, horizon: HORIZON, scale: u }),
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
+            course: () => COURSE.id,
+            courses: () => COURSES.map((c) => c.id),
+            setCourse: (id) => { applyCourse(id); Object.assign(g, makeGame(0)); camA = g.karts[0].a; return COURSE.id },
+            cycleCourse: (dir) => { cycleCourse(dir | 0); return COURSE.id },
             best: () => st.best,
             fx: () => {
                 const P = g.karts[0]
@@ -752,6 +817,7 @@ export default function CometDrift() {
                 const P = g.karts[0]
                 return {
                     tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), done: !!g.end,
+                    course: COURSE.id,
                     place: P.place, lap: P.lap, phase: g.phase, v: Math.round(P.v * 100) / 100,
                     hash: stateHash(g),
                 }

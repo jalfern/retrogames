@@ -8,7 +8,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from '../CometDrift/sim.js'
-import { TRACK, surfaceAt, SCENERY } from '../CometDrift/track.js'
+import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse } from '../CometDrift/track.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 import {
@@ -267,23 +267,35 @@ export default function CometDriftHD() {
             return t
         }
 
-        const stats = trackGeometryStats()
-        const M = stats.geos
         const mat = (map, extra = {}) => new THREE.MeshStandardMaterial({ map, roughness: 0.95, metalness: 0, side: THREE.DoubleSide, ...extra })
-        const roadMesh = new THREE.Mesh(M.road, mat(tex(asphaltTex()), { roughness: 0.82, metalness: 0.05 }))
-        scene.add(roadMesh)
         const kerbMat = mat(tex(kerbTex()))
-        scene.add(new THREE.Mesh(M.kerbL, kerbMat))
-        scene.add(new THREE.Mesh(M.kerbR, kerbMat))
         const sandMat = mat(tex(sandTex()))
-        scene.add(new THREE.Mesh(M.gutterL, sandMat))
-        scene.add(new THREE.Mesh(M.gutterR, sandMat))
         const strataMat = mat(tex(strataTex()))
-        scene.add(new THREE.Mesh(M.wallL, strataMat))
-        scene.add(new THREE.Mesh(M.wallR, strataMat))
         const plateauMat = mat(tex(sandTex()), { color: 0xd8a888 })
-        scene.add(new THREE.Mesh(M.plateauL, plateauMat))
-        scene.add(new THREE.Mesh(M.plateauR, plateauMat))
+        // #493: the circuit itself lives in one group, so the attract-screen
+        // course selector can swap geometry (and the SCENERY that lines it)
+        // without touching karts, sky or lights.
+        const trackGroup = new THREE.Group()
+        scene.add(trackGroup)
+        const buildTrackMeshes = () => {
+            while (trackGroup.children.length) {
+                const m = trackGroup.children.pop()
+                if (m.geometry) m.geometry.dispose()
+            }
+            const M = trackGeometryStats().geos
+            trackGroup.add(new THREE.Mesh(M.road, mat(tex(asphaltTex()), { roughness: 0.82, metalness: 0.05 })))
+            trackGroup.add(new THREE.Mesh(M.kerbL, kerbMat))
+            trackGroup.add(new THREE.Mesh(M.kerbR, kerbMat))
+            trackGroup.add(new THREE.Mesh(M.gutterL, sandMat))
+            trackGroup.add(new THREE.Mesh(M.gutterR, sandMat))
+            trackGroup.add(new THREE.Mesh(M.wallL, strataMat))
+            trackGroup.add(new THREE.Mesh(M.wallR, strataMat))
+            trackGroup.add(new THREE.Mesh(M.plateauL, plateauMat))
+            trackGroup.add(new THREE.Mesh(M.plateauR, plateauMat))
+            trackGroup.add(buildArch(tex(strataTex())))
+            for (const sc of SCENERY) trackGroup.add(buildSceneryItem(sc))
+        }
+        buildTrackMeshes()
 
         // canyon floor beyond the plateau rim, so no void opens under the mesas
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), mat(tex(sandTex()), { color: 0xa87850 }))
@@ -291,10 +303,6 @@ export default function CometDriftHD() {
         floor.position.set(17, -0.4, 17)
         scene.add(floor)
 
-        scene.add(buildArch(tex(strataTex())))
-        const sceneryGroup = new THREE.Group()
-        for (const sc of SCENERY) sceneryGroup.add(buildSceneryItem(sc))
-        scene.add(sceneryGroup)
         scene.add(buildMesas())
 
         const dome = new THREE.Mesh(
@@ -805,8 +813,11 @@ export default function CometDriftHD() {
             hctx.shadowBlur = 0
             hctx.font = fu(16)
             hctx.fillStyle = '#ffd840'
-            hctx.fillText('H D · S U N S E T   G U L C H', W / 2, Math.round(H * 0.38))
-            const msgs = ['4 LAPS · 7 KARTS · ONE CANYON', 'X GAS · S BRAKE · ←→ STEER', 'HOLD SPACE / B THROUGH A BEND', 'BLUE VIOLET GOLD — THE LADDER PAYS']
+            hctx.fillText('H D · ' + COURSE.name.split('').join(' '), W / 2, Math.round(H * 0.38))
+            hctx.font = fu(11)
+            hctx.fillStyle = '#7ae8ff'
+            hctx.fillText('<  ' + COURSE.name + '  >', W / 2, Math.round(H * 0.46))
+            const msgs = ['4 LAPS · 7 KARTS · SELECT CIRCUIT WITH ← →', 'X GAS · S BRAKE · ←→ STEER', 'HOLD SPACE / B THROUGH A BEND', 'BLUE VIOLET GOLD — THE LADDER PAYS']
             hctx.font = fu(10)
             hctx.fillStyle = '#9fc8e8'
             hctx.fillText(msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55))
@@ -834,7 +845,7 @@ export default function CometDriftHD() {
             hctx.shadowBlur = 20 * u
             hctx.shadowColor = g.end === 'win' ? '#c8a020' : '#f04020'
             hctx.fillStyle = g.end === 'win' ? '#ffd840' : '#f85838'
-            hctx.fillText(g.end === 'win' ? 'GULCH CHAMPION!' : `${P.place}TH PLACE`, W / 2, Math.round(H * 0.36))
+            hctx.fillText(g.end === 'win' ? `${COURSE.short} CHAMPION!` : `${P.place}TH PLACE`, W / 2, Math.round(H * 0.36))
             hctx.shadowBlur = 0
             hctx.font = fu(11)
             hctx.fillStyle = '#e8f0fa'
@@ -948,6 +959,18 @@ export default function CometDriftHD() {
             if (st.screen === 'end') drawEnd()
         }
 
+        const cycleCourse = (dir) => {
+            const i = Math.max(0, COURSES.findIndex((c) => c.id === COURSE.id))
+            selectCourse(COURSES[(i + dir + COURSES.length) % COURSES.length].id)
+            buildTrackMeshes()
+            Object.assign(g, makeGame(0))
+            st.endT = 0
+            prevPlace = g.karts[0].place
+            camA = g.karts[0].a
+            camLift = 0
+            sparks.clear(); dust.clear()
+        }
+
         const resetTo = (screen) => {
             Object.assign(g, makeGame(0))
             st.screen = screen; screenRef.current = screen
@@ -971,6 +994,7 @@ export default function CometDriftHD() {
             if (e.code === 'Question' || e.key === '?') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (pausedRef.current) return
             if (st.screen === 'attract') {
+                if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { cycleCourse(e.code === 'ArrowRight' ? 1 : -1); return }
                 audioController.init()
                 resetTo('race')
                 return
@@ -1015,6 +1039,9 @@ export default function CometDriftHD() {
             view: () => ({ w: cssW, h: cssH, dpr }),
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
+            course: () => COURSE.id,
+            setCourse: (id) => { selectCourse(id); buildTrackMeshes(); Object.assign(g, makeGame(0)); camA = g.karts[0].a; return COURSE.id },
+            cycleCourse: (dir) => { cycleCourse(dir | 0); return COURSE.id },
             best: () => st.best,
             fx: () => {
                 const P = g.karts[0]
@@ -1057,6 +1084,7 @@ export default function CometDriftHD() {
                 const P = g.karts[0]
                 return {
                     tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), done: !!g.end,
+                    course: COURSE.id,
                     place: P.place, lap: P.lap, phase: g.phase, v: Math.round(P.v * 100) / 100,
                     driftT: P.driftT, charge: P.charge, boostT: P.boostT, spinT: P.spinT,
                     hash: stateHash(g),
