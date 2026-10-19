@@ -117,7 +117,9 @@ if (!MUTATE) {
     writeFileSync(REC_FILE, JSON.stringify(file) + '\n')
 }
 const onDisk = JSON.parse(readFileSync(REC_FILE, 'utf8'))
-ok(JSON.stringify(onDisk) === JSON.stringify(file), 'example file round-trips through disk byte-identical')
+// The build stamp is whatever commit generated the sample; everything else in
+// the file must be byte-identical to a fresh record at this commit.
+ok(JSON.stringify({ ...onDisk, build: file.build }) === JSON.stringify(file), 'example file round-trips through disk byte-identical (build stamp aside)', `disk=${onDisk.build} fresh=${file.build}`)
 ok(onDisk.slots.every((s) => s.pads.every((p) => JSON.stringify(encodePad(decodePad(p, 'stick'))) === JSON.stringify(p))), 'stored pads are canonical (decode/encode stable)')
 
 // ------------------------------------------------------------------ replay ----
