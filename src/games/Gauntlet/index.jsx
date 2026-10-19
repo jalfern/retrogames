@@ -582,8 +582,8 @@ const GauntletGame = () => {
             if (sc === 'select') {
                 if (ev.code === 'ArrowLeft') selectHero = (selectHero + 3) % 4
                 if (ev.code === 'ArrowRight') selectHero = (selectHero + 1) % 4
-                if (ev.code === 'KeyC') gs.partnerMode = gs.partnerMode === 'cpu' ? 'off' : 'cpu'
-                if (ev.code === 'KeyP') gs.partnerMode = gs.partnerMode === 'human' ? 'off' : 'human'
+                if (ev.code === 'KeyC') { gs.partnerMode = gs.partnerMode === 'cpu' ? 'off' : 'cpu'; if (!gs.partnerHuman) setSlotKind(p2slot, gs.partnerMode === 'cpu' ? 'cpu' : 'off') }
+                if (ev.code === 'KeyP') { gs.partnerMode = gs.partnerMode === 'human' ? 'off' : 'human'; if (gs.partnerMode === 'human') setSlotKind(p2slot, 'human') }
                 if (gs.partnerMode === 'human') {
                     if (ev.code === 'KeyA') selectHero2 = (selectHero2 + 3) % 4
                     if (ev.code === 'KeyD') selectHero2 = (selectHero2 + 1) % 4
@@ -704,7 +704,7 @@ const GauntletGame = () => {
                 startHero: (hk) => startPlay(hk),
                 events: () => evLog,
                 probe: () => ({
-                    tick: gs.tick, screen: screenRef.current, select: selectHero, select2: selectHero2, partnerHuman: gs.partnerHuman, score: gs.score, lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
+                    tick: gs.tick, screen: screenRef.current, select: selectHero, select2: selectHero2, partnerHuman: gs.partnerHuman, seat: p2slot.kind, score: gs.score, lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
                     hash: stateHash(gs),
                     hero: { x: gs.hero.x, y: gs.hero.y, a: gs.hero.a, hp: gs.hero.hp, deadT: gs.hero.deadT },
                     p2: gs.partner ? { x: gs.partner.x, y: gs.partner.y, a: gs.partner.a, hp: gs.partner.hp, name: gs.partner.name, down: gs.partner.down } : null,
