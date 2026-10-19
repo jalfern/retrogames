@@ -21,7 +21,7 @@
 //
 // Pure: importable in Node (slotcheck) and the browser. No React, no DOM.
 
-import { blankPad, slotPad, normalizePad } from './onePad'
+import { blankPad, slotPad, normalizePad } from './onePad.js'
 
 export const SLOT_KINDS = ['off', 'human', 'cpu', 'model', 'remote']
 
