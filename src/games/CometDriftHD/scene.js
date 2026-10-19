@@ -14,7 +14,6 @@ import { TRACK, SCENERY } from '../CometDrift/track.js'
 
 export const S = 1 / 60
 const T = TRACK
-const N = T.N
 const PERP = (a) => [-Math.sin(a), Math.cos(a)]
 
 // rockier than a sine: two detuned waves give the rim a natural profile.
@@ -33,6 +32,7 @@ function buildRibbon(sample, vScale) {
     const pos = []
     const uv = []
     const idx = []
+    const N = T.N
     for (let i = 0; i <= N; i++) {
         const s0 = sample(i % N)
         const v = T.pts[i % N].s * S * vScale
@@ -142,6 +142,7 @@ export function trackGeometryStats() {
     const out = {}
     for (const k of Object.keys(geos)) out[k] = probe(geos[k])
     let offMin = Infinity; let offMax = -Infinity; let topMin = Infinity; let topMax = -Infinity
+    const N = T.N
     for (let i = 0; i < N; i++) {
         const off = wallOffAt(i); const top = wallTopAt(i)
         offMin = Math.min(offMin, off); offMax = Math.max(offMax, off)

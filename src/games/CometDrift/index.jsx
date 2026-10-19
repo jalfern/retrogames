@@ -266,7 +266,6 @@ export default function CometDrift() {
 
         // the natural sandstone arch that marks the line — each circuit's
         // landmark grew there; the keystone carries the course name (#493)
-        let archCache = {}
         const archFor = (name) => {
             if (archCache[name]) return archCache[name]
             const pal = paletteFor(COURSE.palette)
@@ -298,7 +297,6 @@ export default function CometDrift() {
             archCache[name] = c
             return c
         }
-        const sceneryCache = {}
         const S_cactus = () => {
             if (sceneryCache.cactus) return sceneryCache.cactus
             const c = document.createElement('canvas'); c.width = 46; c.height = 90

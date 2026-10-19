@@ -349,6 +349,7 @@ export function stateHash(g) {
     const mix = (n) => { h ^= Math.round(n * 100) & 0xffffffff; h = Math.imul(h, 16777619) }
     mix(g.tick); mix(g.phase === 'race' ? 1 : 0); mix(g.rngState)
     for (const k of g.karts) { mix(k.x); mix(k.y); mix(k.a); mix(k.v); mix(k.lap); mix(k.place); mix(k.boostT); mix(k.driftT) }
+    mix(courseIndex(g.course) + 1)
     return (h >>> 0).toString(16)
 }
 
