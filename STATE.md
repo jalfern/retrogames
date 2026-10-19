@@ -1,74 +1,68 @@
-# STATE — 2026-10-18 (forge: COMET DRIFT HD dune buggy swap #477 shipped; sideways kart fixed)
+# STATE — 2026-10-18 (forge: OCEAN time-of-day + clouds sliders #483 shipped)
 
-## Shipped this session (forge lane)
-- **#477 SHIPPED (#480, squash 455cdde)** — swapped COMET DRIFT HD's hand-boxed
-  primitive kart for Jon's authored `dune_buggy.glb` (player + all rivals), and
-  fixed the sideways-kart bug.
-  - **Sideways fix (root cause)**: the sim drives along `(cos a, sin a)` in the px
-    plane → world `(X,Z)`; the buggy's nose is local **+Z**, so three-yaw must be
-    `kartYaw(a) = π/2 − a`. The HD twin shipped `−a`, pointing the nose 90° off
-    (Jon's "front is the driver's left door"). The arch already used `π/2 − a`; the
-    kart now matches. The 2D retro twin is unaffected (top-down).
-  - `loadBuggy()` dynamic-imports `GLTFLoader`, loads the GLB once (cached); the
-    primitive buggy stays as an **instant fallback** — the race never dead-loads.
-  - `decorateBuggy()` deep-clones materials per kart, recolours `Paint_Orange` per
-    rival, arms `Taillight_Red` as brake lamps, scales the 3.4 m body to 0.48×.
-  - Wheel rig `Wheel_FL/FR/RL/RR`: fronts steer about local vertical, all four
-    spin about the axle; the model bakes a 180° flip into the right-side nodes and
-    per-wheel side-signs undo it so both sides steer parallel + roll forward.
-  - Verified live in prod (WebGPU): all seven buggies square to the road.
+## Shipped this session (forge lane, worktree retrogames-ocean-fix)
+- **#456/#483 SHIPPED (squash 29ba585)** — OCEAN demo gains TIME (night/sunrise/
+  midday/sunset) and CLOUDS (clear/broken/overcast) sliders that combine with STORM.
+  - 4-keyframe sky/sea palette blended by smoothstep in `setupSkyPal`; storm
+    darkening rides the blended palette via `g_night` (night storms stay slate,
+    sunset storms dark-grey — matches old look; P_KS[3]=(1.0,0.80) reproduces
+    main's hardcoded sss factor exactly at the default pose).
+  - Night: hash-cell star field w/ twinkle, moon disc+glow, cool sea glitter
+    trail. Clouds: coverage raises fbm cloud amount, band drops to horizon at
+    full cc so low sun/moon get occluded, sun disc blurs + dims through cloud,
+    glitter ×0.1, moonlit trail ×0.08.
+  - UI rows TIME/CLOUDS + labels, `?tod=` `?cloud=` params, `,` `.` `c` `x` keys,
+    `__oceanTest.setTod/setCloud` hooks.
+  - oceancheck (now 22 checks) green; oceanfold green; full tod×cloud×storm
+    screenshot grid reviewed. Prod verified with sliders.
 
 ## Learned this session
-- **GLTF nodes can carry `matrix` instead of translation/rotation/scale** — a
-  node dump that only prints T/R/S shows nothing and looks identity. Parse the raw
-  GLB JSON chunk to see the real transforms (the wheel flips live in `matrix`).
-- **Node-safe glTF inspection without DOM**: read accessor `min`/`max` (exporters
-  fill them) instead of slicing bufferViews — a hand-rolled positional read hits
-  Node Buffer pool-offset bugs and returns 1e37 garbage. Accessor min/max is the
-  trustworthy bbox.
-- **Baked flip ⇒ sign bookkeeping**: a right-side 180° Y flip makes the same local
-  steer/roll produce mirrored world motion. Lock the sign per side numerically
-  (rotate the tire-top local +Z/+Y and check world sign) before writing it; the
-  check re-derives each wheel's sign from its matrix so a future re-export that
-  changes the flips fails the harness.
-- **WebGPURenderer renders GLB MeshStandardMaterials** fine; cloning shares
-  materials by reference, so deep-clone per instance for per-rival liveries.
+- **Fixed-threshold pixel checks lie under global brightness shifts**: the storm
+  `foam>1200` floor failed 3 ways at once — palette darkening (fix: keep main's
+  factors at the default keyframe), warm haze bleed (fix: storm horizon keeps only
+  3% ember, `g_horiz*0.03`), and — the real one — **foam phase is frame-count
+  driven**: identical builds measured 800–5000 px single-shot. Fix: envelope
+  sampling (max of 3 frames, 400 ms apart). A threshold that fails on main today
+  is stale, not a regression — calibrate against main first (`--file`).
+- **Star detection needs contrast, not color**: night star cores are blue-tinted
+  (~241,241,242 only at the brightest) while noon sky is (172,200,220) — no fixed
+  RGB window separates them. starPix now thresholds vs the region mean
+  (`thr=max(165, mean+90)`): night 594, noon 0.
+- **WGSL `select()` rejects structs** in this Chrome (silent black frame, only a
+  console warning — oceancheck captures WGSL warnings as errors now). Use parallel
+  const arrays for palette tables.
+- Cloud band uses descending-edge `smoothstep` (works in practice, already on main).
 
 ## Harness
-- cometdrifthdcheck: +GLB-contract / heading-law / wheel-sign Node section +
-  browser `modelLoaded()` swap assertion. Heading law **proven red** on a reverted
-  `−a` (27/2), green after restore. Node 29/0, full browser **44/0** (WebGL2 +
-  WebGPU, attract→race→end→restart, zero page errors). lint hd/comet/mario/fps/ai
-  + eslint + build green. CI static green → squash merged → re-detached.
-- Filed **#481** `feedback` — QA polish pass for the buggy (driver figure, blob
-  shadow size vs new footprint, distinct brake lenses, exhaust-flame alignment,
-  steering travel, accent legibility, phone WebGPU retest).
+- oceancheck: +7 checks (tod/clouds present, night darkens hard, stars night>60 &
+  day<10, overcast flattens sun 5844→113, storm-at-night combines, WGSL-warnings);
+  foam + star sampling switched to 3-frame envelope. Comment in-script records why.
+- `gh pr merge` cleanup can fail ("main already used by worktree") when another
+  lane has `main` checked out — the PR still merges server-side; verify with
+  `gh pr view --json state,mergeCommit` and delete the remote branch manually.
 
 ## Held / open (unchanged unless noted)
 - **#391** `stalled` — awaiting Jon: close as shipped vs batch 5.
 - **#375** `stalled` — Civ parked per Jon.
 - **#443** open — idle-builder QA-borrow ruling pending (QA lane owns throughput).
-- **#456** Ocean — spikes+barrier deployed; comment before commissioning more Ocean.
+- **#456** — closed by #483 this session.
 - QA backlog (#440/#426/#423/#421/#422/#409/#410/#405, #365, #384) + **#478**
-  + new **#481**.
+  + **#481**.
 - Rule 4 healthy: game code shipped this session.
 
 ## GOAL — next session
 1. Re-check `next` / `game-queue` / `building` + pushed `forge/*`. Expect nothing
-   unless Jon feeds it; QA lane owns throughput (#443 unresolved — don't borrow
-   while `QA MASTER` is live).
-2. If idle: #478 item 0 (`?renderer=webgl` alias) is a 2-line forge-appropriate
-   fix with a harness name-check — only per FORGE.md 2 borrow rules.
-3. If Jon wants it, #481 items 1 (driver figure) + 3 (brake lenses) are small
-   forge-side follow-ups to this session's model.
+   unless Jon feeds it; QA lane owns throughput (#443 unresolved).
+2. If idle: #478 item 0 (`?renderer=webgl` alias) — small forge-appropriate fix
+   with a harness name-check, per FORGE.md borrow rules.
+3. If Jon wants more Ocean: sun-moon azimuth separation, wave-spray particles in
+   storm, and horizon fog reacting to `cloud` are natural next strokes.
 
 ## Three questions for Jon
-1. **Buggy scale** — 0.48× the 3.4 m body reads kart-sized on desktop; on a phone
-   does it feel too small / too big in the chase cam? (Want your phone verdict —
-   the whole point of #477 was recognisability.)
-2. **Empty cockpit** — the authored model has a seat but no driver. Add a
-   synthesized helmet-in-accent driver (my call: yes, filed #481 item 1), or do you
-   want the buggy to stay driverless as authored?
-3. **Fallback policy** — the primitive buggy is kept as an instant fallback if the
-   GLB ever fails to load. Keep that (safety) or drop it so a missing model is a
-   loud failure instead of a silent downgrade?
+1. **qa-280 has `main` checked out** (violates your 2026-10-11 worktree rule and
+   makes `gh pr merge` throw local-cleanup errors). Should I `git checkout
+   --detach` it, or does that lane need the branch?
+2. **Clouds at sunset read warm-grey** (the palette tints cloud light by sunset
+   colour). Faithful-ish; want overcast to be more neutral slate instead?
+3. #481 items 1 (driver figure) + 3 (brake lenses) are the small pending
+   forge-side follow-ups — pick one for me next if the queue stays empty.
