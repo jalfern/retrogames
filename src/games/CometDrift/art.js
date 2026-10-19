@@ -296,13 +296,14 @@ export function buildGround(pal = PALETTE) {
 
     // worn racing grooves: twin tracks darker than the fresh asphalt
     x.strokeStyle = P.groove; x.lineWidth = 13
-    x.stroke(offsetPath(-58)); x.stroke(offsetPath(58))
+    const groove = ROAD_R - 40
+    x.stroke(offsetPath(-groove)); x.stroke(offsetPath(groove))
 
     // patch kit: deterministic darker repairs scattered along the road
     x.fillStyle = P.roadPatch
     for (let i = 0; i < TRACK.N; i += 9) {
         const q = TRACK.pts[i]
-        const lat = ((i * 53) % 180) - 90
+        const lat = ((i * 53) % (2 * (ROAD_R - 30))) - (ROAD_R - 30)
         const px = q.x + Math.cos(q.a + Math.PI / 2) * lat
         const py = q.y + Math.sin(q.a + Math.PI / 2) * lat
         x.save(); x.translate(px, py); x.rotate(q.a + (i % 3) * 0.5)
@@ -314,9 +315,10 @@ export function buildGround(pal = PALETTE) {
     for (let i = 0; i < TRACK.N; i += 60) {
         const q = TRACK.pts[i]
         const nx = Math.cos(q.a + Math.PI / 2); const ny = Math.sin(q.a + Math.PI / 2)
+        const ck = ROAD_R - 6
         x.beginPath()
-        x.moveTo(q.x - nx * 110, q.y - ny * 110)
-        x.lineTo(q.x + nx * 110, q.y + ny * 110)
+        x.moveTo(q.x - nx * ck, q.y - ny * ck)
+        x.lineTo(q.x + nx * ck, q.y + ny * ck)
         x.stroke()
     }
 
@@ -324,8 +326,9 @@ export function buildGround(pal = PALETTE) {
     const s0 = TRACK.pts[0]
     x.save(); x.translate(s0.x, s0.y); x.rotate(s0.a)
     for (let r = 0; r < 3; r++) for (let col = 0; col < 15; col++) {
+        const step = (2 * ROAD_R) / 15
         x.fillStyle = (r + col) % 2 ? P.bone : P.coal
-        x.fillRect(-24 + r * 16, -ROAD_R + col * 18.6, 16, 18.6)
+        x.fillRect(-24 + r * 16, -ROAD_R + col * step, 16, step)
     }
     x.restore()
     return x.getImageData(0, 0, TX, TY)

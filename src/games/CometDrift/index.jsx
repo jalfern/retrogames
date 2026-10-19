@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from './sim'
-import { TRACK, SCENERY, TX, TY, COURSE, COURSES, selectCourse } from './track.js'
+import { TRACK, SCENERY, TX, TY, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath } from './art.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
@@ -758,7 +758,7 @@ export default function CometDrift() {
                 return [
                     `screen ${st.screen}  phase ${g.phase}  end ${g.end}  course ${COURSE.id}`,
                     `pos ${P.place}/${g.karts.length}  lap ${P.lap}/${LAPS}  v ${P.v.toFixed(2)}`,
-                    `surf ${T.nearest(P.x, P.y, P.hint).surf}  spin ${P.spinT}  boost ${P.boostT}/tier ${P.boostTier}`,
+                    `surf ${surfaceAt(P.x, P.y, P.hint).surf}  spin ${P.spinT}  boost ${P.boostT}/tier ${P.boostTier}`,
                     `drift ${P.driftT} charge ${P.charge}  view ${W}x${H}@${u.toFixed(2)}  tick ${g.tick}`,
                 ]
             },
@@ -788,6 +788,27 @@ export default function CometDrift() {
                     frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, charge: P.charge, boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
             forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
+            // bike-harness precedent (__bikeTest.setup): place the kart, keep
+            // the rules the sim's. Seeds position/speed on a chosen track
+            // point; every consequence still comes from real physics + real keys.
+            setup: (o = {}) => {
+                const P = g.karts[0]
+                if (typeof o.i === 'number') {
+                    const p = TRACK.pts[((o.i % TRACK.N) + TRACK.N) % TRACK.N]
+                    P.x = p.x; P.y = p.y; P.a = p.a; P.idx = ((o.i % TRACK.N) + TRACK.N) % TRACK.N; P.hint = P.idx
+                }
+                if (typeof o.v === 'number') P.v = o.v
+                if (typeof o.spinT === 'number') P.spinT = o.spinT
+                if (o.go) { g.phase = 'race'; g.count = 0 }
+                camA = P.a
+                const s = surfaceAt(P.x, P.y, P.hint)
+                return { x: P.x, y: P.y, v: P.v, surf: s.surf, lat: s.lat }
+            },
+            surf: () => surfaceAt(g.karts[0].x, g.karts[0].y, g.karts[0].hint).surf,
+            pos: () => {
+                const s = surfaceAt(g.karts[0].x, g.karts[0].y, g.karts[0].hint)
+                return { surf: s.surf, lat: s.lat }
+            },
         }
 
         exposeGame({

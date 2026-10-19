@@ -17,11 +17,18 @@
 // (`retrogames:comet.course`) so HD respects it at load. No selection =
 // SUNSET GULCH, byte-identical to pre-#493 data.
 
-export const TX = 2048
-export const TY = 2048
-export const ROAD_R = 140             // half-width of asphalt
-export const KERB_R = ROAD_R + 16    // painted kerb strip
-export const WALL_R = ROAD_R + 76    // sand ends, cliff face: the wall
+// #513: the world grows to 2560² and the asphalt NARROWS (ROAD_R 140 → 80).
+// A real hairpin / Corkscrew / Bus Stop is a braking corner whose own two road
+// legs cannot fit inside the old 280 px-wide canyon — the narrower lane plus the
+// bigger world is the room they need. SUNDBANK now follows the Daytona ROAD
+// COURSE centerline and CORKSCOMB follows Laguna Seca (see reference.js); the
+// harness grades the match. SUNSET GULCH keeps its original data unchanged.
+
+export const TX = 2560
+export const TY = 2560
+export const ROAD_R = 80              // half-width of asphalt (narrowed #513)
+export const KERB_R = ROAD_R + 12    // painted kerb strip
+export const WALL_R = ROAD_R + 52    // sand ends, cliff face: the wall
 
 export const COURSE_KEY = 'retrogames:comet.course'
 
@@ -38,38 +45,36 @@ const CONTROL_GULCH = [
 ]
 
 // ---------------------------------------------------------------------------
-// SANDBANK SPEED BOWL (noon, #493). Daytona road course in spirit, re-
-// proportioned to our world, never traced (public-domain shape): the long
-// outside straight and the big banked sweeper up the right side taken flat out
-// — every arc here is 300+ px of radius, the kind of bend where a dune buggy
-// drifts wide and the exit pays the turbo down the straight. The infield is
-// the slower heart of the bowl: a wide north-west horseshoe, then the Bus
-// Stop, Daytona's braking complex flattened into a shallow wave (the checker
-// wins: radii >= 220 everywhere, drivable, still the technical section where
-// the lap is set up) that unwinds onto the straight back to the line.
+// SANDBANK SPEED BOWL (noon, #493, layout redone #513). Now traces the DAYTONA
+// ROAD COURSE centerline (reference.js → DAYTONA): the long front straight
+// bottom-right into the high-banked Turns 1-2 up the right (the big fast
+// sweepers of the bowl), the long back straight across the top, the Turns 3-4
+// horseshoe down the left, and the Bus Stop braking complex across the
+// bottom-left — three quick left-right-left direction reversals whose radii sit
+// well under the old 220 floor, so the autopilot must brake for them. Names,
+// art and the world stay ours; the harness grades the shape against the map.
 const CONTROL_SANDBANK = [
-    [1180, 1795], [1420, 1800], [1660, 1745], [1830, 1610], [1925, 1420], [1950, 1190],
-    [1880, 960], [1720, 760], [1500, 610], [1240, 530], [970, 510], [710, 560],
-    [490, 690], [350, 900], [310, 1140], [380, 1370], [520, 1555], [690, 1660],
-    [830, 1715], [975, 1752],
+    [1080, 1872], [1320, 1848], [1440, 1764], [1596, 1764], [1716, 1848], [1896, 1800],
+    [2088, 1644], [2232, 1416], [2268, 1128], [2184, 852], [2004, 660], [1764, 564],
+    [1464, 540], [1176, 588], [936, 708], [744, 912], [624, 1176], [612, 1440],
+    [708, 1668], [876, 1812],
 ]
 
 // ---------------------------------------------------------------------------
-// CORKSCOMB DUNES (dawn, #493 course 2). Laguna Seca in spirit, never traced
-// (CC BY-SA reference consulted for character only): the Rainey-style sweeper
-// up the east side taken flat out, the ridge straight beneath the north dunes,
-// and the Corkscomb — the double-S over the dune crest — rendered at our flat
-// world's drivable floor as a crest/shoulder complex where the line's rate
-// alternates against the ridge (the issue's law: bend the shape, never the
-// checker; Sandbank's bus stop set the precedent). The west horseshoe is the
-// switchback, spitting onto the dune descent home. Every arc proven >= 220 px
-// by cometcheck; minR 296.
+// CORKSCOMB DUNES (dawn, #493 course 2, layout redone #513). Now traces LAGUNA
+// SECA (reference.js): the Rahal back straight up the right, the Andretti
+// hairpin at the top, the Corkscomb — the left-right double-apex that alternates
+// curvature sign over the dune crest — cutting down the middle, the fast Snake
+// descent down the left, and the keyhole onto the start straight home. The
+// Corkscomb and hairpin are genuine braking corners now (radii well under 220).
+// Shape is the arcade re-proportion of the CC BY-SA Laguna Seca map (credited in
+// the README); names, art and the world stay ours.
 const CONTROL_CORKSCOMB = [
-    [784, 1751], [950, 1751], [1082, 1751], [1220, 1749], [1363, 1752], [1593, 1750],
-    [1752, 1681], [1860, 1539], [1894, 1353], [1876, 1129], [1870, 972], [1846, 824],
-    [1752, 634], [1620, 523], [1467, 471], [1309, 451], [1111, 451], [905, 522],
-    [751, 576], [617, 674], [482, 821], [402, 999], [380, 1143], [381, 1373],
-    [451, 1561], [603, 1694],
+    [1080, 2040], [1260, 1848], [1464, 1764], [1644, 1812], [1764, 1932], [1848, 1973],
+    [1949, 1949], [2052, 1824], [2141, 1632], [2189, 1404], [2177, 1140], [2098, 888],
+    [1958, 691], [1771, 576], [1560, 557], [1368, 629], [1205, 773], [1085, 869],
+    [922, 850], [758, 989], [629, 1176], [600, 1344], [566, 1584], [614, 1814],
+    [754, 1982], [917, 2054],
 ]
 
 export const COURSES = [
