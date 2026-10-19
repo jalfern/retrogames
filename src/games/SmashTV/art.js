@@ -155,20 +155,27 @@ function civ(f, tint) {
 }
 
 // the contestant: white camera visor, sponsor jersey, pale boots — a 4-frame
-// run cycle, boots the lowest layer so the gun layer passes over the feet
-function player(f) {
+// run cycle, boots the lowest layer so the gun layer passes over the feet.
+// #496: the palette is a parameter so seat 2 reads as its own contestant at
+// a glance (green jersey, amber visor lights) without a second sprite sheet.
+export const PLAYER_PAL = [
+    { visor: '#e8eef8', light: '#ff4f4f', jersey: '#e8eef8', trim: '#2b3a5c', stripe: '#d43a3a', limb: '#cfd8ff' },
+    { visor: '#e8f2e8', light: '#ffd23f', jersey: '#d9f2dc', trim: '#20422c', stripe: '#3fd45a', limb: '#c9e8cf' },
+]
+
+function player(f, pal = PLAYER_PAL[0]) {
     const [c, g] = sheet(12, 16)
-    px(g, 3, 1, 6, 5, '#e8eef8')
+    px(g, 3, 1, 6, 5, pal.visor)
     px(g, 4, 3, 4, 2, '#10141f')
-    px(g, 4, 3, 1, 1, '#ff4f4f'); px(g, 7, 3, 1, 1, '#ff4f4f')
-    px(g, 3, 6, 6, 6, '#e8eef8')
-    px(g, 3, 6, 6, 1, '#2b3a5c'); px(g, 3, 6, 1, 6, '#2b3a5c'); px(g, 8, 6, 1, 6, '#2b3a5c')
-    px(g, 4, 8, 4, 1, '#d43a3a')
-    px(g, 1, 7, 2, 3, '#cfd8ff'); px(g, 9, 7, 2, 3, '#cfd8ff')
+    px(g, 4, 3, 1, 1, pal.light); px(g, 7, 3, 1, 1, pal.light)
+    px(g, 3, 6, 6, 6, pal.jersey)
+    px(g, 3, 6, 6, 1, pal.trim); px(g, 3, 6, 1, 6, pal.trim); px(g, 8, 6, 1, 6, pal.trim)
+    px(g, 4, 8, 4, 1, pal.stripe)
+    px(g, 1, 7, 2, 3, pal.limb); px(g, 9, 7, 2, 3, pal.limb)
     const LEGS = [[[0, 1], [1, -1]], [[0, 0], [0, 0]], [[1, -1], [0, 1]], [[1, 0], [0, 0]]]
     const [[lx, ly], [rx, ry]] = LEGS[f % PLAYER_FRAMES]
-    px(g, 3 + lx, 12 + ly, 2, 3, '#cfd8ff')
-    px(g, 7 + rx, 12 + ry, 2, 3, '#cfd8ff')
+    px(g, 3 + lx, 12 + ly, 2, 3, pal.limb)
+    px(g, 7 + rx, 12 + ry, 2, 3, pal.limb)
     return c
 }
 
@@ -209,7 +216,10 @@ export function buildSprites() {
         SP[`boss${f}`] = boss(f)
         if (f < 2) SP[`crate${f}`] = crate('spread', f)
     }
-    for (const f of [0, 1, 2, 3]) SP[`player${f}`] = player(f)
+    for (const f of [0, 1, 2, 3]) {
+        SP[`player${f}`] = player(f, PLAYER_PAL[0])
+        SP[`player2_${f}`] = player(f, PLAYER_PAL[1])
+    }
     const TINTS = [
         { skin: '#e8b04f', shirt: '#d43a3a' },
         { skin: '#f0c8a0', shirt: '#3a7dd4' },

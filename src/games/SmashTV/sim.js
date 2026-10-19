@@ -105,16 +105,42 @@ function los(gs, x0, y0, x1, y1) {
 export { los }
 
 // ---------------------------------------------------------------- setup ----
+// A seat: position + the player's own bank. score / lives / upTo / weapon ride
+// on the seat, so 1UP and 2UP are honest (#496). For seat 1 the game object
+// keeps score / lives / upTo / weapon as ACCESSORS onto the seat, which is how
+// every legacy line (hash, ledger, HUD, the whole single-player sim) stays
+// byte-identical while both seats share one shape.
+function makeSeat(x, y, invuln, seed) {
+    return {
+        x, y, aim: [0, -1], fireT: 0, deadT: 0, invuln, walk: 0,
+        score: 0, lives: CFG.lives, upTo: CFG.extraLife, weapon: 'twin', out: false, seed,
+    }
+}
+
 export function makeGame(seed = 0, opts = {}) {
+    const seats = Math.max(1, Math.min(2, opts.players | 0 || 1))
+    const start = { x: cx(START.c), y: cy(START.r) }
     const gs = {
         seed, rng: { v: (seed * 97 + 13) | 0 }, slack: !!opts.slack,
         tick: 0, room: 0, lives: CFG.lives, score: 0, end: null,
         events: [], _nextId: 1, upTo: CFG.extraLife,
-        player: null, enemies: [], bullets: [], ebullets: [], crates: [],
+        players: [], player: null, enemies: [], bullets: [], ebullets: [], crates: [],
         items: [], civilians: [], grenades: [],
         energy: CFG.maxEnergy, weapon: 'twin',
         cleared: false, spawnT: 0, bonusT: 0, combo: 0, roomsCleared: 0,
         bossDead: false, bossDeath: null, alertCd: 0, walls: null, roomData: null,
+    }
+    gs.players.push(makeSeat(start.x, start.y, CFG.invulnRoom, seed))
+    if (seats > 1) gs.players.push(makeSeat(start.x, start.y, CFG.invulnRoom, (seed ^ 0x5f3a) | 0))
+    gs.player = gs.players[0]
+    // seat 1's bank IS the game's bank: one property, two names, one value
+    for (const k of ['score', 'lives', 'upTo', 'weapon']) {
+        delete gs[k]
+        Object.defineProperty(gs, k, {
+            get() { return gs.players[0][k] },
+            set(v) { gs.players[0][k] = v },
+            enumerable: true, configurable: true,
+        })
     }
     loadRoom(gs, 0)
     return gs
@@ -141,9 +167,19 @@ function loadRoom(gs, idx) {
     const energyCells = gs.slack ? 0 : room.energyCells
     if (gs.slack && gs.crates.length) gs.crates.shift()
     if (energyCells) gs.items.push({ id: gs._nextId++, t: 'energy', x: cx(3), y: cy(2) })
-    gs.player = {
-        x: cx(START.c), y: cy(START.r), aim: [0, -1], fireT: 0, deadT: 0,
-        invuln: gs.tick === 0 ? CFG.invulnRoom : CFG.invulnRespawn, walk: 0,
+    const inv = gs.tick === 0 ? CFG.invulnRoom : CFG.invulnRespawn
+    const p1 = gs.players[0]
+    p1.x = cx(START.c); p1.y = cy(START.r)
+    p1.aim = [0, -1]; p1.fireT = 0; p1.deadT = 0; p1.invuln = inv; p1.walk = 0
+    gs.player = p1
+    if (gs.players.length > 1) {
+        const p2 = gs.players[1]
+        // partner takes a knee beside the first hero — whichever side is road
+        let px = p1.x - 14
+        if (blockedPx(gs, px, p1.y, CFG.playerR)) px = p1.x + 14
+        if (blockedPx(gs, px, p1.y, CFG.playerR)) px = p1.x
+        p2.x = px; p2.y = p1.y
+        p2.aim = [0, -1]; p2.fireT = 0; p2.deadT = 0; p2.invuln = inv; p2.walk = 0
     }
     if (room.bonus) {
         for (let i = 0; i < room.civilians; i++) {
@@ -155,60 +191,78 @@ function loadRoom(gs, idx) {
     gs.events.push({ type: 'room', room: idx, bonus: room.bonus, boss: room.boss })
 }
 
-function addScore(gs, pts, meta) {
-    gs.score += pts
-    if (gs.score >= gs.upTo) { gs.lives++; gs.upTo += CFG.extraLife; gs.events.push({ type: '1up' }) }
-    if (meta) gs.events.push({ type: 'score', pts, ...meta })
-    else gs.events.push({ type: 'score', pts })
+function addScore(gs, pts, meta, pi = 0) {
+    const seat = gs.players[pi] || gs.players[0]
+    seat.score += pts
+    if (seat.score >= seat.upTo) { seat.lives++; seat.upTo += CFG.extraLife; gs.events.push({ type: '1up', pi }) }
+    if (meta) gs.events.push({ type: 'score', pts, pi, ...meta })
+    else gs.events.push({ type: 'score', pts, pi })
+    // room bonuses belong to the show, not a seat: in co-op every live seat pays
+    // its share into its own bank so both HUDs climb (single seat = legacy line)
 }
 
 // ---------------------------------------------------------------- death ----
-function killPlayer(gs, how) {
-    const p = gs.player
-    if (p.deadT > 0 || gs.end || p.invuln > 0) return
+function killPlayer(gs, p, how, pi = 0) {
+    if (p.deadT > 0 || p.out || gs.end || p.invuln > 0) return
     p.deadT = CFG.deadFreeze
-    gs.lives--
-    gs.events.push({ type: 'death', how, lives: gs.lives })
+    p.lives--
+    gs.events.push({ type: 'death', how, lives: p.lives, pi })
+}
+
+// the seats still on the floor this tick (deadT counting down or spent)
+const liveSeats = (gs) => gs.players.filter((q) => q.deadT === 0 && !q.out)
+
+// who the studio cameras are after: the nearest living seat to (x, y), seat 1
+// breaking ties; a seat counting down its death freeze is already below.
+// Single-player: nearest of [p1] === p1, exactly the legacy read.
+function target(gs, x, y) {
+    const live = liveSeats(gs)
+    if (!live.length) return gs.players[0]
+    let best = live[0], bd = dist(x, y, best.x, best.y)
+    for (let i = 1; i < live.length; i++) {
+        const d = dist(x, y, live[i].x, live[i].y)
+        if (d < bd) { bd = d; best = live[i] }
+    }
+    return best
 }
 
 // ---------------------------------------------------------------- firing ----
 const LATERAL = 3
 
-function firePlayer(gs) {
-    const p = gs.player
-    const w = WEAPONS[gs.weapon]
+function firePlayer(gs, p, pi = 0) {
+    const w = WEAPONS[p.weapon]
     const [fx, fy] = p.aim
     if (w.energy > 0 && gs.energy < w.energy) return
     gs.energy -= w.energy
     p.fireT = w.interval
     // perpendicular offset for twin barrels
     const ox = -fy * LATERAL, oy = fx * LATERAL
-    if (gs.weapon === 'spread') {
+    if (p.weapon === 'spread') {
         const a = Math.atan2(fy, fx)
         for (const d of [-0.38, 0, 0.38]) {
-            gs.bullets.push({ id: gs._nextId++, x: p.x, y: p.y, dx: Math.cos(a + d) * w.speed, dy: Math.sin(a + d) * w.speed, pierce: w.pierce, dmg: w.dmg, kind: gs.weapon })
+            gs.bullets.push({ id: gs._nextId++, by: pi, x: p.x, y: p.y, dx: Math.cos(a + d) * w.speed, dy: Math.sin(a + d) * w.speed, pierce: w.pierce, dmg: w.dmg, kind: p.weapon })
         }
     } else {
-        gs.bullets.push({ id: gs._nextId++, x: p.x + ox, y: p.y + oy, dx: fx * w.speed, dy: fy * w.speed, pierce: w.pierce, dmg: w.dmg, kind: gs.weapon })
-        gs.bullets.push({ id: gs._nextId++, x: p.x - ox, y: p.y - oy, dx: fx * w.speed, dy: fy * w.speed, pierce: w.pierce, dmg: w.dmg, kind: gs.weapon })
+        gs.bullets.push({ id: gs._nextId++, by: pi, x: p.x + ox, y: p.y + oy, dx: fx * w.speed, dy: fy * w.speed, pierce: w.pierce, dmg: w.dmg, kind: p.weapon })
+        gs.bullets.push({ id: gs._nextId++, by: pi, x: p.x - ox, y: p.y - oy, dx: fx * w.speed, dy: fy * w.speed, pierce: w.pierce, dmg: w.dmg, kind: p.weapon })
     }
-    gs.events.push({ type: 'shoot', weapon: gs.weapon })
+    gs.events.push({ type: 'shoot', weapon: p.weapon, pi, x: p.x, y: p.y })
 }
 
-function firebomb(gs) {
-    if (gs.energy < CFG.firebombCost) { gs.events.push({ type: 'bombFail' }); return }
+function firebomb(gs, pi = 0) {
+    if (gs.energy < CFG.firebombCost) { gs.events.push({ type: 'bombFail', pi }); return }
     gs.energy -= CFG.firebombCost
     let killed = 0
     for (const e of gs.enemies) {
         if (e.kind === 'boss') continue
-        addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind })
-        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, bomb: true, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined })
+        addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind }, pi)
+        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, bomb: true, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined, pi })
         killed++
     }
     gs.enemies = gs.enemies.filter((e) => e.kind === 'boss')
     gs.ebullets = []
     gs.grenades = []
-    gs.events.push({ type: 'bomb', killed })
+    gs.events.push({ type: 'bomb', killed, pi })
 }
 
 // ---------------------------------------------------------------- enemies ----
@@ -226,10 +280,10 @@ function makeEnemy(gs, kind, x, y) {
     return { id: gs._nextId++, kind, x, y, hp: ENEMIES[kind].hp, cd: ENEMIES[kind].cd ? Math.floor(ENEMIES[kind].cd / 2) : 0, wanderT: 0, wdx: 0, wdy: 0, hitT: 0, dir: 1, walk: 0, moving: false, chg: 0, aim: [0, 0] }
 }
 
-// the tracked aim: unit vector from the enemy to the player (sees through
-// walls once a charge has started — the cameras are everywhere)
+// the tracked aim: unit vector from the enemy to its chosen contestant (sees
+// through walls once a charge has started — the cameras are everywhere)
 function trackAim(gs, e) {
-    const p = gs.player
+    const p = target(gs, e.x, e.y)
     const d = dist(e.x, e.y, p.x, p.y) || 1
     e.aim = [(p.x - e.x) / d, (p.y - e.y) / d]
 }
@@ -242,7 +296,7 @@ function beginCharge(gs, e) {
 }
 
 function moveEnemy(gs, e, sp) {
-    const p = gs.player
+    const p = target(gs, e.x, e.y)
     const [mx, my] = q8(p.x - e.x, p.y - e.y)
     const k = sp * (mx && my ? 0.7071 : 1)
     const nx = e.x + mx * k, ny = e.y + my * k
@@ -260,9 +314,10 @@ function enemyShoot(gs, e, dx, dy, speed, kind, dmg) {
 }
 
 function updateEnemies(gs) {
-    const p = gs.player
     for (const e of gs.enemies) {
         const def = ENEMIES[e.kind]
+        // this gun's chosen contestant: the nearest seat still on the floor
+        const p = target(gs, e.x, e.y)
         if (e.hitT > 0) e.hitT--
         if (e.cd > 0) e.cd--
         e.moving = false
@@ -331,20 +386,27 @@ function updateEnemies(gs) {
                 gs.events.push({ type: 'spawn', kind, x: e2.x, y: e2.y, bossAdd: true })
             }
         }
-        // contact kills (invuln respected inside killPlayer)
-        if (p.deadT === 0 && dist(e.x, e.y, p.x, p.y) < CFG.contactR) killPlayer(gs, `touch-${e.kind}`)
+        // contact kills either seat (invuln respected inside killPlayer)
+        for (let i = 0; i < gs.players.length; i++) {
+            const q = gs.players[i]
+            if (q.deadT === 0 && dist(e.x, e.y, q.x, q.y) < CFG.contactR) killPlayer(gs, q, `touch-${e.kind}`, i)
+        }
     }
 }
 
 // the single-enemy-close warning: one alert event per ALERT_CD ticks while the
-// nearest gun sits inside ALERT_RADIUS — the player's own ears, not the lights
+// nearest gun sits inside ALERT_RADIUS of any hero on the floor — the players'
+// own ears, not the lights
 function alertClose(gs) {
-    const p = gs.player
     gs.alertCd = Math.max(0, gs.alertCd - 1)
-    let best = Infinity, bx = p.x, by = p.y
+    const seats = liveSeats(gs)
+    if (!seats.length) return
+    let best = Infinity, bx = seats[0].x, by = seats[0].y
     for (const e of gs.enemies) {
-        const d = dist(e.x, e.y, p.x, p.y)
-        if (d < best) { best = d; bx = e.x; by = e.y }
+        for (const q of seats) {
+            const d = dist(e.x, e.y, q.x, q.y)
+            if (d < best) { best = d; bx = e.x; by = e.y }
+        }
     }
     if (best < ALERT_RADIUS && gs.alertCd === 0) {
         gs.alertCd = ALERT_CD
@@ -353,21 +415,21 @@ function alertClose(gs) {
 }
 
 // ---------------------------------------------------------------- shots ----
-function damageEnemy(gs, e, dmg, via) {
+function damageEnemy(gs, e, dmg, via, pi = 0) {
     e.hp -= dmg
     e.hitT = 4
     gs.events.push({ type: 'enemyHit', id: e.id, kind: e.kind, via })
     if (e.hp <= 0) {
-        addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind })
-        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined })
+        addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind }, pi)
+        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined, pi })
         gs.enemies = gs.enemies.filter((x) => x.id !== e.id)
         if (e.kind === 'boss') { gs.bossDead = true; gs.bossDeath = { x: e.x, y: e.y, t: BOSS_DEATH_T }; gs.events.push({ type: 'bossKill' }) }
     }
 }
 
 function updateBullets(gs) {
-    const p = gs.player
     for (const b of gs.bullets) {
+        const owner = b.by || 0
         b.x += b.dx; b.y += b.dy
         if (b.x < 4 || b.x > CW - 4 || b.y < HUD_H + 4 || b.y > CH - 4) { b.done = true; continue }
         const [c, r] = cellOf(b.x, b.y)
@@ -379,9 +441,9 @@ function updateBullets(gs) {
                 k.hp -= b.dmg; k.shake = 5
                 hitCrate = true
                 if (k.hp <= 0) {
-                    addScore(gs, 50, { kind: 'crate' })
+                    addScore(gs, 50, { kind: 'crate' }, owner)
                     gs.items.push({ id: gs._nextId++, t: 'weapon', w: k.weapon, x: k.x, y: k.y })
-                    gs.events.push({ type: 'crateBreak', x: k.x, y: k.y, weapon: k.weapon })
+                    gs.events.push({ type: 'crateBreak', x: k.x, y: k.y, weapon: k.weapon, pi: owner })
                 }
                 break
             }
@@ -389,7 +451,7 @@ function updateBullets(gs) {
         if (hitCrate && !b.pierce) { b.done = true; continue }
         for (const e of gs.enemies) {
             if (dist(b.x, b.y, e.x, e.y) < (e.kind === 'boss' ? 14 : 7)) {
-                damageEnemy(gs, e, b.dmg, b.kind)
+                damageEnemy(gs, e, b.dmg, b.kind, owner)
                 if (!b.pierce) b.done = true
                 break
             }
@@ -401,9 +463,13 @@ function updateBullets(gs) {
         b.x += b.dx; b.y += b.dy
         const [c, r] = cellOf(b.x, b.y)
         if (b.x < 4 || b.x > CW - 4 || b.y < HUD_H + 4 || b.y > CH - 4 || gs.walls.has(`${c},${r}`)) { b.done = true; continue }
-        if (p.deadT === 0 && dist(b.x, b.y, p.x, p.y) < CFG.bulletR + CFG.playerR) {
-            b.done = true
-            killPlayer(gs, `shot-${b.kind}`)
+        for (let i = 0; i < gs.players.length; i++) {
+            const q = gs.players[i]
+            if (q.deadT === 0 && dist(b.x, b.y, q.x, q.y) < CFG.bulletR + CFG.playerR) {
+                b.done = true
+                killPlayer(gs, q, `shot-${b.kind}`, i)
+                break
+            }
         }
     }
     gs.ebullets = gs.ebullets.filter((b) => !b.done)
@@ -414,7 +480,10 @@ function updateBullets(gs) {
         if (g.t <= 0 || gs.walls.has(`${c},${r}`)) {
             g.done = true
             gs.events.push({ type: 'blast', x: g.x, y: g.y, r: CFG.grenadeR })
-            if (p.deadT === 0 && dist(g.x, g.y, p.x, p.y) < CFG.grenadeR + CFG.playerR) killPlayer(gs, 'grenade')
+            for (let i = 0; i < gs.players.length; i++) {
+                const q = gs.players[i]
+                if (q.deadT === 0 && dist(g.x, g.y, q.x, q.y) < CFG.grenadeR + CFG.playerR) { killPlayer(gs, q, 'grenade', i); break }
+            }
         }
     }
     gs.grenades = gs.grenades.filter((g) => !g.done)
@@ -422,8 +491,8 @@ function updateBullets(gs) {
 
 // ---------------------------------------------------------------- civilians ----
 function updateCivilians(gs) {
-    const p = gs.player
     for (const v of gs.civilians) {
+        const p = target(gs, v.x, v.y)
         const d = dist(v.x, v.y, p.x, p.y)
         if (d < 52) {
             const [qx, qy] = q8(v.x - p.x, v.y - p.y)
@@ -468,8 +537,8 @@ function shootCivilians(gs) {
                 v.done = true
                 gs.combo++
                 const pts = 100 + (gs.combo - 1) * 50
-                addScore(gs, pts, { kind: 'civilian', combo: gs.combo })
-                gs.events.push({ type: 'civKill', id: v.id, x: v.x, y: v.y, pts, combo: gs.combo })
+                addScore(gs, pts, { kind: 'civilian', combo: gs.combo }, b.by || 0)
+                gs.events.push({ type: 'civKill', id: v.id, x: v.x, y: v.y, pts, combo: gs.combo, pi: b.by || 0 })
                 if (!b.pierce) b.done = true
                 break
             }
@@ -480,24 +549,37 @@ function shootCivilians(gs) {
 
 // ---------------------------------------------------------------- items ----
 function updateItems(gs) {
-    const p = gs.player
     for (const it of gs.items) {
-        if (it.taken || dist(it.x, it.y, p.x, p.y) > 10) continue
-        it.taken = true
-        if (it.t === 'weapon') { gs.weapon = it.w; gs.events.push({ type: 'pickup', t: 'weapon', w: it.w }) }
-        else if (it.t === 'energy') { gs.energy = CFG.maxEnergy; gs.events.push({ type: 'pickup', t: 'energy' }) }
+        if (it.taken) continue
+        for (let i = 0; i < gs.players.length; i++) {
+            const q = gs.players[i]
+            if (q.deadT > 0 || q.out || dist(it.x, it.y, q.x, q.y) > 10) continue
+            it.taken = true
+            if (it.t === 'weapon') { q.weapon = it.w; gs.events.push({ type: 'pickup', t: 'weapon', w: it.w, pi: i }) }
+            else if (it.t === 'energy') { gs.energy = CFG.maxEnergy; gs.events.push({ type: 'pickup', t: 'energy', pi: i }) }
+            break
+        }
     }
     gs.items = gs.items.filter((it) => !it.taken)
 }
 
 // ---------------------------------------------------------------- rooms ----
+// the room bonus is the show's money: every seat still in the contest banks it
+// (one seat = the legacy single payment)
+function payAll(gs, pts, meta) {
+    for (let i = 0; i < gs.players.length; i++) {
+        if (gs.players[i].out) continue
+        addScore(gs, pts, meta, i)
+    }
+}
+
 function checkClear(gs) {
     if (gs.cleared) return
     const room = gs.roomData
     if (room.bonus) {
         if (gs.bonusT <= 0) {
             gs.cleared = true
-            addScore(gs, CFG.roomBonus, { kind: 'roomBonus', bonus: true })
+            payAll(gs, CFG.roomBonus, { kind: 'roomBonus', bonus: true })
             gs.events.push({ type: 'clear', room: gs.room, bonus: true })
         }
         return
@@ -505,35 +587,39 @@ function checkClear(gs) {
     if (room.boss) {
         if (gs.bossDead && (!gs.bossDeath || gs.bossDeath.t <= 0) && gs.enemies.length === 0 && !room.spawns.length) {
             gs.end = 'win'
-            addScore(gs, CFG.roomBonus * 3, { kind: 'finalBonus' })
+            payAll(gs, CFG.roomBonus * 3, { kind: 'finalBonus' })
             gs.events.push({ type: 'win' })
         }
         return
     }
     if (gs.spawnT <= 0 && !room.spawns.length && gs.enemies.length === 0) {
         gs.cleared = true
-        addScore(gs, CFG.roomBonus, { kind: 'roomBonus' })
+        payAll(gs, CFG.roomBonus, { kind: 'roomBonus' })
         gs.events.push({ type: 'clear', room: gs.room })
     }
 }
 
 function checkExit(gs) {
     if (!gs.cleared || !EXITS.length) return
-    const p = gs.player
-    for (const ex of EXITS) {
-        const x = cx(ex.c), y = cy(ex.r)
-        if (Math.abs(p.x - x) < 7 && Math.abs(p.y - y) < 7) {
-            gs.roomsCleared++
-            if (gs.room + 1 >= TOTAL_ROOMS) return
-            gs.events.push({ type: 'advance', room: gs.room })
-            loadRoom(gs, gs.room + 1)
-            return
+    // any hero walking an open door takes the whole cast to the next room
+    for (let i = 0; i < gs.players.length; i++) {
+        const p = gs.players[i]
+        if (p.deadT > 0 || p.out) continue
+        for (const ex of EXITS) {
+            const x = cx(ex.c), y = cy(ex.r)
+            if (Math.abs(p.x - x) < 7 && Math.abs(p.y - y) < 7) {
+                gs.roomsCleared++
+                if (gs.room + 1 >= TOTAL_ROOMS) return
+                gs.events.push({ type: 'advance', room: gs.room })
+                loadRoom(gs, gs.room + 1)
+                return
+            }
         }
     }
 }
 
 // ---------------------------------------------------------------- step ----
-export function step(gs, inp = {}) {
+export function step(gs, inp = {}, inp2 = null) {
     gs.tick++
     if (gs.end) return gs
     // THE ANNOUNCER's death sequence: the arena holds its breath as he
@@ -541,38 +627,68 @@ export function step(gs, inp = {}) {
     // out and the world (and the WIN check) resumes.
     if (gs.bossDeath && gs.bossDeath.t > 0) { gs.bossDeath.t--; return gs }
     const p = gs.player
+    const co = gs.players.length > 1
 
-    if (p.deadT > 0) {
-        p.deadT--
-        if (p.deadT === 0) {
-            if (gs.lives <= 0) { gs.end = 'over'; gs.events.push({ type: 'over' }); return gs }
-            p.x = cx(START.c); p.y = cy(START.r)
-            p.invuln = CFG.invulnRespawn
-            gs.energy = CFG.maxEnergy
-            gs.events.push({ type: 'respawn' })
+    if (!co) {
+        // ---- single seat: the legacy death / respawn / game-over ladder ----
+        if (p.deadT > 0) {
+            p.deadT--
+            if (p.deadT === 0) {
+                if (p.lives <= 0) { gs.end = 'over'; gs.events.push({ type: 'over' }); return gs }
+                p.x = cx(START.c); p.y = cy(START.r)
+                p.invuln = CFG.invulnRespawn
+                gs.energy = CFG.maxEnergy
+                gs.events.push({ type: 'respawn' })
+            }
+            return gs
         }
-        return gs
+    } else {
+        // ---- co-op ladder: each seat its own freeze; the show only ends when
+        // BOTH seats spend their last life, and a shared pause falls only while
+        // every seat is down together ----
+        const seats = gs.players
+        for (let i = 0; i < seats.length; i++) {
+            const q = seats[i]
+            if (q.out || q.deadT === 0) continue
+            q.deadT--
+            if (q.deadT === 0) {
+                if (q.lives <= 0) q.out = true
+                else {
+                    q.x = cx(START.c); q.y = cy(START.r)
+                    q.invuln = CFG.invulnRespawn
+                    if (i === 0) gs.energy = CFG.maxEnergy
+                    gs.events.push({ type: 'respawn', pi: i })
+                }
+            }
+        }
+        if (seats.every((q) => q.out)) { gs.end = 'over'; gs.events.push({ type: 'over', pi: 0 }); return gs }
+        if (seats.every((q) => q.out || q.deadT > 0)) return gs
     }
 
-    if (p.invuln > 0) p.invuln--
     const room = gs.roomData
-
-    // twin-stick input: movement + independent 8-way fire
-    const [mx, my] = q8(Math.sign(inp.mx || 0), Math.sign(inp.my || 0))
-    if (mx || my) {
-        const k = CFG.playerSpeed * (mx && my ? 0.7071 : 1)
-        const nx = p.x + mx * k, ny = p.y + my * k
-        if (!blockedPx(gs, nx, ny, CFG.playerR)) { p.x = nx; p.y = ny }
-        else if (!blockedPx(gs, nx, p.y, CFG.playerR)) p.x = nx
-        else if (!blockedPx(gs, p.x, ny, CFG.playerR)) p.y = ny
-        p.walk += k
-        p.aim = [mx, my]
+    const moves = [inp, inp2 || {}]
+    // twin-stick input per seat: movement + independent 8-way fire
+    for (let i = 0; i < gs.players.length; i++) {
+        const q = gs.players[i]
+        if (q.out || q.deadT > 0) continue
+        const mi = moves[i] || {}
+        if (q.invuln > 0) q.invuln--
+        const [mx, my] = q8(Math.sign(mi.mx || 0), Math.sign(mi.my || 0))
+        if (mx || my) {
+            const k = CFG.playerSpeed * (mx && my ? 0.7071 : 1)
+            const nx = q.x + mx * k, ny = q.y + my * k
+            if (!blockedPx(gs, nx, ny, CFG.playerR)) { q.x = nx; q.y = ny }
+            else if (!blockedPx(gs, nx, q.y, CFG.playerR)) q.x = nx
+            else if (!blockedPx(gs, q.x, ny, CFG.playerR)) q.y = ny
+            q.walk += k
+            q.aim = [mx, my]
+        }
+        const [fx, fy] = q8(Math.sign(mi.fx ?? mi.mx ?? 0), Math.sign(mi.fy ?? mi.my ?? 0))
+        if (fx || fy) q.aim = [fx, fy]
+        if (q.fireT > 0) q.fireT--
+        if (mi.fire && q.fireT <= 0) firePlayer(gs, q, i)
+        if (mi.bomb) firebomb(gs, i)
     }
-    let [fx, fy] = q8(Math.sign(inp.fx ?? inp.mx ?? 0), Math.sign(inp.fy ?? inp.my ?? 0))
-    if (fx || fy) p.aim = [fx, fy]
-    if (p.fireT > 0) p.fireT--
-    if (inp.fire && p.fireT <= 0) firePlayer(gs)
-    if (inp.bomb) firebomb(gs)
 
     if (room.bonus) {
         // the crowd murmur bed: only while the bonus clock runs, one burst
@@ -586,7 +702,8 @@ export function step(gs, inp = {}) {
         updateEnemies(gs)
         alertClose(gs)
     }
-    if (gs.end || p.deadT > 0) return gs
+    if (gs.end) return gs
+    if (!co && gs.players[0].deadT > 0) return gs
     updateBullets(gs)
     updateItems(gs)
     checkClear(gs)
@@ -603,7 +720,7 @@ function fnv(str) {
 
 export function stateHash(gs) {
     const p = gs.player
-    return fnv([
+    const parts = [
         gs.tick, gs.room, gs.lives, gs.score, gs.energy, gs.weapon, gs.cleared ? 1 : 0,
         gs.end || '-', p.x.toFixed(2), p.y.toFixed(2), p.aim.join(','), p.deadT, p.invuln,
         ...gs.enemies.map((e) => `${e.id}${e.kind}${e.x.toFixed(2)},${e.y.toFixed(2)}h${e.hp}`),
@@ -613,5 +730,13 @@ export function stateHash(gs) {
         ...gs.items.map((i) => `${i.id}${i.t}${i.taken ? 'T' : ''}`),
         ...gs.civilians.map((v) => `${v.id}${v.x.toFixed(2)},${v.y.toFixed(2)}`),
         ...gs.grenades.map((g) => `${g.id}${g.t}`),
-    ].join('|'))
+    ]
+    // co-op (#496): the partner's own bank and body enter the digest; a seat 2
+    // that never exists adds nothing, so every single-player hash is untouched.
+    if (gs.players.length > 1) {
+        const q = gs.players[1]
+        parts.push('P2', q.score, q.lives, q.weapon, q.out ? 'O' : '',
+            q.x.toFixed(2), q.y.toFixed(2), q.aim.join(','), q.deadT, q.invuln)
+    }
+    return fnv(parts.join('|'))
 }

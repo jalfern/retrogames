@@ -16,6 +16,9 @@
 //   { up, down, left, right,       // digital directions (booleans)
 //     a, b, start,                 // action buttons (booleans)
 //     x, y,                        // analog vector, -1..1 (0 at rest)
+//     ax, ay,                      // AIM analog vector, -1..1 (twin-stick aim, #496)
+//     aimUp, aimDown, aimLeft,     // digital aim directions: explicit OR ax/ay
+//     aimRight,                        quantized through the SAME DIR_DEAD
 //     pointer: { x, y, down, alt } }  // x / y normalized 0..1 to the canvas
 //
 // Pure: importable in Node (vpadcheck) and the browser (VirtualControls,
@@ -29,7 +32,10 @@ export const METHODS = ['dpad', 'stick', 'pointer']
 export const DIR_FIELDS = ['up', 'down', 'left', 'right']
 
 // The one-pad's top-level field names (the meta surface a game reports it reads).
-export const PAD_FIELDS = ['up', 'down', 'left', 'right', 'a', 'b', 'start', 'x', 'y', 'pointer']
+export const PAD_FIELDS = ['up', 'down', 'left', 'right', 'a', 'b', 'start', 'x', 'y', 'ax', 'ay', 'aimUp', 'aimDown', 'aimLeft', 'aimRight', 'pointer']
+
+// The digital AIM direction fields (#496, the twin-stick second vector).
+export const AIM_FIELDS = ['aimUp', 'aimDown', 'aimLeft', 'aimRight']
 
 // A fresh, all-idle pad. Pointer rests at the top-left corner with `down` false,
 // so a resting pointer is never mistaken for a press.
@@ -38,6 +44,8 @@ export function blankPad() {
         up: false, down: false, left: false, right: false,
         a: false, b: false, start: false,
         x: 0, y: 0,
+        ax: 0, ay: 0,
+        aimUp: false, aimDown: false, aimLeft: false, aimRight: false,
         pointer: { x: 0, y: 0, down: false, alt: false },
     }
 }
@@ -94,6 +102,19 @@ export function normalizePad(raw = {}, method = 'stick') {
     pad.b = !!r.b
     pad.start = !!r.start
 
+    // #496 twin-stick aim: the SAME quantizer turns the aim vector digital, so
+    // step({ax: 1}) and step({aimRight: true}) read alike — for one stick, the
+    // movement stick and the aim stick are the same rules twice.
+    pad.ax = num(r.ax)
+    pad.ay = num(r.ay)
+    if (Math.abs(pad.ax) > 1) pad.ax = pad.ax > 0 ? 1 : -1
+    if (Math.abs(pad.ay) > 1) pad.ay = pad.ay > 0 ? 1 : -1
+    const aq = quantize(pad.ax, pad.ay)
+    pad.aimUp = !!r.aimUp || aq.up
+    pad.aimDown = !!r.aimDown || aq.down
+    pad.aimLeft = !!r.aimLeft || aq.left
+    pad.aimRight = !!r.aimRight || aq.right
+
     const p = r.pointer || {}
     pad.pointer = {
         x: clamp01(num(p.x)),
@@ -146,6 +167,14 @@ export function setStickVec(x, y) {
     const dz = radialDeadZone(x, y)
     held.x = dz.x
     held.y = dz.y
+}
+
+// #496: slot 1's AIM stick (a gamepad's right stick) — the same dead zone as
+// the movement stick, landing on the pad's ax / ay.
+export function setAimVec(x, y) {
+    const dz = radialDeadZone(x, y)
+    held.ax = dz.x
+    held.ay = dz.y
 }
 
 // The pointer (a drag on the canvas for a pointer game): x / y normalized 0..1
@@ -247,6 +276,14 @@ export function setStickVecSlot(n, x, y) {
     p.y = dz.y
 }
 
+// #496: slot n's AIM stick (that pad's right stick), same dead zone as movement.
+export function setAimVecSlot(n, x, y) {
+    const dz = radialDeadZone(x, y)
+    const p = slot(n)
+    p.ax = dz.x
+    p.ay = dz.y
+}
+
 export function setPointerSlot(n, x, y, down, alt) {
     const p = slot(n)
     p.pointer.x = clamp01(x)
@@ -257,11 +294,13 @@ export function setPointerSlot(n, x, y, down, alt) {
 
 export function clearSlot(n) { Object.assign(slot(n), blankPad()) }
 
-// True while slot n has anything held down (direction, button, stick, pointer).
+// True while slot n has anything held down (direction, button, stick, aim, pointer).
 export function slotActive(n) {
     const p = slot(n)
     return p.up || p.down || p.left || p.right || p.a || p.b || p.start
-        || p.x !== 0 || p.y !== 0 || p.pointer.down || p.pointer.alt
+        || p.x !== 0 || p.y !== 0 || p.ax !== 0 || p.ay !== 0
+        || p.aimUp || p.aimDown || p.aimLeft || p.aimRight
+        || p.pointer.down || p.pointer.alt
 }
 
 let connected = 1

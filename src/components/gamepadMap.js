@@ -104,14 +104,18 @@ export function triggersFromPad(pad) {
 // as the keyboard path — but the face buttons stay semantic (a / b / start),
 // it is the game that decides what B means for its second player.
 // `state` carries this pad's stick hysteresis across frames (one per slot!).
-// Returns { fields, state } where fields is { left,right,up,down,a,b,start,x,y }.
-export function slotFieldsFrom(pad, state = { engaged: false, lastCodes: [] }) {
+// Returns { fields, state } where fields is
+// { left,right,up,down,a,b,start,x,y, ax,ay,aimUp,aimDown,aimLeft,aimRight }.
+// #496: a twin-stick pad's RIGHT stick (axes 2,3) is this slot's aim vector —
+// the same dead-zone read as the movement stick, with its own hysteresis state.
+export function slotFieldsFrom(pad, state = { engaged: false, lastCodes: [], aimEngaged: false, lastAim: [] }) {
     const buttons = (pad && pad.buttons) || []
     const pressed = (i) => !!(buttons[i] && buttons[i].pressed)
     const fields = {
         left: pressed(14), right: pressed(15), up: pressed(12), down: pressed(13),
         a: pressed(0), b: pressed(1), start: pressed(9),
         x: 0, y: 0,
+        ax: 0, ay: 0, aimUp: false, aimDown: false, aimLeft: false, aimRight: false,
     }
     for (const c of stickDirections(pad.axes, state)) {
         if (c === 'ArrowLeft') fields.left = true
@@ -122,6 +126,21 @@ export function slotFieldsFrom(pad, state = { engaged: false, lastCodes: [] }) {
     const left = stickFromAxes([pad && pad.axes && pad.axes[0], pad && pad.axes && pad.axes[1]])
     fields.x = left.x
     fields.y = left.y
+    // #496 aim stick: axes 2,3 -> the slot's ax/ay plus digital aim directions.
+    const ax = (pad && pad.axes && pad.axes[2]) || 0
+    const ay = (pad && pad.axes && pad.axes[3]) || 0
+    const aimState = { engaged: state.aimEngaged, lastCodes: state.lastAim || [] }
+    const aim = stickFromAxes([ax, ay])
+    fields.ax = aim.x
+    fields.ay = aim.y
+    for (const c of stickDirections([ax, ay], aimState)) {
+        if (c === 'ArrowLeft') fields.aimLeft = true
+        else if (c === 'ArrowRight') fields.aimRight = true
+        else if (c === 'ArrowUp') fields.aimUp = true
+        else if (c === 'ArrowDown') fields.aimDown = true
+    }
+    state.aimEngaged = aimState.engaged
+    state.lastAim = aimState.lastCodes
     return { fields, state }
 }
 

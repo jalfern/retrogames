@@ -106,6 +106,17 @@ const DRIVE = ({ seed, script }) => {
     return { zeroTick: zero.tick, zeroDone: !!zero.done, final: JSON.stringify(s), samples, heldTick, restoreOk }
 }
 
+// #496 co-op games: reset(seed, 2) must open seat 2, and the same script must
+// replay deterministically when fed as PER-PLAYER pad arrays.
+const DRIVE_COOP = ({ seed, script }) => {
+    const g = window.__game
+    const zero = g.reset(seed, 2)
+    let s = zero
+    for (const pad of script) s = g.step([pad, pad], 1)
+    g.release()
+    return { opened: (zero.players || 0) >= 2, players: s.players, heldTick: s.tick, final: JSON.stringify(s) }
+}
+
 await requireDevServer(`${BASE}/lunar-lander`)
 const browser = await launch()
 const r = new Report('contractcheck')
@@ -154,6 +165,12 @@ for (const p of RUN) {
         r1.final === r2.final ? `${r1.final.length}b equal` : `A=${r1.final}\n                 B=${r2.final}`)
     r.check(`${p.id}: seed 7 twice → identical per-100-tick hashes`, JSON.stringify(r1.samples) === JSON.stringify(r2.samples), r1.samples.join(' '))
     r.check(`${p.id}: seed 9 → different JSON`, r1.final !== r3.final, `hash ${JSON.parse(r3.final).hash} vs ${JSON.parse(r1.final).hash}`)
+    if ((meta?.players || 1) > 1) {
+        const c1 = await page.evaluate(DRIVE_COOP, { seed: 7, script: scripts[p.id] })
+        const c2 = await page.evaluate(DRIVE_COOP, { seed: 7, script: scripts[p.id] })
+        r.check(`${p.id}: co-op meta.players=${meta.players} — reset(7, 2) opens seat 2`, c1.opened && c1.players >= 2, `players=${c1.players}`)
+        r.check(`${p.id}: co-op pad-array replay is deterministic`, c1.final === c2.final && c1.heldTick === TICKS, `tick=${c1.heldTick} hash=${JSON.parse(c1.final).hash}`)
+    }
     if (r1.restoreOk !== null) r.check(`${p.id}: snapshot/restore round-trip`, r1.restoreOk === true)
 
     const resume = await page.evaluate(() => {
