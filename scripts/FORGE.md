@@ -104,7 +104,9 @@ AGENTS.md wins.
    ```
 8. **Verify prod:** poll `https://jalfern.com/retrogames/` assets until the
    bundle hash contains the new game; comment the live URL on the issue;
-   `gh issue edit <n> --remove-label building --add-label shipped`.
+   `gh issue edit <n> --remove-label building --add-label shipped`,
+   then `gh issue close <n> --reason completed` (skip only a multi-stage issue whose
+   PRs say `Part of #<n>`: it stays open until its last stage).
 8b. **File the polish pass.** Every game gets a second round. Open
    `QA — <NAME>: polish pass` with label `feedback`, listing what is still
    short of `docs/ART.md` and of the original: missing signature features,
