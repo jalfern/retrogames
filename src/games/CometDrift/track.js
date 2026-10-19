@@ -54,6 +54,24 @@ const CONTROL_SANDBANK = [
     [830, 1715], [975, 1752],
 ]
 
+// ---------------------------------------------------------------------------
+// CORKSCOMB DUNES (dawn, #493 course 2). Laguna Seca in spirit, never traced
+// (CC BY-SA reference consulted for character only): the Rainey-style sweeper
+// up the east side taken flat out, the ridge straight beneath the north dunes,
+// and the Corkscomb — the double-S over the dune crest — rendered at our flat
+// world's drivable floor as a crest/shoulder complex where the line's rate
+// alternates against the ridge (the issue's law: bend the shape, never the
+// checker; Sandbank's bus stop set the precedent). The west horseshoe is the
+// switchback, spitting onto the dune descent home. Every arc proven >= 220 px
+// by cometcheck; minR 296.
+const CONTROL_CORKSCOMB = [
+    [784, 1751], [950, 1751], [1082, 1751], [1220, 1749], [1363, 1752], [1593, 1750],
+    [1752, 1681], [1860, 1539], [1894, 1353], [1876, 1129], [1870, 972], [1846, 824],
+    [1752, 634], [1620, 523], [1467, 471], [1309, 451], [1111, 451], [905, 522],
+    [751, 576], [617, 674], [482, 821], [402, 999], [380, 1143], [381, 1373],
+    [451, 1561], [603, 1694],
+]
+
 export const COURSES = [
     {
         id: 'gulch', name: 'SUNSET GULCH', short: 'GULCH',
@@ -63,10 +81,15 @@ export const COURSES = [
         id: 'sandbank', name: 'SANDBANK SPEED BOWL', short: 'SANDBANK',
         tagline: 'SANDBANK SPEED BOWL - 4 LAPS', palette: 'noon', control: CONTROL_SANDBANK,
     },
+    {
+        id: 'corkscomb', name: 'CORKSCOMB DUNES', short: 'CORKSCOMB',
+        tagline: 'CORKSCOMB DUNES - 4 LAPS', palette: 'dawn', control: CONTROL_CORKSCOMB,
+    },
 ]
 
 export const GULCH = COURSES[0]
 export const SANDBANK = COURSES[1]
+export const CORKSCOMB = COURSES[2]
 
 function catmull(p0, p1, p2, p3, t) {
     const t2 = t * t; const t3 = t2 * t
