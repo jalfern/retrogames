@@ -266,6 +266,23 @@ class AudioController {
         noise.start()
     }
 
+    // a lowpassed noise burst (a crowd murmur, a whoosh) — playNoise's raw
+    // crackle reads as static, a bed needs the filter
+    playFilteredNoise(duration, vol = 0.2, freq = 800) {
+        if (this.muted || !this.ctx) return
+        const sr = this.ctx.sampleRate
+        const buffer = this.ctx.createBuffer(1, Math.max(1, Math.floor(sr * duration)), sr)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1
+        const noise = this.ctx.createBufferSource(); noise.buffer = buffer
+        const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = freq
+        const gain = this.ctx.createGain()
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration)
+        noise.connect(lp); lp.connect(gain); gain.connect(this.ctx.destination)
+        noise.start()
+    }
+
     playSweep(startFreq, endFreq, duration, type = 'triangle', vol = 0.1) {
         if (this.muted || !this.ctx) return
         const osc = this.ctx.createOscillator()

@@ -22,6 +22,7 @@ import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
 import { muzzleFlash, casingCol, killShake, shutterPhase, SHUTTER_TICKS } from './juice.js'
+import { fireTimbre, BONUS_JINGLE, MURMUR, WHOOSH, ALERT } from './audio.js'
 
 const SIM_MS = 1000 / 60
 const ROOM_NAMES = [
@@ -90,11 +91,16 @@ const SmashTVGame = () => {
                     floor = buildFloor(e.room, gs.seed)
                     say(ROOM_NAMES[e.room])
                     roomTotal = 0; roomBump = 0; clearedAt = -1
-                    if (e.bonus) { audioController.playSweep(440, 1320, 0.5, 'square', 0.09); flash = 8 }
+                    if (e.bonus) {
+                        for (const [fq, dl, d, v] of BONUS_JINGLE) audioController.playTone(fq, d, 'square', v, dl)
+                        flash = 8
+                    }
                     else audioController.playSweep(140, 320, 0.25, 'sawtooth', 0.06)
                 } else if (e.type === 'score') { roomTotal += e.pts; roomBump = 8 }
                 else if (e.type === 'shoot') {
-                    audioController.playSweep(700 + Math.random() * 200, 220, 0.05, 'square', 0.035)
+                    const t = fireTimbre(e.weapon)
+                    if (t.sweep) audioController.playSweep(t.sweep.f0, t.sweep.f1, t.sweep.dur, t.type, t.vol)
+                    else for (const [fq, dl, d] of t.notes) audioController.playTone(fq, d, t.type, t.vol, dl)
                     const p = gs.player, [ax, ay] = p.aim
                     const col = casingCol(gs.weapon)
                     for (let i = 0; i < 3; i++) parts.push({ x: p.x + ax * 6, y: p.y + ay * 6, vx: -ax * (1 + Math.random()) + (Math.random() - 0.5) * 1.6, vy: -ay * (1 + Math.random()) - 0.6, t: 0, col, grav: 0.18 })
@@ -122,13 +128,15 @@ const SmashTVGame = () => {
                 else if (e.type === 'throw') audioController.playSweep(180, 320, 0.1, 'triangle', 0.04)
                 else if (e.type === 'blast') { audioController.playNoise(0.2, 0.09); burst(e.x, e.y, 10, '#ff8a3f', 3); shake = 4 }
                 else if (e.type === 'spawn') audioController.playSweep(90, 240, 0.12, 'triangle', 0.04)
+                else if (e.type === 'murmur') audioController.playFilteredNoise(MURMUR.dur, MURMUR.vol, MURMUR.freq)
+                else if (e.type === 'alert') audioController.playTone(ALERT.freq, ALERT.dur, ALERT.type, ALERT.vol)
                 else if (e.type === 'death') { audioController.playDeath(); shake = 10; flash = 14; say(BARKS[Math.floor(Math.random() * BARKS.length)]) }
                 else if (e.type === 'respawn') audioController.playSweep(110, 440, 0.3, 'triangle', 0.07)
                 else if (e.type === 'clear') {
                     audioController.playSweep(330, 990, 0.35, 'square', 0.09)
                     say(e.bonus ? 'THAT WAS BEAUTIFUL!' : 'ROOM CLEAR! EXIT OPEN!')
                 } else if (e.type === 'advance') audioController.playSweep(220, 660, 0.25, 'square', 0.07)
-                else if (e.type === 'bomb') { audioController.playNoise(0.4, 0.12); audioController.playSweep(80, 900, 0.4, 'sawtooth', 0.1); shake = 8; flash = 12; say('FIREBOMB! THE AUDIENCE ROARS!') }
+                else if (e.type === 'bomb') { audioController.playFilteredNoise(WHOOSH.dur, WHOOSH.vol, WHOOSH.freq); audioController.playNoise(0.4, 0.12); audioController.playSweep(80, 900, 0.4, 'sawtooth', 0.1); shake = 8; flash = 12; say('FIREBOMB! THE AUDIENCE ROARS!') }
                 else if (e.type === 'bombFail') { audioController.playTone(110, 0.12, 'square', 0.05); say('NOT ENOUGH POWER!') }
                 else if (e.type === '1up') audioController.playSweep(440, 1760, 0.5, 'square', 0.08)
                 else if (e.type === 'bossKill') {
