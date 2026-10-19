@@ -45,36 +45,41 @@ const CONTROL_GULCH = [
 ]
 
 // ---------------------------------------------------------------------------
-// SANDBANK SPEED BOWL (noon, #493, layout redone #513). Now traces the DAYTONA
-// ROAD COURSE centerline (reference.js → DAYTONA): the long front straight
-// bottom-right into the high-banked Turns 1-2 up the right (the big fast
-// sweepers of the bowl), the long back straight across the top, the Turns 3-4
-// horseshoe down the left, and the Bus Stop braking complex across the
-// bottom-left — three quick left-right-left direction reversals whose radii sit
-// well under the old 220 floor, so the autopilot must brake for them. Names,
-// art and the world stay ours; the harness grades the shape against the map.
+// SANDBANK SPEED BOWL (noon, #493, layout redone #513). The control points are
+// placed on the DAYTONA ROAD COURSE centerline traced from the real Wikimedia
+// map (reference.js ← extract-comet-references.mjs ← daytona-road-course.png):
+// the long front straight into the banked Turns 1-2 up the right, the back
+// straight across the top, the International Horseshoe (T3-4) down the left,
+// the T5-7 kinks at the far end and the Bus Stop braking complex — then the
+// tight legs are spread until the road clears itself and corners rounded to the
+// sim's 60 px minimum radius (shape audit stays <=3% of the map box). Names,
+// art and the world stay ours; cometcheck grades the match and the autopilot's
+// braking.
 const CONTROL_SANDBANK = [
-    [1080, 1872], [1320, 1848], [1440, 1764], [1596, 1764], [1716, 1848], [1896, 1800],
-    [2088, 1644], [2232, 1416], [2268, 1128], [2184, 852], [2004, 660], [1764, 564],
-    [1464, 540], [1176, 588], [936, 708], [744, 912], [624, 1176], [612, 1440],
-    [708, 1668], [876, 1812],
+    [1286, 1282], [1513, 1228], [1664, 1130], [1668, 1010], [1641, 930], [1635, 874],
+    [1663, 823], [1723, 773], [1835, 731], [1929, 728], [1986, 773], [2033, 830],
+    [2102, 861], [2196, 856], [2322, 798], [2355, 575], [2261, 363], [2059, 242],
+    [1817, 219], [1575, 224], [1323, 224], [1099, 229], [915, 252], [706, 219],
+    [468, 252], [278, 389], [208, 608], [245, 822], [417, 982], [628, 1081],
+    [845, 1164], [1056, 1247],
 ]
 
 // ---------------------------------------------------------------------------
-// CORKSCOMB DUNES (dawn, #493 course 2, layout redone #513). Now traces LAGUNA
-// SECA (reference.js): the Rahal back straight up the right, the Andretti
-// hairpin at the top, the Corkscomb — the left-right double-apex that alternates
-// curvature sign over the dune crest — cutting down the middle, the fast Snake
-// descent down the left, and the keyhole onto the start straight home. The
-// Corkscomb and hairpin are genuine braking corners now (radii well under 220).
-// Shape is the arcade re-proportion of the CC BY-SA Laguna Seca map (credited in
-// the README); names, art and the world stay ours.
+// CORKSCOMB DUNES (dawn, #493 course 2, layout redone #513). Control points on
+// the LAGUNA SECA centerline traced from the real Wikimedia map (reference.js ←
+// extract-comet-references.mjs ← Laguna_Seca.svg): Rahal straight, the Andretti
+// hook at the top, the Corkscomb (the map's Corkscrew double-apex) cutting
+// down the middle, the Snake descent and the keyhole onto the start straight.
+// Spread + rounded against the same self-clearance and minimum-radius audits.
+// Shape is the arcade re-proportion of the CC BY-SA map (credited in the
+// README); names, art and the world stay ours.
 const CONTROL_CORKSCOMB = [
-    [1080, 2040], [1260, 1848], [1464, 1764], [1644, 1812], [1764, 1932], [1848, 1973],
-    [1949, 1949], [2052, 1824], [2141, 1632], [2189, 1404], [2177, 1140], [2098, 888],
-    [1958, 691], [1771, 576], [1560, 557], [1368, 629], [1205, 773], [1085, 869],
-    [922, 850], [758, 989], [629, 1176], [600, 1344], [566, 1584], [614, 1814],
-    [754, 1982], [917, 2054],
+    [1136, 2302], [1256, 2288], [1302, 2261], [1331, 2230], [1341, 2191], [1336, 2136],
+    [1302, 2046], [1255, 1934], [1198, 1654], [1310, 1419], [1555, 1277], [1825, 1197],
+    [2109, 1150], [2332, 1041], [2256, 796], [2102, 556], [1935, 322], [1716, 200],
+    [1434, 251], [1177, 364], [923, 481], [655, 550], [526, 775], [274, 899],
+    [251, 1125], [443, 1345], [592, 1585], [429, 1821], [265, 2053], [364, 2185],
+    [643, 2245], [924, 2300],
 ]
 
 export const COURSES = [

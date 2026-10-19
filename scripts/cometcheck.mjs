@@ -468,8 +468,18 @@ console.log('— the boost payoff ladder —')
         gg.phase = 'race'
         const Q = gg.karts[0]
         Q.v = 6; Q.lapStart = -999
-        const p = T.pts[40]
-        const pin = () => { Q.x = p.x; Q.y = p.y; Q.a = p.a; Q.idx = 40; Q.hint = 40 }
+        // pin on the same longest banked sweeper the gold-ladder test uses
+        // (fixed index 40 landed on a braking corner once layouts followed real
+        // maps #513 — a spin there truncates the top tier and the ladder inverts)
+        let bi = 0; let bbest = 0; let bcur = 0; let bstart = 0
+        for (let i = 0; i < T.N; i++) {
+            const k = Math.abs(T.pts[i].k)
+            if (k > 1 / 1100 && k < 1 / 240) { if (bcur === 0) bstart = i; bcur++ } else { if (bcur > bbest) { bbest = bcur; bi = bstart } bcur = 0 }
+        }
+        if (bcur > bbest) { bbest = bcur; bi = bstart }
+        const pinIdx = (bi + Math.floor(bbest / 2)) % T.N
+        const p = T.pts[pinIdx]
+        const pin = () => { Q.x = p.x; Q.y = p.y; Q.a = p.a; Q.idx = pinIdx; Q.hint = pinIdx }
         pin()
         for (let i = 0; i < ticksHeld; i++) { pin(); sim.step(gg, { u: true, r: true, drift: true }) }
         sim.step(gg, { u: true })
