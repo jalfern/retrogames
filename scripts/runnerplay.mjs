@@ -5,9 +5,10 @@
 //
 //   1. THE INPUT PATH — a real Space/Arrow keypress reaching step() through
 //      the browser event stack (the same codes the virtual pad dispatches);
-//   2. THE PAINT FOLLOWS PHYSICS — the wheel is sampled at the exact screen
-//      pixel the physics reports (screen = world - cam). If the renderer
-//      painted the wheel anywhere but where the body IS, that pixel goes dark.
+//   2. THE PAINT FOLLOWS PHYSICS — the hero is sampled at the exact screen
+//      pixel the physics reports (screen = world - cam, on a 2x canvas). If
+//      the renderer painted the hero anywhere but where the body IS, that
+//      pixel goes dark.
 //
 // The full route (all three zones INCLUDING the loop) is proven by the attract
 // demo running in a real rAF tab, so the loop completion is real, not a Node
@@ -76,20 +77,24 @@ await wait(400)
     r.check('held RIGHT builds real momentum (past a standing start)', b.speed > 260 && b.x > a.x + 40, `speed ${b.speed} x ${a.x}->${b.x}`)
     r.check('the run drags the camera forward', b.cam.x > 0, `cam.x=${b.cam.x}`)
 
-    // PAINT FOLLOWS PHYSICS: sample the canvas at the wheel's reported pixel,
-    // then move it with a real key and resample — it must still be there.
-    const rimAt = () => page.evaluate(() => {
+    // PAINT FOLLOWS PHYSICS: the canvas renders at 2x the sim space, so the
+    // hero's reported pixel is at at*2. Sample the hero's UNIQUE cyan core
+    // (a colour the track, rings and backgrounds never use) at that exact
+    // screen pixel, then move the body with a real key and resample — it must
+    // still be there.
+    const heroAt = () => page.evaluate(() => {
         const q = window.__runnerTest.probe()
         const g = document.querySelector('canvas[data-runner-stage]').getContext('2d')
-        const d = g.getImageData(Math.max(0, q.at.x - 6), Math.max(0, q.at.y - 6), 13, 13).data
-        let orange = 0
-        for (let i = 0; i < d.length; i += 4) if (d[i] > 170 && d[i + 1] > 110 && d[i + 2] < 130) orange++
-        return { orange, at: q.at }
+        const X = q.at.x * 2, Y = q.at.y * 2
+        const d = g.getImageData(Math.max(0, X - 13), Math.max(0, Y - 13), 26, 26).data
+        let hero = 0
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 75 && d[i] < 135 && d[i + 1] > 225 && d[i + 2] > 235) hero++
+        return { hero, at: q.at }
     })
-    const s1 = await rimAt()
+    const s1 = await heroAt()
     await wait(120)
-    const s2 = await rimAt()
-    r.check('the wheel is PAINTED on the pixel the physics reports', s1.orange >= 35 && s2.orange >= 35 && Math.abs(s2.at.x - s1.at.x) >= 0, `rim px ${s1.orange}/${s2.orange} at ${s1.at.x},${s1.at.y}->${s2.at.x},${s2.at.y}`)
+    const s2 = await heroAt()
+    r.check('the hero is PAINTED on the pixel the physics reports', s1.hero >= 35 && s2.hero >= 35, `hero px ${s1.hero}/${s2.hero} at ${s1.at.x},${s1.at.y}->${s2.at.x},${s2.at.y}`)
     await page.keyboard.up('ArrowRight')
 }
 
