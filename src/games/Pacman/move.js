@@ -79,11 +79,14 @@ export function makePacman() {
 }
 
 // Can a player leave tile (x, y) in direction d? The tunnel row wraps; the
-// ghost-house door (4) is solid for the player.
+// ghost-house door (4) is solid for the player. Dimensions come from the map
+// (not the module maze) so pacmancheck's alternate mazes (CROSS / CORRIDOR)
+// work too — a small grid must not be indexed against the big maze's rows.
 export function tileOpen(map, x, y, d) {
+    const rows = map.length, cols = map[0].length
     const nx = x + d.x, ny = y + d.y
-    if (ny === TUNNEL_ROW && (nx < 0 || nx >= COLS)) return true
-    return nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && map[ny][nx] !== 1 && map[ny][nx] !== 4
+    if (ny === TUNNEL_ROW && (nx < 0 || nx >= cols)) return true
+    return nx >= 0 && nx < cols && ny >= 0 && ny < rows && map[ny][nx] !== 1 && map[ny][nx] !== 4
 }
 
 const same = (a, b) => a.x === b.x && a.y === b.y
@@ -99,13 +102,16 @@ export function stepPlayer(gs, held) {
     const P = gs.pacman
     if (held.length === 2 && opposite(held[0], held[1])) held.length = 1
     const moving = P.dir.x !== 0 || P.dir.y !== 0
+    let reversed = false
 
     if (held.length && moving) {
         const rev = held.find(d => opposite(d, P.dir))
         if (rev) {
             // the classic 180: instant, anywhere in the tile. Keep the position:
             // x + dir*p is unchanged when the tile ref moves one ahead and the
-            // progress mirrors.
+            // progress mirrors. The reversal IS the whole tick — no turn, no
+            // advance (advancing would break that invariant); the pre-turn rides
+            // nextDir into the next tick.
             P.x += P.dir.x
             P.y += P.dir.y
             P.progress = 1 - P.progress
@@ -114,6 +120,7 @@ export function stepPlayer(gs, held) {
             P.dir = { x: -P.dir.x, y: -P.dir.y }
             const pre = held.find(d => d !== rev)
             if (pre) P.nextDir = pre
+            reversed = true
         } else if (held.length > 1) {
             // diagonal: keep the heading, pre-turn the other axis
             const along = held.find(d => same(d, P.dir))
@@ -126,51 +133,53 @@ export function stepPlayer(gs, held) {
         for (const d of held) if (tileOpen(gs.map, P.x, P.y, d)) { P.dir = d; break }
     }
 
-    // Take the buffered turn at the first opening — cornering lets it start
-    // CORNER px before the tile centre.
-    if (P.dir.x !== 0 || P.dir.y !== 0) {
-        const nd = P.nextDir
-        if (nd && !same(nd, P.dir)) {
-            if (P.progress === 0) {
-                if (tileOpen(gs.map, P.x, P.y, nd)) P.dir = nd
-            } else if (P.progress >= 1 - CORNER) {
-                const tx = P.x + P.dir.x, ty = P.y + P.dir.y
-                if (tileOpen(gs.map, tx, ty, nd)) {
-                    P.x = tx; P.y = ty
-                    P.progress = 0
-                    P.dir = nd
+    let eaten = null
+    if (!reversed) {
+        // Take the buffered turn at the first opening — cornering lets it start
+        // CORNER px before the tile centre.
+        if (P.dir.x !== 0 || P.dir.y !== 0) {
+            const nd = P.nextDir
+            if (nd && !same(nd, P.dir)) {
+                if (P.progress === 0) {
+                    if (tileOpen(gs.map, P.x, P.y, nd)) P.dir = nd
+                } else if (P.progress >= 1 - CORNER) {
+                    const tx = P.x + P.dir.x, ty = P.y + P.dir.y
+                    if (tileOpen(gs.map, tx, ty, nd)) {
+                        P.x = tx; P.y = ty
+                        P.progress = 0
+                        P.dir = nd
+                    }
                 }
             }
+            if (P.progress === 0 && !tileOpen(gs.map, P.x, P.y, P.dir)) {
+                P.dir = { x: 0, y: 0 }
+            }
         }
-        if (P.progress === 0 && !tileOpen(gs.map, P.x, P.y, P.dir)) {
-            P.dir = { x: 0, y: 0 }
-        }
-    }
 
-    let eaten = null
-    if (P.dir.x !== 0 || P.dir.y !== 0) {
-        P.progress += P.speed
-        if (P.progress >= 1) {
-            P.x += P.dir.x
-            P.y += P.dir.y
-            P.progress = 0
-            P.x = Math.round(P.x)
-            P.y = Math.round(P.y)
-            if (P.x <= -1) P.x = COLS - 1
-            else if (P.x >= COLS) P.x = 0
-            const mx = P.x, my = P.y
-            if (mx >= 0 && mx < COLS && my >= 0 && my < ROWS) {
-                const tile = gs.map[my][mx]
-                if (tile === 2) {
-                    gs.map[my][mx] = 0
-                    gs.score += 10
-                    eaten = 'dot'
-                } else if (tile === 3) {
-                    gs.map[my][mx] = 0
-                    gs.score += 50
-                    P.poweredUp = true
-                    P.powerTimer = 600
-                    eaten = 'power'
+        if (P.dir.x !== 0 || P.dir.y !== 0) {
+            P.progress += P.speed
+            if (P.progress >= 1) {
+                P.x += P.dir.x
+                P.y += P.dir.y
+                P.progress = 0
+                P.x = Math.round(P.x)
+                P.y = Math.round(P.y)
+                if (P.x <= -1) P.x = COLS - 1
+                else if (P.x >= COLS) P.x = 0
+                const mx = P.x, my = P.y
+                if (mx >= 0 && mx < COLS && my >= 0 && my < ROWS) {
+                    const tile = gs.map[my][mx]
+                    if (tile === 2) {
+                        gs.map[my][mx] = 0
+                        gs.score += 10
+                        eaten = 'dot'
+                    } else if (tile === 3) {
+                        gs.map[my][mx] = 0
+                        gs.score += 50
+                        P.poweredUp = true
+                        P.powerTimer = 600
+                        eaten = 'power'
+                    }
                 }
             }
         }

@@ -82,11 +82,17 @@ console.log('diagonal input (keep heading, pre-turn the other axis)')
     ok(!!t && t.x === 1 && t.y === 1, 'south heading + down/right: keeps south, turns right at the junction', t ? `at ${t.x},${t.y}` : 'never turned')
     ok(trace.some(e => e.x === 2 && e.y === 1 && e.dir.x === 1), 'south heading: then ran east')
 }
-// heading SOUTH with up+right held: the opposite axis (up) is a 180 request
+// heading SOUTH with up+right held: the opposite axis (up) is a 180 request; the
+// other axis (right) is buffered and taken at the first opening on the REVERSED
+// (north) heading. BRGRID: a vertical corridor (col 1) with a right branch at row 1.
 {
-    const { trace } = run(CROSS, 1, 0, V.down, () => ['up', 'right'], 6, 0.4)
-    ok(trace[0].dir.y === -1 && trace[0].y === 1 && Math.abs(trace[0].p - 0.6) < 1e-9, 'up held against a down heading: the 180 wins instantly, position kept')
-    ok(turned(trace, V.right) !== undefined, 'up+right diagonal: the right axis is buffered')
+    const BRGRID = grid(['# #', '#  ', '# #', '# #'])
+    const r = run(BRGRID, 1, 2, V.down, () => ['up', 'right'], 15, 0.4)
+    const t0 = r.trace[0]
+    const keptPos = Math.abs((t0.y + t0.dir.y * t0.p) - (t0.before.y + t0.before.dir.y * t0.before.p)) < 1e-9
+    ok(t0.dir.y === -1 && keptPos, 'up held against a down heading: the 180 wins instantly, position kept', `dir=(${t0.dir.x},${t0.dir.y})`)
+    const tr = turned(r.trace, V.right)
+    ok(!!tr, 'up+right diagonal: the right axis is buffered and taken on the new heading', tr ? `at ${tr.x},${tr.y}` : 'pre-turn lost')
 }
 
 // ------------------------------------------------------------------ instant 180 ----
@@ -155,7 +161,7 @@ console.log('maze: tunnel, door, dots')
     ok(TUNNEL_MAP[12][13] === 4, 'the door tile is untouched')
 }
 {
-    const r = run(TUNNEL_MAP, 12, 23, V.left, () => ['left'], 6)
+    const r = run(TUNNEL_MAP, 12, 23, V.left, () => ['left'], 10)
     const t = r.trace.find(e => e.eaten === 'dot')
     ok(!!t && t.x === 11 && r.gs.score === 10 && TUNNEL_MAP[23][11] === 0, 'dot eaten on entry: +10, tile cleared', t ? `tick ${t.tick} x=${t.x} score=${r.gs.score}` : 'no dot')
 }
@@ -198,8 +204,8 @@ if (process.argv.includes('--mutate')) {
             `        if (rev) {`,
             `        if (false) {`],
         ['the ghost-house door is walkable', F,
-            `return nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && map[ny][nx] !== 1 && map[ny][nx] !== 4`,
-            `return nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && map[ny][nx] !== 1`],
+            `return nx >= 0 && nx < cols && ny >= 0 && ny < rows && map[ny][nx] !== 1 && map[ny][nx] !== 4`,
+            `return nx >= 0 && nx < cols && ny >= 0 && ny < rows && map[ny][nx] !== 1`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

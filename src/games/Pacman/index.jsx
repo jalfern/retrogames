@@ -29,7 +29,6 @@ const PacmanGame = () => {
         let animationFrameId
 
         let isAttractMode = true
-        let keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false }
 
         // MAP DATA lives in ./move — the live copy is mutated as dots are eaten
         const map = MAP.map(row => [...row])
@@ -523,7 +522,6 @@ const PacmanGame = () => {
         }
 
         const drawGhost = (ctx, x, y, color, state, dir) => {
-            const size = CELL_SIZE * 1.6
             ctx.save()
             ctx.translate(x + CELL_SIZE / 2, y + CELL_SIZE / 2)
             if (state === 'dead') {

@@ -344,6 +344,15 @@ jobs:
       - run: npm run landerheatcheck
       - run: npm run lint:tempest
       - run: npm run tempestcheck -- --mutate
+      # PAC-MAN (#472): the arcade input rules, pure in ./move — a held diagonal
+      # keeps the heading and pre-turns the OTHER axis (all four headings), a 180
+      # is instant with the position invariant kept, the buffered turn is taken at
+      # the FIRST opening with cornering, the tunnel wraps, the ghost-house door is
+      # solid for the player, dots/power bank, and the spawn honours the
+      # tile+progress invariant. Four mutants (fixed-priority decode, no cornering,
+      # no instant 180, a walkable door) must die. All in Node, ~1 s.
+      - run: npm run lint:pacman
+      - run: npm run pacmancheck -- --mutate
       # PWA scope gate (#433): lint the SW + contract scripts, then verify the
       # BUILT shell is installable — manifest scope/start_url are /retrogames/,
       # the SW excludes /retrogames/forge, vercel resolves the pwa assets ahead
