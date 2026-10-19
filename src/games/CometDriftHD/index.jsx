@@ -580,8 +580,9 @@ export default function CometDriftHD() {
         // ---- mesh sync: drawn state is the sim state, every frame ---------
         // #518: karts sit on the height profile. Height and pitch are smoothed
         // per kart (the profile is sampled at the nearest centerline point, so
-        // the raw value steps as points pass under the wheels).
-        const EULER = new THREE.Euler(0, 0, 0, 'YXZ')
+        // the raw value steps as points pass under the wheels). Pitch rides
+        // local X after yaw (YXZ), so cresting lifts the nose the way the
+        // road actually tilts.
         const liftAt = (k) => k.hSm || 0
         const syncMeshes = () => {
             for (let i = 0; i < g.karts.length; i++) {
@@ -592,9 +593,8 @@ export default function CometDriftHD() {
                 k.pitchSm = k.pitchSm === undefined ? pT : k.pitchSm + (pT - k.pitchSm) * 0.3
                 const h = k.hSm
                 m.position.set(k.x * S, h, k.y * S)
-                m.rotation.y = kartYaw(k.a)
-                m.rotation.z = k.driftT > 0 ? (k.steerVis || 1) * 0.14 : 0
-                m.quaternion.multiply(EULER.set(-k.pitchSm, 0, 0, 'XYZ'))
+                m.rotation.order = 'YXZ'
+                m.rotation.set(-k.pitchSm, kartYaw(k.a), k.driftT > 0 ? (k.steerVis || 1) * 0.14 : 0)
                 const rough = k.offroad && k.v > 1
                 const bob = rough ? (jit(g.tick * 7.7 + i) - 0.5) * 0.05 : 0
                 m.position.y = h + bob
@@ -1063,6 +1063,13 @@ export default function CometDriftHD() {
                 return !!(v && v.getObjectByName && v.getObjectByName('DuneBuggy'))
             },
             forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
+            kartWorld: () => {
+                const m = kartMeshes[0].m
+                return { pos: [m.position.x.toFixed(2), m.position.y.toFixed(2), m.position.z.toFixed(2)],
+                    rot: [m.rotation.x.toFixed(3), m.rotation.y.toFixed(3), m.rotation.z.toFixed(3)],
+                    visible: m.visible, children: m.children.length,
+                    cam: [camera.position.x.toFixed(2), camera.position.y.toFixed(2), camera.position.z.toFixed(2)] }
+            },
         }
 
         exposeGame({
