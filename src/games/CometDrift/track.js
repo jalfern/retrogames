@@ -17,16 +17,17 @@
 // (`retrogames:comet.course`) so HD respects it at load. No selection =
 // SUNSET GULCH, byte-identical to pre-#493 data.
 
-// #513: the world grows to 2560² and the asphalt NARROWS (ROAD_R 140 → 80).
+// #513: the world grows to 2560² and the asphalt NARROWS (ROAD_R 140 → 80 → 64).
 // A real hairpin / Corkscrew / Bus Stop is a braking corner whose own two road
 // legs cannot fit inside the old 280 px-wide canyon — the narrower lane plus the
-// bigger world is the room they need. SUNDBANK now follows the Daytona ROAD
-// COURSE centerline and CORKSCOMB follows Laguna Seca (see reference.js); the
-// harness grades the match. SUNSET GULCH keeps its original data unchanged.
+// bigger world is the room they need; 64 keeps the real map's closest leg pairs
+// clear at the re-tuned span. SUNDBANK follows the traced DAYTONA ROAD COURSE
+// centerline and CORKSCOMB the traced Laguna Seca (reference.js); the harness
+// grades the match. SUNSET GULCH keeps its original data unchanged.
 
 export const TX = 2560
 export const TY = 2560
-export const ROAD_R = 80              // half-width of asphalt (narrowed #513)
+export const ROAD_R = 64              // half-width of asphalt (narrowed again #513)
 export const KERB_R = ROAD_R + 12    // painted kerb strip
 export const WALL_R = ROAD_R + 52    // sand ends, cliff face: the wall
 
@@ -56,12 +57,12 @@ const CONTROL_GULCH = [
 // art and the world stay ours; cometcheck grades the match and the autopilot's
 // braking.
 const CONTROL_SANDBANK = [
-    [1286, 1282], [1513, 1228], [1664, 1130], [1668, 1010], [1641, 930], [1635, 874],
-    [1663, 823], [1723, 773], [1835, 731], [1929, 728], [1986, 773], [2033, 830],
-    [2102, 861], [2196, 856], [2322, 798], [2355, 575], [2261, 363], [2059, 242],
-    [1817, 219], [1575, 224], [1323, 224], [1099, 229], [915, 252], [706, 219],
-    [468, 252], [278, 389], [208, 608], [245, 822], [417, 982], [628, 1081],
-    [845, 1164], [1056, 1247],
+    [1283, 1284], [1463, 1224], [1563, 1141], [1563, 1044], [1516, 947], [1482, 852],
+    [1517, 761], [1592, 673], [1812, 655], [1964, 637], [2031, 706], [2058, 818],
+    [2132, 881], [2258, 859], [2403, 786], [2427, 556], [2310, 332], [2090, 204],
+    [1837, 180], [1586, 185], [1325, 185], [1092, 190], [902, 214], [685, 180],
+    [438, 214], [241, 356], [168, 584], [207, 805], [385, 971], [604, 1073],
+    [829, 1160], [1048, 1246],
 ]
 
 // ---------------------------------------------------------------------------
@@ -74,12 +75,12 @@ const CONTROL_SANDBANK = [
 // Shape is the arcade re-proportion of the CC BY-SA map (credited in the
 // README); names, art and the world stay ours.
 const CONTROL_CORKSCOMB = [
-    [1136, 2302], [1256, 2288], [1302, 2261], [1331, 2230], [1341, 2191], [1336, 2136],
-    [1302, 2046], [1255, 1934], [1198, 1654], [1310, 1419], [1555, 1277], [1825, 1197],
-    [2109, 1150], [2332, 1041], [2256, 796], [2102, 556], [1935, 322], [1716, 200],
-    [1434, 251], [1177, 364], [923, 481], [655, 550], [526, 775], [274, 899],
-    [251, 1125], [443, 1345], [592, 1585], [429, 1821], [265, 2053], [364, 2185],
-    [643, 2245], [924, 2300],
+    [1222, 2428], [1550, 2448], [1670, 2318], [1716, 2213], [1674, 2144], [1561, 2111],
+    [1373, 2075], [1250, 1915], [1195, 1658], [1311, 1423], [1565, 1277], [1845, 1194],
+    [2139, 1146], [2371, 1032], [2292, 778], [2132, 530], [1959, 286], [1732, 160],
+    [1440, 213], [1173, 330], [909, 452], [632, 523], [498, 757], [236, 885],
+    [213, 1119], [412, 1348], [566, 1596], [397, 1841], [227, 2081], [330, 2219],
+    [619, 2280], [910, 2338],
 ]
 
 export const COURSES = [

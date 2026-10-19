@@ -22,7 +22,9 @@ const PERP = (a) => [-Math.sin(a), Math.cos(a)]
 // noise stays small: a big setback wobble self-intersects on tight inner
 // curves and grows jagged fins at the apexes.
 const wallTopAt = (i) => 2.5 + Math.sin(i * 0.37 + 1.7) * 0.45 + Math.sin(i * 0.131) * 0.35
-const wallOffAt = (i) => T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + Math.sin(i * 0.19 + 4) * 3
+// #513 floor: the sim clamps karts at 216px, so the face must never dip
+// inside it, whatever the shared road width does — 4px of visible margin.
+const wallOffAt = (i) => Math.max(220, T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + Math.sin(i * 0.19 + 4) * 3)
 export const plateauYAt = (i) => wallTopAt(i) - 0.25
 export const wallTopYAt = (i) => wallTopAt(i)
 

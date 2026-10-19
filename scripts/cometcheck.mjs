@@ -15,7 +15,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { inflateSync } from 'node:zlib'
 import { deflateSync } from 'node:zlib'
-import { REFERENCES, bestShapeDistance, normalize, resample } from '../src/games/CometDrift/reference.js'
+import { REFERENCES, bestShapeDistance, normalize, resample, shapeDistance } from '../src/games/CometDrift/reference.js'
 
 const SIM = new URL('../src/games/CometDrift/sim.js', import.meta.url)
 const TRACKMOD = '../src/games/CometDrift/track.js'
@@ -146,6 +146,21 @@ for (const c of COURSES) {
         const d = bestShapeDistance(gamePts, ref.pts)
         check(`${c.id}: layout follows ${ref.name} (avg distance <= 3% of box)`,
             d <= 0.03, `${(d * 100).toFixed(2)}%`)
+        // average distance alone forgives a missing lobe; cap the worst local
+        // deviation too, so signature features cannot be quietly smoothed away
+        const WORST_CAP = { sandbank: 0.12, corkscomb: 0.18 }
+        const A = resample(normalize(ref.pts), 240)
+        const G = resample(normalize(gamePts), 240)
+        const dm2 = shapeDistance(gamePts, ref.pts.map(([x, y]) => [1 - x, y]))
+        const Ar = d <= dm2 ? A : A.map(([x, y]) => [1 - x, y])
+        let worst = 0
+        for (const [x, y] of Ar) {
+            let m = Infinity
+            for (const [gx, gy] of G) { const dd = Math.hypot(x - gx, y - gy); if (dd < m) m = dd }
+            if (m > worst) worst = m
+        }
+        check(`${c.id}: no route feature is smoothed away (worst local distance <= ${100 * WORST_CAP[c.id]}%)`,
+            worst <= WORST_CAP[c.id], `worst ${(worst * 100).toFixed(1)}%`)
         const png = new URL(`../docs/comet-ref-${c.id}.png`, import.meta.url)
         drawSideBySide(png, ref.pts, gamePts)
 
