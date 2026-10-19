@@ -16,7 +16,9 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { CW, CH, HUD_H, CELL, GW, GH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS } from './levels.js'
 import { makeGame, step, stateHash, CFG, comboColor, flickerPhase } from './sim.js'
-import { plan } from './planner.js'
+import { plan, decidePad, padToInp } from './planner.js'
+import { makeSlot, setSlotKind, padFor } from '../../utils/slotSources'
+import { pressSlot, releaseSlot, slotActive, clearSlot, currentPad, connectedSlots } from '../../utils/onePad'
 import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN } from './sprite.js'
@@ -68,13 +70,23 @@ const SmashTVGame = () => {
         let floor = buildFloor(0, 0)
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, roomTotal = 0, roomBump = 0, clearedAt = -1, rackFlash = 0, hiShown = board()[0]?.score || 0
-        let moving = false
-        const held = new Set()
+                const held = new Set()
         let bombEdge = false
         const evLog = []
         const parts = []
         const pops = []
 
+        // #496 seat 2 is a SLOT (off / human / cpu / model). A human seat reads
+        // onePad slot 2 (gamepad 2 via the bridge, or P2 keys mapped below);
+        // the cpu seat emits pads from the planner; the model seat is fed by
+        // __game.step([p1, p2]). Every source folds into the same pad shape.
+        const p2slot = makeSlot('off', {
+            padIndex: 2,
+            emit: () => decidePad(gs, 1),
+        })
+        let seatMode = 'off'
+        let modelP2 = null
+        let p2BombEdge = false
         const say = (m) => { toastMsg = m; toast = 140 }
         const burst = (x, y, n, col, sp = 2.4) => {
             for (let i = 0; i < n; i++) {
@@ -102,8 +114,8 @@ const SmashTVGame = () => {
                     const t = fireTimbre(e.weapon)
                     if (t.sweep) audioController.playSweep(t.sweep.f0, t.sweep.f1, t.sweep.dur, t.type, t.vol)
                     else for (const [fq, dl, d] of t.notes) audioController.playTone(fq, d, t.type, t.vol, dl)
-                    const p = gs.player, [ax, ay] = p.aim
-                    const col = casingCol(gs.weapon)
+                    const p = gs.players[e.pi || 0] || gs.player, [ax, ay] = p.aim
+                    const col = casingCol(e.weapon || gs.weapon)
                     for (let i = 0; i < 3; i++) parts.push({ x: p.x + ax * 6, y: p.y + ay * 6, vx: -ax * (1 + Math.random()) + (Math.random() - 0.5) * 1.6, vy: -ay * (1 + Math.random()) - 0.6, t: 0, col, grav: 0.18 })
                 }
                 else if (e.type === 'enemyHit') { audioController.playNoise(0.03, 0.05); burst(e.x || gs.player.x, e.y || gs.player.y, 3, '#ffd23f') }
@@ -121,7 +133,7 @@ const SmashTVGame = () => {
                     audioController.playNoise(0.14, 0.08); burst(e.x, e.y, 10, '#5dc8ff')
                     say(`${WEAPONS[e.weapon].name}!`)
                 } else if (e.type === 'pickup') {
-                    if (e.t === 'weapon') { audioController.playSweep(500, 1500, 0.2, 'square', 0.08); pop(gs.player.x, gs.player.y - 12, WEAPONS[e.w].name, '#8fff9f'); rackFlash = RACK_FLASH }
+                    if (e.t === 'weapon') { audioController.playSweep(500, 1500, 0.2, 'square', 0.08); const q = gs.players[e.pi || 0] || gs.player; pop(q.x, q.y - 12, WEAPONS[e.w].name, '#8fff9f'); if (!e.pi) rackFlash = RACK_FLASH }
                     else { audioController.playSweep(220, 880, 0.25, 'triangle', 0.08) }
                 } else if (e.type === 'wallHit') burst(e.x, e.y, 2, '#8d99b5', 1.2)
                 else if (e.type === 'eshoot') audioController.playSweep(300, 140, 0.06, 'sawtooth', 0.03)
@@ -159,8 +171,8 @@ const SmashTVGame = () => {
             setMode('over')
         }
 
-        const doSim = (inp) => {
-            step(gs, inp)
+        const doSim = (inp, inp2 = null) => {
+            step(gs, inp, inp2)
             handleEvents(gs.events.splice(0))
             if (gs.cleared && clearedAt < 0) clearedAt = gs.tick
             if (!gs.cleared) clearedAt = -1
@@ -181,29 +193,49 @@ const SmashTVGame = () => {
             const run = provenRun()
             if (demoAt >= run.script.length) { gs = makeGame(0); demoAt = 0; floor = buildFloor(0, 0); return }
             const inp = run.script[demoAt++]
-            moving = !!(inp.mx || inp.my)
             doSim(inp)
             if (gs.end) { gs = makeGame(0); demoAt = 0; floor = buildFloor(0, 0) }
         }
 
         const computeInput = () => {
-            const mx = (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0)
-            const my = (held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0)
-            const fx = (held.has('KeyL') ? 1 : 0) - (held.has('KeyJ') ? 1 : 0)
-            const fy = (held.has('KeyK') ? 1 : 0) - (held.has('KeyI') ? 1 : 0)
-            const fire = held.has('Space') || held.has('KeyZ') || fx !== 0 || fy !== 0
-            const bomb = bombEdge
+            const pad1 = currentPad('stick')
+            const mx = (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0) ||
+                (pad1.right ? 1 : 0) - (pad1.left ? 1 : 0)
+            const my = (held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0) ||
+                (pad1.down ? 1 : 0) - (pad1.up ? 1 : 0)
+            // the aim stick: IJKL on the keys, the right stick on a pad (#496)
+            const fx = (held.has('KeyL') ? 1 : 0) - (held.has('KeyJ') ? 1 : 0) ||
+                (pad1.aimRight ? 1 : 0) - (pad1.aimLeft ? 1 : 0) || Math.sign(pad1.ax)
+            const fy = (held.has('KeyK') ? 1 : 0) - (held.has('KeyI') ? 1 : 0) ||
+                (pad1.aimDown ? 1 : 0) - (pad1.aimUp ? 1 : 0) || Math.sign(pad1.ay)
+            const fire = held.has('Space') || held.has('KeyZ') || pad1.a || fx !== 0 || fy !== 0
+            const bomb = bombEdge || pad1.b
             bombEdge = false
             return { mx, my, fx, fy, fire, bomb }
         }
 
+        // seat 2 pad -> sim input: identical fold for human thumbs, gamepad 2,
+        // the cpu emitter and a model-driven __game.step([p1, p2])
+        const p2BombPrev = { b: false }
+        const seatPadToInp = (pad) => {
+            const inp = padToInp(pad)
+            inp.bomb = p2slot.kind === 'model' ? !!pad.b : (!!pad.b && !p2BombPrev.b) || p2BombEdge
+            p2BombPrev.b = !!pad.b
+            p2BombEdge = false
+            return inp
+        }
+
         const doFrameSim = () => {
             const sc = screenRef.current
-            if (sc === 'attract') { tickDemo(); return }
+            if (sc === 'attract') { pollSeatPad2(); tickDemo(); return }
             if (sc !== 'play') return
             const inp = computeInput()
-            moving = !!(inp.mx || inp.my)
-            doSim(inp)
+            let inp2 = null
+            if (p2slot.kind !== 'off' && gs.players.length > 1) {
+                const pad = modelP2 || padFor(p2slot, { method: 'stick', tick: gs.tick })
+                inp2 = seatPadToInp(pad)
+            }
+            doSim(inp, inp2)
         }
 
         // ---------------------------------------------------------------- render ----
@@ -324,13 +356,15 @@ const SmashTVGame = () => {
             }
         }
 
-        const drawPlayer = () => {
-            const p = gs.player
-            if (p.deadT > 0) return
+        const drawContestant = (idx) => {
+            const p = gs.players[idx]
+            if (!p || p.deadT > 0 || p.out) return
             if (p.invuln > 0 && (gs.tick >> 2) % 2 === 0) return
             // LAYERS order: the body (boots lowest) renders under the gun layer
-            ctx.drawImage(SP[`player${playerFrame(p.walk, moving)}`], p.x - 6, p.y - 8)
-            const spec = GUN[gs.weapon]
+            const mv = p.walk !== (p._w0 || 0)
+            p._w0 = p.walk
+            ctx.drawImage(SP[`${idx === 0 ? 'player' : 'player2_'}${playerFrame(p.walk, mv)}`], p.x - 6, p.y - 8)
+            const spec = GUN[p.weapon]
             const [ax, ay] = p.aim
             const ox = -ay, oy = ax
             for (const o of spec.off) {
@@ -344,8 +378,8 @@ const SmashTVGame = () => {
                 ctx.fillRect(p.x + ox * o + ax * spec.len - 1, p.y + oy * o + ay * spec.len - 1, 2, 2)
             }
             ctx.lineWidth = 1
-            if (p.fireT > WEAPONS[gs.weapon].interval - 3) {
-                const mf = muzzleFlash(gs.weapon)
+            if (p.fireT > WEAPONS[p.weapon].interval - 3) {
+                const mf = muzzleFlash(p.weapon)
                 ctx.fillStyle = mf.col
                 ctx.beginPath(); ctx.arc(p.x + ax * spec.flash, p.y + ay * spec.flash, mf.r, 0, Math.PI * 2); ctx.fill()
             }
@@ -507,11 +541,19 @@ const SmashTVGame = () => {
             ctx.strokeStyle = '#2b3348'
             ctx.strokeRect(0.5, 0.5, CW - 1, HUD_H - 1)
             text(`HI ${String(hiShown).padStart(6, '0')}`, 8, 10, 8, '#ffd23f', 3, 'left')
-            text(`1UP ${String(gs.score).padStart(6, '0')}`, 8, 20, 8, '#ff5d5d', 3, 'left')
+            text(`1UP ${String(gs.players[0].score).padStart(6, '0')}`, 8, 20, 8, '#ff5d5d', 3, 'left')
+            const two = gs.players[1]
+            if (two) text(`2UP ${String(two.score).padStart(6, '0')}`, 92, 20, 8, '#8fff9f', 3, 'left')
             text(gs.roomData.bonus ? `BONUS ${Math.ceil(gs.bonusT / 60)}` : `ROOM ${gs.room + 1}/${TOTAL_ROOMS}`, CW / 2, 10, 8, gs.roomData.bonus ? '#8fff9f' : '#5d7094', 2)
-            for (let i = 0; i < Math.min(6, gs.lives); i++) {
+            for (let i = 0; i < Math.min(6, gs.players[0].lives); i++) {
                 ctx.fillStyle = '#e8eef8'
                 ctx.fillRect(CW / 2 - 14 + i * 6, 14, 4, 6)
+            }
+            if (two) {
+                for (let i = 0; i < Math.min(6, two.lives); i++) {
+                    ctx.fillStyle = '#8fff9f'
+                    ctx.fillRect(CW / 2 + 22 + i * 6, 14, 4, 6)
+                }
             }
             // weapon rack + energy: icon over the bar, the BOMB-ready pip beside it,
             // and the POWER label below the bar (it used to clip the bar's right end)
@@ -554,7 +596,8 @@ const SmashTVGame = () => {
             if (gs.roomData.bonus) drawCivilians()
             drawEnemies()
             drawShots()
-            drawPlayer()
+            drawContestant(0)
+            if (gs.players.length > 1) drawContestant(1)
             drawBonusLights()
             drawCombo()
             for (const p of parts) {
@@ -570,8 +613,9 @@ const SmashTVGame = () => {
             ctx.restore()
 
             if (flash > 0) { ctx.fillStyle = `rgba(255,60,40,${flash * 0.025})`; ctx.fillRect(0, 0, CW, CH); flash -= 0.5 }
-            if (gs.player.deadT > 0) {
-                const t = (CFG.deadFreeze - gs.player.deadT) / CFG.deadFreeze
+            const downSeat = gs.players.find((q) => q.deadT > 0) || null
+            if (downSeat) {
+                const t = (CFG.deadFreeze - downSeat.deadT) / CFG.deadFreeze
                 ctx.fillStyle = `rgba(80,0,0,${0.15 + t * 0.5})`
                 ctx.fillRect(0, HUD_H, CW, CH - HUD_H)
             }
@@ -590,12 +634,15 @@ const SmashTVGame = () => {
                 if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, CW / 2, 130, 8, '#ffd23f', 3)
                 text('ARROWS MOVE · IJKL FIRING STICK · SPACE FIRE', CW / 2, 158, 7, '#5d7094')
                 text('B FIREBOMB · ONE HIT KILLS · DEMO IS THE PROVEN RUN', CW / 2, 170, 7, '#5d7094')
+                const seatTag = seatMode === 'cpu' ? 'CPU PARTNER IN' : seatMode === 'human' ? 'PLAYER 2 READY' : 'SEAT 2 OFF'
+                text(`C = CPU PARTNER · P = PLAYER 2 (WASD + NUMPAD) · ${seatTag}`, CW / 2, 184, 7, seatMode === 'off' ? '#5d7094' : '#8fff9f')
             }
             if (sc === 'over') {
                 ctx.fillStyle = 'rgba(3,3,12,0.78)'
                 ctx.fillRect(0, 0, CW, CH)
                 text(gs.end === 'win' ? 'THE SHOW IS YOURS!' : 'THAT\u2019S ALL, FOLKS!', CW / 2, 96, 18, gs.end === 'win' ? '#8fff9f' : '#ff5d5d', 10)
-                text(`SCORE ${String(gs.score).padStart(6, '0')} · ROOM ${gs.room + 1}/${TOTAL_ROOMS}`, CW / 2, 122, 9, '#ffd23f', 4)
+                const line = `1UP ${String(gs.players[0].score).padStart(6, '0')}${gs.players[1] ? ` · 2UP ${String(gs.players[1].score).padStart(6, '0')}` : ''} · ROOM ${gs.room + 1}/${TOTAL_ROOMS}`
+                text(line, CW / 2, 122, gs.players[1] ? 8 : 9, '#ffd23f', 4)
                 if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY', CW / 2, 150, 9, '#e9f7ff', 4)
             }
             ctx.fillStyle = 'rgba(0,0,0,0.12)'
@@ -624,8 +671,40 @@ const SmashTVGame = () => {
         }
 
         // ---------------------------------------------------------------- input ----
+        // #496 seat 2 keys (desktop): WASD run, numpad 7/8/9/4/6/1/2/3 is the
+        // aim stick (true 8-way), Numpad0/Enter fire, RightShift the firebomb.
+        // Everything lands on onePad slot 2 so pad-2-thumbs and keyboard-P2 are
+        // one pad shape by the time the sim sees them.
+        const P2_MOVE = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' }
+        const P2_AIM = {
+            Numpad8: ['aimUp'], Numpad2: ['aimDown'], Numpad4: ['aimLeft'], Numpad6: ['aimRight'],
+            Numpad7: ['aimUp', 'aimLeft'], Numpad9: ['aimUp', 'aimRight'],
+            Numpad1: ['aimDown', 'aimLeft'], Numpad3: ['aimDown', 'aimRight'],
+        }
+        const P2_FIRE = ['Numpad0', 'NumpadEnter']
+        const P2_BOMB = ['ShiftRight', 'NumpadDecimal']
+        const P2_CODES = new Set([...Object.keys(P2_MOVE), ...Object.keys(P2_AIM), ...P2_FIRE, ...P2_BOMB])
+        const p2Keys = new Set()
+        const P2_STATE = ['up', 'down', 'left', 'right', 'aimUp', 'aimDown', 'aimLeft', 'aimRight', 'a']
+
+        const setSeat = (kind) => {
+            seatMode = kind
+            setSlotKind(p2slot, kind)
+            if (kind === 'off') { clearSlot(2); p2Keys.clear() }
+        }
+        const seatP2KeysActive = () => seatMode === 'human'
+
+        // at the attract screen a second live pad claims seat 2 as human
+        const pollSeatPad2 = () => {
+            if (seatMode === 'off' && connectedSlots() >= 2 && slotActive(2)) setSeat('human')
+        }
+        const onPads = (ev) => {
+            const c = ev.detail && ev.detail.count
+            if (c >= 2 && (screenRef.current === 'attract' || screenRef.current === 'over')) pollSeatPad2()
+        }
+
         const startPlay = () => {
-            gs = makeGame(Math.floor(Math.random() * 1000) % 97)
+            gs = makeGame(Math.floor(Math.random() * 1000) % 97, { players: seatMode === 'off' ? 1 : 2 })
             floor = buildFloor(0, gs.seed)
             demoAt = 0
             roomTotal = 0; roomBump = 0; clearedAt = -1
@@ -634,13 +713,36 @@ const SmashTVGame = () => {
         const onKeyDown = (ev) => {
             if (ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p); return }
             const sc = screenRef.current
+            if (sc === 'attract' || sc === 'over') {
+                // seats are chosen at the threshold of the show, like the cabinet
+                if (ev.code === 'KeyC') { setSeat(seatMode === 'cpu' ? 'off' : 'cpu'); ev.preventDefault(); return }
+                if (ev.code === 'KeyP') { setSeat(seatMode === 'human' ? 'off' : 'human'); ev.preventDefault(); return }
+            }
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) startPlay(); return }
             if (ev.code === 'KeyB' || ev.code === 'KeyX') bombEdge = true
+            if (seatP2KeysActive() && P2_CODES.has(ev.code)) {
+                ev.preventDefault()
+                if (P2_MOVE[ev.code]) pressSlot(2, P2_MOVE[ev.code])
+                else if (P2_AIM[ev.code]) for (const f of P2_AIM[ev.code]) pressSlot(2, f)
+                else if (P2_FIRE.includes(ev.code)) pressSlot(2, 'a')
+                else if (P2_BOMB.includes(ev.code)) p2BombEdge = true
+                p2Keys.add(ev.code)
+                return
+            }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyZ', 'KeyI', 'KeyJ', 'KeyK', 'KeyL'].includes(ev.code)) ev.preventDefault()
             held.add(ev.code)
         }
-        const onKeyUp = (ev) => { held.delete(ev.code) }
+        const onKeyUp = (ev) => {
+            if (p2Keys.has(ev.code)) {
+                p2Keys.delete(ev.code)
+                if (P2_MOVE[ev.code]) releaseSlot(2, P2_MOVE[ev.code])
+                else if (P2_AIM[ev.code]) for (const f of P2_AIM[ev.code]) releaseSlot(2, f)
+                else if (P2_FIRE.includes(ev.code)) releaseSlot(2, 'a')
+                return
+            }
+            held.delete(ev.code)
+        }
         const onPointer = () => {
             const sc = screenRef.current
             if (sc === 'attract') startPlay()
@@ -648,6 +750,7 @@ const SmashTVGame = () => {
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
+        window.addEventListener('retrogames:pads', onPads)
         canvas.addEventListener('pointerdown', onPointer)
 
         // ------------------------------------------------------------- DEV hook ----
@@ -656,18 +759,25 @@ const SmashTVGame = () => {
                 state: () => gs,
                 hash: () => stateHash(gs),
                 step: (n = 1) => { for (let i = 0; i < n; i++) doSim({ mx: 0, my: 0, fire: false, bomb: false }) },
-                stepWith: (inp) => doSim(inp),
+                stepWith: (inp, inp2) => doSim(inp, inp2 || null),
                 press: (codes) => { for (const c of codes) held.add(c) },
                 release: (codes) => { for (const c of codes) held.delete(c) },
                 bomb: () => { bombEdge = true },
+                p2: (kind) => setSeat(kind),
+                pad2: (field) => pressSlot(2, field),
+                pad2release: (field) => releaseSlot(2, field),
+                stepP2: (pad) => { if (p2slot.kind !== 'off' && gs.players.length > 1) doSim({ mx: 0, my: 0, fire: false, bomb: false }, seatPadToInp(pad)) },
                 start: () => startPlay(),
+                start2P: (seed = 0, kind = 'cpu') => { setSeat(kind); gs = makeGame(seed >>> 0, { players: 2 }); floor = buildFloor(0, gs.seed); demoAt = 0; roomTotal = 0; roomBump = 0; clearedAt = -1; setMode('play') },
                 plan: (seed = 0, opts) => plan(seed, opts),
                 events: () => evLog,
                 probe: () => ({
                     tick: gs.tick, screen: screenRef.current, score: gs.score, lives: gs.lives, room: gs.room,
                     weapon: gs.weapon, energy: gs.energy, cleared: gs.cleared, end: gs.end,
-                    hash: stateHash(gs),
+                    hash: stateHash(gs), seat: seatMode, players: gs.players.length,
+                    score2: gs.players[1] ? gs.players[1].score : 0, lives2: gs.players[1] ? gs.players[1].lives : 0,
                     player: { x: gs.player.x, y: gs.player.y, aim: gs.player.aim, invuln: gs.player.invuln, deadT: gs.player.deadT },
+                    player2: gs.players[1] ? { x: gs.players[1].x, y: gs.players[1].y, aim: gs.players[1].aim, invuln: gs.players[1].invuln, deadT: gs.players[1].deadT, out: gs.players[1].out } : null,
                     enemies: gs.enemies.map((e) => ({ kind: e.kind, x: e.x, y: e.y, hp: e.hp, chg: e.chg })),
                     ebullets: gs.ebullets.length, bullets: gs.bullets.length,
                     crates: gs.crates.map((k) => k.hp), items: gs.items.filter((i) => !i.taken).map((i) => i.t),
@@ -677,40 +787,54 @@ const SmashTVGame = () => {
             }
             exposeGame({
                 id: 'smash-tv',
+                method: 'stick',
+                players: 2,
                 buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
-                reset: (seed) => {
-                    gs = makeGame(seed >>> 0)
+                reads: ['up', 'down', 'left', 'right', 'a', 'b', 'aimUp', 'aimDown', 'aimLeft', 'aimRight', 'ax', 'ay'],
+                reset: (seed, players = 1) => {
+                    gs = makeGame(seed >>> 0, { players: players >= 2 ? 2 : 1 })
                     floor = buildFloor(0, gs.seed)
                     demoAt = 0
                     parts.length = 0; pops.length = 0; evLog.length = 0
                     held.clear(); bombEdge = false
                     shake = 0; flash = 0; toast = 0
                     roomTotal = 0; roomBump = 0; clearedAt = -1
+                    modelP2 = null; p2BombEdge = false
+                    // a driven second seat opens as a model slot: __game.step([p1, p2])
+                    // feeds it pads, exactly like every other source
+                    setSeat(players >= 2 ? 'model' : 'off')
                     setMode('play')
                 },
-                tick: (pad) => {
+                tick: (pad, pads) => {
                     if (gs.end) { gs.tick += 1; return }
+                    modelP2 = pads && pads.length > 1 ? pads[1] : null
                     const inp = {
                         mx: (pad.right ? 1 : 0) - (pad.left ? 1 : 0),
                         my: (pad.down ? 1 : 0) - (pad.up ? 1 : 0),
-                        fx: 0, fy: 0,
+                        fx: (pad.aimRight ? 1 : 0) - (pad.aimLeft ? 1 : 0) || Math.sign(pad.ax || 0),
+                        fy: (pad.aimDown ? 1 : 0) - (pad.aimUp ? 1 : 0) || Math.sign(pad.ay || 0),
                         fire: !!pad.a,
                         bomb: !!pad.b,
                     }
-                    moving = !!(inp.mx || inp.my)
-                    doSim(inp)
+                    const inp2 = gs.players.length > 1 ? seatPadToInp(modelP2 || padFor(p2slot, { method: 'stick', tick: gs.tick })) : null
+                    doSim(inp, inp2)
                 },
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: !!gs.end,
                     seed: gs.seed, room: gs.room, lives: gs.lives, weapon: gs.weapon,
                     enemies: gs.enemies.length, hash: stateHash(gs),
+                    players: gs.players.length, score2: gs.players[1] ? gs.players[1].score : 0,
+                    lives2: gs.players[1] ? gs.players[1].lives : 0,
+                    x: +gs.player.x.toFixed(2), y: +gs.player.y.toFixed(2),
+                    x2: gs.players[1] ? +gs.players[1].x.toFixed(2) : null,
+                    y2: gs.players[1] ? +gs.players[1].y.toFixed(2) : null,
                 }),
                 canvas: () => canvas,
             })
             mountDbg({
                 title: 'SMASH TV',
                 getState: () => [
-                    `${ROOM_NAMES[gs.room]} lives ${gs.lives} score ${gs.score} weapon ${gs.weapon} energy ${gs.energy}`,
+                    `${ROOM_NAMES[gs.room]} lives ${gs.lives} score ${gs.score} weapon ${gs.weapon} energy ${gs.energy}${gs.players[1] ? ` · 2UP ${gs.players[1].score} ×${gs.players[1].lives} (${seatMode})` : ''}`,
                     `player ${gs.player.x.toFixed(0)},${gs.player.y.toFixed(0)} aim ${gs.player.aim.join(',')} inv ${gs.player.invuln}${gs.cleared ? ' EXIT OPEN' : ''}`,
                     gs.enemies.map((e) => `${e.kind}@${e.x.toFixed(0)},${e.y.toFixed(0)} h${e.hp}`).join('\n') || (gs.roomData.bonus ? `${gs.civilians.length} contestants running` : 'arena is quiet'),
                 ],
@@ -719,6 +843,7 @@ const SmashTVGame = () => {
                     { label: 'kill all', run: () => { gs.enemies = []; return 'cleared (cheat)' } },
                     { label: 'max power', run: () => { gs.energy = CFG.maxEnergy; return 'power 100' } },
                     { label: 'open exits', run: () => { gs.cleared = true; return 'exits open (cheat)' } },
+                    { label: 'seat: cpu', run: () => { setSeat('cpu'); return `seat ${seatMode} (applies next start)` } },
                 ],
             })
         }
@@ -730,6 +855,8 @@ const SmashTVGame = () => {
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
+            window.removeEventListener('retrogames:pads', onPads)
+            clearSlot(2)
             if (import.meta.env.DEV) { unmountDbg(); unexposeGame(); delete window.__smashTest }
         }
     }, [setMode])
@@ -748,6 +875,7 @@ const SmashTVGame = () => {
             </div>
             <VirtualControls
                 visible={screen === 'play' && !paused}
+                secondAction={{ label: 'BOMB', code: 'KeyB' }}
             />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>
