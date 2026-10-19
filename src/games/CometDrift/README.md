@@ -1,7 +1,8 @@
 # COMET DRIFT GP — engine notes (#419, polished #435, course pack #493)
 
-Original arcade kart racer. Course pack: SUNSET GULCH (dusk canyon) and
-SANDBANK SPEED BOWL (noon, Daytona road-course spirit), 4 laps,
+Original arcade kart racer. Course pack: SUNSET GULCH (dusk canyon),
+SANDBANK SPEED BOWL (noon, Daytona road-course spirit) and CORKSCOMB DUNES
+(dawn, Laguna Seca spirit), 4 laps,
 7 buggies (player + 6 CPU). No items — the drift ladder is the whole game
 economy. ←/→ on the attract screen picks the circuit; the label rides in the
 HUD; the choice persists in localStorage (`retrogames:comet.course`) and HD
@@ -9,8 +10,8 @@ follows it. All art/audio synthesized at runtime; no assets.
 
 ## Layout
 
-- `track.js` — the COURSE PACK (#493): `COURSES` (gulch, sandbank), each a
-  closed Catmull-Rom centerline (18–20 control points, SEG 26) sampled with
+- `track.js` — the COURSE PACK (#493): `COURSES` (gulch, sandbank, corkscomb), each a
+  closed Catmull-Rom centerline (18–26 control points, SEG 26) sampled with
   per-point tangent/arc-length/curvature, plus a live `TRACK` / `SCENERY` /
   `CHECKPOINTS` view of the SELECTED course — `selectCourse(id)` swaps the
   objects' contents in place (identities stable), so every holder of
@@ -19,6 +20,11 @@ follows it. All art/audio synthesized at runtime; no assets.
   start/finish. Sandbank is the Daytona road course in spirit — banked
   sweepers (minR 341), a NW horseshoe, and the Bus Stop flattened to a
   shallow wave (the checker wins: bend the shape, never the checker).
+  Corkscomb is Laguna Seca in spirit (reference shape consulted for character
+  only, not traced; Laguna Seca's public circuit map is CC BY-SA 3.0 —
+  Wikimedia) — a Rainey-class east sweeper, the ridge straight, and the
+  Corkscomb crest complex where the line's rate alternates against the dune
+  (minR 296); the switchback is the west horseshoe.
 - `sim.js` — the pure machine (`makeGame(seed)`, `step`, `decide`,
   `stateHash`). Determinism: mulberry32 riding INSIDE `g.rngState` (JSON-safe
   snapshots); `Math.random` is never called. Launch jitter, the seeded rival
@@ -31,9 +37,10 @@ follows it. All art/audio synthesized at runtime; no assets.
   (`decide`, skill 1.0). `decide()` never makes mistakes — it is the certified
   line the harness and the attract demo replay.
 - `art.js` — `PALETTE` (named dusk-canyon roles: strata, apron, worn asphalt,
-  mesas) + `PALETTES`/`paletteFor` (#493: `noon` re-tints every role —
-  blue-white sky, pale sand, grey-slate asphalt; the same named roles keep
-  cometcheck's look-pins honest per course), `LIVERY` (per driver), `buildGround` (concentric strata strokes
+  mesas) + `PALETTES`/`paletteFor` (#493: `noon` and `dawn` re-tint every
+  role — noon: blue-white sky, pale sand, grey-slate asphalt; dawn:
+  indigo-to-amber first light, rose strata, long shadows; the same named
+  roles keep cometcheck's look-pins honest per course), `LIVERY` (per driver), `buildGround` (concentric strata strokes
   widest-first foot-to-rim, sand apron, worn wheel grooves via offset paths,
   deterministic patches + sealed cross-cracks, crumbled sandstone edge rings —
   NO painted kerb, NO centre dash: the canyon look is pinned by cometcheck),
@@ -89,11 +96,14 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
 ## Honest gaps (filed to QA as the next polish pass)
 
 - Controls per se are #431 (steering curve); this pass kept the sim's numbers.
-- #493 ships ONE new course (Sandbank) per the issue's ship-small plan; the
-  Gulch's two siblings (Dry Lake Bed ~Sebring, Corkscomb Dunes ~Laguna Seca)
-  are the follow-up. HD keeps its dusk sky tint on any circuit (the noon
-  look is 2D-only so far); the shared trackside arch design is per-name, not
-  per-character (Sandbank deserves its own gantry shape in the polish pass).
+- #493 ships TWO new courses (Sandbank, Corkscomb) per the issue's ship-small
+  plan; Dry Lake Bed (~Sebring) remains the optional third. At flat-world scale
+  and the 220px radius floor the Corkscomb reads as a rate-alternating crest
+  complex, not the hill-drop double-S of the real thing — a longer-wavelength
+  re-tune is polish-pass territory. HD keeps its dusk sky tint on any circuit
+  (noon/dawn looks are 2D-only so far); the shared trackside arch design is
+  per-name, not per-character (Sandbank and Corkscomb deserve their own gantry
+  shapes in the polish pass).
 - No cups, items, or real music (placeholder engine buzz
   only) — all out of scope per #419.
 - CPU karts never chain multi-tier drifts deliberately; they hold one bend
