@@ -12,6 +12,10 @@
 //   5. SKY    — the round-three sliders (#456): time of day (night darkens hard
 //               and shows stars/moon; day does not), clouds (overcast flattens the
 //               sun disc), and the storm-at-night combination.
+//   6. NIGHT  — the real-sky pass (#520): the Yale Bright Star Catalogue is embedded
+//               (Sirius/Polaris/Big Dipper/Orion all present at correct J2000 coords),
+//               the celestial pole sits at the latitude altitude due north, the Big
+//               Dipper is up at night, and the sky rotates with the time-of-day slider.
 //
 // Chrome is launched DIRECTLY (not via playwright's default args): playwright's
 // stock switches hide `navigator.gpu`; headless Chrome 155 exposes a real
@@ -308,6 +312,38 @@ async function main() {
         `${nsUi.t}/${nsUi.c}/${nsUi.s} var=${nsVar.variance.toFixed(3)}`)
       await page.evaluate(() => { window.__oceanTest.setStorm(0); window.__oceanTest.setTod(1); window.__oceanTest.setCloud(0) })
       await page.waitForTimeout(1200)
+
+      // 6. NIGHT (#520): a real Yale BSC night sky — real catalog, real celestial math
+      await page.evaluate(() => { window.__oceanTest.setTod(0); window.__oceanTest.setCloud(0); window.__oceanTest.setStorm(0) })
+      await page.waitForTimeout(900)
+      const sk = await page.evaluate(() => window.__oceanTest.stars())
+      ok('night: ~500 Yale BSC stars embedded', sk.count >= 450 && sk.count <= 520, `count=${sk.count} mw=${sk.mwCount} lat=${sk.lat}`)
+      ok('night: faint Milky Way band embedded', sk.mwCount >= 200, `mw=${sk.mwCount}`)
+      ok('night: brightest star is Sirius (mag -1.46)', sk.named.sirius && Math.abs(sk.named.sirius.mag + 1.46) < 0.05, sk.named.sirius ? `mag=${sk.named.sirius.mag}` : 'missing')
+      ok('night: Polaris at the N pole (dec ~89.3)', sk.named.polaris && Math.abs(sk.named.polaris.dec - 89.26) < 0.6, sk.named.polaris ? `dec=${sk.named.polaris.dec}` : 'missing')
+      const dipAll = Object.values(sk.named.dipper).filter(Boolean).length
+      const dipUp = Object.values(sk.named.dipper).filter(s => s && s.above).length
+      ok('night: Big Dipper — all 7 stars present', dipAll === 7, `${dipAll}/7 in catalog`)
+      ok('night: Big Dipper up at NIGHT (circumpolar body)', dipUp >= 6, `${dipUp}/7 above horizon`)
+      ok('night: Orion — all 7 stars present', Object.values(sk.named.orion).filter(Boolean).length === 7, '')
+      ok('night: celestial pole at the latitude altitude', Math.abs(sk.named.polaris.alt - sk.lat) < 3.0, `Polaris alt=${sk.named.polaris.alt} vs lat=${sk.lat}`)
+      const pAz = sk.named.polaris.az
+      ok('night: pole is due north (Polaris azimuth ~0/360)', pAz < 12 || pAz > 348, `Polaris az=${pAz}`)
+      ok('night: star billboards actually drawing', sk.uploaded > 100, `uploaded=${sk.uploaded} night=${sk.night}`)
+      const azA = (await page.evaluate(() => window.__oceanTest.stars())).named.arcturus.az
+      await page.evaluate(() => window.__oceanTest.setTod(0.3))
+      await page.waitForTimeout(700)
+      const azB = (await page.evaluate(() => window.__oceanTest.stars())).named.arcturus.az
+      let dAz = Math.abs(azB - azA); if (dAz > 180) dAz = 360 - dAz
+      ok('night: sky rotates with the time slider', dAz > 20, `Arcturus az ${azA} → ${azB} (Δ=${dAz.toFixed(0)}°)`)
+      await page.evaluate(() => window.__oceanTest.setTod(0))
+      await page.waitForTimeout(500)
+      if (shots) {
+        // frame the Big Dipper high in the north (yaw=+Z=north, pitched up ~64°)
+        await page.evaluate(() => window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: Math.PI / 2, pitch: 1.12 }))
+        await page.waitForTimeout(700)
+        writeFileSync(resolve(shots, 'night-dipper.png'), await page.screenshot())
+      }
     }
 
     // page must stay clean overall (validation errors land in console)
