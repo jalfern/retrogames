@@ -106,7 +106,7 @@ const findSpot = (gs, minH, maxH, flat, away, minAway) => {
     return { x: MAP / 2, y: MAP / 2 }
 }
 
-const BOUNTY = { giant: 18, wolf: 6, cow: 2 }
+export const BOUNTY = { giant: 18, wolf: 6, cow: 2 }
 
 export function makeGame(seed) {
     const gs = {
@@ -122,7 +122,6 @@ export function makeGame(seed) {
         heights: null, events: [], score: 0,
     }
     gs.heights = genHeights((() => {
-        let s = gs.rngState
         return () => { gs.rngState = (gs.rngState + 0x6D2B79F5) | 0; let t = gs.rngState; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
     })())
     gs.rngState = seed >>> 0
@@ -230,7 +229,7 @@ function castHand(gs, hand) {
     if (hand === 'L') gs.coolL = 18; else gs.coolR = 18
     gs.events.push({ type: 'cast', hand, id })
     if (id === 'fireball') {
-        gs.projs.push({ kind: 'fireball', from: 'p', x: gs.x, y: gs.y, z: gs.alt - 2, vz: -0.12, vx: Math.cos(gs.yaw) * 3.2, vy: Math.sin(gs.yaw) * 3.2, dmg: 14, life: 60 })
+        gs.projs.push({ kind: 'fireball', from: 'p', grace: 4, x: gs.x, y: gs.y, z: Math.max(gs.alt - 2, sampleH(gs, gs.x, gs.y) + 1.5), vz: -0.12, vx: Math.cos(gs.yaw) * 3.2, vy: Math.sin(gs.yaw) * 3.2, dmg: 14, life: 60 })
     } else if (id === 'lightning') {
         const lp = lookPoint(gs)
         const struck = []
@@ -256,6 +255,7 @@ function castHand(gs, hand) {
         for (const i of [...new Set(dead)].sort((a, b) => b - a)) killEntity(gs, gs.monsters[i], i)
     } else if (id === 'heal') {
         gs.hp = Math.min(100, gs.hp + 30)
+        gs.events.push({ type: 'heal' })
     } else if (id === 'protect') {
         gs.shield = 150
     } else if (id === 'slow') {
@@ -265,7 +265,7 @@ function castHand(gs, hand) {
             const e = gs.heldEnt
             const ei = gs.monsters.indexOf(e.ref)
             if (ei >= 0) gs.monsters.splice(ei, 1)
-            gs.projs.push({ kind: 'throw', ekind: e.kind, from: 'p', x: gs.x, y: gs.y, z: gs.alt, vz: -0.12, vx: Math.cos(gs.yaw) * 3.4, vy: Math.sin(gs.yaw) * 3.4, dmg: 26, life: 70 })
+            gs.projs.push({ kind: 'throw', ekind: e.kind, from: 'p', grace: 4, x: gs.x, y: gs.y, z: gs.alt, vz: -0.12, vx: Math.cos(gs.yaw) * 3.4, vy: Math.sin(gs.yaw) * 3.4, dmg: 26, life: 70 })
             gs.heldEnt = null; gs.holdT = 0
         } else {
             let bi = -1, bd = 14
@@ -462,6 +462,7 @@ export function step(gs, inp) {
     for (let i = gs.projs.length - 1; i >= 0; i--) {
         const p = gs.projs[i]
         p.life--
+        if (p.grace > 0) p.grace--
         p.x = wrap(p.x + p.vx, MAP); p.y = wrap(p.y + p.vy, MAP)
         if (p.vz) p.z += p.vz
         if (p.from === 'p' && (p.kind === 'fireball' || p.kind === 'throw')) {
@@ -511,7 +512,7 @@ export function step(gs, inp) {
                 }
             }
         }
-        if (!gone && (p.kind === 'fireball' || p.kind === 'throw') && p.z <= sampleH(gs, p.x, p.y) + 0.5) {
+        if (!gone && (p.kind === 'fireball' || p.kind === 'throw') && p.grace <= 0 && p.z <= sampleH(gs, p.x, p.y) + 0.5) {
             gone = true
             gs.fireMarks.push({ x: p.x, y: p.y, t: gs.tick })
             applySplash(gs, p.x, p.y, p.dmg)
@@ -547,7 +548,6 @@ export function autopilot(gs) {
         const off = OFFENSE[gs.hands.L] ? spellById(gs.hands.L).cost
             : (OFFENSE[gs.hands.R] ? spellById(gs.hands.R).cost : 999)
         let target = null
-        const wdNow = gs.wizard.alive ? Math.hypot(wrapD(gs.wizard.x - gs.x), wrapD(gs.wizard.y - gs.y)) : 1e9
         if (gs.wizard.alive && gs.mana >= off) {
             target = { x: gs.wizard.x, y: gs.wizard.y, z: entZ(gs, gs.wizard.tx, gs.wizard.ty) + 6 }
         } else {
