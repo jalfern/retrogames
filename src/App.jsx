@@ -9,6 +9,7 @@ import { padButton } from './components/gamepadMap'
 import { methodOf } from './utils/onePad'
 import ArcadeShowcase from './pages/ArcadeShowcase'
 import ForgeBoard from './pages/ForgeBoard'
+import ForgeLog from './pages/ForgeLog'
 import { audioController } from './utils/AudioController'
 
 const GameLabelContext = createContext({
@@ -206,6 +207,7 @@ function App() {
           <Route path="/games-classic" element={<GamesList />} />
           <Route path="/games-v2" element={<ArcadeShowcase />} />
           <Route path="/forge" element={<div className="w-full h-full relative"><ForgeBoard /></div>} />
+          <Route path="/forge/log" element={<div className="w-full h-full relative"><ForgeLog /></div>} />
           {GAMES.map(game => (
             <Route
               key={game.path}

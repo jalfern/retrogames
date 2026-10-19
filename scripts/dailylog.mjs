@@ -201,7 +201,6 @@ export function buildLog({ now, pulls = [], issues = [], runs = [], jobsByRun = 
         start = cutoffUTC(ptDateOf(start - 12 * 3600 * 1000))
         dayWindows.push({ day: ptDateOf(start), start, end })
     }
-    dayWindows.reverse()
 
     const entry = (day, winStart, winEnd, live) => {
         const sections = buildSections({
