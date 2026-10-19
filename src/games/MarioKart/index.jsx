@@ -4,7 +4,6 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
-import { makeFitCanvas } from '../../utils/fitCanvas'
 import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
 import { TRACK, SCENERY, TX, TY } from './track.js'
@@ -22,10 +21,17 @@ import { currentPad } from '../../utils/onePad'
 // audited it. No assets; every pixel and note is synthesized here.
 // =====================================================================
 
-const W = 256
-const H = 224
-const HORIZON = 78
-const PLAY_H = 200
+// #469: the source canvas is ADAPTIVE — it re-solves to the viewport's own
+// aspect (height-anchored in landscape, width-anchored in portrait), so the
+// race fills a phone screen instead of sitting in it as a small integer-fit
+// square. At exactly 256x224 the frame is bit-identical to the SNES default.
+const LAND_H = 224
+const LAND_W_MIN = 256
+const LAND_W_MAX = 448
+const PORT_W = 256
+const PORT_H_MAX = 448
+const ROAD_ROWS = 122   // horizon -> bottom of the playfield (camera framing)
+const HUD_ROWS = 24     // instrument strip along the bottom
 const CAM_H = 55
 const PP = 520
 const BACK = 92
@@ -59,11 +65,42 @@ export default function MarioKart() {
 
     useEffect(() => {
         const canvas = canvasRef.current
-        const ctx = canvas.getContext('2d')
+        const host = canvas.parentElement
+        let ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
-        // #227: the ref canvas is now the W×H "source" — the harness reads it.
-        // fitCanvas publishes a crisp integer-scaled display canvas on top of it.
-        const fit = makeFitCanvas(canvas, canvas.parentElement)
+        // #469: adaptive source sizing (the old fitCanvas integer box left a
+        // small square on phones). The canvas backing store tracks the host's
+        // aspect, then CSS-stretches 1:1-ish to fill it, like COMET DRIFT.
+        let W = LAND_W_MIN
+        let H = LAND_H
+        let HORIZON = 78
+        let PLAY_H = 200
+        let frame = null
+        let px = null
+        const relayout = () => {
+            const r = host.getBoundingClientRect()
+            const aspect = r.width / Math.max(1, r.height)
+            if (aspect >= 1) {
+                H = LAND_H
+                W = Math.max(LAND_W_MIN, Math.min(LAND_W_MAX, Math.round(LAND_H * aspect)))
+            } else {
+                W = PORT_W
+                H = Math.min(PORT_H_MAX, Math.max(LAND_H, Math.round(PORT_W / Math.max(0.5, aspect))))
+            }
+            canvas.width = W
+            canvas.height = H
+            ctx = canvas.getContext('2d')
+            ctx.imageSmoothingEnabled = false
+            PLAY_H = H - HUD_ROWS
+            HORIZON = PLAY_H - ROAD_ROWS
+            frame = ctx.createImageData(W, PLAY_H)
+            px = new Uint32Array(frame.data.buffer)
+        }
+        relayout()
+        const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => relayout()) : null
+        if (ro) ro.observe(host)
+        const onWinResize = () => relayout()
+        window.addEventListener('resize', onWinResize)
         const ground = buildGround()
         const gnd = new Uint32Array(ground.data.buffer)
         const sky = buildSky()
@@ -77,8 +114,6 @@ export default function MarioKart() {
             if ((wx % 10) === 9) return 0xff2a2a3a // a vertical support
             return CROWD[(((wx * 7) + (dy * 13)) % 6 + 6) % 6]
         }
-        const frame = ctx.createImageData(W, PLAY_H)
-        const px = new Uint32Array(frame.data.buffer)
         const g = makeGame()
         gameRef.current = g
         const keys = keysRef.current
@@ -169,8 +204,8 @@ export default function MarioKart() {
                 const dl = dd / PP
                 const fr = dd > 2200 ? Math.min(0.8, (dd - 2200) / 1400) : 0
                 const cosd = ca * dd; const sind = sa * dd
-                let wx = cx + cosd + sa * 128 * dl
-                let wy = cy + sind - ca * 128 * dl
+                let wx = cx + cosd + sa * (W / 2) * dl
+                let wy = cy + sind - ca * (W / 2) * dl
                 const stepX = -sa * dl; const stepY = ca * dl
                 let o = y * W
                 if (fr > 0) {
@@ -462,7 +497,6 @@ export default function MarioKart() {
             drawHud()
             if (st.screen === 'attract') drawAttract()
             if (st.screen === 'end') drawEnd()
-            fit.blit()
         }
 
         const resetTo = (screen) => {
@@ -552,7 +586,8 @@ export default function MarioKart() {
 
         return () => {
             cancelAnimationFrame(raf)
-            fit.destroy()
+            if (ro) ro.disconnect()
+            window.removeEventListener('resize', onWinResize)
             window.removeEventListener('keydown', kd)
             window.removeEventListener('keyup', ku)
             unmount()
@@ -565,7 +600,7 @@ export default function MarioKart() {
             className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none"
             onPointerDown={() => tapRef.current && tapRef.current()}
         >
-            <canvas ref={canvasRef} data-fit="source" width={W} height={H} className="block w-full h-full" style={{ imageRendering: 'pixelated', objectFit: 'contain', opacity: 0 }} />
+            <canvas ref={canvasRef} data-fit="source" width={256} height={224} className="block w-full h-full" style={{ imageRendering: 'pixelated', touchAction: 'none' }} />
             <VirtualControls visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'SUPER MARIO KART')} onResume={handleResume} />}
         </div>
