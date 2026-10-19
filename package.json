@@ -117,6 +117,7 @@
     "carpetcheck": "node scripts/carpetcheck.mjs",
     "pacmancheck": "node scripts/pacmancheck.mjs",
     "cometcheck": "node scripts/cometcheck.mjs",
+    "cometplay": "node scripts/cometplay.mjs",
     "cometdrifthdcheck": "node scripts/cometdrifthdcheck.mjs",
     "kartplay": "node scripts/kartplay.mjs",
     "lint:tetris": "eslint src/games/Tetris src/components src/utils src/config src/main.jsx scripts",

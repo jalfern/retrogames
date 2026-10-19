@@ -93,6 +93,11 @@ npm run cometcheck            # Node: track audit, reference-shape gate (#513:
                               #       wins, determinism, canyon look-pins, tiers
 npm run cometcheck -- --mutate # mutates the checkpoint gate, demands RED
 npm run lint:comet            # eslint gate for the game + harness
+npm run cometplay             # Chrome: real keys only — throttle/steer/drift-ladder/
+                              #       spin bite+recover, minimap dot tracks the sim,
+                              #       circuit cycle+persist, and the certified line
+                              #       drives the NEW Daytona layout to a WIN in-tab
+                              #       (needs `npm run dev`; COMET_URL overrides port)
 CONTRACT_ONLY=comet-drift npm run contractcheck   # window.__game (needs npm run dev)
 node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   --eval "window.__cometTest.setPlan(true)" --prewait 8000 --w 840 --h 390 --out f.png
@@ -102,6 +107,12 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
 ## Honest gaps (filed to QA as the next polish pass)
 
 - Controls per se are #431 (steering curve); this pass kept the sim's numbers.
+  Measured (cometplay + Node trace): keyboard steer is raw ±1, so a
+  one-direction held drift walks the kart off the asphalt in ~20 ticks at any
+  speed — tier 1 of the ladder is UNREACHABLE by holding one way. The ladder
+  is a zigzag game (alternate steering ~8 ticks while Space holds); cometplay
+  drives and grades exactly that. A softer keyboard steer notch would change
+  the feel — a #431 decision, not a harness one.
 - #493 ships TWO new courses (Sandbank, Corkscomb) per the issue's ship-small
   plan; Dry Lake Bed (~Sebring) remains the optional third. At flat-world scale
   and the 220px radius floor the Corkscomb reads as a rate-alternating crest
