@@ -15,7 +15,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { CFG, T, newCity, step, stateHash, litSet } from './sim.js'
+import { CFG, T, newCity, step, stateHash, litSet, moveCursor, tapInbox } from './sim.js'
 import { W, H, SCEN } from './scen.js'
 import { plan } from './planner.js'
 
@@ -67,7 +67,6 @@ const SimCityMinGame = () => {
         let demoAt = 0, demoSc = 0
         let toast = 0, toastMsg = ''
         let toolIdx = 0
-        let placeTap = false
         let taxDirty = null
         let parts = []
         const evLog = []
@@ -128,9 +127,8 @@ const SimCityMinGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            const inp = {}
+            const inp = { tool: TOOLVALS[toolIdx] }
             if (taxDirty !== null) { inp.tax = taxDirty; taxDirty = null }
-            if (placeTap) { inp.tool = TOOLVALS[toolIdx]; inp.place = [gs.cursor.x, gs.cursor.y]; placeTap = false }
             doSim(inp)
         }
 
@@ -259,7 +257,7 @@ const SimCityMinGame = () => {
         const startPlay = (sc = 0) => {
             gs = newCity(sc)
             evLog.length = 0; parts = []
-            toolIdx = 0; placeTap = false; taxDirty = null
+            toolIdx = 0; taxDirty = null
             setMode('play')
             say(SCEN[sc].blurb.toUpperCase())
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
@@ -281,11 +279,11 @@ const SimCityMinGame = () => {
             if (e.code === 'KeyT') { toolIdx = (toolIdx + 1) % TOOLVALS.length; audioController.playTone(400 + toolIdx * 40, 0.03, 'square', 0.03); return }
             if (e.code === 'BracketLeft') { taxDirty = Math.max(0, gs.tax - 1); return }
             if (e.code === 'BracketRight') { taxDirty = Math.min(CFG.taxMax, gs.tax + 1); return }
-            if (e.code === 'ArrowLeft') step(gs, { cursor: [gs.cursor.x - 1, gs.cursor.y] }); gs.events.splice(0)
-            if (e.code === 'ArrowRight') step(gs, { cursor: [gs.cursor.x + 1, gs.cursor.y] }); gs.events.splice(0)
-            if (e.code === 'ArrowUp') step(gs, { cursor: [gs.cursor.x, gs.cursor.y - 1] }); gs.events.splice(0)
-            if (e.code === 'ArrowDown') step(gs, { cursor: [gs.cursor.x, gs.cursor.y + 1] }); gs.events.splice(0)
-            if (e.code === 'Space') placeTap = true
+            if (e.code === 'ArrowLeft') { moveCursor(gs, -1, 0); return }
+            if (e.code === 'ArrowRight') { moveCursor(gs, 1, 0); return }
+            if (e.code === 'ArrowUp') { moveCursor(gs, 0, -1); return }
+            if (e.code === 'ArrowDown') { moveCursor(gs, 0, 1); return }
+            if (e.code === 'Space') { tapInbox(gs, gs.cursor.x, gs.cursor.y); return }
         }
         const onPointer = (e) => {
             const sc = screenRef.current
@@ -296,7 +294,12 @@ const SimCityMinGame = () => {
             if (!r.width || !r.height) return
             const gx = Math.floor(((e.clientX - r.left) / r.width) * W)
             const gy = Math.floor(((e.clientY - r.top) / r.height) * H)
-            if (gy < H) { gs.cursor.x = Math.max(0, Math.min(W - 1, gx)); gs.cursor.y = Math.max(0, Math.min(H - 1, gy)); placeTap = true }
+            if (gy < H) {
+                const cx = Math.max(0, Math.min(W - 1, gx))
+                const cy = Math.max(0, Math.min(H - 1, gy))
+                gs.cursor.x = cx; gs.cursor.y = cy
+                tapInbox(gs, cx, cy)
+            }
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('pointerdown', onPointer)
@@ -327,7 +330,7 @@ const SimCityMinGame = () => {
                 hash: () => stateHash(gs),
                 setTool: (i) => { toolIdx = ((i % TOOLVALS.length) + TOOLVALS.length) % TOOLVALS.length },
                 cursorTo: (x, y) => { gs.cursor.x = Math.max(0, Math.min(W - 1, x)); gs.cursor.y = Math.max(0, Math.min(H - 1, y)) },
-                place: (x, y, ti) => { if (ti !== undefined) toolIdx = ti; gs.cursor.x = x; gs.cursor.y = y; placeTap = true },
+                place: (x, y, ti) => { if (ti !== undefined) toolIdx = ti; gs.cursor.x = x; gs.cursor.y = y; tapInbox(gs, x, y) },
                 years: (n) => { for (let k = 0; k < n * CFG.yearTicks && !gs.end; k++) doSim({}) },
             }
             mountDbg({

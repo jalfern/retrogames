@@ -316,9 +316,27 @@ export function newCity(scenIdx = 0, { fundsCut = 0 } = {}) {
         funds: S.funds - fundsCut, tax: S.tax, tool: T.ROAD,
         pop: 0, jobs: 0, income: 0, expense: 0, score: 0,
         grid, events: [], end: null, endWhy: null,
-        doneFire: [], tornadoAt: null, popHistory: [],
+        doneFire: [], tornadoAt: null, popHistory: [], inbox: [],
         cursor: { x: 11, y: 8 },
     }
+}
+
+// The cursor is a BRUSH, not a clock: moving it is a state mutation, not a
+// step. The old shell ran a full step() per arrow press (time passed, a year
+// could end, and its events were spliced away before the UI ever saw them).
+export function moveCursor(g, dx, dy) {
+    g.cursor.x = Math.max(0, Math.min(W - 1, g.cursor.x + dx))
+    g.cursor.y = Math.max(0, Math.min(H - 1, g.cursor.y + dy))
+    return g
+}
+
+// Taps are REQUESTS, not booleans: the shell pushes one per press (keyboard
+// or pointer, wherever the brush is) and the city digests at most one per
+// tick. Two quick taps are two placements, not one.
+export const INBOX_CAP = 8
+export function tapInbox(g, x, y) {
+    if (g.inbox.length < INBOX_CAP) g.inbox.push([x, y])
+    return g
 }
 
 export function step(g, input = {}) {
@@ -331,7 +349,8 @@ export function step(g, input = {}) {
         g.cursor.x = Math.max(0, Math.min(W - 1, input.cursor[0]))
         g.cursor.y = Math.max(0, Math.min(H - 1, input.cursor[1]))
     }
-    if (input.place) place(g, input.place[0], input.place[1])
+    const spot = input.place || (g.inbox.length ? g.inbox.shift() : null)
+    if (spot) place(g, spot[0], spot[1])
     if (g.yTick < CFG.yearTicks - 1) g.yTick++
     else { g.yTick = 0; yearTick(g) }
     return g
@@ -344,5 +363,5 @@ export function stateHash(g) {
         if (c.t !== 0 || c.lvl || c.burn || c.scar || c.gc) cells.push(`${i}:${c.t}/${c.lvl}/${c.burn}/${c.scar}/${c.gc}`)
     }
     return [g.tick, g.year, g.funds, g.tax, g.pop, g.jobs, g.score, g.tool, g.end, g.endWhy,
-        g.cursor.x, g.cursor.y, g.doneFire.join('-'), JSON.stringify(g.tornadoAt), cells.join(',')].join('|')
+        g.cursor.x, g.cursor.y, g.inbox.length, g.doneFire.join('-'), JSON.stringify(g.tornadoAt), cells.join(',')].join('|')
 }

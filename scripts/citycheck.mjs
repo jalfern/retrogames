@@ -5,6 +5,7 @@
 //
 // Sections: frozen Math.random · scenario audit · construction/economy pins
 // (ROAD adjacency, power-along-roads, POP-IS-RES-ONLY, ledger to the dollar)
+// · the tap path (cursor moves don't tick, taps queue, alerts survive)
 // · disaster pins (scripted fire, dousing, spread determinism, tornado cut)
 // · doing nothing loses · the proven runs (the attract demo replays these)
 // · the SLACK RULE (one fewer plant, one fewer station, one plant less cash)
@@ -14,7 +15,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { newCity, step, T, CFG, inB, stateHash } from '../src/games/SimCityMin/sim.js'
+import { newCity, step, T, CFG, inB, stateHash, moveCursor, tapInbox, INBOX_CAP } from '../src/games/SimCityMin/sim.js'
 import { plan } from '../src/games/SimCityMin/planner.js'
 import { SCEN, W, H } from '../src/games/SimCityMin/scen.js'
 
@@ -122,6 +123,49 @@ section('ENGINE PINS')
     }
     ok(peak > 0, 'block-by-block fixture never grew at all — the pin was vacuous')
     ok(big === 0, 'a block jumped more than one level in a year — growth is not block-by-block')
+}
+
+// ---------------------------------------------------------------- the tap path ----
+section('THE TAP PATH — the cursor is a brush, taps queue, alerts survive')
+{
+    // A cursor move is a BRUSH mutation, not a step: the clock, the year and
+    // any alert already in flight must all survive it. (The old shell ran a
+    // full step() per arrow press and spliced the events away before the UI
+    // could hear them.)
+    const g = newCity(0)
+    g.events.push({ type: 'fire', x: 3, y: 3 })   // an alert in flight
+    const t0 = g.tick, y0 = g.year
+    moveCursor(g, -99, -99)
+    ok(g.cursor.x === 0 && g.cursor.y === 0, `a fling to (-99,-99) left the brush at ${g.cursor.x},${g.cursor.y} — the walls are not there`)
+    ok(g.tick === t0, `an arrow move advanced the clock ${t0} -> ${g.tick} — the cursor is a step, not a brush`)
+    ok(g.year === y0, 'a cursor move ended a year')
+    ok(g.events.length === 1 && g.events[0].type === 'fire', 'a cursor move ate the fire alert in flight')
+    moveCursor(g, 99, 99)
+    ok(g.cursor.x === W - 1 && g.cursor.y === H - 1, 'a fling to (+99,+99) walked through the east/south wall')
+
+    // Two taps in one tick interval are TWO placements: the inbox digests one
+    // request per step and the sim answers each one (the first lands, the
+    // second on the same cell is refused — but neither is silently dropped).
+    const c = newCity(0)
+    step(c, { tool: T.ROAD, place: [11, 8] })
+    const funds0 = c.funds
+    tapInbox(c, 11, 9); tapInbox(c, 11, 9)   // a fast double tap
+    step(c, { tool: T.RES })
+    ok(c.grid[idx(11, 9)].t === T.RES, 'the first queued tap never placed')
+    ok(c.funds === funds0 - CFG.cost.res, `the first tap charged ${funds0 - c.funds} (want ${CFG.cost.res})`)
+    step(c, { tool: T.RES })
+    const refused = c.events.find((e) => e.type === 'deny' && e.why === 'GROUND')
+    ok(c.grid[idx(11, 9)].t === T.RES && !!refused, 'the second tap on an occupied cell was swallowed instead of refused')
+    ok(c.funds === funds0 - CFG.cost.res, `the refused tap still charged money (${c.funds} vs ${funds0 - CFG.cost.res})`)
+    step(c, {})
+    ok(c.inbox.length === 0 && !c.events.some((e) => e.type === 'place' || e.type === 'deny'), 'a drained inbox still produces work')
+
+    // the inbox is a queue with a cap, not a boolean: a burst of taps keeps
+    // them all (up to the cap) and the state hash sees the backlog.
+    const b = newCity(0)
+    for (let i = 0; i < INBOX_CAP + 5; i++) tapInbox(b, 5, 4)
+    ok(b.inbox.length === INBOX_CAP, `a ${INBOX_CAP + 5}-tap burst left ${b.inbox.length} queued — the cap is a lie`)
+    ok(stateHash(b) !== stateHash(newCity(0)), 'stateHash ignores taps waiting in the inbox')
 }
 
 // ----------------------------------------------------------------- ledger audit ----
