@@ -59,6 +59,53 @@ export const PALETTE = {
     suit:      '#e8dcc4',
 }
 
+// #493 course pack: the same canyon pipeline under other skies. SUNDBANK runs
+// at NOON — blue-white sky, pale sand, bright strata, grey-slate asphalt; the
+// named roles stay the same so cometcheck pins every course variant with the
+// same lines (road still slate, strata still brighten foot-to-rim).
+export const PALETTES = {
+    dusk: PALETTE,
+    noon: {
+        skyTop:    '#1e4c8c',
+        skyMid:    '#5c94cc',
+        skyLow:    '#a8d0e8',
+        sun:       '#fffce0',
+        sunGlow:   '#f8e0a0',
+        glint:     '#e8f0f8',
+        mesaFar:   '#8a7080',
+        mesaNear:  '#5c4650',
+        rockShadow:'#6a3826',
+        rockDark:  '#8a4c30',
+        rockMid:   '#b06840',
+        rockLight: '#d08c58',
+        rimLit:    '#f0c080',
+        crack:     '#4a2416',
+        apron:     '#e8c088',
+        apronMid:  '#d8a868',
+        apronShade:'#b88850',
+        grain:     '#c89858',
+        pebble:    '#9a6c40',
+        road:      '#4a4a52',
+        roadPatch: '#42424c',
+        groove:    '#34343e',
+        sandEdge:  '#e0c090',
+        bone:      '#f4ecd8',
+        coal:      '#2c2428',
+        cactus:    '#347838',
+        cactusLt:  '#48904c',
+        hoodoo:    '#b07858',
+        hoodooCap: '#805038',
+        wheel:     '#141016',
+        wheelLug:  '#9a929c',
+        outline:   '#100c12',
+        cage:      '#2c2430',
+        engine:    '#585060',
+        suit:      '#e8dcc4',
+    },
+}
+
+export const paletteFor = (id) => PALETTES[id] || PALETTE
+
 // rear-view buggy aspect: WIDER than tall; sprite bank is
 // [steer pose][rev frame] — three poses × two rev frames.
 export const KART = { w: 76, h: 54, frames: 3 }
@@ -157,18 +204,19 @@ function offsetPath(lat) {
 // Dashed strokes at the strata boundaries lay vertical cracks across the
 // bands. There is NO painted kerb and NO centre dash anywhere — this is a
 // canyon toll-road, not a circuit.
-export function buildGround() {
+export function buildGround(pal = PALETTE) {
+    const P = pal
     const c = document.createElement('canvas')
     c.width = TX; c.height = TY
     const x = c.getContext('2d')
 
     // desert floor: dune patchwork + grain + pebbles
-    x.fillStyle = PALETTE.apron; x.fillRect(0, 0, TX, TY)
-    x.fillStyle = PALETTE.apronMid
+    x.fillStyle = P.apron; x.fillRect(0, 0, TX, TY)
+    x.fillStyle = P.apronMid
     for (let gy = 0; gy < TY; gy += 96) for (let gx = ((gy / 96) % 2) * 96; gx < TX; gx += 192) x.fillRect(gx, gy, 96, 96)
-    x.fillStyle = PALETTE.grain
+    x.fillStyle = P.grain
     for (let i = 0; i < TX * TY / 620; i++) x.fillRect((i * 173) % TX, (i * 419) % TY, 2, 3)
-    x.fillStyle = PALETTE.pebble
+    x.fillStyle = P.pebble
     for (let i = 0; i < 520; i++) x.fillRect((i * 307 + 91) % TX, (i * 733 + 57) % TY, 3, 2)
 
     const path = new Path2D()
@@ -186,32 +234,32 @@ export function buildGround() {
 
     // strata: foot-shadow out to the lit rim, then the sand apron, then the
     // crumbled sandstone edge nibbling the last pixels of asphalt
-    band(PALETTE.rimLit, WALL_R)
-    band(PALETTE.rockLight, WALL_R - 4)
-    band(PALETTE.rockMid, WALL_R - 14)
-    band(PALETTE.rockDark, KERB_R + 22)
-    band(PALETTE.rockShadow, KERB_R + 8)
-    band(PALETTE.apronShade, ROAD_R + 16)
-    band(PALETTE.apronMid, ROAD_R + 12)
-    band(PALETTE.apron, ROAD_R + 7)
+    band(P.rimLit, WALL_R)
+    band(P.rockLight, WALL_R - 4)
+    band(P.rockMid, WALL_R - 14)
+    band(P.rockDark, KERB_R + 22)
+    band(P.rockShadow, KERB_R + 8)
+    band(P.apronShade, ROAD_R + 16)
+    band(P.apronMid, ROAD_R + 12)
+    band(P.apron, ROAD_R + 7)
     // strata cracks: dashed strokes laying vertical fractures across the rock
-    band(PALETTE.crack, WALL_R - 4, [4, 26])
-    band(PALETTE.crack, KERB_R + 22, [3, 41])
+    band(P.crack, WALL_R - 4, [4, 26])
+    band(P.crack, KERB_R + 22, [3, 41])
     // asphalt
-    band(PALETTE.road, ROAD_R)
+    band(P.road, ROAD_R)
     // crumbled sandstone eating the road edge: thin dashed rings hugging the
     // asphalt border (a wide dashed stroke would crossbar the whole road)
     x.setLineDash([20, 9])
-    x.strokeStyle = PALETTE.sandEdge; x.lineWidth = 4
+    x.strokeStyle = P.sandEdge; x.lineWidth = 4
     x.stroke(offsetPath(ROAD_R - 1)); x.stroke(offsetPath(-(ROAD_R - 1)))
     x.setLineDash([])
 
     // worn racing grooves: twin tracks darker than the fresh asphalt
-    x.strokeStyle = PALETTE.groove; x.lineWidth = 13
+    x.strokeStyle = P.groove; x.lineWidth = 13
     x.stroke(offsetPath(-58)); x.stroke(offsetPath(58))
 
     // patch kit: deterministic darker repairs scattered along the road
-    x.fillStyle = PALETTE.roadPatch
+    x.fillStyle = P.roadPatch
     for (let i = 0; i < TRACK.N; i += 9) {
         const q = TRACK.pts[i]
         const lat = ((i * 53) % 180) - 90
@@ -222,7 +270,7 @@ export function buildGround() {
         x.restore()
     }
     // sealed cracks crossing the road, every ~60 samples
-    x.strokeStyle = PALETTE.groove; x.lineWidth = 2
+    x.strokeStyle = P.groove; x.lineWidth = 2
     for (let i = 0; i < TRACK.N; i += 60) {
         const q = TRACK.pts[i]
         const nx = Math.cos(q.a + Math.PI / 2); const ny = Math.sin(q.a + Math.PI / 2)
@@ -236,7 +284,7 @@ export function buildGround() {
     const s0 = TRACK.pts[0]
     x.save(); x.translate(s0.x, s0.y); x.rotate(s0.a)
     for (let r = 0; r < 3; r++) for (let col = 0; col < 15; col++) {
-        x.fillStyle = (r + col) % 2 ? PALETTE.bone : PALETTE.coal
+        x.fillStyle = (r + col) % 2 ? P.bone : P.coal
         x.fillRect(-24 + r * 16, -ROAD_R + col * 18.6, 16, 18.6)
     }
     x.restore()

@@ -6,7 +6,7 @@
 // drive() runs the player and every rival; brains differ only in skill and
 // in who computes the input (keys, the seeded rival mistakes, or decide()).
 
-import { TRACK, CHECKPOINTS, surfaceAt, TX, TY } from './track.js'
+import { TRACK, CHECKPOINTS, surfaceAt, TX, TY, COURSE, courseIndex } from './track.js'
 
 export const LAPS = 4
 
@@ -82,6 +82,7 @@ function mkKart(def, row) {
 export function makeGame(seed = 0) {
     const g = {
         tick: 0, phase: 'count', count: CFG.count, seed: seed >>> 0,
+        course: COURSE.id,
         rngState: (seed >>> 0) | 1,
         // the player starts LAST (row 6): the whole race is the overtake
         karts: [mkKart(PLAYER, 6), ...RIVALS.map((d, i) => mkKart(d, i))],
