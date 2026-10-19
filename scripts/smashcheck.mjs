@@ -13,6 +13,12 @@
 //   slack     : seed 1 still wins with one fewer crate per room and zero
 //               energy cells.
 //   determinism : same seed twice -> identical digest.
+//   co-op (#496): two seats one arena — per-seat banks (kills pay the
+//               shooter), ONE shared POWER meter, either hero opens the exit,
+//               game over only when both seats burn their last life, the co-op
+//               autopilot (partner pads only) clears the show, and the whole 2P
+//               run replays from seed + per-player pad streams hash-for-hash;
+//               the aim stick rides THE one pad (ax/ay + digital fold).
 // `-- --mutate` re-plants fixed bugs in child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -36,7 +42,7 @@ const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n 
 async function fresh() {
     const sim = await import(`../src/games/SmashTV/sim.js?c=${Date.now()}`)
     const planner = await import(`../src/games/SmashTV/planner.js?c=${Date.now()}`)
-    return { ...sim, plan: planner.plan }
+    return { ...sim, plan: planner.plan, planCoop: planner.planCoop, padToInp: planner.padToInp, inpToPad: planner.inpToPad, decidePad: planner.decidePad }
 }
 const S = await fresh()
 const { makeGame, step, stateHash, CFG, comboColor, flickerPhase, COMBO_COLORS } = S
@@ -476,6 +482,149 @@ console.log('hud')
     ok(hiRoll(0, 16) === 1, 'the roll always advances at least one digit tick')
 }
 
+// ---------------------------------------------------------------- co-op ----
+// #496 two-player co-op: two seats in one arena, per-seat banks, one shared
+// POWER meter, either hero opens the exit, the show ends only when both seats
+// burn their last life, and the whole 2P run replays from seed + pads.
+console.log('co-op')
+{
+    const g = makeGame(0, { players: 2 })
+    ok(g.players.length === 2, 'two seats share one arena')
+    ok(g.player === g.players[0], 'seat 1 keeps the legacy handle')
+    ok(Math.hypot(g.players[1].x - g.players[0].x, g.players[1].y - g.players[0].y) > 0, 'partners spawn side by side, not stacked')
+    ok(g.players[1].aim[0] === 0 && g.players[1].aim[1] === -1, 'both heroes face the studio at the buzzer')
+}
+// kills pay the shooter's own bank
+{
+    const g = makeGame(0, { players: 2 })
+    g.enemies = []
+    g.roomData.spawns = []
+    g.spawnT = 0
+    const p2 = g.players[1]
+    g.enemies.push({ id: 7001, kind: 'walkcam', x: p2.x + 14, y: p2.y, hp: 1, cd: 9999, wanderT: 999, wdx: 0, wdy: 0, hitT: 0, dir: 1, walk: 0, moving: false, chg: 0, aim: [0, 0] })
+    g.enemies.push({ id: 7002, kind: 'turret', x: 40, y: 60, hp: 2, cd: 9999, wanderT: 999, wdx: 0, wdy: 0, hitT: 0, dir: 1, walk: 0, moving: false, chg: 0, aim: [0, 0] })
+    g.bullets.push({ id: 7003, by: 1, x: p2.x + 14, y: p2.y, dx: 0, dy: 0, pierce: 0, dmg: 1, kind: 'twin' })
+    step(g, {}, {})
+    ok(g.players[1].score === 50 && g.players[0].score === 0, 'the shot that kills pays the shooter', `1UP ${g.players[0].score} 2UP ${g.players[1].score}`)
+    const ev = g.events.find((e) => e.type === 'kill')
+    ok(!!ev && ev.pi === 1, 'the kill event carries its seat', ev ? `pi ${ev.pi}` : 'no kill')
+}
+// POWER is the studio's single meter, not one per hero
+{
+    const g = makeGame(0, { players: 2 })
+    g.enemies = []
+    g.roomData.spawns = []
+    g.spawnT = 0
+    g.players[0].weapon = 'laser'
+    g.players[1].weapon = 'laser'
+    g.players[0].invuln = 9999; g.players[1].invuln = 9999
+    for (let i = 0; i < 16; i++) { step(g, { fire: true }, {}); g.events.length = 0 }
+    const after1 = g.energy
+    ok(after1 === CFG.maxEnergy - 2, 'seat 1 LASER burns the shared meter', `${after1}`)
+    for (let i = 0; i < 16; i++) { step(g, {}, { fire: true }); g.events.length = 0 }
+    ok(g.energy === after1 - 2, 'seat 2 LASER burns the SAME meter', `${g.energy}`)
+    // a FIREBOMB paid from the shared meter drains what the partner was saving
+    const before = g.energy
+    step(g, {}, { bomb: true })
+    ok(before - g.energy === CFG.firebombCost, 'the partner can spend the shared POWER on a bomb too', `-${before - g.energy}`)
+}
+// one hero down is not the end of the show
+{
+    const g = makeGame(2, { players: 2 })
+    for (const q of g.players) q.invuln = 0
+    g.ebullets.push({ id: 8801, x: g.players[0].x + 2, y: g.players[0].y, dx: 1, dy: 0, dmg: 1, kind: 'shot' })
+    step(g, {}, { my: -1 })
+    ok(g.events.some((e) => e.type === 'death' && e.pi === 0) && !g.end, 'seat 1 goes down and the show plays on')
+    const y0 = g.players[1].y
+    step(g, {}, { my: -1 })
+    ok(g.players[1].y < y0, 'the partner keeps playing while seat 1 is down')
+    ok(g.end === null, 'no game over while a hero is still standing')
+}
+// the show only ends when BOTH seats burn their last life
+{
+    const g = makeGame(2, { players: 2 })
+    for (const q of g.players) { q.lives = 1; q.invuln = 0 }
+    g.enemies = []
+    g.roomData.spawns = []
+    g.spawnT = 0
+    g.ebullets.push({ id: 8811, x: g.players[0].x + 2, y: g.players[0].y, dx: 0, dy: 0, dmg: 1, kind: 'shot' })
+    g.ebullets.push({ id: 8812, x: g.players[1].x + 2, y: g.players[1].y, dx: 0, dy: 0, dmg: 1, kind: 'shot' })
+    step(g, {}, {})
+    ok(g.players.every((q) => q.deadT > 0), 'both seats drop on the same tick')
+    let n = 0
+    while (!g.end && n++ < CFG.deadFreeze + 4) step(g, {}, {})
+    ok(g.end === 'over', 'the show ends when both seats spend their last life', `n=${n} end=${g.end}`)
+    ok(g.players.every((q) => q.out), 'both seats are out', g.players.map((q) => q.lives).join('/'))
+}
+// either hero walking an open door takes the whole cast onward
+{
+    const g = makeGame(0, { players: 2 })
+    g.enemies = []
+    g.roomData.spawns = []
+    g.spawnT = 0
+    step(g, {}, {})
+    ok(g.cleared, 'the co-op room falls')
+    const ex = EXITS[1]
+    g.players[1].x = cx(ex.c); g.players[1].y = cy(ex.r)
+    step(g, {}, {})
+    ok(g.room === 1, 'seat 2 alone walks the exit and the whole arena advances')
+    ok(g.players[0].deadT === 0 && !g.players[0].out, 'the idle hero travels to the next room too')
+}
+// seats never overlap at spawn
+{
+    const g = makeGame(1, { players: 2 })
+    ok(g.players[0].x !== g.players[1].x, 'partners spawn on different tiles', `${g.players[0].x},${g.players[1].x}`)
+}
+// the co-op autopilot: a partner that speaks ONLY pads still clears the show
+{
+    const seeds = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    const wins = []
+    let badPartner = 0
+    for (const seed of seeds) {
+        const c = S.planCoop(seed)
+        if (c.won) { wins.push(seed); if (c.score2 < 1000) badPartner++ }
+    }
+    ok(wins.length >= 4, `the co-op autopilot clears the show on ${wins.length}/9 seeds (4 is the bar)`, `won ${wins.join(',')}`)
+    ok(badPartner === 0, 'the partner carries its weight on every win (2UP bank > 0)', `weak partner on ${badPartner} seeds`)
+}
+// determinism of the co-op replay
+{
+    const a = S.planCoop(0), b = S.planCoop(0)
+    ok(a.won && a.hash === b.hash, 'co-op is deterministic', `${a.hash} vs ${b.hash}`)
+    ok(a.hash !== S.plan(0).hash, 'the co-op run differs from the solo pilot (the partner actually moves the show)')
+}
+// #496 done-when: the run replays from seed + per-player PAD streams
+{
+    const r = S.planCoop(0)
+    ok(r.won, 'the proven co-op run wins')
+    const g = makeGame(0, { players: 2 })
+    for (const [i1, pad2] of r.script) {
+        // seat 1's decision is folded through a pad too — the harness replays
+        // nothing but seed + two pad streams per tick
+        step(g, S.padToInp(S.inpToPad(i1)), S.padToInp(pad2))
+        g.events.length = 0
+    }
+    ok(stateHash(g) === r.hash, 'seed + per-player pad streams replay hash-for-hash', `${stateHash(g)} vs ${r.hash}`)
+    ok(g.end === 'win', 'the pad-stream replay ends where the autopilot ended', `${g.end}`)
+}
+// #496 the aim stick on THE one pad: analog and digital folds agree
+{
+    const one = await import(`../src/utils/onePad.js?c=${Date.now()}`)
+    const p = one.blankPad()
+    ok('ax' in p && 'ay' in p, 'the one pad carries an analog aim vector')
+    ok(one.PAD_FIELDS.includes('aimUp') && one.PAD_FIELDS.includes('ax'), 'the pad meta lists the aim fields')
+    const a = one.normalizePad({ ax: 1, ay: 0 })
+    ok(a.aimRight && !a.aimLeft && !a.aimUp && !a.aimDown, 'ax=1 quantizes to aim-right')
+    const d = one.normalizePad({ aimDown: true })
+    ok(d.aimDown && d.ay === 0, 'a digital aim press reads without an analog vector')
+    ok(one.blankPad().aimUp === false && one.blankPad().aimRight === false, 'the aim stick rests neutral')
+    // slot 2's aim is independent of slot 1's
+    one.pressSlot(2, 'aimLeft')
+    const s2 = one.slotPad(2)
+    ok(s2.aimLeft, 'slot 2 carries its own digital aim')
+    one.releaseSlot(2, 'aimLeft')
+}
+
 // ----------------------------------------------------------------- pilot ----
 console.log('pilot')
 let deathless = 0
@@ -520,13 +669,15 @@ if (process.argv.includes('--mutate')) {
     const SIM = 'src/games/SmashTV/sim.js'
     const MUTANTS = [
         ['exits unlock while enemies live', 'gs.spawnT <= 0 && !room.spawns.length && gs.enemies.length === 0', 'gs.enemies.length >= 0'],
-        ['one-hit lethality removed', 'if (p.deadT > 0 || gs.end || p.invuln > 0) return', 'if (p.deadT > 0 || gs.end || p.invuln >= 0) return'],
+        ['one-hit lethality removed', 'if (p.deadT > 0 || p.out || gs.end || p.invuln > 0) return', 'if (p.deadT > 0 || p.out || gs.end || p.invuln >= 0) return'],
         ['crates keep their gun inside', 'gs.items.push({ id: gs._nextId++, t: \'weapon\', w: k.weapon, x: k.x, y: k.y })', 'void k'],
         ['firebomb goes free', 'gs.energy -= CFG.firebombCost\n    let killed = 0', 'gs.energy -= 0\n    let killed = 0'],
         ['the bonus clock never runs out', 'if (gs.bonusT <= 0) {', 'if (gs.bonusT <= -1e9) {'],
         ['the telegraph vanishes (guns fire blind)', 'e.chg = TELEGRAPH\n    trackAim(gs, e)\n    gs.events.push({ type: \'charge\', kind: e.kind })', 'void e'],
         ['the crowd never murmurs', 'gs.events.push({ type: \'murmur\' })', 'void 0'],
         ['the close alert never sounds', 'gs.events.push({ type: \'alert\', x: bx, y: by })', 'void 0'],
+        ['the partner\'s kills pay seat 1 instead of the shooter', 'addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind }, pi)\n        gs.events.push({ type: \'kill\', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined, pi })', 'addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind }, 0)\n        gs.events.push({ type: \'kill\', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined, pi })'],
+        ['both seats out never ends the co-op show', 'if (seats.every((q) => q.out)) { gs.end = \'over\'', 'if (seats.every((q) => q.out && false)) { gs.end = \'over\''],
     ]
     const orig = readFileSync(SIM, 'utf8')
     let died = 0
