@@ -20,7 +20,7 @@ import { plan } from './planner.js'
 import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN } from './sprite.js'
-import { enemyFrame, CHARGE, TELEGRAPH } from './enemies.js'
+import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
 
 const SIM_MS = 1000 / 60
 const ROOM_NAMES = [
@@ -124,7 +124,15 @@ const SmashTVGame = () => {
                 else if (e.type === 'bomb') { audioController.playNoise(0.4, 0.12); audioController.playSweep(80, 900, 0.4, 'sawtooth', 0.1); shake = 8; flash = 12; say('FIREBOMB! THE AUDIENCE ROARS!') }
                 else if (e.type === 'bombFail') { audioController.playTone(110, 0.12, 'square', 0.05); say('NOT ENOUGH POWER!') }
                 else if (e.type === '1up') audioController.playSweep(440, 1760, 0.5, 'square', 0.08)
-                else if (e.type === 'win') { audioController.playSweep(220, 1760, 0.9, 'square', 0.1); say('YOU WON THE SHOW!') }
+                else if (e.type === 'bossKill') {
+                    audioController.playSweep(120, 40, 0.5, 'sawtooth', 0.12)
+                    audioController.playTone(523.25, 0.12, 'square', 0.09, 0.15)
+                    audioController.playTone(659.25, 0.12, 'square', 0.09, 0.29)
+                    audioController.playTone(783.99, 0.12, 'square', 0.09, 0.43)
+                    audioController.playTone(1046.5, 0.3, 'square', 0.1, 0.57)
+                    shake = Math.max(shake, 22); flash = Math.max(flash, 26)
+                    say('THE ANNOUNCER IS DOWN!')
+                } else if (e.type === 'win') { audioController.playSweep(220, 1760, 0.9, 'square', 0.1); say('YOU WON THE SHOW!') }
             }
         }
 
@@ -138,6 +146,15 @@ const SmashTVGame = () => {
         const doSim = (inp) => {
             step(gs, inp)
             handleEvents(gs.events.splice(0))
+            // THE ANNOUNCER's death sequence: while the arena holds, a cascade of
+            // explosions rips through his corpse, staggered on the sim clock
+            if (gs.bossDeath && gs.bossDeath.t > 0) {
+                const el = BOSS_DEATH_T - gs.bossDeath.t
+                if (el % 15 === 0) {
+                    const cols = ['#ffd23f', '#ff8a3f', '#ff4f4f']
+                    burst(gs.bossDeath.x + (Math.random() - 0.5) * 26, gs.bossDeath.y + (Math.random() - 0.5) * 18, 18, cols[el % 3], 3.6)
+                }
+            }
             if (gs.end) finish(gs.end === 'win')
         }
 
@@ -305,10 +322,33 @@ const SmashTVGame = () => {
                     ctx.globalAlpha = 1
                 }
                 if (e.kind === 'boss') {
+                    text('THE ANNOUNCER', e.x, e.y - 30, 6, OUTLINE.boss, 4)
                     ctx.fillStyle = '#301010'
                     ctx.fillRect(e.x - 20, e.y - 24, 40, 4)
                     ctx.fillStyle = '#e83a3a'
                     ctx.fillRect(e.x - 20, e.y - 24, 40 * Math.max(0, e.hp / ENEMIES.boss.hp), 4)
+                    // the mouth flaps open in sync with the fire cadence: it sits
+                    // open for the FLAP ticks straight after each shot
+                    if (bossMouth(e.cd, ENEMIES.boss.cd)) {
+                        ctx.fillStyle = '#10141f'
+                        ctx.fillRect(e.x - 6, e.y - 1, 12, 7)
+                        ctx.fillStyle = '#ff4f4f'
+                        ctx.fillRect(e.x - 3, e.y + 3, 6, 2)
+                    }
+                }
+                // THE ANNOUNCER's adds materialize under a ring for ADD_TELEGRAPH
+                // ticks (a boss add is the only kind that carries a born marker)
+                if (e.born !== undefined) {
+                    const age = gs.tick - e.born
+                    if (age < ADD_TELEGRAPH) {
+                        const t = age / ADD_TELEGRAPH
+                        ctx.strokeStyle = OUTLINE.boss
+                        ctx.globalAlpha = 1 - t
+                        ctx.lineWidth = 2
+                        ctx.beginPath(); ctx.arc(e.x, e.y, 4 + 11 * t, 0, Math.PI * 2); ctx.stroke()
+                        ctx.globalAlpha = 1
+                        ctx.lineWidth = 1
+                    }
                 }
             }
         }

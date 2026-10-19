@@ -10,6 +10,15 @@ export const ENEMY_FRAMES = 4
 // ticks of visible charge before a turret/heavy commits its shot
 export const TELEGRAPH = 20
 
+// THE ANNOUNCER's theatre (pure: the sim and drawEnemies render exactly these):
+// his mouth flaps for BOSS_MOUTH_FLAP ticks straight after each shot (synced to
+// the fire cadence), his adds materialize under an ADD_TELEGRAPH ring, and he
+// dies to a BOSS_DEATH_T-tick multi-explosion while the arena holds — before the
+// WIN banner.
+export const BOSS_MOUTH_FLAP = 12
+export const ADD_TELEGRAPH = 22
+export const BOSS_DEATH_T = 90
+
 // the kinds that track a target and must charge before firing
 export const CHARGERS = { turret: true, heavy: true }
 
@@ -40,3 +49,8 @@ export const enemyFrame = (e, tick) => {
     if (!e.moving) return 0
     return Math.floor((e.walk || 0) / 6) % ENEMY_FRAMES
 }
+
+// the mouth is open during the BOSS_MOUTH_FLAP ticks straight after a shot: a
+// fire resets the reload clock cd to maxCd, so it sits in the top FLAP band
+// right after every shot and the flap rides the fire cadence
+export const bossMouth = (cd, maxCd) => cd >= maxCd - BOSS_MOUTH_FLAP + 1
