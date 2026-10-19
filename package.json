@@ -115,6 +115,7 @@
     "lint:kart": "eslint src/games/MarioKart src/components src/utils src/config src/main.jsx scripts",
     "kartcheck": "node scripts/kartcheck.mjs",
     "carpetcheck": "node scripts/carpetcheck.mjs",
+    "pacmancheck": "node scripts/pacmancheck.mjs",
     "cometcheck": "node scripts/cometcheck.mjs",
     "cometdrifthdcheck": "node scripts/cometdrifthdcheck.mjs",
     "kartplay": "node scripts/kartplay.mjs",

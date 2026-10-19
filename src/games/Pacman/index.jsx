@@ -4,6 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
+import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer } from './move'
 
 // Touch devices have no arrow keys — the attract prompt must say TAP, not keys (#420).
 const TOUCH = typeof window !== 'undefined' &&
@@ -30,56 +31,12 @@ const PacmanGame = () => {
         let isAttractMode = true
         let keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false }
 
-        // MAP DATA (V3 - Block Based)
-        // 0: Path, 1: Wall Block, 2: Dot, 3: Power, 4: Door
-        const map = [
-            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
-            [1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1],
-            [1, 3, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 3, 1],
-            [1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1],
-            [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
-            [1, 2, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 2, 1],
-            [1, 2, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 2, 1],
-            [1, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 1],
-            [1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1],
-            [0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 2, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 1, 0, 0, 4, 4, 0, 0, 1, 0, 1, 1, 2, 1, 0, 0, 0, 0, 0], // Ghost House
-            [1, 1, 1, 1, 1, 1, 2, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 2, 1, 1, 1, 1, 1, 1],
-            [0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0], // Tunnel
-            [1, 1, 1, 1, 1, 1, 2, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 2, 1, 1, 1, 1, 1, 1],
-            [0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 2, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 1, 0, 0, 0, 0, 0],
-            [0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 2, 1, 0, 0, 0, 0, 0],
-            [1, 1, 1, 1, 1, 1, 2, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 2, 1, 1, 1, 1, 1, 1],
-            [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
-            [1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1],
-            [1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1],
-            [1, 3, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 0, 0, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 3, 1], // Pacman Start
-            [1, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 1],
-            [1, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 1],
-            [1, 2, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 1],
-            [1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1],
-            [1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1],
-            [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
-            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-        ]
-
-        const CELL_SIZE = 16
-        const ROWS = map.length
-        const COLS = map[0].length
+        // MAP DATA lives in ./move — the live copy is mutated as dots are eaten
+        const map = MAP.map(row => [...row])
 
         // Entities
-        let pacman = {
-            x: 13.5, y: 23,
-            dir: { x: -1, y: 0 },
-            nextDir: { x: -1, y: 0 },
-            progress: 0,
-            speed: 0.15,
-            poweredUp: false,
-            powerTimer: 0
-        }
+        const pacman = makePacman()
+        const gs = { map, pacman, score: 0 }
 
         let ghosts = [
             { id: 1, x: 13, y: 11, color: '#ff0000', path: [], progress: 0, speed: 0.08, state: 'chase', type: 'blinky', penTimer: 0 },
@@ -89,7 +46,6 @@ const PacmanGame = () => {
         ]
 
         let gameOver = false
-        let score = 0
         let lives = 3
 
         // --- AI UTILS ---
@@ -158,25 +114,18 @@ const PacmanGame = () => {
             return bestMove
         }
 
-        const originalMap = map.map(row => [...row])
-
         const resetPositions = () => {
-            pacman.x = 13.5; pacman.y = 23;
-            pacman.dir = { x: -1, y: 0 }
-            pacman.nextDir = { x: -1, y: 0 }
-            pacman.progress = 0
+            Object.assign(pacman, makePacman())
             ghosts[0].x = 13; ghosts[0].y = 11; ghosts[0].state = 'chase'; ghosts[0].progress = 0; ghosts[0].penTimer = 0;
             ghosts[1].x = 13; ghosts[1].y = 14; ghosts[1].state = 'pen'; ghosts[1].progress = 0; ghosts[1].penTimer = 120;
             ghosts[2].x = 12; ghosts[2].y = 14; ghosts[2].state = 'pen'; ghosts[2].progress = 0; ghosts[2].penTimer = 360;
             ghosts[3].x = 15; ghosts[3].y = 14; ghosts[3].state = 'pen'; ghosts[3].progress = 0; ghosts[3].penTimer = 600;
-            pacman.poweredUp = false
-            pacman.powerTimer = 0
         }
 
         const resetLevel = () => {
             for (let r = 0; r < ROWS; r++) {
                 for (let c = 0; c < COLS; c++) {
-                    map[r][c] = originalMap[r][c]
+                    map[r][c] = MAP[r][c]
                 }
             }
             wallContours = null  // recompute on next draw
@@ -231,97 +180,46 @@ const PacmanGame = () => {
                 }
             }
 
-            // PACMAN AI
-            if (pacman.progress === 0) {
-                if (isAttractMode) {
-                    const mapX = Math.round(pacman.x)
-                    const mapY = Math.round(pacman.y)
-                    let dangerGhost = ghosts.find(g => g.state === 'chase' && Math.sqrt(Math.pow(g.x - mapX, 2) + Math.pow(g.y - mapY, 2)) < 8)
-                    if (dangerGhost) {
-                        pacman.nextDir = getSafeMove(mapX, mapY)
-                    } else {
-                        const nearbyPower = bfs(mapX, mapY, 'power')
-                        if (nearbyPower && !pacman.poweredUp) {
-                            pacman.nextDir = nearbyPower
-                        } else {
-                            const nextDot = bfs(mapX, mapY, 'dot')
-                            if (nextDot) pacman.nextDir = nextDot
-                            else {
-                                const moves = getValidMoves(mapX, mapY)
-                                if (moves.length > 0) pacman.nextDir = moves[Math.floor(Math.random() * moves.length)]
-                            }
-                        }
-                    }
-                    pacman.dir = pacman.nextDir || pacman.dir
+            // PACMAN AI (attract) — the human path is the arcade input rules in ./move
+            if (isAttractMode && pacman.progress === 0) {
+                const mapX = Math.round(pacman.x)
+                const mapY = Math.round(pacman.y)
+                let dangerGhost = ghosts.find(g => g.state === 'chase' && Math.sqrt(Math.pow(g.x - mapX, 2) + Math.pow(g.y - mapY, 2)) < 8)
+                if (dangerGhost) {
+                    pacman.nextDir = getSafeMove(mapX, mapY)
                 } else {
-                    // #420: the one pad — a direction held on the touch d-pad, a
-                    // gamepad stick (via the shared quantizer) or a desktop key
-                    // sets the desired next direction. One pad per tick.
-                    const op = currentPad('dpad')
-                    if (op.up) pacman.nextDir = { x: 0, y: -1 }
-                    else if (op.down) pacman.nextDir = { x: 0, y: 1 }
-                    else if (op.left) pacman.nextDir = { x: -1, y: 0 }
-                    else if (op.right) pacman.nextDir = { x: 1, y: 0 }
-
-                    // Manual Turn Logic
-                    // Allow turning if valid
-                    if (pacman.nextDir.x !== 0 || pacman.nextDir.y !== 0) {
-                        const mapX = Math.round(pacman.x)
-                        const mapY = Math.round(pacman.y)
-                        const nextX = mapX + pacman.nextDir.x
-                        const nextY = mapY + pacman.nextDir.y
-                        if (nextY === 14 && (nextX < 0 || nextX >= COLS)) {
-                            pacman.dir = pacman.nextDir
-                        } else if (nextX >= 0 && nextX < COLS && nextY >= 0 && nextY < ROWS && map[nextY][nextX] !== 1) {
-                            pacman.dir = pacman.nextDir
+                    const nearbyPower = bfs(mapX, mapY, 'power')
+                    if (nearbyPower && !pacman.poweredUp) {
+                        pacman.nextDir = nearbyPower
+                    } else {
+                        const nextDot = bfs(mapX, mapY, 'dot')
+                        if (nextDot) pacman.nextDir = nextDot
+                        else {
+                            const moves = getValidMoves(mapX, mapY)
+                            if (moves.length > 0) pacman.nextDir = moves[Math.floor(Math.random() * moves.length)]
                         }
                     }
                 }
+                pacman.dir = pacman.nextDir || pacman.dir
             }
 
-            // Move Pacman
-            if (pacman.dir.x !== 0 || pacman.dir.y !== 0) {
-                // PREDICT COLLISION
-                if (pacman.progress === 0) {
-                    const mapX = Math.round(pacman.x)
-                    const mapY = Math.round(pacman.y)
-                    const nextX = mapX + pacman.dir.x
-                    const nextY = mapY + pacman.dir.y
-                    if (nextX >= 0 && nextX < COLS && nextY >= 0 && nextY < ROWS && map[nextY][nextX] === 1) {
-                        // Hit wall
-                        pacman.dir = { x: 0, y: 0 }
-                    }
-                }
-
-                if (pacman.dir.x !== 0 || pacman.dir.y !== 0) { // Check again after collision stop
-                    pacman.progress += pacman.speed
-                    if (pacman.progress >= 1) {
-                        pacman.x += pacman.dir.x
-                        pacman.y += pacman.dir.y
-                        pacman.progress = 0
-                        pacman.x = Math.round(pacman.x)
-                        pacman.y = Math.round(pacman.y)
-                        if (pacman.x <= -1) pacman.x = COLS - 1
-                        else if (pacman.x >= COLS) pacman.x = 0
-                        const mapX = Math.round(pacman.x)
-                        const mapY = Math.round(pacman.y)
-                        if (mapX >= 0 && mapX < COLS && mapY >= 0 && mapY < ROWS) {
-                            const tile = map[mapY][mapX]
-                            if (tile === 2) {
-                                map[mapY][mapX] = 0
-                                score += 10
-                                audioController.playTone(300 + Math.random() * 200, 0.05, 'triangle', 0.1)
-                            } else if (tile === 3) {
-                                map[mapY][mapX] = 0
-                                score += 50
-                                pacman.poweredUp = true
-                                pacman.powerTimer = 600
-                                ghosts.forEach(g => { if (g.state === 'chase') g.state = 'scared' })
-                                audioController.playSweep(600, 800, 0.5, 'sine', 0.1)
-                            }
-                        }
-                    }
-                }
+            // #472: arcade input — a held diagonal keeps the heading and pre-turns
+            // the other axis, a 180 is instant, and the turn starts up to CORNER px
+            // before the tile centre. One pad per tick (see ./move).
+            const op = isAttractMode ? null : currentPad('dpad')
+            const held = []
+            if (op) {
+                if (op.up) held.push({ x: 0, y: -1 })
+                if (op.down) held.push({ x: 0, y: 1 })
+                if (op.left) held.push({ x: -1, y: 0 })
+                if (op.right) held.push({ x: 1, y: 0 })
+            }
+            const eaten = stepPlayer(gs, held)
+            if (eaten === 'dot') {
+                audioController.playTone(300 + Math.random() * 200, 0.05, 'triangle', 0.1)
+            } else if (eaten === 'power') {
+                ghosts.forEach(g => { if (g.state === 'chase') g.state = 'scared' })
+                audioController.playSweep(600, 800, 0.5, 'sine', 0.1)
             }
 
             // GHOST AI
@@ -432,13 +330,13 @@ const PacmanGame = () => {
                 if (Math.sqrt(dx * dx + dy * dy) < 0.8) {
                     if (g.state === 'scared') {
                         g.state = 'dead'
-                        score += 200
+                        gs.score += 200
                         audioController.playTone(800, 0.1, 'square', 0.2)
                     } else if (g.state === 'chase') {
                         lives--
                         if (lives <= 0) {
                             gameOver = true
-                            score = 0
+                            gs.score = 0
                             lives = 3
                         }
                         audioController.playSweep(400, 100, 0.5, 'sawtooth', 0.2)
@@ -751,7 +649,7 @@ const PacmanGame = () => {
             ctx.fillStyle = '#ffffff'
             ctx.font = '14px monospace'
             ctx.textAlign = 'left'
-            ctx.fillText(`SCORE: ${score}`, (viewWidth - mapWidth * scale) / 2, hudY - 6)
+            ctx.fillText(`SCORE: ${gs.score}`, (viewWidth - mapWidth * scale) / 2, hudY - 6)
             ctx.textAlign = 'right'
             const hudRight = (viewWidth + mapWidth * scale) / 2
             for (let i = 0; i < lives; i++) {
@@ -794,7 +692,7 @@ const PacmanGame = () => {
             if (gameOver) {
                 resetLevel()
                 gameOver = false
-                score = 0
+                gs.score = 0
                 lives = 3
             }
             // #420: desktop keys write THE one pad (the touch d-pad does the same);
