@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SHORE — WebGPU swash &amp; shoals</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .14em;
+    color: rgba(210,235,225,.78); text-shadow: 0 1px 3px rgba(0,0,0,.8);
+    text-transform: uppercase;
+  }
+  #hud b { color: rgba(235,255,245,.95); font-weight: 700; }
+  #tide {
+    position: fixed; top: 12px; right: 14px; z-index: 2; pointer-events: none;
+    background: rgba(10,14,16,.55); border: 1px solid rgba(140,220,190,.25); border-radius: 8px;
+    padding: 8px 12px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    font: 11px/1.6 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase;
+    color: rgba(210,235,225,.85); text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  }
+  #tide b { color: rgba(235,255,245,.95); font-weight: 700; }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 3;
+    font: 14px/1.6 ui-monospace, Menlo, monospace; color: #d8f4e8; background: #10141a;
+    text-align: center; padding: 2em;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>SHORE</b> · WebGPU swash sim &nbsp;·&nbsp; drag look &nbsp;·&nbsp; WASD / arrows fly &nbsp;·&nbsp; Q / E down-up &nbsp;·&nbsp; shift = fast</div>
+<div id="tide"><b>Surf</b> · set <span id="setLbl">—</span> · run-up <span id="runLbl">0.0</span>m</div>
+<div id="fatal"></div>
+<script type="module">
+'use strict';
+
+const qs = new URLSearchParams(location.search);
+const SEED = (qs.get('seed') | 0) || 7;
+const LITE = qs.get('lite') === '1';
+
+const LANES = 128;
+const SLOPE = 0.052;            // beach slope (rise per metre inland)
+const XS0 = 84;                // mean shoreline x
+const XMIN = 0, XMAX = 190;    // world extent, x = offshore -> inland
+const ZMIN = -70, ZSPAN = 140; // alongshore
+const G = 9.81;
+const GRIDX = LITE ? 128 : 256;
+const GRIDZ = LITE ? 96 : 192;
+
+// swell components: period s, deep amplitude m, alongshore phase tilt
+const SW = [
+  { T: 7.4, A: 0.155, tilt: 0.115 },
+  { T: 5.0, A: 0.095, tilt: -0.07 },
+  { T: 3.2, A: 0.055, tilt: 0.16 },
+].map(o => ({ ...o, w: 2 * Math.PI / o.T }));
+
+const xsCurve = z => XS0 + 9 * Math.sin(z * 0.043 + 1.7) + 3.5 * Math.sin(z * 0.12 + 0.6);
+const hash1 = i => { let x = Math.sin(i * 127.1 + SEED * 311.7) * 43758.5453; return x - Math.floor(x); };
+
+// piecewise grid: 25% of points over deep water, 55% over the 50..110 surf
+// band (0.43 m spacing), 20% up the back beach.
+function fx(u) {
+  if (u < 0.25) return XMIN + (u / 0.25) * 50;
+  if (u < 0.80) return 50 + ((u - 0.25) / 0.55) * 60;
+  return 110 + ((u - 0.80) / 0.20) * (XMAX - 110);
+}
+
+// ---- CPU swash lanes: fast uprush / slow backwash + wetting memory ----
+const xw = new Float32Array(LANES);   // waterline x
+const wet = new Float32Array(LANES);  // wet-limit x (lagging max, dries slowly)
+const wvel = new Float32Array(LANES); // d(xw)/dt
+const laneZ = new Float32Array(LANES);
+const laneAmp = new Float32Array(LANES);
+for (let i = 0; i < LANES; i++) {
+  laneZ[i] = ZMIN + i / (LANES - 1) * ZSPAN;
+  laneAmp[i] = 0.72 + 0.56 * hash1(i);
+}
+const swave = u => {            // skewed oscillator: quick rise, slow drain
+  const q = u / (2 * Math.PI) - Math.floor(u / (2 * Math.PI));
+  const r = 0.42;
+  return q < r ? 0.5 - 0.5 * Math.cos(Math.PI * q / r) : 0.5 + 0.5 * Math.cos(Math.PI * (q - r) / (1 - r));
+};
+function swashS(lane, t) {
+  const z = laneZ[lane];
+  let s = SW[0].A * 2.9 * laneAmp[lane] * (0.62 + 0.5 * Math.sin(0.087 * t + lane * 2.399)) * swave(SW[0].w * t + SW[0].tilt * z - 2.35 + hash1(lane + 500) * 0.9);
+  s += SW[1].A * 2.4 * laneAmp[lane] * swave(SW[1].w * t - SW[1].tilt * z + 1.7 + hash1(lane + 900) * 0.9);
+  s += SW[2].A * 2.0 * swave(SW[2].w * t + SW[2].tilt * z + 4.1 + hash1(lane + 1300) * 0.9);
+  return s;
+}
+const ZU = z => Math.max(0, Math.min(LANES - 1, Math.round((z - ZMIN) / ZSPAN * (LANES - 1))));
+function simStep(dt, t) {
+  const dryK = 0.55;  // m/s of dry-down of the wet band
+  for (let i = 0; i < LANES; i++) {
+    const prev = xw[i];
+    const s = swashS(i, t);
+    const nx = xsCurve(laneZ[i]) + s * (0.55 / SLOPE);
+    wvel[i] = (nx - prev) / dt;
+    xw[i] = nx;
+    wet[i] = Math.max(nx, wet[i] - dryK * dt);
+  }
+}
+
+const cam = { pos: [26, 2.6, -6], yaw: 0.22, pitch: -0.055, touched: false };
+const canvas = document.getElementById('c');
+const fatal = document.getElementById('fatal');
+const setLbl = document.getElementById('setLbl');
+const runLbl = document.getElementById('runLbl');
+
+if (!navigator.gpu) {
+  fatal.style.display = 'grid';
+  fatal.textContent = 'WebGPU not available — need Chrome 113+ / Safari 18+ on a GPU device.';
+} else {
+  boot().catch(e => {
+    fatal.style.display = 'grid';
+    fatal.textContent = 'WebGPU init failed: ' + e.message;
+    console.error(e);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// WGSL. COMMON is the single source of truth for the shore model: the render
+// passes and the probe (harness readback) evaluate the SAME functions, so the
+// pixel frame, the depth readback and the CPU swash lanes cannot drift apart.
+// ---------------------------------------------------------------------------
+const COMMON = `
+const SLOPE: f32 = ${SLOPE.toFixed(5)};
+const XS0: f32 = ${XS0.toFixed(1)};
+const GAG: f32 = 9.81;
+const PI: f32 = 3.14159265359;
+const NLANES: u32 = ${LANES}u;
+const ZMINF: f32 = ${ZMIN.toFixed(1)};
+const ZSPANF: f32 = ${ZSPAN.toFixed(1)};
+const W0: f32 = ${SW[0].w.toFixed(5)};
+const W1: f32 = ${SW[1].w.toFixed(5)};
+const W2: f32 = ${SW[2].w.toFixed(5)};
+const A0: f32 = ${SW[0].A.toFixed(5)};
+const A1: f32 = ${SW[1].A.toFixed(5)};
+const A2: f32 = ${SW[2].A.toFixed(5)};
+
+fn sq(a: f32) -> f32 { return a * a; }
+fn xsCurve(z: f32) -> f32 {
+  return XS0 + 9.0 * sin(z * 0.043 + 1.7) + 3.5 * sin(z * 0.12 + 0.6);
+}
+fn laneIdx(z: f32) -> u32 {
+  return u32(clamp(round((z - ZMINF) / ZSPANF * f32(NLANES - 1u)), 0.0, f32(NLANES - 1u)));
+}
+fn hash21(p: vec2f) -> f32 {
+  var q = fract(p * vec2f(127.31, 313.71));
+  return fract((q.x + q.y) * q.y);
+}
+fn vnoise(p: vec2f) -> f32 {
+  let i = floor(p); let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  let a = hash21(i); let b = hash21(i + vec2f(1.0, 0.0));
+  let c = hash21(i + vec2f(0.0, 1.0)); let d = hash21(i + vec2f(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+fn fbm2(p: vec2f) -> f32 {
+  return 0.6 * vnoise(p) + 0.4 * vnoise(p * 2.17 + vec2f(13.0, 7.0));
+}
+// dry sand elevation (0 at the still waterline), ripples + berm + offshore bar
+fn terrain(xIn: f32, z: f32) -> f32 {
+  let xs = xsCurve(z);
+  var h = SLOPE * (xIn - xs);
+  h = h + 0.055 * fbm2(vec2f(xIn * 0.31, z * 0.31)) + 0.02 * fbm2(vec2f(xIn * 1.2, z * 1.05));
+  h = h + 0.22 * exp(-sq((xIn - xs - 2.5) / 2.2));
+  h = h - 0.16 * exp(-sq((xIn - xs + 9.0) / 5.0));
+  return h;
+}
+// shallow-water phase: constant frequency, local k = w / sqrt(g*d) via the
+// travel-time warp on a linear bed (q = sqrt(distance-to-shoreline)) —
+// wavelength compresses and waves slow as they shoal.
+fn wphase(w: f32, t: f32, x: f32, z: f32, tilt: f32) -> f32 {
+  let xs = xsCurve(z);
+  let qd = sqrt(max(xs - x, 0.03));
+  return w * t - (2.0 * w / sqrt(GAG * SLOPE)) * qd + tilt * z;
+}
+fn shoalA(a: f32, d0: f32) -> f32 {
+  return a * clamp(pow(5.0 / max(d0, 0.30), 0.28), 1.0, 3.0);
+}
+struct Shore { d: f32, foam: f32, surf: f32, eta: f32, wetF: f32 };
+fn shore(xIn: f32, z: f32, t: f32, lanes: array<vec3f, NLANES>) -> Shore {
+  var o: Shore;
+  let h = terrain(xIn, z);
+  let lane = lanes[laneIdx(z)];
+  if (h < 0.0) {
+    let d0 = -h;
+    let p0 = wphase(W0, t, xIn, z, ${SW[0].tilt.toFixed(4)});
+    let p1 = wphase(W1, t, xIn, z, ${(-SW[1].tilt).toFixed(4)});
+    let p2 = wphase(W2, t, xIn, z, ${SW[2].tilt.toFixed(4)});
+    let a0 = shoalA(A0, d0); let a1 = shoalA(A1, d0); let a2 = shoalA(A2, d0);
+    var eta = a0 * sin(p0) + a1 * sin(p1) + a2 * sin(p2);
+    eta = eta + 0.02 * fbm2(vec2f(xIn * 0.9 - t * 0.8, z * 0.9));
+    let H = 2.0 * (a0 + a1 + a2);
+    let brk = H / max(d0, 0.12);
+    let fBreak = smoothstep(0.62, 0.95, brk) * (0.45 + 0.55 * vnoise(vec2f(xIn * 0.8 - t * 1.1, z * 0.55)));
+    let d = max(d0 + eta, 0.004);
+    o.eta = eta;
+    o.d = d;
+    o.surf = h + d;
+    o.foam = clamp(fBreak, 0.0, 1.0);
+    o.wetF = 0.0;
+  } else {
+    let back = max(lane.x - xIn, 0.0);
+    let sheet = back * SLOPE * 1.3 * exp(-back / 6.0)
+      * (0.78 + 0.22 * sin(z * 0.31 + t * 2.1));
+    let film = select(0.018, 0.0, xIn >= lane.y);
+    let d = max(sheet, film);
+    o.eta = 0.0;
+    o.d = d;
+    o.surf = h + d;
+    let edge = exp(-sq((xIn - lane.x) / 0.5)) * select(0.0, 1.0, lane.z > 0.05);
+    let ring = exp(-sq((xIn - (lane.y - 0.35)) / 0.45))
+      * select(0.0, 1.0, lane.z < -0.04) * select(0.0, 1.0, xIn > lane.x + 0.2);
+    o.foam = clamp(edge * 0.95 + ring * 0.55, 0.0, 1.0);
+    o.wetF = select(0.0, 1.0, xIn < lane.y);
+  }
+  return o;
+}
+// Gerstner-style forward push of the wave face while shoaling (steepening).
+fn faceShift(xIn: f32, z: f32, t: f32) -> f32 {
+  let h = terrain(xIn, z);
+  if (h >= 0.0) { return 0.0; }
+  let d0 = -h;
+  return clamp(0.05 + 0.35 * pow(5.0 / max(d0, 0.30), 0.30), 0.0, 1.6)
+    * (A0 * cos(wphase(W0, t, xIn, z, ${SW[0].tilt.toFixed(4)}))
+     + A1 * cos(wphase(W1, t, xIn, z, ${(-SW[1].tilt).toFixed(4)})));
+}
+`;
+
+const UNIF = `
+struct U {
+  vp: mat4x4f,
+  camPos_t: vec4f,
+  fwd_tan: vec4f,
+  right_aspect: vec4f,
+  sun: vec4f,
+  pars: vec4f,
+  pars2: vec4f,
+};
+`;
+
+const LANES_DECL = `
+struct LanesIn { v: array<vec3f, NLANES> };
+@group(1) @binding(0) var<storage, read> lanesIn: LanesIn;
+`;
+const U0 = `@group(0) @binding(0) var<uniform> u: U;`;
+
+const SKY = UNIF + U0 + COMMON + `
+struct VOut { @builtin(position) pos: vec4f, @location(0) dir: vec3f };
+@vertex
+fn vs(@builtin(vertex_index) vi: u32) -> VOut {
+  var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  var o: VOut;
+  o.pos = vec4f(p[vi], 1.0, 1.0);
+  let f = u.fwd_tan.xyz; let r = u.right_aspect.xyz; let uu = cross(r, f);
+  o.dir = normalize(f + r * (p[vi].x * u.right_aspect.w * u.fwd_tan.w) + uu * (p[vi].y * u.fwd_tan.w));
+  return o;
+}
+@fragment
+fn fs(i: VOut) -> @location(0) vec4f {
+  let d = normalize(i.dir);
+  let t = u.pars2.y;
+  let up = clamp(d.y, 0.0, 1.0);
+  let zen = vec3f(0.22, 0.34, 0.50);
+  let mid = vec3f(0.72, 0.48, 0.38);
+  let hor = vec3f(1.05, 0.68, 0.36);
+  var col = mix(hor, mix(mid, zen, pow(up, 0.55)), pow(up, 0.32));
+  // low golden-hour sun with a fat warm halo
+  let sd = max(dot(d, normalize(u.sun.xyz)), 0.0);
+  col += vec3f(1.0, 0.72, 0.36) * (pow(sd, 220.0) * 2.6 + pow(sd, 14.0) * 0.55 + pow(sd, 3.0) * 0.16);
+  // stretched cirrus bands
+  if (d.y > 0.005) {
+    let bu = vec2f(d.x / (d.y + 0.12), d.z / (d.y + 0.12));
+    var n = fbm2(vec2f(bu.x * 1.6 + t * 0.012, bu.y * 0.7));
+    n = smoothstep(0.52, 0.78, n) * smoothstep(0.02, 0.16, d.y) * (1.0 - smoothstep(0.5, 0.95, d.y));
+    col = mix(col, mix(vec3f(1.0, 0.78, 0.66), vec3f(0.95, 0.90, 0.94), 0.35), n * 0.7);
+  }
+  // horizon haze
+  col = mix(vec3f(0.96, 0.74, 0.52), col, smoothstep(0.0, 0.14, d.y));
+  return vec4f(col, 1.0);
+}
+`;
+
+const SAND = UNIF + U0 + COMMON + LANES_DECL + `
+struct VOut { @builtin(position) pos: vec4f, @location(0) wp: vec3f };
+@vertex
+fn vs(@location(0) xz: vec2f) -> VOut {
+  var o: VOut;
+  let h = terrain(xz.x, xz.y);
+  let wp = vec3f(xz.x, h, xz.y);
+  o.wp = wp;
+  o.pos = u.vp * vec4f(wp, 1.0);
+  return o;
+}
+@fragment
+fn fs(i: VOut) -> @location(0) vec4f {
+  let p = i.wp;
+  let t = u.pars2.y;
+  let lane = lanesIn.v[laneIdx(p.z)];
+  let xs = xsCurve(p.z);
+  // dry sand with grain and wind banding
+  var dry = vec3f(0.80, 0.66, 0.44);
+  dry = dry * (0.90 + 0.16 * fbm2(vec2f(p.x * 0.9, p.z * 0.55)));
+  dry = dry * (0.93 + 0.07 * sin(p.x * 2.6 + fbm2(vec2f(p.x * 0.4, p.z * 0.4)) * 6.0));
+  // wet sand: fresh dark band trailing the waterline + permanent damp near the still line
+  let wr = clamp(exp(-sq((p.x - lane.y) / 2.2)) + 0.35 * exp(-sq((p.x - xs) / 4.0)), 0.0, 1.0);
+  var col = mix(dry, dry * vec3f(0.55, 0.47, 0.36) + vec3f(0.02, 0.015, 0.01), wr * 0.9);
+  let nrm = normalize(cross(dFdx(i.wp), dFdy(i.wp)));
+  let sun = normalize(u.sun.xyz);
+  let ndl = max(dot(nrm, sun), 0.0);
+  col = col * (0.42 + 0.85 * ndl);
+  let hv = normalize(sun + normalize(u.camPos_t.xyz - p));
+  let sheen = pow(max(dot(nrm, hv), 0.0), select(26.0, 60.0, wr > 0.3)) * (0.14 + 0.5 * wr);
+  col += vec3f(1.0, 0.75, 0.45) * sheen;
+  // thin residual bubbles on the draining sheet
+  let resid = exp(-sq((p.x - (lane.y - 0.5)) / 0.5)) * select(0.0, 1.0, p.x > lane.x);
+  col = mix(col, vec3f(0.93, 0.92, 0.88), resid * 0.30 * (0.5 + 0.5 * vnoise(vec2f(p.x * 3.1, p.z * 2.2 + t))));
+  let dist = length(u.camPos_t.xyz - p);
+  col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(60.0, 190.0, dist));
+  return vec4f(col, 1.0);
+}
+`;
+
+const WATER = UNIF + U0 + COMMON + LANES_DECL + `
+struct VOut { @builtin(position) pos: vec4f, @location(0) wp: vec3f, @location(1) depth: f32, @location(2) foamn: f32 };
+@vertex
+fn vs(@location(0) xzIn: vec2f) -> VOut {
+  var o: VOut;
+  var xz = xzIn;
+  xz.x = xz.x + faceShift(xzIn.x, xzIn.y, u.pars2.y);
+  let s = shore(xz.x, xz.y, u.pars2.y, lanesIn.v);
+  let wp = vec3f(xz.x, s.surf, xz.y);
+  o.wp = wp;
+  o.depth = s.d;
+  o.foamn = s.foam;
+  o.pos = u.vp * vec4f(wp, 1.0);
+  return o;
+}
+@fragment
+fn fs(i: VOut) -> @location(0) vec4f {
+  let p = i.wp;
+  let d = i.depth;
+  if (d < 0.014) { discard; }
+  let t = u.pars2.y;
+  // surface normal from the shore model's height gradient
+  let e = 0.35;
+  let sx = shore(p.x + e, p.z, t, lanesIn.v).surf - shore(p.x - e, p.z, t, lanesIn.v).surf;
+  let sz = shore(p.x, p.z + e, t, lanesIn.v).surf - shore(p.x, p.z - e, t, lanesIn.v).surf;
+  var nrm = normalize(vec3f(-sx / (2.0 * e), 1.0, -sz / (2.0 * e)));
+  let sun = normalize(u.sun.xyz);
+  let V = normalize(u.camPos_t.xyz - p);
+  let ndv = max(dot(nrm, V), 0.0);
+  let deepC = vec3f(0.05, 0.16, 0.22);
+  let shallowC = vec3f(0.22, 0.55, 0.52);
+  let sandTint = vec3f(0.72, 0.60, 0.42);
+  var water = mix(shallowC, deepC, smoothstep(0.0, 2.4, d));
+  // see the sand through thin water
+  let vis = exp(-d * 1.6);
+  water = mix(water, sandTint * 0.85, vis * 0.85);
+  // subsurface glow where the sun shines through crests toward shore
+  let sss = pow(max(dot(V, -sun), 0.0), 3.0) * vis;
+  water += vec3f(0.10, 0.38, 0.30) * sss * clamp(d, 0.0, 1.2);
+  // glitter
+  let hv = normalize(sun + V);
+  let glint = pow(max(dot(nrm, hv), 0.0), 240.0) * 2.2 + pow(max(dot(nrm, hv), 0.0), 40.0) * 0.35;
+  water += vec3f(1.0, 0.78, 0.48) * glint * (1.0 - i.foamn);
+  water += water * 0.25 * max(dot(nrm, sun), 0.0);
+  var col = mix(water, vec3f(0.95, 0.94, 0.90), i.foamn);
+  var alpha = clamp(1.0 - exp(-d * 1.35) + i.foamn * 0.6, 0.06, 0.97);
+  if (d < 0.05) { alpha = 0.10 + d * 2.0; }
+  let dist = length(u.camPos_t.xyz - p);
+  col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(70.0, 200.0, dist));
+  return vec4f(col, alpha);
+}
+`;
+
+const PROBE = UNIF + COMMON + `
+struct LanesIn { v: array<vec3f, NLANES> };
+@group(0) @binding(0) var<storage, read> lanesIn: LanesIn;
+@group(1) @binding(0) var<storage, read_write> outBuf: array<f32>;
+@group(2) @binding(0) var<uniform> u: U;
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= 32u || gid.y >= 32u) { return; }
+  let x = 30.0 + f32(gid.x) * (100.0 / 31.0);
+  let z = -45.0 + f32(gid.y) * (90.0 / 31.0);
+  let s = shore(x, z, u.pars2.y, lanesIn.v);
+  let i = (gid.y * 32u + gid.x) * 4u;
+  outBuf[i] = x;
+  outBuf[i + 1u] = z;
+  outBuf[i + 2u] = s.d;
+  outBuf[i + 3u] = s.foam;
+}
+`;
+
+function matPerspective(fovY, aspect, near, far) {
+  const f = 1 / Math.tan(fovY / 2), nf = 1 / (near - far);
+  return new Float32Array([
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) * nf, -1,
+    0, 0, 2 * far * near * nf, 0,
+  ]);
+}
+function camBasis() {
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const fwd = [Math.cos(cam.yaw) * cp, sp, Math.sin(cam.yaw) * cp];
+  const r = [fwd[2], 0, -fwd[0]];
+  const rl = Math.hypot(r[0], r[2]); r[0] /= rl; r[2] /= rl;
+  const u = [
+    r[1] * fwd[2] - r[2] * fwd[1],
+    r[2] * fwd[0] - r[0] * fwd[2],
+    r[0] * fwd[1] - r[1] * fwd[0],
+  ];
+  return { fwd, r, u };
+}
+function vpMat(eye, r, u, fwd, aspect) {
+  const P = matPerspective(31 * Math.PI / 180, aspect, 0.1, 400);
+  const V = new Float32Array([
+    r[0], u[0], -fwd[0], 0,
+    r[1], u[1], -fwd[1], 0,
+    r[2], u[2], -fwd[2], 0,
+    -(r[0] * eye[0] + r[1] * eye[1] + r[2] * eye[2]),
+    -(u[0] * eye[0] + u[1] * eye[1] + u[2] * eye[2]),
+    (fwd[0] * eye[0] + fwd[1] * eye[1] + fwd[2] * eye[2]),
+    1,
+  ]);
+  const out = new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    for (let ro = 0; ro < 4; ro++) {
+      out[c * 4 + ro] = P[ro] * V[c * 4] + P[4 + ro] * V[c * 4 + 1] + P[8 + ro] * V[c * 4 + 2] + P[12 + ro] * V[c * 4 + 3];
+    }
+  }
+  return out;
+}
+
+async function boot() {
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  if (!adapter) throw new Error('no WebGPU adapter');
+  const device = await adapter.requestDevice();
+  const ctx = canvas.getContext('webgpu');
+  const FORMAT = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({ device, format: FORMAT, alphaMode: 'opaque' });
+
+  function resize() {
+    canvas.width = Math.max(2, Math.min(innerWidth, 1600) * devicePixelRatio) | 0;
+    canvas.height = Math.max(2, Math.min(innerHeight, 1000) * devicePixelRatio) | 0;
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  const posArr = new Float32Array((GRIDX + 1) * (GRIDZ + 1) * 2);
+  const idxArr = new Uint32Array(GRIDX * GRIDZ * 6);
+  for (let iz = 0; iz <= GRIDZ; iz++) {
+    const z = ZMIN + iz / GRIDZ * ZSPAN;
+    for (let ix = 0; ix <= GRIDX; ix++) {
+      const o = (iz * (GRIDX + 1) + ix) * 2;
+      posArr[o] = fx(ix / GRIDX); posArr[o + 1] = z;
+    }
+  }
+  let q = 0;
+  for (let iz = 0; iz < GRIDZ; iz++) {
+    for (let ix = 0; ix < GRIDX; ix++) {
+      const a = iz * (GRIDX + 1) + ix, b = a + 1, c = a + GRIDX + 1, d = c + 1;
+      idxArr[q++] = a; idxArr[q++] = c; idxArr[q++] = b;
+      idxArr[q++] = b; idxArr[q++] = c; idxArr[q++] = d;
+    }
+  }
+  const gridBuf = device.createBuffer({ size: posArr.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(gridBuf, 0, posArr);
+  const idxBuf = device.createBuffer({ size: idxArr.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(idxBuf, 0, idxArr);
+  const idxCount = GRIDX * GRIDZ * 6;
+
+  const ubuf = device.createBuffer({ size: 16 * 4 + 7 * 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const laneBuf = device.createBuffer({ size: LANES * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const probeBuf = device.createBuffer({ size: 32 * 32 * 4 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const probeRead = device.createBuffer({ size: 32 * 32 * 4 * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const laneArr = new Float32Array(LANES * 4);
+
+  const modSky = device.createShaderModule({ code: SKY });
+  const modSand = device.createShaderModule({ code: SAND });
+  const modWater = device.createShaderModule({ code: WATER });
+  const modProbe = device.createShaderModule({ code: PROBE });
+
+  const bglU = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE, buffer: {} }] });
+  const bglL = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }] });
+  const bglLC = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }] });
+  const bglP = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }] });
+  const bgU = device.createBindGroup({ layout: bglU, entries: [{ binding: 0, resource: { buffer: ubuf } }] });
+  const bgL = device.createBindGroup({ layout: bglL, entries: [{ binding: 0, resource: { buffer: laneBuf } }] });
+  const bgLC = device.createBindGroup({ layout: bglLC, entries: [{ binding: 0, resource: { buffer: laneBuf } }] });
+  const bgP = device.createBindGroup({ layout: bglP, entries: [{ binding: 0, resource: { buffer: probeBuf } }] });
+  const layoutU = device.createPipelineLayout({ bindGroupLayouts: [bglU] });
+  const layoutUL = device.createPipelineLayout({ bindGroupLayouts: [bglU, bglL] });
+  const layoutProbe = device.createPipelineLayout({ bindGroupLayouts: [bglLC, bglP, bglU] });
+
+  let depth = null, depthW = 0, depthH = 0;
+  function ensureDepth() {
+    if (depth && depthW === canvas.width && depthH === canvas.height) return depth;
+    if (depth) depth.destroy();
+    depth = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    depthW = canvas.width; depthH = canvas.height;
+    return depth;
+  }
+
+  const skyPipe = device.createRenderPipeline({
+    layout: layoutU,
+    vertex: { module: modSky, entryPoint: 'vs' },
+    fragment: { module: modSky, entryPoint: 'fs', targets: [{ format: FORMAT }] },
+    depthStencil: { depthWriteEnabled: false, depthCompare: 'always', format: 'depth32float' },
+  });
+  const sandPipe = device.createRenderPipeline({
+    layout: layoutUL,
+    vertex: { module: modSand, entryPoint: 'vs', buffers: [{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] }] },
+    fragment: { module: modSand, entryPoint: 'fs', targets: [{ format: FORMAT }] },
+    primitive: { cullMode: 'none' },
+    depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth32float' },
+  });
+  const waterPipe = device.createRenderPipeline({
+    layout: layoutUL,
+    vertex: { module: modWater, entryPoint: 'vs', buffers: [{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] }] },
+    fragment: { module: modWater, entryPoint: 'fs', targets: [{ format: FORMAT, blend: {
+      color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', op: 'add' },
+      alpha: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', op: 'add' },
+    } }] },
+    primitive: { cullMode: 'none' },
+    depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth32float' },
+  });
+  const probePipe = device.createComputePipeline({ layout: layoutProbe, compute: { module: modProbe, entryPoint: 'main' } });
+
+  const SUN = (() => { const v = [-0.62, 0.165, -0.77]; const l = Math.hypot(...v); return v.map(x => x / l); })();
+
+  let t = 0, frames = 0, acc = 0, lastMs = performance.now();
+  let probeData = null, probeBusy = false;
+
+  function frame() {
+    const now = performance.now();
+    let dt = (now - lastMs) / 1000;
+    lastMs = now;
+    if (dt > 0.1) dt = 0.1;
+    acc += dt;
+    const FIXED = 1 / 60;
+    let steps = 0;
+    while (acc >= FIXED && steps < 4) { t += FIXED; simStep(FIXED, t); acc -= FIXED; steps++; }
+    if (steps) {
+      for (let i = 0; i < LANES; i++) {
+        laneArr[i * 4] = xw[i]; laneArr[i * 4 + 1] = wet[i]; laneArr[i * 4 + 2] = wvel[i]; laneArr[i * 4 + 3] = 0;
+      }
+      device.queue.writeBuffer(laneBuf, 0, laneArr);
+      let best = 0;
+      for (let i = 0; i < LANES; i++) { const r = xw[i] - xsCurve(laneZ[i]); if (r > best) best = r; }
+      runLbl.textContent = (best * SLOPE).toFixed(1);
+      setLbl.textContent = swave(SW[0].w * t) > 0.75 ? 'BIG' : 'steady';
+    }
+
+    const { fwd, r, u } = camBasis();
+    const aspect = canvas.width / canvas.height;
+    device.queue.writeBuffer(ubuf, 0, new Float32Array([
+      ...vpMat(cam.pos, r, u, fwd, aspect),
+      cam.pos[0], cam.pos[1], cam.pos[2], t,
+      fwd[0], fwd[1], fwd[2], Math.tan(31 * Math.PI / 180),
+      r[0], r[1], r[2], aspect,
+      SUN[0], SUN[1], SUN[2], 1,
+      SLOPE, XS0, G, ZMIN,
+      ZSPAN, t, SEED, 0,
+    ]));
+
+    const enc = device.createCommandEncoder();
+    const wantProbe = !probeBusy && frames % 30 === 0;
+    if (wantProbe) {
+      const cp = enc.beginComputePass();
+      cp.setPipeline(probePipe); cp.setBindGroup(0, bgLC); cp.setBindGroup(1, bgP); cp.setBindGroup(2, bgU);
+      cp.dispatchWorkgroups(4, 4, 1);
+      cp.end();
+      enc.copyBufferToBuffer(probeBuf, 0, probeRead, 0, probeBuf.size);
+    }
+    const dtx = ensureDepth();
+    const rp = enc.beginRenderPass({
+      colorAttachments: [{ view: ctx.getCurrentTexture().createView(), clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+      depthStencilAttachment: { view: dtx.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'discard' },
+    });
+    rp.setPipeline(skyPipe); rp.setBindGroup(0, bgU); rp.draw(3);
+    rp.setPipeline(sandPipe); rp.setBindGroup(0, bgU); rp.setBindGroup(1, bgL);
+    rp.setVertexBuffer(0, gridBuf); rp.setIndexBuffer(idxBuf, 'uint32');
+    rp.drawIndexed(idxCount);
+    rp.setPipeline(waterPipe); rp.setBindGroup(0, bgU); rp.setBindGroup(1, bgL);
+    rp.drawIndexed(idxCount);
+    rp.end();
+    device.queue.submit([enc.finish()]);
+
+    if (wantProbe) {
+      probeBusy = true;
+      probeRead.mapAsync(GPUMapMode.READ).then(() => {
+        probeData = Array.from(new Float32Array(probeRead.getMappedRange().slice(0)));
+        probeRead.unmap();
+        probeBusy = false;
+      }).catch(() => { probeBusy = false; });
+    }
+    frames++;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---- input ----
+  let drag = null;
+  canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); cam.touched = true; });
+  canvas.addEventListener('pointermove', e => {
+    if (!drag) return;
+    cam.yaw += (e.clientX - drag.x) * 0.0032;
+    cam.pitch = Math.max(-1.35, Math.min(0.5, cam.pitch - (e.clientY - drag.y) * 0.0032));
+    drag = { x: e.clientX, y: e.clientY };
+  });
+  addEventListener('pointerup', () => { drag = null; });
+  const keys = {};
+  addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; cam.touched = true; });
+  addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+  setInterval(() => {
+    const { fwd, r } = camBasis();
+    const sp = (keys['shift'] ? 14 : 6) * 0.05;
+    let dx = 0, dy = 0, dz = 0;
+    if (keys['w'] || keys['arrowup']) { dx += fwd[0]; dy += fwd[1]; dz += fwd[2]; }
+    if (keys['s'] || keys['arrowdown']) { dx -= fwd[0]; dy -= fwd[1]; dz -= fwd[2]; }
+    if (keys['d'] || keys['arrowright']) { dx += r[0]; dz += r[2]; }
+    if (keys['a'] || keys['arrowleft']) { dx -= r[0]; dz -= r[2]; }
+    if (keys['e']) dy += 1;
+    if (keys['q']) dy -= 1;
+    if (dx || dy || dz) {
+      const l = Math.hypot(dx, dy, dz);
+      cam.pos[0] = Math.max(2, Math.min(185, cam.pos[0] + dx / l * sp));
+      cam.pos[2] = Math.max(ZMIN, Math.min(ZMIN + ZSPAN, cam.pos[2] + dz / l * sp));
+      const gz = Math.max(ZMIN, Math.min(ZMIN + ZSPAN, cam.pos[2]));
+      cam.pos[1] = Math.max(cam.pos[1], 0.5 + SLOPE * (cam.pos[0] - xsCurve(gz)));
+    }
+  }, 16);
+
+  // ---- test hooks ----
+  window.__shoreTest = {
+    ready: true,
+    get frames() { return frames; },
+    get time() { return t; },
+    lanes() { return { n: LANES, xw: Array.from(xw), wet: Array.from(wet), vel: Array.from(wvel), z: Array.from(laneZ), xs: Array.from(laneZ).map(xsCurve), slope: SLOPE }; },
+    setPose(p) {
+      if (p.pos) cam.pos = p.pos.slice();
+      if (typeof p.yaw === 'number') cam.yaw = p.yaw;
+      if (typeof p.pitch === 'number') cam.pitch = p.pitch;
+      cam.touched = true;
+    },
+    swashMean() {
+      let m = 0, wl = 0;
+      for (let i = 0; i < LANES; i++) {
+        m += xw[i] - xsCurve(laneZ[i]);
+        wl += Math.max(0, wet[i] - xw[i]);
+      }
+      return { run: m / LANES, wetLag: wl / LANES, t };
+    },
+    probe() { return probeData; },
+    modelDepth(x, z) {
+      const xs = xsCurve(z);
+      const h = SLOPE * (x - xs) - 0.16 * Math.exp(-Math.pow((x - xs + 9.0) / 5.0, 2.0));
+      const l = ZU(z);
+      if (h < 0) return { h, d: Math.max(-h, 0), wet: 0 };
+      return { h, d: Math.max(0, (xw[l] - x) * SLOPE * 1.3), wet: x < wet[l] ? 1 : 0, xw: xw[l], wl: wet[l] };
+    },
+  };
+}
+</script>
+</body>
+</html>
