@@ -17,7 +17,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { LEVELS, W, H, HEROES, HERO_ORDER } from './levels.js'
 import { makeGame, step, stateHash, CFG, doorAt } from './sim.js'
-import { plan, decide } from './planner.js'
+import { plan, decide, partnerPad } from './planner.js'
 import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
@@ -26,6 +26,7 @@ import { torch, litColor, mortarTones, css } from './walls.js'
 import { cardCenter, heroAt } from './select.js'
 import { p2From } from './p2input.js'
 import { slotPad, connectedSlots } from '../../utils/onePad'
+import { makeSlot, setSlotKind } from '../../utils/slotSources'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 
 const PW = 64, HT = 40
@@ -138,6 +139,18 @@ const GauntletGame = () => {
 
         const p2Prev = { a: false, b: false }
         const p2Sel = { l: false, r: false, a: false }
+        // #494 seat 2 is a SLOT: off / human / cpu, model via the contract.
+        // doFrameSim asks the slot for its pad each tick and folds it into the
+        // partner input with the same edge rules a gamepad gets — human, cpu
+        // and a driven model all arrive as THE one pad and are treated alike.
+        const p2slot = makeSlot('off', { padIndex: 2 })
+        const seatPrev = { a: false }
+        let modelP2 = null
+        const syncSeat = () => setSlotKind(p2slot, gs.partnerHuman ? 'human' : gs.partnerOn ? 'cpu' : 'off')
+        const padToInp = (pad, prev) => ({
+            left: !!pad.left, right: !!pad.right, fwd: !!pad.up, back: !!pad.down,
+            sword: !!pad.a && !prev.a,
+        })
         // P2 on the second pad at the hero screen: left/right pick the hero,
         // A claims the slot (flips the partner to human) — mirrors WASD+F.
         const pollP2Select = () => {
@@ -153,10 +166,21 @@ const GauntletGame = () => {
             if (sc === 'attract' || sc === 'select') { if (sc === 'select') pollP2Select(); tickDemo(); return }
             if (sc !== 'play') return
             let pInp = null
-            if (gs.partnerHuman) {
-                const m = p2From(p2, slotPad(2, 'stick'), p2Prev)
-                p2Prev.a = m.a; p2Prev.b = m.b
-                pInp = { left: m.left, right: m.right, fwd: m.fwd, back: m.back, sword: m.sword }
+            if (gs.partnerOn && gs.partner && !gs.partner.down) {
+                syncSeat()
+                if (modelP2) {
+                    pInp = padToInp(modelP2, seatPrev)
+                    seatPrev.a = !!modelP2.a
+                } else if (p2slot.kind === 'cpu') {
+                    const raw = partnerPad(gs, seatPrev.a)
+                    pInp = { left: raw.left, right: raw.right, fwd: raw.up, back: raw.down, sword: raw.a }
+                    seatPrev.a = raw.a
+                } else {
+                    const m = p2From(p2, slotPad(2, 'stick'), p2Prev)
+                    p2Prev.a = m.a; p2Prev.b = m.b
+                    pInp = { left: m.left, right: m.right, fwd: m.fwd, back: m.back, sword: m.sword }
+                    seatPrev.a = false
+                }
             }
             doSim({ left: keys.l, right: keys.r, fwd: keys.u, back: keys.d, sword: keys.swordEdge, arrow: keys.arrowEdge }, pInp)
             keys.swordEdge = false
@@ -644,13 +668,15 @@ const GauntletGame = () => {
                     keys.swordEdge = false; keys.arrowEdge = false
                     p2.l = p2.r = p2.u = p2.d = false; p2.swordEdge = false
                     cPrev = { a: false, b: false }
+                    modelP2 = null; seatPrev.a = false; setSlotKind(p2slot, 'off')
                     setMode('play')
                 },
-                tick: (pad) => {
+                tick: (pad, pads) => {
                     keys.l = !!pad.left; keys.r = !!pad.right; keys.u = !!pad.up; keys.d = !!pad.down
                     keys.swordEdge = !!pad.a && !cPrev.a
                     keys.arrowEdge = !!pad.b && !cPrev.b
                     cPrev = { a: !!pad.a, b: !!pad.b }
+                    modelP2 = pads && pads.length > 1 ? pads[1] : null
                     doFrameSim()
                 },
                 state: () => ({

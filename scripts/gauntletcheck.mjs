@@ -427,10 +427,11 @@ console.log('overhead')
 }
 
 // -------------------------------------------------------------------- 2p ----
-// Human two-player (issue #275 item 7): the partner slot becomes a second
-// hero driven by its OWN input (partnerHuman + partnerInp) — it walks where
-// P2 points it, faces where it walks, and cuts beasts in reach, and it does
-// NOT trail the hero. With partnerHuman off the CPU partner still follows.
+// Two players (#275 item 7, re-ruled by #494): ANY pad in seat 2 drives the
+// partner by human rules — it walks where P2 points it, faces where it walks,
+// and cuts beasts in reach; it does NOT trail and gets no door favors. Only
+// a partner with NO pad at all (the first-person seat) falls back to the
+// old follow.
 console.log('2p')
 {
     const gs = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
@@ -453,9 +454,14 @@ console.log('2p')
     ok(cut, '2p: a partner swing cuts a beast in reach')
     const g2 = makeGame(0, 'warrior', { topDown: true, partner: true })
     g2.monsters = []; g2.gens.forEach((g) => { g.alive = false })
-    for (let i = 0; i < 60; i++) { step(g2, { fwd: true }, { right: true }); g2.events.length = 0 }
-    ok(Math.hypot(g2.partner.x - g2.hero.x, g2.partner.y - g2.hero.y) < 2, '2p: the CPU partner still follows when partnerHuman is off',
+    for (let i = 0; i < 60; i++) { step(g2, { fwd: true }); g2.events.length = 0 }
+    ok(Math.hypot(g2.partner.x - g2.hero.x, g2.partner.y - g2.hero.y) < 2, '2p: a seat with no pad at all still trails (first-person fallback)',
         `dist ${(Math.hypot(g2.partner.x - g2.hero.x, g2.partner.y - g2.hero.y)).toFixed(2)}`)
+    const g3 = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
+    g3.monsters = []; g3.gens.forEach((g) => { g.alive = false })
+    for (let i = 0; i < 60; i++) { step(g3, { fwd: true }, { right: true }); g3.events.length = 0 }
+    ok(Math.hypot(g3.partner.x - g3.hero.x, g3.partner.y - g3.hero.y) > 2, '#494: a pad in seat 2 wins — even partnerHuman off, the partner obeys its pads',
+        `dist ${(Math.hypot(g3.partner.x - g3.hero.x, g3.partner.y - g3.hero.y)).toFixed(2)}`)
 }
 
 // ---------------------------------------------------------------- partner ----

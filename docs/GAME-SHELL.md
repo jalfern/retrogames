@@ -46,7 +46,7 @@ builds no-op) and calling `unexposeGame()` in the effect cleanup:
 |---|---|
 | `spec.id` | kebab-case game id → `__game.meta.id` |
 | `spec.buttons` | pad fields the game reads → `__game.meta.buttons` |
-| `spec.reset(seed)` | rebuild the sim from that seed ALONE; all sim randomness derives from it |
+| `spec.reset(seed[, players])` | rebuild the sim from that seed ALONE; all sim randomness derives from it. `players` (#494) opens extra seats in multiplayer games; single-player titles ignore it |
 | `spec.tick(pad)` | advance the sim exactly one tick with this pad held |
 | `spec.state()` | plain JSON, must include `tick`, `score`, `done` |
 | `spec.canvas()` | the game canvas element (for `frame()`) |
@@ -55,9 +55,13 @@ builds no-op) and calling `unexposeGame()` in the effect cleanup:
 Resulting `window.__game` API:
 
 - `meta` → `{ id, buttons }`
-- `reset(seed)` → `state()` — fresh seeded game; puts the shell in play.
+- `reset(seed[, players])` → `state()` — fresh seeded game; puts the shell in
+  play. `players` (#494) fills seats 1..players where the game supports them.
 - `step(pad, n = 1)` → `state()` — `pad = { up, down, left, right, a, b, start,
-  x, y }` (x/y analog, −1..1) held for n ticks. THE FIRST `step` closes the
+  x, y }` (x/y analog, −1..1) held for n ticks. `pad` may also be an ARRAY —
+  one pad per player (#494): `step([p1, p2])` steps ONE tick with `p1` in
+  seat 1 and `p2` in seat 2; the game's `spec.tick(pad, pads)` gets seat 1's
+  normalized pad plus the full per-player array. THE FIRST `step` closes the
   loop lock: the real-time loop stops simulating (it keeps drawing) until
   `release()`. While locked the caller owns the clock — that is what makes
   scripted 600-tick runs reproducible next to a running rAF loop.

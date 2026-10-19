@@ -19,6 +19,8 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { CELL, COLS, W, H, FIELD_Y0, FLOOR_ROW, LETTERS } from './levels.js'
 import { makeGame, step, stateHash, CFG } from './sim.js'
 import { plan, decide } from './planner.js'
+import { makeSlot, setSlotKind, padFor } from '../../utils/slotSources'
+import { slotPad } from '../../utils/onePad'
 
 const SIM_MS = 1000 / 60
 let proven = null
@@ -55,6 +57,15 @@ const Bob = () => {
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, musicT = 0
         const keys = { l: false, r: false, u: false, d: false, fEdge: false }
         const p2keys = { l: false, r: false, u: false, d: false, fEdge: false }
+        // #494 seat 2 is a SLOT: cpu (planner Bob), human (keys / pad 2) or a
+        // driven model via the contract — every source answers with THE one pad
+        // and the sim folds them alike.
+        const p2slot = makeSlot('off', {
+            padIndex: 2,
+            emit: () => { const d = decide(gs, 1); return { left: d.left, right: d.right, up: d.up, down: d.down, a: d.fire } },
+        })
+        let modelP2 = null
+        const padToBob = (pad) => ({ left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down, fire: !!pad.a })
         const evLog = []
         const parts = []
 
@@ -123,8 +134,14 @@ const Bob = () => {
             if (sc !== 'play') return
             const inputs = [{ left: keys.l, right: keys.r, up: keys.u, down: keys.d, fire: keys.fEdge }]
             if (gs.players.length > 1) {
-                if (modeRef.current === 2) inputs.push(decide(gs, 1))
-                else inputs.push({ left: p2keys.l, right: p2keys.r, up: p2keys.u, down: p2keys.d, fire: p2keys.fEdge })
+                let pad = null
+                if (modelP2) pad = modelP2
+                else if (p2slot.kind === 'cpu') pad = padFor(p2slot, { method: 'dpad', tick: gs.tick })
+                else {
+                    const s = slotPad(2, 'dpad')
+                    pad = { left: p2keys.l || s.left, right: p2keys.r || s.right, up: p2keys.u || s.up, down: p2keys.d || s.down, a: p2keys.fEdge || s.a }
+                }
+                inputs.push(padToBob(pad))
             }
             doSim(inputs)
             keys.fEdge = false
@@ -514,6 +531,7 @@ const Bob = () => {
         // ---------------------------------------------------------------- input ----
         const startPlay = (mode) => {
             modeRef.current = mode
+            setSlotKind(p2slot, mode === 2 ? 'cpu' : mode === 3 ? 'human' : 'off')
             gs = makeGame(0, { players: mode === 1 || mode === 2 ? mode : 2 })
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
@@ -594,21 +612,30 @@ const Bob = () => {
             let prevA = false
             exposeGame({
                 id: 'bubble-bobble',
+                players: 2,
+                method: 'dpad',
                 buttons: ['left', 'right', 'up', 'down', 'a'],
-                reset: (seed) => {
-                    modeRef.current = 1
-                    gs = makeGame(seed >>> 0, { players: 1 })
+                reset: (seed, players = 1) => {
+                    modeRef.current = players > 1 ? 3 : 1
+                    setSlotKind(p2slot, 'off')
+                    gs = makeGame(seed >>> 0, { players: players > 1 ? 2 : 1 })
                     evLog.length = 0; parts.length = 0
                     demoAt = 0; musicT = 0; shake = 0
+                    modelP2 = null
                     for (const k of [keys, p2keys]) { k.l = k.r = k.u = k.d = false; k.fEdge = false }
                     prevA = false
                     setMode('play')
                 },
-                tick: (pad) => {
+                tick: (pad, pads) => {
                     if (gs.end) { gs.tick += 1; return }
                     const fire = !!pad.a && !prevA
                     prevA = !!pad.a
-                    doSim([{ left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down, fire }])
+                    const row = [{ left: !!pad.left, right: !!pad.right, up: !!pad.up, down: !!pad.down, fire }]
+                    // #494: step([p1, p2]) drives seat 2 too — reset(seed, 2)
+                    // seats Bob first; an empty seat ignores its pad.
+                    modelP2 = pads && pads.length > 1 && gs.players.length > 1 ? pads[1] : null
+                    if (modelP2) row.push(padToBob(modelP2))
+                    doSim(row)
                 },
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: !!gs.end,
