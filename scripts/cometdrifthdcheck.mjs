@@ -48,15 +48,41 @@ if (MUTATE) {
 
 // ---------------------------------------------------------------- geometry
 console.log('track geometry (the HD rebuild of the Gulch):')
-const { stats, bounds } = trackGeometryStats()
-ok(bounds.offMin >= 220 && bounds.topMax <= 3.6, `walls sit set back outside the sim clamp (${bounds.offMin}px >= 220px > ${bounds.simClampPx}px) and under the sightline (top ${bounds.topMax.toFixed(2)}u)`)
+const { stats, bounds, geos } = trackGeometryStats()
+ok(bounds.offMin >= 220 && (bounds.topMax - bounds.elevMax) <= 3.6, `walls sit set back outside the sim clamp (${bounds.offMin}px >= 220px > ${bounds.simClampPx}px) and under the sightline (${(bounds.topMax - bounds.elevMax).toFixed(2)}u above the highest road)`)
 const ring = (TRACK.N + 1) * 2
 ok(stats.road.verts === ring, `road ribbon is a closed ring (${ring} verts)`)
 ok(stats.road.nan === 0 && stats.wallL.nan === 0 && stats.plateauR.nan === 0, 'no NaN anywhere in the track bands')
-ok(Math.abs(stats.road.minY - stats.road.maxY) < 1e-9, 'road surface is dead flat')
-ok(stats.wallL.maxY >= 1.5 && stats.wallR.maxY >= 1.5 && stats.wallL.maxY <= 3.6 && stats.wallR.maxY <= 3.6, `cliff walls are low chase-cam bands, 1.5-3.6u (L ${stats.wallL.maxY.toFixed(2)}, R ${stats.wallR.maxY.toFixed(2)})`)
-ok(stats.wallL.minY < stats.road.minY, 'wall bases sit below the road plane (no floating cliffs)')
-ok(stats.plateauL.minY > stats.road.maxY && stats.plateauR.minY > stats.road.maxY, 'plateau rim stands above the road (scenery has ground)')
+
+// #518: the road is NOT flat — it follows the course height profile, and every
+// band (kerb, gutter, wall foot/top, plateau) hangs off the same profile at the
+// same point index, so the terrain meets the road all the way round.
+const yAt = (geo, i, v) => geo.getAttribute('position').getY(i * 2 + v)
+{
+    const S = 1 / 60
+    let dev = 0
+    let hangBad = 0; let footBad = 0; let rimBad = 0
+    let minDev = Infinity; let maxDev = -Infinity
+    const N = TRACK.N
+    for (let i = 0; i < N; i++) {
+        const ry = yAt(geos.road, i, 0)
+        dev = Math.max(dev, Math.abs(ry - (TRACK.pts[i].h * S + 0.06)))
+        const lift = yAt(geos.wallL, i, 1) - ry
+        if (lift < 1.4 || lift > 3.7) hangBad++
+        if (yAt(geos.wallL, i, 0) >= ry) footBad++
+        if (yAt(geos.plateauL, i, 1) <= ry) rimBad++
+        maxDev = Math.max(maxDev, lift)
+        minDev = Math.min(minDev, lift)
+    }
+    ok(dev < 1e-6, `road surface follows the #518 height point for point (profile → geometry, max dev ${dev.toExponential(1)}u — float32 precision)`)
+    ok((stats.road.maxY - stats.road.minY) >= 0.9 * (bounds.elevMax - bounds.elevMin),
+        `the road goes up and down: ${stats.road.minY.toFixed(2)}..${stats.road.maxY.toFixed(2)}u across the lap`)
+    ok(hangBad === 0, `cliff walls ride the profile too — every section stands ${minDev.toFixed(2)}..${maxDev.toFixed(2)}u over the road under it`)
+    ok(footBad === 0, 'wall bases stay under the road at every point (no floating cliffs, elevated or not)')
+    ok(rimBad === 0, 'plateau rim stays above the road at every point (scenery has ground)')
+    ok(bounds.maxGrade <= 0.0951, `grades stay arcade-steep, not stunt-steep (max ${bounds.maxGrade.toFixed(3)})`)
+}
+ok(stats.wallL.maxY >= 1.5 && stats.wallR.maxY >= 1.5, 'cliff walls rise over the road')
 ok(stats.kerbL.verts === ring && stats.gutterR.verts === ring, 'kerb + gutter rings cover the full lap')
 const kart = buildKart(0x20b8dc, '#fff')
 ok(kart.children.length >= 10 && kart.userData.wheels.length === 2, `buggy assembled: ${kart.children.length} parts, steerable front axles`)

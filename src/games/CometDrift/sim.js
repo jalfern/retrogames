@@ -156,6 +156,7 @@ function drive(g, k, inp) {
         // downhill pays — the hill changes the lap, not the line.
         const gp = T.pts[surf.i]
         k.grade = gp.grade * Math.cos(k.a - gp.a)
+        k.h = gp.h
         k.v -= CFG.slopeK * k.grade
         // slipstream: a kart in the narrow window dead ahead leaves a vacuum
         // the chaser rides — pack racing closes on straights and overtakes
