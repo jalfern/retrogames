@@ -290,6 +290,12 @@ jobs:
       # Mutant it: CFG.drainEvery -> never drains turns red.
       - run: npm run lint:gauntlet
       - run: npm run gauntletcheck -- --mutate
+      # RECORDING FORMAT (#495): retrogames-rec/v1 records a Gauntlet 2P run to
+      # public/replays/gauntlet-2p.json and replays it hash-equal through model
+      # seats. Mutant it: dropping one live pad mid-file must be caught.
+      - run: npm run lint:rec
+      - run: npm run replaycheck
+      - run: npm run replaycheck -- --mutate
       # MYST: the whole island graph, every puzzle gate (lever, stars, safe,
       # switches, sphere, fireplace), all eight pages, both trap endings and
       # the white-page win. Proven to bite: forcing a locked door open reds it.

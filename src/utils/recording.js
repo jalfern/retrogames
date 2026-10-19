@@ -94,12 +94,16 @@ export function createRecorder(opts = {}) {
     if (!Number.isInteger(seed)) throw new Error('recorder: seed must be an integer')
     if (!Number.isInteger(hashEvery) || hashEvery < 1) throw new Error('recorder: hashEvery must be a positive integer')
     const seats = Math.max(1, players | 0)
-    const srcs = (opts.sources && opts.sources.length ? opts.sources : Array.from({ length: seats }, () => ({ kind: 'model' })))
-        .slice(0, seats)
-        .map((s) => (typeof s === 'string' ? { kind: s } : { kind: s.kind || 'model', ...(s.modelId ? { modelId: String(s.modelId) } : {}) }))
-    if (!srcs.every((s) => SLOT_KINDS.includes(s.kind))) throw new Error('recorder: unknown source kind')
+    // Sources may be a function — seat kinds live at record-STOP time (seats
+    // flip while the game runs); an array is accepted for static callers.
+    const sourcesOf = typeof opts.sources === 'function' ? opts.sources : () => opts.sources
+    const resolveSources = () => {
+        const raw = sourcesOf()
+        const list = (raw && raw.length ? raw : Array.from({ length: seats }, () => ({ kind: 'model' }))).slice(0, seats)
+        return list.map((s) => (typeof s === 'string' ? { kind: s } : { kind: s.kind || 'model', ...(s.modelId ? { modelId: String(s.modelId) } : {}) }))
+    }
 
-    const slots = srcs.map((source) => ({ source, pads: [], raw: [] }))
+    const slots = Array.from({ length: seats }, () => ({ source: null, pads: [], raw: [] }))
     const hashes = []
     let ticks = 0
 
@@ -115,6 +119,9 @@ export function createRecorder(opts = {}) {
             if (hash !== null && hash !== undefined && ticks % hashEvery === 0) hashes.push({ t: ticks, h: hash })
         },
         finish(finalHash = null) {
+            const srcs = resolveSources()
+            if (!srcs.every((s) => SLOT_KINDS.includes(s.kind))) throw new Error('recorder: unknown source kind')
+            slots.forEach((s, i) => { s.source = srcs[i] })
             const rec = {
                 format: REC_FORMAT,
                 build,
