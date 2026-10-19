@@ -189,6 +189,60 @@ export const MUSIC = {
             43, 43, 0, 55, 43, 0, 57, 0, 41, 41, 0, 53, 45, 0, 43, 0,
         ],
     },
+    // MOMENTUM RUNNER — three original beds, one per sector, composed for this
+    // build. The tempo is the map: city sprints (fastest), the foundry drives
+    // (heavy), orbit floats (slowest) — crossing a zone card you feel the
+    // sector change in the music before the palette finishes blending.
+    // "NEON MEGACITY" — A-minor synthwave sprint, driving eighths.
+    runnerCity: {
+        step: 0.105,
+        lead: [
+            69, 0, 72, 76, 74, 72, 69, 67, 69, 0, 72, 76, 79, 76, 74, 72,
+            69, 0, 72, 76, 74, 72, 69, 67, 64, 0, 67, 72, 74, 76, 79, 81,
+        ],
+        bass: [
+            45, 45, 0, 45, 45, 45, 0, 45, 45, 45, 0, 45, 45, 45, 0, 45,
+            41, 41, 0, 41, 41, 41, 0, 41, 45, 45, 0, 45, 48, 48, 0, 45,
+        ],
+        perc: [
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0,
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 1, 2,
+        ],
+    },
+    // "EMBER GAUNTLET" — D-Phrygian industrial drive: the b2 grinds on every
+    // bar while the bass hits like a trip-hammer.
+    runnerForge: {
+        step: 0.13,
+        lead: [
+            62, 0, 62, 63, 0, 62, 62, 0, 65, 0, 65, 66, 0, 65, 62, 0,
+            62, 0, 62, 63, 0, 62, 65, 0, 69, 0, 66, 65, 62, 0, 0, 0,
+        ],
+        bass: [
+            38, 0, 38, 0, 38, 0, 38, 0, 38, 0, 38, 0, 39, 0, 38, 0,
+            38, 0, 38, 0, 38, 0, 38, 0, 36, 0, 36, 0, 31, 0, 31, 0,
+        ],
+        perc: [
+            1, 0, 1, 2, 1, 0, 1, 2, 1, 0, 1, 2, 1, 0, 1, 2,
+            1, 0, 1, 2, 1, 0, 1, 2, 1, 0, 1, 2, 1, 2, 1, 2,
+        ],
+    },
+    // "SKY LOOP" — slow F-lydian float, wide rests; the vacuum of the orbital
+    // sector. Notes are far apart on purpose: out here the silence is the space.
+    runnerOrbit: {
+        step: 0.17,
+        lead: [
+            65, 0, 0, 69, 0, 72, 0, 77, 76, 0, 0, 74, 0, 72, 0, 69,
+            65, 0, 0, 69, 0, 73, 0, 77, 76, 0, 74, 0, 72, 0, 65, 0,
+        ],
+        bass: [
+            41, 0, 0, 0, 45, 0, 0, 0, 48, 0, 0, 0, 47, 0, 0, 0,
+            41, 0, 0, 0, 45, 0, 0, 0, 46, 0, 0, 0, 41, 0, 0, 0,
+        ],
+        perc: [
+            1, 0, 0, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0,
+            1, 0, 0, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0, 0, 2, 0,
+        ],
+    },
 }
 
 class AudioController {
