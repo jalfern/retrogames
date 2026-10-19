@@ -46,6 +46,7 @@ export const CFG = {
     rockSpeed: 0.12,
     deathDrainEvery: 8,
     deathFreeze: 100,
+    hitFlash: 12,
     lives: 3,
     extraLife: 20000,
     levelBonus: 1000,
@@ -127,7 +128,7 @@ function loadLevel(gs, idx) {
         x: lv.start.x, y: lv.start.y, a: lv.start.a,
         hp: gs.heroHpOverride ?? h.hp, maxHp: h.hp, speed: h.speed, power: h.power,
         arrowRange: h.arrow, name: h.name, who: h.who,
-        deadT: 0, atkT: 0, atkAnim: 0, arrowT: 0, swingId: 0,
+        deadT: 0, atkT: 0, atkAnim: 0, arrowT: 0, swingId: 0, walk: 0, hitT: 0,
     }
     if (gs.partnerOn && !gs.partnerDone) {
         const p = gs.partnerKey === 'valkyrie' && gs.heroKey === 'valkyrie' ? HEROES.warrior : HEROES[gs.partnerKey || 'valkyrie']
@@ -412,6 +413,7 @@ function updateMonsters(gs) {
             gs.events.push({ type: 'hit', kind: m.kind, target })
             if (target === 'hero') {
                 h.hp -= kind.dmg
+                h.hitT = CFG.hitFlash
                 if (h.hp <= 0) { killHero(gs, m.kind); return }
             } else {
                 gs.partner.hp -= kind.dmg
@@ -469,6 +471,7 @@ function updateShots(gs) {
             }
         } else if (h.deadT === 0 && Math.hypot(h.x - s.x, h.y - s.y) < CFG.contactR) {
             h.hp -= s.dmg
+            h.hitT = CFG.hitFlash
             s.done = true
             gs.events.push({ type: 'hit', kind: s.kind, target: 'hero' })
             if (h.hp <= 0) { killHero(gs, s.kind); return }
@@ -591,6 +594,7 @@ export function step(gs, inp, partnerInp = null) {
     }
 
     gs.playT++
+    const wx0 = h.x, wy0 = h.y
     if (gs.topDown) {
         // overhead cabinet: each arrow sets facing AND moves (8-way); the pilot
         // may also aim absolutely (inp.aim) while it moves or holds ground.
@@ -637,6 +641,7 @@ export function step(gs, inp, partnerInp = null) {
             }
         }
     }
+    if (Math.hypot(h.x - wx0, h.y - wy0) > 1e-6) h.walk++
     gs._fwd = inp.fwd
     markExplored(gs)
 
@@ -652,6 +657,7 @@ export function step(gs, inp, partnerInp = null) {
     if (h.atkT > 0) h.atkT--
     if (h.atkAnim > 0) h.atkAnim--
     if (h.arrowT > 0) h.arrowT--
+    if (h.hitT > 0) h.hitT--
     if (inp.sword && h.atkT <= 0) { h.atkT = CFG.swordCool; heroHits(gs) }
     if (inp.arrow && h.arrowT <= 0) { h.arrowT = CFG.arrowCool; fireArrow(gs) }
 

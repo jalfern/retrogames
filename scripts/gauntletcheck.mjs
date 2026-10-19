@@ -19,6 +19,8 @@
 //   walls     : the corridor reads as raised brick courses under the hero's
 //               torch — lit near him, dark at its reach, two-toned per
 //               material (issue #275 item 2).
+//   hero      : the hero steps only while he walks and flashes white the moment
+//               he is struck — full the tick, decaying to nothing (issue #302).
 //   pilot     : seeds 0-3 clear all four mazes; 2/3 do it deathless;
 //   slack     : the quest is re-won with one fewer food AND one fewer potion
 //               per maze.
@@ -221,6 +223,40 @@ console.log('walls')
         ok(t.recess !== t.bevel, `walls: ${name} course is two-toned (recess != bevel)`)
     }
     ok(w.mortarTones(M.red).recess !== w.mortarTones(M.blue).recess, 'walls: the mortar tone differs between materials')
+}
+
+// ----------------------------------------------------------------- hero ----
+// The hero reads as a living fighter (issue #302 item 2): he takes a step only
+// on the ticks he actually walks, and flashes white the moment he is struck —
+// full the tick, then decaying to nothing over CFG.hitFlash ticks.
+console.log('hero')
+{
+    const H = await import('../src/games/Gauntlet/hero.js')
+    // the walk frame steps in cycle and never leaves the frame range
+    ok(H.walkFrame(0, 2) === 0 && H.walkFrame(8, 2) === 1 && H.walkFrame(16, 2) === 0, 'hero: the walk frame steps in cycle', `${H.walkFrame(8, 2)}`)
+    ok([0, 1, 5, 7, 8, 15, 24].every((w) => H.walkFrame(w, 2) < 2), 'hero: the walk frame stays in range')
+    // the hit flash: full the tick struck, decaying, 0 when it runs out
+    ok(H.hitFlashAlpha(0) === 0, 'hero: no hit flash when unstruck')
+    ok(H.hitFlashAlpha(S.CFG.hitFlash) === 1, 'hero: full white the tick he is struck', `${H.hitFlashAlpha(S.CFG.hitFlash)}`)
+    ok(H.hitFlashAlpha(Math.round(S.CFG.hitFlash / 2)) > H.hitFlashAlpha(1) && H.hitFlashAlpha(1) > 0, 'hero: the flash decays to nothing', `${H.hitFlashAlpha(Math.round(S.CFG.hitFlash / 2))},${H.hitFlashAlpha(1)}`)
+    // sim: the walk accumulator advances only the ticks the hero moves
+    const g1 = makeGame(0, 'warrior', { topDown: true })
+    g1.monsters = []; g1.gens.forEach((g) => { g.alive = false }); g1.hero.hp = 1e9; g1.deathSpawned = true
+    const idle0 = g1.hero.walk
+    for (let i = 0; i < 40; i++) { step(g1, {}); g1.events.length = 0 }
+    ok(g1.hero.walk === idle0, 'hero: the walk holds still while he stands', `${g1.hero.walk}`)
+    const move0 = g1.hero.walk
+    for (let i = 0; i < 40; i++) { step(g1, { fwd: true }); g1.events.length = 0 }
+    ok(g1.hero.walk > move0, 'hero: the walk advances while he walks', `${move0} -> ${g1.hero.walk}`)
+    // sim: a strike sets the hit flash, and it decays to nothing on its own
+    const g2 = makeGame(0, 'warrior', { topDown: true })
+    g2.monsters = []; g2.gens.forEach((g) => { g.alive = false }); g2.hero.hp = 1e9; g2.deathSpawned = true
+    g2.monsters.push({ id: 9701, kind: 'grunt', x: g2.hero.x, y: g2.hero.y, hp: MONSTERS.grunt.hp, atkT: 0, castT: 9999, path: [], repathT: 0, drainT: 0 })
+    let struck = false
+    for (let i = 0; i < 6 && !struck; i++) { step(g2, {}); struck = g2.events.some((e) => e.type === 'hit' && e.target === 'hero'); g2.events.length = 0 }
+    ok(struck && g2.hero.hitT === S.CFG.hitFlash, 'hero: a strike sets the hit flash', `hitT=${g2.hero.hitT}`)
+    for (let i = 0; i < S.CFG.hitFlash; i++) { step(g2, {}); g2.events.length = 0 }
+    ok(g2.hero.hitT === 0, 'hero: the hit flash decays to nothing', `${g2.hero.hitT}`)
 }
 
 // ---------------------------------------------------------- generators ----
@@ -563,6 +599,8 @@ if (process.argv.includes('--mutate')) {
         ['a tap on a card picks no hero', 'src/games/Gauntlet/select.js', 'if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i', 'if (false) return i'],
         ['a pad-driven partner ignores its input', 'src/games/Gauntlet/sim.js', 'if (partnerInp) {', 'if (false) {'],
         ['the partner never opens a slam door', 'src/games/Gauntlet/sim.js', 'openSlamInWay(gs, p, ux, uy)\n        const differentCell', 'const differentCell'],
+        ['the hero never steps', 'src/games/Gauntlet/sim.js', 'if (Math.hypot(h.x - wx0, h.y - wy0) > 1e-6) h.walk++', 'if (false) h.walk++'],
+        ['the hero never flashes on a strike', 'src/games/Gauntlet/sim.js', 'h.hp -= kind.dmg\n                h.hitT = CFG.hitFlash', 'h.hp -= kind.dmg'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

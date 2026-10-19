@@ -22,6 +22,7 @@ import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
 import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
+import { walkFrame, hitFlashAlpha } from './hero.js'
 import { torch, litColor, mortarTones, css } from './walls.js'
 import { cardCenter, heroAt } from './select.js'
 import { p2From } from './p2input.js'
@@ -203,10 +204,10 @@ const GauntletGame = () => {
             return gs.levelData.grid[r][c]
         }
 
-        const sprite = (name, wx, wy, size, wob = true) => {
-            const frames = SP[name]
+        const sprite = (name, wx, wy, size, wob = true, frame = -1, white = false) => {
+            const frames = white ? (SP.__flash && SP.__flash[name]) : SP[name]
             if (!frames || !frames.length) return
-            const img = frames[wob ? (gs.tick >> 3) % frames.length : 0]
+            const img = frame >= 0 ? frames[frame] : frames[wob ? (gs.tick >> 3) % frames.length : 0]
             const s = size / img.height
             ctx.drawImage(img, Math.round(wx - (img.width * s) / 2), Math.round(wy - (img.height * s) / 2), Math.round(img.width * s), Math.round(img.height * s))
         }
@@ -370,7 +371,20 @@ const GauntletGame = () => {
                 ctx.lineWidth = 1
             }
             const blink = h.deadT > 0 && (gs.tick >> 2) % 2 === 0
-            if (!blink) sprite(gs.heroKey, hx, hy, 12)
+            if (!blink) {
+                // the hero steps only while he walks (issue #302), and flashes
+                // white the moment he is struck
+                const wf = walkFrame(h.walk, SP[gs.heroKey].length)
+                sprite(gs.heroKey, hx, hy, 12, true, wf)
+                const fa = hitFlashAlpha(h.hitT)
+                if (fa > 0) {
+                    ctx.save()
+                    ctx.globalAlpha = fa
+                    ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 10
+                    sprite(gs.heroKey, hx, hy, 12, true, wf, true)
+                    ctx.restore()
+                }
+            }
             for (const p of parts) {
                 p.x += p.vx; p.y += p.vy; p.t++
                 if (p.t < 18) { ctx.fillStyle = p.col; ctx.globalAlpha = 1 - p.t / 18; ctx.fillRect(VW / 2 + p.x, VH / 2 + p.y, 2, 2); ctx.globalAlpha = 1 }

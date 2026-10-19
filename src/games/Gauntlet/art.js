@@ -20,6 +20,15 @@ const MON = (name, pal, rows) => {
     return { pal, frames: [a, b] }
 }
 
+// a hero: a standing frame plus the same 1px-bob walk frame the beasts use
+// (issue #302 — the hero was a static overhead sprite). Frame 1 keeps the
+// original pixels; frame 2 steps down one row so the walk reads as a step.
+const HRC = (pal, rows) => {
+    const w = Math.max(...rows.map((r) => r.length))
+    const a = rows.map((r) => r.padEnd(w, ' '))
+    return { pal, frames: [a, a.slice(1).concat([' '.repeat(w)])] }
+}
+
 export const SPRITE_DATA = {
     grunt: MON('grunt', { o: '#e0723a', d: '#a24a20', c: '#5a2410', w: '#ffffff', k: '#1a0b0b', y: '#ffd23f' }, [
         '  .d        d.  ',
@@ -167,7 +176,7 @@ export const SPRITE_DATA = {
         ' sskss  ',
         'sk kk s ',
     ]] },
-    warrior: { pal: { g: '#d8b04a', s: '#cfd8e8', k: '#141a26', r: '#c93030' }, frames: [[
+    warrior: HRC({ g: '#d8b04a', s: '#cfd8e8', k: '#141a26', r: '#c93030' }, [
         ' sssss ',
         'srrrrrs',
         'sksssk ',
@@ -176,8 +185,8 @@ export const SPRITE_DATA = {
         ' ggsgg ',
         'ggggggg',
         'gg g gg',
-    ]] },
-    valkyrie: { pal: { g: '#e8d8a0', s: '#8fd0ff', k: '#14212e', p: '#ff8ab0' }, frames: [[
+    ]),
+    valkyrie: HRC({ g: '#e8d8a0', s: '#8fd0ff', k: '#14212e', p: '#ff8ab0' }, [
         ' sssss ',
         'sgggggs',
         'sksgks ',
@@ -186,8 +195,8 @@ export const SPRITE_DATA = {
         ' ssppss ',
         'sspppss',
         'ss   ss',
-    ]] },
-    wizard: { pal: { p: '#7b3fbf', l: '#b487e8', k: '#12081f', w: '#f0e8ff', y: '#ffd23f' }, frames: [[
+    ]),
+    wizard: HRC({ p: '#7b3fbf', l: '#b487e8', k: '#12081f', w: '#f0e8ff', y: '#ffd23f' }, [
         '  ppp  ',
         ' ppypp ',
         'ppppppp',
@@ -196,8 +205,8 @@ export const SPRITE_DATA = {
         ' ppppp ',
         'pplplpp',
         'pp   pp',
-    ]] },
-    elf: { pal: { g: '#4fae5f', l: '#9fe0a8', k: '#0e1f12', w: '#f0ffe0', y: '#d9b06a' }, frames: [[
+    ]),
+    elf: HRC({ g: '#4fae5f', l: '#9fe0a8', k: '#0e1f12', w: '#f0ffe0', y: '#d9b06a' }, [
         ' g   g ',
         ' gg gg ',
         'glwwlg ',
@@ -206,18 +215,20 @@ export const SPRITE_DATA = {
         ' lllll ',
         'll g ll',
         'll   ll',
-    ]] },
+    ]),
 }
 
 const SP = {}
-function punch(pal, rows) {
+function punch(pal, rows, white = false) {
     const w = Math.max(...rows.map((r) => r.length)), h = rows.length
     const c = document.createElement('canvas')
     c.width = w; c.height = h
     const g = c.getContext('2d')
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < rows[y].length; x++) {
-            const col = pal[rows[y][x]]
+            const ch = rows[y][x]
+            if (ch === ' ') continue
+            const col = white ? '#ffffff' : pal[ch]
             if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1) }
         }
     }
@@ -226,9 +237,12 @@ function punch(pal, rows) {
 
 export function buildSprites() {
     if (SP.grunt) return SP
+    SP.__flash = {}
     for (const name of Object.keys(SPRITE_DATA)) {
         const { pal, frames } = SPRITE_DATA[name]
         SP[name] = frames.map((rows) => punch(pal, rows))
+        // a white silhouette per frame: the hero's hit-flash overlay (issue #302)
+        SP.__flash[name] = frames.map((rows) => punch(pal, rows, true))
     }
     return SP
 }
