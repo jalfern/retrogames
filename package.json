@@ -66,6 +66,7 @@
     "iceplay": "node scripts/iceplay.mjs",
     "lint:forge": "eslint src/pages scripts",
     "forgecheck": "node scripts/forgecheck.mjs",
+    "dailylogcheck": "node scripts/dailylogcheck.mjs",
     "lint:galaga": "eslint src/games/Galaga src/components src/utils src/config src/main.jsx scripts",
     "galactcheck": "node scripts/galactcheck.mjs",
     "galactplay": "node scripts/galactplay.mjs",

@@ -174,6 +174,11 @@ verify prod → rewrite STATE.md). One game per session, 3-hour cap, stalled-loo
 agent: pulse line, trust gate + triage, kick the builder / QA when idle, `stalled` after 3
 kicks with no progress. It never calls a model, so it never slows the builder or hangs on oMLX.
 Test any change with `WARDEN_DRY=1 zsh scripts/warden.sh` (reads everything, changes nothing).
+**The daily log** (#516): `scripts/dailylog.mjs` cuts the day at 07:00 Pacific (DST-safe)
+and pushes `log.json` to forge-telemetry with every telemetry tick — shipped (with
+`docs/shots/issue-<n>/` screenshots), stalled, regressed (only `static` failures count),
+waiting on Jon, private titles gated. `/forge/log` renders 14 days newest-first; the board
+shows the live headline. Rules pinned by `npm run dailylogcheck`.
 ```bash
 launchctl load ~/Library/LaunchAgents/com.jalfern.forge.plist   # install (after cp)
 scripts/forge.sh                                                # force a session now

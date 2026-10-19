@@ -197,3 +197,12 @@ r = subprocess.run(['gh', 'api', '-X', 'PUT', f'{OUT}/contents/board.json', '--i
 if r.returncode != 0:
     print('board push failed:', r.stderr[:300])
 PYB
+
+# daily log (#516) — log.json rides the same CDN pipe as board.json. Run the
+# generator from origin/main over stdin (same pattern as this whole script:
+# launchd pipes telemetry.sh itself from origin/main, so a merge lands the
+# next tick without touching any working tree). DAILYLOG_PUSH selects the
+# push path; the module's pure core is pinned by npm run dailylogcheck.
+git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null || true
+git -C /Users/jon/Dev/retrogames show origin/main:scripts/dailylog.mjs \
+    | DAILYLOG_PUSH=1 node --input-type=module - || echo 'dailylog failed'

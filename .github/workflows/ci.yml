@@ -107,6 +107,9 @@ jobs:
       # (queue card count, gate color, anvil freshness, cart flips). ~1 s.
       - run: npm run lint:forge
       - run: npm run forgecheck
+      # The daily log's day math and membership rules (#516), pinned against
+      # fixtures in Node — DST flips, gating, ordering, the stalled-silence rule.
+      - run: npm run dailylogcheck
       # Thirteenth scoped gate: POLARITY. The volley rhythm promise, a per-tick
       # fairness scan through the same step() the player drives, the muscle pins,
       # and six mutants all run in Node in seconds — the same proof that makes

@@ -11,6 +11,7 @@ const REPO = 'jalfern/retrogames'
 // underneath was healthy. telemetry.sh bakes everything the board renders
 // (issues, PRs, pulses, build feed, vitals) into this one file.
 const RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/board.json'
+const LOG_RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/log.json'
 
 const Lamp = ({ label, ok, children }) => (
     <div className={`border p-3 text-xs ${ok ? 'border-[#0f0]/60' : 'border-[#f80]/60'}`}>
@@ -65,6 +66,7 @@ const ForgeBoard = () => {
     const [lastFetched, setLastFetched] = useState(0)
     const [samples, setSamples] = useState(null)
     const [generated, setGenerated] = useState(null)
+    const [daily, setDaily] = useState(null)
     const reload = useRef(() => {})
 
     useEffect(() => {
@@ -98,6 +100,10 @@ const ForgeBoard = () => {
                 setFeed(d.feed ?? [])
                 setSamples(d.samples ?? [])
                 setGenerated(d.generated ?? null)
+                try {
+                    const lr = await fetch(`${LOG_RAW}?t=${Math.floor(Date.now() / 60000)}`)
+                    if (lr.ok) setDaily(await lr.json())
+                } catch { /* the daily log is decoration; the board works without it */ }
                 setNow(Date.now()); lastFetch.current = Date.now(); setLastFetched(Date.now())
                 setError('')
             } catch (e) {
@@ -313,6 +319,17 @@ const ForgeBoard = () => {
                     <h2 className="text-[#c2e0c2] text-sm tracking-widest mb-3">✓ SHIPPED ({shipped.length})</h2>
                     <div className="grid md:grid-cols-2 gap-4">{shipped.map(i => card(i, 'border-[#c2e0c2] text-gray-300'))}</div>
                 </section>
+
+                {daily && (
+                    <Link to="/forge/log" className="block border border-[#0ff]/40 hover:border-[#0ff] p-3 mb-8 text-[10px] leading-relaxed">
+                        <span className="tracking-widest text-[#0ff]">📖 DAILY LOG</span>
+                        <span className="text-gray-400"> — {daily.live.headline}</span>
+                        {daily.live.shipped.length > 0 && (
+                            <div className="text-gray-500 mt-1">latest: {daily.live.shipped[0].title}</div>
+                        )}
+                        <div className="text-gray-600 mt-1">full history at /forge/log →</div>
+                    </Link>
+                )}
 
                 <p className="text-[10px] text-gray-600 text-center mt-16">
                     BUILDER: ONE GAME PER SESSION · WARDEN: EVERY 10 MIN · GATE: CI ONLY · YOU: PROPOSE ABOVE
