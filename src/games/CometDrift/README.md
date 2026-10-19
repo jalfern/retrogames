@@ -79,6 +79,15 @@ follows it. All art/audio synthesized at runtime; no assets.
   drift yaw ×1.6 with a 0.35π lateral slide.
 - Course min radius 288 px → flat-out everywhere on the ideal line; corners
   are won on the drift ladder, not on braking.
+- #518 elevation: every course carries a closed height profile (`ELEV` anchors,
+  [lap-fraction, px], resampled to a uniform knot grid then periodic
+  Catmull-Rom; h=0 at the start/finish, auto-capped at `ELEV_MAX_GRADE` 0.095
+  so authored amplitudes stay arcade-steep — gulch 56px, sandbank 125px,
+  corkscomb 186px of relief). The sim's only slope reading is `p.grade`
+  (dh/ds): `k.v -= CFG.slopeK · grade · cos(heading − trackHeading)`
+  (slopeK 0.42) — downhill gains, uphill pays, no jumps/airtime. 2D stays
+  flat (Mode 7); crests/dips are faked with a smoothed ±6px horizon bob
+  driven by grade+height.
 - Rival skills 0.785–0.86 (top-speed multipliers) + defence shuffle
   (inside-line pull when a chaser is within 460 px) + slipstream + seeded
   mistakes — the pack stays close enough to see and use. The autopilot
@@ -101,7 +110,10 @@ npm run cometcheck            # Node: track audit, reference-shape gate (#513 re
                               #       on the committed road masks: >=98% on-road,
                               #       >=20% coverage, circuit-sized/area), bot wins,
                               #       determinism, canyon look-pins, tiers
-npm run cometcheck -- --mutate # mutates the checkpoint gate, demands RED
+npm run cometcheck -- --mutate # mutates the checkpoint gate AND the #518 slopeK
+                              #       term, demands RED both times (elevation audits:
+                              #       relief >=25px, h=0 datum, seam continuity, grade cap,
+                              #       downhill-outruns-uphill speed proof)
 npm run lint:comet            # eslint gate for the game + harness
 npm run cometplay             # Chrome: real keys only — throttle/steer/drift-ladder/
                               #       spin bite+recover, minimap dot tracks the sim,

@@ -137,6 +137,36 @@ for (const c of COURSES) {
     check(`${c.id}: start/finish sits on the centerline (line on asphalt)`,
         T.pts[0].s === 0 && Tmod.surfaceAt(T.pts[0].x, T.pts[0].y).surf === 'road')
 
+    // #518: the course goes up and down. The profile is closed (no step at the
+    // lap line), sits on the 0 datum at the start, and stays arcade-steep.
+    let hmin = Infinity; let hmax = -Infinity
+    for (const p of T.pts) { hmin = Math.min(hmin, p.h); hmax = Math.max(hmax, p.h) }
+    check(`${c.id}: elevation — the lap goes up and down (>= 25px of relief)`, hmax - hmin >= 25, `${(hmax - hmin).toFixed(0)}px (${hmin.toFixed(0)}..${hmax.toFixed(0)})`)
+    check(`${c.id}: elevation — start/finish is the flat datum (h=0)`, Math.abs(T.pts[0].h) < 1e-9, T.pts[0].h.toFixed(4))
+    check(`${c.id}: elevation — height is continuous across the lap seam`, Math.abs(T.pts[T.N - 1].h - T.pts[0].h) <= 1.5, `${T.pts[T.N - 1].h.toFixed(2)} -> ${T.pts[0].h.toFixed(2)}`)
+    check(`${c.id}: elevation — grades capped at 9.5%`, T.maxGrade <= 0.0951, `max ${T.maxGrade.toFixed(3)}`)
+
+    // #518: gravity is real in the sim — same throttle, same surface: the
+    // downhill section must outrun the uphill one within the same tick budget.
+    {
+        const sv = await loadSim()
+        const up = T.pts.find((p) => p.grade >= 0.045)
+        const dn = T.pts.find((p) => p.grade <= -0.045)
+        const runAt = (p) => {
+            const gg = sv.makeGame(2)
+            gg.phase = 'race'
+            const Q = gg.karts[0]
+            Q.v = 5; Q.lapStart = -999
+            for (let i = 0; i < 40; i++) {
+                Q.x = p.x; Q.y = p.y; Q.a = p.a; Q.idx = p.i; Q.hint = p.i
+                sv.step(gg, { u: true })
+            }
+            return Q.v
+        }
+        const vd = runAt(dn); const vu = runAt(up)
+        check(`${c.id}: gravity — flat-out downhill outruns uphill on the same slope law`, vd - vu >= 0.6, `v down ${vd.toFixed(2)} vs up ${vu.toFixed(2)}`)
+    }
+
     // #513: the layout must actually follow its reference circuit. Normalise the
     // game centerline and the map centreline to the same box; mean point-to-point
     // distance (both ways, best of direct/mirror) must stay under 3% of the box.
@@ -530,10 +560,44 @@ if (process.argv.includes('--mutate')) {
         writeFileSync(path, src.replace('if (crossed && k.cp === (1 << CHECKPOINTS.length) - 1) {', 'if (crossed) {'))
         const lap = await shortcut()
         if (lap > 0) {
-            console.log(`  MUTANT DIED — with the gate removed the infield cut banks a lap (lap=${lap}): the gate is load-bearing and this file went RED on it, by design`)
+            console.log('  MUTANT DIED — with the gate removed the infield cut banks a lap (lap=%d): the gate is load-bearing and this file went RED on it, by design', lap)
             R.fail++
         } else {
             console.log('  MUTANT SURVIVED — removing the gate changed nothing: cometcheck is BLIND')
+        }
+    } finally {
+        writeFileSync(path, src)
+    }
+
+    // #518 mutant: kill the slope term and the downhill/uphill proof above
+    // must go blind (same speed both ways) — the gravity gate is load-bearing.
+    const slopeProbe = async () => {
+        const mm = await import('../src/games/CometDrift/sim.js' + '?m=' + Math.random())
+        selectCourse('corkscomb')
+        const TS = Tmod.TRACK
+        const up = TS.pts.find((p) => p.grade >= 0.045)
+        const dn = TS.pts.find((p) => p.grade <= -0.045)
+        const runAt = (p) => {
+            const gg = mm.makeGame(2)
+            gg.phase = 'race'
+            const Q = gg.karts[0]
+            Q.v = 5; Q.lapStart = -999
+            for (let i = 0; i < 40; i++) {
+                Q.x = p.x; Q.y = p.y; Q.a = p.a; Q.idx = p.i; Q.hint = p.i
+                mm.step(gg, { u: true })
+            }
+            return Q.v
+        }
+        return runAt(dn) - runAt(up)
+    }
+    try {
+        writeFileSync(path, src.replace('slopeK: 0.42,', 'slopeK: 0,'))
+        const gap = await slopeProbe()
+        if (gap < 0.6) {
+            console.log(`  MUTANT DIED — with slopeK=0 downhill and uphill match again (gap ${gap.toFixed(2)}): the #518 gravity gate is load-bearing`)
+            R.fail++
+        } else {
+            console.log('  MUTANT SURVIVED — removing slopeK changed nothing: the gravity gate is BLIND')
         }
     } finally {
         writeFileSync(path, src)

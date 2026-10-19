@@ -15,6 +15,8 @@ import { TRACK, SCENERY } from '../CometDrift/track.js'
 export const S = 1 / 60
 const T = TRACK
 const PERP = (a) => [-Math.sin(a), Math.cos(a)]
+// #518: the road's world height at point i (px profile → units, up +Y).
+export const elevAt = (i) => T.pts[i].h * S
 
 // rockier than a sine: two detuned waves give the rim a natural profile.
 // #471: the shipped walls towered over the road and blocked the view — tops
@@ -25,8 +27,11 @@ const wallTopAt = (i) => 2.5 + Math.sin(i * 0.37 + 1.7) * 0.45 + Math.sin(i * 0.
 // #513 floor: the sim clamps karts at 216px, so the face must never dip
 // inside it, whatever the shared road width does — 4px of visible margin.
 const wallOffAt = (i) => Math.max(220, T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + Math.sin(i * 0.19 + 4) * 3)
-export const plateauYAt = (i) => wallTopAt(i) - 0.25
-export const wallTopYAt = (i) => wallTopAt(i)
+// #518: plateau/wall tops are ABSOLUTE world Y now — the terrain rides the
+// course height profile, so anything standing on it (scenery, the camera
+// collision lip) reads the elevated value.
+export const plateauYAt = (i) => elevAt(i) + wallTopAt(i) - 0.25
+export const wallTopYAt = (i) => elevAt(i) + wallTopAt(i)
 
 // generic ribbon: sample(i) returns the two edge points in px (with height);
 // closed ring, seam duplicated once for continuous UVs.
@@ -57,41 +62,41 @@ function buildRibbon(sample, vScale) {
 // The road spans the full width, so build it directly (both edges on one band):
 function roadGeo() {
     return buildRibbon((i) => {
-        const p = T.pts[i]
+        const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
         return {
-            ax: p.x + pxu * T.ROAD_R, ay: 0.06, az: p.y + pyu * T.ROAD_R,
-            bx: p.x - pxu * T.ROAD_R, by: 0.06, bz: p.y - pyu * T.ROAD_R,
+            ax: p.x + pxu * T.ROAD_R, ay: y + 0.06, az: p.y + pyu * T.ROAD_R,
+            bx: p.x - pxu * T.ROAD_R, by: y + 0.06, bz: p.y - pyu * T.ROAD_R,
         }
     }, 1 / 5)
 }
 
 function kerbGeo(side) {
     return buildRibbon((i) => {
-        const p = T.pts[i]
+        const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
         return {
-            ax: p.x + pxu * side * T.KERB_R, ay: 0.07, az: p.y + pyu * side * T.KERB_R,
-            bx: p.x + pxu * side * T.ROAD_R, by: 0.07, bz: p.y + pyu * side * T.ROAD_R,
+            ax: p.x + pxu * side * T.KERB_R, ay: y + 0.07, az: p.y + pyu * side * T.KERB_R,
+            bx: p.x + pxu * side * T.ROAD_R, by: y + 0.07, bz: p.y + pyu * side * T.ROAD_R,
         }
     }, 1 / 0.85)
 }
 
 function gutterGeo(side) {
     return buildRibbon((i) => {
-        const p = T.pts[i]
+        const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
         const w = wallOffAt(i)
         return {
-            ax: p.x + pxu * side * w, ay: 0.045, az: p.y + pyu * side * w,
-            bx: p.x + pxu * side * T.KERB_R, by: 0.045, bz: p.y + pyu * side * T.KERB_R,
+            ax: p.x + pxu * side * w, ay: y + 0.045, az: p.y + pyu * side * w,
+            bx: p.x + pxu * side * T.KERB_R, by: y + 0.045, bz: p.y + pyu * side * T.KERB_R,
         }
     }, 1 / 3)
 }
 
 function wallGeo(side) {
     return buildRibbon((i) => {
-        const p = T.pts[i]
+        const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
         // offsetting to the INSIDE of a bend collapses the ring once the
         // offset exceeds the local turn radius — the ribbon folded into
@@ -101,19 +106,19 @@ function wallGeo(side) {
         const R = 1 / Math.max(Math.abs(p.k), 1e-6)
         if (p.k * side > 0) w = Math.max(170, Math.min(w, R * 0.8))
         return {
-            ax: p.x + pxu * side * w, ay: 0.02, az: p.y + pyu * side * w,
-            bx: p.x + pxu * side * w, by: wallTopAt(i), bz: p.y + pyu * side * w,
+            ax: p.x + pxu * side * w, ay: y + 0.02, az: p.y + pyu * side * w,
+            bx: p.x + pxu * side * w, by: y + wallTopAt(i), bz: p.y + pyu * side * w,
         }
     }, 1 / 7)
 }
 
 function plateauGeo(side) {
     return buildRibbon((i) => {
-        const p = T.pts[i]
+        const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
         const w = wallOffAt(i)
         const o = w + 430
-        const h = plateauYAt(i)
+        const h = y + wallTopAt(i) - 0.25
         return {
             ax: p.x + pxu * side * o, ay: h, az: p.y + pyu * side * o,
             bx: p.x + pxu * side * w, by: h, bz: p.y + pyu * side * w,
@@ -150,7 +155,7 @@ export function trackGeometryStats() {
         offMin = Math.min(offMin, off); offMax = Math.max(offMax, off)
         topMin = Math.min(topMin, top); topMax = Math.max(topMax, top)
     }
-    return { stats: out, geos, laps: { vertsExpected: (N + 1) * 2 }, bounds: { offMin, offMax, topMin, topMax, simClampPx: 216 } }
+    return { stats: out, geos, laps: { vertsExpected: (N + 1) * 2 }, bounds: { offMin, offMax, topMin, topMax, simClampPx: 216, elevMin: T.hMin * S, elevMax: T.hMax * S, maxGrade: T.maxGrade } }
 }
 
 // ---- karts: exposed-wheel buggies assembled from primitives, livery per
@@ -314,7 +319,7 @@ export function makePool(count, size) {
             tmp.set(colorHex)
             col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b
         },
-        step(gravity) {
+        step(gravity, floor = 0) {
             let n = 0
             for (let i = 0; i < count; i++) {
                 if (life[i] <= 0) { col[i * 3] = 0; col[i * 3 + 1] = 0; col[i * 3 + 2] = 0; continue }
@@ -325,7 +330,7 @@ export function makePool(count, size) {
                 col[i * 3] *= 0.86 + 0.12 * f
                 col[i * 3 + 1] *= 0.86 + 0.12 * f
                 col[i * 3 + 2] *= 0.86 + 0.12 * f
-                if (pos[i * 3 + 1] < 0) pos[i * 3 + 1] = 0
+                if (pos[i * 3 + 1] < floor) pos[i * 3 + 1] = floor
                 n++
             }
             alive = n
@@ -363,8 +368,8 @@ export function buildArch(strataMap) {
     const key = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.55, 0.56), darker)
     key.position.set(0, 2.3 + 3.15, 0)
     g.add(key)
-    // sit it on the line, squared to the road
-    g.position.set(p.x * S, 0, p.y * S)
+    // sit it on the line, squared to the road; #518: the line rides the profile
+    g.position.set(p.x * S, p.h * S, p.y * S)
     g.rotation.y = -p.a + Math.PI / 2
     return g
 }

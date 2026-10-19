@@ -64,6 +64,12 @@ export default function CometDrift() {
         let W = LAND_W_MAX
         let H = LAND_H
         let HORIZON = Math.round(H * 0.4)
+        // #518: Mode 7 keeps its flat ground, but crests and dips are faked
+        // with a small horizon bob — uphill (looking up) slides the horizon
+        // down the frame, a hilltop view lets it settle back. Smoothed so the
+        // line glides over a crest instead of stepping with the point index.
+        let HZ = HORIZON
+        let horizonSm = HORIZON
         let u = 1
         let hs = 1
         let kscale = 1
@@ -84,6 +90,7 @@ export default function CometDrift() {
             ctx = canvas.getContext('2d')
             ctx.imageSmoothingEnabled = false
             HORIZON = Math.round(H * 0.4)
+            HZ = HORIZON; horizonSm = HORIZON
             u = H / 176
             // the HUD scales with the SHORTER axis so it never explodes in
             // portrait, where u runs away with the height
@@ -207,6 +214,9 @@ export default function CometDrift() {
 
         const raster = () => {
             const p = g.karts[0]
+            const bobTarget = Math.max(-6, Math.min(6, (p.grade || 0) * 46 + (p.h || 0) * 0.035))
+            horizonSm += (bobTarget - horizonSm) * 0.18
+            HZ = HORIZON + Math.round(horizonSm)
             const ca = Math.cos(camA); const sa = Math.sin(camA)
             const pp = BASE_PP * (1 + fovK)
             const back = BASE_BACK * (1 + fovK * 1.7)
@@ -215,9 +225,9 @@ export default function CometDrift() {
             const gN = ((camA / (Math.PI * 2)) * 512) % 512
             const cA = ((camA / (Math.PI * 2)) * 256 * 1.6 + g.tick * 0.03) % 256
             const sunX = W / 2 + wrapA(SUN_A - camA) * W * 0.66
-            const sunY = HORIZON - Math.round(sunLift * u)
-            for (let y = 0; y < HORIZON; y++) {
-                const t = y / HORIZON
+            const sunY = HZ - Math.round(sunLift * u)
+            for (let y = 0; y < HZ; y++) {
+                const t = y / Math.max(1, HZ)
                 let sr, sg, sb
                 if (t < 0.55) { const w = t / 0.55; sr = SKY_TOP[0] + (SKY_MID[0] - SKY_TOP[0]) * w; sg = SKY_TOP[1] + (SKY_MID[1] - SKY_TOP[1]) * w; sb = SKY_TOP[2] + (SKY_MID[2] - SKY_TOP[2]) * w }
                 else { const w = (t - 0.55) / 0.45; sr = SKY_MID[0] + (SKY_LOW[0] - SKY_MID[0]) * w; sg = SKY_MID[1] + (SKY_LOW[1] - SKY_MID[1]) * w; sb = SKY_MID[2] + (SKY_LOW[2] - SKY_MID[2]) * w }
@@ -225,19 +235,19 @@ export default function CometDrift() {
                 let o = y * W
                 for (let x = 0; x < W; x++) {
                     const nh = sky.near[(x + gN | 0) & 511] * u
-                    if (y > HORIZON - nh) { px[o++] = y > HORIZON - nh + Math.round(3 * u) ? NEAR_C : FAR_C; continue }
+                    if (y > HZ - nh) { px[o++] = y > HZ - nh + Math.round(3 * u) ? NEAR_C : FAR_C; continue }
                     const fh = sky.far[(x + aN * 0.62 | 0) & 511] * u
-                    if (y > HORIZON - fh) { px[o++] = FAR_C; continue }
+                    if (y > HZ - fh) { px[o++] = FAR_C; continue }
                     const dxS = x - sunX; const dyS = y - sunY
                     const d2 = dxS * dxS + dyS * dyS
                     if (d2 < 260 * u * u) { px[o++] = SUN_C; continue }
                     if (d2 < 620 * u * u) { px[o++] = GLOW_C; continue }
-                    if (y < HORIZON - 6 && sky.glint[((y * 256) + ((x + cA) & 255)) | 0]) { px[o++] = GLINT_C; continue }
+                    if (y < HZ - 6 && sky.glint[((y * 256) + ((x + cA) & 255)) | 0]) { px[o++] = GLINT_C; continue }
                     px[o++] = row
                 }
             }
-            for (let y = HORIZON; y < H; y++) {
-                const dd = (CAM_H * pp) / (y - HORIZON + 0.6)
+            for (let y = HZ; y < H; y++) {
+                const dd = (CAM_H * pp) / (y - HZ + 0.6)
                 const dl = dd / pp
                 const fr = dd > 1700 ? Math.min(0.8, (dd - 1700) / 1250) : 0
                 const cosd = ca * dd; const sind = sa * dd
@@ -350,7 +360,7 @@ export default function CometDrift() {
                 const pr = project(it.x, it.y)
                 if (pr.f < 30 || pr.f > 2600) continue
                 const s = BASE_PP / pr.f
-                const sy = HORIZON + CAM_H * s
+                const sy = HZ + CAM_H * s
                 const sx = W / 2 + pr.l * s
                 const w = Math.min(W * 2, it.w * s * 0.9); const h = Math.min(H * 1.6, it.h * s * 0.9)
                 if (sx + w < 0 || sx - w > W) continue
@@ -441,7 +451,7 @@ export default function CometDrift() {
                 for (let i = 0; i < n; i++) {
                     const side = i % 2 ? 1 : -1
                     const x0 = W / 2 + side * (W * (0.36 + jit(i * 7.3 + (g.tick >> 2)) * 0.13))
-                    const y0 = HORIZON + jit(i * 3.1 + g.tick) * (H - HORIZON) * 0.5
+                    const y0 = HZ + jit(i * 3.1 + g.tick) * (H - HZ) * 0.5
                     const len = (24 + (boost ? 44 : 14) + jit(i + g.tick * 0.7) * 18) * u
                     ctx.globalAlpha = 0.22 + 0.3 * jit(i + g.tick * 0.5)
                     ctx.strokeStyle = boost && P.boostTier >= 1 ? '#ffe8c0' : '#e8c8a0'
@@ -549,7 +559,7 @@ export default function CometDrift() {
                 ctx.textAlign = 'center'
                 ctx.font = fu(44)
                 ctx.fillStyle = g.phase === 'race' ? '#38e878' : '#f2e6d2'
-                ctx.fillText(g.phase === 'race' ? 'GO!' : String(Math.ceil(g.count / 60)), W / 2, HORIZON + Math.round(34 * hs))
+                ctx.fillText(g.phase === 'race' ? 'GO!' : String(Math.ceil(g.count / 60)), W / 2, HZ + Math.round(34 * hs))
                 ctx.textAlign = 'left'
             }
         }
@@ -774,7 +784,7 @@ export default function CometDrift() {
             game: () => g,
             keys,
             screen: () => st.screen,
-            view: () => ({ w: W, h: H, horizon: HORIZON, scale: u }),
+            view: () => ({ w: W, h: H, horizon: HORIZON, horizonNow: HZ, scale: u }),
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
             course: () => COURSE.id,

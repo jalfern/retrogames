@@ -13,7 +13,7 @@ import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/
 import { rumble } from '../../components/gamepadMap'
 import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt,
-    loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE,
+    loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt,
 } from './scene.js'
 
 // =====================================================================
@@ -300,7 +300,7 @@ export default function CometDriftHD() {
         // canyon floor beyond the plateau rim, so no void opens under the mesas
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), mat(tex(sandTex()), { color: 0xa87850 }))
         floor.rotation.x = -Math.PI / 2
-        floor.position.set(17, -0.4, 17)
+        floor.position.set(17, -1.5, 17)
         scene.add(floor)
 
         scene.add(buildMesas())
@@ -539,23 +539,23 @@ export default function CometDriftHD() {
                 const col = tier >= 0 ? parseInt(TIER_COL[tier].slice(1), 16) : SPARK_NOCOL
                 for (const side of [-1, 1]) {
                     const w = wheelWorld(P, side, 0.5)
-                    sparks.spawn(w.x, 0.12, w.z, -w.fx * 0.05 + (jit(g.tick + side) - 0.5) * 0.02, 0.02 + jit(g.tick * 1.7 + side) * 0.02, -w.fx * 0.05 + (jit(g.tick * 2.3 + side) - 0.5) * 0.02, 14, col)
-                    dust.spawn(w.x, 0.16, w.z, -w.fx * 0.015, 0.008, -w.fz * 0.015, 24, 0xb08058)
+                    sparks.spawn(w.x, liftAt(P) + 0.12, w.z, -w.fx * 0.05 + (jit(g.tick + side) - 0.5) * 0.02, 0.02 + jit(g.tick * 1.7 + side) * 0.02, -w.fx * 0.05 + (jit(g.tick * 2.3 + side) - 0.5) * 0.02, 14, col)
+                    dust.spawn(w.x, liftAt(P) + 0.16, w.z, -w.fx * 0.015, 0.008, -w.fz * 0.015, 24, 0xb08058)
                     // gold tier paints short streaks, not just dots (#471 item 6)
                     if (tier === 2) {
-                        sparks.spawn(w.x - w.fx * 0.5, 0.13, w.z - w.fz * 0.5, -w.fx * 0.05, 0.018, -w.fz * 0.05, 11, col)
-                        sparks.spawn(w.x - w.fx * 0.95, 0.13, w.z - w.fz * 0.95, -w.fx * 0.05, 0.015, -w.fz * 0.05, 9, col)
+                        sparks.spawn(w.x - w.fx * 0.5, liftAt(P) + 0.13, w.z - w.fz * 0.5, -w.fx * 0.05, 0.018, -w.fz * 0.05, 11, col)
+                        sparks.spawn(w.x - w.fx * 0.95, liftAt(P) + 0.13, w.z - w.fz * 0.95, -w.fx * 0.05, 0.015, -w.fz * 0.05, 9, col)
                     }
                 }
             } else if (P.spinT > 0) {
                 for (let i = 0; i < 3; i++) {
                     const w = wheelWorld(P, i % 2 ? 1 : -1, 0.2)
-                    dust.spawn(w.x, 0.18, w.z, (jit(g.tick * 3.1 + i) - 0.5) * 0.03, 0.012, (jit(g.tick * 2.1 + i) - 0.5) * 0.03, 20, 0xb08058)
+                    dust.spawn(w.x, liftAt(P) + 0.18, w.z, (jit(g.tick * 3.1 + i) - 0.5) * 0.03, 0.012, (jit(g.tick * 2.1 + i) - 0.5) * 0.03, 20, 0xb08058)
                 }
             }
             if (P.offroad && P.v > 2 && (g.tick & 1) === 0) {
                 const w = wheelWorld(P, 1, 0.4)
-                dust.spawn(w.x, 0.14, w.z, 0, 0.006, 0, 18, 0xb08058)
+                dust.spawn(w.x, liftAt(P) + 0.14, w.z, 0, 0.006, 0, 18, 0xb08058)
             }
             // the pack drifts too: rivals earn their sparks at half rate,
             // and boost leaves a smoke trail (#471 item 6)
@@ -566,31 +566,41 @@ export default function CometDriftHD() {
                 if (k.driftT > 0 && k.v > 1) {
                     const kt = k.charge >= TIERS[2].t ? 2 : k.charge >= TIERS[1].t ? 1 : k.charge >= TIERS[0].t ? 0 : -1
                     const w = wheelWorld(k, side, 0.5)
-                    sparks.spawn(w.x, 0.12, w.z, -w.fx * 0.04, 0.015, -w.fz * 0.04, 12, kt >= 0 ? parseInt(TIER_COL[kt].slice(1), 16) : SPARK_NOCOL)
+                    sparks.spawn(w.x, liftAt(k) + 0.12, w.z, -w.fx * 0.04, 0.015, -w.fz * 0.04, 12, kt >= 0 ? parseInt(TIER_COL[kt].slice(1), 16) : SPARK_NOCOL)
                 }
                 if (k.boostT > 0 && k.v > 2) {
                     const wb = wheelWorld(k, side, 0.9)
-                    dust.spawn(wb.x, 0.3, wb.z, 0, 0.012, 0, 22, 0x8a7a82)
+                    dust.spawn(wb.x, liftAt(k) + 0.3, wb.z, 0, 0.012, 0, 22, 0x8a7a82)
                 }
             }
-            sparks.step(-0.0016)
-            dust.step(-0.0004)
+            sparks.step(-0.0016, liftAt(P) - 0.05)
+            dust.step(-0.0004, liftAt(P) - 0.12)
         }
 
         // ---- mesh sync: drawn state is the sim state, every frame ---------
+        // #518: karts sit on the height profile. Height and pitch are smoothed
+        // per kart (the profile is sampled at the nearest centerline point, so
+        // the raw value steps as points pass under the wheels). Pitch rides
+        // local X after yaw (YXZ), so cresting lifts the nose the way the
+        // road actually tilts.
+        const liftAt = (k) => k.hSm || 0
         const syncMeshes = () => {
             for (let i = 0; i < g.karts.length; i++) {
                 const k = g.karts[i]
                 const { m, shadow } = kartMeshes[i]
-                m.position.set(k.x * S, 0, k.y * S)
-                m.rotation.y = kartYaw(k.a)
-                m.rotation.z = k.driftT > 0 ? (k.steerVis || 1) * 0.14 : 0
+                const hT = elevAt(k.idx); const pT = Math.atan(k.grade || 0)
+                k.hSm = k.hSm === undefined ? hT : k.hSm + (hT - k.hSm) * 0.4
+                k.pitchSm = k.pitchSm === undefined ? pT : k.pitchSm + (pT - k.pitchSm) * 0.3
+                const h = k.hSm
+                m.position.set(k.x * S, h, k.y * S)
+                m.rotation.order = 'YXZ'
+                m.rotation.set(-k.pitchSm, kartYaw(k.a), k.driftT > 0 ? (k.steerVis || 1) * 0.14 : 0)
                 const rough = k.offroad && k.v > 1
                 const bob = rough ? (jit(g.tick * 7.7 + i) - 0.5) * 0.05 : 0
-                m.position.y = bob
+                m.position.y = h + bob
                 // suspension squash through the washboard (#471 item 3)
                 m.scale.y = rough ? 0.93 + jit(g.tick * 11.3 + i) * 0.08 : 1
-                shadow.position.set(k.x * S, 0.052, k.y * S)
+                shadow.position.set(k.x * S, h + 0.052, k.y * S)
                 // wheel rig (#477): steer the front pivots about vertical, roll all
                 // four about their axle. baseQuat keeps the model's baked right-side
                 // flip; steer/roll signs undo it so both sides turn/spin alike.
@@ -631,12 +641,13 @@ export default function CometDriftHD() {
             const back = 5.3 + fovK * 0.06
             const fx0 = Math.cos(camA); const fz0 = Math.sin(camA)
             const hx = P.x * S; const hz = P.y * S
+            const hp = liftAt(P)
             const baseUp = 2.75 + fovK * 0.02
             const behind = surfaceAt((hx - fx0 * back) / S, (hz - fz0 * back) / S, P.hint)
             const need = behind.surf === 'sand' || behind.surf === 'wall'
-                ? Math.max(0, wallTopYAt(behind.i) + 0.55 - baseUp) : 0
+                ? Math.max(0, wallTopYAt(behind.i) + 0.55 - (hp + baseUp)) : 0
             camLift += (need - camLift) * 0.22
-            camera.position.set(hx - fx0 * back, baseUp + camLift, hz - fz0 * back)
+            camera.position.set(hx - fx0 * back, hp + baseUp + camLift, hz - fz0 * back)
             tmpF.set(fx0, 0, fz0)
             tmpR.crossVectors(tmpF, UP).normalize()
             if (shake > 0.05) {
@@ -647,7 +658,7 @@ export default function CometDriftHD() {
                 if (shake < 0.05) shake = 0
             }
             camera.up.set(0, 1, 0)
-            camera.lookAt(hx + fx0 * 9, 1.3 + camLift * 0.5, hz + fz0 * 9)
+            camera.lookAt(hx + fx0 * 9, hp + 1.3 + camLift * 0.5, hz + fz0 * 9)
             camera.fov = 64 + fovK
             camera.updateProjectionMatrix()
         }
@@ -1052,6 +1063,13 @@ export default function CometDriftHD() {
                 return !!(v && v.getObjectByName && v.getObjectByName('DuneBuggy'))
             },
             forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
+            kartWorld: () => {
+                const m = kartMeshes[0].m
+                return { pos: [m.position.x.toFixed(2), m.position.y.toFixed(2), m.position.z.toFixed(2)],
+                    rot: [m.rotation.x.toFixed(3), m.rotation.y.toFixed(3), m.rotation.z.toFixed(3)],
+                    visible: m.visible, children: m.children.length,
+                    cam: [camera.position.x.toFixed(2), camera.position.y.toFixed(2), camera.position.z.toFixed(2)] }
+            },
         }
 
         exposeGame({

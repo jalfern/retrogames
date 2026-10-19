@@ -33,6 +33,65 @@ export const WALL_R = ROAD_R + 52    // sand ends, cliff face: the wall
 
 export const COURSE_KEY = 'retrogames:comet.course'
 
+// #518: elevation. Each course carries a closed height profile along the lap:
+// anchors [lap-fraction, height-px] interpolated by periodic Catmull-Rom onto
+// every polyline point (`p.h`, up-positive px; start/finish pinned at 0 so the
+// HD floor and the 2D apron stay put). `p.grade` = dh/ds along the direction of
+// travel (+ uphill), the only number the sim reads. No bridges or crossovers:
+// the road never crosses another leg's height band — the profile only rolls the
+// ground the road already lies on. Grades stay under ~9% (arcade, not stunt).
+const ELEV = {
+    // canyon roll: a crest on the ridge straight, a dip in the north horseshoe
+    gulch: [
+        [0, 0], [0.16, 40], [0.3, -55], [0.46, -90], [0.6, -18], [0.74, 80],
+        [0.86, 52], [0.94, -26],
+    ],
+    // the bowl: the banked Turns 1-2 and the International Horseshoe ride high,
+    // the Bus Stop complex and the front straight sit low
+    sandbank: [
+        [0, 0], [0.1, 12], [0.22, 48], [0.34, 64], [0.44, 38], [0.56, 6],
+        [0.66, -16], [0.78, -54], [0.88, -62], [0.95, -24],
+    ],
+    // the map's story is the descent: up the Rahal straight to the Andretti
+    // hook, then the Corkscomb drops the field 160px down the hillside
+    corkscomb: [
+        [0, 0], [0.12, 52], [0.24, 104], [0.36, 96], [0.46, 10], [0.56, -64],
+        [0.66, -110], [0.76, -58], [0.86, 16], [0.94, 22],
+    ],
+}
+export const ELEV_MAX_GRADE = 0.095
+
+// Unevenly spaced knots make Catmull-Rom overshoot (the Gulch hit a 30% grade
+// between two tight anchors). Resample the authored anchors onto a uniform
+// fraction grid first — uniform knots keep the periodic spline's tangent (and
+// therefore the grade) bounded — then evaluate the profile on that grid.
+function uniformize(elev, n = 48) {
+    const out = []
+    const m = elev.length
+    for (let k = 0; k < n; k++) {
+        const f = k / n
+        let j = 0
+        while (j < m && elev[j][0] <= f) j++
+        const ia = (j - 1 + m) % m; const ib = j % m
+        let fa = elev[ia][0]; let fb = elev[ib][0]
+        if (ib === 0) fb += 1
+        const t = (f - fa) / Math.max(1e-6, fb - fa)
+        out.push([f, elev[ia][1] + (elev[ib][1] - elev[ia][1]) * t])
+    }
+    return out
+}
+
+function catmullH(anchors, f) {
+    const n = anchors.length
+    const seg = Math.min(n - 1, Math.floor(f * n))
+    const ia = seg
+    const ib = (seg + 1) % n
+    const fa = anchors[ia][0]; let fb = anchors[ib][0]
+    if (ib === 0) fb += 1
+    const t = Math.max(0, Math.min(1, (f - fa) / Math.max(1e-6, fb - fa)))
+    return catmull(anchors[(ia - 1 + n) % n][1], anchors[ia][1], anchors[ib][1], anchors[(ib + 1) % n][1], t)
+}
+
 // ---------------------------------------------------------------------------
 // SUNSET GULCH (dusk). The long start straight east, a sweeper up the right
 // side, the ridge straight westbound along the top, a wide left horseshoe in
@@ -107,7 +166,8 @@ function catmull(p0, p1, p2, p3, t) {
     return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
 }
 
-function buildPoints(control) {
+function buildPoints(control, elev) {
+    const UGRID = uniformize(elev)
     const pts = []
     const n = control.length
     const SEG = 26
@@ -136,7 +196,29 @@ function buildPoints(control) {
         while (da < -Math.PI) da += Math.PI * 2
         p.k = da / Math.max(1, p.d)
     }
-    return { pts, len: s, N }
+    // #518: height rides the lap fraction; grade is dh/ds along travel, the
+    // only slope number the sim reads. Central difference across the two
+    // neighbouring segments keeps it continuous through the lap seam.
+    // Authored amplitudes are advisory: profiles get rescaled until the
+    // steepest section sits under ELEV_MAX_GRADE, so every course pitches the
+    // same arcade amount whatever the author wrote.
+    for (let i = 0; i < N; i++) pts[i].h = catmullH(UGRID, pts[i].s / s)
+    let rawMax = 0
+    for (let i = 0; i < N; i++) {
+        const nx = pts[(i + 1) % N]; const pv = pts[(i - 1 + N) % N]
+        rawMax = Math.max(rawMax, Math.abs(nx.h - pv.h) / Math.max(1, pv.d + pts[i].d))
+    }
+    const scale = rawMax > ELEV_MAX_GRADE ? ELEV_MAX_GRADE / rawMax : 1
+    let hMin = 0; let hMax = 0; let maxGrade = 0
+    if (scale !== 1) for (let i = 0; i < N; i++) pts[i].h *= scale
+    for (let i = 0; i < N; i++) {
+        const p = pts[i]
+        const nx = pts[(i + 1) % N]; const pv = pts[(i - 1 + N) % N]
+        p.grade = (nx.h - pv.h) / Math.max(1, pv.d + p.d)
+        hMin = Math.min(hMin, p.h); hMax = Math.max(hMax, p.h)
+        maxGrade = Math.max(maxGrade, Math.abs(p.grade))
+    }
+    return { pts, len: s, N, hMin, hMax, maxGrade }
 }
 
 // scenery placed by index so the list is identical in Node, the browser and
@@ -191,10 +273,11 @@ const pctOf = (track, f) => Math.round(f * track.len)
 
 const BUILT = new Map()
 for (const c of COURSES) {
-    const t = buildPoints(c.control)
+    const t = buildPoints(c.control, ELEV[c.id])
     BUILT.set(c.id, {
         def: c,
         pts: t.pts, len: t.len, N: t.N,
+        hMin: t.hMin, hMax: t.hMax, maxGrade: t.maxGrade,
         checkpoints: [0.2, 0.4, 0.6, 0.8].map((f) => pctOf(t, f)),
         nearest: makeNearest(t),
         aheadK: makeAheadK(t),
@@ -214,6 +297,7 @@ function adopt(courseId) {
         id: t.def.id, name: t.def.name, short: t.def.short, palette: t.def.palette,
         pts: t.pts, len: t.len, N: t.N,
         ROAD_R, KERB_R, WALL_R,
+        hMin: t.hMin, hMax: t.hMax, maxGrade: t.maxGrade,
         nearest: t.nearest, aheadK: t.aheadK,
     })
     SCENERY.length = 0

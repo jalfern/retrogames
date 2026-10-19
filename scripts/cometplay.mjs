@@ -207,17 +207,20 @@ r.check('the countdown lifts to GO (real 3-2-1)', go, `phase=${(await probe()).p
     let charged = 0
     let steerLeft = true
     const t0 = (await probe()).tick
-    let nextSwap = t0 + 8
+    // #518: the downhill sections make every leg slide farther for the same
+    // key timing, so the correction band tightened (Node-reverified: held drift
+    // still reaches tier 1 at |lat| <= 92, off=never on the Gulch straight).
+    let nextSwap = t0 + 6
     for (let i = 0; i < 400 && charged < 50; i++) {
         const s = await probe()
         charged = Math.max(charged, s.charge)
         if (charged < 50) {
-            const flip = s.tick >= nextSwap || (steerLeft ? s.lat < -62 : s.lat > -20)
+            const flip = s.tick >= nextSwap || (steerLeft ? s.lat < -45 : s.lat > -30)
             if (flip) {
                 steerLeft = !steerLeft
                 await page.keyboard.down(steerLeft ? 'ArrowLeft' : 'ArrowRight')
                 await page.keyboard.up(steerLeft ? 'ArrowRight' : 'ArrowLeft')
-                nextSwap = s.tick + 8
+                nextSwap = s.tick + 6
             }
         }
         await wait(15)

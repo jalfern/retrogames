@@ -17,6 +17,10 @@ export const CFG = {
     spinT: 45, bumpV: 0.42, bumpCd: 12,
     wallLimit: 132, kartR: 34,
     boostAcc: 0.16,
+    // #518: gravity along the slope — v -= slopeK · grade (grade = dh/ds,
+    // + uphill). Downhill pays it back, uphill taxes it. Slope only: no
+    // jumps, no airtime.
+    slopeK: 0.42,
     count: 180,
     // apex grace (#471): crossing zero steering mid-drift (heading aligned
     // with the target for a tick) is not a drift release — while drift and
@@ -72,6 +76,7 @@ function mkKart(def, row) {
         y: p.y + Math.sin(p.a + Math.PI / 2) * lat,
         a: p.a, v: 0, idx: i, hint: i,
         boostT: 0, boostTier: -1, spinT: 0, driftT: 0, charge: -1, steerVis: 0, driftG: 0,
+        grade: 0,
         cp: 0, lap: 0, lapStart: 0, lapTimes: [], place: row + 1,
         finished: false, finishT: 0,
         offroad: false, bumpCd: 0, anim: 0, goT: 0,
@@ -145,6 +150,14 @@ function drive(g, k, inp) {
         if (thr <= 0 && brk <= 0 && k.v <= top && !boost) k.v -= CFG.coast
         if (surf.surf === 'sand' && k.v > top) k.v -= 0.22
         if (k.v > cap) k.v -= 0.2
+        // #518: gravity along the slope. The kart feels the grade of the road
+        // under it, weighted by how squarely it follows the centerline (a kart
+        // side-slipping down the banking feels only part of it). Uphill costs,
+        // downhill pays — the hill changes the lap, not the line.
+        const gp = T.pts[surf.i]
+        k.grade = gp.grade * Math.cos(k.a - gp.a)
+        k.h = gp.h
+        k.v -= CFG.slopeK * k.grade
         // slipstream: a kart in the narrow window dead ahead leaves a vacuum
         // the chaser rides — pack racing closes on straights and overtakes
         // happen in the open. Pure position math, no dice: deterministic for
