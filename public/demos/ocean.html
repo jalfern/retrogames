@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>OCEAN — WebGPU sunset ocean</title>
+<title>OCEAN — WebGPU ocean & sky</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
@@ -42,6 +42,10 @@
   <div class="row"><b>Sea state</b><span id="seaLbl">Calm</span></div>
   <div class="row"><span>Wind</span><span id="windLbl">3 m/s</span></div>
   <input id="storm" type="range" min="0" max="100" step="1" value="0" aria-label="Sea state, calm to storm">
+  <div class="row" style="margin-top:7px"><b>Time</b><span id="todLbl">Sunset</span></div>
+  <input id="tod" type="range" min="0" max="100" step="1" value="100" aria-label="Time of day, night to sunrise to midday to sunset">
+  <div class="row" style="margin-top:7px"><b>Clouds</b><span id="cloudLbl">Clear</span></div>
+  <input id="cloud" type="range" min="0" max="100" step="1" value="0" aria-label="Cloud cover, clear to overcast">
 </div>
 <div id="fatal"></div>
 <script type="module">
@@ -53,10 +57,10 @@ const qs = new URLSearchParams(location.search);
 const SEED = (qs.get('seed') | 0) || 1337;
 const LITE = qs.get('lite') === '1';
 
-const SUN_EL = 2.6 * Math.PI / 180;
-const SUNDIR = [Math.cos(SUN_EL), Math.sin(SUN_EL) * 0 + Math.sin(SUN_EL), 0];
-{ const l = Math.hypot(Math.cos(SUN_EL), Math.sin(SUN_EL), 0); SUNDIR[0] = Math.cos(SUN_EL) / l; SUNDIR[1] = Math.sin(SUN_EL) / l; SUNDIR[2] = 0; }
-const SUN = `vec3f(${SUNDIR[0]}, ${SUNDIR[1]}, ${SUNDIR[2]})`;
+const SUN_EL_K = [-0.21, 0.05, 0.73, 0.045];
+const MOON_EL_K = [0.60, 0.10, -0.40, 0.05];
+const smooth01 = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+const lerpKeys = (K, v) => { const k = Math.max(0, Math.min(1, v)) * 3; const i = Math.min(Math.floor(k), 2); return K[i] + (K[i + 1] - K[i]) * smooth01(k - i); };
 const WIND_AZ = 0.0;
 
 const OCT = [
@@ -79,9 +83,14 @@ function seaParams(s) {
 const cam = { pos: [0, 3.1, -14], yaw: 0, pitch: -0.05, touched: false };
 
 let storm = Math.max(0, Math.min(1, parseFloat(qs.get('storm')) || 0));
+const clamp01 = v => Math.max(0, Math.min(1, v));
+let tod = Number.isFinite(parseFloat(qs.get('tod'))) ? clamp01(parseFloat(qs.get('tod'))) : 1;
+let cloud = Number.isFinite(parseFloat(qs.get('cloud'))) ? clamp01(parseFloat(qs.get('cloud'))) : 0;
 let needSpec = true;
 const windU = () => 3 + 21 * storm;
 const SEA_NAMES = [[0.12, 'CALM'], [0.3, 'SLIGHT'], [0.5, 'MODERATE'], [0.7, 'ROUGH'], [0.85, 'VERY ROUGH'], [1.01, 'STORM']];
+const TOD_NAMES = ['NIGHT', 'SUNRISE', 'MIDDAY', 'SUNSET'];
+const CLOUD_NAMES = [[0.15, 'CLEAR'], [0.45, 'SCATTERED'], [0.75, 'BROKEN'], [1.01, 'OVERCAST']];
 
 const canvas = document.getElementById('c');
 const hud = document.getElementById('hud');
@@ -89,24 +98,42 @@ const fatal = document.getElementById('fatal');
 const seaLbl = document.getElementById('seaLbl');
 const windLbl = document.getElementById('windLbl');
 const stormSl = document.getElementById('storm');
+const todSl = document.getElementById('tod');
+const cloudSl = document.getElementById('cloud');
+const todLbl = document.getElementById('todLbl');
+const cloudLbl = document.getElementById('cloudLbl');
 
 function updateSeaUI() {
   seaLbl.textContent = SEA_NAMES.find(x => storm < x[0])[1];
   windLbl.textContent = Math.round(windU()) + ' m/s';
   stormSl.value = String(Math.round(storm * 100));
+  todLbl.textContent = TOD_NAMES[Math.round(tod * 3)];
+  cloudLbl.textContent = CLOUD_NAMES.find(x => cloud < x[0])[1];
+  todSl.value = String(Math.round(tod * 100));
+  cloudSl.value = String(Math.round(cloud * 100));
 }
 function setStorm(v) {
   storm = Math.max(0, Math.min(1, v));
   needSpec = true;
   updateSeaUI();
 }
+function setTod(v) { tod = clamp01(v); updateSeaUI(); }
+function setCloud(v) { cloud = clamp01(v); updateSeaUI(); }
 stormSl.addEventListener('input', () => setStorm(+stormSl.value / 100));
+todSl.addEventListener('input', () => setTod(+todSl.value / 100));
+cloudSl.addEventListener('input', () => setCloud(+cloudSl.value / 100));
 stormSl.addEventListener('keydown', e => e.stopPropagation());
+todSl.addEventListener('keydown', e => e.stopPropagation());
+cloudSl.addEventListener('keydown', e => e.stopPropagation());
 document.getElementById('sea').addEventListener('pointerdown', e => e.stopPropagation());
 addEventListener('keydown', e => {
-  if (e.target === stormSl) return;
+  if (e.target.tagName === 'INPUT') return;
   if (e.key === '[') setStorm(storm - 0.1);
   if (e.key === ']') setStorm(storm + 0.1);
+  if (e.key === ',') setTod(tod - 0.05);
+  if (e.key === '.') setTod(tod + 0.05);
+  if (e.key === 'c') setCloud(cloud + 0.1);
+  if (e.key === 'x') setCloud(cloud - 0.1);
 });
 updateSeaUI();
 
@@ -124,7 +151,6 @@ if (!navigator.gpu) {
 const HDR = `
 const NI: u32 = ${NI}u;
 const PI: f32 = 3.14159265359;
-const SUNDIR: vec3f = ${SUN};
 fn cmul(a: vec2f, b: vec2f) -> vec2f { return vec2f(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
 fn rev(vIn: u32) -> u32 {
   var v = vIn; var r: u32 = 0u;
@@ -155,30 +181,98 @@ fn fbm(pIn: vec2f, octs: i32) -> f32 {
   return v;
 }
 var<private> g_storm: f32 = 0.0;
+var<private> g_tod: f32 = 1.0;
+var<private> g_cloud: f32 = 0.0;
+var<private> g_day: f32 = 1.0;
+var<private> g_night: f32 = 0.0;
+var<private> g_sun: vec3f = vec3f(1.0, 0.045, 0.0);
+var<private> g_moon: vec3f = vec3f(1.0, 0.6, 0.0);
+var<private> g_zen: vec3f = vec3f(0.040, 0.070, 0.190);
+var<private> g_mid: vec3f = vec3f(0.30, 0.185, 0.360);
+var<private> g_horiz: vec3f = vec3f(1.08, 0.425, 0.155);
+var<private> g_glow: vec3f = vec3f(1.0, 0.60, 0.26);
+var<private> g_disk: vec3f = vec3f(1.0, 0.84, 0.60);
+var<private> g_cldD: vec3f = vec3f(0.14, 0.11, 0.20);
+var<private> g_cldL: vec3f = vec3f(0.98, 0.56, 0.30);
+var<private> g_foamC: vec3f = vec3f(0.93, 0.90, 0.85);
+var<private> g_deepK: f32 = 0.85;
+var<private> g_sssK: f32 = 0.80;
+
+// night, sunrise, midday, sunset
+const P_ZEN: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.010, 0.016, 0.048), vec3f(0.075, 0.130, 0.300), vec3f(0.085, 0.26, 0.60), vec3f(0.040, 0.070, 0.190));
+const P_MID: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.028, 0.045, 0.095), vec3f(0.50, 0.33, 0.40), vec3f(0.28, 0.50, 0.78), vec3f(0.30, 0.185, 0.360));
+const P_HOR: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.050, 0.068, 0.115), vec3f(1.02, 0.52, 0.24), vec3f(0.60, 0.72, 0.84), vec3f(1.08, 0.425, 0.155));
+const P_GLO: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.42, 0.52, 0.78), vec3f(1.0, 0.62, 0.36), vec3f(1.0, 0.94, 0.80), vec3f(1.0, 0.60, 0.26));
+const P_DIS: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.95, 0.97, 1.00), vec3f(1.0, 0.88, 0.72), vec3f(1.0, 1.0, 0.96), vec3f(1.0, 0.84, 0.60));
+const P_CDD: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.030, 0.038, 0.062), vec3f(0.15, 0.12, 0.19), vec3f(0.40, 0.44, 0.50), vec3f(0.14, 0.11, 0.20));
+const P_CDL: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.30, 0.36, 0.50), vec3f(1.0, 0.62, 0.42), vec3f(1.0, 1.0, 0.98), vec3f(0.98, 0.56, 0.30));
+const P_FO: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.40, 0.48, 0.62), vec3f(0.88, 0.80, 0.72), vec3f(0.95, 0.95, 0.92), vec3f(0.93, 0.90, 0.85));
+const P_KS: array<vec2f, 4> = array<vec2f, 4>(vec2f(0.30, 0.22), vec2f(0.72, 0.75), vec2f(1.0, 1.0), vec2f(1.0, 0.80));
+
+fn setupSkyPal(todIn: f32, stIn: f32) {
+  let k = clamp(todIn, 0.0, 1.0) * 3.0;
+  let i = min(u32(floor(k)), 2u);
+  let j = min(i + 1u, 3u);
+  let f0 = k - f32(i);
+  let f = f0 * f0 * (3.0 - 2.0 * f0);
+  g_zen = mix(P_ZEN[i], P_ZEN[j], f);
+  g_mid = mix(P_MID[i], P_MID[j], f);
+  g_horiz = mix(P_HOR[i], P_HOR[j], f);
+  g_glow = mix(P_GLO[i], P_GLO[j], f);
+  g_disk = mix(P_DIS[i], P_DIS[j], f);
+  g_cldD = mix(P_CDD[i], P_CDD[j], f);
+  g_cldL = mix(P_CDL[i], P_CDL[j], f);
+  g_foamC = mix(P_FO[i], P_FO[j], f);
+  let ks = mix(P_KS[i], P_KS[j], f);
+  g_deepK = ks.x; g_sssK = ks.y;
+  // storm desaturates and darkens the whole sky toward slate (night needs less)
+  let dk = stIn * mix(0.97, 0.45, g_night);
+  g_zen = mix(g_zen, g_zen * 0.30 + vec3f(0.020, 0.015, 0.002), dk);
+  g_mid = mix(g_mid, g_mid * 0.36 + vec3f(0.005, 0.045, 0.012), dk);
+  g_horiz = mix(g_horiz, g_horiz * 0.03 + vec3f(0.14, 0.15, 0.19) * g_day, dk);
+  g_glow = mix(g_glow, vec3f(0.50, 0.42, 0.40), dk);
+}
 fn skyColor(dirIn: vec3f, t: f32) -> vec3f {
   let d = normalize(dirIn);
   let dy = d.y;
   let st = g_storm;
-  let mu = max(dot(d, SUNDIR), 0.0);
-  let zen = mix(vec3f(0.040, 0.070, 0.190), vec3f(0.032, 0.036, 0.052), st);
-  let mid = mix(vec3f(0.30, 0.185, 0.360), vec3f(0.105, 0.110, 0.135), st);
-  let ember = mix(vec3f(1.08, 0.425, 0.155), vec3f(0.15, 0.16, 0.20), st * 0.97);
-  var sky = mix(mid, zen, pow(clamp(dy * 1.15, 0.0, 1.0), 0.72));
-  sky = mix(ember, sky, smoothstep(-0.015, 0.32, dy));
-  let sunVis = 1.0 - st * 0.82;
-  let glowC = mix(vec3f(1.0, 0.60, 0.26), vec3f(0.50, 0.42, 0.40), st);
-  sky += glowC * (pow(mu, 10.0) * 0.32 + pow(mu, 320.0) * 1.8) * sunVis;
-  sky += vec3f(1.0, 0.84, 0.60) * smoothstep(0.99955, 0.99978, mu) * 2.6 * (1.0 - smoothstep(0.45, 0.92, st));
+  let cc = g_cloud;
+  let mu = max(dot(d, g_sun), 0.0);
+  let mmu = max(dot(d, g_moon), 0.0);
+  var sky = mix(g_mid, g_zen, pow(clamp(dy * 1.15, 0.0, 1.0), 0.72));
+  sky = mix(g_horiz, sky, smoothstep(-0.015, 0.32, dy));
+  let sunVis = g_day * (1.0 - 0.92 * cc) * (1.0 - 0.82 * st);
+  sky += g_glow * (pow(mu, 10.0) * 0.32 + pow(mu, 320.0) * 1.8) * sunVis;
+  sky += g_disk * smoothstep(mix(0.99955, 0.9955, cc), mix(0.99978, 0.9988, cc), mu) * 2.6 * sunVis * (1.0 - smoothstep(0.45, 0.92, st)) * (1.0 - 0.75 * cc);
+  let moonVis = g_night * (1.0 - 0.90 * cc) * (1.0 - 0.55 * st);
+  sky += vec3f(0.30, 0.40, 0.62) * (pow(mmu, 14.0) * 0.12 + pow(mmu, 300.0) * 0.9) * moonVis;
+  sky += vec3f(0.95, 0.97, 1.0) * smoothstep(0.99963, 0.99980, mmu) * 1.6 * moonVis;
+  if (g_night > 0.02 && dy > 0.03 && cc < 0.95) {
+    let sp = d.xz / (dy + 0.22) * 34.0;
+    let cell = floor(sp);
+    let h1 = fract(sin(dot(cell, vec2f(127.1, 311.7))) * 43758.5453);
+    let h2 = fract(sin(dot(cell, vec2f(269.5, 183.3))) * 24634.6345);
+    if (h1 > 0.948) {
+      let br = (h1 - 0.948) / 0.052;
+      let pos = (vec2f(h1, h2) - 0.5) * 0.7;
+      let sd = length(sp - cell - 0.5 - pos);
+      let tw = 0.72 + 0.28 * sin(t * (1.5 + 4.0 * h2) + h1 * 40.0);
+      sky += mix(vec3f(0.80, 0.86, 1.0), vec3f(1.0, 0.94, 0.84), h2)
+           * smoothstep(0.115, 0.02, sd) * tw * (0.45 + 0.55 * br)
+           * g_night * (1.0 - 0.9 * cc) * smoothstep(0.03, 0.22, dy) * 3.2;
+    }
+  }
   let cloudY = max(dy, 0.004);
   let cp = d.xz / (cloudY + 0.10) * 1.35 + vec2f(t * (0.010 + 0.030 * st), t * (0.004 + 0.014 * st));
   var cld = fbm(cp, 5);
-  cld = smoothstep(0.44 - 0.22 * st, 0.74 - 0.15 * st, cld);
-  let band = smoothstep(0.012, 0.30, dy) * smoothstep(0.88, 0.32, dy);
-  let lit = pow(mu, 2.6);
-  var cCol = mix(vec3f(0.14, 0.11, 0.20), vec3f(0.98, 0.56, 0.30), 0.30 + 0.70 * lit);
-  cCol = mix(cCol, mix(vec3f(0.055, 0.058, 0.075), vec3f(0.13, 0.135, 0.155), lit), st);
-  sky = mix(sky, cCol, cld * band * (0.88 + 0.10 * st));
-  sky += mix(vec3f(1.0, 0.55, 0.28), vec3f(0.45, 0.40, 0.40), st) * pow(1.0 - abs(dy), 16.0) * 0.18 * (1.0 - 0.92 * st);
+  cld = smoothstep(mix(0.44, 0.10, cc) - 0.22 * st, mix(0.74, 0.36, cc) - 0.15 * st, cld);
+  let band = smoothstep(mix(0.012, -0.06, cc), 0.30, dy) * smoothstep(mix(0.88, 1.08, cc), mix(0.32, 0.16, cc), dy);
+  let lit = pow(mix(mu, mmu, g_night), 2.6) * (1.0 - 0.45 * cc);
+  var cCol = mix(g_cldD, g_cldL, 0.30 + 0.70 * lit);
+  cCol = mix(cCol, mix(vec3f(0.055, 0.058, 0.075), vec3f(0.13, 0.135, 0.155), lit) * mix(vec3f(0.35, 0.40, 0.50), vec3f(1.0, 1.0, 1.0), g_day), st);
+  sky = mix(sky, cCol, min(1.0, cld * band * (0.88 + 0.10 * st) * (1.0 + 0.14 * cc)));
+  sky += mix(g_glow, vec3f(0.45, 0.40, 0.40), st) * pow(1.0 - abs(dy), 16.0) * 0.18
+       * (1.0 - 0.92 * st) * mix(g_day * (1.0 - 0.55 * cc), 0.22, g_night);
   return sky;
 }
 fn tonemap(vIn: vec3f) -> vec3f {
@@ -381,6 +475,9 @@ async function boot() {
       oct: vec4f,
       oct2: vec4f,
       wind: vec4f,
+      sky: vec4f,
+      sunD: vec4f,
+      moonD: vec4f,
     };
     @group(0) @binding(0) var<uniform> su: SeaU;
     @group(0) @binding(1) var samp: sampler;
@@ -430,6 +527,11 @@ async function boot() {
     fn fs_main(in: VOut) -> @location(0) vec4f {
       g_storm = su.wind.y;
       let s = su.wind.y;
+      g_tod = su.sky.x; g_cloud = su.sky.y; g_day = su.sky.z; g_night = su.sky.w;
+      g_sun = normalize(su.sunD.xyz);
+      g_moon = normalize(su.moonD.xyz);
+      setupSkyPal(g_tod, g_storm);
+      let cc = g_cloud;
       let V = normalize(su.camPos - in.world);
       var n = normalize(in.nrm);
       let dist = length(su.camPos - in.world);
@@ -446,12 +548,14 @@ async function boot() {
       let r = reflect(-V, n);
       var refl = skyColor(r, su.time);
       refl *= mix(0.28, 1.0, smoothstep(0.0, 0.30, r.y));
-      let deep = mix(mix(vec3f(0.008, 0.035, 0.062), vec3f(0.018, 0.095, 0.120), smoothstep(-1.0, 1.5, in.h)), vec3f(0.045, 0.070, 0.085), s * 0.55) * mix(1.0, 0.88, s);
-      let sss = vec3f(0.03, 0.24, 0.26) * pow(max(dot(V, SUNDIR), 0.0), 3.0) * smoothstep(0.0, 1.1, in.h) * 0.8 * (1.0 - 0.7 * s);
+      let deep = mix(mix(vec3f(0.008, 0.035, 0.062), vec3f(0.018, 0.095, 0.120), smoothstep(-1.0, 1.5, in.h)), vec3f(0.045, 0.070, 0.085), s * 0.55) * mix(1.0, 0.88, s) * g_deepK * (1.0 - 0.30 * cc);
+      let sss = vec3f(0.03, 0.24, 0.26) * pow(max(dot(V, g_sun), 0.0), 3.0) * smoothstep(0.0, 1.1, in.h) * g_sssK * (1.0 - 0.7 * s);
       var col = mix(deep + sss, refl, F);
-      let mu = max(dot(r, SUNDIR), 0.0);
+      let mu = max(dot(r, g_sun), 0.0);
+      let mmu = max(dot(r, g_moon), 0.0);
       let gmask = smoothstep(0.30, 0.72, fbm(in.world.xz * 0.22 + vec2f(su.time * 0.05, 0.0), 4));
-      col += mix(vec3f(1.0, 0.70, 0.42), vec3f(0.62, 0.52, 0.50), s) * (pow(mu, 520.0) * 4.0 + pow(mu, 90.0) * 0.5 + pow(mu, 14.0) * 0.06) * det * (0.25 + 0.75 * gmask) * (1.0 - 0.92 * smoothstep(0.15, 0.75, s));
+      col += mix(g_disk, vec3f(0.62, 0.52, 0.50), s) * (pow(mu, 520.0) * 4.0 + pow(mu, 90.0) * 0.5 + pow(mu, 14.0) * 0.06) * det * (0.25 + 0.75 * gmask) * (1.0 - 0.92 * smoothstep(0.15, 0.75, s)) * g_day * (1.0 - 0.90 * cc);
+      col += vec3f(0.72, 0.80, 0.95) * (pow(mmu, 520.0) * 2.4 + pow(mmu, 90.0) * 0.30 + pow(mmu, 14.0) * 0.035) * det * (0.25 + 0.75 * gmask) * (1.0 - 0.88 * smoothstep(0.15, 0.75, s)) * g_night * (1.0 - 0.92 * cc);
       let ds0 = su.oct.x / f32(NI);
       let ds1 = su.oct2.x / f32(NI);
       let uv0 = vec2f(in.world.x / su.oct.x, in.world.z / su.oct.x);
@@ -487,8 +591,10 @@ async function boot() {
            * (0.18 + 0.82 * streak) * (0.55 + 0.85 * s);
       f = smoothstep(0.14, 0.75, pow(clamp(f, 0.0, 1.0), 1.6));
       f *= (0.35 + 0.65 * foamP) * clamp(1.0 - dist / 320.0, 0.0, 1.0);
-      let foamLit = mix(vec3f(0.93, 0.90, 0.85), vec3f(0.72, 0.75, 0.78), s * 0.45)
-                  * (0.30 + 0.70 * (0.25 + 0.75 * max(dot(n, SUNDIR), 0.0)));
+      let Ldir = normalize(g_sun * g_day + g_moon * g_night);
+      let foamLit = mix(g_foamC, vec3f(0.72, 0.75, 0.78), s * 0.45)
+                  * (0.30 + 0.70 * (0.25 + 0.75 * max(dot(n, Ldir), 0.0)))
+                  * mix(0.38, 1.0, g_day) * (1.0 - 0.30 * cc);
       col = mix(col, foamLit, f);
       let fogD = normalize(vec3f(in.world.x - su.camPos.x, 0.0, in.world.z - su.camPos.z));
       let haze = skyColor(vec3f(fogD.x, 0.012, fogD.z), su.time);
@@ -502,7 +608,10 @@ async function boot() {
       fwd: vec3f, aspect: f32,
       right: vec3f, tanF: f32,
       up: vec3f, time: f32,
-      storm: f32,
+      storm: f32, p0: f32, p1: f32, p2: f32,
+      sky: vec4f,
+      sunD: vec4f,
+      moonD: vec4f,
     };
     @group(0) @binding(0) var<uniform> ku: SkyU;
     struct VOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
@@ -516,6 +625,10 @@ async function boot() {
     @fragment
     fn fs_sky(in: VOut) -> @location(0) vec4f {
       g_storm = ku.storm;
+      g_tod = ku.sky.x; g_cloud = ku.sky.y; g_day = ku.sky.z; g_night = ku.sky.w;
+      g_sun = normalize(ku.sunD.xyz);
+      g_moon = normalize(ku.moonD.xyz);
+      setupSkyPal(g_tod, g_storm);
       let dir = normalize(ku.fwd + ku.right * (in.uv.x * ku.aspect * ku.tanF) + ku.up * (in.uv.y * ku.tanF));
       var c = skyColor(dir, ku.time);
       c = mix(c * 0.55, c, smoothstep(-0.12, 0.05, dir.y));
@@ -534,7 +647,7 @@ async function boot() {
   const samp = device.createSampler({
     magFilter: filt, minFilter: filt, addressModeU: 'repeat', addressModeV: 'repeat',
   });
-  const uSea = device.createBuffer({ size: 176, usage: U });
+  const uSea = device.createBuffer({ size: 208, usage: U });
   const bgSea = device.createBindGroup({ layout: vpLayout, entries: [
     { binding: 0, resource: { buffer: uSea } },
     { binding: 1, resource: samp },
@@ -573,7 +686,7 @@ async function boot() {
   });
   const skyLayout = device.createBindGroupLayout({ entries: [
     { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }], });
-  const uSky = device.createBuffer({ size: 64, usage: U });
+  const uSky = device.createBuffer({ size: 112, usage: U });
   const bgSky = device.createBindGroup({ layout: skyLayout, entries: [{ binding: 0, resource: { buffer: uSky } }] });
   const skyPipeline = device.createRenderPipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [skyLayout] }),
@@ -677,6 +790,12 @@ async function boot() {
     const s = storm;
     const U = windU();
     const pp = seaParams(s);
+    const sunEl = lerpKeys(SUN_EL_K, tod);
+    const moonEl = lerpKeys(MOON_EL_K, tod);
+    const sunDir = [Math.cos(sunEl), Math.sin(sunEl), 0];
+    const moonDir = [Math.cos(moonEl), Math.sin(moonEl), 0];
+    const dayness = smooth01((sunEl + 0.06) / 0.10);
+    const nightness = 1 - dayness;
     const refilling = needSpec;
     if (refilling) {
       needSpec = false;
@@ -693,11 +812,17 @@ async function boot() {
       OCT[0].L, pp[0].dsp, 0, 0,
       OCT[1].L, pp[1].dsp, 0, 0,
       U, s, WIND_AZ, 0,
+      tod, cloud, dayness, nightness,
+      sunDir[0], sunDir[1], sunDir[2], 0,
+      moonDir[0], moonDir[1], moonDir[2], 0,
     ]));
     device.queue.writeBuffer(uSky, 0, new Float32Array([
       fwd[0], fwd[1], fwd[2], asp,
       right[0], right[1], right[2], Math.tan(31 * Math.PI / 180),
-      ...norm3(cross(right, fwd)), t, s, 0,
+      ...norm3(cross(right, fwd)), t, s, 0, 0, 0,
+      tod, cloud, dayness, nightness,
+      sunDir[0], sunDir[1], sunDir[2], 0,
+      moonDir[0], moonDir[1], moonDir[2], 0,
     ]));
 
     const enc = device.createCommandEncoder();
@@ -764,8 +889,12 @@ async function boot() {
     get frames() { return frames; },
     get time() { return t; },
     get storm() { return storm; },
+    get tod() { return tod; },
+    get cloud() { return cloud; },
     get wind() { return windU(); },
     setStorm(v) { setStorm(v); },
+    setTod(v) { setTod(v); },
+    setCloud(v) { setCloud(v); },
     setPose(p) {
       if (p.pos) cam.pos = p.pos.slice();
       if (typeof p.yaw === 'number') cam.yaw = p.yaw;
