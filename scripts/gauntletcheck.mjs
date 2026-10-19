@@ -561,7 +561,7 @@ if (process.argv.includes('--mutate')) {
         ['walls never fall off with the torch', 'src/games/Gauntlet/walls.js', 'return Math.max(0, Math.min(1, 1 - d / reach))', 'return 1'],
         ['the wall course is one tone', 'src/games/Gauntlet/walls.js', 'return { recess: mat.mortar, bevel: mat.lite }', 'return { recess: mat.mortar, bevel: mat.mortar }'],
         ['a tap on a card picks no hero', 'src/games/Gauntlet/select.js', 'if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return i', 'if (false) return i'],
-        ['a human partner ignores its input', 'src/games/Gauntlet/sim.js', 'if (gs.partnerHuman && partnerInp) {', 'if (false) {'],
+        ['a pad-driven partner ignores its input', 'src/games/Gauntlet/sim.js', 'if (partnerInp) {', 'if (false) {'],
         ['the partner never opens a slam door', 'src/games/Gauntlet/sim.js', 'openSlamInWay(gs, p, ux, uy)\n        const differentCell', 'const differentCell'],
     ]
     let died = 0
