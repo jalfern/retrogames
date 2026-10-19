@@ -18,3 +18,8 @@ export const walkFrame = (walk, n) => (n > 0 ? ((walk >> WALK_SHIFT) % n + n) % 
 // the white hit-flash: full the tick he is struck, then a steady fade to
 // nothing over CFG.hitFlash ticks. 0 the moment the flash has run out.
 export const hitFlashAlpha = (hitT) => (hitT <= 0 ? 0 : Math.min(1, hitT / CFG.hitFlash))
+
+// the death fall: over the CFG.deathFreeze ticks between the kill and the
+// respawn the hero spins a full turn and collapses to a point. 0 the tick he
+// dies (full size, unrotated), climbing to 1 as he is gone; 0 while alive.
+export const deathProgress = (deadT) => (deadT <= 0 ? 0 : Math.min(1, (CFG.deathFreeze - deadT) / CFG.deathFreeze))

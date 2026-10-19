@@ -22,7 +22,7 @@ import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
 import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
-import { walkFrame, hitFlashAlpha } from './hero.js'
+import { walkFrame, hitFlashAlpha, deathProgress } from './hero.js'
 import { torch, litColor, mortarTones, css } from './walls.js'
 import { cardCenter, heroAt } from './select.js'
 import { p2From } from './p2input.js'
@@ -370,8 +370,16 @@ const GauntletGame = () => {
                 ctx.restore()
                 ctx.lineWidth = 1
             }
-            const blink = h.deadT > 0 && (gs.tick >> 2) % 2 === 0
-            if (!blink) {
+            if (h.deadT > 0) {
+                // the hero spins a full turn and collapses as he dies (issue #302)
+                const dp = deathProgress(h.deadT)
+                ctx.save()
+                ctx.translate(hx, hy)
+                ctx.rotate(dp * Math.PI * 2)
+                ctx.scale(Math.max(0.05, 1 - dp), Math.max(0.05, 1 - dp))
+                sprite(gs.heroKey, 0, 0, 12, false, 0)
+                ctx.restore()
+            } else {
                 // the hero steps only while he walks (issue #302), and flashes
                 // white the moment he is struck
                 const wf = walkFrame(h.walk, SP[gs.heroKey].length)

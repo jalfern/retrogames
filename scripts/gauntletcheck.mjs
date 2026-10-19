@@ -227,8 +227,9 @@ console.log('walls')
 
 // ----------------------------------------------------------------- hero ----
 // The hero reads as a living fighter (issue #302 item 2): he takes a step only
-// on the ticks he actually walks, and flashes white the moment he is struck —
-// full the tick, then decaying to nothing over CFG.hitFlash ticks.
+// on the ticks he actually walks, flashes white the moment he is struck (full
+// the tick, decaying to nothing over CFG.hitFlash ticks), and spins a full
+// turn collapsing to a point over CFG.deathFreeze ticks as he dies.
 console.log('hero')
 {
     const H = await import('../src/games/Gauntlet/hero.js')
@@ -239,6 +240,12 @@ console.log('hero')
     ok(H.hitFlashAlpha(0) === 0, 'hero: no hit flash when unstruck')
     ok(H.hitFlashAlpha(S.CFG.hitFlash) === 1, 'hero: full white the tick he is struck', `${H.hitFlashAlpha(S.CFG.hitFlash)}`)
     ok(H.hitFlashAlpha(Math.round(S.CFG.hitFlash / 2)) > H.hitFlashAlpha(1) && H.hitFlashAlpha(1) > 0, 'hero: the flash decays to nothing', `${H.hitFlashAlpha(Math.round(S.CFG.hitFlash / 2))},${H.hitFlashAlpha(1)}`)
+    // the death fall: full size the tick he dies, climbing to a full collapse
+    // over deathFreeze; 0 while alive
+    ok(H.deathProgress(0) === 0, 'hero: no death fall while he is alive')
+    ok(H.deathProgress(S.CFG.deathFreeze) === 0, 'hero: full size the tick he dies')
+    ok(H.deathProgress(1) > 0.9 && H.deathProgress(1) < 1, 'hero: nearly collapsed just before the respawn', `${H.deathProgress(1)}`)
+    ok(H.deathProgress(Math.round(S.CFG.deathFreeze / 2)) > H.deathProgress(S.CFG.deathFreeze) && H.deathProgress(Math.round(S.CFG.deathFreeze / 2)) < H.deathProgress(1), 'hero: the death fall climbs as he goes down')
     // sim: the walk accumulator advances only the ticks the hero moves
     const g1 = makeGame(0, 'warrior', { topDown: true })
     g1.monsters = []; g1.gens.forEach((g) => { g.alive = false }); g1.hero.hp = 1e9; g1.deathSpawned = true
@@ -601,6 +608,7 @@ if (process.argv.includes('--mutate')) {
         ['the partner never opens a slam door', 'src/games/Gauntlet/sim.js', 'openSlamInWay(gs, p, ux, uy)\n        const differentCell', 'const differentCell'],
         ['the hero never steps', 'src/games/Gauntlet/sim.js', 'if (Math.hypot(h.x - wx0, h.y - wy0) > 1e-6) h.walk++', 'if (false) h.walk++'],
         ['the hero never flashes on a strike', 'src/games/Gauntlet/sim.js', 'h.hp -= kind.dmg\n                h.hitT = CFG.hitFlash', 'h.hp -= kind.dmg'],
+        ['the hero never collapses when dying', 'src/games/Gauntlet/hero.js', '(deadT <= 0 ? 0 : Math.min(1, (CFG.deathFreeze - deadT) / CFG.deathFreeze))', '(deadT <= 0 ? 0 : 0)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
