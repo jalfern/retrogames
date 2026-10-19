@@ -10,21 +10,25 @@ follows it. All art/audio synthesized at runtime; no assets.
 
 ## Layout
 
-- `track.js` — the COURSE PACK (#493): `COURSES` (gulch, sandbank, corkscomb), each a
-  closed Catmull-Rom centerline (18–26 control points, SEG 26) sampled with
-  per-point tangent/arc-length/curvature, plus a live `TRACK` / `SCENERY` /
-  `CHECKPOINTS` view of the SELECTED course — `selectCourse(id)` swaps the
-  objects' contents in place (identities stable), so every holder of
-  `const T = TRACK` (sim, art, HD scene) follows without re-import. The id
-  persists in localStorage. World = 2048² px texture space, y down, index 0 =
-  start/finish. Sandbank is the Daytona road course in spirit — banked
-  sweepers (minR 341), a NW horseshoe, and the Bus Stop flattened to a
-  shallow wave (the checker wins: bend the shape, never the checker).
-  Corkscomb is Laguna Seca in spirit (reference shape consulted for character
-  only, not traced; Laguna Seca's public circuit map is CC BY-SA 3.0 —
-  Wikimedia) — a Rainey-class east sweeper, the ridge straight, and the
-  Corkscomb crest complex where the line's rate alternates against the dune
-  (minR 296); the switchback is the west horseshoe.
+- `reference.js` (#513) — hand-digitized centerlines of the two REAL circuits
+  in a normalised box: **Daytona road course** (public-domain Wikimedia map) and
+  **Laguna Seca** (CC BY-SA 3.0 Wikimedia map). `normalize`/`resample`/
+  `shapeDistance`/`bestShapeDistance` are pure so the harness can grade shape.
+  `bestShapeDistance` takes the better of direct and mirror-x alignment (the same
+  circuit seen from either side).
+- `track.js` — the COURSE PACK. (#513) the world grew to **2560²** and the asphalt
+  **narrowed** (`ROAD_R 140→80`): a real hairpin / Corkscrew / Bus Stop is a
+  braking corner whose own two road legs cannot fit inside the old 280 px canyon,
+  so the narrower lane plus the bigger world is the room they need. `COURSES`
+  (gulch, sandbank, corkscomb), each a closed Catmull-Rom centerline, plus a live
+  `TRACK`/`SCENERY`/`CHECKPOINTS` view of the SELECTED course — `selectCourse(id)`
+  swaps contents in place. **SUNDBANK traces the Daytona road course** (front
+  straight → Turns 1-2 banked sweeper → back straight → Turns 3-4 horseshoe → the
+  Bus Stop braking complex) and **CORKSCOMB traces Laguna Seca** (Rahal back
+  straight → Andretti hairpin → Corkscomb double-apex → Snake descent → keyhole).
+  The slow corners are genuine braking corners now: the min-radius floor dropped
+  from 220 to 60 (hairpins, not ovals); SUNSET GULCH keeps its original data.
+  Reference maps credited: Daytona PNG public domain, Laguna Seca CC BY-SA 3.0.
 - `sim.js` — the pure machine (`makeGame(seed)`, `step`, `decide`,
   `stateHash`). Determinism: mulberry32 riding INSIDE `g.rngState` (JSON-safe
   snapshots); `Math.random` is never called. Launch jitter, the seeded rival
@@ -83,8 +87,10 @@ follows it. All art/audio synthesized at runtime; no assets.
 ## Verify
 
 ```
-npm run cometcheck            # Node: track audit, bot wins, determinism,
-                              #       canyon look-pins, tier-payoff ladder
+npm run cometcheck            # Node: track audit, reference-shape gate (#513:
+                              #       layout <=3% of the map box, autopilot brakes,
+                              #       side-by-side docs/comet-ref-<id>.png), bot
+                              #       wins, determinism, canyon look-pins, tiers
 npm run cometcheck -- --mutate # mutates the checkpoint gate, demands RED
 npm run lint:comet            # eslint gate for the game + harness
 CONTRACT_ONLY=comet-drift npm run contractcheck   # window.__game (needs npm run dev)

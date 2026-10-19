@@ -13,7 +13,7 @@ export const LAPS = 4
 export const CFG = {
     top: 8.6, acc: 0.075, brake: 0.24, coast: 0.014,
     kerbTop: 7.2, sandTop: 3.4,
-    steer: 0.062, driftMul: 1.6, slide: 0.12, gripV: 2.7,
+    steer: 0.052, driftMul: 1.6, slide: 0.12, gripV: 2.2,
     spinT: 45, bumpV: 0.42, bumpCd: 12,
     wallLimit: 132, kartR: 34,
     boostAcc: 0.16,

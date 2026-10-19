@@ -102,7 +102,7 @@ for (const c of COURSES) {
         const k = Math.abs(T.pts[i].k)
         if (k > 1e-9 && 1 / k < minR) { minR = 1 / k; minI = i }
     }
-    check(`${c.id}: drivable — min radius >= 80 (braking corners allowed #513)`, minR >= 80, `minR ${minR.toFixed(0)} at s=${T.pts[minI].s.toFixed(0)}`)
+    check(`${c.id}: drivable — min radius >= 60 (braking corners allowed #513)`, minR >= 60, `minR ${minR.toFixed(0)} at s=${T.pts[minI].s.toFixed(0)}`)
 
     const HALF = T.WALL_R + 16
     let crossings = 0
@@ -227,12 +227,23 @@ for (const c of COURSES) {
 
     console.log(`— ${c.id}: the drift ladder —`)
     {
+        // pin the ladder test on the circuit's LONGEST gentle FAST sweeper (the
+        // banked loop of Daytona/Laguna, r ~240–1100): throttle holds flat-out
+        // there, so a held drift can run the whole arc and bank the gold comet.
+        // A fixed index is wrong once the layouts are reference-shaped (#513).
+        let bi = 0; let bbest = 0; let bcur = 0; let bstart = 0
+        for (let i = 0; i < T.N; i++) {
+            const k = Math.abs(T.pts[i].k)
+            if (k > 1 / 1100 && k < 1 / 240) { if (bcur === 0) bstart = i; bcur++ } else { if (bcur > bbest) { bbest = bcur; bi = bstart } bcur = 0 }
+        }
+        if (bcur > bbest) { bbest = bcur; bi = bstart }
+        const pinIdx = (bi + Math.floor(bbest / 2)) % T.N
         const g = sim.makeGame(5)
         g.phase = 'race'
         const P = g.karts[0]
         P.v = 6; P.lapStart = -999
-        const p = T.pts[40]
-        const pin = () => { P.x = p.x; P.y = p.y; P.a = p.a; P.idx = 40; P.hint = 40 }
+        const p = T.pts[pinIdx]
+        const pin = () => { P.x = p.x; P.y = p.y; P.a = p.a; P.idx = pinIdx; P.hint = pinIdx }
         pin()
         for (let i = 0; i < 170; i++) { pin(); sim.step(g, { u: true, r: true, drift: true }) }
         const held = P.driftT >= sim.TIERS[2].t
@@ -244,7 +255,7 @@ for (const c of COURSES) {
         g2.phase = 'race'
         const Q = g2.karts[0]
         Q.v = 6
-        const pin2 = () => { Q.x = p.x; Q.y = p.y; Q.a = p.a; Q.idx = 40; Q.hint = 40 }
+        const pin2 = () => { Q.x = p.x; Q.y = p.y; Q.a = p.a; Q.idx = pinIdx; Q.hint = pinIdx }
         pin2()
         for (let i = 0; i < 70; i++) { pin2(); sim.step(g2, { u: true, r: true, drift: true }) }
         sim.step(g2, { u: true })
