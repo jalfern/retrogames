@@ -13,8 +13,9 @@
 // must go RED (and restore the file whatever happens).
 
 import { readFileSync, writeFileSync } from 'node:fs'
+import { inflateSync } from 'node:zlib'
 import { deflateSync } from 'node:zlib'
-import { REFERENCES, bestShapeDistance, normalize, resample } from '../src/games/CometDrift/reference.js'
+import { REFERENCES, bestShapeDistance, normalize, resample, shapeDistance } from '../src/games/CometDrift/reference.js'
 
 const SIM = new URL('../src/games/CometDrift/sim.js', import.meta.url)
 const TRACKMOD = '../src/games/CometDrift/track.js'
@@ -145,6 +146,21 @@ for (const c of COURSES) {
         const d = bestShapeDistance(gamePts, ref.pts)
         check(`${c.id}: layout follows ${ref.name} (avg distance <= 3% of box)`,
             d <= 0.03, `${(d * 100).toFixed(2)}%`)
+        // average distance alone forgives a missing lobe; cap the worst local
+        // deviation too, so signature features cannot be quietly smoothed away
+        const WORST_CAP = { sandbank: 0.12, corkscomb: 0.18 }
+        const A = resample(normalize(ref.pts), 240)
+        const G = resample(normalize(gamePts), 240)
+        const dm2 = shapeDistance(gamePts, ref.pts.map(([x, y]) => [1 - x, y]))
+        const Ar = d <= dm2 ? A : A.map(([x, y]) => [1 - x, y])
+        let worst = 0
+        for (const [x, y] of Ar) {
+            let m = Infinity
+            for (const [gx, gy] of G) { const dd = Math.hypot(x - gx, y - gy); if (dd < m) m = dd }
+            if (m > worst) worst = m
+        }
+        check(`${c.id}: no route feature is smoothed away (worst local distance <= ${100 * WORST_CAP[c.id]}%)`,
+            worst <= WORST_CAP[c.id], `worst ${(worst * 100).toFixed(1)}%`)
         const png = new URL(`../docs/comet-ref-${c.id}.png`, import.meta.url)
         drawSideBySide(png, ref.pts, gamePts)
 
@@ -312,6 +328,136 @@ console.log('— the course pack (#493) —')
     check('an unknown id falls back to the Gulch', fresh.TRACK.id === 'gulch')
 }
 
+// ---- reference provenance (#513 redo) ---------------------------------------
+// The shape gate only bites if reference.js itself sits on the real maps.
+// This decodes the committed road masks (data/maps/<map>-mask.png, gray8 +
+// filter 0, written by scripts/extract-comet-references.mjs from the actual
+// Wikimedia map files) and demands BOTH:
+//   on-road  — the reference centerline lies within TOL_ON px of drawn road
+//   coverage — most drawn road pixels are within TOL_COVER px of the ref
+// A hand-typed blob fails both directions.
+{
+    const readGray = (p) => {
+        const buf = readFileSync(p)
+        let o = 8; let w = 0; let h = 0; const idat = []
+        while (o + 8 <= buf.length) {
+            const len = buf.readUInt32BE(o); const type = buf.toString('ascii', o + 4, o + 8)
+            if (type === 'IHDR') { w = buf.readUInt32BE(o + 8); h = buf.readUInt32BE(o + 12) }
+            else if (type === 'IDAT') idat.push(buf.subarray(o + 8, o + 8 + len))
+            o += 12 + len
+        }
+        const raw = inflateSync(Buffer.concat(idat))
+        const out = new Uint8Array(w * h)
+        for (let y = 0; y < h; y++) {
+            if (raw[y * (w + 1)] !== 0) throw new Error('mask PNG must use filter 0')
+            raw.copy(out, y * w, y * (w + 1) + 1, y * (w + 1) + 1 + w)
+        }
+        return { w, h, d: out }
+    }
+    const PROVENANCE = [
+        { id: 'sandbank', map: 'daytona' },
+        { id: 'corkscomb', map: 'laguna' },
+    ]
+    const TOL_ON = 5
+    const TOL_COVER = 6
+    const MIN_ON = 0.98
+    const MIN_COVER = 0.2
+    const MIN_AREA = 0.25
+    for (const pv of PROVENANCE) {
+        const mk = readGray(new URL(`../data/maps/${pv.map}-mask.png`, import.meta.url))
+        const { w, h } = mk
+        let x0 = 1e9; let x1 = -1e9; let y0 = 1e9; let y1 = -1e9
+        const bpx = []
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                if (!mk.d[y * w + x]) continue
+                bpx.push(y * w + x)
+                if (x < x0) x0 = x; if (x > x1) x1 = x
+                if (y < y0) y0 = y; if (y > y1) y1 = y
+            }
+        }
+        // chamfer distance transform (centipixels): distance to nearest road px
+        const dist = new Float64Array(w * h).fill(1e9)
+        for (const k of bpx) dist[k] = 0
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const k = y * w + x
+                let d = dist[k]
+                if (y > 0) { d = Math.min(d, dist[k - w] + 100); d = Math.min(d, dist[k - w] + 41) }
+                if (x > 0) { d = Math.min(d, dist[k - 1] + 100); d = Math.min(d, dist[k - 1] + 41) }
+                if (y > 0 && x < w - 1) d = Math.min(d, dist[k - w + 1] + 41)
+                dist[k] = d
+            }
+        }
+        for (let y = h - 1; y >= 0; y--) {
+            for (let x = w - 1; x >= 0; x--) {
+                const k = y * w + x
+                let d = dist[k]
+                if (y < h - 1) { d = Math.min(d, dist[k + w] + 100); d = Math.min(d, dist[k + w] + 41) }
+                if (x < w - 1) { d = Math.min(d, dist[k + 1] + 100); d = Math.min(d, dist[k + 1] + 41) }
+                if (y < h - 1 && x > 0) d = Math.min(d, dist[k + w - 1] + 41)
+                dist[k] = d
+            }
+        }
+        // The mask bbox carries badge/text margins the traced loop does not, so
+        // align the loop's own bbox onto it with a small shift+scale search that
+        // maximises on-road coverage.
+        const lp = resample(REFERENCES[pv.id].pts, 400)
+        const lx0 = Math.min(...lp.map((p) => p[0])); const lx1 = Math.max(...lp.map((p) => p[0]))
+        const ly0 = Math.min(...lp.map((p) => p[1])); const ly1 = Math.max(...lp.map((p) => p[1]))
+        const mapPt = (nx, ny, sc, dx, dy) => [
+            Math.round(x0 + ((nx - lx0) / (lx1 - lx0)) * (x1 - x0) * sc + dx),
+            Math.round(y0 + ((ny - ly0) / (ly1 - ly0)) * (y1 - y0) * sc + dy),
+        ]
+        let best = null
+        for (let sc = 0.94; sc <= 1.061; sc += 0.01) {
+            for (let dx = -14; dx <= 14; dx += 2) {
+                for (let dy = -14; dy <= 14; dy += 2) {
+                    let on = 0
+                    for (const [nx, ny] of lp) {
+                        const [px, py] = mapPt(nx, ny, sc, dx, dy)
+                        if (px < 0 || py < 0 || px >= w || py >= h) continue
+                        if (dist[py * w + px] <= TOL_ON * 100) on++
+                    }
+                    if (!best || on > best.on) best = { on, dx, dy, sc }
+                }
+            }
+        }
+        const fOn = best.on / lp.length
+        const q = lp.map(([nx, ny]) => mapPt(nx, ny, best.sc, best.dx, best.dy))
+        let a2 = 0
+        for (let i = 0; i < q.length; i++) {
+            const a = q[i]; const b = q[(i + 1) % q.length]
+            a2 += a[0] * b[1] - b[0] * a[1]
+        }
+        const area = Math.abs(a2) / 2
+        const hit = new Uint8Array(w * h)
+        for (const [px, py] of q) {
+            for (let oy = -TOL_COVER; oy <= TOL_COVER; oy++) {
+                for (let ox = -TOL_COVER; ox <= TOL_COVER; ox++) {
+                    if (ox * ox + oy * oy > TOL_COVER * TOL_COVER) continue
+                    const qx = px + ox; const qy = py + oy
+                    if (qx >= 0 && qx < w && qy >= 0 && qy < h) hit[qy * w + qx] = 1
+                }
+            }
+        }
+        let cov = 0
+        for (const k of bpx) if (hit[k]) cov++
+        const fCov = cov / bpx.length
+        if (process.env.COMETREF_DEBUG) console.log(`  ${pv.id} measured: on ${(100 * fOn).toFixed(1)}% cover ${(100 * fCov).toFixed(1)}% at dx ${best.dx} dy ${best.dy} sc ${best.sc.toFixed(2)}`)
+        check(`${pv.id}: reference sits on the map mask (${pv.map}, ${bpx.length} road px)`, fOn >= MIN_ON, `on-road ${(100 * fOn).toFixed(1)}% >= ${100 * MIN_ON}%`)
+        check(`${pv.id}: reference explains the map's road`, fCov >= MIN_COVER, `coverage ${(100 * fCov).toFixed(1)}% >= ${100 * MIN_COVER}%`)
+        let per = 0
+        for (let i = 0; i < lp.length; i++) {
+            const a = lp[i]; const b = lp[(i + 1) % lp.length]
+            per += Math.hypot(b[0] - a[0], b[1] - a[1])
+        }
+        const scaled = per / (lx1 - lx0) * (x1 - x0) * best.sc
+        check(`${pv.id}: reference is circuit-sized`, scaled >= 1.2 * (w + h), `per ${scaled.toFixed(0)} (mask ${w}x${h})`)
+        check(`${pv.id}: reference encloses a circuit infield`, area >= MIN_AREA * w * h, `area ${(100 * area / (w * h)).toFixed(1)}% >= ${100 * MIN_AREA}%`)
+    }
+}
+
 console.log('— the field —')
 check('7 karts on the grid, player last', await (async () => {
     const m7 = await loadSim()
@@ -337,8 +483,18 @@ console.log('— the boost payoff ladder —')
         gg.phase = 'race'
         const Q = gg.karts[0]
         Q.v = 6; Q.lapStart = -999
-        const p = T.pts[40]
-        const pin = () => { Q.x = p.x; Q.y = p.y; Q.a = p.a; Q.idx = 40; Q.hint = 40 }
+        // pin on the same longest banked sweeper the gold-ladder test uses
+        // (fixed index 40 landed on a braking corner once layouts followed real
+        // maps #513 — a spin there truncates the top tier and the ladder inverts)
+        let bi = 0; let bbest = 0; let bcur = 0; let bstart = 0
+        for (let i = 0; i < T.N; i++) {
+            const k = Math.abs(T.pts[i].k)
+            if (k > 1 / 1100 && k < 1 / 240) { if (bcur === 0) bstart = i; bcur++ } else { if (bcur > bbest) { bbest = bcur; bi = bstart } bcur = 0 }
+        }
+        if (bcur > bbest) { bbest = bcur; bi = bstart }
+        const pinIdx = (bi + Math.floor(bbest / 2)) % T.N
+        const p = T.pts[pinIdx]
+        const pin = () => { Q.x = p.x; Q.y = p.y; Q.a = p.a; Q.idx = pinIdx; Q.hint = pinIdx }
         pin()
         for (let i = 0; i < ticksHeld; i++) { pin(); sim.step(gg, { u: true, r: true, drift: true }) }
         sim.step(gg, { u: true })

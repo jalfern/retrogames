@@ -17,16 +17,17 @@
 // (`retrogames:comet.course`) so HD respects it at load. No selection =
 // SUNSET GULCH, byte-identical to pre-#493 data.
 
-// #513: the world grows to 2560² and the asphalt NARROWS (ROAD_R 140 → 80).
+// #513: the world grows to 2560² and the asphalt NARROWS (ROAD_R 140 → 80 → 64).
 // A real hairpin / Corkscrew / Bus Stop is a braking corner whose own two road
 // legs cannot fit inside the old 280 px-wide canyon — the narrower lane plus the
-// bigger world is the room they need. SUNDBANK now follows the Daytona ROAD
-// COURSE centerline and CORKSCOMB follows Laguna Seca (see reference.js); the
-// harness grades the match. SUNSET GULCH keeps its original data unchanged.
+// bigger world is the room they need; 64 keeps the real map's closest leg pairs
+// clear at the re-tuned span. SUNDBANK follows the traced DAYTONA ROAD COURSE
+// centerline and CORKSCOMB the traced Laguna Seca (reference.js); the harness
+// grades the match. SUNSET GULCH keeps its original data unchanged.
 
 export const TX = 2560
 export const TY = 2560
-export const ROAD_R = 80              // half-width of asphalt (narrowed #513)
+export const ROAD_R = 64              // half-width of asphalt (narrowed again #513)
 export const KERB_R = ROAD_R + 12    // painted kerb strip
 export const WALL_R = ROAD_R + 52    // sand ends, cliff face: the wall
 
@@ -45,36 +46,41 @@ const CONTROL_GULCH = [
 ]
 
 // ---------------------------------------------------------------------------
-// SANDBANK SPEED BOWL (noon, #493, layout redone #513). Now traces the DAYTONA
-// ROAD COURSE centerline (reference.js → DAYTONA): the long front straight
-// bottom-right into the high-banked Turns 1-2 up the right (the big fast
-// sweepers of the bowl), the long back straight across the top, the Turns 3-4
-// horseshoe down the left, and the Bus Stop braking complex across the
-// bottom-left — three quick left-right-left direction reversals whose radii sit
-// well under the old 220 floor, so the autopilot must brake for them. Names,
-// art and the world stay ours; the harness grades the shape against the map.
+// SANDBANK SPEED BOWL (noon, #493, layout redone #513). The control points are
+// placed on the DAYTONA ROAD COURSE centerline traced from the real Wikimedia
+// map (reference.js ← extract-comet-references.mjs ← daytona-road-course.png):
+// the long front straight into the banked Turns 1-2 up the right, the back
+// straight across the top, the International Horseshoe (T3-4) down the left,
+// the T5-7 kinks at the far end and the Bus Stop braking complex — then the
+// tight legs are spread until the road clears itself and corners rounded to the
+// sim's 60 px minimum radius (shape audit stays <=3% of the map box). Names,
+// art and the world stay ours; cometcheck grades the match and the autopilot's
+// braking.
 const CONTROL_SANDBANK = [
-    [1080, 1872], [1320, 1848], [1440, 1764], [1596, 1764], [1716, 1848], [1896, 1800],
-    [2088, 1644], [2232, 1416], [2268, 1128], [2184, 852], [2004, 660], [1764, 564],
-    [1464, 540], [1176, 588], [936, 708], [744, 912], [624, 1176], [612, 1440],
-    [708, 1668], [876, 1812],
+    [1283, 1284], [1463, 1224], [1563, 1141], [1563, 1044], [1516, 947], [1482, 852],
+    [1517, 761], [1592, 673], [1812, 655], [1964, 637], [2031, 706], [2058, 818],
+    [2132, 881], [2258, 859], [2403, 786], [2427, 556], [2310, 332], [2090, 204],
+    [1837, 180], [1586, 185], [1325, 185], [1092, 190], [902, 214], [685, 180],
+    [438, 214], [241, 356], [168, 584], [207, 805], [385, 971], [604, 1073],
+    [829, 1160], [1048, 1246],
 ]
 
 // ---------------------------------------------------------------------------
-// CORKSCOMB DUNES (dawn, #493 course 2, layout redone #513). Now traces LAGUNA
-// SECA (reference.js): the Rahal back straight up the right, the Andretti
-// hairpin at the top, the Corkscomb — the left-right double-apex that alternates
-// curvature sign over the dune crest — cutting down the middle, the fast Snake
-// descent down the left, and the keyhole onto the start straight home. The
-// Corkscomb and hairpin are genuine braking corners now (radii well under 220).
-// Shape is the arcade re-proportion of the CC BY-SA Laguna Seca map (credited in
-// the README); names, art and the world stay ours.
+// CORKSCOMB DUNES (dawn, #493 course 2, layout redone #513). Control points on
+// the LAGUNA SECA centerline traced from the real Wikimedia map (reference.js ←
+// extract-comet-references.mjs ← Laguna_Seca.svg): Rahal straight, the Andretti
+// hook at the top, the Corkscomb (the map's Corkscrew double-apex) cutting
+// down the middle, the Snake descent and the keyhole onto the start straight.
+// Spread + rounded against the same self-clearance and minimum-radius audits.
+// Shape is the arcade re-proportion of the CC BY-SA map (credited in the
+// README); names, art and the world stay ours.
 const CONTROL_CORKSCOMB = [
-    [1080, 2040], [1260, 1848], [1464, 1764], [1644, 1812], [1764, 1932], [1848, 1973],
-    [1949, 1949], [2052, 1824], [2141, 1632], [2189, 1404], [2177, 1140], [2098, 888],
-    [1958, 691], [1771, 576], [1560, 557], [1368, 629], [1205, 773], [1085, 869],
-    [922, 850], [758, 989], [629, 1176], [600, 1344], [566, 1584], [614, 1814],
-    [754, 1982], [917, 2054],
+    [1222, 2428], [1550, 2448], [1670, 2318], [1716, 2213], [1674, 2144], [1561, 2111],
+    [1373, 2075], [1250, 1915], [1195, 1658], [1311, 1423], [1565, 1277], [1845, 1194],
+    [2139, 1146], [2371, 1032], [2292, 778], [2132, 530], [1959, 286], [1732, 160],
+    [1440, 213], [1173, 330], [909, 452], [632, 523], [498, 757], [236, 885],
+    [213, 1119], [412, 1348], [566, 1596], [397, 1841], [227, 2081], [330, 2219],
+    [619, 2280], [910, 2338],
 ]
 
 export const COURSES = [

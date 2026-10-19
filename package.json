@@ -118,6 +118,7 @@
     "carpetcheck": "node scripts/carpetcheck.mjs",
     "pacmancheck": "node scripts/pacmancheck.mjs",
     "cometcheck": "node scripts/cometcheck.mjs",
+    "cometrefs": "node scripts/extract-comet-references.mjs",
     "cometplay": "node scripts/cometplay.mjs",
     "cometdrifthdcheck": "node scripts/cometdrifthdcheck.mjs",
     "kartplay": "node scripts/kartplay.mjs",
@@ -143,12 +144,12 @@
     "bobcheck": "node scripts/bobcheck.mjs",
     "marblecheck": "node scripts/marblecheck.mjs",
     "lint:gauntlet": "eslint src/games/Gauntlet src/games/FourHalls src/components src/utils src/config src/main.jsx scripts/gauntletcheck.mjs scripts/gauntletplay.mjs scripts/lib",
-     "gauntletcheck": "node scripts/gauntletcheck.mjs",
-     "gauntletplay": "node scripts/gauntletplay.mjs",
-      "lint:slots": "eslint src/games/Gauntlet src/games/BubbleBobble src/utils scripts/slotcheck.mjs",
-      "slotcheck": "node scripts/slotcheck.mjs",
-      "lint:rec": "eslint src/utils scripts/replaycheck.mjs",
-      "replaycheck": "node scripts/replaycheck.mjs",
+    "gauntletcheck": "node scripts/gauntletcheck.mjs",
+    "gauntletplay": "node scripts/gauntletplay.mjs",
+    "lint:slots": "eslint src/games/Gauntlet src/games/BubbleBobble src/utils scripts/slotcheck.mjs",
+    "slotcheck": "node scripts/slotcheck.mjs",
+    "lint:rec": "eslint src/utils scripts/replaycheck.mjs",
+    "replaycheck": "node scripts/replaycheck.mjs",
     "lint:smash": "eslint src/games/SmashTV src/components src/utils src/config src/main.jsx scripts/smashcheck.mjs scripts/smashplay.mjs scripts/lib",
     "smashcheck": "node scripts/smashcheck.mjs",
     "smashplay": "node scripts/smashplay.mjs",
@@ -186,7 +187,7 @@
     "civclock": "node scripts/civclock.mjs",
     "lint:pw": "eslint scripts/pwacheck.mjs scripts/gen-pwa-icons.mjs src/main.jsx src/config public/sw.js",
     "pwacheck": "node scripts/pwacheck.mjs",
-    "lint:comet": "eslint src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometcheck.mjs scripts/lib",
+    "lint:comet": "eslint src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometcheck.mjs scripts/extract-comet-references.mjs scripts/lib",
     "lint:hd": "eslint src/games/CometDriftHD src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometdrifthdcheck.mjs scripts/lib",
     "lint:pacman": "eslint src/games/Pacman src/components src/utils src/config src/main.jsx scripts/pacmancheck.mjs scripts/lib"
   },
@@ -213,5 +214,9 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
     "vite": "^7.3.1"
+  },
+  "allowScripts": {
+    "esbuild@0.27.3": true,
+    "fsevents@2.3.3": true
   }
 }
