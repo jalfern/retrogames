@@ -20,6 +20,29 @@ The five signature features of the original are the spec:
 Faithful rules: **one hit kills** (the original has no hit points), 3 lives,
 extra life every 20,000. Respawn keeps the room but grants spawn invulnerability.
 
+## Co-op (#496)
+The cabinet was two players on two sticks, so seat 2 is a player slot, not a
+skin. At the attract screen **C** adds a CPU partner, **P** opens seat 2 for a
+human; a connected second gamepad claims the seat itself. Rules that make it
+co-op rather than a shared run:
+- **Two banks**: the shot that kills pays that shooter's score (`addScore(..., pi)`);
+  seats have independent lives, respawn, weapons and combo ladders.
+- **ONE shared POWER meter**: the studio's power, not per-hero — LASER shots
+  and FIREBOMBS drain the same bar either way.
+- **The show ends only when both seats burn their last life**; a downed hero
+  freezes on his tile while the partner plays on, and either hero walking an
+  open exit advances the whole cast.
+- **The aim stick**: `ax/ay` (analog, right stick) + `aimUp/Down/Left/Right`
+  (quantized, numpad/d-pad) ride THE one pad shape (`onePad`), so every source
+  — keyboard, pad, `__game.step([p1, p2])` — folds to the same input. P2 keys:
+  WASD move, numpad 8/4/6/2+corners aim, Numpad0/Enter fire, RightShift bomb.
+- The co-op autopilot (`planCoop`) drives the partner through **pads only**
+  (`decidePad` → pad stream), proving a second gamepad could do everything the
+  model does; it clears the show on 7/9 seeds (smashcheck pins the bar at 4).
+- Single-player is untouched: solo runs never read seat 2, `stateHash` appends
+  P2 fields only when `players.length > 1`, so every pre-co-op hash and the
+  solo pilot's byte-identical replay still hold.
+
 ## Layout
 - `levels.js` — seeded room generator (wall patterns, exit cells, crates, rosters).
 - `sim.js` — pure `step(state, input)`, zero `Math.random()`: spawn picks and
@@ -32,14 +55,15 @@ extra life every 20,000. Respawn keeps the room but grants spawn invulnerability
 - `sprite.js` — the contestant's paint decisions (4-frame run cycle,
   per-weapon gun silhouettes, layer order: feet under the gun layer).
 - `art.js` — every sprite/texture synthesized at runtime.
-- `index.jsx` — canvas loop (fixed 60 Hz timestep, 256x248 internal), attract,
-  `'?'` PauseOverlay, VirtualControls (A = fire, B = firebomb).
+- `index.jsx` — canvas loop (fixed 60 Hz timestep, 256x248 internal), attract
+  with seat pick (C/P), `'?'` PauseOverlay, VirtualControls (A = fire, B =
+  firebomb), P2 keyboard map and the seat-2 slot wiring.
 
 ## Verify
 ```bash
-npm run lint:smash && npm run smashcheck        # rules + pilot + ledger + determinism
-npm run smashcheck -- --mutate                  # planted bugs must all die
-npm run smashplay                               # headless browser: start/play/die/restart
+npm run lint:smash && npm run smashcheck        # rules + pilot + co-op + ledger + determinism
+npm run smashcheck -- --mutate                  # planted bugs (incl. 2 co-op) must all die
+npm run smashplay                               # headless browser: play, die, restart, seat 2
 ```
 
 ## Honest gaps vs the cabinet
