@@ -634,7 +634,7 @@ const GauntletGame = () => {
                 id: 'gauntlet',
                 players: 2,
                 method: 'stick',
-                buttons: [{ label: 'BOW', code: 'KeyX' }],
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reads: ['up', 'down', 'left', 'right', 'a', 'b'],
                 reset: (seed) => {
                     gs = makeGame(((seed >>> 0) % 97) | 0, 'warrior', { topDown: true })
@@ -655,6 +655,7 @@ const GauntletGame = () => {
                 },
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: !!gs.end,
+                    seed: gs.seed,
                     lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
                     hp: gs.hero.hp, x: +gs.hero.x.toFixed(2), y: +gs.hero.y.toFixed(2),
                     partner: gs.partner ? { x: +gs.partner.x.toFixed(2), y: +gs.partner.y.toFixed(2), hp: gs.partner.hp } : null,

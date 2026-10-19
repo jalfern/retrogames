@@ -45,6 +45,7 @@ const GAMES = [
     { id: 'metroid', path: '/metroid' },
     { id: 'momentum', path: '/momentum' },
     { id: 'magic-carpet', path: '/magic-carpet' },
+    { id: 'gauntlet', path: '/gauntlet' },
 ]
 const TICKS = 600
 const ONLY = process.env.CONTRACT_ONLY
@@ -76,6 +77,7 @@ const PATTERNS = {
     metroid: (i) => ({ left: i % 43 < 15, right: i % 43 >= 19 && i % 43 < 34, down: i % 67 < 6, a: i % 11 < 3, b: i % 17 < 2 }),
     momentum: (i) => ({ left: i % 97 < 6, right: i % 97 >= 10, up: i % 17 < 4, a: i % 19 < 5 }),
     'magic-carpet': (i) => ({ left: i % 41 < 14, right: i % 41 >= 18 && i % 41 < 32, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 38, a: i % 13 < 2, b: i % 29 < 2 }),
+    gauntlet: (i) => ({ left: i % 47 < 16, right: i % 47 >= 20 && i % 47 < 36, up: i % 59 < 12, down: i % 59 >= 30 && i % 59 < 42, a: i % 9 < 2, b: i % 23 < 2 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 
