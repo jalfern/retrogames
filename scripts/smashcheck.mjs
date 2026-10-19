@@ -247,6 +247,8 @@ console.log('rules')
     ok(gs.energy === CFG.maxEnergy - CFG.firebombCost, 'the firebomb takes 34 POWER')
     ok(gs.enemies.length === 0 && gs.ebullets.length === 0, 'the firebomb sweeps the studio')
     ok(gs.score - s0 === 50 + 150, 'firebomb kills still pay', `+${gs.score - s0}`)
+    const bk = gs.events.filter((e) => e.type === 'kill')
+    ok(bk.length === 2 && bk.every((k) => Number.isFinite(k.pts)), 'firebomb kills carry their pts for the popup', bk.map((k) => k.pts).join(' '))
     gs.energy = 10
     step(gs, { bomb: true })
     ok(gs.events.some((e) => e.type === 'bombFail') && gs.energy === 10, 'not enough POWER, not enough boom')

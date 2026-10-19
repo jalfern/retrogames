@@ -201,7 +201,7 @@ function firebomb(gs) {
     for (const e of gs.enemies) {
         if (e.kind === 'boss') continue
         addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind })
-        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, bomb: true })
+        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, bomb: true, pts: ENEMIES[e.kind].pts })
         killed++
     }
     gs.enemies = gs.enemies.filter((e) => e.kind === 'boss')
