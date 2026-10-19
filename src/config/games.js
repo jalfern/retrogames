@@ -970,7 +970,7 @@ export const GAMES = [
     },
     {
         path: '/magic-carpet',
-        pad: { layout: 'dpad', buttons: [{ label: '✦', code: 'KeyX' }], analog: false },
+        pad: { layout: 'dpad', buttons: [{ label: '✦', code: 'KeyX' }], analog: false, reason: 'free flight — dpad turns and climbs, ✦ casts the right hand; aiming is the carpet heading itself' },
         builtBy: 'forge',
         added: '2026-10-18',
         visibility: 'private',
