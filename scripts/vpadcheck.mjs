@@ -12,9 +12,10 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD, dpadDirs, DPAD_SWAP_HI, DPAD_SWAP_LO } from '../src/components/virtualDir.js'
-import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick, waysOf, rumble } from '../src/components/gamepadMap.js'
+import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick, waysOf, rumble, slotFieldsFrom } from '../src/components/gamepadMap.js'
 import { steerPedals, steerResponse, STEER_GAIN } from '../src/utils/padState.js'
-import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD, POINTER_HIT_PX, pointerTarget, pointerGesture } from '../src/utils/onePad.js'
+import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD, POINTER_HIT_PX, pointerTarget, pointerGesture, press, release, MAX_SLOTS, slotPad, pressSlot, setStickVecSlot, clearSlot, slotActive, setConnected, connectedSlots, clearAllSlots } from '../src/utils/onePad.js'
+import { p2From } from '../src/games/Gauntlet/p2input.js'
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error(`  FAIL: ${msg}`) } }
@@ -971,6 +972,87 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
         const src = readFileSync(new URL(file, import.meta.url), 'utf8')
         ok(/import\s*\{[^}]*\brumble\b[^}]*\}\s*from\s*'[^']*gamepadMap'/.test(src), `${file} imports rumble from the shared gamepadMap`)
     }
+}
+
+// --- #492: player slots — pad N drives player N ------------------------------
+// Slot 1 is THE shared pad: legacy writes stay visible through slotPad(1),
+// and nothing a second pad touches may ever leak into player 1.
+clearAllSlots()
+{
+    press('a')
+    ok(slotPad(1, 'stick').a === true, 'slots: legacy press("a") lands on slot 1')
+    release('a')
+    pressSlot(2, 'left'); pressSlot(2, 'b')
+    const s2 = slotPad(2, 'stick'); const s1 = slotPad(1, 'stick')
+    ok(s2.left === true && s2.b === true, 'slots: slot 2 gets its own presses')
+    ok(s1.left === false && s1.b === false, 'slots: slot 2 presses are invisible to slot 1')
+    ok(slotActive(2) === true && slotActive(1) === false, 'slots: slotActive follows its own slot')
+    setStickVecSlot(2, 0.5, 0)
+    ok(Math.abs(slotPad(2, 'stick').x - (0.5 - 0.12) / 0.88) < 1e-9, 'slots: slot-2 stick passes the shared radial dead zone')
+    ok(slotPad(2, 'stick').right === true, 'slots: slot-2 stick push quantizes to digital right')
+    setStickVecSlot(2, 0.1, 0)
+    ok(slotPad(2, 'stick').x === 0 && slotPad(1, 'stick').x === 0, 'slots: in-zone sticks rest at 0 in every slot')
+    clearSlot(2)
+    ok(slotPad(2, 'stick').left === false && slotActive(2) === false, 'slots: clearSlot silences only slot 2')
+    ok(slotPad(1, 'stick') && slotActive(1) === false, 'slots: clearing slot 2 leaves slot 1 idle-clean')
+    ok(setConnected(0) === 1 && connectedSlots() === 1, 'slots: setConnected clamps up to one slot')
+    ok(setConnected(9) === MAX_SLOTS, `slots: setConnected clamps down to MAX_SLOTS (${MAX_SLOTS})`)
+    setConnected(3); pressSlot(3, 'a')
+    ok(setConnected(2) === 2 && slotPad(3, 'stick').a === false, 'slots: a vanished slot releases its held key (never sticks)')
+    clearAllSlots()
+    ok(connectedSlots() === 1, 'slots: clearAllSlots drops back to one slot')
+}
+
+// --- #492: one pad -> slot fields (the multiplayer half of the bridge) -------
+{
+    const f = slotFieldsFrom(padWith([0, 1, 9, 15], [0.8, 0]), { engaged: false, lastCodes: [] })
+    ok(f.fields.right === true && f.fields.a === true && f.fields.b === true && f.fields.start === true, 'slot map: dpad-right + A + B + Start -> right/a/b/start')
+    ok(Math.abs(f.fields.x - 0.8) < 1e-9 && f.fields.y === 0, 'slot map: stick published raw')
+    ok(f.fields.left === false && f.fields.up === false && f.fields.down === false, 'slot map: unpressed fields stay false')
+    const g = slotFieldsFrom(padWith([], [0.6, 0]), f.state)
+    ok(g.fields.right === true, 'slot map: stick engages past the dead zone')
+    const h = slotFieldsFrom(padWith([], [0.2, 0]), g.state)
+    ok(h.fields.right === true, 'slot map: hysteresis band holds the direction')
+    const i0 = slotFieldsFrom(padWith([], [0.02, 0]), h.state)
+    ok(i0.fields.right === false, 'slot map: below the release zone clears it')
+    const other = slotFieldsFrom(padWith([], [0.2, 0]), { engaged: false, lastCodes: [] })
+    ok(other.fields.right === false, 'slot map: hysteresis state is per-slot (a fresh pad reads centre)')
+    const sel = slotFieldsFrom(padWith([8], [0, 0]), { engaged: false, lastCodes: [] })
+    ok(sel.fields.a === false && sel.fields.b === false && sel.fields.start === false, 'slot map: Select (8) maps to no gameplay field')
+}
+
+// --- #492: P2 merge — keyboard WASD+F + slot 2 pad fold into one sim input ---
+{
+    const kbOff = { l: false, r: false, u: false, d: false, swordEdge: false }
+    const only = p2From({ l: true, r: false, u: false, d: false, swordEdge: true }, null)
+    ok(only.left === true && only.sword === true, 'p2: keyboard alone drives P2 (the #491 fixed path)')
+    const pad = { left: false, right: true, up: true, down: false, a: true, b: false }
+    const a1 = p2From(kbOff, pad, { a: false, b: false })
+    ok(a1.right === true && a1.fwd === true && a1.sword === true, 'p2: pad alone drives P2; A edges into a swing')
+    const a2 = p2From(kbOff, pad, { a: true, b: false })
+    ok(a2.right === true && a2.sword === false, 'p2: held A never repeats the swing (edge trigger)')
+    const both = p2From({ l: true, r: false, u: false, d: false, swordEdge: false }, { left: false, right: true, up: false, down: false, a: false, b: false }, { a: false, b: false })
+    ok(both.left === true && both.right === true, 'p2: keyboard and pad fold together (OR)')
+    const frames = [[{ a: true }, { a: false, b: false }], [{ a: true }, { a: true, b: false }]]
+    const real = frames.map(([p, pv]) => p2From(kbOff, p, pv).sword)
+    const mutant = frames.map(([p]) => !!p.a)
+    ok(JSON.stringify(real) !== JSON.stringify(mutant), 'p2 mutant: deleting the edge trigger diverges')
+    ok(real[0] === true && real[1] === false && mutant[1] === true, 'p2 mutant: mutant swings every held tick, real logic swings once')
+}
+
+// --- #492: the wiring is where it must be (registry + frame path + bridge) ----
+{
+    const gamesSrc = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    ok(/path: '\/gauntlet',[\s\S]{0,120}players: 2/.test(gamesSrc), 'registry: GAUNTLET declares players: 2')
+    ok(/path: '\/bubble-bobble',[\s\S]{0,160}players: 2/.test(gamesSrc), 'registry: BUBBLE BOBBLE declares players: 2')
+    const gSrc = readFileSync(new URL('../src/games/Gauntlet/index.jsx', import.meta.url), 'utf8')
+    ok(/step\(gs, inp, pInp\)/.test(gSrc), 'gauntlet: the frame path threads P2 input into the sim (#491 root cause)')
+    ok(/p2From\(p2, slotPad\(2, 'stick'\), p2Prev\)/.test(gSrc), 'gauntlet: P2 merges the keyboard and the slot-2 pad each tick')
+    ok(/exposeGame\(/.test(gSrc) && /players: 2/.test(gSrc), 'gauntlet: __game.meta players is 2')
+    ok(/retrogames:pads/.test(gSrc), 'gauntlet: wakes P2 on the pad-count event')
+    const bSrc = readFileSync(new URL('../src/components/GamepadBridge.jsx', import.meta.url), 'utf8')
+    ok(/slotFieldsFrom\(/.test(bSrc) && /pressSlot\(slotN, k\)/.test(bSrc), 'bridge: pads past the first write their own slots')
+    ok(/'retrogames:pads'/.test(bSrc), 'bridge: announces pad-count changes')
 }
 
 // --- Summary ---
