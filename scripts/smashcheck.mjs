@@ -28,6 +28,7 @@ const { GW, GH, EXITS, TOTAL_ROOMS, genRoom, START, isBonus, ENEMIES } = await i
 const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/SmashTV/walls.js')
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
+const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore } = await import('../src/games/SmashTV/juice.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
 async function fresh() {
@@ -367,6 +368,47 @@ console.log('announcer')
     let done = 0
     while (gs.end !== 'win' && done++ < BOSS_DEATH_T + 10) step(gs, {})
     ok(gs.end === 'win', 'the show ends once the sequence runs out', `ticks=${done}`)
+}
+
+// ------------------------------------------------------------------ juice ----
+console.log('juice')
+{
+    // per-weapon muzzle flash: each gun flashes its own tip colour, never one shared bloom
+    const flashCols = Object.keys(GUN).map((w) => muzzleFlash(w).col)
+    ok(new Set(flashCols).size === 4, 'every weapon flashes its own muzzle colour', flashCols.join(' '))
+    ok(Object.keys(GUN).every((w) => muzzleFlash(w).col === GUN[w].tip), 'the flash rides the gun tip, not a shared white')
+    ok(Object.keys(GUN).every((w) => casingCol(w) === GUN[w].tip), 'the spent casing sparks carry the gun colour')
+    // kill shake: an ordinary kill jolts, a boss add hits harder, the boss rattles the cabinet
+    ok(killShake('walkcam', false) === 2, 'an ordinary kill jolts the floor +2', `${killShake('walkcam', false)}`)
+    ok(killShake('walkcam', true) === 6, 'a boss add lands harder +6', `${killShake('walkcam', true)}`)
+    ok(killShake('boss', false) === 12, 'killing THE ANNOUNCER rattles the cabinet +12', `${killShake('boss', false)}`)
+    ok(KILL_SHAKE.bossAdd > KILL_SHAKE.kill && KILL_SHAKE.boss > KILL_SHAKE.bossAdd, 'the shake escalates with the kill')
+    // the exit shutter rolls open over SHUTTER_TICKS after the room falls
+    ok(shutterPhase(0) === 0, 'a sealed exit starts shut', `${shutterPhase(0)}`)
+    ok(shutterPhase(SHUTTER_TICKS) === 1, 'the shutter is fully open after the window', `${shutterPhase(SHUTTER_TICKS)}`)
+    let mono = true
+    for (let t = 0; t < SHUTTER_TICKS + 6; t++) if (shutterPhase(t + 1) < shutterPhase(t)) mono = false
+    ok(mono, 'the shutter opens monotonically, never re-closing')
+    ok(shutterPhase(-5) === 0 && shutterPhase(9999) === 1, 'the shutter clamps at both ends')
+    // the per-room running total: score events since the last room change
+    const rs = roomScore([
+        { type: 'room', room: 0 }, { type: 'score', pts: 50 }, { type: 'score', pts: 150 },
+        { type: 'room', room: 1 }, { type: 'score', pts: 300 },
+        { type: 'kill', kind: 'runner', pts: 100 }, // a kill without a score event pays nothing
+    ])
+    ok(rs.room === 1 && rs.total === 300, 'the running total resets on the room change', `${rs.room}:${rs.total}`)
+}
+// on the real pilot run the room total at the win is the final room only, not the whole show
+{
+    const r = S.plan(0)
+    const gs = makeGame(0)
+    const all = []
+    for (const inp of r.script) { step(gs, inp); for (const e of gs.events) all.push({ ...e }); gs.events.length = 0 }
+    const rs = roomScore(all)
+    let lastRoom = 0
+    for (let i = all.length - 1; i >= 0; i--) { if (all[i].type === 'score') lastRoom += all[i].pts; else if (all[i].type === 'room') break }
+    ok(rs.room === TOTAL_ROOMS - 1, 'the run ends in the final room', `${rs.room}`)
+    ok(lastRoom > 0 && rs.total === lastRoom, 'the room total is the final room only, not the whole run', `${rs.total} vs ${lastRoom}`)
 }
 
 // ----------------------------------------------------------------- pilot ----

@@ -201,7 +201,7 @@ function firebomb(gs) {
     for (const e of gs.enemies) {
         if (e.kind === 'boss') continue
         addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind })
-        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, bomb: true, pts: ENEMIES[e.kind].pts })
+        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, bomb: true, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined })
         killed++
     }
     gs.enemies = gs.enemies.filter((e) => e.kind === 'boss')
@@ -342,7 +342,7 @@ function damageEnemy(gs, e, dmg, via) {
     gs.events.push({ type: 'enemyHit', id: e.id, kind: e.kind, via })
     if (e.hp <= 0) {
         addScore(gs, ENEMIES[e.kind].pts, { kind: e.kind })
-        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: ENEMIES[e.kind].pts })
+        gs.events.push({ type: 'kill', id: e.id, kind: e.kind, x: e.x, y: e.y, pts: ENEMIES[e.kind].pts, bossAdd: e.born !== undefined })
         gs.enemies = gs.enemies.filter((x) => x.id !== e.id)
         if (e.kind === 'boss') { gs.bossDead = true; gs.bossDeath = { x: e.x, y: e.y, t: BOSS_DEATH_T }; gs.events.push({ type: 'bossKill' }) }
     }

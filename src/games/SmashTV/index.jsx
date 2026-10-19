@@ -21,6 +21,7 @@ import { buildSprites, buildFloor } from './art.js'
 import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
+import { muzzleFlash, casingCol, killShake, shutterPhase, SHUTTER_TICKS } from './juice.js'
 
 const SIM_MS = 1000 / 60
 const ROOM_NAMES = [
@@ -64,7 +65,7 @@ const SmashTVGame = () => {
         let gs = makeGame(0)
         let floor = buildFloor(0, 0)
         let raf = 0, last = 0, acc = 0
-        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0
+        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, roomTotal = 0, roomBump = 0, clearedAt = -1
         let moving = false
         const held = new Set()
         let bombEdge = false
@@ -88,18 +89,25 @@ const SmashTVGame = () => {
                 if (e.type === 'room') {
                     floor = buildFloor(e.room, gs.seed)
                     say(ROOM_NAMES[e.room])
+                    roomTotal = 0; roomBump = 0; clearedAt = -1
                     if (e.bonus) { audioController.playSweep(440, 1320, 0.5, 'square', 0.09); flash = 8 }
                     else audioController.playSweep(140, 320, 0.25, 'sawtooth', 0.06)
-                } else if (e.type === 'shoot') audioController.playSweep(700 + Math.random() * 200, 220, 0.05, 'square', 0.035)
+                } else if (e.type === 'score') { roomTotal += e.pts; roomBump = 8 }
+                else if (e.type === 'shoot') {
+                    audioController.playSweep(700 + Math.random() * 200, 220, 0.05, 'square', 0.035)
+                    const p = gs.player, [ax, ay] = p.aim
+                    const col = casingCol(gs.weapon)
+                    for (let i = 0; i < 3; i++) parts.push({ x: p.x + ax * 6, y: p.y + ay * 6, vx: -ax * (1 + Math.random()) + (Math.random() - 0.5) * 1.6, vy: -ay * (1 + Math.random()) - 0.6, t: 0, col, grav: 0.18 })
+                }
                 else if (e.type === 'enemyHit') { audioController.playNoise(0.03, 0.05); burst(e.x || gs.player.x, e.y || gs.player.y, 3, '#ffd23f') }
                 else if (e.type === 'kill') {
                     audioController.playSweep(420, 90, 0.16, 'square', 0.07)
                     burst(e.x, e.y, 9, e.kind === 'boss' ? '#ffd23f' : '#ff5d5d', e.kind === 'boss' ? 4 : 2.2)
-                    pop(e.x, e.y, `${e.pts}`, '#ffd23f')
-                    if (e.kind === 'boss') { shake = 12; flash = 16 }
+                    shake = Math.max(shake, killShake(e.kind, e.bossAdd))
+                    if (e.kind === 'boss') flash = 16
                 } else if (e.type === 'civKill') {
                     audioController.playSweep(300 + e.combo * 60, 90, 0.12, 'square', 0.06)
-                    burst(e.x, e.y, 6, '#8fb0ff'); pop(e.x, e.y, `${e.pts}`, '#8fff9f')
+                    burst(e.x, e.y, 6, '#8fb0ff')
                     if (e.combo === 5) say('THE CROWD GOES WILD!')
                 } else if (e.type === 'scream') audioController.playSweep(760 + Math.random() * 320, 1500, 0.09, 'square', 0.04)
                 else if (e.type === 'crateBreak') {
@@ -119,7 +127,6 @@ const SmashTVGame = () => {
                 else if (e.type === 'clear') {
                     audioController.playSweep(330, 990, 0.35, 'square', 0.09)
                     say(e.bonus ? 'THAT WAS BEAUTIFUL!' : 'ROOM CLEAR! EXIT OPEN!')
-                    pop(gs.player.x, gs.player.y - 14, '+1000', '#ffd23f')
                 } else if (e.type === 'advance') audioController.playSweep(220, 660, 0.25, 'square', 0.07)
                 else if (e.type === 'bomb') { audioController.playNoise(0.4, 0.12); audioController.playSweep(80, 900, 0.4, 'sawtooth', 0.1); shake = 8; flash = 12; say('FIREBOMB! THE AUDIENCE ROARS!') }
                 else if (e.type === 'bombFail') { audioController.playTone(110, 0.12, 'square', 0.05); say('NOT ENOUGH POWER!') }
@@ -146,6 +153,9 @@ const SmashTVGame = () => {
         const doSim = (inp) => {
             step(gs, inp)
             handleEvents(gs.events.splice(0))
+            if (gs.cleared && clearedAt < 0) clearedAt = gs.tick
+            if (!gs.cleared) clearedAt = -1
+            if (roomBump > 0) roomBump--
             // THE ANNOUNCER's death sequence: while the arena holds, a cascade of
             // explosions rips through his corpse, staggered on the sim clock
             if (gs.bossDeath && gs.bossDeath.t > 0) {
@@ -243,16 +253,51 @@ const SmashTVGame = () => {
             }
         }
 
+        const chevron = (x, y, dx, dy, col, a) => {
+            const px = -dy, py = dx
+            ctx.strokeStyle = col; ctx.globalAlpha = a; ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.moveTo(x - dx * 2 + px * 3, y - dy * 2 + py * 3)
+            ctx.lineTo(x + dx * 2, y + dy * 2)
+            ctx.lineTo(x - dx * 2 - px * 3, y - dy * 2 - py * 3)
+            ctx.stroke()
+            ctx.lineWidth = 1; ctx.globalAlpha = 1
+        }
         const drawExits = () => {
             for (const e of EXITS) {
                 const x = e.c * CELL, y = HUD_H + e.r * CELL
-                ctx.fillStyle = gs.cleared ? ((gs.tick >> 3) % 2 ? '#2e8f4f' : '#1d5c32') : '#40171b'
+                if (!gs.cleared) {
+                    // sealed: a dark red shutter of horizontal slats + a warning pip
+                    ctx.fillStyle = '#3a1216'
+                    ctx.fillRect(x, y, CELL, CELL)
+                    for (let i = 0; i < 4; i++) {
+                        ctx.fillStyle = i % 2 ? '#4a1a20' : '#571e26'
+                        ctx.fillRect(x + 1, y + 1 + i * 4, CELL - 2, 3)
+                    }
+                    ctx.fillStyle = (gs.tick >> 3) % 2 ? '#ff5d5d' : '#a12828'
+                    ctx.fillRect(x + 6, y + 6, 4, 4)
+                    continue
+                }
+                // open: the shutter rolls out from the border edge, the green pit shows,
+                // and a set of chevrons marches in to point the way
+                const ph = shutterPhase(clearedAt >= 0 ? gs.tick - clearedAt : SHUTTER_TICKS)
+                ctx.fillStyle = (gs.tick >> 3) % 2 ? '#2e8f4f' : '#1d5c32'
                 ctx.fillRect(x, y, CELL, CELL)
-                ctx.fillStyle = gs.cleared ? '#8fff9f' : '#ff5d5d'
-                ctx.fillRect(x + 6, y + 6, 4, 4)
-                if (gs.cleared) {
-                    ctx.fillStyle = 'rgba(143,255,159,0.25)'
-                    ctx.fillRect(x - 4, y - 4, CELL + 8, CELL + 8)
+                ctx.fillStyle = 'rgba(143,255,159,0.18)'
+                ctx.fillRect(x - 3, y - 3, CELL + 6, CELL + 6)
+                const shut = Math.round(CELL * (1 - ph))
+                ctx.fillStyle = '#1c3a24'
+                if (e.side === 'up') ctx.fillRect(x, y, CELL, shut)
+                else if (e.side === 'down') ctx.fillRect(x, y + CELL - shut, CELL, shut)
+                else if (e.side === 'left') ctx.fillRect(x, y, shut, CELL)
+                else ctx.fillRect(x + CELL - shut, y, shut, CELL)
+                if (ph > 0.35) {
+                    const into = { up: [0, 1], down: [0, -1], left: [1, 0], right: [-1, 0] }[e.side]
+                    const ccx = x + CELL / 2, ccy = y + CELL / 2
+                    for (let i = 0; i < 3; i++) {
+                        const off = 2 + ((gs.tick % 10) + i * 3) % 10
+                        chevron(ccx + into[0] * off, ccy + into[1] * off, into[0], into[1], '#8fff9f', Math.min(1, (ph - 0.35) / 0.4) * (1 - i * 0.28))
+                    }
                 }
             }
         }
@@ -291,8 +336,9 @@ const SmashTVGame = () => {
             }
             ctx.lineWidth = 1
             if (p.fireT > WEAPONS[gs.weapon].interval - 3) {
-                ctx.fillStyle = '#ffd23f'
-                ctx.beginPath(); ctx.arc(p.x + ax * spec.flash, p.y + ay * spec.flash, 2, 0, Math.PI * 2); ctx.fill()
+                const mf = muzzleFlash(gs.weapon)
+                ctx.fillStyle = mf.col
+                ctx.beginPath(); ctx.arc(p.x + ax * spec.flash, p.y + ay * spec.flash, mf.r, 0, Math.PI * 2); ctx.fill()
             }
         }
 
@@ -472,6 +518,14 @@ const SmashTVGame = () => {
                 ctx.fillStyle = 'rgba(143,255,159,0.15)'
                 ctx.fillRect(0, HUD_H, CW * Math.max(0, gs.bonusT / gs.roomData.bonusTime), 2)
             }
+            // the per-room running total: a small gold readout over the top-left border,
+            // bumped each time a point lands (replaces the old floating per-kill numbers)
+            if (roomTotal > 0) {
+                const bump = 1 + (roomBump / 8) * 0.12
+                ctx.save(); ctx.translate(56, HUD_H + 11); ctx.scale(bump, bump)
+                text(`ROOM +${roomTotal}`, 0, 0, 7, '#ffd23f', 4, 'left')
+                ctx.restore()
+            }
         }
 
         const draw = () => {
@@ -491,7 +545,7 @@ const SmashTVGame = () => {
             drawBonusLights()
             drawCombo()
             for (const p of parts) {
-                p.x += p.vx; p.y += p.vy; p.t++
+                p.x += p.vx; p.y += p.vy; p.vy += p.grav || 0; p.t++
                 if (p.t < 20) { ctx.fillStyle = p.col; ctx.globalAlpha = 1 - p.t / 20; ctx.fillRect(p.x, p.y, 2, 2); ctx.globalAlpha = 1 }
             }
             while (parts.length && parts[0].t >= 20) parts.shift()
@@ -558,6 +612,7 @@ const SmashTVGame = () => {
             gs = makeGame(Math.floor(Math.random() * 1000) % 97)
             floor = buildFloor(0, gs.seed)
             demoAt = 0
+            roomTotal = 0; roomBump = 0; clearedAt = -1
             setMode('play')
         }
         const onKeyDown = (ev) => {
@@ -614,6 +669,7 @@ const SmashTVGame = () => {
                     parts.length = 0; pops.length = 0; evLog.length = 0
                     held.clear(); bombEdge = false
                     shake = 0; flash = 0; toast = 0
+                    roomTotal = 0; roomBump = 0; clearedAt = -1
                     setMode('play')
                 },
                 tick: (pad) => {
