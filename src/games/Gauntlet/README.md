@@ -85,6 +85,8 @@ npm run gauntletcheck             # 133 checks: geometry, art, sound, minimap,
                                       # partner), rules, overhead mode, ledger,
                                       # pilot, slack, determinism
 npm run gauntletcheck -- --mutate # 16 mutants, all must die
+npm run slotcheck -- --mutate     # #494 seat determinism: cpu pads recorded,
+                                      # replayed through model seats, hash-equal
 npm run gauntletplay              # advisory browser drive (needs npm run dev)
 ```
 
@@ -112,3 +114,20 @@ source-string test alone would miss a frame-path regression.
 
 Honest gap: a closed door still blocks P2 (door-opening for the partner is a
 separate filed item, see sim.js `updatePartner`).
+
+## Player slots (#494)
+
+Seat 2 is a `src/utils/slotSources.js` slot with kinds `off / human / cpu /
+model` (+ reserved `remote`): Off by default at hero select (per #275),
+C opens the CPU seat, P the human seat, a second pad auto-opens human, and
+`__game.step([p1, p2])` drives the model path one pad per player. The CPU
+partner now PLAYS BY HUMAN RULES: `planner.js partnerPad(gs, prevA)` trails
+nothing but a pad — it walks toward the hero's back side and pulses `a` when
+a beast comes into reach; the sim folds it through the same pad path a human
+pad gets (`updatePartner` follows ANY `partnerInp`, no 1.15 speed bonus, no
+door favors). A partner with no pad at all (FOUR HALLS, whose seat is not
+wired yet) keeps the old first-person trail as fallback. Determinism law
+proved by `npm run slotcheck` (seed + recorded pad streams ⇒ identical
+state hash, tick by tick, for both this game's seat kinds and Bubble Bobble;
+`--mutate` drops one live pad and goes red). `gauntletplay` drives the seat
+for real: C at select, Digit1, the partner travels under its own pads.

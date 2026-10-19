@@ -729,12 +729,12 @@ const closedDoorOnPath = (gs, x0, y0, x1, y1) => {
 function updatePartner(gs, partnerInp) {
     const p = gs.partner
     if (!p || p.down) return
-    if (gs.partnerHuman && partnerInp) {
-        // a HUMAN second hero: the same 8-way stick / turn + sword rules as the
-        // first player, but driven by its OWN input. It shares the CPU partner's
-        // stone + closed-door collision, and it does NOT trail the hero — it goes
-        // where its player points it. (Door-opening for the partner is a separate
-        // filed item, so a closed door still blocks it here.)
+    if (partnerInp) {
+        // a PAD-DRIVEN second hero (#494): human or cpu, the sim cannot tell —
+        // the same 8-way stick / turn + sword rules as the first player, and
+        // nothing more: no trail, no speed bonus, no door favors. A partner
+        // with no pad this tick falls back to the first-person follow used by
+        // FOUR HALLS (its partner has no seat yet).
         const sp = CFG.walk * p.speed
         if (gs.topDown) {
             const vx = (partnerInp.right ? 1 : 0) - (partnerInp.left ? 1 : 0)

@@ -96,15 +96,21 @@ a scripted animation.
    single-screen generated layouts, not the original's hand-authored rooms;
    enemy *kinds* are homages (Zen-Chan/Pulpul/Gouyu analogues:
    walker/hopper/swimmer + Batoya + Pengu), not sprite reproductions.
-4. No item-shop, no bonuses timers per fruit decay stages, no two-player *screen*
-   split (both dragons share the cave — co-op is the original's shape; P2 is
-   keyboard WASD+F, CPU partner mode exists for phones/harness).
+ 4. No item-shop, no bonuses timers per fruit decay stages, no two-player *screen*
+    split (both dragons share the cave — co-op is the original's shape; P2 is
+    keyboard WASD+F, CPU partner mode exists for phones/harness).
+    #494: seat 2 is a `src/utils/slotSources.js` slot — mode 2 runs it as
+    `cpu` (planner Bob wrapped as a pad emitter), mode 3 as `human` (WASD+F
+    merged with gamepad slot 2), and `__game.reset(seed, 2)` +
+    `__game.step([p1, p2])` fill it with a driven model; every source arrives
+    as THE one pad and `padToBob` folds it for the sim.
 
 ## Verify
 
 ```bash
 npm run bobcheck            # Node, ~2s, 38 checks
 npm run bobcheck -- --mutate  # + 3 mutants that must die
+npm run slotcheck -- --mutate # #494 determinism: cpu pads recorded, replayed via model seats
 npm run bubbleplay          # Chrome, real keys only (needs `npm run dev`)
 npm run lint:bob
 ```

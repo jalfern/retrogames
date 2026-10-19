@@ -37,11 +37,23 @@ export function exposeGame(spec) {
             ...(spec.ways ? { ways: spec.ways } : {}),
             ...(spec.steer ? { steer: spec.steer } : {}),
         },
-        reset: (seed = 0) => { spec.reset(seed); return api.state() },
+        // `players` (#494): an optional seat count for games that support more
+        // than one hero — single-player titles ignore it entirely.
+        reset: (seed = 0, players = 1) => { spec.reset(seed, players); return api.state() },
         step: (pad = {}, n = 1) => {
             loopLock = true
-            const one = normalizePad(pad || {}, method)
-            for (let i = 0; i < n; i++) spec.tick(one)
+            // One pad PER PLAYER (#494): an array steps once with pads[0] for
+            // player 1, pads[1] for player 2, ... A single pad still steps the
+            // same way it always did — held for n ticks — so every legacy
+            // call and every single-player game is byte-identical.
+            if (Array.isArray(pad)) {
+                const ones = pad.map((p) => normalizePad(p || {}, method))
+                if (!ones.length) ones.push(normalizePad({}, method))
+                spec.tick(ones[0], ones)
+            } else {
+                const one = normalizePad(pad || {}, method)
+                for (let i = 0; i < n; i++) spec.tick(one, [one])
+            }
             return api.state()
         },
         release: () => { loopLock = false },

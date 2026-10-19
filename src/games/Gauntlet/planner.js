@@ -205,8 +205,7 @@ export function decide(gs) {
     return inp
 }
 
-export function plan(seed = 0, opts = {}) {
-    const gs = makeGame(seed, opts.hero || 'warrior', { slack: !!opts.slack, partner: !!opts.partner, topDown: !!opts.topDown })
+export function plan(seed = 0, opts = {}) {    const gs = makeGame(seed, opts.hero || 'warrior', { slack: !!opts.slack, partner: !!opts.partner, topDown: !!opts.topDown })
     const script = []
     let deaths = 0
     const max = opts.maxTicks || 40000
@@ -218,4 +217,41 @@ export function plan(seed = 0, opts = {}) {
         gs.events.length = 0
     }
     return { won: gs.end === 'win', deaths, score: gs.score, script, hash: stateHash(gs), gs }
+}
+
+// PARTNER PADS (#494) — the CPU seat as a human: a pad emitter, nothing else.
+// decide() drives P1; this drives P2, and it says ONLY what a pad can say:
+// direction booleans + an `a` pulse (a level; the caller takes the sword edge
+// from it, exactly like a gamepad). It trails no invisible leash and opens no
+// doors by favor — it walks toward the hero's back side and cuts what walks
+// into its reach. Pure and deterministic: same seed, same pads, same hash.
+export function partnerPad(gs, prevA = false) {
+    const pad = { left: false, right: false, up: false, down: false, a: false }
+    const p = gs.partner, h = gs.hero
+    if (!p || p.down || gs.end || !h || h.deadT > 0) return pad
+    let threat = null, td = 1.6
+    for (const m of gs.monsters) {
+        const d = Math.hypot(m.x - p.x, m.y - p.y)
+        if (d < td) { threat = m; td = d }
+    }
+    if (threat) {
+        pad.a = !prevA
+        if (td > 0.65) {
+            pad.left = threat.x < p.x - 0.1
+            pad.right = threat.x > p.x + 0.1
+            pad.up = threat.y < p.y - 0.1
+            pad.down = threat.y > p.y + 0.1
+        }
+        return pad
+    }
+    const tx = h.x - Math.cos(h.a) * 1.1
+    const ty = h.y - Math.sin(h.a) * 1.1
+    const dx = tx - p.x, dy = ty - p.y
+    if (Math.hypot(dx, dy) > 0.55) {
+        pad.left = dx < -0.2
+        pad.right = dx > 0.2
+        pad.up = dy < -0.2
+        pad.down = dy > 0.2
+    }
+    return pad
 }

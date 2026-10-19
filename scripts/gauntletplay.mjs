@@ -101,4 +101,47 @@ const px = await page.evaluate(() => {
 })
 r.check('the corridor actually renders', px > 500, `${px} lit px`)
 
+// #494 player slots on the REAL path: a cpu seat opened at hero select must
+// carry a partner that moves under its own emitted pads, and the contract must
+// step one pad per player.
+{
+    for (let i = 0; i < 20 && (await probe()).screen === 'play'; i++) {
+        await page.evaluate(() => { const gs = window.__gauntletTest.state(); if (gs.hero.hp > 0) gs.hero.hp = 1 })
+        await page.waitForTimeout(350)
+    }
+    await page.waitForTimeout(1200)
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(300)
+    let q = await probe()
+    r.check('#494: back at hero select for the seat test', q.screen === 'select', q.screen)
+    await page.keyboard.press('KeyC')
+    await page.waitForTimeout(150)
+    q = await probe()
+    r.check('#494: C opens the cpu seat at select', q.seat === 'cpu', q.seat)
+    await page.keyboard.press('Digit1')
+    await page.waitForTimeout(500)
+    const c0 = await probe()
+    r.check('#494: the cpu seat carries a partner into the maze', c0.p2 !== null && c0.seat === 'cpu', `p2=${!!c0.p2} seat=${c0.seat}`)
+    // the hero runs; the pad-emitting partner must follow under its own pads
+    await page.keyboard.down('ArrowUp')
+    for (let i = 0; i < 10; i++) { await page.waitForTimeout(60); await page.evaluate(() => window.__gauntletTest.frame()) }
+    await page.keyboard.up('ArrowUp')
+    for (let i = 0; i < 60; i++) await page.evaluate(() => window.__gauntletTest.frame())
+    const c1 = await probe()
+    r.check('#494: the cpu partner travels under its own pads',
+        Math.hypot(c1.p2.x - c0.p2.x, c1.p2.y - c0.p2.y) > 0.3,
+        `${c0.p2.x.toFixed(2)},${c0.p2.y.toFixed(2)} -> ${c1.p2.x.toFixed(2)},${c1.p2.y.toFixed(2)}`)
+
+    const cs = await page.evaluate(() => {
+        const g = window.__game
+        g.reset(7)
+        const s1 = g.step([{ up: true }, { right: true, a: true }], 1)
+        const s2 = g.step({ up: true }, 1)
+        g.release()
+        return { t1: s1.tick, t2: s2.tick }
+    })
+    r.check('#494: step([p1,p2]) steps exactly one tick and legacy pad still steps',
+        cs.t1 === cs.t2 - 1, JSON.stringify(cs))
+}
+
 r.exit(browser)
