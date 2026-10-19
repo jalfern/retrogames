@@ -105,6 +105,10 @@ so the two players cannot collide. `__game.meta.players` is 2. The `step`
 threading that makes any of this move (`step(gs, inp, pInp)`) is the #491
 root cause — driven for real by two fake pads in headless Chrome, and pinned
 in `vpadcheck` (slot isolation, the slot map, the merge, the wiring).
+gauntletplay adds the behavioral half of that guard (#491): the `frame()` DEV
+hook steps the real `doFrameSim` with P2 holding W and P1 idle, so P2 must walk
+up on its own input and leave the stationary hero behind — a pure/`p2From` or
+source-string test alone would miss a frame-path regression.
 
 Honest gap: a closed door still blocks P2 (door-opening for the partner is a
 separate filed item, see sim.js `updatePartner`).
