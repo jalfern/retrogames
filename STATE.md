@@ -1,68 +1,49 @@
-# STATE — 2026-10-18 (forge: OCEAN time-of-day + clouds sliders #483 shipped)
+# STATE — 2026-10-18 (forge: SHIPPED #469 Mario Kart fullscreen on phones)
 
-## Shipped this session (forge lane, worktree retrogames-ocean-fix)
-- **#456/#483 SHIPPED (squash 29ba585)** — OCEAN demo gains TIME (night/sunrise/
-  midday/sunset) and CLOUDS (clear/broken/overcast) sliders that combine with STORM.
-  - 4-keyframe sky/sea palette blended by smoothstep in `setupSkyPal`; storm
-    darkening rides the blended palette via `g_night` (night storms stay slate,
-    sunset storms dark-grey — matches old look; P_KS[3]=(1.0,0.80) reproduces
-    main's hardcoded sss factor exactly at the default pose).
-  - Night: hash-cell star field w/ twinkle, moon disc+glow, cool sea glitter
-    trail. Clouds: coverage raises fbm cloud amount, band drops to horizon at
-    full cc so low sun/moon get occluded, sun disc blurs + dims through cloud,
-    glitter ×0.1, moonlit trail ×0.08.
-  - UI rows TIME/CLOUDS + labels, `?tod=` `?cloud=` params, `,` `.` `c` `x` keys,
-    `__oceanTest.setTod/setCloud` hooks.
-  - oceancheck (now 22 checks) green; oceanfold green; full tod×cloud×storm
-    screenshot grid reviewed. Prod verified with sliders.
+## This session (forge lane)
+- **Shipped:** #469 SUPER MARIO KART fullscreen fix, PR #487 → squash `fbad482`.
+  Root cause: fixed 256×224 source + fitCanvas integer floor-fit (#227) snapped
+  to scale 1–2 at phone DPR → small centered square. Fix = COMET DRIFT pattern
+  (#435): adaptive source re-solves to host aspect (landscape H=224, W 256..512;
+  portrait W=256, H 224..448), CSS-covers the viewport; derived framing
+  (`PLAY_H=H-24`, `HORIZON=PLAY_H-122`, half-FOV `W/2`) keeps 256×224
+  bit-identical. Renderer-only: kartcheck hash `211c01e9` unchanged.
+- kartplay gained 5 permanent #469 checks (portrait/landscape cover,
+  backing-aspect tracking, zero page errors @390×844@3). Mutant proof: clamping
+  `PORT_H_MAX`=224 turns portrait aspect check red.
+- `static` green first try; merged via rule-5. Prod verified: deployed
+  `index-DP_pHL42.js` byte-identical to merged local build. Issue shipped.
+- Per Jon's comment on #469: skipped game-README and step 8b (small fix).
+- Advisory kartplay flakes (touchpad/item/attract-gold/ghost-paint) reproduce
+  identically on `origin/main` baseline — not chased (rule 3).
 
-## Learned this session
-- **Fixed-threshold pixel checks lie under global brightness shifts**: the storm
-  `foam>1200` floor failed 3 ways at once — palette darkening (fix: keep main's
-  factors at the default keyframe), warm haze bleed (fix: storm horizon keeps only
-  3% ember, `g_horiz*0.03`), and — the real one — **foam phase is frame-count
-  driven**: identical builds measured 800–5000 px single-shot. Fix: envelope
-  sampling (max of 3 frames, 400 ms apart). A threshold that fails on main today
-  is stale, not a regression — calibrate against main first (`--file`).
-- **Star detection needs contrast, not color**: night star cores are blue-tinted
-  (~241,241,242 only at the brightest) while noon sky is (172,200,220) — no fixed
-  RGB window separates them. starPix now thresholds vs the region mean
-  (`thr=max(165, mean+90)`): night 594, noon 0.
-- **WGSL `select()` rejects structs** in this Chrome (silent black frame, only a
-  console warning — oceancheck captures WGSL warnings as errors now). Use parallel
-  const arrays for palette tables.
-- Cloud band uses descending-edge `smoothstep` (works in practice, already on main).
-
-## Harness
-- oceancheck: +7 checks (tod/clouds present, night darkens hard, stars night>60 &
-  day<10, overcast flattens sun 5844→113, storm-at-night combines, WGSL-warnings);
-  foam + star sampling switched to 3-frame envelope. Comment in-script records why.
-- `gh pr merge` cleanup can fail ("main already used by worktree") when another
-  lane has `main` checked out — the PR still merges server-side; verify with
-  `gh pr view --json state,mergeCommit` and delete the remote branch manually.
-
-## Held / open (unchanged unless noted)
+## Held / open (unchanged)
 - **#391** `stalled` — awaiting Jon: close as shipped vs batch 5.
 - **#375** `stalled` — Civ parked per Jon.
-- **#443** open — idle-builder QA-borrow ruling pending (QA lane owns throughput).
-- **#456** — closed by #483 this session.
-- QA backlog (#440/#426/#423/#421/#422/#409/#410/#405, #365, #384) + **#478**
-  + **#481**.
-- Rule 4 healthy: game code shipped this session.
+- **#443** open — idle-builder QA-borrow ruling still pending (see Q2).
+- QA lane: mini's QA MASTER held `building-qa` #280 during this session;
+  forge claimed only the game-queue item (#469, Jon pre-moved it) — no overlap.
+- QA backlog: #481 #478 #472 #470 #469(shipped now) #462 #440 #426 #423 #421
+  #422 #409 #410 #405 #365 #384 (+ Civ #3xx pass issues).
+- Rule 4 healthy: last 3 merges (fbad482, 6f0fd7a, 8129edf) all game code.
+- Hygiene: many orphan pushed `forge/*` branches with no issue/PR
+  (excitebike, outpost, paperboy, polarity, simcity, spec-wins, telemetry,
+  watch, game-first) — not adopted (unlabeled), left for Jon/warden sweep.
 
 ## GOAL — next session
-1. Re-check `next` / `game-queue` / `building` + pushed `forge/*`. Expect nothing
-   unless Jon feeds it; QA lane owns throughput (#443 unresolved).
-2. If idle: #478 item 0 (`?renderer=webgl` alias) — small forge-appropriate fix
-   with a harness name-check, per FORGE.md borrow rules.
-3. If Jon wants more Ocean: sun-moon azimuth separation, wave-spray particles in
-   storm, and horizon fog reacting to `cloud` are natural next strokes.
+1. Re-check `next` / `game-queue` / `building` + pushed `forge/*`. Queue is
+   empty again unless Jon feeds it.
+2. If queue still empty AND no live `pgrep "QA MASTER"`: take #478 item 0
+   (`?renderer=webgl` alias) per FORGE borrow rules; ship as
+   `QA: fixed #478 (item 0) via PR #m`.
+3. Consider a tiny cleanup PR pruning orphan `forge/*` branches after warden
+   confirms none are live claims — needs Jon's nod first (Q3).
 
 ## Three questions for Jon
-1. **qa-280 has `main` checked out** (violates your 2026-10-11 worktree rule and
-   makes `gh pr merge` throw local-cleanup errors). Should I `git checkout
-   --detach` it, or does that lane need the branch?
-2. **Clouds at sunset read warm-grey** (the palette tints cloud light by sunset
-   colour). Faithful-ish; want overcast to be more neutral slate instead?
-3. #481 items 1 (driver figure) + 3 (brake lenses) are the small pending
-   forge-side follow-ups — pick one for me next if the queue stays empty.
+1. **Queue dry again:** #469 was the last game-queue item. Which title goes in
+   `game-queue` next?
+2. **#443 borrow-gate:** still strict — forge idles whenever QA MASTER is live.
+   Relax to allow ONE non-overlapping feedback item during a QA run?
+3. **Orphan branches:** 9 pushed `forge/*` branches have no issue and no PR
+   (some 4–6 commits ahead of main). Prune them, or are they intentional
+   parked work?
