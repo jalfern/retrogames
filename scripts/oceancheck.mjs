@@ -9,6 +9,9 @@
 //   4. STORM  — the round-two slider (#458): setStorm(1) grows wave energy >8×,
 //               multiplies cool-white foam pixels, darkens the sky, reads STORM in
 //               the UI, and is reversible back to calm.
+//   5. SKY    — the round-three sliders (#456): time of day (night darkens hard
+//               and shows stars/moon; day does not), clouds (overcast flattens the
+//               sun disc), and the storm-at-night combination.
 //
 // Chrome is launched DIRECTLY (not via playwright's default args): playwright's
 // stock switches hide `navigator.gpu`; headless Chrome 155 exposes a real
@@ -123,6 +126,35 @@ function foamPix(img, yFrom, yTo) {
   return n
 }
 
+// small bright bluish dots in the sky band: stars at night (moon glow also counts)
+function starPix(img, yFrom, yTo) {
+  let sum = 0, n = 0
+  for (let y = yFrom; y < yTo; y++) {
+    for (let x = 0; x < img.w; x++) {
+      sum += img.px[(y * img.w + x) * img.bpp]
+      n++
+    }
+  }
+  const thr = Math.max(165, sum / n + 90)
+  let stars = 0
+  for (let y = yFrom; y < yTo; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const i = (y * img.w + x) * img.bpp
+      if (img.px[i] > thr && img.px[i + 1] > thr - 10 && img.px[i + 2] > thr + 15) stars++
+    }
+  }
+  return stars
+}
+
+async function sampleMax(page, n, count) {
+  let best = 0
+  for (let i = 0; i < n; i++) {
+    if (i) await page.waitForTimeout(400)
+    best = Math.max(best, count(decodePng(await page.screenshot())))
+  }
+  return best
+}
+
 async function main() {
   const chrome = spawn(CHROME, [
     '--headless=new', '--enable-unsafe-swiftshader', `--remote-debugging-port=${PORT}`,
@@ -141,7 +173,7 @@ async function main() {
     const page = await ctx.newPage()
     const errs = []
     page.on('pageerror', e => errs.push('pageerror: ' + e.message))
-    page.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text().split('\n')[0]) })
+    page.on('console', m => { if (m.type() === 'error' || (m.type() === 'warning' && m.text().includes('WGSL'))) errs.push('console: ' + m.text().split('\n')[0]) })
 
     await page.goto(url, { waitUntil: 'load' })
 
@@ -210,11 +242,12 @@ async function main() {
       const stormBuf = await page.screenshot()
       const stormImg = decodePng(stormBuf)
       const stormSkyTop = analyze(stormImg, 0, Math.floor(stormImg.h * 0.25))
-      const stormFoam = foamPix(stormImg, Math.floor(stormImg.h * 0.55), stormImg.h)
+      const stormFoam = Math.max(foamPix(stormImg, Math.floor(stormImg.h * 0.55), stormImg.h),
+        await sampleMax(page, 2, img => foamPix(img, Math.floor(img.h * 0.55), img.h)))
       ok('storm darkens the sky', stormSkyTop.mean < calmSkyTop.mean * 0.82, `sky mean ${calmSkyTop.mean.toFixed(0)} → ${stormSkyTop.mean.toFixed(0)}`)
-      // whitecap floor 1200: foam amplitude now rides the single chop (the pre-fix
-      // build doubled it in enc); single-chop storm foam measures ~1500-2800 px and
-      // fog/phase variance runs ~2x, so the old 3000 floor was tuned to doubled energy.
+      // Foam is phase-flaky (frame-count-driven chop phase moves whitecaps between
+      // frames — single shots ranged 800-5000 px on identical builds), so the check
+      // takes the max of 3 samples; envelope measures ~4300-5300 px on storm, ~0 calm.
       ok('storm whitecaps obvious', stormFoam > calmFoam * 4 && stormFoam > 1200, `foam px ${calmFoam} → ${stormFoam}`)
       const ui = await page.evaluate(() => ({ sea: document.getElementById('seaLbl').textContent, wind: document.getElementById('windLbl').textContent }))
       ok('UI reads STORM at full slider', ui.sea === 'STORM', `${ui.sea} · ${ui.wind}`)
@@ -233,6 +266,48 @@ async function main() {
       await page.waitForTimeout(1500)
       const c2 = await page.evaluate(() => window.__oceanTest.stats())
       ok('slider reversible to calm', c2.variance < vStorm.variance * 0.5 && c2.variance > 1e-4, `var ${vStorm.variance.toFixed(3)} → ${c2.variance.toFixed(3)}`)
+
+      // time-of-day + clouds sliders (#456)
+      const sliders = await page.evaluate(() => ({
+        tod: !!document.getElementById('tod'), cloud: !!document.getElementById('cloud'),
+      }))
+      ok('time + clouds sliders present', sliders.tod && sliders.cloud)
+
+      await page.evaluate(() => window.__oceanTest.setTod(0))
+      await page.waitForTimeout(900)
+      const nightImg = decodePng(await page.screenshot())
+      const nightTop = analyze(nightImg, 0, Math.floor(nightImg.h * 0.25))
+      const nightStars = Math.max(starPix(nightImg, 0, Math.floor(nightImg.h * 0.4)),
+        await sampleMax(page, 2, img => starPix(img, 0, Math.floor(img.h * 0.4))))
+      await page.evaluate(() => window.__oceanTest.setTod(0.66))
+      await page.waitForTimeout(900)
+      const dayImg = decodePng(await page.screenshot())
+      const dayTop = analyze(dayImg, 0, Math.floor(dayImg.h * 0.25))
+      const dayStars = starPix(dayImg, 0, Math.floor(dayImg.h * 0.4))
+      ok('night darkens the sky hard', nightTop.mean < dayTop.mean * 0.5, `sky mean day=${dayTop.mean.toFixed(0)} night=${nightTop.mean.toFixed(0)}`)
+      ok('night shows stars/moon, day does not', nightStars > 60 && dayStars < 10, `stars night=${nightStars} day=${dayStars}`)
+
+      await page.evaluate(() => { window.__oceanTest.setTod(1); window.__oceanTest.setCloud(0) })
+      await page.waitForTimeout(700)
+      const clearSun = analyze(decodePng(await page.screenshot()), Math.floor(540 * 0.28), Math.floor(540 * 0.52)).bright
+      await page.evaluate(() => window.__oceanTest.setCloud(1))
+      await page.waitForTimeout(900)
+      const ovcSun = analyze(decodePng(await page.screenshot()), Math.floor(540 * 0.28), Math.floor(540 * 0.52)).bright
+      ok('overcast flattens the sun', ovcSun < clearSun * 0.5, `bright-clear=${clearSun} bright-overcast=${ovcSun}`)
+
+      await page.evaluate(() => { window.__oceanTest.setTod(0); window.__oceanTest.setCloud(0.5); window.__oceanTest.setStorm(1) })
+      await page.waitForTimeout(1800)
+      const nsVar = await page.evaluate(() => window.__oceanTest.stats())
+      const nsUi = await page.evaluate(() => ({
+        t: document.getElementById('todLbl').textContent,
+        c: document.getElementById('cloudLbl').textContent,
+        s: document.getElementById('seaLbl').textContent,
+      }))
+      ok('storm-at-night combines (NIGHT · BROKEN · STORM, live water)',
+        nsVar.variance > 1 && nsUi.t === 'NIGHT' && nsUi.c === 'BROKEN' && nsUi.s === 'STORM',
+        `${nsUi.t}/${nsUi.c}/${nsUi.s} var=${nsVar.variance.toFixed(3)}`)
+      await page.evaluate(() => { window.__oceanTest.setStorm(0); window.__oceanTest.setTod(1); window.__oceanTest.setCloud(0) })
+      await page.waitForTimeout(1200)
     }
 
     // page must stay clean overall (validation errors land in console)
