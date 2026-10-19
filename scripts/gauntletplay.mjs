@@ -43,6 +43,33 @@ r.check('turn changed heading', after.hero.a !== before.hero.a)
 const evs = await page.evaluate(() => window.__gauntletTest.events().map((e) => e.type))
 r.check('sword + bow fired', evs.includes('sword') && evs.includes('shoot'), [...new Set(evs)].join(','))
 
+// 2P real frame path (issue #491): with a human partner, P2 (WASD) steers itself
+// by its OWN input through the actual rAF body (doFrameSim -> doSim -> step); it
+// does NOT trail the hero. The drop was in doSim's one-arg signature; #492 fixed
+// that (and folded the second pad in via p2From). This drives the real frame
+// path so the fix can't regress: P2 holding W must leave a stationary P1 behind.
+{
+    await page.evaluate(() => {
+        const t = window.__gauntletTest
+        t.start2P('warrior', 'elf')
+        const gs = t.state()
+        gs.monsters = []; gs.gens.forEach((g) => { g.alive = false })
+        gs.hero.hp = 1e9; gs.partner.hp = 1e9
+        t.setP2({ u: true })                    // P2 holds W (up); P1 hands off
+        const a = t.probe()
+        for (let i = 0; i < 50; i++) t.frame()  // drive the real frame path
+        const b = t.probe()
+        t.setP2({ u: false })
+        t.__491 = { p0: a.p2, p1: b.p2, h: b.hero }
+    })
+    const g = await page.evaluate(() => window.__gauntletTest.__491)
+    r.check('2P: P2 walks up by its own input (real frame path)', g.p1.y < g.p0.y - 1,
+        `${g.p0.y.toFixed(2)} -> ${g.p1.y.toFixed(2)}`)
+    r.check('2P: P2 does not trail the idle hero', Math.hypot(g.p1.x - g.h.x, g.p1.y - g.h.y) > 1,
+        `dist ${Math.hypot(g.p1.x - g.h.x, g.p1.y - g.h.y).toFixed(2)}`)
+    r.check('2P: P2 faces where it walks', Math.abs(g.p1.a + Math.PI / 2) < 0.01, `a ${g.p1.a.toFixed(2)}`)
+}
+
 // death via the dev hook (no cheating inside sim: starve it honestly)
 await page.evaluate(() => { window.__gauntletTest.state().hero.hp = 1 })
 await page.waitForTimeout(600)
