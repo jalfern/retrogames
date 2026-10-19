@@ -41,6 +41,25 @@ export const CFG = {
     contactR: 9,
 }
 
+// ---------------------------------------------------------- bonus theatre ----
+// The studio shows its hand: the combo climbs the warm end of the spectrum, and
+// the house lights flicker harder the closer the clock runs to zero. Pure
+// (tick/combo) functions so the harness can pin them without a browser.
+export const COMBO_COLORS = ['#8fb0ff', '#8fff9f', '#ffd23f', '#ff8a3f', '#ff4f4f', '#ff2b8a']
+export const comboColor = (n) => COMBO_COLORS[Math.min(Math.max(1, n) - 1, COMBO_COLORS.length - 1)]
+
+// 0..1 studio-light flicker for a bonus room with `bonusT` ticks left. Steady
+// for most of the ten seconds; the final 3 s (or last 30% of a shorter room)
+// hunt for a black-out.
+export function flickerPhase(bonusT, bonusTime) {
+    const t = Math.max(0, bonusT)
+    const window = Math.min(180, Math.max(1, bonusTime) * 0.3)
+    if (t > window) return 0.06
+    const p = t / window
+    const fast = Math.sin(t / 2.1) * Math.sin(t / 5.7 + 1.3)
+    return Math.min(1, 0.5 + 0.5 * Math.max(0, fast) * (1 - p) + (1 - p) * 0.28)
+}
+
 const cx = (c) => c * CELL + CELL / 2
 const cy = (r) => HUD_H + r * CELL + CELL / 2
 export const cellOf = (x, y) => [Math.floor(x / CELL), Math.floor((y - HUD_H) / CELL)]
@@ -129,7 +148,7 @@ function loadRoom(gs, idx) {
         for (let i = 0; i < room.civilians; i++) {
             const c = 2 + Math.floor(lcg(gs.rng) * (GW - 4))
             const r = 2 + Math.floor(lcg(gs.rng) * (GH - 4))
-            gs.civilians.push({ id: gs._nextId++, x: cx(c), y: cy(r), dx: 0, dy: 0, panic: 0, walk: i })
+            gs.civilians.push({ id: gs._nextId++, x: cx(c), y: cy(r), dx: 0, dy: 0, panic: 0, walk: i, sprintT: 0, sprintCd: 30 + ((i * 53) % 150), sprintRng: { v: ((gs.seed + 1) * 2654435761 + i * 40503 + 12345) | 0 }, sdir: [0, 0], soff: 0 })
         }
     }
     gs.events.push({ type: 'room', room: idx, bonus: room.bonus, boss: room.boss })
@@ -405,6 +424,21 @@ function updateCivilians(gs) {
         if (ny < HUD_H + 12 || ny > CH - 12) { v.dy = -v.dy; v.panic = Math.max(v.panic, 10) }
         else v.y = ny
         v.walk += sp
+        // THEATRE: a random sprint — the sprite dashes from its spot and eases
+        // back, with a scream. Pure showmanship on its own rng: it never touches
+        // x/y/dx/dy/panic, so the shared rng (and the autopilot's proven run)
+        // is exactly what it was before the theatre.
+        if (v.sprintT > 0) v.sprintT--
+        else if (--v.sprintCd <= 0) {
+            v.sprintCd = 90 + Math.floor(lcg(v.sprintRng) * 180)
+            v.sprintT = 22 + Math.floor(lcg(v.sprintRng) * 30)
+            const a = Math.floor(lcg(v.sprintRng) * 8) * Math.PI / 4
+            v.sdir = [Math.round(Math.cos(a)), Math.round(Math.sin(a))]
+            v.walk += 6
+            gs.events.push({ type: 'scream', x: v.x, y: v.y })
+        }
+        if (v.sprintT > 0) v.soff = Math.min(10, v.soff + 0.8)
+        else if (v.soff > 0) v.soff = Math.max(0, v.soff - 1.5)
     }
 }
 
