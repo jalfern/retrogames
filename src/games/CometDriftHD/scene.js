@@ -200,6 +200,7 @@ export function buildKart(hex, accentHex) {
     const wheelGeo = new THREE.CylinderGeometry(0.21, 0.21, 0.13, 14)
     wheelGeo.rotateZ(Math.PI / 2)
     const wheels = []
+    const wheelDefs = []
     const mk = (sx, sz, front) => {
         const pivot = new THREE.Group()
         pivot.position.set(sx * 0.42, 0.24, sz)
@@ -207,12 +208,70 @@ export function buildKart(hex, accentHex) {
         pivot.add(w)
         g.add(pivot)
         if (front) wheels.push(pivot)
+        wheelDefs.push({ node: pivot, front, baseQuat: pivot.quaternion.clone(), steerSign: 1, rollSign: 1, meshes: [w] })
     }
     mk(-1, 0.52, true); mk(1, 0.52, true); mk(-1, -0.45, false); mk(1, -0.45, false)
     g.userData.wheels = wheels
+    g.userData.wheelDefs = wheelDefs
     g.userData.body = body
     g.userData.brakes = brakes
     return g
+}
+
+// #477: sim heading -> three yaw. The sim drives along (cos a, sin a) in the
+// (x,y) px plane, mapped to world (X,Z) = (x*S, y*S) with up +Y. The buggy's
+// nose is local +Z, and rotating +Z by yaw θ lands it on (sin θ, cos θ); to
+// chase (cos a, sin a) we need θ = π/2 − a. The old −a pointed the nose 90°
+// off — Jon's "drives as if its front were the driver's left door" bug.
+export const kartYaw = (a) => Math.PI / 2 - a
+
+// Model footprint: the GLB is ~3.4 m / 1.46 m wide; the road half-width is
+// ROAD_R·S ≈ 2.33u and kartR·S ≈ 0.57u, so the authored buggy scales to about
+// a kart's footprint at ~0.48×.
+export const BUGGY_SCALE = 0.48
+
+// Cached GLB load. Browser-only: dynamic-imports GLTFLoader so importing this
+// module in Node (the harness) never pulls DOM/WebGL code. Resolves null on any
+// failure so the caller can keep the primitive fallback — the race never dies.
+let buggyPromise = null
+export function loadBuggy() {
+    if (!buggyPromise) {
+        buggyPromise = (async () => {
+            const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js')
+            const url = `${import.meta.env.BASE_URL || '/'}games/comet-drift-hd/dune_buggy.glb`
+            const gltf = await new GLTFLoader().loadAsync(url)
+            return gltf.scene
+        })().catch(() => null)
+    }
+    return buggyPromise
+}
+
+// Wire a cloned dune buggy for one driver: deep-clone every material so rival
+// liveries don't bleed, recolour Paint_Orange (body) and Accent_Yellow (trim),
+// arm the taillights as brake lamps, and collect the four wheel pivots with the
+// signs that make them spin/steer correctly through the model's baked 180° flip
+// on the right-hand nodes (derivation and proof in scripts/cometdrifthdcheck).
+export function decorateBuggy(root, hex, accentHex) {
+    const matCache = new Map()
+    let body = null
+    let brakeMat = null
+    root.traverse((o) => {
+        if (!o.isMesh) return
+        if (!matCache.has(o.material)) matCache.set(o.material, o.material.clone())
+        const m = matCache.get(o.material)
+        o.material = m
+        const nm = m.name || ''
+        if (nm === 'Paint_Orange') { m.color = new THREE.Color(hex); body = m }
+        else if (nm === 'Accent_Yellow') m.color = new THREE.Color(accentHex)
+        else if (nm === 'Taillight_Red') { m.emissive = new THREE.Color(0xff2010); m.emissiveIntensity = 0; brakeMat = m }
+    })
+    const wheels = []
+    for (const [name, side, front] of [['Wheel_FL', 1, true], ['Wheel_FR', -1, true], ['Wheel_RL', 1, false], ['Wheel_RR', -1, false]]) {
+        const node = root.getObjectByName(name)
+        if (!node) continue
+        wheels.push({ node, front, side, baseQuat: node.quaternion.clone(), steerSign: side, rollSign: side, meshes: node.children.filter((c) => c.isMesh) })
+    }
+    return { group: root, body, brakeMat, wheels }
 }
 
 // ---- GPU particles: pooled additive point systems (sparks, dust, flames).

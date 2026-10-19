@@ -15,7 +15,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
 import { TRACK } from '../src/games/CometDrift/track.js'
-import { trackGeometryStats, buildKart, makePool } from '../src/games/CometDriftHD/scene.js'
+import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE } from '../src/games/CometDriftHD/scene.js'
 
 const args = process.argv.slice(2)
 const MUTATE = args.includes('--mutate')
@@ -60,6 +60,64 @@ ok(stats.plateauL.minY > stats.road.maxY && stats.plateauR.minY > stats.road.max
 ok(stats.kerbL.verts === ring && stats.gutterR.verts === ring, 'kerb + gutter rings cover the full lap')
 const kart = buildKart(0x20b8dc, '#fff')
 ok(kart.children.length >= 10 && kart.userData.wheels.length === 2, `buggy assembled: ${kart.children.length} parts, steerable front axles`)
+ok(kart.userData.wheelDefs && kart.userData.wheelDefs.length === 4, 'fallback buggy exposes all four wheel rig nodes')
+
+// ------------------------------------------------ dune buggy model + heading (#477)
+// Jon's authored GLB drives the car now. Two facts must hold on the REAL bytes,
+// not on a mock: the model's nose is +Z, and the sim-heading -> yaw law points
+// it down the road (the old −a pointed it sideways — Jon's bug).
+console.log('dune buggy model + heading law (#477):')
+{
+    const glbPath = resolve(HERE, '../public/games/comet-drift-hd/dune_buggy.glb')
+    const bytes = readFileSync(glbPath)
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    let off = 12; let gj = null
+    while (off + 8 <= bytes.length) {
+        const len = dv.getUint32(off, true); const type = dv.getUint32(off + 4, true)
+        if (type === 0x4e4f534a) { gj = JSON.parse(bytes.subarray(off + 8, off + 8 + len).toString('utf8')); break }
+        off += 8 + len
+    }
+    ok(!!gj, 'dune_buggy.glb is a readable glTF binary')
+    const nodeByName = {}; for (const n of (gj.nodes || [])) nodeByName[n.name] = n
+    const matNames = (gj.materials || []).map((m) => m.name)
+    ok(!!nodeByName.DuneBuggy && ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'].every((w) => nodeByName[w]), 'rig has a root + the four named wheel pivots')
+    ok(['Paint_Orange', 'Taillight_Red', 'Light_Emissive'].every((mt) => matNames.includes(mt)), 'paint + taillight + headlight materials present (per-rival recolour target exists)')
+    const acc = (name, attr) => gj.accessors[gj.meshes[nodeByName[name].mesh].primitives[0].attributes[attr]]
+    ok(acc('Chassis_light', 'POSITION').max[2] > acc('Chassis_tail', 'POSITION').max[2], `nose points +Z (headlights z=${acc('Chassis_light', 'POSITION').max[2].toFixed(2)} ahead of tailgate z=${acc('Chassis_tail', 'POSITION').max[2].toFixed(2)})`)
+
+    // heading law: rotating the local nose (+Z) by kartYaw(a) lands on the sim
+    // travel direction (cos a, sin a) in world (X,Z).
+    let maxErr = 0
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2
+        const nose = [Math.sin(kartYaw(a)), Math.cos(kartYaw(a))]
+        maxErr = Math.max(maxErr, Math.hypot(nose[0] - Math.cos(a), nose[1] - Math.sin(a)))
+    }
+    ok(maxErr < 1e-9, `heading law kartYaw(a) points the nose along (cos a, sin a) (max err ${maxErr.toExponential(1)})`)
+    ok(Math.abs(kartYaw(0) - Math.PI / 2) < 1e-9, 'kartYaw(0) = π/2 (guards the reverted −a / sideways regression)')
+
+    // wheel signs are derived from each pivot's baked matrix, so a future re-export
+    // with different flips fails here. R = rotation 3x3 (column-major), side by x.
+    const mul3 = (A, B) => A.map((r, i) => [0, 1, 2].map((j) => r[0] * B[0][j] + r[1] * B[1][j] + r[2] * B[2][j]))
+    const ap3 = (A, v) => A.map((r) => r[0] * v[0] + r[1] * v[1] + r[2] * v[2])
+    const rotOf = (m) => [[m[0], m[4], m[8]], [m[1], m[5], m[9]], [m[2], m[6], m[10]]]
+    const Ry = (t) => [[Math.cos(t), 0, Math.sin(t)], [0, 1, 0], [-Math.sin(t), 0, Math.cos(t)]]
+    const Rx = (t) => [[1, 0, 0], [0, Math.cos(t), -Math.sin(t)], [0, Math.sin(t), Math.cos(t)]]
+    const wheels = ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR'].map((nm) => {
+        const m = nodeByName[nm].matrix || [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+        return { nm, R: rotOf(m), x: m[12], z: m[14], side: Math.sign(m[12]) }
+    })
+    ok(wheels.every((w) => w.side === 1 || w.side === -1) && wheels.length === 4, 'all four wheels offset to a defined left/right side')
+    // forward roll: the tire top (local +Y) must swing toward +Z (world) for every
+    // wheel when rolled by roll = +0.2 * side. Proves spin direction is consistent.
+    ok(wheels.every((w) => ap3(mul3(w.R, Rx(0.2 * w.side)), [0, 1, 0])[2] > 0), 'roll by side-sign spins every wheel forward (both sides spin alike through the baked flip)')
+    // steer: front wheels toe the same way (world forward +Z gains the same-sign X)
+    const fronts = wheels.filter((w) => w.z > 0)
+    const fwdX = fronts.map((w) => ap3(mul3(w.R, Ry(0.3 * w.side)), [0, 0, 1])[0])
+    ok(fronts.length === 2 && fwdX[0] * fwdX[1] > 0 && Math.sign(fwdX[0]) === Math.sign(0.3), 'front wheels steer parallel (side-sign undoes the right-side flip)')
+    ok(BUGGY_SCALE > 0.3 && BUGGY_SCALE < 0.8, `buggy scaled to a kart footprint (${BUGGY_SCALE}x its 3.4m body)`)
+}
+
 const pool = makePool(10, 0.2)
 pool.spawn(0, 0.2, 0, 0.01, 0, 0, 5, 0xffffff)
 pool.spawn(0, 0.2, 0, 0.01, 0, 0, 5, 0xffffff)
@@ -130,6 +188,16 @@ if (!SKIP_BROWSER) {
         await page.waitForFunction(() => window.__cometHDTest.ready(), null, { timeout: 20000 })
         const backend = await page.evaluate(() => window.__cometHDTest.backend())
         ok(backend === 'webgl2' || backend === 'webgl2-legacy', `WebGL2 fallback backend active for pixel checks (${backend})`)
+
+        // #477: the authored dune buggy GLB must actually replace the primitive
+        // fallback (proves the async swap + material-clone + rig wiring run in a
+        // browser, not just in the Node contract).
+        try {
+            await page.waitForFunction(() => window.__cometHDTest.modelLoaded(), null, { timeout: 15000 })
+            ok(true, 'authored dune_buggy.glb swapped in for the primitive kart')
+        } catch {
+            ok(false, 'authored dune_buggy.glb swapped in for the primitive kart')
+        }
 
         const pixels = async () => page.evaluate(() => {
             const src = document.querySelector('canvas')
