@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { gamepadToCodes, stickFromAxes, triggersFromPad, slotFieldsFrom } from './gamepadMap'
 import { setStick, setRight, clearPad } from '../utils/padState'
-import { setStickVec, setConnected, connectedSlots, pressSlot, releaseSlot, setStickVecSlot, clearAllSlots } from '../utils/onePad'
+import { setStickVec, setAimVec, setConnected, connectedSlots, pressSlot, releaseSlot, setStickVecSlot, setAimVecSlot, clearAllSlots } from '../utils/onePad'
 
 // Gamepad bridge: polls navigator.getGamepads() every frame and dispatches the
 // same KeyboardEvents VirtualControls does, so every game that reads keyboard
@@ -44,13 +44,15 @@ const GamepadBridge = ({ secondAction }) => {
             stickState.lastCodes = []
             clearPad()
             setStickVec(0, 0)
+            setAimVec(0, 0)
         }
         const writeSlot = (slotN, f) => {
-            for (const k of ['left', 'right', 'up', 'down', 'a', 'b', 'start']) {
+            for (const k of ['left', 'right', 'up', 'down', 'a', 'b', 'start', 'aimUp', 'aimDown', 'aimLeft', 'aimRight']) {
                 if (f[k]) pressSlot(slotN, k)
                 else releaseSlot(slotN, k)
             }
             setStickVecSlot(slotN, f.x, f.y)
+            setAimVecSlot(slotN, f.ax || 0, f.ay || 0)
         }
 
         let raf = 0
@@ -79,6 +81,7 @@ const GamepadBridge = ({ secondAction }) => {
             const trig = triggersFromPad(pad)
             setStick(left.x, left.y, left.push, left.engaged)
             setStickVec(left.x, left.y) // #420: the left stick also feeds THE one pad
+            setAimVec(right.x, right.y) // #496: the right stick is slot 1's aim stick
             setRight(right.x, right.y, trig.rt, trig.lt)
             // Signal the touch pad to hide the moment a gamepad is used (#290 step 5).
             const active = codes.size > 0
@@ -92,7 +95,7 @@ const GamepadBridge = ({ secondAction }) => {
             for (let i = 1; i < live.length; i++) {
                 const slotN = i + 1
                 let st = slotStates.get(slotN)
-                if (!st) { st = { engaged: false, lastCodes: [] }; slotStates.set(slotN, st) }
+                if (!st) { st = { engaged: false, lastCodes: [], aimEngaged: false, lastAim: [] }; slotStates.set(slotN, st) }
                 const r = slotFieldsFrom(live[i], st)
                 slotStates.set(slotN, r.state)
                 writeSlot(slotN, r.fields)
