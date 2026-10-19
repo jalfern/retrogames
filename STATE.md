@@ -1,49 +1,58 @@
-# STATE — 2026-10-18 (forge: SHIPPED #469 Mario Kart fullscreen on phones)
+# STATE — 2026-10-19 (forge: shipped #489 MAGIC CARPET)
 
 ## This session (forge lane)
-- **Shipped:** #469 SUPER MARIO KART fullscreen fix, PR #487 → squash `fbad482`.
-  Root cause: fixed 256×224 source + fitCanvas integer floor-fit (#227) snapped
-  to scale 1–2 at phone DPR → small centered square. Fix = COMET DRIFT pattern
-  (#435): adaptive source re-solves to host aspect (landscape H=224, W 256..512;
-  portrait W=256, H 224..448), CSS-covers the viewport; derived framing
-  (`PLAY_H=H-24`, `HORIZON=PLAY_H-122`, half-FOV `W/2`) keeps 256×224
-  bit-identical. Renderer-only: kartcheck hash `211c01e9` unchanged.
-- kartplay gained 5 permanent #469 checks (portrait/landscape cover,
-  backing-aspect tracking, zero page errors @390×844@3). Mutant proof: clamping
-  `PORT_H_MAX`=224 turns portrait aspect check red.
-- `static` green first try; merged via rule-5. Prod verified: deployed
-  `index-DP_pHL42.js` byte-identical to merged local build. Issue shipped.
-- Per Jon's comment on #469: skipped game-README and step 8b (small fix).
-- Advisory kartplay flakes (touchpad/item/attract-gold/ghost-paint) reproduce
-  identically on `origin/main` baseline — not chased (rule 3).
+- **Shipped:** #489 MAGIC CARPET (Bullfrog 1994), PR #497 → squash `03796d3`.
+  Live: https://jalfern.com/retrogames/magic-carpet (prod bundle
+  `index-D5sddOBv.js` verified to contain the game). Issue #489 `shipped`.
+- New: `src/games/MagicCarpet/{sim.js,art.js,index.jsx,README.md}` +
+  `scripts/carpetcheck.mjs` (+ `carpetcheck` alias, contractcheck entry).
+  Registry: `visibility: 'private'` — awaiting Jon's promotion (#379).
+- Design (full notes in the game README): first-person voxel carpet flight at
+  320×200 with silhouette-clipped sprites; one mana pool — pearls bank into
+  the castle on possess, spells SPEND it, 180 banked = EQUILIBRIUM; six
+  signature spells in two hands with the original's acquisition risk (20%
+  grimoire fizzle, retryable); rival wizard hoards 90 mana and scatters it as
+  pearls when slain; carpet banks and auto-rises (cannot crash); death respawns
+  at the gates only while the store holds mana. Attract = autopilot's own
+  proven flight; synth audio only.
+- Harness proof: **carpetcheck 21/21** — boot, state-hash determinism, mana
+  conservation identity (`pool+pearls+hoard == start + bounty − cost`), risk
+  fires both branches over 40 seeds, no-mana refusal, never-bury, death/respawn
+  both ways, hoard scatter, equilibrium seeds 7 + 88, headless-Chrome contract
+  pass zero errors. Mutant: win mutated to `QUOTA*100` → exactly the two
+  equilibrium checks red; restored.
+- `CONTRACT_ONLY=magic-carpet contractcheck` 14/14 (incl. snapshot/restore).
+- CI note: `static` failed once — vpadcheck requires a one-line `reason:` on
+  dpad opt-outs (fixed in follow-up commit, green second try).
+- Filed **#498** `QA — MAGIC CARPET: polish pass` (label `feedback`): water
+  shimmer/palette cycle, pearl halo, carpet wake + tassel flutter, day tint
+  cycle, self-hex rune overlay, castle spell, throw topples towers, creeping
+  fire, wind/ambience audio layers.
+- Hygiene: forge worktree re-detached to `origin/main`; dev server on :5173
+  left running by this lane — kill or reuse (QA: it is OURS, `npm run dev`).
 
 ## Held / open (unchanged)
 - **#391** `stalled` — awaiting Jon: close as shipped vs batch 5.
-- **#375** `stalled` — Civ parked per Jon.
-- **#443** open — idle-builder QA-borrow ruling still pending (see Q2).
-- QA lane: mini's QA MASTER held `building-qa` #280 during this session;
-  forge claimed only the game-queue item (#469, Jon pre-moved it) — no overlap.
-- QA backlog: #481 #478 #472 #470 #469(shipped now) #462 #440 #426 #423 #421
-  #422 #409 #410 #405 #365 #384 (+ Civ #3xx pass issues).
-- Rule 4 healthy: last 3 merges (fbad482, 6f0fd7a, 8129edf) all game code.
-- Hygiene: many orphan pushed `forge/*` branches with no issue/PR
-  (excitebike, outpost, paperboy, polarity, simcity, spec-wins, telemetry,
-  watch, game-first) — not adopted (unlabeled), left for Jon/warden sweep.
+- **#375** Civ parked per Jon. **#443** idle-builder borrow-gate ruling pending.
+- game-queue: no new buildable title left after #489 (#496 co-op needs an aim
+  stick; #492/#494 are system pilots; #493 is polish-adjacent).
+- QA backlog: #481 #478 #472 #470 #462 #440 #426 #423 #421 #422 #409 #410
+  #405 #365 #384 + new #498; QA MASTER held #280 during this session
+  (no overlap — forge claimed a game-queue item only).
+- Rule 4 healthy: last merges are all game code.
+- Orphan pushed `forge/*` branches (excitebike, outpost, paperboy, polarity,
+  simcity, spec-wins, telemetry, watch, game-first) await Jon/warden sweep.
 
 ## GOAL — next session
-1. Re-check `next` / `game-queue` / `building` + pushed `forge/*`. Queue is
-   empty again unless Jon feeds it.
-2. If queue still empty AND no live `pgrep "QA MASTER"`: take #478 item 0
-   (`?renderer=webgl` alias) per FORGE borrow rules; ship as
-   `QA: fixed #478 (item 0) via PR #m`.
-3. Consider a tiny cleanup PR pruning orphan `forge/*` branches after warden
-   confirms none are live claims — needs Jon's nod first (Q3).
+1. Check labels: if Jon fed `game-queue`, claim the top title per FORGE.
+2. Else, if queue empty: borrow per FORGE borrow rules — strongest candidate
+   #498 MAGIC CARPET water shimmer (keeps the new game at the ART.md bar)
+   unless QA MASTER is mid-#498; otherwise #478 item 0 (`?renderer=webgl`).
 
 ## Three questions for Jon
-1. **Queue dry again:** #469 was the last game-queue item. Which title goes in
-   `game-queue` next?
-2. **#443 borrow-gate:** still strict — forge idles whenever QA MASTER is live.
-   Relax to allow ONE non-overlapping feedback item during a QA run?
-3. **Orphan branches:** 9 pushed `forge/*` branches have no issue and no PR
-   (some 4–6 commits ahead of main). Prune them, or are they intentional
-   parked work?
+1. MAGIC CARPET is live but `private` — promote to public now, or after #498
+   polish lands?
+2. Which title goes into `game-queue` next? (#496 Smash TV co-op — forge or
+   the pad-system pilot #492 first?)
+3. #498 polish: QA lane as usual, or may forge take the water/pearl art items
+   while QA stays on #280?
