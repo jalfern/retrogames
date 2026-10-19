@@ -13,7 +13,7 @@
 //   slack     : seed 1 still wins with one fewer crate per room and zero
 //               energy cells.
 //   determinism : same seed twice -> identical digest.
-// `-- --mutate` re-plants five fixed bugs in child processes; each MUST die.
+// `-- --mutate` re-plants fixed bugs in child processes; each MUST die.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -29,6 +29,7 @@ const { wallCell, NEON_TOP, CHROME, borderRivet } = await import('../src/games/S
 const { playerFrame, GUN, LAYERS, PLAYER_FRAMES } = await import('../src/games/SmashTV/sprite.js')
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
 const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore } = await import('../src/games/SmashTV/juice.js')
+const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
 async function fresh() {
@@ -411,6 +412,51 @@ console.log('juice')
     ok(lastRoom > 0 && rs.total === lastRoom, 'the room total is the final room only, not the whole run', `${rs.total} vs ${lastRoom}`)
 }
 
+// ------------------------------------------------------------------ audio ----
+console.log('audio')
+{
+    // per-weapon fire timbre: each gun gets its own voice
+    ok(Object.keys(FIRE).length === 4 && new Set(Object.values(FIRE).map((f) => JSON.stringify(f))).size === 4, 'every weapon fires its own timbre', Object.keys(FIRE).join(','))
+    ok(FIRE.twin.notes.length === 1 && FIRE.twin.notes[0][2] < 0.06, 'the twin is a short blip', JSON.stringify(FIRE.twin.notes))
+    ok(FIRE.gun.notes.length === 2, 'the gun is a staccato double click')
+    ok(FIRE.spread.notes.length === 3, 'the spread is a low chord')
+    ok(FIRE.laser.sweep && FIRE.laser.sweep.f0 > FIRE.laser.sweep.f1, 'the laser is a descending zap', JSON.stringify(FIRE.laser.sweep))
+    ok(fireTimbre('nope') === FIRE.twin, 'an unknown weapon falls back to the twin blip')
+    ok(BONUS_JINGLE.length === 4 && BONUS_JINGLE.every((n, i) => i === 0 || n[0] > BONUS_JINGLE[i - 1][0]), 'the bonus-entry jingle rises', BONUS_JINGLE.map((n) => n[0]).join('>'))
+    ok(WHOOSH.freq > MURMUR.freq && MURMUR.vol < 0.05 && MURMUR_TICKS > 0, 'the whoosh is bright, the murmur a soft spaced bed', `${WHOOSH.freq}/${MURMUR.freq} v${MURMUR.vol}`)
+}
+// the murmur bed exists only while a bonus room is on; the close-alert stings once per cooldown
+{
+    const r = S.plan(0)
+    const gs = makeGame(0)
+    let inBonus = 0, outBonus = 0, sawBonus = false
+    for (const inp of r.script) {
+        const bonusNow = gs.roomData.bonus
+        step(gs, inp)
+        for (const e of gs.events) if (e.type === 'murmur') bonusNow ? inBonus++ : outBonus++
+        if (bonusNow) sawBonus = true
+        gs.events.length = 0
+        if (gs.end) break
+    }
+    ok(sawBonus, 'the pilot reaches a bonus room')
+    ok(inBonus > 0, 'the crowd murmurs while the bonus room is on', `${inBonus} bursts`)
+    ok(outBonus === 0, 'the murmur exists nowhere else in the studio', `${outBonus} stray`)
+    // controlled alert: one walkcam pinned at 30 px (inside the ring, outside the kill range)
+    const g2 = makeGame(0)
+    g2.enemies = []; g2.roomData.spawns = []; g2.spawnT = 0
+    g2.player.invuln = 99999
+    g2.enemies.push({ id: 9200, kind: 'walkcam', x: g2.player.x + 30, y: g2.player.y, hp: ENEMIES.walkcam.hp, cd: TELEGRAPH + 1, wanderT: 999, wdx: 0, wdy: 0, hitT: 0, dir: 1, walk: 0, moving: false, chg: 0, aim: [0, 0] })
+    ok(ALERT_RADIUS > CFG.contactR, 'the alert ring sits outside the kill range', `${ALERT_RADIUS} vs ${CFG.contactR}`)
+    let alerts = 0
+    for (let i = 0; i < ALERT_CD + 1; i++) {
+        g2.enemies[0].x = g2.player.x + 30; g2.enemies[0].y = g2.player.y
+        step(g2, {})
+        for (const e of g2.events) if (e.type === 'alert') alerts++
+        g2.events.length = 0
+    }
+    ok(alerts === 2, 'a closing gun stings once per alert cooldown', `${alerts} alerts in ${ALERT_CD + 1} ticks`)
+}
+
 // ----------------------------------------------------------------- pilot ----
 console.log('pilot')
 let deathless = 0
@@ -460,6 +506,8 @@ if (process.argv.includes('--mutate')) {
         ['firebomb goes free', 'gs.energy -= CFG.firebombCost\n    let killed = 0', 'gs.energy -= 0\n    let killed = 0'],
         ['the bonus clock never runs out', 'if (gs.bonusT <= 0) {', 'if (gs.bonusT <= -1e9) {'],
         ['the telegraph vanishes (guns fire blind)', 'e.chg = TELEGRAPH\n    trackAim(gs, e)\n    gs.events.push({ type: \'charge\', kind: e.kind })', 'void e'],
+        ['the crowd never murmurs', 'gs.events.push({ type: \'murmur\' })', 'void 0'],
+        ['the close alert never sounds', 'gs.events.push({ type: \'alert\', x: bx, y: by })', 'void 0'],
     ]
     const orig = readFileSync(SIM, 'utf8')
     let died = 0

@@ -20,6 +20,7 @@ import {
     TOTAL_ROOMS, genRoom, isBonus, isBoss, START, lcg,
 } from './levels.js'
 import { TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
+import { MURMUR_TICKS, ALERT_RADIUS, ALERT_CD } from './audio.js'
 
 export { GW, GH, CELL, HUD_H, CW, CH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS, isBonus, isBoss }
 
@@ -113,7 +114,7 @@ export function makeGame(seed = 0, opts = {}) {
         items: [], civilians: [], grenades: [],
         energy: CFG.maxEnergy, weapon: 'twin',
         cleared: false, spawnT: 0, bonusT: 0, combo: 0, roomsCleared: 0,
-        bossDead: false, bossDeath: null, walls: null, roomData: null,
+        bossDead: false, bossDeath: null, alertCd: 0, walls: null, roomData: null,
     }
     loadRoom(gs, 0)
     return gs
@@ -332,6 +333,22 @@ function updateEnemies(gs) {
         }
         // contact kills (invuln respected inside killPlayer)
         if (p.deadT === 0 && dist(e.x, e.y, p.x, p.y) < CFG.contactR) killPlayer(gs, `touch-${e.kind}`)
+    }
+}
+
+// the single-enemy-close warning: one alert event per ALERT_CD ticks while the
+// nearest gun sits inside ALERT_RADIUS — the player's own ears, not the lights
+function alertClose(gs) {
+    const p = gs.player
+    gs.alertCd = Math.max(0, gs.alertCd - 1)
+    let best = Infinity, bx = p.x, by = p.y
+    for (const e of gs.enemies) {
+        const d = dist(e.x, e.y, p.x, p.y)
+        if (d < best) { best = d; bx = e.x; by = e.y }
+    }
+    if (best < ALERT_RADIUS && gs.alertCd === 0) {
+        gs.alertCd = ALERT_CD
+        gs.events.push({ type: 'alert', x: bx, y: by })
     }
 }
 
@@ -558,12 +575,16 @@ export function step(gs, inp = {}) {
     if (inp.bomb) firebomb(gs)
 
     if (room.bonus) {
+        // the crowd murmur bed: only while the bonus clock runs, one burst
+        // per MURMUR_TICKS (the component spaces them into a continuous hum)
+        if (gs.tick % MURMUR_TICKS === 0) gs.events.push({ type: 'murmur' })
         gs.bonusT--
         updateCivilians(gs)
         shootCivilians(gs)
     } else {
         spawnQueued(gs)
         updateEnemies(gs)
+        alertClose(gs)
     }
     if (gs.end || p.deadT > 0) return gs
     updateBullets(gs)
