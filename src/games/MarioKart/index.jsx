@@ -27,7 +27,7 @@ import { currentPad } from '../../utils/onePad'
 // square. At exactly 256x224 the frame is bit-identical to the SNES default.
 const LAND_H = 224
 const LAND_W_MIN = 256
-const LAND_W_MAX = 448
+const LAND_W_MAX = 512
 const PORT_W = 256
 const PORT_H_MAX = 448
 const ROAD_ROWS = 122   // horizon -> bottom of the playfield (camera framing)

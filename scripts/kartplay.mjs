@@ -374,6 +374,30 @@ await desk.waitForTimeout(1000)
 r.check('desktop: no touchpad during the race', (await desk.evaluate(() => document.querySelectorAll('.fixed.bottom-8 button').length)) === 0)
 await desk.close()
 
+// #469: on a phone the source must be adaptive — a canvas whose backing store
+// tracks the viewport aspect, stretched to cover it in portrait AND landscape
+// (the old integer floor-fit left a small square centred in the screen).
+const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true })
+const phoneErrs = []
+phone.on('pageerror', e => phoneErrs.push(e.message))
+await phone.goto(URL, { waitUntil: 'load' })
+await phone.waitForFunction(() => !!window.__kartTest, { timeout: 15000 })
+const fillProbe = async () => phone.evaluate(() => {
+    const c = document.querySelector('canvas[data-fit="source"]')
+    const b = c.getBoundingClientRect()
+    return { cw: b.width, ch: b.height, vw: innerWidth, vh: innerHeight, bw: c.width, bh: c.height }
+})
+const port = await fillProbe()
+r.check('#469 portrait: canvas covers the viewport', port.cw >= port.vw - 2 && port.ch >= port.vh - 2, `rect ${port.cw.toFixed(0)}x${port.ch.toFixed(0)} of ${port.vw}x${port.vh}, backing ${port.bw}x${port.bh}`)
+r.check('#469 portrait: backing store grew with the viewport aspect', port.bh > 224 && Math.abs((port.bw / port.bh) - (port.cw / port.ch)) < 0.12, `backing ${port.bw}x${port.bh} vs rect ${(port.cw / port.ch).toFixed(2)}`)
+await phone.setViewportSize({ width: 844, height: 390 })
+await phone.waitForTimeout(400)
+const land = await fillProbe()
+r.check('#469 landscape: canvas covers the viewport', land.cw >= land.vw - 2 && land.ch >= land.vh - 2, `rect ${land.cw.toFixed(0)}x${land.ch.toFixed(0)} of ${land.vw}x${land.vh}`)
+r.check('#469 landscape: backing store widened with the viewport aspect', land.bw > 256 && Math.abs((land.bw / land.bh) - (land.cw / land.ch)) < 0.12, `backing ${land.bw}x${land.bh} vs rect ${(land.cw / land.ch).toFixed(2)}`)
+r.check('#469 phone drive: zero page errors', phoneErrs.length === 0, phoneErrs.join(' | ') || 'clean')
+await phone.close()
+
 if (throttle > 1) r.info('throttle', `${throttle}x (advisory frame rate)`)
 
 r.exit(browser)
