@@ -13,6 +13,8 @@
 // must go RED (and restore the file whatever happens).
 
 import { readFileSync, writeFileSync } from 'node:fs'
+import { deflateSync } from 'node:zlib'
+import { REFERENCES, bestShapeDistance, normalize, resample } from '../src/games/CometDrift/reference.js'
 
 const SIM = new URL('../src/games/CometDrift/sim.js', import.meta.url)
 const TRACKMOD = '../src/games/CometDrift/track.js'
@@ -27,6 +29,61 @@ const check = (label, ok, detail = '') => {
 }
 
 const ccw = (px, py, qx, qy, rx, ry) => (rx - px) * (qy - py) - (qx - px) * (ry - py)
+
+// ---- minimal PNG writer (RGB8, no deps) + reference|game side-by-side -------
+const CRC_TABLE = (() => {
+    const t = new Uint32Array(256)
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0 }
+    return t
+})()
+function crc32(buf) { let c = 0xffffffff; for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
+function pngChunk(type, data) {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length)
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body))
+    return Buffer.concat([len, body, crc])
+}
+function writePNG(path, w, h, rgb) {
+    const raw = Buffer.alloc((w * 3 + 1) * h)
+    let o = 0
+    for (let y = 0; y < h; y++) { raw[o++] = 0; for (let x = 0; x < w * 3; x++) raw[o++] = rgb[y * w * 3 + x] }
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4)
+    ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0
+    const png = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        pngChunk('IHDR', ihdr), pngChunk('IDAT', deflateSync(raw, { level: 9 })), pngChunk('IEND', Buffer.alloc(0)),
+    ])
+    writeFileSync(path, png)
+}
+
+// map normalised [0,1] points into a panel rect and stamp the polyline
+function strokePoly(img, w, pts, ox, oy, pw, ph, col) {
+    const px = (p) => [Math.round(ox + p[0] * pw), Math.round(oy + (1 - p[1]) * ph)]
+    const set = (x, y) => { if (x < 0 || y < 0 || x >= w) return; const i = (y * w + x) * 3; img[i] = col[0]; img[i + 1] = col[1]; img[i + 2] = col[2] }
+    const closed = [...pts, pts[0]]
+    for (let k = 0; k < closed.length - 1; k++) {
+        let [x0, y0] = px(closed[k]); const [x1, y1] = px(closed[k + 1])
+        const dx = Math.abs(x1 - x0); const dy = Math.abs(y1 - y0); const sx = x0 < x1 ? 1 : -1; const sy = y0 < y1 ? 1 : -1
+        let err = dx - dy
+        for (let guard = 0; guard < 4096; guard++) {
+            for (let t = -1; t <= 1; t++) set(x0, y0 + t)
+            if (x0 === x1 && y0 === y1) break
+            const e2 = 2 * err
+            if (e2 > -dy) { err -= dy; x0 += sx }
+            if (e2 < dx) { err += dx; y0 += sy }
+        }
+    }
+}
+
+function drawSideBySide(path, refPts, gamePts) {
+    const P = 200; const GAP = 24; const PAD = 16
+    const w = PAD * 2 + P * 2 + GAP; const h = PAD * 2 + P
+    const img = new Uint8Array(w * h * 3).fill(0xf2)
+    strokePoly(img, w, resample(normalize(refPts), 240), PAD, PAD, P, P, [0x90, 0x90, 0x90])
+    strokePoly(img, w, resample(normalize(gamePts), 240), PAD + P + GAP, PAD, P, P, [0x3a, 0x32, 0x44])
+    writePNG(path, w, h, img)
+    return path
+}
 
 const loadSim = async () => {
     const m = await import('../src/games/CometDrift/sim.js' + '?c=' + Math.random())
@@ -45,7 +102,7 @@ for (const c of COURSES) {
         const k = Math.abs(T.pts[i].k)
         if (k > 1e-9 && 1 / k < minR) { minR = 1 / k; minI = i }
     }
-    check(`${c.id}: drivable — min radius >= 220 (flat-out at top speed)`, minR >= 220, `minR ${minR.toFixed(0)} at s=${T.pts[minI].s.toFixed(0)}`)
+    check(`${c.id}: drivable — min radius >= 80 (braking corners allowed #513)`, minR >= 80, `minR ${minR.toFixed(0)} at s=${T.pts[minI].s.toFixed(0)}`)
 
     const HALF = T.WALL_R + 16
     let crossings = 0
@@ -78,6 +135,27 @@ for (const c of COURSES) {
         }), `${CHECKPOINTS.join(',')}`)
     check(`${c.id}: start/finish sits on the centerline (line on asphalt)`,
         T.pts[0].s === 0 && Tmod.surfaceAt(T.pts[0].x, T.pts[0].y).surf === 'road')
+
+    // #513: the layout must actually follow its reference circuit. Normalise the
+    // game centerline and the map centreline to the same box; mean point-to-point
+    // distance (both ways, best of direct/mirror) must stay under 3% of the box.
+    if (REFERENCES[c.id]) {
+        const ref = REFERENCES[c.id]
+        const gamePts = T.pts.map((p) => [p.x, p.y])
+        const d = bestShapeDistance(gamePts, ref.pts)
+        check(`${c.id}: layout follows ${ref.name} (avg distance <= 3% of box)`,
+            d <= 0.03, `${(d * 100).toFixed(2)}%`)
+        const png = new URL(`../docs/comet-ref-${c.id}.png`, import.meta.url)
+        drawSideBySide(png, ref.pts, gamePts)
+
+        // #513: the slow corners are real braking corners — the autopilot must
+        // shed speed well below flat-out to make them (and still win, below).
+        const sim = await loadSim()
+        const g = sim.makeGame(0)
+        let minV = Infinity; let n = 0
+        while (!g.end && n < 60 * 240) { sim.step(g, sim.decide(g)); if (g.phase === 'race') minV = Math.min(minV, g.karts[0].v); n++ }
+        check(`${c.id}: autopilot brakes for the slow corners (min v < 5.5)`, minV < 5.5, `min v ${minV.toFixed(2)}`)
+    }
 
     const sim = await loadSim()
     const race = (seed) => {
