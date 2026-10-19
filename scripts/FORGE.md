@@ -134,6 +134,9 @@ AGENTS.md wins.
 - One game per session. If a game isn't mergeable in this session, leave the
   branch pushed with a draft PR marked **WIP: <what's missing>**, keep the
   `building` label, and exit — never merge a red/WIP PR (AGENTS.md #5).
+- Never merge a draft PR, or one with a "hold" / "don't merge" comment from
+  `jalfern`. Read the PR's comments before `gh pr merge`; a hold is done when
+  Jon (or Claude for him) marks the PR ready again.
 - Never `--no-verify`, never force-push main, never stack a PR on an
   unmerged branch (AGENTS.md, "Don't stack").
 - Time-box: 4 hours max, then report (AGENTS.md #6) even mid-game.
