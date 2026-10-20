@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from './sim'
-import { TRACK, SCENERY, TX, TY, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
+import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath } from './art.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
@@ -257,16 +257,16 @@ export default function CometDrift() {
                 let o = y * W
                 if (fr > 0) {
                     for (let x = 0; x < W; x++) {
-                        const tx = wx | 0; const ty = wy | 0
-                        const c = (tx < 0 || ty < 0 || tx >= TX || ty >= TY) ? OUT_C : gnd[ty * TX + tx]
+                        const tx = (wx * TEX_S) | 0; const ty = (wy * TEX_S) | 0
+                        const c = (tx < 0 || ty < 0 || tx >= TEX || ty >= TEX) ? OUT_C : gnd[ty * TEX + tx]
                         const r = c & 255; const gg = (c >> 8) & 255; const b = (c >> 16) & 255
                         px[o++] = ((r + (HAZE[0] - r) * fr) | 0) | (((gg + (HAZE[1] - gg) * fr) | 0) << 8) | (((b + (HAZE[2] - b) * fr) | 0) << 16) | 0xff000000
                         wx += stepX; wy += stepY
                     }
                 } else {
                     for (let x = 0; x < W; x++) {
-                        const tx = wx | 0; const ty = wy | 0
-                        px[o++] = (tx < 0 || ty < 0 || tx >= TX || ty >= TY) ? OUT_C : gnd[ty * TX + tx]
+                        const tx = (wx * TEX_S) | 0; const ty = (wy * TEX_S) | 0
+                        px[o++] = (tx < 0 || ty < 0 || tx >= TEX || ty >= TEX) ? OUT_C : gnd[ty * TEX + tx]
                         wx += stepX; wy += stepY
                     }
                 }
