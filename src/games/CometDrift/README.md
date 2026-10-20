@@ -67,7 +67,16 @@ follows it. All art/audio synthesized at runtime; no assets.
    `bold Npx monospace`; `index.jsx` now routes EVERY canvas glyph through
    `drawText` (baseline semantics preserved, so layout coords survive), so the
    racer draws with a designed arcade font instead of a per-OS fallback.
-   `cometcheck`'s own-font gate proves it and kills the system-font/glyph mutants.
+    `cometcheck`'s own-font gate proves it and kills the system-font/glyph mutants.
+ - Rival boost sfx (#440 polish 2 item 5) — the sim announces EVERY kart's
+    drift release (`{e:'boost', who}`), but the sfx loop used to react to
+    COMET only, so the pack's gold releases were silent. `sim.js` now exports
+    the pure loudness law `rivalBoostFx(dist, tier)`: quieter than the player's
+    own boost at the same tier (max 0.07 vs 0.11), linear fade over the gap,
+    silent past 700 units, gold louder than blue, `far` flips the timbre to a
+    soft triangle. `index.jsx` plays the two nearest releases per tick so a
+    three-wide pack never stacks; cometcheck's rival-sfx gates kill the flat-law,
+    too-loud and silent-pack mutants.
 - `index.jsx` — the shell: fixed-timestep loop (`contractHoldsLoop` gates the
   sim, the contract owns the clock while held), adaptive-source Mode 7 raster
   (the canvas re-solves to the viewport aspect: height-anchored

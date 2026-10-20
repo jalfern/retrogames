@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
-import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from './sim'
+import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoostFx } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout } from './art.js'
 import { drawText } from './font.js'
@@ -180,6 +180,11 @@ export default function CometDrift() {
 
         const sfx = (evs, live) => {
             if (!live) return
+            // #440 item 5: the pack's gold releases pop a quieter distant
+            // sweep — attenuated by the gap to the player, nearest two only
+            // so a three-wide release never stacks into a wall of noise.
+            const P0 = g.karts[0]
+            const distant = []
             for (const ev of evs) {
                 if (ev.e === 'count') audioController.playTone(660, 0.12, 'square', 0.12)
                 if (ev.e === 'go') audioController.playSweep(440, 880, 0.4, 'square', 0.14)
@@ -187,11 +192,20 @@ export default function CometDrift() {
                     audioController.playSweep(300 + ev.tier * 190, 1150 + ev.tier * 170, 0.34 + ev.tier * 0.14, 'square', 0.11 + ev.tier * 0.02)
                     shake = Math.max(shake, 4 + ev.tier * 3)
                 }
+                if (ev.e === 'boost' && ev.who !== 'COMET') {
+                    const K = g.karts.find((k) => k.name === ev.who)
+                    if (K) distant.push({ fx: rivalBoostFx(Math.hypot(K.x - P0.x, K.y - P0.y), ev.tier), tier: ev.tier })
+                }
                 if (ev.e === 'tier' && ev.who === 'COMET') audioController.playSweep(560 + ev.tier * 210, 960 + ev.tier * 280, 0.08, 'square', 0.07)
                 if (ev.e === 'spin' && ev.who === 'COMET') { audioController.playNoise(0.35, 0.18); shake = 26; rumble(300, 1) }
                 if (ev.e === 'bump' && ev.who === 'COMET') { audioController.playNoise(0.12, 0.15); shake = 10; rumble(100, 0.4) }
                 if (ev.e === 'lap' && ev.who === 'COMET') { audioController.playTone(880, 0.1, 'square', 0.12); audioController.playTone(1320, 0.1, 'square', 0.08) }
                 if (ev.e === 'end') { if (ev.place === 1) audioController.playFanfare(); else audioController.playDeath() }
+            }
+            distant.sort((a, b) => b.fx.vol - a.fx.vol)
+            for (const d of distant.slice(0, 2)) {
+                if (d.fx.vol < 0.004) break
+                audioController.playSweep(d.fx.lo, d.fx.hi, d.fx.dur, d.fx.far ? 'triangle' : 'square', d.fx.vol)
             }
         }
 

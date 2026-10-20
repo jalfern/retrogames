@@ -715,6 +715,44 @@ console.log('— sun azimuth, full-lap audit (#440 item 4) —')
 await sunAudit()
 sunWired()
 
+// #440 item 5 — rival boost was silent: the sim announces EVERY kart's gold
+// release but the sfx loop only reacted to COMET's. rivalBoostFx (sim.js) is
+// the pure loudness law — quieter than the player, fades with the gap, silent
+// past the mute radius, gold louder than blue — and index.jsx must route rival
+// boost events through it.
+const sfxLaw = async () => {
+    const { rivalBoostFx, RIVAL_BOOST } = await import('../src/games/CometDrift/sim.js' + '?sfx=' + Math.random())
+    const near = rivalBoostFx(0, 2)
+    const mid = rivalBoostFx(350, 2)
+    const mute = rivalBoostFx(RIVAL_BOOST.mute, 2)
+    check('a rival gold release is audible up close (#440 item 5)', near.vol > 0.03, `vol ${near.vol.toFixed(3)}`)
+    check('the distant sweep fades with the gap (#440 item 5)', near.vol > mid.vol * 1.42 && mid.vol > mute.vol && mute.vol <= 0, `near ${near.vol.toFixed(3)} > mid ${mid.vol.toFixed(3)} > mute ${mute.vol.toFixed(3)}`)
+    check('a boost one pack-length away still registers (#440 item 5)', rivalBoostFx(150, 2).vol > 0.02 && rivalBoostFx(150, 0).vol > 0.01)
+    check('silent past the mute radius (#440 item 5)', rivalBoostFx(RIVAL_BOOST.mute + 40, 2).vol === 0)
+    check('gold pops louder than blue at the same gap (#440 item 5)', rivalBoostFx(120, 2).vol > rivalBoostFx(120, 0).vol)
+    check('a rival never outruns the player\'s own boost volume (#440 item 5)', near.vol < 0.11, `rival max ${near.vol.toFixed(3)} < player blue 0.11`)
+    check('far releases go soft-edged (triangle), near ones square (#440 item 5)', rivalBoostFx(200, 2).far === true && rivalBoostFx(100, 2).far === false)
+    selectCourse('sandbank')
+    const m = await loadSim()
+    const g = m.makeGame(3)
+    let rb = 0
+    for (let n = 0; n < 60 * 90 && !g.end; n++) {
+        m.step(g, m.decide(g))
+        for (const ev of g.events) if (ev.e === 'boost' && ev.who !== 'COMET') rb++
+        g.events.length = 0
+    }
+    check('the pack really releases boosts in a race — the sound has a job (#440 item 5)', rb > 0, `${rb} rival releases in seed 3`)
+}
+const sfxWired = () => {
+    const src = readFileSync(IDXJS, 'utf8')
+    check('index.jsx: rival boost events route through rivalBoostFx (#440 item 5)', /if \(ev\.e === 'boost' && ev\.who !== 'COMET'\) \{/.test(src) && /distant\.push\(/.test(src) && /rivalBoostFx\(/.test(src))
+    check('index.jsx: distant rivals render as the softer triangle sweep (#440 item 5)', /fx\.far \? 'triangle' : 'square'/.test(src))
+    check('index.jsx: a near-silent distant release is skipped, not stacked (#440 item 5)', /\.vol < 0\.004/.test(src))
+}
+console.log('— rival boost is a distant sweep (#440 item 5) —')
+await sfxLaw()
+sfxWired()
+
 if (process.argv.includes('--mutate')) {
     // break the checkpoint gate in sim.js and demand the shortcut probe above
     // goes red. Restore runs whatever happens.
@@ -934,6 +972,36 @@ if (process.argv.includes('--mutate')) {
         writeFileSync(IDXJS, idxSrc.replace('const sunX = sun.visible ? sun.sunX : W + 4096', 'const sunX = sun.sunX'))
         await sunDied('the renderer drops the visibility gate (glow bleeds without the disc)', sunWired)
     } finally { writeFileSync(IDXJS, idxSrc) }
+
+    // #440 item-5 rival-sfx mutants: re-plant the silence / a flat law and
+    // demand the distant-sweep gate above goes red.
+    const simSfxSrc = readFileSync(SIM, 'utf8')
+    const sfxDied = async (label, run) => {
+        const before = R.fail
+        await run()
+        if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #440 rival-sfx gate is load-bearing`)
+        else console.log(`  MUTANT SURVIVED — ${label}: the rival-sfx gate is BLIND`)
+    }
+    try {
+        writeFileSync(SIM, simSfxSrc.replace('const prox = Math.max(0, 1 - dist / RIVAL_BOOST.mute)', 'const prox = 1'))
+        await sfxDied('every rival boost is full volume regardless of distance', sfxLaw)
+    } finally { writeFileSync(SIM, simSfxSrc) }
+    try {
+        writeFileSync(SIM, simSfxSrc.replace('RIVAL_BOOST.maxVol * (0.45 + tier * 0.275) * prox', 'RIVAL_BOOST.maxVol * 0.72 * prox'))
+        await sfxDied('gold and blue releases sound identical', sfxLaw)
+    } finally { writeFileSync(SIM, simSfxSrc) }
+    try {
+        writeFileSync(SIM, simSfxSrc.replace('maxVol: 0.07', 'maxVol: 0.2'))
+        await sfxDied('a rival release is louder than the player\'s own boost', sfxLaw)
+    } finally { writeFileSync(SIM, simSfxSrc) }
+    try {
+        writeFileSync(IDXJS, idxSrc.replace("if (ev.e === 'boost' && ev.who !== 'COMET') {", "if (false && ev.e === 'boost' && ev.who !== 'COMET') {"))
+        await sfxDied('rival boosts are silent again (the #440 regression)', sfxWired)
+    } finally { writeFileSync(IDXJS, idxSrc) }
+    try {
+        writeFileSync(SIM, simSfxSrc.replace('mute: 700', 'mute: 1e9'))
+        await sfxDied('the mute radius vanishes — a rival across the map still pops', sfxLaw)
+    } finally { writeFileSync(SIM, simSfxSrc) }
 }
 
 console.log(`\n${R.fail === 0 ? 'GREEN' : 'RED — ' + R.fail + ' failed'}`)
