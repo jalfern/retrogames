@@ -1,67 +1,66 @@
-# STATE — forge session 2026-10-19 (COMET DRIFT elevation)
+# STATE — forge session 2026-10-19 (SHORE demo)
 
 ## Shipped this session
-- **#518 COMET DRIFT: elevation — courses go up and down (HD first)** — PR #533, squash `4e1da16`.
-  - `track.js`: per-course closed height profiles (`ELEV` anchors → uniformize →
-    periodic Catmull-Rom → `p.h`/`p.grade`), h=0 at start/finish, auto-capped
-    at 9.5%. Relief: Gulch 56px, Sandbank 125px, Corkscomb 186px (the drop).
-  - `sim.js`: slope only — `v -= 0.42·grade·cos(heading−track)`. No jumps.
-  - HD: all five ribbons ride the height (road/kerb/gutter/wall/plateau); arch,
-    scenery, karts (+pitch, YXZ), shadows, particles, chase cam + collision all
-    follow; floor plane dropped to -1.5u under the dips.
-  - 2D: Mode 7 stays flat; smoothed ±6px horizon bob from grade+height.
-  - Gates: relief/datum/seam/cap audits + downhill-beats-uphill speed proof per
-    course; `--mutate` kills BOTH the lap gate and `slopeK` (RED 2/2).
-    `cometdrifthdcheck` re-pinned: road matches height float32-exact; hanging/
-    foot/rim checks now PER-INDEX (global min/max comparisons are meaningless on
-    a hilly lap — that trap ate a whole probe round). cometplay retuned the
-    drift-zigzag band (-45/-30, swap 6) for the new downhill slide speeds.
-- #530 (camber/kerbs polish) updated with elevation-specific residuals + `feedback` label.
+- **#521 DEMO 2 — Shore: waves lapping a beach** — PR #537, squash `a7bb05d`.
+  - `public/demos/shore.html`: self-contained WebGPU golden-hour beach. No FFT:
+    travel-time phase warp (`φ = ωt − 2ω/√(g·slope)·√(xs−x)`) for wavelength
+    compression + slowing; Green's-law shoaling (d^−0.28, capped); Gerstner
+    face-push steepening; trough-aware depth-limited breaking (H/d_trough).
+  - 128-lane CPU swash sim: skewed oscillators (rise-fraction 0.42 → fast
+    uprush/slow backwash), per-lane phase noise, wet-limit drying memory
+    (0.55 m/s), uploaded to GPU each frame; sheet thickness = overshoot × slope.
+  - Wet-sand darkening + bubble rings, clear shallows (depth alpha/absorption
+    over the bed), golden-hour sky, sun-glitter path, free-fly camera.
+  - Demos-page card added (`public/demos/index.html`).
+  - `npm run shorecheck` (18 checks, 18/18): swash oscillation, uprush-faster-
+    than-backwash (4.4 vs 2.7 m/s), wet-lag, GPU/CPU paired cross-check, foam,
+    golden-hour pixels, camera reacts. Mutant (pinned waterline) → 5 RED.
+  - Screenshots + 9-frame wave strip: `docs/shots/shore/` (reviewed & fixed 5
+    look bugs before shipping, per the issue).
 
 ## Playable now
-`jalfern.com/retrogames/comet-drift-hd` — Corkscomb drops 160px down the
-hillside, karts pitch over crests, walls ride the terrain (PR body has crest +
-dip shots). 2D twin at `/comet-drift` bobs its horizon on the same data.
+`https://jalfern.com/retrogames/demos/shore.html` (via `/retrogames/demos/`).
+Note: jalfern.com 308s to www — poll prod with `curl -L`.
 
 ## Next queued
-- Oldest game-queue: **#521 DEMO 2 — Shore (lane:demos)**.
-- #530 is the QA lane's polish pass (feedback), incl. real camber now that y exists.
+- Oldest game-queue: **#531 Online 2P: room codes + Cloudflare relay, lockstep**
+  (multi-stage infra, pilot Gauntlet).
+- #538 `QA — SHORE: polish pass` (feedback): break curl, foam-edge AA, surf
+  sound, wet-front patchiness, dunes, distant swell, tod slider — QA lane.
 
 ## Lessons worth keeping
-- Spline anchors at uneven lap fractions overshoot the grade (30%!) — resample
-  onto a uniform knot grid first, then auto-scale the profile to a grade cap.
-- Scaling heights mid-loop mixes scaled/un-scaled neighbours (grade 3.06). Two
-  passes: scale, then grade.
-- `Float32BufferAttribute` geometry ⇒ exact-float geometry gates need 1e-6
-  tolerance, not 1e-9.
-- Elevation breaks GLOBAL min/max geometry claims ("road flat", "walls 1.5–3.6u").
-  Re-pin gates as per-index relations (wall-over-road, rim-over-road at each i).
-- Elevation changes real physics: cometplay's key-timed drift slalom now slid
-  into walls at downhill speeds — re-verify harness seeds against the changed
-  physics in Node before touching browser waits.
-- In `cometcheck`, `const sim = await loadSim()` sits AFTER the per-course
-  header checks — new checks earlier in the loop need their own loadSim().
-- `shot.mjs --eval` runs once then waits real-time; `__game.step()` while the
-  contract holds the loop freezes the chase cam (tick World+cam are in the same
-  rAF branch) — captures driven that way show the kart left behind. For camera-
-  honest screenshots, let the attract autopilot run real-time.
-- Prod-poll for a game change: match the lazy `sim-*.js` chunk (where sim code
-  lives), not `index-*.js`.
-- `gh pr create --body-file` uploads local PNG paths — crest/dip shots rode the
-  PR body with zero extra steps.
+- This Chrome's WGSL lacks `dFdx` ("unresolved call target") → finite-difference
+  normals; a rejected shader module kills the renderer black (mean lum=2) —
+  the pixel stats say "dead renderer", not "bad art".
+- Camera basis: right = (−fz, 0, fx)... sign errors flip the whole image
+  (sky landed at the bottom; every region gate failed at once).
+- Foam by still-water depth (`H/d0`) sits above threshold across the whole sea —
+  include the trough: `H/(d0+min(η,0))`.
+- Cross-lane phase tilt must stay well under π over the domain or lane-mean
+  oscillation cancels (the harness averages lanes).
+- Skewed oscillator must straddle 0 (`2·swave−1`) — a 0..1 swash never drains
+  below the still line.
+- Lane `vec3f` in a storage buffer = 16-byte stride; CPU packing of 3 floats
+  silently misaligns every lane.
+- Pair GPU readback with a same-frame CPU snapshot (`probeNow()` resolver);
+  lanes drift ~1.7 m/s, so unsynced probes can't cross-check (and gates that
+  compare counts must tolerate grid sampling: 2–5 cells, not "many").
+- Shared WGSL chunks must not bake bind-group numbers (compute needs other
+  group-0 resources); parameterize them.
+- Glitter needs sun roughly opposite the view dir; sun-behind-camera = flat glass.
+- Fresh worktrees need `npm install` (node_modules isn't shared; takes 3 s).
 
 ## Three questions for Jon
-1. #518 shipped HD-first; the 2D twin only bobs its horizon. Is a fake-3D
-   elevation (Mode 7 scale/shear by grade) wanted for the retro twin, or is the
-   horizon bob the permanent 2D answer and #530's camber HD-only?
-2. Corkscomb's 186px drop auto-scaled the other courses down (cap 9.5%). Want a
-   per-course relief budget (Sandbank flatter by design, Corkscomb steeper) or
-   keep one uniform cap?
-3. Slope currently bypasses the drift ladder entirely (no y-dependent grip).
-   Should crests/dips interact with drift (less grip mid-air-ish over a crest?
-   more bite downhill) or is "speed only" the right arcade law?
+1. Demos have no registry entry — is the `/retrogames/demos/` page the only
+   surface, or should SHORE (and OCEAN) be linked from the arcade footer/menu?
+2. Foam-edge sawtooth (filed in #538): cheap analytic distance-to-waterline AA,
+   or would you rather a dedicated high-res shallow-water texture (512² swash
+   heightfield) — closer to "state of the art" the issue asked for?
+3. The queue head is now infra (#531). Queue a fresh game title for the next
+   forge lane, or start the 2P relay pilot?
 
 ## Housekeeping
-- Main checkout: detached at `4e1da16`; STATE.md committed here.
-- Worktree `~/Dev/retrogames-forge-comet-elevation` removed post-merge.
-- Dev server stopped. Nothing else dirty.
+- Main checkout: detached at the STATE commit this file is part of; `main`
+  otherwise free for the rule-5 merge.
+- Worktree `~/Dev/retrogames-forge-shore` removed post-merge.
+- Dev server not started. Nothing dirty.
