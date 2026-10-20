@@ -47,6 +47,7 @@ const GauntletGame = () => {
     const [netUi, setNetUi] = useState({ phase: 'idle', code: '', info: '', role: null })
     const [joinCode, setJoinCode] = useState('')
     const netJoinRef = useRef(null)
+    const netCodeRef = useRef(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -84,12 +85,12 @@ const GauntletGame = () => {
         // stateHashes must agree. The guest's camera/HUD follow gs.partner so
         // each player watches their own hero.
         const q = new URLSearchParams(window.location.search)
-        const netRole = q.get('net') === 'host' || q.get('net') === 'join' ? q.get('net') : null
+        const netRole = q.get('net') === 'host' ? 'host' : q.get('net') === 'join' ? 'guest' : null
         const netRelay = (q.get('relay') || 'wss://retrogames.jalfern.workers.dev').replace(/^http/, 'ws')
         const net = {
-            phase: netRole === 'host' ? 'connecting' : netRole === 'join' ? ((q.get('room') || '').toUpperCase().length === 4 ? 'connecting' : 'entry') : 'idle',
+            phase: netRole === 'host' ? 'connecting' : netRole === 'guest' ? ((q.get('room') || '').toUpperCase().length === 4 ? 'connecting' : 'entry') : 'idle',
             role: netRole,
-            code: netRole === 'host' ? makeCode(Math.random) : (q.get('room') || '').toUpperCase(),
+            code: netRole === 'host' ? (netCodeRef.current || (netCodeRef.current = makeCode(Math.random))) : (q.get('room') || '').toUpperCase(),
             ws: null,
             peer: false,
             lock: null,
@@ -119,7 +120,8 @@ const GauntletGame = () => {
                 if (obj.t === 'welcome') { net.phase = 'waiting'; netPush() }
                 else if (obj.t === 'peer') {
                     net.peer = true
-                    if (net.role === 'guest') { net.phase = 'waiting'; netPush() } else netPush()
+                    if (net.phase === 'gone' || net.phase === 'offline') { net.phase = 'waiting'; netPush() }
+                    else netPush()
                 } else if (obj.t === 'start' && net.role === 'guest') {
                     netBegin(obj.seed | 0, obj.hero || 'warrior', obj.peerHero || 'valkyrie')
                 } else if (obj.t === 'hs') {
@@ -128,7 +130,7 @@ const GauntletGame = () => {
                 } else if (obj.t === 'pad') {
                     if (net.lock) net.lock.gotPad(obj.k, obj.p)
                 } else if (obj.t === 'gone') {
-                    if (net.phase === 'play') netEnd('gone')
+                    if (net.phase === 'play' || net.phase === 'waiting') { net.phase = 'gone'; netPush() }
                 } else if (obj.t === 'err') {
                     net.phase = 'refused'
                     net.info = obj.e
@@ -136,7 +138,7 @@ const GauntletGame = () => {
                 }
             }
             ws.onerror = () => { if (net.phase === 'connecting') { net.phase = 'offline'; netPush() } }
-            ws.onclose = () => { if (net.phase !== 'play' && net.phase !== 'desync' && net.phase !== 'refused') { net.phase = 'offline'; netPush() } }
+            ws.onclose = (ev) => { if (import.meta.env.DEV) console.log('net ws close', ev.code, ev.reason); if (net.phase !== 'play' && net.phase !== 'desync' && net.phase !== 'refused' && net.phase !== 'gone') { net.phase = 'offline'; netPush() } }
         }
 
         const netDesync = (k) => {

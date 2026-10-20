@@ -28,10 +28,12 @@ export function startRelay(port = Number(process.env.PORT || 8787)) {
     }
 
     const closeRoom = (r) => {
+        const code = r.core.code
+        if (process.env.RELAY_DEBUG) console.log('[relay] closeRoom', code)
         for (const ws of r.socks.values()) { try { ws.close(1000, 'room closed') } catch { /* gone */ } }
         r.socks.clear()
-        rooms.delete(r.code)
-        registryRemove(reg, r.code)
+        rooms.delete(code)
+        registryRemove(reg, code)
     }
 
     wss.on('connection', (ws, req) => {
@@ -52,6 +54,7 @@ export function startRelay(port = Number(process.env.PORT || 8787)) {
         r.socks.set(id, ws)
         touch(r)
         ws.send(JSON.stringify({ t: 'welcome', you: res.slot }))
+        if (process.env.RELAY_DEBUG) console.log('[relay] join', code, id, 'slot', res.slot, 'peers', res.peers)
         if (res.peers === 2) {
             ws.send(JSON.stringify({ t: 'peer', n: 2 }))
             for (const [oid, ows] of r.socks) if (oid !== id) ows.send(JSON.stringify({ t: 'peer', n: 2 }))
@@ -75,8 +78,8 @@ export function startRelay(port = Number(process.env.PORT || 8787)) {
             if (leave(r.core, id).gone) for (const ows of r.socks.values()) ows.send(JSON.stringify({ t: 'gone' }))
             if (r.socks.size === 0) closeRoom(r)
         }
-        ws.on('close', gone)
-        ws.on('error', gone)
+        ws.on('close', (c) => { if (process.env.RELAY_DEBUG) console.log('[relay] ws close', code, id, 'socks', r.socks.size, 'core', r.core.members.length); gone() })
+        ws.on('error', () => { if (process.env.RELAY_DEBUG) console.log('[relay] ws error', code, id); gone() })
     })
 
     const hb = setInterval(() => {

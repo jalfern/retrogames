@@ -148,6 +148,7 @@
     "lint:net": "eslint src/games/Gauntlet src/utils/lockstep.js relay/core.js relay/worker.js",
     "gauntletcheck": "node scripts/gauntletcheck.mjs",
     "netcheck": "node scripts/netcheck.mjs",
+    "netdrill": "node scripts/netdrill.mjs",
     "gauntletplay": "node scripts/gauntletplay.mjs",
     "lint:slots": "eslint src/games/Gauntlet src/games/BubbleBobble src/utils scripts/slotcheck.mjs",
     "slotcheck": "node scripts/slotcheck.mjs",
