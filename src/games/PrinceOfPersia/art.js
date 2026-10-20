@@ -11,10 +11,24 @@
 // the skeleton all bone, Jaffar in robes and a tall hat. No assets, no random.
 
 import { RW, H, T, GROUND, SOLID, PLATFORM, LOOSE, SPIKE, GATE, RAISE, DROP, EXITPLATE, TORCH, EXIT, SWORD, POTION, MIRROR, BRIDGE } from './levels.js'
-import { CFG, chompDown, clockText, GUARD_STYLE } from './sim.js'
+import { CFG, chompDown, clockText, GUARD_STYLE, platePressed } from './sim.js'
 
 export const VW = RW * T
 export const VH = H * T
+
+// The attract band is one centred line on a 320-px playfield. A monospace
+// advance is ~0.60em, so fitAttractFont shrinks a long message until it fits
+// maxW — no browser font metric can clip it at the playfield edges, while short
+// titles stay at the full size. Pure, so popcheck pins the shrink against the
+// longest real message.
+const MONO_ADV = 0.6
+export function fitAttractFont(text, maxW, maxFont = 18, minFont = 9) {
+    if (!text) return maxFont
+    for (let size = maxFont; size > minFont; size--) {
+        if (text.length * size * MONO_ADV <= maxW) return size
+    }
+    return minFont
+}
 
 // per-guard look: turban, tunic, trim, skin, sword metal — colour by skill.
 export const PALETTES = {
@@ -564,21 +578,27 @@ function stone(ctx, c, r, code, g) {
             ctx.closePath(); ctx.fill()
         }
     } else if (code === RAISE) {
+        const pressed = platePressed(g, c, r)
+        const dip = pressed ? 4 : 0
         ctx.fillStyle = '#3c3c50'
-        ctx.fillRect(x + 3, y + T - 10, T - 6, 10)
-        bevel(ctx, x + 3, y + T - 10, T - 6, 10, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.30)')
-        ctx.fillStyle = '#e8b04a'
-        ctx.fillRect(x + 6, y + T - 9, T - 12, 4)
+        ctx.fillRect(x + 3, y + T - 10 + dip, T - 6, 10 - dip)
+        bevel(ctx, x + 3, y + T - 10 + dip, T - 6, 10 - dip, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.30)')
+        ctx.fillStyle = pressed ? '#fff0b0' : '#e8b04a'
+        ctx.fillRect(x + 6, y + T - 8 + dip, T - 12, 3)
         ctx.fillStyle = '#fff0b0'
-        ctx.fillRect(x + 6, y + T - 9, T - 12, 1)
+        ctx.fillRect(x + 6, y + T - 8 + dip, T - 12, 1)
+        if (pressed) { ctx.strokeStyle = 'rgba(255,240,176,0.9)'; ctx.lineWidth = 1; ctx.strokeRect(x + 3.5, y + T - 10.5, T - 7, 11) }
     } else if (code === DROP) {
+        const pressed = platePressed(g, c, r)
+        const dip = pressed ? 4 : 0
         ctx.fillStyle = '#3c3c50'
-        ctx.fillRect(x + 3, y + T - 10, T - 6, 10)
-        bevel(ctx, x + 3, y + T - 10, T - 6, 10, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.30)')
-        ctx.fillStyle = '#c04040'
-        ctx.fillRect(x + 6, y + T - 9, T - 12, 4)
+        ctx.fillRect(x + 3, y + T - 10 + dip, T - 6, 10 - dip)
+        bevel(ctx, x + 3, y + T - 10 + dip, T - 6, 10 - dip, 'rgba(255,255,255,0.10)', 'rgba(0,0,0,0.30)')
+        ctx.fillStyle = pressed ? '#ffc0c0' : '#c04040'
+        ctx.fillRect(x + 6, y + T - 8 + dip, T - 12, 3)
         ctx.fillStyle = '#ff9090'
-        ctx.fillRect(x + 6, y + T - 9, T - 12, 1)
+        ctx.fillRect(x + 6, y + T - 8 + dip, T - 12, 1)
+        if (pressed) { ctx.strokeStyle = 'rgba(255,144,144,0.9)'; ctx.lineWidth = 1; ctx.strokeRect(x + 3.5, y + T - 10.5, T - 7, 11) }
     } else if (code === EXITPLATE) {
         const pressed = g.exitOpen
         ctx.fillStyle = '#3c3c50'

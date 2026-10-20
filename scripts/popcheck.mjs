@@ -14,10 +14,10 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere } from '../src/games/PrinceOfPersia/sim.js'
+import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gateOpenHere, platePressed } from '../src/games/PrinceOfPersia/sim.js'
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
-import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha, paneKeyY, paneShift, WINDOW_ROW_PX, cloudCross, SKY_DRIFT, starField, skyTwinkle, shaftMotes, SHAFT_MOTES, archPath } from '../src/games/PrinceOfPersia/art.js'
+import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha, paneKeyY, paneShift, WINDOW_ROW_PX, cloudCross, SKY_DRIFT, starField, skyTwinkle, shaftMotes, SHAFT_MOTES, archPath, fitAttractFont } from '../src/games/PrinceOfPersia/art.js'
 import { SFX, trackFor, TRACKS, duckFor, DUCK_LEVEL, DUEL_DUCK, ROOM_DUCK, BED_VOICE, CHASE_CUES, stepFor, PRESSURE_MIN, FINAL_MIN } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 
@@ -1365,6 +1365,81 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
         && stepFor(0, 0.13) > 0)
     ok('S12: the riser reaches the engine — the shell calls setMusicStep with stepFor',
         /setMusicStep\(stepFor/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')))
+}
+
+// ---- 22. First-time player pass (#421) ---------------------------------------
+{
+    const here = dirname(fileURLToPath(import.meta.url))
+    const idxSrc = readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')
+    const artSrc = readFileSync(join(here, '..', 'src', 'games', 'PrinceOfPersia', 'art.js'), 'utf8')
+
+    // 4: any key OR tap starts (AGENTS.md law) — a shared startAttract both paths
+    // call, and a real pointer listener bound to (and torn down from) the canvas.
+    ok('F1: tap or click starts the game (any key OR tap)',
+        /canvas\.addEventListener\('pointerdown'/.test(idxSrc)
+        && /const startAttract = /.test(idxSrc)
+        && (idxSrc.match(/startAttract\(\)/g) || []).length >= 2)
+    ok('F1: the canvas pointer listener is bound and torn down',
+        /canvas\.addEventListener\('pointerdown', handleCanvasPointer\)/.test(idxSrc)
+        && /canvas\.removeEventListener\('pointerdown', handleCanvasPointer\)/.test(idxSrc))
+
+    // 3: the two long attract lines shrink to fit the 320px playfield; short
+    // titles keep the full size; the shell actually applies the fit.
+    ok('F2: the two long attract lines shrink to fit the playfield',
+        fitAttractFont('JAFFAR HAS THROWN YOU INTO THE DUNGEON', VW - 28, 18, 9) <= 13
+        && fitAttractFont('ONE HOUR  ·  A SWORD, IF YOU FIND ONE', VW - 28, 18, 9) <= 13)
+    ok('F2: short attract lines keep the full 18px',
+        fitAttractFont('PRINCE OF PERSIA', VW - 28, 18, 9) === 18
+        && fitAttractFont('PRESS ANY KEY TO START', VW - 28, 18, 9) === 18)
+    ok('F2: the shell fits the attract band with fitAttractFont', idxSrc.includes('fitAttractFont(msg, VW - 28'))
+
+    // 2: the level card holds a readable ~3s; a fresh key skips, a held key does not.
+    ok('F3: the level card holds ~3s (no more 1.2s flash)', CFG.clearT >= 150 && CFG.clearT <= 240)
+    {
+        const g = makeGame(0); g.status = 'clear'; g.statusT = 0; clearEv(g)
+        run(g, 71)
+        ok('F3: still on the card where the old code had already advanced (71 ticks)', g.status === 'clear')
+        run(g, 200)
+        ok('F3: the card advances after its 3s floor', g.status === 'play')
+    }
+    {
+        const g = makeGame(0); g.status = 'clear'; g.statusT = 0
+        g.prev = { left: false, right: true, up: false, down: false, jump: false, shift: false, atk: false }
+        step(g, { right: true })
+        ok('F3: a key still held across the crossing does not flash the card away', g.status === 'clear')
+        const h = makeGame(0); h.status = 'clear'; h.statusT = 0
+        h.prev = { left: false, right: false, up: false, down: false, jump: false, shift: false, atk: false }
+        step(h, { right: true })
+        ok('F3: a fresh key press skips the card', h.status === 'play')
+    }
+
+    // 1: a controls strip under the HUD in the opening room + a combat reminder
+    // the moment a guard first engages.
+    ok('F4: the opening room shows a controls strip under the HUD',
+        /levelIndex === 0 && g\.room === 0/.test(idxSrc)
+        && idxSrc.includes('MOVE') && idxSrc.includes('JUMP') && idxSrc.includes('STRIKE'))
+    ok('F4: a guard engaging reminds you how to fight',
+        idxSrc.includes('UP BLOCK') && /g\.guards\.some\(\(q\) => !q\.dead && q\.engaged\)/.test(idxSrc))
+
+    // 5: the plate dips/flashes while stood on; the gate latches when it starts
+    // closing behind you, with its own voice.
+    ok('F5: a plate reads pressed only while the prince stands on it',
+        (() => { const g = makeGame(0); const btn = g.level.plates[0]; setGround(g, (btn.c + 0.5) * T, 8 * T)
+            const on = platePressed(g, btn.c, 8); g.p.x += 2 * T; return on && !platePressed(g, btn.c, 8) })())
+    ok('F5: the art dips and flashes the pressed plate', artSrc.includes('platePressed(g, c, r)'))
+    {
+        const g = makeGame(0); const btn = g.level.plates[0]
+        setGround(g, (btn.c + 0.5) * T, 8 * T); clearEv(g)
+        run(g, 20)                                    // the gate climbs while stood on
+        const openAt = g.gateOpen[btn.room]
+        g.p.x = (btn.c + 3.5) * T                      // step off the button
+        clearEv(g)
+        let latched = false
+        for (let t = 0; t < 60 && !latched; t++) { step(g, {}); if (hasEv(g, 'gateClose')) latched = true }
+        ok('F5: stepping off the raise button latches the closing gate', latched && g.gateOpen[btn.room] < openAt)
+    }
+    ok('F5: the closing latch has its own voice', 'gateClose' in SFX
+        && SFX.gateClose({}).every((st) => ['tone', 'sweep', 'noise'].includes(st[0])))
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

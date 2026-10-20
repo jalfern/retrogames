@@ -318,7 +318,7 @@ export function step(g, inp = {}) {
         return
     }
     if (g.status === 'clear') {
-        if (g.statusT++ > 70) {
+        if (g.statusT++ > 180) {
             const next = g.levelIndex + 1
             if (next >= LEVEL_COUNT) { g.status = 'win'; g.events.push({ t: g.tick, type: 'win' }) }
             else loadLevel(g, next)
