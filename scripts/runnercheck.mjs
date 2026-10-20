@@ -356,6 +356,21 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
         ok(tallies.some(t => t.total > 0), `no goal produced a tally bonus: ${JSON.stringify(tallies)}`)
     }
 
+    // DURATION: the "longer zones" ask — each sector must take the autopilot
+    // 60-90s (3600-5400 ticks). A zone that clears in seconds has no game.
+    {
+        const dur = []
+        let start = 0
+        s.replayScript(plan.script, { onTick: (g) => {
+            for (const e of g.ev) if (e.type === 'goal') { dur.push(g.tick - start); start = g.tick }
+        }})
+        ok(dur.length === ZONES.length, `expected a goal in each of the ${ZONES.length} sectors, saw ${dur.length}`)
+        for (let i = 0; i < ZONES.length; i++) {
+            const t = dur[i] || 0
+            ok(t >= 3600 && t <= 5400, `sector ${i} (${ZONES[i].name}) took ${(t / 60).toFixed(1)}s — the ask is 60-90s`)
+        }
+    }
+
     // independent margin re-measurement on the REPLAY (not the planner's hope):
     // for each jump pit, the real body must land >=12px past the far lip.
     const replayPits = new Map()

@@ -46,7 +46,9 @@ export const CFG = {
 // zone tally: clear the zone quickly and carry rings through the gate.
 // timeBonus  = (TALLY_TIME_CAP - ticks spent this zone) * TALLY_TIME_RATE, floored at 0
 // ringBonus  = rings held at the gate * TALLY_RING_RATE
-export const TALLY_TIME_CAP = 720
+// The cap tracks the "longer zones" pass: a sector now takes the autopilot
+// 60-90s, so the time bonus pays for beating that, not an old 12s mark.
+export const TALLY_TIME_CAP = 5400
 export const TALLY_TIME_RATE = 1
 export const TALLY_RING_RATE = 50
 // boost pads: a floor strip adds BOOST_ACCEL while the body is over it
@@ -152,6 +154,51 @@ export const ZONES = [
         loop: { cx: 1160, cy: 345, r: 80 },
     },
 ]
+
+// ------------------------------------------------- the "longer zones" pass ----
+// The hand-built cores above are short: the autopilot clears them in ~3-6s, so
+// "there is barely a game" (the issue). This appends a deterministic TAIL to
+// every sector — a fixed cycle of beats, each of which starts and ends on flat
+// ground at the entry height so they chain with no height bookkeeping:
+//
+//   fastBoost  a flat stretch with a sprint strip (carry/reward speed)
+//   pitHop     a flat run-up, one jumpable pit (hazard), a flat run-off
+//   hill       a downhill that builds speed, then the climb back (fast stretch)
+//
+// No RNG: the beat order is a fixed cycle, so the attract demo and the gate
+// prove the identical route. The tail is deliberately pit/boost/hill only —
+// no spikes or drones in it, so the autopilot clears it with nothing but its
+// proven pit-jump lookahead, and there is no ring bookkeeping to keep fair.
+// The hand-built core (and every coordinate a check pins) is left untouched.
+const TAIL_BEATS = 23
+const beatFastBoost = (x, y) => ({
+    segs: [[x, y, x + 2400, y]],
+    boosts: [[x + 900, x + 1500]],
+    x1: x + 2400,
+})
+const beatPitHop = (x, y) => {
+    const run = 1150, pit = 110
+    return { segs: [[x, y, x + run, y], [x + run + pit, y, x + 2600, y]], x1: x + 2600 }
+}
+const beatHill = (x, y) => ({
+    segs: [[x, y, x + 1300, y + 200], [x + 1300, y + 200, x + 2800, y]],
+    x1: x + 2800,
+})
+const BEATS = [beatFastBoost, beatPitHop, beatHill]
+
+// append TAIL_BEATS of the beat cycle to each sector and push its goal to the
+// end of the tail, so the autopilot now spends 60-90s in a sector (the ask).
+for (const z of ZONES) {
+    const last = z.segs[z.segs.length - 1]
+    let x = last[2], y = last[3]
+    for (let i = 0; i < TAIL_BEATS; i++) {
+        const b = BEATS[i % BEATS.length](x, y)
+        z.segs.push(...b.segs)
+        if (b.boosts) z.boosts.push(...b.boosts)
+        x = b.x1
+    }
+    z.goal = x - 20
+}
 
 export function segAt(z, x) {
     for (const sgm of z.segs) if (x >= sgm[0] && x <= sgm[2]) return sgm
@@ -504,7 +551,7 @@ export function planRun(g0) {
     const MARGIN = 24
     let jumpAt = -1           // tick index where the queued jump fires
     let pending = null        // { holeFar } the jump must clear
-    for (let t = 0; t < 60 * 130; t++) {
+    for (let t = 0; t < 60 * 400; t++) {
         const z = ZONES[g.zone]
         const p = g.p
         const inp = { right: true }
