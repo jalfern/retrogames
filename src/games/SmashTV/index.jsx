@@ -26,6 +26,7 @@ import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_
 import { muzzleFlash, casingCol, killShake, shutterPhase, SHUTTER_TICKS } from './juice.js'
 import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, WHOOSH, ALERT } from './audio.js'
+import { attractFrame, DIM } from './attract.js'
 
 const SIM_MS = 1000 / 60
 const ROOM_NAMES = [
@@ -625,17 +626,11 @@ const SmashTVGame = () => {
 
             const sc = screenRef.current
             if (sc === 'attract') {
-                ctx.fillStyle = 'rgba(3,3,12,0.78)'
+                ctx.fillStyle = DIM
                 ctx.fillRect(0, 0, CW, CH)
-                text('SMASH TV', CW / 2, 66, 30, '#ff5d5d', 16)
-                text('WILLIAMS 1990 · THE GAME-SHOW DEATH ARENA', CW / 2, 86, 7, '#8fa3d8')
-                if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY TO START', CW / 2, 112, 9, '#e9f7ff', 4)
-                const b = board()[0]
-                if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, CW / 2, 130, 8, '#ffd23f', 3)
-                text('ARROWS MOVE · IJKL FIRING STICK · SPACE FIRE', CW / 2, 158, 7, '#5d7094')
-                text('B FIREBOMB · ONE HIT KILLS · DEMO IS THE PROVEN RUN', CW / 2, 170, 7, '#5d7094')
-                const seatTag = seatMode === 'cpu' ? 'CPU PARTNER IN' : seatMode === 'human' ? 'PLAYER 2 READY' : 'SEAT 2 OFF'
-                text(`C = CPU PARTNER · P = PLAYER 2 (WASD + NUMPAD) · ${seatTag}`, CW / 2, 184, 7, seatMode === 'off' ? '#5d7094' : '#8fff9f')
+                for (const l of attractFrame(gs.tick, CW, CH, hiShown)) {
+                    text(l.text, l.x, l.y, l.size, l.col, l.glow)
+                }
             }
             if (sc === 'over') {
                 ctx.fillStyle = 'rgba(3,3,12,0.78)'

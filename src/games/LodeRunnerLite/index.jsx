@@ -26,7 +26,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
+import { PRESS, MESSAGES } from './attract.js'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import {
@@ -517,18 +519,14 @@ const LodeRunnerLiteGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>LODE RUNNER-LITE</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm">no jump. dig the floor. hang the rope. the guards learn the same physics you do.</p>
-                    <p className="text-white font-mono font-bold mt-1 animate-pulse">TAP / PRESS ANY KEY &mdash; 1 &middot; 2 &middot; 3 PICK A VAULT</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-1 px-8 leading-4">
-                        arrows run, climb and swing on rope &mdash; face a way and push DOWN to dig the brick diagonally below it<br />
-                        a dug hole lasts about 5 seconds, then the brick grows back; whatever is in it when it closes dies<br />
-                        guards fall into your holes, sit it out and climb back out &mdash; and they lift gold you must win back<br />
-                        take every gold * and the hidden ladder appears at the top: climb off the screen to clear the vault<br />
-                        R replays the vault you just lost with your dim ghost @ alongside &mdash; the attract demo is the solver&apos;s own proven witness
-                    </p>
-                </div>
+                <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
+                        <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>LODE RUNNER-LITE</h1>
+                        <p className="text-white font-mono font-bold mt-6 animate-pulse">{PRESS}</p>
+                        <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
+                    </div>
+                </>
             )}
 
             {screen === 'over' && end && (
