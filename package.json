@@ -199,7 +199,7 @@
     "lint:pacman": "eslint src/games/Pacman src/components src/utils src/config src/main.jsx scripts/pacmancheck.mjs scripts/lib",
     "lint:pong": "eslint src/games/Pong src/components src/utils src/config src/main.jsx scripts/pongcheck.mjs scripts/lib",
     "lint:frogger": "eslint src/games/Frogger src/components src/utils src/config src/main.jsx scripts/froggercheck.mjs scripts/lib",
-    "lint:attract": "eslint src/games/Pong/attract.js src/games/Frogger/attract.js src/games/Arkanoid/attract.js src/games/Pacman/attract.js src/games/Defender/attract.js src/games/SpaceInvaders/attract.js src/games/Centipede/attract.js src/games/Gauntlet/attract.js src/games/Galaga/attract.js src/games/Minesweeper/attract.js src/games/SSX/attract.js src/utils/attractLines.js src/components/AttractMessage.jsx scripts/attractcheck.mjs scripts/lib"
+    "lint:attract": "eslint src/games/Pong/attract.js src/games/Frogger/attract.js src/games/Arkanoid/attract.js src/games/Pacman/attract.js src/games/Defender/attract.js src/games/SpaceInvaders/attract.js src/games/Centipede/attract.js src/games/Gauntlet/attract.js src/games/Galaga/attract.js src/games/Minesweeper/attract.js src/games/SSX/attract.js src/games/ArenaArchery/attract.js src/games/Dogfight/attract.js src/utils/attractLines.js src/components/AttractMessage.jsx scripts/attractcheck.mjs scripts/lib"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

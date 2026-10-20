@@ -58,6 +58,24 @@ const REACT_TITLES = [
         wrap: `    'X GRAB · Z/C FLIP · SHIFT BOOST',\n`,
         leak: `    'CHAINS PAY UP TO x4',\n`,
     },
+    {
+        label: 'ARENA ARCHERY',
+        jsx: 'src/games/ArenaArchery/index.jsx',
+        mf: 'src/games/ArenaArchery/attract.js',
+        import: '../src/games/ArenaArchery/attract.js',
+        slot: '<AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />',
+        wrap: `    'ARROWS STUCK IN STONE ARE TERRAIN',\n`,
+        leak: `    'ONE STICK TO MOVE AND AIM · LOB ARCS',\n`,
+    },
+    {
+        label: 'WWI DOGFIGHT',
+        jsx: 'src/games/Dogfight/index.jsx',
+        mf: 'src/games/Dogfight/attract.js',
+        import: '../src/games/Dogfight/attract.js',
+        slot: '<AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />',
+        wrap: `    'SPACE FIRES THE SYNCHRONIZED VICKERS',\n`,
+        leak: `    'A ZOOM CLIMB BUYS METRES WITH M/S',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
