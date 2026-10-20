@@ -54,7 +54,11 @@ try {
     browser = await chromium.launch({
         channel,
         headless: true,
-        args: process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : [],
+        args: [
+            '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
+        ],
     })
 } catch (e) {
     console.error(`Could not launch browser (channel="${channel}").`)

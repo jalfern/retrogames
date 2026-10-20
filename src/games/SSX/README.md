@@ -24,6 +24,12 @@ the boost meter and a full meter at takeoff throws OVER.
 - `art.js` — vertex-coloured snow ribbon, neon rails and city pylons, rigs
   that crouch/grab/spin/flip/tumble, spray sprites. `index.jsx` is paint,
   sound, HUD and input only.
+- Carved tracks: `sim.js` records `r.carves` samples (`{s, x, t}`) whenever the
+  player carves hard on the snow (|steer| > 0.45 at v > 8), fading after
+  `CARVE_FADE = 300` ticks (~5 s). `index.jsx` lays those as two dark groove
+  quads on the slope, plus speed streaks past the camera edges over ~90 km/h
+  and spray whose density scales with speed. Carve state lives in the sim so
+  `ssxcheck` can pin it deterministically.
 
 ## Rules that are load-bearing (each pinned by ssxcheck)
 
@@ -35,11 +41,13 @@ the boost meter and a full meter at takeoff throws OVER.
 5. Boost spends meter for speed; a crash dumps half the meter and the chain.
 6. Race: three heats, standings 10/7/5/3/2/1; the mountain crowns the leader.
 7. Showoff: 90 s, house target 8000.
+8. Carved tracks: hard carving on the snow etches grooves that fade in ~5 s;
+   straight riding and airborne boards leave nothing.
 
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 57 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 62 checks, blocks merges (CI `static`)
 ```
 
 The check proves the autopilot wins RACE (30/30 standings, zero bails) and
@@ -47,7 +55,8 @@ SHOWOFF (≥8000), and re-proves both at the slack economy (`boostGain×0.75`,
 chain cap x3) — the win is not a knife-edge. Determinism: identical scripts →
 identical hashes; `Math.random` is banned in course/sim/planner and the check
 greps for it. Mutant proof (done once, by hand): neuter the bail rule in
-`sim.js` and "a half-done flip is a bail" goes red.
+`sim.js` and "a half-done flip is a bail" goes red; neuter the carve push and
+the five "carved tracks" checks go red.
 
 Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
 
@@ -56,6 +65,6 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
 - CPU riders never crash (the field is pace-limited rather than error-prone).
 - Keyboard-only flips/grabs on desktop; phones get steer + A-jump + B-boost
   (spins still work via the d-pad mid-air). No analogue stick yet.
-- No audio soundtrack beyond the synth pulse; snow tracks (carved grooves left
-  on the slope) are spray, not geometry.
+- No audio soundtrack beyond the synth pulse. Snow tracks are now geometry:
+  fading carve grooves under the board (#310), on top of the speed-scaled spray.
 - No browser-drive harness script yet (`ssxplay`) — the merge gate is Node.

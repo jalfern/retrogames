@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash } from '../src/games/SSX/sim.js'
+import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE } from '../src/games/SSX/sim.js'
 import { decide, PACE } from '../src/games/SSX/planner.js'
 import { buildCourse, terrainY, COURSE_COUNT, DS, WALL_X } from '../src/games/SSX/course.js'
 
@@ -166,6 +166,27 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     const g = autopilot(makeGame('race'))
     ok('race wins end after three heats', g.end === 'win' && g.heat === COURSE_COUNT - 1 && g.place === 1)
     ok('winner books every heat', g.standings[0] === PLACE_PTS[0] * COURSE_COUNT)
+}
+
+// ---- 3b. carved tracks ----------------------------------------------------
+{ // the slope remembers your line for ~5 s, nothing when straight or airborne
+    const g = makeGame('race'); run(g, 181); clear(g)
+    const p = g.riders[0]; p.x = 0; p.v = 20
+    run(g, 40, { steer: 1 })
+    ok('hard carving leaves grooves', p.carves.length >= 30)
+    const nAir = p.carves.length
+    p.air = true; p.y = terrainY(g.course, p.s, p.x) + 4; p.vy = 0
+    run(g, 20, { steer: 1 })
+    ok('airborne boards carve nothing', p.carves.length === nAir)
+    const g2 = makeGame('race'); run(g2, 181); clear(g2)
+    const q = g2.riders[0]; q.x = 0; q.v = 20
+    run(g2, 40, { steer: 1 })
+    ok('carving marks accumulate', q.carves.length > 0)
+    run(g2, CARVE_FADE + 5)
+    ok('carved tracks fade within ~5 s', q.carves.length === 0)
+    const g3 = makeGame('race'); run(g3, 181); clear(g3)
+    run(g3, 40)
+    ok('straight riding leaves no grooves', g3.riders[0].carves.length === 0)
 }
 
 // ---- 4. win proofs -----------------------------------------------------------
