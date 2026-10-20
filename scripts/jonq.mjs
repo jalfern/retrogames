@@ -32,10 +32,14 @@ const OWNER = process.env.JONQ_OWNER || 'jalfern'
 function gh(args, { input } = {}) {
     return execFileSync('gh', ['api', ...args], { encoding: 'utf8', input: input ?? null, stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
-const ghJson = (...args) => JSON.parse(gh(args))
+// ghJson takes either spread flags or ONE array (call sites do both); the
+// nested-array form once reached execFileSync as a single comma-joined
+// argument (invalid URL) — normalize here so both spellings work.
+const ghJson = (...args) => JSON.parse(gh(Array.isArray(args[0]) ? args[0] : args))
 
 const toIssue = (i) => ({
     number: i.number,
+    title: i.title,
     author: i.user?.login ?? i.user ?? '',
     state: i.state,
     labels: (i.labels || []).map((l) => (typeof l === 'string' ? l : l.name)),
