@@ -12,6 +12,8 @@
 // must keep at least one full skeleton — every telegraph has an answer.
 // The scan-transparency pin freezes a hash before and after each scan:
 // if freeze/thaw ever learns to lie again, this goes red first.
+import { spawnSync } from 'node:child_process'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { makeGame, step, decide, volleyOK, survives, CFG, stateHash, L, D } from '../src/games/Polarity/sim.js'
 import { REGISTRY, resolvePath, MAX_STEP, W } from '../src/games/Polarity/paths.js'
 import { WAVES } from '../src/games/Polarity/waves.js'
@@ -453,6 +455,55 @@ if (MUT) {
         ...WAVES[1],
         walls: WAVES[1].walls.flatMap((wl, i) => (i === 0 ? [{ ...wl }, { ...wl, color: wl.color === L ? D : L, t: wl.t + 8 }] : [wl])),
     }, wallPairing)
+}
+
+
+// ------------------------------------------------------------- attract rule 6 ----
+// ART.md rule 6 (#365): the attract shows ONE informational message at a
+// time, cycling, over a dimmed demo — never a stacked tagline + rules wall.
+// attract.js is the copy the shell actually renders, so this audit cannot rot
+// away from the pixels.
+section('attract (rule 6)')
+{
+    const { MESSAGES, PRESS } = await import('../src/games/Polarity/attract.js')
+    ok(MESSAGES.length >= 2, 'attract cycles through more than one message')
+    ok(new Set(MESSAGES).size === MESSAGES.length, 'attract messages are unique')
+    ok(MESSAGES.every((m) => m.length <= 44), 'no attract message wraps a narrow pane')
+    ok(!!PRESS, 'attract keeps its press prompt')
+    const jsx = readFileSync(new URL('../src/games/Polarity/index.jsx', import.meta.url), 'utf8')
+    const block = jsx.slice(jsx.indexOf("{screen === 'attract'"), jsx.indexOf("{screen === 'over'"))
+    ok(block.length > 0, 'the attract block exists')
+    ok(!/<br/.test(block), 'the attract stacks no hard line breaks')
+    ok((block.match(/<p\b/g) || []).length === 1, 'the attract draws exactly one <p> (the press prompt)')
+    ok(/<AttractMessage\b[^>]*messages=\{MESSAGES\}/.test(block), 'rules ride the cycling <AttractMessage>')
+    ok(/bg-black\/[45]\d/.test(block), 'the attract dims the demo')
+}
+if (MUT) {
+    const jsxPath = new URL('../src/games/Polarity/index.jsx', import.meta.url).pathname
+    const copyPath = new URL('../src/games/Polarity/attract.js', import.meta.url).pathname
+    const jsxOrig = readFileSync(jsxPath, 'utf8')
+    const copyOrig = readFileSync(copyPath, 'utf8')
+    const attractMutants = [
+        ['attract stacks a second message', jsxPath, jsxOrig,
+            'animate-pulse">{PRESS}</p>',
+            'animate-pulse">{PRESS}</p>\n                    <p>ANOTHER RULE LINE STACKED</p>'],
+        ['an attract message wraps the pane', copyPath, copyOrig,
+            "'TELEGRAPHS READ WALLS AND STORMS EARLY',",
+            "'TELEGRAPHS READ THE WALLS AND STORMS BEFORE THEY ARRIVE — BOTH COLORS SURVIVE',"],
+        ['the attract stops dimming the demo', jsxPath, jsxOrig,
+            'bg-black/55 flex flex-col',
+            'bg-transparent flex flex-col'],
+    ]
+    for (const [name, path, orig, from, to] of attractMutants) {
+        if (!orig.includes(from)) { ok(false, `attract mutant anchor: ${name}`); continue }
+        writeFileSync(path, orig.replace(from, to))
+        try {
+            const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
+            ok(child.status !== 0, `attract mutant SURVIVED: ${name}`)
+        } finally {
+            writeFileSync(path, orig)
+        }
+    }
 }
 
 console.log(`\npolarcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

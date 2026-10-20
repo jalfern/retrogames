@@ -18,6 +18,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -444,19 +446,10 @@ const IceGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black text-sky-200" style={{ textShadow: '0 4px 0 #123, 0 10px 24px #000' }}>ICE CLIMBER CO-OP</h1>
-                    <p className="text-sky-50/90 font-mono mt-1 text-sm">two climbers. one rope of trust. punch upward.</p>
-                    <p className="text-white font-mono font-bold mt-4 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-sky-100/80 font-mono text-[11px] mt-3 px-8 leading-4">
-                        P1 (red): ARROWS to move, UP to punch the ice, SPACE to jump<br />
-                        P2 (blue): A / D to move, W to punch, F to jump<br />
-                        every tile you punch is gone forever — the shaft is yours<br />
-                        the condor owns the shelf: wait in the pocket, dash for the carrot<br />
-                        the last carrot hangs one head taller than any jump — stand on your partner<br />
-                        a downed climber is revived by touch — alone, the summit is impossible<br />
-                        this demo is the autopilot&apos;s own proven co-op route, tick for tick
-                    </p>
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-4xl font-black text-sky-200 mb-5" style={{ textShadow: '0 4px 0 #123, 0 10px 24px #000' }}>ICE CLIMBER CO-OP</h1>
+                    <AttractMessage className="mb-5 text-sky-100/80" messages={MESSAGES} />
+                    <p className="text-white font-mono font-bold animate-pulse">{PRESS}</p>
                 </div>
             )}
 
