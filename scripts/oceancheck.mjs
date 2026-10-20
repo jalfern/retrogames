@@ -230,6 +230,22 @@ async function main() {
       // 4. STORM (#458): the slider grows the sea, whips up foam, darkens the sky — reversibly
       const hasSlider = await page.evaluate(() => !!document.getElementById('storm'))
       ok('storm slider present', hasSlider)
+      // round-two #462 item 6: the slider EASES toward its set point over ~1s (no hard
+      // cut). Frame-accurate: sample `storm` on every rAF after setStorm(1). A hard cut
+      // reads storm≈1 on the very first frame; the ease stays near 0, then climbs to ~1.
+      await page.evaluate(() => window.__oceanTest.setStorm(0))
+      await page.waitForTimeout(1400)
+      const ease = await page.evaluate((n) => new Promise((res) => {
+        const out = []
+        window.__oceanTest.setStorm(1)
+        let i = 0
+        const step = () => { out.push(window.__oceanTest.storm); if (++i < n) requestAnimationFrame(step); else res(out) }
+        requestAnimationFrame(step)
+      }), 80)
+      ok('storm eases toward set point (~1s, no hard cut)',
+        ease.length > 1 && ease[0] < 0.5 && ease[ease.length - 1] > 0.82
+          && ease.every((v, i) => i === 0 || v >= ease[i - 1] - 1e-6),
+        `first=${ease[0].toFixed(3)} -> last=${ease[ease.length - 1].toFixed(3)} over ${ease.length} frames`)
       await page.evaluate(() => window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: 0, pitch: -0.05 }))
       await page.evaluate(() => window.__oceanTest.setStorm(0))
       await page.waitForTimeout(1500)

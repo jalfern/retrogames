@@ -110,7 +110,12 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 let tod = Number.isFinite(parseFloat(qs.get('tod'))) ? clamp01(parseFloat(qs.get('tod'))) : 1;
 let cloud = Number.isFinite(parseFloat(qs.get('cloud'))) ? clamp01(parseFloat(qs.get('cloud'))) : 0;
 let needSpec = true;
-const windU = () => 3 + 21 * storm;
+// slider SET point; the rendered `storm` eases toward it over ~1s so amplitude
+// grows/shrinks smoothly instead of a hard cut (round-two #462 item 6)
+let stormTarget = storm;
+let lastStorm = storm;
+const STORM_TAU = 0.30;
+const windU = (s = storm) => 3 + 21 * s;
 const SEA_NAMES = [[0.12, 'CALM'], [0.3, 'SLIGHT'], [0.5, 'MODERATE'], [0.7, 'ROUGH'], [0.85, 'VERY ROUGH'], [1.01, 'STORM']];
 const TOD_NAMES = ['NIGHT', 'SUNRISE', 'MIDDAY', 'SUNSET'];
 const CLOUD_NAMES = [[0.15, 'CLEAR'], [0.45, 'SCATTERED'], [0.75, 'BROKEN'], [1.01, 'OVERCAST']];
@@ -127,17 +132,16 @@ const todLbl = document.getElementById('todLbl');
 const cloudLbl = document.getElementById('cloudLbl');
 
 function updateSeaUI() {
-  seaLbl.textContent = SEA_NAMES.find(x => storm < x[0])[1];
-  windLbl.textContent = Math.round(windU()) + ' m/s';
-  stormSl.value = String(Math.round(storm * 100));
+  seaLbl.textContent = SEA_NAMES.find(x => stormTarget < x[0])[1];
+  windLbl.textContent = Math.round(windU(stormTarget)) + ' m/s';
+  stormSl.value = String(Math.round(stormTarget * 100));
   todLbl.textContent = TOD_NAMES[Math.round(tod * 3)];
   cloudLbl.textContent = CLOUD_NAMES.find(x => cloud < x[0])[1];
   todSl.value = String(Math.round(tod * 100));
   cloudSl.value = String(Math.round(cloud * 100));
 }
 function setStorm(v) {
-  storm = Math.max(0, Math.min(1, v));
-  needSpec = true;
+  stormTarget = Math.max(0, Math.min(1, v));
   updateSeaUI();
 }
 function setTod(v) { tod = clamp01(v); updateSeaUI(); }
@@ -151,8 +155,8 @@ cloudSl.addEventListener('keydown', e => e.stopPropagation());
 document.getElementById('sea').addEventListener('pointerdown', e => e.stopPropagation());
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
-  if (e.key === '[') setStorm(storm - 0.1);
-  if (e.key === ']') setStorm(storm + 0.1);
+  if (e.key === '[') setStorm(stormTarget - 0.1);
+  if (e.key === ']') setStorm(stormTarget + 0.1);
   if (e.key === ',') setTod(tod - 0.05);
   if (e.key === '.') setTod(tod + 0.05);
   if (e.key === 'c') setCloud(cloud + 0.1);
@@ -861,6 +865,12 @@ async function boot() {
     const asp = vw / Math.max(1, vh);
     const vp = mul(persp(62 * Math.PI / 180, asp, 0.2, 2500), lookAt(cam.pos, [cam.pos[0] + fwd[0], cam.pos[1] + fwd[1], cam.pos[2] + fwd[2]], [0, 1, 0]));
 
+    // ease the rendered sea state toward the slider set point over ~1s (no hard
+    // cut, #462 item 6); re-fill the spectra while it moves so wave amplitude tracks
+    storm += (stormTarget - storm) * (1 - Math.exp(-dt / STORM_TAU));
+    if (Math.abs(stormTarget - storm) < 0.0015) storm = stormTarget;
+    if (Math.abs(storm - lastStorm) > 0.001) needSpec = true;
+    lastStorm = storm;
     const s = storm;
     const U = windU();
     const pp = seaParams(s);
