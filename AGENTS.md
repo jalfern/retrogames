@@ -24,7 +24,15 @@ lessons below keep games from shipping broken; they are not the goal.
    and ignores advisory jobs; `smoke` flaking must not wedge the merge):
    `scripts/main-ok.sh && while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch`
 6. Don't grow the harness past the code it tests. Prefer a new small check to a longer script.
-7. Every ~4 hours, stop with: what's playable now, what changed, three questions for Jon.
+7. Every ~4 hours, stop with: what's playable now, what changed. Questions for Jon go in
+   issues, never in STATE.md (#605): `node scripts/jonq.mjs ask --lane <lane> --title "…"
+   --question "…" --option "<A>" --option "<B>" --default "<what you do anyway>"` files one
+   issue per question (`waiting-jon` + `question` + `lane:<lane>`; default + 48 h deadline;
+   ≤3 open per lane; taste/priority/hard-to-undo only). Then keep building — past the
+   deadline the warden's sweep takes the default and records `FORGE: no answer by <date>,
+   took <default>`; STATE.md just links the open question issues. `steer` on an issue by
+   jalfern goes first at the next cycle boundary; `halt` on any open issue = lanes finish
+   the current step, rewrite STATE.md and exit — the warden kicks nothing while it's there.
 8. Read your result before writing another probe. Before a second probe for the same error, write
    one line: what did the last output rule out? A result that should be impossible is the clue,
    not noise. Third probe on the same error: post the outputs on the issue and stop.

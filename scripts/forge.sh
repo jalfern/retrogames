@@ -26,6 +26,14 @@ fi
 
 cd "$REPO" || exit 1
 
+# halt (#605): a `halt` label on any open issue is Jon freezing the factory.
+# The warden already refuses to kick; this catches launchd's own timer and any
+# hand-start, so a frozen factory cannot start a new session by any door.
+if [[ -f "$REPO/scripts/jonq.mjs" ]] && [[ "$(node "$REPO/scripts/jonq.mjs" halt 2>/dev/null)" == yes ]]; then
+    echo "$(date): halt label open — the forge stays asleep until Jon lifts it" >> "$LOG"
+    exit 0
+fi
+
 # TAP (scripts/tap.mjs, launchd com.jalfern.tap-builder): when the tap answers
 # AND an `omlxtap` provider exists in ~/.config/opencode/opencode.json, route
 # this session through it so `watch.sh --live` shows tokens as they generate.
@@ -43,6 +51,17 @@ fi
 echo "$(date): model route: ${MODEL_ARGS[*]:-direct (no tap)}" >> "$LOG"
 
 PROMPT="You are THE FORGE. Open scripts/FORGE.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 3 hours."
+
+# steer (#605): jalfern's `steer` label outranks `next` at the cycle boundary
+# (warden step 4 already ranks it; this names it so the session claims it
+# without re-deriving the order).
+if [[ -f "$REPO/scripts/jonq.mjs" ]]; then
+    STEER=$(node "$REPO/scripts/jonq.mjs" steer 2>/dev/null)
+    if [[ -n "$STEER" ]]; then
+        echo "$(date): steer $STEER — taking it ahead of the queue this session" >> "$LOG"
+        PROMPT="$PROMPT STEER (#605): issue $STEER carries jalfern's steer label — at the claim step take it ahead of the normal queue order."
+    fi
+fi
 
 # #601 red-main freeze: if the latest nightly on main failed, this lane opens
 # by fixing main instead of shipping on top of a red trunk.
