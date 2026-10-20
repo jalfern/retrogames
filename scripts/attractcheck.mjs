@@ -137,6 +137,26 @@ const REACT_TITLES = [
         wrap: `    'THE G-6155 IS HOT-WIRED',\n`,
         leak: `    'END EACH STAGE WITH THE BONUS CAR',\n`,
     },
+    {
+        label: 'LEMMINGS-LITE',
+        jsx: 'src/games/Lemmings/index.jsx',
+        mf: 'src/games/Lemmings/attract.js',
+        import: '../src/games/Lemmings/attract.js',
+        slot: '<AttractMessage className="text-amber-100/90 mt-2 px-8" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse">{PRESS}</p>`,
+        wrap: `    'TAP A SKILL BUTTON TO PICK IT',\n`,
+        leak: `    'ARROWS AIM · SPACE ASSIGNS · 1-4 PICK SKILL',\n`,
+    },
+    {
+        label: 'MISSILE BATTLE',
+        jsx: 'src/games/MissileBattle/index.jsx',
+        mf: 'src/games/MissileBattle/attract.js',
+        import: '../src/games/MissileBattle/attract.js',
+        slot: '<AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse">{PRESS}</p>`,
+        wrap: `    'EVERY KILL CHAINS A SMALLER BLAST',\n`,
+        leak: `    'LOSE ALL SIX CITIES AND THE MAP GOES DARK',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]

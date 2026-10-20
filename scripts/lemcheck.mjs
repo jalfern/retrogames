@@ -21,6 +21,7 @@
 
 import { LEVELS, buildLevel } from '../src/games/Lemmings/levels.js'
 import { LAYOUT } from '../src/games/Lemmings/layout.js'
+import { PRESS, MESSAGES } from '../src/games/Lemmings/attract.js'
 import * as sim from '../src/games/Lemmings/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -246,21 +247,27 @@ for (let i = 0; i < LEVELS.length; i++) {
 // ------------------------------------------------ first-run readability (#422) ---
 // Items 3-5 of the first-play pass: the skill bar must be docked off the
 // playfield, the HUD count must read as plain English, and the attract copy
-// must fit without a wall of text. The numbers live in layout.js (audited
-// here); these pins additionally prove index.jsx actually consumes them.
+// must fit without a wall of text (#365 rule 6: the copy lives in
+// attract.js and cycles ONE message at a time through <AttractMessage>).
+// The numbers live in layout.js (audited here); these pins additionally prove
+// index.jsx actually consumes them.
 const docked = () => LAYOUT.panelReserve >= 40
-const linesFit = () => LAYOUT.attractLines.length >= 2 && LAYOUT.attractLines.every(l => l.length <= LAYOUT.maxTextW)
+const linesFit = () => MESSAGES.length >= 2 && new Set(MESSAGES).size === MESSAGES.length && MESSAGES.every(l => l.length > 0 && l.length <= 44)
 const hudPlain = () => `${LAYOUT.hud.pre}9${LAYOUT.hud.mid}0` === 'IN PLAY 9 · LOST 0'
+const pressFits = () => PRESS.length <= 24 && /ANY KEY/i.test(PRESS)
 {
     section('FIRST-RUN READABILITY (#422 items 3-5: docked bar, badges, attract copy)')
     ok(docked(), `the playfield reserves only ${LAYOUT.panelReserve}px at the bottom — the skill bar floats over the walking ground (#422 item 3)`)
-    ok(linesFit(), `an attract line exceeds ${LAYOUT.maxTextW} chars (clips at the edge): ${JSON.stringify(LAYOUT.attractLines)}`)
-    for (const l of LAYOUT.attractLines) {
-        ok(!/scripts\/|\.mjs/.test(l), `harness leak in attract copy: "${l}"`)
+    ok(linesFit(), `an attract message exceeds 44 chars or the slot has no cycle: ${JSON.stringify(MESSAGES)}`)
+    ok(pressFits(), `press prompt "${PRESS}" too long or unclear (#365 rule 6)`)
+    for (const l of MESSAGES) {
+        ok(!/scripts\/|\.mjs|audit|autopilot|proven/i.test(l), `harness leak in attract copy: "${l}"`)
     }
     ok(hudPlain(), `cryptic HUD count "${LAYOUT.hud.pre}9${LAYOUT.hud.mid}0" — say IN PLAY n · LOST m (#422 item 5)`)
     const src = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
     ok(/from '\.\/layout\.js'/.test(src), 'index.jsx does not import layout.js — the audited numbers are decoration')
+    ok(/from '\.\/attract\.js'/.test(src), 'index.jsx does not import attract.js — the audited attract copy is decoration (#365)')
+    ok(/<AttractMessage[^>]*messages=\{MESSAGES\}/.test(src), 'index.jsx stacks its own rules wall instead of the one cycling <AttractMessage> slot (#365 rule 6)')
     ok(/LAYOUT\.panelReserve/.test(src), 'the stage never docks: LAYOUT.panelReserve unused in index.jsx (#422 item 3)')
     ok(/LAYOUT\.hud\.pre/.test(src), 'the HUD prints its own count wording instead of LAYOUT.hud (#422 item 5)')
     ok(/nearestLemming\(gs, cursor\.x, cursor\.y\)/.test(src), 'no hover ring: paint must preview nearestLemming(gs, cursor.x, cursor.y) so the Space target is visible before the press (#422 item 4)')
@@ -333,19 +340,20 @@ if (MUT) {
     })
     const tryMutL = (name, apply, probe) => {
         const pr = LAYOUT.panelReserve
-        const lines = [...LAYOUT.attractLines]
+        const lines = [...MESSAGES]
         const hud = { ...LAYOUT.hud }
         ok(probe(), `mutation harness broken: baseline for '${name}' is already false`)
         apply()
         const verdict = probe()
         LAYOUT.panelReserve = pr
-        LAYOUT.attractLines.length = 0; LAYOUT.attractLines.push(...lines)
+        MESSAGES.length = 0; MESSAGES.push(...lines)
         Object.assign(LAYOUT.hud, hud)
         console.log(`  mut ${name}: ${verdict ? 'SURVIVED (BAD)' : 'caught by the audit'}`)
         ok(!verdict, `${name} SURVIVED — a check stopped touching this rule`)
     }
     tryMutL('panelReserve = 0 (bar back over the ground)', () => { LAYOUT.panelReserve = 0 }, docked)
-    tryMutL('a 60-char attract line (clips at the edge)', () => { LAYOUT.attractLines.push('hold, release, tap, arrows, space and everything else a wall of text says') }, linesFit)
+    tryMutL('a 60-char attract message (wraps the pane again)', () => { MESSAGES.push('hold, release, tap, arrows, space and everything else a wall of text says') }, linesFit)
+    tryMutL('a harness leak back into visible attract copy', () => { MESSAGES.push('this demo replays a proven solution on screen') }, () => MESSAGES.every(l => !/scripts\/|\.mjs|audit|autopilot|proven/i.test(l)))
     tryMutL('HUD back to the cryptic 9+0', () => { LAYOUT.hud.pre = ''; LAYOUT.hud.mid = '+' }, hudPlain)
 }
 
