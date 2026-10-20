@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { attractFrame, DIM } from './attract.js'
 
 const FroggerGame = () => {
     const canvasRef = useRef(null)
@@ -100,6 +101,7 @@ const FroggerGame = () => {
         let lives = 3
         let timeLeft = TIME_LIMIT
         let isAttractMode = true
+        let attractTick = 0
         let gameOverFlag = false
         let levelFlash = 0
 
@@ -569,23 +571,15 @@ const FroggerGame = () => {
             }
 
             if (isAttractMode) {
-                ctx.fillStyle = 'rgba(0,0,0,0.55)'
+                attractTick++
+                ctx.fillStyle = DIM
                 ctx.fillRect(0, HUD_H, W, H - HUD_H)
                 ctx.textAlign = 'center'
-                ctx.fillStyle = '#5adb5a'
-                ctx.font = 'bold 26px monospace'
-                ctx.fillText('FROGGER', W / 2, H / 2 - 34)
-                ctx.fillStyle = '#ffffff'
-                ctx.font = 'bold 9px monospace'
-                ctx.fillText('GET ACROSS. DON\'T GET FLATTENED.', W / 2, H / 2 - 12)
-                if (Math.floor(Date.now() / 500) % 2 === 0) {
-                    ctx.fillStyle = '#ffe14d'
-                    ctx.font = 'bold 11px monospace'
-                    ctx.fillText('TAP OR PRESS ANY KEY', W / 2, H / 2 + 26)
+                for (const l of attractFrame(attractTick, W, H, HUD_H)) {
+                    ctx.font = `bold ${l.size}px monospace`
+                    ctx.fillStyle = l.col
+                    ctx.fillText(l.text, l.x, l.y)
                 }
-                ctx.fillStyle = '#8f8f8f'
-                ctx.font = '8px monospace'
-                ctx.fillText('HOP ON LOGS  -  AVOID THE TURTLES\' NAPS', W / 2, H / 2 + 48)
             } else if (gameOverFlag) {
                 ctx.fillStyle = 'rgba(0,0,0,0.6)'
                 ctx.fillRect(0, HUD_H, W, H - HUD_H)

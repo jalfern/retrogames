@@ -119,6 +119,7 @@
     "carpetcheck": "node scripts/carpetcheck.mjs",
     "pacmancheck": "node scripts/pacmancheck.mjs",
     "pongcheck": "node scripts/pongcheck.mjs",
+    "froggercheck": "node scripts/froggercheck.mjs",
     "cometcheck": "node scripts/cometcheck.mjs",
     "cometrefs": "node scripts/extract-comet-references.mjs",
     "cometplay": "node scripts/cometplay.mjs",
@@ -195,7 +196,8 @@
     "lint:comet": "eslint src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometcheck.mjs scripts/extract-comet-references.mjs scripts/lib",
     "lint:hd": "eslint src/games/CometDriftHD src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometdrifthdcheck.mjs scripts/lib",
     "lint:pacman": "eslint src/games/Pacman src/components src/utils src/config src/main.jsx scripts/pacmancheck.mjs scripts/lib",
-    "lint:pong": "eslint src/games/Pong src/components src/utils src/config src/main.jsx scripts/pongcheck.mjs scripts/lib"
+    "lint:pong": "eslint src/games/Pong src/components src/utils src/config src/main.jsx scripts/pongcheck.mjs scripts/lib",
+    "lint:frogger": "eslint src/games/Frogger src/components src/utils src/config src/main.jsx scripts/froggercheck.mjs scripts/lib"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

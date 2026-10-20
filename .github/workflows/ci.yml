@@ -304,8 +304,10 @@ jobs:
       # MYST: the whole island graph, every puzzle gate (lever, stars, safe,
       # switches, sphere, fireplace), all eight pages, both trap endings and
       # the white-page win. Proven to bite: forcing a locked door open reds it.
+      # Plus the rule-6 attract gate (#365): one cycling slot, no stacked lore,
+      # no harness leak — six attract mutants must die.
       - run: npm run lint:myst
-      - run: npm run mystcheck
+      - run: npm run mystcheck -- --mutate
       # THE BARD'S TALE: independent-BFS floor audit (locked doors are true
       # chokepoints hiding their key), engine pins (potion/ale/heal cost, the
       # tower gate refuses without the key, the Board grants it only once all five
@@ -372,6 +374,11 @@ jobs:
       # All in Node, ~1 s.
       - run: npm run lint:pong
       - run: npm run pongcheck -- --mutate
+      # FROGGER rule-6 attract gate (#365): one cycling message, nothing clipped
+      # at the frame edge, text stays below the HUD, demo dimmed behind the text.
+      # Six mutants must die. All in Node, ~1 s.
+      - run: npm run lint:frogger
+      - run: npm run froggercheck -- --mutate
       # PWA scope gate (#433): lint the SW + contract scripts, then verify the
       # BUILT shell is installable — manifest scope/start_url are /retrogames/,
       # the SW excludes /retrogames/forge, vercel resolves the pwa assets ahead
