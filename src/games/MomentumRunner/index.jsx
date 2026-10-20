@@ -31,6 +31,9 @@ const HINTS = [
     'its apex holds the only rings that survive the far spike',
     'springs are the route over the wide pits — never jump them',
     'hit a hazard WITH rings and you stagger — without, you fall back to the beacon',
+    'press DOWN while moving to ROLL — a ball keeps speed, loses steering',
+    'sprint strips are floor boosts — ride them to carry more speed forward',
+    'clear a sector fast and carry rings: the gate counts up both as a bonus',
 ]
 
 // The hero's signature colour — deliberately NOT used by track, rings or
@@ -262,6 +265,7 @@ const MomentumGame = () => {
         let gs = makeGame()
         let demoAt = 0, raf = 0, last = 0, acc = 0
         let toast = 0, toastMsg = '', shake = 0, wheelAng = 0
+        let tallyAnim = null   // the goal count-up: { time, rings, t }
         let musicOn = false, musicZone = -1
         let contractSeed = 0
         let cprev = {}
@@ -331,6 +335,7 @@ const MomentumGame = () => {
                 else if (e.type === 'save') { audioController.playTone(880, 0.12, 'sine', 0.06); audioController.playTone(1320, 0.18, 'sine', 0.05); say('CHECKPOINT') }
                 else if (e.type === 'die') audioController.playDeath()
                 else if (e.type === 'respawn') { audioController.playSweep(220, 700, 0.4, 'triangle', 0.07); audioController.startMusic(RUNNER_BEDS[gs.zone]); say('BACK TO CHECKPOINT') }
+                else if (e.type === 'tally') { tallyAnim = { time: e.time, rings: e.rings, t: 0 }; say(`SECTOR CLEAR +${e.time + e.rings}`); burst(gs.p.x, gs.p.y - BODY_R, 12, '#ffd23f') }
                 else if (e.type === 'goal') { audioController.playSweep(660, 1760, 0.5, 'square', 0.09) }
             }
         }
@@ -395,7 +400,7 @@ const MomentumGame = () => {
             hg.addColorStop(0, 'rgba(102,246,255,0.38)')
             hg.addColorStop(1, 'rgba(102,246,255,0)')
             ctx.fillStyle = hg; circle(ctx, 0, 0, 16); ctx.fill()
-            if (p.mode === 'air') {
+            if (p.mode === 'air' || p.rolling) {
                 // curled into a glowing ball
                 ctx.fillStyle = HERO_DARK; circle(ctx, 0, 0, BODY_R); ctx.fill()
                 ctx.strokeStyle = HERO_EDGE; ctx.lineWidth = 1.5; circle(ctx, 0, 0, BODY_R); ctx.stroke()
@@ -584,6 +589,28 @@ const MomentumGame = () => {
                 ctx.beginPath(); ctx.moveTo(px - 5, py - 12 + lift); ctx.lineTo(px, py - 17 + lift); ctx.lineTo(px + 5, py - 12 + lift); ctx.stroke()
             }
 
+            // ---- boost pads: sprint strips that add speed along the slope ----
+            for (const b of z.boosts) {
+                const [bx1, bx2] = b
+                const px1 = bx1 - dx0, px2 = bx2 - dx0
+                if (px2 < -30 || px1 > VIEW_W + 30) continue
+                const gy1 = groundY(z, bx1), gy2 = groundY(z, bx2)
+                if (gy1 === null || gy2 === null) continue
+                const py1 = gy1 - dy0, py2 = gy2 - dy0
+                const span = bx2 - bx1
+                ctx.fillStyle = P.glow + '0.16)'
+                ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.lineTo(px2, py2 + 6); ctx.lineTo(px1, py1 + 6); ctx.closePath(); ctx.fill()
+                ctx.strokeStyle = P.accent; ctx.lineWidth = 2
+                for (let i = 0; i < 3; i++) {
+                    const wx = bx1 + ((tick * 4 + i * (span / 3)) % span)
+                    const wy = groundY(z, wx); if (wy === null) continue
+                    const ax = wx - dx0, ay = wy - dy0
+                    ctx.beginPath(); ctx.moveTo(ax - 5, ay - 5); ctx.lineTo(ax + 3, ay); ctx.lineTo(ax - 5, ay + 5); ctx.stroke()
+                }
+                ctx.strokeStyle = P.accent; ctx.lineWidth = 1.5
+                ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.stroke()
+            }
+
             // ---- rings: spinning holo-rings that sparkle ----
             for (let i = 0; i < z.rings.length; i++) {
                 if (gs.taken.has(i + gs.zone * 100)) continue
@@ -720,6 +747,23 @@ const MomentumGame = () => {
                 ctx.restore()
             }
 
+            // goal tally: a count-up of the time + ring bonus
+            if (tallyAnim) {
+                tallyAnim.t++
+                const k = Math.min(1, tallyAnim.t / 28)
+                const dt = Math.round(tallyAnim.time * k)
+                const dr = Math.round(tallyAnim.rings * k)
+                ctx.save()
+                ctx.textAlign = 'center'
+                ctx.font = '700 15px monospace'
+                ctx.fillStyle = 'rgba(255,255,255,0.95)'
+                ctx.fillText(`TIME   +${dt}`, VIEW_W / 2, 104)
+                ctx.fillStyle = P.accent
+                ctx.fillText(`RINGS  +${dr}`, VIEW_W / 2, 122)
+                ctx.restore()
+                if (tallyAnim.t > 55) tallyAnim = null
+            }
+
             if (shake < 0.4) shake = 0
             wheelAng += (spdNow * FIXED_DT) / BODY_R
         }
@@ -831,6 +875,7 @@ const MomentumGame = () => {
                     return {
                         screen: screenRef.current, tick: gs.tick, zone: gs.zone, zoneName: ZONES[gs.zone].name,
                         x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, mode: p.mode,
+                        rolling: !!p.rolling,
                         vx: Math.round(p.vx || 0), vy: Math.round(p.vy || 0), s: Math.round(p.s || 0),
                         cam: c,
                         // THE screen pixel the hero is painted at (screen = world - cam)

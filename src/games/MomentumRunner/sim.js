@@ -36,13 +36,27 @@ export const CFG = {
     landProject: true,     // landings project velocity onto the new tangent
     jumpCut: true,         // releasing the jump key early clips the apex
     pitDeath: true,        // below a zone's floor is dying
+    boostPads: true,       // floor strips that add speed along the slope
+    zoneTally: true,       // each goal counts up a time bonus + a ring bonus
+    roll: true,            // down while moving curls into a ball: no steer, light drag
 }
+
+// zone tally: clear the zone quickly and carry rings through the gate.
+// timeBonus  = (TALLY_TIME_CAP - ticks spent this zone) * TALLY_TIME_RATE, floored at 0
+// ringBonus  = rings held at the gate * TALLY_RING_RATE
+export const TALLY_TIME_CAP = 720
+export const TALLY_TIME_RATE = 1
+export const TALLY_RING_RATE = 50
+// boost pads: a floor strip adds BOOST_ACCEL while the body is over it
+export const BOOST_ACCEL = 1150
 
 export const RUN_TOP = 340      // flat-run cap: NOT enough for the loop
 export const RUN_ACCEL = 700
 export const BRAKE = 950
 export const AIR_ACCEL = 300
 export const ROLL_DRAG = 0.22
+export const ROLL_DRAG_ROLL = 0.06   // a ball has far less drag than a standing runner
+export const ROLL_MIN = 60           // "down" below this speed won't curl you up
 export const JUMP_V = 560
 export const JUMP_CUT = 0.45    // vy multiplier when the key lets go early
 export const VMAX = 1150
@@ -64,6 +78,7 @@ export const ZONES = [
             [1600, 166], [1640, 166], [1680, 166], [1720, 166]],
         spikes: [[1030, 1090]],
         springs: [[1280, 258, -980]],
+        boosts: [[740, 850], [2200, 2300]],
         ck: 1900, goal: 2320, deathY: 520, yMin: -80, loop: null,
     },
     {
@@ -82,6 +97,7 @@ export const ZONES = [
             [1240, 59], [1350, -24], [1461, -47], [1580, -19], [1690, 45]],
         spikes: [[1060, 1100], [2440, 2480]],
         springs: [[1150, 225, -900]],
+        boosts: [[1420, 1680], [2650, 2730]],
         ck: 1620, goal: 2740, deathY: 620, yMin: -66, loop: null,
     },
     {
@@ -102,6 +118,7 @@ export const ZONES = [
         rings: [[1211, 275], [1187, 261], [1160, 256], [1133, 261], [1109, 275]],
         spikes: [[1600, 1650]],
         springs: [],
+        boosts: [[1850, 2000]],
         ck: 1000, goal: 2050, deathY: 760, yMin: 0,
         loop: { cx: 1160, cy: 345, r: 80 },
     },
@@ -147,6 +164,7 @@ function toAir(g, theta, jump = 0) {
     p.vx = p.s * Math.cos(theta)
     p.vy = p.s * Math.sin(theta) - jump
     p.cut = false
+    p.rolling = false
 }
 
 function die(g, why) {
@@ -159,6 +177,7 @@ function die(g, why) {
     g.p.y = groundY(z, sx)
     g.p.mode = 'track'
     g.p.s = 0; g.p.vx = 0; g.p.vy = 0
+    g.p.rolling = false
     g.p.invuln = 90
     g.ev.push({ type: 'respawn', x: sx })
 }
@@ -178,11 +197,16 @@ export function step(g, inp) {
         else {
             const th = segAngle(sgm)
             p.lastTheta = th
+            const rolling = CFG.roll && !!inp.down && Math.abs(p.s) >= ROLL_MIN
+            p.rolling = rolling
             let a = 0
             if (CFG.slopeDrive) a += G * Math.sin(th)
-            if (inp.right) a += p.s < RUN_TOP ? RUN_ACCEL : 140
-            if (inp.left) a -= p.s > 0 ? BRAKE : RUN_ACCEL
-            a -= ROLL_DRAG * p.s
+            if (!rolling) {
+                if (inp.right) a += p.s < RUN_TOP ? RUN_ACCEL : 140
+                if (inp.left) a -= p.s > 0 ? BRAKE : RUN_ACCEL
+            }
+            if (CFG.boostPads) for (const b of z.boosts) if (p.x >= b[0] && p.x <= b[1]) a += BOOST_ACCEL
+            a -= (rolling ? ROLL_DRAG_ROLL : ROLL_DRAG) * p.s
             p.s = Math.max(-200, Math.min(VMAX, p.s + a * FIXED_DT))
             p.x += p.s * Math.cos(th) * FIXED_DT
             const gy = groundY(z, p.x)
@@ -295,6 +319,13 @@ export function step(g, inp) {
                 g.ev.push({ type: 'save', x: z.ck })
             }
             if (p.x >= z.goal) {
+                if (CFG.zoneTally) {
+                    const tInZone = g.tick - g.zoneStartTick
+                    const timeBonus = Math.max(0, TALLY_TIME_CAP - tInZone) * TALLY_TIME_RATE
+                    const ringBonus = g.rings * TALLY_RING_RATE
+                    g.ev.push({ type: 'tally', zone: g.zone, time: timeBonus, rings: ringBonus, total: timeBonus + ringBonus })
+                    g.score += timeBonus + ringBonus
+                }
                 g.ev.push({ type: 'goal', zone: g.zone })
                 g.score += 1000
                 if (g.zone + 1 >= ZONES.length) { g.end = 'win' }
@@ -306,6 +337,7 @@ export function step(g, inp) {
                     g.p.y = groundY(z2, g.p.x)
                     g.p.mode = 'track'; g.p.s = 0; g.p.vx = 0; g.p.vy = 0
                     g.spent = new Map()
+                    g.zoneStartTick = g.tick
                 }
             }
         }
@@ -319,9 +351,10 @@ export function makeGame() {
     const z = ZONES[0]
     return {
         tick: 0, zone: 0, rings: 0, score: 0, deaths: 0, end: null, loopTaken: false,
+        zoneStartTick: 0,
         save: { zone: 0, x: z.segs[0][0] + 40 },
         taken: new Set(), spent: new Map(), ev: [],
-        p: { x: z.segs[0][0] + 40, y: groundY(z, z.segs[0][0] + 40), mode: 'track', s: 0, vx: 0, vy: 0, invuln: 0, cut: false, lastTheta: 0, v0: 0, phi: 0 },
+        p: { x: z.segs[0][0] + 40, y: groundY(z, z.segs[0][0] + 40), mode: 'track', s: 0, vx: 0, vy: 0, invuln: 0, cut: false, lastTheta: 0, v0: 0, phi: 0, rolling: false },
     }
 }
 
@@ -400,8 +433,9 @@ export function planRun(g0) {
                     // try to launch within the next 26 ticks, earliest first
                     let sx = p.x, sy = p.y, ss = p.s
                     for (let k = 0; k <= 26 && jumpAt < 0; k++) {
-                        const a = (CFG.slopeDrive ? G * Math.sin(th) : 0)
+                        let a = (CFG.slopeDrive ? G * Math.sin(th) : 0)
                             + (ss < RUN_TOP ? RUN_ACCEL : 140) - ROLL_DRAG * ss
+                        if (CFG.boostPads) for (const b of z.boosts) if (sx >= b[0] && sx <= b[1]) a += BOOST_ACCEL
                         ss = Math.max(-200, Math.min(VMAX, ss + a * FIXED_DT))
                         sx += ss * Math.cos(th) * FIXED_DT
                         const gy = groundY(z, sx)

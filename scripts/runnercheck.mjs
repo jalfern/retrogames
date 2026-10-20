@@ -50,6 +50,9 @@ const MUTANTS = {
     landProject: 'landings stop projecting onto the slope — downhill impact speed is thrown away',
     jumpCut: 'the jump stops being variable — tap and hold become the same height',
     pitDeath: 'pits stop killing — the whole level becomes a safe walk',
+    boostPads: 'boost strips stop adding speed — the sprint pads do nothing',
+    zoneTally: 'the goal tally stops counting up — the time and ring bonuses vanish',
+    roll: 'rolling stops working — down does nothing, so steering and full drag stay',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -248,6 +251,34 @@ section('HAZARD (rings stagger; no rings kill; pits kill; the totem remembers)')
     }
 }
 
+// ---------------------------------------------------------- boost + roll ----
+section('BOOST + ROLL (new momentum verbs: sprint strips, the ball)')
+{
+    const z = ZONES[0]
+    // BOOST: crossing a sprint strip beats plain ground from the same start speed
+    const peakOnFlat = (x0, ticks) => {
+        const g = s.makeGame(); g.p.x = x0; g.p.y = s.groundY(z, x0); g.p.mode = 'track'; g.p.s = 120
+        let peak = 0
+        for (let t = 0; t < ticks; t++) { s.step(g, { right: true }); s.maybeEnterLoop(g); if (g.p.mode === 'track') peak = Math.max(peak, g.p.s) }
+        return peak
+    }
+    const boosted = peakOnFlat(742, 12)   // crosses the [740,850] strip
+    const plain = peakOnFlat(40, 12)      // same flat, no strip
+    ok(boosted > plain + 80, `a sprint strip peaked at ${boosted.toFixed(0)} vs ${plain.toFixed(0)} plain — boostPads is dead`)
+
+    // ROLL: down while moving = a ball with light drag and NO steering
+    const speedAfter = (inp, ticks = 30) => {
+        const g = s.makeGame(); g.p.x = 120; g.p.y = s.groundY(z, 120); g.p.mode = 'track'; g.p.s = 400
+        for (let t = 0; t < ticks; t++) { s.step(g, inp); s.maybeEnterLoop(g) }
+        return g.p.s
+    }
+    const roll = speedAfter({ down: true })
+    const stand = speedAfter({})
+    ok(roll > stand + 12, `rolling kept ${roll.toFixed(0)} vs ${stand.toFixed(0)} standing — the light-drag ball is dead`)
+    const rollBrake = speedAfter({ down: true, left: true })
+    ok(Math.abs(rollBrake - roll) < 25, `left still steered a roll (${rollBrake.toFixed(0)} vs ${roll.toFixed(0)}) — a ball must not steer`)
+}
+
 // ----------------------------------------------------------------- chain ----
 section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
 {
@@ -263,6 +294,14 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
     ok(rec.loop && rec.loop.entryV2 >= 1.25 * rec.loop.need,
         `loop entry v^2 ${rec.loop ? rec.loop.entryV2.toFixed(0) : '-'} is under 1.25x the need ${rec.loop?.need} — no headroom`)
     ok(rec.ringsAtHit.every(n => n > 0) && rec.hits >= 3, `a spike was passed ringless: ${JSON.stringify(rec.ringsAtHit)}`)
+
+    // TALLY: each goal counts up a time bonus + a ring bonus (the whole run pays out)
+    {
+        const tallies = []
+        s.replayScript(plan.script, { onTick: (g) => { for (const e of g.ev) if (e.type === 'tally') tallies.push(e) } })
+        ok(tallies.length === ZONES.length, `expected a tally at each of the ${ZONES.length} goals, got ${tallies.length} — zoneTally is dead`)
+        ok(tallies.some(t => t.total > 0), `no goal produced a tally bonus: ${JSON.stringify(tallies)}`)
+    }
 
     // independent margin re-measurement on the REPLAY (not the planner's hope):
     // for each jump pit, the real body must land >=12px past the far lip.
