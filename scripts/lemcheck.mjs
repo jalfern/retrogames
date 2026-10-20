@@ -268,6 +268,46 @@ const hudPlain = () => `${LAYOUT.hud.pre}9${LAYOUT.hud.mid}0` === 'IN PLAY 9 · 
     ok(/LAYOUT\.badge\.digger/.test(src), 'digger badge missing — the tunnel tool must use the shared badge color (#422 item 4)')
 }
 
+// -------------------------------------------------------- visible result (#470) ---
+// Jon mashed CLIMBER on the spawn clump: the count dropped but he could not see
+// who gained the skill. First the sim question the issue demanded: a charge must
+// NEVER drop without the target visibly gaining the skill (flag or state change),
+// and a refused assign must never cost anything. Then the on-screen promise:
+// every grant sets the flash the renderer rings with, and it decays by itself.
+{
+    section('VISIBLE RESULT (#470: charges never vanish silently)')
+    const { meta, grid } = buildLevel(0)
+    const g = sim.makeGame(meta, grid)
+    for (let t = 0; t < 200; t++) sim.step(g)
+    for (const L of g.lemmings.filter(l => l.live)) {
+        for (const s of sim.SKILLS) {
+            g.skills[s] = 9
+            const b = { st: L.state, c: L.climber, d: L.digger }
+            const before = g.skills[s]
+            const granted = sim.assign(g, L.id, s)
+            const spent = before - g.skills[s]
+            const changed = L.state !== b.st || L.climber !== b.c || L.digger !== b.d
+            ok(!granted || (spent === 1 && changed),
+                `#${470}: '${s}' on lemming #${L.id} spent ${spent} charge(s) and changed ${changed ? 'the' : 'nothing'} — a charge dropped without a visible skill`)
+            ok(granted || spent === 0,
+                `#${470}: a refused '${s}' on lemming #${L.id} still cost a supply`)
+            ok(!granted || L.flashT > 0,
+                `#${470}: '${s}' granted to lemming #${L.id} set no grant flash — the renderer has nothing to ring with`)
+        }
+    }
+    const F = g.lemmings.find(l => l.live && l.flashT > 0)
+    ok(!!F, 'no lemming carries a flash after grants — the flash never starts')
+    if (F) {
+        for (let t = 0; t < sim.CFG.flash + 5; t++) sim.step(g)
+        ok(F.flashT === 0, '#470: the grant flash never decays — every lemming would ring forever')
+    }
+    const src = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+    ok(/L\.flashT/.test(src) && /CFG\.flash/.test(src),
+        '#470: the renderer never draws the grant flash — assign() has a flashT and paint ignores it')
+    ok(/else\s+audioController\.playTone\(140/.test(src),
+        '#470: a refused assign is silent on the click paths — the player cannot hear that nothing happened')
+}
+
 // ------------------------------------------------------------------ mutations ---
 if (MUT) {
     section('MUTATIONS — each one MUST turn an honest check red')
@@ -285,6 +325,12 @@ if (MUT) {
     tryMut('maxFall = 0 (every hop splats)', c => { c.maxFall = 0 }, () => runSolver(0).win)
     tryMut('blast = 0.6 (door never opens)', c => { c.blast = 0.6 }, () => runSolver(2).win)
     tryMut('digSp = 0 (massif stays shut)', c => { c.digSp = 0 }, () => runSolver(1).win)
+    tryMut('flash = 0 (grants go back to invisible)', c => { c.flash = 0 }, () => {
+        const { meta, grid } = buildLevel(0)
+        const g = sim.makeGame(meta, grid)
+        for (let t = 0; t < 120; t++) sim.step(g)
+        return sim.assign(g, 0, 'climb') && g.lemmings[0].flashT > 0
+    })
     const tryMutL = (name, apply, probe) => {
         const pr = LAYOUT.panelReserve
         const lines = [...LAYOUT.attractLines]

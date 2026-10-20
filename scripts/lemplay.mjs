@@ -301,6 +301,11 @@ r.check('zero page errors across the whole playthrough', errors.length === 0, er
         r.check('the lemming under the first press is spared',
             !nPress || !((atRelease.lemmings.find(l => l.id === nPress.id) || {}).climber),
             `#${nPress && nPress.id} climber=${((atRelease.lemmings.find(l => l.id === (nPress && nPress.id)) || {}).climber)}`)
+        const flashers = (atRelease.lemmings || []).filter(l => l.live && l.flash > 0)
+        const newClimber = (atRelease.lemmings || []).find(l => l.live && l.climber && !((before.lemmings.find(o => o.id === l.id) || {}).climber))
+        r.check('#470: the granted lemming flashes — a spent charge names its target',
+            flashers.length === 1 && !!newClimber && flashers[0].id === newClimber.id,
+            `flashing=[${flashers.map(l => `#${l.id}:${l.flash}`).join(',')}] newClimber=#${newClimber && newClimber.id}`)
 
         // 4. RELEASE ON NOTHING: a press over open sky commits nothing
         const R2 = await stageRect()
