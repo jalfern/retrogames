@@ -122,7 +122,9 @@ export function drawMinimap(ctx, st) {
     if (st.fi < 0) return
     const size = st.map.size
     const cell = 2, ox = VW - size * cell - 6, oy = 6
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(ox - 2, oy - 2, size * cell + 4, size * cell + 4)
+    ctx.fillStyle = 'rgba(10,12,16,0.4)'; ctx.fillRect(ox - 3, oy - 3, size * cell + 6, size * cell + 6)
+    ctx.strokeStyle = 'rgba(245,196,90,0.7)'; ctx.lineWidth = 1
+    ctx.strokeRect(ox - 3 + 0.5, oy - 3 + 0.5, size * cell + 5, size * cell + 5)
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
             if (!st.explored.has(y * size + x)) continue

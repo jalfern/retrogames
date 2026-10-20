@@ -10,7 +10,8 @@
 // Sections: NO-RANDOM · FLOOR AUDIT (independent BFS) · ENGINE PINS
 // (potion/ale/heal cost, locked-door needs key, tower-gate needs key, board
 // grants key only when every tower floor is done, dead-dont-act, overkill
-// floors at dmgFloor) · THE PROVEN CAMPAIGN · SLACK RULE · DETERMINISM.
+// floors at dmgFloor) · THE PROVEN CAMPAIGN · SLACK RULE · DETERMINISM ·
+// READABILITY OVERLAY (rule-6 5b: footer opt-out + minimap chrome).
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -240,6 +241,25 @@ section('DETERMINISM')
     const a = makeRun(), b = makeRun()
     playOut(a, 300000); playOut(b, 300000)
     ok(stateHash(a) === stateHash(b) && a.end === b.end, 'same seed, two different outcomes')
+}
+
+section('READABILITY OVERLAY (#423 item 5b)')
+{
+    // The fixed JALFERN.COM footer watermark + label (App.jsx Layout) is
+    // centred at the bottom of the viewport and paints OVER the corridor floor
+    // and the party HP cards. Bards' Tale owns its own bottom HUD, so it must
+    // opt the global footer off — the same opt-out MYST / COMET DRIFT HD use.
+    const reg = readFileSync(join(HERE, '..', 'src', 'config', 'games.js'), 'utf8').replace(/\/\/.*$/gm, '')
+    const at = reg.indexOf("path: '/bards-tale'")
+    ok(at >= 0, 'bards-tale missing from the registry')
+    const nextPath = reg.indexOf("path: '", at + 1)
+    const block = reg.slice(at, nextPath < 0 ? undefined : nextPath)
+    ok(/footer:\s*'none'/.test(block), "bards-tale footer over the corridor floor: entry must set footer: 'none' (drops the JALFERN.COM watermark + label off the playfield)")
+    // minimap must read as themed chrome, not a black slab over the dungeon art
+    const art = readFileSync(join(HERE, '..', 'src', 'games', 'BardsTale', 'art.js'), 'utf8')
+    const mm = art.slice(art.indexOf('export function drawMinimap'))
+    ok(!/rgba\(0,\s*0,\s*0,\s*0\.55\)/.test(mm), 'minimap is a black box over the corridor (use a translucent tinted fill)')
+    ok(/strokeRect/.test(mm), 'minimap has no themed border (draw a frame so it reads as HUD chrome)')
 }
 
 console.log(`\n\x1b[1m${fails.length ? 'FAIL' : 'PASS'}\x1b[0m  ${pass}/${pass + fails.length}`)
