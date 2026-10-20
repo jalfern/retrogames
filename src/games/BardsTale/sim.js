@@ -364,7 +364,10 @@ function settleTile(st) {
         }
     } else {
         const sp = st.map.specials.get(t)
-        if (sp) st.events.push({ type: 'atDoor', kind: sp.kind, name: sp.name })
+        if (sp) {
+            const open = sp.kind !== 'towergate' || st.towerKey
+            st.events.push({ type: 'atDoor', kind: sp.kind, name: sp.name, open })
+        }
     }
 }
 

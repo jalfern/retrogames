@@ -159,6 +159,45 @@ section('ENGINE PINS')
     run(st, 'attack')
     ok(st.end === 'dead' || st.party.every((h) => !h.alive), 'dead party kept living')
 }
+{
+    // #423 first-time-player pass: walking onto a town doorway LABELS it, and an
+    // open door never calls itself locked. Only Mangar's gate reads locked, and
+    // only until the tower key. (Pre-fix the atDoor event carried no `open`, so
+    // index.jsx painted every town door "LOCKED — FIND THE KEY".)
+    const HX = [1, 0, -1, 0], HY = [0, 1, 0, -1]
+    const walkOnto = (st, idx) => {
+        const w = st.map.w
+        const sx = idx % w, sy = Math.floor(idx / w)
+        for (let d = 0; d < 4; d++) {
+            const nx = sx - HX[d], ny = sy - HY[d]
+            if (!st.map.wall(nx, ny)) {
+                st.x = nx; st.y = ny; st.dir = d; drain(st)
+                run(st, 'fwd')
+                return drain(st).find((e) => e.type === 'atDoor')
+            }
+        }
+        return null
+    }
+    let openCount = 0
+    for (const kind of ['guild', 'garth', 'tavern', 'temple', 'board', 'sewer']) {
+        const st = makeRun()
+        const [idx, sp] = [...st.map.specials.entries()].find(([, s]) => s.kind === kind)
+        const e = walkOnto(st, idx)
+        ok(!!e && e.open === true && e.name === sp.name && e.kind === kind,
+            `${kind} doorway is not labelled as an open, named entrance`)
+        if (e && e.open === true) openCount++
+    }
+    ok(openCount === 6, `only ${openCount}/6 open doorways reported open`)
+    {
+        const st = makeRun()
+        const idx = [...st.map.specials.entries()].find(([, s]) => s.kind === 'towergate')[0]
+        const locked = walkOnto(st, idx)
+        ok(!!locked && locked.open === false, 'tower gate reported open without the key')
+        st.towerKey = true
+        const open = walkOnto(st, idx)
+        ok(!!open && open.open === true, 'tower gate reported locked with the key')
+    }
+}
 
 section('THE PROVEN CAMPAIGN')
 let base
