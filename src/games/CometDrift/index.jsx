@@ -7,7 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
-import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath } from './art.js'
+import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout } from './art.js'
 import { drawText } from './font.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
@@ -211,9 +211,6 @@ export default function CometDrift() {
             return { f: dx * ca + dy * sa, l: dx * -sa + dy * ca }
         }
 
-        const SUN_A = 0.6
-        const wrapA = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a }
-
         const raster = () => {
             const p = g.karts[0]
             const bobTarget = Math.max(-6, Math.min(6, (p.grade || 0) * 46 + (p.h || 0) * 0.035))
@@ -226,8 +223,9 @@ export default function CometDrift() {
             const aN = ((camA / (Math.PI * 2)) * 512) % 512
             const gN = ((camA / (Math.PI * 2)) * 512) % 512
             const cA = ((camA / (Math.PI * 2)) * 256 * 1.6 + g.tick * 0.03) % 256
-            const sunX = W / 2 + wrapA(SUN_A - camA) * W * 0.66
-            const sunY = HZ - Math.round(sunLift * u)
+            const sun = sunLayout(camA, W, pp, u, HZ, sunLift)
+            const sunX = sun.visible ? sun.sunX : W + 4096
+            const sunY = sun.sunY
             for (let y = 0; y < HZ; y++) {
                 const t = y / Math.max(1, HZ)
                 let sr, sg, sb

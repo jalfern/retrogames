@@ -654,6 +654,67 @@ const hudUsesOwnFont = () => {
 await fontIntegrity()
 hudUsesOwnFont()
 
+// #440 item 4 — sun azimuth. The disc must be anchored to a fixed world
+// azimuth and projected through the SAME pinhole the road and scenery use.
+// The old linear map (`wrapA(...) * W * 0.66`) was not the road's
+// projection: turn away from the azimuth and the disc vanished while the
+// glow band kept bleeding in at the screen edge — westbound straights got
+// "glow, no sun". sunLayout (art.js) is the single source; the renderer
+// gates disc+glow together through `visible`.
+const ARTJS = new URL('../src/games/CometDrift/art.js', import.meta.url)
+const loadArt = async () => import('../src/games/CometDrift/art.js' + '?s=' + Math.random())
+
+const sunAudit = async () => {
+    const { sunLayout, SUN_AZ } = await loadArt()
+    for (const W of [320, 560, 880]) {
+        const pp = 540
+        const at = (camA) => {
+            const s = sunLayout(camA, W, pp, 1, 200, 30)
+            const x = s.visible ? s.sunX : W + 4096
+            return { x, discHit: x > -s.discR && x < W + s.discR, glowHit: x > -s.glowR && x < W + s.glowR }
+        }
+        const a0 = at(0); const aL = at(Math.PI * 2)
+        check(`sun ${W}px: fixed world azimuth — a full turn of heading returns to the same spot`, Math.abs(a0.x - aL.x) < 1e-9 && a0.discHit === aL.discHit)
+        const back = at(SUN_AZ + Math.PI)
+        check(`sun ${W}px: facing away from the azimuth — no disc AND no glow band`, !back.discHit && !back.glowHit)
+        let bands = 0; let prev = false; let maxStep = 0; let prevX = 0; let stray = 0
+        let firstHit = false; let lastHit = false
+        for (let i = 0; i < 720; i++) {
+            const v = at((i * Math.PI) / 360)
+            if (v.discHit && !prev) bands++
+            if (v.discHit) { if (prev && Math.abs(v.x - prevX) > maxStep) maxStep = Math.abs(v.x - prevX); prevX = v.x }
+            if (!v.discHit && v.glowHit) stray++
+            prev = v.discHit
+            if (i === 0) firstHit = v.discHit
+            lastHit = v.discHit
+        }
+        if (firstHit && lastHit) bands--
+        check(`sun ${W}px: exactly one visible band per lap — the disc glides, never teleports`, bands === 1, `bands ${bands}`)
+        check(`sun ${W}px: no glow without the disc at any heading`, stray === 0, `stray ${stray}`)
+        check(`sun ${W}px: the sun tracks camera rotation — max ${maxStep.toFixed(1)}px step per 0.5°`, maxStep > 0.2 && maxStep < pp * 0.021)
+        let worst = 0
+        for (let i = 0; i < 36; i++) {
+            const camA = SUN_AZ - 0.28 + (i * 0.56) / 35
+            const D = 4000
+            const wx = Math.cos(SUN_AZ) * D; const wy = Math.sin(SUN_AZ) * D
+            const f = wx * Math.cos(camA) + wy * Math.sin(camA)
+            const l = wx * -Math.sin(camA) + wy * Math.cos(camA)
+            worst = Math.max(worst, Math.abs(W / 2 + pp * (l / f) - sunLayout(camA, W, pp, 1, 200, 30).sunX))
+        }
+        check(`sun ${W}px: same projection as road/scenery — sun x == landmark x (worst ${worst.toFixed(2)}px)`, worst < 1)
+    }
+}
+
+const sunWired = () => {
+    const src = readFileSync(IDXJS, 'utf8')
+    check('index.jsx: sun position comes only from art.js sunLayout', /sunLayout\(camA, W, pp, u, HZ, sunLift\)/.test(src) && !/SUN_A\b/.test(src))
+    check('index.jsx: disc+glow are gated together through sun.visible', /sun\.visible\s*\?\s*sun\.sunX\s*:\s*W\s*\+\s*4096/.test(src))
+}
+
+console.log('— sun azimuth, full-lap audit (#440 item 4) —')
+await sunAudit()
+sunWired()
+
 if (process.argv.includes('--mutate')) {
     // break the checkpoint gate in sim.js and demand the shortcut probe above
     // goes red. Restore runs whatever happens.
@@ -847,6 +908,32 @@ if (process.argv.includes('--mutate')) {
         writeFileSync(FONTJS, fontSrc.replace('return n === 0 ? 0 : n * (CW + 1) - 1', 'return n === 0 ? 0 : n * (CW + 1) + 1'))
         await died('textW stops measuring the trailing gap', fontIntegrity)
     } finally { writeFileSync(FONTJS, fontSrc) }
+
+    // #440 item-4 sun mutants: re-plant each regression into art.js/index.jsx
+    // and demand the azimuth gate above goes red.
+    const sunDied = async (label, run) => {
+        const before = R.fail
+        await run()
+        if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #440 sun-azimuth gate is load-bearing`)
+        else console.log(`  MUTANT SURVIVED — ${label}: the sun-azimuth gate is BLIND`)
+    }
+    const artSrc = readFileSync(ARTJS, 'utf8')
+    try {
+        writeFileSync(ARTJS, artSrc.replace('const sunX = half + pp * Math.tan(d)', 'const sunX = half + d * W * 0.66'))
+        await sunDied('the linear azimuth map returns (westbound glow-band without a disc)', sunAudit)
+    } finally { writeFileSync(ARTJS, artSrc) }
+    try {
+        writeFileSync(ARTJS, artSrc.replace('const sunX = half + pp * Math.tan(d)', 'const sunX = half'))
+        await sunDied('the sun is nailed to screen centre for the whole lap', sunAudit)
+    } finally { writeFileSync(ARTJS, artSrc) }
+    try {
+        writeFileSync(ARTJS, artSrc.replace('wrapAz(SUN_AZ - camA)', 'wrapAz(SUN_AZ - camA * 0.9)'))
+        await sunDied('the sun azimuth is no longer fixed in world space', sunAudit)
+    } finally { writeFileSync(ARTJS, artSrc) }
+    try {
+        writeFileSync(IDXJS, idxSrc.replace('const sunX = sun.visible ? sun.sunX : W + 4096', 'const sunX = sun.sunX'))
+        await sunDied('the renderer drops the visibility gate (glow bleeds without the disc)', sunWired)
+    } finally { writeFileSync(IDXJS, idxSrc) }
 }
 
 console.log(`\n${R.fail === 0 ? 'GREEN' : 'RED — ' + R.fail + ' failed'}`)

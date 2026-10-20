@@ -350,6 +350,25 @@ export function buildSky() {
     return { far: MESA_FAR, near: MESA_NEAR, glint }
 }
 
+// ---- sun (#440 item 4): ONE pure projection, anchored to a fixed world
+// azimuth. Screen x follows pinhole tan(Δ), so the disc glides across the
+// sky in step with the road; when the heading turns away from the azimuth
+// the sun leaves the frame entirely — glow included, never a stray glow
+// band on the opposite straights. The renderer takes this; cometcheck
+// audits it across a full lap. ----
+export const SUN_AZ = 0.6
+const wrapAz = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a }
+export function sunLayout(camA, W, pp, u, HZ, sunLift) {
+    const half = W / 2
+    const discR = 16 * u
+    const glowR = 25 * u
+    const d = wrapAz(SUN_AZ - camA)
+    const visible = Math.abs(d) < Math.atan((half + discR) / pp)
+    const sunX = half + pp * Math.tan(d)
+    const sunY = HZ - Math.round(sunLift * u)
+    return { sunX, sunY, discR, glowR, visible }
+}
+
 // ---- buggies: an exposed-wheel desert racer seen from behind — fat knobby
 // rears outside the body, low wide tub, flat nose plate with the livery
 // stripe, roll cage hoop over the driver, finned engine block behind the seat,
