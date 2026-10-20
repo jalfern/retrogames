@@ -10,6 +10,7 @@ import * as THREE from 'three'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -513,15 +514,10 @@ const SSXGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
-                    <h1 className="text-6xl font-black italic" style={{ color: '#fff', textShadow: '4px 0 0 #b0147a, -4px 0 0 #1490b0, 0 12px 30px #000' }}>SSX</h1>
-                    <p className="text-cyan-100/90 font-mono mt-1 text-sm">tricks fill the boost · boost wins the mountain</p>
-                    <p className="text-white font-mono font-bold mt-5 animate-pulse">TAP / PRESS ANY KEY — RACE &middot; PRESS 2 FOR SHOWOFF</p>
-                    <AttractMessage className="mt-2 px-8 text-cyan-100/80" messages={[
-                        '←/→ steer · SPACE crouch & ollie (release off a lip) · X grab · Z/C flip · SHIFT boost',
-                        'chains pay to x4 · a FULL meter at takeoff throws OVER — double points, stupid-big tricks',
-                        'three heats vs the field: ALPINE GLADE · NEON HEIGHTS · BIG AIR BASIN · ? pause',
-                    ]} />
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-6xl font-black italic mb-6" style={{ color: '#fff', textShadow: '4px 0 0 #b0147a, -4px 0 0 #1490b0, 0 12px 30px #000' }}>SSX</h1>
+                    <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
                 </div>
             )}
 

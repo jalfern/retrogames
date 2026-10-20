@@ -49,6 +49,15 @@ const REACT_TITLES = [
         wrap: `    'DIG A MATCHED NUMBER TO CHORD THE REST',\n`,
         leak: `    'EVERY BOARD IS PROVEN GUESS-FREE',\n`,
     },
+    {
+        label: 'SSX',
+        jsx: 'src/games/SSX/index.jsx',
+        mf: 'src/games/SSX/attract.js',
+        import: '../src/games/SSX/attract.js',
+        slot: '<AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />',
+        wrap: `    'X GRAB · Z/C FLIP · SHIFT BOOST',\n`,
+        leak: `    'CHAINS PAY UP TO x4',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
