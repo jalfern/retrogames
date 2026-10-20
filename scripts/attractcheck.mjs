@@ -79,6 +79,24 @@ const REACT_TITLES = [
         wrap: `    'SPACE FIRES THE SYNCHRONIZED VICKERS',\n`,
         leak: `    'A ZOOM CLIMB BUYS METRES WITH M/S',\n`,
     },
+    {
+        label: 'BOULDER DASH',
+        jsx: 'src/games/BoulderDash/index.jsx',
+        mf: 'src/games/BoulderDash/attract.js',
+        import: '../src/games/BoulderDash/attract.js',
+        slot: '<AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />',
+        wrap: `    'REACH THE GEM QUOTA, THEN THE EXIT',\n`,
+        leak: `    'THE FIREFLY BURNS ALL BUT STEEL',\n`,
+    },
+    {
+        label: 'METROID-LITE',
+        jsx: 'src/games/MetroidLite/index.jsx',
+        mf: 'src/games/MetroidLite/attract.js',
+        import: '../src/games/MetroidLite/attract.js',
+        slot: '<AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />',
+        wrap: `    'THE WAY BACK IS THE WAY FORWARD',\n`,
+        leak: `    'BOMBS DROP THROUGH BULKHEADS',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]

@@ -14,7 +14,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
+import { PRESS, MESSAGES } from './attract.js'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { LEVELS, buildLevel } from './levels.js'
@@ -376,15 +378,10 @@ const DashGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
-                    <h1 className="text-5xl font-black text-amber-300" style={{ textShadow: '0 4px 0 #7a3b12, 0 10px 24px #000' }}>BOULDER DASH</h1>
-                    <p className="text-amber-100/90 font-mono mt-1 text-sm">dig deep. grab the gems. do not be under the rock when it drops.</p>
-                    <p className="text-white font-mono font-bold mt-6 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-amber-200/80 font-mono text-xs mt-2 px-6">
-                        arrows / D-pad: dig &amp; move · gather the GEM quota, then reach the exit before the clock<br />
-                        boulders crush you, dropped gems turn to dirt, and the firefly burns everything but steel ·
-                        this demo is a proven solution, replayed move for move
-                    </p>
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-5xl font-black text-amber-300 mb-6" style={{ textShadow: '0 4px 0 #7a3b12, 0 10px 24px #000' }}>BOULDER DASH</h1>
+                    <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                 </div>
             )}
 
