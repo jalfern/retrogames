@@ -136,6 +136,7 @@
     "qbertcheck": "node scripts/qbertcheck.mjs",
     "qbertdive": "node scripts/qbertdive.mjs",
     "vpadcheck": "node scripts/vpadcheck.mjs",
+    "touchselectcheck": "node scripts/touchselectcheck.mjs",
     "steercheck": "node scripts/steercheck.mjs",
     "vpadboot": "node scripts/vpadboot.mjs",
     "fitcanvascheck": "node scripts/fitcanvascheck.mjs",

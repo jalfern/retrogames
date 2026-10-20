@@ -14,3 +14,34 @@ html,
 body {
   background: #000;
 }
+
+/* #606 — the arcade is a game surface, not a document. On iPad/iOS Safari a
+   press-and-drag (the virtual stick, the d-pad, the canvas, or even the footer
+   label) started a text-selection / long-press callout, so drags "turned into
+   text selection" and the input felt dead. WebKit does not reliably inherit
+   `user-select` off `body`, so it is pinned on the whole app root as well;
+   `user-select` and `-webkit-touch-callout` then cascade to every game surface.
+   Directions still register because the pad reads `touchmove`, not a selection
+   gesture. Editable fields (a game's own text entry, if any) opt back in. */
+html,
+body,
+#root {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+canvas {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
