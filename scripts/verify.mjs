@@ -61,6 +61,9 @@ const suite = [
     node('kartcheck.mjs'),
     node('kartplay.mjs'),
     node('vpadcheck.mjs'),
+    // #606: WebKit (iPad + iPhone profiles) proves a press-and-drag on the pad /
+    // canvas never turns into text selection, and the input still registers.
+    node('touchselectcheck.mjs'),
     // MYST is navigation by sight: frame every node's camera and fail on a
     // buried camera, a single surface filling >=80% of the frame, or the
     // caption's landmark missing from the view (#407).
