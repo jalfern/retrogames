@@ -327,6 +327,7 @@ const CivilizationVGame = () => {
         }
 
         let lastHud = 0, lastPanel = 0
+        const tut = { built: false, ended: false }
         const syncHud = () => {
             const now = performance.now()
             if (now - lastHud < 90) return
@@ -402,6 +403,23 @@ const CivilizationVGame = () => {
                 const tw = Math.min(999, Math.round((tour / CFG.tourismWin) * 100))
                 const aw = arkPartsDone(gs, 0)
                 h.victory.textContent = `🏆 caps ${taken}/3 · ☼ ${tw}% · ARK ${hasTech(gs, 0, 'SPACEFLIGHT') ? `${aw}/4` : '🔒'}`
+            }
+            if (h.nextstep) {
+                // #535 — one line for the NEXT step, until the player has done each once
+                const settled = gs.cities.some((c) => c.civ === 0 && c.alive)
+                if (gs.cities.some((c) => c.civ === 0 && c.alive && c.queue && c.queue.length > 0)) tut.built = true
+                if (gs.turn > 1) tut.ended = true
+                let step = ''
+                if (!settled) step = 'PRESS E TO FOUND YOUR CAPITAL'
+                else if (!tut.built && gs.turn <= 5) step = 'PICK A BUILD — 1 WARRIOR · 3 SETTLER · 4 WORKER'
+                else if (!tut.ended) step = 'PRESS SPACE TO END THE TURN'
+                h.nextstep.textContent = step
+                h.nextstep.style.display = step ? '' : 'none'
+            }
+            if (h.howwin) {
+                // #535 — the short "how you win" card stays up through the opening moves
+                const settled = gs.cities.some((c) => c.civ === 0 && c.alive)
+                h.howwin.style.opacity = (!settled || gs.turn <= 3) ? '1' : '0'
             }
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
@@ -722,13 +740,28 @@ const CivilizationVGame = () => {
             if (vOpenRef.current) refreshVPanel()
             audioController.playTone(vOpenRef.current ? 330 : 240, 0.05, 'triangle', 0.05)
         }
-        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP, toggleDPanel, closeDPanel, pickDeclare, pickPeace, pickTrade, pickGift, toggleVPanel, closeVPanel }
+        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP, toggleDPanel, closeDPanel, pickDeclare, pickPeace, pickTrade, pickGift, toggleVPanel, closeVPanel, recenter: () => recenter() }
 
-        let drag = null
+        // -- camera pan / orbit. Left-drag and single-finger touch PAN the map
+        //    (the map follows your finger); right-drag and two-finger touch ORBIT.
+        //    Re-center (Home / the HUD button) jumps back to your unit or capital.
+        let pointers = new Map()
+        let gesture = null
+        const PAN_K = 0.0016, ORBIT_K = 0.006, TILT_K = 0.004
+        const midOf = () => { const p = [...pointers.values()]; return { x: p.reduce((s, q) => s + q.x, 0) / p.length, y: p.reduce((s, q) => s + q.y, 0) / p.length } }
+        const recenter = () => {
+            if (screenRef.current !== 'play') return
+            const sel = gs.units.find((u) => u.id === gs.selected && u.alive && u.civ === 0)
+            const cap = gs.cities.find((c) => c.civ === 0 && c.alive)
+            const t = sel ? [sel.c, sel.r] : (cap ? [cap.c, cap.r] : null)
+            if (!t) return
+            const w = view.hexToWorld(t[0], t[1]); cam.tx = w.x; cam.tz = w.z
+            audioController.playTone(520, 0.03, 'sine', 0.03)
+        }
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
-            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Enter'].includes(e.code)) e.preventDefault()
+            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Enter', 'Home'].includes(e.code)) e.preventDefault()
             const sc = screenRef.current
             if (sc === 'attract') { startPlay(1); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
@@ -758,6 +791,7 @@ const CivilizationVGame = () => {
             if (e.code === 'KeyM') { if (screenRef.current === 'play') pickImprove('MINE'); return }
             if (e.code === 'KeyO') { if (screenRef.current === 'play') pickImprove('ROAD'); return }
             if (e.code === 'Escape') { if (panelOpenRef.current) closePanel(); if (wOpenRef.current) closeWPanel(); if (pOpenRef.current) closePPanel(); if (uOpenRef.current) closeUPanel(); if (gOpenRef.current) closeGPanel(); if (dOpenRef.current) closeDPanel(); if (vOpenRef.current) closeVPanel(); return }
+            if (e.code === 'Home') { recenter(); return }
             if (e.code === 'ArrowLeft') { cam.az -= 0.12; return }
             if (e.code === 'ArrowRight') { cam.az += 0.12; return }
             if (e.code === 'ArrowUp') { cam.el = Math.min(1.4, cam.el + 0.06); return }
@@ -765,9 +799,9 @@ const CivilizationVGame = () => {
         }
         const onWheel = (e) => { e.preventDefault && e.preventDefault(); cam.dist = Math.max(18, Math.min(90, cam.dist + (e.deltaY > 0 ? 4 : -4))) }
 
-        const onPointerDown = (e) => { const sc = screenRef.current; if (sc === 'attract') { startPlay(1); return } if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return } drag = { x: e.clientX, y: e.clientY, t: performance.now(), moved: 0, az: cam.az, el: cam.el } }
-        const onPointerMove = (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved = Math.max(drag.moved, Math.abs(dx) + Math.abs(dy)); cam.az = drag.az - dx * 0.006; cam.el = Math.max(0.35, Math.min(1.4, drag.el + dy * 0.004)) }
-        const onPointerUp = (e) => { if (!drag) return; if (drag.moved < 8 && screenRef.current === 'play') { const t = pickTile(e.clientX, e.clientY); if (t) clickTile(t.c, t.r) } drag = null }
+        const onPointerDown = (e) => { const sc = screenRef.current; if (sc === 'attract') { startPlay(1); return } if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return } if (pausedRef.current) return; pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); const orbit = e.button === 2 || (e.pointerType === 'mouse' && e.buttons >= 2); if (pointers.size >= 2 && gesture && gesture.mode === 'pan') { gesture.mode = 'orbit'; gesture.start = midOf(); gesture.baseAz = cam.az; gesture.baseEl = cam.el; gesture.clickable = false; return } const two = pointers.size >= 2; const start = two ? midOf() : { x: e.clientX, y: e.clientY }; gesture = { mode: (two || orbit) ? 'orbit' : 'pan', start, baseAz: cam.az, baseEl: cam.el, startTx: cam.tx, startTz: cam.tz, moved: 0, clickable: !two && !orbit } }
+        const onPointerMove = (e) => { if (!pointers.has(e.pointerId)) return; pointers.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (!gesture) return; if (pointers.size >= 2) gesture.mode = 'orbit'; const cur = pointers.size >= 2 ? midOf() : { x: e.clientX, y: e.clientY }; const dx = cur.x - gesture.start.x, dy = cur.y - gesture.start.y; gesture.moved = Math.max(gesture.moved, Math.abs(dx) + Math.abs(dy)); if (gesture.mode === 'orbit') { cam.az = gesture.baseAz - dx * ORBIT_K; cam.el = Math.max(0.35, Math.min(1.4, gesture.baseEl + dy * TILT_K)) } else { const K = cam.dist * PAN_K, ca = Math.cos(gesture.baseAz), sa = Math.sin(gesture.baseAz), ce = Math.cos(gesture.baseEl); cam.tx = gesture.startTx + (-ca * dx - sa * ce * dy) * K; cam.tz = gesture.startTz + (sa * dx - ca * ce * dy) * K } }
+        const onPointerUp = (e) => { if (!pointers.has(e.pointerId)) return; pointers.delete(e.pointerId); if (!pointers.size) { if (gesture && gesture.clickable && gesture.moved < 8 && screenRef.current === 'play') { const t = pickTile(e.clientX, e.clientY); if (t) clickTile(t.c, t.r) } gesture = null } }
 
         const startPlay = (seed = 1) => {
             gs = newGame(seed, 0); view = reinitView(gs)
@@ -784,11 +818,21 @@ const CivilizationVGame = () => {
         canvas.addEventListener('pointerdown', onPointerDown)
         window.addEventListener('pointermove', onPointerMove)
         window.addEventListener('pointerup', onPointerUp)
+        window.addEventListener('pointercancel', onPointerUp)
+        const onCtx = (e) => e.preventDefault()
+        canvas.addEventListener('contextmenu', onCtx)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
             if (!r.width || !r.height) return
-            renderer.setSize(r.width, r.height, false)
+            // The drawing buffer is w*dpr (setPixelRatio) but the CSS box must stay
+            // at the viewport size — otherwise on a HiDPI display the canvas grows
+            // to the buffer size, overflows, and only its top-left quadrant shows
+            // (the world's centre lands in the bottom-right corner — #535).
+            canvas.style.width = r.width + 'px'
+            canvas.style.height = r.height + 'px'
+            canvas.style.display = 'block'
+            renderer.setSize(r.width, r.height)
             camera.aspect = r.width / r.height
             camera.updateProjectionMatrix()
         }
@@ -818,13 +862,15 @@ const CivilizationVGame = () => {
                     owned: gs.tiles.filter((t) => t.owner === 0).length,
                     explored0: countArr(gs.explored[0]),
                     camTgt: [cam.tx, cam.tz],
+                    camLookScreen: (() => { const rect = canvas.getBoundingClientRect(); const v = new THREE.Vector3(cam.tx, 2, cam.tz).project(camera); return [Math.round((v.x * 0.5 + 0.5) * rect.width), Math.round((-v.y * 0.5 + 0.5) * rect.height)] })(),
+                    selectedScreen: (() => { const u = gs.units.find((x) => x.id === gs.selected && x.alive && x.civ === 0); if (!u) return null; const w = view.hexToWorld(u.c, u.r); const rect = canvas.getBoundingClientRect(); const v = new THREE.Vector3(w.x, 2, w.z).project(camera); return [Math.round((v.x * 0.5 + 0.5) * rect.width), Math.round((-v.y * 0.5 + 0.5) * rect.height)] })(),
                     capitalWorld: (() => { const c = gs.cities.find((x) => x.civ === 0 && x.alive); if (!c) return null; const w = view.hexToWorld(c.c, c.r); return [w.x, w.z] })(),
                     // #406 — the fog readback: the dimmest UNexplored tile's colour, straight from
                     // the instanced colour buffer the renderer wrote (not a racy pixel read). The
                     // old bug painted every unseen tile the near-black UNSEEN (rgb sum ~0.07); the
                     // dim world keeps the faintest ocean well above 0.10.
                     unseenMin: (() => { const a = view.hexes.instanceColor && view.hexes.instanceColor.array; if (!a) return null; let m = Infinity, n = 0; for (let i = 0; i < gs.tiles.length; i++) { if (gs.explored[0][i]) continue; const s = a[i * 3] + a[i * 3 + 1] + a[i * 3 + 2]; if (s < m) m = s; n++ } return n ? m : null })() }),
-                start: startPlay, hash: () => stateHash(gs), select: (id) => { pending = { select: id } },
+                start: startPlay, recenter, hash: () => stateHash(gs), select: (id) => { pending = { select: id } },
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
                 attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k) => { pending = { ...pending, queue: k } },
                 research: (id) => { pending = { ...pending, research: id } }, learn: (id) => { grantTech(gs, 0, id) },
@@ -910,6 +956,8 @@ const CivilizationVGame = () => {
             canvas.removeEventListener('pointerdown', onPointerDown)
             window.removeEventListener('pointermove', onPointerMove)
             window.removeEventListener('pointerup', onPointerUp)
+            window.removeEventListener('pointercancel', onPointerUp)
+            canvas.removeEventListener('contextmenu', onCtx)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
             destroyView(view)
@@ -956,7 +1004,17 @@ const CivilizationVGame = () => {
                     <span ref={setHud('sel')} className="text-white/70 ml-auto">tap a unit</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, color: '#ffe9a8', textShadow: '0 0 12px #c80' }} />
-                <div className="absolute bottom-3 right-3 pointer-events-none">
+                {/* #535 — the short how-you-win card: visible through the opening moves, then yields */}
+                <div ref={setHud('howwin')} className="absolute left-3 top-24 pointer-events-none max-w-[44vw] border border-white/20 rounded px-2.5 py-1.5 bg-black/55 font-mono text-[10px] text-white/75 leading-tight transition-opacity duration-500" style={{ opacity: 0 }}>
+                    <div className="text-white/90 font-bold tracking-[0.2em] text-[9px] mb-0.5">HOW YOU WIN</div>
+                    <div>· take all 3 capitals</div>
+                    <div>· build the Ark (science)</div>
+                    <div>· lead the world in tourism</div>
+                </div>
+                {/* #535 — one line for the next step, until the player has done each once */}
+                <div ref={setHud('nextstep')} className="absolute inset-x-0 top-[42%] text-center font-mono font-bold text-base pointer-events-none" style={{ display: 'none', color: '#9fe8ff', textShadow: '0 0 10px #08a' }} />
+                <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5">
+                    <button onClick={() => actRef.current.recenter && actRef.current.recenter()} className="pointer-events-auto border border-cyan-300/60 rounded px-3 py-1 bg-black/50 text-cyan-100 font-mono text-[11px]">⌂ RE-CENTER · Home</button>
                     <div className="border border-amber-300/50 rounded px-3 py-1 bg-black/50 text-amber-100 font-mono text-[11px]">END TURN · Space</div>
                 </div>
             </div>

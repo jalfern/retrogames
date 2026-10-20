@@ -119,6 +119,38 @@ r.check(`the world beyond your vision is a dim world, not a black void (dimmest 
   r.check(`the camera is centred on the capital (look-at offset ${camOff.toFixed(3)})`, camOff < 0.01)
 }
 
+// 2b — THE CAMERA (issue #535): the opening frame is on-screen, a left-drag
+// pans the map, and Home re-centres the look-at back onto the capital.
+{
+    const vw = 760, vh = 620  // the viewport this page launched with
+    const look = s.camLookScreen
+    r.check(`the opening frame is on-screen, not the bottom-right corner (look-at ${look})`,
+        look && look[0] > vw * 0.2 && look[0] < vw * 0.8 && look[1] > vh * 0.2 && look[1] < vh * 0.8)
+    // a real left-drag on the canvas pans the look-at target
+    const before = s.camTgt
+    const cb = await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const b = c.getBoundingClientRect()
+        return { x: b.x, y: b.y, w: b.width, h: b.height }
+    })
+    await page.mouse.move(cb.x + cb.w / 2, cb.y + cb.h / 2)
+    await page.mouse.down()
+    await page.mouse.move(cb.x + cb.w / 2 + 120, cb.y + cb.h / 2 + 60, { steps: 6 })
+    await page.mouse.up()
+    await wait(150)
+    const after = (await probe()).camTgt
+    const panD = Math.hypot(after[0] - before[0], after[1] - before[1])
+    r.check(`a left-drag pans the map (look-at moved ${panD.toFixed(1)}u)`, panD > 2)
+    // Home re-centres the look-at back onto your selected unit (or the capital)
+    await page.keyboard.press('Home')
+    await wait(150)
+    const rc = await probe()
+    const reOff = rc.selectedScreen
+        ? Math.hypot(rc.camLookScreen[0] - rc.selectedScreen[0], rc.camLookScreen[1] - rc.selectedScreen[1])
+        : (rc.capitalWorld ? Math.hypot(rc.camTgt[0] - rc.capitalWorld[0], rc.camTgt[1] - rc.capitalWorld[1]) : Infinity)
+    r.check(`Home re-centres the camera onto your unit (look-at offset ${reOff.toFixed(2)})`, reOff < 1.5)
+}
+
 // 3 — real Space ends turns; the capital grows; canvas stays lit
 const turn0 = s.turn
 await page.keyboard.press('Space')
@@ -411,6 +443,29 @@ r.check('one key returns to attract', (await probe()).screen === 'attract')
     }))
     r.check('lite introduces no page errors', liteErrors.length === 0, liteErrors.slice(0, 2).join(' | '))
     await litePage.close()
+}
+
+// 8b — THE HiDPI FRAME (#535 "start is off-screen"): at a 2x device pixel ratio the
+// drawing buffer is 2x the viewport. The canvas CSS box must stay the viewport size;
+// let it follow the buffer and the world overflows, showing only the top-left
+// quadrant — the opening look-at (your capital) lands in the bottom-right corner.
+{
+    const dprPage = await browser.newPage({ viewport: { width: 760, height: 620 }, deviceScaleFactor: 2 })
+    dprPage.setDefaultTimeout(60000)
+    const dprErrors = []
+    dprPage.on('pageerror', (e) => dprErrors.push(e.message))
+    await dprPage.goto(URL, { waitUntil: 'domcontentloaded' })
+    for (let i = 0; i < 120; i++) { if (await dprPage.evaluate(() => !!window.__civTest)) break; await dprPage.waitForTimeout(200) }
+    await dprPage.evaluate(() => window.__civTest && window.__civTest.start(1))
+    await dprPage.waitForTimeout(400)
+    const dpr = await dprPage.evaluate(() => {
+        const c = document.querySelector('canvas')
+        return { cw: c.clientWidth, ch: c.clientHeight, bw: c.width, look: window.__civTest.probe().camLookScreen, vw: window.innerWidth, vh: window.innerHeight }
+    })
+    r.check(`at 2x dpr the canvas CSS box stays the viewport, not the ${dpr.bw}px buffer (client ${dpr.cw}x${dpr.ch} vs ${dpr.vw}x${dpr.vh})`, dpr.cw <= dpr.vw + 1 && dpr.ch <= dpr.vh + 1)
+    r.check(`at 2x dpr the opening frame is on-screen, not the corner (look-at ${dpr.look} in ${dpr.vw}x${dpr.vh})`, dpr.look && dpr.look[0] > dpr.vw * 0.2 && dpr.look[0] < dpr.vw * 0.8 && dpr.look[1] > dpr.vh * 0.2 && dpr.look[1] < dpr.vh * 0.8)
+    r.check('the 2x-dpr frame introduces no page errors', dprErrors.length === 0, dprErrors.slice(0, 2).join(' | '))
+    await dprPage.close()
 }
 
 const clean = errors.filter((e) => !/favicon|Download the React DevTools|WebGL|GPU stall|Automatic fallback|SwiftShader/i.test(e))
