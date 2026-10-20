@@ -19,6 +19,8 @@ import {
 import { TOWN_SPECIALS } from './dungeons.js'
 import { nextAction } from './solver.js'
 import { playEvents } from './sound.js'
+import AttractMessage from '../../components/AttractMessage'
+import { MESSAGES, PRESS } from './attract.js'
 import { drawDungeon, drawTown, drawMinimap, drawCombatMobs, VW, VH } from './art.js'
 
 const SIM_MS = 1000 / 60
@@ -411,16 +413,10 @@ const BardsTaleGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black tracking-widest" style={{ color: '#ffd54f', textShadow: '3px 3px 0 #6b21a8, 0 10px 28px #000' }}>THE BARD'S TALE</h1>
-                    <p className="text-violet-200/90 font-mono mt-1 text-sm">DOWN THROUGH SKARA BRAE · MANGAR KEEPS THE TOWER</p>
-                    <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY TO START</p>
-                    <p className="text-violet-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
-                        six heroes descend five dark levels to Mangar's throne · arrows walk and turn, SPACE uses doors, stairs and shops<br />
-                        monsters stand 10–40 ft away: spell them at range, close to steel with ADVANCE, or let the Hunter loose<br />
-                        sing on an ALE to heal and harden · buy arms at Garth's · heal and raise at the Temple · spend skill points at the Review Board<br />
-                        prove every floor and the Board grants the tower key · every maze is seeded — the autopilot walking this title screen is the proof CI runs
-                    </p>
+                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-4xl font-black tracking-widest mb-6" style={{ color: '#ffd54f', textShadow: '3px 3px 0 #6b21a8, 0 10px 28px #000' }}>THE BARD&apos;S TALE</h1>
+                    <AttractMessage className="mb-6 text-violet-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                 </div>
             )}
 
