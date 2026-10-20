@@ -226,12 +226,12 @@ export function poseRider(root, r, tick) {
         legs.scale.y = 0.9
         return
     }
-    const c = r.crouch ? 0.78 : 1
+    const c = r.crouch ? 0.78 : r.tuck ? 0.66 : 1
     roll.rotation.x = 0
     roll.rotation.z = r.steerSm * 0.28
     legs.scale.y = c
     legs.position.y = 0.55 * c
-    armR.rotation.z = 0.2
+    armR.rotation.z = r.tuck ? 0.9 : 0.2
 }
 
 export function sprayField(lite) {

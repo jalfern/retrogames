@@ -204,6 +204,10 @@ export function terrainY(c, s, x) {
 }
 
 // world position of a point on the slope — the renderer lives by this
+// Lateral sign (#547): +x is the rider's RIGHT — the side that appears on the
+// right of the chase-cam screen. The camera looks along d = (sin th, cos th),
+// so screen-right = d × up = (-cos th, sin th); the old (+cos, -sin) basis
+// mirrored the mountain and every steer input steered backwards.
 export function slopePos(c, s, x) {
     const { i, seg } = segAt(c, s)
     const f = (s - i * DS) / DS
@@ -211,7 +215,7 @@ export function slopePos(c, s, x) {
     const cx = seg.cx + (nxt.cx - seg.cx) * f
     const cz = seg.cz + (nxt.cz - seg.cz) * f
     const th = seg.th + (nxt.th - seg.th) * f
-    return { x: cx + Math.cos(th) * x * 9, z: cz - Math.sin(th) * x * 9, y: terrainY(c, s, x), th }
+    return { x: cx - Math.cos(th) * x * 9, z: cz + Math.sin(th) * x * 9, y: terrainY(c, s, x), th }
 }
 
 export const WALL_X = 1.75
