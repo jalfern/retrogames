@@ -12,6 +12,16 @@ rendered 2x (960×540, `ctx.scale(2,2)`) in `index.jsx` for the neon look.
   `screen = world - cam` with no vertical flip; the hero is painted at exactly
   the pixel the physics reports, which `runnerplay` samples to prove.
 
+## Two routes (#550)
+Every sector carries a `routes.high` deck (ramp → ringed plateau → ramp) over
+one flat stretch of the tail; its ramps start and end exactly ON the low line,
+so commit and rejoin are surface transitions, not teleports. `groundY(z, x,
+route)` and `segAtRoute` make the ground TWO functions of x — the body carries
+`p.route`. `maybeRouteFork` (called inside `step`, so planner/replay/shell
+share it) commits a grounded body at/above `FORK_SPEED` at the ramp mouth —
+above the flat-run equilibrium, so the sprint strips and downhills are what
+open the lane; the deck's six rings are the only ones up there.
+
 ## Sound
 All synthesized at runtime (no assets) through the shared chiptune engine
 (`src/utils/AudioController.js`):
