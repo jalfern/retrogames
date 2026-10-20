@@ -16,6 +16,10 @@ const CSS = `
   --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;color-scheme:light}
 @media (prefers-color-scheme: dark){.sr{--bg:#0f1412;--panel:#171d1a;--ink:#e7ece9;--muted:#97a29c;--rule:#29312d;
   --builder:#6b95f2;--qa:#38c79c;--ops:#5d6762;--warn:#e6a23c;--hot:#f0735a;color-scheme:dark}}
+html[data-theme="dark"] .sr{--bg:#0f1412;--panel:#171d1a;--ink:#e7ece9;--muted:#97a29c;--rule:#29312d;
+  --builder:#6b95f2;--qa:#38c79c;--ops:#5d6762;--warn:#e6a23c;--hot:#f0735a;color-scheme:dark}
+html[data-theme="light"] .sr{--bg:#f3f5f2;--panel:#ffffff;--ink:#151b18;--muted:#5d6762;--rule:#dde2de;
+  --builder:#2c62d6;--qa:#0f9a73;--ops:#9aa39e;--warn:#c77a06;--hot:#d2462b;color-scheme:light}
 .sr{background:var(--bg);color:var(--ink);font:15px/1.6 var(--body);
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
 .sr-main{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:34px}
