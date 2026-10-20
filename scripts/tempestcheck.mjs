@@ -24,6 +24,7 @@
 import { readFileSync } from 'node:fs'
 import { makeGame, step, stateHash, CFG, LEVELS, TARGET_WAVES, waveSize, wrapDelta, SCORE, WAVE_BONUS, playerSpeed } from '../src/games/Tempest/sim.js'
 import { plan, runCampaign, decide } from '../src/games/Tempest/planner.js'
+import { drawTube, drawEnemies, drawBullets, drawZaps, posAt, CX, CY } from '../src/games/Tempest/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond, detail = '') => { if (cond) { pass++; console.log(`  ok   ${name}`) } else { fail++; console.log(`  FAIL ${name}${detail ? '  — ' + detail : ''}`) } }
@@ -295,6 +296,72 @@ section('THE WIN + SLACK')
     const runs3 = [1, 7, 42, 1337].map((s) => runCampaign(s))
     restore()
     ok('slack: at handicap 3 it LOSES — the guns/tube economy is load-bearing', runs3.some(({ g, deaths }) => g.end !== 'win' || deaths > 0))
+}
+
+section('ART — depth variants, hinged flipper, trails, glow (#298)')
+{
+    const recCtx = () => {
+        const rec = { strokes: 0, lines: [], widths: [], grad: 0, style: [] }
+        let ox = 0, oy = 0, sx = 1, sy = 1
+        const ctx = new Proxy({ lineWidth: 1, globalAlpha: 1 }, {
+            get(t, k) {
+                if (k === 'stroke') return () => { rec.strokes++ }
+                if (k === 'createRadialGradient') return () => { rec.grad++; return { addColorStop() {} } }
+                if (k === 'translate') return (x, y) => { ox = x; oy = y }
+                if (k === 'scale') return (x, y) => { sx = x; sy = y }
+                if (k === 'moveTo') return (x, y) => { rec.lines.push(['m', ox + sx * x, oy + sy * y]) }
+                if (k === 'lineTo') return (x, y) => { rec.lines.push(['l', ox + sx * x, oy + sy * y]) }
+                if (k in t) return t[k]
+                return () => {}
+            },
+            set(t, k, v) {
+                if (k === 'lineWidth') rec.widths.push(v)
+                if (k === 'strokeStyle') rec.style.push(v)
+                t[k] = v
+                return true
+            },
+        })
+        return { ctx, rec }
+    }
+    const drawEnemy = (type, t, A = 3.3) => {
+        const { ctx, rec } = recCtx()
+        const g = { faces: 16, ridge: 0, level: 1, p: 0, enemies: [{ id: 1, type, A, t, spd: 0.1, flipDir: 1, stage: 0, stageT: 0, diving: false }] }
+        drawEnemies(ctx, g, 40)
+        return rec
+    }
+    for (const type of ['flip', 'pulse', 'spin']) {
+        const far = drawEnemy(type, 0.15).strokes
+        const mid = drawEnemy(type, 0.55).strokes
+        const near = drawEnemy(type, 0.92).strokes
+        ok(`${type} gains detail with depth (${far}<${mid}<${near})`, far < mid && mid < near, `far ${far} mid ${mid} near ${near}`)
+    }
+    {
+        const rec = drawEnemy('flip', 0.55, 3.02)
+        const ang = (x, y) => Math.atan2(y - CY, x - CX)
+        const hinge = rec.lines.slice(0, 2)
+        const along = hinge.length === 2 && Math.abs(ang(hinge[0][1], hinge[0][2]) - ang(hinge[1][1], hinge[1][2])) < 0.02
+        ok('flipper hinge axis lies along the radial edge line', along, JSON.stringify(hinge))
+    }
+    {
+        const norm = recCtx(); drawBullets(norm.ctx, { faces: 16, ridge: 0, level: 1, p: 0, bullets: [{ A: 5.5, t: 0.5, super: false }] })
+        const sup = recCtx(); drawBullets(sup.ctx, { faces: 16, ridge: 0, level: 1, p: 0, bullets: [{ A: 5.0, t: 0.5, super: true }] })
+        const seg0 = (rec) => { const l = rec.lines; return l.length >= 2 ? Math.hypot(l[1][1] - l[0][1], l[1][2] - l[0][2]) : 0 }
+        ok('normal bullet has a 3-point trail', norm.rec.strokes >= 3, `strokes ${norm.rec.strokes}`)
+        ok('super trail is longer than the normal one', seg0(sup.rec) > seg0(norm.rec) * 1.4, `${seg0(sup.rec).toFixed(1)} vs ${seg0(norm.rec).toFixed(1)}`)
+        ok('super gets a double-wide stroke', Math.max(...sup.rec.widths) >= 4 && Math.max(...norm.rec.widths) < 3, `super max w ${Math.max(...sup.rec.widths)}, normal max w ${Math.max(...norm.rec.widths)}`)
+    }
+    {
+        const plain = recCtx(); drawTube(plain.ctx, { faces: 16, ridge: 0, level: 1, p: 0 }, 40)
+        ok('far center breathes: tube draws a radial glow gradient', plain.rec.grad >= 1, `grad calls ${plain.rec.grad}`)
+        const ovr = recCtx(); drawTube(ovr.ctx, { faces: 16, ridge: 0, level: 2, p: 0 }, 40, { hue: '#abcdef', alpha: 0.5 })
+        ok('drawTube honours a hue override (wave cross-fade ready)', ovr.rec.style[0] === '#abcdef', `first stroke ${ovr.rec.style[0]}`)
+    }
+    {
+        const hot = recCtx(); drawZaps(hot.ctx, { faces: 16, ridge: 0, level: 1, p: 0 }, [{ A: 3, life: 12 }])
+        const dim = recCtx(); drawZaps(dim.ctx, { faces: 16, ridge: 0, level: 1, p: 0 }, [{ A: 3, life: 3 }])
+        const alpha = (rec) => Number(/rgba\([^)]*,([\d.]+)\)/.exec(rec.style[0])[1])
+        ok('edge zap flashes and decays along the full edge', hot.rec.strokes === 1 && dim.rec.strokes === 1 && alpha(hot.rec) > alpha(dim.rec) + 0.5, `zap ${alpha(hot.rec)} → ${alpha(dim.rec)}`)
+    }
 }
 
 // --------------------------------------------------------------- mutants ----

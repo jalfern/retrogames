@@ -47,13 +47,16 @@ super bullet. `?` pauses. Tap the screen starts and restarts.
 
 ```bash
 npm run lint:tempest               # eslint gate for this game + shared code
-npm run tempestcheck             # 40 Node checks: determinism, ring geometry
+npm run tempestcheck             # 46 Node checks: determinism, ring geometry
                                  # (continuity, wrap, 16·16·32·96 table), the rim
                                  # rule at both longitudes, lane kills, super-bullet
                                  # rake + chain, flipper hinge, pulser homing,
                                  # spinner dive, spawn budget, wave advance + bonus,
-                                 # bonus life, death reset, terminal over/win, and
-                                 # 4-seed deathless wins + slack rule
+                                 # bonus life, death reset, terminal over/win,
+                                 # 4-seed deathless wins + slack rule, and 10 ART
+                                 # gates (#298: depth variants per type, hinge on
+                                 # the edge line, trail length/width, center glow,
+                                 # hue override, zap decay) via a stub ctx
 npm run tempestcheck -- --mutate  # + 4 mutants (rim kill off, lane kill off,
                                  # super pierce off, scoring off) — all must die
 npm run tempestplay            # advisory browser drive (needs npm run dev):
@@ -88,3 +91,21 @@ throughput scheduling, so the harness handicaps the whole economy at once.
   loops the level table with growing speed.
 - Multiplayer: none — two-player mode existed on the cabinet as alternating
   turns; single craft keeps the phone build honest.
+
+## #298 polish pass (QA, 2026-10-20)
+
+- Depth-progressive enemy art: each type swaps 3 line variants by depth band
+  (near/mid/deep) — flipper hinge→fold→midrib, pulser diamond→+inner ring→+spokes,
+  spinner dot→circle+core→+orbit-dot ring. The cabinet kept deep shapes legible
+  this way. `art.js` bands on `posAt().s`.
+- Flipper hinge axis runs along the shared radial edge line; the flap folds
+  across it face-to-face (apex position = `1 - cos(frac·π)` along the face).
+- Super bullet flashes the full edge polyline for ~12 ticks on launch (`super`
+  event → `drawZaps`, decaying alpha + width), plus a double-wide trail head.
+- Bullet trails now span 0.1 depth (super 0.18) with a fading 3-point tail.
+- Arrival alarm: while any enemy has `t > 0.8` a rising tone loops (pitch with
+  t, every 5 ticks) and the rim segment under the imminent arrival glows hot red.
+- Wave clear cross-fades the tube palette over 1s (`drawTube` hue/alpha opts).
+- Far-ring center breathes: radial gradient pulsing with the rim phase.
+- Ship hue rate is tied to wave/score (12°/frame at wave 1, −1 per wave and per
+  8k score, floor 4) instead of a flat 6.

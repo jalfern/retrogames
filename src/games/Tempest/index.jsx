@@ -14,9 +14,11 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateHash, TARGET_WAVES, LEVELS } from './sim.js'
 import { plan } from './planner.js'
-import { W, H, makeStars, drawStars, drawTube, drawPlayer, drawEnemies, drawBullets, posAt } from './art.js'
+import { W, H, makeStars, drawStars, drawTube, drawPlayer, drawEnemies, drawBullets, drawZaps, drawRimWarn, posAt } from './art.js'
 
 const SIM_MS = 1000 / 60
+const TUBE_HUES = ['#3ae0ff', '#59ffb6', '#ffd053', '#ff7ce6']
+const hueOf = (lvl) => TUBE_HUES[Math.max(0, lvl - 1) % 4]
 let cachedRun = null
 const provenRun = () => { if (!cachedRun) cachedRun = plan(0); return cachedRun }
 
@@ -52,6 +54,11 @@ const TempestGame = () => {
         const held = new Set()
         const evLog = []
         const parts = []
+        const zaps = []
+        let fade = null
+        let warnA = -1
+        let alarmT = 0
+        let hue = 0
 
         const say = (m) => { toastMsg = m; toast = 150 }
 
@@ -71,6 +78,7 @@ const TempestGame = () => {
                     audioController.playSweep(1200, 480, 0.07, 'square', 0.045)
                 } else if (e.kind === 'super') {
                     audioController.playSweep(1700, 220, 0.16, 'sawtooth', 0.06)
+                    zaps.push({ A: Math.round(gs.faces + e.A) % gs.faces, life: 12 })
                 } else if (e.kind === 'kill') {
                     const p = posAt(gs, e.A, e.t)
                     audioController.playNoise(0.1, 0.045)
@@ -87,6 +95,7 @@ const TempestGame = () => {
                     say(`SHIP DOWN — WAVE ${gs.level}`)
                 } else if (e.kind === 'waveClear') {
                     audioController.playFanfare(); flash = 14
+                    fade = { from: hueOf(e.level), to: hueOf(gs.level), life: 60 }
                     say(`WAVE ${e.level} CLEARED — +${1000 * e.level}`)
                 } else if (e.kind === 'bonusLife') {
                     audioController.playTone(660, 0.1, 'square', 0.07)
@@ -128,6 +137,13 @@ const TempestGame = () => {
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
             doSim(computeInput())
+            let tmax = 0, tA = -1
+            for (const e of gs.enemies) if (e.t > 0.8 && e.t > tmax) { tmax = e.t; tA = e.A }
+            if (tA >= 0) {
+                warnA = tA
+                if (alarmT <= 0) { audioController.playTone(200 + 420 * tmax, 0.09, 'square', 0.05); alarmT = 5 }
+                alarmT--
+            } else warnA = -1
         }
 
         // ------------------------------------------------------------- render ----
@@ -142,9 +158,17 @@ const TempestGame = () => {
             if (shake > 0) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake -= 0.8 }
             drawStars(ctx, stars, gs.tick)
             drawTube(ctx, gs, gs.tick)
+            if (fade) {
+                drawTube(ctx, gs, gs.tick, { hue: fade.from, alpha: fade.life / 60 })
+                if (--fade.life <= 0) fade = null
+            }
+            drawZaps(ctx, gs, zaps)
+            for (let i = zaps.length - 1; i >= 0; i--) if (--zaps[i].life <= 0) zaps.splice(i, 1)
+            if (screenRef.current === 'play') drawRimWarn(ctx, gs, warnA, gs.tick)
             drawBullets(ctx, gs)
             drawEnemies(ctx, gs, gs.tick)
-            drawPlayer(ctx, gs, gs.tick, gs.end === 'over')
+            hue = (hue + Math.max(4, Math.min(12, 12 - (gs.level - 1) - Math.floor(gs.score / 8000)))) % 360
+            drawPlayer(ctx, gs, gs.tick, gs.end === 'over', hue)
             for (let i = parts.length - 1; i >= 0; i--) {
                 const p = parts[i]
                 p.x += p.vx / 60; p.y += p.vy / 60; p.life--
@@ -218,6 +242,8 @@ const TempestGame = () => {
             demoAt = 0
             stars = makeStars(gs.seed)
             parts.length = 0
+            zaps.length = 0
+            fade = null; warnA = -1; alarmT = 0; hue = 0
             shake = 0; flash = 0
             setMode('play')
         }
@@ -266,6 +292,8 @@ const TempestGame = () => {
                     gs = makeGame(seed)
                     stars = makeStars(seed)
                     parts.length = 0
+                    zaps.length = 0
+                    fade = null; warnA = -1; alarmT = 0; hue = 0
                     shake = 0; flash = 0
                     demoAt = 0
                     setMode('play')
