@@ -208,3 +208,16 @@ npm run lint:civ          # eslint gate for the game + its scripts
 
 These are the arcade's cuts, decided from Stage 1: eight stages, forty turns,
 one phone-sized board — the shape of the whole campaign.
+
+## Camera UX (#535)
+Left-drag (or one-finger) pans the map in the ground plane (pan rate scales with
+zoom, target clamped to world bounds); right-drag and two-finger drag orbit,
+two-finger pinch zooms, wheel zooms. Arrow keys pan continuously while held
+(`held` set + per-frame pan — Playwright holds do not auto-repeat keydowns, so
+edge-style held-key panning is also what the harness can drive); screen edges
+pan. `Home` or the ◎ CENTER button jumps back to the selected unit, else the
+capital, else the first living unit. `probe().unitScreen` reports the selected
+unit's projected screen pixels so civplay can gate framing at both shapes. A
+next-step hint line walks PRESS E → PICK A BUILD → SPACE ENDS THE TURN and steps
+aside once each is done; a short HOW YOU WIN card opens on first play and closes
+when the capital stands.
