@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { attractFrame, DIM } from './attract.js'
 
 const MissileCommandGame = () => {
     const canvasRef = useRef(null)
@@ -40,6 +41,7 @@ const MissileCommandGame = () => {
         let gameOver = false
         let gameState = 'playing' // playing, waveEnd, gameOver
         let isAttractMode = true
+        let attractTick = 0
 
         // INPUT STATE
         const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false }
@@ -537,10 +539,16 @@ const MissileCommandGame = () => {
             ctx.fillText(`WAVE: ${wave}`, SCREEN_WIDTH / 2, 60)
 
             if (isAttractMode) {
-                ctx.fillStyle = '#ffffff'
-                ctx.font = '30px monospace'
-                ctx.fillText("CLICK TO START", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
-                ctx.fillText("ATTRACT MODE", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40)
+                attractTick++
+                ctx.fillStyle = DIM
+                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
+                ctx.textAlign = 'center'
+                for (const l of attractFrame(attractTick, SCREEN_WIDTH, SCREEN_HEIGHT)) {
+                    ctx.font = `${l.size}px monospace`
+                    ctx.fillStyle = l.col
+                    ctx.fillText(l.text, l.x, l.y)
+                }
+                ctx.textAlign = 'start'
             }
 
             if (gameState === 'waveEnd') {

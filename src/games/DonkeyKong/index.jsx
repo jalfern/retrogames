@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { attractFrame, DIM } from './attract.js'
 
 const DonkeyKongGame = () => {
     const canvasRef = useRef(null)
@@ -148,6 +149,7 @@ const DonkeyKongGame = () => {
         let deathTimer = 0
         let winTimer = 0
         let isAttractMode = true
+        let attractTick = 0
         let dkAnimFrame = 0
         let dkAnimTimer = 0
         let dkThrowing = false
@@ -894,13 +896,16 @@ const DonkeyKongGame = () => {
 
             // Attract mode overlay
             if (isAttractMode) {
-                ctx.fillStyle = 'rgba(0,0,0,0.4)'
+                attractTick++
+                ctx.fillStyle = DIM
                 ctx.fillRect(0, 0, GW, GH)
-                ctx.fillStyle = '#ffffff'
-                ctx.font = '10px monospace'
                 ctx.textAlign = 'center'
-                ctx.fillText('PRESS ANY KEY', GW / 2, GH / 2 - 8)
-                ctx.fillText('TO START', GW / 2, GH / 2 + 4)
+                for (const l of attractFrame(attractTick, GW, GH)) {
+                    ctx.font = `${l.size}px monospace`
+                    ctx.fillStyle = l.col
+                    ctx.fillText(l.text, l.x, l.y)
+                }
+                ctx.textAlign = 'start'
             }
 
             // Game over
