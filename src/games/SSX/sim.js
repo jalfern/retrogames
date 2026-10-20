@@ -30,6 +30,8 @@ export const CFG = {
     boostDrain: 26,            // meter / s spent
     boostAcc: 9,
     boostGain: 0.02,           // meter per trick point — the whole economy
+    tuckAcc: 3.2,              // m/s^2 the aero tuck (stick/↑) adds on the hill
+    scrubDrag: 0.12,           // fraction/s of speed a scrub (stick/↓) checks
     comboCap: 4,
     overDouble: true,
     flipCheck: true,           // half-done flips crash you
@@ -58,6 +60,7 @@ function newRider(i, isP, gridBack) {
         s: -gridBack * 7, x: ((i % 2) ? 1 : -1) * 0.3 + (i * 0.13), y: 0, vy: 0,
         v: 0, air: false, airT: 0, spin: 0, spinDir: 0, flip: 0, grab: 0, grabKind: 0,
         crouch: false, crouchT: 0, boost: false, boostEdge: false,
+        tuck: false, scrub: false,
         tumble: 0, chain: 0, chainDisp: 0, chainDispT: 0,
         meter: 0, over: false, grind: null, grindT: 0,
         finished: false, place: 0, finishT: 0, points: 0,
@@ -165,6 +168,7 @@ function riderStep(g, r, inp) {
     if (rail) {
         if (!r.grind) { r.grind = rail; r.grindT = 0; r.spin = 0; r.flip = 0; push(g, { type: 'grindstart', who: r.id }) }
         r.grindT += dt
+        r.tuck = false; r.scrub = false
         r.x += (rail.x - r.x) * 0.4
         r.v = Math.max(r.v, 12)
         r.y = terrainY(c, r.s, rail.x) + 0.18
@@ -184,6 +188,7 @@ function riderStep(g, r, inp) {
     if (r.air) {
         // ---- AIR: the trick ledger runs here, the landing collects ----
         r.airT += dt
+        r.tuck = false; r.scrub = false
         r.vy -= CFG.G * dt
         r.y += r.vy * dt
         r.s += r.v * dt
@@ -215,6 +220,12 @@ function riderStep(g, r, inp) {
     if (Math.abs(r.x) > 1) {
         if (r.v > 14) r.v -= (r.v - 14) * 0.9 * dt       // powder drag
     }
+    // tuck / scrub (stick or ↑/↓, #547): the aero tuck parting the wind pays,
+    // an edge-check scrub bites speed. Steering stays live through both.
+    r.tuck = !!inp.tuck
+    r.scrub = !!inp.scrub
+    if (r.tuck && !r.scrub) r.v += CFG.tuckAcc * dt
+    if (r.scrub) r.v -= CFG.scrubDrag * r.v * dt
     // boost spend
     const wantBoost = !!inp.boost && r.meter > 0
     if (wantBoost) {
@@ -239,6 +250,7 @@ function riderStep(g, r, inp) {
     r.crouchT = r.crouch ? r.crouchT : 0
 
     // lateral: steer + the curve's centrifugal push
+    r.steerSm += (steer - r.steerSm) * Math.min(1, 6 * dt)
     const sf = r.v / 30
     const pow = Math.abs(r.x) > 1 ? 0.5 : 1
     r.x += steer * CFG.STEER * sf * pow * dt
@@ -365,7 +377,7 @@ export function stateHash(g) {
     const add = (str) => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) } }
     add(`${g.tick}|${g.heat}|${g.phase}|${g.mode}|${g.end}|${g.showoffLeft.toFixed(2)}|${g.count}`)
     for (const r of g.riders) {
-        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0}`)
+        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0}`)
     }
     return (h >>> 0).toString(16)
 }

@@ -68,3 +68,21 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
 - No audio soundtrack beyond the synth pulse. Snow tracks are now geometry:
   fading carve grooves under the board (#310), on top of the speed-scaled spray.
 - No browser-drive harness script yet (`ssxplay`) — the merge gate is Node.
+
+## Lateral sign and the tuck/scrub (#547)
+
+`+x` in the sim is the rider's RIGHT, and `slopePos` is the one place that
+turns that convention into world coordinates: the chase-cam looks along
+`d = (sin θ, cos θ)`, so screen-right is `d × up = (−cos θ, sin θ)`. The
+original basis used `(+cos θ, −sin θ)` — a mirror — which made ArrowRight
+(and the gamepad stick, which correctly synthesises ArrowRight) carve to the
+left on screen. The shared input layer is innocent: `gamepadMap.stickDirections`
+maps stick-left → ArrowLeft faithfully; the bug lived at the render boundary.
+ssxcheck now pins the basis ("+x is screen-right") and the end-to-end steer
+sign (steer +1 pushes the world offset right), so any future mirror flips RED.
+
+Tuck and scrub are the original SSX stick verbs: ↑ aero-tucks (lower stance,
+`CFG.tuckAcc` m/s² extra downhill pull), ↓ edge-check scrubs (`CFG.scrubDrag`,
+proportional speed bite). Steering stays live through both — and through the
+crouch-charge (ssxcheck pins it). The rider pose drops to `legs.scale.y 0.66`
+while tucked. `__ssxTest.probe().p` carries `tuck`/`scrub` for QA.

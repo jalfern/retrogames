@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE } from '../src/games/SSX/sim.js'
 import { decide, PACE } from '../src/games/SSX/planner.js'
-import { buildCourse, terrainY, COURSE_COUNT, DS, WALL_X } from '../src/games/SSX/course.js'
+import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X } from '../src/games/SSX/course.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -187,6 +187,45 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     const g3 = makeGame('race'); run(g3, 181); clear(g3)
     run(g3, 40)
     ok('straight riding leaves no grooves', g3.riders[0].carves.length === 0)
+}
+
+// ---- 3c. steer sign + tuck/scrub (#547) ------------------------------------
+{ // the render basis: +x must land on the rider's RIGHT on the chase-cam
+    // screen (cam looks along d=(sin th, cos th) -> right = d × up = (-cos, sin)).
+    // The old (+cos, -sin) basis mirrored the mountain: steer steered backwards.
+    const co = buildCourse(0)
+    const probe = (x) => {
+        const p = slopePos(co, 400, x), p0 = slopePos(co, 400, 0)
+        return (p.x - p0.x) * -Math.cos(p.th) + (p.z - p0.z) * Math.sin(p.th)
+    }
+    ok('+x is screen-right on the chase-cam', probe(0.5) > 0)
+    ok('-x is screen-left on the chase-cam', probe(-0.5) < 0)
+    { // and the input drives it the honest way: ArrowRight (steer +1) pushes x right
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]; p.x = 0; p.v = 20
+        run(g, 20, { steer: 1 })
+        const pa = slopePos(g.course, p.s, p.x), p0 = slopePos(g.course, p.s, 0)
+        const lat = (pa.x - p0.x) * -Math.cos(p0.th) + (pa.z - p0.z) * Math.sin(p0.th)
+        ok('steer right carves right — sim AND screen', p.x > 0.1 && lat > 0)
+    }
+}
+{ // tuck (↑) is faster than sitting tall; scrub (↓) checks speed
+    const fresh = (v) => { const g = makeGame('race'); run(g, 181); clear(g); const p = g.riders[0]; p.x = 0; p.v = v; return g }
+    const a = fresh(12), b = fresh(12), d = fresh(12)
+    run(a, 90)
+    run(b, 90, { tuck: true })
+    run(d, 90, { scrub: true })
+    ok('tuck (↑) outruns sitting tall', b.riders[0].v > a.riders[0].v + 1)
+    ok('scrub (↓) bleeds speed', d.riders[0].v < a.riders[0].v - 1)
+    ok('tuck reads on the rig state', b.riders[0].tuck === true)
+    ok('the upright board neither tucks nor scrubs', a.riders[0].tuck === false && a.riders[0].scrub === false)
+}
+{ // steering stays live while the ollie charges (#547: stick up charged a
+    // jump-lock before; steering must survive the charge)
+    const g = makeGame('race'); run(g, 181); clear(g)
+    const p = g.riders[0]; p.x = 0; p.v = 18
+    run(g, 12, { jump: true, steer: 1 })
+    ok('steering is live mid-jump-charge', p.crouch === true && p.x > 0.05)
 }
 
 // ---- 4. win proofs -----------------------------------------------------------

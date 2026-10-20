@@ -199,6 +199,8 @@ const SSXGame = () => {
                 boost: keys.has('ShiftLeft') || keys.has('ShiftRight'),
                 grab: keys.has('KeyX'),
                 flip: keys.has('KeyZ') ? 1 : keys.has('KeyC') ? 2 : 0,
+                tuck: keys.has('ArrowUp'),
+                scrub: keys.has('ArrowDown'),
             }
             step(g, inp)
             sfx(g.events.splice(0))
@@ -426,7 +428,7 @@ const SSXGame = () => {
                     const p = g.riders[0]
                     return {
                         screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, carves: p.carves.length },
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },
