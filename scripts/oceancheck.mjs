@@ -287,6 +287,32 @@ async function main() {
       const c2 = await page.evaluate(() => window.__oceanTest.stats())
       ok('slider reversible to calm', c2.variance < vStorm.variance * 0.5 && c2.variance > 1e-4, `var ${vStorm.variance.toFixed(3)} → ${c2.variance.toFixed(3)}`)
 
+      // #462 item 4 — camera coupling: the eye bobs/rolls with the local oct-0 swell
+      // at camPos. A fixed pose (setPose -> cam.touched stops the auto-advance) makes
+      // the time-evolving sea the only thing moving the eye. Storm throws the eye, calm
+      // stills it (the coupling scales with the rendered sea state), and pitch/roll track
+      // the patch slope, not just the vertical bob.
+      const swellSample = (n) => page.evaluate((frames) => new Promise((res) => {
+        const hs = [], ps = [], rs = []
+        let i = 0
+        const step = () => { const s = window.__oceanTest.swell(); hs.push(s.h); ps.push(s.pitch); rs.push(s.roll); if (++i < frames) requestAnimationFrame(step); else res({ hs, ps, rs }) }
+        requestAnimationFrame(step)
+      }), n)
+      const p2p = (a) => Math.max(...a) - Math.min(...a)
+      await page.evaluate(() => window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: 0, pitch: -0.05 }))
+      await page.evaluate(() => window.__oceanTest.setStorm(1))
+      await page.waitForTimeout(1600)
+      const swStorm = await swellSample(240)
+      const stormH = p2p(swStorm.hs)
+      const stormSlope = Math.max(p2p(swStorm.ps), p2p(swStorm.rs))
+      await page.evaluate(() => window.__oceanTest.setStorm(0))
+      await page.waitForTimeout(1600)
+      const swCalm = await swellSample(150)
+      const calmH = p2p(swCalm.hs)
+      ok('camera bobs with the local swell (storm)', stormH > 0.15, `swell.h peak-to-peak ${stormH.toFixed(3)} m over 240 frames`)
+      ok('calm sea stills the eye (coupling scales with sea state)', calmH < 0.5 * stormH, `calm ${calmH.toFixed(3)} vs storm ${stormH.toFixed(3)} m`)
+      ok('pitch/roll track the patch slope (storm)', stormSlope > 0.01, `max slope peak-to-peak ${stormSlope.toFixed(4)} rad`)
+
       // time-of-day + clouds sliders (#456)
       const sliders = await page.evaluate(() => ({
         tod: !!document.getElementById('tod'), cloud: !!document.getElementById('cloud'),

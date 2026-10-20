@@ -449,7 +449,7 @@ async function boot() {
     }`;
 
   const M_PROBE = `
-    struct ProbeU { xz: vec2f, fwd: vec2f, right: vec2f, r: f32, L0: f32, pad: vec2f };
+    struct ProbeU { xz: vec2f, fwd: vec2f, right: vec2f, r: f32, L0: f32 };
     @group(0) @binding(0) var<uniform> pr: ProbeU;
     @group(0) @binding(1) var samp: sampler;
     @group(0) @binding(2) var h0: texture_2d<f32>;
@@ -994,6 +994,12 @@ async function boot() {
       ]));
     }
 
+    // #462 item 4 — feed the swell probe (camPos + view axes XZ in oct-0 domain,
+    // sample radius PROBE_R); only written on a probe frame (see readback below).
+    if (!probeBusy) device.queue.writeBuffer(uProbe, 0, new Float32Array([
+      cam.pos[0], cam.pos[2], fwd[0], fwd[2], right[0], right[2], PROBE_R, OCT[0].L,
+    ]));
+
     const enc = device.createCommandEncoder();
     if (refilling) {
       for (let i = 0; i < 2; i++) {
@@ -1020,6 +1026,12 @@ async function boot() {
         const p = enc.beginComputePass(); p.setPipeline(pComb); p.setBindGroup(0, bgComb[oi]); p.dispatchWorkgroups(1, 16, 1); p.end();
       }
     }
+    // #462 item 4 — dispatch the swell probe + copy its 5 samples out, only on a
+    // probe frame so the busy-flagged readback below stays in lockstep (~2-frame lag).
+    if (!probeBusy) {
+      const ppProbe = enc.beginComputePass(); ppProbe.setPipeline(pProbe); ppProbe.setBindGroup(0, bgProbe); ppProbe.dispatchWorkgroups(1, 1, 1); ppProbe.end();
+      enc.copyBufferToBuffer(probeBuf, 0, probeRead, 0, 20);
+    }
     const rp = enc.beginRenderPass({ colorAttachments: [{
       view: ctx.getCurrentTexture().createView(),
       clearValue: { r: 0.05, g: 0.04, b: 0.08, a: 1 }, loadOp: 'clear', storeOp: 'store',
@@ -1037,6 +1049,21 @@ async function boot() {
     rp.drawIndexed(gridIdx.length);
     rp.end();
     device.queue.submit([enc.finish()]);
+    // #462 item 4 — async readback (no fence, no stall): center height -> bob,
+    // fwd slope -> pitch, right slope -> roll; the frame body smooths it into swell.
+    if (!probeBusy) {
+      probeBusy = true;
+      probeRead.mapAsync(GPUMapMode.READ).then(() => {
+        const a = new Float32Array(probeRead.getMappedRange().slice(0, 20));
+        probeRead.unmap();
+        swellTarget = {
+          h: a[0],
+          pitch: Math.atan2(a[2] - a[1], 2 * PROBE_R),
+          roll: Math.atan2(a[4] - a[3], 2 * PROBE_R),
+        };
+        probeBusy = false;
+      }).catch(() => { probeBusy = false; });
+    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -1067,6 +1094,7 @@ async function boot() {
     get tod() { return tod; },
     get cloud() { return cloud; },
     get wind() { return windU(); },
+    swell() { return { h: eye[1] - cam.pos[1], pitch: swell.pitch, roll: swell.roll, storm }; },
     setStorm(v) { setStorm(v); },
     setTod(v) { setTod(v); },
     setCloud(v) { setCloud(v); },
