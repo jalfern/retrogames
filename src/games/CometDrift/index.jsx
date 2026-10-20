@@ -790,7 +790,7 @@ export default function CometDrift() {
                     `screen ${st.screen}  phase ${g.phase}  end ${g.end}  course ${COURSE.id}`,
                     `pos ${P.place}/${g.karts.length}  lap ${P.lap}/${LAPS}  v ${P.v.toFixed(2)}`,
                     `surf ${surfaceAt(P.x, P.y, P.hint).surf}  spin ${P.spinT}  boost ${P.boostT}/tier ${P.boostTier}`,
-                    `drift ${P.driftT} charge ${P.charge}  view ${W}x${H}@${u.toFixed(2)}  tick ${g.tick}`,
+                    `drift ${P.driftT} charge ${Math.round(P.charge)}  view ${W}x${H}@${u.toFixed(2)}  tick ${g.tick}`,
                 ]
             },
             actions: [
@@ -816,7 +816,7 @@ export default function CometDrift() {
             fx: () => {
                 const P = g.karts[0]
                 return { sparks: fx.sparks.length, dust: fx.dust.length,
-                    frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, charge: P.charge, boostT: P.boostT, spinT: P.spinT, v: P.v }
+                    frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
             forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
             // bike-harness precedent (__bikeTest.setup): place the kart, keep
