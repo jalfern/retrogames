@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { attractFrame, DIM } from './attract.js'
 
 const DefenderGame = () => {
     const canvasRef = useRef(null)
@@ -34,6 +35,7 @@ const DefenderGame = () => {
         let cameraX = 0
         let gameTime = 0
         let isAttractMode = true
+        let attractTick = 0
 
         // INPUT
         const keys = {
@@ -425,11 +427,15 @@ const DefenderGame = () => {
             ctx.strokeRect(cameraX * scannerScale, 2, viewWidth * scannerScale, scannerH - 4)
 
             if (isAttractMode) {
-                ctx.fillStyle = '#ffffff'
-                ctx.font = '20px monospace'
+                attractTick++
+                ctx.fillStyle = DIM
+                ctx.fillRect(0, 0, viewWidth, viewHeight)
                 ctx.textAlign = 'center'
-                ctx.fillText("PRESS ANY KEY TO START", viewWidth / 2, viewHeight / 2)
-                ctx.fillText("ATTRACT MODE", viewWidth / 2, viewHeight / 2 - 40)
+                for (const l of attractFrame(attractTick, viewWidth, viewHeight)) {
+                    ctx.font = `${l.size}px monospace`
+                    ctx.fillStyle = l.col
+                    ctx.fillText(l.text, l.x, l.y)
+                }
             }
         }
 

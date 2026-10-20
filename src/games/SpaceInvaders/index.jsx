@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { attractFrame, DIM } from './attract.js'
 
 const SpaceInvadersGame = () => {
     const canvasRef = useRef(null)
@@ -91,6 +92,7 @@ const SpaceInvadersGame = () => {
 
         // INPUT
         let isAttractMode = true
+        let attractTick = 0
         const keys = { ArrowLeft: false, ArrowRight: false, Space: false }
 
         const handleKeyDown = (e) => {
@@ -309,11 +311,15 @@ const SpaceInvadersGame = () => {
             })
 
             if (isAttractMode) {
-                ctx.fillStyle = '#ffffff'
-                ctx.font = '20px monospace'
+                attractTick++
+                ctx.fillStyle = DIM
+                ctx.fillRect(0, 0, state.width, state.height)
                 ctx.textAlign = 'center'
-                ctx.fillText("PRESS ANY KEY TO START", state.width / 2, state.height / 2)
-                ctx.fillText("ATTRACT MODE", state.width / 2, state.height / 2 - 40)
+                for (const l of attractFrame(attractTick, state.width, state.height)) {
+                    ctx.font = `${l.size}px monospace`
+                    ctx.fillStyle = l.col
+                    ctx.fillText(l.text, l.x, l.y)
+                }
             }
         }
 

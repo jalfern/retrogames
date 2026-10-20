@@ -120,6 +120,7 @@
     "pacmancheck": "node scripts/pacmancheck.mjs",
     "pongcheck": "node scripts/pongcheck.mjs",
     "froggercheck": "node scripts/froggercheck.mjs",
+    "attractcheck": "node scripts/attractcheck.mjs",
     "cometcheck": "node scripts/cometcheck.mjs",
     "cometrefs": "node scripts/extract-comet-references.mjs",
     "cometplay": "node scripts/cometplay.mjs",
@@ -197,7 +198,8 @@
     "lint:hd": "eslint src/games/CometDriftHD src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometdrifthdcheck.mjs scripts/lib",
     "lint:pacman": "eslint src/games/Pacman src/components src/utils src/config src/main.jsx scripts/pacmancheck.mjs scripts/lib",
     "lint:pong": "eslint src/games/Pong src/components src/utils src/config src/main.jsx scripts/pongcheck.mjs scripts/lib",
-    "lint:frogger": "eslint src/games/Frogger src/components src/utils src/config src/main.jsx scripts/froggercheck.mjs scripts/lib"
+    "lint:frogger": "eslint src/games/Frogger src/components src/utils src/config src/main.jsx scripts/froggercheck.mjs scripts/lib",
+    "lint:attract": "eslint src/games/Pong/attract.js src/games/Frogger/attract.js src/games/Arkanoid/attract.js src/games/Pacman/attract.js src/games/Defender/attract.js src/games/SpaceInvaders/attract.js src/games/Centipede/attract.js src/utils/attractLines.js src/components/AttractMessage.jsx scripts/attractcheck.mjs scripts/lib"
   },
   "dependencies": {
     "ifvms": "^1.1.6",
