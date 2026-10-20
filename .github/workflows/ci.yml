@@ -390,6 +390,14 @@ jobs:
       # title must die. All in Node, ~1 s.
       - run: npm run lint:attract
       - run: npm run attractcheck -- --mutate
+      # CometDrift GP gate (#440): circuit data audits, every circuit won by the
+      # autopilot, the honest lap gate, drift authority, gravity, announce/brake,
+      # the own bitmap HUD font and the sun-azimuth audit (pinhole projection,
+      # fixed world azimuth, no glow band without the disc). All in Node, ~10 s.
+      # The 16 mutants are proven locally (`cometcheck -- --mutate` exits RED by
+      # design — a caught mutant counts as a fail), so CI runs the green baseline.
+      - run: npm run lint:comet
+      - run: npm run cometcheck
       # PWA scope gate (#433): lint the SW + contract scripts, then verify the
       # BUILT shell is installable — manifest scope/start_url are /retrogames/,
       # the SW excludes /retrogames/forge, vercel resolves the pwa assets ahead
