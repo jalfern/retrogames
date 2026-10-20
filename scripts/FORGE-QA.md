@@ -34,6 +34,12 @@ confuse the two queues.
    `origin/main`, using `-B` so the local ref catches up. When an item ships,
    clean up after the merge:
    `git -C "$HOME/Dev/retrogames" worktree remove "$HOME/Dev/retrogames-qa-<n>"`.
+ 1b. **Land green PRs first.** A session that hit its time box while CI ran
+    leaves a green PR nobody merges (#510, 2026-10-19). Before picking, list
+    open non-draft PRs on `qa/*` branches whose issue your node claimed. For each
+    with required checks green and no hold from `jalfern` (see FORGE.md):
+    `gh pr merge <pr> --squash --delete-branch`, then comment the proof on its
+    issue as step 5 does. Then continue to step 2.
  2. **Pick an item.** **Resume before you claim:** if any open issue carries
     `building-qa`, its newest claim is YOURS (`QA (<your node>): claimed`) and
     it has a pushed `qa/<slug>` branch (a previous session's step 6
