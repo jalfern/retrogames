@@ -275,8 +275,11 @@ for (const c of COURSES) {
         const P = g.karts[0]
         const p = T.pts[T.N - 8]
         P.x = p.x; P.y = p.y; P.a = p.a; P.idx = T.N - 8; P.hint = T.N - 8; P.v = 8; P.cp = 0; P.lap = 0
-        for (let i = 0; i < 30; i++) m.step(g, {})
-        check(`${c.id}: cutting the line without checkpoints banks NO lap`, P.lap === 0)
+        // #426 fix: the grown world made this probe coast ~240px short of the
+        // line, so even the gateless mutant banked nothing and the probe was
+        // blind. Throttle it across the line: cp stays 0, no lap may bank.
+        for (let i = 0; i < 90; i++) m.step(g, { u: true })
+        check(`${c.id}: cutting the line without checkpoints banks NO lap`, P.lap === 0, `lap ${P.lap}, s ${T.pts[P.idx].s.toFixed(0)}/${T.len.toFixed(0)}`)
     }
 
     console.log(`— ${c.id}: the drift ladder —`)
@@ -314,6 +317,25 @@ for (const c of COURSES) {
         for (let i = 0; i < 70; i++) { pin2(); sim.step(g2, { u: true, r: true, drift: true }) }
         sim.step(g2, { u: true })
         check(`${c.id}: a short drift pays tier 0 only`, Q.boostTier === 0, `tier ${Q.boostTier}`)
+    }
+
+    console.log(`— ${c.id}: the pack reads + the ladder announces (#426) —`)
+    {
+        const m = await loadSim()
+        const g = m.makeGame(3)
+        const crosses = [0, 0, 0]
+        let brakeTicks = 0; let rivalBrake = 0; let n = 0
+        while (!g.end && n < 60 * 300) {
+            m.step(g, m.decide(g)); n++
+            brakeTicks += g.karts[0].braking
+            for (let i = 1; i < g.karts.length; i++) rivalBrake += g.karts[i].braking
+            for (const ev of g.events.splice(0)) if (ev.e === 'tier' && ev.who === 'COMET') crosses[ev.tier]++
+        }
+        check(`${c.id}: charging announces every tier crossing (blue/violet/gold events)`,
+            crosses[0] >= 1 && crosses[1] >= 1 && crosses[2] >= 1,
+            `tier events: ${crosses[0]} blue, ${crosses[1]} violet, ${crosses[2]} gold`)
+        check(`${c.id}: brake lights light under braking, player and field`,
+            brakeTicks >= 30 && rivalBrake >= 30, `player ${brakeTicks} ticks, rivals ${rivalBrake}`)
     }
 
     console.log(`— ${c.id}: determinism —`)
@@ -561,7 +583,7 @@ if (process.argv.includes('--mutate')) {
         const P = g.karts[0]
         const p = TS.pts[TS.N - 8]
         P.x = p.x; P.y = p.y; P.a = p.a; P.idx = TS.N - 8; P.hint = TS.N - 8; P.v = 8; P.cp = 0; P.lap = 0
-        for (let i = 0; i < 30; i++) m.step(g, {})
+        for (let i = 0; i < 90; i++) m.step(g, { u: true })
         return P.lap
     }
     try {
@@ -606,6 +628,56 @@ if (process.argv.includes('--mutate')) {
             R.fail++
         } else {
             console.log('  MUTANT SURVIVED — removing slopeK changed nothing: the gravity gate is BLIND')
+        }
+    } finally {
+        writeFileSync(path, src)
+    }
+
+    // #426 mutant: silence the tier announcements and the announce gate dies.
+    try {
+        writeFileSync(path, src.replace("if (tierNow > prevTier) g.events.push({ e: 'tier', who: k.name, tier: tierNow })", ''))
+        const announceProbe = async () => {
+            const mm = await loadSim()
+            selectCourse('sandbank')
+            const gg = mm.makeGame(3)
+            let tiers = 0; let n = 0
+            while (!gg.end && n < 60 * 300) {
+                mm.step(gg, mm.decide(gg)); n++
+                tiers += gg.events.splice(0).filter((ev) => ev.e === 'tier').length
+            }
+            return tiers
+        }
+        const got = await announceProbe()
+        if (got === 0) {
+            console.log('  MUTANT DIED — with the tier push removed no crossing is announced (0 events): the #426 announce gate is load-bearing')
+            R.fail++
+        } else {
+            console.log(`  MUTANT SURVIVED — ${got} tier events without the push: the announce gate is BLIND`)
+        }
+    } finally {
+        writeFileSync(path, src)
+    }
+
+    // #426 mutant: brake lights never light and the brake-read gate must go blind.
+    try {
+        writeFileSync(path, src.replace('k.braking = brk > 0 ? 1 : 0', 'k.braking = 0'))
+        const brakeProbe = async () => {
+            const mm = await loadSim()
+            selectCourse('gulch')
+            const gg = mm.makeGame(3)
+            let b = 0; let n = 0
+            while (!gg.end && n < 60 * 300) {
+                mm.step(gg, mm.decide(gg)); n++
+                for (const k of gg.karts) b += k.braking
+            }
+            return b
+        }
+        const lit = await brakeProbe()
+        if (lit === 0) {
+            console.log('  MUTANT DIED — with braking pinned off no brake light ever lights: the #426 brake-read gate is load-bearing')
+            R.fail++
+        } else {
+            console.log(`  MUTANT SURVIVED — ${lit} braking ticks with the term pinned off: the brake-read gate is BLIND`)
         }
     } finally {
         writeFileSync(path, src)

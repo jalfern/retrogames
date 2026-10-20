@@ -96,6 +96,16 @@ follows it. All art/audio synthesized at runtime; no assets.
 - Speed presentation: edge streaks above 7.6 (denser + tinted on boost), FOV
   punch `0.05+0.035·tier` lerped at 0.08, camera kick 4+3·tier px, engine
   tone steps up per tier.
+- #426 pack-read slice: the sim sets `k.braking` every tick it brakes (renderer
+  paints twin red tail-lamps + halo on karts, player and field) and emits
+  `{e:'tier', who, tier}` when a charge crosses each TIERS threshold upward —
+  the player's crossing pays a rising chirp (violet/gold now audible, not just
+  the release sweep). Also fixed: sfx/best-lap handlers compared `ev.who ===
+  'PLAYER'` but events carry `k.name` ('COMET') — spin/bump/lap sounds and the
+  localStorage best-lap table had been dead since the rename; and the
+  cometcheck infield-cut probe throttles now (#426) — on the grown world it
+  coasted short of the line, so its `if (crossed)` mutant survived (blind) on
+  main @ c5eda5f; with the throttle the gate is load-bearing again.
 
 ## Verify
 

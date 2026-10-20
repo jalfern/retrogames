@@ -186,9 +186,10 @@ export default function CometDrift() {
                     audioController.playSweep(300 + ev.tier * 190, 1150 + ev.tier * 170, 0.34 + ev.tier * 0.14, 'square', 0.11 + ev.tier * 0.02)
                     shake = Math.max(shake, 4 + ev.tier * 3)
                 }
-                if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); shake = 26; rumble(300, 1) }
-                if (ev.e === 'bump' && ev.who === 'PLAYER') { audioController.playNoise(0.12, 0.15); shake = 10; rumble(100, 0.4) }
-                if (ev.e === 'lap' && ev.who === 'PLAYER') { audioController.playTone(880, 0.1, 'square', 0.12); audioController.playTone(1320, 0.1, 'square', 0.08) }
+                if (ev.e === 'tier' && ev.who === 'COMET') audioController.playSweep(560 + ev.tier * 210, 960 + ev.tier * 280, 0.08, 'square', 0.07)
+                if (ev.e === 'spin' && ev.who === 'COMET') { audioController.playNoise(0.35, 0.18); shake = 26; rumble(300, 1) }
+                if (ev.e === 'bump' && ev.who === 'COMET') { audioController.playNoise(0.12, 0.15); shake = 10; rumble(100, 0.4) }
+                if (ev.e === 'lap' && ev.who === 'COMET') { audioController.playTone(880, 0.1, 'square', 0.12); audioController.playTone(1320, 0.1, 'square', 0.08) }
                 if (ev.e === 'end') { if (ev.place === 1) audioController.playFanfare(); else audioController.playDeath() }
             }
         }
@@ -372,6 +373,17 @@ export default function CometDrift() {
                 ctx.translate(sx, sy - h / 2)
                 if (it.o) ctx.rotate(it.o.a - camA)
                 ctx.drawImage(it.img, -w / 2, -h / 2, w, h)
+                if (it.o && it.o.braking && h > 10) {
+                    // brake lights: twin red lamps in the tail, haloed when the
+                    // pack is close enough to matter (#426)
+                    const ps = w / KART.w
+                    ctx.fillStyle = 'rgba(255,64,32,0.32)'
+                    ctx.fillRect(-w / 2 + 21 * ps, -h / 2 + 43 * ps, 13 * ps, 8 * ps)
+                    ctx.fillRect(-w / 2 + 42 * ps, -h / 2 + 43 * ps, 13 * ps, 8 * ps)
+                    ctx.fillStyle = '#ff2818'
+                    ctx.fillRect(-w / 2 + 24 * ps, -h / 2 + 45 * ps, 7 * ps, 4 * ps)
+                    ctx.fillRect(-w / 2 + 45 * ps, -h / 2 + 45 * ps, 7 * ps, 4 * ps)
+                }
                 ctx.restore()
             }
             ctx.restore()
@@ -387,6 +399,15 @@ export default function CometDrift() {
             const sf = P.steerVis < 0 ? 0 : P.steerVis > 0 ? 2 : 1
             const rf = P.v > 0.4 ? (P.anim >> 2) & 1 : 0
             ctx.drawImage(S.comet[sf][rf], -pw / 2, -ph, pw, ph)
+            if (P.braking) {
+                const ps = pw / KART.w
+                ctx.fillStyle = 'rgba(255,64,32,0.32)'
+                ctx.fillRect(-pw / 2 + 21 * ps, -ph + 43 * ps, 13 * ps, 8 * ps)
+                ctx.fillRect(-pw / 2 + 42 * ps, -ph + 43 * ps, 13 * ps, 8 * ps)
+                ctx.fillStyle = '#ff2818'
+                ctx.fillRect(-pw / 2 + 24 * ps, -ph + 45 * ps, 7 * ps, 4 * ps)
+                ctx.fillRect(-pw / 2 + 45 * ps, -ph + 45 * ps, 7 * ps, 4 * ps)
+            }
             if (P.boostT > 0) {
                 // the tier ladder, written in flame: short blue, violet, then
                 // the long gold comet
@@ -659,7 +680,7 @@ export default function CometDrift() {
             if (PplaceRose(evs, live)) audioController.playTone(990, 0.06, 'square', 0.08)
             if (live) {
                 for (const ev of evs) {
-                    if (ev.e === 'lap' && ev.who === 'PLAYER' && ev.t > 60) {
+                    if (ev.e === 'lap' && ev.who === 'COMET' && ev.t > 60) {
                         if (!st.best || ev.t < st.best) {
                             st.best = ev.t
                             try { localStorage.setItem(BEST_KEY, String(ev.t)) } catch { /* private mode */ }
