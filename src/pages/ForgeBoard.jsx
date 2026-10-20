@@ -331,6 +331,12 @@ const ForgeBoard = () => {
                     </Link>
                 )}
 
+                <Link to="/forge/report" className="block border border-[#ffb347]/40 hover:border-[#ffb347] p-3 mb-8 text-[10px] leading-relaxed">
+                    <span className="tracking-widest text-[#ffb347]">🌅 SHIFT REPORT</span>
+                    <span className="text-gray-400"> — the last 48 hours, computed: merges by hour, machines, themes, CI</span>
+                    <div className="text-gray-600 mt-1">full report at /forge/report →</div>
+                </Link>
+
                 <p className="text-[10px] text-gray-600 text-center mt-16">
                     BUILDER: ONE GAME PER SESSION · WARDEN: EVERY 10 MIN · GATE: CI ONLY · YOU: PROPOSE ABOVE
                 </p>
