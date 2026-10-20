@@ -1,0 +1,55 @@
+// MYST — the sound plan. Pure: an event name maps to a list of cue descriptors.
+// It is deliberately free of audioController and three.js so
+// scripts/mystcheck.mjs imports it under Node and asserts on what a sound
+// event schedules. A cue that never schedules — or that schedules identically
+// to its neighbour — is a silent regression the gate catches.
+//
+// Cue shape: { type: 'tone' | 'sweep' | 'noise' | 'fnoise', ... }
+//   tone   { f, dur, wave, vol, delay? }
+//   sweep  { f0, f1, dur, wave, vol }
+//   noise  { dur, vol }                       (raw crackle)
+//   fnoise { dur, vol, freq }                 (lowpassed: paper, whoosh)
+
+export const TONES = [196, 262, 330, 392]
+
+export function plan(ev) {
+  // A linking-book leap is a whole other event than a walk: a long rising
+  // whoosh under a soft page-rustle. It must never collapse into the plain
+  // travel sweep, so it is matched on its prefix before the switch below.
+  if (typeof ev === 'string' && ev.startsWith('link:')) {
+    return [
+      { type: 'sweep', f0: 90, f1: 1400, dur: 0.9, wave: 'sine', vol: 0.1 },
+      { type: 'fnoise', dur: 0.5, vol: 0.12, freq: 600 },
+    ]
+  }
+  const P = []
+  switch (ev) {
+    case 'turn': P.push({ type: 'tone', f: 220, dur: 0.05, wave: 'triangle', vol: 0.05 }); break
+    case 'travel': P.push({ type: 'sweep', f0: 140, f1: 420, dur: 0.5, wave: 'sine', vol: 0.08 }); break
+    case 'look': P.push({ type: 'tone', f: 520, dur: 0.06, wave: 'sine', vol: 0.05 }); break
+    case 'blocked': P.push({ type: 'tone', f: 110, dur: 0.12, wave: 'square', vol: 0.06 }); break
+    case 'reveal': P.push({ type: 'sweep', f0: 330, f1: 180, dur: 0.35, wave: 'triangle', vol: 0.09 }, { type: 'noise', dur: 0.2, vol: 0.1 }); break
+    case 'takePage': P.push({ type: 'noise', dur: 0.18, vol: 0.12 }, { type: 'tone', f: 660, dur: 0.12, wave: 'sine', vol: 0.07, delay: 0.08 }); break
+    case 'placePage': P.push({ type: 'tone', f: 392, dur: 0.18, wave: 'sine', vol: 0.09 }, { type: 'tone', f: 523, dur: 0.22, wave: 'sine', vol: 0.08, delay: 0.12 }); break
+    case 'pickup': P.push({ type: 'tone', f: 587, dur: 0.1, wave: 'square', vol: 0.06 }); break
+    case 'dial': P.push({ type: 'tone', f: 150 + Math.random() * 40, dur: 0.04, wave: 'square', vol: 0.05 }); break
+    case 'safeOpen': P.push({ type: 'sweep', f0: 90, f1: 300, dur: 0.6, wave: 'sawtooth', vol: 0.1 }, { type: 'noise', dur: 0.3, vol: 0.12 }); break
+    case 'switchSolved': P.push({ type: 'tone', f: 196, dur: 0.1, wave: 'square', vol: 0.07 }, { type: 'tone', f: 294, dur: 0.1, wave: 'square', vol: 0.07, delay: 0.09 }, { type: 'tone', f: 392, dur: 0.16, wave: 'square', vol: 0.07, delay: 0.18 }); break
+    case 'starSolved': P.push({ type: 'sweep', f0: 300, f1: 900, dur: 0.7, wave: 'sine', vol: 0.08 }); break
+    case 'sphereSolved': P.push({ type: 'tone', f: 262, dur: 0.25, wave: 'sine', vol: 0.08 }, { type: 'tone', f: 330, dur: 0.25, wave: 'sine', vol: 0.08, delay: 0.1 }, { type: 'tone', f: 392, dur: 0.3, wave: 'sine', vol: 0.08, delay: 0.2 }, { type: 'noise', dur: 0.4, vol: 0.1 }); break
+    case 'burn': P.push({ type: 'noise', dur: 0.9, vol: 0.16 }, { type: 'sweep', f0: 200, f1: 80, dur: 0.8, wave: 'sawtooth', vol: 0.08 }); break
+    case 'whitePage': [523, 659, 784, 1046].forEach((f, i) => P.push({ type: 'tone', f, dur: 0.35, wave: 'sine', vol: 0.09, delay: i * 0.14 })); break
+    case 'endGood': [392, 494, 587, 784, 988].forEach((f, i) => P.push({ type: 'tone', f, dur: 0.5, wave: 'triangle', vol: 0.1, delay: i * 0.16 })); break
+    case 'endBad': P.push({ type: 'sweep', f0: 300, f1: 60, dur: 1.2, wave: 'sawtooth', vol: 0.12 }, { type: 'noise', dur: 0.8, vol: 0.14 }); break
+    case 'restart': P.push({ type: 'sweep', f0: 600, f1: 200, dur: 0.4, wave: 'triangle', vol: 0.08 }); break
+    // A book or panel turning over: a short, dry sheet of paper, lowpassed so
+    // it reads as paper rather than static. Fired on every open and close.
+    case 'page': P.push({ type: 'fnoise', dur: 0.16, vol: 0.08, freq: 1400 }); break
+    case 'panel': P.push({ type: 'fnoise', dur: 0.2, vol: 0.09, freq: 1100 }, { type: 'tone', f: 240, dur: 0.1, wave: 'sine', vol: 0.05, delay: 0.03 }); break
+    // The Selenitic sphere: when the panel opens the four ring posts sing their
+    // tones in sequence, one after another — the player reads the code by ear.
+    case 'sphereSing': TONES.forEach((f, i) => P.push({ type: 'tone', f, dur: 0.4, wave: 'sine', vol: 0.09, delay: i * 0.34 })); break
+    default: break
+  }
+  return P
+}
