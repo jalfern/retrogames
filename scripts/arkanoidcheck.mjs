@@ -153,7 +153,56 @@ ok(allDeterministic, 'same seed twice -> identical hash + receipts')
     }
 }
 
+// ------------------------------------------------------------- attract rule 6 ----
+// ART.md rule 6 (#365): the attract screen shows one message at a time, cycling,
+// and never a line down in the paddle keep-out band. attract.js is the layout the
+// shell actually draws, so this audit cannot rot away from the pixels.
+console.log('attract (rule 6)')
+{
+    const { attractFrame, INFO_MSGS, HOLD, PADDLE_TOP } = await import('../src/games/Arkanoid/attract.js')
+    const span = HOLD * INFO_MSGS.length + 5
+    const TITLE_Y = 76
+    const PRESS_Y = 132
+    const infoBand = (t) => attractFrame(t, 0).filter((l) => l.y > TITLE_Y && l.y < PRESS_Y).map((l) => l.text)
+    let stacked = 0
+    for (let t = 0; t < span; t++) if (infoBand(t).length > 1) stacked++
+    ok(stacked === 0, 'attract shows one informational message at a time', `${stacked} stacked frames`)
+    let overPaddle = 0
+    for (let t = 0; t < span; t++) for (const l of attractFrame(t, 123456)) if (l.y >= PADDLE_TOP - 4) overPaddle++
+    ok(overPaddle === 0, 'no attract line sits over the paddle keep-out', `${overPaddle} lines in band`)
+    const seen = new Set()
+    for (let t = 0; t < HOLD * INFO_MSGS.length; t++) infoBand(t).forEach((m) => seen.add(m))
+    ok(seen.size === INFO_MSGS.length, 'attract cycles through every message', `${seen.size}/${INFO_MSGS.length}`)
+}
+
 // ------------------------------------------------------------------ mutants ----
+if (process.argv.includes('--mutate')) {
+    const attractPath = new URL('../src/games/Arkanoid/attract.js', import.meta.url).pathname
+    const originalAttract = readFileSync(attractPath, 'utf8')
+    const attractMutants = [
+        ['attract stacks a second message', [{ from: "glow: 0 },", to: "glow: 0 }, { text: 'ARROWS MOVE', x: 128, y: 122, size: 8, col: '#ffffff', glow: 0 }," }]],
+        ['an attract line sinks onto the paddle', [{ from: 'y: 110,', to: 'y: 205,' }]],
+        ['attract message never cycles', [{ from: 'cycleAttract(tick, INFO_MSGS, HOLD)', to: 'INFO_MSGS[0]' }]],
+    ]
+    for (const [name, swaps] of attractMutants) {
+        let src = originalAttract
+        let missing = null
+        for (const m of swaps) {
+            if (!src.includes(m.from)) { missing = m.from; break }
+            src = src.replace(m.from, m.to)
+        }
+        if (missing) { ok(false, `attract mutant anchor: ${name}`, `anchor missing: ${missing}`); continue }
+        writeFileSync(attractPath, src)
+        try {
+            const r = spawnSync(process.execPath, [new URL(import.meta.url).pathname], { encoding: 'utf8' })
+            ok(r.status !== 0, `attract mutant dies: ${name}`, r.status === 0 ? 'child passed despite the bug' : (r.stdout.match(/FAIL .*/) || [''])[0])
+        } finally {
+            writeFileSync(attractPath, originalAttract)
+        }
+    }
+    writeFileSync(attractPath, originalAttract)
+}
+
 if (process.argv.includes('--mutate')) {
     console.log('mutants (each MUST die)')
     const original = readFileSync(simPath, 'utf8')

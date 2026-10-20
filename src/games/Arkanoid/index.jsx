@@ -18,6 +18,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan } from './planner.js'
 import { ROUNDS } from './rounds.js'
+import { attractFrame } from './attract.js'
 
 const SIM_MS = 1000 / 60
 
@@ -255,12 +256,8 @@ const ArkanoidGame = () => {
             if (sc === 'attract') {
                 ctx.fillStyle = 'rgba(3,3,12,0.62)'
                 ctx.fillRect(0, 0, W, H)
-                text('ARKANOID', W / 2, 76, 26, '#ff5db0', 12)
-                text('BREAK THE WALLS — SLAY DOH', W / 2, 96, 8, '#8fa3d8', 0)
-                if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY TO START', W / 2, 132, 9, '#ffd23f', 5)
                 const b = board()[0]
-                if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 152, 8, '#5dc8ff', 3)
-                text('DEMO PLAYS THE PROVEN FULL CLEAR', W / 2, H - 24, 7, '#5d7094', 0)
+                for (const l of attractFrame(gs.tick, b ? b.score : 0)) text(l.text, l.x, l.y, l.size, l.col, l.glow)
             }
             if (sc === 'over') {
                 ctx.fillStyle = 'rgba(3,3,12,0.72)'
