@@ -36,13 +36,42 @@ export const CFG = {
     landProject: true,     // landings project velocity onto the new tangent
     jumpCut: true,         // releasing the jump key early clips the apex
     pitDeath: true,        // below a zone's floor is dying
+    boostPads: true,       // floor strips that add speed along the slope
+    zoneTally: true,       // each goal counts up a time bonus + a ring bonus
+    roll: true,            // down while moving curls into a ball: no steer, light drag
+    ringScatter: true,     // a hit scatters your rings in a fixed fan; they last 3s
+    drones: true,          // ground patrols + hovers: air/roll contact destroys, else a hit
+    multiLoop: true,       // zones carry a LOOPS list; the later zones hold two to commit to
 }
+
+// zone tally: clear the zone quickly and carry rings through the gate.
+// timeBonus  = (TALLY_TIME_CAP - ticks spent this zone) * TALLY_TIME_RATE, floored at 0
+// ringBonus  = rings held at the gate * TALLY_RING_RATE
+// The cap tracks the "longer zones" pass: a sector now takes the autopilot
+// 60-90s, so the time bonus pays for beating that, not an old 12s mark.
+export const TALLY_TIME_CAP = 5400
+export const TALLY_TIME_RATE = 1
+export const TALLY_RING_RATE = 50
+// boost pads: a floor strip adds BOOST_ACCEL while the body is over it
+export const BOOST_ACCEL = 1150
+// ring scatter: a hazard sheds your rings into a fixed forward fan (no RNG)
+// that stays pickable for SCATTER_LIFE ticks (3s), capped at SCATTER_MAX rings
+export const SCATTER_LIFE = 180
+export const SCATTER_MAX = 8
+export const SCATTER_FAN = [[14, -6], [30, -18], [46, -34], [62, -50], [78, -64], [94, -76], [110, -88], [126, -100]]
+// drones: the patrol sweeps [x0,x1] on the ground; the hover bobs at (x,y).
+// Position is a pure function of the tick (no per-drone state, no RNG).
+export const DRL_SPEED = 140
+export const DRONE_R = 10
+export const HOVER_BOB = 6
 
 export const RUN_TOP = 340      // flat-run cap: NOT enough for the loop
 export const RUN_ACCEL = 700
 export const BRAKE = 950
 export const AIR_ACCEL = 300
 export const ROLL_DRAG = 0.22
+export const ROLL_DRAG_ROLL = 0.06   // a ball has far less drag than a standing runner
+export const ROLL_MIN = 60           // "down" below this speed won't curl you up
 export const JUMP_V = 560
 export const JUMP_CUT = 0.45    // vy multiplier when the key lets go early
 export const VMAX = 1150
@@ -59,12 +88,28 @@ export const ZONES = [
             [0, 180, 340, 180], [340, 180, 540, 234], [720, 272, 860, 272],
             [860, 272, 1160, 240], [1160, 240, 1280, 258], [1540, 180, 1980, 180],
             [1980, 180, 2180, 215], [2180, 215, 2400, 215],
+            [2400, 215, 2520, 255], [2520, 255, 2660, 255],
+            [2920, 255, 3640, 255],
+            [3640, 255, 3860, 215], [3860, 215, 4140, 215],
+            [4140, 215, 4280, 250], [4280, 250, 4560, 250],
         ],
+        // the rings at 2916..3529 sit ON the second spring's ballistic arc
+        // (the proven line, sampled): they can only be had by riding the spring
+        // at speed. A slow rider's lower arc misses them — and a slow rider
+        // lands BEFORE the 3560 spike ringless. The post-landing spike at 4300
+        // then only forgives the rings that arc carried through.
         rings: [[300, 166], [326, 166], [900, 251], [940, 246], [980, 240],
-            [1600, 166], [1640, 166], [1680, 166], [1720, 166]],
-        spikes: [[1030, 1090]],
-        springs: [[1280, 258, -980]],
-        ck: 1900, goal: 2320, deathY: 520, yMin: -80, loop: null,
+            [1600, 166], [1640, 166], [1680, 166], [1720, 166],
+            [2916, 61], [3069, -8], [3223, -50], [3376, -66], [3529, -55]],
+        spikes: [[1030, 1090], [3560, 3610], [4300, 4360]],
+        springs: [[1280, 258, -980], [2660, 255, -980]],
+        boosts: [[740, 850], [2200, 2300], [3920, 4100]],
+        // the patrol guards the grounded run between the first pit and the
+        // first spike (a hit you survive WITH the early rings); the hover
+        // sits on the apex of the first spring's arc — only an AIR body
+        // (the spring flight) reaches it, so the proven line destroys it
+        drones: [{ kind: 'patrol', x0: 800, x1: 880 }, { kind: 'hover', x: 1710, y: -65 }],
+        ck: 1900, goal: 4420, deathY: 520, yMin: -80, loops: [],
     },
     {
         name: 'EMBER GAUNTLET',
@@ -82,7 +127,9 @@ export const ZONES = [
             [1240, 59], [1350, -24], [1461, -47], [1580, -19], [1690, 45]],
         spikes: [[1060, 1100], [2440, 2480]],
         springs: [[1150, 225, -900]],
-        ck: 1620, goal: 2740, deathY: 620, yMin: -66, loop: null,
+        boosts: [[1420, 1680], [2650, 2730]],
+        drones: [],
+        ck: 1620, goal: 2740, deathY: 620, yMin: -66, loops: [],
     },
     {
         name: 'SKY LOOP',
@@ -92,7 +139,7 @@ export const ZONES = [
         // dies — which is exactly what runnercheck proves (loop load-bearing).
         segs: [
             [0, 40, 150, 40], [150, 40, 950, 413], [950, 413, 1080, 425],
-            [1080, 425, 1160, 425], [1160, 425, 2200, 445],
+            [1080, 425, 1360, 425], [1360, 425, 2200, 445],
         ],
         // the ONLY rings for the far spike sit on the loop's apex arc: you can
         // collect them only by rolling over the INSIDE of the loop, and you can
@@ -102,10 +149,62 @@ export const ZONES = [
         rings: [[1211, 275], [1187, 261], [1160, 256], [1133, 261], [1109, 275]],
         spikes: [[1600, 1650]],
         springs: [],
+        boosts: [[1850, 2000]],
+        drones: [],
         ck: 1000, goal: 2050, deathY: 760, yMin: 0,
-        loop: { cx: 1160, cy: 345, r: 80 },
+        // two loops on the flat run after the dive. loops[0] is the load-bearing
+        // one: its apex rings are the ONLY rings that survive the far spike. The
+        // body carries its entry speed across the flat to loops[1] (a pure
+        // momentum commitment, no rings) — so committing to the first loop at
+        // speed is what opens the second.
+        loops: [{ cx: 1160, cy: 345, r: 80 }, { cx: 1360, cy: 345, r: 80 }],
     },
 ]
+
+// ------------------------------------------------- the "longer zones" pass ----
+// The hand-built cores above are short: the autopilot clears them in ~3-6s, so
+// "there is barely a game" (the issue). This appends a deterministic TAIL to
+// every sector — a fixed cycle of beats, each of which starts and ends on flat
+// ground at the entry height so they chain with no height bookkeeping:
+//
+//   fastBoost  a flat stretch with a sprint strip (carry/reward speed)
+//   pitHop     a flat run-up, one jumpable pit (hazard), a flat run-off
+//   hill       a downhill that builds speed, then the climb back (fast stretch)
+//
+// No RNG: the beat order is a fixed cycle, so the attract demo and the gate
+// prove the identical route. The tail is deliberately pit/boost/hill only —
+// no spikes or drones in it, so the autopilot clears it with nothing but its
+// proven pit-jump lookahead, and there is no ring bookkeeping to keep fair.
+// The hand-built core (and every coordinate a check pins) is left untouched.
+const TAIL_BEATS = 23
+const beatFastBoost = (x, y) => ({
+    segs: [[x, y, x + 2400, y]],
+    boosts: [[x + 900, x + 1500]],
+    x1: x + 2400,
+})
+const beatPitHop = (x, y) => {
+    const run = 1150, pit = 110
+    return { segs: [[x, y, x + run, y], [x + run + pit, y, x + 2600, y]], x1: x + 2600 }
+}
+const beatHill = (x, y) => ({
+    segs: [[x, y, x + 1300, y + 200], [x + 1300, y + 200, x + 2800, y]],
+    x1: x + 2800,
+})
+const BEATS = [beatFastBoost, beatPitHop, beatHill]
+
+// append TAIL_BEATS of the beat cycle to each sector and push its goal to the
+// end of the tail, so the autopilot now spends 60-90s in a sector (the ask).
+for (const z of ZONES) {
+    const last = z.segs[z.segs.length - 1]
+    let x = last[2], y = last[3]
+    for (let i = 0; i < TAIL_BEATS; i++) {
+        const b = BEATS[i % BEATS.length](x, y)
+        z.segs.push(...b.segs)
+        if (b.boosts) z.boosts.push(...b.boosts)
+        x = b.x1
+    }
+    z.goal = x - 20
+}
 
 export function segAt(z, x) {
     for (const sgm of z.segs) if (x >= sgm[0] && x <= sgm[2]) return sgm
@@ -139,6 +238,22 @@ export function springFor(z, x, holeStart) {
 // i.e. the energy-consistent ENTRY speed^2 must reach 5*G*r.
 export const loopRequire = (r) => 5 * G * r
 
+// Drone position is a pure function of the tick — the patrol is a triangle
+// wave over its span, the hover bobs. No per-drone state, so a death/respawn
+// never desyncs them and the renderer can draw them from the same math.
+export function dronePos(g, i) {
+    const z = ZONES[g.zone]
+    const d = z.drones[i]
+    if (d.kind === 'hover') {
+        return { x: d.x, y: d.y + HOVER_BOB * Math.sin(g.tick * 0.15) }
+    }
+    const span = d.x1 - d.x0
+    const u = (g.tick * DRL_SPEED / span) % 2
+    const f = u < 1 ? u : 2 - u
+    const x = d.x0 + f * span
+    return { x, y: groundY(z, x) - DRONE_R }
+}
+
 // ---------------------------------------------------------------- physics ----
 
 function toAir(g, theta, jump = 0) {
@@ -147,20 +262,44 @@ function toAir(g, theta, jump = 0) {
     p.vx = p.s * Math.cos(theta)
     p.vy = p.s * Math.sin(theta) - jump
     p.cut = false
+    p.rolling = false
 }
 
 function die(g, why) {
     g.ev.push({ type: 'die', why })
     g.deaths++
     g.rings = 0
+    g.scatter = []
     const z = ZONES[g.zone]
     const sx = (CFG.checkpointSaves && g.save.zone === g.zone) ? g.save.x : z.segs[0][0] + 40
     g.p.x = sx
     g.p.y = groundY(z, sx)
     g.p.mode = 'track'
     g.p.s = 0; g.p.vx = 0; g.p.vy = 0
+    g.p.rolling = false
     g.p.invuln = 90
     g.ev.push({ type: 'respawn', x: sx })
+}
+
+// A hazard that staggers instead of kills: shed the rings you hold into the
+// fixed forward fan (ringScatter) so a fast player can scoop them back, and
+// drop a bit of momentum. Spikes and drones both call this.
+function stagger(g, why) {
+    const p = g.p
+    const lost = g.rings
+    g.ev.push({ type: 'hit', why, lost })
+    g.rings = 0
+    p.s *= 0.75
+    if (p.mode === 'air') { const gy = groundY(ZONES[g.zone], p.x); if (gy !== null) { p.y = gy; p.s = p.vx * 0.75; p.mode = 'track' } }
+    p.invuln = 70
+    if (CFG.ringScatter) {
+        const n = Math.min(lost, SCATTER_MAX)
+        g.scatter = []
+        for (let i = 0; i < n; i++) {
+            const [ox, oy] = SCATTER_FAN[i]
+            g.scatter.push({ x: p.x + ox, y: (p.y - BODY_R) + oy, until: g.tick + SCATTER_LIFE })
+        }
+    }
 }
 
 export function step(g, inp) {
@@ -178,11 +317,16 @@ export function step(g, inp) {
         else {
             const th = segAngle(sgm)
             p.lastTheta = th
+            const rolling = CFG.roll && !!inp.down && Math.abs(p.s) >= ROLL_MIN
+            p.rolling = rolling
             let a = 0
             if (CFG.slopeDrive) a += G * Math.sin(th)
-            if (inp.right) a += p.s < RUN_TOP ? RUN_ACCEL : 140
-            if (inp.left) a -= p.s > 0 ? BRAKE : RUN_ACCEL
-            a -= ROLL_DRAG * p.s
+            if (!rolling) {
+                if (inp.right) a += p.s < RUN_TOP ? RUN_ACCEL : 140
+                if (inp.left) a -= p.s > 0 ? BRAKE : RUN_ACCEL
+            }
+            if (CFG.boostPads) for (const b of z.boosts) if (p.x >= b[0] && p.x <= b[1]) a += BOOST_ACCEL
+            a -= (rolling ? ROLL_DRAG_ROLL : ROLL_DRAG) * p.s
             p.s = Math.max(-200, Math.min(VMAX, p.s + a * FIXED_DT))
             p.x += p.s * Math.cos(th) * FIXED_DT
             const gy = groundY(z, p.x)
@@ -227,7 +371,7 @@ export function step(g, inp) {
             else { p.y = z.deathY - 1; p.vy = 0 }
         }
     } else if (p.mode === 'loop') {
-        const L = z.loop
+        const L = z.loops[g.activeLoopIdx]
         // energy along the circle; phi measured from the bottom, screen y-down
         const v2 = Math.max(0, p.v0 * p.v0 - 2 * G * L.r * (1 - Math.cos(p.phi)))
         // inside the loop the track's normal force is N = v^2/r + g*cos(phi):
@@ -240,7 +384,7 @@ export function step(g, inp) {
             p.x = L.cx + L.r * Math.sin(p.phi)
             p.y = L.cy + L.r * Math.cos(p.phi)
             p.vx = v * Math.cos(p.phi); p.vy = -v * Math.sin(p.phi)
-            g.ev.push({ type: 'crash' })
+            g.ev.push({ type: 'crash', idx: g.activeLoopIdx })
         } else {
             p.phi += Math.sqrt(v2) / L.r * FIXED_DT
             if (p.phi >= Math.PI * 2) {
@@ -250,7 +394,7 @@ export function step(g, inp) {
                 p.lastTheta = 0
                 g.loopTaken = true
                 g.score += 500
-                g.ev.push({ type: 'loop', v: Math.round(p.s) })
+                g.ev.push({ type: 'loop', v: Math.round(p.s), idx: g.activeLoopIdx, r: L.r })
             } else {
                 // follow the circle every tick, so the apex rings (which sit
                 // ON this arc) are actually passed through and collected
@@ -271,20 +415,42 @@ export function step(g, inp) {
             g.ev.push({ type: 'ring', x: rx })
         }
     }
+    // shed rings: the fixed fan from the last hit, pickable for SCATTER_LIFE
+    for (let i = g.scatter.length - 1; i >= 0; i--) {
+        const r = g.scatter[i]
+        if (g.tick > r.until) { g.scatter.splice(i, 1); continue }
+        const dx = p.x - r.x, dy = (p.y - BODY_R) - r.y
+        if (dx * dx + dy * dy < (RING_R + BODY_R) * (RING_R + BODY_R)) {
+            g.scatter.splice(i, 1)
+            g.rings++; g.score += 10
+            g.ev.push({ type: 'ring', x: r.x })
+        }
+    }
     if (p.invuln === 0) {
         for (const sp of z.spikes) {
             const grounded = p.mode === 'track' || (p.mode === 'air' && p.y >= (groundY(z, p.x) ?? 1e9) - 2)
             if (p.x >= sp[0] && p.x <= sp[1] && grounded) {
-                if (g.rings > 0 && CFG.ringsProtect) {
-                    g.ev.push({ type: 'hit', lost: g.rings })
-                    g.rings = 0
-                    p.s *= 0.75
-                    if (p.mode === 'air') { const gy = groundY(z, p.x); if (gy !== null) { p.y = gy; p.s = p.vx * 0.75; p.mode = 'track' } }
-                    p.invuln = 70
-                } else {
-                    die(g, 'spikes')
-                }
+                if (g.rings > 0 && CFG.ringsProtect) stagger(g, 'spikes')
+                else die(g, 'spikes')
                 break
+            }
+        }
+        if (!g.end && CFG.drones && p.invuln === 0 && z.drones) {
+            for (let i = 0; i < z.drones.length; i++) {
+                const k = g.zone * 100 + i
+                if (g.droneDown.has(k)) continue
+                const d = dronePos(g, i)
+                const dx = p.x - d.x, dy = (p.y - BODY_R) - d.y
+                if (dx * dx + dy * dy < (DRONE_R + BODY_R) * (DRONE_R + BODY_R)) {
+                    if (p.mode === 'air' || p.rolling) {
+                        // a jumping or rolling body blows the drone away
+                        g.droneDown.add(k)
+                        g.score += 200
+                        g.ev.push({ type: 'drone', x: d.x, y: d.y })
+                    } else if (g.rings > 0 && CFG.ringsProtect) stagger(g, 'drone')
+                    else die(g, 'drone')
+                    break
+                }
             }
         }
     }
@@ -295,6 +461,13 @@ export function step(g, inp) {
                 g.ev.push({ type: 'save', x: z.ck })
             }
             if (p.x >= z.goal) {
+                if (CFG.zoneTally) {
+                    const tInZone = g.tick - g.zoneStartTick
+                    const timeBonus = Math.max(0, TALLY_TIME_CAP - tInZone) * TALLY_TIME_RATE
+                    const ringBonus = g.rings * TALLY_RING_RATE
+                    g.ev.push({ type: 'tally', zone: g.zone, time: timeBonus, rings: ringBonus, total: timeBonus + ringBonus })
+                    g.score += timeBonus + ringBonus
+                }
                 g.ev.push({ type: 'goal', zone: g.zone })
                 g.score += 1000
                 if (g.zone + 1 >= ZONES.length) { g.end = 'win' }
@@ -306,6 +479,9 @@ export function step(g, inp) {
                     g.p.y = groundY(z2, g.p.x)
                     g.p.mode = 'track'; g.p.s = 0; g.p.vx = 0; g.p.vy = 0
                     g.spent = new Map()
+                    g.scatter = []   // shed rings don't carry between sectors
+                    g.loopTaken = false; g.loopsTaken = new Set(); g.activeLoopIdx = -1
+                    g.zoneStartTick = g.tick
                 }
             }
         }
@@ -319,26 +495,37 @@ export function makeGame() {
     const z = ZONES[0]
     return {
         tick: 0, zone: 0, rings: 0, score: 0, deaths: 0, end: null, loopTaken: false,
+        loopsTaken: new Set(), activeLoopIdx: -1,
+        zoneStartTick: 0,
         save: { zone: 0, x: z.segs[0][0] + 40 },
-        taken: new Set(), spent: new Map(), ev: [],
-        p: { x: z.segs[0][0] + 40, y: groundY(z, z.segs[0][0] + 40), mode: 'track', s: 0, vx: 0, vy: 0, invuln: 0, cut: false, lastTheta: 0, v0: 0, phi: 0 },
+        taken: new Set(), spent: new Map(), droneDown: new Set(), ev: [],
+        scatter: [],
+        p: { x: z.segs[0][0] + 40, y: groundY(z, z.segs[0][0] + 40), mode: 'track', s: 0, vx: 0, vy: 0, invuln: 0, cut: false, lastTheta: 0, v0: 0, phi: 0, rolling: false },
     }
 }
 
-export function enterLoop(g) {
-    const L = ZONES[g.zone].loop
-    g.p.mode = 'loop'; g.p.phi = 0; g.p.v0 = g.p.s
-    g.p.x = L.cx; g.p.y = L.cy + L.r
-}
-
 // ONE entry rule, used identically by the planner, the replay and the shell.
-// The runner is grounded, moving along flat floor, at/after the loop mouth,
-// floor height equals the circle bottom, and the loop has not yet been taken.
+// The runner is grounded, moving along flat floor, at/after an untaken loop's
+// mouth, and the floor height equals that circle's bottom. A zone may hold
+// SEVERAL loops (the loops list); the body commits to the first untaken one
+// whose mouth it reaches. With multiLoop off only the first is honoured.
 export function maybeEnterLoop(g) {
-    const z = ZONES[g.zone], L = z.loop, p = g.p
-    if (!L || g.loopTaken || p.mode !== 'track') return false
-    if (p.x >= L.cx && p.lastTheta === 0 && Math.abs(p.y - (L.cy + L.r)) < 0.5) {
-        enterLoop(g); return true
+    const z = ZONES[g.zone], p = g.p
+    const all = z.loops || []
+    const loops = CFG.multiLoop ? all : all.slice(0, 1)
+    if (!loops.length || p.mode !== 'track') return false
+    for (let i = 0; i < loops.length; i++) {
+        const L = loops[i]
+        const key = g.zone * 100 + i
+        if (g.loopsTaken.has(key)) continue
+        if (p.x >= L.cx && p.lastTheta === 0 && Math.abs(p.y - (L.cy + L.r)) < 0.5) {
+            g.p.mode = 'loop'; g.p.phi = 0; g.p.v0 = g.p.s
+            g.p.x = L.cx; g.p.y = L.cy + L.r
+            g.activeLoopIdx = i
+            g.loopsTaken.add(key)
+            g.loopTaken = true
+            return true
+        }
     }
     return false
 }
@@ -371,8 +558,8 @@ export function planRun(g0) {
     const g = g0 || makeGame()
     const script = []
     const receipt = {
-        gaps: [], loop: null, hits: 0, ringsAtHit: [], deaths: 0,
-        springs: 0, warnings: [],
+        gaps: [], loops: [], hits: 0, ringsAtHit: [], deaths: 0,
+        springs: 0, drones: 0, warnings: [],
     }
     // the autopilot will not commit to a jump unless its own ballistic
     // lookahead lands this far past the far lip — so every gap in the receipt
@@ -380,7 +567,7 @@ export function planRun(g0) {
     const MARGIN = 24
     let jumpAt = -1           // tick index where the queued jump fires
     let pending = null        // { holeFar } the jump must clear
-    for (let t = 0; t < 60 * 130; t++) {
+    for (let t = 0; t < 60 * 400; t++) {
         const z = ZONES[g.zone]
         const p = g.p
         const inp = { right: true }
@@ -389,7 +576,7 @@ export function planRun(g0) {
             // loop this run has not yet taken. Its far-spike rings live on the
             // apex arc (only the inside of the loop reaches them), so jumping
             // the mouth would strand the runner ringless on the far side.
-            const skipLoop = z.loop && !g.loopTaken && p.x >= z.loop.cx - 340
+            const skipLoop = (z.loops || []).some((L, i) => !g.loopsTaken.has(g.zone * 100 + i) && p.x >= L.cx - 340)
             const hole = holeAhead(z, p.x + 20, 280)
             if (hole && !skipLoop) {
                 const sp = springFor(z, p.x, hole.start)
@@ -400,8 +587,9 @@ export function planRun(g0) {
                     // try to launch within the next 26 ticks, earliest first
                     let sx = p.x, sy = p.y, ss = p.s
                     for (let k = 0; k <= 26 && jumpAt < 0; k++) {
-                        const a = (CFG.slopeDrive ? G * Math.sin(th) : 0)
+                        let a = (CFG.slopeDrive ? G * Math.sin(th) : 0)
                             + (ss < RUN_TOP ? RUN_ACCEL : 140) - ROLL_DRAG * ss
+                        if (CFG.boostPads) for (const b of z.boosts) if (sx >= b[0] && sx <= b[1]) a += BOOST_ACCEL
                         ss = Math.max(-200, Math.min(VMAX, ss + a * FIXED_DT))
                         sx += ss * Math.cos(th) * FIXED_DT
                         const gy = groundY(z, sx)
@@ -422,11 +610,12 @@ export function planRun(g0) {
         for (const e of g.ev) {
             if (e.type === 'hit') { receipt.hits++; receipt.ringsAtHit.push(e.lost) }
             if (e.type === 'spring') receipt.springs++
+            if (e.type === 'drone') receipt.drones++
             if (e.type === 'land' && pending) {
                 receipt.gaps.push({ far: pending.far, landed: e.x, margin: e.x - pending.far })
                 pending = null
             }
-            if (e.type === 'loop') receipt.loop = { entryV2: g.p.v0 * g.p.v0, exitV: e.v, need: loopRequire(ZONES[2].loop.r) }
+            if (e.type === 'loop') receipt.loops.push({ entryV2: g.p.v0 * g.p.v0, exitV: e.v, need: loopRequire(e.r), idx: e.idx })
             if (e.type === 'respawn') receipt.deaths++
         }
         maybeEnterLoop(g)
@@ -456,5 +645,5 @@ export function stateHash(g) {
     const p = g.p
     return [g.tick, g.zone, Math.round(p.x * 4), Math.round(p.y * 4),
         p.mode[0], Math.round((p.s || 0) * 2 + (p.vx || 0)), Math.round(p.vy * 2),
-        g.rings, g.score, g.deaths].join(':')
+        g.rings, g.score, g.deaths, g.droneDown.size, g.scatter.length].join(':')
 }

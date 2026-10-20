@@ -19,6 +19,9 @@
 //             ONLY rings live on the arc, so skipping the loop = a ringless death.
 //   HAZARD    a hazard with rings staggers and strips them; without, it kills;
 //             a pit kills; a totem moves where death puts you back.
+//   SHED      a hit scatters the shed rings in a fixed fan that comes back;
+//             a patrol staggers a grounded body, a hover only an air body
+//             reaches, and the proven route destroys one.
 //   CHAIN     the autopilot wins with ZERO deaths, every pit lands with real
 //             margin measured on the REPLAY (not the planner's hope), the loop
 //             entry is >=1.25x the need, every spike is passed holding rings,
@@ -50,6 +53,12 @@ const MUTANTS = {
     landProject: 'landings stop projecting onto the slope — downhill impact speed is thrown away',
     jumpCut: 'the jump stops being variable — tap and hold become the same height',
     pitDeath: 'pits stop killing — the whole level becomes a safe walk',
+    boostPads: 'boost strips stop adding speed — the sprint pads do nothing',
+    zoneTally: 'the goal tally stops counting up — the time and ring bonuses vanish',
+    roll: 'rolling stops working — down does nothing, so steering and full drag stay',
+    ringScatter: 'shed rings stop scattering — a hit strips you permanently',
+    drones: 'drones stop existing — patrols and hovers never touch the runner',
+    multiLoop: 'only the first loop per zone is honoured — the second loop is never taken',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -83,7 +92,7 @@ if (MAP) {
             if (zz.spikes.some(sp => x >= sp[0] && x <= sp[1])) col = '^'
             if (zz.springs.some(sp => Math.abs(sp[0] - x) < 8)) col = '='
             if (zz.rings.some(r => Math.abs(r[0] - x) < 6)) col = 'o'
-            if (zz.loop && Math.abs(zz.loop.cx - x) < 6) col = 'O'
+            if ((zz.loops || []).some(L => Math.abs(L.cx - x) < 6)) col = 'O'
             if (x >= zz.ck - 4 && x <= zz.ck + 4) col = 'T'
             if (x >= zz.goal - 4 && x <= zz.goal + 4) col = 'G'
             lines[1] += col
@@ -101,16 +110,30 @@ section('WORLD (segments march forward; the loop sits on a real floor)')
         ok(z.segs.every(sg => sg[2] - sg[0] > 20), `${z.name}: a near-vertical/zero-width segment`)
         ok(z.segs.every((sg, i) => i === 0 || sg[0] >= z.segs[i - 1][2]), `${z.name}: segments overlap out of order`)
         for (const sp of z.spikes) ok(s.groundY(z, (sp[0] + sp[1]) / 2) !== null, `${z.name}: a spike floats over a pit`)
-        if (z.loop) {
-            const gy = s.groundY(z, z.loop.cx)
-            ok(gy !== null && Math.abs(gy - (z.loop.cy + z.loop.r)) < 1.5, `${z.name}: the loop mouth is not on a floor`)
-            // apex rings must lie ON the loop's inner arc (recomputed, not trusted)
-            const arcR = (rx, ry) => Math.hypot(rx - z.loop.cx, ry - (z.loop.cy - BODY_R))
+        if (z.loops && z.loops.length) {
+            // every loop's mouth sits on a real floor at the circle's bottom
+            for (const L of z.loops) {
+                const gy = s.groundY(z, L.cx)
+                ok(gy !== null && Math.abs(gy - (L.cy + L.r)) < 1.5, `${z.name}: a loop mouth (${L.cx}) is not on a floor`)
+            }
+            // apex rings must lie ON the load-bearing loop's (loops[0]) inner arc
+            const L0 = z.loops[0]
+            const arcR = (rx, ry) => Math.hypot(rx - L0.cx, ry - (L0.cy - BODY_R))
             for (const [rx, ry] of z.rings) {
                 const d = arcR(rx, ry)
-                ok(Math.abs(d - z.loop.r) < 3, `${z.name}: apex ring (${rx},${ry}) is ${d.toFixed(1)} from the loop centre, arc r=${z.loop.r}`)
+                ok(Math.abs(d - L0.r) < 3, `${z.name}: apex ring (${rx},${ry}) is ${d.toFixed(1)} from the loop centre, arc r=${L0.r}`)
                 const gyR = s.groundY(z, rx)
                 ok(gyR === null || (gyR - ry) > (RING_R + BODY_R), `${z.name}: a loop ring is close enough to the ground to grab while rolling`)
+            }
+        }
+        for (const d of z.drones) {
+            if (d.kind === 'patrol') {
+                ok(s.groundY(z, d.x0) !== null && s.groundY(z, d.x1) !== null,
+                    `${z.name}: a patrol drone (${d.x0}-${d.x1}) sweeps over a pit`)
+            } else {
+                const gy = s.groundY(z, d.x)
+                ok(gy !== null && (gy - s.BODY_R) - d.y > s.DRONE_R + BODY_R + 10,
+                    `${z.name}: a hover drone (${d.x},${d.y}) is reachable while grounded — it must be an air-only prize`)
             }
         }
     }
@@ -179,7 +202,7 @@ section('JETS (variable jump + spring pads throw real bodies)')
 // ----------------------------------------------------------------- loop ----
 section('LOOP (the centripetal floor is v^2 >= 5*g*r — entry speed is load-bearing)')
 {
-    const r = ZONES[2].loop.r
+    const r = ZONES[2].loops[0].r
     const need = s.loopRequire(r)
     ok(need === 5 * G * r, `loopRequire(${r}) = ${need}, expected ${5 * G * r}`)
     const vNeed = Math.sqrt(need)
@@ -202,7 +225,7 @@ section('LOOP (the centripetal floor is v^2 >= 5*g*r — entry speed is load-bea
     // SKIPPING the loop is fatal: the far spike's only rings live on the arc,
     // so a runner deposited at the loop exit with no rings dies there.
     const skip = s.makeGame(); skip.zone = 2
-    skip.p.x = ZONES[2].loop.cx; skip.p.y = s.groundY(ZONES[2], ZONES[2].loop.cx); skip.p.mode = 'track'; skip.p.s = 400; skip.p.lastTheta = 0; skip.loopTaken = true
+    skip.p.x = ZONES[2].loops[0].cx; skip.p.y = s.groundY(ZONES[2], ZONES[2].loops[0].cx); skip.p.mode = 'track'; skip.p.s = 400; skip.p.lastTheta = 0; skip.loopTaken = true; skip.loopsTaken.add(2 * 100 + 0); skip.loopsTaken.add(2 * 100 + 1)
     let skipDie = false, skipHit = false
     for (let t = 0; t < 400; t++) {
         s.step(skip, { right: true }); s.maybeEnterLoop(skip)
@@ -248,6 +271,71 @@ section('HAZARD (rings stagger; no rings kill; pits kill; the totem remembers)')
     }
 }
 
+// ---------------------------------------------------------- boost + roll ----
+section('BOOST + ROLL (new momentum verbs: sprint strips, the ball)')
+{
+    const z = ZONES[0]
+    // BOOST: crossing a sprint strip beats plain ground from the same start speed
+    const peakOnFlat = (x0, ticks) => {
+        const g = s.makeGame(); g.p.x = x0; g.p.y = s.groundY(z, x0); g.p.mode = 'track'; g.p.s = 120
+        let peak = 0
+        for (let t = 0; t < ticks; t++) { s.step(g, { right: true }); s.maybeEnterLoop(g); if (g.p.mode === 'track') peak = Math.max(peak, g.p.s) }
+        return peak
+    }
+    const boosted = peakOnFlat(742, 12)   // crosses the [740,850] strip
+    const plain = peakOnFlat(40, 12)      // same flat, no strip
+    ok(boosted > plain + 80, `a sprint strip peaked at ${boosted.toFixed(0)} vs ${plain.toFixed(0)} plain — boostPads is dead`)
+
+    // ROLL: down while moving = a ball with light drag and NO steering
+    const speedAfter = (inp, ticks = 30) => {
+        const g = s.makeGame(); g.p.x = 120; g.p.y = s.groundY(z, 120); g.p.mode = 'track'; g.p.s = 400
+        for (let t = 0; t < ticks; t++) { s.step(g, inp); s.maybeEnterLoop(g) }
+        return g.p.s
+    }
+    const roll = speedAfter({ down: true })
+    const stand = speedAfter({})
+    ok(roll > stand + 12, `rolling kept ${roll.toFixed(0)} vs ${stand.toFixed(0)} standing — the light-drag ball is dead`)
+    const rollBrake = speedAfter({ down: true, left: true })
+    ok(Math.abs(rollBrake - roll) < 25, `left still steered a roll (${rollBrake.toFixed(0)} vs ${roll.toFixed(0)}) — a ball must not steer`)
+}
+
+// ------------------------------------------------------------ shed + drones ----
+section('SHED + DRONES (hits scatter; patrols and hovers are speed puzzles)')
+{
+    const z = ZONES[0]
+    // SCATTER: a hit sheds your rings in a fixed forward fan; a runner carrying
+    // speed scoops them back before the fan fades (no ground rings in the window)
+    {
+        const g = s.makeGame(); g.p.x = 1000; g.p.y = s.groundY(z, 1000); g.p.mode = 'track'; g.p.s = 300; g.rings = 3
+        let re = 0
+        for (let t = 0; t < 130; t++) {
+            s.step(g, { right: true }); s.maybeEnterLoop(g)
+            for (const e of g.ev) if (e.type === 'ring' && g.p.x < 1550) re++
+        }
+        ok(re > 0, `shed rings never came back (re-collected ${re}) — ringScatter is dead`)
+    }
+    // PATROL: a grounded body with rings stagger-survives the ground drone
+    {
+        const g = s.makeGame(); g.p.x = 760; g.p.y = s.groundY(z, 760); g.p.mode = 'track'; g.p.s = 300; g.rings = 4
+        let hit = false, die = false
+        for (let t = 0; t < 120; t++) {
+            s.step(g, { right: true }); s.maybeEnterLoop(g)
+            for (const e of g.ev) { if (e.type === 'hit' && e.why === 'drone') hit = true; if (e.type === 'die') die = true }
+        }
+        ok(hit && !die, `a grounded body with rings never staggered on the patrol drone (hit=${hit} die=${die}) — drones are dead`)
+    }
+    // HOVER: only an AIR body reaches it — the spring flight blows it away
+    {
+        const g = s.makeGame(); g.p.x = 1230; g.p.y = s.groundY(z, 1230); g.p.mode = 'track'; g.p.s = 500
+        let destroyed = false, die = false
+        for (let t = 0; t < 200; t++) {
+            s.step(g, { right: true }); s.maybeEnterLoop(g)
+            for (const e of g.ev) { if (e.type === 'drone') destroyed = true; if (e.type === 'die') die = true }
+        }
+        ok(destroyed && !die, `the spring flight never destroyed the hover drone (destroyed=${destroyed} die=${die}) — air contact is dead`)
+    }
+}
+
 // ----------------------------------------------------------------- chain ----
 section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
 {
@@ -260,9 +348,38 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
     }
     const rec = plan.receipt
     ok(rec.deaths === 0, `the proven route is no longer zero-death (${rec.deaths} deaths)`)
-    ok(rec.loop && rec.loop.entryV2 >= 1.25 * rec.loop.need,
-        `loop entry v^2 ${rec.loop ? rec.loop.entryV2.toFixed(0) : '-'} is under 1.25x the need ${rec.loop?.need} — no headroom`)
+    const totalLoops = ZONES.reduce((n, z) => n + (z.loops || []).length, 0)
+    ok(totalLoops >= 2, `expected at least two loops across the zones, found ${totalLoops} — the loops list is not populated`)
+    ok(rec.loops.length === totalLoops, `the autopilot took ${rec.loops.length} of ${totalLoops} loops — the multi-loop route is not committed`)
+    ok(rec.loops.every(l => l.entryV2 >= l.need), `a loop was entered below its centripetal floor: ${JSON.stringify(rec.loops)}`)
+    const L0 = rec.loops.find(l => l.idx === 0) || rec.loops[0]
+    ok(L0 && L0.entryV2 >= 1.25 * L0.need,
+        `load-bearing loop entry v^2 ${L0 ? L0.entryV2.toFixed(0) : '-'} is under 1.25x its need ${L0?.need} — no headroom`)
     ok(rec.ringsAtHit.every(n => n > 0) && rec.hits >= 3, `a spike was passed ringless: ${JSON.stringify(rec.ringsAtHit)}`)
+    ok(rec.drones >= 1, `no drone was destroyed on the proven route — the air-destroy rule is unproven`)
+
+    // TALLY: each goal counts up a time bonus + a ring bonus (the whole run pays out)
+    {
+        const tallies = []
+        s.replayScript(plan.script, { onTick: (g) => { for (const e of g.ev) if (e.type === 'tally') tallies.push(e) } })
+        ok(tallies.length === ZONES.length, `expected a tally at each of the ${ZONES.length} goals, got ${tallies.length} — zoneTally is dead`)
+        ok(tallies.some(t => t.total > 0), `no goal produced a tally bonus: ${JSON.stringify(tallies)}`)
+    }
+
+    // DURATION: the "longer zones" ask — each sector must take the autopilot
+    // 60-90s (3600-5400 ticks). A zone that clears in seconds has no game.
+    {
+        const dur = []
+        let start = 0
+        s.replayScript(plan.script, { onTick: (g) => {
+            for (const e of g.ev) if (e.type === 'goal') { dur.push(g.tick - start); start = g.tick }
+        }})
+        ok(dur.length === ZONES.length, `expected a goal in each of the ${ZONES.length} sectors, saw ${dur.length}`)
+        for (let i = 0; i < ZONES.length; i++) {
+            const t = dur[i] || 0
+            ok(t >= 3600 && t <= 5400, `sector ${i} (${ZONES[i].name}) took ${(t / 60).toFixed(1)}s — the ask is 60-90s`)
+        }
+    }
 
     // independent margin re-measurement on the REPLAY (not the planner's hope):
     // for each jump pit, the real body must land >=12px past the far lip.

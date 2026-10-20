@@ -18,7 +18,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
-    ZONES, groundY, maybeEnterLoop, makeGame, step, planRun,
+    ZONES, groundY, maybeEnterLoop, makeGame, step, planRun, dronePos,
     FIXED_DT, VIEW_W, VIEW_H, BODY_R, RUN_TOP, VMAX,
 } from './sim.js'
 
@@ -31,6 +31,10 @@ const HINTS = [
     'its apex holds the only rings that survive the far spike',
     'springs are the route over the wide pits — never jump them',
     'hit a hazard WITH rings and you stagger — without, you fall back to the beacon',
+    'press DOWN while moving to ROLL — a ball keeps speed, loses steering',
+    'sprint strips are floor boosts — ride them to carry more speed forward',
+    'clear a sector fast and carry rings: the gate counts up both as a bonus',
+    'drones guard the line — jump or roll THROUGH them, a grounded touch costs your rings',
 ]
 
 // The hero's signature colour — deliberately NOT used by track, rings or
@@ -219,7 +223,7 @@ const provenScript = () => {
 const CAM_Y = ZONES.map(z => {
     let top = Infinity, bot = -Infinity
     for (const s of z.segs) { top = Math.min(top, s[1], s[3]); bot = Math.max(bot, s[1], s[3]) }
-    if (z.loop) top = Math.min(top, z.loop.cy - z.loop.r)
+    for (const L of (z.loops || [])) top = Math.min(top, L.cy - L.r)
     return { min: top - 60, max: Math.max(bot, z.deathY) - VIEW_H + 40 }
 })
 const CAM_X = ZONES.map(z => ({ min: z.segs[0][0] - 30, max: z.segs[z.segs.length - 1][2] - VIEW_W + 30 }))
@@ -262,6 +266,7 @@ const MomentumGame = () => {
         let gs = makeGame()
         let demoAt = 0, raf = 0, last = 0, acc = 0
         let toast = 0, toastMsg = '', shake = 0, wheelAng = 0
+        let tallyAnim = null   // the goal count-up: { time, rings, t }
         let musicOn = false, musicZone = -1
         let contractSeed = 0
         let cprev = {}
@@ -327,10 +332,12 @@ const MomentumGame = () => {
                 else if (e.type === 'spring') { audioController.playSweep(300, 1100, 0.24, 'sawtooth', 0.08); burst(e.x, gs.p.y, 8, '#ff9f43') }
                 else if (e.type === 'loop') { audioController.playSweep(400, 1400, 0.5, 'square', 0.08); say('LOOP! +500') }
                 else if (e.type === 'hit') { audioController.playNoise(0.16, 0.09); audioController.playSweep(240, 90, 0.2, 'sawtooth', 0.07); shake = 8; burst(gs.p.x, gs.p.y - BODY_R, 10, '#ff5a5a') }
+                else if (e.type === 'drone') { audioController.playNoise(0.12, 0.08); audioController.playSweep(900, 200, 0.18, 'square', 0.06); burst(e.x, e.y, 12, '#7df9ff'); say('DRONE DOWN +200') }
                 else if (e.type === 'crash') { audioController.playNoise(0.2, 0.1); shake = 10; say('TOO SLOW!') }
                 else if (e.type === 'save') { audioController.playTone(880, 0.12, 'sine', 0.06); audioController.playTone(1320, 0.18, 'sine', 0.05); say('CHECKPOINT') }
                 else if (e.type === 'die') audioController.playDeath()
                 else if (e.type === 'respawn') { audioController.playSweep(220, 700, 0.4, 'triangle', 0.07); audioController.startMusic(RUNNER_BEDS[gs.zone]); say('BACK TO CHECKPOINT') }
+                else if (e.type === 'tally') { tallyAnim = { time: e.time, rings: e.rings, t: 0 }; say(`SECTOR CLEAR +${e.time + e.rings}`); burst(gs.p.x, gs.p.y - BODY_R, 12, '#ffd23f') }
                 else if (e.type === 'goal') { audioController.playSweep(660, 1760, 0.5, 'square', 0.09) }
             }
         }
@@ -395,7 +402,7 @@ const MomentumGame = () => {
             hg.addColorStop(0, 'rgba(102,246,255,0.38)')
             hg.addColorStop(1, 'rgba(102,246,255,0)')
             ctx.fillStyle = hg; circle(ctx, 0, 0, 16); ctx.fill()
-            if (p.mode === 'air') {
+            if (p.mode === 'air' || p.rolling) {
                 // curled into a glowing ball
                 ctx.fillStyle = HERO_DARK; circle(ctx, 0, 0, BODY_R); ctx.fill()
                 ctx.strokeStyle = HERO_EDGE; ctx.lineWidth = 1.5; circle(ctx, 0, 0, BODY_R); ctx.stroke()
@@ -488,10 +495,11 @@ const MomentumGame = () => {
                 ctx.beginPath(); ctx.moveTo(px1, py1 + 9); ctx.lineTo(px2, py2 + 9); ctx.stroke()
             }
 
-            // ---- the loop: a glowing tube with energy pulses ----
-            const L = z.loop
+            // ---- the loops: a glowing tube each, with energy pulses ----
+            const loops = z.loops || []
+            let frontLoop = null
             let loopFrontArc = null
-            if (L) {
+            for (const L of loops) {
                 const lx = L.cx - dx0, ly = L.cy - dy0
                 ctx.strokeStyle = P.panel0; ctx.lineWidth = 13
                 circle(ctx, lx, ly, L.r); ctx.stroke()
@@ -508,8 +516,8 @@ const MomentumGame = () => {
                     const a = rot + i * Math.PI / 3
                     ctx.beginPath(); ctx.arc(lx, ly, L.r, a, a + 0.35); ctx.stroke()
                 }
-                if (p.mode === 'loop') loopFrontArc = Math.PI / 2 - p.phi
             }
+            if (p.mode === 'loop') { frontLoop = loops[gs.activeLoopIdx] || null; loopFrontArc = Math.PI / 2 - p.phi }
 
             // ---- spikes: pulsing energy barbs ----
             for (const sp of z.spikes) {
@@ -584,6 +592,28 @@ const MomentumGame = () => {
                 ctx.beginPath(); ctx.moveTo(px - 5, py - 12 + lift); ctx.lineTo(px, py - 17 + lift); ctx.lineTo(px + 5, py - 12 + lift); ctx.stroke()
             }
 
+            // ---- boost pads: sprint strips that add speed along the slope ----
+            for (const b of z.boosts) {
+                const [bx1, bx2] = b
+                const px1 = bx1 - dx0, px2 = bx2 - dx0
+                if (px2 < -30 || px1 > VIEW_W + 30) continue
+                const gy1 = groundY(z, bx1), gy2 = groundY(z, bx2)
+                if (gy1 === null || gy2 === null) continue
+                const py1 = gy1 - dy0, py2 = gy2 - dy0
+                const span = bx2 - bx1
+                ctx.fillStyle = P.glow + '0.16)'
+                ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.lineTo(px2, py2 + 6); ctx.lineTo(px1, py1 + 6); ctx.closePath(); ctx.fill()
+                ctx.strokeStyle = P.accent; ctx.lineWidth = 2
+                for (let i = 0; i < 3; i++) {
+                    const wx = bx1 + ((tick * 4 + i * (span / 3)) % span)
+                    const wy = groundY(z, wx); if (wy === null) continue
+                    const ax = wx - dx0, ay = wy - dy0
+                    ctx.beginPath(); ctx.moveTo(ax - 5, ay - 5); ctx.lineTo(ax + 3, ay); ctx.lineTo(ax - 5, ay + 5); ctx.stroke()
+                }
+                ctx.strokeStyle = P.accent; ctx.lineWidth = 1.5
+                ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.stroke()
+            }
+
             // ---- rings: spinning holo-rings that sparkle ----
             for (let i = 0; i < z.rings.length; i++) {
                 if (gs.taken.has(i + gs.zone * 100)) continue
@@ -601,6 +631,35 @@ const MomentumGame = () => {
                     const rr = 6 * (sp2 - 0.93) / 0.07
                     ctx.beginPath(); ctx.moveTo(px - rr, py); ctx.lineTo(px + rr, py); ctx.moveTo(px, py - rr); ctx.lineTo(px, py + rr); ctx.stroke()
                 }
+            }
+
+            // ---- scatter: shed rings that fade back over ~3s ----
+            for (const r of gs.scatter) {
+                const px = r.x - dx0, py = r.y - dy0
+                if (px < -20 || px > VIEW_W + 20) continue
+                const life = Math.max(0, (r.until - tick) / 180)
+                const blink = life < 0.35 ? (Math.sin(tick * 0.5) > 0 ? 1 : 0.25) : 1
+                ctx.globalAlpha = 0.35 + 0.65 * life * blink
+                ctx.strokeStyle = P.ring; ctx.lineWidth = 2.5
+                ctx.beginPath(); ctx.ellipse(px, py, 8, 8, 0, 0, Math.PI * 2); ctx.stroke()
+                ctx.globalAlpha = 1
+            }
+
+            // ---- drones: ground patrols + hovers, rotors spin, body glows ----
+            for (let i = 0; i < (z.drones || []).length; i++) {
+                if (gs.droneDown.has(gs.zone * 100 + i)) continue
+                const d = dronePos(gs, i)
+                const px = d.x - dx0, py = d.y - dy0
+                if (px < -20 || px > VIEW_W + 20) continue
+                const rot = tick * 0.6
+                ctx.fillStyle = P.panel0
+                ctx.beginPath(); ctx.ellipse(px, py, 9, 6, 0, 0, Math.PI * 2); ctx.fill()
+                ctx.strokeStyle = P.spike; ctx.lineWidth = 1.5
+                ctx.beginPath(); ctx.ellipse(px, py, 9, 6, 0, 0, Math.PI * 2); ctx.stroke()
+                ctx.fillStyle = P.glow + '0.9)'
+                ctx.beginPath(); ctx.arc(px, py - 1, 2.2, 0, Math.PI * 2); ctx.fill()
+                ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5
+                ctx.beginPath(); ctx.moveTo(px - 10 * Math.cos(rot), py - 8 - 2 * Math.sin(rot)); ctx.lineTo(px + 10 * Math.cos(rot), py - 8 + 2 * Math.sin(rot)); ctx.stroke()
             }
 
             // ---- afterimages, then the hero ----
@@ -621,14 +680,14 @@ const MomentumGame = () => {
             ctx.globalAlpha = 1
             drawHero(hpx, hpy)
 
-            // the loop's near half goes OVER the hero — you go through it
-            if (L && loopFrontArc !== null) {
-                const lx = L.cx - dx0, ly = L.cy - dy0
+            // the active loop's near half goes OVER the hero — you go through it
+            if (frontLoop && loopFrontArc !== null) {
+                const lx = frontLoop.cx - dx0, ly = frontLoop.cy - dy0
                 ctx.strokeStyle = P.glow + '0.85)'; ctx.lineWidth = 6
-                ctx.beginPath(); ctx.arc(lx, ly, L.r, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
+                ctx.beginPath(); ctx.arc(lx, ly, frontLoop.r, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
                 ctx.strokeStyle = P.accent; ctx.lineWidth = 2
-                ctx.beginPath(); ctx.arc(lx, ly, L.r + 6.5, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
-                ctx.beginPath(); ctx.arc(lx, ly, L.r - 6.5, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
+                ctx.beginPath(); ctx.arc(lx, ly, frontLoop.r + 6.5, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
+                ctx.beginPath(); ctx.arc(lx, ly, frontLoop.r - 6.5, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
             }
 
             // particles
@@ -671,7 +730,7 @@ const MomentumGame = () => {
                 if (px < -20 || px > VIEW_W + 20) continue
                 gctx.beginPath(); gctx.ellipse(px, py, 9, 9, 0, 0, Math.PI * 2); gctx.stroke()
             }
-            if (L) {
+            for (const L of (z.loops || [])) {
                 gctx.strokeStyle = P.accent; gctx.lineWidth = 4
                 gctx.beginPath(); gctx.arc(L.cx - dx0, L.cy - dy0, L.r, 0, Math.PI * 2); gctx.stroke()
             }
@@ -718,6 +777,23 @@ const MomentumGame = () => {
                 ctx.fillStyle = P.accent
                 ctx.fillRect(VIEW_W / 2 - 70, 82, 140, 2)
                 ctx.restore()
+            }
+
+            // goal tally: a count-up of the time + ring bonus
+            if (tallyAnim) {
+                tallyAnim.t++
+                const k = Math.min(1, tallyAnim.t / 28)
+                const dt = Math.round(tallyAnim.time * k)
+                const dr = Math.round(tallyAnim.rings * k)
+                ctx.save()
+                ctx.textAlign = 'center'
+                ctx.font = '700 15px monospace'
+                ctx.fillStyle = 'rgba(255,255,255,0.95)'
+                ctx.fillText(`TIME   +${dt}`, VIEW_W / 2, 104)
+                ctx.fillStyle = P.accent
+                ctx.fillText(`RINGS  +${dr}`, VIEW_W / 2, 122)
+                ctx.restore()
+                if (tallyAnim.t > 55) tallyAnim = null
             }
 
             if (shake < 0.4) shake = 0
@@ -831,6 +907,7 @@ const MomentumGame = () => {
                     return {
                         screen: screenRef.current, tick: gs.tick, zone: gs.zone, zoneName: ZONES[gs.zone].name,
                         x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10, mode: p.mode,
+                        rolling: !!p.rolling,
                         vx: Math.round(p.vx || 0), vy: Math.round(p.vy || 0), s: Math.round(p.s || 0),
                         cam: c,
                         // THE screen pixel the hero is painted at (screen = world - cam)
