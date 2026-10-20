@@ -279,11 +279,11 @@ const OFFS = {
         'upperarm.r': [0.2, 0, -0.35],
     },
     tumble: {
-        'upperarm.l': [-2.5, 0, 0.55], 'lowerarm.l': [0.6, 0, 0],
-        'upperarm.r': [-2.5, 0, -0.55], 'lowerarm.r': [0.6, 0, 0],
-        'upperleg.l': [0.35, 0, 0.3], 'lowerleg.l': [0.8, 0, 0],
-        'upperleg.r': [0.35, 0, -0.3], 'lowerleg.r': [0.8, 0, 0],
-        head: [0.3, 0, 0],
+        hips: [0, 0.3, 0], spine: [-0.35, -0.2, 0], chest: [-0.2, -0.1, 0], head: [0.5, 0.35, 0],
+        'upperarm.l': [-0.5, 0, 1.2], 'lowerarm.l': [0.3, 0, 0],
+        'upperarm.r': [-2.9, 0, -0.4], 'lowerarm.r': [0.5, 0, 0],
+        'upperleg.l': [0.8, 0, 0.35], 'lowerleg.l': [-0.9, 0, 0], 'foot.l': [0.3, 0, 0],
+        'upperleg.r': [-0.4, 0, -0.35], 'lowerleg.r': [0.6, 0, 0],
     },
     air: {
         'upperleg.l': [0.12, 0, 0.06], 'lowerleg.l': [-0.35, 0, 0],
