@@ -5,6 +5,7 @@
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
 import { freshState, dispatch, solveScript, runSolver, isWin, SAFE_CODE, STAR_CODE, SPHERE_CODE } from '../src/games/Myst/state.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
+import { plan, TONES } from '../src/games/Myst/soundplan.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
@@ -148,11 +149,34 @@ console.log('MYST — attract (rule 6, #365)')
   ok(block.includes('{PRESS}'), 'the press prompt comes from the shared module', '')
 }
 
+console.log('MYST — sound plan (what each event schedules)')
+{
+  const travel = plan('travel')
+  const link = plan('link:mechanical')
+  ok(travel.length > 0, 'a plain travel schedules sound', String(travel.length))
+  ok(link.length > 0, 'a linking-book leap schedules its own sound', String(link.length))
+  ok(JSON.stringify(link) !== JSON.stringify(travel), 'the linking whoosh is distinct from a plain travel')
+  ok(plan('page').length > 0, 'a page-turn is scheduled (books and panels open and close)')
+  ok(plan('panel').length > 0, 'a panel opening is scheduled')
+  ok(plan('safeOpen').length > 0, 'the safe-opening cue still schedules')
+  const sing = plan('sphereSing')
+  ok(sing.length === 4, 'opening the sphere makes the four posts sing (four cues)', String(sing.length))
+  ok(sing.every((c, i) => c.delay === i * 0.34), 'the posts sing IN SEQUENCE (staggered delays)', sing.map((c) => c.delay).join(','))
+  ok(TONES.length === 4, 'the four posts carry four distinct tones', TONES.join(','))
+  const r = dispatch({ ...freshState(), node: 'selenitic' }, { t: 'click', id: 'sphere' })
+  ok(r.events.includes('sphereSing'), 'state emits sphereSing when the sphere opens')
+  ok(r.events.includes('panel'), 'state still opens the sphere panel')
+  const rb = dispatch({ ...freshState(), node: 'library' }, { t: 'click', id: 'redBook' })
+  ok(rb.events.includes('page'), 'opening a book turns its page')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
-  console.log('MYST — attract mutants (each MUST die)')
+  console.log('MYST — mutants (each MUST die)')
   const MF = 'src/games/Myst/attract.js'
   const JX = 'src/games/Myst/index.jsx'
+  const SP = 'src/games/Myst/soundplan.js'
+  const ST = 'src/games/Myst/state.js'
   const MUTANTS = [
     ['attract never cycles (one message)', MF,
       `    'CYAN · 1993 · REBUILT IN CODE',\n    'A library of living books · two imprisoned brothers',\n    'Four Ages hidden in plain sight',\n    'No map. No hints. Take notes, as in 1993.',\n    'Click or tap what you see · arrows step and turn',\n`,
@@ -172,6 +196,21 @@ if (process.argv.includes('--mutate')) {
     ['the press prompt is hard-coded, not from the module', JX,
       `<p className="text-lg animate-pulse text-amber-300">{PRESS}</p>`,
       `<p className="text-lg animate-pulse text-amber-300">CLICK</p>`],
+    ['linking-book whoosh collapses into a plain travel', SP,
+      `  if (typeof ev === 'string' && ev.startsWith('link:')) {`,
+      `  if (false) {`],
+    ['the four posts go silent when the sphere opens', SP,
+      `    case 'sphereSing': TONES.forEach((f, i) => P.push({ type: 'tone', f, dur: 0.4, wave: 'sine', vol: 0.09, delay: i * 0.34 })); break`,
+      `    case 'sphereSing': break`],
+    ['the page-turn cue vanishes', SP,
+      `    case 'page': P.push({ type: 'fnoise', dur: 0.16, vol: 0.08, freq: 1400 }); break`,
+      `    case 'page': break`],
+    ['state stops firing the sphere sing', ST,
+      `ev.push('panel', 'sphereSing'); break`,
+      `ev.push('panel'); break`],
+    ['a book opening stops turning its page', ST,
+      `ev.push('page', 'bookVoice')`,
+      `ev.push('bookVoice')`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
@@ -183,7 +222,7 @@ if (process.argv.includes('--mutate')) {
     else { ok(false, `mutant dies: ${name}`, 'child passed despite the bug') }
     writeFileSync(f, orig)
   }
-  ok(died === MUTANTS.length, `all ${MUTANTS.length} attract mutants die`, `${died}/${MUTANTS.length}`)
+  ok(died === MUTANTS.length, `all ${MUTANTS.length} mutants die`, `${died}/${MUTANTS.length}`)
 }
 
 console.log(`\n${pass} pass, ${fail} fail`)

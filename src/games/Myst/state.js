@@ -128,7 +128,7 @@ function act(s, spot, ev) {
       }
       s.bookOpen = c
       s.message = BROTHER_LINES[c][Math.min(s.placed[c], BROTHER_LINES[c].length - 1)]
-      ev.push('bookVoice')
+      ev.push('page', 'bookVoice')
       break
     }
     case 'fireplace': {
@@ -161,7 +161,7 @@ function act(s, spot, ev) {
       ev.push('takePage'); break
     }
     case 'takeMatch': s.flags.matchbook = true; s.message = 'A matchbook, still dry after all these years. Fire belongs in a fireplace.'; ev.push('pickup'); break
-    case 'sphere': s.panelOpen = 'sphere'; s.message = `The sphere ring-dials read ${s.sphereDial.map((v) => (v < 0 ? '·' : v)).join('-')} — four rings, and the posts sing in sequence.`; ev.push('panel'); break
+    case 'sphere': s.panelOpen = 'sphere'; s.message = `The sphere ring-dials read ${s.sphereDial.map((v) => (v < 0 ? '·' : v)).join('-')} — four rings, and the posts sing in sequence.`; ev.push('panel', 'sphereSing'); break
     case 'starPanel': s.panelOpen = 'star'; s.message = `Stone dials: ${s.starDial.join('-')} points of light each. The dome above shows the true stars.`; ev.push('panel'); break
     case 'starWheel': s.message = 'The great star turns its patient circles above the falls — a symbol of Channelwood, mirrored on the panel below.'; ev.push('look'); break
     case 'towerLever': s.message = 'The great lever is braced solid in its stone well. Whatever bell it once rang, no bell hangs here anymore.'; ev.push('look'); break
