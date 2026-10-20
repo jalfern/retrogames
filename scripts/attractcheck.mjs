@@ -23,6 +23,7 @@ const MODULES = [
     { label: 'DEFENDER', file: 'src/games/Defender/attract.js', import: '../src/games/Defender/attract.js' },
     { label: 'SPACE INVADERS', file: 'src/games/SpaceInvaders/attract.js', import: '../src/games/SpaceInvaders/attract.js' },
     { label: 'CENTIPEDE', file: 'src/games/Centipede/attract.js', import: '../src/games/Centipede/attract.js' },
+    { label: 'GAUNTLET', file: 'src/games/Gauntlet/attract.js', import: '../src/games/Gauntlet/attract.js' },
 ]
 
 const WIDTHS = [320, 600]
@@ -99,7 +100,7 @@ const MUTANTS = [
         `0)'`],
 ]
 
-const MUTATE_FILES = MODULES.filter((m) => /Defender|SpaceInvaders|Centipede/.test(m.file)).map((m) => m.file)
+const MUTATE_FILES = MODULES.filter((m) => /Defender|SpaceInvaders|Centipede|Gauntlet/.test(m.file)).map((m) => m.file)
 
 async function run() {
     for (const mod of MODULES) await audit(mod)

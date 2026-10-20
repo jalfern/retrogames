@@ -25,6 +25,7 @@ import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
 import { walkFrame, hitFlashAlpha, deathProgress } from './hero.js'
 import { torch, litColor, mortarTones, css } from './walls.js'
 import { cardCenter, heroAt } from './select.js'
+import { attractFrame, DIM } from './attract.js'
 import { p2From } from './p2input.js'
 import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
@@ -634,15 +635,15 @@ const GauntletGame = () => {
 
             const sc = screenRef.current
             if (sc === 'attract' || sc === 'select') {
-                ctx.fillStyle = sc === 'select' ? '#05050c' : 'rgba(3,3,12,0.78)'
+                ctx.fillStyle = sc === 'select' ? '#05050c' : DIM
                 ctx.fillRect(0, 0, CW, CH)
                 text('GAUNTLET', CW / 2, 58, 30, '#ffd23f', 14)
                 text('ATARI 1985 · FOUR MAZES · OVERHEAD', CW / 2, 78, 8, '#8fa3d8')
                 if (sc === 'attract') {
-                    if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY TO CHOOSE YOUR HERO', CW / 2, 104, 9, '#e9f7ff', 4)
                     const b = board()[0]
-                    if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, CW / 2, 122, 8, '#5dc8ff', 3)
-                    text('DEMO PLAYS THE PROVEN FULL QUEST', CW / 2, CH - 14, 7, '#5d7094')
+                    for (const l of attractFrame(gs.tick, CW, CH, HT, b ? b.score : 0)) {
+                        text(l.text, l.x, l.y, l.size, l.col, l.glow)
+                    }
                 } else {
                     text('CHOOSE YOUR HERO', CW / 2, 96, 10, '#5dff8f', 4)
                     HERO_ORDER.forEach((hk, i) => {

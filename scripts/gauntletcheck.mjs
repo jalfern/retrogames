@@ -585,6 +585,44 @@ console.log('determinism')
     ok(a.hash === b.hash, 'same seed replays identically', `${a.hash} vs ${b.hash}`)
 }
 
+// ------------------------------------------------------ attract rule 6 ----
+// ART.md rule 6 (#365): one cycling message, a blinking prompt, and NOTHING
+// over the HUD band. The old attract drew "DEMO PLAYS THE PROVEN FULL QUEST"
+// at y = CH-14 — straight over the HUD level name, HI readout and watermark.
+console.log('attract (rule 6)')
+const CW = 320, CH = 240, HT = 40, VH = CH - HT
+{
+    const A = await import('../src/games/Gauntlet/attract.js')
+    const { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, estWidth } = A
+    ok(INFO_MSGS.length >= 2, 'has more than one message to cycle', `${INFO_MSGS.length}`)
+    ok(INFO_MSGS.every((s) => s.length <= 28), 'every message fits one short line',
+        INFO_MSGS.filter((s) => s.length > 28).join(' | '))
+    ok(!INFO_MSGS.some((s) => /scripts?\/|\.mjs|audit|attract mode/i.test(s)), 'no harness leak in a visible message')
+    let stacked = 0, overHud = 0, clipped = 0
+    const seen = new Set()
+    for (let t = 0; t < HOLD * INFO_MSGS.length + 5; t++) {
+        const lines = attractFrame(t, CW, CH, HT, 999999)
+        const info = lines.filter((l) => INFO_MSGS.includes(l.text))
+        if (info.length !== 1) stacked++
+        info.forEach((l) => seen.add(l.text))
+        for (const l of lines) {
+            if (l.y + l.size > VH) overHud++
+            if (estWidth(l) > CW || l.y + l.size > CH || l.y - l.size < 0) clipped++
+        }
+    }
+    ok(stacked === 0, 'one informational message at a time', `${stacked} stacked frames`)
+    ok(seen.size === INFO_MSGS.length, 'the slot cycles every message', `${seen.size}/${INFO_MSGS.length}`)
+    ok(overHud === 0, 'no attract line enters the HUD band', `${overHud} lines at y+size > ${VH}`)
+    ok(clipped === 0, 'no attract line clips the frame', `${clipped}`)
+    let on = 0, off = 0
+    for (let t = 0; t < 48; t++) (attractFrame(t, CW, CH, HT, 0).some((l) => l.text === PRESS) ? on++ : off++)
+    ok(on > 0 && off > 0, 'the press prompt blinks', `on ${on} off ${off}`)
+    ok(parseFloat(DIM.match(/([\d.]+)\)/)?.[1]) >= 0.3, 'the demo dims behind the attract text', DIM)
+    const jsx = readFileSync('src/games/Gauntlet/index.jsx', 'utf8')
+    ok(jsx.includes("from './attract.js'") && jsx.includes('attractFrame(gs.tick'), 'the shell draws through attract.js')
+    ok(!/DEMO PLAYS|PRESS ANY KEY TO CHOOSE YOUR HERO/.test(jsx), 'the HUD-over caption and long prompt are gone from the shell')
+}
+
 // ------------------------------------------------------------- mutants ----
 if (process.argv.includes('--mutate')) {
     console.log('mutants (must die)')
@@ -609,6 +647,8 @@ if (process.argv.includes('--mutate')) {
         ['the hero never steps', 'src/games/Gauntlet/sim.js', 'if (Math.hypot(h.x - wx0, h.y - wy0) > 1e-6) h.walk++', 'if (false) h.walk++'],
         ['the hero never flashes on a strike', 'src/games/Gauntlet/sim.js', 'h.hp -= kind.dmg\n                h.hitT = CFG.hitFlash', 'h.hp -= kind.dmg'],
         ['the hero never collapses when dying', 'src/games/Gauntlet/hero.js', '(deadT <= 0 ? 0 : Math.min(1, (CFG.deathFreeze - deadT) / CFG.deathFreeze))', '(deadT <= 0 ? 0 : 0)'],
+        ['the HUD-over attract caption returns', 'src/games/Gauntlet/attract.js', "        { text: PRESS,", "        { text: 'DEMO PLAYS THE PROVEN FULL QUEST', x: w / 2, y: h - 14, size: 7, col: '#5d7094', glow: 0 },\n        { text: PRESS,"],
+        ['an attract message leaks the harness', 'src/games/Gauntlet/attract.js', "'FOUR MAZES AWAITS',", "'gauntletcheck audits the HUD band',"],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
