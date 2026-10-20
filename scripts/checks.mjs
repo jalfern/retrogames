@@ -8,7 +8,7 @@
 export const CORE = {
   lint: ['lint:ai', 'lint:forge', 'lint:pw'],
   checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
-    'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck'],
+    'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck'],
   smoke: ['vpadboot', 'tapstartcheck'],
   paths: [
     'src/components/', 'src/utils/', 'src/config/', 'src/pages/',
