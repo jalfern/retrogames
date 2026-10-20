@@ -68,10 +68,17 @@ const OutpostGame = () => {
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, demoSeed = 0
         let toast = 0, toastMsg = ''
+        let denyFlash = null
         let toolIdx = 0
         let cursor = { x: 12, y: 10 }
         let designTap = null
         const evLog = []
+
+        const DENY_MSG = {
+            NOTROCK: 'NOT ROCK', DUP: 'ALREADY MARKED', SEALED: 'NO OPEN SIDE TO SWING',
+            OFFMAP: 'OFF THE MAP', NOTGROUND: 'NOT GROUND', DEPOT: 'THAT IS THE DEPOT',
+            NOTSTAIRS: 'RALLY ON THE BEACON >', TOOL: 'BAD TOOL',
+        }
 
         const say = (m) => { toastMsg = m; toast = 160 }
 
@@ -87,7 +94,11 @@ const OutpostGame = () => {
                 else if (e.type === 'rally') { say('ALL TO THE BEACON'); audioController.playSweep(300, 700, 0.4, 'square', 0.06) }
                 else if (e.type === 'descend') { bgDirty = true; demoSeed = gs.baseSeed; audioController.playSweep(600, 120, 0.8, 'sawtooth', 0.08) }
                 else if (e.type === 'die') { say('A DWARVE FELL'); audioController.playSweep(200, 60, 0.7, 'sawtooth', 0.09) }
-                else if (e.type === 'deny') audioController.playTone(90, 0.07, 'square', 0.05)
+                else if (e.type === 'deny') {
+                    denyFlash = { x: e.x, y: e.y, why: e.why, ttl: 50 }
+                    say(DENY_MSG[e.why] || 'THE OUTPOST SAYS NO')
+                    audioController.playTone(90, 0.07, 'square', 0.05)
+                }
                 else if (e.type === 'depth') { say(`DEPTH ${e.depth}`); bgDirty = true }
                 else if (e.type === 'win') audioController.playSweep(400, 1600, 0.9, 'square', 0.08)
                 else if (e.type === 'lose') audioController.playSweep(300, 50, 1.2, 'sawtooth', 0.1)
@@ -167,10 +178,44 @@ const OutpostGame = () => {
                 if (j.kind === 'dig') { ctx.fillStyle = '#ff7d5d66'; ctx.fillText('x', j.x * CW + CW / 2, j.y * CH + CH - 7) }
                 else if (j.kind === 'farm') { ctx.fillStyle = '#7ddc5d88'; ctx.fillText('"', j.x * CW + CW / 2, j.y * CH + CH - 7) }
             }
+            const byTile = new Map()
             for (const d of gs.dwarves) {
                 if (!d.alive) continue
-                ctx.fillStyle = d.hunger >= CFG.HUNGER_MAX ? '#ff5d5d' : d.carryFood || d.carryOre ? '#ffd23e' : '#f2f5ff'
-                ctx.fillText('@', d.x * CW + CW / 2, d.y * CH + CH - 7)
+                const k = d.y * W + d.x
+                const g = byTile.get(k)
+                if (g) {
+                    g.n++
+                    if (d.hunger >= CFG.HUNGER_MAX) g.hungry = true
+                    if (d.carryFood || d.carryOre) g.carry = true
+                } else byTile.set(k, { n: 1, hungry: d.hunger >= CFG.HUNGER_MAX, carry: !!(d.carryFood || d.carryOre) })
+            }
+            for (const [k, g] of byTile) {
+                const x = k % W, y = (k - x) / W
+                ctx.fillStyle = g.hungry ? '#ff5d5d' : g.carry ? '#ffd23e' : '#f2f5ff'
+                ctx.fillText('@', x * CW + CW / 2, y * CH + CH - 7)
+                if (g.n > 1) {
+                    ctx.font = 'bold 10px monospace'
+                    ctx.fillStyle = '#4ad7ff'
+                    ctx.fillText(String(g.n), x * CW + CW - 4, y * CH + 9)
+                    ctx.font = `bold ${CH - 6}px monospace`
+                }
+            }
+            if (denyFlash) {
+                if (screenRef.current !== 'play' || pausedRef.current) denyFlash = null
+                else {
+                    const f = denyFlash
+                    const bx = f.x * CW, by = f.y * CH
+                    ctx.fillStyle = f.ttl % 8 < 4 ? '#ff3b30' : '#8c1d18'
+                    ctx.fillRect(bx + 1, by + 1, CW - 2, CH - 2)
+                    ctx.fillStyle = '#ffd7d5'
+                    ctx.font = 'bold 10px monospace'
+                    const msg = DENY_MSG[f.why] || 'NO'
+                    const hw = ctx.measureText(msg).width / 2
+                    const tx = Math.min(Math.max(bx + CW / 2, hw + 2), PXW - hw - 2)
+                    ctx.fillText(msg, tx, by > 14 ? by - 3 : by + CH + 10)
+                    ctx.font = `bold ${CH - 6}px monospace`
+                    if (--f.ttl <= 0) denyFlash = null
+                }
             }
             if (screenRef.current === 'play') {
                 ctx.strokeStyle = gs.tick % 40 < 20 ? '#ffffff' : TOOLCOL[TOOLS[toolIdx]]
@@ -217,7 +262,7 @@ const OutpostGame = () => {
         const startPlay = (seed = 0) => {
             gs = newRun(seed)
             evLog.length = 0
-            toolIdx = 0; designTap = null
+            toolIdx = 0; designTap = null; denyFlash = null
             cursor = { x: gs.cave.spawn[0], y: gs.cave.spawn[1] + 1 < H - 1 ? gs.cave.spawn[1] + 1 : gs.cave.spawn[1] }
             demoSeed = seed
             bgDirty = true
@@ -280,6 +325,7 @@ const OutpostGame = () => {
                     food: gs.food, eaten: gs.eaten, harvested: gs.harvested, rotten: gs.rotten, ore: gs.ore, minedOre: gs.minedOre, dug: gs.dug,
                     jobs: gs.jobs.map((j) => ({ id: j.id, kind: j.kind, x: j.x, y: j.y, claim: j.claim })),
                     rally: gs.rally, end: gs.end, why: gs.endWhy, tool: TOOLS[toolIdx], cursor: { ...cursor },
+                    flash: denyFlash ? { ...denyFlash } : null,
                     cellAt: (x, y) => { const i = y * W + x; return gs.cave ? { t: gs.cave.t[i], bush: gs.cave.bush[i], ore: gs.cave.ore[i], farm: gs.farm[i] } : null },
                     spawn: gs.cave.spawn, stairs: gs.cave.stairs, depot: gs.cave.depot,
                     evLog: evLog.slice(-140),
@@ -374,6 +420,9 @@ const OutpostGame = () => {
                     <span ref={setHud('queue')} className="text-red-300/90">JOBS 0</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center text-amber-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #f60' }} />
+                <div data-op-legend="1" className="absolute inset-x-0 bottom-2 text-center font-mono text-[11px] leading-4 text-white/70" style={{ textShadow: '0 1px 0 #000, 0 0 6px #000' }}>
+                    <span style={{ color: '#f2f5ff' }}>@</span> dwarf · <span style={{ color: '#ffd23e' }}>&gt;</span> beacon · <span style={{ color: '#2f9e44' }}>*</span> bush · <span style={{ color: '#d8b23e' }}>%</span> ore · <span style={{ color: '#4ad7ff' }}>&amp;</span> depot · <span style={{ color: '#ff7d5d' }}>x</span> dig
+                </div>
             </div>
 
             {screen === 'attract' && (

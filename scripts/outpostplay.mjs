@@ -96,6 +96,38 @@ let c1 = (await probe()).cursor
 for (let i = 0; i < 12 && c1.x === c0.x; i++) { await holdKey('ArrowRight', 140); c1 = (await probe()).cursor }
 r.check(`arrows walk the cursor east (${c0.x},${c0.y} -> ${c1.x},${c1.y})`, c1.x > c0.x)
 
+// 2b — EVERY dwarf is explainable: restart frozen (start + pause in one JS
+// turn, before sim ticks), all dwarves are still stacked on the spawn tile,
+// so the canvas must carry a cyan count-digit for the pile, and the legend
+// that names the glyphs must be present in play.
+await page.evaluate(() => {
+    window.__opTest.start(1)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Slash', shiftKey: true }))
+})
+await wait(250)
+const stacked = await probe()
+const onTile = {}
+for (const d of stacked.dwarves) if (d.alive) { const k = `${d.x},${d.y}`; onTile[k] = (onTile[k] || 0) + 1 }
+const pile = Object.entries(onTile).sort((a, b) => b[1] - a[1])[0]
+r.check(`the @${stacked.dwarves.filter((d) => d.alive).length}/${stacked.dwarves.length} roster is explainable: ${pile ? `${pile[1]} dwarves share tile ${pile[0]}` : 'nobody alive'}`, !!pile && pile[1] >= 2, JSON.stringify(onTile))
+const pilePix = pile && await page.evaluate(([x, y]) => {
+    const c = document.querySelector('canvas[data-op-stage]')
+    if (!c) return null
+    const d = c.getContext('2d').getImageData(x * 15 + 7, y * 22, 8, 11).data
+    let cyan = 0
+    for (let i = 0; i < d.length; i += 4) if (d[i] < 140 && d[i + 1] > 150 && d[i + 2] > 200) cyan++
+    return cyan
+}, pile[0].split(',').map(Number))
+r.check(`the stacked pile paints a cyan count-digit on the tile (${pilePix} cyan pixels)`, pilePix >= 3)
+r.check('a one-line glyph legend is shown in play', await page.evaluate(() => {
+    const el = document.querySelector('[data-op-legend]')
+    if (!el) return false
+    const t = el.textContent
+    return ['@', '>', '*', '%', '&', 'x'].every((g) => t.includes(g))
+}))
+await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Slash', shiftKey: true })))
+await wait(120)
+
 // 3 — Space on a REAL rock posts a dig job, and that rock must be adjacent
 // to open floor (the sim rejects sealed rock — ask it where it can dig),
 // and close to spawn (the dwarf must reach it before the harness times out)
@@ -163,6 +195,18 @@ await wait(150)
 const denied = await probe()
 r.check('RALLY on bare floor answered NOTSTAIRS (the engine refused)',
     denied.evLog.slice(-4).some((e) => e.type === 'deny' && e.why === 'NOTSTAIRS'))
+const fl = denied.flash
+r.check(`the refusal flashes on the refused tile (${fl ? `${fl.why} at ${fl.x},${fl.y}` : 'nothing'})`,
+    !!fl && fl.why === 'NOTSTAIRS' && fl.x === denied.cursor.x && fl.y === denied.cursor.y, JSON.stringify(fl))
+const pxRed = await page.evaluate(([x, y]) => {
+    const c = document.querySelector('canvas[data-op-stage]')
+    if (!c) return null
+    const d = c.getContext('2d').getImageData(x * 15 + 3, y * 22 + 3, 9, 16).data
+    let red = 0
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 120 && d[i + 1] < 90 && d[i + 2] < 90) red++
+    return red
+}, [denied.cursor.x, denied.cursor.y])
+r.check(`the refused tile paints RED while the flash lives (${pxRed} red pixels in the cell)`, pxRed >= 30)
 
 // 5 — drive the colony in CHUNKS (so the canvas catches a dwarf mid-haul):
 // eaten/harvested grow, ledger balances IN THE PAGE, and a carrying dwarf

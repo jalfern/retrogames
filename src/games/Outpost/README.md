@@ -35,6 +35,10 @@ colonists claim work off a priority queue and A-star to it.
   stairs and back; the chain can't fake it.
 - **Hunger is a clock, and the clock kills**: 8 ticks/unit, 100 to peak,
   40 ticks at peak with an empty depot and a dwarf dies.
+- **A refusal must be SEEN.** Every deny event carries `why,x,y`; the shell
+  flashes the tile red with the reason; dwarves sharing a tile paint a cyan
+  count-digit; and play keeps a one-line glyph legend. `outpostcheck` pins
+  the event, `outpostplay` pins the pixels.
 
 ## The run the harness proves
 

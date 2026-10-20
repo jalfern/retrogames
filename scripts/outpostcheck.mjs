@@ -166,6 +166,15 @@ section('THE DENY MATRIX — every wrong click answered by the SIM')
     ok(deny('rally', gs.cave.spawn[0], gs.cave.spawn[1]) === 'NOTSTAIRS', 'rally accepted a floor tile')
     ok(deny('warp', 3, 3) === 'TOOL', 'an unknown tool was accepted')
     ok(deny('dig', -1, 5) === 'OFFMAP', 'the map accepted a designation outside itself')
+    // a refusal the player cannot SEE is still silence: every deny event must
+    // carry the position (and its reason) so the shell can flash the tile red
+    {
+        const gs2 = newRun(0)
+        step(gs2, { tool: 'dig', designate: [gs2.cave.spawn[0], gs2.cave.spawn[1]] })
+        const e = gs2.events.find((ev) => ev.type === 'deny')
+        ok(!!e && e.why === 'NOTROCK' && e.x === gs2.cave.spawn[0] && e.y === gs2.cave.spawn[1],
+            'a deny event arrived without a reason+position — the UI has nothing to flash')
+    }
     step(gs, { tool: 'farm', designate: [gs.cave.spawn[0] + 1, gs.cave.spawn[1]] })
     ok(!gs.events.find((e) => e.type === 'deny' && e.why === 'TOOL'), 'a legal farm tool was rejected')
 }
@@ -503,6 +512,19 @@ if (MUT) {
                 console.log(`  mut structural claim-leak-on-death: ${stranded ? 'caught by the audit' : 'SURVIVED (BAD)'}`)
                 ok(!!stranded, 'the mutant let the claim return — the harness never proved the return')
             }
+        }
+    }
+
+    // 8. deny reasons go silent: the refusal still happens but the UI has
+    //    nothing to show — the first-time player just watches nothing happen.
+    {
+        const mod = await mutSim("gs.events.push({ type: 'deny', why: bad, x, y })", "gs.events.push({ type: 'deny', x, y })")
+        if (mod) {
+            const gs = mod.newRun(0)
+            mod.step(gs, { tool: 'dig', designate: [gs.cave.spawn[0], gs.cave.spawn[1]] })
+            const whyless = gs.events.find((e) => e.type === 'deny' && !e.why)
+            console.log(`  mut structural deny-without-reason: ${whyless ? 'caught by the audit' : 'SURVIVED (BAD)'}`)
+            ok(!!whyless, 'a reasonless deny survived — the matrix never proves the reason arrives')
         }
     }
 }
