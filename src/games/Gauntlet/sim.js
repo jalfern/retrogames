@@ -19,6 +19,7 @@
 //     ends the quest. Touching zero hp costs a life and restarts the maze.
 
 import { LEVELS, W, H, HEROES, MONSTERS } from './levels.js'
+import { viewRect, viewBounds } from './minimap.js'
 
 export { LEVELS, W, H, HEROES, MONSTERS }
 
@@ -668,6 +669,7 @@ export function step(gs, inp, partnerInp = null) {
     if (gs.end || gs.hero.deadT > 0) return gs
     updateGens(gs)
     updatePartner(gs, partnerInp)
+    clampToSharedView(gs)
     updateItems(gs)
     checkStairs(gs)
 
@@ -692,6 +694,28 @@ function moveHuman(gs, p, dx, dy) {
     else if (!blocked(gs, nx, p.y)) p.x = nx
     else if (!blocked(gs, p.x, ny)) p.y = ny
 }
+
+// #524 — the shared cabinet frames both heroes, so the screen edge is a WALL:
+// neither player can step past it and vanish. This runs after every seat has
+// moved (P1, a human P2 pad, the CPU partner, an online seat) so the rule is
+// the simulation's, not the renderer's — the CPU/model seats live by it too.
+// A lone hero is trivially inside his own centred window, so 1P plays unchanged.
+function clampToSharedView(gs) {
+    if (!gs.topDown) return
+    const b = viewBounds(viewRect(gs.hero, gs.partner))
+    const seat = (p) => {
+        if (!p || p.down || p.deadT > 0) return
+        const pullX = p.x < b.minx ? b.minx : p.x > b.maxx ? b.maxx : p.x
+        const pullY = p.y < b.miny ? b.miny : p.y > b.maxy ? b.maxy : p.y
+        // the edge only ever pulls a hero back toward the pair's midpoint, so
+        // the target sits in the corridor between them — never into stone.
+        if (pullX !== p.x && !blocked(gs, pullX, p.y)) p.x = pullX
+        if (pullY !== p.y && !blocked(gs, p.x, pullY)) p.y = pullY
+    }
+    seat(gs.hero)
+    seat(gs.partner)
+}
+
 
 // A closed, un-broken slam door sitting on the cell (x, y) — the partner's
 // push-to-open target (issue #275 item 6). Locked doors are never returned:

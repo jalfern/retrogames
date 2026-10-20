@@ -352,7 +352,9 @@ const GauntletGame = () => {
         const drawView = () => {
             const h = selfEnt()
             const mat = MATERIALS[gs.levelData.material]
-            const { camX, camY } = viewRect(h)
+            // #524 — the shared cabinet frames BOTH heroes, so the drawn edge is
+            // the same window the sim walls players into (host and guest agree).
+            const { camX, camY } = gs.topDown ? viewRect(gs.hero, gs.partner) : viewRect(h)
             ctx.fillStyle = '#05050c'
             ctx.fillRect(0, 0, VW, VH)
             const c0 = Math.floor(camX / PX), r0 = Math.floor(camY / PX)
@@ -587,7 +589,8 @@ const GauntletGame = () => {
                 }
             }
             // the beasts the view shows: red roamers, Death in his green
-            for (const m of mapMonsters(gs, viewRect(h))) {
+            // (#524: the side map admits what the SHARED screen shows, both heroes framed)
+            for (const m of mapMonsters(gs, gs.topDown ? viewRect(gs.hero, gs.partner) : viewRect(h))) {
                 ctx.fillStyle = m.kind === 'death' ? '#8fff9f' : '#ff5d5d'
                 ctx.fillRect(px + m.x * s - 1, py + m.y * s - 1, s, s)
             }
