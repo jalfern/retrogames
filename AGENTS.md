@@ -17,10 +17,12 @@ lessons below keep games from shipping broken; they are not the goal.
    never spend more than one PR fixing a harness timing problem; a flaky advisory failure
    means rerun once and move on, never waiting on it.
 4. If 3 PRs in a row don't change game code (`src/games/**` or demos in `public/demos/**`), stop and report to Jon.
-5. Never merge a PR whose own description says it is red or WIP. From the PR's branch, merge
+5. Never merge a PR whose own description says it is red or WIP. Red main = merge freeze
+   (#601): `scripts/main-ok.sh` exits non-zero while the latest nightly on main failed —
+   fix main (or wait) before merging anything. From the PR's branch, merge
    **only** with this command, never any other way (waits on the required check — `static` —
    and ignores advisory jobs; `smoke` flaking must not wedge the merge):
-   `while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch`
+   `scripts/main-ok.sh && while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch`
 6. Don't grow the harness past the code it tests. Prefer a new small check to a longer script.
 7. Every ~4 hours, stop with: what's playable now, what changed, three questions for Jon.
 8. Read your result before writing another probe. Before a second probe for the same error, write

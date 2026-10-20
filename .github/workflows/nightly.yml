@@ -1,0 +1,85 @@
+name: Nightly (full suite + mutants)
+
+# #601: the complete deterministic suite with every `--mutate` variant, on main,
+# once a night — the tier the PR gate gave up so one-game PRs go green in
+# minutes instead of ~18. A red night freezes merges until it is fixed
+# (scripts/main-ok.sh, consulted by every lane before `gh pr merge`).
+# Nothing in here can block a merge directly; it only sets the freeze signal.
+
+on:
+  schedule:
+    - cron: '15 6 * * *'   # after heist-nightly (05:30 UTC), quiet hours
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  full-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # npm >=11, see the note in ci.yml's static job
+          cache: npm
+      - run: npm ci
+      - run: node scripts/ciscope.mjs --selftest
+      - run: npm run build
+      - run: npm run nightlychecks
+
+  full-smoke:
+    needs: full-static
+    runs-on: ubuntu-latest
+    env:
+      SHOT_CHANNEL: chromium
+      HEIST_LITE: "1"
+      DOG_LITE: "1"
+      TAP_ONLY: "1"
+      TAP_CANVAS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - name: Start dev server
+        run: |
+          npm run dev > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5173/retrogames/raccoon-heist > /dev/null; then
+              echo "dev server up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "dev server never came up"; cat /tmp/vite.log; exit 1
+      - run: npm run nightlysmokes
+      - name: Dev server log (on failure)
+        if: failure()
+        run: cat /tmp/vite.log
+
+  report:
+    needs: [full-static, full-smoke]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report a red night
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="nightly is red ($(date -u +%Y-%m-%d))"
+          dup=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "nightly is red in:title" --json number --jq '.[0].number // empty')
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body="Nightly full suite failed — **merges are frozen until main is green again** (scripts/main-ok.sh). Run: $url"
+          if [ -n "$dup" ]; then
+            gh issue comment "$dup" --repo "$GITHUB_REPOSITORY" --body "Another red night: $body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi

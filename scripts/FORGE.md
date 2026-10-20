@@ -96,7 +96,7 @@ AGENTS.md wins.
     git add -A && git commit -m "<NAME>: <summary>"   # in the forge/<slug> worktree
     git push -u origin forge-<slug>
    gh pr create --base main --title "<NAME>" --body-file /tmp/pr.md
-   gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch
+   scripts/main-ok.sh && while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch
    git checkout --detach origin/main   # gh auto-switches the worktree onto `main` after
                                        # --delete-branch — re-detach at once (the law keeps
                                        # `main` checked out nowhere; a held `main` makes the

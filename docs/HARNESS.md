@@ -113,16 +113,28 @@ npm run doscheck -- --quick # Zork + King's Quest seams in Chrome (--quick skips
   `--no-start` skips the initial keypress, so attract/menu shots are possible.
 
 ### CI
-`.github/workflows/ci.yml` has three jobs:
+`.github/workflows/ci.yml` scopes work per changed file (#601); `nightly.yml` runs
+everything. The scope table lives in `scripts/checks.mjs` (one source of truth:
+`ci.yml` gates on it, `scripts/ciscope.mjs` turns a diff into gate keys,
+`scripts/run-checks.mjs` replays the whole table with mutants nightly —
+`node scripts/ciscope.mjs --selftest` fails if the table references a dead alias).
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
-| `static` | every push to `main` + every PR | `npm ci` → `lint:mario` → `lint:fps` → `lint:ai` → `aicheck` → `zorkcheck` → `build`. No browser, fast. **The only required check** (branch protection on `main`, set 2026-10-19) — the only one that can block a merge. |
-| `smoke` | every PR | `heistsmoke` + per-game real-key smokes (missile, polarity, simcity, outpost, …). Advisory: a flake means `gh run rerun <id> --failed` once, then move on — never fix-in-a-new-PR, never wait on it. |
+| `scope` | every PR | diff vs base → `docs` flag + gate-key list (shared code or an unknown `src/games/<Dir>` fans out to everything). |
+| `static` | every PR | required check (branch protection). Scoped lints/checks per the table, **no `--mutate`**; shared code runs the full set; docs/scripts-only PRs run only `ciscope --selftest` (< 1 min). |
+| `smoke` | every PR | the per-game real-key smokes for the touched games (+ `vpadboot`/`tapstartcheck` on shared changes). Advisory: a flake means `gh run rerun <id> --failed` once, then move on — never fix-in-a-new-PR, never wait on it. |
 | `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + aicheck + zorkcheck + fpscheck + evocheck + doscheck), then builds and `npm run prodsmoke` against the production bundle; uploads `scripts/.shots/`, dumps the vite/preview logs on failure. |
+| Nightly `full-static`/`full-smoke` | schedule + manual | every lint, every check with `--mutate`, `build`, then the whole smoke set on main. A red night files/refreshes one issue and **freezes merges** until green. |
+
+Pushes to `main` no longer re-run CI — the merge commit is the tree the PR just
+proved; main's full proof is the nightly. Before ANY merge a lane runs
+`scripts/main-ok.sh` (red nightly = freeze; the flaky heist nightly only warns).
 
 ```bash
-gh pr checks --watch                      # the static gate on your PR
+scripts/main-ok.sh                        # merge-freeze check (rule 5)
+node scripts/ciscope.mjs --selftest     # proof the scope table is honest
+gh pr checks --watch                      # all checks on your PR
 gh workflow run ci.yml --ref <branch>     # opt into the browser suite
 gh run download <run-id> -n mario-frames  # grab the captured frames
 ```
