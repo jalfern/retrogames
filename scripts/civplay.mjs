@@ -18,6 +18,9 @@
 //   7. THE FINAL AGES (Stage 8) — Y opens VICTORY with the three race tracks,
 //      K/L answer with Musket and Galleon, and after Spaceflight the Ark banks
 //      beakers on live turns.
+//   8b. THE FIRST-PLAY CAMERA (#535) — drag pans, right-drag orbits, arrows pan,
+//      Home re-centers on the unit, the settler opens framed at screen centre,
+//      and the next-step hint walks settle → build → end turn (desktop+phone).
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const URL = process.env.CIV_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/civilization-v`
@@ -411,6 +414,69 @@ r.check('one key returns to attract', (await probe()).screen === 'attract')
     }))
     r.check('lite introduces no page errors', liteErrors.length === 0, liteErrors.slice(0, 2).join(' | '))
     await litePage.close()
+}
+
+// 8b — #535 first-play camera UX: drag pans, right-drag orbits, Home re-centers,
+// the settler opens framed at screen centre, and the next-step hint walks E→build→Space.
+for (const shape of [{ w: 760, h: 620, tag: 'desktop' }, { w: 390, h: 844, tag: 'phone' }]) {
+    const ux = await browser.newPage({ viewport: { width: shape.w, height: shape.h }, deviceScaleFactor: 1 })
+    ux.setDefaultTimeout(60000)
+    const uxErrors = []
+    ux.on('pageerror', (e) => uxErrors.push(e.message))
+    await ux.goto(URL + '?lite=1', { waitUntil: 'domcontentloaded' })
+    for (let i = 0; i < 120; i++) { if (await ux.evaluate(() => !!window.__civTest)) break; await wait(200) }
+    await ux.keyboard.press('KeyQ')
+    await wait(500)
+    const u0 = await ux.evaluate(() => window.__civTest.probe())
+    const settler0 = u0.units0.find((x) => x.kind === 'SETTLER')
+    const expW = [Math.sqrt(3) * (settler0.c + 0.5 * (settler0.r & 1)), 1.5 * settler0.r]
+    r.check(`[${shape.tag}] turn 1 opens framed on the settler (screen ${u0.unitScreen})`,
+        !!u0.unitScreen && Math.abs(u0.unitScreen[0] - shape.w / 2) < shape.w * 0.18 && Math.abs(u0.unitScreen[1] - shape.h / 2) < shape.h * 0.18)
+    const hintOf = () => ux.evaluate(() => {
+        const el = [...document.querySelectorAll('span')].find((x) => /^(PRESS E TO FOUND YOUR CAPITAL|PICK A BUILD: 1 WARRIOR . 3 SETTLER|SPACE ENDS THE TURN)$/.test(x.textContent))
+        if (!el) return ''
+        return el.style.display === 'none' ? el.textContent + '|hidden' : el.textContent
+    })
+    r.check(`[${shape.tag}] the first hint tells the player to settle`, (await hintOf()) === 'PRESS E TO FOUND YOUR CAPITAL')
+    const c0 = u0.camTgt
+    await ux.mouse.move(shape.w / 2, shape.h / 2)
+    await ux.mouse.down({ button: 'left' })
+    await ux.mouse.move(shape.w / 2 - 160, shape.h / 2, { steps: 12 })
+    await ux.mouse.up({ button: 'left' })
+    await wait(200)
+    const c1 = (await ux.evaluate(() => window.__civTest.probe())).camTgt
+    r.check(`[${shape.tag}] left-drag pans the map (moved ${Math.hypot(c1[0] - c0[0], c1[1] - c0[1]).toFixed(1)}u)`, Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) > 3)
+    await ux.mouse.move(shape.w / 2, shape.h / 2)
+    await ux.mouse.down({ button: 'right' })
+    await ux.mouse.move(shape.w / 2 + 140, shape.h / 2, { steps: 12 })
+    await ux.mouse.up({ button: 'right' })
+    await wait(200)
+    const c2 = (await ux.evaluate(() => window.__civTest.probe())).camTgt
+    r.check(`[${shape.tag}] right-drag orbits without panning (drift ${Math.hypot(c2[0] - c1[0], c2[1] - c1[1]).toFixed(2)}u)`, Math.hypot(c2[0] - c1[0], c2[1] - c1[1]) < 0.01)
+    await ux.keyboard.press('Home')
+    await wait(200)
+    const c3 = (await ux.evaluate(() => window.__civTest.probe())).camTgt
+    r.check(`[${shape.tag}] Home re-centers on the unit (offset ${Math.hypot(c3[0] - expW[0], c3[1] - expW[1]).toFixed(3)}u)`, Math.hypot(c3[0] - expW[0], c3[1] - expW[1]) < 0.01)
+    await ux.keyboard.down('ArrowRight')
+    await wait(400)
+    await ux.keyboard.up('ArrowRight')
+    const c4 = (await ux.evaluate(() => window.__civTest.probe())).camTgt
+    r.check(`[${shape.tag}] arrow keys pan the camera`, Math.hypot(c4[0] - c3[0], c4[1] - c3[1]) > 1)
+    await ux.keyboard.press('Home')
+    await wait(150)
+    await ux.keyboard.press('KeyE')
+    await wait(400)
+    r.check(`[${shape.tag}] after settling the hint asks for a build`, (await hintOf()) === 'PICK A BUILD: 1 WARRIOR · 3 SETTLER')
+    await ux.keyboard.press('Digit1')
+    await wait(250)
+    r.check(`[${shape.tag}] after queueing the hint asks to end the turn`, (await hintOf()) === 'SPACE ENDS THE TURN')
+    await ux.keyboard.press('Space')
+    await wait(450)
+    const hf = await hintOf()
+    r.check(`[${shape.tag}] once the turn ends the hint steps aside (${hf || 'empty'})`, hf === '' || /hidden$/.test(hf))
+    r.check(`[${shape.tag}] the how-you-win card is gone once the capital stands`, await ux.evaluate(() => !document.body.innerText.includes('HOW YOU WIN')))
+    r.check(`[${shape.tag}] camera UX run is error-free`, uxErrors.length === 0, uxErrors.slice(0, 2).join(' | '))
+    await ux.close()
 }
 
 const clean = errors.filter((e) => !/favicon|Download the React DevTools|WebGL|GPU stall|Automatic fallback|SwiftShader/i.test(e))

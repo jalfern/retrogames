@@ -6,8 +6,10 @@
 // mirrors the HUD. Playable with mouse/touch: tap a tile to select your unit or
 // move it, tap END TURN (Space) to advance, E settles your settler, W opens
 // the WORK panel for a selected worker, D opens DIPLOMACY (war/peace/trade and
-// the city-state courts), Y opens VICTORY (the three races), drag to orbit,
-// wheel/pinch to zoom.
+// the city-state courts), Y opens VICTORY (the three races), LEFT-DRAG pans the
+// map (arrows and screen edges pan too), RIGHT-DRAG / two-finger orbits, wheel
+// and pinch zoom, Home or the ◎ CENTER button jumps back to your selected unit
+// or capital.
 // Art rule for 3D titles: render at screen res.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
@@ -40,6 +42,7 @@ const CivilizationVGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    const [helpOpen, setHelpOpen] = useState(false)
     const [panel, setPanel] = useState(null)
     const [panelOpen, setPanelOpen] = useState(false)
     const panelOpenRef = useRef(false)
@@ -97,7 +100,7 @@ const CivilizationVGame = () => {
 
         const handleEvents = (evts) => {
             for (const e of evts) {
-                if (e.type === 'found') { say(`${e.capital ? 'CAPITAL' : 'CITY'} ${gs.cities[e.city].name.toUpperCase()} FOUNDED`); audioController.playSweep(300, 720, 0.35, 'triangle', 0.09); if (e.civ === 0) { const w = view.hexToWorld(e.c, e.r); cam.tx = w.x; cam.tz = w.z } }
+                if (e.type === 'found') { say(`${e.capital ? 'CAPITAL' : 'CITY'} ${gs.cities[e.city].name.toUpperCase()} FOUNDED`); audioController.playSweep(300, 720, 0.35, 'triangle', 0.09); if (e.civ === 0) { const w = view.hexToWorld(e.c, e.r); cam.tx = w.x; cam.tz = w.z; clampTgt(); setHelpOpen(false) } }
                 else if (e.type === 'grow') { say(`${gs.cities[e.city].name.toUpperCase()} GROWS TO ${e.size}`); audioController.playTone(520 + e.size * 40, 0.06, 'square', 0.05) }
                 else if (e.type === 'deny') {
                     if (e.reason) say(e.reason.toUpperCase())
@@ -321,6 +324,23 @@ const CivilizationVGame = () => {
             camera.lookAt(cam.tx, 2, cam.tz)
         }
 
+        const clampTgt = () => { cam.tx = Math.max(-8, Math.min(Math.sqrt(3) * CFG.W + 8, cam.tx)); cam.tz = Math.max(-8, Math.min(1.5 * CFG.H + 8, cam.tz)) }
+        const panScreen = (dx, dy, k) => {
+            const rx = Math.cos(cam.az), rz = -Math.sin(cam.az), fx = -Math.sin(cam.az), fz = -Math.cos(cam.az)
+            cam.tx += -dx * k * rx + dy * k * fx
+            cam.tz += -dx * k * rz + dy * k * fz
+            clampTgt()
+        }
+        const recenter = () => {
+            const sel = gs.units.find((u) => u.id === gs.selected && u.alive && !u.loaded && u.civ === 0)
+            const cap = gs.cities.find((c) => c.civ === 0 && c.alive)
+            const u = sel || cap || gs.units.find((x) => x.alive && x.civ === 0)
+            if (!u) return
+            const w = view.hexToWorld(u.c, u.r)
+            cam.tx = w.x; cam.tz = w.z; clampTgt()
+            say('VIEW CENTERED'); audioController.playTone(520, 0.04, 'sine', 0.04)
+        }
+
         const paint = () => {
             updateView(view, gs, { reach: screenRef.current === 'play' ? reachSet() : null, lite: LITE })
             renderer.render(view.scene, camera)
@@ -403,6 +423,15 @@ const CivilizationVGame = () => {
                 const aw = arkPartsDone(gs, 0)
                 h.victory.textContent = `🏆 caps ${taken}/3 · ☼ ${tw}% · ARK ${hasTech(gs, 0, 'SPACEFLIGHT') ? `${aw}/4` : '🔒'}`
             }
+            if (h.hint) {
+                hintFound = hintFound || gs.cities.some((c) => c.civ === 0 && c.alive)
+                const cap0 = gs.cities.find((c) => c.civ === 0 && c.alive)
+                hintBuilt = hintBuilt || !!((cap0 && cap0.queue && cap0.queue.length) || (cap0 && cap0.buildP > 0))
+                hintEnded = hintEnded || gs.turn > startTurnRef
+                const htx = !hintFound ? 'PRESS E TO FOUND YOUR CAPITAL' : !hintBuilt ? 'PICK A BUILD: 1 WARRIOR · 3 SETTLER' : !hintEnded ? 'SPACE ENDS THE TURN' : ''
+                h.hint.textContent = htx
+                h.hint.style.display = htx ? '' : 'none'
+            }
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
         }
@@ -417,6 +446,11 @@ const CivilizationVGame = () => {
             // At 16 steps the world keeps time down to ~4 fps; below that no cap
             // saves it and nothing should blame the game for the machine.
             if (!pausedRef.current) { acc += ft; let g = 0; while (acc >= SIM_MS && g++ < 16) { doFrameSim(); acc -= SIM_MS } }
+            if (edgeOn && screenRef.current === 'play' && (edgeX || edgeY)) panScreen(edgeX, edgeY, cam.dist * 0.008)
+            if (screenRef.current === 'play' && !pausedRef.current && held.size) {
+                const k = cam.dist * 0.008
+                panScreen((held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0), (held.has('ArrowDown') ? 1 : 0) - (held.has('ArrowUp') ? 1 : 0), k)
+            }
             applyCam(); paint(); syncHud()
         }
 
@@ -722,13 +756,12 @@ const CivilizationVGame = () => {
             if (vOpenRef.current) refreshVPanel()
             audioController.playTone(vOpenRef.current ? 330 : 240, 0.05, 'triangle', 0.05)
         }
-        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP, toggleDPanel, closeDPanel, pickDeclare, pickPeace, pickTrade, pickGift, toggleVPanel, closeVPanel }
+        actRef.current = { togglePanel, closePanel, pickResearch, toggleWPanel, closeWPanel, pickImprove, togglePPanel, closePPanel, pickPolicy, toggleUPanel, closeUPanel, pickWonder, toggleGPanel, closeGPanel, pickRecruit, pickUseGP, toggleDPanel, closeDPanel, pickDeclare, pickPeace, pickTrade, pickGift, toggleVPanel, closeVPanel, recenter }
 
-        let drag = null
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
-            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Enter'].includes(e.code)) e.preventDefault()
+            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Enter', 'Home'].includes(e.code)) e.preventDefault()
             const sc = screenRef.current
             if (sc === 'attract') { startPlay(1); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
@@ -758,32 +791,79 @@ const CivilizationVGame = () => {
             if (e.code === 'KeyM') { if (screenRef.current === 'play') pickImprove('MINE'); return }
             if (e.code === 'KeyO') { if (screenRef.current === 'play') pickImprove('ROAD'); return }
             if (e.code === 'Escape') { if (panelOpenRef.current) closePanel(); if (wOpenRef.current) closeWPanel(); if (pOpenRef.current) closePPanel(); if (uOpenRef.current) closeUPanel(); if (gOpenRef.current) closeGPanel(); if (dOpenRef.current) closeDPanel(); if (vOpenRef.current) closeVPanel(); return }
-            if (e.code === 'ArrowLeft') { cam.az -= 0.12; return }
-            if (e.code === 'ArrowRight') { cam.az += 0.12; return }
-            if (e.code === 'ArrowUp') { cam.el = Math.min(1.4, cam.el + 0.06); return }
-            if (e.code === 'ArrowDown') { cam.el = Math.max(0.35, cam.el - 0.06); return }
+            if (e.code === 'Home') { if (screenRef.current === 'play') recenter(); return }
+            if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'ArrowUp' || e.code === 'ArrowDown') { held.add(e.code); return }
+            if (e.code === 'Comma') { cam.az -= 0.12; return }
+            if (e.code === 'Period') { cam.az += 0.12; return }
+            if (e.code === 'BracketLeft') { cam.el = Math.min(1.4, cam.el + 0.06); return }
+            if (e.code === 'BracketRight') { cam.el = Math.max(0.35, cam.el - 0.06); return }
         }
         const onWheel = (e) => { e.preventDefault && e.preventDefault(); cam.dist = Math.max(18, Math.min(90, cam.dist + (e.deltaY > 0 ? 4 : -4))) }
 
-        const onPointerDown = (e) => { const sc = screenRef.current; if (sc === 'attract') { startPlay(1); return } if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return } drag = { x: e.clientX, y: e.clientY, t: performance.now(), moved: 0, az: cam.az, el: cam.el } }
-        const onPointerMove = (e) => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved = Math.max(drag.moved, Math.abs(dx) + Math.abs(dy)); cam.az = drag.az - dx * 0.006; cam.el = Math.max(0.35, Math.min(1.4, drag.el + dy * 0.004)) }
-        const onPointerUp = (e) => { if (!drag) return; if (drag.moved < 8 && screenRef.current === 'play') { const t = pickTile(e.clientX, e.clientY); if (t) clickTile(t.c, t.r) } drag = null }
+        const ptrs = new Map()
+        const held = new Set()
+        let drag = null, pinch = null
+        let edgeX = 0, edgeY = 0, edgeOn = false
+        let hintFound = false, hintBuilt = false, hintEnded = false, startTurnRef = 1
+        const noCtx = (e) => e.preventDefault()
+        const onPointerDown = (e) => {
+            ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+            edgeOn = false
+            const sc = screenRef.current
+            if (sc === 'attract') { startPlay(1); return }
+            if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
+            if (ptrs.size === 2) { drag = null; const [a, b] = [...ptrs.values()]; pinch = { d: Math.max(12, Math.hypot(a.x - b.x, a.y - b.y)), dist: cam.dist, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, az: cam.az, el: cam.el }; return }
+            drag = { x: e.clientX, y: e.clientY, t: performance.now(), moved: 0, az: cam.az, el: cam.el, btn: e.button, tx: cam.tx, tz: cam.tz }
+        }
+        const onPointerMove = (e) => {
+            if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+            edgeX = e.clientX <= 24 ? -1 : e.clientX >= window.innerWidth - 24 ? 1 : 0
+            edgeY = e.clientY <= 24 ? -1 : e.clientY >= window.innerHeight - 24 ? 1 : 0
+            edgeOn = screenRef.current === 'play' && !pausedRef.current && !panelOpenRef.current && !wOpenRef.current && !pOpenRef.current && !uOpenRef.current && !gOpenRef.current && !dOpenRef.current && !vOpenRef.current && e.target === canvas && (edgeX !== 0 || edgeY !== 0)
+            if (pinch && ptrs.size >= 2) {
+                const [a, b] = [...ptrs.values()]
+                const d = Math.max(12, Math.hypot(a.x - b.x, a.y - b.y)), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
+                cam.dist = Math.max(18, Math.min(90, pinch.dist * pinch.d / d))
+                cam.az = pinch.az - (mx - pinch.mx) * 0.006
+                cam.el = Math.max(0.35, Math.min(1.4, pinch.el + (my - pinch.my) * 0.004))
+                return
+            }
+            if (!drag) return
+            const dx = e.clientX - drag.x, dy = e.clientY - drag.y
+            drag.moved = Math.max(drag.moved, Math.abs(dx) + Math.abs(dy))
+            if (drag.btn === 2) { cam.az = drag.az - dx * 0.006; cam.el = Math.max(0.35, Math.min(1.4, drag.el + dy * 0.004)) }
+            else panScreen(dx, dy, cam.dist / 400)
+        }
+        const onPointerUp = (e) => {
+            ptrs.delete(e.pointerId)
+            if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; edgeOn = false; return }
+            if (!drag) return
+            if (drag.moved < 8 && drag.btn === 0 && screenRef.current === 'play') { const t = pickTile(e.clientX, e.clientY); if (t) clickTile(t.c, t.r) }
+            drag = null
+        }
+        const onPointerLeave = () => { edgeOn = false; held.clear(); drag = null; pinch = null; ptrs.clear() }
+        const onKeyUp = (e) => held.delete(e.code)
 
         const startPlay = (seed = 1) => {
             gs = newGame(seed, 0); view = reinitView(gs)
             const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
-            if (s) { gs.selected = s.id; const w = view.hexToWorld(s.c, s.r); cam.tx = w.x; cam.tz = w.z }
+            if (s) { gs.selected = s.id; const w = view.hexToWorld(s.c, s.r); cam.tx = w.x; cam.tz = w.z; clampTgt() }
             pending = {}
+            hintFound = false; hintBuilt = false; hintEnded = false; startTurnRef = gs.turn
+            setHelpOpen(true)
             setMode('play')
             say('FIND A SITE — PRESS E TO SETTLE YOUR CAPITAL')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
 
         window.addEventListener('keydown', onDown)
+        window.addEventListener('keyup', onKeyUp)
         window.addEventListener('wheel', onWheel, { passive: false })
         canvas.addEventListener('pointerdown', onPointerDown)
         window.addEventListener('pointermove', onPointerMove)
         window.addEventListener('pointerup', onPointerUp)
+        canvas.addEventListener('contextmenu', noCtx)
+        window.addEventListener('blur', onPointerLeave)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -818,13 +898,15 @@ const CivilizationVGame = () => {
                     owned: gs.tiles.filter((t) => t.owner === 0).length,
                     explored0: countArr(gs.explored[0]),
                     camTgt: [cam.tx, cam.tz],
+                    unitScreen: (() => { const u = gs.units.find((x) => x.id === gs.selected && x.alive && x.civ === 0 && !x.loaded) || gs.units.find((x) => x.alive && x.civ === 0); if (!u) return null; const w = view.hexToWorld(u.c, u.r); const v = new THREE.Vector3(w.x, 0.6, w.z).project(camera); const rc = canvas.getBoundingClientRect(); return [Math.round(((v.x + 1) / 2) * rc.width), Math.round(((1 - v.y) / 2) * rc.height)] })(),
                     capitalWorld: (() => { const c = gs.cities.find((x) => x.civ === 0 && x.alive); if (!c) return null; const w = view.hexToWorld(c.c, c.r); return [w.x, w.z] })(),
                     // #406 — the fog readback: the dimmest UNexplored tile's colour, straight from
                     // the instanced colour buffer the renderer wrote (not a racy pixel read). The
                     // old bug painted every unseen tile the near-black UNSEEN (rgb sum ~0.07); the
                     // dim world keeps the faintest ocean well above 0.10.
                     unseenMin: (() => { const a = view.hexes.instanceColor && view.hexes.instanceColor.array; if (!a) return null; let m = Infinity, n = 0; for (let i = 0; i < gs.tiles.length; i++) { if (gs.explored[0][i]) continue; const s = a[i * 3] + a[i * 3 + 1] + a[i * 3 + 2]; if (s < m) m = s; n++ } return n ? m : null })() }),
-                start: startPlay, hash: () => stateHash(gs), select: (id) => { pending = { select: id } },
+                start: startPlay, hash: () => stateHash(gs),                 select: (id) => { pending = { select: id } },
+                recenter: () => recenter(),
                 move: (c, r) => { pending = { move: [c, r] } }, settle: () => { pending = { found: true } }, endTurn: () => { pending = { endTurn: true } },
                 attack: (c, r) => { pending = { ...pending, attack: [c, r] } }, queue: (k) => { pending = { ...pending, queue: k } },
                 research: (id) => { pending = { ...pending, research: id } }, learn: (id) => { grantTech(gs, 0, id) },
@@ -906,10 +988,13 @@ const CivilizationVGame = () => {
         return () => {
             if (import.meta.env.DEV) { if (window.__civTest) delete window.__civTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
+            window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('wheel', onWheel)
             canvas.removeEventListener('pointerdown', onPointerDown)
             window.removeEventListener('pointermove', onPointerMove)
             window.removeEventListener('pointerup', onPointerUp)
+            canvas.removeEventListener('contextmenu', noCtx)
+            window.removeEventListener('blur', onPointerLeave)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
             destroyView(view)
@@ -956,8 +1041,10 @@ const CivilizationVGame = () => {
                     <span ref={setHud('sel')} className="text-white/70 ml-auto">tap a unit</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, color: '#ffe9a8', textShadow: '0 0 12px #c80' }} />
-                <div className="absolute bottom-3 right-3 pointer-events-none">
+                <span ref={setHud('hint')} className="absolute left-1/2 top-14 -translate-x-1/2 px-3 py-1 rounded bg-black/60 border border-amber-300/40 text-amber-100 font-mono text-xs font-bold whitespace-nowrap tracking-wider" style={{ display: 'none' }} />
+                <div className="absolute bottom-3 right-3 pointer-events-none flex flex-col items-end gap-1.5">
                     <div className="border border-amber-300/50 rounded px-3 py-1 bg-black/50 text-amber-100 font-mono text-[11px]">END TURN · Space</div>
+                    <button onClick={() => actRef.current.recenter && actRef.current.recenter()} className="pointer-events-auto border border-cyan-300/50 rounded px-3 py-1 bg-black/50 text-cyan-100 font-mono text-[11px]">◎ CENTER · Home</button>
                 </div>
             </div>
 
@@ -1207,6 +1294,16 @@ const CivilizationVGame = () => {
                 </div>
             )}
 
+            {screen === 'play' && helpOpen && (
+                <div className="absolute inset-x-0 top-16 flex justify-center pointer-events-none px-4">
+                    <div className="pointer-events-auto max-w-[min(92vw,560px)] rounded-lg border border-amber-300/50 bg-black/85 px-4 py-3 font-mono text-amber-100 text-[11px] leading-5 shadow-[0_14px_50px_#000]">
+                        <b className="text-amber-300 tracking-widest">HOW YOU WIN</b> — take all 3 rival capitals, or reach Spaceflight and launch the ARK, or out-shimmer every rival in TOURISM; growing your capital to size {GOAL} is the golden shortcut.
+                        <div className="opacity-80 mt-1">E settles · 1–4 build · Space ends the turn · drag to pan · right-drag orbits · Home re-centers · Y tracks all three races.</div>
+                        <button onClick={() => setHelpOpen(false)} className="mt-2 border border-amber-300/50 rounded px-3 py-0.5 hover:bg-amber-300/10 text-amber-200">GOT IT</button>
+                    </div>
+                </div>
+            )}
+
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-5xl font-black tracking-wide" style={{ color: '#e8c56a', textShadow: '0 2px 0 #6b4a12, 0 10px 26px #000' }}>CIVILIZATION</h1>
@@ -1214,7 +1311,7 @@ const CivilizationVGame = () => {
                     <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
                     <p className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-5">
                         win one of the three crowns, or grow your capital to size {GOAL} by turn {CFG.turnLimit}<br />
-                        tap a tile to move your unit · E settles a city · T researches<br />
+                        tap a tile to move your unit · E settles a city · drag pans, Home re-centers<br />
                         Space ends the turn
                     </p>
                 </div>
