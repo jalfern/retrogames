@@ -61,6 +61,14 @@ fi
 
 cd "$REPO" || exit 1
 
+# halt (#605): Jon froze the lanes — no QA node starts a new session either.
+# (A session already running finishes its current step, reports, and exits;
+# the warden refuses to kick while the label is open.)
+if [[ -f "$REPO/scripts/jonq.mjs" ]] && [[ "$(node "$REPO/scripts/jonq.mjs" halt 2>/dev/null)" == yes ]]; then
+    echo "$(date): halt label open — $NODE QA stays asleep until Jon lifts it" >> "$LOG"
+    exit 0
+fi
+
 # If this lane's model server is down, SKIP; the warden retries later.
 # (studio and builder deliberately share the builder's model: a second
 # stream batches with the first, and a session spends much of its time in

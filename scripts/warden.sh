@@ -14,10 +14,14 @@
 #   1. COUNT   — gather the numbers the pulse line needs
 #   2. PULSE   — post the pulse line first (the /forge board reads it)
 #   3. TRIAGE  — trust gate, then label new issues by their title
+#   3b. QUESTIONS + HALT (#605) — sweep jonq questions (answers un-park,
+#                expired defaults get taken); a `halt` label on any open issue
+#                freezes steps 4 and 5: no lane kicks while Jon holds the factory.
 #   4. BUILDER — not running and work is waiting? kick scripts/forge.sh
+#                (a jalfern `steer` outranks `next` here — #605)
 #   5. QA      — not running and feedback is waiting? kick scripts/forge-qa.sh
 #                (mini, studio, and — only while the builder is idle — builder)
-#   6. FOLLOW-UP PULSE — only if step 3, 4 or 5 did something
+#   6. FOLLOW-UP PULSE — only if step 3, 3b, 4 or 5 did something
 #
 # Rules for editing this file (read before changing anything):
 #   - Never let a command read stdin. launchd pipes this script into
@@ -78,6 +82,12 @@ main() {
     QUEUE=$(count_label game-queue)
     BUILDING=$(count_label building)
     QA_OPEN=$(count_label feedback)
+    # #605: a `halt` on ANY open issue freezes the factory; `waiting-jon`
+    # counts the questions parked on him (both labels are collaborator-only,
+    # so presence means Jon put them there).
+    HALT_ISSUES=$(print -r -- "$ISSUES" | jq -r '[.[] | select(any(.labels[]; .name == "halt")) | "#\(.number)"] | join(",")')
+    HALTED=no; [[ -n "$HALT_ISSUES" ]] && HALTED=yes
+    QWAIT=$(count_label waiting-jon)
     SHIPPED=$(gh api "repos/$GH/issues?state=all&labels=shipped&per_page=100" --jq length)
     GATE=$(gh api "repos/$GH/pulls?state=open&per_page=1" --jq '.[0].number // empty')
     GATE=${GATE:+#$GATE}; GATE=${GATE:-none}
@@ -95,7 +105,7 @@ main() {
     fi
 
     pulse_line() {   # $1 = alive word, $2 = actions
-        echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE actions=$2"
+        echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE halted=$HALTED questions=$QWAIT actions=$2"
     }
     comment() {      # $1 = issue number, $2 = text
         act gh api "repos/$GH/issues/$1/comments" -f body="$2" --silent || log "comment on #$1 failed"
@@ -151,15 +161,40 @@ main() {
     done <<< "$NEW"
     (( TRIAGED > 0 )) && ACTIONS+=("triaged:$TRIAGED")
 
+    # ---- 3b. QUESTIONS + HALT (#605) ------------------------------------
+    # jonq sweep (scripts/jonq.mjs): a question Jon answered gets un-parked;
+    # one past its 48 h deadline has its default taken and recorded. A
+    # `halt` label anywhere freezes the factory — automatic decisions, kicks
+    # included, wait for Jon to lift it.
+    if [[ "$HALTED" == yes ]]; then
+        log "halt open on $HALT_ISSUES — factory frozen: no sweep, no kicks"
+        ACTIONS+=("halted")
+    elif [[ "$DRY" == 1 ]]; then
+        log "DRY would sweep jonq questions"
+    else
+        SWEEP=$(node "$REPO/scripts/jonq.mjs" sweep 2>>"$LOG" | tail -1)
+        log "jonq sweep: $SWEEP"
+        N=${SWEEP#sweep: }; N=${N%%[!0-9]*}
+        [[ -n "$N" ]] && (( N > 0 )) && ACTIONS+=("questions:$N")
+    fi
+
     # ---- 4. BUILDER -----------------------------------------------------
     # Work waiting = a half-built game (building) or a queued one. A game
-    # labeled `stalled` is waiting for Jon and never counts.
-    TARGET=$(print -r -- "$ISSUES" | jq -r '
+    # labeled `stalled` is waiting for Jon and never counts. jalfern's
+    # `steer` (#605) ranks after a corpse but before `next`: it is "do this
+    # next at the cycle boundary", and a cycle boundary is now. A question
+    # (waiting-jon/question) is never a work item.
+    TARGET=$(print -r -- "$ISSUES" | jq -r --arg owner "$OWNER" '
         [.[] | select(any(.labels[]; .name == "stalled") | not)] as $ok
         | ([$ok[] | select(any(.labels[]; .name == "building"))]
+           + [$ok[] | select(any(.labels[]; .name == "steer")
+                              and .user.login == $owner
+                              and ((any(.labels[]; .name == "waiting-jon")
+                                  or any(.labels[]; .name == "question")) | not))]
            + [$ok[] | select(any(.labels[]; .name == "next"))]
            + ([$ok[] | select(any(.labels[]; .name == "game-queue"))] | sort_by(.created_at)))
         | .[0].number // empty')
+    [[ "$HALTED" == yes ]] && TARGET=""
 
     # A QA item running in the builder's slot (node builder) finishes first;
     # the game builds on the next tick after it ends (Jon, 2026-10-19).
@@ -206,6 +241,7 @@ main() {
     LANES=("mini 18000 QA_WAITING 1 com.jalfern.forge-qa"
            "studio 8000 UNCLAIMED 1 com.jalfern.forge-qa-studio")
     [[ "$ALIVE" == no && -z "$TARGET" ]] && LANES+=("builder 8000 UNCLAIMED 2 com.jalfern.forge-qa-builder")
+    [[ "$HALTED" == yes ]] && LANES=()   # #605: halt freezes every lane, not just the builder
     for spec in "${LANES[@]}"; do
         lane=(${=spec}); node=${lane[1]} port=${lane[2]} var=${lane[3]} need=${lane[4]} job=${lane[5]}
         have=${(P)var}
