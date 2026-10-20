@@ -131,3 +131,25 @@ proved by `npm run slotcheck` (seed + recorded pad streams ⇒ identical
 state hash, tick by tick, for both this game's seat kinds and Bubble Bobble;
 `--mutate` drops one live pad and goes red). `gauntletplay` drives the seat
 for real: C at select, Digit1, the partner travels under its own pads.
+
+## Online 2P (#531) — the pilot
+
+`?net=host` opens a room and shows its 4-letter code; a friend opens
+`?net=join&room=CODE` and the game starts when the host picks a hero.
+Transport is the Cloudflare relay (`relay/`, see its README); both browsers
+run the same deterministic sim from the host's seed and exchange pads +
+hashes through the reserved `remote` seat path — `src/utils/lockstep.js`
+holds the rules: every pad is FINAL (sampled once, D=4 ticks ahead — input
+delay; never resample-and-resend, that desyncs), a tick runs only when both
+pads for it are in, and `stateHash` is compared every 30 ticks. A mismatch
+freezes both screens with NET DESYNC. Canonical seats: hero = host's entity
+on BOTH boxes (hashes line up); the guest's camera, torch, minimap marker and
+panel follow `gs.partner` so each player watches their own hero. `?relay=…`
+points at the Node twin (`node relay/server.mjs 8787`) for local testing.
+Honest gaps v1 (filed to QA): no reconnect/rejoin-after-desync mid-game, no
+ping display, restart after game over needs a reload, one game (this pilot),
+no rollback for jitter beyond the 4-tick buffer.
+
+Verify: `npm run netcheck` (relay core + protocol + lockstep determinism +
+corrupted-sim IS caught) and `npm run netdrill` (two headless Chromes over
+real keys: pair, seed, play, desync, friend-left — needs `npm run dev`).
