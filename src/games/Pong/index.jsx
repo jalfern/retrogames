@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { attractFrame, DIM } from './attract.js'
 
 const PongGame = () => {
     const canvasRef = useRef(null)
@@ -73,6 +74,7 @@ const PongGame = () => {
 
         // INPUT
         let isAttractMode = true
+        let attractTick = 0
         const keys = { ArrowUp: false, ArrowDown: false }
 
         const handleKeyDown = (e) => {
@@ -201,14 +203,19 @@ const PongGame = () => {
             ctx.stroke()
 
             // Draw minimal score (optional, keep it clean)
-            ctx.font = '40px monospace'
             ctx.textAlign = 'center'
             if (isAttractMode) {
-                ctx.fillStyle = '#ffffff'
-                ctx.fillText("PRESS ARROW KEYS TO START", state.width / 2, state.height / 2)
-                ctx.fillText("ATTRACT MODE", state.width / 2, state.height / 2 - 50)
+                attractTick++
+                ctx.fillStyle = DIM
+                ctx.fillRect(0, 0, state.width, state.height)
+                for (const l of attractFrame(attractTick, state.width, state.height)) {
+                    ctx.font = `${l.size}px monospace`
+                    ctx.fillStyle = l.col
+                    ctx.fillText(l.text, l.x, l.y)
+                }
             } else {
                 // Game Score
+                ctx.font = '40px monospace'
                 ctx.fillStyle = '#333333'
                 ctx.fillText(state.leftPaddle.score, state.width / 4, 50)
                 ctx.fillText(state.rightPaddle.score, 3 * state.width / 4, 50)

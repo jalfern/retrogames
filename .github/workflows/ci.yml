@@ -367,6 +367,11 @@ jobs:
       # no instant 180, a walkable door) must die. All in Node, ~1 s.
       - run: npm run lint:pacman
       - run: npm run pacmancheck -- --mutate
+      # PONG rule-6 attract gate (#365): one cycling message, nothing clipped
+      # at the frame edge, demo dimmed behind the text. Five mutants must die.
+      # All in Node, ~1 s.
+      - run: npm run lint:pong
+      - run: npm run pongcheck -- --mutate
       # PWA scope gate (#433): lint the SW + contract scripts, then verify the
       # BUILT shell is installable — manifest scope/start_url are /retrogames/,
       # the SW excludes /retrogames/forge, vercel resolves the pwa assets ahead

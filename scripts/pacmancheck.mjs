@@ -183,6 +183,38 @@ console.log('spawn invariant')
     ok(!!firstDot && firstDot.x === 12, 'from the spawn heading left, the first dot is at x=12', firstDot ? `x=${firstDot.x}` : 'none')
 }
 
+// ------------------------------------------------------------- attract rule 6 ----
+// ART.md rule 6 (#365): the attract screen shows one message at a time, cycling,
+// and never ghost art through the glyphs — the maze dims behind the lines and the
+// old "ATTRACT MODE" + prompt pair collapses into one cycling slot. attract.js is
+// the layout the shell actually draws, so this audit cannot rot away from the pixels.
+console.log('attract (rule 6)')
+{
+    const { attractFrame, INFO_MSGS, HOLD, DIM, W, H, pressMsg, estWidth } =
+        await import('../src/games/Pacman/attract.js')
+    const pressTexts = [pressMsg(false), pressMsg(true)]
+    const span = HOLD * INFO_MSGS.length + 5
+    let stacked = 0
+    let overMaze = 0
+    const seen = new Set()
+    for (let t = 0; t < span; t++) for (const touch of [false, true]) {
+        const lines = attractFrame(t, touch)
+        const info = lines.filter((l) => !pressTexts.includes(l.text))
+        if (info.length > 1) stacked++
+        info.forEach((l) => seen.add(l.text))
+        for (const l of lines) if (estWidth(l) > W || l.y + l.size > H) overMaze++
+    }
+    ok(stacked === 0, 'attract shows one informational message at a time', `${stacked} stacked frames`)
+    ok(overMaze === 0, 'no attract line overflows the maze', `${overMaze} lines outside`)
+    ok(seen.size === INFO_MSGS.length, 'attract cycles every message', `${seen.size}/${INFO_MSGS.length}`)
+    let on = 0
+    let off = 0
+    for (let t = 0; t < 48; t++) (attractFrame(t, false).some((l) => l.text === pressMsg(false)) ? on++ : off++)
+    ok(on > 0 && off > 0, 'the press prompt blinks', `on ${on} off ${off}`)
+    ok(parseFloat(DIM.match(/([\d.]+)\)$/)?.[1]) >= 0.3, 'the maze dims behind the attract text', DIM)
+    ok(pressMsg(true) === 'TAP TO START' && pressMsg(false).includes('ARROW'), 'touch phones get TAP, keyboards get ARROW (#420)')
+}
+
 console.log(`\n${passes} passed, ${fails} failed`)
 
 // ----------------------------------------------------------------------- mutants ----
@@ -206,6 +238,25 @@ if (process.argv.includes('--mutate')) {
         ['the ghost-house door is walkable', F,
             `return nx >= 0 && nx < cols && ny >= 0 && ny < rows && map[ny][nx] !== 1 && map[ny][nx] !== 4`,
             `return nx >= 0 && nx < cols && ny >= 0 && ny < rows && map[ny][nx] !== 1`],
+        ['attract stacks a second message', 'src/games/Pacman/attract.js',
+            `size: 10, col: '#ffd23f', glow: 0 },`,
+            `size: 10, col: '#ffd23f', glow: 0 },
+        { text: 'GHOSTS KILL ON TOUCH', x: W / 2, y: H / 2 + 40, size: 10, col: '#9aa4b2', glow: 0 },`],
+        ['attract message never cycles', 'src/games/Pacman/attract.js',
+            `cycleAttract(tick, INFO_MSGS, HOLD)`,
+            `INFO_MSGS[0]`],
+        ['an attract line overflows the maze', 'src/games/Pacman/attract.js',
+            `y: H / 2 + 8,`,
+            `y: H + 30,`],
+        ['the press prompt never blinks', 'src/games/Pacman/attract.js',
+            `!l.blink || Math.floor(tick / 24) % 2 === 0`,
+            `true`],
+        ['no dim behind the attract text', 'src/games/Pacman/attract.js',
+            `export const DIM = 'rgba(0,0,0,0.62)'`,
+            `export const DIM = 'rgba(0,0,0,0)'`],
+        ['keyboards are told to TAP (#420 regression)', 'src/games/Pacman/attract.js',
+            `touch ? 'TAP TO START' : 'PRESS ARROW KEYS TO START'`,
+            `'PRESS ARROW KEYS TO START'`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

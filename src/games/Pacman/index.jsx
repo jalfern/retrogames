@@ -5,6 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
 import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer } from './move'
+import { attractFrame, DIM } from './attract.js'
 
 // Touch devices have no arrow keys — the attract prompt must say TAP, not keys (#420).
 const TOUCH = typeof window !== 'undefined' &&
@@ -29,6 +30,7 @@ const PacmanGame = () => {
         let animationFrameId
 
         let isAttractMode = true
+        let attractTick = 0
 
         // MAP DATA lives in ./move — the live copy is mutated as dots are eaten
         const map = MAP.map(row => [...row])
@@ -633,11 +635,15 @@ const PacmanGame = () => {
             }
 
             if (isAttractMode) {
-                ctx.fillStyle = '#ffffff'
-                ctx.font = '20px monospace'
+                attractTick++
+                ctx.fillStyle = DIM
+                ctx.fillRect(0, 0, COLS * CELL_SIZE, ROWS * CELL_SIZE)
                 ctx.textAlign = 'center'
-                ctx.fillText(TOUCH ? "TAP TO START" : "PRESS ARROW KEYS TO START", COLS * CELL_SIZE / 2, ROWS * CELL_SIZE / 2)
-                ctx.fillText("ATTRACT MODE", COLS * CELL_SIZE / 2, ROWS * CELL_SIZE / 2 - 30)
+                for (const l of attractFrame(attractTick, TOUCH)) {
+                    ctx.font = `${l.size}px monospace`
+                    ctx.fillStyle = l.col
+                    ctx.fillText(l.text, l.x, l.y)
+                }
             }
 
             ctx.restore()
