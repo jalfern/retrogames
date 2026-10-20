@@ -40,6 +40,7 @@ export const CFG = {
 }
 
 export const PLACE_PTS = [10, 7, 5, 3, 2, 1]
+export const CARVE_FADE = 300
 const GRABS = ['METHOD', 'MUTE', 'SALISBURY', 'STALEFISH']
 const SPINS = ['', '180', '360', '540', '720', '900', '1080']
 const NAMES = ['JEFF', 'MAC', 'RIFF', 'SIG', 'TYRONE', 'KAELI']
@@ -62,6 +63,7 @@ function newRider(i, isP, gridBack) {
         finished: false, place: 0, finishT: 0, points: 0,
         lastTrick: null, lastTrickT: 0, score: 0,
         crashes: 0, tricksLanded: 0, bigAir: 0,
+        carves: [],
         jumpHeld: false, steerSm: 0, seedPhase: i * 1.7 + 0.4,
     }
 }
@@ -270,6 +272,13 @@ function riderStep(g, r, inp) {
         r.pipeAir = c.pipes.some((p) => lip.i >= p.i0 - 1 && lip.i <= p.i1 + 1)
         push(g, { type: 'jump', who: r.id, power: r.vy, pipe: r.pipeAir })
     }
+
+    // carve tracks: hard steering bites grooves into the slope; they fade in ~5 s
+    if (r.isP && r.v > 8 && Math.abs(steer) > 0.45) {
+        r.carves.push({ s: r.s, x: r.x, t: g.tick })
+        if (r.carves.length > 420) r.carves.splice(0, r.carves.length - 420)
+    }
+    while (r.carves.length && g.tick - r.carves[0].t > CARVE_FADE) r.carves.shift()
 }
 
 function finishCheck(g, r) {

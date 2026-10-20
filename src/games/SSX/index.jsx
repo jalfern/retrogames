@@ -13,10 +13,10 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { makeGame, step, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash } from './sim.js'
+import { makeGame, step, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, makeRider, poseRider, sprayField, THEMES } from './art.js'
+import { buildTerrain, buildRails, buildScenery, makeRider, poseRider, sprayField, makeSprite, THEMES } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -64,6 +64,58 @@ const SSXGame = () => {
         scene.add(spray.pts)
         const sprayVel = new Float32Array(spray.n * 3)
         const sprayLife = new Float32Array(spray.n)
+
+        // carved tracks: two dark grooves laid along the player's last ~5 s line
+        const GROOVE_MAX = 420
+        const mkGroove = () => {
+            const geo = new THREE.BufferGeometry()
+            const pos = new Float32Array(GROOVE_MAX * 6 * 3)
+            const col = new Float32Array(GROOVE_MAX * 6 * 4)
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage))
+            geo.setAttribute('color', new THREE.BufferAttribute(col, 4).setUsage(THREE.DynamicDrawUsage))
+            geo.setDrawRange(0, 0)
+            const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+                vertexColors: true, transparent: true, depthWrite: false,
+                polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+            }))
+            mesh.frustumCulled = false
+            scene.add(mesh)
+            return { mesh, geo, pos, col }
+        }
+        const grooves = [mkGroove(), mkGroove()]
+
+        // speed streaks: additive points streaming past the camera over ~90 km/h
+        const STREAKS = LITE ? 0 : 56
+        let streaks = null
+        const spawnStreak = (d, far) => {
+            const z = -(6 + Math.random() * 36)
+            const halfH = -z * Math.tan((66 * Math.PI) / 360)
+            const halfW = halfH * (camera.aspect || 1.6)
+            const band = Math.random()
+            if (band < 0.42) { d.px = (0.55 + 0.45 * Math.random()) * halfW * (Math.random() < 0.5 ? -1 : 1); d.py = (Math.random() - 0.5) * halfH * 0.7 }
+            else if (band < 0.62) { d.py = (0.6 + 0.4 * Math.random()) * halfH * (Math.random() < 0.5 ? -1 : 1); d.px = (Math.random() - 0.5) * halfW * 0.7 }
+            else { d.px = (0.4 + 0.6 * Math.random()) * halfW * (Math.random() < 0.5 ? -1 : 1); d.py = (Math.random() - 0.5) * halfH }
+            d.z = far ? z : -(34 + Math.random() * 12)
+        }
+        if (STREAKS) {
+            const geo = new THREE.BufferGeometry()
+            const pos = new Float32Array(STREAKS * 3)
+            const data = []
+            for (let i = 0; i < STREAKS; i++) {
+                const d = { px: 0, py: 0, z: -40, sp: 8 + Math.random() * 14 }
+                spawnStreak(d, true)
+                data.push(d)
+                pos[i * 3] = d.px; pos[i * 3 + 1] = d.py; pos[i * 3 + 2] = d.z
+            }
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage))
+            const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+                size: 0.5, map: makeSprite('190,235,255'), transparent: true, depthWrite: false,
+                blending: THREE.AdditiveBlending, opacity: 0,
+            }))
+            pts.frustumCulled = false
+            camera.add(pts)
+            streaks = { pts, geo, pos, data }
+        }
 
         let g = makeGame('race')
         let raf = 0, last = 0, acc = 0
@@ -197,14 +249,26 @@ const SSXGame = () => {
             for (const m of riders) m.visible = true
             g.riders.forEach((r, i) => placeRider(riders[i], r))
 
-            // snow spray: carving, landings, boost
+            // snow spray: carving, landings, boost — powder density scales with speed
             const steer = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0)
             if (!pausedRef.current) {
                 if (!p.air && p.v > 8 && (Math.abs(steer) > 0.2 || screenRef.current === 'attract')) {
-                    putSpray(pp.x - fwdX * 0.8, pp.y + 0.15, pp.z - fwdZ * 0.8, -fwdX * 2 - Math.cos(pp.th) * steer * 2, 1.5 + Math.random() * 1.5, -fwdZ * 2 + Math.sin(pp.th) * steer * 2)
+                    const n = 1 + Math.min(4, Math.floor((p.v - 8) / 5))
+                    for (let k = 0; k < n; k++) {
+                        const fan = (Math.random() - 0.5) * (0.4 + p.v * 0.06)
+                        putSpray(
+                            pp.x - fwdX * 0.8 + Math.cos(pp.th) * fan, pp.y + 0.15, pp.z - fwdZ * 0.8 - Math.sin(pp.th) * fan,
+                            -fwdX * (1.5 + Math.random() * 2) - Math.cos(pp.th) * steer * 2,
+                            1.5 + Math.random() * 1.5 + p.v * 0.05,
+                            -fwdZ * (1.5 + Math.random() * 2) + Math.sin(pp.th) * steer * 2,
+                        )
+                    }
                 }
                 if (p.boost) {
-                    putSpray(pp.x - fwdX * 1.2, pp.y + 0.2, pp.z - fwdZ * 1.2, -fwdX * 5, 0.6, -fwdZ * 5)
+                    for (let k = 0; k < 3; k++) {
+                        const fan = (Math.random() - 0.5) * 0.8
+                        putSpray(pp.x - fwdX * 1.2 + Math.cos(pp.th) * fan, pp.y + 0.2, pp.z - fwdZ * 1.2 - Math.sin(pp.th) * fan, -fwdX * (4 + Math.random() * 2.5), 0.6, -fwdZ * (4 + Math.random() * 2.5))
+                    }
                 }
                 const dt = ft / 1000
                 for (let i = 0; i < spray.n; i++) {
@@ -217,6 +281,53 @@ const SSXGame = () => {
                     if (sprayLife[i] <= 0) spray.pos[i * 3 + 1] = -9999
                 }
                 spray.geo.attributes.position.needsUpdate = true
+            }
+
+            // carved grooves under the board, fading with age
+            {
+                const cv = p.carves
+                grooves.forEach((gr, side) => {
+                    const off = (side === 0 ? -1 : 1) * 0.094
+                    let v = 0
+                    for (let i = 0; i < cv.length - 1; i++) {
+                        const a = cv[i], b = cv[i + 1]
+                        const aa = 1 - (g.tick - a.t) / CARVE_FADE
+                        const ab = 1 - (g.tick - b.t) / CARVE_FADE
+                        if (aa <= 0 || ab <= 0) continue
+                        const a1 = slopePos(g.course, a.s, a.x + off - 0.02), a2 = slopePos(g.course, a.s, a.x + off + 0.02)
+                        const b1 = slopePos(g.course, b.s, b.x + off - 0.02), b2 = slopePos(g.course, b.s, b.x + off + 0.02)
+                        const al = aa * aa * 0.5, be = ab * ab * 0.5
+                        const quad = [a1, a2, b2, a1, b2, b1], alph = [al, al, be, al, be, be]
+                        for (let k = 0; k < 6; k++) {
+                            const q = quad[k], o = (v + k) * 3, co = (v + k) * 4
+                            gr.pos[o] = q.x; gr.pos[o + 1] = q.y + 0.02; gr.pos[o + 2] = q.z
+                            gr.col[co] = 0.06; gr.col[co + 1] = 0.09; gr.col[co + 2] = 0.16; gr.col[co + 3] = alph[k]
+                        }
+                        v += 6
+                        if (v >= GROOVE_MAX * 6) break
+                    }
+                    gr.geo.setDrawRange(0, v)
+                    gr.geo.attributes.position.needsUpdate = true
+                    gr.geo.attributes.color.needsUpdate = true
+                })
+            }
+
+            // speed streaks past the screen edges
+            if (streaks) {
+                const kmh = p.v * 3.6
+                const k = Math.max(0, (kmh - 90) / 35) + (p.boost ? 0.55 : 0)
+                const target = p.air || screenRef.current !== 'play' ? 0 : Math.min(0.8, k * 0.85)
+                streaks.pts.material.opacity += (target - streaks.pts.material.opacity) * 0.22
+                if (target > 0.02) {
+                    const dtS = ft / 1000
+                    for (let i = 0; i < STREAKS; i++) {
+                        const d = streaks.data[i]
+                        d.z += (p.v * 1.6 + d.sp) * dtS
+                        if (d.z > -4) { spawnStreak(d); streaks.pos[i * 3] = d.px; streaks.pos[i * 3 + 1] = d.py }
+                        streaks.pos[i * 3 + 2] = d.z
+                    }
+                    streaks.geo.attributes.position.needsUpdate = true
+                }
             }
 
             // synth pulse: kick + bass, ducked in the air, chorus on landing
@@ -314,7 +425,7 @@ const SSXGame = () => {
                     const p = g.riders[0]
                     return {
                         screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished },
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },
@@ -359,6 +470,8 @@ const SSXGame = () => {
             cancelAnimationFrame(raf)
             disposables.forEach((d) => { if (d.dispose) d.dispose() })
             spray.geo.dispose(); spray.pts.material.map?.dispose(); spray.pts.material.dispose()
+            for (const gr of grooves) { gr.geo.dispose(); gr.mesh.material.dispose(); scene.remove(gr.mesh) }
+            if (streaks) { streaks.geo.dispose(); streaks.pts.material.map?.dispose(); streaks.pts.material.dispose(); camera.remove(streaks.pts) }
             renderer.forceContextLoss()
             renderer.dispose()
             canvas.remove()
