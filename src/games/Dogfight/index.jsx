@@ -20,6 +20,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -594,16 +596,10 @@ const DogfightGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-8 text-center pointer-events-none">
-                    <h1 className="text-5xl font-black" style={{ color: '#e8d9a0', textShadow: '3px 0 0 #7a2b1e, -3px 0 0 #3b5aa0, 0 10px 26px #000' }}>WWI DOGFIGHT</h1>
-                    <p className="text-amber-100/90 font-mono mt-1 text-sm">altitude is ammunition &mdash; speed is the coin you pay it in</p>
-                    <p className="text-white font-mono font-bold mt-6 animate-pulse">TAP / PRESS ANY KEY &mdash; 1 DAWN PATROL &middot; 2 THE CIRCUS</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
-                        &uarr;/&darr; pull and push &middot; &larr;/&rarr; bank (the wings turn you &mdash; there is no rudder miracle)<br />
-                        SPACE fires the synchronized Vickers &middot; Q/E throttle &middot; below the ASI&apos;s white arc the wing quits: the nose drops itself<br />
-                        a zoom climb buys metres with m/s &mdash; the energy ledger never lies &middot; every round is counted, every shot is a receipt<br />
-                        the attract demo is the autopilot&apos;s own proven patrol, replayed tick for tick through the real step()
-                    </p>
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-5xl font-black mb-6" style={{ color: '#e8d9a0', textShadow: '3px 0 0 #7a2b1e, -3px 0 0 #3b5aa0, 0 10px 26px #000' }}>WWI DOGFIGHT</h1>
+                    <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
                 </div>
             )}
 

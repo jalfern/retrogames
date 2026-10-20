@@ -18,6 +18,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -395,17 +397,10 @@ const ArenaArcheryGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>ARENA ARCHERY</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm">one stick to move and aim &mdash; hold to draw, release to lob. every arrow that misses becomes the arena.</p>
-                    <p className="text-white font-mono font-bold mt-1 animate-pulse">TAP / PRESS ANY KEY &mdash; 1 SOLO &middot; 2 DUEL</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-1 px-8 leading-4">
-                        arrows move &amp; aim &mdash; UP jumps, and a 45&deg; held with UP is the lob &middot; SPACE draws, release looses<br />
-                        charge sets the velocity: a 45&deg; range is r = v&sup2;/g &mdash; the arc you draw is the arc that lands<br />
-                        arrows stuck in stone are TERRAIN: they knock out the next crossing arrow and refill your quiver when you walk over them<br />
-                        leave one as cover or pull it back for ammo &mdash; first to 3 points wins the duel<br />
-                        the attract demo is the autopilot&apos;s own proven match, replayed tick for tick through the real step()
-                    </p>
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-4xl font-black mb-6" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>ARENA ARCHERY</h1>
+                    <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
                 </div>
             )}
 
