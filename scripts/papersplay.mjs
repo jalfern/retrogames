@@ -39,7 +39,7 @@ const wait = (ms) => page.waitForTimeout(ms)
 const stampPix = () => page.evaluate(() => {
     const c = document.querySelector('canvas[data-pp-stage]')
     if (!c) return null
-    const d = c.getContext('2d').getImageData(380, 66, 180, 90).data
+    const d = c.getContext('2d').getImageData(416, 66, 180, 90).data
     let green = 0, red = 0
     for (let i = 0; i < d.length; i += 4) {
         const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]
@@ -96,7 +96,7 @@ r.check(`the WRONG call took a strike (strikes ${after.strikes}) and named the w
 // with it, so a shrunken frame (or a missing witness mark) cannot pass
 px = await page.evaluate(() => {
     const c = document.querySelector('canvas[data-pp-stage]')
-    const d = c.getContext('2d').getImageData(316, 36, 308, 238).data
+    const d = c.getContext('2d').getImageData(352, 36, 308, 238).data
     let green = 0, red = 0
     for (let i = 0; i < d.length; i += 4) {
         const [rr, gg, bb] = [d[i], d[i + 1], d[i + 2]]

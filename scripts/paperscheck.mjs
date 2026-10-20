@@ -24,6 +24,7 @@ import { dirname, join } from 'node:path'
 import { RULES, DAY_RULES, decide, judge, dnum } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, stateHash, current, autopilot } from '../src/games/PapersPleaseMin/sim.js'
+import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, wallFit } from '../src/games/PapersPleaseMin/layout.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = join(HERE, '../src/games/PapersPleaseMin')
@@ -240,6 +241,39 @@ section('DETERMINISM')
 }
 
 // ---------------------------------------------------------------- mutants ----
+// ------------------------------------------------------------ booth fit ----
+section('THE WALL FITS THE BOOTH (#410) — nothing hides, nothing is postage')
+{
+    // the rulebook is the most important text in the game: it may never be
+    // smaller than the passport body text (11px) the player reads in hand
+    ok(WALL.ruleSize >= 11, `rulebook prints at ${WALL.ruleSize}px — smaller than the passport text (11px) is unreadable on a phone`)
+    ok(PAPERS.x >= PORTRAIT.x + PORTRAIT.headCx + PORTRAIT.headRx + 2, 'the passport card covers the entrant portrait')
+    ok(PAPERS.x + PAPERS.w <= CW - 4, 'the passport card runs off the canvas')
+    const labelR = PORTRAIT.x + PORTRAIT.headCx + ('ENTRANT 8/8'.length * 10 * CHAR) / 2
+    ok(PAPERS.x >= labelR + 2, 'the passport card covers the ENTRANT label')
+    ok(SCALE.y + SCALE.h <= CHS - STRIP_H, 'the scale box is under the controls strip')
+    let worst = 0
+    for (const seed of SEEDS) {
+        for (const day of genWeek(seed).days) {
+            const f = wallFit(day, day.rules.map((r) => RULES[r].text))
+            worst = Math.max(worst, f.bottom)
+            ok(f.fits && f.listsFit, `seed ${seed} day ${day.n}: wall text reaches y=${f.bottom} — the booth is only ${CHS - STRIP_H}px of wall`)
+            ok(f.rulesClearScale && f.listsClearScale, `seed ${seed} day ${day.n}: the SCALE box is painted ON ${f.rulesEnd > SCALE.y ? 'the rulebook' : 'the entry/wanted lists'} — the sheet vanishes`)
+            ok(f.rulesClearEntrant, `seed ${seed} day ${day.n}: a rulebook line runs into the entrant column`)
+        }
+    }
+    console.log(`  ..    worst wall bottom y=${worst} of ${CHS - STRIP_H}; every entry, every wanted name, every law is on screen together`)
+    // and the theoretical worst day the generator is allowed to build: the
+    // full 8-rule sheet, four countries, four wanted names (#410: the old
+    // booth overflowed exactly here and the scale box buried the sheet)
+    {
+        const worstDay = { n: 7, allowed: ['ARSTOTZKA', 'KIRINIA', 'VESKOLE', 'PARMENISTAN'], wanted: [{ name: 'ANDERSON K V', id: 4022 }, { name: 'GORSKY A V', id: 1180 }, { name: 'VOSKOVIC M', id: 3345 }, { name: 'DZURAK L', id: 2077 }], rules: DAY_RULES[6] }
+        const f = wallFit(worstDay, worstDay.rules.map((r) => RULES[r].text))
+        ok(f.listsFit && f.listsClearScale && f.rulesClearScale, `the worst buildable day reaches y=${f.bottom} vs scale y=${SCALE.y} and strip y=${CHS - STRIP_H} — the wall hides its own evidence`)
+        console.log(`  ..    worst buildable day: bottom y=${f.bottom}, scale box top y=${SCALE.y}, strip top y=${CHS - STRIP_H} — clear`)
+    }
+}
+
 if (MUT) {
     section('MUTATIONS — each MUST turn an honest check red')
     const dir = '/var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/pp-mutant'
@@ -249,7 +283,7 @@ if (MUT) {
     // copy the booth into a temp module dir, swap ONE anchored line, import fresh
     const mutMod = async (file, anchor, replacement, tag) => {
         const files = {}
-        for (const f of ['rules.js', 'gen.js', 'sim.js']) {
+        for (const f of ['rules.js', 'gen.js', 'sim.js', 'layout.js']) {
             let src = readFileSync(join(SRC, f), 'utf8')
             if (f === file) {
                 if (!src.includes(anchor)) { ok(false, `mutant anchor not found (${tag}): ${anchor} — a silent skip is a green suite that tested nothing`); return null }
@@ -264,6 +298,7 @@ if (MUT) {
             rules: await import(pathToFileURL(join(d, 'rules.js')).href),
             gen: await import(pathToFileURL(join(d, 'gen.js')).href),
             sim: await import(pathToFileURL(join(d, 'sim.js')).href),
+            layout: await import(pathToFileURL(join(d, 'layout.js')).href),
         }
     }
 
@@ -398,6 +433,17 @@ if (MUT) {
                 if (g.end !== 'lose' || g.day !== 1) return false   // chaos fell elsewhere — the suite sees that
             }
             return true    // chaos still falls on day one — the wall was theatre
+        })
+
+    // 8. the scale box slid up onto the lists: on 2026-10-19 the 8-rule wall
+    //     overflowed and the box painted OVER the wanted sheet — the wall
+    //     hid its own evidence. The booth-fit gate must see it.
+    await tryMut('SCALE box buried under the wanted sheet',
+        mutMod('layout.js', 'export const SCALE = { x: 12, y: 358, w: 96, h: 30 }', 'export const SCALE = { x: 12, y: 340, w: 96, h: 30 }', 'm8'),
+        (m) => {
+            const worstDay = { n: 7, allowed: ['ARSTOTZKA', 'KIRINIA', 'VESKOLE', 'PARMENISTAN'], wanted: [{ name: 'ANDERSON K V', id: 4022 }, { name: 'GORSKY A V', id: 1180 }, { name: 'VOSKOVIC M', id: 3345 }, { name: 'DZURAK L', id: 2077 }], rules: m.rules.DAY_RULES[6] }
+            const f = m.layout.wallFit(worstDay, worstDay.rules.map((r) => m.rules.RULES[r].text))
+            return f.listsFit && f.listsClearScale && f.rulesClearScale
         })
 }
 

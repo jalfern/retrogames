@@ -13,9 +13,9 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, newRun, step, stateHash, current, autopilot } from './sim.js'
 import { decide, RULES, dfmt, isAdult } from './rules.js'
+import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, wallRows } from './layout.js'
 
 const SIM_MS = 1000 / 60
-const CW = 640, CHS = 420
 
 const COL = {
     wall: '#1c2130', wallLine: '#323a52', paper: '#d8d2b8', paperLine: '#8f8a70',
@@ -155,7 +155,7 @@ const PapersPleaseMinGame = () => {
         const drawPassport = (pp, x, y) => {
             box(x, y, 300, 148, COL.paper, '#6f6a52')
             ctx.fillStyle = '#a33c3c'; ctx.fillRect(x, y, 300, 20)
-            text('PASSPORT — ARSTOTZKA BORDER', x + 8, y + 15, 12, '#f2e8d8')
+            text('PASSPORT', x + 8, y + 15, 12, '#f2e8d8')
             text(`NAME ${pp.name}`, x + 10, y + 42)
             text(`NO. ${pp.id}`, x + 10, y + 58)
             text(`DOB ${dfmt(pp.dob)}`, x + 10, y + 74)
@@ -163,7 +163,8 @@ const PapersPleaseMinGame = () => {
             text(`WEIGHT ${pp.weight}KG`, x + 10, y + 106)
             text(`ISSUED ${pp.city}`, x + 10, y + 122)
             box(x + 190, y + 34, 100, 60, '#c9c2a4', COL.paperLine)
-            text(`${pp.country}`, x + 240, y + 60, 11, COL.ink, 'center')
+            text('ISSUED BY', x + 240, y + 48, 8, '#6b5d3a', 'center')
+            text(`${pp.country}`, x + 240, y + 70, 11, COL.ink, 'center')
             text(`EXPIRES ${dfmt(pp.expiry)}`, x + 10, y + 140)
             text(`VALID ${isAdult(pp.dob, gs.week.days[gs.day - 1].date) ? 'ADULT' : 'CHILD'}`, x + 240, y + 140, 10, '#6b5d3a', 'center')
         }
@@ -184,29 +185,31 @@ const PapersPleaseMinGame = () => {
             const { day, view } = current(gs)
             // the wall: date, rulebook, entry list, wanted sheet, scale
             text(`DAY ${day.n}   ${dfmt(day.date)}`, 12, 24, 15, COL.gold)
-            let yy = 44
-            text('RULEBOOK TODAY:', 12, yy, 11, COL.text); yy += 15
+            let yy = WALL.top
+            text('RULEBOOK TODAY:', WALL.x, yy, WALL.size, COL.text); yy += WALL.labelLine
             for (const r of day.rules) {
                 const t = RULES[r].text
                 const words = t.split(' ')
                 let line = ''
                 for (const w of words) {
-                    if ((line + w).length > 34) { text(line, 14, yy, 8, '#9fb0d6'); yy += 9; line = '' }
+                    if ((line + w).length > WALL.ruleWrap) { text(line, WALL.x + 2, yy, WALL.ruleSize, '#9fb0d6'); yy += WALL.ruleLine; line = '' }
                     line += w + ' '
                 }
-                text(line, 14, yy, 8, '#9fb0d6'); yy += 11
+                text(line, WALL.x + 2, yy, WALL.ruleSize, '#9fb0d6'); yy += WALL.ruleLine
+                yy += WALL.ruleGap
             }
-            yy += 6
-            text('ENTRY LIST:', 12, yy, 11, COL.text); yy += 13
-            for (const c of day.allowed) { text(`  ${c}`, 14, yy, 10, '#7ddc5d'); yy += 12 }
-            yy += 6
-            text('WANTED:', 12, yy, 11, COL.text); yy += 13
+            const rows = wallRows(day, day.rules.map((r) => RULES[r].text))
+            text('ENTRY LIST:', WALL.x, rows.listsY, WALL.size, COL.text)
+            text('WANTED:', WALL.x + 114, rows.listsY, WALL.size, COL.text)
+            let ey = rows.entries
+            for (const c of day.allowed) { text(`  ${c}`, WALL.x, ey, WALL.listSize, '#7ddc5d'); ey += WALL.listLine }
+            let wy = rows.entries
             // every name on the sheet must FIT on the wall — paperscheck
             // pins day.wanted.length <= 4 so no booth must ever hide one
-            for (const w of day.wanted) { text(`  ${w.name} #${w.id}`, 14, yy, 9, COL.red); yy += 11 }
-            box(12, 340, 96, 30, '#0f1420', '#4a5578')
-            text('SCALE', 60, 352, 9, COL.text, 'center')
-            text(`${view.scale}KG`, 60, 366, 12, COL.gold, 'center')
+            for (const w of day.wanted) { text(`  ${w.name} #${w.id}`, WALL.x + 114, wy, WALL.wantedSize, COL.red); wy += WALL.wantedLine }
+            box(SCALE.x, SCALE.y, SCALE.w, SCALE.h, '#0f1420', '#4a5578')
+            text('SCALE', SCALE.x + 48, SCALE.y + 12, 9, COL.text, 'center')
+            text(`${view.scale}KG`, SCALE.x + 48, SCALE.y + 26, 12, COL.gold, 'center')
             // strikes: three slots, filled red
             for (let i = 0; i < CFG.STRIKE_MAX; i++) {
                 box(12 + i * 26, CHS - 34, 20, 20, i < gs.strikes ? '#7a1f1f' : '#10141f', '#555f7d')
@@ -216,20 +219,20 @@ const PapersPleaseMinGame = () => {
             // the entrant (during a stamp, the papers shown are the ones
             // just judged — the stamp lands on its own document)
             const shown = stamp && stamp.ticks > 0 ? stamp.person : view.person
-            drawPortrait(shown ? shown.pic : view.person.pic, 262, 26)
-            text(`ENTRANT ${gs.idx + (stamp && stamp.ticks > 0 ? 0 : 1)}/${gs.week.days[gs.day - 1].queue.length}`, 318, 168, 10, COL.text, 'center')
+            drawPortrait(shown ? shown.pic : view.person.pic, PORTRAIT.x, PORTRAIT.y)
+            text(`ENTRANT ${gs.idx + (stamp && stamp.ticks > 0 ? 0 : 1)}/${gs.week.days[gs.day - 1].queue.length}`, PORTRAIT.x + PORTRAIT.headCx, 168, 10, COL.text, 'center')
             // the papers
             if (shown && shown.passport) {
-                drawPassport(shown.passport, 320, 40)
-                if (shown.idcard) drawId(shown.idcard, 320, 200)
+                drawPassport(shown.passport, PAPERS.x, PAPERS.y)
+                if (shown.idcard) drawId(shown.idcard, ID.x, ID.y)
             } else {
-                box(320, 60, 300, 120, '#12161f', '#39415c')
-                text('"I HAVE NO PAPERS."', 470, 125, 14, '#6d7a9c', 'center')
+                box(PAPERS.x, 60, PAPERS.w, 120, '#12161f', '#39415c')
+                text('"I HAVE NO PAPERS."', STAMP.x, 125, 14, '#6d7a9c', 'center')
             }
             // controls strip + last call feedback
-            box(0, CHS - 40, CW, 40, '#10141f', '#000')
+            box(0, CHS - STRIP_H, CW, STRIP_H, '#10141f', '#000')
             text('A / SPACE: ADMIT        D: DENY', 12, CHS - 16, 13, COL.gold)
-            if (gs.last) text(gs.last.ok ? 'CORRECT' : 'MISTAKE', 628, CHS - 16, 13, gs.last.ok ? COL.green : COL.red, 'right')
+            if (gs.last) text(gs.last.ok ? 'CORRECT' : 'MISTAKE', CW - 12, CHS - 16, 13, gs.last.ok ? COL.green : COL.red, 'right')
             // the stamp: its COLOR is your call (green admit, red deny),
             // never your correctness — a wrong call gets the red/green of
             // what you did, plus the red double frame and the witness line
@@ -239,11 +242,11 @@ const PapersPleaseMinGame = () => {
                 if (!stamp.ok) {
                     ctx.strokeStyle = COL.red
                     ctx.lineWidth = 4
-                    ctx.strokeRect(322, 42, 296, 226)
-                    ctx.strokeRect(316, 36, 308, 238)
+                    ctx.strokeRect(PAPERS.x + 2, PAPERS.y + 2, PAPERS.w - 4, 226)
+                    ctx.strokeRect(PAPERS.x - 4, PAPERS.y - 4, PAPERS.w + 8, 238)
                 }
                 ctx.save()
-                ctx.translate(470, 110)
+                ctx.translate(STAMP.x, STAMP.y)
                 ctx.rotate(-0.18)
                 const stampCol = stamp.verdict === 'approve' ? COL.green : COL.red
                 ctx.strokeStyle = stampCol
@@ -251,7 +254,7 @@ const PapersPleaseMinGame = () => {
                 ctx.strokeRect(-86, -22, 172, 44)
                 text(stamp.verdict === 'approve' ? 'APPROVED' : 'DENIED', 0, 6, 24, stampCol, 'center')
                 ctx.restore()
-                if (!stamp.ok) text(gs.last?.why === 'INNOCENT' ? 'THEY WERE CLEAN' : `WITNESS: ${gs.last?.why}`, 470, 296, 12, COL.red, 'center')
+                if (!stamp.ok) text(gs.last?.why === 'INNOCENT' ? 'THEY WERE CLEAN' : `WITNESS: ${gs.last?.why}`, STAMP.x, 296, 12, COL.red, 'center')
             }
             // day banner
             if (banner && banner.ticks > 0) {
