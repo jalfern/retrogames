@@ -76,7 +76,10 @@ const laneZ = new Float32Array(LANES);
 const laneAmp = new Float32Array(LANES);
 for (let i = 0; i < LANES; i++) {
   laneZ[i] = ZMIN + i / (LANES - 1) * ZSPAN;
-  laneAmp[i] = 0.72 + 0.56 * hash1(i);
+  // coherent alongshore amplitude: independent per-lane noise aliases the
+  // waterline at the 1.1 m sampling limit (the foam-line sawtooth); real
+  // run-up varies in 15-40 m cusp/rip cells.
+  laneAmp[i] = 0.95 + 0.24 * Math.sin(laneZ[i] * 0.09 + 0.7) + 0.12 * Math.sin(laneZ[i] * 0.041 + 2.2);
 }
 const swave = u => {            // skewed oscillator: quick rise, slow drain
   const q = u / (2 * Math.PI) - Math.floor(u / (2 * Math.PI));
@@ -85,9 +88,10 @@ const swave = u => {            // skewed oscillator: quick rise, slow drain
 };
 function swashS(lane, t) {
   const z = laneZ[lane];
-  let s = SW[0].A * 2.6 * laneAmp[lane] * (0.62 + 0.5 * Math.sin(0.087 * t + lane * 2.399)) * swave(SW[0].w * t + SW[0].tilt * z - 2.35 + hash1(lane + 500) * 0.3);
-  s += SW[1].A * 2.2 * laneAmp[lane] * swave(SW[1].w * t - SW[1].tilt * z + 1.7 + hash1(lane + 900) * 0.3);
-  s += SW[2].A * 2.0 * swave(SW[2].w * t + SW[2].tilt * z + 4.1 + hash1(lane + 1300) * 0.3);
+  const blk = Math.floor(lane / 6);   // phase jitter in ~6.6 m cells, not per lane
+  let s = SW[0].A * 2.6 * laneAmp[lane] * (0.62 + 0.5 * Math.sin(0.087 * t + z * 0.045 + 1.3)) * swave(SW[0].w * t + SW[0].tilt * z - 2.35 + hash1(blk + 500) * 0.3);
+  s += SW[1].A * 2.2 * laneAmp[lane] * swave(SW[1].w * t - SW[1].tilt * z + 1.7 + hash1(blk + 900) * 0.3);
+  s += SW[2].A * 2.0 * swave(SW[2].w * t + SW[2].tilt * z + 4.1 + hash1(blk + 1300) * 0.3);
   return s;
 }
 const ZU = z => Math.max(0, Math.min(LANES - 1, Math.round((z - ZMIN) / ZSPAN * (LANES - 1))));
@@ -151,12 +155,15 @@ fn hash21(p: vec2f) -> f32 {
   var q = fract(p * vec2f(127.31, 313.71));
   return fract((q.x + q.y) * q.y);
 }
+fn gdir(h: f32) -> vec2f { let a = h * 6.28318530718; return vec2f(cos(a), sin(a)); }
 fn vnoise(p: vec2f) -> f32 {
   let i = floor(p); let f = fract(p);
-  let u = f * f * (3.0 - 2.0 * f);
-  let a = hash21(i); let b = hash21(i + vec2f(1.0, 0.0));
-  let c = hash21(i + vec2f(0.0, 1.0)); let d = hash21(i + vec2f(1.0, 1.0));
-  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  let n00 = dot(gdir(hash21(i)), f);
+  let n10 = dot(gdir(hash21(i + vec2f(1.0, 0.0))), f - vec2f(1.0, 0.0));
+  let n01 = dot(gdir(hash21(i + vec2f(0.0, 1.0))), f - vec2f(0.0, 1.0));
+  let n11 = dot(gdir(hash21(i + vec2f(1.0, 1.0))), f - vec2f(1.0, 1.0));
+  return clamp(mix(mix(n00, n10, u.x), mix(n01, n11, u.x), u.y) * 0.75 + 0.5, 0.0, 1.0);
 }
 fn fbm2(p: vec2f) -> f32 {
   return 0.6 * vnoise(p) + 0.4 * vnoise(p * 2.17 + vec2f(13.0, 7.0));
@@ -165,7 +172,11 @@ fn fbm2(p: vec2f) -> f32 {
 fn terrain(xIn: f32, z: f32) -> f32 {
   let xs = xsCurve(z);
   var h = SLOPE * (xIn - xs);
-  h = h + 0.055 * fbm2(vec2f(xIn * 0.31, z * 0.31)) + 0.02 * fbm2(vec2f(xIn * 1.2, z * 1.05));
+  // ripple fbm drives texture on the dry beach and bed, but within ~2 m of
+  // the waterline its lattice flips coverage at grazing view (the sawtooth);
+  // damp it out toward the still line so the contour there is the smooth bed.
+  let damp = smoothstep(0.25, 2.0, abs(xIn - xs));
+  h = h + (0.055 * fbm2(vec2f(xIn * 0.31, z * 0.31)) + 0.02 * fbm2(vec2f(xIn * 1.2, z * 1.05))) * damp;
   h = h + 0.22 * exp(-sq((xIn - xs - 2.5) / 2.2));
   h = h - 0.16 * exp(-sq((xIn - xs + 9.0) / 5.0));
   // steeper bed seaward so the shelf has real depth (blue) beyond the bar
@@ -253,6 +264,31 @@ const LANES_DECL = `
 struct LanesIn { v: array<vec3f, NLANES> };
 @group(1) @binding(0) var<storage, read> lanesIn: LanesIn;
 `;
+// laneAt: smooth (Catmull-Rom) lane lookup. Nearest/lerp lane reads staircase
+// whatever the CPU swash jitters lane-to-lane at 1.1 m — the sawtooth; real
+// swash is coherent alongshore, so interpolate through the neighbouring lanes.
+const LANEAT = `
+fn laneClamp(k: i32) -> u32 { return u32(clamp(f32(k), 0.0, f32(NLANES - 1u))); }
+fn laneAt(z: f32) -> vec3f {
+  let f = clamp((z - ZMINF) / ZSPANF * f32(NLANES - 1u), 0.0, f32(NLANES - 1u));
+  let i = i32(floor(f));
+  let t = f - f32(i);
+  // low-pass the lane sequence: per-lane phase jitter is unphysical alongshore
+  // noise, and reading it straight from the buffer puts a 1.1 m sawtooth on
+  // every lane-driven edge (the foam line). Then Catmull-Rom for C1 placement.
+  let Lm3 = lanesIn.v[laneClamp(i - 3)]; let Lm2 = lanesIn.v[laneClamp(i - 2)];
+  let Lm1 = lanesIn.v[laneClamp(i - 1)]; let L0 = lanesIn.v[laneClamp(i)];
+  let Lp1 = lanesIn.v[laneClamp(i + 1)]; let Lp2 = lanesIn.v[laneClamp(i + 2)];
+  let p1 = 0.25 * Lm2 + 0.5 * Lm1 + 0.25 * L0;
+  let p2 = 0.25 * Lm1 + 0.5 * L0 + 0.25 * Lp1;
+  let p3 = 0.25 * L0 + 0.5 * Lp1 + 0.25 * Lp2;
+  let p4 = 0.25 * L0 + 0.5 * Lp1 + 0.375 * Lp2 + 0.125 * lanesIn.v[laneClamp(i + 3)];
+  let t2 = t * t; let t3 = t2 * t;
+  return 0.5 * ((2.0 * p2) + (-p1 + p3) * t
+    + (2.0 * p1 - 5.0 * p2 + 4.0 * p3 - p4) * t2
+    + (-p1 + 3.0 * p2 - 3.0 * p3 + p4) * t3);
+}
+`;
 const U0 = `@group(0) @binding(0) var<uniform> u: U;`;
 
 const SKY = UNIF + U0 + COMMON + `
@@ -291,7 +327,7 @@ fn fs(i: VOut) -> @location(0) vec4f {
 }
 `;
 
-const SAND = UNIF + U0 + COMMON + LANES_DECL + `
+const SAND = UNIF + U0 + COMMON + LANES_DECL + LANEAT + `
 struct VOut { @builtin(position) pos: vec4f, @location(0) wp: vec3f };
 @vertex
 fn vs(@location(0) xz: vec2f) -> VOut {
@@ -306,7 +342,7 @@ fn vs(@location(0) xz: vec2f) -> VOut {
 fn fs(i: VOut) -> @location(0) vec4f {
   let p = i.wp;
   let t = u.pars2.y;
-  let lane = lanesIn.v[laneIdx(p.z)];
+  let lane = laneAt(p.z);
   let xs = xsCurve(p.z);
   // dry sand with grain and wind banding
   var dry = vec3f(0.80, 0.66, 0.44);
@@ -337,31 +373,38 @@ fn fs(i: VOut) -> @location(0) vec4f {
 }
 `;
 
-const WATER = UNIF + U0 + COMMON + LANES_DECL + `
-struct VOut { @builtin(position) pos: vec4f, @location(0) wp: vec3f, @location(1) depth: f32, @location(2) foamn: f32 };
+const WATER = UNIF + U0 + COMMON + LANES_DECL + LANEAT + `
+struct VOut { @builtin(position) pos: vec4f, @location(0) wp: vec3f, @location(1) base: vec2f };
 @vertex
 fn vs(@location(0) xzIn: vec2f) -> VOut {
   var o: VOut;
   var xz = xzIn;
   xz.x = xz.x + faceShift(xzIn.x, xzIn.y, u.pars2.y);
-  let s = shore(xz.x, xz.y, u.pars2.y, lanesIn.v[laneIdx(xz.y)]);
+  let s = shore(xz.x, xz.y, u.pars2.y, laneAt(xz.y));
   let wp = vec3f(xz.x, s.surf, xz.y);
   o.wp = wp;
-  o.depth = s.d;
-  o.foamn = s.foam;
+  // the model is evaluated at the UNSHIFTED xz: faceShift interpolated over
+  // mesh cells is piecewise-planar, and feeding that warped p back into
+  // shore() re-imposed the 0.7 m grid on the foam/waterline contours.
+  o.base = xzIn;
   o.pos = u.vp * vec4f(wp, 1.0);
   return o;
 }
 @fragment
 fn fs(i: VOut) -> @location(0) vec4f {
   let p = i.wp;
-  let d = i.depth;
-  if (d < 0.014) { discard; }
+  let q = i.base;
   let t = u.pars2.y;
+  // full-res shore model: foam/depth contours come from the analytic model,
+  // not from attributes interpolated over the 0.7 m mesh (that was sawtooth).
+  let s0 = shore(q.x, q.y, t, laneAt(q.y));
+  let d = s0.d;
+  let foam = s0.foam;
+  if (d <= 0.0005) { discard; }
   // surface normal from the shore model's height gradient
   let e = 0.2;
-  let sx = shore(p.x + e, p.z, t, lanesIn.v[laneIdx(p.z)]).surf - shore(p.x - e, p.z, t, lanesIn.v[laneIdx(p.z)]).surf;
-  let sz = shore(p.x, p.z + e, t, lanesIn.v[laneIdx(p.z + e)]).surf - shore(p.x, p.z - e, t, lanesIn.v[laneIdx(p.z - e)]).surf;
+  let sx = shore(q.x + e, q.y, t, laneAt(q.y)).surf - shore(q.x - e, q.y, t, laneAt(q.y)).surf;
+  let sz = shore(q.x, q.y + e, t, laneAt(q.y + e)).surf - shore(q.x, q.y - e, t, laneAt(q.y - e)).surf;
   var nrm = normalize(vec3f(-sx / (2.0 * e) * 2.0, 1.0, -sz / (2.0 * e) * 2.0));
   let sun = normalize(u.sun.xyz);
   let V = normalize(u.camPos_t.xyz - p);
@@ -382,12 +425,16 @@ fn fs(i: VOut) -> @location(0) vec4f {
   // glitter
   let hv = normalize(sun + V);
   let glint = pow(max(dot(nrm, hv), 0.0), 200.0) * 2.4 + pow(max(dot(nrm, hv), 0.0), 90.0) * 0.55 + pow(max(dot(nrm, hv), 0.0), 22.0) * 0.16;
-  water += vec3f(1.0, 0.78, 0.48) * glint * (1.0 - i.foamn);
+  water += vec3f(1.0, 0.78, 0.48) * glint * (1.0 - foam);
   water += water * 0.25 * max(dot(nrm, sun), 0.0);
-  var col = mix(water, vec3f(0.95, 0.94, 0.90), i.foamn);
-  var alpha = clamp(1.0 - exp(-d * 2.2) + i.foamn * 0.6, 0.06, 0.97);
-  if (d < 0.05) { alpha = 0.10 + d * 2.0; }
+  var col = mix(water, vec3f(0.95, 0.94, 0.90), foam);
   let dist = length(u.camPos_t.xyz - p);
+  // analytic distance-to-waterline AA: a sheet thinner than ~2 px of world
+  // depth is only partially covered; pxw = world size of a pixel at dist
+  // (2*tan(fov/2)*dist/H — no dFdx in this Chrome).
+  let pxw = max(2.0 * u.fwd_tan.w * dist * u.pars2.w, 2e-4);
+  let filmCov = smoothstep(0.0, pxw * 2.0, d);
+  var alpha = clamp((1.0 - exp(-d * 2.2)) * filmCov + foam * 0.6, 0.0, 0.97);
   col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(70.0, 200.0, dist));
   return vec4f(col, alpha);
 }
@@ -401,8 +448,8 @@ struct LanesIn { v: array<vec3f, NLANES> };
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (gid.x >= 32u || gid.y >= 32u) { return; }
-  let x = 30.0 + f32(gid.x) * (100.0 / 31.0);
-  let z = -45.0 + f32(gid.y) * (90.0 / 31.0);
+  let x = 20.0 + f32(gid.x) * (120.0 / 31.0);
+  let z = -60.0 + f32(gid.y) * (120.0 / 31.0);
   let s = shore(x, z, u.pars2.y, lanesIn.v[laneIdx(z)]);
   let i = (gid.y * 32u + gid.x) * 4u;
   outBuf[i] = x;
@@ -514,19 +561,26 @@ async function boot() {
   const layoutUL = device.createPipelineLayout({ bindGroupLayouts: [bglU, bglL] });
   const layoutProbe = device.createPipelineLayout({ bindGroupLayouts: [bglLC, bglP, bglU] });
 
-  let depth = null, depthW = 0, depthH = 0;
-  function ensureDepth() {
-    if (depth && depthW === canvas.width && depthH === canvas.height) return depth;
+  // 4x MSAA: the water/sand boundary is a mesh-on-mesh silhouette, so the
+  // only way to antialias it is at rasterization; render into a multisample
+  // target and resolve-copy into the canvas at the end of the frame.
+  const MS = 4;
+  let depth = null, msaa = null, tW = 0, tH = 0;
+  function ensureTargets() {
+    if (depth && msaa && tW === canvas.width && tH === canvas.height) return { msaa, depth };
     if (depth) depth.destroy();
-    depth = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    depthW = canvas.width; depthH = canvas.height;
-    return depth;
+    if (msaa) msaa.destroy();
+    depth = device.createTexture({ size: [canvas.width, canvas.height], sampleCount: MS, format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    msaa = device.createTexture({ size: [canvas.width, canvas.height], sampleCount: MS, format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    tW = canvas.width; tH = canvas.height;
+    return { msaa, depth };
   }
 
   const skyPipe = device.createRenderPipeline({
     layout: layoutU,
     vertex: { module: modSky, entryPoint: 'vs' },
     fragment: { module: modSky, entryPoint: 'fs', targets: [{ format: FORMAT }] },
+    multisample: { count: MS },
     depthStencil: { depthWriteEnabled: false, depthCompare: 'always', format: 'depth32float' },
   });
   const sandPipe = device.createRenderPipeline({
@@ -534,6 +588,7 @@ async function boot() {
     vertex: { module: modSand, entryPoint: 'vs', buffers: [{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] }] },
     fragment: { module: modSand, entryPoint: 'fs', targets: [{ format: FORMAT }] },
     primitive: { cullMode: 'none' },
+    multisample: { count: MS },
     depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth32float' },
   });
   const waterPipe = device.createRenderPipeline({
@@ -544,7 +599,11 @@ async function boot() {
       alpha: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', op: 'add' },
     } }] },
     primitive: { cullMode: 'none' },
-    depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth32float' },
+    multisample: { count: MS },
+    // no depth test against sand: the sheet is transparent by design and its
+    // extent is decided analytically (alpha) — testing vs the sand mesh made
+    // the two meshes' intersection line the visible (zigzag) shoreline.
+    depthStencil: { depthWriteEnabled: false, depthCompare: 'always', format: 'depth32float' },
   });
   const probePipe = device.createComputePipeline({ layout: layoutProbe, compute: { module: modProbe, entryPoint: 'main' } });
 
@@ -585,7 +644,7 @@ async function boot() {
       r[0], r[1], r[2], aspect,
       SUN[0], SUN[1], SUN[2], 1,
       SLOPE, XS0, G, ZMIN,
-      ZSPAN, t, SEED, 0,
+      ZSPAN, t, SEED, 1 / canvas.height,
     ]));
 
     const enc = device.createCommandEncoder();
@@ -599,9 +658,9 @@ async function boot() {
       enc.copyBufferToBuffer(probeBuf, 0, probeRead, 0, probeBuf.size);
       laneSnap = { xw: Array.from(xw), wet: Array.from(wet), z: Array.from(laneZ), t };
     }
-    const dtx = ensureDepth();
+    const { msaa: msc, depth: dtx } = ensureTargets();
     const rp = enc.beginRenderPass({
-      colorAttachments: [{ view: ctx.getCurrentTexture().createView(), clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+      colorAttachments: [{ view: msc.createView(), resolveTarget: ctx.getCurrentTexture().createView(), clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
       depthStencilAttachment: { view: dtx.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'discard' },
     });
     rp.setPipeline(skyPipe); rp.setBindGroup(0, bgU); rp.draw(3);
