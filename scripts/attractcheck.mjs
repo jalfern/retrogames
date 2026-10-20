@@ -228,6 +228,45 @@ const REACT_TITLES = [
         wrap: `    'RED BALLS RICOCHET · UGG & WRONGWAY RUN',\n`,
         leak: `    'SPELL COINUP ON THE TOP ROW FOR A LIFE',\n`,
     },
+    {
+        label: 'SONAR ABYSS',
+        jsx: 'src/games/Sonar/index.jsx',
+        mf: 'src/games/Sonar/attract.js',
+        import: '../src/games/Sonar/attract.js',
+        slot: '<AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />',
+        wrap: `    'EELS ARE REAL EVEN WHEN UNHEARD',\n`,
+        leak: `    'EVERY DEATH CARVES A NEW CAVE',\n`,
+    },
+    {
+        label: 'POLARITY',
+        jsx: 'src/games/Polarity/index.jsx',
+        mf: 'src/games/Polarity/attract.js',
+        import: '../src/games/Polarity/attract.js',
+        slot: '<AttractMessage className="mb-5 text-cyan-100/80" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse">{PRESS}</p>`,
+        wrap: `    'THE CORE TAKES ONLY ITS OPPOSITE COLOR',\n`,
+        leak: `    'TELEGRAPHS READ WALLS AND STORMS EARLY',\n`,
+    },
+    {
+        label: 'ICE CLIMBER CO-OP',
+        jsx: 'src/games/IceClimber/index.jsx',
+        mf: 'src/games/IceClimber/attract.js',
+        import: '../src/games/IceClimber/attract.js',
+        slot: '<AttractMessage className="mb-5 text-sky-100/80" messages={MESSAGES} />',
+        wrap: `    'EVERY TILE YOU PUNCH IS GONE FOREVER',\n`,
+        leak: `    'TOUCH REVIVES · ALONE, NO SUMMIT',\n`,
+    },
+    {
+        label: 'MYST',
+        jsx: 'src/games/Myst/index.jsx',
+        mf: 'src/games/Myst/attract.js',
+        import: '../src/games/Myst/attract.js',
+        slot: `<AttractMessage className="mb-8 text-amber-200/70 max-w-xl tracking-wide" messages={MESSAGES} />`,
+        blinkFrom: `animate-pulse text-amber-300">{PRESS}</p>`,
+        dimFrom: 'from-black/80',
+        wrap: `    'No map. No hints. Take notes, as in 1993.',\n`,
+        leak: `    'Four Ages hidden in plain sight',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
@@ -306,7 +345,7 @@ const MUTANTS = [
 
 const MUTATE_FILES = MODULES.filter((m) => /Defender|SpaceInvaders|Centipede|Gauntlet|DonkeyKong|Pitfall|MissileCommand|LunarLander|Tempest|OutRun|SmashTV/.test(m.file)).map((m) => m.file)
 
-async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, leak, blinkFrom }) {
+async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, leak, blinkFrom, dimFrom }) {
     const { MESSAGES, PRESS } = await import(spec)
     console.log(`attract (rule 6) — ${label}`)
     if (!Array.isArray(MESSAGES) || typeof PRESS !== 'string') {
@@ -323,7 +362,8 @@ async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, l
     ok(PRESS.length <= 24 && /ANY KEY/i.test(PRESS), `${label}: the press prompt is short and clear`, PRESS)
 
     const jsx = readFileSync(jsxPath, 'utf8')
-    const block = jsx.slice(jsx.indexOf("{screen === 'attract'"), jsx.indexOf("{screen === 'over'"))
+    const attractAt = jsx.indexOf("{screen === 'attract'")
+    const block = jsx.slice(attractAt, jsx.indexOf('{screen ===', attractAt + 1))
     ok(block.length > 0, `${label}: attract block found`)
     ok((block.match(/<AttractMessage/g) || []).length === 1, `${label}: exactly one cycling message slot`,
         `${(block.match(/<AttractMessage/g) || []).length}`)
@@ -332,14 +372,15 @@ async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, l
     ok(block.includes('{MESSAGES}'), `${label}: the attract reads copy from the shared module`)
     ok(block.includes('{PRESS}'), `${label}: the press prompt comes from the shared module`)
     ok(block.includes('animate-pulse'), `${label}: the press prompt blinks`)
-    const dim = block.match(/bg-black\/(\d+)/)
+    const dim = block.match(/(?:bg|from)-black\/(\d+)/)
     ok(!!dim && Number(dim[1]) >= 40, `${label}: the demo dims behind the attract text`, dim ? dim[0] : 'no scrim')
 
     if (process.argv.includes('--mutate')) {
         const mutants = [
             ['the slot pins one message (never cycles)', jsxPath, 'messages={MESSAGES}', 'messages={[MESSAGES[0]]}'],
             ['a second rules slot stacks over the demo', jsxPath, slot, `${slot}\n                    <AttractMessage className="text-white/70" messages={MESSAGES} />`],
-            ['the demo stops dimming', jsxPath, 'bg-black/55', 'bg-black/0'],
+            ['the demo stops dimming', jsxPath, dimFrom || 'bg-black/55',
+                (dimFrom || 'bg-black/55').replace(/\/\d+$/, '/0')],
             ['the press prompt stops blinking', jsxPath, blinkFrom || 'animate-pulse',
                 (blinkFrom || 'animate-pulse').replace('animate-pulse', 'opacity-100')],
             ['a message wraps the pane again', mf, wrap, `    'EVERY RULE AT ONCE: ARROWS FLY, SPACE FIRES, THE FLAGSHIP DROPS A TRACTOR BEAM THAT CAPTURES YOUR FIGHTER',\n`],

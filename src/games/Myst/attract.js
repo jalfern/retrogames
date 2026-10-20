@@ -9,8 +9,8 @@ export const PRESS = 'PRESS ANY KEY TO START'
 
 export const MESSAGES = [
     'CYAN · 1993 · REBUILT IN CODE',
-    'A library of living books · two imprisoned brothers',
+    'Living books · two imprisoned brothers',
     'Four Ages hidden in plain sight',
     'No map. No hints. Take notes, as in 1993.',
-    'Click or tap what you see · arrows step and turn',
+    'Click what you see · arrows step and turn',
 ]
