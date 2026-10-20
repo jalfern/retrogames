@@ -60,6 +60,27 @@ removed, kept the `Idle`, `Jump_Start`, `Jump_Idle`, `Sit_Chair_Pose` clips).
   rocker, striped topsheet. No CC0 snowboard exists in the KayKit/Quaternius/
   Kenney packs, so the board is the one hand-built piece — the model itself
   is the CC0 rig.
+
+## The CPU field (#620)
+
+All five rivals ride real KayKit bodies too — `RIDER_MODELS` maps sim ids
+to `public/models/ssx/{knight,barbarian,mage,rogue_plain,rogue}.glb` (same
+CC0 pack, same trimming recipe: weapons/shields dropped, hats kept, only
+`Idle`/`Jump_Start`/`Jump_Idle` resampled — ~330 KB each, see LICENSE.txt).
+The whole pack shares one skeleton, so `STANCE`/`OFFS`/pose-bases transfer
+unchanged — rivals crouch, grab, tuck and tumble with the same pipeline as
+the hero. Rider 5 reuses the hooded body (the pack ships exactly five).
+Distinctness comes from body + `RIDER_COLORS` on outfit and board + six
+`makeBoard(color, style)` graphics (stripes, solid, bands, gradient,
+pinstripe, split).
+
+Frame budget (headless software-GL harness, 900×640, `?lite=1`):
+single-hero baseline ≈ 8–10 fps → six skinned riders ≈ 11–15 fps (no
+regression; the box caps everything — real GPU runs are smooth). The
+`ssxmodelcheck` pack checks gate: 6/6 rigs loaded, 48+ bones each, pose
+override reaches all six, fps floor. Its capture loop waits-until-still
+because six rigs converge over seconds on slow renderers (a fixed settle
+was flaking the same-pose stability gate).
 - A dark ellipse tracks the snow under the rider (fades with air height) so
   the pack reads when flying.
 - The GLB is fetched lazily and the primitive box-rider stays on screen until

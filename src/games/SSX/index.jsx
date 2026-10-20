@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, makeRider, makeHeroRider, poseRider, sprayField, makeSprite, THEMES } from './art.js'
+import { buildTerrain, buildRails, buildScenery, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -128,6 +128,7 @@ const SSXGame = () => {
 
         let g = makeGame('race')
         let raf = 0, last = 0, acc = 0
+        let fpsEMA = 60
         let shake = 0, camPos = new THREE.Vector3()
         let musicAcc = 0, musicStep = 0
         let pop = '', popT = 0
@@ -153,7 +154,7 @@ const SSXGame = () => {
             scene.add(world)
             for (const m of riders) scene.remove(m)
             riders = g.riders.map((r) => {
-                const rig = keep(r.id === 0 ? makeHeroRider(RIDER_COLORS[r.id]) : makeRider(RIDER_COLORS[r.id]))
+                const rig = keep(makeHeroRider(RIDER_COLORS[r.id], RIDER_MODELS[r.id] || 'rogue', r.id))
                 scene.add(rig)
                 return rig
             })
@@ -235,6 +236,7 @@ const SSXGame = () => {
             raf = requestAnimationFrame(frame)
             if (!last) last = ts
             const ft = Math.min(ts - last, 250)
+            fpsEMA = fpsEMA * 0.92 + (1000 / Math.max(1, ts - last || 16)) * 0.08
             last = ts
             if (!pausedRef.current) {
                 acc += ft
@@ -455,6 +457,11 @@ const SSXGame = () => {
                     if (!h) return { ready: false, failed: h === false ? 1 : 0 }
                     return { ready: true, pose: h.pose, bones: Object.keys(h.bones).length }
                 },
+                riders: () => riders.map((rig) => {
+                    const h = rig.userData.hero
+                    return { hero: h ? 1 : h === false ? 2 : 0, pose: h ? h.pose : null, bones: h ? Object.keys(h.bones).length : 0 }
+                }),
+                fps: () => Math.round(fpsEMA),
                 start: (m) => startPlay(m === 'showoff' ? 'showoff' : 'race'),
                 toAttract: () => { g = makeGame('race'); shownHeat = 0; poseOverride = null; setCourseVisuals(); setMode('attract') },
                 prognose: () => {

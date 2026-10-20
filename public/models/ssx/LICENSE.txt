@@ -7,3 +7,13 @@ License: http://creativecommons.org/publicdomain/zero/1.0/
 Transformed for this game (public/models/ssx/rogue.glb):
 - kept animations Idle, Jump_Start, Jump_Idle (pose bases); dropped the rest
 - removed weapon/quiver prop meshes attached to the rig
+
+CPU field models #620 (same pack, same CC0 license, same trimming recipe):
+- knight.glb     <- Knight.glb      (swords/shields dropped; hats kept)
+- barbarian.glb  <- Barbarian.glb   (axes/shield/mug dropped)
+- mage.glb       <- Mage.glb        (staff/wand/spellbooks dropped)
+- rogue_plain.glb<- Rogue.glb      (knife/crossbows dropped)
+Kept animations Idle / Jump_Start / Jump_Idle; keyframes resampled
+(tolerance 0.001), dedup + prune. Rider 5 reuses rogue.glb (the hooded
+body) with its own colours and board — the pack ships exactly five
+bodies and the player took the fifth.

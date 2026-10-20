@@ -227,7 +227,13 @@ export function makeRider(color) {
 
 export const HERO_POSES = ['stand', 'tuck', 'crouch', 'air', 'grab', 'tumble']
 
-const HERO_URL = `${(import.meta.env && import.meta.env.BASE_URL) || '/'}models/ssx/rogue.glb`
+// #620: every rider rides a real CC0 KayKit body (one per sim.js id).
+// The whole Adventurers pack shares one skeleton, so the pose bases,
+// STANCE and OFFS below transfer to all six riders unchanged. rider 5
+// reuses the hooded rogue (the pack ships exactly five bodies).
+export const RIDER_MODELS = ['rogue', 'knight', 'barbarian', 'mage', 'rogue_plain', 'rogue']
+
+const modelUrl = (file) => `${(import.meta.env && import.meta.env.BASE_URL) || '/'}models/ssx/${file}.glb`
 const HERO_HEIGHT = 1.74
 
 function sampleClip(clip, time) {
@@ -328,7 +334,7 @@ function composeTargets(clips) {
     return targets
 }
 
-export function makeHeroRider(color) {
+export function makeHeroRider(color, modelFile = 'rogue', style = 0) {
     const root = new THREE.Group()
     const yaw = new THREE.Group()
     const roll = new THREE.Group()
@@ -337,7 +343,7 @@ export function makeHeroRider(color) {
     root.userData = { yaw, roll, ...parts, hero: null }
     Promise.all([
         import('three/examples/jsm/loaders/GLTFLoader.js'),
-        fetch(HERO_URL).then((res) => { if (!res.ok) throw new Error(`hero glb ${res.status}`); return res.arrayBuffer() }),
+        fetch(modelUrl(modelFile)).then((res) => { if (!res.ok) throw new Error(`hero glb ${res.status}`); return res.arrayBuffer() }),
     ]).then(async ([mod, buf]) => {
         const gltf = await new mod.GLTFLoader().parseAsync(buf, '')
         const clips = {}
@@ -351,7 +357,7 @@ export function makeHeroRider(color) {
         model.add(rigRoot)
         model.scale.setScalar(HERO_HEIGHT / h)
         model.position.y = -((box.min.y) * (HERO_HEIGHT / h))
-        const board = makeBoard(color)
+        const board = makeBoard(color, style)
         roll.clear()
         roll.add(model, board)
         const bootGeo = new THREE.BoxGeometry(0.3, 0.22, 0.46)
@@ -376,7 +382,7 @@ export function makeHeroRider(color) {
     return root
 }
 
-export function makeBoard(color) {
+export function makeBoard(color, style = 0) {
     const L = 1.78, NOSE = 0.16, WAIST = 0.17, TIPW = 0.19
     const shape = new THREE.Shape()
     shape.moveTo(L / 2, 0)
@@ -394,13 +400,23 @@ export function makeBoard(color) {
     const cB = new THREE.Color(0x181d26)
     const cTip = new THREE.Color(0xe8edf5)
     const mixc = new THREE.Color()
+    const paint = (x, a) => {
+        switch (style % 6) {
+            case 1: return cA
+            case 2: return Math.floor(Math.abs(x) * 3.5) % 2 === 0 ? cTip : cA
+            case 3: return cA.clone().lerp(cTip, a * 0.9)
+            case 4: return a > 0.5 ? cA : cB
+            case 5: return x > 0 ? cA : cTip
+            default: return Math.sin(x * 6.2) > 0.15 ? cB : cA
+        }
+    }
     for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i), y = pos.getY(i)
         const a = Math.abs(x) / (L / 2)
         pos.setY(i, y + 0.16 * Math.pow(Math.max(0, a - 0.62) / 0.38, 2))
         if (y < 0.012) mixc.copy(cB)
         else if (a > 0.8) mixc.copy(cTip)
-        else mixc.copy(cA).lerp(cB, Math.sin(x * 6.2) > 0.15 ? 1 : 0)
+        else mixc.copy(paint(x, a))
         col[i * 3] = mixc.r; col[i * 3 + 1] = mixc.g; col[i * 3 + 2] = mixc.b
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3))

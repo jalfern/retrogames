@@ -31,7 +31,9 @@ const sig = () => page.evaluate(() => {
     const t = document.createElement('canvas')
     t.width = 40; t.height = 40
     const x = t.getContext('2d')
-    x.drawImage(c, c.width * 0.42, c.height * 0.50, c.width * 0.16, c.height * 0.33, 0, 0, 40, 40)
+    // tight crop on the hero — the pack crowd (#620) must not enter the
+    // pose-diff window, or rider colour noise masquerades as pose motion
+    x.drawImage(c, c.width * 0.44, c.height * 0.54, c.width * 0.12, c.height * 0.26, 0, 0, 40, 40)
     const d = x.getImageData(0, 0, 40, 40).data
     const rows = new Array(40).fill(0); const cols = new Array(40).fill(0)
     for (let py = 0; py < 40; py++) {
@@ -58,18 +60,29 @@ const pressQuestion = async () => {
 await pressQuestion()
 await page.waitForTimeout(400)
 
-const sigs = {}
+// On software GL the six rigs can take seconds to converge (blend lerp is
+// per RENDER frame); wait-until-still beats a fixed settle at any box speed.
+const settle = async () => {
+    let prev = await sig()
+    for (let i = 0; i < 24; i++) {
+        await page.waitForTimeout(250)
+        const s = await sig()
+        if (chanDiff(prev, s) < 6) return s
+        prev = s
+    }
+    return prev
+}
+
 const poseNames = {}
 const pauseTick = await page.evaluate(() => window.__ssxTest.probe().tick)
+const sigs = {}
 for (const p of POSES) {
     await page.evaluate((n) => window.__ssxTest.setPose(n), p)
-    await page.waitForTimeout(SETTLE)
+    sigs[p] = await settle()
     poseNames[p] = await page.evaluate(() => window.__ssxTest.hero().pose)
-    sigs[p] = await sig()
 }
 await page.evaluate(() => window.__ssxTest.setPose('stand'))
-await page.waitForTimeout(SETTLE)
-const standB = await sig()
+const standB = await settle()
 for (const p of POSES) r.check(`pose override "${p}" reaches hero`, poseNames[p] === p, poseNames[p])
 
 const same = chanDiff(sigs.stand, standB)
@@ -102,6 +115,21 @@ const t0 = await page.evaluate(() => window.__ssxTest.probe().tick)
 await page.waitForTimeout(500)
 const t1 = await page.evaluate(() => window.__ssxTest.probe().tick)
 r.check('sim still runs with hero rig', t1 > t0, `${t0} -> ${t1}`)
+
+// #620: the CPU field — five more rigged bodies, posed by the same pipeline.
+const packOk = await page.waitForFunction(
+    () => window.__ssxTest.riders().every((x) => x.hero === 1), null, { timeout: 20000 },
+).then(() => true).catch(() => false)
+const pack = await page.evaluate(() => window.__ssxTest.riders())
+r.check('all six riders load real rigs', packOk, JSON.stringify(pack.map((x) => x.hero)))
+r.check('every pack rig carries the full skeleton', pack.every((x) => x.bones >= 40), JSON.stringify(pack.map((x) => x.bones)))
+await page.evaluate(() => window.__ssxTest.setPose('tuck'))
+await page.waitForTimeout(SETTLE)
+const posed = await page.evaluate(() => window.__ssxTest.riders())
+r.check('pose override reaches all six riders', posed.every((x) => x.pose === 'tuck'), JSON.stringify(posed.map((x) => x.pose)))
+await page.evaluate(() => window.__ssxTest.setPose(null))
+const fps = await page.evaluate(() => window.__ssxTest.fps())
+r.check('six skinned riders hold a renderable frame rate (>= 8 fps under software GL)', fps >= 8, `${fps} fps`)
 
 const prog = await page.evaluate(() => window.__ssxTest.prognose())
 r.check('race still winnable with hero rider', String(prog).startsWith('WINNABLE'), String(prog))
