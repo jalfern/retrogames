@@ -61,6 +61,18 @@
     <div class="meta"><span>WEBGPU · COMPUTE SHADERS</span><span>2026-10-18</span></div>
   </a>
 
+  <a class="card" id="shore" style="margin-top:18px">
+    <div class="row">
+      <span class="name">SHORE</span>
+      <span class="play">OPEN ▸</span>
+    </div>
+    <p class="desc">A WebGPU golden-hour beach: swell that slows, steepens and breaks as it shoals
+      (travel-time phase warp, no FFT), a per-lane swash simulation running up the sand and draining
+      back, foam lines, wet sand that darkens then dries, and clear shallows over the sandbar.
+      Drag to look around; WASD + Q/E to fly.</p>
+    <div class="meta"><span>WEBGPU · SWASH SIM</span><span>2026-10-19</span></div>
+  </a>
+
   <p class="more">MORE DEMOS COMING SOON</p>
 
   <footer>
@@ -71,7 +83,9 @@
   // Resolve demo links relative to wherever this page is mounted
   // (/demos on jalfern.com, /retrogames/demos/... on the arcade host).
   const p = location.pathname.replace(/index\.html$/, '')
-  document.getElementById('ocean').href = (p.endsWith('/') ? p : p + '/') + 'ocean.html'
+  const base = (p.endsWith('/') ? p : p + '/')
+  document.getElementById('ocean').href = base + 'ocean.html'
+  document.getElementById('shore').href = base + 'shore.html'
 </script>
 </body>
 </html>
