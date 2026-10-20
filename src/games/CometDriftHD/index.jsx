@@ -491,7 +491,8 @@ export default function CometDriftHD() {
                 renderer.toneMapping = THREE.ACESFilmicToneMapping
                 renderer.toneMappingExposure = 1.35
                 ready = true
-            } catch {
+            } catch (e) {
+                if (import.meta.env.DEV) console.warn('CometDriftHD: WebGPU init failed, legacy WebGL2 takes over —', e && e.message)
                 try {
                     buildLegacy()
                 } catch {

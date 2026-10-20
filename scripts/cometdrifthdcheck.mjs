@@ -263,7 +263,8 @@ if (!SKIP_BROWSER) {
 
         await page.evaluate(() => { window.__cometHDTest.game().count = 1 })
         await page.keyboard.down('KeyX')
-        await page.waitForTimeout(1000)
+        await page.waitForFunction(() => window.__cometHDTest.fx().v > 4.5, null, { timeout: 4000 }).catch(() => {})
+        await page.waitForTimeout(120)
         const vHeld = await page.evaluate(() => window.__cometHDTest.fx().v)
         ok(vHeld > 4.5, `gas accelerates the buggy past the drift threshold (v ${vHeld.toFixed(2)})`)
 
@@ -351,6 +352,9 @@ if (!SKIP_BROWSER) {
     }
 
     // the product default: WebGPU is attempted first (falls back per-device)
+    // #542: back-to-back headless Chromes briefly wedge the GPU process and
+    // the second boot lands in the legacy refuge; let the first one fully die.
+    await new Promise((r) => setTimeout(r, 2000))
     const b2 = await launch()
     try {
         const page2 = await openGame(b2, { url: BASE, viewport: { width: 640, height: 360 }, hook: '__cometHDTest' })
