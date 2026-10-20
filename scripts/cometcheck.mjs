@@ -615,6 +615,45 @@ console.log('— the drift steer authority (#440) —')
     }
 }
 
+// #440 polish 3 — the HUD must ride the game's OWN bitmap font, not the
+// browser default. `bold Npx monospace` is the same generic face every OS
+// draws; docs/ART.md says build the look from the original. font.js is the
+// designed 3x5 face; index.jsx routes every canvas glyph through drawText.
+const FONTJS = new URL('../src/games/CometDrift/font.js', import.meta.url)
+const IDXJS = new URL('../src/games/CometDrift/index.jsx', import.meta.url)
+const loadFont = async () => import('../src/games/CometDrift/font.js' + '?f=' + Math.random())
+const GLYPHS = ('0123456789'
+    + 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    + "-=/:.,!<>+ '.").split('')
+
+const fontIntegrity = async () => {
+    const { FONT, CW, CH, textW, drawText } = await loadFont()
+    const g = (k) => FONT[k]
+    const rowsOk = GLYPHS.every((k) => {
+        const s = g(k)
+        return Array.isArray(s) && s.length === CH && s.every((r) => r.length === CW && /^[01]+$/.test(r))
+    })
+    check('font: 0-9, A-Z and HUD symbols are defined as 3x5 bitmaps', rowsOk,
+        GLYPHS.filter((k) => { const s = g(k); return !(Array.isArray(s) && s.length === CH && s.every((r) => r.length === CW && /^[01]+$/.test(r))) }).join(''))
+    const digits = '0123456789'.split('').map((d) => g(d).join('|'))
+    check('font: the ten digits are all distinct glyphs', new Set(digits).size === 10)
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((c) => g(c).join('|'))
+    check('font: the twenty-six letters are all distinct glyphs', new Set(letters).size === 26)
+    check('font: textW measures a string (advance = glyph + one-cell gap)', typeof textW === 'function' && textW('123', 2) === (3 * 4 - 1) * 2, `${textW('123', 2)}`)
+    check('font: drawText is exported and callable', typeof drawText === 'function')
+}
+
+const hudUsesOwnFont = () => {
+    const src = readFileSync(IDXJS, 'utf8')
+    check('index.jsx: no browser-default monospace face anywhere in the canvas', !/monospace/.test(src))
+    check('index.jsx: no raw ctx.fillText (every glyph routes through the own font)', !/\.fillText\(/.test(src))
+    check('index.jsx: imports drawText from the game font module', /import\s*\{[^}]*\bdrawText\b[^}]*\}\s*from\s*'\.\/font\.js'/.test(src))
+    check('index.jsx: the POS/positional HUD draws via drawText', /drawText\(ctx,\s*'POS'/.test(src) && /drawText\(ctx,\s*`\$\{P\.place\}/.test(src))
+}
+
+await fontIntegrity()
+hudUsesOwnFont()
+
 if (process.argv.includes('--mutate')) {
     // break the checkpoint gate in sim.js and demand the shortcut probe above
     // goes red. Restore runs whatever happens.
@@ -777,6 +816,37 @@ if (process.argv.includes('--mutate')) {
         if (cv < 10) { console.log(`  MUTANT DIED — an over-tight cap neuters the drift (Δ${cv.toFixed(0)}° carve): the #440 carve floor is load-bearing`); R.fail++ }
         else console.log(`  MUTANT SURVIVED — over-tight cap still carves Δ${cv.toFixed(0)}°: the carve floor is BLIND`)
     } finally { writeFileSync(path, src) }
+
+    // #440 own-font mutants: re-plant a system-fallback draw / a broken glyph
+    // and the gate above MUST go red. R.fail delta > 0 means the mutant died.
+    const idxSrc = readFileSync(IDXJS, 'utf8')
+    const fontSrc = readFileSync(FONTJS, 'utf8')
+    const died = async (label, run) => {
+        const before = R.fail
+        await run()
+        if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #440 own-font gate is load-bearing`)
+        else console.log(`  MUTANT SURVIVED — ${label}: the own-font gate is BLIND`)
+    }
+    try {
+        writeFileSync(IDXJS, idxSrc.replace(`drawText(ctx, 'POS', Math.round(5 * hs), Math.round(11 * hs), '#b08460', dsz(8))`, `ctx.font = 'bold 8px monospace'; ctx.fillText('POS', Math.round(5 * hs), Math.round(11 * hs))`))
+        await died('a HUD readout falls back to browser monospace fillText', hudUsesOwnFont)
+    } finally { writeFileSync(IDXJS, idxSrc) }
+    try {
+        writeFileSync(IDXJS, idxSrc.replace(`import { drawText } from './font.js'`, `import { textW as _tw } from './font.js'`))
+        await died('index.jsx stops importing its own font', hudUsesOwnFont)
+    } finally { writeFileSync(IDXJS, idxSrc) }
+    try {
+        writeFileSync(FONTJS, fontSrc.replace(`    '3': ['111', '001', '011', '001', '111'],`, `    '3': ['111', '001', '011', '001'],`))
+        await died('a glyph loses a pixel row', fontIntegrity)
+    } finally { writeFileSync(FONTJS, fontSrc) }
+    try {
+        writeFileSync(FONTJS, fontSrc.replace(`    '8': ['111', '101', '111', '101', '111'],`, `    '8': ['010', '101', '101', '101', '010'],`))
+        await died('two digits collapse to the same glyph', fontIntegrity)
+    } finally { writeFileSync(FONTJS, fontSrc) }
+    try {
+        writeFileSync(FONTJS, fontSrc.replace('return n === 0 ? 0 : n * (CW + 1) - 1', 'return n === 0 ? 0 : n * (CW + 1) + 1'))
+        await died('textW stops measuring the trailing gap', fontIntegrity)
+    } finally { writeFileSync(FONTJS, fontSrc) }
 }
 
 console.log(`\n${R.fail === 0 ? 'GREEN' : 'RED — ' + R.fail + ' failed'}`)

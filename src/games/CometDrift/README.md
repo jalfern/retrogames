@@ -60,7 +60,14 @@ follows it. All art/audio synthesized at runtime; no assets.
   `buildSky` (two parallax mesa bands + setting sun + ember glint),
   `buildSprites` (exposed-wheel buggies: 3 steer poses × 2 rev frames),
   `minimapPath` (HUD outline + live dot projection). Node-safe on import;
-  `document` only inside builders.
+   `document` only inside builders.
+- `font.js` (#440 polish 3) — the game's OWN 3×5 bitmap face (`FONT`,
+   `drawText`/`textW`): rounded numerals + full uppercase + HUD symbols, every
+   glyph generated in code. The canvas HUD used to lean on the browser default
+   `bold Npx monospace`; `index.jsx` now routes EVERY canvas glyph through
+   `drawText` (baseline semantics preserved, so layout coords survive), so the
+   racer draws with a designed arcade font instead of a per-OS fallback.
+   `cometcheck`'s own-font gate proves it and kills the system-font/glyph mutants.
 - `index.jsx` — the shell: fixed-timestep loop (`contractHoldsLoop` gates the
   sim, the contract owns the clock while held), adaptive-source Mode 7 raster
   (the canvas re-solves to the viewport aspect: height-anchored

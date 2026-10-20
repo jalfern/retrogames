@@ -8,6 +8,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath } from './art.js'
+import { drawText } from './font.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 
@@ -304,7 +305,7 @@ export default function CometDrift() {
             // the keystone
             x.fillStyle = pal.rockLight; x.fillRect(138, 12, 24, 26)
             x.strokeStyle = pal.outline; x.lineWidth = 1.6; x.strokeRect(138, 12, 24, 26)
-            x.fillStyle = pal.bone; x.font = 'bold 11px monospace'; x.fillText(name, Math.max(4, 150 - name.length * 3.6), 30)
+            x.fillStyle = pal.bone; drawText(x, name, 150, 30, pal.bone, 2, 'center')
             archCache[name] = c
             return c
         }
@@ -504,7 +505,7 @@ export default function CometDrift() {
             ctx.fillRect(x, y + h - 1, w, 1)
             ctx.fillRect(x + w - 1, y, 1, h)
         }
-        const fu = (sz) => `bold ${Math.max(1, Math.round(sz * hs))}px monospace`
+        const dsz = (sz) => Math.max(1, Math.round(sz * hs / 5))
 
         const tierReached = (charge) => {
             let t = -1
@@ -523,16 +524,12 @@ export default function CometDrift() {
             const P = g.karts[0]
             // POS badge
             panel(2 * hs, 2 * hs, 34 * hs, 27 * hs)
-            ctx.fillStyle = '#b08460'; ctx.font = fu(8)
-            ctx.fillText('POS', Math.round(5 * hs), Math.round(11 * hs))
-            const suff = ['st', 'nd', 'rd', 'th', 'th', 'th', 'th'][P.place - 1]
-            ctx.fillStyle = P.place === 1 ? '#ffd840' : '#f2e6d2'
-            ctx.font = fu(17)
-            ctx.fillText(`${P.place}${suff}`, Math.round(5 * hs), Math.round(25 * hs))
+            drawText(ctx, 'POS', Math.round(5 * hs), Math.round(11 * hs), '#b08460', dsz(8))
+            const suff = ['ST', 'ND', 'RD', 'TH', 'TH', 'TH', 'TH'][P.place - 1]
+            drawText(ctx, `${P.place}${suff}`, Math.round(5 * hs), Math.round(25 * hs), P.place === 1 ? '#ffd840' : '#f2e6d2', dsz(17))
             // speed + drift ladder under the badge
             panel(2 * hs, 31 * hs, 58 * hs, 28 * hs)
-            ctx.fillStyle = '#f2e6d2'; ctx.font = fu(9)
-            ctx.fillText(`${Math.round(P.v * 19.5)} KM/H`, Math.round(5 * hs), Math.round(40 * hs))
+            drawText(ctx, `${Math.round(P.v * 19.5)} KM/H`, Math.round(5 * hs), Math.round(40 * hs), '#f2e6d2', dsz(9))
             ctx.fillStyle = '#3a2430'; ctx.fillRect(Math.round(5 * hs), Math.round(44 * hs), Math.round(52 * hs), Math.round(7 * hs))
             const barW = Math.round(P.v / (CFG.top + TIERS[Math.max(P.boostTier, 0)].over) * 52 * hs)
             ctx.fillStyle = P.boostT > 0 ? '#ffd840' : P.offroad ? '#f85820' : '#38d898'
@@ -551,12 +548,9 @@ export default function CometDrift() {
             // LAP plate, centre-top
             panel(Math.round((W - 78 * hs) / 2), Math.round(2 * hs), Math.round(78 * hs), Math.round(26 * hs))
             ctx.textAlign = 'center'
-            ctx.fillStyle = '#b08460'; ctx.font = fu(8)
-            ctx.fillText('LAP', Math.round(W / 2), Math.round(10 * hs))
-            ctx.fillStyle = '#f2e6d2'; ctx.font = fu(11)
-            ctx.fillText(`${Math.min(P.lap + 1, LAPS)}/${LAPS}  ${fmtTime(Math.max(0, g.tick - P.lapStart))}`, Math.round(W / 2), Math.round(23 * hs))
-            ctx.fillStyle = '#b08460'; ctx.font = fu(7)
-            ctx.fillText(COURSE.short, Math.round(W / 2), Math.round(37 * hs))
+            drawText(ctx, 'LAP', Math.round(W / 2), Math.round(10 * hs), '#b08460', dsz(8), 'center')
+            drawText(ctx, `${Math.min(P.lap + 1, LAPS)}/${LAPS}  ${fmtTime(Math.max(0, g.tick - P.lapStart))}`, Math.round(W / 2), Math.round(23 * hs), '#f2e6d2', dsz(11), 'center')
+            drawText(ctx, COURSE.short, Math.round(W / 2), Math.round(37 * hs), '#b08460', dsz(7), 'center')
             ctx.textAlign = 'left'
             // minimap, right
             const mw = Math.round(58 * hs); const mh = Math.round(50 * hs)
@@ -578,9 +572,7 @@ export default function CometDrift() {
             }
             if (st.screen !== 'attract' && (g.phase === 'count' || (g.phase === 'race' && g.tick - P.lapStart < 40))) {
                 ctx.textAlign = 'center'
-                ctx.font = fu(44)
-                ctx.fillStyle = g.phase === 'race' ? '#38e878' : '#f2e6d2'
-                ctx.fillText(g.phase === 'race' ? 'GO!' : String(Math.ceil(g.count / 60)), W / 2, HZ + Math.round(34 * hs))
+                drawText(ctx, g.phase === 'race' ? 'GO!' : String(Math.ceil(g.count / 60)), W / 2, HZ + Math.round(34 * hs), g.phase === 'race' ? '#38e878' : '#f2e6d2', dsz(44), 'center')
                 ctx.textAlign = 'left'
             }
         }
@@ -597,36 +589,23 @@ export default function CometDrift() {
             strataBar(Math.round(H * 0.18), W)
             strataBar(Math.round(H * 0.78) - Math.round(6 * hs), W)
             ctx.textAlign = 'center'
-            ctx.fillStyle = '#7c2010'
-            ctx.font = fu(24)
-            ctx.fillText('COMET', W / 2 + 2, Math.round(H * 0.33) + 2)
-            ctx.fillStyle = '#f2e6d2'
-            ctx.fillText('COMET', W / 2, Math.round(H * 0.33))
-            ctx.fillStyle = '#ffd840'
-            ctx.fillText('DRIFT GP', W / 2, Math.round(H * 0.33) + Math.round(24 * hs))
+            drawText(ctx, 'COMET', W / 2 + 2, Math.round(H * 0.33) + 2, '#7c2010', dsz(24), 'center')
+            drawText(ctx, 'COMET', W / 2, Math.round(H * 0.33), '#f2e6d2', dsz(24), 'center')
+            drawText(ctx, 'DRIFT GP', W / 2, Math.round(H * 0.33) + Math.round(24 * hs), '#ffd840', dsz(24), 'center')
             // course selector (#493): ←/→ cycles the circuit, the line label
             // names what you picked; every other key or a tap races it
-            ctx.font = fu(11)
-            ctx.fillStyle = '#8a5c3c'
-            ctx.fillText('<', Math.round(W / 2 - 92 * hs), Math.round(H * 0.47))
-            ctx.fillText('>', Math.round(W / 2 + 88 * hs), Math.round(H * 0.47))
-            ctx.fillStyle = '#f2e6d2'
-            ctx.fillText(COURSE.name, W / 2, Math.round(H * 0.47))
-            const msgs = [COURSE.tagline, '← → PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'blue violet GOLD - the ladder pays']
-            ctx.font = fu(10)
-            ctx.fillStyle = '#f0b878'
-            ctx.fillText(msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55))
+            drawText(ctx, '<', Math.round(W / 2 - 92 * hs), Math.round(H * 0.47), '#8a5c3c', dsz(11), 'center')
+            drawText(ctx, '>', Math.round(W / 2 + 88 * hs), Math.round(H * 0.47), '#8a5c3c', dsz(11), 'center')
+            drawText(ctx, COURSE.name, W / 2, Math.round(H * 0.47), '#f2e6d2', dsz(11), 'center')
+            const msgs = [COURSE.tagline, '< > PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'BLUE VIOLET GOLD - THE LADDER PAYS']
+            drawText(ctx, msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55), '#f0b878', dsz(10), 'center')
             if (st.top.length) {
-                ctx.font = fu(8)
                 for (let i = 0; i < st.top.length; i++) {
-                    ctx.fillStyle = i === 0 ? '#ffd840' : '#b090a8'
-                    ctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, Math.round(H * 0.62 + i * 9 * hs))
+                    drawText(ctx, i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, Math.round(H * 0.62 + i * 9 * hs), i === 0 ? '#ffd840' : '#b090a8', dsz(8), 'center')
                 }
             }
             if ((g.tick >> 5) % 2) {
-                ctx.font = fu(10)
-                ctx.fillStyle = '#f2e6d2'
-                ctx.fillText('PRESS ANY KEY / TAP', W / 2, Math.round(H * 0.74))
+                drawText(ctx, 'PRESS ANY KEY / TAP', W / 2, Math.round(H * 0.74), '#f2e6d2', dsz(10), 'center')
             }
             ctx.textAlign = 'left'
         }
@@ -636,18 +615,12 @@ export default function CometDrift() {
             ctx.fillStyle = 'rgba(20,8,12,0.74)'; ctx.fillRect(0, Math.round(H * 0.2), W, Math.round(H * 0.52))
             strataBar(Math.round(H * 0.2), W)
             ctx.textAlign = 'center'
-            ctx.font = fu(22)
-            ctx.fillStyle = g.end === 'win' ? '#ffd840' : '#f85820'
-            ctx.fillText(g.end === 'win' ? `${COURSE.short} CHAMPION!` : `${P.place}TH PLACE`, W / 2, Math.round(H * 0.36))
-            ctx.font = fu(11)
-            ctx.fillStyle = '#f2e6d2'
-            ctx.fillText(`TIME ${fmtTime(P.finishT || g.tick)}  BEST ${st.best ? fmtTime(st.best) : '--'}`, W / 2, Math.round(H * 0.45))
+            drawText(ctx, g.end === 'win' ? `${COURSE.short} CHAMPION!` : `${P.place}TH PLACE`, W / 2, Math.round(H * 0.36), g.end === 'win' ? '#ffd840' : '#f85820', dsz(22), 'center')
+            drawText(ctx, `TIME ${fmtTime(P.finishT || g.tick)}  BEST ${st.best ? fmtTime(st.best) : '--'}`, W / 2, Math.round(H * 0.45), '#f2e6d2', dsz(11), 'center')
             if (P.lapTimes.length) {
-                ctx.font = fu(8)
-                ctx.fillStyle = '#f0b878'
-                ctx.fillText('SPLITS ' + P.lapTimes.map((t) => (t / 60).toFixed(1)).join(' '), W / 2, Math.round(H * 0.52))
+                drawText(ctx, 'SPLITS ' + P.lapTimes.map((t) => (t / 60).toFixed(1)).join(' '), W / 2, Math.round(H * 0.52), '#f0b878', dsz(8), 'center')
             }
-            if ((g.tick >> 5) % 5 < 3) { ctx.fillStyle = '#f2e6d2'; ctx.font = fu(11); ctx.fillText('TAP OR ANY KEY', W / 2, Math.round(H * 0.63)) }
+            if ((g.tick >> 5) % 5 < 3) { drawText(ctx, 'TAP OR ANY KEY', W / 2, Math.round(H * 0.63), '#f2e6d2', dsz(11), 'center') }
             ctx.textAlign = 'left'
         }
 
