@@ -59,3 +59,13 @@ All synthesized at runtime (no assets) through the shared chiptune engine
   (SKY LOOP's starts at 1450, past loop[1]'s exit at 1360).
 - Fork ramps are quarter-pipe arcs (steep launch, flat landing) with identical
   run/rise; the commit window keys off `FORK_RAMP`, not the segment array.
+
+## Pit walls (#641)
+A pit's far side is a WALL (`CFG.pitWalls`), not a ramp. An airborne body that
+crosses the far lip line BELOW `lip + WALL_TOL` (48px — a legit crossing dips
+at most ~vy·dt + slope·dt) gets `vx=0` pinned to the lip face and falls to
+`deathY`; only near-level arrivals snap onto the surface. `p.hole` marks that
+the current airtime started over a hole, so jumps off solid ground still land
+everywhere, and `flyLand` applies the same rule so the autopilot never promises
+a climb-out. `runnercheck` HAZARD runs a body at a pit too slow to clear it and
+mutates `pitWalls` to prove the check touches the line.

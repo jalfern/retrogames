@@ -323,6 +323,7 @@ const MomentumGame = () => {
                 else if (e.type === 'hit') { audioController.playNoise(0.16, 0.09); audioController.playSweep(240, 90, 0.2, 'sawtooth', 0.07); shake = 8; burst(gs.p.x, gs.p.y - BODY_R, 10, '#ff5a5a') }
                 else if (e.type === 'drone') { audioController.playNoise(0.12, 0.08); audioController.playSweep(900, 200, 0.18, 'square', 0.06); burst(e.x, e.y, 12, '#7df9ff'); say('DRONE DOWN +200') }
                 else if (e.type === 'crash') { audioController.playNoise(0.2, 0.1); shake = 10; say('TOO SLOW!') }
+                else if (e.type === 'wall') { audioController.playNoise(0.14, 0.08); audioController.playSweep(200, 70, 0.25, 'sawtooth', 0.07); shake = 6; burst(e.x, gs.p.y - BODY_R, 8, '#8fa3b8') }
                 else if (e.type === 'save') { audioController.playTone(880, 0.12, 'sine', 0.06); audioController.playTone(1320, 0.18, 'sine', 0.05); say('CHECKPOINT') }
                 else if (e.type === 'die') audioController.playDeath()
                 else if (e.type === 'respawn') { audioController.playSweep(220, 700, 0.4, 'triangle', 0.07); audioController.startMusic(RUNNER_BEDS[gs.zone]); say('BACK TO CHECKPOINT') }

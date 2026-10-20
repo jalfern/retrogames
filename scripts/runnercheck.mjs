@@ -53,6 +53,7 @@ const MUTANTS = {
     landProject: 'landings stop projecting onto the slope — downhill impact speed is thrown away',
     jumpCut: 'the jump stops being variable — tap and hold become the same height',
     pitDeath: 'pits stop killing — the whole level becomes a safe walk',
+    pitWalls: 'a pit\'s far lip becomes a ramp — a runner that falls in at speed climbs out instead of dying',
     boostPads: 'boost strips stop adding speed — the sprint pads do nothing',
     zoneTally: 'the goal tally stops counting up — the time and ring bonuses vanish',
     roll: 'rolling stops working — down does nothing, so steering and full drag stay',
@@ -264,6 +265,28 @@ section('HAZARD (rings stagger; no rings kill; pits kill; the totem remembers)')
         let die = false
         for (let t = 0; t < 200; t++) { s.step(g, {}); if (g.ev.some(e => e.type === 'die')) die = true }
         ok(die, 'falling into a pit did not kill — pitDeath is dead')
+    }
+    // #641: a RUNNER too slow to clear a pit hits the far WALL and falls — it
+    // must not snap up onto the lip and keep running.
+    {
+        const flat = pitsOf(z).find(p => !p.spring && p.far - p.near <= 140 &&
+            Math.abs(s.groundY(z, p.near - 4) - s.groundY(z, p.far + 4)) < 60)
+        ok(!!flat, 'no spring-free flat pit to test the wall rule')
+        if (flat) {
+            const g = s.makeGame()
+            const sx = flat.near - 240
+            g.p.x = sx; g.p.y = s.groundY(z, sx); g.p.mode = 'track'; g.p.s = 260; g.p.invuln = 0
+            let died = false, landed = 0
+            for (let t = 0; t < 300 && !g.end; t++) {
+                s.step(g, { right: true })
+                for (const e of g.ev) {
+                    if (e.type === 'die' && e.why === 'pit') died = true
+                    if (e.type === 'land' && e.x > flat.near) landed = e.x
+                }
+                if (died) break
+            }
+            ok(died, `a runner rolling into pit ${flat.near}-${flat.far} at 260 climbed out (landed ${landed}) — pit walls are ramps`)
+        }
     }
     // checkpoint moves the respawn
     {

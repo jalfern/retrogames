@@ -36,6 +36,7 @@ export const CFG = {
     landProject: true,     // landings project velocity onto the new tangent
     jumpCut: true,         // releasing the jump key early clips the apex
     pitDeath: true,        // below a zone's floor is dying
+    pitWalls: true,        // a pit's far side is a WALL: a body below the lip falls in, never climbs out
     boostPads: true,       // floor strips that add speed along the slope
     zoneTally: true,       // each goal counts up a time bonus + a ring bonus
     roll: true,            // down while moving curls into a ball: no steer, light drag
@@ -344,9 +345,15 @@ export function dronePos(g, i) {
 
 // ---------------------------------------------------------------- physics ----
 
+// a legit landing on the tick it crosses ground dips at most ~vy*dt + slope*dt
+// below the surface (< 45px); anything deeper arriving over a hole came in
+// BELOW the far lip — that is a wall strike, not a landing (#641).
+const WALL_TOL = 48
+
 function toAir(g, theta, jump = 0) {
     const p = g.p
     p.mode = 'air'
+    p.hole = false
     p.vx = p.s * Math.cos(theta)
     p.vy = p.s * Math.sin(theta) - jump
     p.cut = false
@@ -364,6 +371,7 @@ function die(g, why) {
     g.p.y = groundY(z, sx)
     g.p.route = 'low'
     g.p.mode = 'track'
+    g.p.hole = false
     g.p.s = 0; g.p.vx = 0; g.p.vy = 0
     g.p.rolling = false
     g.p.invuln = 90
@@ -379,7 +387,12 @@ function stagger(g, why) {
     g.ev.push({ type: 'hit', why, lost })
     g.rings = 0
     p.s *= 0.75
-    if (p.mode === 'air') { const gy = groundY(ZONES[g.zone], p.x); if (gy !== null) { p.y = gy; p.s = p.vx * 0.75; p.mode = 'track' } }
+    if (p.mode === 'air') {
+        const z2 = ZONES[g.zone]
+        const gy = groundY(z2, p.x)
+        const sgm = gy === null ? null : segAtRoute(z2, p.x)
+        if (sgm && !(CFG.pitWalls && p.hole && p.y > sgm[1] + WALL_TOL)) { p.y = gy; p.s = p.vx * 0.75; p.mode = 'track'; p.hole = false }
+    }
     p.invuln = 70
     if (CFG.ringScatter) {
         const n = Math.min(lost, SCATTER_MAX)
@@ -429,7 +442,7 @@ export function step(g, inp) {
                     for (const sp of z.springs) {
                         if (Math.abs(p.x - sp[0]) < 16 && Math.abs(p.y - sp[1]) < 20 && g.tick > (g.spent.get(sp) || -99)) {
                             g.spent.set(sp, g.tick)
-                            p.mode = 'air'; p.cut = false
+                            p.mode = 'air'; p.cut = false; p.hole = false
                             p.vx = p.s * Math.cos(th); p.vy = sp[2]
                             g.ev.push({ type: 'spring', x: sp[0] })
                         }
@@ -449,14 +462,25 @@ export function step(g, inp) {
         p.x += p.vx * FIXED_DT
         p.y += p.vy * FIXED_DT
         const gy = groundY(z, p.x, p.route)
+        if (gy === null) p.hole = true
         if (gy !== null && p.y >= gy) {
-            p.y = gy
             const sgm = segAtRoute(z, p.x, p.route)
-            const th = segAngle(sgm)
-            p.s = CFG.landProject ? p.vx * Math.cos(th) + p.vy * Math.sin(th) : p.vx
-            p.s = Math.max(-200, Math.min(VMAX, p.s))
-            p.mode = 'track'
-            g.ev.push({ type: 'land', x: Math.round(p.x) })
+            if (CFG.pitWalls && p.hole && p.y > sgm[1] + WALL_TOL) {
+                // arrived below the far lip — the pit's wall stops the forward
+                // motion; the body rides the face down and gravity finishes
+                // the job at deathY. No climbing out.
+                p.x = Math.min(p.x, sgm[0] - 0.5)
+                p.vx = 0
+                g.ev.push({ type: 'wall', x: Math.round(p.x) })
+            } else {
+                p.y = gy
+                const th = segAngle(sgm)
+                p.s = CFG.landProject ? p.vx * Math.cos(th) + p.vy * Math.sin(th) : p.vx
+                p.s = Math.max(-200, Math.min(VMAX, p.s))
+                p.mode = 'track'
+                p.hole = false
+                g.ev.push({ type: 'land', x: Math.round(p.x) })
+            }
         } else if (p.y > z.deathY) {
             if (CFG.pitDeath) die(g, 'pit')
             else { p.y = z.deathY - 1; p.vy = 0 }
@@ -471,7 +495,7 @@ export function step(g, inp) {
         if (CFG.loopContact && Math.cos(p.phi) < 0 && v2 < -G * L.r * Math.cos(p.phi)) {
             // peeled off the wall before the apex — a real fall, no loop, no apex rings
             const v = Math.sqrt(v2)
-            p.mode = 'air'; p.cut = false
+            p.mode = 'air'; p.cut = false; p.hole = false
             p.x = L.cx + L.r * Math.sin(p.phi)
             p.y = L.cy + L.r * Math.cos(p.phi)
             p.vx = v * Math.cos(p.phi); p.vy = -v * Math.sin(p.phi)
@@ -606,7 +630,7 @@ export function makeGame() {
         save: { zone: 0, x: z.segs[0][0] + 40 },
         taken: new Set(), spent: new Map(), droneDown: new Set(), ev: [],
         scatter: [],
-        p: { x: z.segs[0][0] + 40, y: groundY(z, z.segs[0][0] + 40), mode: 'track', route: 'low', s: 0, vx: 0, vy: 0, invuln: 0, cut: false, lastTheta: 0, v0: 0, phi: 0, rolling: false },
+        p: { x: z.segs[0][0] + 40, y: groundY(z, z.segs[0][0] + 40), mode: 'track', route: 'low', hole: false, s: 0, vx: 0, vy: 0, invuln: 0, cut: false, lastTheta: 0, v0: 0, phi: 0, rolling: false },
     }
 }
 
@@ -673,14 +697,18 @@ export function maybeRouteFork(g) {
 // air math, so what the planner predicts is what the engine will do.
 
 function flyLand(z, x, y, vx, vy) {
-    // integrate the SAME air math; returns x at first landing, or null
-    let px = x, py = y, tvx = vx, tvy = vy
+    // integrate the SAME air math (wall rule included); returns x at first
+    // landing, or null — a wall strike is not a landing
+    let px = x, py = y, tvx = vx, tvy = vy, hole = false
     for (let t = 0; t < 130; t++) {
         tvy = Math.min(1500, tvy + G * FIXED_DT)
         tvx = Math.min(VMAX, tvx + AIR_ACCEL * FIXED_DT)
         px += tvx * FIXED_DT; py += tvy * FIXED_DT
         const gy = groundY(z, px)
-        if (gy !== null && py >= gy) return { x: px, y: gy }
+        if (gy === null) { hole = true } else if (py >= gy) {
+            if (CFG.pitWalls && hole && py > segAt(z, px)[1] + WALL_TOL) return null
+            return { x: px, y: gy }
+        }
         if (py > z.deathY) return null
     }
     return null
