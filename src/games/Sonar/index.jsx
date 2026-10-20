@@ -14,6 +14,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
@@ -440,15 +442,10 @@ const SonarGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
-                    <h1 className="text-5xl font-black text-cyan-300" style={{ textShadow: '0 4px 0 #0a3a5a, 0 10px 24px #000' }}>SONAR ABYSS</h1>
-                    <p className="text-cyan-100/90 font-mono mt-1 text-sm">you only see what sound reveals. map the cave in your head.</p>
-                    <p className="text-white font-mono font-bold mt-6 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-cyan-200/80 font-mono text-xs mt-2 px-6">
-                        arrows / D-pad: swim · SPACE / A button: PING — the wavefront lights walls as it reaches them, then fades<br />
-                        pearls score, the teal swirl is the vent to the next depth · eels are real whether or not you just heard one<br />
-                        die and the next run is a different cave (seeded per run) · this demo is a proven route, replayed ping for ping
-                    </p>
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-5xl font-black text-cyan-300 mb-6" style={{ textShadow: '0 4px 0 #0a3a5a, 0 10px 24px #000' }}>SONAR ABYSS</h1>
+                    <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
+                    <p className="text-white font-mono font-bold animate-pulse">{PRESS}</p>
                 </div>
             )}
 

@@ -21,6 +21,8 @@
 //   slack rule   — one fewer LIFE than the run consumes: still winnable
 //   determinism  — replay hashes identical; one flipped input tick is not
 
+import { spawnSync } from 'node:child_process'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { LEVELS, buildLevel } from '../src/games/IceClimber/levels.js'
 import * as sim from '../src/games/IceClimber/sim.js'
 import { plan, replay } from '../src/games/IceClimber/planner.js'
@@ -201,6 +203,55 @@ if (MUT) {
     tryMut('climb=0 (no upward hold)', { climb: 0 }, () => plan(sim.makeGame(buildLevel(0))).ok)
     tryMut('jumpV=0 (no jumps at all)', { jumpV: 0 }, () => plan(sim.makeGame(buildLevel(2))).ok)
     tryMut('moveRight=false (P1 key path dead)', { moveRight: false }, () => plan(sim.makeGame(buildLevel(0))).ok)
+}
+
+
+// ------------------------------------------------------------- attract rule 6 ----
+// ART.md rule 6 (#365): the attract shows ONE informational message at a
+// time, cycling, over a dimmed demo — never a stacked tagline + rules wall.
+// attract.js is the copy the shell actually renders, so this audit cannot rot
+// away from the pixels.
+section('attract (rule 6)')
+{
+    const { MESSAGES, PRESS } = await import('../src/games/IceClimber/attract.js')
+    ok(MESSAGES.length >= 2, 'attract cycles through more than one message')
+    ok(new Set(MESSAGES).size === MESSAGES.length, 'attract messages are unique')
+    ok(MESSAGES.every((m) => m.length <= 44), 'no attract message wraps a narrow pane')
+    ok(!!PRESS, 'attract keeps its press prompt')
+    const jsx = readFileSync(new URL('../src/games/IceClimber/index.jsx', import.meta.url), 'utf8')
+    const block = jsx.slice(jsx.indexOf("{screen === 'attract'"), jsx.indexOf("{screen === 'over'"))
+    ok(block.length > 0, 'the attract block exists')
+    ok(!/<br/.test(block), 'the attract stacks no hard line breaks')
+    ok((block.match(/<p\b/g) || []).length === 1, 'the attract draws exactly one <p> (the press prompt)')
+    ok(/<AttractMessage\b[^>]*messages=\{MESSAGES\}/.test(block), 'rules ride the cycling <AttractMessage>')
+    ok(/bg-black\/[45]\d/.test(block), 'the attract dims the demo')
+}
+if (MUT) {
+    const jsxPath = new URL('../src/games/IceClimber/index.jsx', import.meta.url).pathname
+    const copyPath = new URL('../src/games/IceClimber/attract.js', import.meta.url).pathname
+    const jsxOrig = readFileSync(jsxPath, 'utf8')
+    const copyOrig = readFileSync(copyPath, 'utf8')
+    const attractMutants = [
+        ['attract stacks a second message', jsxPath, jsxOrig,
+            'animate-pulse">{PRESS}</p>',
+            'animate-pulse">{PRESS}</p>\n                    <p>ANOTHER RULE LINE STACKED</p>'],
+        ['an attract message wraps the pane', copyPath, copyOrig,
+            "'STAND ON YOUR PARTNER FOR THE LAST CARROT',",
+            "'THE LAST CARROT HANGS ONE HEAD TALLER THAN ANY JUMP — STAND ON YOUR PARTNER',"],
+        ['the attract stops dimming the demo', jsxPath, jsxOrig,
+            'bg-black/55 flex flex-col',
+            'bg-transparent flex flex-col'],
+    ]
+    for (const [name, path, orig, from, to] of attractMutants) {
+        if (!orig.includes(from)) { ok(false, `attract mutant anchor: ${name}`); continue }
+        writeFileSync(path, orig.replace(from, to))
+        try {
+            const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
+            ok(child.status !== 0, `attract mutant SURVIVED: ${name}`)
+        } finally {
+            writeFileSync(path, orig)
+        }
+    }
 }
 
 console.log(`\nicecheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

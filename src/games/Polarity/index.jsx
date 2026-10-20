@@ -14,6 +14,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -436,19 +438,10 @@ const PolarityGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black" style={{ color: '#8fd8ff', textShadow: '3px 0 0 #c05dff, -3px 0 0 #39c2ff, 0 10px 24px #000' }}>POLARITY</h1>
-                    <p className="text-fuchsia-200/90 font-mono mt-1 text-sm">two colors, one pilot</p>
-                    <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-cyan-100/80 font-mono text-[11px] mt-3 px-8 leading-4">
-                        ARROWS to fly, SPACE to fire, <b>X</b> / B button to FLIP POLARITY<br />
-                        bullets of YOUR color are absorbed and charge the flux meter<br />
-                        the opposite color kills — and your shots only kill the opposite color<br />
-                        a full charge + flip = FLUX NOVA: everything on screen dies but the shell<br />
-                        the REACTOR core only takes shots opposite its spinning shell, one color per quota<br />
-                        telegraph lines read the walls and storms before they arrive — both colors always survive<br />
-                        this demo is the autopilot&apos;s own proven run, tick for tick
-                    </p>
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-4xl font-black mb-5" style={{ color: '#8fd8ff', textShadow: '3px 0 0 #c05dff, -3px 0 0 #39c2ff, 0 10px 24px #000' }}>POLARITY</h1>
+                    <AttractMessage className="mb-5 text-cyan-100/80" messages={MESSAGES} />
+                    <p className="text-white font-mono font-bold animate-pulse">{PRESS}</p>
                 </div>
             )}
 
