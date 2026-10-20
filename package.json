@@ -21,6 +21,7 @@
     "preview": "vite preview",
     "shot": "node scripts/shot.mjs",
     "oceancheck": "node scripts/oceancheck.mjs",
+    "shorecheck": "node scripts/shorecheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
     "audcheck": "node scripts/audcheck.mjs",
     "mariocheck": "node scripts/mariocheck.mjs",

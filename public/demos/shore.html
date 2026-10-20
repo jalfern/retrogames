@@ -52,9 +52,9 @@ const GRIDZ = LITE ? 96 : 192;
 
 // swell components: period s, deep amplitude m, alongshore phase tilt
 const SW = [
-  { T: 7.4, A: 0.155, tilt: 0.115 },
-  { T: 5.0, A: 0.095, tilt: -0.07 },
-  { T: 3.2, A: 0.055, tilt: 0.16 },
+  { T: 7.4, A: 0.21, tilt: 0.010 },
+  { T: 5.0, A: 0.13, tilt: -0.008 },
+  { T: 3.2, A: 0.075, tilt: 0.014 },
 ].map(o => ({ ...o, w: 2 * Math.PI / o.T }));
 
 const xsCurve = z => XS0 + 9 * Math.sin(z * 0.043 + 1.7) + 3.5 * Math.sin(z * 0.12 + 0.6);
@@ -81,13 +81,13 @@ for (let i = 0; i < LANES; i++) {
 const swave = u => {            // skewed oscillator: quick rise, slow drain
   const q = u / (2 * Math.PI) - Math.floor(u / (2 * Math.PI));
   const r = 0.42;
-  return q < r ? 0.5 - 0.5 * Math.cos(Math.PI * q / r) : 0.5 + 0.5 * Math.cos(Math.PI * (q - r) / (1 - r));
+  return (q < r ? 0.5 - 0.5 * Math.cos(Math.PI * q / r) : 0.5 + 0.5 * Math.cos(Math.PI * (q - r) / (1 - r))) * 2 - 1;
 };
 function swashS(lane, t) {
   const z = laneZ[lane];
-  let s = SW[0].A * 2.9 * laneAmp[lane] * (0.62 + 0.5 * Math.sin(0.087 * t + lane * 2.399)) * swave(SW[0].w * t + SW[0].tilt * z - 2.35 + hash1(lane + 500) * 0.9);
-  s += SW[1].A * 2.4 * laneAmp[lane] * swave(SW[1].w * t - SW[1].tilt * z + 1.7 + hash1(lane + 900) * 0.9);
-  s += SW[2].A * 2.0 * swave(SW[2].w * t + SW[2].tilt * z + 4.1 + hash1(lane + 1300) * 0.9);
+  let s = SW[0].A * 2.6 * laneAmp[lane] * (0.62 + 0.5 * Math.sin(0.087 * t + lane * 2.399)) * swave(SW[0].w * t + SW[0].tilt * z - 2.35 + hash1(lane + 500) * 0.3);
+  s += SW[1].A * 2.2 * laneAmp[lane] * swave(SW[1].w * t - SW[1].tilt * z + 1.7 + hash1(lane + 900) * 0.3);
+  s += SW[2].A * 2.0 * swave(SW[2].w * t + SW[2].tilt * z + 4.1 + hash1(lane + 1300) * 0.3);
   return s;
 }
 const ZU = z => Math.max(0, Math.min(LANES - 1, Math.round((z - ZMIN) / ZSPAN * (LANES - 1))));
@@ -103,7 +103,7 @@ function simStep(dt, t) {
   }
 }
 
-const cam = { pos: [26, 2.6, -6], yaw: 0.22, pitch: -0.055, touched: false };
+const cam = { pos: [48, 3.0, -18], yaw: -0.55, pitch: -0.15, touched: false };
 const canvas = document.getElementById('c');
 const fatal = document.getElementById('fatal');
 const setLbl = document.getElementById('setLbl');
@@ -168,6 +168,11 @@ fn terrain(xIn: f32, z: f32) -> f32 {
   h = h + 0.055 * fbm2(vec2f(xIn * 0.31, z * 0.31)) + 0.02 * fbm2(vec2f(xIn * 1.2, z * 1.05));
   h = h + 0.22 * exp(-sq((xIn - xs - 2.5) / 2.2));
   h = h - 0.16 * exp(-sq((xIn - xs + 9.0) / 5.0));
+  // steeper bed seaward so the shelf has real depth (blue) beyond the bar
+  if (xIn < xs) {
+    let k = xs - xIn;
+    h = h - 1.2 * (1.0 - exp(-k / 26.0)) - 1.6 * (1.0 - exp(-k / 55.0));
+  }
   return h;
 }
 // shallow-water phase: constant frequency, local k = w / sqrt(g*d) via the
@@ -195,8 +200,8 @@ fn shore(xIn: f32, z: f32, t: f32, lanes: array<vec3f, NLANES>) -> Shore {
     var eta = a0 * sin(p0) + a1 * sin(p1) + a2 * sin(p2);
     eta = eta + 0.02 * fbm2(vec2f(xIn * 0.9 - t * 0.8, z * 0.9));
     let H = 2.0 * (a0 + a1 + a2);
-    let brk = H / max(d0, 0.12);
-    let fBreak = smoothstep(0.62, 0.95, brk) * (0.45 + 0.55 * vnoise(vec2f(xIn * 0.8 - t * 1.1, z * 0.55)));
+    let brk = H / max(d0 + min(eta, 0.0), 0.12);
+    let fBreak = smoothstep(0.72, 1.05, brk) * (0.45 + 0.55 * vnoise(vec2f(xIn * 0.8 - t * 1.1, z * 0.55)));
     let d = max(d0 + eta, 0.004);
     o.eta = eta;
     o.d = d;
@@ -212,9 +217,11 @@ fn shore(xIn: f32, z: f32, t: f32, lanes: array<vec3f, NLANES>) -> Shore {
     o.eta = 0.0;
     o.d = d;
     o.surf = h + d;
-    let edge = exp(-sq((xIn - lane.x) / 0.5)) * select(0.0, 1.0, lane.z > 0.05);
-    let ring = exp(-sq((xIn - (lane.y - 0.35)) / 0.45))
-      * select(0.0, 1.0, lane.z < -0.04) * select(0.0, 1.0, xIn > lane.x + 0.2);
+    let edge = exp(-sq((xIn - lane.x) / 0.38)) * select(0.0, 1.0, lane.z > 0.05)
+      * (0.5 + 0.5 * vnoise(vec2f(xIn * 2.2, z * 1.6 + t * 2.0)));
+    let ring = exp(-sq((xIn - (lane.y - 0.25)) / 0.38))
+      * select(0.0, 1.0, lane.z < -0.04) * select(0.0, 1.0, xIn > lane.x + 0.15)
+      * (0.5 + 0.5 * vnoise(vec2f(xIn * 2.6 + 9.0, z * 1.9 - t * 1.4)));
     o.foam = clamp(edge * 0.95 + ring * 0.55, 0.0, 1.0);
     o.wetF = select(0.0, 1.0, xIn < lane.y);
   }
@@ -225,7 +232,7 @@ fn faceShift(xIn: f32, z: f32, t: f32) -> f32 {
   let h = terrain(xIn, z);
   if (h >= 0.0) { return 0.0; }
   let d0 = -h;
-  return clamp(0.05 + 0.35 * pow(5.0 / max(d0, 0.30), 0.30), 0.0, 1.6)
+  return clamp(0.05 + 0.5 * pow(5.0 / max(d0, 0.30), 0.30), 0.0, 1.8)
     * (A0 * cos(wphase(W0, t, xIn, z, ${SW[0].tilt.toFixed(4)}))
      + A1 * cos(wphase(W1, t, xIn, z, ${(-SW[1].tilt).toFixed(4)})));
 }
@@ -265,8 +272,8 @@ fn fs(i: VOut) -> @location(0) vec4f {
   let d = normalize(i.dir);
   let t = u.pars2.y;
   let up = clamp(d.y, 0.0, 1.0);
-  let zen = vec3f(0.22, 0.34, 0.50);
-  let mid = vec3f(0.72, 0.48, 0.38);
+  let zen = vec3f(0.26, 0.32, 0.46);
+  let mid = vec3f(0.78, 0.52, 0.40);
   let hor = vec3f(1.05, 0.68, 0.36);
   var col = mix(hor, mix(mid, zen, pow(up, 0.55)), pow(up, 0.32));
   // low golden-hour sun with a fat warm halo
@@ -305,14 +312,17 @@ fn fs(i: VOut) -> @location(0) vec4f {
   // dry sand with grain and wind banding
   var dry = vec3f(0.80, 0.66, 0.44);
   dry = dry * (0.90 + 0.16 * fbm2(vec2f(p.x * 0.9, p.z * 0.55)));
-  dry = dry * (0.93 + 0.07 * sin(p.x * 2.6 + fbm2(vec2f(p.x * 0.4, p.z * 0.4)) * 6.0));
+  dry = dry * (0.96 + 0.025 * sin(p.x * 2.6 + fbm2(vec2f(p.x * 0.4, p.z * 0.4)) * 6.0));
   // wet sand: fresh dark band trailing the waterline + permanent damp near the still line
   let wr = clamp(exp(-sq((p.x - lane.y) / 2.2)) + 0.35 * exp(-sq((p.x - xs) / 4.0)), 0.0, 1.0);
   var col = mix(dry, dry * vec3f(0.55, 0.47, 0.36) + vec3f(0.02, 0.015, 0.01), wr * 0.9);
-  let nrm = normalize(cross(dFdx(i.wp), dFdy(i.wp)));
+  let e = 0.6;
+  let gxx = (terrain(p.x + e, p.z) - terrain(p.x - e, p.z)) / (2.0 * e);
+  let gzz = (terrain(p.x, p.z + e) - terrain(p.x, p.z - e)) / (2.0 * e);
+  let nrm = normalize(vec3f(-gxx, 1.0, -gzz));
   let sun = normalize(u.sun.xyz);
   let ndl = max(dot(nrm, sun), 0.0);
-  col = col * (0.42 + 0.85 * ndl);
+  col = col * (0.58 + 0.72 * ndl);
   let hv = normalize(sun + normalize(u.camPos_t.xyz - p));
   let sheen = pow(max(dot(nrm, hv), 0.0), select(26.0, 60.0, wr > 0.3)) * (0.14 + 0.5 * wr);
   col += vec3f(1.0, 0.75, 0.45) * sheen;
@@ -321,6 +331,9 @@ fn fs(i: VOut) -> @location(0) vec4f {
   col = mix(col, vec3f(0.93, 0.92, 0.88), resid * 0.30 * (0.5 + 0.5 * vnoise(vec2f(p.x * 3.1, p.z * 2.2 + t))));
   let dist = length(u.camPos_t.xyz - p);
   col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(60.0, 190.0, dist));
+  // submerged bed: absorption darkens with depth below the still line
+  let sub = smoothstep(0.0, 1.8, max(xs - p.x + 0.16, 0.0));
+  col = mix(col, col * vec3f(0.58, 0.66, 0.64) + vec3f(0.012, 0.024, 0.026), sub * 0.85);
   return vec4f(col, 1.0);
 }
 `;
@@ -347,30 +360,33 @@ fn fs(i: VOut) -> @location(0) vec4f {
   if (d < 0.014) { discard; }
   let t = u.pars2.y;
   // surface normal from the shore model's height gradient
-  let e = 0.35;
+  let e = 0.2;
   let sx = shore(p.x + e, p.z, t, lanesIn.v).surf - shore(p.x - e, p.z, t, lanesIn.v).surf;
   let sz = shore(p.x, p.z + e, t, lanesIn.v).surf - shore(p.x, p.z - e, t, lanesIn.v).surf;
-  var nrm = normalize(vec3f(-sx / (2.0 * e), 1.0, -sz / (2.0 * e)));
+  var nrm = normalize(vec3f(-sx / (2.0 * e) * 2.0, 1.0, -sz / (2.0 * e) * 2.0));
   let sun = normalize(u.sun.xyz);
   let V = normalize(u.camPos_t.xyz - p);
   let ndv = max(dot(nrm, V), 0.0);
-  let deepC = vec3f(0.05, 0.16, 0.22);
-  let shallowC = vec3f(0.22, 0.55, 0.52);
+  let deepC = vec3f(0.055, 0.175, 0.245);
+  let shallowC = vec3f(0.16, 0.47, 0.46);
   let sandTint = vec3f(0.72, 0.60, 0.42);
-  var water = mix(shallowC, deepC, smoothstep(0.0, 2.4, d));
+  var water = mix(shallowC, deepC, smoothstep(0.0, 1.6, d));
   // see the sand through thin water
-  let vis = exp(-d * 1.6);
+  let vis = exp(-d * 2.2);
   water = mix(water, sandTint * 0.85, vis * 0.85);
+  // golden-hour sky reflection on the swell faces
+  let fres = pow(1.0 - ndv, 3.0);
+  water = mix(water, vec3f(0.92, 0.64, 0.38) * (0.55 + 0.45 * max(dot(reflect(-V, nrm), sun), 0.0)), fres * 0.42);
   // subsurface glow where the sun shines through crests toward shore
-  let sss = pow(max(dot(V, -sun), 0.0), 3.0) * vis;
-  water += vec3f(0.10, 0.38, 0.30) * sss * clamp(d, 0.0, 1.2);
+  let sss = pow(max(dot(V, -sun), 0.0), 3.0) * exp(-d * 2.6);
+  water += vec3f(0.06, 0.30, 0.26) * sss * clamp(d, 0.0, 0.9) * 0.9;
   // glitter
   let hv = normalize(sun + V);
-  let glint = pow(max(dot(nrm, hv), 0.0), 240.0) * 2.2 + pow(max(dot(nrm, hv), 0.0), 40.0) * 0.35;
+  let glint = pow(max(dot(nrm, hv), 0.0), 200.0) * 2.4 + pow(max(dot(nrm, hv), 0.0), 90.0) * 0.55 + pow(max(dot(nrm, hv), 0.0), 22.0) * 0.16;
   water += vec3f(1.0, 0.78, 0.48) * glint * (1.0 - i.foamn);
   water += water * 0.25 * max(dot(nrm, sun), 0.0);
   var col = mix(water, vec3f(0.95, 0.94, 0.90), i.foamn);
-  var alpha = clamp(1.0 - exp(-d * 1.35) + i.foamn * 0.6, 0.06, 0.97);
+  var alpha = clamp(1.0 - exp(-d * 2.2) + i.foamn * 0.6, 0.06, 0.97);
   if (d < 0.05) { alpha = 0.10 + d * 2.0; }
   let dist = length(u.camPos_t.xyz - p);
   col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(70.0, 200.0, dist));
@@ -409,7 +425,7 @@ function matPerspective(fovY, aspect, near, far) {
 function camBasis() {
   const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
   const fwd = [Math.cos(cam.yaw) * cp, sp, Math.sin(cam.yaw) * cp];
-  const r = [fwd[2], 0, -fwd[0]];
+  const r = [-fwd[2], 0, fwd[0]];
   const rl = Math.hypot(r[0], r[2]); r[0] /= rl; r[2] /= rl;
   const u = [
     r[1] * fwd[2] - r[2] * fwd[1],
@@ -533,7 +549,7 @@ async function boot() {
   });
   const probePipe = device.createComputePipeline({ layout: layoutProbe, compute: { module: modProbe, entryPoint: 'main' } });
 
-  const SUN = (() => { const v = [-0.62, 0.165, -0.77]; const l = Math.hypot(...v); return v.map(x => x / l); })();
+  const SUN = (() => { const v = [-0.18, 0.16, -0.97]; const l = Math.hypot(...v); return v.map(x => x / l); })();
 
   let t = 0, frames = 0, acc = 0, lastMs = performance.now();
   let probeData = null, probeBusy = false, probeReq = null;
