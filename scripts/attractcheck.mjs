@@ -35,6 +35,8 @@ const MODULES = [
     { label: 'TEMPEST', file: 'src/games/Tempest/attract.js', import: '../src/games/Tempest/attract.js' },
     { label: 'OUT RUN', file: 'src/games/OutRun/attract.js', import: '../src/games/OutRun/attract.js' },
     { label: 'SMASH TV', file: 'src/games/SmashTV/attract.js', import: '../src/games/SmashTV/attract.js' },
+    { label: 'FOUR HALLS', file: 'src/games/FourHalls/attract.js', import: '../src/games/FourHalls/attract.js' },
+    { label: 'ADVENTURE', file: 'src/games/Adventure/attract.js', import: '../src/games/Adventure/attract.js' },
 ]
 
 const REACT_TITLES = [
@@ -287,6 +289,16 @@ const REACT_TITLES = [
         dimFrom: 'bg-black/60',
         wrap: `    'PROVE EVERY FLOOR FOR THE TOWER KEY',\n`,
         leak: `    'SPELL AT RANGE · ADVANCE TO STEEL',\n`,
+    },
+    {
+        label: 'BEEZEE',
+        jsx: 'src/games/Beezee/index.jsx',
+        mf: 'src/games/Beezee/attract.js',
+        import: '../src/games/Beezee/attract.js',
+        slot: '<AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse text-white">{PRESS}</p>`,
+        wrap: `    'WIND DRIFTS YOUR HOVER',\n`,
+        leak: `    'BANK AT THE HIVE BEFORE SUNSET',\n`,
     },
 ]
 

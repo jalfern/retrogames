@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { attractFrame, DIM } from './attract.js'
 
 const AdventureGame = () => {
     const canvasRef = useRef(null)
@@ -886,16 +887,17 @@ const AdventureGame = () => {
 
             // UI overlays
             if (isAttractMode) {
-                ctx.fillStyle = 'rgba(0,0,0,0.4)'
+                ctx.fillStyle = DIM
                 ctx.fillRect(0, 0, GW, GH)
+                ctx.textAlign = 'center'
                 ctx.fillStyle = COLORS.yellow
                 ctx.font = '10px monospace'
-                ctx.textAlign = 'center'
-                ctx.fillText('ADVENTURE', GW / 2, GH / 2 - 20)
-                ctx.fillStyle = COLORS.white
-                ctx.font = '7px monospace'
-                ctx.fillText('PRESS ANY KEY', GW / 2, GH / 2)
-                ctx.fillText('TO START', GW / 2, GH / 2 + 12)
+                ctx.fillText('ADVENTURE', GW / 2, GH * 0.30)
+                for (const l of attractFrame(tickCount, GW, GH)) {
+                    ctx.fillStyle = l.col
+                    ctx.font = `${l.size}px monospace`
+                    ctx.fillText(l.text, l.x, l.y)
+                }
             }
 
             if (gameWon) {
