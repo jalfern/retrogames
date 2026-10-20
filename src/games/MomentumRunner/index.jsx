@@ -13,6 +13,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -24,18 +26,6 @@ import {
 
 const SIM_MS = 1000 / 60
 const JUMP_KEYS = ['Space', 'KeyZ', 'ArrowUp']
-const HINTS = [
-    'HOLD RIGHT — gravity is the engine; flat ground crawls',
-    'JUMP the pits — release early to land short, hold to fly far',
-    'the vertical loop only sticks if you enter FAST (v² ≥ 5·g·r)',
-    'its apex holds the only rings that survive the far spike',
-    'springs are the route over the wide pits — never jump them',
-    'hit a hazard WITH rings and you stagger — without, you fall back to the beacon',
-    'press DOWN while moving to ROLL — a ball keeps speed, loses steering',
-    'sprint strips are floor boosts — ride them to carry more speed forward',
-    'clear a sector fast and carry rings: the gate counts up both as a bonus',
-    'drones guard the line — jump or roll THROUGH them, a grounded touch costs your rings',
-]
 
 // The hero's signature colour — deliberately NOT used by track, rings or
 // background, so runnerplay's paint-check can prove the body is painted where
@@ -239,7 +229,6 @@ const MomentumGame = () => {
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
-    const hintRef = useRef(null)
     const board = () => { try { return JSON.parse(localStorage.getItem('runner.board') || '[]') } catch { return [] } }
 
     useEffect(() => {
@@ -891,15 +880,6 @@ const MomentumGame = () => {
         resize()
         raf = requestAnimationFrame(frame)
 
-        // attract: one message at a time, cycled over the demo
-        let hintIdx = 0
-        const hintTimer = setInterval(() => {
-            if (screenRef.current === 'attract' && hintRef.current) {
-                hintIdx = (hintIdx + 1) % HINTS.length
-                hintRef.current.textContent = HINTS[hintIdx]
-            }
-        }, 2600)
-
         if (import.meta.env.DEV) {
             window.__runnerTest = {
                 probe: () => {
@@ -1016,7 +996,6 @@ const MomentumGame = () => {
             if (import.meta.env.DEV) { if (window.__runnerTest) delete window.__runnerTest; unmountDbg(); unexposeGame() }
             if (whoosh.src) { try { whoosh.src.stop() } catch { /* already stopped */ } }
             audioController.stopMusic()
-            clearInterval(hintTimer)
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
@@ -1056,15 +1035,15 @@ const MomentumGame = () => {
 
             {screen === 'attract' && (
                 <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
                     <div className="absolute inset-x-0 top-7 text-center pointer-events-none">
                         <h1 className="text-5xl font-black tracking-tight text-cyan-100" style={{ textShadow: '0 0 18px rgba(102,246,255,0.75), 0 4px 0 rgba(8,40,60,0.9), 0 10px 30px #000' }}>
                             MOMENTUM<span className="text-orange-400" style={{ textShadow: '0 0 18px rgba(255,140,60,0.8)' }}> RUNNER</span>
                         </h1>
-                        <p className="text-cyan-300/80 font-mono mt-1 text-xs tracking-[0.3em]">SPEED IS THE ONLY CURRENCY · NEVER STOP</p>
                     </div>
                     <div className="absolute inset-x-0 bottom-5 text-center pointer-events-none px-8">
-                        <p className="text-white font-mono font-bold text-sm animate-pulse tracking-widest">TAP / PRESS ANY KEY</p>
-                        <p ref={hintRef} className="text-cyan-200/85 font-mono text-xs mt-2" style={{ textShadow: '0 0 8px rgba(102,246,255,0.5)' }}>{HINTS[0]}</p>
+                        <p className="text-white font-mono font-bold text-sm animate-pulse tracking-widest">{PRESS}</p>
+                        <AttractMessage className="text-cyan-200/85 mt-2" messages={MESSAGES} />
                     </div>
                 </>
             )}

@@ -100,6 +100,15 @@ const REACT_TITLES = [
         wrap: `    'THE WAY BACK IS THE WAY FORWARD',\n`,
         leak: `    'BOMBS DROP THROUGH BULKHEADS',\n`,
     },
+    {
+        label: 'MOMENTUM RUNNER',
+        jsx: 'src/games/MomentumRunner/index.jsx',
+        mf: 'src/games/MomentumRunner/attract.js',
+        import: '../src/games/MomentumRunner/attract.js',
+        slot: '<AttractMessage className="text-cyan-200/85 mt-2" messages={MESSAGES} />',
+        wrap: `    'SPEED IS THE ONLY CURRENCY — NEVER STOP',\n`,
+        leak: `    'FAST SECTORS + CARRIED RINGS = GATE BONUS',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
