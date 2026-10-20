@@ -42,6 +42,7 @@ export const CFG = {
     ringScatter: true,     // a hit scatters your rings in a fixed fan; they last 3s
     drones: true,          // ground patrols + hovers: air/roll contact destroys, else a hit
     multiLoop: true,       // zones carry a LOOPS list; the later zones hold two to commit to
+    routeFork: true,       // a fast body commits to the HIGH deck at a fork; slow stays low
 }
 
 // zone tally: clear the zone quickly and carry rings through the gate.
@@ -64,6 +65,17 @@ export const SCATTER_FAN = [[14, -6], [30, -18], [46, -34], [62, -50], [78, -64]
 export const DRL_SPEED = 140
 export const DRONE_R = 10
 export const HOVER_BOB = 6
+
+// two routes (#550): every sector carries a HIGH deck over one flat stretch —
+// a ramp up, a ringed plateau, a ramp back down to the low line. The decks
+// share x with the low ground (an overpass), so groundY is a FUNCTION OF THE
+// ROUTE: groundY(z, x, route). The body carries p.route. At the mouth only a
+// body at/above FORK_SPEED commits to 'high' (speed opens the fast lane —
+// the game's one currency); below it you stay on the safe low line.
+export const FORK_DY = 96      // deck height above the low line
+export const FORK_RAMP = 160   // ramp run: the surface is continuous at commit
+export const FORK_PLAT = 620   // ringed plateau
+export const FORK_SPEED = 700  // commit gate: above what a flat run settles at (~636)
 
 export const RUN_TOP = 340      // flat-run cap: NOT enough for the loop
 export const RUN_ACCEL = 700
@@ -197,6 +209,7 @@ const BEATS = [beatFastBoost, beatPitHop, beatHill]
 for (const z of ZONES) {
     const last = z.segs[z.segs.length - 1]
     let x = last[2], y = last[3]
+    const tailX = x, tailY = y
     for (let i = 0; i < TAIL_BEATS; i++) {
         const b = BEATS[i % BEATS.length](x, y)
         z.segs.push(...b.segs)
@@ -204,14 +217,36 @@ for (const z of ZONES) {
         x = b.x1
     }
     z.goal = x - 20
+
+    // the fork (#550): above the first fastBoost stretch — AFTER its sprint
+    // strip, so committing means you carried (or made) speed there. The deck
+    // overlaps the low line's x; its ramps start and end exactly ON the low
+    // height, so the commit and the rejoin are continuous, never teleports.
+    const fx = tailX + 1560, fy = tailY, hy = fy - FORK_DY
+    const hx = fx + FORK_RAMP
+    z.routes = {
+        high: [
+            [fx, fy, hx, hy],
+            [hx, hy, hx + FORK_PLAT, hy],
+            [hx + FORK_PLAT, hy, hx + FORK_PLAT + FORK_RAMP, fy],
+        ],
+    }
+    // the fast lane's payoff: six rings only a high-route body passes through
+    z.highRings = [0, 1, 2, 3, 4, 5].map(i => [hx + 40 + i * 100, hy - 14])
 }
 
 export function segAt(z, x) {
     for (const sgm of z.segs) if (x >= sgm[0] && x <= sgm[2]) return sgm
     return null
 }
-export function groundY(z, x) {
-    const sgm = segAt(z, x)
+export function segAtRoute(z, x, route = 'low') {
+    if (route === 'high' && z.routes) {
+        for (const sgm of z.routes.high) if (x >= sgm[0] && x <= sgm[2]) return sgm
+    }
+    return segAt(z, x)
+}
+export function groundY(z, x, route = 'low') {
+    const sgm = segAtRoute(z, x, route)
     if (!sgm) return null
     const [x1, y1, x2, y2] = sgm
     return y1 + (x - x1) * (y2 - y1) / (x2 - x1)
@@ -274,6 +309,7 @@ function die(g, why) {
     const sx = (CFG.checkpointSaves && g.save.zone === g.zone) ? g.save.x : z.segs[0][0] + 40
     g.p.x = sx
     g.p.y = groundY(z, sx)
+    g.p.route = 'low'
     g.p.mode = 'track'
     g.p.s = 0; g.p.vx = 0; g.p.vy = 0
     g.p.rolling = false
@@ -311,8 +347,10 @@ export function step(g, inp) {
 
     if (p.invuln > 0) p.invuln--
 
+    maybeRouteFork(g)
+
     if (p.mode === 'track') {
-        const sgm = segAt(z, p.x)
+        const sgm = segAtRoute(z, p.x, p.route)
         if (!sgm) { toAir(g, p.lastTheta || 0); }
         else {
             const th = segAngle(sgm)
@@ -329,12 +367,12 @@ export function step(g, inp) {
             a -= (rolling ? ROLL_DRAG_ROLL : ROLL_DRAG) * p.s
             p.s = Math.max(-200, Math.min(VMAX, p.s + a * FIXED_DT))
             p.x += p.s * Math.cos(th) * FIXED_DT
-            const gy = groundY(z, p.x)
+            const gy = groundY(z, p.x, p.route)
             if (gy === null) { toAir(g, th) }
             else {
                 p.y = gy
                 // spring pads fire on touch — the one input-free verb
-                if (CFG.springLaunch) {
+                if (CFG.springLaunch && p.route === 'low') {
                     for (const sp of z.springs) {
                         if (Math.abs(p.x - sp[0]) < 16 && Math.abs(p.y - sp[1]) < 20 && g.tick > (g.spent.get(sp) || -99)) {
                             g.spent.set(sp, g.tick)
@@ -347,7 +385,7 @@ export function step(g, inp) {
             }
         }
         if (p.mode === 'track' && inp.jumpEdge) {
-            const sgm2 = segAt(z, p.x)
+            const sgm2 = segAtRoute(z, p.x, p.route)
             if (sgm2) { toAir(g, segAngle(sgm2), JUMP_V); g.ev.push({ type: 'jump' }) }
         }
     } else if (p.mode === 'air') {
@@ -357,10 +395,10 @@ export function step(g, inp) {
         if (inp.jumpCut && CFG.jumpCut && !p.cut && p.vy < -80) { p.vy *= JUMP_CUT; p.cut = true }
         p.x += p.vx * FIXED_DT
         p.y += p.vy * FIXED_DT
-        const gy = groundY(z, p.x)
+        const gy = groundY(z, p.x, p.route)
         if (gy !== null && p.y >= gy) {
             p.y = gy
-            const sgm = segAt(z, p.x)
+            const sgm = segAtRoute(z, p.x, p.route)
             const th = segAngle(sgm)
             p.s = CFG.landProject ? p.vx * Math.cos(th) + p.vy * Math.sin(th) : p.vx
             p.s = Math.max(-200, Math.min(VMAX, p.s))
@@ -413,6 +451,20 @@ export function step(g, inp) {
             g.taken.add(zoneRing(g.zone, i))
             g.rings++; g.score += 10
             g.ev.push({ type: 'ring', x: rx })
+        }
+    }
+    // the high deck's rings: reachable only from the fast lane (the low line
+    // passes UNDER them), so the speed gamble at the fork is what pays.
+    if (CFG.routeFork && z.highRings && p.route === 'high') {
+        for (let i = 0; i < z.highRings.length; i++) {
+            if (g.taken.has(zoneRing(g.zone, 60 + i))) continue
+            const [rx, ry] = z.highRings[i]
+            const dx = p.x - rx, dy = (p.y - BODY_R) - ry
+            if (dx * dx + dy * dy < (RING_R + BODY_R) * (RING_R + BODY_R)) {
+                g.taken.add(zoneRing(g.zone, 60 + i))
+                g.rings++; g.score += 10
+                g.ev.push({ type: 'ring', x: rx, high: true })
+            }
         }
     }
     // shed rings: the fixed fan from the last hit, pickable for SCATTER_LIFE
@@ -478,6 +530,7 @@ export function step(g, inp) {
                     g.p.x = z2.segs[0][0] + 40
                     g.p.y = groundY(z2, g.p.x)
                     g.p.mode = 'track'; g.p.s = 0; g.p.vx = 0; g.p.vy = 0
+                    g.p.route = 'low'
                     g.spent = new Map()
                     g.scatter = []   // shed rings don't carry between sectors
                     g.loopTaken = false; g.loopsTaken = new Set(); g.activeLoopIdx = -1
@@ -500,7 +553,7 @@ export function makeGame() {
         save: { zone: 0, x: z.segs[0][0] + 40 },
         taken: new Set(), spent: new Map(), droneDown: new Set(), ev: [],
         scatter: [],
-        p: { x: z.segs[0][0] + 40, y: groundY(z, z.segs[0][0] + 40), mode: 'track', s: 0, vx: 0, vy: 0, invuln: 0, cut: false, lastTheta: 0, v0: 0, phi: 0, rolling: false },
+        p: { x: z.segs[0][0] + 40, y: groundY(z, z.segs[0][0] + 40), mode: 'track', route: 'low', s: 0, vx: 0, vy: 0, invuln: 0, cut: false, lastTheta: 0, v0: 0, phi: 0, rolling: false },
     }
 }
 
@@ -526,6 +579,35 @@ export function maybeEnterLoop(g) {
             g.loopTaken = true
             return true
         }
+    }
+    return false
+}
+
+// ONE fork rule, used identically by the sim (every tick), the planner and the
+// gate. Commit: grounded, slow line, mouth of the ramp, speed at/above the
+// gate — speed is the currency that opens the fast lane. Rejoin: past the
+// off-ramp's end the deck hands you back to the low line at the same height,
+// so the route change is a surface transition, not a teleport.
+export function maybeRouteFork(g) {
+    const z = ZONES[g.zone], p = g.p
+    const f = z.routes && z.routes.high
+    if (!f) return false
+    if (p.route === 'low') {
+        if (!CFG.routeFork || p.mode !== 'track') return false
+        if (p.x >= f[0][0] && p.x <= f[0][2] && p.s >= FORK_SPEED) {
+            p.route = 'high'
+            p.y = groundY(z, p.x, 'high')
+            p.lastTheta = segAngle(segAtRoute(z, p.x, 'high'))
+            g.ev.push({ type: 'fork', route: 'high', x: Math.round(p.x) })
+            return true
+        }
+    } else if (p.mode === 'track' && p.x > f[f.length - 1][2]) {
+        p.route = 'low'
+        const gy = groundY(z, p.x, 'low')
+        if (gy !== null) p.y = gy
+        p.lastTheta = segAngle(segAt(z, p.x))
+        g.ev.push({ type: 'fork', route: 'low', x: Math.round(p.x) })
+        return true
     }
     return false
 }
@@ -644,6 +726,6 @@ export function replayScript(script, opts = {}) {
 export function stateHash(g) {
     const p = g.p
     return [g.tick, g.zone, Math.round(p.x * 4), Math.round(p.y * 4),
-        p.mode[0], Math.round((p.s || 0) * 2 + (p.vx || 0)), Math.round(p.vy * 2),
+        p.mode[0], p.route === 'high' ? 'H' : 'L', Math.round((p.s || 0) * 2 + (p.vx || 0)), Math.round(p.vy * 2),
         g.rings, g.score, g.deaths, g.droneDown.size, g.scatter.length].join(':')
 }

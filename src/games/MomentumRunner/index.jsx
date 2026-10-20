@@ -484,6 +484,28 @@ const MomentumGame = () => {
                 ctx.beginPath(); ctx.moveTo(px1, py1 + 9); ctx.lineTo(px2, py2 + 9); ctx.stroke()
             }
 
+            // ---- the high deck (two-route fork): a suspended plate over the
+            // low line — the fast lane you only reach with speed ----
+            for (const s of (z.routes ? z.routes.high : [])) {
+                const [x1, y1, x2, y2] = s
+                const px1 = x1 - dx0, px2 = x2 - dx0, py1 = y1 - dy0, py2 = y2 - dy0
+                if (px2 < -30 || px1 > VIEW_W + 30) continue
+                ctx.beginPath()
+                ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.lineTo(px2, py2 + 9); ctx.lineTo(px1, py1 + 9); ctx.closePath()
+                ctx.fillStyle = P.panel1; ctx.fill()
+                ctx.strokeStyle = P.glow + '0.20)'; ctx.lineWidth = 4
+                ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.stroke()
+                ctx.strokeStyle = P.accent; ctx.lineWidth = 1.8
+                ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.stroke()
+                ctx.strokeStyle = P.seam; ctx.lineWidth = 1
+                for (let wx = Math.ceil(x1 / 56) * 56; wx <= x2; wx += 56) {
+                    const wy = y1 + (wx - x1) * (y2 - y1) / (x2 - x1)
+                    const gy2 = groundY(z, wx, 'low'); if (gy2 === null) continue
+                    ctx.strokeStyle = 'rgba(140,150,180,0.45)'
+                    ctx.beginPath(); ctx.moveTo(wx - dx0, wy - dy0 + 9); ctx.lineTo(wx - dx0, gy2 - dy0); ctx.stroke()
+                }
+            }
+
             // ---- the loops: a glowing tube each, with energy pulses ----
             const loops = z.loops || []
             let frontLoop = null
@@ -622,6 +644,19 @@ const MomentumGame = () => {
                 }
             }
 
+            // ---- the fast lane's rings: only the high route passes through them ----
+            for (let i = 0; i < (z.highRings || []).length; i++) {
+                if (gs.taken.has(i + 60 + gs.zone * 100)) continue
+                const [rx, ry] = z.highRings[i]
+                const px = rx - dx0, py = ry - dy0 + Math.sin(tick / 12 + i) * 2
+                if (px < -20 || px > VIEW_W + 20) continue
+                const wob = Math.abs(Math.cos(tick / 9 + i))
+                ctx.strokeStyle = P.ring; ctx.lineWidth = 3
+                ctx.beginPath(); ctx.ellipse(px, py, 9 * wob + 1, 9, 0, 0, Math.PI * 2); ctx.stroke()
+                ctx.strokeStyle = 'rgba(255,255,255,0.65)'; ctx.lineWidth = 1
+                ctx.beginPath(); ctx.ellipse(px, py, 5 * wob, 5.5, 0, 0, Math.PI * 2); ctx.stroke()
+            }
+
             // ---- scatter: shed rings that fade back over ~3s ----
             for (const r of gs.scatter) {
                 const px = r.x - dx0, py = r.y - dy0
@@ -715,6 +750,20 @@ const MomentumGame = () => {
             for (let i = 0; i < z.rings.length; i++) {
                 if (gs.taken.has(i + gs.zone * 100)) continue
                 const [rx, ry] = z.rings[i]
+                const px = rx - dx0, py = ry - dy0 + Math.sin(tick / 12 + i) * 2
+                if (px < -20 || px > VIEW_W + 20) continue
+                gctx.beginPath(); gctx.ellipse(px, py, 9, 9, 0, 0, Math.PI * 2); gctx.stroke()
+            }
+            gctx.strokeStyle = P.accent; gctx.lineWidth = 1.8
+            for (const s of (z.routes ? z.routes.high : [])) {
+                const px1 = s[0] - dx0, px2 = s[2] - dx0, py1 = s[1] - dy0, py2 = s[3] - dy0
+                if (px2 < -30 || px1 > VIEW_W + 30) continue
+                gctx.beginPath(); gctx.moveTo(px1, py1); gctx.lineTo(px2, py2); gctx.stroke()
+            }
+            gctx.strokeStyle = P.ring; gctx.lineWidth = 3
+            for (let i = 0; i < (z.highRings || []).length; i++) {
+                if (gs.taken.has(i + 60 + gs.zone * 100)) continue
+                const [rx, ry] = z.highRings[i]
                 const px = rx - dx0, py = ry - dy0 + Math.sin(tick / 12 + i) * 2
                 if (px < -20 || px > VIEW_W + 20) continue
                 gctx.beginPath(); gctx.ellipse(px, py, 9, 9, 0, 0, Math.PI * 2); gctx.stroke()

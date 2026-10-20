@@ -59,6 +59,7 @@ const MUTANTS = {
     ringScatter: 'shed rings stop scattering — a hit strips you permanently',
     drones: 'drones stop existing — patrols and hovers never touch the runner',
     multiLoop: 'only the first loop per zone is honoured — the second loop is never taken',
+    routeFork: 'fast lanes stop opening — the high deck and its rings are unreachable at any speed',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -92,6 +93,7 @@ if (MAP) {
             if (zz.spikes.some(sp => x >= sp[0] && x <= sp[1])) col = '^'
             if (zz.springs.some(sp => Math.abs(sp[0] - x) < 8)) col = '='
             if (zz.rings.some(r => Math.abs(r[0] - x) < 6)) col = 'o'
+            if ((zz.highRings || []).some(r => Math.abs(r[0] - x) < 6)) col = 'O'
             if ((zz.loops || []).some(L => Math.abs(L.cx - x) < 6)) col = 'O'
             if (x >= zz.ck - 4 && x <= zz.ck + 4) col = 'T'
             if (x >= zz.goal - 4 && x <= zz.goal + 4) col = 'G'
@@ -336,6 +338,53 @@ section('SHED + DRONES (hits scatter; patrols and hovers are speed puzzles)')
     }
 }
 
+// ----------------------------------------------------------------- fork ----
+section('FORK (two routes: speed opens the high deck; the low line stays safe)')
+{
+    const { FORK_SPEED } = s
+    for (const z of ZONES) {
+        const f = z.routes && z.routes.high
+        ok(f && f.length === 3, `${z.name}: no high-deck route — the fork is missing`)
+        if (!f) continue
+        ok(Math.abs(s.groundY(z, f[0][0], 'high') - s.groundY(z, f[0][0], 'low')) < 0.5,
+            `${z.name}: the on-ramp does not start ON the low line (commit would teleport)`)
+        ok(Math.abs(s.groundY(z, f[2][2], 'high') - s.groundY(z, f[2][2], 'low')) < 0.5,
+            `${z.name}: the off-ramp does not return to the low line (rejoin would teleport)`)
+        const mid = (f[1][0] + f[1][2]) / 2
+        const yl = s.groundY(z, mid, 'low'), yh = s.groundY(z, mid, 'high')
+        ok(yl !== null && yh !== null && yl - yh > s.FORK_DY - 1,
+            `${z.name}: the deck does not put two ground paths over the same x`)
+    }
+    const drive = (s0, zIdx) => {
+        const z = ZONES[zIdx]
+        const fx = z.routes.high[0][0]
+        const g = s.makeGame(); g.zone = zIdx
+        // start 40px before the mouth, past the sprint strip: same ground,
+        // same input — SPEED alone is the variable being tested.
+        g.p.x = fx - 40; g.p.y = s.groundY(z, g.p.x, 'low'); g.p.mode = 'track'; g.p.s = s0
+        let high = false, rejoined = false, rings = 0
+        for (let t = 0; t < 500; t++) {
+            s.step(g, { right: true })
+            for (const e of g.ev) {
+                if (e.type === 'fork' && e.route === 'high') high = true
+                if (e.type === 'fork' && e.route === 'low') rejoined = true
+                if (e.type === 'ring' && e.high) rings++
+            }
+            if (rejoined) break
+        }
+        return { high, rejoined, rings }
+    }
+    for (let zi = 0; zi < ZONES.length; zi++) {
+        const fast = drive(FORK_SPEED + 80, zi)
+        const slow = drive(FORK_SPEED - 250, zi)
+        const pay = ZONES[zi].highRings.length
+        ok(fast.high && fast.rejoined && fast.rings === pay,
+            `${ZONES[zi].name}: a fast body did not commit, bank the deck and rejoin (${JSON.stringify(fast)})`)
+        ok(!slow.high && slow.rings === 0,
+            `${ZONES[zi].name}: a slow body reached the high route (${JSON.stringify(slow)}) — the fork is not speed-gated`)
+    }
+}
+
 // ----------------------------------------------------------------- chain ----
 section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
 {
@@ -357,6 +406,24 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
         `load-bearing loop entry v^2 ${L0 ? L0.entryV2.toFixed(0) : '-'} is under 1.25x its need ${L0?.need} — no headroom`)
     ok(rec.ringsAtHit.every(n => n > 0) && rec.hits >= 3, `a spike was passed ringless: ${JSON.stringify(rec.ringsAtHit)}`)
     ok(rec.drones >= 1, `no drone was destroyed on the proven route — the air-destroy rule is unproven`)
+
+    // FORK ON THE PROVEN ROUTE: the autopilot arrives fast, so the fast lane
+    // IS the proven route — every sector commits, banks every deck ring, and
+    // rejoins the low line. Without routeFork the run stays low and this dies.
+    {
+        let hi = 0, re = 0, hiRings = 0
+        s.replayScript(plan.script, { onTick: (g) => {
+            for (const e of g.ev) {
+                if (e.type === 'fork' && e.route === 'high') hi++
+                if (e.type === 'fork' && e.route === 'low') re++
+                if (e.type === 'ring' && e.high) hiRings++
+            }
+        } })
+        ok(hi === ZONES.length && re === ZONES.length,
+            `the proven route used the fork in ${hi}/${ZONES.length} sectors — the speed gamble is not part of the autopilot's line`)
+        const pay = ZONES.reduce((n, z) => n + z.highRings.length, 0)
+        ok(hiRings === pay, `the proven route banked ${hiRings} high-deck rings, expected ${pay} — the fast lane pays nothing`)
+    }
 
     // TALLY: each goal counts up a time bonus + a ring bonus (the whole run pays out)
     {
