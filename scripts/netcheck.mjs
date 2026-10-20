@@ -211,7 +211,7 @@ console.log('lockstep vs real Gauntlet sims')
     let mismatch = 0
     const hH = new Map()
     const hG = new Map()
-    const TARGET = 900
+    const TARGET = 36000
     while ((gsH.tick < TARGET || gsG.tick < TARGET) && gsH.tick < TARGET + 600 && gsG.tick < TARGET + 600) {
         const dh = pump(lockH, qH)
         if (dh) { desyncH = dh; break }
@@ -233,12 +233,13 @@ console.log('lockstep vs real Gauntlet sims')
                 if (hH.get(gsG.tick) !== hG.get(gsG.tick)) mismatch++
             }
         }
-        if (gsH.end || gsG.end) break
+        if (gsH.end && gsG.end) break
     }
     const stallsH = lockH.stats()
     const stallsG = lockG.stats()
 
-    ok(gsH.tick >= TARGET && gsG.tick >= TARGET, 'both sims ran the full lockstep session', `H ${gsH.tick} G ${gsG.tick}`)
+    ok(gsH.tick >= TARGET || (gsH.end && gsG.end && Math.abs(gsH.tick - gsG.tick) <= 5),
+        'the full ~10-minute lockstep session holds (a game ends early only if BOTH worlds end, within pipeline skew)', `H ${gsH.tick} G ${gsG.tick} end ${gsH.end}/${gsG.end}`)
     ok(boundaries >= 20, 'hash boundaries were crossed repeatedly', `boundaries ${boundaries}`)
     ok(mismatch === 0, 'no sim divergence across the session', `mismatches ${mismatch}`)
     ok(stallsH.maxStallRun <= 2 && stallsG.maxStallRun <= 2, 'the delay buffer absorbs the wire lag', `maxStallRun H ${stallsH.maxStallRun} G ${stallsG.maxStallRun}`)
