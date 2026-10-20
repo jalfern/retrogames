@@ -118,14 +118,17 @@ section('WORLD (segments march forward; the loop sits on a real floor)')
                 const gy = s.groundY(z, L.cx)
                 ok(gy !== null && Math.abs(gy - (L.cy + L.r)) < 1.5, `${z.name}: a loop mouth (${L.cx}) is not on a floor`)
             }
-            // apex rings must lie ON the load-bearing loop's (loops[0]) inner arc
-            const L0 = z.loops[0]
-            const arcR = (rx, ry) => Math.hypot(rx - L0.cx, ry - (L0.cy - BODY_R))
-            for (const [rx, ry] of z.rings) {
-                const d = arcR(rx, ry)
-                ok(Math.abs(d - L0.r) < 3, `${z.name}: apex ring (${rx},${ry}) is ${d.toFixed(1)} from the loop centre, arc r=${L0.r}`)
-                const gyR = s.groundY(z, rx)
-                ok(gyR === null || (gyR - ry) > (RING_R + BODY_R), `${z.name}: a loop ring is close enough to the ground to grab while rolling`)
+            // apex rings must lie ON the load-bearing loop's inner arc — only
+            // loops flagged loadBearing carry the "skip = ringless death" debt
+            const L0 = z.loops.find(L => L.loadBearing)
+            if (L0) {
+                const arcR = (rx, ry) => Math.hypot(rx - L0.cx, ry - (L0.cy - BODY_R))
+                for (const [rx, ry] of z.rings) {
+                    const d = arcR(rx, ry)
+                    ok(Math.abs(d - L0.r) < 3, `${z.name}: apex ring (${rx},${ry}) is ${d.toFixed(1)} from the loop centre, arc r=${L0.r}`)
+                    const gyR = s.groundY(z, rx)
+                    ok(gyR === null || (gyR - ry) > (RING_R + BODY_R), `${z.name}: a loop ring is close enough to the ground to grab while rolling`)
+                }
             }
         }
         for (const d of z.drones) {
@@ -341,16 +344,28 @@ section('SHED + DRONES (hits scatter; patrols and hovers are speed puzzles)')
 // ----------------------------------------------------------------- fork ----
 section('FORK (two routes: speed opens the high deck; the low line stays safe)')
 {
-    const { FORK_SPEED } = s
+    const { FORK_SPEED, FORK_RAMP } = s
     for (const z of ZONES) {
         const f = z.routes && z.routes.high
-        ok(f && f.length === 3, `${z.name}: no high-deck route — the fork is missing`)
+        ok(f && f.length >= 3, `${z.name}: no high-deck route — the fork is missing`)
         if (!f) continue
         ok(Math.abs(s.groundY(z, f[0][0], 'high') - s.groundY(z, f[0][0], 'low')) < 0.5,
             `${z.name}: the on-ramp does not start ON the low line (commit would teleport)`)
-        ok(Math.abs(s.groundY(z, f[2][2], 'high') - s.groundY(z, f[2][2], 'low')) < 0.5,
+        ok(Math.abs(s.groundY(z, f[f.length - 1][2], 'high') - s.groundY(z, f[f.length - 1][2], 'low')) < 0.5,
             `${z.name}: the off-ramp does not return to the low line (rejoin would teleport)`)
-        const mid = (f[1][0] + f[1][2]) / 2
+        // #627: ramps must be arcs, not straight boards — every deck carries
+        // more than 3 segments, and its on-ramp bends (successive tangents
+        // change by 4..25 degrees without a sign flip).
+        ok(f.length > 3, `${z.name}: fork ramps are still straight boards (only ${f.length} segments)`)
+        let bends = 0
+        for (let i = 0; i + 1 < f.length; i++) {
+            const a = Math.atan2(f[i][3] - f[i][1], f[i][2] - f[i][0]) / Math.PI * 180
+            const b = Math.atan2(f[i + 1][3] - f[i + 1][1], f[i + 1][2] - f[i + 1][0]) / Math.PI * 180
+            const d = Math.abs(a - b)
+            if (d > 4 && d < 25 && (a === 0 || b === 0 || Math.sign(a) === Math.sign(b))) bends++
+        }
+        ok(bends >= 4, `${z.name}: only ${bends} ramp bends — the deck ramps are angular, not curved`)
+        const mid = (f[0][0] + f[f.length - 1][2]) / 2
         const yl = s.groundY(z, mid, 'low'), yh = s.groundY(z, mid, 'high')
         ok(yl !== null && yh !== null && yl - yh > s.FORK_DY - 1,
             `${z.name}: the deck does not put two ground paths over the same x`)
@@ -401,11 +416,36 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
     ok(totalLoops >= 2, `expected at least two loops across the zones, found ${totalLoops} — the loops list is not populated`)
     ok(rec.loops.length === totalLoops, `the autopilot took ${rec.loops.length} of ${totalLoops} loops — the multi-loop route is not committed`)
     ok(rec.loops.every(l => l.entryV2 >= l.need), `a loop was entered below its centripetal floor: ${JSON.stringify(rec.loops)}`)
-    const L0 = rec.loops.find(l => l.idx === 0) || rec.loops[0]
+    const L0 = rec.loops.find(l => l.zone === 2 && l.idx === 0)
     ok(L0 && L0.entryV2 >= 1.25 * L0.need,
         `load-bearing loop entry v^2 ${L0 ? L0.entryV2.toFixed(0) : '-'} is under 1.25x its need ${L0?.need} — no headroom`)
     ok(rec.ringsAtHit.every(n => n > 0) && rec.hits >= 3, `a spike was passed ringless: ${JSON.stringify(rec.ringsAtHit)}`)
     ok(rec.drones >= 1, `no drone was destroyed on the proven route — the air-destroy rule is unproven`)
+
+    // #627 — CURVES: ground built from smooth arcs, not straight boards. A run
+    // of successive segments whose tangents each step 4..18 degrees with the
+    // same sign is an arc; every sector must carry a real amount of them.
+    for (const z of ZONES) {
+        let arcSteps = 0
+        for (let i = 0; i + 1 < z.segs.length; i++) {
+            const a = Math.atan2(z.segs[i][3] - z.segs[i][1], z.segs[i][2] - z.segs[i][0]) / Math.PI * 180
+            const b = Math.atan2(z.segs[i + 1][3] - z.segs[i + 1][1], z.segs[i + 1][2] - z.segs[i + 1][0]) / Math.PI * 180
+            const d = Math.abs(a - b)
+            if (d >= 4 && d <= 18 && a * b > 0) arcSteps++
+        }
+        ok(arcSteps >= 8, `${z.name}: only ${arcSteps} arc steps — the ground is straight ramps, not curves`)
+    }
+
+    // #627 — EARLY LOOP: zone 1 shows a loop inside the first ~20s, zone 2 too.
+    ok((ZONES[0].loops || []).length >= 1, 'zone 1 has no loop — every player must see one early')
+    ok((ZONES[1].loops || []).length >= 1, 'zone 2 has no loop')
+    const early = rec.loops.find(l => l.zone === 0)
+    ok(early && early.tick <= 1200,
+        `zone 1's loop was taken at tick ${early ? early.tick : '-'} — the ask is inside the first ~20s`)
+
+    // #627 — ENEMIES: every zone carries drones, big enough to read on a phone.
+    ok(s.DRONE_R >= 16, `drone radius ${s.DRONE_R} is too small to read at a glance`)
+    ok(ZONES.every(z => (z.drones || []).length >= 2), 'a zone carries no enemies — every zone needs a visible threat')
 
     // FORK ON THE PROVEN ROUTE: the autopilot arrives fast, so the fast lane
     // IS the proven route — every sector commits, banks every deck ring, and

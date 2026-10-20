@@ -45,3 +45,17 @@ All synthesized at runtime (no assets) through the shared chiptune engine
 - `npm run runnerplay` — real Chrome, real keys: input path, paint-follows-
   physics at the exact reported pixel, variable jump, pit death→totem, and the
   sector bed actually playing (music-engine state via the probe).
+
+## Curves, early loops, real enemies (#627)
+- The tail beat cycle is `fastBoost → valleyLoop → pitHop → hill`: `arcPipe()`
+  samples true circular arcs (tangent-flat quarter-pipes) into ~77px segments,
+  so hills/dips are rolling curves and downhill is the speed engine.
+- `beatValleyLoop` sets a full loop (r=70) on each valley floor — zone 1's is
+  taken inside the first ~10s, zone 2 carries one too. Flag `loadBearing` marks
+  the loop whose apex rings are load-bearing (only SKY LOOP's loops[0]); the
+  WORLD gate scopes the apex-ring geometry to flagged loops only.
+- `DRONE_R` is 18 (was 10) so bodies read at a glance on a phone; every zone
+  carries a patrol + hover. A patrol never sits within a loop's stagger-shadow
+  (SKY LOOP's starts at 1450, past loop[1]'s exit at 1360).
+- Fork ramps are quarter-pipe arcs (steep launch, flat landing) with identical
+  run/rise; the commit window keys off `FORK_RAMP`, not the segment array.

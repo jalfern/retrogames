@@ -62,8 +62,9 @@ export const SCATTER_MAX = 8
 export const SCATTER_FAN = [[14, -6], [30, -18], [46, -34], [62, -50], [78, -64], [94, -76], [110, -88], [126, -100]]
 // drones: the patrol sweeps [x0,x1] on the ground; the hover bobs at (x,y).
 // Position is a pure function of the tick (no per-drone state, no RNG).
+// #627: bodies must read at a glance on a phone — the old r=10 dot did not.
 export const DRL_SPEED = 140
-export const DRONE_R = 10
+export const DRONE_R = 18
 export const HOVER_BOB = 6
 
 // two routes (#550): every sector carries a HIGH deck over one flat stretch —
@@ -120,7 +121,7 @@ export const ZONES = [
         // first spike (a hit you survive WITH the early rings); the hover
         // sits on the apex of the first spring's arc — only an AIR body
         // (the spring flight) reaches it, so the proven line destroys it
-        drones: [{ kind: 'patrol', x0: 800, x1: 880 }, { kind: 'hover', x: 1710, y: -65 }],
+        drones: [{ kind: 'patrol', x0: 910, x1: 970 }, { kind: 'hover', x: 1710, y: -65 }],
         ck: 1900, goal: 4420, deathY: 520, yMin: -80, loops: [],
     },
     {
@@ -140,7 +141,9 @@ export const ZONES = [
         spikes: [[1060, 1100], [2440, 2480]],
         springs: [[1150, 225, -900]],
         boosts: [[1420, 1680], [2650, 2730]],
-        drones: [],
+        // #627: an enemy in every zone. The patrol guards the pre-spike flat;
+        // the hover sits on the spring's proven apex — air-only prize.
+        drones: [{ kind: 'patrol', x0: 820, x1: 940 }, { kind: 'hover', x: 1550, y: -35 }],
         ck: 1620, goal: 2740, deathY: 620, yMin: -66, loops: [],
     },
     {
@@ -162,14 +165,17 @@ export const ZONES = [
         spikes: [[1600, 1650]],
         springs: [],
         boosts: [[1850, 2000]],
-        drones: [],
+        // #627: the patrol guards the flat AFTER both loop exits (its mouth is
+        // clear — a staggered body must never be dropped short of a loop); the
+        // hover sits above the post-spike run — only an airborne body reaches it.
+        drones: [{ kind: 'patrol', x0: 1450, x1: 1520 }, { kind: 'hover', x: 1700, y: 380 }],
         ck: 1000, goal: 2050, deathY: 760, yMin: 0,
         // two loops on the flat run after the dive. loops[0] is the load-bearing
         // one: its apex rings are the ONLY rings that survive the far spike. The
         // body carries its entry speed across the flat to loops[1] (a pure
         // momentum commitment, no rings) — so committing to the first loop at
         // speed is what opens the second.
-        loops: [{ cx: 1160, cy: 345, r: 80 }, { cx: 1360, cy: 345, r: 80 }],
+        loops: [{ cx: 1160, cy: 345, r: 80, loadBearing: true }, { cx: 1360, cy: 345, r: 80 }],
     },
 ]
 
@@ -180,15 +186,21 @@ export const ZONES = [
 // ground at the entry height so they chain with no height bookkeeping:
 //
 //   fastBoost  a flat stretch with a sprint strip (carry/reward speed)
+//   valleyLoop a rolling quarter-pipe valley sampled from true circular arcs;
+//              a full loop sits on the valley floor — the downhill IS the
+//              engine that charges it (#627: loops and curves in every zone)
 //   pitHop     a flat run-up, one jumpable pit (hazard), a flat run-off
 //   hill       a downhill that builds speed, then the climb back (fast stretch)
 //
 // No RNG: the beat order is a fixed cycle, so the attract demo and the gate
-// prove the identical route. The tail is deliberately pit/boost/hill only —
+// prove the identical route. The tail is deliberately pit/boost/valley only —
 // no spikes or drones in it, so the autopilot clears it with nothing but its
 // proven pit-jump lookahead, and there is no ring bookkeeping to keep fair.
 // The hand-built core (and every coordinate a check pins) is left untouched.
 const TAIL_BEATS = 23
+const ARC_R = 469          // valley arc radius: ~55 degrees max, reads curved
+const VALLEY_DROP = 200     // rolling dip depth — enough to charge the loop
+const LOOP_R = 70           // valley-floor loop; v^2 >= 5*G*r needs ~724
 const beatFastBoost = (x, y) => ({
     segs: [[x, y, x + 2400, y]],
     boosts: [[x + 900, x + 1500]],
@@ -202,11 +214,42 @@ const beatHill = (x, y) => ({
     segs: [[x, y, x + 1300, y + 200], [x + 1300, y + 200, x + 2800, y]],
     x1: x + 2800,
 })
-const BEATS = [beatFastBoost, beatPitHop, beatHill]
+// sample a circular arc into n segments; tangent-flat at one end, steep at the
+// other (a quarter-pipe). `down` dips into the screen, `up` climbs out.
+function arcPipe(x, y, drop, n, down) {
+    const phi = Math.acos(1 - drop / ARC_R)
+    const run = ARC_R * Math.sin(phi)
+    const pts = []
+    for (let k = 0; k <= n; k++) {
+        const a = phi * k / n
+        if (down) pts.push([x + ARC_R * Math.sin(a), y + ARC_R * (1 - Math.cos(a))])
+        else pts.push([x + run - ARC_R * Math.sin(phi - a), y - drop + ARC_R * (1 - Math.cos(phi - a))])
+    }
+    pts[0][0] = x
+    pts[n][0] = x + run
+    const segs = []
+    for (let k = 0; k < n; k++) segs.push([pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1]])
+    return { segs, run }
+}
+const beatValleyLoop = (x, y) => {
+    const segs = [[x, y, x + 150, y]]
+    const d = arcPipe(x + 150, y, VALLEY_DROP, 5, true)
+    segs.push(...d.segs)
+    const bx = x + 150 + d.run, by = y + VALLEY_DROP
+    const cx = bx + 80 + LOOP_R
+    segs.push([bx, by, cx + LOOP_R + 80, by])
+    const u = arcPipe(cx + LOOP_R + 80, by, VALLEY_DROP, 5, false)
+    segs.push(...u.segs)
+    const ex = cx + LOOP_R + 80 + u.run
+    segs.push([ex, y, x + 2600, y])
+    return { segs, x1: x + 2600, loop: { cx, cy: by - LOOP_R, r: LOOP_R } }
+}
+const BEATS = [beatFastBoost, beatValleyLoop, beatPitHop, beatHill]
 
 // append TAIL_BEATS of the beat cycle to each sector and push its goal to the
 // end of the tail, so the autopilot now spends 60-90s in a sector (the ask).
 for (const z of ZONES) {
+    if (!z.loops) z.loops = []
     const last = z.segs[z.segs.length - 1]
     let x = last[2], y = last[3]
     const tailX = x, tailY = y
@@ -214,6 +257,7 @@ for (const z of ZONES) {
         const b = BEATS[i % BEATS.length](x, y)
         z.segs.push(...b.segs)
         if (b.boosts) z.boosts.push(...b.boosts)
+        if (b.loop) z.loops.push(b.loop)
         x = b.x1
     }
     z.goal = x - 20
@@ -222,14 +266,23 @@ for (const z of ZONES) {
     // strip, so committing means you carried (or made) speed there. The deck
     // overlaps the low line's x; its ramps start and end exactly ON the low
     // height, so the commit and the rejoin are continuous, never teleports.
+    // #627: the ramps are quarter-pipe arcs (steep launch, flat landing), not
+    // straight boards — same run and rise, sampled on a circle tangent-flat
+    // at the top. The commit window is fx..fx+FORK_RAMP (the arc's run).
     const fx = tailX + 1560, fy = tailY, hy = fy - FORK_DY
     const hx = fx + FORK_RAMP
+    const rR = (FORK_RAMP * FORK_RAMP + FORK_DY * FORK_DY) / (2 * FORK_DY)
+    const rPh = Math.acos(1 - FORK_DY / rR)
+    const up = [], dn = []
+    for (let k = 0; k < 4; k++) {
+        const p0 = rPh * k / 4, p1 = rPh * (k + 1) / 4
+        up.push([hx - rR * Math.sin(rPh - p0), hy + rR * (1 - Math.cos(rPh - p0)),
+            hx - rR * Math.sin(rPh - p1), hy + rR * (1 - Math.cos(rPh - p1))])
+        dn.push([hx + FORK_PLAT + rR * Math.sin(p0), hy + rR * (1 - Math.cos(p0)),
+            hx + FORK_PLAT + rR * Math.sin(p1), hy + rR * (1 - Math.cos(p1))])
+    }
     z.routes = {
-        high: [
-            [fx, fy, hx, hy],
-            [hx, hy, hx + FORK_PLAT, hy],
-            [hx + FORK_PLAT, hy, hx + FORK_PLAT + FORK_RAMP, fy],
-        ],
+        high: [...up, [hx, hy, hx + FORK_PLAT, hy], ...dn],
     }
     // the fast lane's payoff: six rings only a high-route body passes through
     z.highRings = [0, 1, 2, 3, 4, 5].map(i => [hx + 40 + i * 100, hy - 14])
@@ -594,7 +647,7 @@ export function maybeRouteFork(g) {
     if (!f) return false
     if (p.route === 'low') {
         if (!CFG.routeFork || p.mode !== 'track') return false
-        if (p.x >= f[0][0] && p.x <= f[0][2] && p.s >= FORK_SPEED) {
+        if (p.x >= f[0][0] && p.x <= f[0][0] + FORK_RAMP && p.s >= FORK_SPEED) {
             p.route = 'high'
             p.y = groundY(z, p.x, 'high')
             p.lastTheta = segAngle(segAtRoute(z, p.x, 'high'))
@@ -697,7 +750,7 @@ export function planRun(g0) {
                 receipt.gaps.push({ far: pending.far, landed: e.x, margin: e.x - pending.far })
                 pending = null
             }
-            if (e.type === 'loop') receipt.loops.push({ entryV2: g.p.v0 * g.p.v0, exitV: e.v, need: loopRequire(e.r), idx: e.idx })
+            if (e.type === 'loop') receipt.loops.push({ entryV2: g.p.v0 * g.p.v0, exitV: e.v, need: loopRequire(e.r), idx: e.idx, zone: g.zone, tick: t })
             if (e.type === 'respawn') receipt.deaths++
         }
         maybeEnterLoop(g)
