@@ -36,6 +36,9 @@ audio synthesized at runtime.
 - Two hands: left (Space/A) and right (X/Z/B); 1–6 assign left, Q cycles right.
 - The carpet cannot crash: it banks (turning bleeds 78% of speed) and
   auto-rises over ridges; holding down bottoms out above terrain, never below.
+- Charge-glide: holding boost (`inp.boost`; Shift, or a held ▲ in the shell)
+  flies at 1.6× cruise with turns dampened to 0.55× — a wider radius, and it
+  spends no mana. Look-ahead for the auto-rise scales with speed.
 - Death: with mana in the castle you respawn at its gates (shield, full HP);
   with an empty store the flight is over. The castle regenerates HP in range.
 - Fire that touches ground leaves scorch marks; wolves respawn from scorch marks
@@ -45,9 +48,9 @@ audio synthesized at runtime.
 
 ```
 npm run dev                # another terminal
-npm run carpetcheck        # 21 checks: boot, determinism, conservation, risk,
-                           # death/respawn, hoard scatter, equilibrium ×2 seeds,
-                           # plus a headless-Chrome contract pass
+npm run carpetcheck        # 24 checks: boot, determinism, conservation, risk,
+                           # charge-glide, death/respawn, hoard scatter,
+                           # equilibrium ×2 seeds, plus a headless-Chrome pass
 CONTRACT_ONLY=magic-carpet npm run contractcheck
 ```
 

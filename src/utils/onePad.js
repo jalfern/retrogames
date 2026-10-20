@@ -42,7 +42,7 @@ export const AIM_FIELDS = ['aimUp', 'aimDown', 'aimLeft', 'aimRight']
 export function blankPad() {
     return {
         up: false, down: false, left: false, right: false,
-        a: false, b: false, start: false,
+        a: false, b: false, start: false, boost: false,
         x: 0, y: 0,
         ax: 0, ay: 0,
         aimUp: false, aimDown: false, aimLeft: false, aimRight: false,
@@ -101,6 +101,7 @@ export function normalizePad(raw = {}, method = 'stick') {
     pad.a = !!r.a
     pad.b = !!r.b
     pad.start = !!r.start
+    pad.boost = !!r.boost
 
     // #496 twin-stick aim: the SAME quantizer turns the aim vector digital, so
     // step({ax: 1}) and step({aimRight: true}) read alike — for one stick, the

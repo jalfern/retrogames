@@ -93,6 +93,7 @@ const MagicCarpetGame = () => {
         let flashL = 0, flashR = 0, hurtFlash = 0
         const keys = { l: false, r: false, u: false, d: false }
         let throwL = false, throwR = false
+        let boostKey = false, upHold = 0, boostOn = false, boostPrev = false
         const part = []
         const groundTop = new Float32Array(W)
         const groundD = new Float32Array(W)
@@ -202,6 +203,7 @@ const MagicCarpetGame = () => {
         }
 
         const tickDemo = () => {
+            upHold = 0; boostOn = false; boostPrev = false
             if (gs.end || demoT > 2600) { demoSeed = (demoSeed * 31 + 17) % 9973; gs = makeGame(demoSeed); demoT = 0 }
             demoT++
             doSim(autopilot(gs))
@@ -211,9 +213,14 @@ const MagicCarpetGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
+            upHold = keys.u ? upHold + 1 : 0
+            boostOn = boostKey || upHold >= 24
+            if (boostOn && !boostPrev) audioController.playSweep(220, 520, 0.22, 'sine', 0.05)
+            if (boostOn && gs.tick % 12 === 0) audioController.playNoise(0.06, 0.02)
+            boostPrev = boostOn
             doSim({
                 left: keys.l, right: keys.r, up: keys.u, down: keys.d,
-                castL: throwL, castR: throwR,
+                castL: throwL, castR: throwR, boost: boostOn,
             })
             throwL = throwR = false
         }
@@ -386,16 +393,27 @@ const MagicCarpetGame = () => {
         const paintCarpetAndHands = () => {
             const sway = keys.l ? -3 : keys.r ? 3 : 0
             const bob = Math.sin(gs.tick * 0.09) * 1.5
+            if (boostOn) {
+                ctx.globalAlpha = 0.3
+                ctx.fillStyle = '#dfe8f5'
+                for (let i = 0; i < 4; i++) {
+                    const yy = 40 + ((gs.tick * 3 + i * 37) % (H - HUD_H - 52))
+                    ctx.fillRect(6 + i * 5, yy, 1, 7)
+                    ctx.fillRect(W - 7 - i * 5, yy + 11, 1, 7)
+                }
+                ctx.globalAlpha = 1
+            }
+            const stretch = boostOn ? 4 : 0
             ctx.fillStyle = '#8a1f28'
             ctx.beginPath()
-            ctx.moveTo(96 + sway, H - HUD_H); ctx.lineTo(150 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 16 + bob); ctx.closePath(); ctx.fill()
+            ctx.moveTo(96 + sway, H - HUD_H); ctx.lineTo(150 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 16 + bob - stretch); ctx.closePath(); ctx.fill()
             ctx.beginPath()
-            ctx.moveTo(170 + sway, H - HUD_H); ctx.lineTo(224 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 16 + bob); ctx.closePath(); ctx.fill()
+            ctx.moveTo(170 + sway, H - HUD_H); ctx.lineTo(224 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 16 + bob - stretch); ctx.closePath(); ctx.fill()
             ctx.fillStyle = '#b8303c'
             ctx.beginPath()
-            ctx.moveTo(104 + sway, H - HUD_H); ctx.lineTo(144 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 11 + bob); ctx.closePath(); ctx.fill()
+            ctx.moveTo(104 + sway, H - HUD_H); ctx.lineTo(144 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 11 + bob - stretch); ctx.closePath(); ctx.fill()
             ctx.beginPath()
-            ctx.moveTo(176 + sway, H - HUD_H); ctx.lineTo(216 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 11 + bob); ctx.closePath(); ctx.fill()
+            ctx.moveTo(176 + sway, H - HUD_H); ctx.lineTo(216 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 11 + bob - stretch); ctx.closePath(); ctx.fill()
             ctx.fillStyle = '#d8a840'
             for (let i = 0; i < 4; i++) {
                 ctx.fillRect(100 + i * 12 + sway, H - HUD_H - 2, 2, 2)
@@ -562,6 +580,7 @@ const MagicCarpetGame = () => {
             part.length = 0
             keys.l = keys.r = keys.u = keys.d = false
             throwL = throwR = false
+            boostKey = boostOn = boostPrev = false; upHold = 0
             setMode('play')
             say('RESTORE THIS WORLD TO EQUILIBRIUM')
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
@@ -579,6 +598,7 @@ const MagicCarpetGame = () => {
             if (e.code === 'ArrowRight') keys.r = true
             if (e.code === 'ArrowUp') keys.u = true
             if (e.code === 'ArrowDown') keys.d = true
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') boostKey = true
             if (e.code === 'Space') throwL = true
             if (e.code === 'KeyX' || e.code === 'KeyZ') throwR = true
             if (e.code === 'KeyQ') cycleR(gs)
@@ -590,8 +610,9 @@ const MagicCarpetGame = () => {
             if (e.code === 'ArrowRight') keys.r = false
             if (e.code === 'ArrowUp') keys.u = false
             if (e.code === 'ArrowDown') keys.d = false
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') boostKey = false
         }
-        const onBlur = () => { keys.l = keys.r = keys.u = keys.d = false }
+        const onBlur = () => { keys.l = keys.r = keys.u = keys.d = false; boostKey = false; upHold = 0; boostOn = false; boostPrev = false }
         const onPointer = (e) => {
             if (e.target instanceof Element && e.target.closest('[data-vc], button')) return
             const sc = screenRef.current
@@ -644,7 +665,7 @@ const MagicCarpetGame = () => {
                     learned: [...gs.learned], hands: { ...gs.hands },
                     x: +gs.x.toFixed(2), y: +gs.y.toFixed(2), alt: +gs.alt.toFixed(2), yaw: +gs.yaw.toFixed(4),
                     pearlsAlive: gs.pearls.filter((p) => p.alive).length,
-                    projs: gs.projs.length, keys: { ...keys },
+                    projs: gs.projs.length, keys: { ...keys }, boost: boostOn,
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -678,7 +699,7 @@ const MagicCarpetGame = () => {
             let contractSeed = 0
             exposeGame({
                 id: 'magic-carpet',
-                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b', 'boost'],
                 reset: (seed) => {
                     contractSeed = seed >>> 0
                     gs = makeGame(contractSeed)
@@ -686,11 +707,15 @@ const MagicCarpetGame = () => {
                     part.length = 0
                     keys.l = keys.r = keys.u = keys.d = false
                     throwL = throwR = false
+                    boostKey = boostOn = boostPrev = false; upHold = 0
                     setMode('play')
                 },
                 tick: (pad) => {
                     if (gs.end) { gs.tick += 1; return }
-                    doSim({ left: pad.left, right: pad.right, up: pad.up, down: pad.down, castL: pad.a, castR: pad.b })
+                    boostOn = !!pad.boost
+                    if (boostOn && !boostPrev) audioController.playSweep(220, 520, 0.22, 'sine', 0.05)
+                    boostPrev = boostOn
+                    doSim({ left: pad.left, right: pad.right, up: pad.up, down: pad.down, castL: pad.a, castR: pad.b, boost: boostOn })
                 },
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: gs.end !== null,
