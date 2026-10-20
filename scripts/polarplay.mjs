@@ -19,7 +19,7 @@
 // The fairness scan, tree pins and determinism live in polarcheck (Node).
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.POLAR_URL || 'http://localhost:5173/retrogames/polarity'
+const URL = process.env.POLAR_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/polarity`
 await requireDevServer(URL)
 
 const r = new Report('polarplay')

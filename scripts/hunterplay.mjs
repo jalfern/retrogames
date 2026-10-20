@@ -15,7 +15,7 @@
 // The road audit, ledger, slack rule and mutants live in huntercheck.mjs.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.HUNTER_URL || 'http://localhost:5173/retrogames/spy-hunter'
+const URL = process.env.HUNTER_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/spy-hunter`
 await requireDevServer(URL)
 
 const r = new Report('hunterplay')

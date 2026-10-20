@@ -8,7 +8,7 @@
 
 import { launch, openGame, Report } from './lib/harness.mjs'
 
-const URL = process.env.QBERT_URL || 'http://localhost:5173/retrogames/qbert'
+const URL = process.env.QBERT_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/qbert`
 
 const r = new Report('qbertdive')
 const HARD_DEADLINE = setTimeout(() => { console.error('qbertdive: hard deadline hit — the page wedged'); process.exit(1) }, 180000)

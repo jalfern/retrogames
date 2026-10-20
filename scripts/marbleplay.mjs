@@ -5,7 +5,7 @@
 
 import { requireDevServer, launch, openGame } from './lib/harness.mjs'
 
-const URL = process.env.MARBLE_URL || 'http://localhost:5173/retrogames/marble-madness'
+const URL = process.env.MARBLE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/marble-madness`
 await requireDevServer(URL)
 const browser = await launch()
 let fail = 0

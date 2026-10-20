@@ -3,7 +3,7 @@
 // Needs `npm run dev` running (or SMASH_URL pointed at one).
 import { launch, openGame, Report, opt } from './lib/harness.mjs'
 
-const URL = process.env.SMASH_URL || 'http://localhost:5173/retrogames/smash-tv'
+const URL = process.env.SMASH_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/smash-tv`
 const r = new Report('smashplay')
 const browser = await launch({ headless: opt(process.argv, '--headful', true) === false })
 const page = await openGame(browser, { url: URL, hook: '__smashTest', start: false, viewport: { width: 820, height: 640 } })

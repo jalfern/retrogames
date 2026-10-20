@@ -3,7 +3,7 @@
 // logical state). Needs `npm run dev` running.
 import { launch, openGame, Report, opt } from './lib/harness.mjs'
 
-const URL = process.env.GAUNTLET_URL || 'http://localhost:5173/retrogames/gauntlet'
+const URL = process.env.GAUNTLET_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/gauntlet`
 const r = new Report('gauntletplay')
 const browser = await launch({ headless: opt(process.argv, '--headful', true) === false })
 const page = await openGame(browser, { url: URL, hook: '__gauntletTest', start: false, viewport: { width: 820, height: 640 } })

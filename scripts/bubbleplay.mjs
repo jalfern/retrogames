@@ -9,7 +9,7 @@
 
 import { launch, openGame, Report } from './lib/harness.mjs'
 
-const URL = process.env.BOB_URL || 'http://localhost:5173/retrogames/bubble-bobble'
+const URL = process.env.BOB_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/bubble-bobble`
 
 const r = new Report('bubbleplay')
 const HARD_DEADLINE = setTimeout(() => { console.error('bubbleplay: hard deadline hit — the page wedged'); process.exit(1) }, 240000)

@@ -212,7 +212,7 @@ console.log('reused sim keeps its rules under the new renderer:')
 // ---------------------------------------------------------------- browser
 if (!SKIP_BROWSER) {
     const { launch, openGame, requireDevServer } = await import('./lib/harness.mjs')
-    const BASE = process.env.HD_URL || 'http://localhost:5173/retrogames/comet-drift-hd'
+    const BASE = process.env.HD_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/comet-drift-hd`
     // pixel assertions need the WebGL2 backend: a WebGPU canvas answers black
     // to 2D drawImage/getImageData. The game defaults to WebGPU (verified on
     // the compositor via screenshots); the harness pins the fallback it

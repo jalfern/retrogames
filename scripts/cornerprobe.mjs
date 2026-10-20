@@ -23,7 +23,7 @@
 
 import { openGame, launch, requireDevServer, opt, throttleCPU } from './lib/harness.mjs'
 
-const URL0 = opt(process.argv, '--url', process.env.HEIST_URL || 'http://localhost:5173/retrogames/raccoon-heist?pad=1&lite=1')
+const URL0 = opt(process.argv, '--url', process.env.HEIST_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/raccoon-heist?pad=1&lite=1`)
 const THROTTLE = +opt(process.argv, '--throttle', 64)
 const JOB = +opt(process.argv, '--job', 0)
 

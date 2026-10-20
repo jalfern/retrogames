@@ -17,7 +17,7 @@
 // scripts/sweepcheck.mjs (Node) — this suite proves the browser plumbing.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.SWEEP_URL || 'http://localhost:5173/retrogames/minesweeper'
+const URL = process.env.SWEEP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/minesweeper`
 await requireDevServer(URL)
 
 const r = new Report('sweepplay')

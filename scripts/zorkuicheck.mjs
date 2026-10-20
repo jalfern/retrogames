@@ -56,7 +56,7 @@
 import { launch, requireDevServer, Report, opt, throttleCPU } from './lib/harness.mjs'
 
 const ARGV = process.argv.slice(2)
-const URL = opt(ARGV, '--url', 'http://localhost:5173/retrogames/zork')
+const URL = opt(ARGV, '--url', `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/zork`)
 // A FLOOR, not a deadline: `untilTurns` keeps going while the agent keeps taking
 // turns. The number that actually decides is the stall window below.
 const PLAY_MS = Number(opt(ARGV, '--play', 12000))

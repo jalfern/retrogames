@@ -17,7 +17,7 @@
 
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const BASE = process.env.CONTRACT_URL || 'http://localhost:5173/retrogames'
+const BASE = process.env.CONTRACT_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
 const GAMES = [
     { id: 'lunar-lander', path: '/lunar-lander' },
     { id: 'tempest', path: '/tempest' },

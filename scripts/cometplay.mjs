@@ -26,7 +26,7 @@
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 import { selectCourse, TRACK } from '../src/games/CometDrift/track.js'
 
-const URL = process.env.COMET_URL || 'http://localhost:5173/retrogames/comet-drift'
+const URL = process.env.COMET_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/comet-drift`
 await requireDevServer(URL)
 
 // seed geometry, read off the same live track the browser builds

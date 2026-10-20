@@ -6,7 +6,7 @@ const b = await chromium.launch({ channel: 'chrome', headless: true })
 const p = await b.newPage({ viewport: { width: 600, height: 400 } })
 const errs = []
 p.on('pageerror', e => errs.push(e.message))
-await p.goto(process.argv[2] || 'http://localhost:5173/retrogames/raccoon-heist', { waitUntil: 'load' })
+await p.goto(process.argv[2] || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/raccoon-heist`, { waitUntil: 'load' })
 await p.waitForTimeout(1500)
 console.log(await p.evaluate(() => {
   const t = window.__heistTest; if (!t) return 'NO HOOK'

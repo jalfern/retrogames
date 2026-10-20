@@ -39,8 +39,9 @@ confuse the two queues.
     it has a pushed `qa/<slug>` branch (a previous session's step 6
     checkpoint), open it in its worktree from `origin/qa/<slug>` (step 1) and
     continue that item — never start a new one while one is half-built.
-    **Your node** is the one your prompt names ("on node mini|mbp"; no node
-    named = `mini`). Two QA sessions can run at once, one per node: an item
+    **Your node** is the one your prompt names ("on node mini|studio|builder|mbp";
+    no node named = `mini`). Several QA sessions run at once, one per node, each
+    with its own dev-server port (your prompt names it; 5173 is the forge's): an item
     another node claimed is not yours — skip it, and never open, inspect,
     commit in or clean another node's worktree (`~/Dev/retrogames-qa-*`): it
     is live work in progress. A claim is **dead** only when

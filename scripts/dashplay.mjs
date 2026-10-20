@@ -11,7 +11,7 @@
 // win, the crush-death (the CA, not a scripted flag), and the restart.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.DASH_URL || 'http://localhost:5173/retrogames/boulder-dash'
+const URL = process.env.DASH_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/boulder-dash`
 await requireDevServer(URL)
 
 const r = new Report('dashplay')

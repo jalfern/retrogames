@@ -27,7 +27,7 @@
 
 import { launch, requireDevServer, opt, throttleCPU } from './lib/harness.mjs'
 
-const URL = opt(process.argv.slice(2), '--url', 'http://localhost:5173/retrogames/zork')
+const URL = opt(process.argv.slice(2), '--url', `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/zork`)
 const SECONDS = +opt(process.argv.slice(2), '--seconds', 60)
 const THROTTLE = +opt(process.argv.slice(2), '--throttle', 0)
 

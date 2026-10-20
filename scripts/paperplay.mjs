@@ -25,7 +25,7 @@ const ART_P = PALETTES[STAGES[0].theme]
 const ROAD_RGB = hexToRgb(ART_P.road)
 const GRASS_RGB = hexToRgb(ART_P.grass)
 
-const URL = process.env.PB_URL || 'http://localhost:5173/retrogames/paperboy'
+const URL = process.env.PB_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/paperboy`
 await requireDevServer(URL)
 
 const r = new Report('paperplay')

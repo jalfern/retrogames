@@ -16,9 +16,13 @@
 # Panes: left column, one per machine, top to bottom, refreshed every 5 s:
 #   BUILDER  (Studio, model on :8000)  — the log the builder process actually
 #             has open. Not /tmp/forge/last.log: a launchd fire that skips (a
-#             session is already running) repoints last.log at a stub.
+#             session is already running) repoints last.log at a stub. When
+#             no game is waiting, QA spills into this slot (node builder) and
+#             this pane shows that session instead.
 #   QA·MINI  (model via the :18000 tunnel) — the session using omlxmini/...
 #   QA·MBP   (model via the :18001 tunnel) — the session using omlxmbp/...
+#             (parked 2026-10-19; the pane stays and shows idle/DOWN)
+#   QA·STUDIO (Studio, model on :8000) — the second stream on the Studio
 #   WARDEN   — the newest warden tick log; it also resizes this column so
 #             idle machines shrink to 3 rows and busy ones get the space.
 # Each lane header says whether that machine's model server answers (up/DOWN),
@@ -117,17 +121,18 @@ while true; do
     w=$(ls -t /tmp/forge/warden-2*.log 2>/dev/null | head -1)
     echo "WARDEN ${w##*/}"
     [[ -n "$w" ]] && tail -n $(( $(tput lines) - 2 )) "$w" | cut -c1-$(tput cols)
-    state="$(live "$B1" "$B2")$(live "$M1" "$M2")$(live "$Q1" "$Q2")"
+    state="$(live "$A1" "$Z1")$(live "$A2" "$Z2")$(live "$A3" "$Z3")$(live "$A4" "$Z4")"
     if [[ "$state" != "$last" ]]; then
         last=$state
-        # left-column panes, top to bottom: builder, mini, mbp, warden
+        # left-column panes, top to bottom: builder, mini, mbp, studio, warden
         cols=("${(@f)$(tmux list-panes -F '#{pane_left} #{pane_top} #{pane_id} #{pane_height}' | awk '$1==0' | sort -n -k2)}")
-        if (( ${#cols} == 4 )); then
-            ids=(); total=3
+        n=4
+        if (( ${#cols} == n + 1 )); then
+            ids=(); total=$n
             for c in "${cols[@]}"; do set -- ${=c}; ids+=($3); total=$(( total + $4 )); done
-            busy=$(( ${state[1]} + ${state[2]} + ${state[3]} ))
-            free=$(( total - 3 - 4 - 3 * (3 - busy) ))
-            for i in 1 2 3; do
+            busy=0; for i in {1..$n}; do busy=$(( busy + ${state[$i]} )); done
+            free=$(( total - n - 4 - 3 * (n - busy) ))
+            for i in {1..$n}; do
                 if (( ${state[$i]} )); then h=$(( free / busy ))
                 elif (( busy == 0 && i == 1 )); then h=$(( free + 3 ))
                 else h=3; fi
@@ -157,18 +162,23 @@ touch "$f"; exec tail -n 400 -F "$f"
 PANE
 }
 
-# Left column, top to bottom: BUILDER, QA·MINI, QA·MBP, WARDEN (sizes are
-# set by the warden pane, above).
+# Left column, top to bottom: BUILDER, QA·MINI, QA·MBP, QA·STUDIO, WARDEN
+# (sizes are set by the warden pane, above). BUILDER's pattern matches the
+# forge OR a QA item spilled into the builder's slot (node builder).
 LANE="$(lane_pane)"
+BA='opencode run.*(THE' BZ=' FORGE|QA MASTER on node builder\.)'
+SA='opencode run.*QA MASTER on node ' SZ='studio\.'
 tmux new-session -d -s "$SESSION" -e L=BUILDER -e PORT=8000 -e PROV=omlx \
-    -e P1='opencode run.*THE' -e P2=' FORGE' zsh -c "$LANE"
+    -e P1="$BA" -e P2="$BZ" zsh -c "$LANE"
 tmux split-window -v -l 4 -t "$SESSION:0.0" \
-    -e B1='opencode run.*THE' -e B2=' FORGE' -e M1='opencode run.*omlx' -e M2='mini' \
-    -e Q1='opencode run.*omlx' -e Q2='mbp' zsh -c "$(warden_pane)"
-tmux split-window -v -l 66% -t "$SESSION:0.0" -e L=QA·MINI -e PORT=18000 -e PROV=omlxmini \
+    -e A1="$BA" -e Z1="$BZ" -e A2='opencode run.*omlx' -e Z2='mini' \
+    -e A3='opencode run.*omlx' -e Z3='mbp' -e A4="$SA" -e Z4="$SZ" zsh -c "$(warden_pane)"
+tmux split-window -v -l 75% -t "$SESSION:0.0" -e L=QA·MINI -e PORT=18000 -e PROV=omlxmini \
     -e P1='opencode run.*omlx' -e P2='mini' zsh -c "$LANE"
-tmux split-window -v -l 50% -t "$SESSION:0.1" -e L=QA·MBP -e PORT=18001 -e PROV=omlxmbp \
+tmux split-window -v -l 66% -t "$SESSION:0.1" -e L=QA·MBP -e PORT=18001 -e PROV=omlxmbp \
     -e P1='opencode run.*omlx' -e P2='mbp' zsh -c "$LANE"
+tmux split-window -v -l 50% -t "$SESSION:0.2" -e L=QA·STUDIO -e PORT=8000 -e PROV=omlx \
+    -e P1="$SA" -e P2="$SZ" zsh -c "$LANE"
 # RETRO: a full-height pane on the right, 60% wide. `env -u TMUX` lets tmux
 # nest; -A attaches to "retro" if it exists, otherwise creates it in the repo.
 BUILDER_PANE=$(tmux display -p -t "$SESSION:0.0" '#{pane_id}')

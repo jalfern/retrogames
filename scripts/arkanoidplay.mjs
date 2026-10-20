@@ -7,7 +7,7 @@
 
 import { launch, openGame, Report } from './lib/harness.mjs'
 
-const URL = process.env.ARKANOID_URL || 'http://localhost:5173/retrogames/arkanoid'
+const URL = process.env.ARKANOID_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/arkanoid`
 const r = new Report('arkanoidplay')
 const HARD = setTimeout(() => { console.error('arkanoidplay: hard deadline — page wedged'); process.exit(1) }, 180000)
 const browser = await launch()

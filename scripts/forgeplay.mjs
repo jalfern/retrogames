@@ -12,7 +12,7 @@
 
 import { requireDevServer, launch } from './lib/harness.mjs'
 
-await requireDevServer('http://localhost:5173/retrogames/forge')
+await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/forge`)
 const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 900, height: 900 } })
 const errors = []
@@ -23,7 +23,7 @@ let pass = 0
 const fails = []
 const ok = (c, m) => { if (c) { pass++; console.log(`  ok  ${m}`) } else fails.push(m) }
 
-await page.goto('http://localhost:5173/retrogames/forge', { waitUntil: 'load' })
+await page.goto(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/forge`, { waitUntil: 'load' })
 
 // The floor only appears after the board's real fetches resolve. Poll DOM, not wall.
 let floored = false

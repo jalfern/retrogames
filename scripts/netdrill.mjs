@@ -9,7 +9,7 @@
 import { launch, requireDevServer, opt } from './lib/harness.mjs'
 import { startRelay } from '../relay/server.mjs'
 
-const BASE = process.env.GAUNTLET_URL || 'http://localhost:5173/retrogames/gauntlet'
+const BASE = process.env.GAUNTLET_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/gauntlet`
 let pass = 0, fail = 0
 const ok = (cond, name, info = '') => {
     if (cond) { pass++; console.log(`  ok   ${name}`) }

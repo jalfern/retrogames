@@ -1,6 +1,6 @@
 import { chromium } from '/Users/jon/Dev/retrogames/node_modules/playwright-core/index.mjs'
 import { launch, openGame } from '../lib/harness.mjs'
-const URL = 'http://localhost:5173/retrogames/raccoon-heist'
+const URL = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/raccoon-heist`
 const browser = await launch()
 const page = await openGame(browser, { url: URL, hook: '__heistTest', viewport: { width: 900, height: 620 } })
 const api = (fn, ...a) => page.evaluate(fn, ...a)

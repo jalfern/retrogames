@@ -18,7 +18,7 @@
 
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.WIZ_URL || 'http://localhost:5173/retrogames/wizardry'
+const URL = process.env.WIZ_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/wizardry`
 await requireDevServer(URL)
 
 const r = new Report('wizplay')

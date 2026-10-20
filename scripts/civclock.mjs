@@ -24,7 +24,7 @@
 
 import { openGame, launch, requireDevServer, opt, throttleCPU } from './lib/harness.mjs'
 
-const URL = opt(process.argv, '--url', process.env.CIV_URL || 'http://localhost:5173/retrogames/civilization-v')
+const URL = opt(process.argv, '--url', process.env.CIV_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/civilization-v`)
 const RATES = String(opt(process.argv, '--throttle', '1,4,8')).split(',').map(Number)
 const MIN = +opt(process.argv, '--min', 0.9)
 const TURNS = +opt(process.argv, '--turns', 30)

@@ -19,7 +19,7 @@
 
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const BASE = process.env.VPAD_URL || 'http://localhost:5173/retrogames'
+const BASE = process.env.VPAD_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
 
 // The routes #384/#420 touch, with the input method each registry entry
 // declares ('stick' | 'dpad' | 'pointer'). A drift here (a silent revert of the

@@ -159,9 +159,9 @@ r.check('six signature spells with costs', SPILLS.length === 6 &&
     ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis'].every((id) => spellById(id)?.cost > 0))
 
 // ---- browser pass: boots in Chrome, starts, drives through the contract, zero errors
-await requireDevServer('http://localhost:5173/retrogames/magic-carpet')
+await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`)
 const browser = await launch()
-const page = await openGame(browser, { url: 'http://localhost:5173/retrogames/magic-carpet', hook: '__game', start: false })
+const page = await openGame(browser, { url: `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`, hook: '__game', start: false })
 const errs = []
 page.on('pageerror', (e) => errs.push(e.message))
 

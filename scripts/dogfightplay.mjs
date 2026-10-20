@@ -21,7 +21,7 @@
 //   npm run dogfightplay -- --throttle 32
 import { launch, openGame, Report, throttleCPU, opt } from './lib/harness.mjs'
 
-const URL = process.env.DOG_URL || 'http://localhost:5173/retrogames/dogfight'
+const URL = process.env.DOG_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/dogfight`
 const THROTTLE = +opt(process.argv.slice(2), '--throttle', 1)
 // CI's runner rasterises in software — the documented lite pipeline and a
 // small window are how a 3D title stays green there (the heistplay lesson).

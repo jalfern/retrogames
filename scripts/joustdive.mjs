@@ -8,7 +8,7 @@
 
 import { launch, openGame, Report } from './lib/harness.mjs'
 
-const URL = process.env.JOUST_URL || 'http://localhost:5173/retrogames/joust'
+const URL = process.env.JOUST_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/joust`
 
 const r = new Report('joustdive')
 const HARD_DEADLINE = setTimeout(() => { console.error('joustdive: hard deadline hit — the page wedged'); process.exit(1) }, 180000)

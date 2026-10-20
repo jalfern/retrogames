@@ -3,7 +3,7 @@
 // Needs `npm run dev` running (or LANDER_URL pointed at one).
 import { launch, openGame, Report, opt } from './lib/harness.mjs'
 
-const URL = process.env.LANDER_URL || 'http://localhost:5173/retrogames/lunar-lander'
+const URL = process.env.LANDER_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/lunar-lander`
 const r = new Report('landerplay')
 const browser = await launch({ headless: opt(process.argv, '--headful', true) === false })
 const page = await openGame(browser, { url: URL, hook: '__landerTest', start: false, viewport: { width: 820, height: 700 } })
