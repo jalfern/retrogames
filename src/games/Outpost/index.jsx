@@ -12,6 +12,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -426,18 +428,14 @@ const OutpostGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black" style={{ color: '#ffe9a3', textShadow: '3px 0 0 #4ad7ff, -3px 0 0 #ff7d5d, 0 10px 24px #000' }}>OUTPOST</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm">you are the foreman. the dwarves decide the rest.</p>
-                    <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY — 1 · 2 · 3 · 4 PICK A DEPTH SEED</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
-                        dig through rock with x designations — the tunnel follows the shortest seam to the beacon &gt;<br />
-                        farms , ripen to o; ripe plots and bushes * summon pickers; hauls feed the depot &amp;<br />
-                        dwarves eat on a hunger clock — an empty depot and no food ends a dwarf, and their job returns to the queue<br />
-                        T or B cycles tool: DIG / FARM / RALLY — rally stands every dwarf on the stairs to descend<br />
-                        three depths alive wins; the demo is the autopilot&apos;s own proven run
-                    </p>
-                </div>
+                <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
+                        <h1 className="text-4xl font-black" style={{ color: '#ffe9a3', textShadow: '3px 0 0 #4ad7ff, -3px 0 0 #ff7d5d, 0 10px 24px #000' }}>OUTPOST</h1>
+                        <p className="text-white font-mono font-bold mt-2 animate-pulse">{PRESS}</p>
+                        <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
+                    </div>
+                </>
             )}
 
             {screen === 'over' && end && (

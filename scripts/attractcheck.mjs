@@ -168,6 +168,36 @@ const REACT_TITLES = [
         wrap: `    'TAKE EVERY GOLD FOR THE LADDER',\n`,
         leak: `    '1 · 2 · 3 PICK A VAULT',\n`,
     },
+    {
+        label: 'SIMCITY-MIN',
+        jsx: 'src/games/SimCityMin/index.jsx',
+        mf: 'src/games/SimCityMin/attract.js',
+        import: '../src/games/SimCityMin/attract.js',
+        slot: '<AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse">{PRESS}</p>`,
+        wrap: `    'POWER TRAVELS THE ROAD GRAPH',\n`,
+        leak: `    '1 · 2 · 3 PICK A MAP',\n`,
+    },
+    {
+        label: 'OUTPOST',
+        jsx: 'src/games/Outpost/index.jsx',
+        mf: 'src/games/Outpost/attract.js',
+        import: '../src/games/Outpost/attract.js',
+        slot: '<AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse">{PRESS}</p>`,
+        wrap: `    'X MARKS DIGS · THE SEAM LEADS TO THE BEACON',\n`,
+        leak: `    '1 · 2 · 3 · 4 PICK A DEPTH SEED',\n`,
+    },
+    {
+        label: 'PAPERS, PLEASE-MIN',
+        jsx: 'src/games/PapersPleaseMin/index.jsx',
+        mf: 'src/games/PapersPleaseMin/attract.js',
+        import: '../src/games/PapersPleaseMin/attract.js',
+        slot: '<AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse">{PRESS}</p>`,
+        wrap: `    'A ADMIT · D DENY · THE SCALE READS TRUTH',\n`,
+        leak: `    '1 · 2 · 3 · 4 PICK A WEEK',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
