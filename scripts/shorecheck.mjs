@@ -14,12 +14,14 @@
 //                 · depth field varies in time; breaker foam exists
 //   3. WINS   — golden-hour look: warm sky, foam pixels, warm sand, and a
 //               camera that changes the world.
+//   4. SPEED  — steady-state frame time at full window size (canvas caps at
+//               1600x1000) must stay under --max-ms (20) on the Studio's GPU.
 //
 // Chrome is launched DIRECTLY with --enable-unsafe-swiftshader (playwright's
 // stock switches hide navigator.gpu; same recipe as oceancheck).
 //
 // Usage:
-//   node scripts/shorecheck.mjs [--file <path>] [--json] [--shots <dir>] [--strip]
+//   node scripts/shorecheck.mjs [--file <path>] [--json] [--shots <dir>] [--strip] [--max-ms 20]
 // --shots writes view-a.png / view-b.png; --strip adds strip.png (nine frames
 // of one incoming wave) and waveframes/f0..f8.png. Exit 0 = all green.
 // Proven-fail mutant: pin `nx = xsCurve(laneZ[i])` in simStep → swash
@@ -46,6 +48,7 @@ const asJson = args.includes('--json')
 const file = resolve(ROOT, opt('--file', 'public/demos/shore.html'))
 const shots = opt('--shots', null)
 const wantStrip = args.includes('--strip')
+const maxMs = +opt('--max-ms', 20)
 if (!existsSync(file)) { console.error(`missing ${file}`); process.exit(1) }
 const url = 'file://' + file
 const PORT = opt('--port', '9378')
@@ -308,6 +311,22 @@ async function main() {
         }
         writeFileSync(resolve(dir, 'strip.png'), encodePng(TW * 3, TH * 3, grid))
       }
+
+      // 4. speed — full-window frame budget on the Studio's GPU. The canvas
+      // caps at 1600x1000 (min(inner, cap) x dpr), so that viewport is the
+      // worst case this demo ever renders. Steady state only: resize + warm
+      // pipelines first, then measure over 60 frames and fail above maxMs.
+      await page.setViewportSize({ width: 1600, height: 1000 })
+      await page.waitForTimeout(1500)
+      await page.evaluate(() => window.__shoreTest.resetPerf())
+      let perf = await page.evaluate(() => window.__shoreTest.perf())
+      for (let i = 0; i < 24 && perf.n < 60; i++) {
+        await page.waitForTimeout(250)
+        perf = await page.evaluate(() => window.__shoreTest.perf())
+        if (perf.n >= 30 && perf.avg > maxMs) break
+      }
+      ok(`frame time under ${maxMs} ms at full window (1600x1000)`,
+        perf.n >= 60 && perf.avg <= maxMs, `avg=${perf.avg}ms max=${perf.max}ms over ${perf.n} frames`)
     }
 
     ok('zero page/WGSL errors', errs.length === 0, errs.slice(0, 2).join(' | '))
