@@ -7,7 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoostFx } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
-import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout } from './art.js'
+import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx } from './art.js'
 import { drawText } from './font.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
@@ -376,12 +376,16 @@ export default function CometDrift() {
                 const s = BASE_PP / pr.f
                 const sy = HZ + CAM_H * s
                 const sx = W / 2 + pr.l * s
-                const w = Math.min(W * 2, it.w * s * 0.9); const h = Math.min(H * 1.6, it.h * s * 0.9)
+                let w = Math.min(W * 2, it.w * s * 0.9); let h = Math.min(H * 1.6, it.h * s * 0.9)
                 if (sx + w < 0 || sx - w > W) continue
-                ctx.globalAlpha = 0.22
+                // #440 item 2: a rival that covers the view darkens and shrinks
+                // so the road ahead stays readable during contact racing.
+                const rv = it.o ? rivalViewFx(h, H) : { s: 1, alpha: 1 }
+                w *= rv.s; h *= rv.s
+                ctx.globalAlpha = 0.22 * rv.alpha
                 ctx.fillStyle = '#000'
                 ctx.fillRect(sx - w / 2, sy - 3 * s, w, 6 * s)
-                ctx.globalAlpha = 1
+                ctx.globalAlpha = rv.alpha
                 ctx.save()
                 ctx.translate(sx, sy - h / 2)
                 if (it.o) ctx.rotate(it.o.a - camA)

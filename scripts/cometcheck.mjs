@@ -753,6 +753,63 @@ console.log('— rival boost is a distant sweep (#440 item 5) —')
 await sfxLaw()
 sfxWired()
 
+// #440 item 2 — overtakes blinded the chase camera: at contact distance the
+// rival buggy sprite grew past half the portrait screen (measured 53–158% of
+// screen height at f 30..90, and seed-3 racing really reaches f≈0), hiding
+// the road ahead. rivalViewFx (art.js) is the pure readability law: rivals
+// covering > dampFrac of screen height darken, past capFrac they shrink;
+// far rivals render untouched.
+const viewLaw = async () => {
+    const { rivalViewFx, RIVAL_VIEW } = await import('../src/games/CometDrift/art.js' + '?view=' + Math.random())
+    const PH = 448
+    const rawAt = (f, H) => Math.min(H * 1.6, 54 * (540 / f) * 0.9)
+    const far = rivalViewFx(rawAt(300, PH), PH)
+    check('a far rival renders untouched (#440 item 2)', far.s === 1 && far.alpha === 1, `f300: ${rawAt(300, PH).toFixed(0)}px = ${(rawAt(300, PH) / PH * 100).toFixed(0)}%`)
+    const blinding = rawAt(30, PH)
+    const d30 = rivalViewFx(blinding, PH)
+    check('a blinding close rival shrinks to readable size (#440 item 2: <=56% of screen)', blinding * d30.s <= 0.56 * PH, `raw ${(blinding / PH * 100).toFixed(0)}% → ${(blinding * d30.s / PH * 100).toFixed(0)}%`)
+    check('a half-screen rival darkens so the road reads through (#440 item 2)', rivalViewFx(rawAt(60, PH), PH).alpha <= 0.85 && rivalViewFx(rawAt(90, PH), PH).alpha <= 0.92)
+    const edge = rivalViewFx(rawAt(150, PH), PH)
+    check('damping is continuous at the threshold (#440 item 2)', rivalViewFx(RIVAL_VIEW.dampFrac * PH - 1, PH).s === 1 && edge.alpha > 0.7, `f150 alpha ${edge.alpha.toFixed(2)}`)
+    let monoS = true; let monoA = true
+    for (let px = 40; px <= PH * 1.6; px += 5) {
+        const a = rivalViewFx(px, PH); const b = rivalViewFx(px + 5, PH)
+        if (b.s > a.s + 1e-9 || b.alpha > a.alpha + 1e-9) { monoS = false; monoA = false }
+    }
+    check('damping grows monotonically with coverage (#440 item 2)', monoS && monoA)
+    check('a rival never goes invisible (#440 item 2)', RIVAL_VIEW.minAlpha >= 0.5 && rivalViewFx(PH * 1.6, 176).alpha >= RIVAL_VIEW.minAlpha)
+    selectCourse('sandbank')
+    const m = await loadSim()
+    const g = m.makeGame(3)
+    let dampTicks = 0; let worstAfter = 0
+    for (let n = 0; n < 60 * 90 && !g.end; n++) {
+        m.step(g, m.decide(g))
+        const P = g.karts[0]; const ca = Math.cos(P.a); const sa = Math.sin(P.a)
+        let fmin = Infinity
+        for (const K of g.karts.slice(1)) {
+            const f = (K.x - P.x) * ca + (K.y - P.y) * sa
+            if (f >= 30) fmin = Math.min(fmin, f)
+        }
+        if (fmin === Infinity) continue
+        const raw = rawAt(fmin, PH)
+        const fx = rivalViewFx(raw, PH)
+        if (fx.s < 1 || fx.alpha < 1) dampTicks++
+        worstAfter = Math.max(worstAfter, raw * fx.s / PH)
+    }
+    check('contact racing really triggers the law — it has a job (#440 item 2)', dampTicks > 60, `${dampTicks} dampened ticks in seed 3`)
+    check('throughout the race nothing covers more than 56% of the screen (#440 item 2)', worstAfter <= 0.551, `worst ${(worstAfter * 100).toFixed(1)}%`)
+}
+const viewWired = () => {
+    const src = readFileSync(IDXJS, 'utf8')
+    check('index.jsx: rival sprites route through rivalViewFx (#440 item 2)', /const rv = it\.o \? rivalViewFx\(h, H\) : \{ s: 1, alpha: 1 \}/.test(src) && /w \*= rv\.s; h \*= rv\.s/.test(src))
+    check('index.jsx: the shadow dims with the damped sprite (#440 item 2)', /ctx\.globalAlpha = 0\.22 \* rv\.alpha/.test(src))
+    check('index.jsx: the player kart is NEVER dampened — it stays solid (#440 item 2)', /ctx\.drawImage\(S\.comet\[sf\]\[rf\], -pw \/ 2, -ph, pw, ph\)/.test(src) && !/rv\.(s|alpha)[\s\S]{0,40}S\.comet\[sf\]/.test(src.slice(src.indexOf('const pw = Math.round'))))
+    check('index.jsx: scenery has no rival damp — only karts carry .o (#440 item 2)', /it\.o \? rivalViewFx/.test(src) && /items\.push\(\{ x: sc\.x, y: sc\.y, a: 0, img/.test(src))
+}
+console.log('— overtakes stay readable (#440 item 2) —')
+await viewLaw()
+viewWired()
+
 if (process.argv.includes('--mutate')) {
     // break the checkpoint gate in sim.js and demand the shortcut probe above
     // goes red. Restore runs whatever happens.
@@ -1002,6 +1059,31 @@ if (process.argv.includes('--mutate')) {
         writeFileSync(SIM, simSfxSrc.replace('mute: 700', 'mute: 1e9'))
         await sfxDied('the mute radius vanishes — a rival across the map still pops', sfxLaw)
     } finally { writeFileSync(SIM, simSfxSrc) }
+
+    // #440 item-2 readability mutants: re-plant the blinding sprite and a
+    // flat law and demand the readability gate above goes red.
+    const viewDied = async (label, run) => {
+        const before = R.fail
+        await run()
+        if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #440 readability gate is load-bearing`)
+        else console.log(`  MUTANT SURVIVED — ${label}: the readability gate is BLIND`)
+    }
+    try {
+        writeFileSync(ARTJS, artSrc.replace('const s = frac > RIVAL_VIEW.capFrac ? RIVAL_VIEW.capFrac / frac : 1', 'const s = 1'))
+        await viewDied('the blinding portrait sprite returns (no shrink)', viewLaw)
+    } finally { writeFileSync(ARTJS, artSrc) }
+    try {
+        writeFileSync(ARTJS, artSrc.replace('const alpha = Math.max(RIVAL_VIEW.minAlpha, 1 - over * 1.1)', 'const alpha = 1'))
+        await viewDied('close rivals stay fully opaque — the road is gone', viewLaw)
+    } finally { writeFileSync(ARTJS, artSrc) }
+    try {
+        writeFileSync(ARTJS, artSrc.replace('dampFrac: 0.25', 'dampFrac: 0.02'))
+        await viewDied('far rivals ghost too (threshold swallowed the field)', viewLaw)
+    } finally { writeFileSync(ARTJS, artSrc) }
+    try {
+        writeFileSync(IDXJS, idxSrc.replace('it.o ? rivalViewFx(h, H) : { s: 1, alpha: 1 }', '{ s: 1, alpha: 1 }'))
+        await viewDied('the renderer bypasses the law (the #440 item-2 regression)', viewWired)
+    } finally { writeFileSync(IDXJS, idxSrc) }
 }
 
 console.log(`\n${R.fail === 0 ? 'GREEN' : 'RED — ' + R.fail + ' failed'}`)
