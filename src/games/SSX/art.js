@@ -395,7 +395,7 @@ export function makeBoard(color) {
     const cTip = new THREE.Color(0xe8edf5)
     const mixc = new THREE.Color()
     for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i)
+        const x = pos.getX(i), y = pos.getY(i)
         const a = Math.abs(x) / (L / 2)
         pos.setY(i, y + 0.16 * Math.pow(Math.max(0, a - 0.62) / 0.38, 2))
         if (y < 0.012) mixc.copy(cB)
