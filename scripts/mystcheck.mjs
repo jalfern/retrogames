@@ -4,6 +4,9 @@
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
 import { freshState, dispatch, solveScript, runSolver, isWin, SAFE_CODE, STAR_CODE, SPHERE_CODE } from '../src/games/Myst/state.js'
+import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 
 let pass = 0, fail = 0
 const ok = (cond, name) => { if (cond) { pass++; console.log(`  ok ${name}`) } else { fail++; console.error(`  FAIL ${name}`) } }
@@ -128,6 +131,59 @@ console.log('MYST — pages, books, endings')
   const spots = Object.values(NODES).flatMap((n) => n.spots)
   ok(pagesNeeded.every((p) => spots.some((s) => s.page === p)), 'all eight red/blue pages exist somewhere on the island')
   ok(spots.some((s) => s.act === 'takeMatch'), 'matches exist (fire needs them)')
+}
+
+console.log('MYST — attract (rule 6, #365)')
+{
+  ok(MESSAGES.length >= 2, 'the attract cycles through more than one message', `${MESSAGES.length}`)
+  ok(new Set(MESSAGES).size === MESSAGES.length, 'no message repeats', `${new Set(MESSAGES).size}/${MESSAGES.length}`)
+  ok(MESSAGES.every((m) => m.length > 0 && m.length <= 64), 'every cycling message stays short', MESSAGES.map((m) => m.length).join(','))
+  ok(MESSAGES.every((m) => !/scripts\/|\.mjs|autopilot/.test(m)), 'no harness leak in an attract line', MESSAGES.find((m) => /scripts\/|\.mjs|autopilot/.test(m)) || '')
+  const jsx = readFileSync('src/games/Myst/index.jsx', 'utf8')
+  const block = jsx.slice(jsx.indexOf("{screen === 'attract'"), jsx.indexOf("{screen === 'ending'"))
+  ok(block.length > 0 && block.includes('<AttractMessage'), 'attract renders through the one-slot cycling helper')
+  ok((block.match(/<AttractMessage/g) || []).length === 1, 'exactly one cycling message slot on the attract', `${(block.match(/<AttractMessage/g) || []).length}`)
+  ok((block.match(/<p\b/g) || []).length === 1, 'only the press prompt is a raw paragraph (no stacked lore)', `${(block.match(/<p\b/g) || []).length}`)
+  ok(block.includes('{MESSAGES}'), 'the attract reads copy from the shared module', '')
+  ok(block.includes('{PRESS}'), 'the press prompt comes from the shared module', '')
+}
+
+// ------------------------------------------------------------------ mutants ----
+if (process.argv.includes('--mutate')) {
+  console.log('MYST — attract mutants (each MUST die)')
+  const MF = 'src/games/Myst/attract.js'
+  const JX = 'src/games/Myst/index.jsx'
+  const MUTANTS = [
+    ['attract never cycles (one message)', MF,
+      `    'CYAN · 1993 · REBUILT IN CODE',\n    'A library of living books · two imprisoned brothers',\n    'Four Ages hidden in plain sight',\n    'No map. No hints. Take notes, as in 1993.',\n    'Click or tap what you see · arrows step and turn',\n`,
+      `    'CLICK TO START',\n`],
+    ['a message repeats', MF,
+      `    'Four Ages hidden in plain sight',`,
+      `    'A library of living books · two imprisoned brothers',`],
+    ['a harness script name leaks into an attract line', MF,
+      `    'Four Ages hidden in plain sight',`,
+      `    'scripts/mystcheck.mjs audits, live',`],
+    ['attract stacks lore paragraphs', JX,
+      `          <AttractMessage className="mb-8 text-amber-200/70 max-w-xl tracking-wide" messages={MESSAGES} />`,
+      `          <p className="text-amber-200/70">A library of living books</p>\n          <p className="text-amber-300">No map, no hints</p>`],
+    ['attract drops the cycling helper', JX,
+      `          <AttractMessage className="mb-8 text-amber-200/70 max-w-xl tracking-wide" messages={MESSAGES} />`,
+      `          <p className="text-amber-200/70">A library of living books</p>`],
+    ['the press prompt is hard-coded, not from the module', JX,
+      `<p className="text-lg animate-pulse text-amber-300">{PRESS}</p>`,
+      `<p className="text-lg animate-pulse text-amber-300">CLICK</p>`],
+  ]
+  let died = 0
+  for (const [name, f, from, to] of MUTANTS) {
+    const orig = readFileSync(f, 'utf8')
+    if (!orig.includes(from)) { ok(false, `mutant anchor: ${name}`, `missing in ${f}`); continue }
+    writeFileSync(f, orig.replace(from, to))
+    const res = spawnSync(process.execPath, ['scripts/mystcheck.mjs'], { encoding: 'utf8' })
+    if (res.status !== 0) { died++; ok(true, `mutant dies: ${name}`) }
+    else { ok(false, `mutant dies: ${name}`, 'child passed despite the bug') }
+    writeFileSync(f, orig)
+  }
+  ok(died === MUTANTS.length, `all ${MUTANTS.length} attract mutants die`, `${died}/${MUTANTS.length}`)
 }
 
 console.log(`\n${pass} pass, ${fail} fail`)

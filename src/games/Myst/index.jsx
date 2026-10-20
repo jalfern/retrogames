@@ -10,12 +10,14 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import PauseOverlay from '../../components/PauseOverlay'
+import AttractMessage from '../../components/AttractMessage'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
 import { freshState, dispatch, runSolver, solveScript } from './state.js'
+import { MESSAGES, PRESS } from './attract.js'
 import { buildWorld } from './scene.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 
@@ -424,11 +426,9 @@ const MystGame = () => {
 
       {screen === 'attract' && (
         <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-black/80 flex flex-col items-center justify-center text-center p-6">
-          <h1 className="text-6xl font-bold tracking-[0.5em] text-amber-100 drop-shadow-[0_0_18px_rgba(255,190,90,0.6)] mb-2">MYST</h1>
-          <p className="text-amber-200/70 text-sm mb-8 tracking-widest">CYAN · 1993 · REBUILT IN CODE</p>
-          <p className="text-amber-50/90 max-w-xl mb-2">You fall through the starless dark and land at the foot of a dock. An island waits: a library of living books, two imprisoned brothers, four Ages hidden in plain sight.</p>
-          <p className="text-amber-300/70 text-xs max-w-xl mb-8">No map. No hints. Take notes, as in 1993. Click or tap what you see; arrows step and turn.</p>
-          <p className="text-lg animate-pulse text-amber-300">PRESS ANY KEY TO START</p>
+          <h1 className="text-6xl font-bold tracking-[0.5em] text-amber-100 drop-shadow-[0_0_18px_rgba(255,190,90,0.6)] mb-8">MYST</h1>
+          <AttractMessage className="mb-8 text-amber-200/70 max-w-xl tracking-wide" messages={MESSAGES} />
+          <p className="text-lg animate-pulse text-amber-300">{PRESS}</p>
         </div>
       )}
 
