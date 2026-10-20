@@ -221,7 +221,9 @@ export default function CometDriftHD() {
         // WebGPU is the product default; ?gl=webgl2 pins the fallback so
         // pixel-reading harnesses (getImageData) see the frame — WebGPU
         // canvases answer black to 2D copies regardless of the flag.
-        const forceGL = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('gl') === 'webgl2'
+        // #478: ?renderer=webgl(2) is Jon's pin name for the same fallback.
+        const qs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
+        const forceGL = !!qs && (qs.get('gl') === 'webgl2' || qs.get('renderer') === 'webgl' || qs.get('renderer') === 'webgl2')
 
         const g = makeGame(0)
         gameRef.current = g
@@ -1052,7 +1054,7 @@ export default function CometDriftHD() {
                 return [
                     `screen ${st.screen}  phase ${g.phase}  end ${g.end}  gpu ${backendName}`,
                     `pos ${P.place}/${g.karts.length}  lap ${P.lap}/${LAPS}  v ${P.v.toFixed(2)}`,
-                    `drift ${P.driftT} charge ${P.charge}  boost ${P.boostT}/tier ${P.boostTier}  spin ${P.spinT}`,
+                    `drift ${P.driftT} charge ${Math.round(P.charge)}  boost ${P.boostT}/tier ${P.boostTier}  spin ${P.spinT}`,
                     `sparks ${sparks.aliveCount} dust ${dust.aliveCount}  fov ${camera.fov.toFixed(1)}  tick ${g.tick}`,
                 ]
             },
@@ -1079,7 +1081,7 @@ export default function CometDriftHD() {
             best: () => st.best,
             fx: () => {
                 const P = g.karts[0]
-                return { sparks: sparks.aliveCount, dust: dust.aliveCount, driftT: P.driftT, charge: P.charge, boostT: P.boostT, spinT: P.spinT, v: P.v }
+                return { sparks: sparks.aliveCount, dust: dust.aliveCount, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
             modelLoaded: () => {
                 const v = kartMeshes[0].m.userData.view
@@ -1127,7 +1129,7 @@ export default function CometDriftHD() {
                     tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), done: !!g.end,
                     course: COURSE.id,
                     place: P.place, lap: P.lap, phase: g.phase, v: Math.round(P.v * 100) / 100,
-                    driftT: P.driftT, charge: P.charge, boostT: P.boostT, spinT: P.spinT,
+                    driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT,
                     hash: stateHash(g),
                 }
             },

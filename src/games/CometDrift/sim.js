@@ -34,6 +34,14 @@ export const CFG = {
     // it, the ideal line (or a human's apex correction) dumps the charge at
     // every apex and the ladder never pays in a real race.
     driftGrace: 9,
+    // #478: charge is earned in BENDS, not on the clock. Accrual per drift
+    // tick scales with the road curvature under the kart (|k|/this, capped
+    // at 1), so a held drift through a real corner still pays the same
+    // ladder as before (the horizon is the same 1/3300 the drift-smart
+    // brain already uses to call a bend), while tiny steer taps down a
+    // near-straight (|k| ≲ 1e-4) accrue almost nothing and cannot farm a
+    // turbo. Radius at full accrual = 3300px; nothing accrues at k=0.
+    driftBendK: 1 / 3300,
 }
 
 // the drift charge ladder: hold 50 ticks for the blue spark and a small
@@ -201,7 +209,9 @@ function drive(g, k, inp) {
             k.driftG = Math.abs(steer) > 0 ? CFG.driftGrace : k.driftG - 1
             k.driftT++
             const prevTier = tierFor(k.charge)
-            k.charge = Math.max(k.charge, k.driftT)
+            // #478: charge accrues where the road bends — see CFG.driftBendK.
+            const bendW = Math.min(1, Math.abs(T.pts[surf.i].k) / CFG.driftBendK)
+            k.charge = k.charge < 0 ? bendW : k.charge + bendW
             const tierNow = tierFor(k.charge)
             if (tierNow > prevTier) g.events.push({ e: 'tier', who: k.name, tier: tierNow })
             // #440: drift steer authority decays with how long the drift has

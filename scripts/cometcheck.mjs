@@ -319,6 +319,39 @@ for (const c of COURSES) {
         check(`${c.id}: a short drift pays tier 0 only`, Q.boostTier === 0, `tier ${Q.boostTier}`)
     }
 
+    console.log(`— ${c.id}: straights do not charge (#478) —`)
+    {
+        // #478 item 2: charge must be earned in bends, not on the clock.
+        // The longest |k| ≤ 2e-4 stretch (everything the grown world still
+        // calls near-straight) must accrue under half a tick of charge per
+        // held tick and stay under the blue gate — the old time-based rule
+        // accrues 1.0/tick there and farms tiers without a corner.
+        const STRAIGHT_K = 2e-4
+        let bi = 0; let blen = 0; let bcur = 0; let bstart = 0
+        for (let i = 0; i < T.N * 2; i++) {
+            if (Math.abs(T.pts[i % T.N].k) <= STRAIGHT_K) { if (bcur === 0) bstart = i; bcur++; if (bcur > blen) { blen = bcur; bi = bstart } } else bcur = 0
+        }
+        const p = T.pts[(bi + 2) % T.N]
+        const g = sim.makeGame(7)
+        g.phase = 'race'
+        const P = g.karts[0]
+        P.v = 8.2; P.lapStart = -999
+        P.x = p.x; P.y = p.y; P.a = p.a; P.idx = (bi + 2) % T.N; P.hint = P.idx
+        let maxC = -1; let ticks = 0
+        for (let i = 0; i < 400 && !P.finished; i++) {
+            if (((P.idx - bi) + T.N) % T.N >= blen) break
+            const q = T.pts[P.idx]
+            const lat = (P.x - q.x) * -Math.sin(q.a) + (P.y - q.y) * Math.cos(q.a)
+            const s = lat > 8 ? 'l' : lat < -8 ? 'r' : ((i % 24) < 12 ? 'r' : 'l')
+            sim.step(g, { u: true, drift: true, [s]: true })
+            ticks++
+            maxC = Math.max(maxC, P.charge)
+        }
+        const cap = Math.min(45, ticks * 0.5)
+        check(`${c.id}: held-drift + steer taps on the longest straight bank no tier (#478)`,
+            maxC < cap, `${maxC.toFixed(1)} charge in ${ticks} straight ticks (cap ${cap.toFixed(1)})`)
+    }
+
     console.log(`— ${c.id}: the pack reads + the ladder announces (#426) —`)
     {
         const m = await loadSim()
@@ -953,6 +986,46 @@ if (process.argv.includes('--mutate')) {
             R.fail++
         } else {
             console.log(`  MUTANT SURVIVED — ${got} tier events without the push: the announce gate is BLIND`)
+        }
+    } finally {
+        writeFileSync(path, src)
+    }
+
+    // #478 mutant: restore the time-based accrual and the straight gate must die.
+    try {
+        writeFileSync(path, src.replace('k.charge = k.charge < 0 ? bendW : k.charge + bendW', 'k.charge = Math.max(k.charge, k.driftT)'))
+        const straightProbe = async () => {
+            const mm = await loadSim()
+            selectCourse('gulch')
+            const TT = Tmod.TRACK
+            let bi = 0; let blen = 0; let bcur = 0; let bstart = 0
+            for (let i = 0; i < TT.N * 2; i++) {
+                if (Math.abs(TT.pts[i % TT.N].k) <= 2e-4) { if (bcur === 0) bstart = i; bcur++; if (bcur > blen) { blen = bcur; bi = bstart } } else bcur = 0
+            }
+            const p = TT.pts[(bi + 2) % TT.N]
+            const gg = mm.makeGame(7)
+            gg.phase = 'race'
+            const P = gg.karts[0]
+            P.v = 8.2; P.lapStart = -999
+            P.x = p.x; P.y = p.y; P.a = p.a; P.idx = (bi + 2) % TT.N; P.hint = P.idx
+            let maxC = -1; let ticks = 0
+            for (let i = 0; i < 400 && !P.finished; i++) {
+                if (((P.idx - bi) + TT.N) % TT.N >= blen) break
+                const q = TT.pts[P.idx]
+                const lat = (P.x - q.x) * -Math.sin(q.a) + (P.y - q.y) * Math.cos(q.a)
+                const s = lat > 8 ? 'l' : lat < -8 ? 'r' : ((i % 24) < 12 ? 'r' : 'l')
+                mm.step(gg, { u: true, drift: true, [s]: true })
+                ticks++
+                maxC = Math.max(maxC, P.charge)
+            }
+            return { maxC, ticks, cap: Math.min(45, ticks * 0.5) }
+        }
+        const pr = await straightProbe()
+        if (pr.maxC >= pr.cap) {
+            console.log(`  MUTANT DIED — time-based accrual farms ${pr.maxC.toFixed(1)} charge in ${pr.ticks} straight ticks (cap ${pr.cap.toFixed(1)}): the #478 straight gate is load-bearing`)
+            R.fail++
+        } else {
+            console.log(`  MUTANT SURVIVED — old accrual banked only ${pr.maxC.toFixed(1)} on the straight: the #478 gate is BLIND`)
         }
     } finally {
         writeFileSync(path, src)

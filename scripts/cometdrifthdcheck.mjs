@@ -365,6 +365,18 @@ if (!SKIP_BROWSER) {
     } finally {
         await b2.close()
     }
+
+    // #478 item 0: ?renderer=webgl (Jon's pin name) pins the WebGL2 fallback.
+    await new Promise((r) => setTimeout(r, 2000))
+    const b3 = await launch()
+    try {
+        const page3 = await openGame(b3, { url: BASE + '?renderer=webgl', viewport: { width: 640, height: 360 }, hook: '__cometHDTest' })
+        await page3.waitForFunction(() => window.__cometHDTest.ready(), null, { timeout: 20000 })
+        const backend3 = await page3.evaluate(() => window.__cometHDTest.backend())
+        ok(backend3 === 'webgl2' || backend3 === 'webgl2-legacy', `?renderer=webgl pins the WebGL2 fallback (${backend3})`)
+    } finally {
+        await b3.close()
+    }
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
