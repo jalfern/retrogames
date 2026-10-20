@@ -196,3 +196,4 @@ launchctl load ~/Library/LaunchAgents/com.jalfern.forge.plist   # install (after
 scripts/forge.sh                                                # force a session now
 tail -f /tmp/forge/last.log                                     # watch a session
 ```
+<!-- scope probe: docs-only PR must hit the fast path (#601 done-criteria) -->
