@@ -10,6 +10,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { rumble } from '../../components/gamepadMap'
 import AttractMessage from '../../components/AttractMessage'
+import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -450,15 +451,9 @@ const JoustGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 bottom-8 text-center pointer-events-none px-6">
-                    <p className="text-yellow-300 font-mono font-bold mt-1 animate-pulse text-sm">PRESS ANY KEY / TAP &mdash; PRESS 2 FOR TWO RIDERS</p>
-                    <AttractMessage className="mt-1 text-white/70" messages={[
-                        '← → turn · UP / X / SPACE beat the wings · momentum is real, the sky is wide',
-                        '2P is a keyboard rider: A / D turn · W / F wings — the on-screen pad is P1 only',
-                        'the lower lance loses a joust — meet a rider dead-even and you both fall',
-                        'defeated riders drop eggs: touch one to bank it, leave it and it hatches into something worse',
-                        'troll hands rise from the lava · five waves · the pterodactyl does not get a parachute',
-                    ]} />
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <AttractMessage className="mb-6 text-yellow-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
                 </div>
             )}
 

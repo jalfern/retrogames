@@ -21,6 +21,9 @@ import {
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from '../src/games/Tetris/planner.js'
 import { musicStep, TET_MUSIC_STEPS } from '../src/games/Tetris/music.js'
 import { Report } from './lib/harness.mjs'
+import { MESSAGES, PRESS } from '../src/games/Tetris/attract.js'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 
 const r = new Report('tetrischeck')
 r.info('boot', 'sim.js + planner.js imported in Node, zero DOM, zero Math.random')
@@ -414,6 +417,53 @@ function autoplay(level, seed, maxPieces) {
     for (let i = 0; i < 10; i++) step(s, { hard: true })
     r.check('there is no hard drop: a "hard" input moves nothing', s.cur.y === SPAWN_Y)
     r.check('seven tetrominoes L J O S Z I T', PIECE_NAMES.join('') === 'LJOSZIT')
+}
+
+// ------------------------------------------------ attract (rule 6, #365) ----
+const ATTRACT = {
+    JX: 'src/games/Tetris/index.jsx',
+    MF: 'src/games/Tetris/attract.js',
+    CHILD: 'scripts/tetrischeck.mjs',
+    MSG: `    'DAS 16/6 · SOFT DROP EVERY 2 FRAMES',\n`,
+    STACK: '<AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />',
+}
+{
+    const jsx = readFileSync(ATTRACT.JX, 'utf8')
+    const block = jsx.slice(jsx.indexOf("{screen === 'attract'"), jsx.indexOf("{screen === 'over'"))
+    r.check('attract cycles more than one message', MESSAGES.length >= 2, String(MESSAGES.length))
+    r.check('no attract message repeats', new Set(MESSAGES).size === MESSAGES.length)
+    r.check('every attract message fits one line', MESSAGES.every((m) => m.length > 0 && m.length <= 44), MESSAGES.map((m) => m.length).join(','))
+    r.check('no harness leak in an attract line', !MESSAGES.some((m) => /scripts?\/|\.mjs|audit|autopilot/i.test(m)))
+    r.check('the press prompt is short and clear', PRESS.length <= 24 && /ANY KEY/i.test(PRESS), PRESS)
+    r.check('exactly one cycling message slot on the attract', block.length > 0 && (block.match(/<AttractMessage/g) || []).length === 1, `${(block.match(/<AttractMessage/g) || []).length}`)
+    r.check('only the press prompt is a raw paragraph (no stacked rules)', (block.match(/<p\b/g) || []).length === 1, `${(block.match(/<p\b/g) || []).length}`)
+    r.check('the attract reads copy from the shared module', block.includes('{MESSAGES}'))
+    r.check('the press prompt comes from the shared module', block.includes('{PRESS}'))
+    r.check('the press prompt blinks', block.includes('animate-pulse'))
+    const dim = block.match(/bg-black\/(\d+)/)
+    r.check('the demo dims behind the attract text', !!dim && Number(dim[1]) >= 40, dim ? dim[0] : 'no scrim')
+}
+
+if (process.argv.includes('--mutate')) {
+    const MUTANTS = [
+        ['the slot pins one message (never cycles)', ATTRACT.JX, 'messages={MESSAGES}', 'messages={[MESSAGES[0]]}'],
+        ['a second rules slot stacks over the demo', ATTRACT.JX, ATTRACT.STACK, `${ATTRACT.STACK}\n                    <AttractMessage className="text-white/70" messages={MESSAGES} />`],
+        ['the demo stops dimming', ATTRACT.JX, 'bg-black/55', 'bg-black/0'],
+        ['the press prompt stops blinking', ATTRACT.JX, 'animate-pulse', 'opacity-100'],
+        ['a message wraps the pane again', ATTRACT.MF, ATTRACT.MSG, `    'THE NES RULESET: DAS 16/6, SOFT DROP EVERY TWO FRAMES, NO HARD DROP, NO HOLD, NO KICKS',\n`],
+        ['a harness leak lands in a visible line', ATTRACT.MF, `    'A NEW LEVEL EVERY 10 LINES',\n`, `    'tetrischeck.mjs audits the gravity table',\n`],
+    ]
+    let died = 0
+    for (const [name, file, from, to] of MUTANTS) {
+        const orig = readFileSync(file, 'utf8')
+        if (!orig.includes(from)) { r.check(`mutant anchor: ${name}`, false, file); continue }
+        writeFileSync(file, orig.replace(from, to))
+        const res = spawnSync(process.execPath, [ATTRACT.CHILD], { encoding: 'utf8' })
+        if (res.status !== 0) { died++; r.check(`mutant dies: ${name}`, true) }
+        else r.check(`mutant dies: ${name}`, false, 'child passed despite the bug')
+        writeFileSync(file, orig)
+    }
+    r.check(`all ${MUTANTS.length} attract mutants die`, died === MUTANTS.length, `${died}/${MUTANTS.length}`)
 }
 
 r.exit()

@@ -19,6 +19,9 @@ import { sfxFor, VOICED, SILENT } from '../src/games/QBert/sound.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 import { COILS, coilX, coilY, discHalfW, DISC_FRAMES, ballScale, BALL_FRAMES, BALL_R, bertFrame, BERT_GEO, BERT_LAND_TICKS, CUBE_SIDE, sideMargin, tunnelArch } from '../src/games/QBert/art.js'
 import { Report } from './lib/harness.mjs'
+import { MESSAGES, PRESS } from '../src/games/QBert/attract.js'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 
 const r = new Report('qbertcheck')
 r.info('boot', 'sim.js + planner.js imported in Node, zero DOM, zero Math.random')
@@ -827,6 +830,53 @@ for (const seed of [1, 7, 42, 101, 777, 0xbeef, 2026, 1982]) {
         Number.isInteger(stepsPerHop) && stepsPerHop === 2, `stepsPerHop=${stepsPerHop}`)
     r.check('the 32-step loop is a whole number of hops (music and hops stay in phase across the loop)',
         Number.isInteger(hopsPerLoop) && hopsPerLoop === 16, `hopsPerLoop=${hopsPerLoop}`)
+}
+
+// ------------------------------------------------ attract (rule 6, #365) ----
+const ATTRACT = {
+    JX: 'src/games/QBert/index.jsx',
+    MF: 'src/games/QBert/attract.js',
+    CHILD: 'scripts/qbertcheck.mjs',
+    MSG: `    'COILY DROPS IN AFTER 9 FLIPS',\n`,
+    STACK: '<AttractMessage className="mb-6 text-yellow-100/80" messages={MESSAGES} />',
+}
+{
+    const jsx = readFileSync(ATTRACT.JX, 'utf8')
+    const block = jsx.slice(jsx.indexOf("{screen === 'attract'"), jsx.indexOf("{screen === 'over'"))
+    r.check('attract cycles more than one message', MESSAGES.length >= 2, String(MESSAGES.length))
+    r.check('no attract message repeats', new Set(MESSAGES).size === MESSAGES.length)
+    r.check('every attract message fits one line', MESSAGES.every((m) => m.length > 0 && m.length <= 44), MESSAGES.map((m) => m.length).join(','))
+    r.check('no harness leak in an attract line', !MESSAGES.some((m) => /scripts?\/|\.mjs|audit|autopilot/i.test(m)))
+    r.check('the press prompt is short and clear', PRESS.length <= 24 && /ANY KEY/i.test(PRESS), PRESS)
+    r.check('exactly one cycling message slot on the attract', block.length > 0 && (block.match(/<AttractMessage/g) || []).length === 1, `${(block.match(/<AttractMessage/g) || []).length}`)
+    r.check('only the press prompt is a raw paragraph (no stacked rules)', (block.match(/<p\b/g) || []).length === 1, `${(block.match(/<p\b/g) || []).length}`)
+    r.check('the attract reads copy from the shared module', block.includes('{MESSAGES}'))
+    r.check('the press prompt comes from the shared module', block.includes('{PRESS}'))
+    r.check('the press prompt blinks', block.includes('animate-pulse'))
+    const dim = block.match(/bg-black\/(\d+)/)
+    r.check('the demo dims behind the attract text', !!dim && Number(dim[1]) >= 40, dim ? dim[0] : 'no scrim')
+}
+
+if (process.argv.includes('--mutate')) {
+    const MUTANTS = [
+        ['the slot pins one message (never cycles)', ATTRACT.JX, 'messages={MESSAGES}', 'messages={[MESSAGES[0]]}'],
+        ['a second rules slot stacks over the demo', ATTRACT.JX, ATTRACT.STACK, `${ATTRACT.STACK}\n                    <AttractMessage className="text-white/70" messages={MESSAGES} />`],
+        ['the demo stops dimming', ATTRACT.JX, 'bg-black/55', 'bg-black/0'],
+        ['the press prompt stops blinking', ATTRACT.JX, 'animate-pulse', 'opacity-100'],
+        ['a message wraps the pane again', ATTRACT.MF, ATTRACT.MSG, `    'COILY DROPS IN AFTER NINE FLIPS AND CHASES YOU DOWN EVERY COLUMN UNTIL YOU LURE HIM OFF WITH THE DISC',\n`],
+        ['a harness leak lands in a visible line', ATTRACT.MF, `    'ARROW PAIRS HOP THE DIAGONALS',\n`, `    'qbertcheck.mjs audits the round ledger',\n`],
+    ]
+    let died = 0
+    for (const [name, file, from, to] of MUTANTS) {
+        const orig = readFileSync(file, 'utf8')
+        if (!orig.includes(from)) { r.check(`mutant anchor: ${name}`, false, file); continue }
+        writeFileSync(file, orig.replace(from, to))
+        const res = spawnSync(process.execPath, [ATTRACT.CHILD], { encoding: 'utf8' })
+        if (res.status !== 0) { died++; r.check(`mutant dies: ${name}`, true) }
+        else r.check(`mutant dies: ${name}`, false, 'child passed despite the bug')
+        writeFileSync(file, orig)
+    }
+    r.check(`all ${MUTANTS.length} attract mutants die`, died === MUTANTS.length, `${died}/${MUTANTS.length}`)
 }
 
 r.exit()
