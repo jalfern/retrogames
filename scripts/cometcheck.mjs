@@ -103,7 +103,13 @@ for (const c of COURSES) {
         const k = Math.abs(T.pts[i].k)
         if (k > 1e-9 && 1 / k < minR) { minR = 1 / k; minI = i }
     }
-    check(`${c.id}: drivable — min radius >= 60 (braking corners allowed #513)`, minR >= 60, `minR ${minR.toFixed(0)} at s=${T.pts[minI].s.toFixed(0)}`)
+    // #542: brakeable, not spin-able. The grown world tripled every radius;
+    // the signature hairpins were pulled back to ~105px so the tightest
+    // corners stay braking corners (>=95 keeps them out of the crawl where a
+    // one-tick steering error means a spin).
+    check(`${c.id}: drivable — min radius >= 95 (braking corners, not spin corners #542)`, minR >= 95, `minR ${minR.toFixed(0)} at s=${T.pts[minI].s.toFixed(0)}`)
+    const LEN3 = { gulch: 4124, sandbank: 6166, corkscomb: 8330 }
+    check(`${c.id}: laps roughly 3x longer (#542 grew the world to 8192)`, T.len >= LEN3[c.id] * 2.2, `len ${T.len.toFixed(0)} (was ${LEN3[c.id]})`)
 
     const HALF = T.WALL_R + 16
     let crossings = 0
@@ -132,7 +138,9 @@ for (const c of COURSES) {
     check(`${c.id}: 4 checkpoint gates, every gate on the road`,
         CHECKPOINTS.length === 4 && CHECKPOINTS.every((arc) => {
             const { p, d } = nearestPt(arc)
-            return d <= 10 && Tmod.surfaceAt(p.x, p.y).surf === 'road'
+            // #542: the grown track has ~30px sample spacing — the nearest
+            // polyline point to a gate fraction is up to half a step away.
+            return d <= 24 && Tmod.surfaceAt(p.x, p.y).surf === 'road'
         }), `${CHECKPOINTS.join(',')}`)
     check(`${c.id}: start/finish sits on the centerline (line on asphalt)`,
         T.pts[0].s === 0 && Tmod.surfaceAt(T.pts[0].x, T.pts[0].y).surf === 'road')
@@ -199,7 +207,7 @@ for (const c of COURSES) {
         const sim = await loadSim()
         const g = sim.makeGame(0)
         let minV = Infinity; let n = 0
-        while (!g.end && n < 60 * 240) { sim.step(g, sim.decide(g)); if (g.phase === 'race') minV = Math.min(minV, g.karts[0].v); n++ }
+        while (!g.end && n < 60 * 300) { sim.step(g, sim.decide(g)); if (g.phase === 'race') minV = Math.min(minV, g.karts[0].v); n++ }
         check(`${c.id}: autopilot brakes for the slow corners (min v < 5.5)`, minV < 5.5, `min v ${minV.toFixed(2)}`)
     }
 
@@ -207,7 +215,7 @@ for (const c of COURSES) {
     const race = (seed) => {
         const g = sim.makeGame(seed)
         let n = 0
-        while (!g.end && n < 60 * 240) { sim.step(g, sim.decide(g)); n++ }
+        while (!g.end && n < 60 * 300) { sim.step(g, sim.decide(g)); n++ }
         return g
     }
     console.log(`— ${c.id}: the win (autopilot from P7) —`)
@@ -224,7 +232,7 @@ for (const c of COURSES) {
         const g = sim.makeGame(3)
         const banked = [0, 0, 0]
         let n = 0
-        while (!g.end && n < 60 * 240) {
+        while (!g.end && n < 60 * 300) {
             sim.step(g, sim.decide(g))
             for (const ev of g.events.splice(0)) if (ev.e === 'boost' && ev.who === 'COMET') banked[ev.tier]++
             n++
@@ -234,7 +242,7 @@ for (const c of COURSES) {
         const g = sim.makeGame(3)
         const banked = [0, 0, 0]
         let n = 0
-        while (!g.end && n < 60 * 240) {
+        while (!g.end && n < 60 * 300) {
             sim.step(g, sim.decide(g))
             for (const ev of g.events.splice(0)) if (ev.e === 'boost' && ev.who === 'COMET') banked[ev.tier]++
             n++
@@ -244,14 +252,14 @@ for (const c of COURSES) {
     check(`${c.id}: field is a race, not a procession: top rival within 6 s of the win`, (() => {
         const g = race(7)
         const finishers = g.karts.filter((k) => k.finished)
-        return finishers.length === 1 || finishers[1].finishT - finishers[0].finishT <= 360
+        return finishers.length >= 2 ? finishers[1].finishT - finishers[0].finishT <= 360 : finishers.length === 1
     })(), (() => { const g = race(7); const f = g.karts.filter((k) => k.finished); return f.length > 1 ? `gap ${((f[1].finishT - f[0].finishT) / 60).toFixed(1)}s` : 'field lapped' })())
     check(`${c.id}: rivals make seeded mistakes (spin/wide events)`, (() => {
         let errs = 0
         for (const s of [0, 7, 9, 42]) {
             const g = sim.makeGame(s)
             let n = 0
-            while (!g.end && n < 60 * 240) {
+            while (!g.end && n < 60 * 300) {
                 sim.step(g, sim.decide(g)); n++
                 errs += g.events.filter((ev) => ev.e === 'spin' && ev.who !== 'COMET').length
             }
@@ -274,13 +282,13 @@ for (const c of COURSES) {
     console.log(`— ${c.id}: the drift ladder —`)
     {
         // pin the ladder test on the circuit's LONGEST gentle FAST sweeper (the
-        // banked loop of Daytona/Laguna, r ~240–1100): throttle holds flat-out
+        // banked loop of Daytona/Laguna, r ~700–3300 post-#542): throttle holds flat-out
         // there, so a held drift can run the whole arc and bank the gold comet.
         // A fixed index is wrong once the layouts are reference-shaped (#513).
         let bi = 0; let bbest = 0; let bcur = 0; let bstart = 0
         for (let i = 0; i < T.N; i++) {
             const k = Math.abs(T.pts[i].k)
-            if (k > 1 / 1100 && k < 1 / 240) { if (bcur === 0) bstart = i; bcur++ } else { if (bcur > bbest) { bbest = bcur; bi = bstart } bcur = 0 }
+            if (k > 1 / 3300 && k < 1 / 700) { if (bcur === 0) bstart = i; bcur++ } else { if (bcur > bbest) { bbest = bcur; bi = bstart } bcur = 0 }
         }
         if (bcur > bbest) { bbest = bcur; bi = bstart }
         const pinIdx = (bi + Math.floor(bbest / 2)) % T.N
@@ -314,7 +322,7 @@ for (const c of COURSES) {
             const g = sim.makeGame(seed)
             const samples = []
             let n = 0
-            while (!g.end && n < 60 * 240) {
+            while (!g.end && n < 60 * 300) {
                 sim.step(g, sim.decide(g)); n++
                 if (n % 120 === 0) samples.push(sim.stateHash(g))
             }
@@ -519,7 +527,7 @@ console.log('— the boost payoff ladder —')
         let bi = 0; let bbest = 0; let bcur = 0; let bstart = 0
         for (let i = 0; i < T.N; i++) {
             const k = Math.abs(T.pts[i].k)
-            if (k > 1 / 1100 && k < 1 / 240) { if (bcur === 0) bstart = i; bcur++ } else { if (bcur > bbest) { bbest = bcur; bi = bstart } bcur = 0 }
+            if (k > 1 / 3300 && k < 1 / 700) { if (bcur === 0) bstart = i; bcur++ } else { if (bcur > bbest) { bbest = bcur; bi = bstart } bcur = 0 }
         }
         if (bcur > bbest) { bbest = bcur; bi = bstart }
         const pinIdx = (bi + Math.floor(bbest / 2)) % T.N

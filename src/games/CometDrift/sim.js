@@ -74,13 +74,13 @@ function mkKart(def, row) {
         ...def, row,
         x: p.x + Math.cos(p.a + Math.PI / 2) * lat,
         y: p.y + Math.sin(p.a + Math.PI / 2) * lat,
-        a: p.a, v: 0, idx: i, hint: i,
+        a: p.a, v: 0, idx: i, hint: i, sUnwrap: p.s,
         boostT: 0, boostTier: -1, spinT: 0, driftT: 0, charge: -1, steerVis: 0, driftG: 0,
         grade: 0,
         cp: 0, lap: 0, lapStart: 0, lapTimes: [], place: row + 1,
         finished: false, finishT: 0,
         offroad: false, bumpCd: 0, anim: 0, goT: 0,
-        mist: 0, mistWide: false,
+        mist: 0, mistWide: false, wpress: 0,
     }
 }
 
@@ -137,6 +137,7 @@ function drive(g, k, inp) {
         const surf = surfaceAt(k.x, k.y, k.hint)
         k.hint = surf.i; k.idx = surf.i
         k.offroad = surf.surf !== 'road'
+        if (surf.surf !== 'wall') k.wpress = 0
         const top = surf.surf === 'sand' ? CFG.sandTop : surf.surf === 'kerb' ? CFG.kerbTop : CFG.top
         const boost = k.boostT > 0
         const cap = top + (boost ? TIERS[k.boostTier].over : 0)
@@ -196,8 +197,27 @@ function drive(g, k, inp) {
             // cliff between cooldowns
             const p = T.pts[surf.i]
             const side = Math.sign(surf.lat)
-            k.x = p.x + Math.cos(p.a + Math.PI / 2) * side * CFG.wallLimit
-            k.y = p.y + Math.sin(p.a + Math.PI / 2) * side * CFG.wallLimit
+            // #542: a constant lateral clamp folds through the corner center
+            // wherever the turn radius is tighter than the wall limit (the
+            // hairpin evolute) — karts that touched it orbited forever. On the
+            // INSIDE of a bend cap the clamp by the local radius: the cliff
+            // bulges into the apex (it's a canyon hairpin) and the clamp
+            // stays a real circle the kart can slide along and escape.
+            const Rloc = Math.abs(p.k) > 1e-9 ? 1 / Math.abs(p.k) : Infinity
+            const lim = (p.k * side > 0
+                ? Math.max(48, Math.min(CFG.wallLimit, Rloc - 48))
+                : CFG.wallLimit) - Math.min(24, (k.wpress || 0) * 0.8)
+            k.x = p.x + Math.cos(p.a + Math.PI / 2) * side * lim
+            k.y = p.y + Math.sin(p.a + Math.PI / 2) * side * lim
+            k.wpress = (k.wpress || 0) + 1
+            // #542: banked slide — a nose-in kart ground against the cliff
+            // forever (the clamp held position while the steering oscillated).
+            // Drag the heading toward the wall tangent so speed carries it
+            // along the face until the track curves back and it escapes.
+            let daT = p.a - k.a
+            while (daT > Math.PI) daT -= Math.PI * 2
+            while (daT < -Math.PI) daT += Math.PI * 2
+            k.a += daT * 0.12
             if (k.bumpCd === 0) {
                 k.v *= CFG.bumpV
                 k.bumpCd = CFG.bumpCd
@@ -217,14 +237,26 @@ function drive(g, k, inp) {
 function checkpoints(g, k, prevS) {
     if (k.finished || prevS === undefined) return
     const s = T.pts[k.idx].s
-    const wrapped = prevS > T.len * 0.7 && s < T.len * 0.3
-    if (!wrapped) {
+    // #542: unwrapped odometer. The two legs flanking start/finish sit close
+    // together, so a nearest-point hop across the lap seam used to fake a
+    // crossing (and re-fill the gates). Per-tick motion unwrapped to (-len/2,
+    // len/2] makes the hop and its return cancel out: the odometer only
+    // advances when the kart really drives forward. Gates fill only on sane
+    // forward ticks; the lap banks when the odometer crosses the line.
+    let ds = s - prevS
+    const H = T.len * 0.5
+    while (ds > H) ds -= T.len
+    while (ds < -H) ds += T.len
+    let unw = (k.sUnwrap === undefined ? prevS : k.sUnwrap) + ds
+    if (Math.abs(unw - s) > H) unw = s
+    k.sUnwrap = unw
+    if (ds >= 0 && ds < 200) {
         for (let ci = 0; ci < CHECKPOINTS.length; ci++) {
             const c = CHECKPOINTS[ci]
             if (prevS < c && s >= c && (ci === 0 || k.cp & (1 << (ci - 1)))) k.cp |= 1 << ci
         }
     }
-    const crossed = prevS > T.len - 500 && s < 500
+    const crossed = Math.floor(unw / T.len) > Math.floor((unw - ds) / T.len)
     if (crossed && k.cp === (1 << CHECKPOINTS.length) - 1) {
         k.lap++
         k.lapTimes.push(g.tick - k.lapStart)
@@ -246,9 +278,18 @@ function brain(g, k, skill, driftSmart) {
     const inp = { u: true, d: false, l: false, r: false, drift: false }
     if (g.phase !== 'race' || k.finished) { if (g.phase !== 'race') inp.u = false; return inp }
     if (g.tick - k.lapStart < k.goT) inp.u = false
-    const look = 4 + Math.round(k.v * 2.6)
+    // #542: look-ahead and the brake window are DISTANCES — at 19.2 px per
+    // unit of v, the px the old 7.4px-spaced machine scanned per tick of
+    // speed. Counting samples instead would brake ~780px out on the grown
+    // world and crawl the whole lap.
+    const arcPx = T.len / T.N
+    const look = Math.max(4, Math.round(k.v * 19.2 / arcPx))
     const t = T.pts[(k.idx + look) % T.N]
-    const kmax = T.aheadK((k.idx + look) % T.N, look + 8)
+    // #542: the brake window opens AT the kart, not at the look point — with
+    // the world grown x3, corners within the look distance (≈500px at boost
+    // speed) were invisible to kmax and the boosted kart ran straight into
+    // the wall they could no longer hold.
+    const kmax = T.aheadK(k.idx, look + 8)
     const arc = look * (T.len / T.N)
     let lat = -Math.sign(t.k) * Math.min(44, Math.abs(t.k) * 3.6e4)
     lat = Math.max(-arc * 0.3, Math.min(arc * 0.3, lat))
@@ -268,8 +309,10 @@ function brain(g, k, skill, driftSmart) {
         if (gap > 60 && gap < 460) lat *= 0.6
     }
     // seeded mistakes: only the human rivals roll — the autopilot is the
-    // certified line and never errs (the harness's win proof rides that)
-    if (!driftSmart && k.mist === 0 && k.spinT === 0 && kmax > 0.0025 && rnd(g) < 0.0016 + (1 - skill) * 0.004) {
+    // certified line and never errs (the harness's win proof rides that).
+    // #542: curvature thresholds are world-relative — radii grew x3, so a
+    // corner the old machine flinched at is now a sweeper.
+    if (!driftSmart && k.mist === 0 && k.spinT === 0 && kmax > 0.0008 && rnd(g) < 0.0016 + (1 - skill) * 0.004) {
         k.mist = 26
         k.mistWide = rnd(g) < 0.72
         if (!k.mistWide && skill < 0.93) { spin(k, g, 'overdriven', 'itself'); return inp }
@@ -277,7 +320,7 @@ function brain(g, k, skill, driftSmart) {
     if (k.mist > 0) {
         k.mist--
         if (k.mistWide) lat *= 1.9
-        if (kmax > 0.0025) { inp.d = false; inp.u = true }
+        if (kmax > 0.0008) { inp.d = false; inp.u = true }
     }
     const tx = t.x + Math.cos(t.a + Math.PI / 2) * lat
     const ty = t.y + Math.sin(t.a + Math.PI / 2) * lat
@@ -289,8 +332,11 @@ function brain(g, k, skill, driftSmart) {
     const vmax = Math.min(CFG.top * skill, fear / Math.max(kmax, 9e-4))
     if (k.v > vmax + 0.4) { inp.d = true; inp.u = false }
     // drift is driven by the CORNER, not the current misalignment: hold it
-    // through the bend, and the straight after it pays the turbo
-    const bend = kmax > (driftSmart ? 0.0015 : 0.0024)
+    // through the bend, and the straight after it pays the turbo. #542: the
+    // horizon rides kmax like the pre-#542 machine (a corner anywhere in the
+    // brake window keeps the charge alive between the short grown-world
+    // kinks), threshold scaled x1/3 with the grown radii.
+    const bend = kmax > 1 / (driftSmart ? 3300 : 2200)
     if (k.v > 5 && bend) inp.drift = true
     return inp
 }
