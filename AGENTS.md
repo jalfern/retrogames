@@ -42,6 +42,13 @@ History: `docs/qwen-run-2026-09-postmortem.md` explains why these rules exist.
 - **Multiplayer titles:** a CPU opponent is the default (works on phones, gives the harness an
   autopilot). Two players is a desktop keyboard option. No second on-screen touchpad.
 
+### Jon's decisions (2026-10-19, answers to STATE questions)
+
+- **Demos are self-contained.** `/retrogames/demos/` is the only surface for demo
+  titles — no registry entries, no arcade menu/footer links.
+- **QA is a lane of its own.** Builder lanes do not pick up QA tasks (polish
+  passes, playtest backlogs); they stay on game code unless asked directly.
+
 ## Stack
 React 19 + Vite 7 + React Router 7 + Tailwind CSS 4. `js-dos` + `ifvms` for DOS/IF titles
 (Ultima, King's Quest, Zork…). All game audio is synthesized at runtime via

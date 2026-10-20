@@ -1,75 +1,76 @@
-# STATE — forge session 2026-10-19/20 (COMET DRIFT #542: grown world + camera)
+# STATE — forge session 2026-10-19 (SHORE: perf + coherent swash + AA)
 
-## Shipped this session
-- **#542 COMET DRIFT: courses too tight, camera lost in overhead scenery** —
-  PR #___ (branch `forge/comet-drift-hd-542`). Issue #542.
-  - World grown ×3: TX/TY 2560→8192; all three layouts + ELEV profiles grown
-    about bbox center (`WORLD_SC=3`, `grown()` in track.js); hairpin apexes
-    pulled back via TIGHTEN table (`scripts/comet-tighten.mjs`) so signature
-            corners stay brakeable: min corner radius now ≥95px (was ~60).
-    Lap lengths ≈3× the old (gulch ~24s, sandbank ~37s, corkscomb ~49s at
-    autopilot pace). Ground bake decoupled: TEX=2560 canvas, `TEX_S=0.3125`
-    for Mode 7 sampling — phones still afford the bake.
-  - Sim taught to live at scale (sim.js): look-ahead converted to distance
-    (px), brake window opens AT the kart, drift-bend + mistake thresholds
-    scaled ×1/3, curvature-capped inner wall clamp + banked slide + wall-press
-    repel (no evolute pin at hairpins), and a new **unwrapped lap odometer**:
-    nearest-point hops across the lap seam no longer fake checkpoints/laps
-    (they cancel in the odometer; teleports re-anchor it).
-  - HD (#scene.js/index.jsx): horizon furniture (floor/dome/sun/14 mesas) now
-    derives from the LIVE course bounds (`worldAnchor()`) and rebuilds per
-    course — the old ring sat at the 2560px world's center and karts drove
-    UNDER the mesas at 3× scale. Chase cam closer/lower (back 4.55u, eye
-    2.45u, look 11u) with a crest-clearing lift law; rim tops down to
-    1.4–2.6u. Scenery must clear EVERY track point (260px) — apex items used
-    to loom over the opposite leg of hairpins.
-  - Harness: cometcheck gates ≥95px min radius + ≥2.2× lap length, scaled
-    sweeper band + budgets (GREEN); cometdrifthdcheck gained
-    `cameraCorridorAudit()` per course (GREEN 50/0 incl. browser). Both
-    mutant suites proven RED.
+## Shipped today
+- **#521 SHORE demo** — PR #537 `a7bb05d`: WebGPU golden-hour beach (travel-time
+  phase warp, Green's-law shoaling, Gerstner steepening, 128-lane CPU swash sim,
+  MSAA-free v1). `docs/shots/shore/`.
+- **SHORE perf: one-lane shore()** — PR #539 `2e0ab1f`: `shore()` copied the
+  whole lanes array (2 KB) per call ×4/fragment → <1 fps at full window. Now
+  takes the one lane `vec3f`; shorecheck gates frame time at full window
+  (1600x1000, `--max-ms 20`, `__shoreTest.perf()`): 16.67 ms avg (vsync cap).
+  Mutant (by-value) 72.9 ms → RED.
+- **#538-partial SHORE: foam-edge AA** — PR #557 `e488dda`. Root cause of the
+  sawtooth was in the SIM: `laneAmp[i]=0.72+0.56*hash1(i)` + `lane*2.399`
+  phase = independent per-lane noise = 1.1 m sawtooth on the foam line
+  (measured mean|Δxw| 2.96 m/lane, 97 reversals). Now smooth alongshore
+  sinusoids + ~6.6 m block phase jitter → 0.40 m/lane, 7 reversals; new
+  shorecheck gate "waterline coherent alongshore" (mutant RED). Plus AA stack:
+  low-pass+Catmull-Rom `laneAt` (sand/water; probe keeps nearest so gates stay
+  exact), model evaluated at unshifted base coords, distance-to-waterline alpha
+  ramp (~2 px world, no dFdx), 4× MSAA resolve, gradient noise (quintic),
+  bed-ripple damp within 2 m of the still line. shorecheck 20/20.
+  Residual ~8 px mesh-period scallop documented in #557/#538: survives
+  noise-off/foam-off/depth-off/MSAA → grazing fresnel/facet banding; honest
+  fix = adaptive alongshore grid (geometry), left to the QA lane.
+
+## In flight (other lanes)
+- **COMET DRIFT #542** (3× grown world + camera) sits on
+  `forge/comet-drift-hd-542` — STATE notes for it were on main earlier; the
+  PR is not filed yet (other CPU). Its lessons are folded below.
+- **#538 QA — SHORE polish** (curl, surf sound, wet-front patchiness, dunes,
+  distant swell, tod slider, + fresnel-scallop follow-up): QA lane's — this
+  builder lane does not take QA tasks (Jon, 2026-10-19).
 
 ## Playable now
-`https://jalfern.com/retrogames/comet-drift` and `/comet-drift-hd` — after
-merge: 3× longer Gulch/Sandbank/Corkscomb, brakeable hairpins, tighter chase
-cam that clears the crests and stays under the horizon.
+`https://jalfern.com/retrogames/demos/shore.html` (smooth: perf fix + AA
+live), plus the arcade (`/retrogames/`). jalfern.com 308s to www — `curl -L`.
 
 ## Next queued
-- After #542 merges: game queue has no open forge issues left — check
-  `gh issue list --label game-queue` before inventing work (rule 2).
+- `gh issue list --label game-queue` is EMPTY (rule 2: don't invent work).
+  Oldest game-queue #531 (Online 2P relay) was merged/closed out; awaiting
+  Jon's next title.
 
 ## Lessons worth keeping
-- **A lap crossing IS a half-lap jump.** Symmetric "sane delta" guards kill
-  real crossings; unwrap per-tick motion to (-len/2, len/2] into an odometer
-  instead, and re-anchor when odometer and position diverge (snap/restore).
-- **Sample-count hint windows rot when spacing changes.** makeNearest's fixed
-  ±160 samples became ±3× the px reach with grown spacing and hopped across
-  the seam. Keep hint windows in PX units (track.js W = 1180px / arcPx).
-- **Grow a world and the horizon rots with it.** Anything placed at absolute
-  coords (mesas, dome, floor, sun) must derive from the live track bbox; the
-  audit (`cameraCorridorAudit`) is what proved it, not the eyeball.
-- **Lateral-offset scenery placement fails on self-folding courses** — check
-  distance to ALL track points, hairpins bring the opposite leg within arm's
-  reach of the apex.
-- **Back-to-back headless Chromes wedge the GPU process**: the second boot's
-  WebGPU init falls into the legacy refuge. Settle ~2s between browsers in
-  multi-lane checks (advisory gate, not a product bug — default boot proven
-  webgpu standalone).
-- Real-time gates on world physics must wait-until (`waitForFunction`), never
-  a fixed `waitForTimeout` (software-rendered lanes tick slower than wall clock).
+- **Independent per-lane noise is a sawtooth generator.** Any array-sampled
+  field (1.1 m lanes) must be coherent at ≥ a few samples; amplitude/phase
+  "texture" belongs in the shader noise, not in lane-indexed hashes.
+- **Identical output across edits = stale cache**, even `file://` with a fresh
+  profile: bust the URL (`?v=`) or you'll debug a render you already fixed.
+- **A pixel metric that can't distinguish mutant from fix is not a gate** —
+  shipped without it (rule 6), kept the lanes() one that can.
+- WGSL copies array-typed params by value; hot calls take the indexed vec3f.
+- WGSL resolve of MSAA goes through the render pass `resolveTarget`; a
+  copyTextureToTexture out of a sampleCount>4 texture renders black.
+- `smoothstep` over depth can't AA a geometric silhouette; only raster MSAA or
+  a denser mesh touches mesh-vs-mesh intersections.
+- Value noise with cubic fade only C1: its lattice creases read as 0.45 m
+  teeth at grazing angles — quintic/gradient noise for edges.
+- (comet) A lap crossing IS a half-lap jump: unwrap into an odometer.
+- (comet) Grow a world and re-derive all absolute-coords scenery from live
+  bbox; audits prove it, not the eyeball.
+- (carried) Cross-lane phase tilt ≪ π; foam needs trough `H/(d0+min(η,0))`;
+  storage `vec3f`=16 B stride; pair GPU readback with same-frame CPU snapshot.
 
 ## Three questions for Jon
-1. Lap times are ~2.2–2.7× the old (corners looser than ×3 since apexes were
-   pulled to ~105px). Long enough, or push the grown layouts wider still?
-2. The 2D Mode 7 bake stays at 2560² (0.31 u/px) — at 8192px courses the
-   asphalt grain is softer up close. Worth a per-course bake size, or leave it?
-3. Production WebGPU default boot flaked to legacy only when two headless
-   Chromes ran back-to-back — accept the 2s settle in hdcheck, or want the
-   b2 lane to retry once before reporting the gate red?
+1. game-queue is empty — next title for the forge lane? (#531 relay is closed;
+   is the 2P relay still the direction, just un-issued?)
+2. Shore fresnel scallop: OK to hand the adaptive-z-grid fix to the QA lane,
+   or want forge to take it once the queue refills?
+3. Demos-only surface is now law (AGENTS.md) — should OCEAN/shore get a card
+   refresh on the demos page next, or leave demos frozen while games scale?
 
 ## Housekeeping
-- This lane's worktree: `~/Dev/retrogames-forge-comet-drift-hd-542`
-  (branch `forge/comet-drift-hd-542`) — remove after merge.
-- Main checkout must sit detached at origin/main (Jon's rule): `git fetch &&
-  git checkout --detach origin/main` in `~/Dev/retrogames`.
-- Dev server for the browser lanes was on :5173 from the worktree — stop when
-  done (`pkill -f "vite.*5173"` if it nags).
+- Main checkout: detached at `origin/main`; no local `main` anywhere (rule 5).
+- This lane's worktrees (`forge-shore-perf`, `forge-shore-foam-aa`) removed
+  post-merge; comet worktree belongs to the other lane.
+- Dev server not started. Nothing dirty.
