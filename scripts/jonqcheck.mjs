@@ -112,6 +112,9 @@ ok(warden.includes('.name == "steer"') && warden.includes('$owner'), 'warden: th
 ok(warden.includes('jonq.mjs" sweep') && warden.includes('no sweep, no kicks'), 'warden: the sweep runs each tick, unless halted')
 ok(/halted=\$HALTED/.test(warden) && /questions=\$QWAIT/.test(warden), 'warden: the pulse line reports halted + questions')
 const fs = read('forge.sh')
+ok(!/ghJson\(\[/.test(read('jonq.mjs')) || /Array\.isArray\(args\[0\]\)/.test(read('jonq.mjs')),
+    'jonq.mjs: ghJson never receives a nested array un-normalized (a nested argv reaches gh as one comma-joined URL)')
+ok(/title: i\.title/.test(read('jonq.mjs')), 'jonq.mjs: toIssue keeps the title (list printed undefined without it)')
 ok(fs.includes('jonq.mjs" halt') && fs.includes('stays asleep'), 'forge.sh: refuses to start while halted')
 ok(fs.includes('jonq.mjs" steer') && fs.includes('STEER'), 'forge.sh: names jalfern\'s steer in the prompt')
 ok(read('forge-qa.sh').includes('jonq.mjs" halt'), 'forge-qa.sh: refuses to start while halted')
