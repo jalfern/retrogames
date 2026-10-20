@@ -14,7 +14,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
+import { PRESS, MESSAGES } from './attract.js'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
@@ -535,16 +537,10 @@ const MetroidGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
-                    <h1 className="text-5xl font-black text-emerald-300" style={{ textShadow: '0 4px 0 #0a3a2a, 0 10px 24px #000' }}>METROID-LITE</h1>
-                    <p className="text-cyan-100/90 font-mono mt-1 text-sm">one cave. three upgrades. the way back is the way forward.</p>
-                    <p className="text-white font-mono font-bold mt-5 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-cyan-200/80 font-mono text-xs mt-2 px-6">
-                        arrows / D-pad: move · SPACE / A: jump (press again mid-air once you own the SPACE JUMP)<br />
-                        X / B button: FIRE the beam · hold DOWN + FIRE: drop a BOMB · beacons save and recharge you<br />
-                        cracked blocks melt to beams, bulkheads fall to bombs, the relic sits above a shaft no single jump can clear<br />
-                        this demo is the flow machine&apos;s own proven route, played tick for tick
-                    </p>
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-5xl font-black text-emerald-300 mb-6" style={{ textShadow: '0 4px 0 #0a3a2a, 0 10px 24px #000' }}>METROID-LITE</h1>
+                    <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                 </div>
             )}
 
