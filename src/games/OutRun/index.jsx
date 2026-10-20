@@ -19,6 +19,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { SEG_LEN, ROAD_W, CAM_H, CAM_DEPTH, DRAW, SCENES } from './road.js'
 import { makeGame, step, stateHash, KMH, HIGH_TOP, LOW_TOP, W, H } from './sim.js'
+import { attractFrame, DIM } from './attract.js'
 import { plan } from './planner.js'
 import { buildSprites, makeBackdrop } from './art.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
@@ -307,13 +308,11 @@ const OutRunGame = () => {
 
             const sc = screenRef.current
             if (sc === 'attract') {
-                ctx.fillStyle = 'rgba(3,4,12,0.72)'; ctx.fillRect(0, 0, W, H)
-                text('OUT RUN', W / 2, 92, 44, '#ff5d5d', 18)
-                text('SEGAL 1986 · SUNSET HIGHWAY', W / 2, 116, 8, '#8fa3d8')
-                if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY', W / 2, 150, 12, '#e9f7ff', 4)
-                text('STEER + GAS + BRAKE + LOW/HIGH GEAR', W / 2, 196, 8, '#5d7094')
-                text('BEAT THE CLOCK · FORK YOUR ROUTE · 5 GOALS', W / 2, 210, 8, '#5d7094')
-                const b = board()[0]; if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 232, 9, '#ffd23f', 3)
+                ctx.fillStyle = DIM; ctx.fillRect(0, 0, W, H)
+                const b = board()[0]
+                for (const l of attractFrame(gs.tick, W, H, b ? b.score : 0)) {
+                    text(l.text, l.x, l.y, l.size, l.col, l.glow || 0)
+                }
             } else if (sc === 'radio') {
                 ctx.fillStyle = 'rgba(3,4,12,0.82)'; ctx.fillRect(0, 0, W, H)
                 text('SELECT YOUR RADIO', W / 2, 70, 20, '#e9f7ff', 8)
