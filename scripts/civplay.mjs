@@ -435,7 +435,7 @@ for (const shape of [{ w: 760, h: 620, tag: 'desktop' }, { w: 390, h: 844, tag: 
     const hintOf = () => ux.evaluate(() => {
         const el = [...document.querySelectorAll('span')].find((x) => /^(PRESS E TO FOUND YOUR CAPITAL|PICK A BUILD: 1 WARRIOR . 3 SETTLER|SPACE ENDS THE TURN)$/.test(x.textContent))
         if (!el) return ''
-        return el.style.visibility === 'hidden' ? el.textContent + '|hidden' : el.textContent
+        return el.style.display === 'none' ? el.textContent + '|hidden' : el.textContent
     })
     r.check(`[${shape.tag}] the first hint tells the player to settle`, (await hintOf()) === 'PRESS E TO FOUND YOUR CAPITAL')
     const c0 = u0.camTgt

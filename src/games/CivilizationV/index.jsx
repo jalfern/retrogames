@@ -430,7 +430,7 @@ const CivilizationVGame = () => {
                 hintEnded = hintEnded || gs.turn > startTurnRef
                 const htx = !hintFound ? 'PRESS E TO FOUND YOUR CAPITAL' : !hintBuilt ? 'PICK A BUILD: 1 WARRIOR · 3 SETTLER' : !hintEnded ? 'SPACE ENDS THE TURN' : ''
                 h.hint.textContent = htx
-                h.hint.style.visibility = htx ? 'visible' : 'hidden'
+                h.hint.style.display = htx ? '' : 'none'
             }
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
@@ -1041,7 +1041,7 @@ const CivilizationVGame = () => {
                     <span ref={setHud('sel')} className="text-white/70 ml-auto">tap a unit</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, color: '#ffe9a8', textShadow: '0 0 12px #c80' }} />
-                <span ref={setHud('hint')} className="absolute left-1/2 top-14 -translate-x-1/2 px-3 py-1 rounded bg-black/60 border border-amber-300/40 text-amber-100 font-mono text-xs font-bold whitespace-nowrap tracking-wider" style={{ visibility: 'hidden' }} />
+                <span ref={setHud('hint')} className="absolute left-1/2 top-14 -translate-x-1/2 px-3 py-1 rounded bg-black/60 border border-amber-300/40 text-amber-100 font-mono text-xs font-bold whitespace-nowrap tracking-wider" style={{ display: 'none' }} />
                 <div className="absolute bottom-3 right-3 pointer-events-none flex flex-col items-end gap-1.5">
                     <div className="border border-amber-300/50 rounded px-3 py-1 bg-black/50 text-amber-100 font-mono text-[11px]">END TURN · Space</div>
                     <button onClick={() => actRef.current.recenter && actRef.current.recenter()} className="pointer-events-auto border border-cyan-300/50 rounded px-3 py-1 bg-black/50 text-cyan-100 font-mono text-[11px]">◎ CENTER · Home</button>
