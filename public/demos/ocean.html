@@ -448,7 +448,26 @@ async function boot() {
       textureStore(out, vec2i(i32(x), i32(y)), vec4f(gx, gz, 0.0, 1.0));
     }`;
 
+  const M_PROBE = `
+    struct ProbeU { xz: vec2f, fwd: vec2f, right: vec2f, r: f32, L0: f32, pad: vec2f };
+    @group(0) @binding(0) var<uniform> pr: ProbeU;
+    @group(0) @binding(1) var samp: sampler;
+    @group(0) @binding(2) var h0: texture_2d<f32>;
+    @group(0) @binding(3) var<storage, read_write> out: array<f32, 5>;
+    fn hAt(x: f32, z: f32) -> f32 {
+      let u = vec2f(x / pr.L0 - floor(x / pr.L0), z / pr.L0 - floor(z / pr.L0));
+      return textureSampleLevel(h0, samp, u, 0.0).x;
+    }
+    @compute @workgroup_size(1)
+    fn cs_probe() {
+      out[0] = hAt(pr.xz.x, pr.xz.y);
+      out[1] = hAt(pr.xz.x + pr.fwd.x * pr.r, pr.xz.y + pr.fwd.y * pr.r);
+      out[2] = hAt(pr.xz.x - pr.fwd.x * pr.r, pr.xz.y - pr.fwd.y * pr.r);
+      out[3] = hAt(pr.xz.x + pr.right.x * pr.r, pr.xz.y + pr.right.y * pr.r);
+      out[4] = hAt(pr.xz.x - pr.right.x * pr.r, pr.xz.y - pr.right.y * pr.r);
+    }`;
   const modFill = mkMod(M_FILL), modPrep = mkMod(M_PREP), modRow = mkMod(M_ROW), modCol = mkMod(M_COL), modEnc = mkMod(M_ENC), modComb = mkMod(M_COMBINE);
+  const modProbe = mkMod(M_PROBE), pProbe = cp(modProbe, 'cs_probe');
   const pFill = cp(modFill, 'cs_fill'), pPrep = cp(modPrep, 'cs_prep'), pRow = cp(modRow, 'cs_row'), pCol = cp(modCol, 'cs_col'), pEnc = cp(modEnc, 'cs_enc'), pComb = cp(modComb, 'cs_combine');
 
   const buf = data => { const b = device.createBuffer({ size: data.byteLength, usage: U }); device.queue.writeBuffer(b, 0, data); return b; };
@@ -668,6 +687,25 @@ async function boot() {
     { binding: 4, resource: resH[1] }, { binding: 5, resource: resG[1] },
   ] });
 
+  // #462 item 4 — camera coupling probe: five samples (center, ±fwd·r, ±right·r) of
+  // the SAME octave-0 height field the mesh displaces with (vs_main uses h0v for
+  // geometry; octave 1 is shading-only). Shore readback pattern: per-frame compute
+  // + in-encoder copy, busy-flagged mapAsync, no fence, no frame-path stall.
+  const PROBE_R = 1.8;
+  const SWELL_TAU = 0.25;
+  const uProbe = buf(new Float32Array(8));
+  const probeBuf = device.createBuffer({ size: 24, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const probeRead = device.createBuffer({ size: 24, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const bgProbe = device.createBindGroup({ layout: pProbe.getBindGroupLayout(0), entries: [
+    { binding: 0, resource: { buffer: uProbe } },
+    { binding: 1, resource: samp },
+    { binding: 2, resource: resH[0] },
+    { binding: 3, resource: { buffer: probeBuf } },
+  ] });
+  let probeBusy = false, swellTarget = null, lastRaw = null;
+  const swell = { h: 0, pitch: 0, roll: 0 };
+  const eye = [cam.pos[0], cam.pos[1], cam.pos[2]];
+
   const gridVerts = new Float32Array((SEG + 1) * (SEG + 1) * 2);
   { let k = 0;
     for (let j = 0; j <= SEG; j++) for (let i = 0; i <= SEG; i++) {
@@ -862,8 +900,29 @@ async function boot() {
     cam.pos[1] = Math.max(1.2, cam.pos[1] + ver * 5 * dt);
     cam.pos[2] += (fwd[2] * move + right[2] * str * 6) * dt;
 
+    // #462 item 4 — couple the eye to the local swell at camPos: bob with the
+    // height, roll/pitch with the patch slope. The probe readback lags ~2 frames,
+    // so smooth toward the newest sample; the rendered sea state (and hence the
+    // wave amplitude) scales the motion — calm reads still, storm throws the eye.
+    if (swellTarget) {
+      const k = 1 - Math.exp(-dt / SWELL_TAU);
+      swell.h += (swellTarget.h - swell.h) * k;
+      swell.pitch += (swellTarget.pitch - swell.pitch) * k;
+      swell.roll += (swellTarget.roll - swell.roll) * k;
+      swellTarget = null;
+    }
+    eye[0] = cam.pos[0]; eye[1] = cam.pos[1] + swell.h; eye[2] = cam.pos[2];
+    const cpv = Math.cos(cam.pitch + swell.pitch), spv = Math.sin(cam.pitch + swell.pitch);
+    const vfwd = [cpv * Math.cos(cam.yaw), spv, cpv * Math.sin(cam.yaw)];
+    const vright = norm3(cross(vfwd, [0, 1, 0]));
+    const vup0 = cross(vright, vfwd);
+    const vup = [
+      vup0[0] * Math.cos(swell.roll) + vright[0] * Math.sin(swell.roll),
+      vup0[1] * Math.cos(swell.roll) + vright[1] * Math.sin(swell.roll),
+      vup0[2] * Math.cos(swell.roll) + vright[2] * Math.sin(swell.roll),
+    ];
     const asp = vw / Math.max(1, vh);
-    const vp = mul(persp(62 * Math.PI / 180, asp, 0.2, 2500), lookAt(cam.pos, [cam.pos[0] + fwd[0], cam.pos[1] + fwd[1], cam.pos[2] + fwd[2]], [0, 1, 0]));
+    const vp = mul(persp(62 * Math.PI / 180, asp, 0.2, 2500), lookAt(eye, [eye[0] + vfwd[0], eye[1] + vfwd[1], eye[2] + vfwd[2]], vup));
 
     // ease the rendered sea state toward the slider set point over ~1s (no hard
     // cut, #462 item 6); re-fill the spectra while it moves so wave amplitude tracks
@@ -890,9 +949,9 @@ async function boot() {
 
     device.queue.writeBuffer(uSea, 0, new Float32Array([
       ...vp,
-      cam.pos[0], cam.pos[1], cam.pos[2], t,
-      fwd[0], fwd[1], fwd[2], asp,
-      right[0], right[1], right[2], 0,
+      eye[0], eye[1], eye[2], t,
+      vfwd[0], vfwd[1], vfwd[2], asp,
+      vright[0], vright[1], vright[2], 0,
       OCT[0].L, pp[0].dsp, 0, 0,
       OCT[1].L, pp[1].dsp, 0, 0,
       U, s, WIND_AZ, 0,
@@ -901,9 +960,9 @@ async function boot() {
       moonDir[0], moonDir[1], moonDir[2], 0,
     ]));
     device.queue.writeBuffer(uSky, 0, new Float32Array([
-      fwd[0], fwd[1], fwd[2], asp,
-      right[0], right[1], right[2], Math.tan(31 * Math.PI / 180),
-      ...norm3(cross(right, fwd)), t, s, 0, 0, 0,
+      vfwd[0], vfwd[1], vfwd[2], asp,
+      vright[0], vright[1], vright[2], Math.tan(31 * Math.PI / 180),
+      vup[0], vup[1], vup[2], t, s, 0, 0, 0,
       tod, cloud, dayness, nightness,
       sunDir[0], sunDir[1], sunDir[2], 0,
       moonDir[0], moonDir[1], moonDir[2], 0,
