@@ -28,6 +28,9 @@ const MODULES = [
     { label: 'SPACE INVADERS', file: 'src/games/SpaceInvaders/attract.js', import: '../src/games/SpaceInvaders/attract.js' },
     { label: 'CENTIPEDE', file: 'src/games/Centipede/attract.js', import: '../src/games/Centipede/attract.js' },
     { label: 'GAUNTLET', file: 'src/games/Gauntlet/attract.js', import: '../src/games/Gauntlet/attract.js' },
+    { label: 'DONKEY KONG', file: 'src/games/DonkeyKong/attract.js', import: '../src/games/DonkeyKong/attract.js' },
+    { label: 'PITFALL', file: 'src/games/Pitfall/attract.js', import: '../src/games/Pitfall/attract.js' },
+    { label: 'MISSILE COMMAND', file: 'src/games/MissileCommand/attract.js', import: '../src/games/MissileCommand/attract.js' },
 ]
 
 const REACT_TITLES = [
@@ -152,7 +155,7 @@ const MUTANTS = [
         `0)'`],
 ]
 
-const MUTATE_FILES = MODULES.filter((m) => /Defender|SpaceInvaders|Centipede|Gauntlet/.test(m.file)).map((m) => m.file)
+const MUTATE_FILES = MODULES.filter((m) => /Defender|SpaceInvaders|Centipede|Gauntlet|DonkeyKong|Pitfall|MissileCommand/.test(m.file)).map((m) => m.file)
 
 async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, leak }) {
     const { MESSAGES, PRESS } = await import(spec)

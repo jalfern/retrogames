@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { attractFrame, DIM } from './attract.js'
 
 const PitfallGame = () => {
     const canvasRef = useRef(null)
@@ -41,6 +42,7 @@ const PitfallGame = () => {
         let lives = 3
         let gameOver = false
         let isAttractMode = true
+        let attractTick = 0
         let roomTreeBits = 0
         let holePattern = 'none'
         let undergroundWallSide = 'left'
@@ -1453,28 +1455,16 @@ const PitfallGame = () => {
             }
 
             if (isAttractMode) {
-                // Semi-transparent backdrop for readability
-                ctx.fillStyle = 'rgba(0,0,0,0.55)'
-                ctx.fillRect(SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 85, 400, 145)
-                // Title
-                ctx.fillStyle = '#FCFC68'
-                ctx.font = 'bold 42px monospace'
+                attractTick++
+                ctx.fillStyle = DIM
+                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
                 ctx.textAlign = 'center'
-                ctx.fillText("PITFALL!", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 42)
-                // Subtitle
-                ctx.fillStyle = '#6C9850'
-                ctx.font = '12px monospace'
-                ctx.fillText("PITFALL HARRY'S JUNGLE ADVENTURE", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 14)
-                // Author credit (like original cartridge)
-                ctx.fillStyle = '#909090'
-                ctx.font = '10px monospace'
-                ctx.fillText("DESIGNED BY DAVID CRANE", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 6)
-                // Start prompt — flash
-                if (Math.floor(gameTime / 30) % 2 === 0) {
-                    ctx.fillStyle = '#ECECEC'
-                    ctx.font = '16px monospace'
-                    ctx.fillText("PRESS ANY KEY", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 40)
+                for (const l of attractFrame(attractTick, SCREEN_WIDTH, SCREEN_HEIGHT)) {
+                    ctx.font = `${l.size}px monospace`
+                    ctx.fillStyle = l.col
+                    ctx.fillText(l.text, l.x, l.y)
                 }
+                ctx.textAlign = 'start'
             }
 
             ctx.restore()
