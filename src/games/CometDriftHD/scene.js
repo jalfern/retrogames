@@ -23,7 +23,10 @@ export const elevAt = (i) => T.pts[i].h * S
 // dropped to ~1.7–3.3u and the face set back outside the sim's clamp. The
 // noise stays small: a big setback wobble self-intersects on tight inner
 // curves and grows jagged fins at the apexes.
-const wallTopAt = (i) => 2.5 + Math.sin(i * 0.37 + 1.7) * 0.45 + Math.sin(i * 0.131) * 0.35
+// #542: with the chase cam closer and lower, the rim came down again to
+// ~1.4–2.2u so the eye (≈2.4u over the asphalt) clears it on the straights
+// and the wall frames the corners instead of walling off the horizon.
+const wallTopAt = (i) => 2.07 + Math.sin(i * 0.37 + 1.7) * 0.35 + Math.sin(i * 0.131) * 0.25
 // #513 floor: the sim clamps karts at 216px, so the face must never dip
 // inside it, whatever the shared road width does — 4px of visible margin.
 const wallOffAt = (i) => Math.max(220, T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + Math.sin(i * 0.19 + 4) * 3)
@@ -405,18 +408,88 @@ export function buildSceneryItem(sc) {
 
 // far mesas: a dark silhouette ring on the ember horizon. #471: pushed out
 // and trimmed down so they frame the sky instead of walling it off.
+// #542: the ring used to be pinned at the OLD course's center and radius —
+// when the world tripled, the track ran out past it and karts drove under the
+// silhouettes. The ring now derives from the live track bounds: always outside
+// the furthest track point, so the mesas stay horizon scenery on every course.
+// live bounding box of the selected course in world units (x, z, radius) —
+// the horizon furniture hangs off this so it rings EVERY course, not just the
+// one it was authored for (#542).
+export function worldAnchor() {
+    let minX = Infinity; let maxX = -Infinity; let minZ = Infinity; let maxZ = -Infinity
+    for (const p of T.pts) {
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x)
+        minZ = Math.min(minZ, p.y); maxZ = Math.max(maxZ, p.y)
+    }
+    const cx = (minX + maxX) / 2 * S
+    const cz = (minZ + maxZ) / 2 * S
+    let R = 0
+    for (const p of T.pts) {
+        const d = Math.hypot(p.x * S - cx, p.y * S - cz)
+        if (d > R) R = d
+    }
+    return { cx, cz, R }
+}
+
+export function mesaDefs() {
+    const { cx, cz, R } = worldAnchor()
+    const shapes = []
+    let maxW = 0
+    for (let i = 0; i < 14; i++) {
+        const h = (4.5 + ((i * 37) % 4) * 2.4) * (R / 60)
+        const w = (6.5 + ((i * 53) % 5) * 3) * (R / 60)
+        if (w > maxW) maxW = w
+        shapes.push({ h, w })
+    }
+    const base = R + maxW + 12
+    const defs = []
+    for (let i = 0; i < 14; i++) {
+        const ang = (i / 14) * Math.PI * 2 + Math.sin(i * 3.1) * 0.2
+        const r = base + (i % 4) * 14 + Math.sin(i * 7.7) * 5
+        defs.push({ x: cx + Math.cos(ang) * r, z: cz + Math.sin(ang) * r, h: shapes[i].h, w: shapes[i].w, ang })
+    }
+    return defs
+}
+
+const w0 = (d) => d.w * 0.9
+
 export function buildMesas() {
     const g = new THREE.Group()
     const rock = new THREE.MeshStandardMaterial({ color: 0x4e222c, roughness: 1, metalness: 0 })
-    for (let i = 0; i < 14; i++) {
-        const ang = (i / 14) * Math.PI * 2 + Math.sin(i * 3.1) * 0.2
-        const r = 64 + (i % 4) * 10 + Math.sin(i * 7.7) * 4
-        const h = 3.5 + ((i * 37) % 4) * 1.9
-        const w = 5 + ((i * 53) % 5) * 2.2
-        const m = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.9, w, h, 6), rock)
-        m.position.set(17 + Math.cos(ang) * r, h / 2 - 1.4, 17 + Math.sin(ang) * r)
-        m.rotation.y = ang
+    for (const d of mesaDefs()) {
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(w0(d), d.w, d.h, 6), rock)
+        m.position.set(d.x, d.h / 2 - 1.4, d.z)
+        m.rotation.y = d.ang
         g.add(m)
     }
     return g
+}
+
+// #542 corridor audit (Node-safe): nothing that is not the track itself may
+// stand where the camera or a kart can reach. Mesas must clear the furthest
+// track point by their footprint plus a camera margin; cacti/spires must clear
+// the centerline past the kart's own reach (it rides ±2.2u, the eye swings
+// wider) so tall scenery never passes within arm's length of the lens.
+export function cameraCorridorAudit() {
+    const REACH = 3.5
+    const violations = []
+    const clearToTrack = (ux, uz, footprint) => {
+        let best = Infinity
+        for (let i = 0; i < T.N; i += 3) {
+            const p = T.pts[i]
+            const d = Math.hypot(p.x * S - ux, p.y * S - uz)
+            if (d < best) best = d
+        }
+        return best - footprint
+    }
+    for (const d of mesaDefs()) {
+        const clr = clearToTrack(d.x, d.z, d.w)
+        if (clr < REACH) violations.push({ kind: 'mesa', x: +d.x.toFixed(1), z: +d.z.toFixed(1), clearance: +clr.toFixed(1) })
+    }
+    for (const sc of SCENERY) {
+        const fp = sc.kind === 'spire' ? 0.8 : 0.4
+        const clr = clearToTrack(sc.x * S, sc.y * S, fp)
+        if (clr < REACH) violations.push({ kind: sc.kind, x: +(sc.x * S).toFixed(1), z: +(sc.y * S).toFixed(1), clearance: +clr.toFixed(1) })
+    }
+    return { violations, reach: REACH, sceneryCount: SCENERY.length, mesaCount: mesaDefs().length }
 }

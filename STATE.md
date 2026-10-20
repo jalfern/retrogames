@@ -1,78 +1,75 @@
-# STATE — forge session 2026-10-19/20 (ONLINE 2P infra)
+# STATE — forge session 2026-10-19/20 (COMET DRIFT #542: grown world + camera)
 
 ## Shipped this session
-- **#531 ONLINE 2P: room codes + Cloudflare relay + lockstep (Gauntlet pilot)**
-  — PRs #541 (main build, squash `2dc48d9`), #543 (deploy fix, `f400eca`),
-  #545 (sqlite migration, `88b43b1`). Issue closed shipped.
-  - `relay/`: CF Worker `retrogames` — one hibernating DO per 4-char code
-    (`Room`) + singleton `Registry` (≤120 rooms, 1h stale leases), classic
-    `ctx.storage` rate window (≤1 write/s/room), 512B msgs, 90s idle alarms.
-    Pure logic `relay/core.js` shared with Node twin `relay/server.mjs`.
-    LIVE: https://retrogames.jalfern.workers.dev (2-client internet pair test
-    green; rooms 1→0 after close).
-  - `src/utils/lockstep.js` (pure): seed broadcast, D=4 input delay, tick
-    gated on both pads, `stateHash` vs peer every 30 ticks on BOTH edges of
-    the exchange, mismatch = freeze + DESYNC UI.
-  - Gauntlet pilot: `?net=host` / `?net=join&room=CODE` / `?relay=ws://…`.
-    Canonical seats (hero=host both boxes); guest camera/torch/minimap/panel
-    follow `gs.partner`. Solo play byte-identical without the params.
-  - Prod: jalfern.com serves the pilot chunk (index-D1CRNwxa.js contains the
-    relay URL; lazy chunk — index shell hash unchanged).
-  - Harness: `npm run netcheck` 32/32 offline (core caps, ws lifecycle vs
-    the twin, 10-min-sim determinism, corrupted sim CAUGHT); `npm run
-    netdrill` 10/10 two headless Chromes + real keys (pair/seed/play/
-    desync/friend-left/zero-errors). Mutant (hash compare off) → red.
-  - QA polish filed: **#546** (reconnect, ping UI, guest keypad, per-IP
-    connect limit, restart-no-reload, net sfx, real-pair look check).
+- **#542 COMET DRIFT: courses too tight, camera lost in overhead scenery** —
+  PR #___ (branch `forge/comet-drift-hd-542`). Issue #542.
+  - World grown ×3: TX/TY 2560→8192; all three layouts + ELEV profiles grown
+    about bbox center (`WORLD_SC=3`, `grown()` in track.js); hairpin apexes
+    pulled back via TIGHTEN table (`scripts/comet-tighten.mjs`) so signature
+            corners stay brakeable: min corner radius now ≥95px (was ~60).
+    Lap lengths ≈3× the old (gulch ~24s, sandbank ~37s, corkscomb ~49s at
+    autopilot pace). Ground bake decoupled: TEX=2560 canvas, `TEX_S=0.3125`
+    for Mode 7 sampling — phones still afford the bake.
+  - Sim taught to live at scale (sim.js): look-ahead converted to distance
+    (px), brake window opens AT the kart, drift-bend + mistake thresholds
+    scaled ×1/3, curvature-capped inner wall clamp + banked slide + wall-press
+    repel (no evolute pin at hairpins), and a new **unwrapped lap odometer**:
+    nearest-point hops across the lap seam no longer fake checkpoints/laps
+    (they cancel in the odometer; teleports re-anchor it).
+  - HD (#scene.js/index.jsx): horizon furniture (floor/dome/sun/14 mesas) now
+    derives from the LIVE course bounds (`worldAnchor()`) and rebuilds per
+    course — the old ring sat at the 2560px world's center and karts drove
+    UNDER the mesas at 3× scale. Chase cam closer/lower (back 4.55u, eye
+    2.45u, look 11u) with a crest-clearing lift law; rim tops down to
+    1.4–2.6u. Scenery must clear EVERY track point (260px) — apex items used
+    to loom over the opposite leg of hairpins.
+  - Harness: cometcheck gates ≥95px min radius + ≥2.2× lap length, scaled
+    sweeper band + budgets (GREEN); cometdrifthdcheck gained
+    `cameraCorridorAudit()` per course (GREEN 50/0 incl. browser). Both
+    mutant suites proven RED.
 
 ## Playable now
-`https://jalfern.com/retrogames/gauntlet?net=host` vs `?net=join&room=CODE`
-(desktop keyboard both ends; phones can host/join but P2 pad is desktop-only
-per Jon's multiplayer rule).
+`https://jalfern.com/retrogames/comet-drift` and `/comet-drift-hd` — after
+merge: 3× longer Gulch/Sandbank/Corkscomb, brakeable hairpins, tighter chase
+cam that clears the crests and stays under the horizon.
 
 ## Next queued
-- Oldest game-queue: none left (#531 was the last). #546 is `feedback` — the
-  QA lane's job; forge may borrow it only if no QA session is live.
+- After #542 merges: game queue has no open forge issues left — check
+  `gh issue list --label game-queue` before inventing work (rule 2).
 
 ## Lessons worth keeping
-- **Pads must be FINAL.** Sample each tick once, D ahead; never
-  resample-and-resend — the peer may already have run the tick on the old
-  value (netcheck caught this in its own first draft).
-- Edges belong to the OLDEST unsampled tick only (one press, one swing).
-- React 19 StrictMode remounts: room codes must live in a ref (regen =
-  orphaned guest); 'gone' is advisory — a reconnecting peer sends 'peer'
-  again, so recover waiting≠gone and don't close the socket on 'gone'.
-- workerd close callbacks: the closing socket can still appear in
-  `getWebSockets()` and `deserializeAttachment()` may throw — filter by
-  identity, guard sends. (This leaked registry leases.)
-- Cloudflare free plan: DOs REQUIRE `new_sqlite_classes` in migrations
-  (API 10097); `DurableObject` must be imported from `'cloudflare:workers'`
-  (10021). `this.sql` still undefined in `wrangler dev` on this wrangler —
-  code paths use classic `ctx.storage`, which works dev + cloud.
-- `npx wrangler dev` is the token-free local validator for workerd
-  startup/lifecycle — use it before burning a main deploy (took 3 CI deploys
-  to learn this; local repro of #10021 was exact).
-- `git checkout --` on an UNCOMMITTED file restores the old version — commit
-  working increments before experimenting (lost the first classic-storage
-  rewrite to it).
-- Vercel content-hash: lazy route chunks change filename, index shell may
-  not — poll the game chunk for a marker, not index.html.
-- Never `git add -A` right after `wrangler dev` (swept `.wrangler/` into
-  #543; now gitignored).
+- **A lap crossing IS a half-lap jump.** Symmetric "sane delta" guards kill
+  real crossings; unwrap per-tick motion to (-len/2, len/2] into an odometer
+  instead, and re-anchor when odometer and position diverge (snap/restore).
+- **Sample-count hint windows rot when spacing changes.** makeNearest's fixed
+  ±160 samples became ±3× the px reach with grown spacing and hopped across
+  the seam. Keep hint windows in PX units (track.js W = 1180px / arcPx).
+- **Grow a world and the horizon rots with it.** Anything placed at absolute
+  coords (mesas, dome, floor, sun) must derive from the live track bbox; the
+  audit (`cameraCorridorAudit`) is what proved it, not the eyeball.
+- **Lateral-offset scenery placement fails on self-folding courses** — check
+  distance to ALL track points, hairpins bring the opposite leg within arm's
+  reach of the apex.
+- **Back-to-back headless Chromes wedge the GPU process**: the second boot's
+  WebGPU init falls into the legacy refuge. Settle ~2s between browsers in
+  multi-lane checks (advisory gate, not a product bug — default boot proven
+  webgpu standalone).
+- Real-time gates on world physics must wait-until (`waitForFunction`), never
+  a fixed `waitForTimeout` (software-rendered lanes tick slower than wall clock).
 
 ## Three questions for Jon
-1. Free-plan relay runs WITHOUT a paid tier so far — keep the 120-room cap,
-   or want a usage counter/alert before friends find it?
-2. `?net=` pilot is Gauntlet-only and private by URL param — promote a
-   visible 2P entry point in the Gauntlet select screen (P key for online)?
-3. Queue is empty after #531. Line up: next game title, #546 QA polish, or
-   extending online-2P to a second game (Bubble Bobble would reuse all the
-   plumbing — its sim is already deterministic per slotcheck)?
+1. Lap times are ~2.2–2.7× the old (corners looser than ×3 since apexes were
+   pulled to ~105px). Long enough, or push the grown layouts wider still?
+2. The 2D Mode 7 bake stays at 2560² (0.31 u/px) — at 8192px courses the
+   asphalt grain is softer up close. Worth a per-course bake size, or leave it?
+3. Production WebGPU default boot flaked to legacy only when two headless
+   Chromes ran back-to-back — accept the 2s settle in hdcheck, or want the
+   b2 lane to retry once before reporting the gate red?
 
 ## Housekeeping
-- Main checkout: detached at this STATE commit's parent; `main` free for the
-  next lane's rule-5 merge.
-- Lane worktrees forge-online-2p / forge-relay-fix / forge-relay-sqlite all
-  removed post-merge. Dev server stopped except stray `wrangler dev` may need
-  `pkill -f wrangler` if port 8799 nags.
-- `ws` added as devDependency (lockfile committed with #541).
+- This lane's worktree: `~/Dev/retrogames-forge-comet-drift-hd-542`
+  (branch `forge/comet-drift-hd-542`) — remove after merge.
+- Main checkout must sit detached at origin/main (Jon's rule): `git fetch &&
+  git checkout --detach origin/main` in `~/Dev/retrogames`.
+- Dev server for the browser lanes was on :5173 from the worktree — stop when
+  done (`pkill -f "vite.*5173"` if it nags).

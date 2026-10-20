@@ -9,7 +9,7 @@
 // CALLED, so the harness can grade PALETTE / MESA_* / KART / LIVERY without
 // a DOM.
 
-import { TRACK, TX, TY, ROAD_R, KERB_R, WALL_R } from './track.js'
+import { TRACK, TX, TEX, ROAD_R, KERB_R, WALL_R } from './track.js'
 
 export const PALETTE = {
     // the dusk sky, top to horizon: plum to ember
@@ -244,20 +244,25 @@ function offsetPath(lat) {
 // Dashed strokes at the strata boundaries lay vertical cracks across the
 // bands. There is NO painted kerb and NO centre dash anywhere — this is a
 // canyon toll-road, not a circuit.
+// #542: the world grew to 8192 but the bake stays at TEX (2560) — a ground
+// canvas the 2D renderer can afford on a phone. Everything track-relative is
+// drawn under a TEX/TX scale transform (world px in, texture px out); the
+// desert-floor noise stays in texture px at the old density.
 export function buildGround(pal = PALETTE) {
     const P = pal
     const c = document.createElement('canvas')
-    c.width = TX; c.height = TY
+    c.width = TEX; c.height = TEX
     const x = c.getContext('2d')
 
-    // desert floor: dune patchwork + grain + pebbles
-    x.fillStyle = P.apron; x.fillRect(0, 0, TX, TY)
+    // desert floor: dune patchwork + grain + pebbles (texture space)
+    x.fillStyle = P.apron; x.fillRect(0, 0, TEX, TEX)
     x.fillStyle = P.apronMid
-    for (let gy = 0; gy < TY; gy += 96) for (let gx = ((gy / 96) % 2) * 96; gx < TX; gx += 192) x.fillRect(gx, gy, 96, 96)
+    for (let gy = 0; gy < TEX; gy += 96) for (let gx = ((gy / 96) % 2) * 96; gx < TEX; gx += 192) x.fillRect(gx, gy, 96, 96)
     x.fillStyle = P.grain
-    for (let i = 0; i < TX * TY / 620; i++) x.fillRect((i * 173) % TX, (i * 419) % TY, 2, 3)
+    for (let i = 0; i < TEX * TEX / 620; i++) x.fillRect((i * 173) % TEX, (i * 419) % TEX, 2, 3)
     x.fillStyle = P.pebble
-    for (let i = 0; i < 520; i++) x.fillRect((i * 307 + 91) % TX, (i * 733 + 57) % TY, 3, 2)
+    for (let i = 0; i < 520; i++) x.fillRect((i * 307 + 91) % TEX, (i * 733 + 57) % TEX, 3, 2)
+    x.scale(TEX / TX, TEX / TX)
 
     const path = new Path2D()
     path.moveTo(TRACK.pts[0].x, TRACK.pts[0].y)
@@ -331,7 +336,7 @@ export function buildGround(pal = PALETTE) {
         x.fillRect(-24 + r * 16, -ROAD_R + col * step, 16, step)
     }
     x.restore()
-    return x.getImageData(0, 0, TX, TY)
+    return x.getImageData(0, 0, TEX, TEX)
 }
 
 // ---- sky: two parallax mesa bands + a setting sun + ember glint, sampled

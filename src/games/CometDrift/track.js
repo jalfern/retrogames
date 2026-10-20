@@ -17,16 +17,20 @@
 // (`retrogames:comet.course`) so HD respects it at load. No selection =
 // SUNSET GULCH, byte-identical to pre-#493 data.
 
-// #513: the world grows to 2560² and the asphalt NARROWS (ROAD_R 140 → 80 → 64).
-// A real hairpin / Corkscrew / Bus Stop is a braking corner whose own two road
-// legs cannot fit inside the old 280 px-wide canyon — the narrower lane plus the
-// bigger world is the room they need; 64 keeps the real map's closest leg pairs
-// clear at the re-tuned span. SUNDBANK follows the traced DAYTONA ROAD COURSE
-// centerline and CORKSCOMB the traced Laguna Seca (reference.js); the harness
-// grades the match. SUNSET GULCH keeps its original data unchanged.
-
-export const TX = 2560
-export const TY = 2560
+// #542: the world triples (2560² -> 8192²). The layouts scale x3 about their
+// own bbox center and re-centre in the bigger box: laps land ~3x longer at the
+// unchanged top speed, and the traced hairpins — which at x3 would all become
+// flat-out sweepers — are pulled back in (TIGHTEN) so the signature corners
+// stay brakeable at ~105px radius instead of crawling at 67px. Ground textures
+// bake at TEX (not TX) so the 2D Mode 7 renderer keeps a sane canvas: the
+// texture just samples the world at TEX/TX. SUNDBANK follows the traced DAYTONA
+// ROAD COURSE centerline and CORKSCOMB the traced Laguna Seca (reference.js);
+// the harness grades the match. Shape is uniform-scaling invariant, so the
+// reference gates ride through untouched.
+export const TX = 8192
+export const TY = 8192
+export const TEX = 2560             // bake resolution — decoupled from the world (#542)
+export const TEX_S = TEX / TX      // texture px per world px
 export const ROAD_R = 64              // half-width of asphalt (narrowed again #513)
 export const KERB_R = ROAD_R + 12    // painted kerb strip
 export const WALL_R = ROAD_R + 52    // sand ends, cliff face: the wall
@@ -60,6 +64,40 @@ const ELEV = {
     ],
 }
 export const ELEV_MAX_GRADE = 0.095
+
+// #542 world growth: layouts are authored at the old 2560 span and grown x3
+// about their bbox center into the 8192 box. HEIGHTS grow with them (dh and ds
+// both x3 => the authored grades carry through unchanged, cap included), so
+// crests read at circuit size. TIGHTEN pulls the signature hairpin apexes
+// back in after growing — x3 alone would turn every brakeable corner into a
+// flat-out sweeper. Pulls were tuned by scripts/comet-tighten.mjs against the
+// ~105px brakeable target (apex ~5.5 px/tick, drift pays for holding more).
+const WORLD_SC = 3
+const TIGHTEN = {
+    gulch: [],
+    // Daytona's braking corners: Turns 1-2, the kinks, the horseshoe and the
+    // Bus Stop pulled to ~105px apexes (tuner passes, tighten5).
+    sandbank: [[1, -13, -27], [2, 31, 17], [3, -35, 9], [4, 28, -12], [5, -30, 0], [6, 21, 12],
+        [7, -38, -114], [8, 4, 42], [9, 9, -41], [10, -38, 18], [11, 26, -15], [12, -7, 41],
+        [13, -12, -34], [14, 149, 89]],
+    // Laguna's: the Corkscomb, the andretti hook exit and the keyhole.
+    corkscomb: [[2, -25, -17], [3, 24, 1], [4, -16, 25], [12, -26, -92], [13, 89, 37],
+        [14, -91, 46], [27, 77, 58], [28, -82, -17], [29, 37, -76]],
+}
+
+function grown(id, control) {
+    let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity
+    for (const [x, y] of control) {
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x)
+        y0 = Math.min(y0, y); y1 = Math.max(y1, y)
+    }
+    const cx = (x0 + x1) / 2; const cy = (y0 + y1) / 2
+    const out = control.map(([x, y]) => [TX / 2 + (x - cx) * WORLD_SC, TY / 2 + (y - cy) * WORLD_SC])
+    for (const [i, dx, dy] of TIGHTEN[id] || []) {
+        out[i] = [out[i][0] + dx, out[i][1] + dy]
+    }
+    return out
+}
 
 // Unevenly spaced knots make Catmull-Rom overshoot (the Gulch hit a 30% grade
 // between two tight anchors). Resample the authored anchors onto a uniform
@@ -145,15 +183,15 @@ const CONTROL_CORKSCOMB = [
 export const COURSES = [
     {
         id: 'gulch', name: 'SUNSET GULCH', short: 'GULCH',
-        tagline: 'SUNSET GULCH - 4 LAPS', palette: 'dusk', control: CONTROL_GULCH,
+        tagline: 'SUNSET GULCH - 4 LAPS', palette: 'dusk', control: grown('gulch', CONTROL_GULCH),
     },
     {
         id: 'sandbank', name: 'SANDBANK SPEED BOWL', short: 'SANDBANK',
-        tagline: 'SANDBANK SPEED BOWL - 4 LAPS', palette: 'noon', control: CONTROL_SANDBANK,
+        tagline: 'SANDBANK SPEED BOWL - 4 LAPS', palette: 'noon', control: grown('sandbank', CONTROL_SANDBANK),
     },
     {
         id: 'corkscomb', name: 'CORKSCOMB DUNES', short: 'CORKSCOMB',
-        tagline: 'CORKSCOMB DUNES - 4 LAPS', palette: 'dawn', control: CONTROL_CORKSCOMB,
+        tagline: 'CORKSCOMB DUNES - 4 LAPS', palette: 'dawn', control: grown('corkscomb', CONTROL_CORKSCOMB),
     },
 ]
 
@@ -223,16 +261,29 @@ function buildPoints(control, elev) {
 
 // scenery placed by index so the list is identical in Node, the browser and
 // the harness — no dice. Cacti and mesa spires outside the cliff.
+// #542: a lateral offset alone is not enough on a grown course — the loop
+// folds back on itself, and apex scenery can sit shoulder-high next to the
+// OPPOSITE leg. Items must clear every track point, not just their own.
 function buildScenery(track) {
     const out = []
+    const clearOfAll = (x, y) => {
+        for (let j = 0; j < track.N; j += 2) {
+            const q = track.pts[j]
+            const dx = q.x - x; const dy = q.y - y
+            if (dx * dx + dy * dy < 260 * 260) return false
+        }
+        return true
+    }
     for (let i = 0; i < track.N; i += 8) {
         const p = track.pts[i]
         if (p.s < 300 || p.s > track.len - 240) continue
         const side = (i % 16 === 0) ? 1 : -1
-        const off = WALL_R + 110 + ((i * 7) % 90)
+        const off = WALL_R + 190 + ((i * 7) % 120)
+        const x = p.x + Math.cos(p.a + Math.PI / 2) * side * off
+        const y = p.y + Math.sin(p.a + Math.PI / 2) * side * off
+        if (!clearOfAll(x, y)) continue
         out.push({
-            x: p.x + Math.cos(p.a + Math.PI / 2) * side * off,
-            y: p.y + Math.sin(p.a + Math.PI / 2) * side * off,
+            x, y,
             a: p.a,
             kind: (i % 24 === 0) ? 'spire' : 'cactus',
             h: 80 + (i % 5) * 18,
@@ -243,6 +294,10 @@ function buildScenery(track) {
 
 // ---- per-course APIs over a built polyline -----------------------------------
 function makeNearest(track) {
+    // #542: the hint window is ~1180 px — the px reach of the old
+    // 160-sample window. Counting samples instead tripled it with the grown
+    // spacing and let s hop between the legs flanking start/finish.
+    const W = Math.max(24, Math.round(1180 / Math.max(1, track.len / track.N)))
     return function nearest(x, y, hint = -1) {
         let bi = 0; let bd = Infinity
         const scan = (i) => {
@@ -251,7 +306,7 @@ function makeNearest(track) {
             if (d < bd) { bd = d; bi = i }
         }
         if (hint >= 0) {
-            for (let w = -160; w <= 160; w++) scan((hint + w + track.N * 2) % track.N)
+            for (let w = -W; w <= W; w++) scan((hint + w + track.N * 2) % track.N)
         } else {
             for (let i = 0; i < track.N; i += 2) scan(i)
         }
@@ -273,7 +328,7 @@ const pctOf = (track, f) => Math.round(f * track.len)
 
 const BUILT = new Map()
 for (const c of COURSES) {
-    const t = buildPoints(c.control, ELEV[c.id])
+    const t = buildPoints(c.control, ELEV[c.id].map(([f, h]) => [f, h * WORLD_SC]))
     BUILT.set(c.id, {
         def: c,
         pts: t.pts, len: t.len, N: t.N,

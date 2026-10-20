@@ -14,8 +14,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
-import { TRACK } from '../src/games/CometDrift/track.js'
-import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE } from '../src/games/CometDriftHD/scene.js'
+import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
+import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit } from '../src/games/CometDriftHD/scene.js'
 
 const args = process.argv.slice(2)
 const MUTATE = args.includes('--mutate')
@@ -53,6 +53,18 @@ ok(bounds.offMin >= 220 && (bounds.topMax - bounds.elevMax) <= 3.6, `walls sit s
 const ring = (TRACK.N + 1) * 2
 ok(stats.road.verts === ring, `road ribbon is a closed ring (${ring} verts)`)
 ok(stats.road.nan === 0 && stats.wallL.nan === 0 && stats.plateauR.nan === 0, 'no NaN anywhere in the track bands')
+
+// #542: the horizon furniture must ring EVERY course — when the world grew,
+// the old fixed ring left the karts driving under the mesas. Nothing that is
+// not the track may reach into the camera corridor (mesa footprints, spires).
+console.log('camera corridor (#542):')
+for (const c of COURSES) {
+    selectCourse(c.id)
+    const audit = cameraCorridorAudit()
+    const extra = audit.violations.length ? ` (${audit.violations.length} intrusions, worst ${JSON.stringify(audit.violations.sort((a, b) => a.clearance - b.clearance)[0])})` : ''
+    ok(audit.violations.length === 0, `${c.id}: ${audit.mesaCount} mesas + ${audit.sceneryCount} scenery items clear the corridor${extra}`)
+}
+selectCourse('gulch')
 
 // #518: the road is NOT flat — it follows the course height profile, and every
 // band (kerb, gutter, wall foot/top, plateau) hangs off the same profile at the
@@ -251,7 +263,8 @@ if (!SKIP_BROWSER) {
 
         await page.evaluate(() => { window.__cometHDTest.game().count = 1 })
         await page.keyboard.down('KeyX')
-        await page.waitForTimeout(1000)
+        await page.waitForFunction(() => window.__cometHDTest.fx().v > 4.5, null, { timeout: 4000 }).catch(() => {})
+        await page.waitForTimeout(120)
         const vHeld = await page.evaluate(() => window.__cometHDTest.fx().v)
         ok(vHeld > 4.5, `gas accelerates the buggy past the drift threshold (v ${vHeld.toFixed(2)})`)
 
@@ -339,6 +352,9 @@ if (!SKIP_BROWSER) {
     }
 
     // the product default: WebGPU is attempted first (falls back per-device)
+    // #542: back-to-back headless Chromes briefly wedge the GPU process and
+    // the second boot lands in the legacy refuge; let the first one fully die.
+    await new Promise((r) => setTimeout(r, 2000))
     const b2 = await launch()
     try {
         const page2 = await openGame(b2, { url: BASE, viewport: { width: 640, height: 360 }, hook: '__cometHDTest' })
