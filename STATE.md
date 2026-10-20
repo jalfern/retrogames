@@ -1,74 +1,68 @@
-# STATE — forge session 2026-10-20 (SSX hero rider)
+# STATE — forge session 2026-10-20 pm #2 (SSX CPU pack #620 shipped)
 
-## Shipped today
-- **SSX real rider #548** — PR #610 merged `00f5eee`: CC0 KayKit
-  "Rogue_Hooded" hero (`public/models/ssx/rogue.glb`, 326 KB trimmed;
-  license+provenance in `public/models/ssx/LICENSE.txt`). Six sim-driven
-  poses (stand/tuck/crouch/air/grab/tumble) = baked clip frames
-  (Idle/Jump_Start/Jump_Idle) + per-bone offsets on a per-frame bone-lerp;
-  sculpted sidecut/rocker deck (no CC0 snowboard exists — hand-built,
-  documented); foot-bone boots; air-fading contact shadow. CPU field stays
-  box rigs (issue scope: one rider first).
-- **ssxmodelcheck** (new browser gate, in lint:ssx scope): 20/20 — GLB loads
-  (48 bones), pose overrides land, silhouette-histogram pair diffs ≥54 vs
-  noise 2, real ArrowUp/Space drive hero poses, prognose WINNABLE, zero page
-  errors. Mutant (blendHero→stand) = 12 red, restored. ssxcheck 70/70.
-- QA polish pass filed as **#615** (CPU field models, grab depth, board
-  liveries, idle life, boot fit, dusk/night readability).
-- **Prod router bug found during verify**: `vercel.json` whitelists asset
-  prefixes one-by-one and had none for `models` — prod answered
-  HTML@200 for the GLB, so production SSX silently ran the box-rider
-  fallback. Fix = PR #617 (one rewrite `/retrogames/models/:path*`),
-  diagnostic posted on #548 per rule 8.
+## Shipped today (this session)
+- **SSX real CPU pack (`d975ed8`, PR #626, closes #620)** — all five rivals
+  ride real rigged KayKit Adventurers bodies (knight/barbarian/mage/
+  rogue_plain + hooded rogue for rider 5; the pack ships exactly five).
+  `RIDER_MODELS` in art.js; same skeleton pack-wide so hero pose pipeline
+  (STANCE/OFFS/bases/bone-lerp) drives everyone; six `makeBoard(color,style)`
+  graphics; ~330 KB GLBs trimmed with @gltf-transform (weapons dropped,
+  hats kept) — provenance in public/models/ssx/LICENSE.txt.
+- **fps (issue asked):** software-GL headless box 900×640 lite — 1-hero
+  baseline 8–10 fps → six skinned riders 11–15 fps: no regression, floor is
+  the software renderer.
+- **ssxmodelcheck pack checks** (24/24): 6/6 rigs loaded, ≥48 bones each,
+  pose override reaches all six, fps floor ≥8. Mutant (one GLB missing) =
+  4 checks red, restored. ssxcheck 70/70, lint:ssx + build green.
+  Screenshots in docs/shots/issue-620/.
+- Earlier today the same lane shipped **#601 CI scoping** (`3c24735`, PR #623):
+  scope job gates every static/smoke step by changed paths; `--mutate` moved
+  to nightly.yml; red-main merge freeze via scripts/main-ok.sh in rule 5.
+  Today's own PRs proved it: docs-only follow-ups on #626 ran static in ~16 s.
 
 ## Playable now
-`https://jalfern.com/retrogames/ssx` — player rides the hooded rogue; per-pose
-screenshots on #548. (At report time prod was still on the pre-merge bundle —
-Vercel deploys lag merges a few minutes; the SPA rewrite answers HTML@200 for
-missing assets, so verify with content-length 326172 on
-`/retrogames/models/ssx/rogue.glb`, not status 200.) jalfern.com 308s to www.
+`https://jalfern.com/retrogames/ssx` — hero + five distinct rigged rivals
+(verified prod: knight.glb serves 359148 bytes model/gltf-binary). Nightly
+yml runs green (main-ok reports "nightly success").
 
 ## In flight (other lanes)
-- COMET DRIFT #542 + several comet-* worktrees belong to the other lanes;
-  their dev server holds :5173 (this lane used :5175, now stopped).
+- Demo #616 (shore WebGPU upgrade, `lane:demos`) still queued — left for the
+  demos lane (oldest game-queue item, but builder took `lane:games` #620).
+- QA MASTER sessions (mini/studio) running. `/Users/jon/Dev/retrogames-qa-534`
+  still holds a `main` checkout (law: main checked out nowhere) — it makes gh
+  post-merge cleanup error locally; someone should re-detach it.
 
 ## Next queued
-- `gh issue list --label game-queue`: only **#601** "FORGE — CI: test only
-  what changed, mutate to nightly, freeze merges on red main" — harness work,
-  not a title (rule 4 pressure — next session wants a game label from Jon).
+- game-queue: #616 (demos), #614 + #605 (FORGE platform). No unclaimed
+  `lane:games` title — next forge session wants one, or the loop takes
+  platform work (#614) — see question 1.
 
 ## Lessons worth keeping
-- **three r180 removed `KeyframeTrack.evaluate`** — sample baked clips with
-  `track.createInterpolant(new Float32Array(track.getValueSize())).evaluate(t)`.
-- **GLTFLoader.parse is callback-style** — `parseAsync(buf, '')` or you
-  dereference undefined and silently fall back to the old look.
-- **Chase-cam RGB never sits still**: `camPos.lerp(goal)` converges
-  geometrically but is never static → sub-pixel AA shimmer (~5/255 even when
-  paused). Pose gates must use silhouette histograms (per-row/col dark-pixel
-  counts): noise floor 2 vs pair diffs 54+.
-- **New `public/*` top-level prefix ≠ published**: `vercel.json` whitelists
-  prefixes (`js-dos`, `games`, `demos`, `replays`, icons…) — add the rewrite
-  in the SAME PR that ships the files, and verify prod with expected
-  content-length, never 200 alone (HTML@200 for missing assets).
-- **playwright `press` ignores extra modifiers** — `press('Slash',
-  {shiftKey:true})` does NOT deliver Shift; down/up the modifier.
-- **Sim freezes on pause, rendering doesn't** — DEV pose overrides keep
-  blending while paused: ideal for stable capture (assert tick frozen).
-- KayKit character GLBs ship WITH animation clips — mine them for pose bases.
-- **Whole-file package.json conflicts**: main reformats at 2-space indent;
-  rewrite JSON with `null,2` to stay diff-clean.
-- Don't `git checkout` in a worktree while a merge-loop runs there — it
-  breaks the loop's branch context; re-arm instead of trusting silence.
+- KayKit Adventurers pack shares ONE skeleton across all 5 characters — pose
+  code transfers 1:1; keep models pack-mates when you can.
+- gltf-transform recipe that shrinks 3.6 MB → 330 KB: keep 3 clips, drop
+  weapon nodes by name, `resample --tolerance 0.001`, `dedup`, `prune`.
+  (@gltf-transform/core: use `.dispose()` on nodes/anims, not root.removeChild.)
+- Node has no createImageBitmap — three.js GLTFLoader can't decode PNGs in
+  Node; do asset surgery with @gltf-transform, not three.
+- Silent-guard lesson: this lane's harness gates flaked from fixed settle
+  times; software GL converges per RENDER frame — wait-until-still beats
+  any constant (pair diffs got stronger: 98–240 vs 64–140).
+- gh `--body-file` does NOT upload local images; screenshots go in
+  `docs/shots/issue-<n>/` (repo convention) and link raw.githubusercontent.
+  And copy chains with `&&` half-fail — verify each file after multi-cp.
 
 ## Three questions for Jon
-1. #601 is CI/harness; game-queue has no title. Label the next GAME
-   (`next`) or should the builder lane take #601?
-2. SSX grab reaches toward the nose but the hand doesn't touch the deck edge
-   yet — OK as #615 item 2, or want forge to keep tuning now?
-3. CPU-field models (#615 item 1) add ~4×300 KB GLBs to the repo — fine, or
-   prefer one shared multi-character GLB fetched once?
+1. Only `lane:demos` (#616) and platform (#614/#605) titles left — next
+   builder session: take #614, or label a new GAME? (Rule 4 is not tripped:
+   #626 changed game code.)
+2. Rider 5 shares the hero's hooded body (pack has only five bodies) — OK,
+   or fetch a body from another CC0 source for true six?
+3. Nightly is green; freeze currently keys off it. Want the heist-nightly to
+   also block (currently warns only), or keep advisory per rule 3?
 
 ## Housekeeping
-- Main checkout detached at `origin/main` (00f5eee); nothing dirty.
-- This lane's worktree `retrogames-forge-ssx-rider-548` removed post-merge;
-  dev server :5175 stopped.
+- Main checkout detached at `origin/main` (d975ed8); STATE.md committed per
+  rule 9 (game merged this session).
+- This lane's worktree `retrogames-forge-ssx-cpu-620` removed; branch
+  deleted by merge; dev server :5178 stopped; :5173 untouched (other lanes).
