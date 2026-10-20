@@ -520,9 +520,34 @@ const rand = (gs) => {
 // ---------------------------------------------------------------- items ----
 function updateItems(gs) {
     const h = gs.hero
+    const pt = gs.partnerOn && gs.partner && !gs.partner.down ? gs.partner : null
     for (const it of gs.items) {
         if (it.taken) continue
-        if (Math.hypot(it.x - h.x, it.y - h.y) > 0.5) continue
+        const forHero = Math.hypot(it.x - h.x, it.y - h.y) <= 0.5
+        const forP = pt && !forHero && it.t !== 'potion' && Math.hypot(it.x - pt.x, it.y - pt.y) <= 0.5
+        if (!forHero && !forP) continue
+        if (forP && it.t === 'key') {
+            it.taken = true
+            gs.keys++
+            addScore(gs, 200, { kind: 'key' })
+            gs.events.push({ type: 'pickup', t: 'key', partner: true })
+            continue
+        }
+        if (forP && it.t === 'food') {
+            it.taken = true
+            pt.hp = Math.min(pt.maxHp, pt.hp + CFG.foodHeal)
+            addScore(gs, 500, { kind: 'food' })
+            gs.events.push({ type: 'pickup', t: 'food', heal: CFG.foodHeal, partner: true })
+            continue
+        }
+        if (forP) {
+            const v = [50, 100, 200, 500][Math.floor(rand(gs) * 4)]
+            it.taken = true
+            gs.gold += v
+            addScore(gs, v, { kind: 'gold' })
+            gs.events.push({ type: 'pickup', t: 'gold', v, partner: true })
+            continue
+        }
         it.taken = true
         if (it.t === 'key') {
             gs.keys++
@@ -602,7 +627,7 @@ export function step(gs, inp, partnerInp = null) {
         const vx = (inp.right ? 1 : 0) - (inp.left ? 1 : 0)
         const vy = (inp.back ? 1 : 0) - (inp.fwd ? 1 : 0)
         const sp = CFG.walk * h.speed
-        if (typeof inp.aim === 'number') {
+if (typeof inp.aim === 'number') {
             // pilot lane: point absolutely, travel along the barrel (fwd/back)
             h.a = inp.aim
             if (inp.fwd) moveHero(gs, Math.cos(inp.aim), Math.sin(inp.aim), sp)
@@ -772,12 +797,19 @@ function updatePartner(gs, partnerInp) {
             if (vx || vy) {
                 const a = Math.atan2(vy, vx)
                 p.a = a
+                // seat parity (#505): pushing into a slam door opens it for seat 2
+                // exactly as it does for seat 1 (the #275 push-to-open) — a pad
+                // can push; it still cannot spend a key, and it gets no speed bonus.
+                openSlamInWay(gs, p, Math.cos(a), Math.sin(a))
                 moveHuman(gs, p, Math.cos(a) * sp, Math.sin(a) * sp)
             }
         } else {
             if (partnerInp.left) p.a -= CFG.turn
             if (partnerInp.right) p.a += CFG.turn
-            if (partnerInp.fwd) moveHuman(gs, p, Math.cos(p.a) * sp, Math.sin(p.a) * sp)
+            if (partnerInp.fwd) {
+                openSlamInWay(gs, p, Math.cos(p.a), Math.sin(p.a))
+                moveHuman(gs, p, Math.cos(p.a) * sp, Math.sin(p.a) * sp)
+            }
             else if (partnerInp.back) moveHuman(gs, p, -Math.cos(p.a) * sp * 0.6, -Math.sin(p.a) * sp * 0.6)
         }
         if (p.atkT > 0) { p.atkT--; return }
