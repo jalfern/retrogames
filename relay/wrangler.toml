@@ -13,4 +13,4 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["Room", "Registry"]
+new_sqlite_classes = ["Room", "Registry"]
