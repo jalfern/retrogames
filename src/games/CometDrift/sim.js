@@ -45,6 +45,21 @@ export const TIERS = [
     { t: 165, dur: 90, over: 3.6 },
 ]
 
+// #440 item 5: a rival's gold release is a distant sweep, not the player's.
+// Pure so cometcheck can gate it: quieter than the player's own boost at the
+// same tier, fades linearly with distance, silent past `mute`.
+export const RIVAL_BOOST = { near: 140, mute: 700, maxVol: 0.07 }
+export function rivalBoostFx(dist, tier) {
+    const prox = Math.max(0, 1 - dist / RIVAL_BOOST.mute)
+    return {
+        vol: RIVAL_BOOST.maxVol * (0.45 + tier * 0.275) * prox,
+        lo: 240 + tier * 150,
+        hi: 900 + tier * 240,
+        dur: 0.3 + tier * 0.12,
+        far: dist > RIVAL_BOOST.near,
+    }
+}
+
 // the Gulch's seven-car field — original drivers, skill in top-speed units.
 export const RIVALS = [
     { name: 'BLAZE', color: 'blaze', skill: 0.86 },
