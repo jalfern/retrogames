@@ -34,6 +34,7 @@ const MODULES = [
     { label: 'LUNAR LANDER', file: 'src/games/LunarLander/attract.js', import: '../src/games/LunarLander/attract.js' },
     { label: 'TEMPEST', file: 'src/games/Tempest/attract.js', import: '../src/games/Tempest/attract.js' },
     { label: 'OUT RUN', file: 'src/games/OutRun/attract.js', import: '../src/games/OutRun/attract.js' },
+    { label: 'SMASH TV', file: 'src/games/SmashTV/attract.js', import: '../src/games/SmashTV/attract.js' },
 ]
 
 const REACT_TITLES = [
@@ -157,6 +158,16 @@ const REACT_TITLES = [
         wrap: `    'EVERY KILL CHAINS A SMALLER BLAST',\n`,
         leak: `    'LOSE ALL SIX CITIES AND THE MAP GOES DARK',\n`,
     },
+    {
+        label: 'LODE RUNNER-LITE',
+        jsx: 'src/games/LodeRunnerLite/index.jsx',
+        mf: 'src/games/LodeRunnerLite/attract.js',
+        import: '../src/games/LodeRunnerLite/attract.js',
+        slot: '<AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse">{PRESS}</p>`,
+        wrap: `    'TAKE EVERY GOLD FOR THE LADDER',\n`,
+        leak: `    '1 · 2 · 3 PICK A VAULT',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
@@ -233,7 +244,7 @@ const MUTANTS = [
         `0)'`],
 ]
 
-const MUTATE_FILES = MODULES.filter((m) => /Defender|SpaceInvaders|Centipede|Gauntlet|DonkeyKong|Pitfall|MissileCommand|LunarLander|Tempest|OutRun/.test(m.file)).map((m) => m.file)
+const MUTATE_FILES = MODULES.filter((m) => /Defender|SpaceInvaders|Centipede|Gauntlet|DonkeyKong|Pitfall|MissileCommand|LunarLander|Tempest|OutRun|SmashTV/.test(m.file)).map((m) => m.file)
 
 async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, leak, blinkFrom }) {
     const { MESSAGES, PRESS } = await import(spec)
