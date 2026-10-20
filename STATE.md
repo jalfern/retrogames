@@ -1,76 +1,65 @@
-# STATE — forge session 2026-10-19 (SHORE: perf + coherent swash + AA)
+# STATE — forge session 2026-10-20 (SSX hero rider)
 
 ## Shipped today
-- **#521 SHORE demo** — PR #537 `a7bb05d`: WebGPU golden-hour beach (travel-time
-  phase warp, Green's-law shoaling, Gerstner steepening, 128-lane CPU swash sim,
-  MSAA-free v1). `docs/shots/shore/`.
-- **SHORE perf: one-lane shore()** — PR #539 `2e0ab1f`: `shore()` copied the
-  whole lanes array (2 KB) per call ×4/fragment → <1 fps at full window. Now
-  takes the one lane `vec3f`; shorecheck gates frame time at full window
-  (1600x1000, `--max-ms 20`, `__shoreTest.perf()`): 16.67 ms avg (vsync cap).
-  Mutant (by-value) 72.9 ms → RED.
-- **#538-partial SHORE: foam-edge AA** — PR #557 `e488dda`. Root cause of the
-  sawtooth was in the SIM: `laneAmp[i]=0.72+0.56*hash1(i)` + `lane*2.399`
-  phase = independent per-lane noise = 1.1 m sawtooth on the foam line
-  (measured mean|Δxw| 2.96 m/lane, 97 reversals). Now smooth alongshore
-  sinusoids + ~6.6 m block phase jitter → 0.40 m/lane, 7 reversals; new
-  shorecheck gate "waterline coherent alongshore" (mutant RED). Plus AA stack:
-  low-pass+Catmull-Rom `laneAt` (sand/water; probe keeps nearest so gates stay
-  exact), model evaluated at unshifted base coords, distance-to-waterline alpha
-  ramp (~2 px world, no dFdx), 4× MSAA resolve, gradient noise (quintic),
-  bed-ripple damp within 2 m of the still line. shorecheck 20/20.
-  Residual ~8 px mesh-period scallop documented in #557/#538: survives
-  noise-off/foam-off/depth-off/MSAA → grazing fresnel/facet banding; honest
-  fix = adaptive alongshore grid (geometry), left to the QA lane.
-
-## In flight (other lanes)
-- **COMET DRIFT #542** (3× grown world + camera) sits on
-  `forge/comet-drift-hd-542` — STATE notes for it were on main earlier; the
-  PR is not filed yet (other CPU). Its lessons are folded below.
-- **#538 QA — SHORE polish** (curl, surf sound, wet-front patchiness, dunes,
-  distant swell, tod slider, + fresnel-scallop follow-up): QA lane's — this
-  builder lane does not take QA tasks (Jon, 2026-10-19).
+- **SSX real rider #548** — PR #610 merged `00f5eee`: CC0 KayKit
+  "Rogue_Hooded" hero (`public/models/ssx/rogue.glb`, 326 KB trimmed;
+  license+provenance in `public/models/ssx/LICENSE.txt`). Six sim-driven
+  poses (stand/tuck/crouch/air/grab/tumble) = baked clip frames
+  (Idle/Jump_Start/Jump_Idle) + per-bone offsets on a per-frame bone-lerp;
+  sculpted sidecut/rocker deck (no CC0 snowboard exists — hand-built,
+  documented); foot-bone boots; air-fading contact shadow. CPU field stays
+  box rigs (issue scope: one rider first).
+- **ssxmodelcheck** (new browser gate, in lint:ssx scope): 20/20 — GLB loads
+  (48 bones), pose overrides land, silhouette-histogram pair diffs ≥54 vs
+  noise 2, real ArrowUp/Space drive hero poses, prognose WINNABLE, zero page
+  errors. Mutant (blendHero→stand) = 12 red, restored. ssxcheck 70/70.
+- QA polish pass filed as **#615** (CPU field models, grab depth, board
+  liveries, idle life, boot fit, dusk/night readability).
 
 ## Playable now
-`https://jalfern.com/retrogames/demos/shore.html` (smooth: perf fix + AA
-live), plus the arcade (`/retrogames/`). jalfern.com 308s to www — `curl -L`.
+`https://jalfern.com/retrogames/ssx` — player rides the hooded rogue; per-pose
+screenshots on #548. (At report time prod was still on the pre-merge bundle —
+Vercel deploys lag merges a few minutes; the SPA rewrite answers HTML@200 for
+missing assets, so verify with content-length 326172 on
+`/retrogames/models/ssx/rogue.glb`, not status 200.) jalfern.com 308s to www.
+
+## In flight (other lanes)
+- COMET DRIFT #542 + several comet-* worktrees belong to the other lanes;
+  their dev server holds :5173 (this lane used :5175, now stopped).
 
 ## Next queued
-- `gh issue list --label game-queue` is EMPTY (rule 2: don't invent work).
-  Oldest game-queue #531 (Online 2P relay) was merged/closed out; awaiting
-  Jon's next title.
+- `gh issue list --label game-queue`: only **#601** "FORGE — CI: test only
+  what changed, mutate to nightly, freeze merges on red main" — harness work,
+  not a title (rule 4 pressure — next session wants a game label from Jon).
 
 ## Lessons worth keeping
-- **Independent per-lane noise is a sawtooth generator.** Any array-sampled
-  field (1.1 m lanes) must be coherent at ≥ a few samples; amplitude/phase
-  "texture" belongs in the shader noise, not in lane-indexed hashes.
-- **Identical output across edits = stale cache**, even `file://` with a fresh
-  profile: bust the URL (`?v=`) or you'll debug a render you already fixed.
-- **A pixel metric that can't distinguish mutant from fix is not a gate** —
-  shipped without it (rule 6), kept the lanes() one that can.
-- WGSL copies array-typed params by value; hot calls take the indexed vec3f.
-- WGSL resolve of MSAA goes through the render pass `resolveTarget`; a
-  copyTextureToTexture out of a sampleCount>4 texture renders black.
-- `smoothstep` over depth can't AA a geometric silhouette; only raster MSAA or
-  a denser mesh touches mesh-vs-mesh intersections.
-- Value noise with cubic fade only C1: its lattice creases read as 0.45 m
-  teeth at grazing angles — quintic/gradient noise for edges.
-- (comet) A lap crossing IS a half-lap jump: unwrap into an odometer.
-- (comet) Grow a world and re-derive all absolute-coords scenery from live
-  bbox; audits prove it, not the eyeball.
-- (carried) Cross-lane phase tilt ≪ π; foam needs trough `H/(d0+min(η,0))`;
-  storage `vec3f`=16 B stride; pair GPU readback with same-frame CPU snapshot.
+- **three r180 removed `KeyframeTrack.evaluate`** — sample baked clips with
+  `track.createInterpolant(new Float32Array(track.getValueSize())).evaluate(t)`.
+- **GLTFLoader.parse is callback-style** — `parseAsync(buf, '')` or you
+  dereference undefined and silently fall back to the old look.
+- **Chase-cam RGB never sits still**: `camPos.lerp(goal)` converges
+  geometrically but is never static → sub-pixel AA shimmer (~5/255 even when
+  paused). Pose gates must use silhouette histograms (per-row/col dark-pixel
+  counts): noise floor 2 vs pair diffs 54+.
+- **playwright `press` ignores extra modifiers** — `press('Slash',
+  {shiftKey:true})` does NOT deliver Shift; down/up the modifier.
+- **Sim freezes on pause, rendering doesn't** — DEV pose overrides keep
+  blending while paused: ideal for stable capture (assert tick frozen).
+- KayKit character GLBs ship WITH animation clips — mine them for pose bases.
+- **Whole-file package.json conflicts**: main reformats at 2-space indent;
+  rewrite JSON with `null,2` to stay diff-clean.
+- Don't `git checkout` in a worktree while a merge-loop runs there — it
+  breaks the loop's branch context; re-arm instead of trusting silence.
 
 ## Three questions for Jon
-1. game-queue is empty — next title for the forge lane? (#531 relay is closed;
-   is the 2P relay still the direction, just un-issued?)
-2. Shore fresnel scallop: OK to hand the adaptive-z-grid fix to the QA lane,
-   or want forge to take it once the queue refills?
-3. Demos-only surface is now law (AGENTS.md) — should OCEAN/shore get a card
-   refresh on the demos page next, or leave demos frozen while games scale?
+1. #601 is CI/harness; game-queue has no title. Label the next GAME
+   (`next`) or should the builder lane take #601?
+2. SSX grab reaches toward the nose but the hand doesn't touch the deck edge
+   yet — OK as #615 item 2, or want forge to keep tuning now?
+3. CPU-field models (#615 item 1) add ~4×300 KB GLBs to the repo — fine, or
+   prefer one shared multi-character GLB fetched once?
 
 ## Housekeeping
-- Main checkout: detached at `origin/main`; no local `main` anywhere (rule 5).
-- This lane's worktrees (`forge-shore-perf`, `forge-shore-foam-aa`) removed
-  post-merge; comet worktree belongs to the other lane.
-- Dev server not started. Nothing dirty.
+- Main checkout detached at `origin/main` (00f5eee); nothing dirty.
+- This lane's worktree `retrogames-forge-ssx-rider-548` removed post-merge;
+  dev server :5175 stopped.
