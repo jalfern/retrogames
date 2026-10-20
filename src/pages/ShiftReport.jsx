@@ -208,7 +208,7 @@ export default function ShiftReport() {
     const first = report.rows[0]
     const last = report.rows[report.rows.length - 1]
     const year = new Date(report.generated).getUTCFullYear()
-    const axisLabel = k => `${WDof(k, year)} ${MONTHS[+k.slice(0, 2) - 1]} ${+k.slice(3, 5)}, ${hrLabel(parts(k).hr)}`
+    const axisLabel = k => `${WDof(k, year)} ${+k.slice(3, 5)}, ${hrLabel(parts(k).hr)}`
 
     return (
         <div className="sr absolute inset-0 overflow-y-auto bg-transparent">
@@ -252,7 +252,7 @@ export default function ShiftReport() {
                         <Machine name="Mac mini" sub="QA lane" series={report.machines.mini} pct={pctOf(report.machines.mini)} color="--qa" />
                         <Machine name="MacBook Pro" sub="QA lane" series={report.machines.mbp} pct={pctOf(report.machines.mbp)} color="--qa" />
                         <Machine name="Mac Studio" sub="builder + QA · load avg" series={report.machines.studio}
-                            pct={`${report.machines.studioLoad.find(v => v != null) ?? '—'}→${report.machines.studioLoad.filter(v => v != null).slice(-1)[0] ?? ''}`} color="--builder" />
+                            pct={(() => { const v = report.machines.studioLoad.filter(x => x != null); return v.length ? `${Math.round(v[0])}→${Math.round(v[v.length - 1])}` : '—' })()} color="--builder" />
                         <div className="axis"><div /><div><span>{axisLabel(first[0])}</span><span>{axisLabel(report.rows[24] ? report.rows[24][0] : first[0])}</span><span>{axisLabel(last[0])}</span></div><div /></div>
                     </div>
                 </section>

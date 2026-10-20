@@ -266,7 +266,7 @@ export function buildThemes({ pulls, gameLabels, privates }) {
         const th = themes.get(name) || { name, count: 0, split: { builder: 0, qa: 0, ops: 0 }, titles: [] }
         th.count++
         th.split[lane]++
-        if (th.titles.length < 3) th.titles.push(title.slice(0, 90))
+        if (th.titles.length < 2) th.titles.push(title.split(' — ')[0].split(':')[1]?.trim() || title)
         themes.set(name, th)
     }
     const minor = []
@@ -288,9 +288,11 @@ export function buildThemes({ pulls, gameLabels, privates }) {
         .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
         .map(t => {
             const lanes = ['builder', 'qa', 'ops'].filter(k => t.split[k]).map(k => `${t.split[k]} ${k}`).join(', ')
+            const clip = x => (x.length > 44 ? `${x.slice(0, 43)}…` : x)
+            const body = t.titles.map(clip).join('; ')
             return {
                 name: t.name, count: t.count, split: t.split,
-                text: `${t.count} PR${t.count === 1 ? '' : 's'} (${lanes}): ${t.titles.join('; ')}`,
+                text: `${t.count} PR${t.count === 1 ? '' : 's'} (${lanes}): ${body}`,
             }
         })
 }

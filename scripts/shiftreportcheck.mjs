@@ -147,7 +147,8 @@ ok('minor game folds into polish umbrella', byName['Game polish, other titles']?
 ok('private game hidden from themes', !byName.VEIL && !themed.some(t => /VEIL/.test(t.text)))
 ok('attract keyword theme', byName['Attract screens'].count === 1)
 ok('split bars sum to count', themed.every(t => t.split.builder + t.split.qa + t.split.ops === t.count))
-ok('theme sentence is computed text', /^3 PRs \(1 builder, 2 qa\): SSX: rails; SSX: snow; SSX: audio$/.test(byName.SSX.text))
+ok('theme sentence is computed text', /^3 PRs \(1 builder, 2 qa\): rails; snow$/.test(byName.SSX.text))
+ok('theme text stays short', themed.every(t => t.text.length < 150))
 
 // ---- whole report + notes contract ----
 const rep = m.buildReport({
