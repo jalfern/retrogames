@@ -1,0 +1,16 @@
+name = "retrogames"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# Free tier guards live in worker.js/core.js: MAX_ROOMS 120, 512B msgs,
+# rate window 240/s per room, 90s idle alarm.
+
+[durable_objects]
+bindings = [
+  { name = "ROOM", class_name = "Room" },
+  { name = "REGISTRY", class_name = "Registry" },
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room", "Registry"]
