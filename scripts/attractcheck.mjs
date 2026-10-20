@@ -13,6 +13,10 @@
 //
 // `--mutate` re-plants the broken behaviours in the swept titles' attract.js
 // files; each child run MUST go red — that is the proof this gate has teeth.
+//
+// React shells (AttractMessage overlays) hold their copy in an attract.js
+// {PRESS, MESSAGES} module; those are audited statically: one cycling slot,
+// short single lines, dimmed scrim, blinking prompt, no harness leaks.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -24,6 +28,27 @@ const MODULES = [
     { label: 'SPACE INVADERS', file: 'src/games/SpaceInvaders/attract.js', import: '../src/games/SpaceInvaders/attract.js' },
     { label: 'CENTIPEDE', file: 'src/games/Centipede/attract.js', import: '../src/games/Centipede/attract.js' },
     { label: 'GAUNTLET', file: 'src/games/Gauntlet/attract.js', import: '../src/games/Gauntlet/attract.js' },
+]
+
+const REACT_TITLES = [
+    {
+        label: 'GALAGA',
+        jsx: 'src/games/Galaga/index.jsx',
+        mf: 'src/games/Galaga/attract.js',
+        import: '../src/games/Galaga/attract.js',
+        slot: '<AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />',
+        wrap: `    'DIVE PATHS ARE SCRIPTED AND READABLE',\n`,
+        leak: `    "DON'T GET CORNERED AT THE WALLS",\n`,
+    },
+    {
+        label: 'MINESWEEPER',
+        jsx: 'src/games/Minesweeper/index.jsx',
+        mf: 'src/games/Minesweeper/attract.js',
+        import: '../src/games/Minesweeper/attract.js',
+        slot: '<AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />',
+        wrap: `    'DIG A MATCHED NUMBER TO CHORD THE REST',\n`,
+        leak: `    'EVERY BOARD IS PROVEN GUESS-FREE',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
@@ -102,8 +127,61 @@ const MUTANTS = [
 
 const MUTATE_FILES = MODULES.filter((m) => /Defender|SpaceInvaders|Centipede|Gauntlet/.test(m.file)).map((m) => m.file)
 
+async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, leak }) {
+    const { MESSAGES, PRESS } = await import(spec)
+    console.log(`attract (rule 6) — ${label}`)
+    if (!Array.isArray(MESSAGES) || typeof PRESS !== 'string') {
+        ok(false, `${label}: exports the React attract contract {PRESS, MESSAGES}`)
+        return
+    }
+    ok(true, `${label}: exports the React attract contract {PRESS, MESSAGES}`)
+    ok(MESSAGES.length >= 2, `${label}: has more than one message to cycle`, `${MESSAGES.length}`)
+    ok(new Set(MESSAGES).size === MESSAGES.length, `${label}: no attract message repeats`)
+    ok(MESSAGES.every((s) => s.length > 0 && s.length <= 44), `${label}: every message fits one line`,
+        MESSAGES.filter((s) => s.length > 44).join(' | '))
+    ok(!MESSAGES.some((s) => /attract mode|scripts?\/|\.mjs|audit|autopilot/i.test(s)),
+        `${label}: no harness leak in a visible message`)
+    ok(PRESS.length <= 24 && /ANY KEY/i.test(PRESS), `${label}: the press prompt is short and clear`, PRESS)
+
+    const jsx = readFileSync(jsxPath, 'utf8')
+    const block = jsx.slice(jsx.indexOf("{screen === 'attract'"), jsx.indexOf("{screen === 'over'"))
+    ok(block.length > 0, `${label}: attract block found`)
+    ok((block.match(/<AttractMessage/g) || []).length === 1, `${label}: exactly one cycling message slot`,
+        `${(block.match(/<AttractMessage/g) || []).length}`)
+    ok((block.match(/<p\b/g) || []).length === 1, `${label}: only the press prompt is a raw paragraph (no stacked rules)`,
+        `${(block.match(/<p\b/g) || []).length}`)
+    ok(block.includes('{MESSAGES}'), `${label}: the attract reads copy from the shared module`)
+    ok(block.includes('{PRESS}'), `${label}: the press prompt comes from the shared module`)
+    ok(block.includes('animate-pulse'), `${label}: the press prompt blinks`)
+    const dim = block.match(/bg-black\/(\d+)/)
+    ok(!!dim && Number(dim[1]) >= 40, `${label}: the demo dims behind the attract text`, dim ? dim[0] : 'no scrim')
+
+    if (process.argv.includes('--mutate')) {
+        const mutants = [
+            ['the slot pins one message (never cycles)', jsxPath, 'messages={MESSAGES}', 'messages={[MESSAGES[0]]}'],
+            ['a second rules slot stacks over the demo', jsxPath, slot, `${slot}\n                    <AttractMessage className="text-white/70" messages={MESSAGES} />`],
+            ['the demo stops dimming', jsxPath, 'bg-black/55', 'bg-black/0'],
+            ['the press prompt stops blinking', jsxPath, 'animate-pulse', 'opacity-100'],
+            ['a message wraps the pane again', mf, wrap, `    'EVERY RULE AT ONCE: ARROWS FLY, SPACE FIRES, THE FLAGSHIP DROPS A TRACTOR BEAM THAT CAPTURES YOUR FIGHTER',\n`],
+            ['a harness leak lands in a visible line', mf, leak, `    'attractcheck.mjs audits this attract screen',\n`],
+        ]
+        let died = 0
+        for (const [name, file, from, to] of mutants) {
+            const orig = readFileSync(file, 'utf8')
+            if (!orig.includes(from)) { ok(false, `${label} anchor: ${name}`, `missing: ${from}`); continue }
+            writeFileSync(file, orig.replace(from, to))
+            const res = spawnSync(process.execPath, ['scripts/attractcheck.mjs'], { encoding: 'utf8' })
+            if (res.status !== 0) { died++; ok(true, `${label} mutant dies: ${name}`) }
+            else { ok(false, `${label} mutant dies: ${name}`, 'child passed despite the bug') }
+            writeFileSync(file, orig)
+        }
+        ok(died === mutants.length, `${label}: all ${mutants.length} attract mutants die`, `${died}/${mutants.length}`)
+    }
+}
+
 async function run() {
     for (const mod of MODULES) await audit(mod)
+    for (const t of REACT_TITLES) await auditReact(t)
 
     if (process.argv.includes('--mutate')) {
         console.log('mutants (each MUST die)')

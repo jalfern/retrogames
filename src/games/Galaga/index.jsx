@@ -16,6 +16,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -416,18 +417,10 @@ const GalagaGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black text-red-400" style={{ textShadow: '0 4px 0 #400, 0 10px 24px #000' }}>GALAGA</h1>
-                    <p className="text-yellow-200/90 font-mono mt-1 text-sm">fighting formation of the bee species</p>
-                    <p className="text-white font-mono font-bold mt-4 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <AttractMessage className="mt-3 px-8 text-cyan-100/80" messages={[
-                        'ARROWS to fly (you own the bottom band), SPACE to fire',
-                        'divers hunt your lane — every dive path is scripted, readable, dodgeable',
-                        'the red FLAGSHIP drops a tractor beam: dodge it, or lose a fighter',
-                        'a captured fighter flies the next stage as an escort — shoot YOUR OWN',
-                        'escort down, then CATCH the falling fighter for a DOUBLE (two shots)',
-                        'never corner yourself at the walls; the hive aims its dives at you',
-                    ]} />
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-4xl font-black text-red-400 mb-6" style={{ textShadow: '0 4px 0 #400, 0 10px 24px #000' }}>GALAGA</h1>
+                    <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
                 </div>
             )}
 

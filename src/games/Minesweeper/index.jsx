@@ -15,6 +15,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -479,16 +480,10 @@ const MinesweeperGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>MINESWEEPER</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm">every board is generated guess-free &mdash; logic alone clears it, never 50/50</p>
-                    <p className="text-white font-mono font-bold mt-1 animate-pulse">TAP / PRESS ANY KEY &mdash; 1 COLT &middot; 2 SAPPER &middot; 3 GENERAL</p>
-                    <AttractMessage className="mt-1 px-8 text-amber-100/80" messages={[
-                        'arrows/WASD move the cursor · SPACE digs · B or SHIFT plants a flag',
-                        'digging a number whose flags match its count chords the rest open — a wrong flag chordes into a mine',
-                        'the generator proves every board closes with logic, then re-proves it with chording forbidden',
-                        '1 COLT 9×9 · 2 SAPPER 16×12 · 3 GENERAL 22×13 — tap a cell to dig it directly',
-                    ]} />
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <h1 className="text-4xl font-black mb-6" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>MINESWEEPER</h1>
+                    <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                 </div>
             )}
 
