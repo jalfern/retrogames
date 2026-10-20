@@ -1,0 +1,210 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--
+  SHIFT REPORT — visual reference (Jon, 2026-10-20). The forge's periodic report must look like this:
+  same fonts, color tokens, sections, chart styles, light + dark, works at 400px wide.
+  The numbers below are a hand-made SAMPLE (Sun Oct 18 11am → Tue Oct 20 11am PT). Live reports compute them.
+
+  How the sample was computed (keep these definitions):
+  - Window: last 48 h, America/Los_Angeles.
+  - Lane of a merged PR = branch prefix: forge… = builder, qa… = QA, anything else = ops.
+  - Merges by hour: merged_at bucketed per local hour, stacked builder / QA / ops.
+  - "Builder idle" band: from the builder's last merge until it next ran (telemetry tasks.builder == null).
+  - Machines: telemetry.json samples rolled up per hour. Mac mini / MBP busy = whole-box cpu > 60.
+    Studio = load average, shaded against 16. Missing hours draw as dashed empty cells.
+  - CI: Actions runs created in the window — finished count, median/p90 minutes, runner minutes,
+    cancelled (and how many on main), times main's CI failed.
+  - What shipped: merged PRs grouped by theme, bar split by lane, one plain sentence of highlights each.
+  - The ONLY model-written parts: the headline + lede, and the 3–4 "Notes from the forge". Everything else is computed.
+-->
+<title>Forge Shift Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column, a control-room shift report — summary, the hour-by-hour line, machines, output, then the forge's own notes */
+:root{
+  --bg:#f3f5f2; --panel:#ffffff; --ink:#151b18; --muted:#5d6762; --rule:#dde2de;
+  --builder:#2c62d6; --qa:#0f9a73; --ops:#9aa39e; --warn:#c77a06; --hot:#d2462b;
+  --display:"Chakra Petch","Avenir Next Condensed","Arial Narrow",sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1412; --panel:#171d1a; --ink:#e7ece9; --muted:#97a29c; --rule:#29312d;
+  --builder:#6b95f2; --qa:#38c79c; --ops:#5d6762; --warn:#e6a23c; --hot:#f0735a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1412; --panel:#171d1a; --ink:#e7ece9; --muted:#97a29c; --rule:#29312d;
+  --builder:#6b95f2; --qa:#38c79c; --ops:#5d6762; --warn:#e6a23c; --hot:#f0735a; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+main{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:34px}
+.eyebrow{font:500 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+h1{font:700 clamp(32px,8vw,52px)/1.02 var(--display);margin:8px 0 10px;text-wrap:balance;letter-spacing:-.01em}
+h2{font:600 20px/1.2 var(--display);margin:0 0 4px;letter-spacing:.01em}
+.lede{max-width:62ch;color:var(--muted);margin:0}
+.lede b{color:var(--ink);font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.stat{background:var(--panel);padding:14px 14px 12px;min-width:0}
+.stat .n{font:600 30px/1 var(--display);font-variant-numeric:tabular-nums}
+.stat .l{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.35}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+.sub{color:var(--muted);font-size:13.5px;margin:0 0 14px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.chart{overflow-x:auto}
+.chart svg{display:block;width:100%;min-width:520px;height:auto}
+.chart text{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+.machines{display:flex;flex-direction:column;gap:14px}
+.mrow{display:grid;grid-template-columns:132px 1fr 52px;gap:12px;align-items:center}
+.mname{font-weight:600;font-size:14px;line-height:1.25}
+.mname small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.strip{display:grid;grid-template-columns:repeat(48,1fr);gap:1.5px;height:26px}
+.strip span{border-radius:2px;background:var(--rule)}
+.mpct{font:500 15px var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.axis{display:grid;grid-template-columns:132px 1fr 52px;gap:12px;font:10px var(--mono);color:var(--muted)}
+.axis div:nth-child(2){display:flex;justify-content:space-between}
+@media (max-width:520px){.mrow,.axis{grid-template-columns:96px 1fr 44px;gap:8px}}
+.themes{display:flex;flex-direction:column;gap:16px}
+.theme .top{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.theme .name{font-weight:600}
+.theme .cnt{font:500 14px var(--mono);font-variant-numeric:tabular-nums}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--rule);margin:6px 0 6px}
+.bar span{height:100%}
+.theme p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.5}
+.ci{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.ci div{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:12px 14px;min-width:0}
+.ci .n{font:600 24px/1 var(--display);font-variant-numeric:tabular-nums}
+.ci .l{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.35}
+@media (max-width:520px){.ci{grid-template-columns:1fr 1fr}}
+.notes{display:flex;flex-direction:column;gap:12px}
+.note{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start}
+.note .tag{font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:5px 7px;border-radius:5px;border:1px solid currentColor;white-space:nowrap}
+.note .tag.w{color:var(--warn)} .note .tag.h{color:var(--hot)} .note .tag.k{color:var(--qa)}
+.note p{margin:0;font-size:14.5px} .note p b{font-weight:600}
+a{color:var(--builder)} a:focus-visible{outline:2px solid var(--builder);outline-offset:2px}
+footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--rule);padding-top:14px}
+</style>
+
+<main>
+<header>
+  <div class="eyebrow">jalfern.com/retrogames/forge · shift report</div>
+  <h1>105 merges in 48 hours</h1>
+  <p class="lede">Sun Oct 18, 11am → Tue Oct 20, 11am PT. <b>The QA lanes never stopped.</b> The builder shipped 26 PRs, then sat idle for the last 12 hours with an empty queue. I asked what to build next, but I asked in STATE.md, where nobody reads it.</p>
+</header>
+
+<section class="stats" aria-label="Totals">
+  <div class="stat"><div class="n">105</div><div class="l">PRs merged<br>62 QA · 26 builder · 17 ops</div></div>
+  <div class="stat"><div class="n">56</div><div class="l">issues closed<br>48 opened</div></div>
+  <div class="stat"><div class="n">41</div><div class="l">merged between 11pm and 7am</div></div>
+  <div class="stat"><div class="n">12 min</div><div class="l">median PR open → merged (it's all CI)</div></div>
+</section>
+
+<section>
+  <h2>Merges by hour</h2>
+  <p class="sub">Each bar is one hour. The shaded band is the builder sitting idle.</p>
+  <div class="legend"><span><i style="background:var(--builder)"></i>Builder</span><span><i style="background:var(--qa)"></i>QA lanes</span><span><i style="background:var(--ops)"></i>Ops, docs, fixes</span></div>
+  <div class="chart" id="merges"></div>
+</section>
+
+<section>
+  <h2>Machines</h2>
+  <p class="sub">Five-minute telemetry samples, rolled up by hour. Darker means busier.</p>
+  <div class="machines" id="machines"></div>
+</section>
+
+<section>
+  <h2>What shipped</h2>
+  <p class="sub">The 105 merged PRs, grouped by what they touched. Bar color shows which lane did the work.</p>
+  <div class="themes" id="themes"></div>
+</section>
+
+<section>
+  <h2>CI</h2>
+  <p class="sub">CI sets my pace. A PR waits about as long as its CI run takes.</p>
+  <div class="ci">
+    <div><div class="n">181</div><div class="l">CI runs finished<br>12 min median, 14 min p90</div></div>
+    <div><div class="n">36 h</div><div class="l">of runner time<br>2,159 minutes</div></div>
+    <div><div class="n">52</div><div class="l">runs cancelled<br>49 on main, each one superseded by the next merge</div></div>
+    <div><div class="n">7×</div><div class="l">main went red<br>plus 2 failed relay deploys at 7pm Mon</div></div>
+    <div><div class="n">2</div><div class="l">nightly Heist play-throughs<br>both green</div></div>
+    <div><div class="n">1</div><div class="l">PR closed unmerged</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Notes from the forge</h2>
+  <div class="notes">
+    <div class="note"><span class="tag h">Idle</span><p><b>The builder sat idle about 12 hours overnight</b> (Mon 11pm → Tue 10:30am). The game queue was empty and rule 2 says don't invent work. My question about the next title was buried in STATE.md. <a href="https://github.com/jalfern/retrogames/issues/605">#605</a> moves questions into issues, and the new digest emails them to you.</p></div>
+    <div class="note"><span class="tag w">Detail</span><p><b>One QA PR in five was attract-screen cleanup</b>: 21 sweeps across about 40 games. You asked for meat before detail this morning. The rule landed at 9:46am, and an hour later QA opened another sweep anyway (#604).</p></div>
+    <div class="note"><span class="tag w">CI</span><p><b>Every PR pays the full 12-minute CI run</b>, even doc-only ones, and main went red 7 times while lanes kept merging. <a href="https://github.com/jalfern/retrogames/issues/601">#601</a> (test only what changed, freeze merges on red) is next in the builder queue after SSX.</p></div>
+    <div class="note"><span class="tag k">Fleet</span><p><b>The Mac mini's model ran hot in every sample.</b> The Studio's load roughly tripled Monday morning once a second stream started on it. The MacBook Pro was busy about half the time until it was parked Tue 5:12am. Telemetry dropped out once, Mon 6:11–7:56am.</p></div>
+  </div>
+</section>
+
+<footer>Sources: GitHub PRs, issues and Actions runs for jalfern/retrogames, plus forge-telemetry samples, pulled Tue Oct 20 at 10:55am PT. Lanes are inferred from branch names (forge/… = builder, qa/… = QA, everything else = ops).</footer>
+</main>
+
+<script>
+const H=[["10-18T11",1,1,0,1,0,3.8],["10-18T12",0,1,2,1,0,4.1],["10-18T13",1,0,4,1,0,4.9],["10-18T14",0,0,0,1,0,6.3],["10-18T15",1,1,2,1,.17,5.4],["10-18T16",1,0,3,1,.42,5.4],["10-18T17",1,1,1,1,1,3.7],["10-18T18",0,0,1,1,1,2.7],["10-18T19",0,1,0,1,.42,2.7],["10-18T20",0,0,0,1,.2,2.9],["10-18T21",0,1,0,1,.5,3.4],["10-18T22",1,1,0,1,.42,3.2],["10-18T23",1,1,0,1,.45,3.9],["10-19T00",1,0,0,1,.33,3.1],["10-19T01",1,1,0,1,.17,3.1],["10-19T02",1,0,0,1,0,2.8],["10-19T03",1,0,0,1,.17,2.8],["10-19T04",1,1,0,1,0,2.9],["10-19T05",1,0,0,1,.27,2.5],["10-19T06",0,0,0,null,null,null],["10-19T07",0,0,0,1,.5,14],["10-19T08",0,1,0,1,.5,14.4],["10-19T09",0,0,0,1,.36,14.8],["10-19T10",2,0,0,1,1,14.7],["10-19T11",1,1,0,1,1,16],["10-19T12",1,1,0,1,1,15.8],["10-19T13",1,0,0,1,1,16.6],["10-19T14",0,1,0,1,1,15.2],["10-19T15",1,0,0,1,1,13.6],["10-19T16",1,1,0,1,1,14.2],["10-19T17",1,0,0,1,1,11.4],["10-19T18",1,0,1,1,1,14.3],["10-19T19",1,0,2,1,1,12.1],["10-19T20",0,0,0,1,1,13.3],["10-19T21",1,1,0,1,1,11.5],["10-19T22",1,1,0,1,.55,13.8],["10-19T23",1,2,1,1,.25,12],["10-20T00",0,4,0,1,.18,11.9],["10-20T01",0,4,0,1,.18,12.3],["10-20T02",0,5,0,1,.55,11.7],["10-20T03",0,3,0,1,.08,12.1],["10-20T04",0,5,0,1,0,11.7],["10-20T05",0,3,0,1,.27,12.9],["10-20T06",0,3,0,1,0,13.8],["10-20T07",0,4,0,1,.5,13.3],["10-20T08",0,5,0,1,0,14.3],["10-20T09",0,5,0,1,0,13.7],["10-20T10",0,2,0,1,0,15.7]];
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const NS='http://www.w3.org/2000/svg';
+function el(t,a,p){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p&&p.appendChild(e);return e}
+function label(h){const d=+h.slice(3,5),hr=+h.slice(6,8);const day={18:'Sun',19:'Mon',20:'Tue'}[d];return {day,hr}}
+
+function drawMerges(){
+  const box=document.getElementById('merges');box.innerHTML='';
+  const W=720,Ht=200,L=26,R=8,T=12,B=34,cw=(W-L-R)/48,max=6;
+  const s=el('svg',{viewBox:`0 0 ${W} ${Ht}`,role:'img','aria-label':'Merged PRs per hour by lane'},box);
+  const y=v=>T+(Ht-T-B)*(1-v/max);
+  // idle band: builder last merge Mon 11pm (idx 36) through Tue 10:30am (end)
+  el('rect',{x:L+36*cw,y:T,width:12*cw,height:Ht-T-B,fill:css('--warn'),opacity:.12},s);
+  const tx=el('text',{x:L+36*cw+4,y:T+10},s);tx.textContent='builder idle';tx.setAttribute('style','fill:'+css('--warn'));
+  for(const v of [0,2,4,6]){el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:css('--rule'),'stroke-width':1},s);const t=el('text',{x:L-6,y:y(v)+3,'text-anchor':'end'},s);t.textContent=v}
+  H.forEach((r,i)=>{let acc=0;[[1,'--builder'],[2,'--qa'],[3,'--ops']].forEach(([k,c])=>{const v=r[k];if(!v)return;el('rect',{x:L+i*cw+1,y:y(acc+v),width:cw-2,height:y(acc)-y(acc+v)-.5,fill:css(c),rx:1.5},s);acc+=v});
+    const {day,hr}=label(r[0]);
+    if(hr===0){el('line',{x1:L+i*cw,x2:L+i*cw,y1:T,y2:Ht-B+4,stroke:css('--muted'),'stroke-width':1,'stroke-dasharray':'2 3'},s);const t=el('text',{x:L+i*cw+3,y:Ht-B+26},s);t.textContent=day;t.setAttribute('style','fill:'+css('--ink')+';font-weight:500')}
+    if(hr%6===0){const t=el('text',{x:L+i*cw+cw/2,y:Ht-B+13,'text-anchor':'middle'},s);t.textContent=hr===0?'12a':hr===12?'12p':hr<12?hr+'a':(hr-12)+'p'}
+  });
+}
+
+function drawMachines(){
+  const box=document.getElementById('machines');box.innerHTML='';
+  const rows=[
+    ['Mac mini','QA lane',r=>r[4],'100%','--qa'],
+    ['MacBook Pro','QA lane, parked Tue 5am',r=>r[5],'45%','--qa'],
+    ['Mac Studio','builder + QA · load avg',r=>r[6]==null?null:Math.min(r[6]/16,1),'3→14','--builder'],
+  ];
+  for(const [n,s,f,p,c] of rows){
+    const row=document.createElement('div');row.className='mrow';
+    row.innerHTML=`<div class="mname">${n}<small>${s}</small></div><div class="strip"></div><div class="mpct">${p}</div>`;
+    const st=row.querySelector('.strip');
+    H.forEach(r=>{const v=f(r);const sp=document.createElement('span');sp.title=r[0];if(v!=null){sp.style.background=`color-mix(in srgb, var(${c}) ${Math.round(12+v*88)}%, var(--rule))`}else{sp.style.background='transparent';sp.style.outline='1px dashed var(--rule)';sp.style.outlineOffset='-1px'}st.appendChild(sp)});
+    box.appendChild(row);
+  }
+  const ax=document.createElement('div');ax.className='axis';ax.innerHTML='<div></div><div><span>Sun 11a</span><span>Mon 11a</span><span>Tue 10a</span></div><div></div>';box.appendChild(ax);
+}
+
+const THEMES=[
+  ['Game polish, other titles',26,{builder:1,qa:25},'Smash TV got six passes: enemy telegraphs, bonus room, announcer, juice, audio, HUD. Also Momentum Runner ×3, Bard\'s Tale ×2, Tempest, Myst, Prince of Persia, Lemmings, the Civ camera fix (#560), SSX steering, and Magic Carpet, a new game.'],
+  ['Attract-screen sweep',21,{qa:21},'About 40 games now show one cycling message over a dimmed demo instead of a wall of rules text (#365).'],
+  ['Racers',19,{builder:10,qa:8,ops:1},'COMET DRIFT HD launched (the first MODERN-bar game) with the dune buggy. Sandbank and Corkscomb now follow real circuit layouts, courses got elevation, and the world grew 3×. GP polish ×7. Mario Kart now fills the screen on phones.'],
+  ['WebGPU demos',16,{builder:5,ops:8,qa:3},'Ocean launched, then got storm, time-of-day, clouds and a real night sky, plus an FFT race fix. Shore launched, frame time dropped from 72.9 ms to 16.7 ms, and foam-edge AA landed.'],
+  ['Factory and site ops',13,{builder:5,ops:6,qa:2},'Daily log on the board, Studio QA nodes, static as the required check, close-on-ship and draft-hold rules, short URLs, the demos index.'],
+  ['Multiplayer and Plaicraft plumbing',10,{builder:5,qa:3,ops:2},'Two gamepads, then player slots (human / CPU / model), Smash TV co-op, the recording format, and online 2P over a Cloudflare relay (Gauntlet pilot).'],
+];
+function drawThemes(){
+  const box=document.getElementById('themes');box.innerHTML='';
+  for(const [n,c,split,d] of THEMES){
+    const t=document.createElement('div');t.className='theme';
+    const bar=['builder','qa','ops'].map(k=>split[k]?`<span style="width:${split[k]/26*100}%;background:var(--${k})"></span>`:'').join('');
+    t.innerHTML=`<div class="top"><span class="name">${n}</span><span class="cnt">${c}</span></div><div class="bar">${bar}</div><p>${d}</p>`;
+    box.appendChild(t);
+  }
+}
+function drawAll(){drawMerges();drawMachines();drawThemes()}
+drawAll();
+try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',drawAll)}catch(e){}
+new MutationObserver(drawAll).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+</script>
