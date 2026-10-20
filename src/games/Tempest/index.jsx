@@ -15,6 +15,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { makeGame, step, stateHash, TARGET_WAVES, LEVELS } from './sim.js'
 import { plan } from './planner.js'
 import { W, H, makeStars, drawStars, drawTube, drawPlayer, drawEnemies, drawBullets, drawZaps, drawRimWarn, posAt } from './art.js'
+import { attractFrame, DIM } from './attract.js'
 
 const SIM_MS = 1000 / 60
 const TUBE_HUES = ['#3ae0ff', '#59ffb6', '#ffd053', '#ff7ce6']
@@ -203,15 +204,11 @@ const TempestGame = () => {
 
             const sc = screenRef.current
             if (sc === 'attract') {
-                ctx.fillStyle = 'rgba(3,4,12,0.72)'; ctx.fillRect(0, 0, W, H)
-                text('TEMPEST', W / 2, 110, 44, '#7df0ff', 18)
-                text('ATARI 1981 · VECTOR CLASSIC', W / 2, 136, 8, '#8fa3d8')
-                if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY', W / 2, 178, 12, '#e9f7ff', 4)
-                const msg = Math.floor(gs.tick / 90) % 3
-                if (msg === 0) text('SLIDE THE RIM · FIRE DOWN THE FACES', W / 2, 220, 8, '#5d7094')
-                else if (msg === 1) text('NOTHING REACHES THE RIM ALIVE', W / 2, 220, 8, '#5d7094')
-                else text('EDGE SHOTS PIERCE BOTH FACES', W / 2, 220, 8, '#5d7094')
-                const b = board()[0]; if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 252, 9, '#ffd76b', 3)
+                ctx.fillStyle = DIM; ctx.fillRect(0, 0, W, H)
+                const b = board()[0]
+                for (const l of attractFrame(gs.tick, W, H, b ? b.score : 0)) {
+                    text(l.text, l.x, l.y, l.size, l.col, l.glow || 0)
+                }
             } else if (sc === 'over') {
                 ctx.fillStyle = 'rgba(3,4,12,0.78)'; ctx.fillRect(0, 0, W, H)
                 text(gs.end === 'win' ? 'ALL WAVES CLEARED' : 'OUT OF SHIPS', W / 2, 110, 22, gs.end === 'win' ? '#8fff9f' : '#ff5d5d', 12)

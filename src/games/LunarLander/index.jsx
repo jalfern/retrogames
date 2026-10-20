@@ -15,6 +15,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './sim.js'
+import { attractFrame, DIM } from './attract.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
 import { plan } from './planner.js'
 import { policyProbs, mulberry32, sampleAction, obsFrom, actionVector, ACTION_VECS,
@@ -357,15 +358,11 @@ const LunarLanderGame = () => {
 
             const sc = screenRef.current
             if (sc === 'attract') {
-                ctx.fillStyle = 'rgba(3,4,12,0.72)'; ctx.fillRect(0, 0, W, H)
-                text('LUNAR LANDER', W / 2, 92, 38, '#ffd76b', 16)
-                text('ATARI 1979 · VECTOR CLASSIC', W / 2, 116, 8, '#8fa3d8')
-                if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY', W / 2, 154, 12, '#e9f7ff', 4)
-                const msg = Math.floor(gs.tick / 90) % 3
-                if (msg === 0) text('LAND IT SLOW · STRAIGHT · FLAT', W / 2, 196, 8, '#5d7094')
-                else if (msg === 1) text('PADS PAY 100 · 50 · 20 · × MULTIPLIER', W / 2, 196, 8, '#5d7094')
-                else text('DOCK THE ORBITER · FIVE MISSIONS', W / 2, 196, 8, '#5d7094')
-                const b = board()[0]; if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 228, 9, '#ffd76b', 3)
+                ctx.fillStyle = DIM; ctx.fillRect(0, 0, W, H)
+                const b = board()[0]
+                for (const l of attractFrame(gs.tick, W, H, b ? b.score : 0)) {
+                    text(l.text, l.x, l.y, l.size, l.col, l.glow || 0)
+                }
             } else if (sc === 'over') {
                 ctx.fillStyle = 'rgba(3,4,12,0.78)'; ctx.fillRect(0, 0, W, H)
                 text(gs.win ? 'MISSION COMPLETE — FIVE DOCKS' : 'OUT OF LANDERS', W / 2, 96, 20, gs.win ? '#8fff9f' : '#ff5d5d', 12)
