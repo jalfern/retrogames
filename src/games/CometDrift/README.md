@@ -40,7 +40,11 @@ follows it. All art/audio synthesized at runtime; no assets.
   slipstream (a kart 55–190 px dead ahead, |lat|<46, adds 0.02/tick) all read
   as pure position math. The drift: hold + steer above v 4.5 charges
   50/105/165 ticks; releasing pays `TIERS[t].dur` of over-cap boost; the
-  player's Comet engine multiplies duration ×1.45. Rivals and the player share
+  player's Comet engine multiplies duration ×1.45. Drift steer AUTHORITY decays
+  with `driftT` and the yaw rate is capped (`driftYawCap`/`driftDecayT`/
+  `driftAuthFloor`, #440): a held drift flicks in, carves a fixed radius, then
+  straightens — so `driftT` still climbs the ladder and pays gold, but a drift
+  held on a straight can no longer wind the kart into a spin. Rivals and the player share
   `drive()`; `brain()` is shared by rivals (their skill) and the autopilot
   (`decide`, skill 1.0). `decide()` never makes mistakes — it is the certified
   line the harness and the attract demo replay.

@@ -14,6 +14,12 @@ export const CFG = {
     top: 8.6, acc: 0.075, brake: 0.24, coast: 0.014,
     kerbTop: 7.2, sandTop: 3.4,
     steer: 0.052, driftMul: 1.6, slide: 0.12, gripV: 2.2,
+    // #440 drift steer authority: a held drift + steer used to rotate >150°
+    // in ~550 ms on a straight (carve became a spin into the sand). Yaw now
+    // decays with driftT and is rate-capped, so a held drift flicks in, carves
+    // a fixed radius, then straightens — corners still bite, straights don't
+    // spin. Charge/driftT is untouched, so the ladder still pays gold.
+    driftYawCap: 0.03, driftDecayT: 90, driftAuthFloor: 0.12,
     spinT: 45, bumpV: 0.42, bumpCd: 12,
     wallLimit: 132, kartR: 34,
     boostAcc: 0.16,
@@ -183,7 +189,13 @@ function drive(g, k, inp) {
             k.charge = Math.max(k.charge, k.driftT)
             const tierNow = tierFor(k.charge)
             if (tierNow > prevTier) g.events.push({ e: 'tier', who: k.name, tier: tierNow })
-            k.a += steer * CFG.steer * grip * CFG.driftMul
+            // #440: drift steer authority decays with how long the drift has
+            // been held and the yaw rate is capped, so a held drift carves a
+            // fixed radius instead of winding up into a spin on the straights.
+            const auth = Math.max(CFG.driftAuthFloor, 1 - k.driftT / CFG.driftDecayT)
+            let yaw = steer * CFG.steer * grip * CFG.driftMul * auth
+            yaw = Math.max(-CFG.driftYawCap, Math.min(CFG.driftYawCap, yaw))
+            k.a += yaw
             k.x += Math.cos(k.a + steer * Math.PI * 0.35) * k.v * CFG.slide
             k.y += Math.sin(k.a + steer * Math.PI * 0.35) * k.v * CFG.slide
         } else {
