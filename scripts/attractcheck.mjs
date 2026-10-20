@@ -198,6 +198,36 @@ const REACT_TITLES = [
         wrap: `    'A ADMIT · D DENY · THE SCALE READS TRUTH',\n`,
         leak: `    '1 · 2 · 3 · 4 PICK A WEEK',\n`,
     },
+    {
+        label: 'TETRIS',
+        jsx: 'src/games/Tetris/index.jsx',
+        mf: 'src/games/Tetris/attract.js',
+        import: '../src/games/Tetris/attract.js',
+        slot: '<AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse text-cyan-300">{PRESS}</p>`,
+        wrap: `    'SCORE 40 / 100 / 300 / 1200 × LEVEL',\n`,
+        leak: `    '0-9 PICKS THE START LEVEL',\n`,
+    },
+    {
+        label: 'JOUST',
+        jsx: 'src/games/Joust/index.jsx',
+        mf: 'src/games/Joust/attract.js',
+        import: '../src/games/Joust/attract.js',
+        slot: '<AttractMessage className="mb-6 text-yellow-100/80" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse text-yellow-300">{PRESS}</p>`,
+        wrap: `    'THE LOWER LANCE LOSES · EVEN IS A WIPEOUT',\n`,
+        leak: `    'PRESS 2 FOR TWO RIDERS',\n`,
+    },
+    {
+        label: 'Q*BERT',
+        jsx: 'src/games/QBert/index.jsx',
+        mf: 'src/games/QBert/attract.js',
+        import: '../src/games/QBert/attract.js',
+        slot: '<AttractMessage className="mb-6 text-yellow-100/80" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse text-yellow-300">{PRESS}</p>`,
+        wrap: `    'RED BALLS RICOCHET · UGG & WRONGWAY RUN',\n`,
+        leak: `    'SPELL COINUP ON THE TOP ROW FOR A LIFE',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
