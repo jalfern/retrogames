@@ -12,7 +12,7 @@ import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse } from '../Com
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 import {
-    S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt,
+    S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt,
 } from './scene.js'
 
@@ -297,32 +297,45 @@ export default function CometDriftHD() {
         }
         buildTrackMeshes()
 
-        // canyon floor beyond the plateau rim, so no void opens under the mesas
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), mat(tex(sandTex()), { color: 0xa87850 }))
-        floor.rotation.x = -Math.PI / 2
-        floor.position.set(17, -1.5, 17)
-        scene.add(floor)
-
-        scene.add(buildMesas())
-
-        const dome = new THREE.Mesh(
-            new THREE.SphereGeometry(150, 24, 16),
-            new THREE.MeshBasicMaterial({ map: tex(skyTex()), side: THREE.BackSide, fog: false })
-        )
-        dome.position.set(17, 0, 17)
-        scene.add(dome)
+        // #542: the horizon furniture used to be pinned at the old 2560px
+        // course's center/radius — the grown world drives karts clean through
+        // it. Floor, mesas, dome and sun now derive from the live course
+        // bounds (and the mesas rebuild with every course swap).
+        const horizonGroup = new THREE.Group()
+        scene.add(horizonGroup)
         const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
             map: tex(glowTex()), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true, opacity: 0.95,
         }))
-        sunGlow.position.copy(sunDir.clone().multiplyScalar(120)).add(new THREE.Vector3(17, 2, 17))
         sunGlow.scale.set(84, 84, 1)
         scene.add(sunGlow)
         const sunDisc = new THREE.Sprite(new THREE.SpriteMaterial({
             map: tex(discTex()), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true,
         }))
-        sunDisc.position.copy(sunGlow.position.clone()).add(new THREE.Vector3(0, 1.5, 0))
         sunDisc.scale.set(24, 24, 1)
         scene.add(sunDisc)
+        const buildHorizon = () => {
+            while (horizonGroup.children.length) {
+                const m = horizonGroup.children.pop()
+                if (m.geometry) m.geometry.dispose()
+            }
+            const A = worldAnchor()
+            const span = A.R * 2 + 320
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mat(tex(sandTex()), { color: 0xa87850 }))
+            floor.rotation.x = -Math.PI / 2
+            floor.position.set(A.cx, -1.5, A.cz)
+            horizonGroup.add(floor)
+            horizonGroup.add(buildMesas())
+            const dome = new THREE.Mesh(
+                new THREE.SphereGeometry(A.R + 130, 24, 16),
+                new THREE.MeshBasicMaterial({ map: tex(skyTex()), side: THREE.BackSide, fog: false })
+            )
+            dome.position.set(A.cx, 0, A.cz)
+            horizonGroup.add(dome)
+            const sd = sunDir.clone().multiplyScalar((A.R + 130) * 0.82).add(new THREE.Vector3(A.cx, 2, A.cz))
+            sunGlow.position.copy(sd)
+            sunDisc.position.copy(sd).add(new THREE.Vector3(0, 1.5, 0))
+        }
+        buildHorizon()
 
         // karts + blob shadows
         // dusk env-map (#471 item 4): a tiny equirect wash of the gulch sky
@@ -635,18 +648,26 @@ export default function CometDriftHD() {
             let da = want - camA
             while (da > Math.PI) da -= Math.PI * 2
             while (da < -Math.PI) da += Math.PI * 2
-            camA += da * (P.driftT > 0 ? 0.055 : 0.12)
+            camA += da * (P.driftT > 0 ? 0.062 : 0.13)
             const fovTarget = P.boostT > 0 ? 7 + P.boostTier * 5.5 : 0
             fovK += (fovTarget - fovK) * 0.08
-            const back = 5.3 + fovK * 0.06
+            // #542: a closer, lower eye with a longer look down the road — the
+            // old rig floated 2.75u over the nose and the widened courses made
+            // the scenery read as a ceiling. The lift law now also clears
+            // crests: heights tripled with the world, so hills ahead can hide
+            // the racing line until the eye climbs over them.
+            const back = 4.55 + fovK * 0.05
             const fx0 = Math.cos(camA); const fz0 = Math.sin(camA)
             const hx = P.x * S; const hz = P.y * S
             const hp = liftAt(P)
-            const baseUp = 2.75 + fovK * 0.02
+            const baseUp = 2.45 + fovK * 0.02
             const behind = surfaceAt((hx - fx0 * back) / S, (hz - fz0 * back) / S, P.hint)
-            const need = behind.surf === 'sand' || behind.surf === 'wall'
-                ? Math.max(0, wallTopYAt(behind.i) + 0.55 - (hp + baseUp)) : 0
-            camLift += (need - camLift) * 0.22
+            const needWall = behind.surf === 'sand' || behind.surf === 'wall'
+                ? Math.max(0, wallTopYAt(behind.i) + 0.45 - (hp + baseUp)) : 0
+            let crest = hp
+            for (let w = 4; w <= 32; w += 4) crest = Math.max(crest, TRACK.pts[(P.hint + w + TRACK.N) % TRACK.N].h * S)
+            const needCrest = Math.max(0, crest + 0.6 - (hp + baseUp))
+            camLift += (Math.max(needWall, needCrest) - camLift) * 0.18
             camera.position.set(hx - fx0 * back, hp + baseUp + camLift, hz - fz0 * back)
             tmpF.set(fx0, 0, fz0)
             tmpR.crossVectors(tmpF, UP).normalize()
@@ -658,7 +679,7 @@ export default function CometDriftHD() {
                 if (shake < 0.05) shake = 0
             }
             camera.up.set(0, 1, 0)
-            camera.lookAt(hx + fx0 * 9, hp + 1.3 + camLift * 0.5, hz + fz0 * 9)
+            camera.lookAt(hx + fx0 * 11, hp + 0.95 + camLift * 0.5, hz + fz0 * 11)
             camera.fov = 64 + fovK
             camera.updateProjectionMatrix()
         }
@@ -974,6 +995,7 @@ export default function CometDriftHD() {
             const i = Math.max(0, COURSES.findIndex((c) => c.id === COURSE.id))
             selectCourse(COURSES[(i + dir + COURSES.length) % COURSES.length].id)
             buildTrackMeshes()
+            buildHorizon()
             Object.assign(g, makeGame(0))
             st.endT = 0
             prevPlace = g.karts[0].place
@@ -1051,7 +1073,7 @@ export default function CometDriftHD() {
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
             course: () => COURSE.id,
-            setCourse: (id) => { selectCourse(id); buildTrackMeshes(); Object.assign(g, makeGame(0)); camA = g.karts[0].a; return COURSE.id },
+            setCourse: (id) => { selectCourse(id); buildTrackMeshes(); buildHorizon(); Object.assign(g, makeGame(0)); camA = g.karts[0].a; return COURSE.id },
             cycleCourse: (dir) => { cycleCourse(dir | 0); return COURSE.id },
             best: () => st.best,
             fx: () => {

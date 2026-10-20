@@ -261,16 +261,29 @@ function buildPoints(control, elev) {
 
 // scenery placed by index so the list is identical in Node, the browser and
 // the harness — no dice. Cacti and mesa spires outside the cliff.
+// #542: a lateral offset alone is not enough on a grown course — the loop
+// folds back on itself, and apex scenery can sit shoulder-high next to the
+// OPPOSITE leg. Items must clear every track point, not just their own.
 function buildScenery(track) {
     const out = []
+    const clearOfAll = (x, y) => {
+        for (let j = 0; j < track.N; j += 2) {
+            const q = track.pts[j]
+            const dx = q.x - x; const dy = q.y - y
+            if (dx * dx + dy * dy < 260 * 260) return false
+        }
+        return true
+    }
     for (let i = 0; i < track.N; i += 8) {
         const p = track.pts[i]
         if (p.s < 300 || p.s > track.len - 240) continue
         const side = (i % 16 === 0) ? 1 : -1
-        const off = WALL_R + 110 + ((i * 7) % 90)
+        const off = WALL_R + 190 + ((i * 7) % 120)
+        const x = p.x + Math.cos(p.a + Math.PI / 2) * side * off
+        const y = p.y + Math.sin(p.a + Math.PI / 2) * side * off
+        if (!clearOfAll(x, y)) continue
         out.push({
-            x: p.x + Math.cos(p.a + Math.PI / 2) * side * off,
-            y: p.y + Math.sin(p.a + Math.PI / 2) * side * off,
+            x, y,
             a: p.a,
             kind: (i % 24 === 0) ? 'spire' : 'cactus',
             h: 80 + (i % 5) * 18,

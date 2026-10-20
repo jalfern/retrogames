@@ -14,8 +14,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
-import { TRACK } from '../src/games/CometDrift/track.js'
-import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE } from '../src/games/CometDriftHD/scene.js'
+import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
+import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit } from '../src/games/CometDriftHD/scene.js'
 
 const args = process.argv.slice(2)
 const MUTATE = args.includes('--mutate')
@@ -53,6 +53,18 @@ ok(bounds.offMin >= 220 && (bounds.topMax - bounds.elevMax) <= 3.6, `walls sit s
 const ring = (TRACK.N + 1) * 2
 ok(stats.road.verts === ring, `road ribbon is a closed ring (${ring} verts)`)
 ok(stats.road.nan === 0 && stats.wallL.nan === 0 && stats.plateauR.nan === 0, 'no NaN anywhere in the track bands')
+
+// #542: the horizon furniture must ring EVERY course — when the world grew,
+// the old fixed ring left the karts driving under the mesas. Nothing that is
+// not the track may reach into the camera corridor (mesa footprints, spires).
+console.log('camera corridor (#542):')
+for (const c of COURSES) {
+    selectCourse(c.id)
+    const audit = cameraCorridorAudit()
+    const extra = audit.violations.length ? ` (${audit.violations.length} intrusions, worst ${JSON.stringify(audit.violations.sort((a, b) => a.clearance - b.clearance)[0])})` : ''
+    ok(audit.violations.length === 0, `${c.id}: ${audit.mesaCount} mesas + ${audit.sceneryCount} scenery items clear the corridor${extra}`)
+}
+selectCourse('gulch')
 
 // #518: the road is NOT flat — it follows the course height profile, and every
 // band (kerb, gutter, wall foot/top, plateau) hangs off the same profile at the
