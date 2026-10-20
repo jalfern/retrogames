@@ -50,6 +50,7 @@ export const CFG = {
     fuse: 1.6,
     blast: 1.8,
     blockRange: 1.0,
+    flash: 36,
 }
 
 export const SKILLS = ['block', 'bomb', 'climb', 'dig']
@@ -118,6 +119,7 @@ export function spawnLemming(g) {
         fuseT: -1,
         climber: false,
         digger: false,
+        flashT: 0,
         turnCd: -1,
         live: true,
     })
@@ -157,6 +159,7 @@ export function assign(g, id, skill) {
     else if (skill === 'block') L.state = 'block'
     else if (skill === 'dig') { L.digger = true; L.state = 'dig'; L.digT = 0 }
     else if (skill === 'bomb') { L.state = 'bomb'; L.fuseT = 0 }
+    L.flashT = CFG.flash
     g.events.push({ type: 'assign', id, skill })
     return true
 }
@@ -173,6 +176,7 @@ export function step(g, cursorTarget = null) {
 
     for (const L of g.lemmings) {
         if (!L.live) continue
+        if (L.flashT > 0) L.flashT--
         if (exitTouch(g, L)) continue
         switch (L.state) {
             case 'walk': case 'bomb': case 'block': walker(g, L); break

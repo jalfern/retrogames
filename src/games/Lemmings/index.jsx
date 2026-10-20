@@ -21,7 +21,7 @@ import { currentPad, setPointer, pointerGesture } from '../../utils/onePad'
 import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
 import { LAYOUT } from './layout.js'
-import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
+import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
 
 const TS = 8                                   // internal pixels per tile
 const CW = W * TS
@@ -155,7 +155,7 @@ const LemGame = () => {
             if (assign(gs, L.id, selected)) {
                 runCmds.push({ tick: gs.tick, id: L.id, skill: selected })
                 audioController.playTone(520 + SKILLS.indexOf(selected) * 90, 0.07, 'square', 0.07)
-            }
+            } else audioController.playTone(140, 0.06, 'sawtooth', 0.05)
         }
 
         // #432: the shared pointer gesture, driven by THE one pad's pointer.
@@ -173,7 +173,7 @@ const LemGame = () => {
             if (assign(gs, a.id, selected)) {
                 runCmds.push({ tick: gs.tick, id: a.id, skill: selected })
                 audioController.playTone(520 + SKILLS.indexOf(selected) * 90, 0.07, 'square', 0.07)
-            }
+            } else audioController.playTone(140, 0.06, 'sawtooth', 0.05)
         }
         const stepGesture = (p) => pointerGesture(gest, p, liveCands(), p.x * W, p.y * H, stageScale(), commitAssign)
 
@@ -317,10 +317,24 @@ const LemGame = () => {
                 ctx.fillRect(px + 1, py + 6, 2, 2 - leg); ctx.fillRect(px + 4, py + 6, 2, 1 + leg)
                 if (L.state === 'block') { ctx.fillStyle = LEM_COLORS.body; ctx.fillRect(px - 3, py + 3, 3, 1); ctx.fillRect(px + 6, py + 3, 3, 1) }
                 if (L.state === 'climb') { ctx.fillStyle = LEM_COLORS.head; ctx.fillRect(px + (L.dir > 0 ? 5 : -1), py - 2, 2, 3) }
-                if (L.digger && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.digger; ctx.fillRect(px + (L.dir > 0 ? 6 : -3), py + 4, 3, 1) }
+                if (L.digger && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.digger; ctx.fillRect(px + (L.dir > 0 ? 6 : -3), py + 3, 3, 2) }
                 // #422 item 4: a life-badge on flagged lemmings, so a climber is
                 // still recognisable after it crests and goes back to walking.
-                if (L.climber && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.climber; ctx.fillRect(px + 1, py - 1, 5, 1) }
+                // #470: two pixels thick — at 1 px the gold hairline vanished
+                // into the hair row and a clump looked like nobody had a skill.
+                if (L.climber && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.climber; ctx.fillRect(px, py - 2, 7, 2) }
+            }
+
+            // #470: the grant flash — the lemming that JUST received a skill
+            // gets a bright expanding ring, so "count dropped" always shows
+            // WHO it dropped for, even inside a spawn clump.
+            for (const L of gs.lemmings) {
+                if (!L.live || L.flashT <= 0) continue
+                const f = L.flashT / CFG.flash
+                const rx = Math.round(L.x * TS), ry = Math.round((L.y - 0.5) * TS)
+                ctx.strokeStyle = `rgba(255,216,61,${(0.25 + 0.75 * f).toFixed(2)})`
+                ctx.lineWidth = 2
+                ctx.beginPath(); ctx.arc(rx, ry, 8 + (1 - f) * 7, 0, Math.PI * 2); ctx.stroke()
             }
 
             // cursor (play) or autopilot ghost (attract): in attract the box
@@ -517,7 +531,7 @@ const LemGame = () => {
                     spawned: gs.spawned, exited: gs.exited, dead: gs.dead, need: meta.need,
                     end: gs.end, win: gs.win, score: gs.score, hash: stateHash(gs),
                     cmds: runCmds.length, board: board(),
-                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, live: L.live })),
+                    lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, flash: L.flashT, live: L.live })),
                 }),
                 // The next move the PROVEN solver makes at this point in the
                 // replay — as the live position of that live lemming. Read-only:
