@@ -369,6 +369,22 @@ export function sunLayout(camA, W, pp, u, HZ, sunLift) {
     return { sunX, sunY, discR, glowR, visible }
 }
 
+// ---- #440 item 2: an overtaking rival must not blind the chase camera. At
+// contact distance (~f<90) the buggy sprite grew past half the portrait
+// screen and the road ahead vanished during contact racing. One pure law:
+// a rival sprite covering more than dampFrac of screen height darkens
+// (the road reads through it), and past capFrac it shrinks so the racing
+// line stays visible at the top. Far rivals render untouched. ----
+export const RIVAL_VIEW = { dampFrac: 0.25, capFrac: 0.55, minAlpha: 0.55 }
+export function rivalViewFx(pxH, H) {
+    const frac = pxH / H
+    if (frac <= RIVAL_VIEW.dampFrac) return { s: 1, alpha: 1 }
+    const over = (frac - RIVAL_VIEW.dampFrac) / (1 - RIVAL_VIEW.dampFrac)
+    const alpha = Math.max(RIVAL_VIEW.minAlpha, 1 - over * 1.1)
+    const s = frac > RIVAL_VIEW.capFrac ? RIVAL_VIEW.capFrac / frac : 1
+    return { s, alpha }
+}
+
 // ---- buggies: an exposed-wheel desert racer seen from behind — fat knobby
 // rears outside the body, low wide tub, flat nose plate with the livery
 // stripe, roll cage hoop over the driver, finned engine block behind the seat,

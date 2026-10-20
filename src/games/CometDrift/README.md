@@ -75,8 +75,16 @@ follows it. All art/audio synthesized at runtime; no assets.
     own boost at the same tier (max 0.07 vs 0.11), linear fade over the gap,
     silent past 700 units, gold louder than blue, `far` flips the timbre to a
     soft triangle. `index.jsx` plays the two nearest releases per tick so a
-    three-wide pack never stacks; cometcheck's rival-sfx gates kill the flat-law,
-    too-loud and silent-pack mutants.
+     three-wide pack never stacks; cometcheck's rival-sfx gates kill the flat-law,
+     too-loud and silent-pack mutants.
+  - Overtake readability (#440 polish 2 item 2) — at contact distance a rival
+     buggy grew past half the portrait screen (measured 65–160% of screen height
+     at f 30..90) and hid the road ahead. `art.js` exports the pure law
+     `rivalViewFx(pxH, H)`: a rival covering > 25% of screen height darkens
+     (floor 0.55 alpha), past 55% it shrinks to cap; far rivals render
+     untouched. `index.jsx` routes rival sprites (and their shadows) through it
+     — the player kart and scenery never damp. cometcheck's readability gates
+     kill the no-shrink, flat-alpha and swallowed-threshold mutants.
 - `index.jsx` — the shell: fixed-timestep loop (`contractHoldsLoop` gates the
   sim, the contract owns the clock while held), adaptive-source Mode 7 raster
   (the canvas re-solves to the viewport aspect: height-anchored
