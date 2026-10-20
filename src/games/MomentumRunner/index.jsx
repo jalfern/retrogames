@@ -21,7 +21,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
     ZONES, groundY, maybeEnterLoop, makeGame, step, planRun, dronePos,
-    FIXED_DT, VIEW_W, VIEW_H, BODY_R, RUN_TOP, VMAX,
+    FIXED_DT, VIEW_W, VIEW_H, BODY_R, RUN_TOP, VMAX, DRONE_R,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -676,14 +676,15 @@ const MomentumGame = () => {
                 const px = d.x - dx0, py = d.y - dy0
                 if (px < -20 || px > VIEW_W + 20) continue
                 const rot = tick * 0.6
+                const r = DRONE_R
                 ctx.fillStyle = P.panel0
-                ctx.beginPath(); ctx.ellipse(px, py, 9, 6, 0, 0, Math.PI * 2); ctx.fill()
-                ctx.strokeStyle = P.spike; ctx.lineWidth = 1.5
-                ctx.beginPath(); ctx.ellipse(px, py, 9, 6, 0, 0, Math.PI * 2); ctx.stroke()
+                ctx.beginPath(); ctx.ellipse(px, py, r * 1.15, r * 0.8, 0, 0, Math.PI * 2); ctx.fill()
+                ctx.strokeStyle = P.spike; ctx.lineWidth = 2
+                ctx.beginPath(); ctx.ellipse(px, py, r * 1.15, r * 0.8, 0, 0, Math.PI * 2); ctx.stroke()
                 ctx.fillStyle = P.glow + '0.9)'
-                ctx.beginPath(); ctx.arc(px, py - 1, 2.2, 0, Math.PI * 2); ctx.fill()
-                ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5
-                ctx.beginPath(); ctx.moveTo(px - 10 * Math.cos(rot), py - 8 - 2 * Math.sin(rot)); ctx.lineTo(px + 10 * Math.cos(rot), py - 8 + 2 * Math.sin(rot)); ctx.stroke()
+                ctx.beginPath(); ctx.arc(px, py - 1, r * 0.28, 0, Math.PI * 2); ctx.fill()
+                ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2
+                ctx.beginPath(); ctx.moveTo(px - (r + 4) * Math.cos(rot), py - r * 0.75 - 2 * Math.sin(rot)); ctx.lineTo(px + (r + 4) * Math.cos(rot), py - r * 0.75 + 2 * Math.sin(rot)); ctx.stroke()
             }
 
             // ---- afterimages, then the hero ----
