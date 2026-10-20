@@ -127,6 +127,40 @@ await wait(800)
     r.check('the circuit choice persists across a reload (localStorage)', after === pick, `${pick} -> reload -> ${after}`)
 }
 
+// ---- #534: the title is driven by touch and stick, not just arrows ----------
+// On a phone there is no stick on the attract, so the tappable ‹ › chevrons
+// are the only course control: tapping one cycles (and does NOT start), a tap
+// anywhere else starts (proved at the end). The analog stick — and a gamepad's
+// left stick — cycle through the same shared padState.x the game reads.
+{
+    const c0 = (await probe()).course
+    const box = await page.evaluate(() => {
+        const c = document.querySelector('canvas[data-fit="source"]')
+        const r = c.getBoundingClientRect()
+        return { left: r.left, top: r.top, width: r.width, height: r.height, ...window.__cometTest.view() }
+    })
+    const sel = await page.evaluate(() => window.__cometTest.selector())
+    const tapChevron = async (dir) => {
+        const c = dir > 0 ? sel.right : sel.left
+        await page.mouse.click(box.left + (c[0] / box.w) * box.width, box.top + (c[1] / box.h) * box.height)
+    }
+    await tapChevron(1); await wait(180)
+    const t1 = await probe()
+    r.check('touch: tapping the right chevron cycles the circuit (does not start)', t1.screen === 'attract' && t1.course !== c0, `${c0} -> ${t1.course} screen=${t1.screen}`)
+    await tapChevron(-1); await wait(180)
+    const t2 = await probe()
+    r.check('touch: tapping the left chevron cycles back to the pick', t2.screen === 'attract' && t2.course === c0, `${t1.course} -> ${t2.course}`)
+
+    await page.evaluate(() => window.__cometTest.stick(1, 0)); await wait(200)
+    const s1 = await probe()
+    await page.evaluate(() => window.__cometTest.stick(0, 0)); await wait(80)
+    r.check('stick: pushing right cycles the circuit (does not start)', s1.screen === 'attract' && s1.course !== c0, `${c0} -> ${s1.course} screen=${s1.screen}`)
+    await page.evaluate(() => window.__cometTest.stick(-1, 0)); await wait(200)
+    const s2 = await probe()
+    await page.evaluate(() => window.__cometTest.stick(0, 0)); await wait(80)
+    r.check('stick: pushing left cycles back to the pick', s2.screen === 'attract' && s2.course === c0, `${s1.course} -> ${s2.course}`)
+}
+
 // ---- a real key starts the race; the countdown lifts; the grid throttle is real ----
 await page.keyboard.press('KeyX')
 await wait(250)
@@ -304,6 +338,19 @@ r.check('the countdown lifts to GO (real 3-2-1)', go, `phase=${(await probe()).p
     await wait(350)
     const mid = await probe()
     r.check('a real key returns to attract after the win', mid.screen === 'attract', `screen=${mid.screen}`)
+    // #534: and a tap anywhere else (the prompt, not a chevron) starts the race
+    {
+        const before = (await probe()).course
+        const box = await page.evaluate(() => {
+            const c = document.querySelector('canvas[data-fit="source"]')
+            const r = c.getBoundingClientRect()
+            return { left: r.left, top: r.top, width: r.width, height: r.height, ...window.__cometTest.view() }
+        })
+        await page.mouse.click(box.left + box.width * 0.5, box.top + box.height * 0.74)
+        await wait(300)
+        const started = await probe()
+        r.check('touch: a tap anywhere else starts the race on the picked circuit', started.screen === 'race' && started.course === before, `screen=${started.screen} course=${started.course} (was ${before})`)
+    }
     await page.evaluate(() => window.__cometTest.setCourse('corkscomb'))
     await page.keyboard.press('KeyX')
     await wait(250)

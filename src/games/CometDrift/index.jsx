@@ -7,10 +7,11 @@ import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoostFx } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
+import { selectorGeom, selectorHit } from './selector.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx } from './art.js'
 import { drawText } from './font.js'
 import { engineVoice, driftScrape, sandWhoosh } from './engineSfx.js'
-import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
+import { padState, steerPedals, smoothSteer, STEER_PIPELINE, setStick } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 
 // =====================================================================
@@ -619,11 +620,20 @@ export default function CometDrift() {
             drawText(ctx, 'COMET', W / 2 + 2, Math.round(H * 0.33) + 2, '#7c2010', dsz(24), 'center')
             drawText(ctx, 'COMET', W / 2, Math.round(H * 0.33), '#f2e6d2', dsz(24), 'center')
             drawText(ctx, 'DRIFT GP', W / 2, Math.round(H * 0.33) + Math.round(24 * hs), '#ffd840', dsz(24), 'center')
-            // course selector (#493): ←/→ cycles the circuit, the line label
-            // names what you picked; every other key or a tap races it
-            drawText(ctx, '<', Math.round(W / 2 - 92 * hs), Math.round(H * 0.47), '#8a5c3c', dsz(11), 'center')
-            drawText(ctx, '>', Math.round(W / 2 + 88 * hs), Math.round(H * 0.47), '#8a5c3c', dsz(11), 'center')
-            drawText(ctx, COURSE.name, W / 2, Math.round(H * 0.47), '#f2e6d2', dsz(11), 'center')
+            // course selector (#534): the chevrons are tappable (a phone has no
+            // stick on the title) and also cycle on the stick / arrows. The
+            // name sits dead-centre as the start zone, so a tap on it — or on
+            // anything but a chevron — still races the pick.
+            const sel = selectorGeom(W, H, hs)
+            for (const [c, ch] of [[sel.left, '<'], [sel.right, '>']]) {
+                ctx.fillStyle = 'rgba(242,230,210,0.10)'
+                ctx.fillRect(c[0] - sel.hw, sel.rowY - sel.hh, sel.hw * 2, sel.hh * 2)
+                ctx.fillStyle = 'rgba(240,184,120,0.5)'
+                ctx.fillRect(c[0] - sel.hw, sel.rowY - sel.hh, sel.hw * 2, 1)
+                ctx.fillRect(c[0] - sel.hw, sel.rowY + sel.hh - 1, sel.hw * 2, 1)
+                drawText(ctx, ch, c[0], sel.rowY, '#ffd840', dsz(14), 'center')
+            }
+            drawText(ctx, COURSE.name, W / 2, sel.rowY, '#f2e6d2', dsz(11), 'center')
             const msgs = [COURSE.tagline, '< > PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'BLUE VIOLET GOLD - THE LADDER PAYS']
             drawText(ctx, msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55), '#f0b878', dsz(10), 'center')
             if (st.top.length) {
@@ -707,7 +717,7 @@ export default function CometDrift() {
             else {
                 while (acc >= 1000 / 60) {
                     acc -= 1000 / 60
-                    if (!pausedRef.current) tickWorld(st.screen === 'race')
+                    if (!pausedRef.current) { tickWorld(st.screen === 'race'); if (st.screen === 'attract') attractStickTick() }
                     const P = g.karts[0]
                     // a held drift lags the camera: the view keeps pointing
                     // into the bend while the kart slides out of it
@@ -754,10 +764,39 @@ export default function CometDrift() {
             audioController.playTone(540 + dir * 120, 0.06, 'square', 0.07)
         }
 
-        tapRef.current = () => {
+        // #534: the stick / a gamepad's left stick cycles the circuit too. The
+        // attract runs the autopilot (padState is otherwise idle here), so read
+        // the stick's x once per step: a push past the dead zone steps one
+        // course, and it re-arms only when the stick returns to centre — one
+        // flick is one step, a hold does not spin the pack.
+        let stickArm = 0
+        const STICK_ON = 0.35, STICK_OFF = 0.10
+        const attractStickTick = () => {
+            if (st.screen !== 'attract') { stickArm = 0; return }
+            const x = padState.x
+            if (stickArm === 0) {
+                if (x <= -STICK_ON) { stickArm = -1; cycleCourse(-1) }
+                else if (x >= STICK_ON) { stickArm = 1; cycleCourse(1) }
+            } else if (stickArm === -1 ? x > -STICK_OFF : x < STICK_OFF) stickArm = 0
+        }
+
+        tapRef.current = (e) => {
             if (pausedRef.current) return
-            if (st.screen === 'attract') { audioController.init(); resetTo('race') }
-            else if (st.screen === 'end') resetTo('attract')
+            if (st.screen !== 'attract') {
+                if (st.screen === 'end') resetTo('attract')
+                return
+            }
+            // the title is the control surface: a tap on a chevron cycles the
+            // pick; a tap anywhere else (name, prompt, sky) starts the race
+            const rect = canvas.getBoundingClientRect()
+            if (rect.width > 0 && rect.height > 0) {
+                const cx = (e.clientX - rect.left) / rect.width * W
+                const cy = (e.clientY - rect.top) / rect.height * H
+                const hit = selectorHit(selectorGeom(W, H, hs), cx, cy)
+                if (hit === -1) { cycleCourse(-1); return }
+                if (hit === 1) { cycleCourse(1); return }
+            }
+            audioController.init(); resetTo('race')
         }
 
         const kd = (e) => {
@@ -812,6 +851,8 @@ export default function CometDrift() {
             courses: () => COURSES.map((c) => c.id),
             setCourse: (id) => { applyCourse(id); Object.assign(g, makeGame(0)); camA = g.karts[0].a; return COURSE.id },
             cycleCourse: (dir) => { cycleCourse(dir | 0); return COURSE.id },
+            stick: (x, y) => { setStick(x, y, 0, false); return padState.x },
+            selector: () => selectorGeom(W, H, hs),
             best: () => st.best,
             fx: () => {
                 const P = g.karts[0]
@@ -894,7 +935,7 @@ export default function CometDrift() {
     return (
         <div
             className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none"
-            onPointerDown={() => tapRef.current && tapRef.current()}
+            onPointerDown={(e) => tapRef.current && tapRef.current(e)}
         >
             <canvas ref={canvasRef} data-fit="source" width={LAND_W_MAX} height={LAND_H} className="block w-full h-full" style={{ imageRendering: 'pixelated', touchAction: 'none' }} />
             <VirtualControls visible={padOn && !paused && TOUCH} />

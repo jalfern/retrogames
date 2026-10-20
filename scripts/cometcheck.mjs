@@ -902,7 +902,61 @@ console.log('— the engine bed has a voice (#440 item 6) —')
 await engineLaw()
 engineWired()
 
+// ---- the attract course selector is tappable (#534) -------------------------
+// The phone title has no stick, so the ‹ › chevrons are the only course
+// control. Their geometry + hit test live in selector.js (pure, shared by the
+// renderer, the pointer handler and this gate): audit that they are a thumb's
+// size, symmetric about the name, off-centre, on-screen, never overlapping,
+// and that a chevron tap routes to that course while the centre (the name)
+// stays the clear start zone.
+const SELJS = new URL('../src/games/CometDrift/selector.js', import.meta.url)
+const loadSelector = (q = '') => import(new URL(q ? `../src/games/CometDrift/selector.js?v=${q}` : SELJS, import.meta.url))
+const SEL_CASES = [ { W: 384, H: 176 }, { W: 256, H: 176 }, { W: 256, H: 448 } ]
+const selectorGate = (SEL) => {
+    const { selectorGeom, selectorHit } = SEL
+    let geomOk = true, geomWhy = []
+    let hitOk = true, hitWhy = []
+    for (const { W, H } of SEL_CASES) {
+        const g = selectorGeom(W, H, 1)
+        const onScreen = g.left[0] - g.hw >= 0 && g.right[0] + g.hw <= W && g.rowY - g.hh >= 0 && g.rowY + g.hh <= H
+        const flank = g.left[0] < W / 2 && g.right[0] > W / 2 && g.left[1] === g.rowY && g.right[1] === g.rowY
+        const symmetric = Math.abs(g.left[0] + g.right[0] - W) <= 1
+        const thumb = g.hw * 2 >= 48 && g.hh * 2 >= 32
+        const noOverlap = g.right[0] - g.hw > g.left[0] + g.hw
+        if (!(onScreen && flank && symmetric && thumb && noOverlap)) { geomOk = false; geomWhy.push(`${W}x${H}: on=${onScreen} flank=${flank} sym=${symmetric} thumb=${thumb} overlap=${!noOverlap}`) }
+        const hitL = selectorHit(g, g.left[0], g.left[1]) === -1
+        const hitR = selectorHit(g, g.right[0], g.right[1]) === 1
+        const centre = selectorHit(g, Math.round(W / 2), g.rowY) === 0
+        const corner = selectorHit(g, 0, 0) === 0
+        if (!(hitL && hitR && centre && corner)) { hitOk = false; hitWhy.push(`${W}x${H}: L=${hitL} R=${hitR} centre=${centre} corner=${corner}`) }
+    }
+    check('attract chevrons: thumb-sized, symmetric, off-centre, on-screen, non-overlapping (#534)', geomOk, geomWhy.join(' | '))
+    check('attract chevrons: a chevron tap routes to that course, the centre stays the start zone (#534)', hitOk, hitWhy.join(' | '))
+}
+console.log('— the attract course selector is tappable (#534) —')
+selectorGate(await loadSelector())
+
 if (process.argv.includes('--mutate')) {
+    // #534 mutant: collapse the chevrons onto the centre — no thumb target, no
+    // flanking, and the centre is no longer the clear start zone. The selector
+    // gate must go red. Re-imports the mutated file via a bust query.
+    {
+        const selSrc = readFileSync(SELJS, 'utf8')
+        const died = async (label, run) => {
+            const before = R.fail
+            await run()
+            if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #534 selector gate is load-bearing`)
+            else console.log(`  MUTANT SURVIVED — ${label}: the #534 selector gate is BLIND`)
+        }
+        try {
+            writeFileSync(SELJS, selSrc
+                .replace('const off = Math.round(88 * hs)', 'const off = 0')
+                .replace('const hw = Math.max(1, Math.round(32 * hs))', 'const hw = Math.max(1, Math.round(6 * hs))')
+                .replace('const hh = Math.max(1, Math.round(20 * hs))', 'const hh = Math.max(1, Math.round(6 * hs))'))
+            await died('the chevrons shrink onto the centre (no thumb target, no start zone)', async () => selectorGate(await loadSelector(Date.now())))
+        } finally { writeFileSync(SELJS, selSrc) }
+    }
+
     // break the checkpoint gate in sim.js and demand the shortcut probe above
     // goes red. Restore runs whatever happens.
     const path = SIM
