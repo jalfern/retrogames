@@ -507,6 +507,135 @@ console.log('2p')
         `dist ${(Math.hypot(g3.partner.x - g3.hero.x, g3.partner.y - g3.hero.y)).toFixed(2)}`)
 }
 
+// ------------------------------------------------- partner intelligence (#505) ----
+// The CPU seat thinks like a player: it HOLDS PACE through the hero's sprints
+// (heading prediction along a BFS lane), pushes slam doors like seat 1, WAITS
+// at a locked door instead of grinding its face, cuts what walks into reach
+// without leaving the lane, and breaks away for food when it is hurting.
+console.log('partner intelligence (#505)')
+{
+    const { partnerPad, decide } = await import('../src/games/Gauntlet/planner.js')
+    const runPad = (gs, heroInp) => {
+        const pad = partnerPad(gs, runPad.prevA || false)
+        runPad.prevA = pad.a
+        step(gs, heroInp, { left: pad.left, right: pad.right, fwd: pad.up, back: pad.down, sword: pad.a })
+        gs.events.length = 0
+        return pad
+    }
+    // pace: down the long top corridor a full sprint; before #505 the elf
+    // yo-yoed up to 3.4 cells behind; the pad must hold it inside two.
+    {
+        const gs = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
+        gs.monsters = []; gs.gens.forEach((g) => { g.alive = false })
+        gs.hero.x = 20.5; gs.hero.y = 2.5; gs.hero.a = Math.PI
+        gs.partner.x = 19.5; gs.partner.y = 2.5
+        runPad.prevA = false
+        let worst = 0
+        for (let i = 0; i < 300; i++) {
+            if (i > 60) worst = Math.max(worst, Math.hypot(gs.partner.x - gs.hero.x, gs.partner.y - gs.hero.y))
+            runPad(gs, { left: true })
+        }
+        ok(worst < 2.0, '#505: the CPU seat holds pace through a long sprint', `worst gap ${worst.toFixed(2)}`)
+    }
+    // slam-door parity: the hero waits on the far side; the partner pushes.
+    {
+        const gs = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
+        gs.monsters = []; gs.gens.forEach((g) => { g.alive = false })
+        const d = gs.doors.find((x) => !x.locked && !x.open)
+        gs.hero.x = d.x + 1.5; gs.hero.y = d.y + 0.5; gs.hero.a = Math.PI
+        gs.partner.x = d.x - 1.5; gs.partner.y = d.y + 0.5
+        runPad.prevA = false
+        let through = false
+        for (let i = 0; i < 250 && !through; i++) {
+            runPad(gs, {})
+            if (Math.floor(gs.partner.x) >= d.x) through = true
+        }
+        ok(through && (d.open || d.broken), '#505: seat 2 pushes a slam door open like seat 1',
+            `P${gs.partner.x.toFixed(1)},${gs.partner.y.toFixed(1)} door ${d.open ? 'open' : d.broken ? 'broken' : 'shut'}`)
+    }
+    // locked-door WAIT: hero sealed behind the lock; the partner holds at the
+    // threshold and never pushes pads into the door face.
+    {
+        const gs = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
+        gs.monsters = []; gs.gens.forEach((g) => { g.alive = false })
+        const L = gs.doors.find((x) => x.locked)
+        gs.keys = 0
+        gs.hero.x = L.x + 1.5; gs.hero.y = L.y + 0.5; gs.hero.a = Math.PI
+        gs.partner.x = L.x - 1.0; gs.partner.y = L.y + 0.5
+        runPad.prevA = false
+        let pushes = 0
+        const p0 = { x: gs.partner.x, y: gs.partner.y }
+        for (let i = 0; i < 200; i++) {
+            const pad = runPad(gs, {})
+            if ((pad.right && L.x > gs.partner.x) || (pad.left && L.x < gs.partner.x) ||
+                (pad.down && L.y > gs.partner.y) || (pad.up && L.y < gs.partner.y)) pushes++
+        }
+        const drift = Math.hypot(gs.partner.x - p0.x, gs.partner.y - p0.y)
+        ok(pushes === 0 && drift < 1.2 && !L.open && !L.broken,
+            '#505: a sealed corridor is a WAIT, never a grind at the door face', `pushes ${pushes} drift ${drift.toFixed(2)}`)
+    }
+    // hurt partners eat: food off the lane beats tailing the hero; the seat
+    // eats what it walks over, and a potion it merely crosses stays put.
+    {
+        const openGrid = () => Array.from({ length: H }, (_, r) =>
+            (r === 0 || r === H - 1) ? '#'.repeat(W) : '#' + '.'.repeat(W - 2) + '#')
+        const g = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
+        g.levelData = { ...g.levelData, grid: openGrid(), exit: [99, 99] }
+        g.doors = []; g.monsters = []; g.gens.forEach((x) => { x.alive = false })
+        g.items = [
+            { t: 'food', x: 20.5, y: 6.5, taken: false },
+            { t: 'potion', x: 14.5, y: 12.5, taken: false },
+        ]
+        g.hero.x = 12.5; g.hero.y = 10.5; g.hero.a = 0
+        g.partner.x = 12.5; g.partner.y = 12.5
+        g.partner.hp = 40; g.hero.hp = 1e9
+        runPad.prevA = false
+        let ate = false
+        for (let i = 0; i < 700 && !ate; i++) { runPad(g, {}); if (g.partner.hp > 40) ate = true }
+        ok(ate && g.items[0].taken, '#505: a hurt partner breaks away for food', `hp ${g.partner.hp.toFixed(0)}`)
+        ok(!g.items[1].taken, '#505: the partner leaves the hero the potion', `potion taken=${g.items[1].taken}`)
+    }
+    // cut what walks in — without leaving the lane for it
+    {
+        const openGrid = () => Array.from({ length: H }, (_, r) =>
+            (r === 0 || r === H - 1) ? '#'.repeat(W) : '#' + '.'.repeat(W - 2) + '#')
+        const g = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
+        g.levelData = { ...g.levelData, grid: openGrid(), exit: [99, 99] }
+        g.doors = []; g.gens.forEach((x) => { x.alive = false })
+        g.items = []
+        g.hero.x = 20.5; g.hero.y = 10.5; g.hero.a = Math.PI
+        g.partner.x = 12.5; g.partner.y = 10.5
+        g.monsters = [{ id: 9701, kind: 'grunt', x: 12.9, y: 10.5, hp: 1, atkT: 9999, castT: 9999, path: [], repathT: 0, drainT: 0 }]
+        runPad.prevA = false
+        let cut = false
+        for (let i = 0; i < 40 && !cut; i++) { runPad(g, {}); cut = g.monsters.length === 0 }
+        for (let i = 0; i < 40; i++) runPad(g, {})
+        ok(cut && g.partner.x > 13.5, '#505: the seat cuts a beast at its blade and keeps closing on the hero',
+            `killed=${cut} P${g.partner.x.toFixed(1)}`)
+    }
+    // regression across seeds: hero on the pilot, seat 2 on the pads — no gap
+    // beyond three cells, no grind at any door face.
+    {
+        let bad = null
+        for (const seed of [0, 1, 7]) {
+            const gs = makeGame(seed, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
+            runPad.prevA = false
+            let far = 0, grind = 0
+            while (!gs.end && gs.tick < 12000) {
+                const d = Math.hypot(gs.partner.x - gs.hero.x, gs.partner.y - gs.hero.y)
+                const px = gs.partner.x, py = gs.partner.y
+                const shut = gs.doors.filter((dd) => !dd.locked && !dd.open && !dd.broken)
+                runPad(gs, decide(gs))
+                if (d > 3) far++
+                if (Math.hypot(gs.partner.x - px, gs.partner.y - py) < 0.02 && d > 2 &&
+                    shut.some((dd) => Math.hypot(dd.x + 0.5 - gs.partner.x, dd.y + 0.5 - gs.partner.y) < 1.6)) grind++
+            }
+            if (gs.end !== 'win' || far > 40 || grind > 0) bad = `seed ${seed}: end=${gs.end} far=${far} grind=${grind}`
+        }
+        ok(!bad, '#505: pilot+squad clear seeds 0/1/7 with pace held and zero door grind', bad || 'clean')
+    }
+}
+
 // ------------------------------------------------------ shared screen (#524) ----
 // The cabinet has ONE shared screen: the camera frames both heroes and the
 // screen edge is a wall neither can leave. The wall is a SIM rule (step() pulls
@@ -729,6 +858,10 @@ if (process.argv.includes('--mutate')) {
         ['#524 camera ignores the partner (P2 not framed)', 'src/games/Gauntlet/minimap.js', 'const ax = p ? (hero.x + p.x) / 2 : hero.x', 'const ax = hero.x'],
         ['#524 the shared-view wall is removed from the sim', 'src/games/Gauntlet/sim.js', '    clampToSharedView(gs)\n    updateItems(gs)', '    updateItems(gs)'],
         ['#524 the edge is too loose to wall players in', 'src/games/Gauntlet/minimap.js', 'maxx: rect.camX / PX + VWC, maxy: rect.camY / PX + VHC', 'maxx: rect.camX / PX + VWC * 2, maxy: rect.camY / PX + VHC * 2'],
+        ['#505 the partner ignores the hero heading (yo-yo pace)', 'src/games/Gauntlet/planner.js', 'if (vs > 0.012) {', 'if (false) {'],
+        ['#505 seat 2 never gets slam-door push parity', 'src/games/Gauntlet/sim.js', 'openSlamInWay(gs, p, Math.cos(a), Math.sin(a))\n                moveHuman(gs, p, Math.cos(a) * sp, Math.sin(a) * sp)', 'moveHuman(gs, p, Math.cos(a) * sp, Math.sin(a) * sp)'],
+        ['#505 hurt partners never break for food', 'src/games/Gauntlet/planner.js', 'if (p.hp < p.maxHp * 0.55) {', 'if (false) {'],
+        ['#505 a sealed corridor is grinded, not waited at', 'src/games/Gauntlet/planner.js', 'const near = (gx, gy) => Math.floor(gy) === pr && Math.floor(gx) === pc', 'const near = () => true'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

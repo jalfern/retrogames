@@ -12,7 +12,7 @@
 //   4. It grabs food/potion/gold/key whenever one sits ON its path line, and
 //      eats early when hp drops below half.
 
-import { makeGame, step, stateHash, CFG } from './sim.js'
+import { makeGame, step, stateHash, CFG, doorAt } from './sim.js'
 import { LEVELS, W, H, MONSTERS } from './levels.js'
 
 const cellWalk = (gs, c, r) => {
@@ -219,39 +219,140 @@ export function plan(seed = 0, opts = {}) {    const gs = makeGame(seed, opts.he
     return { won: gs.end === 'win', deaths, score: gs.score, script, hash: stateHash(gs), gs }
 }
 
-// PARTNER PADS (#494) — the CPU seat as a human: a pad emitter, nothing else.
-// decide() drives P1; this drives P2, and it says ONLY what a pad can say:
-// direction booleans + an `a` pulse (a level; the caller takes the sword edge
-// from it, exactly like a gamepad). It trails no invisible leash and opens no
-// doors by favor — it walks toward the hero's back side and cuts what walks
-// into its reach. Pure and deterministic: same seed, same pads, same hash.
+// PARTNER PADS (#494, intelligence pass #505) — the CPU seat as a human: a pad
+// emitter, nothing else. decide() drives P1; this drives P2, and it says ONLY
+// what a pad can say: direction booleans + an `a` pulse (a level; the caller
+// takes the sword edge from it, exactly like a gamepad). It trails no invisible
+// leash and opens no doors by favor — it reads the maze the way a player does:
+// it walks the BFS lane toward where the hero is HEADING (not where he was),
+// waits at a locked door instead of grinding its face, cuts what walks into its
+// reach, and breaks away for food when it is hurting. Pure and deterministic:
+// same seed, same pads, same hash.
 export function partnerPad(gs, prevA = false) {
     const pad = { left: false, right: false, up: false, down: false, a: false }
     const p = gs.partner, h = gs.hero
     if (!p || p.down || gs.end || !h || h.deadT > 0) return pad
-    let threat = null, td = 1.6
+    // cut what walks into reach (#505): a monster at the blade gets the `a`
+    // pulse, but at honest pace the lane toward the hero is NEVER abandoned to
+    // chase a beast across the room — the hero's sprint is the economy; a
+    // partner that stops to duel a straggler is two cells behind him forever.
+    let cut = false
     for (const m of gs.monsters) {
-        const d = Math.hypot(m.x - p.x, m.y - p.y)
-        if (d < td) { threat = m; td = d }
+        if (Math.hypot(m.x - p.x, m.y - p.y) < 1.25) { cut = true; break }
     }
-    if (threat) {
-        pad.a = !prevA
-        if (td > 0.65) {
-            pad.left = threat.x < p.x - 0.1
-            pad.right = threat.x > p.x + 0.1
-            pad.up = threat.y < p.y - 0.1
-            pad.down = threat.y > p.y + 0.1
+    if (cut) pad.a = !prevA
+    // heading prediction (#505): the hero's per-tick velocity, smoothed — the
+    // partner steps onto the hero's NEXT straight while he is still on this
+    // one, so a sprint pulls it along instead of yo-yoing 3 cells behind him.
+    const vx = h.x - (gs._pHX ?? h.x), vy = h.y - (gs._pHY ?? h.y)
+    gs._pHX = h.x; gs._pHY = h.y
+    gs._pVX = (gs._pVX ?? 0) * 0.4 + vx * 0.6
+    gs._pVY = (gs._pVY ?? 0) * 0.4 + vy * 0.6
+    const vs = Math.hypot(gs._pVX, gs._pVY)
+    let tx, ty
+    if (vs > 0.012) {
+        const look = Math.min(1.8, vs * 24)
+        tx = h.x + (gs._pVX / vs) * look
+        ty = h.y + (gs._pVY / vs) * look
+    } else {
+        tx = h.x - Math.cos(h.a) * 1.0
+        ty = h.y - Math.sin(h.a) * 1.0
+    }
+    const steer = (gx, gy, dead) => {
+        const dx = gx - p.x, dy = gy - p.y
+        if (Math.hypot(dx, dy) <= dead) return false
+        pad.left = dx < -0.18
+        pad.right = dx > 0.18
+        pad.up = dy < -0.18
+        pad.down = dy > 0.18
+        return pad.left || pad.right || pad.up || pad.down
+    }
+    // hurt partners eat (#505): FOOD within a reasonable detour beats tailing
+    // the hero — a downed partner is a life and a revival dash lost. Potions
+    // are the hero's tactical call (they clear the halls); the seat never
+    // walks onto one for them.
+    if (p.hp < p.maxHp * 0.55) {
+        let bd = 20, goal = null
+        for (const it of gs.items) {
+            if (it.taken || it.t !== 'food') continue
+            const d = Math.abs(it.x - p.x) + Math.abs(it.y - p.y)
+            if (d < bd) { bd = d; goal = [Math.floor(it.x), Math.floor(it.y)] }
         }
+        if (goal) {
+            const path = padPath(gs, Math.floor(p.y), Math.floor(p.x), goal[1], goal[0])
+            if (path.length) { steerOnPath(pad, p, path, 0.3); return pad }
+        }
+    }
+    const pr = Math.floor(p.y), pc = Math.floor(p.x)
+    let path = padPath(gs, pr, pc, Math.floor(ty), Math.floor(tx))
+    if (!path.length) path = padPath(gs, pr, pc, Math.floor(h.y), Math.floor(h.x))
+    if (path.length) {
+        steerOnPath(pad, p, path, 0.25)
         return pad
     }
-    const tx = h.x - Math.cos(h.a) * 1.1
-    const ty = h.y - Math.sin(h.a) * 1.1
-    const dx = tx - p.x, dy = ty - p.y
-    if (Math.hypot(dx, dy) > 0.55) {
-        pad.left = dx < -0.2
-        pad.right = dx > 0.2
-        pad.up = dy < -0.2
-        pad.down = dy > 0.2
-    }
+    // No lane reaches the target. Either the hero is on the partner's own cell
+    // (hold his back at a human's distance, stop dead when already there), or
+    // he is sealed behind a locked door the seat cannot spend a key on — then
+    // it WAITS at the threshold like a player (#505), no grinding the blade
+    // into a door that will not give.
+    const near = (gx, gy) => Math.floor(gy) === pr && Math.floor(gx) === pc
+    if (near(tx, ty)) steer(tx, ty, 0.45)
+    else if (near(h.x, h.y)) steer(h.x - Math.cos(h.a) * 1.0, h.y - Math.sin(h.a) * 1.0, 0.45)
     return pad
+}
+
+// BFS on the partner's walk rules: stone blocks; a slam door ('D') counts as
+// open (it can push it — the seat's own push-to-open, #275); a LOCKED door
+// ('L') blocks: the partner never spends the hero's key, it waits for him.
+function padPath(gs, sr, sc, tr, tc) {
+    const passable = (c, r) => {
+        const ch = gs.levelData.grid[r] ? gs.levelData.grid[r][c] : '#'
+        if (ch === '#') return false
+        if (ch === 'L') {
+            const d = doorAt(gs, c, r)
+            return !!d && (d.open || d.broken)
+        }
+        return true
+    }
+    if (!passable(sc, sr) || !passable(tc, tr)) return []
+    if (sr === tr && sc === tc) return []
+    const prev = new Map()
+    const q = [[sr, sc]]
+    const seen = new Set([sr * W + sc])
+    while (q.length) {
+        const [r, c] = q.shift()
+        if (r === tr && c === tc) {
+            const path = []
+            let k = tr * W + tc
+            while (k !== sr * W + sc) {
+                path.unshift([k % W, Math.floor(k / W)])
+                k = prev.get(k)
+                if (k === undefined) return []
+            }
+            return path
+        }
+        for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+            const nr = r + dr, nc = c + dc
+            const key = nr * W + nc
+            if (seen.has(key) || nr < 0 || nc < 0 || nr >= H || nc >= W) continue
+            if (!passable(nc, nr)) continue
+            seen.add(key); prev.set(key, r * W + c); q.push([nr, nc])
+        }
+    }
+    return []
+}
+
+// Walk the first waypoint of the lane with the pad. A locked door never
+// appears as a waypoint (padPath blocks it), so a corridor sealed by a lock
+// arrives as "no lane" and partnerPad holds — wait at the threshold, never
+// grind the blade into a door that will not give.
+function steerOnPath(pad, p, path, dead) {
+    const [wc, wr] = path[0]
+    const dx = wc + 0.5 - p.x, dy = wr + 0.5 - p.y
+    if (Math.hypot(dx, dy) <= dead) return false
+    pad.left = dx < -0.18
+    pad.right = dx > 0.18
+    pad.up = dy < -0.18
+    pad.down = dy > 0.18
+    return true
 }
