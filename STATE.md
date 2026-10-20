@@ -1,72 +1,78 @@
-# STATE — forge session 2026-10-19 (SHORE perf)
+# STATE — forge session 2026-10-19/20 (ONLINE 2P infra)
 
 ## Shipped this session
-- **SHORE perf: one-lane shore() — PR #539, squash `2e0ab1f`** — live on prod.
-  - `shore()` took `array<vec3f, NLANES>` (2 KB) **by value**; WGSL copied it
-    per call, 4 calls per water fragment → <1 fps at full window.
-  - Now `shore(x, z, t, lane: vec3f)`; every call site indexes once
-    (`lanesIn.v[laneIdx(z)]`): water vertex, all four normal-gradient calls
-    (each with its own z, so lane choice still follows the sample), probe
-    compute. Sand already read its lane directly.
-  - shorecheck #19: full-window frame budget — viewport 1600x1000 (the canvas
-    cap, worst case the demo renders), warm pipelines, 60 steady frames, fail
-    above `--max-ms` (default 20). Backed by new `__shoreTest.perf()` /
-    `resetPerf()` (raw rAF deltas, 120-frame ring).
-  - Studio proof: fixed avg=16.67 ms = the vsync cap (shader no longer the
-    bottleneck); by-value mutant avg=72.9 ms → speed check RED, 18/19.
-  - Full suite 19/19 green on the Studio.
-
-## Earlier today (PR #537, squash `a7bb05d`)
-- #521 SHORE demo: WebGPU golden-hour beach — travel-time phase warp (no FFT),
-  Green's-law shoaling, Gerstner face-push, trough-aware depth-limited breaking,
-  128-lane CPU swash sim (skewed oscillator + drying memory) uploaded per
-  frame; wet sand, bubble rings, clear shallows, glitter, free-fly camera.
-  Screenshots: docs/shots/shore/.
+- **#531 ONLINE 2P: room codes + Cloudflare relay + lockstep (Gauntlet pilot)**
+  — PRs #541 (main build, squash `2dc48d9`), #543 (deploy fix, `f400eca`),
+  #545 (sqlite migration, `88b43b1`). Issue closed shipped.
+  - `relay/`: CF Worker `retrogames` — one hibernating DO per 4-char code
+    (`Room`) + singleton `Registry` (≤120 rooms, 1h stale leases), classic
+    `ctx.storage` rate window (≤1 write/s/room), 512B msgs, 90s idle alarms.
+    Pure logic `relay/core.js` shared with Node twin `relay/server.mjs`.
+    LIVE: https://retrogames.jalfern.workers.dev (2-client internet pair test
+    green; rooms 1→0 after close).
+  - `src/utils/lockstep.js` (pure): seed broadcast, D=4 input delay, tick
+    gated on both pads, `stateHash` vs peer every 30 ticks on BOTH edges of
+    the exchange, mismatch = freeze + DESYNC UI.
+  - Gauntlet pilot: `?net=host` / `?net=join&room=CODE` / `?relay=ws://…`.
+    Canonical seats (hero=host both boxes); guest camera/torch/minimap/panel
+    follow `gs.partner`. Solo play byte-identical without the params.
+  - Prod: jalfern.com serves the pilot chunk (index-D1CRNwxa.js contains the
+    relay URL; lazy chunk — index shell hash unchanged).
+  - Harness: `npm run netcheck` 32/32 offline (core caps, ws lifecycle vs
+    the twin, 10-min-sim determinism, corrupted sim CAUGHT); `npm run
+    netdrill` 10/10 two headless Chromes + real keys (pair/seed/play/
+    desync/friend-left/zero-errors). Mutant (hash compare off) → red.
+  - QA polish filed: **#546** (reconnect, ping UI, guest keypad, per-IP
+    connect limit, restart-no-reload, net sfx, real-pair look check).
 
 ## Playable now
-`https://jalfern.com/retrogames/demos/shore.html` (via `/retrogames/demos/`).
-jalfern.com 308s to www — poll prod with `curl -L`.
+`https://jalfern.com/retrogames/gauntlet?net=host` vs `?net=join&room=CODE`
+(desktop keyboard both ends; phones can host/join but P2 pad is desktop-only
+per Jon's multiplayer rule).
 
 ## Next queued
-- Oldest game-queue: **#531 Online 2P: room codes + Cloudflare relay, lockstep**
-  (multi-stage infra, pilot Gauntlet).
-- #538 `QA — SHORE: polish pass` (feedback): foam-edge AA, surf sound,
-  wet-front patchiness, dunes, distant swell, tod slider — QA lane.
+- Oldest game-queue: none left (#531 was the last). #546 is `feedback` — the
+  QA lane's job; forge may borrow it only if no QA session is live.
 
 ## Lessons worth keeping
-- WGSL copies array-typed params **by value**; a per-fragment hot call must
-  take the indexed element (`vec3f`), never the lanes buffer.
-- Frame-budget gates: measure steady state (resize + warm-up + 60 frames). On
-  the Studio's Metal the floor is the 16.67 ms vsync cap, so a 20 ms budget
-  separates copy-bound (73 ms) from fine cleanly.
-- Run `npm install` **in the worktree cwd**: a chained
-  `git worktree add && npm install` run from the main checkout installs into
-  the main checkout and leaves the worktree bare.
-- `gh pr merge --delete-branch` leaves the worktree on local `main` — detach or
-  remove the worktree afterwards, or `main` isn't free for the next rule-5 merge.
-- (carried) This Chrome's WGSL lacks `dFdx` → finite-difference normals; a
-  rejected shader module kills the renderer black (mean lum 2) = "dead
-  renderer", not "bad art".
-- (carried) Camera basis: right = (−fz, 0, fx); sign errors flip the image.
-- (carried) Foam by still-water depth saturates the whole sea; include the
-  trough: `H/(d0+min(η,0))`.
-- (carried) Cross-lane phase tilt ≪ π or lane-mean oscillation cancels.
-- (carried) Skewed oscillator must straddle 0 (`2·swave−1`) or it never drains.
-- (carried) Storage `vec3f` = 16 B stride; CPU-packing 3 floats misaligns lanes.
-- (carried) Pair GPU readback with a same-frame CPU snapshot (`probeNow()`);
-  count-comparing gates must tolerate grid sampling (2–5 cells, not "many").
-- (carried) Shared WGSL chunks: parameterize bind-group numbers.
-- (carried) Glitter needs the sun roughly opposite the view dir.
+- **Pads must be FINAL.** Sample each tick once, D ahead; never
+  resample-and-resend — the peer may already have run the tick on the old
+  value (netcheck caught this in its own first draft).
+- Edges belong to the OLDEST unsampled tick only (one press, one swing).
+- React 19 StrictMode remounts: room codes must live in a ref (regen =
+  orphaned guest); 'gone' is advisory — a reconnecting peer sends 'peer'
+  again, so recover waiting≠gone and don't close the socket on 'gone'.
+- workerd close callbacks: the closing socket can still appear in
+  `getWebSockets()` and `deserializeAttachment()` may throw — filter by
+  identity, guard sends. (This leaked registry leases.)
+- Cloudflare free plan: DOs REQUIRE `new_sqlite_classes` in migrations
+  (API 10097); `DurableObject` must be imported from `'cloudflare:workers'`
+  (10021). `this.sql` still undefined in `wrangler dev` on this wrangler —
+  code paths use classic `ctx.storage`, which works dev + cloud.
+- `npx wrangler dev` is the token-free local validator for workerd
+  startup/lifecycle — use it before burning a main deploy (took 3 CI deploys
+  to learn this; local repro of #10021 was exact).
+- `git checkout --` on an UNCOMMITTED file restores the old version — commit
+  working increments before experimenting (lost the first classic-storage
+  rewrite to it).
+- Vercel content-hash: lazy route chunks change filename, index shell may
+  not — poll the game chunk for a marker, not index.html.
+- Never `git add -A` right after `wrangler dev` (swept `.wrangler/` into
+  #543; now gitignored).
 
 ## Three questions for Jon
-1. (open since #521) Demos have no registry entry — link SHORE/OCEAN from the
-   arcade menu/footer, or is `/retrogames/demos/` the only surface?
-2. (open, #538) Foam-edge sawtooth: cheap analytic distance-to-waterline AA, or
-   a dedicated 512² swash heightfield texture?
-3. Queue head is infra (#531): start the 2P relay pilot, or forge a fresh title?
+1. Free-plan relay runs WITHOUT a paid tier so far — keep the 120-room cap,
+   or want a usage counter/alert before friends find it?
+2. `?net=` pilot is Gauntlet-only and private by URL param — promote a
+   visible 2P entry point in the Gauntlet select screen (P key for online)?
+3. Queue is empty after #531. Line up: next game title, #546 QA polish, or
+   extending online-2P to a second game (Bubble Bobble would reuse all the
+   plumbing — its sim is already deterministic per slotcheck)?
 
 ## Housekeeping
-- Main checkout: detached at `origin/main`; no local `main` checked out
-  anywhere (rule-5 merge stays unblocked).
-- Worktree `~/Dev/retrogames-forge-shore-perf` removed post-merge.
-- Dev server not started. Nothing dirty.
+- Main checkout: detached at this STATE commit's parent; `main` free for the
+  next lane's rule-5 merge.
+- Lane worktrees forge-online-2p / forge-relay-fix / forge-relay-sqlite all
+  removed post-merge. Dev server stopped except stray `wrangler dev` may need
+  `pkill -f wrangler` if port 8799 nags.
+- `ws` added as devDependency (lockfile committed with #541).
