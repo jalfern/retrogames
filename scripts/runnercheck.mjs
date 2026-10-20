@@ -19,6 +19,9 @@
 //             ONLY rings live on the arc, so skipping the loop = a ringless death.
 //   HAZARD    a hazard with rings staggers and strips them; without, it kills;
 //             a pit kills; a totem moves where death puts you back.
+//   SHED      a hit scatters the shed rings in a fixed fan that comes back;
+//             a patrol staggers a grounded body, a hover only an air body
+//             reaches, and the proven route destroys one.
 //   CHAIN     the autopilot wins with ZERO deaths, every pit lands with real
 //             margin measured on the REPLAY (not the planner's hope), the loop
 //             entry is >=1.25x the need, every spike is passed holding rings,
@@ -53,6 +56,8 @@ const MUTANTS = {
     boostPads: 'boost strips stop adding speed — the sprint pads do nothing',
     zoneTally: 'the goal tally stops counting up — the time and ring bonuses vanish',
     roll: 'rolling stops working — down does nothing, so steering and full drag stay',
+    ringScatter: 'shed rings stop scattering — a hit strips you permanently',
+    drones: 'drones stop existing — patrols and hovers never touch the runner',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -114,6 +119,16 @@ section('WORLD (segments march forward; the loop sits on a real floor)')
                 ok(Math.abs(d - z.loop.r) < 3, `${z.name}: apex ring (${rx},${ry}) is ${d.toFixed(1)} from the loop centre, arc r=${z.loop.r}`)
                 const gyR = s.groundY(z, rx)
                 ok(gyR === null || (gyR - ry) > (RING_R + BODY_R), `${z.name}: a loop ring is close enough to the ground to grab while rolling`)
+            }
+        }
+        for (const d of z.drones) {
+            if (d.kind === 'patrol') {
+                ok(s.groundY(z, d.x0) !== null && s.groundY(z, d.x1) !== null,
+                    `${z.name}: a patrol drone (${d.x0}-${d.x1}) sweeps over a pit`)
+            } else {
+                const gy = s.groundY(z, d.x)
+                ok(gy !== null && (gy - s.BODY_R) - d.y > s.DRONE_R + BODY_R + 10,
+                    `${z.name}: a hover drone (${d.x},${d.y}) is reachable while grounded — it must be an air-only prize`)
             }
         }
     }
@@ -279,6 +294,43 @@ section('BOOST + ROLL (new momentum verbs: sprint strips, the ball)')
     ok(Math.abs(rollBrake - roll) < 25, `left still steered a roll (${rollBrake.toFixed(0)} vs ${roll.toFixed(0)}) — a ball must not steer`)
 }
 
+// ------------------------------------------------------------ shed + drones ----
+section('SHED + DRONES (hits scatter; patrols and hovers are speed puzzles)')
+{
+    const z = ZONES[0]
+    // SCATTER: a hit sheds your rings in a fixed forward fan; a runner carrying
+    // speed scoops them back before the fan fades (no ground rings in the window)
+    {
+        const g = s.makeGame(); g.p.x = 1000; g.p.y = s.groundY(z, 1000); g.p.mode = 'track'; g.p.s = 300; g.rings = 3
+        let re = 0
+        for (let t = 0; t < 130; t++) {
+            s.step(g, { right: true }); s.maybeEnterLoop(g)
+            for (const e of g.ev) if (e.type === 'ring' && g.p.x < 1550) re++
+        }
+        ok(re > 0, `shed rings never came back (re-collected ${re}) — ringScatter is dead`)
+    }
+    // PATROL: a grounded body with rings stagger-survives the ground drone
+    {
+        const g = s.makeGame(); g.p.x = 760; g.p.y = s.groundY(z, 760); g.p.mode = 'track'; g.p.s = 300; g.rings = 4
+        let hit = false, die = false
+        for (let t = 0; t < 120; t++) {
+            s.step(g, { right: true }); s.maybeEnterLoop(g)
+            for (const e of g.ev) { if (e.type === 'hit' && e.why === 'drone') hit = true; if (e.type === 'die') die = true }
+        }
+        ok(hit && !die, `a grounded body with rings never staggered on the patrol drone (hit=${hit} die=${die}) — drones are dead`)
+    }
+    // HOVER: only an AIR body reaches it — the spring flight blows it away
+    {
+        const g = s.makeGame(); g.p.x = 1230; g.p.y = s.groundY(z, 1230); g.p.mode = 'track'; g.p.s = 500
+        let destroyed = false, die = false
+        for (let t = 0; t < 200; t++) {
+            s.step(g, { right: true }); s.maybeEnterLoop(g)
+            for (const e of g.ev) { if (e.type === 'drone') destroyed = true; if (e.type === 'die') die = true }
+        }
+        ok(destroyed && !die, `the spring flight never destroyed the hover drone (destroyed=${destroyed} die=${die}) — air contact is dead`)
+    }
+}
+
 // ----------------------------------------------------------------- chain ----
 section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
 {
@@ -294,6 +346,7 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
     ok(rec.loop && rec.loop.entryV2 >= 1.25 * rec.loop.need,
         `loop entry v^2 ${rec.loop ? rec.loop.entryV2.toFixed(0) : '-'} is under 1.25x the need ${rec.loop?.need} — no headroom`)
     ok(rec.ringsAtHit.every(n => n > 0) && rec.hits >= 3, `a spike was passed ringless: ${JSON.stringify(rec.ringsAtHit)}`)
+    ok(rec.drones >= 1, `no drone was destroyed on the proven route — the air-destroy rule is unproven`)
 
     // TALLY: each goal counts up a time bonus + a ring bonus (the whole run pays out)
     {

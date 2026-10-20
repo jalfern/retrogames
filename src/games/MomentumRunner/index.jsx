@@ -18,7 +18,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
-    ZONES, groundY, maybeEnterLoop, makeGame, step, planRun,
+    ZONES, groundY, maybeEnterLoop, makeGame, step, planRun, dronePos,
     FIXED_DT, VIEW_W, VIEW_H, BODY_R, RUN_TOP, VMAX,
 } from './sim.js'
 
@@ -34,6 +34,7 @@ const HINTS = [
     'press DOWN while moving to ROLL — a ball keeps speed, loses steering',
     'sprint strips are floor boosts — ride them to carry more speed forward',
     'clear a sector fast and carry rings: the gate counts up both as a bonus',
+    'drones guard the line — jump or roll THROUGH them, a grounded touch costs your rings',
 ]
 
 // The hero's signature colour — deliberately NOT used by track, rings or
@@ -331,6 +332,7 @@ const MomentumGame = () => {
                 else if (e.type === 'spring') { audioController.playSweep(300, 1100, 0.24, 'sawtooth', 0.08); burst(e.x, gs.p.y, 8, '#ff9f43') }
                 else if (e.type === 'loop') { audioController.playSweep(400, 1400, 0.5, 'square', 0.08); say('LOOP! +500') }
                 else if (e.type === 'hit') { audioController.playNoise(0.16, 0.09); audioController.playSweep(240, 90, 0.2, 'sawtooth', 0.07); shake = 8; burst(gs.p.x, gs.p.y - BODY_R, 10, '#ff5a5a') }
+                else if (e.type === 'drone') { audioController.playNoise(0.12, 0.08); audioController.playSweep(900, 200, 0.18, 'square', 0.06); burst(e.x, e.y, 12, '#7df9ff'); say('DRONE DOWN +200') }
                 else if (e.type === 'crash') { audioController.playNoise(0.2, 0.1); shake = 10; say('TOO SLOW!') }
                 else if (e.type === 'save') { audioController.playTone(880, 0.12, 'sine', 0.06); audioController.playTone(1320, 0.18, 'sine', 0.05); say('CHECKPOINT') }
                 else if (e.type === 'die') audioController.playDeath()
@@ -628,6 +630,35 @@ const MomentumGame = () => {
                     const rr = 6 * (sp2 - 0.93) / 0.07
                     ctx.beginPath(); ctx.moveTo(px - rr, py); ctx.lineTo(px + rr, py); ctx.moveTo(px, py - rr); ctx.lineTo(px, py + rr); ctx.stroke()
                 }
+            }
+
+            // ---- scatter: shed rings that fade back over ~3s ----
+            for (const r of gs.scatter) {
+                const px = r.x - dx0, py = r.y - dy0
+                if (px < -20 || px > VIEW_W + 20) continue
+                const life = Math.max(0, (r.until - tick) / 180)
+                const blink = life < 0.35 ? (Math.sin(tick * 0.5) > 0 ? 1 : 0.25) : 1
+                ctx.globalAlpha = 0.35 + 0.65 * life * blink
+                ctx.strokeStyle = P.ring; ctx.lineWidth = 2.5
+                ctx.beginPath(); ctx.ellipse(px, py, 8, 8, 0, 0, Math.PI * 2); ctx.stroke()
+                ctx.globalAlpha = 1
+            }
+
+            // ---- drones: ground patrols + hovers, rotors spin, body glows ----
+            for (let i = 0; i < (z.drones || []).length; i++) {
+                if (gs.droneDown.has(gs.zone * 100 + i)) continue
+                const d = dronePos(gs, i)
+                const px = d.x - dx0, py = d.y - dy0
+                if (px < -20 || px > VIEW_W + 20) continue
+                const rot = tick * 0.6
+                ctx.fillStyle = P.panel0
+                ctx.beginPath(); ctx.ellipse(px, py, 9, 6, 0, 0, Math.PI * 2); ctx.fill()
+                ctx.strokeStyle = P.spike; ctx.lineWidth = 1.5
+                ctx.beginPath(); ctx.ellipse(px, py, 9, 6, 0, 0, Math.PI * 2); ctx.stroke()
+                ctx.fillStyle = P.glow + '0.9)'
+                ctx.beginPath(); ctx.arc(px, py - 1, 2.2, 0, Math.PI * 2); ctx.fill()
+                ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5
+                ctx.beginPath(); ctx.moveTo(px - 10 * Math.cos(rot), py - 8 - 2 * Math.sin(rot)); ctx.lineTo(px + 10 * Math.cos(rot), py - 8 + 2 * Math.sin(rot)); ctx.stroke()
             }
 
             // ---- afterimages, then the hero ----
