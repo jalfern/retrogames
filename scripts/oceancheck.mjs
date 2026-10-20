@@ -29,6 +29,8 @@
 // Exit 0 = all green. Proven-fail mutants:
 //   a) freeze `t` (replace `t += dt` with `t += 0`) → "waves move in time" red.
 //   b) pin `storm = 0` in setStorm → all four STORM assertions go red.
+//   c) set GUST_AMP = 0 (#462 item 3 gusts) → both storm-breath gates red,
+//      "calm stays glassy" stays green (it is the sea-state half of the proof).
 
 import { spawn } from 'node:child_process'
 import { inflateSync } from 'node:zlib'
@@ -312,6 +314,46 @@ async function main() {
       ok('camera bobs with the local swell (storm)', stormH > 0.15, `swell.h peak-to-peak ${stormH.toFixed(3)} m over 240 frames`)
       ok('calm sea stills the eye (coupling scales with sea state)', calmH < 0.5 * stormH, `calm ${calmH.toFixed(3)} vs storm ${stormH.toFixed(3)} m`)
       ok('pitch/roll track the patch slope (storm)', stormSlope > 0.01, `max slope peak-to-peak ${stormSlope.toFixed(4)} rad`)
+
+      // #462 item 3 — gusts: at a PINNED storm set point the sea must breathe. The
+      // gust signal (carrier+fbm, scaled by sea state) swings ≥0.12 peak-to-peak in
+      // any 10 s window (worst phase simulates to 0.20); the height-field variance
+      // (∝ gf²) must track it (worst sim rho 0.85 with 12% wave noise); and at
+      // storm=0 the gust must be identically zero — the breathing scales with sea
+      // state. Gate stays honest while `storm` itself sits pinned at 1.
+      await page.evaluate(() => { window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: 0, pitch: -0.05 }); window.__oceanTest.setStorm(1) })
+      // wait until the ease is actually pinned (world seconds on software GL run
+      // slower than real time — a fixed sleep could sample storm < 0.95)
+      try { await page.waitForFunction(() => window.__oceanTest.storm === 1, null, { timeout: 8000 }) } catch { /* reported by the gate below */ }
+      const gSig = [], hVar = [], gStorm = []
+      for (let i = 0; i < 16; i++) {
+        const r = await page.evaluate(async () => ({ g: window.__oceanTest.gust().raw, s: window.__oceanTest.storm, v: await window.__oceanTest.gustVar() }))
+        gSig.push(r.g); hVar.push(r.v); gStorm.push(r.s)
+        await page.waitForTimeout(600)
+      }
+      const gustP2P = Math.max(...gSig) - Math.min(...gSig)
+      const pearson = (a, b) => {
+        const ma = a.reduce((x, y) => x + y, 0) / a.length, mb = b.reduce((x, y) => x + y, 0) / b.length
+        let n = 0, da = 0, db = 0
+        for (let i = 0; i < a.length; i++) { const xa = a[i] - ma, xb = b[i] - mb; n += xa * xb; da += xa * xa; db += xb * xb }
+        return n / Math.sqrt(da * db || 1)
+      }
+      const rhoVG = pearson(hVar, gSig)
+      ok('storm breathes: gust swings at a pinned set point',
+        gStorm.every(s => s > 0.95) && gustP2P > 0.12,
+        `gust ${Math.min(...gSig).toFixed(3)}..${Math.max(...gSig).toFixed(3)} (p2p ${gustP2P.toFixed(3)}) over 10 s at storm=${gStorm[gStorm.length - 1].toFixed(3)}`)
+      ok('gust grows the height field (variance tracks gust)', rhoVG > 0.5, `rho(height var, gust) = ${rhoVG.toFixed(2)}`)
+      await page.evaluate(() => window.__oceanTest.setStorm(0))
+      try { await page.waitForFunction(() => window.__oceanTest.storm === 0, null, { timeout: 15000 }) } catch { /* reported by the gate below */ }
+      const gCalm = await page.evaluate(() => new Promise(res => {
+        const a = [], ss = []
+        let i = 0
+        const step = () => { const x = window.__oceanTest.gust(); a.push(x.raw); ss.push(window.__oceanTest.storm); if (++i < 8) requestAnimationFrame(step); else res({ a, ss }) }
+        requestAnimationFrame(step)
+      }))
+      ok('calm stays glassy: gust identically zero at storm=0',
+        gCalm.ss.every(v => v === 0) && gCalm.a.every(gv => gv === 0),
+        `${gCalm.a.length} frames at storm=${gCalm.ss[gCalm.ss.length - 1]}, max |gust| ${Math.max(...gCalm.a.map(Math.abs))}`)
 
       // time-of-day + clouds sliders (#456)
       const sliders = await page.evaluate(() => ({

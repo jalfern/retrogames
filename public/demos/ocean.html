@@ -116,6 +116,21 @@ let stormTarget = storm;
 let lastStorm = storm;
 const STORM_TAU = 0.30;
 const windU = (s = storm) => 3 + 21 * s;
+// #462 item 3 — gusts: a slow fbm over time breathes wind, wave height and foam
+// around the slider set point. Amplitude scales with sea state, so calm stays
+// glassy (gust == 0 at s=0) and storm swells/eases over ~10 s.
+const GUST_AMP = 0.30;
+const GUST_RATE = 0.09;
+// a slow ~12 s carrier gives the gusts a provable rhythm (pure fbm can stall for
+// tens of seconds — a harness gate on it would flake); the fbm breaks the metronome.
+const gustSignal = t => Math.max(-1, Math.min(1, 0.62 * Math.sin(t * 0.52) + 0.5 * (fbm1(t * GUST_RATE + 5.0) * 2 - 1)));
+const hash1 = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
+const vnoise1 = x => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return hash1(i) * (1 - u) + hash1(i + 1) * u; };
+const fbm1 = x => { let v = 0, a = 0.5, xx = x; for (let k = 0; k < 3; k++) { v += a * vnoise1(xx); xx = xx * 2.07 + 13.0; a *= 0.5; } return v / 0.875; };
+// streak advection phase: integral of wind speed (a constant times t when calm-
+// constant, but gusts must not teleport the streak pattern, so integrate instead
+// of time*U). gustV/gfV mirror the per-frame gust for the test hook.
+let advPhase = 0, gustV = 0, gfV = 1;
 const SEA_NAMES = [[0.12, 'CALM'], [0.3, 'SLIGHT'], [0.5, 'MODERATE'], [0.7, 'ROUGH'], [0.85, 'VERY ROUGH'], [1.01, 'STORM']];
 const TOD_NAMES = ['NIGHT', 'SUNRISE', 'MIDDAY', 'SUNSET'];
 const CLOUD_NAMES = [[0.15, 'CLEAR'], [0.45, 'SCATTERED'], [0.75, 'BROKEN'], [1.01, 'OVERCAST']];
@@ -319,6 +334,12 @@ async function boot() {
   const resG = [tex(NI), tex(NI)];
   const fftA = tex(NI), fftB = tex(NI);
   const statBuf = device.createBuffer({ size: 32 * 32 * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  // full-tile height variance for the gust gates (#462 item 3): by Parseval the
+  // variance of a WHOLE tile is phase-independent — only amplitude (the gust's
+  // gf² factor) moves it — where a quarter-patch readback lets wave-group noise
+  // through any amplitude gate. Separate buffer; stats() stays quarter-patch so
+  // its mean-drift gates keep working.
+  const gustBuf = device.createBuffer({ size: NI * NI * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
 
   const mkMod = body => device.createShaderModule({ code: HDR + body });
   const cp = (mod, entry) => device.createComputePipeline({ layout: 'auto', compute: { module: mod, entryPoint: entry } });
@@ -559,6 +580,11 @@ async function boot() {
     fn fs_main(in: VOut) -> @location(0) vec4f {
       g_storm = su.wind.y;
       let s = su.wind.y;
+      // #462 item 3 — gust (pre-scaled by sea state): raises the effective wind
+      // for foam/streaks only; sky and colour stay on s so the horizon does not
+      // flicker with the gusts.
+      let eg = su.wind.w;
+      let se = clamp(s + eg, 0.0, 1.0);
       g_tod = su.sky.x; g_cloud = su.sky.y; g_day = su.sky.z; g_night = su.sky.w;
       g_sun = normalize(su.sunD.xyz);
       g_moon = normalize(su.moonD.xyz);
@@ -614,13 +640,15 @@ async function boot() {
       var f = smoothstep(1.06 - 0.012 * s, 1.16, J0) * 0.45
             + smoothstep(1.025 - 0.010 * s, 1.08, J1);
       let wdir = vec2f(cos(su.wind.z), sin(su.wind.z));
-      let walong = dot(in.world.xz, wdir) - su.time * su.wind.x * 0.045;
+      // advection phase comes from the integrated wind (oct.z), not time*U:
+      // gusts change U every frame and time*U would teleport the streaks.
+      let walong = dot(in.world.xz, wdir) - su.oct.z * 0.045;
       let wperp = dot(in.world.xz, vec2f(-wdir.y, wdir.x));
-      let streak = smoothstep(0.42 - 0.10 * s, 0.74 - 0.08 * s,
-                             vnoise(vec2f(walong * (0.08 + 0.04 * s), wperp * (0.75 + 1.10 * s))));
+      let streak = smoothstep(0.42 - 0.10 * se, 0.74 - 0.08 * se,
+                             vnoise(vec2f(walong * (0.08 + 0.04 * se), wperp * (0.75 + 1.10 * se))));
       let foamP = smoothstep(0.32, 0.72, fbm(in.world.xz * 3.2 + vec2f(su.time * 0.30, su.time * 0.10), 3));
       f *= smoothstep(0.10, 0.6, steep) * (0.25 + 0.75 * vnoise(in.world.xz * 1.5 + vec2f(su.time * 0.25, 0.0)))
-           * (0.18 + 0.82 * streak) * (0.55 + 0.85 * s);
+           * (0.18 + 0.82 * streak) * (0.55 + 0.85 * se);
       f = smoothstep(0.14, 0.75, pow(clamp(f, 0.0, 1.0), 1.6));
       f *= (0.35 + 0.65 * foamP) * clamp(1.0 - dist / 320.0, 0.0, 1.0);
       let Ldir = normalize(g_sun * g_day + g_moon * g_night);
@@ -931,7 +959,14 @@ async function boot() {
     if (Math.abs(storm - lastStorm) > 0.001) needSpec = true;
     lastStorm = storm;
     const s = storm;
-    const U = windU();
+    // #462 item 3 — the gust signal (see GUST_AMP): gf scales wave heights,
+    // gust (pre-scaled by sea state) nudges wind speed + foam in the shader.
+    const gust = GUST_AMP * s * gustSignal(t);
+    const gf = 1 + gust;
+    gustV = gust; gfV = gf;
+    const U = windU() * gf;
+    advPhase += U * dt;
+    windLbl.textContent = Math.round(U) + ' m/s';
     const pp = seaParams(s);
     const sunEl = lerpKeys(SUN_EL_K, tod);
     const moonEl = lerpKeys(MOON_EL_K, tod);
@@ -952,9 +987,9 @@ async function boot() {
       eye[0], eye[1], eye[2], t,
       vfwd[0], vfwd[1], vfwd[2], asp,
       vright[0], vright[1], vright[2], 0,
-      OCT[0].L, pp[0].dsp, 0, 0,
+      OCT[0].L, pp[0].dsp, advPhase, 0,
       OCT[1].L, pp[1].dsp, 0, 0,
-      U, s, WIND_AZ, 0,
+      U, s, WIND_AZ, gust,
       tod, cloud, dayness, nightness,
       sunDir[0], sunDir[1], sunDir[2], 0,
       moonDir[0], moonDir[1], moonDir[2], 0,
@@ -1010,7 +1045,10 @@ async function boot() {
       }
     }
     for (let oi = 0; oi < 2; oi++) {
-      device.queue.writeBuffer(uEnc[oi][0], 0, new Float32Array([0, pp[oi].amp, 0, 0]));
+      // #462 item 3 — the gust rides ONLY the height encoder: the displacement
+      // spectra (fi 1/2) keep their calibrated amplitude so the mesh Jacobian
+      // margin oceanfold proves (+0.12 at storm) is untouched.
+      device.queue.writeBuffer(uEnc[oi][0], 0, new Float32Array([0, pp[oi].amp * gf, 0, 0]));
       // chop is already baked into the displacement spectra by cs_prep (× chop·k) —
       // multiplying the encoder amp by chop too applied it twice.
       device.queue.writeBuffer(uEnc[oi][1], 0, new Float32Array([1, pp[oi].amp, 0, 0]));
@@ -1095,6 +1133,7 @@ async function boot() {
     get cloud() { return cloud; },
     get wind() { return windU(); },
     swell() { return { h: eye[1] - cam.pos[1], pitch: swell.pitch, roll: swell.roll, storm }; },
+    gust() { return { raw: gustV, factor: gfV, storm, wind: windU() * gfV }; },
     setStorm(v) { setStorm(v); },
     setTod(v) { setTod(v); },
     setCloud(v) { setCloud(v); },
@@ -1114,6 +1153,17 @@ async function boot() {
       let m = 0; for (const v of a) m += v; m /= a.length;
       let vr = 0; for (const v of a) vr += (v - m) * (v - m); vr /= a.length;
       return { mean: m, variance: vr, frames, time: t };
+    },
+    async gustVar() {
+      const enc = device.createCommandEncoder();
+      enc.copyTextureToBuffer({ texture: resH[0], origin: [0, 0] }, { buffer: gustBuf, bytesPerRow: NI * 8 }, { width: NI, height: NI });
+      device.queue.submit([enc.finish()]);
+      await gustBuf.mapAsync(GPUMapMode.READ);
+      const a = new Float32Array(gustBuf.getMappedRange().slice(0));
+      gustBuf.unmap();
+      let m = 0; for (const v of a) m += v; m /= a.length;
+      let vr = 0; for (const v of a) vr += (v - m) * (v - m); vr /= a.length;
+      return vr;
     },
     stars() {
       const lst = (LST0 + tod * 180) * Math.PI / 180;
