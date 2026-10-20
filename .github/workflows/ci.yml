@@ -379,6 +379,12 @@ jobs:
       # Six mutants must die. All in Node, ~1 s.
       - run: npm run lint:frogger
       - run: npm run froggercheck -- --mutate
+      # Shared rule-6 attract gate (#365): one cycling message per canvas attract
+      # screen, nothing clipped, prompt blinks, demo dims — audited across
+      # Pong/Frogger/Defender/Space Invaders/Centipede. Five mutants per swept
+      # title must die. All in Node, ~1 s.
+      - run: npm run lint:attract
+      - run: npm run attractcheck -- --mutate
       # PWA scope gate (#433): lint the SW + contract scripts, then verify the
       # BUILT shell is installable — manifest scope/start_url are /retrogames/,
       # the SW excludes /retrogames/forge, vercel resolves the pwa assets ahead

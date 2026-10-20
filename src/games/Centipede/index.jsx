@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { attractFrame, DIM } from './attract.js'
 
 const CentipedeGame = () => {
     const canvasRef = useRef(null)
@@ -91,6 +92,7 @@ const CentipedeGame = () => {
 
         // Input
         let isAttractMode = true
+        let attractTick = 0
         let keys = { ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false, Space: false }
         const handleKeyDown = (e) => {
             if (e.key === '?' || (e.shiftKey && e.key === '/')) {
@@ -339,11 +341,16 @@ const CentipedeGame = () => {
                 ctx.fillText("PRESS SPACE", state.width / 2 - 40, state.height / 2)
             }
 
-            if (isAttractMode && !state.player.dead) {
-                ctx.fillStyle = 'white'
+            if (isAttractMode) {
+                attractTick++
+                ctx.fillStyle = DIM
+                ctx.fillRect(0, 0, state.width, state.height)
                 ctx.textAlign = 'center'
-                ctx.fillText("ATTRACT MODE", state.width / 2, state.height / 2 - 20)
-                ctx.fillText("PRESS ANY KEY", state.width / 2, state.height / 2 + 20)
+                for (const l of attractFrame(attractTick, state.width, state.height)) {
+                    ctx.font = `${l.size}px monospace`
+                    ctx.fillStyle = l.col
+                    ctx.fillText(l.text, l.x, l.y)
+                }
                 ctx.textAlign = 'start'
             }
         }
