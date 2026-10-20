@@ -9,7 +9,7 @@
 
 import { launch, openGame, requireDevServer, Report } from './lib/harness.mjs'
 import {
-    QUOTA, SPILLS, BOUNTY, spellById,
+    QUOTA, SPILLS, BOUNTY, MAP, spellById,
     makeGame, step, autopilot, stateHash,
 } from '../src/games/MagicCarpet/sim.js'
 
@@ -99,6 +99,34 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         minClear = Math.min(minClear, gs.alt)
     }
     r.check('holding down never buries the carpet', minClear > 14, `min alt ${minClear.toFixed(1)}`)
+}
+
+// ---- charge-glide: the speed button (Shift / hold ▲ in the shell → inp.boost)
+// Mutation guide: set CFG.boost to 1 in sim.js and the speed check goes red;
+// set CFG.boostTurn to 1 and the wide-turn check goes red.
+{
+    const wrapD = (v) => ((v + MAP / 2) % MAP + MAP) % MAP - MAP / 2
+    const glide = (inp) => {
+        const gs = makeGame(7)
+        const x0 = gs.x, y0 = gs.y
+        let prevM = gs.mana, spent = 0
+        for (let i = 0; i < 60 && !gs.end; i++) {
+            step(gs, inp)
+            if (gs.mana < prevM) spent += prevM - gs.mana
+            prevM = gs.mana
+        }
+        return { d: Math.hypot(wrapD(gs.x - x0), wrapD(gs.y - y0)), yaw: Math.abs(gs.yaw), spent }
+    }
+    const sN = glide({}), sB = glide({ boost: true })
+    const tN = glide({ left: true }), tB = glide({ left: true, boost: true })
+    const speed = sB.d / sN.d
+    const turn = tB.yaw / tN.yaw
+    r.check('charge-glide: 60 boosted ticks cover ~1.6× the cruise distance',
+        speed > 1.5 && speed < 1.7, `ratio ${speed.toFixed(2)} (${sN.d.toFixed(0)} → ${sB.d.toFixed(0)} u)`)
+    r.check('charge-glide turns wider: heading gain ~0.55× at speed',
+        turn > 0.5 && turn < 0.6, `yaw ratio ${turn.toFixed(2)} (radius ×${(speed / turn).toFixed(1)})`)
+    r.check('charge-glide is mana-free (nothing spent while gliding)',
+        sB.spent === 0 && tB.spent === 0, `spent ${sB.spent}/${tB.spent}`)
 }
 
 // ---- death and the castle's mercy

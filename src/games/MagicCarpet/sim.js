@@ -13,6 +13,7 @@ export const HORIZON = 92
 
 export const CFG = {
     speed: 2.0, climb: 0.75, turn: 0.052, focal: 260,
+    boost: 1.6, boostTurn: 0.55,
     
 }
 
@@ -318,14 +319,15 @@ export function step(gs, inp) {
 
     const steer = (inp.right ? 1 : 0) - (inp.left ? 1 : 0)
     const vert = (inp.up ? 1 : 0) - (inp.down ? 1 : 0)
-    gs.yaw += steer * CFG.turn
-    const v = CFG.speed * (1 - 0.78 * Math.abs(steer))
+    const boosting = !!inp.boost
+    gs.yaw += steer * CFG.turn * (boosting ? CFG.boostTurn : 1)
+    const v = CFG.speed * (boosting ? CFG.boost : 1) * (1 - 0.78 * Math.abs(steer))
     gs.x = wrap(gs.x + Math.cos(gs.yaw) * v, MAP)
     gs.y = wrap(gs.y + Math.sin(gs.yaw) * v, MAP)
     gs.alt += vert * CFG.climb
     const aheadH = Math.max(
-        sampleH(gs, gs.x + Math.cos(gs.yaw) * 14, gs.y + Math.sin(gs.yaw) * 14),
-        sampleH(gs, gs.x + Math.cos(gs.yaw) * 26, gs.y + Math.sin(gs.yaw) * 26),
+        sampleH(gs, gs.x + Math.cos(gs.yaw) * Math.max(14, v * 7), gs.y + Math.sin(gs.yaw) * Math.max(14, v * 7)),
+        sampleH(gs, gs.x + Math.cos(gs.yaw) * Math.max(26, v * 13), gs.y + Math.sin(gs.yaw) * Math.max(26, v * 13)),
     )
     if (aheadH + 4 > gs.alt) gs.alt = Math.min(gs.alt + CFG.climb, aheadH + 4)
     gs.alt = Math.max(Math.max(WATER + 3, sampleH(gs, gs.x, gs.y) + 1.6), Math.min(120, gs.alt))
