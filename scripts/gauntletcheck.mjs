@@ -623,6 +623,26 @@ const CW = 320, CH = 240, HT = 40, VH = CH - HT
     ok(!/DEMO PLAYS|PRESS ANY KEY TO CHOOSE YOUR HERO/.test(jsx), 'the HUD-over caption and long prompt are gone from the shell')
 }
 
+// ------------------------------------------------------------- net-seats ----
+// #554 — on the guest, self IS gs.partner, so the hero it must still draw is
+// gs.hero. Drawing only gs.partner left the host invisible on the guest screen.
+console.log('net-seats (#554)')
+{
+    const { selfHero, otherHero } = await import('../src/games/Gauntlet/seat.js')
+    const hero = { id: 'H' }, partner = { id: 'P' }
+    const both = { hero, partner }, solo = { hero, partner: null }
+    ok(selfHero(both, 'host') === hero && otherHero(both, 'host') === partner, 'host sees self=hero, other=guest hero')
+    ok(selfHero(both, 'guest') === partner && otherHero(both, 'guest') === hero, 'guest sees self=partner AND the host hero', `other=${otherHero(both, 'guest')?.id}`)
+    ok(selfHero(both, null) === hero && otherHero(both, null) === partner, 'local 2P keeps self=hero, other=partner')
+    ok(otherHero(solo, null) === null && otherHero(solo, 'guest') === null, 'no second hero -> nothing else to draw')
+    const jsx = readFileSync('src/games/Gauntlet/index.jsx', 'utf8')
+    ok(jsx.includes("from './seat.js'") && jsx.includes('otherHero(gs, net.role)'), 'the shell routes the other-hero choice through seat.js')
+    ok(/const other = otherEnt\(\)[\s\S]*?sprite\(other\.name\.toLowerCase\(\), sx\(other\.x\), sy\(other\.y\)/.test(jsx), 'the world draws the OTHER hero, not gs.partner')
+    ok(/const mo = otherEnt\(\)/.test(jsx) && /ctx\.fillRect\(px \+ mo\.x \* s - 1, py \+ mo\.y \* s - 1/.test(jsx), 'the minimap plots the other hero too')
+    ok(/hudOther && !hudOther\.down && \(gs\.partnerHuman \|\| net\.role\)/.test(jsx), 'the HUD shows the other hero online, not only when partnerHuman')
+    ok(!/selfEnt\(\) !== gs\.partner/.test(jsx), 'the old partner-only draw guard is gone')
+}
+
 // ------------------------------------------------------------- mutants ----
 if (process.argv.includes('--mutate')) {
     console.log('mutants (must die)')
@@ -649,6 +669,12 @@ if (process.argv.includes('--mutate')) {
         ['the hero never collapses when dying', 'src/games/Gauntlet/hero.js', '(deadT <= 0 ? 0 : Math.min(1, (CFG.deathFreeze - deadT) / CFG.deathFreeze))', '(deadT <= 0 ? 0 : 0)'],
         ['the HUD-over attract caption returns', 'src/games/Gauntlet/attract.js', "        { text: PRESS,", "        { text: 'DEMO PLAYS THE PROVEN FULL QUEST', x: w / 2, y: h - 14, size: 7, col: '#5d7094', glow: 0 },\n        { text: PRESS,"],
         ['an attract message leaks the harness', 'src/games/Gauntlet/attract.js', "'FOUR MAZES AWAITS',", "'gauntletcheck audits the HUD band',"],
+        ['#554 guest draws only the partner (host invisible)', 'src/games/Gauntlet/seat.js', 'selfHero(gs, role) === gs.hero ? gs.partner : gs.hero', 'gs.partner'],
+        ['#554 guest self resolves to the hero', 'src/games/Gauntlet/seat.js', "role === 'guest' && gs.partner ? gs.partner : gs.hero", 'gs.hero'],
+        ['#554 world reverts to the partner-only guard', 'src/games/Gauntlet/index.jsx', '            const other = otherEnt()\n            if (other && !other.down) sprite(other.name.toLowerCase(), sx(other.x), sy(other.y), 11)', '            if (gs.partner && !gs.partner.down && selfEnt() !== gs.partner) sprite(gs.partner.name.toLowerCase(), sx(gs.partner.x), sy(gs.partner.y), 11)'],
+        ['#554 minimap drops the other hero', 'src/games/Gauntlet/index.jsx', 'const mo = otherEnt()', 'const mo = null'],
+        ['#554 HUD hides the other hero online', 'src/games/Gauntlet/index.jsx', 'hudOther && !hudOther.down && (gs.partnerHuman || net.role)', 'hudOther && !hudOther.down && gs.partnerHuman'],
+        ['#554 shell stops routing through seat.js', 'src/games/Gauntlet/index.jsx', 'const otherEnt = () => otherHero(gs, net.role)', 'const otherEnt = () => null'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

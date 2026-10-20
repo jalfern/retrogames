@@ -21,6 +21,7 @@ import { plan, decide, partnerPad } from './planner.js'
 import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
+import { selfHero, otherHero } from './seat.js'
 import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
 import { walkFrame, hitFlashAlpha, deathProgress } from './hero.js'
 import { torch, litColor, mortarTones, css } from './walls.js'
@@ -170,8 +171,11 @@ const GauntletGame = () => {
         }
 
         const netLocalPad = () => ({ l: keys.l, r: keys.r, u: keys.u, d: keys.d, s: keys.swordEdge, a: keys.arrowEdge })
-        const selfEnt = () => (net.role === 'guest' && gs.partner ? gs.partner : gs.hero)
+        const selfEnt = () => selfHero(gs, net.role)
         const selfKey = () => (net.role === 'guest' && gs.partnerKey ? gs.partnerKey : gs.heroKey)
+        // the OTHER player's hero on this screen: the host sees the guest (partner),
+        // the guest sees the host (hero) — both boxes must draw whoever isn't self (#554)
+        const otherEnt = () => otherHero(gs, net.role)
 
         const netTick = () => {
             const k = gs.tick
@@ -477,7 +481,8 @@ const GauntletGame = () => {
                 sprite(m.kind, sx(m.x), sy(m.y), big)
                 if (m.kind === 'death') ctx.restore()
             }
-            if (gs.partner && !gs.partner.down && selfEnt() !== gs.partner) sprite(gs.partner.name.toLowerCase(), sx(gs.partner.x), sy(gs.partner.y), 11)
+            const other = otherEnt()
+            if (other && !other.down) sprite(other.name.toLowerCase(), sx(other.x), sy(other.y), 11)
             // facing dagger: the sword arc, rendered honestly
             const hx = sx(h.x), hy = sy(h.y)
             ctx.strokeStyle = 'rgba(232,238,248,0.35)'
@@ -588,6 +593,8 @@ const GauntletGame = () => {
             }
             ctx.fillStyle = '#ff5d5d'
             ctx.fillRect(px + h.x * s - 1, py + h.y * s - 1, 2, 2)
+            const mo = otherEnt()
+            if (mo && !mo.down) { ctx.fillStyle = '#54c8ff'; ctx.fillRect(px + mo.x * s - 1, py + mo.y * s - 1, 2, 2) }
             const hy = VH - 58
             sprite(selfKey(), VW + PW / 2, hy, 20, false)
             text(HEROES[selfKey()].name, VW + PW / 2, hy + 16, 6, '#ffd23f', 2)
@@ -598,14 +605,15 @@ const GauntletGame = () => {
             text('HEALTH', VW + PW / 2, hy + 33, 5, '#8fa3d8')
             text(`KEYS ${gs.keys}`, VW + PW / 2, hy + 44, 7, '#ffd23f', 2)
             text(`GOLD ${gs.gold}`, VW + PW / 2, hy + 53, 7, '#c9d4ea')
-            if (gs.partnerHuman && gs.partner && !gs.partner.down) {
-                // the second player's portrait, under the hero's (P2)
-                const pk = gs.partner.name.toLowerCase()
+            const hudOther = otherEnt()
+            if (hudOther && !hudOther.down && (gs.partnerHuman || net.role)) {
+                // the other player's portrait, under the hero's (P2, or the peer online #554)
+                const pk = hudOther.name.toLowerCase()
                 text('2P', VW + PW / 2, 72, 6, '#ff5d5d', 2)
                 sprite(pk, VW + PW / 2, 98, 18, false)
                 ctx.fillStyle = '#301010'; ctx.fillRect(VW + 10, 112, PW - 20, 3)
-                ctx.fillStyle = gs.partner.hp > gs.partner.maxHp * 0.3 ? '#e83a3a' : (gs.tick >> 2) % 2 ? '#ff8a5d' : '#7d1414'
-                ctx.fillRect(VW + 10, 112, (PW - 20) * Math.max(0, gs.partner.hp / gs.partner.maxHp), 3)
+                ctx.fillStyle = hudOther.hp > hudOther.maxHp * 0.3 ? '#e83a3a' : (gs.tick >> 2) % 2 ? '#ff8a5d' : '#7d1414'
+                ctx.fillRect(VW + 10, 112, (PW - 20) * Math.max(0, hudOther.hp / hudOther.maxHp), 3)
             }
         }
 
