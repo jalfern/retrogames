@@ -44,6 +44,13 @@ echo "$(date): model route: ${MODEL_ARGS[*]:-direct (no tap)}" >> "$LOG"
 
 PROMPT="You are THE FORGE. Open scripts/FORGE.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 3 hours."
 
+# #601 red-main freeze: if the latest nightly on main failed, this lane opens
+# by fixing main instead of shipping on top of a red trunk.
+if [[ -x "$REPO/scripts/main-ok.sh" ]] && ! "$REPO/scripts/main-ok.sh" >/dev/null 2>&1; then
+    echo "$(date): MAIN RED — nightly failed; session starts in fix-main mode" >> "$LOG"
+    PROMPT="$PROMPT WARNING (#601 merge freeze): scripts/main-ok.sh says main is red. Fix main first (read the failing nightly run), do not merge anything until main is green."
+fi
+
 # --auto: headless runs cannot answer permission prompts (an auto-reject
 # silently killed session #2 mid-build). opencode.json carries the guard
 # rails (no force-push, no push to main, no ~/.ssh) around the autonomy.

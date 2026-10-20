@@ -72,6 +72,12 @@ fi
 
 PROMPT="You are THE QA MASTER on node $NODE. Open scripts/FORGE-QA.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 60 minutes.$EXTRA"
 
+# #601 red-main freeze: this lane refuses to ship fixes on top of a red trunk.
+if [[ -x "$REPO/scripts/main-ok.sh" ]] && ! "$REPO/scripts/main-ok.sh" >/dev/null 2>&1; then
+    echo "$(date): MAIN RED — nightly failed; $NODE QA session starts in fix-main mode" >> "$LOG"
+    PROMPT="$PROMPT WARNING (#601 merge freeze): scripts/main-ok.sh says main is red. Fix main first (read the failing nightly run), do not merge anything until main is green."
+fi
+
 # launchd KILLS backgrounded children when the job's script exits (macOS
 # process tracking) — an 08:00-2026-10-10 corpse proved it: every session so
 # far was started by the warden (a live parent), never by launchd itself.

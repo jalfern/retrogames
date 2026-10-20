@@ -91,7 +91,8 @@ confuse the two queues.
     framework), commit, `gh pr create --base main --body-file <b>` with `Closes #<n>`
     in <b> (the merge then closes the issue itself — a fix that ships while its
     issue stays open strands a `building-qa` label no one can clear), then ONLY:
-    `gh pr checks --watch --fail-fast && gh pr merge --squash --delete-branch`
+    `scripts/main-ok.sh && while s=$(gh pr checks --json name,state --jq 'map(select(.name=="static"))[0].state'); do [ "$s" = SUCCESS ] && break; case "$s" in FAILURE|ERROR|TIMED_OUT) exit 1;; esac; sleep 20; done && gh pr merge --squash --delete-branch`
+    (AGENTS rule 5 — red main freezes merges; only `static` gates; advisory jobs never do)
     then `git checkout --detach origin/main` at once — gh auto-switches the worktree onto
     `main` after `--delete-branch`, and the law keeps `main` checked out nowhere.
     Comment the proof on the issue: what was broken, the check that
