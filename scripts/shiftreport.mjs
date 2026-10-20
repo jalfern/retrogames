@@ -141,20 +141,18 @@ export function idleBand({ rows, idx, buckets, pulls, samples, now }) {
     let lastMerge = null
     for (const p of pulls) {
         if (!p.merged_at) continue
-        if (laneOf(p.head?.ref || p.headBranch) !== 'builder') continue
         const t = Date.parse(p.merged_at)
+        if (t > now) continue        // clock skew: a future merge is not idle data
+        if (laneOf(p.head?.ref || p.headBranch) !== 'builder') continue
         if (lastMerge == null || t > lastMerge) lastMerge = t
     }
     if (lastMerge == null) return null
     const start = idx[hourKey(lastMerge)]
     if (start == null) return null
-    const sorted = [...(samples || [])].filter(s => (s.ts || 0) * 1000 >= lastMerge).sort((a, b) => a.ts - b.ts)
-    for (const s of sorted) {
-        if (s.tasks?.builder) {
-            const e = idx[hourKey(s.ts * 1000)]
-            if (e != null && e > start) return { start, end: e }
-            break
-        }
+    for (const s of [...(samples || [])].filter(s => (s.ts || 0) * 1000 >= lastMerge).sort((a, b) => a.ts - b.ts)) {
+        if (!s.tasks?.builder) continue
+        const e = idx[hourKey(s.ts * 1000)]
+        return e == null || e <= start ? null : { start, end: e }
     }
     return { start, end: WINDOW_HOURS - 1 }
 }

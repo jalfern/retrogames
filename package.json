@@ -205,7 +205,8 @@
     "ssxmodelcheck": "node scripts/ssxmodelcheck.mjs",
     "ciscope": "node scripts/ciscope.mjs --selftest",
     "nightlychecks": "node scripts/run-checks.mjs",
-    "nightlysmokes": "node scripts/run-checks.mjs --smoke"
+    "nightlysmokes": "node scripts/run-checks.mjs --smoke",
+    "shiftreportcheck": "node scripts/shiftreportcheck.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

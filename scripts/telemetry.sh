@@ -206,3 +206,12 @@ PYB
 git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null || true
 git -C /Users/jon/Dev/retrogames show origin/main:scripts/dailylog.mjs \
     | DAILYLOG_PUSH=1 node --input-type=module - || echo 'dailylog failed'
+
+# shift report (#614) — report.json on the same pipe, self-gated to one run
+# per 4 h (this script ticks every 5 min). SHIFTREPORT_PUSH selects the push
+# path; the pure core is pinned by npm run shiftreportcheck.
+if [[ ! -f /tmp/forge/last-shiftreport ]] || (( $(date +%s) - $(stat -f %m /tmp/forge/last-shiftreport) >= 14400 )); then
+    git -C /Users/jon/Dev/retrogames show origin/main:scripts/shiftreport.mjs \
+        | SHIFTREPORT_PUSH=1 node --input-type=module - && touch /tmp/forge/last-shiftreport \
+        || echo 'shiftreport failed'
+fi
