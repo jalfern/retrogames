@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, makeRider, poseRider, sprayField, makeSprite, THEMES } from './art.js'
+import { buildTerrain, buildRails, buildScenery, makeRider, makeHeroRider, poseRider, sprayField, makeSprite, THEMES } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -65,6 +65,14 @@ const SSXGame = () => {
         scene.add(spray.pts)
         const sprayVel = new Float32Array(spray.n * 3)
         const sprayLife = new Float32Array(spray.n)
+
+        // fake contact shadow keeps the pack readable mid-air (#548): a dark
+        // ellipse pinned to the snow under the leader, fading as air grows
+        const shadowGeo = new THREE.CircleGeometry(0.72, 20)
+        shadowGeo.rotateX(-Math.PI / 2)
+        const shadowMat = new THREE.MeshBasicMaterial({ color: 0x0b1524, transparent: true, opacity: 0.28, depthWrite: false })
+        const shadow = new THREE.Mesh(shadowGeo, shadowMat)
+        scene.add(shadow)
 
         // carved tracks: two dark grooves laid along the player's last ~5 s line
         const GROOVE_MAX = 420
@@ -123,6 +131,7 @@ const SSXGame = () => {
         let shake = 0, camPos = new THREE.Vector3()
         let musicAcc = 0, musicStep = 0
         let pop = '', popT = 0
+        let poseOverride = null
         const keys = new Set()
         const disposables = []
         const keep = (o) => { disposables.push(o); return o }
@@ -144,7 +153,7 @@ const SSXGame = () => {
             scene.add(world)
             for (const m of riders) scene.remove(m)
             riders = g.riders.map((r) => {
-                const rig = keep(makeRider(RIDER_COLORS[r.id]))
+                const rig = keep(r.id === 0 ? makeHeroRider(RIDER_COLORS[r.id]) : makeRider(RIDER_COLORS[r.id]))
                 scene.add(rig)
                 return rig
             })
@@ -219,7 +228,7 @@ const SSXGame = () => {
             const p = slopePos(g.course, r.s, r.x)
             rig.position.set(p.x, r.air ? r.y : terrainY(g.course, r.s, r.x), p.z)
             rig.userData.yaw.rotation.y = p.th - Math.PI / 2 + (r.spin * Math.PI) / 180
-            poseRider(rig, r, g.tick)
+            poseRider(rig, r, g.tick, poseOverride)
         }
 
         const frame = (ts) => {
@@ -251,6 +260,12 @@ const SSXGame = () => {
 
             for (const m of riders) m.visible = true
             g.riders.forEach((r, i) => placeRider(riders[i], r))
+            {
+                const airH = p.air ? p.y - pp.y : 0
+                shadow.position.set(pp.x, pp.y + 0.04, pp.z)
+                shadow.material.opacity = Math.max(0.05, 0.3 - airH * 0.05)
+                shadow.scale.setScalar(1 + airH * 0.05)
+            }
 
             // snow spray: carving, landings, boost — powder density scales with speed
             const steer = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0)
@@ -376,6 +391,7 @@ const SSXGame = () => {
             shownHeat = g.heat
             setCourseVisuals()
             keys.clear()
+            poseOverride = null
             setResult(null)
             setMode('play')
             audioController.playSweep(220, 660, 0.3, 'square', 0.07)
@@ -433,8 +449,14 @@ const SSXGame = () => {
                     }
                 },
                 keys,
+                setPose: (n) => { poseOverride = n || null },
+                hero: () => {
+                    const h = riders[0]?.userData?.hero
+                    if (!h) return { ready: false, failed: h === false ? 1 : 0 }
+                    return { ready: true, pose: h.pose, bones: Object.keys(h.bones).length }
+                },
                 start: (m) => startPlay(m === 'showoff' ? 'showoff' : 'race'),
-                toAttract: () => { g = makeGame('race'); shownHeat = 0; setCourseVisuals(); setMode('attract') },
+                toAttract: () => { g = makeGame('race'); shownHeat = 0; poseOverride = null; setCourseVisuals(); setMode('attract') },
                 prognose: () => {
                     if (g.end) return `already ${g.end}: ${g.why}`
                     const g2 = cloneGame(g)
@@ -473,6 +495,7 @@ const SSXGame = () => {
             cancelAnimationFrame(raf)
             disposables.forEach((d) => { if (d.dispose) d.dispose() })
             spray.geo.dispose(); spray.pts.material.map?.dispose(); spray.pts.material.dispose()
+            shadowGeo.dispose(); shadowMat.dispose(); scene.remove(shadow)
             for (const gr of grooves) { gr.geo.dispose(); gr.mesh.material.dispose(); scene.remove(gr.mesh) }
             if (streaks) { streaks.geo.dispose(); streaks.pts.material.map?.dispose(); streaks.pts.material.dispose(); camera.remove(streaks.pts) }
             renderer.forceContextLoss()

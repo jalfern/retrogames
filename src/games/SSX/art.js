@@ -1,7 +1,10 @@
-// SSX — art.js : every pixel synthesized. The mountain is a vertex-coloured
-// ribbon built straight from course.js geometry (so the painted slope IS the
-// ridden slope), rails glow, the city hums, and riders are articulated rigs
-// that crouch, grab, spin, flip and tumble. No assets.
+// SSX — art.js : every pixel synthesized — except the hero rider (#548): a
+// real CC0 rigged character (KayKit Adventurers "Rogue_Hooded", see
+// public/models/ssx/LICENSE.txt) loaded with GLTFLoader and posed per-frame
+// from the sim. The mountain is a vertex-coloured ribbon built straight from
+// course.js geometry (so the painted slope IS the ridden slope), rails glow,
+// the city hums, and riders are articulated rigs that crouch, grab, spin,
+// flip and tumble.
 
 import * as THREE from 'three'
 import { slopePos, featureLift } from './course.js'
@@ -178,11 +181,8 @@ export function makeSprite(color) {
 
 // ---- rider rig -------------------------------------------------------------
 // root -> yaw (heading + spin) -> roll (tilt + flip) -> body parts.
-export function makeRider(color) {
-    const root = new THREE.Group()
-    const yaw = new THREE.Group()
-    const roll = new THREE.Group()
-    root.add(yaw); yaw.add(roll)
+
+function buildPrimitiveBody(roll, color) {
     const mat = new THREE.MeshLambertMaterial({ color })
     const dark = new THREE.MeshLambertMaterial({ color: 0x20242c })
     const suit = new THREE.MeshLambertMaterial({ color: 0xf2f2f5 })
@@ -205,33 +205,272 @@ export function makeRider(color) {
     const gog = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.24), new THREE.MeshBasicMaterial({ color: 0xffc23e }))
     gog.position.set(0, 1.55, 0.12)
     roll.add(board, bootL, bootR, legs, torso, armL, armR, head, gog)
-    root.userData = { yaw, roll, armR, legs, torso }
+    return { board, legs, torso, armR, head }
+}
+
+export function makeRider(color) {
+    const root = new THREE.Group()
+    const yaw = new THREE.Group()
+    const roll = new THREE.Group()
+    root.add(yaw); yaw.add(roll)
+    const parts = buildPrimitiveBody(roll, color)
+    root.userData = { yaw, roll, ...parts }
     return root
 }
 
+// ---- hero rider (#548) -----------------------------------------------------
+// KayKit Adventurers "Rogue_Hooded" (CC0) — public/models/ssx/rogue.glb.
+// Pose bases are baked frames of the pack's own clips (Idle / Jump_Start /
+// Jump_Idle / Sit_Chair_Pose); tuck, grab and tumble are those bases plus
+// authored per-bone offsets. Every bone blends toward its target each frame,
+// so pose changes read as motion, never as pops.
+
+export const HERO_POSES = ['stand', 'tuck', 'crouch', 'air', 'grab', 'tumble']
+
+const HERO_URL = `${(import.meta.env && import.meta.env.BASE_URL) || '/'}models/ssx/rogue.glb`
+const HERO_HEIGHT = 1.74
+
+function sampleClip(clip, time) {
+    const pose = {}
+    for (const tr of clip.tracks) {
+        const dot = tr.name.lastIndexOf('.')
+        const bone = tr.name.slice(0, dot)
+        const prop = tr.name.slice(dot + 1)
+        const v = tr.evaluate
+            ? tr.evaluate(time, new Float32Array(tr.getValueSize()))
+            : tr.createInterpolant(new Float32Array(tr.getValueSize())).evaluate(time)
+        const e = pose[bone] || (pose[bone] = {})
+        if (prop === 'position') e.p = [v[0], v[1], v[2]]
+        else if (prop === 'quaternion') e.q = [v[0], v[1], v[2], v[3]]
+    }
+    return pose
+}
+
+const eul = new THREE.Euler()
+const mulQ = new THREE.Quaternion()
+
+// per-bone euler offsets (radians, bone-local axes), composed onto the base
+const STANCE = {
+    hips: [0, 0.55, 0],
+    spine: [0, 0.5, 0],
+    chest: [0, 0.25, 0],
+    head: [0.02, -1.3, 0],
+    'foot.l': [0, -0.55, 0],
+    'foot.r': [0, -0.55, 0],
+}
+const OFFS = {
+    tuck: {
+        hips: [0, 0, 0, -0.10], spine: [0.45, 0, 0], chest: [0.8, 0, 0], head: [-0.5, 0, 0],
+        'upperleg.l': [0.9, 0, 0.05], 'lowerleg.l': [-1.65, 0, 0], 'foot.l': [0.7, 0, 0],
+        'upperleg.r': [0.8, 0, -0.05], 'lowerleg.r': [-1.55, 0, 0], 'foot.r': [0.7, 0, 0],
+        'upperarm.l': [1.1, 0, 0.4], 'lowerarm.l': [1.5, 0, 0],
+        'upperarm.r': [1.1, 0, -0.4], 'lowerarm.r': [1.5, 0, 0],
+    },
+    crouch: {
+        hips: [0, 0, 0, -0.16], spine: [0.2, 0, 0], chest: [0.28, 0, 0], head: [-0.12, 0, 0],
+        'upperleg.l': [0.75, 0, 0.04], 'lowerleg.l': [-1.5, 0, 0], 'foot.l': [0.6, 0, 0],
+        'upperleg.r': [0.68, 0, -0.04], 'lowerleg.r': [-1.42, 0, 0], 'foot.r': [0.6, 0, 0],
+        'upperarm.l': [0.5, 0, 0.25], 'lowerarm.l': [0.8, 0, 0],
+        'upperarm.r': [0.5, 0, -0.25], 'lowerarm.r': [0.8, 0, 0],
+    },
+    grab: {
+        hips: [0, 0.18, 0], spine: [0.35, 0.15, 0], chest: [0.55, 0.1, 0], head: [-0.35, -0.25, 0],
+        'upperarm.l': [1.55, 0, 0.5], 'lowerarm.l': [0.85, 0, 0],
+        'upperarm.r': [0.2, 0, -0.35],
+    },
+    tumble: {
+        hips: [0, 0.3, 0], spine: [-0.35, -0.2, 0], chest: [-0.2, -0.1, 0], head: [0.5, 0.35, 0],
+        'upperarm.l': [-0.5, 0, 1.2], 'lowerarm.l': [0.3, 0, 0],
+        'upperarm.r': [-2.9, 0, -0.4], 'lowerarm.r': [0.5, 0, 0],
+        'upperleg.l': [0.8, 0, 0.35], 'lowerleg.l': [-0.9, 0, 0], 'foot.l': [0.3, 0, 0],
+        'upperleg.r': [-0.4, 0, -0.35], 'lowerleg.r': [0.6, 0, 0],
+    },
+    air: {
+        'upperleg.l': [0.12, 0, 0.06], 'lowerleg.l': [-0.35, 0, 0],
+        'upperleg.r': [0.1, 0, -0.06], 'lowerleg.r': [-0.3, 0, 0],
+    },
+}
+const POSE_BASE = { stand: 'stand', tuck: 'stand', crouch: 'crouch', air: 'air', grab: 'air', tumble: 'air' }
+
+function poseOffset(name, bone) {
+    const a = STANCE[bone]
+    const b = OFFS[name] && OFFS[name][bone]
+    if (!a) return b || null
+    if (!b) return a
+    return [a[0] + b[0], a[1] + b[1], a[2] + b[2], (a[3] || 0) + (b[3] || 0)]
+}
+
+function composeTargets(clips) {
+    const bases = {
+        stand: sampleClip(clips.Idle, 0),
+        crouch: sampleClip(clips.Jump_Start, 0.34),
+        air: sampleClip(clips.Jump_Idle, 0.3),
+    }
+    const targets = {}
+    for (const name of HERO_POSES) {
+        const base = bases[POSE_BASE[name]]
+        const t = {}
+        for (const bone of Object.keys(base)) {
+            const e = { p: base[bone].p ? [...base[bone].p] : null, q: base[bone].q ? [...base[bone].q] : null }
+            const o = poseOffset(name, bone)
+            if (o && e.p && o.length > 3) e.p = [e.p[0], e.p[1] + (o[3] || 0), e.p[2]]
+            const r3 = o ? [o[0], o[1], o[2]] : [0, 0, 0]
+            if (e.q) {
+                eul.set(r3[0], r3[1], r3[2])
+                mulQ.setFromEuler(eul)
+                const q = new THREE.Quaternion(e.q[0], e.q[1], e.q[2], e.q[3]).multiply(mulQ)
+                e.q = [q.x, q.y, q.z, q.w]
+            }
+            t[bone] = e
+        }
+        targets[name] = t
+    }
+    return targets
+}
+
+export function makeHeroRider(color) {
+    const root = new THREE.Group()
+    const yaw = new THREE.Group()
+    const roll = new THREE.Group()
+    root.add(yaw); yaw.add(roll)
+    const parts = buildPrimitiveBody(roll, color)
+    root.userData = { yaw, roll, ...parts, hero: null }
+    Promise.all([
+        import('three/examples/jsm/loaders/GLTFLoader.js'),
+        fetch(HERO_URL).then((res) => { if (!res.ok) throw new Error(`hero glb ${res.status}`); return res.arrayBuffer() }),
+    ]).then(async ([mod, buf]) => {
+        const gltf = await new mod.GLTFLoader().parseAsync(buf, '')
+        const clips = {}
+        for (const a of gltf.animations) clips[a.name] = a
+        const rigRoot = gltf.scene.children.find((c) => c.name === 'Rig') || gltf.scene
+        const bones = {}
+        rigRoot.traverse((o) => { bones[o.name] = o })
+        const box = new THREE.Box3().setFromObject(rigRoot)
+        const h = box.max.y - box.min.y
+        const model = new THREE.Group()
+        model.add(rigRoot)
+        model.scale.setScalar(HERO_HEIGHT / h)
+        model.position.y = -((box.min.y) * (HERO_HEIGHT / h))
+        const board = makeBoard(color)
+        roll.clear()
+        roll.add(model, board)
+        const bootGeo = new THREE.BoxGeometry(0.3, 0.22, 0.46)
+        const bootMat = new THREE.MeshLambertMaterial({ color: 0x232830 })
+        for (const side of ['l', 'r']) {
+            const boot = new THREE.Mesh(bootGeo, bootMat)
+            boot.position.set(0.02, -0.16, 0.06)
+            if (bones[`foot.${side}`]) bones[`foot.${side}`].add(boot)
+        }
+        root.userData.hero = {
+            model, bones, board,
+            targets: composeTargets(clips),
+            pose: 'stand',
+            cur: {},
+        }
+        root.userData.armR = null
+        root.userData.legs = null
+    }).catch((e) => {
+        console.error('[ssx] hero rider load failed:', e)
+        root.userData.hero = false
+    })
+    return root
+}
+
+export function makeBoard(color) {
+    const L = 1.78, NOSE = 0.16, WAIST = 0.17, TIPW = 0.19
+    const shape = new THREE.Shape()
+    shape.moveTo(L / 2, 0)
+    shape.bezierCurveTo(L / 2 - NOSE, TIPW * 0.9, 0.15, WAIST, -0.45, WAIST * 1.02)
+    shape.bezierCurveTo(-L / 2 + NOSE, TIPW * 0.95, -L / 2, TIPW * 0.4, -L / 2, 0)
+    shape.bezierCurveTo(-L / 2, -TIPW * 0.4, -L / 2 + NOSE, -TIPW * 0.95, -0.45, -WAIST * 1.02)
+    shape.bezierCurveTo(0.15, -WAIST, L / 2 - NOSE, -TIPW * 0.9, L / 2, 0)
+    const geo = new THREE.ExtrudeGeometry(shape, {
+        depth: 0.05, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 2, curveSegments: 14,
+    })
+    geo.rotateX(-Math.PI / 2)
+    const pos = geo.attributes.position
+    const col = new Float32Array(pos.count * 3)
+    const cA = new THREE.Color(color)
+    const cB = new THREE.Color(0x181d26)
+    const cTip = new THREE.Color(0xe8edf5)
+    const mixc = new THREE.Color()
+    for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i), y = pos.getY(i)
+        const a = Math.abs(x) / (L / 2)
+        pos.setY(i, y + 0.16 * Math.pow(Math.max(0, a - 0.62) / 0.38, 2))
+        if (y < 0.012) mixc.copy(cB)
+        else if (a > 0.8) mixc.copy(cTip)
+        else mixc.copy(cA).lerp(cB, Math.sin(x * 6.2) > 0.15 ? 1 : 0)
+        col[i * 3] = mixc.r; col[i * 3 + 1] = mixc.g; col[i * 3 + 2] = mixc.b
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    geo.computeVertexNormals()
+    const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }))
+    mesh.position.y = 0.045
+    return mesh
+}
+
+// map sim state to a hero pose name
+export function heroPose(r, override) {
+    if (override) return override
+    if (r.tumble > 0) return 'tumble'
+    if (r.air) return r.grab ? 'grab' : 'air'
+    if (r.crouch) return 'crouch'
+    if (r.tuck) return 'tuck'
+    if (r.scrub) return 'crouch'
+    return 'stand'
+}
+
+const tmpQ = new THREE.Quaternion()
+const tmpV = new THREE.Vector3()
+
+function blendHero(hero, pose) {
+    if (hero.pose !== pose) { hero.pose = pose; hero.cur = {} }
+    const t = hero.targets[pose]
+    if (!t) return
+    for (const name of Object.keys(t)) {
+        const bone = hero.bones[name]
+        if (!bone) continue
+        const tgt = t[name]
+        let c = hero.cur[name]
+        if (!c) {
+            c = hero.cur[name] = {
+                p: bone.position.clone(),
+                q: bone.quaternion.clone(),
+            }
+        }
+        if (tgt.p) { tmpV.set(tgt.p[0], tgt.p[1], tgt.p[2]); bone.position.lerpVectors(c.p, tmpV, 0.32); c.p.copy(bone.position) }
+        if (tgt.q) { tmpQ.set(tgt.q[0], tgt.q[1], tgt.q[2], tgt.q[3]); bone.quaternion.slerpQuaternions(c.q, tmpQ, 0.32); c.q.copy(bone.quaternion) }
+    }
+}
+
 // pose a rig from sim state — crouch, grab, tumble, tilt
-export function poseRider(root, r, tick) {
-    const { roll, armR, legs } = root.userData
+export function poseRider(root, r, tick, override) {
+    const { roll, armR, legs, hero } = root.userData
+    const pose = heroPose(r, override)
     if (r.tumble > 0) {
         roll.rotation.x = tick * 0.6
         roll.rotation.z = Math.sin(tick * 0.9) * 1.2
-        legs.scale.y = 1
-        armR.rotation.z = 2
+        if (hero) blendHero(hero, pose)
+        else { legs.scale.y = 1; armR.rotation.z = 2 }
         return
     }
     if (r.air) {
         roll.rotation.x = (r.flip * Math.PI) / 180 * (r.flip < 0 ? -1 : 1) * -1
         roll.rotation.z = 0
-        armR.rotation.z = r.grab ? 1.1 : 0.35
-        legs.scale.y = 0.9
+        if (hero) blendHero(hero, pose)
+        else { armR.rotation.z = r.grab ? 1.1 : 0.35; legs.scale.y = 0.9 }
         return
     }
     const c = r.crouch ? 0.78 : r.tuck ? 0.66 : 1
     roll.rotation.x = 0
     roll.rotation.z = r.steerSm * 0.28
-    legs.scale.y = c
-    legs.position.y = 0.55 * c
-    armR.rotation.z = r.tuck ? 0.9 : 0.2
+    if (hero) blendHero(hero, pose)
+    else {
+        legs.scale.y = c
+        legs.position.y = 0.55 * c
+        armR.rotation.z = r.tuck ? 0.9 : 0.2
+    }
 }
 
 export function sprayField(lite) {

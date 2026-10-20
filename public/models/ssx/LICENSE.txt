@@ -1,0 +1,9 @@
+Rider model: KayKit : Adventurers Character Pack 1.0 — "Rogue_Hooded"
+Author: Kay Lousberg (www.kaylousberg.com), distributed as CC0 1.0 Universal
+Source: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0
+        addons/kaykit_character_pack_adventures/Characters/gltf/Rogue_Hooded.glb
+License: http://creativecommons.org/publicdomain/zero/1.0/
+
+Transformed for this game (public/models/ssx/rogue.glb):
+- kept animations Idle, Jump_Start, Jump_Idle (pose bases); dropped the rest
+- removed weapon/quiver prop meshes attached to the rig

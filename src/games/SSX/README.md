@@ -44,10 +44,34 @@ the boost meter and a full meter at takeoff throws OVER.
 8. Carved tracks: hard carving on the snow etches grooves that fade in ~5 s;
    straight riding and airborne boards leave nothing.
 
+## The hero rider (#548)
+
+The player rides a real rigged character: KayKit Adventurers "Rogue_Hooded"
+(CC0 — full provenance in `public/models/ssx/LICENSE.txt`), loaded with
+GLTFLoader from `public/models/ssx/rogue.glb` (trimmed: weapons/props
+removed, kept the `Idle`, `Jump_Start`, `Jump_Idle`, `Sit_Chair_Pose` clips).
+
+- `art.js` composes six poses from baked clip frames plus per-bone euler
+  offsets (`STANCE` twists the character sideways onto the board; `OFFS`
+  deepens tuck/crouch/grab/tumble) and blends every bone toward its target
+  each frame, so pose changes read as motion. Boardside grab, aero tuck and
+  the ollie crouch all read against the sky at chase-cam distance.
+- The deck is sculpted procedurally (`makeBoard`): sidecut outline, nose/tail
+  rocker, striped topsheet. No CC0 snowboard exists in the KayKit/Quaternius/
+  Kenney packs, so the board is the one hand-built piece — the model itself
+  is the CC0 rig.
+- A dark ellipse tracks the snow under the rider (fades with air height) so
+  the pack reads when flying.
+- The GLB is fetched lazily and the primitive box-rider stays on screen until
+  it arrives, then swaps — the game (and `ssxcheck`) never block on it. CPU
+  riders keep the primitive rigs until the polish pass gives the field models.
+
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 62 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 70 checks, blocks merges (CI `static`)
+npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
+                                         #   keys drive poses, race still winnable
 ```
 
 The check proves the autopilot wins RACE (30/30 standings, zero bails) and
@@ -67,7 +91,10 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
   (spins still work via the d-pad mid-air). No analogue stick yet.
 - No audio soundtrack beyond the synth pulse. Snow tracks are now geometry:
   fading carve grooves under the board (#310), on top of the speed-scaled spray.
-- No browser-drive harness script yet (`ssxplay`) — the merge gate is Node.
+- No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
+  `ssxmodelcheck` covers the hero rider in the browser.
+- Only the player has the real model; the CPU field is still box rigs, and
+  the grab pose could reach deeper to the board edge (polish pass).
 
 ## Lateral sign and the tuck/scrub (#547)
 
