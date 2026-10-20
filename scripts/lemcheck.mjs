@@ -20,7 +20,9 @@
 //    an identical state hash, and a script with ONE tick bumped must not.
 
 import { LEVELS, buildLevel } from '../src/games/Lemmings/levels.js'
+import { LAYOUT } from '../src/games/Lemmings/layout.js'
 import * as sim from '../src/games/Lemmings/sim.js'
+import { readFileSync } from 'node:fs'
 
 const args = process.argv.slice(2)
 const MUT = args.includes('--mutate')
@@ -241,6 +243,31 @@ for (let i = 0; i < LEVELS.length; i++) {
     }
 }
 
+// ------------------------------------------------ first-run readability (#422) ---
+// Items 3-5 of the first-play pass: the skill bar must be docked off the
+// playfield, the HUD count must read as plain English, and the attract copy
+// must fit without a wall of text. The numbers live in layout.js (audited
+// here); these pins additionally prove index.jsx actually consumes them.
+const docked = () => LAYOUT.panelReserve >= 40
+const linesFit = () => LAYOUT.attractLines.length >= 2 && LAYOUT.attractLines.every(l => l.length <= LAYOUT.maxTextW)
+const hudPlain = () => `${LAYOUT.hud.pre}9${LAYOUT.hud.mid}0` === 'IN PLAY 9 · LOST 0'
+{
+    section('FIRST-RUN READABILITY (#422 items 3-5: docked bar, badges, attract copy)')
+    ok(docked(), `the playfield reserves only ${LAYOUT.panelReserve}px at the bottom — the skill bar floats over the walking ground (#422 item 3)`)
+    ok(linesFit(), `an attract line exceeds ${LAYOUT.maxTextW} chars (clips at the edge): ${JSON.stringify(LAYOUT.attractLines)}`)
+    for (const l of LAYOUT.attractLines) {
+        ok(!/scripts\/|\.mjs/.test(l), `harness leak in attract copy: "${l}"`)
+    }
+    ok(hudPlain(), `cryptic HUD count "${LAYOUT.hud.pre}9${LAYOUT.hud.mid}0" — say IN PLAY n · LOST m (#422 item 5)`)
+    const src = readFileSync(new URL('../src/games/Lemmings/index.jsx', import.meta.url), 'utf8')
+    ok(/from '\.\/layout\.js'/.test(src), 'index.jsx does not import layout.js — the audited numbers are decoration')
+    ok(/LAYOUT\.panelReserve/.test(src), 'the stage never docks: LAYOUT.panelReserve unused in index.jsx (#422 item 3)')
+    ok(/LAYOUT\.hud\.pre/.test(src), 'the HUD prints its own count wording instead of LAYOUT.hud (#422 item 5)')
+    ok(/nearestLemming\(gs, cursor\.x, cursor\.y\)/.test(src), 'no hover ring: paint must preview nearestLemming(gs, cursor.x, cursor.y) so the Space target is visible before the press (#422 item 4)')
+    ok(/LAYOUT\.badge\.climber/.test(src) && /L\.climber &&/.test(src), 'climber badge missing — a lemming that crested a wall is indistinguishable from the crowd (#422 item 4)')
+    ok(/LAYOUT\.badge\.digger/.test(src), 'digger badge missing — the tunnel tool must use the shared badge color (#422 item 4)')
+}
+
 // ------------------------------------------------------------------ mutations ---
 if (MUT) {
     section('MUTATIONS — each one MUST turn an honest check red')
@@ -258,6 +285,22 @@ if (MUT) {
     tryMut('maxFall = 0 (every hop splats)', c => { c.maxFall = 0 }, () => runSolver(0).win)
     tryMut('blast = 0.6 (door never opens)', c => { c.blast = 0.6 }, () => runSolver(2).win)
     tryMut('digSp = 0 (massif stays shut)', c => { c.digSp = 0 }, () => runSolver(1).win)
+    const tryMutL = (name, apply, probe) => {
+        const pr = LAYOUT.panelReserve
+        const lines = [...LAYOUT.attractLines]
+        const hud = { ...LAYOUT.hud }
+        ok(probe(), `mutation harness broken: baseline for '${name}' is already false`)
+        apply()
+        const verdict = probe()
+        LAYOUT.panelReserve = pr
+        LAYOUT.attractLines.length = 0; LAYOUT.attractLines.push(...lines)
+        Object.assign(LAYOUT.hud, hud)
+        console.log(`  mut ${name}: ${verdict ? 'SURVIVED (BAD)' : 'caught by the audit'}`)
+        ok(!verdict, `${name} SURVIVED — a check stopped touching this rule`)
+    }
+    tryMutL('panelReserve = 0 (bar back over the ground)', () => { LAYOUT.panelReserve = 0 }, docked)
+    tryMutL('a 60-char attract line (clips at the edge)', () => { LAYOUT.attractLines.push('hold, release, tap, arrows, space and everything else a wall of text says') }, linesFit)
+    tryMutL('HUD back to the cryptic 9+0', () => { LAYOUT.hud.pre = ''; LAYOUT.hud.mid = '+' }, hudPlain)
 }
 
 console.log(`\nlemcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
