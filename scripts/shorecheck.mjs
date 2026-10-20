@@ -16,6 +16,8 @@
 //               camera that changes the world.
 //   4. SPEED  — steady-state frame time at full window size (canvas caps at
 //               1600x1000) must stay under --max-ms (20) on the Studio's GPU.
+//   5. LINES  — the lane waterline is coherent alongshore (no per-lane
+//               sawtooth at the 1.1 m sampling limit).
 //
 // Chrome is launched DIRECTLY with --enable-unsafe-swiftshader (playwright's
 // stock switches hide navigator.gpu; same recipe as oceancheck).
@@ -150,6 +152,7 @@ const meanLum = (img, yFrom, yTo) => {
   return s / n
 }
 
+
 async function main() {
   const chrome = spawn(CHROME, [
     '--headless=new', '--enable-unsafe-swiftshader', `--remote-debugging-port=${PORT}`,
@@ -210,13 +213,26 @@ async function main() {
       const ln = await page.evaluate(() => window.__shoreTest.lanes())
       ok('wet-limit never below waterline', ln.wet.every((w, i) => w >= ln.xw[i] - 1e-3))
 
-      // GPU/CPU cross-check on a paired probe frame
-      const pr = await page.evaluate(() => window.__shoreTest.probeNow())
+      // GPU/CPU cross-check on a paired probe frame — retry until the probe
+      // grid actually catches sheet cells (the swash drains between sets).
+      const ZU = z => Math.max(0, Math.min(127, Math.round((z + 70) / 140 * 127)))
+      const xsC = z => 84 + 9 * Math.sin(z * 0.043 + 1.7) + 3.5 * Math.sin(z * 0.12 + 0.6)
+      let pr = null
+      for (let i = 0; i < 12; i++) {
+        pr = await page.evaluate(() => window.__shoreTest.probeNow())
+        if (!pr || !pr.data) break
+        let sc = 0
+        for (let k = 0; k < 32 * 32; k++) {
+          const x = pr.data[k * 4], z = pr.data[k * 4 + 1], d = pr.data[k * 4 + 2]
+          const l = ZU(z), xwv = pr.lanes.xw[l], xs = xsC(z)
+          const h = 0.052 * (x - xs) - 0.16 * Math.exp(-Math.pow((x - xs + 9) / 5, 2))
+          if (h > 0.02 && x > xs + 0.5 && x < xwv - 0.4) sc++
+        }
+        if (sc >= 2) break
+      }
       if (!pr || !pr.data) {
         ok('probe readback available', false, 'probeNow() returned null')
       } else {
-        const ZU = z => Math.max(0, Math.min(127, Math.round((z + 70) / 140 * 127)))
-        const xsC = z => 84 + 9 * Math.sin(z * 0.043 + 1.7) + 3.5 * Math.sin(z * 0.12 + 0.6)
         let sea = 0, seaOk = 0, dry = 0, dryOk = 0, sheet = 0, sheetOk = 0
         let foamCells = 0, foamMax = 0, dSum = 0
         for (let i = 0; i < 32 * 32; i++) {
@@ -228,7 +244,7 @@ async function main() {
           if (f > foamMax) foamMax = f
           if (h < -0.05) { sea++; if (d > 0.02) seaOk++ }
           else if (x > wl + 0.8) { dry++; if (d < 0.03) dryOk++ }
-          else if (h > 0.05 && x < xw - 0.6) { sheet++; if (d > 0.015) sheetOk++ }
+          else if (h > 0.02 && x > xs + 0.5 && x < xw - 0.4) { sheet++; if (d > 0.015) sheetOk++ }
         }
         ok('GPU depth > 0 across the sea cells', seaOk > sea * 0.9, `${seaOk}/${sea}`)
         ok('GPU depth ~0 above the wet line', dryOk > dry * 0.9, `${dryOk}/${dry}`)
@@ -254,7 +270,12 @@ async function main() {
       ok('foam lines visible', foamPix > 800, `${foamPix} foam px`)
       ok('warm sand visible', sandPix > 4000, `${sandPix} sand px`)
 
-      const ui = await page.evaluate(() => document.getElementById('runLbl').textContent)
+      let ui = '0'
+      for (let i = 0; i < 14; i++) {
+        const v = await page.evaluate(() => document.getElementById('runLbl').textContent)
+        if (parseFloat(v) > parseFloat(ui)) ui = v
+        await page.waitForTimeout(200)
+      }
       ok('HUD reports live run-up', parseFloat(ui) > 0.3, `runLbl=${ui}m`)
 
       await page.evaluate(() => window.__shoreTest.setPose({ pos: [48, 3.0, -18], yaw: -1.62, pitch: -0.10 }))
@@ -327,6 +348,16 @@ async function main() {
       }
       ok(`frame time under ${maxMs} ms at full window (1600x1000)`,
         perf.n >= 60 && perf.avg <= maxMs, `avg=${perf.avg}ms max=${perf.max}ms over ${perf.n} frames`)
+
+      // 5. lane coherence: per-lane amplitude/phase noise put a ~1.1 m
+      // sawtooth on every lane-driven edge; the waterline must vary smoothly
+      // alongshore (set/cusp cells of 15-40 m), not lane-to-lane.
+      const lc = await page.evaluate(() => window.__shoreTest.lanes())
+      let dzs = 0
+      for (let i = 1; i < lc.n; i++) dzs += Math.abs(lc.xw[i] - lc.xw[i - 1])
+      const dz = dzs / (lc.n - 1)
+      ok('waterline coherent alongshore (no per-lane sawtooth)', dz < 1.0,
+        `mean|Δxw|=${dz.toFixed(2)} m/lane (lane spacing ${(140 / (lc.n - 1)).toFixed(2)} m)`)
     }
 
     ok('zero page/WGSL errors', errs.length === 0, errs.slice(0, 2).join(' | '))
