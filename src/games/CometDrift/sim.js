@@ -76,7 +76,7 @@ function mkKart(def, row) {
         y: p.y + Math.sin(p.a + Math.PI / 2) * lat,
         a: p.a, v: 0, idx: i, hint: i, sUnwrap: p.s,
         boostT: 0, boostTier: -1, spinT: 0, driftT: 0, charge: -1, steerVis: 0, driftG: 0,
-        grade: 0,
+        grade: 0, braking: 0,
         cp: 0, lap: 0, lapStart: 0, lapTimes: [], place: row + 1,
         finished: false, finishT: 0,
         offroad: false, bumpCd: 0, anim: 0, goT: 0,
@@ -126,11 +126,13 @@ function tierFor(charge) {
 function drive(g, k, inp) {
     if (k.finished) {
         k.v *= 0.97
+        k.braking = 0
         k.x += Math.cos(k.a) * k.v; k.y += Math.sin(k.a) * k.v
         return
     }
     if (k.spinT > 0) {
         k.spinT--
+        k.braking = 0
         k.a += 0.34
         k.v *= 0.975
     } else {
@@ -145,6 +147,7 @@ function drive(g, k, inp) {
         const steer = typeof inp.steer === 'number' ? inp.steer : ((inp.l ? -1 : 0) + (inp.r ? 1 : 0))
         const thr = typeof inp.thr === 'number' ? inp.thr : (inp.u ? 1 : 0)
         const brk = typeof inp.brk === 'number' ? inp.brk : (inp.d ? 1 : 0)
+        k.braking = brk > 0 ? 1 : 0
         if (thr > 0 && k.v < (boost ? cap : top)) k.v += CFG.acc * thr
         else if (thr <= 0 && k.v > top && !boost) k.v -= CFG.coast * 6
         if (brk > 0) k.v -= CFG.brake * brk
@@ -176,7 +179,10 @@ function drive(g, k, inp) {
         if (dr) {
             k.driftG = Math.abs(steer) > 0 ? CFG.driftGrace : k.driftG - 1
             k.driftT++
+            const prevTier = tierFor(k.charge)
             k.charge = Math.max(k.charge, k.driftT)
+            const tierNow = tierFor(k.charge)
+            if (tierNow > prevTier) g.events.push({ e: 'tier', who: k.name, tier: tierNow })
             k.a += steer * CFG.steer * grip * CFG.driftMul
             k.x += Math.cos(k.a + steer * Math.PI * 0.35) * k.v * CFG.slide
             k.y += Math.sin(k.a + steer * Math.PI * 0.35) * k.v * CFG.slide

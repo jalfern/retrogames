@@ -958,8 +958,11 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     const wired = [
         ['../src/games/MarioKart/index.jsx', /ev\.e === 'spin' && ev\.who === 'PLAYER'.*rumble\(/, 'mario-kart: the PLAYER spin-out rumbles'],
         ['../src/games/MarioKart/index.jsx', /ev\.e === 'bump' && ev\.who === 'PLAYER'.*rumble\(/, 'mario-kart: the PLAYER bump rumbles'],
-        ['../src/games/CometDrift/index.jsx', /ev\.e === 'spin' && ev\.who === 'PLAYER'.*rumble\(/, 'comet-drift: the PLAYER spin-out rumbles'],
-        ['../src/games/CometDrift/index.jsx', /ev\.e === 'bump' && ev\.who === 'PLAYER'.*rumble\(/, 'comet-drift: the PLAYER bump rumbles'],
+        // #576: CometDrift's player kart is named COMET (the PLAYER constant in
+        // sim.js is { name: 'COMET' }) — the 'PLAYER' pin here matched a
+        // condition that could never fire, so the spin/bump rumble had been dead.
+        ['../src/games/CometDrift/index.jsx', /ev\.e === 'spin' && ev\.who === 'COMET'.*rumble\(/, 'comet-drift: the COMET spin-out rumbles'],
+        ['../src/games/CometDrift/index.jsx', /ev\.e === 'bump' && ev\.who === 'COMET'.*rumble\(/, 'comet-drift: the COMET bump rumbles'],
         ['../src/games/Joust/index.jsx', /e\.t === 'death'.*rumble\(/, 'joust: the player death rumbles'],
         ['../src/games/RaccoonHeist/index.jsx', /e\.type === 'caught'.*rumble\(/, 'raccoon-heist: a caught raccoon rumbles'],
         ['../src/games/RaccoonHeist/index.jsx', /e\.type === 'bust'.*rumble\(/, 'raccoon-heist: a bust rumbles'],
