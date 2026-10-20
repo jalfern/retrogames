@@ -414,6 +414,39 @@ Mutant proof at ship time: pin the temp gate to a constant `0.32` turns
 "a tunic under a torch catches amber" red (332/333); restored → 333/333.
 `popplay` 17/17, zero page errors (reaches the palace levels).
 
+## QA #326 — the audio polish pass (duel duck, stone flip, gait, dread, riser, stings)
+
+- **Duel duck.** `duckFor` gained a second tier: `parry`/`hit`/`hitPlayer`/
+  `guardWind` duck the bed to `DUEL_DUCK=0.63` (~4 dB) — shallower than the
+  chase duck on purpose; duels fire many cues in a row and a deeper pump would
+  hiccup the ostinato.
+- **Stone room flip.** `room` is now a three-layer cue (grinding slab sweep +
+  dust rumble + a low sine tail that reads as the reverb change between rooms)
+  and dips the bed via `ROOM_DUCK=0.55`. The bare 150 Hz tick is gone.
+- **Gait variety.** The sim tracks `p.stepParity` (toggles per footfall,
+  emitted as `foot.foot`) and the `foot` recipe alternates L/R pitch at every
+  gait; `grab` became a grip scrape (grit noise + downward drag).
+- **Chomper dread.** New sim event `chompWarn`: exactly `CFG.chompWarnLead=20`
+  ticks before the jaws reach down, deterministic per cycle, emitted only for
+  jaws in the on-screen room. Rising sawtooth whir in the SFX table.
+- **Clock riser.** `stepFor(clock, base)` tightens the bed's step (×0.85 under
+  five minutes, ×0.72 in the last minute); `index.jsx` feeds it to
+  `AudioController.setMusicStep` every frame while a bed plays.
+- **Per-cause death stings.** `die` branches on `e.why` — fall is a low thud,
+  spikes a high bite, chomper a snap, sword a slash, poison a gurgle, shadow a
+  sigh; unknown causes keep the classic descent. Mirrors the per-cause poses.
+
+Stage-QA added 17 `popcheck` clauses (350 total): duel-duck semantics + peak
+over ducked bed + ordinary cues never ducking; room two-layer + dip; L/R
+footprint difference at walk/run/careful + alternating parity across a real
+sim walk; grab scrape shape; whir pinned at exactly 20 ticks before down,
+jaws down when the whir tails, one whir per jaw per cycle, silence for
+off-screen jaws; six distinct death stings + fall-low/spikes-high + never
+silent; riser monotonicity + shell wiring. Mutant proofs at ship time:
+lead 15 → 3 red (pin), duel branch removed → 1 red, riser pinned flat → 1
+red, parity ternaries removed → 2 red; restored → 350/350.
+`lint:pop` clean, `popplay` 17/17 zero page errors on the live bed.
+
 ## Honest gaps (the deep pass continues — see #316)
 
 - Touch: the pad has no Shift, so hang-grab on a phone leans on climbing

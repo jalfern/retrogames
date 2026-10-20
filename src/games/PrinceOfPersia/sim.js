@@ -34,7 +34,7 @@ export const CFG = {
     guardWind: 18, guardHit0: 13, guardHit1: 19, guardCool: 44, parryStun: 28,
     looseT: 60,
     gateOpen: 0.7, gateRise: 0.12, gateFall: 0.004, gateSlam: 0.5,
-    chompPeriod: 150, chompWait: 96, chompDrop: 30, chompRest: 8,
+    chompPeriod: 150, chompWait: 96, chompDrop: 30, chompRest: 8, chompWarnLead: 20,
     flipDur: 600, levDur: 600,
     drinkT: 26, drawT: 16, sheatheT: 16, startT: 12, skidT: 8, turnT: 10,
     // Stage 3: the twelve levels' signatures
@@ -92,7 +92,7 @@ function princeAt(g, pos) {
         // Stage-2 pose timers (visual only — they never feed the physics)
         drinkT: 0, drawT: 0, sheatheT: 0, startT: 0, skidT: 0, turnT: 0, landT: 0,
         // Stage-4 gait timer (emits `foot` events only — never feeds the physics)
-        stepPhase: 0,
+        stepPhase: 0, stepParity: 0,
         duelDrawn: false, careful: false, jumpStill: false,
     }
 }
@@ -328,6 +328,14 @@ export function step(g, inp = {}) {
     if (g.status !== 'play') return
 
     g.clock -= 1
+    // #326-4: the jaws whine in the last ~20 ticks before they reach down —
+    // one deterministic telegraph per cycle per jaw, ahead of the strike check,
+    // and only for jaws in the room on screen (no cross-room mud).
+    for (const ch of g.chomps) {
+        if (roomOf(ch.c) === g.room && (g.tick + ch.phase) % CFG.chompPeriod === CFG.chompWait - CFG.chompWarnLead) {
+            g.events.push({ t: g.tick, type: 'chompWarn', c: ch.c, r: ch.r })
+        }
+    }
     if (g.clock <= 0) {
         g.clock = 0
         g.deathReason = 'time'
@@ -521,7 +529,8 @@ export function step(g, inp = {}) {
             p.stepPhase += Math.abs(p.vx)
             if (p.stepPhase >= CFG.stride) {
                 p.stepPhase = 0
-                g.events.push({ t: g.tick, type: 'foot', run: p.anim === 'run', soft: p.anim === 'careful' })
+                g.events.push({ t: g.tick, type: 'foot', run: p.anim === 'run', soft: p.anim === 'careful', foot: p.stepParity })
+                p.stepParity ^= 1
             }
         } else p.stepPhase = 0
     } else if (p.vy < 0) p.anim = 'jump'

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { audioController } from '../../utils/AudioController'
+import { audioController, MUSIC } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
@@ -8,7 +8,7 @@ import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { drawScene, VW, VH } from './art.js'
 import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
-import { SFX, trackFor, duckFor } from './music.js'
+import { SFX, trackFor, duckFor, stepFor } from './music.js'
 
 const LITE = typeof window !== 'undefined' && /[?&]lite=/.test(window.location.search)
 
@@ -183,6 +183,9 @@ const PrinceOfPersiaGame = () => {
         let musicTrack = null
         const music = () => {
             const wanted = attract ? null : trackFor(g)
+            // #326-5: the hour's anxiety is tempo — the bed tightens as the
+            // clock drains (sub-5 min, then the last minute again).
+            if (wanted) audioController.setMusicStep(stepFor(g.clock, MUSIC[wanted].step))
             if (wanted === musicTrack) return
             musicTrack = wanted
             if (wanted) audioController.startMusic(wanted)

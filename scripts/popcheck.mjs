@@ -18,7 +18,7 @@ import { makeGame, step, CFG, cloneGame, stateHash, chompDown, GUARD_STYLE, gate
 import { decide, P } from '../src/games/PrinceOfPersia/planner.js'
 import { LEVEL_COUNT, makeLevel, RW, FH, GROUND, roomOf, SOLID, SPIKE, LOOSE, GATE, EXITPLATE } from '../src/games/PrinceOfPersia/levels.js'
 import { POSES, poseOf, RUN_FRAMES, DEATH_ANIMS, PALETTES, guardLook, gateBottom, gateDrawOpen, GATE_CLEAR, lightAt, torchGlow, facet, darkAlpha, LIGHT_AMBIENT, TORCH_RADIUS, LIGHT_DIR, escortSilhouettes, DOOR_ZONE, LIGHT_AMBIENT_LITE, HUD_LINE, torchSum, tempAt, bounceAt, poolVisibleAt, ambientFor, coolGlow, coolAt, moonSources, rimColor, bandAt, propShade, MOON_RADIUS, MOON_STRENGTH, VW, MOON_DILUTE, moonTint, coolBandAt, rimAlpha, paneKeyY, paneShift, WINDOW_ROW_PX, cloudCross, SKY_DRIFT, starField, skyTwinkle, shaftMotes, SHAFT_MOTES, archPath } from '../src/games/PrinceOfPersia/art.js'
-import { SFX, trackFor, TRACKS, duckFor, DUCK_LEVEL, BED_VOICE, CHASE_CUES } from '../src/games/PrinceOfPersia/music.js'
+import { SFX, trackFor, TRACKS, duckFor, DUCK_LEVEL, DUEL_DUCK, ROOM_DUCK, BED_VOICE, CHASE_CUES, stepFor, PRESSURE_MIN, FINAL_MIN } from '../src/games/PrinceOfPersia/music.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 
 let pass = 0, fail = 0
@@ -1282,6 +1282,89 @@ const FLASK_KINDS = () => ({ r: 1, '+': 1, b: 1, f: 1, u: 1 })
 
     // determinism + palace-only guards hold across the whole stage
     ok('S11: determinism holds — still no Math.random anywhere in art.js', !/Math\.random/.test(artSrc))
+}
+
+// ---- 12. QA #326 audio pass: duel duck, stone flip, gait parity, whir, riser, stings
+{
+    const bedRaw = BED_VOICE * MUSIC_BUS
+    const peak = (steps) => Math.max(...steps.map((st) => (st[0] === 'noise' ? st[2] : st[0] === 'sweep' ? st[5] : st[4])))
+    ok('S12: duel cues duck the bed ~4 dB — shallower than the chase, never silent',
+        DUEL_DUCK > DUCK_LEVEL && DUEL_DUCK < 1
+        && duckFor('parry') === DUEL_DUCK && duckFor('hit') === DUEL_DUCK
+        && duckFor('hitPlayer') === DUEL_DUCK && duckFor('guardWind') === DUEL_DUCK)
+    ok('S12: a parry ring still peaks over the ducked bed', peak(SFX.parry({})) > bedRaw * DUEL_DUCK)
+    ok('S12: ordinary sounds never trip the duel duck (foot, potion, checkpoint)',
+        duckFor('foot') === 1 && duckFor('potion') === 1 && duckFor('checkpoint') === 1)
+    ok('S12: the room flip punches two stone layers and dips the bed for the slide',
+        SFX.room({}).length >= 2 && duckFor('room') === ROOM_DUCK && ROOM_DUCK > 0 && ROOM_DUCK < 1)
+    ok('S12: L and R footfalls differ at every gait (walk, run, careful)',
+        JSON.stringify(SFX.foot({ foot: 0 })) !== JSON.stringify(SFX.foot({ foot: 1 }))
+        && JSON.stringify(SFX.foot({ foot: 0, run: true })) !== JSON.stringify(SFX.foot({ foot: 1, run: true }))
+        && JSON.stringify(SFX.foot({ foot: 0, soft: true })) !== JSON.stringify(SFX.foot({ foot: 1, soft: true })))
+    {
+        const wg = makeGame(0)
+        setGround(wg, 1.5 * T, 8 * T)
+        const par = []
+        let t = 0
+        while (t++ < 400) { step(wg, { right: true, shift: true }); for (const e of wg.events) if (e.type === 'foot') par.push(e.foot); wg.events.length = 0 }
+        ok('S12: the sim reports alternating foot parity across a real walk',
+            par.length >= 8 && par.every((v, i) => v === i % 2))
+    }
+    ok('S12: grab is a grip scrape (grit + drag), not the old single 220 Hz blip',
+        SFX.grab({}).length >= 2 && SFX.grab({}).some((st) => st[0] === 'noise') && SFX.grab({}).some((st) => st[0] === 'sweep'))
+    {
+        const cg = makeGame(0)
+        const ch = cg.level.chomps[0]
+        setGround(cg, (roomOf(ch.c) * RW + 1.5) * T, 8 * T)
+        run(cg, 2)   // let the screen-flip settle g.room onto the jaw's room
+        ok('S12: the whir lead is pinned at 20 ticks (~1/3 s of dread)', CFG.chompWarnLead === 20)
+        const lead = CFG.chompWait - 20
+        cg.tick = ((lead - ch.phase - 1) % CFG.chompPeriod + CFG.chompPeriod) % CFG.chompPeriod
+        cg.events.length = 0
+        run(cg, 1)
+        const warnedAt = cg.tick
+        ok('S12: the whir fires exactly chompWarnLead ticks before the jaws reach down',
+            hasEv(cg, 'chompWarn', (e) => e.c === ch.c) && !chompDown(cg, ch))
+        cg.events.length = 0
+        run(cg, 20)
+        ok('S12: and by the time the whir tails off, the jaws are down', chompDown(cg, ch))
+        cg.events.length = 0
+        run(cg, CFG.chompPeriod)
+        ok('S12: exactly one whir per jaw per cycle (deterministic telegraph)',
+            cg.events.filter((e) => e.type === 'chompWarn' && e.c === ch.c).length === 1
+            && cg.events.find((e) => e.type === 'chompWarn' && e.c === ch.c).t === warnedAt + CFG.chompPeriod)
+    }
+    {
+        const silentRoom = makeGame(0)
+        const ch = silentRoom.level.chomps[0]
+        silentRoom.chomps[0].c = (roomOf(ch.c) + 1) * RW + 1
+        const lead = CFG.chompWait - CFG.chompWarnLead
+        silentRoom.tick = ((lead - ch.phase - 1) % CFG.chompPeriod + CFG.chompPeriod) % CFG.chompPeriod
+        silentRoom.events.length = 0
+        run(silentRoom, CFG.chompPeriod)
+        ok('S12: jaws in an off-screen room stay quiet (no cross-room whir mud)',
+            !silentRoom.events.some((e) => e.type === 'chompWarn'))
+    }
+    {
+        const WHY = ['spikes', 'chomper', 'fall', 'sword', 'poison', 'shadow']
+        const stings = WHY.map((why) => JSON.stringify(SFX.die({ why })))
+        ok('S12: all six death causes sting differently (no one saw for everything)',
+            new Set(stings).size === WHY.length)
+        ok('S12: the fall is a low thud, the impale a high bite — mirror of the pose audit',
+            SFX.die({ why: 'fall' }).every((st) => st[0] !== 'sweep')
+            && SFX.die({ why: 'spikes' }).some((st) => st[0] === 'sweep')
+            && Math.max(...SFX.die({ why: 'fall' }).filter((st) => st[0] === 'tone').map((st) => st[1]))
+                < Math.max(...SFX.die({ why: 'spikes' }).filter((st) => st[0] === 'tone').map((st) => st[1])))
+        ok('S12: an unknown cause still gets the classic descent (never silence)',
+            SFX.die({}).length >= 2 && SFX.die({ why: 'time' }) !== null)
+    }
+    ok('S12: the bed tightens as the hour drains — monotonic riser, never zero',
+        stepFor(60 * 60 * 60, 0.13) === 0.13
+        && stepFor(PRESSURE_MIN - 1, 0.13) < 0.13
+        && stepFor(FINAL_MIN - 1, 0.13) < stepFor(PRESSURE_MIN - 1, 0.13)
+        && stepFor(0, 0.13) > 0)
+    ok('S12: the riser reaches the engine — the shell calls setMusicStep with stepFor',
+        /setMusicStep\(stepFor/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'PrinceOfPersia', 'index.jsx'), 'utf8')))
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
