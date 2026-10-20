@@ -20,6 +20,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { currentPad, setPointer, pointerGesture } from '../../utils/onePad'
 import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
+import { LAYOUT } from './layout.js'
 import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
 
 const TS = 8                                   // internal pixels per tile
@@ -316,7 +317,10 @@ const LemGame = () => {
                 ctx.fillRect(px + 1, py + 6, 2, 2 - leg); ctx.fillRect(px + 4, py + 6, 2, 1 + leg)
                 if (L.state === 'block') { ctx.fillStyle = LEM_COLORS.body; ctx.fillRect(px - 3, py + 3, 3, 1); ctx.fillRect(px + 6, py + 3, 3, 1) }
                 if (L.state === 'climb') { ctx.fillStyle = LEM_COLORS.head; ctx.fillRect(px + (L.dir > 0 ? 5 : -1), py - 2, 2, 3) }
-                if (L.digger && L.state !== 'bomb') { ctx.fillStyle = '#c9c9c9'; ctx.fillRect(px + (L.dir > 0 ? 6 : -3), py + 4, 3, 1) }
+                if (L.digger && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.digger; ctx.fillRect(px + (L.dir > 0 ? 6 : -3), py + 4, 3, 1) }
+                // #422 item 4: a life-badge on flagged lemmings, so a climber is
+                // still recognisable after it crests and goes back to walking.
+                if (L.climber && L.state !== 'bomb') { ctx.fillStyle = LAYOUT.badge.climber; ctx.fillRect(px + 1, py - 1, 5, 1) }
             }
 
             // cursor (play) or autopilot ghost (attract): in attract the box
@@ -335,6 +339,18 @@ const LemGame = () => {
             ctx.fillStyle = playing ? '#ffd83d' : 'rgba(255,216,61,0.6)'
             ctx.font = '7px monospace'
             ctx.fillText(SKILL_NAME[skill][0], Math.round(cx * TS - 2), Math.round(cy * TS + 12))
+
+            // #422 item 4: the hover ring — WHICH lemming Space/tap would pick
+            // right now. Same pick function applySkill uses, so the ring never
+            // lies about the target.
+            if (playing && !gest.aim) {
+                const hov = nearestLemming(gs, cursor.x, cursor.y)
+                if (hov) {
+                    ctx.strokeStyle = 'rgba(255,216,61,0.75)'
+                    ctx.lineWidth = 1
+                    ctx.beginPath(); ctx.arc(Math.round(hov.x * TS), Math.round((hov.y - 0.5) * TS), 8, 0, Math.PI * 2); ctx.stroke()
+                }
+            }
 
             // #432: press, preview, release — the ring on the lemming that WILL
             // get the skill. Drawn last (above everything the finger covers) and
@@ -365,7 +381,7 @@ const LemGame = () => {
             if (hud.time) hud.time.style.width = `${Math.max(0, 100 * (1 - gs.t / meta.time))}%`
             if (hud.out) hud.out.textContent = `${gs.exited}/${meta.need}`
             if (hud.score) hud.score.textContent = String(gs.score).padStart(5, '0')
-            if (hud.left) hud.left.textContent = `${gs.spawned - gs.exited - gs.dead}+${gs.dead}`
+            if (hud.left) hud.left.textContent = `${LAYOUT.hud.pre}${gs.spawned - gs.exited - gs.dead}${LAYOUT.hud.mid}${gs.dead}`
             for (const s of SKILLS) {
                 const el = hud['sk_' + s]
                 if (el) {
@@ -628,7 +644,11 @@ const LemGame = () => {
     const play = screen === 'play'
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
-            <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
+            {/* #422 item 3: the skill panel is DOCKED, not floated — while
+                playing, the stage reserves its height, so the letterboxed canvas
+                ends above the bar and the bar never covers the walking ground. */}
+            <div ref={stageRef} className="absolute inset-0 flex items-center justify-center"
+                style={{ bottom: play ? LAYOUT.panelReserve : 0 }} />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-amber-50 font-mono text-xs">
@@ -637,7 +657,7 @@ const LemGame = () => {
                         <div ref={setHud('time')} className="h-full" style={{ background: 'linear-gradient(90deg,#ffd83d,#e23b3b)', width: '100%' }} />
                     </div>
                     <span>OUT <span ref={setHud('out')} className="font-bold text-green-300" /></span>
-                    <span className="opacity-80">here/dead <span ref={setHud('left')} /></span>
+                    <span className="opacity-80" ref={setHud('left')} />
                     <span className="ml-auto text-xl font-bold" style={{ textShadow: '0 2px 5px #000' }}>
                         <span ref={setHud('score')}>00000</span>
                     </span>
@@ -649,10 +669,11 @@ const LemGame = () => {
                     <h1 className="text-5xl font-black text-green-300" style={{ textShadow: '0 4px 0 #1d4a1d, 0 10px 24px #000' }}>LEMMINGS-LITE</h1>
                     <p className="text-amber-100/90 font-mono mt-1 text-sm">they walk. they fall. you decide otherwise.</p>
                     <p className="text-white font-mono font-bold mt-8 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-amber-200/80 font-mono text-xs mt-2 px-6">
-                        hold a lemming to preview · release to assign · tap a skill to pick it · arrows + Space work on a keyboard<br />
-                        this demo is a proven solution, replayed move for move — determinism, on screen
-                    </p>
+                    <div className="inline-block bg-black/55 rounded-lg px-4 py-2 mt-3">
+                        {LAYOUT.attractLines.map((l) => (
+                            <p key={l} className="text-amber-100/90 font-mono text-xs leading-relaxed whitespace-nowrap">{l}</p>
+                        ))}
+                    </div>
                 </div>
             )}
 
