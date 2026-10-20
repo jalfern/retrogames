@@ -13,6 +13,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -20,6 +21,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan, decide } from './planner.js'
 import { WAVES } from './waves.js'
+import { PRESS, MESSAGES } from './attract.js'
 
 const SIM_MS = 1000 / 60
 
@@ -458,18 +460,14 @@ const MissileBattleGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black" style={{ color: '#ff7d5d', textShadow: '3px 0 0 #39d2ff, -3px 0 0 #ff3d6e, 0 10px 24px #000' }}>MISSILE BATTLE</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm">saturation. intercept. chain.</p>
-                    <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
-                        TAP the sky (or arrows + SPACE) puts an interceptor from the nearest battery right there<br />
-                        the blast kills anything it touches — and every kill chains a smaller blast<br />
-                        warheads SPLIT, bombers DROP, smart bombs WEAVE — the scripts never random, never unfair<br />
-                        10 interceptors per battery per wave; the clock between waves rebuilds the cities<br />
-                        lose all six cities and the map goes dark — this demo is the autopilot&apos;s own proven run, tick for tick
-                    </p>
-                </div>
+                <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
+                        <h1 className="text-4xl font-black" style={{ color: '#ff7d5d', textShadow: '3px 0 0 #39d2ff, -3px 0 0 #ff3d6e, 0 10px 24px #000' }}>MISSILE BATTLE</h1>
+                        <p className="text-white font-mono font-bold mt-3 animate-pulse">{PRESS}</p>
+                        <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
+                    </div>
+                </>
             )}
 
             {screen === 'over' && end && (

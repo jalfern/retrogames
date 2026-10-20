@@ -13,6 +13,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -21,6 +22,7 @@ import { currentPad, setPointer, pointerGesture } from '../../utils/onePad'
 import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
 import { LAYOUT } from './layout.js'
+import { PRESS, MESSAGES } from './attract.js'
 import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
 
 const TS = 8                                   // internal pixels per tile
@@ -679,16 +681,14 @@ const LemGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-8 text-center pointer-events-none">
-                    <h1 className="text-5xl font-black text-green-300" style={{ textShadow: '0 4px 0 #1d4a1d, 0 10px 24px #000' }}>LEMMINGS-LITE</h1>
-                    <p className="text-amber-100/90 font-mono mt-1 text-sm">they walk. they fall. you decide otherwise.</p>
-                    <p className="text-white font-mono font-bold mt-8 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <div className="inline-block bg-black/55 rounded-lg px-4 py-2 mt-3">
-                        {LAYOUT.attractLines.map((l) => (
-                            <p key={l} className="text-amber-100/90 font-mono text-xs leading-relaxed whitespace-nowrap">{l}</p>
-                        ))}
+                <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-8 text-center pointer-events-none">
+                        <h1 className="text-5xl font-black text-green-300" style={{ textShadow: '0 4px 0 #1d4a1d, 0 10px 24px #000' }}>LEMMINGS-LITE</h1>
+                        <p className="text-white font-mono font-bold mt-8 animate-pulse">{PRESS}</p>
+                        <AttractMessage className="text-amber-100/90 mt-2 px-8" messages={MESSAGES} />
                     </div>
-                </div>
+                </>
             )}
 
             {screen === 'over' && end && (
