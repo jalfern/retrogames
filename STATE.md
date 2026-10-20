@@ -15,6 +15,11 @@
   errors. Mutant (blendHero→stand) = 12 red, restored. ssxcheck 70/70.
 - QA polish pass filed as **#615** (CPU field models, grab depth, board
   liveries, idle life, boot fit, dusk/night readability).
+- **Prod router bug found during verify**: `vercel.json` whitelists asset
+  prefixes one-by-one and had none for `models` — prod answered
+  HTML@200 for the GLB, so production SSX silently ran the box-rider
+  fallback. Fix = PR #617 (one rewrite `/retrogames/models/:path*`),
+  diagnostic posted on #548 per rule 8.
 
 ## Playable now
 `https://jalfern.com/retrogames/ssx` — player rides the hooded rogue; per-pose
@@ -41,6 +46,10 @@ missing assets, so verify with content-length 326172 on
   geometrically but is never static → sub-pixel AA shimmer (~5/255 even when
   paused). Pose gates must use silhouette histograms (per-row/col dark-pixel
   counts): noise floor 2 vs pair diffs 54+.
+- **New `public/*` top-level prefix ≠ published**: `vercel.json` whitelists
+  prefixes (`js-dos`, `games`, `demos`, `replays`, icons…) — add the rewrite
+  in the SAME PR that ships the files, and verify prod with expected
+  content-length, never 200 alone (HTML@200 for missing assets).
 - **playwright `press` ignores extra modifiers** — `press('Slash',
   {shiftKey:true})` does NOT deliver Shift; down/up the modifier.
 - **Sim freezes on pause, rendering doesn't** — DEV pose overrides keep
