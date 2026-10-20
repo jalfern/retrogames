@@ -11,3 +11,4 @@ dist
 scripts/.shots/*.png
 scripts/.shots/*.jpg
 scripts/.shots/*.jpeg
+.wrangler/
