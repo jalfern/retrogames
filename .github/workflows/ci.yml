@@ -242,6 +242,9 @@ jobs:
       # autopilot that drives the attract demo clears lines on every probe seed.
       - run: npm run lint:tetris
       - run: npm run tetrischeck
+      # Rule-6 attract gate (#365): one cycling message, dimmed demo, blinking
+      # prompt — with six mutants that must die.
+      - run: npm run tetrischeck -- --mutate
       # Twenty-ninth scoped gate: JOUST (Williams 1982). The joust rule (the
       # lower lance loses; dead-even kills both), the egg chain (kill -> egg ->
       # collect or hatch into the next-stronger rider), the wrap, the troll
@@ -250,6 +253,7 @@ jobs:
       # attract demo clears waves 1-2 with the score ledger recomputed.
       - run: npm run lint:joust
       - run: npm run joustcheck
+      - run: npm run joustcheck -- --mutate
       # Thirtieth scoped gate: Q*BERT (Gottlieb 1982). The 28-cube geometry
       # (symmetric diagonals, the fall-off-the-skirt edges, the disc-at-apex
       # rule), the flip state machines (all-green round 1, 5-colour cycle
@@ -260,6 +264,7 @@ jobs:
       # pinned against literal numbers in the pure sim.
       - run: npm run lint:qbert
       - run: npm run qbertcheck
+      - run: npm run qbertcheck -- --mutate
       # ARKANOID: geometry flood-check, capsule uniqueness, paddle/silver/gold
       # rule pins, the 15-eye boss ledger, determinism and the pilot's
       # zero-death full clear, all in Node.

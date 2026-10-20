@@ -9,6 +9,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -403,13 +404,9 @@ const TetrisGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 bottom-8 text-center pointer-events-none px-6">
-                    <p className="text-cyan-300 font-mono font-bold mt-1 animate-pulse text-sm">PRESS ANY KEY / TAP &mdash; 0-9 PICKS THE START LEVEL</p>
-                    <AttractMessage className="mt-1 text-white/70" messages={[
-                        'arrows slide · UP / X / SPACE turns · DOWN soft-drops',
-                        'the NES ruleset: DAS 16/6, soft drop every 2 frames, no hard drop, no hold, no kicks',
-                        '40 / 100 / 300 / 1200 points × level · a new level every 10 lines · lines clear, gravity does not forgive',
-                    ]} />
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-cyan-300">{PRESS}</p>
                 </div>
             )}
 
