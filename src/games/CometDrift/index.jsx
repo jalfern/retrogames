@@ -9,6 +9,7 @@ import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoos
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx } from './art.js'
 import { drawText } from './font.js'
+import { engineVoice, driftScrape, sandWhoosh } from './engineSfx.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 
@@ -209,14 +210,24 @@ export default function CometDrift() {
             }
         }
 
-        // the placeholder engine loop: a buzz whose pitch rides speed, with a
-        // step up per boost tier so the ladder is audible as well as visible
+        // #440 item 6: the engine bed is a voice, not a metronome. engineVoice
+        // (engineSfx.js) is the pure law — pitch rides speed + boost tier and
+        // wobbles on two slow sines, the pop period is continuous (no
+        // round(v) gear-step) — while driftScrape adds a kerb crackle under
+        // held drifts and sandWhoosh a low bed off-road. Phases accumulate
+        // here; the laws stay pure so cometcheck can gate them.
+        let engAcc = 0; let scrapeAcc = 0; let whooshAcc = 0
         const engine = (live) => {
-            if (!live || g.phase !== 'race') return
+            if (!live || g.phase !== 'race') { engAcc = 0; scrapeAcc = 0; whooshAcc = 0; return }
             const P = g.karts[0]
-            if (P.v < 0.5) return
-            const period = Math.max(3, 15 - Math.round(P.v))
-            if (g.tick % period === 0) audioController.playTone(58 + P.v * 13 + (P.boostT > 0 ? 34 + P.boostTier * 52 : 0), 0.035, 'square', 0.028)
+            const e = engineVoice(P.v, P.boostT > 0 ? P.boostTier : -1, g.tick)
+            if (!e) return
+            engAcc += 1 / e.period
+            if (engAcc >= 1) { engAcc -= 1; audioController.playTone(e.freq, 0.035, 'square', e.vol) }
+            const sc = driftScrape(P.driftT, P.v)
+            if (sc) { scrapeAcc += 1 / sc.period; if (scrapeAcc >= 1) { scrapeAcc -= 1; audioController.playFilteredNoise(sc.dur, sc.vol, sc.freq) } } else scrapeAcc = 0
+            const ws = sandWhoosh(P.offroad, P.v)
+            if (ws) { whooshAcc += 1 / ws.period; if (whooshAcc >= 1) { whooshAcc -= 1; audioController.playFilteredNoise(ws.dur, ws.vol, ws.freq) } } else whooshAcc = 0
         }
 
         const project = (wx, wy) => {
