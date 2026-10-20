@@ -8,6 +8,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -385,17 +387,14 @@ const PapersPleaseMinGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black" style={{ color: '#e8c15a', textShadow: '2px 0 0 #a33c3c, -2px 0 0 #49b25a, 0 10px 24px #000' }}>PAPERS, PLEASE-MIN</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm">glory to arstotzka. the wall is getting higher.</p>
-                    <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY — 1 · 2 · 3 · 4 PICK A WEEK</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
-                        read the wall: date, rulebook, entry list, wanted sheet, scale &mdash; the booth never hides its evidence<br />
-                        A / ADMIT lets them in &middot; D / DENY turns them back &middot; the scale reads the truth under their feet<br />
-                        three mistakes end a day; the rulebook grows every morning; seven days survive the week<br />
-                        the demo is the perfect inspector&apos;s own proven week, stamped tick for tick
-                    </p>
-                </div>
+                <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
+                        <h1 className="text-4xl font-black" style={{ color: '#e8c15a', textShadow: '2px 0 0 #a33c3c, -2px 0 0 #49b25a, 0 10px 24px #000' }}>PAPERS, PLEASE-MIN</h1>
+                        <p className="text-white font-mono font-bold mt-2 animate-pulse">{PRESS}</p>
+                        <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
+                    </div>
+                </>
             )}
 
             {screen === 'over' && end && (

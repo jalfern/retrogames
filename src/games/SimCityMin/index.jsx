@@ -12,6 +12,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -390,18 +392,14 @@ const SimCityMinGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black" style={{ color: '#8fff9f', textShadow: '3px 0 0 #39d2ff, -3px 0 0 #ff7d3d, 0 10px 24px #000' }}>SIMCITY-MIN</h1>
-                    <p className="text-amber-200/90 font-mono mt-1 text-sm">roads conduct the grid. jobs summon the people.</p>
-                    <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY — 1 · 2 · 3 PICK A MAP</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
-                        streets first — power only travels the road graph, so every district needs a wire to a plant<br />
-                        residents follow jobs: zone RES next to IND/COM, or the census stays empty<br />
-                        T or B cycles tools; [ and ] steer the tax; tap places right under the cursor<br />
-                        the script lights real fires and walks a tornado — stations douse, ash remembers its zone<br />
-                        hit the charter population before the deadline; the demo is the autopilot&apos;s own proven run
-                    </p>
-                </div>
+                <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
+                        <h1 className="text-4xl font-black" style={{ color: '#8fff9f', textShadow: '3px 0 0 #39d2ff, -3px 0 0 #ff7d3d, 0 10px 24px #000' }}>SIMCITY-MIN</h1>
+                        <p className="text-white font-mono font-bold mt-2 animate-pulse">{PRESS}</p>
+                        <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
+                    </div>
+                </>
             )}
 
             {screen === 'over' && end && (
