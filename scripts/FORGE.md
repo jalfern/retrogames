@@ -128,7 +128,12 @@ AGENTS.md wins.
     --option "<A>" --option "<B>" --default "<what you'll do anyway>"`
     (Options + Default + 48 h deadline; ≤3 open per lane; taste/priority/
     hard-to-undo only — ask rarely, then keep building; the warden's sweep
-    takes the default if the deadline passes). Commit STATE.md to main ONLY if the forge game
+    takes the default if the deadline passes). Publish your shift notes (#614):
+    write `{headline, lede, notes:[{tag:"w"|"h"|"k", text}]}` to a JSON file and
+    run `SHIFTREPORT_NOTES=<file> SHIFTREPORT_PUSH=1 node scripts/shiftreport.mjs`
+    — the headline, lede and 3–4 notes are the ONLY model-written parts of the
+    report; every number is computed by the script, and the warden's 4 h tick
+    carries your notes until a later session replaces them. Commit STATE.md to main ONLY if the forge game
    merged this session (`git commit` on main is otherwise forbidden — if no
    game merged, leave STATE.md written but uncommitted and say why in it —
     step 1 knows that dirt from a corpse, and the QA lane parks it at
