@@ -14,8 +14,9 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import {
-    makeRun, step, stateHash, cloneState, CFG, SPELLS, SONGS, GEAR, knownSpells, DX, DY,
+    makeRun, step, stateHash, cloneState, CFG, SPELLS, SONGS, GEAR, knownSpells, DX, DY, BANDS,
 } from './sim.js'
+import { TOWN_SPECIALS } from './dungeons.js'
 import { nextAction } from './solver.js'
 import { playEvents } from './sound.js'
 import { drawDungeon, drawTown, drawMinimap, drawCombatMobs, VW, VH } from './art.js'
@@ -79,7 +80,7 @@ const BardsTaleGame = () => {
                 else if (e.type === 'treasure') say(`${e.gold} GOLD`)
                 else if (e.type === 'gotFloorKey') say('A RUSTY KEY')
                 else if (e.type === 'lockedGate') say('THE GATE BITES SHUT — PROVE THE DEEP DARKS')
-                else if (e.type === 'atDoor') say(e.open ? 'THE KEY TURNS' : 'LOCKED — FIND THE KEY')
+                else if (e.type === 'atDoor') say(e.open ? `${e.name} — SPACE TO ENTER` : `${e.name} — THE TOWER KEY LOCKS IT`)
                 else if (e.type === 'thaw') say('MANGAR FALLS — SKARA BRAE THAWS')
                 else if (e.type === 'bump') say('')
             }
@@ -139,6 +140,11 @@ const BardsTaleGame = () => {
             if (toast > 0 && !pausedRef.current) toast--
             setUi({
                 mode: gs.mode, fi: gs.fi, menu: gs.menu ? gs.menu.kind : null,
+                menuName: gs.menu ? gs.menu.name : null,
+                band: gs.band, sp: gs.sp, towerKey: !!gs.towerKey,
+                target: gs.combat && gs.combat.mobs[gs.target]
+                    ? { name: gs.combat.mobs[gs.target].name, hp: gs.combat.mobs[gs.target].hp, maxHp: gs.combat.mobs[gs.target].maxHp, band: gs.combat.mobs[gs.target].band }
+                    : null,
                 known: knownSpells(gs).map(([code]) => code),
                 party: gs.party.map((x) => ({ name: x.name, cls: x.cls, hp: x.hp, maxHp: x.maxHp, mp: x.mp, maxMp: x.maxMp, lvl: x.lvl, alive: x.alive })),
             })
@@ -330,11 +336,31 @@ const BardsTaleGame = () => {
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-[28%] text-center text-amber-100 font-mono font-bold text-lg transition-opacity duration-500 px-4" style={{ opacity: 0, textShadow: '0 0 12px #a04' }} />
 
+                {/* town legend (#423): letters on the map are doorway places */}
+                {ui.fi < 0 && (
+                    <div className="absolute top-9 left-2 flex flex-wrap gap-x-2 gap-y-0.5 max-w-[60%] font-mono text-[8px] text-amber-100/90 bg-black/45 rounded px-1.5 py-1">
+                        {Object.entries(TOWN_SPECIALS).map(([ch, sp]) => (
+                            <span key={ch}><b className="text-amber-300">{ch.toUpperCase()}</b> {sp.name}</span>
+                        ))}
+                    </div>
+                )}
+
+                {/* combat readout (#423): who/where/how much */}
+                {ui.mode === 'combat' && ui.target && (
+                    <div className="absolute inset-x-0 top-[16%] flex flex-col items-center gap-1 pointer-events-none">
+                        <div className="font-mono text-[11px] text-red-200 bg-black/55 rounded px-2 py-0.5">
+                            <b>{ui.target.name}</b> · {ui.target.band <= 1 ? 'MELEE' : `${BANDS[ui.target.band - 1]} FT`}
+                            <span className="text-white/70"> · {ui.target.hp}/{ui.target.maxHp}</span>
+                        </div>
+                        <div className="w-40 h-1.5 bg-white/15 rounded"><div className="h-1.5 bg-red-500 rounded" style={{ width: `${Math.max(0, (ui.target.hp / ui.target.maxHp) * 100)}%` }} /></div>
+                    </div>
+                )}
+
                 {/* party bar */}
                 <div className="absolute bottom-2 left-2 right-2 grid grid-cols-6 gap-1 font-mono text-[9px] text-white">
                     {(ui.party || []).map((h) => (
                         <div key={h.name} className={`rounded px-1 py-0.5 border ${h.alive ? 'bg-black/50 border-white/15' : 'bg-red-950/50 border-red-500/30 line-through opacity-70'}`}>
-                            <div className="truncate">{h.name}</div>
+                            <div className="flex items-center justify-between gap-1"><span className="truncate">{h.name}</span><span className="text-red-300 tabular-nums">{h.hp}/{h.maxHp}</span></div>
                             <div className="h-1 bg-white/10 rounded mt-0.5"><div className="h-1 bg-red-500 rounded" style={{ width: `${Math.max(0, (h.hp / h.maxHp) * 100)}%` }} /></div>
                             {h.maxMp > 0 && <div className="h-1 bg-white/10 rounded mt-0.5"><div className="h-1 bg-blue-400 rounded" style={{ width: `${(h.mp / h.maxMp) * 100}%` }} /></div>}
                         </div>
@@ -345,6 +371,11 @@ const BardsTaleGame = () => {
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 pointer-events-auto max-w-[10rem]">
                     {menuOpts && (
                         <>
+                            <div className="text-[9px] font-mono text-amber-300 text-center leading-tight px-1">
+                                <div className="font-bold tracking-wide">{ui.menuName}</div>
+                                {ui.menu === 'board' && <div className="text-violet-200">{ui.sp} SKILL POINTS</div>}
+                                {ui.menu === 'guild' && <div className="text-white/60">HEAR THE CALL</div>}
+                            </div>
                             {menuOpts.map((o) => (
                                 <button key={o.cmd} onClick={() => doCmd(o.cmd)} disabled={o.off}
                                     className={`text-[10px] font-mono px-2 py-1 rounded border text-left ${o.off ? 'opacity-40 border-white/10 text-white/50' : 'border-amber-400/50 bg-amber-900/40 text-amber-100 active:bg-amber-700/60'}`}>{o.label}</button>
