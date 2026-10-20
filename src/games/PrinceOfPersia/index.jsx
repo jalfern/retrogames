@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
-import { drawScene, VW, VH } from './art.js'
+import { drawScene, VW, VH, fitAttractFont } from './art.js'
 import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
 import { SFX, trackFor, duckFor, stepFor } from './music.js'
 
@@ -96,8 +96,8 @@ const PrinceOfPersiaGame = () => {
                 `clock=${clockText(g)} cp=${g.cpReached ? 'y' : 'n'} lev=${g.p.lev} flip=${g.p.flip}`,
             ],
             actions: [
-                { label: 'skip level', run: () => { g.status = 'clear'; g.statusT = 69 } },
-                { label: 'win', run: () => { g.levelIndex = LEVEL_COUNT - 1; g.guards.forEach((q) => { q.dead = true }); g.status = 'clear'; g.statusT = 69 } },
+                { label: 'skip level', run: () => { g.status = 'clear'; g.statusT = CFG.clearT } },
+                { label: 'win', run: () => { g.levelIndex = LEVEL_COUNT - 1; g.guards.forEach((q) => { q.dead = true }); g.status = 'clear'; g.statusT = CFG.clearT } },
                 { label: 'give sword', run: () => { g.sword = true } },
                 { label: 'open gate', run: () => { g.gateOpen[g.room] = 1 } },
                 { label: 'prognosis', run: () => { prognose() === 'win' ? audioController.playTone(880, 0.1, 'square', 0.1) : audioController.playTone(110, 0.2, 'square', 0.12) } },
@@ -120,6 +120,15 @@ const PrinceOfPersiaGame = () => {
 
         const readInputs = () => ({ ...keys })
 
+        // the attract -> play transition, shared by key and pointer (AGENTS:
+        // any key OR tap starts) so a desktop click or a mobile tap both launch it.
+        const startAttract = () => {
+            attract = false
+            g = makeGame(0)
+            Object.keys(keys).forEach((k) => { keys[k] = false })
+            audioController.playTone(660, 0.08, 'square', 0.12)
+        }
+
         const handleKeyDown = (e) => {
             if (e.key === '?' || (e.shiftKey && e.key === '/')) {
                 const next = !pausedRef.current
@@ -128,12 +137,7 @@ const PrinceOfPersiaGame = () => {
                 return
             }
             if (pausedRef.current) return
-            if (attract) {
-                attract = false
-                g = makeGame(0)
-                Object.keys(keys).forEach((k) => { keys[k] = false })
-                audioController.playTone(660, 0.08, 'square', 0.12)
-            }
+            if (attract) startAttract()
             if (e.code === 'Space') { keys.jump = true; e.preventDefault() }
             if (e.code === 'ArrowLeft') { keys.left = true; e.preventDefault() }
             if (e.code === 'ArrowRight') { keys.right = true; e.preventDefault() }
@@ -153,6 +157,14 @@ const PrinceOfPersiaGame = () => {
         }
         const handleRestartKey = (e) => {
             if (!pausedRef.current && e.code === 'KeyR' && (g.status === 'lost' || g.status === 'win')) g = makeGame(0)
+        }
+        // a bare tap/click on the playfield starts the game from the attract
+        // screen (and restarts from the end cards) — keydown alone left desktop
+        // clickers and mobile tappers just watching the autopilot demo.
+        const handleCanvasPointer = (e) => {
+            if (pausedRef.current) return
+            if (attract) { e.preventDefault(); startAttract() }
+            else if (g.status === 'win' || g.status === 'lost') { e.preventDefault(); g = makeGame(0); endSeen = false }
         }
 
         // ---- audio driven off sim events ----------------------------------------
@@ -250,7 +262,7 @@ const PrinceOfPersiaGame = () => {
                 ctx.strokeStyle = 'rgba(232,208,96,0.55)'
                 ctx.beginPath(); ctx.moveTo(0, bandTop + 0.5); ctx.lineTo(VW, bandTop + 0.5)
                 ctx.moveTo(0, bandTop + bandH - 0.5); ctx.lineTo(VW, bandTop + bandH - 0.5); ctx.stroke()
-                ctx.font = 'bold 18px monospace'
+                ctx.font = `bold ${fitAttractFont(msg, VW - 28, 18, 9)}px monospace`
                 ctx.fillStyle = '#e8d060'
                 ctx.fillText(msg, VW / 2, bandTop + 22)
                 ctx.font = '9px monospace'
@@ -304,6 +316,25 @@ const PrinceOfPersiaGame = () => {
                 ctx.fillStyle = '#8a8ab0'
                 ctx.fillText('PRESS R TO TRY AGAIN', VW / 2, VH / 2 + 8)
             }
+
+            // first-time controls: a slim strip under the HUD in the opening room,
+            // and a combat reminder the moment a guard first engages.
+            if (g.status === 'play' && !attract) {
+                const firstRoom = g.levelIndex === 0 && g.room === 0
+                const guardEngaged = g.guards.some((q) => !q.dead && q.engaged)
+                if (firstRoom || guardEngaged) {
+                    const strip = guardEngaged ? 'X STRIKE  ·  UP BLOCK  ·  SHIFT GRAB'
+                        : '← → MOVE  ·  SPACE JUMP  ·  X STRIKE  ·  SHIFT GRAB'
+                    ctx.font = '9px monospace'
+                    ctx.textAlign = 'center'
+                    const w = ctx.measureText(strip).width + 12
+                    const cy = 22 + 15
+                    ctx.fillStyle = 'rgba(6,6,14,0.72)'
+                    ctx.fillRect(VW / 2 - w / 2, cy - 11, w, 14)
+                    ctx.fillStyle = guardEngaged ? '#e8b04a' : '#9aa0c0'
+                    ctx.fillText(strip, VW / 2, cy)
+                }
+            }
         }
 
         let lastTime = 0
@@ -333,6 +364,7 @@ const PrinceOfPersiaGame = () => {
         window.addEventListener('keydown', handleRestartKey)
         window.addEventListener('keyup', handleKeyUp)
         canvas.focus()
+        canvas.addEventListener('pointerdown', handleCanvasPointer)
         raf = requestAnimationFrame(loop)
 
         return () => {
@@ -341,6 +373,7 @@ const PrinceOfPersiaGame = () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keydown', handleRestartKey)
             window.removeEventListener('keyup', handleKeyUp)
+            canvas.removeEventListener('pointerdown', handleCanvasPointer)
             unmountDbg()
             audioController.stopMusic()
             delete window.__popTest

@@ -33,6 +33,9 @@ export const CFG = {
     strikeDur: 24, strikeHit0: 8, strikeHit1: 16, lunge: 1.6, lungeT: 10,
     guardWind: 18, guardHit0: 13, guardHit1: 19, guardCool: 44, parryStun: 28,
     looseT: 60,
+    // QA #421: the level-clear card holds this many ticks (~3 s) before the next
+    // room loads; the debug "skip level" / "win" hooks jump straight to the end.
+    clearT: 180,
     gateOpen: 0.7, gateRise: 0.12, gateFall: 0.004, gateSlam: 0.5,
     chompPeriod: 150, chompWait: 96, chompDrop: 30, chompRest: 8, chompWarnLead: 20,
     flipDur: 600, levDur: 600,
@@ -306,6 +309,18 @@ export function buttonsPressed(g) {
     return out
 }
 
+// QA #421: is the prince standing on the raise/drop plate at (c, r)? The art uses
+// this to dip + flash the plate exactly while it's being pressed. Same horizontal
+// "you're on this button" test as buttonsPressed (hopping over still triggers the
+// gate), but only reads as pressed while grounded so the dip doesn't float mid-air.
+export function platePressed(g, c, r) {
+    const p = g.p
+    if (!p || !p.onGround) return false
+    const code = cell(g, c, r)
+    if (code !== RAISE && code !== DROP) return false
+    return Math.abs(p.x - (c + 0.5) * T) < T * 0.7
+}
+
 export function step(g, inp = {}) {
     g.tick++
     if (g.shake > 0) g.shake--
@@ -318,10 +333,18 @@ export function step(g, inp = {}) {
         return
     }
     if (g.status === 'clear') {
-        if (g.statusT++ > 70) {
+        // QA #421: the card holds ~3s so you can actually read it, but a fresh
+        // key press — not one still held from the walk-in — skips it the moment
+        // you're ready to move on.
+        const fresh = ['left', 'right', 'up', 'down', 'jump', 'shift', 'atk']
+            .some((k) => !!inp[k] && !g.prev[k])
+        g.prev = { left: !!inp.left, right: !!inp.right, up: !!inp.up, down: !!inp.down, jump: !!inp.jump, shift: !!inp.shift, atk: !!inp.atk }
+        if (fresh || g.statusT >= CFG.clearT) {
             const next = g.levelIndex + 1
             if (next >= LEVEL_COUNT) { g.status = 'win'; g.events.push({ t: g.tick, type: 'win' }) }
             else loadLevel(g, next)
+        } else {
+            g.statusT++
         }
         return
     }
@@ -374,6 +397,11 @@ export function step(g, inp = {}) {
     const dir = gateUp ? 1 : gateDown ? -1 : 0
     if (dir !== 0 && (dir !== g.gateMotion || g.tick % CFG.chainEvery === 0)) {
         g.events.push({ t: g.tick, type: 'chain', up: dir === 1 })
+    }
+    // QA #421: a distinct latch the moment a gate STARTS closing behind you.
+    // 'chain' is the continuous rattle; this single cue sells "the gate is going".
+    if (dir === -1 && g.gateMotion !== -1) {
+        g.events.push({ t: g.tick, type: 'gateClose' })
     }
     g.gateMotion = dir
     if (btn.plate >= 0 && !g.exitOpen) { g.exitOpen = true; g.events.push({ t: g.tick, type: 'door' }) }

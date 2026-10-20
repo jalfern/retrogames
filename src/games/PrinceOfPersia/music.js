@@ -81,6 +81,9 @@ export const SFX = {
     land: (e) => (e.floors >= 2 ? [noise(0.07, 0.16), tone(80, 0.1, 'triangle', 0.2), tone(55, 0.14, 'sine', 0.16, 0.02)]
         : [noise(0.045, 0.1), tone(95, 0.07, 'triangle', 0.14)]),
     chain: (e) => [noise(0.045, 0.07), tone(e.up ? 620 : 430, 0.035, 'square', 0.045)],
+    // QA #421: the single "latch" when a gate starts closing behind you — a low
+    // thunk plus a downward settle, distinct from the per-tick 'chain' rattle.
+    gateClose: () => [noise(0.06, 0.12), tone(95, 0.12, 'square', 0.13), tone(58, 0.2, 'sine', 0.11, 0.03)],
 
     jump: () => [sweep(300, 520, 0.07, 'triangle', 0.12)],
     hangjump: () => [sweep(320, 200, 0.09, 'triangle', 0.1)],
