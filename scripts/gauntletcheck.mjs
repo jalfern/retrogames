@@ -507,6 +507,57 @@ console.log('2p')
         `dist ${(Math.hypot(g3.partner.x - g3.hero.x, g3.partner.y - g3.hero.y)).toFixed(2)}`)
 }
 
+// ------------------------------------------------------ shared screen (#524) ----
+// The cabinet has ONE shared screen: the camera frames both heroes and the
+// screen edge is a wall neither can leave. The wall is a SIM rule (step() pulls
+// every seat back), so the CPU/model/net seats live by it too. A lone hero still
+// roams to the maze edge unchanged.
+console.log('shared screen (#524)')
+{
+    const mm = await import('../src/games/Gauntlet/minimap.js')
+    const openGrid = () => Array.from({ length: H }, (_, r) =>
+        (r === 0 || r === H - 1) ? '#'.repeat(W) : '#' + '.'.repeat(W - 2) + '#')
+    const arena = (opts) => {
+        const g = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf', ...opts })
+        g.levelData = { ...g.levelData, grid: openGrid(), exit: [99, 99] }
+        g.doors = []; g.monsters = []
+        g.gens.forEach((x) => { x.alive = false })
+        g.hero.hp = 1e9; if (g.partner) g.partner.hp = 1e9
+        g.hero.y = 12; if (g.partner) g.partner.y = 12
+        return g
+    }
+    // P1 pushes left, P2 pushes right: they drift apart until the edge pins P2.
+    const gs = arena(); gs.partnerHuman = true; gs.hero.x = 8; gs.partner.x = 8
+    for (let i = 0; i < 400; i++) { step(gs, { left: true }, { right: true }); gs.events.length = 0 }
+    const rect = mm.viewRect(gs.hero, gs.partner)
+    ok(mm.inView(rect, gs.hero.x, gs.hero.y) && mm.inView(rect, gs.partner.x, gs.partner.y),
+        'shared screen: both heroes stay framed', `H${gs.hero.x.toFixed(1)} P${gs.partner.x.toFixed(1)}`)
+    const sep = Math.abs(gs.partner.x - gs.hero.x)
+    ok(sep <= mm.VWC + 0.2, 'shared screen: the edge caps how far apart they drift', `sep ${sep.toFixed(2)} <= ${mm.VWC}`)
+    // the window must CENTRE on the pair (level-clamped) — not sit on P1 while
+    // P2 is merely pinned at P1's edge (a hero-centred camera passes "framed").
+    const bA = mm.viewBounds(rect)
+    const emx = Math.max(mm.VWC / 2, Math.min(W - mm.VWC / 2, (gs.hero.x + gs.partner.x) / 2))
+    const emy = Math.max(mm.VHC / 2, Math.min(H - mm.VHC / 2, (gs.hero.y + gs.partner.y) / 2))
+    ok(Math.abs((bA.minx + bA.maxx) / 2 - emx) < 0.01 && Math.abs((bA.miny + bA.maxy) / 2 - emy) < 0.01,
+        'shared screen: the camera centres on the pair, not on P1', `cx ${((bA.minx + bA.maxx) / 2).toFixed(2)} vs ${emx.toFixed(2)}`)
+    const px0 = gs.partner.x
+    for (let i = 0; i < 10; i++) { step(gs, { left: true }, { right: true }); gs.events.length = 0 }
+    ok(Math.abs(gs.partner.x - px0) < 0.05, 'shared screen: P2 pinned at the edge holds, never slides off', `dx ${(gs.partner.x - px0).toFixed(3)}`)
+    ok(gs.partner.x > 10, 'shared screen: P2 walked away before the wall caught it', `P2 ${gs.partner.x.toFixed(1)}`)
+    // a seat that gets flung past the edge (CPU/model/net, no pad) is pulled back
+    const g2 = arena({ partnerKey: 'valkyrie' }); g2.partnerHuman = false; g2.hero.x = 6; g2.partner.x = 23
+    for (let i = 0; i < 3; i++) { step(g2, {}, {}); g2.events.length = 0 }
+    const r2 = mm.viewRect(g2.hero, g2.partner)
+    ok(g2.partner.x < 22.9 && mm.inView(r2, g2.partner.x, g2.partner.y) && Math.abs(g2.partner.x - g2.hero.x) <= mm.VWC + 0.2,
+        'shared screen: a seat pushed past the edge is pulled back by the sim', `P${g2.partner.x.toFixed(1)} H${g2.hero.x.toFixed(1)}`)
+    // one player: the lone hero still roams to the maze edge, unchanged
+    const g3 = arena({ partner: false }); g3.hero.x = 8
+    for (let i = 0; i < 200; i++) { step(g3, { left: true }); g3.events.length = 0 }
+    ok(g3.hero.x < 3 && mm.inView(mm.viewRect(g3.hero, null), g3.hero.x, g3.hero.y),
+        'shared screen: a lone hero still roams free (1P unchanged)', `H${g3.hero.x.toFixed(1)}`)
+}
+
 // ---------------------------------------------------------------- partner ----
 // The CPU partner opens the slam doors it walks into (issue #275 item 6): the
 // hero pushes a corridor open and it slams shut behind, and the partner
@@ -675,6 +726,9 @@ if (process.argv.includes('--mutate')) {
         ['#554 minimap drops the other hero', 'src/games/Gauntlet/index.jsx', 'const mo = otherEnt()', 'const mo = null'],
         ['#554 HUD hides the other hero online', 'src/games/Gauntlet/index.jsx', 'hudOther && !hudOther.down && (gs.partnerHuman || net.role)', 'hudOther && !hudOther.down && gs.partnerHuman'],
         ['#554 shell stops routing through seat.js', 'src/games/Gauntlet/index.jsx', 'const otherEnt = () => otherHero(gs, net.role)', 'const otherEnt = () => null'],
+        ['#524 camera ignores the partner (P2 not framed)', 'src/games/Gauntlet/minimap.js', 'const ax = p ? (hero.x + p.x) / 2 : hero.x', 'const ax = hero.x'],
+        ['#524 the shared-view wall is removed from the sim', 'src/games/Gauntlet/sim.js', '    clampToSharedView(gs)\n    updateItems(gs)', '    updateItems(gs)'],
+        ['#524 the edge is too loose to wall players in', 'src/games/Gauntlet/minimap.js', 'maxx: rect.camX / PX + VWC, maxy: rect.camY / PX + VHC', 'maxx: rect.camX / PX + VWC * 2, maxy: rect.camY / PX + VHC * 2'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
