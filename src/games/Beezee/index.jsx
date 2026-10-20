@@ -16,11 +16,13 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import PauseOverlay from '../../components/PauseOverlay'
+import AttractMessage from '../../components/AttractMessage'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { newGame, step, autopilot, windAt, CFG, FIXED_DT, GARDENS } from './sim.js'
+import { PRESS, MESSAGES } from './attract.js'
 
 const texFrom = (w, h, paint) => {
     const c = document.createElement('canvas')
@@ -659,13 +661,10 @@ const BeeGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-14 text-center pointer-events-none">
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <h1 className="text-6xl font-black text-amber-300" style={{ textShadow: '0 4px 0 #7a4a00, 0 10px 28px #000' }}>BEEZEE</h1>
-                    <p className="text-amber-100/90 font-mono mt-2 text-sm">a honeybee&apos;s last hour of light</p>
-                    <p className="text-white font-mono font-bold mt-10 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-amber-200/80 font-mono text-xs mt-2 px-6">
-                        hover flower centers — deep cups only answer in UV —<br />fly into the hive to bank the nectar before the sun sets
-                    </p>
+                    <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                 </div>
             )}
 
