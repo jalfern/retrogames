@@ -15,7 +15,7 @@
 // scripts/galactcheck.mjs (Node) — this suite proves the browser plumbing.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.GALAGA_URL || 'http://localhost:5173/retrogames/galaga'
+const URL = process.env.GALAGA_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/galaga`
 await requireDevServer(URL)
 
 const r = new Report('galactplay')

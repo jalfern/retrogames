@@ -1,58 +1,72 @@
 #!/bin/zsh
 # The QA MASTER driver — one session = one feedback item, lane parallel to
-# the forge. One QA lane per MACHINE: the session always runs here on the
-# Studio, and the machine named is where its model runs (through its tunnel).
+# the forge. Every session runs here on the Studio; the node named is where
+# its model runs.
 #
-#   forge-qa.sh [--foreground] [mini|mbp]      (default: mini)
+#   forge-qa.sh [--foreground] [mini|mbp|studio|builder]      (default: mini)
 #
-#   mini — Mac mini, omlxmini via the :18000 tunnel  (launchd: com.jalfern.forge-qa)
-#   mbp  — MacBook Pro, omlxmbp via the :18001 tunnel (launchd: com.jalfern.forge-qa-mbp,
-#          started only by the warden, never on a timer)
+#   mini    — Mac mini, omlxmini via the :18000 tunnel  (launchd: com.jalfern.forge-qa)
+#   mbp     — MacBook Pro, omlxmbp via the :18001 tunnel (launchd: com.jalfern.forge-qa-mbp).
+#             PARKED 2026-10-19: the warden no longer kicks it. Re-enable in warden.sh step 5.
+#   studio  — the Studio's own model on :8000, a second stream beside the builder
+#             (launchd: com.jalfern.forge-qa-studio, kicked by the warden)
+#   builder — the Studio's model again, in the BUILDER's slot: the warden kicks it
+#             only when no game is queued or building. A game that arrives waits
+#             for this one item to finish, then builds (forge.sh and warden step 4
+#             both skip while it runs). (launchd: com.jalfern.forge-qa-builder)
 #
-# A lane's identity is its --model provider ("omlxmini/" or "omlxmbp/"), so
-# "is this lane busy?" is a pgrep on that, and two lanes never block each
-# other. The prompt names the node so the session tags its claims with it
-# (FORGE-QA.md step 3) and only ever resumes its own.
+# A lane's identity is its node name in the prompt ("QA MASTER on node <node>."),
+# so "is this lane busy?" is a pgrep on that, and lanes never block each other.
+# (The model string no longer works for that: studio and builder share one.)
+# Each lane gets its own dev-server port (DEV_PORT, read by every browser
+# script) so two sessions never screenshot each other's server. 5173 stays
+# the forge lane's.
 #
-# Logs: mini /tmp/forge/qa-<stamp>.log (newest: last-qa.log)
-#       mbp  /tmp/forge/qa-mbp-<stamp>.log (newest: last-qa-mbp.log)
+# Logs: /tmp/forge/qa-<tag><stamp>.log (newest: last-qa.log, last-qa-<node>.log)
 
 set -u
 FG=0; NODE=mini
 for a in "$@"; do
     case "$a" in
         --foreground) FG=1 ;;
-        mini|mbp)     NODE=$a ;;
+        mini|mbp|studio|builder) NODE=$a ;;
     esac
 done
 
-case "$NODE" in
-    mini) MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"; PORT=18000; TAG=""; EXTRA="" ;;
-    mbp)  MODEL="omlxmbp/Qwen3.8-27B-oQ4e-mtp";  PORT=18001; TAG="mbp-"
-          # The MBP is slow and the dev-server port (5173) is shared by every
-          # lane, so it never drives a browser.
-          EXTRA=" Node checks only: never run browser suites (*play scripts, npm run verify, shot.mjs); they share one dev-server port with the other lanes. So pick only an item you can finish and verify with Node checks in one session; skip items that need screenshots or a browser, or touch many games, and leave those to the mini." ;;
-esac
-
 REPO="$HOME/Dev/retrogames"
+STUDIO_MODEL=$(jq -r '.model' "$REPO/opencode.json" 2>/dev/null)
+EXTRA=""
+case "$NODE" in
+    mini)    MODEL="omlxmini/Qwen3.8-27B-oQ8e-mtp"; PORT=18000; TAG="";         DEV=5174 ;;
+    mbp)     MODEL="omlxmbp/Qwen3.8-27B-oQ4e-mtp";  PORT=18001; TAG="mbp-";     DEV=5175
+             # The MBP is slow, so it never drives a browser.
+             EXTRA=" Node checks only: never run browser suites (*play scripts, npm run verify, shot.mjs). So pick only an item you can finish and verify with Node checks in one session; skip items that need screenshots or a browser, or touch many games, and leave those to the other nodes." ;;
+    studio)  MODEL="$STUDIO_MODEL"; PORT=8000; TAG="studio-";  DEV=5176 ;;
+    builder) MODEL="$STUDIO_MODEL"; PORT=8000; TAG="builder-"; DEV=5177
+             EXTRA=" You are in the builder's slot because no game is queued: do this one item, then exit." ;;
+esac
+export DEV_PORT=$DEV
+EXTRA="$EXTRA Your dev server port is $DEV: start yours with \`npm run dev -- --port $DEV --strictPort\` (DEV_PORT=$DEV is set; the browser scripts read it, and shot.mjs takes --url). Never use or stop the server on 5173 or any other lane's port."
+
 LOG_DIR="/tmp/forge"
 mkdir -p "$LOG_DIR"
 STAMP=$(date +%Y%m%d-%H%M%S)
 LOG="$LOG_DIR/qa-$TAG$STAMP.log"
 ln -sf "$LOG" "$LOG_DIR/last-qa${TAG:+-${TAG%-}}.log"
 
-if pgrep -f "opencode run.*--model omlx$NODE/" >/dev/null; then
+if pgrep -f "opencode run.*QA MASTER on node $NODE\\." >/dev/null; then
     echo "$(date): a QA session on $NODE is already running, skipping" >> "$LOG"
     exit 0
 fi
 
 cd "$REPO" || exit 1
 
-# The QA brain never runs on the Studio's model: a second stream on the
-# builder's model halves both. If this lane's machine is down, SKIP; the
-# warden retries later.
+# If this lane's model server is down, SKIP; the warden retries later.
+# (studio and builder deliberately share the builder's model: a second
+# stream batches with the first, and a session spends much of its time in
+# builds, browsers and CI rather than inference. Jon, 2026-10-19.)
 if ! curl -s -m 3 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
-    echo "$(date): $NODE unreachable on :$PORT, skipping QA this run (no studio fallback)" >> "$LOG"
+    echo "$(date): $NODE unreachable on :$PORT, skipping QA this run " >> "$LOG"
     exit 0
 fi
 

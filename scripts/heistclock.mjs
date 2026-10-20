@@ -15,7 +15,7 @@
 
 import { openGame, launch, requireDevServer, opt, throttleCPU } from './lib/harness.mjs'
 
-const URL = opt(process.argv, '--url', process.env.HEIST_URL || 'http://localhost:5173/retrogames/raccoon-heist')
+const URL = opt(process.argv, '--url', process.env.HEIST_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/raccoon-heist`)
 const RATES = String(opt(process.argv, '--throttle', '1,4,8,16')).split(',').map(Number)
 const MIN = +opt(process.argv, '--min', 0.9)
 

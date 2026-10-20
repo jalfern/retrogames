@@ -6,7 +6,7 @@
 
 import { launch, openGame, Report } from './lib/harness.mjs'
 
-const URL = process.env.MYST_URL || 'http://localhost:5173/retrogames/myst'
+const URL = process.env.MYST_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/myst`
 const browser = await launch({ headless: true })
 const r = new Report('mystviewcheck')
 const page = await openGame(browser, { url: URL, hook: '__mystTest', start: false, viewport: { width: 960, height: 540 } })

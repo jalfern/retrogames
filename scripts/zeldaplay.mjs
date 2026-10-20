@@ -10,7 +10,7 @@
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 import { screenOf, at, isWall, TILE } from '../src/games/Zelda/world.js'
 
-const URL = process.env.OP_URL || 'http://localhost:5173/retrogames/zelda'
+const URL = process.env.OP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/zelda`
 await requireDevServer(URL)
 
 const r = new Report('zeldaplay')

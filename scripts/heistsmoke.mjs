@@ -28,7 +28,7 @@
 
 import { opt, openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL0 = opt(process.argv, '--url', process.env.HEIST_URL || 'http://localhost:5173/retrogames/raccoon-heist?pad=1')
+const URL0 = opt(process.argv, '--url', process.env.HEIST_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/raccoon-heist?pad=1`)
 const LITE = process.env.HEIST_LITE ? process.env.HEIST_LITE !== '0' : !!process.env.CI
 const VIEW = LITE ? { width: 480, height: 320 } : { width: 800, height: 520 }
 const URL = URL0 + (LITE ? (URL0.includes('?') ? '&' : '?') + 'lite=1' : '')

@@ -7,7 +7,7 @@
 //   npm run papersplay     (needs `npm run dev`)
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.PP_URL || 'http://localhost:5173/retrogames/papers-please'
+const URL = process.env.PP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/papers-please`
 await requireDevServer(URL)
 
 const r = new Report('papersplay')

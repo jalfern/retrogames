@@ -52,7 +52,7 @@ import { opt, openGame, launch, requireDevServer, Report, throttleCPU } from './
 
 const JOB = +opt(process.argv, '--job', 2) - 1 // human 1-based -> index
 if (!(JOB >= 0 && JOB <= 2)) { console.error('--job is 1-based (1..3)'); process.exit(2) }
-const URL0 = opt(process.argv, '--url', process.env.HEIST_URL || 'http://localhost:5173/retrogames/raccoon-heist?pad=1')
+const URL0 = opt(process.argv, '--url', process.env.HEIST_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/raccoon-heist?pad=1`)
 const LITE = process.env.HEIST_LITE ? process.env.HEIST_LITE !== '0' : !!process.env.CI
 const VIEW = LITE ? { width: 640, height: 426 } : { width: 1100, height: 700 }
 const URL = URL0 + (LITE ? (URL0.includes('?') ? '&' : '?') + 'lite=1' : '')

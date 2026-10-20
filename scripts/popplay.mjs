@@ -4,7 +4,7 @@
 // input. Needs `npm run dev` (or POP_URL).
 import { launch, openGame, Report, opt } from './lib/harness.mjs'
 
-const URL = process.env.POP_URL || 'http://localhost:5173/retrogames/prince-of-persia'
+const URL = process.env.POP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/prince-of-persia`
 const r = new Report('popplay')
 const browser = await launch({ headless: opt(process.argv, '--headful', true) === false })
 const page = await openGame(browser, { url: URL, hook: '__popTest', start: false, viewport: { width: 820, height: 680 } })

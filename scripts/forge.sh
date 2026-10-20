@@ -17,6 +17,13 @@ if pgrep -f "opencode run.*THE FORGE" >/dev/null; then
     exit 0
 fi
 
+# QA spilled into the builder's slot (forge-qa.sh builder): let that one item
+# finish; the warden starts this build on its next tick after it ends.
+if pgrep -f "opencode run.*QA MASTER on node builder\\." >/dev/null; then
+    echo "$(date): the builder slot is finishing a QA item; the warden builds after it" >> "$LOG"
+    exit 0
+fi
+
 cd "$REPO" || exit 1
 
 # TAP (scripts/tap.mjs, launchd com.jalfern.tap-builder): when the tap answers

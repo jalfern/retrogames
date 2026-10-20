@@ -112,7 +112,7 @@ for (const f of fails) console.log(`  FAIL  ${f}`)
 
 // --- layer D (opt-in): real Chrome, real taps, zero page errors --------
 if (process.argv.includes('--browser')) {
-    const base = String(opt(process.argv, '--url', 'http://localhost:5173/retrogames'))
+    const base = String(opt(process.argv, '--url', `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`))
     try {
         const res = await fetch(`${base}/pong`, { signal: AbortSignal.timeout(2000) })
         if (!res.ok) throw new Error(String(res.status))

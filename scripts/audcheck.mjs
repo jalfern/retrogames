@@ -10,7 +10,7 @@
 //
 // Prereqs: `npm install`, a running `npm run dev`, and Google Chrome.
 
-const url = process.argv[2] || 'http://localhost:5173/retrogames/mario'
+const url = process.argv[2] || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/mario`
 
 let chromium
 try {

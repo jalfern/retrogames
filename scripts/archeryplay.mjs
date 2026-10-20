@@ -12,7 +12,7 @@
 //     the floor during the whole ride.
 import { launch, openGame, Report } from './lib/harness.mjs'
 
-const URL = process.env.ARCHERY_URL || 'http://localhost:5173/retrogames/arena-archery'
+const URL = process.env.ARCHERY_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/arena-archery`
 const browser = await launch()
 const page = await openGame(browser, { url: URL, hook: '__archeryTest', wait: 300 })
 const r = new Report('archeryplay')

@@ -11,8 +11,8 @@
 //   - Target URL comes from MARIO_URL (default localhost dev server).
 //   - Checks exit non-zero on failure so npm run verify / CI can gate on them.
 
-export const URL_DEFAULT = process.env.MARIO_URL || 'http://localhost:5173/retrogames/mario'
-export const KEEP_URL_DEFAULT = process.env.KEEP_URL || 'http://localhost:5173/retrogames/ironkeep'
+export const URL_DEFAULT = process.env.MARIO_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/mario`
+export const KEEP_URL_DEFAULT = process.env.KEEP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/ironkeep`
 
 export function opt(args, name, d) {
     const i = args.indexOf(name)

@@ -27,7 +27,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { openGame, launch, requireDevServer, opt, Report, throttleCPU } from './lib/harness.mjs'
 
-const URL0 = opt(process.argv, '--url', process.env.HEIST_URL || 'http://localhost:5173/retrogames/raccoon-heist?pad=1')
+const URL0 = opt(process.argv, '--url', process.env.HEIST_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/raccoon-heist?pad=1`)
 // The CI runner rasterises in software. At 1100x700 with antialiasing and shadow maps it
 // was measured at **1 fps** (`sim clock 0.14x real time at 1 fps` in the job log), which is
 // under the floor every timing-shaped assumption in this file needs — the camera never

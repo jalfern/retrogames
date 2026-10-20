@@ -26,7 +26,7 @@ import { dirname, resolve } from 'node:path'
 const args = process.argv.slice(2)
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d }
 
-const url = opt('--url', 'http://localhost:5173/retrogames/mario')
+const url = opt('--url', `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/mario`)
 let out = opt('--out', 'scripts/.shots/shot.png')
 if (!/\.(png|jpe?g)$/i.test(out)) out += '.png'
 out = resolve(process.cwd(), out)

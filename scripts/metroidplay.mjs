@@ -25,7 +25,7 @@
 // rAF, so wall-clock key holds coalesce into one tick).
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.METROID_URL || 'http://localhost:5173/retrogames/metroid'
+const URL = process.env.METROID_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/metroid`
 await requireDevServer(URL)
 
 const r = new Report('metroidplay')

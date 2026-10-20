@@ -14,7 +14,7 @@
 
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.BARDS_URL || 'http://localhost:5173/retrogames/bards-tale'
+const URL = process.env.BARDS_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/bards-tale`
 await requireDevServer(URL)
 
 const r = new Report('bardsplay')

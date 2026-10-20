@@ -7,7 +7,7 @@
 
 import { launch, openGame, Report } from './lib/harness.mjs'
 
-const URL = process.env.TETRIS_URL || 'http://localhost:5173/retrogames/tetris'
+const URL = process.env.TETRIS_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/tetris`
 const FX = 88, FY = 48, CELL = 8
 
 const r = new Report('tetrisplay')

@@ -26,7 +26,7 @@
 
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const BASE = process.env.TAP_URL || 'http://localhost:5173/retrogames'
+const BASE = process.env.TAP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
 const ONLY_FLAGGED = !!process.env.TAP_ONLY
 // TAP_CANVAS=1 drops the emulator (dos) routes: the per-PR smoke gate runs only
 // the tapStart-flagged canvas games (the fix surface) — the emulators boot on

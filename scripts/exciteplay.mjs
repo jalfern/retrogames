@@ -17,7 +17,7 @@
 // The terrain, ledger, slack rule and nine mutants live in excitecheck.mjs.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.EXCITE_URL || 'http://localhost:5173/retrogames/excitebike'
+const URL = process.env.EXCITE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/excitebike`
 await requireDevServer(URL)
 
 const W = 256, H = 240

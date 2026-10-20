@@ -16,6 +16,7 @@
 #   3. TRIAGE  — trust gate, then label new issues by their title
 #   4. BUILDER — not running and work is waiting? kick scripts/forge.sh
 #   5. QA      — not running and feedback is waiting? kick scripts/forge-qa.sh
+#                (mini, studio, and — only while the builder is idle — builder)
 #   6. FOLLOW-UP PULSE — only if step 3, 4 or 5 did something
 #
 # Rules for editing this file (read before changing anything):
@@ -160,7 +161,12 @@ main() {
            + ([$ok[] | select(any(.labels[]; .name == "game-queue"))] | sort_by(.created_at)))
         | .[0].number // empty')
 
-    if [[ "$ALIVE" == no && -n "$TARGET" ]]; then
+    # A QA item running in the builder's slot (node builder) finishes first;
+    # the game builds on the next tick after it ends (Jon, 2026-10-19).
+    if pgrep -f "opencode run.*QA MASTER on node builder\\." >/dev/null; then BSLOT_QA=1; else BSLOT_QA=0; fi
+    if [[ "$ALIVE" == no && -n "$TARGET" ]] && (( BSLOT_QA )); then
+        log "builder slot is finishing a QA item; #$TARGET builds after it"
+    elif [[ "$ALIVE" == no && -n "$TARGET" ]]; then
         # Three kicks with no FORGE: comment in between = the builder keeps
         # dying before it reports anything. Stop kicking; that is Jon's call.
         # Any comment that is not the warden's own (a FORGE: report, or Jon's
@@ -182,24 +188,29 @@ main() {
     fi
 
     # ---- 5. QA ----------------------------------------------------------
-    # One QA lane per machine (forge-qa.sh mini|mbp; each picks its own item).
-    # A lane is kicked when its model answers through its tunnel, it has no
-    # session of its own (identity = the --model provider), its launchd job is
-    # installed, and enough work is waiting:
-    #   mini — any feedback item (that includes a checkpoint to resume)
-    #   mbp  — 2+ UNCLAIMED items, so the part-time laptop never races the
-    #          mini for the last one. A checkpoint the MBP leaves behind is
-    #          picked up by the mini once it goes stale (FORGE-QA.md step 2).
+    # One QA session per node (forge-qa.sh <node>; each picks its own item).
+    # A lane is kicked when its model answers, it has no session of its own
+    # (identity = "QA MASTER on node <node>." in the prompt), its launchd job
+    # is installed, and enough work is waiting:
+    #   mini    — any feedback item (that includes a checkpoint to resume)
+    #   studio  — 1+ UNCLAIMED item (a second stream on the Studio's model)
+    #   builder — 2+ UNCLAIMED, and only while the builder is idle with no
+    #             game waiting: QA spills into the builder's slot, and step 4
+    #             holds the next game until that one item is done.
+    #   mbp     — PARKED 2026-10-19 (Jon). To bring it back, add:
+    #             "mbp 18001 UNCLAIMED 2 com.jalfern.forge-qa-mbp"
     QA_WAITING=$(print -r -- "$ISSUES" | jq '[.[] | select(any(.labels[]; .name == "feedback"))
                                           | select(any(.labels[]; .name == "needs-approval") | not)] | length')
     UNCLAIMED=$(print -r -- "$ISSUES" | jq '[.[] | select(any(.labels[]; .name == "feedback"))
         | select(any(.labels[]; .name == "needs-approval" or .name == "building-qa" or .name == "waiting-jon") | not)] | length')
-    for spec in "mini 18000 QA_WAITING 1 com.jalfern.forge-qa" \
-                "mbp 18001 UNCLAIMED 2 com.jalfern.forge-qa-mbp"; do
+    LANES=("mini 18000 QA_WAITING 1 com.jalfern.forge-qa"
+           "studio 8000 UNCLAIMED 1 com.jalfern.forge-qa-studio")
+    [[ "$ALIVE" == no && -z "$TARGET" ]] && LANES+=("builder 8000 UNCLAIMED 2 com.jalfern.forge-qa-builder")
+    for spec in "${LANES[@]}"; do
         lane=(${=spec}); node=${lane[1]} port=${lane[2]} var=${lane[3]} need=${lane[4]} job=${lane[5]}
         have=${(P)var}
         curl -s -m 3 "http://127.0.0.1:$port/v1/models" >/dev/null 2>&1 || continue
-        pgrep -f "opencode run.*--model omlx$node/" >/dev/null && continue
+        pgrep -f "opencode run.*QA MASTER on node $node\\." >/dev/null && continue
         (( have >= need )) || continue
         launchctl print "gui/$(id -u)/$job" >/dev/null 2>&1 || continue
         act launchctl kickstart "gui/$(id -u)/$job" >> "$LOG" 2>&1

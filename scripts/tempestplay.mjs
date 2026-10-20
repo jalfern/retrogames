@@ -3,7 +3,7 @@
 // Needs `npm run dev` running (or TEMPEST_URL pointed at one).
 import { launch, openGame, Report, opt } from './lib/harness.mjs'
 
-const URL = process.env.TEMPEST_URL || 'http://localhost:5173/retrogames/tempest'
+const URL = process.env.TEMPEST_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/tempest`
 const r = new Report('tempestplay')
 const browser = await launch({ headless: opt(process.argv, '--headful', true) === false })
 const page = await openGame(browser, { url: URL, hook: '__tempestTest', start: false, viewport: { width: 820, height: 700 } })

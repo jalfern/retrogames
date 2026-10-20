@@ -20,7 +20,7 @@
 //      beakers on live turns.
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-const URL = process.env.CIV_URL || 'http://localhost:5173/retrogames/civilization-v'
+const URL = process.env.CIV_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/civilization-v`
 await requireDevServer(URL)
 
 const r = new Report('civplay')
