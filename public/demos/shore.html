@@ -187,10 +187,9 @@ fn shoalA(a: f32, d0: f32) -> f32 {
   return a * clamp(pow(5.0 / max(d0, 0.30), 0.28), 1.0, 3.0);
 }
 struct Shore { d: f32, foam: f32, surf: f32, eta: f32, wetF: f32 };
-fn shore(xIn: f32, z: f32, t: f32, lanes: array<vec3f, NLANES>) -> Shore {
+fn shore(xIn: f32, z: f32, t: f32, lane: vec3f) -> Shore {
   var o: Shore;
   let h = terrain(xIn, z);
-  let lane = lanes[laneIdx(z)];
   if (h < 0.0) {
     let d0 = -h;
     let p0 = wphase(W0, t, xIn, z, ${SW[0].tilt.toFixed(4)});
@@ -345,7 +344,7 @@ fn vs(@location(0) xzIn: vec2f) -> VOut {
   var o: VOut;
   var xz = xzIn;
   xz.x = xz.x + faceShift(xzIn.x, xzIn.y, u.pars2.y);
-  let s = shore(xz.x, xz.y, u.pars2.y, lanesIn.v);
+  let s = shore(xz.x, xz.y, u.pars2.y, lanesIn.v[laneIdx(xz.y)]);
   let wp = vec3f(xz.x, s.surf, xz.y);
   o.wp = wp;
   o.depth = s.d;
@@ -361,8 +360,8 @@ fn fs(i: VOut) -> @location(0) vec4f {
   let t = u.pars2.y;
   // surface normal from the shore model's height gradient
   let e = 0.2;
-  let sx = shore(p.x + e, p.z, t, lanesIn.v).surf - shore(p.x - e, p.z, t, lanesIn.v).surf;
-  let sz = shore(p.x, p.z + e, t, lanesIn.v).surf - shore(p.x, p.z - e, t, lanesIn.v).surf;
+  let sx = shore(p.x + e, p.z, t, lanesIn.v[laneIdx(p.z)]).surf - shore(p.x - e, p.z, t, lanesIn.v[laneIdx(p.z)]).surf;
+  let sz = shore(p.x, p.z + e, t, lanesIn.v[laneIdx(p.z + e)]).surf - shore(p.x, p.z - e, t, lanesIn.v[laneIdx(p.z - e)]).surf;
   var nrm = normalize(vec3f(-sx / (2.0 * e) * 2.0, 1.0, -sz / (2.0 * e) * 2.0));
   let sun = normalize(u.sun.xyz);
   let V = normalize(u.camPos_t.xyz - p);
@@ -404,7 +403,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (gid.x >= 32u || gid.y >= 32u) { return; }
   let x = 30.0 + f32(gid.x) * (100.0 / 31.0);
   let z = -45.0 + f32(gid.y) * (90.0 / 31.0);
-  let s = shore(x, z, u.pars2.y, lanesIn.v);
+  let s = shore(x, z, u.pars2.y, lanesIn.v[laneIdx(z)]);
   let i = (gid.y * 32u + gid.x) * 4u;
   outBuf[i] = x;
   outBuf[i + 1u] = z;
@@ -552,12 +551,15 @@ async function boot() {
   const SUN = (() => { const v = [-0.18, 0.16, -0.97]; const l = Math.hypot(...v); return v.map(x => x / l); })();
 
   let t = 0, frames = 0, acc = 0, lastMs = performance.now();
+  const ftimes = [];
   let probeData = null, probeBusy = false, probeReq = null;
 
   function frame() {
     const now = performance.now();
     let dt = (now - lastMs) / 1000;
     lastMs = now;
+    ftimes.push(dt * 1000);
+    if (ftimes.length > 120) ftimes.shift();
     if (dt > 0.1) dt = 0.1;
     acc += dt;
     const FIXED = 1 / 60;
@@ -678,6 +680,12 @@ async function boot() {
       return { run: m / LANES, wetLag: wl / LANES, t };
     },
     probe() { return probeData; },
+    resetPerf() { ftimes.length = 0; },
+    perf() {
+      if (!ftimes.length) return { n: 0, avg: 0, max: 0 };
+      const avg = ftimes.reduce((a, b) => a + b, 0) / ftimes.length;
+      return { n: ftimes.length, avg: +avg.toFixed(2), max: +Math.max(...ftimes).toFixed(2) };
+    },
     probeNow() {
       return new Promise(res => { probeReq = res; });
     },
