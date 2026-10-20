@@ -90,6 +90,7 @@ export function startRelay(port = Number(process.env.PORT || 8787)) {
 
     return {
         port,
+        boundPort: () => { const a = wss.address(); return a ? a.port : 0 },
         rooms: () => rooms.size,
         codes: () => registryCount(reg),
         close: () => new Promise((done) => { clearInterval(hb); for (const r of rooms.values()) closeRoom(r); wss.close(done) }),

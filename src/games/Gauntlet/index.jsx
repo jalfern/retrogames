@@ -28,6 +28,8 @@ import { cardCenter, heroAt } from './select.js'
 import { p2From } from './p2input.js'
 import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
+import { createLockStep } from '../../utils/lockstep'
+import { makeCode } from '../../../relay/core.js'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 
 const PW = 64, HT = 40
@@ -42,6 +44,9 @@ const GauntletGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
+    const [netUi, setNetUi] = useState({ phase: 'idle', code: '', info: '', role: null })
+    const [joinCode, setJoinCode] = useState('')
+    const netJoinRef = useRef(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -71,6 +76,129 @@ const GauntletGame = () => {
         const p2 = { l: false, r: false, u: false, d: false, swordEdge: false }
         const evLog = []
         const parts = []
+
+        // ------------------------------------------------------------ online ----
+        // #531 pilot: ?net=host / ?net=join&room=CODE / ?relay=ws(s)://host.
+        // Canonical seats on BOTH boxes: hero = host's entity, partner = the
+        // guest's — so both sims consume the identical pad streams and their
+        // stateHashes must agree. The guest's camera/HUD follow gs.partner so
+        // each player watches their own hero.
+        const q = new URLSearchParams(window.location.search)
+        const netRole = q.get('net') === 'host' || q.get('net') === 'join' ? q.get('net') : null
+        const netRelay = (q.get('relay') || 'wss://retrogames.jalfern.workers.dev').replace(/^http/, 'ws')
+        const net = {
+            phase: netRole === 'host' ? 'connecting' : netRole === 'join' ? ((q.get('room') || '').toUpperCase().length === 4 ? 'connecting' : 'entry') : 'idle',
+            role: netRole,
+            code: netRole === 'host' ? makeCode(Math.random) : (q.get('room') || '').toUpperCase(),
+            ws: null,
+            peer: false,
+            lock: null,
+            tamper: false,
+            desyncTick: 0,
+            lastHash: '',
+            info: '',
+        }
+        const netPush = () => setNetUi({ phase: net.phase, code: net.code, info: net.desyncTick ? `tick ${net.desyncTick}` : (net.info || ''), role: net.role })
+        if (netRole) netPush()
+
+        const netEnd = (phase) => {
+            net.phase = phase
+            if (net.ws) { try { net.ws.close() } catch { /* gone */ } net.ws = null }
+            netPush()
+        }
+
+        const netConnect = (code) => {
+            net.code = code
+            netPush()
+            let ws
+            try { ws = new WebSocket(`${netRelay}/room/${code}`) } catch { net.phase = 'offline'; netPush(); return }
+            net.ws = ws
+            ws.onmessage = (ev) => {
+                let obj = null
+                try { obj = JSON.parse(ev.data) } catch { return }
+                if (obj.t === 'welcome') { net.phase = 'waiting'; netPush() }
+                else if (obj.t === 'peer') {
+                    net.peer = true
+                    if (net.role === 'guest') { net.phase = 'waiting'; netPush() } else netPush()
+                } else if (obj.t === 'start' && net.role === 'guest') {
+                    netBegin(obj.seed | 0, obj.hero || 'warrior', obj.peerHero || 'valkyrie')
+                } else if (obj.t === 'hs') {
+                    const r = net.lock && net.lock.gotHash(obj.k, obj.h)
+                    if (r && r.desync !== undefined) netDesync(r.desync)
+                } else if (obj.t === 'pad') {
+                    if (net.lock) net.lock.gotPad(obj.k, obj.p)
+                } else if (obj.t === 'gone') {
+                    if (net.phase === 'play') netEnd('gone')
+                } else if (obj.t === 'err') {
+                    net.phase = 'refused'
+                    net.info = obj.e
+                    netPush()
+                }
+            }
+            ws.onerror = () => { if (net.phase === 'connecting') { net.phase = 'offline'; netPush() } }
+            ws.onclose = () => { if (net.phase !== 'play' && net.phase !== 'desync' && net.phase !== 'refused') { net.phase = 'offline'; netPush() } }
+        }
+
+        const netDesync = (k) => {
+            net.desyncTick = k
+            net.phase = 'desync'
+            audioController.playNoise(0.4, 0.12)
+            netPush()
+        }
+
+        const netStartLock = () => {
+            net.lock = createLockStep({ send: (m) => { if (net.ws && net.ws.readyState === 1) net.ws.send(JSON.stringify(m)) } })
+            keys.l = keys.r = keys.u = keys.d = false
+            keys.swordEdge = false; keys.arrowEdge = false
+            seatPrev.a = false
+            setSlotKind(p2slot, 'remote')
+        }
+
+        const netBegin = (seed, hero, peerHero) => {
+            gs = makeGame(seed, hero, { partner: true, topDown: true, partnerKey: peerHero })
+            gs.partnerOn = true
+            gs.partnerMode = 'human'
+            gs.partnerHuman = false
+            demoAt = 0
+            netStartLock()
+            net.phase = 'play'
+            netPush()
+            setMode('play')
+        }
+
+        const netLocalPad = () => ({ l: keys.l, r: keys.r, u: keys.u, d: keys.d, s: keys.swordEdge, a: keys.arrowEdge })
+        const selfEnt = () => (net.role === 'guest' && gs.partner ? gs.partner : gs.hero)
+        const selfKey = () => (net.role === 'guest' && gs.partnerKey ? gs.partnerKey : gs.heroKey)
+
+        const netTick = () => {
+            const k = gs.tick
+            net.lock.pumpTo(k + net.lock.delay, () => {
+                const p = netLocalPad()
+                if (net.tamper) { p.l = !p.l; p.r = p.l ? false : p.r; net.tamper = false }
+                if (p.s) keys.swordEdge = false
+                if (p.a) keys.arrowEdge = false
+                return p
+            })
+            if (!net.lock.ready(k)) {
+                net.lock.stall()
+                acc = 0
+                return
+            }
+            const [lp, rp] = net.lock.pads(k)
+            const heroPad = net.role === 'host' ? lp : rp
+            const partnerPad = net.role === 'host' ? rp : lp
+            const partnerAlive = gs.partner && !gs.partner.down
+            const pInp = partnerAlive ? { left: partnerPad.l, right: partnerPad.r, fwd: partnerPad.u, back: partnerPad.d, sword: partnerPad.s } : null
+            doSim(
+                { left: heroPad.l, right: heroPad.r, fwd: heroPad.u, back: heroPad.d, sword: heroPad.s, arrow: heroPad.a },
+                pInp
+            )
+            if (gs.tick % net.lock.hashEvery === 0) {
+                const r = net.lock.hash(gs.tick, stateHash(gs))
+                if (r && r.desync !== undefined) netDesync(r.desync)
+            }
+            net.lock.prune(k)
+        }
 
         const say = (m, kind) => {
             toastMsg = m; toast = 150
@@ -122,6 +250,7 @@ const GauntletGame = () => {
             const sc = gs.score
             if (win) localStorage.setItem('gauntlet.board', JSON.stringify([...board(), { score: sc, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
+            if (net.role && net.phase === 'play') netEnd('over')
             setMode('over')
         }
 
@@ -163,6 +292,7 @@ const GauntletGame = () => {
         }
 
         const doFrameSim = () => {
+            if (net.phase === 'play') { netTick(); return }
             const sc = screenRef.current
             if (sc === 'attract' || sc === 'select') { if (sc === 'select') pollP2Select(); tickDemo(); return }
             if (sc !== 'play') return
@@ -213,7 +343,7 @@ const GauntletGame = () => {
         }
 
         const drawView = () => {
-            const h = gs.hero
+            const h = selfEnt()
             const mat = MATERIALS[gs.levelData.material]
             const { camX, camY } = viewRect(h)
             ctx.fillStyle = '#05050c'
@@ -269,7 +399,7 @@ const GauntletGame = () => {
             }
             // the torch: the hero's light — bright around him, falling to the
             // dim ambient at the screen's edge. Every wall colour is lit by it.
-            const gx = gs.hero.x, gy = gs.hero.y
+            const gx = h.x, gy = h.y
             const { recess, bevel } = mortarTones(mat)
             for (let r = r0; r <= r1; r++) {
                 for (let c = c0; c <= c1; c++) {
@@ -344,7 +474,7 @@ const GauntletGame = () => {
                 sprite(m.kind, sx(m.x), sy(m.y), big)
                 if (m.kind === 'death') ctx.restore()
             }
-            if (gs.partner && !gs.partner.down) sprite(gs.partner.name.toLowerCase(), sx(gs.partner.x), sy(gs.partner.y), 11)
+            if (gs.partner && !gs.partner.down && selfEnt() !== gs.partner) sprite(gs.partner.name.toLowerCase(), sx(gs.partner.x), sy(gs.partner.y), 11)
             // facing dagger: the sword arc, rendered honestly
             const hx = sx(h.x), hy = sy(h.y)
             ctx.strokeStyle = 'rgba(232,238,248,0.35)'
@@ -377,19 +507,19 @@ const GauntletGame = () => {
                 ctx.translate(hx, hy)
                 ctx.rotate(dp * Math.PI * 2)
                 ctx.scale(Math.max(0.05, 1 - dp), Math.max(0.05, 1 - dp))
-                sprite(gs.heroKey, 0, 0, 12, false, 0)
+                sprite(selfKey(), 0, 0, 12, false, 0)
                 ctx.restore()
             } else {
                 // the hero steps only while he walks (issue #302), and flashes
                 // white the moment he is struck
-                const wf = walkFrame(h.walk, SP[gs.heroKey].length)
-                sprite(gs.heroKey, hx, hy, 12, true, wf)
+                const wf = walkFrame(h.walk, SP[selfKey()].length)
+                sprite(selfKey(), hx, hy, 12, true, wf)
                 const fa = hitFlashAlpha(h.hitT)
                 if (fa > 0) {
                     ctx.save()
                     ctx.globalAlpha = fa
                     ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 10
-                    sprite(gs.heroKey, hx, hy, 12, true, wf, true)
+                    sprite(selfKey(), hx, hy, 12, true, wf, true)
                     ctx.restore()
                 }
             }
@@ -428,7 +558,7 @@ const GauntletGame = () => {
             const px = VW + MAP_MARGIN, py = MAP_MARGIN, s = MAP_CELL
             ctx.fillStyle = '#05050c'
             ctx.fillRect(px - 2, py - 2, W * s + 4, H * s + 4)
-            const h = gs.hero
+            const h = selfEnt()
             const map = gs.explored[gs.level]
             for (let r = 0; r < H; r++) {
                 for (let c = 0; c < W; c++) {
@@ -456,8 +586,8 @@ const GauntletGame = () => {
             ctx.fillStyle = '#ff5d5d'
             ctx.fillRect(px + h.x * s - 1, py + h.y * s - 1, 2, 2)
             const hy = VH - 58
-            sprite(gs.heroKey, VW + PW / 2, hy, 20, false)
-            text(HEROES[gs.heroKey].name, VW + PW / 2, hy + 16, 6, '#ffd23f', 2)
+            sprite(selfKey(), VW + PW / 2, hy, 20, false)
+            text(HEROES[selfKey()].name, VW + PW / 2, hy + 16, 6, '#ffd23f', 2)
             ctx.fillStyle = '#301010'
             ctx.fillRect(VW + 8, hy + 22, PW - 16, 5)
             ctx.fillStyle = h.hp > h.maxHp * 0.3 ? '#e83a3a' : (gs.tick >> 2) % 2 ? '#ff8a5d' : '#7d1414'
@@ -585,20 +715,38 @@ const GauntletGame = () => {
             setMode('select')
         }
         const startPlay = (hk) => {
+            if (net.role === 'guest' && net.phase !== 'play') return
             let pm = gs.partnerMode || 'off'
             if (pm === 'off' && connectedSlots() >= 2) pm = 'human'
             const two = pm === 'human'
             const pOn = pm === 'cpu'
-            gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn || two, topDown: true, partnerKey: two ? HERO_ORDER[selectHero2] : undefined })
-            gs.partnerOn = pOn || two
+            const online = net.role === 'host' && net.peer && net.phase === 'waiting'
+            if (net.role === 'host' && !online) {
+                net.info = 'waiting for friend'
+                netPush()
+                return
+            }
+            const peerHero = online ? HERO_ORDER[(selectHero + 1) % 4] : undefined
+            gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn || two || online, topDown: true, partnerKey: online ? peerHero : (two ? HERO_ORDER[selectHero2] : undefined) })
+            gs.partnerOn = pOn || two || online
             gs.partnerMode = pm
             gs.partnerHuman = two
+            if (online) {
+                gs.partnerMode = 'human'
+                gs.partnerHuman = false
+                if (net.ws && net.ws.readyState === 1) net.ws.send(JSON.stringify({ t: 'start', seed: gs.seed, hero: hk, peerHero }))
+                netStartLock()
+                net.phase = 'play'
+                netPush()
+            }
             setMode('play')
             say(`${HEROES[hk].who} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · THE /, '')}`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
         }
         const onKeyDown = (ev) => {
             if (ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p); return }
+            if (net.role && ev.target && ev.target.tagName === 'INPUT') return
+            if (net.role === 'guest' && net.phase !== 'play') return
             const sc = screenRef.current
             if (sc === 'attract') { startSelect(); return }
             if (sc === 'select') {
@@ -648,6 +796,7 @@ const GauntletGame = () => {
         }
         const onPointer = (ev) => {
             const sc = screenRef.current
+            if (net.role === 'guest' && net.phase !== 'play') return
             if (sc === 'attract') { startSelect(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) startSelect(); return }
             if (sc === 'select') {
@@ -740,6 +889,14 @@ const GauntletGame = () => {
                     deathSpawned: gs.deathSpawned, end: gs.end,
                 }),
                 gameTime: () => gs.tick / 60,
+                netProbe: () => ({
+                    phase: net.phase, role: net.role, code: net.code, peer: net.peer,
+                    tick: gs.tick, seed: gs.seed, hash: stateHash(gs),
+                    stalls: net.lock ? net.lock.stats().stalls : 0,
+                    desyncTick: net.desyncTick,
+                }),
+                netTamper: () => { net.tamper = true },
+                netJoin: (code) => netConnect((code || '').toUpperCase()),
             }
             mountDbg({
                 title: 'GAUNTLET',
@@ -758,10 +915,14 @@ const GauntletGame = () => {
             })
         }
 
+        netJoinRef.current = netConnect
+        if (net.role === 'host') netConnect(net.code)
+        if (net.role === 'guest' && net.code.length === 4) netConnect(net.code)
         last = performance.now()
         raf = requestAnimationFrame(frame)
         return () => {
             cancelAnimationFrame(raf)
+            if (net.ws) { try { net.ws.close() } catch { /* gone */ } net.ws = null }
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
@@ -774,17 +935,62 @@ const GauntletGame = () => {
     useEffect(() => { pausedRef.current = paused }, [paused])
 
     const entry = GAMES.find((g) => g.label === 'GAUNTLET')
+    const netPhase = netUi.phase
+    const netOverlay = netPhase === 'idle' || netPhase === 'play' ? null : (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-[rgba(5,5,12,0.88)] font-mono text-[#8fa3d8] tracking-widest">
+            {netPhase === 'entry' && (
+                <div className="flex flex-col items-center gap-2">
+                    <div className="text-[11px] text-[#ffd23f]">JOIN A FRIEND'S QUEST</div>
+                    <div className="flex gap-2">
+                        <input
+                            value={joinCode}
+                            onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^ABCDEFGHJKLMNPQRSTUVWXYZ23456789]/g, '').slice(0, 4))}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && joinCode.length === 4 && netJoinRef.current) netJoinRef.current(joinCode) }}
+                            placeholder="CODE"
+                            maxLength={4}
+                            className="w-28 bg-transparent border border-[#2b3348] px-2 py-1 text-center text-[#e9f7ff] text-lg tracking-[0.4em] outline-none focus:border-[#ffd23f]"
+                        />
+                        <button
+                            type="button"
+                            disabled={joinCode.length !== 4}
+                            onClick={() => netJoinRef.current && netJoinRef.current(joinCode)}
+                            className="border border-[#ffd23f] px-3 py-1 text-[11px] text-[#ffd23f] disabled:opacity-30"
+                        >
+                            JOIN
+                        </button>
+                    </div>
+                </div>
+            )}
+            {netPhase === 'connecting' && <div className="text-[11px]">CONNECTING TO THE RELAY…</div>}
+            {netPhase === 'offline' && <div className="text-[11px] text-[#ff5d5d]">RELAY OFFLINE — CHECK NETWORK OR ?relay= URL</div>}
+            {netPhase === 'refused' && <div className="text-[11px] text-[#ff5d5d]">ROOM {netUi.code} — {String(netUi.info || 'REFUSED').toUpperCase()}</div>}
+            {netPhase === 'waiting' && netUi.role === 'host' && (
+                <div className="flex flex-col items-center gap-2">
+                    <div className="text-[10px]">ROOM CODE</div>
+                    <div className="text-3xl text-[#ffd23f] tracking-[0.5em]">{netUi.code}</div>
+                    <div className="text-[10px]">WAITING FOR A FRIEND…</div>
+                </div>
+            )}
+            {netPhase === 'waiting' && netUi.role !== 'host' && <div className="text-[11px]">IN ROOM {netUi.code} — WAITING FOR THE HOST TO PICK A HERO…</div>}
+            {netPhase === 'gone' && <div className="text-[11px] text-[#ff5d5d]">FRIEND LEFT — RELOAD TO ROOM AGAIN</div>}
+            {netPhase === 'over' && <div className="text-[10px]">RELOAD TO PLAY ONLINE AGAIN</div>}
+            {netPhase === 'desync' && <div className="text-[13px] text-[#ff5d5d]">NET DESYNC {netUi.info.toUpperCase()} — SIMS DIVERGED</div>}
+        </div>
+    )
 
     return (
         <div className="relative w-full h-full flex flex-col items-center justify-center bg-[#05050c] select-none">
-            <div ref={stageRef} className="relative w-full max-w-[720px] aspect-[320/240] shadow-[0_0_40px_rgba(224,58,58,0.25)]" />
+            <div className="relative w-full max-w-[720px] aspect-[320/240]">
+                <div ref={stageRef} className="absolute inset-0 shadow-[0_0_40px_rgba(224,58,58,0.25)]" />
+                {netOverlay}
+            </div>
             <div className="flex gap-6 mt-2 text-[11px] font-mono tracking-widest text-[#8fa3d8]">
                 <span>SCORE <span ref={setHud('score')} className="text-[#ffd23f]">000000</span></span>
                 <span>MAZE <span ref={setHud('level')} className="text-[#e9f7ff]">1/4</span></span>
                 <span>LIVES <span ref={setHud('lives')} className="text-[#ff5d5d]">3</span></span>
             </div>
             <VirtualControls
-                visible={screen === 'play' && !paused}
+                visible={screen === 'play' && !paused && (netPhase === 'idle' || netPhase === 'play')}
             />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>

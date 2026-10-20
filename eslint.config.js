@@ -32,4 +32,10 @@ export default defineConfig([
       globals: globals.serviceworker,
     },
   },
+  {
+    files: ['relay/worker.js'],
+    languageOptions: {
+      globals: { ...globals.browser, DurableObject: 'readonly', WebSocketPair: 'readonly' },
+    },
+  },
 ])

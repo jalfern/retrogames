@@ -6,7 +6,7 @@
 // alarms and the global room cap via the Registry singleton DO.
 // Served at https://retrogames.jalfern.workers.dev/room/<CODE> (wss).
 
-import { CODE_RE, MAX_MSG, IDLE_MS, relay, registryRemove } from './core.js'
+import { CODE_RE, MAX_MSG, IDLE_MS, relay } from './core.js'
 
 export class Registry extends DurableObject {
     constructor(ctx, env) {

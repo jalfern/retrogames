@@ -296,6 +296,11 @@ jobs:
       - run: npm run lint:rec
       - run: npm run replaycheck
       - run: npm run replaycheck -- --mutate
+      # ONLINE 2P (#531): relay core + protocol over the Node relay twin +
+      # lockstep determinism against the real Gauntlet sim, incl. a corrupted
+      # sim that MUST be caught by the 30-tick hash verify (teeth built in).
+      - run: npm run lint:net
+      - run: npm run netcheck
       # MYST: the whole island graph, every puzzle gate (lever, stars, safe,
       # switches, sphere, fireplace), all eight pages, both trap endings and
       # the white-page win. Proven to bite: forcing a locked door open reds it.
