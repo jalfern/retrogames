@@ -14,12 +14,14 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
 import { track, groundY, LAP, MUD, WATER, BOOST } from './levels.js'
 import { plan, decide } from './planner.js'
+import { PRESS, MESSAGES } from './attract.js'
 
 const SIM_MS = 1000 / 60
 const g2s = (h) => (H - 46) - (h - 40) * 0.95
@@ -471,19 +473,14 @@ const ExcitebikeGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black tracking-tight" style={{ color: '#e40000', textShadow: '2px 2px 0 #ffe23f, 4px 4px 0 #000' }}>EXCITEBIKE</h1>
-                    <p className="text-yellow-200 font-mono mt-1 text-xs">the 1984 motocross · lean the bike or eat dirt</p>
-                    <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-cyan-50 font-mono text-[11px] mt-2 px-8 leading-4" style={{ textShadow: '1px 1px #000' }}>
-                        ↑ is the GAS — and leans the nose UP in the air<br />
-                        ↓ brakes — and pushes the nose DOWN in the air<br />
-                        SPACE jumps (hold for float), and PUMPS the mud / water / after a crash<br />
-                        redline too long and the engine BOILS — feather the gas<br />
-                        land on the nose or over-rotate and you go over the bars<br />
-                        beat the clock · first place · G switches gear · ? is the pause
-                    </p>
-                </div>
+                <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
+                        <h1 className="text-4xl font-black tracking-tight" style={{ color: '#e40000', textShadow: '2px 2px 0 #ffe23f, 4px 4px 0 #000' }}>EXCITEBIKE</h1>
+                        <p className="text-white font-mono font-bold mt-3 animate-pulse">{PRESS}</p>
+                        <AttractMessage className="text-cyan-100/80 mt-2 px-8" messages={MESSAGES} />
+                    </div>
+                </>
             )}
 
             {screen === 'over' && end && (
