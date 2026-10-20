@@ -569,6 +569,52 @@ console.log('— the boost payoff ladder —')
     check('over-cap speed rises with the tier', sim.TIERS[1].over > sim.TIERS[0].over && sim.TIERS[2].over > sim.TIERS[1].over)
 }
 
+// #440: drift steer authority. A held drift + steer used to wind the kart
+// up into a spin (>150° in 550 ms) on the straights. Yaw now decays with
+// driftT and is rate-capped, so a held drift flicks, carves a fixed radius,
+// then straightens. Position is pinned to the centerline so this isolates the
+// steering model from track-following; only the heading is measured.
+console.log('— the drift steer authority (#440) —')
+{
+    const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a }
+    const longRun = (T, pred) => {
+        let best = 0; let bi = 0; let cur = 0; let st = 0
+        for (let i = 0; i < T.N; i++) { if (pred(T.pts[i])) { if (cur === 0) st = i; cur++ } else { if (cur > best) { best = cur; bi = st } cur = 0 } }
+        if (cur > best) { best = cur; bi = st }
+        return bi + Math.floor(best / 2)
+    }
+    const headingAfter = async (id, mode, ticks) => {
+        const sim = await loadSim()
+        selectCourse(id); selectCourse(id)
+        const T = Tmod.TRACK
+        const idx = mode === 'straight'
+            ? longRun(T, (p) => Math.abs(p.k) < 1 / 5000)
+            : longRun(T, (p) => Math.abs(p.k) > 1 / 3300 && Math.abs(p.k) < 1 / 700)
+        const g = sim.makeGame(11); g.phase = 'race'
+        const Q = g.karts[0]; Q.lapStart = -999
+        const p = T.pts[idx]
+        Q.a = p.a
+        let maxoff = 0; let early = 0; let late = 0; const prev = { a: p.a }
+        for (let i = 0; i < ticks; i++) {
+            Q.x = p.x; Q.y = p.y; Q.idx = idx; Q.hint = idx; Q.v = 6.5
+            Q.offroad = false; Q.wpress = 0; Q.bumpCd = 0
+            sim.step(g, { u: true, r: true, drift: true })
+            maxoff = Math.max(maxoff, Math.abs(wrap(Q.a - p.a)))
+            const d = Math.abs(wrap(Q.a - prev.a)); prev.a = Q.a
+            if (i < 33) early += d; else if (i >= ticks - 33) late += d
+        }
+        return { maxoff: maxoff * 180 / Math.PI, early: early * 180 / Math.PI, late: late * 180 / Math.PI }
+    }
+    for (const c of COURSES) {
+        const quick = (await headingAfter(c.id, 'straight', 33)).maxoff
+        const sus = await headingAfter(c.id, 'straight', 165)
+        const carve = (await headingAfter(c.id, 'sweeper', 33)).maxoff
+        check(`${c.id}: held drift+steer on a straight carves, doesn't spin (#440: <90° in 550ms)`, quick < 90, `Δ${quick.toFixed(0)}° in 33 ticks`)
+        check(`${c.id}: a held drift straightens as it charges — late yaw < early yaw (#440 decay)`, sus.late < sus.early * 0.6, `early ${sus.early.toFixed(0)}° late ${sus.late.toFixed(0)}°`)
+        check(`${c.id}: a held drift still carves the corner (not neutered)`, carve > 10, `Δ${carve.toFixed(0)}° in 33 ticks`)
+    }
+}
+
 if (process.argv.includes('--mutate')) {
     // break the checkpoint gate in sim.js and demand the shortcut probe above
     // goes red. Restore runs whatever happens.
@@ -682,6 +728,55 @@ if (process.argv.includes('--mutate')) {
     } finally {
         writeFileSync(path, src)
     }
+
+    // #440 mutants: the drift-authority gate is load-bearing. Re-plant each
+    // regression into sim.js and demand the straight/spin probe goes red.
+    const headingMut = async (mode, ticks) => {
+        const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a }
+        const mm = await loadSim()
+        selectCourse('gulch'); selectCourse('gulch')
+        const TT = Tmod.TRACK
+        const flat = mode === 'sweeper'
+            ? (p) => Math.abs(p.k) > 1 / 3300 && Math.abs(p.k) < 1 / 700
+            : (p) => Math.abs(p.k) < 1 / 5000
+        let best = 0; let bi = 0; let cur = 0; let st = 0
+        for (let i = 0; i < TT.N; i++) { if (flat(TT.pts[i])) { if (cur === 0) st = i; cur++ } else { if (cur > best) { best = cur; bi = st } cur = 0 } }
+        if (cur > best) { best = cur; bi = st }
+        const idx = bi + Math.floor(best / 2); const p = TT.pts[idx]
+        const gg = mm.makeGame(11); gg.phase = 'race'
+        const Q = gg.karts[0]; Q.lapStart = -999; Q.a = p.a
+        let mo = 0; let early = 0; let late = 0; const prev = { a: p.a }
+        for (let i = 0; i < ticks; i++) {
+            Q.x = p.x; Q.y = p.y; Q.idx = idx; Q.hint = idx; Q.v = 6.5
+            Q.offroad = false; Q.wpress = 0; Q.bumpCd = 0
+            mm.step(gg, { u: true, r: true, drift: true })
+            mo = Math.max(mo, Math.abs(wrap(Q.a - p.a)))
+            const d = Math.abs(wrap(Q.a - prev.a)); prev.a = Q.a
+            if (i < 33) early += d; else if (i >= ticks - 33) late += d
+        }
+        return { maxoff: mo * 180 / Math.PI, early: early * 180 / Math.PI, late: late * 180 / Math.PI }
+    }
+    // cap removed → the straight spin returns
+    try {
+        writeFileSync(path, src.replace('driftYawCap: 0.03,', 'driftYawCap: 100,'))
+        const q = (await headingMut('straight', 33)).maxoff
+        if (q >= 90) { console.log(`  MUTANT DIED — with the yaw cap removed a straight held drift spins again (Δ${q.toFixed(0)}°): the #440 cap gate is load-bearing`); R.fail++ }
+        else console.log(`  MUTANT SURVIVED — cap removal still carves ${q.toFixed(0)}°: the cap gate is BLIND`)
+    } finally { writeFileSync(path, src) }
+    // decay removed → a held drift stops straightening (late yaw = early yaw)
+    try {
+        writeFileSync(path, src.replace('driftDecayT: 90,', 'driftDecayT: 1e9,'))
+        const s = await headingMut('straight', 165)
+        if (s.late >= s.early * 0.6) { console.log(`  MUTANT DIED — without authority decay a held drift never straightens (early ${s.early.toFixed(0)}° late ${s.late.toFixed(0)}°): the #440 decay gate is load-bearing`); R.fail++ }
+        else console.log(`  MUTANT SURVIVED — decay removal still straightens (early ${s.early.toFixed(0)}° late ${s.late.toFixed(0)}°): the decay gate is BLIND`)
+    } finally { writeFileSync(path, src) }
+    // cap tightened to zero → the drift can no longer carve at all
+    try {
+        writeFileSync(path, src.replace('driftYawCap: 0.03,', 'driftYawCap: 0.0005,'))
+        const cv = (await headingMut('straight', 33)).maxoff
+        if (cv < 10) { console.log(`  MUTANT DIED — an over-tight cap neuters the drift (Δ${cv.toFixed(0)}° carve): the #440 carve floor is load-bearing`); R.fail++ }
+        else console.log(`  MUTANT SURVIVED — over-tight cap still carves Δ${cv.toFixed(0)}°: the carve floor is BLIND`)
+    } finally { writeFileSync(path, src) }
 }
 
 console.log(`\n${R.fail === 0 ? 'GREEN' : 'RED — ' + R.fail + ' failed'}`)
