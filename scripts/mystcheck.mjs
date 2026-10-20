@@ -179,11 +179,11 @@ if (process.argv.includes('--mutate')) {
   const ST = 'src/games/Myst/state.js'
   const MUTANTS = [
     ['attract never cycles (one message)', MF,
-      `    'CYAN · 1993 · REBUILT IN CODE',\n    'A library of living books · two imprisoned brothers',\n    'Four Ages hidden in plain sight',\n    'No map. No hints. Take notes, as in 1993.',\n    'Click or tap what you see · arrows step and turn',\n`,
+      `    'CYAN · 1993 · REBUILT IN CODE',\n    'Living books · two imprisoned brothers',\n    'Four Ages hidden in plain sight',\n    'No map. No hints. Take notes, as in 1993.',\n    'Click what you see · arrows step and turn',\n`,
       `    'CLICK TO START',\n`],
     ['a message repeats', MF,
       `    'Four Ages hidden in plain sight',`,
-      `    'A library of living books · two imprisoned brothers',`],
+      `    'Living books · two imprisoned brothers',`],
     ['a harness script name leaks into an attract line', MF,
       `    'Four Ages hidden in plain sight',`,
       `    'scripts/mystcheck.mjs audits, live',`],
