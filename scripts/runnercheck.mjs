@@ -58,6 +58,7 @@ const MUTANTS = {
     roll: 'rolling stops working — down does nothing, so steering and full drag stay',
     ringScatter: 'shed rings stop scattering — a hit strips you permanently',
     drones: 'drones stop existing — patrols and hovers never touch the runner',
+    multiLoop: 'only the first loop per zone is honoured — the second loop is never taken',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -91,7 +92,7 @@ if (MAP) {
             if (zz.spikes.some(sp => x >= sp[0] && x <= sp[1])) col = '^'
             if (zz.springs.some(sp => Math.abs(sp[0] - x) < 8)) col = '='
             if (zz.rings.some(r => Math.abs(r[0] - x) < 6)) col = 'o'
-            if (zz.loop && Math.abs(zz.loop.cx - x) < 6) col = 'O'
+            if ((zz.loops || []).some(L => Math.abs(L.cx - x) < 6)) col = 'O'
             if (x >= zz.ck - 4 && x <= zz.ck + 4) col = 'T'
             if (x >= zz.goal - 4 && x <= zz.goal + 4) col = 'G'
             lines[1] += col
@@ -109,14 +110,18 @@ section('WORLD (segments march forward; the loop sits on a real floor)')
         ok(z.segs.every(sg => sg[2] - sg[0] > 20), `${z.name}: a near-vertical/zero-width segment`)
         ok(z.segs.every((sg, i) => i === 0 || sg[0] >= z.segs[i - 1][2]), `${z.name}: segments overlap out of order`)
         for (const sp of z.spikes) ok(s.groundY(z, (sp[0] + sp[1]) / 2) !== null, `${z.name}: a spike floats over a pit`)
-        if (z.loop) {
-            const gy = s.groundY(z, z.loop.cx)
-            ok(gy !== null && Math.abs(gy - (z.loop.cy + z.loop.r)) < 1.5, `${z.name}: the loop mouth is not on a floor`)
-            // apex rings must lie ON the loop's inner arc (recomputed, not trusted)
-            const arcR = (rx, ry) => Math.hypot(rx - z.loop.cx, ry - (z.loop.cy - BODY_R))
+        if (z.loops && z.loops.length) {
+            // every loop's mouth sits on a real floor at the circle's bottom
+            for (const L of z.loops) {
+                const gy = s.groundY(z, L.cx)
+                ok(gy !== null && Math.abs(gy - (L.cy + L.r)) < 1.5, `${z.name}: a loop mouth (${L.cx}) is not on a floor`)
+            }
+            // apex rings must lie ON the load-bearing loop's (loops[0]) inner arc
+            const L0 = z.loops[0]
+            const arcR = (rx, ry) => Math.hypot(rx - L0.cx, ry - (L0.cy - BODY_R))
             for (const [rx, ry] of z.rings) {
                 const d = arcR(rx, ry)
-                ok(Math.abs(d - z.loop.r) < 3, `${z.name}: apex ring (${rx},${ry}) is ${d.toFixed(1)} from the loop centre, arc r=${z.loop.r}`)
+                ok(Math.abs(d - L0.r) < 3, `${z.name}: apex ring (${rx},${ry}) is ${d.toFixed(1)} from the loop centre, arc r=${L0.r}`)
                 const gyR = s.groundY(z, rx)
                 ok(gyR === null || (gyR - ry) > (RING_R + BODY_R), `${z.name}: a loop ring is close enough to the ground to grab while rolling`)
             }
@@ -197,7 +202,7 @@ section('JETS (variable jump + spring pads throw real bodies)')
 // ----------------------------------------------------------------- loop ----
 section('LOOP (the centripetal floor is v^2 >= 5*g*r — entry speed is load-bearing)')
 {
-    const r = ZONES[2].loop.r
+    const r = ZONES[2].loops[0].r
     const need = s.loopRequire(r)
     ok(need === 5 * G * r, `loopRequire(${r}) = ${need}, expected ${5 * G * r}`)
     const vNeed = Math.sqrt(need)
@@ -220,7 +225,7 @@ section('LOOP (the centripetal floor is v^2 >= 5*g*r — entry speed is load-bea
     // SKIPPING the loop is fatal: the far spike's only rings live on the arc,
     // so a runner deposited at the loop exit with no rings dies there.
     const skip = s.makeGame(); skip.zone = 2
-    skip.p.x = ZONES[2].loop.cx; skip.p.y = s.groundY(ZONES[2], ZONES[2].loop.cx); skip.p.mode = 'track'; skip.p.s = 400; skip.p.lastTheta = 0; skip.loopTaken = true
+    skip.p.x = ZONES[2].loops[0].cx; skip.p.y = s.groundY(ZONES[2], ZONES[2].loops[0].cx); skip.p.mode = 'track'; skip.p.s = 400; skip.p.lastTheta = 0; skip.loopTaken = true; skip.loopsTaken.add(2 * 100 + 0); skip.loopsTaken.add(2 * 100 + 1)
     let skipDie = false, skipHit = false
     for (let t = 0; t < 400; t++) {
         s.step(skip, { right: true }); s.maybeEnterLoop(skip)
@@ -343,8 +348,13 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
     }
     const rec = plan.receipt
     ok(rec.deaths === 0, `the proven route is no longer zero-death (${rec.deaths} deaths)`)
-    ok(rec.loop && rec.loop.entryV2 >= 1.25 * rec.loop.need,
-        `loop entry v^2 ${rec.loop ? rec.loop.entryV2.toFixed(0) : '-'} is under 1.25x the need ${rec.loop?.need} — no headroom`)
+    const totalLoops = ZONES.reduce((n, z) => n + (z.loops || []).length, 0)
+    ok(totalLoops >= 2, `expected at least two loops across the zones, found ${totalLoops} — the loops list is not populated`)
+    ok(rec.loops.length === totalLoops, `the autopilot took ${rec.loops.length} of ${totalLoops} loops — the multi-loop route is not committed`)
+    ok(rec.loops.every(l => l.entryV2 >= l.need), `a loop was entered below its centripetal floor: ${JSON.stringify(rec.loops)}`)
+    const L0 = rec.loops.find(l => l.idx === 0) || rec.loops[0]
+    ok(L0 && L0.entryV2 >= 1.25 * L0.need,
+        `load-bearing loop entry v^2 ${L0 ? L0.entryV2.toFixed(0) : '-'} is under 1.25x its need ${L0?.need} — no headroom`)
     ok(rec.ringsAtHit.every(n => n > 0) && rec.hits >= 3, `a spike was passed ringless: ${JSON.stringify(rec.ringsAtHit)}`)
     ok(rec.drones >= 1, `no drone was destroyed on the proven route — the air-destroy rule is unproven`)
 

@@ -223,7 +223,7 @@ const provenScript = () => {
 const CAM_Y = ZONES.map(z => {
     let top = Infinity, bot = -Infinity
     for (const s of z.segs) { top = Math.min(top, s[1], s[3]); bot = Math.max(bot, s[1], s[3]) }
-    if (z.loop) top = Math.min(top, z.loop.cy - z.loop.r)
+    for (const L of (z.loops || [])) top = Math.min(top, L.cy - L.r)
     return { min: top - 60, max: Math.max(bot, z.deathY) - VIEW_H + 40 }
 })
 const CAM_X = ZONES.map(z => ({ min: z.segs[0][0] - 30, max: z.segs[z.segs.length - 1][2] - VIEW_W + 30 }))
@@ -495,10 +495,11 @@ const MomentumGame = () => {
                 ctx.beginPath(); ctx.moveTo(px1, py1 + 9); ctx.lineTo(px2, py2 + 9); ctx.stroke()
             }
 
-            // ---- the loop: a glowing tube with energy pulses ----
-            const L = z.loop
+            // ---- the loops: a glowing tube each, with energy pulses ----
+            const loops = z.loops || []
+            let frontLoop = null
             let loopFrontArc = null
-            if (L) {
+            for (const L of loops) {
                 const lx = L.cx - dx0, ly = L.cy - dy0
                 ctx.strokeStyle = P.panel0; ctx.lineWidth = 13
                 circle(ctx, lx, ly, L.r); ctx.stroke()
@@ -515,8 +516,8 @@ const MomentumGame = () => {
                     const a = rot + i * Math.PI / 3
                     ctx.beginPath(); ctx.arc(lx, ly, L.r, a, a + 0.35); ctx.stroke()
                 }
-                if (p.mode === 'loop') loopFrontArc = Math.PI / 2 - p.phi
             }
+            if (p.mode === 'loop') { frontLoop = loops[gs.activeLoopIdx] || null; loopFrontArc = Math.PI / 2 - p.phi }
 
             // ---- spikes: pulsing energy barbs ----
             for (const sp of z.spikes) {
@@ -679,14 +680,14 @@ const MomentumGame = () => {
             ctx.globalAlpha = 1
             drawHero(hpx, hpy)
 
-            // the loop's near half goes OVER the hero — you go through it
-            if (L && loopFrontArc !== null) {
-                const lx = L.cx - dx0, ly = L.cy - dy0
+            // the active loop's near half goes OVER the hero — you go through it
+            if (frontLoop && loopFrontArc !== null) {
+                const lx = frontLoop.cx - dx0, ly = frontLoop.cy - dy0
                 ctx.strokeStyle = P.glow + '0.85)'; ctx.lineWidth = 6
-                ctx.beginPath(); ctx.arc(lx, ly, L.r, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
+                ctx.beginPath(); ctx.arc(lx, ly, frontLoop.r, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
                 ctx.strokeStyle = P.accent; ctx.lineWidth = 2
-                ctx.beginPath(); ctx.arc(lx, ly, L.r + 6.5, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
-                ctx.beginPath(); ctx.arc(lx, ly, L.r - 6.5, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
+                ctx.beginPath(); ctx.arc(lx, ly, frontLoop.r + 6.5, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
+                ctx.beginPath(); ctx.arc(lx, ly, frontLoop.r - 6.5, loopFrontArc - Math.PI / 2, loopFrontArc + Math.PI / 2); ctx.stroke()
             }
 
             // particles
@@ -729,7 +730,7 @@ const MomentumGame = () => {
                 if (px < -20 || px > VIEW_W + 20) continue
                 gctx.beginPath(); gctx.ellipse(px, py, 9, 9, 0, 0, Math.PI * 2); gctx.stroke()
             }
-            if (L) {
+            for (const L of (z.loops || [])) {
                 gctx.strokeStyle = P.accent; gctx.lineWidth = 4
                 gctx.beginPath(); gctx.arc(L.cx - dx0, L.cy - dy0, L.r, 0, Math.PI * 2); gctx.stroke()
             }

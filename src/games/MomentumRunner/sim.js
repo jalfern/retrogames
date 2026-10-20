@@ -41,6 +41,7 @@ export const CFG = {
     roll: true,            // down while moving curls into a ball: no steer, light drag
     ringScatter: true,     // a hit scatters your rings in a fixed fan; they last 3s
     drones: true,          // ground patrols + hovers: air/roll contact destroys, else a hit
+    multiLoop: true,       // zones carry a LOOPS list; the later zones hold two to commit to
 }
 
 // zone tally: clear the zone quickly and carry rings through the gate.
@@ -108,7 +109,7 @@ export const ZONES = [
         // sits on the apex of the first spring's arc — only an AIR body
         // (the spring flight) reaches it, so the proven line destroys it
         drones: [{ kind: 'patrol', x0: 800, x1: 880 }, { kind: 'hover', x: 1710, y: -65 }],
-        ck: 1900, goal: 4420, deathY: 520, yMin: -80, loop: null,
+        ck: 1900, goal: 4420, deathY: 520, yMin: -80, loops: [],
     },
     {
         name: 'EMBER GAUNTLET',
@@ -128,7 +129,7 @@ export const ZONES = [
         springs: [[1150, 225, -900]],
         boosts: [[1420, 1680], [2650, 2730]],
         drones: [],
-        ck: 1620, goal: 2740, deathY: 620, yMin: -66, loop: null,
+        ck: 1620, goal: 2740, deathY: 620, yMin: -66, loops: [],
     },
     {
         name: 'SKY LOOP',
@@ -138,7 +139,7 @@ export const ZONES = [
         // dies — which is exactly what runnercheck proves (loop load-bearing).
         segs: [
             [0, 40, 150, 40], [150, 40, 950, 413], [950, 413, 1080, 425],
-            [1080, 425, 1160, 425], [1160, 425, 2200, 445],
+            [1080, 425, 1360, 425], [1360, 425, 2200, 445],
         ],
         // the ONLY rings for the far spike sit on the loop's apex arc: you can
         // collect them only by rolling over the INSIDE of the loop, and you can
@@ -151,7 +152,12 @@ export const ZONES = [
         boosts: [[1850, 2000]],
         drones: [],
         ck: 1000, goal: 2050, deathY: 760, yMin: 0,
-        loop: { cx: 1160, cy: 345, r: 80 },
+        // two loops on the flat run after the dive. loops[0] is the load-bearing
+        // one: its apex rings are the ONLY rings that survive the far spike. The
+        // body carries its entry speed across the flat to loops[1] (a pure
+        // momentum commitment, no rings) — so committing to the first loop at
+        // speed is what opens the second.
+        loops: [{ cx: 1160, cy: 345, r: 80 }, { cx: 1360, cy: 345, r: 80 }],
     },
 ]
 
@@ -365,7 +371,7 @@ export function step(g, inp) {
             else { p.y = z.deathY - 1; p.vy = 0 }
         }
     } else if (p.mode === 'loop') {
-        const L = z.loop
+        const L = z.loops[g.activeLoopIdx]
         // energy along the circle; phi measured from the bottom, screen y-down
         const v2 = Math.max(0, p.v0 * p.v0 - 2 * G * L.r * (1 - Math.cos(p.phi)))
         // inside the loop the track's normal force is N = v^2/r + g*cos(phi):
@@ -378,7 +384,7 @@ export function step(g, inp) {
             p.x = L.cx + L.r * Math.sin(p.phi)
             p.y = L.cy + L.r * Math.cos(p.phi)
             p.vx = v * Math.cos(p.phi); p.vy = -v * Math.sin(p.phi)
-            g.ev.push({ type: 'crash' })
+            g.ev.push({ type: 'crash', idx: g.activeLoopIdx })
         } else {
             p.phi += Math.sqrt(v2) / L.r * FIXED_DT
             if (p.phi >= Math.PI * 2) {
@@ -388,7 +394,7 @@ export function step(g, inp) {
                 p.lastTheta = 0
                 g.loopTaken = true
                 g.score += 500
-                g.ev.push({ type: 'loop', v: Math.round(p.s) })
+                g.ev.push({ type: 'loop', v: Math.round(p.s), idx: g.activeLoopIdx, r: L.r })
             } else {
                 // follow the circle every tick, so the apex rings (which sit
                 // ON this arc) are actually passed through and collected
@@ -474,6 +480,7 @@ export function step(g, inp) {
                     g.p.mode = 'track'; g.p.s = 0; g.p.vx = 0; g.p.vy = 0
                     g.spent = new Map()
                     g.scatter = []   // shed rings don't carry between sectors
+                    g.loopTaken = false; g.loopsTaken = new Set(); g.activeLoopIdx = -1
                     g.zoneStartTick = g.tick
                 }
             }
@@ -488,6 +495,7 @@ export function makeGame() {
     const z = ZONES[0]
     return {
         tick: 0, zone: 0, rings: 0, score: 0, deaths: 0, end: null, loopTaken: false,
+        loopsTaken: new Set(), activeLoopIdx: -1,
         zoneStartTick: 0,
         save: { zone: 0, x: z.segs[0][0] + 40 },
         taken: new Set(), spent: new Map(), droneDown: new Set(), ev: [],
@@ -496,20 +504,28 @@ export function makeGame() {
     }
 }
 
-export function enterLoop(g) {
-    const L = ZONES[g.zone].loop
-    g.p.mode = 'loop'; g.p.phi = 0; g.p.v0 = g.p.s
-    g.p.x = L.cx; g.p.y = L.cy + L.r
-}
-
 // ONE entry rule, used identically by the planner, the replay and the shell.
-// The runner is grounded, moving along flat floor, at/after the loop mouth,
-// floor height equals the circle bottom, and the loop has not yet been taken.
+// The runner is grounded, moving along flat floor, at/after an untaken loop's
+// mouth, and the floor height equals that circle's bottom. A zone may hold
+// SEVERAL loops (the loops list); the body commits to the first untaken one
+// whose mouth it reaches. With multiLoop off only the first is honoured.
 export function maybeEnterLoop(g) {
-    const z = ZONES[g.zone], L = z.loop, p = g.p
-    if (!L || g.loopTaken || p.mode !== 'track') return false
-    if (p.x >= L.cx && p.lastTheta === 0 && Math.abs(p.y - (L.cy + L.r)) < 0.5) {
-        enterLoop(g); return true
+    const z = ZONES[g.zone], p = g.p
+    const all = z.loops || []
+    const loops = CFG.multiLoop ? all : all.slice(0, 1)
+    if (!loops.length || p.mode !== 'track') return false
+    for (let i = 0; i < loops.length; i++) {
+        const L = loops[i]
+        const key = g.zone * 100 + i
+        if (g.loopsTaken.has(key)) continue
+        if (p.x >= L.cx && p.lastTheta === 0 && Math.abs(p.y - (L.cy + L.r)) < 0.5) {
+            g.p.mode = 'loop'; g.p.phi = 0; g.p.v0 = g.p.s
+            g.p.x = L.cx; g.p.y = L.cy + L.r
+            g.activeLoopIdx = i
+            g.loopsTaken.add(key)
+            g.loopTaken = true
+            return true
+        }
     }
     return false
 }
@@ -542,7 +558,7 @@ export function planRun(g0) {
     const g = g0 || makeGame()
     const script = []
     const receipt = {
-        gaps: [], loop: null, hits: 0, ringsAtHit: [], deaths: 0,
+        gaps: [], loops: [], hits: 0, ringsAtHit: [], deaths: 0,
         springs: 0, drones: 0, warnings: [],
     }
     // the autopilot will not commit to a jump unless its own ballistic
@@ -560,7 +576,7 @@ export function planRun(g0) {
             // loop this run has not yet taken. Its far-spike rings live on the
             // apex arc (only the inside of the loop reaches them), so jumping
             // the mouth would strand the runner ringless on the far side.
-            const skipLoop = z.loop && !g.loopTaken && p.x >= z.loop.cx - 340
+            const skipLoop = (z.loops || []).some((L, i) => !g.loopsTaken.has(g.zone * 100 + i) && p.x >= L.cx - 340)
             const hole = holeAhead(z, p.x + 20, 280)
             if (hole && !skipLoop) {
                 const sp = springFor(z, p.x, hole.start)
@@ -599,7 +615,7 @@ export function planRun(g0) {
                 receipt.gaps.push({ far: pending.far, landed: e.x, margin: e.x - pending.far })
                 pending = null
             }
-            if (e.type === 'loop') receipt.loop = { entryV2: g.p.v0 * g.p.v0, exitV: e.v, need: loopRequire(ZONES[2].loop.r) }
+            if (e.type === 'loop') receipt.loops.push({ entryV2: g.p.v0 * g.p.v0, exitV: e.v, need: loopRequire(e.r), idx: e.idx })
             if (e.type === 'respawn') receipt.deaths++
         }
         maybeEnterLoop(g)
