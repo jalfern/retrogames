@@ -11,6 +11,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -18,6 +19,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { W, H, CFG, PEDAL, G, makeGame, step, stateHash } from './sim.js'
 import { STAGES, PALETTES } from './levels.js'
 import { solveGame } from './planner.js'
+import { PRESS, MESSAGES } from './attract.js'
 
 const SIM_MS = 1000 / 60
 const YB = 186                 // screen y of the boy (t = 0)
@@ -584,17 +586,14 @@ const PaperboyGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #e8443a, -3px 0 0 #2e6fd8, 0 10px 24px #000' }}>PAPERBOY</h1>
-                    <p className="text-lime-200/90 font-mono mt-1 text-sm">ride the route . throw the papers . dodge everything</p>
-                    <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY TO START</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
-                        ARROWS steer + pedal (UP mash, DOWN crawl) — SPACE throws toward your lean, F hurls down the lane at dogs<br />
-                        papers count ONLY if you are leaned that way when you cross the door — the window is real, and it is the game<br />
-                        carts sweep the crossing behind their nose, dogs lunge from the kerb past centre — hug their side<br />
-                        three routes, 77 doors; this demo is the solver&apos;s own proven ride, tick for tick
-                    </p>
-                </div>
+                <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
+                        <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #e8443a, -3px 0 0 #2e6fd8, 0 10px 24px #000' }}>PAPERBOY</h1>
+                        <p className="text-white font-mono font-bold mt-2 animate-pulse">{PRESS}</p>
+                        <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
+                    </div>
+                </>
             )}
 
             {screen === 'over' && end && (

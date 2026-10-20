@@ -10,6 +10,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -17,6 +18,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { W, H, PY, ROAD_L, ROAD_R, RIVER_X, makeGame, step, stateHash } from './sim.js'
 import { STAGES } from './script.js'
 import { plan, decide } from './planner.js'
+import { PRESS, MESSAGES } from './attract.js'
 
 const SIM_MS = 1000 / 60
 
@@ -492,20 +494,14 @@ const SpyHunterGame = () => {
             </div>
 
             {screen === 'attract' && (
-                <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
-                    <h1 className="text-4xl font-black text-yellow-300" style={{ textShadow: '0 4px 0 #620, 0 10px 24px #000' }}>SPY HUNTER</h1>
-                    <p className="text-cyan-200/90 font-mono mt-1 text-sm">the G-6155 is hot-wired · two stages of hostile highway</p>
-                    <p className="text-white font-mono font-bold mt-4 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-cyan-100/80 font-mono text-[11px] mt-3 px-8 leading-4">
-                        ARROWS to steer across three lanes — the grass kills slowly, the wall kills fast<br />
-                        SPACE is the machine gun: it has a HEAT gauge, not infinite ammo<br />
-                        X / B fires a homing MISSILE — the gunboat lives in the river<br />
-                        the SUPPORTER carries GUN / MISSILE / repair crates: shoot it, catch the drop<br />
-                        Road Lakers paint oil that spins you; Sweepers shove you toward it<br />
-                        every stage ends with a 2000-point bonus car crossing the road<br />
-                        this demo is the autopilot&apos;s own proven run, tick for tick
-                    </p>
-                </div>
+                <>
+                    <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
+                        <h1 className="text-4xl font-black text-yellow-300" style={{ textShadow: '0 4px 0 #620, 0 10px 24px #000' }}>SPY HUNTER</h1>
+                        <p className="text-white font-mono font-bold mt-4 animate-pulse">{PRESS}</p>
+                        <AttractMessage className="text-cyan-100/80 mt-3 px-8" messages={MESSAGES} />
+                    </div>
+                </>
             )}
 
             {screen === 'over' && end && (

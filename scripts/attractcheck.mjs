@@ -109,6 +109,34 @@ const REACT_TITLES = [
         wrap: `    'SPEED IS THE ONLY CURRENCY — NEVER STOP',\n`,
         leak: `    'FAST SECTORS + CARRIED RINGS = GATE BONUS',\n`,
     },
+    {
+        label: 'EXCITEBIKE',
+        jsx: 'src/games/Excitebike/index.jsx',
+        mf: 'src/games/Excitebike/attract.js',
+        import: '../src/games/Excitebike/attract.js',
+        slot: '<AttractMessage className="text-cyan-100/80 mt-2 px-8" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse">{PRESS}</p>`,
+        wrap: `    'LEAN THE BIKE OR EAT DIRT',\n`,
+        leak: `    'REDLINE TOO LONG AND THE ENGINE BOILS',\n`,
+    },
+    {
+        label: 'PAPERBOY',
+        jsx: 'src/games/Paperboy/index.jsx',
+        mf: 'src/games/Paperboy/attract.js',
+        import: '../src/games/Paperboy/attract.js',
+        slot: '<AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />',
+        wrap: `    'RIDE THE ROUTE · THROW THE PAPERS',\n`,
+        leak: `    'THREE ROUTES · 77 DOORS · DELIVER THEM ALL',\n`,
+    },
+    {
+        label: 'SPY HUNTER',
+        jsx: 'src/games/SpyHunter/index.jsx',
+        mf: 'src/games/SpyHunter/attract.js',
+        import: '../src/games/SpyHunter/attract.js',
+        slot: '<AttractMessage className="text-cyan-100/80 mt-3 px-8" messages={MESSAGES} />',
+        wrap: `    'THE G-6155 IS HOT-WIRED',\n`,
+        leak: `    'END EACH STAGE WITH THE BONUS CAR',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
@@ -187,7 +215,7 @@ const MUTANTS = [
 
 const MUTATE_FILES = MODULES.filter((m) => /Defender|SpaceInvaders|Centipede|Gauntlet|DonkeyKong|Pitfall|MissileCommand|LunarLander|Tempest|OutRun/.test(m.file)).map((m) => m.file)
 
-async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, leak }) {
+async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, leak, blinkFrom }) {
     const { MESSAGES, PRESS } = await import(spec)
     console.log(`attract (rule 6) — ${label}`)
     if (!Array.isArray(MESSAGES) || typeof PRESS !== 'string') {
@@ -221,7 +249,8 @@ async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, l
             ['the slot pins one message (never cycles)', jsxPath, 'messages={MESSAGES}', 'messages={[MESSAGES[0]]}'],
             ['a second rules slot stacks over the demo', jsxPath, slot, `${slot}\n                    <AttractMessage className="text-white/70" messages={MESSAGES} />`],
             ['the demo stops dimming', jsxPath, 'bg-black/55', 'bg-black/0'],
-            ['the press prompt stops blinking', jsxPath, 'animate-pulse', 'opacity-100'],
+            ['the press prompt stops blinking', jsxPath, blinkFrom || 'animate-pulse',
+                (blinkFrom || 'animate-pulse').replace('animate-pulse', 'opacity-100')],
             ['a message wraps the pane again', mf, wrap, `    'EVERY RULE AT ONCE: ARROWS FLY, SPACE FIRES, THE FLAGSHIP DROPS A TRACTOR BEAM THAT CAPTURES YOUR FIGHTER',\n`],
             ['a harness leak lands in a visible line', mf, leak, `    'attractcheck.mjs audits this attract screen',\n`],
         ]
