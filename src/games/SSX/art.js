@@ -73,7 +73,7 @@ export function buildTerrain(course) {
             const b = a + 1
             const c = a + COLS.length
             const d = c + 1
-            idx.push(a, c, b, b, c, d)
+            idx.push(a, b, c, b, d, c)
         }
     }
     const geo = new THREE.BufferGeometry()
