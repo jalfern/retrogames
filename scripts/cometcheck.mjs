@@ -810,6 +810,65 @@ console.log('— overtakes stay readable (#440 item 2) —')
 await viewLaw()
 viewWired()
 
+// #440 item 6 — the engine bed was one buzz: a Math.round(v) stepped pop
+// period (a plastic gear-step at every integer of speed), dead-steady pitch,
+// and held drifts / sand runs silent bar the one-shot crashes. engineSfx.js
+// is the pure law (engineVoice/driftScrape/sandWhoosh); index.jsx accumulates
+// phases and routes them into AudioController.
+const SFXJS = new URL('../src/games/CometDrift/engineSfx.js', import.meta.url)
+const loadSfx = async () => import('../src/games/CometDrift/engineSfx.js' + '?e=' + Math.random())
+
+const engineLaw = async () => {
+    const { ENGINE, SCRAPE, engineVoice, driftScrape, sandWhoosh } = await loadSfx()
+    check('engine is silent below a crawl (#440 item 6)', engineVoice(0.4, -1, 0) === null)
+    const pop = (v) => engineVoice(v, -1, 7).period
+    let stepMax = 0
+    for (let v = 0.5; v < 14; v += 0.25) stepMax = Math.max(stepMax, Math.abs(pop(v + 0.25) - pop(v)))
+    check('pop period is continuous in speed — no integer gear-step (#440 item 6)', stepMax <= 0.26, `worst Δ ${stepMax.toFixed(2)} per 0.25 v`)
+    const f = (v, tier, tick) => engineVoice(v, tier, tick).freq
+    const fs = []
+    for (let t = 0; t < 240; t++) fs.push(f(8, -1, t) - (ENGINE.floor + 8 * ENGINE.vMul))
+    const wobMax = Math.max(...fs.map(Math.abs))
+    const spread = Math.max(...fs) - Math.min(...fs)
+    check('pitch wobbles — the engine breathes, no dead laser tone (#440 item 6)', new Set(fs).size >= 150 && spread >= 12, `${new Set(fs).size}/240 distinct, spread ${spread.toFixed(1)} Hz`)
+    check('wobble stays a wobble — bounded by wob1+wob2 (#440 item 6)', wobMax <= ENGINE.wob1 + ENGINE.wob2 + 1e-9, `peak ±${wobMax.toFixed(2)} Hz`)
+    check('boost tiers keep the audible ladder: 34 + 52·tier above base (#440 item 6)',
+        Math.abs(f(8, 0, 0) - f(8, -1, 0) - ENGINE.boostBase) < 1e-9
+        && Math.abs(f(8, 1, 0) - f(8, 0, 0) - ENGINE.boostTierMul) < 1e-9
+        && Math.abs(f(8, 2, 0) - f(8, 1, 0) - ENGINE.boostTierMul) < 1e-9)
+    check('no scrape while the wheels are straight (#440 item 6)', driftScrape(0, 9) === null && driftScrape(40, 3) === null)
+    let mono = true; let cap = 0
+    for (let d = 1; d <= SCRAPE.maxGrip * 2; d++) {
+        const a = driftScrape(d, 9); const b = driftScrape(d + 1, 9)
+        cap = Math.max(cap, a.vol)
+        if (b.vol < a.vol - 1e-12 || b.freq > a.freq + 1e-12) mono = false
+    }
+    check('held-drift crackle swells and darkens as the tyre charges (#440 item 6)', mono && cap <= 0.034, `vol cap ${cap.toFixed(3)}`)
+    check('no whoosh on asphalt, none at a crawl (#440 item 6)', sandWhoosh(false, 9) === null && sandWhoosh(true, 0.5) === null)
+    check('sand sits under kerb — whoosh cutoff below the scrape floor (#440 item 6)',
+        sandWhoosh(true, 12).freq < driftScrape(SCRAPE.maxGrip, 12).freq, `${sandWhoosh(true, 12).freq} < ${driftScrape(SCRAPE.maxGrip, 12).freq}`)
+    check('whoosh swells with speed (#440 item 6)', sandWhoosh(true, 10).vol > sandWhoosh(true, 2).vol)
+    selectCourse('sandbank')
+    const m = await loadSim()
+    const g = m.makeGame(3)
+    let sc = 0
+    for (let n = 0; n < 60 * 90 && !g.end; n++) { m.step(g, m.decide(g)); if (driftScrape(g.karts[0].driftT, g.karts[0].v)) sc++ }
+    check('real racing really holds drifts — the scrape has a job (#440 item 6)', sc > 60, `${sc} scrape ticks in seed 3`)
+    const g2 = m.makeGame(3)
+    for (let n = 0; n < 600 && !sandWhoosh(g2.karts[0].offroad, g2.karts[0].v); n++) m.step(g2, { u: true, r: true, drift: true })
+    check('run wide and it really leaves the road — the whoosh has a job (#440 item 6)', sandWhoosh(g2.karts[0].offroad, g2.karts[0].v) !== null, `v ${g2.karts[0].v.toFixed(1)} offroad ${g2.karts[0].offroad}`)
+}
+const engineWired = () => {
+    const src = readFileSync(IDXJS, 'utf8')
+    check('index.jsx: the engine bed routes through engineSfx laws (#440 item 6)', /import\s*\{[^}]*engineVoice[^}]*driftScrape[^}]*sandWhoosh[^}]*\}\s*from\s*'\.\/engineSfx\.js'/.test(src))
+    check('index.jsx: engine pop phase comes from the law, not a stepped modulo (#440 item 6)', /engAcc \+= 1 \/ e\.period/.test(src) && !/g\.tick % period/.test(src) && !/15 - Math\.round\(P\.v\)/.test(src))
+    check('index.jsx: drift scrape is filtered noise, not raw crackle (#440 item 6)', /playFilteredNoise\(sc\.dur, sc\.vol, sc\.freq\)/.test(src))
+    check('index.jsx: sand whoosh is filtered noise too (#440 item 6)', /playFilteredNoise\(ws\.dur, ws\.vol, ws\.freq\)/.test(src))
+}
+console.log('— the engine bed has a voice (#440 item 6) —')
+await engineLaw()
+engineWired()
+
 if (process.argv.includes('--mutate')) {
     // break the checkpoint gate in sim.js and demand the shortcut probe above
     // goes red. Restore runs whatever happens.
@@ -1083,6 +1142,36 @@ if (process.argv.includes('--mutate')) {
     try {
         writeFileSync(IDXJS, idxSrc.replace('it.o ? rivalViewFx(h, H) : { s: 1, alpha: 1 }', '{ s: 1, alpha: 1 }'))
         await viewDied('the renderer bypasses the law (the #440 item-2 regression)', viewWired)
+    } finally { writeFileSync(IDXJS, idxSrc) }
+
+    // #440 item-6 engine-voice mutants: re-plant the plastic gear-step, the
+    // dead pitch, the silent drift, the glass-cutting sand and the bypass.
+    const sfx6Src = readFileSync(SFXJS, 'utf8')
+    const sfx6Died = async (label, run) => {
+        const before = R.fail
+        await run()
+        if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #440 engine-voice gate is load-bearing`)
+        else console.log(`  MUTANT SURVIVED — ${label}: the engine-voice gate is BLIND`)
+    }
+    try {
+        writeFileSync(SFXJS, sfx6Src.replace('const period = Math.max(3, 15 - v)', 'const period = Math.max(3, 15 - Math.round(v))'))
+        await sfx6Died('the round(v) gear-step is back in the pop rate', engineLaw)
+    } finally { writeFileSync(SFXJS, sfx6Src) }
+    try {
+        writeFileSync(SFXJS, sfx6Src.replace('const wob = ENGINE.wob1 * Math.sin(tick * ENGINE.wobR1) + ENGINE.wob2 * Math.sin(tick * ENGINE.wobR2)', 'const wob = 0'))
+        await sfx6Died('pitch is dead-steady again — no wobble', engineLaw)
+    } finally { writeFileSync(SFXJS, sfx6Src) }
+    try {
+        writeFileSync(SFXJS, sfx6Src.replace('if (driftT <= 0 || v <= SCRAPE.minV) return null', 'if (v <= SCRAPE.minV) return null'))
+        await sfx6Died('scrape fires on straight wheels (driftT ignored)', engineLaw)
+    } finally { writeFileSync(SFXJS, sfx6Src) }
+    try {
+        writeFileSync(SFXJS, sfx6Src.replace('freq: 300 + 500 * speed', 'freq: 3000 + 500 * speed'))
+        await sfx6Died('sand reads brighter than kerb — cutoff swapped above the scrape', engineLaw)
+    } finally { writeFileSync(SFXJS, sfx6Src) }
+    try {
+        writeFileSync(IDXJS, idxSrc.replace('engAcc += 1 / e.period', 'engAcc += 1 / (15 - Math.round(P.v))'))
+        await sfx6Died('the engine loop bypasses the law\'s period (the #440 item-6 regression)', engineWired)
     } finally { writeFileSync(IDXJS, idxSrc) }
 }
 

@@ -84,8 +84,20 @@ follows it. All art/audio synthesized at runtime; no assets.
      (floor 0.55 alpha), past 55% it shrinks to cap; far rivals render
      untouched. `index.jsx` routes rival sprites (and their shadows) through it
      — the player kart and scenery never damp. cometcheck's readability gates
-     kill the no-shrink, flat-alpha and swallowed-threshold mutants.
-- `index.jsx` — the shell: fixed-timestep loop (`contractHoldsLoop` gates the
+      kill the no-shrink, flat-alpha and swallowed-threshold mutants.
+   - Engine voice (#440 polish 2 item 6) — the bed used to be one square buzz
+      whose pop period stepped with `Math.round(v)` (a plastic gear-step at every
+      integer of speed), dead-steady pitch, drifts and sand silent bar the
+      one-shot crashes. `engineSfx.js` exports the pure laws: `engineVoice`
+      (continuous period `max(3, 15−v)`, pitch riding 58+13·v plus the old
+      34+52·tier boost ladder, wobbling on two incommensurate sines ±7.5 Hz),
+      `driftScrape` (filtered-noise crackle under held drifts, swelling and
+      darkening 2400→1500 Hz as the tyre charges), `sandWhoosh` (low filtered
+      bed off-road, 300–800 Hz — under the scrape floor, since sand drinks the
+      top end). `index.jsx` only accumulates phases and calls AudioController;
+      cometcheck's engine-voice gates kill the gear-step, dead-pitch,
+      straight-wheel-scrape, glass-sand and bypass mutants.
+ - `index.jsx` — the shell: fixed-timestep loop (`contractHoldsLoop` gates the
   sim, the contract owns the clock while held), adaptive-source Mode 7 raster
   (the canvas re-solves to the viewport aspect: height-anchored
   176×≤384 landscape, width-anchored 256×≤448 portrait — the race fills the
@@ -187,8 +199,9 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   (noon/dawn looks are 2D-only so far); the shared trackside arch design is
   per-name, not per-character (Sandbank and Corkscomb deserve their own gantry
   shapes in the polish pass).
-- No cups, items, or real music (placeholder engine buzz
-  only) — all out of scope per #419.
+- No cups, items, or real music (the engine bed is a synthesized voice with
+  scrape/whoosh layers since #440 item 6, but there is no music track) —
+  music out of scope per #419.
 - CPU karts never chain multi-tier drifts deliberately; they hold one bend
   and bank whatever tier they reach.
 - Sand and cliff are surfaces + clamp; no dynamic deformation.
