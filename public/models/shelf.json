@@ -181,7 +181,11 @@
       "tags": [
         "racing",
         "barrier"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "billboard",
@@ -207,7 +211,11 @@
       "tags": [
         "racing",
         "prop"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "boulder",
@@ -233,6 +241,13 @@
       "tags": [
         "nature",
         "rock"
+      ],
+      "colorways": [
+        "default",
+        "snow"
+      ],
+      "variants": [
+        "boulder_snow"
       ]
     },
     {
@@ -260,7 +275,11 @@
         "nature",
         "rock",
         "snow"
-      ]
+      ],
+      "colorways": [
+        "snow"
+      ],
+      "variants": []
     },
     {
       "id": "cone",
@@ -286,7 +305,11 @@
       "tags": [
         "racing",
         "marker"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "fence",
@@ -312,7 +335,11 @@
       "tags": [
         "props",
         "fence"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "flag",
@@ -338,7 +365,11 @@
       "tags": [
         "racing",
         "marker"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "grandstand",
@@ -364,7 +395,11 @@
       "tags": [
         "racing",
         "building"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "hill",
@@ -390,7 +425,11 @@
       "tags": [
         "nature",
         "terrain"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "marshal_post",
@@ -416,7 +455,11 @@
       "tags": [
         "racing",
         "building"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "pit_building",
@@ -442,7 +485,11 @@
       "tags": [
         "racing",
         "building"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "rock",
@@ -468,6 +515,13 @@
       "tags": [
         "nature",
         "rock"
+      ],
+      "colorways": [
+        "default",
+        "snow"
+      ],
+      "variants": [
+        "rock_snow"
       ]
     },
     {
@@ -495,7 +549,11 @@
         "nature",
         "rock",
         "snow"
-      ]
+      ],
+      "colorways": [
+        "snow"
+      ],
+      "variants": []
     },
     {
       "id": "sign",
@@ -521,7 +579,11 @@
       "tags": [
         "racing",
         "marker"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "snowbank",
@@ -547,7 +609,11 @@
       "tags": [
         "nature",
         "snow"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "tire_wall",
@@ -573,7 +639,11 @@
       "tags": [
         "racing",
         "barrier"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "tree_oak",
@@ -599,7 +669,11 @@
       "tags": [
         "nature",
         "tree"
-      ]
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "tree_pine",
@@ -625,6 +699,13 @@
       "tags": [
         "nature",
         "tree"
+      ],
+      "colorways": [
+        "default",
+        "snow"
+      ],
+      "variants": [
+        "tree_pine_snow"
       ]
     },
     {
@@ -652,7 +733,11 @@
         "nature",
         "tree",
         "snow"
-      ]
+      ],
+      "colorways": [
+        "snow"
+      ],
+      "variants": []
     },
     {
       "id": "dune_buggy",
