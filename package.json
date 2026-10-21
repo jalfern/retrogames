@@ -187,7 +187,7 @@
     "lint:bards": "eslint src/games/BardsTale src/components src/utils src/config src/main.jsx scripts/bardscheck.mjs scripts/bardsplay.mjs scripts/lib",
     "bardscheck": "node scripts/bardscheck.mjs",
     "bardsplay": "node scripts/bardsplay.mjs",
-    "lint:ssx": "eslint src/games/SSX src/components src/utils src/config src/main.jsx scripts/ssxcheck.mjs scripts/ssxmodelcheck.mjs scripts/lib",
+    "lint:ssx": "eslint src/games/SSX src/components src/utils src/config src/main.jsx scripts/ssxcheck.mjs scripts/ssxmountaincheck.mjs scripts/ssxmodelcheck.mjs scripts/lib",
     "ssxcheck": "node scripts/ssxcheck.mjs",
     "lint:pop": "eslint src/games/PrinceOfPersia src/components src/utils src/config src/main.jsx scripts/popcheck.mjs scripts/lib",
     "lint:civ": "eslint src/games/CivilizationV src/components src/utils src/config src/main.jsx scripts/civcheck.mjs scripts/civplay.mjs scripts/civclock.mjs scripts/lib",
@@ -208,7 +208,8 @@
     "ciscope": "node scripts/ciscope.mjs --selftest",
     "nightlychecks": "node scripts/run-checks.mjs",
     "nightlysmokes": "node scripts/run-checks.mjs --smoke",
-    "shiftreportcheck": "node scripts/shiftreportcheck.mjs"
+    "shiftreportcheck": "node scripts/shiftreportcheck.mjs",
+    "ssxmountaincheck": "node scripts/ssxmountaincheck.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

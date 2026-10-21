@@ -67,7 +67,7 @@ const SPINES = [
             { n: 16, curve: -0.018, drop: 0.095 },
             { n: 20, curve: 0.000, drop: 0.060 },
         ],
-        gullies: [{ f0: 0.16, f1: 0.24 }, { f0: 0.48, f1: 0.56 }, { f0: 0.66, f1: 0.72 }],
+        gullies: [{ f0: 0.16, f1: 0.22 }, { f0: 0.46, f1: 0.52 }, { f0: 0.64, f1: 0.68 }],
         kickers: [
             { f: 0.11, x: 0.00, power: 3.0, w: 0.24 },
             { f: 0.28, x: -0.35, power: 2.4, w: 0.22 },
@@ -197,8 +197,10 @@ export function featureLift(c, s, x) {
     for (const p of c.pipes) {
         if (i >= p.i0 && i <= p.i1) {
             const t = (i - p.i0) / (p.i1 - p.i0)
-            const wall = Math.max(0, Math.abs(x) - 0.35) / 0.65
-            lift = Math.max(lift, p.power * Math.sin(Math.PI * t) * (0.35 + 0.65 * wall * wall))
+            const ax = Math.abs(x)
+            const wall = Math.max(0, Math.min(1, (ax - 0.35) / 0.65))
+            const fade = 1 - smooth01((ax - 1.4) / 1.2)
+            lift = Math.max(lift, p.power * Math.sin(Math.PI * t) * (0.35 + 0.65 * wall * wall) * fade)
         }
     }
     return lift
@@ -211,8 +213,8 @@ export function featureLift(c, s, x) {
 export function openness(c, s) {
     let o = 1
     for (const gl of c.gullies) {
-        if (s > gl.s0 - 22 && s < gl.s1 + 22) {
-            const e = Math.min(s - (gl.s0 - 22), (gl.s1 + 22) - s) / 22
+        if (s > gl.s0 - 70 && s < gl.s1 + 70) {
+            const e = Math.min(s - (gl.s0 - 70), (gl.s1 + 70) - s) / 70
             o = Math.min(o, 1 - smooth01(e))
         }
     }
@@ -234,15 +236,29 @@ export function bankTurn(c, s, x) {
     return -seg.curve * x * 26
 }
 
-// Side of the piste: on an open face a gentle snow shoulder that climbs toward
-// distant ridges; in a gully the old hard rock wall. Blended by openness.
-function bank(x, open) {
+// Side of the piste: a snow shoulder that climbs to a distant ridge closing
+// the valley; inside a gully an extra rock wall rises ON TOP of the ridge
+// (never below it — an overhang would read as a black blade in the sky).
+// Near the summit the shoulders taper low so the run falls away below you.
+function bank(x, open, s) {
     const a = Math.abs(x)
     if (a <= 1) return 0
     const q = a - 1
-    const shoulder = q * 0.55 + q * q * 0.22
-    const wall = q * q * 9
-    return shoulder * open + wall * (1 - open)
+    const taper = 0.28 + 0.72 * smooth01((s - 30) / 140)
+    // the shoulder climbs to a ridge by q~9 and then the outer mesh SINKS
+    // below the ridge line: far columns can never poke over the near crest in
+    // silhouette (that overhang read as a black blade in the sky)
+    const rise = 8 * smooth01(Math.min(q, 9) / 8) + Math.max(0, Math.min(q, 9) - 8) * 3.2
+    const sink = Math.max(0, q - 9)
+    const shoulder = rise * taper - sink * sink * 0.55
+    // canyon wall: broken jagged rim (two frequencies + per-side offset),
+    // higher near the piste, faded out beyond the ridge
+    const side = x > 0 ? 1 : -1
+    const jag = 0.62 + 0.38 * Math.abs(Math.sin(s * 0.021 + 1.4 + side) * Math.sin(s * 0.0083 + 5.1)
+        * (0.85 + 0.3 * Math.sin(s * 0.061 * side + q * 2.1)))
+    const wc = Math.min(q, 10)
+    const wall = Math.min(24, wc * wc * 2.2) * jag * (1 - smooth01((q - 5) / 10))
+    return shoulder + wall * (1 - open)
 }
 
 export function terrainY(c, s, x) {
@@ -250,7 +266,7 @@ export function terrainY(c, s, x) {
     const f = (s - i * DS) / DS
     const nxt = c.segs[Math.min(c.N - 1, i + 1)]
     const y = seg.y + (nxt.y - seg.y) * f
-    return y + bank(x, openness(c, s)) + featureLift(c, s, x) + undulate(c, s) + bankTurn(c, s, x)
+    return y + bank(x, openness(c, s), s) + featureLift(c, s, x) + undulate(c, s) + bankTurn(c, s, x)
 }
 
 // world position of a point on the slope — the renderer lives by this

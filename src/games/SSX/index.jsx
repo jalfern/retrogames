@@ -57,7 +57,7 @@ const SSXGame = () => {
         scene.add(camera)
         const sun = new THREE.DirectionalLight(0xffffff, 1.6)
         sun.position.set(-80, 160, 60)
-        scene.add(sun, new THREE.HemisphereLight(0xffffff, 0x888888, 0.8))
+        scene.add(sun, new THREE.HemisphereLight(0xffffff, 0x9aa2b4, 0.95))
 
         let world = null
         let worldGen = 0
@@ -132,6 +132,7 @@ const SSXGame = () => {
         let raf = 0, last = 0, acc = 0
         let fpsEMA = 60
         let shake = 0, camPos = new THREE.Vector3()
+        let camFresh = true
         let musicAcc = 0, musicStep = 0
         let pop = '', popT = 0
         let poseOverride = null
@@ -157,6 +158,7 @@ const SSXGame = () => {
             skyObj = buildSky(g.course)
             world.add(keep(skyObj))
             scene.add(world)
+            camFresh = true
             attachShelf(g.course, world, () => gen === worldGen).catch(() => {})
             for (const m of riders) scene.remove(m)
             riders = g.riders.map((r) => {
@@ -260,7 +262,8 @@ const SSXGame = () => {
                 goal.y += Math.cos(g.tick * 4.9) * shake
                 shake = Math.max(0, shake - 0.03)
             }
-            camPos.lerp(goal, 0.18)
+            camPos.lerp(goal, camFresh ? 1 : 0.18)
+            camFresh = false
             camera.position.copy(camPos)
             camera.lookAt(pp.x + fwdX * 16, (p.air ? p.y : pp.y) + 1.2, pp.z + fwdZ * 16)
             if (skyObj) skyObj.position.set(camPos.x, camPos.y - 60, camPos.z)

@@ -7,6 +7,10 @@ the boost meter and a full meter at takeoff throws OVER.
 ## Shape
 
 - `course.js` — the mountains: downhill centerlines integrated segment-by-segment
+  (#638: each spine opens on a summit traverse, then a drop-away; `openness(s)`
+  blends open shoulders ↔ gully rock walls; `undulate` lays rollers/moguls and
+  `bankTurn` banks the curves INTO terrainY — still the single painted==ridden
+  surface; `sceneryPlan` scatters shelf props deterministically)
   (`DS = 4 m`), with kicker wedges, halfpipe walls, rails, and obstacles parked
   on fractions of the run. `terrainY(s, x)` / `slopePos` are the single surface
   every rider and the renderer share — the painted slope IS the ridden slope.
@@ -21,7 +25,11 @@ the boost meter and a full meter at takeoff throws OVER.
   0.76–0.88 of the player top, skill decides grabs/flips/rails), drives the
   attract demo, and is the witness `ssxcheck` grades. Constants mirror `CFG`;
   the harness pins they agree.
-- `art.js` — vertex-coloured snow ribbon, neon rails and city pylons, rigs
+- `art.js` — vertex-coloured snow ribbon (#638: smooth analytic shading —
+  hollows darken blue, crests catch light, wind grain, groomed trail line), a
+  sky-following horizon of distant peaks + sun (#638), shelf scenery models
+  (`attachShelf`, tree_pine/oak, rock, boulder, fence, flag — primitive
+  fallback so nothing blocks), neon rails and city pylons, rigs
   that crouch/grab/spin/flip/tumble, spray sprites. `index.jsx` is paint,
   sound, HUD and input only.
 - Carved tracks: `sim.js` records `r.carves` samples (`{s, x, t}`) whenever the
@@ -89,8 +97,23 @@ was flaking the same-pose stability gate).
 
 ## Verify
 
+- The far mesh SINKS past the ridge line (`bank` q>9) — outer columns must
+  never stand above the near crest, or the silhouette reads as a black blade
+  floating in the sky (the #638 screenshot hunt).
+- `snowColor`'s hollow/crest laplacian reads the NATURAL surface only
+  (`terrainY − featureLift`): kicker lips are built features, and comparing
+  against them drew dark lines along every jump edge.
+- The pipe `featureLift` wall term is clamped/faded past the piste; before
+  that, halfpipe courses generated kilometre-high towers at the wide columns.
+- The chase-cam SNAPS to the rider on the first frame after any course
+  rebuild (`camFresh`) — lerping from world origin meant the first frames of
+  every heat looked at the mountain from below it.
+
+## Verify
+
 ```bash
 npm run lint:ssx && npm run ssxcheck     # 70 checks, blocks merges (CI `static`)
+npm run ssxmountaincheck                # 90 checks: mountain feel (#638)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
                                          #   keys drive poses, race still winnable
 ```

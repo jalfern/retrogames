@@ -15,18 +15,21 @@ import * as THREE from 'three'
 import { slopePos, terrainY, featureLift, sceneryPlan } from './course.js'
 
 // wide grid: past the piste edge the slope keeps going — shoulders, ridges —
-// so the camera never sees the mesh end. Inner columns stay fine.
-const COLS = [-7, -5.5, -4.2, -3.2, -2.75, -2.2, -1.75, -1.0, -0.5, 0, 0.5, 1.0, 1.75, 2.2, 2.75, 3.2, 4.2, 5.5, 7]
+// so the camera never sees the mesh end. Rows start behind the summit so the
+// start gate sits on painted snow too (the sim rides s<0; paint must match).
+const COLS = [-26, -22, -19, -16, -13, -11, -9, -7, -5.5, -4.2, -3.2, -2.75, -2.2, -1.75, -1.0, -0.5, 0, 0.5, 1.0, 1.75, 2.2, 2.75, 3.2, 4.2, 5.5, 7, 9, 11, 13, 16, 19, 22, 26]
+const ROW_BACK = -12
+export const GRIDS = { COLS, ROW_BACK }
 
 const hash = (n) => { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v) }
 const smooth01 = (t) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u) }
 
 export const THEMES = {
     day: {
-        sky: 0x8fc4f2, skyTop: 0x4a86c8, fog: 0xa8ccf0, fogD: 0.0011,
+        sky: 0x8fc4f2, skyTop: 0x4a86c8, fog: 0xc9d9ec, fogD: 0.0009,
         sun: 0xfff3d0, hemiSky: 0xbfd8f2, hemiGround: 0xdfe8f2,
-        snowA: [248, 250, 255], snowB: [205, 222, 244],
-        shadow: [148, 172, 222], edge: [70, 190, 240], rock: [150, 155, 168], rock2: [105, 112, 128],
+        snowA: [248, 250, 255], snowB: [186, 206, 236],
+        shadow: [150, 168, 212], edge: [70, 190, 240], rock: [158, 162, 174], rock2: [122, 128, 142],
         peak: [172, 196, 230], peakSun: [225, 232, 245],
     },
     night: {
@@ -39,8 +42,8 @@ export const THEMES = {
     dusk: {
         sky: 0xff9a5c, skyTop: 0x6a4a9c, fog: 0xf2a878, fogD: 0.0012,
         sun: 0xffd0a0, hemiSky: 0xffc8a0, hemiGround: 0xe0b0c0,
-        snowA: [255, 220, 210], snowB: [216, 170, 196],
-        shadow: [140, 110, 180], edge: [255, 90, 60], rock: [130, 100, 120], rock2: [92, 70, 96],
+        snowA: [255, 224, 214], snowB: [206, 156, 186],
+        shadow: [118, 88, 158], edge: [255, 90, 60], rock: [130, 100, 120], rock2: [92, 70, 96],
         peak: [206, 140, 150], peakSun: [255, 200, 170],
     },
 }
@@ -53,9 +56,11 @@ export function snowColor(c, s, x) {
     const T = THEMES[c.theme]
     const a = Math.abs(x)
     const y = terrainY(c, s, x)
+    // hollow / crest from the laplacian of the NATURAL surface only — kickers
+    // and pipe lips are built features and must not read as snow hollows
+    const nat = (ss, xx) => terrainY(c, ss, xx) - featureLift(c, ss, xx)
     const above = y - terrainY(c, s, 0)
-    // hollow / crest from the local laplacian of the surface
-    const lap = (terrainY(c, s - 3, x) + terrainY(c, s + 3, x) + terrainY(c, s, x - 0.4) + terrainY(c, s, x + 0.4)) / 4 - y
+    const lap = (nat(s - 3, x) + nat(s + 3, x) + nat(s, x - 0.4) + nat(s, x + 0.4)) / 4 - nat(s, x)
     const hollow = smooth01(lap * 2.4)
     const crest = smooth01(-lap * 2.4)
     // wind grain: crossed slow sines, never speckle
@@ -67,19 +72,21 @@ export function snowColor(c, s, x) {
         T.snowA[2] + (T.snowB[2] - T.snowA[2]) * t,
     ]
     // hollows: darken and pull blue; crests: burn slightly white
-    const sh = 0.22 + 0.5 * hollow
+    const sh = 0.12 + 0.55 * hollow
     rgb = rgb.map((v, k) => v * (1 - sh) + T.shadow[k] * sh * (k === 2 ? 1.12 : 1))
-    rgb = rgb.map((v) => v * (1 - 0.16 * hollow) * (1 + 0.10 * crest))
+    rgb = rgb.map((v) => v * (1 - 0.20 * hollow) * (1 + 0.10 * crest))
     if (a < 1.05) {
         // groomed trail down the natural line + piste edge stripe
         const tc = Math.sin(s * 0.011) * 0.35 + Math.sin(s * 0.004 + 1.3) * 0.25
-        const track = smooth01(1 - Math.abs(x - tc) / 0.5)
-        rgb = rgb.map((v, k) => v * (1 - track * 0.55) + (T.shadow[k] * 0.9 + 24) * track * 0.55)
+        const track = smooth01(1 - Math.abs(x - tc) / 0.55)
+        rgb = rgb.map((v, k) => v * (1 - track * 0.16) + T.snowB[k] * 0.8 * track * 0.16)
         if (a > 0.92 && a < 1.06) rgb = T.edge.map((v, k) => (v + rgb[k]) / 2)
     } else {
         // past the piste: snow on the shoulders, rock as the ridge steepens
+        const q0 = a - 1
         const rockT = smooth01((above - 2.6) / 5.5)
-        const rk = T.rock.map((v, k) => v * (1 - rockT) + T.rock2[k] * rockT)
+        const band = 0.86 + 0.22 * (0.5 + 0.5 * Math.sin(q0 * 1.9 + s * 0.017))
+        const rk = T.rock.map((v, k) => (v * (1 - rockT) + T.rock2[k] * rockT) * band)
         rgb = rgb.map((v, k) => v * (1 - rockT) + rk[k] * rockT)
     }
     // kicker lips catch the light
@@ -90,7 +97,7 @@ export function snowColor(c, s, x) {
 
 export function buildTerrain(course) {
     const rows = []
-    for (let i = 0; i < course.N; i += 1) rows.push(i * 4)
+    for (let i = ROW_BACK; i < course.N; i += 1) rows.push(i * 4)
     const pos = new Float32Array(rows.length * COLS.length * 3)
     const col = new Float32Array(rows.length * COLS.length * 3)
     const idx = []
@@ -117,7 +124,7 @@ export function buildTerrain(course) {
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
     geo.setIndex(idx)
     geo.computeVertexNormals()
-    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }))
+    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x1c222c }))
 }
 
 
@@ -230,24 +237,33 @@ export function buildSky(course) {
     dome.position.y = -60
     g.add(dome)
 
-    const sunDir = course.theme === 'dusk' ? [-0.78, 0.32, 0.53] : [-0.42, 0.84, 0.34]
-    const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(course.theme === 'dusk' ? 52 : 34, 20), new THREE.MeshBasicMaterial({ color: T.sun, fog: false }))
-    sunDisc.position.set(sunDir[0] * 700, sunDir[1] * 700 - 40, sunDir[2] * 700)
+    // low enough to sit inside the chase-cam frame, just above the ridge line
+    const sunDir = course.theme === 'dusk' ? [-0.84, 0.16, 0.52] : [-0.48, 0.30, 0.42]
+    const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(course.theme === 'dusk' ? 46 : 30, 20), new THREE.MeshBasicMaterial({ color: T.sun, fog: false }))
+    sunDisc.position.set(sunDir[0] * 680, sunDir[1] * 680, sunDir[2] * 680)
     sunDisc.lookAt(0, sunDisc.position.y * 0.4, 0)
     g.add(sunDisc)
 
-    // peaks ring: jagged low-poly cones, tops well above the horizon line
-    for (let i = 0; i < 18; i++) {
-        const ang = (i / 18) * Math.PI * 2 + hash(i * 1.7) * 0.35
-        const dist = 360 + hash(i * 3.1) * 280
-        const h = 90 + hash(i * 7.3) * 160
-        const rad = 55 + hash(i * 11.7) * 80
+    // peaks ring: distant snow-capped cones deep in the haze
+    const capCol = course.theme === 'night' ? 0x9aa4d8 : course.theme === 'dusk' ? 0xffe8dc : 0xf4f8ff
+    for (let i = 0; i < 16; i++) {
+        const ang = (i / 16) * Math.PI * 2 + hash(i * 1.7) * 0.35
+        const dist = 420 + hash(i * 3.1) * 300
+        const h = 150 + hash(i * 7.3) * 170
+        const rad = 70 + hash(i * 11.7) * 90
+        // tips 30..170 m above the sky origin (which tracks the camera), so
+        // peaks always break the horizon around the rider
+        const tip = 30 + hash(i * 13.3) * 140
         const peak = new THREE.Mesh(
             new THREE.ConeGeometry(rad, h, 4 + (i % 3)),
-            new THREE.MeshLambertMaterial({ color: hash(i * 2.9) < 0.4 ? T.peakSun : T.peak, fog: false }),
+            new THREE.MeshLambertMaterial({ color: hash(i * 2.9) < 0.4 ? T.peakSun : T.peak }),
         )
-        peak.position.set(Math.sin(ang) * dist, -150 + h / 2, Math.cos(ang) * dist)
+        peak.position.set(Math.sin(ang) * dist, -h + tip + h / 2, Math.cos(ang) * dist)
         peak.rotation.y = hash(i * 5.3) * Math.PI
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(rad * 0.42, h * 0.32, 4 + (i % 3)), new THREE.MeshLambertMaterial({ color: capCol }))
+        cap.position.y = h * 0.34
+        cap.rotation.y = peak.rotation.y
+        peak.add(cap)
         g.add(peak)
     }
     return g
