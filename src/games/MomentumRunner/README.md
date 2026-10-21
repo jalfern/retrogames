@@ -47,7 +47,8 @@ All synthesized at runtime (no assets) through the shared chiptune engine
   sector bed actually playing (music-engine state via the probe).
 
 ## Curves, early loops, real enemies (#627)
-- The tail beat cycle is `fastBoost → valleyLoop → pitHop → hill`: `arcPipe()`
+- The tail beat cycle was `fastBoost → valleyLoop → pitHop → hill` until #642
+  replaced it with per-zone programs (below); `arcPipe()`
   samples true circular arcs (tangent-flat quarter-pipes) into ~77px segments,
   so hills/dips are rolling curves and downhill is the speed engine.
 - `beatValleyLoop` sets a full loop (r=70) on each valley floor — zone 1's is
@@ -59,6 +60,22 @@ All synthesized at runtime (no assets) through the shared chiptune engine
   (SKY LOOP's starts at 1450, past loop[1]'s exit at 1360).
 - Fork ramps are quarter-pipe arcs (steep launch, flat landing) with identical
   run/rise; the commit window keys off `FORK_RAMP`, not the segment array.
+
+## Per-zone beat programs (#642)
+- The tail is NO LONGER a 23-beat cycle: each zone gets a hand-authored
+  `PROGRAMS` list of 20 beats, no two neighbours alike, ~15% shorter. Beats:
+  `flatBoost` (fork runway, ≥2600 so the deck ramps land on flat),
+  `valleyLoop` (+ two toll rings), `springHop` (spring at the lip of a wide
+  pit — run-off 1150: a 240px pit at ~800 px/s flies ~1000px; a short pad
+  throws the landing onto the next beat's downslope and the pit-wall rule
+  kills it), `bigHop` (wide gaps you must jump), `hill` (sized per zone),
+  `sCurves` (four chained quarter-pipes, nearly no flat ground),
+  `pitHop`, `spikeSprint` (strip → three toll rings → spike: enemies where
+  they matter; zone 2 has NO tail rings/spikes — its load-bearing apex-ring
+  WORLD check validates every ring in the zone).
+- `TWEAKS` re-params shared beats per zone so neighbouring zones don't share
+  shapes. Hovers ride spring landings; every beat still starts and ends
+  tangent-flat at the entry height, so programs chain with no height math.
 
 ## Pit walls (#641)
 A pit's far side is a WALL (`CFG.pitWalls`), not a ramp. An airborne body that
