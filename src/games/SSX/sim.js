@@ -76,14 +76,14 @@ export function makeGame(mode = 'race', seed = 0) {
         mode, seed, tick: 0,
         heat: 0, course: buildCourse(mode === 'showoff' ? 2 : 0),
         phase: 'count', count: 180, runT: 0, heatT: 0,
-        riders: Array.from({ length: 6 }, (_, i) => newRider(i, i === 0, mode === 'showoff' ? i * 2 : (i === 0 ? 5 : i - 1))),
+        riders: Array.from({ length: 6 }, (_, i) => newRider(i, i === 0, mode === 'showoff' ? i * 2 : (i === 0 ? 2 : i - 1))),
         heatResults: [], standings: [0, 0, 0, 0, 0, 0],
         end: null, why: '', place: 0,
         showoffLeft: mode === 'showoff' ? CFG.showoffTime : 0,
         lastHeatPlace: 0, flash: {},
         events: [], _rs: (seed * 2654435761 + 101) >>> 0,
     }
-    g.riders[0].s = -30
+    g.riders[0].s = -14
     return g
 }
 
@@ -92,8 +92,8 @@ export function loadHeat(g, heat) {
     g.course = buildCourse(heat)
     g.phase = 'count'; g.count = 180; g.heatT = 0
     for (const r of g.riders) {
-        Object.assign(r, newRider(r.id, r.isP, r.isP ? 5 : r.id - 1))
-        r.s = (r.isP ? -35 : -(r.id - 1) * 7)
+        Object.assign(r, newRider(r.id, r.isP, r.isP ? 2 : r.id - 1))
+        r.s = (r.isP ? -14 : -(r.id - 1) * 7)
         r.lastTrick = null
     }
     push(g, { type: 'heat', heat })

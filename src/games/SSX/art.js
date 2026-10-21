@@ -5,65 +5,108 @@
 // course.js geometry (so the painted slope IS the ridden slope), rails glow,
 // the city hums, and riders are articulated rigs that crouch, grab, spin,
 // flip and tumble.
+//
+// #638 mountain feel: smooth analytic snow shading (hollows darken blue, crests
+// catch the sun, wind-grain without speckle), a summit horizon of distant
+// peaks under a gradient sky, and slope props from the shared model shelf
+// (#637) with primitive fallbacks so the game never waits on the network.
 
 import * as THREE from 'three'
-import { slopePos, featureLift } from './course.js'
+import { slopePos, terrainY, featureLift, sceneryPlan } from './course.js'
 
-const COLS = [-2.75, -2.2, -1.75, -1.0, -0.5, 0, 0.5, 1.0, 1.75, 2.2, 2.75]
+// wide grid: past the piste edge the slope keeps going — shoulders, ridges —
+// so the camera never sees the mesh end. Rows start behind the summit so the
+// start gate sits on painted snow too (the sim rides s<0; paint must match).
+const COLS = [-26, -22, -19, -16, -13, -11, -9, -7, -5.5, -4.2, -3.2, -2.75, -2.2, -1.75, -1.0, -0.5, 0, 0.5, 1.0, 1.75, 2.2, 2.75, 3.2, 4.2, 5.5, 7, 9, 11, 13, 16, 19, 22, 26]
+const ROW_BACK = -12
+export const GRIDS = { COLS, ROW_BACK }
 
 const hash = (n) => { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v) }
+const smooth01 = (t) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u) }
 
 export const THEMES = {
     day: {
-        sky: 0x8fc4f2, fog: 0xa8ccf0, fogD: 0.0011,
+        sky: 0x8fc4f2, skyTop: 0x4a86c8, fog: 0xc9d9ec, fogD: 0.0009,
         sun: 0xfff3d0, hemiSky: 0xbfd8f2, hemiGround: 0xdfe8f2,
-        snowA: [248, 250, 255], snowB: [205, 222, 244],
-        edge: [70, 190, 240], rock: [150, 155, 168],
+        snowA: [248, 250, 255], snowB: [186, 206, 236],
+        shadow: [150, 168, 212], edge: [70, 190, 240], rock: [158, 162, 174], rock2: [122, 128, 142],
+        peak: [172, 196, 230], peakSun: [225, 232, 245],
     },
     night: {
-        sky: 0x0a0c22, fog: 0x101436, fogD: 0.0016,
+        sky: 0x0a0c22, skyTop: 0x04051a, fog: 0x101436, fogD: 0.0016,
         sun: 0x8090ff, hemiSky: 0x2a3070, hemiGround: 0x141838,
         snowA: [96, 110, 190], snowB: [56, 64, 140],
-        edge: [255, 60, 200], rock: [40, 44, 90],
+        shadow: [22, 28, 72], edge: [255, 60, 200], rock: [40, 44, 90], rock2: [26, 28, 62],
+        peak: [30, 34, 78], peakSun: [56, 62, 120],
     },
     dusk: {
-        sky: 0xff9a5c, fog: 0xf2a878, fogD: 0.0012,
+        sky: 0xff9a5c, skyTop: 0x6a4a9c, fog: 0xf2a878, fogD: 0.0012,
         sun: 0xffd0a0, hemiSky: 0xffc8a0, hemiGround: 0xe0b0c0,
-        snowA: [255, 220, 210], snowB: [216, 170, 196],
-        edge: [255, 90, 60], rock: [130, 100, 120],
+        snowA: [255, 224, 214], snowB: [206, 156, 186],
+        shadow: [118, 88, 158], edge: [255, 90, 60], rock: [130, 100, 120], rock2: [92, 70, 96],
+        peak: [206, 140, 150], peakSun: [255, 200, 170],
     },
 }
 
+// Smooth snow shading for one grid point (#638). Everything is analytic —
+// no per-vertex noise — so the slope reads as wind-shaped snow: darker
+// hollows with a blue cast, sunlit crests, a fainter groomed trail line
+// following the natural racing line, bluer shadow the deeper off-piste.
+export function snowColor(c, s, x) {
+    const T = THEMES[c.theme]
+    const a = Math.abs(x)
+    const y = terrainY(c, s, x)
+    // hollow / crest from the laplacian of the NATURAL surface only — kickers
+    // and pipe lips are built features and must not read as snow hollows
+    const nat = (ss, xx) => terrainY(c, ss, xx) - featureLift(c, ss, xx)
+    const above = y - terrainY(c, s, 0)
+    const lap = (nat(s - 3, x) + nat(s + 3, x) + nat(s, x - 0.4) + nat(s, x + 0.4)) / 4 - nat(s, x)
+    const hollow = smooth01(lap * 2.4)
+    const crest = smooth01(-lap * 2.4)
+    // wind grain: crossed slow sines, never speckle
+    const grain = 0.5 + 0.5 * Math.sin(s * 0.09 + x * 1.9) * Math.sin(s * 0.041 - x * 0.7 + 2.0)
+    const t = Math.max(0, Math.min(1, 0.55 * grain + 0.45 * (a / 2.2)))
+    let rgb = [
+        T.snowA[0] + (T.snowB[0] - T.snowA[0]) * t,
+        T.snowA[1] + (T.snowB[1] - T.snowA[1]) * t,
+        T.snowA[2] + (T.snowB[2] - T.snowA[2]) * t,
+    ]
+    // hollows: darken and pull blue; crests: burn slightly white
+    const sh = 0.12 + 0.55 * hollow
+    rgb = rgb.map((v, k) => v * (1 - sh) + T.shadow[k] * sh * (k === 2 ? 1.12 : 1))
+    rgb = rgb.map((v) => v * (1 - 0.20 * hollow) * (1 + 0.10 * crest))
+    if (a < 1.05) {
+        // groomed trail down the natural line + piste edge stripe
+        const tc = Math.sin(s * 0.011) * 0.35 + Math.sin(s * 0.004 + 1.3) * 0.25
+        const track = smooth01(1 - Math.abs(x - tc) / 0.55)
+        rgb = rgb.map((v, k) => v * (1 - track * 0.16) + T.snowB[k] * 0.8 * track * 0.16)
+        if (a > 0.92 && a < 1.06) rgb = T.edge.map((v, k) => (v + rgb[k]) / 2)
+    } else {
+        // past the piste: snow on the shoulders, rock as the ridge steepens
+        const q0 = a - 1
+        const rockT = smooth01((above - 2.6) / 5.5)
+        const band = 0.86 + 0.22 * (0.5 + 0.5 * Math.sin(q0 * 1.9 + s * 0.017))
+        const rk = T.rock.map((v, k) => (v * (1 - rockT) + T.rock2[k] * rockT) * band)
+        rgb = rgb.map((v, k) => v * (1 - rockT) + rk[k] * rockT)
+    }
+    // kicker lips catch the light
+    const lift = featureLift(c, s, x)
+    if (lift > 0.3) rgb = rgb.map((v) => Math.min(255, v * 1.18))
+    return rgb.map((v) => Math.max(0, Math.min(255, v)))
+}
+
 export function buildTerrain(course) {
-    const T = THEMES[course.theme]
     const rows = []
-    for (let i = 0; i < course.N; i += 1) rows.push(i * 4)
+    for (let i = ROW_BACK; i < course.N; i += 1) rows.push(i * 4)
     const pos = new Float32Array(rows.length * COLS.length * 3)
     const col = new Float32Array(rows.length * COLS.length * 3)
     const idx = []
     rows.forEach((s, ri) => {
-        const si = s / 4
         COLS.forEach((x, ci) => {
             const p = slopePos(course, s, x)
             const o = (ri * COLS.length + ci) * 3
             pos[o] = p.x; pos[o + 1] = p.y; pos[o + 2] = p.z
-            const a = Math.abs(x)
-            const wall = a > 1.75
-            let rgb
-            if (wall) rgb = T.rock
-            else {
-                const n = hash(si * 7.13 + ci * 3.71)
-                const mix = 0.5 + 0.5 * Math.sin(si * 0.05 + x * 2.1) + (n - 0.5) * 0.35
-                const t = Math.max(0, Math.min(1, mix))
-                rgb = [
-                    T.snowA[0] + (T.snowB[0] - T.snowA[0]) * t,
-                    T.snowA[1] + (T.snowB[1] - T.snowA[1]) * t,
-                    T.snowA[2] + (T.snowB[2] - T.snowA[2]) * t,
-                ]
-                if (a > 0.92 && a < 1.06) rgb = T.edge
-                const lift = featureLift(course, s, x)
-                if (lift > 0.3) { rgb = rgb.map((v) => Math.min(255, v * 1.18)) }
-            }
+            const rgb = snowColor(course, s, x)
             col[o] = rgb[0] / 255; col[o + 1] = rgb[1] / 255; col[o + 2] = rgb[2] / 255
         })
     })
@@ -71,9 +114,9 @@ export function buildTerrain(course) {
         for (let ci = 0; ci < COLS.length - 1; ci++) {
             const a = ri * COLS.length + ci
             const b = a + 1
-            const c = a + COLS.length
-            const d = c + 1
-            idx.push(a, b, c, b, d, c)
+            const c2 = a + COLS.length
+            const d = c2 + 1
+            idx.push(a, b, c2, b, d, c2)
         }
     }
     const geo = new THREE.BufferGeometry()
@@ -81,8 +124,9 @@ export function buildTerrain(course) {
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
     geo.setIndex(idx)
     geo.computeVertexNormals()
-    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }))
+    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x1c222c }))
 }
+
 
 export function buildRails(course) {
     const g = new THREE.Group()
@@ -114,22 +158,24 @@ export function buildScenery(course) {
         : new THREE.MeshLambertMaterial({ color: 0x2c6a3a })
     const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5a3d24 })
     const rockMat = new THREE.MeshLambertMaterial({ color: course.theme === 'night' ? 0x2c3054 : 0x8a8f9c })
+    // Primitive placeholders for the crash obstacles + day glade. Tagged `ph`
+    // so attachShelf() swaps them for the real shelf models when the GLBs
+    // arrive; if the network or shelf is missing, these carry the look.
+    const ph = (m) => { m.userData.ph = 1; return m }
     for (const ob of course.obstacles) {
         const p = slopePos(course, ob.i * 4, ob.x)
-        const th = p.th
         if (ob.kind === 'tree') {
-            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 6), trunkMat)
+            const trunk = ph(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 6), trunkMat))
             trunk.position.set(p.x, p.y + 0.6, p.z)
-            const canopy = new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.4, 7), treeMat)
+            const canopy = ph(new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.4, 7), treeMat))
             canopy.position.set(p.x, p.y + 2.6, p.z)
             g.add(trunk, canopy)
         } else {
-            const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.75, 0), rockMat)
+            const rock = ph(new THREE.Mesh(new THREE.DodecahedronGeometry(0.75, 0), rockMat))
             rock.position.set(p.x, p.y + 0.45, p.z)
             rock.rotation.y = hash(ob.i) * 3
             g.add(rock)
         }
-        void th
     }
     if (course.theme === 'night') {
         const neon = [0xff3ca0, 0x3ce0ff, 0xffe03c, 0x8aff5e]
@@ -160,12 +206,121 @@ export function buildScenery(course) {
             const s = 20 + (i * 71) % (course.N * 4)
             const side = i % 2 ? 1 : -1
             const p = slopePos(course, s, side * (2.6 + hash(i) * 1.6))
-            const canopy = new THREE.Mesh(new THREE.ConeGeometry(1.4, 4.4, 7), treeMat)
+            const canopy = ph(new THREE.Mesh(new THREE.ConeGeometry(1.4, 4.4, 7), treeMat))
             canopy.position.set(p.x, p.y + 3, p.z)
             g.add(canopy)
         }
     }
     return g
+}
+
+// ---- summit horizon (#638) ---------------------------------------------------
+// A gradient sky dome, a sun and a ring of distant peaks, all centred on the
+// sky group's origin — index.jsx parks that origin on the camera every frame,
+// so the range never runs out: the run always falls away into peaks.
+export function buildSky(course) {
+    const T = THEMES[course.theme]
+    const g = new THREE.Group()
+
+    const cvs = document.createElement('canvas')
+    cvs.width = 2; cvs.height = 256
+    const ctx = cvs.getContext('2d')
+    const grad = ctx.createLinearGradient(0, 0, 0, 256)
+    const hex = (v) => `#${v.toString(16).padStart(6, '0')}`
+    grad.addColorStop(0, hex(T.skyTop)); grad.addColorStop(0.62, hex(T.sky)); grad.addColorStop(1, hex(T.fog))
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, 2, 256)
+    const skyTex = new THREE.CanvasTexture(cvs)
+    skyTex.colorSpace = THREE.SRGBColorSpace
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(800, 20, 14), new THREE.MeshBasicMaterial({
+        map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false,
+    }))
+    dome.position.y = -60
+    g.add(dome)
+
+    // low enough to sit inside the chase-cam frame, just above the ridge line
+    const sunDir = course.theme === 'dusk' ? [-0.84, 0.16, 0.52] : [-0.48, 0.30, 0.42]
+    const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(course.theme === 'dusk' ? 46 : 30, 20), new THREE.MeshBasicMaterial({ color: T.sun, fog: false }))
+    sunDisc.position.set(sunDir[0] * 680, sunDir[1] * 680, sunDir[2] * 680)
+    sunDisc.lookAt(0, sunDisc.position.y * 0.4, 0)
+    g.add(sunDisc)
+
+    // peaks ring: distant snow-capped cones deep in the haze
+    const capCol = course.theme === 'night' ? 0x9aa4d8 : course.theme === 'dusk' ? 0xffe8dc : 0xf4f8ff
+    for (let i = 0; i < 16; i++) {
+        const ang = (i / 16) * Math.PI * 2 + hash(i * 1.7) * 0.35
+        const dist = 420 + hash(i * 3.1) * 300
+        const h = 150 + hash(i * 7.3) * 170
+        const rad = 70 + hash(i * 11.7) * 90
+        // tips 30..170 m above the sky origin (which tracks the camera), so
+        // peaks always break the horizon around the rider
+        const tip = 30 + hash(i * 13.3) * 140
+        const peak = new THREE.Mesh(
+            new THREE.ConeGeometry(rad, h, 4 + (i % 3)),
+            new THREE.MeshLambertMaterial({ color: hash(i * 2.9) < 0.4 ? T.peakSun : T.peak }),
+        )
+        peak.position.set(Math.sin(ang) * dist, -h + tip + h / 2, Math.cos(ang) * dist)
+        peak.rotation.y = hash(i * 5.3) * Math.PI
+        const cap = new THREE.Mesh(new THREE.ConeGeometry(rad * 0.42, h * 0.32, 4 + (i % 3)), new THREE.MeshLambertMaterial({ color: capCol }))
+        cap.position.y = h * 0.34
+        cap.rotation.y = peak.rotation.y
+        peak.add(cap)
+        g.add(peak)
+    }
+    return g
+}
+
+// ---- shelf props (#638) ------------------------------------------------------
+// Real CC0 models from the shared shelf (public/models/shelf.json), scattered
+// by the sceneryPlan in course.js. Templates are cached per id+theme; clones
+// share geometry (keepGeo marks them so teardown does not dispose shared
+// buffers). The game never blocks on this — buildScenery paints primitives
+// first, attachShelf upgrades when the GLBs land.
+const shelfTemplates = new Map()
+
+async function shelfTemplate(id, theme) {
+    const key = `${id}|${theme}`
+    if (!shelfTemplates.has(key)) {
+        const { loadModel } = await import('../../utils/modelShelf.js')
+        const src = await loadModel(id)
+        const tint = theme === 'night' ? 0x5a66b0 : theme === 'dusk' ? 0xffcfa0 : null
+        if (tint) {
+            src.traverse((o) => {
+                if (o.isMesh && o.material) {
+                    o.material = o.material.clone()
+                    o.material.color = o.material.color.clone().multiply(new THREE.Color(tint))
+                }
+            })
+        }
+        shelfTemplates.set(key, src)
+    }
+    return shelfTemplates.get(key)
+}
+
+export async function attachShelf(course, group, alive = () => true) {
+    const plan = sceneryPlan(course)
+    const ids = [...new Set(plan.map((p) => p.id))]
+    const models = {}
+    await Promise.all(ids.map(async (id) => {
+        try { models[id] = await shelfTemplate(id, course.theme) } catch { models[id] = null }
+    }))
+    if (!alive()) return 0
+    for (const ch of [...group.children]) {
+        if (ch.userData.ph) { group.remove(ch); ch.traverse((o) => { if (o.geometry) o.geometry.dispose() }) }
+    }
+    let n = 0
+    for (const e of plan) {
+        const src = models[e.id]
+        if (!src) continue
+        const m = src.clone(true)
+        m.userData.keepGeo = 1
+        const p = slopePos(course, e.s, e.x)
+        m.position.set(p.x, p.y - 0.05, p.z)
+        m.scale.setScalar(e.scale)
+        m.rotation.y = e.orient === 'along' ? -p.th - Math.PI / 2 : e.orient === 'across' ? -p.th : e.rot
+        group.add(m)
+        n++
+    }
+    return n
 }
 
 export function makeSprite(color) {

@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -57,9 +57,11 @@ const SSXGame = () => {
         scene.add(camera)
         const sun = new THREE.DirectionalLight(0xffffff, 1.6)
         sun.position.set(-80, 160, 60)
-        scene.add(sun, new THREE.HemisphereLight(0xffffff, 0x888888, 0.8))
+        scene.add(sun, new THREE.HemisphereLight(0xffffff, 0x9aa2b4, 0.95))
 
         let world = null
+        let worldGen = 0
+        let skyObj = null
         let riders = []
         let spray = sprayField(LITE)
         scene.add(spray.pts)
@@ -130,6 +132,7 @@ const SSXGame = () => {
         let raf = 0, last = 0, acc = 0
         let fpsEMA = 60
         let shake = 0, camPos = new THREE.Vector3()
+        let camFresh = true
         let musicAcc = 0, musicStep = 0
         let pop = '', popT = 0
         let poseOverride = null
@@ -140,8 +143,9 @@ const SSXGame = () => {
         const setCourseVisuals = () => {
             if (world) {
                 scene.remove(world)
-                world.traverse((o) => { if (o.geometry) o.geometry.dispose() })
+                world.traverse((o) => { if (o.geometry && !o.userData.keepGeo) o.geometry.dispose() })
             }
+            const gen = ++worldGen
             const T = THEMES[g.course.theme]
             scene.background = new THREE.Color(T.sky)
             scene.fog = new THREE.FogExp2(T.fog, T.fogD)
@@ -151,7 +155,11 @@ const SSXGame = () => {
             world.add(keep(buildTerrain(g.course)))
             world.add(keep(buildRails(g.course)))
             world.add(keep(buildScenery(g.course)))
+            skyObj = buildSky(g.course)
+            world.add(keep(skyObj))
             scene.add(world)
+            camFresh = true
+            attachShelf(g.course, world, () => gen === worldGen).catch(() => {})
             for (const m of riders) scene.remove(m)
             riders = g.riders.map((r) => {
                 const rig = keep(makeHeroRider(RIDER_COLORS[r.id], RIDER_MODELS[r.id] || 'rogue', r.id))
@@ -254,9 +262,11 @@ const SSXGame = () => {
                 goal.y += Math.cos(g.tick * 4.9) * shake
                 shake = Math.max(0, shake - 0.03)
             }
-            camPos.lerp(goal, 0.18)
+            camPos.lerp(goal, camFresh ? 1 : 0.18)
+            camFresh = false
             camera.position.copy(camPos)
             camera.lookAt(pp.x + fwdX * 16, (p.air ? p.y : pp.y) + 1.2, pp.z + fwdZ * 16)
+            if (skyObj) skyObj.position.set(camPos.x, camPos.y - 60, camPos.z)
             const fov = 66 + Math.min(16, Math.max(0, (p.v - 12) * 0.55)) + (p.boost ? 8 : 0)
             if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix() }
 
