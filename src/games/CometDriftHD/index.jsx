@@ -17,7 +17,7 @@ import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, roadRollYAt, roadRollAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
-    hudScale, hudTop, tintFor, SKY_STOPS,
+    hudScale, hudTop, tintFor, SKY_STOPS, refOverlayStats,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
@@ -235,6 +235,9 @@ export default function CometDriftHD() {
         // skips the adapter search, so backendName is deterministically 'webgl2'
         // and WEBGL_lose_context can exercise the auto-heal headlessly.
         const forceGLNode = !!qs && qs.get('gl') === 'webgl-node'
+        // #530 item 4: ?ref=1 draws the traced real-map centerline over the
+        // circuit (debug aid — see scene.js refOverlayStats). Off by default.
+        const refOn = !!qs && qs.get('ref') === '1'
 
         const g = makeGame(0)
         gameRef.current = g
@@ -351,6 +354,17 @@ export default function CometDriftHD() {
             trackGroup.add(new THREE.Mesh(M.plateauL, plateauMat))
             trackGroup.add(new THREE.Mesh(M.plateauR, plateauMat))
             trackGroup.add(buildArch(tex(strataTex())))
+            if (refOn) {
+                const ro = refOverlayStats()
+                if (ro) {
+                    const rg = new THREE.BufferGeometry()
+                    rg.setAttribute('position', new THREE.Float32BufferAttribute(ro.coords, 3))
+                    const refLine = new THREE.Line(rg, new THREE.LineBasicMaterial({ color: 0x00e5ff, depthTest: false, transparent: true, opacity: 0.9 }))
+                    refLine.renderOrder = 999
+                    refLine.name = 'refOverlay'
+                    trackGroup.add(refLine)
+                }
+            }
             trackGroup.add(buildTireBars(
                 new THREE.MeshStandardMaterial({ color: 0xc8281e, roughness: 0.85 }),
                 new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.8 }),

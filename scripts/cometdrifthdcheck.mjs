@@ -15,7 +15,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
 import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
-import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE } from '../src/games/CometDriftHD/scene.js'
+import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE, refOverlayStats } from '../src/games/CometDriftHD/scene.js'
 import * as THREE from 'three'
 
 const args = process.argv.slice(2)
@@ -336,6 +336,28 @@ const roadC = (i) => (yAt(geos.road, i, 0) + yAt(geos.road, i, 1)) / 2
     selectCourse('gulch')
     ok(lawMax > 0.1, `#530 banking law is non-trivial on Sandbank (law max ${lawMax.toFixed(3)}u)`)
     ok(Math.abs(rollMax - lawMax) < 0.02, `#530 surface roll matches the banking law (measured ${rollMax.toFixed(3)}u vs law ${lawMax.toFixed(3)}u; a flat road reads 0)`)
+}
+// #530 item 4: the ?ref=1 debug overlay — the traced real-map centerline
+// (reference.js) fitted onto the shipped circuit. On a referenced course it
+// must draw ≥200 finite points that hug the shipped centerline (<4% of the
+// bbox span on average) and pick direct over mirror-x alignment (the layouts
+// were authored on the un-mirrored map — cometcheck's own rule). Gulch has
+// no traced map, so the overlay stays null there. Mutating refOverlayStats
+// to return null reds every gate in this block.
+console.log('reference overlay (#530 item 4):')
+{
+    ok(refOverlayStats('gulch') === null, 'gulch has no traced reference — overlay stays null')
+    for (const id of ['sandbank', 'corkscomb']) {
+        selectCourse(id)
+        const ro = refOverlayStats()
+        if (!ro) { ok(false, `${id}: overlay stats missing`); continue }
+        let nan = 0
+        for (let k = 0; k < ro.coords.length; k++) if (!Number.isFinite(ro.coords[k])) nan++
+        ok(nan === 0 && ro.count >= 200, `${id}: overlay draws ${ro.count} finite points (NaN ${nan})`)
+        ok(ro.meanPx > 0 && ro.meanPx / ro.spanPx <= 0.04, `${id}: overlay hugs the shipped centerline (mean ${ro.meanPx.toFixed(1)}px = ${(100 * ro.meanPx / ro.spanPx).toFixed(2)}% of span)`)
+        ok(ro.mirror === false, `${id}: direct alignment beats mirror-x (authored on the un-mirrored map)`)
+    }
+    selectCourse('gulch')
 }
 ok(stats.wallL.maxY >= 1.5 && stats.wallR.maxY >= 1.5, 'cliff walls rise over the road')
 ok(stats.kerbL.verts === ring && stats.gutterR.verts === ring, 'kerb + gutter rings cover the full lap')
