@@ -800,16 +800,26 @@ async function boot() {
     struct SOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f, @location(1) col: vec3f, @location(2) att: f32, @location(3) tw: f32 };
     @vertex
     fn vs_star(@location(0) corner: vec2f, @location(1) d4: vec4f, @location(2) c4: vec4f) -> SOut {
-      let center = d4.xyz * u.radius;
+      // #608: reflected batch mirrors each direction in the horizon plane (p0=1)
+      // and rides the sea: dimmer (p1), vertically smeared into glitter, wobbled
+      // by a per-star ripple, scintillating faster than the sky copy.
+      let refl = u.p0;
+      let dir = vec3f(d4.x, mix(d4.y, -d4.y, refl), d4.z);
+      let center = dir * u.radius;
       let cc = u.vp * vec4f(center, 1.0);
       var o: SOut;
       o.col = c4.rgb;
-      o.tw = 0.72 + 0.28 * sin(u.time * (1.5 + 2.5 * fract(c4.w * 17.0)) + c4.w * 43.0);
-      o.att = smoothstep(0.02, 0.18, d4.y);   // fade out at the horizon (d4.y = up factor)
+      let twSlow = 0.72 + 0.28 * sin(u.time * (1.5 + 2.5 * fract(c4.w * 17.0)) + c4.w * 43.0);
+      let twFast = 0.55 + 0.45 * sin(u.time * (5.5 + 7.0 * fract(c4.w * 7.0)) + c4.w * 29.0);
+      o.tw = mix(twSlow, twFast, refl);
+      let att = smoothstep(0.02, 0.18, d4.y);   // fade out at the horizon (d4.y = up factor)
+      o.att = mix(att, att * u.p1, refl);
       if (cc.w <= 0.0) { o.pos = vec4f(3.0, 3.0, 1.0, 1.0); o.uv = vec2f(0.0); o.att = 0.0; return o; }
       let ndc = cc.xyz / cc.w;
-      let ox = corner.x * d4.w * (2.0 / u.px);
-      let oy = corner.y * d4.w * (2.0 / u.py);
+      let ph = c4.w * 43.0;
+      let jit = refl * sin(u.time * 3.1 + ph) * (1.5 + 2.5 * sin(u.time * 1.3 + ph * 0.7)) * (2.0 / u.px);
+      let ox = corner.x * d4.w * mix(1.0, 0.8, refl) * (2.0 / u.px) + jit;
+      let oy = corner.y * d4.w * mix(1.0, 3.2, refl) * (2.0 / u.py);
       o.pos = vec4f(ndc.x + ox, ndc.y + oy, ndc.z, 1.0);
       o.uv = corner;
       return o;
@@ -852,7 +862,28 @@ async function boot() {
     primitive: { topology: 'triangle-list' },
     depthStencil: { format: 'depth24plus', depthCompare: 'less', depthWriteEnabled: true },
   });
-  let starInstCount = 0, curNight = 1;
+  // #608: the reflection batch draws after the sea with depthCompare 'always' — its
+  // mirrored directions always land below the horizon, i.e. on water, and virtual
+  // sky at radius 900 could never pass a real depth test against the near sea.
+  const uStarR = device.createBuffer({ size: 96, usage: U });
+  const bgStarR = device.createBindGroup({ layout: starLayout, entries: [{ binding: 0, resource: { buffer: uStarR } }] });
+  const starReflPipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [starLayout] }),
+    vertex: { module: modStar, entryPoint: 'vs_star', buffers: [
+      { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
+      { arrayStride: 32, stepMode: 'instance', attributes: [
+        { shaderLocation: 1, offset: 0, format: 'float32x4' },
+        { shaderLocation: 2, offset: 16, format: 'float32x4' },
+      ] },
+    ] },
+    fragment: { module: modStar, entryPoint: 'fs_star', targets: [{ format, blend: {
+      color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+      alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+    } }] },
+    primitive: { topology: 'triangle-list' },
+    depthStencil: { format: 'depth24plus', depthCompare: 'always', depthWriteEnabled: false },
+  });
+  let starInstCount = 0, curNight = 1, curReflK = 0;
 
   // ---------- matrix helpers ----------
   function lookAt(eye, f, up) {
@@ -1041,6 +1072,12 @@ async function boot() {
       device.queue.writeBuffer(uStar, 0, new Float32Array([
         ...vp, STAR_RADIUS, vw, vh, t, nightness, cloud, 0, 0,
       ]));
+      // #608: reflected star glints — brighter skies give brighter water; a rough
+      // sea scatters them away (mirrors break up, same story as the moon glitter).
+      curReflK = nightness > 0.02 ? 0.42 * (1.0 - 0.5 * s) : 0;
+      device.queue.writeBuffer(uStarR, 0, new Float32Array([
+        ...vp, STAR_RADIUS, vw, vh, t, nightness, cloud, 1, curReflK,
+      ]));
     }
 
     // #462 item 4 — feed the swell probe (camPos + view axes XZ in oct-0 domain,
@@ -1099,6 +1136,12 @@ async function boot() {
     rp.setPipeline(seaPipeline); rp.setBindGroup(0, bgSea);
     rp.setVertexBuffer(0, vtxBuf); rp.setIndexBuffer(idxBuf, 'uint32');
     rp.drawIndexed(gridIdx.length);
+    if (starInstCount > 0 && curReflK > 0.001) {
+      rp.setPipeline(starReflPipeline); rp.setBindGroup(0, bgStarR);
+      rp.setVertexBuffer(0, starCornerBuf); rp.setVertexBuffer(1, starInstBuf);
+      rp.setIndexBuffer(starIdxBuf, 'uint32');
+      rp.drawIndexed(starIdx.length, starInstCount, 0, 0);
+    }
     rp.end();
     device.queue.submit([enc.finish()]);
     // #462 item 4 — async readback (no fence, no stall): center height -> bob,
@@ -1204,7 +1247,7 @@ async function boot() {
       return {
         count: SKY.BSC.length, mwCount: SKY.MILKY.length, lat: SKY.LAT_DEG,
         lstDeg: +((((lst * 180 / Math.PI) % 360) + 360) % 360).toFixed(1),
-        night: +curNight.toFixed(3), uploaded: starInstCount,
+        night: +curNight.toFixed(3), uploaded: starInstCount, reflect: +curReflK.toFixed(3),
         pole: [0, +Math.sin(PHI).toFixed(4), +Math.cos(PHI).toFixed(4)],
         named,
       };
