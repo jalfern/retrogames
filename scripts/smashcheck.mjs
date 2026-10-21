@@ -592,7 +592,7 @@ console.log('co-op')
         const c = S.planCoop(seed)
         if (c.won) { wins.push(seed); if (c.score2 < 1000) badPartner++ }
     }
-    ok(wins.length >= 4, `the co-op autopilot clears the show on ${wins.length}/9 seeds (4 is the bar)`, `won ${wins.join(',')}`)
+    ok(wins.length >= 9, `the co-op autopilot clears the show on ${wins.length}/9 seeds (all nine is the bar)`, `won ${wins.join(',')}`)
     ok(badPartner === 0, 'the partner carries its weight on every win (2UP bank > 0)', `weak partner on ${badPartner} seeds`)
 }
 // determinism of the co-op replay
