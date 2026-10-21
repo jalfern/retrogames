@@ -132,7 +132,31 @@ function foamPix(img, yFrom, yTo) {
   return n
 }
 
-// small bright bluish dots in the sky band: stars at night (moon glow also counts)
+// star pixels + their vertical/horizontal span in a sky band (#607: a thin band
+// means the catalog is too sparse and the sky reads as a line, not a dome)
+function starSpread(img, yFrom, yTo) {
+  let sum = 0, n = 0
+  for (let y = yFrom; y < yTo; y++) {
+    for (let x = 0; x < img.w; x++) {
+      sum += img.px[(y * img.w + x) * img.bpp]
+      n++
+    }
+  }
+  let count = 0, yLo = 1e9, yHi = -1, xLo = 1e9, xHi = -1
+  for (let y = yFrom; y < yTo; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const i = (y * img.w + x) * img.bpp
+      if (img.px[i + 2] > sum / n + 25 && img.px[i + 2] > img.px[i] + 8 && img.px[i + 2] > 70) {
+        count++
+        if (y < yLo) yLo = y
+        if (y > yHi) yHi = y
+        if (x < xLo) xLo = x
+        if (x > xHi) xHi = x
+      }
+    }
+  }
+  return { count, ySpan: yHi - yLo, xSpan: xHi - xLo }
+}
 function starPix(img, yFrom, yTo) {
   let sum = 0, n = 0
   for (let y = yFrom; y < yTo; y++) {
@@ -401,7 +425,7 @@ async function main() {
       await page.evaluate(() => { window.__oceanTest.setTod(0); window.__oceanTest.setCloud(0); window.__oceanTest.setStorm(0) })
       await page.waitForTimeout(900)
       const sk = await page.evaluate(() => window.__oceanTest.stars())
-      ok('night: ~500 Yale BSC stars embedded', sk.count >= 450 && sk.count <= 520, `count=${sk.count} mw=${sk.mwCount} lat=${sk.lat}`)
+      ok('night: ~2900 Yale BSC stars embedded (to mag 5.5, #607)', sk.count >= 2500 && sk.count <= 3000, `count=${sk.count} mw=${sk.mwCount} lat=${sk.lat}`)
       ok('night: faint Milky Way band embedded', sk.mwCount >= 200, `mw=${sk.mwCount}`)
       ok('night: brightest star is Sirius (mag -1.46)', sk.named.sirius && Math.abs(sk.named.sirius.mag + 1.46) < 0.05, sk.named.sirius ? `mag=${sk.named.sirius.mag}` : 'missing')
       ok('night: Polaris at the N pole (dec ~89.3)', sk.named.polaris && Math.abs(sk.named.polaris.dec - 89.26) < 0.6, sk.named.polaris ? `dec=${sk.named.polaris.dec}` : 'missing')
@@ -414,6 +438,15 @@ async function main() {
       const pAz = sk.named.polaris.az
       ok('night: pole is due north (Polaris azimuth ~0/360)', pAz < 12 || pAz > 348, `Polaris az=${pAz}`)
       ok('night: star billboards actually drawing', sk.uploaded > 100, `uploaded=${sk.uploaded} night=${sk.night}`)
+      // #607: the stars must FILL the sky, not sit in a thin band across it.
+      let bestSpread = { count: 0, ySpan: 0, xSpan: 0 }
+      for (let i = 0; i < 3; i++) {
+        const sp = starSpread(decodePng(await page.screenshot()), 0, Math.floor(540 * 0.44))
+        if (sp.count > bestSpread.count) bestSpread = sp
+        await page.waitForTimeout(350)
+      }
+      ok('night: stars fill the sky (not a line)', bestSpread.count >= 8000 && bestSpread.ySpan >= 140 && bestSpread.xSpan >= 500,
+        `count=${bestSpread.count} ySpan=${bestSpread.ySpan} xSpan=${bestSpread.xSpan}`)
       const azA = (await page.evaluate(() => window.__oceanTest.stars())).named.arcturus.az
       await page.evaluate(() => window.__oceanTest.setTod(0.3))
       await page.waitForTimeout(700)
