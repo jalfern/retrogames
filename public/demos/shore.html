@@ -109,6 +109,16 @@ function vn2(x, z) {
   return Math.max(0, Math.min(1, (a * (1 - v) + b * v) * 0.75 + 0.5));
 }
 function fbm2(x, z) { return 0.6 * vn2(x, z) + 0.4 * vn2(x * 2.17 + 13, z * 2.17 + 7); }
+// rip channels: two or three deepening slots in the submerged bar. The SWE
+// accelerates through a slot (continuity), the breaker line jumps offshore
+// over the bar between slots, and the alongshore foam lanes structure.
+function ripF(z) {
+  const a = 0.5 + 0.5 * Math.sin(z * 0.052 + 0.9);
+  const b = 0.5 + 0.5 * Math.sin(z * 0.083 + 2.6);
+  const m = Math.max(a, 0.85 * b);
+  const s = Math.max(0, Math.min(1, (m - 0.58) / (0.90 - 0.58)));
+  return s * s * (3 - 2 * s);
+}
 function terrain(x, z) {
   const xs = xsCurve(z);
   let h = SLOPE * (x - xs);
@@ -119,6 +129,7 @@ function terrain(x, z) {
   if (x < xs) {
     const k = xs - x;
     h -= 1.2 * (1 - Math.exp(-k / 26)) + 1.6 * (1 - Math.exp(-k / 55));
+    h -= 0.15 * ripF(z) * Math.exp(-Math.pow((k - 16.0) / 7.0, 2));
   }
   return h;
 }
@@ -200,7 +211,7 @@ function etaA(x, z, t) {
   return e;
 }
 
-const cam = { pos: [48, 3.0, -18], yaw: -0.55, pitch: -0.15, touched: false };
+const cam = { pos: [40, 3.6, -46], yaw: 0.78, pitch: -0.15, touched: false };
 const canvas = document.getElementById('c');
 const fatal = document.getElementById('fatal');
 const setLbl = document.getElementById('setLbl');
@@ -271,7 +282,7 @@ fn vnoise(p: vec2f) -> f32 {
 fn fbm2(p: vec2f) -> f32 {
   return 0.6 * vnoise(p) + 0.4 * vnoise(p * 2.17 + vec2f(13.0, 7.0));
 }
-// Worley cells for foam lace: F1 distance over ~0.6 m cells
+// Worley cells for foam lace: F1 distance over unit cells
 fn worley(p: vec2f) -> f32 {
   let ip = floor(p); let fp = fract(p);
   var md = 8.0;
@@ -284,6 +295,24 @@ fn worley(p: vec2f) -> f32 {
   }
   return md;
 }
+// thin ridge network of a Worley field (cell borders, not cell centres)
+fn strand(p: vec2f) -> f32 {
+  let a = worley(p);
+  return smoothstep(0.30, 0.52, a) * (1.0 - 0.6 * smoothstep(0.60, 0.92, a));
+}
+// churn: two octaves of strand networks at ~0.19 m and ~0.43 m — the size
+// spread is what kills the uniform polka-dot read at distance
+fn churn(p: vec2f) -> f32 {
+  return clamp(strand(p * 5.4) * 0.95 + strand(p * 2.3 + vec2f(31.7, 13.9)) * 0.6, 0.0, 1.0);
+}
+// rip channels (JS mirror twin): deepening slots in the submerged bar
+fn ripF(z: f32) -> f32 {
+  let a = 0.5 + 0.5 * sin(z * 0.052 + 0.9);
+  let b = 0.5 + 0.5 * sin(z * 0.083 + 2.6);
+  let m = max(a, 0.85 * b);
+  let s = clamp((m - 0.58) / (0.90 - 0.58), 0.0, 1.0);
+  return s * s * (3.0 - 2.0 * s);
+}
 // dry sand elevation (0 at the still waterline), ripples + berm + offshore bar
 fn terrain(xIn: f32, z: f32) -> f32 {
   let xs = xsCurve(z);
@@ -295,6 +324,7 @@ fn terrain(xIn: f32, z: f32) -> f32 {
   if (xIn < xs) {
     let k = xs - xIn;
     h = h - 1.2 * (1.0 - exp(-k / 26.0)) - 1.6 * (1.0 - exp(-k / 55.0));
+    h = h - 0.15 * ripF(z) * exp(-sq((k - 16.0) / 7.0));
   }
   return h;
 }
@@ -555,22 +585,30 @@ fn fs(i: VOut) -> @location(0) vec4f {
   let det = exp(-dist0 * 0.02);
   nrm.x += (vnoise(vec2f(q.x * 2.3 - gT * 1.4, q.y * 1.7)) - 0.5) * 0.30 * det * smoothstep(0.15, 0.6, d);
   nrm.z += (vnoise(vec2f(q.x * 2.3 - gT * 1.4 + 31.0, q.y * 1.7 + 17.0)) - 0.5) * 0.30 * det * smoothstep(0.15, 0.6, d);
+  // mid-scale ripple: breaks the horizon mirror into glitter at distance
+  nrm.x += (vnoise(vec2f(q.x * 0.7 - gT * 0.5, q.y * 0.7)) - 0.5) * 0.16 * smoothstep(0.5, 1.5, d);
+  nrm.z += (vnoise(vec2f(q.x * 0.7 + 41.0, q.y * 0.7 + gT * 0.4)) - 0.5) * 0.16 * smoothstep(0.5, 1.5, d);
   nrm = normalize(nrm);
   let sun = normalize(u.sun.xyz);
   let V = normalize(u.camPos_t.xyz - p);
   let ndv = max(dot(nrm, V), 0.0);
-  // two-stream colour: turquoise absorption e^{-sigma_a d} in the shallows,
-  // milky sediment forward-scatter where the surf suspends sand
-  let absorb = exp(-d * 1.9);
-  let turquoise = vec3f(0.10, 0.42, 0.42);
-  let deepC = vec3f(0.045, 0.15, 0.22);
-  var water = mix(turquoise, deepC, smoothstep(0.0, 2.2, d));
-  let sandSee = absorb * smoothstep(2.6, 0.0, d);
-  water = mix(water, vec3f(0.62, 0.52, 0.36) * (0.55 + 0.45 * absorb), sandSee * 0.85);
+  // two-stream colour: slant path through the column, per-channel absorption
+  // (red dies first, so depth reads blue-green); sand shows through the
+  // shallows and the body colour saturates with path length
+  let path = d / max(ndv, 0.30);
+  let at = vec3f(exp(-path * 0.60), exp(-path * 0.20), exp(-path * 0.36));
+  let body = vec3f(0.008, 0.068, 0.118);
+  let bodyF = 1.0 - exp(-path * 0.34);
+  var water = body * bodyF + vec3f(0.62, 0.52, 0.36) * at * (1.0 - bodyF) * 0.78;
+  // rip channels: calmer, darker water through the slot; the shoal between rips
+  // (low ripF) holds the churning foam band
+  let rip = ripF(q.y);
+  water *= 1.0 - 0.22 * rip;
   let turb = clamp(w.foam * 0.65, 0.0, 1.0);
-  water = mix(water, vec3f(0.55, 0.58, 0.48), turb * absorb * 0.45);
-  // golden-hour sky reflection (same shader the sky pass draws)
-  let fres = 0.02 + 0.78 * pow(1.0 - ndv, 4.0);
+  water = mix(water, vec3f(0.55, 0.58, 0.48), turb * exp(-path * 0.5) * 0.45);
+  // golden-hour sky reflection (same shader the sky pass draws); weight eases
+  // off in deep water so the body colour owns the deep set
+  let fres = (0.02 + 0.78 * pow(1.0 - ndv, 4.0)) * (1.0 - 0.35 * bodyF);
   let R = reflect(-V, nrm);
   water = mix(water, skyBase(R) * mix(0.30, 1.0, smoothstep(-0.02, 0.30, R.y)), fres * 0.55);
   // subsurface transmission: sun through crests toward shore
@@ -580,14 +618,17 @@ fn fs(i: VOut) -> @location(0) vec4f {
   let hvv = normalize(sun + V);
   let glint = pow(max(dot(nrm, hvv), 0.0), 220.0) * 2.6 + pow(max(dot(nrm, hvv), 0.0), 90.0) * 0.5 + pow(max(dot(nrm, hvv), 0.0), 22.0) * 0.16;
   water += vec3f(1.0, 0.78, 0.48) * glint * (1.0 - w.foam);
-  // foam: advected density * reticulated Worley lace
+  // foam: advected density * churn lace; the sim field already fades off the
+  // breaker crest, the lace only breaks the band into strands
   var fo = w.foam;
   if (fo > 0.02) {
-    let lace = smoothstep(0.10, 0.75, worley(vec2f(q.x * 1.7 + gT * 0.35, q.y * 1.7 - gT * 0.1)));
-    fo *= 0.45 + 0.75 * lace;
-    fo += smoothstep(0.55, 1.0, worley(vec2f(q.x * 0.9 - gT * 0.2, q.y * 0.9))) * fo * 0.3;
+    let cl = churn(vec2f((q.x + gT * 0.35) * 0.7, (q.y - gT * 0.1) * 0.7));
+    fo *= 0.10 + 1.12 * cl;
   }
   fo = clamp(fo, 0.0, 1.0);
+  // rip cue: the shoal between rips (low ripF) holds the churning foam, the
+  // channel itself runs calmer
+  fo = clamp(fo * (1.0 + 0.40 * (1.0 - rip)), 0.0, 1.0);
   var col = mix(water, vec3f(0.95, 0.94, 0.90) * (0.55 + 0.55 * max(dot(nrm, sun), 0.0)), fo);
   // capillary meniscus: bright thin rise where water meets wet sand
   if (bed > -0.06 && bed < 0.09) {
