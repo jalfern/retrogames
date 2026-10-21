@@ -54,11 +54,40 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   out, capped 0.18) when the slope drops away at speed, springs at 0.78/tick
   — load hits crests, not just sand.
 
+## Trackside scenery (#639)
+
+The circuits were bare, so speed didn't read. `scenery.js` dresses them like
+real race tracks, pulled from the shared model shelf (#637) by id with primitive
+fallbacks so the game never waits on — or dies from — the network.
+
+- `tracksidePlan()` is deterministic data (Node/browser/harness agree): a
+  distance-based pass (density constant per arc length, not per index) placing
+  grandstands straddling the start/finish, pit buildings + billboards down the
+  front straight, tire walls on the outer side of each course's tightest corners
+  (gate relative to that course's own max curvature, so the fast-flow GULCH
+  dresses its apexes too), striped barriers along the fast sections, marshal
+  posts + flags at the corner posts, cones at chicane mouths, and pines/oaks/
+  rocks on the plateaus. Every prop stands on the plateau height (rides the
+  course elevation profile) and is oriented `along`/`across` the road.
+- Placement law: nothing inside the sim's 216px wall clamp (the racing line is
+  physically unreachable), and every prop clears EVERY track point by its own
+  footprint (the #542 fold-back rule) — so no prop ever hedges a passing leg or
+  the camera. Only `barrier`/`tire_wall` are marked solid (and they sit outside
+  the wall, so nothing bites); the count is capped for phones.
+- `primitiveProp(id)` paints recognisable desert-gulch stand-ins tagged `ph`;
+  `attachShelfProps()` swaps them for the real CC0 GLBs when they land (clones
+  share geometry via `keepGeo`, never disposed). `index.jsx` rebuilds the props
+  group with the circuit on every course swap; a `propsRev` token guards the
+  async attach against a swap mid-load.
+
 ## Verify
 
 ```
 npm run cometdrifthdcheck             # Node geometry audit + rules + win,
                                     # browser boot/pixels/drift/end-table cycle
+npm run cometdrifthdscenerycheck    # #639 dress audit: build/rules/win on every
+                                    # course (line clear, corridor, solids, cap)
+npm run cometdrifthdscenerycheck -- --mutate  # parks a barrier on the line, RED
 npm run cometdrifthdcheck -- --mutate     # kills particle spawning, demands RED
 npm run cometdrifthdcheck -- --mutate-spin  # freezes the wheel-blur law, demands RED
 npm run lint:hd                     # eslint gate for the game + harness

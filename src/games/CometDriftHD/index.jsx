@@ -17,6 +17,7 @@ import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash,
 } from './scene.js'
+import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
 // =====================================================================
 // COMET DRIFT HD — SUNSET GULCH, same machine, modern renderer (#465).
@@ -315,11 +316,20 @@ export default function CometDriftHD() {
         // without touching karts, sky or lights.
         const trackGroup = new THREE.Group()
         scene.add(trackGroup)
+        // #639: trackside dressing lives in its own group so it can rebuild with
+        // the circuit. Primitive stand-ins paint immediately; the real shelf GLBs
+        // upgrade it asynchronously. propsRev guards the async attach against a
+        // course swap mid-load (a stale attach must never edit a dead group).
+        let propsGroup = null
+        let propsRev = 0
+        const disposeProps = (g) => { if (g) g.traverse((o) => { if (o.isMesh && o.geometry && !o.userData.keepGeo) o.geometry.dispose() }) }
         const buildTrackMeshes = () => {
+            disposeProps(propsGroup)
             while (trackGroup.children.length) {
                 const m = trackGroup.children.pop()
                 if (m.geometry) m.geometry.dispose()
             }
+            propsRev++
             const M = trackGeometryStats().geos
             trackGroup.add(new THREE.Mesh(M.road, mat(tex(asphaltTex()), { roughness: 0.82, metalness: 0.05 })))
             trackGroup.add(new THREE.Mesh(M.kerbL, kerbMat))
@@ -332,6 +342,11 @@ export default function CometDriftHD() {
             trackGroup.add(new THREE.Mesh(M.plateauR, plateauMat))
             trackGroup.add(buildArch(tex(strataTex())))
             for (const sc of SCENERY) trackGroup.add(buildSceneryItem(sc))
+            const plan = tracksidePlan()
+            propsGroup = buildTracksidePrimitives(plan)
+            trackGroup.add(propsGroup)
+            const rev = propsRev
+            attachShelfProps(plan, propsGroup, () => propsRev === rev).catch(() => {})
         }
         buildTrackMeshes()
 
