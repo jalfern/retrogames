@@ -388,21 +388,40 @@ fn b_${f}(x: f32, z: f32) -> ${f === 'hud' ? 'vec4f' : 'f32'} {
   let b = mix(s_${f}[si(i, j + 1)], s_${f}[si(i + 1, j + 1)], tx);
   return mix(a, b, tz);
 }`).join('\n')}
+// box-smoothed field reads (#538): bilinear over a cell-quantised field makes
+// the iso-lines kink once per cell (the scalloped waterline) and the wet map
+// read as checkerboard. One 5-tap box across neighbouring cells keeps the edge
+// C1 at cell crossings while leaving the sim untouched.
+fn sm_h(x: f32, z: f32) -> f32 {
+  let c = b_hud(x, z).x;
+  let s = b_hud(x + SDXF, z).x + b_hud(x - SDXF, z).x + b_hud(x, z + SDXF).x + b_hud(x, z - SDXF).x;
+  return 0.5 * c + 0.125 * s;
+}
+fn sm_f(x: f32, z: f32) -> f32 {
+  let c = b_fof(x, z);
+  let s = b_fof(x + SDXF, z) + b_fof(x - SDXF, z) + b_fof(x, z + SDXF) + b_fof(x, z - SDXF);
+  return 0.5 * c + 0.125 * s;
+}
+fn sm_w(x: f32, z: f32) -> f32 {
+  let c = b_wtf(x, z);
+  let s = b_wtf(x + SDXF, z) + b_wtf(x - SDXF, z) + b_wtf(x, z + SDXF) + b_wtf(x, z - SDXF);
+  return 0.5 * c + 0.125 * s;
+}
 // water surface elevation: SWE near shore, analytic spectrum offshore
 fn surfAt(x: f32, z: f32) -> f32 {
   let bed = terrain(x, z);
-  let sS = bed + max(b_hud(x, z).x, 0.0);
+  let sS = bed + max(sm_h(x, z), 0.0);
   let wa = smoothstep(QS_IN, QS_OUT, xsCurve(z) - x);
   if (wa <= 0.001) { return sS; }
   let sA = etaA(x, z);
   if (wa >= 0.999) { return sA; }
   return mix(sS, sA, wa);
 }
-struct W { d: f32, foam: f32, wet: f32 };
+struct W { d: f32, foam: f32, wet: f32, cov: f32 };
 fn waterAt(x: f32, z: f32) -> W {
   let bed = terrain(x, z);
   let wa = smoothstep(QS_IN, QS_OUT, xsCurve(z) - x);
-  let hS = max(b_hud(x, z).x, 0.0);
+  let hS = max(sm_h(x, z), 0.0);
   var o: W;
   if (wa <= 0.001) {
     o.d = hS;
@@ -413,7 +432,10 @@ fn waterAt(x: f32, z: f32) -> W {
     o.d = mix(hS, dA, wa);
     o.foam = mix(clamp(b_fof(x, z), 0.0, 1.0), fA2, wa);
   }
-  o.wet = clamp(b_wtf(x, z), 0.0, 1.0);
+  // silhouette coverage of the foam band (smoothed, so the outer edge has no
+  // per-cell kinks); the lace texture stays sharp in .foam.
+  o.cov = mix(clamp(sm_f(x, z), 0.0, 1.0), clamp(foamA(x, z), 0.0, 1.0), wa);
+  o.wet = clamp(sm_w(x, z), 0.0, 1.0);
   return o;
 }
 // golden-hour sky (ported from /demos/ocean: gradient + sun halo + cirrus)
@@ -512,7 +534,7 @@ fn fs(i: VOut) -> @location(0) vec4f {
   gT = u.pars2.y;
   let p = i.wp;
   let hv = b_hud(p.x, p.z);
-  let wet = clamp(b_wtf(p.x, p.z), 0.0, 1.0);
+  let wet = clamp(sm_w(p.x, p.z), 0.0, 1.0);
   // dry sand: grain + wind banding + micro-shadowing (rough diffuse lobe)
   var dry = vec3f(0.80, 0.66, 0.44);
   dry = dry * (0.90 + 0.16 * fbm2(vec2f(p.x * 0.9, p.z * 0.55)));
@@ -638,7 +660,7 @@ fn fs(i: VOut) -> @location(0) vec4f {
   // analytic distance-to-waterline AA (thin sheets cover part of a pixel)
   let pxw = max(2.0 * u.fwd_tan.w * dist0 * u.pars2.w, 2e-4);
   let filmCov = smoothstep(0.0, pxw * 2.0, d);
-  let alpha = clamp((1.0 - exp(-d * 2.2)) * filmCov + fo * 0.6, 0.0, 0.97);
+  let alpha = clamp((1.0 - exp(-d * 2.2)) * filmCov + max(w.cov, fo * 0.5) * 0.6, 0.0, 0.97);
   col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(70.0, 200.0, dist0));
   return vec4f(tonemap(col), alpha);
 }
@@ -709,7 +731,11 @@ fn cs_swe(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
   o_hud[c] = vec4f(hNew, uu, vv, 0.0);
   o_fof[c] = min(1.0, s_fof[c] + inject * 0.55 * (dts * 60.0));
-  o_wtf[c] = max(s_wtf[c] * (1.0 - dts * 0.023), step(0.004, hNew));
+  // wet map: soft cover instead of a hard per-cell step, plus a little
+  // neighbour diffusion so the drying front can't lock into a checkerboard
+  let lapW = s_wtf[L] + s_wtf[R] + s_wtf[D] + s_wtf[U2] - 4.0 * s_wtf[c];
+  let wDry = max(0.0, s_wtf[c] * (1.0 - dts * 0.023) + 0.28 * lapW * min(1.0, dts * 60.0));
+  o_wtf[c] = clamp(max(wDry, smoothstep(0.004, 0.035, hNew)), 0.0, 1.0);
 }
 `;
 
