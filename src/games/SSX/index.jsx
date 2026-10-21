@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, retunePose } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -515,7 +515,7 @@ const SSXGame = () => {
                     const roll = rig.userData.roll
                     const out = {}
                     for (const side of ['l', 'r']) {
-                        const w = h.bones[`wrist.${side}`]
+                        const w = h.bones[`wrist${side}`]
                         if (!w) continue
                         const lp = roll.worldToLocal(w.getWorldPosition(new THREE.Vector3()))
                         let best = Infinity, bx = 0, bz = 0
@@ -542,7 +542,7 @@ const SSXGame = () => {
                     const box = new THREE.Box3()
                     const out = {}
                     for (const side of ['l', 'r']) {
-                        const foot = h.bones[`foot.${side}`]
+                        const foot = h.bones[`foot${side}`]
                         const boot = foot && foot.children.find((c) => c.isMesh)
                         if (!boot) continue
                         box.setFromObject(boot)
@@ -573,6 +573,21 @@ const SSXGame = () => {
                     return b ? { num: b.userData.num, logo: b.userData.logo, decal: b.children.some((c) => c.isMesh && c.material?.map) } : { num: null }
                 }),
                 shadowInfo: () => ({ theme: g.course.theme, color: shadowMat.color.getHexString(), base: shadowBase }),
+                boneNames: () => { const h = riders[0]?.userData?.hero; return h ? Object.keys(h.bones) : null },
+                // DEV probe loop: replace one pose's offset table live, then read
+                // joint positions in roll space to re-aim the grab/boot weld
+                retune: (name, offs) => { for (const rig of riders) { const h = rig?.userData?.hero; if (h) retunePose(name, offs, h) } },
+                joints: () => {
+                    const rig = riders[0]; const h = rig?.userData?.hero
+                    if (!h) return null
+                    const roll = rig.userData.roll
+                    const out = {}
+                    for (const n of ['chest', 'upperarml', 'lowerarml', 'wristl', 'upperarmr', 'lowerarmr', 'wristr', 'footl', 'footr']) {
+                        const b = h.bones[n]
+                        if (b) out[n] = roll.worldToLocal(b.getWorldPosition(new THREE.Vector3())).toArray().map((v) => +v.toFixed(3))
+                    }
+                    return out
+                },
                 riders: () => riders.map((rig) => {
                     const h = rig.userData.hero
                     return { hero: h ? 1 : h === false ? 2 : 0, pose: h ? h.pose : null, bones: h ? Object.keys(h.bones).length : 0 }

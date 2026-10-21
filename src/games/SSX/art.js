@@ -649,45 +649,48 @@ function sampleClip(clip, time) {
 const eul = new THREE.Euler()
 const mulQ = new THREE.Quaternion()
 
-// per-bone euler offsets (radians, bone-local axes), composed onto the base
+// per-bone euler offsets (radians, bone-local axes), composed onto the base.
+// Bone keys must match the RUNTIME names: GLTFLoader runs every node name
+// through PropertyBinding.sanitizeNodeName, which strips the dots the KayKit
+// pack ships ("foot.l" -> "footl"). Dotted keys here were silent no-ops (#615).
 const STANCE = {
     hips: [0, 0.55, 0],
     spine: [0, 0.5, 0],
     chest: [0, 0.25, 0],
     head: [0.02, -1.3, 0],
-    'foot.l': [0, -0.55, 0],
-    'foot.r': [0, -0.55, 0],
+    footl: [0, -0.55, 0],
+    footr: [0, -0.55, 0],
 }
 const OFFS = {
     tuck: {
         hips: [0, 0, 0, -0.10], spine: [0.45, 0, 0], chest: [0.8, 0, 0], head: [-0.5, 0, 0],
-        'upperleg.l': [0.9, 0, 0.05], 'lowerleg.l': [-1.65, 0, 0], 'foot.l': [0.7, 0, 0],
-        'upperleg.r': [0.8, 0, -0.05], 'lowerleg.r': [-1.55, 0, 0], 'foot.r': [0.7, 0, 0],
-        'upperarm.l': [1.1, 0, 0.4], 'lowerarm.l': [1.5, 0, 0],
-        'upperarm.r': [1.1, 0, -0.4], 'lowerarm.r': [1.5, 0, 0],
+        'upperlegl': [0.9, 0, 0.05], 'lowerlegl': [-1.65, 0, 0], footl: [0.7, 0, 0],
+        'upperlegr': [0.8, 0, -0.05], 'lowerlegr': [-1.55, 0, 0], footr: [0.7, 0, 0],
+        'upperarml': [1.1, 0, 0.4], 'lowerarml': [1.5, 0, 0],
+        'upperarmr': [1.1, 0, -0.4], 'lowerarmr': [1.5, 0, 0],
     },
     crouch: {
         hips: [0, 0, 0, -0.16], spine: [0.2, 0, 0], chest: [0.28, 0, 0], head: [-0.12, 0, 0],
-        'upperleg.l': [0.75, 0, 0.04], 'lowerleg.l': [-1.5, 0, 0], 'foot.l': [0.6, 0, 0],
-        'upperleg.r': [0.68, 0, -0.04], 'lowerleg.r': [-1.42, 0, 0], 'foot.r': [0.6, 0, 0],
-        'upperarm.l': [0.5, 0, 0.25], 'lowerarm.l': [0.8, 0, 0],
-        'upperarm.r': [0.5, 0, -0.25], 'lowerarm.r': [0.8, 0, 0],
+        'upperlegl': [0.75, 0, 0.04], 'lowerlegl': [-1.5, 0, 0], footl: [0.6, 0, 0],
+        'upperlegr': [0.68, 0, -0.04], 'lowerlegr': [-1.42, 0, 0], footr: [0.6, 0, 0],
+        'upperarml': [0.5, 0, 0.25], 'lowerarml': [0.8, 0, 0],
+        'upperarmr': [0.5, 0, -0.25], 'lowerarmr': [0.8, 0, 0],
     },
     grab: {
         hips: [0, 0.18, 0], spine: [0.35, 0.15, 0], chest: [0.55, 0.1, 0], head: [-0.35, -0.25, 0],
-        'upperarm.l': [1.55, 0, 0.5], 'lowerarm.l': [0.85, 0, 0],
-        'upperarm.r': [0.2, 0, -0.35],
+        'upperarml': [1.55, 0, 0.5], 'lowerarml': [0.85, 0, 0],
+        'upperarmr': [0.2, 0, -0.35],
     },
     tumble: {
         hips: [0, 0.3, 0], spine: [-0.35, -0.2, 0], chest: [-0.2, -0.1, 0], head: [0.5, 0.35, 0],
-        'upperarm.l': [-0.5, 0, 1.2], 'lowerarm.l': [0.3, 0, 0],
-        'upperarm.r': [-2.9, 0, -0.4], 'lowerarm.r': [0.5, 0, 0],
-        'upperleg.l': [0.8, 0, 0.35], 'lowerleg.l': [-0.9, 0, 0], 'foot.l': [0.3, 0, 0],
-        'upperleg.r': [-0.4, 0, -0.35], 'lowerleg.r': [0.6, 0, 0],
+        'upperarml': [-0.5, 0, 1.2], 'lowerarml': [0.3, 0, 0],
+        'upperarmr': [-2.9, 0, -0.4], 'lowerarmr': [0.5, 0, 0],
+        'upperlegl': [0.8, 0, 0.35], 'lowerlegl': [-0.9, 0, 0], footl: [0.3, 0, 0],
+        'upperlegr': [-0.4, 0, -0.35], 'lowerlegr': [0.6, 0, 0],
     },
     air: {
-        'upperleg.l': [0.12, 0, 0.06], 'lowerleg.l': [-0.35, 0, 0],
-        'upperleg.r': [0.1, 0, -0.06], 'lowerleg.r': [-0.3, 0, 0],
+        'upperlegl': [0.12, 0, 0.06], 'lowerlegl': [-0.35, 0, 0],
+        'upperlegr': [0.1, 0, -0.06], 'lowerlegr': [-0.3, 0, 0],
     },
 }
 const POSE_BASE = { stand: 'stand', tuck: 'stand', crouch: 'crouch', air: 'air', grab: 'air', tumble: 'air' }
@@ -741,6 +744,13 @@ export function buildIdleRing(clips, n = 48) {
     return { frames, n, duration: clip.duration }
 }
 
+// DEV: live-recompose one pose with a replacement offset table (probe loop)
+export function retunePose(name, offs, hero) {
+    OFFS[name] = offs
+    hero.targets = composeTargets(hero.clips)
+    if (hero.pose === name) hero.cur = {}
+}
+
 export function makeHeroRider(color, modelFile = 'rogue', id = 0) {
     const root = new THREE.Group()
     const yaw = new THREE.Group()
@@ -773,10 +783,10 @@ export function makeHeroRider(color, modelFile = 'rogue', id = 0) {
             const boot = new THREE.Mesh(bootGeo, bootMat)
             boot.position.set(0.02, -0.16, 0.06)
             boot.rotation.z = -0.12
-            if (bones[`foot.${side}`]) bones[`foot.${side}`].add(boot)
+            if (bones[`foot${side}`]) bones[`foot${side}`].add(boot)
         }
         root.userData.hero = {
-            model, bones, board,
+            model, bones, board, clips,
             targets: composeTargets(clips),
             idleRing: buildIdleRing(clips),
             pose: 'stand',
