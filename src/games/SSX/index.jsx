@@ -70,12 +70,14 @@ const SSXGame = () => {
         const sprayLife = new Float32Array(spray.n)
 
         // fake contact shadow keeps the pack readable mid-air (#548): a dark
-        // ellipse pinned to the snow under the leader, fading as air grows
+        // ellipse pinned to the snow under the leader, fading as air grows;
+        // colour + base opacity are per-theme so it survives night/dusk (#615)
         const shadowGeo = new THREE.CircleGeometry(0.72, 20)
         shadowGeo.rotateX(-Math.PI / 2)
         const shadowMat = new THREE.MeshBasicMaterial({ color: 0x0b1524, transparent: true, opacity: 0.28, depthWrite: false })
         const shadow = new THREE.Mesh(shadowGeo, shadowMat)
         scene.add(shadow)
+        let shadowBase = 0.28
 
         // carved tracks: two dark grooves laid along the player's last ~5 s line
         const GROOVE_MAX = 420
@@ -129,6 +131,14 @@ const SSXGame = () => {
             streaks = { pts, geo, pos, data }
         }
 
+        // board top surface height (roll space) at lateral offset x — deck
+        // top 0.115 plus the tip rocker lift; the one true surface the
+        // grab/boot probes measure against
+        const deckTop = (x) => {
+            const a = Math.abs(x) / 0.89
+            return 0.115 + 0.16 * Math.pow(Math.max(0, a - 0.62) / 0.38, 2)
+        }
+
         let g = makeGame('race')
         let raf = 0, last = 0, acc = 0
         let fpsEMA = 60
@@ -152,6 +162,8 @@ const SSXGame = () => {
             scene.fog = new THREE.FogExp2(T.fog, T.fogD)
             sun.color.setHex(T.sun)
             scene.children.find((c) => c.isHemisphereLight).color.setHex(T.hemiSky)
+            shadowMat.color.setHex(T.shC)
+            shadowBase = T.shO
             world = new THREE.Group()
             const terrainMesh = keep(buildTerrain(g.course))
             world.add(terrainMesh)
@@ -295,7 +307,7 @@ const SSXGame = () => {
             {
                 const airH = p.air ? p.y - pp.y : 0
                 shadow.position.set(pp.x, pp.y + 0.04, pp.z)
-                shadow.material.opacity = Math.max(0.05, 0.3 - airH * 0.05)
+                shadow.material.opacity = Math.max(0.05, shadowBase - airH * 0.05)
                 shadow.scale.setScalar(1 + airH * 0.05)
             }
 
@@ -487,6 +499,80 @@ const SSXGame = () => {
                     if (!h) return { ready: false, failed: h === false ? 1 : 0 }
                     return { ready: true, pose: h.pose, bones: Object.keys(h.bones).length }
                 },
+                // board top surface height (roll space) at lateral offset x — deck
+                // top 0.115 plus the tip rocker lift; the one true surface the
+                // grab/boot probes measure against
+                deckTop: (x) => {
+                    const a = Math.abs(x) / 0.89
+                    return 0.115 + 0.16 * Math.pow(Math.max(0, a - 0.62) / 0.38, 2)
+                },
+                // grab depth (#615): wrist distance to the board's nose-edge band
+                // (x 0.45..0.89 across the topsheet) in roll space, per arm
+                grabReach: () => {
+                    const rig = riders[0]
+                    const h = rig && rig.userData.hero
+                    if (!h) return { ready: false }
+                    const roll = rig.userData.roll
+                    const out = {}
+                    for (const side of ['l', 'r']) {
+                        const w = h.bones[`wrist.${side}`]
+                        if (!w) continue
+                        const lp = roll.worldToLocal(w.getWorldPosition(new THREE.Vector3()))
+                        let best = Infinity, bx = 0, bz = 0
+                        for (let i = 0; i <= 10; i++) {
+                            const x = 0.45 + (i / 10) * 0.44
+                            const top = deckTop(x)
+                            for (const z of [-0.19, -0.095, 0, 0.095, 0.19]) {
+                                const d = Math.hypot(lp.x - x, lp.y - top, lp.z - z)
+                                if (d < best) { best = d; bx = x; bz = z }
+                            }
+                        }
+                        out[side] = { d: +best.toFixed(3), hand: [lp.x.toFixed(2), lp.y.toFixed(2), lp.z.toFixed(2)], pt: [bx.toFixed(2), bz.toFixed(2)] }
+                    }
+                    return out
+                },
+                // boot fit (#615): boot-box underside vs the deck top under each
+                // boot (roll space) — welded when the gap is ~0..small, floating
+                // when it grows positive, sunken when well negative
+                bootClear: () => {
+                    const rig = riders[0]
+                    const h = rig && rig.userData.hero
+                    if (!h) return { ready: false }
+                    const roll = rig.userData.roll
+                    const box = new THREE.Box3()
+                    const out = {}
+                    for (const side of ['l', 'r']) {
+                        const foot = h.bones[`foot.${side}`]
+                        const boot = foot && foot.children.find((c) => c.isMesh)
+                        if (!boot) continue
+                        box.setFromObject(boot)
+                        const center = roll.worldToLocal(box.getCenter(new THREE.Vector3()))
+                        const bottom = roll.worldToLocal(box.min.clone())
+                        out[side] = +(bottom.y - deckTop(center.x)).toFixed(3)
+                    }
+                    return out
+                },
+                // pose life (#615): how far the stand pose's baked Idle frames
+                // move between opposite phases of the loop — 0 means the rider
+                // is mannequin-still again
+                standBreath: () => {
+                    const h = riders[0]?.userData?.hero
+                    if (!h || !h.idleRing) return null
+                    const A = h.idleRing.frames[0]
+                    const B = h.idleRing.frames[Math.floor(h.idleRing.n / 2)]
+                    let d = 0
+                    for (const b of Object.keys(A)) {
+                        if (A[b].p && B[b].p) d = Math.max(d, Math.hypot(A[b].p[0] - B[b].p[0], A[b].p[1] - B[b].p[1], A[b].p[2] - B[b].p[2]))
+                    }
+                    return +d.toFixed(3)
+                },
+                // board liveries (#615): per-rider bib number + logo + top-base
+                // darkening factor
+                boardInfo: () => riders.map((rig) => {
+                    const b = rig?.userData?.hero?.board
+                    return b ? { num: b.userData.num, logo: b.userData.logo, decal: b.children.some((c) => c.isMesh && c.material?.map) } : { num: null }
+                }),
+                shadowInfo: () => ({ theme: g.course.theme, color: shadowMat.color.getHexString(), base: shadowBase }),
                 riders: () => riders.map((rig) => {
                     const h = rig.userData.hero
                     return { hero: h ? 1 : h === false ? 2 : 0, pose: h ? h.pose : null, bones: h ? Object.keys(h.bones).length : 0 }
