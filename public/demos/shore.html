@@ -22,6 +22,13 @@
     color: rgba(210,235,225,.85); text-shadow: 0 1px 3px rgba(0,0,0,.8);
   }
   #tide b { color: rgba(235,255,245,.95); font-weight: 700; }
+  #perf {
+    position: fixed; top: 12px; left: 14px; z-index: 2; display: none; pointer-events: none;
+    background: rgba(10,14,16,.55); border: 1px solid rgba(140,220,190,.25); border-radius: 8px;
+    padding: 6px 10px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    font: 11px/1.6 ui-monospace, Menlo, monospace; letter-spacing: .08em; text-transform: uppercase;
+    color: rgba(210,235,225,.85); text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  }
   #fatal {
     position: fixed; inset: 0; display: none; place-items: center; z-index: 3;
     font: 14px/1.6 ui-monospace, Menlo, monospace; color: #d8f4e8; background: #10141a;
@@ -33,13 +40,20 @@
 <canvas id="c"></canvas>
 <div id="hud"><b>SHORE</b> · WebGPU SWE swash + advected foam &nbsp;·&nbsp; drag look &nbsp;·&nbsp; WASD / arrows fly &nbsp;·&nbsp; Q / E down-up &nbsp;·&nbsp; shift = fast</div>
 <div id="tide"><b>Surf</b> · set <span id="setLbl">—</span> · run-up <span id="runLbl">0.0</span>m · foam <span id="foamLbl">0</span>%</div>
+<div id="perf"></div>
 <div id="fatal"></div>
 <script type="module">
 'use strict';
 
 const qs = new URLSearchParams(location.search);
 const SEED = (qs.get('seed') | 0) || 7;
-const LITE = qs.get('lite') === '1';
+// #702: phone profile picked ONCE at startup (never a live governor, #678).
+// coarse pointer or a small viewport => lite grid + reduced-res blit by
+// default; ?lite=0/1 and ?rs= still override.
+const COARSE = matchMedia('(pointer: coarse)').matches;
+const SMALL = Math.min(innerWidth, innerHeight) <= 440;
+const AUTO_PHONE = qs.get('lite') === null && (COARSE || SMALL);
+const LITE = qs.get('lite') ? qs.get('lite') === '1' : AUTO_PHONE;
 
 const SLOPE = 0.052;            // beach slope (rise per metre inland)
 const XS0 = 84;                 // mean shoreline x
@@ -217,6 +231,9 @@ const fatal = document.getElementById('fatal');
 const setLbl = document.getElementById('setLbl');
 const runLbl = document.getElementById('runLbl');
 const foamLbl = document.getElementById('foamLbl');
+const perfLbl = document.getElementById('perf');
+const FPS_ON = qs.get('fps') === '1';
+if (FPS_ON) perfLbl.style.display = 'block';
 
 if (!navigator.gpu) {
   fatal.style.display = 'grid';
@@ -848,7 +865,7 @@ async function boot() {
   // ?rs=0.55..0.9 for experiments and by harness determinism locks).
   const DPR_CAP = Math.min(devicePixelRatio || 1, 2);
   const RS_LOCK = qs.get('rs') ? Math.max(0.55, Math.min(1, parseFloat(qs.get('rs')))) : 0;
-  let rs = RS_LOCK || 1;
+  let rs = RS_LOCK || (AUTO_PHONE ? 0.75 : 1);
   let nsub = qs.get('nsub') ? Math.max(2, Math.min(NSUB, parseInt(qs.get('nsub'), 10) & ~1)) : NSUB;
   function resize() {
     const w = Math.max(2, Math.min(innerWidth, 1600) * DPR_CAP) | 0;
@@ -1122,6 +1139,10 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     lastMs = now;
     ftimes.push(dt * 1000);
     if (ftimes.length > 120) ftimes.shift();
+    if (FPS_ON && frames % 15 === 0) {
+      const avgF = ftimes.reduce((a, b) => a + b, 0) / ftimes.length;
+      perfLbl.textContent = `${avgF.toFixed(1)} avg · ${Math.max(...ftimes).toFixed(1)} worst ms · rs ${rs.toFixed(2)} · ${LITE ? 'lite' : 'full'} · nsub ${nsub}${AUTO_PHONE ? ' · auto' : ''}`;
+    }
     // #668 notes: an adaptive resolution governor (1 -> 0.9 via the blit
     // targets below) was tried and backed out: under shared-GPU interference it
     // deterministically starved the probe readback and broke shorecheck's
@@ -1256,7 +1277,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     ready: true,
     get frames() { return frames; },
     get time() { return t; },
-    grid() { return { sx0: SX0, sx1: SX1, sz0: SZ0, sz1: SZ1, dx: SDX, n: NC, ns: nsub }; },
+    grid() { return { sx0: SX0, sx1: SX1, sz0: SZ0, sz1: SZ1, dx: SDX, n: NC, ns: nsub, lite: LITE, auto: AUTO_PHONE }; },
     setPose(p) {
       if (p.pos) cam.pos = p.pos.slice();
       if (typeof p.yaw === 'number') cam.yaw = p.yaw;
