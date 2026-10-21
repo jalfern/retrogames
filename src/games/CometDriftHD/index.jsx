@@ -8,6 +8,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from '../CometDrift/sim.js'
+import { bankVoices } from './audio.js'
 import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse } from '../CometDrift/track.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
@@ -510,10 +511,13 @@ export default function CometDriftHD() {
                 if (ev.e === 'count') audioController.playTone(660, 0.12, 'square', 0.12)
                 if (ev.e === 'go') audioController.playSweep(440, 880, 0.4, 'square', 0.14)
                 if (ev.e === 'boost' && ev.who === 'COMET') {
-                    // each tier gets its own voice, not just a higher pitch (#471 item 7)
-                    if (ev.tier === 0) audioController.playSweep(340, 900, 0.3, 'square', 0.1)
-                    else if (ev.tier === 1) { audioController.playSweep(240, 1150, 0.42, 'sawtooth', 0.11); audioController.playTone(1240, 0.09, 'square', 0.07) }
-                    else { audioController.playSweep(180, 1450, 0.55, 'sawtooth', 0.12); audioController.playNoise(0.22, 0.1); audioController.playTone(1568, 0.1, 'square', 0.08); audioController.playTone(2093, 0.12, 'square', 0.06) }
+                    // each tier gets its own voice, not just a higher pitch (#471 item 7);
+                    // GOLD adds a rising bell chime the lower tiers never ring (#478 item 5)
+                    for (const v of bankVoices(ev.tier)) {
+                        if (v.k === 'sweep') audioController.playSweep(v.a, v.b, v.d, v.t, v.g)
+                        else if (v.k === 'noise') audioController.playNoise(v.d, v.g)
+                        else audioController.playTone(v.f, v.d, v.t, v.g, v.delay || 0)
+                    }
                     shake = Math.max(shake, 3 + ev.tier * 2.5)
                 }
                 if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); shake = 16; rumble(300, 1) }
