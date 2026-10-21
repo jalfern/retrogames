@@ -19,7 +19,9 @@
 //   3. WINS   — golden-hour sky, foam pixels, warm sand, camera moves the world.
 //   4. SPEED  — steady-state frame time at the worst-case window under --max-ms.
 //   5. PROFILE (#702) — a 390x844 touch viewport auto-picks the lite grid +
-//     rs<1 at startup; ?lite=0 overrides it back to full quality.
+//     rs<1 + MSAA 1x at startup; ?lite=0 overrides it back to full quality;
+//     ?ms=4 re-forces MSAA and ?probe=0 drops the probe (WebKit bisect knobs);
+//     the GPU-sensed dt sum tracks the sim clock (per-substep uniform slots).
 //   + static: no var<uniform> array of f32/vec2/vec3 (Safari standard layout).
 //
 // Chrome is launched DIRECTLY with --enable-unsafe-swiftshader (playwright's
@@ -507,6 +509,38 @@ async function main() {
       ok('phone viewport auto-picks lite grid + reduced rs (#702)',
         !!pg && !!pg.auto && !!pg.lite && pg.n < 20000 && !!phr && phr.rs < 1,
         pg ? `n=${pg.n} rs=${phr && phr.rs}` : 'phone boot failed')
+      ok('phone profile boots MSAA 1x (#702 round 2)', !!pg && pg.ms === 1,
+        pg ? `ms=${pg.ms}` : 'phone boot failed')
+      // #702: the substep uniform fix — the GPU-sensed dt sum must track the
+      // sim clock (~1.0), not nsub x it (the single-submit bug read ~4).
+      let ds = null
+      try {
+        await ppage.waitForFunction(() => window.__shoreTest.dtSense().simT > 4, null, { timeout: 30000 })
+        ds = await ppage.evaluate(() => window.__shoreTest.dtSense())
+      } catch { /* gate goes red */ }
+      ok('sim clock advances real time via per-substep dt slots (#702)',
+        !!ds && ds.simT > 0 && Math.abs(ds.acc / ds.simT - 1) < 0.15,
+        ds ? `acc=${ds.acc}s simT=${ds.simT}s ratio=${(ds.acc / ds.simT).toFixed(2)}` : 'dt sense failed')
+      let mg = null
+      try {
+        await ppage.goto(url + '?ms=4', { waitUntil: 'load' })
+        await ppage.waitForFunction(() => window.__shoreTest && window.__shoreTest.ready, null, { timeout: 30000 })
+        await ppage.waitForFunction(() => window.__shoreTest.perf().n > 5, null, { timeout: 15000 })
+        mg = await ppage.evaluate(() => window.__shoreTest.grid())
+      } catch { /* gate goes red */ }
+      ok('?ms=4 forces MSAA back on (bisect knob)', !!mg && mg.ms === 4, mg ? `ms=${mg.ms}` : 'ms=4 boot failed')
+      let pgz = null, pframes = 0, pnull = null
+      try {
+        await ppage.goto(url + '?probe=0', { waitUntil: 'load' })
+        await ppage.waitForFunction(() => window.__shoreTest && window.__shoreTest.ready, null, { timeout: 30000 })
+        await ppage.waitForFunction(() => window.__shoreTest.perf().n > 5, null, { timeout: 15000 })
+        pgz = await ppage.evaluate(() => window.__shoreTest.grid())
+        pframes = await ppage.evaluate(() => window.__shoreTest.frames)
+        pnull = await ppage.evaluate(() => window.__shoreTest.probeNow().then(r => r === null))
+      } catch { /* gate goes red */ }
+      ok('?probe=0 drops probe + readback, loop stays alive (#702 bisect knob)',
+        !!pgz && pgz.probe === false && pframes > 5 && pnull === true,
+        pgz ? `probe=${pgz.probe} frames=${pframes} now-null=${pnull}` : 'probe=0 boot failed')
       try {
         await ppage.goto(url + '?lite=0', { waitUntil: 'load' })
         await ppage.waitForFunction(() => window.__shoreTest && window.__shoreTest.ready, null, { timeout: 30000 })
