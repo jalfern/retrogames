@@ -184,14 +184,17 @@ export const COURSES = [
     {
         id: 'gulch', name: 'SUNSET GULCH', short: 'GULCH',
         tagline: 'SUNSET GULCH - 4 LAPS', palette: 'dusk', control: grown('gulch', CONTROL_GULCH),
+        landmark: 'arch',
     },
     {
         id: 'sandbank', name: 'SANDBANK SPEED BOWL', short: 'SANDBANK',
         tagline: 'SANDBANK SPEED BOWL - 4 LAPS', palette: 'noon', control: grown('sandbank', CONTROL_SANDBANK),
+        landmark: 'gantry',
     },
     {
         id: 'corkscomb', name: 'CORKSCOMB DUNES', short: 'CORKSCOMB',
         tagline: 'CORKSCOMB DUNES - 4 LAPS', palette: 'dawn', control: grown('corkscomb', CONTROL_CORKSCOMB),
+        landmark: 'arch',
     },
 ]
 
@@ -349,7 +352,7 @@ function adopt(courseId) {
     const t = BUILT.get(courseId) || BUILT.get('gulch')
     for (const k of Object.keys(TRACK)) delete TRACK[k]
     Object.assign(TRACK, {
-        id: t.def.id, name: t.def.name, short: t.def.short, palette: t.def.palette,
+        id: t.def.id, name: t.def.name, short: t.def.short, palette: t.def.palette, landmark: t.def.landmark || 'arch',
         pts: t.pts, len: t.len, N: t.N,
         ROAD_R, KERB_R, WALL_R,
         hMin: t.hMin, hMax: t.hMax, maxGrade: t.maxGrade,

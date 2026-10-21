@@ -224,6 +224,26 @@ if (args.includes('--mutate-register')) {
     })
 }
 
+// #502 item 2 gantry mutant: Sandbank falls back onto the sandstone arch —
+// the line-structure gates MUST go red under this run (bowl wears the Gulch's
+// landmark again, the exact sameness the item complains about).
+const GLINE = "if (T.landmark === 'gantry') return buildGantry(strataMap)"
+const GUTIL = "if (false) return buildGantry(strataMap) /* gantrymut */"
+let gantrymutat = false
+if (args.includes('--mutate-gantry')) {
+    const gsrc = readFileSync(SCENE, 'utf8')
+    if (!gsrc.includes(GLINE)) { console.error('MUTATE_GANTRY: landmark dispatch not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, gsrc.replace(GLINE, GUTIL))
+    gantrymutat = true
+    console.log('  ..    mutated: Sandbank gets the Gulch arch back — the line-structure gates MUST report FAILs')
+    process.on('exit', () => {
+        if (gantrymutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(GUTIL, GLINE))
+            console.log('  ..    gantry mutation restored')
+        }
+    })
+}
+
 // ---------------------------------------------------------------- geometry
 console.log('track geometry (the HD rebuild of the Gulch):')
 const { stats, bounds, geos } = trackGeometryStats()
@@ -768,6 +788,42 @@ console.log('per-course skin + engine register (#502 items 1+6):')
     ok(SRC7.includes('applyCourseTint()') && SRC7.includes('tintFor(COURSE.palette)'), 'index.jsx re-tints the scene from the selected course')
     ok((SRC7.match(/applyCourseTint\(\)/g) || []).length >= 3, 'the tint runs at boot AND on both course-swap paths')
     ok(SRC7.includes('engineRegister(COURSE.palette)'), 'the engine law multiplies by the course register')
+}
+
+// ------------------------------------------ line structures per course (#502 item 2)
+// The arch was one shape with a different word on it. Sandbank's landmark is
+// now its own: a wide timing-line gantry — twin towers, a flat deck, a truss
+// and a three-lamp signal board — while the Gulch (and Corkscomb) keep the
+// sandstone span. The 2D attract/race sprite draws the same two silhouettes.
+console.log('line structures (#502 item 2 — gantry vs arch per course):')
+{
+    const SC = await import('file://' + SCENE + '?t=' + (Date.now() + 31))
+    const { buildArch, GANTRY_SPAN, GANTRY_DECK_Y } = SC
+    const meshes = (grp) => { const out = []; grp.traverse((m) => { if (m.isMesh) out.push(m) }); return out }
+    ok(COURSES.find((c) => c.id === 'sandbank').landmark === 'gantry', 'Sandbank declares a gantry landmark')
+    ok(COURSES.filter((c) => c.id !== 'sandbank').every((c) => c.landmark === 'arch'), 'the Gulch and Corkscomb keep the sandstone arch')
+    selectCourse('sandbank')
+    ok(TRACK.landmark === 'gantry', 'the live TRACK carries the selected course landmark')
+    const gt = meshes(buildArch())
+    ok(!gt.some((m) => m.geometry.type === 'TorusGeometry'), 'the gantry is not an arch — no semicircular span anywhere')
+    const deck = gt.find((m) => m.geometry.type === 'BoxGeometry' && m.geometry.parameters.width >= GANTRY_SPAN - 0.01 && m.geometry.parameters.height <= 0.6)
+    ok(!!deck && Math.abs(deck.position.y - GANTRY_DECK_Y) < 1e-6, `a flat timing deck spans the bowl (${GANTRY_SPAN}u wide at y ${GANTRY_DECK_Y})`)
+    const towers = gt.filter((m) => m.geometry.type === 'BoxGeometry' && Math.abs(m.position.x) >= 3.2 && m.geometry.parameters.height >= 4)
+    ok(towers.length === 2, `twin towers stand outside the wall line on both sides (${towers.map((t) => t.position.x).join(', ')})`)
+    const lamps = gt.filter((m) => m.material.emissive && m.material.emissive.getHex() !== 0 && m.material.emissiveIntensity > 0.3)
+    ok(lamps.length === 3, `the signal board shows three start lights (${lamps.length})`)
+    const distinct = new Set(lamps.map((l) => l.material.color.getHex()))
+    ok(distinct.size === 3, 'each signal lamp is its own colour (red/amber/green)')
+    const widths = gt.filter((m) => m.geometry.type === 'BoxGeometry').map((m) => m.geometry.parameters.width)
+    ok(Math.max(...widths) >= 7, `the gantry reads wider than the arch's ${3.15 * 2}u legs (max box ${Math.max(...widths).toFixed(1)}u)`)
+    selectCourse('gulch')
+    ok(TRACK.landmark === 'arch', 'the Gulch resolves to the arch landmark')
+    const at = meshes(buildArch())
+    ok(at.some((m) => m.geometry.type === 'TorusGeometry'), 'the Gulch keeps its shipped sandstone span')
+    ok(at.length !== gt.length, `the two landmarks are structurally distinct (${at.length} arch parts vs ${gt.length} gantry parts)`)
+    const SRC8 = readFileSync(resolve(HERE, '../src/games/CometDrift/index.jsx'), 'utf8')
+    ok(SRC8.includes("COURSE.landmark === 'gantry'"), 'the 2D renderer branches on the course landmark')
+    ok(/gantryFor/.test(SRC8) && /'#d03028', '#e0a030', '#30b048'/.test(SRC8), 'the 2D gantry draws its own towers, deck and signal lamps')
 }
 
 // ---------------------------------------------------------------- browser

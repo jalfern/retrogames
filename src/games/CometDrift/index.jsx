@@ -300,10 +300,51 @@ export default function CometDrift() {
             ctx.putImageData(frame, 0, 0)
         }
 
-        // the natural sandstone arch that marks the line — each circuit's
-        // landmark grew there; the keystone carries the course name (#493)
+        // the landmark that marks the line — each circuit grew its own; the
+        // keystone carries the course name (#493). #502 item 2: the bowl's is
+        // a start-finish timing gantry — a wide bridge, not a sandstone arch.
+        const gantryFor = (name) => {
+            const pal = paletteFor(COURSE.palette)
+            const c = document.createElement('canvas'); c.width = 300; c.height = 170
+            const x = c.getContext('2d'); x.imageSmoothingEnabled = false
+            const tower = (tx) => {
+                x.fillStyle = pal.rockMid; x.fillRect(tx, 34, 36, 136)
+                x.fillStyle = pal.rimLit; x.fillRect(tx, 34, 36, 4)
+                x.fillStyle = pal.rockDark; x.fillRect(tx + 25, 34, 11, 136)
+                x.strokeStyle = pal.outline; x.lineWidth = 2; x.strokeRect(tx, 34, 36, 136)
+                x.strokeStyle = pal.crack; x.lineWidth = 2
+                for (let i = 0; i < 4; i++) {
+                    x.beginPath(); x.moveTo(tx + 2, 52 + i * 30); x.lineTo(tx + 34, 72 + i * 30); x.stroke()
+                    x.beginPath(); x.moveTo(tx + 34, 52 + i * 30); x.lineTo(tx + 2, 72 + i * 30); x.stroke()
+                }
+            }
+            tower(6); tower(258)
+            x.fillStyle = pal.rockLight; x.fillRect(6, 18, 288, 16)
+            x.strokeStyle = pal.outline; x.lineWidth = 2; x.strokeRect(6, 18, 288, 16)
+            x.strokeStyle = pal.crack; x.lineWidth = 2
+            for (let i = 0; i < 7; i++) {
+                const bx = 10 + i * 40
+                x.beginPath(); x.moveTo(bx, 8); x.lineTo(bx + 40, 18); x.stroke()
+                x.beginPath(); x.moveTo(bx + 40, 8); x.lineTo(bx, 18); x.stroke()
+            }
+            x.fillStyle = pal.rockDark; x.fillRect(6, 8, 4, 12); x.fillRect(290, 8, 4, 12)
+            x.fillStyle = pal.bone; drawText(x, name, 150, 26, pal.bone, 2, 'center')
+            x.fillStyle = '#20242c'; x.fillRect(112, 34, 76, 22)
+            x.strokeStyle = pal.outline; x.lineWidth = 2; x.strokeRect(112, 34, 76, 22)
+            const lamps = ['#d03028', '#e0a030', '#30b048']
+            for (let i = 0; i < 3; i++) { x.fillStyle = lamps[i]; x.fillRect(120 + i * 22, 39, 14, 12) }
+            const flag = (fx) => {
+                for (let r = 0; r < 2; r++) for (let q = 0; q < 2; q++) {
+                    x.fillStyle = (r + q) % 2 ? '#101010' : '#f0ead8'
+                    x.fillRect(fx + q * 5, 18 + r * 5, 5, 5)
+                }
+            }
+            flag(12); flag(283)
+            return c
+        }
         const archFor = (name) => {
             if (archCache[name]) return archCache[name]
+            if (COURSE.landmark === 'gantry') { archCache[name] = gantryFor(name); return archCache[name] }
             const pal = paletteFor(COURSE.palette)
             const c = document.createElement('canvas'); c.width = 300; c.height = 170
             const x = c.getContext('2d'); x.imageSmoothingEnabled = false
