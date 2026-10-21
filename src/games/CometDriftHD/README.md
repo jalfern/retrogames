@@ -25,7 +25,15 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   (pixel-readback path — a WebGPU canvas answers BLACK to 2D
   `drawImage`/`getImageData` regardless of `preserveDrawingBuffer`).
   A render-failure/black-frame heartbeat self-heals a dead WebGL backend by
-  rebuilding on the classic renderer mid-session. Canvas-substitutes are
+  rebuilding on the classic renderer mid-session. `?gl=webgl-node` pins three's
+  WebGPU renderer onto its WebGL backend (`forceWebGL`, #478 item 9) so the
+  self-heal is testable headlessly via `WEBGL_lose_context`. Gotcha the retest
+  found: a StrictMode remount inherits a force-lost GL context (three's
+  `WebGLBackend.dispose()` calls `loseContext()` and a canvas hands out its
+  context once), and a dead context makes `readPixels` throw — so the boot path
+  retries once on a fresh canvas when the inherited context reports lost, and
+  the refuge additionally fires on the canonical `webglcontextlost` event.
+  Canvas-substitutes are
   inserted BEFORE the React-owned canvas, never in place of it (React
   re-attaches its ref on StrictMode remount and would resurrect a disposed
   context — see the commit history for the failure this prevents).
@@ -131,6 +139,7 @@ npm run cometdrifthdscenerycheck    # #639 dress audit: build/rules/win on every
 npm run cometdrifthdscenerycheck -- --mutate  # parks a barrier on the line, RED
 npm run cometdrifthdcheck -- --mutate     # kills particle spawning, demands RED
 npm run cometdrifthdcheck -- --mutate-spin  # freezes the wheel-blur law, demands RED
+npm run cometdrifthdcheck -- --mutate-heal # disarms device-loss self-heal, demands RED
 npm run lint:hd                     # eslint gate for the game + harness
 CONTRACT_ONLY=comet-drift-hd npm run contractcheck   # window.__game (needs npm run dev)
 node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift-hd \

@@ -901,6 +901,25 @@ console.log('attract preview + per-course map (#502 item 5):')
     selectCourse('gulch')
 }
 
+// #478 item 9 heal mutant: disarm the self-heal — the device-loss gates MUST
+// go red under this run (the race must die with the backend, which it mustn't).
+const HL2LINE = "if (disposed || backendName !== 'webgl2') return"
+const HL2UTIL = 'if (true) return /* healmut */'
+let healmutat = false
+if (args.includes('--mutate-heal')) {
+    const hsrc = readFileSync(SHARD, 'utf8')
+    if (!hsrc.includes(HL2LINE)) { console.error('MUTATE_HEAL: heal guard not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SHARD, hsrc.replace(HL2LINE, HL2UTIL))
+    healmutat = true
+    console.log('  ..    mutated: the self-heal never rebuilds — the device-loss gates MUST report FAILs')
+    process.on('exit', () => {
+        if (healmutat) {
+            writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(HL2UTIL, HL2LINE))
+            console.log('  ..    heal mutation restored')
+        }
+    })
+}
+
 // ---------------------------------------------------------------- browser
 if (!SKIP_BROWSER) {
     const { launch, openGame, requireDevServer } = await import('./lib/harness.mjs')
@@ -1187,6 +1206,40 @@ if (!SKIP_BROWSER) {
     } finally {
         await b4.close()
     }
+
+    // #478 item 9: device-loss self-heal, retested headlessly. ?gl=webgl-node
+    // pins three's WebGPU renderer onto its WebGL backend (forceWebGL — no
+    // adapter needed), the exact state the refuge exists for; WEBGL_lose_context
+    // then kills the context and the game must rebuild itself without dying.
+    await new Promise((r) => setTimeout(r, 2000))
+    const b5 = await launch()
+    try {
+        const page5 = await openGame(b5, { url: BASE + '?gl=webgl-node', viewport: { width: 640, height: 360 }, hook: '__cometHDTest', wait: 500 })
+        await page5.waitForFunction(() => window.__cometHDTest.ready() && window.__cometHDTest.backend() === 'webgl2', null, { timeout: 20000 })
+        ok(true, '?gl=webgl-node pins the three WebGL-node backend (the device-loss state, deterministically)')
+        const stashed = await page5.evaluate(() => window.__cometHDTest.hasNodeGL())
+        ok(stashed === true, 'the node backend stashes its live GL context at boot (heartbeat + heal are not blind)')
+        const lost = await page5.evaluate(() => window.__cometHDTest.simulateDeviceLoss())
+        ok(lost === true, 'WEBGL_lose_context fired on the live node-backend canvas')
+        await page5.waitForFunction(() => window.__cometHDTest.backend() === 'webgl2-legacy', null, { timeout: 20000 }).catch(() => {})
+        ok((await page5.evaluate(() => window.__cometHDTest.backend())) === 'webgl2-legacy', 'device loss self-heals into the legacy refuge (no manual reload)')
+        const t1 = await page5.evaluate(() => window.__cometHDTest.game().tick)
+        await page5.waitForTimeout(400)
+        const t2 = await page5.evaluate(() => window.__cometHDTest.game().tick)
+        ok(t2 > t1, `the sim keeps ticking through and after the rebuild (${t1} -> ${t2})`)
+        const px5 = await page5.evaluate(() => {
+            const src = document.querySelector('canvas')
+            const cv = document.createElement('canvas'); cv.width = 160; cv.height = 90
+            const x = cv.getContext('2d'); x.drawImage(src, 0, 0, 160, 90)
+            const d = x.getImageData(0, 0, 160, 90).data
+            let min = 255; let max = 0
+            for (let i = 0; i < d.length; i += 4) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; min = Math.min(min, l); max = Math.max(max, l) }
+            return { min, max }
+        })
+        ok(px5.max - px5.min > 60, `the rebuilt canvas draws a real world again, not the dead black (${px5.min}..${px5.max})`)
+    } finally {
+        await b5.close()
+    }
 }
 
 // ---- #502 item 4: HD banking cue ----------------------------------------------------
@@ -1215,5 +1268,5 @@ if (!SKIP_BROWSER) {
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat || hudmutat || skinmutat || regmutat) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat || hudmutat || skinmutat || regmutat || healmutat) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)
