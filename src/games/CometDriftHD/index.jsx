@@ -15,7 +15,7 @@ import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/
 import { rumble } from '../../components/gamepadMap'
 import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
-    loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash,
+    loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
@@ -477,6 +477,11 @@ export default function CometDriftHD() {
         scene.add(sparks.points)
         scene.add(dust.points)
 
+        // #478 item 4: gold sparks as camera-aligned streak quads, not tripled
+        // points — the pool billboards each dash onto the camera plane.
+        const streaks = makeStreakPool(lite ? 48 : 96, { width: lite ? 0.06 : 0.075 })
+        scene.add(streaks.mesh)
+
         // camera rig state (px-space chase like the retro twin, same lag law).
         // #471: the kart filled the bottom 40% of the frame — the cam sits
         // further back and higher with a long look-ahead (modern chase cam),
@@ -624,10 +629,11 @@ export default function CometDriftHD() {
                     const w = wheelWorld(P, side, 0.5)
                     sparks.spawn(w.x, liftAt(P) + 0.12, w.z, -w.fx * 0.05 + (jit(g.tick + side) - 0.5) * 0.02, 0.02 + jit(g.tick * 1.7 + side) * 0.02, -w.fx * 0.05 + (jit(g.tick * 2.3 + side) - 0.5) * 0.02, 14, col)
                     dust.spawn(w.x, liftAt(P) + 0.16, w.z, -w.fx * 0.015, 0.008, -w.fz * 0.015, 24, 0xb08058)
-                    // gold tier paints short streaks, not just dots (#471 item 6)
+                    // gold tier paints camera-aligned streaks, not tripled
+                    // dots (#471 item 6, re-cut as quads for #478 item 4)
                     if (tier === 2) {
-                        sparks.spawn(w.x - w.fx * 0.5, liftAt(P) + 0.13, w.z - w.fz * 0.5, -w.fx * 0.05, 0.018, -w.fz * 0.05, 11, col)
-                        sparks.spawn(w.x - w.fx * 0.95, liftAt(P) + 0.13, w.z - w.fz * 0.95, -w.fx * 0.05, 0.015, -w.fz * 0.05, 9, col)
+                        streaks.spawn(w.x - w.fx * 0.35, liftAt(P) + 0.13, w.z - w.fz * 0.35, -w.fx * 0.05, 0.018, -w.fz * 0.05, 11, col, 0.34)
+                        streaks.spawn(w.x - w.fx * 0.8, liftAt(P) + 0.12, w.z - w.fz * 0.8, -w.fx * 0.055, 0.012, -w.fz * 0.055, 8, col, 0.24)
                     }
                 }
             } else if (P.spinT > 0) {
@@ -654,10 +660,16 @@ export default function CometDriftHD() {
                 if (k.boostT > 0 && k.v > 2) {
                     const wb = wheelWorld(k, side, 0.9)
                     dust.spawn(wb.x, liftAt(k) + 0.3, wb.z, 0, 0.012, 0, 22, 0x8a7a82)
+                    // short afterburner trails off both exhaust tips (#478 item 4)
+                    for (const es of [-1, 1]) {
+                        const we = wheelWorld(k, es, 0.75)
+                        streaks.spawn(we.x, liftAt(k) + 0.3, we.z, -we.fx * 0.085, 0.004, -we.fz * 0.085, 7, k.boostTier >= 2 ? 0xffcf50 : 0xff8a30, 0.22)
+                    }
                 }
             }
             sparks.step(-0.0016, liftAt(P) - 0.05)
             dust.step(-0.0004, liftAt(P) - 0.12)
+            streaks.step(-0.001, liftAt(P) - 0.02, camera)
         }
 
         // ---- mesh sync: drawn state is the sim state, every frame ---------
@@ -1016,7 +1028,7 @@ export default function CometDriftHD() {
                     }
                 }
             }
-            if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame(0)); st.endT = 0; sparks.clear(); dust.clear() } }
+            if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame(0)); st.endT = 0; sparks.clear(); dust.clear(); streaks.clear() } }
             if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0; st.endAt = performance.now(); setPadOn(false) }
             spawnTick()
         }
@@ -1089,7 +1101,7 @@ export default function CometDriftHD() {
             prevPlace = g.karts[0].place
             camA = g.karts[0].a
             camLift = 0
-            sparks.clear(); dust.clear()
+            sparks.clear(); dust.clear(); streaks.clear()
         }
 
         const resetTo = (screen) => {
@@ -1100,7 +1112,7 @@ export default function CometDriftHD() {
             prevPlace = g.karts[0].place
             camA = g.karts[0].a
             camLift = 0
-            sparks.clear(); dust.clear()
+            sparks.clear(); dust.clear(); streaks.clear()
             setPadOn(screen === 'race')
         }
 
@@ -1140,7 +1152,7 @@ export default function CometDriftHD() {
                     `screen ${st.screen}  phase ${g.phase}  end ${g.end}  gpu ${backendName}`,
                     `pos ${P.place}/${g.karts.length}  lap ${P.lap}/${LAPS}  v ${P.v.toFixed(2)}`,
                     `drift ${P.driftT} charge ${Math.round(P.charge)}  boost ${P.boostT}/tier ${P.boostTier}  spin ${P.spinT}`,
-                    `sparks ${sparks.aliveCount} dust ${dust.aliveCount}  fov ${camera.fov.toFixed(1)}  tick ${g.tick}`,
+                    `sparks ${sparks.aliveCount} dust ${dust.aliveCount} streaks ${streaks.aliveCount}  fov ${camera.fov.toFixed(1)}  tick ${g.tick}`,
                 ]
             },
             actions: [
@@ -1166,7 +1178,7 @@ export default function CometDriftHD() {
             best: () => st.best,
             fx: () => {
                 const P = g.karts[0]
-                return { sparks: sparks.aliveCount, dust: dust.aliveCount, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
+                return { sparks: sparks.aliveCount, dust: dust.aliveCount, streaks: streaks.aliveCount, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
             fxChain: () => ({ mode: chainMode, pipeline: !!post, bloom: bloomGain.value, radial: Math.round(radialAmt.value * 1000) / 1000, backend: backendName }),
             setBloom: (v) => { bloomGain.value = Math.max(0, Number(v) || 0); return chainMode },
@@ -1196,7 +1208,7 @@ export default function CometDriftHD() {
                 prevPlace = g.karts[0].place
                 camA = g.karts[0].a
                 camLift = 0
-                sparks.clear(); dust.clear()
+                sparks.clear(); dust.clear(); streaks.clear()
                 setPadOn(false)
             },
             tick: (pad) => {

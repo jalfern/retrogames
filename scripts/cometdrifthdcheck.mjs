@@ -108,6 +108,25 @@ if (args.includes('--mutate-spin')) {
     })
 }
 
+// #478 item 4 streak mutant: collapse the stretch law — the camera-aligned
+// dash gates MUST go red under this run.
+const SLAW = 'export const streakLen = (len, speed) => len * (0.3 + 0.7 * Math.min(1, speed / 0.05))'
+const SUTIL2 = 'export const streakLen = (len, speed) => 0 /* streakmut */'
+let streakmutat = false
+if (args.includes('--mutate-streak')) {
+    const ssrc = readFileSync(SCENE, 'utf8')
+    if (!ssrc.includes(SLAW)) { console.error('MUTATE_STREAK: streak law not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, ssrc.replace(SLAW, SUTIL2))
+    streakmutat = true
+    console.log('  ..    mutated: streaks never stretch — the gold-dash gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (streakmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(SUTIL2, SLAW))
+            console.log('  ..    streak mutation restored')
+        }
+    })
+}
+
 // ---------------------------------------------------------------- geometry
 console.log('track geometry (the HD rebuild of the Gulch):')
 const { stats, bounds, geos } = trackGeometryStats()
@@ -291,6 +310,72 @@ ok(pool.aliveCount === 2, 'particle pool spawns and ages')
 pool.step(0); pool.step(0); pool.step(0); pool.step(0)
 ok(pool.aliveCount === 0, 'particle pool retires dead particles')
 
+// ------------------------------------------------ gold streaks (#478 item 4)
+// Gold sparks are camera-aligned streak QUADS, not tripled points: each dash
+// billboards onto the camera plane with its long axis along the velocity there.
+console.log('gold streaks (#478 item 4 — camera-aligned quads + rival afterburners):')
+{
+    const SR = await import('file://' + SCENE + '?t=' + (Date.now() + 1))
+    const { makeStreakPool, streakLen } = SR
+    ok(streakLen(1, 0) === 0.3 && streakLen(1, 0.05) === 1, `streak law: stub at rest, full at dash speed (${streakLen(1, 0)} → ${streakLen(1, 0.05)})`)
+    ok(streakLen(1, 5) === 1, 'streak length clamps (a warp drive never draws a 100 m line)')
+    let monoS = true; let prevS = -1
+    for (let s = 0; s <= 0.08; s += 0.005) { const L = streakLen(1, s); if (L < prevS - 1e-12) monoS = false; prevS = L }
+    ok(monoS, 'streak length grows monotonically with speed (no popping)')
+
+    const sp = makeStreakPool(8, { width: 0.08 })
+    ok(sp.mesh.material.blending === THREE.AdditiveBlending && sp.mesh.material.depthWrite === false && sp.mesh.material.vertexColors, 'streak quads are additive, depth-write-free, vertex-coloured (glow, not paint)')
+    ok(sp.mesh.geometry.index.count === 8 * 6, 'index buffer covers every quad with two triangles')
+    sp.spawn(0, 0.2, 0, 0.05, 0, 0, 4, 0xffd23c, 0.3)
+    sp.step(-0.001, -1)
+    ok(sp.aliveCount === 1, 'a streak spawns alive')
+    const Q = sp.mesh.geometry.getAttribute('position')
+    const span = (ax) => { let lo = 1e9; let hi = -1e9; for (let i = 0; i < 4; i++) { lo = Math.min(lo, Q['get' + ax](i)); hi = Math.max(hi, Q['get' + ax](i)) } return hi - lo }
+    ok(span('X') > span('Y') * 3, `a side-running streak lies along SCREEN X for a default camera (${span('X').toFixed(3)} long vs ${span('Y').toFixed(3)} wide — a dash, not a square)`)
+    ok(span('Z') < 1e-6, `all four corners share one depth plane (${span('Z').toExponential(1)}) — a true billboard`)
+    const CQ = sp.mesh.geometry.getAttribute('color')
+    const luma = (i) => CQ.getX(i) * 0.299 + CQ.getY(i) * 0.587 + CQ.getZ(i) * 0.114
+    ok(luma(1) > luma(0) * 1.5 && luma(2) > luma(3) * 1.5, 'streaks taper — the head burns, the tail dims')
+    sp.step(-0.001, -1); sp.step(-0.001, -1); sp.step(-0.001, -1); sp.step(-0.001, -1)
+    ok(sp.aliveCount === 0, 'streaks retire with their life (no orphaned quads)')
+    sp.spawn(0, 0.2, 0, 0.05, 0, 0, 9, 0xffffff, 0.3)
+    sp.step(-0.001, -1)
+    sp.clear()
+    ok(sp.aliveCount === 0 && CQ.getX(0) === 0, 'clear() sweeps live streaks (restart leaves no smear)')
+
+    // velocity INTO the camera must not collapse the quad or smear it in depth
+    const sp2 = makeStreakPool(4)
+    sp2.spawn(0, 0.2, 0, 0, 0, -0.05, 4, 0xffffff, 0.3)
+    sp2.step(-0.001, -1)
+    const Q2 = sp2.mesh.geometry.getAttribute('position')
+    let finite = true; let sx = 0; let sz2 = 0
+    for (let i = 0; i < 4; i++) { finite = finite && Number.isFinite(Q2.getX(i)) && Number.isFinite(Q2.getY(i)) && Number.isFinite(Q2.getZ(i)) }
+    let loX = 1e9; let hiX = -1e9; let loZ = 1e9; let hiZ = -1e9
+    for (let i = 0; i < 4; i++) { loX = Math.min(loX, Q2.getX(i)); hiX = Math.max(hiX, Q2.getX(i)); loZ = Math.min(loZ, Q2.getZ(i)); hiZ = Math.max(hiZ, Q2.getZ(i)) }
+    sx = hiX - loX; sz2 = hiZ - loZ
+    ok(finite && sx > 0.1 && sz2 < 1e-6, `velocity straight into the lens falls back to a screen-right dash (span ${sx.toFixed(2)}x, no NaN)`)
+
+    // alignment follows the CAMERA, not the world: yaw the camera 90°, and a
+    // world-Z velocity must spread along world Z with zero world-X spread.
+    const cam = new THREE.Object3D()
+    cam.quaternion.setFromEuler(new THREE.Euler(0, Math.PI / 2, 0, 'YXZ'))
+    const sp3 = makeStreakPool(4)
+    sp3.spawn(0, 0.2, 0, 0, 0, 0.05, 4, 0xffffff, 0.3)
+    sp3.step(-0.001, -1, cam)
+    const Q3 = sp3.mesh.geometry.getAttribute('position')
+    let lo3x = 1e9; let hi3x = -1e9; let lo3z = 1e9; let hi3z = -1e9
+    for (let i = 0; i < 4; i++) { lo3x = Math.min(lo3x, Q3.getX(i)); hi3x = Math.max(hi3x, Q3.getX(i)); lo3z = Math.min(lo3z, Q3.getZ(i)); hi3z = Math.max(hi3z, Q3.getZ(i)) }
+    ok(hi3x - lo3x < 1e-6 && hi3z - lo3z > 0.2, `the dash yaws WITH the camera (90° yaw: world-Z spread ${(hi3z - lo3z).toFixed(2)}, world-X ${(hi3x - lo3x).toExponential(1)})`)
+
+    // the shell drives it: player gold + rival exhausts + harness visibility
+    const SRC = readFileSync(SHARD, 'utf8')
+    ok(SRC.includes('makeStreakPool(') && SRC.includes('streaks.step('), 'index.jsx builds the streak pool and billboards it every tick')
+    ok((SRC.match(/streaks\.spawn\(/g) || []).length >= 3, 'gold wheels AND rival exhausts spawn streaks (player + pack covered)')
+    ok(SRC.includes('0xff8a30'), 'rival afterburners carry a hot-exhaust colour of their own')
+    ok(SRC.includes('streaks: streaks.aliveCount'), 'fx() reports the streak pool to the harness')
+    ok((SRC.match(/streaks\.clear\(\)/g) || []).length >= 4, 'every restart path sweeps the streak pool')
+}
+
 // ------------------------------------------------------------------ rules
 console.log('reused sim keeps its rules under the new renderer:')
 {
@@ -460,6 +545,29 @@ if (!SKIP_BROWSER) {
             ok(b.boostT > 0 && b.driftT === 0, `releasing after gapped legs banks a turbo (boostT ${b.boostT}) — pre-grace code banked nothing here`)
         }
 
+        // #478 item 4: GOLD paints camera-aligned streaks; a boosting rival
+        // leaves an afterburner trail. Pinned treadmill like the ladder above.
+        {
+            const t2 = (await import('../src/games/CometDrift/track.js')).TRACK
+            const p40 = t2.pts[40]
+            await page.evaluate(() => window.__game.release())
+            const goldLeg = () => page.evaluate(({ x, y, a }) => {
+                const P = window.__cometHDTest.game().karts[0]
+                for (let i = 0; i < 6; i++) {
+                    P.x = x; P.y = y; P.a = a; P.idx = 40; P.hint = 40; P.v = Math.min(P.v, 7.5)
+                    P.charge = Math.max(P.charge, 170); P.spinT = 0; P.offroad = false
+                    window.__game.step({ up: true, right: true, a: true }, 1)
+                }
+            }, { x: p40.x, y: p40.y, a: p40.a })
+            await goldLeg()
+            const fxG = await page.evaluate(() => window.__cometHDTest.fx())
+            ok(fxG.streaks > 0, `GOLD drift paints camera-aligned streak quads (${fxG.streaks} live)`)
+            ok(fxG.sparks > 0, 'gold keeps its spark dots — streaks augment, never replace')
+            await page.evaluate(() => { const k = window.__cometHDTest.game().karts[1]; k.boostT = 30; k.boostTier = 2; k.v = 6; k.driftT = 0 })
+            for (let i = 0; i < 4; i++) await page.evaluate(() => window.__game.step({ up: true }, 1))
+            ok((await page.evaluate(() => window.__cometHDTest.fx())).streaks > 0, 'a boosting rival leaves an afterburner trail')
+        }
+
         const p2 = await pixels()
         ok(p2.max - p2.min > 60, 'canvas still renders after a boost (not a dead black frame)')
 
@@ -565,5 +673,5 @@ if (!SKIP_BROWSER) {
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)
