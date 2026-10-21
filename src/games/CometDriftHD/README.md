@@ -46,6 +46,14 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   minimap) rides a 2D overlay canvas, dropped below the app's #437 corner
   chrome. Attract = the autopilot's proven win; end table restarts on the
   first tap after a 400 ms guard.
+- #718 floor law: the sand floor was a fixed −1.5 plane (a Gulch fit; its
+  road bottoms at −1.49). Since #518's elevation, Sandbank dips to −3.1 and
+  Corkscomb to −4.8 — ~25% of those laps drove UNDER the sand. The floor
+  now hangs at `courseFloorY()` = min(−1.5, `asphaltMinY()` − `FLOOR_MARGIN`
+  0.6) — the selected course's lowest cambered asphalt edge — and the mesa
+  ring sinks with it (base = floor + 0.1u). `cometdrifthdcheck` gates all
+  three courses (road, kart, chase eye ≥0.5u above the floor) and
+  `--mutate-floor` pins it back to −1.5 and must redden them.
 
 ## Feel tuning
 
