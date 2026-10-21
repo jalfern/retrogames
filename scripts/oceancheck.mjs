@@ -177,22 +177,26 @@ function starPix(img, yFrom, yTo) {
 }
 
 // #608: glitter on the sea — whiter-than-band pixels below the horizon. Night water
-// is blue-dominant (B >> R); a star/moon glint lifts R toward B, so R > B-45 with a
-// local R excess isolates sparkles from the deep-blue sea and dark foam.
-function seaGlint(img, yFrom, yTo) {
+// is blue-dominant (B >> R); a star glint lifts R toward B, so the strict trio
+// (R excess, absolute floor, B excess, near-white) isolates point sparkles from the
+// diffuse moon-lit swell. Sampled on the FLANKS (away from the moon's centre column)
+// so pre-existing moon glitter cannot satisfy it: mutant (no reflection draw) reads 0
+// px on both flanks; the wired pass reads ~7-13 px per flank.
+function seaGlint(img, x0, x1) {
+  const y0 = Math.floor(img.h * 0.54), y1 = Math.floor(img.h * 0.78)
   let sr = 0, sb = 0, n = 0
-  for (let y = yFrom; y < yTo; y++) {
-    for (let x = 0; x < img.w; x++) {
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
       const i = (y * img.w + x) * img.bpp
       sr += img.px[i]; sb += img.px[i + 2]; n++
     }
   }
   const mr = sr / n, mb = sb / n
   let count = 0, xLo = 1e9, xHi = -1
-  for (let y = yFrom; y < yTo; y++) {
-    for (let x = 0; x < img.w; x++) {
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
       const i = (y * img.w + x) * img.bpp
-      if (img.px[i] > mr + 14 && img.px[i] > img.px[i + 2] - 45 && img.px[i] > 50) {
+      if (img.px[i] > mr + 30 && img.px[i] > 75 && img.px[i + 2] > mb + 8 && img.px[i] > img.px[i + 2] - 45) {
         count++
         if (x < xLo) xLo = x
         if (x > xHi) xHi = x
@@ -475,17 +479,21 @@ async function main() {
       }
       ok('night: stars fill the sky (not a line)', bestSpread.count >= 8000 && bestSpread.ySpan >= 140 && bestSpread.xSpan >= 500,
         `count=${bestSpread.count} ySpan=${bestSpread.ySpan} xSpan=${bestSpread.xSpan}`)
-      // #608: the same sky mirrors into the sea — armed strength + wide glint span
+      // #608: the same sky mirrors into the sea — armed strength + glitter on both
+      // flanks of the moon column (best of 3 frames; reflections scintillate).
       const reflK = (await page.evaluate(() => window.__oceanTest.stars())).reflect
       ok('night: star reflections armed on the sea (#608)', reflK > 0.2, `reflect=${reflK}`)
-      let bestGlint = { count: 0, xSpan: 0 }
+      let glL = { count: 0, xSpan: 0 }, glR = { count: 0, xSpan: 0 }
       for (let i = 0; i < 3; i++) {
-        const g = seaGlint(decodePng(await page.screenshot()), Math.floor(540 * 0.54), Math.floor(540 * 0.78))
-        if (g.count > bestGlint.count) bestGlint = g
+        const img = decodePng(await page.screenshot())
+        const l = seaGlint(img, 40, 320), r = seaGlint(img, 640, 920)
+        if (l.count > glL.count) glL = l
+        if (r.count > glR.count) glR = r
         await page.waitForTimeout(350)
       }
-      ok('night: stars glitter on the sea below the horizon (#608)',
-        bestGlint.count >= 150 && bestGlint.xSpan >= 300, `count=${bestGlint.count} xSpan=${bestGlint.xSpan}`)
+      ok('night: stars glitter on the sea away from the moon (#608)',
+        glL.count >= 3 && glL.xSpan >= 60 && glR.count >= 3 && glR.xSpan >= 60,
+        `L ${glL.count}px/${glL.xSpan} R ${glR.count}px/${glR.xSpan}`)
       const azA = (await page.evaluate(() => window.__oceanTest.stars())).named.arcturus.az
       await page.evaluate(() => window.__oceanTest.setTod(0.3))
       await page.waitForTimeout(700)
