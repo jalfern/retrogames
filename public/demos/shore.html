@@ -605,7 +605,7 @@ fn fs(i: VOut) -> @location(0) vec4f {
 
 // ---- SWE swash sim: h,u,v + foam injection + wet map, one kernel ----
 const SWE = UNIF + U0 + TT_DECL + `@group(3) @binding(0) var<storage, read> ttBuf: TTBuf;
-@group(0) @binding(1) var<uniform> su: array<f32, 4>;
+@group(0) @binding(1) var<uniform> su: vec4f;
 @group(2) @binding(0) var<storage, read_write> o_hud: array<vec4f, ${NC}>;
 @group(2) @binding(1) var<storage, read_write> o_fof: array<f32, ${NC}>;
 @group(2) @binding(2) var<storage, read_write> o_wtf: array<f32, ${NC}>;
@@ -674,7 +674,7 @@ fn cs_swe(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 // ---- foam advection: semi-Lagrangian along (u,v), ~3 s half-life ----
 const FOAMADV = UNIF + U0 + TT_DECL + `@group(3) @binding(0) var<storage, read> ttBuf: TTBuf;
-@group(0) @binding(1) var<uniform> su: array<f32, 4>;
+@group(0) @binding(1) var<uniform> su: vec4f;
 @group(2) @binding(0) var<storage, read_write> o_hud: array<vec4f, ${NC}>;
 @group(2) @binding(1) var<storage, read_write> o_fof: array<f32, ${NC}>;
 @group(2) @binding(2) var<storage, read_write> o_wtf: array<f32, ${NC}>;

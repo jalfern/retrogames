@@ -18,6 +18,7 @@
 //     · waterline coherent alongshore (no per-column sawtooth)
 //   3. WINS   — golden-hour sky, foam pixels, warm sand, camera moves the world.
 //   4. SPEED  — steady-state frame time at the worst-case window under --max-ms.
+//   + static: no var<uniform> array of f32/vec2/vec3 (Safari standard layout).
 //
 // Chrome is launched DIRECTLY with --enable-unsafe-swiftshader (playwright's
 // stock switches hide navigator.gpu; same recipe as oceancheck).
@@ -27,6 +28,8 @@
 // --shots writes view-a.png / view-b.png; --strip adds strip.png + waveframes/.
 // Proven-fail mutant: zero the inlet sponge (`k3 ... * 0.4` -> `* 0.0`) ->
 // swash oscillation, asymmetry, sea-depth and vary-in-time checks go red.
+// Second mutant (#660): declare the sim uniform as `array<f32, 4>` again ->
+// the uniform-stride check goes red (Chrome accepts it, Safari rejects it).
 
 import { spawn } from 'node:child_process'
 import { inflateSync, deflateSync } from 'node:zlib'
@@ -154,7 +157,26 @@ const meanLum = (img, yFrom, yTo) => {
 const xsC = z => 84 + 9 * Math.sin(z * 0.043 + 1.7) + 3.5 * Math.sin(z * 0.12 + 0.6)
 const bedC = (x, z) => 0.052 * (x - xsC(z)) - 0.16 * Math.exp(-Math.pow((x - xsC(z) + 9) / 5, 2))
 
+// Safari/WebGPU enforces uniform standard layout (16-byte array strides);
+// Chrome only passes because it accepts the uniform_buffer_standard_layout
+// exception. A `var<uniform>` (or any struct it binds) holding an array of
+// f32/vec2/vec3 breaks on iPad (#660), so catch it statically.
+function uniformStrideOffenders(src) {
+  const bad = []
+  for (const m of src.matchAll(/var<uniform>\s*\w+\s*:\s*([\w]+(?:\s*<[^;]*>)?)/g)) {
+    const t = m[1].replace(/\s+/g, '')
+    if (/^array<(f32|f16|vec2f?|vec3f?)[,>]/.test(t)) bad.push(`var<uniform> : ${t}`)
+    const sm = src.match(new RegExp(`struct\\s+${t}\\s*\\{([\\s\\S]*?)\\};`))
+    if (sm) for (const mm of sm[1].matchAll(/(\w+)\s*:\s*(array<\s*(?:f32|f16|vec2f?|vec3f?)[^>]*>)/g))
+      bad.push(`struct ${t}.${mm[1]}: ${mm[2].replace(/\s+/g, '')}`)
+  }
+  return bad
+}
+
 async function main() {
+  const offenders = uniformStrideOffenders(readFileSync(file, 'utf8'))
+  ok('uniform buffers obey 16-byte stride (Safari #660)', offenders.length === 0, offenders.join(' | '))
+
   const chrome = spawn(CHROME, [
     '--headless=new', '--enable-unsafe-swiftshader', `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
