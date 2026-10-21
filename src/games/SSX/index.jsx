@@ -14,7 +14,7 @@ import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { makeGame, step, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
+import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS } from './art.js'
@@ -479,6 +479,8 @@ const SSXGame = () => {
                 }),
                 fps: () => Math.round(fpsEMA),
                 start: (m) => startPlay(m === 'showoff' ? 'showoff' : 'race'),
+                seek: (m) => { g.riders[0].s = m; camFresh = true; return g.riders[0].s },
+                heat: (h) => { loadHeat(g, h); shownHeat = g.heat; setCourseVisuals(); return g.course.name },
                 toAttract: () => { g = makeGame('race'); shownHeat = 0; poseOverride = null; setCourseVisuals(); setMode('attract') },
                 prognose: () => {
                     if (g.end) return `already ${g.end}: ${g.why}`

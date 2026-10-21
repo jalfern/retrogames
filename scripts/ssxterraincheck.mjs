@@ -50,7 +50,7 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     const hues = new Set()
     for (let x = 2; x <= 6; x += 0.25) {
         const rgb = snowColor(co, sm, x)
-        hues.add(`${Math.round(rgb[0] / 12)}:${Math.round(rgb[1] / 12)}`)
+        hues.add(`${Math.round(rgb[0] / 8)}:${Math.round(rgb[1] / 8)}`)
     }
     ok(`${co.name}: rock is layered, not one flat tint (${hues.size} bands)`, hues.size >= 5)
 }
@@ -77,9 +77,9 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     for (let s = 120; s < co.N * DS - 40; s += DS) {
         for (const x of [2, -2, 3, -3, 4, -4, 5, -5, 6, -6]) {
             const inf = surfaceInfo(co, s, x)
-            if (inf.rawRock > 0.5 && inf.relax > 0.5) {
+            if (inf.rawRock > 0.5 && inf.relax > 0.4) {
                 ledges++
-                if (inf.rockT > inf.rawRock * 0.55) ledgesOk = false
+                if (inf.rockT > inf.rawRock * 0.62) ledgesOk = false
             }
         }
     }

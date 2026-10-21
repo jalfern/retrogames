@@ -30,21 +30,21 @@ export const THEMES = {
         sky: 0x8fc4f2, skyTop: 0x4a86c8, fog: 0xc9d9ec, fogD: 0.0009,
         sun: 0xfff3d0, hemiSky: 0xbfd8f2, hemiGround: 0xdfe8f2,
         snowA: [248, 250, 255], snowB: [186, 206, 236],
-        shadow: [150, 168, 212], edge: [70, 190, 240], rock: [158, 162, 174], rock2: [122, 128, 142],
+        shadow: [150, 168, 212], edge: [70, 190, 240], rock: [42, 35, 31], rock2: [20, 17, 16],
         peak: [172, 196, 230], peakSun: [225, 232, 245],
     },
     night: {
         sky: 0x0a0c22, skyTop: 0x04051a, fog: 0x101436, fogD: 0.0016,
         sun: 0x8090ff, hemiSky: 0x2a3070, hemiGround: 0x141838,
         snowA: [96, 110, 190], snowB: [56, 64, 140],
-        shadow: [22, 28, 72], edge: [255, 60, 200], rock: [40, 44, 90], rock2: [26, 28, 62],
+        shadow: [22, 28, 72], edge: [255, 60, 200], rock: [10, 10, 26], rock2: [4, 4, 12],
         peak: [30, 34, 78], peakSun: [56, 62, 120],
     },
     dusk: {
         sky: 0xff9a5c, skyTop: 0x6a4a9c, fog: 0xf2a878, fogD: 0.0012,
         sun: 0xffd0a0, hemiSky: 0xffc8a0, hemiGround: 0xe0b0c0,
         snowA: [255, 224, 214], snowB: [206, 156, 186],
-        shadow: [118, 88, 158], edge: [255, 90, 60], rock: [130, 100, 120], rock2: [92, 70, 96],
+        shadow: [118, 88, 158], edge: [255, 90, 60], rock: [19, 10, 8], rock2: [7, 3, 4],
         peak: [206, 140, 150], peakSun: [255, 200, 170],
     },
 }
@@ -57,7 +57,9 @@ export const THEMES = {
 // Lateral x-units are 9 m.
 export function slopeAt(c, s, x) {
     const nat = (ss, xx) => terrainY(c, ss, xx) - featureLift(c, ss, xx)
-    const gy = (nat(s + 1, x) - nat(s - 1, x)) / 2
+    // ±3 m along s averages the short mogul wave (rock must not flicker on as
+    // riders cross each bump); lateral stays fine — cliff faces are lateral
+    const gy = (nat(s + 3, x) - nat(s - 3, x)) / 6
     const gx = (nat(s, x + 0.05) - nat(s, x - 0.05)) / 0.1 / 9
     return Math.hypot(gy, gx)
 }
@@ -65,18 +67,20 @@ export function slopeAt(c, s, x) {
 // Crag bands: strata stripes folded along the run. Where a face sits high
 // above the piste these bands break the snow into alternating snow/rock layers
 // — the crag-and-snow banding of a real alpine wall.
-function cragBands(s, x, y) {
-    const fold = 1.1 * Math.sin(s * 0.013 + x * 0.9 + 2.0) + 0.5 * Math.sin(s * 0.031 - x * 0.4)
-    return smooth01(Math.sin(y * 0.55 + fold) * 1.15)
+function cragBands(s, x) {
+    const fold = 0.9 * Math.sin(s * 0.017 + x * 0.9 + 2.0) + 0.45 * Math.sin(s * 0.031 - x * 0.4)
+    const b = fold + 0.55 * Math.sin(s * 0.23 + x * 1.3 + fold * 2)
+    return smooth01((b - 0.1) * 2.2)
 }
 
 // Fracture: blocky cell hash so a rock face reads as broken plates, and
 // bedding: dark planes every ~2 m of height, both only ever seen through
 // the rock blend.
-const fracture = (s, x) => hash(Math.floor(s / 7.3) * 31.7 + Math.floor(x * 1.7) * 7.9 + 3.1)
+const fracture = (s, x) => hash(Math.floor(s / 10.3) * 31.7 + Math.floor(x * 1.7) * 7.9 + 3.1)
 const bedding = (y, s, x) => {
     const fold = 0.8 * Math.sin(s * 0.017 + x * 1.3)
-    return smooth01(Math.abs(Math.sin((y * 1.35 + fold))) * 2.4)
+    return smooth01(Math.abs(Math.sin(y * 0.9 + fold)) * 2.6) * 0.8
+        + 0.2 * Math.abs(Math.sin(y * 3.3 + fold * 2.3))
 }
 
 // Everything the surface look needs at one point: base colour plus the
@@ -116,12 +120,16 @@ export function surfaceInfo(c, s, x) {
 
     // ---- snow vs rock ----
     const grad = slopeAt(c, s, x)
-    const slopeRock = smooth01((grad - 0.35) / 0.35)
-    const cragRaw = smooth01((above - 2.4) / 5.5) * cragBands(s, x, y)
+    const slopeRock = smooth01((grad - 0.28) / 0.3)
+    const cragRaw = smooth01((above - 2.4) / 5.5) * cragBands(s, x)
     const rawRock = Math.max(slopeRock, cragRaw)
     // snow settles on ledges: gentle ground inside the rock zone keeps snow
-    const relax = 0.8 * smooth01((0.38 - grad) / 0.25)
-    let rockT = rawRock * (1 - relax)
+    let relax = 0.8 * smooth01((0.45 - grad) / 0.3)
+    // high up (bench, ridge) the relief is rock even when locally gentle; snow
+    // caps stay where the face is both low and flat
+    relax *= 1 - 0.55 * smooth01((above - 2) / 6)
+    // rock only exists beyond the piste proper
+    let rockT = rawRock * (1 - relax) * smooth01((a - 1.5) / 0.45)
     if (a < 1.05) {
         // groomed trail down the natural line + piste edge stripe
         const tc = Math.sin(s * 0.011) * 0.35 + Math.sin(s * 0.004 + 1.3) * 0.25
@@ -131,7 +139,8 @@ export function surfaceInfo(c, s, x) {
         rockT = Math.min(rockT, smooth01((grad - 0.5) / 0.4))
     }
     if (rockT > 0) {
-        const band = 0.82 + 0.3 * bedding(y, s, x) + 0.18 * (fracture(s, x) - 0.5)
+        const band = (0.66 + 0.42 * bedding(y, s, x) + 0.26 * (fracture(s, x) - 0.5))
+            * (0.85 + 0.28 * cragBands(s, x))
         const rk = T.rock.map((v, k) => (v * (1 - slopeRock) + T.rock2[k] * slopeRock) * band)
         rgb = rgb.map((v, k) => v * (1 - rockT) + rk[k] * rockT)
     }
@@ -200,17 +209,17 @@ export function detailTexture(theme) {
                 }
             }
             // crust: a few branching crack lines
-            g.strokeStyle = night ? 'rgba(20,24,60,0.5)' : 'rgba(120,128,150,0.4)'
+            g.strokeStyle = night ? 'rgba(14,18,52,0.42)' : 'rgba(112,120,142,0.26)'
             g.lineWidth = 1
-            for (let k = 0; k < 7; k++) {
+            for (let k = 0; k < 5; k++) {
                 let px = rnd() * 256, py = rnd() * 256
                 let dir = rnd() * Math.PI * 2
                 g.beginPath(); g.moveTo(px, py)
-                const steps = 5 + Math.floor(rnd() * 8)
+                const steps = 3 + Math.floor(rnd() * 4)
                 for (let i = 0; i < steps; i++) {
-                    dir += (rnd() - 0.5) * 1.4
-                    px += Math.cos(dir) * (6 + rnd() * 10)
-                    py += Math.sin(dir) * (6 + rnd() * 10)
+                    dir += (rnd() < 0.5 ? -1 : 1) * (0.9 + rnd() * 0.9)
+                    px += Math.cos(dir) * (4 + rnd() * 6)
+                    py += Math.sin(dir) * (4 + rnd() * 6)
                     g.lineTo(px, py)
                 }
                 g.stroke()
@@ -238,15 +247,16 @@ export function sparkleTexture(theme) {
         const cvs = seamless(128, 128, (g) => {
             g.clearRect(0, 0, 128, 128)
             const rnd = lcg(9901)
-            const n = night ? 22 : 38
+            const n = night ? 18 : 32
             for (let i = 0; i < n; i++) {
                 const px = rnd() * 128, py = rnd() * 128
-                const r = 0.8 + rnd() * 1.6
-                const grad = g.createRadialGradient(px, py, 0.1, px, py, r * 2.4)
-                grad.addColorStop(0, `rgba(255,255,255,${night ? 0.5 : 0.9})`)
+                const r = 0.5 + rnd() * 0.9
+                const grad = g.createRadialGradient(px, py, 0.05, px, py, r * 1.7)
+                grad.addColorStop(0, `rgba(255,255,255,${night ? 0.55 : 0.9})`)
+                grad.addColorStop(0.45, 'rgba(255,255,255,0.35)')
                 grad.addColorStop(1, 'rgba(255,255,255,0)')
                 g.fillStyle = grad
-                g.beginPath(); g.arc(px, py, r * 2.4, 0, Math.PI * 2); g.fill()
+                g.beginPath(); g.arc(px, py, r * 1.7, 0, Math.PI * 2); g.fill()
             }
         })
         const tex = new THREE.CanvasTexture(cvs)
