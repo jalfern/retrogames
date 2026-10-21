@@ -523,7 +523,11 @@ console.log('partner intelligence (#505)')
         return pad
     }
     // pace: down the long top corridor a full sprint; before #505 the elf
-    // yo-yoed up to 3.4 cells behind; the pad must hold it inside two.
+    // yo-yoed up to 3.4 cells behind. Heading prediction is what pulls the
+    // seat along: it rides the hero's heels (steady ~0.2). Without it the
+    // pad settles on the hold-back setpoint, one cell astern (~1.0) — still
+    // "holding pace" by the old 2.0 bar, which is why the #687 nightly
+    // found the mutant surviving.
     {
         const gs = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
         gs.monsters = []; gs.gens.forEach((g) => { g.alive = false })
@@ -535,7 +539,8 @@ console.log('partner intelligence (#505)')
             if (i > 60) worst = Math.max(worst, Math.hypot(gs.partner.x - gs.hero.x, gs.partner.y - gs.hero.y))
             runPad(gs, { left: true })
         }
-        ok(worst < 2.0, '#505: the CPU seat holds pace through a long sprint', `worst gap ${worst.toFixed(2)}`)
+        ok(worst < 0.5, '#505: the CPU seat rides the sprint — heading prediction, not the hold-back setpoint',
+            `worst gap ${worst.toFixed(2)} (hold-back ~1.0, pre-#505 yo-yo 3.4)`)
     }
     // slam-door parity: the hero waits on the far side; the partner pushes.
     {
@@ -859,6 +864,7 @@ if (process.argv.includes('--mutate')) {
         ['#524 the shared-view wall is removed from the sim', 'src/games/Gauntlet/sim.js', '    clampToSharedView(gs)\n    updateItems(gs)', '    updateItems(gs)'],
         ['#524 the edge is too loose to wall players in', 'src/games/Gauntlet/minimap.js', 'maxx: rect.camX / PX + VWC, maxy: rect.camY / PX + VHC', 'maxx: rect.camX / PX + VWC * 2, maxy: rect.camY / PX + VHC * 2'],
         ['#505 the partner ignores the hero heading (yo-yo pace)', 'src/games/Gauntlet/planner.js', 'if (vs > 0.012) {', 'if (false) {'],
+        ['#505 heading prediction dies at sprint speed (vs gate)', 'src/games/Gauntlet/planner.js', 'if (vs > 0.012) {', 'if (vs > 0.5) {'],
         ['#505 seat 2 never gets slam-door push parity', 'src/games/Gauntlet/sim.js', 'openSlamInWay(gs, p, Math.cos(a), Math.sin(a))\n                moveHuman(gs, p, Math.cos(a) * sp, Math.sin(a) * sp)', 'moveHuman(gs, p, Math.cos(a) * sp, Math.sin(a) * sp)'],
         ['#505 hurt partners never break for food', 'src/games/Gauntlet/planner.js', 'if (p.hp < p.maxHp * 0.55) {', 'if (false) {'],
         ['#505 a sealed corridor is grinded, not waited at', 'src/games/Gauntlet/planner.js', 'const near = (gx, gy) => Math.floor(gy) === pr && Math.floor(gx) === pc', 'const near = () => true'],
