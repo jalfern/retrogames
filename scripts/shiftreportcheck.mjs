@@ -22,8 +22,36 @@ const ok = (name, cond) => { if (cond) pass++; else fails.push(name) }
 const m = await import('./shiftreport.mjs')
 
 for (const fn of ['hourKey', 'hourKeys', 'laneOf', 'medianMinutes', 'p90Minutes', 'buildRows', 'idleBand',
-    'machineRows', 'ciStats', 'themeOf', 'buildThemes', 'parsePrivateLabels', 'parseGameLabels', 'buildReport']) {
+    'machineRows', 'ciStats', 'themeOf', 'buildThemes', 'parsePrivateLabels', 'parseGameLabels', 'buildReport', 'pushContents']) {
     ok(`boot: exports ${fn}`, typeof m[fn] === 'function')
+}
+
+// ---- #645: Contents PUT vs the 4 h tick — sha race retry loop ----
+const race409 = () => { const e = new Error('Command failed: gh api'); e.stderr = 'gh: updating contents failed: SHA mismatch (HTTP 409)'; return e }
+{
+    let reads = 0, puts = 0
+    const got = m.pushContents({ readSha: () => { reads++; return 'a'.repeat(40) }, put: () => { puts++; if (puts < 3) throw race409() } })
+    ok('sha race retried: succeeds on attempt 3, sha re-read each time', got === 3 && reads === 3 && puts === 3)
+}
+{
+    let puts = 0, threw = false
+    try { m.pushContents({ readSha: () => 'b'.repeat(40), put: () => { puts++; throw race409() } }) } catch { threw = true }
+    ok('persistent races give up after 3 attempts (no infinite loop)', threw && puts === 3)
+}
+{
+    let puts = 0
+    try { m.pushContents({ readSha: () => 'c'.repeat(40), put: () => { puts++; throw new Error('boom (HTTP 422)') } }) } catch { /* not retried */ }
+    ok('non-409 failures are not retried', puts === 1)
+}
+{
+    let seen = null
+    const got = m.pushContents({ readSha: () => { throw new Error('not found') }, put: (sha) => { seen = sha } })
+    ok('first write (no remote file) PUTs without a sha', got === 1 && seen === '')
+}
+{
+    let last = null
+    m.pushContents({ readSha: () => ' deadbeefdeadbeefdeadbeefdeadbeefdeadbeef ', put: s => { last = s } })
+    ok('existing sha trimmed and passed to PUT', last === 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef')
 }
 
 // ---- lanes come from branch prefixes only ----

@@ -53,6 +53,22 @@ const fmt = new Intl.DateTimeFormat('en-CA', {
     hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
 })
 
+export function pushContents({ readSha, put, warn = () => {} }) {
+    // #645: the 4 h launchd tick can regenerate report.json between our sha
+    // read and the Contents PUT (HTTP 409). Re-read the sha and retry up to
+    // 3 attempts; a non-409 failure (or exhausting retries) rethrows.
+    const isRace = e => /409/.test(String((e && e.stderr) || '') + String((e && e.message) || ''))
+    for (let attempt = 1; ; attempt++) {
+        let sha = ''
+        try { sha = String(readSha() || '').trim() } catch { /* first write */ }
+        try { put(sha); return attempt }
+        catch (e) {
+            if (attempt >= 3 || !isRace(e)) throw e
+            warn(`push attempt ${attempt} lost the sha race (409) — re-reading sha`)
+        }
+    }
+}
+
 export function pacificParts(ts) {
     const p = {}
     for (const { type, value } of fmt.formatToParts(new Date(ts))) p[type] = +value
@@ -415,13 +431,16 @@ async function main() {
         return
     }
     const data = Buffer.from(JSON.stringify(report)).toString('base64')
-    const body = { message: 'shift report', content: data, branch: 'main' }
-    let sha = ''
-    try {
-        sha = execFileSync('gh', ['api', `${OUT}/contents/report.json?ref=main`, '--jq', '.sha'], { encoding: 'utf8' }).trim()
-    } catch { /* first write */ }
-    if (/^[0-9a-f]{40}$/.test(sha)) body.sha = sha
-    execFileSync('gh', ['api', '-X', 'PUT', `${OUT}/contents/report.json`, '--input', '-'], { input: JSON.stringify(body) })
+    const attempts = pushContents({
+        readSha: () => execFileSync('gh', ['api', `${OUT}/contents/report.json?ref=main`, '--jq', '.sha'], { encoding: 'utf8' }),
+        put: (sha) => {
+            const body = { message: 'shift report', content: data, branch: 'main' }
+            if (/^[0-9a-f]{40}$/.test(sha)) body.sha = sha
+            execFileSync('gh', ['api', '-X', 'PUT', `${OUT}/contents/report.json`, '--input', '-'], { input: JSON.stringify(body) })
+        },
+        warn: msg => console.warn(msg),
+    })
+    if (attempts > 1) console.log(`pushed after ${attempts} attempts (sha races: ${attempts - 1})`)
     console.log('shift report pushed:', report.headline)
 }
 
