@@ -53,6 +53,14 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   squash: `landingSquash(prevGrade, grade, v)` compresses (scale.y down, xz
   out, capped 0.18) when the slope drops away at speed, springs at 0.78/tick
   — load hits crests, not just sand.
+- #478 item 4 gold streaks: `makeStreakPool` (scene.js) draws the gold tier
+  and rival afterburners as CAMERA-ALIGNED additive quads, not tripled points.
+  Each live streak billboards onto the camera plane every tick: long axis =
+  velocity projected into that plane (screen-right fallback when velocity
+  points at/away from the lens), width fixed, head bright / tail dimmed 0.35.
+  `streakLen(len, speed)` clamps the dash at 0.05 px/tick so a warp never
+  draws a 100 m line. Pools: 96 quads (48 lite), cleared on every restart
+  path; `fx()` reports `streaks` alive count to the harness.
 
 ## Trackside scenery (#639)
 

@@ -449,6 +449,115 @@ export function makePool(count, size) {
     }
 }
 
+// ---- gold streaks (#478 item 4): camera-aligned additive quads, not tripled
+// points. Each live streak billboards onto the camera plane: its long axis is
+// the velocity projected into that plane (screen-right fallback when velocity
+// points at/away from the viewer), so a dash always reads as a motion dash at
+// any camera angle and never smears into depth. Head/tail taper + per-tick
+// fade match the point pools' look. Node-safe: without a camera the axes are
+// identity, so the check can measure quad geometry with no renderer.
+export const streakLen = (len, speed) => len * (0.3 + 0.7 * Math.min(1, speed / 0.05))
+export function makeStreakPool(count, opts = {}) {
+    const width = opts.width || 0.075
+    const pos = new Float32Array(count * 4 * 3)
+    const col = new Float32Array(count * 4 * 3)
+    const idx = new Uint16Array(count * 6)
+    for (let i = 0; i < count; i++) {
+        const b = i * 4
+        idx[i * 6] = b; idx[i * 6 + 1] = b + 1; idx[i * 6 + 2] = b + 2
+        idx[i * 6 + 3] = b; idx[i * 6 + 4] = b + 2; idx[i * 6 + 5] = b + 3
+    }
+    const geo = new THREE.BufferGeometry()
+    const posAttr = new THREE.BufferAttribute(pos, 3)
+    posAttr.setUsage(THREE.DynamicDrawUsage)
+    const colAttr = new THREE.BufferAttribute(col, 3)
+    colAttr.setUsage(THREE.DynamicDrawUsage)
+    geo.setAttribute('position', posAttr)
+    geo.setAttribute('color', colAttr)
+    geo.setIndex(new THREE.BufferAttribute(idx, 1))
+    const mat = new THREE.MeshBasicMaterial({
+        vertexColors: true, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    })
+    const mesh = new THREE.Mesh(geo, mat)
+    mesh.frustumCulled = false
+    const x = new Float32Array(count); const y = new Float32Array(count); const z = new Float32Array(count)
+    const vx = new Float32Array(count); const vy = new Float32Array(count); const vz = new Float32Array(count)
+    const life = new Float32Array(count); const maxLife = new Float32Array(count)
+    const len = new Float32Array(count)
+    const r = new Float32Array(count); const g = new Float32Array(count); const b = new Float32Array(count)
+    let head = 0
+    let alive = 0
+    const tint = new THREE.Color()
+    const right = new THREE.Vector3()
+    const dir = new THREE.Vector3()
+    const axis = new THREE.Vector3()
+    const side = new THREE.Vector3()
+    return {
+        mesh,
+        get aliveCount() { return alive },
+        spawn(px, py, pz, ivx, ivy, ivz, ttl, colorHex, streakLen0) {
+            const i = head; head = (head + 1) % count
+            x[i] = px; y[i] = py; z[i] = pz
+            vx[i] = ivx; vy[i] = ivy; vz[i] = ivz
+            life[i] = ttl; maxLife[i] = ttl
+            len[i] = streakLen0 || 0.28
+            tint.set(colorHex)
+            r[i] = tint.r; g[i] = tint.g; b[i] = tint.b
+        },
+        step(gravity, floor = 0, camera = null) {
+            if (camera && camera.quaternion) {
+                right.set(1, 0, 0).applyQuaternion(camera.quaternion)
+                dir.set(0, 0, -1).applyQuaternion(camera.quaternion)
+            } else {
+                right.set(1, 0, 0); dir.set(0, 0, -1)
+            }
+            let n = 0
+            for (let i = 0; i < count; i++) {
+                const vb = i * 12
+                if (life[i] <= 0) { col.fill(0, vb, vb + 12); continue }
+                life[i]--
+                x[i] += vx[i]; y[i] += vy[i]; z[i] += vz[i]
+                vy[i] += gravity
+                if (y[i] < floor) y[i] = floor
+                const f = life[i] / maxLife[i]
+                const k = 0.86 + 0.12 * f
+                r[i] *= k; g[i] *= k; b[i] *= k
+                const dot = vx[i] * dir.x + vy[i] * dir.y + vz[i] * dir.z
+                axis.set(vx[i] - dir.x * dot, vy[i] - dir.y * dot, vz[i] - dir.z * dot)
+                const spdSq = vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i]
+                if (axis.lengthSq() < 0.01 * spdSq + 1e-12) axis.copy(right)
+                axis.normalize()
+                side.crossVectors(axis, dir)
+                if (side.lengthSq() < 1e-9) side.set(0, 1, 0)
+                side.normalize()
+                const Lh = streakLen(len[i], Math.hypot(vx[i], vy[i], vz[i])) * 0.5
+                const Wh = width * 0.5
+                const hx = x[i]; const hy = y[i]; const hz = z[i]
+                const ax = axis.x * Lh; const ay = axis.y * Lh; const az = axis.z * Lh
+                const sx = side.x * Wh; const sy = side.y * Wh; const sz = side.z * Wh
+                pos[vb] = hx - ax - sx; pos[vb + 1] = hy - ay - sy; pos[vb + 2] = hz - az - sz
+                pos[vb + 3] = hx + ax - sx; pos[vb + 4] = hy + ay - sy; pos[vb + 5] = hz + az - sz
+                pos[vb + 6] = hx + ax + sx; pos[vb + 7] = hy + ay + sy; pos[vb + 8] = hz + az + sz
+                pos[vb + 9] = hx - ax + sx; pos[vb + 10] = hy - ay + sy; pos[vb + 11] = hz - az + sz
+                const tr = r[i] * 0.35; const tg = g[i] * 0.35; const tb = b[i] * 0.35
+                col[vb] = tr; col[vb + 1] = tg; col[vb + 2] = tb
+                col[vb + 3] = r[i]; col[vb + 4] = g[i]; col[vb + 5] = b[i]
+                col[vb + 6] = r[i]; col[vb + 7] = g[i]; col[vb + 8] = b[i]
+                col[vb + 9] = tr; col[vb + 10] = tg; col[vb + 11] = tb
+                n++
+            }
+            alive = n
+            posAttr.needsUpdate = true
+            colAttr.needsUpdate = true
+        },
+        clear() {
+            life.fill(0); col.fill(0); alive = 0
+            posAttr.needsUpdate = true; colAttr.needsUpdate = true
+        },
+    }
+}
+
 // ---- the sandstone arch over the line: the Gulch's landmark, now standing
 // 5 metres off the asphalt. Legs land in the sand gutter, safely outside the
 // sim's wall limit — the karts never touch it. Browser can pass a strata
