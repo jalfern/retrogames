@@ -161,9 +161,92 @@ export function trackGeometryStats() {
     return { stats: out, geos, laps: { vertsExpected: (N + 1) * 2 }, bounds: { offMin, offMax, topMin, topMax, simClampPx: 216, elevMin: T.hMin * S, elevMax: T.hMax * S, maxGrade: T.maxGrade } }
 }
 
+// ---- #478 item 3: wheel-spin blur, driver body, nose art, landing squash.
+// All Node-safe pure math + geometry so cometdrifthdcheck can gate the laws
+// without a browser.
+
+// Spin blur law: spokes streak in above a trot and fully merge at top speed
+// (top ~8.6 px/tick). 0 below 2.5, 1 by 7 — monotonic.
+export const spinBlurAt = (v) => Math.min(1, Math.max(0, (v - 2.5) / 4.5))
+
+// Landing squash law: suspension compresses under LOAD at crest/landing
+// moments — the road slope dropping away while climbing into it at speed.
+// 0 when the slope is steady, rising, or the kart is slow.
+export const landingSquash = (prevGrade, grade, v) =>
+    (v > 2 && prevGrade > 0.02 ? Math.min(0.16, Math.max(0, prevGrade - grade) * v * 1.4) : 0)
+
+// Spoke set for one wheel: three bars per face (rolls with the wheel) plus a
+// lagging ghost set whose opacity rides spinBlurAt — the streak. Shared per-kart
+// materials so syncMeshes drives all four wheels with two uniform writes.
+export function buildSpokes(sharpMat, ghostMat, { len = 0.32, faceX = 0.071, bar = 0.02 } = {}) {
+    const sharp = new THREE.Group()
+    const ghost = new THREE.Group()
+    const barGeo = new THREE.BoxGeometry(bar, len, bar)
+    for (const side of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+            const ang = (i * Math.PI) / 3
+            const s = new THREE.Mesh(barGeo, sharpMat)
+            s.rotation.x = ang; s.position.x = side * faceX
+            sharp.add(s)
+            const gh = new THREE.Mesh(barGeo, ghostMat)
+            gh.rotation.x = ang - Math.PI / 12; gh.position.x = side * faceX
+            ghost.add(gh)
+        }
+    }
+    return { sharp, ghost }
+}
+
+// The driver: helmeted head, visor, torso, both arms reaching the wheel —
+// the nubs that make an empty cockpit read as a person at speed.
+export function buildDriver(accentHex) {
+    const g = new THREE.Group()
+    const suit = new THREE.MeshStandardMaterial({ color: 0x241c28, roughness: 0.85, metalness: 0.1 })
+    const helm = new THREE.MeshStandardMaterial({ color: accentHex, roughness: 0.4, metalness: 0.3 })
+    const dark = new THREE.MeshStandardMaterial({ color: 0x14101a, roughness: 0.6 })
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.125, 12, 10), helm)
+    head.position.set(0, 0.52, 0)
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.055, 0.05), dark)
+    visor.position.set(0, 0.53, 0.09)
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.2, 0.16), suit)
+    torso.position.set(0, 0.38, -0.02)
+    const armGeo = new THREE.BoxGeometry(0.055, 0.055, 0.2)
+    const armL = new THREE.Mesh(armGeo, suit); armL.position.set(-0.155, 0.42, 0.05); armL.rotation.x = -0.5
+    const armR = new THREE.Mesh(armGeo, suit); armR.position.set(0.155, 0.42, 0.05); armR.rotation.x = -0.5
+    g.add(head, visor, torso, armL, armR)
+    g.userData.parts = ['head', 'visor', 'torso', 'armL', 'armR']
+    return g
+}
+
+// Per-livery nose art beyond the one stripe: four deterministic motifs keyed
+// to the driver index, so seven karts read as seven entries at a glance.
+export function buildNoseArt(accentHex, variant) {
+    const g = new THREE.Group()
+    const m = new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.25, roughness: 0.35 })
+    const v = ((variant | 0) % 4 + 4) % 4
+    if (v === 0) {
+        for (let i = 0; i < 2; i++) {
+            const c = new THREE.Mesh(new THREE.BoxGeometry(0.26 - i * 0.08, 0.02, 0.05), m)
+            c.position.set(0, 0.405, 0.44 + i * 0.12); g.add(c)
+        }
+    } else if (v === 1) {
+        const a = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.02, 0.06), m); a.position.set(0, 0.405, 0.5); g.add(a)
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.4), m); b.position.set(0, 0.405, 0.62); g.add(b)
+    } else if (v === 2) {
+        for (const sx of [-1, 1]) {
+            const s = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.7), m)
+            s.position.set(sx * 0.24, 0.405, 0.05); g.add(s)
+        }
+    } else {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.018, 6, 12), m)
+        ring.rotation.x = Math.PI / 2; ring.position.set(0, 0.405, 0.72); g.add(ring)
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.02, 0.05), m); cap.position.set(0, 0.53, -0.52); g.add(cap)
+    }
+    return g
+}
+
 // ---- karts: exposed-wheel buggies assembled from primitives, livery per
 // driver. Node-safe: plain materials, no textures.
-export function buildKart(hex, accentHex) {
+export function buildKart(hex, accentHex, variant = 0) {
     const g = new THREE.Group()
     const body = new THREE.MeshStandardMaterial({ color: hex, metalness: 0.3, roughness: 0.32 })
     const dark = new THREE.MeshStandardMaterial({ color: 0x1c161e, metalness: 0.2, roughness: 0.7 })
@@ -201,15 +284,20 @@ export function buildKart(hex, accentHex) {
         g.add(bl)
         brakes.push(bl)
     }
-    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10),
-        new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.3, roughness: 0.4 }))
-    helmet.position.set(0, 0.5, 0.05)
-    g.add(helmet)
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.06), dark)
-    visor.position.set(0, 0.52, 0.14)
-    g.add(visor)
+    // #478 item 3: the boxed helmet/visor moved into buildDriver (index.jsx
+    // mounts it on every kart, primitive or GLB, so the driver survives the
+    // model swap). Per-livery nose art past the single stripe:
+    const noseArt = buildNoseArt(accentHex, variant)
+    g.add(noseArt)
+    g.userData.noseArt = noseArt
     const wheelGeo = new THREE.CylinderGeometry(0.21, 0.21, 0.13, 14)
     wheelGeo.rotateZ(Math.PI / 2)
+    // #478 item 3: accent spokes + lagging ghosts — sharp at rest, merged into
+    // a streak at top speed (opacities driven by spinBlurAt in syncMeshes).
+    const spinMats = {
+        sharp: new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.45, roughness: 0.4, transparent: true, opacity: 1 }),
+        ghost: new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.45, roughness: 0.4, transparent: true, opacity: 0 }),
+    }
     const wheels = []
     const wheelDefs = []
     const mk = (sx, sz, front) => {
@@ -217,13 +305,17 @@ export function buildKart(hex, accentHex) {
         pivot.position.set(sx * 0.42, 0.24, sz)
         const w = new THREE.Mesh(wheelGeo, dark)
         pivot.add(w)
+        const sp = buildSpokes(spinMats.sharp, spinMats.ghost)
+        // on the PIVOT (not the rolling mesh): the roll list drives them once
+        pivot.add(sp.sharp, sp.ghost)
         g.add(pivot)
         if (front) wheels.push(pivot)
-        wheelDefs.push({ node: pivot, front, baseQuat: pivot.quaternion.clone(), steerSign: 1, rollSign: 1, meshes: [w] })
+        wheelDefs.push({ node: pivot, front, baseQuat: pivot.quaternion.clone(), steerSign: 1, rollSign: 1, meshes: [w, sp.sharp, sp.ghost] })
     }
     mk(-1, 0.52, true); mk(1, 0.52, true); mk(-1, -0.45, false); mk(1, -0.45, false)
     g.userData.wheels = wheels
     g.userData.wheelDefs = wheelDefs
+    g.userData.spinMats = spinMats
     g.userData.body = body
     g.userData.brakes = brakes
     return g
@@ -277,12 +369,22 @@ export function decorateBuggy(root, hex, accentHex) {
         else if (nm === 'Taillight_Red') { m.emissive = new THREE.Color(0xff2010); m.emissiveIntensity = 0; brakeMat = m }
     })
     const wheels = []
+    // #478 item 3: accent spokes + ghosts on the authored wheels too, sized in
+    // buggy metres (the group later scales by BUGGY_SCALE). They inherit the
+    // pivot's baked flip and join the roll list, so they spin with the tires.
+    const spinMats = {
+        sharp: new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.45, roughness: 0.4, transparent: true, opacity: 1 }),
+        ghost: new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.45, roughness: 0.4, transparent: true, opacity: 0 }),
+    }
     for (const [name, side, front] of [['Wheel_FL', 1, true], ['Wheel_FR', -1, true], ['Wheel_RL', 1, false], ['Wheel_RR', -1, false]]) {
         const node = root.getObjectByName(name)
         if (!node) continue
-        wheels.push({ node, front, side, baseQuat: node.quaternion.clone(), steerSign: side, rollSign: side, meshes: node.children.filter((c) => c.isMesh) })
+        const meshes = node.children.filter((c) => c.isMesh)
+        const sp = buildSpokes(spinMats.sharp, spinMats.ghost, { len: 0.66, faceX: 0.17, bar: 0.05 })
+        node.add(sp.sharp, sp.ghost)
+        wheels.push({ node, front, side, baseQuat: node.quaternion.clone(), steerSign: side, rollSign: side, meshes: [...meshes, sp.sharp, sp.ghost] })
     }
-    return { group: root, body, brakeMat, wheels }
+    return { group: root, body, brakeMat, wheels, spinMats }
 }
 
 // ---- GPU particles: pooled additive point systems (sparks, dust, flames).

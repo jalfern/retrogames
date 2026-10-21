@@ -15,7 +15,7 @@ import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/
 import { rumble } from '../../components/gamepadMap'
 import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
-    loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt,
+    loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash,
 } from './scene.js'
 
 // =====================================================================
@@ -398,7 +398,7 @@ export default function CometDriftHD() {
         for (const k of g.karts) {
             const m = new THREE.Group()
             m.userData.kart = k
-            const view = buildKart(LIVERY[k.color] || 0xcccccc, ACCENT[k.color] || '#fff')
+            const view = buildKart(LIVERY[k.color] || 0xcccccc, ACCENT[k.color] || '#fff', kartMeshes.length)
             view.userData.body.envMap = envMap
             view.userData.body.envMapIntensity = 0.55
             m.add(view)
@@ -406,6 +406,10 @@ export default function CometDriftHD() {
             m.userData.body = view.userData.body
             m.userData.brakeMat = view.userData.brakes.length ? view.userData.brakes[0].material : null
             m.userData.wheelDefs = view.userData.wheelDefs
+            // #478 item 3: the driver rides the kart root, not the view — it
+            // survives the GLB swap and tilts with the suspension.
+            const driver = buildDriver(ACCENT[k.color] || '#fff')
+            m.add(driver)
             scene.add(m)
             const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.72, 14),
                 new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false }))
@@ -413,7 +417,7 @@ export default function CometDriftHD() {
             shadow.scale.set(1, 1.5, 1)
             shadow.rotation.z = 0
             scene.add(shadow)
-            kartMeshes.push({ m, shadow })
+            kartMeshes.push({ m, shadow, spinMats: view.userData.spinMats })
         }
         // exhaust cones on the player's buggy (flame drawn by scale + tint)
         const flames = []
@@ -432,7 +436,8 @@ export default function CometDriftHD() {
         ;(async () => {
             const model = await loadBuggy()
             if (!model || disposed) return
-            kartMeshes.forEach(({ m }, i) => {
+            kartMeshes.forEach((km, i) => {
+                const m = km.m
                 const k = g.karts[i]
                 const dec = decorateBuggy(model.clone(true), LIVERY[k.color] || 0xcccccc, ACCENT[k.color] || '#fff')
                 if (!dec.wheels.length || !dec.body) return
@@ -445,6 +450,7 @@ export default function CometDriftHD() {
                 m.userData.body = dec.body
                 m.userData.brakeMat = dec.brakeMat
                 m.userData.wheelDefs = dec.wheels
+                km.spinMats = dec.spinMats
             })
         })()
 
@@ -649,7 +655,7 @@ export default function CometDriftHD() {
         const syncMeshes = () => {
             for (let i = 0; i < g.karts.length; i++) {
                 const k = g.karts[i]
-                const { m, shadow } = kartMeshes[i]
+                const { m, shadow, spinMats } = kartMeshes[i]
                 const hT = elevAt(k.idx); const pT = Math.atan(k.grade || 0)
                 k.hSm = k.hSm === undefined ? hT : k.hSm + (hT - k.hSm) * 0.4
                 k.pitchSm = k.pitchSm === undefined ? pT : k.pitchSm + (pT - k.pitchSm) * 0.3
@@ -660,8 +666,16 @@ export default function CometDriftHD() {
                 const rough = k.offroad && k.v > 1
                 const bob = rough ? (jit(g.tick * 7.7 + i) - 0.5) * 0.05 : 0
                 m.position.y = h + bob
-                // suspension squash through the washboard (#471 item 3)
-                m.scale.y = rough ? 0.93 + jit(g.tick * 11.3 + i) * 0.08 : 1
+                // #478 item 3: suspension carries LOAD at crest/landing moments,
+                // not just offroad — the slope dropping away under a fast kart
+                // compresses the spring, which then rebounds and settles.
+                const imp = landingSquash(k.gPrev === undefined ? k.grade : k.gPrev, k.grade || 0, k.v)
+                k.gPrev = k.grade || 0
+                k.sq = ((k.sq || 0) + imp * 0.18) * 0.78
+                if (k.sq < 1e-4) k.sq = 0
+                const squash = Math.min(0.18, k.sq)
+                m.scale.y = Math.max(0.8, (rough ? 0.93 + jit(g.tick * 11.3 + i) * 0.08 : 1) - squash)
+                m.scale.x = m.scale.z = 1 + squash * 0.6
                 shadow.position.set(k.x * S, h + 0.052, k.y * S)
                 // wheel rig (#477): steer the front pivots about vertical, roll all
                 // four about their axle. baseQuat keeps the model's baked right-side
@@ -672,6 +686,13 @@ export default function CometDriftHD() {
                     wd.node.quaternion.copy(wd.baseQuat)
                     if (wd.front) wd.node.rotateOnAxis(UP, steerV * wd.steerSign)
                     for (const mesh of wd.meshes) mesh.rotation.x = k.rollA * wd.rollSign
+                }
+                // #478 item 3: spokes sharpen at a standstill, dissolve into the
+                // ghost streak at top speed (single uniform pair per kart).
+                if (spinMats) {
+                    const bl = spinBlurAt(k.v)
+                    spinMats.sharp.opacity = 1 - bl * 0.75
+                    spinMats.ghost.opacity = bl * 0.8
                 }
                 const braking = (k.pv !== undefined && k.v < k.pv - 0.08) ||
                     (i === 0 && (keys.KeyS || keys.ArrowDown))

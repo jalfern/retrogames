@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
 import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
 import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit } from '../src/games/CometDriftHD/scene.js'
+import * as THREE from 'three'
 
 const args = process.argv.slice(2)
 const MUTATE = args.includes('--mutate')
@@ -87,6 +88,26 @@ if (MUTATE_BLOOM) {
     })
 }
 
+// #478 item 3 spin-blur mutant: freeze the blur law at zero — the kart-feel
+// gates MUST go red under this run.
+const SCENE = resolve(HERE, '../src/games/CometDriftHD/scene.js')
+const SLINE = 'export const spinBlurAt = (v) => Math.min(1, Math.max(0, (v - 2.5) / 4.5))'
+const SUTIL = 'export const spinBlurAt = (v) => 0 /* spinmut */'
+let spinmutat = false
+if (args.includes('--mutate-spin')) {
+    const ssrc = readFileSync(SCENE, 'utf8')
+    if (!ssrc.includes(SLINE)) { console.error('MUTATE_SPIN: blur law not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, ssrc.replace(SLINE, SUTIL))
+    spinmutat = true
+    console.log('  ..    mutated: spokes never blur — the kart-feel gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (spinmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(SUTIL, SLINE))
+            console.log('  ..    spin mutation restored')
+        }
+    })
+}
+
 // ---------------------------------------------------------------- geometry
 console.log('track geometry (the HD rebuild of the Gulch):')
 const { stats, bounds, geos } = trackGeometryStats()
@@ -141,13 +162,78 @@ const kart = buildKart(0x20b8dc, '#fff')
 ok(kart.children.length >= 10 && kart.userData.wheels.length === 2, `buggy assembled: ${kart.children.length} parts, steerable front axles`)
 ok(kart.userData.wheelDefs && kart.userData.wheelDefs.length === 4, 'fallback buggy exposes all four wheel rig nodes')
 
+// ------------------------------------------------------ kart feel (#478 item 3)
+console.log('kart feel (#478 item 3 — spin blur, driver, nose art, landing squash):')
+{
+    // fresh import with a cache-buster: --mutate-spin rewrites scene.js AFTER
+    // the top-level import cached it — read the on-disk laws, not the cache.
+    const SC = await import('file://' + SCENE + '?t=' + Date.now())
+    const { spinBlurAt, landingSquash, buildNoseArt, buildDriver, decorateBuggy } = SC
+    // spin blur law: 0 at rest/trot, 1 at top speed, monotonic
+    ok(spinBlurAt(0) === 0 && spinBlurAt(2.5) === 0, 'wheels are crisp below the trot threshold (blur 0)')
+    ok(spinBlurAt(8.6) === 1, `blur fully merges the spokes at top speed (${spinBlurAt(8.6)})`)
+    let mono = true; let prevB = -1
+    for (let v = 0; v <= 9; v += 0.5) { const b = spinBlurAt(v); if (b < prevB) mono = false; prevB = b }
+    ok(mono, 'blur increases monotonically with speed (no popping)')
+
+    // landing squash law: crest-drop at speed compresses; steady/level/slow never do
+    ok(landingSquash(0.08, -0.08, 8) > 0.05, `crest-drop at speed loads the suspension (${landingSquash(0.08, -0.08, 8).toFixed(3)})`)
+    ok(landingSquash(0.08, -0.08, 8) <= 0.16, 'squash is capped — the kart never pancakes')
+    ok(landingSquash(0.05, 0.05, 8) === 0, 'steady slope carries no landing load')
+    ok(landingSquash(-0.05, -0.08, 8) === 0, 'driving downhill is not a landing')
+    ok(landingSquash(0.08, -0.08, 1) === 0, 'a crest at walking pace unloads nothing (squash needs speed)')
+    ok(kart.userData.spinMats && kart.userData.spinMats.sharp && kart.userData.spinMats.ghost, 'fallback buggy carries the spoke blur material pair')
+    ok(kart.userData.wheelDefs.every((wd) => wd.meshes.length === 3), 'every wheel rolls tire + sharp spokes + ghost spokes as one list')
+    ok(kart.userData.noseArt && kart.userData.noseArt.children.length > 0, 'fallback buggy carries nose art beyond the stripe')
+
+    // nose art: four distinct motifs + wraparound
+    const art0 = buildNoseArt('#fff', 0); const art1 = buildNoseArt('#fff', 1)
+    const art2 = buildNoseArt('#fff', 2); const art3 = buildNoseArt('#fff', 3)
+    const z0 = art0.children[0].position.z; const z1 = art1.children[0].position.z
+    const z2 = art2.children[0].position.z; const z3 = art3.children[0].position.z
+    ok(new Set([z0, z1, z2, z3]).size === 4, 'the four livery motifs place their first mark differently (drivers read as distinct entries)')
+    ok(art2.children.length === 2 && Math.sign(art2.children[0].position.x) === -Math.sign(art2.children[1].position.x), 'variant 2 is twin side lines, mirrored')
+    ok(buildNoseArt('#fff', 4).children.length === art0.children.length, 'variant wraps 4→0 (seven karts mod four still art every kart)')
+
+    // driver: five parts, arms ahead of the torso (reaching the wheel)
+    const drv = buildDriver('#dff4fa')
+    ok(drv.children.length === 5 && drv.userData.parts.join() === 'head,visor,torso,armL,armR', `driver mounted: ${drv.userData.parts.join('/')}`)
+    const [dHead, , dTorso, dArmL, dArmR] = drv.children
+    ok(dArmL.position.z > dTorso.position.z && dArmR.position.z > dTorso.position.z, 'arms reach forward of the torso')
+    ok(Math.sign(dArmL.position.x) === -1 && Math.sign(dArmR.position.x) === 1, 'left/right arms on their own sides')
+    ok(dHead.position.y > dTorso.position.y, 'the head sits above the torso')
+
+    // the authored buggy gets the same rig: spokes join the roll list per wheel
+    const mockRoot = new THREE.Group()
+    mockRoot.name = 'DuneBuggy'
+    for (const nm of ['Wheel_FL', 'Wheel_FR', 'Wheel_RL', 'Wheel_RR']) {
+        const wn = new THREE.Group(); wn.name = nm
+        wn.position.set(nm.endsWith('R') ? 0.7 : -0.7, 0.35, nm.includes('FL') || nm.includes('FR') ? 1.1 : -1.1)
+        wn.matrixAutoUpdate = false
+        wn.matrix.set(...(nm.endsWith('FR') ? [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]))
+        const tire = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.3, 12), new THREE.MeshStandardMaterial({ name: 'Tire_Black' }))
+        wn.add(tire)
+        mockRoot.add(wn)
+    }
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(1, 0.3, 3), new THREE.MeshStandardMaterial({ name: 'Paint_Orange' }))
+    chassis.name = 'Chassis_light'; mockRoot.add(chassis)
+    const dec = decorateBuggy(mockRoot, 0x20b8dc, '#dff4fa')
+    ok(dec.wheels.length === 4 && dec.wheels.every((w) => w.meshes.length === 3), 'GLB path: every wheel rolls tire + sharp + ghost spokes (spokes joined the rig)')
+    ok(!!dec.spinMats && dec.spinMats.sharp.opacity === 1 && dec.spinMats.ghost.opacity === 0, 'GLB path starts crisp (ghost hidden until speed)')
+
+    // the shell drives all three laws in the live loop
+    const SHARD_SRC = readFileSync(SHARD, 'utf8')
+    ok(SHARD_SRC.includes('spinBlurAt(k.v)') && SHARD_SRC.includes('landingSquash(') && SHARD_SRC.includes('buildDriver('), 'index.jsx drives blur, squash and the driver in the live loop')
+}
+
 // ------------------------------------------------ dune buggy model + heading (#477)
 // Jon's authored GLB drives the car now. Two facts must hold on the REAL bytes,
 // not on a mock: the model's nose is +Z, and the sim-heading -> yaw law points
 // it down the road (the old −a pointed it sideways — Jon's bug).
 console.log('dune buggy model + heading law (#477):')
 {
-    const glbPath = resolve(HERE, '../public/games/comet-drift-hd/dune_buggy.glb')
+    // #637 moved the shelf under public/models/ — the old games/ path is gone.
+    const glbPath = resolve(HERE, '../public/models/vehicles/dune_buggy.glb')
     const bytes = readFileSync(glbPath)
     const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     let off = 12; let gj = null
@@ -479,5 +565,5 @@ if (!SKIP_BROWSER) {
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)

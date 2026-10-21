@@ -44,13 +44,23 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   charge tier (blue #48b8ff / violet #b878ff / gold #ffd23c) at the rear
   wheels + half-rate for the rival pack; dust off sand/spins; tier-tinted
   exhaust cones under boost. Deterministic jitter = tick-hash noise.
+- #478 item 3 kart feel: accent-colored spokes (3 bars/face) ride every wheel
+  pivot on both backends; a lagging ghost set fades in as `spinBlurAt(v)`
+  climbs (0 below 2.5, 1 by 7 px/tick) so wheels streak at speed and sit
+  crisp at the grid. `buildDriver` (helmet/visor/torso/reaching arms) mounts
+  on the kart ROOT so it survives the GLB swap. `buildNoseArt` gives four
+  rotating motifs per driver index — seven entries read as seven. Landing
+  squash: `landingSquash(prevGrade, grade, v)` compresses (scale.y down, xz
+  out, capped 0.18) when the slope drops away at speed, springs at 0.78/tick
+  — load hits crests, not just sand.
 
 ## Verify
 
 ```
 npm run cometdrifthdcheck             # Node geometry audit + rules + win,
                                     # browser boot/pixels/drift/end-table cycle
-npm run cometdrifthdcheck -- --mutate # kills particle spawning, demands RED
+npm run cometdrifthdcheck -- --mutate     # kills particle spawning, demands RED
+npm run cometdrifthdcheck -- --mutate-spin  # freezes the wheel-blur law, demands RED
 npm run lint:hd                     # eslint gate for the game + harness
 CONTRACT_ONLY=comet-drift-hd npm run contractcheck   # window.__game (needs npm run dev)
 node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift-hd \
