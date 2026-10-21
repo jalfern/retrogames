@@ -315,7 +315,7 @@ export default function CometDriftHD() {
         const mat = (map, extra = {}) => new THREE.MeshStandardMaterial({ map, roughness: 0.95, metalness: 0, side: THREE.DoubleSide, ...extra })
         const kerbMat = mat(tex(kerbTex()))
         const sandMat = mat(tex(sandTex()))
-        const strataMat = mat(tex(strataTex()))
+        const strataMat = mat(tex(strataTex()), { vertexColors: true })
         const plateauMat = mat(tex(sandTex()), { color: 0xd8a888 })
         // #493: the circuit itself lives in one group, so the attract-screen
         // course selector can swap geometry (and the SCENERY that lines it)

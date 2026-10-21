@@ -146,6 +146,25 @@ if (args.includes('--mutate-stars')) {
     })
 }
 
+// #478 item 7 wall-tint mutant: collapse the cycle to one section — the wall
+// variety gates MUST go red under this run (stone tiles past identically).
+const WLINE = 'export const WALL_TINT_STEPS = 16'
+const WUTIL = 'export const WALL_TINT_STEPS = 0 /* wallmut */'
+let wallmutat = false
+if (args.includes('--mutate-wall')) {
+    const wsrc = readFileSync(SCENE, 'utf8')
+    if (!wsrc.includes(WLINE)) { console.error('MUTATE_WALL: tint step count not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, wsrc.replace(WLINE, WUTIL))
+    wallmutat = true
+    console.log('  ..    mutated: the wall tint never varies — the variety gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (wallmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(WUTIL, WLINE))
+            console.log('  ..    wall mutation restored')
+        }
+    })
+}
+
 // ---------------------------------------------------------------- geometry
 console.log('track geometry (the HD rebuild of the Gulch):')
 const { stats, bounds, geos } = trackGeometryStats()
@@ -436,6 +455,65 @@ console.log('dusk sky (#478 item 6 — dither + twinkling stars):')
     ok(SRC6.includes('applySkyDither(id.data'), 'skyTex dithers the dusk gradient before upload')
     ok(SRC6.includes('new THREE.Points(') && SRC6.includes('twinkleStars(g.tick)'), 'index.jsx builds the star points and twinkles them every tick')
     ok(SRC6.includes('stars: () =>'), 'the harness reads the star field via __cometHDTest.stars()')
+}
+
+// ------------------------------------------------------ wall variety (#478 item 7)
+// The Gulch's two cliff walls wore ONE strata texture end to end, so the same
+// band pattern tiled past at speed. Each wall now carries a per-section rock
+// tint (vertex colours × shared map) cycling four stone families per lap, the
+// two sides out of phase, blended so the lap seam stays continuous.
+console.log('wall variety (#478 item 7 — per-section rock tint, sides out of phase):')
+{
+    const WV = await import('file://' + SCENE + '?t=' + (Date.now() + 3))
+    const { wallTint, WALL_TINT_PALETTE, WALL_TINT_STEPS, trackGeometryStats: freshStats } = WV
+    ok(WALL_TINT_STEPS % WALL_TINT_PALETTE.length === 0, `the tint cycle closes on itself (${WALL_TINT_STEPS} steps / ${WALL_TINT_PALETTE.length} stone families) — every lap repeats the SAME stone story`)
+    ok(WALL_TINT_PALETTE.every((c) => c.every((v) => v > 0.4 && v <= 1)), 'tints stay bright (0.4..1 multipliers) — they vary the stone, they never paint it night')
+    const lum = (c) => c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114
+    const maxDelta = Math.max(...WALL_TINT_PALETTE.map((c, k) => {
+        const b = WALL_TINT_PALETTE[(k + 1) % WALL_TINT_PALETTE.length]
+        return Math.max(...c.map((v, j) => Math.abs(b[j] - v)))
+    }))
+    const SAMPLE_BOUND = maxDelta * 1.5 * (WALL_TINT_STEPS / TRACK.N) * 1.5
+    let lawMono = true; let prevT = null; let worstJump = 0
+    for (let i = 0; i <= TRACK.N; i++) {
+        const t = wallTint(i % TRACK.N, 1)
+        if (!t.every(Number.isFinite)) lawMono = false
+        if (prevT) { const d = Math.abs(lum(t) - lum(prevT)); worstJump = Math.max(worstJump, d); if (d > SAMPLE_BOUND) lawMono = false }
+        prevT = t
+    }
+    ok(lawMono, `the tint law is finite and smooth ring by ring (worst ring-to-ring swing ${worstJump.toExponential(1)}u — a hard band step would be ~${maxDelta.toFixed(2)})`)
+    for (const c of COURSES) {
+        selectCourse(c.id)
+        const G = freshStats().geos
+        const tints = (geo) => {
+            const CQ = geo.getAttribute('color')
+            const set = new Set(); let lo = 1; let hi = 0
+            for (let v = 0; v < CQ.count; v += 2) {
+                set.add(`${CQ.getX(v).toFixed(2)},${CQ.getY(v).toFixed(2)},${CQ.getZ(v).toFixed(2)}`)
+                const l = lum([CQ.getX(v), CQ.getY(v), CQ.getZ(v)])
+                lo = Math.min(lo, l); hi = Math.max(hi, l)
+            }
+            return { set: set.size, spread: hi - lo }
+        }
+        const wl = tints(G.wallL); const wr = tints(G.wallR)
+        ok(wl.set >= 4 && wr.set >= 4, `${c.id}: both walls read varied stone along the lap (${wl.set} distinct tints left, ${wr.set} right — one texture tiled alone gave 1)`)
+        ok(wl.spread >= 0.1 && wr.spread >= 0.1, `${c.id}: stone brightness swings ${wl.spread.toFixed(2)}u left / ${wr.spread.toFixed(2)}u right (bleached sand to umber, not a wash)`)
+        const R = freshStats().geos
+        const aL = R.wallL.getAttribute('color'); const aR = R.wallR.getAttribute('color')
+        let phaseDiffers = false
+        for (let i = 0; i < 200; i++) {
+            if (Math.abs(aL.getX(i * 2) - aR.getX(i * 2)) > 1e-3) { phaseDiffers = true; break }
+        }
+        ok(phaseDiffers, `${c.id}: the two walls run out of phase (a straight shows different rock left AND right)`)
+        const N = freshStats().geos.wallL.getAttribute('position').count / 2 - 1
+        const seamA = wallTint(0, 1); const seamB = wallTint(N - 1, 1)
+        const seamGap = Math.max(...seamA.map((v, k) => Math.abs(v - seamB[k])))
+        ok(seamGap < 0.06, `${c.id}: the tint cycle closes across the start/finish seam (worst channel step ${seamGap.toFixed(3)})`)
+    }
+    selectCourse('gulch')
+    const SRC7 = readFileSync(SHARD, 'utf8')
+    ok(/const strataMat = mat\(tex\(strataTex\(\)\), \{ vertexColors: true \}\)/.test(SRC7), 'index.jsx lets the wall material read the per-section tints (vertexColors)')
+    ok(SRC7.includes('M.wallL, strataMat') && SRC7.includes('M.wallR, strataMat'), 'both cliff walls share the tinted strata material (retextured, not rebuilt)')
 }
 
 // ------------------------------------------------------------------ rules
@@ -742,5 +820,5 @@ if (!SKIP_BROWSER) {
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)
