@@ -124,7 +124,7 @@ uniform vec3 uCamPos;
 uniform mat4 uCamInvRot;
 out vec4 fragColor;
 
-#define HMAX 1.05
+#define HMAX 0.95
 #define PI 3.14159265
 
 float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -164,34 +164,33 @@ float ridge(vec3 p){
 /* fire density + temperature (0..1) at world point p, height h above ground */
 float fireDensity(vec3 p, float h, out float temp){
   temp = 0.0;
-  if (h < -0.02 || h > HMAX) return 0.0;
+  if (h < 0.0 || h > HMAX) return 0.0;
   float hn = clamp(h / HMAX, 0.0, 1.0);
   vec3 q = p;
   q.xz -= uWind * h * h * 0.9;
-  float sway = sin(uTime * 0.9 + h * 3.0) * 0.028 + sin(uTime * 1.7 + 2.0) * 0.018;
-  q.x += sway * h; q.z += cos(uTime * 1.1 + h * 2.4) * 0.022 * h;
+  float sway = sin(uTime * 0.9 + h * 3.0) * 0.03 + sin(uTime * 1.7 + 2.0) * 0.02;
+  q.x += sway * h; q.z += cos(uTime * 1.1 + h * 2.4) * 0.024 * h;
   float rad = length(q.xz);
   float ang = atan(q.z, q.x);
-  // lobes: the fire breathes through 3-5 tongues around the pile
-  float lobe = 0.62 + 0.5 * fbm2(vec2(ang * 1.6 + uTime * 0.35, h * 1.2 - uTime * 0.8));
-  float w = (0.235 * pow(1.0 - hn, 0.95) + 0.012) * (0.8 + 0.5 * lobe);
-  float core = pow(1.0 - smoothstep(w * 0.1, w, rad), 1.6);
-  // vertically stretched filaments flowing upward
-  vec3 tq = q * vec3(11.0, 1.8, 11.0);
-  tq.y -= uTime * 3.6;
-  tq += vec3(fbm3(tq * 0.4 + uTime * 0.3)) * 1.3;
+  // flame tongues: lobes that shift as the fire breathes
+  float lobe = 0.55 + 0.55 * fbm2(vec2(ang * 3.1 + uTime * 0.7, h * 2.2 - uTime * 1.4));
+  float w = (0.335 * pow(1.0 - hn * 0.96, 0.80) + 0.015) * (0.55 + 0.9 * lobe);
+  float core = smoothstep(w, w * 0.12, rad);
+  // wrinkled structure flowing upward
+  vec3 tq = q * vec3(7.5, 2.2, 7.5);
+  tq.y -= uTime * 3.8;
+  tq += vec3(fbm3(tq * 0.42 + uTime * 0.34)) * 1.05;
   float fil = ridge(tq);
-  // tongues: fine filaments, sharp-edged, broken up at the tips
-  float body = pow(fil, 3.8) * smoothstep(0.10, 0.42, fil);
-  float d = core * core * body * (0.55 + 0.75 * lobe);
-  // coal-bed fireball: hot, shaped by the same turbulence so it is never flat
-  float base = smoothstep(0.18, 0.02, h) * smoothstep(0.30, 0.06, rad);
-  d += base * (0.45 + 0.55 * fil) * 0.85;
-  d *= mix(0.5, 1.0, smoothstep(0.0, 0.14, hn));
-  d *= (1.0 - hn) * (1.0 - hn * 0.4);
-  float t0v = (0.55 + 0.45 * core) * (1.0 - hn * 0.72) * (0.5 + 0.5 * base);
-  temp = clamp(min(1.0, t0v * 1.45) * pow(uFlare, 0.7), 0.0, 1.0);
-  temp *= smoothstep(0.0, 0.55, d);
+  float d = pow(core, 1.15) * (0.22 + 0.78 * pow(fil, 1.5));
+  // upper half tears into separate tongues
+  d *= mix(1.0, smoothstep(0.32, 0.78, fil), smoothstep(0.5, 0.95, hn));
+  // coal-bed: bright gap-light between the logs
+  d += smoothstep(0.15, 0.0, h) * smoothstep(0.32, 0.08, rad) * (0.55 + 0.45 * fil) * 1.05;
+  d *= (1.0 - hn) * (1.0 - hn * 0.35);
+  d *= smoothstep(0.0, 0.05, h);
+  // temperature: axis + base hot, thin tips cool but never black
+  temp = clamp(0.85 * pow(core, 0.55) * (1.0 - hn * 0.78) * (0.6 + 0.4 * min(1.0, d * 1.4))
+               + 0.28 * smoothstep(0.16, 0.0, h) * pow(uFlare, 0.5), 0.0, 1.0);
   return clamp(d, 0.0, 2.0);
 }
 
@@ -263,7 +262,7 @@ float softShadow(vec3 p){
     vec3 sp = p + dir * t;
     float d = sceneSdf(sp);
     if (d < 0.004) { shade = 0.0; break; }
-    shade = min(shade, 8.0 * d / t);
+    shade = min(shade, 3.2 * d / t);
     t += max(d, 0.035);
     if (t > dist || shade < 0.01) break;
   }
@@ -275,10 +274,10 @@ vec3 groundColor(vec3 p, vec3 n, vec3 rd){
   float grain = fbm2(p.xz * 26.0);
   float fine = fbm2(p.xz * 110.0);
   float peb = smoothstep(0.86, 0.94, hash12(floor(p.xz * 150.0)));
-  float grass = smoothstep(0.62, 0.9, fbm2(p.xz * 6.0 + 2.0)) * smoothstep(1.5, 2.4, dist);
+  float grass = smoothstep(0.68, 0.92, fbm2(p.xz * 6.0 + 2.0)) * smoothstep(1.5, 2.4, dist);
   vec3 dirt = mix(vec3(0.080, 0.058, 0.040), vec3(0.108, 0.082, 0.058), grain * 0.8 + fine * 0.2);
   dirt = mix(dirt, vec3(0.15, 0.14, 0.12), peb * 0.7);
-  dirt = mix(dirt, vec3(0.09, 0.085, 0.045), grass * 0.22);
+  dirt = mix(dirt, vec3(0.09, 0.085, 0.045), grass * 0.12);
   vec3 lp = vec3(0.0, 0.30, 0.0);
   vec3 L = lp - p;
   float dL = length(L);
@@ -286,10 +285,10 @@ vec3 groundColor(vec3 p, vec3 n, vec3 rd){
   float ndl = max(dot(n, ldir), 0.0);
   float fall = 1.0 / (0.55 + dL * dL * 0.85);
   float sh = softShadow(p + n * 0.01);
-  float emb = smoothstep(0.62, 0.20, dist) * (0.35 + 0.65 * fbm2(p.xz * 7.0 + uTime * 0.35));
+  float emb = smoothstep(0.62, 0.16, dist) * (0.35 + 0.65 * fbm2(p.xz * 7.0 + uTime * 0.35));
   vec3 warm = vec3(1.0, 0.52, 0.16);
-  vec3 c = dirt * (warm * ndl * fall * uFlare * mix(0.12, 1.0, sh) * 5.2
-                  + warm * emb * uFlare * 0.55 * fall
+  vec3 c = dirt * (warm * ndl * fall * uFlare * mix(0.22, 1.0, sh) * 5.2
+                  + warm * emb * uFlare * 1.15 * fall
                   + vec3(0.010, 0.014, 0.026));
   float spec = pow(max(dot(reflect(-ldir, n), -rd), 0.0), 26.0);
   c += warm * spec * fall * uFlare * 0.6 * sh;
@@ -395,11 +394,11 @@ void main(){
         float df = fireDensity(p, h, temp);
         float ds = smokeDensity(p, h);
         if (df + ds > 0.001){
-          vec3 e = blackbody(temp) * pow(df, 1.30) * (0.35 + temp * 2.4) * uFlare * 3.6;
+          vec3 e = blackbody(temp) * df * (0.5 + temp * 2.4) * uFlare * 6.2;
           float sT = exp(-length(p.xz) * 1.8 - max(p.y - 0.25, 0.0) * 1.6);
           e += mix(vec3(0.11, 0.095, 0.085), vec3(0.5, 0.26, 0.11), sT) * ds * uFlare * sT * 0.9;
           emis += T * e * dt;
-          T *= exp(-(df * 7.0 + ds * 1.15) * dt);
+          T *= exp(-(df * 1.9 + ds * 0.7) * dt);
         }
         tv += dt;
       }
@@ -766,7 +765,7 @@ function frame(){
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
   gl.uniform1i(ubr('uTex'), 0);
-  gl.uniform1f(ubr('uThresh'), 0.40);
+  gl.uniform1f(ubr('uThresh'), 0.50);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.useProgram(progBlur);
   gl.uniform1i(ubl('uTex'), 0);
@@ -794,7 +793,7 @@ function frame(){
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b1.tex);
   gl.uniform1i(uc('uHdr'), 0);
   gl.uniform1i(uc('uBloom'), 1);
-  gl.uniform1f(uc('uGain'), 1.15);
+  gl.uniform1f(uc('uGain'), 1.0);
   gl.uniform1f(uc('uTime'), t);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
