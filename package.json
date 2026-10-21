@@ -211,6 +211,7 @@
     "nightlysmokes": "node scripts/run-checks.mjs --smoke",
     "shiftreportcheck": "node scripts/shiftreportcheck.mjs",
     "ssxmountaincheck": "node scripts/ssxmountaincheck.mjs",
+    "ssxterraincheck": "node scripts/ssxterraincheck.mjs",
     "shoreperf": "node scripts/shoreperf.mjs"
   },
   "dependencies": {

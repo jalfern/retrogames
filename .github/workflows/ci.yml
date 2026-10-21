@@ -239,6 +239,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'ssx')
       - run: npm run ssxcheck
         if: contains(fromJSON(env.KEYS), 'ssx')
+      - run: npm run ssxterraincheck
+        if: contains(fromJSON(env.KEYS), 'ssx')
       - run: npm run lint:pop
         if: contains(fromJSON(env.KEYS), 'pop')
       - run: npm run popcheck
