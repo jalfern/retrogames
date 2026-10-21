@@ -91,8 +91,8 @@ const NTT = NTX * NTZ;
 // the sim nsub x real time, which inflated run-up against this shoreline; with
 // honest dt the approved look needs more driving swell (retune, not re-break).
 const SW = [
-  { T: 7.4, A: 0.38, tp: 0.010 },
-  { T: 5.0, A: 0.23, tp: 0.008 },
+  { T: 7.4, A: 0.46, tp: 0.010 },
+  { T: 5.0, A: 0.26, tp: 0.008 },
   { T: 3.2, A: 0.13, tp: 0.014 },
 ].map(o => ({ ...o, w: 2 * Math.PI / o.T }));
 // directional chop (deep-water wind sea): wavelength, azimuth from offshore, amp
@@ -733,7 +733,7 @@ fn cs_swe(@builtin(global_invocation_id) gid: vec3<u32>) {
   uu -= GAG * dts * (eR - eL) / (2.0 * SDXF);
   vv -= GAG * dts * (eU - eD) / (2.0 * SDXF);
   // bed friction, hard in the thin film so run-up stalls and drains like swash
-  let fr = 0.012 + 0.45 * exp(-max(h, 0.0) / 0.09);
+  let fr = 0.012 + 0.28 * exp(-max(h, 0.0) / 0.10);
   let fk = max(0.0, 1.0 - fr * dts);
   uu *= fk; vv *= fk;
   // breaking: McCowan H/d >= ~0.78 (crest over still depth) or the bore limit
@@ -762,7 +762,11 @@ fn cs_swe(@builtin(global_invocation_id) gid: vec3<u32>) {
   // coefficient multiplied effective diffusion 4x when dt went honest
   // (nsub substeps/s quadrupled), starving the beach and draining the sets.
   let lap = hL.x + hR.x + hD.x + hU.x - 4.0 * h;
-  hNew += 0.03 * min(1.0, dts * 60.0) * lap;
+  hNew += 0.010 * min(1.0, dts * 60.0) * lap;
+  // #702: alongshore-only smoothing. Crest lines run alongshore, so a z-lap
+  // damps the across-shore sawtooth of the waterline without eating the
+  // incoming swell the way the 2D lap would.
+  hNew += 0.10 * min(1.0, dts * 60.0) * (hD.x + hU.x - 2.0 * h);
   if (hNew < 0.0) { hNew = 0.0; uu *= 0.5; vv *= 0.5; }
   // open-sponge at the seaward edge: relax towards the analytic swell.
   // #702: dt-scaled like the diffusion above — per-substep k3 quadrupled
