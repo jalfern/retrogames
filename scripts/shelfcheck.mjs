@@ -138,6 +138,49 @@ for (const [id, dims] of Object.entries(PROPORTIONS)) {
         check(e.meters[k] >= lo && e.meters[k] <= hi, `${id}: ${k}=${e.meters[k]} m within ${lo}–${hi} (vs 1.75 m human)`)
 }
 
+// ---- 4. Grounded shading: every scenery model must carry a vertical colour
+// gradient (lower faces darker than upper faces) so props don't read flat under
+// the games' lighting (#657). Reads COLOR_0 straight from each GLB.
+function vertBands(path) {
+    const buf = readFileSync(path)
+    const jsonLen = buf.readUInt32LE(12)
+    const json = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8'))
+    const prim = json.meshes[0].primitives[0]
+    const pa = json.accessors[prim.attributes.POSITION]
+    const ca = json.accessors[prim.attributes.COLOR_0]
+    const binStart = 20 + jsonLen + 8
+    const pOff = buf.byteOffset + binStart + json.bufferViews[pa.bufferView].byteOffset
+    const cOff = buf.byteOffset + binStart + json.bufferViews[ca.bufferView].byteOffset
+    const pos = new Float32Array(buf.buffer, pOff, pa.count * 3)
+    const col = new Float32Array(buf.buffer, cOff, ca.count * 3)
+    let minY = Infinity, maxY = -Infinity
+    for (let i = 0; i < pa.count; i++) { const y = pos[i * 3 + 1]; if (y < minY) minY = y; if (y > maxY) maxY = y }
+    const span = (maxY - minY) || 1
+    let lo = 0, loN = 0, hi = 0, hiN = 0
+    for (let i = 0; i < pa.count; i++) {
+        const lum = 0.2126 * col[i * 3] + 0.7152 * col[i * 3 + 1] + 0.0722 * col[i * 3 + 2]
+        const t = (pos[i * 3 + 1] - minY) / span
+        if (t <= 1 / 3) { lo += lum; loN++ } else if (t >= 2 / 3) { hi += lum; hiN++ }
+    }
+    if (!loN || !hiN) return null
+    return { lower: lo / loN, upper: hi / hiN }
+}
+for (const e of shelf.entries.filter((x) => x.category === 'scenery')) {
+    const b = vertBands(BY_GLB[e.id])
+    if (!b) { check(false, `${e.id}: shading — bands unreadable`); continue }
+    check(b.lower < b.upper - 0.004, `${e.id}: grounded shading (lower ${b.lower.toFixed(3)} < upper ${b.upper.toFixed(3)})`)
+}
+
+// ---- 5. Index niceties: scenery entries carry colorways, and every declared
+// variant references a sibling id that actually ships in the kit (#657).
+const sceneryWithColorways = shelf.entries.filter((x) => x.category === 'scenery')
+check(sceneryWithColorways.every((e) => Array.isArray(e.colorways) && e.colorways.length >= 1), 'every scenery entry declares colorways')
+for (const e of sceneryWithColorways) {
+    const missingVar = (e.variants || []).filter((v) => !ids.has(v))
+    check(missingVar.length === 0, `${e.id}: variants resolve${missingVar.length ? ' — missing ' + missingVar.join(',') : ''}`)
+}
+check(shelf.entries.some((e) => (e.variants || []).length && (e.colorways || []).includes('snow')), 'snow colour family wired (base → *_snow sibling)')
+
 // index is internally consistent with the files on disk.
 for (const cat of ['characters', 'vehicles', 'scenery']) {
     const onDisk = existsSync(join(MODELS, cat)) ? readdirSync(join(MODELS, cat)).filter((f) => f.endsWith('.glb')).length : 0
