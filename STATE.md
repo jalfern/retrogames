@@ -1,69 +1,54 @@
-# STATE — 2026-10-21 forge pm #2
+# STATE.md — 2026-10-21 (forge session close)
 
 ## Shipped this session
-- **#670 DEMO: CAMPFIRE → prod** (PR #692, squash `fea79f8`, live at
-  jalfern.com/retrogames/demos/campfire.html — served page contains the
-  `__campfireTest` hook). Single self-contained WebGL2 file, ~800 lines:
-  - Raymarched flame: domain-warped ridged-fBm density, lobed tongues that
-    breathe and tear at the tips, blackbody emission, Beer-Lambert
-    transmittance; flicker + surges driven from JS so the harness senses it.
-  - Cast light: flickering warm point on noise-bumped dirt, soft SDF shadows,
-    12-stone ring + log tipi, coal-bed glow, sheen spec. Embers (instanced
-    additive, swirl + wind + twinkle), wispy smoke, stars + treeline, HDR
-    (RGBA16F) + bloom + ACES + grain, synthesized rumble/crackle (click-unlock).
-  - Harness `npm run campfirecheck` (local alias, like shorecheck — Chrome over
-    CDP): 18 gates static/boots/flame/core/flicker/cast-light/dark-far/sky/
-    stars/embers/camera/budget/zero-errors. Mutant proof: zeroing emission →
-    4 gates red.
-- **MAIN FIXED: #601 freeze broken** (PR #693 `e7548e6`): nightly red was a
-  surviving Gauntlet #505 mutant — pace gate (2.0) too loose to distinguish
-  prediction (worst gap 0.18) from mutant (1.05); tightened to 0.5, nightly
-  re-run green, freeze lifted, then #692 merged.
-- Polished pass filed: **#695** (QA CAMPFIRE). Platform bug filed: **#696**
-  (host proxy serves stale /demos/ index — SHORE/OCEAN cards also invisible;
-  demo files themselves proxy fine).
+- **MOUNTAINS #671** — raymarched dawn range demo, live at
+  `https://www.jalfern.com/retrogames/demos/mountains.html` (PR #709 squash-merged,
+  Vercel SUCCESS, issue closed + `shipped`).
+  - WebGL2 heightfield raymarch: 1024² bake (R16F single-fetch when
+    `EXT_color_buffer_float` allows, hi/lo RGBA8 pair fallback), domain-warped ridged
+    fBm, clustered near range + farther second range, carved lake basin.
+  - Low sun **into frame** (az −0.55); all warmth driven by `uSunCol` — sky horizon
+    glow, fog tint, rock alpenglow, lake glitter. Shadow-march near, smoothstep far.
+  - Sphere-traced steps (`clamp(hd*1.4,…)` — overshoot caused stair-stepped skylines);
+    distance-driven mip LOD (dt-driven LOD sampled mip-4 at distance = blocks).
+  - HDR + threshold bloom + ACES; wind + dawn birds on click; drag-to-look + idle drift.
+- `npm run mountainscheck` — 18 pixel-sensed gates, **mutation-proven**: cool-sun
+  mutant zeroes alpenglow (11k → 0 px) and horizon glow (28k → 532 px). Alpenglow
+  gate needs warmth across ≥8 of 15 frame sections (a sun-bloom halo alone can't pass).
 
-## The lesson of the session
-- A gate that can't distinguish 0.18 from 1.05 is decoration — thresholds
-  picked for an old failure mode (3.4 yo-yo) go blind once the fix lands.
-  Measure both sides when setting a bound.
-- `smoothstep(e0>e1)`-style inverted ramps and 3-arg `vec4(…)` constructors
-  silently kill a shader under ANGLE; always confirm a debug probe actually
-  compiled before believing its answer (two black dbg frames were the probe,
-  not the fire).
-- Pixel-only gates found a real harness bug this session: JS counters passed by
-  value into a scan helper always read 0.
+## Next goal (claim fresh)
+**#674 DEMO — Credits card on every demo** (oldest `game-queue`; Jon #635-A: whatever
+lane). Then #672 Thunderstorm (also `stalled` — check why before claiming).
 
-## Next goal
-- Oldest game-queue: **#671 DEMO — Mountain range at sunrise** (lane:demos)
-  unless a steer lands. jonq #635 AWAITING default in effect (builder takes
-  oldest whatever the lane).
+## Perf reality of this box (don't relearn)
+- Headless Chrome rAF pacing here swings 33–66 ms **at blank page**; load-avg 11 during
+  this session. mountainscheck perf gate (best-of-3 windows, ≤45 ms) measured 30 ms
+  idle and 47–94 ms under load on identical code. It is advisory-grade: green idle,
+  flakes red under contention — treat red-perf as rerun-once, per repo rule 3.
+- Calibration trick that cracked it: `about:blank` rAF interval is the floor; compare
+  demo ms against it before blaming the shader.
 
-## Gotchas learned this session
-- main-ok.sh reads the Nightly **conclusion** — advisory `full-smoke` inside
-  nightly.yml can keep a freeze up after full-static is already green.
-- Another live lane (QA MASTER pid) mutates Gauntlet files in the main
-  checkout *while running gauntletcheck mutants from there* — rolling
-  one-file dirt is their mutant plant, not a corpse; don't restore it, don't
-  touch it; scope commits to STATE.md only.
-- Demos: demos/index.html cards need `id` + `base + '<file>.html'` wiring;
-  prod index freshness is blocked by #696 (host cache ~2.7 d).
+## Harness lessons this session
+- GLSL: `max()` is 2-arg only (3-arg compile fail); dynamic `textureLod` pair cost
+  ~25 ms/frame vs single texture at 0.18MP — R16F single-fetch + `EXT_color_buffer_float`
+  works on ANGLE/Metal incl. `generateMipmap`.
+- Gates must survive their own mutation story: fog-tinted pixels passed the alpenglow
+  gate at zero sun-diffuse — fixed by linking sky glow color to `uSunCol` and requiring
+  warmth breadth; then a cool-sun mutant fails both warmth gates cleanly.
+- games.js demos-law gate: match `path:'…mountains` / `label:'Mountains'`, **not** the
+  bare word "mountains" (SSX/IceBoulder prose false-positives).
+- `label deployed` doesn't exist; board convention is `shipped`.
 
-## Board / harness status
-- main: `fea79f8` (CAMPFIRE). Nightly green at merge (dispatched after #693).
-- Rule 4 satisfied (game code merged). Rule 7: no new jonq (no taste calls;
-  #696 is plumbing, filed as feedback).
-- Worktrees: forge/campfire-670 (this lane, to be removed),
-  forge/gauntlet-pace-505 (merged, remove). Main checkout detached at
-  origin/main, Gauntlet files dirty = live QA session's mutant plant (see
-  gotcha), NOT to be restored by this lane.
+## Open questions / blockers on the board
+- #687 nightly red — `needs-approval`; `scripts/main-ok.sh` will refuse merges while
+  it stays red. First thing next session: check if main's nightly recovered (or the
+  approval landed); a red main freezes all lanes (#601).
+- #698 waiting-jon: who owns the demos driver (unanswered).
+- #696/#694 platform: host proxy serves `/demos/` index stale (two issues, one dup).
+- #691 waiting-jon: harness-fix exception for #687.
 
-## Open questions
-- #633 SSX rider 5 duplicate body — awaiting Jon.
-- #635 builder takes demos/platform queue items? — AWAITING (default in effect).
-- #634 red heist-nightly blocking? — AWAITING (default: advisory).
-
-## Open threads
-- #695 QA CAMPFIRE polish, #685 QA SSX surfaces, #696 demos-index platform —
-  QA/platform lanes'.
-- Stale `origin/forge/ssx-cpu-riders-620` branch (shipped long ago) — prune?
+## Environment notes
+- Worktree `~/Dev/retrogames-forge-mountains` on branch `docs/state-mountains`
+  (this STATE.md PR). Main checkout must stay detached at `origin/main` (Jon rule).
+- `node_modules` symlinked into the worktree for playwright-core access.
+- Latest main: `1227a95` (#709). nightly: last check green pre-merge; re-verify.
