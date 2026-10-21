@@ -210,7 +210,8 @@
     "nightlychecks": "node scripts/run-checks.mjs",
     "nightlysmokes": "node scripts/run-checks.mjs --smoke",
     "shiftreportcheck": "node scripts/shiftreportcheck.mjs",
-    "ssxmountaincheck": "node scripts/ssxmountaincheck.mjs"
+    "ssxmountaincheck": "node scripts/ssxmountaincheck.mjs",
+    "shoreperf": "node scripts/shoreperf.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

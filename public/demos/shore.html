@@ -57,7 +57,7 @@ const SDX = LITE ? 0.8 : 0.4;
 const NX = Math.round((SX1 - SX0) / SDX) + 1;
 const NZ = Math.round((SZ1 - SZ0) / SDX) + 1;
 const NC = NX * NZ;
-const NSUB = 4;                 // SWE substeps per 1/60 s frame
+const NSUB = 4;                 // SWE substeps per 1/60 s frame (never lower: CFL edge at dt 1/120)
 
 // travel-time (eikonal) grid for refraction of the primary swells
 const TX0 = 38, TX1 = 130, TXS = 1.6;
@@ -830,9 +830,19 @@ async function boot() {
   const FORMAT = navigator.gpu.getPreferredCanvasFormat();
   ctx.configure({ device, format: FORMAT, alphaMode: 'opaque' });
 
+  // Resolution policy (#668): canvas pinned at CSS×dpr capped at 2 (was
+  // uncapped: a dpr-3 phone rendered 2.25x the pixels for no visible gain).
+  // The scene renders into offscreen targets sized rs×canvas; rs=1 resolves
+  // straight to the canvas, rs<1 upscales via a fullscreen blit (used by
+  // ?rs=0.55..0.9 for experiments and by harness determinism locks).
+  const DPR_CAP = Math.min(devicePixelRatio || 1, 2);
+  const RS_LOCK = qs.get('rs') ? Math.max(0.55, Math.min(1, parseFloat(qs.get('rs')))) : 0;
+  let rs = RS_LOCK || 1;
+  let nsub = qs.get('nsub') ? Math.max(2, Math.min(NSUB, parseInt(qs.get('nsub'), 10) & ~1)) : NSUB;
   function resize() {
-    canvas.width = Math.max(2, Math.min(innerWidth, 1600) * devicePixelRatio) | 0;
-    canvas.height = Math.max(2, Math.min(innerHeight, 1000) * devicePixelRatio) | 0;
+    const w = Math.max(2, Math.min(innerWidth, 1600) * DPR_CAP) | 0;
+    const h = Math.max(2, Math.min(innerHeight, 1000) * DPR_CAP) | 0;
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   }
   resize();
   addEventListener('resize', resize);
@@ -903,7 +913,22 @@ async function boot() {
   const modSwe = device.createShaderModule({ code: SWE });
   const modFoam = device.createShaderModule({ code: FOAMADV });
   const modProbe = device.createShaderModule({ code: PROBE });
-  for (const [n, m] of [['sky', modSky], ['sand', modSand], ['water', modWater], ['swe', modSwe], ['foam', modFoam], ['probe', modProbe]]) {
+  const modBlit = device.createShaderModule({ code: `
+@group(0) @binding(0) var srcTex: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+struct BOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
+@vertex
+fn vs(@builtin(vertex_index) vi: u32) -> BOut {
+  var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  var o: BOut;
+  o.pos = vec4f(p[vi], 0.0, 1.0);
+  o.uv = vec2f((p[vi].x + 1.0) * 0.5, (1.0 - p[vi].y) * 0.5);
+  return o;
+}
+@fragment
+fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv); }
+` });
+  for (const [n, m] of [['sky', modSky], ['sand', modSand], ['water', modWater], ['swe', modSwe], ['foam', modFoam], ['probe', modProbe], ['blit', modBlit]]) {
     const info = await m.getCompilationInfo();
     const errs = info.messages.filter(x => x.type === 'error');
     if (errs.length) throw new Error(`${n} WGSL: ${errs.map(x => x.message).join(' | ')}`);
@@ -985,17 +1010,29 @@ async function boot() {
   const probePipe = device.createComputePipeline({ layout: layoutProbe, compute: { module: modProbe, entryPoint: 'main' } });
 
   // 4x MSAA: the water/sand boundary is a mesh-on-mesh silhouette; resolve
-  // into the canvas at the end of the frame.
+  // into the canvas at the end of the frame. #668: the scene renders at
+  // rs×canvas into these targets; when rs<1 the resolve lands in an
+  // intermediate texture and a fullscreen blit upscales it to the canvas,
+  // so the canvas backbuffer itself never changes size.
   const MS = 4;
-  let depth = null, msaa = null, tW = 0, tH = 0;
+  let depth = null, msaa = null, drs = null, bgBlit = null, tW = 0, tH = 0;
   function ensureTargets() {
-    if (depth && msaa && tW === canvas.width && tH === canvas.height) return { msaa, depth };
+    const w = Math.max(2, (canvas.width * rs) | 0);
+    const h = Math.max(2, (canvas.height * rs) | 0);
+    const up = w < canvas.width || h < canvas.height;
+    if (depth && msaa && tW === w && tH === h && up === !!drs) return { msaa, depth, drs };
     if (depth) depth.destroy();
     if (msaa) msaa.destroy();
-    depth = device.createTexture({ size: [canvas.width, canvas.height], sampleCount: MS, format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    msaa = device.createTexture({ size: [canvas.width, canvas.height], sampleCount: MS, format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    tW = canvas.width; tH = canvas.height;
-    return { msaa, depth };
+    if (drs) drs.destroy();
+    depth = device.createTexture({ size: [w, h], sampleCount: MS, format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    msaa = device.createTexture({ size: [w, h], sampleCount: MS, format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    drs = up ? device.createTexture({ size: [w, h], format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING }) : null;
+    bgBlit = drs ? device.createBindGroup({ layout: blitPipe.getBindGroupLayout(0), entries: [
+      { binding: 0, resource: drs.createView() },
+      { binding: 1, resource: blitSampler },
+    ] }) : null;
+    tW = w; tH = h;
+    return { msaa, depth, drs };
   }
 
   const skyPipe = device.createRenderPipeline({
@@ -1025,6 +1062,14 @@ async function boot() {
     // no depth test against sand: the sheet extent is decided analytically by
     // alpha; testing vs the sand mesh makes the mesh intersection the shoreline.
     depthStencil: { depthWriteEnabled: false, depthCompare: 'always', format: 'depth32float' },
+  });
+
+  const blitSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' });
+  const blitPipe = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: modBlit, entryPoint: 'vs' },
+    fragment: { module: modBlit, entryPoint: 'fs', targets: [{ format: FORMAT }] },
+    primitive: { cullMode: 'none' },
   });
 
   const SUN = (() => { const v = [-0.18, 0.16, -0.97]; const l = Math.hypot(...v); return v.map(x => x / l); })();
@@ -1066,6 +1111,14 @@ async function boot() {
     lastMs = now;
     ftimes.push(dt * 1000);
     if (ftimes.length > 120) ftimes.shift();
+    // #668 notes: an adaptive resolution governor (1 -> 0.9 via the blit
+    // targets below) was tried and backed out: under shared-GPU interference it
+    // deterministically starved the probe readback and broke shorecheck's
+    // swash-trace gates, with no measurable fps win to show for it. The
+    // offscreen targets stay (rs=1 => resolve direct to canvas); the wins that
+    // shipped are the dpr cap, the per-pixel shader trims and ?rs=?nsub=
+    // harness locks. nsub never drops below NSUB: dt 1/120 sits on the CFL
+    // edge of the 0.4m grid and let swash blow up.
     if (dt > 0.1) dt = 0.1;
     acc += dt;
     const FIXED = 1 / 60;
@@ -1073,6 +1126,7 @@ async function boot() {
     while (acc >= FIXED && steps < 4) { t += FIXED; acc -= FIXED; steps++; }
 
     const { fwd, r, u } = camBasis();
+    const { msaa: msc, depth: dtx, drs } = ensureTargets();
     const aspect = canvas.width / canvas.height;
     device.queue.writeBuffer(ubuf, 0, new Float32Array([
       ...vpMat(cam.pos, r, u, fwd, aspect),
@@ -1081,14 +1135,14 @@ async function boot() {
       r[0], r[1], r[2], aspect,
       SUN[0], SUN[1], SUN[2], 1,
       SLOPE, XS0, G, ZMIN,
-      ZSPAN, t, SEED, 1 / canvas.height,
+      ZSPAN, t, SEED, 1 / tH,
     ]));
 
     const enc = device.createCommandEncoder();
-    // SWE: NSUB substeps ping-ponged; NSUB even => final state lands in bufs[0]
+    // SWE: nsub substeps ping-ponged; even nsub => final state lands in bufs[0]
     let cur = 0;
-    for (let s = 0; s < NSUB; s++) {
-      device.queue.writeBuffer(suBuf, 0, new Float32Array([t, FIXED / NSUB, 0, 0]));
+    for (let s = 0; s < nsub; s++) {
+      device.queue.writeBuffer(suBuf, 0, new Float32Array([t, FIXED / nsub, 0, 0]));
       const cp = enc.beginComputePass();
       cp.setPipeline(swePipe);
       cp.setBindGroup(0, bgSimU); cp.setBindGroup(1, bgSimRead[cur]); cp.setBindGroup(2, bgSimWrite[cur]); cp.setBindGroup(3, bgTT);
@@ -1113,9 +1167,8 @@ async function boot() {
       cp.end();
       enc.copyBufferToBuffer(probeBuf, 0, probeRead, 0, probeBuf.size);
     }
-    const { msaa: msc, depth: dtx } = ensureTargets();
     const rp = enc.beginRenderPass({
-      colorAttachments: [{ view: msc.createView(), resolveTarget: ctx.getCurrentTexture().createView(), clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+      colorAttachments: [{ view: msc.createView(), resolveTarget: drs ? drs.createView() : ctx.getCurrentTexture().createView(), clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
       depthStencilAttachment: { view: dtx.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'discard' },
     });
     rp.setPipeline(skyPipe); rp.setBindGroup(0, bgRender); rp.setBindGroup(1, bgSimR); rp.draw(3);
@@ -1125,6 +1178,13 @@ async function boot() {
     rp.setPipeline(waterPipe); rp.setBindGroup(0, bgRender); rp.setBindGroup(1, bgSimR);
     rp.drawIndexed(idxCount);
     rp.end();
+    if (drs) {
+      const bp = enc.beginRenderPass({
+        colorAttachments: [{ view: ctx.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+      });
+      bp.setPipeline(blitPipe); bp.setBindGroup(0, bgBlit); bp.draw(3);
+      bp.end();
+    }
     device.queue.submit([enc.finish()]);
 
     if (wantProbe) {
@@ -1185,7 +1245,7 @@ async function boot() {
     ready: true,
     get frames() { return frames; },
     get time() { return t; },
-    grid() { return { sx0: SX0, sx1: SX1, sz0: SZ0, sz1: SZ1, dx: SDX, n: NC, ns: NSUB }; },
+    grid() { return { sx0: SX0, sx1: SX1, sz0: SZ0, sz1: SZ1, dx: SDX, n: NC, ns: nsub }; },
     setPose(p) {
       if (p.pos) cam.pos = p.pos.slice();
       if (typeof p.yaw === 'number') cam.yaw = p.yaw;
@@ -1202,7 +1262,7 @@ async function boot() {
     perf() {
       if (!ftimes.length) return { n: 0, avg: 0, max: 0 };
       const avg = ftimes.reduce((a, b) => a + b, 0) / ftimes.length;
-      return { n: ftimes.length, avg: +avg.toFixed(2), max: +Math.max(...ftimes).toFixed(2) };
+      return { n: ftimes.length, avg: +avg.toFixed(2), max: +Math.max(...ftimes).toFixed(2), rs: +rs.toFixed(2), nsub };
     },
     probeNow() {
       return new Promise(res => { probeReq = res; });
