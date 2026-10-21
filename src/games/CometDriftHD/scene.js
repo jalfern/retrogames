@@ -11,10 +11,69 @@
 
 import * as THREE from 'three'
 import { TRACK, SCENERY, bankAt } from '../CometDrift/track.js'
+import { REFERENCES } from '../CometDrift/reference.js'
 
 export const S = 1 / 60
 const T = TRACK
 const PERP = (a) => [-Math.sin(a), Math.cos(a)]
+
+// #530 item 4: the `?ref=1` debug overlay — the traced real-map centerline
+// (reference.js) fitted onto the shipped circuit: uniform scale to the
+// centerline bbox span, bbox-centred, best of direct / mirror-x (the same
+// alignment rule cometcheck grades with). 32 traced points are Catmull-
+// smoothed onto the lap and ride 0.14u over the asphalt at the nearest
+// centerline height — where the arcade spread/tighten moved the road off the
+// map, the line visibly leaves it. Null on courses without a reference.
+const CATMULL4 = (p0, p1, p2, p3, t) => {
+    const t2 = t * t; const t3 = t2 * t
+    return 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (3 * p1 - p0 - 3 * p2 + p3) * t3)
+}
+export function refOverlayStats(courseId = T.id) {
+    const ref = REFERENCES[courseId]
+    if (!ref) return null
+    const M = ref.pts.length
+    const seg = Math.max(2, Math.round(256 / M))
+    const smooth = []
+    for (let i = 0; i < M; i++) {
+        const p0 = ref.pts[(i - 1 + M) % M]; const p1 = ref.pts[i]
+        const p2 = ref.pts[(i + 1) % M]; const p3 = ref.pts[(i + 2) % M]
+        for (let j = 0; j < seg; j++) {
+            const t = j / seg
+            smooth.push([CATMULL4(p0[0], p1[0], p2[0], p3[0], t), CATMULL4(p0[1], p1[1], p2[1], p3[1], t)])
+        }
+    }
+    let rx0 = Infinity; let rx1 = -Infinity; let ry0 = Infinity; let ry1 = -Infinity
+    for (const [x, y] of smooth) {
+        rx0 = Math.min(rx0, x); rx1 = Math.max(rx1, x)
+        ry0 = Math.min(ry0, y); ry1 = Math.max(ry1, y)
+    }
+    const rcx = (rx0 + rx1) / 2; const rcy = (ry0 + ry1) / 2
+    let gx0 = Infinity; let gx1 = -Infinity; let gy0 = Infinity; let gy1 = -Infinity
+    for (const p of T.pts) {
+        gx0 = Math.min(gx0, p.x); gx1 = Math.max(gx1, p.x)
+        gy0 = Math.min(gy0, p.y); gy1 = Math.max(gy1, p.y)
+    }
+    const gcx = (gx0 + gx1) / 2; const gcy = (gy0 + gy1) / 2
+    const span = Math.max(gx1 - gx0, gy1 - gy0)
+    const fit = (mirror) => {
+        let sum = 0
+        const coords = new Float32Array(smooth.length * 3)
+        for (let k = 0; k < smooth.length; k++) {
+            const wx = gcx + (mirror ? rcx - smooth[k][0] : smooth[k][0] - rcx) * span
+            const wy = gcy + (smooth[k][1] - rcy) * span
+            const n = T.nearest(wx, wy)
+            sum += Math.abs(n.lat)
+            coords[k * 3] = wx * S
+            coords[k * 3 + 1] = T.pts[n.i].h * S + 0.14
+            coords[k * 3 + 2] = wy * S
+        }
+        return { coords, meanPx: sum / smooth.length }
+    }
+    const direct = fit(false); const mirrored = fit(true)
+    const useMirror = mirrored.meanPx < direct.meanPx
+    const best = useMirror ? mirrored : direct
+    return { coords: best.coords, count: smooth.length, mirror: useMirror, meanPx: best.meanPx, spanPx: span }
+}
 // #518: the road's world height at point i (px profile → units, up +Y).
 export const elevAt = (i) => T.pts[i].h * S
 
