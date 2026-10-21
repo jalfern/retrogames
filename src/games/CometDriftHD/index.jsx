@@ -256,6 +256,7 @@ export default function CometDriftHD() {
 
         // ---- renderer + scene (async WebGPU init, WebGL2 fallback inside) ----
         let renderer = null
+        let nodeGL = null
         let ready = false
         let disposed = false
         let backendName = 'pending'
@@ -630,10 +631,48 @@ export default function CometDriftHD() {
         ;(async () => {
             try {
                 if (forceGL) throw new Error('pinned by ?gl=webgl2')
-                renderer = new WebGPURenderer({ canvas: glCanvas, antialias: !lite, alpha: false, preserveDrawingBuffer: true, forceWebGL: forceGLNode })
-                await renderer.init()
-                if (disposed) { renderer.dispose(); return }
-                backendName = renderer.backend && renderer.backend.isWebGPUBackend ? 'webgpu' : 'webgl2'
+                let attempt = 0
+                for (;;) {
+                    renderer = new WebGPURenderer({ canvas: glCanvas, antialias: !lite, alpha: false, preserveDrawingBuffer: true, forceWebGL: forceGLNode })
+                    await renderer.init()
+                    if (disposed) { renderer.dispose(); return }
+                    backendName = renderer.backend && renderer.backend.isWebGPUBackend ? 'webgpu' : 'webgl2'
+                    if (backendName === 'webgl2') {
+                        nodeGL = (renderer.getContext && renderer.getContext()) || (renderer.backend && renderer.backend.gl) || null
+                        // A dev remount (StrictMode) can inherit a force-lost GL
+                        // context: three's WebGLBackend.dispose() calls
+                        // WEBGL_lose_context.loseContext(), and a canvas hands out
+                        // its context exactly once. Swap in a fresh canvas (the
+                        // refuge's trick, marked for the next mount's sweep) and
+                        // re-init once — otherwise the node backend renders into a
+                        // dead context and neither heartbeat nor heal can see it.
+                        if (nodeGL && nodeGL.isContextLost() && attempt === 0 && glCanvas.parentNode) {
+                            attempt++
+                            try { renderer.dispose() } catch { /* already gone */ }
+                            const fresh = document.createElement('canvas')
+                            fresh.dataset.hdgl = '1'
+                            fresh.className = glCanvas.className
+                            fresh.style.cssText = glCanvas.style.cssText
+                            glCanvas.parentNode.insertBefore(fresh, glCanvas)
+                            glCanvas.style.display = 'none'
+                            glCanvas = fresh
+                            nodeGL = null
+                            if (import.meta.env.DEV) console.warn('CometDriftHD: inherited lost GL context — retrying on a fresh canvas')
+                            continue
+                        }
+                        if (import.meta.env.DEV && !nodeGL) console.warn('CometDriftHD: node backend up but no GL context stashed — heartbeat/heal will be blind')
+                    }
+                    break
+                }
+                if (backendName === 'webgl2') {
+                    // Canonical device-loss signal: some dead contexts make
+                    // readPixels throw (the heartbeat's black-frame net then
+                    // never closes), but the canvas always fires webglcontextlost.
+                    glCanvas.addEventListener('webglcontextlost', (e) => {
+                        e.preventDefault()
+                        healIfNeeded('webglcontextlost')
+                    })
+                }
                 renderer.setPixelRatio(dpr)
                 renderer.setSize(cssW, cssH, false)
                 renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -1163,6 +1202,7 @@ export default function CometDriftHD() {
         const healIfNeeded = (why) => {
             renderFails = 0; blackRuns = 0
             if (disposed || backendName !== 'webgl2') return
+            nodeGL = null
             try { renderer.dispose() } catch { /* already gone */ }
             buildLegacy()
             if (import.meta.env.DEV) console.warn('CometDriftHD: backend rebuilt after ' + why)
@@ -1171,8 +1211,10 @@ export default function CometDriftHD() {
         const pixelHeartbeat = () => {
             if (backendName !== 'webgl2' || g.tick % 120 !== 0) return
             try {
-                const glc = (renderer && ((renderer.getContext && renderer.getContext()) || (renderer.backend && renderer.backend.gl))) || glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
+                if (!nodeGL) nodeGL = (renderer && ((renderer.getContext && renderer.getContext()) || (renderer.backend && renderer.backend.gl))) || glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
+                const glc = nodeGL
                 if (!glc) return
+                if (glc.isContextLost && glc.isContextLost()) { healIfNeeded('lost GL context') ; return }
                 const buf = new Uint8Array(4 * 4)
                 glc.readPixels(Math.floor(glc.drawingBufferWidth / 2) - 2, Math.floor(glc.drawingBufferHeight / 2) - 2, 4, 4, glc.RGBA, glc.UNSIGNED_BYTE, buf)
                 let lum = 0
@@ -1288,12 +1330,13 @@ export default function CometDriftHD() {
         window.__cometHDTest = {
             game: () => g,
             simulateDeviceLoss: () => {
-                const gl = (renderer && ((renderer.getContext && renderer.getContext()) || (renderer.backend && renderer.backend.gl))) || glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
+                const gl = nodeGL || (renderer && ((renderer.getContext && renderer.getContext()) || (renderer.backend && renderer.backend.gl))) || glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
                 const ext = gl && gl.getExtension('WEBGL_lose_context')
                 if (!ext) return false
                 ext.loseContext()
                 return true
             },
+            hasNodeGL: () => !!nodeGL,
             keys,
             screen: () => st.screen,
             ready: () => ready,

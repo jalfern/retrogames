@@ -27,7 +27,13 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   A render-failure/black-frame heartbeat self-heals a dead WebGL backend by
   rebuilding on the classic renderer mid-session. `?gl=webgl-node` pins three's
   WebGPU renderer onto its WebGL backend (`forceWebGL`, #478 item 9) so the
-  self-heal is testable headlessly via `WEBGL_lose_context`. Canvas-substitutes are
+  self-heal is testable headlessly via `WEBGL_lose_context`. Gotcha the retest
+  found: a StrictMode remount inherits a force-lost GL context (three's
+  `WebGLBackend.dispose()` calls `loseContext()` and a canvas hands out its
+  context once), and a dead context makes `readPixels` throw — so the boot path
+  retries once on a fresh canvas when the inherited context reports lost, and
+  the refuge additionally fires on the canonical `webglcontextlost` event.
+  Canvas-substitutes are
   inserted BEFORE the React-owned canvas, never in place of it (React
   re-attaches its ref on StrictMode remount and would resurrect a disposed
   context — see the commit history for the failure this prevents).

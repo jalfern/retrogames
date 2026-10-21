@@ -1217,6 +1217,8 @@ if (!SKIP_BROWSER) {
         const page5 = await openGame(b5, { url: BASE + '?gl=webgl-node', viewport: { width: 640, height: 360 }, hook: '__cometHDTest', wait: 500 })
         await page5.waitForFunction(() => window.__cometHDTest.ready() && window.__cometHDTest.backend() === 'webgl2', null, { timeout: 20000 })
         ok(true, '?gl=webgl-node pins the three WebGL-node backend (the device-loss state, deterministically)')
+        const stashed = await page5.evaluate(() => window.__cometHDTest.hasNodeGL())
+        ok(stashed === true, 'the node backend stashes its live GL context at boot (heartbeat + heal are not blind)')
         const lost = await page5.evaluate(() => window.__cometHDTest.simulateDeviceLoss())
         ok(lost === true, 'WEBGL_lose_context fired on the live node-backend canvas')
         await page5.waitForFunction(() => window.__cometHDTest.backend() === 'webgl2-legacy', null, { timeout: 20000 }).catch(() => {})
