@@ -243,17 +243,27 @@ async function main() {
       ok('crests bend toward the shore (Snell)', refr.tiltNear > refr.tiltOff * 1.5 && refr.tiltNear > 0.15,
         `tilt offshore ${refr.tiltOff.toFixed(2)} -> near ${refr.tiltNear.toFixed(2)}`)
 
-      // 2. rules — swash trace over ~13.5 s (> one 7.4 s swell period), all
-      // read from the GPU probe columns.
+      // 2. rules — swash trace over ~2 swell periods of WORLD time, all
+      // read from the GPU probe columns. A loaded box can drop the sim to
+      // ~0.1 real time (measured 2026-10-21, load 13: simT/s 0.086), so a
+      // fixed wall-clock sample budget can cover less than one period —
+      // anchor on the sim clock (AGENTS gotcha: harness waits are world
+      // seconds). Key the trace to probe updates (t changes): while the
+      // readback is in flight swashMean() repeats the same value, and those
+      // ties plateau the strict-peak search below into "no clean cycle".
       const trace = []
-      for (let i = 0; i < 180; i++) {
-        trace.push(await page.evaluate(() => window.__shoreTest.swashMean()))
-        await page.waitForTimeout(150)
+      const tStart = await page.evaluate(() => window.__shoreTest.swashMean().t)
+      for (let i = 0; i < 1500; i++) {
+        const s = await page.evaluate(() => window.__shoreTest.swashMean())
+        trace.push(s)
+        if (s.t - tStart >= 16) break
+        await page.waitForTimeout(120)
       }
-      // headless runs the sim at ~0.7 real-time and the setup settles after a
-      // few seconds: skip the warm-up so gates see the steady state.
-      const traceS = trace.slice(12)
-      const runsRaw = traceS.map(s => s.run)
+      // skip the warm-up (setup settles after a few sim seconds)
+      const pts = trace.filter(s => s.t - tStart > 2)
+      const uniq = pts.filter((s, i) => i === 0 || s.t !== pts[i - 1].t)
+      const runsRaw = uniq.map(s => s.run)
+      const ts = uniq.map(s => s.t)
       const runs = runsRaw.map((_, i) => {
         const w = runsRaw.slice(Math.max(0, i - 1), i + 2)
         return w.reduce((a, b) => a + b, 0) / w.length
@@ -265,19 +275,33 @@ async function main() {
       }
       ok('swash oscillates (peak + range, not drift)', peaks >= 1 && mx - mn > 0.9, `run ${mn.toFixed(2)}…${mx.toFixed(2)} m peaks=${peaks}`)
 
-      // asymmetry from the cleanest full cycle anywhere in the trace (a
-      // peak whose rise and fall both exceed 0.8 m), not just the global max
+      // asymmetry across full swash cycles. The trace arrives at probe
+      // cadence (slower and jogglier on a loaded box), so single-step
+      // monotone walks break on readback jitter and report "no clean cycle"
+      // for a trace a human sees pulsing. Smooth wider, then measure each
+      // peak against the troughs of its surrounding cycle: rise = peak -
+      // min(prev peak..peak), fall = peak - min(peak..next peak), with
+      // velocities over WORLD dt.
+      const sw = runsRaw.map((_, i) => {
+        const w = runsRaw.slice(Math.max(0, i - 2), i + 3)
+        return w.reduce((a, b) => a + b, 0) / w.length
+      })
+      const peakIdx = []
+      for (let p = 2; p < sw.length - 2; p++) {
+        if (sw[p] >= sw[p - 1] && sw[p] > sw[p - 2] && sw[p] >= sw[p + 1] && sw[p] > sw[p + 2]) peakIdx.push(p)
+      }
       let best = null
-      for (let p = 2; p < runs.length - 2; p++) {
-        if (runs[p] <= runs[p - 1] || runs[p] <= runs[p + 1]) continue
-        let a = p
-        while (a > 0 && runs[a] > runs[a - 1]) a--
-        let b = p
-        while (b < runs.length - 1 && runs[b] > runs[b + 1]) b++
-        const rise = runs[p] - runs[a], fall = runs[p] - runs[b]
+      for (let k = 0; k < peakIdx.length; k++) {
+        const p = peakIdx[k]
+        const lo0 = k > 0 ? peakIdx[k - 1] : 0
+        const hi0 = k < peakIdx.length - 1 ? peakIdx[k + 1] : sw.length - 1
+        let a = lo0, b = hi0
+        for (let i = lo0; i <= p; i++) if (sw[i] < sw[a]) a = i
+        for (let i = p; i <= hi0; i++) if (sw[i] < sw[b]) b = i
+        const rise = sw[p] - sw[a], fall = sw[p] - sw[b]
         if (rise < 0.2 || fall < 0.2) continue
-        const cand = { vUp: rise / ((p - a) * 0.15 || 0.15), vDn: fall / ((b - p) * 0.15 || 0.15) }
-        if (!best || rise + fall > 0) { if (!best || cand.vUp / cand.vDn > best.vUp / best.vDn) best = cand }
+        const cand = { vUp: rise / Math.max(0.1, ts[p] - ts[a]), vDn: fall / Math.max(0.1, ts[b] - ts[p]) }
+        if (!best || cand.vUp / cand.vDn > best.vUp / best.vDn) best = cand
       }
       ok('uprush faster than backwash',
         !!best && best.vUp > best.vDn * 1.15 && best.vUp > 0.03,
@@ -421,10 +445,19 @@ async function main() {
         sparkleS > 25000 && nearPctS < 4.2,
         `sparkle=${sparkleS} nearWhite=${nearPctS.toFixed(1)}%`)
 
+      // set label poll, world-seconds anchored too: the label only flips on a
+      // probe update, and on a loaded box 15 s of wall time can be well under
+      // one swell period.
       let sawBig = false
-      for (let i = 0; i < 60 && !sawBig; i++) {
-        if (await page.evaluate(() => document.getElementById('setLbl').textContent) === 'BIG') sawBig = true
-        else await page.waitForTimeout(250)
+      const tBig0 = await page.evaluate(() => window.__shoreTest.swashMean().t)
+      for (let i = 0; i < 1500 && !sawBig; i++) {
+        const st = await page.evaluate(() => ({
+          lbl: document.getElementById('setLbl').textContent,
+          t: window.__shoreTest.swashMean().t,
+        }))
+        if (st.lbl === 'BIG') sawBig = true
+        else if (st.t - tBig0 > 40) break
+        else await page.waitForTimeout(100)
       }
       ok('wave-set label catches a BIG set', sawBig)
 
