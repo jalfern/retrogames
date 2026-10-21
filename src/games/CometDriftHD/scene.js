@@ -838,6 +838,58 @@ export const hudScale = (w, h) => {
 export const CHROME_BAND = 46
 export const hudTop = (safeTop) => CHROME_BAND + Math.max(0, safeTop)
 
+// ---- #511 item 4: the attract screen's vertical stack. Fractions of H put
+// the title baseline 0.06H above the course-name line — at lite scale (u≈1.5
+// on 640x426) that gap is ~26px under a 46px title, so 'HD · CORKSCOMB
+// DUNES' wrote straight over 'COMET DRIFT', and at 840x420 the letter-spaced
+// noon name ran edge-to-edge over the POS panel and the minimap. The stack is
+// now computed from the glyph boxes it holds, not from fractions: every block
+// clears the next by ATTRACT_GAP, the whole column shrinks (ua, floored so it
+// stays readable) when the band runs out, and the spaced name carries a fit
+// scale clamped to the corridor between the two HUD columns. Node-safe.
+export const ATTRACT_GAP = 6
+export const ATTRACT_UA_MIN = 0.55
+export const ATTRACT_CHAR_W = 0.62
+export const ATTRACT_NAME_LEFT = 70
+export const ATTRACT_NAME_RIGHT = 74
+export function attractLayout(u, W, H, best = 0, nameLen = 13) {
+    const build = (ua) => {
+        const gap = ATTRACT_GAP * ua
+        const ft = 30 * ua; const fn = 16 * ua; const fs = 11 * ua
+        const fm = 10 * ua; const fb = 8 * ua; const fk = 10 * ua
+        const pbs = Math.min(52 * ua, H * 0.058)
+        const title = { fs: ft, y: ft * 0.78 }
+        const name = { fs: fn, y: title.y + ft * 0.22 + gap + fn * 0.78 }
+        const sel = { fs: fs, y: name.y + fn * 0.22 + gap * 1.2 + fs * 0.78 }
+        const prev = { top: sel.y + fs * 0.22 + gap * 1.2, size: pbs }
+        const msg = { fs: fm, y: prev.top + pbs + gap + fm * 0.78 }
+        const bestO = best > 0
+            ? { fs: fb, y: msg.y + fm * 0.22 + gap * 0.6 + fb * 0.78, step: fb + 2 * ua }
+            : null
+        const lastY = bestO ? bestO.y + (best - 1) * bestO.step + fb * 0.22 : msg.y + fm * 0.22
+        const blink = { fs: fk, y: lastY + gap + fk * 0.78 }
+        return { ua, ft, fn, title, name, sel, prev, msg, best: bestO, blink, bottom: blink.y + fk * 0.22 }
+    }
+    const b0 = 0.16 * H; const b1 = 0.78 * H
+    const pad = 8 * u
+    let ua = u
+    const full = build(ua)
+    if (b0 + pad + full.bottom > b1 - pad) ua = Math.max(ATTRACT_UA_MIN, (b1 - b0 - pad * 2) / full.bottom)
+    const L = build(ua)
+    const availW = Math.max(80, W - (ATTRACT_NAME_LEFT + ATTRACT_NAME_RIGHT) * u)
+    const estW = (2 * nameLen + 5) * ATTRACT_CHAR_W * L.name.fs
+    return {
+        band: [b0, b1], gap: ATTRACT_GAP * ua, availW, ua,
+        title: { fs: L.ft, y: b0 + L.title.y },
+        name: { fs: L.fn, y: b0 + L.name.y, estW, fit: Math.min(1, availW / Math.max(1, estW)) },
+        sel: { fs: L.sel.fs, y: b0 + L.sel.y },
+        prev: { top: b0 + L.prev.top, size: L.prev.size },
+        msg: { fs: L.msg.fs, y: b0 + L.msg.y },
+        best: L.best ? { fs: L.best.fs, y: b0 + L.best.y, step: L.best.step } : null,
+        blink: { fs: L.blink.fs, y: b0 + L.blink.y },
+    }
+}
+
 // ---- #502 item 3: the Bus Stop braking cue (Sandbank). Tire-bar walls hug
 // the INSIDE of every bend inside TRACK.brakeCue, so the double-kink announces
 // itself as the slow bit long before the brake mark. Node-safe: defs first,
