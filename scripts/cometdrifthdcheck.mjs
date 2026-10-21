@@ -20,6 +20,7 @@ import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCo
 const args = process.argv.slice(2)
 const MUTATE = args.includes('--mutate')
 const MUTATE_CHIME = args.includes('--mutate-chime')
+const MUTATE_BLOOM = args.includes('--mutate-bloom')
 const SKIP_BROWSER = args.includes('--skip-browser')
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SHARD = resolve(HERE, '../src/games/CometDriftHD/index.jsx')
@@ -63,6 +64,25 @@ if (MUTATE_CHIME) {
         if (chimemutat) {
             writeFileSync(AUDIO, readFileSync(AUDIO, 'utf8').replace(CUTIL, CLINE))
             console.log('  ..    chime mutation restored')
+        }
+    })
+}
+
+// #478 item 1 bloom mutant: drop the post chain on the node backend — the
+// chain-presence gate MUST go red under this run.
+const BLINE = 'post = buildPostChain(renderer)'
+const BUTIL = 'post = null /* bloommut */'
+let bloommutat = false
+if (MUTATE_BLOOM) {
+    const bsrc = readFileSync(SHARD, 'utf8')
+    if (!bsrc.includes(BLINE)) { console.error('MUTATE_BLOOM: chain line not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SHARD, bsrc.replace(BLINE, BUTIL))
+    bloommutat = true
+    console.log('  ..    mutated: the post chain never builds — the bloom gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (bloommutat) {
+            writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(BUTIL, BLINE))
+            console.log('  ..    bloom mutation restored')
         }
     })
 }
@@ -266,6 +286,10 @@ if (!SKIP_BROWSER) {
         const backend = await page.evaluate(() => window.__cometHDTest.backend())
         ok(backend === 'webgl2' || backend === 'webgl2-legacy', `WebGL2 fallback backend active for pixel checks (${backend})`)
 
+        // #478 item 1: the legacy refuge must run WITHOUT the post chain (graceful absence)
+        const chainPinned = await page.evaluate(() => window.__cometHDTest.fxChain())
+        ok(chainPinned.mode === null && chainPinned.pipeline === false, `post chain is gracefully absent on the pinned legacy path (mode ${chainPinned.mode}, ${chainPinned.backend})`)
+
         // #477: the authored dune buggy GLB must actually replace the primitive
         // fallback (proves the async swap + material-clone + rig wiring run in a
         // browser, not just in the Node contract).
@@ -401,6 +425,42 @@ if (!SKIP_BROWSER) {
         const backend2 = await page2.evaluate(() => window.__cometHDTest.backend())
         ok(backend2 === 'webgpu' || backend2 === 'webgl2' || backend2 === 'webgl2-legacy', `default boot picks a real backend (got ${backend2})`)
         ok(backend2 === 'webgpu' || backend2 === 'webgl2', 'backend is WebGPU or the advertised WebGL2 fallback')
+
+        // #478 item 1: the earned-bloom chain is live on whichever node backend
+        // the product default picked, the radial smear follows boost both ways,
+        // and on a pixel-readable backend the bloom demonstrably lights the frame.
+        const ch = await page2.evaluate(() => window.__cometHDTest.fxChain())
+        ok(ch.mode !== null && ch.pipeline === true, `post chain builds on the node backend (${ch.backend}: ${ch.mode})`)
+        await page2.evaluate(() => { const k = window.__cometHDTest.game().karts[0]; k.boostT = 90; k.boostTier = 2 })
+        await page2.waitForTimeout(120)
+        const rb = await page2.evaluate(() => window.__cometHDTest.fxChain())
+        ok(rb.radial > 0.3 && rb.bloom > 0, `gold boost drives the radial smear + keeps bloom gain live (radial ${rb.radial}, bloom ${rb.bloom})`)
+        await page2.evaluate(() => { window.__cometHDTest.game().karts[0].boostT = 0 })
+        await page2.waitForTimeout(150)
+        const rd = await page2.evaluate(() => window.__cometHDTest.fxChain().radial)
+        ok(rd === 0, `radial smear decays to zero the moment boost ends (${rd})`)
+        if (backend2 === 'webgl2') {
+            const bright = () => page2.evaluate(() => {
+                const src = document.querySelector('canvas')
+                const cv = document.createElement('canvas'); cv.width = 160; cv.height = 90
+                const x = cv.getContext('2d'); x.drawImage(src, 0, 0, 160, 90)
+                const d = x.getImageData(0, 0, 160, 90).data
+                let s = 0
+                for (let i = 0; i < d.length; i += 4) s += Math.max(0, (d[i] + d[i + 1] + d[i + 2]) / 3 - 150)
+                return s
+            })
+            await page2.evaluate(() => window.__cometHDTest.setBloom(0))
+            await page2.waitForTimeout(120)
+            const offA = await bright()
+            await page2.evaluate(() => window.__cometHDTest.setBloom(1.4))
+            await page2.waitForTimeout(120)
+            const onS = await bright()
+            await page2.evaluate(() => window.__cometHDTest.setBloom(0))
+            await page2.waitForTimeout(120)
+            const offB = await bright()
+            ok(onS > Math.max(offA, offB) + 40, `bloom demonstrably adds glow to the frame (glow-sum off ${offA.toFixed(0)}/${offB.toFixed(0)} -> on ${onS.toFixed(0)})`)
+            await page2.evaluate(() => window.__cometHDTest.setBloom(0.5))
+        }
     } finally {
         await b2.close()
     }
@@ -419,5 +479,5 @@ if (!SKIP_BROWSER) {
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)
