@@ -113,12 +113,29 @@ check(existsSync(join(ROOT, 'src/utils/modelShelf.js')), 'src/utils/modelShelf.j
 
 // ---- 3. Usable: the ids #638 (mountain) and #639 (trackside) declared.
 const REQUIRED = {
-    '#638 SSX mountain': ['tree_oak', 'tree_pine', 'rock', 'boulder', 'fence', 'flag'],
-    '#639 Comet trackside': ['grandstand', 'barrier', 'marshal_post', 'pit_building', 'billboard', 'cone', 'sign', 'tree_oak', 'tree_pine', 'rock'],
+    '#638 SSX mountain': ['tree_oak', 'tree_pine', 'rock', 'boulder', 'fence', 'flag', 'rock_snow', 'boulder_snow', 'tree_pine_snow', 'snowbank'],
+    '#639 Comet trackside': ['grandstand', 'barrier', 'marshal_post', 'pit_building', 'billboard', 'cone', 'sign', 'tree_oak', 'tree_pine', 'rock', 'tire_wall', 'hill'],
 }
 for (const [label, want] of Object.entries(REQUIRED)) {
     const missing = want.filter((id) => !ids.has(id))
     check(missing.length === 0, `${label}: ${want.length} deps present${missing.length ? ' — missing ' + missing.join(',') : ''}`)
+}
+
+// Proportions vs references in metres: human ~1.75 m, buggy ~3.4 m wide /
+// 1.4 m tall (#657). The new kit pieces must read at believable scale.
+const PROPORTIONS = {
+    tire_wall: { w: [1.8, 2.6], h: [1.2, 1.6] },
+    hill: { w: [5.5, 8.5], h: [3.0, 5.5], d: [4.0, 7.0] },
+    rock_snow: { h: [0.5, 1.0] },
+    boulder_snow: { h: [1.2, 1.8], w: [1.2, 1.6] },
+    tree_pine_snow: { h: [2.6, 3.2] },
+    snowbank: { h: [0.3, 0.8], w: [1.8, 3.0] },
+}
+for (const [id, dims] of Object.entries(PROPORTIONS)) {
+    const e = shelf.entries.find((x) => x.id === id)
+    if (!e || !e.meters) { check(false, `${id}: proportions — entry/meters missing`); continue }
+    for (const [k, [lo, hi]] of Object.entries(dims))
+        check(e.meters[k] >= lo && e.meters[k] <= hi, `${id}: ${k}=${e.meters[k]} m within ${lo}–${hi} (vs 1.75 m human)`)
 }
 
 // index is internally consistent with the files on disk.
