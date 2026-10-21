@@ -217,6 +217,26 @@ const DEFINITIONS = {
         box(s, -0.6, 0.28, 0.1, 1.0, 0.28, 0.7, SNOW_D)
         return s
     },
+    // Silhouette variants (#657): a second tree and rock shape so scatters
+    // don't repeat visibly. Same voxel idiom, ground origin, lean.
+    tree_pine_tall: () => {
+        const s = newSoup()
+        box(s, 0, 0.45, 0, 0.2, 0.9, 0.2, BARK)
+        box(s, 0, 1.1, 0, 0.95, 0.7, 0.95, PINE)
+        box(s, 0, 1.75, 0, 0.72, 0.7, 0.72, PINE)
+        box(s, 0, 2.4, 0, 0.5, 0.7, 0.5, PINE_D)
+        box(s, 0, 3.0, 0, 0.3, 0.6, 0.3, PINE_D)
+        box(s, 0, 3.45, 0, 0.16, 0.4, 0.16, PINE_D)
+        return s
+    },
+    rock_angular: () => {
+        const s = newSoup()
+        box(s, 0, 0.22, 0, 0.9, 0.44, 0.5, ROCK)
+        box(s, 0.34, 0.28, 0.1, 0.4, 0.56, 0.4, ROCK_D)
+        box(s, -0.3, 0.18, -0.06, 0.34, 0.36, 0.42, ROCK_D)
+        box(s, 0.05, 0.52, 0.02, 0.36, 0.24, 0.36, ROCK)
+        return s
+    },
 }
 
 const META = {
@@ -239,6 +259,8 @@ const META = {
     boulder_snow: { name: 'Snow-topped boulder', summary: 'Hillside boulder with a snow cap', tags: ['nature', 'rock', 'snow'], solid: true },
     tree_pine_snow: { name: 'Snowy pine', summary: 'Tiered conifer with snow shelves', tags: ['nature', 'tree', 'snow'], solid: false },
     snowbank: { name: 'Snowbank', summary: 'Lumpy drift of packed snow', tags: ['nature', 'snow'], solid: true },
+    tree_pine_tall: { name: 'Pine tree (tall)', summary: 'Slim high silhouette conifer, spire top', tags: ['nature', 'tree'], solid: false },
+    rock_angular: { name: 'Angular rock', summary: 'Jagged low rock outcrop', tags: ['nature', 'rock'], solid: true },
 }
 
 // Colour families: a base prop plus the snow-capped sibling the mountain kit
@@ -246,9 +268,9 @@ const META = {
 // kit); `colorways` names the tints a consumer can ask for. Index-only — it
 // references existing files, never promises geometry that isn't there.
 const FAMILIES = {
-    rock: { variants: ['rock_snow'], colorways: ['default', 'snow'] },
+    rock: { variants: ['rock_snow', 'rock_angular'], colorways: ['default', 'snow'] },
     boulder: { variants: ['boulder_snow'], colorways: ['default', 'snow'] },
-    tree_pine: { variants: ['tree_pine_snow'], colorways: ['default', 'snow'] },
+    tree_pine: { variants: ['tree_pine_snow', 'tree_pine_tall'], colorways: ['default', 'snow'] },
 }
 
 const moved = []

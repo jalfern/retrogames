@@ -7,9 +7,9 @@
   "browse": "fetch /retrogames/models/shelf.json, or import src/utils/modelShelf.js and call browse()",
   "note": "Scenery is Forge-authored CC0 in the KayKit voxel idiom — itch.io pack downloads are outside the GitHub/npm-only network rule. Rigged characters and the buggy keep their original pack provenance.",
   "totals": {
-    "count": 25,
-    "bytes": 2073716,
-    "triangles": 2178,
+    "count": 27,
+    "bytes": 2088732,
+    "triangles": 2298,
     "categories": [
       "characters",
       "vehicles",
@@ -521,8 +521,39 @@
         "snow"
       ],
       "variants": [
-        "rock_snow"
+        "rock_snow",
+        "rock_angular"
       ]
+    },
+    {
+      "id": "rock_angular",
+      "name": "Angular rock",
+      "summary": "Jagged low rock outcrop",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/rock_angular.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 6212,
+      "triangles": 48,
+      "vertices": 144,
+      "meters": {
+        "w": 1.01,
+        "h": 0.64,
+        "d": 0.57
+      },
+      "tags": [
+        "nature",
+        "rock"
+      ],
+      "colorways": [
+        "default"
+      ],
+      "variants": []
     },
     {
       "id": "rock_snow",
@@ -705,7 +736,8 @@
         "snow"
       ],
       "variants": [
-        "tree_pine_snow"
+        "tree_pine_snow",
+        "tree_pine_tall"
       ]
     },
     {
@@ -736,6 +768,36 @@
       ],
       "colorways": [
         "snow"
+      ],
+      "variants": []
+    },
+    {
+      "id": "tree_pine_tall",
+      "name": "Pine tree (tall)",
+      "summary": "Slim high silhouette conifer, spire top",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/tree_pine_tall.glb",
+      "format": "glb",
+      "solid": false,
+      "units": "metres",
+      "sizeBytes": 8804,
+      "triangles": 72,
+      "vertices": 216,
+      "meters": {
+        "w": 0.95,
+        "h": 3.65,
+        "d": 0.95
+      },
+      "tags": [
+        "nature",
+        "tree"
+      ],
+      "colorways": [
+        "default"
       ],
       "variants": []
     },
