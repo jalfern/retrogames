@@ -23,6 +23,7 @@
     "oceancheck": "node scripts/oceancheck.mjs",
     "shorecheck": "node scripts/shorecheck.mjs",
     "campfirecheck": "node scripts/campfirecheck.mjs",
+    "mountainscheck": "node scripts/mountainscheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
     "oceanfoam": "node scripts/oceanfoam.mjs",

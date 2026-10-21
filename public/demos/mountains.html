@@ -40,10 +40,10 @@
 const qs = new URLSearchParams(location.search);
 const LITE = qs.get('lite') === '1';
 const SEED = (qs.get('seed') | 0) || 23;
-const RENDER_SCALE = LITE ? 0.45 : 0.72;
+const RENDER_SCALE = LITE ? 0.34 : 0.42;
 const EXT = 40.0;
 const TEXW = LITE ? 512 : 1024;
-const LAKE_Y = 0.048;
+const LAKE_Y = 0.13;
 
 const canvas = document.getElementById('c');
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
@@ -108,20 +108,26 @@ out vec4 o;
 ${CHUNK_NOISE}
 void main(){
   vec2 p = (vUv - 0.5) * ${EXT.toFixed(1)};
-  vec2 dp = p + vec2(0.13, -0.21) * uSeed;
+  vec2 dp = p + vec2(sin(uSeed * 1.7), cos(uSeed * 2.3)) * 1.7;
   vec2 warp = vec2(fbm2(dp * 0.021 + 13.0, 3), fbm2(dp * 0.021 + 91.0, 3)) - 0.5;
   dp += warp * 6.5;
-  float s = ridged(dp * 0.062);
-  float mask = smoothstep(0.30, 0.74, fbm2(dp * 0.016 + 5.0, 3));
-  mask *= mix(0.68, 1.0, smoothstep(-6.0, 7.0, dp.y));
+  float s0 = ridged(dp * 0.062);
+  float s = s0 * s0 * (3.0 - 2.0 * s0);
+  float mask = 0.35 + 0.65 * smoothstep(0.30, 0.74, fbm2(dp * 0.016 + 5.0, 3));
+  float massif = smoothstep(0.30, 0.62, fbm2(dp * 0.011 + 3.0, 2));
   float rolls = 0.06 * fbm2(dp * 0.05 + 71.0, 3);
-  float h = pow(s, 1.16) * 1.08 + rolls;
-  h *= mix(0.18, 1.0, mask);
-  h *= 1.0 + 0.30 * smoothstep(2.0, 7.5, dp.y) * mask;
-  float r2 = length(vec2(p.x * 0.72, (p.y + 0.55) * 0.92));
-  float v = smoothstep(1.25, 4.6, r2);
-  h = mix(0.022, h, v);
-  h = clamp(h * 0.78, 0.0, 0.995);
+  float north = smoothstep(3.2, 9.5, dp.y);
+  north *= 0.42 + 0.58 * smoothstep(0.34, 0.68, fbm2(vec2(dp.x * 0.030, dp.y * 0.010) + 11.0, 2));
+  float along = 0.50 + 0.50 * smoothstep(0.30, 0.72, fbm2(vec2(dp.x * 0.017, dp.y * 0.008) + 7.0, 2));
+  float h = rolls;
+  h += pow(s0, 1.55) * 2.35 * mask * north * along * (0.55 + 0.45 * massif);
+  h += 0.05 * north * mask;
+  float far = smoothstep(8.5, 15.0, dp.y) * (0.55 + 0.45 * smoothstep(0.35, 0.70, fbm2(vec2(dp.x * 0.011, dp.y * 0.006) + 4.0, 2)));
+  h += pow(ridged(dp * 0.045 + 20.0), 1.5) * 2.6 * far;
+  float r2 = length(vec2(p.x * 0.80, p.y + 0.7));
+  float v = smoothstep(2.2, 9.0, r2);
+  h = mix(0.024, h, v);
+  h = 0.995 * (1.0 - exp(-h * 0.80));
   float x = h * 255.0;
   o = vec4(floor(x) / 255.0, fract(x), 0.0, 1.0);
 }`;
@@ -144,21 +150,26 @@ out vec4 fragColor;
 ${CHUNK_NOISE}
 
 const float FOG_B = 0.085;
-const float FOG_H = 0.135;
-const float SNOW0 = 0.26;
-const float LAKE_Y = 0.048;
+const float FOG_H = 0.42;
+const float SNOW0 = 2.05;
+const float LAKE_Y = 0.30;
+const float HSCALE = 7.5;
 
 float heightTex(vec2 p, float lod){
   vec2 uv = p / ${EXT.toFixed(1)} + 0.5;
   vec2 e = smoothstep(vec2(0.0), vec2(0.008), uv) * (1.0 - smoothstep(vec2(0.992), vec2(1.0), uv));
+#ifdef H16
+  float h = textureLod(uHi, uv, lod).r;
+#else
   float h = textureLod(uHi, uv, lod).r + textureLod(uLo, uv, lod).r / 255.0;
-  return mix(0.0, h, e.x * e.y);
+#endif
+  return mix(0.0, h, e.x * e.y) * HSCALE;
 }
 
 vec3 skyColor(vec3 rd, vec3 sunDir){
   float h = rd.y;
   float az = clamp(dot(normalize(vec3(rd.x, 0.0, rd.z)), normalize(vec3(sunDir.x, 0.0, sunDir.z))), 0.0, 1.0);
-  vec3 horiz = mix(vec3(0.42, 0.38, 0.44), vec3(0.98, 0.56, 0.26), pow(az, 1.6));
+  vec3 horiz = mix(vec3(0.58, 0.50, 0.47), uSunCol * vec3(0.99, 0.82, 0.63), pow(az, 1.6));
   vec3 low = mix(vec3(0.30, 0.32, 0.46), horiz, smoothstep(0.0, 0.075, h));
   vec3 mid = vec3(0.19, 0.28, 0.50);
   vec3 zen = vec3(0.07, 0.12, 0.30);
@@ -186,18 +197,35 @@ vec3 skyColor(vec3 rd, vec3 sunDir){
 struct Hit { float t; int kind; };
 
 float shadowMarch(vec3 p, vec3 sd){
-  float shade = 1.0, t = 0.02;
-  for (int i = 0; i < 22; i++){
+  float shade = 1.0, t = 0.15;
+  for (int i = 0; i < 10; i++){
     vec3 q = p + sd * t;
-    if (q.y > 1.25 || length(q.xz) > ${EXT.toFixed(1)} * 0.5) break;
+    if (q.y > 6.3 || length(q.xz) > ${EXT.toFixed(1)} * 0.5) break;
     float lod = clamp(log2(max(t, 0.05) * 2.2), 0.0, 5.0);
     float hd = q.y - heightTex(q.xz, lod);
-    if (hd < 0.0){ shade = 0.0; break; }
+    if (hd < -0.02){ shade = 0.0; break; }
     shade = min(shade, 2.6 * hd / t);
-    t += max(hd * 0.8, 0.02 + t * 0.06);
+    t += max(hd * 0.8, 0.10 + t * 0.09);
     if (shade < 0.008) break;
   }
   return clamp(shade, 0.0, 1.0);
+}
+
+Hit terrainRayCheap(vec3 ro, vec3 rd){
+  Hit miss; miss.t = -1.0; miss.kind = 0;
+  if (rd.y > 0.8) return miss;
+  float t = 0.02, dt = 0.03;
+  for (int i = 0; i < 45; i++){
+    vec3 p = ro + rd * t;
+    if (p.y > 5.6 || length(p.xz) > ${EXT.toFixed(1)} * 0.5) return miss;
+    float lod = clamp(log2(max(max(dt * 9.0, 0.05), 0.22 + t * 0.30)), 1.0, 5.0);
+    float hd = p.y - heightTex(p.xz, lod);
+    if (hd > 4.8) return miss;
+    if (hd <= 0.0){ Hit hit; hit.t = t; hit.kind = 1; return hit; }
+    dt = min(dt * 1.08, 0.34 + t * 0.16);
+    t += clamp(hd * 1.4, 0.02 + t * 0.004, dt);
+  }
+  return miss;
 }
 
 float fogAmount(float y0, float dy, float t){
@@ -205,7 +233,7 @@ float fogAmount(float y0, float dy, float t){
   float f;
   if (abs(k) < 0.02) f = FOG_B * t * exp(-y0 / FOG_H);
   else f = FOG_B * FOG_H / abs(dy) * abs(exp(-y0 / FOG_H) - exp(-(y0 + dy) / FOG_H));
-  f += t * 0.0045;
+  f += t * 0.0050;
   return clamp(f, 0.0, 1.0);
 }
 
@@ -214,45 +242,48 @@ vec3 shadeTerrain(vec3 p, vec3 n, vec3 rd, vec3 sunDir){
   float slope = n.y;
   float rockN = fbm2(p.xz * 2.6 + 7.0, 4);
   float mass = fbm2(p.xz * 0.45 + 19.0, 3);
-  float crack = 1.0 - smoothstep(0.03, 0.14, abs(vnoise(p.xz * 2.4 + 3.0) - 0.5));
-  vec3 rock = mix(vec3(0.10, 0.105, 0.12), vec3(0.26, 0.245, 0.235), mass);
-  rock = mix(rock, rock * vec3(1.28, 1.22, 1.10), smoothstep(0.55, 0.92, rockN));
-  rock *= 1.0 - crack * 0.35;
-  rock = mix(rock, vec3(0.21, 0.205, 0.20), smoothstep(0.66, 0.95, rockN) * 0.6);
+  float crack = 1.0 - smoothstep(0.02, 0.07, abs(vnoise(p.xz * 4.5 + 3.0) - 0.5));
+  vec3 rock = mix(vec3(0.105, 0.11, 0.13), vec3(0.30, 0.28, 0.27), mass);
+  rock = mix(rock, rock * vec3(1.32, 1.24, 1.08), smoothstep(0.55, 0.92, rockN));
+  rock *= 1.0 - crack * 0.22;
+  rock = mix(rock, vec3(0.24, 0.235, 0.23), smoothstep(0.66, 0.95, rockN) * 0.6);
   rock *= 0.86 + 0.22 * smoothstep(0.25, 0.55, slope);
-  float sl = SNOW0 + 0.10 * (fbm2(p.xz * 0.85 + 33.0, 3) - 0.5) * 2.0;
-  float snowAlt = smoothstep(sl, sl + 0.075, h);
+  float sl = SNOW0 + 0.60 * (fbm2(p.xz * 1.7 + 33.0, 3) - 0.5) * 2.0;
+  float snowAlt = smoothstep(sl - 0.12, sl + 0.28, h);
   float snowFlat = smoothstep(0.22, 0.50, slope);
   float driftNoise = smoothstep(0.42, 0.58, fbm2(p.xz * 3.4 + 55.0, 3));
-  float snow = clamp(snowAlt * mix(snowFlat, 1.0, driftNoise * 0.55), 0.0, 1.0);
+  float brk = 0.55 + 0.70 * fbm2(p.xz * 2.6 + 3.0, 3);
+  float snow = clamp(snowAlt * mix(snowFlat, 1.0, driftNoise * 0.55) * brk, 0.0, 1.0);
   float glaze = smoothstep(0.55, 0.78, fbm2(p.xz * 5.0 + 12.0, 3)) * smoothstep(sl + 0.02, sl + 0.16, h) * (1.0 - snow);
   snow = clamp(snow + glaze * 0.5, 0.0, 1.0);
-  vec3 snowCol = mix(vec3(0.72, 0.75, 0.82), vec3(0.93, 0.93, 0.95), fbm2(p.xz * 9.0, 3));
+  vec3 snowCol = mix(vec3(0.62, 0.66, 0.74), vec3(0.88, 0.89, 0.93), fbm2(p.xz * 9.0, 3));
   vec3 albedo = mix(rock, snowCol, snow);
-  float shore = smoothstep(0.10, 0.045, h) * smoothstep(0.02, 0.045, h);
-  albedo = mix(albedo, vec3(0.10, 0.105, 0.10), shore);
+  float shore = smoothstep(0.38, 0.30, h) * smoothstep(0.10, 0.30, h);
+  albedo = mix(albedo, vec3(0.17, 0.15, 0.115), shore);
 
   float ndl = max(dot(n, sunDir), 0.0);
-  float sh = shadowMarch(p + n * 0.02, sunDir);
+  float dcam = length(p - uCamPos);
+  float sh = ndl > 0.012 ? (dcam < 9.0 ? shadowMarch(p + n * 0.12, sunDir) : smoothstep(9.0, 14.0, dcam) * 0.35 + 0.65) : 0.0;
   float hemi = 0.5 + 0.5 * n.y;
-  vec3 amb = mix(vec3(0.045, 0.04, 0.036), vec3(0.13, 0.175, 0.28), hemi);
-  vec3 c = albedo * (uSunCol * ndl * mix(0.11, 1.0, sh) * 1.75 + amb * mix(0.45, 1.0, sh * 0.5 + 0.5 * hemi));
+  vec3 amb = mix(vec3(0.055, 0.05, 0.045), vec3(0.19, 0.24, 0.38), hemi);
+  vec3 c = albedo * (uSunCol * ndl * mix(0.22, 1.0, sh) * 1.7 + amb * mix(0.45, 1.0, sh * 0.5 + 0.5 * hemi));
   float above = smoothstep(FOG_H * 0.9, FOG_H * 2.6, p.y);
-  c += uSunCol * pow(max(dot(n, sunDir), 0.0), 1.0) * sh * snow * above * 0.55;
+  c += uSunCol * pow(max(dot(n, sunDir), 0.0), 1.0) * sh * snow * above * 0.30;
   float rr = max(dot(reflect(-sunDir, n), -normalize(rd)), 0.0);
-  c += uSunCol * pow(rr, 28.0) * sh * snow * 0.5;
+  c += uSunCol * pow(rr, 28.0) * sh * snow * 0.25;
   return c;
 }
 
-Hit terrainRay(vec3 ro, vec3 rd){
+Hit terrainRay(vec3 ro, vec3 rd, float tLimit){
   Hit miss; miss.t = -1.0; miss.kind = 0;
   if (rd.y > 0.8) return miss;
   float t = 0.02, dt = 0.012;
-  for (int i = 0; i < 190; i++){
+  for (int i = 0; i < 80; i++){
     vec3 p = ro + rd * t;
-    if (p.y > 1.9 || length(p.xz) > ${EXT.toFixed(1)} * 0.55) return miss;
-    float lod = clamp(log2(max(dt * 1.6, 0.03) + t * 0.012), 0.0, 5.0);
+    if (t > tLimit || p.y > 5.6 || length(p.xz) > ${EXT.toFixed(1)} * 0.55) return miss;
+    float lod = clamp(log2(max(max(dt * 9.0, 0.05), 0.22 + t * 0.30)), 0.0, 5.0);
     float hd = p.y - heightTex(p.xz, lod);
+    if (rd.y > 0.02 && hd > 2.4) return miss;
     if (hd <= 0.0){
       float lo = t - dt, hi = t;
       for (int k = 0; k < 7; k++){
@@ -263,9 +294,8 @@ Hit terrainRay(vec3 ro, vec3 rd){
       Hit hit; hit.t = hi; hit.kind = 1;
       return hit;
     }
-    if (hd > t * 0.45 + 0.25) return miss;
-    dt = min(dt * 1.06, 0.10 + t * 0.05);
-    t += max(dt, 0.004 + t * 0.0012);
+    dt = min(dt * 1.06, 0.10 + t * 0.055);
+    t += clamp(hd * 1.4, 0.010 + t * 0.002, dt);
   }
   return miss;
 }
@@ -277,50 +307,54 @@ void main(){
   vec3 ro = uCamPos;
   vec3 sunDir = uSunDir;
 
-  Hit terr = terrainRay(ro, rd);
-
   float tLake = 1e9;
   float lakeDepth = 0.0;
   if (rd.y < -0.0015){
     float tl = (LAKE_Y - ro.y) / rd.y;
     vec3 lp = ro + rd * tl;
-    float th = heightTex(lp.xz, 0.0);
-    if (tl > 0.0 && th < LAKE_Y - 0.004){ tLake = tl; lakeDepth = LAKE_Y - th; }
+    if (tl > 0.0 && tl < 60.0 && abs(lp.x) < 18.0 && abs(lp.y) < 18.0){
+      float th = heightTex(lp.xz, 0.0);
+      if (th < LAKE_Y - 0.004){ tLake = tl; lakeDepth = LAKE_Y - th; }
+    }
   }
+
+  float tLim = 60.0;
+  if (rd.y < -0.0015){ float td = (LAKE_Y - 0.03 - ro.y) / rd.y; if (td > 0.0) tLim = td; }
+  Hit terr = terrainRay(ro, rd, tLim);
 
   vec3 col;
   float fogT;
   if (tLake < 1e8 && (terr.t < 0.0 || tLake < terr.t)){
     vec3 p = ro + rd * tLake;
-    float rip = fbm2(p.xz * 5.5 + vec2(uTime * 0.05, uTime * 0.03), 3) + 0.5 * fbm2(p.xz * 13.0 - uTime * 0.04, 2);
-    float ex = fbm2((p.xz + vec2(0.09, 0.0)) * 6.0 + uTime * 0.05, 2) - fbm2((p.xz - vec2(0.09, 0.0)) * 6.0 + uTime * 0.05, 2);
-    float ez = fbm2((p.xz + vec2(0.0, 0.09)) * 6.0 + uTime * 0.05, 2) - fbm2((p.xz - vec2(0.0, 0.09)) * 6.0 + uTime * 0.05, 2);
-    vec3 n = normalize(vec3(-ex * 0.35 - (rip - 0.75) * 0.04, 1.0, -ez * 0.35));
+    float rip = fbm2(p.xz * 5.5 + vec2(uTime * 0.05, uTime * 0.03), 2);
+    float ex = vnoise((p.xz + vec2(0.12, 0.0)) * 5.5 + uTime * 0.05) - vnoise((p.xz - vec2(0.12, 0.0)) * 5.5 + uTime * 0.05);
+    float ez = vnoise((p.xz + vec2(0.0, 0.12)) * 5.5 + uTime * 0.05) - vnoise((p.xz - vec2(0.0, 0.12)) * 5.5 + uTime * 0.05);
+    vec3 n = normalize(vec3(-ex * 0.055 - (rip - 0.75) * 0.010, 1.0, -ez * 0.055));
     vec3 rr = reflect(rd, n);
     vec3 skyR = skyColor(normalize(rr), sunDir);
-    Hit refl = terrainRay(p + n * 0.02, rr);
+    Hit refl = terrainRayCheap(p + n * 0.02, rr);
     if (refl.t > 0.0 && refl.t < 30.0){
       vec3 rp = p + rr * refl.t;
-      vec2 e2 = vec2(0.05, 0.0);
-      float l2 = clamp(log2(max(refl.t, 0.5)), 0.0, 3.0);
+      vec2 e2 = vec2(0.30, 0.0);
+      float l2 = clamp(log2(0.22 + refl.t * 0.30), 0.0, 2.0);
       float nx = heightTex(rp.xz + vec2(e2.x, 0.0), l2) - heightTex(rp.xz - vec2(e2.x, 0.0), l2);
       float nz = heightTex(rp.xz + vec2(0.0, e2.x), l2) - heightTex(rp.xz - vec2(0.0, e2.x), l2);
-      vec3 rn = normalize(vec3(-nx / (2.0 * e2.x) * 0.05, 1.0, -nz / (2.0 * e2.x) * 0.05));
+      vec3 rn = normalize(vec3(-nx / (2.0 * e2.x) * 0.30, 1.0, -nz / (2.0 * e2.x) * 0.30));
       vec3 tc = shadeTerrain(rp, rn, rr, sunDir);
       float rf = fogAmount(rr.y, rr.y * refl.t, refl.t);
       skyR = mix(skyR, tc * 0.82, rf * 0.0 + 1.0 - rf * 0.55);
     }
     float fres = pow(1.0 - max(dot(-rd, n), 0.0), 4.0) * 0.82 + 0.16;
-    vec3 waterDeep = vec3(0.020, 0.030, 0.048);
-    vec3 waterCol = mix(vec3(0.10, 0.095, 0.085), waterDeep + skyColor(rd, sunDir) * 0.16, smoothstep(0.0, 0.05, lakeDepth));
+    vec3 waterDeep = vec3(0.024, 0.034, 0.052);
+    vec3 waterCol = mix(vec3(0.075, 0.085, 0.095), waterDeep + skyColor(rd, sunDir) * 0.16, smoothstep(0.0, 0.33, lakeDepth));
     col = mix(waterCol, skyR, fres);
     float glit = pow(max(dot(reflect(-sunDir, n), -rd), 0.0), 220.0);
-    col += uSunCol * glit * 2.4 * smoothstep(0.02, 0.06, lakeDepth);
+    col += uSunCol * glit * 2.4 * smoothstep(0.12, 0.30, lakeDepth);
     fogT = tLake;
   } else if (terr.t > 0.0){
     vec3 p = ro + rd * terr.t;
-    float l2 = clamp(log2(max(terr.t, 0.6)), 0.0, 2.0);
-    float e = 0.035 + terr.t * 0.0016;
+    float l2 = clamp(log2(0.22 + terr.t * 0.30), 0.0, 2.0);
+    float e = 0.22 + terr.t * 0.010;
     float nx = heightTex(p.xz + vec2(e, 0.0), l2) - heightTex(p.xz - vec2(e, 0.0), l2);
     float nz = heightTex(p.xz + vec2(0.0, e), l2) - heightTex(p.xz - vec2(0.0, e), l2);
     vec3 n = normalize(vec3(-nx / (2.0 * e), 1.0, -nz / (2.0 * e)));
@@ -412,7 +446,6 @@ function program(vs, fs){
 }
 
 const progHeight = program(VS_QUAD, FS_HEIGHT);
-const progScene = program(VS_QUAD, FS_SCENE);
 const progBright = program(VS_QUAD, FS_BRIGHT);
 const progBlur = program(VS_QUAD, FS_BLUR);
 const progComp = program(VS_QUAD, FS_COMP);
@@ -434,16 +467,54 @@ function byteTarget(w, h){
   return { tex, fbo };
 }
 
-const hTexHi = byteTarget(TEXW, TEXW);
-const hTexLo = byteTarget(TEXW, TEXW);
-
-function bakeHeights(){
-  const uh = gl.getUniformLocation(progHeight, 'uSeed');
-  gl.bindFramebuffer(gl.FRAMEBUFFER, hTexHi.fbo);
+let hTexHi = null, hTexLo = null, H16 = false;
+function halfTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, w, h, 0, gl.RED, gl.HALF_FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const okF = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (!okF) return null;
+  return { tex, fbo };
+}
+function bakeHalf(){
+  const t = halfTarget(TEXW, TEXW);
+  if (!t) return null;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
   gl.viewport(0, 0, TEXW, TEXW);
   gl.useProgram(progHeight);
   gl.bindVertexArray(vaoEmpty);
+  gl.uniform1f(gl.getUniformLocation(progHeight, 'uSeed'), SEED);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.getExtension('EXT_color_buffer_half_float');
+  try {
+    gl.bindTexture(gl.TEXTURE_2D, t.tex);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+  } catch (e) { return null; }
+  if (gl.getError() !== gl.NO_ERROR) return null;
+  return t;
+}
+hTexHi = byteTarget(TEXW, TEXW);
+hTexLo = byteTarget(TEXW, TEXW);
+
+function bakeHeights(){
+  const uh = gl.getUniformLocation(progHeight, 'uSeed');
+  gl.useProgram(progHeight);
+  gl.bindVertexArray(vaoEmpty);
   gl.uniform1f(uh, SEED);
+  const t16 = EXT_HOK ? bakeHalf() : null;
+  if (t16){ H16 = true; hTex16 = t16; return; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hTexHi.fbo);
+  gl.viewport(0, 0, TEXW, TEXW);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.bindFramebuffer(gl.FRAMEBUFFER, hTexLo.fbo);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -451,7 +522,10 @@ function bakeHeights(){
   gl.bindTexture(gl.TEXTURE_2D, hTexLo.tex); gl.generateMipmap(gl.TEXTURE_2D);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
+let hTex16 = null;
+const EXT_HOK = !!gl.getExtension('EXT_color_buffer_float');
 bakeHeights();
+const progScene = program(VS_QUAD, H16 ? '#version 300 es\n#define H16\n' + FS_SCENE.slice(FS_SCENE.indexOf('\n') + 1) : FS_SCENE);
 
 const HDRF = HDR_OK ? gl.RGBA16F : gl.RGBA8;
 const HDRType = HDR_OK ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
@@ -490,7 +564,7 @@ addEventListener('resize', resize);
 
 /* ---------------- camera ---------------- */
 
-const cam = { yaw: 0.02, pitch: 0.05, tyaw: 0.02, tpitch: 0.05, touched: 0 };
+const cam = { yaw: 0.02, pitch: 0.045, tyaw: 0.02, tpitch: 0.045, touched: 0 };
 let drag = null;
 canvas.addEventListener('pointerdown', e => {
   drag = { x: e.clientX, y: e.clientY };
@@ -507,7 +581,7 @@ canvas.addEventListener('pointermove', e => {
 addEventListener('pointerup', () => { drag = null; });
 
 const FOVZ = 1.9;
-const CAMPOS = [0.0, 0.15, -2.6];
+const CAMPOS = [0.0, 1.15, -3.40];
 
 function camBasis(t){
   const idle = Math.max(0, (performance.now() - cam.touched) / 1000 - 2.0);
@@ -537,11 +611,11 @@ function rotMat(out, r, u, f){
 
 /* ---------------- sun ---------------- */
 
-const SUN_AZ = Math.PI + 0.55;
+const SUN_AZ = -0.55;
 function sunAt(t){
-  const el = (10.0 + Math.min(2.0, t * 0.015)) * Math.PI / 180;
+  const el = (13.0 + Math.min(2.0, t * 0.015)) * Math.PI / 180;
   const dir = [Math.sin(SUN_AZ) * Math.cos(el), Math.sin(el), Math.cos(SUN_AZ) * Math.cos(el)];
-  const warm = [1.0, 0.44 + el * 1.7, 0.14 + el * 2.6];
+  const warm = [1.0, 0.48 + el * 1.0, 0.16 + el * 1.2];
   return { dir, col: warm };
 }
 
@@ -640,8 +714,8 @@ function frame(){
   gl.uniformMatrix4fv(us('uCamInvRot'), false, rot4);
   gl.uniform3f(us('uSunDir'), sun.dir[0], sun.dir[1], sun.dir[2]);
   gl.uniform3f(us('uSunCol'), sun.col[0], sun.col[1], sun.col[2]);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hTexHi.tex); gl.uniform1i(us('uHi'), 0);
-  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, hTexLo.tex); gl.uniform1i(us('uLo'), 1);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, H16 ? hTex16.tex : hTexHi.tex); gl.uniform1i(us('uHi'), 0);
+  if (!H16){ gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, hTexLo.tex); gl.uniform1i(us('uLo'), 1); }
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
@@ -695,6 +769,23 @@ window.__mountainsTest = {
   get hdr(){ return HDR_OK; },
   sun(){ const s = sunAt((performance.now() - t0) / 1000); return { elev: Math.asin(s.dir[1]) * 180 / Math.PI, az: SUN_AZ, r: s.col[0], g: s.col[1], b: s.col[2] }; },
   pose(){ return { yaw: cam.yaw, pitch: cam.pitch }; },
+  terrain(x, z){
+    const px8 = new Uint8Array(4);
+    const u = Math.max(0, Math.min(1, x / EXT + 0.5)) * (TEXW - 1);
+    const v = Math.max(0, Math.min(1, z / EXT + 0.5)) * (TEXW - 1);
+    const s = gl.createSampler ? null : null;
+    const hi = new Uint8Array(1), lo = new Uint8Array(1);
+    const grab = (rt, dst) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, rt.fbo);
+      const buf = new Uint8Array(TEXW * TEXW * 4);
+      gl.readPixels(0, 0, TEXW, TEXW, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      const idx = (Math.round(v) * TEXW + Math.round(u)) * 4;
+      dst[0] = buf[idx];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    };
+    grab(hTexHi, hi); grab(hTexLo, lo);
+    return +((hi[0] + lo[0] / 255) / 255).toFixed(3);
+  },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
   setPose(p){
