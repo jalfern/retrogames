@@ -36,19 +36,52 @@ const wallOffAt = (i) => Math.max(220, T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + 
 export const plateauYAt = (i) => elevAt(i) + wallTopAt(i) - 0.25
 export const wallTopYAt = (i) => elevAt(i) + wallTopAt(i)
 
+// #478 item 7 — wall variety: one strata texture tiled the whole loop, so the
+// same 8-band pattern read as copy-paste every few seconds at speed. Each lap
+// section carries its own rock tint (vertex colours multiply the shared map),
+// cycling four stone families 16 times around the lap with smoothstep blends —
+// no hard seams, and the exact same field at the start/finish seam because the
+// step count divides clean. The two walls run two steps out of phase so a
+// straight shows varied stone left AND right, not one mirrored strip.
+export const WALL_TINT_PALETTE = [
+    [1.00, 0.94, 0.84],
+    [0.90, 0.74, 0.58],
+    [0.72, 0.54, 0.44],
+    [0.96, 0.84, 0.66],
+]
+export const WALL_TINT_STEPS = 16
+const wallPhase = (side) => (side > 0 ? 2 : 0)
+export const wallTint = (i, side) => {
+    const u = (((i % T.N) + T.N) % T.N) / T.N
+    const x = u * WALL_TINT_STEPS + wallPhase(side)
+    const k = Math.floor(x)
+    const f = x - k
+    const sm = f * f * (3 - 2 * f)
+    const L = WALL_TINT_PALETTE.length
+    const a = WALL_TINT_PALETTE[((k % L) + L) % L]
+    const b = WALL_TINT_PALETTE[(((k + 1) % L) + L) % L]
+    return [a[0] + (b[0] - a[0]) * sm, a[1] + (b[1] - a[1]) * sm, a[2] + (b[2] - a[2]) * sm]
+}
+
 // generic ribbon: sample(i) returns the two edge points in px (with height);
 // closed ring, seam duplicated once for continuous UVs.
-function buildRibbon(sample, vScale) {
+function buildRibbon(sample, vScale, colorAt) {
     const pos = []
     const uv = []
+    const col = []
     const idx = []
     const N = T.N
     for (let i = 0; i <= N; i++) {
-        const s0 = sample(i % N)
-        const v = T.pts[i % N].s * S * vScale
+        const j = i % N
+        const s0 = sample(j)
+        const v = T.pts[j].s * S * vScale
         pos.push(s0.ax * S, s0.ay, s0.az * S)
         pos.push(s0.bx * S, s0.by, s0.bz * S)
         uv.push(0, v, 1, v)
+        if (colorAt) {
+            const c = colorAt(j)
+            col.push(c[0], c[1], c[2], c[0], c[1], c[2])
+        }
         if (i < N) {
             const a = i * 2
             idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
@@ -57,6 +90,7 @@ function buildRibbon(sample, vScale) {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+    if (colorAt) geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
     geo.setIndex(idx)
     geo.computeVertexNormals()
     return geo
@@ -112,7 +146,7 @@ function wallGeo(side) {
             ax: p.x + pxu * side * w, ay: y + 0.02, az: p.y + pyu * side * w,
             bx: p.x + pxu * side * w, by: y + wallTopAt(i), bz: p.y + pyu * side * w,
         }
-    }, 1 / 7)
+    }, 1 / 7, (j) => wallTint(j, side))
 }
 
 function plateauGeo(side) {

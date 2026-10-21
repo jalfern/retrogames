@@ -71,6 +71,17 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   field; `cometdrifthdcheck --mutate-stars` kills the twinkle law to prove
   the gates watch it.
 
+- #478 item 7 wall variety: one strata texture tiled end-to-end so the same
+  8-band pattern pasted past at speed. `wallTint(i, side)` (scene.js) gives each
+  lap section its own rock tint — four stone families (bleached sand, warm rust,
+  umber, pale dust) cycling 16 steps/lap with smoothstep blends, the right wall
+  two steps out of phase. Tints ship as vertex colours on the wall ribbons
+  (`buildRibbon` accepts a `colorAt` sampler) and the strata material reads them
+  via `vertexColors` — the map is shared, only the tint rides the loop.
+  `cometdrifthdcheck` gates ≥4 distinct tints + ≥0.1 luma swing per wall on
+  every course, ring-to-ring smoothness, out-of-phase sides, and a closed
+  start/finish seam; `--mutate-wall` collapses the cycle and MUST go red.
+
 ## Trackside scenery (#639)
 
 The circuits were bare, so speed didn't read. `scenery.js` dresses them like
