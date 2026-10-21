@@ -603,6 +603,13 @@ export default function CometDrift() {
                 drawText(ctx, g.phase === 'race' ? 'GO!' : String(Math.ceil(g.count / 60)), W / 2, HZ + Math.round(34 * hs), g.phase === 'race' ? '#38e878' : '#f2e6d2', dsz(44), 'center')
                 ctx.textAlign = 'left'
             }
+            // #517: the zig-zag lesson — after the first off-road drift dump
+            // the sky band teaches the technique that keeps a drift alive.
+            if (st.screen !== 'attract' && g.zigHintT > 0 && (g.zigHintT > 60 || (g.tick >> 3) % 2 === 0)) {
+                ctx.textAlign = 'center'
+                drawText(ctx, 'OFF-ROAD! TAP-TAP THE STEER', W / 2, Math.round(48 * hs), '#f0b878', dsz(9), 'center')
+                ctx.textAlign = 'left'
+            }
         }
 
         // attract / end screens ride the same carved panels, strata-trimmed
@@ -857,7 +864,7 @@ export default function CometDrift() {
             fx: () => {
                 const P = g.karts[0]
                 return { sparks: fx.sparks.length, dust: fx.dust.length,
-                    frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
+                    frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v, zigHintT: g.zigHintT }
             },
             forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
             // bike-harness precedent (__bikeTest.setup): place the kart, keep

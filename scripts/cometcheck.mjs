@@ -936,6 +936,70 @@ const selectorGate = (SEL) => {
 console.log('— the attract course selector is tappable (#534) —')
 selectorGate(await loadSelector())
 
+// ---- #517: an off-road drift-dump teaches the zig-zag (Jon's call, 'a') ----
+// A keyboard drift held one way carves ~v/yaw = 200px, tighter than any corner
+// (~865-1500px), so it walks off the asphalt and dumps its charge before tier 1
+// (measured: off-road in ~22-30 ticks at cruise 6.0). The tap-tap steer that
+// keeps a drift alive through the 9-tick grace was invisible to new players;
+// the sim now surfaces it ONCE per race at the first off-road dump that pays
+// nothing, and the HUD draws the line. These probes drive the exact repro.
+{
+    console.log('— the zig-zag lesson fires on a failed keyboard drift (#517) —')
+    const m = await loadSim()
+    selectCourse('corkscomb')
+    const TS = Tmod.TRACK
+    const bend = TS.pts.find((p) => Math.abs(p.k) > 1 / 1200)
+    check('corkscomb has a bend to fail on (#517)', !!bend)
+    const placeKart = (g) => {
+        const P = g.karts[0]
+        P.x = bend.x; P.y = bend.y; P.a = bend.a; P.idx = bend.i; P.hint = bend.i
+        P.v = 6; P.spinT = 0; P.driftT = 0; P.charge = -1; P.driftG = 0
+        P.boostT = 0; P.boostTier = -1
+        return P
+    }
+    const heldDump = (g, P) => {
+        placeKart(g)
+        for (let i = 0; i < 120; i++) m.step(g, { u: true, drift: true, steer: 1 })
+    }
+    let dumpG = null
+    for (const dir of [1, -1]) {
+        const g = m.makeGame(7)
+        g.phase = 'race'
+        const P = placeKart(g)
+        for (let i = 0; i < 120 && !g.zigHint; i++) m.step(g, { u: true, drift: true, steer: dir })
+        if (g.zigHint) { dumpG = { g, P, dir }; break }
+    }
+    check('#517: held one-way drift at a bend walks off-road and the sim fires the zig-zag hint', !!dumpG)
+    if (dumpG) {
+        const { g, P, dir } = dumpG
+        check('#517: the dump really left the asphalt and paid nothing (charge below tier 1)',
+            Tmod.surfaceAt(P.x, P.y, P.hint).surf !== 'road' || P.offroad,
+            `surf ${Tmod.surfaceAt(P.x, P.y, P.hint).surf}`)
+        check('#517: the hint is on-screen for ~4 s of world time', g.zigHintT > 120 && g.zigHintT <= 240, `t=${g.zigHintT}`)
+        check('#517: the hint routes as a sim event (audio/HUD can hook it)',
+            g.events.filter((ev) => ev.e === 'zigHint').length === 1)
+        placeKart(g)
+        for (let i = 0; i < 120; i++) m.step(g, { u: true, drift: true, steer: dir })
+        check('#517: the lesson is taught once per race — a second dump adds no event',
+            g.events.filter((ev) => ev.e === 'zigHint').length === 1 && g.zigHint === 1)
+        for (let i = 0; i < 241; i++) m.step(g, { u: false })
+        check('#517: the hint expires (never permanent HUD clutter)', g.zigHintT === 0)
+        const g2 = m.makeGame(11)
+        g2.phase = 'race'
+        const P2 = placeKart(g2)
+        for (let i = 0; i < 40; i++) m.step(g2, { u: true, drift: true, steer: 0 })
+        m.step(g2, { u: true })
+        check('#517: a drift that never leaves the road teaches nothing', g2.zigHint === 0)
+    }
+    const idxSrc517 = readFileSync(IDXJS, 'utf8')
+    check('index.jsx: the zig-zag line draws via the own font, gated on the countdown (#517)',
+        /g\.zigHintT\s*>\s*0/.test(idxSrc517) && /drawText\(ctx,\s*'OFF-ROAD! TAP-TAP THE STEER'/.test(idxSrc517))
+    check('index.jsx: zigHintT is exposed to the harness (#517)', /zigHintT:\s*g\.zigHintT/.test(idxSrc517))
+    const simSrc517 = readFileSync(SIM, 'utf8')
+    check('sim.js: the hint sets once (!g.zigHint) and decays every tick (#517)',
+        /!g\.zigHint\b/.test(simSrc517) && /if \(g\.zigHintT > 0\) g\.zigHintT--/.test(simSrc517))
+}
+
 if (process.argv.includes('--mutate')) {
     // #534 mutant: collapse the chevrons onto the centre — no thumb target, no
     // flanking, and the centre is no longer the clear start zone. The selector
@@ -1300,6 +1364,59 @@ if (process.argv.includes('--mutate')) {
         writeFileSync(IDXJS, idxSrc.replace('engAcc += 1 / e.period', 'engAcc += 1 / (15 - Math.round(P.v))'))
         await sfx6Died('the engine loop bypasses the law\'s period (the #440 item-6 regression)', engineWired)
     } finally { writeFileSync(IDXJS, idxSrc) }
+
+    // #517 zig-zag-hint mutants: re-plant the silence (the pre-#517 game,
+    // where the failed-drift player got no lesson), the spam (lesson taught on
+    // every dump), and the permanent HUD line. Each must go red above.
+    const sim517Src = readFileSync(SIM, 'utf8')
+    const zig517 = async () => {
+        const mm = await import('../src/games/CometDrift/sim.js' + '?m=' + Math.random())
+        selectCourse('corkscomb')
+        const TS = Tmod.TRACK
+        const bend = TS.pts.find((p) => Math.abs(p.k) > 1 / 1200)
+        for (const dir of [1, -1]) {
+            const gg = mm.makeGame(7)
+            gg.phase = 'race'
+            const Q = gg.karts[0]
+            let n = 0
+            for (let leg = 0; leg < 2; leg++) {
+                Q.x = bend.x; Q.y = bend.y; Q.a = bend.a; Q.idx = bend.i; Q.hint = bend.i
+                Q.v = 6; Q.spinT = 0; Q.driftT = 0; Q.charge = -1; Q.driftG = 0
+                Q.boostT = 0; Q.boostTier = -1
+                for (let i = 0; i < 60; i++) mm.step(gg, { u: true, drift: true, steer: dir })
+                n = gg.events.filter((ev) => ev.e === 'zigHint').length
+            }
+            if (n > 0) return { n, hintT: gg.zigHintT }
+        }
+        return { n: 0, hintT: 0 }
+    }
+    const zig517Died = async (label, run) => {
+        const before = R.fail
+        await run()
+        if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #517 zig-zag gate is load-bearing`)
+        else console.log(`  MUTANT SURVIVED — ${label}: the #517 zig-zag gate is BLIND`)
+    }
+    const zigRun = async () => {
+        const r = await zig517()
+        check(`#517 probe under mutant (events=${r.n}, hintT=${r.hintT})`, r.n === 1 && r.hintT > 120)
+    }
+    try {
+        writeFileSync(SIM, sim517Src.replace('g.zigHintT = 240', 'g.zigHintT = 0'))
+        await zig517Died('the hint fires but never reaches the screen (silence, the pre-#517 game)', zigRun)
+    } finally { writeFileSync(SIM, sim517Src) }
+    try {
+        writeFileSync(SIM, sim517Src.replace('!g.zigHint && ', ''))
+        await zig517Died('every failed dump re-fires the lesson (no once-per-race guard)', zigRun)
+    } finally { writeFileSync(SIM, sim517Src) }
+    try {
+        writeFileSync(SIM, sim517Src.replace('if (g.zigHintT > 0) g.zigHintT--', 'if (false) g.zigHintT--'))
+        const mm = await import('../src/games/CometDrift/sim.js' + '?m=' + Math.random())
+        const gg = mm.makeGame(7)
+        gg.zigHint = 1; gg.zigHintT = 240
+        for (let i = 0; i < 300; i++) mm.step(gg, { u: false })
+        await zig517Died('the hint never expires (permanent HUD clutter)',
+            () => check(`#517 expiry under mutant (hintT=${gg.zigHintT})`, gg.zigHintT === 0))
+    } finally { writeFileSync(SIM, sim517Src) }
 }
 
 console.log(`\n${R.fail === 0 ? 'GREEN' : 'RED — ' + R.fail + ' failed'}`)
