@@ -610,6 +610,12 @@ fn fs(i: VOut) -> @location(0) vec4f {
   // mid-scale ripple: breaks the horizon mirror into glitter at distance
   nrm.x += (vnoise(vec2f(q.x * 0.7 - gT * 0.5, q.y * 0.7)) - 0.5) * 0.16 * smoothstep(0.5, 1.5, d);
   nrm.z += (vnoise(vec2f(q.x * 0.7 + 41.0, q.y * 0.7 + gT * 0.4)) - 0.5) * 0.16 * smoothstep(0.5, 1.5, d);
+  // #544: capillary-scale normal jitter (OCEAN's sp2) shatters the sun path
+  // into moving sparkle; a gentler falloff carries it out to the horizon where
+  // the swell normals alone paint wide streaks
+  let detF = exp(-dist0 * 0.012);
+  nrm.x += (vnoise(vec2f(q.x * 5.1 - gT * 0.5, q.y * 5.1)) - 0.5) * 0.10 * detF;
+  nrm.z += (vnoise(vec2f(q.x * 5.1 - gT * 0.5 + 23.1, q.y * 5.1 + 17.9)) - 0.5) * 0.10 * detF;
   nrm = normalize(nrm);
   let sun = normalize(u.sun.xyz);
   let V = normalize(u.camPos_t.xyz - p);
@@ -628,18 +634,23 @@ fn fs(i: VOut) -> @location(0) vec4f {
   water *= 1.0 - 0.22 * rip;
   let turb = clamp(w.foam * 0.65, 0.0, 1.0);
   water = mix(water, vec3f(0.55, 0.58, 0.48), turb * exp(-path * 0.5) * 0.45);
-  // golden-hour sky reflection (same shader the sky pass draws); weight eases
-  // off in deep water so the body colour owns the deep set
-  let fres = (0.02 + 0.78 * pow(1.0 - ndv, 4.0)) * (1.0 - 0.35 * bodyF);
+  // golden-hour sky reflection: full Fresnel (OCEAN's law) — at a grazing
+  // angle the orange sky owns the water; the body colour owns steep views
+  let fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
   let R = reflect(-V, nrm);
-  water = mix(water, skyBase(R) * mix(0.30, 1.0, smoothstep(-0.02, 0.30, R.y)), fres * 0.55);
+  let refl = skyBase(R) * mix(0.28, 1.0, smoothstep(0.0, 0.30, R.y));
+  water = mix(water, refl, fres);
   // subsurface transmission: sun through crests toward shore
   let sss = pow(max(dot(V, -sun), 0.0), 3.0) * exp(-d * 2.4);
   water += vec3f(0.05, 0.30, 0.25) * sss * clamp(d, 0.0, 1.1) * 1.1;
-  // glints on the offshore swells
-  let hvv = normalize(sun + V);
-  let glint = pow(max(dot(nrm, hvv), 0.0), 220.0) * 2.6 + pow(max(dot(nrm, hvv), 0.0), 90.0) * 0.5 + pow(max(dot(nrm, hvv), 0.0), 22.0) * 0.16;
-  water += vec3f(1.0, 0.78, 0.48) * glint * (1.0 - w.foam);
+  // #544: the sun path is a true specular lobe on the REFLECTED direction —
+  // the old Blinn-Phong halfway vector smeared it into a solid white river —
+  // and a static world-space mask breaks the lobe into glitter (OCEAN's sea):
+  // the shimmer comes from the moving ripples, not from flickering the mask
+  let mu = max(dot(R, sun), 0.0);
+  let gmask = smoothstep(0.35, 0.72, fbm2(vec2f(q.x * 0.22 + gT * 0.05, q.y * 0.22)));
+  let glint = pow(mu, 320.0) * 3.0 + pow(mu, 90.0) * 0.35 + pow(mu, 14.0) * 0.02;
+  water += vec3f(1.0, 0.78, 0.48) * glint * (0.25 + 0.75 * gmask) * (1.0 - w.foam);
   // foam: advected density * churn lace; the sim field already fades off the
   // breaker crest, the lace only breaks the band into strands
   var fo = w.foam;

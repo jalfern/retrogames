@@ -382,6 +382,41 @@ async function main() {
       for (let i = 0; i < Math.min(imgA.px.length, imgB.px.length); i += 64) d += Math.abs(imgA.px[i] - imgB.px[i])
       ok('camera pose changes the world', d / (imgA.px.length / 64) > 8, `mean|Δ|=${(d / (imgA.px.length / 64)).toFixed(1)}`)
 
+      // #544 — into-sun sun-path must sparkle (glitter), not smear into a
+      // clipped-white river. Grazing into-sun view: the path is a true
+      // specular lobe on the REFLECTED direction broken by moving ripples
+      // (OCEAN's sea); the old Blinn-Phong halfway-vector lobe painted one
+      // solid white band. Sense it the way a human does — a sparkly path has
+      // many bright local maxima and little near-constant clipped white.
+      await page.evaluate(() => window.__shoreTest.setPose({ pos: [48, 1.4, -18], yaw: -1.75, pitch: -0.05 }))
+      await page.waitForTimeout(1200)
+      const imgS = decodePng(await page.screenshot())
+      const y0s = Math.floor(imgS.h * 0.45)
+      const Ls = new Float32Array(imgS.w * imgS.h)
+      let ns = 0, nearWhiteS = 0, sparkleS = 0
+      for (let y = y0s; y < imgS.h; y++) for (let x = 0; x < imgS.w; x++) {
+        const i = (y * imgS.w + x) * imgS.bpp
+        const r = imgS.px[i], g = imgS.px[i + 1], b = imgS.px[i + 2]
+        const l = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        Ls[y * imgS.w + x] = l
+        if (y === y0s || x === 0 || x === imgS.w - 1) continue
+        ns++
+        const sat = Math.max(r, g, b) - Math.min(r, g, b)
+        if (l > 200 && sat < 30) nearWhiteS++
+        if (l > 140) {
+          let isMax = true
+          for (let dy = -1; dy <= 1 && isMax; dy++) for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue
+            if (Ls[(y + dy) * imgS.w + x + dx] >= l) { isMax = false; break }
+          }
+          if (isMax) sparkleS++
+        }
+      }
+      const nearPctS = 100 * nearWhiteS / ns
+      ok('into-sun sun-path sparkles, no clipped-white smear (#544)',
+        sparkleS > 25000 && nearPctS < 4.2,
+        `sparkle=${sparkleS} nearWhite=${nearPctS.toFixed(1)}%`)
+
       let sawBig = false
       for (let i = 0; i < 60 && !sawBig; i++) {
         if (await page.evaluate(() => document.getElementById('setLbl').textContent) === 'BIG') sawBig = true
