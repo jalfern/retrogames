@@ -17,6 +17,7 @@ import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
+    hudScale, hudTop,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
@@ -541,11 +542,20 @@ export default function CometDriftHD() {
 
         let raf = 0; let acc = 0; let last = performance.now()
         let cssW = 2; let cssH = 2
+        let safeTop = 0
+
+        const readSafeTop = () => {
+            try {
+                const v = getComputedStyle(document.documentElement).getPropertyValue('--sat')
+                return parseFloat(v) || 0
+            } catch { return 0 }
+        }
 
         const relayout = () => {
             const r = host.getBoundingClientRect()
             cssW = Math.max(2, Math.round(r.width))
             cssH = Math.max(2, Math.round(r.height))
+            safeTop = readSafeTop()
             hud.width = Math.round(cssW * dpr)
             hud.height = Math.round(cssH * dpr)
             hctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -826,7 +836,18 @@ export default function CometDriftHD() {
         }
 
         // ---- HUD overlay: modern glass cluster in the sky band ------------
-        const hs = () => Math.max(0.72, Math.min(2, Math.min(cssH / 240, cssW / 420)))
+        const hs = () => hudScale(cssW, cssH)
+        const layoutOf = (u, W, H, top) => {
+            const mw = Math.round(62 * u)
+            return {
+                u, W, H, top,
+                pos: { x: 2 * u, y: top + 2 * u, w: 40 * u, h: 30 * u },
+                speed: { x: 2 * u, y: top + 35 * u, w: 66 * u, h: 30 * u },
+                lap: { x: Math.round((W - 92 * u) / 2), y: top + 2 * u, w: Math.round(92 * u), h: Math.round(28 * u) },
+                mini: { x: Math.round(W - mw - 2 * u), y: top + 2 * u, w: mw, h: mw },
+            }
+        }
+        let hudRects = layoutOf(hs(), cssW, cssH, hudTop(safeTop))
         const round = (x, y, w, h, r) => {
             hctx.beginPath()
             hctx.moveTo(x + r, y)
@@ -870,8 +891,10 @@ export default function CometDriftHD() {
             const u = hs()
             const W = cssW; const H = cssH
             // the app's #437 corner chrome floats over full-bleed canvases;
-            // drop the instrument row below it so nothing writes over nothing
-            const TOP = 42
+            // drop the instrument row below it (and below the notch inset the
+            // chrome itself rides) so nothing writes over nothing
+            const TOP = hudTop(safeTop)
+            hudRects = layoutOf(u, W, H, TOP)
             hctx.clearRect(0, 0, W, H)
             // speed streaks at the frame edges: density + tint ride v and boost
             if (P.boostT > 0 || P.v > 7.9) {
@@ -1214,6 +1237,7 @@ export default function CometDriftHD() {
             ready: () => ready,
             backend: () => backendName,
             view: () => ({ w: cssW, h: cssH, dpr }),
+            hud: () => ({ ...hudRects, safeTop }),
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
             course: () => COURSE.id,
