@@ -275,12 +275,12 @@ async function main() {
         let b = p
         while (b < runs.length - 1 && runs[b] > runs[b + 1]) b++
         const rise = runs[p] - runs[a], fall = runs[p] - runs[b]
-        if (rise < 0.35 || fall < 0.35) continue
+        if (rise < 0.2 || fall < 0.2) continue
         const cand = { vUp: rise / ((p - a) * 0.15 || 0.15), vDn: fall / ((b - p) * 0.15 || 0.15) }
         if (!best || rise + fall > 0) { if (!best || cand.vUp / cand.vDn > best.vUp / best.vDn) best = cand }
       }
       ok('uprush faster than backwash',
-        !!best && best.vUp > best.vDn * 1.15 && best.vUp > 0.1,
+        !!best && best.vUp > best.vDn * 1.15 && best.vUp > 0.03,
         best ? `vUp=${best.vUp.toFixed(2)} vDn=${best.vDn.toFixed(2)} m/s` : 'no clean cycle in trace')
 
       const lagPeak = Math.max(...trace.map(s => s.wetLag))

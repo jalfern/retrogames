@@ -1,0 +1,12 @@
+import { chromium } from 'playwright-core'
+const b = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', args: ['--enable-unsafe-swiftshader', '--use-angle=metal'] })
+const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true })
+const p = await ctx.newPage()
+p.on('console', m => { const t = m.text(); if (!t.includes('Invalid CommandBuffer') && !t.includes('SetPipeline')) console.log('[c]', m.type(), t.slice(0,160)) })
+await p.goto('file://' + process.argv[2], { waitUntil: 'load' })
+await p.waitForFunction(() => window.__shoreTest?.ready, null, { timeout: 30000 })
+await p.waitForFunction(() => window.__shoreTest.perf().n > 5, null, { timeout: 15000 })
+await p.waitForFunction(() => window.__shoreTest.dtSense().simT > 4, null, { timeout: 30000 })
+console.log('dt', JSON.stringify(await p.evaluate(() => window.__shoreTest.dtSense())))
+console.log('swash', JSON.stringify(await p.evaluate(() => window.__shoreTest.swashMean())))
+await b.close()

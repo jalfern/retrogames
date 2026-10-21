@@ -1068,12 +1068,12 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     const w = Math.max(2, (canvas.width * rs) | 0);
     const h = Math.max(2, (canvas.height * rs) | 0);
     const up = w < canvas.width || h < canvas.height;
-    if (depth && msaa && tW === w && tH === h && up === !!drs) return { msaa, depth, drs };
+    if (depth && (MS === 1 || msaa) && tW === w && tH === h && up === !!drs) return { msaa, depth, drs };
     if (depth) depth.destroy();
     if (msaa) msaa.destroy();
     if (drs) drs.destroy();
     depth = device.createTexture({ size: [w, h], sampleCount: MS, format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    msaa = device.createTexture({ size: [w, h], sampleCount: MS, format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+    msaa = MS > 1 ? device.createTexture({ size: [w, h], sampleCount: MS, format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT }) : null;
     drs = up ? device.createTexture({ size: [w, h], format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING }) : null;
     bgBlit = drs ? device.createBindGroup({ layout: blitPipe.getBindGroupLayout(0), entries: [
       { binding: 0, resource: drs.createView() },
@@ -1223,8 +1223,12 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
       enc.copyBufferToBuffer(probeBuf, 0, probeRead, 0, probeBuf.size);
       enc.copyBufferToBuffer(bufs[0].hud, 0, dtRead, 0, 16);
     }
+    // MS=1 has no resolve: attach the upscale target (or the canvas) directly.
+    const colorAtt = MS > 1
+      ? { view: msc.createView(), resolveTarget: drs ? drs.createView() : ctx.getCurrentTexture().createView() }
+      : { view: drs ? drs.createView() : ctx.getCurrentTexture().createView() };
     const rp = enc.beginRenderPass({
-      colorAttachments: [{ view: msc.createView(), resolveTarget: drs ? drs.createView() : ctx.getCurrentTexture().createView(), clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+      colorAttachments: [{ ...colorAtt, clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
       depthStencilAttachment: { view: dtx.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'discard' },
     });
     rp.setPipeline(skyPipe); rp.setBindGroup(0, bgRender); rp.setBindGroup(1, bgSimR); rp.draw(3);
@@ -1255,7 +1259,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
         foamRun += (latest.foamCol.reduce((a, b) => a + b, 0) / (64 * 8) - foamRun) * 0.08;
         runLbl.textContent = Math.max(0, latest.run).toFixed(1);
         foamLbl.textContent = String(Math.round(Math.min(100, foamRun)));
-        setLbl.textContent = latest.run > runEMA + 0.55 ? 'BIG' : 'steady';
+        setLbl.textContent = latest.run > runEMA + 0.3 ? 'BIG' : 'steady';
         if (probeReq) { const rq = probeReq; probeReq = null; rq({ data: probeData, t }); }
       }).catch(() => { probeBusy = false; if (probeReq) { const rq = probeReq; probeReq = null; rq(null); } });
       dtRead.mapAsync(GPUMapMode.READ).then(() => {
