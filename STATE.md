@@ -1,58 +1,68 @@
-# STATE — 2026-10-20 forge pm #5
+# STATE — 2026-10-20 forge pm #6
 
 ## Shipped this session
-- **#638 SSX: make it feel like a mountain → prod** (PR #662, squash `3aea015`,
-  live at jalfern.com/retrogames/ssx, bundle verified to carry the new code).
-  - Summit traverse + steep drop-away on every spine; player grid moved to
-    mid-pack (the old 35 m back-grid deficit exceeded catch-up on the faster
-    face — ssxcheck re-proven 30/30).
-  - `openness(s)` blends open snow shoulders ↔ gully rock walls (70 m easing);
-    gully walls ride ON TOP of the ridge line and the far mesh SINKS past it —
-    no silhouette may overhang the near crest (that was the black-blade bug).
-  - Shaped snow: `undulate` rollers/moguls + `bankTurn` banking live inside
-    `terrainY` — painted == ridden, pinned by the harness.
-  - Smooth snow shading (hollows blue-dark, crests lit, wind grain, groomed
-    trail); hollow laplacian reads the natural surface only (features excluded).
-  - Sky-following horizon: gradient dome + sun + snow-capped peaks ring.
-  - Shelf props (#637): `sceneryPlan` scatters tree_pine/oak, rock, boulder,
-    fence, flag + gate/billboard; async GLB with primitive fallback.
-  - `npm run ssxmountaincheck`: 90 assertions. Mutant (`openness→1`) → 8 red,
-    restored. Gates: eslint + lint:mario/fps/ai + build green; ssxcheck 70/70.
-  - Screenshots reviewed at summit/mid-run/gully; four real bugs found by
-    LOOKING (camera origin-lerp, overhang, kicker-edge shadow, pipe towers).
+- **#639 COMET DRIFT HD: trackside scenery → prod** (PR #673, squash `a41f3dc`,
+  live at jalfern.com/retrogames/comet-drift-hd; prod chunk index-B5zuoW9m.js
+  verified to carry the new scenery literals).
+  - New `src/games/CometDriftHD/scenery.js`: a deterministic `tracksidePlan()`
+    (distance-based density) + primitive fallbacks + shelf GLB attach + a
+    Node-safe `tracksideAudit()`.
+  - Dressing per circuit: grandstands straddling the start/finish (+ two
+    opposite straights), pit buildings + billboards down the front straight,
+    tire walls on the outer side of each course's tightest corners (gate
+    relative to that course's own max curvature, so the fast-flow GULCH dresses
+    too), striped barriers on the fast sections, marshal posts + flags at corner
+    posts, cones at chicane mouths, pines/oaks/rocks on the plateaus.
+  - Laws held: racing line clear (nothing inside the 216px sim clamp), every
+    prop clears every passing leg by its footprint (#542 fold-back rule), only
+    barrier/tire_wall solid (and outside the wall), phone count capped (100–177).
+  - `index.jsx`: props group rebuilds on every course swap; primitives paint
+    instantly, GLBs upgrade async; `propsRev` guards a swap mid-load; shared GLB
+    geometry never disposed.
+  - `npm run cometdrifthdscenerycheck`: 51 asserts across GULCH/SANDBANK/
+    CORKSCOMB — boot (deterministic, finite), rules (line clear, corridor, solids,
+    cap, all signature categories), autopilot still wins 4 laps. Mutant
+    (barrier onto the line, fresh child process) → RED, restored.
+  - Gates green: eslint + lint:mario/fps/ai/hd + build. Screenshots reviewed at
+    start line + mid-lap; pulled the finish grandstands back/down after LOOKING
+    so they frame the line without smothering the sky.
 
 ## Next goal
-Oldest game-queue is **#639 COMET DRIFT HD: trackside scenery** (lane:games) —
-unblocked by #637, commented with the shelf ids it needs. Claim with
-`building` + `lane:games`, worktree off origin/main.
+Oldest game-queue is empty right now (only #639 was queued). Check the board
+next cycle — if it stays empty and no `next`/`steer`, and no live QA session,
+borrow a `feedback` item per FORGE step 2. The next game-queue item to expect is
+whichever Jon or the warden labels.
 
 ## Gotchas learned this session
-- A dark curved slab in the sky = terrain overhang: compare far column heights
-  against the near crest from the chase-cam, not against world zero.
-- `npm run shot` throttles the sim (rAF frozen ~clock 0:00); for gameplay
-  captures launch via `scripts/lib/harness.mjs` (disables backgrounding).
-- The chase-cam lerps from (0,0,0) — SNAP the camera on course rebuild.
-- Laplacian-based shading must exclude built features (kicker/pipe lift) or
-  every lip gets a dark hollow line.
-- float32 mesh positions vs float64 terrainY: painted==ridden tolerance is
-  1e-3, not 1e-6.
-- jalfern.com serves /retrogames/ behind a redirect — curl needs -L; SSX lives
-  in a lazy chunk (prod proof = grep chunk bodies for a new symbol).
+- A shared `node_modules` symlink into a fresh worktree works and keeps
+  `three` resolvable without a re-install; still run the full `npm ci` gates.
+- ESM caches the module you import, so a file-mutating check cannot see its own
+  mutation in-process — mutate on disk, re-run the check in a FRESH child
+  process, demand it exits red, then restore (the #673 harness pattern).
+- `sim.step(g, inp)` mutates `g` in place and returns nothing; the win flag is
+  `g.end` (+ `kart.finished`, LAPS=4), not `g.over`.
+- On a 3-leg loop a lateral `off` is not enough: gates that use a CURVATURE
+  threshold miss the fast-flow course entirely — gate relative to the course's
+  own max curvature so every circuit dresses its apexes.
+- Grandstand roofs at scale 1.5 / off 320 loom over the chase-cam and cut the
+  sky out at the line; pull to off ≥430 / scale ~1.2.
+- `__cometHDTest` + `window.__game.step(...)` drive the HD race headless;
+  `page.screenshot` captures the compositor so WebGPU/WebGL both image fine.
 
 ## Board / harness status
-- main: `7da7539` (another lane merged after me — fine; nightly ok at merge).
-- Rule 4 satisfied: this PR is game code. Rule 7: no new jonq (games lane has
-  1 open: #633; nothing needed taste/priority this session).
-- Worktrees: `~/Dev/retrogames-forge-ssx-mountain-638` removed; main checkout
-  detached at `origin/main`.
+- main: `a41f3dc` (this lane's merge). nightly ok at merge.
+- Rule 4 satisfied: this PR is game code. Rule 7: no new jonq (games lane open
+  questions unchanged; nothing this session needed taste/priority).
+- Worktrees: `~/Dev/retrogames-forge-comet-scenery-639` removed after merge;
+  main checkout detached at `origin/main`.
 
 ## Open questions
-- #633 (lane:games) SSX rider 5 duplicate body — keep or fetch a sixth
-  (default: keep the hooded duplicate). Awaiting Jon.
+- #633 (lane:games) SSX rider 5 duplicate body — awaiting Jon (default: keep the
+  hooded duplicate).
 
 ## Open threads
-- #665 QA — SSX mountain-feel polish pass (lane:qa): gully two-tone + snow
-  caps, peak silhouettes, cyan wash, night/dusk heat verification, sun in
-  frame, grandstand at the finish, roller-launch SFX, groove vs trail contrast.
-- #657 QA shelf polish (snow variants, tire_wall, hills) still open (lane:qa).
-- #639 next in queue as above.
+- #675 QA — COMET DRIFT HD: trackside scenery polish pass (lane:qa): roof clip,
+  signage text, floating trees/contact shadows, barrier variety, crowd dots,
+  bunting, distant hills, start-line crowd ambience.
+- #665 QA — SSX mountain-feel polish pass (lane:qa) still open.
+- #657 QA shelf polish (lane:qa) still open.
