@@ -757,14 +757,19 @@ fn cs_swe(@builtin(global_invocation_id) gid: vec3<u32>) {
   let FzU = vUf * select(hU.x, h, vUf >= 0.0);
   let FzD = vDf * select(hD.x, h, vDf >= 0.0);
   var hNew = h - dts * ((FxR - FxL) / SDXF + (FzU - FzD) / SDXF);
-  // light height diffusion damps the checkerboard of a first-order scheme
+  // light height diffusion damps the checkerboard of a first-order scheme.
+  // #702: scale by dts like the wet-map term below — a fixed per-substep
+  // coefficient multiplied effective diffusion 4x when dt went honest
+  // (nsub substeps/s quadrupled), starving the beach and draining the sets.
   let lap = hL.x + hR.x + hD.x + hU.x - 4.0 * h;
-  hNew += 0.03 * lap;
+  hNew += 0.03 * min(1.0, dts * 60.0) * lap;
   if (hNew < 0.0) { hNew = 0.0; uu *= 0.5; vv *= 0.5; }
-  // open-sponge at the seaward edge: relax towards the analytic swell
+  // open-sponge at the seaward edge: relax towards the analytic swell.
+  // #702: dt-scaled like the diffusion above — per-substep k3 quadrupled
+  // effective absorption when the substep dt went honest.
   let wx = SX0F + f32(i) * SDXF;
   if (wx < SX0F + 18.0) {
-    let k3 = smoothstep(SX0F + 18.0, SX0F + 1.0, wx) * 0.7;
+    let k3 = smoothstep(SX0F + 18.0, SX0F + 1.0, wx) * 0.7 * min(1.0, dts * 60.0);
     let dA = max(etaSwellD(wx, SZ0F + f32(j) * SDXF, max(0.05, -bedBuf[si(i, j)])) - bedBuf[si(i, j)], 0.0);
     hNew = mix(hNew, dA, k3);
   }
