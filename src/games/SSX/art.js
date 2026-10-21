@@ -23,6 +23,7 @@ export const GRIDS = { COLS, ROW_BACK }
 
 const hash = (n) => { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v) }
 const smooth01 = (t) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u) }
+const clamp255 = (v) => Math.max(0, Math.min(255, v))
 
 export const THEMES = {
     day: {
@@ -48,18 +49,46 @@ export const THEMES = {
     },
 }
 
-// Smooth snow shading for one grid point (#638). Everything is analytic —
-// no per-vertex noise — so the slope reads as wind-shaped snow: darker
-// hollows with a blue cast, sunlit crests, a fainter groomed trail line
-// following the natural racing line, bluer shadow the deeper off-piste.
-export function snowColor(c, s, x) {
+// ---- real surfaces (#669) ---------------------------------------------------
+// Slope magnitude in world m/m from terrain differences — the analytic terms
+// are not worth differentiating by hand. #669: measured on the NATURAL
+// surface (terrainY − featureLift), same rule as the #638 laplacian — kicker
+// and pipe flanks are built features and must not read as exposed rock.
+// Lateral x-units are 9 m.
+export function slopeAt(c, s, x) {
+    const nat = (ss, xx) => terrainY(c, ss, xx) - featureLift(c, ss, xx)
+    const gy = (nat(s + 1, x) - nat(s - 1, x)) / 2
+    const gx = (nat(s, x + 0.05) - nat(s, x - 0.05)) / 0.1 / 9
+    return Math.hypot(gy, gx)
+}
+
+// Crag bands: strata stripes folded along the run. Where a face sits high
+// above the piste these bands break the snow into alternating snow/rock layers
+// — the crag-and-snow banding of a real alpine wall.
+function cragBands(s, x, y) {
+    const fold = 1.1 * Math.sin(s * 0.013 + x * 0.9 + 2.0) + 0.5 * Math.sin(s * 0.031 - x * 0.4)
+    return smooth01(Math.sin(y * 0.55 + fold) * 1.15)
+}
+
+// Fracture: blocky cell hash so a rock face reads as broken plates, and
+// bedding: dark planes every ~2 m of height, both only ever seen through
+// the rock blend.
+const fracture = (s, x) => hash(Math.floor(s / 7.3) * 31.7 + Math.floor(x * 1.7) * 7.9 + 3.1)
+const bedding = (y, s, x) => {
+    const fold = 0.8 * Math.sin(s * 0.017 + x * 1.3)
+    return smooth01(Math.abs(Math.sin((y * 1.35 + fold))) * 2.4)
+}
+
+// Everything the surface look needs at one point: base colour plus the
+// blend values the sparkle layer reads. snowColor() is the rgb face of it.
+export function surfaceInfo(c, s, x) {
     const T = THEMES[c.theme]
     const a = Math.abs(x)
     const y = terrainY(c, s, x)
     // hollow / crest from the laplacian of the NATURAL surface only — kickers
     // and pipe lips are built features and must not read as snow hollows
     const nat = (ss, xx) => terrainY(c, ss, xx) - featureLift(c, ss, xx)
-    const above = y - terrainY(c, s, 0)
+    const above = nat(s, x) - nat(s, 0)
     const lap = (nat(s - 3, x) + nat(s + 3, x) + nat(s, x - 0.4) + nat(s, x + 0.4)) / 4 - nat(s, x)
     const hollow = smooth01(lap * 2.4)
     const crest = smooth01(-lap * 2.4)
@@ -75,24 +104,156 @@ export function snowColor(c, s, x) {
     const sh = 0.12 + 0.55 * hollow
     rgb = rgb.map((v, k) => v * (1 - sh) + T.shadow[k] * sh * (k === 2 ? 1.12 : 1))
     rgb = rgb.map((v) => v * (1 - 0.20 * hollow) * (1 + 0.10 * crest))
+    // wind ripples (sastrugi): low-frequency cords across the face, small
+    // amplitude so the #638 continuity gate stays green
+    const rip = Math.sin(s * 0.52 + x * 0.8 + c.rollPhase) + 0.5 * Math.sin(s * 1.07 - x * 0.35 + 1.3)
+    rgb = rgb.map((v) => v * (1 + 0.022 * rip))
+    // small lumps: soft bump field, lit on one flank and shaded on the other
+    const bx = Math.sin(x * 2.7 + s * 0.11) * Math.cos(s * 0.61 + x * 0.6 + c.rollPhase * 1.7)
+    const bz = Math.cos(x * 2.7 + s * 0.11) * Math.sin(s * 0.61 + x * 0.6 + c.rollPhase * 1.7)
+    const lump = bx * 0.55 + bz * 0.45
+    rgb = rgb.map((v) => v * (1 + 0.03 * lump) + (lump < 0 ? T.shadow[0] * 0.012 * -lump : 0))
+
+    // ---- snow vs rock ----
+    const grad = slopeAt(c, s, x)
+    const slopeRock = smooth01((grad - 0.42) / 0.38)
+    const ridgeCrag = smooth01((above - 2.4) / 5.5) * cragBands(s, x, y)
+    let rockT = Math.max(slopeRock, ridgeCrag)
+    // snow settles on ledges: gentle ground inside the rock zone keeps snow
+    rockT *= 1 - 0.8 * smooth01((0.32 - grad) / 0.22)
     if (a < 1.05) {
         // groomed trail down the natural line + piste edge stripe
         const tc = Math.sin(s * 0.011) * 0.35 + Math.sin(s * 0.004 + 1.3) * 0.25
         const track = smooth01(1 - Math.abs(x - tc) / 0.55)
         rgb = rgb.map((v, k) => v * (1 - track * 0.16) + T.snowB[k] * 0.8 * track * 0.16)
         if (a > 0.92 && a < 1.06) rgb = T.edge.map((v, k) => (v + rgb[k]) / 2)
-    } else {
-        // past the piste: snow on the shoulders, rock as the ridge steepens
-        const q0 = a - 1
-        const rockT = smooth01((above - 2.6) / 5.5)
-        const band = 0.86 + 0.22 * (0.5 + 0.5 * Math.sin(q0 * 1.9 + s * 0.017))
-        const rk = T.rock.map((v, k) => (v * (1 - rockT) + T.rock2[k] * rockT) * band)
+        rockT = Math.min(rockT, smooth01((grad - 0.5) / 0.4))
+    }
+    if (rockT > 0) {
+        const band = 0.82 + 0.3 * bedding(y, s, x) + 0.18 * (fracture(s, x) - 0.5)
+        const rk = T.rock.map((v, k) => (v * (1 - slopeRock) + T.rock2[k] * slopeRock) * band)
         rgb = rgb.map((v, k) => v * (1 - rockT) + rk[k] * rockT)
     }
     // kicker lips catch the light
     const lift = featureLift(c, s, x)
     if (lift > 0.3) rgb = rgb.map((v) => Math.min(255, v * 1.18))
-    return rgb.map((v) => Math.max(0, Math.min(255, v)))
+    return { rgb: rgb.map(clamp255), rockT, grad, crest, hollow, above }
+}
+
+// Smooth snow shading for one grid point (#638, textured by #669). The base
+// stays analytic — hollows blue-dark, crests lit — and the #669 layer adds
+// slope-based rock reveal, crag banding, wind cords and lumps on top.
+export function snowColor(c, s, x) {
+    return surfaceInfo(c, s, x).rgb
+}
+
+// ---- procedural surface detail (#669) -----------------------------------------
+// A tiling albedo texture per theme (wind cords, crust cracks, grit) plus a
+// sparkle-dot texture for the additive twinkle overlay. Both seamless: the
+// motifs are drawn once and stamped 3×3 around the wrap edges. A tile spans
+// SURF_TILE metres of slope.
+
+export const SURF_TILE = 4
+const HAS_DOM = typeof document !== 'undefined'
+const lcg = (seed) => () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296 }
+
+function seamless(w, h, draw) {
+    const off = document.createElement('canvas')
+    off.width = w; off.height = h
+    const o = off.getContext('2d')
+    draw(o)
+    const cvs = document.createElement('canvas')
+    cvs.width = w; cvs.height = h
+    const ctx = cvs.getContext('2d')
+    for (const dy of [-h, 0, h]) for (const dx of [-w, 0, w]) ctx.drawImage(off, dx, dy)
+    return cvs
+}
+
+const detailCache = new Map()
+export function detailTexture(theme) {
+    if (!HAS_DOM) return null
+    const key = `d|${theme}`
+    if (!detailCache.has(key)) {
+        const night = theme === 'night'
+        const cvs = seamless(256, 256, (g) => {
+            g.fillStyle = night ? '#c8cce8' : '#ebeff6'
+            g.fillRect(0, 0, 256, 256)
+            // wind cords: soft dark troughs with lit crests, integer sine
+            // cycles across x so the tile wraps seamlessly east-west
+            const rnd = lcg(7717)
+            const n = 7
+            for (let i = 0; i < n; i++) {
+                const y = (i + 0.5) * (256 / n)
+                const cy = 1 + Math.floor(rnd() * 3)
+                const ph = rnd() * Math.PI * 2
+                const amp = 2 + rnd() * 3
+                for (const [style, lift] of [['rgba(120,132,168,0.16)', 0], ['rgba(255,255,255,0.35)', -2.5]]) {
+                    g.strokeStyle = style
+                    g.lineWidth = lift === 0 ? 2.5 : 1.2
+                    g.beginPath()
+                    for (let px = 0; px <= 256; px += 4) {
+                        const yy = y + lift + amp * Math.sin((px / 256) * Math.PI * 2 * cy + ph)
+                        if (px === 0) g.moveTo(px, yy); else g.lineTo(px, yy)
+                    }
+                    g.stroke()
+                }
+            }
+            // crust: a few branching crack lines
+            g.strokeStyle = night ? 'rgba(20,24,60,0.5)' : 'rgba(120,128,150,0.4)'
+            g.lineWidth = 1
+            for (let k = 0; k < 7; k++) {
+                let px = rnd() * 256, py = rnd() * 256
+                let dir = rnd() * Math.PI * 2
+                g.beginPath(); g.moveTo(px, py)
+                const steps = 5 + Math.floor(rnd() * 8)
+                for (let i = 0; i < steps; i++) {
+                    dir += (rnd() - 0.5) * 1.4
+                    px += Math.cos(dir) * (6 + rnd() * 10)
+                    py += Math.sin(dir) * (6 + rnd() * 10)
+                    g.lineTo(px, py)
+                }
+                g.stroke()
+            }
+            // grit + firn speckle
+            for (let i = 0; i < 900; i++) {
+                g.fillStyle = rnd() < 0.5 ? 'rgba(150,158,182,0.20)' : 'rgba(255,255,255,0.28)'
+                g.fillRect(rnd() * 256, rnd() * 256, 1, 1)
+            }
+        })
+        const tex = new THREE.CanvasTexture(cvs)
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+        detailCache.set(key, tex)
+    }
+    return detailCache.get(key)
+}
+
+const sparkleCache = new Map()
+export function sparkleTexture(theme) {
+    if (!HAS_DOM) return null
+    const key = `s|${theme}`
+    if (!sparkleCache.has(key)) {
+        const night = theme === 'night'
+        const cvs = seamless(128, 128, (g) => {
+            g.clearRect(0, 0, 128, 128)
+            const rnd = lcg(9901)
+            const n = night ? 22 : 38
+            for (let i = 0; i < n; i++) {
+                const px = rnd() * 128, py = rnd() * 128
+                const r = 0.8 + rnd() * 1.6
+                const grad = g.createRadialGradient(px, py, 0.1, px, py, r * 2.4)
+                grad.addColorStop(0, `rgba(255,255,255,${night ? 0.5 : 0.9})`)
+                grad.addColorStop(1, 'rgba(255,255,255,0)')
+                g.fillStyle = grad
+                g.beginPath(); g.arc(px, py, r * 2.4, 0, Math.PI * 2); g.fill()
+            }
+        })
+        const tex = new THREE.CanvasTexture(cvs)
+        tex.colorSpace = THREE.SRGBColorSpace
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+        sparkleCache.set(key, tex)
+    }
+    return sparkleCache.get(key)
 }
 
 export function buildTerrain(course) {
@@ -100,6 +261,7 @@ export function buildTerrain(course) {
     for (let i = ROW_BACK; i < course.N; i += 1) rows.push(i * 4)
     const pos = new Float32Array(rows.length * COLS.length * 3)
     const col = new Float32Array(rows.length * COLS.length * 3)
+    const uv = new Float32Array(rows.length * COLS.length * 2)
     const idx = []
     rows.forEach((s, ri) => {
         COLS.forEach((x, ci) => {
@@ -108,6 +270,9 @@ export function buildTerrain(course) {
             pos[o] = p.x; pos[o + 1] = p.y; pos[o + 2] = p.z
             const rgb = snowColor(course, s, x)
             col[o] = rgb[0] / 255; col[o + 1] = rgb[1] / 255; col[o + 2] = rgb[2] / 255
+            const u = (ri * COLS.length + ci) * 2
+            uv[u] = (x * 9) / SURF_TILE
+            uv[u + 1] = s / SURF_TILE
         })
     })
     for (let ri = 0; ri < rows.length - 1; ri++) {
@@ -122,9 +287,50 @@ export function buildTerrain(course) {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
     geo.setIndex(idx)
     geo.computeVertexNormals()
-    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0x1c222c }))
+    return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+        vertexColors: true, emissive: 0x1c222c, map: detailTexture(course.theme),
+    }))
+}
+
+// Twinkle overlay: same grid, additive blend, per-vertex mask that only lets
+// the sparkle dots through on flat, sunlit, snowy ground — never on rock or
+// steep faces. Shares the terrain geometry (userData.keepGeo guards disposal).
+export function sparkleMask(c, s, x) {
+    const { rockT, grad, crest } = surfaceInfo(c, s, x)
+    const flat = 1 - smooth01(grad / 0.3)
+    const cell = hash(Math.floor(s / 1.7) * 17.3 + Math.floor(x * 2.3) * 5.7 + 9.2)
+    const patch = smooth01((cell - 0.55) / 0.3)
+    const theme = c.theme === 'night' ? 0.5 : c.theme === 'dusk' ? 0.8 : 1
+    return (1 - rockT) * flat * (0.35 + 0.65 * crest) * patch * theme
+}
+
+export function buildSparkles(course, geo) {
+    const rows = []
+    for (let i = ROW_BACK; i < course.N; i += 1) rows.push(i * 4)
+    const col = new Float32Array(rows.length * COLS.length * 3)
+    rows.forEach((s, ri) => {
+        COLS.forEach((x, ci) => {
+            const m = sparkleMask(course, s, x)
+            const o = (ri * COLS.length + ci) * 3
+            col[o] = m; col[o + 1] = m; col[o + 2] = Math.min(1, m * 1.15)
+        })
+    })
+    const sg = new THREE.BufferGeometry()
+    sg.setAttribute('position', geo.getAttribute('position'))
+    sg.setAttribute('uv', geo.getAttribute('uv'))
+    sg.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    sg.setIndex(geo.getIndex())
+    const mesh = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({
+        vertexColors: true, map: sparkleTexture(course.theme), transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.8,
+        polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    }))
+    mesh.userData.keepGeo = 1
+    mesh.frustumCulled = false
+    return mesh
 }
 
 

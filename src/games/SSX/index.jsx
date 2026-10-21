@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, buildSky, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -62,6 +62,7 @@ const SSXGame = () => {
         let world = null
         let worldGen = 0
         let skyObj = null
+        let sparkles = null
         let riders = []
         let spray = sprayField(LITE)
         scene.add(spray.pts)
@@ -152,7 +153,11 @@ const SSXGame = () => {
             sun.color.setHex(T.sun)
             scene.children.find((c) => c.isHemisphereLight).color.setHex(T.hemiSky)
             world = new THREE.Group()
-            world.add(keep(buildTerrain(g.course)))
+            const terrainMesh = keep(buildTerrain(g.course))
+            world.add(terrainMesh)
+            if (sparkles) { sparkles.material.dispose() }
+            sparkles = LITE ? null : buildSparkles(g.course, terrainMesh.geometry)
+            if (sparkles) world.add(sparkles)
             world.add(keep(buildRails(g.course)))
             world.add(keep(buildScenery(g.course)))
             skyObj = buildSky(g.course)
@@ -267,6 +272,7 @@ const SSXGame = () => {
             camera.position.copy(camPos)
             camera.lookAt(pp.x + fwdX * 16, (p.air ? p.y : pp.y) + 1.2, pp.z + fwdZ * 16)
             if (skyObj) skyObj.position.set(camPos.x, camPos.y - 60, camPos.z)
+            if (sparkles) sparkles.material.opacity = 0.5 + 0.32 * Math.sin(g.tick * 0.11) + 0.14 * Math.sin(g.tick * 0.037 + 2.1)
             const fov = 66 + Math.min(16, Math.max(0, (p.v - 12) * 0.55)) + (p.boost ? 8 : 0)
             if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix() }
 
