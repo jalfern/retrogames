@@ -61,6 +61,15 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   `streakLen(len, speed)` clamps the dash at 0.05 px/tick so a warp never
   draws a 100 m line. Pools: 96 quads (48 lite), cleared on every restart
   path; `fx()` reports `streaks` alive count to the harness.
+- #478 item 6 dusk sky: `applySkyDither(data, w, h)` (scene.js) breaks the
+  8-bit dusk bands that stripe OLED/phones — a deterministic ±1.5-level hash
+  noise over the 64×256 sky gradient (same noise every boot; alpha untouched).
+  Stars: `makeStarDefs()` puts 56 unit directions in the UPPER band only
+  (y ≥ 0.55 — the dusk rim and sun stay clean), and `twinkle(phase, tick)`
+  (0.4..1, spread per-star phases) modulates additive point colours every
+  tick (`twinkleStars` in spawnTick). `__cometHDTest.stars()` reports the
+  field; `cometdrifthdcheck --mutate-stars` kills the twinkle law to prove
+  the gates watch it.
 
 ## Trackside scenery (#639)
 

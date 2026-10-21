@@ -127,6 +127,25 @@ if (args.includes('--mutate-streak')) {
     })
 }
 
+// #478 item 6 star mutant: freeze the twinkle law at full — the dusk-sky
+// gates MUST go red under this run.
+const TLAW = 'export const twinkle = (phase, tick) => 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(tick * 0.055 + phase * Math.PI * 2))'
+const TUTIL = 'export const twinkle = (phase, tick) => 1 /* starmut */'
+let starmutat = false
+if (args.includes('--mutate-stars')) {
+    const tsrc = readFileSync(SCENE, 'utf8')
+    if (!tsrc.includes(TLAW)) { console.error('MUTATE_STARS: twinkle law not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, tsrc.replace(TLAW, TUTIL))
+    starmutat = true
+    console.log('  ..    mutated: stars never twinkle — the dusk-sky gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (starmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(TUTIL, TLAW))
+            console.log('  ..    star mutation restored')
+        }
+    })
+}
+
 // ---------------------------------------------------------------- geometry
 console.log('track geometry (the HD rebuild of the Gulch):')
 const { stats, bounds, geos } = trackGeometryStats()
@@ -374,6 +393,49 @@ console.log('gold streaks (#478 item 4 — camera-aligned quads + rival afterbur
     ok(SRC.includes('0xff8a30'), 'rival afterburners carry a hot-exhaust colour of their own')
     ok(SRC.includes('streaks: streaks.aliveCount'), 'fx() reports the streak pool to the harness')
     ok((SRC.match(/streaks\.clear\(\)/g) || []).length >= 4, 'every restart path sweeps the streak pool')
+}
+
+// ------------------------------------------------------- dusk sky (#478 item 6)
+console.log('dusk sky (#478 item 6 — dither + twinkling stars):')
+{
+    const SK = await import('file://' + SCENE + '?t=' + (Date.now() + 2))
+    const { applySkyDither, makeStarDefs, twinkle, STAR_Y_MIN, DITHER_AMP } = SK
+    const flatSky = () => {
+        const d = new Uint8ClampedArray(64 * 256 * 4)
+        for (let i = 0; i < 64 * 256; i++) { d[i * 4] = 60; d[i * 4 + 1] = 30; d[i * 4 + 2] = 40; d[i * 4 + 3] = 255 }
+        return d
+    }
+    const a1 = applySkyDither(flatSky(), 64, 256)
+    const a2 = applySkyDither(flatSky(), 64, 256)
+    ok(a1.every((v, i) => v === a2[i]), 'the dither is deterministic (identical noise every boot)')
+    const levels = new Set()
+    for (let y = 0; y < 256; y++) levels.add(a1[(y * 64 + 32) * 4])
+    ok(levels.size >= 2, `the dither breaks a flat 60-level band into ${levels.size} dithered levels`)
+    let dev = 0
+    let alphaKept = true
+    for (let i = 0; i < 64 * 256; i++) {
+        dev = Math.max(dev, Math.abs(a1[i * 4] - 60), Math.abs(a1[i * 4 + 1] - 30), Math.abs(a1[i * 4 + 2] - 40))
+        if (a1[i * 4 + 3] !== 255) alphaKept = false
+    }
+    ok(dev > 0 && dev <= Math.ceil(DITHER_AMP), `the noise stays subtle (${dev} / ${DITHER_AMP} levels max deviation)`)
+    ok(alphaKept, 'the dither touches colour only — alpha survives')
+    const vals = new Set()
+    for (let t = 0; t < 240; t++) vals.add(Math.round(twinkle(0.3, t) * 1000) / 1000)
+    ok(vals.size >= 40, `twinkle varies smoothly over 4s (${vals.size} distinct levels)`)
+    let lo = 1
+    let hi = 0
+    for (let t = 0; t < 600; t++) { const v = twinkle(0.77, t); lo = Math.min(lo, v); hi = Math.max(hi, v) }
+    ok(lo >= 0.4 - 1e-9 && hi <= 1 + 1e-9 && hi - lo > 0.5, `twinkle stays in [0.4,1] and runs the full range (${lo.toFixed(2)}..${hi.toFixed(2)})`)
+    const defs = makeStarDefs()
+    ok(defs.length >= 48, `the star field has ${defs.length} stars`)
+    ok(defs.every((d) => d.dir[1] >= STAR_Y_MIN), `every star sits in the UPPER band (y >= ${STAR_Y_MIN}) — the dusk rim stays clean`)
+    ok(defs.every((d) => Math.abs(Math.hypot(d.dir[0], d.dir[1], d.dir[2]) - 1) < 1e-9), 'star directions are unit vectors (the field rides the dome radius)')
+    ok(JSON.stringify(defs) === JSON.stringify(makeStarDefs()), 'the star field is deterministic (same sky every boot)')
+    ok(new Set(defs.map((d) => Math.round(d.phase * 1000))).size >= defs.length * 0.8, 'stars twinkle OUT of step (spread phases)')
+    const SRC6 = readFileSync(SHARD, 'utf8')
+    ok(SRC6.includes('applySkyDither(id.data'), 'skyTex dithers the dusk gradient before upload')
+    ok(SRC6.includes('new THREE.Points(') && SRC6.includes('twinkleStars(g.tick)'), 'index.jsx builds the star points and twinkles them every tick')
+    ok(SRC6.includes('stars: () =>'), 'the harness reads the star field via __cometHDTest.stars()')
 }
 
 // ------------------------------------------------------------------ rules
@@ -633,6 +695,13 @@ if (!SKIP_BROWSER) {
         await page2.waitForTimeout(150)
         const rd = await page2.evaluate(() => window.__cometHDTest.fxChain().radial)
         ok(rd === 0, `radial smear decays to zero the moment boost ends (${rd})`)
+        // #478 item 6: stars ride the dome and twinkle in the running world.
+        const st6a = await page2.evaluate(() => window.__cometHDTest.stars())
+        ok(st6a.count >= 48 && st6a.upper === true && st6a.radius > 100, `star field rides the dome (${st6a.count} upper-band stars, r=${st6a.radius})`)
+        await page2.waitForTimeout(260)
+        const st6b = await page2.evaluate(() => window.__cometHDTest.stars())
+        ok(st6a.bright > 0 && st6a.bright <= 1 && st6b.bright > 0 && st6b.bright <= 1, `star brightness stays in range (${st6a.bright} -> ${st6b.bright})`)
+        ok(st6a.bright !== st6b.bright, `stars twinkle live in the running world (${st6a.bright} -> ${st6b.bright})`)
         if (backend2 === 'webgl2') {
             const bright = () => page2.evaluate(() => {
                 const src = document.querySelector('canvas')
@@ -673,5 +742,5 @@ if (!SKIP_BROWSER) {
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)

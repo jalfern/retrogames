@@ -16,6 +16,7 @@ import { rumble } from '../../components/gamepadMap'
 import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
+    applySkyDither, makeStarDefs, twinkle,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
@@ -163,6 +164,11 @@ function skyTex() {
     gr.addColorStop(0.62, '#8a3a28')
     gr.addColorStop(1, '#40201a')
     x.fillStyle = gr; x.fillRect(0, 0, 64, 256)
+    // #478 item 6: deterministic dither breaks the 8-bit dusk bands that
+    // stripe OLED/phone screens (same noise every boot — see scene.js).
+    const id = x.getImageData(0, 0, 64, 256)
+    applySkyDither(id.data, 64, 256)
+    x.putImageData(id, 0, 0)
     return c
 }
 function glowTex() {
@@ -366,6 +372,25 @@ export default function CometDriftHD() {
         }))
         sunDisc.scale.set(24, 24, 1)
         scene.add(sunDisc)
+        // #478 item 6: a few twinkling stars in the UPPER sky band only —
+        // additive point sprites just inside the dome, brightness modulated
+        // per tick by twinkle(); the dusk rim and the sun stay star-free.
+        const starDefs = makeStarDefs()
+        const starMat = new THREE.PointsMaterial({
+            map: tex(dotTex()), vertexColors: true, transparent: true, opacity: 0.9,
+            blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+            size: lite ? 2.4 : 3.2, sizeAttenuation: false,
+        })
+        let starMesh = null
+        const twinkleStars = (tick) => {
+            if (!starMesh) return
+            const c = starMesh.geometry.getAttribute('color')
+            for (let i = 0; i < starDefs.length; i++) {
+                const s = twinkle(starDefs[i].phase, tick) * starDefs[i].gain
+                c.setXYZ(i, s, s * 0.97, s * 0.9)
+            }
+            c.needsUpdate = true
+        }
         const buildHorizon = () => {
             while (horizonGroup.children.length) {
                 const m = horizonGroup.children.pop()
@@ -384,6 +409,24 @@ export default function CometDriftHD() {
             )
             dome.position.set(A.cx, 0, A.cz)
             horizonGroup.add(dome)
+            const sPos = new Float32Array(starDefs.length * 3)
+            const sCol = new Float32Array(starDefs.length * 3)
+            for (let i = 0; i < starDefs.length; i++) {
+                const d = starDefs[i]
+                sPos[i * 3] = d.dir[0] * (A.R + 112)
+                sPos[i * 3 + 1] = d.dir[1] * (A.R + 112)
+                sPos[i * 3 + 2] = d.dir[2] * (A.R + 112)
+                sCol[i * 3] = d.gain; sCol[i * 3 + 1] = d.gain * 0.97; sCol[i * 3 + 2] = d.gain * 0.9
+            }
+            const sGeo = new THREE.BufferGeometry()
+            sGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3))
+            const sColAttr = new THREE.BufferAttribute(sCol, 3)
+            sColAttr.setUsage(THREE.DynamicDrawUsage)
+            sGeo.setAttribute('color', sColAttr)
+            starMesh = new THREE.Points(sGeo, starMat)
+            starMesh.frustumCulled = false
+            starMesh.position.set(A.cx, 0, A.cz)
+            horizonGroup.add(starMesh)
             const sd = sunDir.clone().multiplyScalar((A.R + 130) * 0.82).add(new THREE.Vector3(A.cx, 2, A.cz))
             sunGlow.position.copy(sd)
             sunDisc.position.copy(sd).add(new THREE.Vector3(0, 1.5, 0))
@@ -670,6 +713,7 @@ export default function CometDriftHD() {
             sparks.step(-0.0016, liftAt(P) - 0.05)
             dust.step(-0.0004, liftAt(P) - 0.12)
             streaks.step(-0.001, liftAt(P) - 0.02, camera)
+            twinkleStars(g.tick)
         }
 
         // ---- mesh sync: drawn state is the sim state, every frame ---------
@@ -1181,6 +1225,17 @@ export default function CometDriftHD() {
                 return { sparks: sparks.aliveCount, dust: dust.aliveCount, streaks: streaks.aliveCount, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
             fxChain: () => ({ mode: chainMode, pipeline: !!post, bloom: bloomGain.value, radial: Math.round(radialAmt.value * 1000) / 1000, backend: backendName }),
+            stars: () => {
+                const c = starMesh && starMesh.geometry.getAttribute('color')
+                const p = starMesh && starMesh.geometry.getAttribute('position')
+                return {
+                    count: starDefs.length,
+                    upper: starDefs.every((d) => d.dir[1] >= 0.55),
+                    radius: p ? Math.round(Math.hypot(p.getX(0), p.getY(0), p.getZ(0))) : 0,
+                    bright: c ? Math.round(c.getX(0) * 1000) / 1000 : 0,
+                    tick: g.tick,
+                }
+            },
             setBloom: (v) => { bloomGain.value = Math.max(0, Number(v) || 0); return chainMode },
             modelLoaded: () => {
                 const v = kartMeshes[0].m.userData.view
