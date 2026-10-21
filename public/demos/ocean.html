@@ -73,7 +73,7 @@ const PHI = SKY.LAT_DEG * Math.PI / 180;          // latitude -> celestial pole 
 const LST0 = 185;                                  // LST at tod=0: Dipper on the meridian, high in the north
 const STAR_D = (() => {
   const out = [];
-  const mn = -1.46, mx = 3.96, sp = mx - mn;       // V-mag range of the embedded catalog
+  const mn = -1.46, mx = 5.5, sp = mx - mn;           // V-mag range of the embedded catalog (#607: to 5.5 so the sky fills)
   for (let i = 0; i < SKY.BSC.length; i++) {
     const s = SKY.BSC[i];
     const p = Math.max(0, Math.min(1, (mx - s[2]) / sp));   // 0 faint .. 1 brightest
