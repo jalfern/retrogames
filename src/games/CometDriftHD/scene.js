@@ -740,6 +740,52 @@ export const hudScale = (w, h) => {
 export const CHROME_BAND = 46
 export const hudTop = (safeTop) => CHROME_BAND + Math.max(0, safeTop)
 
+// ---- #502 item 3: the Bus Stop braking cue (Sandbank). Tire-bar walls hug
+// the INSIDE of every bend inside TRACK.brakeCue, so the double-kink announces
+// itself as the slow bit long before the brake mark. Node-safe: defs first,
+// meshes only when the browser passes materials.
+export const TIRE_R = 0.62
+export const TIRE_SPACING = 15
+export function brakeCueDefs() {
+    if (!T.brakeCue) return []
+    const [f0, f1] = T.brakeCue
+    const N = T.N
+    const bars = []
+    let last = -1e9
+    for (let i = 0; i < N; i++) {
+        const f = i / N
+        if (f < f0 || f > f1) continue
+        const p = T.pts[i]
+        const side = Math.sign(p.k)
+        if (!side || Math.abs(p.k) < 0.00008) continue
+        const s = p.s
+        if (s - last < TIRE_SPACING) continue
+        last = s
+        const [pxu, pyu] = PERP(p.a)
+        const off = T.KERB_R + 16
+        bars.push({
+            x: p.x + pxu * side * off, z: p.y + pyu * side * off, y: p.h * S,
+            a: p.a, side, f: +f.toFixed(3), color: bars.length % 2 ? 'white' : 'red',
+        })
+    }
+    return bars
+}
+
+export function buildTireBars(redMat, whiteMat) {
+    const g = new THREE.Group()
+    const bars = brakeCueDefs()
+    if (!bars.length) return g
+    const cyl = new THREE.CylinderGeometry(TIRE_R, TIRE_R, 0.5, 10)
+    for (const b of bars) {
+        const m = new THREE.Mesh(cyl, b.color === 'red' ? redMat : whiteMat)
+        m.position.set(b.x * S, b.y + 0.25, b.z * S)
+        m.rotation.x = Math.PI / 2
+        m.rotation.z = -b.a
+        g.add(m)
+    }
+    return g
+}
+
 // ---- the structure over the line: the Gulch's landmark arch, now standing
 // 5 metres off the asphalt. Legs land in the sand gutter, safely outside the
 // sim's wall limit — the karts never touch it. Browser can pass a strata

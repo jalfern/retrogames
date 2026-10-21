@@ -91,6 +91,7 @@ if (MUTATE_BLOOM) {
 // #478 item 3 spin-blur mutant: freeze the blur law at zero — the kart-feel
 // gates MUST go red under this run.
 const SCENE = resolve(HERE, '../src/games/CometDriftHD/scene.js')
+const TRACKJS = resolve(HERE, '../src/games/CometDrift/track.js')
 const SLINE = 'export const spinBlurAt = (v) => Math.min(1, Math.max(0, (v - 2.5) / 4.5))'
 const SUTIL = 'export const spinBlurAt = (v) => 0 /* spinmut */'
 let spinmutat = false
@@ -240,6 +241,26 @@ if (args.includes('--mutate-gantry')) {
         if (gantrymutat) {
             writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(GUTIL, GLINE))
             console.log('  ..    gantry mutation restored')
+        }
+    })
+}
+
+// #502 item 3 brake-cue mutant: Sandbank loses its Bus Stop braking cue —
+// the barrier gates MUST go red under this run (the double-kink is silent
+// again, the exact readability gap the item complains about).
+const CUELINE = "if (!T.brakeCue) return []"
+const CUEUTIL = "if (true) return [] /* brakemut */"
+let brakemutat = false
+if (args.includes('--mutate-brakecue')) {
+    const bsrc = readFileSync(SCENE, 'utf8')
+    if (!bsrc.includes(CUELINE)) { console.error('MUTATE_BRAKECUE: brakeCue def not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, bsrc.replace(CUELINE, CUEUTIL))
+    brakemutat = true
+    console.log('  ..    mutated: the Bus Stop cue is gone — the barrier gates MUST report FAILs')
+    process.on('exit', () => {
+        if (brakemutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(CUEUTIL, CUELINE))
+            console.log('  ..    brake-cue mutation restored')
         }
     })
 }
@@ -824,6 +845,37 @@ console.log('line structures (#502 item 2 — gantry vs arch per course):')
     const SRC8 = readFileSync(resolve(HERE, '../src/games/CometDrift/index.jsx'), 'utf8')
     ok(SRC8.includes("COURSE.landmark === 'gantry'"), 'the 2D renderer branches on the course landmark')
     ok(/gantryFor/.test(SRC8) && /'#d03028', '#e0a030', '#30b048'/.test(SRC8), 'the 2D gantry draws its own towers, deck and signal lamps')
+}
+
+// #502 item 3: the Bus Stop braking complex must be SEEABLE, not just graded.
+// Sandbank declares a brakeCue fraction range and the HD side paints red/white
+// tire-bar walls on the inside of every bend inside it; the other circuits
+// keep bare shoulders (no cue, no false advertising).
+console.log('braking cue (#502 item 3 — Bus Stop tire bars):')
+{
+    const SC = await import('file://' + SCENE + '?t=' + (Date.now() + 47))
+    const { brakeCueDefs, buildTireBars, TIRE_R } = SC
+    const sand = COURSES.find((c) => c.id === 'sandbank')
+    ok(Array.isArray(sand.brakeCue) && sand.brakeCue.length === 2 && sand.brakeCue[0] > 0 && sand.brakeCue[1] < 1,
+        `Sandbank declares a brakeCue range (${JSON.stringify(sand.brakeCue)})`)
+    ok(COURSES.filter((c) => c.id !== 'sandbank').every((c) => !c.brakeCue), 'only Sandbank carries a braking cue')
+    selectCourse('sandbank')
+    ok(TRACK.brakeCue && TRACK.brakeCue[0] === sand.brakeCue[0], 'the live TRACK carries the brakeCue range')
+    const bars = brakeCueDefs()
+    ok(bars.length >= 12, `the barrier is a wall, not a hint (${bars.length} tire bars)`)
+    const [f0, f1] = sand.brakeCue
+    ok(bars.every((b) => b.f >= f0 && b.f <= f1), 'every tire bar sits inside the declared range')
+    ok(bars.some((b) => b.side > 0) && bars.some((b) => b.side < 0), 'the bars follow the alternating kinks (both sides appear)')
+    ok(bars.every((b, i) => b.color === (i % 2 ? 'white' : 'red')), 'the bars alternate red/white like real tire walls')
+    ok(bars.every((b) => b.side === Math.sign(TRACK.pts[Math.round(b.f * TRACK.N)].k)), 'each bar hugs the INSIDE of its bend')
+    const grp = buildTireBars(new THREE.MeshStandardMaterial(), new THREE.MeshStandardMaterial())
+    const cyls = []
+    grp.traverse((m) => { if (m.isMesh && m.geometry.type === 'CylinderGeometry') cyls.push(m) })
+    ok(cyls.length === bars.length, `buildTireBars stands every def up as a mesh (${cyls.length}/${bars.length})`)
+    ok(cyls.every((m) => Math.abs(m.geometry.parameters.radiusTop - TIRE_R) < 1e-9), 'tires are the declared radius')
+    selectCourse('gulch')
+    ok(!TRACK.brakeCue && brakeCueDefs().length === 0, 'the Gulch keeps bare shoulders (no cue)')
+    selectCourse('sandbank')
 }
 
 // ---------------------------------------------------------------- browser
