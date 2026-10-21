@@ -20,7 +20,7 @@
 //                                       # the local relay (needs npm run dev)
 
 import { CODE_RE, makeCode, newRoom, join, leave, relay, newRegistry, registryAdd, registryRemove, registryCount } from '../relay/core.js'
-import { createLockStep } from '../src/utils/lockstep.js'
+import { createLockStep, retryDelay } from '../src/utils/lockstep.js'
 import { makeGame, step, stateHash } from '../src/games/Gauntlet/sim.js'
 
 let pass = 0, fail = 0
@@ -275,6 +275,28 @@ console.log('lockstep vs real Gauntlet sims')
         }
         ok(desync2 > 150, 'a corrupted sim IS caught by the 30-tick hash verify', `desync at ${desync2}`)
     }
+}
+
+// ----------------------------------------------------------------- tier 4 ----
+console.log('net UX plumbing (#546: ping HUD + reconnect backoff)')
+{
+    const ladder = [0, 1, 2, 3, 4, 5, 9].map((a) => retryDelay(a))
+    ok(ladder.join(',') === '400,800,1600,3200,6400,8000,8000', 'retryDelay doubles and caps at 8s', ladder.join(','))
+
+    let t = 1000
+    const lock = createLockStep({ now: () => t })
+    ok(lock.padAge(t) === -1, 'padAge is unknown before any pad lands')
+    lock.gotPad(5, { u: true })
+    lock.gotPad(6, { u: true })
+    t = 1250
+    ok(lock.padAge(t) === 250, 'padAge reports the one-way age of the freshest pad', String(lock.padAge(t)))
+    ok(!lock.ready(9), 'a tick without its remote pad is not ready')
+    lock.stall(); lock.stall()
+    ok(lock.stats().stallRun === 2 && lock.stats().stalls === 2, 'stats expose the live stall run', JSON.stringify(lock.stats()))
+    lock.gotPad(9, {})
+    ok(lock.ready(9) && lock.stats().stallRun === 0, 'the stall run resets when a pad lands')
+    lock.reset()
+    ok(lock.padAge(t) === -1 && lock.stats().stallRun === 0 && lock.stats().stalls === 0, 'reset clears age and stall counters')
 }
 
 console.log(`\nnetcheck: ${pass} passed, ${fail} failed`)

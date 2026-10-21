@@ -30,7 +30,7 @@ import { attractFrame, DIM } from './attract.js'
 import { p2From } from './p2input.js'
 import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
-import { createLockStep } from '../../utils/lockstep'
+import { createLockStep, retryDelay } from '../../utils/lockstep'
 import { makeCode } from '../../../relay/core.js'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 
@@ -100,18 +100,24 @@ const GauntletGame = () => {
             desyncTick: 0,
             lastHash: '',
             info: '',
+            attempt: 0,
+            maxRetry: 0,
+            retryTimer: 0,
         }
         const netPush = () => setNetUi({ phase: net.phase, code: net.code, info: net.desyncTick ? `tick ${net.desyncTick}` : (net.info || ''), role: net.role })
         if (netRole) netPush()
 
         const netEnd = (phase) => {
             net.phase = phase
+            clearTimeout(net.retryTimer)
             if (net.ws) { try { net.ws.close() } catch { /* gone */ } net.ws = null }
             netPush()
         }
 
         const netConnect = (code) => {
             net.code = code
+            clearTimeout(net.retryTimer)
+            if (net.ws) { try { net.ws.close() } catch { /* gone */ } net.ws = null }
             netPush()
             let ws
             try { ws = new WebSocket(`${netRelay}/room/${code}`) } catch { net.phase = 'offline'; netPush(); return }
@@ -119,11 +125,13 @@ const GauntletGame = () => {
             ws.onmessage = (ev) => {
                 let obj = null
                 try { obj = JSON.parse(ev.data) } catch { return }
-                if (obj.t === 'welcome') { net.phase = 'waiting'; netPush() }
+                if (obj.t === 'welcome') { net.attempt = 0; net.phase = 'waiting'; netPush() }
                 else if (obj.t === 'peer') {
                     net.peer = true
-                    if (net.phase === 'gone' || net.phase === 'offline') { net.phase = 'waiting'; netPush() }
+                    if (net.phase === 'gone' || net.phase === 'offline' || net.phase === 'reconnecting') { net.phase = 'waiting'; netPush() }
                     else netPush()
+                    audioController.playTone(660, 0.07, 'square', 0.05)
+                    audioController.playTone(990, 0.09, 'square', 0.05, 0.07)
                 } else if (obj.t === 'start' && net.role === 'guest') {
                     netBegin(obj.seed | 0, obj.hero || 'warrior', obj.peerHero || 'valkyrie')
                 } else if (obj.t === 'hs') {
@@ -133,14 +141,33 @@ const GauntletGame = () => {
                     if (net.lock) net.lock.gotPad(obj.k, obj.p)
                 } else if (obj.t === 'gone') {
                     if (net.phase === 'play' || net.phase === 'waiting') { net.phase = 'gone'; netPush() }
+                    audioController.playSweep(660, 180, 0.25, 'square', 0.07)
                 } else if (obj.t === 'err') {
                     net.phase = 'refused'
                     net.info = obj.e
                     netPush()
                 }
             }
-            ws.onerror = () => { if (net.phase === 'connecting') { net.phase = 'offline'; netPush() } }
-            ws.onclose = (ev) => { if (import.meta.env.DEV) console.log('net ws close', ev.code, ev.reason); if (net.phase !== 'play' && net.phase !== 'desync' && net.phase !== 'refused' && net.phase !== 'gone') { net.phase = 'offline'; netPush() } }
+            ws.onerror = () => { /* onclose owns the retry decision (#546) */ }
+            // #546 item 2: a dropped WS (phone sleep, wifi hop) while still
+            // waiting reconnects with exponential backoff instead of dead-ending
+            // at offline; 6 tries, then give up and say RELAY OFFLINE.
+            ws.onclose = (ev) => {
+                if (import.meta.env.DEV) console.log('net ws close', ev.code, ev.reason)
+                if (net.ws !== ws) return
+                if (net.phase === 'play' || net.phase === 'desync' || net.phase === 'refused' || net.phase === 'gone' || net.phase === 'over') return
+                if (net.attempt < 6) {
+                    net.phase = 'reconnecting'
+                    netPush()
+                    clearTimeout(net.retryTimer)
+                    net.attempt++
+                    net.maxRetry = net.attempt
+                    net.retryTimer = setTimeout(() => netConnect(net.code), retryDelay(net.attempt - 1))
+                } else {
+                    net.phase = 'offline'
+                    netPush()
+                }
+            }
         }
 
         const netDesync = (k) => {
@@ -717,6 +744,13 @@ const GauntletGame = () => {
             if (hud.score) hud.score.textContent = String(gs.score).padStart(6, '0')
             if (hud.lives) hud.lives.textContent = String(gs.lives)
             if (hud.level) hud.level.textContent = `${gs.level + 1}/4`
+            // #546 item 1: one-way pad age + live stall count so a laggy
+            // friend reads on-screen instead of "the game froze".
+            if (hud.age && net.phase === 'play' && net.lock && gs.tick % 10 === 0) {
+                const a = net.lock.padAge(performance.now())
+                hud.age.textContent = a < 0 ? '--' : `${Math.round(a)}MS`
+                if (hud.stall) hud.stall.textContent = net.lock.stats().stallRun > 0 ? ` STALL ${net.lock.stats().stallRun}` : ''
+            }
         }
 
         // ---------------------------------------------------------------- input ----
@@ -907,9 +941,14 @@ const GauntletGame = () => {
                     phase: net.phase, role: net.role, code: net.code, peer: net.peer,
                     tick: gs.tick, seed: gs.seed, hash: stateHash(gs),
                     stalls: net.lock ? net.lock.stats().stalls : 0,
+                    stallRun: net.lock ? net.lock.stats().stallRun : 0,
+                    padAge: net.lock ? net.lock.padAge(performance.now()) : -1,
+                    attempt: net.attempt,
+                    maxRetry: net.maxRetry,
                     desyncTick: net.desyncTick,
                 }),
                 netTamper: () => { net.tamper = true },
+                netKill: () => { if (net.ws) { try { net.ws.close() } catch { /* gone */ } } },
                 netJoin: (code) => netConnect((code || '').toUpperCase()),
             }
             mountDbg({
@@ -936,6 +975,7 @@ const GauntletGame = () => {
         raf = requestAnimationFrame(frame)
         return () => {
             cancelAnimationFrame(raf)
+            clearTimeout(net.retryTimer)
             if (net.ws) { try { net.ws.close() } catch { /* gone */ } net.ws = null }
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
@@ -976,6 +1016,7 @@ const GauntletGame = () => {
                 </div>
             )}
             {netPhase === 'connecting' && <div className="text-[11px]">CONNECTING TO THE RELAY…</div>}
+            {netPhase === 'reconnecting' && <div className="text-[11px] text-[#ffd23f]">CONNECTION DROPPED — RECONNECTING…</div>}
             {netPhase === 'offline' && <div className="text-[11px] text-[#ff5d5d]">RELAY OFFLINE — CHECK NETWORK OR ?relay= URL</div>}
             {netPhase === 'refused' && <div className="text-[11px] text-[#ff5d5d]">ROOM {netUi.code} — {String(netUi.info || 'REFUSED').toUpperCase()}</div>}
             {netPhase === 'waiting' && netUi.role === 'host' && (
@@ -1002,6 +1043,11 @@ const GauntletGame = () => {
                 <span>SCORE <span ref={setHud('score')} className="text-[#ffd23f]">000000</span></span>
                 <span>MAZE <span ref={setHud('level')} className="text-[#e9f7ff]">1/4</span></span>
                 <span>LIVES <span ref={setHud('lives')} className="text-[#ff5d5d]">3</span></span>
+                {netPhase === 'play' && (
+                    <span>AGE <span ref={setHud('age')} className="text-[#e9f7ff]">--</span>
+                        <span ref={setHud('stall')} className="text-[#ff5d5d]"></span>
+                    </span>
+                )}
             </div>
             <VirtualControls
                 visible={screen === 'play' && !paused && (netPhase === 'idle' || netPhase === 'play')}

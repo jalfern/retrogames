@@ -79,6 +79,19 @@ try {
     await D.close()
     ok(await until(async () => (await probe(C)).phase === 'gone', 4000), 'a waiting host learns the friend left')
 
+    // #546 item 2: kill the host's socket while waiting — it must climb the
+    // backoff ladder and reclaim its seat, and the friend must re-pair.
+    const E = await open(`${BASE}?net=host&relay=${RELAY}`)
+    const pe = await probe(E)
+    const F = await open(`${BASE}?net=join&room=${pe.code}&relay=${RELAY}`)
+    await until(async () => (await probe(F)).peer)
+    await E.evaluate(() => window.__gauntletTest.netKill())
+    ok(await until(async () => { const p = await probe(E); return p.phase === 'waiting' && p.maxRetry >= 1 }, 5000),
+        'a dropped socket auto-reconnects while waiting', JSON.stringify(await probe(E)))
+    ok(await until(async () => (await probe(F)).phase === 'waiting', 5000),
+        'the rejoining seat re-pairs its friend', JSON.stringify(await probe(F)))
+    E.close(); F.close()
+
     ok(errors.length === 0, 'zero page errors', errors.slice(0, 3).join(' | '))
 } finally {
     await browser.close()

@@ -19,6 +19,13 @@
 
 export const WIRE = { PAD: 'pad', HASH: 'hs', START: 'start' }
 
+// #546 item 2: backoff for auto-reconnecting a dropped WS while still waiting
+// for a partner — 400ms, doubling, capped at 8s so a dead relay is not
+// hammered. Pure so netcheck can pin the ladder.
+export function retryDelay(attempt, base = 400, cap = 8000) {
+    return Math.min(cap, base * 2 ** Math.max(0, attempt | 0))
+}
+
 export function normalizeWirePad(p) {
     const o = p || {}
     return { l: !!o.l, r: !!o.r, u: !!o.u, d: !!o.d, s: !!o.s, a: !!o.a }
@@ -28,9 +35,12 @@ export function createLockStep(opts = {}) {
     const delay = Number.isFinite(opts.delay) ? opts.delay : 4
     const hashEvery = Number.isFinite(opts.hashEvery) ? opts.hashEvery : 30
     const send = typeof opts.send === 'function' ? opts.send : () => {}
+    const now = typeof opts.now === 'function' ? opts.now : () => Date.now()
     const KEEP = 240
     let local = new Map()
     let remote = new Map()
+    let remoteAt = new Map()
+    let lastArrival = 0
     let ours = new Map()
     let peerH = new Map()
     let stalls = 0
@@ -50,7 +60,8 @@ export function createLockStep(opts = {}) {
         delay,
         hashEvery,
         reset() {
-            local = new Map(); remote = new Map(); ours = new Map(); peerH = new Map()
+            local = new Map(); remote = new Map(); remoteAt = new Map(); lastArrival = 0
+            ours = new Map(); peerH = new Map()
             stalls = 0; stallRun = 0; maxStallRun = 0; nextSend = 0
         },
         // Sample every tick from nextSend up to target (= simTick + delay),
@@ -65,7 +76,16 @@ export function createLockStep(opts = {}) {
                 nextSend++
             }
         },
-        gotPad(k, pad) { remote.set(k, normalizeWirePad(pad)) },
+        gotPad(k, pad) {
+            remote.set(k, normalizeWirePad(pad))
+            const at = now()
+            remoteAt.set(k, at)
+            if (at > lastArrival) lastArrival = at
+        },
+        // #546 item 1: age (ms) of the freshest remote pad at time `at` —
+        // ~0 when the wire is healthy and the buffer keeps pace, it grows
+        // when the friend lags. -1 until any pad has landed.
+        padAge(at) { return lastArrival ? at - lastArrival : -1 },
         ready(k) { const r = remote.has(k); if (r) stallRun = 0; return r },
         stall() { stalls++; stallRun++; if (stallRun > maxStallRun) maxStallRun = stallRun; return stalls },
         pads(k) { return [local.get(k) || normalizeWirePad(), remote.get(k) || normalizeWirePad()] },
@@ -81,7 +101,7 @@ export function createLockStep(opts = {}) {
             if (ours.has(k)) return compare(k, ours.get(k), h)
             return null
         },
-        prune(k) { shrink(local, k); shrink(remote, k); shrink(ours, k); shrink(peerH, k) },
-        stats() { return { local: local.size, remote: remote.size, stalls, maxStallRun } },
+        prune(k) { shrink(local, k); shrink(remote, k); shrink(remoteAt, k); shrink(ours, k); shrink(peerH, k) },
+        stats() { return { local: local.size, remote: remote.size, stalls, stallRun, maxStallRun } },
     }
 }
