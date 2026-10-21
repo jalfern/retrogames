@@ -1,47 +1,69 @@
-# STATE — 2026-10-20 forge pm #3
+# STATE — 2026-10-20 forge pm #4
 
 ## Shipped this session
-- **#616 SHORE rewrite → prod** (PR #652, squash `409e822`,
-  live at jalfern.com/retrogames/demos/shore). CPU swash lanes replaced by a
-  GPU 2D SWE sim (141x351 @ 0.4m, 4 substeps) with eikonal travel-time
-  refraction (Snell tilt 0.07→0.73 measured), cnoidal asymmetry, persistent
-  advected foam (ping-pong + Worley lace, ~2.5 s half-life, proven to linger
-  on dry sand), two-stream water colour, dual-lobe wet/dry sand PBR, caustics,
-  meniscus, ocean-ported golden-hour sky.
-- `scripts/shorecheck.mjs` rewritten: senses the water **through the GPU probe
-  only** (no CPU lanes exist anymore). 25/25 green; sponge-zero mutant proven
-  red (3 gates) and restored. Perf gate is headless-aware (SwiftShader ~70 ms
-  at 1600x1000; old demo was ~88 ms on the same box).
-- QA polish filed: **#654** (foam polka-dot, flat deep tone, camera framing,
-  missing rip seeds). Labels `feedback` + `lane:qa` — QA lane picks it up, not
-  builders (Jon 2026-10-19).
+- **#637 Shared 3D model shelf → prod** (PR #656, squash `50e2419`,
+  live at jalfern.com/retrogames/models/shelf.json).
+  One shelf under `public/models/`: `characters/` (5 KayKit bodies, moved from
+  `models/ssx/`, `LICENSE.txt` kept), `vehicles/` (`dune_buggy.glb`, moved from
+  `games/comet-drift-hd/`, README kept), `scenery/` (13 ORIGINAL CC0 props in the
+  KayKit voxel idiom, 1u=1m, +Y up, ground origin): tree_oak, tree_pine, rock,
+  boulder, fence, flag, barrier, cone, grandstand, marshal_post, pit_building,
+  billboard, sign.
+  - `public/models/shelf.json` index: 19 entries, name/summary/category/pack/
+    author/license/source/path/format/sizeBytes/triangles/vertices/meters/tags/solid.
+  - `src/utils/modelShelf.js`: `browse() / loadModel(id) / modelUrl(id) /
+    idsByCategory()`; side effects stay behind calls so Node import is clean.
+  - SSX `art.js` + Comet `scene.js` repointed to the shelf paths.
+  - `scripts/build-shelf.mjs` regenerates scenery + index; `scripts/_glb.mjs` is a
+    dependency-free glTF 2.0 binary writer (validated: every scenery GLB parses
+    through three's real `GLTFLoader`).
+  - `npm run shelfcheck`: 94 assertions green (schema, CC0-only, structural glTF
+    validate, ground convention, index↔disk, consumer wiring, #638/#639 dep
+    presence). Mutant (corrupt glb magic) → 1 red, restored. Gates: eslint clean,
+    lint:mario/fps/ai green, build green, dist carries the shelf.
+
+## Why original models, not pack downloads
+itch.io (KayKit/Kenney/Quaternius) is outside the GitHub/npm-only network rule; the
+KayKit org repo listing is 404 and Quaternius ships nothing on GitHub. So the scenery
+kit is Forge-authored CC0, provenance honest in the index. Only re-download from a
+GitHub-hosted CC0 repo if one turns up.
 
 ## Next goal
-Oldest game-queue: **#637 FORGE — Shared 3D model shelf** (infra-ish; it's
-labelled FORGE, take it or skip to #638 SSX mountain feel per the FORGE.md
-tie-break). Queue: #637, #638, #639. Claim with `building` +
-`lane:<x>`, worktree off origin/main, ship end-to-end.
+Oldest game-queue now **#638 SSX: make it feel like a mountain** (lane:games),
+then #639 COMET DRIFT HD trackside (lane:games). Both commented with the shelf
+ids they need. Snow/capped variants + tire_wall/hills are the shelf gap for them —
+filed as QA **#657** (lane:qa; builders don't pick up QA, so #638/#639 add what
+they need directly). Claim oldest with `building` + `lane:<x>`, worktree off
+origin/main, ship end-to-end.
 
-## Gotchas learned this session (add to whichever doc fits if repeated)
-- `jalfern.com` 308-redirects to `www.` — production content polls must use
-  `curl -sL`; without `-L` the poll silently never matches.
-- Issue labels: there is **no `done`** label — shipped work gets `shipped`
-  (see #620). `building` removed on merge.
-- shore.html tuning that mattered: inlet sponge band 18 m / strength 0.7;
-  bore clamp at spd>celer2; film friction 0.012+0.45·exp(-h/0.09) — zeroing
-  the sponge lets the box seiche swamp everything (that's the mutant).
-- shorecheck trace needs ≥180 samples @ skip 12 before the cycle test is
-  stable; shorter traces flake the set-catch gate.
+## Gotchas learned this session
+- **Zero-indexed glTF attribute = falsy.** `if (!prim.attributes.POSITION)` is
+  wrong when POSITION is accessor index 0 (returns "no POSITION" for valid files).
+  Always test `=== undefined`. This bit shelfcheck on every scenery glb.
+- **git worktrees don't share node_modules.** Symlink the main checkout's
+  `node_modules` into a fresh forge worktree (`ln -sfn`) to run lint/build/glTF
+  checks without a slow `npm ci`.
+- **three GLTFLoader in Node:** static geometry/vehicles parse fine; *skinned*
+  rigged glbs throw `self is not defined` in Node — that's a Node-env quirk, not a
+  model defect (those files load fine in the browser). Gate rigged files
+  structurally (readGlb), not via GLTFLoader.parse.
+- `.glb` served with `content-type: model/gltf-binary` in prod (vercel SPA/wasm
+  headers already cover it).
 
 ## Board / harness status
-- main: `409e822`, nightly green before merge (`main-ok.sh` ok).
-- Rule 4: satisfied — #646 (Momentum Runner), #651 (QA), #652 (demo) are all
-  game-code PRs in the last three merges.
-- Rule 7: no open `waiting-jon` questions from this lane; none needed.
-- Worktrees: `~/Dev/retrogames-forge-shore-616` removed. Main checkout
-  detached at origin/main.
+- main: `50e2419`; nightly green before merge (`main-ok.sh` ok), `static` green,
+  prod verified live.
+- Rule 4: satisfied — #656 touches `src/games/**` (SSX, Comet) plus infra.
+- Rule 7: no new `waiting-jon` question filed (games lane already at 3 open
+  per `jonq list games`; nothing taste/priority needed this session).
+- Worktrees: `~/Dev/retrogames-forge-model-shelf-637` removed; main checkout
+  detached at `origin/main` (`50e2419`).
+
+## Open questions
+- #633 (lane:games) SSX rider 5 duplicate body — keep or fetch a sixth
+  (default: keep the hooded duplicate). Awaiting Jon.
 
 ## Open threads
-- **#654** QA polish for shore (lane:qa).
-- #637/#638/#639 as above. Previous sessions' open questions, if any, are on
-  the board with `waiting-jon`, not here.
+- #657 QA polish for the shelf (lane:qa): tire_wall, hills, snow variants,
+  two-tone shading, silhouette variety, proportions-vs-human screenshot QA.
+- #638 / #639 as above (unblocked by #637).
