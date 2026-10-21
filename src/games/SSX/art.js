@@ -116,11 +116,12 @@ export function surfaceInfo(c, s, x) {
 
     // ---- snow vs rock ----
     const grad = slopeAt(c, s, x)
-    const slopeRock = smooth01((grad - 0.42) / 0.38)
-    const ridgeCrag = smooth01((above - 2.4) / 5.5) * cragBands(s, x, y)
-    let rockT = Math.max(slopeRock, ridgeCrag)
+    const slopeRock = smooth01((grad - 0.35) / 0.35)
+    const cragRaw = smooth01((above - 2.4) / 5.5) * cragBands(s, x, y)
+    const rawRock = Math.max(slopeRock, cragRaw)
     // snow settles on ledges: gentle ground inside the rock zone keeps snow
-    rockT *= 1 - 0.8 * smooth01((0.32 - grad) / 0.22)
+    const relax = 0.8 * smooth01((0.38 - grad) / 0.25)
+    let rockT = rawRock * (1 - relax)
     if (a < 1.05) {
         // groomed trail down the natural line + piste edge stripe
         const tc = Math.sin(s * 0.011) * 0.35 + Math.sin(s * 0.004 + 1.3) * 0.25
@@ -137,7 +138,7 @@ export function surfaceInfo(c, s, x) {
     // kicker lips catch the light
     const lift = featureLift(c, s, x)
     if (lift > 0.3) rgb = rgb.map((v) => Math.min(255, v * 1.18))
-    return { rgb: rgb.map(clamp255), rockT, grad, crest, hollow, above }
+    return { rgb: rgb.map(clamp255), rockT, rawRock, relax, grad, crest, hollow, above }
 }
 
 // Smooth snow shading for one grid point (#638, textured by #669). The base
@@ -301,10 +302,11 @@ export function buildTerrain(course) {
 export function sparkleMask(c, s, x) {
     const { rockT, grad, crest } = surfaceInfo(c, s, x)
     const flat = 1 - smooth01(grad / 0.3)
+    const rockKill = 1 - smooth01((rockT - 0.08) / 0.3)
     const cell = hash(Math.floor(s / 1.7) * 17.3 + Math.floor(x * 2.3) * 5.7 + 9.2)
     const patch = smooth01((cell - 0.55) / 0.3)
     const theme = c.theme === 'night' ? 0.5 : c.theme === 'dusk' ? 0.8 : 1
-    return (1 - rockT) * flat * (0.35 + 0.65 * crest) * patch * theme
+    return (1 - rockT) * rockKill * flat * (0.35 + 0.65 * crest) * patch * theme
 }
 
 export function buildSparkles(course, geo) {
