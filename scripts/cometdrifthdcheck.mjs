@@ -127,6 +127,27 @@ if (args.includes('--mutate-streak')) {
     })
 }
 
+// #481 buggy-polish mutant: collapse the shadow ellipse to a disc and kill the
+// lamp idle glow — the #481 gates MUST go red under this run.
+const FLINE = 'export const BUGGY_FOOT = { l: +(3.44 * BUGGY_SCALE).toFixed(3), w: +(1.98 * BUGGY_SCALE).toFixed(3) }'
+const FUTIL = 'export const BUGGY_FOOT = { l: +(3.44 * BUGGY_SCALE).toFixed(3), w: +(3.44 * BUGGY_SCALE).toFixed(3) } /* footmut */'
+const ILINE = 'export const BRAKE_IDLE = 0.35'
+const IUTIL = 'export const BRAKE_IDLE = 0 /* lampmut */'
+let footmutat = false
+if (args.includes('--mutate-buggy')) {
+    const fsrc = readFileSync(SCENE, 'utf8')
+    if (!fsrc.includes(FLINE) || !fsrc.includes(ILINE)) { console.error('MUTATE_BUGGY: footprint/lamp lines not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, fsrc.replace(FLINE, FUTIL).replace(ILINE, IUTIL))
+    footmutat = true
+    console.log('  ..    mutated: shadow is a disc again and lamps are dead — the #481 gates MUST report FAILs')
+    process.on('exit', () => {
+        if (footmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(FUTIL, FLINE).replace(IUTIL, ILINE))
+            console.log('  ..    buggy mutation restored')
+        }
+    })
+}
+
 // #478 item 6 star mutant: freeze the twinkle law at full — the dusk-sky
 // gates MUST go red under this run.
 const TLAW = 'export const twinkle = (phase, tick) => 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(tick * 0.055 + phase * Math.PI * 2))'
@@ -225,7 +246,7 @@ console.log('kart feel (#478 item 3 — spin blur, driver, nose art, landing squ
     // fresh import with a cache-buster: --mutate-spin rewrites scene.js AFTER
     // the top-level import cached it — read the on-disk laws, not the cache.
     const SC = await import('file://' + SCENE + '?t=' + Date.now())
-    const { spinBlurAt, landingSquash, buildNoseArt, buildDriver, decorateBuggy } = SC
+    const { spinBlurAt, landingSquash, buildNoseArt, buildDriver, decorateBuggy, BRAKE_IDLE } = SC
     // spin blur law: 0 at rest/trot, 1 at top speed, monotonic
     ok(spinBlurAt(0) === 0 && spinBlurAt(2.5) === 0, 'wheels are crisp below the trot threshold (blur 0)')
     ok(spinBlurAt(8.6) === 1, `blur fully merges the spokes at top speed (${spinBlurAt(8.6)})`)
@@ -274,9 +295,16 @@ console.log('kart feel (#478 item 3 — spin blur, driver, nose art, landing squ
     }
     const chassis = new THREE.Mesh(new THREE.BoxGeometry(1, 0.3, 3), new THREE.MeshStandardMaterial({ name: 'Paint_Orange' }))
     chassis.name = 'Chassis_light'; mockRoot.add(chassis)
+    const tailM = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.03), new THREE.MeshStandardMaterial({ name: 'Taillight_Red' }))
+    tailM.name = 'Chassis_tail'; mockRoot.add(tailM)
+    const trimM = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.4, 2.6), new THREE.MeshStandardMaterial({ name: 'Accent_Yellow' }))
+    trimM.name = 'Chassis_accent'; mockRoot.add(trimM)
     const dec = decorateBuggy(mockRoot, 0x20b8dc, '#dff4fa')
     ok(dec.wheels.length === 4 && dec.wheels.every((w) => w.meshes.length === 3), 'GLB path: every wheel rolls tire + sharp + ghost spokes (spokes joined the rig)')
     ok(!!dec.spinMats && dec.spinMats.sharp.opacity === 1 && dec.spinMats.ghost.opacity === 0, 'GLB path starts crisp (ghost hidden until speed)')
+    ok(!!dec.brakeMat && dec.brakeMat.emissiveIntensity === BRAKE_IDLE && BRAKE_IDLE > 0.1, `taillight arms at idle glow ${dec.brakeMat && dec.brakeMat.emissiveIntensity} (lamps, not off-black)`)
+    const trimMat = trimM.material
+    ok(trimMat.emissiveIntensity > 0.1 && trimMat.emissive.getHexString() === new THREE.Color('#dff4fa').getHexString(), 'accent trim glows in its own livery colour (5-second rival recognition)')
 
     // the shell drives all three laws in the live loop
     const SHARD_SRC = readFileSync(SHARD, 'utf8')
@@ -338,6 +366,34 @@ console.log('dune buggy model + heading law (#477):')
     const fwdX = fronts.map((w) => ap3(mul3(w.R, Ry(0.3 * w.side)), [0, 0, 1])[0])
     ok(fronts.length === 2 && fwdX[0] * fwdX[1] > 0 && Math.sign(fwdX[0]) === Math.sign(0.3), 'front wheels steer parallel (side-sign undoes the right-side flip)')
     ok(BUGGY_SCALE > 0.3 && BUGGY_SCALE < 0.8, `buggy scaled to a kart footprint (${BUGGY_SCALE}x its 3.4m body)`)
+}
+
+// ------------------------------------------------------ #481 polish round two
+// Blob shadow hugs the measured footprint, taillights glow as lamps, exhaust
+// flames sit on the chrome outlets, and the front wheels turn far enough.
+console.log('buggy polish round two (#481):')
+{
+    const FB = await import('file://' + SCENE + '?t=' + (Date.now() + 5))
+    const sh = FB.makeBlobShadow()
+    ok(sh.userData.parts.join() === 'halo,core', `shadow is a two-pass blob (penumbra + core): ${sh.userData.parts.join('/')}`)
+    const bb = new THREE.Box3().setFromObject(sh)
+    const sL = bb.max.z - bb.min.z; const sW = bb.max.x - bb.min.x
+    ok(sL / sW >= 1.6, `blob is an ellipse, not a disc (len ${sL.toFixed(2)}u vs width ${sW.toFixed(2)}u)`)
+    ok(Math.abs(sL - FB.BUGGY_FOOT.l) / FB.BUGGY_FOOT.l <= 0.15 && Math.abs(sW - FB.BUGGY_FOOT.w) / FB.BUGGY_FOOT.w <= 0.15,
+        `blob tracks the real model footprint (${sL.toFixed(2)}×${sW.toFixed(2)}u vs body ${FB.BUGGY_FOOT.l}×${FB.BUGGY_FOOT.w}u, was a 2.16×1.44 disc)`)
+    ok(bb.max.y - bb.min.y < 1e-6, 'shadow blob stays planar (no floating slab)')
+    ok(sh.children.every((c) => c.material.transparent && c.material.depthWrite === false), 'blob passes are transparent and never write depth')
+    const outs = FB.exhaustOutlets()
+    ok(outs.length === 2 && outs[0].x * outs[1].x < 0, 'one exhaust outlet per side')
+    ok(outs.every((o) => Math.abs(o.x) >= 0.3 && Math.abs(o.x) <= 0.4), `outlets ride the flank pipes (|x| = ${Math.abs(outs[0].x)}u, replacing the centred 0.2 guess)`)
+    ok(outs.every((o) => o.z <= -BUGGY_SCALE * 1.3 && o.z >= -BUGGY_SCALE * 1.7), `outlets at the tailgate, not mid-chassis (z = ${outs[0].z}u)`)
+    ok(outs.every((o) => o.y > 0.12 && o.y < 0.35), `outlets at pipe height (y = ${outs[0].y}u)`)
+    ok(FB.BRAKE_ON > 1 && FB.BRAKE_ON > FB.BRAKE_IDLE + 1, `brake command is a jump to ${FB.BRAKE_ON} from idle ${FB.BRAKE_IDLE}`)
+    ok(FB.STEER_MAX >= 0.55 && FB.STEER_MAX <= 0.8, `steer travel widened to ${FB.STEER_MAX} rad (was 0.45 — stiff against the drift yaw)`)
+    const SHARD_SRC2 = readFileSync(SHARD, 'utf8')
+    ok(SHARD_SRC2.includes('shadow.rotation.y = kartYaw(k.a)'), 'the blob steers with the kart heading (no fixed-axis disc regression)')
+    ok(SHARD_SRC2.includes('BRAKE_ON : BRAKE_IDLE'), 'the live loop drives idle↔brake on the lamps')
+    ok(SHARD_SRC2.includes('* STEER_MAX'), 'the live loop steers by the shared STEER_MAX constant')
 }
 
 const pool = makePool(10, 0.2)
@@ -641,6 +697,23 @@ if (!SKIP_BROWSER) {
         await page.waitForTimeout(120)
         const vHeld = await page.evaluate(() => window.__cometHDTest.fx().v)
         ok(vHeld > 4.5, `gas accelerates the buggy past the drift threshold (v ${vHeld.toFixed(2)})`)
+
+        // #481 item 2/3 in pixels: the blob steers with the kart heading, and
+        // the brake lamps put hot red into the frame only when braking.
+        {
+            const follow = await page.evaluate(() => {
+                const t = window.__cometHDTest.shadowBlob()
+                const P = window.__cometHDTest.game().karts[0]
+                return { parts: t.parts, err: Math.abs(t.rotY - (Math.PI / 2 - P.a)) }
+            })
+            ok(follow.parts === 2 && follow.err < 0.05, `blob shadow rides the kart heading in the live loop (${follow.parts} passes, rot err ${follow.err.toFixed(4)} rad)`)
+            const glowCoast = await page.evaluate(() => window.__cometHDTest.brakeGlow())
+            await page.keyboard.down('KeyS')
+            await page.waitForTimeout(300)
+            const glowBrake = await page.evaluate(() => window.__cometHDTest.brakeGlow())
+            await page.keyboard.up('KeyS')
+            ok(glowBrake >= 1.5 && glowCoast <= 0.4, `brake command drives the lamp material idle→blaze (${glowCoast} → ${glowBrake}) in the live loop`)
+        }
 
         // slalom with drift held: serpentine keeps the kart on the asphalt,
         // and charge accrues through the whole weave (steer never hits 0)
