@@ -97,13 +97,27 @@ export function decide(gs, pi = 0) {
     if (st.stall > 15) {
         st.detour = 30
         st.stall = 0
-        st.side *= -1
+        if (pi === 0) {
+            // seat 1 keeps its proven horizontal break exactly as it always did
+            st.axis = 0
+            st.side *= -1
+        } else {
+            // a partner's break that lands mid-detour runs into a wall that runs
+            // the other way, so the axis must swap — but the side also flipped on
+            // every break, so (axis,side) only ever visited two of the four ways
+            // (#508): wedged against a bar the partner pushed just the two blocked
+            // directions and froze for 58k ticks. Flip the axis once the side has
+            // tried both signs, so the break sweeps all four ways in turn.
+            st.d2 = (st.d2 || 0) + 1
+            if (st.d2 % 2 === 1) st.axis = 1 - (st.axis ?? 1)
+            st.side *= -1
+        }
     }
     if (st.detour > 0) {
         st.detour--
         // seat 1 keeps its proven horizontal break; a partner strafes VERTICALLY
         // first, because the stall it usually eats is a bar wall running vertical
-        if (pi === 0) { inp.mx = st.side; inp.my = 0 }
+        if (st.axis === 0) { inp.mx = st.side; inp.my = 0 }
         else { inp.mx = 0; inp.my = st.side }
         const th = nearestEnemy(gs, true, p)
         if (th) aimH(gs, inp, p, th.x, th.y)
@@ -120,8 +134,13 @@ export function decide(gs, pi = 0) {
             const d = Math.hypot(v.x - p.x, v.y - p.y)
             if (d < bd) { bd = d; civ = v }
         }
-        if (civ) { aimAt(civ.x + (civ.dx || 0) * 8, civ.y + (civ.dy || 0) * 8); moveToward(civ.x, civ.y, 4) }
-        else if (gs.bonusT <= 0) { const e = gs.cleared ? nearestExit(gs, p) : null; if (e) moveToward(e[0], e[1]) }
+        // Once the clock has opened the exits, the show moves on when EITHER
+        // hero walks a door. A partner that keeps hunting a civilian across
+        // the chrome (they can ghost a bar wall its bullets cannot) pins the
+        // whole arena in the bonus room (#508) — so the partner goes to the
+        // door; seat 1 keeps its proven hunt-first game.
+        if (civ && !(pi !== 0 && gs.cleared)) { aimAt(civ.x + (civ.dx || 0) * 8, civ.y + (civ.dy || 0) * 8); moveToward(civ.x, civ.y, 4) }
+        else if (gs.cleared) { const e = nearestExit(gs, p); if (e) moveToward(e[0], e[1]) }
         return inp
     }
 
@@ -169,7 +188,12 @@ export function decide(gs, pi = 0) {
             return inp
         }
         if (dodgeVec) { inp.mx = Math.sign(dodgeVec[0]); inp.my = Math.sign(dodgeVec[1]); return inp }
-        if (ENEMIES[threat.kind].kind === 'chaser' && d < 42) { inp.mx = -Math.sign(threat.x - p.x) || (p.x < CW / 2 ? 1 : -1); inp.my = -Math.sign(threat.y - p.y) || (p.y < CH / 2 ? 1 : -1); return inp }
+        // Fleeing is for the chaser that can reach you. A chaser on the far
+        // side of a wall cannot, and running "away" from it is what parks the
+        // partner in a pocket, pacing the 42 px threshold forever (#508): with
+        // no line the partner walks TO the threat instead and lets the stuck
+        // breaker detour it around the bar.
+        if (ENEMIES[threat.kind].kind === 'chaser' && d < 42 && (pi === 0 || los(gs, p.x, p.y, threat.x, threat.y))) { inp.mx = -Math.sign(threat.x - p.x) || (p.x < CW / 2 ? 1 : -1); inp.my = -Math.sign(threat.y - p.y) || (p.y < CH / 2 ? 1 : -1); return inp }
         // The 8-way aim only lands what its line crosses, so a partner walks
         // ONTO the camera's row or column and empties the clip down the lane:
         // null out one axis at a time, stop at arm's length, and the shot that

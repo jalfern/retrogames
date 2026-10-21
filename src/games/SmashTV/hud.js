@@ -27,3 +27,12 @@ export const hiRoll = (cur, target) => {
     if (cur >= target) return target
     return Math.min(target, cur + Math.max(1, Math.ceil((target - cur) / HI_ROLL_DIV)))
 }
+
+// #508: a DOWN seat's slot blinks a respawn countdown so a partner's death
+// reads through the kill-shake. deadT counts deadFreeze -> 0, so the whole
+// seconds left is ceil(deadT/60); the slot blinks on a 4-tick cadence.
+export const RESPAWN_BLINK_SHIFT = 2
+export const respawnState = (deadT, tick) => {
+    if (deadT <= 0) return { down: false, on: true, secs: 0 }
+    return { down: true, on: (tick >> RESPAWN_BLINK_SHIFT) % 2 === 0, secs: Math.max(1, Math.ceil(deadT / 60)) }
+}
