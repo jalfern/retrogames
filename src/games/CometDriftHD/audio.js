@@ -8,6 +8,13 @@
 
 export const GOLD_BELL = 3136 // G7 — the sparkle only GOLD rings
 
+// #502 item 6: per-course engine register. The circuits' surface mixes cap
+// top speed differently, so Sandbank's long straights redden at a higher
+// pitch than the Gulch's dusk cruise. A multiplier on the gear-curve base —
+// dusk keeps the shipped engine untouched (×1).
+export const ENGINE_REGISTER = { dusk: 1, dawn: 1.06, noon: 1.12 }
+export const engineRegister = (id) => ENGINE_REGISTER[id] || ENGINE_REGISTER.dusk
+
 // [freq, dur, type, vol, delay] — rising, short, pure (bell, not chiptune square)
 export const GOLD_CHIME = [
     [1568, 0.16, 'sine', 0.10, 0.00],
