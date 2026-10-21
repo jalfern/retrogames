@@ -17,7 +17,7 @@ import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor, courseFloorY,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, roadRollYAt, roadRollAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
-    hudScale, hudTop, tintFor, SKY_STOPS, refOverlayStats,
+    hudScale, hudTop, tintFor, SKY_STOPS, refOverlayStats, attractLayout,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
@@ -1097,27 +1097,42 @@ export default function CometDriftHD() {
 
         const drawAttract = () => {
             const u = hs(); const W = cssW; const H = cssH
+            // #511 item 4: stack, don't fraction — every attract line clears the
+            // next by a glyph-aware gap and the long letter-spaced name is
+            // squeezed to the corridor between the POS column and the minimap.
+            const A = attractLayout(u, W, H, st.top.length, COURSE.name.length)
+            const fa = (n) => `bold ${Math.max(1, Math.round(n))}px monospace`
             hctx.fillStyle = 'rgba(8,10,22,0.55)'
-            hctx.fillRect(0, Math.round(H * 0.16), W, Math.round(H * 0.62))
+            hctx.fillRect(0, Math.round(A.band[0]), W, Math.round(A.band[1] - A.band[0]))
             hctx.textAlign = 'center'
-            hctx.font = fu(30)
-            const gr = hctx.createLinearGradient(0, H * 0.24, 0, H * 0.4)
+            hctx.font = fa(A.title.fs)
+            const gr = hctx.createLinearGradient(0, A.title.y - A.title.fs, 0, A.title.y + 4)
             gr.addColorStop(0, '#7ae8ff'); gr.addColorStop(1, '#2060f0')
             hctx.fillStyle = gr
             hctx.shadowColor = '#2090ff'; hctx.shadowBlur = 22 * u
-            hctx.fillText('COMET DRIFT', W / 2, Math.round(H * 0.32))
+            hctx.fillText('COMET DRIFT', W / 2, Math.round(A.title.y))
             hctx.shadowBlur = 0
-            hctx.font = fu(16)
+            hctx.font = fa(A.name.fs)
             hctx.fillStyle = '#ffd840'
-            hctx.fillText('H D · ' + COURSE.name.split('').join(' '), W / 2, Math.round(H * 0.38))
-            hctx.font = fu(11)
+            const spaced = 'H D · ' + COURSE.name.split('').join(' ')
+            const realW = hctx.measureText(spaced).width
+            const fit = Math.min(1, A.availW / Math.max(1, realW))
+            if (fit < 1) {
+                hctx.save()
+                hctx.translate(W / 2, 0); hctx.scale(fit, 1)
+                hctx.fillText(spaced, 0, Math.round(A.name.y))
+                hctx.restore()
+            } else {
+                hctx.fillText(spaced, W / 2, Math.round(A.name.y))
+            }
+            hctx.font = fa(A.sel.fs)
             hctx.fillStyle = '#7ae8ff'
-            hctx.fillText('<  ' + COURSE.name + '  >', W / 2, Math.round(H * 0.46))
+            hctx.fillText('<  ' + COURSE.name + '  >', W / 2, Math.round(A.sel.y))
             // #502 item 5: mini-map outline preview — the selected circuit's
             // shape centred under the selector line, so cycling courses shows
             // the track itself, not just its name.
-            const pbs = Math.round(Math.min(52 * u, H * 0.058))
-            const pbx = Math.round(W / 2 - pbs / 2); const pby = Math.round(H * 0.53 - pbs)
+            const pbs = Math.round(A.prev.size)
+            const pbx = Math.round(W / 2 - pbs / 2); const pby = Math.round(A.prev.top)
             const m1 = mapNow()
             hctx.strokeStyle = 'rgba(122,232,255,0.32)'; hctx.lineWidth = Math.max(1, Math.round(1.4 * u))
             hctx.beginPath()
@@ -1128,20 +1143,20 @@ export default function CometDriftHD() {
             }
             hctx.closePath(); hctx.stroke()
             const msgs = ['4 LAPS · 7 KARTS · SELECT CIRCUIT WITH ← →', 'X GAS · S BRAKE · ←→ STEER', 'HOLD SPACE / B THROUGH A BEND', 'BLUE VIOLET GOLD — THE LADDER PAYS']
-            hctx.font = fu(10)
+            hctx.font = fa(A.msg.fs)
             hctx.fillStyle = '#9fc8e8'
-            hctx.fillText(msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55))
-            if (st.top.length) {
-                hctx.font = fu(8)
+            hctx.fillText(msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(A.msg.y))
+            if (st.top.length && A.best) {
+                hctx.font = fa(A.best.fs)
                 for (let i = 0; i < st.top.length; i++) {
                     hctx.fillStyle = i === 0 ? '#ffd840' : '#8098b8'
-                    hctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, Math.round(H * 0.62 + i * 10 * u))
+                    hctx.fillText(i === 0 ? `BEST  ${fmtTime(st.top[i])}` : ` #${i + 1}  ${fmtTime(st.top[i])}`, W / 2, Math.round(A.best.y + i * A.best.step))
                 }
             }
             if ((g.tick >> 5) % 2) {
-                hctx.font = fu(10)
+                hctx.font = fa(A.blink.fs)
                 hctx.fillStyle = '#e8f0fa'
-                hctx.fillText('PRESS ANY KEY / TAP', W / 2, Math.round(H * 0.74))
+                hctx.fillText('PRESS ANY KEY / TAP', W / 2, Math.round(A.blink.y))
             }
             hctx.textAlign = 'left'
         }
@@ -1364,6 +1379,7 @@ export default function CometDriftHD() {
             backend: () => backendName,
             view: () => ({ w: cssW, h: cssH, dpr }),
             hud: () => ({ ...hudRects, safeTop }),
+            attract: () => attractLayout(hs(), cssW, cssH, st.top.length, COURSE.name.length),
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
             course: () => COURSE.id,

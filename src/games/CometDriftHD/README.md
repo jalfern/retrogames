@@ -137,6 +137,17 @@ fallbacks so the game never waits on — or dies from — the network.
   group with the circuit on every course swap; a `propsRev` token guards the
   async attach against a swap mid-load.
 
+- #511 item 4 attract stack: the screen used fixed H-fractions, so at lite
+  scale (u≈1.5 on 640x426) the letter-spaced course name wrote over the
+  title, and on 840x420 the noon name ran under the POS panel and minimap.
+  `attractLayout(u, W, H, best, nameLen)` (scene.js) now stacks the column by
+  glyph boxes with `ATTRACT_GAP` clearances, shrinks the whole column (ua,
+  floored at `ATTRACT_UA_MIN`) when the band runs out, and returns a fit
+  scale clamping the spaced name to the corridor between the HUD columns;
+  `drawAttract` applies it and re-clamps by `measureText` on the real glyphs.
+  `cometdrifthdcheck` gates clearances/band/fit over 7 viewports x 3 course
+  names; `--mutate-attract` collapses the gap law and MUST redden it.
+
 ## Verify
 
 ```

@@ -966,6 +966,67 @@ console.log('attract preview + per-course map (#502 item 5):')
     selectCourse('gulch')
 }
 
+// #511 item 4: the attract stack — fractions overlapped the title with the
+// letter-spaced course name at lite scale, and the noon name ran under the
+// POS panel and minimap at 840x420. attractLayout stacks by glyph box and
+// clamps the name to the corridor; these gates pin every clearance.
+// --mutate-attract collapses the gap law and MUST redden them.
+const ALAW = 'export const ATTRACT_GAP = 6'
+const AUTIL = 'export const ATTRACT_GAP = 0.5 /* attractmut */'
+let attractmutat = false
+if (args.includes('--mutate-attract')) {
+    const asrc = readFileSync(SCENE, 'utf8')
+    if (!asrc.includes(ALAW)) { console.error('MUTATE_ATTRACT: gap law not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, asrc.replace(ALAW, AUTIL))
+    attractmutat = true
+    console.log('  ..    mutated: attract blocks collide by design — the stack gates MUST report FAILs')
+    process.on('exit', () => {
+        if (attractmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(AUTIL, ALAW))
+            console.log('  ..    attract mutation restored')
+        }
+    })
+}
+console.log('attract stack (#511 item 4 — glyph-box stacking, fitted name corridor):')
+{
+    const AS = await import('file://' + SCENE + '?t=' + (Date.now() + 9))
+    const { attractLayout, ATTRACT_GAP, ATTRACT_UA_MIN } = AS
+    ok(ATTRACT_GAP >= 4, `attract blocks keep a real gap (${ATTRACT_GAP}px at u=1)`)
+    ok(ATTRACT_UA_MIN >= 0.5, `stack shrink has a readability floor (${ATTRACT_UA_MIN})`)
+    const SHARD_SRC5 = readFileSync(SHARD, 'utf8')
+    ok(SHARD_SRC5.includes('attractLayout(') && SHARD_SRC5.includes("measureText(spaced)"),
+        'the attract screen stacks via the layout law and squeezes the name by measured width')
+    const NAMES = { gulch: 'SUNSET GULCH'.length, sandbank: 'SANDBANK SPEED BOWL'.length, corkscomb: 'CORKSCOMB DUNES'.length }
+    const SIZES = [[640, 426], [840, 420], [390, 844], [320, 480], [1280, 720], [1512, 982], [768, 1024]]
+    let clearOk = true; let fitOk = true; let bandOk = true; let worst = 99; let spill = 0
+    for (const [w, h] of SIZES) {
+        const u = Math.max(0.85, Math.min(2, Math.min(h / 240, w / 420) * (h > w * 1.4 ? Math.min(1.3, h / 560) : 1)))
+        for (const len of Object.values(NAMES)) {
+            const A = attractLayout(u, w, h, 3, len)
+            const clr = [
+                A.name.y - A.name.fs * 0.78 - (A.title.y + A.title.fs * 0.22),
+                A.sel.y - A.sel.fs * 0.78 - (A.name.y + A.name.fs * 0.22),
+                A.prev.top - (A.sel.y + A.sel.fs * 0.22),
+                A.msg.y - A.msg.fs * 0.78 - (A.prev.top + A.prev.size),
+                A.best.y - A.best.fs * 0.78 - (A.msg.y + A.msg.fs * 0.22),
+                A.blink.y - A.blink.fs * 0.78 - (A.best.y + 2 * A.best.step + A.best.fs * 0.22),
+            ]
+            worst = Math.min(worst, ...clr)
+            if (clr.some((c) => c < 2)) clearOk = false
+            const bottom = A.blink.y + A.blink.fs * 0.22
+            if (bottom > A.band[1] + 1 || A.title.y - A.title.fs * 0.78 < A.band[0] - 1) bandOk = false
+            if (A.name.estW * A.name.fit > A.availW + 1) fitOk = false
+            if (A.name.fit < 1) spill += 1
+        }
+    }
+    ok(clearOk, `every attract line clears its neighbour on ${SIZES.length} viewports x 3 course names (worst gap ${worst.toFixed(1)}px >= 2)`)
+    ok(bandOk, 'the whole attract column stays inside its band on every viewport')
+    ok(fitOk, 'the letter-spaced course name never runs wider than the corridor between the HUD columns')
+    ok(spill > 0, `long names genuinely get squeezed where they must (${spill} clamped layouts)`)
+    ok(attractLayout(2, 1280, 720, 3, 13).ua === 2 && attractLayout(2, 1600, 900, 3, 13).ua === 2,
+        'roomy desktop keeps the shipped scale untouched (no needless shrink)')
+}
+
 // #478 item 9 heal mutant: disarm the self-heal — the device-loss gates MUST
 // go red under this run (the race must die with the backend, which it mustn't).
 const HL2LINE = "if (disposed || backendName !== 'webgl2') return"
