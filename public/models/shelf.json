@@ -1,0 +1,527 @@
+{
+  "schema": "retrogames-model-shelf/1",
+  "version": 1,
+  "updated": "2026-10-20",
+  "units": "metres (1 unit = 1 m)",
+  "licensePolicy": "CC0 / public domain only",
+  "browse": "fetch /retrogames/models/shelf.json, or import src/utils/modelShelf.js and call browse()",
+  "note": "Scenery is Forge-authored CC0 in the KayKit voxel idiom — itch.io pack downloads are outside the GitHub/npm-only network rule. Rigged characters and the buggy keep their original pack provenance.",
+  "totals": {
+    "count": 19,
+    "bytes": 2011884,
+    "triangles": 1662,
+    "categories": [
+      "characters",
+      "vehicles",
+      "scenery"
+    ]
+  },
+  "entries": [
+    {
+      "id": "barbarian",
+      "name": "barbarian",
+      "summary": "Adventurer body (rigged, pose bases)",
+      "category": "characters",
+      "pack": "KayKit: Adventurers Character Pack 1.0",
+      "author": "Kay Lousberg (kaylousberg.com)",
+      "license": "CC0-1.0",
+      "source": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+      "note": "Trimmed: weapon/quiver props dropped, Idle/Jump_Start/Jump_Idle pose bases kept; see public/models/characters/LICENSE.txt",
+      "path": "models/characters/barbarian.glb",
+      "format": "glb",
+      "solid": false,
+      "rigged": true,
+      "units": "metres",
+      "sizeBytes": 341736,
+      "triangles": 148,
+      "vertices": 445,
+      "meters": {
+        "w": 0.92,
+        "h": 0.33,
+        "d": 0.31
+      },
+      "tags": [
+        "character",
+        "humanoid"
+      ]
+    },
+    {
+      "id": "knight",
+      "name": "knight",
+      "summary": "Adventurer body (rigged, pose bases)",
+      "category": "characters",
+      "pack": "KayKit: Adventurers Character Pack 1.0",
+      "author": "Kay Lousberg (kaylousberg.com)",
+      "license": "CC0-1.0",
+      "source": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+      "note": "Trimmed: weapon/quiver props dropped, Idle/Jump_Start/Jump_Idle pose bases kept; see public/models/characters/LICENSE.txt",
+      "path": "models/characters/knight.glb",
+      "format": "glb",
+      "solid": false,
+      "rigged": true,
+      "units": "metres",
+      "sizeBytes": 359148,
+      "triangles": 162,
+      "vertices": 486,
+      "meters": {
+        "w": 0.92,
+        "h": 0.3,
+        "d": 0.31
+      },
+      "tags": [
+        "character",
+        "humanoid"
+      ]
+    },
+    {
+      "id": "mage",
+      "name": "mage",
+      "summary": "Adventurer body (rigged, pose bases)",
+      "category": "characters",
+      "pack": "KayKit: Adventurers Character Pack 1.0",
+      "author": "Kay Lousberg (kaylousberg.com)",
+      "license": "CC0-1.0",
+      "source": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+      "note": "Trimmed: weapon/quiver props dropped, Idle/Jump_Start/Jump_Idle pose bases kept; see public/models/characters/LICENSE.txt",
+      "path": "models/characters/mage.glb",
+      "format": "glb",
+      "solid": false,
+      "rigged": true,
+      "units": "metres",
+      "sizeBytes": 337708,
+      "triangles": 110,
+      "vertices": 330,
+      "meters": {
+        "w": 0.88,
+        "h": 0.3,
+        "d": 0.27
+      },
+      "tags": [
+        "character",
+        "humanoid"
+      ]
+    },
+    {
+      "id": "rogue",
+      "name": "rogue",
+      "summary": "Hooded adventurer (rigged, pose bases)",
+      "category": "characters",
+      "pack": "KayKit: Adventurers Character Pack 1.0",
+      "author": "Kay Lousberg (kaylousberg.com)",
+      "license": "CC0-1.0",
+      "source": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+      "note": "Trimmed: weapon/quiver props dropped, Idle/Jump_Start/Jump_Idle pose bases kept; see public/models/characters/LICENSE.txt",
+      "path": "models/characters/rogue.glb",
+      "format": "glb",
+      "solid": false,
+      "rigged": true,
+      "units": "metres",
+      "sizeBytes": 326172,
+      "triangles": 147,
+      "vertices": 440,
+      "meters": {
+        "w": 0.88,
+        "h": 0.28,
+        "d": 0.29
+      },
+      "tags": [
+        "character",
+        "humanoid"
+      ]
+    },
+    {
+      "id": "rogue_plain",
+      "name": "rogue plain",
+      "summary": "Adventurer body (rigged, pose bases)",
+      "category": "characters",
+      "pack": "KayKit: Adventurers Character Pack 1.0",
+      "author": "Kay Lousberg (kaylousberg.com)",
+      "license": "CC0-1.0",
+      "source": "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+      "note": "Trimmed: weapon/quiver props dropped, Idle/Jump_Start/Jump_Idle pose bases kept; see public/models/characters/LICENSE.txt",
+      "path": "models/characters/rogue_plain.glb",
+      "format": "glb",
+      "solid": false,
+      "rigged": true,
+      "units": "metres",
+      "sizeBytes": 331788,
+      "triangles": 147,
+      "vertices": 440,
+      "meters": {
+        "w": 0.88,
+        "h": 0.28,
+        "d": 0.29
+      },
+      "tags": [
+        "character",
+        "humanoid"
+      ]
+    },
+    {
+      "id": "barrier",
+      "name": "Safety barrier",
+      "summary": "Armco-style crash barrier (1.5 m)",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/barrier.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 7480,
+      "triangles": 60,
+      "vertices": 180,
+      "meters": {
+        "w": 1.5,
+        "h": 0.57,
+        "d": 0.14
+      },
+      "tags": [
+        "racing",
+        "barrier"
+      ]
+    },
+    {
+      "id": "billboard",
+      "name": "Billboard",
+      "summary": "Two-leg advertising board",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/billboard.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 6212,
+      "triangles": 48,
+      "vertices": 144,
+      "meters": {
+        "w": 3.4,
+        "h": 3.4,
+        "d": 0.16
+      },
+      "tags": [
+        "racing",
+        "prop"
+      ]
+    },
+    {
+      "id": "boulder",
+      "name": "Boulder",
+      "summary": "Large hillside boulder",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/boulder.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 6208,
+      "triangles": 48,
+      "vertices": 144,
+      "meters": {
+        "w": 1.35,
+        "h": 1.35,
+        "d": 1.2
+      },
+      "tags": [
+        "nature",
+        "rock"
+      ]
+    },
+    {
+      "id": "cone",
+      "name": "Traffic cone",
+      "summary": "Orange cone with a white band",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/cone.glb",
+      "format": "glb",
+      "solid": false,
+      "units": "metres",
+      "sizeBytes": 7080,
+      "triangles": 56,
+      "vertices": 168,
+      "meters": {
+        "w": 0.34,
+        "h": 0.56,
+        "d": 0.34
+      },
+      "tags": [
+        "racing",
+        "marker"
+      ]
+    },
+    {
+      "id": "fence",
+      "name": "Post-and-rail fence",
+      "summary": "Two-rail wooden fence section (2 m)",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/fence.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 7508,
+      "triangles": 60,
+      "vertices": 180,
+      "meters": {
+        "w": 2.12,
+        "h": 0.9,
+        "d": 0.12
+      },
+      "tags": [
+        "props",
+        "fence"
+      ]
+    },
+    {
+      "id": "flag",
+      "name": "Course flag",
+      "summary": "Marker flag on a pole",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/flag.glb",
+      "format": "glb",
+      "solid": false,
+      "units": "metres",
+      "sizeBytes": 4904,
+      "triangles": 36,
+      "vertices": 108,
+      "meters": {
+        "w": 0.65,
+        "h": 2,
+        "d": 0.06
+      },
+      "tags": [
+        "racing",
+        "marker"
+      ]
+    },
+    {
+      "id": "grandstand",
+      "name": "Grandstand",
+      "summary": "Tiered spectator stand with roof + banner",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/grandstand.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 13968,
+      "triangles": 120,
+      "vertices": 360,
+      "meters": {
+        "w": 6.4,
+        "h": 3.23,
+        "d": 5.1
+      },
+      "tags": [
+        "racing",
+        "building"
+      ]
+    },
+    {
+      "id": "marshal_post",
+      "name": "Marshal post",
+      "summary": "Raised marshal hut on legs",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/marshal_post.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 12688,
+      "triangles": 108,
+      "vertices": 324,
+      "meters": {
+        "w": 1.15,
+        "h": 3.65,
+        "d": 1.15
+      },
+      "tags": [
+        "racing",
+        "building"
+      ]
+    },
+    {
+      "id": "pit_building",
+      "name": "Pit building",
+      "summary": "Long pits/garage block with bays",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/pit_building.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 16560,
+      "triangles": 144,
+      "vertices": 432,
+      "meters": {
+        "w": 8.4,
+        "h": 4,
+        "d": 4.44
+      },
+      "tags": [
+        "racing",
+        "building"
+      ]
+    },
+    {
+      "id": "rock",
+      "name": "Rock",
+      "summary": "Small grey rock cluster",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/rock.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 6196,
+      "triangles": 48,
+      "vertices": 144,
+      "meters": {
+        "w": 0.9,
+        "h": 0.67,
+        "d": 0.62
+      },
+      "tags": [
+        "nature",
+        "rock"
+      ]
+    },
+    {
+      "id": "sign",
+      "name": "Course sign",
+      "summary": "Square red/white corner sign",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/sign.glb",
+      "format": "glb",
+      "solid": false,
+      "units": "metres",
+      "sizeBytes": 4920,
+      "triangles": 36,
+      "vertices": 108,
+      "meters": {
+        "w": 0.9,
+        "h": 2.15,
+        "d": 0.11
+      },
+      "tags": [
+        "racing",
+        "marker"
+      ]
+    },
+    {
+      "id": "tree_oak",
+      "name": "Oak tree",
+      "summary": "Chunky broadleaf tree, block canopy",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/tree_oak.glb",
+      "format": "glb",
+      "solid": false,
+      "units": "metres",
+      "sizeBytes": 7448,
+      "triangles": 60,
+      "vertices": 180,
+      "meters": {
+        "w": 1.55,
+        "h": 2,
+        "d": 1.5
+      },
+      "tags": [
+        "nature",
+        "tree"
+      ]
+    },
+    {
+      "id": "tree_pine",
+      "name": "Pine tree",
+      "summary": "Tapered conifer, tiered needles",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/tree_pine.glb",
+      "format": "glb",
+      "solid": false,
+      "units": "metres",
+      "sizeBytes": 7500,
+      "triangles": 60,
+      "vertices": 180,
+      "meters": {
+        "w": 1.1,
+        "h": 2.8,
+        "d": 1.1
+      },
+      "tags": [
+        "nature",
+        "tree"
+      ]
+    },
+    {
+      "id": "dune_buggy",
+      "name": "Dune buggy",
+      "summary": "Kart chassis, four wheel pivots, recolourable paint",
+      "category": "vehicles",
+      "pack": "Forge vehicle (original)",
+      "author": "Claude for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: modelled for COMET DRIFT HD; see public/models/vehicles/README.md",
+      "note": "Wheels are separate nodes Wheel_FL/FR/RL/RR; body paint is material Paint_Orange.",
+      "path": "models/vehicles/dune_buggy.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 206660,
+      "triangles": 64,
+      "vertices": 192,
+      "meters": {
+        "w": 1.24,
+        "h": 0.48,
+        "d": 2.96
+      },
+      "tags": [
+        "vehicle",
+        "kart",
+        "racing"
+      ]
+    }
+  ]
+}

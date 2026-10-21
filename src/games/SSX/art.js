@@ -1,6 +1,6 @@
 // SSX — art.js : every pixel synthesized — except the hero rider (#548): a
 // real CC0 rigged character (KayKit Adventurers "Rogue_Hooded", see
-// public/models/ssx/LICENSE.txt) loaded with GLTFLoader and posed per-frame
+// public/models/characters/LICENSE.txt) loaded with GLTFLoader and posed per-frame
 // from the sim. The mountain is a vertex-coloured ribbon built straight from
 // course.js geometry (so the painted slope IS the ridden slope), rails glow,
 // the city hums, and riders are articulated rigs that crouch, grab, spin,
@@ -219,7 +219,7 @@ export function makeRider(color) {
 }
 
 // ---- hero rider (#548) -----------------------------------------------------
-// KayKit Adventurers "Rogue_Hooded" (CC0) — public/models/ssx/rogue.glb.
+// KayKit Adventurers "Rogue_Hooded" (CC0) — public/models/characters/rogue.glb.
 // Pose bases are baked frames of the pack's own clips (Idle / Jump_Start /
 // Jump_Idle / Sit_Chair_Pose); tuck, grab and tumble are those bases plus
 // authored per-bone offsets. Every bone blends toward its target each frame,
@@ -233,7 +233,7 @@ export const HERO_POSES = ['stand', 'tuck', 'crouch', 'air', 'grab', 'tumble']
 // reuses the hooded rogue (the pack ships exactly five bodies).
 export const RIDER_MODELS = ['rogue', 'knight', 'barbarian', 'mage', 'rogue_plain', 'rogue']
 
-const modelUrl = (file) => `${(import.meta.env && import.meta.env.BASE_URL) || '/'}models/ssx/${file}.glb`
+const modelUrl = (file) => `${(import.meta.env && import.meta.env.BASE_URL) || '/'}models/characters/${file}.glb`
 const HERO_HEIGHT = 1.74
 
 function sampleClip(clip, time) {
