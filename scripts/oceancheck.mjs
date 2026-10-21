@@ -508,6 +508,61 @@ async function main() {
         await page.waitForTimeout(700)
         writeFileSync(resolve(shots, 'night-dipper.png'), await page.screenshot())
       }
+
+      // 7. PHONE (#704): the night sky must read as a full field on a DPR>1 phone in
+      //    portrait. Star sizes are CSS-px scaled by the render DPR (a 1.1-canvas-px
+      //    faint star is sub-pixel on a DPR-1.75 phone); the Milky Way is a field of
+      //    large, very dim, overlapping soft billboards — a continuous glow, never dots.
+      const phoneCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1.75 })
+      const phonePage = await phoneCtx.newPage()
+      const phoneErrs = []
+      phonePage.on('pageerror', e => phoneErrs.push(e.message))
+      phonePage.on('console', m => { if (m.type() === 'error' || (m.type() === 'warning' && m.text().includes('WGSL'))) phoneErrs.push(m.text().split('\n')[0]) })
+      await phonePage.goto(url, { waitUntil: 'load' })
+      let phoneReady = true
+      try { await phonePage.waitForFunction(() => window.__oceanTest && window.__oceanTest.ready, null, { timeout: 20000 }) } catch { phoneReady = false }
+      ok('phone: boots (390×844 DPR 1.75)', phoneReady && phoneErrs.length === 0, phoneErrs[0])
+      if (phoneReady) {
+        await phonePage.waitForTimeout(3000)
+        await phonePage.evaluate(() => { window.__oceanTest.setTod(0); window.__oceanTest.setCloud(0); window.__oceanTest.setStorm(0) })
+        await phonePage.waitForTimeout(1000)
+        const pcfg = await phonePage.evaluate(() => { const s = window.__oceanTest.stars(); return { starMinCss: s.starMinCss, starMaxCss: s.starMaxCss, mwSizeCss: s.mwSizeCss, mwGain: s.mwGain, dprCap: s.dprCap, uploaded: s.uploaded } })
+        ok('phone: DPR scaling active (star CSS-px × dpr)', pcfg.dprCap > 1.2, `dprCap=${pcfg.dprCap} starMin=${pcfg.starMinCss} starMax=${pcfg.starMaxCss}`)
+        ok('phone: faint star end lifts above sub-pixel (min CSS ≥ 1.5)', pcfg.starMinCss >= 1.5, `starMinCss=${pcfg.starMinCss}`)
+        ok('phone: Milky Way is a soft glow (gain < 0.3, blob ≫ star)', pcfg.mwGain < 0.3 && pcfg.mwSizeCss > pcfg.starMaxCss, `mwGain=${pcfg.mwGain} mwSize=${pcfg.mwSizeCss} starMax=${pcfg.starMaxCss}`)
+        // stars fill the portrait sky width (not a horizontal strip): sample the sky
+        // band (top 55% of the portrait frame) and check the blue-channel local lift
+        // spans >80% of the width at a moderate threshold
+        await phonePage.evaluate(() => { window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: 0, pitch: 0.3 }) })
+        await phonePage.waitForTimeout(1200)
+        const phoneImg = decodePng(await phonePage.screenshot())
+        const { w, h, px, bpp } = phoneImg
+        const y0 = Math.floor(h * 0.08), y1 = Math.floor(h * 0.52)
+        // local background: 8×8 coarse box blur of the blue channel
+        const F = 8, cw = Math.floor(w / F), ch = Math.floor((y1 - y0) / F)
+        const coarse = new Float32Array(cw * ch)
+        for (let cy = 0; cy < ch; cy++) for (let cx = 0; cx < cw; cx++) {
+          let s = 0, n = 0
+          for (let y = y0 + cy * F; y < y0 + (cy + 1) * F; y++) for (let x = cx * F; x < (cx + 1) * F; x++) { s += px[(y * w + x) * bpp + 2]; n++ }
+          coarse[cy * cw + cx] = s / n
+        }
+        const colMax = new Float32Array(w)
+        for (let y = y0; y < y1; y++) {
+          const row = Math.floor((y - y0) / F)
+          for (let x = 0; x < w; x++) {
+            const cx = Math.min(Math.floor(x / F), cw - 1)
+            const lift = px[(y * w + x) * bpp + 2] - coarse[row * cw + cx]
+            if (lift > colMax[x]) colMax[x] = lift
+          }
+        }
+        const THR = 4
+        let covered = 0
+        for (let x = 0; x < w; x++) if (colMax[x] > THR) covered++
+        const covFrac = covered / w
+        ok('phone: star field fills the portrait sky width (not a strip)', covFrac > 0.8 && pcfg.uploaded > 100,
+          `covFrac=${covFrac.toFixed(2)} covered=${covered}/${w} uploaded=${pcfg.uploaded}`)
+      }
+      await phoneCtx.close()
     }
 
     // page must stay clean overall (validation errors land in console)
