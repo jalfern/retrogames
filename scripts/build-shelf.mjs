@@ -32,6 +32,11 @@ const CONCRETE = c(196, 194, 188)
 const ROOF = c(78, 92, 110)
 const GLASS = c(70, 96, 120)
 const DARK = c(40, 42, 48)
+const BLACK = c(22, 24, 28)
+const SNOW = c(244, 248, 252)
+const SNOW_D = c(214, 224, 236)
+const GRASS = c(98, 142, 74)
+const GRASS_D = c(78, 118, 60)
 
 // Every model: origin on the ground (y >= 0), ~1m scale, lean (< a few hundred tris).
 const DEFINITIONS = {
@@ -141,6 +146,55 @@ const DEFINITIONS = {
         box(s, 0, 1.7, 0.05, 0.66, 0.66, 0.04, WHITE)
         return s
     },
+    tire_wall: () => {
+        const s = newSoup()
+        const tire = (x, y, painted) => {
+            box(s, x, y, 0, 0.72, 0.72, 0.44, DARK)
+            box(s, x, y, 0.225, 0.44, 0.44, 0.02, BLACK)
+            if (painted) box(s, x, y, 0.24, 0.62, 0.16, 0.01, WHITE)
+        }
+        for (const x of [-0.75, 0, 0.75]) tire(x, 0.36, false)
+        for (const x of [-0.375, 0.375]) tire(x, 1.08, true)
+        return s
+    },
+    hill: () => {
+        const s = newSoup()
+        box(s, 0, 0.75, 0, 7, 1.5, 5.5, GRASS_D)
+        box(s, 0.2, 2.0, -0.2, 5, 1.4, 4, GRASS)
+        box(s, -0.2, 3.1, -0.1, 3, 1.2, 2.4, GRASS)
+        box(s, 0.1, 3.85, -0.2, 1.6, 0.7, 1.2, GRASS_D)
+        box(s, 2.4, 0.6, 1.7, 1.3, 1.2, 1.1, ROCK)
+        box(s, -2.6, 0.5, -1.5, 1.1, 1.0, 0.9, ROCK_D)
+        return s
+    },
+    rock_snow: () => {
+        const s = DEFINITIONS.rock()
+        box(s, 0, 0.54, 0, 0.74, 0.08, 0.64, SNOW)
+        box(s, 0.28, 0.64, 0.08, 0.48, 0.08, 0.48, SNOW)
+        box(s, 0.05, 0.7, -0.1, 0.34, 0.06, 0.34, SNOW_D)
+        return s
+    },
+    boulder_snow: () => {
+        const s = DEFINITIONS.boulder()
+        box(s, 0.25, 1.4, 0.1, 0.9, 0.14, 0.9, SNOW)
+        box(s, -0.1, 1.42, -0.15, 0.55, 0.12, 0.55, SNOW_D)
+        return s
+    },
+    tree_pine_snow: () => {
+        const s = DEFINITIONS.tree_pine()
+        box(s, 0, 1.28, 0, 1.12, 0.12, 1.12, SNOW)
+        box(s, 0, 1.88, 0, 0.87, 0.12, 0.87, SNOW)
+        box(s, 0, 2.48, 0, 0.57, 0.14, 0.57, SNOW)
+        box(s, 0, 2.84, 0, 0.32, 0.14, 0.32, SNOW_D)
+        return s
+    },
+    snowbank: () => {
+        const s = newSoup()
+        box(s, 0, 0.15, 0, 2.4, 0.3, 1.2, SNOW)
+        box(s, 0.5, 0.34, 0, 1.4, 0.34, 0.9, SNOW)
+        box(s, -0.6, 0.28, 0.1, 1.0, 0.28, 0.7, SNOW_D)
+        return s
+    },
 }
 
 const META = {
@@ -157,6 +211,12 @@ const META = {
     pit_building: { name: 'Pit building', summary: 'Long pits/garage block with bays', tags: ['racing', 'building'], solid: true },
     billboard: { name: 'Billboard', summary: 'Two-leg advertising board', tags: ['racing', 'prop'], solid: true },
     sign: { name: 'Course sign', summary: 'Square red/white corner sign', tags: ['racing', 'marker'], solid: false },
+    tire_wall: { name: 'Tire wall', summary: 'Stacked tyre ring section, 2 m, painted centre tyre', tags: ['racing', 'barrier'], solid: true },
+    hill: { name: 'Hill', summary: 'Low grassy landform with rock outcrops (7 m)', tags: ['nature', 'terrain'], solid: true },
+    rock_snow: { name: 'Snow-topped rock', summary: 'Rock cluster with snow caps', tags: ['nature', 'rock', 'snow'], solid: true },
+    boulder_snow: { name: 'Snow-topped boulder', summary: 'Hillside boulder with a snow cap', tags: ['nature', 'rock', 'snow'], solid: true },
+    tree_pine_snow: { name: 'Snowy pine', summary: 'Tiered conifer with snow shelves', tags: ['nature', 'tree', 'snow'], solid: false },
+    snowbank: { name: 'Snowbank', summary: 'Lumpy drift of packed snow', tags: ['nature', 'snow'], solid: true },
 }
 
 const moved = []

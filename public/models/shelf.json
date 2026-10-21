@@ -7,9 +7,9 @@
   "browse": "fetch /retrogames/models/shelf.json, or import src/utils/modelShelf.js and call browse()",
   "note": "Scenery is Forge-authored CC0 in the KayKit voxel idiom — itch.io pack downloads are outside the GitHub/npm-only network rule. Rigged characters and the buggy keep their original pack provenance.",
   "totals": {
-    "count": 19,
-    "bytes": 2011884,
-    "triangles": 1662,
+    "count": 25,
+    "bytes": 2073716,
+    "triangles": 2178,
     "categories": [
       "characters",
       "vehicles",
@@ -236,6 +236,33 @@
       ]
     },
     {
+      "id": "boulder_snow",
+      "name": "Snow-topped boulder",
+      "summary": "Hillside boulder with a snow cap",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/boulder_snow.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 8800,
+      "triangles": 72,
+      "vertices": 216,
+      "meters": {
+        "w": 1.37,
+        "h": 1.48,
+        "d": 1.2
+      },
+      "tags": [
+        "nature",
+        "rock",
+        "snow"
+      ]
+    },
+    {
       "id": "cone",
       "name": "Traffic cone",
       "summary": "Orange cone with a white band",
@@ -340,6 +367,32 @@
       ]
     },
     {
+      "id": "hill",
+      "name": "Hill",
+      "summary": "Low grassy landform with rock outcrops (7 m)",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/hill.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 8744,
+      "triangles": 72,
+      "vertices": 216,
+      "meters": {
+        "w": 7,
+        "h": 4.2,
+        "d": 5.5
+      },
+      "tags": [
+        "nature",
+        "terrain"
+      ]
+    },
+    {
       "id": "marshal_post",
       "name": "Marshal post",
       "summary": "Raised marshal hut on legs",
@@ -418,6 +471,33 @@
       ]
     },
     {
+      "id": "rock_snow",
+      "name": "Snow-topped rock",
+      "summary": "Rock cluster with snow caps",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/rock_snow.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 10100,
+      "triangles": 84,
+      "vertices": 252,
+      "meters": {
+        "w": 0.92,
+        "h": 0.73,
+        "d": 0.64
+      },
+      "tags": [
+        "nature",
+        "rock",
+        "snow"
+      ]
+    },
+    {
       "id": "sign",
       "name": "Course sign",
       "summary": "Square red/white corner sign",
@@ -441,6 +521,58 @@
       "tags": [
         "racing",
         "marker"
+      ]
+    },
+    {
+      "id": "snowbank",
+      "name": "Snowbank",
+      "summary": "Lumpy drift of packed snow",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/snowbank.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 4916,
+      "triangles": 36,
+      "vertices": 108,
+      "meters": {
+        "w": 2.4,
+        "h": 0.51,
+        "d": 1.2
+      },
+      "tags": [
+        "nature",
+        "snow"
+      ]
+    },
+    {
+      "id": "tire_wall",
+      "name": "Tire wall",
+      "summary": "Stacked tyre ring section, 2 m, painted centre tyre",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/tire_wall.glb",
+      "format": "glb",
+      "solid": true,
+      "units": "metres",
+      "sizeBytes": 16580,
+      "triangles": 144,
+      "vertices": 432,
+      "meters": {
+        "w": 2.22,
+        "h": 1.44,
+        "d": 0.47
+      },
+      "tags": [
+        "racing",
+        "barrier"
       ]
     },
     {
@@ -493,6 +625,33 @@
       "tags": [
         "nature",
         "tree"
+      ]
+    },
+    {
+      "id": "tree_pine_snow",
+      "name": "Snowy pine",
+      "summary": "Tiered conifer with snow shelves",
+      "category": "scenery",
+      "pack": "Forge Scenery Kit (original)",
+      "author": "Forge — authored procedurally for jalfern.com/retrogames",
+      "license": "CC0-1.0",
+      "source": "forge: scripts/build-shelf.mjs (original geometry, not a pack download)",
+      "path": "models/scenery/tree_pine_snow.glb",
+      "format": "glb",
+      "solid": false,
+      "units": "metres",
+      "sizeBytes": 12692,
+      "triangles": 108,
+      "vertices": 324,
+      "meters": {
+        "w": 1.12,
+        "h": 2.91,
+        "d": 1.12
+      },
+      "tags": [
+        "nature",
+        "tree",
+        "snow"
       ]
     },
     {
