@@ -14,7 +14,7 @@ import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse } from '../Com
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 import {
-    S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
+    S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
     hudScale, hudTop, tintFor, SKY_STOPS,
@@ -345,6 +345,10 @@ export default function CometDriftHD() {
             trackGroup.add(new THREE.Mesh(M.plateauL, plateauMat))
             trackGroup.add(new THREE.Mesh(M.plateauR, plateauMat))
             trackGroup.add(buildArch(tex(strataTex())))
+            trackGroup.add(buildTireBars(
+                new THREE.MeshStandardMaterial({ color: 0xc8281e, roughness: 0.85 }),
+                new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.8 }),
+            ))
             for (const sc of SCENERY) trackGroup.add(buildSceneryItem(sc))
             const plan = tracksidePlan()
             propsGroup = buildTracksidePrimitives(plan)

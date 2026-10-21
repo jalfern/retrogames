@@ -190,6 +190,11 @@ export const COURSES = [
         id: 'sandbank', name: 'SANDBANK SPEED BOWL', short: 'SANDBANK',
         tagline: 'SANDBANK SPEED BOWL - 4 LAPS', palette: 'noon', control: grown('sandbank', CONTROL_SANDBANK),
         landmark: 'gantry',
+        // #502 item 3: the Bus Stop braking complex — the double-kink onto the
+        // front straight. Renderers paint a tire-bar wall + concrete apron on
+        // the inside of the bends inside this lap-fraction range so a player
+        // SEES the slow bit coming.
+        brakeCue: [0.84, 0.965],
     },
     {
         id: 'corkscomb', name: 'CORKSCOMB DUNES', short: 'CORKSCOMB',
@@ -353,6 +358,7 @@ function adopt(courseId) {
     for (const k of Object.keys(TRACK)) delete TRACK[k]
     Object.assign(TRACK, {
         id: t.def.id, name: t.def.name, short: t.def.short, palette: t.def.palette, landmark: t.def.landmark || 'arch',
+        brakeCue: t.def.brakeCue || null,
         pts: t.pts, len: t.len, N: t.N,
         ROAD_R, KERB_R, WALL_R,
         hMin: t.hMin, hMax: t.hMax, maxGrade: t.maxGrade,
