@@ -230,6 +230,11 @@ export default function CometDriftHD() {
         // #478: ?renderer=webgl(2) is Jon's pin name for the same fallback.
         const qs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
         const forceGL = !!qs && (qs.get('gl') === 'webgl2' || qs.get('renderer') === 'webgl' || qs.get('renderer') === 'webgl2')
+        // #478 item 9: QA pin for the three WebGPU-node-on-WebGL state — the
+        // exact device condition the self-heal refuge was built for. forceWebGL
+        // skips the adapter search, so backendName is deterministically 'webgl2'
+        // and WEBGL_lose_context can exercise the auto-heal headlessly.
+        const forceGLNode = !!qs && qs.get('gl') === 'webgl-node'
 
         const g = makeGame(0)
         gameRef.current = g
@@ -625,7 +630,7 @@ export default function CometDriftHD() {
         ;(async () => {
             try {
                 if (forceGL) throw new Error('pinned by ?gl=webgl2')
-                renderer = new WebGPURenderer({ canvas: glCanvas, antialias: !lite, alpha: false, preserveDrawingBuffer: true, forceWebGL: false })
+                renderer = new WebGPURenderer({ canvas: glCanvas, antialias: !lite, alpha: false, preserveDrawingBuffer: true, forceWebGL: forceGLNode })
                 await renderer.init()
                 if (disposed) { renderer.dispose(); return }
                 backendName = renderer.backend && renderer.backend.isWebGPUBackend ? 'webgpu' : 'webgl2'
@@ -1166,7 +1171,7 @@ export default function CometDriftHD() {
         const pixelHeartbeat = () => {
             if (backendName !== 'webgl2' || g.tick % 120 !== 0) return
             try {
-                const glc = glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
+                const glc = (renderer && ((renderer.getContext && renderer.getContext()) || (renderer.backend && renderer.backend.gl))) || glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
                 if (!glc) return
                 const buf = new Uint8Array(4 * 4)
                 glc.readPixels(Math.floor(glc.drawingBufferWidth / 2) - 2, Math.floor(glc.drawingBufferHeight / 2) - 2, 4, 4, glc.RGBA, glc.UNSIGNED_BYTE, buf)
@@ -1282,6 +1287,13 @@ export default function CometDriftHD() {
 
         window.__cometHDTest = {
             game: () => g,
+            simulateDeviceLoss: () => {
+                const gl = (renderer && ((renderer.getContext && renderer.getContext()) || (renderer.backend && renderer.backend.gl))) || glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
+                const ext = gl && gl.getExtension('WEBGL_lose_context')
+                if (!ext) return false
+                ext.loseContext()
+                return true
+            },
             keys,
             screen: () => st.screen,
             ready: () => ready,
