@@ -32,6 +32,15 @@ the boost meter and a full meter at takeoff throws OVER.
   fallback so nothing blocks), neon rails and city pylons, rigs
   that crouch/grab/spin/flip/tumble, spray sprites. `index.jsx` is paint,
   sound, HUD and input only.
+- Real surfaces (#669): `surfaceInfo` blends snow over rock by NATURAL slope
+  (`slopeAt` — featureLift excluded, the #638 lesson) and ridge height, with
+  crag banding, bedding planes + fracture blocks in the rock colour, and
+  snow-on-ledge relaxation; rock exists only beyond piste |x|>=1.5. Wind
+  cords + lit lumps ride the vertex shade; a tiling canvas detail texture
+  (cords, crust cracks, grit, `SURF_TILE` m) and an additive sparkle overlay
+  (`buildSparkles`, masked by `sparkleMask` to flat lit snow) complete the
+  look. Purely cosmetic: `terrainY` and physics untouched — pinned by
+  `ssxterraincheck`.
 - Carved tracks: `sim.js` records `r.carves` samples (`{s, x, t}`) whenever the
   player carves hard on the snow (|steer| > 0.45 at v > 8), fading after
   `CARVE_FADE = 300` ticks (~5 s). `index.jsx` lays those as two dark groove
@@ -114,6 +123,7 @@ was flaking the same-pose stability gate).
 ```bash
 npm run lint:ssx && npm run ssxcheck     # 70 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 90 checks: mountain feel (#638)
+npm run ssxterraincheck                 # 30 checks: snow/rock surfaces (#669)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
                                          #   keys drive poses, race still winnable
 ```
@@ -126,7 +136,17 @@ greps for it. Mutant proof (done once, by hand): neuter the bail rule in
 `sim.js` and "a half-done flip is a bail" goes red; neuter the carve push and
 the five "carved tracks" checks go red.
 
+The renderer treats vertex colours as LINEAR (SRGB output), so authored
+palettes lift a stop — day rock is authored dark or cliffs wash to grey
+(the #669 screenshot hunt). Vertex-colour `above`/laplacian/slope reads all
+exclude `featureLift`: built features must not read as terrain.
+
+Mutant proof for the terrain gate (done once, by hand): re-including
+featureLift in `slopeAt` goes red on "kicker flank stays snow" + piste
+continuity.
+
 Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
+`__ssxTest.seek(m)` / `.heat(n)` jump the rider/heat for screenshots and QA.
 
 ## Honest gaps (filed as the polish pass)
 
