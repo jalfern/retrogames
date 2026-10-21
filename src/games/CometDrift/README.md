@@ -222,3 +222,7 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
 - Sand and cliff are surfaces + clamp; no dynamic deformation.
 - The strata are texture bands, not true vertical geometry (Mode 7 limitation
   accepted — the Road Rash trick was always fake).
+- Banking cue (#502 item 4): `bankAt(i)` in track.js is the shared measure
+  (smoothed |curvature| / BANK_K); `bankRimDefs()` paints dark rim-shadow dots
+  on the outside of banked bends in the ground bake, so Sandbank's bowl leans
+  before the tyres do. Gated in cometcheck.

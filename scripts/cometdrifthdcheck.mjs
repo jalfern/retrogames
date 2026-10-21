@@ -15,7 +15,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
 import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
-import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit } from '../src/games/CometDriftHD/scene.js'
+import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE } from '../src/games/CometDriftHD/scene.js'
 import * as THREE from 'three'
 
 const args = process.argv.slice(2)
@@ -1164,6 +1164,31 @@ if (!SKIP_BROWSER) {
     } finally {
         await b4.close()
     }
+}
+
+// ---- #502 item 4: HD banking cue ----------------------------------------------------
+// Outside strata climb with bankAt through Sandbank's sweepers (a taller wall
+// against the lean); Sunset Gulch's canyon keeps uniform strata.
+{
+    const probe = (id) => {
+        selectCourse(id)
+        let cov = 0; let maxRise = 0
+        for (let i = 0; i < TRACK.N; i++) {
+            const s = -Math.sign(TRACK.pts[i].k) || 1
+            const rise = wallTopSideAt(i, s) - wallTopSideAt(i, -s)
+            if (rise >= 0.6 * BANK_RISE) cov++
+            if (rise > maxRise) maxRise = rise
+        }
+        selectCourse('gulch')
+        return { cov: cov / TRACK.N, maxRise }
+    }
+    const bk = probe('sandbank')
+    ok(bk.cov >= 0.15 && bk.maxRise >= 0.95,
+        `banking: Sandbank sweepers raise the outside strata (coverage ${(bk.cov * 100).toFixed(1)}%, peak +${bk.maxRise.toFixed(2)}m)`)
+    const gk = probe('gulch')
+    ok(gk.cov === 0 && gk.maxRise < 0.6 * BANK_RISE, `banking: Gulch canyon strata stay uniform (peak +${gk.maxRise.toFixed(2)}m)`)
+    const bs = trackGeometryStats()
+    ok(Object.values(bs.stats).every((s) => s.nan === 0), 'banking: raised wall ribbons stay finite (no NaNs)')
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)

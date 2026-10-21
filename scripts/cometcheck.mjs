@@ -1419,5 +1419,35 @@ if (process.argv.includes('--mutate')) {
     } finally { writeFileSync(SIM, sim517Src) }
 }
 
+// ---- #502 item 4: banking cue -------------------------------------------------------
+// bankAt() runs 0 on straights to 1 in full bank; the 2D bake paints a
+// rim-shadow band on the OUTSIDE of banked bends only — Sandbank's bowl
+// leans, Sunset Gulch keeps its flat canyon floor.
+{
+    const art = await import('../src/games/CometDrift/art.js' + '?bank=' + Math.random())
+    const { bankRimDefs } = art
+    selectCourse('sandbank'); selectCourse('sandbank')
+    const N = Tmod.TRACK.N
+    let cov = 0; let maxB = 0
+    for (let i = 0; i < N; i++) { const b = Tmod.bankAt(i); if (b >= 0.6) cov++; if (b > maxB) maxB = b }
+    check('#502 bank: Sandbank bowl reads banked', cov / N >= 0.15 && maxB >= 0.95,
+        `coverage ${(cov / N * 100).toFixed(1)}%, peak ${maxB.toFixed(2)}`)
+    const dots = bankRimDefs()
+    let bad = 0
+    for (const d of dots) {
+        const n = Tmod.TRACK.nearest(d.x, d.y, d.i)
+        if (Math.sign(n.lat) !== d.side || Math.abs(n.lat) > Tmod.WALL_R + 2 || Math.abs(n.lat) < Tmod.ROAD_R) bad++
+    }
+    check('#502 bank: rim shadows hug the outside of banked bends', dots.length >= N * 0.1 && bad === 0,
+        `${dots.length} dots, ${bad} misplaced`)
+    selectCourse('gulch'); selectCourse('gulch')
+    const NG = Tmod.TRACK.N
+    let gmax = 0
+    for (let i = 0; i < NG; i++) gmax = Math.max(gmax, Tmod.bankAt(i))
+    check('#502 bank: Sunset Gulch keeps a flat canyon', gmax < 0.6 && bankRimDefs().length === 0,
+        `peak ${gmax.toFixed(2)}`)
+    selectCourse('gulch')
+}
+
 console.log(`\n${R.fail === 0 ? 'GREEN' : 'RED — ' + R.fail + ' failed'}`)
 process.exit(R.fail === 0 ? 0 : 1)

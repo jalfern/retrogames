@@ -10,7 +10,7 @@
 // circuit in Node without a DOM.
 
 import * as THREE from 'three'
-import { TRACK, SCENERY } from '../CometDrift/track.js'
+import { TRACK, SCENERY, bankAt } from '../CometDrift/track.js'
 
 export const S = 1 / 60
 const T = TRACK
@@ -35,6 +35,14 @@ const wallOffAt = (i) => Math.max(220, T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + 
 // collision lip) reads the elevated value.
 export const plateauYAt = (i) => elevAt(i) + wallTopAt(i) - 0.25
 export const wallTopYAt = (i) => elevAt(i) + wallTopAt(i)
+// #502 item 4: the banking cue. Through the bowl's sweepers the OUTSIDE
+// strata climb with bankAt(i) (see track.js) — a taller wall against the
+// lean, straights untouched. Node-safe; cometdrifthdcheck pins the law.
+export const BANK_RISE = 1.15
+export const wallTopSideAt = (i, side) => {
+    const p = T.pts[i]
+    return wallTopAt(i) + (p.k * side < 0 ? bankAt(i) * BANK_RISE : 0)
+}
 
 // #478 item 7 — wall variety: one strata texture tiled the whole loop, so the
 // same 8-band pattern read as copy-paste every few seconds at speed. Each lap
@@ -182,7 +190,7 @@ function wallGeo(side) {
         if (p.k * side > 0) w = Math.max(170, Math.min(w, R * 0.8))
         return {
             ax: p.x + pxu * side * w, ay: y + 0.02, az: p.y + pyu * side * w,
-            bx: p.x + pxu * side * w, by: y + wallTopAt(i), bz: p.y + pyu * side * w,
+            bx: p.x + pxu * side * w, by: y + wallTopSideAt(i, side), bz: p.y + pyu * side * w,
         }
     }, 1 / 7, (j) => wallTint(j, side))
 }
@@ -193,7 +201,7 @@ function plateauGeo(side) {
         const [pxu, pyu] = PERP(p.a)
         const w = wallOffAt(i)
         const o = w + 430
-        const h = y + wallTopAt(i) - 0.25
+        const h = y + wallTopSideAt(i, side) - 0.25
         return {
             ax: p.x + pxu * side * o, ay: h, az: p.y + pyu * side * o,
             bx: p.x + pxu * side * w, by: h, bz: p.y + pyu * side * w,

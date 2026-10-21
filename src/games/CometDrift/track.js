@@ -404,3 +404,20 @@ export function surfaceAt(x, y, hint) {
 }
 
 export const START = { i: 0, s: 0 }
+
+// ---- #502 item 4: the banking measure ----------------------------------------
+// Sandbank is "banked" today only in feel; the player never SEES it. Both
+// renderers cue the sweeps off one number: smoothed |curvature| over a
+// ±14-sample window normalized to BANK_K (a ~450px sweeper). 0 on the
+// straights, 1 in full bank. HD raises the OUTSIDE strata through it,
+// the 2D bake lays a rim-shadow band; cometcheck pins the law.
+export const BANK_K = 0.0022
+export function bankAt(i) {
+    const N = TRACK.N
+    let m = 0
+    for (let w = -14; w <= 14; w++) {
+        const kk = Math.abs(TRACK.pts[(i + w + N) % N].k)
+        if (kk > m) m = kk
+    }
+    return Math.min(1, m / BANK_K)
+}

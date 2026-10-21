@@ -11,6 +11,9 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
 - `scene.js` — the Gulch as geometry, Node-safe (no DOM): `buildRibbon`
   extrudes the Catmull centerline into road / kerb / gutter / cliff-wall /
   plateau rings (`trackGeometryStats` is the harness audit surface);
+  banking cue (#502 item 4): `wallTopSideAt(i, side)` raises the OUTSIDE
+  strata by `bankAt(i) * BANK_RISE` through Sandbank's sweepers (flat on
+  straights, flat on Gulch) — pinned by cometdrifthdcheck.
   `buildKart` (13-part exposed-wheel buggy, steerable front axles),
   `makePool` (fixed-size additive GPU point system: spawn/step/clear,
   retire at ttl+1 ticks), `buildArch` (sandstone span, legs planted in the

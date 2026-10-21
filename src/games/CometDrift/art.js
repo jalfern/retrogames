@@ -9,7 +9,7 @@
 // CALLED, so the harness can grade PALETTE / MESA_* / KART / LIVERY without
 // a DOM.
 
-import { TRACK, TX, TEX, ROAD_R, KERB_R, WALL_R } from './track.js'
+import { TRACK, TX, TEX, ROAD_R, KERB_R, WALL_R, bankAt } from './track.js'
 
 export const PALETTE = {
     // the dusk sky, top to horizon: plum to ember
@@ -228,6 +228,29 @@ function offsetPath(lat) {
     return p
 }
 
+// #502 item 4: rim shadow through the banked sweepers. Where bankAt() says
+// the bowl leans (see track.js), the tall outside wall throws a dark band
+// along the canyon rim — the eye reads "banked" before the tyres do. Pure
+// geometry in Node (cometcheck gates it); buildGround paints the dots.
+export const RIM_SHADOW_R = WALL_R - 5
+export function bankRimDefs() {
+    const N = TRACK.N
+    const out = []
+    for (let i = 0; i < N; i++) {
+        const b = bankAt(i)
+        if (b < 0.6) continue
+        const p = TRACK.pts[i]
+        const side = -Math.sign(p.k) || 1
+        out.push({
+            i,
+            x: p.x + Math.cos(p.a + Math.PI / 2) * side * RIM_SHADOW_R,
+            y: p.y + Math.sin(p.a + Math.PI / 2) * side * RIM_SHADOW_R,
+            a: p.a, side, bank: +b.toFixed(3),
+        })
+    }
+    return out
+}
+
 // ---- the Mode 7 ground: one 2048² texture painted once at boot ----
 //
 // Concentric strokes over the centerline, WIDEST first — each narrower stroke
@@ -290,6 +313,14 @@ export function buildGround(pal = PALETTE) {
     // strata cracks: dashed strokes laying vertical fractures across the rock
     band(P.crack, WALL_R - 4, [4, 26])
     band(P.crack, KERB_R + 22, [3, 41])
+    // #502 item 4: the banking cue — the outside rim goes dark through the
+    // banked sweepers (tall wall, long shadow), straights stay lit rim-to-rim
+    x.fillStyle = 'rgba(28, 14, 8, 0.5)'
+    for (const d of bankRimDefs()) {
+        x.beginPath()
+        x.arc(d.x, d.y, 4.5, 0, Math.PI * 2)
+        x.fill()
+    }
     // asphalt
     band(P.road, ROAD_R)
     // crumbled sandstone eating the road edge: thin dashed rings hugging the
