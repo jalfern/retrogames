@@ -24,7 +24,7 @@ import { wallCell, NEON_TOP, CHROME, borderRivet } from './walls.js'
 import { playerFrame, GUN } from './sprite.js'
 import { enemyFrame, CHARGE, TELEGRAPH, OUTLINE, bossMouth, ADD_TELEGRAPH, BOSS_DEATH_T } from './enemies.js'
 import { muzzleFlash, casingCol, killShake, shutterPhase, SHUTTER_TICKS } from './juice.js'
-import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH } from './hud.js'
+import { BAR, PIP, POWER_LABEL, ICON, bombReady, hiRoll, RACK_FLASH, respawnState } from './hud.js'
 import { fireTimbre, BONUS_JINGLE, MURMUR, WHOOSH, ALERT } from './audio.js'
 import { attractFrame, DIM } from './attract.js'
 
@@ -542,9 +542,13 @@ const SmashTVGame = () => {
             ctx.strokeStyle = '#2b3348'
             ctx.strokeRect(0.5, 0.5, CW - 1, HUD_H - 1)
             text(`HI ${String(hiShown).padStart(6, '0')}`, 8, 10, 8, '#ffd23f', 3, 'left')
-            text(`1UP ${String(gs.players[0].score).padStart(6, '0')}`, 8, 20, 8, '#ff5d5d', 3, 'left')
+            const r1 = respawnState(gs.players[0].deadT, gs.tick)
+            text(`1UP ${String(gs.players[0].score).padStart(6, '0')}${r1.down ? ` ${r1.secs}` : ''}`, 8, 20, 8, r1.down ? (r1.on ? '#ff5d5d' : '#5a1f1f') : '#ff5d5d', 3, 'left')
             const two = gs.players[1]
-            if (two) text(`2UP ${String(two.score).padStart(6, '0')}`, 92, 20, 8, '#8fff9f', 3, 'left')
+            if (two) {
+                const r2 = respawnState(two.deadT, gs.tick)
+                text(`2UP ${String(two.score).padStart(6, '0')}${r2.down ? ` ${r2.secs}` : ''}`, 92, 20, 8, r2.down ? (r2.on ? '#8fff9f' : '#2f5a3a') : '#8fff9f', 3, 'left')
+            }
             text(gs.roomData.bonus ? `BONUS ${Math.ceil(gs.bonusT / 60)}` : `ROOM ${gs.room + 1}/${TOTAL_ROOMS}`, CW / 2, 10, 8, gs.roomData.bonus ? '#8fff9f' : '#5d7094', 2)
             for (let i = 0; i < Math.min(6, gs.players[0].lives); i++) {
                 ctx.fillStyle = '#e8eef8'

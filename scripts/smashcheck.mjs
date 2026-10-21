@@ -36,7 +36,7 @@ const { playerFrame, GUN, LAYERS, PLAYER_FRAMES } = await import('../src/games/S
 const { ENEMY_FRAMES, TELEGRAPH, CHARGERS, CHARGE, OUTLINE, enemyFrame, bossMouth, BOSS_MOUTH_FLAP, ADD_TELEGRAPH, BOSS_DEATH_T } = await import('../src/games/SmashTV/enemies.js')
 const { muzzleFlash, casingCol, killShake, KILL_SHAKE, SHUTTER_TICKS, shutterPhase, roomScore } = await import('../src/games/SmashTV/juice.js')
 const { FIRE, fireTimbre, BONUS_JINGLE, MURMUR, MURMUR_TICKS, WHOOSH, ALERT, ALERT_RADIUS, ALERT_CD } = await import('../src/games/SmashTV/audio.js')
-const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll } = await import('../src/games/SmashTV/hud.js')
+const { BAR, PIP, POWER_LABEL, labelClearsBar, pipFits, bombReady, RACK_FLASH, hiRoll, respawnState, RESPAWN_BLINK_SHIFT } = await import('../src/games/SmashTV/hud.js')
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) }
 
 async function fresh() {
@@ -480,6 +480,14 @@ console.log('hud')
     ok(seq.every((x, i) => i === 0 || x > seq[i - 1]), 'the HI roll is monotonic')
     ok(hiRoll(5, 5) === 5 && hiRoll(10, 5) === 5, 'the roll never moves at or past the target')
     ok(hiRoll(0, 16) === 1, 'the roll always advances at least one digit tick')
+    // #508: a DOWN seat's slot blinks a respawn countdown (readable in the shake)
+    ok(!respawnState(0, 0).down, 'a live seat shows no respawn countdown')
+    ok(respawnState(CFG.deadFreeze, 0).down && respawnState(1, 0).down, 'a dying seat is down until the freeze runs out')
+    ok(respawnState(CFG.deadFreeze, 0).secs > respawnState(1, 0).secs, 'the countdown counts down as the freeze runs out', `${respawnState(CFG.deadFreeze, 0).secs} -> ${respawnState(1, 0).secs}`)
+    ok(respawnState(1, 0).secs >= 1, 'the countdown never reads 0 while the seat is still down')
+    const on = [0, 1, 2, 3].map((t) => respawnState(35, t).on)
+    const off = [4, 5, 6, 7].map((t) => respawnState(35, t).on)
+    ok(on.every(Boolean) && off.every((v) => !v), `the down slot blinks on a ${1 << RESPAWN_BLINK_SHIFT}-tick cadence`)
 }
 
 // ---------------------------------------------------------------- co-op ----
