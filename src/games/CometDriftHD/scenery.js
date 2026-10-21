@@ -80,14 +80,24 @@ export function tracksidePlan() {
     const startStraight = Math.round(N * 0.04)
     const backStraight = Math.round(N * 0.5)
 
-    // grandstands: the finish straight landmark + two more on opposite straights.
-    for (let k = 0; k < 3; k++) {
-        const base = k === 0 ? startStraight : k === 1 ? backStraight : Math.round(N * 0.78)
-        const side = k === 0 ? 1 : k === 1 ? -1 : (shash(k * 3.3) < 0.5 ? 1 : -1)
+    // grandstands: the finish-line landmark — a pair straddling the start/finish
+    // so the grid and the camera both read a real start — plus two more on
+    // opposite straights. Kept well back from the wall (off ≥ 420px) and modestly
+    // scaled so their roofs sit above and behind the chase-cam, never looming over
+    // the racing line or cutting the sky out of frame.
+    for (const side of [1, -1]) {
+        for (let g = 0; g < 2; g++) {
+            const gi = (4 + g * 6) % N
+            if (place(gi, side, 430 + g * 50, 92)) add({ id: 'grandstand', i: gi, side, off: 430 + g * 50, scale: 1.2, orient: 'across', r: 92 })
+        }
+    }
+    for (let k = 0; k < 2; k++) {
+        const base = k === 0 ? backStraight : Math.round(N * 0.78)
+        const side = k === 0 ? -1 : (shash(k * 3.3) < 0.5 ? 1 : -1)
         for (let g = 0; g < 3; g++) {
             const i = (base + g * 5) % N
-            const off = 360 + g * 40
-            if (place(i, side, off, 92)) add({ id: 'grandstand', i, side, off, scale: 1.5, orient: 'across', r: 92 })
+            const off = 440 + g * 40
+            if (place(i, side, off, 92)) add({ id: 'grandstand', i, side, off, scale: 1.25, orient: 'across', r: 92 })
         }
     }
 
