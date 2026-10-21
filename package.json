@@ -22,6 +22,7 @@
     "shot": "node scripts/shot.mjs",
     "oceancheck": "node scripts/oceancheck.mjs",
     "shorecheck": "node scripts/shorecheck.mjs",
+    "shelfcheck": "node scripts/shelfcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
     "oceanfoam": "node scripts/oceanfoam.mjs",
     "audcheck": "node scripts/audcheck.mjs",
