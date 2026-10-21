@@ -1,67 +1,64 @@
-# STATE — 2026-10-21 forge am #1
+# STATE — 2026-10-21 forge pm #1
 
 ## Shipped this session
-- **#668 SHORE: make it fast → prod** (PR #678, squash `35c1916`,
-  live at jalfern.com/retrogames/demos/shore.html — DPR_CAP literals
-  verified in the served file).
-  - DPR capped at 2 (was uncapped; dpr-3 phones rendered 2.25x pixels for
-    no visible gain) — the headline phone win, arithmetic-certain.
-  - Offscreen render targets: canvas backbuffer pinned at CSS×dpr, never
-    resizes; internal scale selectable via `?rs=0.55..1` (fullscreen blit
-    upscale when rs<1; default rs=1 resolves straight to canvas).
-  - Harness hooks: `perf()` reports rs/nsub, `grid().ns` live, `?nsub=` lock.
-  - New `scripts/shoreperf.mjs` (`npm run shoreperf`): frame-time measurement
-    desktop/qhd/phone profiles vs the real GPU adapter, leak-proof kill
-    (process-group + profile pkill).
-
-## Backed out (measured, with evidence — see PR #678 body)
-- **nsub governor**: dt=1/120 is the CFL edge of the 0.4m grid — swash depths
-  inflated to 4m+ and shorecheck trace gates broke deterministically.
-- **Adaptive-resolution governor (1→0.9)**: starved probe readback under GPU
-  contention (trace gates red while the locked build was 26/26); no measurable
-  fps win. Blit plumbing stays so rs<1 is lockable without canvas resize.
-- **Per-pixel shader trims** (waterAt dedup, forward-diff normals, gated
-  churn/vnoise): fewer ops on paper, correlated with slower frames under
-  contention; reverted. Retry recipe in follow-up issue.
+- **#669 SSX: real snow and rock surfaces → prod** (PR #682, squash
+  `f2f10f2`, live at jalfern.com/retrogames/ssx — prod chunk
+  index-Q18zGN6c.js contains the new palette). README engine-notes
+  follow-up PR #686 (`7401af9`).
+  - Snow: wind cords (vertex + tiling detail texture), crust cracks, grit,
+    lit/shaded lumps, sparkle pinpoints on flat lit snow (additive overlay
+    sharing terrain buffers, global twinkle pulse). Carved tracks kept (#310).
+  - Rock: natural-slope reveal (featureLift excluded — the #638 lesson),
+    ridge crag banding, bedding planes + fracture blocks, snow-on-ledge
+    relax, masked to beyond piste |x|>=1.5.
+  - New gate `npm run ssxterraincheck` (30 checks, wired into CI static);
+    mutant proof: re-including featureLift in slopeAt goes red on
+    "kicker flank" + piste continuity.
+  - QA polish pass filed: **#685** (feedback).
 
 ## The lesson of the session
-- The box runs local LLM inference (omlx-server) + other lanes' Chrome
-  harnesses on the SAME Metal GPU. Absolute fps numbers there are fiction;
-  leaked headless Chromes from failed boots made it worse. Interleaved A/B is
-  the only honest local measurement; shorecheck/CI are the real gates.
-  shoreperf now kills its whole process group — keep that pattern.
+- The renderer treats vertex colours as LINEAR (SRGB output): every authored
+  palette lifts ~a stop. Day rock authored dark (82→42) or cliffs read as
+  grey plastic — screenshots caught what numbers couldn't.
+- Structural gates beat tuned gates: masking rock to |x|>=1.5 made the
+  no-speckle continuity gate pass by construction instead of by tuning.
+- Third probe on the same "flat wall" symptom: MEASURE surfaceInfo on the
+  visible columns instead of guessing — revealed the palette wash instantly.
+- Commit before running mutants; `git checkout --` reverts to the last
+  commit and eats uncommitted tuning (it nearly ate this session's).
 
 ## Next goal
-- Game-queue at session end: #669-#674 (SSX surfaces + 4 demos) + #668 was the
-  only `next`. Oldest game-queue = **#669 GAME — SSX: real snow and rock
-  surfaces** (lane:games) — unless a steer lands. Jonq #635 (AWAITING) default
-  says builder keeps taking queue items whatever the lane.
+- Game-queue at session end: #670-#674 (5 demos: campfire, sunrise range,
+  thunderstorm, credits card…). Oldest = **#670 DEMO — Campfire at night**
+  (lane:demos) unless a steer lands. jonq #635 AWAITING default in effect:
+  builder keeps taking the oldest queue item whatever the lane.
 
 ## Gotchas learned this session
-- `pgrep -f "user-data-dir=/tmp/forge"` before AND after any Chrome harness
-  session; leaked headless instances hold the GPU and invert every measurement
-  (a 0.55x render "running" at 82ms vs 21ms full-res was contention, not
-  physics).
-- A shorecheck failure that reproduces with your file but not with
-  origin/main's, at the same moment, IS your regression even on a noisy box —
-  the locked-copy bisect (disable one feature via sed, re-run) localizes it.
-- #676 (QA) merged mid-session: shore.html grew box-smoothers + struct cov.
-  Always `git fetch` + rebase before claiming; the base moved.
+- jalfern.com/retrogames/ 308-redirects to www.jalfern.com — poll the
+  canonical host; the arcade index is a 780KB loader, game code lives in
+  lazy chunks enumerated by `__vite__mapDeps` — grep every chunk for the
+  marker, not the index.
+- ssxmountaincheck/ssxterraincheck run buildTerrain in Node: canvas-texture
+  builders need a `document` guard (HAS_DOM) or the gates crash.
+- DEV hooks `__ssxTest.seek(m)` / `.heat(n)` (added for the shot hunt) —
+  reusable by QA; countdown is 3s+ so browser probes must wait ~5.5s
+  before checking speed/carves.
 
 ## Board / harness status
-- main: `35c1916` (this lane's merge) + others; nightly ok at merge.
-- Rule 4 satisfied (demo shipped). Rule 7: no new jonq needed (nothing this
-  session needed taste/priority).
-- Worktrees: forge-shore-fast-668 removed; main checkout detached at
-  origin/main.
+- main: `7401af9`; nightly green at merge (main-ok passed twice).
+- Rule 4 satisfied (game code shipped). Rule 7: no new jonq (nothing needed
+  taste/priority; polish wishes went to #685 instead).
+- Worktrees: forge/ssx-snow-rock-669 removed; main checkout detached at
+  origin/main; no leaked /tmp/forge Chromes (checked before and after).
 
 ## Open questions
 - #633 (lane:games) SSX rider 5 duplicate body — awaiting Jon.
 - #635 (lane:platform) builder takes demos/platform queue items? — AWAITING
   (default in effect: keep taking them).
+- #634 (lane:platform) red heist-nightly blocking? — AWAITING (default:
+  advisory per rule 3).
 
 ## Open threads
-- #680 QA — SHORE perf follow-ups (quiet-box shoreperf numbers, shader-trim
-  retry, nightly shoreperf job) — filed this session, lane:feedback.
-- #675 QA COMET DRIFT HD scenery polish, #665 QA SSX mountain-feel,
-  #657 QA shelf polish — still open (QA lane's).
+- #685 QA SSX surfaces polish pass — filed this session (lane:feedback).
+- #680 QA SHORE perf follow-ups, #675 QA COMET DRIFT HD scenery,
+  #665 QA SSX mountain-feel, #657 QA shelf polish — QA lane's.
