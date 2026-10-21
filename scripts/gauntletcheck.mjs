@@ -535,7 +535,10 @@ console.log('partner intelligence (#505)')
             if (i > 60) worst = Math.max(worst, Math.hypot(gs.partner.x - gs.hero.x, gs.partner.y - gs.hero.y))
             runPad(gs, { left: true })
         }
-        ok(worst < 2.0, '#505: the CPU seat holds pace through a long sprint', `worst gap ${worst.toFixed(2)}`)
+        // measured: heading prediction holds worst gap at 0.18; without it the
+        // seat aims one cell behind and drifts to 1.05 — 2.0 was too loose to
+        // tell the difference (surviving mutant, nightly 2026-10-21).
+        ok(worst < 0.5, '#505: the CPU seat holds pace through a long sprint', `worst gap ${worst.toFixed(2)}`)
     }
     // slam-door parity: the hero waits on the far side; the partner pushes.
     {
