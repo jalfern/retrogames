@@ -265,6 +265,25 @@ if (args.includes('--mutate-brakecue')) {
     })
 }
 
+// #718 floor mutant: pin the sand floor back to the flat dusk plane — the
+// floor-vs-elevation gates MUST go red under this run.
+const FLRLINE = 'export const courseFloorY = () => Math.min(FLOOR_DUSK, asphaltMinY() - FLOOR_MARGIN)'
+const FLRLINE_UTIL = 'export const courseFloorY = () => FLOOR_DUSK /* floormut */'
+let floormutat = false
+if (args.includes('--mutate-floor')) {
+    const fsrc = readFileSync(SCENE, 'utf8')
+    if (!fsrc.includes(FLRLINE)) { console.error('MUTATE_FLOOR: floor law not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, fsrc.replace(FLRLINE, FLRLINE_UTIL))
+    floormutat = true
+    console.log('  ..    mutated: the floor is the flat -1.5 plane again — the #718 gates MUST report FAILs')
+    process.on('exit', () => {
+        if (floormutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(FLRLINE_UTIL, FLRLINE))
+            console.log('  ..    floor mutation restored')
+        }
+    })
+}
+
 // ---------------------------------------------------------------- geometry
 console.log('track geometry (the HD rebuild of the Gulch):')
 const { stats, bounds, geos } = trackGeometryStats()
@@ -1291,6 +1310,37 @@ if (!SKIP_BROWSER) {
     ok(Object.values(bs.stats).every((s) => s.nan === 0), 'banking: raised wall ribbons stay finite (no NaNs)')
 }
 
+// ---- #718: the floor follows the course ------------------------------------------------
+// The sand floor was a flat plane at -1.5 (a Gulch fit); #518's elevation work
+// sank Sandbank to -3.1 and Corkscomb to -4.8, so road, kart and camera drove
+// UNDER the sand for ~a quarter of those laps. The floor now hangs below the
+// selected course's lowest cambered asphalt edge. --mutate-floor pins it back
+// to -1.5 and must redden the per-course gates.
+console.log('floor vs elevation (#718 — nothing drives under the sand):')
+{
+    const F7 = await import('file://' + SCENE + '?t=' + (Date.now() + 718))
+    const { courseFloorY, asphaltMinY, elevAt, buildMesas: bm7 } = F7
+    ok(F7.FLOOR_DUSK === -1.5 && F7.FLOOR_MARGIN >= 0.5, `floor constants: dusk plane -1.5, a real ${F7.FLOOR_MARGIN}u margin`)
+    for (const c of COURSES) {
+        selectCourse(c.id)
+        const f = courseFloorY(); const lo = asphaltMinY()
+        const cm = Math.min(...Array.from({ length: TRACK.N }, (_, i) => elevAt(i)))
+        ok(lo > f, `${c.short}: lowest cambered asphalt ${lo.toFixed(2)}u clears the floor ${f.toFixed(2)}u`)
+        ok(f <= lo - 0.5, `${c.short}: floor hangs ≥0.5u under the road (${(lo - f).toFixed(2)}u of margin)`)
+        ok(f <= F7.FLOOR_DUSK, `${c.short}: floor never rises above the dusk plane`)
+        ok(cm + 2.2 > f, `${c.short}: the chase eye (≥2.2u over the crown, shake included) stays above the floor`)
+    }
+    selectCourse('gulch')
+    ok(courseFloorY() === Math.min(-1.5, asphaltMinY() - F7.FLOOR_MARGIN), 'the Gulch floor obeys the same law (no special case)')
+    ok(courseFloorY() < -1.49 - 0.5, `Gulch's 0.01 clearance got a real margin (floor ${courseFloorY().toFixed(2)}u vs road -1.49u)`)
+    const SRCF = readFileSync(SHARD, 'utf8')
+    ok(/floor\.position\.set\(A\.cx, floorY, A\.cz\)/.test(SRCF) && /buildMesas\(t\.mesa, floorY\)/.test(SRCF), 'index.jsx drops floor AND mesas to the course floor in buildHorizon')
+    ok(!SRCF.includes('A.cx, -1.5'), 'the flat -1.5 floor literal is gone from index.jsx')
+    const mesas = bm7(0x123456, -3).children
+    ok(mesas.every((m) => Math.abs(m.position.y - m.geometry.parameters.height / 2 + 2.9) < 1e-9), 'mesas sink with the floor (base = floor + 0.1u)')
+    ok(bm7(0x123456, -3).children[0].position.y < bm7(0x123456).children[0].position.y - 1.4, 'a deeper floor puts every mesa below its dusk footing')
+}
+
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat || hudmutat || skinmutat || regmutat || healmutat) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat || hudmutat || skinmutat || regmutat || healmutat || floormutat) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)

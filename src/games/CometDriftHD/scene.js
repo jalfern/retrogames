@@ -50,6 +50,22 @@ export const wallTopSideAt = (i, side) => {
     return wallTopAt(i) + (p.k * side < 0 ? bankAt(i) * BANK_RISE : 0)
 }
 
+// #718: the sand floor. It was a flat plane at -1.5 — a fit for Gulch that
+// #518's elevation work sank under: Sandbank's road dips to -3.1 and
+// Corkscomb's to -4.8, so a quarter of those laps drove BELOW the sand. The
+// floor now hangs FLOOR_MARGIN under the selected course's lowest asphalt
+// edge (camber included, which pushes the outside edge ~0.3u deeper than the
+// centerline) and never above the dusk constant, so Gulch keeps its look and
+// every course gets a floor its road can't pierce. Node-safe.
+export const FLOOR_DUSK = -1.5
+export const FLOOR_MARGIN = 0.6
+export const asphaltMinY = () => {
+    let m = Infinity
+    for (let i = 0; i < T.N; i++) m = Math.min(m, elevAt(i) - T.ROAD_R * S * Math.abs(Math.tan(T.pts[i].bank)))
+    return m
+}
+export const courseFloorY = () => Math.min(FLOOR_DUSK, asphaltMinY() - FLOOR_MARGIN)
+
 // #478 item 7 — wall variety: one strata texture tiled the whole loop, so the
 // same 8-band pattern read as copy-paste every few seconds at speed. Each lap
 // section carries its own rock tint (vertex colours multiply the shared map),
@@ -963,12 +979,12 @@ export function mesaDefs() {
 
 const w0 = (d) => d.w * 0.9
 
-export function buildMesas(color = 0x4e222c) {
+export function buildMesas(color = 0x4e222c, floorY = FLOOR_DUSK) {
     const g = new THREE.Group()
     const rock = new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 })
     for (const d of mesaDefs()) {
         const m = new THREE.Mesh(new THREE.CylinderGeometry(w0(d), d.w, d.h, 6), rock)
-        m.position.set(d.x, d.h / 2 - 1.4, d.z)
+        m.position.set(d.x, d.h / 2 + floorY + 0.1, d.z)
         m.rotation.y = d.ang
         g.add(m)
     }
