@@ -71,18 +71,24 @@ const WIND_AZ = 0.0;
 const SKY = (typeof OCEAN_STARS !== 'undefined') ? OCEAN_STARS : { BSC: [], MILKY: [], STAR_PAL: [[1, 1, 1]], LAT_DEG: 38.6 };
 const PHI = SKY.LAT_DEG * Math.PI / 180;          // latitude -> celestial pole altitude
 const LST0 = 185;                                  // LST at tod=0: Dipper on the meridian, high in the north
+// #704 — phone-faithful night sky. Sizes are CSS-px radii; the vertex pass scales
+// them by the render dpr so a star reads the same on a DPR-1.75 phone (a 1.1-canvas-px
+// faint star is sub-pixel there — the field barely showed). The Milky Way is a field of
+// large, very dim, heavily overlapping soft billboards — a continuous glow, never dots.
+const STAR_MIN = 1.5, STAR_RANGE = 3.2;   // CSS-px radius, faint (mag 5.5) → bright end
+const MW_SIZE = 24, MW_GAIN = 0.13;      // CSS-px blob radius + per-blob brightness (vs a star)
 const STAR_D = (() => {
   const out = [];
   const mn = -1.46, mx = 5.5, sp = mx - mn;           // V-mag range of the embedded catalog (#607: to 5.5 so the sky fills)
   for (let i = 0; i < SKY.BSC.length; i++) {
     const s = SKY.BSC[i];
     const p = Math.max(0, Math.min(1, (mx - s[2]) / sp));   // 0 faint .. 1 brightest
-    const sizePx = 1.1 + 3.4 * Math.pow(p, 1.7);            // angular size (px radius) by brightness
+    const sizePx = STAR_MIN + STAR_RANGE * Math.pow(p, 1.7); // angular size (CSS-px radius) by brightness
     const br = 0.5 + 2.1 * Math.pow(p, 2.2);                // additive brightness by brightness
     const c = SKY.STAR_PAL[s[3]] || [1, 1, 1];              // spectral color O..M
-    out.push({ ra: s[0], dec: s[1], sizePx, br, c, tw: (i * 0.6180339887) % 1 });
+    out.push({ ra: s[0], dec: s[1], sizePx, br, c, tw: (i * 0.6180339887) % 1, gain: 1.0 });
   }
-  for (const m of SKY.MILKY) out.push({ ra: m[0], dec: m[1], sizePx: 10.0, br: m[2] * 5.0, c: [0.56, 0.63, 0.80], tw: Math.random() });
+  for (const m of SKY.MILKY) out.push({ ra: m[0], dec: m[1], sizePx: MW_SIZE, br: m[2] * 5.0, c: [0.56, 0.63, 0.80], tw: Math.random(), gain: MW_GAIN });
   return out;
 })();
 
@@ -797,9 +803,9 @@ async function boot() {
   const M_STAR = `
     struct StarU { vp: mat4x4f, radius: f32, px: f32, py: f32, time: f32, night: f32, cloud: f32, p0: f32, p1: f32 };
     @group(0) @binding(0) var<uniform> u: StarU;
-    struct SOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f, @location(1) col: vec3f, @location(2) att: f32, @location(3) tw: f32 };
+    struct SOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f, @location(1) col: vec3f, @location(2) att: f32, @location(3) tw: f32, @location(4) gain: f32 };
     @vertex
-    fn vs_star(@location(0) corner: vec2f, @location(1) d4: vec4f, @location(2) c4: vec4f) -> SOut {
+    fn vs_star(@location(0) corner: vec2f, @location(1) d4: vec4f, @location(2) c4: vec4f, @location(3) g1: f32) -> SOut {
       // #608: reflected batch mirrors each direction in the horizon plane (p0=1)
       // and rides the sea: dimmer (p1), vertically smeared into glitter, wobbled
       // by a per-star ripple, scintillating faster than the sky copy.
@@ -809,6 +815,7 @@ async function boot() {
       let cc = u.vp * vec4f(center, 1.0);
       var o: SOut;
       o.col = c4.rgb;
+      o.gain = g1;
       let twSlow = 0.72 + 0.28 * sin(u.time * (1.5 + 2.5 * fract(c4.w * 17.0)) + c4.w * 43.0);
       let twFast = 0.55 + 0.45 * sin(u.time * (5.5 + 7.0 * fract(c4.w * 7.0)) + c4.w * 29.0);
       o.tw = mix(twSlow, twFast, refl);
@@ -830,7 +837,7 @@ async function boot() {
       if (r > 1.0) { discard; }
       let core = smoothstep(0.60, 0.0, r);
       let fall = pow(1.0 - r, 2.0);
-      let b = in.att * in.tw * u.night * (1.0 - 0.92 * u.cloud);
+      let b = in.att * in.tw * in.gain * u.night * (1.0 - 0.92 * u.cloud);
       return vec4f(in.col * (0.5 + 1.1 * core) * fall * b, 1.0);
     }
   `;
@@ -841,8 +848,8 @@ async function boot() {
   const starIdx = new Uint32Array([0, 1, 2, 2, 1, 3]);
   const starIdxBuf = device.createBuffer({ size: starIdx.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(starIdxBuf, 0, starIdx);
-  const starInstBuf = device.createBuffer({ size: Math.max(1, STAR_D.length) * 8 * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-  const starInstArr = new Float32Array(Math.max(1, STAR_D.length) * 8);
+  const starInstBuf = device.createBuffer({ size: Math.max(1, STAR_D.length) * 9 * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  const starInstArr = new Float32Array(Math.max(1, STAR_D.length) * 9);
   const uStar = device.createBuffer({ size: 96, usage: U });
   const starLayout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }] });
   const bgStar = device.createBindGroup({ layout: starLayout, entries: [{ binding: 0, resource: { buffer: uStar } }] });
@@ -850,9 +857,10 @@ async function boot() {
     layout: device.createPipelineLayout({ bindGroupLayouts: [starLayout] }),
     vertex: { module: modStar, entryPoint: 'vs_star', buffers: [
       { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
-      { arrayStride: 32, stepMode: 'instance', attributes: [
+      { arrayStride: 36, stepMode: 'instance', attributes: [
         { shaderLocation: 1, offset: 0, format: 'float32x4' },
         { shaderLocation: 2, offset: 16, format: 'float32x4' },
+        { shaderLocation: 3, offset: 32, format: 'float32' },
       ] },
     ] },
     fragment: { module: modStar, entryPoint: 'fs_star', targets: [{ format, blend: {
@@ -871,9 +879,10 @@ async function boot() {
     layout: device.createPipelineLayout({ bindGroupLayouts: [starLayout] }),
     vertex: { module: modStar, entryPoint: 'vs_star', buffers: [
       { arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] },
-      { arrayStride: 32, stepMode: 'instance', attributes: [
+      { arrayStride: 36, stepMode: 'instance', attributes: [
         { shaderLocation: 1, offset: 0, format: 'float32x4' },
         { shaderLocation: 2, offset: 16, format: 'float32x4' },
+        { shaderLocation: 3, offset: 32, format: 'float32' },
       ] },
     ] },
     fragment: { module: modStar, entryPoint: 'fs_star', targets: [{ format, blend: {
@@ -937,9 +946,11 @@ async function boot() {
   let last = performance.now();
   let frames = 0;
   let vw = 0, vh = 0;
+  let dprCap = 1;   // #704: render dpr — star sizes are CSS-px, scaled by this at draw time
 
   function resize() {
     const dpr = Math.min(devicePixelRatio || 1, LITE ? 1 : 1.75);
+    dprCap = dpr;
     const w = Math.max(2, Math.floor(canvas.clientWidth * dpr));
     const h = Math.max(2, Math.floor(canvas.clientHeight * dpr));
     if (w !== vw || h !== vh) {
@@ -1061,13 +1072,13 @@ async function boot() {
         const Uu = Math.sin(d) * sinP + cD * cosP * Math.cos(H);
         if (Uu <= 0.0) continue;                 // below the horizon
         const inv = 1 / Math.hypot(E, N, Uu);
-        const o = n * 8;
-        starInstArr[o] = E * inv; starInstArr[o + 1] = Uu * inv; starInstArr[o + 2] = N * inv; starInstArr[o + 3] = st.sizePx;
-        starInstArr[o + 4] = st.c[0]; starInstArr[o + 5] = st.c[1]; starInstArr[o + 6] = st.c[2]; starInstArr[o + 7] = st.tw;
+        const o = n * 9;
+        starInstArr[o] = E * inv; starInstArr[o + 1] = Uu * inv; starInstArr[o + 2] = N * inv; starInstArr[o + 3] = st.sizePx * dprCap;
+        starInstArr[o + 4] = st.c[0]; starInstArr[o + 5] = st.c[1]; starInstArr[o + 6] = st.c[2]; starInstArr[o + 7] = st.tw; starInstArr[o + 8] = st.gain;
         n++;
       }
       starInstCount = n;
-      if (n) device.queue.writeBuffer(starInstBuf, 0, starInstArr.subarray(0, n * 8));
+      if (n) device.queue.writeBuffer(starInstBuf, 0, starInstArr.subarray(0, n * 9));
       curNight = nightness;
       device.queue.writeBuffer(uStar, 0, new Float32Array([
         ...vp, STAR_RADIUS, vw, vh, t, nightness, cloud, 0, 0,
@@ -1248,6 +1259,7 @@ async function boot() {
         count: SKY.BSC.length, mwCount: SKY.MILKY.length, lat: SKY.LAT_DEG,
         lstDeg: +((((lst * 180 / Math.PI) % 360) + 360) % 360).toFixed(1),
         night: +curNight.toFixed(3), uploaded: starInstCount, reflect: +curReflK.toFixed(3),
+        starMinCss: STAR_MIN, starMaxCss: +(STAR_MIN + STAR_RANGE).toFixed(2), mwSizeCss: MW_SIZE, mwGain: MW_GAIN, dprCap: +dprCap.toFixed(3),
         pole: [0, +Math.sin(PHI).toFixed(4), +Math.cos(PHI).toFixed(4)],
         named,
       };
