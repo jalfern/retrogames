@@ -1,68 +1,67 @@
-# STATE — 2026-10-20 forge pm #6
+# STATE — 2026-10-21 forge am #1
 
 ## Shipped this session
-- **#639 COMET DRIFT HD: trackside scenery → prod** (PR #673, squash `a41f3dc`,
-  live at jalfern.com/retrogames/comet-drift-hd; prod chunk index-B5zuoW9m.js
-  verified to carry the new scenery literals).
-  - New `src/games/CometDriftHD/scenery.js`: a deterministic `tracksidePlan()`
-    (distance-based density) + primitive fallbacks + shelf GLB attach + a
-    Node-safe `tracksideAudit()`.
-  - Dressing per circuit: grandstands straddling the start/finish (+ two
-    opposite straights), pit buildings + billboards down the front straight,
-    tire walls on the outer side of each course's tightest corners (gate
-    relative to that course's own max curvature, so the fast-flow GULCH dresses
-    too), striped barriers on the fast sections, marshal posts + flags at corner
-    posts, cones at chicane mouths, pines/oaks/rocks on the plateaus.
-  - Laws held: racing line clear (nothing inside the 216px sim clamp), every
-    prop clears every passing leg by its footprint (#542 fold-back rule), only
-    barrier/tire_wall solid (and outside the wall), phone count capped (100–177).
-  - `index.jsx`: props group rebuilds on every course swap; primitives paint
-    instantly, GLBs upgrade async; `propsRev` guards a swap mid-load; shared GLB
-    geometry never disposed.
-  - `npm run cometdrifthdscenerycheck`: 51 asserts across GULCH/SANDBANK/
-    CORKSCOMB — boot (deterministic, finite), rules (line clear, corridor, solids,
-    cap, all signature categories), autopilot still wins 4 laps. Mutant
-    (barrier onto the line, fresh child process) → RED, restored.
-  - Gates green: eslint + lint:mario/fps/ai/hd + build. Screenshots reviewed at
-    start line + mid-lap; pulled the finish grandstands back/down after LOOKING
-    so they frame the line without smothering the sky.
+- **#668 SHORE: make it fast → prod** (PR #678, squash `35c1916`,
+  live at jalfern.com/retrogames/demos/shore.html — DPR_CAP literals
+  verified in the served file).
+  - DPR capped at 2 (was uncapped; dpr-3 phones rendered 2.25x pixels for
+    no visible gain) — the headline phone win, arithmetic-certain.
+  - Offscreen render targets: canvas backbuffer pinned at CSS×dpr, never
+    resizes; internal scale selectable via `?rs=0.55..1` (fullscreen blit
+    upscale when rs<1; default rs=1 resolves straight to canvas).
+  - Harness hooks: `perf()` reports rs/nsub, `grid().ns` live, `?nsub=` lock.
+  - New `scripts/shoreperf.mjs` (`npm run shoreperf`): frame-time measurement
+    desktop/qhd/phone profiles vs the real GPU adapter, leak-proof kill
+    (process-group + profile pkill).
+
+## Backed out (measured, with evidence — see PR #678 body)
+- **nsub governor**: dt=1/120 is the CFL edge of the 0.4m grid — swash depths
+  inflated to 4m+ and shorecheck trace gates broke deterministically.
+- **Adaptive-resolution governor (1→0.9)**: starved probe readback under GPU
+  contention (trace gates red while the locked build was 26/26); no measurable
+  fps win. Blit plumbing stays so rs<1 is lockable without canvas resize.
+- **Per-pixel shader trims** (waterAt dedup, forward-diff normals, gated
+  churn/vnoise): fewer ops on paper, correlated with slower frames under
+  contention; reverted. Retry recipe in follow-up issue.
+
+## The lesson of the session
+- The box runs local LLM inference (omlx-server) + other lanes' Chrome
+  harnesses on the SAME Metal GPU. Absolute fps numbers there are fiction;
+  leaked headless Chromes from failed boots made it worse. Interleaved A/B is
+  the only honest local measurement; shorecheck/CI are the real gates.
+  shoreperf now kills its whole process group — keep that pattern.
 
 ## Next goal
-Oldest game-queue is empty right now (only #639 was queued). Check the board
-next cycle — if it stays empty and no `next`/`steer`, and no live QA session,
-borrow a `feedback` item per FORGE step 2. The next game-queue item to expect is
-whichever Jon or the warden labels.
+- Game-queue at session end: #669-#674 (SSX surfaces + 4 demos) + #668 was the
+  only `next`. Oldest game-queue = **#669 GAME — SSX: real snow and rock
+  surfaces** (lane:games) — unless a steer lands. Jonq #635 (AWAITING) default
+  says builder keeps taking queue items whatever the lane.
 
 ## Gotchas learned this session
-- A shared `node_modules` symlink into a fresh worktree works and keeps
-  `three` resolvable without a re-install; still run the full `npm ci` gates.
-- ESM caches the module you import, so a file-mutating check cannot see its own
-  mutation in-process — mutate on disk, re-run the check in a FRESH child
-  process, demand it exits red, then restore (the #673 harness pattern).
-- `sim.step(g, inp)` mutates `g` in place and returns nothing; the win flag is
-  `g.end` (+ `kart.finished`, LAPS=4), not `g.over`.
-- On a 3-leg loop a lateral `off` is not enough: gates that use a CURVATURE
-  threshold miss the fast-flow course entirely — gate relative to the course's
-  own max curvature so every circuit dresses its apexes.
-- Grandstand roofs at scale 1.5 / off 320 loom over the chase-cam and cut the
-  sky out at the line; pull to off ≥430 / scale ~1.2.
-- `__cometHDTest` + `window.__game.step(...)` drive the HD race headless;
-  `page.screenshot` captures the compositor so WebGPU/WebGL both image fine.
+- `pgrep -f "user-data-dir=/tmp/forge"` before AND after any Chrome harness
+  session; leaked headless instances hold the GPU and invert every measurement
+  (a 0.55x render "running" at 82ms vs 21ms full-res was contention, not
+  physics).
+- A shorecheck failure that reproduces with your file but not with
+  origin/main's, at the same moment, IS your regression even on a noisy box —
+  the locked-copy bisect (disable one feature via sed, re-run) localizes it.
+- #676 (QA) merged mid-session: shore.html grew box-smoothers + struct cov.
+  Always `git fetch` + rebase before claiming; the base moved.
 
 ## Board / harness status
-- main: `a41f3dc` (this lane's merge). nightly ok at merge.
-- Rule 4 satisfied: this PR is game code. Rule 7: no new jonq (games lane open
-  questions unchanged; nothing this session needed taste/priority).
-- Worktrees: `~/Dev/retrogames-forge-comet-scenery-639` removed after merge;
-  main checkout detached at `origin/main`.
+- main: `35c1916` (this lane's merge) + others; nightly ok at merge.
+- Rule 4 satisfied (demo shipped). Rule 7: no new jonq needed (nothing this
+  session needed taste/priority).
+- Worktrees: forge-shore-fast-668 removed; main checkout detached at
+  origin/main.
 
 ## Open questions
-- #633 (lane:games) SSX rider 5 duplicate body — awaiting Jon (default: keep the
-  hooded duplicate).
+- #633 (lane:games) SSX rider 5 duplicate body — awaiting Jon.
+- #635 (lane:platform) builder takes demos/platform queue items? — AWAITING
+  (default in effect: keep taking them).
 
 ## Open threads
-- #675 QA — COMET DRIFT HD: trackside scenery polish pass (lane:qa): roof clip,
-  signage text, floating trees/contact shadows, barrier variety, crowd dots,
-  bunting, distant hills, start-line crowd ambience.
-- #665 QA — SSX mountain-feel polish pass (lane:qa) still open.
-- #657 QA shelf polish (lane:qa) still open.
+- #680 QA — SHORE perf follow-ups (quiet-box shoreperf numbers, shader-trim
+  retry, nightly shoreperf job) — filed this session, lane:feedback.
+- #675 QA COMET DRIFT HD scenery polish, #665 QA SSX mountain-feel,
+  #657 QA shelf polish — still open (QA lane's).
