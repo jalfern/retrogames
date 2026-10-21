@@ -19,6 +19,7 @@ import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCo
 
 const args = process.argv.slice(2)
 const MUTATE = args.includes('--mutate')
+const MUTATE_CHIME = args.includes('--mutate-chime')
 const SKIP_BROWSER = args.includes('--skip-browser')
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SHARD = resolve(HERE, '../src/games/CometDriftHD/index.jsx')
@@ -42,6 +43,26 @@ if (MUTATE) {
         if (mutated) {
             writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(MUTIL, LINE))
             console.log('  ..    mutation restored')
+        }
+    })
+}
+
+// chime mutant (#478 item 5): flatten the gold bell's sparkle so the ladder's
+// chime stops rising — the gold-bell gate MUST go red under this run.
+const AUDIO = resolve(HERE, '../src/games/CometDriftHD/audio.js')
+const CLINE = 'export const GOLD_BELL = 3136'
+const CUTIL = 'export const GOLD_BELL = 120'
+let chimemutat = false
+if (MUTATE_CHIME) {
+    const csrc = readFileSync(AUDIO, 'utf8')
+    if (!csrc.includes(CLINE)) { console.error('MUTATE_CHIME: gold-bell line not found — probing stale code.'); process.exit(2) }
+    writeFileSync(AUDIO, csrc.replace(CLINE, CUTIL))
+    chimemutat = true
+    console.log('  ..    mutated: gold bell no longer rings on top — the chime gate MUST report a FAIL')
+    process.on('exit', () => {
+        if (chimemutat) {
+            writeFileSync(AUDIO, readFileSync(AUDIO, 'utf8').replace(CUTIL, CLINE))
+            console.log('  ..    chime mutation restored')
         }
     })
 }
@@ -207,6 +228,24 @@ console.log('reused sim keeps its rules under the new renderer:')
     ok(g.end === 'win', `autopilot drives the field from P7 and WINS (${(t / 60).toFixed(1)}s world time, ${P.lap} laps)`)
     ok(banked[0] + banked[1] + banked[2] >= 3, `the ladder pays in a REAL race, not just the treadmill: ${banked[0]} blue + ${banked[1]} violet + ${banked[2]} gold banked (#471 item 8)`)
     ok(banked[2] >= 1, 'the autopilot banks the GOLD tier in-race')
+}
+
+// ---------------------------------------------------------------- bank voices
+// #478 item 5: GOLD banks with a rising bell chime the lower tiers never ring.
+console.log('bank voices (#478 item 5 — gold bell chime):')
+{
+    const AV = await import('file://' + AUDIO + '?t=' + Date.now())
+    const { bankVoices, GOLD_CHIME, GOLD_BELL } = AV
+    const sineTones = (tier) => bankVoices(tier).filter((v) => v.k === 'tone' && v.t === 'sine').map((v) => v.f)
+    const chime = sineTones(2)
+    ok(GOLD_CHIME.length >= 3, `gold chime is a ${GOLD_CHIME.length}-note arpeggio (not a single blip)`)
+    ok(GOLD_CHIME.every((c) => c[2] === 'sine'), 'the chime is pure sine (bell, not a chiptune square)')
+    ok(GOLD_CHIME.every((c) => c[1] <= 0.3), 'every chime note is short (<=0.3s) so it rings, not drones')
+    ok(GOLD_CHIME.every((c, i) => i === 0 || c[0] > GOLD_CHIME[i - 1][0]), 'the chime ascends (rising ladder to the bell)')
+    ok(chime.length === GOLD_CHIME.length && chime[chime.length - 1] === GOLD_BELL && GOLD_BELL >= 3000, `tier 2 rings the full chime topping out on the high G7 bell (${GOLD_BELL}Hz)`)
+    ok(bankVoices(0).every((v) => v.t !== 'sine') && bankVoices(1).every((v) => v.t !== 'sine'), 'blue and violet have NO bell — the chime is GOLD-only')
+    ok(GOLD_CHIME.every((c, i) => i === 0 || c[4] > GOLD_CHIME[i - 1][4]), 'chime notes arpeggiate (rising delays, not a chord stab)')
+    ok(readFileSync(SHARD, 'utf8').includes('bankVoices(ev.tier)'), 'index.jsx drives the COMET bank voices from bankVoices(ev.tier)')
 }
 
 // ---------------------------------------------------------------- browser
@@ -380,5 +419,5 @@ if (!SKIP_BROWSER) {
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)
