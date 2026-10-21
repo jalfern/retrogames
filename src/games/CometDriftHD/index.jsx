@@ -891,7 +891,11 @@ export default function CometDriftHD() {
         }
         const fu = (sz) => `bold ${Math.max(1, Math.round(sz * hs()))}px monospace`
 
-        const MAP = (() => {
+        // #502 item 5: the normaliser is REBUILT when the selector swaps the
+        // course — the circuits' bounding boxes differ by nearly 2x, and a
+        // frozen Gulch box clipped Sandbank/Corkscomb off the minimap. Cached
+        // by TRACK.id, rebuilt on the fly (course switches are rare).
+        const makeMapNorm = () => {
             let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity
             for (const p of T.pts) {
                 minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x)
@@ -902,7 +906,13 @@ export default function CometDriftHD() {
             const sy = (1 - padF * 2) / (maxY - minY)
             const sc = Math.min(sx, sy)
             return (x, y) => [padF + (x - minX) * sc + ((1 - padF * 2) - (maxX - minX) * sc) / 2, padF + (y - minY) * sc + ((1 - padF * 2) - (maxY - minY) * sc) / 2]
-        })()
+        }
+        let mapId = T.id
+        let MAP = makeMapNorm()
+        const mapNow = () => {
+            if (mapId !== T.id) { mapId = T.id; MAP = makeMapNorm() }
+            return MAP
+        }
 
         const tierReached = (charge) => {
             let t = -1
@@ -990,16 +1000,17 @@ export default function CometDriftHD() {
             const mw = Math.round(62 * u)
             panel(Math.round(W - mw - 2 * u), TOP + 2 * u, mw, mw)
             hctx.strokeStyle = 'rgba(150,190,220,0.55)'; hctx.lineWidth = Math.max(1, u)
+            const m0 = mapNow()
             hctx.beginPath()
             for (let i = 0; i < T.N; i += 6) {
-                const [qx, qy] = MAP(T.pts[i].x, T.pts[i].y)
+                const [qx, qy] = m0(T.pts[i].x, T.pts[i].y)
                 const px0 = Math.round(W - mw - 2 * u + qx * mw); const py0 = Math.round(TOP + 2 * u + qy * mw)
                 if (i === 0) hctx.moveTo(px0, py0); else hctx.lineTo(px0, py0)
             }
             hctx.closePath(); hctx.stroke()
             for (let i = g.karts.length - 1; i >= 0; i--) {
                 const k = g.karts[i]
-                const [qx, qy] = MAP(k.x, k.y)
+                const [qx, qy] = m0(k.x, k.y)
                 hctx.fillStyle = k.isPlayer ? '#28d8f8' : `#${(LIVERY[k.color] || 0xcccccc).toString(16).padStart(6, '0')}`
                 const ds = Math.max(2, Math.round((k.isPlayer ? 4.5 : 3) * u))
                 hctx.beginPath()
@@ -1037,6 +1048,20 @@ export default function CometDriftHD() {
             hctx.font = fu(11)
             hctx.fillStyle = '#7ae8ff'
             hctx.fillText('<  ' + COURSE.name + '  >', W / 2, Math.round(H * 0.46))
+            // #502 item 5: mini-map outline preview — the selected circuit's
+            // shape centred under the selector line, so cycling courses shows
+            // the track itself, not just its name.
+            const pbs = Math.round(Math.min(52 * u, H * 0.058))
+            const pbx = Math.round(W / 2 - pbs / 2); const pby = Math.round(H * 0.53 - pbs)
+            const m1 = mapNow()
+            hctx.strokeStyle = 'rgba(122,232,255,0.32)'; hctx.lineWidth = Math.max(1, Math.round(1.4 * u))
+            hctx.beginPath()
+            for (let i = 0; i < T.N; i += 6) {
+                const [qx, qy] = m1(T.pts[i].x, T.pts[i].y)
+                const px1 = pbx + qx * pbs; const py1 = pby + qy * pbs
+                if (i === 0) hctx.moveTo(px1, py1); else hctx.lineTo(px1, py1)
+            }
+            hctx.closePath(); hctx.stroke()
             const msgs = ['4 LAPS · 7 KARTS · SELECT CIRCUIT WITH ← →', 'X GAS · S BRAKE · ←→ STEER', 'HOLD SPACE / B THROUGH A BEND', 'BLUE VIOLET GOLD — THE LADDER PAYS']
             hctx.font = fu(10)
             hctx.fillStyle = '#9fc8e8'
@@ -1371,7 +1396,7 @@ export default function CometDriftHD() {
             <canvas ref={glRef} className="block absolute inset-0 w-full h-full" style={{ touchAction: 'none' }} />
             <canvas ref={hudRef} className="block absolute inset-0 w-full h-full pointer-events-none" />
             <VirtualControls secondAction={{ label: 'DRIFT', code: 'KeyR' }} visible={padOn && !paused && TOUCH} />
-            {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'COMET DRIFT HD')} onResume={handleResume} />}
+            {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'COMET DRIFT HD')} badge={COURSE.name} onResume={handleResume} />}
         </div>
     )
 }

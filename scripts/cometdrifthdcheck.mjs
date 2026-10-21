@@ -878,6 +878,29 @@ console.log('braking cue (#502 item 3 — Bus Stop tire bars):')
     selectCourse('sandbank')
 }
 
+// #502 item 5: the attract selector shows the SELECTED circuit's shape, and
+// the minimap normaliser rebuilds when the course swaps — the circuits'
+// bounding boxes differ by nearly 2x, so a frozen Gulch box clipped the wide
+// Sandbank/Corkscomb outlines off the map.
+console.log('attract preview + per-course map (#502 item 5):')
+{
+    const SRC9 = readFileSync(SHARD, 'utf8')
+    ok(SRC9.includes('if (mapId !== T.id)'), 'HD rebuilds the minimap normaliser when the course changes')
+    ok(SRC9.includes('mini-map outline preview') && SRC9.includes('mapNow()'),
+        'HD stamps the selected circuit outline on the attract screen')
+    ok(SRC9.includes('badge={COURSE.name}'), 'the pause overlay names the chosen circuit (HD)')
+    const span = (id) => {
+        selectCourse(id)
+        let ax = Infinity; let bx = -Infinity; let ay = Infinity; let by = -Infinity
+        for (const p of TRACK.pts) { ax = Math.min(ax, p.x); bx = Math.max(bx, p.x); ay = Math.min(ay, p.y); by = Math.max(by, p.y) }
+        return Math.max(bx - ax, by - ay)
+    }
+    const sp = COURSES.map((c) => span(c.id))
+    ok(Math.max(...sp) / Math.min(...sp) >= 1.4,
+        `courses need per-course maps: spans ${sp.map((v) => Math.round(v)).join(' / ')}`)
+    selectCourse('gulch')
+}
+
 // ---------------------------------------------------------------- browser
 if (!SKIP_BROWSER) {
     const { launch, openGame, requireDevServer } = await import('./lib/harness.mjs')

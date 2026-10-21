@@ -7,7 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoostFx } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
-import { selectorGeom, selectorHit } from './selector.js'
+import { selectorGeom, selectorHit, previewBox } from './selector.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx } from './art.js'
 import { drawText } from './font.js'
 import { engineVoice, driftScrape, sandWhoosh } from './engineSfx.js'
@@ -681,6 +681,20 @@ export default function CometDrift() {
                 ctx.fillRect(c[0] - sel.hw, sel.rowY + sel.hh - 1, sel.hw * 2, 1)
                 drawText(ctx, ch, c[0], sel.rowY, '#ffd840', dsz(14), 'center')
             }
+            // #502 item 5: mini-map outline preview — the selected circuit's
+            // shape stamped in the centre zone between the chevrons, so
+            // cycling courses shows the track itself. Recomputed per attract
+            // frame (cheap: one pass over the polyline, live TRACK).
+            const pb = previewBox(W, H, hs)
+            const smp = minimapPath(pb.w, pb.h)
+            ctx.strokeStyle = 'rgba(240,184,120,0.30)'
+            ctx.lineWidth = Math.max(1, Math.round(1.4 * hs))
+            ctx.beginPath()
+            for (let i = 0; i < smp.pts.length; i++) {
+                const [qx, qy] = smp.pts[i]
+                if (i === 0) ctx.moveTo(pb.x + qx, pb.y + qy); else ctx.lineTo(pb.x + qx, pb.y + qy)
+            }
+            ctx.closePath(); ctx.stroke()
             drawText(ctx, COURSE.name, W / 2, sel.rowY, '#f2e6d2', dsz(11), 'center')
             const msgs = [COURSE.tagline, '< > PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'BLUE VIOLET GOLD - THE LADDER PAYS']
             drawText(ctx, msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55), '#f0b878', dsz(10), 'center')
@@ -987,7 +1001,7 @@ export default function CometDrift() {
         >
             <canvas ref={canvasRef} data-fit="source" width={LAND_W_MAX} height={LAND_H} className="block w-full h-full" style={{ imageRendering: 'pixelated', touchAction: 'none' }} />
             <VirtualControls visible={padOn && !paused && TOUCH} />
-            {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'COMET DRIFT GP')} onResume={handleResume} />}
+            {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'COMET DRIFT GP')} badge={COURSE.name} onResume={handleResume} />}
         </div>
     )
 }

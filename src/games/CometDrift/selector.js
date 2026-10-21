@@ -33,3 +33,15 @@ export function selectorHit(geom, cx, cy) {
     if (inBox(geom.right)) return 1
     return 0
 }
+
+// #502 item 5: the mini-map preview box on the attract selector — a small
+// panel in the centre zone between the chevrons showing the shape of the
+// SELECTED circuit, so cycling courses shows the track, not just its name.
+// It must never overlap either chevron hit-box (a preview is not a button).
+export function previewBox(W, H, hs) {
+    const geom = selectorGeom(W, H, hs)
+    const w = Math.max(1, Math.round(104 * hs))
+    const h = Math.max(1, Math.round(30 * hs))
+    const cx = Math.round(W / 2); const cy = geom.rowY
+    return { x: cx - Math.round(w / 2), y: cy - Math.round(h / 2), w, h }
+}

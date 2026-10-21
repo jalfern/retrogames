@@ -50,6 +50,11 @@ export const PALETTE = {
     cactusLt:  '#3c8040',
     hoodoo:    '#96604a',
     hoodooCap: '#6a4030',
+    // #502 item 3: the Bus Stop braking-complex paint (Sandbank only — the
+    // cue is drawn where TRACK.brakeCue says): concrete run-off + tire bars
+    concrete:  '#8e8488',
+    barRed:    '#b02818',
+    barWhite:  '#e8e0d0',
     // buggies' shared structure
     wheel:     '#141016',
     wheelLug:  '#9a929c',
@@ -95,6 +100,9 @@ export const PALETTES = {
         cactusLt:  '#48904c',
         hoodoo:    '#b07858',
         hoodooCap: '#805038',
+        concrete:  '#c8c2b8',
+        barRed:    '#d82c1c',
+        barWhite:  '#f6f2e6',
         wheel:     '#141016',
         wheelLug:  '#9a929c',
         outline:   '#100c12',
@@ -135,6 +143,9 @@ export const PALETTES = {
         cactusLt:  '#3e8442',
         hoodoo:    '#a06850',
         hoodooCap: '#744838',
+        concrete:  '#988c90',
+        barRed:    '#bc2c1c',
+        barWhite:  '#eee6d4',
         wheel:     '#141016',
         wheelLug:  '#9a929c',
         outline:   '#100c12',
@@ -251,6 +262,30 @@ export function bankRimDefs() {
     return out
 }
 
+// #502 item 3: the Bus Stop braking complex, 2D. The course declares the
+// lap-fraction range (track.js brakeCue); here it becomes PAINT on the
+// INSIDE of the bends — a poured concrete apron over the shoulder plus
+// red/white tire bars hugging the asphalt, so the driver SEES the slow bit
+// coming (HD raises real tire-bar geometry for the same cue). Note the side
+// flips with the sign of curvature: the double-kink's two bends point at
+// each other, and the cue follows each one's inside. Pure defs in Node;
+// buildGround stamps them; cometcheck pins the law.
+export const APRON_IN = ROAD_R + 30
+export function brakeCueDefs() {
+    if (!TRACK.brakeCue) return []
+    const [f0, f1] = TRACK.brakeCue
+    const N = TRACK.N
+    const out = []
+    for (let i = 0; i < N; i++) {
+        const p = TRACK.pts[i]
+        const f = p.s / TRACK.len
+        if (f < f0 || f > f1) continue
+        // inside of the bend: mirror image of bankRimDefs' outside rule
+        out.push({ i, x: p.x, y: p.y, a: p.a, side: Math.sign(p.k) || 1 })
+    }
+    return out
+}
+
 // ---- the Mode 7 ground: one 2048² texture painted once at boot ----
 //
 // Concentric strokes over the centerline, WIDEST first — each narrower stroke
@@ -356,6 +391,33 @@ export function buildGround(pal = PALETTE) {
         x.moveTo(q.x - nx * ck, q.y - ny * ck)
         x.lineTo(q.x + nx * ck, q.y + ny * ck)
         x.stroke()
+    }
+
+    // #502 item 3: the Bus Stop braking cue — concrete apron + tire bars on
+    // the inside of the double-kink's bends (Sandbank only; brakeCueDefs is
+    // empty elsewhere). Per-sample quads overlap into a continuous pour.
+    const cue = brakeCueDefs()
+    if (cue.length) {
+        const apronMid = (ROAD_R + 2 + APRON_IN) / 2
+        const apronW = APRON_IN - (ROAD_R + 2)
+        x.fillStyle = P.concrete
+        for (const d of cue) {
+            const px0 = d.x + Math.cos(d.a + Math.PI / 2) * d.side * apronMid
+            const py0 = d.y + Math.sin(d.a + Math.PI / 2) * d.side * apronMid
+            x.save(); x.translate(px0, py0); x.rotate(d.a)
+            x.fillRect(-(TRACK.pts[d.i].d + 2) / 2, -apronW / 2, TRACK.pts[d.i].d + 2, apronW)
+            x.restore()
+        }
+        const barLat = ROAD_R + 6
+        for (let n = 0; n < cue.length; n++) {
+            const d = cue[n]
+            x.fillStyle = n % 2 ? P.barRed : P.barWhite
+            const bx = d.x + Math.cos(d.a + Math.PI / 2) * d.side * barLat
+            const by = d.y + Math.sin(d.a + Math.PI / 2) * d.side * barLat
+            x.save(); x.translate(bx, by); x.rotate(d.a)
+            x.fillRect(-(TRACK.pts[d.i].d + 3) / 2, -3.5, TRACK.pts[d.i].d + 3, 7)
+            x.restore()
+        }
     }
 
     // start/finish: a bone-over-charcoal band set into the asphalt

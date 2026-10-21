@@ -1,11 +1,17 @@
 import React from 'react'
 
-const PauseOverlay = ({ game, onResume }) => {
+const PauseOverlay = ({ game, badge, onResume }) => {
     return (
         <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-50 p-8 font-mono">
             <h1 className="text-4xl font-bold mb-4 text-[#ff0000] drop-shadow-[2px_2px_0_rgba(255,255,255,0.5)]">
                 {game.label}
             </h1>
+
+            {badge && (
+                <p className="text-lg mb-4 text-[#ffd840] tracking-widest">
+                    {badge}
+                </p>
+            )}
 
             <p className="text-lg mb-8 max-w-2xl text-center text-gray-300">
                 {game.description}
