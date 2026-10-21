@@ -1,54 +1,50 @@
-# STATE.md — 2026-10-21 (forge session close)
+# STATE — 2026-10-21 forge pm #3
 
 ## Shipped this session
-- **MOUNTAINS #671** — raymarched dawn range demo, live at
-  `https://www.jalfern.com/retrogames/demos/mountains.html` (PR #709 squash-merged,
-  Vercel SUCCESS, issue closed + `shipped`).
-  - WebGL2 heightfield raymarch: 1024² bake (R16F single-fetch when
-    `EXT_color_buffer_float` allows, hi/lo RGBA8 pair fallback), domain-warped ridged
-    fBm, clustered near range + farther second range, carved lake basin.
-  - Low sun **into frame** (az −0.55); all warmth driven by `uSunCol` — sky horizon
-    glow, fog tint, rock alpenglow, lake glitter. Shadow-march near, smoothstep far.
-  - Sphere-traced steps (`clamp(hd*1.4,…)` — overshoot caused stair-stepped skylines);
-    distance-driven mip LOD (dt-driven LOD sampled mip-4 at distance = blocks).
-  - HDR + threshold bloom + ACES; wind + dawn birds on click; drag-to-look + idle drift.
-- `npm run mountainscheck` — 18 pixel-sensed gates, **mutation-proven**: cool-sun
-  mutant zeroes alpenglow (11k → 0 px) and horizon glow (28k → 532 px). Alpenglow
-  gate needs warmth across ≥8 of 15 frame sections (a sun-bloom halo alone can't pass).
+- **#674 CREDITS CARD on every demo → prod** (PR #712 squash `aa966ac`,
+  Vercel SUCCESS; live at jalfern.com/retrogames/demos/ — index carries
+  per-card built-by lines + factory credit; all four demos serve the
+  `DEMO_CREDITS` config + `credits.js` @200).
+  - `public/demos/credits.js` = shared injector (template piece): corner tag
+    `BUILT BY QWEN ▸` bottom-right → card: model + Mac Studio local, issue
+    link, issue→ship span, SOLO vs GUIDED help level + honest note.
+  - Per-demo configs: OCEAN #451 (~1 h, guided-lite), SHORE #521+#616
+    (~6 h, guided — the canonical brief), CAMPFIRE #670 (~7 h, solo),
+    MOUNTAINS #671 (~13 h, solo). Facts sourced from issue wording/repo —
+    nothing invented; assist classified from each brief's own text.
+  - `public/demos/README.md` = add-a-demo checklist; credits block step 2,
+    mandatory. Model/machine live ONLY in credits.js.
+  - Harness `npm run creditscheck`: 46 gates (config completeness, index↔demo
+    consistency, demos-law, Chrome open/tap/ESC/links). Mutation-proven:
+    deleting shore's `issues` line reds 2 gates.
 
-## Next goal (claim fresh)
-**#674 DEMO — Credits card on every demo** (oldest `game-queue`; Jon #635-A: whatever
-lane). Then #672 Thunderstorm (also `stalled` — check why before claiming).
+## The lesson of the session
+- The perf gate red on mountainscheck again = the box (load ~14), not the
+  code: blank-page rAF floor @1600x1000 is median 22.6 / p90 66.8 ms.
+  Calibration script trick (/tmp/floor.mjs pattern) beats re-arguing it.
+- `#696` looked clear at verify time (fresh index served) — worth confirming
+  on the next demos PR before re-filing cache-busting plumbing.
 
-## Perf reality of this box (don't relearn)
-- Headless Chrome rAF pacing here swings 33–66 ms **at blank page**; load-avg 11 during
-  this session. mountainscheck perf gate (best-of-3 windows, ≤45 ms) measured 30 ms
-  idle and 47–94 ms under load on identical code. It is advisory-grade: green idle,
-  flakes red under contention — treat red-perf as rerun-once, per repo rule 3.
-- Calibration trick that cracked it: `about:blank` rAF interval is the floor; compare
-  demo ms against it before blaming the shader.
+## Next goal
+- Oldest game-queue: **#672 Thunderstorm over a field** (lane:demos, carries
+  `stalled` — read WHY on the issue before claiming). #635-A default in
+  effect (builder takes oldest whatever lane).
 
-## Harness lessons this session
-- GLSL: `max()` is 2-arg only (3-arg compile fail); dynamic `textureLod` pair cost
-  ~25 ms/frame vs single texture at 0.18MP — R16F single-fetch + `EXT_color_buffer_float`
-  works on ANGLE/Metal incl. `generateMipmap`.
-- Gates must survive their own mutation story: fog-tinted pixels passed the alpenglow
-  gate at zero sun-diffuse — fixed by linking sky glow color to `uSunCol` and requiring
-  warmth breadth; then a cool-sun mutant fails both warmth gates cleanly.
-- games.js demos-law gate: match `path:'…mountains` / `label:'Mountains'`, **not** the
-  bare word "mountains" (SSX/IceBoulder prose false-positives).
-- `label deployed` doesn't exist; board convention is `shipped`.
+## Board / harness status
+- main: `aa966ac` (#712). Nightly: last main-ok green pre-merge; #687 freeze
+  stayed lifted all session.
+- Rule 4 satisfied (demos code merged). Rule 7: no new jonq (no taste calls).
+- Polish pass filed: **#713** (QA CREDITS).
+- Worktrees to prune (branches merged): forge-* incl. credits-674, mountains;
+  stale `origin/forge/ssx-cpu-riders-620` still dangles.
 
-## Open questions / blockers on the board
-- #687 nightly red — `needs-approval`; `scripts/main-ok.sh` will refuse merges while
-  it stays red. First thing next session: check if main's nightly recovered (or the
-  approval landed); a red main freezes all lanes (#601).
-- #698 waiting-jon: who owns the demos driver (unanswered).
-- #696/#694 platform: host proxy serves `/demos/` index stale (two issues, one dup).
-- #691 waiting-jon: harness-fix exception for #687.
+## Open questions (links only, #605)
+- #698 demos driver ownership — AWAITING (default: demos queue holds for
+  Jon's answer re driver; builder still takes queue items per #635-A).
+- #691 land #690 harness-fix exception — AWAITING (lane:qa's call).
+- #687 needs-approval; #696/#694 host index staleness — platform lanes'.
 
-## Environment notes
-- Worktree `~/Dev/retrogames-forge-mountains` on branch `docs/state-mountains`
-  (this STATE.md PR). Main checkout must stay detached at `origin/main` (Jon rule).
-- `node_modules` symlinked into the worktree for playwright-core access.
-- Latest main: `1227a95` (#709). nightly: last check green pre-merge; re-verify.
+## Open threads
+- #695 QA CAMPFIRE, #685 QA SSX surfaces, #702/#704 QA SHORE/OCEAN,
+  #713 QA CREDITS — QA lane. #611/#609 Ocean stars follow-ups still open
+  (unlabeled → not claimable).
