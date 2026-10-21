@@ -262,6 +262,22 @@ export function bankRimDefs() {
     return out
 }
 
+// #530: the camber shade. The 2D surface can't show the roll itself, so the
+// OUTER HALF of the asphalt reads darker through the banked sweeps — the
+// high side of the bowl in shadow, the same outside rule as bankRimDefs.
+// alpha rides the bank (0 below the 0.6 threshold, 0.18 at full bank).
+export function camberShadeDefs() {
+    const N = TRACK.N
+    const out = []
+    for (let i = 0; i < N; i += 2) {
+        const b = bankAt(i)
+        if (b < 0.6) continue
+        const p = TRACK.pts[i]
+        out.push({ i, x: p.x, y: p.y, a: p.a, d: p.d, side: -Math.sign(p.k) || 1, bank: +b.toFixed(3) })
+    }
+    return out
+}
+
 // #502 item 3: the Bus Stop braking complex, 2D. The course declares the
 // lap-fraction range (track.js brakeCue); here it becomes PAINT on the
 // INSIDE of the bends — a poured concrete apron over the shoulder plus
@@ -358,6 +374,18 @@ export function buildGround(pal = PALETTE) {
     }
     // asphalt
     band(P.road, ROAD_R)
+    // #530: the camber shade — the outer half of the bowl in shadow through
+    // the banked sweeps (see camberShadeDefs). Under the grooves and patches
+    // so the worn surface still reads on top of it.
+    for (const d of camberShadeDefs()) {
+        const mid = ROAD_R / 2
+        const px = d.x + Math.cos(d.a + Math.PI / 2) * d.side * mid
+        const py = d.y + Math.sin(d.a + Math.PI / 2) * d.side * mid
+        x.save(); x.translate(px, py); x.rotate(d.a)
+        x.fillStyle = `rgba(28, 14, 8, ${(0.18 * d.bank).toFixed(3)})`
+        x.fillRect(-(d.d + 2) / 2, d.side > 0 ? 0 : -ROAD_R, d.d + 2, ROAD_R)
+        x.restore()
+    }
     // crumbled sandstone eating the road edge: thin dashed rings hugging the
     // asphalt border (a wide dashed stroke would crossbar the whole road)
     x.setLineDash([20, 9])

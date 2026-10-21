@@ -27,6 +27,13 @@ export const CFG = {
     // + uphill). Downhill pays it back, uphill taxes it. Slope only: no
     // jumps, no airtime.
     slopeK: 0.42,
+    // #530: the banked grip bonus. Through the bowl's sweeps the road rolls
+    // toward the inside (p.bank, track.js) and the slope itself pushes the
+    // kart toward the centre — lateral grip grows with the roll. It scales
+    // the steer authority (this point model's grip proxy); road only. The
+    // drift yaw cap binds first, so a held drift carves the same radius it
+    // always did.
+    bankGrip: 1.5,
     count: 180,
     // apex grace (#471): crossing zero steering mid-drift (heading aligned
     // with the target for a tick) is not a drift release — while drift and
@@ -105,7 +112,7 @@ function mkKart(def, row) {
         y: p.y + Math.sin(p.a + Math.PI / 2) * lat,
         a: p.a, v: 0, idx: i, hint: i, sUnwrap: p.s,
         boostT: 0, boostTier: -1, spinT: 0, driftT: 0, charge: -1, steerVis: 0, driftG: 0,
-        grade: 0, braking: 0,
+        grade: 0, braking: 0, lat: 0, bank: 0,
         cp: 0, lap: 0, lapStart: 0, lapTimes: [], place: row + 1,
         finished: false, finishT: 0,
         offroad: false, bumpCd: 0, anim: 0, goT: 0,
@@ -192,6 +199,12 @@ function drive(g, k, inp) {
         k.grade = gp.grade * Math.cos(k.a - gp.a)
         k.h = gp.h
         k.v -= CFG.slopeK * k.grade
+        // #530: the bank — road only (kerb and sand run flat). Exposed on the
+        // kart (k.bank + k.lat) so the HD mesh can ride the rolled surface;
+        // the roll's grip bonus scales the steer authority below.
+        k.bank = surf.surf === 'road' ? gp.bank : 0
+        k.lat = surf.lat
+        const bankA = 1 + CFG.bankGrip * Math.abs(k.bank)
         // slipstream: a kart in the narrow window dead ahead leaves a vacuum
         // the chaser rides — pack racing closes on straights and overtakes
         // happen in the open. Pure position math, no dice: deterministic for
@@ -219,7 +232,7 @@ function drive(g, k, inp) {
             // been held and the yaw rate is capped, so a held drift carves a
             // fixed radius instead of winding up into a spin on the straights.
             const auth = Math.max(CFG.driftAuthFloor, 1 - k.driftT / CFG.driftDecayT)
-            let yaw = steer * CFG.steer * grip * CFG.driftMul * auth
+            let yaw = steer * CFG.steer * grip * CFG.driftMul * auth * bankA
             yaw = Math.max(-CFG.driftYawCap, Math.min(CFG.driftYawCap, yaw))
             k.a += yaw
             k.x += Math.cos(k.a + steer * Math.PI * 0.35) * k.v * CFG.slide
@@ -245,7 +258,7 @@ function drive(g, k, inp) {
                 g.events.push({ e: 'zigHint', who: k.name })
             }
             k.driftT = 0; k.charge = -1; k.driftG = 0
-            k.a += steer * CFG.steer * grip
+            k.a += steer * CFG.steer * grip * bankA
         }
         if (surf.surf === 'wall') {
             // clamp EVERY tick: a one-shot clamp lets speed sneak past the
