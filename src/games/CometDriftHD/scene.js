@@ -740,11 +740,15 @@ export const hudScale = (w, h) => {
 export const CHROME_BAND = 46
 export const hudTop = (safeTop) => CHROME_BAND + Math.max(0, safeTop)
 
-// ---- the sandstone arch over the line: the Gulch's landmark, now standing
+// ---- the structure over the line: the Gulch's landmark arch, now standing
 // 5 metres off the asphalt. Legs land in the sand gutter, safely outside the
 // sim's wall limit — the karts never touch it. Browser can pass a strata
 // texture for the rock; Node-safe without one.
+// #502 item 2: the landmark is per-course. Sandbank SPEED BOWL's is the
+// Daytona-style start/finish gantry — a wide timing-line bridge with twin
+// trussed towers and a three-lamp signal board, not a sandstone arch.
 export function buildArch(strataMap) {
+    if (T.landmark === 'gantry') return buildGantry(strataMap)
     const g = new THREE.Group()
     const strata = new THREE.MeshStandardMaterial({ color: 0xb07050, map: strataMap || null, metalness: 0.05, roughness: 0.9 })
     const darker = new THREE.MeshStandardMaterial({ color: 0x6e3c28, map: strataMap || null, metalness: 0.05, roughness: 0.95 })
@@ -765,6 +769,50 @@ export function buildArch(strataMap) {
     key.position.set(0, 2.3 + 3.15, 0)
     g.add(key)
     // sit it on the line, squared to the road; #518: the line rides the profile
+    g.position.set(p.x * S, p.h * S, p.y * S)
+    g.rotation.y = -p.a + Math.PI / 2
+    return g
+}
+
+export const GANTRY_SPAN = 7.6
+export const GANTRY_DECK_Y = 4.6
+export function buildGantry(strataMap) {
+    const g = new THREE.Group()
+    const steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, map: strataMap || null, metalness: 0.35, roughness: 0.55 })
+    const beam = new THREE.MeshStandardMaterial({ color: 0x565c66, metalness: 0.3, roughness: 0.6 })
+    const concrete = new THREE.MeshStandardMaterial({ color: 0xb8b0a4, map: strataMap || null, metalness: 0.02, roughness: 0.95 })
+    const tower = new THREE.BoxGeometry(0.42, GANTRY_DECK_Y, 0.42)
+    for (const s of [-1, 1]) {
+        const t = new THREE.Mesh(tower, steel)
+        t.position.set(s * 3.5, GANTRY_DECK_Y / 2, 0)
+        g.add(t)
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.3, 0.85), concrete)
+        foot.position.set(s * 3.5, 0.15, 0)
+        g.add(foot)
+    }
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(GANTRY_SPAN, 0.55, 0.5), steel)
+    deck.position.y = GANTRY_DECK_Y
+    g.add(deck)
+    const braceGeo = new THREE.BoxGeometry(0.14, 1.9, 0.14)
+    for (let i = 0; i < 4; i++) {
+        const b = new THREE.Mesh(braceGeo, beam)
+        b.position.set(-2.85 + i * 1.9, GANTRY_DECK_Y + 0.85, 0)
+        b.rotation.z = (i % 2 === 0 ? 1 : -1) * 0.62
+        g.add(b)
+    }
+    const board = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.72, 0.14), beam)
+    board.position.set(0, GANTRY_DECK_Y - 0.62, 0)
+    g.add(board)
+    const lampGeo = new THREE.BoxGeometry(0.3, 0.3, 0.16)
+    const lampCols = [0xd03028, 0xe0a030, 0x30b048]
+    for (let i = 0; i < 3; i++) {
+        const lamp = new THREE.Mesh(lampGeo, new THREE.MeshStandardMaterial({
+            color: lampCols[i], emissive: lampCols[i], emissiveIntensity: 0.55, roughness: 0.4,
+        }))
+        lamp.position.set((i - 1) * 0.78, GANTRY_DECK_Y - 0.62, 0.09)
+        g.add(lamp)
+    }
+    const p = T.pts[0]
     g.position.set(p.x * S, p.h * S, p.y * S)
     g.rotation.y = -p.a + Math.PI / 2
     return g
