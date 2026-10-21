@@ -176,6 +176,32 @@ function starPix(img, yFrom, yTo) {
   return stars
 }
 
+// #608: glitter on the sea — whiter-than-band pixels below the horizon. Night water
+// is blue-dominant (B >> R); a star/moon glint lifts R toward B, so R > B-45 with a
+// local R excess isolates sparkles from the deep-blue sea and dark foam.
+function seaGlint(img, yFrom, yTo) {
+  let sr = 0, sb = 0, n = 0
+  for (let y = yFrom; y < yTo; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const i = (y * img.w + x) * img.bpp
+      sr += img.px[i]; sb += img.px[i + 2]; n++
+    }
+  }
+  const mr = sr / n, mb = sb / n
+  let count = 0, xLo = 1e9, xHi = -1
+  for (let y = yFrom; y < yTo; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const i = (y * img.w + x) * img.bpp
+      if (img.px[i] > mr + 14 && img.px[i] > img.px[i + 2] - 45 && img.px[i] > 50) {
+        count++
+        if (x < xLo) xLo = x
+        if (x > xHi) xHi = x
+      }
+    }
+  }
+  return { count, xSpan: xHi > xLo ? xHi - xLo : 0 }
+}
+
 async function sampleMax(page, n, count) {
   let best = 0
   for (let i = 0; i < n; i++) {
@@ -398,6 +424,8 @@ async function main() {
       const dayStars = starPix(dayImg, 0, Math.floor(dayImg.h * 0.4))
       ok('night darkens the sky hard', nightTop.mean < dayTop.mean * 0.5, `sky mean day=${dayTop.mean.toFixed(0)} night=${nightTop.mean.toFixed(0)}`)
       ok('night shows stars/moon, day does not', nightStars > 60 && dayStars < 10, `stars night=${nightStars} day=${dayStars}`)
+      const dayRefl = await page.evaluate(() => window.__oceanTest.stars().reflect)
+      ok('day: star reflections disarmed', dayRefl === 0, `reflect=${dayRefl}`)
 
       await page.evaluate(() => { window.__oceanTest.setTod(1); window.__oceanTest.setCloud(0) })
       await page.waitForTimeout(700)
@@ -447,6 +475,17 @@ async function main() {
       }
       ok('night: stars fill the sky (not a line)', bestSpread.count >= 8000 && bestSpread.ySpan >= 140 && bestSpread.xSpan >= 500,
         `count=${bestSpread.count} ySpan=${bestSpread.ySpan} xSpan=${bestSpread.xSpan}`)
+      // #608: the same sky mirrors into the sea — armed strength + wide glint span
+      const reflK = (await page.evaluate(() => window.__oceanTest.stars())).reflect
+      ok('night: star reflections armed on the sea (#608)', reflK > 0.2, `reflect=${reflK}`)
+      let bestGlint = { count: 0, xSpan: 0 }
+      for (let i = 0; i < 3; i++) {
+        const g = seaGlint(decodePng(await page.screenshot()), Math.floor(540 * 0.54), Math.floor(540 * 0.78))
+        if (g.count > bestGlint.count) bestGlint = g
+        await page.waitForTimeout(350)
+      }
+      ok('night: stars glitter on the sea below the horizon (#608)',
+        bestGlint.count >= 150 && bestGlint.xSpan >= 300, `count=${bestGlint.count} xSpan=${bestGlint.xSpan}`)
       const azA = (await page.evaluate(() => window.__oceanTest.stars())).named.arcturus.az
       await page.evaluate(() => window.__oceanTest.setTod(0.3))
       await page.waitForTimeout(700)
