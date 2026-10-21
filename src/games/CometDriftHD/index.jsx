@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
-import { WebGPURenderer } from 'three/webgpu'
+import { WebGPURenderer, PostProcessing } from 'three/webgpu'
+import { pass, viewportSharedTexture, uniform, vec2, vec4, smoothstep, luminance, screenUV } from 'three/tsl'
 import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
@@ -262,6 +263,40 @@ export default function CometDriftHD() {
         scene.add(new THREE.HemisphereLight(0xd06a50, 0x553018, 1.8))
         scene.add(new THREE.AmbientLight(0x6a4050, 0.95))
 
+        // ---- #478 item 1: earned bloom + boost radial blur (post chain) ----
+        // The node pipeline samples its own scene pass: a 21-tap donut blur is
+        // the glow source, a luminance threshold lets ONLY the sun, the flames
+        // and the gold sparks bloom (earned — the sky never glows), and a
+        // center-pull radial smear rides the boost, decaying to nothing when
+        // the tank is dry. The classic WebGL2 refuge builds no chain at all.
+        const BLOOM_STRENGTH = 0.5
+        const bloomGain = uniform(BLOOM_STRENGTH)
+        const radialAmt = uniform(0)
+        const buildPostChain = (r) => {
+            const scenePass = pass(scene, camera)
+            let sum = scenePass
+            for (let i = 1; i <= 13; i++) {
+                const ang = i * 2.39996323
+                const rad = 0.0045 + 0.0075 * (i / 13)
+                sum = sum.add(viewportSharedTexture(screenUV.add(vec2(Math.cos(ang) * rad, Math.sin(ang) * rad))))
+            }
+            for (let i = 1; i <= 8; i++) {
+                const ang = i * 2.39996323 + 1.2
+                const rad = 0.02 + 0.01 * (i / 8)
+                sum = sum.add(viewportSharedTexture(screenUV.add(vec2(Math.cos(ang) * rad, Math.sin(ang) * rad))))
+            }
+            const soft = sum.div(22)
+            const glow = smoothstep(0.82, 1.45, luminance(soft.rgb))
+            const radDir = screenUV.sub(vec2(0.5))
+            const pull = (k) => viewportSharedTexture(screenUV.add(radDir.mul(radialAmt.mul(k))))
+            const radial = scenePass.add(pull(-0.02)).add(pull(-0.05)).add(pull(-0.09)).div(4)
+            const post = new PostProcessing(r, vec4(radial.rgb.add(soft.rgb.mul(glow).mul(bloomGain)), 1))
+            post.needsUpdate = true
+            return post
+        }
+        let post = null
+        let chainMode = null
+
         const tex = (canvas, rx = 1, ry = 1) => {
             const t = new THREE.CanvasTexture(canvas)
             t.wrapS = t.wrapT = THREE.RepeatWrapping
@@ -472,6 +507,9 @@ export default function CometDriftHD() {
                 if (old !== fresh) old.remove()
             }
             glCanvas = fresh
+            if (post) { try { post.dispose() } catch { /* gone */ } }
+            post = null
+            chainMode = null
             const r = new THREE.WebGLRenderer({ canvas: fresh, antialias: !lite, preserveDrawingBuffer: true })
             r.setPixelRatio(dpr)
             r.setSize(cssW, cssH, false)
@@ -493,6 +531,10 @@ export default function CometDriftHD() {
                 renderer.setSize(cssW, cssH, false)
                 renderer.toneMapping = THREE.ACESFilmicToneMapping
                 renderer.toneMappingExposure = 1.35
+                try {
+                    post = buildPostChain(renderer)
+                    chainMode = backendName === 'webgpu' ? 'bloom-tsl-webgpu' : 'bloom-tsl-webgl2'
+                } catch { post = null; chainMode = null }
                 ready = true
             } catch (e) {
                 if (import.meta.env.DEV) console.warn('CometDriftHD: WebGPU init failed, legacy WebGL2 takes over —', e && e.message)
@@ -987,8 +1029,11 @@ export default function CometDriftHD() {
             sunGlow.scale.set(84 * sh, 84 * sh, 1)
             sunDisc.scale.set(24 * (2 - sh), 24 * (2 - sh), 1)
             if (ready && renderer) {
+                radialAmt.value = g.karts[0].boostT > 0 ? 0.32 + g.karts[0].boostTier * 0.26 : 0
                 try {
-                    if (renderer.renderAsync) renderer.renderAsync(scene, camera).catch(onRenderFail)
+                    if (post && post.renderAsync) post.renderAsync().catch(onRenderFail)
+                    else if (post) post.render()
+                    else if (renderer.renderAsync) renderer.renderAsync(scene, camera).catch(onRenderFail)
                     else renderer.render(scene, camera)
                 } catch { onRenderFail() }
                 pixelHeartbeat()
@@ -1087,6 +1132,8 @@ export default function CometDriftHD() {
                 const P = g.karts[0]
                 return { sparks: sparks.aliveCount, dust: dust.aliveCount, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
+            fxChain: () => ({ mode: chainMode, pipeline: !!post, bloom: bloomGain.value, radial: Math.round(radialAmt.value * 1000) / 1000, backend: backendName }),
+            setBloom: (v) => { bloomGain.value = Math.max(0, Number(v) || 0); return chainMode },
             modelLoaded: () => {
                 const v = kartMeshes[0].m.userData.view
                 return !!(v && v.getObjectByName && v.getObjectByName('DuneBuggy'))
@@ -1149,6 +1196,7 @@ export default function CometDriftHD() {
             window.removeEventListener('resize', relayout)
             window.removeEventListener('keydown', kd)
             window.removeEventListener('keyup', ku)
+            if (post) { try { post.dispose() } catch { /* gone */ } post = null }
             if (renderer && renderer.dispose) renderer.dispose()
             envMap.dispose()
             scene.traverse((o) => {
