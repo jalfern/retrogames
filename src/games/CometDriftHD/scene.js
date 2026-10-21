@@ -558,6 +558,49 @@ export function makeStreakPool(count, opts = {}) {
     }
 }
 
+// ---- dusk sky: banding breakers + twinkling stars (#478 item 6). Node-safe
+// laws. The 8-bit dusk gradient bands visibly on OLED/phones, so the sky
+// texture gets a deterministic ±DITHER_AMP hash noise: same pixels, same
+// noise, every boot. Stars live ONLY in the upper band (dir.y >= STAR_Y_MIN)
+// so the dusk rim and the sun stay clean, and twinkle() is the brightness law
+// the shell animates per tick — additive points, never geometry churn.
+export const DITHER_AMP = 1.5
+const ihash = (x, y) => {
+    let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0
+    h = Math.imul(h ^ (h >>> 13), 1274126177)
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967295
+}
+export const skyNoise = (x, y) => (ihash(x, y) - 0.5) * 2 * DITHER_AMP
+export function applySkyDither(data, w, h, amp = DITHER_AMP) {
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = (y * w + x) * 4
+            const n = (ihash(x, y) - 0.5) * 2 * amp
+            data[i] = Math.min(255, Math.max(0, data[i] + n))
+            data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + n))
+            data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + n))
+        }
+    }
+    return data
+}
+export const STAR_COUNT = 56
+export const STAR_Y_MIN = 0.55
+export const twinkle = (phase, tick) => 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(tick * 0.055 + phase * Math.PI * 2))
+export function makeStarDefs(count = STAR_COUNT, seed = 7) {
+    const defs = []
+    for (let s = 0; s < count; s++) {
+        const y = STAR_Y_MIN + (0.98 - STAR_Y_MIN) * ihash(s + 1, seed * 13 + 3)
+        const az = ihash(s * 7 + 3, seed + 11) * Math.PI * 2
+        const r = Math.sqrt(Math.max(0, 1 - y * y))
+        defs.push({
+            dir: [r * Math.cos(az), y, r * Math.sin(az)],
+            phase: ihash(s + 5, seed * 3 + 1),
+            gain: 0.55 + 0.45 * ihash(seed, s + 9),
+        })
+    }
+    return defs
+}
+
 // ---- the sandstone arch over the line: the Gulch's landmark, now standing
 // 5 metres off the asphalt. Legs land in the sand gutter, safely outside the
 // sim's wall limit — the karts never touch it. Browser can pass a strata
