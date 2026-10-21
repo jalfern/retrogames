@@ -523,7 +523,10 @@ console.log('partner intelligence (#505)')
         return pad
     }
     // pace: down the long top corridor a full sprint; before #505 the elf
-    // yo-yoed up to 3.4 cells behind; the pad must hold it inside two.
+    // yo-yoed up to 3.4 cells behind; prediction pins it at the hero's heels.
+    // (0.6, not 2.0: the elf's 1.06 speed alone outruns a 1.0 hero on a
+    // straight — a trailing gap under ~1.05 proves the heading lead, not
+    // raw legs. Nightly mutant #505 lived behind the old loose ceiling.)
     {
         const gs = makeGame(0, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
         gs.monsters = []; gs.gens.forEach((g) => { g.alive = false })
@@ -535,7 +538,7 @@ console.log('partner intelligence (#505)')
             if (i > 60) worst = Math.max(worst, Math.hypot(gs.partner.x - gs.hero.x, gs.partner.y - gs.hero.y))
             runPad(gs, { left: true })
         }
-        ok(worst < 2.0, '#505: the CPU seat holds pace through a long sprint', `worst gap ${worst.toFixed(2)}`)
+        ok(worst < 0.6, '#505: the CPU seat holds pace through a long sprint', `worst gap ${worst.toFixed(2)}`)
     }
     // slam-door parity: the hero waits on the far side; the partner pushes.
     {
