@@ -193,27 +193,66 @@ export const ZONES = [
 //   pitHop     a flat run-up, one jumpable pit (hazard), a flat run-off
 //   hill       a downhill that builds speed, then the climb back (fast stretch)
 //
-// No RNG: the beat order is a fixed cycle, so the attract demo and the gate
-// prove the identical route. The tail is deliberately pit/boost/valley only —
-// no spikes or drones in it, so the autopilot clears it with nothing but its
-// proven pit-jump lookahead, and there is no ring bookkeeping to keep fair.
+// No RNG: each zone carries a HAND-AUTHORED beat PROGRAM (#642), so the
+// attract demo and the gate prove the identical route, and no two stretches of
+// a sector rhyme. The programs reuse one invariant: every beat starts and ends
+// tangent-flat at the entry height, so beats chain with no height bookkeeping.
 // The hand-built core (and every coordinate a check pins) is left untouched.
-const TAIL_BEATS = 23
 const ARC_R = 469          // valley arc radius: ~55 degrees max, reads curved
 const VALLEY_DROP = 200     // rolling dip depth — enough to charge the loop
 const LOOP_R = 70           // valley-floor loop; v^2 >= 5*G*r needs ~724
-const beatFastBoost = (x, y) => ({
-    segs: [[x, y, x + 2400, y]],
-    boosts: [[x + 900, x + 1500]],
-    x1: x + 2400,
+const beatFlatBoost = (x, y, len = 2600, b0 = 900, b1 = 1500) => ({
+    segs: [[x, y, x + len, y]],
+    boosts: [[x + b0, x + b1]],
+    x1: x + len,
 })
-const beatPitHop = (x, y) => {
-    const run = 1150, pit = 110
-    return { segs: [[x, y, x + run, y], [x + run + pit, y, x + 2600, y]], x1: x + 2600 }
+const beatPitHop = (x, y, run = 1150, pit = 110) => {
+    const off = 2600 - run - pit
+    return { segs: [[x, y, x + run, y], [x + run + pit, y, x + 2600, y]], x1: x + 2600, off }
 }
-const beatHill = (x, y) => ({
-    segs: [[x, y, x + 1300, y + 200], [x + 1300, y + 200, x + 2800, y]],
-    x1: x + 2800,
+// a WIDE gap you must jump (#642 "wider gaps"): longer run-up, 180-220px pit
+const beatBigHop = (x, y, pit = 200, run = 900, off = 700) => ({
+    segs: [[x, y, x + run, y], [x + run + pit, y, x + run + pit + off, y]],
+    x1: x + run + pit + off,
+})
+// spring INTO a wide gap (#642 "springs into high routes", low form): the pad
+// at the lip is the only route; a hover waits over the landing at jump height.
+// The pad is LONG on purpose: a sprung body at 700-850 px/s flies ~1.2s, so
+// run-off ~1150 keeps the landing on flat ground, never on the next beat's
+// downslope (the pit-wall rule reads slope landings below the lip as deaths).
+const beatSpringHop = (x, y, pit = 240, run = 820, off = 1150) => {
+    const sx = x + run
+    return {
+        segs: [[x, y, sx, y], [sx + pit, y, sx + pit + off, y]],
+        springs: [[sx, y, -900]],
+        hover: { kind: 'hover', x: sx + pit + 280, y: y - 250 },
+        x1: sx + pit + off,
+    }
+}
+// a hill sized per beat (#642 "slopes that launch you" + variety)
+const beatHill = (x, y, depth = 200, down = 1300, up = 1500) => ({
+    segs: [[x, y, x + down, y + depth], [x + down, y + depth, x + down + up, y]],
+    x1: x + down + up,
+})
+// rolling S-curves from true circular arcs — dip, crest, shallower dip, crest:
+// almost no flat ground (#642)
+const beatSCurves = (x, y, drop = 120, len = 2050) => {
+    const d1 = arcPipe(x, y, drop, 4, true)
+    const u1 = arcPipe(x + d1.run, y + drop, drop, 4, false)
+    const d2 = arcPipe(x + d1.run + u1.run, y, drop * 0.8, 4, true)
+    const u2 = arcPipe(x + d1.run + u1.run + d2.run, y + drop * 0.8, drop * 0.8, 4, false)
+    const ex = x + d1.run + u1.run + d2.run + u2.run
+    return { segs: [...d1.segs, ...u1.segs, ...d2.segs, ...u2.segs, [ex, y, x + len, y]], x1: x + len }
+}
+// spikes that MATTER (#642 "enemies placed where they matter"): a sprint
+// strip, three ground rings as the toll, then a spike span — rings protect,
+// the scatter fan refills for whatever comes next.
+const beatSpikeSprint = (x, y, len = 2200) => ({
+    segs: [[x, y, x + len, y]],
+    boosts: [[x + 150, x + 700]],
+    rings: [[x + 980, y - 14], [x + 1020, y - 14], [x + 1060, y - 14]],
+    spikes: [[x + 1150, x + 1210]],
+    x1: x + len,
 })
 // sample a circular arc into n segments; tangent-flat at one end, steep at the
 // other (a quarter-pipe). `down` dips into the screen, `up` climbs out.
@@ -243,21 +282,59 @@ const beatValleyLoop = (x, y) => {
     segs.push(...u.segs)
     const ex = cx + LOOP_R + 80 + u.run
     segs.push([ex, y, x + 2600, y])
-    return { segs, x1: x + 2600, loop: { cx, cy: by - LOOP_R, r: LOOP_R } }
+    // two rings on the valley floor before the loop: the descent's toll booth
+    return { segs, x1: x + 2600, loop: { cx, cy: by - LOOP_R, r: LOOP_R }, rings: [[cx - LOOP_R - 60, by - 14], [cx - LOOP_R - 20, by - 14]] }
 }
-const BEATS = [beatFastBoost, beatValleyLoop, beatPitHop, beatHill]
 
-// append TAIL_BEATS of the beat cycle to each sector and push its goal to the
-// end of the tail, so the autopilot now spends 60-90s in a sector (the ask).
-for (const z of ZONES) {
+// per-zone programs (#642): every stretch different, no cycle, no repeating
+// tail. Order keeps the invariants the gate pins: beat 0 is the flat fork
+// runway (the deck overlaps it), valley loops follow speed builders so the
+// entry always clears v^2 >= 5Gr, and zone 2 (load-bearing apex rings) gets
+// no tail rings or spikes — its only rings must stay on the loop arc.
+const PROGRAMS = [
+    // GREEN HILL
+    [beatFlatBoost, beatValleyLoop, beatSpringHop, beatBigHop, beatHill, beatSpikeSprint,
+        beatSCurves, beatPitHop, beatValleyLoop, beatBigHop, beatSpringHop, beatHill,
+        beatSCurves, beatPitHop, beatFlatBoost, beatValleyLoop, beatSpikeSprint, beatBigHop,
+        beatHill, beatPitHop],
+    // EMBER GAUNTLET
+    [beatFlatBoost, beatSCurves, beatValleyLoop, beatBigHop, beatSpikeSprint, beatSpringHop,
+        beatHill, beatPitHop, beatValleyLoop, beatSCurves, beatBigHop, beatSpikeSprint,
+        beatSpringHop, beatHill, beatPitHop, beatValleyLoop, beatFlatBoost, beatBigHop,
+        beatHill, beatPitHop],
+    // SKY LOOP — rings are load-bearing here; no tail rings, no tail spikes
+    [beatFlatBoost, beatValleyLoop, beatBigHop, beatSCurves, beatHill, beatSpringHop,
+        beatPitHop, beatValleyLoop, beatBigHop, beatHill, beatSCurves, beatSpringHop,
+        beatPitHop, beatValleyLoop, beatFlatBoost, beatBigHop, beatHill, beatSCurves,
+        beatPitHop, beatHill],
+]
+// per-beat tweaks so neighbouring zones never share a shape
+const TWEAKS = [
+    {},
+    { pitHop: [1150, 120], bigHop: [180], hill: [220, 1250, 1350], sCurves: [160] },
+    { pitHop: [1150, 130], bigHop: [220, 950, 650], hill: [260, 1500, 1100], sCurves: [150], springHop: [260] },
+]
+const TWEAKED = (fn, zi) => {
+    const tune = { beatPitHop: 'pitHop', beatBigHop: 'bigHop', beatHill: 'hill', beatSCurves: 'sCurves', beatSpringHop: 'springHop' }[fn.name]
+    const args = TWEAKS[zi]?.[tune]
+    return args ? (x, y) => fn(x, y, ...args) : fn
+}
+
+// append each zone's program and push its goal to the end, so the autopilot
+// spends 60-90s in a sector on all-different terrain.
+for (const [zi, z] of ZONES.entries()) {
     if (!z.loops) z.loops = []
     const last = z.segs[z.segs.length - 1]
     let x = last[2], y = last[3]
     const tailX = x, tailY = y
-    for (let i = 0; i < TAIL_BEATS; i++) {
-        const b = BEATS[i % BEATS.length](x, y)
+    for (const beat of PROGRAMS[zi]) {
+        const b = TWEAKED(beat, zi)(x, y)
         z.segs.push(...b.segs)
         if (b.boosts) z.boosts.push(...b.boosts)
+        if (b.rings && zi !== 2) z.rings.push(...b.rings)   // zone 2's rings stay on its loop arc
+        if (b.spikes) z.spikes.push(...b.spikes)
+        if (b.springs) z.springs.push(...b.springs)
+        if (b.hover) z.drones.push(b.hover)
         if (b.loop) z.loops.push(b.loop)
         x = b.x1
     }
