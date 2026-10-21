@@ -6,4 +6,4 @@
 - +Y up, nose toward +Z, origin on the ground centred between the wheels.
 - Wheels are separate nodes `Wheel_FL`, `Wheel_FR`, `Wheel_RL`, `Wheel_RR` (spin and steer them).
 - Body paint is material `Paint_Orange`: recolour it per rival.
-- Served at `/retrogames/games/comet-drift-hd/dune_buggy.glb`.
+- Served at `/retrogames/models/vehicles/dune_buggy.glb` (shared shelf, #637).

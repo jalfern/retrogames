@@ -249,7 +249,7 @@ export function loadBuggy() {
     if (!buggyPromise) {
         buggyPromise = (async () => {
             const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js')
-            const url = `${import.meta.env.BASE_URL || '/'}games/comet-drift-hd/dune_buggy.glb`
+            const url = `${import.meta.env.BASE_URL || '/'}models/vehicles/dune_buggy.glb`
             const gltf = await new GLTFLoader().loadAsync(url)
             return gltf.scene
         })().catch(() => null)

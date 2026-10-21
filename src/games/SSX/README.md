@@ -47,8 +47,8 @@ the boost meter and a full meter at takeoff throws OVER.
 ## The hero rider (#548)
 
 The player rides a real rigged character: KayKit Adventurers "Rogue_Hooded"
-(CC0 — full provenance in `public/models/ssx/LICENSE.txt`), loaded with
-GLTFLoader from `public/models/ssx/rogue.glb` (trimmed: weapons/props
+(CC0 — full provenance in `public/models/characters/LICENSE.txt`), loaded with
+GLTFLoader from `public/models/characters/rogue.glb` (trimmed: weapons/props
 removed, kept the `Idle`, `Jump_Start`, `Jump_Idle`, `Sit_Chair_Pose` clips).
 
 - `art.js` composes six poses from baked clip frames plus per-bone euler
@@ -64,7 +64,7 @@ removed, kept the `Idle`, `Jump_Start`, `Jump_Idle`, `Sit_Chair_Pose` clips).
 ## The CPU field (#620)
 
 All five rivals ride real KayKit bodies too — `RIDER_MODELS` maps sim ids
-to `public/models/ssx/{knight,barbarian,mage,rogue_plain,rogue}.glb` (same
+to `public/models/characters/{knight,barbarian,mage,rogue_plain,rogue}.glb` (same
 CC0 pack, same trimming recipe: weapons/shields dropped, hats kept, only
 `Idle`/`Jump_Start`/`Jump_Idle` resampled — ~330 KB each, see LICENSE.txt).
 The whole pack shares one skeleton, so `STANCE`/`OFFS`/pose-bases transfer
