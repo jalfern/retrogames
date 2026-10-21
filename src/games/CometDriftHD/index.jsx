@@ -16,7 +16,7 @@ import { rumble } from '../../components/gamepadMap'
 import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
-    applySkyDither, makeStarDefs, twinkle,
+    applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
@@ -469,21 +469,20 @@ export default function CometDriftHD() {
             const driver = buildDriver(ACCENT[k.color] || '#fff')
             m.add(driver)
             scene.add(m)
-            const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.72, 14),
-                new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.34, depthWrite: false }))
-            shadow.rotation.x = -Math.PI / 2
-            shadow.scale.set(1, 1.5, 1)
-            shadow.rotation.z = 0
+            // #481 item 2: an ellipse hugging the buggy footprint that steers
+            // with the kart, replacing the fixed-axis disc that dwarfed it.
+            const shadow = makeBlobShadow()
             scene.add(shadow)
             kartMeshes.push({ m, shadow, spinMats: view.userData.spinMats })
         }
-        // exhaust cones on the player's buggy (flame drawn by scale + tint)
+        // exhaust cones on the player's buggy (#481 item 4: aligned to the
+        // model's measured chrome outlets, not eyeballed mid-air)
         const flames = []
-        for (const sx of [-0.2, 0.2]) {
+        for (const o of exhaustOutlets()) {
             const cone = new THREE.Mesh(new THREE.ConeGeometry(0.085, 1, 8),
                 new THREE.MeshBasicMaterial({ color: 0x60c0ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }))
             cone.rotation.x = -Math.PI / 2
-            cone.position.set(sx, 0.3, -0.72)
+            cone.position.set(o.x, o.y, o.z - 0.12)
             cone.visible = false
             kartMeshes[0].m.add(cone)
             flames.push(cone)
@@ -748,11 +747,12 @@ export default function CometDriftHD() {
                 m.scale.y = Math.max(0.8, (rough ? 0.93 + jit(g.tick * 11.3 + i) * 0.08 : 1) - squash)
                 m.scale.x = m.scale.z = 1 + squash * 0.6
                 shadow.position.set(k.x * S, h + 0.052, k.y * S)
+                shadow.rotation.y = kartYaw(k.a)
                 // wheel rig (#477): steer the front pivots about vertical, roll all
                 // four about their axle. baseQuat keeps the model's baked right-side
                 // flip; steer/roll signs undo it so both sides turn/spin alike.
                 k.rollA = (k.rollA || 0) + k.v * 0.6
-                const steerV = (k.steerVis || 0) * 0.45
+                const steerV = (k.steerVis || 0) * STEER_MAX
                 for (const wd of m.userData.wheelDefs) {
                     wd.node.quaternion.copy(wd.baseQuat)
                     if (wd.front) wd.node.rotateOnAxis(UP, steerV * wd.steerSign)
@@ -768,7 +768,7 @@ export default function CometDriftHD() {
                 const braking = (k.pv !== undefined && k.v < k.pv - 0.08) ||
                     (i === 0 && (keys.KeyS || keys.ArrowDown))
                 k.pv = k.v
-                if (m.userData.brakeMat) m.userData.brakeMat.emissiveIntensity = braking && k.spinT === 0 ? 1.8 : 0
+                if (m.userData.brakeMat) m.userData.brakeMat.emissiveIntensity = braking && k.spinT === 0 ? BRAKE_ON : BRAKE_IDLE
             }
             const P = g.karts[0]
             for (const f of flames) f.visible = P.boostT > 0
@@ -1225,6 +1225,8 @@ export default function CometDriftHD() {
                 return { sparks: sparks.aliveCount, dust: dust.aliveCount, streaks: streaks.aliveCount, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
             fxChain: () => ({ mode: chainMode, pipeline: !!post, bloom: bloomGain.value, radial: Math.round(radialAmt.value * 1000) / 1000, backend: backendName }),
+            shadowBlob: () => ({ parts: kartMeshes[0].shadow.children.length, rotY: Math.round(kartMeshes[0].shadow.rotation.y * 1000) / 1000 }),
+            brakeGlow: () => Math.round((kartMeshes[0].m.userData.brakeMat?.emissiveIntensity ?? -1) * 100) / 100,
             stars: () => {
                 const c = starMesh && starMesh.geometry.getAttribute('color')
                 const p = starMesh && starMesh.geometry.getAttribute('position')

@@ -306,11 +306,11 @@ export function buildKart(hex, accentHex, variant = 0) {
     const cockpit = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.16, 0.5), dark)
     cockpit.position.set(0, 0.36, 0.02)
     g.add(cockpit)
-    const stripeMat = new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.25, roughness: 0.35 })
+    const stripeMat = new THREE.MeshStandardMaterial({ color: accentHex, emissive: new THREE.Color(accentHex), emissiveIntensity: 0.18, metalness: 0.25, roughness: 0.35 })
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.5), stripeMat)
     stripe.position.set(0, 0.41, 0.55)
     g.add(stripe)
-    const brakeMat = new THREE.MeshStandardMaterial({ color: 0x601010, emissive: 0xff2010, emissiveIntensity: 0, roughness: 0.6 })
+    const brakeMat = new THREE.MeshStandardMaterial({ color: 0x601010, emissive: 0xff2010, emissiveIntensity: BRAKE_IDLE, roughness: 0.6 })
     const brakes = []
     for (const sx of [-0.2, 0.2]) {
         const bl = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.05, 0.02), brakeMat)
@@ -367,6 +367,52 @@ export const kartYaw = (a) => Math.PI / 2 - a
 // a kart's footprint at ~0.48×.
 export const BUGGY_SCALE = 0.48
 
+// #481 item 2: the blob shadow was a 0.72r disc fixed to world Z — too big
+// for the 0.48× buggy and misaligned the moment the kart pointed anywhere but
+// down the axis. Measured from the real GLB bounds: paint+cage span z −1.61..1.83
+// (3.44 m) and wheels span x ±0.99 (1.98 m), so the footprint is the ellipse
+// the shadow must hug.
+export const BUGGY_FOOT = { l: +(3.44 * BUGGY_SCALE).toFixed(3), w: +(1.98 * BUGGY_SCALE).toFixed(3) }
+
+// Two-pass ellipse (Node-safe: no canvas texture): a soft wide halo under a
+// tighter dark core fakes the penumbra. Callers steer rotation.y by kartYaw.
+export function makeBlobShadow() {
+    const g = new THREE.Group()
+    const ellipse = (sx, sz) => {
+        const geo = new THREE.CircleGeometry(0.5, 20)
+        geo.rotateX(-Math.PI / 2)
+        geo.scale(sx, 1, sz)
+        return geo
+    }
+    const mk = (sx, sz, opacity) => new THREE.Mesh(
+        ellipse(sx * BUGGY_FOOT.w, sz * BUGGY_FOOT.l),
+        new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity, depthWrite: false }))
+    const halo = mk(1.14, 1.08, 0.14)
+    const core = mk(0.8, 0.78, 0.32)
+    g.add(halo, core)
+    g.userData.parts = ['halo', 'core']
+    return g
+}
+
+// #481 item 4: exhaust outlets from the authored model, not guessed — the
+// chrome pipes run the flanks (x ±0.70 m) and exit at the tail (z −1.61 m,
+// y ≈ 0.46 m). In kart-root units (the group scales by BUGGY_SCALE).
+export const BUGGY_EXHAUST = { x: 0.70, y: 0.46, z: -1.61 }
+export const exhaustOutlets = () => [1, -1].map((s) => ({
+    x: +(s * BUGGY_EXHAUST.x * BUGGY_SCALE).toFixed(3),
+    y: +(BUGGY_EXHAUST.y * BUGGY_SCALE).toFixed(3),
+    z: +(BUGGY_EXHAUST.z * BUGGY_SCALE).toFixed(3),
+}))
+
+// #481 item 3: taillights are lamps, not off-black — a dim idle glow so they
+// read as lenses before the brake pedal, full blaze behind it.
+export const BRAKE_IDLE = 0.35
+export const BRAKE_ON = 1.8
+
+// #481 item 5: front-wheel steer travel — 0.45 rad read stiff against the
+// body's drift rotation at speed.
+export const STEER_MAX = 0.62
+
 // Cached GLB load. Browser-only: dynamic-imports GLTFLoader so importing this
 // module in Node (the harness) never pulls DOM/WebGL code. Resolves null on any
 // failure so the caller can keep the primitive fallback — the race never dies.
@@ -399,8 +445,8 @@ export function decorateBuggy(root, hex, accentHex) {
         o.material = m
         const nm = m.name || ''
         if (nm === 'Paint_Orange') { m.color = new THREE.Color(hex); body = m }
-        else if (nm === 'Accent_Yellow') m.color = new THREE.Color(accentHex)
-        else if (nm === 'Taillight_Red') { m.emissive = new THREE.Color(0xff2010); m.emissiveIntensity = 0; brakeMat = m }
+        else if (nm === 'Accent_Yellow') { m.color = new THREE.Color(accentHex); m.emissive = new THREE.Color(accentHex); m.emissiveIntensity = 0.22 }
+        else if (nm === 'Taillight_Red') { m.emissive = new THREE.Color(0xff2010); m.emissiveIntensity = BRAKE_IDLE; brakeMat = m }
     })
     const wheels = []
     // #478 item 3: accent spokes + ghosts on the authored wheels too, sized in
