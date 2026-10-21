@@ -289,6 +289,11 @@ selectCourse('gulch')
 // band (kerb, gutter, wall foot/top, plateau) hangs off the same profile at the
 // same point index, so the terrain meets the road all the way round.
 const yAt = (geo, i, v) => geo.getAttribute('position').getY(i * 2 + v)
+// #530: the road ROLLS about its tangent through the banked sweeps (scene.js
+// roadGeo) — the centreline still rides the #518 profile exactly, only the two
+// edges move, symmetric about it. Every "road height" reference below is the
+// centre, so the wall/foot/rim invariants read the true road level, not a lean.
+const roadC = (i) => (yAt(geos.road, i, 0) + yAt(geos.road, i, 1)) / 2
 {
     const S = 1 / 60
     let dev = 0
@@ -296,7 +301,7 @@ const yAt = (geo, i, v) => geo.getAttribute('position').getY(i * 2 + v)
     let minDev = Infinity; let maxDev = -Infinity
     const N = TRACK.N
     for (let i = 0; i < N; i++) {
-        const ry = yAt(geos.road, i, 0)
+        const ry = roadC(i)
         dev = Math.max(dev, Math.abs(ry - (TRACK.pts[i].h * S + 0.06)))
         const lift = yAt(geos.wallL, i, 1) - ry
         if (lift < 1.4 || lift > 3.7) hangBad++
@@ -305,13 +310,32 @@ const yAt = (geo, i, v) => geo.getAttribute('position').getY(i * 2 + v)
         maxDev = Math.max(maxDev, lift)
         minDev = Math.min(minDev, lift)
     }
-    ok(dev < 1e-6, `road surface follows the #518 height point for point (profile → geometry, max dev ${dev.toExponential(1)}u — float32 precision)`)
+    ok(dev < 1e-6, `road centreline rides the #518 profile point for point (max dev ${dev.toExponential(1)}u — the #530 roll is symmetric about it)`)
     ok((stats.road.maxY - stats.road.minY) >= 0.9 * (bounds.elevMax - bounds.elevMin),
         `the road goes up and down: ${stats.road.minY.toFixed(2)}..${stats.road.maxY.toFixed(2)}u across the lap`)
     ok(hangBad === 0, `cliff walls ride the profile too — every section stands ${minDev.toFixed(2)}..${maxDev.toFixed(2)}u over the road under it`)
     ok(footBad === 0, 'wall bases stay under the road at every point (no floating cliffs, elevated or not)')
     ok(rimBad === 0, 'plateau rim stays above the road at every point (scenery has ground)')
     ok(bounds.maxGrade <= 0.0951, `grades stay arcade-steep, not stunt-steep (max ${bounds.maxGrade.toFixed(3)})`)
+}
+// #530: the surface roll. Through the bowl the road ribbon rolls about its
+// tangent — the outside edge sits 2·ROAD_R·tan(bank) above the inside (scene.js
+// roadGeo), so a bowl reads banked and a flat canyon stays flat. Pinned against
+// the banking law itself: Sandbank (the high-bank course) must measure it, and a
+// flat road (revert roadGeo) reads exactly 0 and goes red.
+{
+    const S = 1 / 60
+    let lawMax = 0; let rollMax = 0
+    selectCourse('sandbank')
+    const g2 = trackGeometryStats().geos
+    const N2 = TRACK.N
+    for (let i = 0; i < N2; i++) {
+        lawMax = Math.max(lawMax, 2 * TRACK.ROAD_R * S * Math.abs(Math.tan(TRACK.pts[i].bank)))
+        rollMax = Math.max(rollMax, Math.abs(yAt(g2.road, i, 0) - yAt(g2.road, i, 1)))
+    }
+    selectCourse('gulch')
+    ok(lawMax > 0.1, `#530 banking law is non-trivial on Sandbank (law max ${lawMax.toFixed(3)}u)`)
+    ok(Math.abs(rollMax - lawMax) < 0.02, `#530 surface roll matches the banking law (measured ${rollMax.toFixed(3)}u vs law ${lawMax.toFixed(3)}u; a flat road reads 0)`)
 }
 ok(stats.wallL.maxY >= 1.5 && stats.wallR.maxY >= 1.5, 'cliff walls rise over the road')
 ok(stats.kerbL.verts === ring && stats.gutterR.verts === ring, 'kerb + gutter rings cover the full lap')

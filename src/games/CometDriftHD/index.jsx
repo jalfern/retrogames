@@ -15,7 +15,7 @@ import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/
 import { rumble } from '../../components/gamepadMap'
 import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
-    loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
+    loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, roadRollYAt, roadRollAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
     hudScale, hudTop, tintFor, SKY_STOPS,
 } from './scene.js'
@@ -799,18 +799,24 @@ export default function CometDriftHD() {
         // the raw value steps as points pass under the wheels). Pitch rides
         // local X after yaw (YXZ), so cresting lifts the nose the way the
         // road actually tilts.
-        const liftAt = (k) => k.hSm || 0
+        // #530: the same smoothing carries the banked roll — the surface under
+        // the kart rises with its lateral offset (roadRollYAt) and the mesh
+        // rolls to match the surface tilt (rotation.z), outside edge up.
+        const liftAt = (k) => (k.hSm || 0) + (k.rSm || 0)
         const syncMeshes = () => {
             for (let i = 0; i < g.karts.length; i++) {
                 const k = g.karts[i]
                 const { m, shadow, spinMats } = kartMeshes[i]
                 const hT = elevAt(k.idx); const pT = Math.atan(k.grade || 0)
+                const rT = roadRollYAt(k.idx, k.lat || 0); const bT = -roadRollAt(k.idx)
                 k.hSm = k.hSm === undefined ? hT : k.hSm + (hT - k.hSm) * 0.4
+                k.rSm = k.rSm === undefined ? rT : k.rSm + (rT - k.rSm) * 0.4
+                k.rollSm = k.rollSm === undefined ? bT : k.rollSm + (bT - k.rollSm) * 0.3
                 k.pitchSm = k.pitchSm === undefined ? pT : k.pitchSm + (pT - k.pitchSm) * 0.3
-                const h = k.hSm
+                const h = k.hSm + k.rSm
                 m.position.set(k.x * S, h, k.y * S)
                 m.rotation.order = 'YXZ'
-                m.rotation.set(-k.pitchSm, kartYaw(k.a), k.driftT > 0 ? (k.steerVis || 1) * 0.14 : 0)
+                m.rotation.set(-k.pitchSm, kartYaw(k.a), (k.driftT > 0 ? (k.steerVis || 1) * 0.14 : 0) + (k.rollSm || 0))
                 const rough = k.offroad && k.v > 1
                 const bob = rough ? (jit(g.tick * 7.7 + i) - 0.5) * 0.05 : 0
                 m.position.y = h + bob

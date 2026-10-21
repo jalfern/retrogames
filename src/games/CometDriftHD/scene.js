@@ -18,6 +18,12 @@ const PERP = (a) => [-Math.sin(a), Math.cos(a)]
 // #518: the road's world height at point i (px profile → units, up +Y).
 export const elevAt = (i) => T.pts[i].h * S
 
+// #530: the rolled road. World-Y of the asphalt under lateral `lat` (px,
+// +PERP direction) at point i, and the surface tilt (rad) the mesh sync rides
+// so the buggies sit ON the banked surface instead of floating over it.
+export const roadRollYAt = (i, lat) => lat * S * Math.tan(T.pts[i].bank)
+export const roadRollAt = (i) => T.pts[i].bank
+
 // rockier than a sine: two detuned waves give the rim a natural profile.
 // #471: the shipped walls towered over the road and blocked the view — tops
 // dropped to ~1.7–3.3u and the face set back outside the sim's clamp. The
@@ -147,9 +153,12 @@ function roadGeo() {
     return buildRibbon((i) => {
         const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
+        // #530: the bowl rolls about the tangent — the outside edge of a
+        // banked bend sits ROAD_R·tan(p.bank) above the inside (track.js).
+        const rb = T.ROAD_R * S * Math.tan(p.bank)
         return {
-            ax: p.x + pxu * T.ROAD_R, ay: y + 0.06, az: p.y + pyu * T.ROAD_R,
-            bx: p.x - pxu * T.ROAD_R, by: y + 0.06, bz: p.y - pyu * T.ROAD_R,
+            ax: p.x + pxu * T.ROAD_R, ay: y + 0.06 + rb, az: p.y + pyu * T.ROAD_R,
+            bx: p.x - pxu * T.ROAD_R, by: y + 0.06 - rb, bz: p.y - pyu * T.ROAD_R,
         }
     }, 1 / 5)
 }
@@ -158,9 +167,12 @@ function kerbGeo(side) {
     return buildRibbon((i) => {
         const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
+        // #530: the kerb inherits the bowl's roll at the asphalt edge, so the
+        // painted band stays watertight with the road ribbon.
+        const rb = S * Math.tan(p.bank)
         return {
-            ax: p.x + pxu * side * T.KERB_R, ay: y + 0.07, az: p.y + pyu * side * T.KERB_R,
-            bx: p.x + pxu * side * T.ROAD_R, by: y + 0.07, bz: p.y + pyu * side * T.ROAD_R,
+            ax: p.x + pxu * side * T.KERB_R, ay: y + 0.07 + side * T.KERB_R * rb, az: p.y + pyu * side * T.KERB_R,
+            bx: p.x + pxu * side * T.ROAD_R, by: y + 0.07 + side * T.ROAD_R * rb, bz: p.y + pyu * side * T.ROAD_R,
         }
     }, 1 / 0.85)
 }
@@ -170,9 +182,12 @@ function gutterGeo(side) {
         const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
         const w = wallOffAt(i)
+        // #530: the runoff eases from the bowl's roll at the kerb edge to
+        // flat at the cliff foot — the wall geometry stays put.
+        const rb = S * Math.tan(p.bank)
         return {
             ax: p.x + pxu * side * w, ay: y + 0.045, az: p.y + pyu * side * w,
-            bx: p.x + pxu * side * T.KERB_R, by: y + 0.045, bz: p.y + pyu * side * T.KERB_R,
+            bx: p.x + pxu * side * T.KERB_R, by: y + 0.045 + side * T.KERB_R * rb, bz: p.y + pyu * side * T.KERB_R,
         }
     }, 1 / 3)
 }

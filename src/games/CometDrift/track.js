@@ -65,6 +65,16 @@ const ELEV = {
 }
 export const ELEV_MAX_GRADE = 0.095
 
+// #530: the banking law. BANK_K: the curvature that reads as FULL bank (the
+// #502 visual measure — a ~450px sweeper); BANK_MAX: the road's maximum roll
+// about its tangent, radians (the outside edge of a full-bank bend sits
+// ROAD_R·tan(BANK_MAX) above the inside). buildPoints stores the signed roll
+// on every point as `p.bank`; the surface height offset at lateral u (px, in
+// the +PERP direction) is u·tan(p.bank), so the outside (u = -sign(k)·R) is
+// the high side — that is what makes a bowl flat-out.
+export const BANK_K = 0.0022
+export const BANK_MAX = 0.26
+
 // #542 world growth: layouts are authored at the old 2560 span and grown x3
 // about their bbox center into the 8192 box. HEIGHTS grow with them (dh and ds
 // both x3 => the authored grades carry through unchanged, cap included), so
@@ -242,6 +252,26 @@ function buildPoints(control, elev) {
         while (da < -Math.PI) da += Math.PI * 2
         p.k = da / Math.max(1, p.d)
     }
+    // #530: the banked roll (see BANK_MAX above). The magnitude reuses the
+    // #502 visual measure — window-max |k| over ±14, full bank at BANK_K —
+    // signed toward each bend's inside, then eased over ±8 samples so a
+    // double apex (the Corkscomb) re-rolls THROUGH flat at the inflection
+    // instead of stepping from one lean to the other across a hairpin.
+    const raw = new Array(N)
+    for (let i = 0; i < N; i++) {
+        const p = pts[i]
+        let m = 0
+        for (let w = -14; w <= 14; w++) {
+            const kk = Math.abs(pts[(i + w + N) % N].k)
+            if (kk > m) m = kk
+        }
+        raw[i] = -Math.sign(p.k) * BANK_MAX * Math.min(1, m / BANK_K)
+    }
+    for (let i = 0; i < N; i++) {
+        let sum = 0
+        for (let w = -8; w <= 8; w++) sum += raw[(i + w + N) % N]
+        pts[i].bank = sum / 17
+    }
     // #518: height rides the lap fraction; grade is dh/ds along travel, the
     // only slope number the sim reads. Central difference across the two
     // neighbouring segments keeps it continuous through the lap seam.
@@ -411,7 +441,6 @@ export const START = { i: 0, s: 0 }
 // ±14-sample window normalized to BANK_K (a ~450px sweeper). 0 on the
 // straights, 1 in full bank. HD raises the OUTSIDE strata through it,
 // the 2D bake lays a rim-shadow band; cometcheck pins the law.
-export const BANK_K = 0.0022
 export function bankAt(i) {
     const N = TRACK.N
     let m = 0
