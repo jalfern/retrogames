@@ -81,6 +81,16 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   `cometdrifthdcheck` gates ≥4 distinct tints + ≥0.1 luma swing per wall on
   every course, ring-to-ring smoothness, out-of-phase sides, and a closed
   start/finish seam; `--mutate-wall` collapses the cycle and MUST go red.
+- #478 item 8 phone HUD: the old fit `min(h/240, w/420)` bottomed at 0.72 and a
+  390x844 portrait phone was width-bound at 0.93 — POS read ~7px. `hudScale(w, h)`
+  (scene.js) adds a height-driven portrait lift (×min(1.3, h/560) when h > 1.4w)
+  and raises the floor to 0.85; landscape/desktop/lite are provably untouched.
+  `hudTop(sat)` parks the instrument row at 46px + the same `--sat` safe-area
+  inset the #437 ARCADE/PAUSE chrome rides, so notched devices keep a gap.
+  Gates: scale law at phone/landscape/desktop/lite sizes + monotonicity, chrome
+  clearance at four insets, and browser asserts at 390x844 (u ≥ 1.1, panels
+  below the DOM chrome rects, no panel overlaps); `--mutate-hud` folds the
+  portrait lift to 1 and MUST go red.
 
 ## Trackside scenery (#639)
 

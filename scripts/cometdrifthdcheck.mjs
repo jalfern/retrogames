@@ -966,7 +966,7 @@ if (!SKIP_BROWSER) {
         const { hud, arcade, pause } = m
         ok(hud.u >= 1.1, `portrait 390x844 draws a thumb-readable cluster (u=${hud.u.toFixed(2)})`)
         ok(hud.pos.y >= arcade.bottom && hud.speed.y >= arcade.bottom, `POS/speed sit below ARCADE (top ${arcade.bottom.toFixed(0)}px vs row ${hud.pos.y.toFixed(0)}/${hud.speed.y.toFixed(0)})`)
-        ok(hud.mini.x >= pause.right, `minimap sits left of PAUSE (mini right edge ${hud.mini.x.toFixed(0)} < ${pause.right.toFixed(0)})`)
+        ok(hud.mini.y >= pause.bottom && hud.lap.y >= pause.bottom && hud.pos.y >= arcade.bottom, `every panel starts below the chrome row (buttons bottom ${pause.bottom.toFixed(0)}px vs rows ${hud.mini.y.toFixed(0)}/${hud.pos.y.toFixed(0)})`)
         ok(hud.lap.x >= hud.pos.x + hud.pos.w && hud.lap.x + hud.lap.w <= hud.mini.x, 'LAP / POS / minimap do not overlap each other at portrait scale')
         ok(hud.mini.x + hud.mini.w <= hud.W && hud.mini.y + hud.mini.h <= hud.H && hud.pos.y + hud.pos.h <= hud.H, 'every panel stays inside the viewport')
         ok(hud.pos.w >= 40 && hud.lap.h >= 26, `panels themselves grew with the scale (POS ${hud.pos.w.toFixed(0)}x${hud.pos.h.toFixed(0)}, LAP h ${hud.lap.h})`)
