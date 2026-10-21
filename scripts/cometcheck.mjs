@@ -1449,5 +1449,60 @@ if (process.argv.includes('--mutate')) {
     selectCourse('gulch')
 }
 
+// ---- #502 item 3 + 5: Bus Stop cue (2D) + attract preview -------------------
+// The course declares the braking range; art.brakeCueDefs turns it into
+// paint (concrete apron + red/white tire bars) on the INSIDE of each kink.
+// Item 5: the attract selector carries a mini-map outline preview that must
+// never steal a chevron tap.
+{
+    const art = await import('../src/games/CometDrift/art.js' + '?cue=' + Math.random())
+    const sel = await import('../src/games/CometDrift/selector.js' + '?cue=' + Math.random())
+    const artSrc = readFileSync(new URL('../src/games/CometDrift/art.js', import.meta.url), 'utf8')
+    const idxSrc = readFileSync(new URL('../src/games/CometDrift/index.jsx', import.meta.url), 'utf8')
+    const pauseSrc = readFileSync(new URL('../src/components/PauseOverlay.jsx', import.meta.url), 'utf8')
+    selectCourse('sandbank'); selectCourse('sandbank')
+    const N = Tmod.TRACK.N
+    const cue = art.brakeCueDefs()
+    let bad = 0
+    const signs = new Set()
+    for (const d of cue) {
+        const nx = d.x + Math.cos(d.a + Math.PI / 2) * d.side * (art.APRON_IN - 4)
+        const ny = d.y + Math.sin(d.a + Math.PI / 2) * d.side * (art.APRON_IN - 4)
+        const n = Tmod.TRACK.nearest(nx, ny, d.i)
+        const a = Math.abs(n.lat)
+        const surf = a <= Tmod.ROAD_R ? 'road' : a <= Tmod.KERB_R ? 'kerb' : a <= Tmod.WALL_R ? 'sand' : 'wall'
+        if (Math.sign(n.lat) !== d.side || surf !== 'sand') bad++
+        signs.add(d.side)
+    }
+    check('#502 cue: Sandbank paints an inside apron through the Bus Stop',
+        cue.length >= N * 0.08 && cue.length <= N * 0.25 && bad === 0,
+        `${cue.length}/${N} samples, ${bad} misplaced`)
+    check('#502 cue: both kinks get the cue (side flips mid-complex)', signs.size === 2,
+        `sides ${[...signs].join('/')}`)
+    const fr = Tmod.SANDBANK.brakeCue
+    const offRange = cue.filter((d) => { const f = Tmod.TRACK.pts[d.i].s / Tmod.TRACK.len; return f < fr[0] || f > fr[1] }).length
+    check('#502 cue: the paint stays inside the declared range', offRange === 0 && cue.length > 0, `${offRange} outside`)
+    selectCourse('gulch'); selectCourse('gulch')
+    check('#502 cue: the Gulch keeps bare shoulders', art.brakeCueDefs().length === 0)
+    check('#502 cue: buildGround pours concrete and stripes tire bars',
+        artSrc.includes('brakeCueDefs()') && artSrc.includes('P.concrete') && artSrc.includes('P.barRed') && artSrc.includes('P.barWhite'),
+        artSrc.includes('brakeCueDefs()') ? 'paint calls present' : 'no paint loop in art.js')
+    selectCourse('corkscomb'); selectCourse('corkscomb')
+    check('#502 cue: Corkscomb keeps bare shoulders too', art.brakeCueDefs().length === 0)
+    selectCourse('gulch')
+    for (const [vw, vh, vs] of [[384, 176, 1], [256, 448, 1], [320, 568, 1.2]]) {
+        const gm = sel.selectorGeom(vw, vh, vs)
+        const b = sel.previewBox(vw, vh, vs)
+        const clear = (c) => b.x > c[0] + gm.hw || b.x + b.w < c[0] - gm.hw || b.y > c[1] + gm.hh || b.y + b.h < c[1] - gm.hh
+        check(`#502 preview ${vw}x${vh}: centred, on-canvas, clear of both chevrons`,
+            Math.abs(b.x + b.w / 2 - vw / 2) <= 1 && b.x >= 0 && b.y >= 0 && b.x + b.w <= vw && b.y + b.h <= vh &&
+            clear(gm.left) && clear(gm.right) && b.w > 20 && b.h > 10,
+            `box ${b.w}x${b.h}@${b.x},${b.y}`)
+    }
+    check('#502 preview: the 2D attract stamps the outline', idxSrc.includes('previewBox(') && idxSrc.includes('minimapPath(pb.w, pb.h)'))
+    check('#502 preview: the pause overlay names the chosen circuit (2D)', idxSrc.includes('badge={COURSE.name}'))
+    check('#502 preview: PauseOverlay renders the optional badge', pauseSrc.includes('{badge'))
+}
+
 console.log(`\n${R.fail === 0 ? 'GREEN' : 'RED — ' + R.fail + ' failed'}`)
 process.exit(R.fail === 0 ? 0 : 1)
