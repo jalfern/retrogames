@@ -198,7 +198,14 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   speed — tier 1 of the ladder is UNREACHABLE by holding one way. The ladder
   is a zigzag game (alternate steering ~8 ticks while Space holds); cometplay
   drives and grades exactly that. A softer keyboard steer notch would change
-  the feel — a #431 decision, not a harness one.
+  the feel — a #431 decision, not a harness one. #517 (Jon's call, 2026-10-21)
+  teaches the technique instead of bending the controls: the sim flags the
+  player's first off-road drift-dump that pays nothing (release while
+  off-road with charge < tier 1) as a once-per-race `zigHint` event + a
+  240-tick countdown, and the HUD draws "OFF-ROAD! TAP-TAP THE STEER" in
+  the sky band while it runs. Gates: cometcheck drives the measured repro
+  (held one-way drift at a Corkscomb bend) and three mutants — silence
+  (hintT=0), spam (guard removed), permanent HUD (decay removed).
 - #493 ships TWO new courses (Sandbank, Corkscomb) per the issue's ship-small
   plan; Dry Lake Bed (~Sebring) remains the optional third. At flat-world scale
   and the 220px radius floor the Corkscomb reads as a rate-alternating crest

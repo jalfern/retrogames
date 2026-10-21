@@ -121,6 +121,7 @@ export function makeGame(seed = 0) {
         // the player starts LAST (row 6): the whole race is the overtake
         karts: [mkKart(PLAYER, 6), ...RIVALS.map((d, i) => mkKart(d, i))],
         events: [], end: null,
+        zigHint: 0, zigHintT: 0,
     }
     for (const k of g.karts) k.goT = Math.floor(rnd(g) * 7)
     return g
@@ -231,6 +232,17 @@ function drive(g, k, inp) {
                     k.boostT = Math.round(TIERS[t].dur * (k.isPlayer ? 1.45 : 1)); k.boostTier = t
                     g.events.push({ e: 'boost', who: k.name, tier: t })
                 }
+            }
+            // #517 (Jon's call: teach the zig-zag): a keyboard drift held one
+            // way carves tighter than any corner and walks off the asphalt,
+            // dumping the charge before tier 1 — the tap-tap steer that keeps
+            // a drift alive through the 9-tick grace is invisible to new
+            // players. Surface it once per race, at the first off-road dump
+            // that pays nothing.
+            if (k.isPlayer && !g.zigHint && k.driftT > 0 && k.offroad && k.charge < TIERS[0].t) {
+                g.zigHint = 1
+                g.zigHintT = 240
+                g.events.push({ e: 'zigHint', who: k.name })
             }
             k.driftT = 0; k.charge = -1; k.driftG = 0
             k.a += steer * CFG.steer * grip
@@ -412,6 +424,7 @@ function kartBump(g) {
 
 export function step(g, inp) {
     g.tick++
+    if (g.zigHintT > 0) g.zigHintT--
     if (g.end) return
     const P = g.karts[0]
     if (g.phase === 'count') {
