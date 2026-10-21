@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>SHORE — WebGPU swash &amp; shoals</title>
+<title>SHORE — WebGPU surf, swash &amp; foam</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0d10; }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
@@ -31,8 +31,8 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud"><b>SHORE</b> · WebGPU swash sim &nbsp;·&nbsp; drag look &nbsp;·&nbsp; WASD / arrows fly &nbsp;·&nbsp; Q / E down-up &nbsp;·&nbsp; shift = fast</div>
-<div id="tide"><b>Surf</b> · set <span id="setLbl">—</span> · run-up <span id="runLbl">0.0</span>m</div>
+<div id="hud"><b>SHORE</b> · WebGPU SWE swash + advected foam &nbsp;·&nbsp; drag look &nbsp;·&nbsp; WASD / arrows fly &nbsp;·&nbsp; Q / E down-up &nbsp;·&nbsp; shift = fast</div>
+<div id="tide"><b>Surf</b> · set <span id="setLbl">—</span> · run-up <span id="runLbl">0.0</span>m · foam <span id="foamLbl">0</span>%</div>
 <div id="fatal"></div>
 <script type="module">
 'use strict';
@@ -41,70 +41,163 @@ const qs = new URLSearchParams(location.search);
 const SEED = (qs.get('seed') | 0) || 7;
 const LITE = qs.get('lite') === '1';
 
-const LANES = 128;
 const SLOPE = 0.052;            // beach slope (rise per metre inland)
-const XS0 = 84;                // mean shoreline x
+const XS0 = 84;                 // mean shoreline x
 const XMIN = 0, XMAX = 190;    // world extent, x = offshore -> inland
 const ZMIN = -70, ZSPAN = 140; // alongshore
 const G = 9.81;
 const GRIDX = LITE ? 128 : 256;
 const GRIDZ = LITE ? 96 : 192;
 
-// swell components: period s, deep amplitude m, alongshore phase tilt
+// GPU shallow-water (swash) grid: covers the surf + swash zone, x 50..126 m.
+// h,u,v live in one vec4 storage buffer; foam and wet maps in two f32 buffers.
+// The old 1D CPU swash lanes are gone: run-up is 2D fluid.
+const SX0 = 50, SX1 = 126, SZ0 = -70, SZ1 = 70;
+const SDX = LITE ? 0.8 : 0.4;
+const NX = Math.round((SX1 - SX0) / SDX) + 1;
+const NZ = Math.round((SZ1 - SZ0) / SDX) + 1;
+const NC = NX * NZ;
+const NSUB = 4;                 // SWE substeps per 1/60 s frame
+
+// travel-time (eikonal) grid for refraction of the primary swells
+const TX0 = 38, TX1 = 130, TXS = 1.6;
+const TZ0 = -70, TZS = 2.4;
+const NTX = Math.round((TX1 - TX0) / TXS) + 1;
+const NTZ = Math.round((SZ1 - SZ0) / TZS) + 1;
+const NTT = NTX * NTZ;
+
+// primary swells: period s, deep amplitude m, alongshore phase tilt (rad/m)
 const SW = [
-  { T: 7.4, A: 0.21, tilt: 0.010 },
-  { T: 5.0, A: 0.13, tilt: -0.008 },
-  { T: 3.2, A: 0.075, tilt: 0.014 },
+  { T: 7.4, A: 0.21, tp: 0.010 },
+  { T: 5.0, A: 0.13, tp: 0.008 },
+  { T: 3.2, A: 0.075, tp: 0.014 },
 ].map(o => ({ ...o, w: 2 * Math.PI / o.T }));
+// directional chop (deep-water wind sea): wavelength, azimuth from offshore, amp
+const CHOPN = LITE ? 3 : 6;
+const CHOP = (() => {
+  const out = [];
+  let s = SEED * 7.13 + 3.7;
+  const rnd = () => { s = Math.sin(s * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+  for (let i = 0; i < CHOPN; i++) {
+    const lam = 1.1 + 3.2 * (i / (CHOPN - 1)) + 0.4 * rnd();
+    const az = (rnd() - 0.5) * 1.05;
+    const a = 0.010 + 0.020 * Math.pow(2.6 / lam, 1.5) * (0.7 + 0.6 * rnd());
+    out.push({ lam, az, a, k: 2 * Math.PI / lam, w: Math.sqrt(G * 2 * Math.PI / lam), ph: rnd() * 6.283 });
+  }
+  return out;
+})();
 
 const xsCurve = z => XS0 + 9 * Math.sin(z * 0.043 + 1.7) + 3.5 * Math.sin(z * 0.12 + 0.6);
-const hash1 = i => { let x = Math.sin(i * 127.1 + SEED * 311.7) * 43758.5453; return x - Math.floor(x); };
 
-// piecewise grid: 25% of points over deep water, 55% over the 50..110 surf
-// band (0.43 m spacing), 20% up the back beach.
+// piecewise mesh: 25% of points over deep water, 55% over the 50..110 surf
+// band, 20% up the back beach.
 function fx(u) {
   if (u < 0.25) return XMIN + (u / 0.25) * 50;
   if (u < 0.80) return 50 + ((u - 0.25) / 0.55) * 60;
   return 110 + ((u - 0.80) / 0.20) * (XMAX - 110);
 }
 
-// ---- CPU swash lanes: fast uprush / slow backwash + wetting memory ----
-const xw = new Float32Array(LANES);   // waterline x
-const wet = new Float32Array(LANES);  // wet-limit x (lagging max, dries slowly)
-const wvel = new Float32Array(LANES); // d(xw)/dt
-const laneZ = new Float32Array(LANES);
-const laneAmp = new Float32Array(LANES);
-for (let i = 0; i < LANES; i++) {
-  laneZ[i] = ZMIN + i / (LANES - 1) * ZSPAN;
-  // coherent alongshore amplitude: independent per-lane noise aliases the
-  // waterline at the 1.1 m sampling limit (the foam-line sawtooth); real
-  // run-up varies in 15-40 m cusp/rip cells.
-  laneAmp[i] = 0.95 + 0.24 * Math.sin(laneZ[i] * 0.09 + 0.7) + 0.12 * Math.sin(laneZ[i] * 0.041 + 2.2);
+// ---- JS mirrors of the WGSL model (warm-start only; the harness senses the
+// water through the GPU probe, never through these). ----
+function hash1(i) { let x = Math.sin(i * 127.1 + SEED * 311.7) * 43758.5453; return x - Math.floor(x); }
+function vn2(x, z) {
+  const i = Math.floor(x), j = Math.floor(z), fx0 = x - i, fz0 = z - j;
+  const u = fx0 * fx0 * fx0 * (fx0 * (fx0 * 6 - 15) + 10), v = fz0 * fz0 * fz0 * (fz0 * (fz0 * 6 - 15) + 10);
+  const g = (a, b) => { const h = hash1(a * 31.7 + b * 57.13) * 6.28318; return Math.cos(h) * (x - a) + Math.sin(h) * (z - b); };
+  const a = g(i, j) * (1 - u) + g(i + 1, j) * u;
+  const b = g(i, j + 1) * (1 - u) + g(i + 1, j + 1) * u;
+  return Math.max(0, Math.min(1, (a * (1 - v) + b * v) * 0.75 + 0.5));
 }
-const swave = u => {            // skewed oscillator: quick rise, slow drain
-  const q = u / (2 * Math.PI) - Math.floor(u / (2 * Math.PI));
-  const r = 0.42;
-  return (q < r ? 0.5 - 0.5 * Math.cos(Math.PI * q / r) : 0.5 + 0.5 * Math.cos(Math.PI * (q - r) / (1 - r))) * 2 - 1;
-};
-function swashS(lane, t) {
-  const z = laneZ[lane];
-  const blk = Math.floor(lane / 6);   // phase jitter in ~6.6 m cells, not per lane
-  let s = SW[0].A * 2.6 * laneAmp[lane] * (0.62 + 0.5 * Math.sin(0.087 * t + z * 0.045 + 1.3)) * swave(SW[0].w * t + SW[0].tilt * z - 2.35 + hash1(blk + 500) * 0.3);
-  s += SW[1].A * 2.2 * laneAmp[lane] * swave(SW[1].w * t - SW[1].tilt * z + 1.7 + hash1(blk + 900) * 0.3);
-  s += SW[2].A * 2.0 * swave(SW[2].w * t + SW[2].tilt * z + 4.1 + hash1(blk + 1300) * 0.3);
-  return s;
-}
-const ZU = z => Math.max(0, Math.min(LANES - 1, Math.round((z - ZMIN) / ZSPAN * (LANES - 1))));
-function simStep(dt, t) {
-  const dryK = 0.55;  // m/s of dry-down of the wet band
-  for (let i = 0; i < LANES; i++) {
-    const prev = xw[i];
-    const s = swashS(i, t);
-    const nx = xsCurve(laneZ[i]) + s * (0.55 / SLOPE);
-    wvel[i] = (nx - prev) / dt;
-    xw[i] = nx;
-    wet[i] = Math.max(nx, wet[i] - dryK * dt);
+function fbm2(x, z) { return 0.6 * vn2(x, z) + 0.4 * vn2(x * 2.17 + 13, z * 2.17 + 7); }
+function terrain(x, z) {
+  const xs = xsCurve(z);
+  let h = SLOPE * (x - xs);
+  const damp = Math.max(0, Math.min(1, (Math.abs(x - xs) - 0.25) / 1.75));
+  h += (0.055 * fbm2(x * 0.31, z * 0.31) + 0.02 * fbm2(x * 1.2, z * 1.05)) * damp;
+  h += 0.22 * Math.exp(-Math.pow((x - xs - 2.5) / 2.2, 2));
+  h -= 0.16 * Math.exp(-Math.pow((x - xs + 9.0) / 5.0, 2));
+  if (x < xs) {
+    const k = xs - x;
+    h -= 1.2 * (1 - Math.exp(-k / 26)) + 1.6 * (1 - Math.exp(-k / 55));
   }
+  return h;
+}
+// local wavenumber for frequency w over depth d: Newton on g*k*tanh(k*d) - w^2
+function kDepth(w, d) {
+  let k = w * w / G;
+  for (let n = 0; n < 12; n++) {
+    const th = Math.tanh(k * d);
+    const f = G * k * th - w * w;
+    const fp = G * (th + k * d * (1 - th * th));
+    k -= f / fp;
+    if (k < 1e-4) k = 1e-4;
+  }
+  return k;
+}
+// Fast-sweeping eikonal solver per component: T = travel time (s),
+// |grad T| = 1/c with c(x,z) = w/k(depth). Rays bend toward the shoreline
+// normal where depth drops — Snell by dispersion, not a global phase warp.
+const ttJS = new Float32Array(3 * NTT);
+for (let ci = 0; ci < 3; ci++) {
+  const w = SW[ci].w;
+  const c0 = G / w;
+  const cArr = new Float32Array(NTT);
+  for (let i = 0; i < NTX; i++) {
+    const x = TX0 + i * TXS;
+    for (let j = 0; j < NTZ; j++) {
+      const z = TZ0 + j * TZS;
+      const d = Math.max(0.02, -terrain(x, z));
+      cArr[i * NTZ + j] = Math.min(c0, w / kDepth(w, d));
+    }
+  }
+  const T = ttJS.subarray(ci * NTT, (ci + 1) * NTT);
+  T.fill(1e9);
+  // boundary: phase ramp tp*z at the offshore edge -> travel-time ramp tp*z/w
+  for (let j = 0; j < NTZ; j++) T[j] = (SW[ci].tp * (TZ0 + j * TZS)) / w + 1 - 1;
+  for (let sweep = 0; sweep < 40; sweep++) {
+    let maxd = 0;
+    for (let p = 0; p < 4; p++) {
+      const forX = (p & 1) === 0, forZ = (p & 2) === 0;
+      for (let n = 0; n < NTX; n++) {
+        const i = forX ? n : NTX - 1 - n;
+        for (let m = 0; m < NTZ; m++) {
+          const j = forZ ? m : NTZ - 1 - m;
+          const idx = i * NTZ + j;
+          const c = cArr[idx];
+          let best = T[idx];
+          if (i > 0) best = Math.min(best, T[idx - NTZ] + TXS / c);
+          if (i < NTX - 1) best = Math.min(best, T[idx + NTZ] + TXS / c);
+          if (j > 0) best = Math.min(best, T[idx - 1] + TZS / c);
+          if (j < NTZ - 1) best = Math.min(best, T[idx + 1] + TZS / c);
+          maxd = Math.max(maxd, Math.abs(best - T[idx]));
+          T[idx] = best;
+        }
+      }
+    }
+    if (maxd < 1e-4) break;
+  }
+}
+// analytic deep-water surface elevation (mirror of COMMON etaA; warm-start only)
+function etaA(x, z, t) {
+  const d0 = Math.max(0.05, -terrain(x, z));
+  const m = Math.max(0, Math.min(0.8, 1.15 - d0 * 0.95));
+  let e = 0;
+  for (let ci = 0; ci < 3; ci++) {
+    const c = SW[ci];
+    const i = Math.min(NTX - 1, Math.max(0, Math.round((x - TX0) / TXS)));
+    const j = Math.min(NTZ - 1, Math.max(0, Math.round((z - TZ0) / TZS)));
+    const T = ttJS[ci * NTT + i * NTZ + j];
+    const cc = Math.min(G / c.w, Math.sqrt(G * Math.max(d0, 0.15)));
+    const a = c.A * Math.min(3.0, Math.pow((G / c.w) / Math.max(cc, 0.4), 0.75));
+    const ph = c.w * (t - T);
+    e += a * (Math.sin(ph) - 0.5 * m * Math.sin(2 * ph));
+  }
+  const deepF = Math.max(0, Math.min(1, (d0 - 0.4) / 1.4));
+  for (let n = 0; n < CHOPN; n++) {
+    const ch = CHOP[n];
+    e += ch.a * Math.sin(ch.k * (x * Math.cos(ch.az) + z * Math.sin(ch.az)) - ch.w * t + ch.ph) * deepF;
+  }
+  return e;
 }
 
 const cam = { pos: [48, 3.0, -18], yaw: -0.55, pitch: -0.15, touched: false };
@@ -112,6 +205,7 @@ const canvas = document.getElementById('c');
 const fatal = document.getElementById('fatal');
 const setLbl = document.getElementById('setLbl');
 const runLbl = document.getElementById('runLbl');
+const foamLbl = document.getElementById('foamLbl');
 
 if (!navigator.gpu) {
   fatal.style.display = 'grid';
@@ -125,31 +219,40 @@ if (!navigator.gpu) {
 }
 
 // ---------------------------------------------------------------------------
-// WGSL. COMMON is the single source of truth for the shore model: the render
-// passes and the probe (harness readback) evaluate the SAME functions, so the
-// pixel frame, the depth readback and the CPU swash lanes cannot drift apart.
+// WGSL. COMMON is the single source of truth for the shore model: sky, sand,
+// water, sim and probe all evaluate the SAME terrain/eta functions, so the
+// pixel frame, the SWE forcing and the probe readback cannot drift apart.
 // ---------------------------------------------------------------------------
 const COMMON = `
 const SLOPE: f32 = ${SLOPE.toFixed(5)};
 const XS0: f32 = ${XS0.toFixed(1)};
 const GAG: f32 = 9.81;
 const PI: f32 = 3.14159265359;
-const NLANES: u32 = ${LANES}u;
-const ZMINF: f32 = ${ZMIN.toFixed(1)};
-const ZSPANF: f32 = ${ZSPAN.toFixed(1)};
+const SX0F: f32 = ${SX0.toFixed(1)};
+const SZ0F: f32 = ${SZ0.toFixed(1)};
+const SDXF: f32 = ${SDX.toFixed(3)};
+const NXI: i32 = ${NX};
+const NZI: i32 = ${NZ};
+const TX0F: f32 = ${TX0.toFixed(1)};
+const TZ0F: f32 = ${TZ0.toFixed(1)};
+const TXSF: f32 = ${TXS.toFixed(3)};
+const TZSF: f32 = ${TZS.toFixed(3)};
+const NTXI: i32 = ${NTX};
+const NTZI: i32 = ${NTZ};
+const NTTU: u32 = ${NTT}u;
 const W0: f32 = ${SW[0].w.toFixed(5)};
 const W1: f32 = ${SW[1].w.toFixed(5)};
 const W2: f32 = ${SW[2].w.toFixed(5)};
 const A0: f32 = ${SW[0].A.toFixed(5)};
 const A1: f32 = ${SW[1].A.toFixed(5)};
 const A2: f32 = ${SW[2].A.toFixed(5)};
+const QS_IN: f32 = 18.0;   // offshore-distance below which the SWE owns the water
+const QS_OUT: f32 = 34.0;  // above which the analytic spectrum owns it
+var<private> gT: f32 = 0.0;
 
 fn sq(a: f32) -> f32 { return a * a; }
 fn xsCurve(z: f32) -> f32 {
   return XS0 + 9.0 * sin(z * 0.043 + 1.7) + 3.5 * sin(z * 0.12 + 0.6);
-}
-fn laneIdx(z: f32) -> u32 {
-  return u32(clamp(round((z - ZMINF) / ZSPANF * f32(NLANES - 1u)), 0.0, f32(NLANES - 1u)));
 }
 fn hash21(p: vec2f) -> f32 {
   var q = fract(p * vec2f(127.31, 313.71));
@@ -168,84 +271,155 @@ fn vnoise(p: vec2f) -> f32 {
 fn fbm2(p: vec2f) -> f32 {
   return 0.6 * vnoise(p) + 0.4 * vnoise(p * 2.17 + vec2f(13.0, 7.0));
 }
+// Worley cells for foam lace: F1 distance over ~0.6 m cells
+fn worley(p: vec2f) -> f32 {
+  let ip = floor(p); let fp = fract(p);
+  var md = 8.0;
+  for (var oy: i32 = -1; oy <= 1; oy = oy + 1) {
+    for (var ox: i32 = -1; ox <= 1; ox = ox + 1) {
+      let o = vec2f(f32(ox), f32(oy));
+      let c = o + vec2f(hash21(ip + o), hash21(ip + o + vec2f(7.31, 2.17)));
+      md = min(md, length(c - fp));
+    }
+  }
+  return md;
+}
 // dry sand elevation (0 at the still waterline), ripples + berm + offshore bar
 fn terrain(xIn: f32, z: f32) -> f32 {
   let xs = xsCurve(z);
   var h = SLOPE * (xIn - xs);
-  // ripple fbm drives texture on the dry beach and bed, but within ~2 m of
-  // the waterline its lattice flips coverage at grazing view (the sawtooth);
-  // damp it out toward the still line so the contour there is the smooth bed.
   let damp = smoothstep(0.25, 2.0, abs(xIn - xs));
   h = h + (0.055 * fbm2(vec2f(xIn * 0.31, z * 0.31)) + 0.02 * fbm2(vec2f(xIn * 1.2, z * 1.05))) * damp;
   h = h + 0.22 * exp(-sq((xIn - xs - 2.5) / 2.2));
   h = h - 0.16 * exp(-sq((xIn - xs + 9.0) / 5.0));
-  // steeper bed seaward so the shelf has real depth (blue) beyond the bar
   if (xIn < xs) {
     let k = xs - xIn;
     h = h - 1.2 * (1.0 - exp(-k / 26.0)) - 1.6 * (1.0 - exp(-k / 55.0));
   }
   return h;
 }
-// shallow-water phase: constant frequency, local k = w / sqrt(g*d) via the
-// travel-time warp on a linear bed (q = sqrt(distance-to-shoreline)) —
-// wavelength compresses and waves slow as they shoal.
-fn wphase(w: f32, t: f32, x: f32, z: f32, tilt: f32) -> f32 {
-  let xs = xsCurve(z);
-  let qd = sqrt(max(xs - x, 0.03));
-  return w * t - (2.0 * w / sqrt(GAG * SLOPE)) * qd + tilt * z;
+fn ttAt(ci: u32, x: f32, z: f32) -> f32 {
+  let fx0 = clamp((x - TX0F) / TXSF, 0.0, f32(NTXI - 1));
+  let fz0 = clamp((z - TZ0F) / TZSF, 0.0, f32(NTZI - 1));
+  let i = i32(floor(fx0)); let j = i32(floor(fz0));
+  let tx = fx0 - f32(i); let tz = fz0 - f32(j);
+  let b = ci * NTTU;
+  let iu = min(i + 1, NTXI - 1); let ju = min(j + 1, NTZI - 1);
+  let a00 = ttBuf.v[b + u32(i * NTZI + j)];
+  let a10 = ttBuf.v[b + u32(iu * NTZI + j)];
+  let a01 = ttBuf.v[b + u32(i * NTZI + ju)];
+  let a11 = ttBuf.v[b + u32(iu * NTZI + ju)];
+  return mix(mix(a00, a10, tx), mix(a01, a11, tx), tz);
 }
-fn shoalA(a: f32, d0: f32) -> f32 {
-  return a * clamp(pow(5.0 / max(d0, 0.30), 0.28), 1.0, 3.0);
+// cnoidal-ish profile: crest narrows/sharpens, trough flattens as m grows
+// with shoaling (second harmonic of a steepening cn wave).
+fn prof(phi: f32, m: f32) -> f32 { return sin(phi) - 0.5 * m * sin(2.0 * phi); }
+fn swellA(a: f32, w: f32, d0: f32) -> f32 {
+  let c = min(GAG / w, sqrt(GAG * max(d0, 0.15)));
+  return a * clamp(pow((GAG / w) / max(c, 0.4), 0.75), 1.0, 3.0);
 }
-struct Shore { d: f32, foam: f32, surf: f32, eta: f32, wetF: f32 };
-fn shore(xIn: f32, z: f32, t: f32, lane: vec3f) -> Shore {
-  var o: Shore;
-  let h = terrain(xIn, z);
-  if (h < 0.0) {
-    let d0 = -h;
-    let p0 = wphase(W0, t, xIn, z, ${SW[0].tilt.toFixed(4)});
-    let p1 = wphase(W1, t, xIn, z, ${(-SW[1].tilt).toFixed(4)});
-    let p2 = wphase(W2, t, xIn, z, ${SW[2].tilt.toFixed(4)});
-    let a0 = shoalA(A0, d0); let a1 = shoalA(A1, d0); let a2 = shoalA(A2, d0);
-    var eta = a0 * sin(p0) + a1 * sin(p1) + a2 * sin(p2);
-    eta = eta + 0.02 * fbm2(vec2f(xIn * 0.9 - t * 0.8, z * 0.9));
-    let H = 2.0 * (a0 + a1 + a2);
-    let brk = H / max(d0 + min(eta, 0.0), 0.12);
-    let fBreak = smoothstep(0.72, 1.05, brk) * (0.45 + 0.55 * vnoise(vec2f(xIn * 0.8 - t * 1.1, z * 0.55)));
-    let d = max(d0 + eta, 0.004);
-    o.eta = eta;
-    o.d = d;
-    o.surf = h + d;
-    o.foam = clamp(fBreak, 0.0, 1.0);
-    o.wetF = 0.0;
+// deep-water analytic surface: 3 refracted primary swells + directional chop
+fn etaA(x: f32, z: f32) -> f32 {
+  let d0 = max(0.05, -terrain(x, z));
+  let m = clamp(1.15 - d0 * 0.95, 0.0, 0.8);
+  var e = swellA(A0, W0, d0) * prof(W0 * (gT - ttAt(0u, x, z)), m);
+  e += swellA(A1, W1, d0) * prof(W1 * (gT - ttAt(1u, x, z)), m);
+  e += swellA(A2, W2, d0) * prof(W2 * (gT - ttAt(2u, x, z)), m);
+  let deepF = smoothstep(0.4, 1.8, d0);
+${CHOP.map(ch => `  e += ${ch.a.toFixed(5)} * sin(${ch.k.toFixed(5)} * (x * ${Math.cos(ch.az).toFixed(5)} + z * ${Math.sin(ch.az).toFixed(5)}) - ${ch.w.toFixed(5)} * gT + ${ch.ph.toFixed(5)}) * deepF;`).join('\n')}
+  return e;
+}
+// analytic whitecaps in the far blend band (SWE foam takes over near shore)
+fn foamA(x: f32, z: f32) -> f32 {
+  let d0 = max(0.12, -terrain(x, z));
+  let H = 2.0 * (swellA(A0, W0, d0) + swellA(A1, W1, d0) + swellA(A2, W2, d0));
+  let brk = H / d0;
+  return smoothstep(0.72, 1.05, brk) * (0.45 + 0.55 * vnoise(vec2f(x * 0.8 - gT * 1.1, z * 0.55)));
+}
+// sim-grid index: periodic alongshore, clamped cross-shore
+fn si(i: i32, j: i32) -> u32 {
+  var jj = j % NZI; if (jj < 0) { jj += NZI; }
+  let ii = clamp(i, 0, NXI - 1);
+  return u32(ii * NZI + jj);
+}
+${['hud', 'fof', 'wtf'].map(f => `
+fn b_${f}(x: f32, z: f32) -> ${f === 'hud' ? 'vec4f' : 'f32'} {
+  let fx0 = clamp((x - SX0F) / SDXF - 0.5, 0.0, f32(NXI - 1));
+  let fz0 = clamp((z - SZ0F) / SDXF - 0.5, 0.0, f32(NZI - 1));
+  let i = i32(floor(fx0)); let j = i32(floor(fz0));
+  let tx = fx0 - f32(i); let tz = fz0 - f32(j);
+  let a = mix(s_${f}[si(i, j)], s_${f}[si(i + 1, j)], tx);
+  let b = mix(s_${f}[si(i, j + 1)], s_${f}[si(i + 1, j + 1)], tx);
+  return mix(a, b, tz);
+}`).join('\n')}
+// water surface elevation: SWE near shore, analytic spectrum offshore
+fn surfAt(x: f32, z: f32) -> f32 {
+  let bed = terrain(x, z);
+  let sS = bed + max(b_hud(x, z).x, 0.0);
+  let wa = smoothstep(QS_IN, QS_OUT, xsCurve(z) - x);
+  if (wa <= 0.001) { return sS; }
+  let sA = etaA(x, z);
+  if (wa >= 0.999) { return sA; }
+  return mix(sS, sA, wa);
+}
+struct W { d: f32, foam: f32, wet: f32 };
+fn waterAt(x: f32, z: f32) -> W {
+  let bed = terrain(x, z);
+  let wa = smoothstep(QS_IN, QS_OUT, xsCurve(z) - x);
+  let hS = max(b_hud(x, z).x, 0.0);
+  var o: W;
+  if (wa <= 0.001) {
+    o.d = hS;
+    o.foam = clamp(b_fof(x, z), 0.0, 1.0);
   } else {
-    let back = max(lane.x - xIn, 0.0);
-    let sheet = back * SLOPE * 1.3 * exp(-back / 6.0)
-      * (0.78 + 0.22 * sin(z * 0.31 + t * 2.1));
-    let film = select(0.018, 0.0, xIn >= lane.y);
-    let d = max(sheet, film);
-    o.eta = 0.0;
-    o.d = d;
-    o.surf = h + d;
-    let edge = exp(-sq((xIn - lane.x) / 0.38)) * select(0.0, 1.0, lane.z > 0.05)
-      * (0.5 + 0.5 * vnoise(vec2f(xIn * 2.2, z * 1.6 + t * 2.0)));
-    let ring = exp(-sq((xIn - (lane.y - 0.25)) / 0.38))
-      * select(0.0, 1.0, lane.z < -0.04) * select(0.0, 1.0, xIn > lane.x + 0.15)
-      * (0.5 + 0.5 * vnoise(vec2f(xIn * 2.6 + 9.0, z * 1.9 - t * 1.4)));
-    o.foam = clamp(edge * 0.95 + ring * 0.55, 0.0, 1.0);
-    o.wetF = select(0.0, 1.0, xIn < lane.y);
+    let dA = max(etaA(x, z) - bed, 0.0);
+    let fA2 = clamp(foamA(x, z), 0.0, 1.0);
+    o.d = mix(hS, dA, wa);
+    o.foam = mix(clamp(b_fof(x, z), 0.0, 1.0), fA2, wa);
   }
+  o.wet = clamp(b_wtf(x, z), 0.0, 1.0);
   return o;
 }
-// Gerstner-style forward push of the wave face while shoaling (steepening).
-fn faceShift(xIn: f32, z: f32, t: f32) -> f32 {
-  let h = terrain(xIn, z);
-  if (h >= 0.0) { return 0.0; }
-  let d0 = -h;
-  return clamp(0.05 + 0.5 * pow(5.0 / max(d0, 0.30), 0.30), 0.0, 1.8)
-    * (A0 * cos(wphase(W0, t, xIn, z, ${SW[0].tilt.toFixed(4)}))
-     + A1 * cos(wphase(W1, t, xIn, z, ${(-SW[1].tilt).toFixed(4)})));
+// golden-hour sky (ported from /demos/ocean: gradient + sun halo + cirrus)
+fn skyPal(d0: vec3f) -> vec3f {
+  let up = clamp(d0.y, 0.0, 1.0);
+  let zen = vec3f(0.075, 0.130, 0.300);
+  let mid = vec3f(0.50, 0.33, 0.40);
+  let hor = vec3f(1.02, 0.52, 0.24);
+  var col = mix(hor, mix(mid, zen, pow(up, 0.55)), pow(up, 0.32));
+  let sd = max(dot(d0, normalize(u.sun.xyz)), 0.0);
+  col += vec3f(1.0, 0.72, 0.36) * (pow(sd, 320.0) * 2.6 + pow(sd, 14.0) * 0.55 + pow(sd, 3.0) * 0.16);
+  if (d0.y > 0.005) {
+    let bu = vec2f(d0.x / (d0.y + 0.12), d0.z / (d0.y + 0.12));
+    var n = fbm2(vec2f(bu.x * 1.6 + gT * 0.012, bu.y * 0.7));
+    n = smoothstep(0.50, 0.76, n) * smoothstep(0.02, 0.16, d0.y) * (1.0 - smoothstep(0.5, 0.95, d0.y));
+    col = mix(col, mix(vec3f(1.0, 0.78, 0.66), vec3f(0.95, 0.90, 0.94), 0.35), n * 0.7);
+  }
+  col = mix(vec3f(0.96, 0.70, 0.46), col, smoothstep(0.0, 0.14, d0.y));
+  return col;
 }
+fn tonemap(vIn: vec3f) -> vec3f {
+  let v = max(vIn, vec3f(0.0));
+  let m = (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14);
+  return pow(clamp(m, vec3f(0.0), vec3f(1.0)), vec3f(1.0 / 2.2));
+}
+// animated sub-sand caustics: two drifting interference lattices
+fn caustics(x: f32, z: f32, vu: f32, vv: f32) -> f32 {
+  let t1 = gT * 0.7;
+  let a = vnoise(vec2f(x * 1.9 + t1 + vu * 2.0, z * 1.6 - t1 * 0.6));
+  let b = vnoise(vec2f(x * 2.4 - t1 * 0.8 + vv * 2.0, z * 2.1 + t1 * 0.5));
+  let l = pow(1.0 - abs(a - 0.5) * 2.0, 3.0) + pow(1.0 - abs(b - 0.5) * 2.0, 3.0);
+  return clamp(l, 0.0, 1.3);
+}
+`;
+
+const TT_DECL = `
+struct TTBuf { v: array<f32, ${NTT * 3}> };
+`;
+const SIM_DECL = `
+@group(1) @binding(0) var<storage, read> s_hud: array<vec4f, ${NC}>;
+@group(1) @binding(1) var<storage, read> s_fof: array<f32, ${NC}>;
+@group(1) @binding(2) var<storage, read> s_wtf: array<f32, ${NC}>;
 `;
 
 const UNIF = `
@@ -259,38 +433,9 @@ struct U {
   pars2: vec4f,
 };
 `;
-
-const LANES_DECL = `
-struct LanesIn { v: array<vec3f, NLANES> };
-@group(1) @binding(0) var<storage, read> lanesIn: LanesIn;
-`;
-// laneAt: smooth (Catmull-Rom) lane lookup. Nearest/lerp lane reads staircase
-// whatever the CPU swash jitters lane-to-lane at 1.1 m — the sawtooth; real
-// swash is coherent alongshore, so interpolate through the neighbouring lanes.
-const LANEAT = `
-fn laneClamp(k: i32) -> u32 { return u32(clamp(f32(k), 0.0, f32(NLANES - 1u))); }
-fn laneAt(z: f32) -> vec3f {
-  let f = clamp((z - ZMINF) / ZSPANF * f32(NLANES - 1u), 0.0, f32(NLANES - 1u));
-  let i = i32(floor(f));
-  let t = f - f32(i);
-  // low-pass the lane sequence: per-lane phase jitter is unphysical alongshore
-  // noise, and reading it straight from the buffer puts a 1.1 m sawtooth on
-  // every lane-driven edge (the foam line). Then Catmull-Rom for C1 placement.
-  let Lm3 = lanesIn.v[laneClamp(i - 3)]; let Lm2 = lanesIn.v[laneClamp(i - 2)];
-  let Lm1 = lanesIn.v[laneClamp(i - 1)]; let L0 = lanesIn.v[laneClamp(i)];
-  let Lp1 = lanesIn.v[laneClamp(i + 1)]; let Lp2 = lanesIn.v[laneClamp(i + 2)];
-  let p1 = 0.25 * Lm2 + 0.5 * Lm1 + 0.25 * L0;
-  let p2 = 0.25 * Lm1 + 0.5 * L0 + 0.25 * Lp1;
-  let p3 = 0.25 * L0 + 0.5 * Lp1 + 0.25 * Lp2;
-  let p4 = 0.25 * L0 + 0.5 * Lp1 + 0.375 * Lp2 + 0.125 * lanesIn.v[laneClamp(i + 3)];
-  let t2 = t * t; let t3 = t2 * t;
-  return 0.5 * ((2.0 * p2) + (-p1 + p3) * t
-    + (2.0 * p1 - 5.0 * p2 + 4.0 * p3 - p4) * t2
-    + (-p1 + 3.0 * p2 - 3.0 * p3 + p4) * t3);
-}
-`;
 const U0 = `@group(0) @binding(0) var<uniform> u: U;`;
 
+// ---- golden-hour sky ----
 const SKY = UNIF + U0 + COMMON + `
 struct VOut { @builtin(position) pos: vec4f, @location(0) dir: vec3f };
 @vertex
@@ -304,30 +449,13 @@ fn vs(@builtin(vertex_index) vi: u32) -> VOut {
 }
 @fragment
 fn fs(i: VOut) -> @location(0) vec4f {
-  let d = normalize(i.dir);
-  let t = u.pars2.y;
-  let up = clamp(d.y, 0.0, 1.0);
-  let zen = vec3f(0.26, 0.32, 0.46);
-  let mid = vec3f(0.78, 0.52, 0.40);
-  let hor = vec3f(1.05, 0.68, 0.36);
-  var col = mix(hor, mix(mid, zen, pow(up, 0.55)), pow(up, 0.32));
-  // low golden-hour sun with a fat warm halo
-  let sd = max(dot(d, normalize(u.sun.xyz)), 0.0);
-  col += vec3f(1.0, 0.72, 0.36) * (pow(sd, 220.0) * 2.6 + pow(sd, 14.0) * 0.55 + pow(sd, 3.0) * 0.16);
-  // stretched cirrus bands
-  if (d.y > 0.005) {
-    let bu = vec2f(d.x / (d.y + 0.12), d.z / (d.y + 0.12));
-    var n = fbm2(vec2f(bu.x * 1.6 + t * 0.012, bu.y * 0.7));
-    n = smoothstep(0.52, 0.78, n) * smoothstep(0.02, 0.16, d.y) * (1.0 - smoothstep(0.5, 0.95, d.y));
-    col = mix(col, mix(vec3f(1.0, 0.78, 0.66), vec3f(0.95, 0.90, 0.94), 0.35), n * 0.7);
-  }
-  // horizon haze
-  col = mix(vec3f(0.96, 0.74, 0.52), col, smoothstep(0.0, 0.14, d.y));
-  return vec4f(col, 1.0);
+  gT = u.pars2.y;
+  return vec4f(tonemap(skyPal(normalize(i.dir))), 1.0);
 }
 `;
 
-const SAND = UNIF + U0 + COMMON + LANES_DECL + LANEAT + `
+// ---- sand: dual-lobe wet/dry PBR, drying map, caustics under thin water ----
+const SAND = UNIF + U0 + TT_DECL + `@group(0) @binding(1) var<storage, read> ttBuf: TTBuf;` + SIM_DECL + COMMON + `
 struct VOut { @builtin(position) pos: vec4f, @location(0) wp: vec3f };
 @vertex
 fn vs(@location(0) xz: vec2f) -> VOut {
@@ -340,122 +468,241 @@ fn vs(@location(0) xz: vec2f) -> VOut {
 }
 @fragment
 fn fs(i: VOut) -> @location(0) vec4f {
+  gT = u.pars2.y;
   let p = i.wp;
-  let t = u.pars2.y;
-  let lane = laneAt(p.z);
-  let xs = xsCurve(p.z);
-  // dry sand with grain and wind banding
+  let hv = b_hud(p.x, p.z);
+  let wet = clamp(b_wtf(p.x, p.z), 0.0, 1.0);
+  // dry sand: grain + wind banding + micro-shadowing (rough diffuse lobe)
   var dry = vec3f(0.80, 0.66, 0.44);
   dry = dry * (0.90 + 0.16 * fbm2(vec2f(p.x * 0.9, p.z * 0.55)));
-  dry = dry * (0.96 + 0.025 * sin(p.x * 2.6 + fbm2(vec2f(p.x * 0.4, p.z * 0.4)) * 6.0));
-  // wet sand: fresh dark band trailing the waterline + permanent damp near the still line
-  let wr = clamp(exp(-sq((p.x - lane.y) / 2.2)) + 0.35 * exp(-sq((p.x - xs) / 4.0)), 0.0, 1.0);
-  var col = mix(dry, dry * vec3f(0.55, 0.47, 0.36) + vec3f(0.02, 0.015, 0.01), wr * 0.9);
+  dry = dry * (0.94 + 0.05 * fbm2(vec2f(p.x * 3.4, p.z * 2.2)) + 0.025 * sin(p.x * 2.6 + fbm2(vec2f(p.x * 0.4, p.z * 0.4)) * 6.0));
+  // saturated wet sand: darker albedo + mirror lobe (roughness ~0.05); the
+  // wet map drying over ~30 s restores albedo and roughness gradually.
+  let wr = wet;
+  var col = mix(dry, dry * vec3f(0.42, 0.36, 0.28) + vec3f(0.015, 0.012, 0.008), wr * 0.88);
   let e = 0.6;
   let gxx = (terrain(p.x + e, p.z) - terrain(p.x - e, p.z)) / (2.0 * e);
   let gzz = (terrain(p.x, p.z + e) - terrain(p.x, p.z - e)) / (2.0 * e);
   let nrm = normalize(vec3f(-gxx, 1.0, -gzz));
   let sun = normalize(u.sun.xyz);
   let ndl = max(dot(nrm, sun), 0.0);
-  col = col * (0.58 + 0.72 * ndl);
-  let hv = normalize(sun + normalize(u.camPos_t.xyz - p));
-  let sheen = pow(max(dot(nrm, hv), 0.0), select(26.0, 60.0, wr > 0.3)) * (0.14 + 0.5 * wr);
+  col = col * (0.55 + 0.75 * ndl);
+  let Vd = u.camPos_t.xyz - p;
+  let hvv = normalize(sun + normalize(Vd));
+  let specPow = mix(18.0, 500.0, wr);
+  let sheen = pow(max(dot(nrm, hvv), 0.0), specPow) * (0.05 + 0.75 * wr * wr);
   col += vec3f(1.0, 0.75, 0.45) * sheen;
-  // thin residual bubbles on the draining sheet
-  let resid = exp(-sq((p.x - (lane.y - 0.5)) / 0.5)) * select(0.0, 1.0, p.x > lane.x);
-  col = mix(col, vec3f(0.93, 0.92, 0.88), resid * 0.30 * (0.5 + 0.5 * vnoise(vec2f(p.x * 3.1, p.z * 2.2 + t))));
-  let dist = length(u.camPos_t.xyz - p);
+  // broad sky gloss on the film just drained
+  let gloss = pow(max(reflect(normalize(-Vd), nrm).y, 0.0), 3.0) * wr * 0.25;
+  col += vec3f(0.9, 0.62, 0.40) * gloss;
+  // caustics where a thin sheet still covers the bed
+  let bed = terrain(p.x, p.z);
+  let ds = max(hv.x, 0.0);
+  let cover = smoothstep(0.004, 0.05, ds) * smoothstep(1.3, 0.2, ds);
+  let shallowBed = exp(-max(bed, 0.0) * 2.5);
+  col += vec3f(1.0, 0.82, 0.52) * caustics(p.x, p.z, hv.y, hv.z) * cover * shallowBed * 0.35;
+  let dist = length(Vd);
   col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(60.0, 190.0, dist));
-  // submerged bed: absorption darkens with depth below the still line
-  let sub = smoothstep(0.0, 1.8, max(xs - p.x + 0.16, 0.0));
-  col = mix(col, col * vec3f(0.58, 0.66, 0.64) + vec3f(0.012, 0.024, 0.026), sub * 0.85);
-  return vec4f(col, 1.0);
+  // submerged bed darkens with depth (absorption itself happens in the water)
+  let sub = smoothstep(0.0, 1.8, max(xsCurve(p.z) - p.x + 0.16, 0.0)) * step(bed, 0.0);
+  col = mix(col, col * vec3f(0.58, 0.66, 0.64) + vec3f(0.012, 0.024, 0.026), sub * 0.8);
+  return vec4f(tonemap(col), 1.0);
 }
 `;
 
-const WATER = UNIF + U0 + COMMON + LANES_DECL + LANEAT + `
+// ---- water: two-stream colour, advected foam with Worley lace, meniscus ----
+const WATER = UNIF + U0 + TT_DECL + `@group(0) @binding(1) var<storage, read> ttBuf: TTBuf;` + SIM_DECL + COMMON + `
 struct VOut { @builtin(position) pos: vec4f, @location(0) wp: vec3f, @location(1) base: vec2f };
 @vertex
 fn vs(@location(0) xzIn: vec2f) -> VOut {
   var o: VOut;
-  var xz = xzIn;
-  xz.x = xz.x + faceShift(xzIn.x, xzIn.y, u.pars2.y);
-  let s = shore(xz.x, xz.y, u.pars2.y, laneAt(xz.y));
-  let wp = vec3f(xz.x, s.surf, xz.y);
+  gT = u.pars2.y;
+  let s = surfAt(xzIn.x, xzIn.y);
+  let wp = vec3f(xzIn.x, s, xzIn.y);
   o.wp = wp;
-  // the model is evaluated at the UNSHIFTED xz: faceShift interpolated over
-  // mesh cells is piecewise-planar, and feeding that warped p back into
-  // shore() re-imposed the 0.7 m grid on the foam/waterline contours.
   o.base = xzIn;
   o.pos = u.vp * vec4f(wp, 1.0);
   return o;
 }
 @fragment
 fn fs(i: VOut) -> @location(0) vec4f {
+  gT = u.pars2.y;
   let p = i.wp;
   let q = i.base;
-  let t = u.pars2.y;
-  // full-res shore model: foam/depth contours come from the analytic model,
-  // not from attributes interpolated over the 0.7 m mesh (that was sawtooth).
-  let s0 = shore(q.x, q.y, t, laneAt(q.y));
-  let d = s0.d;
-  let foam = s0.foam;
+  let bed = terrain(q.x, q.z);
+  let w = waterAt(q.x, q.z);
+  let d = w.d;
   if (d <= 0.0005) { discard; }
-  // surface normal from the shore model's height gradient
-  let e = 0.2;
-  let sx = shore(q.x + e, q.y, t, laneAt(q.y)).surf - shore(q.x - e, q.y, t, laneAt(q.y)).surf;
-  let sz = shore(q.x, q.y + e, t, laneAt(q.y + e)).surf - shore(q.x, q.y - e, t, laneAt(q.y - e)).surf;
-  var nrm = normalize(vec3f(-sx / (2.0 * e) * 2.0, 1.0, -sz / (2.0 * e) * 2.0));
+  let hv = b_hud(q.x, q.z);
+  // surface normal from the full-model height gradient
+  let e = 0.24;
+  let sx = surfAt(q.x + e, q.z) - surfAt(q.x - e, q.z);
+  let sz = surfAt(q.x, q.z + e) - surfAt(q.x, q.z - e);
+  var nrm = normalize(vec3f(-sx / (2.0 * e) * 1.6, 1.0, -sz / (2.0 * e) * 1.6));
+  // detail normals ride the chop field at close range only
+  let dist0 = length(u.camPos_t.xyz - p);
+  let det = exp(-dist0 * 0.02);
+  nrm.x += (vnoise(vec2f(q.x * 2.3 - gT * 1.4, q.z * 1.7)) - 0.5) * 0.30 * det * smoothstep(0.15, 0.6, d);
+  nrm.z += (vnoise(vec2f(q.x * 2.3 - gT * 1.4 + 31.0, q.z * 1.7 + 17.0)) - 0.5) * 0.30 * det * smoothstep(0.15, 0.6, d);
+  nrm = normalize(nrm);
   let sun = normalize(u.sun.xyz);
   let V = normalize(u.camPos_t.xyz - p);
   let ndv = max(dot(nrm, V), 0.0);
-  let deepC = vec3f(0.055, 0.175, 0.245);
-  let shallowC = vec3f(0.16, 0.47, 0.46);
-  let sandTint = vec3f(0.72, 0.60, 0.42);
-  var water = mix(shallowC, deepC, smoothstep(0.0, 1.6, d));
-  // see the sand through thin water
-  let vis = exp(-d * 2.2);
-  water = mix(water, sandTint * 0.85, vis * 0.85);
-  // golden-hour sky reflection on the swell faces
-  let fres = pow(1.0 - ndv, 3.0);
-  water = mix(water, vec3f(0.92, 0.64, 0.38) * (0.55 + 0.45 * max(dot(reflect(-V, nrm), sun), 0.0)), fres * 0.42);
-  // subsurface glow where the sun shines through crests toward shore
-  let sss = pow(max(dot(V, -sun), 0.0), 3.0) * exp(-d * 2.6);
-  water += vec3f(0.06, 0.30, 0.26) * sss * clamp(d, 0.0, 0.9) * 0.9;
-  // glitter
-  let hv = normalize(sun + V);
-  let glint = pow(max(dot(nrm, hv), 0.0), 200.0) * 2.4 + pow(max(dot(nrm, hv), 0.0), 90.0) * 0.55 + pow(max(dot(nrm, hv), 0.0), 22.0) * 0.16;
-  water += vec3f(1.0, 0.78, 0.48) * glint * (1.0 - foam);
-  water += water * 0.25 * max(dot(nrm, sun), 0.0);
-  var col = mix(water, vec3f(0.95, 0.94, 0.90), foam);
-  let dist = length(u.camPos_t.xyz - p);
-  // analytic distance-to-waterline AA: a sheet thinner than ~2 px of world
-  // depth is only partially covered; pxw = world size of a pixel at dist
-  // (2*tan(fov/2)*dist/H — no dFdx in this Chrome).
-  let pxw = max(2.0 * u.fwd_tan.w * dist * u.pars2.w, 2e-4);
+  // two-stream colour: turquoise absorption e^{-sigma_a d} in the shallows,
+  // milky sediment forward-scatter where the surf suspends sand
+  let absorb = exp(-d * 1.9);
+  let turquoise = vec3f(0.10, 0.42, 0.42);
+  let deepC = vec3f(0.045, 0.15, 0.22);
+  var water = mix(turquoise, deepC, smoothstep(0.0, 2.2, d));
+  let sandSee = absorb * smoothstep(2.6, 0.0, d);
+  water = mix(water, vec3f(0.62, 0.52, 0.36) * (0.55 + 0.45 * absorb), sandSee * 0.85);
+  let turb = clamp(w.foam * 0.65, 0.0, 1.0);
+  water = mix(water, vec3f(0.55, 0.58, 0.48), turb * absorb * 0.45);
+  // golden-hour sky reflection (same shader the sky pass draws)
+  let fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+  let R = reflect(-V, nrm);
+  water = mix(water, skyPal(R) * mix(0.45, 1.0, smoothstep(-0.05, 0.25, R.y)), fres * 0.85);
+  // subsurface transmission: sun through crests toward shore
+  let sss = pow(max(dot(V, -sun), 0.0), 3.0) * exp(-d * 2.4);
+  water += vec3f(0.05, 0.30, 0.25) * sss * clamp(d, 0.0, 1.1) * 1.1;
+  // glints on the offshore swells
+  let hvv = normalize(sun + V);
+  let glint = pow(max(dot(nrm, hvv), 0.0), 220.0) * 2.6 + pow(max(dot(nrm, hvv), 0.0), 90.0) * 0.5 + pow(max(dot(nrm, hvv), 0.0), 22.0) * 0.16;
+  water += vec3f(1.0, 0.78, 0.48) * glint * (1.0 - w.foam);
+  // foam: advected density * reticulated Worley lace
+  var fo = w.foam;
+  if (fo > 0.02) {
+    let lace = smoothstep(0.10, 0.75, worley(vec2f(q.x * 1.7 + gT * 0.35, q.z * 1.7 - gT * 0.1)));
+    fo *= 0.45 + 0.75 * lace;
+    fo += smoothstep(0.55, 1.0, worley(vec2f(q.x * 0.9 - gT * 0.2, q.z * 0.9))) * fo * 0.3;
+  }
+  fo = clamp(fo, 0.0, 1.0);
+  var col = mix(water, vec3f(0.95, 0.94, 0.90) * (0.55 + 0.55 * max(dot(nrm, sun), 0.0)), fo);
+  // capillary meniscus: bright thin rise where water meets wet sand
+  if (bed > -0.06 && bed < 0.09) {
+    let men = exp(-sq(d / 0.045)) * (0.5 + 0.5 * vnoise(vec2f(q.x * 3.0, q.z * 2.4 + gT)));
+    col += vec3f(1.0, 0.88, 0.70) * men * 0.5;
+  }
+  // analytic distance-to-waterline AA (thin sheets cover part of a pixel)
+  let pxw = max(2.0 * u.fwd_tan.w * dist0 * u.pars2.w, 2e-4);
   let filmCov = smoothstep(0.0, pxw * 2.0, d);
-  var alpha = clamp((1.0 - exp(-d * 2.2)) * filmCov + foam * 0.6, 0.0, 0.97);
-  col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(70.0, 200.0, dist));
-  return vec4f(col, alpha);
+  let alpha = clamp((1.0 - exp(-d * 2.2)) * filmCov + fo * 0.6, 0.0, 0.97);
+  col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(70.0, 200.0, dist0));
+  return vec4f(tonemap(col), alpha);
 }
 `;
 
-const PROBE = UNIF + COMMON + `
-struct LanesIn { v: array<vec3f, NLANES> };
-@group(0) @binding(0) var<storage, read> lanesIn: LanesIn;
-@group(1) @binding(0) var<storage, read_write> outBuf: array<f32>;
-@group(2) @binding(0) var<uniform> u: U;
+// ---- SWE swash sim: h,u,v + foam injection + wet map, one kernel ----
+const SWE = UNIF + U0 + TT_DECL + `@group(3) @binding(0) var<storage, read> ttBuf: TTBuf;
+@group(0) @binding(1) var<uniform> su: array<f32, 4>;
+@group(2) @binding(0) var<storage, read_write> o_hud: array<vec4f, ${NC}>;
+@group(2) @binding(1) var<storage, read_write> o_fof: array<f32, ${NC}>;
+@group(2) @binding(2) var<storage, read_write> o_wtf: array<f32, ${NC}>;
+` + SIM_DECL + COMMON + `
+fn bedAt(i: i32, j: i32) -> f32 {
+  return terrain(SX0F + f32(i) * SDXF, SZ0F + f32(j) * SDXF);
+}
+@compute @workgroup_size(8, 8, 1)
+fn cs_swe(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = i32(gid.x); let j = i32(gid.y);
+  if (i >= NXI || j >= NZI) { return; }
+  gT = su[0];
+  let dts = su[1];
+  let c = si(i, j);
+  let L = si(i - 1, j); let R = si(i + 1, j);
+  let D = si(i, j - 1); let U2 = si(i, j + 1);
+  let hC = s_hud[c];
+  let hL = s_hud[L]; let hR = s_hud[R];
+  let hD = s_hud[D]; let hU = s_hud[U2];
+  var h = hC.x; var uu = hC.y; var vv = hC.z;
+  // free-surface elevation gradient drives the flow
+  let eL = bedAt(i - 1, j) + hL.x;
+  let eR = bedAt(i + 1, j) + hR.x;
+  let eD = bedAt(i, j - 1) + hD.x;
+  let eU = bedAt(i, j + 1) + hU.x;
+  uu -= GAG * dts * (eR - eL) / (2.0 * SDXF);
+  vv -= GAG * dts * (eU - eD) / (2.0 * SDXF);
+  // bed friction, hard in the thin film so run-up stalls and drains like swash
+  let fr = 0.02 + 1.6 * exp(-max(h, 0.0) / 0.06);
+  let fk = max(0.0, 1.0 - fr * dts);
+  uu *= fk; vv *= fk;
+  // breaking: McCowan H/d >= ~0.78 (crest over still depth) or the bore limit
+  // (flow reaching its own celerity, u >= c). Both inject foam.
+  let dLoc = max(0.05, -bedAt(i, j));
+  let celer2 = sqrt(GAG * max(h, 0.0));
+  var inject = smoothstep(0.55, 0.78, (h - dLoc) / dLoc);
+  let spd = length(vec2f(uu, vv));
+  inject = max(inject, smoothstep(0.90, 1.0, spd / max(celer2, 0.05)));
+  if (celer2 > 0.05 && spd > celer2) {
+    let k2 = celer2 / spd;
+    uu *= k2; vv *= k2;
+  }
+  // face-upwind fluxes (average face velocity, upwind depth)
+  let uRf = 0.5 * (uu + hR.y);
+  let uLf = 0.5 * (uu + hL.y);
+  let vUf = 0.5 * (vv + hU.z);
+  let vDf = 0.5 * (vv + hD.z);
+  let FxR = uRf * select(hR.x, h, uRf >= 0.0);
+  let FxL = uLf * select(hL.x, h, uLf >= 0.0);
+  let FzU = vUf * select(hU.x, h, vUf >= 0.0);
+  let FzD = vDf * select(hD.x, h, vDf >= 0.0);
+  var hNew = h - dts * ((FxR - FxL) / SDXF + (FzU - FzD) / SDXF);
+  // light height diffusion damps the checkerboard of a first-order scheme
+  let lap = hL.x + hR.x + hD.x + hU.x - 4.0 * h;
+  hNew += 0.08 * lap;
+  if (hNew < 0.0) { hNew = 0.0; uu *= 0.5; vv *= 0.5; }
+  // open-sponge at the seaward edge: relax towards the analytic swell
+  let wx = SX0F + f32(i) * SDXF;
+  if (wx < SX0F + 14.0) {
+    let k3 = smoothstep(SX0F + 14.0, SX0F + 2.0, wx) * 0.4;
+    let dA = max(etaA(wx, SZ0F + f32(j) * SDXF) - bedAt(i, j), 0.0);
+    hNew = mix(hNew, dA, k3);
+  }
+  o_hud[c] = vec4f(hNew, uu, vv, 0.0);
+  o_fof[c] = min(1.0, s_fof[c] + inject * 0.55 * (dts * 60.0));
+  o_wtf[c] = max(s_wtf[c] * (1.0 - dts * 0.023), step(0.004, hNew));
+}
+`;
+
+// ---- foam advection: semi-Lagrangian along (u,v), ~3 s half-life ----
+const FOAMADV = UNIF + U0 + TT_DECL + `@group(3) @binding(0) var<storage, read> ttBuf: TTBuf;
+@group(0) @binding(1) var<uniform> su: array<f32, 4>;
+@group(2) @binding(0) var<storage, read_write> o_hud: array<vec4f, ${NC}>;
+@group(2) @binding(1) var<storage, read_write> o_fof: array<f32, ${NC}>;
+@group(2) @binding(2) var<storage, read_write> o_wtf: array<f32, ${NC}>;
+` + SIM_DECL + COMMON + `
+@compute @workgroup_size(8, 8, 1)
+fn cs_foam(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let i = i32(gid.x); let j = i32(gid.y);
+  if (i >= NXI || j >= NZI) { return; }
+  gT = su[0];
+  let c = si(i, j);
+  let hv = s_hud[c];
+  let x = SX0F + f32(i) * SDXF; let z = SZ0F + f32(j) * SDXF;
+  let decay = exp(-su[1] * 0.231);   // ~3 s half-life
+  let adv = b_fof(x - hv.y * su[1], z - hv.z * su[1]);
+  // freshly injected foam (written by cs_swe this frame) must survive advection
+  let cur = s_fof[c];
+  o_fof[c] = clamp(max(adv, cur) * decay, 0.0, 1.0);
+}
+`;
+
+// ---- probe: 64x64 world samples of (x, z, d, foam, wet) for the harness ----
+const PROBE = UNIF + U0 + TT_DECL + `@group(0) @binding(1) var<storage, read> ttBuf: TTBuf;` + SIM_DECL + COMMON + `
+@group(2) @binding(0) var<storage, read_write> outBuf: array<f32>;
 @compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  if (gid.x >= 32u || gid.y >= 32u) { return; }
-  let x = 20.0 + f32(gid.x) * (120.0 / 31.0);
-  let z = -60.0 + f32(gid.y) * (120.0 / 31.0);
-  let s = shore(x, z, u.pars2.y, lanesIn.v[laneIdx(z)]);
-  let i = (gid.y * 32u + gid.x) * 4u;
+  if (gid.x >= 64u || gid.y >= 64u) { return; }
+  let x = 52.0 + f32(gid.x) * (70.0 / 63.0);
+  let z = -60.0 + f32(gid.y) * (120.0 / 63.0);
+  gT = u.pars2.y;
+  let w = waterAt(x, z);
+  let i = (gid.y * 64u + gid.x) * 5u;
   outBuf[i] = x;
   outBuf[i + 1u] = z;
-  outBuf[i + 2u] = s.d;
-  outBuf[i + 3u] = s.foam;
+  outBuf[i + 2u] = w.d;
+  outBuf[i + 3u] = w.foam;
+  outBuf[i + 4u] = w.wet;
 }
 `;
 
@@ -539,32 +786,122 @@ async function boot() {
   const idxCount = GRIDX * GRIDZ * 6;
 
   const ubuf = device.createBuffer({ size: 16 * 4 + 7 * 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  const laneBuf = device.createBuffer({ size: LANES * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-  const probeBuf = device.createBuffer({ size: 32 * 32 * 4 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
-  const probeRead = device.createBuffer({ size: 32 * 32 * 4 * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
-  const laneArr = new Float32Array(LANES * 4);
+  const suBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const ttBuf = device.createBuffer({ size: ttJS.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(ttBuf, 0, ttJS);
+
+  // warm start: h = analytic depth over bed, so the sim spawns mid-swell
+  const T0 = qs.get('t0') ? parseFloat(qs.get('t0')) : 8.0;
+  const hudA = new Float32Array(NC * 4), hudB = new Float32Array(NC * 4);
+  const f0 = new Float32Array(NC), f1 = new Float32Array(NC);
+  const wA = new Float32Array(NC), wB = new Float32Array(NC);
+  for (let i = 0; i < NX; i++) {
+    const x = SX0 + i * SDX;
+    for (let j = 0; j < NZ; j++) {
+      const z = SZ0 + j * SDX;
+      const idx = i * NZ + j;
+      const d = Math.max(0, etaA(x, z, T0) - terrain(x, z));
+      hudA[idx * 4] = d;
+      wA[idx] = d > 0.004 ? 1 : 0;
+    }
+  }
+  const mkSim = size => device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const bufs = [
+    { hud: mkSim(hudA.byteLength), fof: mkSim(f0.byteLength), wtf: mkSim(wA.byteLength) },
+    { hud: mkSim(hudB.byteLength), fof: mkSim(f1.byteLength), wtf: mkSim(wB.byteLength) },
+  ];
+  device.queue.writeBuffer(bufs[0].hud, 0, hudA);
+  device.queue.writeBuffer(bufs[0].wtf, 0, wA);
+  const probeBuf = device.createBuffer({ size: 64 * 64 * 5 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const probeRead = device.createBuffer({ size: 64 * 64 * 5 * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
 
   const modSky = device.createShaderModule({ code: SKY });
   const modSand = device.createShaderModule({ code: SAND });
   const modWater = device.createShaderModule({ code: WATER });
+  const modSwe = device.createShaderModule({ code: SWE });
+  const modFoam = device.createShaderModule({ code: FOAMADV });
   const modProbe = device.createShaderModule({ code: PROBE });
+  for (const [n, m] of [['sky', modSky], ['sand', modSand], ['water', modWater], ['swe', modSwe], ['foam', modFoam], ['probe', modProbe]]) {
+    const info = await m.getCompilationInfo();
+    const errs = info.messages.filter(x => x.type === 'error');
+    if (errs.length) throw new Error(`${n} WGSL: ${errs.map(x => x.message).join(' | ')}`);
+  }
 
-  const bglU = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE, buffer: {} }] });
-  const bglL = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } }] });
-  const bglLC = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } }] });
-  const bglP = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }] });
-  const bgU = device.createBindGroup({ layout: bglU, entries: [{ binding: 0, resource: { buffer: ubuf } }] });
-  const bgL = device.createBindGroup({ layout: bglL, entries: [{ binding: 0, resource: { buffer: laneBuf } }] });
-  const bgLC = device.createBindGroup({ layout: bglLC, entries: [{ binding: 0, resource: { buffer: laneBuf } }] });
-  const bgP = device.createBindGroup({ layout: bglP, entries: [{ binding: 0, resource: { buffer: probeBuf } }] });
-  const layoutU = device.createPipelineLayout({ bindGroupLayouts: [bglU] });
-  const layoutUL = device.createPipelineLayout({ bindGroupLayouts: [bglU, bglL] });
-  const layoutProbe = device.createPipelineLayout({ bindGroupLayouts: [bglLC, bglP, bglU] });
+  // ---- bind group layouts ----
+  // render: g0 binding0 U, binding1 ttBuf; g1 binding0..2 sim read
+  const bglRender = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: {} },
+    { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+  ] });
+  const bglSimR = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+    { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+    { binding: 2, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+  ] });
+  const layoutRender = device.createPipelineLayout({ bindGroupLayouts: [bglRender, bglSimR] });
+  const bgRender = device.createBindGroup({ layout: bglRender, entries: [
+    { binding: 0, resource: { buffer: ubuf } },
+    { binding: 1, resource: { buffer: ttBuf } },
+  ] });
+  const bgSimR = device.createBindGroup({ layout: bglSimR, entries: [
+    { binding: 0, resource: { buffer: bufs[0].hud } },
+    { binding: 1, resource: { buffer: bufs[0].fof } },
+    { binding: 2, resource: { buffer: bufs[0].wtf } },
+  ] });
 
-  // 4x MSAA: the water/sand boundary is a mesh-on-mesh silhouette, so the
-  // only way to antialias it is at rasterization; render into a multisample
-  // target and resolve-copy into the canvas at the end of the frame.
-  const MS = 4;
+  // sim: g0 b0 U, b1 su; g1 sim read; g2 sim write; g3 tt
+  const bglSimU = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {} },
+  ] });
+  const bglSimW = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+  ] });
+  const bglTT = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+  ] });
+  const layoutSim = device.createPipelineLayout({ bindGroupLayouts: [bglSimU, bglSimR, bglSimW, bglTT] });
+  const bgSimU = device.createBindGroup({ layout: bglSimU, entries: [
+    { binding: 0, resource: { buffer: ubuf } },
+    { binding: 1, resource: { buffer: suBuf } },
+  ] });
+  const bgTT = device.createBindGroup({ layout: bglTT, entries: [{ binding: 0, resource: { buffer: ttBuf } }] });
+  // ping-pong: k reads bufs[k], writes bufs[1-k]
+  const bgSimRead = [0, 1].map(k => device.createBindGroup({ layout: bglSimR, entries: [
+    { binding: 0, resource: { buffer: bufs[k].hud } },
+    { binding: 1, resource: { buffer: bufs[k].fof } },
+    { binding: 2, resource: { buffer: bufs[k].wtf } },
+  ] }));
+  const bgSimWrite = [0, 1].map(k => device.createBindGroup({ layout: bglSimW, entries: [
+    { binding: 0, resource: { buffer: bufs[1 - k].hud } },
+    { binding: 1, resource: { buffer: bufs[1 - k].fof } },
+    { binding: 2, resource: { buffer: bufs[1 - k].wtf } },
+  ] }));
+
+  // probe: g0 b0 U + b1 tt(read, via render-like layout? needs tt read-only + U)
+  const bglProbeU = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+  ] });
+  const bglProbeOut = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+  ] });
+  const bgProbeU = device.createBindGroup({ layout: bglProbeU, entries: [
+    { binding: 0, resource: { buffer: ubuf } },
+    { binding: 1, resource: { buffer: ttBuf } },
+  ] });
+  const bgProbeOut = device.createBindGroup({ layout: bglProbeOut, entries: [{ binding: 0, resource: { buffer: probeBuf } }] });
+  const layoutProbe = device.createPipelineLayout({ bindGroupLayouts: [bglProbeU, bglSimR, bglProbeOut] });
+
+  const swePipe = device.createComputePipeline({ layout: layoutSim, compute: { module: modSwe, entryPoint: 'cs_swe' } });
+  const foamPipe = device.createComputePipeline({ layout: layoutSim, compute: { module: modFoam, entryPoint: 'cs_foam' } });
+  const probePipe = device.createComputePipeline({ layout: layoutProbe, compute: { module: modProbe, entryPoint: 'main' } });
+
+  // 4x MSAA: the water/sand boundary is a mesh-on-mesh silhouette; resolve
+  // into the canvas at the end of the frame.
+  const MS = LITE ? 2 : 4;
   let depth = null, msaa = null, tW = 0, tH = 0;
   function ensureTargets() {
     if (depth && msaa && tW === canvas.width && tH === canvas.height) return { msaa, depth };
@@ -577,14 +914,14 @@ async function boot() {
   }
 
   const skyPipe = device.createRenderPipeline({
-    layout: layoutU,
+    layout: device.createPipelineLayout({ bindGroupLayouts: [bglRender] }),
     vertex: { module: modSky, entryPoint: 'vs' },
     fragment: { module: modSky, entryPoint: 'fs', targets: [{ format: FORMAT }] },
     multisample: { count: MS },
     depthStencil: { depthWriteEnabled: false, depthCompare: 'always', format: 'depth32float' },
   });
   const sandPipe = device.createRenderPipeline({
-    layout: layoutUL,
+    layout: layoutRender,
     vertex: { module: modSand, entryPoint: 'vs', buffers: [{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] }] },
     fragment: { module: modSand, entryPoint: 'fs', targets: [{ format: FORMAT }] },
     primitive: { cullMode: 'none' },
@@ -592,7 +929,7 @@ async function boot() {
     depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth32float' },
   });
   const waterPipe = device.createRenderPipeline({
-    layout: layoutUL,
+    layout: layoutRender,
     vertex: { module: modWater, entryPoint: 'vs', buffers: [{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] }] },
     fragment: { module: modWater, entryPoint: 'fs', targets: [{ format: FORMAT, blend: {
       color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', op: 'add' },
@@ -600,18 +937,43 @@ async function boot() {
     } }] },
     primitive: { cullMode: 'none' },
     multisample: { count: MS },
-    // no depth test against sand: the sheet is transparent by design and its
-    // extent is decided analytically (alpha) — testing vs the sand mesh made
-    // the two meshes' intersection line the visible (zigzag) shoreline.
+    // no depth test against sand: the sheet extent is decided analytically by
+    // alpha; testing vs the sand mesh makes the mesh intersection the shoreline.
     depthStencil: { depthWriteEnabled: false, depthCompare: 'always', format: 'depth32float' },
   });
-  const probePipe = device.createComputePipeline({ layout: layoutProbe, compute: { module: modProbe, entryPoint: 'main' } });
 
   const SUN = (() => { const v = [-0.18, 0.16, -0.97]; const l = Math.hypot(...v); return v.map(x => x / l); })();
 
-  let t = 0, frames = 0, acc = 0, lastMs = performance.now();
+  let t = T0, frames = 0, acc = 0, lastMs = performance.now();
   const ftimes = [];
-  let probeData = null, probeBusy = false, probeReq = null;
+  let probeData = null, probeBusy = false, probeReq = null, latest = null;
+  let runEMA = 0, foamRun = 0;
+  const PROBE_EVERY = LITE ? 4 : 3;
+  const WG_X = Math.ceil(NX / 8), WG_Z = Math.ceil(NZ / 8);
+
+  // waterline extraction from the probe grid, per alongshore column
+  function shoreline(pd) {
+    const runs = [], wetLags = [], foamTot = [];
+    let n = 0;
+    for (let j = 0; j < 64; j++) {
+      let lastX = null, lastW = null, foamC = 0;
+      for (let i = 0; i < 64; i++) {
+        const k = (j * 64 + i) * 5;
+        const x = pd[k], d = pd[k + 2], fo = pd[k + 3], wet = pd[k + 4];
+        if (d > 0.02) lastX = x;
+        if (wet > 0.45) lastW = x;
+        if (fo > 0.3) foamC++;
+      }
+      foamTot.push(foamC);
+      if (lastX !== null) {
+        runs.push(lastX - xsCurve(-60 + j * (120 / 63)));
+        wetLags.push(lastW === null ? 0 : lastW - lastX);
+        n++;
+      }
+    }
+    const m = a => a.length ? a.reduce((p, c) => p + c, 0) / a.length : 0;
+    return { run: m(runs), wetLag: m(wetLags), n, foamCol: foamTot };
+  }
 
   function frame() {
     const now = performance.now();
@@ -623,17 +985,7 @@ async function boot() {
     acc += dt;
     const FIXED = 1 / 60;
     let steps = 0;
-    while (acc >= FIXED && steps < 4) { t += FIXED; simStep(FIXED, t); acc -= FIXED; steps++; }
-    if (steps) {
-      for (let i = 0; i < LANES; i++) {
-        laneArr[i * 4] = xw[i]; laneArr[i * 4 + 1] = wet[i]; laneArr[i * 4 + 2] = wvel[i]; laneArr[i * 4 + 3] = 0;
-      }
-      device.queue.writeBuffer(laneBuf, 0, laneArr);
-      let best = 0;
-      for (let i = 0; i < LANES; i++) { const r = xw[i] - xsCurve(laneZ[i]); if (r > best) best = r; }
-      runLbl.textContent = (best * SLOPE).toFixed(1);
-      setLbl.textContent = swave(SW[0].w * t) > 0.75 ? 'BIG' : 'steady';
-    }
+    while (acc >= FIXED && steps < 4) { t += FIXED; acc -= FIXED; steps++; }
 
     const { fwd, r, u } = camBasis();
     const aspect = canvas.width / canvas.height;
@@ -648,26 +1000,44 @@ async function boot() {
     ]));
 
     const enc = device.createCommandEncoder();
-    const wantProbe = !probeBusy && (probeReq !== null || frames % 90 === 0);
-    let laneSnap = null;
+    // SWE: NSUB substeps ping-ponged; NSUB even => final state lands in bufs[0]
+    let cur = 0;
+    for (let s = 0; s < NSUB; s++) {
+      device.queue.writeBuffer(suBuf, 0, new Float32Array([t, FIXED / NSUB, 0, 0]));
+      const cp = enc.beginComputePass();
+      cp.setPipeline(swePipe);
+      cp.setBindGroup(0, bgSimU); cp.setBindGroup(1, bgSimRead[cur]); cp.setBindGroup(2, bgSimWrite[cur]); cp.setBindGroup(3, bgTT);
+      cp.dispatchWorkgroups(WG_X, WG_Z, 1);
+      cp.end();
+      cur = 1 - cur;
+    }
+    {
+      device.queue.writeBuffer(suBuf, 0, new Float32Array([t, FIXED, 0, 0]));
+      const cp = enc.beginComputePass();
+      cp.setPipeline(foamPipe);
+      cp.setBindGroup(0, bgSimU); cp.setBindGroup(1, bgSimRead[0]); cp.setBindGroup(2, bgSimWrite[0]); cp.setBindGroup(3, bgTT);
+      cp.dispatchWorkgroups(WG_X, WG_Z, 1);
+      cp.end();
+    }
+    const wantProbe = !probeBusy && (probeReq !== null || frames % PROBE_EVERY === 0);
     if (wantProbe) {
       const cp = enc.beginComputePass();
-      cp.setPipeline(probePipe); cp.setBindGroup(0, bgLC); cp.setBindGroup(1, bgP); cp.setBindGroup(2, bgU);
-      cp.dispatchWorkgroups(4, 4, 1);
+      cp.setPipeline(probePipe);
+      cp.setBindGroup(0, bgProbeU); cp.setBindGroup(1, bgSimR); cp.setBindGroup(2, bgProbeOut);
+      cp.dispatchWorkgroups(8, 8, 1);
       cp.end();
       enc.copyBufferToBuffer(probeBuf, 0, probeRead, 0, probeBuf.size);
-      laneSnap = { xw: Array.from(xw), wet: Array.from(wet), z: Array.from(laneZ), t };
     }
     const { msaa: msc, depth: dtx } = ensureTargets();
     const rp = enc.beginRenderPass({
       colorAttachments: [{ view: msc.createView(), resolveTarget: ctx.getCurrentTexture().createView(), clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
       depthStencilAttachment: { view: dtx.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'discard' },
     });
-    rp.setPipeline(skyPipe); rp.setBindGroup(0, bgU); rp.draw(3);
-    rp.setPipeline(sandPipe); rp.setBindGroup(0, bgU); rp.setBindGroup(1, bgL);
+    rp.setPipeline(skyPipe); rp.setBindGroup(0, bgRender); rp.draw(3);
+    rp.setPipeline(sandPipe); rp.setBindGroup(0, bgRender); rp.setBindGroup(1, bgSimR);
     rp.setVertexBuffer(0, gridBuf); rp.setIndexBuffer(idxBuf, 'uint32');
     rp.drawIndexed(idxCount);
-    rp.setPipeline(waterPipe); rp.setBindGroup(0, bgU); rp.setBindGroup(1, bgL);
+    rp.setPipeline(waterPipe); rp.setBindGroup(0, bgRender); rp.setBindGroup(1, bgSimR);
     rp.drawIndexed(idxCount);
     rp.end();
     device.queue.submit([enc.finish()]);
@@ -678,7 +1048,14 @@ async function boot() {
         probeData = Array.from(new Float32Array(probeRead.getMappedRange().slice(0)));
         probeRead.unmap();
         probeBusy = false;
-        if (probeReq) { const rq = probeReq; probeReq = null; rq({ data: probeData, lanes: laneSnap, t }); }
+        latest = shoreline(probeData);
+        latest.t = t;
+        runEMA += (latest.run - runEMA) * 0.02;
+        foamRun += (latest.foamCol.reduce((a, b) => a + b, 0) / (64 * 8) - foamRun) * 0.08;
+        runLbl.textContent = Math.max(0, latest.run).toFixed(1);
+        foamLbl.textContent = String(Math.round(Math.min(100, foamRun)));
+        setLbl.textContent = latest.run > runEMA + 0.55 ? 'BIG' : 'steady';
+        if (probeReq) { const rq = probeReq; probeReq = null; rq({ data: probeData, t }); }
       }).catch(() => { probeBusy = false; if (probeReq) { const rq = probeReq; probeReq = null; rq(null); } });
     }
     frames++;
@@ -723,20 +1100,17 @@ async function boot() {
     ready: true,
     get frames() { return frames; },
     get time() { return t; },
-    lanes() { return { n: LANES, xw: Array.from(xw), wet: Array.from(wet), vel: Array.from(wvel), z: Array.from(laneZ), xs: Array.from(laneZ).map(xsCurve), slope: SLOPE }; },
+    grid() { return { sx0: SX0, sx1: SX1, sz0: SZ0, sz1: SZ1, dx: SDX, n: NC, ns: NSUB }; },
     setPose(p) {
       if (p.pos) cam.pos = p.pos.slice();
       if (typeof p.yaw === 'number') cam.yaw = p.yaw;
       if (typeof p.pitch === 'number') cam.pitch = p.pitch;
       cam.touched = true;
     },
+    // GPU-sensed swash: waterline run-up and wet-band lag over probe columns
     swashMean() {
-      let m = 0, wl = 0;
-      for (let i = 0; i < LANES; i++) {
-        m += xw[i] - xsCurve(laneZ[i]);
-        wl += Math.max(0, wet[i] - xw[i]);
-      }
-      return { run: m / LANES, wetLag: wl / LANES, t };
+      if (!latest) return { run: 0, wetLag: 0, t };
+      return { run: latest.run, wetLag: latest.wetLag, t: latest.t };
     },
     probe() { return probeData; },
     resetPerf() { ftimes.length = 0; },
@@ -748,13 +1122,12 @@ async function boot() {
     probeNow() {
       return new Promise(res => { probeReq = res; });
     },
-    modelDepth(x, z) {
-      const xs = xsCurve(z);
-      const h = SLOPE * (x - xs) - 0.16 * Math.exp(-Math.pow((x - xs + 9.0) / 5.0, 2.0));
-      const l = ZU(z);
-      if (h < 0) return { h, d: Math.max(-h, 0), wet: 0 };
-      return { h, d: Math.max(0, (xw[l] - x) * SLOPE * 1.3), wet: x < wet[l] ? 1 : 0, xw: xw[l], wl: wet[l] };
+    ttAt(ci, x, z) {
+      const i = Math.min(NTX - 1, Math.max(0, Math.round((x - TX0) / TXS)));
+      const j = Math.min(NTZ - 1, Math.max(0, Math.round((z - TZ0) / TZS)));
+      return ttJS[ci * NTT + i * NTZ + j];
     },
+    ttGrid() { return { tx0: TX0, txs: TXS, tz0: TZ0, tzs: TZS, nt: [NTX, NTZ] }; },
   };
 }
 </script>
