@@ -63,6 +63,44 @@ export const wallTint = (i, side) => {
     return [a[0] + (b[0] - a[0]) * sm, a[1] + (b[1] - a[1]) * sm, a[2] + (b[2] - a[2]) * sm]
 }
 
+// ---- #502 item 1: per-course sky tint (the 2D `paletteFor` idiom, #493).
+// HD used to wear the dusk skin on EVERY circuit — fog, sun, hemisphere/ambient
+// fill, dome stops, mesas and the sand floor were dusk constants, so Sandbank's
+// noon bowl read as sunset. Each palette id carries the full lighting law the
+// scene applies on course swap; dusk is the shipped look, unchanged stop for
+// stop. Node-safe: plain data only.
+export const COURSE_TINTS = {
+    dusk: {
+        fog: 0x8a4a3c, fogD: 0.0072,
+        sun: 0xffc090, sunI: 3.6, sunElev: 0.12,
+        hemiSky: 0xd06a50, hemiGround: 0x553018, hemiI: 1.8,
+        amb: 0x6a4050, ambI: 0.95,
+        mesa: 0x4e222c, floor: 0xa87850, plateau: 0xd8a888,
+        starGain: 1, sunWash: 0xffffff,
+        sky: ['#1a0f24', '#452038', '#7c3030', '#c05830', '#ff9050', '#e07038', '#8a3a28', '#40201a'],
+    },
+    noon: {
+        fog: 0x9db2c2, fogD: 0.0048,
+        sun: 0xfff6d0, sunI: 4.2, sunElev: 0.62,
+        hemiSky: 0x9cc4e8, hemiGround: 0x6a5a44, hemiI: 2.2,
+        amb: 0x94acc4, ambI: 1.1,
+        mesa: 0x8a7080, floor: 0xb89468, plateau: 0xe8c898,
+        starGain: 0.08, sunWash: 0xfff4da,
+        sky: ['#1e4c8c', '#36649c', '#4c84bc', '#7cb0d8', '#a8d0e8', '#c8d8e0', '#9a8468', '#54443a'],
+    },
+    dawn: {
+        fog: 0x8a6a78, fogD: 0.0062,
+        sun: 0xffecc8, sunI: 3.8, sunElev: 0.28,
+        hemiSky: 0x9a6a88, hemiGround: 0x4a3440, hemiI: 1.9,
+        amb: 0x7a5a70, ambI: 1.0,
+        mesa: 0x7a4c60, floor: 0xb08468, plateau: 0xe0b890,
+        starGain: 0.45, sunWash: 0xffecd0,
+        sky: ['#221a3e', '#40284c', '#6c3a5c', '#a04c64', '#e08858', '#ffb070', '#8a5048', '#38243a'],
+    },
+}
+export const SKY_STOPS = [0, 0.28, 0.38, 0.44, 0.49, 0.53, 0.62, 1]
+export const tintFor = (id) => COURSE_TINTS[id] || COURSE_TINTS.dusk
+
 // generic ribbon: sample(i) returns the two edge points in px (with height);
 // closed ring, seam duplicated once for continuous UVs.
 function buildRibbon(sample, vScale, colorAt) {
@@ -808,9 +846,9 @@ export function mesaDefs() {
 
 const w0 = (d) => d.w * 0.9
 
-export function buildMesas() {
+export function buildMesas(color = 0x4e222c) {
     const g = new THREE.Group()
-    const rock = new THREE.MeshStandardMaterial({ color: 0x4e222c, roughness: 1, metalness: 0 })
+    const rock = new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 })
     for (const d of mesaDefs()) {
         const m = new THREE.Mesh(new THREE.CylinderGeometry(w0(d), d.w, d.h, 6), rock)
         m.position.set(d.x, d.h / 2 - 1.4, d.z)

@@ -9,7 +9,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from '../CometDrift/sim.js'
-import { bankVoices } from './audio.js'
+import { bankVoices, engineRegister } from './audio.js'
 import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse } from '../CometDrift/track.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
@@ -17,7 +17,7 @@ import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
-    hudScale, hudTop,
+    hudScale, hudTop, tintFor, SKY_STOPS,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
@@ -148,7 +148,7 @@ function strataTex() {
     }
     return c
 }
-function skyTex() {
+function skyTex(stops) {
     const c = texCanvas(64, 256)
     const x = c.getContext('2d')
     const gr = x.createLinearGradient(0, 0, 0, 256)
@@ -156,14 +156,10 @@ function skyTex() {
     // (v=0.5) is the CANVAS MIDDLE. The shipped sky put its dusk band at the
     // canvas bottom = under the south pole — the sun washed out invisible for
     // the whole race (#471 item 1 root cause). Orange now straddles f=0.5.
-    gr.addColorStop(0, '#1a0f24')
-    gr.addColorStop(0.28, '#452038')
-    gr.addColorStop(0.38, '#7c3030')
-    gr.addColorStop(0.44, '#c05830')
-    gr.addColorStop(0.49, '#ff9050')
-    gr.addColorStop(0.53, '#e07038')
-    gr.addColorStop(0.62, '#8a3a28')
-    gr.addColorStop(1, '#40201a')
+    // #502 item 1: the eight colours come from the course tint (dusk = the
+    // shipped skin, stop for stop; noon runs blue-white, dawn rose-to-amber).
+    const cols = stops || tintFor('dusk').sky
+    SKY_STOPS.forEach((p, i) => gr.addColorStop(p, cols[i]))
     x.fillStyle = gr; x.fillRect(0, 0, 64, 256)
     // #478 item 6: deterministic dither breaks the 8-bit dusk bands that
     // stripe OLED/phone screens (same noise every boot — see scene.js).
@@ -264,12 +260,13 @@ export default function CometDriftHD() {
         scene.fog = new THREE.FogExp2(0x8a4a3c, 0.0072)
         const camera = new THREE.PerspectiveCamera(64, 16 / 9, 0.1, 400)
 
-        const sunDir = new THREE.Vector3(Math.cos(-0.6), 0.12, Math.sin(-0.6)).normalize()
+        let sunDir = new THREE.Vector3(Math.cos(-0.6), 0.12, Math.sin(-0.6)).normalize()
         const sun = new THREE.DirectionalLight(0xffc090, 3.6)
         sun.position.copy(sunDir.clone().multiplyScalar(60))
         scene.add(sun)
-        scene.add(new THREE.HemisphereLight(0xd06a50, 0x553018, 1.8))
-        scene.add(new THREE.AmbientLight(0x6a4050, 0.95))
+        const hemi = new THREE.HemisphereLight(0xd06a50, 0x553018, 1.8)
+        const amb = new THREE.AmbientLight(0x6a4050, 0.95)
+        scene.add(hemi, amb)
 
         // ---- #478 item 1: earned bloom + boost radial blur (post chain) ----
         // The node pipeline samples its own scene pass: a 21-tap donut blur is
@@ -392,21 +389,43 @@ export default function CometDriftHD() {
             }
             c.needsUpdate = true
         }
+        // #502 item 1: the course skin — every light, the fog, the sand floor,
+        // mesas, dome and stars ride the palette of the SELECTED circuit
+        // (dusk values reproduce the shipped Gulch exactly). Runs at boot and
+        // on every course swap, before buildHorizon so the dome gets fresh sky.
+        const applyCourseTint = () => {
+            const t = tintFor(COURSE.palette)
+            scene.fog = new THREE.FogExp2(t.fog, t.fogD)
+            sunDir = new THREE.Vector3(Math.cos(-0.6), t.sunElev, Math.sin(-0.6)).normalize()
+            sun.color.setHex(t.sun)
+            sun.intensity = t.sunI
+            sun.position.copy(sunDir.clone().multiplyScalar(60))
+            hemi.color.setHex(t.hemiSky)
+            hemi.groundColor.setHex(t.hemiGround)
+            hemi.intensity = t.hemiI
+            amb.color.setHex(t.amb)
+            amb.intensity = t.ambI
+            plateauMat.color.setHex(t.plateau)
+            starMat.opacity = 0.9 * t.starGain
+            sunGlow.material.color.setHex(t.sunWash)
+            sunDisc.material.color.setHex(t.sunWash)
+        }
         const buildHorizon = () => {
             while (horizonGroup.children.length) {
                 const m = horizonGroup.children.pop()
                 if (m.geometry) m.geometry.dispose()
             }
+            const t = tintFor(COURSE.palette)
             const A = worldAnchor()
             const span = A.R * 2 + 320
-            const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mat(tex(sandTex()), { color: 0xa87850 }))
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mat(tex(sandTex()), { color: t.floor }))
             floor.rotation.x = -Math.PI / 2
             floor.position.set(A.cx, -1.5, A.cz)
             horizonGroup.add(floor)
-            horizonGroup.add(buildMesas())
+            horizonGroup.add(buildMesas(t.mesa))
             const dome = new THREE.Mesh(
                 new THREE.SphereGeometry(A.R + 130, 24, 16),
-                new THREE.MeshBasicMaterial({ map: tex(skyTex()), side: THREE.BackSide, fog: false })
+                new THREE.MeshBasicMaterial({ map: tex(skyTex(t.sky)), side: THREE.BackSide, fog: false })
             )
             dome.position.set(A.cx, 0, A.cz)
             horizonGroup.add(dome)
@@ -432,6 +451,7 @@ export default function CometDriftHD() {
             sunGlow.position.copy(sd)
             sunDisc.position.copy(sd).add(new THREE.Vector3(0, 1.5, 0))
         }
+        applyCourseTint()
         buildHorizon()
 
         // karts + blob shadows
@@ -654,7 +674,7 @@ export default function CometDriftHD() {
             // turbo sits on top of the gear, not in place of it (#471 item 7)
             const gear = Math.min(5, Math.floor(P.v / 1.6))
             const pull = (P.v * 1.6) % 8
-            const base = 44 + gear * 13 + pull * 2.6 + (P.boostT > 0 ? 30 + P.boostTier * 42 : 0)
+            const base = (44 + gear * 13 + pull * 2.6 + (P.boostT > 0 ? 30 + P.boostTier * 42 : 0)) * engineRegister(COURSE.palette)
             const period = Math.max(2, 14 - Math.round(P.v))
             if (g.tick % period === 0) {
                 audioController.playTone(base, 0.03, 'sawtooth', 0.022)
@@ -1162,6 +1182,7 @@ export default function CometDriftHD() {
             const i = Math.max(0, COURSES.findIndex((c) => c.id === COURSE.id))
             selectCourse(COURSES[(i + dir + COURSES.length) % COURSES.length].id)
             buildTrackMeshes()
+            applyCourseTint()
             buildHorizon()
             Object.assign(g, makeGame(0))
             st.endT = 0
@@ -1241,7 +1262,7 @@ export default function CometDriftHD() {
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
             course: () => COURSE.id,
-            setCourse: (id) => { selectCourse(id); buildTrackMeshes(); buildHorizon(); Object.assign(g, makeGame(0)); camA = g.karts[0].a; return COURSE.id },
+            setCourse: (id) => { selectCourse(id); buildTrackMeshes(); applyCourseTint(); buildHorizon(); Object.assign(g, makeGame(0)); camA = g.karts[0].a; return COURSE.id },
             cycleCourse: (dir) => { cycleCourse(dir | 0); return COURSE.id },
             best: () => st.best,
             fx: () => {

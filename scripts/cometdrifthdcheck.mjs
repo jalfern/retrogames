@@ -186,6 +186,44 @@ if (args.includes('--mutate-wall')) {
     })
 }
 
+// #502 item 1 skin mutant: flatten every course onto the dusk tint — the
+// per-course skin gates MUST go red under this run (noon wears a sunset).
+const KLINE = 'export const tintFor = (id) => COURSE_TINTS[id] || COURSE_TINTS.dusk'
+const KUTIL = 'export const tintFor = () => COURSE_TINTS.dusk /* skinmut */'
+let skinmutat = false
+if (args.includes('--mutate-skin')) {
+    const ksrc = readFileSync(SCENE, 'utf8')
+    if (!ksrc.includes(KLINE)) { console.error('MUTATE_SKIN: tintFor law not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, ksrc.replace(KLINE, KUTIL))
+    skinmutat = true
+    console.log('  ..    mutated: every course wears the dusk skin — the per-course skin gates MUST report FAILs')
+    process.on('exit', () => {
+        if (skinmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(KUTIL, KLINE))
+            console.log('  ..    skin mutation restored')
+        }
+    })
+}
+
+// #502 item 6 register mutant: Sandbank's engine drops back to the dusk
+// pitch — the register ladder gate MUST go red under this run.
+const RLINE = 'export const ENGINE_REGISTER = { dusk: 1, dawn: 1.06, noon: 1.12 }'
+const RUTIL = 'export const ENGINE_REGISTER = { dusk: 1, dawn: 1.06, noon: 1 } /* regmut */'
+let regmutat = false
+if (args.includes('--mutate-register')) {
+    const rsrc = readFileSync(AUDIO, 'utf8')
+    if (!rsrc.includes(RLINE)) { console.error('MUTATE_REGISTER: engine ladder not found — probing stale code.'); process.exit(2) }
+    writeFileSync(AUDIO, rsrc.replace(RLINE, RUTIL))
+    regmutat = true
+    console.log('  ..    mutated: Sandbank runs at the dusk register — the ladder gate MUST report a FAIL')
+    process.on('exit', () => {
+        if (regmutat) {
+            writeFileSync(AUDIO, readFileSync(AUDIO, 'utf8').replace(RUTIL, RLINE))
+            console.log('  ..    register mutation restored')
+        }
+    })
+}
+
 // ---------------------------------------------------------------- geometry
 console.log('track geometry (the HD rebuild of the Gulch):')
 const { stats, bounds, geos } = trackGeometryStats()
@@ -687,6 +725,51 @@ console.log('bank voices (#478 item 5 — gold bell chime):')
     ok(readFileSync(SHARD, 'utf8').includes('bankVoices(ev.tier)'), 'index.jsx drives the COMET bank voices from bankVoices(ev.tier)')
 }
 
+// --------------------------------------------- per-course skin + register (#502)
+// HD wore the dusk skin on every circuit: fog, sun, hemi/amb fill, dome stops,
+// mesas and the sand floor were dusk constants. A tintFor(palette) table now
+// drives the whole scene per course — dusk reproduces the shipped Gulch byte
+// for byte, noon runs brighter and cooler with a higher sun, and Sandbank's
+// engine winds up on its own register.
+console.log('per-course skin + engine register (#502 items 1+6):')
+{
+    const CT = await import('file://' + SCENE + '?t=' + (Date.now() + 7))
+    const { COURSE_TINTS, tintFor, SKY_STOPS, buildMesas: bm } = CT
+    const AT = await import('file://' + AUDIO + '?t=' + (Date.now() + 8))
+    const { engineRegister } = AT
+    const ids = Object.keys(COURSE_TINTS)
+    ok(SKY_STOPS.length === 8 && SKY_STOPS[0] === 0 && SKY_STOPS[7] === 1, 'the dome sky ramp has 8 shared stops (0..1)')
+    ok(ids.every((id) => COURSE_TINTS[id].sky.length === SKY_STOPS.length), 'every tint carries one colour per sky stop')
+    ok(ids.every((id) => COURSE_TINTS[id].sky.every((c) => /^#[0-9a-f]{6}$/i.test(c))), 'all sky stops are 6-digit hex colours')
+    const D = tintFor('dusk'); const N = tintFor('noon'); const W = tintFor('dawn')
+    ok(D.fog === 0x8a4a3c && Math.abs(D.fogD - 0.0072) < 1e-9, 'the dusk fog is the shipped gulch wash (0x8a4a3c @ 0.0072)')
+    ok(D.sun === 0xffc090 && Math.abs(D.sunI - 3.6) < 1e-9 && Math.abs(D.sunElev - 0.12) < 1e-9, 'the dusk sun rides the shipped low-amber law')
+    ok(JSON.stringify(D.sky) === JSON.stringify(['#1a0f24', '#452038', '#7c3030', '#c05830', '#ff9050', '#e07038', '#8a3a28', '#40201a']), 'the dusk dome gradient is the shipped Gulch sky stop for stop')
+    ok(D.mesa === 0x4e222c && D.floor === 0xa87850 && D.starGain === 1 && D.sunWash === 0xffffff, 'dusk keeps mesas, floor, full stars and a colourless sun wash')
+    const rgbOf = (v) => [(v >> 16) & 255, (v >> 8) & 255, v & 255]
+    const lumOf = (v) => { const [r, g, b] = rgbOf(v); return 0.299 * r + 0.587 * g + 0.114 * b }
+    ok(lumOf(N.fog) > lumOf(D.fog), `noon fog is brighter than dusk (#${N.fog.toString(16)} vs #${D.fog.toString(16)})`)
+    ok(rgbOf(N.fog)[2] > rgbOf(N.fog)[0] && rgbOf(D.fog)[0] > rgbOf(D.fog)[2], 'noon fog runs cool (blue-dominant) where dusk runs warm (red-dominant)')
+    ok(rgbOf(N.hemiSky)[2] > rgbOf(N.hemiSky)[0], 'noon hemi fill is a blue sky, not an ember wash')
+    ok(N.sunI > D.sunI, `noon sun pushes harder than dusk (${N.sunI} vs ${D.sunI})`)
+    ok(D.sunElev < W.sunElev && W.sunElev < N.sunElev, `the sun climbs dusk -> dawn -> noon (${D.sunElev} < ${W.sunElev} < ${N.sunElev})`)
+    ok(N.starGain >= 0 && N.starGain < W.starGain && W.starGain < D.starGain && D.starGain === 1, `stars fade as the sun rises (${D.starGain} -> ${W.starGain} -> ${N.starGain})`)
+    ok(new Set(ids.map((id) => COURSE_TINTS[id].mesa)).size === ids.length, 'every course gets its own mesa colour')
+    ok(new Set(ids.map((id) => COURSE_TINTS[id].floor)).size === ids.length, 'every course gets its own sand floor')
+    ok(new Set(ids.map((id) => COURSE_TINTS[id].sky.join())).size === ids.length, 'every course gets its own dome gradient')
+    ok(tintFor('corkscomb') === COURSE_TINTS.dusk && tintFor(undefined) === COURSE_TINTS.dusk, 'unknown palettes fall back to dusk — the Gulch skin never breaks')
+    ok(bm(0x123456).children.every((m) => m.material.color.getHex() === 0x123456), 'buildMesas paints the ring with the course mesa colour')
+    ok(bm().children[0].material.color.getHex() === 0x4e222c, 'buildMesas still defaults to the shipped dusk rock')
+    ok(engineRegister('dusk') === 1, 'the Gulch keeps its shipped engine pitch (register 1)')
+    ok(engineRegister('noon') > engineRegister('dawn') && engineRegister('dawn') > engineRegister('dusk'), `Sandbank winds up the highest register (1 -> ${engineRegister('dawn')} -> ${engineRegister('noon')})`)
+    ok(engineRegister('noon') <= 1.25, `the register stays an engine, not a lawnmower (${engineRegister('noon')}x)`)
+    ok(engineRegister('nope') === 1, 'unknown courses keep the dusk register')
+    const SRC7 = readFileSync(SHARD, 'utf8')
+    ok(SRC7.includes('applyCourseTint()') && SRC7.includes('tintFor(COURSE.palette)'), 'index.jsx re-tints the scene from the selected course')
+    ok((SRC7.match(/applyCourseTint\(\)/g) || []).length >= 3, 'the tint runs at boot AND on both course-swap paths')
+    ok(SRC7.includes('engineRegister(COURSE.palette)'), 'the engine law multiplies by the course register')
+}
+
 // ---------------------------------------------------------------- browser
 if (!SKIP_BROWSER) {
     const { launch, openGame, requireDevServer } = await import('./lib/harness.mjs')
@@ -976,5 +1059,5 @@ if (!SKIP_BROWSER) {
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat || hudmutat) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat || hudmutat || skinmutat || regmutat) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)
