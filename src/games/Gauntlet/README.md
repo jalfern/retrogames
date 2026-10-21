@@ -150,6 +150,16 @@ Honest gaps v1 (filed to QA): no reconnect/rejoin-after-desync mid-game, no
 ping display, restart after game over needs a reload, one game (this pilot),
 no rollback for jitter beyond the 4-tick buffer.
 
+#546 partial: while WAITING, a dropped socket auto-reconnects with
+exponential backoff (`retryDelay` in lockstep.js: 400ms doubling, 8s cap,
+6 tries) and the relay's rejoin re-pairs the friend; during PLAY the HUD
+shows one-way pad AGE (ms since the freshest remote pad) plus a blinking
+STALL n while the delay buffer drains, so lag reads on screen instead of
+looking like a freeze; pair and leave get synth blips (peer/gone). Still
+open: reconnect mid-play, net-aware restart, tappable join keypad, per-IP
+relay auth.
+
 Verify: `npm run netcheck` (relay core + protocol + lockstep determinism +
-corrupted-sim IS caught) and `npm run netdrill` (two headless Chromes over
-real keys: pair, seed, play, desync, friend-left — needs `npm run dev`).
+corrupted-sim IS caught + #546 backoff/age/stall pins) and `npm run netdrill`
+(two headless Chromes over real keys: pair, seed, play, desync, friend-left,
+dropped-socket auto-rejoin — needs `npm run dev`).
