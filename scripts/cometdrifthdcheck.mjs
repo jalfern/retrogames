@@ -572,6 +572,58 @@ console.log('wall variety (#478 item 7 — per-section rock tint, sides out of p
     ok(SRC7.includes('M.wallL, strataMat') && SRC7.includes('M.wallR, strataMat'), 'both cliff walls share the tinted strata material (retextured, not rebuilt)')
 }
 
+// #478 item 8 HUD mutant: fold the portrait lift back to 1 — the phone-readability
+// gates MUST go red under this run.
+const HLAW = 'export const HUD_PORTRAIT_MAX = 1.3'
+const HUTIL = 'export const HUD_PORTRAIT_MAX = 1 /* hudmut */'
+let hudmutat = false
+if (args.includes('--mutate-hud')) {
+    const hsrc = readFileSync(SCENE, 'utf8')
+    if (!hsrc.includes(HLAW)) { console.error('MUTATE_HUD: portrait lift not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, hsrc.replace(HLAW, HUTIL))
+    hudmutat = true
+    console.log('  ..    mutated: portrait phones stop scaling the HUD up — the readability gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (hudmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(HUTIL, HLAW))
+            console.log('  ..    hud mutation restored')
+        }
+    })
+}
+
+// ---------------------------------------------------- phone HUD (#478 item 8)
+// A 390x844 portrait phone is width-bound under the old fit ratio (0.93) and
+// drew 7px digits. Portrait viewports now take a height-driven lift, the floor
+// sits at 0.85, and the HUD row rides the safe-area inset so the #437 corner
+// chrome never writes over the POS stack on notched devices.
+console.log('phone HUD (#478 item 8 — portrait scale, readable floor, safe-area top):')
+{
+    const HS = await import('file://' + SCENE + '?t=' + (Date.now() + 4))
+    const { hudScale, hudTop, HUD_MIN, HUD_PORTRAIT_MAX, CHROME_BAND } = HS
+    const OLD = (w, h) => Math.max(0.72, Math.min(2, Math.min(h / 240, w / 420)))
+    ok(HUD_MIN > 0.72, `floor lifted 0.72 → ${HUD_MIN} (no more 7px digits on a small screen)`)
+    const phone = hudScale(390, 844)
+    ok(phone >= 1.1 && phone <= 2, `390x844 portrait draws a thumb-readable cluster (u=${phone.toFixed(2)}, old law gave ${OLD(390, 844).toFixed(2)})`)
+    ok(hudScale(320, 568) >= HUD_MIN, `even a 320x568 phone holds the floor (u=${hudScale(320, 568).toFixed(2)})`)
+    ok(hudScale(844, 390) === OLD(844, 390), `landscape keeps the old fit (${hudScale(844, 390).toFixed(2)} — the portrait lift never fires sideways)`)
+    ok(hudScale(1280, 800) === OLD(1280, 800), `desktop is untouched (u=${hudScale(1280, 800)})`)
+    ok(hudScale(640, 426) === OLD(640, 426), `the lite CI box is untouched (u=${hudScale(640, 426).toFixed(2)})`)
+    let monoH = true; let prevH = -1
+    for (let h = 540; h <= 1400; h += 20) { const s = hudScale(390, h); if (s < prevH - 1e-12) monoH = false; prevH = s }
+    ok(monoH, 'portrait scale grows monotonically with height (no popping between phone sizes)')
+    ok(hudScale(390, 2400) <= 2, `a portrait tablet still clamps (u=${hudScale(390, 2400)})`)
+    ok(HUD_PORTRAIT_MAX <= 1.35 && CHROME_BAND >= 42, `the lift stays sane (${HUD_PORTRAIT_MAX}x cap) and the chrome band outstands the buttons (${CHROME_BAND} >= 42)`)
+    ok(hudTop(0) >= 42, `desktop row still clears the #437 buttons (top ${hudTop(0)} over a ~41px button bottom)`)
+    ok(hudTop(47) === CHROME_BAND + 47, `a notched phone pushes the row by the same inset the chrome rides (${hudTop(47)} for a 47px notch)`)
+    let collides = false
+    for (const sat of [0, 20, 47, 59]) if (hudTop(sat) - sat < 42) collides = true
+    ok(!collides, 'ARCADE/PAUSE never overlap the instrument row at any safe-area inset (>=1px gap on every notch)')
+    const SRC8 = readFileSync(SHARD, 'utf8')
+    ok(SRC8.includes('hudScale(cssW, cssH)') && SRC8.includes('hudTop(safeTop)'), 'index.jsx drives scale + top from the shared laws')
+    ok(SRC8.includes("'--sat'"), 'the shell reads the same safe-area inset the chrome uses')
+    ok(SRC8.includes('hud: () =>'), 'the harness measures the live HUD layout via __cometHDTest.hud()')
+}
+
 // ------------------------------------------------------------------ rules
 console.log('reused sim keeps its rules under the new renderer:')
 {
@@ -890,8 +942,39 @@ if (!SKIP_BROWSER) {
     } finally {
         await b3.close()
     }
+
+    // #478 item 8: a portrait phone (390x844) must draw a readable cluster that
+    // stays clear of the #437 corner chrome. Chrome rects come from the DOM,
+    // panel rects from the shell's own layout — both in CSS px over one canvas.
+    await new Promise((r) => setTimeout(r, 1500))
+    const b4 = await launch()
+    try {
+        const page4 = await openGame(b4, { url: URL, viewport: { width: 390, height: 844 }, hook: '__cometHDTest', wait: 500 })
+        await page4.waitForFunction(() => window.__cometHDTest.ready(), null, { timeout: 20000 })
+        await page4.keyboard.press('Space')
+        await page4.waitForFunction(() => window.__cometHDTest.screen() === 'race', null, { timeout: 8000 })
+        const m = await page4.evaluate(() => {
+            const hud = window.__cometHDTest.hud()
+            const rect = (sel) => {
+                const el = document.querySelector(sel)
+                if (!el) return null
+                const r = el.getBoundingClientRect()
+                return { x: r.left, y: r.top, w: r.width, h: r.height, bottom: r.bottom, right: r.right }
+            }
+            return { hud, arcade: rect('[data-nav="arcade"]'), pause: rect('[data-nav="pause"]') }
+        })
+        const { hud, arcade, pause } = m
+        ok(hud.u >= 1.1, `portrait 390x844 draws a thumb-readable cluster (u=${hud.u.toFixed(2)})`)
+        ok(hud.pos.y >= arcade.bottom && hud.speed.y >= arcade.bottom, `POS/speed sit below ARCADE (top ${arcade.bottom.toFixed(0)}px vs row ${hud.pos.y.toFixed(0)}/${hud.speed.y.toFixed(0)})`)
+        ok(hud.mini.x >= pause.right, `minimap sits left of PAUSE (mini right edge ${hud.mini.x.toFixed(0)} < ${pause.right.toFixed(0)})`)
+        ok(hud.lap.x >= hud.pos.x + hud.pos.w && hud.lap.x + hud.lap.w <= hud.mini.x, 'LAP / POS / minimap do not overlap each other at portrait scale')
+        ok(hud.mini.x + hud.mini.w <= hud.W && hud.mini.y + hud.mini.h <= hud.H && hud.pos.y + hud.pos.h <= hud.H, 'every panel stays inside the viewport')
+        ok(hud.pos.w >= 40 && hud.lap.h >= 26, `panels themselves grew with the scale (POS ${hud.pos.w.toFixed(0)}x${hud.pos.h.toFixed(0)}, LAP h ${hud.lap.h})`)
+    } finally {
+        await b4.close()
+    }
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat || hudmutat) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)

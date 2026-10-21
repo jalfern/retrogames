@@ -681,6 +681,27 @@ export function makeStarDefs(count = STAR_COUNT, seed = 7) {
     return defs
 }
 
+// ---- HUD scale + safe-area top (#478 item 8) --------------------------------
+// The old law took the SMALLER of the two ratios, so a 390x844 portrait phone
+// (width-bound at 0.93) drew an instrument cluster sized for a 420px-wide
+// strip — POS read 7px, the ladder pips 3px. A tall narrow viewport has all
+// its room vertically: portrait viewports now get a height-driven lift (up to
+// 1.3x) on top of the fit ratio, and the floor moves 0.72 -> 0.85 so even a
+// 320px phone draws legible digits. Landscape and desktop are untouched: the
+// portrait factor is 1 unless h > 1.4w.
+export const HUD_MIN = 0.85
+export const HUD_PORTRAIT_MAX = 1.3
+export const hudScale = (w, h) => {
+    const base = Math.min(h / 240, w / 420)
+    const portrait = h > w * 1.4 ? Math.min(HUD_PORTRAIT_MAX, h / 560) : 1
+    return Math.max(HUD_MIN, Math.min(2, base * portrait))
+}
+// The #437 corner chrome sits at 12px + var(--sat) with a ~29px button; the
+// HUD row must start below it on NOTCHED phones too, so the band rides the
+// same safe-area inset the chrome does.
+export const CHROME_BAND = 46
+export const hudTop = (safeTop) => CHROME_BAND + Math.max(0, safeTop)
+
 // ---- the sandstone arch over the line: the Gulch's landmark, now standing
 // 5 metres off the asphalt. Legs land in the sand gutter, safely outside the
 // sim's wall limit — the karts never touch it. Browser can pass a strata
