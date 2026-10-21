@@ -18,6 +18,8 @@
 //     · waterline coherent alongshore (no per-column sawtooth)
 //   3. WINS   — golden-hour sky, foam pixels, warm sand, camera moves the world.
 //   4. SPEED  — steady-state frame time at the worst-case window under --max-ms.
+//   5. PROFILE (#702) — a 390x844 touch viewport auto-picks the lite grid +
+//     rs<1 at startup; ?lite=0 overrides it back to full quality.
 //   + static: no var<uniform> array of f32/vec2/vec3 (Safari standard layout).
 //
 // Chrome is launched DIRECTLY with --enable-unsafe-swiftshader (playwright's
@@ -486,6 +488,36 @@ async function main() {
       ok(`frame time under ${budget} ms at full window (1600x1000, ${soft ? 'software raster' : 'hardware'})`,
         perf.n >= 60 && perf.avg <= budget, `avg=${perf.avg}ms max=${perf.max}ms over ${perf.n} frames`)
     }
+
+          // #702 phone profile: a phone-sized touch viewport boots LITE with a
+      // sub-1 blit by default; ?lite=0 forces full quality back. Runs LAST of
+      // the sim gates: booting a second WebGPU context heats the software
+      // raster and its residual contention compresses the swash trace window
+      // (an earlier placement flipped the uprush/backwash ratio to noise).
+      const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true })
+      const ppage = await pctx.newPage()
+      let pg = null, phr = null, fg = null, fr = null
+      try {
+        await ppage.goto(url, { waitUntil: 'load' })
+        await ppage.waitForFunction(() => window.__shoreTest && window.__shoreTest.ready, null, { timeout: 30000 })
+        await ppage.waitForFunction(() => window.__shoreTest.perf().n > 5, null, { timeout: 15000 })
+        pg = await ppage.evaluate(() => window.__shoreTest.grid())
+        phr = await ppage.evaluate(() => window.__shoreTest.perf())
+      } catch { /* the gate below goes red */ }
+      ok('phone viewport auto-picks lite grid + reduced rs (#702)',
+        !!pg && !!pg.auto && !!pg.lite && pg.n < 20000 && !!phr && phr.rs < 1,
+        pg ? `n=${pg.n} rs=${phr && phr.rs}` : 'phone boot failed')
+      try {
+        await ppage.goto(url + '?lite=0', { waitUntil: 'load' })
+        await ppage.waitForFunction(() => window.__shoreTest && window.__shoreTest.ready, null, { timeout: 30000 })
+        await ppage.waitForFunction(() => window.__shoreTest.perf().n > 5, null, { timeout: 15000 })
+        fg = await ppage.evaluate(() => window.__shoreTest.grid())
+        fr = await ppage.evaluate(() => window.__shoreTest.perf())
+      } catch { /* the gate below goes red */ }
+      await pctx.close()
+      ok('?lite=0 overrides the phone profile (full grid, rs 1)',
+        !!fg && !fg.lite && fg.n > 40000 && !!fr && fr.rs >= 1,
+        fg ? `n=${fg.n} rs=${fr && fr.rs}` : 'phone boot failed')
 
     ok('zero page/WGSL errors', errs.length === 0, errs.slice(0, 2).join(' | '))
   } finally {

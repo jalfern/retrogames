@@ -10,6 +10,9 @@
 //
 // Usage: node scripts/shoreperf.mjs [--file <path>] [--port 9381] [--secs 6]
 //        [--profile desktop,qhd,phone] [--url <url>]
+//        [--ab "<queryA>|<queryB>" [--ab-rounds 6]]   #702: interleaved A/B of
+//        two query strings on the first requested profile (absolute fps on a
+//        shared-GPU box is noise; alternating rounds cancel the drift).
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -28,6 +31,8 @@ const url = opt('--url', 'file://' + file)
 const PORT = opt('--port', '9381')
 const SECS = +opt('--secs', 6)
 const profilesWanted = opt('--profile', 'desktop,qhd,phone').split(',')
+const abQuery = opt('--ab', null)
+const AB_ROUNDS = +opt('--ab-rounds', 6)
 if (!url.startsWith('http') && !existsSync(file)) { console.error(`missing ${file}`); process.exit(1) }
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
@@ -36,6 +41,7 @@ const PROFILES = {
   qhd: { viewport: { width: 1600, height: 1000 }, dsf: 2, cpu: 1 },
   phone: { viewport: { width: 390, height: 844 }, dsf: 3, cpu: 6 },
 }
+if (+opt('--cpu', 0) > 0) for (const p of Object.values(PROFILES)) p.cpu = +opt('--cpu')
 
 async function measure(browser, name, p) {
   const ctx = await browser.newContext({ viewport: p.viewport, deviceScaleFactor: p.dsf })
@@ -70,6 +76,38 @@ async function measure(browser, name, p) {
   return { profile: name, ...perf, fps: +fps.toFixed(1), canvas: canvasSize, gpu }
 }
 
+const med = a => [...a].sort((x, y) => x - y)[a.length >> 1]
+
+async function abMeasure(browser, profileName, p, qA, qB) {
+  // ONE page, reloaded between rounds: headless Chrome keeps every open page
+  // visible, so two live pages would each measure "self + the other config's
+  // render load" — the lighter config would look slower than it is.
+  const ctx = await browser.newContext({ viewport: p.viewport, deviceScaleFactor: p.dsf })
+  const page = await ctx.newPage()
+  let cdp = null
+  if (p.cpu > 1) { cdp = await ctx.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: p.cpu }) }
+  const win = Math.max(2000, (SECS * 1000) / 2)
+  const aAvg = [], bAvg = [], aMax = [], bMax = []
+  let perfA = null, perfB = null
+  for (let i = 0; i < AB_ROUNDS; i++) {
+    for (const [q, av, xv] of [[qA, aAvg, aMax], [qB, bAvg, bMax]]) {
+      await page.goto(url + q, { waitUntil: 'load' })
+      await page.waitForFunction(() => window.__shoreTest && window.__shoreTest.ready && window.__shoreTest.perf().n > 40, null, { timeout: 40000 })
+      if (cdp) await cdp.send('Emulation.setCPUThrottlingRate', { rate: p.cpu })
+      await page.evaluate(() => window.__shoreTest.resetPerf())
+      await page.waitForTimeout(win)
+      const perf = await page.evaluate(() => window.__shoreTest.perf())
+      av.push(perf.avg); xv.push(perf.max)
+      if (q === qA) perfA = perf; else perfB = perf
+    }
+  }
+  await ctx.close()
+  const mA = med(aAvg), mB = med(bAvg)
+  const gain = mA > 0 ? (1 - mB / mA) * 100 : 0
+  console.log(`AB/${profileName} A"${qA || '(default)'}" med=${mA.toFixed(1)}ms worst=${Math.min(...aMax).toFixed(0)}ms rs=${perfA.rs} | B"${qB || '(default)'}" med=${mB.toFixed(1)}ms worst=${Math.min(...bMax).toFixed(0)}ms rs=${perfB.rs} -> B ${gain > 0 ? 'faster' : 'SLOWER'} by ${gain.toFixed(1)}% over ${AB_ROUNDS} interleaved rounds`)
+  return { ab: profileName, qA, qB, medA: +mA.toFixed(2), medB: +mB.toFixed(2), worstA: Math.min(...aMax), worstB: Math.min(...bMax), gainPct: +gain.toFixed(1) }
+}
+
 async function main() {
   const profDir = `/tmp/forge/shoreperf-profile-${PORT}`
   const chrome = spawn(CHROME, [
@@ -90,6 +128,14 @@ async function main() {
   if (!browser) { killAll(); console.error('cannot reach headless Chrome over CDP'); process.exit(1) }
   const out = []
   try {
+    if (abQuery) {
+      const [qA, qB] = abQuery.split('|')
+      const name = profilesWanted[0].trim()
+      const p = PROFILES[name]
+      if (!p) { console.error(`unknown profile ${name}`); killAll(); process.exit(1) }
+      const r = await abMeasure(browser, name, p, qA || '', qB || '')
+      if (r) out.push(r)
+    }
     for (const name of profilesWanted) {
       const p = PROFILES[name.trim()]
       if (!p) { console.error(`unknown profile ${name}`); continue }
