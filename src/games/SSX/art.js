@@ -32,6 +32,7 @@ export const THEMES = {
         snowA: [248, 250, 255], snowB: [186, 206, 236],
         shadow: [150, 168, 212], edge: [70, 190, 240], rock: [42, 35, 31], rock2: [20, 17, 16],
         peak: [172, 196, 230], peakSun: [225, 232, 245],
+        shC: 0x0b1524, shO: 0.28,
     },
     night: {
         sky: 0x0a0c22, skyTop: 0x04051a, fog: 0x101436, fogD: 0.0016,
@@ -39,6 +40,7 @@ export const THEMES = {
         snowA: [96, 110, 190], snowB: [56, 64, 140],
         shadow: [22, 28, 72], edge: [255, 60, 200], rock: [10, 10, 26], rock2: [4, 4, 12],
         peak: [30, 34, 78], peakSun: [56, 62, 120],
+        shC: 0x04050e, shO: 0.45,
     },
     dusk: {
         sky: 0xff9a5c, skyTop: 0x6a4a9c, fog: 0xf2a878, fogD: 0.0012,
@@ -46,6 +48,7 @@ export const THEMES = {
         snowA: [255, 224, 214], snowB: [206, 156, 186],
         shadow: [118, 88, 158], edge: [255, 90, 60], rock: [19, 10, 8], rock2: [7, 3, 4],
         peak: [206, 140, 150], peakSun: [255, 200, 170],
+        shC: 0x241226, shO: 0.34,
     },
 }
 
@@ -646,45 +649,54 @@ function sampleClip(clip, time) {
 const eul = new THREE.Euler()
 const mulQ = new THREE.Quaternion()
 
-// per-bone euler offsets (radians, bone-local axes), composed onto the base
+// per-bone euler offsets (radians, bone-local axes), composed onto the base.
+// Bone keys must match the RUNTIME names: GLTFLoader runs every node name
+// through PropertyBinding.sanitizeNodeName, which strips the dots the KayKit
+// pack ships ("foot.l" -> "footl"). Dotted keys here were silent no-ops (#615).
 const STANCE = {
     hips: [0, 0.55, 0],
     spine: [0, 0.5, 0],
     chest: [0, 0.25, 0],
     head: [0.02, -1.3, 0],
-    'foot.l': [0, -0.55, 0],
-    'foot.r': [0, -0.55, 0],
+    footl: [0, -0.55, 0],
+    footr: [0, -0.55, 0],
 }
 const OFFS = {
     tuck: {
         hips: [0, 0, 0, -0.10], spine: [0.45, 0, 0], chest: [0.8, 0, 0], head: [-0.5, 0, 0],
-        'upperleg.l': [0.9, 0, 0.05], 'lowerleg.l': [-1.65, 0, 0], 'foot.l': [0.7, 0, 0],
-        'upperleg.r': [0.8, 0, -0.05], 'lowerleg.r': [-1.55, 0, 0], 'foot.r': [0.7, 0, 0],
-        'upperarm.l': [1.1, 0, 0.4], 'lowerarm.l': [1.5, 0, 0],
-        'upperarm.r': [1.1, 0, -0.4], 'lowerarm.r': [1.5, 0, 0],
+        'upperlegl': [0.9, 0, 0.05], 'lowerlegl': [-1.65, 0, 0], footl: [0.7, 0, 0],
+        'upperlegr': [0.8, 0, -0.05], 'lowerlegr': [-1.55, 0, 0], footr: [0.7, 0, 0],
+        'upperarml': [1.1, 0, 0.4], 'lowerarml': [1.5, 0, 0],
+        'upperarmr': [1.1, 0, -0.4], 'lowerarmr': [1.5, 0, 0],
     },
     crouch: {
         hips: [0, 0, 0, -0.16], spine: [0.2, 0, 0], chest: [0.28, 0, 0], head: [-0.12, 0, 0],
-        'upperleg.l': [0.75, 0, 0.04], 'lowerleg.l': [-1.5, 0, 0], 'foot.l': [0.6, 0, 0],
-        'upperleg.r': [0.68, 0, -0.04], 'lowerleg.r': [-1.42, 0, 0], 'foot.r': [0.6, 0, 0],
-        'upperarm.l': [0.5, 0, 0.25], 'lowerarm.l': [0.8, 0, 0],
-        'upperarm.r': [0.5, 0, -0.25], 'lowerarm.r': [0.8, 0, 0],
+        'upperlegl': [0.75, 0, 0.04], 'lowerlegl': [-1.5, 0, 0], footl: [0.6, 0, 0],
+        'upperlegr': [0.68, 0, -0.04], 'lowerlegr': [-1.42, 0, 0], footr: [0.6, 0, 0],
+        'upperarml': [0.5, 0, 0.25], 'lowerarml': [0.8, 0, 0],
+        'upperarmr': [0.5, 0, -0.25], 'lowerarmr': [0.8, 0, 0],
     },
+    // #615: boardslide grab — the torso leans to the nose so the reaching
+    // hand lands on the nose-edge band (probe: grabReach l.d ~0.18), the
+    // balance arm lifts outboard, and the legs stay planted (the air base's
+    // tuck is un-tucked, foot toes pitched, so the boots weld to the deck).
     grab: {
-        hips: [0, 0.18, 0], spine: [0.35, 0.15, 0], chest: [0.55, 0.1, 0], head: [-0.35, -0.25, 0],
-        'upperarm.l': [1.55, 0, 0.5], 'lowerarm.l': [0.85, 0, 0],
-        'upperarm.r': [0.2, 0, -0.35],
+        hips: [0.75, 0.18, 0], spine: [1.0, 0.15, 0], chest: [1.15, 0.1, 0], head: [1.25, -0.25, 0],
+        'upperarml': [2.45, 0, 0.45], 'lowerarml': [-0.15, 0, 0],
+        'upperarmr': [2.0, 0, -0.7], 'lowerarmr': [0.8, 0, 0],
+        'upperlegl': [0.5, 0, 0.05], 'lowerlegl': [-1.3, 0, 0], footl: [1.0, 0, 0],
+        'upperlegr': [0.6, 0, -0.05], 'lowerlegr': [-1.2, 0, 0], footr: [0.7, 0, 0],
     },
     tumble: {
         hips: [0, 0.3, 0], spine: [-0.35, -0.2, 0], chest: [-0.2, -0.1, 0], head: [0.5, 0.35, 0],
-        'upperarm.l': [-0.5, 0, 1.2], 'lowerarm.l': [0.3, 0, 0],
-        'upperarm.r': [-2.9, 0, -0.4], 'lowerarm.r': [0.5, 0, 0],
-        'upperleg.l': [0.8, 0, 0.35], 'lowerleg.l': [-0.9, 0, 0], 'foot.l': [0.3, 0, 0],
-        'upperleg.r': [-0.4, 0, -0.35], 'lowerleg.r': [0.6, 0, 0],
+        'upperarml': [-0.5, 0, 1.2], 'lowerarml': [0.3, 0, 0],
+        'upperarmr': [-2.9, 0, -0.4], 'lowerarmr': [0.5, 0, 0],
+        'upperlegl': [0.8, 0, 0.35], 'lowerlegl': [-0.9, 0, 0], footl: [0.3, 0, 0],
+        'upperlegr': [-0.4, 0, -0.35], 'lowerlegr': [0.6, 0, 0],
     },
     air: {
-        'upperleg.l': [0.12, 0, 0.06], 'lowerleg.l': [-0.35, 0, 0],
-        'upperleg.r': [0.1, 0, -0.06], 'lowerleg.r': [-0.3, 0, 0],
+        'upperlegl': [0.12, 0, 0.06], 'lowerlegl': [-0.35, 0, 0],
+        'upperlegr': [0.1, 0, -0.06], 'lowerlegr': [-0.3, 0, 0],
     },
 }
 const POSE_BASE = { stand: 'stand', tuck: 'stand', crouch: 'crouch', air: 'air', grab: 'air', tumble: 'air' }
@@ -697,6 +709,24 @@ function poseOffset(name, bone) {
     return [a[0] + b[0], a[1] + b[1], a[2] + b[2], (a[3] || 0) + (b[3] || 0)]
 }
 
+function applyOffsets(base, name) {
+    const t = {}
+    for (const bone of Object.keys(base)) {
+        const e = { p: base[bone].p ? [...base[bone].p] : null, q: base[bone].q ? [...base[bone].q] : null }
+        const o = poseOffset(name, bone)
+        if (o && e.p && o.length > 3) e.p = [e.p[0], e.p[1] + (o[3] || 0), e.p[2]]
+        const r3 = o ? [o[0], o[1], o[2]] : [0, 0, 0]
+        if (e.q) {
+            eul.set(r3[0], r3[1], r3[2])
+            mulQ.setFromEuler(eul)
+            const q = new THREE.Quaternion(e.q[0], e.q[1], e.q[2], e.q[3]).multiply(mulQ)
+            e.q = [q.x, q.y, q.z, q.w]
+        }
+        t[bone] = e
+    }
+    return t
+}
+
 function composeTargets(clips) {
     const bases = {
         stand: sampleClip(clips.Idle, 0),
@@ -704,28 +734,30 @@ function composeTargets(clips) {
         air: sampleClip(clips.Jump_Idle, 0.3),
     }
     const targets = {}
-    for (const name of HERO_POSES) {
-        const base = bases[POSE_BASE[name]]
-        const t = {}
-        for (const bone of Object.keys(base)) {
-            const e = { p: base[bone].p ? [...base[bone].p] : null, q: base[bone].q ? [...base[bone].q] : null }
-            const o = poseOffset(name, bone)
-            if (o && e.p && o.length > 3) e.p = [e.p[0], e.p[1] + (o[3] || 0), e.p[2]]
-            const r3 = o ? [o[0], o[1], o[2]] : [0, 0, 0]
-            if (e.q) {
-                eul.set(r3[0], r3[1], r3[2])
-                mulQ.setFromEuler(eul)
-                const q = new THREE.Quaternion(e.q[0], e.q[1], e.q[2], e.q[3]).multiply(mulQ)
-                e.q = [q.x, q.y, q.z, q.w]
-            }
-            t[bone] = e
-        }
-        targets[name] = t
-    }
+    for (const name of HERO_POSES) targets[name] = applyOffsets(bases[POSE_BASE[name]], name)
     return targets
 }
 
-export function makeHeroRider(color, modelFile = 'rogue', style = 0) {
+// The stand pose is the model's own Idle clip sampled around its loop (#615):
+// pre-baked frames (stance offsets applied, same recipe as composeTargets) so
+// the render loop only does a lookup — the rider breathes and shifts weight
+// instead of sitting mannequin-still at the gate.
+export function buildIdleRing(clips, n = 48) {
+    const clip = clips.Idle
+    if (!clip) return null
+    const frames = []
+    for (let i = 0; i < n; i++) frames.push(applyOffsets(sampleClip(clip, (i / n) * clip.duration), 'stand'))
+    return { frames, n, duration: clip.duration }
+}
+
+// DEV: live-recompose one pose with a replacement offset table (probe loop)
+export function retunePose(name, offs, hero) {
+    OFFS[name] = offs
+    hero.targets = composeTargets(hero.clips)
+    if (hero.pose === name) hero.cur = {}
+}
+
+export function makeHeroRider(color, modelFile = 'rogue', id = 0) {
     const root = new THREE.Group()
     const yaw = new THREE.Group()
     const roll = new THREE.Group()
@@ -748,7 +780,7 @@ export function makeHeroRider(color, modelFile = 'rogue', style = 0) {
         model.add(rigRoot)
         model.scale.setScalar(HERO_HEIGHT / h)
         model.position.y = -((box.min.y) * (HERO_HEIGHT / h))
-        const board = makeBoard(color, style)
+        const board = makeBoard(color, id, id)
         roll.clear()
         roll.add(model, board)
         const bootGeo = new THREE.BoxGeometry(0.3, 0.22, 0.46)
@@ -756,11 +788,13 @@ export function makeHeroRider(color, modelFile = 'rogue', style = 0) {
         for (const side of ['l', 'r']) {
             const boot = new THREE.Mesh(bootGeo, bootMat)
             boot.position.set(0.02, -0.16, 0.06)
-            if (bones[`foot.${side}`]) bones[`foot.${side}`].add(boot)
+            boot.rotation.z = -0.12
+            if (bones[`foot${side}`]) bones[`foot${side}`].add(boot)
         }
         root.userData.hero = {
-            model, bones, board,
+            model, bones, board, clips,
             targets: composeTargets(clips),
+            idleRing: buildIdleRing(clips),
             pose: 'stand',
             cur: {},
         }
@@ -773,7 +807,7 @@ export function makeHeroRider(color, modelFile = 'rogue', style = 0) {
     return root
 }
 
-export function makeBoard(color, style = 0) {
+export function makeBoard(color, style = 0, id = 0) {
     const L = 1.78, NOSE = 0.16, WAIST = 0.17, TIPW = 0.19
     const shape = new THREE.Shape()
     shape.moveTo(L / 2, 0)
@@ -787,9 +821,10 @@ export function makeBoard(color, style = 0) {
     geo.rotateX(-Math.PI / 2)
     const pos = geo.attributes.position
     const col = new Float32Array(pos.count * 3)
-    const cA = new THREE.Color(color)
-    const cB = new THREE.Color(0x181d26)
-    const cTip = new THREE.Color(0xe8edf5)
+    // darker top base: the bright rider hues blow out on night/dusk snow (#615)
+    const cA = new THREE.Color(color).multiplyScalar(0.72)
+    const cB = new THREE.Color(0x10141c)
+    const cTip = new THREE.Color(0xdfe6f0)
     const mixc = new THREE.Color()
     const paint = (x, a) => {
         switch (style % 6) {
@@ -814,7 +849,72 @@ export function makeBoard(color, style = 0) {
     geo.computeVertexNormals()
     const mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }))
     mesh.position.y = 0.045
+    mesh.userData.num = id + 1
+    mesh.userData.logo = id % 6
+    // livery decal: bib number + logo shape, unlit so it reads at night/dusk (#615)
+    const tex = liveryTexture(id + 1, id % 6)
+    const decal = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.46, 0.15),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
+    )
+    decal.rotation.x = -Math.PI / 2
+    decal.position.set(0.18, 0.072, 0)
+    mesh.add(decal)
     return mesh
+}
+
+const liveryCanvases = new Map()
+
+function liveryTexture(num, logo) {
+    const key = `${num}|${logo}`
+    if (!liveryCanvases.has(key)) {
+        const c = document.createElement('canvas')
+        c.width = 192; c.height = 64
+        const x = c.getContext('2d')
+        x.clearRect(0, 0, 192, 64)
+        x.fillStyle = 'rgba(255,255,255,0.92)'
+        x.font = '900 44px monospace'
+        x.textAlign = 'center'
+        x.textBaseline = 'middle'
+        x.fillText(String(num), 72, 34)
+        // per-rider logo mark (right of the bib)
+        x.strokeStyle = 'rgba(255,255,255,0.92)'
+        x.fillStyle = 'rgba(255,255,255,0.92)'
+        x.lineWidth = 5
+        x.lineJoin = 'round'
+        const lx = 148, ly = 32
+        x.beginPath()
+        if (logo === 0) { // chevron
+            x.moveTo(lx - 16, ly + 10); x.lineTo(lx, ly - 12); x.lineTo(lx + 16, ly + 10)
+            x.stroke()
+        } else if (logo === 1) { // star
+            for (let i = 0; i < 5; i++) {
+                const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5
+                const b = a + Math.PI / 5
+                const px = lx + Math.cos(a) * 16, py = ly + Math.sin(a) * 16
+                i === 0 ? x.moveTo(px, py) : x.lineTo(px, py)
+                x.lineTo(lx + Math.cos(b) * 7, ly + Math.sin(b) * 7)
+            }
+            x.closePath(); x.fill()
+        } else if (logo === 2) { // bolt
+            x.moveTo(lx + 4, ly - 16); x.lineTo(lx - 10, ly + 4); x.lineTo(lx - 1, ly + 4)
+            x.lineTo(lx - 4, ly + 16); x.lineTo(lx + 10, ly - 4); x.lineTo(lx + 1, ly - 4)
+            x.closePath(); x.fill()
+        } else if (logo === 3) { // target
+            x.arc(lx, ly, 14, 0, Math.PI * 2); x.stroke()
+            x.arc(lx, ly, 5, 0, Math.PI * 2); x.fill()
+        } else if (logo === 4) { // triangle
+            x.moveTo(lx, ly - 15); x.lineTo(lx + 14, ly + 11); x.lineTo(lx - 14, ly + 11)
+            x.closePath(); x.stroke()
+        } else { // split bars
+            x.fillRect(lx - 14, ly - 12, 9, 24)
+            x.fillRect(lx + 5, ly - 12, 9, 24)
+        }
+        const t = new THREE.CanvasTexture(c)
+        t.colorSpace = THREE.SRGBColorSpace
+        liveryCanvases.set(key, t)
+    }
+    return liveryCanvases.get(key)
 }
 
 // map sim state to a hero pose name
@@ -831,9 +931,13 @@ export function heroPose(r, override) {
 const tmpQ = new THREE.Quaternion()
 const tmpV = new THREE.Vector3()
 
-function blendHero(hero, pose) {
+function blendHero(hero, pose, tick) {
     if (hero.pose !== pose) { hero.pose = pose; hero.cur = {} }
-    const t = hero.targets[pose]
+    let t = hero.targets[pose]
+    if (pose === 'stand' && hero.idleRing) {
+        const ring = hero.idleRing
+        t = ring.frames[Math.floor(((tick / 60) % ring.duration) / ring.duration * ring.n) % ring.n]
+    }
     if (!t) return
     for (const name of Object.keys(t)) {
         const bone = hero.bones[name]
@@ -858,21 +962,21 @@ export function poseRider(root, r, tick, override) {
     if (r.tumble > 0) {
         roll.rotation.x = tick * 0.6
         roll.rotation.z = Math.sin(tick * 0.9) * 1.2
-        if (hero) blendHero(hero, pose)
+        if (hero) blendHero(hero, pose, tick)
         else { legs.scale.y = 1; armR.rotation.z = 2 }
         return
     }
     if (r.air) {
         roll.rotation.x = (r.flip * Math.PI) / 180 * (r.flip < 0 ? -1 : 1) * -1
         roll.rotation.z = 0
-        if (hero) blendHero(hero, pose)
+        if (hero) blendHero(hero, pose, tick)
         else { armR.rotation.z = r.grab ? 1.1 : 0.35; legs.scale.y = 0.9 }
         return
     }
     const c = r.crouch ? 0.78 : r.tuck ? 0.66 : 1
     roll.rotation.x = 0
     roll.rotation.z = r.steerSm * 0.28
-    if (hero) blendHero(hero, pose)
+    if (hero) blendHero(hero, pose, tick)
     else {
         legs.scale.y = c
         legs.position.y = 0.55 * c

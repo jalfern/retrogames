@@ -134,6 +134,61 @@ r.check('six skinned riders hold a renderable frame rate (>= 8 fps under softwar
 const prog = await page.evaluate(() => window.__ssxTest.prognose())
 r.check('race still winnable with hero rider', String(prog).startsWith('WINNABLE'), String(prog))
 
+// #615 rider polish: grab depth, boot weld, Idle breath, per-rider liveries,
+// per-theme contact shadow. Bone keys must be the GLTF-sanitised runtime names
+// ("foot.l" -> "footl"): dotted keys were silently no-op offsets once.
+const dotted = await page.evaluate(() => window.__ssxTest.boneNames().filter((k) => k.includes('.')))
+r.check('hero bone keys carry no dots (GLTF sanitised)', dotted.length === 0, JSON.stringify(dotted))
+
+await pressQuestion()
+await page.waitForTimeout(300)
+
+const poseProbe = async (p) => {
+    await page.evaluate((n) => window.__ssxTest.setPose(n), p)
+    let prev = null
+    for (let i = 0; i < 28; i++) {
+        await page.waitForTimeout(250)
+        const g = await page.evaluate(() => JSON.stringify(window.__ssxTest.grabReach()))
+        if (prev === g) break
+        prev = g
+    }
+    return {
+        grab: await page.evaluate(() => window.__ssxTest.grabReach()),
+        boot: await page.evaluate(() => window.__ssxTest.bootClear()),
+    }
+}
+
+for (const p of ['stand', 'crouch', 'tuck']) {
+    const { boot } = await poseProbe(p)
+    const welded = ['l', 'r'].every((s) => boot[s] <= 0.06 && boot[s] >= -0.3)
+    r.check(`boots stay welded to the deck in ${p}`, welded, JSON.stringify(boot))
+}
+const gp = await poseProbe('grab')
+const reachOk = gp.grab.l && gp.grab.r && gp.grab.l.d <= 0.3 && gp.grab.r.d <= 0.3
+r.check('grab pose reaches the nose-edge band (both hands)', reachOk,
+    `l ${gp.grab.l?.d} r ${gp.grab.r?.d}`)
+const grabWeld = ['l', 'r'].every((s) => gp.boot[s] <= 0.06)
+r.check('grab pose keeps boots welded (no float)', grabWeld, JSON.stringify(gp.boot))
+
+const breath = await page.evaluate(() => window.__ssxTest.standBreath())
+r.check('stand pose breathes (Idle ring moves the rig)', breath !== null && breath >= 0.015, String(breath))
+
+const boards = await page.evaluate(() => window.__ssxTest.boardInfo())
+r.check('all six boards carry a livery decal', boards.every((b) => b.decal === true), JSON.stringify(boards.map((b) => b.decal)))
+r.check('board bib numbers are unique per rider', new Set(boards.map((b) => b.num)).size === 6, JSON.stringify(boards.map((b) => b.num)))
+
+const shadowBy = {}
+for (const t of ['day', 'night', 'dusk']) {
+    await page.evaluate((th) => window.__ssxTest.setTheme(th), t)
+    await page.waitForTimeout(400)
+    shadowBy[t] = await page.evaluate(() => window.__ssxTest.shadowInfo())
+}
+await page.evaluate(() => window.__ssxTest.setTheme('day'))
+r.check('contact shadow colour is per-theme', new Set(['day', 'night', 'dusk'].map((t) => shadowBy[t].color)).size === 3,
+    JSON.stringify(shadowBy))
+r.check('night contact shadow is darker than day', shadowBy.night.base > shadowBy.day.base,
+    `night ${shadowBy.night.base} vs day ${shadowBy.day.base}`)
+
 r.check('zero page errors', pageErrors === 0, String(pageErrors))
 await browser.close()
 r.exit()
