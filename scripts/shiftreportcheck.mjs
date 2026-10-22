@@ -12,7 +12,7 @@
 // Prove-it-can-fail (done by hand once): flip the busy threshold `cpu > 60` to
 // `cpu > 300` in scripts/shiftreport.mjs -> the machine-rollup asserts go red.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
 const D = s => Date.parse(s)
 let pass = 0
@@ -23,7 +23,7 @@ const m = await import('./shiftreport.mjs')
 
 for (const fn of ['hourKey', 'hourKeys', 'laneOf', 'medianMinutes', 'p90Minutes', 'buildRows', 'idleBand',
     'machineRows', 'ciStats', 'themeOf', 'buildThemes', 'parsePrivateLabels', 'parseGameLabels', 'parseGameEntries',
-    'validateLook', 'buildGoLook', 'buildReport', 'pushContents']) {
+    'validateLook', 'buildGoLook', 'goLookCandidates', 'lookRoutes', 'buildReport', 'pushContents']) {
     ok(`boot: exports ${fn}`, typeof m[fn] === 'function')
 }
 
@@ -183,7 +183,12 @@ ok('theme text stays short', themed.every(t => t.text.length < 150))
 const entries = m.parseGameEntries(GAME_FIXTURE)
 ok('parseGameEntries: public games with paths, private excluded',
     entries.some(e => e.label === 'SSX' && e.path === '/a') && !entries.some(e => e.label === 'VEIL'))
+ok('parseGameEntries: a block with nested pad braces still parses (the first ] must not end the scan)',
+    entries.some(e => e.label === 'GAUNTLET' && e.path === '/b'))
 const DEMOS = ['ocean', 'shore']
+const ROUTES = m.lookRoutes({ gameEntries: entries, demos: DEMOS })
+ok('lookRoutes: game routes + demo .html routes only',
+    [...ROUTES].sort().join(',') === ['/retrogames/a', '/retrogames/b', '/retrogames/demos/ocean.html', '/retrogames/demos/shore.html'].sort().join(','))
 const lookPulls = [
     { number: 1, title: 'SSX: rail grind', merged_at: iso(NOW - H), head: { ref: 'forge/a' } },
     { number: 2, title: 'SSX: audio', merged_at: iso(NOW - 2 * H), head: { ref: 'qa/a' } },
@@ -195,7 +200,8 @@ const lookPulls = [
 const look = m.buildGoLook({ pulls: lookPulls, gameEntries: entries, demos: DEMOS, privates: privs })
 ok('go look: game + demo ranked by merge count, in-app links',
     look.length === 2 && look[0].text.startsWith('SSX') && look[0].href === '/retrogames/a' &&
-    look[1].text.startsWith('Ocean demo') && look[1].href === '/retrogames/demos/ocean')
+    look[1].text.startsWith('Ocean demo') && look[1].href === '/retrogames/demos/ocean.html')
+ok('go look: demo hrefs always carry .html (#809)', look.filter(g => g.href.includes('/demos/')).every(g => g.href.endsWith('.html')))
 ok('go look: one line each', look.every(g => !g.text.includes('\n') && g.text.length <= 76))
 ok('go look: plumbing-only window yields no picks',
     m.buildGoLook({ pulls: [{ title: 'docs: readme' }, { title: 'CI: bump runner' }], gameEntries: entries, demos: DEMOS, privates: privs }).length === 0)
@@ -205,17 +211,23 @@ ok('go look: private label colliding with a demo slug still never leaks',
     m.buildGoLook({ pulls: [{ title: 'VEIL: secret levels' }], gameEntries: entries, demos: ['veil'], privates: privs }).length === 0)
 ok('validateLook: cap two, strip html, keep /retrogames/ hrefs',
     (() => { const v = m.validateLook([
-        { text: 'Ocean demo got storm gusts', href: '/retrogames/demos/ocean' },
+        { text: 'Ocean demo got storm gusts', href: '/retrogames/demos/ocean.html' },
         { text: 'SSX rails <b>new</b>', href: '/retrogames/a' },
-        { text: 'third', href: '/retrogames/b' }], privs)
+        { text: 'third', href: '/retrogames/b' }], privs, ROUTES)
     return v.length === 2 && v.every(g => !/[<>]/.test(g.text) && g.href.startsWith('/retrogames/')) })())
 ok('validateLook: offsite href rejected',
-    m.validateLook([{ text: 'click', href: 'https://evil.example/x' }], privs).length === 0)
+    m.validateLook([{ text: 'click', href: 'https://evil.example/x' }], privs, ROUTES).length === 0)
 ok('validateLook: private game rejected by href or text',
-    m.validateLook([{ text: 'a secret teaser', href: '/retrogames/veil-x' }], privs).length === 0 &&
-    m.validateLook([{ text: 'VEIL teaser', href: '/retrogames/a' }], privs).length === 0)
+    m.validateLook([{ text: 'a secret teaser', href: '/retrogames/veil-x' }], privs, ROUTES).length === 0 &&
+    m.validateLook([{ text: 'VEIL teaser', href: '/retrogames/a' }], privs, ROUTES).length === 0)
 ok('validateLook: empty lines rejected',
-    m.validateLook(null, privs).length === 0 && m.validateLook([{ text: ' ', href: '/retrogames/a' }], privs).length === 0)
+    m.validateLook(null, privs, ROUTES).length === 0 && m.validateLook([{ text: ' ', href: '/retrogames/a' }], privs, ROUTES).length === 0)
+ok('validateLook: demo href without .html 404s, rejected (#809)',
+    m.validateLook([{ text: 'old shore link', href: '/retrogames/demos/shore' }], privs, ROUTES).length === 0)
+ok('validateLook: unknown game route rejected',
+    m.validateLook([{ text: 'nowhere', href: '/retrogames/nosuch' }], privs, ROUTES).length === 0)
+ok('validateLook: real demo route accepted',
+    m.validateLook([{ text: 'shore demo', href: '/retrogames/demos/shore.html' }], privs, ROUTES).length === 1)
 
 // ---- whole report + notes contract ----
 const rep = m.buildReport({
@@ -252,11 +264,21 @@ ok('new session notes replace carried ones', overwritten.headline === 'Second sh
 // ---- go look rides the notes pipe (#647) ----
 const lookRep = m.buildReport({ now: NOW, pulls: lookPulls, issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS })
 ok('report carries go-look', Array.isArray(lookRep.look) && lookRep.look.length === 2 && lookRep.look.every(g => g.href.startsWith('/retrogames/')))
-const LOOKED = { headline: 'H', lede: '', notes: [{ tag: 'k', text: 'n' }], look: [{ text: 'Try the new shore MSAA', href: '/retrogames/demos/shore' }] }
+ok('report go-look only uses live routes', lookRep.look.every(g => ROUTES.has(g.href)))
+const LOOKED = { headline: 'H', lede: '', notes: [{ tag: 'k', text: 'n' }], look: [{ text: 'Try the new shore MSAA', href: '/retrogames/demos/shore.html' }] }
 const withLook = m.buildReport({ now: NOW, pulls: lookPulls, issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS, notes: LOOKED })
-ok('session look picks win over computed', withLook.look.length === 1 && withLook.look[0].href === '/retrogames/demos/shore')
+ok('session look picks win over computed', withLook.look.length === 1 && withLook.look[0].href === '/retrogames/demos/shore.html')
 const carryLook = m.buildReport({ now: NOW + H, pulls: [], issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS, notes: null, prev: withLook })
-ok('go-look carries with the notes', carryLook.look.length === 1 && carryLook.look[0].href === '/retrogames/demos/shore')
+ok('carried look dies when its path merged nothing in-window (#809)', carryLook.look.length === 0)
+const carryStaleHref = m.buildReport({ now: NOW + H, pulls: [], issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS, notes: null,
+    prev: { ...withLook, look: [{ text: 'old shore link', href: '/retrogames/demos/shore' }] } })
+ok('carried look with a dead href falls back to computed (#809)', carryStaleHref.look.length === 0)
+const carryAlive = m.buildReport({
+    now: NOW + H,
+    pulls: [{ number: 9, title: 'Shore: msaa on phones', merged_at: iso(NOW + 30 * 60000), created_at: iso(NOW), head: { ref: 'qa/s' } }],
+    issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS, notes: null, prev: withLook,
+})
+ok('carried look kept while its path still merges', carryAlive.look.length === 1 && carryAlive.look[0].href === '/retrogames/demos/shore.html' && carryAlive.look[0].text === 'Try the new shore MSAA')
 const freshNoLook = m.buildReport({ now: NOW + H, pulls: lookPulls, issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS,
     notes: { headline: 'Fresh', lede: '', notes: [] }, prev: withLook })
 ok('fresh notes without look recompute from merges', freshNoLook.look.length === 2 && freshNoLook.look[0].text.startsWith('SSX'))
@@ -284,6 +306,37 @@ ok('fixture + ?report hook exist for the browser leg',
     read('src/pages/ShiftReport.jsx').includes('REPORT_URL'))
 ok('?report hook ignores offsite fixtures',
     read('src/pages/ShiftReport.jsx').includes('/^\\/retrogames\\/'))
+
+// ---- #809: every look.href maps to a real game route or an existing demo ----
+const REAL_SRC = read('src/config/games.js')
+const realEntries = m.parseGameEntries(REAL_SRC)
+const realPrivs = m.parsePrivateLabels(REAL_SRC)
+const realDemos = readdirSync(new URL('../public/demos/', import.meta.url))
+    .filter(f => f.endsWith('.html') && f !== 'index.html')
+    .map(f => f.slice(0, -'.html'.length))
+const realRoutes = m.lookRoutes({ gameEntries: realEntries, demos: realDemos })
+ok('registry + demos parse into live routes', realEntries.length > 10 && realDemos.includes('shore') && realRoutes.has('/retrogames/demos/shore.html'))
+ok('go look on the real registry + demos only emits live routes (#809)', (() => {
+    const pulls = [
+        ...realEntries.slice(0, 3).map((e, i) => ({ number: i, title: `${e.label}: live now` })),
+        ...realDemos.slice(0, 3).map((d, i) => ({ number: 10 + i, title: `${d}: fresh water` })),
+    ]
+    const look = m.buildGoLook({ pulls, gameEntries: realEntries, demos: realDemos, privates: realPrivs })
+    return look.length > 0 && look.every(g => realRoutes.has(g.href))
+})())
+ok('go look demo picks always end in .html against the real tree (#809)', (() => {
+    const pulls = realDemos.slice(0, 3).map((d, i) => ({ number: i, title: `${d}: fresh water` }))
+    const look = m.buildGoLook({ pulls, gameEntries: realEntries, demos: realDemos, privates: realPrivs })
+    return look.length > 0 && look.every(g => g.href.endsWith('.html'))
+})())
+ok('validateLook against the real tree drops 404 hrefs (#809)',
+    m.validateLook([
+        { text: 'old shore link', href: '/retrogames/demos/shore' },
+        { text: 'no such game', href: '/retrogames/nosuch-game' },
+        { text: 'live shore link', href: '/retrogames/demos/shore.html' },
+    ], realPrivs, realRoutes).length === 1)
+ok('committed fixture look hrefs are live routes (#809)',
+    JSON.parse(read('public/forge/report-fixture.json')).look.every(g => realRoutes.has(g.href)))
 
 if (fails.length) {
     console.error(`FAIL (${fails.length}/${pass + fails.length}):`)

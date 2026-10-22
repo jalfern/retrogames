@@ -42,11 +42,14 @@
 //   else "Other merges". Private games (#379) never appear as a theme or in a
 //   highlight sentence.
 //   Go look (#647): the top 2 changes to try, one line each with a direct link.
-//   Model picks them in notes.look (href must be a /retrogames/… path, never a
-//   private game); with no model picks they are computed from the window: games
-//   (registry label in a merged PR title → /retrogames<path>) and demos
-//   (public/demos/<slug>.html named in a merged PR title → /retrogames/demos/<slug>)
-//   ranked by merge count. Plumbing-only windows yield no picks.
+//   Model picks them in notes.look (href must be a LIVE route — a registry game
+//   or public/demos/<slug>.html — never a private game); with no model picks
+//   they are computed from the window: games (registry label in a merged PR
+//   title → /retrogames<path>) and demos (public/demos/<slug>.html named in a
+//   merged PR title → /retrogames/demos/<slug>.html; the .html is real —
+//   vercel.json has no cleanUrls, #809) ranked by merge count. Carried picks
+//   die the moment none of their paths merged in the window (fall back to
+//   computed, #809). Plumbing-only windows yield no picks.
 
 const WINDOW_HOURS = 48
 const TZ = 'America/Los_Angeles'
@@ -332,7 +335,7 @@ export function parseGameEntries(src) {
         const c = src[i]
         if (c === '{') { if (depth === 1 && objStart < 0) objStart = i; depth++ }
         else if (c === '}') { depth--; if (depth === 1 && objStart >= 0) { blocks.push(src.slice(objStart, i)); objStart = -1 } }
-        else if (c === ']') break
+        else if (c === ']' && depth === 1) break
     }
     return blocks
         .filter(b => !/visibility:\s*'private'/.test(b))
@@ -351,8 +354,10 @@ const clipLook = x => (x.length > 76 ? `${x.slice(0, 75)}…` : x)
 
 // Model-written picks, validated: one line, an in-app /retrogames/… link,
 // never a private game, at most LOOK_LIMIT. Invalid entries are dropped, not
-// rendered — the box only ever shows something tryable.
-export function validateLook(look, privates = []) {
+// rendered — the box only ever shows something tryable. `routes` (a Set of
+// live hrefs, see lookRoutes) additionally rejects any pick that would 404
+// (#809: the demo links shipped without their .html).
+export function validateLook(look, privates = [], routes) {
     const hidden = new Set(privates.map(normalizeTitle))
     const out = []
     for (const g of Array.isArray(look) ? look : []) {
@@ -360,15 +365,28 @@ export function validateLook(look, privates = []) {
         const text = String(g.text || '').replace(/<[^>]*>/g, '').trim()
         const href = String(g.href || '').trim()
         if (!text || !LOOK_HREF.test(href)) continue
+        if (routes && !routes.has(href)) continue
         if ([...hidden].some(h => h && (normalizeTitle(href).includes(h) || normalizeTitle(text).includes(h)))) continue
         out.push({ text: clipLook(text), href })
     }
     return out
 }
 
-// Computed fallback: games and demos that actually merged in the window,
-// ranked by merge count. Plumbing (docs/CI/board work) is never a pick.
-export function buildGoLook({ pulls = [], gameEntries = [], demos = [], privates = [] }) {
+// The live /retrogames/… hrefs a look pick may point at: registry game
+// routes plus the committed demo pages, which are served as <slug>.html —
+// vercel.json has no cleanUrls (#809).
+export function lookRoutes({ gameEntries = [], demos = [] }) {
+    return new Set([
+        ...gameEntries.map(e => `/retrogames${e.path}`),
+        ...demos.filter(d => d && d !== 'index').map(d => `/retrogames/demos/${d}.html`),
+    ])
+}
+
+// All in-window candidates (games + demos) ranked by merge count. The top
+// LOOK_LIMIT become the computed picks; the full list is also what "merged
+// in the window" means for carried picks (#809). Plumbing (docs/CI/board
+// work) is never a pick.
+export function goLookCandidates({ pulls = [], gameEntries = [], demos = [], privates = [] }) {
     const hidden = new Set(privates.map(normalizeTitle))
     const cand = new Map()
     const bump = (key, name, href, title) => {
@@ -393,12 +411,17 @@ export function buildGoLook({ pulls = [], gameEntries = [], demos = [], privates
         for (const d of demos) {
             if (!d || d === 'index') continue
             if (new RegExp(`\\b${d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(title)) {
-                bump(`d:${d}`, `${d[0].toUpperCase()}${d.slice(1)} demo`, `/retrogames/demos/${d}`, title)
+                bump(`d:${d}`, `${d[0].toUpperCase()}${d.slice(1)} demo`, `/retrogames/demos/${d}.html`, title)
             }
         }
     }
     return [...cand.values()]
         .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+}
+
+// Computed fallback picks: the top LOOK_LIMIT in-window candidates.
+export function buildGoLook(args) {
+    return goLookCandidates(args)
         .slice(0, LOOK_LIMIT)
         .map(c => {
             const after = c.title.includes(':') ? c.title.split(':').slice(1).join(':').trim() : ''
@@ -441,9 +464,15 @@ export function buildReport({ now, pulls = [], issues = [], runs = [], samples =
     const noteList = fresh ? notes.notes : (carried ? carried.notes : [])
     const notesFrom = fresh ? new Date(now).toISOString() : (carried ? carried.notesFrom || null : null)
 
-    const freshLook = validateLook(notes && notes.look, privates)
-    const carriedLook = carried ? validateLook(carried.look, privates) : []
-    const chosenLook = fresh ? freshLook : carriedLook
+    const routes = lookRoutes({ gameEntries, demos })
+    const freshLook = validateLook(notes && notes.look, privates, routes)
+    const carriedLook = carried ? validateLook(carried.look, privates, routes) : []
+    // A carried pick only stays while its path actually merged in THIS
+    // window; once none of them did, the box falls back to computed picks
+    // instead of advertising yesterday's work (#809).
+    const mergedHrefs = new Set(goLookCandidates({ pulls: merged, gameEntries, demos, privates }).map(c => c.href))
+    const carriedAlive = carriedLook.some(g => mergedHrefs.has(g.href))
+    const chosenLook = fresh ? freshLook : (carried && carriedAlive ? carriedLook : [])
     const look = chosenLook.length
         ? chosenLook
         : buildGoLook({ pulls: merged, gameEntries, demos, privates })

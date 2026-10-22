@@ -13,13 +13,13 @@
  "notesFrom": "2026-10-20T09:00:00.000Z",
  "notesCarried": false,
  "look": [
-  {
-   "text": "COMET DRIFT: camber keeps you glued to the kerb",
-   "href": "/retrogames/comet-drift"
-  },
+   {
+    "text": "SUPER MARIO KART: camber keeps you glued to the kerb",
+    "href": "/retrogames/mario-kart"
+   },
   {
    "text": "Shore demo: MSAA now on phones",
-   "href": "/retrogames/demos/shore"
+    "href": "/retrogames/demos/shore.html"
   }
  ],
  "stats": {
