@@ -1,42 +1,35 @@
-# STATE — 2026-10-21 forge pm #3
+# STATE — 2026-10-21 forge pm #4
 
 ## Shipped this session
-- **#674 CREDITS CARD on every demo → prod** (PR #712 squash `aa966ac`,
-  Vercel SUCCESS; live at jalfern.com/retrogames/demos/ — index carries
-  per-card built-by lines + factory credit; all four demos serve the
-  `DEMO_CREDITS` config + `credits.js` @200).
-  - `public/demos/credits.js` = shared injector (template piece): corner tag
-    `BUILT BY QWEN ▸` bottom-right → card: model + Mac Studio local, issue
-    link, issue→ship span, SOLO vs GUIDED help level + honest note.
-  - Per-demo configs: OCEAN #451 (~1 h, guided-lite), SHORE #521+#616
-    (~6 h, guided — the canonical brief), CAMPFIRE #670 (~7 h, solo),
-    MOUNTAINS #671 (~13 h, solo). Facts sourced from issue wording/repo —
-    nothing invented; assist classified from each brief's own text.
-  - `public/demos/README.md` = add-a-demo checklist; credits block step 2,
-    mandatory. Model/machine live ONLY in credits.js.
-  - Harness `npm run creditscheck`: 46 gates (config completeness, index↔demo
-    consistency, demos-law, Chrome open/tap/ESC/links). Mutation-proven:
-    deleting shore's `issues` line reds 2 gates.
+- **#672 STORM demo → prod** (PR #743 squash `c592b59`, Vercel complete;
+  live at jalfern.com/retrogames/demos/storm.html — index card + credits card
+  + DEMO_INDEX entry live; storm.html serves with `__stormTest` @200).
+  - Single-file WebGL2 storm: raymarched lobed cumulonimbus (flat wall base,
+    eroded rim, shear lean, anvil), low lateral sun, storm-dark field with
+    wind rows + tree line, two-slab rain streaks + slate veil + splash,
+    pre-glow→double-stroke flashes, ~40% CG forked bolts into HDR+bloom,
+    thunder after distance/340, rolls in from 7.0 km over ~6 min.
+  - Harness `npm run stormcheck` 21 gates; proven-fail: zeroing extinction
+    reds coverage + sky-contrast + perf. creditscheck now 62/62 (storm added).
+  - Solo-assist credit (~3 h issue→ship) per the brief's own wording.
 
 ## The lesson of the session
-- The perf gate red on mountainscheck again = the box (load ~14), not the
-  code: blank-page rAF floor @1600x1000 is median 22.6 / p90 66.8 ms.
-  Calibration script trick (/tmp/floor.mjs pattern) beats re-arguing it.
-- `#696` looked clear at verify time (fresh index served) — worth confirming
-  on the next demos PR before re-filing cache-busting plumbing.
+- `git checkout -- <file>` after a mutation test destroys every uncommitted
+  change in that file (it bit here: lost off-axis core + double-stroke +
+  setAuto, had to re-apply). Mutate, verify red, restore from a saved copy —
+  never from git — or commit first. Checkpoint BEFORE the mutant, not after.
 
 ## Next goal
-- Oldest game-queue: **#672 Thunderstorm over a field** (lane:demos, carries
-  `stalled` — read WHY on the issue before claiming). #635-A default in
-  effect (builder takes oldest whatever lane).
+- Oldest game-queue: **#738 Zelda-like HD-2D action-adventure** (lane:games,
+  filed 2026-10-22). #635-A default in effect (builder takes oldest whatever
+  lane). Big multi-session build: expect WIP branch + checkpointed handoff.
 
 ## Board / harness status
-- main: `aa966ac` (#712). Nightly: last main-ok green pre-merge; #687 freeze
-  stayed lifted all session.
+- main: `c592b59` (#743). Nightly green pre-merge; no freeze this session.
 - Rule 4 satisfied (demos code merged). Rule 7: no new jonq (no taste calls).
-- Polish pass filed: **#713** (QA CREDITS).
-- Worktrees to prune (branches merged): forge-* incl. credits-674, mountains;
-  stale `origin/forge/ssx-cpu-riders-620` still dangles.
+- Polish pass filed: **#747** (QA STORM).
+- Worktrees to prune: forge/storm-672 (+ its worktree ~/Dev/retrogames-forge-storm-672);
+  older merged forge-* still lying around; `origin/forge/ssx-cpu-riders-620` dangles.
 
 ## Open questions (links only, #605)
 - #698 demos driver ownership — AWAITING (default: demos queue holds for
@@ -45,6 +38,6 @@
 - #687 needs-approval; #696/#694 host index staleness — platform lanes'.
 
 ## Open threads
-- #695 QA CAMPFIRE, #685 QA SSX surfaces, #702/#704 QA SHORE/OCEAN,
-  #713 QA CREDITS — QA lane. #611/#609 Ocean stars follow-ups still open
-  (unlabeled → not claimable).
+- #747 QA STORM, #713 QA CREDITS, #695 QA CAMPFIRE, #685 QA SSX surfaces,
+  #702/#704 QA SHORE/OCEAN — QA lane. #611/#609 Ocean stars follow-ups still
+  open (unlabeled → not claimable).
