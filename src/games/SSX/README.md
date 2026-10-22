@@ -169,6 +169,21 @@ seeded `miss` falls, rival finish orders that actually differ, and hash-exact
 replay of every fall. Mutant proof (done once, by hand): `cpuMiss → false` and
 the wipeout gate goes red.
 
+## Analog steer (#791)
+
+Steer is edge pressure, not a switch. Every rider carries `press ∈ [-1,1]`;
+`sim.js` ramps it toward the input target at `CFG.PRESS` units/s (full lock in
+~0.1 s), and *press* — not the raw input — drives lateral carve, speed bleed,
+air spin and the groove threshold. A tap nips, a hold carves, and the planner's
+already-fractional CPU line now also spools in smoothly. Touch is the true
+stick: dragging on the canvas maps horizontal offset (÷64 px) straight into the
+steer target, so shallow drag = shallow carve; keyboard/d-pad feed ±1 through
+the same ramp. Spray/swish read `press` too, so powder density scales with
+depth. `press` rides `stateHash` (section 6 replays it) and the DEV probe;
+ssxcheck section 9b pins ramp-in/out, the half-target hold, depth-vs-line-width,
+tap-shallowness, saturation, and pressure-scaled spin. Mutant proof (done once,
+by hand): `press = target` (no ramp) and three gates go red.
+
 ## Hard-won verify notes
 
 - The far mesh SINKS past the ridge line (`bank` q>9) — outer columns must
@@ -225,7 +240,8 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
 - CPU riders wipe out on seeded landings (#791), but they never *miss* a line —
   a seat only falls, it never bobbles past an obstacle it should have dodged.
 - Keyboard-only flips/grabs on desktop; phones get steer + A-jump + B-boost
-  (spins still work via the d-pad mid-air). No analogue stick yet.
+  (spins still work via the d-pad mid-air). Analogue depth is the #791 ramp +
+  canvas drag distance — not a physical analogue stick.
 - Snow tracks are now geometry: fading carve grooves under the board (#310),
   on top of the speed-scaled spray. Attract mode runs silent — the beds run
   only during heats (#780).

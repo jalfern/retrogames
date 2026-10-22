@@ -249,7 +249,10 @@ const SSXGame = () => {
             let inp
             if (screenRef.current === 'attract') inp = decide(g, p)
             else inp = {
-                steer: (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0),
+                // #791: a canvas drag IS the analog stick — horizontal offset from
+                // where the finger went down sets steer depth; keyboard/pad ±1 falls
+                // back through the sim's pressure ramp.
+                steer: dragSteer !== null ? dragSteer : (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0),
                 jump: keys.has('Space'),
                 boost: keys.has('ShiftLeft') || keys.has('ShiftRight'),
                 grab: keys.has('KeyX'),
@@ -347,7 +350,9 @@ const SSXGame = () => {
             }
 
             // snow spray: carving, landings, boost — powder density scales with speed
-            const steer = (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0)
+            // #791: the board's analog edge pressure drives spray and swish, not
+            // the raw key state — a shallow press throws a whisper, full lock a plume.
+            const steer = p.press
             if (!pausedRef.current) {
                 if (!p.air && p.v > 8 && (Math.abs(steer) > 0.2 || screenRef.current === 'attract')) {
                     const n = 1 + Math.min(4, Math.floor((p.v - 8) / 5))
@@ -530,8 +535,30 @@ const SSXGame = () => {
             keys.clear()
             poseOverride = null
             setResult(null)
+            dragId = null
+            dragSteer = null
             setMode('play')
             audioController.playSweep(220, 660, 0.3, 'square', 0.07)
+        }
+
+        let dragId = null
+        let dragX0 = 0
+        let dragSteer = null
+        const DRAG_FULL_PX = 64
+        const onCanvasDown = (e) => {
+            if (screenRef.current !== 'play' || pausedRef.current || dragId !== null) return
+            dragId = e.pointerId
+            dragX0 = e.clientX
+            dragSteer = 0
+        }
+        const onCanvasMove = (e) => {
+            if (dragId === null || e.pointerId !== dragId) return
+            dragSteer = Math.max(-1, Math.min(1, (e.clientX - dragX0) / DRAG_FULL_PX))
+        }
+        const onCanvasUp = (e) => {
+            if (dragId === null || e.pointerId !== dragId) return
+            dragId = null
+            dragSteer = null
         }
 
         const onDown = (e) => {
@@ -563,6 +590,10 @@ const SSXGame = () => {
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
         window.addEventListener('pointerdown', onPointer)
+        canvas.addEventListener('pointerdown', onCanvasDown)
+        window.addEventListener('pointermove', onCanvasMove)
+        window.addEventListener('pointerup', onCanvasUp)
+        window.addEventListener('pointercancel', onCanvasUp)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -581,7 +612,7 @@ const SSXGame = () => {
                     const p = g.riders[0]
                     return {
                         screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick, phase: g.phase,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, carves: p.carves.length },
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, press: p.press, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },
@@ -743,6 +774,10 @@ const SSXGame = () => {
             window.removeEventListener('blur', onBlur)
             window.removeEventListener('resize', resize)
             window.removeEventListener('pointerdown', onPointer)
+            canvas.removeEventListener('pointerdown', onCanvasDown)
+            window.removeEventListener('pointermove', onCanvasMove)
+            window.removeEventListener('pointerup', onCanvasUp)
+            window.removeEventListener('pointercancel', onCanvasUp)
             cancelAnimationFrame(raf)
             disposables.forEach((d) => { if (d.dispose) d.dispose() })
             spray.geo.dispose(); spray.pts.material.map?.dispose(); spray.pts.material.dispose()
