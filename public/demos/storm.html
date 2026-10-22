@@ -579,7 +579,7 @@ function vpMat(out, r, u, f, pos, aspect){
 /* ---------------- storm state ---------------- */
 
 const CB = 420, CTOP = 7000;
-let stormX = -600;
+let stormX = -3300;
 let flashCount = 0;
 let nextFlashAt = 3.0 + Math.random() * 4.0;
 let flashes = [];   // { t0, pos:[x,y,z], main, double, bolt:{segs,pts} | null }
@@ -625,12 +625,15 @@ function flashEnvelope(age){
   if (age < 0 || age > 1.6) return 0;
   let e = 0;
   e += Math.exp(-Math.pow((age - 0.05) / 0.085, 2)) * 0.32;   // in-cloud pre-glow
-  e += Math.exp(-Math.pow((age - 0.17) / 0.055, 2)) * 1.0;    // main stroke
-  e += Math.exp(-Math.pow((age - 0.30) / 0.15, 2)) * 0.42;    // afterglow tail
+  e += Math.exp(-Math.pow((age - 0.15) / 0.055, 2)) * 1.0;    // first stroke
+  e += Math.exp(-Math.pow((age - 0.32) / 0.070, 2)) * 0.82;   // second stroke (recoil)
+  e += Math.exp(-Math.pow((age - 0.52) / 0.24, 2)) * 0.42;     // afterglow tail
   return e;
 }
 
+let autoFlashes = true;
 function scheduleFlashes(t){
+  if (!autoFlashes) return;
   if (t >= nextFlashAt){
     const stormD = Math.hypot(stormX, stormZ);
     const cg = Math.random() < 0.42;
@@ -674,7 +677,7 @@ function flashState(t){
     const age = t - f.t0;
     let e = flashEnvelope(age);
     if (f.bolt){
-      const flick = age < 0.42 ? (rr(Math.floor(age * 55) + f.t0 * 7.13) > 0.42 ? 1 : 0.25) : 1;
+      const flick = age < 0.45 ? 1 : (rr(Math.floor(age * 55) + f.t0 * 7.13) > 0.5 ? 1 : 0.5);
       boltE = Math.max(boltE, e * flick);
     }
     sky = Math.max(sky, e * 0.55);
@@ -772,7 +775,7 @@ const vp4 = new Float32Array(16);
 const U = p => name => gl.getUniformLocation(p, name);
 const us = U(progScene), ub = U(progBolt), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
 
-let stormZ = -7600;
+let stormZ = -7000;
 
 function frame(){
   const t = (performance.now() - t0) / 1000;
@@ -782,7 +785,7 @@ function frame(){
   frames++;
   resize();
 
-  stormZ = -(7600 - Math.min(t, 360) * 7.2);   // the storm rolls in
+  stormZ = -(7000 - Math.min(t, 360) * 7.2);   // the storm rolls in
   scheduleFlashes(t);
   const fs = flashState(t);
   skyFlash = fs.sky;
@@ -883,9 +886,10 @@ window.__stormTest = {
       flashCount,
       skyFlash: +skyFlash.toFixed(3),
       rainAtCam: rainAtJS(0, 0),
-      boltOn: flashes.some(f => f.bolt && (performance.now() - t0) / 1000 - f.t0 < 0.42),
+      boltOn: flashes.some(f => f.bolt && (performance.now() - t0) / 1000 - f.t0 < 1.0),
     };
   },
+  setAuto(v){ autoFlashes = !!v; },
   flashNow(cg){
     const t = (performance.now() - t0) / 1000;
     const jx = stormX + (Math.random() - 0.5) * 1200;

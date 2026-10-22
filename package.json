@@ -24,6 +24,7 @@
     "shorecheck": "node scripts/shorecheck.mjs",
     "campfirecheck": "node scripts/campfirecheck.mjs",
     "mountainscheck": "node scripts/mountainscheck.mjs",
+    "stormcheck": "node scripts/stormcheck.mjs",
     "creditscheck": "node scripts/creditscheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
