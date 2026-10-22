@@ -16,6 +16,7 @@ import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPA
 import { steerPedals, steerResponse, STEER_GAIN } from '../src/utils/padState.js'
 import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD, POINTER_HIT_PX, pointerTarget, pointerGesture, press, release, MAX_SLOTS, slotPad, pressSlot, setStickVecSlot, clearSlot, slotActive, setConnected, connectedSlots, clearAllSlots } from '../src/utils/onePad.js'
 import { p2From } from '../src/games/Gauntlet/p2input.js'
+import { actionCodeAt } from '../src/components/actionHit.js'
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error(`  FAIL: ${msg}`) } }
@@ -1056,6 +1057,60 @@ clearAllSlots()
     const bSrc = readFileSync(new URL('../src/components/GamepadBridge.jsx', import.meta.url), 'utf8')
     ok(/slotFieldsFrom\(/.test(bSrc) && /pressSlot\(slotN, k\)/.test(bSrc), 'bridge: pads past the first write their own slots')
     ok(/'retrogames:pads'/.test(bSrc), 'bridge: announces pad-count changes')
+}
+
+// --- 35. #734: the A/B hit area follows the drawn layout --------------------
+//
+// The two action buttons are drawn B-left / A-right. The old hit test split the
+// whole action zone at its CENTER (left half -> Space/A, right half -> B), so
+// the left-drawn B fired A and the right-drawn A fired B — in Smash TV, tapping
+// BOMB fired and tapping FIRE bombed. The fix tests each button's OWN rect.
+//
+// Proven two ways: (a) the pure actionCodeAt against the drawn rects (simulated
+// here exactly as VirtualControls lays them out), and (b) a source pin that the
+// component feeds it the buttons' live rects, not a zone center.
+{
+    const B = 'KeyB'   // Smash TV's second action
+    // The drawn layout, as VirtualControls renders it: B (w-14) left, gap-2,
+    // A (w-14) right; the zone carries pb-2 (bottom) + pr-4 (right) padding.
+    const bRect = { left: 0, top: 0, right: 56, bottom: 56, width: 56, height: 56 }
+    const aRect = { left: 64, top: 0, right: 120, bottom: 56, width: 56, height: 56 }
+    const zoneRect = { left: 0, top: 0, right: 136, bottom: 64, width: 136, height: 64 }
+    const ctx = (o = {}) => ({ showA: true, bCode: B, aRect, bRect, zoneRect, ...o })
+    const at = (x, y, o) => actionCodeAt(ctx(o), x, y)
+
+    // 35a. Each drawn button fires its OWN action (the #734 fix).
+    ok(at(28, 28) === B, 'tap the drawn B (left, centre) fires B (KeyB), not Space')
+    ok(at(92, 28) === 'Space', 'tap the drawn A (right, centre) fires Space, not B')
+    ok(at(1, 1) === B, 'tap the drawn B (top-left corner) fires B')
+    ok(at(119, 1) === 'Space', 'tap the drawn A (top-right corner) fires Space')
+    ok(at(55, 55) === B, 'tap the drawn B (bottom-right corner) fires B')
+    ok(at(65, 55) === 'Space', 'tap the drawn A (bottom-left corner) fires Space')
+
+    // 35b. A touch in the gap / padding splits on the DRAWN side (B left, A right).
+    ok(at(60, 28) === B, 'touch in the gap (x=60 < centre 68) falls to the left button (B)')
+    ok(at(128, 28) === 'Space', 'touch in the pr-4 padding (x=128 >= centre) falls to the right button (A)')
+    ok(at(28, 60) === B, 'touch in the pb-2 padding (below B) falls to the left button (B)')
+
+    // 35c. Single-button zones still resolve to the one shown button.
+    ok(at(28, 28, { showA: false }) === B, 'B-only zone (A hidden) fires B anywhere')
+    ok(at(92, 28, { bCode: null }) === 'Space', 'A-only zone (no B) fires Space anywhere')
+
+    // 35d. Mutant that dies: the old zone-center split. It maps the left-drawn B
+    // to Space and the right-drawn A to B — the exact swap #734 reports.
+    const zoneCx = zoneRect.left + zoneRect.width / 2
+    const oldCodeAt = (x) => (x < zoneCx ? 'Space' : B)
+    ok(at(28, 28) !== oldCodeAt(28), 'zone-center mutant fires Space on the drawn B (the bug) — real logic fires B')
+    ok(at(92, 28) !== oldCodeAt(92), 'zone-center mutant fires B on the drawn A (the bug) — real logic fires Space')
+
+    // 35e. The wiring: the component feeds actionCodeAt the buttons' live rects
+    // (and a y), not a zone center — a silent revert to the old split is caught.
+    const src = readFileSync(new URL('../src/components/VirtualControls.jsx', import.meta.url), 'utf8')
+    ok(/import\s*\{[^}]*\bactionCodeAt\b[^}]*\}\s*from\s*'\.\/actionHit'/.test(src), 'VirtualControls imports actionCodeAt from ./actionHit')
+    ok(/ref=\{aBtnRef\}/.test(src) && /ref=\{bBtnRef\}/.test(src), 'VirtualControls attaches aBtnRef / bBtnRef to the drawn A / B buttons')
+    ok(/aRect:\s*aBtnRef\.current\s*&&\s*aBtnRef\.current\.getBoundingClientRect\(\)/.test(src), 'VirtualControls feeds the A button live rect')
+    ok(/bRect:\s*bBtnRef\.current\s*&&\s*bBtnRef\.current\.getBoundingClientRect\(\)/.test(src), 'VirtualControls feeds the B button live rect')
+    ok(/aCodeAt\(x, y\)/.test(src), 'VirtualControls hit test takes the touch y (per-button rect, not a zone half)')
 }
 
 // --- Summary ---
