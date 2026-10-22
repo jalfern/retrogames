@@ -9,6 +9,8 @@
 //     · rain streaks move between frames (down-frame in the near field)
 //     · the field is storm-dark but not night
 //     · a forced flash spikes whole-sky brightness, bleeds a bright bolt, then decays
+//     · CG bolt landings spread across the core projection (both sides of the
+//       core in x and z) and a far variant travels >2300m under the base (#747)
 //     · the storm rolls in: its distance shrinks over time
 //     · the camera pose moves the world
 //   3. LAW    — self-contained single file; NOT registered in games.js
@@ -17,7 +19,9 @@
 //
 // Usage: node scripts/stormcheck.mjs [--file <path>] [--shots <dir>] [--json] [--max-ms 55]
 // Proven-fail mutant: zero the in-cloud extinction (`sig = d * 0.0013` ->
-// `sig = 0.0`) -> cloud-coverage and base-shadow gates go red.
+// `sig = 0.0`) -> cloud-coverage and base-shadow gates go red. Pin CG starts
+// back to the front (near=true always, driftZ 0) -> landings-spread and
+// far-travel gates go red.
 
 import { spawn } from 'node:child_process'
 import { inflateSync, deflateSync } from 'node:zlib'
@@ -218,6 +222,24 @@ async function main() {
       await page.waitForTimeout(900)
       const after = meanLum(decodePng(await page.screenshot()), 0, 0, W, Math.round(H * 0.45))
       ok('flash decays back to ambient', after - pre < 12, `after=${after.toFixed(0)} pre=${pre.toFixed(0)}`)
+
+      // #747: CG bolts land across the whole core projection, not one front quadrant
+      const spread = await page.evaluate(() => {
+        const D = window.__stormTest;
+        for (let i = 0; i < 48; i++) D.flashNow(true, 'wide');
+        const s = D.state();
+        return { storm: s.storm, tips: s.cgTips };
+      });
+      const tx = spread.tips.map(t => t[0] - spread.storm[0]);
+      const tz = spread.tips.map(t => t[1] - spread.storm[1]);
+      const xr = Math.max(...tx) - Math.min(...tx);
+      const zr = Math.max(...tz) - Math.min(...tz);
+      ok('CG bolts land across the whole core projection',
+        spread.tips.length >= 40 && xr > 3500 && zr > 3500 &&
+        tx.some(v => v < -700) && tx.some(v => v > 700) && tz.some(v => v < 600),
+        `n=${spread.tips.length} xRange=${xr} zRange=${zr} behindCore=${tz.filter(v => v < 600).length}`);
+      const farBolt = await page.evaluate(() => window.__stormTest.flashNow(true, 'far'));
+      ok('CG bolts sometimes travel far under the base', farBolt.dz > 2300, `dz=${farBolt.dz}m`);
 
       // camera pose moves the world
       await page.evaluate(() => window.__stormTest.setPose({ yaw: 0.95, pitch: 0.06 }))
