@@ -27,6 +27,8 @@ const ENEMY_SPEC = {
     husk: { hp: 3, w: 13, h: 13, dmg: 1 },
     wisp: { hp: 1, w: 10, h: 10, dmg: 1, phase: true },
     sprig: { hp: 1, w: 10, h: 10, dmg: 1 },
+    tuskroot: { hp: 3, w: 12, h: 10, dmg: 1 },
+    pod: { hp: 2, w: 11, h: 11, dmg: 1 },
     maw: { hp: 8, w: 26, h: 26, dmg: 1, boss: 1 },
     wyrm: { hp: 6, w: 22, h: 22, dmg: 1, boss: 2 },
 }
@@ -54,7 +56,7 @@ export function createSim(seed = 1) {
         rng: mulberry32(seed >>> 0),
         screen: 'ow-11',
         hero: { x: 5 * TS + 8, y: 6 * TS + 6, dir: 'up', hp: 3, max: 3, inv: 0, hurt: 0 },
-        items: { sword: true, bow: false, shield: false, bombs: 0, arrows: 0, potions: 0, keys: 0, bigkey: false },
+        items: { sword: true, bow: false, shield: false, blade: false, bombs: 0, arrows: 0, potions: 0, keys: 0, bigkey: false },
         score: 0,
         swing: 0, swingDir: 'down', swingId: 0, cool: 0, holdT: 0, drawing: false,
         arc: 0, arcDir: 'down', arcId: 0,
@@ -92,11 +94,12 @@ function blocked(sim, x, y, w, h, phase) {
     for (let ty = y0; ty <= y1; ty++) {
         for (let tx = x0; tx <= x1; tx++) {
             let ch = tileAt(s, tx, ty)
+            const d = doorAt(s, tx, ty)
+            if (d && !doorOpen(sim, d)) return true
+            if (d) continue
             if (ch === 'C') { if (!sim.flags.cracked[crackAt(s, tx, ty)?.id]) return true }
             else if (isSolidTile(ch)) return true
             else if (ch === '.') {
-                const d = doorAt(s, tx, ty)
-                if (d && !doorOpen(sim, d)) return true
                 const c = chestAt(sim, tx, ty)
                 if (c) return true
                 if (sim.blocks.some(b => b.x === tx && b.y === ty)) return true
@@ -144,6 +147,7 @@ function makeEnemy(e) {
         x: e.x * TS + TS / 2, y: e.y * TS + TS / 2 + 2,
         hp: spec.hp, w: spec.w, h: spec.h, dmg: spec.dmg,
         t: 0, st: 0, vx: 0, vy: 0, hitT: 0, open: 0, stagger: 0, hidden: e.type === 'sprig',
+        charging: 0, rest: 0, chx: 0, chy: 0, gen: 0,
         fx: 0, fy: 1, seedOff: (e.i || 0) * 37 + 11, dead: false,
         seg: [],
     }
@@ -269,6 +273,8 @@ function primaryAction(sim) {
         else say(sim, npc.msg, 320)
         return
     }
+    const sg = (s.signs || []).find(v => v.x === tx && v.y === ty)
+    if (sg) { say(sim, sg.msg, 340); emit(sim, 'read', h.x, h.y); return }
     const chest = chestAt(sim, tx, ty) || chestAt(sim, tileOf(h.x), tileOf(h.y) + (dvy !== 0 ? dvy : 0))
     if (chest && Math.hypot(chest.x * TS + 8 - h.x, chest.y * TS + 8 - h.y) < TS * 1.8) { openChest(sim, chest); return }
     const d = doorAt(s, tx, ty)
@@ -310,6 +316,7 @@ function grant(sim, item) {
     else if (item === 'bow') { sim.items.bow = true; sim.items.arrows += 10; say(sim, 'THE ELDER BOW! HOLD A TO DRAW, RELEASE TO LOOSE', 240) }
     else if (item === 'arrows') sim.items.arrows += 10
     else if (item === 'shield') sim.items.shield = true
+    else if (item === 'blade') { sim.items.blade = true; say(sim, 'THE EMBER BLADE — TEMPERED IN WYRMFIRE, EVERY SLASH BITES TWICE', 240) }
     else if (item === 'potion') sim.items.potions++
     else if (item === 'bombs') sim.items.bombs += 1
     emit(sim, 'grant', h.x, h.y, { item })
@@ -347,7 +354,7 @@ function swordHits(sim) {
         if (e.dead || e.hidden || e.hitSwing === sim.swingId) continue
         if (Math.abs(e.x - hx) < (hw + e.w) / 2 && Math.abs(e.y - hy) < (hh + e.h) / 2) {
             e.hitSwing = sim.swingId
-            hurtEnemy(sim, e, 1, dx, dy)
+            hurtEnemy(sim, e, sim.items.blade ? 2 : 1, dx, dy)
         }
     }
 }
@@ -374,6 +381,17 @@ function killEnemy(sim, e) {
     emit(sim, 'die', e.x, e.y, { type: e.type, boss: e.boss })
     const wasKey = e.drop === 'key' && !sim.flags.killed[`${sim.screen}:${e.i}`]
     sim.flags.killed[`${sim.screen}:${e.i}`] = true
+    if (e.type === 'pod' && !e.gen) {
+        emit(sim, 'split', e.x, e.y)
+        for (const off of [-10, 10]) {
+            const kid = makeEnemy({ type: 'cinderling', x: 0, y: 0, i: 90 + (e.i || 0) * 2 + (off < 0 ? 0 : 1), drop: 'ember' })
+            kid.hp = 1; kid.gen = 1
+            kid.x = e.x + off; kid.y = e.y; kid.t = e.t
+            kid.hitSwing = sim.swingId // the pop survives the swing that burst the pod
+            if (blocked(sim, kid.x, kid.y, kid.w, kid.h)) kid.x = e.x; if (blocked(sim, kid.x, kid.y, kid.w, kid.h)) kid.y = e.y - 10
+            sim.enemies.push(kid)
+        }
+    }
     if (wasKey) spawnDrop(sim, e.x, e.y, 'key')
     else if (e.boss) {
         if (e.boss === 1) { sim.flags.boss1 = true; say(sim, 'THE BRAMBLE MAW FALLS', 200) }
@@ -583,6 +601,28 @@ function stepEnemies(sim) {
                 else if (e.st === 0 && e.t % 90 < 28) moveEnemy(sim, e, dx, dy, 1.7)
                 else if (e.t % 90 >= 28 && dist < 34) { e.st = 10 }
                 break
+            case 'tuskroot': {
+                if (e.st > 0) {
+                    e.st--
+                    if (e.st === 0) { const l = dist || 1; e.chx = dx / l; e.chy = dy / l; e.charging = 42 }
+                    break
+                }
+                if (e.charging > 0) {
+                    e.charging--
+                    const nx = e.x + e.chx * 2.7, ny = e.y + e.chy * 2.7
+                    if (e.charging === 0 || blocked(sim, nx, e.y, e.w, e.h) || blocked(sim, e.x, ny, e.w, e.h)) {
+                        e.charging = 0; e.rest = 55
+                    } else { e.fx = e.chx; e.fy = e.chy; e.x = nx; e.y = ny }
+                    break
+                }
+                if (e.rest > 0) { e.rest--; break }
+                if (dist < 92 && (e.t + e.seedOff) % 80 === 0) { e.st = 36; emit(sim, 'grunt', e.x, e.y); break }
+                moveEnemy(sim, e, dx, dy, 0.32)
+                break
+            }
+            case 'pod':
+                if (e.t % 70 < 26) moveEnemy(sim, e, dx, dy, 0.5)
+                break
             case 'maw': {
                 const cyc = (e.t + e.seedOff) % 220
                 e.open = cyc < 80 ? 1 : 0
@@ -636,13 +676,25 @@ function checkTransitions(sim) {
         emit(sim, 'warp', h.x, h.y)
         return
     }
-    // edge exits
+    // opened dungeon doors: stepping onto the tile walks you through (#781 —
+    // before this, doors unlocked but led nowhere and the game was unwinnable)
+    const dr = doorAt(s, tx, ty)
+    if (dr && dr.to && doorOpen(sim, dr)) {
+        const dId = dr.to.startsWith('d') ? dr.to.slice(0, 4) : null
+        if (dId) sim.lastDungeonEntry[dId] = { screen: sim.screen, x: h.x, y: h.y }
+        spawnRoom(sim, dr.to, dr.entry || SCREENS[dr.to].spawn || [7, 8])
+        emit(sim, 'warp', h.x, h.y)
+        return
+    }
+    // edge exits — thresholds at the border-tile CENTER (#781: the old <2/>SW*TS-2
+    // bounds were physically unreachable, so on-foot overworld travel never worked;
+    // a hero's center stops at ~4/172 against the wall)
     const cx = tileOf(h.x), cy = tileOf(h.y)
     let ex = null
-    if (cy < 0 || h.y < 2) ex = s.exits?.n
-    else if (cy >= SH || h.y > SH * TS - 2) ex = s.exits?.s
-    else if (cx < 0 || h.x < 2) ex = s.exits?.w
-    else if (cx >= SW || h.x > SW * TS - 2) ex = s.exits?.e
+    if (cy < 0 || h.y <= 8) ex = s.exits?.n
+    else if (cy >= SH || h.y >= SH * TS - 8) ex = s.exits?.s
+    else if (cx < 0 || h.x <= 8) ex = s.exits?.w
+    else if (cx >= SW || h.x >= SW * TS - 8) ex = s.exits?.e
     if (ex) {
         const to = SCREENS[ex.to]
         spawnRoom(sim, ex.to, null)
@@ -672,6 +724,7 @@ function stepShop(sim, inp) {
     if (inp.aPressed) {
         const offer = menu[sim.shop.sel]
         if (offer.item === 'shield' && sim.items.shield) { say(sim, 'YE ALREADY CARRY A SHIELD', 100); return }
+        if (offer.item === 'blade' && sim.items.blade) { say(sim, 'YE ALREADY CARRY THE EMBER BLADE', 100); return }
         if (sim.score >= offer.price) {
             sim.score -= offer.price
             grant(sim, offer.item === 'arrows' ? 'arrows' : offer.item === 'bombs' ? 'bombs' : offer.item)
