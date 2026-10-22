@@ -17,7 +17,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
 import { makeGame, step, decide, LAPS } from '../src/games/CometDrift/sim.js'
-import { tracksidePlan, tracksideAudit, resolvePlan, ROOF_Y, STAND_SCALE_START, STAND_SCALE_STRAIGHT, SHADOW_IDS } from '../src/games/CometDriftHD/scenery.js'
+import { tracksidePlan, tracksideAudit, resolvePlan, ROOF_Y, STAND_SCALE_START, STAND_SCALE_STRAIGHT, SHADOW_IDS, specSeat, SPEC_SEATS, SPEC_ROWS, SPEC_FILL, primitiveProp } from '../src/games/CometDriftHD/scenery.js'
 import { elevAt, wallTopSideAt } from '../src/games/CometDriftHD/scene.js'
 import { crowdSwellGain, CROWD_R_MIN, CROWD_R_MAX, CROWD_BURST, CROWD_PERIOD } from '../src/games/CometDriftHD/audio.js'
 
@@ -41,6 +41,7 @@ const PAIRS = [
     // be caught by the grounding / stand-roof gates.
     ['e.baseY = propGroundY(e.i, e.side)', 'e.baseY = 1.82'],
     ['export const ROOF_Y = 3.4', 'export const ROOF_Y = 4'],
+    ['export const SPEC_FILL = 0.82', 'export const SPEC_FILL = 0.0'],
 ]
 if (MUTATE) {
     let src = readFileSync(SCENERY_SRC, 'utf8')
@@ -86,6 +87,21 @@ ok(CROWD_BURST * 60 >= CROWD_PERIOD, `crowd bed: burst ${CROWD_BURST}s covers it
 const ROOF_TOP_LOCAL = ROOF_Y + 0.4 // + half-thickness + the -0.12 tilt
 ok(ROOF_TOP_LOCAL * STAND_SCALE_START <= 4.6, `stand roof: start stands top out ${(ROOF_TOP_LOCAL * STAND_SCALE_START).toFixed(2)}u over the base (≤ 4.6)`)
 ok(ROOF_TOP_LOCAL * STAND_SCALE_STRAIGHT <= 4.6, `stand roof: straight stands top out ${(ROOF_TOP_LOCAL * STAND_SCALE_STRAIGHT).toFixed(2)}u over the base (≤ 4.6)`)
+
+// CROWD (#675, once): the stands read populated — a deterministic seat law,
+// and the built grandstand carries exactly the seats the law says it does,
+// all of them sitting on the deck (the mutant below empties the crowd).
+{
+    const seed = 7
+    let n = 0
+    for (let r = 0; r < SPEC_ROWS; r++) for (let c = 0; c < SPEC_SEATS; c++) if (specSeat(seed, r, c)) n++
+    const seats = (stand) => { const d = []; stand.traverse((o) => { if (o.userData.dot) d.push(o) }); return d }
+    const a = seats(primitiveProp('grandstand', seed))
+    const b = seats(primitiveProp('grandstand', seed))
+    ok(a.length === n && n >= SPEC_SEATS * SPEC_ROWS * 0.6, `crowd: ${a.length} spectators fill the deck (law ${n}, fill ${SPEC_FILL})`)
+    ok(b.length === a.length && b.every((m, k) => m.position.equals(a[k].position)), 'crowd: the crowd is deterministic across builds')
+    ok(a.every((m) => Math.abs(m.position.x) <= 2.8 && m.position.z >= -3.4 && m.position.z <= 0.6 && m.position.y >= 0.85 && m.position.y <= 2.65), 'crowd: every spectator sits on the deck (inside the stand bounds)')
+}
 
 for (const c of COURSES) {
     selectCourse(c.id)

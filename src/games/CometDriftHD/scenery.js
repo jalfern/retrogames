@@ -45,6 +45,43 @@ export const STAND_SCALE_STRAIGHT = 1.15
 // (the group's scale multiplies them); ids without an entry get no blob.
 export const SHADOW_IDS = { tree_pine: 1.6, tree_oak: 1.7, boulder: 1.4, rock: 1.0 }
 
+// #675: spectators. The stands were bare blue/white steps — a dressed circuit
+// reads populated. Deterministic crowd dots: one shared box geometry and a
+// small shared material palette per stand (both disposed with the stand);
+// every seat is a pure function of (seed, row, seat), so the crowd — like the
+// plan — is deterministic. specSeat() is exported for the Node gate.
+export const SPEC_SEATS = 6
+export const SPEC_ROWS = 4
+export const SPEC_FILL = 0.82
+const SPEC_PALETTE = [0xf2ece2, 0xc0392b, 0x2e6db0, 0xf1c40f, 0xe67e22, 0x27ae60, 0x8e44ad, 0x5dade2]
+// one seat on the deck: null when the seat is empty, else its local spot.
+export const specSeat = (seed, r, c) => {
+    if (shash(seed + r * 31.7 + c * 7.31) >= SPEC_FILL) return null
+    const h2 = shash(seed + r * 13.13 + c * 3.77)
+    return {
+        x: -2.5 + c * 1.0 + (shash(seed + r * 3.31 + c * 11.71) - 0.5) * 0.5,
+        y: 0.93 + r * 0.55,
+        z: -r * 0.9 + (h2 - 0.5) * 0.4,
+        ci: Math.floor(h2 * SPEC_PALETTE.length) % SPEC_PALETTE.length,
+    }
+}
+export function spectatorDots(seed) {
+    const g = new THREE.Group()
+    const geo = new THREE.BoxGeometry(0.22, 0.16, 0.22)
+    const mats = SPEC_PALETTE.map((col) => new THREE.MeshLambertMaterial({ color: col }))
+    for (let r = 0; r < SPEC_ROWS; r++) {
+        for (let c = 0; c < SPEC_SEATS; c++) {
+            const s = specSeat(seed, r, c)
+            if (!s) continue
+            const m = new THREE.Mesh(geo, mats[s.ci])
+            m.userData.dot = 1
+            m.position.set(s.x, s.y, s.z)
+            g.add(m)
+        }
+    }
+    return g
+}
+
 // shelf ids this circuit uses. Only `barrier` / `tire_wall` are solid; the rest
 // are dressing that never collides (and sits outside the wall anyway).
 export const SHELF_PROPS = [
@@ -211,13 +248,14 @@ const C = {
 }
 const lam = (color) => new THREE.MeshLambertMaterial({ color })
 
-export function primitiveProp(id) {
+export function primitiveProp(id, seed = 1) {
     const g = new THREE.Group()
     const ph = (m) => { m.userData.ph = 1; g.add(m); return m }
     if (id === 'grandstand') {
         for (let r = 0; r < 4; r++) { const step = ph(new THREE.Mesh(new THREE.BoxGeometry(6, 0.5, 1), lam(r % 2 ? C.blue : C.white))); step.position.set(0, 0.6 + r * 0.55, -r * 0.9) }
         const back = ph(new THREE.Mesh(new THREE.BoxGeometry(6, 2.4, 0.3), lam(C.concrete))); back.position.set(0, 2.05, -3.6)
         const roof = ph(new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.25, 4.6), lam(C.steel))); roof.position.set(0, ROOF_Y, -1.6); roof.rotation.x = -0.12
+        ph(spectatorDots(seed))
     } else if (id === 'pit_building') {
         const base = ph(new THREE.Mesh(new THREE.BoxGeometry(8, 2.6, 3), lam(C.concrete))); base.position.y = 1.3
         const roof = ph(new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.3, 3.4), lam(C.dark))); roof.position.y = 2.75
@@ -286,7 +324,7 @@ export function buildTracksidePrimitives(plan) {
     const g = new THREE.Group()
     g.userData.isProps = 1
     for (const e of plan) {
-        const m = primitiveProp(e.id)
+        const m = primitiveProp(e.id, e.i * 31 + e.side * 7)
         const p = T.pts[e.i % T.N]
         m.position.set(e.wx * S, e.baseY - 0.05, e.wz * S)
         m.scale.setScalar(e.scale)
@@ -329,6 +367,7 @@ export async function attachShelfProps(plan, group, alive = () => true) {
         m.scale.setScalar(e.scale)
         m.rotation.y = yawFor(e.orient, p.a, e.rot)
         if (SHADOW_IDS[e.id]) m.add(makePropShadow(SHADOW_IDS[e.id]))
+        if (e.id === 'grandstand') m.add(spectatorDots(e.i * 31 + e.side * 7))
         group.add(m)
         n++
     }

@@ -157,7 +157,7 @@ fallbacks so the game never waits on — or dies from — the network.
   `cometdrifthdcheck` gates clearances/band/fit over 7 viewports x 3 course
   names; `--mutate-attract` collapses the gap law and MUST redden it.
 
-- #675 grounding + crowd + roof: three polish fixes, all pinned by
+- #675 grounding + crowd + roof: four polish fixes, all pinned by
   `cometdrifthdscenerycheck` (Node-only, no browser):
   - **Props stand on the true plateau.** The old plan used a CONSTANT
     (2.07−0.25 = 1.82u) above the local road for every prop, but the plateau
@@ -182,6 +182,14 @@ fallbacks so the game never waits on — or dies from — the network.
     period, so the murmur beds without dead air) at `CROWD_GAIN × gain × wob`.
     The engine law is untouched — the crowd sits under it. DEV: every burst
     logs `{e:'crowd', g, t}` to `window.__cometHDLog`.
+  - **The stands read populated.** Bare blue/white steps read empty; a
+    dressed circuit has a crowd. `specSeat(seed, row, seat)` is the pure
+    law (fill `SPEC_FILL`, one of 8 spectator colours) and
+    `spectatorDots(seed)` builds the deck from it — a shared box geometry +
+    small shared material palette per stand, disposed with the stand. Seeded
+    per stand (`i*31 + side*7`) so no two stands crowd identically; re-added
+    to the GLB clones in `attachShelfProps` exactly like the shadows. The
+    gate pins count, bounds (every dot on the deck) and determinism.
   - **The stand roofs stop cutting the sky.** The old roof (local y 4.0 at
     1.2 scale) topped out ~5.3u over the stand base — enough to sweep the top
     corners of the chase frame at the line (the eye is ~2.4u up, the nearest
