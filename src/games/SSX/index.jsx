@@ -237,6 +237,7 @@ const SSXGame = () => {
                         }
                     }
                     if (e.over) audioController.playSweep(600, 1400, 0.3, 'sawtooth', 0.09)
+                    if (e.revert) audioController.playSweep(500, 1050, 0.14, 'square', 0.055)
                 }
                 if (e.type === 'crash' && mine) {
                     audioController.playNoise(0.3, 0.14)
@@ -642,7 +643,7 @@ const SSXGame = () => {
                     const p = g.riders[0]
                     return {
                         screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick, phase: g.phase,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, boostHum: p.boostHum, press: p.press, stomp: p.stomp, stompPow: p.stompPow, grabKind: p.grab, grab: p.grabKind, grabName: p.grab ? GRAB_NAMES[p.grabKind] : null, lastTrick: p.lastTrick, carves: p.carves.length },
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, boostHum: p.boostHum, press: p.press, takeSpin: p.takeSpin, stomp: p.stomp, stompPow: p.stompPow, grabKind: p.grab, grab: p.grabKind, grabName: p.grab ? GRAB_NAMES[p.grabKind] : null, lastTrick: p.lastTrick, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },

@@ -40,6 +40,11 @@ export const CFG = {
                                // reel. A real input never carries fuel; see planner hot.
     tuckAcc: 3.2,              // m/s^2 the aero tuck (stick/↑) adds on the hill
     scrubDrag: 0.12,           // fraction/s of speed a scrub (stick/↓) checks
+    revertPts: 200,            // #791 revert: landing spun the OPPOSITE way to the
+                               // takeoff carve pays a style bonus (score, not meter —
+                               // the boost economy stays the trick economy)
+    revertTake: 0.25,          // edge pressure at takeoff for the carve to "own" a direction
+    revertSpin: 120,           // degrees of opposite rotation that commits the revert
     rockBounce: 7.0,           // m/s kicked back off a rock top landed from above (#731)
     rockPts: 200,              // style points for the boulder boop
     comboCap: 4,
@@ -102,7 +107,7 @@ function newRider(i, isP, gridBack) {
         carves: [],
         bounceOb: -1,
         miss: false,
-        jumpHeld: false, steerSm: 0, press: 0, seedPhase: i * 1.7 + 0.4,
+        jumpHeld: false, steerSm: 0, press: 0, takeSpin: 0, seedPhase: i * 1.7 + 0.4,
     }
 }
 
@@ -146,23 +151,28 @@ function evalTrick(g, r, impact = 0) {
     const grabPts = r.grab ? 150 : 0
     const airPts = r.airT > 1.1 ? 300 + Math.round(r.airT * 60) : Math.round(r.airT * 80)
     const pipeB = r.pipeAir ? 250 : 0
+    // #791 revert: the board came off the lip carved one way and lands spun
+    // the other way. Style bonus on the score — the meter keeps counting the
+    // pre-revert base, so the boost economy stays exactly the trick economy.
+    const revert = r.takeSpin !== 0 && r.spin * r.takeSpin < 0 && Math.abs(r.spin) >= CFG.revertSpin
     let base = spinPts + flipPts + grabPts + airPts + pipeB
     if (base < 60) return { crash: false, pts: 0 }
     const mult = Math.min(CFG.comboCap, r.chain + 1)
     if (r.over && CFG.overDouble) base *= 2
     const pts = base * mult
+    const revertBonus = revert ? Math.round(CFG.revertPts * mult * (r.over && CFG.overDouble ? 2 : 1)) : 0
     const spinName = SPINS[sp] || ''
     const flipName = fl > 0 ? `${fl > 1 ? 'DOUBLE ' : ''}${r.flip < 0 ? 'FRONT' : 'BACK'}FLIP ` : ''
     const grabName = r.grab ? GRABS[r.grabKind].name + ' ' : ''
     r.chain = Math.min(CFG.comboCap - 1, r.chain + 1)
     r.chainDisp = mult; r.chainDispT = 150
-    r.score += pts; r.tricksLanded++
+    r.score += pts + revertBonus; r.tricksLanded++
     if (r.airT > 1.2) r.bigAir++
     r.meter = Math.min(100, r.meter + pts * CFG.boostGain * (CFG.slack ? 0.75 : 1))
-    r.lastTrick = `${r.over ? 'OVER!! ' : ''}${flipName}${grabName}${spinName}${spinName ? '' : 'AIR'}`.trim()
+    r.lastTrick = `${r.over ? 'OVER!! ' : ''}${revert ? 'REVERT ' : ''}${flipName}${grabName}${spinName}${spinName ? '' : 'AIR'}`.trim()
     r.lastTrickT = 150
-    push(g, { type: 'land', who: r.id, pts, name: r.lastTrick, mult, over: !!r.over, bigAir: r.airT > 1.2, impact })
-    return { crash: false, pts }
+    push(g, { type: 'land', who: r.id, pts: pts + revertBonus, name: r.lastTrick, mult, over: !!r.over, revert, bigAir: r.airT > 1.2, impact })
+    return { crash: false, pts: pts + revertBonus }
 }
 
 function crash(g, r, what) {
@@ -174,7 +184,7 @@ function crash(g, r, what) {
     r.meter *= 0.5
     r.over = false
     r.spin = 0; r.flip = 0; r.grab = 0; r.air = false; r.grind = null
-    r.press = 0
+    r.press = 0; r.takeSpin = 0
     r.stomp = 0; r.stompPow = 0
     push(g, { type: 'crash', who: r.id, what })
 }
@@ -284,7 +294,7 @@ function riderStep(g, r, inp) {
             const res = evalTrick(g, r, impact)
             r.pipeAir = false
             if (res.crash) { crash(g, r, 'bail'); return }
-            r.spin = 0; r.flip = 0; r.grab = 0; r.airT = 0; r.over = false
+            r.spin = 0; r.flip = 0; r.grab = 0; r.airT = 0; r.over = false; r.takeSpin = 0
             if (res.pts > 0) { /* banked */ }
             // landing absorption: slope landings keep speed, flat landings shed a little
             const { seg } = segAt(c, r.s)
@@ -331,6 +341,7 @@ function riderStep(g, r, inp) {
         r.vy = boostV
         r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0
         r.over = r.meter >= 100
+        r.takeSpin = Math.abs(r.press) >= CFG.revertTake ? Math.sign(r.press) : 0
         r.miss = !r.isP && cpuMiss(g, r)
         push(g, { type: 'jump', who: r.id, small: true })
     }
@@ -368,6 +379,7 @@ function riderStep(g, r, inp) {
         r.vy = Math.max(4.5, liftHere * 1.9) + r.v * 0.11 + r.crouchT * 2.5
         r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0
         r.over = r.meter >= 100
+        r.takeSpin = Math.abs(r.press) >= CFG.revertTake ? Math.sign(r.press) : 0
         r.miss = !r.isP && cpuMiss(g, r)
         r.pipeAir = c.pipes.some((p) => lip.i >= p.i0 - 1 && lip.i <= p.i1 + 1)
         push(g, { type: 'jump', who: r.id, power: r.vy, pipe: r.pipeAir })
@@ -465,7 +477,7 @@ export function stateHash(g) {
     const add = (str) => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) } }
     add(`${g.tick}|${g.heat}|${g.phase}|${g.mode}|${g.end}|${g.showoffLeft.toFixed(2)}|${g.count}`)
     for (const r of g.riders) {
-        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)},st${r.stomp}:${r.stompPow.toFixed(2)}`)
+        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)},ts${r.takeSpin},st${r.stomp}:${r.stompPow.toFixed(2)}`)
     }
     return (h >>> 0).toString(16)
 }
