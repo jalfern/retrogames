@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { buildCourse, terrainY, openness, undulate, bankTurn, sceneryPlan, COURSE_COUNT, DS, WALL_X, SHELF_PROPS } from '../src/games/SSX/course.js'
-import { snowColor, buildTerrain, THEMES, GRIDS } from '../src/games/SSX/art.js'
+import { snowColor, buildTerrain, THEMES, GRIDS, SUN, GROOVE, TRACK_DARKEN } from '../src/games/SSX/art.js'
 import { makeGame, step } from '../src/games/SSX/sim.js'
 import { decide } from '../src/games/SSX/planner.js'
 
@@ -178,6 +178,46 @@ for (const f of ['course.js', 'sim.js', 'planner.js']) {
     ok('SLACK: showoff still wins', sl2.end === 'win')
     CFG.slack = false
     CFG.comboCap = cap
+}
+
+// ---- 9. mountain feel #665: sun in frame, roller pops, groove contrast ------
+{
+    // chase-cam geometry mirrors index.jsx frame(): back 9.5, up 4.1+v*0.028,
+    // look 16 ahead +1.2 (pitch), fov 66 + speed*0.55 + boost 8; sky origin
+    // sits 60 below the camera (the dome offset) — 900/640 = the harness shot.
+    const sunInUpperThird = (v, boost, theme) => {
+        const sd = SUN[theme] || SUN.day
+        const up = 4.1 + v * 0.028
+        const pitch = Math.atan2(1.2 - up, 25.5)
+        const fov = ((66 + Math.min(16, Math.max(0, (v - 12) * 0.55)) + (boost ? 8 : 0)) * Math.PI) / 180
+        const halfV = fov / 2
+        const halfH = Math.atan(Math.tan(halfV) * (900 / 640))
+        const rad = Math.cos(sd.el) * 680
+        const el = Math.atan2(Math.sin(sd.el) * 680 - 60, rad)
+        const rv = el - pitch
+        const vert = 0.5 - rv / fov
+        return vert >= 0.02 && vert <= 1 / 3 && Math.abs(sd.az) <= halfH * 0.85
+    }
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        ok(`${co.name}: sun/moon sits in the chase-cam upper third at gate/cruise/boost`,
+            sunInUpperThird(8, false, co.theme) && sunInUpperThird(18, false, co.theme) && sunInUpperThird(30, true, co.theme))
+    }
+    // roller/lip auto-launches fire on every heat (0-based) and carry `power`
+    for (let heat = 0; heat < 3; heat++) {
+        const g = makeGame('race')
+        while (!g.end && g.heat < heat) step(g, g.phase === 'run' ? decide(g, g.riders[0]) : {})
+        let pops = 0
+        while (!g.end && g.heat === heat) {
+            step(g, g.phase === 'run' ? decide(g, g.riders[0]) : {})
+            for (const e of g.events.splice(0)) if (e.type === 'jump' && e.who === 0 && e.power !== undefined) pops++
+        }
+        ok(`heat ${heat + 1} (${buildCourse(heat).name}): roller launches fire and carry power (${pops})`, pops >= 2)
+    }
+    const jsxA = readFileSync(join(here, '..', 'src', 'games', 'SSX', 'index.jsx'), 'utf8')
+    ok('sfx: a powered launch gets its own deeper sweep, not the ollie chirp',
+        /e\.type === 'jump' && mine[\s\S]{0,240}e\.power[\s\S]{0,200}playSweep\(140/.test(jsxA))
+    ok('fresh carve grooves bite darker than the groomed line', GROOVE.alpha - TRACK_DARKEN >= 0.4)
 }
 
 console.log(`${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

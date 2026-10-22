@@ -49,6 +49,20 @@ export const THEMES = {
     },
 }
 
+// #665: sun/moon sits in the chase-cam's upper third — anchored to the rider's
+// heading (the sky group never rotates, and the centreline does). az = angle
+// left of the view axis, el = elevation. day lifts the disc into the frame.
+export const SUN = {
+    day: { az: -0.52, el: 0.3 },
+    night: { az: -0.52, el: 0.3 },
+    dusk: { az: -0.6, el: 0.2 },
+}
+
+// #665: fresh carve grooves run deeper than the groomed track so the two
+// lines read apart when both are new (ssxmountaincheck pins the gap).
+export const GROOVE = { color: [0.05, 0.07, 0.13], alpha: 0.66 }
+export const TRACK_DARKEN = 0.12
+
 // ---- real surfaces (#669) ---------------------------------------------------
 // Slope magnitude in world m/m from terrain differences — the analytic terms
 // are not worth differentiating by hand. #669: measured on the NATURAL
@@ -131,10 +145,11 @@ export function surfaceInfo(c, s, x) {
     // rock only exists beyond the piste proper
     let rockT = rawRock * (1 - relax) * smooth01((a - 1.5) / 0.45)
     if (a < 1.05) {
-        // groomed trail down the natural line + piste edge stripe
+        // groomed trail down the natural line + piste edge stripe — a soft light
+        // tint, so fresh carve grooves (#665) read as a darker, crisper line
         const tc = Math.sin(s * 0.011) * 0.35 + Math.sin(s * 0.004 + 1.3) * 0.25
         const track = smooth01(1 - Math.abs(x - tc) / 0.55)
-        rgb = rgb.map((v, k) => v * (1 - track * 0.16) + T.snowB[k] * 0.8 * track * 0.16)
+        rgb = rgb.map((v, k) => v * (1 - track * TRACK_DARKEN) + T.snowB[k] * 0.8 * track * TRACK_DARKEN)
         if (a > 0.92 && a < 1.06) rgb = T.edge.map((v, k) => (v + rgb[k]) / 2)
         rockT = Math.min(rockT, smooth01((grad - 0.5) / 0.4))
     }
@@ -455,12 +470,15 @@ export function buildSky(course) {
     dome.position.y = -60
     g.add(dome)
 
-    // low enough to sit inside the chase-cam frame, just above the ridge line
-    const sunDir = course.theme === 'dusk' ? [-0.84, 0.16, 0.52] : [-0.48, 0.30, 0.42]
+    // low enough to sit inside the chase-cam frame, just above the ridge line;
+    // index.jsx re-anchors it each frame relative to the rider's heading (#665)
+    const sd = SUN[course.theme] || SUN.day
     const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(course.theme === 'dusk' ? 46 : 30, 20), new THREE.MeshBasicMaterial({ color: T.sun, fog: false }))
-    sunDisc.position.set(sunDir[0] * 680, sunDir[1] * 680, sunDir[2] * 680)
+    sunDisc.position.set(Math.sin(sd.az) * Math.cos(sd.el) * 680, Math.sin(sd.el) * 680, Math.cos(sd.az) * Math.cos(sd.el) * 680)
     sunDisc.lookAt(0, sunDisc.position.y * 0.4, 0)
     g.add(sunDisc)
+    g.userData.sun = sunDisc
+    g.userData.theme = course.theme
 
     // peaks ring: distant snow-capped cones deep in the haze
     const capCol = course.theme === 'night' ? 0x9aa4d8 : course.theme === 'dusk' ? 0xffe8dc : 0xf4f8ff

@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -188,7 +188,12 @@ const SSXGame = () => {
                 const mine = e.who === 0 || e.who === undefined
                 if (e.type === 'count') audioController.playTone(660, 0.1, 'square', 0.1)
                 if (e.type === 'go') audioController.playSweep(440, 880, 0.4, 'square', 0.12)
-                if (e.type === 'jump' && mine) audioController.playSweep(300, 700, 0.18, 'triangle', 0.05)
+                // ollie = small chirp; roller/lip auto-launch (#665) = deeper,
+                // louder pop scaled with launch power — a crest is not silent
+                if (e.type === 'jump' && mine) {
+                    if (e.power === undefined) audioController.playSweep(300, 700, 0.18, 'triangle', 0.05)
+                    else audioController.playSweep(140, 420 + Math.min(260, e.power * 24), 0.24, 'triangle', 0.07 + Math.min(0.05, e.power * 0.004))
+                }
                 if (e.type === 'land' && mine) {
                     audioController.playNoise(0.08, 0.08)
                     const f = 520 + Math.min(900, e.pts * 0.4)
@@ -271,7 +276,16 @@ const SSXGame = () => {
             camFresh = false
             camera.position.copy(camPos)
             camera.lookAt(pp.x + fwdX * 16, (p.air ? p.y : pp.y) + 1.2, pp.z + fwdZ * 16)
-            if (skyObj) skyObj.position.set(camPos.x, camPos.y - 60, camPos.z)
+            if (skyObj) {
+                skyObj.position.set(camPos.x, camPos.y - 60, camPos.z)
+                const sunMesh = skyObj.userData.sun
+                if (sunMesh) {
+                    const sd = SUN[skyObj.userData.theme] || SUN.day
+                    const az = pp.th + sd.az, rad = Math.cos(sd.el) * 680
+                    sunMesh.position.set(Math.sin(az) * rad, Math.sin(sd.el) * 680, Math.cos(az) * rad)
+                    sunMesh.lookAt(camPos.x, camPos.y, camPos.z)
+                }
+            }
             if (sparkles) sparkles.material.opacity = 0.5 + 0.32 * Math.sin(g.tick * 0.11) + 0.14 * Math.sin(g.tick * 0.037 + 2.1)
             const fov = 66 + Math.min(16, Math.max(0, (p.v - 12) * 0.55)) + (p.boost ? 8 : 0)
             if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix() }
@@ -332,12 +346,12 @@ const SSXGame = () => {
                         if (aa <= 0 || ab <= 0) continue
                         const a1 = slopePos(g.course, a.s, a.x + off - 0.02), a2 = slopePos(g.course, a.s, a.x + off + 0.02)
                         const b1 = slopePos(g.course, b.s, b.x + off - 0.02), b2 = slopePos(g.course, b.s, b.x + off + 0.02)
-                        const al = aa * aa * 0.5, be = ab * ab * 0.5
+                        const al = aa * aa * GROOVE.alpha, be = ab * ab * GROOVE.alpha
                         const quad = [a1, a2, b2, a1, b2, b1], alph = [al, al, be, al, be, be]
                         for (let k = 0; k < 6; k++) {
                             const q = quad[k], o = (v + k) * 3, co = (v + k) * 4
                             gr.pos[o] = q.x; gr.pos[o + 1] = q.y + 0.02; gr.pos[o + 2] = q.z
-                            gr.col[co] = 0.06; gr.col[co + 1] = 0.09; gr.col[co + 2] = 0.16; gr.col[co + 3] = alph[k]
+                            gr.col[co] = GROOVE.color[0]; gr.col[co + 1] = GROOVE.color[1]; gr.col[co + 2] = GROOVE.color[2]; gr.col[co + 3] = alph[k]
                         }
                         v += 6
                         if (v >= GROOVE_MAX * 6) break
