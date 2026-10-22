@@ -117,6 +117,23 @@ for (const [path, method] of TOUCHED) {
             isPointer ? 'pointer game: no left control (tap the field)' : 'no left control after the start ladder')
         r.check(`${path} stick zone ${method === 'stick' ? 'present' : 'absent'}`, stick === (method === 'stick'),
             `stick=${stick} expected=${method === 'stick'}`)
+        // #734/#745: the DRAWN action buttons must be tappable — the topmost
+        // element at each button's centre is inside the action zone, not chrome
+        // overlapping it. (The bottom-right mute toggle once covered the A
+        // button's right edge: a tap on A muted the game instead of firing.)
+        const tapOk = await page.evaluate(() => {
+            const zone = document.querySelector('[data-vc="1"] .pb-2.pr-4')
+            if (!zone) return { pad: false, bad: [] }
+            const bad = []
+            for (const btn of zone.children) {
+                const b = btn.getBoundingClientRect()
+                const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)
+                if (!zone.contains(el)) bad.push(btn.textContent.trim() + '->' + ((el && el.tagName) || 'null'))
+            }
+            return { pad: true, bad }
+        })
+        if (tapOk.pad)
+            r.check(`${path} action buttons are tappable (no chrome overlap)`, tapOk.bad.length === 0, tapOk.bad.join(' '))
     } catch (e) {
         r.check(`${path} boots with zero page errors`, false, String(e.message).slice(0, 200))
         r.check(`${path} pad is on screen`, false, 'boot failed')

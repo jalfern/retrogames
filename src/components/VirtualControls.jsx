@@ -4,6 +4,7 @@ import { PadContext } from './padContext'
 import { padButton, shouldUseStick, waysOf } from './gamepadMap'
 import { setStick, clearStick } from '../utils/padState'
 import { methodOf, press, release, setStickVec, clearHeld } from '../utils/onePad'
+import { actionCodeAt } from './actionHit'
 
 const DIAG = {
     ul: ['ArrowUp', 'ArrowLeft'],
@@ -59,6 +60,8 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
 
     const dPadRef = useRef(null)
     const actZoneRef = useRef(null)
+    const aBtnRef = useRef(null)
+    const bBtnRef = useRef(null)
     const dirCodes = useRef([])
     const actCode = useRef(null)
     const dPtr = useRef(null)
@@ -403,32 +406,32 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     }
 
     // --- Action zone: A/B one zone ---
-    const aCodeAt = (x) => {
-        const hasB = !!secondAction
-        if (showA && hasB) {
-            const r = actZoneRef.current.getBoundingClientRect()
-            return x < r.left + r.width / 2 ? 'Space' : secondAction.code
-        }
-        if (hasB) return secondAction.code
-        return 'Space'
-    }
-    const aStart = (x, id) => { aPtr.current = id; tick(); setActCode(aCodeAt(x)) }
-    const aMove = (x, id) => { if (id === aPtr.current) setActCode(aCodeAt(x)) }
+    // #734: the hit test follows the DRAWN layout — each button tests its own
+    // rect (B left, A right) — so a button and its action can never be swapped.
+    const aCodeAt = (x, y) => actionCodeAt({
+        showA,
+        bCode: secondAction && secondAction.code,
+        aRect: aBtnRef.current && aBtnRef.current.getBoundingClientRect(),
+        bRect: bBtnRef.current && bBtnRef.current.getBoundingClientRect(),
+        zoneRect: actZoneRef.current.getBoundingClientRect(),
+    }, x, y)
+    const aStart = (x, y, id) => { aPtr.current = id; tick(); setActCode(aCodeAt(x, y)) }
+    const aMove = (x, y, id) => { if (id === aPtr.current) setActCode(aCodeAt(x, y)) }
     const aEnd = (id) => { if (id === aPtr.current) { aPtr.current = null; setActCode(null) } }
 
     const aTS = (e) => {
         e.preventDefault()
-        for (const t of e.changedTouches) if (aPtr.current === null) aStart(t.clientX, t.identifier)
+        for (const t of e.changedTouches) if (aPtr.current === null) aStart(t.clientX, t.clientY, t.identifier)
     }
     const aTM = (e) => {
         e.preventDefault()
-        for (const t of e.changedTouches) aMove(t.clientX, t.identifier)
+        for (const t of e.changedTouches) aMove(t.clientX, t.clientY, t.identifier)
     }
     const aTE = (e) => {
         for (const t of e.changedTouches) aEnd(t.identifier)
     }
-    const aMD = (e) => { e.preventDefault(); if (aPtr.current === null) aStart(e.clientX, 'm') }
-    const aMM = (e) => { aMove(e.clientX, 'm') }
+    const aMD = (e) => { e.preventDefault(); if (aPtr.current === null) aStart(e.clientX, e.clientY, 'm') }
+    const aMM = (e) => { aMove(e.clientX, e.clientY, 'm') }
     const aMU = () => { aEnd('m') }
 
     // --- Second pad (2P, separate buttons) ---
@@ -630,12 +633,12 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         onMouseLeave={aMU}
                     >
                         {secondAction && (
-                            <div className={`${actBase} shadow-orange-900/20 ${isHeld(secondAction.code) ? 'bg-orange-400/90 scale-95' : 'bg-orange-500/50'}`}>
+                            <div ref={bBtnRef} className={`${actBase} shadow-orange-900/20 ${isHeld(secondAction.code) ? 'bg-orange-400/90 scale-95' : 'bg-orange-500/50'}`}>
                                 <span className="text-white font-bold text-lg">{secondAction.label || 'B'}</span>
                             </div>
                         )}
                         {showA && (
-                            <div className={`${actBase} shadow-red-900/20 ${isHeld('Space') ? 'bg-red-400/90 scale-95' : 'bg-red-500/50'}`}>
+                            <div ref={aBtnRef} className={`${actBase} shadow-red-900/20 ${isHeld('Space') ? 'bg-red-400/90 scale-95' : 'bg-red-500/50'}`}>
                                 <span className="text-white font-bold text-lg">{aLabel}</span>
                             </div>
                         )}
