@@ -322,6 +322,30 @@ if (!SKIP_BROWSER) {
         const after = await page.evaluate(() => window.__emberwoodTest.state())
         cok(after.hash !== before.hash && after.tick > before.tick, `walking advances the world (hash moved, screen still ${after.screen})`)
 
+        // #772 orientation: the diorama must read like the tile data (east right,
+        // north top) and holding right must move the hero's PROJECTED screen x right.
+        const orient = await page.evaluate(() => {
+            const T = window.__emberwoodTest
+            const west = T.screenAt(4 * 16 + 8, 88)
+            const east = T.screenAt(12 * 16 + 8, 88)
+            const north = T.screenAt(128, 24)
+            const south = T.screenAt(128, 152)
+            return { west, east, north, south }
+        })
+        cok(orient.east.x > orient.west.x + 0.1, `east reads right on screen (west.x=${orient.west.x.toFixed(2)} < east.x=${orient.east.x.toFixed(2)})`)
+        cok(orient.north.y < orient.south.y + 0.1, `north reads top on screen (north.y=${orient.north.y.toFixed(2)} < south.y=${orient.south.y.toFixed(2)})`)
+        const holdRight = await page.evaluate(() => {
+            const T = window.__emberwoodTest
+            T.reset(11)
+            const p0 = T.heroPos()
+            const x0 = T.screenAt(p0.x, p0.y).x
+            T.step(30, { right: true })
+            const p1 = T.heroPos()
+            return { x0, x1: T.screenAt(p1.x, p1.y).x, wx0: p0.x, wx1: p1.x, dir: p1.dir }
+        })
+        cok(holdRight.wx1 > holdRight.wx0 + 10, `holding right moves the hero east in the world (+${(holdRight.wx1 - holdRight.wx0).toFixed(1)}px, dir=${holdRight.dir})`)
+        cok(holdRight.x1 > holdRight.x0 + 0.02, `holding right moves the hero's projected screen x right (${holdRight.x0.toFixed(3)} -> ${holdRight.x1.toFixed(3)})`)
+
         // canvas has non-black pixels — read via the contract frame() (toDataURL),
         // never getContext('2d') on the live WebGL canvas (that corrupts the context)
         const notBlank = await page.evaluate(async () => {
