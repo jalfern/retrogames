@@ -547,5 +547,50 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('#791 impact + stomp ride the replay hash', stateHash(wit) === stateHash(autopilot(makeGame('race'))))
 }
 
+// ---- 9e. #791 boost is a sustained rising engine, not a one-shot whine ------
+{
+    ok('#791 the boost-rev knob is exported and sane', CFG.boostRev >= 0.2 && CFG.boostRev <= 3)
+    const fresh = () => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]; p.x = 0; p.v = 20; p.meter = 100
+        return g
+    }
+
+    const g = fresh(); const p = g.riders[0]
+    ok('#791 a cold rider idles — the engine bed starts at rest', p.boostHum === 0)
+
+    step(g, { boost: true })
+    ok('#791 the first frame of a held boost is a kick, not redline', p.boostHum > 0 && p.boostHum < 1)
+
+    const climb = [p.boostHum]
+    let topped = -1
+    for (let t = 1; t < 120 && p.meter > 0; t++) {
+        step(g, { boost: true })
+        climb.push(p.boostHum)
+        if (p.boostHum >= 1 && topped < 0) topped = t
+    }
+    let mono = true
+    for (let i = 1; i < climb.length; i++) if (climb[i] < climb[i - 1] - 1e-9) mono = false
+    ok('#791 the pitch climbs every frame the Shift stays down — a rising engine', mono)
+    ok('#791 held boost winds up to the redline', topped >= 0)
+    const REV_FRAMES = Math.round(60 / CFG.boostRev)
+    ok('#791 the wind-up takes ~1/rev seconds, then holds', Math.abs(topped - REV_FRAMES) <= 2 && p.boostHum === 1)
+    ok('#791 the redline is a ceiling, not a runaway — it saturates at 1', climb.every((h) => h <= 1))
+
+    step(g, {})
+    ok('#791 letting go cuts the engine back to idle', p.boost === false && p.boostHum === 0)
+
+    step(g, { boost: true })
+    ok('#791 a fresh hold re-kicks from the floor, not mid-pitch', p.boostHum > 0 && p.boostHum < 0.05)
+
+    const h = fresh(); run(h, 40, { boost: true })
+    const b = fresh(); run(b, 40)
+    const h2 = fresh(); run(h2, 40, { boost: true })
+    ok('#791 the engine rev rides the replay hash — same hold, same hum',
+        h.riders[0].boostHum > 0 && h.riders[0].boostHum === h2.riders[0].boostHum && stateHash(h) === stateHash(h2))
+    ok('#791 the rev changes the run — a boosted line hashes apart from a coasted one',
+        stateHash(h) !== stateHash(b))
+}
+
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)

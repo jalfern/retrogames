@@ -154,7 +154,8 @@ was flaking the same-pose stability gate).
   lifts up to 14% with your speed through `setMusicStep` (`MUSIC_STEP` is the
   resting tempo, pinned equal to the track grid by ssxcheck).
 - **Physical mix**: wind rising with speed (grounded), an edge swish on hard
-  carves, an open-air hush on hangs, a boost whine, lip-launch whoosh, a low
+  carves, an open-air hush on hangs, a sustained rising boost engine (#791, see
+  below), lip-launch whoosh, a low
   thud on big-air landings, a filtered rumble on crashes — crashes and big hits
   `duckMusic` so the field of sound keeps the hit.
 - `__ssxTest.cam()` exposes phase/fov/pos/dir + the music state; the headless
@@ -237,6 +238,29 @@ below the 60-pt floor, and every crash/miss/bail, clear stomp without a burst
 Mutant proof (done once, by hand): neuter the `stomp` set in `sim.js` and
 two gates go red (the deeper-and-longer stomp, the relax-beat); restore →
 green.
+
+## Sustained boost engine (#791)
+
+The original's boost is a sustained engine that climbs while you hold the
+trigger, not a one-shot whistle. The mix used to fire a fixed `300→720` saw
+burst every 8 frames — a constant whine no matter how long Shift stayed down.
+
+- **The rev lives in the sim** so the harness can pin it and replays carry it:
+  `rider.boostHum` ramps 0→1 at `CFG.boostRev` rev/s while `wantBoost` holds,
+  saturating at 1 (the redline). It resets to 0 the instant boost drops, so a
+  fresh hold re-kicks from the floor instead of resuming mid-pitch.
+- **Audio** (`index.jsx`) reads `boostHum`: the boost-start edge is now a low
+  ignition sweep (`80→190`), and the grounded bed sweeps `150+hum·300 →
+  260+hum·520` at `0.026+hum·0.012` gain. The floor and ceiling both climb with
+  the hold, so overlapping bursts read as one engine winding toward redline; the
+  FOV/spray already keyed off `p.boost` sell the spend alongside it.
+- ssxcheck pins the knob's sanity, the cold idle, the kick, frame-monotonic
+  climb, the `~1/rev s` wind-up to the `1` ceiling, the release-to-idle, the
+  fresh-hold re-kick, and that the rev rides `stateHash` (9 gates, 133 total).
+  Mutant proof (done once, by hand): pin `boostHum` to a fixed `0.5` and three
+  gates go red (wind-up, the `~1/rev` timing, the fresh-hold floor); restore →
+  green. Browser (`__ssxTest`): holding ShiftKey drives `p.boostHum` `0 → ~0.89`
+  with zero page errors.
 
 ## Hard-won verify notes
 
