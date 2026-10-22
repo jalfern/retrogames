@@ -7,9 +7,12 @@
 //
 // F1 toggles the panel; production never sees any of it.
 // window.__dbg is also exposed: { state(), act('label') } for console work.
+// A built-in "download rec .json" button saves window.__lastRecording (#527 6).
 // Games with an existing DEV hook (window.__<game>Test) keep that hook
 // untouched — the panel is for humans poking at a symptom; the hook stays
 // the harness's read-only contract.
+
+import { recDownload } from './recording.js'
 
 let el = null
 let teardown = null
@@ -43,6 +46,29 @@ export function mountDbg({ title, getState, actions = [] }) {
         }
         btnRow.appendChild(b)
     })
+
+    // #527 item 6 — one-click save of a hand-recorded session (DEV only).
+    const recBtn = document.createElement('button')
+    recBtn.textContent = 'download rec .json'
+    recBtn.style.cssText = 'background:#103;color:#8cf;border:1px solid #8cf;font:10px monospace;padding:2px 6px;cursor:pointer'
+    recBtn.onclick = () => {
+        try {
+            const rec = window.__lastRecording
+            if (!rec) { flash('no recording — recordStart() then recordStop() first'); return }
+            const dl = recDownload(rec)
+            const url = URL.createObjectURL(new Blob([dl.text], { type: 'application/json' }))
+            const a = document.createElement('a')
+            a.href = url
+            a.download = dl.filename
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            setTimeout(() => URL.revokeObjectURL(url), 0)
+            flash('saved ' + dl.filename)
+        } catch (e) { flash('ERR ' + e.message) }
+    }
+    btnRow.appendChild(recBtn)
+
     el.append(head, body, btnRow)
     document.body.appendChild(el)
 
