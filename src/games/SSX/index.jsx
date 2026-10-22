@@ -219,6 +219,8 @@ const SSXGame = () => {
                 if (e.type === 'boost' && mine) audioController.playSweep(240, 960, 0.35, 'sawtooth', 0.08)
                 if (e.type === 'grind' && mine) audioController.playTone(1100, 0.08, 'square', 0.05)
                 if (e.type === 'grindstart' && mine) audioController.playSweep(900, 1500, 0.15, 'square', 0.05)
+                if (e.type === 'rockbounce' && mine) audioController.playSweep(180, 520, 0.16, 'square', 0.1)
+                if (e.type === 'rockbounce' && mine) { pop = `${e.name || 'ROCK BOUNCE'} +${e.pts}`; popT = 110 }
                 if (e.type === 'finish' && mine) { e.place === 1 ? audioController.playFanfare() : audioController.playTone(300, 0.2, 'square', 0.08) }
                 if (e.type === 'win') audioController.playFanfare()
                 if (e.type === 'lose' || e.type === 'time') audioController.playDeath()

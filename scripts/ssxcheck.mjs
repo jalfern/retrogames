@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE } from '../src/games/SSX/sim.js'
 import { decide, PACE } from '../src/games/SSX/planner.js'
-import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X } from '../src/games/SSX/course.js'
+import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS } from '../src/games/SSX/course.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -75,6 +75,64 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     const p = g.riders[0]; p.x = WALL_X - 0.03; p.v = 18
     run(g, 8, { steer: 1 })
     ok('the rock wall bails you', p.tumble > 0 && hasEv(g, 'crash'))
+}
+{ // #731 rock tops are bounce pads: down from above = points, not punishment
+    const g = makeGame('race'); run(g, 181); clear(g)
+    const p = g.riders[0]
+    const ob = g.course.obstacles.find((o) => o.kind === 'rock')
+    const os = ob.i * DS
+    p.air = true; p.s = os; p.x = ob.x; p.v = 20; p.vy = -1
+    p.y = terrainY(g.course, os, ob.x) + 1.1 - 0.05
+    const s0 = p.score
+    let t = 0
+    while (!hasEv(g, 'rockbounce') && t < 10) { step(g, {}); t++ }
+    ok('#731 landing on a rock from above bounces', hasEv(g, 'rockbounce') && p.air && p.vy > 0)
+    ok('#731 the bounce pays points', p.score - s0 === CFG.rockPts)
+    ok('#731 a bounce is not a bail', p.tumble === 0)
+}
+{ // #731 second contact with the same rock crashes; trees never bounce
+    const g = makeGame('race'); run(g, 181); clear(g)
+    const p = g.riders[0]
+    const ob = g.course.obstacles.find((o) => o.kind === 'rock')
+    p.air = true; p.s = ob.i * DS; p.x = ob.x; p.v = 20; p.vy = -1
+    p.bounceOb = ob.i
+    p.y = terrainY(g.course, ob.i * DS, ob.x) + 1.1 - 0.05
+    step(g, {})
+    ok('#731 re-landing on a bounced rock is a crash', p.tumble > 0 && hasEv(g, 'crash', (e) => e.what === 'rock'))
+    const g2 = makeGame('race'); run(g2, 181); clear(g2)
+    const q = g2.riders[0]
+    const tr = g2.course.obstacles.find((o) => o.kind === 'tree')
+    q.air = true; q.s = tr.i * DS; q.x = tr.x; q.v = 6; q.vy = -1
+    q.y = terrainY(g2.course, tr.i * DS, tr.x) + 1.2
+    let t = 0
+    while (!hasEv(g2, 'crash') && t < 300) { step(g2, {}); t++ }
+    ok('#731 trees still swallow you whole', hasEv(g2, 'crash', (e) => e.what === 'tree') && !hasEv(g2, 'rockbounce'))
+}
+{ // #731 head-on at ground level still bails
+    const g = makeGame('race'); run(g, 181); clear(g)
+    const p = g.riders[0]
+    const ob = g.course.obstacles.find((o) => o.kind === 'rock')
+    p.s = ob.i * DS - 2; p.x = ob.x; p.v = 18; p.air = false
+    let t = 0
+    while (!hasEv(g, 'crash') && t < 60) { step(g, {}); t++ }
+    ok('#731 riding into a rock face still bails', p.tumble > 0 && hasEv(g, 'crash', (e) => e.what === 'rock'))
+}
+{ // #731 scenery plan: four tree species, per-instance tint/scale, ids on the shelf
+    const shelfIds = new Set(JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../public/models/shelf.json'))).entries.map((e) => e.id))
+    let speciesOk = true, tintOk = true, varietyOk = true, shelfOk = true
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const plan = sceneryPlan(buildCourse(c))
+        const trees = plan.filter((e) => e.id.startsWith('tree'))
+        const species = new Set(trees.map((e) => e.id))
+        if (species.size < 4) speciesOk = false
+        if (!trees.every((e) => e.tint != null && e.tint > 0.7 && e.tint < 1.3)) tintOk = false
+        if (new Set(trees.map((e) => e.scale.toFixed(3))).size < 8 || new Set(trees.map((e) => e.rot.toFixed(3))).size < 8) varietyOk = false
+        if (!plan.every((e) => SHELF_PROPS.includes(e.id) && shelfIds.has(e.id))) shelfOk = false
+    }
+    ok('#731 every course carries all four tree species', speciesOk)
+    ok('#731 every tree instance carries an in-range tint', tintOk)
+    ok('#731 scale and rotation vary across trees', varietyOk)
+    ok('#731 every plan id is a real shelf prop', shelfOk)
 }
 { // clean landing banks the trick; a half-finished flip eats it
     const g = makeGame('race'); run(g, 181); clear(g)

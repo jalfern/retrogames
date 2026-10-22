@@ -594,6 +594,14 @@ export async function attachShelf(course, group, alive = () => true) {
         if (!src) continue
         const m = src.clone(true)
         m.userData.keepGeo = 1
+        if (e.tint != null) {
+            m.traverse((o) => {
+                if (o.isMesh && o.material) {
+                    o.material = o.material.clone()
+                    o.material.color.multiplyScalar(e.tint)
+                }
+            })
+        }
         const p = slopePos(course, e.s, e.x)
         m.position.set(p.x, p.y - 0.05, p.z)
         m.scale.setScalar(e.scale)

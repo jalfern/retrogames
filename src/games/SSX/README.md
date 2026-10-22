@@ -30,8 +30,11 @@ the boost meter and a full meter at takeoff throws OVER.
   sky-following horizon of distant peaks + sun (#638), shelf scenery models
   (`attachShelf`, tree_pine/oak, rock, boulder, fence, flag — primitive
   fallback so nothing blocks), neon rails and city pylons, rigs
-  that crouch/grab/spin/flip/tumble, spray sprites. `index.jsx` is paint,
-  sound, HUD and input only.
+   that crouch/grab/spin/flip/tumble, spray sprites. `index.jsx` is paint,
+   sound, HUD and input only. #731: trees span all four shelf species
+   (`tree_pine`, `tree_pine_snow`, `tree_pine_tall`, `tree_oak`) picked per
+   instance, with continuous scale/rotation spread and a per-instance material
+   tint so no two look alike.
 - Real surfaces (#669): `surfaceInfo` blends snow over rock by NATURAL slope
   (`slopeAt` — featureLift excluded, the #638 lesson) and ridge height, with
   crag banding, bedding planes + fracture blocks in the rock colour, and
@@ -70,6 +73,10 @@ the boost meter and a full meter at takeoff throws OVER.
 7. Showoff: 90 s, house target 8000.
 8. Carved tracks: hard carving on the snow etches grooves that fade in ~5 s;
    straight riding and airborne boards leave nothing.
+9. Rock bounce (#731): dropping onto a rock's top from above kicks you back
+   off with `CFG.rockPts` and a meter bump (chain-neutral); a second contact
+   with the same rock crashes, a rock met at ground level bails, and trees
+   never bounce. Pinned by five ssxcheck gates.
 
 ## The hero rider (#548)
 
@@ -136,7 +143,7 @@ was flaking the same-pose stability gate).
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 70 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 80 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
 npm run ssxterraincheck                 # 30 checks: snow/rock surfaces (#669)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,

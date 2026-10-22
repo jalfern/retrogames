@@ -291,16 +291,20 @@ export const WALL_X = 1.75
 // pin it; art.js turns entries into real models (primitive fallback included).
 const shash = (n) => { const v = Math.sin(n * 78.233) * 43758.5453; return v - Math.floor(v) }
 
-export const SHELF_PROPS = ['tree_pine', 'tree_oak', 'rock', 'boulder', 'fence', 'flag', 'marshal_post', 'billboard', 'grandstand']
+export const SHELF_PROPS = ['tree_pine', 'tree_pine_snow', 'tree_pine_tall', 'tree_oak', 'rock', 'boulder', 'fence', 'flag', 'marshal_post', 'billboard', 'grandstand']
 
 export function sceneryPlan(c) {
     const out = []
     let n = 0
-    const push = (id, s, x, scale, orient) => out.push({ id, s, x, scale, rot: shash(n++) * Math.PI * 2, orient })
+    const push = (id, s, x, scale, orient, tint = null) => out.push({ id, s, x, scale, rot: shash(n++) * Math.PI * 2, orient, tint })
+    const treeAt = (k) => {
+        const tr = shash(k)
+        return tr < 0.34 ? 'tree_pine' : tr < 0.56 ? 'tree_pine_snow' : tr < 0.78 ? 'tree_pine_tall' : 'tree_oak'
+    }
     // crash obstacles first — the things that bite must stand where you see them
     for (const ob of c.obstacles) {
         const s = ob.i * DS
-        if (ob.kind === 'tree') push(shash(ob.i * 3.1) < 0.68 ? 'tree_pine' : 'tree_oak', s, ob.x, shash(ob.i * 1.9) < 0.5 ? 1.1 : 1.35, 'rand')
+        if (ob.kind === 'tree') push(treeAt(ob.i * 3.1), s, ob.x, 1.05 + shash(ob.i * 1.9) * 0.4, 'rand', 0.88 + shash(ob.i * 7.3) * 0.28)
         else push(shash(ob.i * 5.7) < 0.5 ? 'boulder' : 'rock', s, ob.x, 1.25, 'rand')
     }
     // slalom flags gating the line
@@ -321,7 +325,7 @@ export function sceneryPlan(c) {
         const r1 = shash(i * 1.37 + 11.3)
         if (r1 < 0.24) {
             const side = r1 < 0.12 ? 1 : -1
-            push(shash(i * 4.3) < 0.75 ? 'tree_pine' : 'tree_oak', s, side * (2.5 + shash(i * 2.9) * 3.6), 1.5 + shash(i * 6.1), 'rand')
+            push(treeAt(i * 4.3), s, side * (2.5 + shash(i * 2.9) * 3.6), 1.35 + shash(i * 6.1) * 0.9, 'rand', 0.85 + shash(i * 5.3) * 0.3)
         }
         if (shash(i * 3.71 + 5) < 0.08) {
             push(shash(i * 9.1) < 0.5 ? 'rock' : 'boulder', s, (i % 2 ? 1 : -1) * (1.95 + shash(i * 7.7) * 1.1), 1.3, 'rand')

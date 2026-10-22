@@ -32,6 +32,8 @@ export const CFG = {
     boostGain: 0.02,           // meter per trick point — the whole economy
     tuckAcc: 3.2,              // m/s^2 the aero tuck (stick/↑) adds on the hill
     scrubDrag: 0.12,           // fraction/s of speed a scrub (stick/↓) checks
+    rockBounce: 7.0,           // m/s kicked back off a rock top landed from above (#731)
+    rockPts: 200,              // style points for the boulder boop
     comboCap: 4,
     overDouble: true,
     flipCheck: true,           // half-done flips crash you
@@ -67,6 +69,7 @@ function newRider(i, isP, gridBack) {
         lastTrick: null, lastTrickT: 0, score: 0,
         crashes: 0, tricksLanded: 0, bigAir: 0,
         carves: [],
+        bounceOb: -1,
         jumpHeld: false, steerSm: 0, seedPhase: i * 1.7 + 0.4,
     }
 }
@@ -196,6 +199,30 @@ function riderStep(g, r, inp) {
         if (inp.flip && Math.abs(r.flip) < (r.over ? 720 : 360) + 20) r.flip += CFG.flipRate * dt * (inp.flip === 2 ? -1 : 1)
         if (inp.grab && !r.grab) { r.grab = 1; r.grabKind = (r.tricksLanded + g.tick) % GRABS.length }
         const groundY = terrainY(c, r.s, r.x)
+        if (r.vy < 0) {
+            // rock tops are bounce pads (#731): descending onto one kicks you
+            // back off with style points — a second contact is a crash, and a
+            // rock met at ground level still bails (the loop below).
+            for (const ob of c.obstacles) {
+                if (ob.kind !== 'rock') continue
+                const os = ob.i * DS
+                if (Math.abs(os - r.s) < DS * 0.9 && Math.abs(ob.x - r.x) < ob.r) {
+                    const top = groundY + 1.1
+                    if (r.y <= top) {
+                        if (r.bounceOb === ob.i) { crash(g, r, 'rock'); return }
+                        r.bounceOb = ob.i
+                        r.y = top
+                        r.vy = CFG.rockBounce
+                        r.score += CFG.rockPts
+                        r.meter = Math.min(100, r.meter + CFG.rockPts * CFG.boostGain * (CFG.slack ? 0.75 : 1))
+                        r.lastTrick = 'ROCK BOUNCE'
+                        r.lastTrickT = 150
+                        push(g, { type: 'rockbounce', who: r.id, pts: CFG.rockPts, name: 'ROCK BOUNCE' })
+                        return
+                    }
+                }
+            }
+        }
         if (r.y <= groundY && r.vy < 0) {
             r.y = groundY
             r.air = false
