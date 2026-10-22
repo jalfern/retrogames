@@ -259,3 +259,17 @@ the compositor screenshot path covers WebGPU).
     `cometdrifthdscenerycheck` grows to 101 gates (+19); two new mutants
     (single-sponsor collapse, bunting sag into headspace) must die; the
     #502 landmark gate now expects `gulch:arch corkscomb:dune` (#740 law).
+
+## Attract course selector (#794)
+
+The 2D twin's #534 lesson, ported: the title's ‹ › are real thumb-sized
+buttons, not typography. `scene.js:attractSelectGeom` places the shared
+`CometDrift/selector.js` contract (selectorGeom gains an `opts` override for
+rowY/off/hw/hh; 2D defaults byte-identical) on the HD attract stack, boxes
+flanking the measured name and clamped on-screen. Pointer taps hit-test
+`selectorHit` — chevron cycles, centre (name/prompt/sky) races; the analog
+stick cycles with the #534 one-flick-one-step law (re-arm at centre), the
+d-pad via Arrow keys; a press lights the box. Cycle sound 540±120 Hz.
+Harness: 8 Node + 10 browser gates in `cometdrifthdcheck` (real mouse
+clicks, stick flick steps exactly one, wrap over all 4 circuits, centre
+still launches); `--mutate-select` (offset collapse) dies.

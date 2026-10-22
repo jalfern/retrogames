@@ -17,6 +17,7 @@ import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.j
 import { TRACK, COURSES, selectCourse, crestDipLaw, crestDust } from '../src/games/CometDrift/track.js'
 import { BANDS } from '../src/games/CometDrift/bands.js'
 import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE, refOverlayStats } from '../src/games/CometDriftHD/scene.js'
+import { selectorGeom, selectorHit } from '../src/games/CometDrift/selector.js'
 import * as THREE from 'three'
 
 const args = process.argv.slice(2)
@@ -85,6 +86,26 @@ if (MUTATE_BLOOM) {
         if (bloommutat) {
             writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(BUTIL, BLINE))
             console.log('  ..    bloom mutation restored')
+        }
+    })
+}
+
+// #794 selector mutant: collapse the chevron offset onto the centre — the
+// flank / overlap / start-zone-clear gates MUST go red under this run.
+const OLINE = 'const off = Math.max(hw + Math.round(16 * u), Math.min(want, Math.round(W / 2 - hw - Math.round(2 * u))))'
+const OUTIL = 'const off = Math.round(hw / 2) /* selectmut */'
+let selectmutat = false
+if (args.includes('--mutate-select')) {
+    const osrc = readFileSync(resolve(HERE, '../src/games/CometDriftHD/scene.js'), 'utf8')
+    if (!osrc.includes(OLINE)) { console.error('MUTATE_SELECT: offset law not found — probing stale code.'); process.exit(2) }
+    writeFileSync(resolve(HERE, '../src/games/CometDriftHD/scene.js'), osrc.replace(OLINE, OUTIL))
+    selectmutat = true
+    console.log('  ..    mutated: the chevrons collapse onto the centre — the #794 selector gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (selectmutat) {
+            const p = resolve(HERE, '../src/games/CometDriftHD/scene.js')
+            writeFileSync(p, readFileSync(p, 'utf8').replace(OUTIL, OLINE))
+            console.log('  ..    selector mutation restored')
         }
     })
 }
@@ -1193,6 +1214,56 @@ console.log('attract preview + per-course map (#502 item 5):')
     selectCourse('gulch')
 }
 
+// #794: the HD title's chevrons must be real thumb-sized buttons on the
+// shared #534 contract (selector.js) — symmetric, off-centre, clear of the
+// centre start zone, never overlapping, and they flank the MEASURED name.
+// --mutate-select collapses the offset onto the centre and MUST redden the
+// flank/centre gates.
+console.log('attract chevron buttons (#794 — the phone can pick a course):')
+{
+    const SRC794 = readFileSync(SHARD, 'utf8')
+    const SCENE794 = readFileSync(resolve(HERE, '../src/games/CometDriftHD/scene.js'), 'utf8')
+    // fresh-import the geometry law so --mutate-select (which rewrites the
+    // file AFTER this module's static import cached it) is actually visible.
+    const HD_SCENE = new URL('../src/games/CometDriftHD/scene.js', import.meta.url)
+    const attractSel = (await import(`${HD_SCENE}?v=${process.argv.includes('--mutate-select') ? Date.now() : 0}`)).attractSelectGeom
+    const cases = [[840, 420, 1.0], [640, 360, 0.85], [390, 844, 1.3], [1440, 810, 2.0]]
+    let geomOk = true; const geomWhy = []
+    for (const [W, H, u] of cases) {
+        for (const nameHalf of [40, 90, 160]) {
+            const g = attractSel(W, H, u, Math.round(H * 0.5), nameHalf)
+            const onScreen = g.left[0] - g.hw >= 0 && g.right[0] + g.hw <= W && g.rowY - g.hh >= 0 && g.rowY + g.hh <= H
+            const flank = g.left[0] < W / 2 && g.right[0] > W / 2 && g.left[1] === g.rowY && g.right[1] === g.rowY
+            const symmetric = Math.abs(g.left[0] + g.right[0] - W) <= 1
+            const thumb = g.hw * 2 >= 48 && g.hh * 2 >= 32
+            const noOverlap = g.right[0] - g.hw > g.left[0] + g.hw
+            const clamp = Math.round(W / 2 - g.hw - Math.round(2 * u))
+            const want = Math.round(nameHalf + 8 * u + g.hw)
+            const clearsName = g.off >= Math.round(nameHalf + 4 * u) || clamp < want
+            const centreClear = selectorHit(g, Math.round(W / 2), g.rowY) === 0
+            const hitL = selectorHit(g, g.left[0], g.left[1]) === -1
+            const hitR = selectorHit(g, g.right[0], g.right[1]) === 1
+            if (!(onScreen && flank && symmetric && thumb && noOverlap && clearsName && centreClear && hitL && hitR)) {
+                geomOk = false
+                geomWhy.push(`${W}x${H}@${u} n=${nameHalf}: on=${onScreen} flank=${flank} sym=${symmetric} thumb=${thumb} ovl=${!noOverlap} name=${clearsName} ctr=${centreClear} hits=${hitL}/${hitR}`)
+            }
+        }
+    }
+    ok(geomOk, `HD chevron buttons: thumb-sized, symmetric, flanking the name, on-screen, centre stays the start zone${geomWhy.length ? ' — ' + geomWhy.join(' | ') : ''}`)
+    const gDefaults = selectorGeom(256, 192, 1)
+    ok(gDefaults.rowY === Math.round(192 * 0.47) && gDefaults.off === 88 && gDefaults.hw === 32 && gDefaults.hh === 20,
+        'the 2D selector defaults are byte-identical after the opts extension (#534 regression)')
+    ok(SCENE794.includes('export function attractSelectGeom') && SCENE794.includes("from '../CometDrift/selector.js'"),
+        'scene.js places the shared selector contract for HD')
+    ok(SRC794.includes('selectorHit(') && SRC794.includes('attractSelectGeom(') && SRC794.includes("e.clientX"),
+        'HD hit-tests pointer taps against the chevron boxes')
+    ok(SRC794.includes('attractStickTick') && SRC794.includes('STICK_ON') && SRC794.includes('setStick'),
+        'HD cycles the course on the analog stick (#534 law ported)')
+    ok(/ArrowLeft' \|\| e\.code === 'ArrowRight'/.test(SRC794), 'HD cycles on d-pad Arrow keys on the title')
+    ok(SRC794.includes("'TAP ‹ › TO PICK CIRCUIT"), 'the attract copy teaches the chevron control')
+    ok(SRC794.includes('pressFresh') && SRC794.includes('selPress'), 'HD tracks + exposes the chevron press state for the pressable-look gate')
+}
+
 // #511 item 4: the attract stack — fractions overlapped the title with the
 // letter-spaced course name at lite scale, and the noon name ran under the
 // POS panel and minimap at 840x420. attractLayout stacks by glyph box and
@@ -1455,6 +1526,59 @@ if (!SKIP_BROWSER) {
 
         const p3 = await pixels()
         ok(p3.max - p3.min > 60, 'attract still renders live after restart (full cycle survives)')
+
+        // #794: the HD title's ‹ › must be REAL controls — a chevron tap
+        // cycles the course without launching, the stick/d-pad cycle too, the
+        // centre stays the start zone, and cycling walks all four circuits
+        // (#784). The page just restarted from the end table: it sits on attract.
+        console.log('  attract course selector (#794 — chevrons are buttons):')
+        ok(await page.evaluate(() => window.__cometHDTest.screen()) === 'attract', 'the page sits on attract for the selector checks')
+        let S = await page.evaluate(() => window.__cometHDTest.selector())
+        ok(!!S && S.hw * 2 >= 48 && S.hh * 2 >= 32, `chevron hit-boxes are thumb-sized (${S ? `${S.hw * 2}x${S.hh * 2}` : 'null'})`)
+        const ids = await page.evaluate(() => window.__cometHDTest.courseIds())
+        const idxOf = (id) => ids.indexOf(id)
+        const cur = () => page.evaluate(() => window.__cometHDTest.course())
+        const scr = () => page.evaluate(() => window.__cometHDTest.screen())
+        const clickChevron = async (dir) => {
+            const G = await page.evaluate(() => window.__cometHDTest.selector())
+            const [gx, gy] = dir < 0 ? G.left : G.right
+            await page.mouse.click(G.ox + gx * (G.vw / G.w), G.oy + gy * (G.vh / G.h))
+            await page.waitForTimeout(120)
+        }
+        const clickCentre = async () => {
+            const G = await page.evaluate(() => window.__cometHDTest.selector())
+            await page.mouse.click(G.ox + (G.w / 2) * (G.vw / G.w), G.oy + G.rowY * (G.vh / G.h))
+            await page.waitForTimeout(120)
+        }
+        const c0 = await cur()
+        await clickChevron(-1)
+        ok(await cur() === ids[(idxOf(c0) - 1 + ids.length) % ids.length] && await scr() === 'attract',
+            'a left-chevron click cycles back and does NOT start the race')
+        await clickChevron(1)
+        ok(await cur() === c0 && await scr() === 'attract', 'a right-chevron click cycles forward and still does not start')
+        ok(await page.evaluate(() => { window.__cometHDTest.cycleCourse(1); const s = window.__cometHDTest.selector(); return s.pressFresh === true && s.pressDir === 1 }),
+            'a cycled chevron lights its press state (pressable look)')
+        await page.keyboard.press('ArrowRight')
+        await page.waitForTimeout(120)
+        ok(await cur() !== c0 && await scr() === 'attract', 'the d-pad (Arrow keys) cycles the title too')
+        const c1 = await cur()
+        await page.evaluate(() => window.__cometHDTest.setStick(1))
+        await page.waitForTimeout(260)
+        const held1 = await page.evaluate(() => { const t = window.__cometHDTest; return { c: t.course(), s: t.screen() } })
+        await page.waitForTimeout(450)
+        const held2 = await cur()
+        ok(held1.s === 'attract' && held1.c === ids[(idxOf(c1) + 1) % ids.length] && held2 === held1.c,
+            `one stick flick steps exactly ONE course, a hold does not spin, and nothing launches (${c1} -> ${held1.c})`)
+        await page.evaluate(() => window.__cometHDTest.setStick(-1))
+        await page.waitForTimeout(260)
+        ok(await cur() === c1 && await scr() === 'attract', 'the opposite stick flick steps back without launching')
+        await page.evaluate(() => window.__cometHDTest.setStick(0))
+        await page.waitForTimeout(120)
+        const cWrap = await cur()
+        for (let i = 0; i < ids.length; i++) await clickChevron(1)
+        ok((await cur()) === cWrap && await scr() === 'attract', `chevron cycling walks every circuit and wraps (${ids.length} circuits — the 4th survives #784)`)
+        await clickCentre()
+        ok(await scr() === 'race', 'a tap on the name (centre start zone) still launches the race')
     } finally {
         await browser.close()
     }
