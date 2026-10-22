@@ -29,6 +29,22 @@ export function fitScale(W, H, cssW, cssH, dpr = 1) {
   return { s, bw: W * s, bh: H * s, cssW: (W * s) / d, cssH: (H * s) / d }
 }
 
+// #739: the FILL decision — the largest scale (fractional allowed) that fits
+// the container, for titles that CSS-size their own canvas. fitScale above
+// deliberately floors to a whole multiple for its two-canvas blit path; for a
+// directly sized canvas that floor costs a phone-class viewer most of the
+// screen (a 256-wide game in a 390-wide box rounds down to 1x). Raw contain
+// never shrinks below the whole-multiple scale — integer scaling is kept
+// exactly where it already fills — and crispness rides on
+// `image-rendering: pixelated` + `imageSmoothingEnabled = false`, which every
+// caller already sets. Returns s >= 1; callers size the canvas to W*s x H*s.
+export function fitFill(W, H, cssW, cssH) {
+  const fits = cssW > 0 && cssH > 0 && W > 0 && H > 0
+  if (!fits) return 1
+  const s = Math.max(1, Math.min(cssW / W, cssH / H))
+  return Math.abs(s - Math.round(s)) <= 1e-6 ? Math.round(s) : s
+}
+
 // DOM: owns the display canvas and keeps it in step with the container and dpr.
 //   source     the game's W×H canvas — kept in the DOM, the harness reads it
 //   container  the element the display canvas is centred in (the game's root)

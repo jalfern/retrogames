@@ -6,7 +6,8 @@
 // Two mutants that die: one forgets dpr (underscales on Retina), one rounds up
 // with ceil (overflows the container and re-introduces a fractional crop).
 
-import { fitScale } from '../src/utils/fitCanvas.js'
+import { fitScale, fitFill } from '../src/utils/fitCanvas.js'
+import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++ } else { fail++; console.error(`  FAIL: ${msg}`) } }
@@ -106,6 +107,49 @@ for (const [W, H, cssW, cssH, dpr] of [[256, 224, 390, 844, 3], [100, 100, 100, 
   ok(mutant.s > real.s, `ceil mutant rounds up past the real scale (mutant s=${mutant.s} > real s=${real.s})`)
   ok(mutant.cssW > cssW, `ceil mutant overflows the container (cssW ${mutant.cssW} > ${cssW}) — the bug`)
   ok(real.cssW <= cssW, `real floor result fits (cssW ${real.cssW} <= ${cssW})`)
+}
+
+// --- 11. #739 fitFill: phone boxes FILL, they don't quarter (#739 bug) ---
+// iPhone-class width 390 → 382 usable for a 256-wide source: the old floor
+// answered 1 (256 px of a 390 px screen = the quarter-screen bug). fitFill
+// answers ~1.49 and the canvas spans the phone.
+{
+  const s = fitFill(256, 224, 382, 540)
+  ok(s > 1.4 && s < 1.5, `iPhone portrait 382x540 fills width (got s=${s.toFixed(3)}, old floor: 1)`)
+  ok(s * 256 <= 382 + 1e-6 && s * 224 <= 540 + 1e-6, `fitFill never overflows (got ${s * 256}x${s * 224} in 382x540)`)
+  const floorMutant = Math.max(1, Math.floor(Math.min(382 / 256, 540 / 224)))
+  ok(s > floorMutant, `integer-floor mutant leaves the phone quartered (mutant s=${floorMutant}, real s=${s.toFixed(3)})`)
+}
+
+// --- 12. fitFill keeps whole numbers where they already fill ---
+// Desktop boxes where contain lands on an integer must stay integer (crisp),
+// and fitFill is never SMALLER than the whole-multiple fitScale (never shrinks).
+{
+  ok(fitFill(256, 224, 512, 1000) === 2, `exact 2x box stays integer s=2 (got ${fitFill(256, 224, 512, 1000)})`)
+  ok(fitFill(256, 224, 768, 1000) === 3, `exact 3x box stays integer s=3 (got ${fitFill(256, 224, 768, 1000)})`)
+  let shrink = false
+  for (const [W, H, cssW, cssH] of [
+    [256, 224, 382, 540], [256, 240, 382, 700], [256, 224, 1016, 640], [256, 224, 511, 1000], [200, 100, 405, 1000],
+  ]) {
+    if (fitFill(W, H, cssW, cssH) < fitScale(W, H, cssW, cssH, 1).s - 1e-9) shrink = true
+  }
+  ok(!shrink, `fitFill >= whole-multiple fit everywhere (integer kept where it fills)`)
+}
+
+// --- 13. fitFill floors at 1 and survives degenerate input ---
+{
+  ok(fitFill(256, 224, 100, 100) === 1, `tiny container never shrinks below 1 (got ${fitFill(256, 224, 100, 100)})`)
+  ok(fitFill(256, 224, 0, 0) === 1, `zero container -> s=1 (got ${fitFill(256, 224, 0, 0)})`)
+}
+
+// --- 14. #739 source gate: the three games use fitFill, no floor-leftover ---
+// The bug lived in per-game resize() copies of Math.floor(...). A game drifting
+// back to floor (or to a hand-rolled min) reds this gate without a browser.
+for (const game of ['QBert', 'Tetris', 'Joust']) {
+  const src = readFileSync(new URL(`../src/games/${game}/index.jsx`, import.meta.url), 'utf8')
+  ok(/from '\.\.\/\.\.\/utils\/fitCanvas'/.test(src), `${game} imports fitCanvas`)
+  ok(/const s = fitFill\(W, H, r\.width - 8, r\.height - 60\)/.test(src), `${game} resize uses fitFill`)
+  ok(!/Math\.floor\(Math\.min\(\(r\.width/.test(src), `${game} has no leftover integer-floor resize (the #739 bug)`)
 }
 
 // --- Summary ---

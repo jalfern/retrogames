@@ -14,6 +14,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { fitFill } from '../../utils/fitCanvas'
 import { newGame, step, cellsOf, stateHash, PIECE_NAMES, SPAWN_X, SPAWN_Y, FIXED_DT, resting } from './sim.js'
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from './planner.js'
 import { musicStep } from './music.js'
@@ -300,7 +301,7 @@ const TetrisGame = () => {
         const resize = () => {
             const r = wrap.getBoundingClientRect()
             if (!r.width || !r.height) return
-            const s = Math.max(1, Math.floor(Math.min((r.width - 8) / W, (r.height - 60) / H)))
+            const s = fitFill(W, H, r.width - 8, r.height - 60)
             canvas.style.width = `${W * s}px`
             canvas.style.height = `${H * s}px`
         }
