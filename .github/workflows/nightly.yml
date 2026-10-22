@@ -68,12 +68,15 @@ jobs:
   shoreperf:
     # #680: quiet-box qhd numbers land nightly on a dedicated runner. The dev
     # boxes all run local LLM inference, so shoreperf's guard always says
-    # CONTENDED there and the absolute fps is context, never verdict. CI's
-    # Chrome is SwiftShader — slow but quiet and reproducible, so the nightly
-    # series is the trend line the issue asks for. Advisory: continue-on-error
-    # so a perf blip never freezes merges (only full-static gates, rule 3).
+    # CONTENDED there and the absolute fps is context, never verdict. The runner
+    # must have a real GPU: qhd is 3200x2000 and the Linux CI SwiftShader path
+    # boots WebGPU but cannot drive a single counted frame through the sim in the
+    # window (n=0, no timestamp-query) — verified 2026-10-22 on ubuntu-latest.
+    # macOS runners are quiet and Metal-backed (the known-good combo from local
+    # qhd runs), so the nightly series there is the real trend line #680 asks
+    # for. Advisory: continue-on-error so a perf blip never freezes merges.
     continue-on-error: true
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -81,7 +84,9 @@ jobs:
           node-version: 24   # npm >=11, see the note in ci.yml's static job
           cache: npm
       - run: npm ci
-      - run: npx playwright-core install --with-deps chromium
+      - name: Install headless Chromium (Linux only)
+        if: runner.os != 'macOS'
+        run: npx playwright-core install --with-deps chromium
       - name: shoreperf qhd
         run: |
           set -o pipefail
