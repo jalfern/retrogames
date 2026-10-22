@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
-import { TRACK, COURSES, selectCourse, crestDipLaw } from '../src/games/CometDrift/track.js'
+import { TRACK, COURSES, selectCourse, crestDipLaw, crestDust } from '../src/games/CometDrift/track.js'
 import { BANDS } from '../src/games/CometDrift/bands.js'
 import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE, refOverlayStats } from '../src/games/CometDriftHD/scene.js'
 import * as THREE from 'three'
@@ -404,6 +404,41 @@ console.log('crest/dip elevation feel (#530 item 2):')
         ok(pts[di].dip > 0.5 && avg(pts, di, -1) < 0 && avg(pts, di, 1) > 0,
             `${id}: strongest dip sits on a real bottom (grade ${avg(pts, di, -1).toFixed(3)} -> ${avg(pts, di, 1).toFixed(3)})`)
         ok(ci !== di, `${id}: crest and dip are distinct features (idx ${ci} vs ${di})`)
+    }
+    selectCourse('gulch')
+}
+// #530 item 2 (crest-lip dust): a kart flying over a brow kicks a short plume
+// off the lip, so the break the #757 FOV dip implies is visible in the world.
+// The emission is driven by the pure crestDust law (track.js), pinned here two
+// ways — (a) the law's behaviour: nothing below the brow threshold or below the
+// speed floor, monotone in both crest strength and speed, peaking at 1 on the
+// brow at speed; (b) it is live on the shipped tracks: at each course's
+// strongest crest the plume fires hard, at the strongest dip it stays nil (a
+// bottom is not a lip), and the plume is brow-localised, not everywhere.
+// Forcing crestDust -> 0 reds the monotone/peak gates and every live-course
+// plume gate; flipping the speed term reds the speed-monotone gate.
+console.log('crest-lip dust plume (#530 item 2):')
+{
+    ok(crestDust(0, 8) === 0 && crestDust(0.34, 8) === 0, 'no plume below the brow threshold (weak crest reads 0)')
+    ok(crestDust(1, 1.5) === 0 && crestDust(1, 1) === 0, 'a crawling kart kicks nothing (speed at/below the floor reads 0)')
+    ok(crestDust(1, 8) > crestDust(0.6, 8) && crestDust(0.6, 8) > crestDust(0.36, 8) && crestDust(0.36, 8) > 0,
+        `plume grows with crest strength (0.36->${crestDust(0.36, 8).toFixed(3)}, 0.6->${crestDust(0.6, 8).toFixed(3)}, 1->${crestDust(1, 8).toFixed(3)})`)
+    ok(crestDust(0.8, 8) > crestDust(0.8, 3) && crestDust(0.8, 3) > crestDust(0.8, 1.6) && crestDust(0.8, 1.6) > 0,
+        `plume grows with speed (1.6->${crestDust(0.8, 1.6).toFixed(3)}, 3->${crestDust(0.8, 3).toFixed(3)}, 8->${crestDust(0.8, 8).toFixed(3)})`)
+    ok(crestDust(1, 8) <= 1.0001 && crestDust(1, 8) >= 0.99, `brow at speed is a full plume (${crestDust(1, 8).toFixed(3)})`)
+    const RACE_V = 7
+    for (const id of ['gulch', 'sandbank', 'corkscomb']) {
+        selectCourse(id)
+        const pts = TRACK.pts; const N = TRACK.N
+        let ci = 0, di = 0
+        for (let i = 1; i < N; i++) { if (pts[i].crest > pts[ci].crest) ci = i; if (pts[i].dip > pts[di].dip) di = i }
+        ok(crestDust(pts[ci].crest, RACE_V) > 0.5,
+            `${id}: plume fires hard at the strongest brow (crest ${pts[ci].crest.toFixed(3)} -> intensity ${crestDust(pts[ci].crest, RACE_V).toFixed(3)})`)
+        ok(crestDust(pts[di].crest, RACE_V) < 0.15,
+            `${id}: no plume at the strongest dip (a bottom is not a lip: intensity ${crestDust(pts[di].crest, RACE_V).toFixed(3)})`)
+        let live = 0
+        for (let i = 0; i < N; i++) if (crestDust(pts[i].crest, RACE_V) > 0.05) live++
+        ok(live > 0 && live < N * 0.5, `${id}: plume is brow-localised (${live}/${N} points kick at race speed)`)
     }
     selectCourse('gulch')
 }
