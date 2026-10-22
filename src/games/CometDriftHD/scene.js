@@ -13,6 +13,7 @@ import * as THREE from 'three'
 import { TRACK, SCENERY, bankAt } from '../CometDrift/track.js'
 import { REFERENCES } from '../CometDrift/reference.js'
 import { BANDS } from '../CometDrift/bands.js'
+import { selectorGeom } from '../CometDrift/selector.js'
 
 export const S = 1 / 60
 const T = TRACK
@@ -1041,6 +1042,24 @@ export function attractLayout(u, W, H, best = 0, nameLen = 13) {
         best: L.best ? { fs: L.best.fs, y: b0 + L.best.y, step: L.best.step } : null,
         blink: { fs: L.blink.fs, y: b0 + L.blink.y },
     }
+}
+
+// ---- #794: the HD attract's chevron BUTTONS. The 2D twin solved the phone
+// title in #534 (thumb-sized hit-boxes flanking the name, centre stays the
+// start zone); HD drew the chevrons as plain text and any tap launched. This
+// places the shared #534 contract (selector.js) on the HD stack: the row
+// rides attractLayout's sel line, the boxes flank the MEASURED name, and the
+// clamp keeps both boxes fully on-screen at any viewport. Returns the same
+// geom shape selectorHit consumes, so one hit test serves both twins.
+export const SELECT_HW = 34
+export const SELECT_HH = 22
+export const SELECT_GAP = 8
+export function attractSelectGeom(W, H, u, selY, nameHalfW) {
+    const hw = Math.max(1, Math.round(SELECT_HW * u))
+    const hh = Math.max(1, Math.round(SELECT_HH * u))
+    const want = Math.round(nameHalfW + SELECT_GAP * u + hw)
+    const off = Math.max(hw + Math.round(16 * u), Math.min(want, Math.round(W / 2 - hw - Math.round(2 * u))))
+    return selectorGeom(W, H, u, { rowY: Math.round(selY), off, hw, hh })
 }
 
 // ---- #502 item 3: the Bus Stop braking cue (Sandbank). Tire-bar walls hug

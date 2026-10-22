@@ -11,13 +11,14 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from '../CometDrift/sim.js'
 import { bankVoices, engineRegister, crowdSwellGain, nearestStandPx, CROWD_GAIN, CROWD_PERIOD, CROWD_BURST, CROWD_FREQ } from './audio.js'
 import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse, crestDust } from '../CometDrift/track.js'
-import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
+import { selectorHit } from '../CometDrift/selector.js'
+import { padState, steerPedals, smoothSteer, STEER_PIPELINE, setStick } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, buildHills, wallTopYAt, worldAnchor, courseFloorY,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, roadRollYAt, roadRollAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
-    hudScale, hudTop, tintFor, envWashFor, SKY_STOPS, refOverlayStats, attractLayout,
+    hudScale, hudTop, tintFor, envWashFor, SKY_STOPS, refOverlayStats, attractLayout, attractSelectGeom,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
@@ -244,6 +245,8 @@ export default function CometDriftHD() {
         const keys = keysRef.current
         const st = { screen: 'attract', endT: 0, plan: true }
         screenRef.current = 'attract'
+        const selGeomRef = { current: null }
+        const selPress = { dir: 0, t: -1e9 }
 
         const BEST_KEY = 'arcade.cometHD.bestLap'
         const TOP_KEY = 'arcade.cometHD.topLaps'
@@ -1175,9 +1178,30 @@ export default function CometDriftHD() {
             } else {
                 hctx.fillText(spaced, W / 2, Math.round(A.name.y))
             }
+            // #794: the chevrons are REAL buttons, not typography. The 2D twin
+            // (#534) made the title's ‹ › the only course control a phone has;
+            // HD shipped them as text inside a line that any tap launched. Same
+            // shared contract (selector.js via attractSelectGeom): thumb-sized
+            // boxes flank the measured name, the centre stays the start zone,
+            // and a press lights the box so it reads pressable.
             hctx.font = fa(A.sel.fs)
-            hctx.fillStyle = '#7ae8ff'
-            hctx.fillText('<  ' + COURSE.name + '  >', W / 2, Math.round(A.sel.y))
+            const selNameW = hctx.measureText(COURSE.name).width
+            const G = attractSelectGeom(W, H, u, A.sel.y, selNameW / 2)
+            selGeomRef.current = G
+            const nowP = performance.now()
+            for (const [c, ch, dir] of [[G.left, '‹', -1], [G.right, '›', 1]]) {
+                const held = selPress.dir === dir && nowP - selPress.t < 160
+                round(c[0] - G.hw, G.rowY - G.hh, G.hw * 2, G.hh * 2, 6 * u)
+                hctx.fillStyle = held ? 'rgba(122,232,255,0.42)' : 'rgba(122,232,255,0.13)'
+                hctx.fill()
+                hctx.strokeStyle = held ? '#b8f4ff' : 'rgba(122,232,255,0.55)'
+                hctx.lineWidth = Math.max(1, Math.round(u))
+                hctx.stroke()
+                hctx.fillStyle = held ? '#ffffff' : '#7ae8ff'
+                hctx.fillText(ch, c[0], Math.round(G.rowY + A.sel.fs * 0.36))
+            }
+            hctx.fillStyle = '#dff4fa'
+            hctx.fillText(COURSE.name, W / 2, Math.round(A.sel.y))
             // #502 item 5: mini-map outline preview — the selected circuit's
             // shape centred under the selector line, so cycling courses shows
             // the track itself, not just its name.
@@ -1192,7 +1216,7 @@ export default function CometDriftHD() {
                 if (i === 0) hctx.moveTo(px1, py1); else hctx.lineTo(px1, py1)
             }
             hctx.closePath(); hctx.stroke()
-            const msgs = ['4 LAPS · 7 KARTS · SELECT CIRCUIT WITH ← →', 'X GAS · S BRAKE · ←→ STEER', 'HOLD SPACE / B THROUGH A BEND', 'BLUE VIOLET GOLD — THE LADDER PAYS']
+            const msgs = ['TAP ‹ › TO PICK CIRCUIT · 4 LAPS · 7 KARTS', 'X GAS · S BRAKE · ←→ STEER', 'HOLD SPACE / B THROUGH A BEND', 'BLUE VIOLET GOLD — THE LADDER PAYS']
             hctx.font = fa(A.msg.fs)
             hctx.fillStyle = '#9fc8e8'
             hctx.fillText(msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(A.msg.y))
@@ -1318,6 +1342,7 @@ export default function CometDriftHD() {
                 while (acc >= 1000 / 60) {
                     acc -= 1000 / 60
                     if (!pausedRef.current) tickWorld(st.screen === 'race')
+                    if (!pausedRef.current && st.screen === 'attract') attractStickTick()
                     updateCamera()
                 }
             }
@@ -1353,6 +1378,25 @@ export default function CometDriftHD() {
             camA = g.karts[0].a
             camLift = 0
             sparks.clear(); dust.clear(); streaks.clear()
+            selPress.dir = dir
+            selPress.t = performance.now()
+            audioController.playTone(540 + dir * 120, 0.06, 'square', 0.07)
+        }
+
+        // #794: the stick cycles the circuit on the title too (same law as the
+        // retro twin's #534): one push past the dead zone steps one course, and
+        // it re-arms only when the stick returns to centre — one flick is one
+        // step, a hold does not spin the pack. The d-pad already cycles via the
+        // Arrow keys kd handles on attract.
+        let stickArm = 0
+        const STICK_ON = 0.35, STICK_OFF = 0.10
+        const attractStickTick = () => {
+            if (st.screen !== 'attract') { stickArm = 0; return }
+            const x = padState.x
+            if (stickArm === 0) {
+                if (x <= -STICK_ON) { stickArm = -1; cycleCourse(-1) }
+                else if (x >= STICK_ON) { stickArm = 1; cycleCourse(1) }
+            } else if (stickArm === -1 ? x > -STICK_OFF : x < STICK_OFF) stickArm = 0
         }
 
         const resetTo = (screen) => {
@@ -1367,9 +1411,23 @@ export default function CometDriftHD() {
             setPadOn(screen === 'race')
         }
 
-        tapRef.current = () => {
+        tapRef.current = (e) => {
             if (pausedRef.current) return
-            if (st.screen === 'attract') { audioController.init(); resetTo('race') }
+            if (st.screen === 'attract') {
+                // #794: the title is a control surface — a tap on a chevron
+                // button cycles the pick, a tap anywhere else (name, prompt,
+                // sky) races it. Same hit test as the 2D twin (#534).
+                const G = selGeomRef.current
+                const rect = glCanvas.getBoundingClientRect()
+                if (G && e && rect.width > 0 && rect.height > 0) {
+                    const cx = (e.clientX - rect.left) / rect.width * cssW
+                    const cy = (e.clientY - rect.top) / rect.height * cssH
+                    const hit = selectorHit(G, cx, cy)
+                    if (hit === -1) { audioController.init(); cycleCourse(-1); return }
+                    if (hit === 1) { audioController.init(); cycleCourse(1); return }
+                }
+                audioController.init(); resetTo('race')
+            }
             else if (st.screen === 'end' && performance.now() - (st.endAt || 0) > 400) resetTo('attract')
         }
 
@@ -1431,6 +1489,15 @@ export default function CometDriftHD() {
             view: () => ({ w: cssW, h: cssH, dpr }),
             hud: () => ({ ...hudRects, safeTop }),
             attract: () => attractLayout(hs(), cssW, cssH, st.top.length, COURSE.name.length),
+            selector: () => {
+                const G = selGeomRef.current
+                if (!G) return null
+                const r = glCanvas.getBoundingClientRect()
+                return { ...G, ox: r.left, oy: r.top, vw: r.width, vh: r.height,
+                    pressDir: selPress.dir, pressFresh: performance.now() - selPress.t < 200 }
+            },
+            setStick: (v) => { setStick(Number(v) || 0, 0); return padState.x },
+            courseIds: () => COURSES.map((c) => c.id),
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
             setPlan: (v) => { st.plan = !!v },
             course: () => COURSE.id,
@@ -1534,7 +1601,7 @@ export default function CometDriftHD() {
     return (
         <div
             className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none"
-            onPointerDown={() => tapRef.current && tapRef.current()}
+            onPointerDown={(e) => tapRef.current && tapRef.current(e)}
         >
             <canvas ref={glRef} className="block absolute inset-0 w-full h-full" style={{ touchAction: 'none' }} />
             <canvas ref={hudRef} className="block absolute inset-0 w-full h-full pointer-events-none" />

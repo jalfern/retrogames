@@ -12,11 +12,17 @@
 // sits dead-centre. `left` / `right` are the box centres, `hw` / `hh` their
 // half-extents. A tap on a chevron cycles the course; a tap anywhere else on
 // the attract (the name, the prompt, the sky) starts the race.
-export function selectorGeom(W, H, hs) {
-    const rowY = Math.round(H * 0.47)
-    const off = Math.round(88 * hs)               // chevron offset from centre
-    const hw = Math.max(1, Math.round(32 * hs))   // hit-box half-width
-    const hh = Math.max(1, Math.round(20 * hs))   // hit-box half-height
+//
+// #794: `opts` lets the HD twin place the same contract on its own attract
+// stack — the row rides the stacked layout (rowY), and the chevron boxes sit
+// outside the measured name (off / hw / hh). Defaults reproduce the 2D
+// geometry byte for byte. selectorHit is shape-agnostic, so both twins share
+// one hit test.
+export function selectorGeom(W, H, hs, opts = {}) {
+    const rowY = opts.rowY !== undefined ? Math.round(opts.rowY) : Math.round(H * 0.47)
+    const off = opts.off !== undefined ? Math.round(opts.off) : Math.round(88 * hs)
+    const hw = opts.hw !== undefined ? Math.max(1, Math.round(opts.hw)) : Math.max(1, Math.round(32 * hs))
+    const hh = opts.hh !== undefined ? Math.max(1, Math.round(opts.hh)) : Math.max(1, Math.round(20 * hs))
     return {
         w: W, h: H, hs, rowY, hw, hh, off,
         left: [Math.round(W / 2 - off), rowY],
