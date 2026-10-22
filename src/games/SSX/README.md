@@ -44,6 +44,16 @@ the boost meter and a full meter at takeoff throws OVER.
   (`buildSparkles`, masked by `sparkleMask` to flat lit snow) complete the
   look. Purely cosmetic: `terrainY` and physics untouched — pinned by
   `ssxterraincheck`.
+- #685 surfaces round 3: coarse `rockStrata` slabs (~18 m) ride the rock
+   colour so mip-washed cliffs keep their bands at chase-cam distance; two
+   sparkle layers (`SPARKLE_PULSE`, independent seeds + decorrelated pulse
+   rates) approximate the original's per-facet glitter; night rock is authored
+   warm/dark so cliffs separate from moonlit blue snow; `cpuSprayCount` gives
+   the rival field powder spray; carve grooves get a packed-snow albedo lip
+   (`GROOVE.lipColor/lipAlpha`); `rimJagPlan` + `buildRimJags` stand
+   non-physics shards on high rock rims to break the skyline; and
+   `landingSound` splits icy crust snaps from powder thuffs. All cosmetic —
+   `terrainY` and physics untouched; pinned by 15 new `ssxterraincheck` gates.
 - Carved tracks: `sim.js` records `r.carves` samples (`{s, x, t}`) whenever the
   player carves hard on the snow (|steer| > 0.45 at v > 8), fading after
   `CARVE_FADE = 300` ticks (~5 s). `index.jsx` lays those as two dark groove
@@ -145,7 +155,7 @@ was flaking the same-pose stability gate).
 ```bash
 npm run lint:ssx && npm run ssxcheck     # 80 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
-npm run ssxterraincheck                 # 30 checks: snow/rock surfaces (#669)
+npm run ssxterraincheck                 # 45 checks: snow/rock surfaces (#669, #685)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
                                           #   keys drive poses, race still winnable,
                                           #   #615 rider polish (grab reach, boot weld,
