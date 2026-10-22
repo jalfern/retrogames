@@ -49,16 +49,25 @@
   }
 
   var css =
-    '#credits-tag{position:fixed;right:12px;bottom:12px;z-index:7;pointer-events:auto;' +
+    '#credits-tag{position:fixed;right:max(12px,env(safe-area-inset-right));' +
+    'bottom:max(12px,env(safe-area-inset-bottom));z-index:7;pointer-events:auto;' +
+    'display:inline-flex;align-items:center;box-sizing:border-box;min-height:32px;' +
     'font:9px/1 ui-monospace,Menlo,monospace;letter-spacing:.28em;text-transform:uppercase;' +
     'color:rgba(255,255,255,.55);background:rgba(6,8,14,.55);border:1px solid rgba(255,255,255,.16);' +
     'border-radius:999px;padding:7px 11px;cursor:pointer;backdrop-filter:blur(4px);' +
     '-webkit-backdrop-filter:blur(4px);transition:color .25s,border-color .25s;}' +
     '#credits-tag:hover{color:#fff;border-color:var(--credits-accent,#fff);}' +
     '#credits-card{position:fixed;inset:0;z-index:8;display:none;place-items:center;' +
+    'padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) ' +
+    'max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));' +
     'background:rgba(3,4,8,.62);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);}' +
-    '#credits-card.open{display:grid;}' +
-    '.cc-box{max-width:min(88vw,430px);background:#0b0d13;border:1px solid var(--credits-accent,#666);' +
+    '#credits-card.open{display:grid;animation:cc-fade .22s ease-out;}' +
+    '#credits-card.open .cc-box{animation:cc-rise .28s ease-out;}' +
+    '@keyframes cc-fade{from{opacity:0}}' +
+    '@keyframes cc-rise{from{opacity:0;transform:translateY(2px)}}' +
+    '@media (prefers-reduced-motion:reduce){#credits-card.open,#credits-card.open .cc-box{animation:none}}' +
+    '.cc-box{max-width:min(88vw,430px);max-height:100%;overflow:auto;' +
+    'background:#0b0d13;border:1px solid var(--credits-accent,#666);' +
     'border-radius:10px;padding:26px 28px;font:11px/1.9 ui-monospace,Menlo,monospace;' +
     'letter-spacing:.12em;color:#d7dbe4;text-transform:uppercase;cursor:default;}' +
     '.cc-name{font-size:15px;font-weight:800;letter-spacing:.3em;color:#fff;margin-bottom:14px;}' +
