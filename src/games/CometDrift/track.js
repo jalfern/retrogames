@@ -31,9 +31,15 @@ export const TX = 8192
 export const TY = 8192
 export const TEX = 2560             // bake resolution — decoupled from the world (#542)
 export const TEX_S = TEX / TX      // texture px per world px
-export const ROAD_R = 64              // half-width of asphalt (narrowed again #513)
-export const KERB_R = ROAD_R + 12    // painted kerb strip
-export const WALL_R = ROAD_R + 52    // sand ends, cliff face: the wall
+// #782: the world tripled in #542 (legs now 3x farther apart) but ROAD_R stayed
+// at 64 — so two karts (KART.w 76 each = 152px) could not fit side-by-side on a
+// 128px ribbon; there was no room to drift or pass. The #513 narrowing to 64 was
+// for the old 2560 world where wide roads overlapped at the hairpins; that
+// constraint is gone, so the surface opens back up while every centerline stays
+// true to its reference. WALL_R stays under the HD wall floor (220px sim clamp).
+export const ROAD_R = 96              // half-width of asphalt — fits two karts + drift room (#782)
+export const KERB_R = ROAD_R + 14    // painted kerb strip
+export const WALL_R = ROAD_R + 36    // sand ends, cliff face: the wall
 
 export const COURSE_KEY = 'retrogames:comet.course'
 

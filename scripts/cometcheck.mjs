@@ -22,6 +22,7 @@ const TRACKMOD = '../src/games/CometDrift/track.js'
 
 const Tmod = await import(TRACKMOD)
 const { COURSES, selectCourse } = Tmod
+const { KART } = await import('../src/games/CometDrift/art.js')
 
 const R = { fail: 0 }
 const check = (label, ok, detail = '') => {
@@ -195,6 +196,11 @@ for (const c of COURSES) {
         }
     }
     check(`${c.id}: road never crosses itself`, crossings === 0, `${crossings} crossings`)
+    // #782: the whole point of the widen — the surface must be wide enough for
+    // two karts side-by-side (pass room), yet the wall must stay outside the HD
+    // sim clamp so the cliff ring never drifts into the drivable band.
+    check(`${c.id}: asphalt fits two karts side-by-side — room to pass (#782)`, 2 * T.ROAD_R >= 2 * KART.w + 24, `${2 * T.ROAD_R}px asphalt vs ${2 * KART.w}px two karts + 24px slip`)
+    check(`${c.id}: wall ring clear of the 220px HD sim clamp (#782)`, T.WALL_R + 16 <= 220, `wall ring ${T.WALL_R + 16}px`)
     const nearestPt = (arc) => {
         let bp = T.pts[0]; let bd = Infinity
         for (const p of T.pts) { const d = Math.abs(p.s - arc); if (d < bd) { bd = d; bp = p } }
