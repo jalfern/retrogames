@@ -18,6 +18,10 @@
 // Usage: node scripts/campfirecheck.mjs [--file <path>] [--shots <dir>] [--json] [--max-ms 45]
 // Proven-fail mutant: zero the volume emission (`emis += T * e * dt` ->
 // `emis += vec3(0.0)`) -> flame-body, white-core and flicker checks go red.
+// Mutant 2 (#695 item 3): revert ember seed layout to per-seed
+// (`i * 7.31 + SEED`) -> burst gate red two ways: floor(s*4) grouping gave
+// cluster=1 (no bursts), floor(s/100) on the old layout gave cluster=14
+// (whole-field pulse) — the two-sided window catches both.
 
 import { spawn } from 'node:child_process'
 import { inflateSync, deflateSync } from 'node:zlib'
@@ -250,10 +254,19 @@ async function main() {
         : 0
       ok('ember field moves (rising/twinkling)', drift > 1.5 || eA !== eB, `centroid drift=${drift.toFixed(1)}px, count ${eA}->${eB}`)
 
+      // #695 item 3: sparks erupt in sap-pop bursts (shared group schedule)
+      // and fall ballistically late in life. Two-sided: >=4 proves bursts,
+      // <=6 proves they are pops, not the whole field pulsing in unison.
+      const spark = await page.evaluate(() => window.__campfireTest.sparkStats())
+      ok('sparks burst in clusters with ballistic fall',
+        spark.cluster >= 4 && spark.cluster <= 6 && spark.groups * 6 >= spark.nem && spark.lateVy < 0,
+        `cluster=${spark.cluster} groups=${spark.groups}/${Math.ceil(spark.nem / 4)} nem=${spark.nem} lateVy=${spark.lateVy}`)
+
       // camera moves the world
       await page.evaluate(() => window.__campfireTest.setPose({ yaw: 1.15, pitch: -0.10 }))
       await page.waitForTimeout(1200)
-      const imgC = decodePng(await page.screenshot())
+      const bufC = await page.screenshot()
+      const imgC = decodePng(bufC)
       let d = 0, n = 0
       for (let y = 0; y < imgC.h; y += 3) for (let x = 0; x < imgC.w; x += 3) {
         const p = px(imgC, x, y), q = px(imgB, x, y)
@@ -264,7 +277,7 @@ async function main() {
       if (shots) {
         mkdirSync(shots, { recursive: true })
         writeFileSync(resolve(shots, 'front.png'), bufA)
-        writeFileSync(resolve(shots, 'orbit.png'), encodePng(imgC.w, imgC.h, imgC.px))
+        writeFileSync(resolve(shots, 'orbit.png'), bufC)
       }
 
       // speed: hardware budget; SwiftShader gets its own (like shorecheck).

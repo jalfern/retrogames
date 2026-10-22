@@ -79,10 +79,11 @@ float h1(float n){ float s = sin(n * 127.1 + 311.7) * 43758.5453; return s - flo
 
 void main(){
   float s = aSeed;
-  // #695 item 3: sap pops — sparks leave in bursts. Seeds are grouped into
-  // clusters that share one life/rise schedule (± jitter), so ~4 sparks erupt
-  // together instead of the even rain the old per-seed cycle produced.
-  float grp = floor(s * 4.0);
+  // #695 item 3: sap pops — sparks leave in bursts. Seeds are laid out as
+  // grp*100 + per-spark jitter (see emberSeeds), so floor(s*0.01) recovers
+  // the group and ~4 sparks share one life/rise schedule and erupt together,
+  // instead of the even rain the old per-seed cycle produced.
+  float grp = floor(s * 0.01);
   float gage = h1(grp * 1.71 + 5.13);
   float life = 1.4 + h1(grp * 9.31) * 1.8;
   float age = mod(uTime * (0.55 + h1(grp * 7.7) * 0.5) + gage * life + h1(s) * 0.32, life);
@@ -524,7 +525,13 @@ const vaoEmber = gl.createVertexArray();
 gl.bindVertexArray(vaoEmber);
 const seedBuf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, seedBuf);
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(NEM).map((_, i) => i * 7.31 + SEED), gl.STATIC_DRAW);
+const emberSeeds = new Float32Array(NEM);
+for (let i = 0; i < NEM; i++){
+  const g = Math.floor(i / 4), sub = i % 4;
+  const j = ((Math.sin((SEED + g * 371.13) * 127.1 + 7.7) * 43758.5453) % 1 + 1) % 1;
+  emberSeeds[i] = g * 100 + 0.05 + sub * 0.211 + j * 0.15;
+}
+gl.bufferData(gl.ARRAY_BUFFER, emberSeeds, gl.STATIC_DRAW);
 const locSeed = gl.getAttribLocation(progEmber, 'aSeed');
 gl.enableVertexAttribArray(locSeed);
 gl.vertexAttribPointer(locSeed, 1, gl.FLOAT, false, 0, 0);
@@ -826,14 +833,14 @@ window.__campfireTest = {
     const groups = new Map();
     let minV = 0;
     for (let i = 0; i < NEM; i++){
-      const s = i * 7.31 + SEED;
-      const grp = Math.floor(s * 4);
+      const s = emberSeeds[i];
+      const grp = Math.floor(s * 0.01);
       groups.set(grp, (groups.get(grp) || 0) + 1);
       const life = 1.4 + hh(grp * 9.31) * 1.8;
       const v0 = (0.55 + hh(s * 2.9) * 0.75) * 0.8;
       minV = Math.min(minV, v0 - 0.95 * life);
     }
-    return { cluster: Math.max(...groups.values()), groups: groups.size, lateVy: +minV.toFixed(3) };
+    return { cluster: Math.max(...groups.values()), groups: groups.size, nem: NEM, lateVy: +minV.toFixed(3) };
   },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
