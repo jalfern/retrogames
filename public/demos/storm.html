@@ -588,24 +588,27 @@ let skyFlash = 0;
 
 function rr(n){ const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
 
-function makeBolt(sx, sy, sz, reach){
+function makeBolt(sx, sy, sz, reach, far){
   const segs = [];
   const pts = [];
   let x = sx, y = sy, z = sz;
   const n = 26 + Math.floor(Math.random() * 10);
   const dy = -(y - 4) / n;
+  const driftX = far ? (Math.random() - 0.5) * 90 : 0;
+  const driftZ = far ? 100 + Math.random() * 60 : 0;
   for (let i = 0; i < n && segs.length < MAX_SEG; i++){
-    const nx = x + (Math.random() - 0.5) * 300 * reach;
-    const nz = z + (Math.random() - 0.5) * 220 * reach + 40;
+    const nx = x + (Math.random() - 0.5) * 300 * reach + driftX;
+    const nz = z + (Math.random() - 0.5) * 220 * reach + 40 + driftZ;
     const ny = y + dy * (0.7 + Math.random() * 0.6);
     segs.push([x, y, z, nx, Math.max(ny, 4), nz]);
     pts.push([(x + nx) / 2, (y + Math.max(ny, 4)) / 2, (z + nz) / 2]);
     x = nx; y = Math.max(ny, 4); z = nz;
   }
+  const land = [x, z];
   // one branch
   if (segs.length > 8){
     const bi = 4 + Math.floor(Math.random() * (segs.length - 8));
-    const bp = segs[bi].slice(2);
+    const bp = segs[bi].slice(0, 3);
     let bx = bp[0], by = bp[1], bz = bp[2];
     const bn = 7 + Math.floor(Math.random() * 5);
     const bdy = -(by - 4) / bn;
@@ -618,7 +621,7 @@ function makeBolt(sx, sy, sz, reach){
       bx = nx; by = Math.max(ny, 4); bz = nz;
     }
   }
-  return { segs, pts };
+  return { segs, pts, land };
 }
 
 function flashEnvelope(age){
@@ -632,39 +635,52 @@ function flashEnvelope(age){
 }
 
 let autoFlashes = true;
+let cgTips = [];   // [landX, landZ, landZ - startZ] — CG main-channel ground contacts (#747 spread)
+
+function spawnFlash(t, cg, far, near){
+  const stormD = Math.hypot(stormX, stormZ);
+  const jx = cg ? stormX + (near ? (Math.random() - 0.5) * 1200 : (Math.random() - 0.5) * 5200)
+                : stormX + (Math.random() - 0.5) * 2600;
+  const jz = cg ? stormZ + (near ? 2600 + Math.random() * 1200 : (Math.random() - 0.5) * 5200 + 1100)
+                : stormZ + (Math.random() - 0.5) * 2200;
+  const jy = cg ? CB + 300 + Math.random() * 500 : CB + 900 + Math.random() * 2600;
+  const f = {
+    t0: t,
+    pos: [jx, jy, jz],
+    bolt: cg ? makeBolt(jx, jy, jz, stormD < 8000 ? 1 : 0.7, far) : null,
+    dist: Math.hypot(jx, jz),
+  };
+  flashes.push(f);
+  flashCount++;
+  if (f.bolt){
+    boltSegs = Math.min(f.bolt.segs.length, MAX_SEG);
+    boltPtsN = Math.min(f.bolt.pts.length, MAX_SEG);
+    for (let i = 0; i < boltPtsN; i++){
+      boltPts[i * 3] = f.bolt.pts[i][0];
+      boltPts[i * 3 + 1] = f.bolt.pts[i][1];
+      boltPts[i * 3 + 2] = f.bolt.pts[i][2];
+    }
+    for (let i = 0; i < boltSegs; i++){
+      for (let k = 0; k < 6; k++) boltVerts[i * 6 + k] = f.bolt.segs[i][k];
+    }
+    gl.bindVertexArray(vaoBolt);
+    gl.bindBuffer(gl.ARRAY_BUFFER, boltBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, boltVerts, 0, boltSegs * 6);
+    gl.bindVertexArray(null);
+    const land = f.bolt.land;
+    cgTips.push([Math.round(land[0]), Math.round(land[1]), Math.round(land[1] - jz)]);
+    if (cgTips.length > 64) cgTips.shift();
+  }
+  thunder(f.dist);
+  return f;
+}
+
 function scheduleFlashes(t){
   if (!autoFlashes) return;
   if (t >= nextFlashAt){
     const stormD = Math.hypot(stormX, stormZ);
     const cg = Math.random() < 0.42;
-    const jx = stormX + (Math.random() - 0.5) * 2600;
-    const jz = stormZ + (cg ? 2600 + Math.random() * 1400 : (Math.random() - 0.5) * 2200);
-    const jy = cg ? CB + 300 + Math.random() * 500 : CB + 900 + Math.random() * 2600;
-    const f = {
-      t0: t,
-      pos: [jx, jy, jz],
-      bolt: cg ? makeBolt(jx, jy, jz, stormD < 8000 ? 1 : 0.7) : null,
-      dist: Math.hypot(jx, jz),
-    };
-    flashes.push(f);
-    flashCount++;
-    if (f.bolt) boltSegs = Math.min(f.bolt.segs.length, MAX_SEG);
-    if (f.bolt){
-      boltPtsN = Math.min(f.bolt.pts.length, MAX_SEG);
-      for (let i = 0; i < boltPtsN; i++){
-        boltPts[i * 3] = f.bolt.pts[i][0];
-        boltPts[i * 3 + 1] = f.bolt.pts[i][1];
-        boltPts[i * 3 + 2] = f.bolt.pts[i][2];
-      }
-      for (let i = 0; i < boltSegs; i++){
-        for (let k = 0; k < 6; k++) boltVerts[i * 6 + k] = f.bolt.segs[i][k];
-      }
-      gl.bindVertexArray(vaoBolt);
-      gl.bindBuffer(gl.ARRAY_BUFFER, boltBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, boltVerts, 0, boltSegs * 6);
-      gl.bindVertexArray(null);
-    }
-    thunder(f.dist);
+    spawnFlash(t, cg, cg && Math.random() < 0.22, false);
     nextFlashAt = t + 3.5 + Math.random() * 9.0 * (stormD < 8000 ? 0.6 : 1.0);
   }
   flashes = flashes.filter(f => t - f.t0 < 1.6);
@@ -883,6 +899,8 @@ window.__stormTest = {
   state(){
     return {
       stormDist: +Math.hypot(stormX, stormZ).toFixed(0),
+      storm: [Math.round(stormX), Math.round(stormZ)],
+      cgTips: cgTips.slice(),
       flashCount,
       skyFlash: +skyFlash.toFixed(3),
       rainAtCam: rainAtJS(0, 0),
@@ -890,32 +908,13 @@ window.__stormTest = {
     };
   },
   setAuto(v){ autoFlashes = !!v; },
-  flashNow(cg){
+  flashNow(cg, mode){
     const t = (performance.now() - t0) / 1000;
-    const jx = stormX + (Math.random() - 0.5) * 1200;
-    const jz = stormZ + (cg === false ? (Math.random() - 0.5) * 1600 : 2600 + Math.random() * 1200);
-    const jy = cg === false ? CB + 1200 + Math.random() * 1800 : CB + 300 + Math.random() * 400;
-    const f = { t0: t, pos: [jx, jy, jz], bolt: cg === false ? null : makeBolt(jx, jy, jz, 1), dist: Math.hypot(jx, jz) };
-    flashes.push(f);
-    flashCount++;
-    if (f.bolt){
-      boltSegs = Math.min(f.bolt.segs.length, MAX_SEG);
-      boltPtsN = Math.min(f.bolt.pts.length, MAX_SEG);
-      for (let i = 0; i < boltPtsN; i++){
-        boltPts[i * 3] = f.bolt.pts[i][0];
-        boltPts[i * 3 + 1] = f.bolt.pts[i][1];
-        boltPts[i * 3 + 2] = f.bolt.pts[i][2];
-      }
-      for (let i = 0; i < boltSegs; i++){
-        for (let k = 0; k < 6; k++) boltVerts[i * 6 + k] = f.bolt.segs[i][k];
-      }
-      gl.bindVertexArray(vaoBolt);
-      gl.bindBuffer(gl.ARRAY_BUFFER, boltBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, boltVerts, 0, boltSegs * 6);
-      gl.bindVertexArray(null);
-    }
-    thunder(f.dist);
-    return { dist: Math.round(f.dist), bolt: !!f.bolt };
+    const far = mode === 'far';
+    const near = mode !== 'wide' && mode !== 'far';
+    const f = spawnFlash(t, cg !== false, far, near);
+    const dz = f.bolt ? f.bolt.land[1] - f.pos[2] : 0;
+    return { dist: Math.round(f.dist), bolt: !!f.bolt, dz: Math.round(dz) };
   },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
