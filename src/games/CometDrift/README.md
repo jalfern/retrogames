@@ -102,9 +102,25 @@ pointer handler and `cometcheck` all audit the same targets).
       `driftScrape` (filtered-noise crackle under held drifts, swelling and
       darkening 2400→1500 Hz as the tyre charges), `sandWhoosh` (low filtered
       bed off-road, 300–800 Hz — under the scrape floor, since sand drinks the
-      top end). `index.jsx` only accumulates phases and calls AudioController;
-      cometcheck's engine-voice gates kill the gear-step, dead-pitch,
-      straight-wheel-scrape, glass-sand and bypass mutants.
+       top end). `index.jsx` only accumulates phases and calls AudioController;
+       cometcheck's engine-voice gates kill the gear-step, dead-pitch,
+       straight-wheel-scrape, glass-sand and bypass mutants.
+  - Per-light ambience (#511 item 5) — the three circuits shared one dusk-canyon
+       air. `engineSfx.js` exports the pure `AMBIENCE`/`ambienceFor(palette)` law:
+       dusk hums warm (triangle 98 Hz), noon shimmers brighter and thinner
+       (132 Hz), dawn sits low and cool on a sine 74 Hz pad — quieter than the
+       engine voice, on a slow 36–52-tick period so it beds rather than rattles.
+       `index.jsx` accumulates the period and plays the pad during races;
+       cometcheck kills the flat-law (dawn cloned onto dusk) and bypass mutants.
+  - `art.js` `DUNE`/`duneCrest` (#511 item 3) — pure silhouette law across the
+       start-line span (x 0..1 → height 0..1): one dominant off-centre crest with
+       a gentle windward shoulder and a steeper slipface, a second lower dune
+       behind, 19 wind ripples across the body. CORKSCOMB's landmark is `'dune'`
+       (track.js) and `index.jsx` stamps it sand-coloured with grain ticks,
+       crest blow-off wisps and the course name where the arch keystone sat —
+       three circuits, three line structures. cometcheck grades the silhouette
+       and kills the flat-berm, flipped-asymmetry and arch-revert mutants.
+       The HD renderer still shares the Gulch arch (filed follow-up).
  - `index.jsx` — the shell: fixed-timestep loop (`contractHoldsLoop` gates the
   sim, the contract owns the clock while held), adaptive-source Mode 7 raster
   (the canvas re-solves to the viewport aspect: height-anchored
@@ -211,8 +227,8 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   and the 220px radius floor the Corkscomb reads as a rate-alternating crest
   complex, not the hill-drop double-S of the real thing — a longer-wavelength
   re-tune is polish-pass territory. The start line structure is per-course
-  since #502 (Sandbank's timing gantry); Corkscomb still shares the sandstone
-  arch and deserves its own dune-crest shape.
+  since #502 (Sandbank's timing gantry) and #511 item 3 (Corkscomb's dune
+  crest, 2D renderer; HD still shares the Gulch arch).
 - No cups, items, or real music (the engine bed is a synthesized voice with
   scrape/whoosh layers since #440 item 6, but there is no music track) —
   music out of scope per #419.

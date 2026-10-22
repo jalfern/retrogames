@@ -8,9 +8,9 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoostFx } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
 import { selectorGeom, selectorHit, previewBox } from './selector.js'
-import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx } from './art.js'
+import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE } from './art.js'
 import { drawText } from './font.js'
-import { engineVoice, driftScrape, sandWhoosh } from './engineSfx.js'
+import { engineVoice, driftScrape, sandWhoosh, ambienceFor } from './engineSfx.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE, setStick } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 
@@ -217,9 +217,9 @@ export default function CometDrift() {
         // round(v) gear-step) — while driftScrape adds a kerb crackle under
         // held drifts and sandWhoosh a low bed off-road. Phases accumulate
         // here; the laws stay pure so cometcheck can gate them.
-        let engAcc = 0; let scrapeAcc = 0; let whooshAcc = 0
+        let engAcc = 0; let scrapeAcc = 0; let whooshAcc = 0; let ambAcc = 0
         const engine = (live) => {
-            if (!live || g.phase !== 'race') { engAcc = 0; scrapeAcc = 0; whooshAcc = 0; return }
+            if (!live || g.phase !== 'race') { engAcc = 0; scrapeAcc = 0; whooshAcc = 0; ambAcc = 0; return }
             const P = g.karts[0]
             const e = engineVoice(P.v, P.boostT > 0 ? P.boostTier : -1, g.tick)
             if (!e) return
@@ -229,6 +229,13 @@ export default function CometDrift() {
             if (sc) { scrapeAcc += 1 / sc.period; if (scrapeAcc >= 1) { scrapeAcc -= 1; audioController.playFilteredNoise(sc.dur, sc.vol, sc.freq) } } else scrapeAcc = 0
             const ws = sandWhoosh(P.offroad, P.v)
             if (ws) { whooshAcc += 1 / ws.period; if (whooshAcc >= 1) { whooshAcc -= 1; audioController.playFilteredNoise(ws.dur, ws.vol, ws.freq) } } else whooshAcc = 0
+            // #511 item 5: the lights have a sound — a soft pad under the
+            // engine bed, tuned by the course palette (dawn low + cool, noon
+            // thin + bright, dusk warm), so the circuits don't all smell of
+            // the same dusk canyon air.
+            const am = ambienceFor(COURSE.palette)
+            ambAcc += 1 / am.period
+            if (ambAcc >= 1) { ambAcc -= 1; audioController.playTone(am.freq, (am.period / 60) * 0.9, am.type, am.vol) }
         }
 
         const project = (wx, wy) => {
@@ -342,9 +349,40 @@ export default function CometDrift() {
             flag(12); flag(283)
             return c
         }
+        // #511 item 3: CORKSCOMB's line structure is the dune itself — the
+        // silhouette comes from art.js's duneCrest law (main crest with a
+        // gentle windward shoulder, steeper slipface, a second dune behind),
+        // sand-coloured with grain ripples, crest blow-off wisps and the
+        // course name written on the crest where the arch's keystone sat.
+        const DUNE_MAIN = DUNE.mainX
+        const duneFor = (name) => {
+            const pal = paletteFor(COURSE.palette)
+            const c = document.createElement('canvas'); c.width = 300; c.height = 170
+            const x = c.getContext('2d'); x.imageSmoothingEnabled = false
+            const top = (fx) => 170 - (26 + 92 * duneCrest(fx))
+            for (let i = 0; i < 300; i++) {
+                const fx = i / 299
+                const y0 = Math.round(top(fx))
+                x.fillStyle = fx < DUNE_MAIN ? pal.apron : pal.apronShade
+                x.fillRect(i, y0, 1, 170 - y0)
+                x.fillStyle = pal.crack
+                x.fillRect(i, y0, 1, 1)
+                if (i % 7 === 0) {             x.fillStyle = pal.grain; x.fillRect(i, y0 + 5 + ((i % 21) / 3 | 0), 4, 1) }
+            }
+            x.fillStyle = pal.apronMid
+            x.fillRect(0, 150, 300, 20)
+            x.fillStyle = pal.rimLit
+            for (let i = 0; i < 4; i++) x.fillRect(132 + i * 16, 44 + i * 5 + (i % 2) * 3, 10 - i * 2, 1)
+            x.fillStyle = pal.coal
+            drawText(x, name, 128, 71, pal.coal, 2, 'center')
+            x.fillStyle = pal.bone
+            drawText(x, name, 127, 69, pal.bone, 2, 'center')
+            return c
+        }
         const archFor = (name) => {
             if (archCache[name]) return archCache[name]
             if (COURSE.landmark === 'gantry') { archCache[name] = gantryFor(name); return archCache[name] }
+            if (COURSE.landmark === 'dune') { archCache[name] = duneFor(name); return archCache[name] }
             const pal = paletteFor(COURSE.palette)
             const c = document.createElement('canvas'); c.width = 300; c.height = 170
             const x = c.getContext('2d'); x.imageSmoothingEnabled = false

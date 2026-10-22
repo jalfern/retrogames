@@ -902,6 +902,69 @@ console.log('— the engine bed has a voice (#440 item 6) —')
 await engineLaw()
 engineWired()
 
+// #511 items 3+5 — every circuit under its own structure, every light with
+// its own air. Corkscomb's start line is a wind-carved dune crest (track
+// landmark + the pure art.js duneCrest silhouette law), not the Gulch's
+// sandstone arch; and the race bed rides a per-palette ambience pad (the
+// pure engineSfx law): dawn sits low and cool under the dusk hum.
+const duneLaw = async () => {
+    const { duneCrest, DUNE } = await import('../src/games/CometDrift/art.js' + '?dune=' + Math.random())
+    const S = []
+    for (let i = 0; i <= 300; i++) S.push(duneCrest(i / 300))
+    check('the dune meets the sand at both legs (#511 item 3)', S[0] < 0.12 && S[300] < 0.12, `${S[0].toFixed(3)}/${S[300].toFixed(3)}`)
+    let peak = 0; let peakX = 0
+    for (let i = 1; i < 300; i++) if (S[i] > peak) { peak = S[i]; peakX = i / 300 }
+    check('one dominant crest, off-centre like a real blow (#511 item 3)',
+        peak >= 0.9 && peakX > 0.25 && peakX < 0.55, `peak ${peak.toFixed(2)} @ x ${peakX.toFixed(2)}`)
+    let second = 0
+    for (let i = 180; i <= 270; i++) second = Math.max(second, S[i])
+    check('a second, lower dune behind the crest (#511 item 3)', second >= 0.4 && second <= 0.85, `second ${second.toFixed(2)}`)
+    let maxima = 0
+    for (let i = 1; i < 300; i++) if (S[i] > S[i - 1] && S[i] >= S[i + 1] && S[i] > 0.08) maxima++
+    check('wind ripples break the flanks (#511 item 3)', maxima >= 5, `${maxima} ripple crests`)
+    const l = Math.abs(duneCrest(DUNE.mainX) - duneCrest(DUNE.mainX - 0.07)) / 0.07
+    const r = Math.abs(duneCrest(DUNE.mainX + 0.08) - duneCrest(DUNE.mainX)) / 0.08
+    check('gentle windward shoulder, steeper slipface (#511 item 3)', r > l * 1.8, `windward ${l.toFixed(2)} vs slipface ${r.toFixed(2)}`)
+    const fresh = await import(TRACKMOD + '?dl=' + Math.random())
+    const marks = fresh.COURSES.map((c) => `${c.id}:${c.landmark}`).join(' ')
+    check('three circuits, three line structures — the pack repeats no arch (#511 item 3)',
+        new Set(fresh.COURSES.map((c) => c.landmark)).size === 3 &&
+        fresh.COURSES.find((c) => c.id === 'corkscomb').landmark === 'dune', marks)
+}
+const duneWired = () => {
+    const src = readFileSync(IDXJS, 'utf8')
+    check('index.jsx: the dune landmark renders from the crest law (#511 item 3)',
+        /COURSE\.landmark === 'dune'/.test(src) && /const duneFor = \(name\) =>/.test(src) && /duneCrest\(fx\)/.test(src))
+    check('index.jsx: the Gulch keeps its sandstone arch and the bowl its gantry (#511 item 3)',
+        /COURSE\.landmark === 'gantry'/.test(src) && /quadraticCurveTo\(150, -18, 292, 52\)/.test(src))
+}
+const ambienceLaw = async () => {
+    const { AMBIENCE, ambienceFor } = await loadSfx()
+    const d = ambienceFor('dusk'); const n = ambienceFor('noon'); const a = ambienceFor('dawn')
+    check('every light has an ambience pad (#511 item 5)', !!d && !!n && !!a)
+    check('dawn is a low, cool pad under the dusk hum (#511 item 5)',
+        a.freq < d.freq && a.vol <= d.vol && a.period > d.period,
+        `dawn ${a.freq}Hz/${a.vol}/${a.type} vs dusk ${d.freq}Hz/${d.vol}/${d.type}`)
+    check('noon shimmers brighter and thinner than dusk (#511 item 5)',
+        n.freq > d.freq && n.vol < d.vol, `noon ${n.freq}Hz/${n.vol}`)
+    check('three lights, three pitches — the pads are distinct (#511 item 5)',
+        new Set([d.freq, n.freq, a.freq]).size === 3)
+    check('the pad is a bed, not a rattle — slow periods only (#511 item 5)',
+        d.period >= 30 && n.period >= 30 && a.period >= 30)
+    check('an unknown palette defaults to the dusk hum (#511 item 5)', ambienceFor('bogus') === AMBIENCE.dusk)
+    const src = readFileSync(IDXJS, 'utf8')
+    check('index.jsx: the pad routes through the law, not a hard-coded hum (#511 item 5)',
+        /import\s*\{[^}]*ambienceFor[^}]*\}\s*from\s*'\.\/engineSfx\.js'/.test(src) &&
+        /ambAcc \+= 1 \/ am\.period/.test(src) &&
+        /playTone\(am\.freq, \(am\.period \/ 60\) \* 0\.9, am\.type, am\.vol\)/.test(src))
+    check('index.jsx: the ambience bed is quieter than the engine voice (#511 item 5)',
+        Math.max(...Object.values(AMBIENCE).map((p) => p.vol)) < 0.028)
+}
+console.log('— the dunes keep their own gate, the lights their own air (#511) —')
+await duneLaw()
+duneWired()
+await ambienceLaw()
+
 // ---- the attract course selector is tappable (#534) -------------------------
 // The phone title has no stick, so the ‹ › chevrons are the only course
 // control. Their geometry + hit test live in selector.js (pure, shared by the
@@ -1417,6 +1480,39 @@ if (process.argv.includes('--mutate')) {
         await zig517Died('the hint never expires (permanent HUD clutter)',
             () => check(`#517 expiry under mutant (hintT=${gg.zigHintT})`, gg.zigHintT === 0))
     } finally { writeFileSync(SIM, sim517Src) }
+
+    // #511 item-3/-5 mutants: re-plant the shared arch at the Dunes line,
+    // flatten and symmetrise the crest law, clone the dawn ambience onto the
+    // dusk hum, and bypass the pad law in the renderer. Each must go red.
+    const art511Src = readFileSync(ARTJS, 'utf8')
+    const TRACKJS = new URL(TRACKMOD, import.meta.url)
+    const track511Src = readFileSync(TRACKJS, 'utf8')
+    const d511Died = async (label, run) => {
+        const before = R.fail
+        await run()
+        if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #511 gate is load-bearing`)
+        else console.log(`  MUTANT SURVIVED — ${label}: the #511 gate is BLIND`)
+    }
+    try {
+        writeFileSync(TRACKJS, track511Src.replace("landmark: 'dune',", "landmark: 'arch',"))
+        await d511Died("Corkscomb shares the Gulch's arch again (landmark reverted)", duneLaw)
+    } finally { writeFileSync(TRACKJS, track511Src) }
+    try {
+        writeFileSync(ARTJS, art511Src.replace('return Math.max(0, base + rip)', 'return 0.5'))
+        await d511Died('the crest law flattens to a berm', duneLaw)
+    } finally { writeFileSync(ARTJS, art511Src) }
+    try {
+        writeFileSync(ARTJS, art511Src.replace('windW: 0.18, slipW: 0.12', 'windW: 0.12, slipW: 0.18'))
+        await d511Died('the slipface is milder than the windward side (asymmetry flipped)', duneLaw)
+    } finally { writeFileSync(ARTJS, art511Src) }
+    try {
+        writeFileSync(SFXJS, sfx6Src.replace("dawn: { freq: 74, type: 'sine', vol: 0.008, period: 52 },", "dawn: { freq: 98, type: 'triangle', vol: 0.011, period: 36 },"))
+        await d511Died('dawn is the dusk hum again (one ambience for every light)', ambienceLaw)
+    } finally { writeFileSync(SFXJS, sfx6Src) }
+    try {
+        writeFileSync(IDXJS, idxSrc.replace('ambAcc += 1 / am.period', 'ambAcc += 1 / 36'))
+        await d511Died('the pad ignores the law (hard-coded period back in the loop)', ambienceLaw)
+    } finally { writeFileSync(IDXJS, idxSrc) }
 }
 
 // ---- #502 item 4: banking cue -------------------------------------------------------
