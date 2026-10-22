@@ -100,6 +100,13 @@ const wallOffAt = (i) => Math.max(220, T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + 
 // collision lip) reads the elevated value.
 export const plateauYAt = (i) => elevAt(i) + wallTopAt(i) - 0.25
 export const wallTopYAt = (i) => elevAt(i) + wallTopAt(i)
+// #675: where a trackside prop ACTUALLY stands. The old plan used a CONSTANT
+// (2.07 − 0.25) above the local road, but the plateau surface follows the wall
+// top — wallTopAt swings ±0.6u around the loop and the outside wall climbs
+// with banking — so props floated up to ~0.6u off the sand (the "floating
+// pines": canopy above the rim, trunk lost behind the wall, no base to read).
+// The prop's own side is the law: plateauGeo(side) rides wallTopSideAt.
+export const propGroundY = (i, side) => elevAt(i) + wallTopSideAt(i, side) - 0.25
 // #502 item 4: the banking cue. Through the bowl's sweepers the OUTSIDE
 // strata climb with bankAt(i) (see track.js) — a taller wall against the
 // lean, straights untouched. Node-safe; cometdrifthdcheck pins the law.

@@ -157,6 +157,47 @@ fallbacks so the game never waits on — or dies from — the network.
   `cometdrifthdcheck` gates clearances/band/fit over 7 viewports x 3 course
   names; `--mutate-attract` collapses the gap law and MUST redden it.
 
+- #675 grounding + crowd + roof: four polish fixes, all pinned by
+  `cometdrifthdscenerycheck` (Node-only, no browser):
+  - **Props stand on the true plateau.** The old plan used a CONSTANT
+    (2.07−0.25 = 1.82u) above the local road for every prop, but the plateau
+    surface follows the wall top — `wallTopAt` swings ±0.6u and the outside
+    wall climbs with banking — so props floated up to ~0.6u off the sand
+    (the "floating pines": canopy above the rim, trunk lost behind the wall).
+    `propGroundY(i, side)` (scene.js) is the law — the prop's own side's
+    `wallTopSideAt − 0.25` — stamped onto the plan as `e.baseY` by
+    `resolvePlan`, and used by both `buildTracksidePrimitives` and
+    `attachShelfProps`. Tree scales trimmed 1.4+1.1·h → 1.15+0.85·h. Every
+    tree/boulder/rock now carries a soft contact-shadow blob (`SHADOW_IDS`
+    radii, `makePropShadow` — a flat dark ellipse at the kart-shadow idiom of
+    surface +0.052u, added as a CHILD of the prop so it scales with it, is
+    re-added to GLB clones, and is disposed with the prop).
+  - **The crowd swells at the line.** The stands are the circuit's only
+    audience, but the circuit had no crowd sound. `audio.js` carries the pure
+    law: `crowdSwellGain(dist)` is full inside `CROWD_R_MIN` (340px), silent
+    beyond `CROWD_R_MAX` (1000px), smoothstep between; `nearestStandPx`
+    measures the player to the nearest grandstand centre. index.jsx `crowd()`
+    (next to `engine()`, race only) fires `playFilteredNoise` bursts
+    (`CROWD_BURST` 0.16s every `CROWD_PERIOD` 5 ticks — the burst covers its
+    period, so the murmur beds without dead air) at `CROWD_GAIN × gain × wob`.
+    The engine law is untouched — the crowd sits under it. DEV: every burst
+    logs `{e:'crowd', g, t}` to `window.__cometHDLog`.
+  - **The stands read populated.** Bare blue/white steps read empty; a
+    dressed circuit has a crowd. `specSeat(seed, row, seat)` is the pure
+    law (fill `SPEC_FILL`, one of 8 spectator colours) and
+    `spectatorDots(seed)` builds the deck from it — a shared box geometry +
+    small shared material palette per stand, disposed with the stand. Seeded
+    per stand (`i*31 + side*7`) so no two stands crowd identically; re-added
+    to the GLB clones in `attachShelfProps` exactly like the shadows. The
+    gate pins count, bounds (every dot on the deck) and determinism.
+  - **The stand roofs stop cutting the sky.** The old roof (local y 4.0 at
+    1.2 scale) topped out ~5.3u over the stand base — enough to sweep the top
+    corners of the chase frame at the line (the eye is ~2.4u up, the nearest
+    stand edge ~8u out, and the boost FOV punch lifts the ceiling to ~28°).
+    `ROOF_Y` 3.4 + scale caps (`STAND_SCALE_START` 1.1 / `STAND_SCALE_STRAIGHT`
+    1.15) keep the roof top at ≤4.6u over the base. `--mutate` (plus the
+    baseY/ROOF_Y pairs) must redden the grounding/roof gates.
+
 ## Verify
 
 ```

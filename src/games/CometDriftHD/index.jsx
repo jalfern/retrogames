@@ -9,7 +9,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from '../CometDrift/sim.js'
-import { bankVoices, engineRegister } from './audio.js'
+import { bankVoices, engineRegister, crowdSwellGain, nearestStandPx, CROWD_GAIN, CROWD_PERIOD, CROWD_BURST, CROWD_FREQ } from './audio.js'
 import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse } from '../CometDrift/track.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
@@ -334,6 +334,7 @@ export default function CometDriftHD() {
         // upgrade it asynchronously. propsRev guards the async attach against a
         // course swap mid-load (a stale attach must never edit a dead group).
         let propsGroup = null
+        let propsPlan = null // resolved plan (grandstand centres) for the crowd swell
         let propsRev = 0
         const disposeProps = (g) => { if (g) g.traverse((o) => { if (o.isMesh && o.geometry && !o.userData.keepGeo) o.geometry.dispose() }) }
         const buildTrackMeshes = () => {
@@ -371,6 +372,7 @@ export default function CometDriftHD() {
             ))
             for (const sc of SCENERY) trackGroup.add(buildSceneryItem(sc))
             const plan = tracksidePlan()
+            propsPlan = plan
             propsGroup = buildTracksidePrimitives(plan)
             trackGroup.add(propsGroup)
             const rev = propsRev
@@ -746,6 +748,23 @@ export default function CometDriftHD() {
                 audioController.playTone(base, 0.03, 'sawtooth', 0.022)
                 audioController.playTone(base * 1.504, 0.026, 'sawtooth', 0.012)
             }
+        }
+        // #675: the crowd swells as the player nears the grandstands and dies on
+        // the backstretch — a lowpassed murmur bed (bursts longer than their
+        // period), gated by the pure law in audio.js. The engine is untouched.
+        const crowd = (live) => {
+            if (!live || g.phase !== 'race' || !propsPlan) return
+            const P = g.karts[0]
+            const gain = crowdSwellGain(nearestStandPx(propsPlan, P.x, P.y))
+            if (gain <= 0.02) return
+            if (g.tick % CROWD_PERIOD !== 0) return
+            if (import.meta.env.DEV) {
+                const log = (window.__cometHDLog ||= [])
+                log.push({ e: 'crowd', g: +gain.toFixed(3), t: g.tick })
+                if (log.length > 2000) log.splice(0, log.length - 2000)
+            }
+            const wob = 0.85 + jit(g.tick * 1.3) * 0.3
+            audioController.playFilteredNoise(CROWD_BURST, CROWD_GAIN * gain * wob, CROWD_FREQ)
         }
 
         // ---- particles: world-space, spawned from live sim state ----------
@@ -1212,6 +1231,7 @@ export default function CometDriftHD() {
             }
             sfx(evs, live)
             engine(live)
+            crowd(live)
             const rose = live && g.karts[0].place < prevPlace
             prevPlace = g.karts[0].place
             if (rose) audioController.playTone(990, 0.06, 'square', 0.08)

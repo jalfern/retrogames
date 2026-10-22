@@ -22,6 +22,7 @@
 
 import * as THREE from 'three'
 import { TRACK } from '../CometDrift/track.js'
+import { propGroundY } from './scene.js'
 
 const T = TRACK
 const S = 1 / 60
@@ -31,6 +32,56 @@ const PERP = (a) => [-Math.sin(a), Math.cos(a)]
 // deterministic fractional hash (same spirit as the SSX scenery plan)
 const shash = (n) => { const v = Math.sin(n * 78.233) * 43758.5453; return v - Math.floor(v) }
 
+// #675: the stands' roof used to top out at local y 4.0 at scale 1.2 — ~6.9u
+// above the local road at the line — high enough to sweep across the top
+// corners of the chase frame and cut the dusk sky out as the kart passes.
+// Lower the roof and cap the scale so the sky stays clear above the line.
+export const ROOF_Y = 3.4
+export const STAND_SCALE_START = 1.1
+export const STAND_SCALE_STRAIGHT = 1.15
+
+// #675: soft contact shadows under the plateau vegetation and rocks — a
+// floating canopy needs a base to read. Radii are in UNSCALED prop units
+// (the group's scale multiplies them); ids without an entry get no blob.
+export const SHADOW_IDS = { tree_pine: 1.6, tree_oak: 1.7, boulder: 1.4, rock: 1.0 }
+
+// #675: spectators. The stands were bare blue/white steps — a dressed circuit
+// reads populated. Deterministic crowd dots: one shared box geometry and a
+// small shared material palette per stand (both disposed with the stand);
+// every seat is a pure function of (seed, row, seat), so the crowd — like the
+// plan — is deterministic. specSeat() is exported for the Node gate.
+export const SPEC_SEATS = 6
+export const SPEC_ROWS = 4
+export const SPEC_FILL = 0.82
+const SPEC_PALETTE = [0xf2ece2, 0xc0392b, 0x2e6db0, 0xf1c40f, 0xe67e22, 0x27ae60, 0x8e44ad, 0x5dade2]
+// one seat on the deck: null when the seat is empty, else its local spot.
+export const specSeat = (seed, r, c) => {
+    if (shash(seed + r * 31.7 + c * 7.31) >= SPEC_FILL) return null
+    const h2 = shash(seed + r * 13.13 + c * 3.77)
+    return {
+        x: -2.5 + c * 1.0 + (shash(seed + r * 3.31 + c * 11.71) - 0.5) * 0.5,
+        y: 0.93 + r * 0.55,
+        z: -r * 0.9 + (h2 - 0.5) * 0.4,
+        ci: Math.floor(h2 * SPEC_PALETTE.length) % SPEC_PALETTE.length,
+    }
+}
+export function spectatorDots(seed) {
+    const g = new THREE.Group()
+    const geo = new THREE.BoxGeometry(0.22, 0.16, 0.22)
+    const mats = SPEC_PALETTE.map((col) => new THREE.MeshLambertMaterial({ color: col }))
+    for (let r = 0; r < SPEC_ROWS; r++) {
+        for (let c = 0; c < SPEC_SEATS; c++) {
+            const s = specSeat(seed, r, c)
+            if (!s) continue
+            const m = new THREE.Mesh(geo, mats[s.ci])
+            m.userData.dot = 1
+            m.position.set(s.x, s.y, s.z)
+            g.add(m)
+        }
+    }
+    return g
+}
+
 // shelf ids this circuit uses. Only `barrier` / `tire_wall` are solid; the rest
 // are dressing that never collides (and sits outside the wall anyway).
 export const SHELF_PROPS = [
@@ -39,9 +90,6 @@ export const SHELF_PROPS = [
     'tree_oak', 'tree_pine', 'hill', 'boulder', 'rock', 'cone',
 ]
 export const SOLID_PROPS = ['barrier', 'tire_wall']
-
-// plateau height (world units, +Y up) at a sample index — props stand on it.
-const groundY = (i) => { const p = T.pts[i % T.N]; return p.h * S + (2.07 - 0.25) }
 
 // clearance test in px: a prop footprint r must be clear of every track point
 // AND outside the sim clamp. Returns the centre in px or null if it collides.
@@ -88,7 +136,7 @@ export function tracksidePlan() {
     for (const side of [1, -1]) {
         for (let g = 0; g < 2; g++) {
             const gi = (4 + g * 6) % N
-            if (place(gi, side, 430 + g * 50, 92)) add({ id: 'grandstand', i: gi, side, off: 430 + g * 50, scale: 1.2, orient: 'across', r: 92 })
+            if (place(gi, side, 430 + g * 50, 92)) add({ id: 'grandstand', i: gi, side, off: 430 + g * 50, scale: STAND_SCALE_START, orient: 'across', r: 92 })
         }
     }
     for (let k = 0; k < 2; k++) {
@@ -97,7 +145,7 @@ export function tracksidePlan() {
         for (let g = 0; g < 3; g++) {
             const i = (base + g * 5) % N
             const off = 440 + g * 40
-            if (place(i, side, off, 92)) add({ id: 'grandstand', i, side, off, scale: 1.25, orient: 'across', r: 92 })
+            if (place(i, side, off, 92)) add({ id: 'grandstand', i, side, off, scale: STAND_SCALE_STRAIGHT, orient: 'across', r: 92 })
         }
     }
 
@@ -155,7 +203,9 @@ export function tracksidePlan() {
             const side = r < 0.3 ? 1 : -1
             const off = 320 + shash(i * 2.9) * 160
             const id = shash(i * 4.3) < 0.72 ? 'tree_pine' : 'tree_oak'
-            if (place(i, side, off, 46)) add({ id, i, side, off, scale: 1.4 + shash(i * 6.1) * 1.1, orient: 'rand', r: 46 })
+            // #675: trimmed from 1.4+1.1·h — the tall pines lost their trunks
+            // behind the wall rim and read as floating canopies.
+            if (place(i, side, off, 46)) add({ id, i, side, off, scale: 1.15 + shash(i * 6.1) * 0.85, orient: 'rand', r: 46 })
         }
         if (shash(i * 3.71 + 2.5) < 0.14) {
             const side = i % 2 ? 1 : -1
@@ -173,13 +223,15 @@ export function tracksidePlan() {
 }
 
 // resolve the plan's px centres once (so primitives and GLB attach agree), and
-// stamp wx/wz onto each entry. Idempotent.
+// stamp wx/wz/baseY onto each entry. baseY is the prop's TRUE ground — the
+// plateau surface on its own side (propGroundY), not a constant. Idempotent.
 export function resolvePlan(plan) {
     for (const e of plan) {
         const p = T.pts[e.i % T.N]
         const [ux, uy] = PERP(p.a)
         e.wx = p.x + ux * e.side * e.off
         e.wz = p.y + uy * e.side * e.off
+        e.baseY = propGroundY(e.i, e.side)
     }
     return plan
 }
@@ -196,13 +248,14 @@ const C = {
 }
 const lam = (color) => new THREE.MeshLambertMaterial({ color })
 
-export function primitiveProp(id) {
+export function primitiveProp(id, seed = 1) {
     const g = new THREE.Group()
     const ph = (m) => { m.userData.ph = 1; g.add(m); return m }
     if (id === 'grandstand') {
         for (let r = 0; r < 4; r++) { const step = ph(new THREE.Mesh(new THREE.BoxGeometry(6, 0.5, 1), lam(r % 2 ? C.blue : C.white))); step.position.set(0, 0.6 + r * 0.55, -r * 0.9) }
-        const back = ph(new THREE.Mesh(new THREE.BoxGeometry(6, 2.6, 0.3), lam(C.concrete))); back.position.set(0, 2.2, -3.6)
-        const roof = ph(new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.25, 4.6), lam(C.steel))); roof.position.set(0, 4, -1.6); roof.rotation.x = -0.12
+        const back = ph(new THREE.Mesh(new THREE.BoxGeometry(6, 2.4, 0.3), lam(C.concrete))); back.position.set(0, 2.05, -3.6)
+        const roof = ph(new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.25, 4.6), lam(C.steel))); roof.position.set(0, ROOF_Y, -1.6); roof.rotation.x = -0.12
+        ph(spectatorDots(seed))
     } else if (id === 'pit_building') {
         const base = ph(new THREE.Mesh(new THREE.BoxGeometry(8, 2.6, 3), lam(C.concrete))); base.position.y = 1.3
         const roof = ph(new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.3, 3.4), lam(C.dark))); roof.position.y = 2.75
@@ -251,16 +304,32 @@ export function primitiveProp(id) {
     return g
 }
 
+// #675: a soft contact-shadow blob — a flat dark ellipse a hair above the
+// surface, no depth write. Node-safe (geometry + material only). Added as a
+// CHILD of the prop, so it inherits the group's scale/position and is disposed
+// with the prop; attachShelfProps re-adds it to the GLB clones.
+export function makePropShadow(radius) {
+    const geo = new THREE.CircleGeometry(radius, 16)
+    geo.rotateX(-Math.PI / 2)
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false,
+    }))
+    m.position.y = 0.102 // the prop group sinks 0.05u into the sand; the kart
+                         // shadow idiom is surface + 0.052 — 0.05 + 0.052
+    return m
+}
+
 // Build the primitive dressing for a plan into a fresh group (browser).
 export function buildTracksidePrimitives(plan) {
     const g = new THREE.Group()
     g.userData.isProps = 1
     for (const e of plan) {
-        const m = primitiveProp(e.id)
+        const m = primitiveProp(e.id, e.i * 31 + e.side * 7)
         const p = T.pts[e.i % T.N]
-        m.position.set(e.wx * S, groundY(e.i) - 0.05, e.wz * S)
+        m.position.set(e.wx * S, e.baseY - 0.05, e.wz * S)
         m.scale.setScalar(e.scale)
         m.rotation.y = yawFor(e.orient, p.a, e.rot)
+        if (SHADOW_IDS[e.id]) m.add(makePropShadow(SHADOW_IDS[e.id]))
         g.add(m)
     }
     return g
@@ -294,9 +363,11 @@ export async function attachShelfProps(plan, group, alive = () => true) {
         const m = src.clone(true)
         m.userData.keepGeo = 1
         const p = T.pts[e.i % T.N]
-        m.position.set(e.wx * S, groundY(e.i) - 0.05, e.wz * S)
+        m.position.set(e.wx * S, e.baseY - 0.05, e.wz * S)
         m.scale.setScalar(e.scale)
         m.rotation.y = yawFor(e.orient, p.a, e.rot)
+        if (SHADOW_IDS[e.id]) m.add(makePropShadow(SHADOW_IDS[e.id]))
+        if (e.id === 'grandstand') m.add(spectatorDots(e.i * 31 + e.side * 7))
         group.add(m)
         n++
     }
