@@ -11,6 +11,8 @@
 //     · a forced flash spikes whole-sky brightness, bleeds a bright bolt, then decays
 //     · CG bolt landings spread across the core projection (both sides of the
 //       core in x and z) and a far variant travels >2300m under the base (#747)
+//     · rain gusts: the squall-wave field varies over time, spreads cells across
+//       the whole field at every instant, and its crest sweeps downfield (#747)
 //     · the storm rolls in: its distance shrinks over time
 //     · the camera pose moves the world
 //   3. LAW    — self-contained single file; NOT registered in games.js
@@ -21,7 +23,9 @@
 // Proven-fail mutant: zero the in-cloud extinction (`sig = d * 0.0013` ->
 // `sig = 0.0`) -> cloud-coverage and base-shadow gates go red. Pin CG starts
 // back to the front (near=true always, driftZ 0) -> landings-spread and
-// far-travel gates go red.
+// far-travel gates go red. Freeze the gust-wave phase (`t * 0.35` / `t * 0.22`
+// -> 0 in both shader and the `gust` mirror) -> the gust-range and crest-sweep
+// gates go red (measured 0.00 and 0 m).
 
 import { spawn } from 'node:child_process'
 import { inflateSync, deflateSync } from 'node:zlib'
@@ -240,6 +244,31 @@ async function main() {
         `n=${spread.tips.length} xRange=${xr} zRange=${zr} behindCore=${tz.filter(v => v < 600).length}`);
       const farBolt = await page.evaluate(() => window.__stormTest.flashNow(true, 'far'));
       ok('CG bolts sometimes travel far under the base', farBolt.dz > 2300, `dz=${farBolt.dz}m`);
+
+      // #747 item 4: rain gusts — squall waves sweep the field instead of a metronome
+      const wave = await page.evaluate(() => {
+        const D = window.__stormTest;
+        const samples = [];
+        for (let i = 0; i <= 24; i++) samples.push(D.gust(0, 0, i));
+        const cells = [];
+        for (const t of [0, 2, 6, 10]) {
+          let mn = 9, mx = -9;
+          for (let x = -4000; x <= 4000; x += 100) { const v = D.gust(x, 0, t); if (v < mn) mn = v; if (v > mx) mx = v; }
+          cells.push(+(mx - mn).toFixed(3));
+        }
+        const at0 = []; for (let x = -4000; x <= 4000; x += 200) at0.push([x, D.gust(x, 0, 2)]);
+        const at1 = []; for (let x = -4000; x <= 4000; x += 200) at1.push([x, D.gust(x, 0, 6)]);
+        return { samples, cells, at0, at1 };
+      });
+      const gmin = Math.min(...wave.samples), gmax = Math.max(...wave.samples);
+      ok('rain gusting: streak intensity varies over the squall cycle', gmax - gmin > 0.22,
+        `gust range=${(gmax - gmin).toFixed(2)}`);
+      ok('sheeting: squall cells spread across the field at every instant', Math.min(...wave.cells) > 0.25,
+        `spatial ranges=${wave.cells.join(',')}`);
+      const crest = arr => arr.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+      const crestShift = Math.abs(crest(wave.at1) - crest(wave.at0));
+      ok('sheeting: squall crest sweeps across the field', crestShift > 300,
+        `crest ${crest(wave.at0)}m -> ${crest(wave.at1)}m in 4s`);
 
       // camera pose moves the world
       await page.evaluate(() => window.__stormTest.setPose({ yaw: 0.95, pitch: 0.06 }))
