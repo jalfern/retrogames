@@ -24,7 +24,7 @@ const roll = (g) => { g._rs = (Math.imul(g._rs, 1664525) + 1013904223) >>> 0; re
 export const cpuMiss = (g, r) => roll(g) < missChance(SKILL[r.id - 1], PACE[r.id - 1])
 
 // mirrors CFG in sim.js (ssxcheck pins these against CFG to catch drift)
-const CFGP = { G: 22, STEER: 1.15, CENT: 0.30, flipRate: 520 }
+const CFGP = { G: 22, STEER: 1.15, CENT: 0.30, flipRate: 520, revertSpin: 120 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
@@ -34,15 +34,21 @@ export function decide(g, r, hot = false) {
     const c = g.course
     const skill = r.isP ? 1 : SKILL[r.id - 1]
     const { seg } = segAt(c, r.s)
+    const dir = ((r.seedPhase * 5.1) % 2) < 1 ? 1 : -1
 
     if (r.air) {
         // predicted hang: how long until the slope meets the board again
         const gy = terrainY(c, r.s + r.v * 0.6, r.x)
         const ttl = (r.vy + Math.sqrt(Math.max(0, r.vy * r.vy + 2 * CFGP.G * (r.y - gy)))) / CFGP.G
 
-        // spins: commit early, both directions earn the same ledger
-        const dir = ((r.seedPhase * 5.1) % 2) < 1 ? 1 : -1
-        if (skill > 0.45 && ttl > 0.55) inp.steer = dir
+        // spins: commit early, both directions earn the same ledger.
+        // #791 revert (hot attract only): leave the lip carved one way and the
+        // demo winds the board the other — a REVERT — then holds the spin so
+        // the ledger's own direction never unwinds it. Cold lines never see
+        // this branch: the race witness and the CPU field keep the old trick.
+        if (hot && r.takeSpin !== 0 && skill > 0.5) {
+            if (r.spin * r.takeSpin > -(CFGP.revertSpin + 40) && ttl > 0.3) inp.steer = -r.takeSpin
+        } else if (skill > 0.45 && ttl > 0.55) inp.steer = dir
 
         // grab: mid-air, one grab per jump
         if (skill > 0.4 && !r.grab && r.airT > 0.12 && r.airT < Math.max(0.2, ttl - 0.25)) inp.grab = true
@@ -77,14 +83,23 @@ export function decide(g, r, hot = false) {
         }
     }
     // obstacles veto the line
+    let vetoed = false
     for (const ob of c.obstacles) {
         const os = ob.i * DS
         if (os > r.s + 1 && os - r.s < Math.max(16, r.v * 0.9) && Math.abs(ob.x - r.x) < ob.r + 0.3) {
             aim = ob.x > r.x ? clamp(r.x - 0.8, -1, 1) : clamp(r.x + 0.8, -1, 1)
+            vetoed = true
         }
     }
     const feed = seg.curve * CFGP.CENT * 30 / CFGP.STEER
     inp.steer = clamp((aim - r.x) * 2.4 + feed, -1, 1)
+    // #791: the hot demo loads an edge through the lip's final stretch — you
+    // carve off a kicker, you don't slide off it square. Signs takeSpin in the
+    // sim so the airborne revert branch has a direction to revert against.
+    if (hot && nextK && !vetoed) {
+        const d = nextK.lipS - r.s
+        if (d > 0 && d < Math.max(4, r.v * 0.5)) inp.steer = clamp(inp.steer + Math.sign(dir) * 0.9, -1, 1)
+    }
 
     // crouch into the lip, snap the release at it
     if (nextK) {

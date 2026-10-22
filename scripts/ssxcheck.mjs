@@ -439,6 +439,7 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('planner mirrors CFG.STEER', grab('STEER') === CFG.STEER)
     ok('planner mirrors CFG.CENT', grab('CENT') === CFG.CENT)
     ok('planner mirrors CFG.flipRate', grab('flipRate') === CFG.flipRate)
+    ok('#791 planner mirrors CFG.revertSpin', grab('revertSpin') === CFG.revertSpin)
     ok('#791 miss rate mirrors the planner LCG modulus', Number(src.match(/1664525/)?.[0]) === 1664525)
     ok('CPU seats are honest under the player top', PACE.every((v) => v < 1))
 }
@@ -739,6 +740,83 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         h.riders[0].boostHum > 0 && h.riders[0].boostHum === h2.riders[0].boostHum && stateHash(h) === stateHash(h2))
     ok('#791 the rev changes the run — a boosted line hashes apart from a coasted one',
         stateHash(h) !== stateHash(b))
+}
+
+// ---- 9f. #791 slice 9: revert — land spun against the takeoff carve --------
+{
+    ok('#791 the revert knobs are exported and sane',
+        CFG.revertPts >= 100 && CFG.revertPts <= 400 && CFG.revertTake >= 0.1 && CFG.revertTake <= 0.5 && CFG.revertSpin >= 60 && CFG.revertSpin <= 240)
+
+    const launch = (steerHeld) => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]; p.x = 0; p.v = 20
+        run(g, 10, { steer: steerHeld, jump: true })
+        step(g, {})
+        return p
+    }
+    ok('#791 a carve-loaded takeoff signs the board', launch(1).takeSpin === 1 && launch(-1).takeSpin === -1)
+    ok('#791 a straight takeoff owns no direction', launch(0).takeSpin === 0)
+
+    const drop = (takeSpin, spin) => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0; p.v = 8
+        p.air = true; p.airT = 0.9
+        p.takeSpin = takeSpin; p.spin = spin
+        p.y = terrainY(g.course, p.s, p.x) + 4; p.vy = -2
+        let t = 0
+        while (!hasEv(g, 'land') && t < 180) { step(g, {}); t++ }
+        return { e: g.events.find((x) => x.type === 'land'), meter: p.meter, takeSpin: p.takeSpin }
+    }
+    const back = drop(1, 240)
+    const rev = drop(1, -240)
+    ok('#791 spinning against the takeoff carve banks a REVERT',
+        !!rev.e && rev.e.revert === true && /REVERT/.test(rev.e.name))
+    ok('#791 spinning with the carve is just a spin — no revert',
+        !!back.e && !back.e.revert && !/REVERT/.test(back.e.name))
+    ok('#791 the revert pays its bonus on top of the same spin — nothing else',
+        !!rev.e && !!back.e && rev.e.pts - back.e.pts === CFG.revertPts)
+    ok('#791 the revert is style, not fuel — the bonus never feeds the boost meter',
+        !!rev.e && !!back.e && Math.abs(rev.meter - back.meter) < 1e-9)
+    const weak = drop(1, -60)
+    ok('#791 a small opposite wiggle does not revert', !!weak.e && !weak.e.revert)
+    const flat = drop(0, -240)
+    ok('#791 an unloaded takeoff has nothing to revert', !!flat.e && !flat.e.revert)
+    ok('#791 landing forgets the carve — the next jump starts clean', rev.takeSpin === 0)
+    {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0; p.v = 8; p.air = true; p.airT = 0.9; p.takeSpin = 1; p.spin = -300; p.flip = 200
+        p.y = terrainY(g.course, p.s, p.x) + 5; p.vy = -2
+        let t = 0
+        while (!hasEv(g, 'crash') && t < 180) { step(g, {}); t++ }
+        ok('#791 a bail eats the revert with the rest of the trick',
+            hasEv(g, 'crash') && p.takeSpin === 0 && !hasEv(g, 'land', (e) => e.revert))
+    }
+    const hs = (takeSpin, spin) => {
+        const g = makeGame('race'); run(g, 181)
+        const p = g.riders[0]; p.x = 0; p.v = 8; p.air = true; p.airT = 0.9
+        p.takeSpin = takeSpin; p.spin = spin
+        p.y = terrainY(g.course, p.s, p.x) + 4; p.vy = -2
+        run(g, 60)
+        return stateHash(g)
+    }
+    ok('#791 the carve and the revert ride the replay hash',
+        hs(1, -240) === hs(1, -240) && hs(1, -240) !== hs(1, 240))
+    {
+        const g = makeGame('race')
+        let reverts = 0, crashes = 0, t = 0
+        while (!g.end && g.heat === 0 && t < 400000) {
+            step(g, g.phase === 'run' ? decide(g, g.riders[0], true) : {})
+            for (const e of g.events) {
+                if (e.type === 'land' && e.who === 0 && e.revert) reverts++
+                if (e.type === 'crash' && e.who === 0) crashes++
+            }
+            g.events.splice(0)
+            t++
+        }
+        ok('#791 the hot attract demo throws REVERTs visibly — and lands them clean', reverts >= 2 && crashes === 0)
+    }
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

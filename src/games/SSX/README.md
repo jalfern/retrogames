@@ -95,6 +95,11 @@ the boost meter and a full meter at takeoff throws OVER.
     throws a spray burst sized by the impact. Bails and takeoffs clear it.
     Cosmetic state — physics untouched — but it rides `stateHash`. Pinned by
     eight ssxcheck gates.
+12. Revert (#791): a takeoff loaded with edge pressure (`|press| >=
+    CFG.revertTake`) signs `r.takeSpin`; landing spun ≥ `CFG.revertSpin`°
+    the *other* way banks `CFG.revertPts` (chain- and OVER-scaled) and
+    renames the trick `REVERT …`. The bonus pays score but never the
+    meter — the boost economy stays the trick economy. Bails eat it.
 
 ## The hero rider (#548)
 
@@ -278,6 +283,37 @@ bounds, and that both surfaces actually occur carved on the mountain
 (5 gates, 50 total). Mutant proof (done once, by hand): pin `icy = 0`
 (surface-blind) → 3 gates red; restore → green.
 
+## Revert bonus (#791 slice 9)
+
+The original paid REVERT when you left a lip carved one way and landed spun
+the other. Two new sim pieces make it real:
+
+- **The takeoff keeps the carve.** Both launch paths (crouch-ollie release and
+  lip auto-launch) sign `r.takeSpin` from the edge pressure at that instant
+  (`|press| >= CFG.revertTake`, else the board owns no direction — a square
+  launch can't revert). Landings and crashes clear it; it rides `stateHash`.
+- **The landing collects it.** `evalTrick` pays `CFG.revertPts` when the
+  accumulated spin is opposite `takeSpin` and at least `CFG.revertSpin`° deep,
+  scaled by chain and doubled by OVER, and the name gains a `REVERT ` prefix
+  (`OVER!! REVERT BACKFLIP 540`). The bonus goes to score, never the meter:
+  `r.meter` still counts the pre-revert base, so the documented boost economy
+  is untouched by the style bonus.
+- **The hot attract demo wears it.** The hot planner carves through a lip's
+  final stretch (never across an obstacle veto), presses `-takeSpin` in the
+  air until the spin is committed (160°), then drops the steering so the
+  revert can't unwind — REVERTs land visibly, cleanly. The cold race witness
+  and the CPU field never *attempt* a revert; when their existing lines
+  happen to carve a lip and spin against it, the sim pays them honestly (the
+  rules are the same for the whole field — win gates re-run green on top).
+
+ssxcheck section 9f (+14 gates, 173 total): carve-signs the takeoff
+(left/right/straight), REVERT banks against the carve and only on top of the
+same spin (`pts` delta `=== CFG.revertPts`), the bonus never feeds the meter,
+a wiggle below depth doesn't revert, an unloaded launch can't, landing clears
+it, a bail eats it, hash determinism, and the hot attract demo throws ≥2
+REVERTs with zero crashes. Mutation proof (done once, by hand):
+`revert = false` → 4 gates red; restore → green.
+
 ## Hard-won verify notes
 
 
@@ -301,7 +337,7 @@ bounds, and that both surfaces actually occur carved on the mountain
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 114 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 173 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
 npm run ssxterraincheck                 # 50 checks: snow/rock surfaces (#669, #685)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
@@ -349,8 +385,8 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
   sign (reaching hand, mirrored for goofy seats), ↓ (heel edge) and a held
   flip (weight fore/aft) at the grab frame — INDY/MUTE/METHOD/SALISBURY/
   NOSEGRAB/TAILGRAB, each with its own hero pose; the flip commit follows
-  the reach — front hand to the nose, back hand to the tail. Still open for
-  a later slice: inverts and reverts.
+  the reach — front hand to the nose, back hand to the tail. Reverts landed
+  in slice 9; still open for a later slice: inverts.
 - Doubles (#791 slice 8): past a second of hang the flip ledger opens to a
   second rotation — a held flip through big normal air banks DOUBLE BACK/
   FRONTFLIP at full double pay, capped at 720+~20 so a clean landing still
