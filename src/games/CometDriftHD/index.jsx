@@ -10,7 +10,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from '../CometDrift/sim.js'
 import { bankVoices, engineRegister, crowdSwellGain, nearestStandPx, CROWD_GAIN, CROWD_PERIOD, CROWD_BURST, CROWD_FREQ } from './audio.js'
-import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse } from '../CometDrift/track.js'
+import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse, crestDust } from '../CometDrift/track.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 import {
@@ -805,6 +805,22 @@ export default function CometDriftHD() {
             if (P.offroad && P.v > 2 && (g.tick & 1) === 0) {
                 const w = wheelWorld(P, 1, 0.4)
                 dust.spawn(w.x, liftAt(P) + 0.14, w.z, 0, 0.006, 0, 18, 0xb08058)
+            }
+            // #530 item 2: crest-lip dust — flying over a brow kicks a short
+            // plume off the lip, so the break the #757 FOV dip implies is
+            // visible in the world, not just the lens. Intensity comes from the
+            // pure crestDust law (track.js), pinned by cometdrifthdcheck.
+            const crestPlume = crestDust((TRACK.pts[P.hint] && TRACK.pts[P.hint].crest) || 0, P.v)
+            if (crestPlume > 0.01) {
+                const n = Math.round(2 + crestPlume * 5)
+                for (let i = 0; i < n; i++) {
+                    const w = wheelWorld(P, i % 2 ? 1 : -1, 0.6)
+                    dust.spawn(w.x, liftAt(P) + 0.1, w.z,
+                        -w.fx * (0.02 + crestPlume * 0.02) + (jit(g.tick * 5.1 + i) - 0.5) * 0.02,
+                        0.01 + crestPlume * 0.02,
+                        -w.fz * (0.02 + crestPlume * 0.02) + (jit(g.tick * 4.3 + i) - 0.5) * 0.02,
+                        Math.round(18 + crestPlume * 10), 0xb08058)
+                }
             }
             // the pack drifts too: rivals earn their sparks at half rate,
             // and boost leaves a smoke trail (#471 item 6)

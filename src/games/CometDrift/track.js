@@ -335,6 +335,21 @@ export function crestDipLaw(pts, win = 6) {
     return { crest, dip, crestPeak: cMax, dipPeak: dMax }
 }
 
+// #530 item 2 (crest-lip dust) — the brow-break plume law. Over a crest the far
+// edge drops out of frame; the #757 FOV dip implies that break, and this sells
+// it with dust kicked off the lip. Pure and height-invariant so the harness pins
+// it in Node without Chrome: the kart must be BOTH over a genuine brow (crest
+// above THR) and moving (v above VMIN) — a crawling cart on a rise kicks nothing.
+// Intensity grows with crest strength and sub-linearly with speed, clamped 0..1.
+export function crestDust(crest, v) {
+    const THR = 0.35
+    const VMIN = 1.5
+    if (!(crest > THR) || !(v > VMIN)) return 0
+    const strength = (crest - THR) / (1 - THR)
+    const speed = Math.min(1, (v - VMIN) / (8 - VMIN))
+    return strength * (0.4 + 0.6 * speed)
+}
+
 // scenery placed by index so the list is identical in Node, the browser and
 // the harness — no dice. Cacti and mesa spires outside the cliff.
 // #542: a lateral offset alone is not enough on a grown course — the loop
