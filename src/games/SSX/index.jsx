@@ -220,6 +220,22 @@ const SSXGame = () => {
                     audioController.playTone(f, 0.09, 'square', 0.08)
                     if (e.mult > 1) audioController.playTone(f * 1.25, 0.09, 'square', 0.06)
                     if (e.bigAir) { shake = Math.max(shake, 0.35); audioController.playTone(58, 0.22, 'sine', 0.14); audioController.duckMusic(0.4, 0.4) }
+                    else if (e.impact > 0.25) audioController.playTone(74, 0.16, 'sine', Math.min(0.12, 0.04 + e.impact * 0.1))
+                    // #791: the landing throws a powder burst sized by impact —
+                    // a soft roller sets off a puff, a hard drop a full cloud.
+                    if (e.impact > 0.25) {
+                        const rp = slopePos(g.course, rr.s, rr.x)
+                        const nb = 4 + Math.round(e.impact * 10)
+                        for (let k = 0; k < nb; k++) {
+                            const fan = (Math.random() - 0.5) * (0.8 + e.impact * 1.4)
+                            putSpray(
+                                rp.x + Math.cos(rp.th) * fan, rp.y + 0.12, rp.z - Math.sin(rp.th) * fan,
+                                Math.cos(rp.th) * fan * 2 + (Math.random() - 0.5) * 2,
+                                1.8 + e.impact * 3.5 + Math.random() * 1.6,
+                                Math.sin(rp.th) * fan * 2 + (Math.random() - 0.5) * 2,
+                            )
+                        }
+                    }
                     if (e.over) audioController.playSweep(600, 1400, 0.3, 'sawtooth', 0.09)
                 }
                 if (e.type === 'crash' && mine) {
@@ -623,7 +639,7 @@ const SSXGame = () => {
                     const p = g.riders[0]
                     return {
                         screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick, phase: g.phase,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, press: p.press, carves: p.carves.length },
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, press: p.press, stomp: p.stomp, stompPow: p.stompPow, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },

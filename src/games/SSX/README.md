@@ -90,6 +90,11 @@ the boost meter and a full meter at takeoff throws OVER.
 10. Seeded wipeouts (#791): a CPU flagged at takeoff washes out on landing;
     the flag rides `g._rs`, so the same seed replays every fall exactly, and
     the player is exempt. Pinned by seven ssxcheck gates.
+11. Landing impact (#791): descent speed at touchdown sets `r.stompPow` and a
+    short `r.stomp` beat; the rig compresses toward the deck and the renderer
+    throws a spray burst sized by the impact. Bails and takeoffs clear it.
+    Cosmetic state — physics untouched — but it rides `stateHash`. Pinned by
+    eight ssxcheck gates.
 
 ## The hero rider (#548)
 
@@ -206,7 +211,35 @@ driven highlight reel. Two changes, neither touching the race economy:
   → 3 gates red; leaking `inp.fuel` into every input → the cold-witness gate
   (plus two pre-existing ones) red; restore → 114 green.
 
+## Landing impact — stomp pose + spray burst (#791)
+
+Landing is an event the body feels. `sim.js` reads the descent speed at
+touchdown as `impact = -vy` and sets `stompPow = min(1, impact/11)` plus a
+short `stomp` beat (`8 + pow·10` ticks) that decays on the ground. The
+`land` event carries `impact`; the renderer's existing spray pool throws a
+burster `4 + impact·10` particles wide, and a mid-strength landing (impact
+>0.25, not already a big-air thud) adds its own low tone. `art.js poseRider`
+compresses the whole rig toward the deck by `5–24 %` (root + legs, for both
+the rigged hero and primitive field), deeper the harder the hit; it only
+applies on the ground, never during tumble/air, and `poseOverride` (the
+`ssxmodelcheck` probe) skips it so pose captures stay clean.
+
+Cosmetic by construction — physics, scoring and the meter are untouched — but
+`stomp/stompPow` ride `stateHash`, so a replay stomps identically. Sub-60-pt
+micro-touchdowns still push no `land` event (pre-existing: only banked tricks
+report); the spray/pose still fire off the event, so a soft roller that banks
+gets a small puff, a hard drop a full cloud.
+
+Note: a `land` event only exists when the trick actually banks. A landing
+below the 60-pt floor, and every crash/miss/bail, clear stomp without a burst
+(the tumble owns those frames).
+
+Mutant proof (done once, by hand): neuter the `stomp` set in `sim.js` and
+two gates go red (the deeper-and-longer stomp, the relax-beat); restore →
+green.
+
 ## Hard-won verify notes
+
 
 - The far mesh SINKS past the ridge line (`bank` q>9) — outer columns must
   never stand above the near crest, or the silhouette reads as a black blade

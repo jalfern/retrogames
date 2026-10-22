@@ -494,5 +494,58 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('#791 the hot attract demo replays hash-for-hash', hot.hs.join(',') === hot2.hs.join(','))
 }
 
+// ---- 9d. #791 landing impact drives the body: stomp pose + sized burst ----
+{
+    const drop = (h, vy) => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0; p.v = 8
+        p.air = true; p.airT = 0.9   // rollers hang long enough to bank (base ≥ 60)
+        p.y = terrainY(g.course, p.s, p.x) + h
+        p.vy = vy
+        const evs = []
+        let t = 0
+        while (!evs.some((e) => e.type === 'land') && t < 180) { step(g, {}); evs.push(...g.events.splice(0)); t++ }
+        const e = evs.find((x) => x.type === 'land')
+        const st = p.stomp
+        t = 0
+        while (p.stomp > 0 && t < 300 && !p.air) { step(g, {}); t++ }
+        return { e, st, zeroed: p.stomp === 0 }
+    }
+    const soft = drop(0.35, -1)
+    const hard = drop(6, -2)
+    ok('#791 a touchdown reports finite impact, harder falls hit bigger',
+        !!soft.e && !!hard.e && Number.isFinite(soft.e.impact) && Number.isFinite(hard.e.impact) && hard.e.impact > soft.e.impact + 4)
+    ok('#791 the body stomps on touchdown — harder landings stomp deeper and longer',
+        soft.st > 0 && hard.st > soft.st)
+    ok('#791 the stomp is a beat, not a state — it relaxes back to stand',
+        soft.zeroed && hard.zeroed && soft.st > 0 && hard.st > soft.st)
+    ok('#791 a rider cruising the snow carries no stomp',
+        (() => { const g = makeGame('race'); run(g, 240); return g.riders[0].stomp === 0 })())
+    ok('#791 a bail never stomps — the tumble owns the body', (() => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0; p.v = 8; p.air = true; p.airT = 0.5
+        p.y = terrainY(g.course, p.s, p.x) + 5; p.vy = -2
+        p.flip = 200
+        let t = 0
+        while (!hasEv(g, 'crash') && t < 180) { step(g, {}); t++ }
+        return hasEv(g, 'crash') && p.stomp === 0
+    })())
+    ok('#791 a takeoff clears any stomp still ringing', (() => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.stomp = 12; p.stompPow = 0.8
+        step(g, { jump: true })
+        step(g, {})
+        return p.air === true && p.stomp === 0
+    })())
+    const wit = autopilot(makeGame('race'))
+    const lands = wit.events.filter((e) => e.type === 'land')
+    ok('#791 every banked landing of a full race carries its impact',
+        lands.length >= 10 && lands.every((e) => Number.isFinite(e.impact) && e.impact >= 0))
+    ok('#791 impact + stomp ride the replay hash', stateHash(wit) === stateHash(autopilot(makeGame('race'))))
+}
+
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)
