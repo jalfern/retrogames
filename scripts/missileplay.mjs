@@ -227,7 +227,12 @@ r.check('the banner hands the sky over to the script', !!st, `phase=${(await pro
     await ensureSetup({ wave: 1, quiet: true })
     await waitPlay()
     for (let i = 1; i < 6; i++) await setup({ killCity: i })
-    await setup({ spawn: { kind: 'icbm', x: 146, y: 170, vy: 1.5, ti: 3 } })
+    // Aim the killing warhead at the ONLY surviving city (index 0, x=54).
+    // Targeting a city the loop already killed makes it a dud, so the run
+    // would end only after the NEXT scripted wave rebuilds the board and
+    // lands ~1144 ticks later — past this check's ~8s budget, flaky on
+    // software-rendered CI. Hitting the live city ends the run in ~15 ticks.
+    await setup({ spawn: { kind: 'icbm', x: 54, y: 170, vy: 1.5, ti: 0 } })
     const dark = await waitEv((ev) => ev.type === 'lose', 160)
     r.check('the sixth city falling ends the run', !!dark)
     await wait(1400)
