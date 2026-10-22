@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -430,7 +430,8 @@ const SSXGame = () => {
                     }
                     if (p.v > 8 && Math.abs(steer) > 0.45 && (swishT = (swishT + 1) % 5) === 0) {
                         const s = Math.abs(steer)
-                        audioController.playFilteredNoise(0.12, Math.min(0.09, 0.02 + s * 0.028 + p.v * 0.0012), 650 + p.v * 40 + s * 350)
+                        const cv = carveVoice(slopeAt(g.course, p.s, p.x), p.v, s)
+                        audioController.playFilteredNoise(cv.dur, cv.vol, cv.cutoff)
                     }
                     if (p.boost && (boostT = (boostT + 1) % 8) === 0) {
                         const hum = p.boostHum || 0

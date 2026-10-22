@@ -5,7 +5,7 @@
 // and the mountain is still winnable. Run: npm run ssxterraincheck
 
 import { buildCourse, terrainY, featureLift, openness, COURSE_COUNT, DS } from '../src/games/SSX/course.js'
-import { snowColor, surfaceInfo, slopeAt, sparkleMask, buildTerrain, buildSparkles, detailTexture, sparkleTexture, GRIDS, rockStrata, cpuSprayCount, landingSound, rimJagPlan, SPARKLE_PULSE, GROOVE } from '../src/games/SSX/art.js'
+import { snowColor, surfaceInfo, slopeAt, sparkleMask, buildTerrain, buildSparkles, detailTexture, sparkleTexture, GRIDS, rockStrata, cpuSprayCount, landingSound, carveVoice, rimJagPlan, SPARKLE_PULSE, GROOVE } from '../src/games/SSX/art.js'
 import { makeGame, step } from '../src/games/SSX/sim.js'
 import { decide } from '../src/games/SSX/planner.js'
 
@@ -268,6 +268,32 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         }
     }
     ok('both landing surfaces occur on the mountain', icy > 0 && soft > 0)
+}
+{
+    // #791 carve voice: icy crust swishes brighter, thinner and louder than powder
+    const ice = carveVoice(0.5, 16, 0.7), powder = carveVoice(0.12, 16, 0.7)
+    ok('crust vs powder carve: icy swishes brighter, shorter, louder',
+        ice.icy && !powder.icy
+        && ice.cutoff > powder.cutoff && ice.dur < powder.dur && ice.vol > powder.vol)
+    ok('carve cutoff rises monotonically with slope',
+        carveVoice(0.3, 16, 0.7).cutoff > carveVoice(0.25, 16, 0.7).cutoff
+        && carveVoice(0.45, 16, 0.7).cutoff > carveVoice(0.3, 16, 0.7).cutoff
+        && carveVoice(0.6, 16, 0.7).cutoff > carveVoice(0.45, 16, 0.7).cutoff)
+    ok('carve swish still scales with speed and pressure on both surfaces',
+        carveVoice(0.12, 24, 0.7).cutoff > carveVoice(0.12, 10, 0.7).cutoff
+        && carveVoice(0.12, 16, 0.9).vol > carveVoice(0.12, 16, 0.5).vol
+        && carveVoice(0.5, 24, 0.9).cutoff > carveVoice(0.5, 10, 0.5).cutoff)
+    ok('carve voice stays bounded',
+        carveVoice(1.4, 38, 1).vol <= 0.1 && carveVoice(0, 8, 0.5).cutoff >= 650
+        && carveVoice(1.4, 38, 1).dur >= 0.069 && carveVoice(1.4, 38, 1).icyT === 1)
+    let icier = 0, softer = 0
+    const co = buildCourse(0)
+    for (let s = 120; s < co.N * DS - 40; s += DS) {
+        for (const x of [0, 1.2, -1.2, 2.2, -2.2]) {
+            if (carveVoice(slopeAt(co, s, x), 16, 0.7).icy) icier++; else softer++
+        }
+    }
+    ok(`both carve surfaces occur on the mountain (${icier} icy / ${softer} powder)`, icier > 0 && softer > icier)
 }
 {
     // rim jag skyline: shards only stand on high rock rims, bounded count
