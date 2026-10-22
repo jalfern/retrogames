@@ -297,7 +297,42 @@ function buildPoints(control, elev) {
         hMin = Math.min(hMin, p.h); hMax = Math.max(hMax, p.h)
         maxGrade = Math.max(maxGrade, Math.abs(p.grade))
     }
-    return { pts, len: s, N, hMin, hMax, maxGrade }
+    // #530 item 2: crest/dip feel. A crest is where the grade flips up->down:
+    // a short look BACK averages uphill (grade > 0) while a look AHEAD averages
+    // downhill (grade < 0), so (b - a) peaks at the brow. dip is the mirror.
+    // Normalised 0..1 across the lap, so the renderer's FOV punch and dip
+    // darkening are height-invariant and identical for Node and the browser.
+    const CD = crestDipLaw(pts)
+    for (let i = 0; i < N; i++) { pts[i].crest = CD.crest[i]; pts[i].dip = CD.dip[i] }
+    return { pts, len: s, N, hMin, hMax, maxGrade, crestPeak: CD.crestPeak, dipPeak: CD.dipPeak }
+}
+
+// #530 item 2 — the crest/dip law, exported so the harness pins the attached
+// `p.crest`/`p.dip` against the same source instead of a mirror. Averages the
+// grade ahead vs behind a point over +/-win samples; a brow reads look-back
+// positive and look-ahead negative (crest), a bottom the reverse (dip). Each
+// lane is then scaled by its own course peak so the strongest feature = 1.
+export function crestDipLaw(pts, win = 6) {
+    const N = pts.length
+    const sum = (i, sgn) => { let m = 0; for (let w = 1; w <= win; w++) m += pts[(i + sgn * w + N) % N].grade; return m / win }
+    const crest = new Array(N); const dip = new Array(N)
+    const cr = new Array(N); const dr = new Array(N)
+    let cMax = 0; let dMax = 0
+    for (let i = 0; i < N; i++) {
+        const a = sum(i, 1); const b = sum(i, -1)
+        // a brow needs BOTH sides: climbing behind (b>0) and descending ahead
+        // (a<0). The product is zero on a persistent climb or the start/finish
+        // seam (where grade stays positive), so only real summits/dips light up.
+        cr[i] = Math.max(0, b) * Math.max(0, -a)
+        dr[i] = Math.max(0, a) * Math.max(0, -b)
+        if (cr[i] > cMax) cMax = cr[i]
+        if (dr[i] > dMax) dMax = dr[i]
+    }
+    for (let i = 0; i < N; i++) {
+        crest[i] = cMax > 0 ? cr[i] / cMax : 0
+        dip[i] = dMax > 0 ? dr[i] / dMax : 0
+    }
+    return { crest, dip, crestPeak: cMax, dipPeak: dMax }
 }
 
 // scenery placed by index so the list is identical in Node, the browser and
@@ -374,6 +409,7 @@ for (const c of COURSES) {
         def: c,
         pts: t.pts, len: t.len, N: t.N,
         hMin: t.hMin, hMax: t.hMax, maxGrade: t.maxGrade,
+        crestPeak: t.crestPeak, dipPeak: t.dipPeak,
         checkpoints: [0.2, 0.4, 0.6, 0.8].map((f) => pctOf(t, f)),
         nearest: makeNearest(t),
         aheadK: makeAheadK(t),
@@ -395,6 +431,7 @@ function adopt(courseId) {
         pts: t.pts, len: t.len, N: t.N,
         ROAD_R, KERB_R, WALL_R,
         hMin: t.hMin, hMax: t.hMax, maxGrade: t.maxGrade,
+        crestPeak: t.crestPeak, dipPeak: t.dipPeak,
         nearest: t.nearest, aheadK: t.aheadK,
     })
     SCENERY.length = 0

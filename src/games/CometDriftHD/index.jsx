@@ -585,6 +585,8 @@ export default function CometDriftHD() {
         let camLift = 0
         let shake = 0
         let fovK = 0
+        let crestK = 0
+        let dipK = 0
         let prevPlace = g.karts[0].place
 
         const tmpF = new THREE.Vector3()
@@ -912,7 +914,16 @@ export default function CometDriftHD() {
             while (da > Math.PI) da -= Math.PI * 2
             while (da < -Math.PI) da += Math.PI * 2
             camA += da * (P.driftT > 0 ? 0.062 : 0.13)
-            const fovTarget = P.boostT > 0 ? 7 + P.boostTier * 5.5 : 0
+            // #530 item 2: the road's crest/dip ride the camera too. Over a brow
+            // the ground drops away — punch the FOV wider and let the nose fall so
+            // the far side reveals itself a beat late (the crest-lip FOV dip). In a
+            // dip the view narrows and the eye sinks, so walls loom and the band
+            // darkens. crestK/dipK are eased so the punch is a swell, not a snap.
+            const cAt = (TRACK.pts[P.hint] && TRACK.pts[P.hint].crest) || 0
+            const dAt = (TRACK.pts[P.hint] && TRACK.pts[P.hint].dip) || 0
+            crestK += (cAt - crestK) * 0.12
+            dipK += (dAt - dipK) * 0.12
+            const fovTarget = (P.boostT > 0 ? 7 + P.boostTier * 5.5 : 0) + crestK * 6 - dipK * 3
             fovK += (fovTarget - fovK) * 0.08
             // #542: a closer, lower eye with a longer look down the road — the
             // old rig floated 2.75u over the nose and the widened courses made
@@ -923,7 +934,7 @@ export default function CometDriftHD() {
             const fx0 = Math.cos(camA); const fz0 = Math.sin(camA)
             const hx = P.x * S; const hz = P.y * S
             const hp = liftAt(P)
-            const baseUp = 2.45 + fovK * 0.02
+            const baseUp = 2.45 + fovK * 0.02 - dipK * 0.35
             const behind = surfaceAt((hx - fx0 * back) / S, (hz - fz0 * back) / S, P.hint)
             const needWall = behind.surf === 'sand' || behind.surf === 'wall'
                 ? Math.max(0, wallTopYAt(behind.i) + 0.45 - (hp + baseUp)) : 0
