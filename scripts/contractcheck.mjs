@@ -16,6 +16,7 @@
 // Run: npm run dev in another terminal, then `npm run contractcheck`.
 
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
+import { validate } from '../src/utils/recording.js'
 
 const BASE = process.env.CONTRACT_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
 const GAMES = [
@@ -50,6 +51,10 @@ const GAMES = [
 ]
 const TICKS = 600
 const ONLY = process.env.CONTRACT_ONLY
+// #527 item 1 — games whose loop banks live ticks (recordLiveTick). The live
+// gate below runs only for these; every other game's recorder is still fed by
+// step(), so a full rollout is the remaining work on #527.
+const LIVE = ['tetris']
 
 const PATTERNS = {
     'lunar-lander': (i) => ({ left: i % 71 < 16, right: false, up: i % 37 < 18 }),
@@ -180,6 +185,39 @@ for (const p of RUN) {
         r.check(`${p.id}: co-op pad-array replay is deterministic`, c1.final === c2.final && c1.heldTick === TICKS, `tick=${c1.heldTick} hash=${JSON.parse(c1.final).hash}`)
     }
     if (r1.restoreOk !== null) r.check(`${p.id}: snapshot/restore round-trip`, r1.restoreOk === true)
+
+    // #527 item 1 — LIVE-session capture. recordStart does NOT lock the loop,
+    // so the game's own rAF loop owns the clock and banks each tick via
+    // recordLiveTick; no harness drives step. We lock first (step n=0) so the
+    // capture starts exactly at the reset's tick 0, replay then hits every hash.
+    if (LIVE.includes(p.id)) {
+        const live = await page.evaluate(async () => {
+            const g = window.__game
+            const kd = (code) => window.dispatchEvent(new KeyboardEvent('keydown', { code }))
+            const ku = (code) => window.dispatchEvent(new KeyboardEvent('keyup', { code }))
+            g.step({}, 0) // lock the rAF loop without advancing a tick
+            g.reset(1234) // fresh seed-1234 game at tick 0 (loop locked)
+            g.recordStart(30)
+            g.release() // hand the clock to the real loop, from tick 0
+            const plan = [[150, 'kd', 'ArrowLeft'], [500, 'ku', 'ArrowLeft'],
+                [300, 'kd', 'ArrowRight'], [900, 'ku', 'ArrowRight'],
+                [200, 'kd', 'ArrowUp'], [260, 'ku', 'ArrowUp'], [700, 'kd', 'ArrowUp'], [760, 'ku', 'ArrowUp']]
+            for (const [t, kind, code] of plan) setTimeout(kind === 'kd' ? () => kd(code) : () => ku(code), t)
+            await new Promise((r) => setTimeout(r, 1500))
+            const rec = g.recordStop()
+            g.release()
+            return rec
+        })
+        r.check(`${p.id}: live capture banked ticks (loop-owned, no harness step)`, live && live.ticks > 0, live ? `ticks=${live.ticks}` : 'no recording')
+        r.check(`${p.id}: live capture validates`, live && validate(live) === null, live ? (validate(live) || 'valid') : 'no recording')
+        const rep = await page.evaluate((rec) => {
+            const out = window.__game.replay(rec)
+            window.__game.release()
+            return out
+        }, live)
+        r.check(`${p.id}: live capture replays hash-equal`, rep && rep.ok === true && !rep.mismatch,
+            rep ? (rep.mismatch ? `diverged @${rep.mismatch.tick} want ${rep.mismatch.want} got ${rep.mismatch.got}` : `ok, ${rep.ticks} ticks`) : 'no replay')
+    }
 
     const resume = await page.evaluate(() => {
         const g = window.__game

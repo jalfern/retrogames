@@ -13,7 +13,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
 import { newGame, step, cellsOf, stateHash, PIECE_NAMES, SPAWN_X, SPAWN_Y, FIXED_DT, resting } from './sim.js'
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from './planner.js'
@@ -236,6 +236,7 @@ const TetrisGame = () => {
                         handleEvents(demo, false)
                     } else if (screenRef.current === 'play' && gs && !gs.over) {
                         step(gs, { ...keys })
+                        recordLiveTick([{ left: keys.left, right: keys.right, down: keys.down, a: keys.rot }])
                         const rest = resting(gs)
                         if (rest && !wasResting) audioController.playTone(140, 0.03, 'square', 0.05)
                         wasResting = rest

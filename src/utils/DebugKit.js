@@ -7,7 +7,9 @@
 //
 // F1 toggles the panel; production never sees any of it.
 // window.__dbg is also exposed: { state(), act('label') } for console work.
-// A built-in "download rec .json" button saves window.__lastRecording (#527 6).
+// A built-in "REC" button records a LIVE session (the game's own rAF loop
+// banks each tick, #527 item 1) and "download rec .json" saves the last
+// recording (#527 item 6).
 // Games with an existing DEV hook (window.__<game>Test) keep that hook
 // untouched — the panel is for humans poking at a symptom; the hook stays
 // the harness's read-only contract.
@@ -46,6 +48,34 @@ export function mountDbg({ title, getState, actions = [] }) {
         }
         btnRow.appendChild(b)
     })
+
+    // #527 item 1 — record a LIVE session. The game's own rAF loop banks each
+    // tick via recordLiveTick, so no harness drives step: press to start, play
+    // for real, press again to stop + save. Works on any wired game.
+    const liveRecBtn = document.createElement('button')
+    liveRecBtn.textContent = 'REC'
+    liveRecBtn.style.cssText = 'background:#310;color:#f88;border:1px solid #f88;font:10px monospace;padding:2px 8px;cursor:pointer'
+    liveRecBtn.onclick = () => {
+        const g = window.__game
+        if (!g || typeof g.recordStart !== 'function') { flash('no __game (game not wired)'); return }
+        try {
+            if (g.isRecording && g.isRecording()) {
+                const rec = g.recordStop()
+                if (!rec) { flash('REC: nothing captured'); return }
+                const dl = recDownload(rec)
+                const url = URL.createObjectURL(new Blob([dl.text], { type: 'application/json' }))
+                const a = document.createElement('a')
+                a.href = url; a.download = dl.filename
+                document.body.appendChild(a); a.click(); a.remove()
+                setTimeout(() => URL.revokeObjectURL(url), 0)
+                flash(`REC saved ${dl.filename} (${rec.ticks} ticks)`)
+            } else {
+                g.recordStart(30)
+                flash('REC on — play, press again to save')
+            }
+        } catch (e) { flash('ERR ' + e.message) }
+    }
+    btnRow.appendChild(liveRecBtn)
 
     // #527 item 6 — one-click save of a hand-recorded session (DEV only).
     const recBtn = document.createElement('button')

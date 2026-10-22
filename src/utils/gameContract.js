@@ -19,8 +19,18 @@ let loopLock = false
 let exposed = null
 let recorder = null
 let lastPlayers = 1
+let liveFeed = null
 
 export const contractHoldsLoop = () => loopLock
+
+// #527 item 1 — live-session capture. A human (or the attract demo) plays at
+// rAF speed through the game's OWN loop, which never calls step(), so the
+// recorder (fed only inside step) would bank nothing. Each wired game's loop
+// calls recordLiveTick(thePad) once per simulated play tick; the active
+// recorder banks it exactly the way step() would — same pad codec, same raw
+// device view, same hash cadence — so a live capture replays hash-equal.
+export const recordLiveTick = (pads) => { if (liveFeed) liveFeed(pads) }
+export const isRecording = () => !!recorder
 
 // `spec.method` is the game's input method ('dpad' | 'stick' | 'pointer', #420)
 // and `spec.reads` the one-pad fields it actually consumes. Both surface on
@@ -50,6 +60,11 @@ export function exposeGame(spec) {
         const st = spec.state()
         return typeof st.hash === 'number' || typeof st.hash === 'string' ? st.hash : null
     }
+    // The loop-facing live bank (recordLiveTick): one addTick per rAF play
+    // tick, mirroring the step() bank byte-for-byte so a live capture is the
+    // same file the harness would record. rawsFor reads the live device; a
+    // keyboard/dpad seat has no analog device so its raw mirrors the pad.
+    liveFeed = (pads) => { if (recorder) recorder.addTick(pads, rawsFor(pads), hashNow()) }
     const api = {
         meta: {
             id: spec.id,
@@ -119,6 +134,7 @@ export function exposeGame(spec) {
             window.__lastRecording = rec
             return rec
         },
+        isRecording: () => !!recorder,
         replay: (rec) => verifyRecording(rec, {
             reset: (seed, players) => { api.reset(seed, players) },
             step: (pads) => { api.step(pads) },
@@ -143,6 +159,7 @@ export function exposeGame(spec) {
 export function unexposeGame() {
     loopLock = false
     recorder = null
+    liveFeed = null
     if (exposed && window.__game === exposed) delete window.__game
     exposed = null
 }
