@@ -17,7 +17,7 @@ const ok = (name, cond) => { if (cond) pass++; else fails.push(name) }
 const m = await import('./dailylog.mjs')
 
 // ---- boot ----
-for (const fn of ['cutoffFor', 'cutoffUTC', 'ptDateOf', 'pacificParts', 'parsePrivateLabels', 'isPrivateTitle', 'shotsByIssue', 'buildSections', 'buildLog']) {
+for (const fn of ['cutoffFor', 'cutoffUTC', 'ptDateOf', 'pacificParts', 'parsePrivateLabels', 'isPrivateTitle', 'shotsByIssue', 'buildSections', 'buildLog', 'fetchClosedPulls']) {
     ok(`boot: exports ${fn}`, typeof m[fn] === 'function')
 }
 
@@ -133,6 +133,34 @@ ok('a full day reports stalled', oct18.stalled.length === 2)
 ok('a full day reports regression', oct18.regressed.filter(r => !r.advisory).length === 1)
 ok('live reports Jon traffic', log.live.waiting.length === 2 && log.live.shipped.length === 1)
 ok('headline counts match sections', oct18.headline === '1 shipped · 3 stalled/regressed · 0 waiting on Jon')
+
+// ---- closed-PR pagination (#525): sort=updated pages must be walked ----
+const SINCE = '2026-10-08T13:00:00Z'
+const pull = i => {
+    const t = iso(D('2026-10-22T12:00:00Z') - i * 2 * 3600 * 1000)
+    return { number: 1000 + i, state: 'closed', merged_at: t, updated_at: t, title: `SHIP ${i}`, html_url: `u/${1000 + i}`, body: '' }
+}
+const pages = [Array.from({ length: 100 }, (_, i) => pull(i)),
+    Array.from({ length: 100 }, (_, i) => pull(100 + i)),
+    Array.from({ length: 100 }, (_, i) => pull(200 + i))]
+const asked = []
+const gotPulls = m.fetchClosedPulls(SINCE, url => {
+    const pg = +(url.match(/[?&]page=(\d+)/) || [])[1] || 1
+    asked.push(pg)
+    return pages[pg - 1] || []
+})
+ok('walks pages past the 100-PR wall', asked.join(',') === '1,2')
+ok('coverage reaches beyond page 1', gotPulls.some(p => p.merged_at.slice(0, 10) < '2026-10-20'))
+ok('keeps every in-window merge, drops older', gotPulls.length === 168 && gotPulls.every(p => p.merged_at >= SINCE))
+const askedOld = []
+const oldOnly = m.fetchClosedPulls(SINCE, url => {
+    askedOld.push(+(url.match(/[?&]page=(\d+)/) || [])[1] || 1)
+    return Array.from({ length: 100 }, (_, i) => {
+        const t = iso(D(SINCE) - (i + 1) * 3600 * 1000)
+        return { number: 2000 + i, state: 'closed', merged_at: t, updated_at: t, title: `OLD ${i}`, html_url: `u/${2000 + i}`, body: '' }
+    })
+})
+ok('stops early once updates fall out of window', askedOld.join(',') === '1' && oldOnly.length === 0)
 
 if (fails.length) {
     console.error(`FAIL (${fails.length}/${pass + fails.length}):`)

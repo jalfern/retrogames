@@ -225,12 +225,27 @@ export function buildLog({ now, pulls = [], issues = [], runs = [], jobsByRun = 
 
 const gh = (...args) => JSON.parse(execFileSync('gh', ['api', ...args, '--jq', '.'], { maxBuffer: 32 * 1024 * 1024 }).toString())
 
+// One page is NOT enough (#525): with sort=updated, the 100 most-recently
+// updated closed PRs all live in the last ~2 days on a fast-moving repo, so
+// merged_at coverage collapsed to zero for older days in the window. Walk
+// pages until updates fall out of the window (updated_at >= merged_at, so
+// every PR merged in-window has been updated in-window too).
+export function fetchClosedPulls(since, api, maxPages = 10) {
+    const all = []
+    for (let page = 1; page <= maxPages; page++) {
+        const batch = api(`${REPO}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=${page}`) || []
+        all.push(...batch)
+        const last = batch[batch.length - 1]
+        if (batch.length < 100 || !last || last.updated_at < since) break
+    }
+    return all.filter(p => !p.merged_at || p.merged_at >= since)
+}
+
 async function main() {
     const now = Date.now()
     const since = new Date(cutoffUTC(ptDateOf(now)) - HISTORY_DAYS * 24 * 3600 * 1000).toISOString()
     const openIssuesRaw = gh(`${REPO}/issues?state=open&per_page=100`)
-    const pullsRaw = gh(`${REPO}/pulls?state=closed&sort=updated&direction=desc&per_page=100`)
-        .filter(p => !p.merged_at || p.merged_at >= since)
+    const pullsRaw = fetchClosedPulls(since, gh)
     const pullsOpen = gh(`${REPO}/pulls?state=open&per_page=50`)
     const pulls = [...pullsOpen, ...pullsRaw]
     const runs = gh(`${REPO}/actions/runs?branch=main&event=push&created=%3E${since}&per_page=100`).workflow_runs || []
