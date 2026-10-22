@@ -175,6 +175,8 @@ async function main() {
   const reg = readFileSync(resolve(ROOT, 'src/config/games.js'), 'utf8')
   ok('not registered in games.js (demos law, Jon 2026-10-19)', !/path:\s*['"]\/[^'"]*mountains|label:\s*['"]Mountains/i.test(reg))
   ok('exposes __mountainsTest DEV hook', /__mountainsTest/.test(src))
+  ok('LAKE_Y single source (JS value interpolated into shader)', /const float LAKE_Y = \$\{LAKE_Y/.test(src) && !/const float LAKE_Y = 0\.\d+;/.test(src))
+  ok('lake bounded to the basin (lp.z ellipse, lp.y bug fixed)', /lp\.z \+ 0\.7\)\) < /.test(src) && !/abs\(lp\.y\)/.test(src))
 
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${PORT}`,
@@ -231,10 +233,20 @@ async function main() {
       const skyCols = sky.filter(v => v > 0).length
       ok('mountain skyline spans the frame', skyCols > W * 0.45, `${skyCols}/${W} columns have terrain`)
 
+      const skyVals = sky.filter(v => v > 0).sort((a, b) => a - b)
+      const ridge = skyVals[Math.floor(skyVals.length / 2)]
+      const summit = skyVals[Math.floor(skyVals.length * 0.02)]
+      const peakCols = sky.filter(v => v > 0 && v < ridge - Math.round(H * 0.06)).length
+      ok('peaks break the skyline above the ridge band',
+        summit < ridge - Math.round(H * 0.10) && peakCols > W * 0.08,
+        `ridge=${ridge} summit=${summit} (${ridge - summit}px relief), ${peakCols} peak columns`)
+
       const warmRock = (r, g, b) => r - b > 28 && r > 110 && luma([r, g, b]) < 190
       const snowHi = (r, g, b) => r > 150 && g > 150 && b > 150
       let rock = 0, snow = 0, nearL = 0, nearN = 0, lowL = 0, lowN = 0
+      let pink = 0
       const rockBuckets = new Set()
+      const pinkBuckets = new Set()
       for (let x = 4; x < W - 4; x += 4) {
         const s = sky[x]
         if (s < 0) continue
@@ -242,12 +254,17 @@ async function main() {
           const [r, g, b] = px(img, x, y)
           if (warmRock(r, g, b)) { rock++; rockBuckets.add(Math.floor(x / 64)) }
           if (snowHi(r, g, b)) snow++
-          if (y < s + Math.round(H * 0.10)) { nearL += luma([r, g, b]); nearN++ }
+          if (y < s + Math.round(H * 0.10)) {
+            nearL += luma([r, g, b]); nearN++
+            if (r - g > 12 && r - b > 30 && r > 140 && luma([r, g, b]) < 235) { pink++; pinkBuckets.add(Math.floor(x / 64)) }
+          }
           if (y >= s + Math.round(H * 0.16) && y < s + Math.round(H * 0.30)) { lowL += luma([r, g, b]); lowN++ }
         }
       }
       ok('sunlit rock runs warm gold (alpenglow)', rock * 4 > 6000 && rockBuckets.size >= 8, `${rock * 4} warm-lit rock px across ${rockBuckets.size}/15 frame sections`)
       ok('snow sits among the peaks', snow * 4 > 800, `${snow * 4} bright snow px`)
+      ok('alpenglow paints the summits pink-gold', pink * 4 > 400 && pinkBuckets.size >= 4,
+        `${pink * 4} pink-gold crown px across ${pinkBuckets.size}/15 frame sections`)
 
       const nearMean = nearN ? nearL / nearN : 0
       const lowMean = lowN ? lowL / lowN : 0
@@ -265,6 +282,19 @@ async function main() {
         }
       }
       ok('lake mirrors the sky (cool reflection in foreground)', mirrorN > 100 && mirror / mirrorN > 0.18, `${((mirror / mirrorN) * 100).toFixed(0)}% cool px in foreground band`)
+
+      let sliver = 0, sliverN = 0
+      for (let x = 8; x < W - 8; x += 4) {
+        const s = sky[x]
+        if (s < 0) continue
+        for (let y = s + 4; y < s + Math.round(H * 0.16); y += 2) {
+          const [r, g, b] = px(img, x, y)
+          sliverN++
+          if (b > r + 20 && b > 165) sliver++
+        }
+      }
+      ok('no bright water sliver cuts across the range', sliverN > 500 && sliver / sliverN < 0.02,
+        `${((sliver / sliverN) * 100).toFixed(2)}% bright-cool px just below the skyline`)
 
       await page.evaluate(() => window.__mountainsTest.setPose({ yaw: 0.62, pitch: 0.05 }))
       await page.waitForTimeout(1400)
@@ -286,6 +316,18 @@ async function main() {
         writeFileSync(resolve(shots, 'front.png'), bufA)
         writeFileSync(resolve(shots, 'orbit.png'), encodePng(imgB.w, imgB.h, toRGBA(imgB)))
       }
+
+      const ctxR = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2 })
+      const pageR = await ctxR.newPage()
+      await pageR.goto(url, { waitUntil: 'load' })
+      let rsReady = true
+      try { await pageR.waitForFunction(() => window.__mountainsTest && window.__mountainsTest.ready, null, { timeout: 20000 }) }
+      catch { rsReady = false }
+      const rs = rsReady ? await pageR.evaluate(() => window.__mountainsTest.renderScale()) : null
+      ok('sharp on retina tablet (dpr2 picks the higher render scale)',
+        !!rs && rs.retina && rs.scale >= 0.55 && !rs.lite,
+        rs ? `scale=${rs.scale} internal=${rs.w}x${rs.h} css=${rs.css}@dpr${rs.dpr}` : 'renderScale unavailable')
+      await ctxR.close()
 
       const renderer = await page.evaluate(() => {
         const g = document.createElement('canvas').getContext('webgl2')

@@ -40,10 +40,11 @@
 const qs = new URLSearchParams(location.search);
 const LITE = qs.get('lite') === '1';
 const SEED = (qs.get('seed') | 0) || 23;
-const RENDER_SCALE = LITE ? 0.34 : 0.42;
+const RETINA = (window.devicePixelRatio || 1) >= 2;
+const RENDER_SCALE = LITE ? 0.34 : (RETINA ? 0.62 : 0.42);
 const EXT = 40.0;
 const TEXW = LITE ? 512 : 1024;
-const LAKE_Y = 0.13;
+const LAKE_Y = 0.30;
 
 const canvas = document.getElementById('c');
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
@@ -120,13 +121,14 @@ void main(){
   north *= 0.42 + 0.58 * smoothstep(0.34, 0.68, fbm2(vec2(dp.x * 0.030, dp.y * 0.010) + 11.0, 2));
   float along = 0.50 + 0.50 * smoothstep(0.30, 0.72, fbm2(vec2(dp.x * 0.017, dp.y * 0.008) + 7.0, 2));
   float h = rolls;
-  h += pow(s0, 1.55) * 2.35 * mask * north * along * (0.55 + 0.45 * massif);
+  h += pow(s0, 1.7) * 2.55 * mask * north * along * (0.55 + 0.45 * massif);
+  h += pow(clamp(s0 * mask - 0.50, 0.0, 1.0), 2.2) * 2.8 * north * along;
   h += 0.05 * north * mask;
   float far = smoothstep(8.5, 15.0, dp.y) * (0.55 + 0.45 * smoothstep(0.35, 0.70, fbm2(vec2(dp.x * 0.011, dp.y * 0.006) + 4.0, 2)));
   h += pow(ridged(dp * 0.045 + 20.0), 1.5) * 2.6 * far;
   float r2 = length(vec2(p.x * 0.80, p.y + 0.7));
-  float v = smoothstep(2.2, 9.0, r2);
-  h = mix(0.024, h, v);
+  float v = smoothstep(2.2, 7.5, r2);
+  h = mix(0.024, max(h, 0.075), v);
   h = 0.995 * (1.0 - exp(-h * 0.80));
   float x = h * 255.0;
   o = vec4(floor(x) / 255.0, fract(x), 0.0, 1.0);
@@ -149,10 +151,10 @@ out vec4 fragColor;
 
 ${CHUNK_NOISE}
 
-const float FOG_B = 0.085;
-const float FOG_H = 0.42;
+const float FOG_B = 0.045;
+const float FOG_H = 0.52;
 const float SNOW0 = 2.05;
-const float LAKE_Y = 0.30;
+const float LAKE_Y = ${LAKE_Y.toFixed(2)};
 const float HSCALE = 7.5;
 
 float heightTex(vec2 p, float lod){
@@ -268,7 +270,7 @@ vec3 shadeTerrain(vec3 p, vec3 n, vec3 rd, vec3 sunDir){
   vec3 amb = mix(vec3(0.055, 0.05, 0.045), vec3(0.19, 0.24, 0.38), hemi);
   vec3 c = albedo * (uSunCol * ndl * mix(0.22, 1.0, sh) * 1.7 + amb * mix(0.45, 1.0, sh * 0.5 + 0.5 * hemi));
   float above = smoothstep(FOG_H * 0.9, FOG_H * 2.6, p.y);
-  c += uSunCol * pow(max(dot(n, sunDir), 0.0), 1.0) * sh * snow * above * 0.30;
+  c += mix(uSunCol, vec3(1.0, 0.40, 0.28), 0.55) * pow(ndl, 0.7) * sh * snow * above * 0.85;
   float rr = max(dot(reflect(-sunDir, n), -normalize(rd)), 0.0);
   c += uSunCol * pow(rr, 28.0) * sh * snow * 0.25;
   return c;
@@ -312,7 +314,7 @@ void main(){
   if (rd.y < -0.0015){
     float tl = (LAKE_Y - ro.y) / rd.y;
     vec3 lp = ro + rd * tl;
-    if (tl > 0.0 && tl < 60.0 && abs(lp.x) < 18.0 && abs(lp.y) < 18.0){
+    if (tl > 0.0 && tl < 60.0 && length(vec2(lp.x * 0.80, lp.z + 0.7)) < 6.4){
       float th = heightTex(lp.xz, 0.0);
       if (th < LAKE_Y - 0.004){ tLake = tl; lakeDepth = LAKE_Y - th; }
     }
@@ -787,6 +789,7 @@ window.__mountainsTest = {
     return +((hi[0] + lo[0] / 255) / 255).toFixed(3);
   },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
+  renderScale(){ return { scale: RENDER_SCALE, lite: LITE, retina: RETINA, w: W, h: H, css: canvas.clientWidth, dpr: window.devicePixelRatio || 1 }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
   setPose(p){
     if (p.yaw !== undefined) { cam.tyaw = p.yaw; cam.yaw = p.yaw; }
