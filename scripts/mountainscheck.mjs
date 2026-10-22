@@ -13,6 +13,8 @@
 //     · the lake mirrors the sky: cool blue reflective water in the foreground
 //     · the camera pose moves the world
 //     · the sim never freezes (frames keep advancing)
+//   2b. #736 READS AS A RANGE — ridge bases reach lit ground (no dark void mid-band),
+//     · no thin horizontal line cuts the range.
 //   3. LAW    — self-contained single file; NOT registered in games.js
 //               (demos law, Jon 2026-10-19); exposes the __mountainsTest hook.
 //   4. SPEED  — frame budget with software-raster fallback detection.
@@ -180,8 +182,8 @@ async function main() {
   ok('lake bounded to a small basin (lp.z ellipse r<4.5, lp.y bug fixed)',
     !!basinM && +basinM[1] < 4.5 && !/abs\(lp\.y\)/.test(src),
     basinM ? `basin radius=${basinM[1]}` : 'unbounded')
-  ok('shoreline bank lifts land above the waterline',
-    /float bank = 0\.0\d+ \+ 0\.0\d+ \* \(1\.0 - smoothstep\(/.test(src) && /max\(h, bank\)/.test(src))
+  ok('shoreline bank lifts land above the waterline, on the far side only (valley mouth)',
+    /float bank = \(0\.0\d+ \+ 0\.0\d+ \* \(1\.0 - smoothstep\([^)]*\)\)\) \* smoothstep\(-/.test(src) && /max\(h, bank\)/.test(src))
 
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${PORT}`,
@@ -300,6 +302,30 @@ async function main() {
       }
       ok('no bright water sliver cuts across the range', sliverN > 500 && sliver / sliverN < 0.02,
         `${((sliver / sliverN) * 100).toFixed(2)}% bright-cool px just below the skyline`)
+
+      let voidPx = 0, voidN = 0
+      for (let x = Math.round(W * 0.05); x < Math.round(W * 0.95); x += 2) {
+        for (let y = Math.round(H * 0.42); y < Math.round(H * 0.62); y++) {
+          const [r, g, b] = px(img, x, y)
+          voidN++
+          if (b > r + 25 && luma([r, g, b]) < 150) voidPx++
+        }
+      }
+      ok('land fills the band between the range and the lake (no dark void, #736)',
+        voidN > 1000 && voidPx / voidN < 0.02,
+        `${((voidPx / voidN) * 100).toFixed(1)}% void px mid-band`)
+
+      let lineRows = 0
+      for (let y = Math.round(H * 0.40); y < Math.round(H * 0.70); y++) {
+        let hits = 0, cols = 0
+        for (let x = Math.round(W * 0.10); x < Math.round(W * 0.90); x += 4) {
+          const l = luma(px(img, x, y))
+          if (l > 150 && l - luma(px(img, x, Math.max(y - 9, 0))) > 9 && l - luma(px(img, x, Math.min(y + 9, H - 1))) > 9) hits++
+          cols++
+        }
+        if (hits / cols > 0.25) lineRows++
+      }
+      ok('no thin horizontal line runs through the range (#736)', lineRows === 0, `${lineRows} line rows`)
 
       await page.evaluate(() => window.__mountainsTest.setPose({ yaw: 0.62, pitch: 0.05 }))
       await page.waitForTimeout(1400)

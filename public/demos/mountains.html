@@ -41,7 +41,7 @@ const qs = new URLSearchParams(location.search);
 const LITE = qs.get('lite') === '1';
 const SEED = (qs.get('seed') | 0) || 23;
 const RETINA = (window.devicePixelRatio || 1) >= 2;
-const RENDER_SCALE = LITE ? 0.34 : (RETINA ? 0.62 : 0.42);
+const RENDER_SCALE = LITE ? 0.34 : (RETINA ? 0.72 : 0.70);
 const EXT = 40.0;
 const TEXW = LITE ? 512 : 1024;
 const LAKE_Y = 0.30;
@@ -117,10 +117,11 @@ void main(){
   float mask = 0.35 + 0.65 * smoothstep(0.30, 0.74, fbm2(dp * 0.016 + 5.0, 3));
   float massif = smoothstep(0.30, 0.62, fbm2(dp * 0.011 + 3.0, 2));
   float rolls = 0.06 * fbm2(dp * 0.05 + 71.0, 3);
-  float north = smoothstep(3.2, 9.5, dp.y);
+  float north = smoothstep(2.2, 8.5, dp.y);
   north *= 0.42 + 0.58 * smoothstep(0.34, 0.68, fbm2(vec2(dp.x * 0.030, dp.y * 0.010) + 11.0, 2));
   float along = 0.50 + 0.50 * smoothstep(0.30, 0.72, fbm2(vec2(dp.x * 0.017, dp.y * 0.008) + 7.0, 2));
   float h = rolls;
+  h += pow(ridged(dp * 0.052 + 55.0), 1.8) * 1.05 * smoothstep(1.4, 6.0, dp.y) * mask;
   h += pow(s0, 1.7) * 2.55 * mask * north * along * (0.55 + 0.45 * massif);
   h += pow(clamp(s0 * mask - 0.50, 0.0, 1.0), 2.2) * 2.8 * north * along;
   h += 0.05 * north * mask;
@@ -128,7 +129,7 @@ void main(){
   h += pow(ridged(dp * 0.045 + 20.0), 1.5) * 2.6 * far;
   float r2 = length(vec2(p.x * 0.80, p.y + 0.7));
   float v = smoothstep(2.2, 5.0, r2);
-  float bank = 0.075 + 0.030 * (1.0 - smoothstep(3.0, 5.5, r2));
+  float bank = (0.075 + 0.030 * (1.0 - smoothstep(3.0, 5.5, r2))) * smoothstep(-2.4, 1.2, p.y);
   h = mix(0.024, max(h, bank), v);
   h = 0.995 * (1.0 - exp(-h * 0.80));
   float x = h * 255.0;
@@ -152,8 +153,8 @@ out vec4 fragColor;
 
 ${CHUNK_NOISE}
 
-const float FOG_B = 0.045;
-const float FOG_H = 0.52;
+const float FOG_B = 0.032;
+const float FOG_H = 0.72;
 const float SNOW0 = 2.05;
 const float LAKE_Y = ${LAKE_Y.toFixed(2)};
 const float HSCALE = 7.5;
@@ -222,7 +223,7 @@ Hit terrainRayCheap(vec3 ro, vec3 rd){
   for (int i = 0; i < 45; i++){
     vec3 p = ro + rd * t;
     if (p.y > 5.6 || length(p.xz) > ${EXT.toFixed(1)} * 0.5) return miss;
-    float lod = clamp(log2(max(max(dt * 9.0, 0.05), 0.22 + t * 0.30)), 1.0, 5.0);
+    float lod = clamp(log2(max(max(dt * 9.0, 0.05), 0.22 + t * 0.30)), 1.0, 4.0);
     float hd = p.y - heightTex(p.xz, lod);
     if (hd > 4.8) return miss;
     if (hd <= 0.0){ Hit hit; hit.t = t; hit.kind = 1; return hit; }
@@ -285,7 +286,7 @@ Hit terrainRay(vec3 ro, vec3 rd, float tLimit){
   for (int i = 0; i < 80; i++){
     vec3 p = ro + rd * t;
     if (t > tLimit || p.y > 5.6 || length(p.xz) > ${EXT.toFixed(1)} * 0.9) return miss;
-    float lod = clamp(log2(max(max(dt * 9.0, 0.05), 0.22 + t * 0.30)), 0.0, 5.0);
+    float lod = clamp(log2(max(max(dt * 9.0, 0.05), 0.22 + t * 0.30)), 0.0, 1.5);
     float hd = p.y - heightTex(p.xz, lod);
     if (rd.y > 0.02 && hd > 2.4) return miss;
     if (hd <= 0.0){
@@ -346,7 +347,7 @@ void main(){
       vec3 rn = normalize(vec3(-nx / (2.0 * e2.x) * 0.30, 1.0, -nz / (2.0 * e2.x) * 0.30));
       vec3 tc = shadeTerrain(rp, rn, rr, sunDir);
       float rf = fogAmount(rr.y, rr.y * refl.t, refl.t);
-      skyR = mix(skyR, tc * 0.82, rf * 0.0 + 1.0 - rf * 0.55);
+      skyR = mix(skyR, tc * 0.88, clamp(1.0 - rf * 0.30, 0.45, 1.0));
     }
     float fres = pow(1.0 - max(dot(-rd, n), 0.0), 4.0) * 0.82 + 0.16;
     vec3 waterDeep = vec3(0.024, 0.034, 0.052);
@@ -803,7 +804,7 @@ window.__mountainsTest = {
 <script>
 window.DEMO_CREDITS = {
   name: 'MOUNTAINS', accent: '#ff8fa3',
-  issues: [671], span: '~13 h', shipped: '2026-10-21',
+  issues: [671, 736], span: '~13 h', shipped: '2026-10-21',
   assist: 'solo', note: '“This is a solo test” — approach researched and chosen by the builder',
 };
 </script>
