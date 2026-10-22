@@ -415,5 +415,50 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         !/Math\.random\s*\(/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'SSX', 'planner.js'), 'utf8')))
 }
 
+// ---- 9b. #791 analog steer: edge pressure, not binary twitch -----------------
+{
+    const RAMP = Math.round(60 / CFG.PRESS)
+    ok('#791 the pressure knob is exported and sane', CFG.PRESS >= 6 && CFG.PRESS <= 20)
+    const fresh = () => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]; p.x = 0; p.v = 20
+        return g
+    }
+
+    const g = fresh(); const p = g.riders[0]
+    ok('#791 a rider starts with no edge pressure', p.press === 0)
+    step(g, { steer: 1 })
+    ok('#791 the first frame of a held turn is a shallow bite, not full lock', p.press > 0 && p.press < 1)
+    let t = 1
+    while (p.press < 1 && t < 60) { step(g, { steer: 1 }); t++ }
+    ok('#791 held steer loads the edge fully in ~0.1 s', Math.abs(t - RAMP) <= 1)
+    run(g, RAMP + 1)
+    ok('#791 releasing lets the edge come back to neutral', p.press < 1e-9)
+
+    const h = fresh(); const q = h.riders[0]
+    run(h, RAMP * 2, { steer: 0.5 })
+    ok('#791 a half-pressure target holds halfway over — analog, not binary', Math.abs(q.press - 0.5) < 1e-9)
+
+    const deep = fresh(); run(deep, 12, { steer: 1 })
+    const shal = fresh(); run(shal, 12, { steer: 0.5 })
+    ok('#791 deeper pressure carves a wider line', Math.abs(deep.riders[0].x) > Math.abs(shal.riders[0].x) * 1.4)
+
+    const tap = fresh(); run(tap, 2, { steer: 1 }); run(tap, RAMP + 2)
+    ok('#791 a quick tap nips the edge and never locks', tap.riders[0].press < 1e-9 && Math.abs(tap.riders[0].x) < 0.05)
+
+    const s = fresh(); run(s, RAMP * 2, { steer: 9 })
+    ok('#791 input saturates at the rail', s.riders[0].press === 1)
+
+    const a = fresh(); const ar = a.riders[0]
+    ar.air = true; ar.y = terrainY(a.course, ar.s, ar.x) + 6; ar.vy = 4
+    run(a, RAMP + 6, { steer: 1 })
+    const binary = CFG.spinRate * (RAMP + 6) / 60
+    ok('#791 air rotation is pressure-scaled too', Math.abs(ar.spin) > binary * 0.5 && Math.abs(ar.spin) < binary * 0.9)
+
+    const z1 = fresh(), z2 = fresh()
+    run(z1, 10, { steer: 1 }); run(z2, 10, { steer: 1 })
+    ok('#791 pressure history rides the replay hash', stateHash(z1) === stateHash(z2) && stateHash(z1) !== stateHash(fresh()))
+}
+
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)

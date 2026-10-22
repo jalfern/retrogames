@@ -24,6 +24,7 @@ export const CFG = {
     G: 22,                     // arcade gravity, m/s^2
     top: 30, boostTop: 38,     // m/s ceilings (face plate ~ km/h x3.6)
     STEER: 1.15,               // piste fractions / s at reference speed
+    PRESS: 10,                 // #791 analog steer: pressure units / s (full carve ~0.1 s)
     CENT: 0.30,                // centrifugal push in a curve
     spinRate: 300,             // deg / s
     flipRate: 520,             // deg / s while held — an arcade-fast flip
@@ -71,7 +72,7 @@ function newRider(i, isP, gridBack) {
         carves: [],
         bounceOb: -1,
         miss: false,
-        jumpHeld: false, steerSm: 0, seedPhase: i * 1.7 + 0.4,
+        jumpHeld: false, steerSm: 0, press: 0, seedPhase: i * 1.7 + 0.4,
     }
 }
 
@@ -143,6 +144,7 @@ function crash(g, r, what) {
     r.meter *= 0.5
     r.over = false
     r.spin = 0; r.flip = 0; r.grab = 0; r.air = false; r.grind = null
+    r.press = 0
     push(g, { type: 'crash', who: r.id, what })
 }
 
@@ -159,7 +161,13 @@ function riderStep(g, r, inp) {
         return
     }
     const pace = r.isP ? 1 : PACE[r.id - 1]
-    const steer = Math.max(-1, Math.min(1, inp.steer || 0))
+    // #791 analog steer: the board loads onto an edge over ~0.1 s of held
+    // pressure instead of snapping to full lock — a tap nips, a hold carves.
+    // Touch drag distance feeds the target directly (index.jsx); keyboard/pad
+    // ±1 feeds the same ramp, so both inputs are pressure-scaled.
+    const want = Math.max(-1, Math.min(1, inp.steer || 0))
+    r.press += Math.max(-CFG.PRESS * dt, Math.min(CFG.PRESS * dt, want - r.press))
+    const steer = r.press
 
     // ---- rails: grind zone snaps you on and pays trickle ----
     let rail = null
@@ -410,7 +418,7 @@ export function stateHash(g) {
     const add = (str) => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) } }
     add(`${g.tick}|${g.heat}|${g.phase}|${g.mode}|${g.end}|${g.showoffLeft.toFixed(2)}|${g.count}`)
     for (const r of g.riders) {
-        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0}`)
+        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)}`)
     }
     return (h >>> 0).toString(16)
 }
