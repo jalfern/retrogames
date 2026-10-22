@@ -3,17 +3,38 @@
 // 0.75x trick economy with the chain capped at x3 (the slack rule), and
 // replays identical scripts to identical hashes. No browser, no randomness.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE } from '../src/games/SSX/sim.js'
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
 import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
-import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA } from '../src/games/SSX/art.js'
+import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, acrossYaw } from '../src/games/SSX/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
+
+// #808 mutant: side-blind 'across' yaw (the old `-p.th`) — one stand in every
+// pair turns its back, and the facing gate below MUST catch it.
+const ART_SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'SSX', 'art.js')
+const YAW_GOOD = 'p.th + Math.sign(e.x) * Math.PI / 2'
+const YAW_BAD = 'p.th - Math.sign(e.x) * Math.PI / 2'
+if (process.argv.includes('--mutate')) {
+    let src = readFileSync(ART_SRC, 'utf8')
+    if (!src.includes(YAW_GOOD)) { console.error('MUTATE: facing law not found — stale code.'); process.exit(2) }
+    writeFileSync(ART_SRC, src.replace(YAW_GOOD, YAW_BAD))
+    let done = false
+    try {
+        const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { encoding: 'utf8' })
+        done = child.status !== 0
+        console.log(done ? 'ok  mutant detected: child run failed as demanded' : 'FAIL mutant escaped: child run still green')
+    } finally {
+        writeFileSync(ART_SRC, readFileSync(ART_SRC, 'utf8').replace(YAW_BAD, YAW_GOOD))
+    }
+    process.exit(done ? 0 : 1)
+}
 
 const run = (g, ticks, inp = {}) => { for (let i = 0; i < ticks; i++) step(g, inp) }
 const autopilot = (g, maxT = 400000) => {
@@ -135,6 +156,31 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('#731 every tree instance carries an in-range tint', tintOk)
     ok('#731 scale and rotation vary across trees', varietyOk)
     ok('#731 every plan id is a real shelf prop', shelfOk)
+}
+{ // #808 facing law: every 'across' prop shows its face to the racing line
+    // from whichever side it sits on — the front (local +z rotated by the
+    // yaw art.js applies) must look at the nearest centreline point.
+    let facingOk = true, facingN = 0
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        for (const e of sceneryPlan(co)) {
+            if (e.orient !== 'across') continue
+            facingN++
+            const p = slopePos(co, e.s, e.x)
+            const yaw = acrossYaw(e, p)
+            const fx = Math.sin(yaw), fz = Math.cos(yaw)
+            let bx = 0, bz = 0, bd = Infinity
+            for (let s = 0; s <= (co.N - 1) * DS; s += DS / 4) {
+                const q = slopePos(co, s, 0)
+                const dd = (q.x - p.x) ** 2 + (q.z - p.z) ** 2
+                if (dd < bd) { bd = dd; bx = q.x; bz = q.z }
+            }
+            const dx = bx - p.x, dz = bz - p.z
+            if ((fx * dx + fz * dz) / (Math.hypot(dx, dz) || 1) < 0.3) facingOk = false
+        }
+    }
+    ok(`#808 ${facingN} across props audited (≥ 8)`, facingN >= 8)
+    ok('#808 every across-facing prop looks at the racing line', facingOk)
 }
 { // clean landing banks the trick; a half-finished flip eats it
     const g = makeGame('race'); run(g, 181); clear(g)

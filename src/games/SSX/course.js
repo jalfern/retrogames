@@ -334,7 +334,7 @@ export function sceneryPlan(c) {
     // the summit gate and the finish banner
     push('flag', 2 * DS, -0.55, 1, 'rand')
     push('flag', 2 * DS, 0.55, 1, 'rand')
-    push('marshal_post', 3 * DS, WALL_X + 0.7, 1, 'rand')
+    push('marshal_post', 3 * DS, WALL_X + 0.7, 1, 'across')
     push('billboard', (c.N - 8) * DS, -(WALL_X + 1.4), 1.4, 'across')
     // #665: a bank of seats at the line — two grandstands straddling the
     // finish, parked back until the face is open so no gully pierces them

@@ -17,7 +17,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
 import { makeGame, step, decide, LAPS } from '../src/games/CometDrift/sim.js'
-import { tracksidePlan, tracksideAudit, resolvePlan, ROOF_Y, STAND_SCALE_START, STAND_SCALE_STRAIGHT, SHADOW_IDS, specSeat, SPEC_SEATS, SPEC_ROWS, SPEC_FILL, primitiveProp, barrierSkin, SPONSOR_PAIRS, signSpec, SIGN_BRANDS, SIGN_NUMS, bakeSignTexture, buntingY, pennantColor, BUNT_TOP, BUNT_SAG, BUNT_N, BUNT_COLORS, bunting } from '../src/games/CometDriftHD/scenery.js'
+import { tracksidePlan, tracksideAudit, resolvePlan, ROOF_Y, STAND_SCALE_START, STAND_SCALE_STRAIGHT, SHADOW_IDS, specSeat, SPEC_SEATS, SPEC_ROWS, SPEC_FILL, primitiveProp, barrierSkin, SPONSOR_PAIRS, signSpec, SIGN_BRANDS, SIGN_NUMS, bakeSignTexture, buntingY, pennantColor, BUNT_TOP, BUNT_SAG, BUNT_N, BUNT_COLORS, bunting, yawFor } from '../src/games/CometDriftHD/scenery.js'
 import { elevAt, wallTopSideAt, hillDefs, mesaDefs } from '../src/games/CometDriftHD/scene.js'
 import { crowdSwellGain, CROWD_R_MIN, CROWD_R_MAX, CROWD_BURST, CROWD_PERIOD } from '../src/games/CometDriftHD/audio.js'
 
@@ -46,6 +46,8 @@ const PAIRS = [
     // sags into the kart's headspace — both must die at their law gates.
     ['const i = Math.floor(shash(seed * 1.77 + 0.31) * SPONSOR_PAIRS.length)', 'const i = 0'],
     ['export const BUNT_SAG = 0.32', 'export const BUNT_SAG = 0.5'],
+    // #808 mutant: side-blind 'across' yaw — stands on one side face away.
+    ["orient === 'across' ? (side > 0 ? Math.PI - a : -a)", "orient === 'across' ? -a"],
 ]
 if (MUTATE) {
     let src = readFileSync(SCENERY_SRC, 'utf8')
@@ -173,6 +175,30 @@ for (const c of COURSES) {
     ok(plan.every((e) => Number.isFinite(e.wx) && Number.isFinite(e.wz)), `${c.id}: all prop centres finite`)
     const again = resolvePlan(tracksidePlan())
     ok(again.every((e, k) => e.wx === plan[k].wx && e.wz === plan[k].wz), `${c.id}: plan is deterministic`)
+
+    // FACING LAW (#808): every 'across' prop looks at the racing line from its
+    // own side — its front (local +z, rotated by the yaw both renderers apply)
+    // must face the nearest track point. The side-blind mutant must die here.
+    {
+        let facing = 0; let bad = 0
+        for (const e of plan) {
+            if (e.orient !== 'across') continue
+            facing++
+            const p = TRACK.pts[e.i % TRACK.N]
+            const yaw = yawFor(e.orient, p.a, e.rot, e.side)
+            const fx = Math.sin(yaw); const fz = Math.cos(yaw)
+            let bx = 0; let bz = 0; let bd = Infinity
+            for (let j = 0; j < TRACK.N; j += 2) {
+                const q = TRACK.pts[j]
+                const dd = (q.x - e.wx) ** 2 + (q.y - e.wz) ** 2
+                if (dd < bd) { bd = dd; bx = q.x; bz = q.y }
+            }
+            const dx = bx - e.wx; const dz = bz - e.wz
+            if ((fx * dx + fz * dz) / (Math.hypot(dx, dz) || 1) < 0.3) bad++
+        }
+        ok(facing >= 8, `${c.id}: ${facing} across-facing props audited (≥ 8)`)
+        ok(bad === 0, `${c.id}: every across-facing prop looks at the racing line (${bad} look away)`)
+    }
 
     // RULES: racing line clear — no prop within the sim clamp.
     ok(audit.violations.length === 0, `${c.id}: no prop inside its required clearance`)
