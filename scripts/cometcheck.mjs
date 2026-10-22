@@ -111,6 +111,47 @@ for (const c of COURSES) {
     const LEN3 = { gulch: 4124, sandbank: 6166, corkscomb: 8330 }
     check(`${c.id}: laps roughly 3x longer (#542 grew the world to 8192)`, T.len >= LEN3[c.id] * 2.2, `len ${T.len.toFixed(0)} (was ${LEN3[c.id]})`)
 
+    if (c.id === 'corkscomb') {
+        // #511 item 1: the Corkscomb must READ as Laguna's Corkscrew — a
+        // left-right-left triple apex woven over the drop, not a gentle
+        // rate-alternating crest complex. Signature: in the descent window
+        // (lap-f 0.44..0.60) exactly three curvature reversals bound three
+        // apex bends; the apexes alternate sign, are corner-tight (<= 320px
+        // radius), spaced a full wavelength apart (>= 300px of arc) and all
+        // run downhill. A straightened or wobble-only ridge fails this.
+        const APEX_MAX = 320, WL_MIN = 300, SPAN_MIN = 600
+        const rev = []
+        for (let i = 1; i < T.N; i++) {
+            const k0 = T.pts[i - 1].k, k1 = T.pts[i].k
+            if (k0 !== 0 && k1 !== 0 && Math.sign(k0) !== Math.sign(k1)) rev.push(i)
+        }
+        const apexes = []
+        for (let b = 0; b < rev.length; b++) {
+            const i0 = rev[b], i1 = rev[(b + 1) % rev.length]
+            let mk = 0, ai = i0
+            const span = i1 > i0 ? i1 : i1 + T.N
+            for (let w = 0; w < span - i0; w++) {
+                const p = T.pts[(i0 + w) % T.N]
+                if (Math.abs(p.k) > mk) { mk = Math.abs(p.k); ai = (i0 + w) % T.N }
+            }
+            const f = T.pts[ai].s / T.len
+            if (f >= 0.44 && f <= 0.60 && mk > 0 && 1 / mk <= APEX_MAX) {
+                apexes.push({ f, r: 1 / mk, s: T.pts[ai].s, sign: Math.sign(T.pts[ai].k), h: T.pts[ai].h })
+            }
+        }
+        const wl = []
+        for (let a = 1; a < apexes.length; a++) wl.push(apexes[a].s - apexes[a - 1].s)
+        const alt = apexes.every((a, i) => i === 0 || a.sign !== apexes[i - 1].sign)
+        const down = apexes.every((a) => a.h < 0)
+        const spanOK = apexes.length > 1 && apexes[apexes.length - 1].s - apexes[0].s >= SPAN_MIN
+        check('corkscomb: the Corkscomb is a triple-apex double-S (#511 item 1)',
+            apexes.length === 3 && alt && down && spanOK,
+            `${apexes.length} apexes ${apexes.map((a) => `${a.sign > 0 ? 'L' : 'R'}${a.r.toFixed(0)}@${a.f.toFixed(2)}`).join(' ')} span ${(apexes.length ? apexes[apexes.length - 1].s - apexes[0].s : 0).toFixed(0)}`)
+        check('corkscomb: apexes are wide-set, not a wobble cluster (#511 item 1)',
+            wl.length === apexes.length - 1 && wl.every((v) => v >= WL_MIN),
+            `wavelengths ${wl.map((v) => v.toFixed(0)).join(', ') || 'none'}`)
+    }
+
     const HALF = T.WALL_R + 16
     let crossings = 0
     for (let i = 0; i < T.N; i += 2) {
@@ -186,7 +227,12 @@ for (const c of COURSES) {
             d <= 0.03, `${(d * 100).toFixed(2)}%`)
         // average distance alone forgives a missing lobe; cap the worst local
         // deviation too, so signature features cannot be quietly smoothed away
-        const WORST_CAP = { sandbank: 0.12, corkscomb: 0.18 }
+        // #511 item 1: re-measured with the Corkscomb woven into the ridge
+        // (triple-apex double-S). The worst local gap is the keyhole pinch
+        // (spread leg, README "honest gaps"), not a smoothed-away feature —
+        // the new course bbox re-normalised it from ~17% to ~18.6%. The
+        // Corkscomb section itself sits ON the traced line (avg improved).
+        const WORST_CAP = { sandbank: 0.12, corkscomb: 0.19 }
         const A = resample(normalize(ref.pts), 240)
         const G = resample(normalize(gamePts), 240)
         const dm2 = shapeDistance(gamePts, ref.pts.map(([x, y]) => [1 - x, y]))

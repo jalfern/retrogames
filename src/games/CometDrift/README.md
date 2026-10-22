@@ -223,10 +223,16 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   (held one-way drift at a Corkscomb bend) and three mutants — silence
   (hintT=0), spam (guard removed), permanent HUD (decay removed).
 - #493 ships TWO new courses (Sandbank, Corkscomb) per the issue's ship-small
-  plan; Dry Lake Bed (~Sebring) remains the optional third. At flat-world scale
-  and the 220px radius floor the Corkscomb reads as a rate-alternating crest
-  complex, not the hill-drop double-S of the real thing — a longer-wavelength
-  re-tune is polish-pass territory. The start line structure is per-course
+  plan; Dry Lake Bed (~Sebring) remains the optional third. #511 item 1 wove
+  the Corkscomb into the ridge: five extra control points between the Andretti
+  crest and the Snake make a left-right-left triple apex OVER the drop
+  (apex radii ~110-130px, wavelengths 360-570px, all downhill), replacing the
+  old single R~735 sweep that read as a rate-alternating crest complex. Two
+  cometcheck gates pin the signature (count/alternation/radius/wavelength/span)
+  and are mutation-proven red on the straightened ridge. Weaving shifted the
+  course bbox, re-normalising the worst local distance vs the traced line from
+  16.9% to 18.6% — still the keyhole pinch (spread leg), so WORST_CAP moved
+  to 0.19. The start line structure is per-course
   since #502 (Sandbank's timing gantry) and #511 item 3 (Corkscomb's dune
   crest, 2D renderer; HD still shares the Gulch arch).
 - No cups, items, or real music (the engine bed is a synthesized voice with
