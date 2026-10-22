@@ -573,6 +573,9 @@ const SSXGame = () => {
                     return b ? { num: b.userData.num, logo: b.userData.logo, decal: b.children.some((c) => c.isMesh && c.material?.map) } : { num: null }
                 }),
                 shadowInfo: () => ({ theme: g.course.theme, color: shadowMat.color.getHexString(), base: shadowBase }),
+                // DEV #615: swap the course theme without finishing the heat
+                // (geometry is unchanged; visuals + shelf tint rebuild)
+                setTheme: (t) => { if (!THEMES[t]) return false; g.course.theme = t; shownHeat = g.heat; setCourseVisuals(); return true },
                 boneNames: () => { const h = riders[0]?.userData?.hero; return h ? Object.keys(h.bones) : null },
                 // DEV probe loop: replace one pose's offset table live, then read
                 // joint positions in roll space to re-aim the grab/boot weld

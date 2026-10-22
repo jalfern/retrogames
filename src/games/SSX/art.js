@@ -676,10 +676,16 @@ const OFFS = {
         'upperarml': [0.5, 0, 0.25], 'lowerarml': [0.8, 0, 0],
         'upperarmr': [0.5, 0, -0.25], 'lowerarmr': [0.8, 0, 0],
     },
+    // #615: boardslide grab — the torso leans to the nose so the reaching
+    // hand lands on the nose-edge band (probe: grabReach l.d ~0.18), the
+    // balance arm lifts outboard, and the legs stay planted (the air base's
+    // tuck is un-tucked, foot toes pitched, so the boots weld to the deck).
     grab: {
-        hips: [0, 0.18, 0], spine: [0.35, 0.15, 0], chest: [0.55, 0.1, 0], head: [-0.35, -0.25, 0],
-        'upperarml': [1.55, 0, 0.5], 'lowerarml': [0.85, 0, 0],
-        'upperarmr': [0.2, 0, -0.35],
+        hips: [0.75, 0.18, 0], spine: [1.0, 0.15, 0], chest: [1.15, 0.1, 0], head: [1.25, -0.25, 0],
+        'upperarml': [2.45, 0, 0.45], 'lowerarml': [-0.15, 0, 0],
+        'upperarmr': [2.0, 0, -0.7], 'lowerarmr': [0.8, 0, 0],
+        'upperlegl': [0.5, 0, 0.05], 'lowerlegl': [-1.3, 0, 0], footl: [1.0, 0, 0],
+        'upperlegr': [0.6, 0, -0.05], 'lowerlegr': [-1.2, 0, 0], footr: [0.7, 0, 0],
     },
     tumble: {
         hips: [0, 0.3, 0], spine: [-0.35, -0.2, 0], chest: [-0.2, -0.1, 0], head: [0.5, 0.35, 0],
