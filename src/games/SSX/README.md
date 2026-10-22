@@ -329,6 +329,12 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
 - Only the player's livery carries the bib + logo decal set; grab/boot weld
   reach the board now (#615 — probe gates `grabReach`/`bootClear` in
   `ssxmodelcheck`), but the offsets are static per pose, not IK.
+- Grabs are named by the reach (#791 slice 6): `grabKindFor` reads the steer
+  sign (reaching hand, mirrored for goofy seats), ↓ (heel edge) and a held
+  flip (weight fore/aft) at the grab frame — INDY/MUTE/METHOD/SALISBURY/
+  NOSEGRAB/TAILGRAB, each with its own hero pose; the flip commit follows
+  the reach — front hand to the nose, back hand to the tail. Still open for
+  a later slice: inverts, double-flip naming on normal takeoffs, and reverts.
 
 ## Lateral sign and the tuck/scrub (#547)
 

@@ -53,7 +53,30 @@ export const CFG = {
 
 export const PLACE_PTS = [10, 7, 5, 3, 2, 1]
 export const CARVE_FADE = 300
-const GRABS = ['METHOD', 'MUTE', 'SALISBURY', 'STALEFISH']
+const GRABS = [
+    { name: 'INDY', back: 1, spot: 'toe' },
+    { name: 'MUTE', back: 0, spot: 'toe' },
+    { name: 'METHOD', back: 1, spot: 'heel' },
+    { name: 'SALISBURY', back: 0, spot: 'heel' },
+    { name: 'NOSEGRAB', back: 0, spot: 'nose' },
+    { name: 'TAILGRAB', back: 1, spot: 'tail' },
+]
+// #791 slice 6: the grab's NAME comes from the inputs that reach it —
+// steer sign picks the hand, held flip commits the weight fore/aft, held
+// scrub presses the heel edge. Front hand leads for regular (even seat),
+// goofy (odd seat) mirrors it. The flip commit follows the reach: front hand
+// goes nose, back hand goes tail; the findIndex fallback is a safety net for
+// table gaps, resolving to the hand's between-feet edge grab.
+export function grabKindFor(steer, flipHeld, scrubHeld, stanceFrontLeft) {
+    const reachLeft = steer < -0.05
+    const back = reachLeft === !!stanceFrontLeft ? 0 : 1
+    const spot = flipHeld ? (back ? 'tail' : 'nose') : scrubHeld ? 'heel' : 'toe'
+    let k = GRABS.findIndex((g) => g.back === back && g.spot === spot)
+    if (k < 0) k = back ? 0 : 1
+    return k
+}
+export const GRAB_NAMES = GRABS.map((g) => g.name)
+export const GRAB_POSES = ['grabIndy', 'grabFlat', 'grabMethod', 'grabSalis', 'grabNose', 'grabTail']
 const SPINS = ['', '180', '360', '540', '720', '900', '1080']
 const NAMES = ['JEFF', 'MAC', 'RIFF', 'SIG', 'TYRONE', 'KAELI']
 export const RIDER_COLORS = [0x3ec8ff, 0xff4fa3, 0xffc23e, 0x7bff5e, 0xb381ff, 0xff7a3e]
@@ -68,7 +91,7 @@ function newRider(i, isP, gridBack) {
         id: i, isP, name: isP ? 'YOU' : NAMES[i],
         color: RIDER_COLORS[i],
         s: -gridBack * 7, x: ((i % 2) ? 1 : -1) * 0.3 + (i * 0.13), y: 0, vy: 0,
-        v: 0, air: false, airT: 0, spin: 0, spinDir: 0, flip: 0, grab: 0, grabKind: 0,
+        v: 0, air: false, airT: 0, spin: 0, spinDir: 0, flip: 0, grab: 0, grabKind: 0, stance: i % 2,
         crouch: false, crouchT: 0, boost: false, boostEdge: false, boostHum: 0,
         tuck: false, scrub: false,
         tumble: 0, stomp: 0, stompPow: 0, chain: 0, chainDisp: 0, chainDispT: 0,
@@ -130,7 +153,7 @@ function evalTrick(g, r, impact = 0) {
     const pts = base * mult
     const spinName = SPINS[sp] || ''
     const flipName = fl > 0 ? `${fl > 1 ? 'DOUBLE ' : ''}${r.flip < 0 ? 'FRONT' : 'BACK'}FLIP ` : ''
-    const grabName = r.grab ? GRABS[r.grabKind] + ' ' : ''
+    const grabName = r.grab ? GRABS[r.grabKind].name + ' ' : ''
     r.chain = Math.min(CFG.comboCap - 1, r.chain + 1)
     r.chainDisp = mult; r.chainDispT = 150
     r.score += pts; r.tricksLanded++
@@ -215,7 +238,7 @@ function riderStep(g, r, inp) {
         r.s += r.v * dt
         r.spin += steer * CFG.spinRate * dt
         if (inp.flip && Math.abs(r.flip) < (r.over ? 720 : 360) + 20) r.flip += CFG.flipRate * dt * (inp.flip === 2 ? -1 : 1)
-        if (inp.grab && !r.grab) { r.grab = 1; r.grabKind = (r.tricksLanded + g.tick) % GRABS.length }
+        if (inp.grab && !r.grab) { r.grab = 1; r.grabKind = grabKindFor(steer, inp.flip, inp.scrub, r.stance === 0) }
         const groundY = terrainY(c, r.s, r.x)
         if (r.vy < 0) {
             // rock tops are bounce pads (#731): descending onto one kicks you

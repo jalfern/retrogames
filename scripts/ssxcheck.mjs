@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE } from '../src/games/SSX/sim.js'
+import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabKindFor, GRAB_NAMES, GRAB_POSES } from '../src/games/SSX/sim.js'
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
 import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
@@ -460,7 +460,54 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('#791 pressure history rides the replay hash', stateHash(z1) === stateHash(z2) && stateHash(z1) !== stateHash(fresh()))
 }
 
-// ---- 9c. #791 attract hotness: the demo throws OVERs visibly ----------------
+// ---- 9c. #791 slice 6: authentic grabs — the name follows the reach --------
+{
+    const name = (k) => GRAB_NAMES[k]
+    ok('#791 the grab vocabulary is six authentic names', JSON.stringify(GRAB_NAMES) === JSON.stringify(['INDY', 'MUTE', 'METHOD', 'SALISBURY', 'NOSEGRAB', 'TAILGRAB']))
+    ok('#791 every grab has its own pose', GRAB_POSES.length === 6 && new Set(GRAB_POSES).size === 6)
+
+    // hand: steer sign at grab picks the reaching hand, stance decides front/back
+    ok('#791 front hand + toe = MUTE (regular, steer left)', name(grabKindFor(-0.5, false, false, true)) === 'MUTE')
+    ok('#791 back hand + toe = INDY (regular, steer right)', name(grabKindFor(0.5, false, false, true)) === 'INDY')
+    ok('#791 back hand + heel press = METHOD', name(grabKindFor(0.5, false, true, true)) === 'METHOD')
+    ok('#791 front hand + heel press = SALISBURY', name(grabKindFor(-0.5, false, true, true)) === 'SALISBURY')
+    ok('#791 front hand committed forward = NOSEGRAB', name(grabKindFor(-0.5, true, false, true)) === 'NOSEGRAB')
+    ok('#791 back hand committed aft = TAILGRAB', name(grabKindFor(0.5, true, false, true)) === 'TAILGRAB')
+    ok('#791 goofy mirrors the hands', name(grabKindFor(-0.5, false, false, false)) === 'INDY' && name(grabKindFor(0.5, false, false, false)) === 'MUTE')
+    ok('#791 flip commits fore for the front hand, aft for the back — mirrored on goofy',
+        name(grabKindFor(0.5, true, false, true)) === 'TAILGRAB' && name(grabKindFor(0.5, true, false, false)) === 'NOSEGRAB' && name(grabKindFor(-0.5, true, false, false)) === 'TAILGRAB')
+
+    // end-to-end: the banked trick name comes from the live inputs, not a cycle
+    const air = (inp, pre = 0) => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        p.x = 0; p.v = 20
+        if (pre) run(g, pre)
+        p.air = true; p.y = terrainY(g.course, p.s, p.x) + 3; p.vy = -1
+        run(g, 2, inp)
+        run(g, 40)
+        const ev = g.events.find((e) => e.type === 'land' && e.who === 0)
+        return ev ? ev.name : null
+    }
+    ok('#791 steering left into the grab banks a MUTE', /MUTE/.test(air({ grab: true, steer: -1 }) || ''))
+    ok('#791 steering right into the grab banks an INDY', /INDY/.test(air({ grab: true, steer: 1 }) || ''))
+    ok('#791 the same grab at a different tick names the same trick',
+        air({ grab: true, steer: 1 }, 60) === air({ grab: true, steer: 1 }))
+    ok('#791 heel press renames the same hand reach',
+        /METHOD/.test(air({ grab: true, steer: 1, scrub: true }) || '') && /INDY/.test(air({ grab: true, steer: 1 }) || ''))
+
+    const g1 = makeGame('race'); run(g1, 181)
+    const g2 = makeGame('race'); run(g2, 181)
+    ok('#791 a named grab still rides the replay hash', (() => {
+        const setup = (g) => { const p = g.riders[0]; p.x = 0; p.v = 20; p.air = true; p.y = terrainY(g.course, p.s, p.x) + 3; p.vy = -1; return p }
+        setup(g1); setup(g2)
+        run(g1, 2, { grab: true, steer: -1 }); run(g2, 2, { grab: true, steer: -1 })
+        run(g1, 40); run(g2, 40)
+        return stateHash(g1) === stateHash(g2)
+    })())
+}
+
+// ---- 9d. #791 attract hotness: the demo throws OVERs visibly ----------------
 {
     ok('#791 the attract fuel knob is exported and sane', CFG.attractFuel >= 10 && CFG.attractFuel <= 60)
     const heat1 = (hot, hashes = false) => {

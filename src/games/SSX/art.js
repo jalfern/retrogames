@@ -13,6 +13,7 @@
 
 import * as THREE from 'three'
 import { slopePos, terrainY, featureLift, sceneryPlan, DS } from './course.js'
+import { GRAB_POSES } from './sim.js'
 
 // wide grid: past the piste edge the slope keeps going — shoulders, ridges —
 // so the camera never sees the mesh end. Rows start behind the summit so the
@@ -767,7 +768,7 @@ export function makeRider(color) {
 // authored per-bone offsets. Every bone blends toward its target each frame,
 // so pose changes read as motion, never as pops.
 
-export const HERO_POSES = ['stand', 'tuck', 'crouch', 'air', 'grab', 'tumble']
+export const HERO_POSES = ['stand', 'tuck', 'crouch', 'air', 'grab', 'grabFlat', 'grabIndy', 'grabMethod', 'grabSalis', 'grabNose', 'grabTail', 'tumble']
 
 // #620: every rider rides a real CC0 KayKit body (one per sim.js id).
 // The whole Adventurers pack shares one skeleton, so the pose bases,
@@ -835,6 +836,51 @@ const OFFS = {
         'upperlegl': [0.5, 0, 0.05], 'lowerlegl': [-1.3, 0, 0], footl: [1.0, 0, 0],
         'upperlegr': [0.6, 0, -0.05], 'lowerlegr': [-1.2, 0, 0], footr: [0.7, 0, 0],
     },
+    // #791 slice 6: one pose per named grab — the reach arm follows the hand,
+    // the torso twist follows the edge, fore/aft lean follows the spot. Legs
+    // stay on the base grab's leg values so the boot weld never wanders.
+    grabNose: {
+        hips: [0.75, 0.18, 0], spine: [1.0, 0.15, 0], chest: [1.15, 0.1, 0], head: [1.25, -0.25, 0],
+        'upperarml': [2.45, 0, 0.45], 'lowerarml': [-0.15, 0, 0],
+        'upperarmr': [2.0, 0, -0.7], 'lowerarmr': [0.8, 0, 0],
+        'upperlegl': [0.5, 0, 0.05], 'lowerlegl': [-1.3, 0, 0], footl: [1.0, 0, 0],
+        'upperlegr': [0.6, 0, -0.05], 'lowerlegr': [-1.2, 0, 0], footr: [0.7, 0, 0],
+    },
+    grabFlat: {
+        hips: [0.42, 0.18, 0], spine: [0.7, 0.15, 0], chest: [0.8, 0.1, 0], head: [0.9, -0.25, 0],
+        'upperarml': [2.45, 0, 0.45], 'lowerarml': [-0.15, 0, 0],
+        'upperarmr': [2.0, 0, -0.7], 'lowerarmr': [0.8, 0, 0],
+        'upperlegl': [0.5, 0, 0.05], 'lowerlegl': [-1.3, 0, 0], footl: [1.0, 0, 0],
+        'upperlegr': [0.6, 0, -0.05], 'lowerlegr': [-1.2, 0, 0], footr: [0.7, 0, 0],
+    },
+    grabIndy: {
+        hips: [0.42, -0.18, 0], spine: [0.7, -0.15, 0], chest: [0.8, -0.1, 0], head: [0.9, 0.25, 0],
+        'upperarml': [2.0, 0, 0.7], 'lowerarml': [0.8, 0, 0],
+        'upperarmr': [2.45, 0, -0.45], 'lowerarmr': [-0.15, 0, 0],
+        'upperlegl': [0.5, 0, 0.05], 'lowerlegl': [-1.3, 0, 0], footl: [1.0, 0, 0],
+        'upperlegr': [0.6, 0, -0.05], 'lowerlegr': [-1.2, 0, 0], footr: [0.7, 0, 0],
+    },
+    grabMethod: {
+        hips: [0.36, -0.42, 0], spine: [0.62, -0.34, 0], chest: [0.74, -0.24, 0], head: [0.86, 0.3, 0],
+        'upperarml': [1.9, 0, 0.7], 'lowerarml': [0.85, 0, 0],
+        'upperarmr': [2.62, 0, -0.32], 'lowerarmr': [-0.2, 0, 0],
+        'upperlegl': [0.5, 0, 0.05], 'lowerlegl': [-1.3, 0, 0], footl: [1.0, 0, 0],
+        'upperlegr': [0.6, 0, -0.05], 'lowerlegr': [-1.2, 0, 0], footr: [0.7, 0, 0],
+    },
+    grabSalis: {
+        hips: [0.36, -0.42, 0], spine: [0.62, -0.34, 0], chest: [0.74, -0.24, 0], head: [0.86, 0.3, 0],
+        'upperarml': [2.62, 0, 0.32], 'lowerarml': [-0.2, 0, 0],
+        'upperarmr': [1.9, 0, -0.7], 'lowerarmr': [0.85, 0, 0],
+        'upperlegl': [0.5, 0, 0.05], 'lowerlegl': [-1.3, 0, 0], footl: [1.0, 0, 0],
+        'upperlegr': [0.6, 0, -0.05], 'lowerlegr': [-1.2, 0, 0], footr: [0.7, 0, 0],
+    },
+    grabTail: {
+        hips: [-0.4, -0.18, 0], spine: [-0.6, -0.15, 0], chest: [-0.7, -0.1, 0], head: [0.2, 0.25, 0],
+        'upperarml': [1.2, 0, 0.5], 'lowerarml': [0.9, 0, 0],
+        'upperarmr': [1.7, 0, -0.95], 'lowerarmr': [0.35, 0, 0],
+        'upperlegl': [0.5, 0, 0.05], 'lowerlegl': [-1.3, 0, 0], footl: [1.0, 0, 0],
+        'upperlegr': [0.6, 0, -0.05], 'lowerlegr': [-1.2, 0, 0], footr: [0.7, 0, 0],
+    },
     tumble: {
         hips: [0, 0.3, 0], spine: [-0.35, -0.2, 0], chest: [-0.2, -0.1, 0], head: [0.5, 0.35, 0],
         'upperarml': [-0.5, 0, 1.2], 'lowerarml': [0.3, 0, 0],
@@ -847,7 +893,7 @@ const OFFS = {
         'upperlegr': [0.1, 0, -0.06], 'lowerlegr': [-0.3, 0, 0],
     },
 }
-const POSE_BASE = { stand: 'stand', tuck: 'stand', crouch: 'crouch', air: 'air', grab: 'air', tumble: 'air' }
+const POSE_BASE = { stand: 'stand', tuck: 'stand', crouch: 'crouch', air: 'air', grab: 'air', grabFlat: 'air', grabIndy: 'air', grabMethod: 'air', grabSalis: 'air', grabNose: 'air', grabTail: 'air', tumble: 'air' }
 
 function poseOffset(name, bone) {
     const a = STANCE[bone]
@@ -1069,7 +1115,7 @@ function liveryTexture(num, logo) {
 export function heroPose(r, override) {
     if (override) return override
     if (r.tumble > 0) return 'tumble'
-    if (r.air) return r.grab ? 'grab' : 'air'
+    if (r.air) return r.grab ? (GRAB_POSES[r.grabKind] || 'grab') : 'air'
     if (r.crouch) return 'crouch'
     if (r.tuck) return 'tuck'
     if (r.scrub) return 'crouch'
@@ -1120,7 +1166,7 @@ export function poseRider(root, r, tick, override) {
         roll.rotation.z = 0
         root.scale.y = 1
         if (hero) blendHero(hero, pose, tick)
-        else { armR.rotation.z = r.grab ? 1.1 : 0.35; legs.scale.y = 0.9 }
+        else { armR.rotation.z = r.grab ? (r.grabKind === 0 || r.grabKind === 2 || r.grabKind === 5 ? 1.5 : 1.1) : 0.35; legs.scale.y = 0.9 }
         return
     }
     const c = r.crouch ? 0.78 : r.tuck ? 0.66 : 1
