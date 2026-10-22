@@ -17,7 +17,9 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
 import { makeGame, step, decide, LAPS } from '../src/games/CometDrift/sim.js'
-import { tracksidePlan, tracksideAudit, resolvePlan } from '../src/games/CometDriftHD/scenery.js'
+import { tracksidePlan, tracksideAudit, resolvePlan, ROOF_Y, STAND_SCALE_START, STAND_SCALE_STRAIGHT, SHADOW_IDS } from '../src/games/CometDriftHD/scenery.js'
+import { elevAt, wallTopSideAt } from '../src/games/CometDriftHD/scene.js'
+import { crowdSwellGain, CROWD_R_MIN, CROWD_R_MAX, CROWD_BURST, CROWD_PERIOD } from '../src/games/CometDriftHD/audio.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SELF = fileURLToPath(import.meta.url)
@@ -35,6 +37,10 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log(`  ok  ${msg}`) } el
 const PAIRS = [
     ['const min = Math.max(r, clampPx + 16)', 'const min = Math.max(r, 20)'],
     ["off: 252, scale: 1, orient: 'along', r: 48 })", "off: 60, scale: 1, orient: 'along', r: 48 })"],
+    // #675 mutants: the constant-ground regression and the tall roof, both must
+    // be caught by the grounding / stand-roof gates.
+    ['e.baseY = propGroundY(e.i, e.side)', 'e.baseY = 1.82'],
+    ['export const ROOF_Y = 3.4', 'export const ROOF_Y = 4'],
 ]
 if (MUTATE) {
     let src = readFileSync(SCENERY_SRC, 'utf8')
@@ -58,6 +64,29 @@ if (MUTATE) {
 
 const SIGNATURE = ['grandstand', 'pit_building', 'billboard', 'sign', 'barrier', 'tire_wall', 'marshal_post', 'flag']
 
+// CROWD LAW (#675, once): full voice at the stands, silent at the horizon,
+// monotone between — and the murmur burst must cover its own period, so the
+// bed is continuous, not dotted.
+ok(crowdSwellGain(0) === 1 && crowdSwellGain(CROWD_R_MIN) === 1, 'crowd law: full gain inside R_MIN')
+ok(crowdSwellGain(CROWD_R_MAX) === 0 && crowdSwellGain(1e4) === 0, 'crowd law: silent at/beyond R_MAX')
+{
+    let mono = true; let prev = 1
+    for (let d = 0; d <= CROWD_R_MAX; d += 25) { const gv = crowdSwellGain(d); if (gv > prev + 1e-9) mono = false; prev = gv }
+    ok(mono, 'crowd law: monotone decrease with distance')
+    const mid = crowdSwellGain((CROWD_R_MIN + CROWD_R_MAX) / 2)
+    ok(Math.abs(mid - 0.5) < 1e-9, `crowd law: smoothstep midpoint (got ${mid})`)
+}
+ok(CROWD_BURST * 60 >= CROWD_PERIOD, `crowd bed: burst ${CROWD_BURST}s covers its ${CROWD_PERIOD}-tick period (no dead air)`)
+
+// STAND ROOF LAW (#675, once): the chase eye sits ~2.4u over the asphalt and
+// the nearest stand edge is ~8u out at the line; with the boost FOV punch the
+// frame ceiling is ~28° up, so the roof may top out at most ~4.6u above the
+// stand base — the old 4.4u-local roof at 1.2 scale (5.3u) swept the top
+// corners and cut the dusk sky.
+const ROOF_TOP_LOCAL = ROOF_Y + 0.4 // + half-thickness + the -0.12 tilt
+ok(ROOF_TOP_LOCAL * STAND_SCALE_START <= 4.6, `stand roof: start stands top out ${(ROOF_TOP_LOCAL * STAND_SCALE_START).toFixed(2)}u over the base (≤ 4.6)`)
+ok(ROOF_TOP_LOCAL * STAND_SCALE_STRAIGHT <= 4.6, `stand roof: straight stands top out ${(ROOF_TOP_LOCAL * STAND_SCALE_STRAIGHT).toFixed(2)}u over the base (≤ 4.6)`)
+
 for (const c of COURSES) {
     selectCourse(c.id)
     const plan = tracksidePlan()
@@ -77,16 +106,37 @@ for (const c of COURSES) {
     ok(audit.count <= audit.cap, `${c.id}: prop count ${audit.count} within phone cap ${audit.cap}`)
     for (const id of SIGNATURE) ok(audit.categories[id] === true, `${c.id}: has ${id}`)
 
+    // GROUNDING (#675): every prop stands on the TRUE plateau surface of its
+    // own side (the wall-top law, banking included) — not the old constant
+    // (2.07−0.25 = 1.82). The mutant below pins the stamp; the <1.70 probe
+    // proves the law actually moves props (the constant never could).
+    ok(plan.every((e) => Math.abs(e.baseY - (elevAt(e.i) + wallTopSideAt(e.i, e.side) - 0.25)) < 1e-9), `${c.id}: every prop baseY rides its side's plateau`)
+    ok(again.every((e, k) => e.baseY === plan[k].baseY), `${c.id}: baseY is deterministic`)
+    ok(plan.some((e) => e.baseY < 1.70), `${c.id}: some prop stands below the old constant ground (1.82)`)
+    const grounded = plan.filter((e) => SHADOW_IDS[e.id])
+    ok(grounded.length > 0 && grounded.every((e) => SHADOW_IDS[e.id] > 0.5 && SHADOW_IDS[e.id] < 2.5), `${c.id}: every tree/rock carries a contact-shadow radius (${grounded.length} props)`)
+
     // UNAFFECTED: the certified autopilot still wins the whole race with the
-    // dressing on (props never collide — nothing inside the clamp).
+    // dressing on (props never collide — nothing inside the clamp). While it
+    // runs we watch how close the player gets to the stands: the crowd swell
+    // (#675) is only real if the racing line actually passes within hearing.
     let g = makeGame(0)
+    const stands = plan.filter((e) => e.id === 'grandstand')
+    let minStandD = Infinity
     const maxTicks = 120000
     let ticks = 0
     while (!g.end && ticks < maxTicks) {
         step(g, decide(g))
+        const P = g.karts[0]
+        for (const s of stands) {
+            const dd = Math.hypot(P.x - s.wx, P.y - s.wz)
+            if (dd < minStandD) minStandD = dd
+        }
         ticks++
     }
     ok(g.end && g.karts[0].finished && g.karts[0].lap >= LAPS, `${c.id}: autopilot still wins ${LAPS} laps (${ticks} ticks)`)
+    ok(minStandD < CROWD_R_MAX, `${c.id}: the racing line passes within crowd range (${minStandD.toFixed(0)}px < ${CROWD_R_MAX}px)`)
+    ok(crowdSwellGain(minStandD) > 0.3, `${c.id}: the swell is audible at the line (peak gain ${crowdSwellGain(minStandD).toFixed(2)})`)
 }
 
 console.log(`\n${pass} passed, ${fail} failed`)

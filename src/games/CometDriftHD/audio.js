@@ -37,3 +37,39 @@ export function bankVoices(tier) {
     }
     return v
 }
+
+// #675: the crowd. The grandstands are the circuit's only audience, and the
+// stands sit outside the sim's wall clamp while the player rides within
+// ±216px of the centerline — so proximity is the distance from the player to
+// the NEAREST stand centre. Beyond R_MAX the crowd is no sound at all; inside
+// R_MIN it is at full voice; between them a smoothstep ramp, so the murmur
+// swells as the kart comes down the straight and dies on the backstretch.
+// The burst is LONGER than its period, so the murmur beds without dead air.
+// The engine law is untouched — the crowd sits under it.
+export const CROWD_R_MIN = 340   // px — full gain at the line
+export const CROWD_R_MAX = 1000  // px — silent beyond
+export const CROWD_GAIN = 0.13   // peak murmur (under the engine's presence)
+export const CROWD_PERIOD = 5    // ticks between bursts (83 ms)
+export const CROWD_BURST = 0.16  // s — longer than the period: a continuous bed
+export const CROWD_FREQ = 900    // Hz lowpass — a murmur, not static
+
+// proximity -> gain: 1 at the stands, 0 at the horizon, smoothstep between.
+export const crowdSwellGain = (d) => {
+    if (d <= CROWD_R_MIN) return 1
+    if (d >= CROWD_R_MAX) return 0
+    const t = (CROWD_R_MAX - d) / (CROWD_R_MAX - CROWD_R_MIN)
+    return t * t * (3 - 2 * t)
+}
+
+// Node-safe: distance in px from (x, y) to the nearest grandstand centre
+// (Infinity when the plan carries no stands).
+export const nearestStandPx = (plan, x, y) => {
+    let d = Infinity
+    for (const e of plan) {
+        if (e.id !== 'grandstand') continue
+        const dx = x - e.wx; const dy = y - e.wz
+        const dd = dx * dx + dy * dy
+        if (dd < d) d = dd
+    }
+    return d === Infinity ? Infinity : Math.sqrt(d)
+}
