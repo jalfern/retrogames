@@ -242,6 +242,41 @@ export const MUSIC = {
             1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 2, 0, 0, 1, 0,
         ],
     },
+    // EMBERWOOD (#781) — two ORIGINAL beds for the Cinder Vale, composed for
+    // this build. The vale sings in D major under a dusk sky; the dungeons answer
+    // in A-minor with long gaps between notes so torchlight feels quiet.
+    // "VALE ASCENT" — the overworld walk, brisk and folk-ish.
+    emberwoodVale: {
+        step: 0.13,
+        lead: [
+            62, 0, 66, 0, 69, 0, 71, 69, 66, 0, 69, 0, 62, 0, 0, 0,
+            67, 0, 69, 0, 71, 0, 74, 71, 69, 0, 66, 0, 62, 0, 66, 0,
+        ],
+        bass: [
+            38, 0, 38, 0, 45, 0, 38, 0, 43, 0, 43, 0, 40, 0, 38, 0,
+            38, 0, 38, 0, 45, 0, 38, 0, 43, 0, 45, 0, 38, 0, 0, 0,
+        ],
+        perc: [
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 1, 2,
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 2, 0,
+        ],
+    },
+    // "ROOT AND EMBER" — the deep places; half-time, wide rests, low drone.
+    emberwoodDeep: {
+        step: 0.17,
+        lead: [
+            57, 0, 0, 60, 0, 0, 62, 0, 64, 0, 0, 0, 60, 0, 59, 0,
+            57, 0, 0, 60, 0, 0, 64, 0, 62, 0, 0, 60, 0, 0, 57, 0,
+        ],
+        bass: [
+            45, 0, 0, 0, 45, 0, 0, 0, 41, 0, 0, 0, 43, 0, 0, 0,
+            45, 0, 0, 0, 45, 0, 0, 0, 40, 0, 0, 0, 43, 0, 45, 0,
+        ],
+        perc: [
+            1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0,
+            1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 2, 0, 0, 1, 0,
+        ],
+    },
     // MOMENTUM RUNNER — three original beds, one per sector, composed for this
     // build. The tempo is the map: city sprints (fastest), the foundry drives
     // (heavy), orbit floats (slowest) — crossing a zone card you feel the

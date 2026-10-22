@@ -60,11 +60,27 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   asserts it spawns facing-correct, outlives the blade, clears, tracks facing, is
   seed-deterministic, and that a bomb blast never fakes one.
 
+- **Composite encodes sRGB (#773)**: the scene RT samples back linear (sRGB
+  RT + hardware decode), the canvas blit is raw, so `compMat` must run
+  `lin2srgb` before output or the whole diorama ships near-black (measured:
+  town mean 15.8/255 pre-fix, ~55 post-fix, lite path 58). `emberwoodcheck`
+  pins it: overworld mean ≥35/30, dark-pixel fraction ≤0.35, dungeon mean in
+  8..0.8×town (moody by construction).
+- **Portrait canvas (#773)**: portrait viewports render at 480x360 (4:3)
+  instead of 480x288 — the ortho window (viewH 210 ⊃ the 11-row screen) is
+  orientation-agnostic, so portrait just gets ~25% bigger pixels. The blur
+  kernel normalizes by a `res` uniform for this reason.
+- **Music (#781)**: two ORIGINAL beds in `AudioController.MUSIC` —
+  `emberwoodVale` (D-major overworld) / `emberwoodDeep` (A-minor dungeon,
+  slower grid) — switched per screen darkness from the shell loop; silent on
+  attract/pause/death/win; `duckMusic` on hits/booms/stagger/boss-die;
+  fanfare on win, stop on unmount.
+
 ## Verify
 
 ```bash
 npm run dev
-npm run emberwoodcheck          # boots the page, drives the sim, proves dungeons
+npm run emberwoodcheck          # boots the page, drives the sim, proves dungeons + brightness + beds
 node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>console.log(m.proveGame({bombs:true}).win))"   # true
 node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>console.log(m.proveGame({bombs:false}).bowGot))" # false — bombs gate the bow
 ```
@@ -75,5 +91,7 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
   (solver-route played in attract) is the polish-pass goal.
 - The Wyrm tail segments ride the drop-pool quads (visible but cheap).
 - No save system; no secret second shop; the elder hints but gives nothing.
-- Sound is per-fx; there's no music bed yet (AudioController `underground`
-  could pair with the vale `overworld` theme in QA).
+- Portrait is 4:3, not full-bleed: a taller window would crop the 16-tile
+  screen's east/west columns at viewH 210.
+- No tempo lift on the beds (SSX's `setMusicStep` seam is unused here); no
+  attract-mode music (contract keeps attract silent).
