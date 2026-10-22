@@ -105,7 +105,7 @@ function mkKart(def, row) {
     const i = Math.round((T.N - back / (T.len / T.N))) % T.N
     const p = T.pts[(i + T.N) % T.N]
     const side = row % 2 ? 1 : -1
-    const lat = side * 44
+    const lat = side * 54    // #782: two-wide grid now fits the widened asphalt
     return {
         ...def, row,
         x: p.x + Math.cos(p.a + Math.PI / 2) * lat,
@@ -359,7 +359,7 @@ function brain(g, k, skill, driftSmart) {
     // the wall they could no longer hold.
     const kmax = T.aheadK(k.idx, look + 8)
     const arc = look * (T.len / T.N)
-    let lat = -Math.sign(t.k) * Math.min(44, Math.abs(t.k) * 3.6e4)
+    let lat = -Math.sign(t.k) * Math.min(52, Math.abs(t.k) * 3.6e4)
     lat = Math.max(-arc * 0.3, Math.min(arc * 0.3, lat))
     // traffic: a kart in the cone ahead nudges the line to the open side
     for (const o of g.karts) {
@@ -367,9 +367,9 @@ function brain(g, k, skill, driftSmart) {
         const dx = o.x - k.x; const dy = o.y - k.y
         const f = dx * Math.cos(k.a) + dy * Math.sin(k.a)
         const l = dx * -Math.sin(k.a) + dy * Math.cos(k.a)
-        if (f > 20 && f < 340 && Math.abs(l) < 56) lat += (l > 0 ? -1 : 1) * 30
+        if (f > 20 && f < 340 && Math.abs(l) < 60) lat += (l > 0 ? -1 : 1) * 38
     }
-    lat = Math.max(-48, Math.min(48, lat))
+    lat = Math.max(-58, Math.min(58, lat))
     // defend: a chaser within two lengths behind pulls the line to centre
     for (const o of g.karts) {
         if (o === k || o.finished) continue
