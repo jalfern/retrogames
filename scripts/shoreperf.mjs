@@ -69,7 +69,11 @@ if (opt('--quiet-check-only', null) !== null) {
   process.exit(0)
 }
 if (!url.startsWith('http') && !existsSync(file)) { console.error(`missing ${file}`); process.exit(1) }
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const CHROME = process.env.SHOREPERF_CHROME || (() => {
+  const sys = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (existsSync(sys)) return sys
+  try { return chromium.executablePath() } catch { console.error('no Chrome found — install one or run `npx playwright-core install chromium`'); process.exit(1) }
+})()
 
 const PROFILES = {
   desktop: { viewport: { width: 1440, height: 900 }, dsf: 2, cpu: 1 },

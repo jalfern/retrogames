@@ -65,6 +65,33 @@ jobs:
         if: failure()
         run: cat /tmp/vite.log
 
+  shoreperf:
+    # #680: quiet-box qhd numbers land nightly on a dedicated runner. The dev
+    # boxes all run local LLM inference, so shoreperf's guard always says
+    # CONTENDED there and the absolute fps is context, never verdict. CI's
+    # Chrome is SwiftShader — slow but quiet and reproducible, so the nightly
+    # series is the trend line the issue asks for. Advisory: continue-on-error
+    # so a perf blip never freezes merges (only full-static gates, rule 3).
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # npm >=11, see the note in ci.yml's static job
+          cache: npm
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - name: shoreperf qhd
+        run: |
+          node scripts/shoreperf.mjs --profile qhd --secs 6 | tee /tmp/shoreperf-qhd.log
+          { echo "## shoreperf qhd (#680)"; echo '```'; cat /tmp/shoreperf-qhd.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shoreperf-qhd
+          path: /tmp/shoreperf-qhd.log
+
   report:
     needs: [full-static, full-smoke]
     if: failure()
