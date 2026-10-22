@@ -17,7 +17,7 @@ import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor, courseFloorY,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, roadRollYAt, roadRollAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
-    hudScale, hudTop, tintFor, SKY_STOPS, refOverlayStats, attractLayout,
+    hudScale, hudTop, tintFor, envWashFor, SKY_STOPS, refOverlayStats, attractLayout,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 
@@ -413,6 +413,25 @@ export default function CometDriftHD() {
             }
             c.needsUpdate = true
         }
+        // #471 item 4: a tiny equirect wash gives the liveries sky-glass
+        // reflections without a real probe. #511 item 2: the wash rides the
+        // course palette (dusk reproduces the shipped canvas stop for stop;
+        // noon runs blue-white with a high sun, dawn rose-to-amber low).
+        const envCanvas = texCanvas(128, 64)
+        const paintEnv = (palette) => {
+            const x = envCanvas.getContext('2d')
+            const w = envWashFor(palette)
+            const gr = x.createLinearGradient(0, 0, 0, 64)
+            for (const [col, at] of w.stops) gr.addColorStop(at, col)
+            x.fillStyle = gr; x.fillRect(0, 0, 128, 64)
+            const sg = x.createRadialGradient(w.sunX, w.sunY, 2, w.sunX, w.sunY, w.sunR)
+            sg.addColorStop(0, `rgba(${parseInt(w.sun[0].slice(1, 3), 16)},${parseInt(w.sun[0].slice(3, 5), 16)},${parseInt(w.sun[0].slice(5, 7), 16)},1)`)
+            sg.addColorStop(1, `rgba(${parseInt(w.sun[1].slice(1, 3), 16)},${parseInt(w.sun[1].slice(3, 5), 16)},${parseInt(w.sun[1].slice(5, 7), 16)},0)`)
+            x.fillStyle = sg; x.fillRect(w.sunX - w.sunR - 4, w.sunY - w.sunR - 4, (w.sunR + 4) * 2, (w.sunR + 4) * 2)
+        }
+        const envMap = new THREE.CanvasTexture(envCanvas)
+        envMap.mapping = THREE.EquirectangularReflectionMapping
+        envMap.colorSpace = THREE.SRGBColorSpace
         // #502 item 1: the course skin — every light, the fog, the sand floor,
         // mesas, dome and stars ride the palette of the SELECTED circuit
         // (dusk values reproduce the shipped Gulch exactly). Runs at boot and
@@ -433,6 +452,8 @@ export default function CometDriftHD() {
             starMat.opacity = 0.9 * t.starGain
             sunGlow.material.color.setHex(t.sunWash)
             sunDisc.material.color.setHex(t.sunWash)
+            paintEnv(COURSE.palette)
+            envMap.needsUpdate = true
         }
         const buildHorizon = () => {
             while (horizonGroup.children.length) {
@@ -479,25 +500,7 @@ export default function CometDriftHD() {
         applyCourseTint()
         buildHorizon()
 
-        // karts + blob shadows
-        // dusk env-map (#471 item 4): a tiny equirect wash of the gulch sky
-        // gives the liveries sky-glass reflections without a real probe.
-        const envCanvas = (() => {
-            const c = texCanvas(128, 64)
-            const x = c.getContext('2d')
-            const gr = x.createLinearGradient(0, 0, 0, 64)
-            gr.addColorStop(0, '#241432'); gr.addColorStop(0.36, '#7c3a34')
-            gr.addColorStop(0.46, '#e07a38'); gr.addColorStop(0.56, '#8a4428')
-            gr.addColorStop(1, '#40281c')
-            x.fillStyle = gr; x.fillRect(0, 0, 128, 64)
-            const sg = x.createRadialGradient(88, 28, 2, 88, 28, 20)
-            sg.addColorStop(0, 'rgba(255,230,170,1)'); sg.addColorStop(1, 'rgba(255,150,70,0)')
-            x.fillStyle = sg; x.fillRect(68, 8, 40, 40)
-            return c
-        })()
-        const envMap = new THREE.CanvasTexture(envCanvas)
-        envMap.mapping = THREE.EquirectangularReflectionMapping
-        envMap.colorSpace = THREE.SRGBColorSpace
+        // karts + blob shadows (env canvas + map built above, before the tint)
         const kartMeshes = []
         for (const k of g.karts) {
             const m = new THREE.Group()

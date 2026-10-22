@@ -210,10 +210,9 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   plan; Dry Lake Bed (~Sebring) remains the optional third. At flat-world scale
   and the 220px radius floor the Corkscomb reads as a rate-alternating crest
   complex, not the hill-drop double-S of the real thing — a longer-wavelength
-  re-tune is polish-pass territory. HD keeps its dusk sky tint on any circuit
-  (noon/dawn looks are 2D-only so far); the shared trackside arch design is
-  per-name, not per-character (Sandbank and Corkscomb deserve their own gantry
-  shapes in the polish pass).
+  re-tune is polish-pass territory. The start line structure is per-course
+  since #502 (Sandbank's timing gantry); Corkscomb still shares the sandstone
+  arch and deserves its own dune-crest shape.
 - No cups, items, or real music (the engine bed is a synthesized voice with
   scrape/whoosh layers since #440 item 6, but there is no music track) —
   music out of scope per #419.
