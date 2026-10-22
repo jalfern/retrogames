@@ -194,6 +194,62 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     t = 0; while (q.air && t < 300) { step(g2, {}); t++ }
     ok('a half-done flip is a bail', q.tumble > 0 && hasEv(g2, 'crash'))
 }
+{ // #791 doubles: big normal air opens the ledger to a second flip; short air stays single
+    const launch = (who, airT, dy, vy, dir, held) => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        g.course.obstacles.length = 0
+        const p = g.riders[who]
+        p.x = 0; p.v = 24
+        p.air = true; p.airT = airT; p.spin = 0; p.flip = 0; p.grab = 0; p.over = false
+        p.y = terrainY(g.course, p.s, p.x) + dy; p.vy = vy
+        let t = 0; let maxF = 0
+        const evs = []
+        while (!evs.some((e) => (e.type === 'land' || e.type === 'crash') && e.who === who) && t < 400) {
+            maxF = Math.max(maxF, Math.abs(p.flip))
+            step(g, held ? { flip: dir } : {})
+            evs.push(...g.events.splice(0))
+            t++
+        }
+        return { e: evs.find((x) => x.who === who && (x.type === 'land' || x.type === 'crash')), maxF, p }
+    }
+    const d = launch(0, 0, 60, 2, 1, true)
+    ok('#791 a held flip through big normal air banks a DOUBLE BACKFLIP without OVER',
+        !!d.e && d.e.type === 'land' && /DOUBLE BACKFLIP/.test(d.e.name) && !d.e.over)
+    ok('#791 the double is capped where a clean landing still fits (720+~20)',
+        d.maxF >= 740 && d.maxF < 750)
+    ok('#791 a double pays both rotations (≥ 700 flip points)', !!d.e && d.e.pts >= 700)
+    const s = launch(0, 0, 2, 2, 1, true)
+    ok('#791 short air stays single: the second flip only opens past a second of hang',
+        !!s.e && s.e.type === 'land' && !/DOUBLE/.test(s.e.name) && s.maxF <= 328)
+    const f = launch(0, 0, 60, 2, 2, true)
+    ok('#791 the ledger names the direction: held front flip banks DOUBLE FRONTFLIP',
+        !!f.e && f.e.type === 'land' && /DOUBLE FRONTFLIP/.test(f.e.name))
+    ok('#791 a half-finished double (560°+) is still a bail', (() => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        g.course.obstacles.length = 0
+        const p = g.riders[0]
+        p.x = 0; p.v = 24
+        p.air = true; p.airT = 1.2; p.spin = 0; p.grab = 0; p.over = false; p.flip = 560
+        p.y = terrainY(g.course, p.s, p.x) + 3; p.vy = -4
+        let t = 0; while (!hasEv(g, 'crash') && t < 300) { step(g, {}); t++ }
+        return p.tumble > 0 && hasEv(g, 'crash')
+    })())
+    {
+        const airRide = (rid, flip, extra) => {
+            const g = makeGame('race'); run(g, 181); clear(g)
+            const r = g.riders[rid]
+            Object.assign(r, { air: true, airT: 0.2, spin: 0, grab: 0, over: false, v: 24, x: 0, flip, ...extra })
+            r.y = terrainY(g.course, r.s, r.x) + 30; r.vy = 2
+            return decide(g, r).flip
+        }
+        ok('#791 seat 1 opens the second flip when the hang pays, and releases inside the clean window',
+            airRide(1, 0) === true && airRide(1, 500) === true && airRide(1, 660) === true && airRide(1, 668) === false)
+        ok('#791 seat 2 (skill 0.78) never reaches for the double — it releases at the single',
+            airRide(2, 0) === true && airRide(2, 324) === false && airRide(2, 500) === false)
+        ok('#791 the double is seat-1 only — seat 3 (skill 0.72) never reaches past its single',
+            airRide(3, 324) === false)
+    }
+}
 { // chains multiply; bails reset to x1
     const g = makeGame('race'); run(g, 181); clear(g)
     const p = g.riders[0]

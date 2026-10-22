@@ -47,9 +47,14 @@ export function decide(g, r, hot = false) {
         // grab: mid-air, one grab per jump
         if (skill > 0.4 && !r.grab && r.airT > 0.12 && r.airT < Math.max(0.2, ttl - 0.25)) inp.grab = true
 
-        // flips: only when the hang can be bought back in 360s of rotation
+        // flips: only when the hang can be bought back in 360s of rotation.
+        // #791 doubles: seat 1 opens a second flip when the hang can carry the
+        // board to 665° (the top of the clean double window) before the landing
+        // margin; latched once past 330° so a sagging estimate never strands
+        // the rotation in the crash band between the two safe windows.
         const wantFlip = (r.over || skill > 0.72) && ttl > 1.05
-        if (wantFlip && r.airT > 0.14 && r.flip < (r.over && skill > 0.9 ? 720 : 360) - 40 && ttl - r.airT > 0.35) inp.flip = true
+        const dbl = skill > 0.9 && (r.over || r.flip > 330 || (ttl - r.airT) * CFGP.flipRate > 700)
+        if (wantFlip && r.airT > 0.14 && r.flip < (dbl ? 665 : 320) && ttl - r.airT > 0.35) inp.flip = true
         return inp
     }
 

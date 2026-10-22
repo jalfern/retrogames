@@ -350,7 +350,14 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
   flip (weight fore/aft) at the grab frame — INDY/MUTE/METHOD/SALISBURY/
   NOSEGRAB/TAILGRAB, each with its own hero pose; the flip commit follows
   the reach — front hand to the nose, back hand to the tail. Still open for
-  a later slice: inverts, double-flip naming on normal takeoffs, and reverts.
+  a later slice: inverts and reverts.
+- Doubles (#791 slice 8): past a second of hang the flip ledger opens to a
+  second rotation — a held flip through big normal air banks DOUBLE BACK/
+  FRONTFLIP at full double pay, capped at 720+~20 so a clean landing still
+  fits; short air stays single and flipCheck still eats any half-done double.
+  Seat 1 of the CPU field commits doubles when its predicted hang can carry
+  the board to 665° before the landing margin (releases inside the clean
+  window; latched past 330° so a sagging estimate can't strand the band).
 
 ## Lateral sign and the tuck/scrub (#547)
 

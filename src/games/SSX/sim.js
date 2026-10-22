@@ -237,7 +237,11 @@ function riderStep(g, r, inp) {
         r.y += r.vy * dt
         r.s += r.v * dt
         r.spin += steer * CFG.spinRate * dt
-        if (inp.flip && Math.abs(r.flip) < (r.over ? 720 : 360) + 20) r.flip += CFG.flipRate * dt * (inp.flip === 2 ? -1 : 1)
+        // #791 doubles: past a second of hang the rotation ledger opens to a
+        // second flip — airtime is the limiter (520°/s needs ~1.4 s to bank a
+        // DOUBLE), and flipCheck still eats any unfinished attempt.
+        const flipCap = (r.over || r.airT > 1.05) ? 720 : 360
+        if (inp.flip && Math.abs(r.flip) < flipCap + 20) r.flip += CFG.flipRate * dt * (inp.flip === 2 ? -1 : 1)
         if (inp.grab && !r.grab) { r.grab = 1; r.grabKind = grabKindFor(steer, inp.flip, inp.scrub, r.stance === 0) }
         const groundY = terrainY(c, r.s, r.x)
         if (r.vy < 0) {
