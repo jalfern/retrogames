@@ -104,7 +104,7 @@ was flaking the same-pose stability gate).
   it arrives, then swaps — the game (and `ssxcheck`) never block on it. CPU
   riders keep the primitive rigs until the polish pass gives the field models.
 
-## Verify
+## Hard-won verify notes
 
 - The far mesh SINKS past the ridge line (`bank` q>9) — outer columns must
   never stand above the near crest, or the silhouette reads as a black blade
@@ -117,6 +117,11 @@ was flaking the same-pose stability gate).
 - The chase-cam SNAPS to the rider on the first frame after any course
   rebuild (`camFresh`) — lerping from world origin meant the first frames of
   every heat looked at the mountain from below it.
+- GLTFLoader runs every node name through `sanitizeNodeName`, which strips
+  dots ("foot.l" → "footl"): the dotted keys in `STANCE`/`OFFS` were silent
+  no-ops until #615 — pose offsets composed onto nothing and the poses still
+  looked "distinct" because the base clips differ. Bone-key tables must use
+  the runtime (sanitised) names; `ssxmodelcheck` now pins zero dotted keys.
 
 ## Verify
 
@@ -125,7 +130,9 @@ npm run lint:ssx && npm run ssxcheck     # 70 checks, blocks merges (CI `static`
 npm run ssxmountaincheck                # 90 checks: mountain feel (#638)
 npm run ssxterraincheck                 # 30 checks: snow/rock surfaces (#669)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
-                                         #   keys drive poses, race still winnable
+                                          #   keys drive poses, race still winnable,
+                                          #   #615 rider polish (grab reach, boot weld,
+                                          #   Idle breath, liveries, per-theme shadow)
 ```
 
 The check proves the autopilot wins RACE (30/30 standings, zero bails) and
@@ -157,8 +164,9 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
   fading carve grooves under the board (#310), on top of the speed-scaled spray.
 - No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
   `ssxmodelcheck` covers the hero rider in the browser.
-- Only the player has the real model; the CPU field is still box rigs, and
-  the grab pose could reach deeper to the board edge (polish pass).
+- Only the player's livery carries the bib + logo decal set; grab/boot weld
+  reach the board now (#615 — probe gates `grabReach`/`bootClear` in
+  `ssxmodelcheck`), but the offsets are static per pose, not IK.
 
 ## Lateral sign and the tuck/scrub (#547)
 
