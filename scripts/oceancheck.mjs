@@ -539,6 +539,58 @@ async function main() {
         writeFileSync(resolve(shots, 'night-dipper.png'), await page.screenshot())
       }
 
+      // 6c. #611 CALENDAR — the sky must obey the date, not just the clock. LST is
+      //     computed from the real date (?date=YYYY-MM-DD pins it), so the same clock
+      //     time slides the constellations ~0.9856°/night. Anchors are almanac facts
+      //     for Calistoga (38.6N 122.577W, PST/PDT), computed from Meeus:
+      //       2026-03-21 00:00 LST 161.2 · 2026-09-21 00:00 LST 342.6 (Δ=181.4 half-year)
+      //       2026-01-01 00:00 LST 98.4 (Betelgeuse on the meridian at midnight ~ New Year)
+      //       2026-07-01 00:00 LST 261.8 (Vega near zenith at midnight in early July)
+      //       Jan→Jul Δ=163.4 (−15° from the PDT shift — pins the timezone law)
+      //     Mutant: freeze the old fixed LST0=185 anchor → gates 1, 2, 5, 7 go red.
+      const isoToday = await page.evaluate(() => {
+        const d = new Date()
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      })
+      const lstAt = async (iso) => {
+        await page.goto(`${url}?date=${iso}&tod=0&cloud=0`, { waitUntil: 'load' })
+        await page.waitForFunction(() => window.__oceanTest && window.__oceanTest.ready, null, { timeout: 20000 })
+        await page.waitForTimeout(600)
+        return page.evaluate(() => window.__oceanTest.stars())
+      }
+      const arc = (a, b) => { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d }
+      const skMar = await lstAt('2026-03-21')
+      ok('#611 pinned date + site longitude flow through', skMar.date === '2026-03-21' && Math.abs(skMar.lonDeg + 122.577) < 0.01 && skMar.timeSpan === 18,
+        `date=${skMar.date} lon=${skMar.lonDeg} span=${skMar.timeSpan}`)
+      ok('#611 equinox midnight: LST 161.2 ±2 (real sidereal time)', Math.abs(skMar.lstDeg - 161.2) < 2, `lst=${skMar.lstDeg}`)
+      const skSep = await lstAt('2026-09-21')
+      ok('#611 autumn equinox midnight: LST 342.6 ±2', Math.abs(skSep.lstDeg - 342.6) < 2, `lst=${skSep.lstDeg}`)
+      // NOT arc() on purpose: 181.4° folded would read 178.6° like a retrograde drift
+      const halfDrift = ((skSep.lstDeg - skMar.lstDeg) % 360 + 360) % 360
+      ok('#611 half-year drift ≈ 181.4° prograde (0.9856°/night, not a frozen sky)', Math.abs(halfDrift - 181.4) < 2,
+        `Mar→Sep Δ=${halfDrift.toFixed(1)}°`)
+      const skJan = await lstAt('2026-01-01')
+      const bet = skJan.named.orion.betelgeuse
+      ok('#611 New Year midnight: Orion on the meridian (Betelgeuse alt>40, az~180±35)',
+        skJan.lstDeg > 96.4 && skJan.lstDeg < 100.4 && bet && bet.alt > 40 && bet.az > 165 && bet.az < 215,
+        `lst=${skJan.lstDeg} Betelgeuse alt=${bet && bet.alt} az=${bet && bet.az}`)
+      const skJul = await lstAt('2026-07-01')
+      const vega = skJul.named.vega
+      ok('#611 early July midnight: Vega near the zenith (alt>70)', skJul.lstDeg > 259.8 && vega && vega.alt > 70,
+        `lst=${skJul.lstDeg} Vega alt=${vega && vega.alt} az=${vega && vega.az}`)
+      ok('#611 Jan→Jul Δ=163.4° ±2 — carries the −15° PDT shift (timezone law pinned)',
+        Math.abs(arc(skJul.lstDeg, skJan.lstDeg) - 163.4) < 2, `Δ=${arc(skJul.lstDeg, skJan.lstDeg).toFixed(1)}°`)
+      const skJun = await lstAt('2026-06-01')
+      ok('#611 30-night drift = 29.6° ±0.5 at fixed clock time', Math.abs(arc(skJul.lstDeg, skJun.lstDeg) - 29.57) < 0.5,
+        `Jun→Jul Δ=${arc(skJul.lstDeg, skJun.lstDeg).toFixed(2)}°`)
+      await page.goto(url, { waitUntil: 'load' })
+      await page.waitForFunction(() => window.__oceanTest && window.__oceanTest.ready, null, { timeout: 20000 })
+      await page.waitForTimeout(600)
+      const skLive = await page.evaluate(() => window.__oceanTest.stars())
+      ok('#611 default load uses the live calendar date', skLive.date === isoToday, `page=${skLive.date} host=${isoToday}`)
+      await page.evaluate(() => { window.__oceanTest.setTod(0); window.__oceanTest.setCloud(0); window.__oceanTest.setStorm(0) })
+      await page.waitForTimeout(900)
+
       // 7. PHONE (#704): the night sky must read as a full field on a DPR>1 phone in
       //    portrait. Star sizes are CSS-px scaled by the render DPR (a 1.1-canvas-px
       //    faint star is sub-pixel on a DPR-1.75 phone); the Milky Way is a field of
