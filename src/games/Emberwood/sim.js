@@ -45,6 +45,7 @@ export function createSim(seed = 1) {
         items: { sword: true, bow: false, shield: false, bombs: 0, arrows: 0, potions: 0, keys: 0, bigkey: false },
         score: 0,
         swing: 0, swingDir: 'down', swingId: 0, cool: 0, holdT: 0, drawing: false,
+        arc: 0, arcDir: 'down', arcId: 0,
         bombCool: 0,
         hitStop: 0,        // frozen frames after a kill / blast (hit-stop for weight)
         shop: { open: false, sel: 0 },
@@ -120,6 +121,7 @@ export function spawnRoom(sim, id, entry) {
     sim.roomName = s.name
     sim.nameT = 140
     sim.swing = 0; sim.drawing = false; sim.holdT = 0
+    sim.arc = 0
     sim.shop.open = false
 }
 
@@ -149,6 +151,7 @@ function moveEnemy(sim, e, dx, dy, speed) {
 }
 
 const DIRV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
+const ARC_DUR = 12 // swipe-trail frames (outlives the 10-frame blade by 2)
 
 export function stepSim(sim, inp) {
     sim.tick++
@@ -208,6 +211,8 @@ export function stepSim(sim, inp) {
         sim.swing--
         swordHits(sim)
     }
+    // ---- swipe trail lingers ~2 frames past the blade for a readable arc ----
+    if (sim.arc > 0) sim.arc--
 
     // ---- B: bomb ----
     if (inp.bPressed && sim.items.bombs > 0 && sim.bombCool === 0) {
@@ -257,6 +262,7 @@ function primaryAction(sim) {
     // otherwise: swing sword
     if (sim.cool === 0) {
         sim.swing = 10; sim.cool = 16; sim.swingDir = h.dir; sim.swingId++
+        sim.arc = ARC_DUR; sim.arcDir = h.dir; sim.arcId = sim.swingId
         emit(sim, 'sword', h.x, h.y, { dir: h.dir })
     }
 }
@@ -705,6 +711,7 @@ export function simState(sim) {
         win: !!sim.win,
         shop: sim.shop.open,
         screen: sim.screen,
+        arc: sim.arc > 0 ? { dir: sim.arcDir, id: sim.arcId, frames: sim.arc, p: 1 - sim.arc / ARC_DUR } : null,
         items: { ...sim.items },
         progress: {
             cracked: { ...sim.flags.cracked },
