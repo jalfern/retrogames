@@ -16,7 +16,7 @@
 //   SHOWOFF: 90 seconds, pure trick points against the house target.
 
 import { buildCourse, terrainY, segAt, featureLift, COURSE_COUNT, WALL_X, DS } from './course.js'
-import { decide, PACE } from './planner.js'
+import { decide, PACE, cpuMiss } from './planner.js'
 
 export const FIXED_DT = 1000 / 60
 
@@ -70,6 +70,7 @@ function newRider(i, isP, gridBack) {
         crashes: 0, tricksLanded: 0, bigAir: 0,
         carves: [],
         bounceOb: -1,
+        miss: false,
         jumpHeld: false, steerSm: 0, seedPhase: i * 1.7 + 0.4,
     }
 }
@@ -226,6 +227,9 @@ function riderStep(g, r, inp) {
         if (r.y <= groundY && r.vy < 0) {
             r.y = groundY
             r.air = false
+            // #791: a seat that was flagged at takeoff washes out on landing —
+            // chain and meter go, the field drives past it.
+            if (r.miss) { r.miss = false; crash(g, r, 'miss'); return }
             const res = evalTrick(g, r)
             r.pipeAir = false
             if (res.crash) { crash(g, r, 'bail'); return }
@@ -272,6 +276,7 @@ function riderStep(g, r, inp) {
         r.vy = boostV
         r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0
         r.over = r.meter >= 100
+        r.miss = !r.isP && cpuMiss(g, r)
         push(g, { type: 'jump', who: r.id, small: true })
     }
     r.crouchT = r.crouch ? r.crouchT : 0
@@ -308,6 +313,7 @@ function riderStep(g, r, inp) {
         r.vy = Math.max(4.5, liftHere * 1.9) + r.v * 0.11 + r.crouchT * 2.5
         r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0
         r.over = r.meter >= 100
+        r.miss = !r.isP && cpuMiss(g, r)
         r.pipeAir = c.pipes.some((p) => lip.i >= p.i0 - 1 && lip.i <= p.i1 + 1)
         push(g, { type: 'jump', who: r.id, power: r.vy, pipe: r.pipeAir })
     }

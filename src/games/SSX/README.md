@@ -87,6 +87,9 @@ the boost meter and a full meter at takeoff throws OVER.
    off with `CFG.rockPts` and a meter bump (chain-neutral); a second contact
    with the same rock crashes, a rock met at ground level bails, and trees
    never bounce. Pinned by five ssxcheck gates.
+10. Seeded wipeouts (#791): a CPU flagged at takeoff washes out on landing;
+    the flag rides `g._rs`, so the same seed replays every fall exactly, and
+    the player is exempt. Pinned by seven ssxcheck gates.
 
 ## The hero rider (#548)
 
@@ -153,6 +156,19 @@ was flaking the same-pose stability gate).
   drive (vista→swoop→bed→carve/ollie/boost/wall/heat-swap→iPhone tap) runs off
   it. ssxmodelcheck now waits for the run phase before pose capture (#780).
 
+## Seeded CPU misses (#791)
+
+The field is error-prone, not just pace-limited. At every CPU takeoff `sim.js`
+asks `planner.cpuMiss(g, r)`; the roll rides the LCG seeded into `g._rs`
+(`makeGame`), with `missChance(skill, pace) = MISS.base · (1−skill) ·
+(1+MISS.paceK·(PACE₀−pace))` — seat 1 ≈ 4%, seat 5 ≈ 27% — and a flagged seat
+washes out on the landing (`crash what='miss'`: chain and meter go, the field
+drives past). The witness (player) is exempt, so `ssxcheck` still proves the
+win; the new section-9 gates pin the exemption, the monotone seat ramp, ≥2
+seeded `miss` falls, rival finish orders that actually differ, and hash-exact
+replay of every fall. Mutant proof (done once, by hand): `cpuMiss → false` and
+the wipeout gate goes red.
+
 ## Hard-won verify notes
 
 - The far mesh SINKS past the ridge line (`bank` q>9) — outer columns must
@@ -175,7 +191,7 @@ was flaking the same-pose stability gate).
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 87 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 97 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
 npm run ssxterraincheck                 # 45 checks: snow/rock surfaces (#669, #685)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
@@ -206,7 +222,8 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
 
 ## Honest gaps (filed as the polish pass)
 
-- CPU riders never crash (the field is pace-limited rather than error-prone).
+- CPU riders wipe out on seeded landings (#791), but they never *miss* a line —
+  a seat only falls, it never bobbles past an obstacle it should have dodged.
 - Keyboard-only flips/grabs on desktop; phones get steer + A-jump + B-boost
   (spins still work via the d-pad mid-air). No analogue stick yet.
 - Snow tracks are now geometry: fading carve grooves under the board (#310),

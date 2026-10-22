@@ -10,6 +10,19 @@ import { segAt, terrainY, DS } from './course.js'
 export const PACE = [0.88, 0.85, 0.82, 0.79, 0.76]
 export const SKILL = [0.92, 0.78, 0.72, 0.62, 0.55]
 
+// #791 seeded miss rate: the field is error-prone, not just pace-limited.
+// A seat takes a wipeout on landing with missChance(skill, pace) — slower and
+// less skilled seats fall more often — so places change hands. The roll rides
+// the LCG seeded into g._rs (sim.js makeGame), so every crash is replayable.
+export const MISS = { base: 0.55, paceK: 0.6 }
+export const missChance = (skill, pace) => MISS.base * (1 - skill) * (1 + MISS.paceK * (PACE[0] - pace))
+
+const roll = (g) => { g._rs = (Math.imul(g._rs, 1664525) + 1013904223) >>> 0; return g._rs / 4294967296 }
+
+// sim.js calls this at every CPU takeoff: the roll commits the seat to either
+// a clean landing or a wipeout (crash what='miss') when it comes back down.
+export const cpuMiss = (g, r) => roll(g) < missChance(SKILL[r.id - 1], PACE[r.id - 1])
+
 // mirrors CFG in sim.js (ssxcheck pins these against CFG to catch drift)
 const CFGP = { G: 22, STEER: 1.15, CENT: 0.30, flipRate: 520 }
 
