@@ -176,7 +176,12 @@ async function main() {
   ok('not registered in games.js (demos law, Jon 2026-10-19)', !/path:\s*['"]\/[^'"]*mountains|label:\s*['"]Mountains/i.test(reg))
   ok('exposes __mountainsTest DEV hook', /__mountainsTest/.test(src))
   ok('LAKE_Y single source (JS value interpolated into shader)', /const float LAKE_Y = \$\{LAKE_Y/.test(src) && !/const float LAKE_Y = 0\.\d+;/.test(src))
-  ok('lake bounded to the basin (lp.z ellipse, lp.y bug fixed)', /lp\.z \+ 0\.7\)\) < /.test(src) && !/abs\(lp\.y\)/.test(src))
+  const basinM = src.match(/lp\.z \+ 0\.7\)\) < ([\d.]+)/)
+  ok('lake bounded to a small basin (lp.z ellipse r<4.5, lp.y bug fixed)',
+    !!basinM && +basinM[1] < 4.5 && !/abs\(lp\.y\)/.test(src),
+    basinM ? `basin radius=${basinM[1]}` : 'unbounded')
+  ok('shoreline bank lifts land above the waterline',
+    /float bank = 0\.0\d+ \+ 0\.0\d+ \* \(1\.0 - smoothstep\(/.test(src) && /max\(h, bank\)/.test(src))
 
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${PORT}`,

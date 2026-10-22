@@ -127,8 +127,9 @@ void main(){
   float far = smoothstep(8.5, 15.0, dp.y) * (0.55 + 0.45 * smoothstep(0.35, 0.70, fbm2(vec2(dp.x * 0.011, dp.y * 0.006) + 4.0, 2)));
   h += pow(ridged(dp * 0.045 + 20.0), 1.5) * 2.6 * far;
   float r2 = length(vec2(p.x * 0.80, p.y + 0.7));
-  float v = smoothstep(2.2, 7.5, r2);
-  h = mix(0.024, max(h, 0.075), v);
+  float v = smoothstep(2.2, 5.0, r2);
+  float bank = 0.075 + 0.030 * (1.0 - smoothstep(3.0, 5.5, r2));
+  h = mix(0.024, max(h, bank), v);
   h = 0.995 * (1.0 - exp(-h * 0.80));
   float x = h * 255.0;
   o = vec4(floor(x) / 255.0, fract(x), 0.0, 1.0);
@@ -156,6 +157,7 @@ const float FOG_H = 0.52;
 const float SNOW0 = 2.05;
 const float LAKE_Y = ${LAKE_Y.toFixed(2)};
 const float HSCALE = 7.5;
+const float FLOOR_H = 0.055;
 
 float heightTex(vec2 p, float lod){
   vec2 uv = p / ${EXT.toFixed(1)} + 0.5;
@@ -165,7 +167,7 @@ float heightTex(vec2 p, float lod){
 #else
   float h = textureLod(uHi, uv, lod).r + textureLod(uLo, uv, lod).r / 255.0;
 #endif
-  return mix(0.0, h, e.x * e.y) * HSCALE;
+  return mix(FLOOR_H, h, e.x * e.y) * HSCALE;
 }
 
 vec3 skyColor(vec3 rd, vec3 sunDir){
@@ -235,7 +237,7 @@ float fogAmount(float y0, float dy, float t){
   float f;
   if (abs(k) < 0.02) f = FOG_B * t * exp(-y0 / FOG_H);
   else f = FOG_B * FOG_H / abs(dy) * abs(exp(-y0 / FOG_H) - exp(-(y0 + dy) / FOG_H));
-  f += t * 0.0050;
+  f += t * 0.0100;
   return clamp(f, 0.0, 1.0);
 }
 
@@ -282,7 +284,7 @@ Hit terrainRay(vec3 ro, vec3 rd, float tLimit){
   float t = 0.02, dt = 0.012;
   for (int i = 0; i < 80; i++){
     vec3 p = ro + rd * t;
-    if (t > tLimit || p.y > 5.6 || length(p.xz) > ${EXT.toFixed(1)} * 0.55) return miss;
+    if (t > tLimit || p.y > 5.6 || length(p.xz) > ${EXT.toFixed(1)} * 0.9) return miss;
     float lod = clamp(log2(max(max(dt * 9.0, 0.05), 0.22 + t * 0.30)), 0.0, 5.0);
     float hd = p.y - heightTex(p.xz, lod);
     if (rd.y > 0.02 && hd > 2.4) return miss;
@@ -314,7 +316,7 @@ void main(){
   if (rd.y < -0.0015){
     float tl = (LAKE_Y - ro.y) / rd.y;
     vec3 lp = ro + rd * tl;
-    if (tl > 0.0 && tl < 60.0 && length(vec2(lp.x * 0.80, lp.z + 0.7)) < 6.4){
+    if (tl > 0.0 && tl < 60.0 && length(vec2(lp.x * 0.80, lp.z + 0.7)) < 3.0){
       float th = heightTex(lp.xz, 0.0);
       if (th < LAKE_Y - 0.004){ tLake = tl; lakeDepth = LAKE_Y - th; }
     }
