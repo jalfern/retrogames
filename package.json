@@ -22,6 +22,7 @@
     "shot": "node scripts/shot.mjs",
     "oceancheck": "node scripts/oceancheck.mjs",
     "shorecheck": "node scripts/shorecheck.mjs",
+    "shorewebkit": "node scripts/shorewebkit.mjs",
     "campfirecheck": "node scripts/campfirecheck.mjs",
     "mountainscheck": "node scripts/mountainscheck.mjs",
     "stormcheck": "node scripts/stormcheck.mjs",

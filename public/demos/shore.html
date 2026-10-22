@@ -235,6 +235,43 @@ const perfLbl = document.getElementById('perf');
 const FPS_ON = qs.get('fps') === '1';
 if (FPS_ON) perfLbl.style.display = 'block';
 
+// #702 slice B — ?diag=1 copy-report overlay (Jon's proposal): one button that
+// captures browser+GPU, settings, ~10s of frame times incl hitches, per-pass
+// GPU timings where the browser allows them, and the camera pose, so a phone
+// user can paste the exact stall instead of reading numbers off a screen.
+const DIAG = qs.get('diag') === '1';
+const diagTimes = [];
+let diagSpan = 0, diagLost = 0;
+let diagPanel = null;
+if (DIAG) {
+  diagPanel = document.createElement('div');
+  diagPanel.id = 'diagPanel';
+  diagPanel.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9;max-width:min(420px,92vw)' +
+    'background:rgba(8,10,16,.88);color:#cfe3ff;font:11px/1.45 ui-monospace,Menlo,monospace' +
+    'padding:8px 10px;border-radius:8px;border:1px solid rgba(120,160,255,.35);white-space:pre-wrap';
+  const txt = document.createElement('div');
+  txt.id = 'diagTxt';
+  diagPanel.appendChild(txt);
+  const btn = document.createElement('button');
+  btn.id = 'diagCopy';
+  btn.textContent = 'copy report';
+  btn.style.cssText = 'margin-top:6px;background:#2a4f8f;color:#fff;border:0;border-radius:6px' +
+    'padding:4px 10px;font:inherit;cursor:pointer';
+  btn.addEventListener('click', () => {
+    const s = window.__diagReport ? window.__diagReport() : '{}';
+    const done = () => { btn.textContent = 'copied ✓'; setTimeout(() => { btn.textContent = 'copy report'; }, 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(s).then(done, done);
+    else {
+      const ta = document.createElement('textarea');
+      ta.value = s; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch {}
+      ta.remove(); done();
+    }
+  });
+  diagPanel.appendChild(btn);
+  document.body.appendChild(diagPanel);
+}
+
 if (!navigator.gpu) {
   fatal.style.display = 'grid';
   fatal.textContent = 'WebGPU not available — need Chrome 113+ / Safari 18+ on a GPU device.';
@@ -854,6 +891,18 @@ async function boot() {
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
   if (!adapter) throw new Error('no WebGPU adapter');
   const device = await adapter.requestDevice();
+  let GPU_INFO = null;
+  try {
+    const ai = adapter.info || (adapter.requestAdapterInfo ? await adapter.requestAdapterInfo() : null);
+    if (ai) GPU_INFO = { vendor: ai.vendor || '', architecture: ai.architecture || '', device: ai.device || '', description: ai.description || '' };
+  } catch {}
+  const TS_OK = DIAG && device.features.has('timestamp-query');
+  let tsSet = null, tsRes = null, tsBusy = false, tsPass = null, tsHist = null;
+  if (TS_OK) {
+    tsSet = device.createQuerySet({ type: 'timestamp', count: 8 });
+    tsRes = device.createBuffer({ size: 64, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
+  }
+  const TS_PERIOD = (adapter.limits && adapter.limits.timestampPeriod) || 1;
   const ctx = canvas.getContext('webgpu');
   const FORMAT = navigator.gpu.getPreferredCanvasFormat();
   ctx.configure({ device, format: FORMAT, alphaMode: 'opaque' });
@@ -1141,9 +1190,31 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     lastMs = now;
     ftimes.push(dt * 1000);
     if (ftimes.length > 120) ftimes.shift();
+    if (DIAG) {
+      diagTimes.push(dt * 1000);
+      if (diagTimes.length > 600) diagTimes.shift();
+      diagSpan += dt;
+    }
     if (FPS_ON && frames % 15 === 0) {
       const avgF = ftimes.reduce((a, b) => a + b, 0) / ftimes.length;
       perfLbl.textContent = `${avgF.toFixed(1)} avg · ${Math.max(...ftimes).toFixed(1)} worst ms · rs ${rs.toFixed(2)} · ${LITE ? 'lite' : 'full'} · nsub ${nsub}${AUTO_PHONE ? ' · auto' : ''}`;
+    }
+    if (DIAG && diagPanel && frames % 30 === 0) {
+      const s = diagTimes.slice().sort((a, b) => a - b);
+      const avg = diagTimes.length ? diagTimes.reduce((a, b) => a + b, 0) / diagTimes.length : 0;
+      const pk = p => s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : 0;
+      const h32 = diagTimes.filter(x => x > 32).length, h100 = diagTimes.filter(x => x > 100).length;
+      let line = `diag · ${diagTimes.length} frames/${diagSpan.toFixed(1)}s\n` +
+        `avg ${avg.toFixed(1)} · p95 ${pk(.95).toFixed(1)} · worst ${s.length ? s[s.length - 1].toFixed(1) : 0} ms\n` +
+        `hitches >32ms ${h32} · >100ms ${h100} · catchups ${diagLost}\n` +
+        `rs ${rs.toFixed(2)} ${LITE ? 'lite' : 'full'} nsub ${nsub} dpr ${DPR_CAP.toFixed(1)} ${canvas.width}x${canvas.height}`;
+      if (tsHist && tsHist.length) {
+        const m = k => (tsHist.reduce((a, b) => a + b[k], 0) / tsHist.length).toFixed(1);
+        line += `\nGPU ms · sim ${m(0)} water ${m(1)} blit ${m(2)} total ${m(3)}`;
+      } else if (DIAG) {
+        line += `\nGPU passes: timestamp-query unavailable`;
+      }
+      diagPanel.firstChild.textContent = line;
     }
     // #668 notes: an adaptive resolution governor (1 -> 0.9 via the blit
     // targets below) was tried and backed out: under shared-GPU interference it
@@ -1153,11 +1224,13 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     // shipped are the dpr cap, the per-pixel shader trims and ?rs=?nsub=
     // harness locks. nsub never drops below NSUB: dt 1/120 sits on the CFL
     // edge of the 0.4m grid and let swash blow up.
+    const rawDt = dt;
     if (dt > 0.1) dt = 0.1;
     acc += dt;
     const FIXED = 1 / 60;
     let steps = 0;
     while (acc >= FIXED && steps < 4) { t += FIXED; acc -= FIXED; steps++; }
+    if (DIAG) diagLost += Math.max(0, rawDt - 0.1) + acc;
 
     const { fwd, r, u } = camBasis();
     const { msaa: msc, depth: dtx, drs } = ensureTargets();
@@ -1173,6 +1246,8 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     ]));
 
     const enc = device.createCommandEncoder();
+    const tsLive = TS_OK && !tsBusy;
+    if (tsLive) enc.writeTimestamp(tsSet, 0);
     // SWE: nsub substeps ping-ponged; even nsub => final state lands in bufs[0]
     let cur = 0;
     for (let s = 0; s < nsub; s++) {
@@ -1191,6 +1266,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
       cp.setBindGroup(0, bgSimU); cp.setBindGroup(1, bgSimRead[0]); cp.setBindGroup(2, bgSimWrite[0]); cp.setBindGroup(3, bgTT);
       cp.dispatchWorkgroups(WG_X, WG_Z, 1);
       cp.end();
+      if (tsLive) enc.writeTimestamp(tsSet, 1);
     }
     const wantProbe = !probeBusy && (probeReq !== null || frames % PROBE_EVERY === 0);
     if (wantProbe) {
@@ -1212,6 +1288,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     rp.setPipeline(waterPipe); rp.setBindGroup(0, bgRender); rp.setBindGroup(1, bgSimR);
     rp.drawIndexed(idxCount);
     rp.end();
+    if (tsLive) enc.writeTimestamp(tsSet, 2);
     if (drs) {
       const bp = enc.beginRenderPass({
         colorAttachments: [{ view: ctx.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
@@ -1219,7 +1296,20 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
       bp.setPipeline(blitPipe); bp.setBindGroup(0, bgBlit); bp.draw(3);
       bp.end();
     }
+    if (tsLive) enc.writeTimestamp(tsSet, 3);
     device.queue.submit([enc.finish()]);
+    if (tsLive) {
+      tsBusy = true;
+      tsRes.mapAsync(GPUMapMode.READ).then(() => {
+        const q8 = new BigInt64Array(tsRes.getMappedRange().slice(0));
+        const dms = (a, b) => Number(q8[b] - q8[a]) * TS_PERIOD / 1e6;
+        tsPass = [+dms(0, 1).toFixed(2), +dms(1, 2).toFixed(2), +dms(2, 3).toFixed(2), +dms(0, 3).toFixed(2)];
+        tsHist = (tsHist || []).concat([tsPass]);
+        if (tsHist.length > 60) tsHist.shift();
+        tsRes.unmap();
+        tsBusy = false;
+      }).catch(() => { tsBusy = false; });
+    }
 
     if (wantProbe) {
       probeBusy = true;
@@ -1305,6 +1395,40 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     }
   }, 16);
 
+  // ---- diag report (#702 slice B) ----
+  window.__diagReport = () => {
+    const s = diagTimes.slice().sort((a, b) => a - b);
+    const avg = diagTimes.length ? diagTimes.reduce((a, b) => a + b, 0) / diagTimes.length : 0;
+    const pk = p => s.length ? +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(1) : 0;
+    const h = ms => diagTimes.filter(x => x > ms).length;
+    let passes = null;
+    if (tsHist && tsHist.length) {
+      const m = k => +(tsHist.reduce((a, b) => a + b[k], 0) / tsHist.length).toFixed(2);
+      passes = { simMs: m(0), waterMs: m(1), blitMs: m(2), totalMs: m(3), samples: tsHist.length };
+    }
+    return JSON.stringify({
+      v: 1,
+      t: +t.toFixed(1),
+      ua: navigator.userAgent,
+      gpu: Object.assign({ tsQuery: TS_OK, tsPeriodNs: TS_PERIOD }, GPU_INFO || {}),
+      settings: {
+        rs: +rs.toFixed(2), lite: LITE, auto: AUTO_PHONE, nsub,
+        dpr: +DPR_CAP.toFixed(2), canvas: [canvas.width, canvas.height],
+        view: [innerWidth, innerHeight], grid: { n: NC, dx: SDX },
+        query: location.search,
+      },
+      frames: {
+        n: diagTimes.length, spanS: +diagSpan.toFixed(1),
+        avgMs: +avg.toFixed(1), p50Ms: pk(.5), p95Ms: pk(.95),
+        worstMs: s.length ? +s[s.length - 1].toFixed(1) : 0,
+        hitchesGt32: h(32), hitchesGt100: h(100),
+        droppedSimS: +diagLost.toFixed(2),
+      },
+      passes,
+      cam: { pos: cam.pos.map(x => +x.toFixed(2)), yaw: +cam.yaw.toFixed(3), pitch: +cam.pitch.toFixed(3) },
+    }, null, 1);
+  };
+
   // ---- test hooks ----
   window.__shoreTest = {
     ready: true,
@@ -1340,6 +1464,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     ttGrid() { return { tx0: TX0, txs: TXS, tz0: TZ0, tzs: TZS, nt: [NTX, NTZ] }; },
     get running() { return running; },
     get released() { return destroyed; },
+    get diagOn() { return DIAG; },
     pause() { stopLoop(); },
     resume() { startLoop(); },
     teardown() { releaseGpu(); },
