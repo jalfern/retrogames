@@ -1113,6 +1113,33 @@ clearAllSlots()
     ok(/aCodeAt\(x, y\)/.test(src), 'VirtualControls hit test takes the touch y (per-button rect, not a zone half)')
 }
 
+// --- 36. #735 req 4: a drag on the controls must never become text selection ---
+// The iPad problem: a touch that starts on a button and moves can turn into a
+// native rubber-band selection (dragging the label out with a selection
+// handle) instead of the pad reading the new button. The markup opts the whole
+// pad bar and every button into `select-none` (user-select:none — no
+// rubber-band) and every interactive zone into `touch-none` (touch-action:
+// none — no scroll/zoom gesture). A silent drop of either class re-opens the
+// bug, so the committed class lists are pinned (the markup, not a prose note).
+{
+    const vc = readFileSync(new URL('../src/components/VirtualControls.jsx', import.meta.url), 'utf8')
+    // The A/B action zone is where a thumb slides between buttons; its OWN
+    // element must carry both guard classes (extracted, not a whole-file grep,
+    // so a class removed specifically from the zone is caught).
+    const zoneCls = vc.match(/data-vc="actzone"[\s\S]*?className="([^"]*)"/)
+    ok(zoneCls !== null, '#735 drag-select: the A/B action zone is present (data-vc="actzone")')
+    if (zoneCls) {
+        ok(/select-none/.test(zoneCls[1]), '#735 drag-select: the A/B zone disables text selection (select-none)')
+        ok(/touch-none/.test(zoneCls[1]), '#735 drag-select: the A/B zone disables touch scroll/zoom (touch-none)')
+    }
+    ok(/select-none/.test(vc), '#735 drag-select: the pad bar / face buttons carry select-none')
+    // Each interactive zone (swipe field, fixed stick, diamond gate, d-pad,
+    // action zone) carries the pair together, so a drag on any of them can
+    // neither select text nor scroll the page.
+    const guarded = (vc.match(/touch-none select-none/g) || []).length
+    ok(guarded >= 4, `#735 drag-select: >=4 interactive zones carry 'touch-none select-none' (got ${guarded})`)
+}
+
 // --- Summary ---
 const total = pass + fail
 console.log(`vpadcheck: ${pass}/${total} pass, ${fail} fail`)

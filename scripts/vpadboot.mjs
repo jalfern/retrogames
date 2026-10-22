@@ -122,7 +122,7 @@ for (const [path, method] of TOUCHED) {
         // overlapping it. (The bottom-right mute toggle once covered the A
         // button's right edge: a tap on A muted the game instead of firing.)
         const tapOk = await page.evaluate(() => {
-            const zone = document.querySelector('[data-vc="1"] .pb-2.pr-4')
+            const zone = document.querySelector('[data-vc="actzone"]')
             if (!zone) return { pad: false, bad: [] }
             const bad = []
             for (const btn of zone.children) {

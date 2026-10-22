@@ -7,7 +7,7 @@
 // Usage:
 //   npm run shot -- --out shots/foo.png --eval "window.__marioTest.setPower('fire')"
 //   node scripts/shot.mjs [--url <url>] [--out <png>] [--eval "<js>"]
-//                         [--steps '<json>'] [--w 440] [--h 420]
+//                         [--steps '<json>'] [--w 440] [--h 420] [--touch]
 //                         [--settle 300] [--prewait <ms>] [--channel chrome]
 //                         [--no-start]
 //
@@ -40,6 +40,7 @@ const evalJs = opt('--eval')
 const steps = opt('--steps')
 const channel = opt('--channel', process.env.SHOT_CHANNEL || 'chrome')
 const start = !args.includes('--no-start')
+const touch = args.includes('--touch')
 
 let chromium
 try {
@@ -67,7 +68,7 @@ try {
     process.exit(1)
 }
 
-const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 2 })
+const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 2, hasTouch: touch, isMobile: touch })
 page.on('console', m => { if (m.type() === 'error') console.log('[console.error]', m.text()) })
 page.on('pageerror', e => console.log('[pageerror]', e.message))
 
