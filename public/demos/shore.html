@@ -54,12 +54,6 @@ const COARSE = matchMedia('(pointer: coarse)').matches;
 const SMALL = Math.min(innerWidth, innerHeight) <= 440;
 const AUTO_PHONE = qs.get('lite') === null && (COARSE || SMALL);
 const LITE = qs.get('lite') ? qs.get('lite') === '1' : AUTO_PHONE;
-// #702 round 2: OCEAN runs great on Jon's iPhone with NO MSAA and a lower DPR
-// cap, while SHORE's 4x MSAA + resolve is the top WebKit suspect. Phones boot
-// at 1x; ?ms=1/4 overrides for bisection. ?probe=0 drops the compute probe +
-// readback entirely (bisect against the mapAsync pattern).
-const MS = qs.get('ms') !== null ? (parseInt(qs.get('ms'), 10) >= 4 ? 4 : 1) : (AUTO_PHONE ? 1 : 4);
-const PROBE_ON = qs.get('probe') !== '0';
 
 const SLOPE = 0.052;            // beach slope (rise per metre inland)
 const XS0 = 84;                 // mean shoreline x
@@ -86,14 +80,11 @@ const NTX = Math.round((TX1 - TX0) / TXS) + 1;
 const NTZ = Math.round((SZ1 - SZ0) / TZS) + 1;
 const NTT = NTX * NTZ;
 
-// primary swells: period s, deep amplitude m, alongshore phase tilt (rad/m).
-// #702: amplitudes are ~1.8x the pre-fix values — the single-submit dt bug ran
-// the sim nsub x real time, which inflated run-up against this shoreline; with
-// honest dt the approved look needs more driving swell (retune, not re-break).
+// primary swells: period s, deep amplitude m, alongshore phase tilt (rad/m)
 const SW = [
-  { T: 7.4, A: 0.46, tp: 0.010 },
-  { T: 5.0, A: 0.26, tp: 0.008 },
-  { T: 3.2, A: 0.13, tp: 0.014 },
+  { T: 7.4, A: 0.21, tp: 0.010 },
+  { T: 5.0, A: 0.13, tp: 0.008 },
+  { T: 3.2, A: 0.075, tp: 0.014 },
 ].map(o => ({ ...o, w: 2 * Math.PI / o.T }));
 // directional chop (deep-water wind sea): wavelength, azimuth from offshore, amp
 const CHOPN = LITE ? 3 : 6;
@@ -720,8 +711,6 @@ fn cs_swe(@builtin(global_invocation_id) gid: vec3<u32>) {
   let L = si(i - 1, j); let R = si(i + 1, j);
   let D = si(i, j - 1); let U2 = si(i, j + 1);
   let hC = s_hud[c];
-  var accW = 0.0;
-  if (c == 0u) { accW = hC.w + dts * 1000.0; }
   let hL = s_hud[L]; let hR = s_hud[R];
   let hD = s_hud[D]; let hU = s_hud[U2];
   var h = hC.x; var uu = hC.y; var vv = hC.z;
@@ -733,7 +722,7 @@ fn cs_swe(@builtin(global_invocation_id) gid: vec3<u32>) {
   uu -= GAG * dts * (eR - eL) / (2.0 * SDXF);
   vv -= GAG * dts * (eU - eD) / (2.0 * SDXF);
   // bed friction, hard in the thin film so run-up stalls and drains like swash
-  let fr = 0.012 + 0.28 * exp(-max(h, 0.0) / 0.10);
+  let fr = 0.012 + 0.45 * exp(-max(h, 0.0) / 0.09);
   let fk = max(0.0, 1.0 - fr * dts);
   uu *= fk; vv *= fk;
   // breaking: McCowan H/d >= ~0.78 (crest over still depth) or the bore limit
@@ -757,27 +746,18 @@ fn cs_swe(@builtin(global_invocation_id) gid: vec3<u32>) {
   let FzU = vUf * select(hU.x, h, vUf >= 0.0);
   let FzD = vDf * select(hD.x, h, vDf >= 0.0);
   var hNew = h - dts * ((FxR - FxL) / SDXF + (FzU - FzD) / SDXF);
-  // light height diffusion damps the checkerboard of a first-order scheme.
-  // #702: scale by dts like the wet-map term below — a fixed per-substep
-  // coefficient multiplied effective diffusion 4x when dt went honest
-  // (nsub substeps/s quadrupled), starving the beach and draining the sets.
+  // light height diffusion damps the checkerboard of a first-order scheme
   let lap = hL.x + hR.x + hD.x + hU.x - 4.0 * h;
-  hNew += 0.010 * min(1.0, dts * 60.0) * lap;
-  // #702: alongshore-only smoothing. Crest lines run alongshore, so a z-lap
-  // damps the across-shore sawtooth of the waterline without eating the
-  // incoming swell the way the 2D lap would.
-  hNew += 0.10 * min(1.0, dts * 60.0) * (hD.x + hU.x - 2.0 * h);
+  hNew += 0.03 * lap;
   if (hNew < 0.0) { hNew = 0.0; uu *= 0.5; vv *= 0.5; }
-  // open-sponge at the seaward edge: relax towards the analytic swell.
-  // #702: dt-scaled like the diffusion above — per-substep k3 quadrupled
-  // effective absorption when the substep dt went honest.
+  // open-sponge at the seaward edge: relax towards the analytic swell
   let wx = SX0F + f32(i) * SDXF;
   if (wx < SX0F + 18.0) {
-    let k3 = smoothstep(SX0F + 18.0, SX0F + 1.0, wx) * 0.7 * min(1.0, dts * 60.0);
+    let k3 = smoothstep(SX0F + 18.0, SX0F + 1.0, wx) * 0.7;
     let dA = max(etaSwellD(wx, SZ0F + f32(j) * SDXF, max(0.05, -bedBuf[si(i, j)])) - bedBuf[si(i, j)], 0.0);
     hNew = mix(hNew, dA, k3);
   }
-  o_hud[c] = vec4f(hNew, uu, vv, accW);
+  o_hud[c] = vec4f(hNew, uu, vv, 0.0);
   o_fof[c] = min(1.0, s_fof[c] + inject * 0.55 * (dts * 60.0));
   // wet map: soft cover instead of a hard per-cell step, plus a little
   // neighbour diffusion so the drying front can't lock into a checkerboard
@@ -919,11 +899,7 @@ async function boot() {
   const idxCount = GRIDX * GRIDZ * 6;
 
   const ubuf = device.createBuffer({ size: 16 * 4 + 7 * 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  // #702: one uniform slot per SWE substep (stride 256 = min dynamic-offset
-  // alignment). The old code wrote every substep's dt to offset 0 before the
-  // single submit — the GPU only saw the LAST write (the foam pass's FIXED),
-  // so each substep advanced a full 1/60 s and the sim ran nsub x real time.
-  const suBuf = device.createBuffer({ size: (NSUB + 1) * 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const suBuf = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   const ttBuf = device.createBuffer({ size: ttJS.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(ttBuf, 0, ttJS);
 
@@ -949,7 +925,7 @@ async function boot() {
   }
   const bedBufG = device.createBuffer({ size: bedArr.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   device.queue.writeBuffer(bedBufG, 0, bedArr);
-  const mkSim = size => device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+  const mkSim = size => device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
   const bufs = [
     { hud: mkSim(hudA.byteLength), fof: mkSim(f0.byteLength), wtf: mkSim(wA.byteLength) },
     { hud: mkSim(hudB.byteLength), fof: mkSim(f1.byteLength), wtf: mkSim(wB.byteLength) },
@@ -958,11 +934,6 @@ async function boot() {
   device.queue.writeBuffer(bufs[0].wtf, 0, wA);
   const probeBuf = device.createBuffer({ size: 96 * 64 * 5 * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
   const probeRead = device.createBuffer({ size: 96 * 64 * 5 * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
-  // #702 dt truth: cell 0 of the hud buffer accumulates per-substep dt in ms
-  // (its w component is otherwise unused) — the harness proves the sim runs
-  // real time, not nsub x it. No extra binding: the SWE kernel sits exactly at
-  // the default 8-storage-per-stage compute limit.
-  const dtRead = device.createBuffer({ size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
 
   const modSky = device.createShaderModule({ code: SKY });
   const modSand = device.createShaderModule({ code: SAND });
@@ -1018,7 +989,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
   // sim: g0 b0 U, b1 su; g1 sim read; g2 sim write; g3 tt
   const bglSimU = device.createBindGroupLayout({ entries: [
     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {} },
-    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform', hasDynamicOffset: true, minBindingSize: 16 } },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {} },
   ] });
   const bglSimW = device.createBindGroupLayout({ entries: [
     { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
@@ -1031,7 +1002,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
   const layoutSim = device.createPipelineLayout({ bindGroupLayouts: [bglSimU, bglSimR, bglSimW, bglTT] });
   const bgSimU = device.createBindGroup({ layout: bglSimU, entries: [
     { binding: 0, resource: { buffer: ubuf } },
-    { binding: 1, resource: { buffer: suBuf, offset: 0, size: 16 } },
+    { binding: 1, resource: { buffer: suBuf } },
   ] });
   const bgTT = device.createBindGroup({ layout: bglTT, entries: [{ binding: 0, resource: { buffer: ttBuf } }] });
   // ping-pong: k reads bufs[k], writes bufs[1-k]
@@ -1066,23 +1037,23 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
   const foamPipe = device.createComputePipeline({ layout: layoutSim, compute: { module: modFoam, entryPoint: 'cs_foam' } });
   const probePipe = device.createComputePipeline({ layout: layoutProbe, compute: { module: modProbe, entryPoint: 'main' } });
 
-  // MSAA (#702 round 2): 4x on desktop (mesh-on-mesh water/sand silhouette),
-  // 1x on the phone profile — OCEAN ships without MSAA and runs great on
-  // Jon's iPhone; the resolve was the top WebKit suspect. ?ms= overrides.
-  // #668: the scene renders at rs×canvas into these targets; when rs<1 the
-  // resolve lands in an intermediate texture and a fullscreen blit upscales it
-  // to the canvas, so the canvas backbuffer itself never changes size.
+  // 4x MSAA: the water/sand boundary is a mesh-on-mesh silhouette; resolve
+  // into the canvas at the end of the frame. #668: the scene renders at
+  // rs×canvas into these targets; when rs<1 the resolve lands in an
+  // intermediate texture and a fullscreen blit upscales it to the canvas,
+  // so the canvas backbuffer itself never changes size.
+  const MS = 4;
   let depth = null, msaa = null, drs = null, bgBlit = null, tW = 0, tH = 0;
   function ensureTargets() {
     const w = Math.max(2, (canvas.width * rs) | 0);
     const h = Math.max(2, (canvas.height * rs) | 0);
     const up = w < canvas.width || h < canvas.height;
-    if (depth && (MS === 1 || msaa) && tW === w && tH === h && up === !!drs) return { msaa, depth, drs };
+    if (depth && msaa && tW === w && tH === h && up === !!drs) return { msaa, depth, drs };
     if (depth) depth.destroy();
     if (msaa) msaa.destroy();
     if (drs) drs.destroy();
     depth = device.createTexture({ size: [w, h], sampleCount: MS, format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT });
-    msaa = MS > 1 ? device.createTexture({ size: [w, h], sampleCount: MS, format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT }) : null;
+    msaa = device.createTexture({ size: [w, h], sampleCount: MS, format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT });
     drs = up ? device.createTexture({ size: [w, h], format: FORMAT, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING }) : null;
     bgBlit = drs ? device.createBindGroup({ layout: blitPipe.getBindGroupLayout(0), entries: [
       { binding: 0, resource: drs.createView() },
@@ -1134,7 +1105,6 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
   let t = T0, frames = 0, acc = 0, lastMs = performance.now();
   const ftimes = [];
   let probeData = null, probeBusy = false, probeReq = null, latest = null;
-  let dtSeen = 0;
   let runEMA = 0, foamRun = 0;
   const PROBE_EVERY = LITE ? 4 : 3;
   const WG_X = Math.ceil(NX / 8), WG_Z = Math.ceil(NZ / 8);
@@ -1171,7 +1141,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     if (ftimes.length > 120) ftimes.shift();
     if (FPS_ON && frames % 15 === 0) {
       const avgF = ftimes.reduce((a, b) => a + b, 0) / ftimes.length;
-      perfLbl.textContent = `${avgF.toFixed(1)} avg · ${Math.max(...ftimes).toFixed(1)} worst ms · rs ${rs.toFixed(2)} · ${LITE ? 'lite' : 'full'} · nsub ${nsub} · ms ${MS}${AUTO_PHONE ? ' · auto' : ''}`;
+      perfLbl.textContent = `${avgF.toFixed(1)} avg · ${Math.max(...ftimes).toFixed(1)} worst ms · rs ${rs.toFixed(2)} · ${LITE ? 'lite' : 'full'} · nsub ${nsub}${AUTO_PHONE ? ' · auto' : ''}`;
     }
     // #668 notes: an adaptive resolution governor (1 -> 0.9 via the blit
     // targets below) was tried and backed out: under shared-GPU interference it
@@ -1201,28 +1171,26 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     ]));
 
     const enc = device.createCommandEncoder();
-    // SWE: nsub substeps ping-ponged; even nsub => final state lands in bufs[0].
-    // #702: each substep writes its own uniform slot (256B stride, dynamic
-    // offset) — a single pre-submit write meant every substep ran at dt FIXED.
+    // SWE: nsub substeps ping-ponged; even nsub => final state lands in bufs[0]
     let cur = 0;
     for (let s = 0; s < nsub; s++) {
-      device.queue.writeBuffer(suBuf, s * 256, new Float32Array([t, FIXED / nsub, 0, 0]));
+      device.queue.writeBuffer(suBuf, 0, new Float32Array([t, FIXED / nsub, 0, 0]));
       const cp = enc.beginComputePass();
       cp.setPipeline(swePipe);
-      cp.setBindGroup(0, bgSimU, [s * 256]); cp.setBindGroup(1, bgSimRead[cur]); cp.setBindGroup(2, bgSimWrite[cur]); cp.setBindGroup(3, bgTT);
+      cp.setBindGroup(0, bgSimU); cp.setBindGroup(1, bgSimRead[cur]); cp.setBindGroup(2, bgSimWrite[cur]); cp.setBindGroup(3, bgTT);
       cp.dispatchWorkgroups(WG_X, WG_Z, 1);
       cp.end();
       cur = 1 - cur;
     }
     {
-      device.queue.writeBuffer(suBuf, NSUB * 256, new Float32Array([t, FIXED, 0, 0]));
+      device.queue.writeBuffer(suBuf, 0, new Float32Array([t, FIXED, 0, 0]));
       const cp = enc.beginComputePass();
       cp.setPipeline(foamPipe);
-      cp.setBindGroup(0, bgSimU, [NSUB * 256]); cp.setBindGroup(1, bgSimRead[0]); cp.setBindGroup(2, bgSimWrite[0]); cp.setBindGroup(3, bgTT);
+      cp.setBindGroup(0, bgSimU); cp.setBindGroup(1, bgSimRead[0]); cp.setBindGroup(2, bgSimWrite[0]); cp.setBindGroup(3, bgTT);
       cp.dispatchWorkgroups(WG_X, WG_Z, 1);
       cp.end();
     }
-    const wantProbe = PROBE_ON && !probeBusy && (probeReq !== null || frames % PROBE_EVERY === 0);
+    const wantProbe = !probeBusy && (probeReq !== null || frames % PROBE_EVERY === 0);
     if (wantProbe) {
       const cp = enc.beginComputePass();
       cp.setPipeline(probePipe);
@@ -1230,14 +1198,9 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
       cp.dispatchWorkgroups(12, 8, 1);
       cp.end();
       enc.copyBufferToBuffer(probeBuf, 0, probeRead, 0, probeBuf.size);
-      enc.copyBufferToBuffer(bufs[0].hud, 0, dtRead, 0, 16);
     }
-    // MS=1 has no resolve: attach the upscale target (or the canvas) directly.
-    const colorAtt = MS > 1
-      ? { view: msc.createView(), resolveTarget: drs ? drs.createView() : ctx.getCurrentTexture().createView() }
-      : { view: drs ? drs.createView() : ctx.getCurrentTexture().createView() };
     const rp = enc.beginRenderPass({
-      colorAttachments: [{ ...colorAtt, clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
+      colorAttachments: [{ view: msc.createView(), resolveTarget: drs ? drs.createView() : ctx.getCurrentTexture().createView(), clearValue: { r: 0.5, g: 0.4, b: 0.3, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
       depthStencilAttachment: { view: dtx.createView(), depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'discard' },
     });
     rp.setPipeline(skyPipe); rp.setBindGroup(0, bgRender); rp.setBindGroup(1, bgSimR); rp.draw(3);
@@ -1268,13 +1231,9 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
         foamRun += (latest.foamCol.reduce((a, b) => a + b, 0) / (64 * 8) - foamRun) * 0.08;
         runLbl.textContent = Math.max(0, latest.run).toFixed(1);
         foamLbl.textContent = String(Math.round(Math.min(100, foamRun)));
-        setLbl.textContent = latest.run > runEMA + 0.3 ? 'BIG' : 'steady';
+        setLbl.textContent = latest.run > runEMA + 0.55 ? 'BIG' : 'steady';
         if (probeReq) { const rq = probeReq; probeReq = null; rq({ data: probeData, t }); }
       }).catch(() => { probeBusy = false; if (probeReq) { const rq = probeReq; probeReq = null; rq(null); } });
-      dtRead.mapAsync(GPUMapMode.READ).then(() => {
-        dtSeen = new Float32Array(dtRead.getMappedRange())[3] / 1000;
-        dtRead.unmap();
-      }).catch(() => {});
     }
     frames++;
     requestAnimationFrame(frame);
@@ -1318,7 +1277,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
     ready: true,
     get frames() { return frames; },
     get time() { return t; },
-    grid() { return { sx0: SX0, sx1: SX1, sz0: SZ0, sz1: SZ1, dx: SDX, n: NC, ns: nsub, lite: LITE, auto: AUTO_PHONE, ms: MS, probe: PROBE_ON }; },
+    grid() { return { sx0: SX0, sx1: SX1, sz0: SZ0, sz1: SZ1, dx: SDX, n: NC, ns: nsub, lite: LITE, auto: AUTO_PHONE }; },
     setPose(p) {
       if (p.pos) cam.pos = p.pos.slice();
       if (typeof p.yaw === 'number') cam.yaw = p.yaw;
@@ -1338,14 +1297,8 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
       return { n: ftimes.length, avg: +avg.toFixed(2), max: +Math.max(...ftimes).toFixed(2), rs: +rs.toFixed(2), nsub };
     },
     probeNow() {
-      if (!PROBE_ON) return Promise.resolve(null);
       return new Promise(res => { probeReq = res; });
     },
-    // GPU-sensed sim clock: cell 0 accumulates each substep's uniform dt.
-    // One physics round = nsub substeps x FIXED/nsub = FIXED per frame, so the
-    // honest reading is acc ~= frames/60; the #702 single-submit bug reads ~nsub x
-    // that (every substep ran at dt FIXED).
-    dtSense() { return { acc: +dtSeen.toFixed(3), simT: +(frames / 60).toFixed(3) }; },
     ttAt(ci, x, z) {
       const i = Math.min(NTX - 1, Math.max(0, Math.round((x - TX0) / TXS)));
       const j = Math.min(NTZ - 1, Math.max(0, Math.round((z - TZ0) / TZS)));
