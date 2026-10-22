@@ -1,59 +1,65 @@
-# STATE — 2026-10-22 forge session (mirror fix)
+# STATE — 2026-10-22 forge session (SSX feel pass #780)
 
 ## Shipped this session
-- **#772 EMBERWOOD mirrored diorama → prod** (PR #775 squash `6f28d23`).
-  Jon on iPhone: press right, hero walked left; town house sat top-RIGHT
-  (tile data says top-left). Root cause = camera math: +Z-up stage, ortho cam
-  south-above looking north-down with `up=(0,-1,0)` → north-on-top but
-  screen-right = world −X (the whole view mirrored).
-  - Fix = VIEW, not input: `FX(x) = SW*TS - x` applied to every view-space x in
-    `render.js` (camera-follow, tiles/props, plates/switches/chests/doors/
-    cracks/NPCs, torches+sun, hero/enemies/drops/projectiles/blocks/particles +
-    blob shadows, tilt-shift focus). Removed the art.js hero right→left swap and
-    the `scale.x=-1` hero flip (both were mirror compensation). `screenPos()` +
-    `heroPos()` exposed on `__emberwoodTest` for QA.
-  - Drive-by: `setFocus` passed `-hero.y` (focus off-screen → vale-wide blur);
-    now passes hero.y. Helps town legibility (#773) though not the brightness
-    half of that issue.
-  - Harness: +4 chrome gates in `emberwoodcheck` (east-right 0.33<0.70,
-    north-top, hold-right → world +43px east dir=right, projected screen x
-    0.513→0.638). **Mutation-proven**: `FX = x => x` reds exactly the two x
-    gates with Jon's mirror signature (0.486→0.361), vertical gates stay green.
-  - Gates: eslint + lint:mario/fps/ai + build green; full check 76/76
-    (node 64, chrome 12), zero page/console errors.
-  - Prod verify: upstream `retrogames-psi.vercel.app` EMBERWOOD chunk
-    `index-CPcmEIa0.js` contains the FX-wrapped sun (`(-80),200,150`) — fix is
-    live. jalfern.com proxy still caches the old index hash (known #696/#694
-    host-index staleness; refreshes on cache expiry).
+- **#780 SSX "make it great" feel pass → prod** (PR #790 squash `7146bf3`).
+  Jon's steer: how a run feels, start to finish — not detail.
+  - Summit-vista start: countdown parks the camera high/far/wide
+    (`START_VISTA`, art.js pure data) with a slow pan, valley falling away
+    below the gate; swoops into chase-cam at GO (pos+FOV lerp); big 3-2-1-GO!
+    readout. Camera constructed at vista FOV so attract opens wide too.
+  - Soundtrack: three ORIGINAL big-beat beds in `AudioController.MUSIC`
+    (SIGNAL HILL / NEON ASCENT / LONG SHADOW), one per mountain theme, switch
+    per heat, speed-lifted tempo (up to 14% via `setMusicStep`, `MUSIC_STEP`
+    pinned equal to track grids). Silent on attract/pause/results by contract.
+  - Physical mix: wind rising with speed, carve swish on hard edges, air hush,
+    boost whine, lip-launch whoosh, big-air landing thud, crash rumble —
+    crashes/big hits `duckMusic` so the hit lands.
+  - Harness: +7 ssxcheck gates (87 total) — beds exist per theme, driving
+    equal-lane kick/tek patterns, pinned liftable tempo, vista dominates the
+    chase rig (back/up/look/fov). **Mutation-proven**: neuter
+    `START_VISTA.up` + `MUSIC_TRACKS.day` → 3 gates red, restore → green.
+  - Sim untouched → determinism/win/slack gates all green unchanged.
+    mountaincheck 119/119, terraincheck 45/45, modelcheck 35/35, real headless
+    drive 19/19 (vista→swoop→bed→tuck→carve→ollie→boost→wall bail→heat
+    reload+track swap→iPhone tap start), zero page errors.
+  - Prod verify: jalfern.com index hash `eK3UrKR-` == upstream; chunk
+    `index-DELHJ5qA.js` carries `ssxDay` + the exact vista literal. Live.
+- Filed **#791 QA — SSX polish pass (post-#780 feel round)**: analog steer
+  path, CPU miss rate, trick vocabulary (grabs by hand, invert, revert, double
+  naming), landing compression pose+spray, crust carve sound, sustained boost
+  engine, attract music, flag/crowd wind life.
 
 ## The lesson of the session
-- A tilted +Z-up ortho stage viewed from above with `camera.up=(0,-1,0)` is
-  north-on-top but X-MIRRORED. Any pixel-art game on this rig needs its
-  orientation asserted, not assumed: gate "east tile projects right" +
-  "holding right increases PROJECTED screen x" (world coords alone can't see
-  the mirror). Symptom lookalike: sprite-flip hacks appear in art/ render to
-  "fix" facing — that's the tell someone fought the mirror instead of the view.
+- When you change a game's START (new camera phase, new timing contract), every
+  browser check that assumed the old opening breaks *legitimately* —
+  `ssxmodelcheck` was capturing poses during what is now the countdown
+  (hero 30 m away → tiny pose diffs, pan drift in the stability window). Fix
+  the check's precondition to wait for `phase==='run'`, don't back out the
+  feature. Also: the summit traverse is deliberately slow (v≈4 m/s early) —
+  feel gates on carving/boost must ramp speed first (hold tuck), not assume
+  cruise speed.
 
 ## Next goal
-- game-queue is EMPTY; `next` holds **#773** (iPhone overworld near-black +
-  HUD overlaps shell buttons + thin play band). That's the next session's
-  claim (oldest `next`), plus it may share air with the brightness/exposure
-  chain (ACES + candela lights at `?lite` on WebKit; the focus-blur fix above
-  already helps). HUD overlap = index.jsx absolute HUD vs VirtualControls zone.
+- game-queue is EMPTY; `next` still holds **#773** (Emberwood overworld
+  near-black on iPhone + HUD overlaps VirtualControls + thin play band) — the
+  next session's claim. Brightness half is likely ACES/exposure at `?lite` on
+  WebKit (same chain the #775 focus-blur fix helped); overlap half is
+  index.jsx absolute HUD vs the pad zone.
 
 ## Board / harness status
-- main: `6f28d23` (#775). Nightly green pre-merge; no freeze. Rule 4 ok
-  (game code shipped). Rule 7: no new jonq — no taste calls.
-- jonq lane:games: nothing AWAITING (#635/#634/#633 ANSWERED and executed).
-- QA lane owns: #752 EMBERWOOD polish, #747 STORM, #713 CREDITS, #695 CAMPFIRE,
-  #685 SSX, #702/#704 SHORE/OCEAN.
-- Worktree to prune: `~/Dev/retrogames-forge-emberwood-mirror-772`
-  (merged branch + its node_modules). Vite dev server killed.
+- main: `7146bf3` (#790). Nightly green pre-merge; no freeze. Rule 4 ok
+  (game code shipped). Rule 7: no new jonq — no taste calls this pass.
+- jonq lane:games: nothing AWAITING.
+- QA lane owns: #791 SSX polish (new), #752 EMBERWOOD polish, #747 STORM,
+  #713 CREDITS, #695 CAMPFIRE, #685 SSX surfaces (closed), #702/#704 SHORE/OCEAN.
+- Worktrees to prune: `~/Dev/retrogames-forge-ssx-feel` (this lane, merged +
+  its node_modules) and leftover `~/Dev/retrogames-forge-emberwood-mirror-772`
+  (noted by the #772 session, never pruned). Vite dev server on 5177 killed.
 
 ## Open questions (links only, #605)
 - none open for lane:games. (Other lanes: #698 demos-driver hold honored;
   #691 answered — lane:qa's call.)
 
 ## Open threads
-- #773 next up (builder). #752 QA EMBERWOOD polish still open (brighten vale,
-  tree sprites, attract solver-route bot, music bed, swipe-arc/hit-stop juice).
+- #773 next up (builder, `next` label). #791 + #752 QA backlog on SSX /
+  EMBERWOOD polish.
