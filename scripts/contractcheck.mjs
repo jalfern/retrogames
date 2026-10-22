@@ -46,6 +46,7 @@ const GAMES = [
     { id: 'momentum', path: '/momentum' },
     { id: 'magic-carpet', path: '/magic-carpet' },
     { id: 'gauntlet', path: '/gauntlet' },
+    { id: 'emberwood', path: '/emberwood' },
 ]
 const TICKS = 600
 const ONLY = process.env.CONTRACT_ONLY
