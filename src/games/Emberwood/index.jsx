@@ -18,7 +18,13 @@ import { SCREENS, TS } from './world.js'
 
 const FIXED_DT = 1000 / 60
 const W = 480
-const H = 288
+const H_LAND = 288
+const H_PORT = 360
+
+// #773: portrait phones get a taller logical canvas (4:3 instead of 5:3) so the
+// diorama isn't a thin band on a tall screen — the ortho camera keeps its world
+// window (viewH covers the 11-row screen either way), the pixels just get bigger.
+const readOrient = () => (typeof window !== 'undefined' && window.innerHeight > window.innerWidth ? 'port' : 'land')
 
 const solveSt = (sim) => ({
     cracked: sim.flags.cracked, doors: sim.flags.doorsOpen, switches: sim.flags.switchesOn,
@@ -62,11 +68,11 @@ const fxSound = (e) => {
     const ac = audioController
     try {
         switch (e.k) {
-            case 'sword': ac.playTone(560, 0.06, 'square', 0.05); break
-            case 'hit': ac.playNoise(0.08, 0.09); break
-            case 'die': ac.playSweep(320, 90, 0.28, 'sawtooth', 0.08); break
+            case 'sword': ac.playTone(560, 0.06, 'square', 0.05); ac.playFilteredNoise(0.05, 0.04, 1600); break
+            case 'hit': ac.playNoise(0.08, 0.09); ac.duckMusic(0.5, 0.25); break
+            case 'die': ac.playSweep(320, 90, 0.28, 'sawtooth', 0.08); if (e.boss) ac.duckMusic(0.3, 0.8); break
             case 'cut': ac.playNoise(0.05, 0.05); break
-            case 'boom': ac.playSweep(160, 40, 0.4, 'sawtooth', 0.12); ac.playNoise(0.3, 0.1); break
+            case 'boom': ac.playSweep(160, 40, 0.4, 'sawtooth', 0.12); ac.playNoise(0.3, 0.1); ac.duckMusic(0.35, 0.5); break
             case 'crack': ac.playNoise(0.25, 0.12); break
             case 'coin': ac.playTone(880, 0.05, 'square', 0.05); ac.playTone(1320, 0.07, 'square', 0.05, 0.05); break
             case 'heart': ac.playTone(660, 0.08, 'square', 0.06); ac.playTone(990, 0.12, 'square', 0.06, 0.07); break
@@ -75,9 +81,11 @@ const fxSound = (e) => {
             case 'switch': ac.playTone(300, 0.08, 'square', 0.07); ac.playTone(220, 0.12, 'square', 0.05, 0.08); break
             case 'shoot': ac.playTone(700, 0.05, 'triangle', 0.05); break
             case 'spit': ac.playTone(240, 0.06, 'sawtooth', 0.04); break
-            case 'hurt': ac.playSweep(220, 110, 0.18, 'sawtooth', 0.09); break
+            case 'hurt': ac.playSweep(220, 110, 0.18, 'sawtooth', 0.09); ac.duckMusic(0.3, 0.5); break
+            case 'heroDeath': ac.playSweep(300, 50, 0.7, 'sawtooth', 0.1); ac.duckMusic(0.15, 1.2); break
+            case 'revive': ac.playSweep(200, 620, 0.35, 'triangle', 0.07); break
             case 'clank': ac.playTone(1200, 0.04, 'square', 0.05); break
-            case 'stagger': ac.playSweep(400, 60, 0.5, 'sawtooth', 0.12); break
+            case 'stagger': ac.playSweep(400, 60, 0.5, 'sawtooth', 0.12); ac.duckMusic(0.25, 0.7); break
             case 'pop': ac.playTone(500, 0.05, 'triangle', 0.05); break
             case 'warp': ac.playSweep(300, 900, 0.25, 'sine', 0.06); break
             case 'grant': [660, 880, 1100, 1320].forEach((f, i) => ac.playTone(f, 0.1, 'square', 0.05, i * 0.09)); break
@@ -107,6 +115,17 @@ export default function Emberwood() {
     const pausedRef = useRef(false)
     const [hud, setHud] = useState({ hp: 3, max: 3, embers: 0, items: {}, msg: null, shop: false, sel: 0, death: false, win: false, room: '' })
     const [attractLine, setAttractLine] = useState(0)
+    const [orient, setOrient] = useState(readOrient)
+    useEffect(() => {
+        const onR = () => setOrient(readOrient())
+        window.addEventListener('resize', onR)
+        window.addEventListener('orientationchange', onR)
+        return () => {
+            window.removeEventListener('resize', onR)
+            window.removeEventListener('orientationchange', onR)
+        }
+    }, [])
+    const H = orient === 'port' ? H_PORT : H_LAND
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -157,6 +176,7 @@ export default function Emberwood() {
         const resetAttract = () => {
             const fresh = createSim((sim.seed + 7) >>> 0)
             Object.assign(sim, fresh)
+            sim._winSeen = false
             rend.buildScreen(sim.screen, sim.flags, sim.cut)
         }
 
@@ -201,9 +221,19 @@ export default function Emberwood() {
                     room: sim.roomName,
                 })
             }
+
+            // Music (#781): the vale sings above ground, the dungeons drone below;
+            // silent on attract/pause/death/win by contract, like every bed here.
+            if (sc === 'play' && !pausedRef.current && !sim.death && !sim.win) {
+                audioController.startMusic(SCREENS[sim.screen]?.dark ? 'emberwoodDeep' : 'emberwoodVale')
+            } else {
+                audioController.stopMusic()
+            }
+
             if (sc === 'play' && sim.win && !sim._winSeen) {
                 sim._winSeen = true
                 setMode('win')
+                try { audioController.playFanfare() } catch { /* audio locked */ }
             }
             if (sc === 'attract' && Math.floor(now / 4000) !== attractRef.current) {
                 attractRef.current = Math.floor(now / 4000)
@@ -216,6 +246,7 @@ export default function Emberwood() {
         const startPlay = () => {
             const fresh = createSim(11)
             Object.assign(sim, fresh)
+            sim._winSeen = false
             rend.buildScreen(sim.screen, sim.flags, sim.cut)
             setMode('play')
         }
@@ -287,11 +318,12 @@ export default function Emberwood() {
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
+            audioController.stopMusic()
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__emberwoodTest }
             rend.dispose()
         }
         return cleanup
-    }, [])
+    }, [orient])
 
     const line = LINES[attractLine % LINES.length]
 
@@ -304,11 +336,12 @@ export default function Emberwood() {
                 width={W}
                 height={H}
                 className="max-w-full max-h-full"
-                style={{ imageRendering: 'pixelated', width: 'min(100vw, calc((100vh - 140px) * 1.667))' }}
+                style={{ imageRendering: 'pixelated', width: `min(100vw, calc((100dvh - ${orient === 'port' ? 150 : 140}px) * ${(W / H).toFixed(3)}))` }}
             />
-            {/* HUD */}
+            {/* HUD — #773: clears the #437 chrome cluster (ARCADE left, PAUSE+mute
+                right sit at top 0.75rem), so the strip starts below both. */}
             {inGame && !paused && (
-                <div className="absolute top-2 left-2 right-2 flex justify-between pointer-events-none font-mono select-none" style={{ textShadow: '2px 2px 0 #000' }}>
+                <div className="absolute left-2 right-2 flex justify-between pointer-events-none font-mono select-none" style={{ top: 'calc(3.4rem + var(--sat, 0px))', textShadow: '2px 2px 0 #000' }}>
                     <div>
                         <div className="flex gap-0.5 flex-wrap max-w-[220px]">
                             {Array.from({ length: hud.max }).map((_, i) => <HeartIcon key={i} full={i < hud.hp} />)}

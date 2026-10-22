@@ -102,9 +102,9 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
         fragmentShader: 'uniform sampler2D tSrc; varying vec2 vUv; void main(){ vec3 c=texture2D(tSrc,vUv).rgb; float l=dot(c,vec3(.25,.6,.15)); gl_FragColor=vec4(c*smoothstep(0.55,0.92,l),1.0); }',
     })
     const blurMat = new THREE.ShaderMaterial({
-        uniforms: { tSrc: { value: null }, dir: { value: new THREE.Vector2(1, 0) }, r: { value: 1.0 } },
+        uniforms: { tSrc: { value: null }, dir: { value: new THREE.Vector2(1, 0) }, r: { value: 1.0 }, res: { value: new THREE.Vector2(width, height) } },
         vertexShader: VS,
-        fragmentShader: 'uniform sampler2D tSrc; uniform vec2 dir; uniform float r; varying vec2 vUv; void main(){ vec2 px=dir*r/vec2(480.0,288.0); vec3 s=texture2D(tSrc,vUv).rgb*0.227; s+=texture2D(tSrc,vUv+px*1.384).rgb*0.316; s+=texture2D(tSrc,vUv-px*1.384).rgb*0.316; s+=texture2D(tSrc,vUv+px*3.230).rgb*0.070; s+=texture2D(tSrc,vUv-px*3.230).rgb*0.070; gl_FragColor=vec4(s,1.0); }',
+        fragmentShader: 'uniform sampler2D tSrc; uniform vec2 dir; uniform float r; uniform vec2 res; varying vec2 vUv; void main(){ vec2 px=dir*r/res; vec3 s=texture2D(tSrc,vUv).rgb*0.227; s+=texture2D(tSrc,vUv+px*1.384).rgb*0.316; s+=texture2D(tSrc,vUv-px*1.384).rgb*0.316; s+=texture2D(tSrc,vUv+px*3.230).rgb*0.070; s+=texture2D(tSrc,vUv-px*3.230).rgb*0.070; gl_FragColor=vec4(s,1.0); }',
     })
     const compMat = new THREE.ShaderMaterial({
         uniforms: { tScene: { value: null }, tBloom: { value: null }, tSoft: { value: null }, focus: { value: new THREE.Vector2(0.5, 0.5) } },
@@ -112,6 +112,10 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
         fragmentShader: `
 uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tSoft;
 uniform vec2 focus; varying vec2 vUv;
+vec3 lin2srgb(vec3 c){
+  c = clamp(c, 0.0, 1.0);
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
 void main(){
   vec3 c = texture2D(tScene, vUv).rgb;
   c += texture2D(tBloom, vUv).rgb * 0.7;
@@ -119,7 +123,11 @@ void main(){
   c = mix(c, texture2D(tSoft, vUv).rgb, f * 0.5);
   float v = 1.0 - 0.4 * pow(length(vUv - 0.5) * 1.42, 2.2);
   c *= clamp(v, 0.55, 1.0);
-  gl_FragColor = vec4(c, 1.0);
+  // The scene RT samples back as linear; the canvas is blitted raw, so encode
+  // here or the whole diorama lands near-black (#773 — measured mean 15.8/255
+  // on town in plain Chrome, lite path 58). WebKit and Blink agree once the
+  // encode lives in the shader instead of depending on the framebuffer.
+  gl_FragColor = vec4(lin2srgb(c), 1.0);
 }`,
     })
 
