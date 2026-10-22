@@ -57,3 +57,20 @@ export function sandWhoosh(offroad, v) {
         period: WHOOSH.period,
     }
 }
+
+// #511 item 5: the lights have a sound. The three circuits share one engine
+// bed but the air over them is not the same air: Sunset Gulch at dusk hums
+// warm, Sandbank at noon shimmers thin and bright, Corkscomb at dawn is a
+// low, cool pad under first light. Pure law of the course palette (no phase,
+// no browser) so cometcheck can gate the separation; index.jsx accumulates
+// the slow period and plays the pad. The pad stays well under the engine
+// voice — ambience you notice is ambience that got in the way.
+export const AMBIENCE = {
+    dusk: { freq: 98, type: 'triangle', vol: 0.011, period: 36 },
+    noon: { freq: 132, type: 'triangle', vol: 0.009, period: 44 },
+    dawn: { freq: 74, type: 'sine', vol: 0.008, period: 52 },
+}
+
+export function ambienceFor(palette) {
+    return AMBIENCE[palette] || AMBIENCE.dusk
+}

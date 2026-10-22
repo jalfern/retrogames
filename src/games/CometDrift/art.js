@@ -157,6 +157,27 @@ export const PALETTES = {
 
 export const paletteFor = (id) => PALETTES[id] || PALETTE
 
+// #511 item 3: the Dunes' line structure is a wind-carved crest, not the
+// Gulch's sandstone arch. Pure profile across the span (x 0..1 → height 0..1):
+// one dominant crest with a gentle windward shoulder and a steeper slipface,
+// a second, lower dune behind it, and wind ripples across the body. The
+// renderer samples it per pixel-column; cometcheck grades the silhouette.
+export const DUNE = {
+    mainX: 0.42, windW: 0.18, slipW: 0.12, mainH: 1,
+    backX: 0.74, backW: 0.12, backH: 0.58,
+    ripples: 19, rippleAmp: 0.075,
+}
+
+export function duneCrest(x) {
+    const bell = (cx, w, hh) => hh * Math.exp(-((x - cx) * (x - cx)) / (2 * w * w))
+    const main = x <= DUNE.mainX
+        ? DUNE.mainH * Math.exp(-((x - DUNE.mainX) * (x - DUNE.mainX)) / (2 * DUNE.windW * DUNE.windW))
+        : DUNE.mainH * Math.exp(-((x - DUNE.mainX) * (x - DUNE.mainX)) / (2 * DUNE.slipW * DUNE.slipW))
+    const base = main + bell(DUNE.backX, DUNE.backW, DUNE.backH)
+    const rip = DUNE.rippleAmp * Math.sin(x * DUNE.ripples * Math.PI) * Math.min(1, 0.2 + base)
+    return Math.max(0, base + rip)
+}
+
 // rear-view buggy aspect: WIDER than tall; sprite bank is
 // [steer pose][rev frame] — three poses × two rev frames.
 export const KART = { w: 76, h: 54, frames: 3 }

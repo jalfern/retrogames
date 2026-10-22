@@ -209,7 +209,9 @@ export const COURSES = [
     {
         id: 'corkscomb', name: 'CORKSCOMB DUNES', short: 'CORKSCOMB',
         tagline: 'CORKSCOMB DUNES - 4 LAPS', palette: 'dawn', control: grown('corkscomb', CONTROL_CORKSCOMB),
-        landmark: 'arch',
+        // #511 item 3: the dunes get their own line structure — a wind-carved
+        // dune crest (art.js duneCrest law), not the Gulch's sandstone arch.
+        landmark: 'dune',
     },
 ]
 
