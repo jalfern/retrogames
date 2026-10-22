@@ -15,6 +15,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { fitFill } from '../../utils/fitCanvas'
 import { makeGame, step, stateHash, WAVES, LAVA_TOP, GROUND_Y, FIXED_DT } from './sim.js'
 import { plan } from './planner.js'
 import { SFX } from './sounds.js'
@@ -332,7 +333,7 @@ const JoustGame = () => {
         const resize = () => {
             const r = wrap.getBoundingClientRect()
             if (!r.width || !r.height) return
-            const s = Math.max(1, Math.floor(Math.min((r.width - 8) / W, (r.height - 60) / H)))
+            const s = fitFill(W, H, r.width - 8, r.height - 60)
             canvas.style.width = `${W * s}px`
             canvas.style.height = `${H * s}px`
         }
