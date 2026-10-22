@@ -519,6 +519,70 @@ async function main() {
         !!fg && !fg.lite && fg.n > 40000 && !!fr && fr.rs >= 1,
         fg ? `n=${fg.n} rs=${fr && fr.rs}` : 'phone boot failed')
 
+      // #702 lifecycle: a WebGPU demo must stop submitting when the page is
+      // hidden and must release the device on teardown, so a backgrounded or
+      // closing SHORE tab stops pinning GPU + memory (Jon: slow to switch apps /
+      // close the tab, and "gets slower the longer it runs"). Uses its own
+      // context so a device-lost hiccup never contaminates the main page's
+      // error counter. Runs after the phone profile so its contention can't
+      // touch the swash trace window.
+      const lerrs = []
+      const lctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
+      const lpage = await lctx.newPage()
+      lpage.on('pageerror', e => lerrs.push(String(e)))
+      lpage.on('console', m => { if (m.type() === 'error') lerrs.push(m.text()) })
+      try {
+        await lpage.goto(url, { waitUntil: 'load' })
+        await lpage.waitForFunction(() => window.__shoreTest && window.__shoreTest.ready, null, { timeout: 30000 })
+        await lpage.waitForFunction(() => window.__shoreTest.perf().n > 5, null, { timeout: 15000 })
+        ok('loop is running when visible (#702)',
+          await lpage.evaluate(() => window.__shoreTest.running && window.__shoreTest.frames > 5))
+
+        await lpage.evaluate(() => {
+          Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+          Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+          document.dispatchEvent(new Event('visibilitychange'))
+        })
+        await lpage.waitForTimeout(700)
+        const frozen1 = await lpage.evaluate(() => window.__shoreTest.frames)
+        const frozenRun = await lpage.evaluate(() => window.__shoreTest.running)
+        await lpage.waitForTimeout(700)
+        const frozen2 = await lpage.evaluate(() => window.__shoreTest.frames)
+        ok('render loop pauses when the page is hidden (#702)',
+          frozenRun === false && frozen2 === frozen1,
+          `hidden: running=${frozenRun} frames ${frozen1}->${frozen2}`)
+
+        await lpage.evaluate(() => {
+          Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
+          Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+          document.dispatchEvent(new Event('visibilitychange'))
+        })
+        await lpage.waitForTimeout(900)
+        const resumed = await lpage.evaluate(() => ({ run: window.__shoreTest.running, f: window.__shoreTest.frames, sp: window.__shoreTest.perf() }))
+        ok('render loop resumes when the page is visible again (#702)',
+          resumed.run === true && resumed.f > frozen2,
+          `resumed: running=${resumed.run} frames ${frozen2}->${resumed.f}`)
+
+        const td = await lpage.evaluate(() => {
+          try { window.__shoreTest.teardown() } catch (e) { return { err: String(e) } }
+          return { err: null }
+        })
+        await lpage.waitForTimeout(400)
+        const post = await lpage.evaluate(() => {
+          window.__shoreTest.resume()
+          return { released: window.__shoreTest.released, run: window.__shoreTest.running, f: window.__shoreTest.frames }
+        })
+        ok('teardown releases the GPU and is terminal (#702)',
+          td.err === null && post.released === true && post.run === false,
+          `teardown err=${td.err} released=${post.released} runAfterResume=${post.run}`)
+        ok('lifecycle (hide/resume/teardown) raises no GPU errors (#702)',
+          lerrs.length === 0, lerrs.slice(0, 2).join(' | '))
+      } catch (e) {
+        ok('render loop pauses when the page is hidden (#702)', false, `lifecycle page failed: ${e}`)
+      } finally {
+        await lctx.close()
+      }
+
     ok('zero page/WGSL errors', errs.length === 0, errs.slice(0, 2).join(' | '))
   } finally {
     chrome.kill()
