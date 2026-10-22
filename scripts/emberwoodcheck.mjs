@@ -86,6 +86,45 @@ const t1 = trace(12345, 500), t2 = trace(12345, 500), t3 = trace(999, 500)
 ok(t1 === t2, 'same seed replays a byte-identical hash trajectory')
 ok(t1 !== t3, 'a different seed diverges')
 
+// ---- 4b. hit-stop: kills and blasts freeze the world, deterministically ----
+function killScript(seed) {
+    const s = createSim(seed)
+    spawnRoom(s, 'd1-e0', [7, 8])
+    const e = s.enemies.find(x => x.type === 'cinderling' && !x.dead)
+    if (!e) return 'noenemy'
+    e.hp = 1
+    s.hero.x = e.x; s.hero.y = e.y + 12; s.hero.dir = 'up'
+    stepSim(s, inp({ ap: true }))
+    stepSim(s, inp({ ar: true }))
+    let froze = 0, pinned = false
+    for (let i = 0; i < 8 && !(e.dead && s.hitStop > 0); i++) stepSim(s, inp({}))
+    froze = s.hitStop
+    const px = s.hero.x, py = s.hero.y, pt = s.tick
+    stepSim(s, inp({ lx: 1, ly: 1 })) // try to move during the freeze
+    pinned = e.dead && froze > 0 && s.hero.x === px && s.hero.y === py && s.tick > pt
+    let clears = 0
+    while (s.hitStop > 0 && clears < 40) { stepSim(s, inp({})); clears++ }
+    return { froze, pinned, cleared: clears <= 6 && s.hitStop === 0, stop: s.hitStop }
+}
+{
+    const a = killScript(7), b = killScript(7)
+    ok(a !== 'noenemy' && a.froze > 0, `a kill triggers hit-stop (hitStop=${a && a.froze})`)
+    ok(a !== 'noenemy' && a.pinned, 'during hit-stop the hero is pinned (move intent ignored) while tick advances')
+    ok(a !== 'noenemy' && a.cleared, `hit-stop releases after a few frames (clears=${a && a.cleared}, hitStop back to 0)`)
+    ok(JSON.stringify(a) === JSON.stringify(b), 'hit-stop is seed-deterministic (identical freeze trajectory)')
+}
+function blastHitStop(seed) {
+    const s = createSim(seed)
+    spawnRoom(s, 'ow-00', [6, 5])
+    s.enemies = [] // no kill: the blast alone must freeze
+    s.items.bombs = 5
+    let peak = 0
+    stepSim(s, inp({ bp: true }))
+    for (let i = 0; i < 90; i++) { stepSim(s, inp({})); if (s.hitStop > peak) peak = s.hitStop }
+    return peak
+}
+ok(blastHitStop(7) > 0 && blastHitStop(7) === blastHitStop(7), `a bomb blast hits stop even with nothing to kill (peak=${blastHitStop(7)})`)
+
 // ---- 5. core mechanics, driven through the sim ----
 // grass cut drops, and the cut persists
 {

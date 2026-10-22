@@ -43,6 +43,11 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
 - Grass respawns nothing (cuts are permanent) but monsters respawn on re-entry
   and drop-tables are seeded-derterministic, so embers are always farmable.
 - Death respawns at the current dungeon's entrance (or town) keeping progress.
+- **Hit-stop**: the world freezes for a few frames on a kill (3, bosses 6) and
+  on every bomb blast (4) — `sim.hitStop` short-circuits `stepSim` after
+  `tick++`, so the hero/enemies/bombs/particles hold while the tick advances.
+  Deterministic (seed-preserved); `emberwoodcheck` asserts the freeze, the hero
+  pin, its release, seed-equality, and a blast with nothing to kill.
 
 ## Verify
 
