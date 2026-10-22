@@ -12,7 +12,7 @@
 // (#637) with primitive fallbacks so the game never waits on the network.
 
 import * as THREE from 'three'
-import { slopePos, terrainY, featureLift, sceneryPlan } from './course.js'
+import { slopePos, terrainY, featureLift, sceneryPlan, DS } from './course.js'
 
 // wide grid: past the piste edge the slope keeps going — shoulders, ridges —
 // so the camera never sees the mesh end. Rows start behind the summit so the
@@ -39,7 +39,7 @@ export const THEMES = {
         sky: 0x0a0c22, skyTop: 0x04051a, fog: 0x101436, fogD: 0.0016,
         sun: 0x8090ff, hemiSky: 0x2a3070, hemiGround: 0x141838,
         snowA: [96, 110, 190], snowB: [56, 64, 140],
-        shadow: [22, 28, 72], edge: [255, 60, 200], rock: [10, 10, 26], rock2: [4, 4, 12],
+        shadow: [22, 28, 72], edge: [255, 60, 200], rock: [20, 14, 11], rock2: [8, 6, 5],
         capSnow: [150, 160, 215],
         peak: [30, 34, 78], peakSun: [56, 62, 120], peakRock: [18, 20, 48],
         shC: 0x04050e, shO: 0.45,
@@ -66,8 +66,46 @@ export const SUN = {
 
 // #665: fresh carve grooves run deeper than the groomed track so the two
 // lines read apart when both are new (ssxmountaincheck pins the gap).
-export const GROOVE = { color: [0.05, 0.07, 0.13], alpha: 0.66 }
+// #685: a packed-snow albedo lip flanks each dark line — compressed snow
+// catches a touch of light — so the groove reads as cut into the surface
+// instead of an ink quad pasted on it.
+export const GROOVE = { color: [0.05, 0.07, 0.13], alpha: 0.66, lipColor: [0.38, 0.46, 0.68], lipAlpha: 0.30 }
 export const TRACK_DARKEN = 0.12
+
+// #685: which riders throw spray. The player always has; the CPU field used
+// to cut through snow silently. Carving hard on the snow kicks powder.
+export function cpuSprayCount(r) {
+    if (!r || r.air || r.tumble > 0 || r.v <= 8) return 0
+    if (Math.abs(r.steerSm) < 0.45) return 0
+    return 1 + Math.min(1, Math.floor((r.v - 8) / 10))
+}
+
+// #685: landing voice splits crust vs powder — a hard steep (icy) face gets a
+// shorter, sharper, louder swish; soft ground stays the muffled thuff.
+export function landingSound(grad, v) {
+    const crust = grad > 0.34
+    return crust
+        ? { crust: true, dur: 0.05, vol: 0.11 + Math.min(0.04, v * 0.0015), swish: [1500, 520] }
+        : { crust: false, dur: 0.09, vol: 0.075 + Math.min(0.03, v * 0.001), swish: null }
+}
+
+// #685: the geometric wall-top rim is smooth; small non-physics shards along
+// the high rock rim break the skyline the way the gully teeth do. Pure data
+// so the harness can grade placement without a DOM.
+export function rimJagPlan(course) {
+    const out = []
+    for (let s = 80; s < course.N * DS - 60; s += DS * 3) {
+        for (const x of [4.5, 5.5, 6.5, -4.5, -5.5, -6.5]) {
+            const inf = surfaceInfo(course, s, x)
+            if (inf.above > 10 && inf.rockT > 0.5 && inf.crest > 0.4) {
+                const h = hash(s * 0.37 + x * 7.1)
+                out.push({ s, x, h: 0.5 + h * 1.8, w: 0.6 + hash(s * 0.11 + x * 3.3) * 1.2, rot: h * Math.PI })
+                if (out.length >= 240) return out
+            }
+        }
+    }
+    return out
+}
 
 // ---- real surfaces (#669) ---------------------------------------------------
 // Slope magnitude in world m/m from terrain differences — the analytic terms
@@ -101,6 +139,15 @@ const bedding = (y, s, x) => {
     const fold = 0.8 * Math.sin(s * 0.017 + x * 1.3)
     return smooth01(Math.abs(Math.sin(y * 0.9 + fold)) * 2.6) * 0.8
         + 0.2 * Math.abs(Math.sin(y * 3.3 + fold * 2.3))
+}
+
+// #685: coarse strata blocks (~18 m along the run) carried in the rock colour
+// itself. The fracture/bedding motifs are ~1-3 m and average away under
+// mipmapping on distant cliffs, washing walls to one grey; these wide light/
+// dark slabs keep the walls broken-looking from the chase-cam.
+export function rockStrata(s, x) {
+    const fold = 0.9 * Math.sin(s * 0.017 + x * 0.9 + 2.0)
+    return 0.5 + 0.5 * Math.sin(s * 0.34 + x * 0.62 + fold * 2.4)
 }
 
 // Everything the surface look needs at one point: base colour plus the
@@ -177,6 +224,7 @@ export function surfaceInfo(c, s, x) {
     if (rockT > 0) {
         const band = (0.66 + 0.42 * bedding(y, s, x) + 0.26 * (fracture(s, x) - 0.5))
             * (0.85 + 0.28 * cragBands(s, x))
+            * (0.74 + 0.46 * rockStrata(s, x))
         const rk = T.rock.map((v, k) => (v * (1 - slopeRock) + T.rock2[k] * slopeRock) * band * (0.72 + 0.56 * litFace))
         rgb = rgb.map((v, k) => v * (1 - rockT) + rk[k] * rockT)
     }
@@ -276,18 +324,27 @@ export function detailTexture(theme) {
 }
 
 const sparkleCache = new Map()
-export function sparkleTexture(theme) {
+// #685: the original's glitter twinkles per facet, not as one global pulse.
+// Two additive layers with independent dot fields (seeds) and decorrelated
+// pulse rates approximate per-dot phase: a dot lit in one layer is usually
+// mid-fade in the other, so no two sparkles blink together.
+export const SPARKLE_PULSE = [
+    { seed: 9901, base: 0.5, amp: 0.32, rate: 0.11, slow: 0.14, slowRate: 0.037, phase: 0 },
+    { seed: 5273, base: 0.42, amp: 0.24, rate: 0.071, slow: 0.18, slowRate: 0.053, phase: 2.1 },
+]
+export function sparkleTexture(theme, layer = 0) {
     if (!HAS_DOM) return null
-    const key = `s|${theme}`
+    const P = SPARKLE_PULSE[layer] || SPARKLE_PULSE[0]
+    const key = `s|${theme}|${layer}`
     if (!sparkleCache.has(key)) {
         const night = theme === 'night'
         const cvs = seamless(128, 128, (g) => {
             g.clearRect(0, 0, 128, 128)
-            const rnd = lcg(9901)
-            const n = night ? 18 : 32
+            const rnd = lcg(P.seed)
+            const n = layer ? (night ? 10 : 16) : night ? 18 : 32
             for (let i = 0; i < n; i++) {
                 const px = rnd() * 128, py = rnd() * 128
-                const r = 0.5 + rnd() * 0.9
+                const r = (layer ? 0.7 : 0.5) + rnd() * (layer ? 1.5 : 0.9)
                 const grad = g.createRadialGradient(px, py, 0.05, px, py, r * 1.7)
                 grad.addColorStop(0, `rgba(255,255,255,${night ? 0.55 : 0.9})`)
                 grad.addColorStop(0.45, 'rgba(255,255,255,0.35)')
@@ -346,23 +403,24 @@ export function buildTerrain(course) {
 // Twinkle overlay: same grid, additive blend, per-vertex mask that only lets
 // the sparkle dots through on flat, sunlit, snowy ground — never on rock or
 // steep faces. Shares the terrain geometry (userData.keepGeo guards disposal).
-export function sparkleMask(c, s, x) {
+export function sparkleMask(c, s, x, layer = 0) {
     const { rockT, grad, crest } = surfaceInfo(c, s, x)
     const flat = 1 - smooth01(grad / 0.3)
     const rockKill = 1 - smooth01((rockT - 0.08) / 0.3)
-    const cell = hash(Math.floor(s / 1.7) * 17.3 + Math.floor(x * 2.3) * 5.7 + 9.2)
+    const cell = hash(Math.floor(s / 1.7) * 17.3 + Math.floor(x * 2.3) * 5.7 + 9.2 + layer * 13.7)
     const patch = smooth01((cell - 0.55) / 0.3)
     const theme = c.theme === 'night' ? 0.5 : c.theme === 'dusk' ? 0.8 : 1
-    return (1 - rockT) * rockKill * flat * (0.35 + 0.65 * crest) * patch * theme
+    const damp = layer ? 0.7 : 1
+    return (1 - rockT) * rockKill * flat * (0.35 + 0.65 * crest) * patch * theme * damp
 }
 
-export function buildSparkles(course, geo) {
+export function buildSparkles(course, geo, layer = 0) {
     const rows = []
     for (let i = ROW_BACK; i < course.N; i += 1) rows.push(i * 4)
     const col = new Float32Array(rows.length * COLS.length * 3)
     rows.forEach((s, ri) => {
         COLS.forEach((x, ci) => {
-            const m = sparkleMask(course, s, x)
+            const m = sparkleMask(course, s, x, layer)
             const o = (ri * COLS.length + ci) * 3
             col[o] = m; col[o + 1] = m; col[o + 2] = Math.min(1, m * 1.15)
         })
@@ -372,12 +430,14 @@ export function buildSparkles(course, geo) {
     sg.setAttribute('uv', geo.getAttribute('uv'))
     sg.setAttribute('color', new THREE.BufferAttribute(col, 3))
     sg.setIndex(geo.getIndex())
+    const P = SPARKLE_PULSE[layer] || SPARKLE_PULSE[0]
     const mesh = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({
-        vertexColors: true, map: sparkleTexture(course.theme), transparent: true,
-        blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.8,
-        polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+        vertexColors: true, map: sparkleTexture(course.theme, layer), transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, opacity: P.base,
+        polygonOffset: true, polygonOffsetFactor: -3 - layer, polygonOffsetUnits: -3 - layer,
     }))
     mesh.userData.keepGeo = 1
+    mesh.userData.layer = layer
     mesh.frustumCulled = false
     return mesh
 }
@@ -464,6 +524,29 @@ export function buildScenery(course) {
             const canopy = ph(new THREE.Mesh(new THREE.ConeGeometry(1.4, 4.4, 7), treeMat))
             canopy.position.set(p.x, p.y + 3, p.z)
             g.add(canopy)
+        }
+    }
+    return g
+}
+
+// #685: skyline shards on the high rock rim (visual only — no physics, the
+// sim collides with obstacles, never with the ribbon).
+export function buildRimJags(course) {
+    const g = new THREE.Group()
+    const T = THEMES[course.theme]
+    const hex = (arr) => (arr[0] << 16) | (arr[1] << 8) | arr[2]
+    const mat = new THREE.MeshLambertMaterial({ color: hex(T.rock) })
+    const capMat = new THREE.MeshLambertMaterial({ color: hex(T.capSnow) })
+    for (const jg of rimJagPlan(course)) {
+        const p = slopePos(course, jg.s, jg.x)
+        const m = new THREE.Mesh(new THREE.ConeGeometry(jg.w * 0.5, jg.h, 4), mat)
+        m.position.set(p.x, p.y + jg.h * 0.34, p.z)
+        m.rotation.set(hash(jg.s * 0.13) * 0.5 - 0.25, jg.rot, hash(jg.x * 3.1) * 0.5 - 0.25)
+        g.add(m)
+        if (jg.h > 1.6) {
+            const cap = new THREE.Mesh(new THREE.ConeGeometry(jg.w * 0.22, jg.h * 0.34, 4), capMat)
+            cap.position.y = jg.h * 0.33
+            m.add(cap)
         }
     }
     return g

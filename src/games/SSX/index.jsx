@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, retunePose } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, retunePose } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -63,6 +63,7 @@ const SSXGame = () => {
         let worldGen = 0
         let skyObj = null
         let sparkles = null
+        let rimJags = null
         let riders = []
         let spray = sprayField(LITE)
         scene.add(spray.pts)
@@ -83,8 +84,8 @@ const SSXGame = () => {
         const GROOVE_MAX = 420
         const mkGroove = () => {
             const geo = new THREE.BufferGeometry()
-            const pos = new Float32Array(GROOVE_MAX * 6 * 3)
-            const col = new Float32Array(GROOVE_MAX * 6 * 4)
+            const pos = new Float32Array(GROOVE_MAX * 18 * 3)
+            const col = new Float32Array(GROOVE_MAX * 18 * 4)
             geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage))
             geo.setAttribute('color', new THREE.BufferAttribute(col, 4).setUsage(THREE.DynamicDrawUsage))
             geo.setDrawRange(0, 0)
@@ -167,11 +168,13 @@ const SSXGame = () => {
             world = new THREE.Group()
             const terrainMesh = keep(buildTerrain(g.course))
             world.add(terrainMesh)
-            if (sparkles) { sparkles.material.dispose() }
-            sparkles = LITE ? null : buildSparkles(g.course, terrainMesh.geometry)
-            if (sparkles) world.add(sparkles)
+            if (sparkles) sparkles.forEach((sp) => sp.material.dispose())
+            sparkles = LITE ? null : [0, 1].map((layer) => buildSparkles(g.course, terrainMesh.geometry, layer))
+            if (sparkles) sparkles.forEach((sp) => world.add(sp))
             world.add(keep(buildRails(g.course)))
             world.add(keep(buildScenery(g.course)))
+            rimJags = LITE ? null : buildRimJags(g.course)
+            if (rimJags) world.add(keep(rimJags))
             skyObj = buildSky(g.course)
             world.add(keep(skyObj))
             scene.add(world)
@@ -207,7 +210,10 @@ const SSXGame = () => {
                     else audioController.playSweep(140, 420 + Math.min(260, e.power * 24), 0.24, 'triangle', 0.07 + Math.min(0.05, e.power * 0.004))
                 }
                 if (e.type === 'land' && mine) {
-                    audioController.playNoise(0.08, 0.08)
+                    const rr = g.riders[e.who ?? 0] || g.riders[0]
+                    const snd = landingSound(slopeAt(g.course, rr.s, rr.x), rr.v)
+                    audioController.playNoise(snd.dur, snd.vol)
+                    if (snd.crust) audioController.playSweep(snd.swish[0], snd.swish[1], 0.06, 'triangle', 0.045)
                     const f = 520 + Math.min(900, e.pts * 0.4)
                     audioController.playTone(f, 0.09, 'square', 0.08)
                     if (e.mult > 1) audioController.playTone(f * 1.25, 0.09, 'square', 0.06)
@@ -300,7 +306,10 @@ const SSXGame = () => {
                     sunMesh.lookAt(camPos.x, camPos.y, camPos.z)
                 }
             }
-            if (sparkles) sparkles.material.opacity = 0.5 + 0.32 * Math.sin(g.tick * 0.11) + 0.14 * Math.sin(g.tick * 0.037 + 2.1)
+            if (sparkles) sparkles.forEach((sp, i) => {
+                const P = SPARKLE_PULSE[i] || SPARKLE_PULSE[0]
+                sp.material.opacity = P.base + P.amp * Math.sin(g.tick * P.rate + P.phase) + P.slow * Math.sin(g.tick * P.slowRate + P.phase * 1.7)
+            })
             const fov = 66 + Math.min(16, Math.max(0, (p.v - 12) * 0.55)) + (p.boost ? 8 : 0)
             if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix() }
 
@@ -334,6 +343,24 @@ const SSXGame = () => {
                         putSpray(pp.x - fwdX * 1.2 + Math.cos(pp.th) * fan, pp.y + 0.2, pp.z - fwdZ * 1.2 - Math.sin(pp.th) * fan, -fwdX * (4 + Math.random() * 2.5), 0.6, -fwdZ * (4 + Math.random() * 2.5))
                     }
                 }
+                // #685: the CPU field cuts snow too — rivals kick powder when
+                // they carve hard on the slope, so the field looks alive
+                for (let ri = 1; ri < g.riders.length; ri++) {
+                    const r = g.riders[ri]
+                    const n = cpuSprayCount(r)
+                    if (!n) continue
+                    const rp = slopePos(g.course, r.s, r.x)
+                    const rX = Math.sin(rp.th), rZ = Math.cos(rp.th)
+                    for (let k = 0; k < n; k++) {
+                        const fan = (Math.random() - 0.5) * (0.3 + r.v * 0.05)
+                        putSpray(
+                            rp.x - rX * 0.8 + Math.cos(rp.th) * fan, rp.y + 0.15, rp.z - rZ * 0.8 - Math.sin(rp.th) * fan,
+                            -rX * (1.5 + Math.random() * 2) - Math.cos(rp.th) * r.steerSm * 1.6,
+                            1.4 + Math.random() * 1.4 + r.v * 0.04,
+                            -rZ * (1.5 + Math.random() * 2) + Math.sin(rp.th) * r.steerSm * 1.6,
+                        )
+                    }
+                }
                 const dt = ft / 1000
                 for (let i = 0; i < spray.n; i++) {
                     if (sprayLife[i] <= 0) continue
@@ -358,17 +385,29 @@ const SSXGame = () => {
                         const aa = 1 - (g.tick - a.t) / CARVE_FADE
                         const ab = 1 - (g.tick - b.t) / CARVE_FADE
                         if (aa <= 0 || ab <= 0) continue
-                        const a1 = slopePos(g.course, a.s, a.x + off - 0.02), a2 = slopePos(g.course, a.s, a.x + off + 0.02)
-                        const b1 = slopePos(g.course, b.s, b.x + off - 0.02), b2 = slopePos(g.course, b.s, b.x + off + 0.02)
                         const al = aa * aa * GROOVE.alpha, be = ab * ab * GROOVE.alpha
-                        const quad = [a1, a2, b2, a1, b2, b1], alph = [al, al, be, al, be, be]
-                        for (let k = 0; k < 6; k++) {
-                            const q = quad[k], o = (v + k) * 3, co = (v + k) * 4
-                            gr.pos[o] = q.x; gr.pos[o + 1] = q.y + 0.02; gr.pos[o + 2] = q.z
-                            gr.col[co] = GROOVE.color[0]; gr.col[co + 1] = GROOVE.color[1]; gr.col[co + 2] = GROOVE.color[2]; gr.col[co + 3] = alph[k]
+                        const lipAl = aa * aa * GROOVE.lipAlpha, lipBe = ab * ab * GROOVE.lipAlpha
+                        const strips = [
+                            { dOff: -0.035, c: GROOVE.lipColor, a0: lipAl, a1: lipBe },
+                            { dOff: 0, c: GROOVE.color, a0: al, a1: be },
+                            { dOff: 0.035, c: GROOVE.lipColor, a0: lipAl, a1: lipBe },
+                        ]
+                        for (const st of strips) {
+                            const half = st.dOff === 0 ? 0.02 : 0.018
+                            const a1 = slopePos(g.course, a.s, a.x + off + st.dOff - half)
+                            const a2 = slopePos(g.course, a.s, a.x + off + st.dOff + half)
+                            const b1 = slopePos(g.course, b.s, b.x + off + st.dOff - half)
+                            const b2 = slopePos(g.course, b.s, b.x + off + st.dOff + half)
+                            const quad = [a1, a2, b2, a1, b2, b1]
+                            const alph = [st.a0, st.a0, st.a1, st.a0, st.a1, st.a1]
+                            for (let k = 0; k < 6; k++) {
+                                const q = quad[k], o = (v + k) * 3, co = (v + k) * 4
+                                gr.pos[o] = q.x; gr.pos[o + 1] = q.y + 0.02; gr.pos[o + 2] = q.z
+                                gr.col[co] = st.c[0]; gr.col[co + 1] = st.c[1]; gr.col[co + 2] = st.c[2]; gr.col[co + 3] = alph[k]
+                            }
+                            v += 6
                         }
-                        v += 6
-                        if (v >= GROOVE_MAX * 6) break
+                        if (v >= GROOVE_MAX * 18) break
                     }
                     gr.geo.setDrawRange(0, v)
                     gr.geo.attributes.position.needsUpdate = true
