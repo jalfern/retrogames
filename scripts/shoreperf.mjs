@@ -13,9 +13,19 @@
 //        [--ab "<queryA>|<queryB>" [--ab-rounds 6]]   #702: interleaved A/B of
 //        two query strings on the first requested profile (absolute fps on a
 //        shared-GPU box is noise; alternating rounds cancel the drift).
+//        [--require-quiet] [--quiet-check-only] [--max-load 8]   #680: a quiet
+//        box means no local LLM inference and no foreign headless Chrome. On a
+//        contended Metal box even interleaved A/B medians flip sign when an
+//        inference burst spans whole profiles (#680 studio run), so the script
+//        now names the noise instead of silently printing junk: every run prints
+//        its box state, --require-quiet refuses to measure on a dirty box (exit 2),
+//        and --quiet-check-only reports the verdict without booting Chrome.
+//        (SHOREPERF_ASSUME_QUIET=1 forces the verdict to quiet on boxes where
+//        pgrep/loadavg lie — dedicated runners, containers.)
 
-import { spawn } from 'node:child_process'
+import { spawn, execSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { loadavg } from 'node:os'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -33,6 +43,31 @@ const SECS = +opt('--secs', 6)
 const profilesWanted = opt('--profile', 'desktop,qhd,phone').split(',')
 const abQuery = opt('--ab', null)
 const AB_ROUNDS = +opt('--ab-rounds', 6)
+const MAX_LOAD = +opt('--max-load', 8)
+
+function quietscan() {
+  if (process.env.SHOREPERF_ASSUME_QUIET === '1') return []
+  const reasons = []
+  const pids = cmd => { try { return execSync(`pgrep -x ${cmd} 2>/dev/null || true`).toString().trim().split('\n').filter(Boolean) } catch { return [] } }
+  const inference = pids('omlx-server').concat(pids('llama-server'), pids('ollama'))
+  if (inference.length) reasons.push(`llm-inference(pid ${inference.join(',')})`)
+  let foreign = []
+  try {
+    foreign = execSync('pgrep -f -- "[h]eadless=new" 2>/dev/null || true').toString().trim().split('\n').filter(Boolean)
+      .filter(pid => +pid !== process.pid)
+  } catch { /* none */ }
+  if (foreign.length) reasons.push(`foreign headless chrome(${foreign.length})`)
+  const la = loadavg()[0]
+  if (la > MAX_LOAD) reasons.push(`loadavg ${la.toFixed(1)}>max-load ${MAX_LOAD}`)
+  return reasons
+}
+
+if (opt('--quiet-check-only', null) !== null) {
+  const r = quietscan()
+  if (r.length) { console.log(`QUIET: CONTENDED — ${r.join('; ')}`); process.exit(2) }
+  console.log('QUIET: ok')
+  process.exit(0)
+}
 if (!url.startsWith('http') && !existsSync(file)) { console.error(`missing ${file}`); process.exit(1) }
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
@@ -109,6 +144,12 @@ async function abMeasure(browser, profileName, p, qA, qB) {
 }
 
 async function main() {
+  const noise = quietscan()
+  if (opt('--require-quiet', null) !== null && noise.length) {
+    console.error(`REFUSED (--require-quiet): box is contended — ${noise.join('; ')}. Re-run on a quiet box (#680).`)
+    process.exit(2)
+  }
+  console.log(`# box: ${noise.length ? `CONTENDED — ${noise.join('; ')} (numbers are context, not verdict)` : 'quiet'}`)
   const profDir = `/tmp/forge/shoreperf-profile-${PORT}`
   const chrome = spawn(CHROME, [
     '--headless=new', '--enable-unsafe-swiftshader', `--remote-debugging-port=${PORT}`,
@@ -143,7 +184,7 @@ async function main() {
       if (r) out.push(r)
     }
   } finally { killAll() }
-  console.log(JSON.stringify(out))
+  console.log(JSON.stringify(noise.length ? out.map(o => ({ ...o, contended: true })) : out))
 }
 
 main()
