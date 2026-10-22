@@ -1103,6 +1103,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
   const SUN = (() => { const v = [-0.18, 0.16, -0.97]; const l = Math.hypot(...v); return v.map(x => x / l); })();
 
   let t = T0, frames = 0, acc = 0, lastMs = performance.now();
+  let running = false, rafId = 0, destroyed = false;
   const ftimes = [];
   let probeData = null, probeBusy = false, probeReq = null, latest = null;
   let runEMA = 0, foamRun = 0;
@@ -1134,6 +1135,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
   }
 
   function frame() {
+    if (destroyed) return;
     const now = performance.now();
     let dt = (now - lastMs) / 1000;
     lastMs = now;
@@ -1236,9 +1238,39 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
       }).catch(() => { probeBusy = false; if (probeReq) { const rq = probeReq; probeReq = null; rq(null); } });
     }
     frames++;
-    requestAnimationFrame(frame);
+    if (running) rafId = requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+
+  // #702 — a WebGPU page must not keep rendering (or holding the GPU) when the
+  // player isn't looking at it. iOS Chrome/Safari keep rAF alive long enough that
+  // a hidden or closing SHORE tab kept submitting frames and pinning GPU+memory,
+  // which dragged down the whole device (#702: "slow to switch apps or close the
+  // tab", "gets slower the longer it runs"). Pause the loop while hidden — and
+  // zero the accumulator on resume so a throttled-while-hidden dt doesn't come
+  // back as a burst of catch-up substeps (the post-pause "burst" Jon saw).
+  function startLoop() {
+    if (running || destroyed) return;
+    running = true; lastMs = performance.now(); acc = 0;
+    rafId = requestAnimationFrame(frame);
+  }
+  function stopLoop() {
+    if (!running) return;
+    running = false; cancelAnimationFrame(rafId);
+  }
+  function releaseGpu() {
+    stopLoop();
+    if (destroyed) return;
+    destroyed = true;
+    if (depth) depth.destroy();
+    if (msaa) msaa.destroy();
+    if (drs) drs.destroy();
+    depth = msaa = drs = null;
+    device.destroy();
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopLoop(); else startLoop(); });
+  addEventListener('pagehide', releaseGpu);
+  device.lost.then(() => { running = false; destroyed = true; depth = msaa = drs = null; });
+  startLoop();
 
   // ---- input ----
   let drag = null;
@@ -1254,6 +1286,7 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
   addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; cam.touched = true; });
   addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
   setInterval(() => {
+    if (document.hidden || destroyed) return;
     const { fwd, r } = camBasis();
     const sp = (keys['shift'] ? 14 : 6) * 0.05;
     let dx = 0, dy = 0, dz = 0;
@@ -1305,6 +1338,11 @@ fn fs(i: BOut) -> @location(0) vec4f { return textureSample(srcTex, samp, i.uv);
       return ttJS[ci * NTT + i * NTZ + j];
     },
     ttGrid() { return { tx0: TX0, txs: TXS, tz0: TZ0, tzs: TZS, nt: [NTX, NTZ] }; },
+    get running() { return running; },
+    get released() { return destroyed; },
+    pause() { stopLoop(); },
+    resume() { startLoop(); },
+    teardown() { releaseGpu(); },
   };
 }
 </script>
