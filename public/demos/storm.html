@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>STORM — a thunderstorm rolling over the field, live in WebGL2</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #10131a; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .14em;
+    color: rgba(210,220,232,.62); text-shadow: 0 1px 3px rgba(0,0,0,.8);
+    text-transform: uppercase;
+  }
+  #hud b { color: rgba(235,240,248,.9); font-weight: 700; }
+  #audiohint {
+    position: fixed; top: 12px; right: 14px; z-index: 2;
+    background: rgba(10,13,18,.55); border: 1px solid rgba(170,190,220,.25); border-radius: 8px;
+    padding: 7px 12px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase;
+    color: rgba(210,220,235,.85); text-shadow: 0 1px 3px rgba(0,0,0,.8); cursor: pointer;
+  }
+  #audiohint.off { color: rgba(180,185,195,.5); border-color: rgba(150,150,150,.2); }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 3;
+    font: 14px/1.6 ui-monospace, Menlo, monospace; color: #dfe6ee; background: #101318;
+    text-align: center; padding: 2em; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>STORM</b> · thunderstorm rolling over open field &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = wind + thunder</div>
+<div id="audiohint">click for wind + thunder</div>
+<div id="fatal"></div>
+<script>
+'use strict';
+
+const qs = new URLSearchParams(location.search);
+const LITE = qs.get('lite') === '1';
+const SEED = (qs.get('seed') | 0) || 7;
+const RENDER_SCALE = LITE ? 0.5 : 0.72;
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) {
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'WebGL2 required.\nThis demo needs a WebGL2-capable browser.';
+  throw new Error('no webgl2');
+}
+const HDR_OK = !!gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
+
+/* ---------------- shaders ---------------- */
+
+const VS_QUAD = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FS_SCENE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec2 uRes;
+uniform float uTime;
+uniform float uSeed;
+uniform vec2 uStorm;          // storm core xz (negative z = away from camera)
+uniform vec4 uFlash0;         // xyz in-cloud flash pos, w = energy
+uniform vec4 uFlash1;
+uniform float uSkyFlash;      // whole-sky ambient pulse
+uniform float uDbg;   // 1 = cloud coverage (1-T)
+uniform vec3 uCamPos;
+uniform mat4 uCamInvRot;
+out vec4 fragColor;
+
+#define CB 420.0
+#define CT 7000.0
+#define PI 3.14159265
+
+float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float hash13(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+
+vec3 grad3(vec3 i){
+  float h = hash13(i) * 6.2831853;
+  float a = hash13(i + vec3(11.1, 7.7, 3.3)) * 2.0 - 1.0;
+  float r = sqrt(max(0.0, 1.0 - a * a));
+  return vec3(cos(h) * r, sin(h) * r, a);
+}
+float vnoise(vec3 p){
+  vec3 i = floor(p), f = fract(p);
+  vec3 u = f * f * (3.0 - 2.0 * f);
+  return 0.5 + 0.5 * mix(
+    mix(mix(dot(grad3(i + vec3(0,0,0)), f),
+            dot(grad3(i + vec3(1,0,0)), f - vec3(1,0,0)), u.x),
+        mix(dot(grad3(i + vec3(0,1,0)), f - vec3(0,1,0)),
+            dot(grad3(i + vec3(1,1,0)), f - vec3(1,1,0)), u.x), u.y),
+    mix(mix(dot(grad3(i + vec3(0,0,1)), f - vec3(0,0,1)),
+            dot(grad3(i + vec3(1,0,1)), f - vec3(1,0,1)), u.x),
+        mix(dot(grad3(i + vec3(0,1,1)), f - vec3(0,1,1)),
+            dot(grad3(i + vec3(1,1,1)), f - vec3(1,1,1)), u.x), u.y), u.z);
+}
+float fbm3(vec3 p){
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 4; i++){ s += a * vnoise(p); p = p * 2.03 + vec3(1.7, 0.3, 2.9); a *= 0.5; }
+  return s;
+}
+float fbm2(vec2 p){
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 3; i++){ s += a * vnoise(vec3(p, 3.0)); p = p * 2.11 + vec2(3.1, 1.7); a *= 0.5; }
+  return s;
+}
+float hg(float c, float g){
+  float d = 1.0 + g * g - 2.0 * g * c;
+  return (1.0 - g * g) / (4.0 * PI * pow(max(d, 0.02), 1.5));
+}
+
+/* smooth cumulonimbus envelope (no noise): flat base, lobed towers, flaring anvil */
+float n2(vec2 p){ float a = 0.55, s = 0.0; for (int i = 0; i < 2; i++){ s += a * vnoise(vec3(p, 1.0)); p = p * 2.11 + vec2(3.1, 1.7); a *= 0.5; } return s; }
+
+float envSmooth(vec3 p){
+  float hm = (p.y - CB) / (CT - CB);
+  if (hm < 0.0 || hm > 1.0) return 0.0;
+  vec2 q = p.xz - uStorm;
+  q -= vec2(-450.0, 700.0) * hm * hm;
+  float dist = length(q * vec2(1.0, 0.80));
+  float rad = mix(4300.0, 6200.0, smoothstep(0.0, 0.7, hm));
+  float env = smoothstep(rad, rad * 0.80, dist);
+  env *= smoothstep(0.0, 0.03, hm);
+  env *= 1.0 - smoothstep(0.72, 1.0, hm);
+  return clamp(env, 0.0, 1.25);
+}
+
+float envShape(vec3 p){
+  float hm = (p.y - CB) / (CT - CB);
+  if (hm < 0.0 || hm > 1.0) return 0.0;
+  vec2 q = p.xz - uStorm;
+  q -= vec2(-450.0, 700.0) * hm * hm;                 // mild wind shear
+  float ang = atan(q.y, q.x);
+  float dist = length(q * vec2(1.0, 0.80));
+  float lobe = fbm2(vec2(ang * 5.5 + hm * 2.0, hm * 3.0 - uTime * 0.005));
+  float fine = n2(vec2(ang * 14.0 + hm * 4.0, hm * 8.0 - uTime * 0.012));
+  float rad = mix(4300.0, 6200.0, smoothstep(0.0, 0.7, hm)) * (0.50 + 0.90 * lobe) * (0.80 + 0.42 * fine);
+  float env = smoothstep(rad, rad * 0.72, dist);
+  env *= smoothstep(0.0, 0.03, hm);                   // flat dark base
+  env *= 1.0 - smoothstep(0.72, 1.0, hm);             // flattened top
+  float an = smoothstep(0.80, 0.90, hm) * smoothstep(1.0, 0.94, hm)
+           * smoothstep(rad * 2.6, rad * 1.05, length(q - vec2(-1500.0, 2200.0) * hm));
+  env += an * 0.45;
+  return clamp(env, 0.0, 1.25);
+}
+
+float cloudDensity(vec3 p, float e){
+  float hm = (p.y - CB) / (CT - CB);
+  vec2 w = vec2(n2(p.xz * 0.00022 + p.y * 0.00006), n2(p.zx * 0.00020 - p.y * 0.00005)) - 0.5;
+  vec2 q2 = p.xz + w * 2600.0;
+  vec3 q = vec3(q2.x, p.y, q2.y);
+  float n = fbm3(q * 0.00125 + vec3(0.0, -uTime * 0.012, uTime * 0.006));
+  float det = fbm3(q * 0.00310 + vec3(uTime * 0.020, -uTime * 0.050, uTime * 0.010));
+  float eS = sqrt(e);
+  float d = eS * (0.10 + 1.05 * pow(n, 1.25)) + pow(max(0.0, det * 1.18 - 0.24), 1.45) * eS * 1.35;
+  d *= mix(0.55, 1.0, smoothstep(0.0, 0.30, hm));      // thin dark shelf at base
+  d *= mix(1.0, 0.55, smoothstep(0.86, 1.0, hm));       // anvil stays wispy
+  return clamp(d, 0.0, 1.0) * 1.15;
+}
+
+float sunOcc(vec3 p){
+  float s = 0.0;
+  vec3 q = p;
+  for (int i = 0; i < 6; i++){
+    q += vec3(0.74, 0.33, 0.58) * 260.0;
+    s += envSmooth(q);
+  }
+  return exp(-s * 260.0 * 0.0013);
+}
+
+vec3 flashLight(vec3 p){
+  vec3 c = vec3(0.0);
+  if (uFlash0.w > 0.002) c += vec3(0.72, 0.80, 1.0) * uFlash0.w * exp(-length(p - uFlash0.xyz) * 0.00016);
+  if (uFlash1.w > 0.002) c += vec3(0.72, 0.80, 1.0) * uFlash1.w * exp(-length(p - uFlash1.xyz) * 0.00016);
+  return c;
+}
+
+vec3 skyBase(vec3 rd, vec3 sdir3, float toward){
+  float up = clamp(rd.y, 0.0, 1.0);
+  vec3 c = mix(vec3(0.60, 0.68, 0.75), vec3(0.16, 0.31, 0.53), pow(up, 0.55));
+  c += vec3(0.30, 0.20, 0.08) * pow(max(dot(rd, normalize(vec3(0.74, 0.33, 0.58))), 0.0), 5.0) * 0.7;
+  c = mix(c, vec3(0.13, 0.145, 0.165), toward * 0.78 * smoothstep(0.30, 0.04, rd.y));
+  float veil = toward * smoothstep(0.24, 0.02, rd.y) * smoothstep(-0.02, 0.03, rd.y);
+  c = mix(c, vec3(0.185, 0.20, 0.22), veil * 0.72);
+  float behind = pow(max(dot(normalize(vec3(rd.x, 0.0, rd.z)), -sdir3), 0.0), 3.0);
+  c += vec3(0.10, 0.075, 0.03) * behind * smoothstep(0.22, 0.0, rd.y);
+  c += uSkyFlash * vec3(0.30, 0.36, 0.52);
+  return c;
+}
+
+float rainAt(vec2 xz){
+  float d = length(xz - uStorm);
+  float a = smoothstep(9200.0, 3600.0, d) * (0.45 + 0.55 * fbm2(xz * 0.00082 + vec2(0.0, uTime * 0.008)));
+  return clamp(pow(max(a, 0.0), 1.35), 0.0, 1.0);
+}
+
+/* returns rgb in .xyz, transmittance in .w */
+vec4 cloudMarch(vec3 ro, vec3 rd, float tEnd){
+  // enter only where the ray is inside the cloud altitude slab AND horizontally
+  // near the storm mass (bounding cylinder) — otherwise the budget burns in empty air
+  float t0 = 0.0, t1 = tEnd;
+  if (rd.y > 0.0001) t0 = max(t0, (CB - ro.y) / rd.y);
+  else if (rd.y < -0.0001) t1 = min(t1, (CB - ro.y) / rd.y);
+  if (rd.y > 0.0001) t1 = min(t1, (CT - ro.y) / rd.y);
+  // cylinder: |ro.xz + t*rd.xz - uStorm| (scaled) = RB
+  float RB = 9000.0;
+  vec2 oc = (ro.xz - uStorm) * vec2(1.0, 0.80);
+  vec2 vd = rd.xz * vec2(1.0, 0.80);
+  float qa = dot(vd, vd);
+  float qb = 2.0 * dot(oc, vd);
+  float qc = dot(oc, oc) - RB * RB;
+  float disc = qb * qb - 4.0 * qa * qc;
+  if (disc > 0.0){
+    float sq = sqrt(disc);
+    float tb0 = (-qb - sq) / (2.0 * qa);
+    float tb1 = (-qb + sq) / (2.0 * qa);
+    t0 = max(t0, tb0 - 350.0);
+    t1 = min(t1, tb1 + 350.0);
+  } else {
+    return vec4(0.0, 0.0, 0.0, 1.0);
+  }
+  t0 = max(t0, 1.0);
+  vec3 col = vec3(0.0);
+  float T = 1.0;
+  if (t1 <= t0 + 1.0) return vec4(0.0, 0.0, 0.0, 1.0);
+  float jit = hash12(gl_FragCoord.xy + vec2(uTime * 13.0, uSeed));
+  float t = t0 + jit * 110.0;
+  for (int i = 0; i < 120; i++){
+    if (t > t1 || T < 0.015) break;
+    vec3 p = ro + rd * t;
+    float e = envShape(p);
+    float dt = clamp(max(40.0 + e * 300.0, t * 0.06), 40.0, 320.0);
+    if (e > 0.004){
+      float d = cloudDensity(p, e);
+      if (d > 0.004){
+        float hm = clamp((p.y - CB) / (CT - CB), 0.0, 1.0);
+        float n = fbm3(p * 0.00125 + vec3(0.0, -uTime * 0.012, uTime * 0.006));
+        float so = sunOcc(p);
+        float ph = 0.55 + 0.85 * hg(dot(rd, normalize(vec3(0.74, 0.33, 0.58))), 0.35);
+        vec3 ambTop = vec3(0.34, 0.40, 0.48);
+        vec3 ambBase = vec3(0.040, 0.046, 0.052);
+        float bump = 0.55 + 1.3 * pow(n, 2.2);
+        vec3 c = vec3(1.0, 0.96, 0.86) * so * ph * bump * (0.42 + 1.9 * pow(hm, 1.15))
+               + mix(ambBase, ambTop, pow(hm, 0.7))
+               + vec3(1.0, 0.95, 0.88) * ph * 0.12 * sqrt(so) * bump;
+        c += flashLight(p);
+        float sig = d * 0.0013;
+        col += T * c * sig * dt;
+        T *= exp(-sig * dt * 1.35);
+      }
+    }
+    t += dt;
+  }
+  return vec4(col, T);
+}
+
+void main(){
+  vec2 ndc = vUv * 2.0 - 1.0;
+  ndc.x *= uRes.x / uRes.y;
+  vec3 rd = normalize((uCamInvRot * vec4(ndc, -1.75, 1.0)).xyz);
+  vec3 ro = uCamPos;
+  vec3 sdir3 = normalize(vec3(uStorm.x, 0.0, uStorm.y));
+  float toward = pow(max(dot(normalize(vec3(rd.x, 0.00001, rd.z)), sdir3), 0.0), 1.6);
+
+  float rang = atan(rd.z, rd.x);
+  float treeH = 0.0060 + 0.0135 * fbm2(vec2(rang * 3.0, 1.0)) + 0.006 * smoothstep(0.4, 0.9, fbm2(vec2(rang * 11.0 + 2.0, 3.0)));
+  float treeMask = smoothstep(treeH + 0.002, treeH - 0.001, rd.y) * smoothstep(-0.045, -0.01, rd.y);
+
+  float tGround = (rd.y < -0.0002) ? (-ro.y / rd.y) : 1e9;
+
+  vec3 bg;
+  if (tGround < 26000.0){
+    vec3 p = ro + rd * tGround;
+    float sd2 = length(p.xz - uStorm);
+    float rA = rainAt(p.xz);
+    float grain = fbm2(p.xz * 0.0042);
+    float grain2 = fbm2(p.xz * 0.017 + 5.0);
+    float fine = fbm2(p.xz * 0.055);
+    vec3 grass = mix(vec3(0.240, 0.225, 0.125), vec3(0.125, 0.170, 0.078), clamp(grain * 1.4 - 0.18, 0.0, 1.0));
+    grass = mix(grass, grass * vec3(0.82, 0.90, 0.72), clamp(grain2 * 1.3 - 0.2, 0.0, 1.0));
+    grass *= 0.86 + 0.28 * fine;
+    vec2 wd = normalize(vec2(0.75, 0.66));
+    float rows = sin(dot(p.xz, wd) * 0.028 + fbm2(p.xz * 0.0021) * 5.0 + uTime * 1.9);
+    grass *= 0.86 + 0.14 * rows * (0.3 + 0.7 * fbm2(p.xz * 0.0013 + 3.0));
+    float near = smoothstep(200.0, 20.0, length(p.xz - ro.xz));
+    float flecks = fbm2(p.xz * 0.9 + vec2(uTime * 0.35, uTime * 0.2));
+    grass = mix(grass, grass * (0.72 + 0.62 * flecks), near * 0.85);
+    float sh = mix(1.0, 0.34, smoothstep(11000.0, 3500.0, sd2));
+    grass = mix(grass, grass * vec3(0.50, 0.54, 0.50), rA * 0.72);
+    float ndl = 0.34;
+    vec3 sunK = vec3(1.0, 0.80, 0.55);
+    bg = grass * (sunK * ndl * sh * 1.05 + vec3(0.10, 0.125, 0.16) * (0.6 + 0.4 * sh));
+    float fres = pow(1.0 - max(-rd.y, 0.0), 4.0);
+    bg += vec3(0.42, 0.48, 0.58) * fres * rA * 0.10 * (1.0 + 3.0 * uSkyFlash);
+    float sp = step(0.9935, hash12(floor(p.xz * 110.0) + floor(uTime * 26.0) * 0.137));
+    bg += vec3(0.55, 0.58, 0.62) * sp * rA * smoothstep(650.0, 120.0, length(p.xz - ro.xz)) * (0.35 + 1.3 * uSkyFlash);
+    float fogK = 1.0 - exp(-tGround / 10500.0 * (0.55 + 0.85 * toward));
+    vec3 fogCol = mix(vec3(0.52, 0.58, 0.64), vec3(0.30, 0.325, 0.355), toward);
+    bg = mix(bg, fogCol + uSkyFlash * vec3(0.22, 0.26, 0.36), fogK * 0.85);
+  } else {
+    bg = skyBase(rd, sdir3, toward);
+  }
+  vec3 treeCol = vec3(0.045, 0.062, 0.052) * (0.55 + 0.45 * mix(1.0, 0.62, toward)) + uSkyFlash * vec3(0.10, 0.12, 0.16);
+  bg = mix(bg, treeCol, clamp(treeMask * 0.92, 0.0, 1.0));
+
+  vec4 cm = cloudMarch(ro, rd, min(26000.0, tGround));
+  vec3 col = cm.rgb + bg * cm.w;
+
+  /* rain streaks: two parallax slabs between camera and the scene */
+  float rEnd = min(tGround < 26000.0 ? tGround : 30000.0, 2600.0);
+  float accA = 0.0;
+  vec3 accC = vec3(0.0);
+  float j2 = hash12(gl_FragCoord.yx + vec2(uTime * 7.0, uSeed + 3.0));
+  float tr = 6.0 + j2 * 24.0;
+  for (int i = 0; i < 16; i++){
+    if (tr > rEnd || accA > 0.9) break;
+    vec3 p = ro + rd * tr;
+    float inten = mix(0.26, 1.0, smoothstep(9000.0, 2500.0, length(p.xz - uStorm)));
+    // vertical-stretched world noise, drifting down with a wind slant
+    vec3 q = vec3(p.x * 3.1 + uTime * 34.0, (p.y + uTime * 520.0) * 0.055, p.z * 3.1);
+    float sA = vnoise(q);
+    float sB = vnoise(q * 2.6 + vec3(4.0, 2.0, 7.0));
+    float streak = smoothstep(0.58, 0.80, sA) * smoothstep(0.42, 0.72, sB);
+    float a = streak * inten * (1.0 - smoothstep(0.30, 0.95, tr / rEnd)) * 0.42;
+    vec3 rc = vec3(0.60, 0.65, 0.72) * (0.30 + 0.55 * max(0.0, 1.0 - p.y * 0.0006)) * (0.55 + 1.6 * uSkyFlash);
+    accC += (1.0 - accA) * rc * a;
+    accA += (1.0 - accA) * a;
+    tr += 24.0 + tr * 0.16;
+  }
+  col += accC;
+
+  if (uDbg > 0.5 && uDbg < 1.5) fragColor = vec4(vec3(clamp(1.0 - cm.w, 0.0, 1.0)), 1.0);
+  else if (uDbg > 1.5 && uDbg < 2.5) fragColor = vec4(clamp(cm.rgb / 1.5, 0.0, 1.0), 1.0);
+  else fragColor = vec4(max(col, vec3(0.0)), 1.0);
+}`;
+
+const VS_BOLT = `#version 300 es
+precision highp float;
+uniform mat4 uVP;
+uniform float uPxPerM;
+uniform float uSize;
+in vec3 aPos;
+out float vW;
+void main(){
+  vec4 cp = uVP * vec4(aPos, 1.0);
+  vW = max(cp.w, 1.0);
+  gl_Position = cp;
+  gl_PointSize = clamp(uSize * uPxPerM / vW, 2.0, 900.0);
+}`;
+
+const FS_BOLT = `#version 300 es
+precision highp float;
+uniform vec3 uColor;
+uniform float uEnergy;
+uniform float uSoft;
+in float vW;
+out vec4 o;
+void main(){
+  float a = uEnergy;
+  if (uSoft > 0.5){
+    vec2 q = gl_PointCoord * 2.0 - 1.0;
+    float r2 = dot(q, q);
+    if (r2 > 1.0) discard;
+    a *= exp(-r2 * 2.6);
+  }
+  o = vec4(uColor * a, 1.0);
+}`;
+
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform float uThresh;
+out vec4 o;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float b = max(c.r, max(c.g, c.b));
+  float k = smoothstep(uThresh, uThresh + 0.6, b);
+  o = vec4(c * k, 1.0);
+}`;
+
+const FS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+out vec4 o;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb * 0.227027;
+  c += (texture(uTex, vUv + uDir * 1.3846).rgb + texture(uTex, vUv - uDir * 1.3846).rgb) * 0.3162162;
+  c += (texture(uTex, vUv + uDir * 3.2307).rgb + texture(uTex, vUv - uDir * 3.2307).rgb) * 0.0702702;
+  o = vec4(c, 1.0);
+}`;
+
+const FS_COMP = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uHdr;
+uniform sampler2D uBloom;
+uniform float uGain;
+uniform float uTime;
+out vec4 o;
+vec3 aces(vec3 x){
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+void main(){
+  vec3 c = texture(uHdr, vUv).rgb + texture(uBloom, vUv).rgb * uGain;
+  c = aces(c * 1.02);
+  c = pow(c, vec3(1.0 / 2.2));
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - dot(q, q) * 0.20;
+  float g = h21(vUv * vec2(1920.0, 1080.0) + fract(uTime) * 137.0) - 0.5;
+  c += g * 0.012;
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------------- GL helpers ---------------- */
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    console.error('shader compile failed:\n' + log);
+    throw new Error('shader: ' + log);
+  }
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  return p;
+}
+
+const progScene = program(VS_QUAD, FS_SCENE);
+const progBolt = program(VS_BOLT, FS_BOLT);
+const progBright = program(VS_QUAD, FS_BRIGHT);
+const progBlur = program(VS_QUAD, FS_BLUR);
+const progComp = program(VS_QUAD, FS_COMP);
+
+const vaoEmpty = gl.createVertexArray();
+const MAX_SEG = 64;
+const boltVerts = new Float32Array(MAX_SEG * 2 * 3);
+const boltPts = new Float32Array(MAX_SEG * 3);
+const vaoBolt = gl.createVertexArray();
+gl.bindVertexArray(vaoBolt);
+const boltBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, boltBuf);
+gl.bufferData(gl.ARRAY_BUFFER, boltVerts.byteLength, gl.DYNAMIC_DRAW);
+const locPosL = gl.getAttribLocation(progBolt, 'aPos');
+gl.enableVertexAttribArray(locPosL);
+gl.vertexAttribPointer(locPosL, 3, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+
+const HDRF = HDR_OK ? gl.RGBA16F : gl.RGBA8;
+const HDRType = HDR_OK ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+
+function makeTarget(w, h, withDepth){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, HDRF, w, h, 0, gl.RGBA, HDRType, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  let rbo = null;
+  if (withDepth){
+    rbo = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rbo);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rbo);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo, rbo, w, h };
+}
+
+let W = 0, H = 0, hdr = null, b1 = null, b2 = null;
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 1.25);
+  const cw = Math.floor(canvas.clientWidth * dpr * RENDER_SCALE);
+  const ch = Math.floor(canvas.clientHeight * dpr * RENDER_SCALE);
+  if (cw === W && ch === H) return;
+  W = Math.max(2, cw); H = Math.max(2, ch);
+  canvas.width = W; canvas.height = H;
+  hdr = makeTarget(W, H, false);
+  const bw = Math.max(2, W >> 2), bh = Math.max(2, H >> 2);
+  b1 = makeTarget(bw, bh, false);
+  b2 = makeTarget(bw, bh, false);
+}
+resize();
+addEventListener('resize', resize);
+
+/* ---------------- camera ---------------- */
+
+const EYE = 1.7;
+const cam = { yaw: 0.0, pitch: -0.035, tyaw: 0.0, tpitch: -0.035, touched: 0 };
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY };
+  canvas.setPointerCapture(e.pointerId);
+  cam.touched = performance.now();
+  unlockAudio();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  cam.tyaw -= (e.clientX - drag.x) * 0.0032;
+  cam.tpitch = Math.max(-0.18, Math.min(0.55, cam.tpitch - (e.clientY - drag.y) * 0.0028));
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('pointerup', () => { drag = null; });
+
+const FOVZ = 1.75;
+
+function camBasis(t){
+  const idle = Math.max(0, (performance.now() - cam.touched) / 1000 - 2.0);
+  const drift = Math.min(1, idle / 3.0);
+  cam.yaw += (cam.tyaw + Math.sin(t * 0.05) * 0.05 * drift - cam.yaw) * 0.035;
+  cam.pitch += (cam.tpitch + Math.sin(t * 0.083 + 1.3) * 0.008 * drift - cam.pitch) * 0.035;
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const pos = [0, EYE, 0];
+  const f = [sy * cp, sp, -cy * cp];
+  let r = [-f[2], 0, f[0]];
+  const rl = Math.hypot(r[0], r[2]) || 1;
+  r = [r[0] / rl, 0, r[2] / rl];
+  const u = [
+    r[1] * f[2] - r[2] * f[1],
+    r[2] * f[0] - r[0] * f[2],
+    r[0] * f[1] - r[1] * f[0],
+  ];
+  return { pos, r, u, f };
+}
+
+function rotMat(out, r, u, f){
+  out[0] = r[0]; out[1] = r[1]; out[2] = r[2]; out[3] = 0;
+  out[4] = u[0]; out[5] = u[1]; out[6] = u[2]; out[7] = 0;
+  out[8] = -f[0]; out[9] = -f[1]; out[10] = -f[2]; out[11] = 0;
+  out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+}
+function vpMat(out, r, u, f, pos, aspect){
+  const t = 1 / FOVZ, near = 1, far = 30000;
+  const view = [
+    r[0], u[0], -f[0], 0,
+    r[1], u[1], -f[1], 0,
+    r[2], u[2], -f[2], 0,
+    -(r[0] * pos[0] + r[1] * pos[1] + r[2] * pos[2]),
+    -(u[0] * pos[0] + u[1] * pos[1] + u[2] * pos[2]),
+    (f[0] * pos[0] + f[1] * pos[1] + f[2] * pos[2]),
+    1,
+  ];
+  const proj = [1 / (t * aspect), 0, 0, 0, 0, 1 / t, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0];
+  for (let c = 0; c < 4; c++){
+    for (let row = 0; row < 4; row++){
+      out[c * 4 + row] = proj[row] * view[c * 4] + proj[4 + row] * view[c * 4 + 1] + proj[8 + row] * view[c * 4 + 2] + proj[12 + row] * view[c * 4 + 3];
+    }
+  }
+}
+
+/* ---------------- storm state ---------------- */
+
+const CB = 420, CTOP = 7000;
+let stormX = -3300;
+let flashCount = 0;
+let nextFlashAt = 3.0 + Math.random() * 4.0;
+let flashes = [];   // { t0, pos:[x,y,z], main, double, bolt:{segs,pts} | null }
+let boltSegs = 0, boltPtsN = 0;
+let skyFlash = 0;
+
+function rr(n){ const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+
+function makeBolt(sx, sy, sz, reach){
+  const segs = [];
+  const pts = [];
+  let x = sx, y = sy, z = sz;
+  const n = 26 + Math.floor(Math.random() * 10);
+  const dy = -(y - 4) / n;
+  for (let i = 0; i < n && segs.length < MAX_SEG; i++){
+    const nx = x + (Math.random() - 0.5) * 300 * reach;
+    const nz = z + (Math.random() - 0.5) * 220 * reach + 40;
+    const ny = y + dy * (0.7 + Math.random() * 0.6);
+    segs.push([x, y, z, nx, Math.max(ny, 4), nz]);
+    pts.push([(x + nx) / 2, (y + Math.max(ny, 4)) / 2, (z + nz) / 2]);
+    x = nx; y = Math.max(ny, 4); z = nz;
+  }
+  // one branch
+  if (segs.length > 8){
+    const bi = 4 + Math.floor(Math.random() * (segs.length - 8));
+    const bp = segs[bi].slice(2);
+    let bx = bp[0], by = bp[1], bz = bp[2];
+    const bn = 7 + Math.floor(Math.random() * 5);
+    const bdy = -(by - 4) / bn;
+    for (let i = 0; i < bn && segs.length < MAX_SEG; i++){
+      const nx = bx + (Math.random() - 0.5) * 340;
+      const nz = bz + (Math.random() - 0.5) * 200;
+      const ny = by + bdy * (0.7 + Math.random() * 0.6);
+      segs.push([bx, by, bz, nx, Math.max(ny, 4), nz]);
+      pts.push([(bx + nx) / 2, (by + Math.max(ny, 4)) / 2, (bz + nz) / 2]);
+      bx = nx; by = Math.max(ny, 4); bz = nz;
+    }
+  }
+  return { segs, pts };
+}
+
+function flashEnvelope(age){
+  if (age < 0 || age > 1.6) return 0;
+  let e = 0;
+  e += Math.exp(-Math.pow((age - 0.05) / 0.085, 2)) * 0.32;   // in-cloud pre-glow
+  e += Math.exp(-Math.pow((age - 0.15) / 0.055, 2)) * 1.0;    // first stroke
+  e += Math.exp(-Math.pow((age - 0.32) / 0.070, 2)) * 0.82;   // second stroke (recoil)
+  e += Math.exp(-Math.pow((age - 0.52) / 0.24, 2)) * 0.42;     // afterglow tail
+  return e;
+}
+
+let autoFlashes = true;
+function scheduleFlashes(t){
+  if (!autoFlashes) return;
+  if (t >= nextFlashAt){
+    const stormD = Math.hypot(stormX, stormZ);
+    const cg = Math.random() < 0.42;
+    const jx = stormX + (Math.random() - 0.5) * 2600;
+    const jz = stormZ + (cg ? 2600 + Math.random() * 1400 : (Math.random() - 0.5) * 2200);
+    const jy = cg ? CB + 300 + Math.random() * 500 : CB + 900 + Math.random() * 2600;
+    const f = {
+      t0: t,
+      pos: [jx, jy, jz],
+      bolt: cg ? makeBolt(jx, jy, jz, stormD < 8000 ? 1 : 0.7) : null,
+      dist: Math.hypot(jx, jz),
+    };
+    flashes.push(f);
+    flashCount++;
+    if (f.bolt) boltSegs = Math.min(f.bolt.segs.length, MAX_SEG);
+    if (f.bolt){
+      boltPtsN = Math.min(f.bolt.pts.length, MAX_SEG);
+      for (let i = 0; i < boltPtsN; i++){
+        boltPts[i * 3] = f.bolt.pts[i][0];
+        boltPts[i * 3 + 1] = f.bolt.pts[i][1];
+        boltPts[i * 3 + 2] = f.bolt.pts[i][2];
+      }
+      for (let i = 0; i < boltSegs; i++){
+        for (let k = 0; k < 6; k++) boltVerts[i * 6 + k] = f.bolt.segs[i][k];
+      }
+      gl.bindVertexArray(vaoBolt);
+      gl.bindBuffer(gl.ARRAY_BUFFER, boltBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, boltVerts, 0, boltSegs * 6);
+      gl.bindVertexArray(null);
+    }
+    thunder(f.dist);
+    nextFlashAt = t + 3.5 + Math.random() * 9.0 * (stormD < 8000 ? 0.6 : 1.0);
+  }
+  flashes = flashes.filter(f => t - f.t0 < 1.6);
+}
+
+function flashState(t){
+  let f0 = null, f1 = null, sky = 0;
+  let boltE = 0;
+  for (const f of flashes){
+    const age = t - f.t0;
+    let e = flashEnvelope(age);
+    if (f.bolt){
+      const flick = age < 0.45 ? 1 : (rr(Math.floor(age * 55) + f.t0 * 7.13) > 0.5 ? 1 : 0.5);
+      boltE = Math.max(boltE, e * flick);
+    }
+    sky = Math.max(sky, e * 0.55);
+    if (!f0 || e > f0.e) { f1 = f0; f0 = { e, pos: f.pos }; }
+    else if (!f1 || e > f1.e) f1 = { e, pos: f.pos };
+  }
+  return {
+    f0: f0 || { e: 0, pos: [0, CB + 800, -9000] },
+    f1: f1 || { e: 0, pos: [0, CB + 800, -9000] },
+    sky, boltE,
+  };
+}
+
+/* ---------------- audio: wind + thunder ---------------- */
+
+let AC = null, master = null, running = false;
+const audioHint = document.getElementById('audiohint');
+function unlockAudio(){
+  if (AC) return;
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+    const len = Math.floor(AC.sampleRate * 2);
+    const buf = AC.createBuffer(1, len, AC.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++){
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.02 * w) / 1.02;
+      d[i] = last * 3.2;
+    }
+    const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 210; lp.Q.value = 0.5;
+    const g = AC.createGain(); g.gain.value = 0.10;
+    src.connect(lp).connect(g).connect(master);
+    src.start();
+    const lfo = AC.createOscillator(); lfo.frequency.value = 0.17;
+    const lg = AC.createGain(); lg.gain.value = 70;
+    lfo.connect(lg).connect(lp.frequency); lfo.start();
+    running = true;
+    audioHint.textContent = 'storm sound on';
+    audioHint.classList.add('off');
+  } catch (e) { /* audio unavailable */ }
+}
+audioHint.addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', unlockAudio);
+
+function thunder(dist){
+  if (!running || !AC) return;
+  const delay = Math.max(0.4, dist / 340);
+  setTimeout(() => {
+    if (!AC || AC.state !== 'running') return;
+    const t = AC.currentTime;
+    const near = dist < 3400;
+    const dur = near ? 2.6 : 4.2;
+    const nlen = Math.floor(dur * AC.sampleRate);
+    const nb = AC.createBuffer(1, nlen, AC.sampleRate);
+    const nd = nb.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < nlen; i++){
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.012 * w) / 1.012;
+      const env = Math.min(1, i / (AC.sampleRate * 0.05)) * Math.exp(-i / (nlen * 0.42));
+      nd[i] = last * 6.5 * env * (0.6 + 0.4 * Math.sin(i / nlen * 9.0 + dist));
+    }
+    const n = AC.createBufferSource(); n.buffer = nb;
+    const bp = AC.createBiquadFilter(); bp.type = 'lowpass'; bp.frequency.setValueAtTime(near ? 320 : 150, t);
+    bp.frequency.exponentialRampToValueAtTime(70, t + dur);
+    const g = AC.createGain();
+    g.gain.setValueAtTime(Math.max(0.12, 0.85 * (1 - dist / 11000)), t);
+    n.connect(bp).connect(g).connect(master);
+    n.start(t);
+    if (near){
+      const clen = Math.floor(0.09 * AC.sampleRate);
+      const cb = AC.createBuffer(1, clen, AC.sampleRate);
+      const cd = cb.getChannelData(0);
+      for (let i = 0; i < clen; i++) cd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (clen * 0.28));
+      const c = AC.createBufferSource(); c.buffer = cb;
+      const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+      const cg2 = AC.createGain(); cg2.gain.value = 0.5;
+      c.connect(hp).connect(cg2).connect(master);
+      c.start(t);
+    }
+  }, delay * 1000);
+}
+
+/* ---------------- frame loop ---------------- */
+
+let t0 = performance.now();
+let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
+let readyFlag = false;
+
+const rot4 = new Float32Array(16);
+const vp4 = new Float32Array(16);
+const U = p => name => gl.getUniformLocation(p, name);
+const us = U(progScene), ub = U(progBolt), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
+
+let stormZ = -7000;
+
+function frame(){
+  const t = (performance.now() - t0) / 1000;
+  const now = performance.now();
+  if (lastFrame) { const dtms = now - lastFrame; perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; }
+  lastFrame = now;
+  frames++;
+  resize();
+
+  stormZ = -(7000 - Math.min(t, 360) * 7.2);   // the storm rolls in
+  scheduleFlashes(t);
+  const fs = flashState(t);
+  skyFlash = fs.sky;
+  const cb = camBasis(t);
+  rotMat(rot4, cb.r, cb.u, cb.f);
+  vpMat(vp4, cb.r, cb.u, cb.f, cb.pos, W / H);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fbo);
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.disable(gl.BLEND);
+  gl.useProgram(progScene);
+  gl.bindVertexArray(vaoEmpty);
+  gl.uniform2f(us('uRes'), W, H);
+  gl.uniform1f(us('uTime'), t);
+  gl.uniform1f(us('uSeed'), SEED);
+  gl.uniform2f(us('uStorm'), stormX, stormZ);
+  gl.uniform4f(us('uFlash0'), fs.f0.pos[0], fs.f0.pos[1], fs.f0.pos[2], fs.f0.e);
+  gl.uniform4f(us('uFlash1'), fs.f1.pos[0], fs.f1.pos[1], fs.f1.pos[2], fs.f1.e);
+  gl.uniform1f(us('uSkyFlash'), fs.sky);
+  gl.uniform1f(us('uDbg'), +(qs.get('dbg') || 0));
+  gl.uniform3f(us('uCamPos'), cb.pos[0], cb.pos[1], cb.pos[2]);
+  gl.uniformMatrix4fv(us('uCamInvRot'), false, rot4);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  if (fs.boltE > 0.02 && boltSegs > 0){
+    gl.useProgram(progBolt);
+    gl.bindVertexArray(vaoBolt);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.uniformMatrix4fv(ub('uVP'), false, vp4);
+    gl.uniform1f(ub('uPxPerM'), H * FOVZ);
+    gl.uniform1f(ub('uSoft'), 0.0);
+    gl.uniform3f(ub('uColor'), 0.85, 0.90, 1.0);
+    gl.uniform1f(ub('uEnergy'), fs.boltE * 1.6);
+    gl.drawArrays(gl.LINES, 0, boltSegs * 2);
+    gl.uniform1f(ub('uSoft'), 1.0);
+    gl.uniform1f(ub('uSize'), 60);
+    gl.uniform1f(ub('uEnergy'), fs.boltE * 0.5);
+    gl.drawArrays(gl.POINTS, 0, boltPtsN);
+    gl.disable(gl.BLEND);
+  }
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.viewport(0, 0, b1.w, b1.h);
+  gl.useProgram(progBright);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.uniform1i(ubr('uTex'), 0);
+  gl.uniform1f(ubr('uThresh'), 0.55);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(progBlur);
+  gl.uniform1i(ubl('uTex'), 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b2.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform2f(ubl('uDir'), 2.2 / b1.w, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b2.tex);
+  gl.uniform2f(ubl('uDir'), 0, 2.2 / b1.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b2.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform2f(ubl('uDir'), 5.0 / b1.w, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b2.tex);
+  gl.uniform2f(ubl('uDir'), 0, 5.0 / b1.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progComp);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform1i(uc('uHdr'), 0);
+  gl.uniform1i(uc('uBloom'), 1);
+  gl.uniform1f(uc('uGain'), 0.75);
+  gl.uniform1f(uc('uTime'), t);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  readyFlag = true;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- DEV hooks ---------------- */
+
+window.__stormTest = {
+  get ready(){ return readyFlag; },
+  get frames(){ return frames; },
+  get gl2(){ return true; },
+  get hdr(){ return HDR_OK; },
+  state(){
+    return {
+      stormDist: +Math.hypot(stormX, stormZ).toFixed(0),
+      flashCount,
+      skyFlash: +skyFlash.toFixed(3),
+      rainAtCam: rainAtJS(0, 0),
+      boltOn: flashes.some(f => f.bolt && (performance.now() - t0) / 1000 - f.t0 < 1.0),
+    };
+  },
+  setAuto(v){ autoFlashes = !!v; },
+  flashNow(cg){
+    const t = (performance.now() - t0) / 1000;
+    const jx = stormX + (Math.random() - 0.5) * 1200;
+    const jz = stormZ + (cg === false ? (Math.random() - 0.5) * 1600 : 2600 + Math.random() * 1200);
+    const jy = cg === false ? CB + 1200 + Math.random() * 1800 : CB + 300 + Math.random() * 400;
+    const f = { t0: t, pos: [jx, jy, jz], bolt: cg === false ? null : makeBolt(jx, jy, jz, 1), dist: Math.hypot(jx, jz) };
+    flashes.push(f);
+    flashCount++;
+    if (f.bolt){
+      boltSegs = Math.min(f.bolt.segs.length, MAX_SEG);
+      boltPtsN = Math.min(f.bolt.pts.length, MAX_SEG);
+      for (let i = 0; i < boltPtsN; i++){
+        boltPts[i * 3] = f.bolt.pts[i][0];
+        boltPts[i * 3 + 1] = f.bolt.pts[i][1];
+        boltPts[i * 3 + 2] = f.bolt.pts[i][2];
+      }
+      for (let i = 0; i < boltSegs; i++){
+        for (let k = 0; k < 6; k++) boltVerts[i * 6 + k] = f.bolt.segs[i][k];
+      }
+      gl.bindVertexArray(vaoBolt);
+      gl.bindBuffer(gl.ARRAY_BUFFER, boltBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, boltVerts, 0, boltSegs * 6);
+      gl.bindVertexArray(null);
+    }
+    thunder(f.dist);
+    return { dist: Math.round(f.dist), bolt: !!f.bolt };
+  },
+  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
+  resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
+  setPose(p){
+    if (p.yaw !== undefined) { cam.tyaw = p.yaw; cam.yaw = p.yaw; }
+    if (p.pitch !== undefined) { cam.tpitch = p.pitch; cam.pitch = p.pitch; }
+    cam.touched = performance.now();
+  },
+};
+
+function rainAtJS(x, z){
+  const d = Math.hypot(x - stormX, z - stormZ);
+  const a = Math.max(0, Math.min(1, (9200 - d) / (9200 - 3600)));
+  return +(Math.pow(a, 1.35)).toFixed(3);
+}
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'STORM', accent: '#8fb4d8',
+  issues: [672], span: '~3 h', shipped: '2026-10-21',
+  assist: 'solo', note: '“This is a solo test” — approach researched and chosen by the builder',
+};
+</script>
+<script src="credits.js"></script>
+</body>
+</html>
