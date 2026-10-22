@@ -46,6 +46,7 @@ export function createSim(seed = 1) {
         score: 0,
         swing: 0, swingDir: 'down', swingId: 0, cool: 0, holdT: 0, drawing: false,
         bombCool: 0,
+        hitStop: 0,        // frozen frames after a kill / blast (hit-stop for weight)
         shop: { open: false, sel: 0 },
         paused: false,
         death: false, deathT: 0, win: false,
@@ -151,6 +152,7 @@ const DIRV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
 
 export function stepSim(sim, inp) {
     sim.tick++
+    if (sim.hitStop > 0) { sim.hitStop--; return sim }
     if (sim.msgT > 0) sim.msgT--
     if (sim.nameT > 0) sim.nameT--
     if (sim.fx.length > 400) sim.fx.splice(0, sim.fx.length - 400)
@@ -348,6 +350,7 @@ function hurtEnemy(sim, e, dmg, dx, dy) {
 
 function killEnemy(sim, e) {
     e.dead = true
+    sim.hitStop = Math.max(sim.hitStop, e.boss ? 6 : 3)
     emit(sim, 'die', e.x, e.y, { type: e.type, boss: e.boss })
     const wasKey = e.drop === 'key' && !sim.flags.killed[`${sim.screen}:${e.i}`]
     sim.flags.killed[`${sim.screen}:${e.i}`] = true
@@ -455,6 +458,7 @@ function stepBombs(sim) {
         if (b.fuse > 0) continue
         sim.bombs.splice(i, 1)
         emit(sim, 'boom', b.x, b.y)
+        sim.hitStop = Math.max(sim.hitStop, 4)
         for (let ty = tileOf(b.y - 24); ty <= tileOf(b.y + 24); ty++) {
             for (let tx = tileOf(b.x - 24); tx <= tileOf(b.x + 24); tx++) {
                 if (Math.hypot(tx * TS + 8 - b.x, ty * TS + 8 - b.y) > 28) continue
