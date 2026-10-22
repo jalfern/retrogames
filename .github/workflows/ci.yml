@@ -123,6 +123,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run dailylogcheck
         if: contains(fromJSON(env.KEYS), 'core')
+      - run: npm run shiftreportcheck
+        if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run jonqcheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run lint:polar
