@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { buildCourse, terrainY, openness, undulate, bankTurn, sceneryPlan, COURSE_COUNT, DS, WALL_X, SHELF_PROPS } from '../src/games/SSX/course.js'
-import { snowColor, buildTerrain, THEMES, GRIDS, SUN, GROOVE, TRACK_DARKEN } from '../src/games/SSX/art.js'
+import { snowColor, buildTerrain, THEMES, GRIDS, SUN, GROOVE, TRACK_DARKEN, surfaceInfo, peaksRing } from '../src/games/SSX/art.js'
 import { makeGame, step } from '../src/games/SSX/sim.js'
 import { decide } from '../src/games/SSX/planner.js'
 
@@ -218,6 +218,81 @@ for (const f of ['course.js', 'sim.js', 'planner.js']) {
     ok('sfx: a powered launch gets its own deeper sweep, not the ollie chirp',
         /e\.type === 'jump' && mine[\s\S]{0,240}e\.power[\s\S]{0,200}playSweep\(140/.test(jsxA))
     ok('fresh carve grooves bite darker than the groomed line', GROOVE.alpha - TRACK_DARKEN >= 0.4)
+}
+
+// ---- 10. mountain feel #665 round 2: gully stone, capped rims, white faces,
+//          varied peak ring, finish grandstands ----------------------------------
+{
+    const luma = (rgb) => rgb[0] * 0.3 + rgb[1] * 0.59 + rgb[2] * 0.11
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        if (!co.gullies.length) continue
+        const gl = co.gullies[0]
+        let rockLo = 1e9, rockHi = -1e9, litSum = 0, litN = 0, darkSum = 0, darkN = 0, capped = 0, bare = 0
+        for (let s = Math.round(gl.s0); s <= Math.round(gl.s1); s += DS) {
+            for (const x of [-7, -5.5, -4.2, -3.2, 3.2, 4.2, 5.5, 7]) {
+                const info = surfaceInfo(co, s, x)
+                if (info.rockT > 0.45) {
+                    const L = luma(info.rgb)
+                    rockLo = Math.min(rockLo, L); rockHi = Math.max(rockHi, L)
+                }
+                // sun-vs-shade comparison at matched height/steepness, so the
+                // cap and slopeRock terms can't bias the comparison
+                if (info.rockT > 0.5 && info.above < 12) {
+                    const L = luma(info.rgb)
+                    if (info.litFace > 0.6) { litSum += L; litN++ }
+                    else if (info.litFace < 0.15) { darkSum += L; darkN++ }
+                }
+                if (info.above > 14 && Math.abs(x) > 1.6) {
+                    if (info.rockT < 0.25) capped++
+                    if (info.rockT > 0.5) bare++
+                }
+            }
+        }
+        ok(`${co.name}: gully rock is two-tone (lit faces vs dark clefts)`, rockHi - rockLo > 18)
+        ok(`${co.name}: sun-facing rock reads lighter than shaded rock (${litN}/${darkN})`,
+            litN > 3 && darkN > 3 && litSum / litN > (darkSum / darkN) * 1.15)
+        ok(`${co.name}: snow caps band the jagged rim (${capped} capped / ${bare} bare teeth)`,
+            capped > 0 && bare > 0)
+    }
+    // #665 item 3: open faces near the camera keep their whiteness — a flat,
+    // rock-free centre-lane pixel on the day course may not run icy.
+    {
+        const co = buildCourse(0)
+        let worstBlue = -1e9
+        for (let s = 60; s < 700; s += DS) {
+            for (const x of [-0.5, 0, 0.5]) {
+                const info = surfaceInfo(co, s, x)
+                if (info.hollow < 0.15 && info.rockT < 0.05) {
+                    worstBlue = Math.max(worstBlue, info.rgb[2] - info.rgb[0])
+                }
+            }
+        }
+        ok('day open faces stay near-white (blue cast confined to hollows)', worstBlue < 40)
+    }
+    // #665 item 2: the horizon range varies its silhouettes and rocks its flanks
+    {
+        const ring = peaksRing()
+        const segs = new Set(ring.map((p) => p.segs))
+        ok('peak ring varies silhouettes', segs.size >= 3 && ring.every((p) => p.sx !== 1 || p.sz !== 1))
+        ok('some peaks stand bare rock, the rest wear caps', ring.some((p) => p.cap) && ring.some((p) => !p.cap))
+        ok('peak bodies stay hazed rock under the caps',
+            THEMES.day.peakRock[0] < THEMES.day.peak[0] && THEMES.night.peakRock && THEMES.dusk.peakRock)
+        ok('rim caps carry a tint brighter than the snowfield in every theme',
+            Object.values(THEMES).every((T) => T.capSnow[0] * 0.3 + T.capSnow[1] * 0.59 + T.capSnow[2] * 0.11
+                > T.snowB[0] * 0.3 + T.snowB[1] * 0.59 + T.snowB[2] * 0.11 + 10))
+        ok('peak ring is deterministic', JSON.stringify(peaksRing()) === JSON.stringify(ring))
+    }
+    // #665 item 6: race-day grandstands at the finish, clear of gullies
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        const plan = sceneryPlan(co)
+        const stands = plan.filter((p) => p.id === 'grandstand')
+        ok(`${co.name}: a bank of seats lines the finish`, stands.length >= 2)
+        ok(`${co.name}: grandstands sit clear of gullies and face the line`,
+            stands.length >= 2 && stands.every((p) => openness(co, p.s) > 0.7
+                && p.s > 0.7 * co.N * DS && Math.abs(p.x) > WALL_X && p.orient === 'across'))
+    }
 }
 
 console.log(`${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

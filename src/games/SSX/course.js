@@ -291,7 +291,7 @@ export const WALL_X = 1.75
 // pin it; art.js turns entries into real models (primitive fallback included).
 const shash = (n) => { const v = Math.sin(n * 78.233) * 43758.5453; return v - Math.floor(v) }
 
-export const SHELF_PROPS = ['tree_pine', 'tree_oak', 'rock', 'boulder', 'fence', 'flag', 'marshal_post', 'billboard']
+export const SHELF_PROPS = ['tree_pine', 'tree_oak', 'rock', 'boulder', 'fence', 'flag', 'marshal_post', 'billboard', 'grandstand']
 
 export function sceneryPlan(c) {
     const out = []
@@ -332,6 +332,12 @@ export function sceneryPlan(c) {
     push('flag', 2 * DS, 0.55, 1, 'rand')
     push('marshal_post', 3 * DS, WALL_X + 0.7, 1, 'rand')
     push('billboard', (c.N - 8) * DS, -(WALL_X + 1.4), 1.4, 'across')
+    // #665: a bank of seats at the line — two grandstands straddling the
+    // finish, parked back until the face is open so no gully pierces them
+    let gs = (c.N - 5) * DS
+    while (gs > 40 && openness(c, gs) < 0.7) gs -= DS
+    push('grandstand', gs, -(WALL_X + 2.6), 1.7, 'across')
+    push('grandstand', gs, WALL_X + 2.6, 1.7, 'across')
     return out
 }
 
