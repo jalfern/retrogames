@@ -368,8 +368,11 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
 
 ## Honest gaps (filed as the polish pass)
 
-- CPU riders wipe out on seeded landings (#791), but they never *miss* a line —
-  a seat only falls, it never bobbles past an obstacle it should have dodged.
+- CPU riders wipe out on seeded landings (#791) and now *miss* lines too
+  (#791 slice 10): a rival that clips a rock/tree bobbles past it — speed and
+  line lost, off-balance wobble, dust burst — on a skill-scaled seeded roll, so
+  places change hands even when nobody actually falls. A bad roll still goes over
+  the bars; the player is never exempt (ground contact is a straight bailing).
 - Keyboard-only flips/grabs on desktop; phones get steer + A-jump + B-boost
   (spins still work via the d-pad mid-air). Analogue depth is the #791 ramp +
   canvas drag distance — not a physical analogue stick.

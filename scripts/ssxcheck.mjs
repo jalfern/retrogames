@@ -518,6 +518,76 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         !/Math\.random\s*\(/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'SSX', 'planner.js'), 'utf8')))
 }
 
+// ---- 9a. #791 slice 10: line-bobble — the field clips lines, not just landings --
+{
+    // recovery odds scale with skill: a skilled seat saves a clip, a rookie eats it
+    ok('#791 the bobble knobs are exported and sane',
+        CFG.bobbleK > 0 && CFG.bobbleK <= 1 && CFG.bobbleDrag > 0.5 && CFG.bobbleDrag < 1 &&
+        CFG.bobbleKick > 0 && CFG.bobbleMeter >= 0 && CFG.bobbleT > 0)
+    let mono = true
+    for (let i = 1; i < SKILL.length; i++) if (!(CFG.bobbleK * SKILL[i] <= CFG.bobbleK * SKILL[i - 1])) mono = false
+    ok('#791 clip recovery rises with seat skill and stays sane',
+        mono && SKILL.every((s) => CFG.bobbleK * s > 0 && CFG.bobbleK * s < 1))
+    ok('#791 the bobble gate reads the seat skill and rides the seeded LCG',
+        /SKILL\[r\.id - 1\]/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'SSX', 'sim.js'), 'utf8')) &&
+        !/Math\.random\s*\(/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'SSX', 'sim.js'), 'utf8')))
+
+    // a deterministic bobble: seed the LCG so a weak seat recovers off a rock
+    const bob = makeGame('race'); run(bob, 181); clear(bob)
+    const rb = bob.riders[5]
+    const rob = bob.course.obstacles.find((o) => o.kind === 'rock')
+    rb.air = false; rb.s = rob.i * DS; rb.x = rob.x; rb.v = 20; rb.meter = 60
+    rb.y = terrainY(bob.course, rob.i * DS, rob.x)
+    bob._rs = 0
+    const v0 = rb.v, m0 = rb.meter
+    step(bob, {})
+    ok('#791 a CPU that clips a rock bobbles past it, not a wipeout',
+        hasEv(bob, 'bobble', (e) => e.who === 5) && rb.tumble === 0 && rb.bobble > 0)
+    ok('#791 a clip costs speed and meter but keeps the rider rolling',
+        rb.v < v0 && rb.v > v0 * 0.6 && rb.meter < m0 && !hasEv(bob, 'crash'))
+    ok('#791 the clip knocks the board off its line', Math.abs(rb.x - rob.x) >= rob.r)
+
+    // the player is never exempt: the same contact is a straight bailing
+    const pla = makeGame('race'); run(pla, 181); clear(pla)
+    const p = pla.riders[0]
+    const pob = pla.course.obstacles.find((o) => o.kind === 'rock')
+    p.air = false; p.s = pob.i * DS; p.x = pob.x; p.v = 20
+    p.y = terrainY(pla.course, pob.i * DS, pob.x)
+    pla._rs = 0
+    step(pla, {})
+    ok('#791 the player still bails on an obstacle — never bobbles',
+        !hasEv(pla, 'bobble') && p.tumble > 0 && hasEv(pla, 'crash', (e) => e.who === 0))
+
+    // across heats: the field actually bobbles, the witness is clean, places move
+    const raceBob = (seed) => {
+        const g = makeGame('race', seed)
+        let t = 0
+        while (!g.end && t < 400000) { step(g, g.phase === 'run' ? decide(g, g.riders[0]) : {}); t++ }
+        return g
+    }
+    let bobbles = 0, obCrash = 0, playerBob = 0, orders = []
+    for (const seed of [0, 4, 5, 6, 8, 9]) {
+        const g = raceBob(seed)
+        const bobs = g.events.filter((e) => e.type === 'bobble')
+        bobbles += bobs.length
+        playerBob += bobs.filter((e) => e.who === 0).length
+        obCrash += g.events.filter((e) => e.type === 'crash' && (e.what === 'rock' || e.what === 'tree')).length
+        orders.push(g.riders.filter((r) => r.id !== 0 && r.finished).map((r) => r.place).join(''))
+    }
+    ok('#791 the CPU field bobbles past obstacles across heats', bobbles >= 6)
+    ok('#791 a bobble is never credited to the player', playerBob === 0)
+    ok('#791 bobbles soften but never erase the obstacle fall', obCrash >= 1)
+    ok('#791 places still change hands with the bobble in play', new Set(orders).size >= 2)
+
+    // determinism: the same seed replays bobble-for-bobble
+    const seq = (g) => g.events.filter((e) => e.type === 'bobble' || e.type === 'crash').map((e) => `${e.type}:${e.who}:${e.what}`).join(',')
+    const r1 = raceBob(4), r2 = raceBob(4)
+    ok('#791 the bobble sequence replays exactly, hash included',
+        seq(r1) === seq(r2) && stateHash(r1) === stateHash(r2) && hasEv(r1, 'bobble'))
+    const rc = cloneGame(r1); rc.riders[5].bobble = (rc.riders[5].bobble + 3) % 34
+    ok('#791 the off-balance wobble rides the replay hash', stateHash(rc) !== stateHash(r1))
+}
+
 // ---- 9b. #791 analog steer: edge pressure, not binary twitch -----------------
 {
     const RAMP = Math.round(60 / CFG.PRESS)

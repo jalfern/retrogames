@@ -16,9 +16,11 @@
 //   SHOWOFF: 90 seconds, pure trick points against the house target.
 
 import { buildCourse, terrainY, segAt, featureLift, COURSE_COUNT, WALL_X, DS } from './course.js'
-import { decide, PACE, cpuMiss } from './planner.js'
+import { decide, PACE, SKILL, cpuMiss } from './planner.js'
 
 export const FIXED_DT = 1000 / 60
+
+const rollLcg = (g) => { g._rs = (Math.imul(g._rs, 1664525) + 1013904223) >>> 0; return g._rs / 4294967296 }
 
 export const CFG = {
     G: 22,                     // arcade gravity, m/s^2
@@ -47,6 +49,13 @@ export const CFG = {
     revertSpin: 120,           // degrees of opposite rotation that commits the revert
     rockBounce: 7.0,           // m/s kicked back off a rock top landed from above (#731)
     rockPts: 200,              // style points for the boulder boop
+    bobbleK: 0.85,             // #791 line-bobble: skill-scaled odds a CPU *recovers*
+                               // from clipping an obstacle (glance, speed+line loss) instead
+                               // of going over the bars — seats miss lines, not just landings
+    bobbleDrag: 0.82,          // fraction of speed kept past a clip
+    bobbleKick: 0.55,          // lateral knock off the clip, piste fractions
+    bobbleMeter: 12,           // meter scrubbed off by the obstacle
+    bobbleT: 34,               // frames of off-balance wobble after a clip
     comboCap: 4,
     overDouble: true,
     flipCheck: true,           // half-done flips crash you
@@ -107,6 +116,7 @@ function newRider(i, isP, gridBack) {
         carves: [],
         bounceOb: -1,
         miss: false,
+        bobble: 0, bobbleOb: -1,
         jumpHeld: false, steerSm: 0, press: 0, takeSpin: 0, seedPhase: i * 1.7 + 0.4,
     }
 }
@@ -186,6 +196,7 @@ function crash(g, r, what) {
     r.spin = 0; r.flip = 0; r.grab = 0; r.air = false; r.grind = null
     r.press = 0; r.takeSpin = 0
     r.stomp = 0; r.stompPow = 0
+    r.bobble = 0
     push(g, { type: 'crash', who: r.id, what })
 }
 
@@ -202,6 +213,7 @@ function riderStep(g, r, inp) {
         return
     }
     if (r.stomp > 0) r.stomp--
+    if (r.bobble > 0) r.bobble--
     const pace = r.isP ? 1 : PACE[r.id - 1]
     // #791 analog steer: the board loads onto an edge over ~0.1 s of held
     // pressure instead of snapping to full lock — a tap nips, a hold carves.
@@ -360,12 +372,28 @@ function riderStep(g, r, inp) {
     }
     r.s += r.v * dt
 
-    // obstacles: only bite when you are on their level
+    // obstacles: only bite when you are on their level.
+    // #791 line-bobble: the CPU field misses *lines*, not just landings. When a
+    // rival clips a rock/tree it should have dodged, a skilled seat glances off
+    // and recovers — speed and line lost, but the board keeps rolling — while a
+    // bad roll still goes over the bars. The player is never exempt: the same
+    // contact at ground level is a straight bailing (the original's rule).
     for (const ob of c.obstacles) {
         const os = ob.i * DS
         if (Math.abs(os - r.s) < DS * 0.9 && Math.abs(ob.x - r.x) < ob.r) {
             const obH = ob.kind === 'tree' ? 2.4 : 1.1
-            if (r.y < terrainY(c, r.s, r.x) + obH) { crash(g, r, ob.kind); return }
+            if (r.y < terrainY(c, r.s, r.x) + obH) {
+                if (!r.isP && r.bobbleOb !== ob.i && rollLcg(g) < CFG.bobbleK * SKILL[r.id - 1]) {
+                    r.bobbleOb = ob.i
+                    r.v *= CFG.bobbleDrag
+                    r.x += (ob.x > r.x ? -1 : 1) * CFG.bobbleKick
+                    r.meter = Math.max(0, r.meter - CFG.bobbleMeter)
+                    r.bobble = CFG.bobbleT
+                    push(g, { type: 'bobble', who: r.id, what: ob.kind })
+                    continue
+                }
+                crash(g, r, ob.kind); return
+            }
         }
     }
 
@@ -477,7 +505,7 @@ export function stateHash(g) {
     const add = (str) => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) } }
     add(`${g.tick}|${g.heat}|${g.phase}|${g.mode}|${g.end}|${g.showoffLeft.toFixed(2)}|${g.count}`)
     for (const r of g.riders) {
-        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)},ts${r.takeSpin},st${r.stomp}:${r.stompPow.toFixed(2)}`)
+        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)},ts${r.takeSpin},st${r.stomp}:${r.stompPow.toFixed(2)},bb${r.bobble}`)
     }
     return (h >>> 0).toString(16)
 }
