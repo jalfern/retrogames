@@ -1,66 +1,59 @@
-# STATE — 2026-10-21 forge pm #5
+# STATE — 2026-10-22 forge session (mirror fix)
 
 ## Shipped this session
-- **#738 EMBERWOOD — original HD-2D action-adventure → prod** (PR #751 squash
-  `6bfca16`; Vercel SUCCESS + production deployment at `6bfca16`; route
-  `/retrogames/emberwood` answers 200). Jon's "fancier Zelda-like that's OURS"
-  (no Nintendo names/art/music): hero Ash, the vale of Emberwood, embers currency,
-  bosses Bramble Maw + Cinder Wyrm. MODERN bar.
-  - Full first slice: 2x2 overworld + town shop (potion/arrows/bombs/shield),
-    tap-A slash / **hold-A draw bow / B bomb / C drink**, 6 monster species each
-    with its own AI (cinderling/bat/spitter/husk-front-armour/wisp-phase/sprig-lurk),
-    two item-gated dungeons (keys, locked+big door, push-block→plate, cracked walls,
-    far arrow-switches gated on dungeon-1's bow), hearts+containers, death→respawn
-    with progress, win overlay.
-  - HD-2D three.js stage: tilted ortho diorama, sun+hemi+real shadow maps, torch
-    point-lights + hero lantern in dark, ACES exposure, animated water, bloom +
-    tilt-shift focus on hero, vignette. `?lite=1` skips post/shadows.
-  - Pure seeded `sim.js` (mulberry32) — renderer/contract/attract-bot/Node harness
-    all drive ONE module; same seed ⇒ byte-identical hash trajectory (asserted).
-  - `solver.js` proves dungeon finishability with only the items owned at that point:
-    full win WITH bombs; **bow unreachable without bombs** (crack gates it); bare kit
-    can't clear bow-gated d2; slack keys≥doors+1, arrows≥switches+1.
-  - Harness `npm run emberwoodcheck` = **61 gates green**: maps/species/solver
-    gating+slack/determinism + per-rule mechanics + Chrome leg (start, walk, real
-    contract ticks, forced death/restart, canvas lit via contract `frame()`, zero
-    page/console errors). Mutation-proven: removing solver bomb-gate reds 3 gates;
-    restore → green. Registry `visibility:'private'` (#379), own lazy chunk, pad/B,
-    PauseOverlay, DebugKit (+ live PROGNOSIS), `exposeGame`+contractcheck.
-  - Gates: lint:mario/fps/ai clean, build green, main-ok green.
+- **#772 EMBERWOOD mirrored diorama → prod** (PR #775 squash `6f28d23`).
+  Jon on iPhone: press right, hero walked left; town house sat top-RIGHT
+  (tile data says top-left). Root cause = camera math: +Z-up stage, ortho cam
+  south-above looking north-down with `up=(0,-1,0)` → north-on-top but
+  screen-right = world −X (the whole view mirrored).
+  - Fix = VIEW, not input: `FX(x) = SW*TS - x` applied to every view-space x in
+    `render.js` (camera-follow, tiles/props, plates/switches/chests/doors/
+    cracks/NPCs, torches+sun, hero/enemies/drops/projectiles/blocks/particles +
+    blob shadows, tilt-shift focus). Removed the art.js hero right→left swap and
+    the `scale.x=-1` hero flip (both were mirror compensation). `screenPos()` +
+    `heroPos()` exposed on `__emberwoodTest` for QA.
+  - Drive-by: `setFocus` passed `-hero.y` (focus off-screen → vale-wide blur);
+    now passes hero.y. Helps town legibility (#773) though not the brightness
+    half of that issue.
+  - Harness: +4 chrome gates in `emberwoodcheck` (east-right 0.33<0.70,
+    north-top, hold-right → world +43px east dir=right, projected screen x
+    0.513→0.638). **Mutation-proven**: `FX = x => x` reds exactly the two x
+    gates with Jon's mirror signature (0.486→0.361), vertical gates stay green.
+  - Gates: eslint + lint:mario/fps/ai + build green; full check 76/76
+    (node 64, chrome 12), zero page/console errors.
+  - Prod verify: upstream `retrogames-psi.vercel.app` EMBERWOOD chunk
+    `index-CPcmEIa0.js` contains the FX-wrapped sun (`(-80),200,150`) — fix is
+    live. jalfern.com proxy still caches the old index hash (known #696/#694
+    host-index staleness; refreshes on cache expiry).
 
 ## The lesson of the session
-- three.js r155+: point/spot lights use candela units — the diorama rendered
-  near-black until lights were bumped to 4–7 candela AND `toneMapping=ACESFilmic`
-  with a Z-up stage. First-pass HD-2D must be screenshot-eyeballed, not just
-  "does frame() have light >0". A Y-up mental model on a +Z-up board frames the
-  whole diorama off-camera → all-black, no error. Diagnose with a pixel histogram
-  (max luminance), not just a blank-check.
-- Never `getContext('2d')` on a live WebGL canvas in a probe — it corrupts the
-  context ("existing context of a different type"). Read pixels via contract
-  `frame()` (toDataURL) instead.
+- A tilted +Z-up ortho stage viewed from above with `camera.up=(0,-1,0)` is
+  north-on-top but X-MIRRORED. Any pixel-art game on this rig needs its
+  orientation asserted, not assumed: gate "east tile projects right" +
+  "holding right increases PROJECTED screen x" (world coords alone can't see
+  the mirror). Symptom lookalike: sprite-flip hacks appear in art/ render to
+  "fix" facing — that's the tell someone fought the mirror instead of the view.
 
 ## Next goal
-- Oldest game-queue: (check `gh issue list --label game-queue`). If empty, borrow
-  the QA lane per FORGE step 2 — but QA is live (#752 EMBERWOOD polish just filed).
-  EMBERWOOD polish = **#752** (QA lane owns it; builder lanes stay on game code).
+- game-queue is EMPTY; `next` holds **#773** (iPhone overworld near-black +
+  HUD overlaps shell buttons + thin play band). That's the next session's
+  claim (oldest `next`), plus it may share air with the brightness/exposure
+  chain (ACES + candela lights at `?lite` on WebKit; the focus-blur fix above
+  already helps). HUD overlap = index.jsx absolute HUD vs VirtualControls zone.
 
 ## Board / harness status
-- main: `6bfca16` (#751). Nightly green pre-merge; no freeze.
-- Rule 4 satisfied (new game code shipped). Rule 7: no new jonq (no taste calls).
-- Polish pass filed: **#752** (QA EMBERWOOD).
-- Prod note: jalfern.com proxy serves a cached main bundle without the EMBERWOOD
-  label string yet (same host-index staleness as #696/#694); merge+Vercel+prod-alias
-  at `6bfca16` all confirmed.
-- Worktrees to prune: forge/emberfall-738 branch (merged); this state-* branch's
-  worktree dir ~/Dev/retrogames-forge-emberfall-738 (has its own node_modules install).
+- main: `6f28d23` (#775). Nightly green pre-merge; no freeze. Rule 4 ok
+  (game code shipped). Rule 7: no new jonq — no taste calls.
+- jonq lane:games: nothing AWAITING (#635/#634/#633 ANSWERED and executed).
+- QA lane owns: #752 EMBERWOOD polish, #747 STORM, #713 CREDITS, #695 CAMPFIRE,
+  #685 SSX, #702/#704 SHORE/OCEAN.
+- Worktree to prune: `~/Dev/retrogames-forge-emberwood-mirror-772`
+  (merged branch + its node_modules). Vite dev server killed.
 
 ## Open questions (links only, #605)
-- #698 demos driver ownership — AWAITING (default: demos queue holds for Jon's
-  answer re driver; builder still takes queue items per #635-A).
-- #691 land #690 harness-fix exception — AWAITING (lane:qa's call).
-- #687 needs-approval; #696/#694 host index staleness — platform lanes'.
+- none open for lane:games. (Other lanes: #698 demos-driver hold honored;
+  #691 answered — lane:qa's call.)
 
 ## Open threads
-- #752 QA EMBERWOOD polish (brighten vale, tree sprites, attract solver-route bot,
-  music bed, swipe-arc/hit-stop juice). Plus older QA: #747 STORM, #713 CREDITS,
-  #695 CAMPFIRE, #685 SSX, #702/#704 SHORE/OCEAN — QA lane.
+- #773 next up (builder). #752 QA EMBERWOOD polish still open (brighten vale,
+  tree sprites, attract solver-route bot, music bed, swipe-arc/hit-stop juice).
