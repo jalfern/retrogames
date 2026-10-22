@@ -942,7 +942,7 @@ console.log('line structures (#502 item 2 — gantry vs arch per course):')
     const { buildArch, GANTRY_SPAN, GANTRY_DECK_Y } = SC
     const meshes = (grp) => { const out = []; grp.traverse((m) => { if (m.isMesh) out.push(m) }); return out }
     ok(COURSES.find((c) => c.id === 'sandbank').landmark === 'gantry', 'Sandbank declares a gantry landmark')
-    ok(COURSES.filter((c) => c.id !== 'sandbank').every((c) => c.landmark === 'arch'), 'the Gulch and Corkscomb keep the sandstone arch')
+    ok(COURSES.find((c) => c.id === 'gulch').landmark === 'arch' && COURSES.find((c) => c.id === 'corkscomb').landmark === 'dune', 'the Gulch keeps the sandstone arch, Corkscomb its dune crest (#740)')
     selectCourse('sandbank')
     ok(TRACK.landmark === 'gantry', 'the live TRACK carries the selected course landmark')
     const gt = meshes(buildArch())

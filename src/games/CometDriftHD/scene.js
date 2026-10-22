@@ -171,7 +171,7 @@ export const COURSE_TINTS = {
         sun: 0xffc090, sunI: 3.6, sunElev: 0.12,
         hemiSky: 0xd06a50, hemiGround: 0x553018, hemiI: 1.8,
         amb: 0x6a4050, ambI: 0.95,
-        mesa: 0x4e222c, floor: 0xa87850, plateau: 0xd8a888,
+        mesa: 0x4e222c, floor: 0xa87850, plateau: 0xd8a888, hills: 0x6e3a44,
         starGain: 1, sunWash: 0xffffff,
         sky: ['#1a0f24', '#452038', '#7c3030', '#c05830', '#ff9050', '#e07038', '#8a3a28', '#40201a'],
     },
@@ -180,7 +180,7 @@ export const COURSE_TINTS = {
         sun: 0xfff6d0, sunI: 4.2, sunElev: 0.62,
         hemiSky: 0x9cc4e8, hemiGround: 0x6a5a44, hemiI: 2.2,
         amb: 0x94acc4, ambI: 1.1,
-        mesa: 0x8a7080, floor: 0xb89468, plateau: 0xe8c898,
+        mesa: 0x8a7080, floor: 0xb89468, plateau: 0xe8c898, hills: 0xa28d9c,
         starGain: 0.08, sunWash: 0xfff4da,
         sky: ['#1e4c8c', '#36649c', '#4c84bc', '#7cb0d8', '#a8d0e8', '#c8d8e0', '#9a8468', '#54443a'],
     },
@@ -189,7 +189,7 @@ export const COURSE_TINTS = {
         sun: 0xffecc8, sunI: 3.8, sunElev: 0.28,
         hemiSky: 0x9a6a88, hemiGround: 0x4a3440, hemiI: 1.9,
         amb: 0x7a5a70, ambI: 1.0,
-        mesa: 0x7a4c60, floor: 0xb08468, plateau: 0xe0b890,
+        mesa: 0x7a4c60, floor: 0xb08468, plateau: 0xe0b890, hills: 0x94647a,
         starGain: 0.45, sunWash: 0xffecd0,
         sky: ['#221a3e', '#40284c', '#6c3a5c', '#a04c64', '#e08858', '#ffb070', '#8a5048', '#38243a'],
     },
@@ -1116,6 +1116,38 @@ export function mesaDefs() {
     return defs
 }
 
+// #675: rolling hills. The horizon shipped flat-topped mesas but nothing
+// between them and the plateau, so the middle distance was empty sand. The
+// hills ring sits just OUTSIDE the furthest track point (clearance-checked,
+// same #542 law as the mesas) and well INSIDE the mesa base: low, rounded,
+// overlapping shoulders — the soft counter-shape to the mesas' hard tops.
+export const HILL_RING = 26 // world units past the outermost track point
+export function hillDefs() {
+    const { cx, cz, R } = worldAnchor()
+    const defs = []
+    for (let i = 0; i < 18; i++) {
+        const ang = (i / 18) * Math.PI * 2 + Math.sin(i * 5.3) * 0.16
+        const w = Math.min((4 + ((i * 29) % 5) * 1.2) * (R / 60), HILL_RING - 5) // keep ≥5u of corridor past the line
+        const h = w * (0.30 + ((i * 17) % 3) * 0.08)
+        const r = R + HILL_RING + ((i * 41) % 5) * 3
+        defs.push({ x: cx + Math.cos(ang) * r, z: cz + Math.sin(ang) * r, w, h, ang })
+    }
+    return defs
+}
+
+export function buildHills(color = 0x6e3a44, floorY = FLOOR_DUSK) {
+    const g = new THREE.Group()
+    const soil = new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 })
+    for (const d of hillDefs()) {
+        const m = new THREE.Mesh(new THREE.SphereGeometry(d.w, 10, 7, 0, Math.PI * 2, 0, Math.PI / 2), soil)
+        m.scale.y = d.h / d.w
+        m.position.set(d.x, floorY, d.z)
+        m.rotation.y = d.ang
+        g.add(m)
+    }
+    return g
+}
+
 const w0 = (d) => d.w * 0.9
 
 export function buildMesas(color = 0x4e222c, floorY = FLOOR_DUSK) {
@@ -1150,6 +1182,10 @@ export function cameraCorridorAudit() {
     for (const d of mesaDefs()) {
         const clr = clearToTrack(d.x, d.z, d.w)
         if (clr < REACH) violations.push({ kind: 'mesa', x: +d.x.toFixed(1), z: +d.z.toFixed(1), clearance: +clr.toFixed(1) })
+    }
+    for (const d of hillDefs()) {
+        const clr = clearToTrack(d.x, d.z, d.w)
+        if (clr < REACH) violations.push({ kind: 'hill', x: +d.x.toFixed(1), z: +d.z.toFixed(1), clearance: +clr.toFixed(1) })
     }
     for (const sc of SCENERY) {
         const fp = sc.kind === 'spire' ? 0.8 : 0.4
