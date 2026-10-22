@@ -33,6 +33,18 @@ const ENEMY_SPEC = {
 
 const HERO = { w: 10, h: 8, speed: 1.45 }
 
+const NUDGE = 6
+
+function cornerNudge(free) {
+    let up = 0, dn = 0
+    for (let d = 1; d <= NUDGE; d++) { if (free(-d)) { up = d; break } }
+    for (let d = 1; d <= NUDGE; d++) { if (free(d)) { dn = d; break } }
+    if (up > 0 && dn > 0) return 0
+    if (up > 0) return -Math.min(up, HERO.speed)
+    if (dn > 0) return Math.min(dn, HERO.speed)
+    return 0
+}
+
 const tileOf = (v) => Math.floor(v / TS)
 
 export function createSim(seed = 1) {
@@ -187,7 +199,9 @@ export function stepSim(sim, inp) {
         const vx = (lx / len) * HERO.speed
         const vy = (ly / len) * HERO.speed
         if (!blocked(sim, h.x + vx, h.y, HERO.w, HERO.h)) h.x += vx
+        else if (vx !== 0) h.y += cornerNudge((d) => !blocked(sim, h.x + vx, h.y + d, HERO.w, HERO.h) && !blocked(sim, h.x, h.y + d, HERO.w, HERO.h))
         if (!blocked(sim, h.x, h.y + vy, HERO.w, HERO.h)) h.y += vy
+        else if (vy !== 0) h.x += cornerNudge((d) => !blocked(sim, h.x + d, h.y + vy, HERO.w, HERO.h) && !blocked(sim, h.x + d, h.y, HERO.w, HERO.h))
         if (Math.abs(lx) >= Math.abs(ly)) h.dir = lx > 0 ? 'right' : 'left'
         else h.dir = ly > 0 ? 'down' : 'up'
         tryPush(sim, lx, ly)
@@ -600,7 +614,10 @@ function stepEnemies(sim) {
         if (!e.hidden && Math.abs(h.x - e.x) < (HERO.w + e.w) / 2 && Math.abs(h.y - e.y) < (HERO.h + e.h) / 2 + 2) {
             hurtHero(sim, e.dmg)
             const l = Math.hypot(dx, dy) || 1
-            h.x += (dx / l) * 7; h.y += (dy / l) * 7
+            const kx = (dx / l) * 7, ky = (dy / l) * 7
+            if (!blocked(sim, h.x + kx, h.y + ky, HERO.w, HERO.h)) { h.x += kx; h.y += ky }
+            else if (!blocked(sim, h.x + kx, h.y, HERO.w, HERO.h)) h.x += kx
+            else if (!blocked(sim, h.x, h.y + ky, HERO.w, HERO.h)) h.y += ky
         }
     }
     if (sim.tick % 30 === 0) sim.enemies = sim.enemies.filter(e => !e.dead)

@@ -43,11 +43,11 @@ export const SCREENS = {
     'ow-10': S('ow-10', 'THE OLD SHRINE', [
         'TTTTTTTTTTTTTTTT',
         'T.TT...T...T...T',
-        'T.T..C...T.TT..T',
+        'T.T..C...TTTT..T',
         'T....T....T....T',
         'T.T.....S......T',
         '.........b......',
-        'T.T..T.........T',
+        'T.T.TT.........T',
         'T...T..."".....T',
         'T.TTTTT....T...T',
         'T....."".......T',

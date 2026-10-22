@@ -128,6 +128,7 @@ void main(){
     let currentScreen = null
     let structureSig = ''
     const staticMeshes = []
+    const canopies = []
     const dynamic = { doors: new Map(), cracks: new Map(), chests: new Map(), switches: new Map(), npcs: new Map() }
 
     const tileTexKey = (ch) => ({
@@ -172,6 +173,7 @@ void main(){
                     tr.quaternion.copy(camera.quaternion)
                     tr.position.set(FX(x * TS + 8), y * TS + 6, 12)
                     screenGroup.add(tr); staticMeshes.push(tr)
+                    canopies.push({ mesh: tr, x: x * TS + 8, y: y * TS + 8, o: 1 })
                 }
                 if (ch === 'I') {
                     const sg = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshLambertMaterial({ map: T('sign'), transparent: true, alphaTest: 0.4 }))
@@ -250,6 +252,7 @@ void main(){
         screenGroup = new THREE.Group()
         scene.add(screenGroup)
         staticMeshes.length = 0
+        canopies.length = 0
         dynamic.doors.clear(); dynamic.cracks.clear(); dynamic.chests.clear(); dynamic.switches.clear(); dynamic.npcs.clear()
     }
 
@@ -401,6 +404,11 @@ void main(){
         }
 
         const hx = sim.hero.x, hy = sim.hero.y
+        for (const cp of canopies) {
+            const under = Math.abs(hx - cp.x) < 11 && hy > cp.y - 10 && hy < cp.y + 12
+            cp.o += ((under ? 0.5 : 1) - cp.o) * 0.25
+            cp.mesh.material.opacity = cp.o
+        }
         camera.position.x += (FX(128 + (hx - 128) * 0.5) - camera.position.x) * 0.08
         camera.position.y += ((CAM_Y + (hy - 88) * 0.5) - camera.position.y) * 0.08
         const lookX = camera.position.x, lookY = camera.position.y - 120
