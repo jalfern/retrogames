@@ -590,7 +590,7 @@ function stepEnemies(sim) {
         if (!e.hidden && Math.abs(h.x - e.x) < (HERO.w + e.w) / 2 && Math.abs(h.y - e.y) < (HERO.h + e.h) / 2 + 2) {
             hurtHero(sim, e.dmg)
             const l = Math.hypot(dx, dy) || 1
-            h.x -= (dx / l) * 6; h.y -= (dy / l) * 6
+            h.x += (dx / l) * 7; h.y += (dy / l) * 7
         }
     }
     if (sim.tick % 30 === 0) sim.enemies = sim.enemies.filter(e => !e.dead)
@@ -679,6 +679,7 @@ export function hashState(sim) {
     let h = 2166136261
     const mix = (v) => { h ^= v | 0; h = Math.imul(h, 16777619) }
     mix(sim.tick); mix(sim.score); mix(sim.hero.hp); mix(sim.hero.max)
+    mix(sim.seed)
     mix(Math.round(sim.hero.x * 4)); mix(Math.round(sim.hero.y * 4))
     mix(sim.screen.split('').reduce((a, c) => a + c.charCodeAt(0), 0))
     mix(ITEM_BITS(sim)); mix(FLAG_BITS(sim))

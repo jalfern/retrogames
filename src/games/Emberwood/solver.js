@@ -91,7 +91,7 @@ function blockSolves(id, st) {
 // logical proof over the whole game.
 export function proveGame(startKit = { bombs: false, bow: false, shield: false }) {
     const st = st0()
-    const kit = { sword: true, bombs: startKit.bombs, bow: startKit.bow, arrows: startKit.bow ? 10 : 0, shield: startKit.shield || false, keys: 0, bigkey: false }
+    const kit = { sword: true, bombs: !!startKit.bombs, bow: !!startKit.bow, arrows: startKit.bow ? 10 : 0, shield: !!startKit.shield, keys: 0, bigkey: false }
 
     const reachables = () => {
         const seen = new Set(['ow-11'])
