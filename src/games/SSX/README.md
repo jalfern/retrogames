@@ -47,6 +47,16 @@ the boost meter and a full meter at takeoff throws OVER.
   quads on the slope, plus speed streaks past the camera edges over ~90 km/h
   and spray whose density scales with speed. Carve state lives in the sim so
   `ssxcheck` can pin it deterministically.
+- #665 round 2 (items 1-4, 6): canyon walls shade two-tone — a `litFace` term
+  (height drop toward +x = the disc side) lightens sun-facing rock and leaves
+  clefts dark; rounded rims high above the piste wear snow caps (`capT`,
+  killed on sheer faces so #669's rock-through rule holds, tinted per theme by
+  `capSnow` so moonlit caps read at night). The constant blue shadow became
+  hollow-weighted (open faces stay near-white). `peaksRing()` is exported pure
+  data: varied cone counts/squashed footprints, hazed-rock bodies
+  (`peakRock`), only ~70% of peaks capped. `sceneryPlan` parks a pair of
+  shelf `grandstand` props straddling the finish, scanned back to open ground
+  so no gully pierces them.
 
 ## Rules that are load-bearing (each pinned by ssxcheck)
 
@@ -127,7 +137,7 @@ was flaking the same-pose stability gate).
 
 ```bash
 npm run lint:ssx && npm run ssxcheck     # 70 checks, blocks merges (CI `static`)
-npm run ssxmountaincheck                # 90 checks: mountain feel (#638)
+npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
 npm run ssxterraincheck                 # 30 checks: snow/rock surfaces (#669)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
                                           #   keys drive poses, race still winnable,

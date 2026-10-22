@@ -31,7 +31,8 @@ export const THEMES = {
         sun: 0xfff3d0, hemiSky: 0xbfd8f2, hemiGround: 0xdfe8f2,
         snowA: [248, 250, 255], snowB: [186, 206, 236],
         shadow: [150, 168, 212], edge: [70, 190, 240], rock: [42, 35, 31], rock2: [20, 17, 16],
-        peak: [172, 196, 230], peakSun: [225, 232, 245],
+        capSnow: [252, 254, 255],
+        peak: [148, 158, 186], peakSun: [225, 232, 245], peakRock: [104, 112, 138],
         shC: 0x0b1524, shO: 0.28,
     },
     night: {
@@ -39,7 +40,8 @@ export const THEMES = {
         sun: 0x8090ff, hemiSky: 0x2a3070, hemiGround: 0x141838,
         snowA: [96, 110, 190], snowB: [56, 64, 140],
         shadow: [22, 28, 72], edge: [255, 60, 200], rock: [10, 10, 26], rock2: [4, 4, 12],
-        peak: [30, 34, 78], peakSun: [56, 62, 120],
+        capSnow: [150, 160, 215],
+        peak: [30, 34, 78], peakSun: [56, 62, 120], peakRock: [18, 20, 48],
         shC: 0x04050e, shO: 0.45,
     },
     dusk: {
@@ -47,7 +49,8 @@ export const THEMES = {
         sun: 0xffd0a0, hemiSky: 0xffc8a0, hemiGround: 0xe0b0c0,
         snowA: [255, 224, 214], snowB: [206, 156, 186],
         shadow: [118, 88, 158], edge: [255, 90, 60], rock: [19, 10, 8], rock2: [7, 3, 4],
-        peak: [206, 140, 150], peakSun: [255, 200, 170],
+        capSnow: [255, 238, 228],
+        peak: [186, 126, 138], peakSun: [255, 200, 170], peakRock: [122, 74, 92],
         shC: 0x241226, shO: 0.34,
     },
 }
@@ -121,9 +124,12 @@ export function surfaceInfo(c, s, x) {
         T.snowA[1] + (T.snowB[1] - T.snowA[1]) * t,
         T.snowA[2] + (T.snowB[2] - T.snowA[2]) * t,
     ]
-    // hollows: darken and pull blue; crests: burn slightly white
-    const sh = 0.12 + 0.55 * hollow
-    rgb = rgb.map((v, k) => v * (1 - sh) + T.shadow[k] * sh * (k === 2 ? 1.12 : 1))
+    // hollows: darken and pull blue; crests: burn slightly white. #665: the
+    // constant blue shadow was a floor under every pixel — an icy cyan wash on
+    // open faces near the camera. The cast now rides the hollow term so flat,
+    // open snow stays near-white and the blue lives where it belongs.
+    const sh = 0.04 + 0.62 * hollow
+    rgb = rgb.map((v, k) => v * (1 - sh) + T.shadow[k] * sh * (k === 2 ? 1 + 0.12 * hollow : 1))
     rgb = rgb.map((v) => v * (1 - 0.20 * hollow) * (1 + 0.10 * crest))
     // wind ripples (sastrugi): low-frequency cords across the face, small
     // amplitude so the #638 continuity gate stays green
@@ -137,6 +143,11 @@ export function surfaceInfo(c, s, x) {
 
     // ---- snow vs rock ----
     const grad = slopeAt(c, s, x)
+    const gx = (nat(s, x + 0.05) - nat(s, x - 0.05)) / 0.9
+    // #665 two-tone walls: the disc sits on the +x-slope side of the view, so
+    // faces whose height drops toward +x (the left wall) catch the light and
+    // the far side of every cleft stays dark — the canyon reads as stone.
+    const litFace = smooth01((-gx - 0.04) / 0.28)
     const slopeRock = smooth01((grad - 0.28) / 0.3)
     const cragRaw = smooth01((above - 2.4) / 5.5) * cragBands(s, x)
     const rawRock = Math.max(slopeRock, cragRaw)
@@ -147,6 +158,13 @@ export function surfaceInfo(c, s, x) {
     relax *= 1 - 0.55 * smooth01((above - 2) / 6)
     // rock only exists beyond the piste proper
     let rockT = rawRock * (1 - relax) * smooth01((a - 1.5) / 0.45)
+    // #665 snow caps band the jagged canyon rim: only the teeth that both
+    // stand highest above the piste and bulge (convex laplacian) hold snow,
+    // and only where the ground rounds off — a sheer cliff face stays bare
+    // rock (#669 rule); the clefts between the crowns stay dark too.
+    const capT = smooth01((above - 13) / 7) * (0.35 + 0.65 * crest)
+        * (1 - smooth01((grad - 0.42) / 0.25))
+    rockT *= 1 - 0.9 * capT
     if (a < 1.05) {
         // groomed trail down the natural line + piste edge stripe — a soft light
         // tint, so fresh carve grooves (#665) read as a darker, crisper line
@@ -159,13 +177,14 @@ export function surfaceInfo(c, s, x) {
     if (rockT > 0) {
         const band = (0.66 + 0.42 * bedding(y, s, x) + 0.26 * (fracture(s, x) - 0.5))
             * (0.85 + 0.28 * cragBands(s, x))
-        const rk = T.rock.map((v, k) => (v * (1 - slopeRock) + T.rock2[k] * slopeRock) * band)
+        const rk = T.rock.map((v, k) => (v * (1 - slopeRock) + T.rock2[k] * slopeRock) * band * (0.72 + 0.56 * litFace))
         rgb = rgb.map((v, k) => v * (1 - rockT) + rk[k] * rockT)
     }
+    if (capT > 0) rgb = rgb.map((v, k) => v * (1 - capT * 0.55) + T.capSnow[k] * capT * 0.55)
     // kicker lips catch the light
     const lift = featureLift(c, s, x)
     if (lift > 0.3) rgb = rgb.map((v) => Math.min(255, v * 1.18))
-    return { rgb: rgb.map(clamp255), rockT, rawRock, relax, grad, crest, hollow, above }
+    return { rgb: rgb.map(clamp255), rockT, rawRock, relax, grad, crest, hollow, above, litFace }
 }
 
 // Smooth snow shading for one grid point (#638, textured by #669). The base
@@ -450,6 +469,31 @@ export function buildScenery(course) {
     return g
 }
 
+// Peaks-ring parameters, pure data so the harness can grade the silhouette
+// without a DOM (#665): varied cone counts, squashed footprints, some peaks
+// bare rock and some snow-capped, tips always below the cone height.
+export function peaksRing() {
+    const ring = []
+    for (let i = 0; i < 16; i++) {
+        const ang = (i / 16) * Math.PI * 2 + hash(i * 1.7) * 0.35
+        const dist = 420 + hash(i * 3.1) * 300
+        const h = 150 + hash(i * 7.3) * 170
+        const rad = 70 + hash(i * 11.7) * 90
+        // tips 30..170 m above the sky origin (which tracks the camera), so
+        // peaks always break the horizon around the rider
+        const tip = 30 + hash(i * 13.3) * 140
+        ring.push({
+            ang, dist, h, rad, tip,
+            segs: 3 + (i % 3) + (hash(i * 23.7) < 0.25 ? 3 : 0),
+            sx: 0.78 + hash(i * 29.3) * 0.55,
+            sz: 0.72 + hash(i * 31.1) * 0.5,
+            cap: hash(i * 17.9) < 0.72,
+            lit: hash(i * 37.7) < 0.4,
+        })
+    }
+    return ring
+}
+
 // ---- summit horizon (#638) ---------------------------------------------------
 // A gradient sky dome, a sun and a ring of distant peaks, all centred on the
 // sky group's origin — index.jsx parks that origin on the camera every frame,
@@ -483,26 +527,24 @@ export function buildSky(course) {
     g.userData.sun = sunDisc
     g.userData.theme = course.theme
 
-    // peaks ring: distant snow-capped cones deep in the haze
+    // peaks ring (#665): rocky bodies with snow caps on the taller, luckier
+    // peaks — varied silhouettes so the horizon range reads as mountains, not
+    // sugar loaves. Bodies pick hazed rock; a lit minority catches the sun.
     const capCol = course.theme === 'night' ? 0x9aa4d8 : course.theme === 'dusk' ? 0xffe8dc : 0xf4f8ff
-    for (let i = 0; i < 16; i++) {
-        const ang = (i / 16) * Math.PI * 2 + hash(i * 1.7) * 0.35
-        const dist = 420 + hash(i * 3.1) * 300
-        const h = 150 + hash(i * 7.3) * 170
-        const rad = 70 + hash(i * 11.7) * 90
-        // tips 30..170 m above the sky origin (which tracks the camera), so
-        // peaks always break the horizon around the rider
-        const tip = 30 + hash(i * 13.3) * 140
+    for (const pk of peaksRing()) {
         const peak = new THREE.Mesh(
-            new THREE.ConeGeometry(rad, h, 4 + (i % 3)),
-            new THREE.MeshLambertMaterial({ color: hash(i * 2.9) < 0.4 ? T.peakSun : T.peak }),
+            new THREE.ConeGeometry(pk.rad, pk.h, pk.segs),
+            new THREE.MeshLambertMaterial({ color: pk.lit ? T.peakSun : pk.cap ? T.peak : T.peakRock }),
         )
-        peak.position.set(Math.sin(ang) * dist, -h + tip + h / 2, Math.cos(ang) * dist)
-        peak.rotation.y = hash(i * 5.3) * Math.PI
-        const cap = new THREE.Mesh(new THREE.ConeGeometry(rad * 0.42, h * 0.32, 4 + (i % 3)), new THREE.MeshLambertMaterial({ color: capCol }))
-        cap.position.y = h * 0.34
-        cap.rotation.y = peak.rotation.y
-        peak.add(cap)
+        peak.position.set(Math.sin(pk.ang) * pk.dist, -pk.h + pk.tip + pk.h / 2, Math.cos(pk.ang) * pk.dist)
+        peak.scale.set(pk.sx, 1, pk.sz)
+        peak.rotation.y = hash(pk.ang * 5.3) * Math.PI
+        if (pk.cap) {
+            const cap = new THREE.Mesh(new THREE.ConeGeometry(pk.rad * 0.42, pk.h * 0.32, pk.segs), new THREE.MeshLambertMaterial({ color: capCol }))
+            cap.position.y = pk.h * 0.34
+            cap.rotation.y = peak.rotation.y
+            peak.add(cap)
+        }
         g.add(peak)
     }
     return g
