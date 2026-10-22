@@ -163,8 +163,13 @@ function MuteToggle({ theme }) {
   return (
     <button
       onClick={toggleMute}
-      className={`${textColor} opacity-20 hover:opacity-100 transition-opacity duration-300 z-50 p-2`}
-      style={{ position: 'fixed', bottom: 'calc(2rem + var(--sab, 0px))', right: 'calc(2rem + var(--sar, 0px))' }}
+      data-nav="mute"
+      aria-label="Mute"
+      className={`${textColor} opacity-20 hover:opacity-100 transition-opacity duration-300 z-[60] p-2`}
+      // #745: top-right chrome cluster (beside PAUSE, the #437 convention), NOT
+      // bottom-right — there it covered the A action button's right edge and a
+      // tap on A muted the game instead of firing.
+      style={{ position: 'fixed', top: 'calc(0.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px) + 4.5rem)' }}
     >
       {muted ? (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
