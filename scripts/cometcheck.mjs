@@ -108,7 +108,7 @@ for (const c of COURSES) {
     // corners stay braking corners (>=95 keeps them out of the crawl where a
     // one-tick steering error means a spin).
     check(`${c.id}: drivable — min radius >= 95 (braking corners, not spin corners #542)`, minR >= 95, `minR ${minR.toFixed(0)} at s=${T.pts[minI].s.toFixed(0)}`)
-    const LEN3 = { gulch: 4124, sandbank: 6166, corkscomb: 8330 }
+    const LEN3 = { gulch: 4124, sandbank: 6166, corkscomb: 8330, drylake: 4860 }
     check(`${c.id}: laps roughly 3x longer (#542 grew the world to 8192)`, T.len >= LEN3[c.id] * 2.2, `len ${T.len.toFixed(0)} (was ${LEN3[c.id]})`)
 
     if (c.id === 'corkscomb') {
@@ -150,6 +150,30 @@ for (const c of COURSES) {
         check('corkscomb: apexes are wide-set, not a wobble cluster (#511 item 1)',
             wl.length === apexes.length - 1 && wl.every((v) => v >= WL_MIN),
             `wavelengths ${wl.map((v) => v.toFixed(0)).join(', ') || 'none'}`)
+    }
+
+    if (c.id === 'drylake') {
+        // #530 item 3: the lake bed's character is speed with ONE braking zone.
+        // Signature: exactly one tight corner (radius < 140) and it sits at the
+        // north-east fold (lap-f 0.40..0.55) at brakeable radius (95..120), and
+        // nearly half the lap is flat-out road (r > 500) — the salt straights.
+        let tight = []
+        for (let i = 0; i < T.N; i++) {
+            const k = Math.abs(T.pts[i].k)
+            if (k > 1e-9 && 1 / k < 140) tight.push({ f: T.pts[i].s / T.len, r: 1 / k })
+        }
+        let fold = tight.filter((t) => t.f >= 0.40 && t.f <= 0.55)
+        let minFold = fold.reduce((m, t) => Math.min(m, t.r), Infinity)
+        check('drylake: one braking zone — the runway hairpin, brakeable not spinable (#530 item 3)',
+            tight.length > 0 && tight.every((t) => t.f >= 0.40 && t.f <= 0.55) && minFold >= 95 && minFold <= 120,
+            `${tight.length} tight pts, fold min r ${minFold.toFixed(0)}`)
+        let flat = 0; let run = 0
+        for (let i = 0; i < T.N; i++) {
+            const k = Math.abs(T.pts[i].k)
+            if (k < 1 / 500) { run += T.pts[i].d; flat = Math.max(flat, run) } else run = 0
+        }
+        check('drylake: the straights dominate — >= 35% of the lap is flat-out (#530 item 3)',
+            flat / T.len >= 0.35, `${((flat / T.len) * 100).toFixed(0)}% flat`)
     }
 
     const HALF = T.WALL_R + 16
@@ -1028,9 +1052,10 @@ const duneLaw = async () => {
     check('gentle windward shoulder, steeper slipface (#511 item 3)', r > l * 1.8, `windward ${l.toFixed(2)} vs slipface ${r.toFixed(2)}`)
     const fresh = await import(TRACKMOD + '?dl=' + Math.random())
     const marks = fresh.COURSES.map((c) => `${c.id}:${c.landmark}`).join(' ')
-    check('three circuits, three line structures — the pack repeats no arch (#511 item 3)',
-        new Set(fresh.COURSES.map((c) => c.landmark)).size === 3 &&
-        fresh.COURSES.find((c) => c.id === 'corkscomb').landmark === 'dune', marks)
+    check('every circuit, its own line structure — the pack repeats no arch (#511 item 3, pack #530)',
+        new Set(fresh.COURSES.map((c) => c.landmark)).size === fresh.COURSES.length &&
+        fresh.COURSES.find((c) => c.id === 'corkscomb').landmark === 'dune' &&
+        fresh.COURSES.find((c) => c.id === 'drylake').landmark === 'windmill', marks)
 }
 const duneWired = () => {
     const src = readFileSync(IDXJS, 'utf8')
@@ -1038,20 +1063,25 @@ const duneWired = () => {
         /COURSE\.landmark === 'dune'/.test(src) && /const duneFor = \(name\) =>/.test(src) && /duneCrest\(fx\)/.test(src))
     check('index.jsx: the Gulch keeps its sandstone arch and the bowl its gantry (#511 item 3)',
         /COURSE\.landmark === 'gantry'/.test(src) && /quadraticCurveTo\(150, -18, 292, 52\)/.test(src))
+    check('index.jsx: the windmill landmark renders for the lake bed (#530 item 3)',
+        /COURSE\.landmark === 'windmill'/.test(src) && /const windmillFor = \(name\) =>/.test(src) &&
+        /x\.arc\(hub\[0\], hub\[1\], 30, 0, Math\.PI \* 2\)/.test(src))
 }
 const ambienceLaw = async () => {
     const { AMBIENCE, ambienceFor } = await loadSfx()
-    const d = ambienceFor('dusk'); const n = ambienceFor('noon'); const a = ambienceFor('dawn')
-    check('every light has an ambience pad (#511 item 5)', !!d && !!n && !!a)
+    const d = ambienceFor('dusk'); const n = ambienceFor('noon'); const a = ambienceFor('dawn'); const ht = ambienceFor('heat')
+    check('every light has an ambience pad (#511 item 5)', !!d && !!n && !!a && !!ht)
     check('dawn is a low, cool pad under the dusk hum (#511 item 5)',
         a.freq < d.freq && a.vol <= d.vol && a.period > d.period,
         `dawn ${a.freq}Hz/${a.vol}/${a.type} vs dusk ${d.freq}Hz/${d.vol}/${d.type}`)
     check('noon shimmers brighter and thinner than dusk (#511 item 5)',
         n.freq > d.freq && n.vol < d.vol, `noon ${n.freq}Hz/${n.vol}`)
-    check('three lights, three pitches — the pads are distinct (#511 item 5)',
-        new Set([d.freq, n.freq, a.freq]).size === 3)
+    check('heat shimmers highest and faintest of the lights (#530 item 3)',
+        ht.freq > n.freq && ht.vol <= n.vol, `heat ${ht.freq}Hz/${ht.vol}/${ht.type}`)
+    check('every light, its own pitch — the pads are distinct (#511 item 5, pack #530)',
+        new Set([d.freq, n.freq, a.freq, ht.freq]).size === 4)
     check('the pad is a bed, not a rattle — slow periods only (#511 item 5)',
-        d.period >= 30 && n.period >= 30 && a.period >= 30)
+        d.period >= 30 && n.period >= 30 && a.period >= 30 && ht.period >= 30)
     check('an unknown palette defaults to the dusk hum (#511 item 5)', ambienceFor('bogus') === AMBIENCE.dusk)
     const src = readFileSync(IDXJS, 'utf8')
     check('index.jsx: the pad routes through the law, not a hard-coded hum (#511 item 5)',
