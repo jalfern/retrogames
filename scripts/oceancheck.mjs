@@ -209,27 +209,26 @@ function seaGlint(img, x0, x1) {
   return { count, xSpan: xHi > xLo ? xHi - xLo : 0 }
 }
 
-// #612: aurora pixels — green-dominant (the hem colour: G > R+30, G > B+10) in a
-// sky band, split by altitude band: `hem` = lower third of the sky band (green hem),
-// `high` = top third. The night sky is blue/purple-dominant (B ≥ G) and meteors are
-// white, so green dominance isolates the curtains: near 0 at OFF, thousands at ON.
-// `rg` is mean(R−G) — the height ramp (green hem → red/purple crown) shows up as
-// `rg` climbing with altitude while green counts fall (the purple crown sits ABOVE
-// the default camera's frame edge, so the ramp is proven by the gradient, not by
-// counting violet px).
+// #612: aurora pixels in a sky band, split into the two colours the height ramp
+// produces: `green` = hem (the blue-free 557.7nm-OI green: G > R+30, G > B+10) and
+// `violet` = crown (magenta/violet: R > G, B > G, B > 90). The night sky is
+// blue-dominant and meteors are white, so neither count fires at OFF; both are
+// thousands at ON. The ramp (green hem low → violet crown high) is proven by the
+// VERTICAL ORDER of the two centroids (`vRow` above `gRow`), not by fixed rows: the
+// camera rides the wave pitch, so an absolute hem/high split flips run-to-run, but
+// green is always BELOW violet in the sky whatever the pitch.
+
 function auroraPix(img, yFrom, yTo) {
-  const yHem = yFrom + (yTo - yFrom) * 0.66
-  const yMid = yFrom + (yTo - yFrom) * 0.33
-  let green = 0, hem = 0, high = 0, rgLow = 0, nLow = 0, rgHigh = 0, nHigh = 0
+  let green = 0, violet = 0, gSum = 0, vSum = 0
   for (let y = yFrom; y < yTo; y++) {
     for (let x = 0; x < img.w; x++) {
       const i = (y * img.w + x) * img.bpp
       const R = img.px[i], G = img.px[i + 1], B = img.px[i + 2]
-      if (G > 70 && G > R + 30 && G > B + 10) { green++; if (y >= yHem) hem++; if (y < yMid) high++ }
-      if (y < yMid) { rgHigh += R - G; nHigh++ } else if (y >= yHem) { rgLow += R - G; nLow++ }
+      if (G > 70 && G > R + 30 && G > B + 10) { green++; gSum += y }
+      else if (R > G && B > G && B > 90 && R + B > 2 * G + 40) { violet++; vSum += y }
     }
   }
-  return { green, hem, high, rg: rgHigh / Math.max(1, nHigh) - rgLow / Math.max(1, nLow) }
+  return { green, violet, gRow: green ? gSum / green : -1, vRow: violet ? vSum / violet : -1 }
 }
 function auroraSea(img) {
   let n = 0
@@ -641,7 +640,7 @@ async function main() {
       await page.evaluate(() => window.__oceanTest.setAurora(0))
       await page.waitForTimeout(700)
       const aOff = await page.evaluate(() => window.__oceanTest.auroraState())
-      let gOff = { green: 0, hem: 0, high: 0, rg: 0 }
+      let gOff = { green: 0, violet: 0, gRow: -1, vRow: -1 }
       let seaOff = 0
       for (let i = 0; i < 3; i++) {
         const img = decodePng(await page.screenshot())
@@ -663,22 +662,43 @@ async function main() {
         easeA.length > 1 && easeA[0] < 0.5 && easeA[easeA.length - 1] > 0.82
           && easeA.every((v, i) => i === 0 || v >= easeA[i - 1] - 1e-6),
         `first=${easeA[0].toFixed(3)} -> last=${easeA[easeA.length - 1].toFixed(3)} over ${easeA.length} frames`)
-      await page.waitForTimeout(900)
-      let gOn = { green: 0, hem: 0, high: 0, rg: 0 }, seaOn = 0
-      let dbg = null
-      for (let i = 0; i < 3; i++) {
+      await page.waitForTimeout(1400)
+      let gOn = { green: 0, violet: 0, gRow: -1, vRow: -1 }, seaOn = 0
+      for (let i = 0; i < 4; i++) {
         const img = decodePng(await page.screenshot())
         const ap = auroraPix(img, skyA0, skyA1)
         if (ap.green > gOn.green) gOn = ap
         seaOn = Math.max(seaOn, auroraSea(img))
-        dbg = { st: await page.evaluate(() => window.__oceanTest.auroraState()), top: [img.px[(100 * img.w + 480) * img.bpp], img.px[(100 * img.w + 480) * img.bpp + 1], img.px[(100 * img.w + 480) * img.bpp + 2]] }
-        await page.waitForTimeout(350)
+        await page.waitForTimeout(300)
       }
-      if (!asJson && dbg) console.log('DBG gOn:', JSON.stringify(gOn), JSON.stringify(dbg))
       ok('#612 ON at night: green curtains in the sky', gOn.green > gOff.green * 8 && gOn.green > 800, `green px ${gOff.green} → ${gOn.green}`)
-      ok('#612 height ramp: green hem low, hue climbs toward red up the dome',
-        gOn.hem > 2000 && gOn.high < gOn.hem * 0.5 && gOn.rg > 15,
-        `hem=${gOn.hem} high=${gOn.high} Δ(R−G)=${gOn.rg.toFixed(1)}`)
+      // Height ramp (green hem → magenta/violet crown). The curtains drift in
+      // azimuth with shader time AND the camera rides the wave pitch, so a single
+      // frame's colour-row position is non-deterministic (this defeated the original
+      // fixed-band hem/high split). Pool the two hues over a full yaw sweep: the hem
+      // always sits low and the crown always sits high wherever the curtains are, so
+      // the pooled centroids separate by a wide, repeatable margin (~55 rows). At OFF
+      // both hues vanish (the night sky is blue-dominant, B > R > G), so an aurora
+      // pin-to-0 mutant reds this gate as well as the ON-count gate.
+      const skyR1 = Math.floor(540 * 0.49)
+      let rampG = 0, rampV = 0, rampGS = 0, rampVS = 0
+      for (let k = 0; k < 12; k++) {
+        await page.evaluate((yaw) => window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw, pitch: 0.18 }), Math.PI * 2 * k / 12)
+        await page.waitForTimeout(260)
+        const img = decodePng(await page.screenshot())
+        for (let y = 0; y < skyR1; y++) {
+          for (let x = 0; x < img.w; x++) {
+            const i = (y * img.w + x) * img.bpp
+            const R = img.px[i], G = img.px[i + 1], B = img.px[i + 2]
+            if (G > 70 && G > R + 30 && G > B + 10) { rampG++; rampGS += y }
+            else if (R > G && B > G && B > 90) { rampV++; rampVS += y }
+          }
+        }
+      }
+      await page.evaluate(() => window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: 0, pitch: -0.05 }))
+      ok('#612 height ramp: green hem pools below the magenta crown over a yaw sweep',
+        rampG > 8000 && rampV > 2000 && (rampGS / rampG) - (rampVS / rampV) > 25,
+        `green ${rampG}@row${(rampGS / rampG).toFixed(0)} magenta ${rampV}@row${(rampVS / rampV).toFixed(0)} sep ${((rampGS / rampG) - (rampVS / rampV)).toFixed(0)}`)
       ok('#612 curtains reflect green on the sea', seaOn > seaOff * 2 && seaOn > 40, `sea green px ${seaOff} → ${seaOn}`)
       await page.evaluate(() => window.__oceanTest.setAurora(0.35))
       await page.waitForTimeout(1200)
