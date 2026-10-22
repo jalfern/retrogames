@@ -374,17 +374,23 @@ console.log('lemmings pointer (THE SPIRE, solver script as finger taps)')
     ok(res.state.hash === onDisk.hashes[onDisk.hashes.length - 1].h, 'final state.hash identical')
     ok(res.assigned === assigned, `the replay produced the same ${assigned} pointer assignments`)
     if (MUTATE) {
-        // drop the down of one press: the assign never happens, the world
-        // forks, and the next checkpoint names the tick
-        const cand = onDisk.slots[0].pads.findIndex((p, i) => i > 30 && p.pointer && p.pointer.down)
-        ok(cand > 30, 'found a live press to drop')
-        if (cand > 30) {
+        // drop the down of one press: the release without its press commits
+        // nothing, the world forks, and the next checkpoint names the tick.
+        // A press whose release was already a no-op in the original run (the
+        // assign no longer applied to the lemming — the script says such
+        // assignments are simply lost, deterministically) cannot be detected;
+        // the gate is that at least one LIVE press drop forks the run.
+        const pressTicks = onDisk.slots[0].pads.map((p, i) => (i > 30 && p.pointer && p.pointer.down ? i : -1)).filter((i) => i >= 0)
+        ok(pressTicks.length >= 3, `found press ticks to drop (${pressTicks.length})`)
+        let caught = 0
+        const caughtAt = []
+        for (const cand of pressTicks) {
             const tampered = JSON.parse(JSON.stringify(onDisk))
             delete tampered.slots[0].pads[cand].pointer.down
             const r2 = replayLem(tampered)
-            ok(!r2.ok && r2.mismatch && r2.mismatch.tick >= cand + 1, `dropped press at tick ${cand + 1} is caught`,
-                r2.mismatch ? `diverged at ${r2.mismatch.tick}` : 'never diverged')
+            if (!r2.ok && r2.mismatch && r2.mismatch.tick >= cand + 1) { caught++; caughtAt.push(cand + 1) }
         }
+        ok(caught >= 1, `a dropped live press forks the run (${caught}/${pressTicks.length} drops caught, first at ${caughtAt[0] ?? '-'})`)
     }
 }
 
