@@ -126,11 +126,11 @@ const DEFINITIONS = {
     },
     grandstand: () => {
         const s = newSoup()
-        for (let i = 0; i < 3; i++) box(s, 0, 0.4 + i * 0.5, -0.9 + i * 0.85, 6, 0.8 + i, 0.9, CONCRETE)
-        box(s, 0, 1.9, -1.4, 6.2, 0.1, 3.2, METAL_D)
-        for (const x of [-2.6, -0.9, 0.9, 2.6]) box(s, x, 2.5, 1.2, 0.14, 1.2, 0.14, METAL)
-        box(s, 0, 3.15, 0.3, 6.4, 0.16, 3.6, ROOF)
-        box(s, 0, 0.65, 1.05, 6, 0.5, 0.08, RED)
+        for (let i = 0; i < 3; i++) box(s, 0, 0.4 + i * 0.5, 0.9 - i * 0.85, 6, 0.8 + i, 0.9, CONCRETE)
+        box(s, 0, 1.9, 1.4, 6.2, 0.1, 3.2, METAL_D)
+        for (const x of [-2.6, -0.9, 0.9, 2.6]) box(s, x, 2.5, -1.2, 0.14, 1.2, 0.14, METAL)
+        box(s, 0, 3.15, -0.3, 6.4, 0.16, 3.6, ROOF)
+        box(s, 0, 0.65, -1.05, 6, 0.5, 0.08, RED)
         return s
     },
     marshal_post: () => {

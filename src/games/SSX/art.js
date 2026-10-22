@@ -675,6 +675,14 @@ async function shelfTemplate(id, theme) {
     return shelfTemplates.get(key)
 }
 
+// #808 facing law: an 'across' prop shows its face to the racing line from
+// whichever side it sits on. Local +z is the shelf front; +x in slopePos is
+// the rider's right, so the centre of the piste lies along sign(x)·(cos th,
+// -sin th) from the prop — a front of (sin ry, cos ry) matches at
+// ry = th + sign(x)·π/2. The old `-th` ignored the side, so one stand in
+// every pair showed the field its back.
+export const acrossYaw = (e, p) => p.th + Math.sign(e.x) * Math.PI / 2
+
 export async function attachShelf(course, group, alive = () => true) {
     const plan = sceneryPlan(course)
     const ids = [...new Set(plan.map((p) => p.id))]
@@ -703,7 +711,7 @@ export async function attachShelf(course, group, alive = () => true) {
         const p = slopePos(course, e.s, e.x)
         m.position.set(p.x, p.y - 0.05, p.z)
         m.scale.setScalar(e.scale)
-        m.rotation.y = e.orient === 'along' ? -p.th - Math.PI / 2 : e.orient === 'across' ? -p.th : e.rot
+        m.rotation.y = e.orient === 'along' ? -p.th - Math.PI / 2 : e.orient === 'across' ? acrossYaw(e, p) : e.rot
         group.add(m)
         n++
     }

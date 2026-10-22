@@ -195,7 +195,12 @@ function place(i, side, off, r) {
 
 // orient a prop: 'along' squares it with the road (long axis on the racing
 // direction), 'across' faces it at the track, 'rand' scatters it.
-const yawFor = (orient, a, rot) => (orient === 'along' ? Math.PI / 2 - a : orient === 'across' ? -a : rot)
+// #808 facing law: shelf props front local +z. A prop on `side` sits at
+// p + side·off along perp(a) = (-sin a, cos a), so the track centre lies
+// along -side·perp(a); a (sin yaw, cos yaw) front matches at
+// yaw = -a + (side > 0 ? π : 0). The old `-a` ignored the side, so the
+// far-side stand in every pair showed the field its back.
+export const yawFor = (orient, a, rot, side = 1) => (orient === 'along' ? Math.PI / 2 - a : orient === 'across' ? (side > 0 ? Math.PI - a : -a) : rot)
 
 // ---- the plan ---------------------------------------------------------------
 // One deterministic pass over the live course. Entries keep everything the
@@ -277,7 +282,7 @@ export function tracksidePlan() {
     const marStep = stepFor(1100)
     for (let i = 0; i < N; i += marStep) {
         const side = (Math.floor(i / marStep) % 2 === 0) ? 1 : -1
-        if (place(i, side, 250, 26)) add({ id: 'marshal_post', i, side, off: 250, scale: 1.1, orient: 'rand', r: 26 })
+        if (place(i, side, 250, 26)) add({ id: 'marshal_post', i, side, off: 250, scale: 1.1, orient: 'across', r: 26 })
         if (shash(i * 5.3) < 0.6 && place(i, -side, 250, 24)) add({ id: 'flag', i, side: -side, off: 250, scale: 1.2, orient: 'rand', r: 24 })
     }
 
@@ -425,7 +430,7 @@ export function buildTracksidePrimitives(plan) {
         const p = T.pts[e.i % T.N]
         m.position.set(e.wx * S, e.baseY - 0.05, e.wz * S)
         m.scale.setScalar(e.scale)
-        m.rotation.y = yawFor(e.orient, p.a, e.rot)
+        m.rotation.y = yawFor(e.orient, p.a, e.rot, e.side)
         if (SHADOW_IDS[e.id]) m.add(makePropShadow(SHADOW_IDS[e.id]))
         g.add(m)
     }
@@ -462,7 +467,7 @@ export async function attachShelfProps(plan, group, alive = () => true) {
         const p = T.pts[e.i % T.N]
         m.position.set(e.wx * S, e.baseY - 0.05, e.wz * S)
         m.scale.setScalar(e.scale)
-        m.rotation.y = yawFor(e.orient, p.a, e.rot)
+        m.rotation.y = yawFor(e.orient, p.a, e.rot, e.side)
         if (SHADOW_IDS[e.id]) m.add(makePropShadow(SHADOW_IDS[e.id]))
         const seed = e.i * 31 + e.side * 7
         if (e.id === 'grandstand') { m.add(spectatorDots(seed)); m.add(bunting(seed)) }
