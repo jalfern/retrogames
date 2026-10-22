@@ -245,6 +245,24 @@ const SSXGame = () => {
                     audioController.duckMusic(0.2, 0.7)
                     shake = 0.7
                 }
+                // #791 line-bobble: a rival clipping a line it should have dodged
+                // throws a rock-dust burst and a low thunk — the field is messy now,
+                // not a procession. The player never bobbles, so this reads CPU-only.
+                if (e.type === 'bobble') {
+                    const rr = g.riders[e.who] || g.riders[0]
+                    const rp = slopePos(g.course, rr.s, rr.x)
+                    const nb = 6
+                    for (let k = 0; k < nb; k++) {
+                        const fan = (Math.random() - 0.5) * 1.6
+                        putSpray(
+                            rp.x + Math.cos(rp.th) * fan, rp.y + 0.14, rp.z - Math.sin(rp.th) * fan,
+                            Math.cos(rp.th) * fan * 2.4 + (Math.random() - 0.5) * 2,
+                            1.6 + Math.random() * 1.8,
+                            Math.sin(rp.th) * fan * 2.4 + (Math.random() - 0.5) * 2,
+                        )
+                    }
+                    audioController.playFilteredNoise(0.22, 0.07, 220)
+                }
                 if (e.type === 'up' && mine) audioController.playTone(330, 0.08, 'square', 0.05)
                 if (e.type === 'boost' && mine) audioController.playSweep(80, 190, 0.22, 'sawtooth', 0.09)
                 if (e.type === 'grind' && mine) audioController.playTone(1100, 0.08, 'square', 0.05)
@@ -643,7 +661,7 @@ const SSXGame = () => {
                     const p = g.riders[0]
                     return {
                         screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick, phase: g.phase,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, boostHum: p.boostHum, press: p.press, takeSpin: p.takeSpin, stomp: p.stomp, stompPow: p.stompPow, grabKind: p.grab, grab: p.grabKind, grabName: p.grab ? GRAB_NAMES[p.grabKind] : null, lastTrick: p.lastTrick, carves: p.carves.length },
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, boostHum: p.boostHum, press: p.press, takeSpin: p.takeSpin, stomp: p.stomp, stompPow: p.stompPow, bobble: p.bobble, grabKind: p.grab, grab: p.grabKind, grabName: p.grab ? GRAB_NAMES[p.grabKind] : null, lastTrick: p.lastTrick, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },
