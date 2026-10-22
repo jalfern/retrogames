@@ -9,11 +9,13 @@ import { SCREENS, TS, SW, SH, tileAt, isSolidTile, SHOP } from './world.js'
 const openTile = (id, tx, ty, st) => {
     if (tx < 0 || ty < 0 || tx >= SW || ty >= SH) return false
     const s = SCREENS[id]
+    const d0 = (s.doors || []).find(q => q.x === tx && q.y === ty)
+    if (d0) return !!st.doors[d0.id] || (d0.kind === 'switch' && !!st.switches[d0.switch])
     const ch = tileAt(s, tx, ty)
     if (ch === 'C') return !!st.cracked[id + ':' + (s.cracks || []).find(c => c.x === tx && c.y === ty)?.id]
     if (isSolidTile(ch)) return false
     if (ch === '.') {
-        const d = (s.doors || []).find(q => q.x === tx && q.y === ty)
+        const d = d0
         if (d) {
             if (st.doors[d.id]) return true
             if (d.kind === 'switch') return !!st.switches[d.switch]

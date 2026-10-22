@@ -62,6 +62,7 @@ export const SCREENS = {
             { type: 'wisp', x: 12, y: 3, i: 1 },
             { type: 'sprig', x: 6, y: 7, i: 2 },
             { type: 'cinderling', x: 10, y: 8, i: 3 },
+            { type: 'pod', x: 10, y: 6, i: 4 },
         ],
     }),
     'ow-01': S('ow-01', 'FERN HOLLOW', [
@@ -86,15 +87,16 @@ export const SCREENS = {
             { type: 'sprig', x: 8, y: 9, i: 1 },
             { type: 'spitter', x: 12, y: 7, i: 2 },
             { type: 'wisp', x: 2, y: 5, i: 3 },
+            { type: 'tuskroot', x: 12, y: 3, i: 4 },
         ],
     }),
     'ow-11': S('ow-11', 'EMBERWOOD TOWN', [
         'TTTTT.TTTTTTTTTT',
         'T.RRR..........T',
-        'T.HHH..........T',
+        'T.HHH.I........T',
         'T.....~~~......T',
         'T.....~~~......T',
-        '................',
+        '..I.............',
         'T....="".......T',
         'T....="".......T',
         'T..T.....T...T.T',
@@ -110,7 +112,11 @@ export const SCREENS = {
             { id: 'shop', kind: 'shop', x: 5, y: 1, msg: 'WELCOME TO THE EMBER SHOP, TRAVELER.' },
             { id: 'elder', kind: 'oldman', x: 12, y: 8, msg: 'THE CINDER WYRM SLEEPS BENEATH THE SHRINE. ITS SCALECLOAK SHRUGS OFF STEEL — FIRE AN ARROW INTO ITS OPENING MAW TO STAGGER IT, THEN STRIKE.' },
         ],
-        signs: [{ x: 13, y: 3, msg: 'EMBER SHOP — TRADE AT THE DOOR. POTION, ARROWS, BOMBS, SHIELD.' }],
+        signs: [
+            { x: 7, y: 2, msg: 'EMBER SHOP — STAND BY THE KEEPER AND PRESS A. POTION, ARROWS, BOMBS, SHIELD — AND, FOR 150 EMBERS, THE EMBER BLADE.' },
+            { x: 2, y: 5, msg: 'WEST: FERN HOLLOW — A SHIELD WAITS BEYOND THE FERNS.' },
+            { x: 13, y: 3, msg: 'EAST AND NORTH: THE SHRINE, THE WOOD, AND TWO DARK DOORS BELOW.' },
+        ],
         enemies: [{ type: 'cinderling', x: 13, y: 9, i: 0 }],
     }),
 
@@ -182,7 +188,7 @@ export const SCREENS = {
         chests: [{ id: 'ch-e2', x: 12, y: 2, item: 'key' }, { id: 'ch-e2b', x: 3, y: 8, item: 'heart' }],
         enemies: [
             { type: 'spitter', x: 10, y: 2, i: 0 },
-            { type: 'spitter', x: 8, y: 6, i: 1 },
+            { type: 'pod', x: 8, y: 6, i: 1 },
             { type: 'husk', x: 5, y: 8, i: 2 },
         ],
         warps: [],
@@ -233,7 +239,7 @@ export const SCREENS = {
     }),
     'd2-f1': S('d2-f1', 'CINDERKEEP II', [
         '################',
-        '#......A.......#',
+        '#...A..........#',
         '#..............#',
         '#...##..##.....#',
         '#..............#',
@@ -246,12 +252,13 @@ export const SCREENS = {
     ], {
         dark: true, spawn: [7, 8],
         doors: [{ id: 'dr2-1', x: 7, y: 0, kind: 'switch', switch: 'sw3', to: 'd2-f2', entry: [7, 8] }],
-        switches: [{ id: 'sw3', x: 7, y: 1, via: 'arrow', opens: 'dr2-1' }],
+        switches: [{ id: 'sw3', x: 3, y: 1, via: 'arrow', opens: 'dr2-1' }],
         chests: [{ id: 'ch-f1', x: 12, y: 5, item: 'key' }],
         enemies: [
             { type: 'bat', x: 3, y: 2, i: 0 },
             { type: 'bat', x: 11, y: 2, i: 1 },
             { type: 'spitter', x: 12, y: 7, i: 2 },
+            { type: 'pod', x: 8, y: 4, i: 3 },
         ],
         warps: [],
     }),
@@ -300,6 +307,7 @@ export const SCREENS = {
             { type: 'wisp', x: 9, y: 2, i: 0 },
             { type: 'sprig', x: 4, y: 5, i: 1 },
             { type: 'spitter', x: 12, y: 4, i: 2 },
+            { type: 'tuskroot', x: 9, y: 7, i: 3 },
         ],
         warps: [],
     }),
@@ -347,4 +355,5 @@ export const SHOP = [
     { item: 'arrows', label: 'ARROWS x10', price: 20 },
     { item: 'bombs', label: 'BOMBS x4', price: 30 },
     { item: 'shield', label: 'SHIELD', price: 80 },
+    { item: 'blade', label: 'EMBER BLADE', price: 150 },
 ]
