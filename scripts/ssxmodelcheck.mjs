@@ -7,10 +7,13 @@
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
 const URL = process.env.SSX_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/ssx?lite=1`
-const POSES = ['stand', 'tuck', 'crouch', 'air', 'grab', 'tumble']
+const POSES = ['stand', 'tuck', 'crouch', 'air', 'grab', 'tumble',
+    'grabFlat', 'grabIndy', 'grabMethod', 'grabSalis', 'grabNose', 'grabTail']
 const NEIGHBOURS = [
     ['stand', 'crouch'], ['crouch', 'tuck'], ['tuck', 'air'],
     ['air', 'grab'], ['grab', 'tumble'], ['stand', 'air'],
+    // #791 slice 6: the six named grabs read as six bodies, not one pose
+    ['grabFlat', 'grabIndy'], ['grabIndy', 'grabMethod'], ['grabSalis', 'grabFlat'], ['grabNose', 'grabTail'],
 ]
 const DIFF_MIN = 40
 const SETTLE = 900
