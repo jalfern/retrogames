@@ -30,6 +30,9 @@ export const CFG = {
     flipRate: 520,             // deg / s while held — an arcade-fast flip
     boostDrain: 26,            // meter / s spent
     boostAcc: 9,
+    boostRev: 0.8,             // #791 boost engine: rev/s the bed climbs toward redline
+                               // while Shift is held (hum 0→1 in ~1.25 s) — a sustained
+                               // rising engine, not a one-shot whine
     boostGain: 0.02,           // meter per trick point — the whole economy
     attractFuel: 22,           // #791 attract demo only: meter/s fed into a HOT input
                                // (inp.fuel) so the showcase rider reaches lips full and
@@ -66,7 +69,7 @@ function newRider(i, isP, gridBack) {
         color: RIDER_COLORS[i],
         s: -gridBack * 7, x: ((i % 2) ? 1 : -1) * 0.3 + (i * 0.13), y: 0, vy: 0,
         v: 0, air: false, airT: 0, spin: 0, spinDir: 0, flip: 0, grab: 0, grabKind: 0,
-        crouch: false, crouchT: 0, boost: false, boostEdge: false,
+        crouch: false, crouchT: 0, boost: false, boostEdge: false, boostHum: 0,
         tuck: false, scrub: false,
         tumble: 0, stomp: 0, stompPow: 0, chain: 0, chainDisp: 0, chainDispT: 0,
         meter: 0, over: false, grind: null, grindT: 0,
@@ -283,8 +286,9 @@ function riderStep(g, r, inp) {
     if (wantBoost) {
         r.meter = Math.max(0, r.meter - CFG.boostDrain * dt)
         r.v += CFG.boostAcc * dt
-        if (!r.boostEdge) { r.boostEdge = true; push(g, { type: 'boost', who: r.id }) }
-    } else r.boostEdge = false
+        if (!r.boostEdge) { r.boostEdge = true; r.boostHum = 0; push(g, { type: 'boost', who: r.id }) }
+        r.boostHum = Math.min(1, r.boostHum + CFG.boostRev * dt)
+    } else { r.boostEdge = false; r.boostHum = 0 }
     // #791 attract fuel: only an inp.fuel (hot attract) input carries it, and
     // only the witness rides hot in attract — the race and the field never do.
     if (inp.fuel && r.isP && r.meter < 100) r.meter = Math.min(100, r.meter + CFG.attractFuel * dt)

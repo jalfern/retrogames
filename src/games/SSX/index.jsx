@@ -245,7 +245,7 @@ const SSXGame = () => {
                     shake = 0.7
                 }
                 if (e.type === 'up' && mine) audioController.playTone(330, 0.08, 'square', 0.05)
-                if (e.type === 'boost' && mine) audioController.playSweep(240, 960, 0.35, 'sawtooth', 0.08)
+                if (e.type === 'boost' && mine) audioController.playSweep(80, 190, 0.22, 'sawtooth', 0.09)
                 if (e.type === 'grind' && mine) audioController.playTone(1100, 0.08, 'square', 0.05)
                 if (e.type === 'grindstart' && mine) audioController.playSweep(900, 1500, 0.15, 'square', 0.05)
                 if (e.type === 'rockbounce' && mine) audioController.playSweep(180, 520, 0.16, 'square', 0.1)
@@ -420,7 +420,8 @@ const SSXGame = () => {
             }
 
             // #780 physical mix: wind rising with speed, a swish off the edge
-            // on hard carves, an open-air hush on hangs, a boost whine — short
+            // on hard carves, an open-air hush on hangs, a rising boost engine
+            // (#791: pitch climbs with how long Shift is held) — short
             // filtered bursts re-triggered on a throttle read as one bed.
             if (screenRef.current === 'play' && !pausedRef.current && g.phase === 'run' && p.v > 1) {
                 if (!p.air) {
@@ -432,7 +433,8 @@ const SSXGame = () => {
                         audioController.playFilteredNoise(0.12, Math.min(0.09, 0.02 + s * 0.028 + p.v * 0.0012), 650 + p.v * 40 + s * 350)
                     }
                     if (p.boost && (boostT = (boostT + 1) % 8) === 0) {
-                        audioController.playSweep(300, 720, 0.16, 'sawtooth', 0.028)
+                        const hum = p.boostHum || 0
+                        audioController.playSweep(150 + hum * 300, 260 + hum * 520, 0.16, 'sawtooth', 0.026 + hum * 0.012)
                     }
                 } else if ((windT = (windT + 1) % 12) === 0) {
                     audioController.playFilteredNoise(0.3, Math.min(0.055, 0.02 + p.v * 0.0015), 900)
@@ -639,7 +641,7 @@ const SSXGame = () => {
                     const p = g.riders[0]
                     return {
                         screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick, phase: g.phase,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, press: p.press, stomp: p.stomp, stompPow: p.stompPow, carves: p.carves.length },
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, boostHum: p.boostHum, press: p.press, stomp: p.stomp, stompPow: p.stompPow, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },
