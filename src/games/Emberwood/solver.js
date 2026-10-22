@@ -102,7 +102,6 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
             const from = s.spawn || (id === 'ow-11' ? [8, 6] : [7, 8])
             for (const k of Object.keys(SCREENS)) {
                 if (seen.has(k)) continue
-                const t = SCREENS[k]
                 // overworld adjacency
                 const e = s.exits || {}
                 for (const dir of Object.keys(e)) {

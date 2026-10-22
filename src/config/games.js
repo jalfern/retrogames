@@ -54,6 +54,8 @@ const IceClimberGame = lazy(() => import('../games/IceClimber'))
 // Galaga: same lesson again — the attract demo is the autopilot's own proven
 // run, and the path library it shares with the harness rides in its chunk.
 const GalagaGame = lazy(() => import('../games/Galaga'))
+// EMBERWOOD: its own chunk — three.js HD-2D renderer, solver and sim ride together.
+const EmberwoodGame = lazy(() => import('../games/Emberwood'))
 // Polarity: same lesson — the attract demo is the autopilot's own proven run,
 // and the fairness scanner it shares with the harness IS the autopilot.
 const PolarityGame = lazy(() => import('../games/Polarity'))
@@ -552,6 +554,19 @@ export const GAMES = [
         theme: 'dark',
         description: 'Hyrule as a cartridge that never was: a 3x3 overworld of hand-carved screens, a sword cave, a bomb shop whose price you earn by the drop tables, a cracked wall that hides an old man and his bombs, and a three-hall dungeon where a push-block opens the way to Aquamentus and the Triforce of Wisdom. Every screen respawns its monsters when you walk back in, every octorok spits on a fixed beat, and every kill drops exactly what the NES ledger says it drops — hearts for the brave, rupees for the hungry. The whole route (sword -> rupees -> bombs -> crack -> dungeon -> boss -> Triforce) is walked by a deterministic autopilot a Node harness audits offline, and the game is re-proven with a thinner wallet and no second cave container.',
         controls: ['Arrows / D-pad: walk Hyrule — cave mouths and doors swallow you when you step in', 'Z / A: the sword — it hits the arc you face; monsters die to patterns, not to mashing', 'X / B: BOMB — blow the cracked wall, and the rocks of a set full pack too', 'Buy low at the BOMB SHOP (stand at the counter, press A to trade)', 'Push blocks from the side onto the switch tile; wait out Aquamentus, then dash the top row', '?: pause and read the quest'],
+    },
+    {
+        path: '/emberwood',
+        tapStart: true,
+        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
+        builtBy: 'forge',
+        added: '2026-10-21',
+        component: EmberwoodGame,
+        label: 'EMBERWOOD',
+        theme: 'dark',
+        visibility: 'private',
+        description: 'An original HD-2D action-adventure — our own vale, our own hero. Pixel sprites on a lit 3D diorama: a low sun and torch flames, cast shadows, shimmering water, bloom and tilt-shift depth of field. Ash wakes in Emberwood town with a sword and errands: trade embers at the shop (potion, arrows, bombs, shield), clear six species of monster that each fight by their own rules, and walk two item-gated dungeons where keys, push-blocks, cracked walls and far-off arrow-switches hide the Elder Bow and, beneath the old shrine, the Cinder Wyrm. Hold A to draw the bow, release to loose; bombs open what steel cannot; the husk only falls from behind. A deterministic solver proves every dungeon finishable with exactly the kit you own at that point — and re-proves it one bomb thinner.',
+        controls: ['Arrows / WASD / stick: walk the vale — stairs and portals swallow you', 'A / SPACE: tap to slash; stand at doors and counters to talk, trade, unlock', 'Hold A (with bow + arrows) to DRAW, release to LOOSE', 'B / X: BOMB — crack the cracked walls for old gifts', 'C: drink a potion when hearts run low', '?: pause and read the quest'],
     },
     {
         path: '/minesweeper',

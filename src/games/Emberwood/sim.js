@@ -135,14 +135,6 @@ function makeEnemy(e) {
 }
 
 // deterministic per-enemy pseudo random from tick + id
-const prand = (sim, e, salt) => {
-    const v = Math.sin(((sim.tick + e.seedOff) * 12.9898 + salt * 78.233)) * 43758.5453
-    return v - Math.floor(v)
-}
-
-const heroCx = (sim) => sim.hero.x
-const heroCy = (sim) => sim.hero.y
-
 function moveEnemy(sim, e, dx, dy, speed) {
     const len = Math.hypot(dx, dy) || 1
     const vx = (dx / len) * speed
@@ -184,6 +176,7 @@ export function stepSim(sim, inp) {
     if (Math.abs(lx) < 0.15) lx = 0
     if (Math.abs(ly) < 0.15) ly = 0
     const moving = lx !== 0 || ly !== 0
+    sim.moving = moving
     if (moving) {
         const len = Math.hypot(lx, ly)
         const vx = (lx / len) * HERO.speed
@@ -350,10 +343,10 @@ function hurtEnemy(sim, e, dmg, dx, dy) {
     if (e.stagger > 0 && e.hp <= 0) e.stagger = 0
     e.x += dx * 5; e.y += dy * 5
     emit(sim, 'hit', e.x, e.y)
-    if (e.hp <= 0) killEnemy(sim, e, dx, dy)
+    if (e.hp <= 0) killEnemy(sim, e)
 }
 
-function killEnemy(sim, e, dx, dy) {
+function killEnemy(sim, e) {
     e.dead = true
     emit(sim, 'die', e.x, e.y, { type: e.type, boss: e.boss })
     const wasKey = e.drop === 'key' && !sim.flags.killed[`${sim.screen}:${e.i}`]
@@ -660,8 +653,7 @@ function stepShop(sim, inp) {
         } else say(sim, 'NOT ENOUGH EMBERS', 90)
     }
     if (inp.bPressed || inp.startPressed) sim.shop.open = false
-    if (inp.aPressed && inp.up) {}
-    if (inp.upPressed) sim.shop.sel = (sim.shop.sel + menu.length - 1) % menu.length
+        if (inp.upPressed) sim.shop.sel = (sim.shop.sel + menu.length - 1) % menu.length
     if (inp.downPressed) sim.shop.sel = (sim.shop.sel + 1) % menu.length
 }
 
