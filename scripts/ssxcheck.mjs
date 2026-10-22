@@ -460,5 +460,39 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('#791 pressure history rides the replay hash', stateHash(z1) === stateHash(z2) && stateHash(z1) !== stateHash(fresh()))
 }
 
+// ---- 9c. #791 attract hotness: the demo throws OVERs visibly ----------------
+{
+    ok('#791 the attract fuel knob is exported and sane', CFG.attractFuel >= 10 && CFG.attractFuel <= 60)
+    const heat1 = (hot, hashes = false) => {
+        const g = makeGame('race')
+        let overs = 0, crashes = 0, fullTakeoffs = 0, takeoffs = 0, maxScore = 0, t = 0
+        const hs = []
+        while (!g.end && g.heat === 0 && t < 400000) {
+            step(g, g.phase === 'run' ? (hot ? decide(g, g.riders[0], true) : decide(g, g.riders[0])) : {})
+            const p = g.riders[0]
+            maxScore = Math.max(maxScore, p.score)
+            if (hashes && t % 500 === 0) hs.push(stateHash(g))
+            for (const e of g.events) {
+                if (e.type === 'jump' && e.who === 0) { takeoffs++; if (p.meter >= 100) fullTakeoffs++ }
+                if (e.type === 'land' && e.who === 0 && e.over) overs++
+                if (e.type === 'crash' && e.who === 0) crashes++
+            }
+            g.events.splice(0)
+            t++
+        }
+        return { overs, crashes, fullTakeoffs, takeoffs, maxScore, hs }
+    }
+    const cold = heat1(false)
+    const hot = heat1(true, true)
+    ok('#791 the race economy is untouched — the cold witness arrives short at the lips',
+        cold.fullTakeoffs <= 2 && cold.overs <= 1)
+    ok('#791 the hot demo arrives OVER at almost every lip', hot.fullTakeoffs >= hot.takeoffs - 2)
+    ok('#791 the hot demo banks doubled OVER pay — visibly hotter than the race line',
+        hot.overs >= 4 && hot.overs > cold.overs * 2 && hot.maxScore > cold.maxScore)
+    ok('#791 the hot demo rides clean — hot, not sloppy', hot.crashes === 0)
+    const hot2 = heat1(true, true)
+    ok('#791 the hot attract demo replays hash-for-hash', hot.hs.join(',') === hot2.hs.join(','))
+}
+
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)
