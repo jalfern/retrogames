@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoostFx } from './sim'
-import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt } from './track.js'
+import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN } from './track.js'
 import { selectorGeom, selectorHit, previewBox } from './selector.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE } from './art.js'
 import { drawText } from './font.js'
@@ -246,7 +246,7 @@ export default function CometDrift() {
 
         const raster = () => {
             const p = g.karts[0]
-            const bobTarget = Math.max(-6, Math.min(6, (p.grade || 0) * 46 + (p.h || 0) * 0.035))
+            const bobTarget = Math.max(-6, Math.min(6, (p.grade || 0) * 46 + (p.h || 0) * ELEV_SCREEN))
             horizonSm += (bobTarget - horizonSm) * 0.18
             HZ = HORIZON + Math.round(horizonSm)
             const ca = Math.cos(camA); const sa = Math.sin(camA)
@@ -446,26 +446,28 @@ export default function CometDrift() {
         const drawSprites = () => {
             ctx.save()
             ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip()
+            const eyeH = g.karts[0].h || 0
             const items = []
             for (const k of g.karts.slice(1)) {
                 const sf = k.steerVis < 0 ? 0 : k.steerVis > 0 ? 2 : 1
-                items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color][sf][(k.anim >> 2) & 1], w: KART.w, h: KART.h, o: k })
+                items.push({ x: k.x, y: k.y, a: k.a, img: S[k.color][sf][(k.anim >> 2) & 1], w: KART.w, h: KART.h, o: k, elev: k.h || 0 })
             }
             for (const sc of SCENERY) {
                 const img = sc.kind === 'cactus' ? S_cactus() : S_hoodoo()
-                items.push({ x: sc.x, y: sc.y, a: 0, img, w: sc.kind === 'cactus' ? 46 : 90, h: sc.kind === 'cactus' ? 90 : 150 })
+                items.push({ x: sc.x, y: sc.y, a: 0, img, w: sc.kind === 'cactus' ? 46 : 90, h: sc.kind === 'cactus' ? 90 : 150, elev: sc.elev || 0 })
             }
             const s0 = T.pts[0]
-            items.push({ x: s0.x, y: s0.y, a: 0, img: archFor(COURSE.short), w: 300, h: 170 })
+            items.push({ x: s0.x, y: s0.y, a: 0, img: archFor(COURSE.short), w: 300, h: 170, elev: s0.h || 0 })
             items.sort((a, b) => {
                 const fa = project(a.x, a.y).f; const fb = project(b.x, b.y).f
                 return fb - fa
             })
+            const footCap = (H - HZ) * 0.22
             for (const it of items) {
                 const pr = project(it.x, it.y)
                 if (pr.f < 30 || pr.f > 2600) continue
                 const s = BASE_PP / pr.f
-                const sy = HZ + CAM_H * s
+                const sy = HZ + CAM_H * s + Math.max(-footCap, Math.min(footCap, spriteFootShift(it.elev, eyeH)))
                 const sx = W / 2 + pr.l * s
                 let w = Math.min(W * 2, it.w * s * 0.9); let h = Math.min(H * 1.6, it.h * s * 0.9)
                 if (sx + w < 0 || sx - w > W) continue
