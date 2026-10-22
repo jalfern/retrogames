@@ -131,6 +131,28 @@ was flaking the same-pose stability gate).
   it arrives, then swaps — the game (and `ssxcheck`) never block on it. CPU
   riders keep the primitive rigs until the polish pass gives the field models.
 
+## The feel pass (#780) — summit start, soundtrack, physical mix
+
+- **The countdown stands on top of the mountain.** `START_VISTA` (art.js, pure
+  data pinned by ssxcheck) parks the camera high and far during `phase==='count'`
+  with a slow tick-driven pan, looking down the whole face; at GO the chase goal
+  takes over and the position/FOV lerps swoop you into the run. The camera is
+  constructed at the vista FOV so attract opens wide too. A big 3-2-1-GO! readout
+  rides the countdown.
+- **One original big-beat bed per mountain** (`AudioController.MUSIC`:
+  SIGNAL HILL / NEON ASCENT / LONG SHADOW — composed here, none from the
+  soundtrack). The bed runs only during an actual run (attract/pause/results
+  silent), switches per heat with the theme via `MUSIC_TRACKS`, and its grid
+  lifts up to 14% with your speed through `setMusicStep` (`MUSIC_STEP` is the
+  resting tempo, pinned equal to the track grid by ssxcheck).
+- **Physical mix**: wind rising with speed (grounded), an edge swish on hard
+  carves, an open-air hush on hangs, a boost whine, lip-launch whoosh, a low
+  thud on big-air landings, a filtered rumble on crashes — crashes and big hits
+  `duckMusic` so the field of sound keeps the hit.
+- `__ssxTest.cam()` exposes phase/fov/pos/dir + the music state; the headless
+  drive (vista→swoop→bed→carve/ollie/boost/wall/heat-swap→iPhone tap) runs off
+  it. ssxmodelcheck now waits for the run phase before pose capture (#780).
+
 ## Hard-won verify notes
 
 - The far mesh SINKS past the ridge line (`bank` q>9) — outer columns must
@@ -153,7 +175,7 @@ was flaking the same-pose stability gate).
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 80 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 87 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
 npm run ssxterraincheck                 # 45 checks: snow/rock surfaces (#669, #685)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
@@ -187,8 +209,9 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
 - CPU riders never crash (the field is pace-limited rather than error-prone).
 - Keyboard-only flips/grabs on desktop; phones get steer + A-jump + B-boost
   (spins still work via the d-pad mid-air). No analogue stick yet.
-- No audio soundtrack beyond the synth pulse. Snow tracks are now geometry:
-  fading carve grooves under the board (#310), on top of the speed-scaled spray.
+- Snow tracks are now geometry: fading carve grooves under the board (#310),
+  on top of the speed-scaled spray. Attract mode runs silent — the beds run
+  only during heats (#780).
 - No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
   `ssxmodelcheck` covers the hero rider in the browser.
 - Only the player's livery carries the bib + logo decal set; grab/boot weld

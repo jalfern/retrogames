@@ -51,7 +51,7 @@ const SSXGame = () => {
         renderer.setPixelRatio(LITE ? 1 : Math.min(window.devicePixelRatio || 1, 2))
 
         const scene = new THREE.Scene()
-        const camera = new THREE.PerspectiveCamera(68, 1, 0.1, 900)
+        const camera = new THREE.PerspectiveCamera(START_VISTA.fov, 1, 0.1, 900)
         scene.add(camera)
         const sun = new THREE.DirectionalLight(0xffffff, 1.6)
         sun.position.set(-80, 160, 60)
@@ -580,8 +580,8 @@ const SSXGame = () => {
                 probe: () => {
                     const p = g.riders[0]
                     return {
-                        screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, carves: p.carves.length },
+                        screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick, phase: g.phase,
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },
@@ -703,6 +703,7 @@ const SSXGame = () => {
                     }
                 },
                 start: (m) => startPlay(m === 'showoff' ? 'showoff' : 'race'),
+                boostMeter: () => { g.riders[0].meter = 100; return g.riders[0].meter },
                 seek: (m) => { g.riders[0].s = m; camFresh = true; return g.riders[0].s },
                 heat: (h) => { loadHeat(g, h); shownHeat = g.heat; setCourseVisuals(); return g.course.name },
                 toAttract: () => { g = makeGame('race'); shownHeat = 0; poseOverride = null; setCourseVisuals(); setMode('attract') },
