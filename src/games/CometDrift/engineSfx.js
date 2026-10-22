@@ -69,6 +69,9 @@ export const AMBIENCE = {
     dusk: { freq: 98, type: 'triangle', vol: 0.011, period: 36 },
     noon: { freq: 132, type: 'triangle', vol: 0.009, period: 44 },
     dawn: { freq: 74, type: 'sine', vol: 0.008, period: 52 },
+    // #530 item 3: over the lake bed the hottest air shimmers highest and
+    // thinnest — a tight, faint sine above the noon shimmer.
+    heat: { freq: 158, type: 'sine', vol: 0.007, period: 48 },
 }
 
 export function ambienceFor(palette) {

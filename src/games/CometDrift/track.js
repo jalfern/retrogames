@@ -49,8 +49,7 @@ const ELEV = {
     gulch: [
         [0, 0], [0.16, 40], [0.3, -55], [0.46, -90], [0.6, -18], [0.74, 80],
         [0.86, 52], [0.94, -26],
-    ],
-    // the bowl: the banked Turns 1-2 and the International Horseshoe ride high,
+    ],    // the bowl: the banked Turns 1-2 and the International Horseshoe ride high,
     // the Bus Stop complex and the front straight sit low
     sandbank: [
         [0, 0], [0.1, 12], [0.22, 48], [0.34, 64], [0.44, 38], [0.56, 6],
@@ -61,6 +60,11 @@ const ELEV = {
     corkscomb: [
         [0, 0], [0.12, 52], [0.24, 104], [0.36, 96], [0.46, 10], [0.56, -64],
         [0.66, -110], [0.76, -58], [0.86, 16], [0.94, 22],
+    ],
+    // #530 item 3: the lake bed barely rolls — salt flats and old runway
+    // slabs; a washboard drop off the north berm and a rise past the tower
+    drylake: [
+        [0, 0], [0.1, 26], [0.24, -20], [0.4, -52], [0.52, -4], [0.66, 40], [0.8, 16], [0.92, 4],
     ],
 }
 export const ELEV_MAX_GRADE = 0.095
@@ -93,6 +97,10 @@ const TIGHTEN = {
     // Laguna's: the Corkscomb, the andretti hook exit and the keyhole.
     corkscomb: [[2, -25, -17], [3, 24, 1], [4, -16, 25], [12, -26, -92], [13, 89, 37],
         [14, -91, 46], [30, 77, 58], [31, -82, -17], [32, 37, -76]],
+    // #530 item 3: the runway fold — the NE hairpin's four knots pulled toward
+    // the fold's centre until the apex reads brakeable (~100px grown), the
+    // same target the traced circuits tune to.
+    drylake: [[6, -113, -54], [7, -119, 194], [8, 135, 335], [9, 378, 284]],
 }
 
 function grown(id, control) {
@@ -191,6 +199,23 @@ const CONTROL_CORKSCOMB = [
     [619, 2280], [910, 2338],
 ]
 
+// ---------------------------------------------------------------------------
+// DRY LAKE BED (late-afternoon heat, #530 item 3 — the optional third the
+// #493 pack left on the board). Hand-authored like the Gulch (never traced
+// from a map): an airfield circuit on a salt flat in the Sebring spirit — a
+// huge main straight along the bottom, fast sweepers up the east side, the
+// signature: a hard braking hairpin at the north-east end (the runway turn),
+// a long back straight west, and the kinked pit straight home. The hairpin
+// apex is pulled to brakeable radius with TIGHTEN below; everything else is
+// flat-out — the lap is won and lost at the fold.
+const CONTROL_DRYLAKE = [
+    [900, 1750], [1350, 1750], [1750, 1750], [2050, 1760],
+    [2270, 1650], [2360, 1420], [2330, 1170], [2240, 960],
+    [2070, 865], [1880, 880], [1600, 850], [1300, 850],
+    [1020, 850], [760, 900], [590, 1060], [510, 1280],
+    [495, 1500], [520, 1650], [590, 1730],
+]
+
 export const COURSES = [
     {
         id: 'gulch', name: 'SUNSET GULCH', short: 'GULCH',
@@ -214,11 +239,19 @@ export const COURSES = [
         // dune crest (art.js duneCrest law), not the Gulch's sandstone arch.
         landmark: 'dune',
     },
+    {
+        id: 'drylake', name: 'DRY LAKE BED', short: 'DRY LAKE',
+        tagline: 'DRY LAKE BED - 4 LAPS', palette: 'heat', control: grown('drylake', CONTROL_DRYLAKE),
+        // #530 item 3: the airfield gets its own line structure — the old
+        // windmill by the start line, not the arch, gantry or dune.
+        landmark: 'windmill',
+    },
 ]
 
 export const GULCH = COURSES[0]
 export const SANDBANK = COURSES[1]
 export const CORKSCOMB = COURSES[2]
+export const DRYLAKE = COURSES[3]
 
 function catmull(p0, p1, p2, p3, t) {
     const t2 = t * t; const t3 = t2 * t

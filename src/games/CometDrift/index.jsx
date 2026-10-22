@@ -379,10 +379,50 @@ export default function CometDrift() {
             drawText(x, name, 127, 69, pal.bone, 2, 'center')
             return c
         }
+        // #530 item 3: DRY LAKE BED's line structure is the old farm windmill
+        // by the start line — a lattice tower, a spoked wheel and a tail vane,
+        // bleached like everything else on the salt flat, course name on the
+        // concrete pad at its foot.
+        const windmillFor = (name) => {
+            const pal = paletteFor(COURSE.palette)
+            const c = document.createElement('canvas'); c.width = 300; c.height = 170
+            const x = c.getContext('2d'); x.imageSmoothingEnabled = false
+            x.fillStyle = pal.concrete; x.fillRect(96, 152, 108, 18)
+            x.strokeStyle = pal.outline; x.lineWidth = 2; x.strokeRect(96, 152, 108, 18)
+            x.fillStyle = pal.coal; drawText(x, name, 150, 166, pal.coal, 2, 'center')
+            x.strokeStyle = pal.outline; x.lineWidth = 3
+            x.beginPath(); x.moveTo(126, 152); x.lineTo(142, 56); x.stroke()
+            x.beginPath(); x.moveTo(174, 152); x.lineTo(158, 56); x.stroke()
+            x.lineWidth = 2; x.strokeStyle = pal.rockDark
+            for (let i = 0; i < 5; i++) {
+                const t0 = i / 5; const t1 = (i + 1) / 5
+                const lx0 = 126 + (142 - 126) * t0; const rx0 = 174 + (158 - 174) * t0; const y0 = 152 - (152 - 56) * t0
+                const lx1 = 126 + (142 - 126) * t1; const rx1 = 174 + (158 - 174) * t1; const y1 = 152 - (152 - 56) * t1
+                x.beginPath(); x.moveTo(lx0, y0); x.lineTo(rx1, y1); x.stroke()
+                x.beginPath(); x.moveTo(rx0, y0); x.lineTo(lx1, y1); x.stroke()
+                x.strokeStyle = pal.outline; x.beginPath(); x.moveTo(lx1, y1); x.lineTo(rx1, y1); x.stroke()
+                x.strokeStyle = pal.rockDark
+            }
+            const hub = [150, 44]
+            x.strokeStyle = pal.outline; x.lineWidth = 2
+            for (let b = 0; b < 8; b++) {
+                const an = (b / 8) * Math.PI * 2
+                x.beginPath(); x.moveTo(hub[0], hub[1])
+                x.lineTo(hub[0] + Math.cos(an) * 30, hub[1] + Math.sin(an) * 30); x.stroke()
+            }
+            x.strokeStyle = pal.rimLit; x.lineWidth = 1
+            x.beginPath(); x.arc(hub[0], hub[1], 30, 0, Math.PI * 2); x.stroke()
+            x.fillStyle = pal.coal; x.fillRect(hub[0] - 3, hub[1] - 3, 6, 6)
+            x.fillStyle = pal.rockMid; x.fillRect(180, 38, 26, 10)
+            x.strokeStyle = pal.outline; x.lineWidth = 1.5; x.strokeRect(180, 38, 26, 10)
+            x.beginPath(); x.moveTo(153, 44); x.lineTo(180, 43); x.stroke()
+            return c
+        }
         const archFor = (name) => {
             if (archCache[name]) return archCache[name]
             if (COURSE.landmark === 'gantry') { archCache[name] = gantryFor(name); return archCache[name] }
             if (COURSE.landmark === 'dune') { archCache[name] = duneFor(name); return archCache[name] }
+            if (COURSE.landmark === 'windmill') { archCache[name] = windmillFor(name); return archCache[name] }
             const pal = paletteFor(COURSE.palette)
             const c = document.createElement('canvas'); c.width = 300; c.height = 170
             const x = c.getContext('2d'); x.imageSmoothingEnabled = false

@@ -13,7 +13,7 @@
 //   4. A SPIN BITES — a knocked kart cannot throttle out of the spin, and
 //      drives again the moment it expires.
 //   5. THE CIRCUIT CHOICE IS REAL KEYS + PERSISTENT — ArrowLeft/Right on the
-//      attract cycle gulch/sandbank/corkscomb and survive a page reload.
+//      attract cycle gulch/sandbank/corkscomb/drylake and survive a page reload.
 //   6. THE WHOLE RACE IS DRIVABLE IN A TAB — the certified autopilot line
 //      (decide, skill 1.0 — the same line cometcheck proves wins in Node) runs
 //      the NEW Daytona/Laguna layouts (#513) end-to-end: four COMET lap events,
@@ -116,8 +116,8 @@ await wait(800)
 // ---- real ←/→ cycle circuits, and the pick survives a reload ----
 {
     const seen = [(await probe()).course]
-    for (let i = 0; i < 2; i++) { await page.keyboard.press('ArrowRight'); await wait(200); seen.push((await probe()).course) }
-    r.check('real ArrowRight cycles all three circuits from attract', new Set(seen).size === 3, seen.join(' -> '))
+    for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowRight'); await wait(200); seen.push((await probe()).course) }
+    r.check('real ArrowRight cycles all four circuits from attract', new Set(seen).size === 4, seen.join(' -> '))
     for (let i = 0; i < 2; i++) { await page.keyboard.press('ArrowRight'); await wait(150) }
     const pick = (await probe()).course
     await page.reload({ waitUntil: 'load' })

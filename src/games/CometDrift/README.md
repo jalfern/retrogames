@@ -1,8 +1,9 @@
 # COMET DRIFT GP — engine notes (#419, polished #435, course pack #493)
 
 Original arcade kart racer. Course pack: SUNSET GULCH (dusk canyon),
-SANDBANK SPEED BOWL (noon, Daytona road-course spirit) and CORKSCOMB DUNES
-(dawn, Laguna Seca spirit), 4 laps,
+SANDBANK SPEED BOWL (noon, Daytona road-course spirit), CORKSCOMB DUNES
+(dawn, Laguna Seca spirit) and DRY LAKE BED (#530 item 3, late-afternoon
+heat, Sebring-spirit airfield), 4 laps,
 7 buggies (player + 6 CPU). No items — the drift ladder is the whole game
 economy. ←/→ on the attract screen picks the circuit; the label rides in the
 HUD; the choice persists in localStorage (`retrogames:comet.course`) and HD
@@ -40,7 +41,18 @@ pointer handler and `cometcheck` all audit the same targets).
   arc-weighted spread + corner-rounding make the tight sections self-clearing at
   the 60 px radius floor (the 220 oval-only floor was dropped in #513 — hairpins
   are real braking corners now). SUNSET GULCH keeps its original data.
-  Reference maps credited: Daytona PNG public domain, Laguna Seca CC BY-SA 3.0.
+   Reference maps credited: Daytona PNG public domain, Laguna Seca CC BY-SA 3.0.
+   #530 item 3 adds **DRY LAKE BED** — hand-authored like the Gulch (never
+   traced, so it carries no reference/provenance gates): a Sebring-spirit
+   airfield on a salt flat. Character = speed with ONE braking zone: ~45% of
+   the lap is flat-out (r > 500) and the only tight corner is the north-east
+   runway fold, TIGHTEN-pulled to a 99 px brakeable apex at lap-f 0.45. Its
+   own `heat` palette (bleached salt, white-hot sun) and its own line
+   structure (a lattice windmill with a spoked wheel at the line — the
+   pack's fourth, `landmark: 'windmill'`), own `heat` ambience pad
+   (engineSfx: 158 Hz sine, the highest and faintest). cometcheck's drylake
+   gates pin the signature (one braking zone 95..120 px inside f 0.40..0.55,
+   >=35% flat straight) on top of the generic per-course audits + wins.
 - `sim.js` — the pure machine (`makeGame(seed)`, `step`, `decide`,
   `stateHash`). Determinism: mulberry32 riding INSIDE `g.rngState` (JSON-safe
   snapshots); `Math.random` is never called. Launch jitter, the seeded rival
@@ -223,7 +235,7 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   (held one-way drift at a Corkscomb bend) and three mutants — silence
   (hintT=0), spam (guard removed), permanent HUD (decay removed).
 - #493 ships TWO new courses (Sandbank, Corkscomb) per the issue's ship-small
-  plan; Dry Lake Bed (~Sebring) remains the optional third. #511 item 1 wove
+  plan; the optional third, Dry Lake Bed (~Sebring), shipped in #530 item 3. #511 item 1 wove
   the Corkscomb into the ridge: five extra control points between the Andretti
   crest and the Snake make a left-right-left triple apex OVER the drop
   (apex radii ~110-130px, wavelengths 360-570px, all downhill), replacing the
