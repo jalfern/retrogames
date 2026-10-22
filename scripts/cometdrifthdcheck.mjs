@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
-import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
+import { TRACK, COURSES, selectCourse, crestDipLaw } from '../src/games/CometDrift/track.js'
 import { BANDS } from '../src/games/CometDrift/bands.js'
 import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE, refOverlayStats } from '../src/games/CometDriftHD/scene.js'
 import * as THREE from 'three'
@@ -376,6 +376,36 @@ const roadC = (i) => (yAt(geos.road, i, 0) + yAt(geos.road, i, 1)) / 2
     selectCourse('gulch')
     ok(lawMax > 0.1, `#530 banking law is non-trivial on Sandbank (law max ${lawMax.toFixed(3)}u)`)
     ok(Math.abs(rollMax - lawMax) < 0.02, `#530 surface roll matches the banking law (measured ${rollMax.toFixed(3)}u vs law ${lawMax.toFixed(3)}u; a flat road reads 0)`)
+}
+// #530 item 2: the crest/dip law. `p.crest`/`p.dip` ride the grade sign flip so
+// the HD camera can punch its FOV over a brow and sink it in a dip. Pinned three
+// ways, on every course: (a) the attached lane equals the exported law recomputed
+// from the live points (drop the build's crest assignment -> undefined -> red);
+// (b) both lanes have a real peak (a course with no elevation has no feature);
+// (c) the strongest crest sits where the grade genuinely flips up->down (a brow),
+// and the strongest dip where it flips down->up — the camera move tracks terrain,
+// not noise. Mutating crestDipLaw to flat reds every peak + flip gate.
+console.log('crest/dip elevation feel (#530 item 2):')
+{
+    const win = 6
+    const avg = (pts, i, sgn) => { let m = 0; for (let w = 1; w <= win; w++) m += pts[(i + sgn * w + pts.length) % pts.length].grade; return m / win }
+    for (const id of ['gulch', 'sandbank', 'corkscomb']) {
+        selectCourse(id)
+        const pts = TRACK.pts; const N = TRACK.N
+        const law = crestDipLaw(pts)
+        let bad = 0
+        for (let i = 0; i < N; i++) if (pts[i].crest !== law.crest[i] || pts[i].dip !== law.dip[i]) bad++
+        ok(bad === 0, `${id}: p.crest/p.dip equal the crestDipLaw output (${bad} mismatches; a build that drops the lane reads NaN)`)
+        ok(TRACK.crestPeak > 0 && TRACK.dipPeak > 0, `${id}: has both a crest (peak ${TRACK.crestPeak.toFixed(4)}) and a dip (peak ${TRACK.dipPeak.toFixed(4)})`)
+        let ci = 0, di = 0
+        for (let i = 1; i < N; i++) { if (pts[i].crest > pts[ci].crest) ci = i; if (pts[i].dip > pts[di].dip) di = i }
+        ok(pts[ci].crest > 0.5 && avg(pts, ci, -1) > 0 && avg(pts, ci, 1) < 0,
+            `${id}: strongest crest sits on a real brow (grade ${avg(pts, ci, -1).toFixed(3)} -> ${avg(pts, ci, 1).toFixed(3)})`)
+        ok(pts[di].dip > 0.5 && avg(pts, di, -1) < 0 && avg(pts, di, 1) > 0,
+            `${id}: strongest dip sits on a real bottom (grade ${avg(pts, di, -1).toFixed(3)} -> ${avg(pts, di, 1).toFixed(3)})`)
+        ok(ci !== di, `${id}: crest and dip are distinct features (idx ${ci} vs ${di})`)
+    }
+    selectCourse('gulch')
 }
 // #530 item 4: the ?ref=1 debug overlay — the traced real-map centerline
 // (reference.js) fitted onto the shipped circuit. On a referenced course it
