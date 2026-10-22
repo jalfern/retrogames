@@ -13,8 +13,9 @@ import { audioController } from '../../utils/AudioController'
 import { createSim, stepSim, simState, spawnRoom } from './sim.js'
 import { createRenderer } from './render.js'
 import { makeTextures } from './art.js'
-import { proveGame, tilePath } from './solver.js'
-import { SCREENS, TS } from './world.js'
+import { proveGame } from './solver.js'
+import { attractBot } from './bot.js'
+import { SCREENS, TS, SHOP } from './world.js'
 
 const FIXED_DT = 1000 / 60
 const W = 480
@@ -25,44 +26,6 @@ const H_PORT = 360
 // diorama isn't a thin band on a tall screen — the ortho camera keeps its world
 // window (viewH covers the 11-row screen either way), the pixels just get bigger.
 const readOrient = () => (typeof window !== 'undefined' && window.innerHeight > window.innerWidth ? 'port' : 'land')
-
-const solveSt = (sim) => ({
-    cracked: sim.flags.cracked, doors: sim.flags.doorsOpen, switches: sim.flags.switchesOn,
-    chests: sim.flags.chestsOpen, flags: sim.flags, killed: sim.flags.killed,
-})
-
-// attract autopilot: wander the screen, slash at everything, warp onward.
-function attractStep(sim) {
-    sim._botT = (sim._botT || 0) + 1
-    if (!sim._botPath || !sim._botPath.length || sim._botScreen !== sim.screen || sim._botT % 260 === 0) {
-        sim._botScreen = sim.screen
-        const s = SCREENS[sim.screen]
-        const open = []
-        for (let y = 1; y < 10; y++) for (let x = 1; x < 15; x++) {
-            const ch = s.rows[y][x]
-            if (ch === '.' || ch === ',' || ch === 'S' || ch === '<') open.push([x, y])
-        }
-        const cur = [Math.floor(sim.hero.x / TS), Math.floor(sim.hero.y / TS)]
-        const st = solveSt(sim)
-        const pick = open[Math.floor(Math.random() * open.length)] || cur
-        sim._botPath = (tilePath(sim.screen, cur, pick, st) || []).slice(1)
-    }
-    const wp = sim._botPath[0]
-    const inp = { lx: 0, ly: 0 }
-    if (wp) {
-        const tx = wp[0] * TS + 8, ty = wp[1] * TS + 8
-        const dx = tx - sim.hero.x, dy = ty - sim.hero.y
-        if (Math.hypot(dx, dy) < 5) sim._botPath.shift()
-        else {
-            inp.lx = Math.abs(dx) > 1.5 ? Math.sign(dx) : 0
-            inp.ly = Math.abs(dy) > 1.5 ? Math.sign(dy) : 0
-        }
-    }
-    if (sim._botT % 34 < 3 && sim._botT % 34 !== 0) inp.aHeld = true
-    if (sim._botT % 34 === 2) inp.aPressed = true
-    if (sim._botT % 34 === 5) inp.aReleased = true
-    return inp
-}
 
 const fxSound = (e) => {
     const ac = audioController
@@ -87,6 +50,10 @@ const fxSound = (e) => {
             case 'clank': ac.playTone(1200, 0.04, 'square', 0.05); break
             case 'stagger': ac.playSweep(400, 60, 0.5, 'sawtooth', 0.12); ac.duckMusic(0.25, 0.7); break
             case 'pop': ac.playTone(500, 0.05, 'triangle', 0.05); break
+            case 'grunt': ac.playSweep(150, 85, 0.2, 'sawtooth', 0.07); break
+            case 'split': ac.playTone(520, 0.05, 'square', 0.05); ac.playNoise(0.08, 0.06); break
+            case 'read': ac.playTone(620, 0.05, 'triangle', 0.04); break
+            case 'ui': ac.playTone(880, 0.04, 'square', 0.04); break
             case 'warp': ac.playSweep(300, 900, 0.25, 'sine', 0.06); break
             case 'grant': [660, 880, 1100, 1320].forEach((f, i) => ac.playTone(f, 0.1, 'square', 0.05, i * 0.09)); break
             case 'buy': ac.playTone(980, 0.06, 'square', 0.05); ac.playTone(1240, 0.08, 'square', 0.05, 0.06); break
@@ -199,7 +166,7 @@ export default function Emberwood() {
                 if (pausedRef.current || contractHoldsLoop()) break
                 if (sc === 'attract') {
                     if (sim.win || sim.death) resetAttract()
-                    stepSim(sim, attractStep(sim))
+                    stepSim(sim, attractBot(sim))
                 } else if (sc === 'play') {
                     stepSim(sim, readPad())
                 }
@@ -214,11 +181,14 @@ export default function Emberwood() {
 
             if (now - hudTick > 120) {
                 hudTick = now
+                const scr0 = SCREENS[sim.screen]
+                const shopNpc = scr0 ? (scr0.npcs || []).find(n => n.kind === 'shop') : null
                 setHud({
                     hp: sim.hero.hp, max: sim.hero.max, embers: sim.score,
                     items: { ...sim.items }, msg: sim.msgT > 0 ? sim.msg : null,
                     shop: sim.shop.open, sel: sim.shop.sel, death: sim.death, win: sim.win,
                     room: sim.roomName,
+                    nearShop: !!shopNpc && Math.hypot(shopNpc.x * TS + TS / 2 - sim.hero.x, shopNpc.y * TS + TS / 2 - sim.hero.y) < 26,
                 })
             }
 
@@ -352,6 +322,7 @@ export default function Emberwood() {
                         <div className="text-violet-200 text-sm">{hud.room}</div>
                         {hud.items.bigkey && <div className="text-amber-200 text-xs">BIG KEY</div>}
                         {hud.items.shield && <div className="text-sky-200 text-xs">SHIELD</div>}
+                        {hud.items.blade && <div className="text-orange-300 text-xs">EMBER BLADE</div>}
                     </div>
                 </div>
             )}
@@ -360,12 +331,19 @@ export default function Emberwood() {
                     {hud.msg}
                 </div>
             )}
+            {inGame && hud.nearShop && !hud.shop && !hud.death && (
+                <div className="absolute bottom-40 left-1/2 -translate-x-1/2 bg-black/70 border border-amber-600 text-amber-200 font-mono text-xs px-3 py-1 rounded pointer-events-none animate-pulse">
+                    A — TRADE AT THE EMBER SHOP
+                </div>
+            )}
             {inGame && hud.shop && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/60 pointer-events-none">
                     <div className="bg-stone-900 border-2 border-amber-600 p-4 font-mono text-sm w-64">
                         <div className="text-amber-300 text-center mb-2">EMBER SHOP</div>
-                        {['POTION — 20', 'ARROWS x10 — 20', 'BOMBS x4 — 30', 'SHIELD — 80'].map((l, i) => (
-                            <div key={l} className={`px-2 py-1 ${i === hud.sel ? 'bg-amber-600 text-black' : 'text-amber-100'}`}>{l}</div>
+                        {SHOP.map((o, i) => (
+                            <div key={o.item} className={`px-2 py-1 ${i === hud.sel ? 'bg-amber-600 text-black' : 'text-amber-100'}`}>
+                                {o.label} — {o.price}{(o.item === 'shield' && hud.items.shield) || (o.item === 'blade' && hud.items.blade) ? ' (OWNED)' : ''}
+                            </div>
                         ))}
                         <div className="text-amber-400/70 mt-2 text-xs text-center">EMBERS: {hud.embers} · A BUY · B LEAVE</div>
                     </div>

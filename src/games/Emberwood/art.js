@@ -327,6 +327,39 @@ export function makeTextures() {
             return c
         })(),
     ]
+    T.tuskroot = [0, 1, 2, 3].map(f => {
+        const [c, g] = mk(16, 12)
+        g.clearRect(0, 0, 16, 12)
+        const low = f === 2 || f === 3
+        // log-body boarroot
+        g.fillStyle = '#5a3d24'; g.fillRect(2, low ? 5 : 3, 11, 6)
+        g.fillStyle = '#6e4c28'; g.fillRect(3, low ? 6 : 4, 9, 3)
+        g.fillStyle = '#422c1a'; g.fillRect(4, low ? 7 : 5, 1, 3); g.fillRect(8, low ? 6 : 4, 1, 4)
+        // legs
+        g.fillStyle = '#422c1a'
+        if (f === 0) { g.fillRect(3, 10, 2, 2); g.fillRect(9, 9, 2, 2) }
+        else if (f === 1) { g.fillRect(3, 9, 2, 2); g.fillRect(9, 10, 2, 2) }
+        else if (f === 2) { g.fillRect(3, 10, 2, 2); g.fillRect(9, 10, 2, 2); g.fillRect(12, 8, 3, 1) }
+        else { g.fillRect(4, 10, 2, 2); g.fillRect(10, 10, 2, 2); g.fillRect(13, 6, 2, 1) }
+        // snout + tusks
+        g.fillStyle = '#8a5c34'; g.fillRect(low ? 12 : 12, low ? 8 : 6, 3, 3)
+        g.fillStyle = '#f0e6cc'; g.fillRect(low ? 14 : 14, low ? 9 : 7, 2, 1)
+        // eyes: calm amber -> telegraph white -> charge red
+        g.fillStyle = f === 3 ? '#ff5a2a' : f === 2 ? '#fff3cf' : '#ffb238'
+        g.fillRect(low ? 11 : 11, low ? 6 : 4, 2, 1)
+        return c
+    })
+    T.pod = [0, 1].map(f => {
+        const [c, g] = mk(12, 12)
+        g.clearRect(0, 0, 12, 12)
+        g.fillStyle = '#5c2f2f'; g.beginPath(); g.arc(6, 7, 5, 0, 7); g.fill()
+        g.fillStyle = '#7c3d30'; g.beginPath(); g.arc(5, 6, 3, 0, 7); g.fill()
+        g.fillStyle = f ? '#ff9a3c' : '#c9613a'
+        g.fillRect(5, 2, 2, 3); g.fillRect(2, 6, 2, 1); g.fillRect(8, 7, 2, 1)
+        g.fillStyle = f ? '#ffd87a' : '#ff9a3c'; g.fillRect(5, 1, 2, 1)
+        g.fillStyle = '#2a1414'; g.fillRect(4, 7, 1, 1); g.fillRect(7, 7, 1, 1)
+        return c
+    })
     T.maw = {
         closed: (() => {
             const [c, g] = mk(28, 28)

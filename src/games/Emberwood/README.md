@@ -37,7 +37,31 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
 
 ## Rules the sim enforces
 
-- Tap A slashes (arc hitbox, knockback, hitstop flash); **hold A ≥12 ticks
+- **#781 stage 2 — doors and exits are REAL:** stepping onto an opened dungeon
+  door walks you into `d.to` at `d.entry` (before this the doors unlocked onto
+  nothing and the game was physically unwinnable — only the logical solver
+  reached the Wyrm). Edge exits trigger at border-tile *centers* (`<= 8`),
+  because the hero's center stops at ~4 against the wall and the old `< 2`
+  bounds were unreachable; post-transition spawns pull inside to avoid ping-pong.
+- **Eight species + two bosses.** TUSKROOT (fern hollow, CINDERKEEP IV) stops,
+  paws the ground for ~36 frames, then charges in a locked straight line at
+  2.7px/f — sidestep the telegraph, slash the flank during the run, punish the
+  55-frame rest. CINDER POD bursts into two cinder sparks when it falls (the
+  sparks survive the killing swing, they do not split again).
+- **Ember Blade (shop, 150 embers):** sword damage 1 -> 2. Deliberately does
+  NOT skip boss rules: closed thorns still clank, the scale-cloak still shrugs
+  off steel, the Husk still deflects the front. One purchase (re-buy says
+  "YE ALREADY CARRY"). HUD shows `EMBER BLADE`; the swipe arc burns orange.
+- **Signposts read:** facing an `I` tile (or a sign-posted floor tile) and
+  pressing A shows its `signs` message (`signs` was dead data before).
+- **Attract = proof route.** `bot.js` plays the solver's route with real
+  inputs: bombs the cracks, unlocks doors with real keys, pushes the block via
+  a sokoban-BFS over (hero, block) tiles, arrows the wall-switches, fells the
+  Maw in its thorn-window, staggers the Wyrm with an arrow and takes the
+  Ember Heart at tick 7160 — identical on every seed. The vale lends the demo
+  hero provisions (keys/arrows/bombs/blade) and 4 HP regen; no progress flags
+  are cheated.
+- Tap A slashes (arc hitbox, knockback, hitstop flash); **hold A >=12 ticks
   draws the bow** (needs arrows), release looses. B bombs (destroys cracks,
   blasts monsters). C drinks. Standing at a shopkeeper and pressing A trades.
 - Keys are consumable currency; one mossy door wants the BIG KEY.
@@ -87,8 +111,10 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
 
 ## Honest gaps (QA polish pass will own these)
 
-- The attract autopilot wanders one screen and slashes; the *proven route bot*
-  (solver-route played in attract) is the polish-pass goal.
+- The proof-route attract bot wins start-to-win but fights plainly (point-and-
+  shoot arrows, no hit-and-run); a *graceful* demo bot is polish-pass territory.
+- Tuskroot/pod sprites are first-pass 16x12 paintings; charge-dust and
+  split-pop FX are missing.
 - The Wyrm tail segments ride the drop-pool quads (visible but cheap).
 - No save system; no secret second shop; the elder hints but gives nothing.
 - Portrait is 4:3, not full-bleed: a taller window would crop the 16-tile

@@ -448,7 +448,7 @@ void main(){
             const grow = 0.82 + (1 - af) * 0.4
             arcMesh.scale.set(grow, grow, 1)
             arcMat.opacity = af
-            arcMat.color.setRGB(1.15, 1.0, 0.72)
+            arcMat.color.setRGB(...(sim.items.blade ? [1.25, 0.72, 0.38] : [1.15, 1.0, 0.72]))
         } else {
             arcMesh.visible = false
         }
@@ -464,6 +464,8 @@ void main(){
             else if (e.type === 'husk') key = `husk/${anim}`
             else if (e.type === 'wisp') key = `wisp/${anim}`
             else if (e.type === 'sprig') key = `sprig/${e.hidden ? 0 : 1}`
+            else if (e.type === 'tuskroot') key = `tuskroot/${e.charging > 0 ? 3 : e.st > 0 ? 2 : anim}`
+            else if (e.type === 'pod') key = `pod/${e.t % 70 < 26 ? 1 : 0}`
             else if (e.type === 'maw') key = `maw/${e.open ? 'open' : 'closed'}`
             else if (e.type === 'wyrm') key = `wyrm/${e.open ? 'open' : 'closed'}`
             else key = `cinder/${anim}`

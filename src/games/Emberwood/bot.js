@@ -181,7 +181,6 @@ export function attractBot(sim) {
     let dest = null
     if (a.screen === sim.screen) {
         if (a.type === 'plate') {
-            const s = SCREENS[sim.screen]
             const block = (sim.blocks || [])[0]
             if (block) {
                 b.pushQ = pushPlan(sim, block) || []

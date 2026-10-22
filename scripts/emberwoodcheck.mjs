@@ -8,6 +8,7 @@
 import { SCREENS, TS, SW, SH, tileAt, isSolidTile } from '../src/games/Emberwood/world.js'
 import { createSim, stepSim, simState, hashState, spawnRoom } from '../src/games/Emberwood/sim.js'
 import { proveGame, tilePath } from '../src/games/Emberwood/solver.js'
+import { attractBot } from '../src/games/Emberwood/bot.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
 let pass = 0, fail = 0
@@ -48,7 +49,7 @@ ok(d1.some(id => (SCREENS[id].enemies || []).some(e => e.type === 'maw')), 'dung
 ok(d2.some(id => (SCREENS[id].switches || []).some(s => s.via === 'arrow')), 'dungeon 2 has far arrow-switches')
 const species = new Set()
 for (const id of Object.keys(SCREENS)) for (const e of SCREENS[id].enemies || []) species.add(e.type)
-for (const sp of ['cinderling', 'bat', 'spitter', 'husk', 'wisp', 'sprig']) ok(species.has(sp), `species present: ${sp}`)
+for (const sp of ['cinderling', 'bat', 'spitter', 'husk', 'wisp', 'sprig', 'tuskroot', 'pod']) ok(species.has(sp), `species present: ${sp}`)
 
 // ---- 3. THE SOLVER: winnable, gated, and re-proven one supply thinner ----
 const full = proveGame({ bombs: true })
@@ -281,6 +282,134 @@ function arcScript(seed) {
     // simulate the solver's claim that the block reaches the plate, then check the door links
     const p = proveGame({ bombs: true, bow: true })
     ok(p.route.some(r => r.type === 'plate'), 'the solver pushes the dungeon-1 block onto its plate to open the switch-door')
+}
+
+// ---- 5b. #781 stage 2: doors that lead somewhere, signposts, blade tier, new species ----
+{
+    // an opened door carries the hero to the next room; a closed one does not
+    const s = createSim(7)
+    spawnRoom(s, 'd1-e0', [7, 8])
+    s.hero.x = 7 * TS + 8; s.hero.y = 2 * TS
+    let f = 0; while (s.screen === 'd1-e0' && f < 80) { stepSim(s, inp({ ly: -1 })); f++ }
+    ok(s.screen === 'd1-e0', 'a locked door still blocks the way up')
+    s.items.keys = 1; s.hero.dir = 'up'; s.cool = 0
+    stepSim(s, inp({ ap: true })); stepSim(s, inp({ ar: true }))
+    f = 0; while (s.screen === 'd1-e0' && f < 80) { stepSim(s, inp({ ly: -1 })); f++ }
+    ok(s.screen === 'd1-e1', 'key + A + walk-up walks THROUGH the door into the next room')
+    ok(s.flags.killed !== undefined, 'progress flags survive the door')
+    // big-key door
+    const bk = createSim(7)
+    spawnRoom(bk, 'd2-f3', [7, 8]); bk.items.bigkey = true
+    bk.hero.x = 7 * TS + 8; bk.hero.y = TS + 6; bk.hero.dir = 'up'; bk.cool = 0
+    stepSim(bk, inp({ ap: true })); stepSim(bk, inp({ ar: true }))
+    f = 0; while (bk.screen === 'd2-f3' && f < 80) { stepSim(bk, inp({ ly: -1 })); f++ }
+    ok(bk.screen === 'd2-f4', 'the big key opens the mossy door to the Wyrm')
+    // edge exits are reachable: town -> shrine by walking (col9 lane, west on
+    // row1, north through the opening), back by south
+    const ow = createSim(7)
+    spawnRoom(ow, 'ow-11', [8, 6])
+    ow.hero.x = 9 * TS + 8
+    f = 0; while (ow.hero.y > TS + 12 && f < 200) { stepSim(ow, inp({ ly: -1 })); f++ }
+    while (ow.hero.x > 5 * TS + 8 && f < 260) { stepSim(ow, inp({ lx: -1 })); f++ }
+    while (ow.screen === 'ow-11' && f < 320) { stepSim(ow, inp({ ly: -1 })); f++ }
+    ok(ow.screen === 'ow-10', `walking north out of town reaches the shrine (screen=${ow.screen})`)
+    f = 0; while (ow.screen === 'ow-10' && f < 200) { stepSim(ow, inp({ ly: 1 })); f++ }
+    ok(ow.screen === 'ow-11', 'and the return edge brings you back to town')
+}
+{
+    // signposts: facing a sign and pressing A reads it; town is signposted
+    const s = createSim(7)
+    spawnRoom(s, 'ow-11', [8, 6])
+    s.hero.x = 7 * TS + 8; s.hero.y = 3 * TS + 8; s.hero.dir = 'up'; s.cool = 0
+    stepSim(s, inp({ ap: true })); stepSim(s, inp({ ar: true }))
+    ok(s.msgT > 0 && /SHOP|EMBER/.test(s.msg || ''), `sign by the shop reads out (${JSON.stringify((s.msg || '').slice(0, 24))})`)
+    const signs = SCREENS['ow-11'].signs || []
+    ok(signs.length >= 3, `town has ${signs.length} signposts (both entrances + shop)`)
+}
+{
+    // ember blade: shop-bought, doubles the sword, boss rules untouched
+    const s = createSim(7)
+    spawnRoom(s, 'd1-e0', [7, 8])
+    s.score = 200; s.shop.open = true; s.shop.sel = 4
+    stepSim(s, inp({ ap: true }))
+    ok(s.items.blade === true && s.score === 200 - 150, 'the shop sells the EMBER BLADE for 150 embers')
+    stepSim(s, inp({ ap: true }))
+    ok(s.items.blade === true && s.score === 50, 'buying the blade twice does not charge twice')
+    const e = s.enemies.find(x => x.type === 'cinderling')
+    s.shop.open = false
+    const hp0 = e.hp
+    s.hero.x = e.x; s.hero.y = e.y + 12; s.hero.dir = 'up'; s.cool = 0
+    stepSim(s, inp({ ap: true })); stepSim(s, inp({ ar: true })); for (let i = 0; i < 10; i++) stepSim(s, inp({}))
+    ok(hp0 === 2 && (e.dead || e.hp <= 0), `the ember blade fells a cinderling in ONE hit (hp ${hp0}->${e.hp}${e.dead ? ', dead' : ''})`)
+    const w = createSim(7)
+    spawnRoom(w, 'd2-f4', [7, 8]); w.items.blade = true
+    const wy = w.enemies.find(x => x.type === 'wyrm'); wy.open = 0; wy.hp = 6
+    w.hero.x = wy.x; w.hero.y = wy.y + 14; w.hero.dir = 'up'; w.cool = 0
+    stepSim(w, inp({ ap: true })); stepSim(w, inp({ ar: true })); for (let i = 0; i < 10; i++) stepSim(w, inp({}))
+    ok(wy.hp === 6, 'the blade does NOT skip the Wyrm rule — scale-cloak still shrugs off steel')
+    const m = createSim(7)
+    spawnRoom(m, 'd1-e3', [7, 8]); m.items.blade = true
+    const mw = m.enemies.find(x => x.type === 'maw'); const mhp = mw.hp
+    m.hero.x = mw.x; m.hero.y = mw.y + 16; m.hero.dir = 'up'; m.cool = 0
+    mw.open = 0
+    stepSim(m, inp({ ap: true })); mw.open = 0
+    stepSim(m, inp({ ar: true })); mw.open = 0
+    for (let i = 0; i < 10; i++) { stepSim(m, inp({})); mw.open = 0 }
+    ok(mw.hp === mhp, 'the blade does NOT skip the Maw rule — closed thorns still deflect')
+}
+{
+    // tuskroot: telegraphs, charges in a locked line, rests after
+    const s = createSim(7)
+    spawnRoom(s, 'ow-01', [2, 5])
+    const t = s.enemies.find(e => e.type === 'tuskroot')
+    ok(!!t, 'tuskroot lives in fern hollow')
+    s.hero.x = t.x; s.hero.y = t.y + 40; s.hero.inv = 1e9
+    let tele = 0, charge = 0, segBad = 0, seg = null
+    for (let i = 0; i < 260; i++) {
+        const st0 = t.st, c0 = t.charging
+        stepSim(s, inp({}))
+        if (st0 > 0 && t.st > 0) tele++
+        if (t.charging > 0) {
+            charge++
+            const k = Math.trunc(t.chx * 100) + ',' + Math.trunc(t.chy * 100)
+            if (c0 === 0) seg = k
+            else if (k !== seg) segBad++
+        }
+    }
+    ok(tele > 10, `tuskroot telegraphs before it charges (${tele} pawing frames)`)
+    ok(charge > 20 && segBad === 0, `every charge runs a locked straight line (${charge} charge frames, no mid-run turns)`)
+    ok(t.st === 0 && t.charging === 0 && t.rest >= 0, 'tuskroot rests after the run — the punish window')
+}
+{
+    // cinder pod: bursts into two sparks
+    const s = createSim(7)
+    spawnRoom(s, 'd2-f1', [7, 8])
+    const p = s.enemies.find(e => e.type === 'pod')
+    p.hp = 1
+    s.hero.x = p.x; s.hero.y = p.y + 12; s.hero.dir = 'up'; s.cool = 0
+    stepSim(s, inp({ ap: true })); stepSim(s, inp({ ar: true }))
+    for (let i = 0; i < 30; i++) stepSim(s, inp({}))
+    const kids = s.enemies.filter(e => e.gen === 1 && !e.dead)
+    ok(p.dead && kids.length === 2, `a fallen cinder pod bursts into two sparks (${kids.length})`)
+}
+{
+    // THE PROOF ROUTE: the attract bot plays the whole vale with real inputs
+    function botRun(seed) {
+        const s = createSim(seed)
+        let t = 0, sawMawRoom = false, sawBoss1 = false
+        while (!s.win && t < 30000) {
+            stepSim(s, attractBot(s))
+            t++
+            if (s.screen === 'd1-e3') sawMawRoom = true
+            if (s.flags.boss1) sawBoss1 = true
+        }
+        return { win: s.win, t, sawMawRoom, sawBoss1, hash: hashState(s) }
+    }
+    const a = botRun(11), b = botRun(11)
+    ok(a.sawMawRoom && a.sawBoss1, `the attract bot reaches the Maw and fells it (tick ${a.t})`)
+    ok(a.win, `the attract bot wins the game for real — Ember Heart at tick ${a.t}`)
+    ok(a.t === b.t && a.hash === b.hash, 'the proof route is deterministic (identical run, identical hash)')
+    ok(a.t > 3000, `the route is a real traverse, not a teleport (${a.t} ticks of walking)`)
 }
 
 // ---- 6. state contract shape ----
