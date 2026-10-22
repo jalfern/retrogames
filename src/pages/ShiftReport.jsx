@@ -8,6 +8,11 @@ import { Link } from 'react-router-dom'
 const REPORT_RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/report.json'
 const REFRESH_MS = 5 * 60 * 1000
 
+// DEV/harness hook (?647 browser leg): ?report=/retrogames/… forces a same-origin
+// fixture instead of the live telemetry feed. Offsite fixtures are ignored.
+const FIXTURE = new URLSearchParams(window.location.search).get('report')
+const REPORT_URL = FIXTURE && /^\/retrogames\/[a-z0-9._/-]+$/i.test(FIXTURE) ? FIXTURE : REPORT_RAW
+
 const CSS = `
 .sr{--bg:#f3f5f2;--panel:#ffffff;--ink:#151b18;--muted:#5d6762;--rule:#dde2de;
   --builder:#2c62d6;--qa:#0f9a73;--ops:#9aa39e;--warn:#c77a06;--hot:#d2462b;
@@ -62,6 +67,13 @@ html[data-theme="light"] .sr{--bg:#f3f5f2;--panel:#ffffff;--ink:#151b18;--muted:
 .sr .ci .l{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.35}
 @media (max-width:520px){.sr .ci{grid-template-columns:1fr 1fr}}
 .sr .notes{display:flex;flex-direction:column;gap:12px}
+.sr .golook{border:1px solid var(--builder);border-radius:12px;padding:16px 18px;background:color-mix(in srgb, var(--builder) 6%, var(--panel))}
+.sr .golook h2{margin-bottom:2px}
+.sr .lookline{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:10px 0;border-top:1px dashed var(--rule);text-decoration:none;color:var(--ink);font-size:14.5px;line-height:1.45}
+.sr .lookline:first-of-type{border-top:none}
+.sr .lookline .try{font:500 12.5px var(--mono);color:var(--builder);white-space:nowrap}
+.sr .lookline:hover .try{text-decoration:underline}
+.sr .lookline:hover .ln{color:var(--builder)}
 .sr .note{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start}
 .sr .note .tag{font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:5px 7px;border-radius:5px;border:1px solid currentColor;white-space:nowrap}
 .sr .note .tag.w{color:var(--warn)} .sr .note .tag.h{color:var(--hot)} .sr .note .tag.k{color:var(--qa)}
@@ -163,7 +175,7 @@ export default function ShiftReport() {
 
     const load = useCallback(async () => {
         try {
-            const r = await fetch(`${REPORT_RAW}?t=${Math.floor(Date.now() / REFRESH_MS)}`)
+            const r = await fetch(`${REPORT_URL}${REPORT_URL.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / REFRESH_MS)}`)
             if (!r.ok) throw new Error(`report feed ${r.status}`)
             setReport(await r.json())
             setError('')
@@ -222,6 +234,20 @@ export default function ShiftReport() {
                     <h1>{report.headline}</h1>
                     {report.lede && <p className="lede" dangerouslySetInnerHTML={{ __html: report.lede }} />}
                 </header>
+
+                {report.look && report.look.length > 0 && (
+                    <section className="golook" aria-label="Go look">
+                        <div className="eyebrow">go look</div>
+                        <h2>Two things to try</h2>
+                        <p className="sub" style={{ marginBottom: 6 }}>The changes from this shift you most want to see — tap through and play them.</p>
+                        {report.look.map((g, i) => (
+                            <a className="lookline" href={g.href} key={`${g.href}-${i}`}>
+                                <span className="ln">{g.text}</span>
+                                <span className="try">try it →</span>
+                            </a>
+                        ))}
+                    </section>
+                )}
 
                 <section className="stats" aria-label="Totals">
                     <div className="stat"><div className="n">{st.merged.total}</div>
@@ -309,7 +335,7 @@ export default function ShiftReport() {
                 <footer>
                     Sources: GitHub PRs, issues and Actions runs for jalfern/retrogames, plus forge-telemetry samples,
                     generated {String(report.generated).slice(0, 16).replace('T', ' ')} UTC. Lanes are inferred from branch names
-                    (forge/… = builder, qa/… = QA, everything else = ops). Only the headline, lede and notes are model-written.
+                    (forge/… = builder, qa/… = QA, everything else = ops). Only the headline, lede, notes and go-look picks are model-written.
                 </footer>
             </main>
         </div>

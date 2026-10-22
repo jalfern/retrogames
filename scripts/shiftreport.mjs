@@ -6,10 +6,12 @@
 // /retrogames/forge/report renders it over the same anonymous CDN pipe.
 //
 // Every NUMBER is computed here from GitHub + telemetry.json samples. The only
-// model-written parts are the headline, the lede and the 3-4 "Notes from the
-// forge" (#614): a builder session supplies them at its end with
+// model-written parts are the headline, the lede, the 3-4 "Notes from the
+// forge" (#614) and the optional "Go look" picks (#647): a builder session
+// supplies them at its end with
 //   SHIFTREPORT_NOTES=notes.json node scripts/shiftreport.mjs
-// (shape: {headline, lede, notes:[{tag:'w'|'h'|'k', text}]}) and this script
+// (shape: {headline, lede, notes:[{tag:'w'|'h'|'k', text}],
+//          look:[{text, href}]}) and this script
 // carries those notes through every later 4 h regeneration until a session
 // replaces them. Without notes the headline is script-generated
 // ("N merges in 48 hours") — a fallback, never fake prose.
@@ -39,6 +41,12 @@
 //   (longest title match), then demos / controls / factory / docs keyword rules,
 //   else "Other merges". Private games (#379) never appear as a theme or in a
 //   highlight sentence.
+//   Go look (#647): the top 2 changes to try, one line each with a direct link.
+//   Model picks them in notes.look (href must be a /retrogames/… path, never a
+//   private game); with no model picks they are computed from the window: games
+//   (registry label in a merged PR title → /retrogames<path>) and demos
+//   (public/demos/<slug>.html named in a merged PR title → /retrogames/demos/<slug>)
+//   ranked by merge count. Plumbing-only windows yield no picks.
 
 const WINDOW_HOURS = 48
 const TZ = 'America/Los_Angeles'
@@ -313,11 +321,98 @@ export function buildThemes({ pulls, gameLabels, privates }) {
         })
 }
 
-export function buildReport({ now, pulls = [], issues = [], runs = [], samples = [], gamesSrc = '', notes = null, prev = null }) {
+// Registry entries of PUBLIC games ({label, path}) — go-look needs the path too.
+export function parseGameEntries(src) {
+    const start = src.indexOf('export const GAMES')
+    if (start < 0) return []
+    const open = src.indexOf('[', start)
+    let depth = 1, objStart = -1
+    const blocks = []
+    for (let i = open; i < src.length; i++) {
+        const c = src[i]
+        if (c === '{') { if (depth === 1 && objStart < 0) objStart = i; depth++ }
+        else if (c === '}') { depth--; if (depth === 1 && objStart >= 0) { blocks.push(src.slice(objStart, i)); objStart = -1 } }
+        else if (c === ']') break
+    }
+    return blocks
+        .filter(b => !/visibility:\s*'private'/.test(b))
+        .map(b => ({
+            label: (b.match(/^ {4,}label:\s*'([^']+)'/m) || [])[1],
+            path: (b.match(/^ {4,}path:\s*'([^']+)'/m) || [])[1],
+        }))
+        .filter(e => e.label && e.path && e.path.startsWith('/'))
+}
+
+// ---------- go look (#647) ----------
+
+const LOOK_LIMIT = 2
+const LOOK_HREF = /^\/retrogames\/[a-z0-9._/-]+$/i
+const clipLook = x => (x.length > 76 ? `${x.slice(0, 75)}…` : x)
+
+// Model-written picks, validated: one line, an in-app /retrogames/… link,
+// never a private game, at most LOOK_LIMIT. Invalid entries are dropped, not
+// rendered — the box only ever shows something tryable.
+export function validateLook(look, privates = []) {
+    const hidden = new Set(privates.map(normalizeTitle))
+    const out = []
+    for (const g of Array.isArray(look) ? look : []) {
+        if (!g || out.length >= LOOK_LIMIT) continue
+        const text = String(g.text || '').replace(/<[^>]*>/g, '').trim()
+        const href = String(g.href || '').trim()
+        if (!text || !LOOK_HREF.test(href)) continue
+        if ([...hidden].some(h => h && (normalizeTitle(href).includes(h) || normalizeTitle(text).includes(h)))) continue
+        out.push({ text: clipLook(text), href })
+    }
+    return out
+}
+
+// Computed fallback: games and demos that actually merged in the window,
+// ranked by merge count. Plumbing (docs/CI/board work) is never a pick.
+export function buildGoLook({ pulls = [], gameEntries = [], demos = [], privates = [] }) {
+    const hidden = new Set(privates.map(normalizeTitle))
+    const cand = new Map()
+    const bump = (key, name, href, title) => {
+        const c = cand.get(key) || { name, href, count: 0, latest: 0, title }
+        c.count++
+        if ((title || '').length && title !== c.title) c.title = title
+        cand.set(key, c)
+    }
+    for (const p of pulls) {
+        const title = String(p.title || '').split('\n')[0]
+        const t = normalizeTitle(title)
+        if ([...hidden].some(h => h && t.includes(h))) continue
+        let best = null
+        for (const g of gameEntries) {
+            const n = normalizeTitle(g.label)
+            if (n && t.includes(n) && (!best || n.length > best.n.length)) best = { n, g }
+        }
+        if (best) {
+            bump(`g:${best.g.path}`, best.g.label, `/retrogames${best.g.path}`, title)
+            continue
+        }
+        for (const d of demos) {
+            if (!d || d === 'index') continue
+            if (new RegExp(`\\b${d.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(title)) {
+                bump(`d:${d}`, `${d[0].toUpperCase()}${d.slice(1)} demo`, `/retrogames/demos/${d}`, title)
+            }
+        }
+    }
+    return [...cand.values()]
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+        .slice(0, LOOK_LIMIT)
+        .map(c => {
+            const after = c.title.includes(':') ? c.title.split(':').slice(1).join(':').trim() : ''
+            const what = after || c.title
+            return { text: clipLook(`${c.name}: ${what}`), href: c.href }
+        })
+}
+
+export function buildReport({ now, pulls = [], issues = [], runs = [], samples = [], gamesSrc = '', notes = null, prev = null, demos = [] }) {
     const windowStart = now - WINDOW_HOURS * 3600 * 1000
     const merged = pulls.filter(p => p.merged_at && Date.parse(p.merged_at) >= windowStart)
     const privates = parsePrivateLabels(gamesSrc)
     const gameLabels = parseGameLabels(gamesSrc)
+    const gameEntries = parseGameEntries(gamesSrc)
 
     const split = { builder: 0, qa: 0, ops: 0 }
     for (const p of merged) split[laneOf(p.head?.ref || p.headBranch)]++
@@ -346,11 +441,19 @@ export function buildReport({ now, pulls = [], issues = [], runs = [], samples =
     const noteList = fresh ? notes.notes : (carried ? carried.notes : [])
     const notesFrom = fresh ? new Date(now).toISOString() : (carried ? carried.notesFrom || null : null)
 
+    const freshLook = validateLook(notes && notes.look, privates)
+    const carriedLook = carried ? validateLook(carried.look, privates) : []
+    const chosenLook = fresh ? freshLook : carriedLook
+    const look = chosenLook.length
+        ? chosenLook
+        : buildGoLook({ pulls: merged, gameEntries, demos, privates })
+
     return {
         generated: new Date(now).toISOString(),
         tz: TZ, hours: WINDOW_HOURS,
         headline, lede, notes: noteList, notesFrom,
         notesCarried: !!carried,
+        look,
         stats: {
             merged: { total: merged.length, ...split },
             issues: { closed: issuesClosed, opened: issuesOpened },
@@ -414,6 +517,12 @@ async function main() {
     const samples = telemText.split('\n').filter(l => l.startsWith('{')).map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean)
 
     const gamesSrc = await fetchText(RAW_BASE + 'src/config/games.js')
+    let demos = []
+    try {
+        demos = gh(`${REPO}/contents/public/demos?ref=main`)
+            .filter(f => f.type === 'file' && f.name.endsWith('.html') && f.name !== 'index.html')
+            .map(f => f.name.slice(0, -'.html'.length))
+    } catch { demos = [] }
     const prev = await fetchJson(TELEM_URL + 'report.json')
 
     let notes = null
@@ -422,7 +531,7 @@ async function main() {
         try { notes = JSON.parse(readFileSync(notesFile, 'utf8')) } catch { notes = null }
     }
 
-    const report = buildReport({ now, pulls, issues, runs, samples, gamesSrc, notes, prev })
+    const report = buildReport({ now, pulls, issues, runs, samples, gamesSrc, notes, prev, demos })
 
     if (!process.env.SHIFTREPORT_PUSH) {
         mkdirSync('/tmp/forge', { recursive: true })

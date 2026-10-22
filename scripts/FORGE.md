@@ -129,9 +129,13 @@ AGENTS.md wins.
     (Options + Default + 48 h deadline; ≤3 open per lane; taste/priority/
     hard-to-undo only — ask rarely, then keep building; the warden's sweep
     takes the default if the deadline passes). Publish your shift notes (#614):
-    write `{headline, lede, notes:[{tag:"w"|"h"|"k", text}]}` to a JSON file and
+    write `{headline, lede, notes:[{tag:"w"|"h"|"k", text}], look:[{text, href:"/retrogames/…"}]}`
+    to a JSON file and
     run `SHIFTREPORT_NOTES=<file> SHIFTREPORT_PUSH=1 node scripts/shiftreport.mjs`
-    — the headline, lede and 3–4 notes are the ONLY model-written parts of the
+    — the headline, lede, 3–4 notes and up to 2 optional `look` picks (the
+    top player-visible changes of your shift, one line each with an in-app
+    link to try — #647; omit `look` and the report computes it from merge
+    counts) are the ONLY model-written parts of the
     report; every number is computed by the script, and the warden's 4 h tick
     carries your notes until a later session replaces them. Commit STATE.md to main ONLY if the forge game
    merged this session (`git commit` on main is otherwise forbidden — if no

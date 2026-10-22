@@ -22,7 +22,8 @@ const ok = (name, cond) => { if (cond) pass++; else fails.push(name) }
 const m = await import('./shiftreport.mjs')
 
 for (const fn of ['hourKey', 'hourKeys', 'laneOf', 'medianMinutes', 'p90Minutes', 'buildRows', 'idleBand',
-    'machineRows', 'ciStats', 'themeOf', 'buildThemes', 'parsePrivateLabels', 'parseGameLabels', 'buildReport', 'pushContents']) {
+    'machineRows', 'ciStats', 'themeOf', 'buildThemes', 'parsePrivateLabels', 'parseGameLabels', 'parseGameEntries',
+    'validateLook', 'buildGoLook', 'buildReport', 'pushContents']) {
     ok(`boot: exports ${fn}`, typeof m[fn] === 'function')
 }
 
@@ -178,6 +179,44 @@ ok('split bars sum to count', themed.every(t => t.split.builder + t.split.qa + t
 ok('theme sentence is computed text', /^3 PRs \(1 builder, 2 qa\): rails; snow$/.test(byName.SSX.text))
 ok('theme text stays short', themed.every(t => t.text.length < 150))
 
+// ---- go look (#647): top 2 changes to try, games/demos only ----
+const entries = m.parseGameEntries(GAME_FIXTURE)
+ok('parseGameEntries: public games with paths, private excluded',
+    entries.some(e => e.label === 'SSX' && e.path === '/a') && !entries.some(e => e.label === 'VEIL'))
+const DEMOS = ['ocean', 'shore']
+const lookPulls = [
+    { number: 1, title: 'SSX: rail grind', merged_at: iso(NOW - H), head: { ref: 'forge/a' } },
+    { number: 2, title: 'SSX: audio', merged_at: iso(NOW - 2 * H), head: { ref: 'qa/a' } },
+    { number: 3, title: 'SSX: hud', merged_at: iso(NOW - 3 * H), head: { ref: 'qa/a' } },
+    { number: 4, title: 'Ocean: storm gusts', merged_at: iso(NOW - 4 * H), head: { ref: 'forge/o' } },
+    { number: 5, title: 'Ocean: reflections', merged_at: iso(NOW - 5 * H), head: { ref: 'forge/o' } },
+    { number: 6, title: 'docs: readme tidy', merged_at: iso(NOW - 6 * H), head: { ref: 'docs/d' } },
+]
+const look = m.buildGoLook({ pulls: lookPulls, gameEntries: entries, demos: DEMOS, privates: privs })
+ok('go look: game + demo ranked by merge count, in-app links',
+    look.length === 2 && look[0].text.startsWith('SSX') && look[0].href === '/retrogames/a' &&
+    look[1].text.startsWith('Ocean demo') && look[1].href === '/retrogames/demos/ocean')
+ok('go look: one line each', look.every(g => !g.text.includes('\n') && g.text.length <= 76))
+ok('go look: plumbing-only window yields no picks',
+    m.buildGoLook({ pulls: [{ title: 'docs: readme' }, { title: 'CI: bump runner' }], gameEntries: entries, demos: DEMOS, privates: privs }).length === 0)
+ok('go look: private games never a pick',
+    m.buildGoLook({ pulls: [{ title: 'VEIL: secret work' }], gameEntries: entries, demos: [], privates: privs }).length === 0)
+ok('go look: private label colliding with a demo slug still never leaks',
+    m.buildGoLook({ pulls: [{ title: 'VEIL: secret levels' }], gameEntries: entries, demos: ['veil'], privates: privs }).length === 0)
+ok('validateLook: cap two, strip html, keep /retrogames/ hrefs',
+    (() => { const v = m.validateLook([
+        { text: 'Ocean demo got storm gusts', href: '/retrogames/demos/ocean' },
+        { text: 'SSX rails <b>new</b>', href: '/retrogames/a' },
+        { text: 'third', href: '/retrogames/b' }], privs)
+    return v.length === 2 && v.every(g => !/[<>]/.test(g.text) && g.href.startsWith('/retrogames/')) })())
+ok('validateLook: offsite href rejected',
+    m.validateLook([{ text: 'click', href: 'https://evil.example/x' }], privs).length === 0)
+ok('validateLook: private game rejected by href or text',
+    m.validateLook([{ text: 'a secret teaser', href: '/retrogames/veil-x' }], privs).length === 0 &&
+    m.validateLook([{ text: 'VEIL teaser', href: '/retrogames/a' }], privs).length === 0)
+ok('validateLook: empty lines rejected',
+    m.validateLook(null, privs).length === 0 && m.validateLook([{ text: ' ', href: '/retrogames/a' }], privs).length === 0)
+
 // ---- whole report + notes contract ----
 const rep = m.buildReport({
     now: NOW,
@@ -210,6 +249,21 @@ ok('carry-over chains stay stable', replaced.notes[0].text === 'Fleet ran hot.')
 const overwritten = m.buildReport({ now: NOW + 2 * H, pulls: [], issues: [], runs: [], samples: [], gamesSrc: '', notes: { headline: 'Second shift', lede: '', notes: [{ tag: 'w', text: 'New note' }] }, prev: carried })
 ok('new session notes replace carried ones', overwritten.headline === 'Second shift' && overwritten.notes[0].text === 'New note' && !overwritten.notesCarried)
 
+// ---- go look rides the notes pipe (#647) ----
+const lookRep = m.buildReport({ now: NOW, pulls: lookPulls, issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS })
+ok('report carries go-look', Array.isArray(lookRep.look) && lookRep.look.length === 2 && lookRep.look.every(g => g.href.startsWith('/retrogames/')))
+const LOOKED = { headline: 'H', lede: '', notes: [{ tag: 'k', text: 'n' }], look: [{ text: 'Try the new shore MSAA', href: '/retrogames/demos/shore' }] }
+const withLook = m.buildReport({ now: NOW, pulls: lookPulls, issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS, notes: LOOKED })
+ok('session look picks win over computed', withLook.look.length === 1 && withLook.look[0].href === '/retrogames/demos/shore')
+const carryLook = m.buildReport({ now: NOW + H, pulls: [], issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS, notes: null, prev: withLook })
+ok('go-look carries with the notes', carryLook.look.length === 1 && carryLook.look[0].href === '/retrogames/demos/shore')
+const freshNoLook = m.buildReport({ now: NOW + H, pulls: lookPulls, issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS,
+    notes: { headline: 'Fresh', lede: '', notes: [] }, prev: withLook })
+ok('fresh notes without look recompute from merges', freshNoLook.look.length === 2 && freshNoLook.look[0].text.startsWith('SSX'))
+const noGamesNoDemos = m.buildReport({ now: NOW, pulls: [{ number: 8, title: 'docs: typo', merged_at: iso(NOW - H), head: { ref: 'docs/z' }, created_at: iso(NOW - 2 * H) }],
+    issues: [], runs, samples, gamesSrc: '', demos: [] })
+ok('go-look is an empty array, never missing', Array.isArray(noGamesNoDemos.look) && noGamesNoDemos.look.length === 0)
+
 // ---- source tripwires: the pipe stays wired ----
 const read = f => readFileSync(new URL(`../${f}`, import.meta.url), 'utf8')
 ok('npm alias shiftreportcheck exists', JSON.parse(read('package.json')).scripts.shiftreportcheck === 'node scripts/shiftreportcheck.mjs')
@@ -218,6 +272,18 @@ ok('board links the shift report', read('src/pages/ForgeBoard.jsx').includes('to
 ok('telemetry job runs shiftreport every 4 h', read('scripts/telemetry.sh').includes('last-shiftreport') && read('scripts/telemetry.sh').includes('shiftreport.mjs'))
 ok('reference look is committed', read('docs/forge/shift-report-ref.html').includes('SHIFT REPORT'))
 ok('FORGE.md tells sessions to publish notes', read('scripts/FORGE.md').includes('SHIFTREPORT_NOTES'))
+ok('FORGE.md documents the look picks', read('scripts/FORGE.md').includes('look'))
+ok('report page renders the go-look box', /className="golook"/.test(read('src/pages/ShiftReport.jsx')) && /report\.look/.test(read('src/pages/ShiftReport.jsx')))
+ok('generator enumerates public demos', read('scripts/shiftreport.mjs').includes('public/demos'))
+ok('shiftreportcheck is wired as a core CI gate',
+    read('scripts/checks.mjs').includes("'shiftreportcheck'") &&
+    read('.github/workflows/ci.yml').includes('npm run shiftreportcheck'))
+ok('fixture + ?report hook exist for the browser leg',
+    JSON.parse(read('public/forge/report-fixture.json')).look.length === 2 &&
+    read('src/pages/ShiftReport.jsx').includes("get('report')") &&
+    read('src/pages/ShiftReport.jsx').includes('REPORT_URL'))
+ok('?report hook ignores offsite fixtures',
+    read('src/pages/ShiftReport.jsx').includes('/^\\/retrogames\\/'))
 
 if (fails.length) {
     console.error(`FAIL (${fails.length}/${pass + fails.length}):`)
