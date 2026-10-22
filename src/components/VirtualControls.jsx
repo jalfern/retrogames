@@ -5,6 +5,7 @@ import { padButton, shouldUseStick, waysOf } from './gamepadMap'
 import { setStick, clearStick } from '../utils/padState'
 import { methodOf, press, release, setStickVec, clearHeld } from '../utils/onePad'
 import { actionCodeAt } from './actionHit'
+import { vpadSize } from './vpadSize'
 
 const DIAG = {
     ul: ['ArrowUp', 'ArrowLeft'],
@@ -54,6 +55,20 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     // migration is per-title and cannot regress a game that has not opted in.
     const ways = waysOf(pad)
     const mDpadGate = hasMethod && method === 'dpad' && !!ways
+    // #735: the pad scales with the screen (vpadSize law) — re-derived on
+    // resize / orientation change, so iPad and iPhone and both orientations
+    // each get their own size from the same pure law.
+    const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }))
+    useEffect(() => {
+        const onR = () => setVp({ w: window.innerWidth, h: window.innerHeight })
+        window.addEventListener('resize', onR)
+        window.addEventListener('orientationchange', onR)
+        return () => {
+            window.removeEventListener('resize', onR)
+            window.removeEventListener('orientationchange', onR)
+        }
+    }, [])
+    const sz = vpadSize(vp.w, vp.h)
     // Step 5 (#290, feel): the touch pad hides as soon as a keyboard or gamepad is
     // used, and comes back on the next touch.
     const [hidden, setHidden] = useState(false)
@@ -458,9 +473,11 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
 
     const isHeld = (c) => held.has(c)
 
-    const dBtnBase = 'w-12 h-12 rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 transition-colors'
+    const dBtnBase = 'rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 transition-colors'
     const dBtnCls = (c) => `${dBtnBase} ${isHeld(c) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`
-    const actBase = 'w-14 h-14 rounded-full flex items-center justify-center select-none backdrop-blur-sm border border-white/10 shadow-lg transition-all'
+    const actBase = 'rounded-full flex items-center justify-center select-none backdrop-blur-sm border border-white/10 shadow-lg transition-all'
+    const armStyle = { width: sz.arm, height: sz.arm }
+    const btnStyle = { width: sz.btn, height: sz.btn }
 
     const stickZone = useStick && (
         <div
@@ -500,7 +517,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                 still reaches the shell's tap-to-start (the synthesized Space). */}
             {mDpadGate ? (
                 <div
-                    className="fixed inset-0 z-40 touch-none"
+                    className="fixed inset-0 z-40 touch-none select-none"
                     style={{ pointerEvents: 'auto' }}
                     onTouchStart={swTS}
                     onTouchMove={swTM}
@@ -511,7 +528,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
             {stickZone}
             <div
                 data-vc="1"
-                className="fixed left-0 right-0 flex justify-between items-end z-50 pointer-events-auto"
+                className="fixed left-0 right-0 flex justify-between items-end z-50 pointer-events-auto select-none"
                 style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))', padding: '0 calc(2rem + env(safe-area-inset-right)) 0 calc(2rem + env(safe-area-inset-left))' }}
             >
                 {/* Left control: fixed stick (method stick), nothing (pointer —
@@ -521,7 +538,8 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                     <div
                         data-vc="fixedstick"
                         ref={fsZoneRef}
-                        className="relative w-[150px] h-[150px] touch-none"
+                        className="relative touch-none select-none"
+                        style={{ width: sz.stick, height: sz.stick }}
                         onTouchStart={fsTS}
                         onTouchMove={fsTM}
                         onTouchEnd={fsTE}
@@ -538,18 +556,19 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         <div
                             ref={fsKnobRef}
                             className="absolute top-1/2 left-1/2 rounded-full bg-white/70 border border-white/40 shadow-lg"
-                            style={{ width: 54, height: 54, transform: 'translate(-50%, -50%)' }}
+                            style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
                         />
                     </div>
                 ) : mPointer ? (
                     <div className="w-2" />
                 ) : useStick ? (
-                    <div className="w-24" />
+                    <div style={{ width: sz.stick }} />
                 ) : diag ? (
                     <div data-vc="diag" className="grid grid-cols-2 gap-1">
                         {[['ul', '↖'], ['ur', '↗'], ['dl', '↙'], ['dr', '↘']].map(([k, sym]) => (
                             <button
                                 key={k}
+                                style={armStyle}
                                 className={`${dBtnBase} ${diagKeysState.has(k) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`}
                                 {...diagBind(k)}
                             >
@@ -561,7 +580,8 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                     <div
                         data-vc="dpadgate"
                         ref={dgZoneRef}
-                        className="relative w-[150px] h-[150px] touch-none"
+                        className="relative touch-none select-none"
+                        style={{ width: sz.stick, height: sz.stick }}
                         onTouchStart={dgTS}
                         onTouchMove={dgTM}
                         onTouchEnd={dgTE}
@@ -579,14 +599,15 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         <div
                             ref={dgKnobRef}
                             className="absolute top-1/2 left-1/2 rounded-full bg-white/70 border border-white/40 shadow-lg"
-                            style={{ width: 54, height: 54, transform: 'translate(-50%, -50%)' }}
+                            style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
                         />
                     </div>
                 ) : (
                     <div
                         data-vc="dpad"
                         ref={dPadRef}
-                        className="relative w-[150px] h-[150px] touch-none"
+                        className="relative touch-none select-none"
+                        style={{ width: sz.stick, height: sz.stick }}
                         onTouchStart={dTS}
                         onTouchMove={dTM}
                         onTouchEnd={dTE}
@@ -595,22 +616,22 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         onMouseUp={dMU}
                         onMouseLeave={dMU}
                     >
-                        <div className={`absolute top-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowUp')}`}>
+                        <div className={`absolute top-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowUp')}`} style={armStyle}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowUp') ? 'text-white' : 'text-white/50'}>
                                 <path d="M12 19V5M5 12l7-7 7 7" />
                             </svg>
                         </div>
-                        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowDown')}`}>
+                        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowDown')}`} style={armStyle}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowDown') ? 'text-white' : 'text-white/50'}>
                                 <path d="M12 5v14M19 12l-7 7-7-7" />
                             </svg>
                         </div>
-                        <div className={`absolute left-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowLeft')}`}>
+                        <div className={`absolute left-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowLeft')}`} style={armStyle}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowLeft') ? 'text-white' : 'text-white/50'}>
                                 <path d="M19 12H5M12 19l-7-7 7-7" />
                             </svg>
                         </div>
-                        <div className={`absolute right-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowRight')}`}>
+                        <div className={`absolute right-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowRight')}`} style={armStyle}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowRight') ? 'text-white' : 'text-white/50'}>
                                 <path d="M5 12h14M12 5l7 7-7 7" />
                             </svg>
@@ -619,11 +640,15 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                     </div>
                 )}
 
-                {/* Action Buttons: only the actions the game reads, by name */}
+                {/* Action Buttons: only the actions the game reads, by name.
+                    #735: the zone is data-vc="actzone" (vpadboot's stable
+                    selector) and its gap/padding scale with the pad (sz). */}
                 {(showA || secondAction) ? (
                     <div
+                        data-vc="actzone"
                         ref={actZoneRef}
-                        className="flex items-end gap-2 pb-2 pr-4 touch-none"
+                        className="flex items-end touch-none select-none"
+                        style={{ gap: sz.gap, paddingBottom: Math.round(sz.gap * 0.5), paddingRight: sz.gap }}
                         onTouchStart={aTS}
                         onTouchMove={aTM}
                         onTouchEnd={aTE}
@@ -633,13 +658,13 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         onMouseLeave={aMU}
                     >
                         {secondAction && (
-                            <div ref={bBtnRef} className={`${actBase} shadow-orange-900/20 ${isHeld(secondAction.code) ? 'bg-orange-400/90 scale-95' : 'bg-orange-500/50'}`}>
-                                <span className="text-white font-bold text-lg">{secondAction.label || 'B'}</span>
+                            <div ref={bBtnRef} style={btnStyle} className={`${actBase} shadow-orange-900/20 ${isHeld(secondAction.code) ? 'bg-orange-400/90 scale-95' : 'bg-orange-500/50'}`}>
+                                <span className="text-white font-bold" style={{ fontSize: sz.font((secondAction.label || 'B').length) }}>{secondAction.label || 'B'}</span>
                             </div>
                         )}
                         {showA && (
-                            <div ref={aBtnRef} className={`${actBase} shadow-red-900/20 ${isHeld('Space') ? 'bg-red-400/90 scale-95' : 'bg-red-500/50'}`}>
-                                <span className="text-white font-bold text-lg">{aLabel}</span>
+                            <div ref={aBtnRef} style={btnStyle} className={`${actBase} shadow-red-900/20 ${isHeld('Space') ? 'bg-red-400/90 scale-95' : 'bg-red-500/50'}`}>
+                                <span className="text-white font-bold" style={{ fontSize: sz.font(aLabel.length) }}>{aLabel}</span>
                             </div>
                         )}
                     </div>
