@@ -84,7 +84,8 @@ jobs:
       - run: npx playwright-core install --with-deps chromium
       - name: shoreperf qhd
         run: |
-          node scripts/shoreperf.mjs --profile qhd --secs 6 | tee /tmp/shoreperf-qhd.log
+          set -o pipefail
+          node scripts/shoreperf.mjs --profile qhd --secs 6 2>&1 | tee /tmp/shoreperf-qhd.log
           { echo "## shoreperf qhd (#680)"; echo '```'; cat /tmp/shoreperf-qhd.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()

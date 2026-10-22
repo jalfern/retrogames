@@ -155,11 +155,13 @@ async function main() {
   }
   console.log(`# box: ${noise.length ? `CONTENDED — ${noise.join('; ')} (numbers are context, not verdict)` : 'quiet'}`)
   const profDir = `/tmp/forge/shoreperf-profile-${PORT}`
-  const chrome = spawn(CHROME, [
+  const flags = [
     '--headless=new', '--enable-unsafe-swiftshader', `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
     `--user-data-dir=${profDir}`, 'about:blank',
-  ], { stdio: 'ignore', detached: true })
+  ]
+  if (process.platform !== 'darwin') flags.push('--no-sandbox')
+  const chrome = spawn(CHROME, flags, { stdio: 'ignore', detached: true })
   const killAll = () => {
     try { process.kill(-chrome.pid) } catch { /* gone */ }
     try { chrome.kill() } catch { /* gone */ }
