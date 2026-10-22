@@ -191,6 +191,7 @@ async function main() {
     }
   } finally { killAll() }
   console.log(JSON.stringify(noise.length ? out.map(o => ({ ...o, contended: true })) : out))
+  if (!abQuery && out.length === 0) { console.error('no profile produced a measurement — demo failed to boot'); process.exit(1) }
 }
 
 main()
