@@ -8,6 +8,7 @@
 import { SCREENS, TS, SW, SH, tileAt, isSolidTile } from '../src/games/Emberwood/world.js'
 import { createSim, stepSim, simState, hashState, spawnRoom } from '../src/games/Emberwood/sim.js'
 import { proveGame, tilePath } from '../src/games/Emberwood/solver.js'
+import { MUSIC } from '../src/utils/AudioController.js'
 
 let pass = 0, fail = 0
 const ok = (c, m) => { if (c) { pass++; console.log('ok   ', m) } else { fail++; console.log('FAIL ', m) } }
@@ -357,6 +358,22 @@ function arcScript(seed) {
     ok(gMeat >= 40, `the gap sweep actually exercises off-center entries (meat runs: ${gMeat})`)
 }
 
+// ---- 6c. music beds (#781): two originals exist, one per world layer ----
+{
+    for (const tr of ['emberwoodVale', 'emberwoodDeep']) {
+        const P = MUSIC[tr]
+        ok(!!P, `music bed exists: ${tr}`)
+        ok(!!P && P.lead.length === 32 && P.bass.length === 32 && P.perc.length === 32,
+            `${tr} is a full 32-step bed (lead+bass+perc aligned)`)
+        ok(!!P && P.step > 0.08 && P.step < 0.2, `${tr} tempo is playable (${P && P.step}s/step)`)
+    }
+    ok(MUSIC.emberwoodDeep.step > MUSIC.emberwoodVale.step,
+        'the dungeon bed is slower than the vale bed (moody by composition, not just volume)')
+    const darkCount = Object.values(SCREENS).filter(s => s.dark).length
+    const litCount = Object.values(SCREENS).filter(s => !s.dark).length
+    ok(darkCount > 0 && litCount > 0, `both world layers exist for the track switch (${litCount} lit / ${darkCount} dark screens)`)
+}
+
 const nodeResult = { pass, fail }
 
 // ---- 7. the Chrome leg: start, play, die, restart, zero page errors ----
@@ -428,6 +445,37 @@ if (!SKIP_BROWSER) {
             return lit > 40
         })
         cok(notBlank, 'the canvas drew a lit diorama (frame() shows light, not black)')
+
+        // #773 brightness gates: an overworld frame must READ at phone brightness
+        // and a dungeon frame must stay moody-but-lantern. Pre-fix the composite
+        // shipped the vale near-black (town measured mean 15.8/255, 85% dead
+        // pixels in full quality); lite read 58 — the encode now lives in the
+        // shader, so both engines land in the same place.
+        const lumaOf = async (sid) => await page.evaluate(async (id) => {
+            window.__emberwoodTest.goto(id)
+            await new Promise(r => setTimeout(r, 400))
+            const url = window.__game.frame()
+            const img = new Image()
+            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url })
+            const d = document.createElement('canvas'); d.width = img.width; d.height = img.height
+            const cc = d.getContext('2d'); cc.drawImage(img, 0, 0)
+            const data = cc.getImageData(0, 0, d.width, d.height).data
+            let s = 0, dark = 0
+            for (let i = 0; i < data.length; i += 4) {
+                const l = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]
+                s += l; if (l < 20) dark++
+            }
+            return { mean: s / (data.length / 4), darkFrac: dark / (data.length / 4) }
+        }, sid)
+        const town = await lumaOf('ow-11')
+        const field = await lumaOf('ow-01')
+        const keep = await lumaOf('d1-e0')
+        cok(town.mean >= 35 && field.mean >= 30,
+            `overworld reads bright (town mean=${town.mean.toFixed(1)}, field=${field.mean.toFixed(1)}, floor 35/30)`)
+        cok(town.darkFrac <= 0.35,
+            `the overworld has no near-black spread (town dark-pixel frac=${town.darkFrac.toFixed(2)}, ceil 0.35)`)
+        cok(keep.mean >= 8 && keep.mean < town.mean * 0.8,
+            `dungeon stays moody under the lantern (mean=${keep.mean.toFixed(1)}, band 8..${(town.mean * 0.8).toFixed(1)})`)
 
         // drive to a fight and swing: use goto + step to spawn next to a monster
         const fought = await page.evaluate(() => {

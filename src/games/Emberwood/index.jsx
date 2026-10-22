@@ -323,7 +323,7 @@ export default function Emberwood() {
             rend.dispose()
         }
         return cleanup
-    }, [orient])
+    }, [orient, H])
 
     const line = LINES[attractLine % LINES.length]
 
