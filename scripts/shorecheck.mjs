@@ -583,6 +583,49 @@ async function main() {
         await lctx.close()
       }
 
+    // #702 slice B: ?diag=1 copy-report overlay — Jon pastes a real-device
+    // report (browser+GPU, settings, 10s frame times + hitches, per-pass GPU
+    // ms where allowed, camera pose) instead of reading numbers off a phone.
+    const dctx = await browser.newContext({ viewport: { width: 960, height: 540 }, permissions: ['clipboard-read', 'clipboard-write'] })
+    const dpage = await dctx.newPage()
+    const derr = []
+    dpage.on('pageerror', e => derr.push(String(e)))
+    try {
+      await dpage.goto(url + '?diag=1', { waitUntil: 'load' })
+      await dpage.waitForFunction(() => window.__shoreTest && window.__shoreTest.ready, null, { timeout: 30000 })
+      await dpage.waitForFunction(() => window.__shoreTest.perf().n > 10, null, { timeout: 15000 })
+      const ui = await dpage.evaluate(() => {
+        const p = document.getElementById('diagPanel')
+        return {
+          on: window.__shoreTest.diagOn === true,
+          panel: !!p && getComputedStyle(p).display !== 'none',
+          txt: p ? p.textContent.includes('diag') : false,
+          btn: !!document.getElementById('diagCopy'),
+        }
+      })
+      ok('diag=1 shows the copy-report panel (#702)',
+        ui.on && ui.panel && ui.txt && ui.btn, JSON.stringify(ui))
+      const rep = await dpage.evaluate(() => { try { return JSON.parse(window.__diagReport()) } catch (e) { return { err: String(e) } } })
+      const good = !rep.err
+        && typeof rep.ua === 'string' && rep.ua.length > 10
+        && typeof rep.gpu.tsQuery === 'boolean'
+        && rep.settings && rep.settings.rs > 0.5 && rep.settings.rs <= 1 && rep.settings.grid.dx > 0
+        && rep.frames && rep.frames.n >= 10 && rep.frames.spanS > 0.3
+        && rep.frames.worstMs >= rep.frames.avgMs
+        && Array.isArray(rep.cam.pos) && rep.cam.pos.length === 3 && rep.t > 0
+      ok('diag report is complete and sane (#702)', good,
+        good ? `${rep.frames.n}f avg ${rep.frames.avgMs}ms worst ${rep.frames.worstMs}ms ts=${rep.gpu.tsQuery}` : JSON.stringify(rep).slice(0, 200))
+      const cb = await dpage.evaluate(async () => {
+        try { await navigator.clipboard.writeText('diag-ok'); return await navigator.clipboard.readText() } catch { return null }
+      })
+      ok('diag panel clipboard is usable (#702)', cb === 'diag-ok', `clip=${cb}`)
+    } catch (e) {
+      ok('diag=1 shows the copy-report panel (#702)', false, `diag page failed: ${e}`)
+    } finally {
+      ok('diag=1 raises no page errors (#702)', derr.length === 0, derr.slice(0, 2).join(' | '))
+      await dctx.close()
+    }
+
     ok('zero page/WGSL errors', errs.length === 0, errs.slice(0, 2).join(' | '))
   } finally {
     chrome.kill()
