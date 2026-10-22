@@ -1,65 +1,53 @@
-# STATE — 2026-10-22 forge session (SSX feel pass #780)
+# STATE — 2026-10-22 forge session (#781 Emberwood stage 1)
 
 ## Shipped this session
-- **#780 SSX "make it great" feel pass → prod** (PR #790 squash `7146bf3`).
-  Jon's steer: how a run feels, start to finish — not detail.
-  - Summit-vista start: countdown parks the camera high/far/wide
-    (`START_VISTA`, art.js pure data) with a slow pan, valley falling away
-    below the gate; swoops into chase-cam at GO (pos+FOV lerp); big 3-2-1-GO!
-    readout. Camera constructed at vista FOV so attract opens wide too.
-  - Soundtrack: three ORIGINAL big-beat beds in `AudioController.MUSIC`
-    (SIGNAL HILL / NEON ASCENT / LONG SHADOW), one per mountain theme, switch
-    per heat, speed-lifted tempo (up to 14% via `setMusicStep`, `MUSIC_STEP`
-    pinned equal to track grids). Silent on attract/pause/results by contract.
-  - Physical mix: wind rising with speed, carve swish on hard edges, air hush,
-    boost whine, lip-launch whoosh, big-air landing thud, crash rumble —
-    crashes/big hits `duckMusic` so the hit lands.
-  - Harness: +7 ssxcheck gates (87 total) — beds exist per theme, driving
-    equal-lane kick/tek patterns, pinned liftable tempo, vista dominates the
-    chase rig (back/up/look/fov). **Mutation-proven**: neuter
-    `START_VISTA.up` + `MUSIC_TRACKS.day` → 3 gates red, restore → green.
-  - Sim untouched → determinism/win/slack gates all green unchanged.
-    mountaincheck 119/119, terraincheck 45/45, modelcheck 35/35, real headless
-    drive 19/19 (vista→swoop→bed→tuck→carve→ollie→boost→wall bail→heat
-    reload+track swap→iPhone tap start), zero page errors.
-  - Prod verify: jalfern.com index hash `eK3UrKR-` == upstream; chunk
-    `index-DELHJ5qA.js` carries `ssxDay` + the exact vista literal. Live.
-- Filed **#791 QA — SSX polish pass (post-#780 feel round)**: analog steer
-  path, CPU miss rate, trick vocabulary (grabs by hand, invert, revert, double
-  naming), landing compression pose+spray, crust carve sound, sustained boost
-  engine, attract music, flag/crowd wind life.
+- **#797 Emberwood "light the vale" → prod** (main `0e4a30b`), the #781 steer.
+  - Near-black FIXED (#773): the composite sampled the sRGB scene RT (decode to
+    linear) and wrote the canvas raw — vale shipped dark on every engine, not
+    just iPhone. `compMat` runs `lin2srgb` in-shader. Town mean 15.8 → 65
+    (lite 58); dungeon stays moody (14).
+  - HUD strip clears the #437 ARCADE/PAUSE/mute cluster on every viewport.
+  - Portrait canvas 480x360 (4:3): ~25% taller game on iPhone; blur kernel
+    takes a `res` uniform. Ortho window is orientation-agnostic (viewH 210).
+  - Music (#781, was an honest gap): ORIGINAL beds VALE ASCENT (D-major,
+    0.13/step) + ROOT AND EMBER (A-minor, 0.17) in `AudioController.MUSIC`;
+    switch per `screen.dark` in the shell loop; silent attract/pause/death/win;
+    `duckMusic` on hit/boom/stagger/boss-kill; fanfare on win; sword swish;
+    `_winSeen` reset fix (win overlay could stick off a second run).
+  - Harness: 87 → **90 gates** (+3 brightness +4 bed/layer… net with QA's 3
+    nudge gates from #796). Mutation-proven twice: neuter encode → 3 red
+    (town 11.0); rename dungeon bed → 3 red. Restore → 90 green, lint quiet,
+    build green, zero page errors.
+  - #773 closed shipped. #781 multi-stage — kept `building` (see below).
 
 ## The lesson of the session
-- When you change a game's START (new camera phase, new timing contract), every
-  browser check that assumed the old opening breaks *legitimately* —
-  `ssxmodelcheck` was capturing poses during what is now the countdown
-  (hero 30 m away → tiny pose diffs, pan drift in the stability window). Fix
-  the check's precondition to wait for `phase==='run'`, don't back out the
-  feature. Also: the summit traverse is deliberately slow (v≈4 m/s early) —
-  feel gates on carving/boost must ramp speed first (hold tuck), not assume
-  cruise speed.
+- Two lanes on one game CAN collide even when you dodge the files you expect:
+  #786 (QA) shipped mid-session and touched render.js too. Staying out of
+  sim.js/world.js still required one clean rebase (check gates green AFTER
+  rebasing, not just before). Also: prod verify must chase the lazy chunk —
+  the game code lives in its own dynamic chunk; the entry carrying the new
+  track name was the tell, `lin2srgb` was in `index-ByRzm2nN.js`.
+  And jalfern.com 308s to www — curl needs `-L`.
 
 ## Next goal
-- game-queue is EMPTY; `next` still holds **#773** (Emberwood overworld
-  near-black on iPhone + HUD overlaps VirtualControls + thin play band) — the
-  next session's claim. Brightness half is likely ACES/exposure at `?lite` on
-  WebKit (same chain the #775 focus-blur fix helped); overlap half is
-  index.jsx absolute HUD vs the pad zone.
+- #781 continues (steer stays claimed): **enemy variety + attract proof-route
+  bot + shop signposting** next builder round. Brightness/HUD are done; the
+  sim is stable again after #796 so sim edits are safe to resume.
+- `next`/game-queue: empty.
 
 ## Board / harness status
-- main: `7146bf3` (#790). Nightly green pre-merge; no freeze. Rule 4 ok
-  (game code shipped). Rule 7: no new jonq — no taste calls this pass.
-- jonq lane:games: nothing AWAITING.
-- QA lane owns: #791 SSX polish (new), #752 EMBERWOOD polish, #747 STORM,
-  #713 CREDITS, #695 CAMPFIRE, #685 SSX surfaces (closed), #702/#704 SHORE/OCEAN.
-- Worktrees to prune: `~/Dev/retrogames-forge-ssx-feel` (this lane, merged +
-  its node_modules) and leftover `~/Dev/retrogames-forge-emberwood-mirror-772`
-  (noted by the #772 session, never pruned). Vite dev server on 5177 killed.
-
-## Open questions (links only, #605)
-- none open for lane:games. (Other lanes: #698 demos-driver hold honored;
-  #691 answered — lane:qa's call.)
+- main: `0e4a30b` (#797). Nightly green pre-merge; no freeze. Rule 4 ok.
+- jonq lane:games: nothing AWAITING; nothing filed this pass (no taste calls).
+- Open questions (links only, #605): none open for lane:games.
+- QA lane owns: #752 EMBERWOOD polish (gap list updated post-#797), #791 SSX,
+  #747 STORM, #713 CREDITS, #695 CAMPFIRE, #702/#704 SHORE/OCEAN. #786
+  shipped via #796 (closed).
+- #781 keeps `building` (stage 1 of the steer merged; stage list in its last
+  FORGE comment).
+- Worktree `~/Dev/retrogames-forge-emberwood-pass-781` + dev server 5177
+  pruned this session. Stale unpruned from earlier lanes still on disk
+  (comet-drift family, qa-5xx/6xx/7xx set) — worth a housekeeping pass.
 
 ## Open threads
-- #773 next up (builder, `next` label). #791 + #752 QA backlog on SSX /
-  EMBERWOOD polish.
+- Old forge branches on remote for closed issues: `forge/campfire-670`,
+  `forge/ssx-cpu-riders-620` — deletable by Jon's next sweep.
