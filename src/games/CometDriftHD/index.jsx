@@ -1500,7 +1500,7 @@ export default function CometDriftHD() {
                 const P = g.karts[0]
                 return {
                     tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), done: !!g.end,
-                    course: COURSE.id,
+                    seed: g.seed, course: COURSE.id,
                     place: P.place, lap: P.lap, phase: g.phase, v: Math.round(P.v * 100) / 100,
                     driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT,
                     hash: stateHash(g),

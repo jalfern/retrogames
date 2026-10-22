@@ -79,6 +79,7 @@ const PATTERNS = {
     momentum: (i) => ({ left: i % 97 < 6, right: i % 97 >= 10, up: i % 17 < 4, a: i % 19 < 5 }),
     'magic-carpet': (i) => ({ left: i % 41 < 14, right: i % 41 >= 18 && i % 41 < 32, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 38, a: i % 13 < 2, b: i % 29 < 2 }),
     gauntlet: (i) => ({ left: i % 47 < 16, right: i % 47 >= 20 && i % 47 < 36, up: i % 59 < 12, down: i % 59 >= 30 && i % 59 < 42, a: i % 9 < 2, b: i % 23 < 2 }),
+    emberwood: (i) => ({ left: i % 43 < 16, right: i % 43 >= 20 && i % 43 < 34, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 36, a: i % 11 < 4, b: i % 29 < 2 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 
@@ -162,6 +163,12 @@ for (const p of RUN) {
         const s = JSON.parse(r1.final)
         return ['tick', 'score', 'done', 'hash'].every((k) => s[k] !== undefined)
     })())
+    // #527 item 2: recordStart() refuses to open a capture unless state()
+    // reports an integer seed — pin that, so the recorder works studio-wide.
+    r.check(`${p.id}: state.seed is an integer (recordStart)`, (() => {
+        const s = JSON.parse(r1.final)
+        return Number.isInteger(s.seed)
+    })(), `seed=${JSON.parse(r1.final).seed}`)
     r.check(`${p.id}: seed 7 twice → identical final JSON`, r1.final === r2.final,
         r1.final === r2.final ? `${r1.final.length}b equal` : `A=${r1.final}\n                 B=${r2.final}`)
     r.check(`${p.id}: seed 7 twice → identical per-100-tick hashes`, JSON.stringify(r1.samples) === JSON.stringify(r2.samples), r1.samples.join(' '))
