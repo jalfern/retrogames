@@ -205,6 +205,13 @@ float rainAt(vec2 xz){
   return clamp(pow(max(a, 0.0), 1.35), 0.0, 1.0);
 }
 
+/* rain gusting + sheeting (#747): deterministic squall waves sweeping with the wind */
+float gustWave(vec2 xz, float t){
+  float m = 0.5 + 0.5 * sin(dot(xz, vec2(0.0016, 0.0011)) - t * 0.35 + 1.3);
+  float cr = sin(dot(xz, vec2(-0.0011, 0.0023)) + t * 0.22);
+  return 0.66 + 0.28 * m * m + 0.04 * cr;
+}
+
 /* returns rgb in .xyz, transmittance in .w */
 vec4 cloudMarch(vec3 ro, vec3 rd, float tEnd){
   // enter only where the ray is inside the cloud altitude slab AND horizontally
@@ -283,7 +290,7 @@ void main(){
   if (tGround < 26000.0){
     vec3 p = ro + rd * tGround;
     float sd2 = length(p.xz - uStorm);
-    float rA = rainAt(p.xz);
+    float rA = rainAt(p.xz) * gustWave(p.xz, uTime);
     float grain = fbm2(p.xz * 0.0042);
     float grain2 = fbm2(p.xz * 0.017 + 5.0);
     float fine = fbm2(p.xz * 0.055);
@@ -305,6 +312,8 @@ void main(){
     bg += vec3(0.42, 0.48, 0.58) * fres * rA * 0.10 * (1.0 + 3.0 * uSkyFlash);
     float sp = step(0.9935, hash12(floor(p.xz * 110.0) + floor(uTime * 26.0) * 0.137));
     bg += vec3(0.55, 0.58, 0.62) * sp * rA * smoothstep(650.0, 120.0, length(p.xz - ro.xz)) * (0.35 + 1.3 * uSkyFlash);
+    float sp2 = step(0.9955, hash12(floor(p.xz * 70.0) + floor(uTime * 21.0) * 0.311));
+    bg += vec3(0.50, 0.53, 0.57) * sp2 * rA * smoothstep(1500.0, 650.0, length(p.xz - ro.xz)) * 0.16 * (0.5 + 1.2 * uSkyFlash);
     float fogK = 1.0 - exp(-tGround / 10500.0 * (0.55 + 0.85 * toward));
     vec3 fogCol = mix(vec3(0.52, 0.58, 0.64), vec3(0.30, 0.325, 0.355), toward);
     bg = mix(bg, fogCol + uSkyFlash * vec3(0.22, 0.26, 0.36), fogK * 0.85);
@@ -326,7 +335,7 @@ void main(){
   for (int i = 0; i < 16; i++){
     if (tr > rEnd || accA > 0.9) break;
     vec3 p = ro + rd * tr;
-    float inten = mix(0.26, 1.0, smoothstep(9000.0, 2500.0, length(p.xz - uStorm)));
+    float inten = mix(0.26, 1.0, smoothstep(9000.0, 2500.0, length(p.xz - uStorm))) * gustWave(p.xz, uTime);
     // vertical-stretched world noise, drifting down with a wind slant
     vec3 q = vec3(p.x * 3.1 + uTime * 34.0, (p.y + uTime * 520.0) * 0.055, p.z * 3.1);
     float sA = vnoise(q);
@@ -904,9 +913,11 @@ window.__stormTest = {
       flashCount,
       skyFlash: +skyFlash.toFixed(3),
       rainAtCam: rainAtJS(0, 0),
+      gustAtCam: +gustJS(0, 0, (performance.now() - t0) / 1000).toFixed(3),
       boltOn: flashes.some(f => f.bolt && (performance.now() - t0) / 1000 - f.t0 < 1.0),
     };
   },
+  gust(x, z, t){ return +gustJS(x, z, t).toFixed(4); },
   setAuto(v){ autoFlashes = !!v; },
   flashNow(cg, mode){
     const t = (performance.now() - t0) / 1000;
@@ -929,6 +940,12 @@ function rainAtJS(x, z){
   const d = Math.hypot(x - stormX, z - stormZ);
   const a = Math.max(0, Math.min(1, (9200 - d) / (9200 - 3600)));
   return +(Math.pow(a, 1.35)).toFixed(3);
+}
+
+function gustJS(x, z, t){
+  const m = 0.5 + 0.5 * Math.sin(x * 0.0016 + z * 0.0011 - t * 0.35 + 1.3);
+  const cr = Math.sin(-x * 0.0011 + z * 0.0023 + t * 0.22);
+  return 0.66 + 0.28 * m * m + 0.04 * cr;
 }
 </script>
 <script>
