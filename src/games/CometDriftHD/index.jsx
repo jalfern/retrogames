@@ -14,7 +14,7 @@ import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse } from '../Com
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 import {
-    S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, wallTopYAt, worldAnchor, courseFloorY,
+    S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, buildHills, wallTopYAt, worldAnchor, courseFloorY,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, roadRollYAt, roadRollAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
     hudScale, hudTop, tintFor, envWashFor, SKY_STOPS, refOverlayStats, attractLayout,
@@ -471,6 +471,7 @@ export default function CometDriftHD() {
             floor.position.set(A.cx, floorY, A.cz)
             horizonGroup.add(floor)
             horizonGroup.add(buildMesas(t.mesa, floorY))
+            horizonGroup.add(buildHills(t.hills, floorY))
             const dome = new THREE.Mesh(
                 new THREE.SphereGeometry(A.R + 130, 24, 16),
                 new THREE.MeshBasicMaterial({ map: tex(skyTex(t.sky)), side: THREE.BackSide, fog: false })

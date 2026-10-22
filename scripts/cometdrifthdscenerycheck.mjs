@@ -17,8 +17,8 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
 import { makeGame, step, decide, LAPS } from '../src/games/CometDrift/sim.js'
-import { tracksidePlan, tracksideAudit, resolvePlan, ROOF_Y, STAND_SCALE_START, STAND_SCALE_STRAIGHT, SHADOW_IDS, specSeat, SPEC_SEATS, SPEC_ROWS, SPEC_FILL, primitiveProp } from '../src/games/CometDriftHD/scenery.js'
-import { elevAt, wallTopSideAt } from '../src/games/CometDriftHD/scene.js'
+import { tracksidePlan, tracksideAudit, resolvePlan, ROOF_Y, STAND_SCALE_START, STAND_SCALE_STRAIGHT, SHADOW_IDS, specSeat, SPEC_SEATS, SPEC_ROWS, SPEC_FILL, primitiveProp, barrierSkin, SPONSOR_PAIRS, signSpec, SIGN_BRANDS, SIGN_NUMS, bakeSignTexture, buntingY, pennantColor, BUNT_TOP, BUNT_SAG, BUNT_N, BUNT_COLORS, bunting } from '../src/games/CometDriftHD/scenery.js'
+import { elevAt, wallTopSideAt, hillDefs, mesaDefs } from '../src/games/CometDriftHD/scene.js'
 import { crowdSwellGain, CROWD_R_MIN, CROWD_R_MAX, CROWD_BURST, CROWD_PERIOD } from '../src/games/CometDriftHD/audio.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -42,6 +42,10 @@ const PAIRS = [
     ['e.baseY = propGroundY(e.i, e.side)', 'e.baseY = 1.82'],
     ['export const ROOF_Y = 3.4', 'export const ROOF_Y = 4'],
     ['export const SPEC_FILL = 0.82', 'export const SPEC_FILL = 0.0'],
+    // #675 remainder mutants: one sponsor for every barrier, and bunting that
+    // sags into the kart's headspace — both must die at their law gates.
+    ['const i = Math.floor(shash(seed * 1.77 + 0.31) * SPONSOR_PAIRS.length)', 'const i = 0'],
+    ['export const BUNT_SAG = 0.32', 'export const BUNT_SAG = 0.5'],
 ]
 if (MUTATE) {
     let src = readFileSync(SCENERY_SRC, 'utf8')
@@ -103,6 +107,62 @@ ok(ROOF_TOP_LOCAL * STAND_SCALE_STRAIGHT <= 4.6, `stand roof: straight stands to
     ok(a.every((m) => Math.abs(m.position.x) <= 2.8 && m.position.z >= -3.4 && m.position.z <= 0.6 && m.position.y >= 0.85 && m.position.y <= 2.65), 'crowd: every spectator sits on the deck (inside the stand bounds)')
 }
 
+// SPONSOR LAW (#675, once): deterministic pair + stripe law, and the walls
+// actually vary — enough distinct skins that the straight stops tiling (the
+// mutant below collapses every seed onto one sponsor and must go red).
+{
+    const skins = Array.from({ length: 12 }, (_, s) => barrierSkin(s + 1))
+    ok(skins.every((sk, s) => JSON.stringify(sk) === JSON.stringify(barrierSkin(s + 1))), 'barriers: skin law is deterministic')
+    ok(skins.every((sk) => SPONSOR_PAIRS.some(([a, b]) => (sk.base === a && sk.stripe === b) || (sk.base === b && sk.stripe === a))), 'barriers: every skin is a sponsor pair, base ≠ stripe')
+    ok(skins.every((sk) => sk.stripes === 3 || sk.stripes === 4), 'barriers: stripe count is 3 or 4')
+    const pairs = new Set(skins.map((sk) => `${sk.base}-${sk.stripe}`))
+    ok(pairs.size >= 4, `barriers: ${pairs.size} distinct sponsor skins across the straight (≥ 4)`)
+    const hexes = (b) => b.children.filter((o) => Math.abs(o.position.y - 0.45) < 1e-6).map((o) => o.material.color.getHex())
+    const b1 = hexes(primitiveProp('barrier', 3))
+    const b2 = hexes(primitiveProp('barrier', 8))
+    ok(b1.length >= 4 && b2.length >= 4 && JSON.stringify(b1) !== JSON.stringify(b2), 'barriers: built panels differ seed to seed (corrugation + sponsor)')
+}
+
+// SIGNAGE LAW (#675, once): boards carry brand + number from finite lists,
+// contrast pair, deterministic; the canvas bake is browser-only (null in Node),
+// and the built boards actually carry a signFace.
+{
+    const spec = signSpec(5)
+    ok(SIGN_BRANDS.includes(spec.brand) && SIGN_NUMS.includes(spec.big) && /^\d+$/.test(spec.big), `signage: spec reads "${spec.brand} ${spec.big}" from the brand/number lists`)
+    ok(JSON.stringify(signSpec(5)) === JSON.stringify(spec) && spec.bg !== spec.fg, 'signage: deterministic, bg ≠ fg (contrast)')
+    ok(bakeSignTexture(spec) === null, 'signage: canvas bake is browser-only (null under Node)')
+    const faces = (p) => { const d = []; p.traverse((o) => { if (o.userData.signFace) d.push(o) }); return d }
+    ok(faces(primitiveProp('billboard', 5)).length === 1 && faces(primitiveProp('sign', 5)).length === 1, 'signage: billboard and sign boards carry a branded face')
+}
+
+// BUNTING LAW (#675, once): catenary over the decks — endpoints at the posts,
+// sag keeps the pennants ≥ 2.2u over the stand base (above the kart's
+// headspace), colours cycle, build deterministic (the sag mutant must die).
+{
+    ok(Math.abs(buntingY(0) - BUNT_TOP) < 1e-9 && Math.abs(buntingY(1) - BUNT_TOP) < 1e-9, 'bunting: string ties off at both posts')
+    ok(BUNT_TOP - BUNT_SAG >= 2.2 && buntingY(0.5) === BUNT_TOP - BUNT_SAG, `bunting: lowest pennant ${buntingY(0.5).toFixed(2)}u ≥ 2.2u (clear of karts)`)
+    let down = true; let up = true; let prev = buntingY(0)
+    for (let t = 0; t <= 1.0001; t += 0.05) { const y = buntingY(t); if (t < 0.5 && y > prev + 1e-9) down = false; if (t > 0.5 && y < prev - 1e-9) up = false; prev = y }
+    ok(down && up, 'bunting: monotone sag then rise (a catenary, not a zigzag)')
+    ok(new Set(Array.from({ length: 6 }, (_, k) => pennantColor(k))).size >= 4, 'bunting: pennant colours cycle through the palette')
+    const b = bunting(3)
+    ok(b.children.length === BUNT_N + 2, `bunting: ${BUNT_N} pennants + 2 posts per string`)
+    const stand = primitiveProp('grandstand', 9)
+    let cones = 0; stand.traverse((o) => { if (o.geometry && o.geometry.type === 'ConeGeometry' && o.geometry.parameters.radialSegments === 3) cones++ })
+    ok(cones === BUNT_N, `bunting: the built grandstand wears its ${BUNT_N} pennants`)
+}
+
+// HILLS (#675, once): a rolling ring between the plateau and the mesas —
+// rounded (low h/w, the anti-mesa), deterministic, and clear of the camera
+// corridor past the furthest track point.
+{
+    const hs = hillDefs()
+    ok(hs.length >= 12, `hills: ${hs.length} rolling hills on the ring`)
+    ok(JSON.stringify(hillDefs()) === JSON.stringify(hs), 'hills: the ring is deterministic')
+    ok(hs.every((d) => d.h / d.w >= 0.3 && d.h / d.w <= 0.6), 'hills: rolling shoulders (h/w 0.3–0.6) — not mesas')
+    ok(hs.every((d) => d.h < Math.min(...mesaDefs().map((m) => m.h))), 'hills: lower than the lowest mesa (soft band in front)')
+}
+
 for (const c of COURSES) {
     selectCourse(c.id)
     const plan = tracksidePlan()
@@ -131,6 +191,21 @@ for (const c of COURSES) {
     ok(plan.some((e) => e.baseY < 1.70), `${c.id}: some prop stands below the old constant ground (1.82)`)
     const grounded = plan.filter((e) => SHADOW_IDS[e.id])
     ok(grounded.length > 0 && grounded.every((e) => SHADOW_IDS[e.id] > 0.5 && SHADOW_IDS[e.id] < 2.5), `${c.id}: every tree/rock carries a contact-shadow radius (${grounded.length} props)`)
+
+    // HILLS per course (#542 law): every hill clears the live centerline by its
+    // footprint plus the camera margin, whatever course is selected.
+    {
+        let bad = 0
+        for (const d of hillDefs()) {
+            let best = Infinity
+            for (let j = 0; j < TRACK.N; j += 3) {
+                const q = TRACK.pts[j]
+                best = Math.min(best, Math.hypot(q.x * (1 / 60) - d.x, q.y * (1 / 60) - d.z))
+            }
+            if (best - d.w < 3.5) bad++
+        }
+        ok(bad === 0, `${c.id}: rolling hills clear the camera corridor (footprint + 3.5u)`)
+    }
 
     // UNAFFECTED: the certified autopilot still wins the whole race with the
     // dressing on (props never collide — nothing inside the clamp). While it

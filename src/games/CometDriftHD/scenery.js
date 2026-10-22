@@ -82,6 +82,92 @@ export function spectatorDots(seed) {
     return g
 }
 
+// #675: sponsor skins. Every barrier used to be the same red/white panel and
+// every board a flat yellow slab. One deterministic sponsor law per seed: a
+// pair of contrast colours and a stripe count, so the walls read as different
+// sponsors down the straight instead of one texture tiled to death.
+export const SPONSOR_PAIRS = [
+    [0xf2ece2, 0xc0392b], [0x2e6db0, 0xf1c40f], [0xf1c40f, 0x2a2320],
+    [0x27ae60, 0xf2ece2], [0xe67e22, 0x2a2320], [0x8e44ad, 0xf2ece2],
+]
+export const barrierSkin = (seed) => {
+    const i = Math.floor(shash(seed * 1.77 + 0.31) * SPONSOR_PAIRS.length) % SPONSOR_PAIRS.length
+    const flip = shash(seed * 2.11 + 0.7) < 0.5
+    const [a, b] = SPONSOR_PAIRS[i]
+    return { base: flip ? b : a, stripe: flip ? a : b, stripes: 3 + Math.floor(shash(seed * 3.19 + 5.3) * 2) }
+}
+
+// #675: signage. Boards now carry real branding — a brand line and a big
+// number, colours from the sponsor pairs — so they read at distance instead of
+// as solid rectangles. signSpec is the pure law (Node-pinnable); the canvas
+// bake is browser-only and returns null under Node, where consumers fall back
+// to the flat fg panel.
+export const SIGN_BRANDS = ['COMET DRIFT', 'DRIFT GP', 'HELIOS FUEL', 'APEX TYRES', 'TURBINE 9']
+export const SIGN_NUMS = ['3', '7', '9', '11', '27', '77']
+export const signSpec = (seed) => {
+    const b = Math.floor(shash(seed * 3.71 + 1.1) * SIGN_BRANDS.length) % SIGN_BRANDS.length
+    const n = Math.floor(shash(seed * 5.93 + 2.3) * SIGN_NUMS.length) % SIGN_NUMS.length
+    const p = Math.floor(shash(seed * 7.31 + 0.7) * SPONSOR_PAIRS.length) % SPONSOR_PAIRS.length
+    return { brand: SIGN_BRANDS[b], big: SIGN_NUMS[n], bg: SPONSOR_PAIRS[p][0], fg: SPONSOR_PAIRS[p][1] }
+}
+const cssHex = (c) => `#${c.toString(16).padStart(6, '0')}`
+export function bakeSignTexture(spec, w = 256, h = 128) {
+    if (typeof document === 'undefined') return null
+    const cv = document.createElement('canvas')
+    cv.width = w; cv.height = h
+    const ctx = cv.getContext('2d')
+    ctx.fillStyle = cssHex(spec.bg); ctx.fillRect(0, 0, w, h)
+    ctx.fillStyle = cssHex(spec.fg)
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.font = `bold ${Math.round(h * 0.26)}px sans-serif`
+    ctx.fillText(spec.brand, w / 2, h * 0.28)
+    ctx.font = `bold ${Math.round(h * 0.55)}px sans-serif`
+    ctx.fillText(spec.big, w / 2, h * 0.66)
+    const t = new THREE.CanvasTexture(cv)
+    if (THREE.SRGBColorSpace) t.colorSpace = THREE.SRGBColorSpace
+    return t
+}
+export function signFace(id, seed = 1) {
+    const spec = signSpec(seed)
+    const bb = id === 'billboard'
+    const tex = bakeSignTexture(spec, bb ? 256 : 128, bb ? 128 : 128)
+    const geo = new THREE.PlaneGeometry(bb ? 3.7 : 1.05, bb ? 1.7 : 1.05)
+    const mat = tex ? new THREE.MeshBasicMaterial({ map: tex }) : new THREE.MeshBasicMaterial({ color: spec.fg })
+    const m = new THREE.Mesh(geo, mat)
+    m.userData.signFace = 1
+    m.position.set(0, bb ? 2.6 : 1.6, bb ? 0.09 : 0.056)
+    return m
+}
+
+// #675: bunting. A pennant string across the front of every grandstand —
+// posts at the deck edges, pennants along a sagging catenary, colour-cycled
+// and seed-shifted so neighbouring stands don't match. Pure laws (buntingY,
+// pennantColor) keep it Node-pinnable.
+export const BUNT_TOP = 2.6
+export const BUNT_SAG = 0.32
+export const BUNT_HALF = 3.0
+export const BUNT_N = 9
+export const BUNT_COLORS = [0xc0392b, 0xf2ece2, 0x2e6db0, 0xf1c40f, 0x27ae60, 0xe67e22]
+export const buntingY = (t) => BUNT_TOP - BUNT_SAG * Math.sin(Math.PI * t)
+export const pennantColor = (k) => BUNT_COLORS[k % BUNT_COLORS.length]
+export function bunting(seed = 1) {
+    const g = new THREE.Group()
+    for (const sx of [-BUNT_HALF, BUNT_HALF]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, BUNT_TOP, 0.08), lam(C.steel))
+        post.position.set(sx, BUNT_TOP / 2, -3.4)
+        g.add(post)
+    }
+    for (const k of Array.from({ length: BUNT_N }, (_, i) => i)) {
+        const t = (k + 0.5) / BUNT_N
+        const x = -BUNT_HALF + t * BUNT_HALF * 2
+        const p = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 3), lam(pennantColor(k + seed)))
+        p.rotation.x = Math.PI
+        p.position.set(x, buntingY(t) - 0.17, -3.4)
+        g.add(p)
+    }
+    return g
+}
+
 // shelf ids this circuit uses. Only `barrier` / `tire_wall` are solid; the rest
 // are dressing that never collides (and sits outside the wall anyway).
 export const SHELF_PROPS = [
@@ -256,22 +342,31 @@ export function primitiveProp(id, seed = 1) {
         const back = ph(new THREE.Mesh(new THREE.BoxGeometry(6, 2.4, 0.3), lam(C.concrete))); back.position.set(0, 2.05, -3.6)
         const roof = ph(new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.25, 4.6), lam(C.steel))); roof.position.set(0, ROOF_Y, -1.6); roof.rotation.x = -0.12
         ph(spectatorDots(seed))
+        ph(bunting(seed))
     } else if (id === 'pit_building') {
         const base = ph(new THREE.Mesh(new THREE.BoxGeometry(8, 2.6, 3), lam(C.concrete))); base.position.y = 1.3
         const roof = ph(new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.3, 3.4), lam(C.dark))); roof.position.y = 2.75
         const glass = ph(new THREE.Mesh(new THREE.BoxGeometry(7, 0.7, 0.1), lam(0x1b2b3a))); glass.position.set(0, 1.9, 1.51)
         const sign = ph(new THREE.Mesh(new THREE.BoxGeometry(4, 0.5, 0.12), lam(C.red))); sign.position.set(0, 3.2, 1.4)
     } else if (id === 'billboard') {
-        const panel = ph(new THREE.Mesh(new THREE.BoxGeometry(4, 2, 0.15), lam(C.yellow))); panel.position.y = 2.6
-        const text = ph(new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.5, 0.05), lam(C.dark))); text.position.set(0, 2.6, 0.1)
+        const spec = signSpec(seed)
+        const panel = ph(new THREE.Mesh(new THREE.BoxGeometry(4, 2, 0.15), lam(spec.bg))); panel.position.y = 2.6
+        ph(signFace(id, seed))
         for (const sx of [-1.4, 1.4]) { const leg = ph(new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.6, 0.2), lam(C.steel))); leg.position.set(sx, 0.8, 0) }
     } else if (id === 'sign') {
-        const panel = ph(new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 0.1), lam(C.white))); panel.position.y = 1.6
-        const arrow = ph(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.25, 0.05), lam(C.dark))); arrow.position.set(0, 1.6, 0.08)
+        const spec = signSpec(seed)
+        const panel = ph(new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 0.1), lam(spec.bg))); panel.position.y = 1.6
+        ph(signFace(id, seed))
         const post = ph(new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.6, 0.14), lam(C.steel))); post.position.y = 0.8
     } else if (id === 'barrier') {
-        const wall = ph(new THREE.Mesh(new THREE.BoxGeometry(3, 0.9, 0.25), lam(C.white))); wall.position.y = 0.45
-        for (let s = 0; s < 3; s++) { const stripe = ph(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.28), lam(C.red))); stripe.position.set(-1 + s, 0.45, 0) }
+        const skin = barrierSkin(seed)
+        const wall = ph(new THREE.Mesh(new THREE.BoxGeometry(3, 0.9, 0.25), lam(skin.base))); wall.position.y = 0.45
+        const sw = (2.6 / skin.stripes) * 0.62
+        for (let s = 0; s < skin.stripes; s++) {
+            const stripe = ph(new THREE.Mesh(new THREE.BoxGeometry(sw, 0.9, 0.28), lam(skin.stripe)))
+            stripe.position.set(-1.3 + (s + 0.5) * (2.6 / skin.stripes), 0.45, 0)
+        }
+        for (const rx of [-1.1, -0.35, 0.35, 1.1]) { const rib = ph(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.62, 0.32), lam(skin.stripe))); rib.position.set(rx, 0.42, 0) }
     } else if (id === 'tire_wall') {
         const tireMat = lam(0x1a1a1a)
         for (let t = 0; t < 5; t++) {
@@ -325,6 +420,8 @@ export function buildTracksidePrimitives(plan) {
     g.userData.isProps = 1
     for (const e of plan) {
         const m = primitiveProp(e.id, e.i * 31 + e.side * 7)
+        m.userData.ph = 1
+        m.userData.phId = e.id
         const p = T.pts[e.i % T.N]
         m.position.set(e.wx * S, e.baseY - 0.05, e.wz * S)
         m.scale.setScalar(e.scale)
@@ -354,7 +451,7 @@ export async function attachShelfProps(plan, group, alive = () => true) {
     await Promise.all(ids.map(async (id) => { try { models[id] = await shelfTemplate(id) } catch { models[id] = null } }))
     if (!alive()) return 0
     for (const ch of [...group.children]) {
-        if (ch.userData.ph) { group.remove(ch); ch.traverse((o) => { if (o.geometry && !o.userData.keepGeo) o.geometry.dispose() }) }
+        if (ch.userData.ph && models[ch.userData.phId]) { group.remove(ch); ch.traverse((o) => { if (o.geometry && !o.userData.keepGeo) o.geometry.dispose() }) }
     }
     let n = 0
     for (const e of plan) {
@@ -367,7 +464,17 @@ export async function attachShelfProps(plan, group, alive = () => true) {
         m.scale.setScalar(e.scale)
         m.rotation.y = yawFor(e.orient, p.a, e.rot)
         if (SHADOW_IDS[e.id]) m.add(makePropShadow(SHADOW_IDS[e.id]))
-        if (e.id === 'grandstand') m.add(spectatorDots(e.i * 31 + e.side * 7))
+        const seed = e.i * 31 + e.side * 7
+        if (e.id === 'grandstand') { m.add(spectatorDots(seed)); m.add(bunting(seed)) }
+        if (e.id === 'billboard' || e.id === 'sign') m.add(signFace(e.id, seed))
+        if (e.id === 'barrier') {
+            const skin = barrierSkin(seed)
+            let k = 0
+            m.traverse((o) => {
+                if (!o.isMesh || !o.material || !o.material.color) return
+                const mm = o.material.clone(); mm.color.setHex(k++ % 2 ? skin.stripe : skin.base); o.material = mm
+            })
+        }
         group.add(m)
         n++
     }

@@ -233,3 +233,20 @@ the compositor screenshot path covers WebGPU).
   stability): speed lines/vignette are 2D-overlay, not GPU.
 - No dynamic sand deformation, no kart reflections, blob shadows are discs.
 - Sound is the retro twin's synthesized law re-cut on sawtooth; no music.
+  - **Remainder (#675, QA studio): skins, signage, bunting, hills.**
+    `barrierSkin(seed)` picks a contrast pair from `SPONSOR_PAIRS` plus a
+    3/4-stripe count, so barriers read as different sponsors down the
+    straight (primitives draw ribs + stripes; GLB clones re-tint cloned
+    materials). `signSpec(seed)` gives boards a brand line + big number;
+    `bakeSignTexture` paints it on a canvas (browser-only — null under Node,
+    flat-fg fallback) and `signFace` rides both renderers. `bunting(seed)`
+    strings 9 pennants on a catenary across each grandstand front
+    (`buntingY`/`pennantColor` pure; lowest pennant ≥2.2u). `hillDefs()`/
+    `buildHills` (scene.js) add a rolling-hills ring (h/w 0.30–0.46,
+    `HILL_RING` 26u past the outermost track point, lower than the mesas,
+    per-course palette `hills` colour) so the middle distance isn't bare.
+    Fixed a latent tag bug: prop groups never carried `userData.ph`, so
+    primitives were never removed when GLBs landed (double-drawn boards).
+    `cometdrifthdscenerycheck` grows to 101 gates (+19); two new mutants
+    (single-sponsor collapse, bunting sag into headspace) must die; the
+    #502 landmark gate now expects `gulch:arch corkscomb:dune` (#740 law).
