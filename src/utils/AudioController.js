@@ -189,6 +189,59 @@ export const MUSIC = {
             43, 43, 0, 55, 43, 0, 57, 0, 41, 41, 0, 53, 45, 0, 43, 0,
         ],
     },
+    // SSX (#780) — three ORIGINAL big-beat beds, one per mountain, composed for
+    // this build (our own melodies, none from the soundtrack). Driving 32-step
+    // patterns (1=dum kick, 2=tek hat); the cabinet lifts the tempo with your
+    // speed via setMusicStep, so the grid here is the resting tempo.
+    // "SIGNAL HILL" — E-minor day drive, the fastest of the three.
+    ssxDay: {
+        step: 0.115,
+        lead: [
+            64, 0, 67, 0, 71, 0, 67, 0, 69, 0, 67, 0, 64, 0, 0, 0,
+            64, 0, 67, 0, 71, 0, 74, 0, 76, 0, 74, 0, 71, 0, 67, 0,
+        ],
+        bass: [
+            40, 0, 40, 0, 47, 0, 40, 0, 45, 0, 45, 0, 43, 0, 40, 0,
+            40, 0, 40, 0, 47, 0, 40, 0, 45, 0, 47, 0, 50, 0, 47, 0,
+        ],
+        perc: [
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 1, 2,
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 1, 2, 0, 1, 2,
+        ],
+    },
+    // "NEON ASCENT" — A-minor with a b2 grind under the city lights.
+    ssxNight: {
+        step: 0.13,
+        lead: [
+            69, 0, 72, 0, 75, 0, 73, 0, 72, 0, 69, 0, 0, 68, 0, 69,
+            69, 0, 72, 0, 75, 0, 77, 0, 76, 0, 75, 0, 72, 0, 0, 0,
+        ],
+        bass: [
+            45, 0, 45, 0, 45, 0, 48, 0, 44, 0, 44, 0, 41, 0, 44, 0,
+            45, 0, 45, 0, 45, 0, 48, 0, 41, 0, 41, 0, 44, 0, 45, 0,
+        ],
+        perc: [
+            1, 0, 2, 0, 1, 0, 2, 2, 1, 0, 2, 0, 1, 0, 2, 0,
+            1, 0, 2, 0, 1, 0, 2, 2, 1, 0, 2, 0, 1, 2, 1, 2,
+        ],
+    },
+    // "LONG SHADOW" — half-time D-minor slalom for the dusk big-air run;
+    // wide notes, room between them, so hangs read against the bed.
+    ssxDusk: {
+        step: 0.145,
+        lead: [
+            74, 0, 0, 77, 0, 0, 81, 0, 79, 0, 0, 77, 0, 0, 74, 0,
+            74, 0, 0, 79, 0, 0, 83, 0, 81, 0, 0, 79, 0, 77, 0, 0,
+        ],
+        bass: [
+            38, 0, 0, 0, 45, 0, 0, 0, 36, 0, 0, 0, 38, 0, 0, 0,
+            38, 0, 0, 0, 45, 0, 0, 0, 41, 0, 0, 0, 38, 0, 0, 0,
+        ],
+        perc: [
+            1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 1, 0,
+            1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 2, 0, 0, 1, 0,
+        ],
+    },
     // MOMENTUM RUNNER — three original beds, one per sector, composed for this
     // build. The tempo is the map: city sprints (fastest), the foundry drives
     // (heavy), orbit floats (slowest) — crossing a zone card you feel the
