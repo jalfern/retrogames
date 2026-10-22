@@ -262,6 +262,22 @@ burst every 8 frames — a constant whine no matter how long Shift stayed down.
   green. Browser (`__ssxTest`): holding ShiftKey drives `p.boostHum` `0 → ~0.89`
   with zero page errors.
 
+## Carve voice reads the snow (#791 slice 7)
+
+The edge swish used to be one voice everywhere — the same filter whether the
+board was screaming down an icy shoulder or plowing fresh powder. `art.js`
+exports `carveVoice(grad, v, s)` (pure, next to `landingSound`): a
+`smooth01((grad − 0.18)·3.5)` crust blend lifts the cutoff up to +900 Hz,
+shortens the burst and adds a touch of volume, so icy sections swish brighter
+and thinner while powder stays the low wash. `index.jsx` samples the surface
+under the board (`slopeAt(course, p.s, p.x)`) at each swish tick and plays
+what `carveVoice` prescribes. Audio-only: physics, scoring and the mix
+envelope are untouched. ssxterraincheck pins the crust-vs-powder split, slope
+monotonicity, the speed/pressure scaling surviving on both surfaces, the
+bounds, and that both surfaces actually occur carved on the mountain
+(5 gates, 50 total). Mutant proof (done once, by hand): pin `icy = 0`
+(surface-blind) → 3 gates red; restore → green.
+
 ## Hard-won verify notes
 
 
@@ -287,7 +303,7 @@ burst every 8 frames — a constant whine no matter how long Shift stayed down.
 ```bash
 npm run lint:ssx && npm run ssxcheck     # 114 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
-npm run ssxterraincheck                 # 45 checks: snow/rock surfaces (#669, #685)
+npm run ssxterraincheck                 # 50 checks: snow/rock surfaces (#669, #685)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
                                           #   keys drive poses, race still winnable,
                                           #   #615 rider polish (grab reach, boot weld,

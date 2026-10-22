@@ -90,6 +90,21 @@ export function landingSound(grad, v) {
         : { crust: false, dur: 0.09, vol: 0.075 + Math.min(0.03, v * 0.001), swish: null }
 }
 
+// #791 slice 7: the carve reads the snow under the board. Icy crust swishes
+// brighter, thinner and louder than deep powder — the #685 landing split
+// extended to the continuous edge sound, so steep icy sections hiss and
+// soft sections stay a low wash. Pure: ssxterraincheck grades it.
+export function carveVoice(grad, v, s) {
+    const icy = smooth01((grad - 0.18) * 3.5)
+    return {
+        icy: grad > 0.3,
+        icyT: icy,
+        dur: 0.12 - icy * 0.05,
+        vol: Math.min(0.1, 0.02 + s * 0.028 + v * 0.0012 + icy * 0.014),
+        cutoff: 650 + v * 40 + s * 350 + icy * 900,
+    }
+}
+
 // #780 feel pass — pure view constants so the harness can grade them in Node.
 // The heat should open STANDING ON TOP OF THE MOUNTAIN, not in the chase-cam
 // tunnel: during the countdown the camera parks high and far with a slow pan,
