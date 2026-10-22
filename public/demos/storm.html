@@ -74,6 +74,7 @@ uniform vec2 uStorm;          // storm core xz (negative z = away from camera)
 uniform vec4 uFlash0;         // xyz in-cloud flash pos, w = energy
 uniform vec4 uFlash1;
 uniform float uSkyFlash;      // whole-sky ambient pulse
+uniform float uDbg;   // 1 = cloud coverage (1-T)
 uniform vec3 uCamPos;
 uniform mat4 uCamInvRot;
 out vec4 fragColor;
@@ -129,7 +130,7 @@ float envSmooth(vec3 p){
   q -= vec2(-450.0, 700.0) * hm * hm;
   float dist = length(q * vec2(1.0, 0.80));
   float rad = mix(4300.0, 6200.0, smoothstep(0.0, 0.7, hm));
-  float env = smoothstep(rad, rad * 0.55, dist);
+  float env = smoothstep(rad, rad * 0.80, dist);
   env *= smoothstep(0.0, 0.03, hm);
   env *= 1.0 - smoothstep(0.72, 1.0, hm);
   return clamp(env, 0.0, 1.25);
@@ -142,9 +143,10 @@ float envShape(vec3 p){
   q -= vec2(-450.0, 700.0) * hm * hm;                 // mild wind shear
   float ang = atan(q.y, q.x);
   float dist = length(q * vec2(1.0, 0.80));
-  float lobe = n2(vec2(ang * 1.8 + 2.0, hm * 2.2 - uTime * 0.004));
-  float rad = mix(4300.0, 6200.0, smoothstep(0.0, 0.7, hm)) * (0.62 + 0.75 * lobe);
-  float env = smoothstep(rad, rad * 0.52, dist);
+  float lobe = fbm2(vec2(ang * 5.5 + hm * 2.0, hm * 3.0 - uTime * 0.005));
+  float fine = n2(vec2(ang * 14.0 + hm * 4.0, hm * 8.0 - uTime * 0.012));
+  float rad = mix(4300.0, 6200.0, smoothstep(0.0, 0.7, hm)) * (0.50 + 0.90 * lobe) * (0.80 + 0.42 * fine);
+  float env = smoothstep(rad, rad * 0.72, dist);
   env *= smoothstep(0.0, 0.03, hm);                   // flat dark base
   env *= 1.0 - smoothstep(0.72, 1.0, hm);             // flattened top
   float an = smoothstep(0.80, 0.90, hm) * smoothstep(1.0, 0.94, hm)
@@ -158,9 +160,10 @@ float cloudDensity(vec3 p, float e){
   vec2 w = vec2(n2(p.xz * 0.00022 + p.y * 0.00006), n2(p.zx * 0.00020 - p.y * 0.00005)) - 0.5;
   vec2 q2 = p.xz + w * 2600.0;
   vec3 q = vec3(q2.x, p.y, q2.y);
-  float n = fbm3(q * 0.00090 + vec3(0.0, -uTime * 0.012, uTime * 0.006));
-  float det = fbm3(q * 0.00270 + vec3(uTime * 0.020, -uTime * 0.050, uTime * 0.010));
-  float d = e * (0.10 + 1.05 * pow(n, 1.25)) + pow(max(0.0, det * 1.15 - 0.30), 1.5) * e * 0.95;
+  float n = fbm3(q * 0.00125 + vec3(0.0, -uTime * 0.012, uTime * 0.006));
+  float det = fbm3(q * 0.00310 + vec3(uTime * 0.020, -uTime * 0.050, uTime * 0.010));
+  float eS = sqrt(e);
+  float d = eS * (0.10 + 1.05 * pow(n, 1.25)) + pow(max(0.0, det * 1.18 - 0.24), 1.45) * eS * 1.35;
   d *= mix(0.55, 1.0, smoothstep(0.0, 0.30, hm));      // thin dark shelf at base
   d *= mix(1.0, 0.55, smoothstep(0.86, 1.0, hm));       // anvil stays wispy
   return clamp(d, 0.0, 1.0) * 1.15;
@@ -169,11 +172,11 @@ float cloudDensity(vec3 p, float e){
 float sunOcc(vec3 p){
   float s = 0.0;
   vec3 q = p;
-  for (int i = 0; i < 5; i++){
-    q += vec3(0.46, 0.60, 0.66) * 430.0;
+  for (int i = 0; i < 6; i++){
+    q += vec3(0.74, 0.33, 0.58) * 260.0;
     s += envSmooth(q);
   }
-  return exp(-s * 430.0 * 0.0011);
+  return exp(-s * 260.0 * 0.0013);
 }
 
 vec3 flashLight(vec3 p){
@@ -186,10 +189,10 @@ vec3 flashLight(vec3 p){
 vec3 skyBase(vec3 rd, vec3 sdir3, float toward){
   float up = clamp(rd.y, 0.0, 1.0);
   vec3 c = mix(vec3(0.60, 0.68, 0.75), vec3(0.16, 0.31, 0.53), pow(up, 0.55));
-  c += vec3(0.22, 0.15, 0.06) * pow(max(dot(rd, normalize(vec3(0.46, 0.60, 0.66))), 0.0), 5.0) * 0.55;
+  c += vec3(0.30, 0.20, 0.08) * pow(max(dot(rd, normalize(vec3(0.74, 0.33, 0.58))), 0.0), 5.0) * 0.7;
   c = mix(c, vec3(0.13, 0.145, 0.165), toward * 0.78 * smoothstep(0.30, 0.04, rd.y));
   float veil = toward * smoothstep(0.24, 0.02, rd.y) * smoothstep(-0.02, 0.03, rd.y);
-  c = mix(c, vec3(0.235, 0.255, 0.28), veil * 0.68);
+  c = mix(c, vec3(0.185, 0.20, 0.22), veil * 0.72);
   float behind = pow(max(dot(normalize(vec3(rd.x, 0.0, rd.z)), -sdir3), 0.0), 3.0);
   c += vec3(0.10, 0.075, 0.03) * behind * smoothstep(0.22, 0.0, rd.y);
   c += uSkyFlash * vec3(0.30, 0.36, 0.52);
@@ -233,23 +236,24 @@ vec4 cloudMarch(vec3 ro, vec3 rd, float tEnd){
   if (t1 <= t0 + 1.0) return vec4(0.0, 0.0, 0.0, 1.0);
   float jit = hash12(gl_FragCoord.xy + vec2(uTime * 13.0, uSeed));
   float t = t0 + jit * 110.0;
-  for (int i = 0; i < 96; i++){
+  for (int i = 0; i < 120; i++){
     if (t > t1 || T < 0.015) break;
     vec3 p = ro + rd * t;
     float e = envShape(p);
-    float dt = clamp(max(55.0 + e * 520.0, t * 0.07), 55.0, 460.0);
+    float dt = clamp(max(40.0 + e * 300.0, t * 0.06), 40.0, 320.0);
     if (e > 0.004){
       float d = cloudDensity(p, e);
       if (d > 0.004){
         float hm = clamp((p.y - CB) / (CT - CB), 0.0, 1.0);
-        float n = fbm3(p * 0.00090 + vec3(0.0, -uTime * 0.012, uTime * 0.006));
+        float n = fbm3(p * 0.00125 + vec3(0.0, -uTime * 0.012, uTime * 0.006));
         float so = sunOcc(p);
-        float ph = 0.55 + 0.85 * hg(dot(rd, normalize(vec3(0.46, 0.60, 0.66))), 0.42);
+        float ph = 0.55 + 0.85 * hg(dot(rd, normalize(vec3(0.74, 0.33, 0.58))), 0.35);
         vec3 ambTop = vec3(0.34, 0.40, 0.48);
-        vec3 ambBase = vec3(0.055, 0.062, 0.068);
-        float bump = 0.42 + 1.35 * pow(n, 3.2);
-        vec3 c = vec3(1.0, 0.97, 0.90) * so * ph * bump * (0.14 + 1.85 * pow(hm, 1.8))
-               + mix(ambBase, ambTop, pow(hm, 0.7));
+        vec3 ambBase = vec3(0.040, 0.046, 0.052);
+        float bump = 0.55 + 1.3 * pow(n, 2.2);
+        vec3 c = vec3(1.0, 0.96, 0.86) * so * ph * bump * (0.42 + 1.9 * pow(hm, 1.15))
+               + mix(ambBase, ambTop, pow(hm, 0.7))
+               + vec3(1.0, 0.95, 0.88) * ph * 0.12 * sqrt(so) * bump;
         c += flashLight(p);
         float sig = d * 0.0013;
         col += T * c * sig * dt;
@@ -294,8 +298,8 @@ void main(){
     grass = mix(grass, grass * (0.72 + 0.62 * flecks), near * 0.85);
     float sh = mix(1.0, 0.34, smoothstep(11000.0, 3500.0, sd2));
     grass = mix(grass, grass * vec3(0.50, 0.54, 0.50), rA * 0.72);
-    float ndl = 0.60;
-    vec3 sunK = vec3(1.0, 0.86, 0.62);
+    float ndl = 0.34;
+    vec3 sunK = vec3(1.0, 0.80, 0.55);
     bg = grass * (sunK * ndl * sh * 1.05 + vec3(0.10, 0.125, 0.16) * (0.6 + 0.4 * sh));
     float fres = pow(1.0 - max(-rd.y, 0.0), 4.0);
     bg += vec3(0.42, 0.48, 0.58) * fres * rA * 0.10 * (1.0 + 3.0 * uSkyFlash);
@@ -336,7 +340,9 @@ void main(){
   }
   col += accC;
 
-  fragColor = vec4(max(col, vec3(0.0)), 1.0);
+  if (uDbg > 0.5 && uDbg < 1.5) fragColor = vec4(vec3(clamp(1.0 - cm.w, 0.0, 1.0)), 1.0);
+  else if (uDbg > 1.5 && uDbg < 2.5) fragColor = vec4(clamp(cm.rgb / 1.5, 0.0, 1.0), 1.0);
+  else fragColor = vec4(max(col, vec3(0.0)), 1.0);
 }`;
 
 const VS_BOLT = `#version 300 es
@@ -573,7 +579,7 @@ function vpMat(out, r, u, f, pos, aspect){
 /* ---------------- storm state ---------------- */
 
 const CB = 420, CTOP = 7000;
-let stormX = -1500;
+let stormX = -600;
 let flashCount = 0;
 let nextFlashAt = 3.0 + Math.random() * 4.0;
 let flashes = [];   // { t0, pos:[x,y,z], main, double, bolt:{segs,pts} | null }
@@ -766,7 +772,7 @@ const vp4 = new Float32Array(16);
 const U = p => name => gl.getUniformLocation(p, name);
 const us = U(progScene), ub = U(progBolt), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
 
-let stormZ = -8000;
+let stormZ = -7600;
 
 function frame(){
   const t = (performance.now() - t0) / 1000;
@@ -776,7 +782,7 @@ function frame(){
   frames++;
   resize();
 
-  stormZ = -(8000 - Math.min(t, 360) * 8.2);   // the storm rolls in
+  stormZ = -(7600 - Math.min(t, 360) * 7.2);   // the storm rolls in
   scheduleFlashes(t);
   const fs = flashState(t);
   skyFlash = fs.sky;
@@ -798,6 +804,7 @@ function frame(){
   gl.uniform4f(us('uFlash0'), fs.f0.pos[0], fs.f0.pos[1], fs.f0.pos[2], fs.f0.e);
   gl.uniform4f(us('uFlash1'), fs.f1.pos[0], fs.f1.pos[1], fs.f1.pos[2], fs.f1.e);
   gl.uniform1f(us('uSkyFlash'), fs.sky);
+  gl.uniform1f(us('uDbg'), +(qs.get('dbg') || 0));
   gl.uniform3f(us('uCamPos'), cb.pos[0], cb.pos[1], cb.pos[2]);
   gl.uniformMatrix4fv(us('uCamInvRot'), false, rot4);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
