@@ -189,7 +189,7 @@ export default function Emberwood() {
             const fx = sim.fx.splice(0, sim.fx.length)
             if (sc !== 'pause') fx.forEach(fxSound)
             rend.sync(sim, now / 1000)
-            rend.setFocus(sim.hero.x, -sim.hero.y)
+            rend.setFocus(sim.hero.x, sim.hero.y)
             rend.draw()
 
             if (now - hudTick > 120) {
@@ -255,6 +255,7 @@ export default function Emberwood() {
             })
             window.__emberwoodTest = {
                 state: () => simState(sim),
+                heroPos: () => ({ x: sim.hero.x, y: sim.hero.y, dir: sim.hero.dir }),
                 reset: (seed) => { const fresh = createSim(seed || 11); Object.assign(sim, fresh); rend.buildScreen(sim.screen, sim.flags, sim.cut); setMode('play'); return simState(sim) },
                 step: (n, pad) => { const p = pad || {}; for (let i = 0; i < n; i++) stepSim(sim, padToInput(p, contractPrev)); return simState(sim) },
                 goto: (id, x, y) => {
@@ -263,6 +264,7 @@ export default function Emberwood() {
                     return simState(sim)
                 },
                 prove: (opts) => proveGame(opts || { bombs: true }),
+                screenAt: (x, y) => rend.screenPos(x, y),
                 win: () => { sim.flags.boss1 = true; sim.flags.boss2 = true; return true },
             }
             mountDbg({

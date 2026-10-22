@@ -263,7 +263,7 @@ export function makeTextures() {
     }
     T.hero = {}
     for (const d of ['left', 'right', 'up', 'down']) {
-        T.hero[d] = { w1: hero(d === 'right' ? 'left' : d, 'w1'), w2: hero(d === 'right' ? 'left' : d, 'w2'), slash: hero(d === 'right' ? 'left' : d, 'slash'), draw: hero(d === 'right' ? 'left' : d, 'draw') }
+        T.hero[d] = { w1: hero(d, 'w1'), w2: hero(d, 'w2'), slash: hero(d, 'slash'), draw: hero(d, 'draw') }
     }
 
     // ---------------- enemies ----------------

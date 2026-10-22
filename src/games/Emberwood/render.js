@@ -1,16 +1,20 @@
 // EMBERWOOD — HD-2D renderer: pixel sprites and tiles on a lit 3D diorama.
 //
 // Coordinate convention: X = east (tileX*TS), Y = south (tileY*TS), Z = height.
-// The camera perches south-above and looks north-down (Octopath's tilted stage),
-// so "up" on screen is north + sky. Floor planes keep their default +Z normal
-// (they face the sky); blob shadows lie flat on them. Sprites billboard to the
-// camera. Post chain: bright → blur → bloom, big-radius soft blur mixed by
-// tilt-shift focus on the hero, vignette. `?lite=1` skips post + shadows.
+// The camera perches south-above and looks north-down (Octopath's tilted stage).
+// A +Z-up stage viewed from above with camera.up=(0,-1,0) puts north on top but
+// mirrors the X axis (screen-right = world west), so every view-space x passes
+// through FX() — east reads right on screen, matching the tile data (#772).
+// Floor planes keep their default +Z normal (they face the sky); blob shadows
+// lie flat on them. Sprites billboard to the camera. Post chain: bright → blur →
+// bloom, big-radius soft blur mixed by tilt-shift focus on the hero, vignette.
+// `?lite=1` skips post + shadows.
 
 import * as THREE from 'three'
 import { SCREENS, TS, SW, SH, tileAt } from './world.js'
 
 const WALL_H = 12
+const FX = (x) => SW * TS - x
 
 const SOLID_H = { '#': WALL_H, 'T': 2, 'H': WALL_H, 'R': WALL_H, '=': 5, 'I': 3 }
 
@@ -38,7 +42,7 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
     const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x3c3226, 1.15)
     scene.add(hemi)
     const sun = new THREE.DirectionalLight(0xffd9a0, 2.4)
-    sun.position.set(-80, 200, 150)
+    sun.position.set(FX(-80), 200, 150)
     sun.target.position.set(128, 88, 0)
     if (!lite) {
         sun.castShadow = true
@@ -147,7 +151,7 @@ void main(){
             spots.push([2, 1], [13, 9])
         }
         spots.slice(0, 4).forEach((p, i) => {
-            torchLights[i].position.set(p[0] * TS + 8, p[1] * TS + 8, 10)
+            torchLights[i].position.set(FX(p[0] * TS + 8), p[1] * TS + 8, 10)
             torchLights[i].intensity = dark ? 7 : 0
         })
 
@@ -158,7 +162,7 @@ void main(){
                 const tex = T(tileTexKey(ch))
                 const z0 = ch === '~' ? -0.6 : 0
                 const m = new THREE.Mesh(floorGeo, new THREE.MeshLambertMaterial({ map: tex }))
-                m.position.set(x * TS + 8, y * TS + 8, z0)
+                m.position.set(FX(x * TS + 8), y * TS + 8, z0)
                 m.receiveShadow = !lite
                 if (ch === '~') m.material.color.set('#9fc8e8')
                 if (ch === '"' && cut && cut[`${id}:${x},${y}`]) m.material.map = T('grass')
@@ -166,25 +170,25 @@ void main(){
                 if (ch === 'T') {
                     const tr = new THREE.Mesh(new THREE.PlaneGeometry(24, 30), new THREE.MeshLambertMaterial({ map: T('tree'), transparent: true, alphaTest: 0.4 }))
                     tr.quaternion.copy(camera.quaternion)
-                    tr.position.set(x * TS + 8, y * TS + 6, 12)
+                    tr.position.set(FX(x * TS + 8), y * TS + 6, 12)
                     screenGroup.add(tr); staticMeshes.push(tr)
                 }
                 if (ch === 'I') {
                     const sg = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshLambertMaterial({ map: T('sign'), transparent: true, alphaTest: 0.4 }))
                     sg.quaternion.copy(camera.quaternion)
-                    sg.position.set(x * TS + 8, y * TS + 6, 8)
+                    sg.position.set(FX(x * TS + 8), y * TS + 6, 8)
                     screenGroup.add(sg); staticMeshes.push(sg)
                 }
                 if (ch === '<') {
                     const pt = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), new THREE.MeshBasicMaterial({ map: T('portal'), transparent: true }))
-                    pt.position.set(x * TS + 8, y * TS + 8, 0.2)
+                    pt.position.set(FX(x * TS + 8), y * TS + 8, 0.2)
                     screenGroup.add(pt); staticMeshes.push(pt)
                 }
                 const h = SOLID_H[ch]
                 if (h && ch !== 'T' && ch !== 'I' && ch !== '<' && ch !== 'C') {
                     const topKey = ch === '#' ? 'wallTop' : (ch === 'H' || ch === 'R' ? 'roof' : (ch === '=' ? 'fence' : 'rock'))
                     const box = new THREE.Mesh(new THREE.BoxGeometry(TS, TS, h), new THREE.MeshLambertMaterial({ map: ch === '#' ? T('wall') : (ch === '=' ? T('fence') : T(topKey)), color: ch === '#' ? '#9a95ad' : 0xffffff }))
-                    box.position.set(x * TS + 8, y * TS + 8, h / 2)
+                    box.position.set(FX(x * TS + 8), y * TS + 8, h / 2)
                     if (!lite) { box.castShadow = true; box.receiveShadow = true }
                     screenGroup.add(box); staticMeshes.push(box)
                 }
@@ -192,32 +196,32 @@ void main(){
         }
         for (const p of s.plates || []) {
             const ring = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), new THREE.MeshBasicMaterial({ map: T('plate'), transparent: true, color: 0xc9a24a }))
-            ring.position.set(p.x * TS + 8, p.y * TS + 8, 0.15)
+            ring.position.set(FX(p.x * TS + 8), p.y * TS + 8, 0.15)
             screenGroup.add(ring); staticMeshes.push(ring)
         }
         for (const sw of s.switches || []) {
             const plaque = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshLambertMaterial({ map: T('switchP') }))
-            plaque.position.set(sw.x * TS + 8, sw.y * TS + 8, 8)
+            plaque.position.set(FX(sw.x * TS + 8), sw.y * TS + 8, 8)
             screenGroup.add(plaque); staticMeshes.push(plaque)
             dynamic.switches.set(sw.id, plaque)
         }
         for (const c of s.chests || []) {
             const ch2 = new THREE.Mesh(new THREE.PlaneGeometry(14, 12), new THREE.MeshLambertMaterial({ map: T('chest/closed'), transparent: true, alphaTest: 0.4 }))
             ch2.quaternion.copy(camera.quaternion)
-            ch2.position.set(c.x * TS + 8, c.y * TS + 8, 6)
+            ch2.position.set(FX(c.x * TS + 8), c.y * TS + 8, 6)
             screenGroup.add(ch2); staticMeshes.push(ch2)
             dynamic.chests.set(c.id, ch2)
         }
         for (const d of s.doors || []) {
             const box = new THREE.Mesh(new THREE.BoxGeometry(TS, TS, WALL_H), new THREE.MeshLambertMaterial({ map: T(d.kind === 'bigkey' ? 'doorBig' : 'door') }))
-            box.position.set(d.x * TS + 8, d.y * TS + 8, WALL_H / 2)
+            box.position.set(FX(d.x * TS + 8), d.y * TS + 8, WALL_H / 2)
             if (!lite) box.castShadow = true
             screenGroup.add(box); staticMeshes.push(box)
             dynamic.doors.set(d.id, box)
         }
         for (const cr of s.cracks || []) {
             const box = new THREE.Mesh(new THREE.BoxGeometry(TS, TS, WALL_H), new THREE.MeshLambertMaterial({ map: T('crack') }))
-            box.position.set(cr.x * TS + 8, cr.y * TS + 8, WALL_H / 2)
+            box.position.set(FX(cr.x * TS + 8), cr.y * TS + 8, WALL_H / 2)
             if (!lite) box.castShadow = true
             screenGroup.add(box); staticMeshes.push(box)
             dynamic.cracks.set(cr.id, box)
@@ -230,7 +234,7 @@ void main(){
             g.fillStyle = n.kind === 'shop' ? '#3c2c1c' : '#cfc8dc'; g.fillRect(3, 0, 8, 2)
             const nn = new THREE.Mesh(new THREE.PlaneGeometry(14, 18), new THREE.MeshLambertMaterial({ map: makeTex(cnv), transparent: true, alphaTest: 0.4 }))
             nn.quaternion.copy(camera.quaternion)
-            nn.position.set(n.x * TS + 8, n.y * TS + 8, 9)
+            nn.position.set(FX(n.x * TS + 8), n.y * TS + 8, 9)
             screenGroup.add(nn); staticMeshes.push(nn)
             dynamic.npcs.set(n.id, nn)
         }
@@ -324,7 +328,7 @@ void main(){
             const p = parts[partIdx]; partIdx = (partIdx + 1) % PARTS
             p.m.visible = true
             p.m.material.color.set(colors[Math.floor(Math.random() * colors.length)])
-            p.m.position.set(x, y, 6 + Math.random() * 8)
+            p.m.position.set(FX(x), y, 6 + Math.random() * 8)
             p.vx = (Math.random() - 0.5) * spread
             p.vy = (Math.random() - 0.5) * spread
             p.vz = Math.random() * up
@@ -365,10 +369,10 @@ void main(){
         let v = 0.5
         for (const l of torchLights) {
             if (l.intensity <= 0) continue
-            const d = Math.hypot(l.position.x - x, l.position.y - y)
+            const d = Math.hypot(l.position.x - FX(x), l.position.y - y)
             v += Math.max(0, 1 - d / 70) * 1.6
         }
-        const dl = Math.hypot(lantern.position.x - x, lantern.position.y - y)
+        const dl = Math.hypot(lantern.position.x - FX(x), lantern.position.y - y)
         v += Math.max(0, 1 - dl / 66) * 0.9
         return Math.min(1.3, v)
     }
@@ -397,7 +401,7 @@ void main(){
         }
 
         const hx = sim.hero.x, hy = sim.hero.y
-        camera.position.x += ((128 + (hx - 128) * 0.5) - camera.position.x) * 0.08
+        camera.position.x += (FX(128 + (hx - 128) * 0.5) - camera.position.x) * 0.08
         camera.position.y += ((CAM_Y + (hy - 88) * 0.5) - camera.position.y) * 0.08
         const lookX = camera.position.x, lookY = camera.position.y - 120
         camera.lookAt(lookX, lookY, 2)
@@ -406,17 +410,17 @@ void main(){
             camera.position.y += (Math.random() - 0.5) * shake
             shake *= 0.82
         }
-        lantern.position.set(hx, hy, 12)
+        lantern.position.set(FX(hx), hy, 12)
 
         const anim = Math.floor(tSec * 7) % 2
         const pose = sim.swing > 0 ? 'slash' : (sim.drawing ? 'draw' : (sim.moving ? 'w' + (anim + 1) : 'w1'))
         setTex(heroBB, `hero/${sim.hero.dir}/${pose}`)
-        heroBB.mesh.position.set(hx, hy, 9)
-        heroBB.mesh.scale.x = sim.hero.dir === 'right' ? -1 : 1
+        heroBB.mesh.position.set(FX(hx), hy, 9)
+        heroBB.mesh.scale.x = 1
         const hl = probeLight(hx, hy, dark)
         heroBB.mat.color.setRGB(hl, hl, hl)
         if (sim.hero.hurt > 0 && Math.floor(tSec * 14) % 2 === 0) heroBB.mat.color.set('#ff5c5c')
-        heroBB.shadow.position.set(hx, hy, 0.12)
+        heroBB.shadow.position.set(FX(hx), hy, 0.12)
 
         if (sim.arc > 0) {
             const af = sim.arc / ARC_DUR
@@ -424,7 +428,7 @@ void main(){
             arcMesh.visible = true
             arcMesh.quaternion.copy(camera.quaternion)
             arcMesh.rotateZ((ARC_DIRS[sim.arcDir] || 0) + (0.5 - af) * 0.9)
-            arcMesh.position.set(hx + avx * 11, hy + avy * 11, 10)
+            arcMesh.position.set(FX(hx + avx * 11), hy + avy * 11, 10)
             const grow = 0.82 + (1 - af) * 0.4
             arcMesh.scale.set(grow, grow, 1)
             arcMat.opacity = af
@@ -451,12 +455,12 @@ void main(){
             b.mesh.scale.set(1, 1, 1)
             if (e.type === 'maw') b.mesh.scale.set(28 / 16, 28 / 16, 1)
             if (e.type === 'wyrm') b.mesh.scale.set(24 / 16, 20 / 16, 1)
-            b.mesh.position.set(e.x, e.y, 8 + (e.type === 'bat' || e.type === 'wisp' ? 6 : 0))
+            b.mesh.position.set(FX(e.x), e.y, 8 + (e.type === 'bat' || e.type === 'wisp' ? 6 : 0))
             b.mesh.scale.x *= (e.fx > 0.1 ? -1 : 1)
             const el = e.hitT > 0 ? 1.7 : probeLight(e.x, e.y, dark)
             b.mat.color.setRGB(Math.min(1.6, el), e.hitT > 0 ? 1.1 : el, e.hitT > 0 ? 1.1 : el)
             b.mat.opacity = e.type === 'wisp' ? 0.65 + 0.3 * Math.sin(tSec * 6 + e.i) : 1
-            b.shadow.position.set(e.x, e.y, 0.12)
+            b.shadow.position.set(FX(e.x), e.y, 0.12)
             b.shadow.scale.setScalar(e.boss ? 2 : 1)
         }
         const wyrm = sim.enemies.find(en => en.type === 'wyrm' && !en.dead)
@@ -466,7 +470,7 @@ void main(){
                 const p = wyrm.seg[i * 3 + 1]
                 if (p) {
                     d.mesh.visible = true; setTex(d, 'wyrm/seg')
-                    d.mesh.position.set(p.x, p.y, 6); d.mesh.scale.setScalar(1 - i * 0.06)
+                    d.mesh.position.set(FX(p.x), p.y, 6); d.mesh.scale.setScalar(1 - i * 0.06)
                     const wl = probeLight(p.x, p.y, dark)
                     d.mat.color.setRGB(wl, wl, wl); d.shadow.visible = false
                     continue
@@ -476,10 +480,10 @@ void main(){
             if (!dr) { d.mesh.visible = false; d.shadow.visible = false; continue }
             d.mesh.visible = true; d.shadow.visible = true
             setTex(d, dr.kind === 'ember' ? `ember/${anim}` : dr.kind)
-            d.mesh.position.set(dr.x, dr.y, 5 + Math.sin(tSec * 5 + dr.t * 0.1) * 1.5)
+            d.mesh.position.set(FX(dr.x), dr.y, 5 + Math.sin(tSec * 5 + dr.t * 0.1) * 1.5)
             const dl2 = probeLight(dr.x, dr.y, dark)
             d.mat.color.setRGB(dl2, dl2, dl2)
-            d.shadow.position.set(dr.x, dr.y, 0.12)
+            d.shadow.position.set(FX(dr.x), dr.y, 0.12)
         }
         for (let i = 0; i < projPool.length; i++) {
             const p = projPool[i]
@@ -487,7 +491,7 @@ void main(){
             if (!pr) { p.mesh.visible = false; p.shadow.visible = false; continue }
             p.mesh.visible = true
             setTex(p, pr.kind === 'arrow' ? 'arrow' : 'orb')
-            p.mesh.position.set(pr.x, pr.y, 8)
+            p.mesh.position.set(FX(pr.x), pr.y, 8)
             p.mesh.rotation.z = Math.atan2(pr.vy, pr.vx)
             const pl = probeLight(pr.x, pr.y, dark)
             p.mat.color.setRGB(pl, pl, pl)
@@ -499,9 +503,9 @@ void main(){
             if (!bb) { b.mesh.visible = false; b.shadow.visible = false; continue }
             b.mesh.visible = true; setTex(b, 'bomb')
             const puls = bb.fuse < 22 && Math.floor(tSec * 10) % 2 === 0
-            b.mesh.position.set(bb.x, bb.y, 6)
+            b.mesh.position.set(FX(bb.x), bb.y, 6)
             b.mat.color.setRGB(puls ? 2 : 1, puls ? 1.2 : 1, puls ? 1.2 : 1)
-            b.shadow.position.set(bb.x, bb.y, 0.12)
+            b.shadow.position.set(FX(bb.x), bb.y, 0.12)
         }
         const blocks = sim.blocks || []
         for (let i = 0; i < blockBBs.length; i++) {
@@ -509,10 +513,10 @@ void main(){
             const bk = blocks[i]
             if (!bk) { b.mesh.visible = false; b.shadow.visible = false; continue }
             b.mesh.visible = true
-            b.mesh.position.set(bk.x * TS + 8, bk.y * TS + 8, 7)
+            b.mesh.position.set(FX(bk.x * TS + 8), bk.y * TS + 8, 7)
             const bl = probeLight(bk.x * TS + 8, bk.y * TS + 8, dark)
             b.mat.color.setRGB(bl, bl, bl)
-            b.shadow.position.set(bk.x * TS + 8, bk.y * TS + 8, 0.12)
+            b.shadow.position.set(FX(bk.x * TS + 8), bk.y * TS + 8, 0.12)
         }
         for (const p of parts) {
             if (p.life <= 0) { p.m.visible = false; continue }
@@ -555,13 +559,17 @@ void main(){
         compMat.uniforms.tScene.value = rtScene.texture
         compMat.uniforms.tBloom.value = rtA.texture
         compMat.uniforms.tSoft.value = rtD.texture
-        const v = new THREE.Vector3(simFocus[0], simFocus[1], 0).project(camera)
+        const v = new THREE.Vector3(FX(simFocus[0]), simFocus[1], 0).project(camera)
         compMat.uniforms.focus.value.set((v.x + 1) / 2, (v.y + 1) / 2)
         renderer.setRenderTarget(null)
         renderer.render(quadScene, quadCam)
     }
 
     function setFocus(x, y) { simFocus[0] = x; simFocus[1] = y }
+    function screenPos(x, y, z = 0) {
+        const v = new THREE.Vector3(FX(x), y, z).project(camera)
+        return { x: (v.x + 1) / 2, y: (1 - v.y) / 2 }
+    }
     function loadTex(texObj) { TEX = texObj; texCache.clear() }
     function dispose() {
         disposeScreen()
@@ -571,5 +579,5 @@ void main(){
         renderer.dispose()
     }
 
-    return { loadTex, buildScreen, sync, draw, onFx, setFocus, dispose, get camera() { return camera } }
+    return { loadTex, buildScreen, sync, draw, onFx, setFocus, screenPos, dispose, get camera() { return camera } }
 }

@@ -27,6 +27,10 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   the dark, billboarded pixel entities tinted by a JS light probe, animated
   water, and a post chain: bright → blur → bloom, big-radius soft blur mixed
   by tilt-shift focus on the hero, vignette. `?lite=1` skips post + shadows.
+  Orientation: the stage is Z-up and the camera looks north-down with
+  `up=(0,-1,0)` — north on top, but that mirrors X — so every view-space x
+  passes through `FX(x) = SW*TS - x`. East then reads right, matching tile
+  data (#772); sprites and the hero draw unmirrored.
 - `index.jsx` — the shell: fixed-timestep loop (GAME-SHELL), attract bot,
   pause, VirtualControls, HUD (hearts/embers/items/shop), audio map
   (every fx event has a synthesized sound), contract + DebugKit + `__emberwoodTest`.
