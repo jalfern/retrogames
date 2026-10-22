@@ -232,6 +232,23 @@ export const wallTint = (i, side) => {
     return [a[0] + (b[0] - a[0]) * sm, a[1] + (b[1] - a[1]) * sm, a[2] + (b[2] - a[2]) * sm]
 }
 
+// #530 residual (Jon's post-#518 item 3): dips darken slightly, an ambient-
+// occlusion feel cheap enough for vertex colours. The shade is 1 on crests and
+// straights and sinks to 1 - AO_MAX in the deepest ground the course reaches,
+// driven by whichever is worse: where the asphalt sits in the course's height
+// range, or the local dip (#530's crest/dip law) so sharp bottoms darken even
+// when the overall range is shallow. A flat course (Gulch: hMax - hMin = 0)
+// returns 1 everywhere, so its shipped look is untouched. Node-safe.
+export const AO_MAX = 0.28
+const AO_FLAT = 1e-6
+export const aoShade = (i) => {
+    const range = T.hMax - T.hMin
+    if (!(range > AO_FLAT)) return 1
+    const p = T.pts[((i % T.N) + T.N) % T.N]
+    const low = 1 - (p.h - T.hMin) / range
+    return 1 - AO_MAX * Math.max(low, p.dip || 0)
+}
+
 // ---- #502 item 1: per-course sky tint (the 2D `paletteFor` idiom, #493).
 // HD used to wear the dusk skin on EVERY circuit — fog, sun, hemisphere/ambient
 // fill, dome stops, mesas and the sand floor were dusk constants, so Sandbank's
@@ -336,7 +353,11 @@ function roadGeo() {
             ax: p.x + pxu * T.ROAD_R, ay: y + 0.06 + rb, az: p.y + pyu * T.ROAD_R,
             bx: p.x - pxu * T.ROAD_R, by: y + 0.06 - rb, bz: p.y - pyu * T.ROAD_R,
         }
-    }, 1 / 5)
+    }, 1 / 5, (j) => {
+        // #530 residual: asphalt darkens in dips (see aoShade).
+        const s = aoShade(j)
+        return [s, s, s]
+    })
 }
 
 function kerbGeo(side) {
@@ -371,7 +392,11 @@ function gutterGeo(side) {
             ax: p.x + pxu * side * w, ay: y + 0.045, az: p.y + pyu * side * w,
             bx: p.x + pxu * side * kr, by: y + 0.045 + side * kr * rb, bz: p.y + pyu * side * kr,
         }
-    }, 1 / 3)
+    }, 1 / 3, (j) => {
+        // #530 residual: the run-off sinks with the asphalt into a dip.
+        const s = aoShade(j)
+        return [s, s, s]
+    })
 }
 
 function wallGeo(side) {
@@ -387,7 +412,13 @@ function wallGeo(side) {
             ax: p.x + pxu * side * w, ay: y + 0.02, az: p.y + pyu * side * w,
             bx: p.x + pxu * side * w, by: y + wallTopSideAt(i, side), bz: p.y + pyu * side * w,
         }
-    }, 1 / 7, (j) => wallTint(j, side))
+    }, 1 / 7, (j) => {
+        // #530 residual: the stone sinks into shadow in a dip too (aoShade ×
+        // the #478 per-section tint).
+        const s = aoShade(j)
+        const t = wallTint(j, side)
+        return [t[0] * s, t[1] * s, t[2] * s]
+    })
 }
 
 function plateauGeo(side) {

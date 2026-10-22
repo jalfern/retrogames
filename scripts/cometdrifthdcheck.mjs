@@ -821,6 +821,58 @@ console.log('wall variety (#478 item 7 — per-section rock tint, sides out of p
     ok(SRC7.includes('M.wallL, strataMat') && SRC7.includes('M.wallR, strataMat'), 'both cliff walls share the tinted strata material (retextured, not rebuilt)')
 }
 
+// #530 residual (Jon's post-#518 item 3): dips darken slightly — a cheap AO feel
+// via vertex colours. aoShade sinks with elevation (and the #530 dip law) inside
+// [1-AO_MAX, 1]; road + run-off + walls all consume it. Pinned four ways:
+// (a) the exported law bounds and equals the geometry ring by ring, (b) elevated
+// courses actually reach shade (mutate aoShade -> 1 and these go red),
+// (c) the lowest asphalt sits darker than the highest (elevation drives it),
+// (d) the flat Gulch keeps its shipped look EXACTLY (shade 1, walls = wallTint).
+console.log('dip AO shade (#530 residual — dips darken by vertex tint):')
+{
+    const AO = await import('file://' + SCENE + '?t=' + (Date.now() + 4))
+    const { aoShade, AO_MAX, wallTint, trackGeometryStats: AOStats } = AO
+    ok(AO_MAX > 0.05 && AO_MAX <= 0.5, `AO darkening is a shade, not a repaint (${AO_MAX})`)
+    for (const id of ['gulch', 'sandbank', 'corkscomb']) {
+        selectCourse(id)
+        const G = AOStats().geos
+        const RC = G.road.getAttribute('color')
+        ok(!!RC && RC.count === (TRACK.N + 1) * 2, `${id}: asphalt carries a per-ring colour attribute (${RC ? RC.count : 0} verts)`)
+        let bad = 0; let lo = 1; let hi = 0
+        for (let i = 0; i <= TRACK.N; i++) {
+            const s = aoShade(i % TRACK.N)
+            if (Math.abs(RC.getX(i * 2) - s) > 1e-6 || Math.abs(RC.getX(i * 2 + 1) - s) > 1e-6) bad++
+            lo = Math.min(lo, RC.getX(i * 2)); hi = Math.max(hi, RC.getX(i * 2))
+        }
+        ok(bad === 0, `${id}: asphalt shade equals aoShade ring by ring (${bad} mismatches; dropping the colourAt wiring reads 1)`)
+        ok(hi > 0.999 && lo < 1 - 0.08, `${id}: asphalt spans sunlit crests to shaded dips (${lo.toFixed(3)}..${hi.toFixed(3)}; a constant law goes red)`)
+        let wbad = 0
+        const WC = G.wallL.getAttribute('color')
+        for (let i = 0; i < TRACK.N; i++) {
+            const s = aoShade(i); const t = wallTint(i, -1)
+            if (Math.abs(WC.getX(i * 2) - t[0] * s) > 1e-6 || Math.abs(WC.getX(i * 2 + 1) - t[0] * s) > 1e-6) wbad++
+        }
+        ok(wbad === 0, `${id}: wall stone shade equals wallTint × aoShade (${wbad} mismatches; forgetting the AO multiply on walls reads red)`)
+        let iLo = 0; let iHi = 0
+        for (let i = 1; i < TRACK.N; i++) {
+            if (TRACK.pts[i].h < TRACK.pts[iLo].h) iLo = i
+            if (TRACK.pts[i].h > TRACK.pts[iHi].h) iHi = i
+        }
+        ok(aoShade(iLo) < aoShade(iHi) - 0.1, `${id}: the lowest asphalt sits in real shade vs the highest (${aoShade(iLo).toFixed(3)} vs ${aoShade(iHi).toFixed(3)}) — elevation drives the darkening`)
+        const GC = G.gutterR.getAttribute('color')
+        let gLo = 1
+        for (let v = 0; v < GC.count; v++) gLo = Math.min(gLo, GC.getX(v))
+        ok(gLo < 1 - 0.08, `${id}: the run-off sinks with the asphalt too (min ${gLo.toFixed(3)})`)
+    }
+    selectCourse('gulch')
+    let parked = 0
+    let iHi0 = 0
+    for (let i = 1; i < TRACK.N; i++) if (TRACK.pts[i].h > TRACK.pts[iHi0].h) iHi0 = i
+    for (let i = 0; i < TRACK.N; i++) if (aoShade(i) > 0.999) parked++
+    ok(parked > 0, `the AO law parks at full brightness on the crests/straights (${parked} rings ride the sun; the summit at idx ${iHi0} reads ${aoShade(iHi0).toFixed(3)})`)
+    ok(aoShade(iHi0) > 0.999, `the course summit keeps raw shipped brightness (${aoShade(iHi0).toFixed(3)}) — AO only ADDS shade, it never repaints the top of the world`)
+}
+
 // #478 item 8 HUD mutant: fold the portrait lift back to 1 — the phone-readability
 // gates MUST go red under this run.
 const HLAW = 'export const HUD_PORTRAIT_MAX = 1.3'

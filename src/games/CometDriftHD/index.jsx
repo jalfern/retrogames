@@ -321,7 +321,7 @@ export default function CometDriftHD() {
 
         const mat = (map, extra = {}) => new THREE.MeshStandardMaterial({ map, roughness: 0.95, metalness: 0, side: THREE.DoubleSide, ...extra })
         const kerbMat = mat(tex(kerbTex()))
-        const sandMat = mat(tex(sandTex()))
+        const sandMat = mat(tex(sandTex()), { vertexColors: true })
         const strataMat = mat(tex(strataTex()), { vertexColors: true })
         const plateauMat = mat(tex(sandTex()), { color: 0xd8a888 })
         // #493: the circuit itself lives in one group, so the attract-screen
@@ -345,7 +345,7 @@ export default function CometDriftHD() {
             }
             propsRev++
             const M = trackGeometryStats().geos
-            trackGroup.add(new THREE.Mesh(M.road, mat(tex(asphaltTex()), { roughness: 0.82, metalness: 0.05 })))
+            trackGroup.add(new THREE.Mesh(M.road, mat(tex(asphaltTex()), { roughness: 0.82, metalness: 0.05, vertexColors: true })))
             trackGroup.add(new THREE.Mesh(M.kerbL, kerbMat))
             trackGroup.add(new THREE.Mesh(M.kerbR, kerbMat))
             trackGroup.add(new THREE.Mesh(M.gutterL, sandMat))
