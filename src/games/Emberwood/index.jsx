@@ -241,7 +241,7 @@ export default function Emberwood() {
             exposeGame({
                 id: 'emberwood',
                 method: 'stick',
-                buttons: ['Space', 'KeyX'],
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reads: ['up', 'down', 'left', 'right', 'a', 'b'],
                 reset: (seed) => {
                     const fresh = createSim(seed || 11)
