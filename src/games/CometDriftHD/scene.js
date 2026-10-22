@@ -12,10 +12,83 @@
 import * as THREE from 'three'
 import { TRACK, SCENERY, bankAt } from '../CometDrift/track.js'
 import { REFERENCES } from '../CometDrift/reference.js'
+import { BANDS } from '../CometDrift/bands.js'
 
 export const S = 1 / 60
 const T = TRACK
 const PERP = (a) => [-Math.sin(a), Math.cos(a)]
+
+// #530 item 2: the road BAND from the real maps (bands.js ← comet-bands.mjs).
+// The published track maps paint asphalt + kerbs + run-off, and the band is
+// wider at the banked escape areas, narrower where the road threads the trees.
+// Half-band fractions of the map span convert to course px with the live
+// centerline's bbox span (the arcade layouts sit on the un-mirrored map —
+// cometcheck's own alignment rule — so map LEFT/RIGHT ride scene side -1/+1).
+// Widths normalise by the lap median, because the arcade asphalt is fatter
+// than the map's drawn road: what transfers is the corner-to-corner RATIO.
+// Three-tap smoothing kills the hairpin spikes the far-cap can't (two lap
+// sections reading as one wide escape), and the inside-of-bend clamp keeps the
+// ribbon from folding. Gulch has no traced map: ratio null, rings stay constant.
+const BAND_CACHE = new Map()
+function bandContext(id = T.id) {
+    if (BAND_CACHE.has(id)) return BAND_CACHE.get(id)
+    const b = BANDS[id]
+    let ctx = null
+    if (b) {
+        let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity
+        for (const p of T.pts) {
+            x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x)
+            y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y)
+        }
+        const span = Math.max(x1 - x0, y1 - y0)
+        const med = (arr) => { const s = [...arr].sort((u, v) => u - v); return s[Math.floor(s.length / 2)] * span }
+        ctx = { span, medL: med(b.left), medR: med(b.right) }
+    }
+    BAND_CACHE.set(id, ctx)
+    return ctx
+}
+
+// smoothed measured half-band ratio (0.7..1.7) for one side at point i, or
+// null when the course has no traced map. `side` is the ribbon side (+1 PERP).
+export function bandRatioAt(i, side, courseId = T.id) {
+    const ctx = bandContext(courseId)
+    if (!ctx) return null
+    const b = BANDS[courseId]
+    const arr = side > 0 ? b.right : b.left
+    const N = T.N
+    const at = (k) => {
+        const u = (((k / N) % 1) + 1) % 1
+        const len = arr.length
+        const x = u * len
+        const i0 = Math.floor(x) % len
+        const i1 = (i0 + 1) % len
+        return arr[i0] + (arr[i1] - arr[i0]) * (x - Math.floor(x))
+    }
+    const med = side > 0 ? ctx.medR : ctx.medL
+    const r = (at(i - 2) + at(i) + at(i + 2)) * ctx.span / (3 * med)
+    return Math.min(1.7, Math.max(0.7, r))
+}
+
+// painted kerb outer radius: uniform 12px on the Gulch, 8..18px on the
+// measured courses (wide escapes get the deeper kerb run).
+export const kerbOuterAt = (i, side) => {
+    const r = bandRatioAt(i, side)
+    return T.ROAD_R + (r === null ? 12 : Math.min(18, Math.max(8, 12 * r)))
+}
+
+// per-side wall foot: the map's escape width, floor 220px (the #513 sim-clamp
+// margin), ceiling 300px so trackside props (placed from 306px) always stand
+// on the plateau, never inside the wall band (#675 floating-prop lesson), and
+// capped so a hairpin inside never exceeds 0.8·R (the folded-fin fix).
+export const wallOffSideAt = (i, side) => {
+    const r = bandRatioAt(i, side)
+    let w = wallOffAt(i)
+    if (r !== null) w = Math.min(300, Math.max(220, w * r))
+    const p = T.pts[i]
+    const R = 1 / Math.max(Math.abs(p.k), 1e-6)
+    if (p.k * side > 0) w = Math.max(170, Math.min(w, R * 0.8))
+    return w
+}
 
 // #530 item 4: the `?ref=1` debug overlay — the traced real-map centerline
 // (reference.js) fitted onto the shipped circuit: uniform scale to the
@@ -273,8 +346,10 @@ function kerbGeo(side) {
         // #530: the kerb inherits the bowl's roll at the asphalt edge, so the
         // painted band stays watertight with the road ribbon.
         const rb = S * Math.tan(p.bank)
+        // #530 item 2: kerb depth follows the measured band ratio corner to corner.
+        const kr = kerbOuterAt(i, side)
         return {
-            ax: p.x + pxu * side * T.KERB_R, ay: y + 0.07 + side * T.KERB_R * rb, az: p.y + pyu * side * T.KERB_R,
+            ax: p.x + pxu * side * kr, ay: y + 0.07 + side * kr * rb, az: p.y + pyu * side * kr,
             bx: p.x + pxu * side * T.ROAD_R, by: y + 0.07 + side * T.ROAD_R * rb, bz: p.y + pyu * side * T.ROAD_R,
         }
     }, 1 / 0.85)
@@ -284,13 +359,17 @@ function gutterGeo(side) {
     return buildRibbon((i) => {
         const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
-        const w = wallOffAt(i)
+        // #530 item 2: the run-off's outer edge is the map-measured escape width
+        // for THIS side (wallOffSideAt), so wide escapes and tree-tight legs read
+        // differently corner to corner instead of one uniform ring.
+        const w = wallOffSideAt(i, side)
+        const kr = kerbOuterAt(i, side)
         // #530: the runoff eases from the bowl's roll at the kerb edge to
         // flat at the cliff foot — the wall geometry stays put.
         const rb = S * Math.tan(p.bank)
         return {
             ax: p.x + pxu * side * w, ay: y + 0.045, az: p.y + pyu * side * w,
-            bx: p.x + pxu * side * T.KERB_R, by: y + 0.045 + side * T.KERB_R * rb, bz: p.y + pyu * side * T.KERB_R,
+            bx: p.x + pxu * side * kr, by: y + 0.045 + side * kr * rb, bz: p.y + pyu * side * kr,
         }
     }, 1 / 3)
 }
@@ -302,10 +381,8 @@ function wallGeo(side) {
         // offsetting to the INSIDE of a bend collapses the ring once the
         // offset exceeds the local turn radius — the ribbon folded into
         // jagged fins at the hairpins. Clamp inside-wall offsets under the
-        // radius so the band stays a band.
-        let w = wallOffAt(i)
-        const R = 1 / Math.max(Math.abs(p.k), 1e-6)
-        if (p.k * side > 0) w = Math.max(170, Math.min(w, R * 0.8))
+        // radius so the band stays a band (inside wallOffSideAt, #530 item 2).
+        const w = wallOffSideAt(i, side)
         return {
             ax: p.x + pxu * side * w, ay: y + 0.02, az: p.y + pyu * side * w,
             bx: p.x + pxu * side * w, by: y + wallTopSideAt(i, side), bz: p.y + pyu * side * w,
@@ -317,7 +394,7 @@ function plateauGeo(side) {
     return buildRibbon((i) => {
         const p = T.pts[i]; const y = p.h * S
         const [pxu, pyu] = PERP(p.a)
-        const w = wallOffAt(i)
+        const w = wallOffSideAt(i, side)
         const o = w + 430
         const h = y + wallTopSideAt(i, side) - 0.25
         return {
@@ -351,12 +428,29 @@ export function trackGeometryStats() {
     for (const k of Object.keys(geos)) out[k] = probe(geos[k])
     let offMin = Infinity; let offMax = -Infinity; let topMin = Infinity; let topMax = -Infinity
     const N = T.N
+    const offL = new Array(N); const offR = new Array(N)
+    const kerbL = new Array(N); const kerbR = new Array(N)
     for (let i = 0; i < N; i++) {
         const off = wallOffAt(i); const top = wallTopAt(i)
         offMin = Math.min(offMin, off); offMax = Math.max(offMax, off)
         topMin = Math.min(topMin, top); topMax = Math.max(topMax, top)
+        offL[i] = wallOffSideAt(i, -1); offR[i] = wallOffSideAt(i, 1)
+        kerbL[i] = kerbOuterAt(i, -1) - T.ROAD_R; kerbR[i] = kerbOuterAt(i, 1) - T.ROAD_R
     }
-    return { stats: out, geos, laps: { vertsExpected: (N + 1) * 2 }, bounds: { offMin, offMax, topMin, topMax, simClampPx: 216, elevMin: T.hMin * S, elevMax: T.hMax * S, maxGrade: T.maxGrade } }
+    const ctx = bandContext()
+    const mean = (v) => v.reduce((a, x) => a + x, 0) / v.length
+    const std = (v) => Math.sqrt(mean(v.map((x) => (x - mean(v)) ** 2)))
+    const band = {
+        id: T.id,
+        has: ctx !== null,
+        spanPx: ctx ? ctx.span : null,
+        offL, offR, kerbL, kerbR,
+        offStdL: std(offL), offStdR: std(offR),
+        asymMean: mean(offL.map((x, i) => Math.abs(x - offR[i]))),
+        kerbMin: Math.min(...kerbL, ...kerbR), kerbMax: Math.max(...kerbL, ...kerbR),
+        offMinPx: Math.min(...offL, ...offR), offMaxPx: Math.max(...offL, ...offR),
+    }
+    return { stats: out, geos, band, laps: { vertsExpected: (N + 1) * 2 }, bounds: { offMin, offMax, topMin, topMax, simClampPx: 216, elevMin: T.hMin * S, elevMax: T.hMax * S, maxGrade: T.maxGrade } }
 }
 
 // ---- #478 item 3: wheel-spin blur, driver body, nose art, landing squash.

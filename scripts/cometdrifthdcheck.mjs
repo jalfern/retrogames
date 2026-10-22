@@ -15,6 +15,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
 import { TRACK, COURSES, selectCourse } from '../src/games/CometDrift/track.js'
+import { BANDS } from '../src/games/CometDrift/bands.js'
 import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE, refOverlayStats } from '../src/games/CometDriftHD/scene.js'
 import * as THREE from 'three'
 
@@ -395,6 +396,60 @@ console.log('reference overlay (#530 item 4):')
         ok(nan === 0 && ro.count >= 200, `${id}: overlay draws ${ro.count} finite points (NaN ${nan})`)
         ok(ro.meanPx > 0 && ro.meanPx / ro.spanPx <= 0.04, `${id}: overlay hugs the shipped centerline (mean ${ro.meanPx.toFixed(1)}px = ${(100 * ro.meanPx / ro.spanPx).toFixed(2)}% of span)`)
         ok(ro.mirror === false, `${id}: direct alignment beats mirror-x (authored on the un-mirrored map)`)
+    }
+    selectCourse('gulch')
+}
+// #530 item 2: the run-off/kerb ribs follow the MEASURED map bands (bands.js ←
+// comet-bands.mjs) instead of uniform rings. Pinned three ways per traced
+// course: the per-side wall offsets and kerb depths vary corner to corner (a
+// constant ring reads std 0), the two sides disagree (the maps paint asymmetric
+// escapes — Daytona's banking), and the offsets equal the law recomputed from
+// bands.js directly (consumption: ignoring the file drops the equality). The
+// Gulch has no traced map: it must stay the exact constant ring it was.
+// Mutating bandRatioAt to return null reds every banded gate below.
+console.log('measured run-off bands (#530 item 2):')
+{
+    selectCourse('gulch')
+    {
+        const b = trackGeometryStats().band
+        ok(b.has === false, 'gulch has no traced map — band law reports no band')
+        ok(b.offStdL === 0 && b.offStdR === 0 && b.asymMean === 0, 'gulch run-off stays the constant fallback ring (std 0, sides equal)')
+        ok(b.kerbMin === 12 && b.kerbMax === 12, 'gulch kerb stays the uniform 12px fallback')
+    }
+    for (const id of ['sandbank', 'corkscomb']) {
+        selectCourse(id)
+        const b = trackGeometryStats().band
+        ok(b.has === true && b.spanPx > 1000, `${id}: band law active (map span ${b.spanPx.toFixed(0)}px)`)
+        ok(b.offStdL > 15 && b.offStdR > 15, `${id}: run-off width varies corner to corner (std L ${b.offStdL.toFixed(1)}px, R ${b.offStdR.toFixed(1)}px; a constant ring reads 0)`)
+        ok(b.asymMean > 10, `${id}: the two sides disagree — asymmetric escapes read from the map (mean Δ ${b.asymMean.toFixed(1)}px)`)
+        ok(b.kerbMin >= 8 && b.kerbMax <= 18 && b.kerbMax - b.kerbMin > 2, `${id}: kerb depth tracks the band (${b.kerbMin.toFixed(1)}..${b.kerbMax.toFixed(1)}px)`)
+        ok(b.offMinPx >= 170 && b.offMaxPx <= 300, `${id}: walls stay inside the guard rails (${b.offMinPx.toFixed(0)}..${b.offMaxPx.toFixed(0)}px: ≥170 hairpin floor, ≤300 prop clearance)`)
+        // consumption pin: recompute the offsets from bands.js + the documented
+        // law and require they match what the geometry actually used.
+        const braw = BANDS[id]
+        const med = (arr) => [...arr].sort((u, v) => u - v)[Math.floor(arr.length / 2)]
+        let pinBad = 0
+        for (let i = 0; i < TRACK.N; i++) {
+            for (const side of [-1, 1]) {
+                const arr = side > 0 ? braw.right : braw.left
+                const at = (k) => {
+                    const u = (((k / TRACK.N) % 1) + 1) % 1
+                    const x = u * arr.length
+                    const i0 = Math.floor(x) % arr.length
+                    return arr[i0] + (arr[(i0 + 1) % arr.length] - arr[i0]) * (x - Math.floor(x))
+                }
+                const r = Math.min(1.7, Math.max(0.7, (at(i - 2) + at(i) + at(i + 2)) / (3 * med(side > 0 ? braw.right : braw.left))))
+                const p = TRACK.pts[i]
+                let w = Math.min(300, Math.max(220, 220 * r))
+                const R = 1 / Math.max(Math.abs(p.k), 1e-6)
+                if (p.k * side > 0) w = Math.max(170, Math.min(w, R * 0.8))
+                const off = side > 0 ? b.offR[i] : b.offL[i]
+                const kerb = side > 0 ? b.kerbR[i] : b.kerbL[i]
+                if (Math.abs(off - w) > 1e-6) pinBad++
+                if (Math.abs(kerb - Math.min(18, Math.max(8, 12 * r))) > 1e-6) pinBad++
+            }
+        }
+        ok(pinBad === 0, `${id}: wall/kerb offsets equal bands.js recomputed through the law (${pinBad} mismatches)`)
     }
     selectCourse('gulch')
 }
