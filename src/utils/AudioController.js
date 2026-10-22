@@ -379,6 +379,14 @@ class AudioController {
         this.musicGain.gain.linearRampToValueAtTime(MUSIC_BUS, t + hold)
     }
 
+    // Hold the music bus at a fraction of the bus (the attract loop runs the
+    // bed at low gain — the original's attract had its soundtrack on). Call
+    // every frame to hold it through ducks; scale 1 restores the full bus.
+    setMusicLevel(scale) {
+        if (!this.ctx || !this.musicGain || this.muted) return
+        this.musicGain.gain.setTargetAtTime(MUSIC_BUS * Math.max(0, Math.min(1, scale)), this.ctx.currentTime, 0.05)
+    }
+
     // ---- one-shot SFX ----
     playTone(freq, duration, type = 'square', vol = 0.1, delay = 0) {
         if (this.muted || !this.ctx) return

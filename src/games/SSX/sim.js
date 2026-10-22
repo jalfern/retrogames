@@ -31,6 +31,10 @@ export const CFG = {
     boostDrain: 26,            // meter / s spent
     boostAcc: 9,
     boostGain: 0.02,           // meter per trick point — the whole economy
+    attractFuel: 22,           // #791 attract demo only: meter/s fed into a HOT input
+                               // (inp.fuel) so the showcase rider reaches lips full and
+                               // throws OVERs — the original's attract was a highlight
+                               // reel. A real input never carries fuel; see planner hot.
     tuckAcc: 3.2,              // m/s^2 the aero tuck (stick/↑) adds on the hill
     scrubDrag: 0.12,           // fraction/s of speed a scrub (stick/↓) checks
     rockBounce: 7.0,           // m/s kicked back off a rock top landed from above (#731)
@@ -272,6 +276,9 @@ function riderStep(g, r, inp) {
         r.v += CFG.boostAcc * dt
         if (!r.boostEdge) { r.boostEdge = true; push(g, { type: 'boost', who: r.id }) }
     } else r.boostEdge = false
+    // #791 attract fuel: only an inp.fuel (hot attract) input carries it, and
+    // only the witness rides hot in attract — the race and the field never do.
+    if (inp.fuel && r.isP && r.meter < 100) r.meter = Math.min(100, r.meter + CFG.attractFuel * dt)
     r.boost = wantBoost
     const top = wantBoost ? CFG.boostTop * pace : CFG.top * pace
     r.v = Math.max(0, Math.min(top, r.v))

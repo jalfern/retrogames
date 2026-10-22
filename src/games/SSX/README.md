@@ -184,6 +184,28 @@ ssxcheck section 9b pins ramp-in/out, the half-target hold, depth-vs-line-width,
 tap-shallowness, saturation, and pressure-scaled spin. Mutant proof (done once,
 by hand): `press = target` (no ramp) and three gates go red.
 
+## Attract hotness + bed (#791)
+
+The attract loop was silent and static-ish next to the original's soundtrack-
+driven highlight reel. Two changes, neither touching the race economy:
+
+- **The bed runs under attract** at 0.45 gain (`AudioController.setMusicLevel`)
+  — same per-theme track, same speed-lifted grid; pause and results stay
+  silent. Autoplay policy still gates the first gesture (App.jsx unlock), so a
+  click-through into the arcade gets the bed on attract, a cold load does not.
+- **The demo is hot**: `decide(g, r, hot)` — only the attract witness passes
+  `hot`. A hot profile keeps its tank above `keep` instead of dumping at 45,
+  stops boosting inside 40 m of a lip, and asks the sim for `inp.fuel`, a
+  meter feed at `CFG.attractFuel` that `sim.js` honours **only** for a hot
+  input on the player. The rider therefore arrives at lips with meter 100 →
+  OVER (rule 4): doubled pay, over-the-top names, the OVER!! sweep + the
+  attract pop callout (`[data-apop]`). Cold inputs (`ssxcheck`'s witness, the
+  CPU field, real play) never see `fuel` and spend exactly as before —
+  section 9c gates the cold-vs-hot split, the ≥4 OVERs per heat, clean rides
+  and hot-replay hashes. Mutant proof (done once, by hand): `attractFuel: 0`
+  → 3 gates red; leaking `inp.fuel` into every input → the cold-witness gate
+  (plus two pre-existing ones) red; restore → 114 green.
+
 ## Hard-won verify notes
 
 - The far mesh SINKS past the ridge line (`bank` q>9) — outer columns must
@@ -206,7 +228,7 @@ by hand): `press = target` (no ramp) and three gates go red.
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 97 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 114 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
 npm run ssxterraincheck                 # 45 checks: snow/rock surfaces (#669, #685)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
@@ -243,8 +265,8 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
   (spins still work via the d-pad mid-air). Analogue depth is the #791 ramp +
   canvas drag distance — not a physical analogue stick.
 - Snow tracks are now geometry: fading carve grooves under the board (#310),
-  on top of the speed-scaled spray. Attract mode runs silent — the beds run
-  only during heats (#780).
+  on top of the speed-scaled spray. Attract now runs the theme bed at low
+  gain and a hot, OVER-happy demo (#791).
 - No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
   `ssxmodelcheck` covers the hero rider in the browser.
 - Only the player's livery carries the bib + logo decal set; grab/boot weld

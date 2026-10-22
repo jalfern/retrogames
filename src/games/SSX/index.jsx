@@ -247,7 +247,7 @@ const SSXGame = () => {
         const doSim = () => {
             const p = g.riders[0]
             let inp
-            if (screenRef.current === 'attract') inp = decide(g, p)
+            if (screenRef.current === 'attract') inp = decide(g, p, true)
             else inp = {
                 // #791: a canvas drag IS the analog stick — horizontal offset from
                 // where the finger went down sets steer depth; keyboard/pad ±1 falls
@@ -482,15 +482,21 @@ const SSXGame = () => {
                 }
             }
 
-            // #780 score: one original big-beat bed per mountain theme (the
+            // #780/#791 score: one original big-beat bed per mountain theme (the
             // melodies live in AudioController.MUSIC). The grid lifts with your
-            // speed — faster riding pushes the tempo — and the bed only runs
-            // during an actual run: attract, pause and results stay silent.
-            if (screenRef.current === 'play' && !pausedRef.current && !g.end && g.phase === 'run') {
+            // speed — faster riding pushes the tempo. The attract loop runs the
+            // same bed at low gain (the original's attract had its soundtrack
+            // running); pause and results stay silent.
+            const wantBed = !pausedRef.current && !g.end && g.phase === 'run' &&
+                (screenRef.current === 'play' || screenRef.current === 'attract')
+            if (wantBed) {
                 const track = MUSIC_TRACKS[g.course.theme]
                 if (track && musicTrack !== track) { audioController.startMusic(track); musicTrack = track }
-                if (track && (musicStepT = (musicStepT + 1) % 24) === 0) {
-                    audioController.setMusicStep(MUSIC_STEP[track] * Math.max(0.86, 1 - 0.14 * Math.max(0, p.v - 12) / 26))
+                if (track) {
+                    audioController.setMusicLevel(screenRef.current === 'attract' ? 0.45 : 1)
+                    if ((musicStepT = (musicStepT + 1) % 24) === 0) {
+                        audioController.setMusicStep(MUSIC_STEP[track] * Math.max(0.86, 1 - 0.14 * Math.max(0, p.v - 12) / 26))
+                    }
                 }
             } else if (musicTrack) { audioController.stopMusic(); musicTrack = null }
 
@@ -515,6 +521,11 @@ const SSXGame = () => {
             if (h.heat) h.heat.textContent = g.mode === 'showoff' ? `TARGET ${CFG.showoffTarget}` : `HEAT ${g.heat + 1}/3 · ${g.course.name}`
             if (h.clock) h.clock.textContent = g.mode === 'showoff' ? String(Math.max(0, Math.ceil(g.showoffLeft))) : fmtTime(g.heatT / 60)
             if (h.pop) { h.pop.textContent = pop; h.pop.style.opacity = popT > 0 ? '1' : '0' }
+            if (h.aPop) {
+                const show = popT > 0 && pop.startsWith('OVER!!')
+                h.aPop.textContent = pop
+                h.aPop.style.opacity = show ? '1' : '0'
+            }
             if (h.air) h.air.style.opacity = p.air && p.airT > 0.25 ? '1' : '0'
             if (h.count) {
                 if (g.phase === 'count' && !g.end) {
@@ -828,6 +839,7 @@ const SSXGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <h1 className="text-6xl font-black italic mb-6" style={{ color: '#fff', textShadow: '4px 0 0 #b0147a, -4px 0 0 #1490b0, 0 12px 30px #000' }}>SSX</h1>
+                    <span ref={setHud('aPop')} data-apop="1" className="block mb-4 text-2xl font-black italic text-yellow-300 transition-opacity duration-200" style={{ opacity: 0, textShadow: '0 0 18px #f0f, 3px 3px 0 #000' }} />
                     <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
                 </div>

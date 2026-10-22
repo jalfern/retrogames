@@ -28,7 +28,7 @@ const CFGP = { G: 22, STEER: 1.15, CENT: 0.30, flipRate: 520 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
-export function decide(g, r) {
+export function decide(g, r, hot = false) {
     const inp = { steer: 0, jump: false, boost: false, grab: false, flip: false }
     if (g.phase !== 'run' || r.tumble > 0) return inp
     const c = g.course
@@ -88,6 +88,15 @@ export function decide(g, r) {
     }
 
     // spend the meter on the straights
-    if (r.meter > 45 && Math.abs(seg.curve) < 0.012) inp.boost = true
+    // #791 attract hotness: the demo keeps its tank full into the lips and
+    // refuels on the fall (inp.fuel — sim.js only honours it for a hot input),
+    // so it arrives at kickers OVER: the doubled pay and the over-the-top
+    // names are the original's attract signature. Only the attract witness
+    // (hot=true) gets this; the race witness and the CPU field keep the cold
+    // spend path byte-identical.
+    const keep = hot ? 70 : 45
+    const lipClose = hot && nextK && nextK.lipS - r.s < 40
+    if (hot) inp.fuel = true
+    if (r.meter > keep && Math.abs(seg.curve) < 0.012 && !lipClose) inp.boost = true
     return inp
 }
