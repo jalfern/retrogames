@@ -160,7 +160,14 @@ async function main() {
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
     `--user-data-dir=${profDir}`, 'about:blank',
   ]
-  if (process.platform !== 'darwin') flags.push('--no-sandbox')
+  // #680: on Linux CI there is no GPU and, unlike macOS, --enable-unsafe-
+  // swiftshader alone does NOT expose a WebGPU adapter — navigator.gpu exists
+  // but requestAdapter() returns null, so shore.html's boot() throws 'no
+  // WebGPU adapter' and __shoreTest.ready never flips. Linux headless Chrome
+  // needs the Dawn software backend opted in explicitly; this gives a slow but
+  // quiet, reproducible SwiftShader adapter — exactly the trend line #680 asks
+  // for. macOS (local/dev boxes) keeps Metal and ignores these.
+  if (process.platform !== 'darwin') flags.push('--no-sandbox', '--enable-unsafe-webgpu', '--use-angle=swiftshader')
   const chrome = spawn(CHROME, flags, { stdio: 'ignore', detached: true })
   const killAll = () => {
     try { process.kill(-chrome.pid) } catch { /* gone */ }
