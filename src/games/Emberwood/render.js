@@ -263,6 +263,25 @@ void main(){
         return b
     }
     const heroBB = mkBillboard(16, 18)
+    // ---- sword swipe arc: additive crescent that sweeps in the facing direction ----
+    const ARC_DUR = 12
+    const ARC_DIRS = { up: 0, right: Math.PI / 2, down: Math.PI, left: -Math.PI / 2 }
+    const ARC_DIRV = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
+    const arcCnv = document.createElement('canvas'); arcCnv.width = 32; arcCnv.height = 32
+    {
+        const g = arcCnv.getContext('2d')
+        g.clearRect(0, 0, 32, 32)
+        g.lineCap = 'round'
+        g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 4
+        g.beginPath(); g.arc(16, 23, 15, Math.PI * 1.12, Math.PI * 1.88); g.stroke()
+        g.strokeStyle = 'rgba(255,244,210,1)'; g.lineWidth = 2
+        g.beginPath(); g.arc(16, 23, 15, Math.PI * 1.18, Math.PI * 1.82); g.stroke()
+    }
+    const arcMat = new THREE.MeshBasicMaterial({ map: makeTex(arcCnv), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 })
+    const arcMesh = new THREE.Mesh(new THREE.PlaneGeometry(26, 26), arcMat)
+    arcMesh.quaternion.copy(camera.quaternion)
+    arcMesh.visible = false
+    scene.add(arcMesh)
     const bbPool = []
     for (let i = 0; i < 12; i++) bbPool.push(mkBillboard(16, 16))
     const projPool = []
@@ -398,6 +417,21 @@ void main(){
         heroBB.mat.color.setRGB(hl, hl, hl)
         if (sim.hero.hurt > 0 && Math.floor(tSec * 14) % 2 === 0) heroBB.mat.color.set('#ff5c5c')
         heroBB.shadow.position.set(hx, hy, 0.12)
+
+        if (sim.arc > 0) {
+            const af = sim.arc / ARC_DUR
+            const [avx, avy] = ARC_DIRV[sim.arcDir] || [0, -1]
+            arcMesh.visible = true
+            arcMesh.quaternion.copy(camera.quaternion)
+            arcMesh.rotateZ((ARC_DIRS[sim.arcDir] || 0) + (0.5 - af) * 0.9)
+            arcMesh.position.set(hx + avx * 11, hy + avy * 11, 10)
+            const grow = 0.82 + (1 - af) * 0.4
+            arcMesh.scale.set(grow, grow, 1)
+            arcMat.opacity = af
+            arcMat.color.setRGB(1.15, 1.0, 0.72)
+        } else {
+            arcMesh.visible = false
+        }
 
         for (let i = 0; i < bbPool.length; i++) {
             const b = bbPool[i]

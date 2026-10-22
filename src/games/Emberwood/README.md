@@ -48,6 +48,13 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   `tick++`, so the hero/enemies/bombs/particles hold while the tick advances.
   Deterministic (seed-preserved); `emberwoodcheck` asserts the freeze, the hero
   pin, its release, seed-equality, and a blast with nothing to kill.
+- **Swipe arc**: a slash sets `sim.arc` to 12 frames — two longer than the
+  10-frame blade — in `sim.arcDir`/`sim.arcId`, so the render draws an additive
+  crescent (`render.js` `arcMesh`) that sweeps past the hero after the sword has
+  left. It freezes with `sim.hitStop` and clears on room entry. The trail is
+  exposed on `simState().arc` (`{dir,id,frames,p}` or `null`); `emberwoodcheck`
+  asserts it spawns facing-correct, outlives the blade, clears, tracks facing, is
+  seed-deterministic, and that a bomb blast never fakes one.
 
 ## Verify
 

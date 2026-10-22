@@ -125,6 +125,42 @@ function blastHitStop(seed) {
 }
 ok(blastHitStop(7) > 0 && blastHitStop(7) === blastHitStop(7), `a bomb blast hits stop even with nothing to kill (peak=${blastHitStop(7)})`)
 
+// ---- 4c. swipe arc: a sword swing leaves a deterministic directional trail ----
+function arcScript(seed) {
+    const s = createSim(seed)
+    spawnRoom(s, 'd1-e0', [7, 8])
+    s.cool = 0
+    s.hero.dir = 'up'
+    stepSim(s, inp({ ap: true }))
+    stepSim(s, inp({ ar: true }))
+    const st = simState(s)
+    const active0 = !!(st.arc && st.arc.dir === 'up' && st.arc.id > 0 && st.arc.p >= 0 && st.arc.frames > 0)
+    let maxPastBlade = 0, guard = 0
+    while (s.arc > 0 && guard < 40) { stepSim(s, inp({})); if (s.swing === 0 && s.arc > 0) maxPastBlade = Math.max(maxPastBlade, s.arc); guard++ }
+    const cleared = s.arc === 0 && s.swing === 0
+    s.cool = 0; s.hero.dir = 'left'
+    stepSim(s, inp({ ap: true })); stepSim(s, inp({ ar: true }))
+    const dleft = !!(simState(s).arc && simState(s).arc.dir === 'left')
+    return { active0, frames: st.arc ? st.arc.frames : 0, maxPastBlade, cleared, dleft }
+}
+{
+    const a = arcScript(7), b = arcScript(7)
+    ok(a.active0 === true, `a sword swing spawns a swipe arc (up-facing, ${a.frames} frames)`)
+    ok(a.maxPastBlade > 0, `the arc trails the blade (outlives the 10-frame swing by ${a.maxPastBlade} frames)`)
+    ok(a.cleared === true, 'the swipe arc clears back to null after its frames')
+    ok(a.dleft === true, 'the arc follows facing (face left -> left-facing arc)')
+    ok(JSON.stringify(a) === JSON.stringify(b), 'the swipe arc is seed-deterministic (identical trail trajectory)')
+}
+{
+    const s = createSim(7)
+    spawnRoom(s, 'ow-00', [6, 5])
+    s.items.bombs = 5; s.arc = 0
+    stepSim(s, inp({ bp: true }))
+    let sawArc = false
+    for (let i = 0; i < 40; i++) { stepSim(s, inp({})); if (simState(s).arc) sawArc = true }
+    ok(sawArc === false, 'a bomb blast does not fake a sword swipe arc')
+}
+
 // ---- 5. core mechanics, driven through the sim ----
 // grass cut drops, and the cut persists
 {
