@@ -67,12 +67,40 @@ const lerpKeys = (K, v) => { const k = Math.max(0, Math.min(1, v)) * 3; const i 
 const WIND_AZ = 0.0;
 
 // ---- real night sky: Yale Bright Star Catalogue v5 (J2000), see ocean.stars.js ----
-// ~500 brightest stars + a faint Milky Way band, as seen from LAT_DEG N. Positions are
-// celestial (RA/Dec); they rotate with the time-of-day slider via local sidereal time,
-// so the Big Dipper sits high in the north at NIGHT and drifts west as the sky turns.
-const SKY = (typeof OCEAN_STARS !== 'undefined') ? OCEAN_STARS : { BSC: [], MILKY: [], STAR_PAL: [[1, 1, 1]], LAT_DEG: 38.6 };
+// ~500 brightest stars + a faint Milky Way band, as seen from LAT_DEG N / LON_DEG E.
+// Positions are celestial (RA/Dec); they rotate with the time slider via local sidereal
+// time, AND obey the calendar (#611): the date (today, or ?date=YYYY-MM-DD) enters the
+// LST, so the same clock time shows a sky ~1° further west each night — Orion rules the
+// midnight meridian in January, Vega sits near the zenith at midnight in early July.
+const SKY = (typeof OCEAN_STARS !== 'undefined') ? OCEAN_STARS : { BSC: [], MILKY: [], STAR_PAL: [[1, 1, 1]], LAT_DEG: 38.6, LON_DEG: -122.577 };
 const PHI = SKY.LAT_DEG * Math.PI / 180;          // latitude -> celestial pole altitude
-const LST0 = 185;                                  // LST at tod=0: Dipper on the meridian, high in the north
+const LON_DEG = (typeof SKY.LON_DEG === 'number') ? SKY.LON_DEG : -122.577;
+// #611 — the slider reads local clock time: NIGHT = 00:00 .. SUNSET = 18:00.
+const TIME_SPAN = 18;
+const QS_DATE = /^\d{4}-\d{2}-\d{2}$/.test(qs.get('date') || '') ? qs.get('date') : null;
+const localIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const skyDate = () => (QS_DATE ? new Date(QS_DATE + 'T00:00:00') : new Date());
+// US daylight saving: 2nd Sunday of March 02:00 -> 1st Sunday of November 02:00, local.
+function isDst(y, m, d, h) {
+  if (m < 3 || m > 11) return false;
+  if (m > 3 && m < 11) return true;
+  const firstDow = new Date(y, m - 1, 1).getDay();
+  const nth = Math.floor((d - 1 - firstDow + 7) / 7) + 1;
+  return m === 3 ? (nth > 2 || (nth === 2 && h >= 2)) : (nth === 1 && h < 2);
+}
+const julianDay = (y, m, d) => {
+  if (m <= 2) { y -= 1; m += 12; }
+  const a = Math.floor(y / 100);
+  return Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + 2 - a + Math.floor(a / 4) - 1524.5;
+};
+// local sidereal time in degrees at slider time t (fraction of NIGHT..SUNSET) on skyDate()
+function lstDeg(t) {
+  const dt = skyDate();
+  const h = t * TIME_SPAN;
+  const ut = h + 8 - (isDst(dt.getFullYear(), dt.getMonth() + 1, dt.getDate(), h) ? 1 : 0);  // PST = UTC-8
+  const D = julianDay(dt.getFullYear(), dt.getMonth() + 1, dt.getDate()) + ut / 24 - 2451545.0;
+  return (((280.46061837 + 360.98564736629 * D + LON_DEG) % 360) + 360) % 360;
+}
 // #704 — phone-faithful night sky. Sizes are CSS-px radii; the vertex pass scales
 // them by the render dpr so a star reads the same on a DPR-1.75 phone (a 1.1-canvas-px
 // faint star is sub-pixel there — the field barely showed). The Milky Way is a field of
@@ -1142,9 +1170,9 @@ async function boot() {
       moonDir[0], moonDir[1], moonDir[2], 0,
     ]));
 
-    // real stars: rebuild this frame's billboards from the catalog at LST(tod)
+    // real stars: rebuild this frame's billboards from the catalog at LST(date, tod)
     {
-      const lst = (LST0 + tod * 180) * Math.PI / 180;
+      const lst = lstDeg(tod) * Math.PI / 180;
       const sinP = Math.sin(PHI), cosP = Math.cos(PHI);
       let n = 0;
       for (const st of STAR_D) {
@@ -1336,7 +1364,7 @@ async function boot() {
       };
     },
     stars() {
-      const lst = (LST0 + tod * 180) * Math.PI / 180;
+      const lst = lstDeg(tod) * Math.PI / 180;
       const sinP = Math.sin(PHI), cosP = Math.cos(PHI);
       const toDir = (ra, dec) => {
         const a = ra * Math.PI / 180, d = dec * Math.PI / 180, H = lst - a;
@@ -1360,6 +1388,7 @@ async function boot() {
       return {
         count: SKY.BSC.length, mwCount: SKY.MILKY.length, lat: SKY.LAT_DEG,
         lstDeg: +((((lst * 180 / Math.PI) % 360) + 360) % 360).toFixed(1),
+        lonDeg: +LON_DEG.toFixed(3), date: QS_DATE ?? localIso(skyDate()), timeSpan: TIME_SPAN,
         night: +curNight.toFixed(3), uploaded: starInstCount, reflect: +curReflK.toFixed(3),
         starMinCss: STAR_MIN, starMaxCss: +(STAR_MIN + STAR_RANGE).toFixed(2), mwSizeCss: MW_SIZE, mwGain: MW_GAIN, dprCap: +dprCap.toFixed(3),
         pole: [0, +Math.sin(PHI).toFixed(4), +Math.cos(PHI).toFixed(4)],
@@ -1372,8 +1401,8 @@ async function boot() {
 <script>
 window.DEMO_CREDITS = {
   name: 'OCEAN', accent: '#ffb060',
-  issues: [451, 609], span: '~1 h', shipped: '2026-10-18',
-  assist: 'guided', note: 'brief named the stack (WebGPU + FFT waves); #609 added the meteor-shower slider',
+  issues: [451, 609, 611], span: '~1 h', shipped: '2026-10-18',
+  assist: 'guided', note: 'brief named the stack (WebGPU + FFT waves); #609 added the meteor-shower slider; #611 made the stars obey the calendar',
 };
 </script>
 <script src="credits.js"></script>

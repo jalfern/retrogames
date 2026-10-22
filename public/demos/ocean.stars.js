@@ -4,6 +4,7 @@
 const STAR_SRC = "aduboisforge/Bright-Star-Catalog-JSON (Yale Bright Star Catalogue v5, J2000), master @ 704675ce";
 const STAR_PAL = [[0.61,0.68,1],[0.79,0.84,1],[0.93,0.95,1],[1,0.98,0.94],[1,0.93,0.84],[1,0.78,0.55],[1,0.6,0.36]];
 const LAT_DEG = 38.6;
+const LON_DEG = -122.577;   // Calistoga, CA — same site as LAT_DEG (#611: local sidereal time needs east-positive longitude)
 const BSC = [
   [101.287,-16.716,-1.46,2],    [95.988,-52.696,-0.72,3],    [213.915,19.183,-0.04,5],    [219.9,-60.835,-0.01,4],    [279.235,38.784,0.03,2],
   [79.172,45.998,0.08,4],    [78.635,-8.202,0.12,1],    [114.825,5.225,0.38,3],    [24.429,-57.237,0.46,1],    [88.793,7.407,0.5,6],
@@ -591,4 +592,4 @@ const MILKY = [
 ];
 // Loaded as a classic <script> before ocean.html's module — expose on window so the
 // module can read it (top-level consts here are script-scoped, not global).
-if (typeof window !== 'undefined') window.OCEAN_STARS = { BSC, MILKY, STAR_PAL, LAT_DEG, STAR_SRC };
+if (typeof window !== 'undefined') window.OCEAN_STARS = { BSC, MILKY, STAR_PAL, LAT_DEG, LON_DEG, STAR_SRC };
