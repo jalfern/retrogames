@@ -48,6 +48,8 @@
   <input id="cloud" type="range" min="0" max="100" step="1" value="0" aria-label="Cloud cover, clear to overcast">
   <div class="row" style="margin-top:7px"><b>Meteors</b><span id="shootLbl">Off</span></div>
   <input id="shoot" type="range" min="0" max="100" step="1" value="0" aria-label="Shooting-star frequency, off to meteor shower">
+  <div class="row" style="margin-top:7px"><b>Aurora</b><span id="auroraLbl">Off</span></div>
+  <input id="aurora" type="range" min="0" max="100" step="1" value="0" aria-label="Aurora intensity, off to vivid">
 </div>
 <div id="fatal"></div>
 <script src="ocean.stars.js"></script>
@@ -161,6 +163,10 @@ const STORM_TAU = 0.30;
 // over ~1s instead of cutting. 0 = OFF (byte-identical to the pre-#609 sky).
 let shootTarget = Number.isFinite(parseFloat(qs.get('shoot'))) ? clamp01(parseFloat(qs.get('shoot'))) : 0;
 let shoot = shootTarget;
+// #612 — aurora intensity. Eases like the meteors; 0 = OFF and the sky is
+// byte-identical to the pre-#612 build (the shader skips the curtains entirely).
+let auroraTarget = Number.isFinite(parseFloat(qs.get('aurora'))) ? clamp01(parseFloat(qs.get('aurora'))) : 0;
+let aurora = auroraTarget;
 const windU = (s = storm) => 3 + 21 * s;
 // #462 item 3 — gusts: a slow fbm over time breathes wind, wave height and foam
 // around the slider set point. Amplitude scales with sea state, so calm stays
@@ -193,8 +199,11 @@ const todLbl = document.getElementById('todLbl');
 const cloudLbl = document.getElementById('cloudLbl');
 const shootSl = document.getElementById('shoot');
 const shootLbl = document.getElementById('shootLbl');
+const auroraSl = document.getElementById('aurora');
+const auroraLbl = document.getElementById('auroraLbl');
 
 const SHOOT_NAMES = [[0.001, 'OFF'], [0.2, 'LOW'], [0.5, 'OCCASIONAL'], [0.8, 'ACTIVE'], [1.01, 'SHOWER']];
+const AURORA_NAMES = [[0.001, 'OFF'], [0.3, 'FAINT'], [0.65, 'ACTIVE'], [1.01, 'VIVID']];
 
 function updateSeaUI() {
   seaLbl.textContent = SEA_NAMES.find(x => stormTarget < x[0])[1];
@@ -206,6 +215,8 @@ function updateSeaUI() {
   cloudSl.value = String(Math.round(cloud * 100));
   shootLbl.textContent = SHOOT_NAMES.find(x => shootTarget < x[0])[1];
   shootSl.value = String(Math.round(shootTarget * 100));
+  auroraLbl.textContent = AURORA_NAMES.find(x => auroraTarget < x[0])[1];
+  auroraSl.value = String(Math.round(auroraTarget * 100));
 }
 function setStorm(v) {
   stormTarget = Math.max(0, Math.min(1, v));
@@ -214,14 +225,17 @@ function setStorm(v) {
 function setTod(v) { tod = clamp01(v); updateSeaUI(); }
 function setCloud(v) { cloud = clamp01(v); updateSeaUI(); }
 function setShoot(v) { shootTarget = clamp01(v); updateSeaUI(); }
+function setAurora(v) { auroraTarget = clamp01(v); updateSeaUI(); }
 stormSl.addEventListener('input', () => setStorm(+stormSl.value / 100));
 todSl.addEventListener('input', () => setTod(+todSl.value / 100));
 cloudSl.addEventListener('input', () => setCloud(+cloudSl.value / 100));
 shootSl.addEventListener('input', () => setShoot(+shootSl.value / 100));
+auroraSl.addEventListener('input', () => setAurora(+auroraSl.value / 100));
 stormSl.addEventListener('keydown', e => e.stopPropagation());
 todSl.addEventListener('keydown', e => e.stopPropagation());
 cloudSl.addEventListener('keydown', e => e.stopPropagation());
 shootSl.addEventListener('keydown', e => e.stopPropagation());
+auroraSl.addEventListener('keydown', e => e.stopPropagation());
 document.getElementById('sea').addEventListener('pointerdown', e => e.stopPropagation());
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
@@ -233,6 +247,8 @@ addEventListener('keydown', e => {
   if (e.key === 'x') setCloud(cloud - 0.1);
   if (e.key === 'm') setShoot(shootTarget + 0.1);
   if (e.key === 'n') setShoot(shootTarget - 0.1);
+  if (e.key === 'z') setAurora(auroraTarget + 0.1);
+  if (e.key === 'v') setAurora(auroraTarget - 0.1);
 });
 updateSeaUI();
 
@@ -296,6 +312,7 @@ var<private> g_cldL: vec3f = vec3f(0.98, 0.56, 0.30);
 var<private> g_foamC: vec3f = vec3f(0.93, 0.90, 0.85);
 var<private> g_deepK: f32 = 0.85;
 var<private> g_sssK: f32 = 0.80;
+var<private> g_aurora: f32 = 0.0;
 
 // night, sunrise, midday, sunset
 const P_ZEN: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.010, 0.016, 0.048), vec3f(0.075, 0.130, 0.300), vec3f(0.085, 0.26, 0.60), vec3f(0.040, 0.070, 0.190));
@@ -358,7 +375,54 @@ fn skyColor(dirIn: vec3f, t: f32) -> vec3f {
   sky = mix(sky, cCol, min(1.0, cld * band * (0.88 + 0.10 * st) * (1.0 + 0.14 * cc)));
   sky += mix(g_glow, vec3f(0.45, 0.40, 0.40), st) * pow(1.0 - abs(dy), 16.0) * 0.18
        * (1.0 - 0.92 * st) * mix(g_day * (1.0 - 0.55 * cc), 0.22, g_night);
+  // #612 — aurora: glowing vertical curtains riding above the whole sky stack.
+  // At slider 0 the addend is exactly 0 (no shader-visible difference from pre-#612);
+  // night-gated, and overcast buries it (the curtains sit ABOVE the cloud deck, but
+  // a thick deck scatters them away — same law as the moon glow).
+  if (g_aurora > 0.0 && dy > 0.0) {
+    sky += auroraGlow(d, t) * g_aurora * g_night * (1.0 - 0.75 * cc) * (1.0 - 0.60 * st);
+  }
   return sky;
+}
+// #612 — the curtains. Three thin layers raymarched along the view ray between two
+// altitude planes; each layer samples an fbm once. The noise domain is sheared: fast
+// along a fixed horizontal axis, slow along d.y and the perpendicular axis, so the
+// iso-density features stretch into vertical ribbons. A second slow fbm folds the
+// axis (rippling folds) and every layer drifts at its own rate. Colour by height:
+// green at the hem fading to magenta/purple at the crown. Additive, hem-softened.
+fn auroraGlow(d: vec3f, t: f32) -> vec3f {
+  if (d.y <= 0.015) { return vec3f(0.0); }
+  var ax = vec2f(1.0, 0.0);
+  if (abs(d.x) + abs(d.z) > 1e-4) { ax = normalize(vec2f(d.x, d.z)); }
+  var acc = vec3f(0.0);
+  for (var i: i32 = 0; i < 3; i = i + 1) {
+    let fi = f32(i);
+    let b0 = mix(0.04, 0.22, fi / 2.0);
+    let b1 = b0 + 0.26;
+    let lo = b0 / d.y;                     // enter/exit parameters of the layer slab
+    let hi = b1 / d.y;
+    let sp = (lo + hi) * 0.5;             // march mid-slab (three layers ARE the march)
+    let q = d * sp;                       // sample point on the curtain layer
+    let along = dot(q.xz, ax);
+    let perp = q.x * ax.y - q.z * ax.x;
+    // rippling folds: slow noise warps the ribbon axis; steady eastward drift
+    let fold = fbm(vec2f(perp * 0.10 + t * 0.010 + fi * 4.3, fi * 2.7 + 1.1), 3) * 2.0 - 1.0;
+    let u = along * (0.32 + 0.10 * fi) + fold * (1.4 + 0.5 * fi) + t * (0.055 + 0.030 * fi);
+    let n = fbm(vec2f(u, fi * 7.7 + 0.5), 4) * 2.0 - 1.0;
+    // n centres on 0 with a spread of ~±0.3: soft-threshold the crest band, then
+    // square — bright ribbons with dark gaps between them (auroral arcs).
+    var ribbon = smoothstep(0.06, 0.30, n);
+    ribbon *= ribbon;
+    // hem fade: curtains thin out near the horizon and at the crown
+    ribbon *= smoothstep(b0, b0 + 0.05, d.y) * (1.0 - smoothstep(b1 - 0.09, b1, d.y));
+    let ht = clamp((d.y - b0) / (b1 - b0), 0.0, 1.0);
+    // hem colour near-pure green (the 557.7nm OI line is blue-free — and blue-free
+    // is what keeps the curtains reading GREEN over a blue-dominant night sky instead
+    // of saturating to wash-white); crown ramps through magenta to violet.
+    let col = mix(vec3f(0.08, 1.0, 0.14), vec3f(0.62, 0.14, 0.92), smoothstep(0.30, 0.72, ht));
+    acc += col * ribbon * (1.0 - 0.22 * fi);
+  }
+  return acc * 1.7;
 }
 fn tonemap(vIn: vec3f) -> vec3f {
   let v = max(vIn, vec3f(0.0));
@@ -643,6 +707,7 @@ async function boot() {
       let eg = su.wind.w;
       let se = clamp(s + eg, 0.0, 1.0);
       g_tod = su.sky.x; g_cloud = su.sky.y; g_day = su.sky.z; g_night = su.sky.w;
+      g_aurora = su.oct.w;
       g_sun = normalize(su.sunD.xyz);
       g_moon = normalize(su.moonD.xyz);
       setupSkyPal(g_tod, g_storm);
@@ -752,6 +817,7 @@ async function boot() {
     fn fs_sky(in: VOut) -> @location(0) vec4f {
       g_storm = ku.storm;
       g_tod = ku.sky.x; g_cloud = ku.sky.y; g_day = ku.sky.z; g_night = ku.sky.w;
+      g_aurora = ku.p1;
       g_sun = normalize(ku.sunD.xyz);
       g_moon = normalize(ku.moonD.xyz);
       setupSkyPal(g_tod, g_storm);
@@ -1125,6 +1191,10 @@ async function boot() {
     if (Math.abs(stormTarget - storm) < 0.0015) storm = stormTarget;
     if (Math.abs(storm - lastStorm) > 0.001) needSpec = true;
     lastStorm = storm;
+    // #612 — the aurora eases like the meteors (#609): nudging the slider ramps the
+    // curtains over ~1s instead of cutting.
+    aurora += (auroraTarget - aurora) * (1 - Math.exp(-dt / 0.35));
+    if (Math.abs(auroraTarget - aurora) < 0.0015) aurora = auroraTarget;
     const s = storm;
     // #462 item 3 — the gust signal (see GUST_AMP): gf scales wave heights,
     // gust (pre-scaled by sea state) nudges wind speed + foam in the shader.
@@ -1154,7 +1224,7 @@ async function boot() {
       eye[0], eye[1], eye[2], t,
       vfwd[0], vfwd[1], vfwd[2], asp,
       vright[0], vright[1], vright[2], 0,
-      OCT[0].L, pp[0].dsp, advPhase, 0,
+      OCT[0].L, pp[0].dsp, advPhase, aurora,
       OCT[1].L, pp[1].dsp, 0, 0,
       U, s, WIND_AZ, gust,
       tod, cloud, dayness, nightness,
@@ -1164,7 +1234,7 @@ async function boot() {
     device.queue.writeBuffer(uSky, 0, new Float32Array([
       vfwd[0], vfwd[1], vfwd[2], asp,
       vright[0], vright[1], vright[2], Math.tan(31 * Math.PI / 180),
-      vup[0], vup[1], vup[2], t, s, 0, 0, 0,
+      vup[0], vup[1], vup[2], t, s, 0, aurora, 0,
       tod, cloud, dayness, nightness,
       sunDir[0], sunDir[1], sunDir[2], 0,
       moonDir[0], moonDir[1], moonDir[2], 0,
@@ -1319,6 +1389,8 @@ async function boot() {
     get tod() { return tod; },
     get cloud() { return cloud; },
     get shoot() { return shootTarget; },
+    get aurora() { return aurora; },
+    get auroraTarget() { return auroraTarget; },
     get wind() { return windU(); },
     swell() { return { h: eye[1] - cam.pos[1], pitch: swell.pitch, roll: swell.roll, storm }; },
     gust() { return { raw: gustV, factor: gfV, storm, wind: windU() * gfV }; },
@@ -1326,6 +1398,10 @@ async function boot() {
     setTod(v) { setTod(v); },
     setCloud(v) { setCloud(v); },
     setShoot(v) { setShoot(v); },
+    setAurora(v) { setAurora(v); },
+    auroraState() {
+      return { value: +aurora.toFixed(3), target: +auroraTarget.toFixed(3), night: +curNight.toFixed(3), cloud };
+    },
     setPose(p) {
       if (p.pos) cam.pos = p.pos.slice();
       if (typeof p.yaw === 'number') cam.yaw = p.yaw;
@@ -1401,8 +1477,8 @@ async function boot() {
 <script>
 window.DEMO_CREDITS = {
   name: 'OCEAN', accent: '#ffb060',
-  issues: [451, 609, 611], span: '~1 h', shipped: '2026-10-18',
-  assist: 'guided', note: 'brief named the stack (WebGPU + FFT waves); #609 added the meteor-shower slider; #611 made the stars obey the calendar',
+  issues: [451, 609, 611, 612], span: '~1 h', shipped: '2026-10-18',
+  assist: 'guided', note: 'brief named the stack (WebGPU + FFT waves); #609 added the meteor-shower slider; #611 made the stars obey the calendar; #612 added the aurora curtains',
 };
 </script>
 <script src="credits.js"></script>

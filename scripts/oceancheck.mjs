@@ -16,6 +16,9 @@
 //               (Sirius/Polaris/Big Dipper/Orion all present at correct J2000 coords),
 //               the celestial pole sits at the latitude altitude due north, the Big
 //               Dipper is up at night, and the sky rotates with the time-of-day slider.
+//   7. AURORA — #612: an aurora slider (default OFF) raises green curtains with a
+//               red/purple crown at night, eases, scales, drowns under cloud, dies at
+//               day, and reflects green on the sea.
 //
 // Chrome is launched DIRECTLY (not via playwright's default args): playwright's
 // stock switches hide `navigator.gpu`; headless Chrome 155 exposes a real
@@ -204,6 +207,40 @@ function seaGlint(img, x0, x1) {
     }
   }
   return { count, xSpan: xHi > xLo ? xHi - xLo : 0 }
+}
+
+// #612: aurora pixels in a sky band, split into the two colours the height ramp
+// produces: `green` = hem (the blue-free 557.7nm-OI green: G > R+30, G > B+10) and
+// `violet` = crown (magenta/violet: R > G, B > G, B > 90). The night sky is
+// blue-dominant and meteors are white, so neither count fires at OFF; both are
+// thousands at ON. The ramp (green hem low → violet crown high) is proven by the
+// VERTICAL ORDER of the two centroids (`vRow` above `gRow`), not by fixed rows: the
+// camera rides the wave pitch, so an absolute hem/high split flips run-to-run, but
+// green is always BELOW violet in the sky whatever the pitch.
+
+function auroraPix(img, yFrom, yTo) {
+  let green = 0, violet = 0, gSum = 0, vSum = 0
+  for (let y = yFrom; y < yTo; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const i = (y * img.w + x) * img.bpp
+      const R = img.px[i], G = img.px[i + 1], B = img.px[i + 2]
+      if (G > 70 && G > R + 30 && G > B + 10) { green++; gSum += y }
+      else if (R > G && B > G && B > 90 && R + B > 2 * G + 40) { violet++; vSum += y }
+    }
+  }
+  return { green, violet, gRow: green ? gSum / green : -1, vRow: violet ? vSum / violet : -1 }
+}
+function auroraSea(img) {
+  let n = 0
+  const y0 = Math.floor(img.h * 0.56), y1 = Math.floor(img.h * 0.78)
+  for (let y = y0; y < y1; y++) {
+    for (let x = 0; x < img.w; x++) {
+      const i = (y * img.w + x) * img.bpp
+      const R = img.px[i], G = img.px[i + 1], B = img.px[i + 2]
+      if (G > 40 && G > R + 12 && G > B) n++
+    }
+  }
+  return n
 }
 
 async function sampleMax(page, n, count) {
@@ -591,6 +628,101 @@ async function main() {
       await page.evaluate(() => { window.__oceanTest.setTod(0); window.__oceanTest.setCloud(0); window.__oceanTest.setStorm(0) })
       await page.waitForTimeout(900)
 
+      // 6d. #612 AURORA — the northern-lights slider. OFF leaves the night sky green-
+      //     clean (the shader skips the curtains at 0); ON at night raises green curtain
+      //     pixels with a red/purple crown (height ramp); the curtains ease (no hard
+      //     cut), scale with the slider, are armed only at night, die under overcast,
+      //     and reflect green on the sea. Mutant: pin g_aurora = 0 → gates 3–9 red;
+      //     never-easing (hard cut) → gate 3 red.
+      const skyA0 = Math.floor(540 * 0.08), skyA1 = Math.floor(540 * 0.44)
+      const aurSl = await page.evaluate(() => ({ present: !!document.getElementById('aurora'), value: +(document.getElementById('aurora') || {}).value }))
+      ok('#612 aurora slider present and default OFF', aurSl.present && aurSl.value === 0, JSON.stringify(aurSl))
+      await page.evaluate(() => window.__oceanTest.setAurora(0))
+      await page.waitForTimeout(700)
+      const aOff = await page.evaluate(() => window.__oceanTest.auroraState())
+      let gOff = { green: 0, violet: 0, gRow: -1, vRow: -1 }
+      let seaOff = 0
+      for (let i = 0; i < 3; i++) {
+        const img = decodePng(await page.screenshot())
+        const ap = auroraPix(img, skyA0, skyA1)
+        if (ap.green > gOff.green) gOff = ap
+        seaOff = Math.max(seaOff, auroraSea(img))
+        await page.waitForTimeout(350)
+      }
+      ok('#612 OFF: sky green-clean (pre-#612 night untouched)', aOff.value === 0 && aOff.target === 0 && gOff.green < 5,
+        `state=${JSON.stringify(aOff)} green=${gOff.green}`)
+      const easeA = await page.evaluate(() => new Promise((res) => {
+        const out = []
+        window.__oceanTest.setAurora(1)
+        let i = 0
+        const step = () => { out.push(window.__oceanTest.aurora); if (++i < 80) requestAnimationFrame(step); else res(out) }
+        requestAnimationFrame(step)
+      }))
+      ok('#612 aurora eases toward set point (~1s, no hard cut)',
+        easeA.length > 1 && easeA[0] < 0.5 && easeA[easeA.length - 1] > 0.82
+          && easeA.every((v, i) => i === 0 || v >= easeA[i - 1] - 1e-6),
+        `first=${easeA[0].toFixed(3)} -> last=${easeA[easeA.length - 1].toFixed(3)} over ${easeA.length} frames`)
+      await page.waitForTimeout(1400)
+      let gOn = { green: 0, violet: 0, gRow: -1, vRow: -1 }, seaOn = 0
+      for (let i = 0; i < 4; i++) {
+        const img = decodePng(await page.screenshot())
+        const ap = auroraPix(img, skyA0, skyA1)
+        if (ap.green > gOn.green) gOn = ap
+        seaOn = Math.max(seaOn, auroraSea(img))
+        await page.waitForTimeout(300)
+      }
+      ok('#612 ON at night: green curtains in the sky', gOn.green > gOff.green * 8 && gOn.green > 800, `green px ${gOff.green} → ${gOn.green}`)
+      // Height ramp (green hem → magenta/violet crown). The curtains drift in
+      // azimuth with shader time AND the camera rides the wave pitch, so a single
+      // frame's colour-row position is non-deterministic (this defeated the original
+      // fixed-band hem/high split). Pool the two hues over a full yaw sweep: the hem
+      // always sits low and the crown always sits high wherever the curtains are, so
+      // the pooled centroids separate by a wide, repeatable margin (~55 rows). At OFF
+      // both hues vanish (the night sky is blue-dominant, B > R > G), so an aurora
+      // pin-to-0 mutant reds this gate as well as the ON-count gate.
+      const skyR1 = Math.floor(540 * 0.49)
+      let rampG = 0, rampV = 0, rampGS = 0, rampVS = 0
+      for (let k = 0; k < 12; k++) {
+        await page.evaluate((yaw) => window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw, pitch: 0.18 }), Math.PI * 2 * k / 12)
+        await page.waitForTimeout(260)
+        const img = decodePng(await page.screenshot())
+        for (let y = 0; y < skyR1; y++) {
+          for (let x = 0; x < img.w; x++) {
+            const i = (y * img.w + x) * img.bpp
+            const R = img.px[i], G = img.px[i + 1], B = img.px[i + 2]
+            if (G > 70 && G > R + 30 && G > B + 10) { rampG++; rampGS += y }
+            else if (R > G && B > G && B > 90) { rampV++; rampVS += y }
+          }
+        }
+      }
+      await page.evaluate(() => window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: 0, pitch: -0.05 }))
+      ok('#612 height ramp: green hem pools below the magenta crown over a yaw sweep',
+        rampG > 8000 && rampV > 2000 && (rampGS / rampG) - (rampVS / rampV) > 25,
+        `green ${rampG}@row${(rampGS / rampG).toFixed(0)} magenta ${rampV}@row${(rampVS / rampV).toFixed(0)} sep ${((rampGS / rampG) - (rampVS / rampV)).toFixed(0)}`)
+      ok('#612 curtains reflect green on the sea', seaOn > seaOff * 2 && seaOn > 40, `sea green px ${seaOff} → ${seaOn}`)
+      await page.evaluate(() => window.__oceanTest.setAurora(0.35))
+      await page.waitForTimeout(1200)
+      const gMid = await sampleMax(page, 3, img => auroraPix(img, skyA0, skyA1).green)
+      ok('#612 brightness scales with the slider', gMid < gOn.green * 0.8, `green at 0.35=${gMid} vs at 1=${gOn.green}`)
+      await page.evaluate(() => { window.__oceanTest.setAurora(1); window.__oceanTest.setCloud(1) })
+      await page.waitForTimeout(1400)
+      const gOvc = await sampleMax(page, 3, img => auroraPix(img, skyA0, skyA1).green)
+      ok('#612 overcast buries the curtains', gOvc < gOn.green * 0.3, `green overcast=${gOvc} vs clear=${gOn.green}`)
+      await page.evaluate(() => { window.__oceanTest.setCloud(0); window.__oceanTest.setTod(0.66) })
+      await page.waitForTimeout(1200)
+      const gDay = await sampleMax(page, 3, img => auroraPix(img, skyA0, skyA1).green)
+      ok('#612 day disarms the aurora (night-gated)', gDay < Math.max(10, gOn.green * 0.05), `green day=${gDay} vs night=${gOn.green}`)
+      await page.evaluate(() => { window.__oceanTest.setTod(0); window.__oceanTest.setAurora(0) })
+      await page.waitForTimeout(1300)
+      const gOff2 = await sampleMax(page, 3, img => auroraPix(img, skyA0, skyA1).green)
+      ok('#612 reversible to off', gOff2 < 5, `green back=${gOff2}`)
+      if (shots) {
+        await page.evaluate(() => { window.__oceanTest.setAurora(1); window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: Math.PI / 2, pitch: 0.25 }) })
+        await page.waitForTimeout(1500)
+        writeFileSync(resolve(shots, 'aurora-north.png'), await page.screenshot())
+        await page.evaluate(() => { window.__oceanTest.setAurora(0); window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: 0, pitch: -0.05 }) })
+        await page.waitForTimeout(600)
+      }
       // 7. PHONE (#704): the night sky must read as a full field on a DPR>1 phone in
       //    portrait. Star sizes are CSS-px scaled by the render DPR (a 1.1-canvas-px
       //    faint star is sub-pixel on a DPR-1.75 phone); the Milky Way is a field of
