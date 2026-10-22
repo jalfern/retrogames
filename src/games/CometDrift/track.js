@@ -350,6 +350,23 @@ export function crestDust(crest, v) {
     return strength * (0.4 + 0.6 * speed)
 }
 
+// #530 item 5 — the sprite height-anchor law (2D twin). Mode 7 keeps the ground
+// flat, and the horizon already bobs with the CAMERA's own height+grade (index.jsx
+// bobTarget, scale ELEV_SCREEN on p.h). But the arch and trackside props are drawn
+// at a fixed `HZ + CAM_H*s`, so they ride the horizon rigidly and slide over/under
+// the ground line as the kart crests a brow. This law plants a sprite on its OWN
+// terrain elevation, relative to the camera's, using the SAME px-per-world-height
+// scale as the horizon bob (so it stays consistent and bounded, not a raw projection).
+// It returns a screen-space y offset (positive = down): a prop uphill of the eye
+// (terr > camTerrain) lifts onto the horizon (negative), a prop in a dip sinks
+// (positive), and when the two heights match it is exactly 0 — so on flat/datum
+// ground the anchoring is byte-identical to the pre-#530 look. Pure and DOM-free
+// so the harness pins it in Node; the renderer must be the only caller.
+export const ELEV_SCREEN = 0.035
+export function spriteFootShift(terr, camTerrain) {
+    return -(terr - camTerrain) * ELEV_SCREEN
+}
+
 // scenery placed by index so the list is identical in Node, the browser and
 // the harness — no dice. Cacti and mesa spires outside the cliff.
 // #542: a lateral offset alone is not enough on a grown course — the loop
@@ -378,6 +395,8 @@ function buildScenery(track) {
             a: p.a,
             kind: (i % 24 === 0) ? 'spire' : 'cactus',
             h: 80 + (i % 5) * 18,
+            elev: p.h,
+            si: i,
         })
     }
     return out

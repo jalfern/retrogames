@@ -195,6 +195,36 @@ for (const c of COURSES) {
     check(`${c.id}: elevation — height is continuous across the lap seam`, Math.abs(T.pts[T.N - 1].h - T.pts[0].h) <= 1.5, `${T.pts[T.N - 1].h.toFixed(2)} -> ${T.pts[0].h.toFixed(2)}`)
     check(`${c.id}: elevation — grades capped at 9.5%`, T.maxGrade <= 0.0951, `max ${T.maxGrade.toFixed(3)}`)
 
+    // #530 item 5: trackside props must be PLANTED on their terrain elevation,
+    // not painted at a fixed horizon offset. Each SCENERY item carries `elev`, the
+    // ground height it stands on (the live 1D profile along s; the renderer anchors
+    // its foot to that via spriteFootShift). A prop that ignores h — the pre-#530
+    // look — reds these gates: elev collapses to a constant, or diverges from the
+    // track height at the prop's nearest point.
+    {
+        const sc = Tmod.SCENERY
+        const finite = sc.every((s) => Number.isFinite(s.elev) && Number.isInteger(s.si) && T.pts[s.si])
+        check(`${c.id}: props carry a terrain elevation (#530 item 5)`, finite && sc.length > 0,
+            `${sc.length} props, ${sc.filter((s) => Number.isFinite(s.elev)).length} with elev`)
+        // elev must equal the ground height of the leg the prop visually belongs to
+        // (its placement centreline point si), and that point must actually be the
+        // lateral neighbour — not a distant leg that happens to pass close in 2D.
+        let maxOff = 0; let maxRun = 0
+        for (const s of sc) {
+            const p = T.pts[s.si]
+            maxOff = Math.max(maxOff, Math.abs(s.elev - p.h))
+            maxRun = Math.max(maxRun, Math.hypot(p.x - s.x, p.y - s.y))
+        }
+        check(`${c.id}: props sit on their terrain — elev is that leg's ground height (#530 item 5)`, maxOff < 1e-6,
+            `max |elev - pts[si].h| ${maxOff.toFixed(2)}px`)
+        check(`${c.id}: that leg is the prop's lateral neighbour (not a distant leg) (#530 item 5)`,
+            maxRun <= T.WALL_R + 190 + 120 + 5, `max prop-to-centreline ${maxRun.toFixed(0)}px`)
+        let emin = Infinity; let emax = -Infinity
+        for (const s of sc) { emin = Math.min(emin, s.elev); emax = Math.max(emax, s.elev) }
+        check(`${c.id}: props elevate with the ground they stand on (#530 item 5)`, emax - emin >= 25,
+            `elev spread ${(emax - emin).toFixed(0)}px (${emin.toFixed(0)}..${emax.toFixed(0)})`)
+    }
+
     // #518: gravity is real in the sim — same throttle, same surface: the
     // downhill section must outrun the uphill one within the same tick budget.
     {
@@ -732,6 +762,31 @@ const hudUsesOwnFont = () => {
 
 await fontIntegrity()
 hudUsesOwnFont()
+
+// #530 item 5 — the sprite height-anchor law and its wiring. spriteFootShift
+// (track.js) turns a prop's terrain elevation, relative to the camera's, into a
+// bounded screen-space y offset that PLANTS the sprite on the ground instead of
+// riding the horizon. The renderer must be the law's only caller and must feed it
+// the arch's and rivals' elevations too, and the horizon bob must share the scale.
+const spriteAnchorAudit = () => {
+    const { spriteFootShift, ELEV_SCREEN } = Tmod
+    check('#530 item 5: spriteFootShift is exported and finite', typeof spriteFootShift === 'function' && Number.isFinite(ELEV_SCREEN) && ELEV_SCREEN > 0)
+    check('#530 item 5: matching height — foot is exactly on the flat datum (back-compat)', spriteFootShift(50, 50) === 0, `${spriteFootShift(50, 50)}`)
+    check('#530 item 5: uphill prop lifts onto the horizon (negative, up-screen)', spriteFootShift(100, 50) < 0, `${spriteFootShift(100, 50).toFixed(2)}`)
+    check('#530 item 5: dip prop sinks below it (positive, down-screen)', spriteFootShift(0, 50) > 0, `${spriteFootShift(0, 50).toFixed(2)}`)
+    check('#530 item 5: monotone in terrain — higher ground lifts more', spriteFootShift(10, 0) > spriteFootShift(20, 0) && spriteFootShift(20, 0) > spriteFootShift(30, 0))
+    check('#530 item 5: monotone in camera height — a high eye lowers props', spriteFootShift(0, 10) < spriteFootShift(0, 20) && spriteFootShift(0, 20) < spriteFootShift(0, 30))
+    check('#530 item 5: scale matches the exported px-per-height constant', Math.abs((spriteFootShift(1000, 0) - spriteFootShift(0, 0)) / 1000) === ELEV_SCREEN, `slope ${(Math.abs((spriteFootShift(1000, 0)) / 1000)).toFixed(4)} vs ${ELEV_SCREEN}`)
+
+    const src = readFileSync(IDXJS, 'utf8')
+    check('#530 item 5: renderer anchors every sprite foot via the law (single caller)',
+        /const sy = HZ \+ CAM_H \* s \+ Math\.max\(-footCap, Math\.min\(footCap, spriteFootShift\(it\.elev, eyeH\)\)\)/.test(src))
+    check('#530 item 5: arch and props carry their terrain elevation into the draw list',
+        /elev: s0\.h/.test(src) && /elev: sc\.elev/.test(src) && /elev: k\.h/.test(src))
+    check('#530 item 5: horizon bob shares the anchor scale (no hardcoded drift)',
+        /\(p\.h \|\| 0\) \* ELEV_SCREEN/.test(src) && !/\(p\.h \|\| 0\) \* 0\.035/.test(src))
+}
+spriteAnchorAudit()
 
 // #440 item 4 — sun azimuth. The disc must be anchored to a fixed world
 // azimuth and projected through the SAME pinhole the road and scenery use.
