@@ -171,6 +171,19 @@ export function validate(rec) {
     return null
 }
 
+// --- share/download ----------------------------------------------------------
+// A hand-recorded session is one click to save (DebugKit button, #527 item 6):
+// the exact bytes a replaycheck accepts, named after the run so a bug report
+// carries game + seed + length. Pure (no DOM) so replaycheck pins it.
+export function recDownload(rec) {
+    const bad = validate(rec)
+    if (bad) throw new Error(`recDownload: ${bad}`)
+    return {
+        filename: `${rec.game}-seed${rec.seed}-t${rec.ticks}.json`,
+        text: JSON.stringify(rec) + '\n',
+    }
+}
+
 // --- replay --------------------------------------------------------------------
 // driver is contract-shaped: reset(seed, players), step(pads) advances EXACTLY
 // one tick with one pad per slot, state() carries { tick, hash }.

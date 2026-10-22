@@ -19,7 +19,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { createRecorder, validate, verifyRecording, decodePad, encodePad, REC_FORMAT } from '../src/utils/recording.js'
+import { createRecorder, validate, verifyRecording, decodePad, encodePad, recDownload, REC_FORMAT } from '../src/utils/recording.js'
 import { makeSlot, padFor } from '../src/utils/slotSources.js'
 import { setStickVec, press, release, rawPad, clearAllSlots } from '../src/utils/onePad.js'
 import { makeGame, step, stateHash } from '../src/games/Gauntlet/sim.js'
@@ -121,6 +121,17 @@ const onDisk = JSON.parse(readFileSync(REC_FILE, 'utf8'))
 // the file must be byte-identical to a fresh record at this commit.
 ok(JSON.stringify({ ...onDisk, build: file.build }) === JSON.stringify(file), 'example file round-trips through disk byte-identical (build stamp aside)', `disk=${onDisk.build} fresh=${file.build}`)
 ok(onDisk.slots.every((s) => s.pads.every((p) => JSON.stringify(encodePad(decodePad(p, 'stick'))) === JSON.stringify(p))), 'stored pads are canonical (decode/encode stable)')
+
+// --- share/download (#527 item 6) ---------------------------------------------
+// recDownload is the DebugKit button's brain: pin its exact name + serialization
+// so a hand-saved .json is byte-for-byte what replaycheck replays.
+const dl = recDownload(file)
+ok(dl.text === JSON.stringify(file) + '\n', 'download text is the exact on-disk serialization (compact + newline)')
+ok(JSON.stringify(JSON.parse(dl.text)) === JSON.stringify(file), 'download text round-trips to the recorded file')
+ok(dl.filename === `gauntlet-seed${SEED}-t${file.ticks}.json`, `download name carries game+seed+length: ${dl.filename}`)
+ok(recDownload({ ...file, game: 'qbert' }).filename.startsWith('qbert-'), 'filename tracks the game id (not hardcoded)')
+ok(recDownload({ ...file, hashes: file.hashes.map((h) => ({ ...h, h: h.h + 1 })) }).text !== dl.text, 'download text tracks the run (not a fixed blob)')
+ok((() => { try { recDownload({ ...file, format: 'nope' }); return false } catch { return true } })(), 'recDownload refuses an invalid file')
 
 // ------------------------------------------------------------------ replay ----
 console.log('replay: same file through plain model seats')
