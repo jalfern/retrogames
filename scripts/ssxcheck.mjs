@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE } from '../src/games/SSX/sim.js'
-import { decide, PACE } from '../src/games/SSX/planner.js'
+import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
 import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA } from '../src/games/SSX/art.js'
@@ -337,6 +337,7 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('planner mirrors CFG.STEER', grab('STEER') === CFG.STEER)
     ok('planner mirrors CFG.CENT', grab('CENT') === CFG.CENT)
     ok('planner mirrors CFG.flipRate', grab('flipRate') === CFG.flipRate)
+    ok('#791 miss rate mirrors the planner LCG modulus', Number(src.match(/1664525/)?.[0]) === 1664525)
     ok('CPU seats are honest under the player top', PACE.every((v) => v < 1))
 }
 
@@ -363,6 +364,55 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('#780 the start camera towers over the gate', V.up >= 10)
     ok('#780 the vista looks down the whole face, not into the near slope', V.look >= 48)
     ok('#780 the vista FOV opens wider than the chase rig', V.fov > 70 && V.fov < 100)
+}
+
+// ---- 9. #791 CPU miss rate: the field falls, places change hands ------------
+{
+    ok('#791 the witness (skill 1) is exempt from the miss rate', missChance(1, PACE[0]) === 0)
+    let mono = true
+    for (let i = 1; i < SKILL.length; i++) if (!(missChance(SKILL[i], PACE[i]) >= missChance(SKILL[i - 1], PACE[i - 1]))) mono = false
+    ok('#791 miss chance rises with seat number, stays sane',
+        mono && SKILL.every((s, i) => missChance(s, PACE[i]) > 0 && missChance(s, PACE[i]) < 0.5))
+    ok('#791 the miss knobs are exported and mirrored', MISS.base > 0 && MISS.paceK > 0)
+
+    const driveRace = (seed) => {
+        const g = makeGame('race', seed)
+        const orders = []
+        let cur = []
+        let t = 0
+        while (!g.end && t < 400000) {
+            step(g, g.phase === 'run' ? decide(g, g.riders[0]) : {})
+            for (const e of g.events.slice(-2)) {
+                if (e.type === 'heat') { if (cur.length) orders.push(cur.join('')); cur = [] }
+                if (e.type === 'finish' && e.who !== 0) cur.push(e.who)
+            }
+            t++
+        }
+        if (cur.length) orders.push(cur.join(''))
+        return { g, orders }
+    }
+
+    let cpuFalls = 0, missFalls = 0, witnessClean = true, seedWin = true
+    const allOrders = []
+    for (const seed of [0, 7, 13]) {
+        const { g, orders } = driveRace(seed)
+        const falls = g.events.filter((e) => e.type === 'crash' && e.who !== 0)
+        cpuFalls += falls.length
+        missFalls += falls.filter((e) => e.what === 'miss').length
+        if (g.riders[0].crashes !== 0) witnessClean = false
+        if (g.end !== 'win') seedWin = false
+        allOrders.push(...orders)
+    }
+    ok('#791 the CPU field actually takes falls', cpuFalls >= 4)
+    ok('#791 seeded wipeouts land as what=miss crashes', missFalls >= 2)
+    ok('#791 places change hands among the rivals', new Set(allOrders).size >= 2)
+    ok('#791 the witness still thrashes a fallible field', witnessClean && seedWin)
+
+    const d1 = driveRace(7), d2 = driveRace(7)
+    const crashSeq = (g) => g.events.filter((e) => e.type === 'crash').map((e) => `${e.who}:${e.what}`).join(',')
+    ok('#791 every seeded fall replays exactly', crashSeq(d1.g) === crashSeq(d2.g) && stateHash(d1.g) === stateHash(d2.g))
+    ok('#791 seeded misses ride the g._rs LCG, not Math.random',
+        !/Math\.random\s*\(/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'SSX', 'planner.js'), 'utf8')))
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
