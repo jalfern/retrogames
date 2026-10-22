@@ -412,8 +412,10 @@ async function main() {
       // time-of-day + clouds sliders (#456)
       const sliders = await page.evaluate(() => ({
         tod: !!document.getElementById('tod'), cloud: !!document.getElementById('cloud'),
+        shoot: !!document.getElementById('shoot'), shootDefault: +(document.getElementById('shoot') || {}).value,
       }))
       ok('time + clouds sliders present', sliders.tod && sliders.cloud)
+      ok('#609 meteor slider present and default OFF', sliders.shoot && sliders.shootDefault === 0, `present=${sliders.shoot} default=${sliders.shootDefault}`)
 
       await page.evaluate(() => window.__oceanTest.setTod(0))
       await page.waitForTimeout(900)
@@ -502,6 +504,34 @@ async function main() {
       ok('night: sky rotates with the time slider', dAz > 20, `Arcturus az ${azA} → ${azB} (Δ=${dAz.toFixed(0)}°)`)
       await page.evaluate(() => window.__oceanTest.setTod(0))
       await page.waitForTimeout(500)
+
+      // 6b. #609 METEORS — the shooting-star slider. OFF must leave the night sky
+      //     byte-identical to pre-#609 (no trail instances appended); ON at night puts
+      //     at least one streak on screen, the count scales with the slider, and the
+      //     streaks add bright sky pixels. Mutant: pin want=0 in emitMeteors → the
+      //     three behaviour gates below go red.
+      await page.evaluate(() => window.__oceanTest.setShoot(0))
+      await page.waitForTimeout(500)
+      const mOff = await page.evaluate(() => window.__oceanTest.meteors())
+      ok('#609 meteors OFF: none active, sky byte-identical to pre-#609',
+        mOff.active === 0 && mOff.trailInstances === 0 && mOff.uploaded === mOff.statics, JSON.stringify(mOff))
+      const mSkyOff = await sampleMax(page, 3, img => starPix(img, 0, Math.floor(540 * 0.42)))
+      await page.evaluate(() => window.__oceanTest.setShoot(1))
+      await page.waitForTimeout(900)
+      const mOn = await page.evaluate(() => window.__oceanTest.meteors())
+      ok('#609 meteors ON at rate 1: streaks present + trail instances',
+        mOn.rate >= 0.9 && mOn.active >= 1 && mOn.trailInstances > 0, `active=${mOn.active} trailInstances=${mOn.trailInstances} rate=${mOn.rate}`)
+      const mSkyOn = await sampleMax(page, 3, img => starPix(img, 0, Math.floor(540 * 0.42)))
+      ok('#609 meteors add bright sky pixels at night', mSkyOn > mSkyOff + 8, `off=${mSkyOff} on=${mSkyOn}`)
+      await page.evaluate(() => window.__oceanTest.setShoot(0.12))
+      await page.waitForTimeout(900)
+      const mLow = await page.evaluate(() => window.__oceanTest.meteors())
+      await page.evaluate(() => window.__oceanTest.setShoot(1))
+      await page.waitForTimeout(900)
+      const mHigh = await page.evaluate(() => window.__oceanTest.meteors())
+      ok('#609 meteor count scales with the slider', mHigh.active >= mLow.active && mHigh.trailInstances > mLow.trailInstances, `low=${mLow.active} high=${mHigh.active}`)
+      await page.evaluate(() => window.__oceanTest.setShoot(0))
+      await page.waitForTimeout(300)
       if (shots) {
         // frame the Big Dipper high in the north (yaw=+Z=north, pitched up ~64°)
         await page.evaluate(() => window.__oceanTest.setPose({ pos: [0, 3.1, -14], yaw: Math.PI / 2, pitch: 1.12 }))

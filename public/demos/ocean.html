@@ -46,6 +46,8 @@
   <input id="tod" type="range" min="0" max="100" step="1" value="100" aria-label="Time of day, night to sunrise to midday to sunset">
   <div class="row" style="margin-top:7px"><b>Clouds</b><span id="cloudLbl">Clear</span></div>
   <input id="cloud" type="range" min="0" max="100" step="1" value="0" aria-label="Cloud cover, clear to overcast">
+  <div class="row" style="margin-top:7px"><b>Meteors</b><span id="shootLbl">Off</span></div>
+  <input id="shoot" type="range" min="0" max="100" step="1" value="0" aria-label="Shooting-star frequency, off to meteor shower">
 </div>
 <div id="fatal"></div>
 <script src="ocean.stars.js"></script>
@@ -126,6 +128,11 @@ let needSpec = true;
 let stormTarget = storm;
 let lastStorm = storm;
 const STORM_TAU = 0.30;
+// #609 — shooting-star frequency. `shootTarget` is the slider set point; the
+// rendered `shoot` eases toward it, so nudging the slider ramps the meteor rate
+// over ~1s instead of cutting. 0 = OFF (byte-identical to the pre-#609 sky).
+let shootTarget = Number.isFinite(parseFloat(qs.get('shoot'))) ? clamp01(parseFloat(qs.get('shoot'))) : 0;
+let shoot = shootTarget;
 const windU = (s = storm) => 3 + 21 * s;
 // #462 item 3 — gusts: a slow fbm over time breathes wind, wave height and foam
 // around the slider set point. Amplitude scales with sea state, so calm stays
@@ -156,6 +163,10 @@ const todSl = document.getElementById('tod');
 const cloudSl = document.getElementById('cloud');
 const todLbl = document.getElementById('todLbl');
 const cloudLbl = document.getElementById('cloudLbl');
+const shootSl = document.getElementById('shoot');
+const shootLbl = document.getElementById('shootLbl');
+
+const SHOOT_NAMES = [[0.001, 'OFF'], [0.2, 'LOW'], [0.5, 'OCCASIONAL'], [0.8, 'ACTIVE'], [1.01, 'SHOWER']];
 
 function updateSeaUI() {
   seaLbl.textContent = SEA_NAMES.find(x => stormTarget < x[0])[1];
@@ -165,6 +176,8 @@ function updateSeaUI() {
   cloudLbl.textContent = CLOUD_NAMES.find(x => cloud < x[0])[1];
   todSl.value = String(Math.round(tod * 100));
   cloudSl.value = String(Math.round(cloud * 100));
+  shootLbl.textContent = SHOOT_NAMES.find(x => shootTarget < x[0])[1];
+  shootSl.value = String(Math.round(shootTarget * 100));
 }
 function setStorm(v) {
   stormTarget = Math.max(0, Math.min(1, v));
@@ -172,12 +185,15 @@ function setStorm(v) {
 }
 function setTod(v) { tod = clamp01(v); updateSeaUI(); }
 function setCloud(v) { cloud = clamp01(v); updateSeaUI(); }
+function setShoot(v) { shootTarget = clamp01(v); updateSeaUI(); }
 stormSl.addEventListener('input', () => setStorm(+stormSl.value / 100));
 todSl.addEventListener('input', () => setTod(+todSl.value / 100));
 cloudSl.addEventListener('input', () => setCloud(+cloudSl.value / 100));
+shootSl.addEventListener('input', () => setShoot(+shootSl.value / 100));
 stormSl.addEventListener('keydown', e => e.stopPropagation());
 todSl.addEventListener('keydown', e => e.stopPropagation());
 cloudSl.addEventListener('keydown', e => e.stopPropagation());
+shootSl.addEventListener('keydown', e => e.stopPropagation());
 document.getElementById('sea').addEventListener('pointerdown', e => e.stopPropagation());
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
@@ -187,6 +203,8 @@ addEventListener('keydown', e => {
   if (e.key === '.') setTod(tod + 0.05);
   if (e.key === 'c') setCloud(cloud + 0.1);
   if (e.key === 'x') setCloud(cloud - 0.1);
+  if (e.key === 'm') setShoot(shootTarget + 0.1);
+  if (e.key === 'n') setShoot(shootTarget - 0.1);
 });
 updateSeaUI();
 
@@ -893,6 +911,71 @@ async function boot() {
     depthStencil: { format: 'depth24plus', depthCompare: 'always', depthWriteEnabled: false },
   });
   let starInstCount = 0, curNight = 1, curReflK = 0;
+  let staticStarCount = 0;
+
+  // ---------- #609 shooting stars ----------
+  // Meteors reuse the SAME instanced star billboard pass (and its #608 reflected
+  // batch), so a streak rides the real celestial math, fades at the horizon like a
+  // star, scales with nightfall without extra uniform plumbing, and reflects faintly
+  // on the water for free. Each meteor is a short trail of round billboards laid
+  // along a near-great-circle path: bright head → dim tail. The count of concurrent
+  // meteors tracks the slider (0 => none: the sky is byte-identical to pre-#609),
+  // so "on" always shows at least one streak and "off" shows none — provable.
+  const METEOR_MAX = 6, METEOR_TRAIL = 16, METEOR_LEN = 0.16;   // rad of trail arc
+  const meteorPool = [];
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const dirFromAltAz = (alt, az) => {           // alt/az (rad) -> unit ENU
+    const cA = Math.cos(alt);
+    return [Math.sin(az) * cA, Math.sin(alt), Math.cos(az) * cA];
+  };
+  const spawnMeteor = () => {
+    const alt = rnd(0.5, 1.2);                  // 29°..69°: high sky, clear of the horizon
+    const az = rnd(0, Math.PI * 2);
+    const head = dirFromAltAz(alt, az);
+    const des = rnd(0.35, 0.8);                // descent angle from horizontal
+    const hh = az + rnd(-1.1, 1.1);           // heading across the sky
+    let vel = [Math.cos(hh) * Math.cos(des), -Math.sin(des), Math.sin(hh) * Math.cos(des)];
+    const vl = Math.hypot(vel[0], vel[1], vel[2]); vel = vel.map(v => v / vl);
+    const life = rnd(0.7, 1.5);
+    return { head, vel, life, maxLife: life, speed: rnd(0.28, 0.55), br: rnd(1.4, 2.6), sizePx: rnd(2.4, 3.6) };
+  };
+  // advance meteors to `dt` and lay down the frame's trail instances after the
+  // static sky (n). Returns the total instance count written into starInstArr.
+  function emitMeteors(dt, n) {
+    const want = shoot > 0.0001 ? Math.max(1, Math.round(shoot * METEOR_MAX)) : 0;
+    while (meteorPool.length < want) meteorPool.push(spawnMeteor());
+    while (meteorPool.length > want) meteorPool.pop();
+    let m = n;
+    for (const mt of meteorPool) {
+      mt.life -= dt;
+      if (mt.life <= 0) { Object.assign(mt, spawnMeteor()); }
+      const env = Math.min(1, mt.life * 5, (mt.maxLife - mt.life) * 8);   // quick fade in/out
+      for (let j = 0; j < METEOR_TRAIL; j++) {
+        const t = j / (METEOR_TRAIL - 1);
+        const back = METEOR_LEN * t;
+        let px = mt.head[0] - mt.vel[0] * back, py = mt.head[1] - mt.vel[1] * back, pz = mt.head[2] - mt.vel[2] * back;
+        px -= mt.vel[0] * mt.speed * (mt.maxLife - mt.life);   // sweep the whole streak across the sky
+        py -= mt.vel[1] * mt.speed * (mt.maxLife - mt.life);
+        pz -= mt.vel[2] * mt.speed * (mt.maxLife - mt.life);
+        const pl = Math.hypot(px, py, pz) || 1;
+        const inv = 1 / pl;
+        if (py * inv <= 0.02) continue;                         // keep the trail above the horizon
+        const o = m * 9;
+        starInstArr[o] = px * inv; starInstArr[o + 1] = py * inv; starInstArr[o + 2] = pz * inv;
+        starInstArr[o + 3] = mt.sizePx * (1 - 0.72 * t) * dprCap;
+        starInstArr[o + 4] = 1; starInstArr[o + 5] = 0.97; starInstArr[o + 6] = 0.92; starInstArr[o + 7] = j * 0.11;
+        starInstArr[o + 8] = mt.br * env * Math.pow(1 - t, 1.7);   // head bright, tail dim
+        m++;
+      }
+    }
+    // advance the head along its path for the next frame
+    for (const mt of meteorPool) {
+      let hx = mt.head[0] + mt.vel[0] * mt.speed * dt, hy = mt.head[1] + mt.vel[1] * mt.speed * dt, hz = mt.head[2] + mt.vel[2] * mt.speed * dt;
+      const hl = Math.hypot(hx, hy, hz) || 1;
+      mt.head = [hx / hl, hy / hl, hz / hl];
+    }
+    return m;
+  }
 
   // ---------- matrix helpers ----------
   function lookAt(eye, f, up) {
@@ -1078,7 +1161,15 @@ async function boot() {
         n++;
       }
       starInstCount = n;
-      if (n) device.queue.writeBuffer(starInstBuf, 0, starInstArr.subarray(0, n * 9));
+      staticStarCount = n;
+      // #609: ease the rendered meteor rate toward the slider, then append the live
+      // meteor trails after the static sky. With shoot=0 nothing is appended, so the
+      // instance buffer / count / draw is identical to the pre-#609 night sky.
+      shoot += (shootTarget - shoot) * (1 - Math.exp(-dt / 0.35));
+      if (Math.abs(shootTarget - shoot) < 0.0015) shoot = shootTarget;
+      const total = emitMeteors(dt, n);
+      starInstCount = total;
+      if (total) device.queue.writeBuffer(starInstBuf, 0, starInstArr.subarray(0, total * 9));
       curNight = nightness;
       device.queue.writeBuffer(uStar, 0, new Float32Array([
         ...vp, STAR_RADIUS, vw, vh, t, nightness, cloud, 0, 0,
@@ -1199,12 +1290,14 @@ async function boot() {
     get storm() { return storm; },
     get tod() { return tod; },
     get cloud() { return cloud; },
+    get shoot() { return shootTarget; },
     get wind() { return windU(); },
     swell() { return { h: eye[1] - cam.pos[1], pitch: swell.pitch, roll: swell.roll, storm }; },
     gust() { return { raw: gustV, factor: gfV, storm, wind: windU() * gfV }; },
     setStorm(v) { setStorm(v); },
     setTod(v) { setTod(v); },
     setCloud(v) { setCloud(v); },
+    setShoot(v) { setShoot(v); },
     setPose(p) {
       if (p.pos) cam.pos = p.pos.slice();
       if (typeof p.yaw === 'number') cam.yaw = p.yaw;
@@ -1232,6 +1325,15 @@ async function boot() {
       let m = 0; for (const v of a) m += v; m /= a.length;
       let vr = 0; for (const v of a) vr += (v - m) * (v - m); vr /= a.length;
       return vr;
+    },
+    meteors() {
+      return {
+        rate: +shoot.toFixed(3), target: +shootTarget.toFixed(3),
+        active: meteorPool.length, cap: METEOR_MAX, trail: METEOR_TRAIL,
+        statics: staticStarCount, uploaded: starInstCount,
+        trailInstances: starInstCount - staticStarCount,
+        reflect: +curReflK.toFixed(3),
+      };
     },
     stars() {
       const lst = (LST0 + tod * 180) * Math.PI / 180;
@@ -1270,8 +1372,8 @@ async function boot() {
 <script>
 window.DEMO_CREDITS = {
   name: 'OCEAN', accent: '#ffb060',
-  issues: [451], span: '~1 h', shipped: '2026-10-18',
-  assist: 'guided', note: 'brief named the stack (WebGPU + FFT waves)',
+  issues: [451, 609], span: '~1 h', shipped: '2026-10-18',
+  assist: 'guided', note: 'brief named the stack (WebGPU + FFT waves); #609 added the meteor-shower slider',
 };
 </script>
 <script src="credits.js"></script>
