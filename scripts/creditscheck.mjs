@@ -66,6 +66,16 @@ function staticLayer() {
   ok('credits.js names the machine', /Mac Studio/.test(cj))
   ok('credits.js carries tag + card + index modes',
     /credits-tag/.test(cj) && /credits-card/.test(cj) && /credits-factory/.test(cj))
+  ok('credits.js animates the card open (fade + rise keyframes)',
+    /@keyframes cc-fade\{from\{opacity:0\}\}/.test(cj) &&
+    /@keyframes cc-rise\{from\{opacity:0;transform:translateY\(2px\)\}\}/.test(cj) &&
+    /#credits-card\.open\{[^}]*animation:cc-fade/.test(cj) &&
+    /#credits-card\.open \.cc-box\{animation:cc-rise/.test(cj))
+  ok('credits.js respects prefers-reduced-motion',
+    /@media \(prefers-reduced-motion:reduce\)\{[^}]*animation:none/.test(cj))
+  ok('credits.js sizes a 32px tap target + safe-area insets',
+    /min-height:32px/.test(cj) &&
+    /env\(safe-area-inset-left\)/.test(cj) && /env\(safe-area-inset-bottom\)/.test(cj))
   const reg = readFileSync(resolve(ROOT, 'src/config/games.js'), 'utf8')
 
   for (const d of DEMOS) {
@@ -181,6 +191,48 @@ async function browserLayer() {
     ok('ESC closes the card', await page2.evaluate(() => !document.getElementById('credits-card').classList.contains('open')))
     ok('demo boots with zero page errors (credits included)', errs2.length === 0, errs2[0])
     pageErrsTotal += errs2.length
+
+    // --- phone: 390px tap target, card fits portrait + landscape ---
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+    const phone = await pctx.newPage()
+    const errs3 = []
+    phone.on('pageerror', e => errs3.push('pageerror: ' + e.message))
+    phone.on('console', m => { if (m.type() === 'error') errs3.push('console: ' + m.text().split('\n')[0]) })
+    await phone.goto('file://' + resolve(ROOT, 'public/demos/campfire.html'), { waitUntil: 'load' })
+    const tagH = await phone.evaluate(() => document.getElementById('credits-tag').getBoundingClientRect().height)
+    ok('phone 390px: tag tap-target >= 32px tall', tagH >= 32, `height=${tagH.toFixed(1)}px`)
+    const fit = async (label) => {
+      await phone.click('#credits-tag')
+      await phone.waitForTimeout(320)
+      const r = await phone.evaluate(() => {
+        const b = document.querySelector('#credits-card .cc-box').getBoundingClientRect()
+        return {
+          open: document.getElementById('credits-card').classList.contains('open'),
+          top: b.top, bottom: b.bottom, vh: innerHeight,
+          anim: getComputedStyle(document.querySelector('#credits-card .cc-box')).animationName,
+        }
+      })
+      ok(label + ': open card fits viewport height', r.open && r.top >= 0 && r.bottom <= r.vh + 1,
+        `top=${r.top.toFixed(0)} bottom=${r.bottom.toFixed(0)} vh=${r.vh}`)
+      await phone.click('#credits-card')
+      return r
+    }
+    ok('phone: card runs the open animation', (await fit('phone portrait')).anim === 'cc-rise')
+    await phone.setViewportSize({ width: 844, height: 390 })
+    await fit('phone landscape')
+    ok('phone boots with zero page errors', errs3.length === 0, errs3[0])
+    pageErrsTotal += errs3.length
+    await pctx.close()
+
+    // --- reduced motion: card opens with no animation ---
+    const rctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
+    const rpage = await rctx.newPage()
+    await rpage.goto('file://' + resolve(ROOT, 'public/demos/campfire.html'), { waitUntil: 'load' })
+    await rpage.click('#credits-tag')
+    ok('prefers-reduced-motion: card opens without animation', await rpage.evaluate(() =>
+      document.getElementById('credits-card').classList.contains('open') &&
+      getComputedStyle(document.querySelector('#credits-card .cc-box')).animationName === 'none'))
+    await rctx.close()
   } finally {
     chrome.kill()
   }
