@@ -90,6 +90,15 @@ dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
   field; `cometdrifthdcheck --mutate-stars` kills the twinkle law to prove
   the gates watch it.
 
+- #511 item 2 env wash: the #471 equirect reflection canvas was one hard-coded
+  dusk gradient, so noon/dawn liveries mirrored a sunset they were not standing
+  under. `ENV_WASHES` + `envWashFor(id)` (scene.js) put the wash on the same
+  palette table as sky/fog/lights (five gradient stops + sun colour pair + sun
+  position per palette; dusk reproduces the shipped canvas stop for stop, the
+  reflected sun climbs dusk 28 -> dawn 20 -> noon 10). `paintEnv(COURSE.palette)`
+  runs inside `applyCourseTint`, bumping `envMap.needsUpdate`.
+  `cometdrifthdcheck --mutate-env` flattens the wash to dusk to prove the gates watch it.
+
 - #478 item 7 wall variety: one strata texture tiled end-to-end so the same
   8-band pattern pasted past at speed. `wallTint(i, side)` (scene.js) gives each
   lap section its own rock tint — four stone families (bleached sand, warm rust,

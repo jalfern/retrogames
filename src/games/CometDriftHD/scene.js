@@ -190,6 +190,27 @@ export const COURSE_TINTS = {
 export const SKY_STOPS = [0, 0.28, 0.38, 0.44, 0.49, 0.53, 0.62, 1]
 export const tintFor = (id) => COURSE_TINTS[id] || COURSE_TINTS.dusk
 
+// ---- #511 item 2 (rest): per-course env wash. #502 put sky/fog/lights on the
+// course palette, but the #471 equirect wash that gives the liveries their
+// sky-glass reflections stayed one hard-coded dusk canvas — Sandbank's noon
+// bowls reflected sunset. Each palette carries the full wash law; dusk
+// reproduces the shipped canvas stop for stop. Node-safe: plain data only.
+export const ENV_WASHES = {
+    dusk: {
+        stops: [['#241432', 0], ['#7c3a34', 0.36], ['#e07a38', 0.46], ['#8a4428', 0.56], ['#40281c', 1]],
+        sun: ['#ffe6aa', '#ff9646'], sunX: 88, sunY: 28, sunR: 20,
+    },
+    noon: {
+        stops: [['#1e4c8c', 0], ['#4c84bc', 0.36], ['#c8d8e0', 0.46], ['#b89468', 0.56], ['#54443a', 1]],
+        sun: ['#fffae1', '#fff4da'], sunX: 88, sunY: 10, sunR: 24,
+    },
+    dawn: {
+        stops: [['#221a3e', 0], ['#6c3a5c', 0.36], ['#ffb070', 0.46], ['#b08468', 0.56], ['#38243a', 1]],
+        sun: ['#ffecd0', '#ffb070'], sunX: 88, sunY: 20, sunR: 22,
+    },
+}
+export const envWashFor = (id) => ENV_WASHES[id] || ENV_WASHES.dusk
+
 // generic ribbon: sample(i) returns the two edge points in px (with height);
 // closed ring, seam duplicated once for continuous UVs.
 function buildRibbon(sample, vScale, colorAt) {

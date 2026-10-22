@@ -225,6 +225,26 @@ if (args.includes('--mutate-register')) {
     })
 }
 
+// #511 item 2 env-wash mutant: flatten every course onto the dusk livery
+// reflection — the env-wash gates MUST go red under this run (noon karts
+// reflect a sunset they are not standing under).
+const ELINE = 'export const envWashFor = (id) => ENV_WASHES[id] || ENV_WASHES.dusk'
+const EUTIL = 'export const envWashFor = () => ENV_WASHES.dusk /* envmut */'
+let envmutat = false
+if (args.includes('--mutate-env')) {
+    const esrc = readFileSync(SCENE, 'utf8')
+    if (!esrc.includes(ELINE)) { console.error('MUTATE_ENV: envWashFor law not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, esrc.replace(ELINE, EUTIL))
+    envmutat = true
+    console.log('  ..    mutated: every course reflects the dusk wash — the env-wash gates MUST report FAILs')
+    process.on('exit', () => {
+        if (envmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(EUTIL, ELINE))
+            console.log('  ..    env mutation restored')
+        }
+    })
+}
+
 // #502 item 2 gantry mutant: Sandbank falls back onto the sandstone arch —
 // the line-structure gates MUST go red under this run (bowl wears the Gulch's
 // landmark again, the exact sameness the item complains about).
@@ -874,6 +894,41 @@ console.log('per-course skin + engine register (#502 items 1+6):')
     ok(SRC7.includes('applyCourseTint()') && SRC7.includes('tintFor(COURSE.palette)'), 'index.jsx re-tints the scene from the selected course')
     ok((SRC7.match(/applyCourseTint\(\)/g) || []).length >= 3, 'the tint runs at boot AND on both course-swap paths')
     ok(SRC7.includes('engineRegister(COURSE.palette)'), 'the engine law multiplies by the course register')
+}
+
+// --------------------------------------- per-course env wash on the liveries (#511 item 2)
+// #502 re-tinted sky/fog/lights but the #471 equirect reflection wash stayed a
+// dusk constant — noon and dawn karts still mirrored a sunset. The wash now
+// rides the palette table; dusk reproduces the shipped canvas byte for byte.
+console.log('per-course env wash (#511 item 2 — liveries reflect their own light):')
+{
+    const CT = await import('file://' + SCENE + '?t=' + (Date.now() + 41))
+    const { COURSE_TINTS, ENV_WASHES, envWashFor } = CT
+    const ids = Object.keys(COURSE_TINTS)
+    ok(JSON.stringify(Object.keys(ENV_WASHES)) === JSON.stringify(ids), 'every palette id carries its own env wash')
+    const hex6 = (c) => /^#[0-9a-f]{6}$/i.test(c)
+    ok(Object.values(ENV_WASHES).every((w) => w.stops.length === 5 &&
+        w.stops.every(([c, at], i) => hex6(c) && (i === 0 ? at === 0 : i === 4 ? at === 1 : at > w.stops[i - 1][1])) &&
+        hex6(w.sun[0]) && hex6(w.sun[1])), 'every wash is five ordered stops plus a sun core/fade hex pair')
+    const D = envWashFor('dusk')
+    ok(JSON.stringify(D.stops) === JSON.stringify([['#241432', 0], ['#7c3a34', 0.36], ['#e07a38', 0.46], ['#8a4428', 0.56], ['#40281c', 1]]) &&
+        D.sun.join() === '#ffe6aa,#ff9646' && D.sunX === 88 && D.sunY === 28 && D.sunR === 20,
+        'the dusk wash is the shipped #471 canvas stop for stop (gradient, sun colour, sun at 88/28)')
+    const rgbOf = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]
+    const lumOf = (c) => { const [r, g, b] = rgbOf(c); return 0.299 * r + 0.587 * g + 0.114 * b }
+    const hor = (w) => w.stops[2][0]
+    const top = (w) => w.stops[0][0]
+    const N = envWashFor('noon'); const W = envWashFor('dawn')
+    ok(rgbOf(top(N))[2] > rgbOf(top(N))[0] && rgbOf(hor(N))[2] > rgbOf(hor(N))[0], 'noon wash runs cool top-to-horizon (blue-dominant), not ember')
+    ok(rgbOf(hor(D))[0] > rgbOf(hor(D))[2], 'dusk horizon stays the shipped warm ember')
+    ok(rgbOf(hor(W))[0] > rgbOf(hor(W))[2], 'dawn horizon is warm rose-amber, not blue')
+    ok(lumOf(hor(N)) > lumOf(hor(W)) && lumOf(hor(W)) > lumOf(hor(D)), `the wash horizon brightens dusk -> dawn -> noon (${lumOf(hor(D)).toFixed(0)} -> ${lumOf(hor(W)).toFixed(0)} -> ${lumOf(hor(N)).toFixed(0)})`)
+    ok(N.sunY < W.sunY && W.sunY < D.sunY, `the reflected sun climbs with the light (canvas y ${D.sunY} -> ${W.sunY} -> ${N.sunY})`)
+    ok(new Set(ids.map((id) => ENV_WASHES[id].stops.map((s) => s[0]).join())).size === ids.length, 'every course reflects its own sky, not one shared gradient')
+    ok(envWashFor('nope') === ENV_WASHES.dusk, 'unknown palettes fall back to the dusk wash')
+    const SRC7 = readFileSync(SHARD, 'utf8')
+    ok(SRC7.includes('paintEnv(COURSE.palette)') && SRC7.includes('envMap.needsUpdate = true'), 'index.jsx repaints the env canvas and bumps the texture on course tint')
+    ok(!SRC7.includes('#241432'), 'index.jsx no longer hard-codes the dusk wash — the palette table owns it')
 }
 
 // ------------------------------------------ line structures per course (#502 item 2)
