@@ -47,7 +47,11 @@ const sig = () => page.evaluate(() => {
 })
 
 await page.keyboard.press('ArrowRight')
-await page.waitForTimeout(1400)
+// #780: the heat now opens on a summit-vista countdown — capture poses only
+// once the run phase has started and the swoop has landed, or the hero sits
+// 30 m away on the vista and pose diffs measure snow, not the rig.
+await page.waitForFunction(() => window.__ssxTest.cam().phase === 'run', null, { timeout: 8000 }).catch(() => {})
+await page.waitForTimeout(1600)
 
 r.check('hero GLB loads (>=40 bones)', await page.waitForFunction(() => window.__ssxTest.hero().ready, null, { timeout: 15000 }).then(() => page.evaluate(() => window.__ssxTest.hero().bones)).then((n) => n >= 40).catch(() => false))
 

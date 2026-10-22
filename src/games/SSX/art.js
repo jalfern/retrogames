@@ -89,6 +89,21 @@ export function landingSound(grad, v) {
         : { crust: false, dur: 0.09, vol: 0.075 + Math.min(0.03, v * 0.001), swish: null }
 }
 
+// #780 feel pass — pure view constants so the harness can grade them in Node.
+// The heat should open STANDING ON TOP OF THE MOUNTAIN, not in the chase-cam
+// tunnel: during the countdown the camera parks high and far with a slow pan,
+// the valley falling away below, then swoops into chase at GO. Values must
+// dominate the chase-cam rig in index.jsx (back 9.5, up ≤5.2, look 16, fov 66
+// at rest) — ssxcheck pins the gap so a "vista" can never shrink back to a
+// tunnel.
+export const START_VISTA = { back: 30, up: 13, look: 70, fov: 80, drift: 0.5, drop: 6 }
+
+// One original big-beat bed per mountain theme (melodies live in
+// AudioController.MUSIC); MUSIC_STEP is the resting tempo the cabinet lifts
+// with your speed — pinned equal to the track's own step by ssxcheck.
+export const MUSIC_TRACKS = { day: 'ssxDay', night: 'ssxNight', dusk: 'ssxDusk' }
+export const MUSIC_STEP = { ssxDay: 0.115, ssxNight: 0.13, ssxDusk: 0.145 }
+
 // #685: the geometric wall-top rim is smooth; small non-physics shards along
 // the high rock rim break the skyline the way the gully teeth do. Pure data
 // so the harness can grade placement without a DOM.

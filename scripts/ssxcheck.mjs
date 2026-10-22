@@ -9,6 +9,8 @@ import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE } from '../src/games/SSX/sim.js'
 import { decide, PACE } from '../src/games/SSX/planner.js'
 import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS } from '../src/games/SSX/course.js'
+import { MUSIC } from '../src/utils/AudioController.js'
+import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA } from '../src/games/SSX/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -336,6 +338,31 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('planner mirrors CFG.CENT', grab('CENT') === CFG.CENT)
     ok('planner mirrors CFG.flipRate', grab('flipRate') === CFG.flipRate)
     ok('CPU seats are honest under the player top', PACE.every((v) => v < 1))
+}
+
+// ---- 8. feel pass (#780): soundtrack beds + summit vista --------------------
+{
+    const themes = []
+    for (let c = 0; c < COURSE_COUNT; c++) themes.push(buildCourse(c).theme)
+    ok('#780 every mountain theme has a big-beat bed',
+        themes.every((t) => MUSIC_TRACKS[t] && MUSIC[MUSIC_TRACKS[t]]))
+    let bedsOk = true, stepsOk = true
+    for (const t of Object.keys(MUSIC_TRACKS)) {
+        const P = MUSIC[MUSIC_TRACKS[t]]
+        if (!P || P.lead.length !== P.bass.length || P.lead.length !== P.perc.length || P.lead.length % 8 !== 0) { bedsOk = false; continue }
+        if (!P.perc.some((v) => v === 1) || !P.perc.some((v) => v === 2)) bedsOk = false
+        if (MUSIC_STEP[MUSIC_TRACKS[t]] !== P.step) stepsOk = false
+        if (!(P.step >= 0.1 && P.step <= 0.17)) stepsOk = false
+    }
+    ok('#780 beds are driving kick/tek patterns of equal lanes', bedsOk)
+    ok('#780 resting tempo pinned to the track grid, liftable band', stepsOk)
+}
+{
+    const V = START_VISTA
+    ok('#780 the start camera is twice the chase-cam distance back', V.back >= 9.5 * 2)
+    ok('#780 the start camera towers over the gate', V.up >= 10)
+    ok('#780 the vista looks down the whole face, not into the near slope', V.look >= 48)
+    ok('#780 the vista FOV opens wider than the chase rig', V.fov > 70 && V.fov < 100)
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

@@ -17,12 +17,10 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, retunePose } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
-
-const BASS = [0, 0, 7, 0, 5, 0, 3, 7]
 
 const SSXGame = () => {
     const stageRef = useRef(null)
@@ -53,7 +51,7 @@ const SSXGame = () => {
         renderer.setPixelRatio(LITE ? 1 : Math.min(window.devicePixelRatio || 1, 2))
 
         const scene = new THREE.Scene()
-        const camera = new THREE.PerspectiveCamera(68, 1, 0.1, 900)
+        const camera = new THREE.PerspectiveCamera(START_VISTA.fov, 1, 0.1, 900)
         scene.add(camera)
         const sun = new THREE.DirectionalLight(0xffffff, 1.6)
         sun.position.set(-80, 160, 60)
@@ -145,7 +143,8 @@ const SSXGame = () => {
         let fpsEMA = 60
         let shake = 0, camPos = new THREE.Vector3()
         let camFresh = true
-        let musicAcc = 0, musicStep = 0
+        let musicTrack = null, musicStepT = 0
+        let swishT = 0, windT = 0, boostT = 0
         let pop = '', popT = 0
         let poseOverride = null
         const keys = new Set()
@@ -207,7 +206,10 @@ const SSXGame = () => {
                 // louder pop scaled with launch power — a crest is not silent
                 if (e.type === 'jump' && mine) {
                     if (e.power === undefined) audioController.playSweep(300, 700, 0.18, 'triangle', 0.05)
-                    else audioController.playSweep(140, 420 + Math.min(260, e.power * 24), 0.24, 'triangle', 0.07 + Math.min(0.05, e.power * 0.004))
+                    else {
+                        audioController.playSweep(140, 420 + Math.min(260, e.power * 24), 0.24, 'triangle', 0.07 + Math.min(0.05, e.power * 0.004))
+                        audioController.playSweep(950, 300, 0.4, 'sine', 0.045)
+                    }
                 }
                 if (e.type === 'land' && mine) {
                     const rr = g.riders[e.who ?? 0] || g.riders[0]
@@ -217,10 +219,15 @@ const SSXGame = () => {
                     const f = 520 + Math.min(900, e.pts * 0.4)
                     audioController.playTone(f, 0.09, 'square', 0.08)
                     if (e.mult > 1) audioController.playTone(f * 1.25, 0.09, 'square', 0.06)
-                    if (e.bigAir) shake = Math.max(shake, 0.35)
+                    if (e.bigAir) { shake = Math.max(shake, 0.35); audioController.playTone(58, 0.22, 'sine', 0.14); audioController.duckMusic(0.4, 0.4) }
                     if (e.over) audioController.playSweep(600, 1400, 0.3, 'sawtooth', 0.09)
                 }
-                if (e.type === 'crash' && mine) { audioController.playNoise(0.3, 0.14); shake = 0.7 }
+                if (e.type === 'crash' && mine) {
+                    audioController.playNoise(0.3, 0.14)
+                    audioController.playFilteredNoise(0.55, 0.16, 260)
+                    audioController.duckMusic(0.2, 0.7)
+                    shake = 0.7
+                }
                 if (e.type === 'up' && mine) audioController.playTone(330, 0.08, 'square', 0.05)
                 if (e.type === 'boost' && mine) audioController.playSweep(240, 960, 0.35, 'sawtooth', 0.08)
                 if (e.type === 'grind' && mine) audioController.playTone(1100, 0.08, 'square', 0.05)
@@ -285,17 +292,34 @@ const SSXGame = () => {
             const p = g.riders[0]
             const pp = slopePos(g.course, p.s, p.x)
             const fwdX = Math.sin(pp.th), fwdZ = Math.cos(pp.th)
-            const back = 9.5, up = 4.1 + p.v * 0.028
-            const goal = new THREE.Vector3(pp.x - fwdX * back, (p.air ? p.y : pp.y) + up, pp.z - fwdZ * back)
-            if (shake > 0) {
+            // #780: the countdown is a SUMMIT VISTA, not a chase-cam tunnel —
+            // park high and far with a slow drift, the valley falling away
+            // below the gate; at GO the chase goal takes over and the lerp
+            // swoops you down into the run.
+            const counting = g.phase === 'count'
+            let goal
+            if (counting) {
+                const V = START_VISTA
+                const pan = Math.sin(g.tick * 0.008) * V.drift
+                goal = new THREE.Vector3(
+                    pp.x - Math.sin(pp.th + pan) * V.back,
+                    pp.y + V.up,
+                    pp.z - Math.cos(pp.th + pan) * V.back,
+                )
+            } else {
+                const back = 9.5, up = 4.1 + p.v * 0.028
+                goal = new THREE.Vector3(pp.x - fwdX * back, (p.air ? p.y : pp.y) + up, pp.z - fwdZ * back)
+            }
+            if (shake > 0 && !counting) {
                 goal.x += Math.sin(g.tick * 3.7) * shake
                 goal.y += Math.cos(g.tick * 4.9) * shake
-                shake = Math.max(0, shake - 0.03)
             }
-            camPos.lerp(goal, camFresh ? 1 : 0.18)
+            shake = Math.max(0, shake - 0.03)
+            camPos.lerp(goal, camFresh ? 1 : counting ? 0.06 : 0.18)
             camFresh = false
             camera.position.copy(camPos)
-            camera.lookAt(pp.x + fwdX * 16, (p.air ? p.y : pp.y) + 1.2, pp.z + fwdZ * 16)
+            if (counting) camera.lookAt(pp.x + fwdX * START_VISTA.look, pp.y - START_VISTA.drop, pp.z + fwdZ * START_VISTA.look)
+            else camera.lookAt(pp.x + fwdX * 16, (p.air ? p.y : pp.y) + 1.2, pp.z + fwdZ * 16)
             if (skyObj) {
                 skyObj.position.set(camPos.x, camPos.y - 60, camPos.z)
                 const sunMesh = skyObj.userData.sun
@@ -310,8 +334,8 @@ const SSXGame = () => {
                 const P = SPARKLE_PULSE[i] || SPARKLE_PULSE[0]
                 sp.material.opacity = P.base + P.amp * Math.sin(g.tick * P.rate + P.phase) + P.slow * Math.sin(g.tick * P.slowRate + P.phase * 1.7)
             })
-            const fov = 66 + Math.min(16, Math.max(0, (p.v - 12) * 0.55)) + (p.boost ? 8 : 0)
-            if (Math.abs(camera.fov - fov) > 0.05) { camera.fov = fov; camera.updateProjectionMatrix() }
+            const fov = counting ? START_VISTA.fov : 66 + Math.min(16, Math.max(0, (p.v - 12) * 0.55)) + (p.boost ? 8 : 0)
+            if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * 0.12; camera.updateProjectionMatrix() }
 
             for (const m of riders) m.visible = true
             g.riders.forEach((r, i) => placeRider(riders[i], r))
@@ -374,6 +398,26 @@ const SSXGame = () => {
                 spray.geo.attributes.position.needsUpdate = true
             }
 
+            // #780 physical mix: wind rising with speed, a swish off the edge
+            // on hard carves, an open-air hush on hangs, a boost whine — short
+            // filtered bursts re-triggered on a throttle read as one bed.
+            if (screenRef.current === 'play' && !pausedRef.current && g.phase === 'run' && p.v > 1) {
+                if (!p.air) {
+                    if (p.v > 16 && (windT = (windT + 1) % 9) === 0) {
+                        audioController.playFilteredNoise(0.24, Math.min(0.05, 0.012 + (p.v - 16) * 0.0035), 420 + p.v * 28)
+                    }
+                    if (p.v > 8 && Math.abs(steer) > 0.45 && (swishT = (swishT + 1) % 5) === 0) {
+                        const s = Math.abs(steer)
+                        audioController.playFilteredNoise(0.12, Math.min(0.09, 0.02 + s * 0.028 + p.v * 0.0012), 650 + p.v * 40 + s * 350)
+                    }
+                    if (p.boost && (boostT = (boostT + 1) % 8) === 0) {
+                        audioController.playSweep(300, 720, 0.16, 'sawtooth', 0.028)
+                    }
+                } else if ((windT = (windT + 1) % 12) === 0) {
+                    audioController.playFilteredNoise(0.3, Math.min(0.055, 0.02 + p.v * 0.0015), 900)
+                }
+            }
+
             // carved grooves under the board, fading with age
             {
                 const cv = p.carves
@@ -433,19 +477,17 @@ const SSXGame = () => {
                 }
             }
 
-            // synth pulse: kick + bass, ducked in the air, chorus on landing
-            if (screenRef.current === 'play' && !pausedRef.current && p.v > 1) {
-                musicAcc += ft
-                if (musicAcc > 145) {
-                    musicAcc = 0
-                    musicStep++
-                    audioController.playNoise(0.03, p.air ? 0.015 : 0.035)
-                    if (!p.air && musicStep % 2 === 0) {
-                        const n = BASS[(musicStep / 2) % BASS.length]
-                        audioController.playTone(55 * Math.pow(2, n / 12), 0.12, 'square', 0.03)
-                    }
+            // #780 score: one original big-beat bed per mountain theme (the
+            // melodies live in AudioController.MUSIC). The grid lifts with your
+            // speed — faster riding pushes the tempo — and the bed only runs
+            // during an actual run: attract, pause and results stay silent.
+            if (screenRef.current === 'play' && !pausedRef.current && !g.end && g.phase === 'run') {
+                const track = MUSIC_TRACKS[g.course.theme]
+                if (track && musicTrack !== track) { audioController.startMusic(track); musicTrack = track }
+                if (track && (musicStepT = (musicStepT + 1) % 24) === 0) {
+                    audioController.setMusicStep(MUSIC_STEP[track] * Math.max(0.86, 1 - 0.14 * Math.max(0, p.v - 12) / 26))
                 }
-            }
+            } else if (musicTrack) { audioController.stopMusic(); musicTrack = null }
 
             if (popT > 0) popT--
             syncHud()
@@ -469,6 +511,16 @@ const SSXGame = () => {
             if (h.clock) h.clock.textContent = g.mode === 'showoff' ? String(Math.max(0, Math.ceil(g.showoffLeft))) : fmtTime(g.heatT / 60)
             if (h.pop) { h.pop.textContent = pop; h.pop.style.opacity = popT > 0 ? '1' : '0' }
             if (h.air) h.air.style.opacity = p.air && p.airT > 0.25 ? '1' : '0'
+            if (h.count) {
+                if (g.phase === 'count' && !g.end) {
+                    const n = Math.ceil(g.count / 60)
+                    h.count.textContent = n > 0 ? String(n) : 'GO!'
+                    h.count.style.opacity = '1'
+                } else if (g.phase === 'run' && g.heatT < 45) {
+                    h.count.textContent = 'GO!'
+                    h.count.style.opacity = g.heatT < 28 ? '1' : '0'
+                } else h.count.style.opacity = '0'
+            }
         }
 
         const startPlay = (mode) => {
@@ -528,8 +580,8 @@ const SSXGame = () => {
                 probe: () => {
                     const p = g.riders[0]
                     return {
-                        screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, carves: p.carves.length },
+                        screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick, phase: g.phase,
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },
@@ -637,7 +689,21 @@ const SSXGame = () => {
                     return { hero: h ? 1 : h === false ? 2 : 0, pose: h ? h.pose : null, bones: h ? Object.keys(h.bones).length : 0 }
                 }),
                 fps: () => Math.round(fpsEMA),
+                // #780: what the chase/vista camera is doing + whether the bed
+                // is running — the headless drive proves summit-before-GO.
+                cam: () => {
+                    const d = new THREE.Vector3()
+                    camera.getWorldDirection(d)
+                    return {
+                        phase: g.phase,
+                        fov: +camera.fov.toFixed(1),
+                        pos: camera.position.toArray().map((v) => +v.toFixed(2)),
+                        dir: d.toArray().map((v) => +v.toFixed(3)),
+                        music: audioController._musicState(),
+                    }
+                },
                 start: (m) => startPlay(m === 'showoff' ? 'showoff' : 'race'),
+                boostMeter: () => { g.riders[0].meter = 100; return g.riders[0].meter },
                 seek: (m) => { g.riders[0].s = m; camFresh = true; return g.riders[0].s },
                 heat: (h) => { loadHeat(g, h); shownHeat = g.heat; setCourseVisuals(); return g.course.name },
                 toAttract: () => { g = makeGame('race'); shownHeat = 0; poseOverride = null; setCourseVisuals(); setMode('attract') },
@@ -671,6 +737,7 @@ const SSXGame = () => {
 
         return () => {
             if (import.meta.env.DEV) { delete window.__ssxTest; unmountDbg() }
+            audioController.stopMusic()
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
@@ -706,6 +773,7 @@ const SSXGame = () => {
                     <div ref={setHud('pop')} className="mt-2 text-xl font-black text-fuchsia-300 transition-opacity duration-300" style={{ opacity: 0, textShadow: '0 0 14px #f0f, 2px 2px 0 #000' }} />
                     <div ref={setHud('air')} className="mt-1 text-xs tracking-[0.35em] text-cyan-200 transition-opacity duration-150" style={{ opacity: 0 }}>A I R</div>
                 </div>
+                <div ref={setHud('count')} className="absolute top-[34%] left-1/2 -translate-x-1/2 text-8xl font-black italic text-yellow-300 transition-opacity duration-100" style={{ opacity: 0, textShadow: '0 0 26px rgba(0,0,0,0.9), 4px 4px 0 #b0147a' }} />
                 <div className="absolute top-2 right-3 text-right">
                     <div className="bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5">
                         <div className="text-[9px] tracking-widest opacity-70">SPEED</div>
