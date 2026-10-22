@@ -1110,6 +1110,7 @@ export function poseRider(root, r, tick, override) {
     if (r.tumble > 0) {
         roll.rotation.x = tick * 0.6
         roll.rotation.z = Math.sin(tick * 0.9) * 1.2
+        root.scale.y = 1
         if (hero) blendHero(hero, pose, tick)
         else { legs.scale.y = 1; armR.rotation.z = 2 }
         return
@@ -1117,17 +1118,22 @@ export function poseRider(root, r, tick, override) {
     if (r.air) {
         roll.rotation.x = (r.flip * Math.PI) / 180 * (r.flip < 0 ? -1 : 1) * -1
         roll.rotation.z = 0
+        root.scale.y = 1
         if (hero) blendHero(hero, pose, tick)
         else { armR.rotation.z = r.grab ? 1.1 : 0.35; legs.scale.y = 0.9 }
         return
     }
     const c = r.crouch ? 0.78 : r.tuck ? 0.66 : 1
+    // #791: landing impact — the body compresses toward the deck for a beat
+    // after touchdown, deeper the harder the drop (r.stomp/stompPow in sim).
+    const stomp = !override && r.stomp > 0 ? Math.min(0.24, 0.05 + r.stompPow * 0.19) : 0
     roll.rotation.x = 0
     roll.rotation.z = r.steerSm * 0.28
+    root.scale.y = 1 - stomp
     if (hero) blendHero(hero, pose, tick)
     else {
-        legs.scale.y = c
-        legs.position.y = 0.55 * c
+        legs.scale.y = c * (1 - stomp)
+        legs.position.y = 0.55 * c * (1 - stomp)
         armR.rotation.z = r.tuck ? 0.9 : 0.2
     }
 }

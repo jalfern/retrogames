@@ -68,7 +68,7 @@ function newRider(i, isP, gridBack) {
         v: 0, air: false, airT: 0, spin: 0, spinDir: 0, flip: 0, grab: 0, grabKind: 0,
         crouch: false, crouchT: 0, boost: false, boostEdge: false,
         tuck: false, scrub: false,
-        tumble: 0, chain: 0, chainDisp: 0, chainDispT: 0,
+        tumble: 0, stomp: 0, stompPow: 0, chain: 0, chainDisp: 0, chainDispT: 0,
         meter: 0, over: false, grind: null, grindT: 0,
         finished: false, place: 0, finishT: 0, points: 0,
         lastTrick: null, lastTrickT: 0, score: 0,
@@ -110,7 +110,7 @@ export function loadHeat(g, heat) {
 
 export function push(g, e) { g.events.push(e) }
 
-function evalTrick(g, r) {
+function evalTrick(g, r, impact = 0) {
     const sp = Math.min(6, Math.floor(Math.abs(r.spin) / 175))
     const fl = Math.round(Math.abs(r.flip) / 360)
     const flOk = !CFG.flipCheck || Math.abs(Math.abs(r.flip) - fl * 360) <= 55 || Math.abs(r.flip) < 140
@@ -135,7 +135,7 @@ function evalTrick(g, r) {
     r.meter = Math.min(100, r.meter + pts * CFG.boostGain * (CFG.slack ? 0.75 : 1))
     r.lastTrick = `${r.over ? 'OVER!! ' : ''}${flipName}${grabName}${spinName}${spinName ? '' : 'AIR'}`.trim()
     r.lastTrickT = 150
-    push(g, { type: 'land', who: r.id, pts, name: r.lastTrick, mult, over: !!r.over, bigAir: r.airT > 1.2 })
+    push(g, { type: 'land', who: r.id, pts, name: r.lastTrick, mult, over: !!r.over, bigAir: r.airT > 1.2, impact })
     return { crash: false, pts }
 }
 
@@ -149,6 +149,7 @@ function crash(g, r, what) {
     r.over = false
     r.spin = 0; r.flip = 0; r.grab = 0; r.air = false; r.grind = null
     r.press = 0
+    r.stomp = 0; r.stompPow = 0
     push(g, { type: 'crash', who: r.id, what })
 }
 
@@ -164,6 +165,7 @@ function riderStep(g, r, inp) {
         if (r.tumble === 0) { r.v = Math.min(r.v, 12); push(g, { type: 'up', who: r.id }) }
         return
     }
+    if (r.stomp > 0) r.stomp--
     const pace = r.isP ? 1 : PACE[r.id - 1]
     // #791 analog steer: the board loads onto an edge over ~0.1 s of held
     // pressure instead of snapping to full lock — a tap nips, a hold carves.
@@ -239,10 +241,17 @@ function riderStep(g, r, inp) {
         if (r.y <= groundY && r.vy < 0) {
             r.y = groundY
             r.air = false
-            // #791: a seat that was flagged at takeoff washes out on landing —
+            // #791: landing impact — descent speed at touchdown drives a
+            // compression/stomp pose and sizes the spray burst in the renderer.
+            // Purely cosmetic state: physics is untouched, but it rides the
+            // hash so replays stomp identically.
+            const impact = Math.max(0, -r.vy)
+            r.stompPow = Math.min(1, impact / 11)
+            if (r.stompPow > 0.04) r.stomp = Math.round(8 + r.stompPow * 10)
+            // #791: the seat flagged at takeoff washes out on landing —
             // chain and meter go, the field drives past it.
             if (r.miss) { r.miss = false; crash(g, r, 'miss'); return }
-            const res = evalTrick(g, r)
+            const res = evalTrick(g, r, impact)
             r.pipeAir = false
             if (res.crash) { crash(g, r, 'bail'); return }
             r.spin = 0; r.flip = 0; r.grab = 0; r.airT = 0; r.over = false
@@ -289,7 +298,7 @@ function riderStep(g, r, inp) {
         r.crouch = false
         const boostV = 3 + r.crouchT * 4
         r.vy = boostV
-        r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0
+        r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0
         r.over = r.meter >= 100
         r.miss = !r.isP && cpuMiss(g, r)
         push(g, { type: 'jump', who: r.id, small: true })
@@ -326,7 +335,7 @@ function riderStep(g, r, inp) {
     if ((ahead - r.y > 0.55 || (liftHere > 0.8 && r.y - ahead > 0.3)) && r.v > 12) {
         const lip = segAt(c, r.s)
         r.vy = Math.max(4.5, liftHere * 1.9) + r.v * 0.11 + r.crouchT * 2.5
-        r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0
+        r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0
         r.over = r.meter >= 100
         r.miss = !r.isP && cpuMiss(g, r)
         r.pipeAir = c.pipes.some((p) => lip.i >= p.i0 - 1 && lip.i <= p.i1 + 1)
@@ -425,7 +434,7 @@ export function stateHash(g) {
     const add = (str) => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) } }
     add(`${g.tick}|${g.heat}|${g.phase}|${g.mode}|${g.end}|${g.showoffLeft.toFixed(2)}|${g.count}`)
     for (const r of g.riders) {
-        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)}`)
+        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)},st${r.stomp}:${r.stompPow.toFixed(2)}`)
     }
     return (h >>> 0).toString(16)
 }
