@@ -213,6 +213,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'bob')
       - run: npm run bobcheck
         if: contains(fromJSON(env.KEYS), 'bob')
+      - run: npm run recmethods
+        if: contains(fromJSON(env.KEYS), 'bob') || contains(fromJSON(env.KEYS), 'lem')
       - run: npm run lint:marble
         if: contains(fromJSON(env.KEYS), 'marble')
       - run: npm run marblecheck
