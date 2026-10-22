@@ -5,7 +5,7 @@
 //
 //   npm run dev   (in another shell)   then   npm run emberwoodcheck
 //   EMBERWOOD_NO_BROWSER=1 npm run emberwoodcheck   # skip the Chrome leg
-import { SCREENS, TS, SW, SH, tileAt } from '../src/games/Emberwood/world.js'
+import { SCREENS, TS, SW, SH, tileAt, isSolidTile } from '../src/games/Emberwood/world.js'
 import { createSim, stepSim, simState, hashState, spawnRoom } from '../src/games/Emberwood/sim.js'
 import { proveGame, tilePath } from '../src/games/Emberwood/solver.js'
 
@@ -288,6 +288,73 @@ function arcScript(seed) {
     stepSim(s, inp({ lx: 1 }))
     const st = simState(s)
     ok(typeof st.tick === 'number' && typeof st.score === 'number' && 'done' in st && typeof st.hash === 'number', 'simState carries tick/score/done/hash')
+}
+
+// ---- 6b. movement flow (#786): smooth walking — no pinches, every gap passes off-center ----
+{
+    const sol = (s, x, y) => { const ch = tileAt(s, x, y); return ch === 'C' || isSolidTile(ch) }
+    const cnt = (s, x, y) =>
+        (s.chests || []).some(c => c.x === x && c.y === y) ||
+        (s.doors || []).some(d => d.x === x && d.y === y) ||
+        (s.blocks || []).some(b => b.x === x && b.y === y) ||
+        (s.warps || []).some(w => w.x === x && w.y === y)
+    const freeBox = (s, X, Y) => {
+        for (let ty = Math.floor((Y - 4) / TS); ty <= Math.floor((Y + 4 - 0.001) / TS); ty++)
+            for (let tx = Math.floor((X - 5) / TS); tx <= Math.floor((X + 5 - 0.001) / TS); tx++)
+                if (sol(s, tx, ty) || cnt(s, tx, ty)) return false
+        return true
+    }
+    const pinches = []
+    let gTests = 0, gFails = 0, gMeat = 0
+    const gFl = []
+    for (const id of Object.keys(SCREENS)) {
+        const s = SCREENS[id]
+        for (let y = 0; y < SH - 1; y++) for (let x = 0; x < SW - 1; x++) {
+            if (sol(s, x, y) && sol(s, x + 1, y + 1) && !sol(s, x + 1, y) && !sol(s, x, y + 1)) pinches.push(`${id}:${x},${y}x`)
+            if (sol(s, x + 1, y) && sol(s, x, y + 1) && !sol(s, x, y) && !sol(s, x + 1, y + 1)) pinches.push(`${id}:${x},${y}/`)
+        }
+        for (let y = 1; y < SH - 1; y++) for (let x = 1; x < SW - 1; x++) {
+            if (sol(s, x, y) || cnt(s, x, y)) continue
+            const vert = sol(s, x - 1, y) && sol(s, x + 1, y) && !sol(s, x, y - 1) && !sol(s, x, y + 1)
+            const horz = sol(s, x, y - 1) && sol(s, x, y + 1) && !sol(s, x - 1, y) && !sol(s, x + 1, y)
+            if (!vert && !horz) continue
+            if (cnt(s, x, y - 1) || cnt(s, x, y + 1) || cnt(s, x - 1, y) || cnt(s, x + 1, y)) continue
+            for (const o of [-5, -3, 0, 3, 5]) {
+                let off = o
+                if (vert) {
+                    while (off !== 0 && !freeBox(s, x * TS + 8 + off, (y - 1) * TS + 12)) off -= Math.sign(o)
+                    if (!freeBox(s, x * TS + 8 + off, (y - 1) * TS + 12)) continue
+                    gTests++; if (Math.abs(off) >= 4) gMeat++
+                    const sim = createSim(7); spawnRoom(sim, id, null); sim.enemies = []
+                    sim.hero.x = x * TS + 8 + off; sim.hero.y = (y - 1) * TS + 12
+                    let okRun = false
+                    for (let f = 0; f < 60; f++) {
+                        stepSim(sim, inp({ ly: 1 }))
+                        if (sim.screen !== id) break
+                        if (Math.floor(sim.hero.x / TS) === x && Math.floor(sim.hero.y / TS) >= y) { okRun = true; break }
+                    }
+                    if (!okRun) { gFails++; gFl.push(`${id} V(${x},${y}) o=${off}`) }
+                }
+                if (horz) {
+                    while (off !== 0 && !freeBox(s, (x - 1) * TS + 8, y * TS + 8 + off)) off -= Math.sign(o)
+                    if (!freeBox(s, (x - 1) * TS + 8, y * TS + 8 + off)) continue
+                    gTests++; if (Math.abs(off) >= 4) gMeat++
+                    const sim = createSim(7); spawnRoom(sim, id, null); sim.enemies = []
+                    sim.hero.x = (x - 1) * TS + 8; sim.hero.y = y * TS + 8 + off
+                    let okRun = false
+                    for (let f = 0; f < 60; f++) {
+                        stepSim(sim, inp({ lx: 1, ly: off === 0 ? 0 : -Math.sign(off) * 0.4 }))
+                        if (sim.screen !== id) break
+                        if (Math.floor(sim.hero.x / TS) >= x && Math.abs(sim.hero.y - (y * TS + 8)) < 8) { okRun = true; break }
+                    }
+                    if (!okRun) { gFails++; gFl.push(`${id} H(${x},${y}) o=${off}`) }
+                }
+            }
+        }
+    }
+    ok(pinches.length === 0, `no diagonal pinches on any map${pinches.length ? ' -> ' + pinches.join(' ') : ''}`)
+    ok(gTests > 200 && gFails === 0, `every 1-tile gap passes from off-center starts ±5px (#786): ${gTests} runs, ${gMeat} need corner-nudge${gFl.length ? ' -> ' + gFl.slice(0, 6).join(' ') : ''}`)
+    ok(gMeat >= 40, `the gap sweep actually exercises off-center entries (meat runs: ${gMeat})`)
 }
 
 const nodeResult = { pass, fail }
