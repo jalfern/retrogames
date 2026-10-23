@@ -40,6 +40,9 @@ export function decide(g, r, hot = false) {
         // predicted hang: how long until the slope meets the board again
         const gy = terrainY(c, r.s + r.v * 0.6, r.x)
         const ttl = (r.vy + Math.sqrt(Math.max(0, r.vy * r.vy + 2 * CFGP.G * (r.y - gy)))) / CFGP.G
+        // #889: over a crevasse the hang estimate reads the hole as ground —
+        // nobody starts a flip they might have to land in the air over a hole.
+        const nearGap = c.gaps.some((gp) => r.s > gp.s0 - 8 && r.s < gp.s1 + 8)
 
         // spins: commit early, both directions earn the same ledger.
         // #791 revert (hot attract only): leave the lip carved one way and the
@@ -58,7 +61,7 @@ export function decide(g, r, hot = false) {
         // board to 665° (the top of the clean double window) before the landing
         // margin; latched once past 330° so a sagging estimate never strands
         // the rotation in the crash band between the two safe windows.
-        const wantFlip = (r.over || skill > 0.72) && ttl > 1.05
+        const wantFlip = (r.over || skill > 0.72) && ttl > 1.05 && !nearGap
         const dbl = skill > 0.9 && (r.over || r.flip > 330 || (ttl - r.airT) * CFGP.flipRate > 700)
         if (wantFlip && r.airT > 0.14 && r.flip < (dbl ? 665 : 320) && ttl - r.airT > 0.35) inp.flip = true
         return inp
@@ -105,6 +108,12 @@ export function decide(g, r, hot = false) {
     if (nextK) {
         const d = nextK.lipS - r.s
         inp.jump = d < nextK.k.power * 2 + r.v * 0.30 && d > r.v * 0.07
+        // #889 crevasse lip: an early ollie dies over the hole — hold the
+        // edges, commit the meter and arrive fast enough for the crest launch.
+        if (nextK.k.gap) {
+            inp.jump = false
+            if (d < 60 && !vetoed && r.meter > 25) inp.boost = true
+        }
     }
 
     // spend the meter on the straights

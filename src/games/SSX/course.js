@@ -1,4 +1,4 @@
-// SSX — course.js : the three mountains. Pure data + geometry helpers, no DOM,
+// SSX — course.js : the six mountains. Pure data + geometry helpers, no DOM,
 // no Math.random. A course is a downhill centerline integrated segment by
 // segment (heading from curve, height from drop), with kickers, rails,
 // halfpipes and obstacles parked along it. The sim, the autopilot, the
@@ -10,16 +10,31 @@
 // out). Rollers and moguls (`undulate`) and turn banking (`bankTurn`) are lift
 // added inside terrainY — the single surface — so riders ride exactly what they
 // see. Every spine starts on a summit plateau, then the drop falls away.
+//
+// #889 — the mountain got bigger. Six original courses, each ~2x the length of
+// the original three, each with its own character, and every course carries
+// route choices: `gaps` (crevasses you launch over or skirt on the shoulder),
+// `chutes` (express troughs that trade the feature line for raw speed) and
+// high `rails` (the point line up in the powder band). The RACE is still three
+// heats (HEATS), but `tournament(seed)` rotates which three of the six you
+// ride — and online rooms run the same rotation off the host seed.
 
 export const DS = 4                       // metres per segment
 
 const smooth01 = (t) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u) }
 
+// #889 route-choice constants (pinned by ssxcheck)
+export const GAP_DEPTH = 9               // m a crevasse sinks below its rim
+export const GAP_X = 1.7               // |x| under which a crevasse swallows you
+export const EXPRESS = 1.45            // s-progress multiplier inside a chute
+
 // Every course is chunks of {n, curve, drop}; curve is rad/m of heading turn,
-// drop is metres of fall per metre travelled. Chunks are seeded permutational
-// seasoning on a hand-authored spine, so each course is fixed forever.
+// drop is metres of fall per metre travelled. Chunks are hand-authored spines,
+// fixed forever. #889 doubled every spine and gave each a second character
+// half, so each mountain reads as a different place, not a recolor.
 const SPINES = [
-    {   // ALPINE GLADE — the classic day run: summit drop-in, long S's, gullies.
+    {   // ALPINE GLADE — the classic day run: summit drop-in, long S's, gullies,
+        // a crevasse below the shoulder and an express chute past the step.
         name: 'ALPINE GLADE', theme: 'day',
         chunks: [
             { n: 10, curve: 0.000, drop: 0.045 },   // summit traverse (#638)
@@ -34,27 +49,46 @@ const SPINES = [
             { n: 22, curve: -0.020, drop: 0.075 },
             { n: 20, curve: 0.006, drop: 0.090 },
             { n: 24, curve: 0.000, drop: 0.055 },
+            // #889 back half — the face keeps falling: a second S district
+            { n: 26, curve: 0.014, drop: 0.070 },
+            { n: 18, curve: 0.000, drop: 0.095 },
+            { n: 22, curve: -0.016, drop: 0.080 },
+            { n: 24, curve: 0.000, drop: 0.060 },
+            { n: 20, curve: 0.018, drop: 0.085 },
+            { n: 16, curve: -0.012, drop: 0.105 },
+            { n: 26, curve: 0.000, drop: 0.055 },
+            { n: 22, curve: 0.008, drop: 0.070 },
+            { n: 20, curve: 0.000, drop: 0.060 },
         ],
         gullies: [{ f0: 0.30, f1: 0.41 }, { f0: 0.62, f1: 0.71 }],
         // #844: authored stretches where the shoulder runs out in exposed rock
         // faces instead of pure snow shoulders (f = fraction, side = which)
         outcrops: [{ f0: 0.16, f1: 0.25, side: 1 }, { f0: 0.48, f1: 0.56, side: -1 }, { f0: 0.82, f1: 0.90, side: 1 }],
+        // #889 crevasses: a launch lip is built straight before each span; fly
+        // the fall line or take the shoulder around it.
+        gaps: [{ f: 0.265, w: 6, power: 3.8 }, { f: 0.575, w: 5, power: 3.4 }],
+        // #889 express chutes: sunk troughs that carry speed past the features
+        chutes: [{ f0: 0.45, f1: 0.53, x: 0.85, w: 0.5 }, { f0: 0.76, f1: 0.84, x: -0.8, w: 0.5 }],
         // f = fraction of the run, x = lateral fraction of the piste
         kickers: [
-            { f: 0.13, x: -0.25, power: 2.6, w: 0.22 },
-            { f: 0.30, x: 0.30, power: 3.2, w: 0.24 },
-            { f: 0.47, x: -0.15, power: 2.4, w: 0.22 },
-            { f: 0.62, x: 0.10, power: 3.6, w: 0.26 },
-            { f: 0.80, x: -0.05, power: 3.0, w: 0.24 },
+            { f: 0.12, x: -0.25, power: 2.6, w: 0.22 },
+            { f: 0.185, x: 0.30, power: 3.2, w: 0.24 },
+            { f: 0.40, x: -0.15, power: 2.4, w: 0.22 },
+            { f: 0.49, x: 0.10, power: 3.6, w: 0.26 },
+            { f: 0.70, x: -0.05, power: 3.0, w: 0.24 },
+            { f: 0.85, x: 0.20, power: 2.8, w: 0.22 },
         ],
         rails: [
             { f0: 0.36, f1: 0.40, x: 0.55 },
             { f0: 0.70, f1: 0.75, x: -0.55 },
+            // #889 high line: up in the powder band, double trickle, slow to reach
+            { f0: 0.46, f1: 0.51, x: 1.30, high: true },
         ],
         pipes: [],
-        obst: [0.10, 0.21, 0.26, 0.41, 0.52, 0.58, 0.68, 0.74, 0.86, 0.92],
+        obst: [0.10, 0.21, 0.44, 0.52, 0.66, 0.74, 0.80, 0.90, 0.94],
     },
-    {   // NEON HEIGHTS — the night city: summit stage, harder lines, gullies.
+    {   // NEON HEIGHTS — the night city: summit stage, harder lines, gullies,
+        // two crevasses under the lights and a catwalk rail above the crowd.
         name: 'NEON HEIGHTS', theme: 'night',
         chunks: [
             { n: 10, curve: 0.000, drop: 0.042 },   // summit traverse (#638)
@@ -69,26 +103,42 @@ const SPINES = [
             { n: 22, curve: 0.000, drop: 0.070 },
             { n: 16, curve: -0.018, drop: 0.095 },
             { n: 20, curve: 0.000, drop: 0.060 },
+            // #889 back half — the district below the skyline
+            { n: 18, curve: 0.022, drop: 0.085 },
+            { n: 14, curve: 0.000, drop: 0.110 },
+            { n: 16, curve: -0.020, drop: 0.095 },
+            { n: 22, curve: 0.000, drop: 0.070 },
+            { n: 18, curve: 0.018, drop: 0.080 },
+            { n: 16, curve: 0.000, drop: 0.105 },
+            { n: 20, curve: -0.014, drop: 0.075 },
+            { n: 18, curve: 0.000, drop: 0.065 },
+            { n: 22, curve: 0.012, drop: 0.070 },
+            { n: 18, curve: 0.000, drop: 0.060 },
         ],
         gullies: [{ f0: 0.16, f1: 0.22 }, { f0: 0.46, f1: 0.52 }, { f0: 0.64, f1: 0.68 }],
         outcrops: [{ f0: 0.28, f1: 0.38, side: -1 }, { f0: 0.74, f1: 0.86, side: 1 }],
+        gaps: [{ f: 0.325, w: 5, power: 3.6 }, { f: 0.605, w: 6, power: 3.8 }],
+        chutes: [{ f0: 0.19, f1: 0.26, x: -0.8, w: 0.5 }, { f0: 0.48, f1: 0.55, x: 0.8, w: 0.5 }],
         kickers: [
             { f: 0.11, x: 0.00, power: 3.0, w: 0.24 },
-            { f: 0.28, x: -0.35, power: 2.4, w: 0.22 },
-            { f: 0.44, x: 0.25, power: 3.4, w: 0.26 },
-            { f: 0.58, x: -0.20, power: 2.8, w: 0.24 },
-            { f: 0.76, x: 0.05, power: 3.8, w: 0.26 },
+            { f: 0.235, x: -0.35, power: 2.4, w: 0.22 },
+            { f: 0.42, x: 0.25, power: 3.4, w: 0.26 },
+            { f: 0.52, x: -0.20, power: 2.8, w: 0.24 },
+            { f: 0.72, x: 0.05, power: 3.8, w: 0.26 },
+            { f: 0.86, x: -0.10, power: 2.6, w: 0.22 },
         ],
         rails: [
             { f0: 0.17, f1: 0.22, x: -0.50 },
-            { f0: 0.34, f1: 0.38, x: 0.55 },
+            { f0: 0.36, f1: 0.40, x: 0.55 },
             { f0: 0.50, f1: 0.55, x: -0.55 },
             { f0: 0.66, f1: 0.71, x: 0.50 },
+            { f0: 0.78, f1: 0.83, x: 1.30, high: true },
         ],
         pipes: [],
-        obst: [0.08, 0.16, 0.24, 0.33, 0.42, 0.54, 0.63, 0.72, 0.82, 0.90],
+        obst: [0.08, 0.15, 0.24, 0.30, 0.40, 0.48, 0.58, 0.66, 0.74, 0.82, 0.88, 0.93],
     },
-    {   // BIG AIR BASIN — the halfpipe run: rim start, two walls, monster kickers.
+    {   // BIG AIR BASIN — the halfpipe run: rim start, two walls, monster
+        // kickers doubled down the whole length of the basin.
         name: 'BIG AIR BASIN', theme: 'dusk',
         chunks: [
             { n: 10, curve: 0.000, drop: 0.045 },   // rim traverse (#638)
@@ -101,12 +151,26 @@ const SPINES = [
             { n: 20, curve: 0.000, drop: 0.075 },
             { n: 24, curve: -0.008, drop: 0.060 },
             { n: 22, curve: 0.000, drop: 0.080 },
+            // #889 back half — the far rim keeps rolling
+            { n: 22, curve: 0.010, drop: 0.070 },
+            { n: 20, curve: 0.000, drop: 0.085 },
+            { n: 24, curve: -0.010, drop: 0.065 },
+            { n: 22, curve: 0.000, drop: 0.075 },
+            { n: 20, curve: 0.012, drop: 0.070 },
+            { n: 18, curve: 0.000, drop: 0.080 },
+            { n: 22, curve: -0.008, drop: 0.065 },
+            { n: 20, curve: 0.000, drop: 0.070 },
+            { n: 22, curve: 0.000, drop: 0.060 },
         ],
         gullies: [{ f0: 0.40, f1: 0.50 }, { f0: 0.86, f1: 0.95 }],
         outcrops: [{ f0: 0.56, f1: 0.66, side: -1 }],
+        gaps: [{ f: 0.48, w: 5, power: 4.0 }],
+        chutes: [{ f0: 0.68, f1: 0.74, x: 0.9, w: 0.45 }],
         kickers: [
             { f: 0.30, x: 0.00, power: 4.2, w: 0.34 },
+            { f: 0.36, x: 0.00, power: 3.6, w: 0.30 },
             { f: 0.52, x: 0.00, power: 4.6, w: 0.36 },
+            { f: 0.60, x: 0.00, power: 4.4, w: 0.34 },
             { f: 0.72, x: 0.00, power: 4.0, w: 0.34 },
         ],
         rails: [],
@@ -116,9 +180,154 @@ const SPINES = [
         ],
         obst: [0.20, 0.40, 0.62, 0.80],
     },
+    {   // BACKCOUNTRY BOWL (#889) — the long cruiser: wide-open day face, giant
+        // rollers, one thundering canyon gap, and river chutes that hum.
+        name: 'BACKCOUNTRY BOWL', theme: 'day',
+        chunks: [
+            { n: 10, curve: 0.000, drop: 0.045 },   // summit traverse
+            { n: 16, curve: 0.000, drop: 0.110 },   // the drop-away
+            { n: 26, curve: 0.010, drop: 0.060 },
+            { n: 24, curve: 0.000, drop: 0.075 },
+            { n: 26, curve: -0.012, drop: 0.065 },
+            { n: 28, curve: 0.000, drop: 0.070 },
+            { n: 24, curve: 0.012, drop: 0.060 },
+            { n: 26, curve: 0.000, drop: 0.075 },
+            { n: 24, curve: -0.010, drop: 0.065 },
+            { n: 28, curve: 0.000, drop: 0.060 },
+            { n: 26, curve: 0.014, drop: 0.070 },
+            { n: 24, curve: 0.000, drop: 0.065 },
+            { n: 26, curve: -0.012, drop: 0.060 },
+            { n: 28, curve: 0.000, drop: 0.055 },
+            { n: 26, curve: 0.010, drop: 0.060 },
+            { n: 24, curve: 0.000, drop: 0.055 },
+            { n: 28, curve: -0.010, drop: 0.055 },
+            { n: 26, curve: 0.000, drop: 0.050 },
+            { n: 24, curve: 0.008, drop: 0.045 },
+        ],
+        gullies: [{ f0: 0.48, f1: 0.56 }],
+        outcrops: [{ f0: 0.18, f1: 0.26, side: 1 }, { f0: 0.68, f1: 0.76, side: -1 }],
+        gaps: [{ f: 0.36, w: 6, power: 4.2 }],
+        chutes: [{ f0: 0.50, f1: 0.58, x: -0.85, w: 0.5 }, { f0: 0.78, f1: 0.85, x: 0.8, w: 0.5 }],
+        kickers: [
+            { f: 0.14, x: -0.30, power: 2.6, w: 0.24 },
+            { f: 0.28, x: 0.25, power: 2.8, w: 0.24 },
+            { f: 0.44, x: -0.20, power: 2.4, w: 0.22 },
+            { f: 0.58, x: 0.30, power: 3.0, w: 0.26 },
+            { f: 0.72, x: -0.15, power: 2.6, w: 0.24 },
+            { f: 0.86, x: 0.10, power: 2.8, w: 0.22 },
+        ],
+        rails: [
+            { f0: 0.20, f1: 0.24, x: -0.55 },
+            { f0: 0.64, f1: 0.70, x: 1.30, high: true },   // ridge catwalk
+        ],
+        pipes: [],
+        obst: [0.12, 0.22, 0.30, 0.42, 0.50, 0.62, 0.70, 0.80, 0.90],
+    },
+    {   // TIMBER LINE (#889) — the tight forest slalom: short alternating turns,
+        // dense trees, gaps between the trunks and a boardwalk high line.
+        name: 'TIMBER LINE', theme: 'dusk',
+        chunks: [
+            { n: 10, curve: 0.000, drop: 0.045 },   // ridge traverse
+            { n: 14, curve: 0.000, drop: 0.115 },   // drop into the trees
+            { n: 14, curve: 0.024, drop: 0.085 },
+            { n: 12, curve: -0.026, drop: 0.090 },
+            { n: 14, curve: 0.022, drop: 0.080 },
+            { n: 12, curve: -0.024, drop: 0.095 },
+            { n: 14, curve: 0.026, drop: 0.085 },
+            { n: 12, curve: -0.022, drop: 0.090 },
+            { n: 14, curve: 0.020, drop: 0.080 },
+            { n: 12, curve: -0.026, drop: 0.095 },
+            { n: 14, curve: 0.024, drop: 0.085 },
+            { n: 12, curve: -0.020, drop: 0.090 },
+            { n: 14, curve: 0.026, drop: 0.080 },
+            { n: 12, curve: -0.024, drop: 0.090 },
+            { n: 14, curve: 0.022, drop: 0.075 },
+            { n: 12, curve: -0.020, drop: 0.085 },
+            { n: 14, curve: 0.018, drop: 0.080 },
+            { n: 12, curve: -0.022, drop: 0.085 },
+            { n: 14, curve: 0.020, drop: 0.070 },
+            { n: 12, curve: -0.018, drop: 0.080 },
+            { n: 16, curve: 0.000, drop: 0.065 },
+            { n: 14, curve: 0.014, drop: 0.070 },
+            { n: 12, curve: -0.012, drop: 0.075 },
+            { n: 14, curve: 0.000, drop: 0.060 },
+        ],
+        gullies: [{ f0: 0.34, f1: 0.40 }],
+        outcrops: [{ f0: 0.24, f1: 0.30, side: 1 }],
+        gaps: [{ f: 0.50, w: 5, power: 3.4 }],
+        chutes: [{ f0: 0.20, f1: 0.26, x: 0.85, w: 0.45 }, { f0: 0.64, f1: 0.70, x: -0.85, w: 0.45 }],
+        kickers: [
+            { f: 0.16, x: -0.30, power: 2.2, w: 0.20 },
+            { f: 0.30, x: 0.28, power: 2.4, w: 0.20 },
+            { f: 0.38, x: -0.25, power: 2.2, w: 0.20 },
+            { f: 0.58, x: 0.30, power: 2.6, w: 0.22 },
+            { f: 0.72, x: -0.28, power: 2.2, w: 0.20 },
+            { f: 0.86, x: 0.15, power: 2.4, w: 0.22 },
+        ],
+        rails: [
+            { f0: 0.40, f1: 0.45, x: 1.30, high: true },   // boardwalk
+        ],
+        pipes: [],
+        obst: [0.10, 0.14, 0.18, 0.24, 0.28, 0.34, 0.38, 0.46, 0.535, 0.56, 0.62, 0.68, 0.74, 0.80, 0.86, 0.92],
+    },
+    {   // PIPE WORKS (#889) — the night park: two halfpipes, rails at every
+        // tier, wall after wall after wall. Showoff's playground, and the
+        // tightest lines on the mountain.
+        name: 'PIPE WORKS', theme: 'night',
+        chunks: [
+            { n: 10, curve: 0.000, drop: 0.045 },   // lift-tower traverse
+            { n: 14, curve: 0.000, drop: 0.110 },   // the drop-in
+            { n: 22, curve: 0.008, drop: 0.070 },
+            { n: 20, curve: 0.000, drop: 0.075 },
+            { n: 22, curve: -0.010, drop: 0.065 },
+            { n: 20, curve: 0.000, drop: 0.080 },
+            { n: 22, curve: 0.010, drop: 0.070 },
+            { n: 20, curve: 0.000, drop: 0.075 },
+            { n: 24, curve: -0.008, drop: 0.065 },
+            { n: 22, curve: 0.000, drop: 0.070 },
+            { n: 22, curve: 0.012, drop: 0.065 },
+            { n: 20, curve: 0.000, drop: 0.075 },
+            { n: 24, curve: -0.010, drop: 0.060 },
+            { n: 22, curve: 0.000, drop: 0.055 },
+            { n: 22, curve: 0.000, drop: 0.050 },
+        ],
+        gullies: [{ f0: 0.34, f1: 0.42 }],
+        outcrops: [{ f0: 0.44, f1: 0.52, side: 1 }, { f0: 0.76, f1: 0.84, side: -1 }],
+        gaps: [{ f: 0.56, w: 5, power: 3.8 }],
+        chutes: [{ f0: 0.66, f1: 0.72, x: -0.85, w: 0.5 }],
+        kickers: [
+            { f: 0.30, x: 0.00, power: 3.6, w: 0.30 },
+            { f: 0.36, x: -0.35, power: 2.4, w: 0.22 },
+            { f: 0.44, x: 0.30, power: 2.8, w: 0.24 },
+            { f: 0.68, x: -0.30, power: 2.8, w: 0.24 },
+            { f: 0.78, x: 0.00, power: 4.2, w: 0.34 },
+            { f: 0.86, x: 0.20, power: 2.6, w: 0.22 },
+        ],
+        rails: [
+            { f0: 0.20, f1: 0.25, x: -0.50 },
+            { f0: 0.48, f1: 0.53, x: 0.55 },
+            { f0: 0.70, f1: 0.75, x: 1.30, high: true },
+        ],
+        pipes: [
+            { f: 0.12, power: 5.0, w: 1.0 },
+            { f: 0.62, power: 5.4, w: 1.0 },
+        ],
+        obst: [0.18, 0.28, 0.40, 0.48, 0.62, 0.74, 0.82, 0.90],
+    },
 ]
 
 export const COURSE_COUNT = SPINES.length
+
+// #889: the RACE is still three heats (rule 6 stands), but WHICH three of the
+// six mountains you ride rotates on the game seed. Even seeds ride the classic
+// front face — seed 0 keeps the original ALPINE → NEON → BASIN opening — odd
+// seeds ride the backcountry side. Online rooms inherit the host seed, so every
+// box in a room rotates to the same triple.
+export const HEATS = 3
+export function tournament(seed) {
+    const base = ((((seed | 0) % 2) + 2) % 2) * 3
+    return [0, 1, 2].map((h) => (base + h) % COURSE_COUNT)
+}
 
 const lcg = (s) => () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 }
 
@@ -162,7 +371,7 @@ export function buildCourse(idx) {
         const i = Math.round(k.f * N)
         return { i0: i, i1: i + Math.round(6 + k.power), x: k.x, power: k.power, w: k.w, lip: i + Math.round(6 + k.power) }
     })
-    const rails = def.rails.map((r) => ({ i0: Math.round(r.f0 * N), i1: Math.round(r.f1 * N), x: r.x }))
+    const rails = def.rails.map((r) => ({ i0: Math.round(r.f0 * N), i1: Math.round(r.f1 * N), x: r.x, high: !!r.high }))
     const pipes = (def.pipes || []).map((p) => {
         const i = Math.round(p.f * N)
         return { i0: i, i1: i + 14, x: 0, power: p.power, w: p.w }
@@ -170,9 +379,24 @@ export function buildCourse(idx) {
     const obstacles = placeObst(def, seed).map((o) => ({ ...o, i: Math.round(o.f * N) }))
     const gullies = (def.gullies || []).map((gl) => ({ s0: gl.f0 * N * DS, s1: gl.f1 * N * DS }))
     const outcrops = (def.outcrops || []).map((o) => ({ s0: o.f0 * N * DS, s1: o.f1 * N * DS, side: o.side }))
+    // #889 crevasses: each span gets a launch lip bolted to the snow right
+    // before it — the auto-launch law throws anyone fast enough off the crest;
+    // the span behind it sinks GAP_DEPTH below the rim (featureLift carries the
+    // sink so the natural-surface readers never mistake the hole for terrain).
+    const gaps = []
+    for (const gp of (def.gaps || [])) {
+        const i0 = Math.round(gp.f * N)
+        const li = i0 - 1
+        const lip0 = li - Math.round(6 + gp.power)
+        kickers.push({ i0: lip0, i1: li, x: 0, power: gp.power, w: 0.30, lip: li, gap: true })
+        gaps.push({ i0, i1: i0 + gp.w, s0: i0 * DS, s1: (i0 + gp.w) * DS, rim: segs[i0].y })
+    }
+    const chutes = (def.chutes || []).map((ch) => ({
+        i0: Math.round(ch.f0 * N), i1: Math.round(ch.f1 * N), x: ch.x, w: ch.w,
+    }))
     return {
         name: def.name, theme: def.theme, idx: ((idx % COURSE_COUNT) + COURSE_COUNT) % COURSE_COUNT,
-        segs, N, length: N * DS, kickers, rails, pipes, obstacles, gullies, outcrops,
+        segs, N, length: N * DS, kickers, rails, pipes, obstacles, gullies, outcrops, gaps, chutes,
         rollPhase: idx * 1.7,
         finish: N - 4,
     }
@@ -185,8 +409,25 @@ export function segAt(c, s) {
     return { i, seg: c.segs[i] }
 }
 
+// #889 crevasse at s: the span (or null). Riders under GAP_X lateral between
+// s0 and s1 are over the hole.
+export function gapAt(c, s) {
+    for (const gp of c.gaps) if (s > gp.s0 && s < gp.s1) return gp
+    return null
+}
+
+// #889 express chute factor at (s, x): 1 outside, EXPRESS inside a trough.
+export function expressAt(c, s, x) {
+    for (const ch of c.chutes) {
+        if (s > ch.i0 * DS && s < ch.i1 * DS && Math.abs(x - ch.x) < ch.w) return EXPRESS
+    }
+    return 1
+}
+
 // feature lift at (s, x): kicker wedges ramp toward their lip, halfpipe walls
 // arc up across the piste. Grounded riders ride this exact surface.
+// #889: the same channel carries NEGATIVE lift — crevasse sinks and the carved
+// express troughs — so the painted surface and the ridden surface stay one.
 export function featureLift(c, s, x) {
     let lift = 0
     const i = s / DS
@@ -207,6 +448,21 @@ export function featureLift(c, s, x) {
             const wall = Math.max(0, Math.min(1, (ax - 0.35) / 0.65))
             const fade = 1 - smooth01((ax - 1.4) / 1.2)
             lift = Math.max(lift, p.power * Math.sin(Math.PI * t) * (0.35 + 0.65 * wall * wall) * fade)
+        }
+    }
+    for (const gp of c.gaps) {
+        if (i >= gp.i0 && i <= gp.i1) {
+            const ax = Math.abs(x)
+            const fall = 1 - smooth01((ax - 1.55) / 0.35)   // full hole to 1.55, funnel to ~1.9
+            lift = Math.min(lift, -GAP_DEPTH * fall)
+        }
+    }
+    for (const ch of c.chutes) {
+        if (i >= ch.i0 && i <= ch.i1) {
+            const t = (i - ch.i0) / (ch.i1 - ch.i0)
+            const dx = Math.abs(x - ch.x)
+            const edge = dx < ch.w * 0.6 ? 1 : 1 - (dx - ch.w * 0.6) / (ch.w * 0.4)
+            lift = Math.min(lift, -1.5 * Math.sin(Math.PI * t) * Math.max(0, edge))
         }
     }
     return lift
@@ -322,15 +578,20 @@ export function sceneryPlan(c) {
         const tr = shash(k)
         return tr < 0.34 ? 'tree_pine' : tr < 0.56 ? 'tree_pine_snow' : tr < 0.78 ? 'tree_pine_tall' : 'tree_oak'
     }
+    // #889: nothing with legs stands in a crevasse — the hole stays empty air
+    const overGap = (s, x) => gapAt(c, s) !== null && Math.abs(x) < GAP_X
     // crash obstacles first — the things that bite must stand where you see them
     for (const ob of c.obstacles) {
         const s = ob.i * DS
+        if (overGap(s, ob.x)) continue
         if (ob.kind === 'tree') push(treeAt(ob.i * 3.1), s, ob.x, 1.05 + shash(ob.i * 1.9) * 0.4, 'rand', 0.88 + shash(ob.i * 7.3) * 0.28)
         else push(shash(ob.i * 5.7) < 0.5 ? 'boulder' : 'rock', s, ob.x, 1.25, 'rand')
     }
     // slalom flags gating the line
     for (let i = 14; i < c.N - 6; i += 7) {
-        push('flag', i * DS, ((i / 7 | 0) % 2 ? 1 : -1) * 1.12, 1, 'rand')
+        const fx = ((i / 7 | 0) % 2 ? 1 : -1) * 1.12
+        if (overGap(i * DS, fx)) continue
+        push('flag', i * DS, fx, 1, 'rand')
     }
     // marker fence along the piste edge wherever the face is open
     for (let i = 8; i < c.N - 4; i += 4) {
@@ -358,10 +619,12 @@ export function sceneryPlan(c) {
         const r1 = shash(i * 1.37 + 11.3)
         if (r1 < 0.24) {
             const side = r1 < 0.12 ? 1 : -1
-            push(treeAt(i * 4.3), s, side * (2.5 + shash(i * 2.9) * 3.6), 1.35 + shash(i * 6.1) * 0.9, 'rand', 0.85 + shash(i * 5.3) * 0.3)
+            const x = side * (2.5 + shash(i * 2.9) * 3.6)
+            if (!overGap(s, x)) push(treeAt(i * 4.3), s, x, 1.35 + shash(i * 6.1) * 0.9, 'rand', 0.85 + shash(i * 5.3) * 0.3)
         }
         if (shash(i * 3.71 + 5) < 0.08) {
-            push(shash(i * 9.1) < 0.5 ? 'rock' : 'boulder', s, (i % 2 ? 1 : -1) * (1.95 + shash(i * 7.7) * 1.1), 1.3, 'rand')
+            const x = (i % 2 ? 1 : -1) * (1.95 + shash(i * 7.7) * 1.1)
+            if (!overGap(s, x)) push(shash(i * 9.1) < 0.5 ? 'rock' : 'boulder', s, x, 1.3, 'rand')
         }
     }
     // the summit gate and the finish banner
@@ -372,9 +635,8 @@ export function sceneryPlan(c) {
     // #665: a bank of seats at the line — two grandstands straddling the
     // finish, parked back until the face is open so no gully pierces them
     let gs = (c.N - 5) * DS
-    while (gs > 40 && openness(c, gs) < 0.7) gs -= DS
+    while (gs > 40 && (openness(c, gs) < 0.7 || gapAt(c, gs))) gs -= DS
     push('grandstand', gs, -(WALL_X + 2.6), 1.7, 'across')
     push('grandstand', gs, WALL_X + 2.6, 1.7, 'across')
     return out
 }
-
