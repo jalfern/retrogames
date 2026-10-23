@@ -14,11 +14,26 @@ const DIAG = {
     dr: ['ArrowDown', 'ArrowRight'],
 }
 
+// #885: the "glass" face-button icons — a short glyph above the verb, the
+// Apple/Xbox Cloud look. Inline SVG so there are still zero pad assets.
+const ICON_F = 0.36 // icon size as a fraction of the button diameter
+
+const IconFire = ({ s }) => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2c1.2 4.2-3 5.4-3 9a3 3 0 0 0 6 0c0-1.8-1-3-1-3 2 1.2 4 3.8 4 6.4A6.4 6.4 0 0 1 5.6 14c0-5.4 5.4-7.4 6.4-12z" />
+    </svg>
+)
+const IconBolt = ({ s }) => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M13 2 4.5 13.5H10L9 22l8.5-11.5H12L13 2z" />
+    </svg>
+)
+
 // #439: how far (px) a touch must travel before it is a swipe that sets a
 // direction. Below this a touch is a tap (tap-to-start keeps its own meaning).
 const SWIPE_MIN = 24
 
-const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = true, diag = false }) => {
+const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = true, diag = false, skin = null }) => {
     const [held, setHeld] = useState(() => new Set())
     const [diagKeysState, setDiagKeysState] = useState(() => new Set())
 
@@ -39,7 +54,9 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const mStick = hasMethod && method === 'stick'
     const mPointer = hasMethod && method === 'pointer'
     const showA = hasMethod ? reads.includes('a') : true
-    const aLabel = (pad && pad.aLabel) || 'A'
+    // #885: label the A button by what it does, not by its shell letter. Games
+    // declare the verb via pad.aLabel in the registry; the arcade default is FIRE.
+    const aLabel = (pad && pad.aLabel) || 'FIRE'
     const toHolder = hasMethod
 
     // Step 1 (#384): the floating stick is the DEFAULT touch layout — it anchors
@@ -473,9 +490,15 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
 
     const isHeld = (c) => held.has(c)
 
-    const dBtnBase = 'rounded-lg flex items-center justify-center select-none backdrop-blur-sm border border-white/10 transition-colors'
-    const dBtnCls = (c) => `${dBtnBase} ${isHeld(c) ? 'bg-neutral-600/90' : 'bg-neutral-700/50'}`
-    const actBase = 'rounded-full flex items-center justify-center select-none backdrop-blur-sm border border-white/10 shadow-lg transition-all'
+    // #885 "glass" skin (Apple / Xbox Cloud reference): thin bright ring, faint
+    // fill with an inner top highlight, and a pressed state that sinks + brightens
+    // then fades back (transition). `skin` is the themed-skin hook (#885): games
+    // will pass their own (arcade cabinet etc.) — the default stays glass.
+    const skinId = skin || 'glass'
+    const glass = 'select-none backdrop-blur-md border border-white/10 shadow-[inset_0_1px_2px_rgba(255,255,255,0.35),0_4px_12px_rgba(0,0,0,0.45)] transition-all duration-150'
+    const dBtnBase = `rounded-2xl flex items-center justify-center ring-1 ${glass}`
+    const dBtnCls = (c) => `${dBtnBase} ${isHeld(c) ? 'bg-white/30 ring-white/90 scale-95 brightness-150' : 'bg-white/10 ring-white/50'}`
+    const actBase = `relative flex flex-col items-center justify-center gap-0.5 rounded-full ring-1 ${glass}`
     const armStyle = { width: sz.arm, height: sz.arm }
     const btnStyle = { width: sz.btn, height: sz.btn }
 
@@ -495,12 +518,12 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
             {stickUI.active && (
                 <div className="absolute" style={{ left: stickUI.ax, top: stickUI.ay, width: 0, height: 0 }}>
                     <div
-                        className="absolute rounded-full border-2 border-white/25 bg-white/5"
+                        className="absolute rounded-full border-2 border-white/40 bg-white/5 shadow-[inset_0_0_14px_rgba(255,255,255,0.12)]"
                         style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2, transform: 'translate(-50%, -50%)' }}
                     />
                     <div
                         ref={knobRef}
-                        className="absolute rounded-full bg-white/70 border border-white/40 shadow-lg"
+                        className="absolute rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
                         style={{ width: 54, height: 54, transform: 'translate(-50%, -50%)' }}
                     />
                 </div>
@@ -528,8 +551,9 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
             {stickZone}
             <div
                 data-vc="1"
+                data-skin={skinId}
                 className="fixed left-0 right-0 flex justify-between items-end z-50 pointer-events-auto select-none"
-                style={{ bottom: 'calc(2rem + env(safe-area-inset-bottom))', padding: '0 calc(2rem + env(safe-area-inset-right)) 0 calc(2rem + env(safe-area-inset-left))' }}
+                style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom))', padding: '0 calc(0.75rem + env(safe-area-inset-right)) 0 calc(0.75rem + env(safe-area-inset-left))' }}
             >
                 {/* Left control: fixed stick (method stick), nothing (pointer —
                     the canvas is the surface), floating-stick spacer, fixed
@@ -550,12 +574,12 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         onMouseLeave={fsMU}
                     >
                         <div
-                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/25 bg-white/5"
+                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40 bg-white/5 shadow-[inset_0_0_14px_rgba(255,255,255,0.12)]"
                             style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2 }}
                         />
                         <div
                             ref={fsKnobRef}
-                            className="absolute top-1/2 left-1/2 rounded-full bg-white/70 border border-white/40 shadow-lg"
+                            className="absolute top-1/2 left-1/2 rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
                             style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
                         />
                     </div>
@@ -592,13 +616,13 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         onMouseLeave={dgMU}
                     >
                         <div
-                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/25 bg-white/5"
+                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40 bg-white/5 shadow-[inset_0_0_14px_rgba(255,255,255,0.12)]"
                             style={{ width: STICK_TRAVEL * 2, height: STICK_TRAVEL * 2 }}
                         />
                         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-neutral-600/40 rounded-full" />
                         <div
                             ref={dgKnobRef}
-                            className="absolute top-1/2 left-1/2 rounded-full bg-white/70 border border-white/40 shadow-lg"
+                            className="absolute top-1/2 left-1/2 rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
                             style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
                         />
                     </div>
@@ -648,7 +672,7 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         data-vc="actzone"
                         ref={actZoneRef}
                         className="flex items-end touch-none select-none"
-                        style={{ gap: sz.gap, paddingBottom: Math.round(sz.gap * 0.5), paddingRight: sz.gap }}
+                        style={{ gap: sz.gap, paddingBottom: Math.round(sz.gap * 0.5), paddingRight: Math.round(sz.gap * 0.5) }}
                         onTouchStart={aTS}
                         onTouchMove={aTM}
                         onTouchEnd={aTE}
@@ -658,13 +682,15 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         onMouseLeave={aMU}
                     >
                         {secondAction && (
-                            <div ref={bBtnRef} style={btnStyle} className={`${actBase} shadow-orange-900/20 ${isHeld(secondAction.code) ? 'bg-orange-400/90 scale-95' : 'bg-orange-500/50'}`}>
-                                <span className="text-white font-bold" style={{ fontSize: sz.font((secondAction.label || 'B').length) }}>{secondAction.label || 'B'}</span>
+                            <div ref={bBtnRef} style={btnStyle} className={`${actBase} ${isHeld(secondAction.code) ? 'bg-orange-400/40 ring-white/90 scale-95 brightness-150' : 'bg-orange-500/25 ring-white/60'}`}>
+                                <span className="text-white/90">{<IconBolt s={Math.round(sz.btn * ICON_F)} />}</span>
+                                <span className="text-white font-bold leading-none" style={{ fontSize: sz.font((secondAction.label || 'B').length) }}>{secondAction.label || 'B'}</span>
                             </div>
                         )}
                         {showA && (
-                            <div ref={aBtnRef} style={btnStyle} className={`${actBase} shadow-red-900/20 ${isHeld('Space') ? 'bg-red-400/90 scale-95' : 'bg-red-500/50'}`}>
-                                <span className="text-white font-bold" style={{ fontSize: sz.font(aLabel.length) }}>{aLabel}</span>
+                            <div ref={aBtnRef} style={btnStyle} className={`${actBase} ${isHeld('Space') ? 'bg-red-400/40 ring-white/90 scale-95 brightness-150' : 'bg-red-500/25 ring-white/60'}`}>
+                                <span className="text-white/90">{<IconFire s={Math.round(sz.btn * ICON_F)} />}</span>
+                                <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(aLabel.length) }}>{aLabel}</span>
                             </div>
                         )}
                     </div>

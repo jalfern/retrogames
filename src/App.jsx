@@ -117,6 +117,19 @@ function Layout({ children }) {
   const textColor = info.theme === 'dark' ? 'text-white' : 'text-black'
   const borderColor = info.theme === 'dark' ? 'hover:border-white' : 'hover:border-black'
 
+  // #885: on phones the touch pad owns the bottom band (84px buttons + a 180px
+  // stick span nearly the whole width), so the JALFERN.COM mark moves to the top
+  // center band — the controls must never sit on top of it. Desktop keeps the
+  // classic bottom-center footer.
+  const [padBand, setPadBand] = useState(() =>
+    window.matchMedia?.('(max-width: 480px) and (pointer: coarse)')?.matches === true)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 480px) and (pointer: coarse)')
+    const on = (e) => setPadBand(e.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+
   return (
     <GameLabelContext.Provider value={contextValue}>
       <div className="w-full h-screen bg-white overflow-hidden relative">
@@ -124,7 +137,7 @@ function Layout({ children }) {
 
         {/* Footer Label (a route can opt out — MYST's caption bar owns the bottom) */}
         {info.footer !== 'none' && (
-          <div className={`fixed left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-100 transition-opacity duration-500 flex flex-col items-center gap-1`} style={{ bottom: 'calc(2rem + var(--sab, 0px))', paddingLeft: 'var(--sal, 0px)', paddingRight: 'var(--sar, 0px)' }}>
+          <div className={`fixed left-0 right-0 text-center pointer-events-none opacity-40 hover:opacity-100 transition-opacity duration-500 flex flex-col items-center gap-1`} style={padBand ? { top: 'calc(0.375rem + var(--sat, 0px))', paddingLeft: 'var(--sal, 0px)', paddingRight: 'var(--sar, 0px)' } : { bottom: 'calc(2rem + var(--sab, 0px))', paddingLeft: 'var(--sal, 0px)', paddingRight: 'var(--sar, 0px)' }}>
             <h1 className={`${textColor} font-mono text-sm tracking-widest border-b-2 border-transparent ${borderColor} inline-block pb-1`}>
               JALFERN.COM
             </h1>
