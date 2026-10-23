@@ -165,17 +165,18 @@ const poseProbe = async (p) => {
     }
 }
 
-for (const p of ['stand', 'crouch', 'tuck']) {
+// #883: the ankle IK solves the weld per frame, so every hero pose must keep
+// the boots on the deck — not just the four the old gate measured. Tumble is
+// exempt: a crash peeling the feet off the board is the point.
+for (const p of POSES.filter((x) => x !== 'tumble')) {
     const { boot } = await poseProbe(p)
-    const welded = ['l', 'r'].every((s) => boot[s] <= 0.06 && boot[s] >= -0.3)
+    const welded = ['l', 'r'].every((s) => boot[s] <= 0.02 && boot[s] >= -0.06)
     r.check(`boots stay welded to the deck in ${p}`, welded, JSON.stringify(boot))
 }
 const gp = await poseProbe('grab')
 const reachOk = gp.grab.l && gp.grab.r && gp.grab.l.d <= 0.3 && gp.grab.r.d <= 0.3
 r.check('grab pose reaches the nose-edge band (both hands)', reachOk,
     `l ${gp.grab.l?.d} r ${gp.grab.r?.d}`)
-const grabWeld = ['l', 'r'].every((s) => gp.boot[s] <= 0.06)
-r.check('grab pose keeps boots welded (no float)', grabWeld, JSON.stringify(gp.boot))
 
 const breath = await page.evaluate(() => window.__ssxTest.standBreath())
 r.check('stand pose breathes (Idle ring moves the rig)', breath !== null && breath >= 0.015, String(breath))

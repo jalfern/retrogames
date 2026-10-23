@@ -960,16 +960,28 @@ const SSXGame = () => {
                     const h = rig && rig.userData.hero
                     if (!h) return { ready: false }
                     const roll = rig.userData.roll
-                    const box = new THREE.Box3()
+                    rig.updateMatrixWorld(true)
                     const out = {}
                     for (const side of ['l', 'r']) {
                         const foot = h.bones[`foot${side}`]
                         const boot = foot && foot.children.find((c) => c.isMesh)
                         if (!boot) continue
-                        box.setFromObject(boot)
-                        const center = roll.worldToLocal(box.getCenter(new THREE.Vector3()))
-                        const bottom = roll.worldToLocal(box.min.clone())
-                        out[side] = +(bottom.y - deckTop(center.x)).toFixed(3)
+                        // underside measured in roll space: under the leg-chain
+                        // rotations of grab/tuck poses the world AABB min corner
+                        // is not the deck-side of the boot (#883)
+                        if (!boot.geometry.boundingBox) boot.geometry.computeBoundingBox()
+                        const gb = boot.geometry.boundingBox
+                        let low = Infinity, xs = 0, n = 0
+                        for (let i = 0; i < 8; i++) {
+                            const v = new THREE.Vector3(
+                                i & 1 ? gb.max.x : gb.min.x, i & 2 ? gb.max.y : gb.min.y, i & 4 ? gb.max.z : gb.min.z)
+                            boot.localToWorld(v)
+                            roll.worldToLocal(v)
+                            if (v.y < low) low = v.y
+                            xs += v.x; n++
+                        }
+                        const a = Math.abs(xs / n) / 0.89
+                        out[side] = +(low - (0.115 + 0.16 * Math.pow(Math.max(0, a - 0.62) / 0.38, 2))).toFixed(3)
                     }
                     return out
                 },
