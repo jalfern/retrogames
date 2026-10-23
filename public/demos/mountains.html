@@ -88,6 +88,9 @@ float ridged(vec2 p){
     a *= 0.58;
   }
   return s;
+}
+float lakeW(vec2 w){
+  return 0.30 * (fbm2(w * 1.35 + 27.0, 3) - 0.5) * 2.0 + 0.14 * (fbm2(w * 0.40 + 61.0, 3) - 0.5) * 2.0;
 }`;
 
 /* ---------------- heightfield generation (baked once to hi/lo R8 pair) ------ */
@@ -119,21 +122,47 @@ void main(){
   float rolls = 0.06 * fbm2(dp * 0.05 + 71.0, 3);
   float north = smoothstep(2.2, 8.5, dp.y);
   north *= 0.42 + 0.58 * smoothstep(0.34, 0.68, fbm2(vec2(dp.x * 0.030, dp.y * 0.010) + 11.0, 2));
+  north *= 0.55 + 0.55 * vnoise(vec2(dp.x * 0.11, dp.y * 0.05) + 21.0);
   float along = 0.50 + 0.50 * smoothstep(0.30, 0.72, fbm2(vec2(dp.x * 0.017, dp.y * 0.008) + 7.0, 2));
   float h = rolls;
   h += pow(ridged(dp * 0.052 + 55.0), 1.8) * 1.05 * smoothstep(1.4, 6.0, dp.y) * mask;
   h += pow(s0, 1.7) * 2.55 * mask * north * along * (0.55 + 0.45 * massif);
   h += pow(clamp(s0 * mask - 0.50, 0.0, 1.0), 2.2) * 2.8 * north * along;
   h += 0.05 * north * mask;
-  float far = smoothstep(8.5, 15.0, dp.y) * (0.55 + 0.45 * smoothstep(0.35, 0.70, fbm2(vec2(dp.x * 0.011, dp.y * 0.006) + 4.0, 2)));
+  float far = smoothstep(8.0, 14.0, dp.y) * (0.55 + 0.45 * smoothstep(0.35, 0.70, fbm2(vec2(dp.x * 0.011, dp.y * 0.006) + 4.0, 2)));
+  far *= 0.70 + 0.40 * vnoise(vec2(dp.x * 0.13, dp.y * 0.06) + 13.0);
   h += pow(ridged(dp * 0.045 + 20.0), 1.5) * 2.6 * far;
   float r2 = length(vec2(p.x * 0.80, p.y + 0.7));
-  float v = smoothstep(2.2, 5.0, r2);
+  float rr = r2 + lakeW(vec2(p.x * 0.80, p.y + 0.7));
+  float v = smoothstep(2.2, 5.0, rr);
   float bank = (0.075 + 0.030 * (1.0 - smoothstep(3.0, 5.5, r2))) * smoothstep(-2.4, 1.2, p.y);
-  h = mix(0.024, max(h, bank), v);
+  h = mix(0.010, max(h, bank), v);
   h = 0.995 * (1.0 - exp(-h * 0.80));
+#ifdef H16
+  o = vec4(h, 0.0, 0.0, 1.0);
+#else
   float x = h * 255.0;
   o = vec4(floor(x) / 255.0, fract(x), 0.0, 1.0);
+#endif
+}`;
+
+/* far-continuation ridges past the baked data edge, baked once to R8 */
+const FAR_EXT = 72.0;
+const FS_FAR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+${CHUNK_NOISE}
+void main(){
+  vec2 p = (vUv - 0.5) * ${FAR_EXT.toFixed(1)};
+  float rad = length(p);
+  float r3 = 1.0 - abs(vnoise(p * 0.075 + 17.0) * 2.0 - 1.0);
+  float r4 = 1.0 - abs(vnoise(p * 0.17 + 5.0) * 2.0 - 1.0);
+  float h = (r3 * r3 * 0.85 + r4 * r4 * 0.40) * 1.7;
+  float ang = atan(p.y, p.x);
+  float mask = 0.25 + 1.0 * vnoise(vec2(ang * 2.7, rad * 0.12) + 7.0);
+  h *= smoothstep(21.0, 25.5, rad) * (1.0 - smoothstep(30.0, 35.0, rad)) * mask;
+  o = vec4(h / 2.625, 0.0, 0.0, 1.0);
 }`;
 
 /* ---------------- scene: raymarched terrain + sky + lake -------------------- */
@@ -149,6 +178,7 @@ uniform vec3 uSunDir;
 uniform vec3 uSunCol;
 uniform sampler2D uHi;
 uniform sampler2D uLo;
+uniform sampler2D uFar;
 out vec4 fragColor;
 
 ${CHUNK_NOISE}
@@ -163,12 +193,15 @@ const float FLOOR_H = 0.055;
 float heightTex(vec2 p, float lod){
   vec2 uv = p / ${EXT.toFixed(1)} + 0.5;
   vec2 e = smoothstep(vec2(0.0), vec2(0.008), uv) * (1.0 - smoothstep(vec2(0.992), vec2(1.0), uv));
+  float k = e.x * e.y;
 #ifdef H16
   float h = textureLod(uHi, uv, lod).r;
 #else
   float h = textureLod(uHi, uv, lod).r + textureLod(uLo, uv, lod).r / 255.0;
 #endif
-  return mix(FLOOR_H, h, e.x * e.y) * HSCALE;
+  float hs = mix(FLOOR_H, h, k) * HSCALE;
+  float c = textureLod(uFar, p / ${FAR_EXT.toFixed(1)} + 0.5, max(lod - 0.5, 0.0)).r * 2.625;
+  return max(hs, c);
 }
 
 vec3 skyColor(vec3 rd, vec3 sunDir){
@@ -245,26 +278,35 @@ float fogAmount(float y0, float dy, float t){
 vec3 shadeTerrain(vec3 p, vec3 n, vec3 rd, vec3 sunDir){
   float h = p.y;
   float slope = n.y;
-  float rockN = fbm2(p.xz * 2.6 + 7.0, 4);
-  float mass = fbm2(p.xz * 0.45 + 19.0, 3);
-  float crack = 1.0 - smoothstep(0.02, 0.07, abs(vnoise(p.xz * 4.5 + 3.0) - 0.5));
-  vec3 rock = mix(vec3(0.105, 0.11, 0.13), vec3(0.30, 0.28, 0.27), mass);
-  rock = mix(rock, rock * vec3(1.32, 1.24, 1.08), smoothstep(0.55, 0.92, rockN));
-  rock *= 1.0 - crack * 0.22;
-  rock = mix(rock, vec3(0.24, 0.235, 0.23), smoothstep(0.66, 0.95, rockN) * 0.6);
+  float mass = fbm2(p.xz * 0.22 + 19.0, 3);
+  vec2 sdir = n.xz;
+  float dl = length(sdir);
+  vec2 sd = dl > 0.0015 ? sdir / dl : vec2(0.0, 1.0);
+  vec2 pd = vec2(dot(p.xz, sd), dot(p.xz, vec2(-sd.y, sd.x)));
+  float grain = fbm2(pd * vec2(1.1, 3.6) + 7.0, 3);
+  float speck = hash21(floor(p.xz * 13.0) + 5.0);
+  float crack = 1.0 - smoothstep(0.012, 0.036, abs(vnoise(p.xz * 3.6 + 3.0) - 0.5));
+  vec3 rock = mix(vec3(0.150, 0.155, 0.172), vec3(0.255, 0.240, 0.228), mass);
+  rock *= 0.88 + 0.26 * smoothstep(0.35, 0.75, grain);
+  rock *= 0.95 + 0.10 * speck;
+  rock *= 1.0 - crack * 0.18;
   rock *= 0.86 + 0.22 * smoothstep(0.25, 0.55, slope);
   float sl = SNOW0 + 0.60 * (fbm2(p.xz * 1.7 + 33.0, 3) - 0.5) * 2.0;
   float snowAlt = smoothstep(sl - 0.12, sl + 0.28, h);
   float snowFlat = smoothstep(0.22, 0.50, slope);
   float driftNoise = smoothstep(0.42, 0.58, fbm2(p.xz * 3.4 + 55.0, 3));
   float brk = 0.55 + 0.70 * fbm2(p.xz * 2.6 + 3.0, 3);
+  float farSoft = smoothstep(15.0, 28.0, length(p - uCamPos));
+  brk = mix(brk, 0.80, farSoft);
   float snow = clamp(snowAlt * mix(snowFlat, 1.0, driftNoise * 0.55) * brk, 0.0, 1.0);
-  float glaze = smoothstep(0.55, 0.78, fbm2(p.xz * 5.0 + 12.0, 3)) * smoothstep(sl + 0.02, sl + 0.16, h) * (1.0 - snow);
+  float glaze = smoothstep(0.55, 0.78, fbm2(p.xz * 5.0 + 12.0, 3)) * smoothstep(sl + 0.02, sl + 0.16, h) * (1.0 - snow) * (1.0 - 0.8 * farSoft);
   snow = clamp(snow + glaze * 0.5, 0.0, 1.0);
   vec3 snowCol = mix(vec3(0.62, 0.66, 0.74), vec3(0.88, 0.89, 0.93), fbm2(p.xz * 9.0, 3));
+  snowCol = mix(snowCol, vec3(0.80, 0.82, 0.87), farSoft * 0.55);
   vec3 albedo = mix(rock, snowCol, snow);
-  float shore = smoothstep(0.38, 0.30, h) * smoothstep(0.10, 0.30, h);
-  albedo = mix(albedo, vec3(0.17, 0.15, 0.115), shore);
+  float shore = smoothstep(4.6, 3.4, length(vec2(p.x * 0.80, p.z + 0.7)))
+              * smoothstep(0.345, 0.30, h) * smoothstep(0.12, 0.30, h);
+  albedo = mix(albedo, vec3(0.17, 0.15, 0.115) * (0.88 + 0.28 * speck), shore);
 
   float ndl = max(dot(n, sunDir), 0.0);
   float dcam = length(p - uCamPos);
@@ -288,7 +330,7 @@ Hit terrainRay(vec3 ro, vec3 rd, float tLimit){
     if (t > tLimit || p.y > 5.6 || length(p.xz) > ${EXT.toFixed(1)} * 0.9) return miss;
     float lod = clamp(log2(max(max(dt * 9.0, 0.05), 0.22 + t * 0.30)), 0.0, 1.5);
     float hd = p.y - heightTex(p.xz, lod);
-    if (rd.y > 0.02 && hd > 2.4) return miss;
+    if (rd.y > 0.02 && hd > 2.4 && t > 9.0) return miss;
     if (hd <= 0.0){
       float lo = t - dt, hi = t;
       for (int k = 0; k < 7; k++){
@@ -317,42 +359,52 @@ void main(){
   if (rd.y < -0.0015){
     float tl = (LAKE_Y - ro.y) / rd.y;
     vec3 lp = ro + rd * tl;
-    if (tl > 0.0 && tl < 60.0 && length(vec2(lp.x * 0.80, lp.z + 0.7)) < 3.0){
-      float th = heightTex(lp.xz, 0.0);
-      if (th < LAKE_Y - 0.004){ tLake = tl; lakeDepth = LAKE_Y - th; }
+    if (tl > 0.0 && tl < 60.0){
+      vec2 lc = vec2(lp.x * 0.80, lp.z + 0.7);
+      if (length(lc) < 3.0 + lakeW(lc)){
+        float th = heightTex(lp.xz, 0.0);
+        if (th < LAKE_Y - 0.004){ tLake = tl; lakeDepth = LAKE_Y - th; }
+      }
     }
   }
 
   float tLim = 60.0;
-  if (rd.y < -0.0015){ float td = (LAKE_Y - 0.03 - ro.y) / rd.y; if (td > 0.0) tLim = td; }
+  if (rd.y < -0.0015){
+    float td = (LAKE_Y - 0.03 - ro.y) / rd.y;
+    if (td > 0.0 && td < 60.0){
+      vec3 dp = ro + rd * td;
+      vec2 dlc = vec2(dp.x * 0.80, dp.z + 0.7);
+      if (length(dlc) < 3.0 + lakeW(dlc)) tLim = td;
+    }
+  }
   Hit terr = terrainRay(ro, rd, tLim);
 
   vec3 col;
   float fogT;
   if (tLake < 1e8 && (terr.t < 0.0 || tLake < terr.t)){
     vec3 p = ro + rd * tLake;
-    float rip = fbm2(p.xz * 5.5 + vec2(uTime * 0.05, uTime * 0.03), 2);
-    float ex = vnoise((p.xz + vec2(0.12, 0.0)) * 5.5 + uTime * 0.05) - vnoise((p.xz - vec2(0.12, 0.0)) * 5.5 + uTime * 0.05);
-    float ez = vnoise((p.xz + vec2(0.0, 0.12)) * 5.5 + uTime * 0.05) - vnoise((p.xz - vec2(0.0, 0.12)) * 5.5 + uTime * 0.05);
-    vec3 n = normalize(vec3(-ex * 0.055 - (rip - 0.75) * 0.010, 1.0, -ez * 0.055));
+    float ex = vnoise((p.xz + vec2(0.07, 0.0)) * 9.0 + uTime * 0.05) - vnoise((p.xz - vec2(0.07, 0.0)) * 9.0 + uTime * 0.05);
+    float ez = vnoise((p.xz + vec2(0.0, 0.07)) * 9.0 + uTime * 0.05) - vnoise((p.xz - vec2(0.0, 0.07)) * 9.0 + uTime * 0.05);
+    vec3 n = normalize(vec3(-ex * 0.014, 1.0, -ez * 0.014));
     vec3 rr = reflect(rd, n);
     vec3 skyR = skyColor(normalize(rr), sunDir);
     Hit refl = terrainRayCheap(p + n * 0.02, rr);
     if (refl.t > 0.0 && refl.t < 30.0){
       vec3 rp = p + rr * refl.t;
-      vec2 e2 = vec2(0.30, 0.0);
+      vec2 e2 = vec2(0.18, 0.0);
       float l2 = clamp(log2(0.22 + refl.t * 0.30), 0.0, 2.0);
       float nx = heightTex(rp.xz + vec2(e2.x, 0.0), l2) - heightTex(rp.xz - vec2(e2.x, 0.0), l2);
       float nz = heightTex(rp.xz + vec2(0.0, e2.x), l2) - heightTex(rp.xz - vec2(0.0, e2.x), l2);
-      vec3 rn = normalize(vec3(-nx / (2.0 * e2.x) * 0.30, 1.0, -nz / (2.0 * e2.x) * 0.30));
+      vec3 rn = normalize(vec3(-nx / (2.0 * e2.x) * 0.05, 1.0, -nz / (2.0 * e2.x) * 0.05));
       vec3 tc = shadeTerrain(rp, rn, rr, sunDir);
       float rf = fogAmount(rr.y, rr.y * refl.t, refl.t);
       skyR = mix(skyR, tc * 0.88, clamp(1.0 - rf * 0.30, 0.45, 1.0));
     }
     float fres = pow(1.0 - max(dot(-rd, n), 0.0), 4.0) * 0.82 + 0.16;
+    vec3 waterShallow = vec3(0.075, 0.085, 0.095);
     vec3 waterDeep = vec3(0.024, 0.034, 0.052);
-    vec3 waterCol = mix(vec3(0.075, 0.085, 0.095), waterDeep + skyColor(rd, sunDir) * 0.16, smoothstep(0.0, 0.33, lakeDepth));
-    col = mix(waterCol, skyR, fres);
+    vec3 body = mix(waterShallow, waterDeep + skyColor(rd, sunDir) * 0.16, smoothstep(0.0, 0.30, lakeDepth));
+    col = mix(body, skyR, fres * smoothstep(0.02, 0.10, lakeDepth));
     float glit = pow(max(dot(reflect(-sunDir, n), -rd), 0.0), 220.0);
     col += uSunCol * glit * 2.4 * smoothstep(0.12, 0.30, lakeDepth);
     fogT = tLake;
@@ -372,8 +424,10 @@ void main(){
 
   float f = fogAmount(ro.y, rd.y * max(fogT, 0.001), max(fogT, 0.001));
   vec3 rdFog = rd;
-  vec3 fogCol = skyColor(normalize(vec3(rdFog.x, max(rdFog.y, 0.02), rdFog.z)), sunDir);
+  float fogY = sqrt(rd.y * rd.y + 0.0009) - 0.03;
+  vec3 fogCol = skyColor(normalize(vec3(rdFog.x, fogY, rdFog.z)), sunDir);
   fogCol = mix(fogCol * 1.08, fogCol * vec3(1.16, 0.92, 0.78), pow(max(dot(normalize(vec3(rd.x, 0.0, rd.z)), normalize(vec3(sunDir.x, 0.0, sunDir.z))), 0.0), 2.0) * smoothstep(0.25, 0.0, rd.y));
+  fogCol = mix(fogCol, fogCol * vec3(1.12, 0.99, 0.82) + vec3(0.03, 0.02, 0.0), smoothstep(6.0, 16.0, fogT) * 0.75);
   col = mix(col, fogCol, f);
 
   fragColor = vec4(max(col, vec3(0.0)), 1.0);
@@ -451,9 +505,11 @@ function program(vs, fs){
 }
 
 const progHeight = program(VS_QUAD, FS_HEIGHT);
+const progHeight16 = program(VS_QUAD, '#version 300 es\n#define H16\n' + FS_HEIGHT.slice(FS_HEIGHT.indexOf('\n') + 1));
 const progBright = program(VS_QUAD, FS_BRIGHT);
 const progBlur = program(VS_QUAD, FS_BLUR);
 const progComp = program(VS_QUAD, FS_COMP);
+const progFar = program(VS_QUAD, FS_FAR);
 
 const vaoEmpty = gl.createVertexArray();
 
@@ -494,9 +550,9 @@ function bakeHalf(){
   if (!t) return null;
   gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo);
   gl.viewport(0, 0, TEXW, TEXW);
-  gl.useProgram(progHeight);
+  gl.useProgram(progHeight16);
   gl.bindVertexArray(vaoEmpty);
-  gl.uniform1f(gl.getUniformLocation(progHeight, 'uSeed'), SEED);
+  gl.uniform1f(gl.getUniformLocation(progHeight16, 'uSeed'), SEED);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.getExtension('EXT_color_buffer_half_float');
@@ -510,6 +566,16 @@ function bakeHalf(){
 }
 hTexHi = byteTarget(TEXW, TEXW);
 hTexLo = byteTarget(TEXW, TEXW);
+
+const farTex = byteTarget(512, 512);
+gl.bindFramebuffer(gl.FRAMEBUFFER, farTex.fbo);
+gl.viewport(0, 0, 512, 512);
+gl.useProgram(progFar);
+gl.bindVertexArray(vaoEmpty);
+gl.drawArrays(gl.TRIANGLES, 0, 3);
+gl.bindTexture(gl.TEXTURE_2D, farTex.tex);
+gl.generateMipmap(gl.TEXTURE_2D);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
 function bakeHeights(){
   const uh = gl.getUniformLocation(progHeight, 'uSeed');
@@ -721,6 +787,7 @@ function frame(){
   gl.uniform3f(us('uSunCol'), sun.col[0], sun.col[1], sun.col[2]);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, H16 ? hTex16.tex : hTexHi.tex); gl.uniform1i(us('uHi'), 0);
   if (!H16){ gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, hTexLo.tex); gl.uniform1i(us('uLo'), 1); }
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, farTex.tex); gl.uniform1i(us('uFar'), 2);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
@@ -804,7 +871,7 @@ window.__mountainsTest = {
 <script>
 window.DEMO_CREDITS = {
   name: 'MOUNTAINS', accent: '#ff8fa3',
-  issues: [671, 736], span: '~13 h', shipped: '2026-10-21',
+  issues: [671, 736, 834], span: '~15 h', shipped: '2026-10-21',
   assist: 'solo', note: '“This is a solo test” — approach researched and chosen by the builder',
 };
 </script>

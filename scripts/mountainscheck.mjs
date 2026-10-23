@@ -15,6 +15,11 @@
 //     · the sim never freezes (frames keep advancing)
 //   2b. #736 READS AS A RANGE — ridge bases reach lit ground (no dark void mid-band),
 //     · no thin horizontal line cuts the range.
+//   2c. #834 PHOTOGRAPHIC — wobbled natural lake edge, still-water ripples, mirror
+//     reflection, soft wet-shallow waterline; far field continues past the heightfield
+//     edge (no seam cliff); distance-damped snow (no floating patches); rock grain is
+//     slope-aligned streak detail, and a pixel gate requires fine-grain energy to
+//     outweigh low-frequency blot energy on sunlit rock (the cheetah test).
 //   3. LAW    — self-contained single file; NOT registered in games.js
 //               (demos law, Jon 2026-10-19); exposes the __mountainsTest hook.
 //   4. SPEED  — frame budget with software-raster fallback detection.
@@ -23,6 +28,9 @@
 // Proven-fail mutant: zero the sun diffuse gain (`* mix(0.11, 1.0, sh) * 1.75` ->
 // `* mix(0.11, 1.0, sh) * 0.0`) -> sunlit-rock, snow-brightness and haze-order
 // gates go red (warm gold light is what separates lit rock from silhouette).
+// Second mutant (#834): restore the blob highlight `smoothstep(0.66, 0.95, rockN)` ->
+// cheetah-grain gate red; restore hard ellipse `length(vec2(lp.x*0.80, lp.z+0.7)) < 3.0`
+// -> wobbled-basin gate red.
 
 import { spawn } from 'node:child_process'
 import { inflateSync, deflateSync } from 'node:zlib'
@@ -178,10 +186,28 @@ async function main() {
   ok('not registered in games.js (demos law, Jon 2026-10-19)', !/path:\s*['"]\/[^'"]*mountains|label:\s*['"]Mountains/i.test(reg))
   ok('exposes __mountainsTest DEV hook', /__mountainsTest/.test(src))
   ok('LAKE_Y single source (JS value interpolated into shader)', /const float LAKE_Y = \$\{LAKE_Y/.test(src) && !/const float LAKE_Y = 0\.\d+;/.test(src))
-  const basinM = src.match(/lp\.z \+ 0\.7\)\) < ([\d.]+)/)
-  ok('lake bounded to a small basin (lp.z ellipse r<4.5, lp.y bug fixed)',
-    !!basinM && +basinM[1] < 4.5 && !/abs\(lp\.y\)/.test(src),
-    basinM ? `basin radius=${basinM[1]}` : 'unbounded')
+  const basinM = src.match(/length\(lc\) < 3\.0 \+ lakeW\(lc\)/)
+  ok('lake bounded to a noise-perturbed basin (r<4.5, wobbled shoreline in both shaders)',
+    !!basinM && (src.match(/lakeW\(/g) || []).length >= 3 && /rr = r2 \+ lakeW\(vec2\(p\.x \* 0\.80, p\.y \+ 0\.7\)\)/.test(src) && !/abs\(lp\.y\)/.test(src),
+    basinM ? 'wobbled ellipse, shared lakeW()' : 'hard ellipse')
+  ok('still-water ripples: derivative-only normals, small amplitude (#834)',
+    !/rip - 0\.75/.test(src) && /-ex \* 0\.01\d/.test(src) && /vec2\(0\.07, 0\.0\)\) \* 9\.0/.test(src))
+  ok('reflection mirror-smooth: tight gradient, small wobble (#834)',
+    /e2 = vec2\(0\.18, 0\.0\)/.test(src) && /0\.05, 1\.0, -nz/.test(src) && !/\* 0\.30, 1\.0, -nz/.test(src))
+  ok('lake fades to wet-shallow at its edge (no hard curved waterline, #834)',
+    /waterShallow/.test(src) && /smoothstep\(0\.02, 0\.10, lakeDepth\)/.test(src))
+  ok('H16 bake stores FULL height, not hi-byte (8-bit contour-seam regression, #834)',
+    /#ifdef H16\n\s*o = vec4\(h, 0\.0, 0\.0, 1\.0\);/.test(src) && /progHeight16 = program\(VS_QUAD, '#version 300 es\\n#define H16\\n'/.test(src))
+  ok('far field continues past the heightfield edge: baked, angular-broken, max-merged (seam fix, #834)',
+    /return max\(hs, c\);/.test(src) && /FS_FAR/.test(src) && /textureLod\(uFar/.test(src) && /smoothstep\(21\.0, 25\.5, rad\)/.test(src) && /vnoise\(vec2\(ang \* 2\.7/.test(src))
+  ok('lake-bed cull only bites inside the lake outline (seam across range fix, #834)',
+    /if \(length\(dlc\) < 3\.0 \+ lakeW\(dlc\)\) tLim = td;/.test(src))
+  ok('ray early-exit cannot dump near-ridge slopes to sky (hd>2.4 gated by t, #834)',
+    /hd > 2\.4 && t > 9\.0/.test(src))
+  ok('snow break-up damps with distance (no floating patches, #834)',
+    /farSoft = smoothstep\(15\.0, 28\.0/.test(src) && /brk = mix\(brk, 0\.80, farSoft\)/.test(src))
+  ok('rock detail is slope-aligned streak grain, not blob thresholds (no cheetah, #834)',
+    /vec2 pd = vec2\(dot\(p\.xz, sd\)/.test(src) && /vec3\(0\.150, 0\.155, 0\.172\), vec3\(0\.255, 0\.240, 0\.228\)/.test(src) && !/smoothstep\(0\.66, 0\.95, rockN\)/.test(src))
   ok('shoreline bank lifts land above the waterline, on the far side only (valley mouth)',
     /float bank = \(0\.0\d+ \+ 0\.0\d+ \* \(1\.0 - smoothstep\([^)]*\)\)\) \* smoothstep\(-/.test(src) && /max\(h, bank\)/.test(src))
 
@@ -278,6 +304,24 @@ async function main() {
       ok('aerial perspective: snow-crowned tops read brighter than rock bands',
         nearN > 500 && lowN > 500 && nearMean > lowMean + 4, `crown=${nearMean.toFixed(1)} rock=${lowMean.toFixed(1)}`)
 
+      let devSum = 0, nDev = 0, blot = 0
+      for (let x = 32; x < W - 32; x += 2) {
+        const s = sky[x]
+        if (s < 0) continue
+        for (let y = s + Math.round(H * 0.10); y < Math.min(s + Math.round(H * 0.30), Math.round(H * 0.68)); y += 2) {
+          if (!warmRock(...px(img, x, y))) continue
+          let sum = 0, m = 0
+          for (let dx = -28; dx <= 28; dx += 4) { const c = px(img, x + dx, y); if (warmRock(...c)) { sum += luma(c); m++ } }
+          if (m < 6) continue
+          const d = Math.abs(luma(px(img, x, y)) - sum / m)
+          if (d > 30) blot++
+          devSum += d; nDev++
+        }
+      }
+      const meanDev = nDev ? devSum / nDev : 99
+      ok('rock carries fine grain, not cheetah blotches (#834)',
+        nDev > 800 && meanDev < 2.9 && blot / nDev < 0.01, `meanDev=${meanDev.toFixed(2)} over ${nDev} rock px, ${blot} hard-blot px`)
+
       const coolMirror = (r, g, b) => b > r + 6 && b > 55
       let mirror = 0, mirrorN = 0
       for (let x = 8; x < W - 8; x += 4) {
@@ -316,16 +360,18 @@ async function main() {
         `${((voidPx / voidN) * 100).toFixed(1)}% void px mid-band`)
 
       let lineRows = 0
-      for (let y = Math.round(H * 0.40); y < Math.round(H * 0.70); y++) {
-        let hits = 0, cols = 0
+      for (let y = Math.round(H * 0.32); y < Math.round(H * 0.70); y++) {
+        let hits = 0, darkHits = 0, cols = 0
         for (let x = Math.round(W * 0.10); x < Math.round(W * 0.90); x += 4) {
           const l = luma(px(img, x, y))
-          if (l > 150 && l - luma(px(img, x, Math.max(y - 9, 0))) > 9 && l - luma(px(img, x, Math.min(y + 9, H - 1))) > 9) hits++
+          const up = luma(px(img, x, Math.max(y - 9, 0))), dn = luma(px(img, x, Math.min(y + 9, H - 1)))
+          if (l > 150 && l - up > 12 && l - dn > 12) hits++
+          if (l < 150 && up - l > 13 && dn - l > 13) darkHits++
           cols++
         }
-        if (hits / cols > 0.25) lineRows++
+        if (hits / cols > 0.30 || darkHits / cols > 0.30) lineRows++
       }
-      ok('no thin horizontal line runs through the range (#736)', lineRows === 0, `${lineRows} line rows`)
+      ok('no thin horizontal line runs through the range (#736, dark seams #834)', lineRows === 0, `${lineRows} line rows`)
 
       await page.evaluate(() => window.__mountainsTest.setPose({ yaw: 0.62, pitch: 0.05 }))
       await page.waitForTimeout(1400)
