@@ -506,6 +506,28 @@ async function main() {
       }
       ok(`frame time under ${budget} ms at full window (1600x1000, ${soft ? 'software raster' : 'hardware'})`,
         perf.n >= 60 && perf.avg <= budget, `avg=${perf.avg}ms max=${perf.max}ms over ${perf.n} frames`)
+
+      // 4b. retina speed — the dpr-2 path is where Safari choked (dpr cap 2 +
+      // MSAA 4 = 25.6M shaded samples/frame). Gate only on hardware: a GPU
+      // pixel budget on SwiftShader measures the raster, not the scene.
+      if (!soft) {
+        const rctx = await browser.newContext({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 })
+        const rpage = await rctx.newPage()
+        await rpage.goto(url + '?v=' + Date.now(), { waitUntil: 'load' })
+        await rpage.waitForFunction(() => window.__shoreTest && window.__shoreTest.perf().n > 40, null, { timeout: 30000 })
+        await rpage.evaluate(() => window.__shoreTest.resetPerf())
+        let rperf = await rpage.evaluate(() => window.__shoreTest.perf())
+        for (let i = 0; i < 24 && rperf.n < 60; i++) {
+          await rpage.waitForTimeout(250)
+          rperf = await rpage.evaluate(() => window.__shoreTest.perf())
+          if (rperf.n >= 30 && rperf.avg > maxMs) break
+        }
+        const cw = await rpage.evaluate(() => [document.querySelector('canvas').width, document.querySelector('canvas').height])
+        ok(`retina (dpr2) frame time under ${budget} ms — canvas caps at dpr 1.5`,
+          rperf.n >= 60 && rperf.avg <= budget && cw[0] <= 2400,
+          `avg=${rperf.avg}ms max=${rperf.max}ms over ${rperf.n} frames, canvas ${cw.join('x')}`)
+        await rctx.close()
+      }
     }
 
           // #702 phone profile: a phone-sized touch viewport boots LITE with a
