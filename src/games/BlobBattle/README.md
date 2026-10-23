@@ -53,9 +53,20 @@ while incoming rows are queued COUNTERS them. First to 2 rounds wins.
   its NEW cell while a fading ghost slides off the old one — never offset the
   orb itself (blobdrill samples cell centers; an offset sprite reads as a
   dark cell and fails pixels==board). Incoming garbage hovers as ghost slabs
-  (holes punched, bobbing, flickering) above the lip and slams home as the
-  warning beat ends. Chain pops walk a major arpeggio up per step
-  (`CHAIN_SCALE`); round win is a two-note call, match win a four-note fanfare.
+   (holes punched, bobbing, flickering) above the lip and slams home as the
+   warning beat ends. Chain pops walk a major arpeggio up per step
+   (`CHAIN_SCALE`); round win is a two-note call, match win a four-note fanfare.
+   Online UX (#863): every online start — first drop, rematch, desync re-join —
+   rides `startPlay('online')`, which arms a 3 s `GO_FRAMES` countdown the fixed
+   step decrements before the first `step()`; both boxes count 3-2-1 (drawn in
+   the VS column) so neither drops into a live board. A rival gone mid-match
+   (`onLeave` roster delta, the relay's `gone`, or — for the guest whose HOST
+   left, the only signal — the transport close) freezes the board (`pausedRef`)
+   under a RIVAL LEFT screen that offers Return: the host re-opens the room
+   (`waiting`, a new challenger can pair and start again) and the guest drops
+   the dead net back to the CPU cabinet. `startPlay` clears the pause refs on
+   every fresh start — the re-join wedge: a desync leaves `pausedRef` set, and
+   without the clear the restarted match never stepped on either box.
 
 ## Controls
 
@@ -86,8 +97,17 @@ npm run blobcheck    # Node gate (static tier): 49 assertions — boot, group/ch
                       # tiers to `normal` (depth 4 / no miss / raw jitter) reddens
                       # the rungs-differ and drops-faster assertions (verified).
 npm run blobdrill    # advisory Chrome drill: real keys/taps, attract, rotate,
-                     # slide, hard drop, drawn-pixels==board, defeat, rematch,
-                     # pause, phone tap, zero page errors.
+                      # slide, hard drop, drawn-pixels==board, defeat, rematch,
+                      # pause, phone tap, zero page errors.
+npm run blobnet      # advisory two-Chrome online drill over the local relay
+                      # twin (netdrill pattern): the 3-2-1 countdown runs on
+                      # BOTH boxes before the board moves (and again after a
+                      # desync re-join, whose restart must actually advance),
+                      # a rival who leaves mid-match freezes the board with a
+                      # RIVAL LEFT screen offering Return, the host re-opens the
+                      # room for a new challenger, and the guest whose host left
+                      # (socket close is the only signal) escapes to the CPU
+                      # cabinet. Needs `npm run dev`.
 ```
 
 ## Known gaps (filed for QA polish)
