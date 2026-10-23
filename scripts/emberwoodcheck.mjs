@@ -535,8 +535,13 @@ if (!SKIP_BROWSER) {
         browser = await launch({})
         const errors = []
         page = await openGame(browser, { url: URL, viewport: { width: 900, height: 760 }, start: false, hook: '__emberwoodTest' })
+        // #829: the #737 feedback SDK polls the relay's /status; off jalfern.com
+        // origins that request is CORS-rejected by design (the worker's ACAO is
+        // prod-only). Relay noise must not mask the game's own page errors —
+        // match it strictly on the relay URL (message text or resource location).
+        const relayNoise = (text, loc) => text.includes('retrogames.jalfern.workers.dev/status') || (loc && String(loc.url || '').startsWith('https://retrogames.jalfern.workers.dev/'))
         page.on('pageerror', e => errors.push('pageerror: ' + e.message))
-        page.on('console', m => { if (m.type() === 'error') errors.push('console.error: ' + m.text()) })
+        page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push('console.error: ' + m.text()) })
         cok(true, 'the page boots and __emberwoodTest answers')
 
         // attract -> play (real key event)
@@ -623,6 +628,32 @@ if (!SKIP_BROWSER) {
             `the overworld has no near-black spread (town dark-pixel frac=${town.darkFrac.toFixed(2)}, ceil 0.35)`)
         cok(keep.mean >= 8 && keep.mean < town.mean * 0.8,
             `dungeon stays moody under the lantern (mean=${keep.mean.toFixed(1)}, band 8..${(town.mean * 0.8).toFixed(1)})`)
+
+        // #829 crisp: full quality renders at device resolution, not the pinned
+        // 480x288 CI buffer. Buffer must follow css*dpr (capped), the camera
+        // aspect must match the buffer (no stretch), and MSAA must be live on
+        // WebGL2 so diorama edges stop staircasing. Pre-fix: buffer 480x288,
+        // samples 0 — both gates red.
+        const info = await page.evaluate(() => (window.__emberwoodTest.renderInfo
+            ? window.__emberwoodTest.renderInfo()
+            : { bufferW: 0, bufferH: 0, cssW: 1, cssH: 1, dpr: 0, samples: 0, lite: true, gl2: false }))
+        cok(!info.lite && info.bufferW >= 720 && info.bufferW * info.bufferH > 480 * 288 * 2.2,
+            `full quality renders at device resolution (buffer=${info.bufferW}x${info.bufferH}, css=${info.cssW}x${info.cssH}, dpr=${info.dpr})`)
+        cok(Math.abs(info.bufferW / info.bufferH - info.cssW / info.cssH) < 0.02,
+            `buffer aspect matches the canvas (${(info.bufferW / info.bufferH).toFixed(3)} vs ${(info.cssW / info.cssH).toFixed(3)})`)
+        cok(!info.gl2 || info.samples >= 1,
+            `scene pass runs with MSAA on WebGL2 (samples=${info.samples}, gl2=${info.gl2})`)
+
+        // the lite path (CI software boxes) must stay pinned at the logical buffer
+        await page.goto(`${URL}?lite=1`, { waitUntil: 'load' })
+        await page.waitForFunction(() => window.__emberwoodTest, null, { timeout: 15000 })
+        const liteInfo = await page.evaluate(() => (window.__emberwoodTest.renderInfo
+            ? window.__emberwoodTest.renderInfo()
+            : { bufferW: 0, bufferH: 0, cssW: 1, cssH: 1, dpr: 0, samples: 0, lite: false, gl2: false }))
+        cok(liteInfo.lite && liteInfo.bufferW === 480 && liteInfo.bufferH === 288,
+            `?lite=1 stays pinned at the logical 480x288 (got ${liteInfo.bufferW}x${liteInfo.bufferH})`)
+        await page.goto(URL, { waitUntil: 'load' })
+        await page.waitForFunction(() => window.__emberwoodTest && window.__emberwoodTest.state, null, { timeout: 15000 })
 
         // #789 living foliage: vale screens carry plants, and the wind moves them.
         const fol0 = await page.evaluate(async () => {

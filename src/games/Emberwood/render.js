@@ -30,6 +30,15 @@ export const WIND = {
 
 const SOLID_H = { '#': WALL_H, 'T': 2, 'H': WALL_H, 'R': WALL_H, '=': 5, 'I': 3 }
 
+// #829 crisp: full quality renders at device resolution (css px x dpr, capped)
+// so lighting, bloom, vignette and geometry edges read smooth on phone+desktop;
+// the sprite/tile textures stay NearestFilter, so the pixel art keeps its
+// identity. `?lite=1` pins the CI buffer to the logical 480x288. Blur radii are
+// uv-space (res uniform stays logical), so the look is identical, just sampled
+// at more pixels.
+const MAX_LONG = 1280
+const DPR_CAP = 2
+
 export function createRenderer(canvas, { lite = false, width = 480, height = 288 } = {}) {
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, preserveDrawingBuffer: true })
     renderer.setPixelRatio(1)
@@ -39,6 +48,7 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.35
+    const gl2 = renderer.capabilities.isWebGL2
 
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#1a1626')
@@ -91,16 +101,52 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
         return texCache.get(key)
     }
 
-    const mkRT = (w, h, srgb = false) => {
-        const rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter })
+    const mkRT = (w, h, srgb = false, samples = 0) => {
+        const opts = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }
+        if (samples > 0 && gl2) opts.samples = samples
+        const rt = new THREE.WebGLRenderTarget(w, h, opts)
         if (srgb) rt.texture.colorSpace = THREE.SRGBColorSpace
         return rt
     }
-    const rtScene = mkRT(width, height, true)
-    const rtA = mkRT(width / 2, height / 2)
-    const rtB = mkRT(width / 2, height / 2)
-    const rtC = mkRT(width / 2, height / 2)
-    const rtD = mkRT(width / 2, height / 2)
+    let bufW = width, bufH = height
+    let samples = 0
+    const rtScene = mkRT(bufW, bufH, true, 4)
+    const rtA = mkRT(bufW / 2, bufH / 2)
+    const rtB = mkRT(bufW / 2, bufH / 2)
+    const rtC = mkRT(bufW / 2, bufH / 2)
+    const rtD = mkRT(bufW / 2, bufH / 2)
+    samples = lite ? 0 : (gl2 ? 4 : 0)
+
+    // #829: match the drawing buffer to the canvas's CSS size x devicePixelRatio
+    // (capped DPR_CAP x MAX_LONG); lite stays at the logical resolution.
+    function resize() {
+        const cw = canvas.clientWidth || width
+        const ch = canvas.clientHeight || height
+        let bw, bh
+        if (lite) {
+            bw = width; bh = height
+        } else {
+            const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP)
+            bw = Math.round(cw * dpr)
+            bh = Math.round(ch * dpr)
+            const long = Math.max(bw, bh)
+            if (long > MAX_LONG) {
+                const k = MAX_LONG / long
+                bw = Math.round(bw * k); bh = Math.round(bh * k)
+            }
+        }
+        bw = Math.max(2, bw); bh = Math.max(2, bh)
+        if (bw === bufW && bh === bufH) return
+        bufW = bw; bufH = bh
+        renderer.setSize(bw, bh, false)
+        rtScene.setSize(bw, bh)
+        const hw = Math.max(1, Math.round(bw / 2)), hh = Math.max(1, Math.round(bh / 2))
+        rtA.setSize(hw, hh); rtB.setSize(hw, hh); rtC.setSize(hw, hh); rtD.setSize(hw, hh)
+        const ar = bw / bh
+        camera.left = -viewH * ar / 2; camera.right = viewH * ar / 2
+        camera.top = viewH / 2; camera.bottom = -viewH / 2
+        camera.updateProjectionMatrix()
+    }
     const quadGeo = new THREE.PlaneGeometry(2, 2)
     const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
     const quad = new THREE.Mesh(quadGeo, null)
@@ -145,6 +191,7 @@ void main(){
 
     let screenGroup = new THREE.Group()
     scene.add(screenGroup)
+    resize()
     let currentScreen = null
     let structureSig = ''
     const staticMeshes = []
@@ -644,7 +691,13 @@ void main(){
     }
 
     return {
-        loadTex, buildScreen, sync, draw, onFx, setFocus, screenPos, dispose,
+        loadTex, buildScreen, sync, draw, onFx, setFocus, screenPos, dispose, resize,
+        renderInfo: () => ({
+            bufferW: bufW, bufferH: bufH,
+            cssW: canvas.clientWidth || width, cssH: canvas.clientHeight || height,
+            dpr: Math.min(window.devicePixelRatio || 1, DPR_CAP),
+            samples, lite, gl2,
+        }),
         get camera() { return camera },
         foliage: () => ({
             trees: canopies.length, bushes: bushes.length, grass: grassTiles.length,

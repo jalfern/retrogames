@@ -22,6 +22,10 @@ const W = 480
 const H_LAND = 288
 const H_PORT = 360
 
+// #829: full quality renders at device resolution and the canvas is shown 1:1
+// (no CSS upscale); lite keeps the pixelated 480-wide CI buffer.
+const IS_LITE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite')
+
 // #773: portrait phones get a taller logical canvas (4:3 instead of 5:3) so the
 // diorama isn't a thin band on a tall screen — the ortho camera keeps its world
 // window (viewH covers the 11-row screen either way), the pixels just get bigger.
@@ -96,9 +100,12 @@ export default function Emberwood() {
 
     useEffect(() => {
         const canvas = canvasRef.current
-        const lite = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite')
+        const lite = IS_LITE
         const sim = createSim(11)
         const rend = createRenderer(canvas, { lite, width: W, height: H })
+        rend.resize()
+        const onWinResize = () => rend.resize()
+        window.addEventListener('resize', onWinResize)
         rend.loadTex(makeTextures())
         rend.buildScreen('ow-11', sim.flags, sim.cut)
 
@@ -267,6 +274,7 @@ export default function Emberwood() {
                 prove: (opts) => proveGame(opts || { bombs: true }),
                 screenAt: (x, y) => rend.screenPos(x, y),
                 foliage: () => rend.foliage(),
+                renderInfo: () => rend.renderInfo(),
                 win: () => { sim.flags.boss1 = true; sim.flags.boss2 = true; return true },
             }
             mountDbg({
@@ -287,6 +295,7 @@ export default function Emberwood() {
 
         const cleanup = () => {
             cancelAnimationFrame(raf)
+            window.removeEventListener('resize', onWinResize)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             audioController.stopMusic()
@@ -307,7 +316,7 @@ export default function Emberwood() {
                 width={W}
                 height={H}
                 className="max-w-full max-h-full"
-                style={{ imageRendering: 'pixelated', width: `min(100vw, calc((100dvh - ${orient === 'port' ? 150 : 140}px) * ${(W / H).toFixed(3)}))` }}
+                style={{ imageRendering: IS_LITE ? 'pixelated' : 'auto', width: `min(100vw, calc((100dvh - ${orient === 'port' ? 150 : 140}px) * ${(W / H).toFixed(3)}))` }}
             />
             {/* HUD — #773: clears the #437 chrome cluster (ARCADE left, PAUSE+mute
                 right sit at top 0.75rem), so the strip starts below both. */}
