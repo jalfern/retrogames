@@ -412,6 +412,57 @@ function arcScript(seed) {
     ok(a.t === b.t && a.hash === b.hash, 'the proof route is deterministic (identical run, identical hash)')
     ok(a.t > 3000, `the route is a real traverse, not a teleport (${a.t} ticks of walking)`)
 }
+{
+    // GRACEFUL FIGHTS (#874): the attract bot fights the vale's rules, not
+    // just through them. Each species scenario drives attractBot with real
+    // inputs against one monster and checks the choreography the README sells.
+    function duel(screen, type, cap) {
+        const s = createSim(11)
+        spawnRoom(s, screen, null)
+        s.enemies = s.enemies.filter(e => e.type === type)
+        const hp0 = s.hero.hp
+        let t = 0, hurt = 0, hits = 0, clanks = 0, shots = 0, staggers = 0, swingsInRest = 0
+        let charged = 0, hurtInCharge = 0, restClose = 1e9, closedMin = 1e9, openMin = 1e9
+        while (t < cap) {
+            const inp = attractBot(s)
+            const e = s.enemies.find(x => !x.dead)
+            const d = e ? Math.hypot(e.x - s.hero.x, e.y - s.hero.y) : 1e9
+            if (e) {
+                if (type === 'tuskroot' && (e.st > 0 || e.charging > 0)) charged++
+                if (type === 'tuskroot' && e.rest > 0) { restClose = Math.min(restClose, d); if (inp.aPressed) swingsInRest++ }
+                if (type === 'maw') { if (e.open > 0) openMin = Math.min(openMin, d); else closedMin = Math.min(closedMin, d) }
+            }
+            const hp = s.hero.hp
+            stepSim(s, inp)
+            s.fx.forEach(f => {
+                if (f.k === 'hurt') hurt++
+                if (f.k === 'hit') hits++
+                if (f.k === 'clank') clanks++
+                if (f.k === 'shoot') shots++
+                if (f.k === 'stagger') staggers++
+            })
+            if (type === 'tuskroot' && e && (e.st > 0 || e.charging > 0) && s.hero.hp < hp) hurtInCharge++
+            s.fx.length = 0
+            const done = type === 'maw' ? s.flags.boss1 : type === 'wyrm' ? s.flags.boss2 : s.enemies.every(x => x.dead || x.type !== type)
+            if (done) { t++; break }
+            t++
+        }
+        const left = s.enemies.filter(x => x.type === type && !x.dead).length
+        return { t, left, hurt, hits, clanks, shots, staggers, charged, hurtInCharge, restClose, swingsInRest, closedMin, openMin, hp0, hp: s.hero.hp }
+    }
+    const tk = duel('ow-01', 'tuskroot', 1500)
+    ok(tk.charged > 0 && tk.hurtInCharge === 0, `tuskroot: sidesteps every telegraph and locked charge line (charges ${tk.charged}, damage taken during windup/charge ${tk.hurtInCharge})`)
+    ok(tk.restClose <= 20 && tk.swingsInRest > 0, `tuskroot: punishes the 55-frame rest window (min ${tk.restClose.toFixed(0)}px, ${tk.swingsInRest} swings landed in rest)`)
+    const hk = duel('d1-e1', 'husk', 400)
+    ok(hk.left === 0 && hk.hits >= 2, `husk: falls to diagonal flank bites (${hk.hits} landed, ${hk.t} ticks)`)
+    ok(hk.clanks === 0, `husk: the frontal deflect arc is never head-on-tested (clanks ${hk.clanks})`)
+    const cl = duel('d1-e0', 'cinderling', 150)
+    ok(cl.left === 0 && cl.hurt === 0, `trash: slash-and-hop kills without a scratch (${cl.hits} hits, ${cl.t} ticks, hurt ${cl.hurt})`)
+    const mw = duel('d1-e3', 'maw', 2000)
+    ok(mw.left === 0 && mw.hits >= 2 && mw.clanks === 0, `Maw: strikes land only in the thorn window (${mw.hits} hits, clanks ${mw.clanks}, ${mw.t} ticks)`)
+    const wy = duel('d2-f4', 'wyrm', 2000)
+    ok(wy.left === 0 && wy.shots >= 2 && wy.staggers >= 1 && wy.clanks === 0, `Wyrm: kited volleys stagger the maw before steel ever touches the cloak (${wy.shots} shots, ${wy.staggers} staggers, clanks ${wy.clanks})`)
+}
 
 // ---- 6. state contract shape ----
 {

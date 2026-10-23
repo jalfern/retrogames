@@ -135,7 +135,7 @@ function tap(b, screen) { b.seq = { kind: 'tap', t: 0, screen } }
 // only opens in its thorn window (strike, then stand off); the Wyrm's maw
 // is arrowed from mid range while the hero keeps moving.
 
-const ENGAGE = 46, LEASH = 84, FIGHT_BUDGET = 600
+const ENGAGE = 46, LEASH = 84, FIGHT_BUDGET = 2400
 
 const freeAt = (sim, x, y) => {
     const tx = Math.floor(x / TS), ty = Math.floor(y / TS)
@@ -213,10 +213,19 @@ export function fightTick(sim, b, inp) {
     const dx = e.x - h.x, dy = e.y - h.y
     const dist = Math.hypot(dx, dy)
     const blacken = () => { (b.black || (b.black = {}))[`${sim.screen}:${e.i}`] = true; b.fight = null; b.fightCool = 60 }
-    if (dist > LEASH || ++f.t > FIGHT_BUDGET) { blacken(); return false }
+    if (dist > LEASH) { blacken(); return false }
+    if (++f.t > FIGHT_BUDGET) {
+        const k = `:`
+        b.broke = b.broke || {}
+        b.broke[k] = (b.broke[k] || 0) + 1
+        if (b.broke[k] > 2) blacken(); else { b.fight = null; b.fightCool = 60 }
+        return false
+    }
     if (f.px === undefined) { f.px = h.x; f.py = h.y; f.pt = 0 }
-    if (++f.pt > 44) {
-        if (Math.hypot(h.x - f.px, h.y - f.py) < 3) { blacken(); return false }
+    if (++f.pt > 60) {
+        // pin detection: a rooted hero is stuck on geometry, not fighting;
+        // tuskroot circles are legitimate patience, judge them by leash/budget
+        if (Math.hypot(h.x - f.px, h.y - f.py) < 2 && e.type !== 'tuskroot') { blacken(); return false }
         f.px = h.x; f.py = h.y; f.pt = 0
     }
     f.tt = (f.tt || 0) + 1
@@ -237,32 +246,43 @@ export function fightTick(sim, b, inp) {
 
     if (e.type === 'husk') {
         // frontal steel clanks (toward = dom/r > 0.5) — bite from a steep
-        // diagonal instead: ~4px off the swing axis, 12px off the minor
-        if (!f.ax) f.ax = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y'
-        if (f.mn === undefined) f.mn = ((e.seedOff || 0) % 2) ? 1 : -1
-        const mx = f.ax === 'x' ? 1 : 0, my = f.ax === 'x' ? 0 : 1
-        const nx = f.ax === 'x' ? 0 : 1, ny = f.ax === 'x' ? 1 : 0
-        const sx = Math.sign(f.ax === 'x' ? dx : dy) || 1
-        const poseX = e.x + mx * sx * 4 + nx * f.mn * 12
-        const poseY = e.y + my * sx * 4 + ny * f.mn * 12
+        // diagonal: 4px off the swing axis, 13.5px off the minor (outside the
+        // 12.5px contact band). Axis and side freeze at engage so the pose
+        // doesn't flip as the husk circles.
+        if (f.ax === undefined) {
+            const horiz = Math.abs(dx) >= Math.abs(dy)
+            f.ax = horiz ? 1 : 0
+            f.sx = horiz ? (Math.sign(dx) || 1) : 1
+            f.sy = horiz ? 1 : (Math.sign(dy) || 1)
+            f.mn = ((e.seedOff || 0) % 2) ? 1 : -1
+        }
+        const mx = f.ax, my = 1 - f.ax
+        const s0 = mx ? f.sx : f.sy
+        const poseX = e.x + mx * s0 * 4 + (1 - mx) * f.mn * 13.5
+        const poseY = e.y + my * s0 * 4 + mx * f.mn * 13.5
         if (f.ph === 'close') {
+            const minorDelta = mx ? (h.y - e.y) : (h.x - e.x)
+            if (minorDelta * f.mn < 0) { // wrong side of the blade line: slip around, never through
+                if (mx) inp.ly = f.mn; else inp.lx = f.mn
+                return true
+            }
             if (Math.hypot(h.x - poseX, h.y - poseY) > 5) { setMove(inp, poseX - h.x, poseY - h.y); return true }
             f.ph = 'aim'; f.tt = 0
             return true
         }
         if (f.ph === 'aim') {
-            inp.lx = -mx * sx; inp.ly = -my * sx // set facing along the swing axis
-            if (f.tt > 3) { f.ph = 'strike'; f.tt = 0; f.hp = e.hp }
+            inp.lx = -mx * s0; inp.ly = -my * s0 // one tick of facing along the swing axis
+            if (f.tt > 0) { f.ph = 'strike'; f.tt = 0; f.hp = e.hp }
             return true
         }
         if (f.ph === 'strike') {
             if (f.tt === 1) inp.aPressed = true
             else if (f.tt === 2) inp.aHeld = true
             else if (f.tt === 3) inp.aReleased = true // short tap = sword, not bow
-            if (f.tt > 16) {
+            if (f.tt > 4) {
                 if (e.dead) { b.fight = null; return false }
-                if (e.hp < f.hp) { f.ph = 'aim'; f.tt = 0 }
-                else { f.ph = 'close'; f.tt = 0; f.mn = -f.mn } // clanked: new corner
+                if (!(e.hp < f.hp)) f.mn = -f.mn // clanked: new corner
+                f.ph = 'close'; f.tt = 0 // re-orbit between bites, the husk walks
             }
             return true
         }
@@ -576,7 +596,7 @@ function fireSetup(sim, b, m) {
 // stand off until the thorns open again. Wyrm = arrow the open maw from mid
 // range on the move (align, set facing, draw, loose, hop back), then carve
 // the stunned core in slash-pulse rhythm.
-function bossTick(sim, b, inp, id) {
+export function bossTick(sim, b, inp, id) {
     const e = sim.enemies.find(x => (id === 'boss1' ? x.type === 'maw' : x.type === 'wyrm') && !x.dead)
     if (!e) return inp
     const h = sim.hero
