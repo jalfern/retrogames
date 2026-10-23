@@ -9,9 +9,47 @@
 // Served at https://retrogames.jalfern.workers.dev/room/<CODE> (wss).
 
 import { DurableObject } from 'cloudflare:workers'
-import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders } from './core.js'
+import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders, FB_SHOT_PLACEHOLDER, screenshotMarkdown } from './core.js'
 
 const GH_API = 'https://api.github.com'
+
+// #905: a captured screenshot must be VIEWABLE in the issue, not "attached" as a
+// base64 blob nobody can open. GitHub issue comments/issues render images only
+// from uploads.github.com, so after filing we decode the data URL, upload it as
+// an issue asset, and patch the placeholder line into real markdown. Every step
+// is best-effort: a failed upload leaves an honest note in the body, and the
+// report still files (note + replay are the load-bearing parts).
+async function attachScreenshot(env, number, dataUrl, issueBody) {
+    let markdown = screenshotMarkdown(null)
+    try {
+        const b64 = String(dataUrl).split(',')[1] || ''
+        const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+        const res = await fetch(`https://uploads.github.com/repos/${env.GH_REPO}/issues/${number}/assets?name=screenshot.png`, {
+            method: 'POST',
+            headers: {
+                authorization: `Bearer ${env.GITHUB_TOKEN}`,
+                'content-type': 'image/png',
+                'user-agent': 'retrogames-relay',
+            },
+            body: bin,
+        })
+        if (res.ok) {
+            const j = await res.json()
+            markdown = screenshotMarkdown(j && j.browser_download_url)
+        }
+    } catch { /* upload failed: honest fallback line */ }
+    try {
+        await fetch(`${GH_API}/repos/${env.GH_REPO}/issues/${number}`, {
+            method: 'PATCH',
+            headers: {
+                authorization: `Bearer ${env.GITHUB_TOKEN}`,
+                'content-type': 'application/json',
+                'user-agent': 'retrogames-relay',
+            },
+            body: JSON.stringify({ body: issueBody.replace(FB_SHOT_PLACEHOLDER, markdown) }),
+        })
+    } catch { /* issue stays filed with the honest note */ }
+}
 
 // CORS (#886): the button on jalfern.com fetches /status and POSTs /feedback
 // cross-origin; every plain-HTTP answer here carries the allow headers (WS
@@ -41,6 +79,7 @@ async function handleFeedback(req, env) {
         })
         if (!res.ok) return json({ ok: false, err: `github ${res.status}` }, origin, 502)
         const j = await res.json()
+        if (j && j.number && body.screenshot) await attachScreenshot(env, j.number, body.screenshot, issue.body)
         return json({ ok: true, issue: j.html_url, labels: issue.labels }, origin, 200)
     } catch {
         return json({ ok: false, err: 'github unreachable' }, origin, 502)
