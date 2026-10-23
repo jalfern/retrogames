@@ -3,10 +3,11 @@
 //
 //   {
 //     format: 'retrogames-rec/v1',
-//     build,            // commit that generated the capture: a main commit when
-//                       // regenerated from a detached main tip (check scripts'
-//                       // --rebuild), `unknown` when the capture ran on a commit
-//                       // that won't survive its merge (feature branch / CI)
+//     build,            // commit (full sha) that generated the capture: a main
+//                       // commit when regenerated from a detached main tip
+//                       // (check scripts' --rebuild), `unknown` when the
+//                       // capture ran on a commit that won't survive its merge
+//                       // (feature branch / CI)
 //     game,             // registry id ('gauntlet')
 //     method,           // input method: 'dpad' | 'stick' | 'pointer' (#420)
 //     seed,             // the one integer the sim resets from

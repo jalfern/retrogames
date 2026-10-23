@@ -46,7 +46,8 @@ const ok = (cond, name, info = '') => {
 // #527 item 5 — the stamp must name a commit that survives the squash-merge. On a
 // feature branch the capture's own commit dies with the PR, so those runs stamp
 // `unknown` (honest); a regeneration from a detached main tip stamps the main
-// commit. `--rebuild` forces the fresh stamp even when the bytes are unchanged.
+// commit (full sha, so a shallow checkout can fetch exactly that object).
+// `--rebuild` forces the fresh stamp even when the bytes are unchanged.
 const gitOut = (cmd) => {
     try { return execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null }
     catch { return null }
@@ -59,7 +60,7 @@ const onMainLine = (() => {
     }
 })()
 const REBUILD = process.argv.includes('--rebuild')
-const build = onMainLine ? (gitOut('git rev-parse --short HEAD') || 'unknown') : 'unknown'
+const build = onMainLine ? (gitOut('git rev-parse HEAD') || 'unknown') : 'unknown'
 
 // --- the seat-to-sim fold (mirrors the index.jsx pad path, slotcheck's shape) --
 const fold1 = (pad, prev) => ({
@@ -143,10 +144,19 @@ const onDisk = JSON.parse(readFileSync(REC_FILE, 'utf8'))
 // The build stamp is whatever commit generated the sample; everything else in
 // the file must be byte-identical to a fresh record at this commit.
 ok(JSON.stringify({ ...onDisk, build: file.build }) === JSON.stringify(file), 'example file round-trips through disk byte-identical (build stamp aside)', `disk=${onDisk.build} fresh=${file.build}`)
-// #527 item 5: the committed stamp is `unknown` or a commit this clone still
-// has — a dead pre-merge stamp (a branch tip that squashed away) means the
-// sample is stale: regenerate it from a detached main tip with --rebuild.
-ok(onDisk.build === 'unknown' || gitOut(`git rev-parse --verify '${onDisk.build}^{commit}'`) !== null,
+// #527 item 5: the committed stamp is `unknown` or a commit this clone has —
+// a dead pre-merge stamp (a branch tip that squashed away) means the sample
+// is stale: regenerate it from a detached main tip with --rebuild. A shallow
+// checkout (CI) lacks the object, so fetch exactly that commit first: GitHub
+// serves any sha reachable from a ref and refuses pruned ones, which is the
+// distinction the gate needs.
+const stampAlive = (s) => {
+    if (s === 'unknown') return true
+    if (gitOut(`git rev-parse --verify '${s}^{commit}'`) !== null) return true
+    try { execSync(`git fetch --depth 1 origin '${s}'`, { stdio: 'ignore' }) } catch { return false }
+    return gitOut(`git rev-parse --verify '${s}^{commit}'`) !== null
+}
+ok(stampAlive(onDisk.build),
     `build stamp ${onDisk.build} is unknown or names a commit this clone has`,
     'regenerate from a detached main tip: node scripts/replaycheck.mjs --rebuild')
 ok(onDisk.slots.every((s) => s.pads.every((p) => JSON.stringify(encodePad(decodePad(p, 'stick'))) === JSON.stringify(p))), 'stored pads are canonical (decode/encode stable)')

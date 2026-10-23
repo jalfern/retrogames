@@ -91,7 +91,7 @@ ONE JSON file for a recorded multiplayer run — replayable exactly, trainable o
 
 ```json
 {
-  "format": "retrogames-rec/v1", "build": "c80a6bb",
+  "format": "retrogames-rec/v1", "build": "cccccccccccccccccccccccccccccccccccccccc",
   "game": "gauntlet", "method": "stick", "seed": 42, "players": 2,
   "ticks": 900, "hashEvery": 30,
   "slots": [
@@ -102,13 +102,15 @@ ONE JSON file for a recorded multiplayer run — replayable exactly, trainable o
 }
 ```
 
-- **Header** — `build` is the commit that generated the capture: a main commit
-  when the sample is regenerated from a detached main tip (`replaycheck` /
-  `recmethods` with `--rebuild`), or `unknown` when the capture ran on a commit
-  that will not survive its merge (feature branch / CI). The check scripts
-  refuse a committed stamp that names a commit no longer in the clone — a dead
-  stamp means the sample is stale, regenerate it. `game` the registry id;
-  `method` the input method (#420); `seed` the one integer the sim resets from.
+- **Header** — `build` is the commit (full sha) that generated the capture: a
+  main commit when the sample is regenerated from a detached main tip
+  (`replaycheck` / `recmethods` with `--rebuild`), or `unknown` when the capture
+  ran on a commit that will not survive its merge (feature branch / CI). The
+  check scripts refuse a committed stamp that names a commit no longer fetchable
+  — on a shallow checkout they fetch exactly that sha first (GitHub serves any
+  ref-reachable sha and refuses pruned ones), so a dead pre-merge stamp is red
+  and a stale sample must be regenerated. `game` the registry id; `method` the
+  input method (#420); `seed` the one integer the sim resets from.
 - **`slots[]`** — one entry per seat. `source.kind` is the #494 slot kind
   (`human`/`cpu`/`model`+`modelId`/`remote`/`off`) as it stood at capture time.
   `pads` holds THE one pad per tick (#420), compact: false/zero fields are

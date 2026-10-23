@@ -54,7 +54,8 @@ const ok = (cond, name, info = '') => {
 // #527 item 5 — the stamp must name a commit that survives the squash-merge. On a
 // feature branch the capture's own commit dies with the PR, so those runs stamp
 // `unknown` (honest); a regeneration from a detached main tip stamps the main
-// commit. `--rebuild` forces the fresh stamp even when the bytes are unchanged.
+// commit (full sha, so a shallow checkout can fetch exactly that object).
+// `--rebuild` forces the fresh stamp even when the bytes are unchanged.
 const gitOut = (cmd) => {
     try { return execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null }
     catch { return null }
@@ -67,7 +68,7 @@ const onMainLine = (() => {
     }
 })()
 const REBUILD = process.argv.includes('--rebuild')
-const build = onMainLine ? (gitOut('git rev-parse --short HEAD') || 'unknown') : 'unknown'
+const build = onMainLine ? (gitOut('git rev-parse HEAD') || 'unknown') : 'unknown'
 
 // A recorded file must round-trip through disk byte-identically. The build stamp
 // is preserved from disk when the bytes are unchanged (#527 item 5): a branch or
@@ -88,9 +89,18 @@ const roundTrip = (onDisk, fresh, label) => {
         `${label}: on-disk file is byte-identical to a fresh record (build stamp aside)`,
         `disk=${onDisk.build} fresh=${fresh.build}`)
 }
-// #527 item 5: the committed stamp is `unknown` or a commit this clone still has.
+// #527 item 5: the committed stamp is `unknown` or a commit this clone has —
+// a dead pre-merge stamp means the sample is stale. A shallow checkout (CI)
+// lacks the object, so fetch exactly that commit first: GitHub serves any sha
+// reachable from a ref and refuses pruned ones, which is the distinction the
+// gate needs.
 const stampGate = (onDisk, label) => {
-    ok(onDisk.build === 'unknown' || gitOut(`git rev-parse --verify '${onDisk.build}^{commit}'`) !== null,
+    let alive = onDisk.build === 'unknown' || gitOut(`git rev-parse --verify '${onDisk.build}^{commit}'`) !== null
+    if (!alive && onDisk.build !== 'unknown') {
+        try { execSync(`git fetch --depth 1 origin '${onDisk.build}'`, { stdio: 'ignore' }) } catch { /* refused below */ }
+        alive = gitOut(`git rev-parse --verify '${onDisk.build}^{commit}'`) !== null
+    }
+    ok(alive,
         `${label}: build stamp ${onDisk.build} is unknown or names a commit this clone has`,
         'regenerate from a detached main tip: node scripts/recmethods.mjs --rebuild')
 }
