@@ -907,12 +907,16 @@ async function boot() {
   const FORMAT = navigator.gpu.getPreferredCanvasFormat();
   ctx.configure({ device, format: FORMAT, alphaMode: 'opaque' });
 
-  // Resolution policy (#668): canvas pinned at CSS×dpr capped at 2 (was
-  // uncapped: a dpr-3 phone rendered 2.25x the pixels for no visible gain).
-  // The scene renders into offscreen targets sized rs×canvas; rs=1 resolves
-  // straight to the canvas, rs<1 upscales via a fullscreen blit (used by
-  // ?rs=0.55..0.9 for experiments and by harness determinism locks).
-  const DPR_CAP = Math.min(devicePixelRatio || 1, 2);
+  // Resolution policy (#668): canvas pinned at CSS×dpr (was uncapped: a dpr-3
+  // phone rendered 2.25x the pixels for no visible gain). Retina cap 1.5, not
+  // 2: at dpr 2 (3200x2000) the three MSAA-4 passes pushed Safari/WebKit to
+  // 22.4 ms avg with 43 ms spikes on an M3 Ultra; at 1.5 the same engine runs
+  // 16.2/18.0 with no visible softening (foam-line crops compared). storm
+  // (1.25), campfire (1.5) and ocean (1.75) set the demo house range; MSAA 2
+  // is not an option — depth32float only guarantees sampleCount 4. The scene
+  // renders into offscreen targets sized rs×canvas; rs=1 resolves straight to
+  // the canvas, rs<1 upscales via a fullscreen blit (?rs= for experiments).
+  const DPR_CAP = Math.min(devicePixelRatio || 1, 1.5);
   const RS_LOCK = qs.get('rs') ? Math.max(0.55, Math.min(1, parseFloat(qs.get('rs')))) : 0;
   let rs = RS_LOCK || (AUTO_PHONE ? 0.75 : 1);
   let nsub = qs.get('nsub') ? Math.max(2, Math.min(NSUB, parseInt(qs.get('nsub'), 10) & ~1)) : NSUB;
