@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPadClient } from '../utils/padlink.js'
+import { makePadPeer, RELAY_DEFAULT } from '../utils/linkPeers.js'
 import { quantize, DIR_DEAD } from '../utils/onePad.js'
 import { vpadSize } from '../components/vpadSize.js'
 
@@ -13,36 +14,6 @@ import { vpadSize } from '../components/vpadSize.js'
 //
 // Look follows the shared touch controls (#885/#735): the same vpadSize law
 // drives every dimension, the same white/25 knob + ring + blur language.
-
-const RELAY_DEFAULT = 'wss://retrogames.jalfern.workers.dev'
-
-function makePadPeer() {
-    const pc = new RTCPeerConnection({ iceServers: [] })
-    let chan = null
-    let openCb = null, msgCb = null, stateCb = null, iceCb = null
-    pc.ondatachannel = (ev) => {
-        chan = ev.channel
-        chan.onopen = () => openCb && openCb()
-        chan.onmessage = (ev2) => msgCb && msgCb(ev2.data)
-    }
-    pc.onconnectionstatechange = () => { if (stateCb) stateCb(pc.connectionState) }
-    pc.onicecandidate = (ev) => { if (ev.candidate && iceCb) iceCb(ev.candidate) }
-    return {
-        answer: async (sd) => {
-            await pc.setRemoteDescription(sd)
-            const a = await pc.createAnswer()
-            await pc.setLocalDescription(a)
-            return a
-        },
-        ice: (c) => { pc.addIceCandidate(c).catch(() => { /* stale candidate */ }) },
-        send: (s) => { if (chan && chan.readyState === 'open') chan.send(s) },
-        close: () => { try { pc.close() } catch { /* gone */ } },
-        onOpen: (cb) => { openCb = cb },
-        onMessage: (cb) => { msgCb = cb },
-        onState: (cb) => { stateCb = cb },
-        onIce: (cb) => { iceCb = cb },
-    }
-}
 
 const clamp1 = (v) => (v > 1 ? 1 : v < -1 ? -1 : v)
 
@@ -111,7 +82,7 @@ export default function PadLink() {
     }, [])
 
     // --- sticks ---------------------------------------------------------------
-    const stickHandlers = (which) => {
+    const useStickHandlers = (which) => {
         const zone = useRef(null)
         const active = useRef(-1)
         const center = useRef({ x: 0, y: 0 })
@@ -161,8 +132,8 @@ export default function PadLink() {
         onPointerLeave: () => { padRef.current[field] = false; setHeldUI((p) => ({ ...p, [codeLabel]: false })) },
     })
 
-    const move = stickHandlers('move')
-    const aim = stickHandlers('aim')
+    const move = useStickHandlers('move')
+    const aim = useStickHandlers('aim')
 
     const stickEl = (handlers, label) => {
         const { ref, ...rest } = handlers

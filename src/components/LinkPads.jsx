@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPadHost } from '../utils/padlink.js'
+import { makeHostPeer, RELAY_DEFAULT } from '../utils/linkPeers.js'
 
 // LINK PADS host glue (#893): the game screen half of iPhone-as-controller.
 // Opens a room over the relay, watches phones join at /retrogames/pad, and
@@ -13,41 +14,11 @@ import { createPadHost } from '../utils/padlink.js'
 // point (same Wi-Fi); when ICE can't pair within RTC_WAIT_MS the pad state
 // just keeps riding the relay, and the pill says RELAY.
 
-const RELAY_DEFAULT = 'wss://retrogames.jalfern.workers.dev'
-
-export function makeHostPeer() {
-    const pc = new RTCPeerConnection({ iceServers: [] })
-    let chan = null
-    let openCb = null, msgCb = null, stateCb = null, iceCb = null
-    pc.onicecandidate = (ev) => { if (ev.candidate && iceCb) iceCb(ev.candidate) }
-    pc.onconnectionstatechange = () => { if (stateCb) stateCb(pc.connectionState) }
-    return {
-        offer: async () => {
-            if (!chan) {
-                chan = pc.createDataChannel('pad', { ordered: false, maxRetransmits: 0 })
-                chan.onopen = () => openCb && openCb()
-                chan.onmessage = (ev) => msgCb && msgCb(ev.data)
-            }
-            const sd = await pc.createOffer()
-            await pc.setLocalDescription(sd)
-            return sd
-        },
-        answer: async (sd) => { await pc.setRemoteDescription(sd) },
-        ice: (c) => { pc.addIceCandidate(c).catch(() => { /* stale candidate */ }) },
-        send: (s) => { if (chan && chan.readyState === 'open') chan.send(s) },
-        close: () => { try { pc.close() } catch { /* gone */ } },
-        onOpen: (cb) => { openCb = cb; if (chan && chan.readyState === 'open') cb() },
-        onMessage: (cb) => { msgCb = cb },
-        onState: (cb) => { stateCb = cb },
-        onIce: (cb) => { iceCb = cb },
-    }
-}
-
 const LinkPads = ({ secondAction }) => {
     const [ui, setUi] = useState({ open: false, phase: 'idle', code: '', pads: [] })
     const hostRef = useRef(null)
     const secondRef = useRef(secondAction)
-    secondRef.current = secondAction
+    useEffect(() => { secondRef.current = secondAction }, [secondAction])
 
     const syncUi = useCallback((snapshot) => {
         setUi((prev) => ({ ...prev, ...snapshot }))

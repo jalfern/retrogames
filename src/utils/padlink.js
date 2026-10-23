@@ -96,10 +96,6 @@ export function decodePadPacket(pkt) {
     }
 }
 
-function sigMsg(from, to, kind, data) {
-    return { t: 'pad', k: 'sig', s: from, d: to, m: kind, p: data }
-}
-
 // --- host ---------------------------------------------------------------------
 // createPadHost(opts):
 //   relay, makeTransport            room.js transport contract (WebSocket factory
@@ -192,7 +188,7 @@ export function createPadHost(opts = {}) {
         if (seat === 1) syncKeys(pad, new Set(keyCodesFor(f)))
     }
 
-    function hostRecv(msg, viaPeer) {
+    function hostRecv(msg, _viaPeer) {
         if (!msg) return
         if (msg.k === 'sig') {
             // signaling for the host only (from a phone seat)
