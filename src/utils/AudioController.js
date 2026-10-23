@@ -545,7 +545,7 @@ class AudioController {
     }
 
     // ---- verification hooks ----
-    _musicState() { return { playing: !!(this.music && this.music.playing), track: this.music && this.music.track, step: this.music && this.music.step, ctx: this.ctx && this.ctx.state } }
+    _musicState() { return { playing: !!(this.music && this.music.playing), track: this.music && this.music.track, step: this.music && this.music.step, stepDur: this.music && this.music.playing ? this.music.stepDur : null, ctx: this.ctx && this.ctx.state } }
     _peak() {
         if (!this.analyser) return 0
         const d = new Uint8Array(this.analyser.fftSize)

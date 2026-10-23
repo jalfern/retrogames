@@ -16,7 +16,8 @@ import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
 import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
-import { audioController } from '../../utils/AudioController'
+import { audioController, MUSIC } from '../../utils/AudioController'
+import { musicStep } from './music.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
@@ -871,14 +872,23 @@ const MomentumGame = () => {
             }
             // bed lifecycle: plays only during a live run (attract has no
             // gesture yet, so it stays silent); switches with the sector.
+            // #833: the grid lifts with your speed, SSX-style — resting tempo
+            // while you coast at the flat-run cap, up to -16% at VMAX.
             const wantMusic = screenRef.current === 'play' && !pausedRef.current && !gs.end
-            if (wantMusic !== musicOn) {
-                musicOn = wantMusic
-                if (wantMusic) { musicZone = gs.zone; audioController.startMusic(RUNNER_BEDS[gs.zone]) }
-                else audioController.stopMusic()
-            } else if (musicOn && gs.zone !== musicZone) {
-                musicZone = gs.zone
-                audioController.startMusic(RUNNER_BEDS[gs.zone])
+            if (wantMusic) {
+                const bed = MUSIC[RUNNER_BEDS[gs.zone]]
+                const step = musicStep(bed.step, Math.max(0, gs.p.s || 0))
+                if (!musicOn || gs.zone !== musicZone) {
+                    audioController.setMusicStep(step)
+                    audioController.startMusic(RUNNER_BEDS[gs.zone])
+                    musicOn = true
+                    musicZone = gs.zone
+                } else {
+                    audioController.setMusicStep(step)
+                }
+            } else if (musicOn) {
+                musicOn = false
+                audioController.stopMusic()
             }
             paint()
             syncHud()
