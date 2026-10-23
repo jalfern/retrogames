@@ -189,7 +189,10 @@ its own `game-queue` issue then claimed normally) → only then STOP. The pick l
 pure Node; `jonqcheck` pins the order and skips.
 **The warden** (`scripts/warden.sh`, launchd every 10 min) is a plain shell script, not an
 agent: pulse line, trust gate + triage, kick the builder / QA when idle, `stalled` after 3
-kicks with no progress. It never calls a model, so it never slows the builder or hangs on oMLX.
+kicks with no progress. An empty queue no longer means sleep (#869): when the builder is idle
+and TARGET is empty, step 4b asks `scripts/idle-kick.mjs` — the same pure `flagshipStage`
+pick over the README honest-gaps — and kicks only on `KICK`; `NONE` (every gap owned) leaves
+STOP legal. It never calls a model, so it never slows the builder or hangs on oMLX.
 Test any change with `WARDEN_DRY=1 zsh scripts/warden.sh` (reads everything, changes nothing).
 **The daily log** (#516): `scripts/dailylog.mjs` cuts the day at 07:00 Pacific (DST-safe)
 and pushes `log.json` to forge-telemetry with every telemetry tick — shipped (with
