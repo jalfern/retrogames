@@ -40,6 +40,7 @@
     "fpscheck": "node scripts/fpscheck.mjs",
     "zorkcheck": "node scripts/zorkcheck.mjs",
     "padlinkcheck": "node scripts/padlinkcheck.mjs",
+    "padlinkdrive": "node scripts/padlinkdrive.mjs",
     "zorkuicheck": "node scripts/zorkuicheck.mjs",
     "zorkpulse": "node scripts/zorkpulse.mjs",
     "doscheck": "node scripts/doscheck.mjs",
