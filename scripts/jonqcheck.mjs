@@ -23,7 +23,7 @@ import {
     claimOrder, decide, defaultComment, formatQuestion, halted, openQuestions,
     capReached, parseQuestion, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
-import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, ownsGap, flagshipStage } from './lib/idle.mjs'
+import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, ownsGap, flagshipStage, heldGames } from './lib/idle.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(join(here, p), 'utf8')
@@ -145,6 +145,19 @@ ok(claimOrder([]) === null && flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [
 ok(claimOrder([ST(51, 'jalfern', ['game-queue'])]) === 51,
     'idle: a queued issue outranks the flagship stage (stage only runs on a claimOrder miss)')
 
+// --- the warden's idle kick (#869) ---------------------------------------
+// #841's rule never ran: sessions only start on a warden kick, and step 4
+// kicked only when TARGET existed. The kick decision is the same pure logic:
+// empty queue + an unowned gap => KICK, every gap owned => NONE.
+ok(heldGames([QA(910, 'SSX', 'polish notes')]).join() === 'SSX',
+    'idle-kick: a building-qa issue names its game held')
+ok(heldGames([QA(911, 'BLOB BATTLE', 'polish pass')]).length === 0,
+    'idle-kick: a non-flagship QA issue holds nothing')
+ok(heldGames([{ title: 'QA — comet drift hd polish', body: '' }]).join() === 'COMET DRIFT HD',
+    'idle-kick: the held match is case-insensitive')
+ok(claimOrder([]) === null && flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [QA(913, 'BLOB BATTLE', 'polish pass')], buildingQa: [] }).game === 'SSX',
+    '#869: empty queue + unowned gap -> KICK; QA noise on non-flagship games changes nothing')
+
 // --- B. the wiring says what the protocol promises --------------------
 const warden = read('warden.sh')
 ok(/HALTED=yes/.test(warden) && warden.includes('LANES=()'), 'warden: halt zeroes the QA lanes')
@@ -152,6 +165,13 @@ ok(warden.includes('TARGET=""') && /\[\[ "\$HALTED" == yes \]\] && TARGET=""/.te
 ok(warden.includes('.name == "steer"') && warden.includes('$owner'), 'warden: the steer tier is in TARGET, gated on the owner')
 ok(warden.includes('jonq.mjs" sweep') && warden.includes('no sweep, no kicks'), 'warden: the sweep runs each tick, unless halted')
 ok(/halted=\$HALTED/.test(warden) && /questions=\$QWAIT/.test(warden), 'warden: the pulse line reports halted + questions')
+ok(/ALIVE" == no && -z "\$TARGET" && "\$HALTED" != yes/.test(warden) && warden.includes('idle-kick.mjs'),
+    '#869: warden asks idle-kick.mjs when the builder is idle, TARGET is empty and nothing is halted')
+ok(warden.includes('== KICK*') && warden.includes('idle-kick'),
+    '#869: the idle kick is gated on the answer — NONE (every gap owned) never starts a session')
+const kick = read('idle-kick.mjs')
+ok(kick.includes('flagshipStage') && kick.includes("'NONE'") && kick.includes('heldGames'),
+    '#869: idle-kick answers from flagshipStage + heldGames only; any failure prints NONE, never a fabricated kick')
 const fs = read('forge.sh')
 ok(!/ghJson\(\[/.test(read('jonq.mjs')) || /Array\.isArray\(args\[0\]\)/.test(read('jonq.mjs')),
     'jonq.mjs: ghJson never receives a nested array un-normalized (a nested argv reaches gh as one comma-joined URL)')

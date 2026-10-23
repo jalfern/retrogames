@@ -19,6 +19,9 @@
 #                freezes steps 4 and 5: no lane kicks while Jon holds the factory.
 #   4. BUILDER — not running and work is waiting? kick scripts/forge.sh
 #                (a jalfern `steer` outranks `next` here — #605)
+#   4b. IDLE — builder idle and NOTHING to claim? ask idle-kick.mjs; kick
+#                only on KICK (an unowned flagship gap, #841/#869). NONE =
+#                every gap owned, STOP legal, no kick.
 #   5. QA      — not running and feedback is waiting? kick scripts/forge-qa.sh
 #                (mini, studio, and — only while the builder is idle — builder)
 #   6. FOLLOW-UP PULSE — only if step 3, 3b, 4 or 5 did something
@@ -218,6 +221,25 @@ main() {
             act launchctl kickstart "gui/$(id -u)/com.jalfern.forge" >> "$LOG" 2>&1
             comment "$TARGET" "WARDEN: builder idle, kicked a session"
             ACTIONS+=("kicked:1"); log "kicked builder for #$TARGET"
+            ALIVE=kicked
+        fi
+    fi
+
+    # ---- 4b. IDLE FLAGSHIP KICK (#869) ---------------------------------
+    # #841's "never idle" lives inside the FORGE session, but a session only
+    # starts when step 4 kicks: an empty TARGET left the builder idle for
+    # hours (Oct 23, 02:28-08:00). Ask idle-kick.mjs instead: it answers
+    # KICK only while flagshipStage() finds unowned honest gaps, and NONE
+    # when every gap is owned — then STOP is legal and nobody is kicked.
+    # A repeated KICK is harmless (kickstart no-ops while the job runs) and
+    # ends once the session files its POLISH issue and TARGET turns non-empty.
+    if [[ "$ALIVE" == no && -z "$TARGET" && "$HALTED" != yes ]] && (( ! BSLOT_QA )); then
+        STAGE=$(node "$REPO/scripts/idle-kick.mjs" 2>>"$LOG" | tail -1)
+        log "idle-kick: $STAGE"
+        if [[ "$STAGE" == KICK* ]]; then
+            act launchctl kickstart "gui/$(id -u)/com.jalfern.forge" >> "$LOG" 2>&1
+            comment "$PULSE" "WARDEN: queue empty, ${STAGE#KICK } unowned — kicked a flagship-stage session"
+            ACTIONS+=("idle-kick:1"); log "kicked builder for flagship stage ${STAGE#KICK }"
             ALIVE=kicked
         fi
     fi

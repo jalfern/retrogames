@@ -57,6 +57,14 @@ export function ownsGap(qaIssues, game, gap, handleLen = 40) {
     })
 }
 
+// Flagship names held by open `building-qa` issues — QA is inside those games
+// and the idle stage must never touch them. Derived live (#869: the warden
+// needs the same skip the FORGE playbook promises, from the issue list).
+export function heldGames(buildingQaIssues) {
+    return FLAGSHIPS.filter((g) => buildingQaIssues.some(
+        (q) => norm(`${q.title || ''} ${q.body || ''}`).includes(norm(g))))
+}
+
 // Pick the flagship polish stage. gapsByGame: { <FLAGSHIPS name>: string[] }
 // (README order = oldest first). qaIssues: open issues on the QA lanes
 // (feedback/building-qa) as {title, body}. buildingQa: flagship names the QA
