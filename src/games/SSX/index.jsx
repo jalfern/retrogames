@@ -291,6 +291,7 @@ const SSXGame = () => {
                 jump: keys.has('Space'),
                 boost: keys.has('ShiftLeft') || keys.has('ShiftRight'),
                 grab: keys.has('KeyX'),
+                invert: keys.has('KeyV'),
                 flip: keys.has('KeyZ') ? 1 : keys.has('KeyC') ? 2 : 0,
                 tuck: keys.has('ArrowUp'),
                 scrub: keys.has('ArrowDown'),
@@ -664,7 +665,7 @@ const SSXGame = () => {
                     const p = g.riders[0]
                     return {
                         screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick, phase: g.phase,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, boostHum: p.boostHum, press: p.press, takeSpin: p.takeSpin, stomp: p.stomp, stompPow: p.stompPow, bobble: p.bobble, grabKind: p.grab, grab: p.grabKind, grabName: p.grab ? GRAB_NAMES[p.grabKind] : null, lastTrick: p.lastTrick, carves: p.carves.length },
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, boostHum: p.boostHum, press: p.press, takeSpin: p.takeSpin, stomp: p.stomp, stompPow: p.stompPow, bobble: p.bobble, grabKind: p.grab, grab: p.grabKind, grabName: p.grab ? GRAB_NAMES[p.grabKind] : null, invert: p.invert, lastTrick: p.lastTrick, carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },

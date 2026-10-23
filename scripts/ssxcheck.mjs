@@ -970,5 +970,51 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     }
 }
 
+{ // #791 slice 12: the invert — a grabbed board rolled about its long axis
+    const airInvert = (opts = {}) => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        Object.assign(p, { air: true, y: terrainY(g.course, p.s, p.x) + 8, vy: 1.5, spin: 0, flip: 0, grab: 0, over: false, invert: 0, invertSign: 1, press: opts.press || 0 })
+        let t = 0
+        while (p.air && t < 400) {
+            if (opts.hold && t >= (opts.hold[0] || 0) && t < (opts.hold[1] ?? 400)) step(g, { grab: true, invert: true })
+            else step(g, opts.press !== undefined ? {} : {})
+            t++
+        }
+        return { g, p, e: g.events.find((ev) => (ev.type === 'land' || ev.type === 'crash') && ev.who === 0) }
+    }
+    const nike = airInvert({ hold: [0, 60] })
+    ok('#791 a held grab+invert rolls the board and lands a named NIKE INVERT',
+        nike.e && nike.e.type === 'land' && /NIKE INVERT/.test(nike.e.name) && nike.e.invert === 1)
+    ok('#791 the invert pays its rotation (≥ 400)', nike.e && nike.e.pts >= 400)
+    const solid = airInvert({ press: -0.9, hold: [0, 60] })
+    ok('#791 steering left at the shove names the SOLID direction',
+        solid.e && solid.e.type === 'land' && /SOLID INVERT/.test(solid.e.name) && solid.p.invertSign === -1)
+    const half = airInvert({ hold: [0, 33] })   // 33 × 7° = 231° — past the escape hatch, short of the window
+    ok('#791 a half-done invert eats it — invertCheck is law like flipCheck',
+        half.e && half.e.type === 'crash' && half.p.tumble > 0)
+    const nograb = (() => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        Object.assign(p, { air: true, y: terrainY(g.course, p.s, p.x) + 8, vy: 1.5, spin: 0, flip: 0, grab: 0, over: false, invert: 0 })
+        let t = 0; while (p.air && t < 400) { step(g, { invert: true }); t++ }
+        const e = g.events.find((ev) => ev.type === 'land')
+        ok('#791 hands off the board, no invert: V alone never rolls it',
+            p.invert === 0 && e && !/INVERT/.test(e.name))
+        return e ? e.pts : 0
+    })()
+    ok('#791 the invert scores on top of the same air with hands off (Δ ≥ 400)',
+        nike.e.pts - nograb >= 400)
+    const invHash = () => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        Object.assign(p, { air: true, y: terrainY(g.course, p.s, p.x) + 8, vy: 1.5, spin: 0, flip: 0, grab: 0, over: false, invert: 0 })
+        let t = 0; while (p.air && t < 400) { step(g, { grab: true, invert: true }); t++ }
+        return stateHash(g)
+    }
+    ok('#791 the invert rolls identically on replay — and hashes apart from hands-off',
+        invHash() === invHash() && invHash() !== stateHash((() => { const g = makeGame('race'); run(g, 181); clear(g); return g })()))
+}
+
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)
