@@ -448,36 +448,16 @@ name, direction, pay, the half-done bail, the grab requirement and determinism.
 
 ## Honest gaps (filed as the polish pass)
 
-- CPU riders wipe out on seeded landings (#791) and now *miss* lines too
-  (#791 slice 10): a rival that clips a rock/tree bobbles past it — speed and
-  line lost, off-balance wobble, dust burst — on a skill-scaled seeded roll, so
-  places change hands even when nobody actually falls. A bad roll still goes over
-  the bars; the player is never exempt (ground contact is a straight bailing).
-- Trick verbs reach phones since #844 (GRAB/FLIP/INV buttons feeding the key
-  codes); still no physical analogue stick — flip direction on touch is
-  backflip only (KeyZ), front-flip is keyboard C. Analogue depth is the #791
-  ramp + canvas drag distance.
-- Snow tracks are now geometry: fading carve grooves under the board (#310),
-  on top of the speed-scaled spray. Attract now runs the theme bed at low
-  gain and a hot, OVER-happy demo (#791).
+- Trick verbs reach phones (#844: GRAB/FLIP/INV). #871 adds FRNT so the
+  front-flip (formerly keyboard-C only) reaches touch, driving the sim's
+  negative flip ledger one-handed. Still no physical analogue stick: analogue
+  steer depth is the #791 ramp + canvas drag distance, and flip direction on
+  touch is a discrete FLIP/FRNT tap, not stick tilt.
 - No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
-  `ssxmodelcheck` covers the hero rider in the browser.
+  `ssxmodelcheck` covers the hero rider and the touch trick-pad in the browser.
 - Only the player's livery carries the bib + logo decal set; grab/boot weld
   reach the board now (#615 — probe gates `grabReach`/`bootClear` in
   `ssxmodelcheck`), but the offsets are static per pose, not IK.
-- Grabs are named by the reach (#791 slice 6): `grabKindFor` reads the steer
-  sign (reaching hand, mirrored for goofy seats), ↓ (heel edge) and a held
-  flip (weight fore/aft) at the grab frame — INDY/MUTE/METHOD/SALISBURY/
-  NOSEGRAB/TAILGRAB, each with its own hero pose; the flip commit follows
-  the reach — front hand to the nose, back hand to the tail. Reverts landed
-  in slice 9; inverts landed in slice 12 (below).
-- Doubles (#791 slice 8): past a second of hang the flip ledger opens to a
-  second rotation — a held flip through big normal air banks DOUBLE BACK/
-  FRONTFLIP at full double pay, capped at 720+~20 so a clean landing still
-  fits; short air stays single and flipCheck still eats any half-done double.
-  Seat 1 of the CPU field commits doubles when its predicted hang can carry
-  the board to 665° before the landing margin (releases inside the clean
-  window; latched past 330° so a sagging estimate can't strand the band).
 
 ## Lateral sign and the tuck/scrub (#547)
 
