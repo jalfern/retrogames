@@ -1,8 +1,9 @@
 # SSX — engine notes
 
-EA Sports BIG's 2000 snowboard racer, rebuilt whole in code. Three seeded
-mountains, a CPU field of five, and a trick economy where clean landings fill
-the boost meter and a full meter at takeoff throws OVER.
+EA Sports BIG's 2000 snowboard racer, rebuilt whole in code. Six seeded
+mountains (#889 — three originals doubled, three new), a CPU field of five, and
+a trick economy where clean landings fill the boost meter and a full meter at
+takeoff throws OVER.
 
 ## Shape
 
@@ -368,9 +369,9 @@ spectators tagged, crowd hops at the stands, zero page errors.
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 229 checks, blocks merges (CI `static`)
-npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
-npm run ssxterraincheck                 # 55 checks: snow/rock surfaces (#669, #685, #844)
+npm run lint:ssx && npm run ssxcheck     # 283 checks, blocks merges (CI `static`)
+npm run ssxmountaincheck                # 212 checks: mountain feel (#638, #665, #889)
+npm run ssxterraincheck                 # 76 checks: snow/rock surfaces (#669, #685, #844, #889)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
                                           #   keys drive poses, race still winnable,
                                           #   #615 rider polish (grab reach, boot weld,
@@ -476,6 +477,44 @@ release-to-centre, right-carves-right with `press` ramped, fwd/back tilt verbs,
 and FLIP+tilt mid-air landing a negative ledger where FLIP alone goes
 positive. **Mutant proof (done once, by hand):** swap the two signs in
 `flipDirFromTilt` → 3 node gates go red; restore → 229 green.
+
+## The bigger mountain (#889) — six courses, route choices, rotating triple
+
+- `course.js` carries SIX originals. The classic three doubled (~1.5-1.9 km
+  each: the back halves continue each spine's character, so the drop, gullies
+  and outcrops scale with the length). Three new ones, each a different place,
+  not a recolor: **BACKCOUNTRY BOWL** (day, the long cruiser: wide open, giant
+  rollers, one thundering canyon gap), **TIMBER LINE** (dusk, tight alternating
+  turns through dense trees with a boardwalk high line), **PIPE WORKS** (night,
+  the park: two pipes, rails at three tiers, walls after walls).
+- **Route choices on every course** (`gaps`, `chutes`, high `rails`):
+  - **Gaps** are crevasses: a launch lip (an auto-built kicker, `gap: true`)
+    sits right before a span that sinks `GAP_DEPTH` below its rim. The sim
+    launches off the crest deterministically when you cross `s0 − DS` above
+    v>12 (the generic wedge auto-launch is suppressed for 26 m before a lip —
+    it was a height lottery that left arc-short riders in the hole). Below the
+    rim over the hole, or grounded inside the span, is `crash 'gap'` — you get
+    washed out past the far side with the standard bail penalty. The hole spans
+    only |x| < `GAP_X`: **the shoulder route exists** (slow — it's the powder
+    band — but alive). Nothing stands in a hole: obstacles inside a span are
+    filtered from the sim AND the prop plan (painted == ridden).
+  - **Chutes** are sunk express troughs (`featureLift` carries the negative,
+    so shade and physics read one surface). Grounded in the lane, s advances at
+    `EXPRESS`× — the shortcut trades the trick line beside it for raw speed.
+  - **High rails** park in the powder band at |x| ≈ 1.3 and pay **double
+    trickle** — the point line costs speed to reach (BIG AIR BASIN stays
+    rails-free by character; five of six carry one).
+  - The planner: never ollies off a gap lip (early releases die over the hole —
+    commit the crest launch), boosts into gap lips when the tank allows, and
+    never starts a flip whose predicted landing reads the hole as ground.
+- **The race is still three heats (rule 6)** — `tournament(seed)` picks WHICH
+  three: even seeds ride the classic ALPINE→NEON→BASIN opening (seed 0
+  unchanged), odd seeds rotate to BACKCOUNTRY→TIMBER→PIPE WORKS. Online rooms
+  inherit the host seed, so the friends' tournament rotates as one.
+- Look: crevasse rows darken with the sink (featureLift-aware tint in
+  `surfaceInfo`); the kicker-lip highlight is now ramped (`1 + 0.15·smooth`)
+  because longer faces put wedge edges under harder sun — the old binary 1.18
+  pop drew a shade line over the groomed piste past the continuity guard.
 
 ## Honest gaps (filed as the polish pass)
 

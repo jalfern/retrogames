@@ -270,9 +270,12 @@ export function surfaceInfo(c, s, x) {
         rgb = rgb.map((v, k) => v * (1 - rockT) + rk[k] * rockT)
     }
     if (capT > 0) rgb = rgb.map((v, k) => v * (1 - capT * 0.55) + T.capSnow[k] * capT * 0.55)
-    // kicker lips catch the light; #889 crevasse sinks and troughs swallow it
+    // kicker lips catch the light, ramped so the wedge edge never draws a hard
+    // shade line across the groomed piste (#889: longer faces put lips under
+    // more sun angles; the old binary 1.18 pop was a hair over the continuity
+    // guard's contrast budget). Sinks and troughs swallow it.
     const lift = featureLift(c, s, x)
-    if (lift > 0.3) rgb = rgb.map((v) => Math.min(255, v * 1.18))
+    if (lift > 0.3) rgb = rgb.map((v) => Math.min(255, v * (1 + 0.15 * smooth01((lift - 0.3) / 2))))
     else if (lift < -0.3) rgb = rgb.map((v) => v * (1 + Math.max(-0.62, lift * 0.055)))
     return { rgb: rgb.map(clamp255), rockT, rawRock, relax, grad, crest, hollow, above, litFace }
 }

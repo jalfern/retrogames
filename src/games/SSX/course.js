@@ -25,7 +25,7 @@ const smooth01 = (t) => { const u = Math.max(0, Math.min(1, t)); return u * u * 
 
 // #889 route-choice constants (pinned by ssxcheck)
 export const GAP_DEPTH = 9               // m a crevasse sinks below its rim
-export const GAP_X = 1.7               // |x| under which a crevasse swallows you
+export const GAP_X = 1.15              // |x| under which a crevasse swallows you (the shoulder route lives beyond it)
 export const EXPRESS = 1.45            // s-progress multiplier inside a chute
 
 // Every course is chunks of {n, curve, drop}; curve is rad/m of heading turn,
@@ -204,7 +204,7 @@ const SPINES = [
             { n: 26, curve: 0.000, drop: 0.050 },
             { n: 24, curve: 0.008, drop: 0.045 },
         ],
-        gullies: [{ f0: 0.48, f1: 0.56 }],
+        gullies: [{ f0: 0.30, f1: 0.38 }, { f0: 0.48, f1: 0.56 }],
         outcrops: [{ f0: 0.18, f1: 0.26, side: 1 }, { f0: 0.68, f1: 0.76, side: -1 }],
         gaps: [{ f: 0.36, w: 6, power: 4.2 }],
         chutes: [{ f0: 0.50, f1: 0.58, x: -0.85, w: 0.5 }, { f0: 0.78, f1: 0.85, x: 0.8, w: 0.5 }],
@@ -252,7 +252,7 @@ const SPINES = [
             { n: 12, curve: -0.012, drop: 0.075 },
             { n: 14, curve: 0.000, drop: 0.060 },
         ],
-        gullies: [{ f0: 0.34, f1: 0.40 }],
+        gullies: [{ f0: 0.34, f1: 0.40 }, { f0: 0.56, f1: 0.62 }],
         outcrops: [{ f0: 0.24, f1: 0.30, side: 1 }],
         gaps: [{ f: 0.50, w: 5, power: 3.4 }],
         chutes: [{ f0: 0.20, f1: 0.26, x: 0.85, w: 0.45 }, { f0: 0.64, f1: 0.70, x: -0.85, w: 0.45 }],
@@ -268,7 +268,7 @@ const SPINES = [
             { f0: 0.40, f1: 0.45, x: 1.30, high: true },   // boardwalk
         ],
         pipes: [],
-        obst: [0.10, 0.14, 0.18, 0.24, 0.28, 0.34, 0.38, 0.46, 0.535, 0.56, 0.62, 0.68, 0.74, 0.80, 0.86, 0.92],
+        obst: [0.10, 0.14, 0.18, 0.24, 0.28, 0.34, 0.38, 0.46, 0.56, 0.62, 0.68, 0.74, 0.80, 0.86, 0.92],
     },
     {   // PIPE WORKS (#889) — the night park: two halfpipes, rails at every
         // tier, wall after wall after wall. Showoff's playground, and the
@@ -291,8 +291,8 @@ const SPINES = [
             { n: 22, curve: 0.000, drop: 0.055 },
             { n: 22, curve: 0.000, drop: 0.050 },
         ],
-        gullies: [{ f0: 0.34, f1: 0.42 }],
-        outcrops: [{ f0: 0.44, f1: 0.52, side: 1 }, { f0: 0.76, f1: 0.84, side: -1 }],
+        gullies: [{ f0: 0.30, f1: 0.46 }, { f0: 0.80, f1: 0.90 }],
+        outcrops: [{ f0: 0.50, f1: 0.58, side: 1 }, { f0: 0.66, f1: 0.74, side: -1 }],
         gaps: [{ f: 0.56, w: 5, power: 3.8 }],
         chutes: [{ f0: 0.66, f1: 0.72, x: -0.85, w: 0.5 }],
         kickers: [
@@ -376,13 +376,10 @@ export function buildCourse(idx) {
         const i = Math.round(p.f * N)
         return { i0: i, i1: i + 14, x: 0, power: p.power, w: p.w }
     })
-    const obstacles = placeObst(def, seed).map((o) => ({ ...o, i: Math.round(o.f * N) }))
-    const gullies = (def.gullies || []).map((gl) => ({ s0: gl.f0 * N * DS, s1: gl.f1 * N * DS }))
-    const outcrops = (def.outcrops || []).map((o) => ({ s0: o.f0 * N * DS, s1: o.f1 * N * DS, side: o.side }))
     // #889 crevasses: each span gets a launch lip bolted to the snow right
-    // before it — the auto-launch law throws anyone fast enough off the crest;
-    // the span behind it sinks GAP_DEPTH below the rim (featureLift carries the
-    // sink so the natural-surface readers never mistake the hole for terrain).
+    // before it — the crest launch in sim.js throws anyone fast enough over
+    // the span; the span behind it sinks GAP_DEPTH below the rim (featureLift
+    // carries the sink so the natural-surface readers never mistake it for terrain).
     const gaps = []
     for (const gp of (def.gaps || [])) {
         const i0 = Math.round(gp.f * N)
@@ -391,6 +388,14 @@ export function buildCourse(idx) {
         kickers.push({ i0: lip0, i1: li, x: 0, power: gp.power, w: 0.30, lip: li, gap: true })
         gaps.push({ i0, i1: i0 + gp.w, s0: i0 * DS, s1: (i0 + gp.w) * DS, rim: segs[i0].y })
     }
+    const overGap = (s) => gaps.some((gp) => s > gp.s0 - 2 && s < gp.s1 + 2)
+    const obstacles = placeObst(def, seed)
+        // #889: nothing stands in a crevasse — the sim must not bite on props
+        // the renderer skips (painted == ridden).
+        .filter((o) => !overGap(o.f * N * DS) || Math.abs(o.x) >= GAP_X + 0.25)
+        .map((o) => ({ ...o, i: Math.round(o.f * N) }))
+    const gullies = (def.gullies || []).map((gl) => ({ s0: gl.f0 * N * DS, s1: gl.f1 * N * DS }))
+    const outcrops = (def.outcrops || []).map((o) => ({ s0: o.f0 * N * DS, s1: o.f1 * N * DS, side: o.side }))
     const chutes = (def.chutes || []).map((ch) => ({
         i0: Math.round(ch.f0 * N), i1: Math.round(ch.f1 * N), x: ch.x, w: ch.w,
     }))
@@ -453,7 +458,7 @@ export function featureLift(c, s, x) {
     for (const gp of c.gaps) {
         if (i >= gp.i0 && i <= gp.i1) {
             const ax = Math.abs(x)
-            const fall = 1 - smooth01((ax - 1.55) / 0.35)   // full hole to 1.55, funnel to ~1.9
+            const fall = 1 - smooth01((ax - 1.0) / 0.4)   // full hole to 1.0, funnel to 1.4 — the shoulder route lives beyond
             lift = Math.min(lift, -GAP_DEPTH * fall)
         }
     }

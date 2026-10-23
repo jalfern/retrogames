@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabKindFor, GRAB_NAMES, GRAB_POSES, flipDirFromTilt, bodyFromTilt, STICK_TILT } from '../src/games/SSX/sim.js'
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
-import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt } from '../src/games/SSX/course.js'
+import { buildCourse, terrainY, slopePos, COURSE_COUNT, HEATS, tournament, gapAt, expressAt, GAP_X, EXPRESS, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD } from '../src/games/SSX/art.js'
 
@@ -55,7 +55,11 @@ const clear = (g) => g.events.splice(0)
     ok('boots: countdown releases to run', g.phase === 'run')
     const s = makeGame('showoff')
     ok('boots: showoff timer', Math.round(s.showoffLeft) === CFG.showoffTime)
-    ok('boots: three courses exist', COURSE_COUNT === 3)
+    ok('boots: six courses exist (#889)', COURSE_COUNT === 6)
+    ok('#889 the race is still three heats', HEATS === 3)
+    ok('#889 seed 0 keeps the classic triple', JSON.stringify(tournament(0)) === '[0,1,2]')
+    ok('#889 odd seeds rotate to the backcountry', JSON.stringify(tournament(1)) === '[3,4,5]' && JSON.stringify(tournament(7)) === '[3,4,5]')
+    ok('#889 every seed rides three distinct mountains', [0, 1, 2, 3].every((s) => new Set(tournament(s)).size === 3))
 }
 
 // ---- 2. course integrity ----------------------------------------------------
@@ -72,6 +76,21 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         co.obstacles.every((o) => o.i > 4 && o.i < co.N - 2)
     ok(`course ${co.name}: features within bounds`, inside)
     ok(`course ${co.name}: deterministic build`, JSON.stringify(buildCourse(c)) === JSON.stringify(co))
+    // #889 — doubled length and a full set of route choices on every mountain
+    ok(`course ${co.name}: #889 doubled length (${co.length} m)`, co.length >= 1200)
+    ok(`course ${co.name}: #889 route choices present`,
+        co.gaps.length >= 1 && co.chutes.length >= 1 && co.kickers.some((k) => k.gap))
+    ok(`course ${co.name}: #889 gaps are clean ground`, co.gaps.every((gp) =>
+        gp.i0 > 12 && gp.i1 < co.N - 6 &&
+        co.chutes.every((ch) => ch.i1 * DS <= gp.s0 - 8 || ch.i0 * DS >= gp.s1 + 8) &&
+        co.rails.every((rl) => rl.i1 * DS <= gp.s0 - 8 || rl.i0 * DS >= gp.s1 + 8) &&
+        co.kickers.every((k) => k.gap || k.i1 * DS <= gp.s0 - 40 || k.i0 * DS >= gp.s1 + 8) &&
+        co.obstacles.every((ob) => (ob.i * DS < gp.s0 - 2 || ob.i * DS > gp.s1 + 2) || Math.abs(ob.x) >= GAP_X)))
+}
+{ // #889: the high line exists across the mountain range
+    let highN = 0
+    for (let c = 0; c < COURSE_COUNT; c++) highN += buildCourse(c).rails.filter((r) => r.high).length
+    ok('#889 the high line exists on every rail course (BIG AIR BASIN is pipes-only by character)', highN === COURSE_COUNT - 1)
 }
 
 // ---- 3. rule pins -----------------------------------------------------------
@@ -377,10 +396,94 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         ok('heat ends when the player finishes', g.phase === 'heatEnd')
     }
 }
-{ // heat progression: a win walks all three courses
+{ // heat progression: a win walks three heats off the seed rotation (#889)
     const g = autopilot(makeGame('race'))
-    ok('race wins end after three heats', g.end === 'win' && g.heat === COURSE_COUNT - 1 && g.place === 1)
-    ok('winner books every heat', g.standings[0] === PLACE_PTS[0] * COURSE_COUNT)
+    ok('race wins end after three heats', g.end === 'win' && g.heat === HEATS - 1 && g.place === 1)
+    ok('winner books every heat', g.standings[0] === PLACE_PTS[0] * HEATS)
+}
+{ // #889 the rotation names: seed 0 classic, seed 1 backcountry
+    const names = (seed) => {
+        const g = makeGame('race', seed)
+        const seen = [g.course.name]
+        let t = 0
+        while (!g.end && t < 400000) {
+            const before = g.events.length
+            step(g, g.phase === 'run' ? decide(g, g.riders[0]) : {})
+            for (const e of g.events.slice(before)) if (e.type === 'heat') seen.push(g.course.name)
+            t++
+        }
+        return seen.join('|')
+    }
+    ok('#889 seed 0 rides ALPINE → NEON → BASIN', names(0) === 'ALPINE GLADE|NEON HEIGHTS|BIG AIR BASIN')
+    ok('#889 seed 1 rides BACKCOUNTRY → TIMBER → PIPE WORKS', names(1) === 'BACKCOUNTRY BOWL|TIMBER LINE|PIPE WORKS')
+}
+
+// ---- 3d. #889 route choices: crevasses, chutes, high rails ------------------
+{ // a crevasse: speed flies, a crawl gets swallowed, the shoulder survives
+    const co = buildCourse(3)
+    const gp = co.gaps[0]
+    const trial = (v, x) => {
+        const g = makeGame('race')
+        g.course = co
+        g.phase = 'run'; g.count = 0
+        clear(g)
+        const p = g.riders[0]
+        p.s = gp.s0 - DS * 2; p.x = x; p.v = v; p.y = terrainY(co, p.s, x)
+        for (let i = 0; i < 150 && p.s < gp.s1 + 20; i++) step(g, {})
+        return g.events.some((e) => e.type === 'crash' && e.what === 'gap' && e.who === 0)
+    }
+    ok('#889 a fast fall-line flies the crevasse', !trial(28, 0))
+    ok('#889 a crawl off the lip gets swallowed', trial(6, 0))
+    ok('#889 the shoulder line skirts it (slow but alive)', !trial(6, GAP_X + 0.25))
+    ok('#889 the crest launch rides the hash (deterministic)', (() => {
+        const two = [0, 1].map(() => {
+            const g = makeGame('race')
+            g.course = co
+            g.phase = 'run'; g.count = 0
+            const p = g.riders[0]
+            p.s = gp.s0 - DS * 2; p.x = 0; p.v = 28; p.y = terrainY(co, p.s, 0)
+            run(g, 40)
+            return stateHash(g)
+        })
+        return two[0] === two[1]
+    })())
+    ok('#889 gapAt reports the span and rim', (() => {
+        const a = gapAt(co, gp.s0 + 4), b = gapAt(co, gp.s1 + 4)
+        return a !== null && a.rim === gp.rim && b === null
+    })())
+}
+{ // chutes: the trough carries more ground than the same push on open snow
+    const co = buildCourse(0)
+    const ch = co.chutes[0]
+    const trial = (x) => {
+        const g = makeGame('race')
+        g.course = co
+        g.phase = 'run'; g.count = 0
+        const p = g.riders[0]
+        p.s = ch.i0 * DS + 2; p.x = x; p.v = 20; p.y = terrainY(co, p.s, x)
+        const s0 = p.s
+        for (let i = 0; i < 30 && p.s < ch.i1 * DS; i++) step(g, {})
+        return p.s - s0
+    }
+    ok('#889 the express chute outruns the snow beside the line', trial(ch.x) > trial(0) * 1.2)
+    ok('#889 expressAt reads the lane and saturates', expressAt(co, ch.i0 * DS + 10, ch.x) === EXPRESS && expressAt(co, ch.i0 * DS + 10, ch.x + ch.w + 0.5) === 1)
+}
+{ // high rails pay double trickle against the standard rail
+    const co = buildCourse(0)
+    const hi = co.rails.find((r) => r.high)
+    const lo = co.rails.find((r) => !r.high)
+    const grind = (rl) => {
+        const g = makeGame('race')
+        g.course = co
+        g.phase = 'run'; g.count = 0
+        const p = g.riders[0]
+        p.s = rl.i0 * DS + 2; p.x = rl.x; p.v = 20; p.y = terrainY(co, p.s, rl.x)
+        clear(g)
+        step(g, {})   // snap onto the rail first
+        for (let i = 0; i < 40 && p.grind; i++) step(g, {})
+        return p.score
+    }
+    ok('#889 the high line pays roughly double the low rail', grind(hi) > grind(lo) * 1.7)
 }
 
 // ---- 3b. carved tracks ----------------------------------------------------
@@ -451,6 +554,9 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('the champion actually thrashed the field', p.tricksLanded > 0 && p.crashes === 0)
     const so = autopilot(makeGame('showoff'))
     ok('PROVEN: showoff clears the house target', so.end === 'win' && so.riders[0].score >= CFG.showoffTarget)
+    const g1 = autopilot(makeGame('race', 1))
+    ok('PROVEN: the backcountry rotation is winnable too (#889)', g1.end === 'win' && g1.place === 1 && g1.riders[0].crashes === 0)
+    ok('#889 the field actually risks the crevasses (seeded gap falls)', g1.events.filter((e) => e.type === 'crash' && e.what === 'gap' && e.who !== 0).length >= 2)
 }
 
 // ---- 5. slack rule -----------------------------------------------------------
@@ -460,6 +566,8 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     try {
         const g = autopilot(makeGame('race'))
         ok('SLACK: race still wins at 0.75x trick economy, chain cap x3', g.end === 'win')
+        const g1 = autopilot(makeGame('race', 1))
+        ok('SLACK: the backcountry rotation still wins (#889)', g1.end === 'win')
         const so = autopilot(makeGame('showoff'))
         ok('SLACK: showoff still clears', so.end === 'win')
     } finally { CFG.slack = false; CFG.boostGain = gain; CFG.comboCap = cap }

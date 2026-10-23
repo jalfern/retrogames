@@ -112,7 +112,9 @@ export function decide(g, r, hot = false) {
         // edges, commit the meter and arrive fast enough for the crest launch.
         if (nextK.k.gap) {
             inp.jump = false
-            if (d < 60 && !vetoed && r.meter > 25) inp.boost = true
+            // the hot attract line never spends tank at a crevasse — it needs
+            // the meter full for OVER; the cold field commits speed instead.
+            if (!hot && d < 60 && !vetoed && r.meter > 25) inp.boost = true
         }
     }
 
@@ -127,5 +129,8 @@ export function decide(g, r, hot = false) {
     const lipClose = hot && nextK && nextK.lipS - r.s < 40
     if (hot) inp.fuel = true
     if (r.meter > keep && Math.abs(seg.curve) < 0.012 && !lipClose) inp.boost = true
+    // #889: a full tank is worth more OVER the next lip than spent on speed —
+    // the demo holds 100 instead of draining past the OVER threshold.
+    if (hot && r.meter >= 100) inp.boost = false
     return inp
 }
