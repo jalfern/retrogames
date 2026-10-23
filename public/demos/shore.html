@@ -419,12 +419,20 @@ fn etaA(x: f32, z: f32) -> f32 {
 ${CHOP.map(ch => `  e += ${ch.a.toFixed(5)} * sin(${ch.k.toFixed(5)} * (x * ${Math.cos(ch.az).toFixed(5)} + z * ${Math.sin(ch.az).toFixed(5)}) - ${ch.w.toFixed(5)} * gT + ${ch.ph.toFixed(5)}) * deepF;`).join('\n')}
   return e;
 }
-// analytic whitecaps in the far blend band (SWE foam takes over near shore)
+// analytic whitecaps in the far blend band (SWE foam takes over near shore).
+// LOD: the stipple is ~1.2 m scale; at grazing views a cell covers <3 px and
+// it reads as mould-grain (Jon's low-view screenshot). Past ~3 px per feature
+// the noise blends into its own mean — the band keeps its coverage, loses the
+// grain, exactly like real breakers seen from afar.
 fn foamA(x: f32, z: f32) -> f32 {
   let d0 = max(0.12, -terrain(x, z));
   let H = 2.0 * (swellA(A0, W0, d0) + swellA(A1, W1, d0) + swellA(A2, W2, d0));
   let brk = H / d0;
-  return smoothstep(0.72, 1.05, brk) * (0.45 + 0.55 * vnoise(vec2f(x * 0.8 - gT * 1.1, z * 0.55)));
+  let cxz = vec3f(x - u.camPos_t.x, 0.0, z - u.camPos_t.z);
+  let pxwA = max(2.0 * u.fwd_tan.w * length(cxz) * u.pars2.w, 2e-4);
+  let lod = smoothstep(0.02, 0.07, pxwA);
+  let nz = mix(0.45 + 0.55 * vnoise(vec2f(x * 0.8 - gT * 1.1, z * 0.55)), 0.72, lod);
+  return smoothstep(0.72, 1.05, brk) * nz;
 }
 // sim-grid index: periodic alongshore, clamped cross-shore
 fn si(i: i32, j: i32) -> u32 {
@@ -587,12 +595,16 @@ fn vs(@location(0) xz: vec2f) -> VOut {
 fn fs(i: VOut) -> @location(0) vec4f {
   gT = u.pars2.y;
   let p = i.wp;
+  // distance-LOD (#557 grain fix in the water fs, same law): sub-3px texture
+  // at grazing views is pure aliasing — blend the fine terms to their means.
+  let cxzS = vec3f(p.x - u.camPos_t.x, 0.0, p.z - u.camPos_t.z);
+  let lodS = smoothstep(0.02, 0.07, max(2.0 * u.fwd_tan.w * length(cxzS) * u.pars2.w, 2e-4));
   let hv = b_hud(p.x, p.z);
   let wet = clamp(sm_w(p.x, p.z), 0.0, 1.0);
   // dry sand: grain + wind banding + micro-shadowing (rough diffuse lobe)
   var dry = vec3f(0.80, 0.66, 0.44);
   dry = dry * (0.90 + 0.16 * fbm2(vec2f(p.x * 0.9, p.z * 0.55)));
-  dry = dry * (0.94 + 0.05 * fbm2(vec2f(p.x * 3.4, p.z * 2.2)) + 0.025 * sin(p.x * 2.6 + fbm2(vec2f(p.x * 0.4, p.z * 0.4)) * 6.0));
+  dry = dry * mix(0.94 + 0.05 * fbm2(vec2f(p.x * 3.4, p.z * 2.2)) + 0.025 * sin(p.x * 2.6 + fbm2(vec2f(p.x * 0.4, p.z * 0.4)) * 6.0), 0.94, lodS);
   // saturated wet sand: darker albedo + mirror lobe (roughness ~0.05); the
   // wet map drying over ~30 s restores albedo and roughness gradually.
   let wr = wet;
@@ -617,7 +629,7 @@ fn fs(i: VOut) -> @location(0) vec4f {
   let ds = max(hv.x, 0.0);
   let cover = smoothstep(0.004, 0.05, ds) * smoothstep(1.3, 0.2, ds);
   let shallowBed = exp(-max(bed, 0.0) * 2.5);
-  col += vec3f(1.0, 0.82, 0.52) * caustics(p.x, p.z, hv.y, hv.z) * cover * shallowBed * 0.35;
+  col += vec3f(1.0, 0.82, 0.52) * caustics(p.x, p.z, hv.y, hv.z) * cover * shallowBed * 0.35 * (1.0 - lodS);
   let dist = length(Vd);
   col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(60.0, 190.0, dist));
   // submerged bed darkens with depth (absorption itself happens in the water)
@@ -659,6 +671,8 @@ fn fs(i: VOut) -> @location(0) vec4f {
   // detail normals ride the chop field at close range only
   let dist0 = length(u.camPos_t.xyz - p);
   let det = exp(-dist0 * 0.02);
+  let pxw = max(2.0 * u.fwd_tan.w * dist0 * u.pars2.w, 2e-4);
+  let lodF = smoothstep(0.015, 0.05, pxw);
   nrm.x += (vnoise(vec2f(q.x * 2.3 - gT * 1.4, q.y * 1.7)) - 0.5) * 0.30 * det * smoothstep(0.15, 0.6, d);
   nrm.z += (vnoise(vec2f(q.x * 2.3 - gT * 1.4 + 31.0, q.y * 1.7 + 17.0)) - 0.5) * 0.30 * det * smoothstep(0.15, 0.6, d);
   // mid-scale ripple: breaks the horizon mirror into glitter at distance
@@ -710,7 +724,11 @@ fn fs(i: VOut) -> @location(0) vec4f {
   var fo = w.foam;
   if (fo > 0.02) {
     let cl = churn(vec2f((q.x + gT * 0.35) * 0.7, (q.y - gT * 0.1) * 0.7));
-    fo *= 0.10 + 1.12 * cl;
+    // lace only breaks the EDGE of a foam patch into strands; dense white-water
+    // (fo->1) stays solid — breaking the 1.0 field into 0.19 m strands was the
+    // bubble-wrap read in the low-view screenshot.
+    let lace = mix(0.10 + 1.12 * cl, 1.0, smoothstep(0.55, 0.95, fo));
+    fo *= mix(lace, 0.86, lodF);
   }
   fo = clamp(fo, 0.0, 1.0);
   // rip cue: the shoal between rips (low ripF) holds the churning foam, the
@@ -720,10 +738,9 @@ fn fs(i: VOut) -> @location(0) vec4f {
   // capillary meniscus: bright thin rise where water meets wet sand
   if (bed > -0.06 && bed < 0.09) {
     let men = exp(-sq(d / 0.045)) * (0.5 + 0.5 * vnoise(vec2f(q.x * 3.0, q.y * 2.4 + gT)));
-    col += vec3f(1.0, 0.88, 0.70) * men * 0.5;
+    col += vec3f(1.0, 0.88, 0.70) * men * 0.5 * (1.0 - lodF);
   }
   // analytic distance-to-waterline AA (thin sheets cover part of a pixel)
-  let pxw = max(2.0 * u.fwd_tan.w * dist0 * u.pars2.w, 2e-4);
   let filmCov = smoothstep(0.0, pxw * 2.0, d);
   let alpha = clamp((1.0 - exp(-d * 2.2)) * filmCov + max(w.cov, fo * 0.5) * 0.6, 0.0, 0.97);
   col = mix(col, vec3f(0.93, 0.74, 0.55), smoothstep(70.0, 200.0, dist0));
@@ -918,7 +935,13 @@ async function boot() {
   // the canvas, rs<1 upscales via a fullscreen blit (?rs= for experiments).
   const DPR_CAP = Math.min(devicePixelRatio || 1, 1.5);
   const RS_LOCK = qs.get('rs') ? Math.max(0.55, Math.min(1, parseFloat(qs.get('rs')))) : 0;
-  let rs = RS_LOCK || (AUTO_PHONE ? 0.75 : 1);
+  // Safari/WebKit shaves this scene's heavy fragment passes markedly slower than
+  // Chrome/Metal (Jon: full quality only "so-so" on Safari even at dpr 1.5):
+  // render the offscreen targets at 0.8 and blit — the scene's features are all
+  // >=3 px at that scale, so it reads soft, not pixelated. 'chrome' in window
+  // excludes Chromium-based browsers reporting Apple strings.
+  const IS_SAFARI = /Apple Computer/.test(navigator.vendor || '') && !('chrome' in window);
+  let rs = RS_LOCK || (AUTO_PHONE ? 0.75 : (IS_SAFARI ? 0.8 : 1));
   let nsub = qs.get('nsub') ? Math.max(2, Math.min(NSUB, parseInt(qs.get('nsub'), 10) & ~1)) : NSUB;
   function resize() {
     const w = Math.max(2, Math.min(innerWidth, 1600) * DPR_CAP) | 0;
