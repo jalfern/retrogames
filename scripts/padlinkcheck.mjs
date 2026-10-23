@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { newRoom, join, leave, relay, rosterOf, MAX_MSG } from '../relay/core.js'
 import { createPadHost, createPadClient, encodePadPacket, decodePadPacket, packSig, makeSigInbox, STALE_MS, PING_EVERY_MS, LINK_CAP } from '../src/utils/padlink.js'
 import { slotPad, clearAllSlots } from '../src/utils/onePad.js'
+import { createRecorder, validate, PING_EVERY_TICKS } from '../src/utils/recording.js'
 
 let pass = 0
 const ok = (name, fn) => {
@@ -234,6 +235,27 @@ async function scenarioTwoPhones() {
         assert.equal(back.seat, 3)
         assert.equal(back.up && back.boost && back.shoulderL && back.shoulderR, true)
         assert.ok(Math.abs(back.x - 1) < 0.01 && Math.abs(back.ay + 0.5) < 0.01)
+    })
+
+    // ping into the recording (#919): the RTT the host measured rides into the
+    // retrogames-rec/v1 file as a per-slot ping trace — same flow
+    // gameContract.pingsNow() runs against window.__padlink.pads each tick.
+    const rec = createRecorder({ gameId: 'gauntlet', method: 'stick', seed: 7, players: 2, build: 'test', hashEvery: 30 })
+    const pingsFromHost = () => {
+        const out = [0, 0]
+        for (const p of host.pads) { const i = (p.seat | 0) - 1; if (i >= 0 && i < out.length && p.rtt > 0) out[i] = p.rtt }
+        return out
+    }
+    for (let i = 0; i < PING_EVERY_TICKS * 2; i++) rec.addTick([{}, {}], null, null, pingsFromHost())
+    const recFile = rec.finish()
+    ok('link-pad ping lands in the retrogames-rec/v1 file (#919)', () => {
+        assert.equal(validate(recFile), null, validate(recFile) || '')
+        assert.ok(recFile.slots[0].ping && recFile.slots[0].ping.length >= 2, `entries: ${JSON.stringify(recFile.slots[0].ping)}`)
+        const hostRtt = host.pads[0].rtt
+        assert.ok(hostRtt > 0, 'host learned a positive pad RTT')
+        assert.ok(recFile.slots[0].ping.every((x) => x.ms === hostRtt), `trace ${JSON.stringify(recFile.slots[0].ping)} must mirror host rtt ${hostRtt}`)
+        assert.equal(recFile.slots[1].ping, undefined, 'seat without measured RTT must not carry ping entries')
+        assert.ok(recFile.slots[0].pads.length === recFile.ticks, 'pad channel unaffected by the ping trace')
     })
 
     // staleness: phone sleeps -> keys release after STALE_MS

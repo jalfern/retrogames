@@ -16,9 +16,16 @@
 //     hashEvery,        // checkpoint cadence (default 30 = 2/s)
 //     slots: [ { source: { kind, modelId? },          // #494 kinds: human/cpu/model/remote/off
 //                pads: [ compactPad x ticks ],         // THE one pad, one per tick
-//                raw:  [ compactRaw x ticks ] } ],     // pre-dead-zone device analog
+//                raw:  [ compactRaw x ticks ],         // pre-dead-zone device analog
+//                ping?: [ { t, ms } ] } ],             // #919 link-pad RTT trace (remote seats)
 //     hashes: [ { t, h } ]                            // state.hash at t, ..., ticks
 //   }
+//
+// The ping channel (#919) is metadata, not input: a slot carries a sparse
+// `ping: [{t, ms}]` trace of the measured link RTT (ms) for its remote pad,
+// sampled when the value changes or at least every PING_EVERY_TICKS. Replay
+// ignores it; validate() accepts files with or without it, so v1 files written
+// before link pads stay valid.
 //
 // Compact pads omit every false/zero field; decoding routes through normalizePad,
 // so decode(encode(p)) === normalizePad(p) for any pad — the one-pad's own
@@ -43,6 +50,8 @@ import { SLOT_KINDS } from './slotSources.js'
 export const REC_FORMAT = 'retrogames-rec/v1'
 
 export const DEFAULT_HASH_EVERY = 30
+
+export const PING_EVERY_TICKS = 30
 
 const DIGITAL_FIELDS = [...DIR_FIELDS, 'a', 'b', 'start', ...AIM_FIELDS]
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0)
@@ -109,17 +118,23 @@ export function createRecorder(opts = {}) {
         return list.map((s) => (typeof s === 'string' ? { kind: s } : { kind: s.kind || 'model', ...(s.modelId ? { modelId: String(s.modelId) } : {}) }))
     }
 
-    const slots = Array.from({ length: seats }, () => ({ source: null, pads: [], raw: [] }))
+    const slots = Array.from({ length: seats }, () => ({ source: null, pads: [], raw: [], ping: [] }))
     const hashes = []
     let ticks = 0
 
     return {
         get ticks() { return ticks },
-        addTick(pads, raws = null, hash = null) {
+        addTick(pads, raws = null, hash = null, pings = null) {
             const list = Array.isArray(pads) ? pads : [pads]
+            const t = ticks + 1
             for (let i = 0; i < slots.length; i++) {
                 slots[i].pads.push(encodePad(list[i] || {}))
                 slots[i].raw.push(encodeRaw(raws && (Array.isArray(raws) ? raws[i] : null)))
+                const ms = pings && pings[i] > 0 ? Math.min(9999, Math.round(pings[i])) : 0
+                if (ms) {
+                    const last = slots[i].ping[slots[i].ping.length - 1]
+                    if (!last || last.ms !== ms || t - last.t >= PING_EVERY_TICKS) slots[i].ping.push({ t, ms })
+                }
             }
             ticks++
             if (hash !== null && hash !== undefined && ticks % hashEvery === 0) hashes.push({ t: ticks, h: hash })
@@ -127,7 +142,7 @@ export function createRecorder(opts = {}) {
         finish(finalHash = null) {
             const srcs = resolveSources()
             if (!srcs.every((s) => SLOT_KINDS.includes(s.kind))) throw new Error('recorder: unknown source kind')
-            slots.forEach((s, i) => { s.source = srcs[i] })
+            slots.forEach((s, i) => { s.source = srcs[i]; if (!s.ping.length) delete s.ping })
             const rec = {
                 format: REC_FORMAT,
                 build,
@@ -165,6 +180,15 @@ export function validate(rec) {
         if (!s.source || !SLOT_KINDS.includes(s.source.kind)) return `bad source kind: ${JSON.stringify(s.source && s.source.kind)}`
         if (!Array.isArray(s.pads) || s.pads.length !== rec.ticks) return `slot ${s.source.kind}: pads must hold one pad per tick`
         if (!Array.isArray(s.raw) || s.raw.length !== rec.ticks) return `slot ${s.source.kind}: raw must hold one entry per tick`
+        if (s.ping !== undefined) {
+            if (!Array.isArray(s.ping)) return `slot ${s.source.kind}: ping must be an array`
+            let lastT = 0
+            for (const x of s.ping) {
+                if (!x || !Number.isInteger(x.t) || x.t < 1 || x.t > rec.ticks || x.t <= lastT) return `slot ${s.source.kind}: ping checkpoints must increase within ticks`
+                if (!Number.isFinite(x.ms) || x.ms < 1 || x.ms > 9999) return `slot ${s.source.kind}: ping ms must be 1..9999`
+                lastT = x.t
+            }
+        }
     }
     if (!Array.isArray(rec.hashes)) return 'hashes must be an array'
     let last = 0

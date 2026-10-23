@@ -187,8 +187,11 @@ Local test: `node relay/server.mjs 8787`, then `?pads=1&relay=ws://localhost:
 gate: `npm run padlinkcheck` (13 gates; mutates to red when the seat→slot
 routing breaks).
 
-Honest gaps: no QR code (code shown as text); ping not yet written into the
-`retrogames-rec/v1` file (kept live on `__padlink.pads()` instead); seat 1's
+Honest gaps: no QR code (code shown as text); seat 1's
 keyboard route shares slot 1 with the screen's own touch (last writer wins,
 same as gamepad + keyboard); `jalfern.com/pad` site-root alias lives in the
-jalfern repo, here the pad is `/retrogames/pad`.
+jalfern repo, here the pad is `/retrogames/pad`. Ping IS written into the
+`retrogames-rec/v1` file (#919): remote seats carry an additive sparse
+`ping: [{t, ms}]` trace of the measured link RTT (replay ignores it, files
+without it stay valid) — plus the pad page shows a rotate-to-landscape hint
+and buzzes on button presses where `navigator.vibrate` exists.

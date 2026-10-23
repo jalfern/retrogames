@@ -213,6 +213,23 @@ const cut = JSON.parse(JSON.stringify(onDisk))
 cut.slots[0].pads.pop()
 ok(validate(cut) !== null, 'missing final pad refused')
 
+// --- #919 ping channel: additive, validated, replay-neutral ---------------------
+ok(validate(JSON.parse(JSON.stringify(onDisk))) === null, 'ping-less v1 files stay valid (additive channel)')
+const pingGood = JSON.parse(JSON.stringify(onDisk))
+pingGood.slots[0].ping = [{ t: 30, ms: 120 }, { t: 60, ms: 95 }]
+ok(validate(pingGood) === null, 'a valid per-slot ping trace accepted', validate(pingGood) || '')
+const pingReplay = replayDriver(pingGood)
+ok(pingReplay.ok && pingReplay.ticks === res.ticks, 'ping metadata leaves the replay unchanged')
+const pingBad1 = JSON.parse(JSON.stringify(onDisk))
+pingBad1.slots[0].ping = [{ t: 10, ms: 120 }, { t: 5, ms: 90 }]
+ok(validate(pingBad1) !== null, 'unordered ping checkpoints refused')
+const pingBad2 = JSON.parse(JSON.stringify(onDisk))
+pingBad2.slots[0].ping = [{ t: 30, ms: 0 }]
+ok(validate(pingBad2) !== null, 'zero-ms ping sample refused')
+const pingBad3 = JSON.parse(JSON.stringify(onDisk))
+pingBad3.slots[0].ping = [{ t: onDisk.ticks + 1, ms: 50 }]
+ok(validate(pingBad3) !== null, 'ping beyond the last tick refused')
+
 // ------------------------------------------------------------------ mutant ----
 if (MUTATE) {
     console.log('mutant: one seat-1 direction pad dropped mid-file')
