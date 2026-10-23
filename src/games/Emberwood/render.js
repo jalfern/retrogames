@@ -16,6 +16,18 @@ import { SCREENS, TS, SW, SH, tileAt } from './world.js'
 const WALL_H = 12
 const FX = (x) => SW * TS - x
 
+// #789 living foliage — one deterministic wind field drives every plant. The
+// vale breathes: gusts (slow gain) ride over two swells so no two spots rock
+// in lockstep. Trees sway slow and wide, bushes rustle fast and tight, tall
+// grass shivers as a texture offset (the blades shift inside their tile).
+export const WIND = {
+    gust: (x, y, t) => 0.55 + 0.45 * Math.sin(t * 0.37 + x * 0.008 - y * 0.011),
+    field: (x, y, t, sp, ph) => Math.sin(t * sp + x * 0.05 + y * 0.03 + ph) * 0.65 + Math.sin(t * sp * 0.47 - y * 0.041 + x * 0.013 + ph * 1.7) * 0.35,
+    tree: (x, y, t) => WIND.field(x, y, t, 1.35, 0) * WIND.gust(x, y, t) * 0.05,
+    bush: (x, y, t) => WIND.field(x, y, t, 3.1, 1.9) * WIND.gust(x, y, t) * 0.09,
+    grass: (x, y, t) => WIND.field(x, y, t, 2.6, 0.7) * WIND.gust(x, y, t) * 0.06,
+}
+
 const SOLID_H = { '#': WALL_H, 'T': 2, 'H': WALL_H, 'R': WALL_H, '=': 5, 'I': 3 }
 
 export function createRenderer(canvas, { lite = false, width = 480, height = 288 } = {}) {
@@ -137,6 +149,8 @@ void main(){
     let structureSig = ''
     const staticMeshes = []
     const canopies = []
+    const bushes = []
+    const grassTiles = []
     const dynamic = { doors: new Map(), cracks: new Map(), chests: new Map(), switches: new Map(), npcs: new Map() }
 
     const tileTexKey = (ch) => ({
@@ -165,6 +179,11 @@ void main(){
         })
 
         const floorGeo = new THREE.PlaneGeometry(TS, TS)
+        const reserved = new Set()
+        for (const arr of [s.doors, s.chests, s.switches, s.plates, s.cracks, s.npcs, s.signs, s.warps, s.enemies]) {
+            for (const e of arr || []) reserved.add(`${e.x},${e.y}`)
+        }
+        if (s.spawn) reserved.add(`${s.spawn[0]},${s.spawn[1]}`)
         for (let y = 0; y < SH; y++) {
             for (let x = 0; x < SW; x++) {
                 const ch = tileAt(s, x, y)
@@ -175,7 +194,24 @@ void main(){
                 m.receiveShadow = !lite
                 if (ch === '~') m.material.color.set('#9fc8e8')
                 if (ch === '"' && cut && cut[`${id}:${x},${y}`]) m.material.map = T('grass')
+                else if (ch === '"' && T('tallgrass')) {
+                    const cl = T('tallgrass').clone()
+                    cl.wrapS = cl.wrapT = THREE.MirroredRepeatWrapping
+                    cl.needsUpdate = true
+                    m.material.map = cl
+                    grassTiles.push({ tex: cl, x: x * TS + 8, y: y * TS + 8 })
+                }
                 screenGroup.add(m); staticMeshes.push(m)
+                if (ch === '.') {
+                    const nearTree = tileAt(s, x - 1, y) === 'T' || tileAt(s, x + 1, y) === 'T' || tileAt(s, x, y - 1) === 'T' || tileAt(s, x, y + 1) === 'T'
+                    if (nearTree && x > 0 && y > 0 && x < SW - 1 && y < SH - 1 && !reserved.has(`${x},${y}`) && (x * 7 + y * 13) % 3 === 0 && T('bush')) {
+                        const bu = new THREE.Mesh(new THREE.PlaneGeometry(14, 10), new THREE.MeshLambertMaterial({ map: T('bush'), transparent: true, alphaTest: 0.4 }))
+                        bu.quaternion.copy(camera.quaternion)
+                        bu.position.set(FX(x * TS + 8), y * TS + 8, 5)
+                        screenGroup.add(bu); staticMeshes.push(bu)
+                        bushes.push({ mesh: bu, x: x * TS + 8, y: y * TS + 8 })
+                    }
+                }
                 if (ch === 'T') {
                     const tr = new THREE.Mesh(new THREE.PlaneGeometry(24, 30), new THREE.MeshLambertMaterial({ map: T('tree'), transparent: true, alphaTest: 0.4 }))
                     tr.quaternion.copy(camera.quaternion)
@@ -261,6 +297,8 @@ void main(){
         scene.add(screenGroup)
         staticMeshes.length = 0
         canopies.length = 0
+        bushes.length = 0
+        grassTiles.length = 0
         dynamic.doors.clear(); dynamic.cracks.clear(); dynamic.chests.clear(); dynamic.switches.clear(); dynamic.npcs.clear()
     }
 
@@ -416,7 +454,15 @@ void main(){
             const under = Math.abs(hx - cp.x) < 11 && hy > cp.y - 10 && hy < cp.y + 12
             cp.o += ((under ? 0.5 : 1) - cp.o) * 0.25
             cp.mesh.material.opacity = cp.o
+            cp.mesh.quaternion.copy(camera.quaternion)
+            cp.mesh.rotateZ(WIND.tree(cp.x, cp.y, tSec))
         }
+        for (const b of bushes) {
+            b.mesh.quaternion.copy(camera.quaternion)
+            b.mesh.rotateZ(WIND.bush(b.x, b.y, tSec))
+            b.mesh.position.x = FX(b.x) + Math.sin(tSec * 4.7 + b.x * 0.11) * WIND.gust(b.x, b.y, tSec) * 0.35
+        }
+        for (const gt of grassTiles) gt.tex.offset.x = WIND.grass(gt.x, gt.y, tSec)
         camera.position.x += (FX(128 + (hx - 128) * 0.5) - camera.position.x) * 0.08
         camera.position.y += ((CAM_Y + (hy - 88) * 0.5) - camera.position.y) * 0.08
         const lookX = camera.position.x, lookY = camera.position.y - 120
@@ -597,5 +643,14 @@ void main(){
         renderer.dispose()
     }
 
-    return { loadTex, buildScreen, sync, draw, onFx, setFocus, screenPos, dispose, get camera() { return camera } }
+    return {
+        loadTex, buildScreen, sync, draw, onFx, setFocus, screenPos, dispose,
+        get camera() { return camera },
+        foliage: () => ({
+            trees: canopies.length, bushes: bushes.length, grass: grassTiles.length,
+            treeRot: canopies.slice(0, 5).map(c => c.mesh.rotation.z),
+            bushRot: bushes.slice(0, 5).map(b => b.mesh.rotation.z),
+            grassOff: grassTiles.slice(0, 6).map(g => g.tex.offset.x),
+        }),
+    }
 }

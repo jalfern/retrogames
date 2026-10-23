@@ -9,6 +9,7 @@ import { SCREENS, TS, SW, SH, tileAt, isSolidTile } from '../src/games/Emberwood
 import { createSim, stepSim, simState, hashState, spawnRoom } from '../src/games/Emberwood/sim.js'
 import { proveGame, tilePath } from '../src/games/Emberwood/solver.js'
 import { attractBot } from '../src/games/Emberwood/bot.js'
+import { WIND } from '../src/games/Emberwood/render.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 
 let pass = 0, fail = 0
@@ -505,6 +506,23 @@ function arcScript(seed) {
 
 const nodeResult = { pass, fail }
 
+// ---- 6b. #789 living foliage: the wind field is bounded, gusty, phased, deterministic ----
+{
+    let tMax = 0, bMax = 0, gMax = 0, gustMin = 9, gustMax = -9
+    for (let t = 0; t < 24; t += 1 / 30) {
+        const gu = WIND.gust(40, 48, t)
+        tMax = Math.max(tMax, Math.abs(WIND.tree(40, 48, t)))
+        bMax = Math.max(bMax, Math.abs(WIND.bush(40, 48, t)))
+        gMax = Math.max(gMax, Math.abs(WIND.grass(40, 48, t)))
+        gustMin = Math.min(gustMin, gu); gustMax = Math.max(gustMax, gu)
+    }
+    ok(tMax > 0.02 && tMax <= 0.051, `tree sway is visible but restrained (peak ${tMax.toFixed(3)} rad, ceil 0.05)`)
+    ok(bMax > tMax && bMax <= 0.091, `bushes rustle tighter and livelier than trees (peak ${bMax.toFixed(3)} > ${tMax.toFixed(3)} rad)`)
+    ok(gMax > 0.02 && gMax <= 0.061, `grass shiver stays a sub-pixel texture shift (peak ${gMax.toFixed(3)} uv, ceil 0.06)`)
+    ok(gustMin < 0.25 && gustMax > 0.85, `gusts cycle the vale's breath (${gustMin.toFixed(2)}..${gustMax.toFixed(2)})`)
+    ok(WIND.tree(24, 40, 5.1) !== WIND.tree(184, 96, 5.1) && WIND.tree(24, 40, 5.1) === WIND.tree(24, 40, 5.1), 'wind is spatially phased yet deterministic (same spot+time -> same sway)')
+}
+
 // ---- 7. the Chrome leg: start, play, die, restart, zero page errors ----
 const SKIP_BROWSER = process.env.EMBERWOOD_NO_BROWSER === '1'
 let browser = null, page = null, chromePass = 0, chromeFail = 0
@@ -512,7 +530,7 @@ const cok = (c, m) => { if (c) { chromePass++; pass++; console.log('ok   ', m) }
 
 if (!SKIP_BROWSER) {
     const { launch, openGame } = await import('./lib/harness.mjs')
-    const URL = process.env.EMBERWOOD_URL || 'http://localhost:5173/retrogames/emberwood'
+    const URL = process.env.EMBERWOOD_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/emberwood`
     try {
         browser = await launch({})
         const errors = []
@@ -605,6 +623,33 @@ if (!SKIP_BROWSER) {
             `the overworld has no near-black spread (town dark-pixel frac=${town.darkFrac.toFixed(2)}, ceil 0.35)`)
         cok(keep.mean >= 8 && keep.mean < town.mean * 0.8,
             `dungeon stays moody under the lantern (mean=${keep.mean.toFixed(1)}, band 8..${(town.mean * 0.8).toFixed(1)})`)
+
+        // #789 living foliage: vale screens carry plants, and the wind moves them.
+        const fol0 = await page.evaluate(async () => {
+            window.__emberwoodTest.goto('ow-00', 6, 5)
+            await new Promise(r => setTimeout(r, 500))
+            return window.__emberwoodTest.foliage()
+        })
+        cok(fol0.trees > 8 && fol0.grass > 4 && fol0.bushes > 0,
+            `THE WOOD is planted (trees=${fol0.trees}, tall grass=${fol0.grass}, bushes=${fol0.bushes})`)
+        const fol1 = await page.evaluate(async () => {
+            await new Promise(r => setTimeout(r, 450))
+            return window.__emberwoodTest.foliage()
+        })
+        const maxDelta = (a, b) => (Array.isArray(a) && a.length > 0 && a.length === b.length) ? Math.max(...a.map((v, i) => Math.abs(v - b[i]))) : 0
+        const dTree = maxDelta(fol0.treeRot, fol1.treeRot)
+        const dBush = maxDelta(fol0.bushRot, fol1.bushRot)
+        const dGrass = maxDelta(fol0.grassOff, fol1.grassOff)
+        cok(dTree > 0.004, `trees sway between samples (peak delta ${dTree.toFixed(4)} rad over ~450ms)`)
+        cok(dBush > 0.004, `bushes rustle between samples (peak delta ${dBush.toFixed(4)} rad)`)
+        cok(dGrass > 0.002, `tall grass shivers — blade texture shifts (peak delta ${dGrass.toFixed(4)} uv)`)
+        const keepFol = await page.evaluate(async () => {
+            window.__emberwoodTest.goto('d1-e0', 7, 8)
+            await new Promise(r => setTimeout(r, 250))
+            return window.__emberwoodTest.foliage()
+        })
+        cok(keepFol.trees === 0 && keepFol.bushes === 0 && keepFol.grass === 0,
+            `the deep has no brush to blow (dungeon foliage trees=${keepFol.trees}, bushes=${keepFol.bushes}, grass=${keepFol.grass})`)
 
         // drive to a fight and swing: use goto + step to spawn next to a monster
         const fought = await page.evaluate(() => {

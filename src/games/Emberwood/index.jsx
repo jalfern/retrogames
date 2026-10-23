@@ -266,6 +266,7 @@ export default function Emberwood() {
                 },
                 prove: (opts) => proveGame(opts || { bombs: true }),
                 screenAt: (x, y) => rend.screenPos(x, y),
+                foliage: () => rend.foliage(),
                 win: () => { sim.flags.boss1 = true; sim.flags.boss2 = true; return true },
             }
             mountDbg({
