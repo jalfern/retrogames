@@ -200,7 +200,7 @@ export function actAt(g, r, c) {
         if (i < 0) return false
         g.plants.splice(i, 1)
         g.cd.daisy = Math.max(g.cd.daisy || 0, 2)
-        g.events.push({ t: 'dig' })
+        g.events.push({ t: 'dig', r, c })
         return true
     }
     const id = g.unlocked[g.sel]
@@ -220,7 +220,7 @@ export function plant(g, id, r, c) {
         r, c, type: id, hp: def.hp, maxHp: def.hp, cool: def.kind === 'shooter' || def.kind === 'frost' ? def.rate * 0.6 : 0,
         bornT: g.sec, anim: roll(g) * 6, fuse: def.kind === 'bomb' ? def.fuse : 0, made: 0,
     })
-    g.events.push({ t: 'plant', id })
+    g.events.push({ t: 'plant', id, r, c })
     return true
 }
 
@@ -347,7 +347,7 @@ function defendersStep(g, dt) {
             if (target && p.cool <= 0) {
                 p.cool = def.rate
                 g.projs.push({ r: p.r, x: colX(p.c) + 16, y: rowY(p.r) - 6, vx: 320, dmg: def.dmg, kind: def.kind, slow: def.slow || 1, slowFor: def.slowFor || 0 })
-                g.events.push({ t: def.kind === 'frost' ? 'frostshot' : 'shoot' })
+                g.events.push({ t: def.kind === 'frost' ? 'frostshot' : 'shoot', x: colX(p.c) + 16, y: rowY(p.r) - 6 })
             }
         } else if (def.kind === 'lobber') {
             const target = g.enemies.some((e) => e.r === p.r && e.x > colX(p.c))
@@ -355,7 +355,7 @@ function defendersStep(g, dt) {
             if (target && p.cool <= 0) {
                 p.cool = def.rate
                 g.projs.push({ r: p.r, x: colX(p.c), y: rowY(p.r), vx: 200, dmg: def.dmg, splash: def.splash, kind: 'lob', lobT: 0 })
-                g.events.push({ t: 'lob' })
+                g.events.push({ t: 'lob', x: colX(p.c), y: rowY(p.r) })
             }
         } else if (def.kind === 'bomb') {
             p.fuse -= dt
@@ -416,7 +416,7 @@ function mowerStep(g, dt) {
     }
 }
 
-function bankAcorn(g, d) { d.taken = true; g.acorns += d.val; g.events.push({ t: 'bank', val: d.val }) }
+function bankAcorn(g, d) { d.taken = true; g.acorns += d.val; g.events.push({ t: 'bank', val: d.val, x: d.x, y: d.y }) }
 export function bankTap(g, d) { if (!d.taken) bankAcorn(g, d) }
 
 function checkLevelDone(g) {

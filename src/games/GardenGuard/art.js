@@ -21,6 +21,12 @@ const C = {
 }
 
 const rnd = (x, y) => { const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return n - Math.floor(n) }
+function shade(hex, amt) {
+    const n = parseInt(hex.slice(1), 16)
+    const clamp = (v) => Math.max(0, Math.min(255, v))
+    const r = clamp((n >> 16) + amt), g = clamp(((n >> 8) & 255) + amt), b = clamp((n & 255) + amt)
+    return `rgb(${r},${g},${b})`
+}
 function rr(ctx, x, y, w, h, r) {
     const rad = Math.min(r, w / 2, h / 2)
     ctx.beginPath()
@@ -127,9 +133,10 @@ export function drawTray(ctx, g, hover) {
     drawAcornIcon(ctx, 127, 40, 34)
     ctx.fillStyle = C.cream; ctx.font = 'bold 24px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     ctx.fillText(String(g.acorns), 127, 68)
-    // cards
+    // cards — themed portrait plate + name so each defender reads at a glance
     const cardW = 64, cardH = 78, gap = 8
     const startX = 178
+    const SHORT = { daisy: 'DAISY', squirrel: 'SQUIRREL', hedge: 'HEDGE', chili: 'CHILI', frost: 'FROST', pumpkin: 'PUMPKIN' }
     for (let i = 0; i < g.unlocked.length; i++) {
         const id = g.unlocked[i]
         const def = PLANTS[id]
@@ -141,7 +148,20 @@ export function drawTray(ctx, g, hover) {
         rr(ctx, x, y, cardW, cardH, 7); ctx.fill()
         ctx.lineWidth = sel ? 3 : 1.5; ctx.strokeStyle = sel ? '#e4a52b' : 'rgba(90,60,30,0.5)'
         rr(ctx, x, y, cardW, cardH, 7); ctx.stroke()
-        drawPlantIcon(ctx, id, x + cardW / 2, y + 34, 30)
+        // portrait plate: a tinted inset in the defender's own colour
+        ctx.save()
+        rr(ctx, x + 5, y + 5, cardW - 10, 40, 5)
+        ctx.clip()
+        const pg = ctx.createLinearGradient(0, y + 5, 0, y + 45)
+        pg.addColorStop(0, shade(def.color, 34)); pg.addColorStop(1, shade(def.color, -22))
+        ctx.fillStyle = pg; ctx.fillRect(x + 5, y + 5, cardW - 10, 40)
+        ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.beginPath(); ctx.ellipse(x + cardW / 2, y + 12, 22, 8, 0, 0, 7); ctx.fill()
+        drawPlantIcon(ctx, id, x + cardW / 2, y + 24, 30)
+        ctx.restore()
+        ctx.strokeStyle = 'rgba(60,38,16,0.55)'; ctx.lineWidth = 1; rr(ctx, x + 5, y + 5, cardW - 10, 40, 5); ctx.stroke()
+        // name plate
+        ctx.fillStyle = C.ink; ctx.font = 'bold 9px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.fillText(SHORT[id] || def.name.slice(0, 8).toUpperCase(), x + cardW / 2, y + 52)
         // cost badge
         ctx.fillStyle = afford ? '#3a2a16' : '#b23a2a'
         rr(ctx, x + 6, y + cardH - 20, cardW - 12, 16, 4); ctx.fill()
@@ -239,9 +259,17 @@ export function drawPlant(ctx, p, t) {
         const pulse = 1 + Math.sin(t * 3 + p.anim) * 0.06
         ctx.save(); ctx.scale(pulse, pulse); drawPlantIcon(ctx, 'daisy', sway, 0, 36); ctx.restore()
     } else if (def.kind === 'shooter' || def.kind === 'frost') {
-        ctx.save(); ctx.translate(sway * 0.4, 0)
+        // recoil right after firing: cool resets to def.rate, so (def.rate - p.cool)
+        // is time-since-shot; squash + kick the body back off the muzzle.
+        const rec = Math.max(0, 1 - (def.rate - p.cool) / 0.14)
+        ctx.save(); ctx.translate(sway * 0.4 - rec * 3, 0); ctx.scale(1 - rec * 0.14, 1 + rec * 0.1)
         drawPlantIcon(ctx, p.type, 0, 0, 34)
         ctx.restore()
+        if (rec > 0.5) {
+            const mx = 12, my = -6
+            ctx.fillStyle = def.kind === 'frost' ? 'rgba(191,240,255,0.85)' : 'rgba(255,230,168,0.9)'
+            ctx.beginPath(); ctx.arc(mx, my, 3 + rec * 4, 0, 7); ctx.fill()
+        }
     } else if (def.kind === 'wall') {
         drawPlantIcon(ctx, 'hedge', 0, 0, 36)
         const dmg = 1 - p.hp / p.maxHp
@@ -268,18 +296,46 @@ export function drawPlant(ctx, p, t) {
 export function drawEnemy(ctx, e, t) {
     const def = ENEMIES[e.id]
     const cy = rowY(e.r)
-    const bob = e.eat ? Math.sin(t * 16) * 2 : Math.sin(e.anim) * 2.2
-    const lean = e.eat ? 0.12 : 0
+    const type = e.id
+    const sprint = type === 'sprinter'
+    const heavy = type === 'brute' || type === 'warlord'
+    const ph = e.anim
+    // gait: Sprinter = quick low bob, Brute = slow heavy dip, Grunt/Pup = the classic roll
+    let bob
+    if (heavy) bob = e.eat ? Math.sin(t * 11) * 2.4 : Math.sin(ph) * 3.2
+    else if (sprint) bob = e.eat ? Math.sin(t * 18) * 2 : Math.sin(ph * 2) * 1.4
+    else bob = e.eat ? Math.sin(t * 16) * 2 : Math.sin(ph) * 2.2
+    // Sprinter leans into the run; eaters lunge at the plant
+    let lean = e.eat ? 0.12 : (sprint ? -0.14 : heavy ? 0.04 : 0)
     ctx.save(); ctx.translate(e.x, cy + bob)
     ctx.rotate(lean)
     const slowed = e.slowT > 0
-    const flash = e.id === 'warlord' ? '#3f6b22' : def.color
+    const flash = type === 'warlord' ? '#3f6b22' : def.color
     // shadow
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.beginPath(); ctx.ellipse(0, def.r * 0.7, def.r * 0.8, 5, 0, 0, 7); ctx.fill()
-    // legs (two-frame walk)
-    const step = Math.sin(e.anim)
-    ctx.strokeStyle = '#3a5a20'; ctx.lineWidth = def.r * 0.26
-    ctx.beginPath(); ctx.moveTo(-2, def.r * 0.2); ctx.lineTo(-2 + step * 5, def.r * 0.72); ctx.moveTo(2, def.r * 0.2); ctx.lineTo(2 - step * 5, def.r * 0.72); ctx.stroke()
+    // brute ground-shake dust at each footfall (the dip of the bob)
+    if (heavy && !e.eat && Math.sin(ph) < -0.72) {
+        ctx.fillStyle = 'rgba(120,90,55,0.32)'
+        for (let k = 0; k < 3; k++) { const dx = (k - 1) * 5 + rnd(e.r, k) * 3; ctx.beginPath(); ctx.arc(dx, def.r * 0.72, 2.6 - k * 0.6, 0, 7); ctx.fill() }
+    }
+    // legs — per-gait cycle (Sprinter quickens, Brute drives wider)
+    const stride = heavy ? 7 : sprint ? 6 : 5
+    const legPhase = sprint ? ph * 2 : ph
+    const step = Math.sin(legPhase)
+    const step2 = Math.sin(legPhase + Math.PI * 0.6)
+    ctx.strokeStyle = '#3a5a20'; ctx.lineWidth = def.r * (heavy ? 0.32 : 0.26); ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(-2, def.r * 0.2); ctx.lineTo(-2 + step * stride, def.r * 0.72)
+    ctx.moveTo(2, def.r * 0.2); ctx.lineTo(2 - step2 * stride, def.r * 0.72)
+    ctx.stroke()
+    // tail — Grunt/Pup carry a wagging one behind the body (a stub on the Grunt)
+    if (type === 'pup' || type === 'grunt') {
+        const wag = Math.sin(ph * 1.5) * (type === 'pup' ? 1 : 0.55)
+        ctx.strokeStyle = def.color; ctx.lineWidth = def.r * (type === 'pup' ? 0.26 : 0.2); ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.moveTo(def.r * 0.55, -def.r * 0.1)
+        ctx.quadraticCurveTo(def.r * 1.0, -def.r * 0.2 + wag * def.r * 0.35, def.r * 1.15, -def.r * 0.5 + wag * def.r * 0.5)
+        ctx.stroke()
+    }
     // body
     ctx.fillStyle = flash
     ctx.beginPath(); ctx.ellipse(0, 0, def.r * 0.78, def.r * 0.82, 0, 0, 7); ctx.fill()
