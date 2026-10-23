@@ -9,9 +9,12 @@ while incoming rows are queued COUNTERS them. First to 2 rounds wins.
 ## Layout
 
 - `sim.js` — pure rules. Zero Math.random, zero DOM: `(state, [pad1, pad2])`.
-  Gravity table per round index (`GRAVITY`, 48f/row round 1 down to 6f),
-  DAS 12/4, soft drop every 2f, hard drop slams + locks (this battler has it;
-  the 1991 original did not — the issue asked for a Tetris-battle hybrid too).
+   Gravity table per round index (`GRAVITY`, 48f/row round 1 down to 6f),
+   DAS 8/4 (delay 8f ~133 ms, repeat 4f — #863 tuned the 12f keyboard-tight
+   delay down for thumb repeat-on-hold; global so both online boxes apply the
+   same DAS to the same held pad stream), soft drop every 2f, hard drop slams +
+   locks (this battler has it; the 1991 original did not — the issue asked for a
+   Tetris-battle hybrid too).
   Attack rows = `chain - 1 + Σ(floor(size/4) - 1)` per cascade, delivered at
   cascade end; holes are rolled from the shared seeded RNG at delivery time so
   both online boxes generate identical garbage. Counter: any clear in a cascade
@@ -78,11 +81,14 @@ any other key normal.
 ## Verify
 
 ```
-npm run blobcheck    # Node gate (static tier): 49 assertions — boot, group/chain
+npm run blobcheck    # Node gate (static tier): 54 assertions — boot, group/chain
                       # rules, counters, garbage landing, rounds, determinism
                       # (seed+pads replay hash-equal), the #863 theater block
                       # (next-pair preview legality, draw-at-lock swap, per-seed
                       # determinism of the preview stream, collapse slide math),
+                      # the #863 DAS block (a tap is one cell, the first auto-repeat
+                      # lands on frame 9 — the tuned 8-frame thumb delay — then it
+                      # repeats every 4 frames across the well),
                       # a full ONLINE pair over an
                       # in-memory pipe (pad delay, hash checkpoints, zero desyncs),
                       # the #863 RE-JOIN block (a diverged box is caught at the
@@ -92,10 +98,12 @@ npm run blobcheck    # Node gate (static tier): 49 assertions — boot, group/ch
                       # determinism, ladder rungs differ, expert out-chains
                       # beginner, expert drops faster). Can fail: mutant
                       # pop-threshold 4->5 reddens it (verified by hand); mutant
-                      # dropping the re-join lockstep reset stalls the pair at the
-                      # first checkpoint (verified); mutant collapsing all three
-                      # tiers to `normal` (depth 4 / no miss / raw jitter) reddens
-                      # the rungs-differ and drops-faster assertions (verified).
+                      # reverting DAS_DELAY 8->12 reddens the frame-9 auto-repeat
+                      # gate (verified); mutant dropping the re-join lockstep reset
+                      # stalls the pair at the first checkpoint (verified); mutant
+                      # collapsing all three tiers to `normal` (depth 4 / no miss /
+                      # raw jitter) reddens the rungs-differ and drops-faster
+                      # assertions (verified).
 npm run blobdrill    # advisory Chrome drill: real keys/taps, attract, rotate,
                       # slide, hard drop, drawn-pixels==board, defeat, rematch,
                       # pause, phone tap, zero page errors.
