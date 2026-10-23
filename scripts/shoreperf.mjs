@@ -24,6 +24,7 @@
 //        pgrep/loadavg lie — dedicated runners, containers.)
 
 import { spawn, execSync } from 'node:child_process'
+import { guardChrome } from './chromecleanup.mjs'
 import { existsSync } from 'node:fs'
 import { loadavg } from 'node:os'
 import { resolve, dirname } from 'node:path'
@@ -169,11 +170,7 @@ async function main() {
   // for. macOS (local/dev boxes) keeps Metal and ignores these.
   if (process.platform !== 'darwin') flags.push('--no-sandbox', '--enable-unsafe-webgpu', '--use-angle=swiftshader')
   const chrome = spawn(CHROME, flags, { stdio: 'ignore', detached: true })
-  const killAll = () => {
-    try { process.kill(-chrome.pid) } catch { /* gone */ }
-    try { chrome.kill() } catch { /* gone */ }
-    spawn('pkill', ['-f', `user-data-dir=${profDir}`], { stdio: 'ignore' })
-  }
+  const killAll = guardChrome(chrome, profDir, { detached: true })
   let browser
   for (let i = 0; i < 40 && !browser; i++) {
     await new Promise(r => setTimeout(r, 500))

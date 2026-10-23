@@ -61,6 +61,10 @@ fi
 
 cd "$REPO" || exit 1
 
+# #907 backstop: a killed session can orphan headless Chrome under launchd.
+# Sweep only Forge's own profiles (/tmp/forge/), never a normal Chrome.
+pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/" 2>/dev/null || true
+
 # halt (#605): Jon froze the lanes — no QA node starts a new session either.
 # (A session already running finishes its current step, reports, and exits;
 # the warden refuses to kick while the label is open.)

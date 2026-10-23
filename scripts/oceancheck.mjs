@@ -36,6 +36,7 @@
 //      "calm stays glassy" stays green (it is the sea-state half of the proof).
 
 import { spawn } from 'node:child_process'
+import { guardChrome } from './chromecleanup.mjs'
 import { inflateSync } from 'node:zlib'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -258,6 +259,7 @@ async function main() {
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
     `--user-data-dir=/tmp/forge/oceancheck-profile`, 'about:blank',
   ], { stdio: 'ignore' })
+  const cleanup = guardChrome(chrome, '/tmp/forge/oceancheck-profile')
   let browser
   for (let i = 0; i < 40 && !browser; i++) {
     await new Promise(r => setTimeout(r, 500))
@@ -796,7 +798,7 @@ async function main() {
     ok('zero page/validation errors', gpuErrs.length === 0, gpuErrs.slice(0, 2).join(' | '))
   } finally {
     await browser.close().catch(() => {})
-    chrome.kill()
+    cleanup()
   }
 
   const failures = results.filter(r => !r.pass)
