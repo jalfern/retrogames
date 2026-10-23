@@ -40,6 +40,9 @@ export const STALE_MS = 1000               // a silent pad releases its keys
 export const PING_EVERY_MS = 500           // host echo cadence
 export const RTC_WAIT_MS = 4000            // give ICE this long before settling on relay
 export const PACKET_Q = 100                // analog quantisation (1/100th of full)
+export const RESEAT_BASE_MS = 500          // auto re-seat backoff: first retry
+export const RESEAT_MAX_MS = 4000         // ... capped (500,1k,2k,4k,4k...)
+export const RESEAT_TRIES = 8             // then give up -> 'gone' (one-tap JOIN)
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
@@ -331,22 +334,58 @@ export function createPadClient(opts = {}) {
         seq: 0,
         pending: new Map(),   // stamp -> sentAt (for RTT; bounded)
         lastRttAt: 0,
-        phase: 'idle',        // idle | connecting | waiting | live | hostless | gone
+        phase: 'idle',        // idle | connecting | waiting | live | reseat | hostless | gone
         peer: null,
         chan: null,
         timer: 0,
         stampTimer: 0,
         wsSendRateMs: 1000 / PAD_HZ_RELAY,
         lastSent: 0,
+        code: '',             // last joined code — kept so a drop can re-seat itself
+        hadSeat: false,       // we were seated mid-play (a drop here deserves auto-retry)
+        reseatAttempt: 0,
+        reseatTimer: 0,
 
         setPhase(p) { client.phase = p; if (opts.onPhase) opts.onPhase(p) },
 
         join(rawCode) {
             const code = decodeCode(rawCode)
             if (!code) { if (opts.onError) opts.onError('badcode'); return }
+            client.code = code
+            client.hadSeat = false
+            client.reseatAttempt = 0
+            client.clearReseat()
             client.setPhase('connecting')
             room.connect(code, 0)
         },
+
+        // a hard socket drop mid-play (Wi-Fi naps): the pad page stays hot and
+        // re-seats itself into the same code with capped exponential backoff.
+        // Runs out of tries -> 'gone' (entry screen, code still filled, one tap).
+        enterReseat() {
+            if (client.phase === 'gone' || client.phase === 'idle') return
+            client.seat = 0
+            if (client.peer) { try { client.peer.close() } catch { /* gone */ } client.peer = null }
+            client.chan = null
+            client.mode = 'relay'
+            if (opts.onMode) opts.onMode('relay')
+            if (!client.code) { client.setPhase('gone'); return }
+            client.setPhase('reseat')
+            client.scheduleReseat()
+        },
+
+        scheduleReseat() {
+            client.clearReseat()
+            if (client.reseatAttempt >= RESEAT_TRIES) { client.setPhase('gone'); return }
+            const delay = Math.min(RESEAT_BASE_MS * 2 ** client.reseatAttempt, RESEAT_MAX_MS)
+            client.reseatAttempt++
+            client.reseatTimer = setTimeout(() => {
+                client.reseatTimer = 0
+                if (client.phase !== 'reseat') return
+                room.connect(client.code, 0)
+            }, delay)
+        },
+        clearReseat() { clearTimeout(client.reseatTimer); client.reseatTimer = 0 },
 
         // the steady stream: call from a timer/loop at >= PAD_HZ_DIRECT; it
         // self-throttles to the live transport's rate.
@@ -392,7 +431,7 @@ export function createPadClient(opts = {}) {
                 } else if (obj.m === 'ice' && client.peer) client.peer.ice(data)
                 return
             }
-            if (obj.k === 'kicked') { client.setPhase('gone'); client.stop() }
+            if (obj.k === 'kicked') { client.clearReseat(); client.hadSeat = false; client.setPhase('gone'); client.stop() }
         },
 
         start() {
@@ -402,6 +441,8 @@ export function createPadClient(opts = {}) {
         stopTimers() { clearInterval(client.timer); client.timer = 0 },
         stop() {
             client.stopTimers()
+            client.clearReseat()
+            client.hadSeat = false
             if (client.peer) { try { client.peer.close() } catch { /* gone */ } client.peer = null; client.chan = null }
             room.send('pad', { k: 'out' })
             room.reset()
@@ -430,7 +471,15 @@ export function createPadClient(opts = {}) {
     const room = createRoom({
         relay: opts.relay,
         makeTransport: opts.makeTransport,
-        onPhase: (p) => { if (p === 'offline') client.setPhase('gone') },
+        onPhase: (p) => {
+            if (p !== 'offline') return
+            if (client.hadSeat || client.phase === 'reseat') client.enterReseat()
+            else client.setPhase('gone')
+        },
+        onClose: () => {
+            // dropped socket while seated (or while already re-seating) -> retry
+            if (client.hadSeat || client.phase === 'reseat') client.enterReseat()
+        },
         onRoster: ({ slots }) => {
             if (!slots.includes(0)) { client.setPhase('hostless'); room.reset(); client.seat = 0; return }
             client.setPhase(client.seat >= 1 ? 'live' : 'waiting')
@@ -445,11 +494,18 @@ export function createPadClient(opts = {}) {
             const you = obj.you | 0
             if (you === 0) {
                 // joined a code nobody hosts: the room exists because WE made it.
-                client.setPhase('hostless')
                 room.reset()
+                client.seat = 0
+                // mid-play we raced a host that went down with us — keep
+                // re-checking until a real host takes seat 0 back.
+                if (client.hadSeat) client.enterReseat()
+                else client.setPhase('hostless')
                 return
             }
             client.seat = you
+            client.hadSeat = true
+            client.reseatAttempt = 0
+            client.clearReseat()
             client.setPhase('live')
             if (opts.onSeat) opts.onSeat(you)
             client.start()

@@ -255,6 +255,13 @@ export default function PadLink() {
                     CONNECTING…
                 </div>
             )}
+
+            {phase === 'reseat' && (
+                <div data-pad="reseat" className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-neutral-950/80 font-mono text-white/70">
+                    <span className="text-xs tracking-[0.3em] animate-pulse">HOST LOST — RE-SEATING…</span>
+                    <span className="text-[10px] tracking-[0.3em] text-sky-300/70">{code}</span>
+                </div>
+            )}
         </div>
     )
 }
