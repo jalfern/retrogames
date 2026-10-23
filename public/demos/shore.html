@@ -54,6 +54,10 @@ const COARSE = matchMedia('(pointer: coarse)').matches;
 const SMALL = Math.min(innerWidth, innerHeight) <= 440;
 const AUTO_PHONE = qs.get('lite') === null && (COARSE || SMALL);
 const LITE = qs.get('lite') ? qs.get('lite') === '1' : AUTO_PHONE;
+// #680 bullet 2 — ?trim=1: the per-pixel shader-trim A/B variant (see the
+// WATER shader). Default is the original WGSL; a quiet box runs
+// `shoreperf --ab "trim=0|trim=1" --require-quiet` for the verdict.
+const TRIM = qs.get('trim') === '1';
 
 const SLOPE = 0.052;            // beach slope (rise per metre inland)
 const XS0 = 84;                 // mean shoreline x
@@ -472,8 +476,9 @@ fn surfAt(x: f32, z: f32) -> f32 {
   return mix(sS, sA, wa);
 }
 struct W { d: f32, foam: f32, wet: f32, cov: f32 };
-fn waterAt(x: f32, z: f32) -> W {
-  let bed = terrain(x, z);
+// bed is passed in (the callers already have it) — one terrain() per pixel,
+// not one per call (#680)
+fn waterAt(x: f32, z: f32, bed: f32) -> W {
   let wa = smoothstep(QS_IN, QS_OUT, xsCurve(z) - x);
   let hS = max(sm_h(x, z), 0.0);
   var o: W;
@@ -629,7 +634,7 @@ fn fs(i: VOut) -> @location(0) vec4f {
 
 // ---- water: two-stream colour, advected foam with Worley lace, meniscus ----
 const WATER = UNIF + U0 + TT_DECL + `@group(0) @binding(1) var<storage, read> ttBuf: TTBuf;` + SIM_DECL + COMMON + `
-struct VOut { @builtin(position) pos: vec4f, @location(0) wp: vec3f, @location(1) base: vec2f };
+struct VOut { @builtin(position) pos: vec4f, @location(0) wp: vec3f, @location(1) base: vec2f${TRIM ? `, @location(2) h0: f32` : ``} };
 @vertex
 fn vs(@location(0) xzIn: vec2f) -> VOut {
   var o: VOut;
@@ -637,7 +642,8 @@ fn vs(@location(0) xzIn: vec2f) -> VOut {
   let s = surfAt(xzIn.x, xzIn.y);
   let wp = vec3f(xzIn.x, s, xzIn.y);
   o.wp = wp;
-  o.base = xzIn;
+  o.base = xzIn;${TRIM ? `
+  o.h0 = s;` : ``}
   o.pos = u.vp * vec4f(wp, 1.0);
   return o;
 }
@@ -647,11 +653,29 @@ fn fs(i: VOut) -> @location(0) vec4f {
   let p = i.wp;
   let q = i.base;
   let bed = terrain(q.x, q.y);
-  let w = waterAt(q.x, q.y);
+  let w = waterAt(q.x, q.y, bed);
   let d = w.d;
   if (d <= 0.0005) { discard; }
   let hv = b_hud(q.x, q.y);
-  // surface normal from the full-model height gradient
+${TRIM ? `  // #680 trims: forward-diff base normal reusing the vertex's surfAt (3
+  // samples become 2), detail noise gated out of range — at 160 m the det
+  // terms are ~0.012-0.015 normal tilt, below perception
+  let e = 0.24;
+  var nrm = normalize(vec3f(-(surfAt(q.x + e, q.y) - i.h0) / e * 1.6, 1.0, -(surfAt(q.x, q.y + e) - i.h0) / e * 1.6));
+  let dist0 = length(u.camPos_t.xyz - p);
+  if (dist0 < 160.0) {
+    let det = exp(-dist0 * 0.02);
+    nrm.x += (vnoise(vec2f(q.x * 2.3 - gT * 1.4, q.y * 1.7)) - 0.5) * 0.30 * det * smoothstep(0.15, 0.6, d);
+    nrm.z += (vnoise(vec2f(q.x * 2.3 - gT * 1.4 + 31.0, q.y * 1.7 + 17.0)) - 0.5) * 0.30 * det * smoothstep(0.15, 0.6, d);
+  }
+  // mid-scale ripple: breaks the horizon mirror into glitter at distance
+  nrm.x += (vnoise(vec2f(q.x * 0.7 - gT * 0.5, q.y * 0.7)) - 0.5) * 0.16 * smoothstep(0.5, 1.5, d);
+  nrm.z += (vnoise(vec2f(q.x * 0.7 + 41.0, q.y * 0.7 + gT * 0.4)) - 0.5) * 0.16 * smoothstep(0.5, 1.5, d);
+  if (dist0 < 160.0) {
+    let detF = exp(-dist0 * 0.012);
+    nrm.x += (vnoise(vec2f(q.x * 5.1 - gT * 0.5, q.y * 5.1)) - 0.5) * 0.10 * detF;
+    nrm.z += (vnoise(vec2f(q.x * 5.1 - gT * 0.5 + 23.1, q.y * 5.1 + 17.9)) - 0.5) * 0.10 * detF;
+  }` : `  // surface normal from the full-model height gradient
   let e = 0.24;
   let sx = surfAt(q.x + e, q.y) - surfAt(q.x - e, q.y);
   let sz = surfAt(q.x, q.y + e) - surfAt(q.x, q.y - e);
@@ -669,7 +693,7 @@ fn fs(i: VOut) -> @location(0) vec4f {
   // the swell normals alone paint wide streaks
   let detF = exp(-dist0 * 0.012);
   nrm.x += (vnoise(vec2f(q.x * 5.1 - gT * 0.5, q.y * 5.1)) - 0.5) * 0.10 * detF;
-  nrm.z += (vnoise(vec2f(q.x * 5.1 - gT * 0.5 + 23.1, q.y * 5.1 + 17.9)) - 0.5) * 0.10 * detF;
+  nrm.z += (vnoise(vec2f(q.x * 5.1 - gT * 0.5 + 23.1, q.y * 5.1 + 17.9)) - 0.5) * 0.10 * detF;`}
   nrm = normalize(nrm);
   let sun = normalize(u.sun.xyz);
   let V = normalize(u.camPos_t.xyz - p);
@@ -702,7 +726,10 @@ fn fs(i: VOut) -> @location(0) vec4f {
   // and a static world-space mask breaks the lobe into glitter (OCEAN's sea):
   // the shimmer comes from the moving ripples, not from flickering the mask
   let mu = max(dot(R, sun), 0.0);
-  let gmask = smoothstep(0.35, 0.72, fbm2(vec2f(q.x * 0.22 + gT * 0.05, q.y * 0.22)));
+${TRIM ? `  // #680 trim: the mask only modulates the narrow sun lobe — below mu 0.6
+  // the glint is <2e-5 pre-tonemap, so the fbm2 is skipped off-lobe
+  var gmask = 0.25;
+  if (mu > 0.6) { gmask = smoothstep(0.35, 0.72, fbm2(vec2f(q.x * 0.22 + gT * 0.05, q.y * 0.22))); }` : `  let gmask = smoothstep(0.35, 0.72, fbm2(vec2f(q.x * 0.22 + gT * 0.05, q.y * 0.22)));`}
   let glint = pow(mu, 320.0) * 3.0 + pow(mu, 90.0) * 0.35 + pow(mu, 14.0) * 0.02;
   water += vec3f(1.0, 0.78, 0.48) * glint * (0.25 + 0.75 * gmask) * (1.0 - w.foam);
   // foam: advected density * churn lace; the sim field already fades off the
@@ -836,7 +863,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let x = 52.0 + f32(gid.x) * (70.0 / 95.0);
   let z = -60.0 + f32(gid.y) * (120.0 / 63.0);
   gT = u.pars2.y;
-  let w = waterAt(x, z);
+  let bed = terrain(x, z);
+  let w = waterAt(x, z, bed);
   let i = (gid.y * 96u + gid.x) * 5u;
   outBuf[i] = x;
   outBuf[i + 1u] = z;
