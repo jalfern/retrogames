@@ -17,6 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
+import { padState } from '../../utils/padState'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
@@ -286,8 +287,9 @@ const SSXGame = () => {
             else inp = {
                 // #791: a canvas drag IS the analog stick — horizontal offset from
                 // where the finger went down sets steer depth; keyboard/pad ±1 falls
-                // back through the sim's pressure ramp.
-                steer: dragSteer !== null ? dragSteer : (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0),
+                // back through the sim's pressure ramp. #828: a physical stick
+                // (padState) rides the same analog line as the drag.
+                steer: dragSteer !== null ? dragSteer : padState.engaged ? padState.x : (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0),
                 jump: keys.has('Space'),
                 boost: keys.has('ShiftLeft') || keys.has('ShiftRight'),
                 grab: keys.has('KeyX'),
@@ -615,7 +617,10 @@ const SSXGame = () => {
         }
 
         const onDown = (e) => {
-            const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
+            // #828: any '?' reaches the pause regardless of layout or how it was
+            // synthesized (non-US keyboards deliver '?' without shiftKey; other
+            // codes carry it) — trust the key the browser resolved.
+            const code = e.key === '?' ? 'Question' : e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             const sc = screenRef.current

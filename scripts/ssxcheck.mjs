@@ -1016,5 +1016,16 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         invHash() === invHash() && invHash() !== stateHash((() => { const g = makeGame('race'); run(g, 181); clear(g); return g })()))
 }
 
+// #828 (Jon, pad + pause): source gates on the input layer of index.jsx —
+// '?' pauses whatever layout delivers it (key === '?' needs no shiftKey; a
+// non-US keyboard or synthesized event used to fall through to keys.add), and
+// the physical stick rides the analog steer line beside the canvas drag.
+{
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/games/SSX/index.jsx'), 'utf8')
+    ok(/e\.key === '\?' \? 'Question'/.test(src), '#828 "?" pauses by key, not only shift+Slash (layout-proof pause)')
+    ok(/import \{ padState \}/.test(src) && /padState\.engaged \? padState\.x/.test(src),
+        '#828 left stick analog steer: index.jsx reads padState.x on the steer line')
+}
+
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)

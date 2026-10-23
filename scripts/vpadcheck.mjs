@@ -12,7 +12,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD, dpadDirs, DPAD_SWAP_HI, DPAD_SWAP_LO } from '../src/components/virtualDir.js'
-import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, stickFromAxes, triggersFromPad, shouldUseStick, waysOf, rumble, slotFieldsFrom } from '../src/components/gamepadMap.js'
+import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, extraButtonsOf, stickFromAxes, triggersFromPad, shouldUseStick, waysOf, rumble, slotFieldsFrom } from '../src/components/gamepadMap.js'
 import { steerPedals, steerResponse, STEER_GAIN } from '../src/utils/padState.js'
 import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD, POINTER_HIT_PX, pointerTarget, pointerGesture, press, release, MAX_SLOTS, slotPad, pressSlot, setStickVecSlot, clearSlot, slotActive, setConnected, connectedSlots, clearAllSlots } from '../src/utils/onePad.js'
 import { p2From } from '../src/games/Gauntlet/p2input.js'
@@ -187,6 +187,33 @@ ok(setEq(gamepadToCodes(padWith([13], [0.8, 0])).codes, ['ArrowDown', 'ArrowRigh
 // --- 15. Gamepad: mapping tables are the standard layout ---
 ok(GPAD_DPAD[12] === 'ArrowUp' && GPAD_DPAD[13] === 'ArrowDown' && GPAD_DPAD[14] === 'ArrowLeft' && GPAD_DPAD[15] === 'ArrowRight', 'd-pad table is the W3C layout (12 up,13 down,14 left,15 right)')
 ok(GPAD_FIXED[0] === 'Space' && GPAD_FIXED[8] === 'Question' && GPAD_FIXED[9] === 'Enter', 'fixed-button table: A=Space, Select=Question, Start=Enter')
+
+// --- 15b. #828 per-game extra face/shoulder buttons (SSX trick pad) ---
+const ssxPadDecl = {
+    layout: 'stick', analog: true,
+    buttons: [
+        { label: 'BST', code: 'ShiftLeft' },
+        { label: '□ GRAB', code: 'KeyX', pad: 2 },
+        { label: '△ INVERT', code: 'KeyV', pad: 3 },
+        { label: 'L1 FLIP', code: 'KeyZ', pad: 4 },
+        { label: 'R1 FLIP', code: 'KeyC', pad: 5 },
+    ],
+}
+ok(validPad(ssxPadDecl) === true, 'validPad: pad with indexed extra buttons accepted')
+const ssxExtras = extraButtonsOf(ssxPadDecl)
+ok(ssxExtras.length === 4 && ssxExtras.every((e) => e.button >= 2), '#828 SSX declares exactly 4 extra pad buttons (square/triangle/L1/R1), none on reserved 0/1')
+ok(setEq(gamepadToCodes(padWith([2, 3, 4, 5]), { secondAction: 'ShiftLeft', extraButtons: ssxExtras }).codes, ['KeyX', 'KeyV', 'KeyZ', 'KeyC']),
+    '#828 square->KeyX grab, triangle->KeyV invert, L1->KeyZ front flip, R1->KeyC back flip')
+ok(setEq(gamepadToCodes(padWith([2]), { secondAction: 'ShiftLeft', extraButtons: ssxExtras }).codes, ['KeyX']),
+    '#828 extras ride beside secondAction without hijacking A/B (square alone = KeyX)')
+ok(extraButtonsOf({ layout: 'dpad', buttons: [{ label: 'B', code: 'KeyX' }], analog: false }).length === 0, 'extraButtonsOf: legacy declarations without pad indices stay empty')
+ok(validPad({ layout: 'dpad', buttons: [{ label: 'B', code: 'KeyX' }, { label: 'BAD', code: 'KeyQ', pad: 1 }] }) === false,
+    'validPad: reserved face-button index (pad:1) rejected')
+const gamesSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/config/games.js'), 'utf8')
+const ssxBlock = (gamesSrc.match(/path: '\/ssx',[\s\S]*?builtBy/) || [''])[0]
+ok(/analog: true/.test(ssxBlock) && /code: 'KeyX', pad: 2/.test(ssxBlock) && /code: 'KeyV', pad: 3/.test(ssxBlock) && /code: 'KeyZ', pad: 4/.test(ssxBlock) && /code: 'KeyC', pad: 5/.test(ssxBlock),
+    '#828 registry SSX pad entry maps square/triangle/L1/R1 to the trick codes (registry is the source of truth)')
+ok(/Pad: left stick steer/.test(gamesSrc), '#828 trick book names the pad buttons for Jon')
 
 // --- 16. Pad declaration (games.js `pad` field): validPad shape ---
 const goodPad = { layout: 'dpad', buttons: [{ label: 'B', code: 'KeyX' }], analog: false }

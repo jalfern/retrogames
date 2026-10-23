@@ -5,7 +5,7 @@ import GamesList from './components/GamesList'
 import GamepadBridge from './components/GamepadBridge'
 import GameChrome from './components/GameChrome'
 import { PadContext } from './components/padContext'
-import { padButton } from './components/gamepadMap'
+import { padButton, extraButtonsOf } from './components/gamepadMap'
 import { methodOf } from './utils/onePad'
 import ArcadeShowcase from './pages/ArcadeShowcase'
 import ForgeBoard from './pages/ForgeBoard'
@@ -84,9 +84,11 @@ function GameRoute({ game }) {
 
   useTapStart(game)
 
+  const extraButtons = useMemo(() => extraButtonsOf(pad), [pad])
+
   return (
     <PadContext.Provider value={pad}>
-      <GamepadBridge secondAction={padButton(pad)?.code} />
+      <GamepadBridge secondAction={padButton(pad)?.code} extraButtons={extraButtons} />
       <Suspense fallback={<LoadingCard />}>
         <Component />
       </Suspense>
