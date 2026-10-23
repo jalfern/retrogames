@@ -129,6 +129,8 @@
     "kartcheck": "node scripts/kartcheck.mjs",
     "carpetcheck": "node scripts/carpetcheck.mjs",
     "gardencheck": "node scripts/gardencheck.mjs",
+    "peoplecheck": "node scripts/peoplecheck.mjs",
+    "homebodydrive": "node scripts/homebodydrive.mjs",
     "pacmancheck": "node scripts/pacmancheck.mjs",
     "pongcheck": "node scripts/pongcheck.mjs",
     "froggercheck": "node scripts/froggercheck.mjs",
