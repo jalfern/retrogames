@@ -127,6 +127,166 @@ function pushPlan(sim, block) {
 // tap A (attack / interact): 3 ticks that read as a tap through stepSim
 function tap(b, screen) { b.seq = { kind: 'tap', t: 0, screen } }
 
+// ---- graceful combat (#874) ----------------------------------------------
+// Hit-and-run, species-aware, deterministic (pure sim + counters). The sim's
+// own rules are the choreography: the tuskroot locks its charge line (dodge
+// perpendicular, punish the rest), the husk's frontal arc deflects steel
+// (toward = d·(-f) > 0.5), so bites come from the diagonal flank; the Maw
+// only opens in its thorn window (strike, then stand off); the Wyrm's maw
+// is arrowed from mid range while the hero keeps moving.
+
+const ENGAGE = 46, LEASH = 84, FIGHT_BUDGET = 600
+
+const freeAt = (sim, x, y) => {
+    const tx = Math.floor(x / TS), ty = Math.floor(y / TS)
+    if (tx < 0 || ty < 0 || tx >= SW || ty >= SH) return false
+    const ch = tileAt(SCREENS[sim.screen], tx, ty)
+    return !isSolidTile(ch) && ch !== 'C'
+}
+
+const setMove = (inp, dx, dy) => {
+    inp.lx = Math.abs(dx) >= Math.abs(dy) ? Math.sign(dx) : 0
+    inp.ly = Math.abs(dy) > Math.abs(dx) ? Math.sign(dy) : 0
+}
+const moveAway = (inp, dx, dy) => setMove(inp, -dx, -dy)
+
+// 3-tick A tap inside a fight cadence; `every` spaces swings past the 16f
+// sword cooldown. Returns true on the release tick (a strike was loosed).
+function cadenceTap(f, inp, every) {
+    f.tap = (f.tap || 0) + 1
+    const p = f.tap % every
+    if (p === 1) inp.aPressed = true
+    else if (p === 2) inp.aHeld = true
+    else if (p === 3) { inp.aReleased = true; return true }
+    return false
+}
+
+// always-on danger: a pawing/charging tuskroot outranks the macro plan
+function dodgeTick(sim, b, inp) {
+    const h = sim.hero
+    let threat = null, tBest = 1e9
+    for (const e of sim.enemies) {
+        if (e.dead || e.type !== 'tuskroot') continue
+        if (!(e.st > 0 || e.charging > 0)) continue
+        const d = Math.hypot(e.x - h.x, e.y - h.y)
+        if (d < 120 && d < tBest) { tBest = d; threat = e }
+    }
+    if (!threat) return false
+    let nx, ny
+    if (threat.charging > 0) { nx = threat.chx; ny = threat.chy }
+    else { const l = tBest || 1; nx = (h.x - threat.x) / l; ny = (h.y - threat.y) / l }
+    let px = -ny, py = nx
+    let side = ((threat.seedOff || 0) % 2) ? 1 : -1
+    if (!freeAt(sim, h.x + px * side * 16, h.y + py * side * 16)) side = -side
+    if (freeAt(sim, h.x + px * side * 16, h.y + py * side * 16)) {
+        inp.lx = Math.sign(px * side); inp.ly = Math.sign(py * side)
+    } else {
+        moveAway(inp, nx, ny) // boxed: break the line backwards
+    }
+    return true
+}
+
+// fight only what the hero can actually walk to (the macro BFS is the only
+// obstacle-aware path — chasing a monster through a lake starves the route)
+function reachableThreat(sim, b, st) {
+    const h = sim.hero
+    let best = null, bd = ENGAGE
+    for (const e of sim.enemies) {
+        if (e.dead || e.hidden || e.boss) continue
+        if (b.black && b.black[`${sim.screen}:${e.i}`]) continue // one honest try each
+        const d = Math.hypot(e.x - h.x, e.y - h.y)
+        if (d < bd) { bd = d; best = e }
+    }
+    if (!best) return null
+    const p = tilePath(sim.screen,
+        [Math.floor(h.x / TS), Math.floor(h.y / TS)],
+        [Math.floor(best.x / TS), Math.floor(best.y / TS)], st)
+    return p && p.length <= 20 ? best : null
+}
+
+export function fightTick(sim, b, inp) {
+    const h = sim.hero
+    const f = b.fight
+    if (!f) return false
+    const e = f.e
+    if (e.dead) { b.fight = null; return false }
+    const dx = e.x - h.x, dy = e.y - h.y
+    const dist = Math.hypot(dx, dy)
+    const blacken = () => { (b.black || (b.black = {}))[`${sim.screen}:${e.i}`] = true; b.fight = null; b.fightCool = 60 }
+    if (dist > LEASH || ++f.t > FIGHT_BUDGET) { blacken(); return false }
+    if (f.px === undefined) { f.px = h.x; f.py = h.y; f.pt = 0 }
+    if (++f.pt > 44) {
+        if (Math.hypot(h.x - f.px, h.y - f.py) < 3) { blacken(); return false }
+        f.px = h.x; f.py = h.y; f.pt = 0
+    }
+    f.tt = (f.tt || 0) + 1
+    f.ph = f.ph || 'close'
+
+    if (e.type === 'tuskroot') {
+        // windup/charge is handled by dodgeTick; here: punish the rest, else
+        // keep spacing just outside its wake-up range
+        if (e.rest > 0) {
+            if (dist > 20) { setMove(inp, dx, dy); return true }
+            cadenceTap(f, inp, 8)
+            return true
+        }
+        if (dist < 36) moveAway(inp, dx, dy); else if (dist > 52) setMove(inp, dx, dy)
+        else { const s = f.side || 1; inp.lx = Math.sign(-dy) || s; inp.ly = Math.sign(dx) || s }
+        return true
+    }
+
+    if (e.type === 'husk') {
+        // frontal steel clanks (toward = dom/r > 0.5) — bite from a steep
+        // diagonal instead: ~4px off the swing axis, 12px off the minor
+        if (!f.ax) f.ax = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y'
+        if (f.mn === undefined) f.mn = ((e.seedOff || 0) % 2) ? 1 : -1
+        const mx = f.ax === 'x' ? 1 : 0, my = f.ax === 'x' ? 0 : 1
+        const nx = f.ax === 'x' ? 0 : 1, ny = f.ax === 'x' ? 1 : 0
+        const sx = Math.sign(f.ax === 'x' ? dx : dy) || 1
+        const poseX = e.x + mx * sx * 4 + nx * f.mn * 12
+        const poseY = e.y + my * sx * 4 + ny * f.mn * 12
+        if (f.ph === 'close') {
+            if (Math.hypot(h.x - poseX, h.y - poseY) > 5) { setMove(inp, poseX - h.x, poseY - h.y); return true }
+            f.ph = 'aim'; f.tt = 0
+            return true
+        }
+        if (f.ph === 'aim') {
+            inp.lx = -mx * sx; inp.ly = -my * sx // set facing along the swing axis
+            if (f.tt > 3) { f.ph = 'strike'; f.tt = 0; f.hp = e.hp }
+            return true
+        }
+        if (f.ph === 'strike') {
+            if (f.tt === 1) inp.aPressed = true
+            else if (f.tt === 2) inp.aHeld = true
+            else if (f.tt === 3) inp.aReleased = true // short tap = sword, not bow
+            if (f.tt > 16) {
+                if (e.dead) { b.fight = null; return false }
+                if (e.hp < f.hp) { f.ph = 'aim'; f.tt = 0 }
+                else { f.ph = 'close'; f.tt = 0; f.mn = -f.mn } // clanked: new corner
+            }
+            return true
+        }
+        return true
+    }
+
+    // trash ghouls (cinderling/wisp/bat/sprig/pod-sparks/spitter): close,
+    // slash, hop back out of the contact box before re-engaging
+    if (f.ph === 'close') {
+        if (e.type === 'spitter' && f.t % 12 < 6) { inp.lx = f.zz || 1; inp.ly = 0 }
+        if (dist > 20) { setMove(inp, dx, dy); return true }
+        f.ph = 'strike'; f.tt = 0
+        return true
+    }
+    if (f.ph === 'strike') {
+        cadenceTap(f, inp, 6)
+        if (f.tt > 4) { f.ph = 'back'; f.tt = 0; f.zz = -(f.zz || 1) }
+        return true
+    }
+    moveAway(inp, dx, dy)
+    if (f.tt > 12) { f.ph = 'close'; f.tt = 0 }
+    return true
+}
+
 export function attractBot(sim) {
     const b = sim._bot || (sim._bot = { pi: 0 })
     const inp = { lx: 0, ly: 0 }
@@ -140,9 +300,41 @@ export function attractBot(sim) {
     sim.hero.max = Math.max(sim.hero.max, 4)
     sim.hero.hp = Math.max(sim.hero.hp, 4)
 
-    if (sim.death || sim.win) { b.pi = 0; b.seq = null; return inp }
+    if (sim.death || sim.win) { b.pi = 0; b.seq = null; b.fight = null; b.boss = null; return inp }
+    if (b.fight && b.fight.screen !== sim.screen) b.fight = null
+    if (b.boss && b.boss.screen !== sim.screen) b.boss = null
+    if (b.fightCool > 0) b.fightCool--
+    if (dodgeTick(sim, b, inp)) return inp
+    // panic-break: a monster that refuses to lose contact (a blacklisted tail
+    // at a slow puzzle step) gets shed with a sprint on a free axis (#874)
+    if (b.panicT > 0) { b.panicT--; inp.lx = b.panicV[0]; inp.ly = b.panicV[1]; return inp }
+    {
+        const h0 = sim.hero
+        let tail = null, td = 26
+        for (const e of sim.enemies) {
+            if (e.dead || e.hidden || e.boss) continue
+            const d = Math.hypot(e.x - h0.x, e.y - h0.y)
+            if (d < td) { td = d; tail = e }
+        }
+        const key = tail ? `${sim.screen}:${tail.i}` : null
+        b.tailT = tail && b.tailKey === key ? b.tailT + 1 : 0
+        b.tailKey = key
+        if (tail && b.tailT > 48) {
+            b.tailT = 0
+            const ax = h0.x - tail.x, ay = h0.y - tail.y
+            const cands = Math.abs(ax) >= Math.abs(ay)
+                ? [[Math.sign(ax) || 1, 0], [0, Math.sign(ay) || 1], [0, -(Math.sign(ay) || 1)], [-Math.sign(ax) || 1, 0]]
+                : [[0, Math.sign(ay) || 1], [Math.sign(ax) || 1, 0], [-Math.sign(ax) || 1, 0], [0, -Math.sign(ay) || 1]]
+            for (const v of cands) if (freeAt(sim, h0.x + v[0] * 20, h0.y + v[1] * 20)) { b.panicV = v; b.panicT = 26; break }
+        }
+    }
     if (!b.plan) b.plan = proveGame({ bombs: true }).route
     const st = solveSt(sim)
+    if (!b.fight && (!b.seq || b.seq.kind === 'walk') && !b.fightCool) {
+        const t = reachableThreat(sim, b, st)
+        if (t) b.fight = { e: t, screen: sim.screen, t: 0, tt: 0, ph: 'close', tap: 0, zz: 1, side: 1 }
+    }
+    if (b.fight && fightTick(sim, b, inp)) return inp
     while (b.pi < b.plan.length && doneAction(sim, b.plan[b.pi])) { b.pi++; b.seq = null }
     // finish everything on the current screen first (dungeon chains are
     // one-way); otherwise take the earliest unfinished action by world phase
@@ -380,35 +572,79 @@ function fireSetup(sim, b, m) {
     void sy
 }
 
+// bosses: choreography, not tile-chasing (#874). Maw = strike-in-window then
+// stand off until the thorns open again. Wyrm = arrow the open maw from mid
+// range on the move (align, set facing, draw, loose, hop back), then carve
+// the stunned core in slash-pulse rhythm.
 function bossTick(sim, b, inp, id) {
     const e = sim.enemies.find(x => (id === 'boss1' ? x.type === 'maw' : x.type === 'wyrm') && !x.dead)
     if (!e) return inp
     const h = sim.hero
+    const s = b.boss || (b.boss = { screen: sim.screen, ph: 'reposition', tt: 0, strikes: 0, tap: 0, side: ((e.seedOff || 0) % 2) ? 1 : -1 })
+    s.tt++
     const dx = e.x - h.x, dy = e.y - h.y
     const dist = Math.hypot(dx, dy)
-    const killable = id === 'boss1' ? e.open > 0 : e.stagger > 0
-    if (killable && dist < 30) {
-        if (b.swT === undefined) b.swT = 0
-        if (++b.swT % 18 === 1) { inp.aPressed = true } else if (b.swT % 18 === 2) { inp.aHeld = true } else if (b.swT % 18 === 3) { inp.aReleased = true }
-        inp.lx = Math.sign(dx) || 0; inp.ly = Math.sign(dy) || 0
+    const horiz = Math.abs(dx) >= Math.abs(dy)
+    const px = horiz ? 0 : (Math.sign(dx) || s.side)
+    const py = horiz ? (Math.sign(dy) || s.side) : 0
+
+    if (id === 'boss1') {
+        if (e.open > 0) {
+            if (s.ph !== 'window' && s.ph !== 'bounce') { s.ph = 'window'; s.tt = 0; s.strikes = 0 }
+            if (s.ph === 'window') {
+                if (dist > 24) { setMove(inp, dx, dy); return inp }
+                cadenceTap(s, inp, 8)
+                if (dist < 28 && s.tap % 8 === 3) s.strikes++
+                if (s.strikes >= 2) { s.ph = 'bounce'; s.tt = 0 }
+                return inp
+            }
+            if (dist < 52) { moveAway(inp, dx, dy); return inp }
+        }
+        if (s.ph !== 'orbit') { s.ph = 'orbit'; s.tt = 0; s.strikes = 0 }
+        if (dist < 40) moveAway(inp, dx, dy)
+        else if (dist > 54) setMove(inp, dx, dy)
+        else { inp.lx = px; inp.ly = py }
         return inp
     }
-    b.swT = 0
-    if (id === 'boss2' && e.open > 0 && e.stagger <= 0) {
-        // arrow the open maw from mid range, dominant axis
-        if (dist > 40) { inp.lx = Math.sign(dx) || 1; inp.ly = Math.sign(dy); return inp }
-        const horiz = Math.abs(dy) < 12
-        inp.lx = horiz ? Math.sign(dx) : 0
-        inp.ly = horiz ? 0 : Math.sign(dy)
-        if (b.arT === undefined) b.arT = 0
-        if (++b.arT % 40 === 1) inp.aPressed = true
-        else if (b.arT % 40 > 1 && b.arT % 40 < 16) inp.aHeld = true
-        else if (b.arT % 40 === 16) inp.aReleased = true
+
+    if (e.stagger > 0) {
+        if (s.ph !== 'rush' && s.ph !== 'pulse') { s.ph = 'rush'; s.tt = 0 }
+        if (s.ph === 'rush') {
+            if (dist > 22) { setMove(inp, dx, dy); return inp }
+            cadenceTap(s, inp, 10)
+            if (s.tap % 10 === 3) { s.ph = 'pulse'; s.tt = 0 }
+            return inp
+        }
+        moveAway(inp, dx, dy)
+        if (s.tt > 10) { s.ph = 'rush'; s.tt = 0 }
         return inp
     }
-    b.arT = 0
-    // reposition: orbit mid-range
-    if (dist > 60) { inp.lx = Math.sign(dx) || 1; inp.ly = Math.sign(dy) }
-    else { inp.lx = Math.sin((sim.tick + (e.i || 0)) * 0.05) > 0 ? 1 : -1; inp.ly = 0 }
+    if (e.open > 0) {
+        if (!['align', 'face', 'draw', 'retreat'].includes(s.ph)) { s.ph = 'align'; s.tt = 0 }
+        if (s.ph === 'align') {
+            if (dist > 70) { setMove(inp, dx, dy); return inp }
+            const minor = horiz ? dy : dx
+            if (Math.abs(minor) > 8) { if (horiz) inp.ly = Math.sign(minor); else inp.lx = Math.sign(minor); return inp }
+            s.ph = 'face'; s.tt = 0
+            return inp
+        }
+        if (s.ph === 'face') {
+            setMove(inp, dx, dy)
+            if (s.tt > 1) { s.ph = 'draw'; s.tt = 0 }
+            return inp
+        }
+        if (s.ph === 'draw') {
+            if (s.tt === 1) inp.aPressed = true
+            else if (s.tt < 15) inp.aHeld = true
+            else { inp.aReleased = true; s.ph = 'retreat'; s.tt = 0 }
+            return inp
+        }
+        moveAway(inp, dx, dy)
+        if (s.tt > 14) { s.ph = 'align'; s.tt = 0 }
+        return inp
+    }
+    if (dist < 48) moveAway(inp, dx, dy)
+    else if (dist > 78) setMove(inp, dx, dy)
+    else { inp.lx = px; inp.ly = py }
     return inp
 }
