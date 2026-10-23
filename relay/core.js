@@ -88,6 +88,42 @@ export function registryAdd(reg, code, now) {
     return true
 }
 
+// CORS (#886) — the FEEDBACK button lives on jalfern.com pages but talks to this
+// worker on *.workers.dev, so every /status fetch and /feedback POST is
+// cross-origin: without Access-Control-Allow-Origin the browser kills the request
+// (the button never shows) and the POST preflight never reaches GitHub. Allowed
+// origins are the arcade and its deploy surface plus localhost for dev/QA. An
+// unknown origin gets NO ACAO header — the browser blocks it, which is the point:
+// this endpoint files GitHub issues, so the allowlist is its only front door.
+
+export const CORS_ALLOW = [
+    'https://jalfern.com',
+    'https://www.jalfern.com',
+    'https://retrogames.jalfern.workers.dev',
+]
+export const CORS_ALLOW_METHODS = 'GET,POST,OPTIONS'
+export const CORS_ALLOW_HEADERS = 'content-type'
+export const CORS_MAX_AGE = '86400'
+
+export function corsOrigin(origin) {
+    if (!origin || typeof origin !== 'string') return null
+    if (CORS_ALLOW.indexOf(origin) >= 0) return origin
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin
+    return null
+}
+
+export function corsHeaders(origin) {
+    const allow = corsOrigin(origin)
+    if (!allow) return {}
+    return {
+        'access-control-allow-origin': allow,
+        'access-control-allow-methods': CORS_ALLOW_METHODS,
+        'access-control-allow-headers': CORS_ALLOW_HEADERS,
+        'access-control-max-age': CORS_MAX_AGE,
+        vary: 'Origin',
+    }
+}
+
 // FEEDBACK (#737) — the in-game feedback button files GitHub issues THROUGH this
 // relay so the GitHub token stays server-side and never reaches the browser. The
 // payload is a game report: a note plus a screenshot, game/build/state metadata,

@@ -54,6 +54,14 @@ const FeedbackButton = ({ theme }) => {
         if (res.ok) { setNote(''); setTimeout(() => { setOpen(false); setStatus(null) }, 1200) }
     }
 
+    // #886: typing a report mid-game must not cost lives — toggling the panel
+    // toggles the game's own pause too (same synthetic '?' as the PAUSE button,
+    // so open pauses and close resumes on every title that speaks '?').
+    const toggle = () => {
+        setOpen((v) => !v)
+        dispatchPause()
+    }
+
     if (!ready) return null
 
     const panel = (theme === 'dark' ? 'text-white bg-black/80 border-white/25' : 'text-black bg-white/90 border-black/25')
@@ -63,7 +71,7 @@ const FeedbackButton = ({ theme }) => {
             <button
                 data-feedback="open"
                 aria-label="Feedback"
-                onClick={() => setOpen((v) => !v)}
+                onClick={toggle}
                 className={`${btn(theme)} fixed`}
                 style={{ top: 'calc(2.75rem + var(--sat, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}
             >

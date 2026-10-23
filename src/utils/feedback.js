@@ -15,7 +15,45 @@ import { REC_FORMAT, encodePad } from './recording.js'
 export const FB_WINDOW_MS = 30_000
 export const FB_RELAY = 'https://retrogames.jalfern.workers.dev'
 
+// JON'S KEY (#886) — reports without a key land quarantined behind
+// needs-approval, so Jon's own phone files the same way as a stranger's. He
+// stores his private key once via a one-time link (`?jonkey=…`): the SDK
+// captures it into localStorage and strips it from the address bar, and every
+// later submit rides with it so his reports go straight to `feedback`. The key
+// is per-device; the relay never echoes it back and it never reaches an issue.
+export const JONKEY_PARAM = 'jonkey'
+export const JONKEY_STORE = 'rg.jonkey'
+
+export function storeJonKey(search, storage) {
+    const m = new RegExp(`[?&]${JONKEY_PARAM}=([^&#]+)`).exec(search || '')
+    if (!m || !storage) return null
+    let key = m[1]
+    try { key = decodeURIComponent(key) } catch { /* raw value */ }
+    if (!key) return null
+    try { storage.setItem(JONKEY_STORE, key) } catch { /* private mode: stay silent */ }
+    return key
+}
+
+export function readJonKey(storage) {
+    if (!storage) return null
+    try { return storage.getItem(JONKEY_STORE) } catch { return null }
+}
+
+function stripJonKey(loc) {
+    const cleaned = (loc.search || '')
+        .replace(new RegExp(`([?&])${JONKEY_PARAM}=[^&#]*`, 'g'), '$1')
+        .replace(/([?&])$/, '')
+        .replace('?&', '?')
+    try { window.history.replaceState({}, '', loc.pathname + cleaned + (loc.hash || '')) } catch { /* no history */ }
+}
+
 const HAS_WIN = typeof window !== 'undefined'
+
+if (HAS_WIN) {
+    try {
+        if (storeJonKey(window.location.search, window.localStorage) != null) stripJonKey(window.location)
+    } catch { /* storage blocked */ }
+}
 
 // A ring of timestamped pads, trimmed to the last `seconds`. Fed once per play
 // tick from the game's loop (or from the keyboard logger below). tail() returns
@@ -152,14 +190,19 @@ export async function probeFeedback({ base = FB_RELAY, fetchImpl = null } = {}) 
 }
 
 // File via the relay. Never throws: a failed submit must not crash the game.
-export async function submitFeedback(payload, { base = FB_RELAY, fetchImpl = null } = {}) {
+// Jon's stored key (#886) rides along when present so his reports skip the
+// needs-approval quarantine; `storage` is injectable for the harness.
+export async function submitFeedback(payload, { base = FB_RELAY, fetchImpl = null, storage = HAS_WIN ? window.localStorage : null } = {}) {
     const doFetch = fetchImpl || (HAS_WIN && typeof fetch === 'function' ? fetch : null)
     if (!doFetch) return { ok: false, err: 'no fetch' }
+    const body = { ...payload }
+    const jonKey = readJonKey(storage)
+    if (jonKey) body.key = jonKey
     try {
         const res = await doFetch(`${base}/feedback`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(body),
         })
         const j = await res.json().catch(() => ({}))
         return { ok: !!j.ok, issue: j.issue || null, err: j.err || (res.ok ? null : `http ${res.status}`) }

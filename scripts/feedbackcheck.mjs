@@ -9,11 +9,14 @@
 //   node scripts/feedbackcheck.mjs        # green when the contract holds
 //   node scripts/feedbackcheck.mjs --mutate   # RED by design (drop the size cap)
 
+import { readFileSync } from 'node:fs'
 import {
     validateFeedback, feedbackLabels, buildFeedbackIssue, FB_MAX_PADS,
+    corsOrigin, corsHeaders, CORS_ALLOW_HEADERS,
 } from '../relay/core.js'
 import {
     makeRing, captureFeedback, submitFeedback, probeFeedback, FB_RELAY,
+    storeJonKey, readJonKey, JONKEY_STORE,
 } from '../src/utils/feedback.js'
 import { REC_FORMAT } from '../src/utils/recording.js'
 
@@ -106,6 +109,43 @@ const probeOff = await probeFeedback({ fetchImpl: async () => ({ ok: true, json:
 ok('probe: hides button when relay lacks the capability', probeOff === false)
 const probeErr = await probeFeedback({ fetchImpl: async () => { throw new Error('offline') } })
 ok('probe: offline -> hidden (never a dead button)', probeErr === false)
+
+// ── relay CORS (#886): the button on jalfern.com fetches cross-origin ───────
+ok('cors: arcade origin allowed', corsOrigin('https://jalfern.com') === 'https://jalfern.com')
+ok('cors: www + workers surface allowed', corsOrigin('https://www.jalfern.com') === 'https://www.jalfern.com'
+    && corsOrigin('https://retrogames.jalfern.workers.dev') === 'https://retrogames.jalfern.workers.dev')
+ok('cors: localhost dev origins allowed', corsOrigin('http://localhost:5176') === 'http://localhost:5176'
+    && corsOrigin('http://127.0.0.1:8787') === 'http://127.0.0.1:8787')
+ok('cors: unknown origin gets NO ACAO (browser blocks)', corsHeaders('https://evil.example')['access-control-allow-origin'] === undefined)
+ok('cors: originless (curl/cron) gets no headers', Object.keys(corsHeaders(null)).length === 0)
+ok('cors: preflight answers content-type + methods', corsHeaders('https://jalfern.com')['access-control-allow-headers'] === CORS_ALLOW_HEADERS
+    && corsHeaders('https://jalfern.com')['access-control-allow-methods'].includes('POST'))
+ok('cors: ACAO echoes the exact origin (credentials-safe)', corsHeaders('https://www.jalfern.com')['access-control-allow-origin'] === 'https://www.jalfern.com')
+
+const workerSrc = readFileSync(new URL('../relay/worker.js', import.meta.url), 'utf8')
+ok('wiring: worker preflights OPTIONS on the HTTP endpoints', /req\.method === 'OPTIONS'/.test(workerSrc) && /corsHeaders/.test(workerSrc))
+ok('wiring: /status + /feedback answers carry corsHeaders', (workerSrc.match(/json\(/g) || []).length >= 6 && !/Response\.json\(\{ ok: true, service/.test(workerSrc))
+const chromeSrc = readFileSync(new URL('../src/components/GameChrome.jsx', import.meta.url), 'utf8')
+ok('panel: opening the feedback panel toggles the game pause', /onClick=\{toggle\}/.test(chromeSrc) && /const toggle = \(\) => \{[\s\S]*?dispatchPause\(\)/.test(chromeSrc))
+
+// ── Jon's key (#886): stored once from a one-time link, rides every submit ───
+const memStore = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v) } }
+const store = memStore()
+ok('jonkey: ?jonkey= captured to storage', storeJonKey('?feedback=1&jonkey=S3cretOneTime', store) === 'S3cretOneTime'
+    && readJonKey(store) === 'S3cretOneTime')
+ok('jonkey: plain visit keeps stored key', storeJonKey('?x=1', store) === null && readJonKey(store) === 'S3cretOneTime')
+ok('jonkey: no link, no key', readJonKey(memStore()) === null && readJonKey(null) === null)
+
+let captured2 = null
+const fakeFetch2 = async (url, init) => {
+    captured2 = { url, body: JSON.parse(init.body) }
+    return { ok: true, status: 200, json: async () => ({ ok: true, issue: 'https://github.com/jalfern/retrogames/issues/739', labels: ['feedback'] }) }
+}
+const sentKey = await submitFeedback(cap, { fetchImpl: fakeFetch2, storage: store })
+ok('jonkey: submit attaches the stored key', sentKey.ok === true && captured2.body.key === 'S3cretOneTime')
+const sentNoKey = await submitFeedback(cap, { fetchImpl: fakeFetch2, storage: memStore() })
+ok('jonkey: anonymous submit sends no key field', sentNoKey.ok === true && captured2.body.key === undefined)
+ok('jonkey: the key never reaches the filed issue body', !buildFeedbackIssue({ ...cap, key: 'S3cretOneTime' }, true).body.includes('S3cretOneTime'))
 
 if (mutate) {
     // Mutant (nightly): tamper = a report one pad over the hard cap. A validator
