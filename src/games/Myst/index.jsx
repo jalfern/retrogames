@@ -80,6 +80,24 @@ const MystGame = () => {
     }
     gotoNode(gs.node); aim()
 
+    const updateMech = (s, dt) => {
+      const k = Math.min(1, dt * 2.4)
+      const F = s.flags
+      for (const m of mech) {
+        switch (m.kind) {
+          case 'cageWalk': m.o.position.y += ((F.mechCarDown ? 0.6 : 15) - m.o.position.y) * k; break
+          case 'cageTop': m.o.position.y += ((F.mechCarDown ? m.y0 - 16 : m.y0) - m.o.position.y) * k; break
+          case 'cageShaft': m.o.position.y += ((F.mechCarDown ? m.y0 : m.y0 + 3.2) - m.o.position.y) * k; break
+          case 'doorTop': { const o = F.mechDoorOpen ? 1 : 0; m.o.position.x += (m.x0 + 1.95 * o - m.o.position.x) * k; m.o.rotation.y += (-0.9 * o - m.o.rotation.y) * k; break }
+          case 'plateD': m.o.position.y += ((F.mechPlateD ? m.y0 - 0.07 : m.y0) - m.o.position.y) * k; break
+          case 'plateE': m.o.position.y += ((F.mechPlateE ? m.y0 - 0.07 : m.y0) - m.o.position.y) * k; break
+          case 'latch': m.o.rotation.z += ((F.mechLatchD || F.mechLatchE ? -0.5 : 0.55) - m.o.rotation.z) * k; break
+          case 'topGear': { const open = !!F.switchPanel; m.o.position.z += (m.z0 - (open ? 1.5 : 0) - m.o.position.z) * k; m.o.rotation.z += dt * (open ? 1.4 : 0.3); break }
+          default: break
+        }
+      }
+    }
+
     const doAction = (a) => {
       const prevNode = gs.node
       const r = dispatch(gs, a)
@@ -186,25 +204,7 @@ const MystGame = () => {
 
     const startPlay = () => {
       gs = freshState()
-    gotoNode(gs.node); aim()
-
-    const updateMech = (s, dt) => {
-      const k = Math.min(1, dt * 2.4)
-      const F = s.flags
-      for (const m of mech) {
-        switch (m.kind) {
-          case 'cageWalk': m.o.position.y += ((F.mechCarDown ? 0.6 : 15) - m.o.position.y) * k; break
-          case 'cageTop': m.o.position.y += ((F.mechCarDown ? m.y0 - 16 : m.y0) - m.o.position.y) * k; break
-          case 'cageShaft': m.o.position.y += ((F.mechCarDown ? m.y0 : m.y0 + 3.2) - m.o.position.y) * k; break
-          case 'doorTop': { const o = F.mechDoorOpen ? 1 : 0; m.o.position.x += (m.x0 + 1.95 * o - m.o.position.x) * k; m.o.rotation.y += (-0.9 * o - m.o.rotation.y) * k; break }
-          case 'plateD': m.o.position.y += ((F.mechPlateD ? m.y0 - 0.07 : m.y0) - m.o.position.y) * k; break
-          case 'plateE': m.o.position.y += ((F.mechPlateE ? m.y0 - 0.07 : m.y0) - m.o.position.y) * k; break
-          case 'latch': m.o.rotation.z += ((F.mechLatchD || F.mechLatchE ? -0.5 : 0.55) - m.o.rotation.z) * k; break
-          case 'topGear': { const open = !!F.switchPanel; m.o.position.z += (m.z0 - (open ? 1.5 : 0) - m.o.position.z) * k; m.o.rotation.z += dt * (open ? 1.4 : 0.3); break }
-          default: break
-        }
-      }
-    }
+      gotoNode(gs.node); aim()
       setMode('play')
       hudStamp = -1
     }

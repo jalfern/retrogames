@@ -139,7 +139,7 @@ export const NODES = {
     spots: [
       { id: 'retMechanical', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'library' },
       { id: 'matchbook', label: 'a matchbook on the pedestal rail', yaw: -50, w: 22, h: 22, act: 'takeMatch', gone: 'matchbook' },
-      { id: 'pageMechanicalBlue', label: 'a blue page by the steam vent', yaw: -70, w: 24, h: 24, act: 'takePage', page: 'blue:mechanical', gone: 'pageBlue_mechanical' },
+      { id: 'pageMechanicalBlue', label: 'a blue page by the steam vent', yaw: -15, w: 24, h: 24, act: 'takePage', page: 'blue:mechanical', gone: 'pageBlue_mechanical' },
       { id: 'toTowerWalk', label: 'the path around the tower base', yaw: 55, w: 70, h: 40, to: 'mechWalk' },
     ],
   },
@@ -149,9 +149,9 @@ export const NODES = {
     expect: ['mechCallLever'],
     spots: [
       { id: 'backLand', label: 'back to the landing', yaw: -140, w: 70, h: 40, to: 'mechanical' },
-      { id: 'switchPanel', label: 'a panel of iron switches', yaw: -35, w: 34, h: 30, act: 'switchPanel' },
-      { id: 'mechCall', label: 'the cage call lever', yaw: 20, w: 26, h: 34, act: 'mechCall' },
-      { id: 'boardCar', label: 'step into the cage', yaw: 20, w: 22, h: 30, to: 'mechCar', need: 'mechCarDown', needMsg: 'The cage hangs twenty metres up its rails. The call lever is bolted to the wall beside it.' },
+      { id: 'switchPanel', label: 'a panel of iron switches', yaw: -30, w: 34, h: 30, act: 'switchPanel' },
+      { id: 'mechCall', label: 'the cage call lever', yaw: 12, w: 26, h: 34, act: 'mechCall' },
+      { id: 'boardCar', label: 'step into the cage', yaw: 8, w: 22, h: 30, to: 'mechCar', need: 'mechCarDown', needMsg: 'The cage hangs twenty metres up its rails. The call lever is bolted to the wall beside it.' },
     ],
   },
   mechCar: {
@@ -169,11 +169,11 @@ export const NODES = {
     caption: 'The gantry at the top of the tower — the control-room door, and a page glinting under a gear',
     expect: ['mechDoorSteel'],
     spots: [
-      { id: 'mechSendDown', label: 'the cage send-down lever', yaw: -55, w: 26, h: 30, act: 'mechSendDown' },
-      { id: 'mechDoorBtn', label: 'the door release button', yaw: 12, w: 20, h: 22, act: 'mechDoorBtn' },
-      { id: 'enterRoom', label: 'through the open door', yaw: 12, w: 24, h: 34, to: 'mechRoom', need: 'mechDoorOpen', needMsg: 'The steel door is shut. Its release jams — something heavy is in the way.' },
-      { id: 'cageBoardTop', label: 'step back into the cage', yaw: -30, w: 22, h: 30, act: 'cageBoardTop', visits: 'mechCar' },
-      { id: 'pageMechanicalRed', label: 'a red page under a great gear', yaw: 75, w: 24, h: 24, act: 'takePage', page: 'red:mechanical', gone: 'pageRed_mechanical', need: 'switchPanel', needMsg: 'A heavy gear seals the alcove. The switches govern which gears turn.' },
+      { id: 'mechSendDown', label: 'the cage send-down lever', yaw: -12, w: 26, h: 30, act: 'mechSendDown' },
+      { id: 'mechDoorBtn', label: 'the door release button', yaw: 2, w: 20, h: 22, act: 'mechDoorBtn' },
+      { id: 'enterRoom', label: 'through the open door', yaw: 2, w: 24, h: 34, to: 'mechRoom', need: 'mechDoorOpen', needMsg: 'The steel door is shut. Its release jams — something heavy is in the way.' },
+      { id: 'cageBoardTop', label: 'step back into the cage', yaw: -18, w: 22, h: 30, act: 'cageBoardTop', visits: 'mechCar' },
+      { id: 'pageMechanicalRed', label: 'a red page under a great gear', yaw: 22, w: 24, h: 24, act: 'takePage', page: 'red:mechanical', gone: 'pageRed_mechanical', need: 'switchPanel', needMsg: 'A heavy gear seals the alcove. The switches govern which gears turn.' },
     ],
   },
   mechRoom: {
