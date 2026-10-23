@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict'
 import { newRoom, join, leave, relay, rosterOf, MAX_MSG } from '../relay/core.js'
-import { createPadHost, createPadClient, encodePadPacket, decodePadPacket, packSig, makeSigInbox, STALE_MS, PING_EVERY_MS, LINK_CAP } from '../src/utils/padlink.js'
+import { createPadHost, createPadClient, encodePadPacket, decodePadPacket, packSig, makeSigInbox, STALE_MS, PING_EVERY_MS, LINK_CAP, RESEAT_BASE_MS, RESEAT_TRIES } from '../src/utils/padlink.js'
 import { slotPad, clearAllSlots } from '../src/utils/onePad.js'
 import { createRecorder, validate, PING_EVERY_TICKS } from '../src/utils/recording.js'
 
@@ -367,11 +367,87 @@ async function scenarioRate() {
     await flush()
 }
 
+// --- scenario: hard socket drop mid-play -> auto re-seat (#922) ----------------
+async function scenarioReseat() {
+    clearAllSlots()
+    const rel = makeRelay()
+    const c = clock()
+    const peers = makePeers()
+    const phases = []
+    const host = createPadHost({ relay: 'relay://', makeTransport: (url) => rel.connect(url), now: c.now })
+    const code = host.open()
+    await flush()
+    const pad = makePadOn()
+    const p = createPadClient({
+        relay: 'relay://', makeTransport: (url) => rel.connect(url), now: c.now,
+        readPad: () => pad.snapshot(), onPhase: (ph) => phases.push(ph),
+    })
+    p.join(code)
+    await flush()
+    ok('pad is seated and live before the drop', () => {
+        assert.equal(p.phase, 'live')
+    })
+    // Wi-Fi nap: the socket dies without an 'out' message.
+    p.stopTimers()
+    p.room.ws.close()
+    await flush()
+    ok('hard drop -> phase reseat (pad stays hot), seat surrendered at the host', () => {
+        assert.equal(p.phase, 'reseat', `phase=${p.phase}`)
+        assert.equal(p.seat, 0)
+    })
+    c.advance(STALE_MS + 50)
+    host.pump()
+    ok('the host releases the vanished pad slot', () => {
+        assert.equal(slotPad(1, 'stick').left, false)
+    })
+    // backoff fires (real timer >= RESEAT_BASE_MS) and the room takes it back
+    await new Promise((done) => setTimeout(done, RESEAT_BASE_MS + 120))
+    await flush()
+    ok('auto re-seat rejoins the same code and lands live again at seat 1', () => {
+        assert.equal(p.phase, 'live', `phase=${p.phase}`)
+        assert.equal(p.seat, 1)
+    })
+    // pad streams again
+    p.stopTimers()
+    c.advance(30)
+    pad.push({ xv: -1, yv: 0, a: true })
+    p.tick()
+    await flush()
+    ok('stream is hot again after re-seat (pad state lands at the host)', () => {
+        assert.equal(slotPad(1, 'stick').left, true)
+    })
+    // exhausted ladder -> give up to 'gone' (entry screen, code kept)
+    p.reseatAttempt = RESEAT_TRIES
+    p.enterReseat()
+    ok('exhausted re-seat ladder gives up to gone with the code kept for one-tap JOIN', () => {
+        assert.equal(p.phase, 'gone')
+        assert.equal(p.code, code)
+    })
+    // a host that closed the room keeps the pad re-checking (not a silent stop)
+    p.hadSeat = true
+    p.reseatAttempt = 0
+    host.close()
+    await flush()
+    p.enterReseat()
+    await new Promise((done) => setTimeout(done, RESEAT_BASE_MS + 120))
+    await flush()
+    ok('while the host is down the pad keeps re-checking (reseat, not silent live)', () => {
+        assert.equal(p.phase, 'reseat', `phase=${p.phase}`)
+    })
+    ok('reseat phases are reported to the UI in order', () => {
+        assert.ok(phases.includes('reseat'), phases.join(','))
+        assert.ok(phases.lastIndexOf('reseat') > phases.lastIndexOf('live'), phases.join(','))
+    })
+    p.stop()
+    await flush()
+}
+
 async function main() {
     console.log('padlinkcheck — link-pad spine')
     await scenarioTwoPhones()
     await scenarioHostless()
     await scenarioRate()
+    await scenarioReseat()
     console.log(`padlinkcheck: ${pass} passed`)
     if (process.exitCode) console.error('padlinkcheck: RED')
     else console.log('padlinkcheck: green')
