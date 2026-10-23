@@ -1098,6 +1098,8 @@ const SSXGame = () => {
                 // (curve push can outrun the pad on a random line — the wipeout
                 // gates must not depend on luck)
                 nudgeWall: () => { const p = g.riders[0]; p.x = (p.x >= 0 ? 1 : -1) * 1.78; camFresh = true; return p.x },
+                // DEV QA (#894): park the rider back on the centreline.
+                center: () => { const p = g.riders[0]; p.x = 0; camFresh = true; return p.x },
                 heat: (h) => { loadHeat(g, h); shownHeat = g.heat; setCourseVisuals(); return g.course.name },
                 toAttract: () => { g = makeGame('race'); shownHeat = 0; poseOverride = null; setCourseVisuals(); setMode('attract') },
                 prognose: () => {
