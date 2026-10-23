@@ -28,6 +28,7 @@ const GAMES = [
     { id: 'missile-battle', path: '/missile-battle' },
     { id: 'spy-hunter', path: '/spy-hunter' },
     { id: 'paperboy', path: '/paperboy' },
+    { id: 'blob-battle', path: '/blob-battle' },
     { id: 'tetris', path: '/tetris' },
     { id: 'boulder-dash', path: '/boulder-dash' },
     { id: 'bubble-bobble', path: '/bubble-bobble' },
@@ -86,6 +87,7 @@ const PATTERNS = {
     'magic-carpet': (i) => ({ left: i % 41 < 14, right: i % 41 >= 18 && i % 41 < 32, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 38, a: i % 13 < 2, b: i % 29 < 2 }),
     gauntlet: (i) => ({ left: i % 47 < 16, right: i % 47 >= 20 && i % 47 < 36, up: i % 59 < 12, down: i % 59 >= 30 && i % 59 < 42, a: i % 9 < 2, b: i % 23 < 2 }),
     emberwood: (i) => ({ left: i % 43 < 16, right: i % 43 >= 20 && i % 43 < 34, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 36, a: i % 11 < 4, b: i % 29 < 2 }),
+    'blob-battle': (i) => ({ left: i % 43 < 15, right: i % 43 >= 20 && i % 43 < 34, down: i % 17 < 4, a: i % 11 < 2, b: i % 23 === 0 }),
     'garden-guard': (i) => ({ left: i % 13 < 3, right: i % 17 >= 8 && i % 17 < 11, up: i % 29 < 2, down: i % 23 >= 6 && i % 23 < 8, a: i % 7 < 2, b: i % 31 < 1, pointer: { x: 0.55 + 0.32 * Math.sin(i / 40), y: 0.55 + 0.3 * Math.cos(i / 37), down: i % 53 === 0 } }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))

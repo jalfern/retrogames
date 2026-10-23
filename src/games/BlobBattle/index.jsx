@@ -456,6 +456,8 @@ const BlobBattleGame = () => {
                         scores: [s.wells[0].score, s.wells[1].score],
                         chains: [s.wells[0].chain, s.wells[1].chain],
                         pending: [s.wells[0].pending, s.wells[1].pending],
+                        cur: s.wells[0].cur ? { x: s.wells[0].cur.x, y: s.wells[0].cur.y, rot: s.wells[0].cur.rot } : null,
+                        locks0: s.wells[0].locks, locks1: s.wells[1].locks,
                         hash: stateHash(s),
                     }
                 },
@@ -482,6 +484,7 @@ const BlobBattleGame = () => {
             })
             exposeGame({
                 id: 'blob-battle',
+                players: 2,
                 buttons: ['left', 'right', 'down', 'a', 'b'],
                 reset: (seed, players) => {
                     startPlay(players > 1 ? 'local' : 'cpu', seed >>> 0)
