@@ -23,7 +23,7 @@ import {
     claimOrder, decide, defaultComment, formatQuestion, halted, openQuestions,
     capReached, parseQuestion, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
-import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, ownsGap, flagshipStage, heldGames } from './lib/idle.mjs'
+import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, ownsGap, flagshipStage, heldGames, qaIdleStage } from './lib/idle.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(join(here, p), 'utf8')
@@ -158,6 +158,26 @@ ok(heldGames([{ title: 'QA — comet drift hd polish', body: '' }]).join() === '
 ok(claimOrder([]) === null && flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [QA(913, 'BLOB BATTLE', 'polish pass')], buildingQa: [] }).game === 'SSX',
     '#869: empty queue + unowned gap -> KICK; QA noise on non-flagship games changes nothing')
 
+// --- the unified queue (#878): a free QA lane takes an unowned flagship gap ---
+// Oct 23: the Studio QA stream idled for hours with feedback empty while SSX's
+// gaps were unowned — the builder's flagship path (#869) only fires when the
+// whole builder is free. qaIdleStage lets the QA lane claim that gap itself.
+const IQ = (n, labels, title = '', body = '') => ({ number: n, author: 'jalfern', state: 'open', labels, created_at: '2026-10-19T00:00:00Z', title, body, comments: [] })
+ok(qaIdleStage({ issues: [IQ(920, ['game-queue'])], gapsByGame: REAL_GAPS }).game === 'SSX',
+    '#878: empty feedback + unowned flagship gap -> the Studio QA lane gets kicked to SSX')
+ok(qaIdleStage({ issues: [IQ(921, ['feedback'])], gapsByGame: REAL_GAPS }) === null,
+    '#878: real feedback outranks the flagship stage — a claimable feedback item means no flagship kick')
+ok(qaIdleStage({ issues: [IQ(922, ['waiting-jon', 'question']), IQ(923, ['needs-approval', 'feedback'])], gapsByGame: REAL_GAPS }).game === 'SSX',
+    '#878: a parked question and an un-approved item are NOT claimable feedback — the stage still fires')
+ok(qaIdleStage({ issues: [IQ(924, ['building'], 'GAME — SSX: the deep pass')], gapsByGame: REAL_GAPS }).game === 'Emberwood',
+    '#878: a game the builder is inside (building) is skipped — one lane per game')
+ok(qaIdleStage({ issues: [IQ(925, ['building-qa'], 'QA — SSX: polish pass')], gapsByGame: REAL_GAPS }).game === 'Emberwood',
+    '#878: a game another QA lane holds (building-qa) is skipped too')
+const allHeldByQa = FLAGSHIPS.map((g, i) => IQ(930 + i, ['building-qa'], `QA — ${g}: polish`))
+ok(qaIdleStage({ issues: allHeldByQa, gapsByGame: REAL_GAPS }) === null,
+    '#878: every flagship held -> null — STOP stays legal, the QA lane is not forced at a held game')
+
+
 // --- B. the wiring says what the protocol promises --------------------
 const warden = read('warden.sh')
 ok(/HALTED=yes/.test(warden) && warden.includes('LANES=()'), 'warden: halt zeroes the QA lanes')
@@ -172,6 +192,11 @@ ok(warden.includes('== KICK*') && warden.includes('idle-kick'),
 const kick = read('idle-kick.mjs')
 ok(kick.includes('flagshipStage') && kick.includes("'NONE'") && kick.includes('heldGames'),
     '#869: idle-kick answers from flagshipStage + heldGames only; any failure prints NONE, never a fabricated kick')
+ok(kick.includes('qaIdleStage({') && kick.includes("=== 'qa'"),
+    '#878: idle-kick.mjs qa mode routes a free QA lane through qaIdleStage')
+ok(warden.includes('idle-kick.mjs" qa') && warden.includes('forge-qa-studio') && warden.includes('qa-flagship:studio') && warden.includes('"$ALIVE" == yes'),
+    '#878: the warden kicks Studio QA to an unowned flagship gap while the builder is busy and feedback is empty')
+
 const fs = read('forge.sh')
 ok(!/ghJson\(\[/.test(read('jonq.mjs')) || /Array\.isArray\(args\[0\]\)/.test(read('jonq.mjs')),
     'jonq.mjs: ghJson never receives a nested array un-normalized (a nested argv reaches gh as one comma-joined URL)')
@@ -186,6 +211,8 @@ const playbook = read('FORGE.md')
 ok(playbook.includes('Halt first') && playbook.includes('steer') && playbook.includes('jonq.mjs list'), 'FORGE.md step 2: halt-first, steer-first, questions are not work items')
 ok(!playbook.includes('three questions for Jon') && playbook.includes('jonq.mjs ask'), 'FORGE.md step 9: STATE links questions, never carries them')
 ok(read('FORGE-QA.md').includes('jonq.mjs ask --lane qa'), 'FORGE-QA.md 5b: decisions ask decidable')
+ok(read('FORGE-QA.md').includes('idle-kick.mjs qa') && read('FORGE-QA.md').includes('Unified queue') && read('FORGE-QA.md').includes('#878'),
+    '#878: FORGE-QA.md step 2 carries the unified-queue flagship borrow (never idle a free QA lane)')
 
 // --- idle wiring: the playbook + the architecture map (#841) -------------
 ok(!playbook.includes('nothing to forge'), 'FORGE.md still carries the old idle STOP ("nothing to forge")')

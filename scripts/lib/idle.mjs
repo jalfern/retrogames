@@ -81,3 +81,26 @@ export function flagshipStage({ gapsByGame = {}, qaIssues = [], buildingQa = [] 
     }
     return null
 }
+
+// #878 — the unified queue for a free QA lane. Builder and QA used to pull from
+// separate queues, so a lane idled whenever its own queue ran dry: on Oct 23 the
+// Studio QA stream sat idle for hours with feedback empty while SSX's honest gaps
+// were unowned (the builder's flagship path, #869 idle-kick, only fires when the
+// whole builder is free, so a busy builder left the flagship gaps to nobody).
+//
+// qaIdleStage is the pure half of that fix: name the flagship polish stage a
+// free QA lane may take when there is no claimable feedback, or null. The
+// unified order is steer/next/queue/feedback first (the caller asks only on a
+// feedback miss), then the flagship stage. One lane per game is kept: every game
+// another lane is already inside — a `building` title (the builder's live game)
+// or a `building-qa` title (any QA lane) — is skipped, so the builder and a QA
+// lane can never be sent at the same flagship.
+export function qaIdleStage({ issues = [], gapsByGame = {} } = {}) {
+    const lbl = (i, l) => (i.labels || []).includes(l)
+    const claimableFeedback = issues.some((i) => lbl(i, 'feedback')
+        && !lbl(i, 'building-qa') && !lbl(i, 'waiting-jon') && !lbl(i, 'needs-approval'))
+    if (claimableFeedback) return null
+    const qaIssues = issues.filter((i) => lbl(i, 'feedback') || lbl(i, 'building-qa'))
+    const held = heldGames(issues.filter((i) => lbl(i, 'building') || lbl(i, 'building-qa')))
+    return flagshipStage({ gapsByGame, qaIssues, buildingQa: held })
+}
