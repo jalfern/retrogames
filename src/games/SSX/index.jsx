@@ -14,7 +14,7 @@ import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES } from './sim.js'
+import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES, flipDirFromTilt, bodyFromTilt } from './sim.js'
 import { decide } from './planner.js'
 import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
 import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
@@ -38,6 +38,7 @@ const SSXGame = () => {
     const [podium, setPodium] = useState(null) // #845 final friends' podium
     const [trickHeld, setTrickHeld] = useState(() => new Set())
     const trickApi = useRef(null)
+    const stickApi = useRef(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const hudRef = useRef({})
@@ -192,6 +193,34 @@ const SSXGame = () => {
             })
         }
         trickApi.current = pressTrick
+        // #894 (the #873 answer — Jon picked analogue): a PHYSICAL stick on the
+        // touch pad. The knob offset from the base centre is the analog input —
+        // x is steer depth (the same #791 press line the canvas drag rides, so
+        // shallow tilt = shallow carve, saturating at ±1), y is body tilt:
+        // forward tucks and commits a FRONT flip, back scrubs / back flips.
+        let tiltX = 0, tiltY = 0, tiltActive = false, tiltPtr = null
+        const STICK_R = 38
+        const tiltApply = (cx, cy) => {
+            const el = document.querySelector('[data-ssx-stick]')
+            if (!el) return
+            const r = el.getBoundingClientRect()
+            const dx = cx - (r.left + r.width / 2)
+            const dy = cy - (r.top + r.height / 2)
+            tiltX = Math.max(-1, Math.min(1, dx / STICK_R))
+            tiltY = Math.max(-1, Math.min(1, dy / STICK_R))
+            const knob = document.querySelector('[data-ssx-stick-knob]')
+            if (knob) knob.style.transform = `translate(-50%, -50%) translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`
+        }
+        const tiltReset = () => {
+            tiltX = 0; tiltY = 0; tiltActive = false; tiltPtr = null
+            const knob = document.querySelector('[data-ssx-stick-knob]')
+            if (knob) knob.style.transform = 'translate(-50%, -50%)'
+        }
+        stickApi.current = {
+            down: (id, cx, cy) => { if (tiltPtr !== null) return; tiltPtr = id; tiltActive = true; tiltApply(cx, cy) },
+            move: (id, cx, cy) => { if (id === tiltPtr) tiltApply(cx, cy) },
+            up: (id) => { if (id === tiltPtr) tiltReset() },
+        }
         const disposables = []
         const keep = (o) => { disposables.push(o); return o }
 
@@ -418,6 +447,7 @@ const SSXGame = () => {
             shownHeat = 0
             setCourseVisuals()
             keys.clear()
+            tiltReset()
             setResult(null)
             setPodium(null)
             setMode('play')
@@ -486,15 +516,17 @@ const SSXGame = () => {
                 // #791: a canvas drag IS the analog stick — horizontal offset from
                 // where the finger went down sets steer depth; keyboard/pad ±1 falls
                 // back through the sim's pressure ramp. #828: a physical stick
-                // (padState) rides the same analog line as the drag.
-                steer: dragSteer !== null ? dragSteer : padState.engaged ? padState.x : (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0),
+                // (padState) rides the same analog line as the drag. #894: the pad's
+                // physical stick outranks both — x depth, y tilt for tuck/scrub and
+                // the flip direction (forward commits the FRONT flip, sim ledger −).
+                steer: tiltActive ? tiltX : dragSteer !== null ? dragSteer : padState.engaged ? padState.x : (keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0),
                 jump: keys.has('Space'),
                 boost: keys.has('ShiftLeft') || keys.has('ShiftRight'),
                 grab: keys.has('KeyX'),
                 invert: keys.has('KeyV'),
-                flip: keys.has('KeyZ') ? 1 : keys.has('KeyC') ? 2 : 0,
-                tuck: keys.has('ArrowUp'),
-                scrub: keys.has('ArrowDown'),
+                flip: keys.has('KeyZ') ? (tiltActive ? flipDirFromTilt(tiltY) || 1 : 1) : keys.has('KeyC') ? 2 : 0,
+                tuck: keys.has('ArrowUp') || (tiltActive && bodyFromTilt(tiltY).tuck),
+                scrub: keys.has('ArrowDown') || (tiltActive && bodyFromTilt(tiltY).scrub),
             }
             step(g, inp)
             sfx(g.events.splice(0))
@@ -807,6 +839,7 @@ const SSXGame = () => {
             setResult(null)
             dragId = null
             dragSteer = null
+            tiltReset()
             setMode('play')
             audioController.playSweep(220, 660, 0.3, 'square', 0.07)
         }
@@ -857,7 +890,7 @@ const SSXGame = () => {
             keys.add(e.code)
         }
         const onUp = (e) => keys.delete(e.code)
-        const onBlur = () => keys.clear()
+        const onBlur = () => { keys.clear(); tiltReset() }
         const onPointer = () => {
             const sc = screenRef.current
             if (sc === 'attract') {
@@ -1036,6 +1069,14 @@ const SSXGame = () => {
                     spray: sprayLife.reduce((a, b) => a + (b > 0 ? 1 : 0), 0),
                 }),
                 touchpad: () => TOUCH_PAD,
+                // #894: the physical stick's live analog state — the drive drags
+                // the knob and reads depth + tilt back out of here.
+                stick: () => ({
+                    x: +tiltX.toFixed(3), y: +tiltY.toFixed(3), active: tiltActive,
+                    flipDir: tiltActive ? flipDirFromTilt(tiltY) : 0,
+                    tuck: tiltActive && bodyFromTilt(tiltY).tuck,
+                    scrub: tiltActive && bodyFromTilt(tiltY).scrub,
+                }),
                 // #780: what the chase/vista camera is doing + whether the bed
                 // is running — the headless drive proves summit-before-GO.
                 cam: () => {
@@ -1092,6 +1133,7 @@ const SSXGame = () => {
             room.reset()
             if (ws) { try { ws.close() } catch { /* gone */ } }
             trickApi.current = null
+            stickApi.current = null
             clearDebris()
             audioController.stopMusic()
             window.removeEventListener('keydown', onDown)
@@ -1233,17 +1275,52 @@ const SSXGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'SSX')} onResume={handleResume} />}
+            {/* #894 (Jon's #873 answer): the physical analogue stick — always
+                visible base + knob. x = carve depth through the sim's press ramp,
+                y = body tilt (forward tucks + commits a FRONT flip, back scrubs). */}
+            {play && !paused && TOUCH_PAD && (
+                <div
+                    data-ssx-stick="1"
+                    className="fixed z-[60] rounded-full pointer-events-auto select-none"
+                    style={{
+                        left: 'calc(1.5rem + env(safe-area-inset-left))',
+                        bottom: 'calc(8.5rem + env(safe-area-inset-bottom))',
+                        width: 128, height: 128, touchAction: 'none',
+                        background: 'radial-gradient(circle, rgba(8,20,38,0.72) 0%, rgba(8,20,38,0.35) 70%, transparent 100%)',
+                        border: '1px solid rgba(103,232,249,0.35)',
+                        boxShadow: 'inset 0 0 18px rgba(103,232,249,0.12), 0 4px 14px rgba(0,0,0,0.5)',
+                    }}
+                    onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.setPointerCapture?.(e.pointerId); stickApi.current?.down(e.pointerId, e.clientX, e.clientY) }}
+                    onPointerMove={(e) => { e.preventDefault(); e.stopPropagation(); stickApi.current?.move(e.pointerId, e.clientX, e.clientY) }}
+                    onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); stickApi.current?.up(e.pointerId) }}
+                    onPointerCancel={(e) => { e.stopPropagation(); stickApi.current?.up(e.pointerId) }}
+                >
+                    <div className="absolute left-1/2 top-1/2 rounded-full" style={{ width: 104, height: 104, transform: 'translate(-50%, -50%)', border: '1px solid rgba(103,232,249,0.25)' }} />
+                    <div className="absolute left-1/2 top-1/2 w-1.5 h-1.5 rounded-full bg-cyan-300/40" style={{ transform: 'translate(-50%, -50%)' }} />
+                    <div
+                        data-ssx-stick-knob="1"
+                        className="absolute left-1/2 top-1/2 rounded-full"
+                        style={{
+                            width: 44, height: 44, transform: 'translate(-50%, -50%)',
+                            background: 'radial-gradient(circle at 35% 30%, rgba(186,240,250,0.85) 0%, rgba(34,160,190,0.75) 55%, rgba(12,70,95,0.85) 100%)',
+                            boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.5), 0 2px 8px rgba(0,0,0,0.5)',
+                        }}
+                    />
+                    <div className="absolute left-1/2 -translate-x-1/2 text-[8px] tracking-[0.2em] text-cyan-200/60 font-bold" style={{ bottom: 6 }}>TILT</div>
+                </div>
+            )}
             {/* #844: phone trick buttons — grab / flip / invert feed the same
                 key codes the desktop reads, so the trick economy works one-handed
-                on the slope (INV needs GRAB held, like on the keyboard). #871:
-                add FRNT (KeyC) so the front-flip reaches phones too — until now
-                touch could only backflip (FLIP→KeyZ); front-flip was keyboard-only. */}
+                on the slope (INV needs GRAB held, like on the keyboard). #894:
+                FLIP is one button now — stick tilt picks its direction
+                (forward = FRONT flip), replacing the discrete FLIP/FRNT pair;
+                keyboard Z/C and gamepad L1/R1 keep both flips explicit. */}
             {play && !paused && TOUCH_PAD && (
                 <div
                     className="fixed z-50 right-0 flex gap-2 pointer-events-auto select-none"
                     style={{ bottom: 'calc(9.5rem + env(safe-area-inset-bottom))', paddingRight: 'calc(2rem + env(safe-area-inset-right))' }}
                 >
-                    {[['GRAB', 'KeyX'], ['FLIP', 'KeyZ'], ['FRNT', 'KeyC'], ['INV', 'KeyV']].map(([label, code]) => (
+                    {[['GRAB', 'KeyX'], ['FLIP', 'KeyZ'], ['INV', 'KeyV']].map(([label, code]) => (
                         <button
                             key={code}
                             data-ssx-trick={code}

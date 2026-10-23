@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabKindFor, GRAB_NAMES, GRAB_POSES } from '../src/games/SSX/sim.js'
+import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabKindFor, GRAB_NAMES, GRAB_POSES, flipDirFromTilt, bodyFromTilt, STICK_TILT } from '../src/games/SSX/sim.js'
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
 import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
@@ -19,6 +19,7 @@ const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } e
 // #808 mutant: side-blind 'across' yaw (the old `-p.th`) — one stand in every
 // pair turns its back, and the facing gate below MUST catch it.
 const ART_SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'SSX', 'art.js')
+const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
 const YAW_GOOD = 'p.th + Math.sign(e.x) * Math.PI / 2'
 const YAW_BAD = 'p.th - Math.sign(e.x) * Math.PI / 2'
 if (process.argv.includes('--mutate')) {
@@ -1066,6 +1067,44 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     }
     ok('#791 the invert rolls identically on replay — and hashes apart from hands-off',
         invHash() === invHash() && invHash() !== stateHash((() => { const g = makeGame('race'); run(g, 181); clear(g); return g })()))
+}
+
+// ---- #894 analogue touch stick (Jon's #873 answer: use analogue) ----------
+{
+    ok('#894 tilt law: forward commits FRONT (2), back commits BACK (1), neutral nothing',
+        flipDirFromTilt(-1) === 2 && flipDirFromTilt(1) === 1 && flipDirFromTilt(0) === 0)
+    ok('#894 the flip commits at the threshold, not before',
+        flipDirFromTilt(-(STICK_TILT.flip - 0.05)) === 0 && flipDirFromTilt(-STICK_TILT.flip) === 2 &&
+        flipDirFromTilt(STICK_TILT.flip) === 1 && flipDirFromTilt(STICK_TILT.flip - 0.05) === 0)
+    ok('#894 the law is odd-symmetric and saturates both ends',
+        flipDirFromTilt(-0.77) === flipDirFromTilt(-1) && flipDirFromTilt(0.77) === flipDirFromTilt(1))
+    ok('#894 body tilt splits tuck/scrub around a neutral band',
+        bodyFromTilt(-0.9).tuck && !bodyFromTilt(-0.9).scrub &&
+        bodyFromTilt(0.9).scrub && !bodyFromTilt(0.9).tuck &&
+        !bodyFromTilt(-(STICK_TILT.body - 0.1)).tuck && !bodyFromTilt(0).scrub)
+    // sim integration: the direction the tilt commits must reach the trick
+    // ledger with the right sign — front rotates negative, back positive.
+    const airFlipPeak = (dir) => {
+        const g = makeGame('race'); run(g, 181); clear(g)
+        const p = g.riders[0]
+        Object.assign(p, { air: true, y: terrainY(g.course, p.s, p.x) + 8, vy: 1.5, spin: 0, flip: 0, grab: 0, over: false, invert: 0 })
+        let peak = 0, t = 0
+        while (p.air && t < 400) { step(g, { flip: dir }); if (p.air) peak = p.flip; t++ }
+        return peak
+    }
+    const frontPeak = airFlipPeak(flipDirFromTilt(-0.9))
+    const backPeak = airFlipPeak(flipDirFromTilt(0.9))
+    ok('#894 a tilt-committed FLIP rotates the ledger FRONT, not back',
+        frontPeak < -20 && backPeak > 20, `front ${frontPeak.toFixed(0)} back ${backPeak.toFixed(0)}`)
+    const src = readFileSync(join(SRC_DIR, 'games', 'SSX', 'index.jsx'), 'utf8')
+    ok('#894 the pad mounts a physical stick (base + knob)',
+        /data-ssx-stick="1"/.test(src) && /data-ssx-stick-knob="1"/.test(src))
+    ok('#894 the discrete FRNT touch button is gone — tilt picks the direction',
+        !src.includes("'FRNT', 'KeyC'") && /flipDirFromTilt\(tiltY\) \|\| 1 : 1/.test(src))
+    ok('#894 stick depth outranks the canvas drag on the steer line',
+        /steer: tiltActive \? tiltX : dragSteer !== null/.test(src))
+    ok('#894 tilt reaches the body verbs beside the arrows',
+        /bodyFromTilt\(tiltY\)\.tuck/.test(src) && /bodyFromTilt\(tiltY\)\.scrub/.test(src))
 }
 
 // #828 (Jon, pad + pause): source gates on the input layer of index.jsx —
