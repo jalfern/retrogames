@@ -164,6 +164,8 @@
     "gauntletcheck": "node scripts/gauntletcheck.mjs",
     "netcheck": "node scripts/netcheck.mjs",
     "netdrill": "node scripts/netdrill.mjs",
+    "lint:room": "eslint src/utils/room.js src/games/SSX/net.js relay/core.js relay/worker.js scripts/roomcheck.mjs",
+    "roomcheck": "node scripts/roomcheck.mjs",
     "gauntletplay": "node scripts/gauntletplay.mjs",
     "lint:slots": "eslint src/games/Gauntlet src/games/BubbleBobble src/utils scripts/slotcheck.mjs",
     "slotcheck": "node scripts/slotcheck.mjs",

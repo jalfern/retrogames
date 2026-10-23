@@ -5,17 +5,17 @@
 // network, no secrets. Run: `node relay/server.mjs [port]` (default 8787).
 
 import { WebSocketServer } from 'ws'
-import { CODE_RE, MAX_MSG, join, leave, relay, newRoom, newRegistry, registryAdd, registryRemove, registryCount } from './core.js'
+import { CODE_RE, MAX_MSG, join, leave, relay, rosterOf, newRoom, newRegistry, registryAdd, registryRemove, registryCount } from './core.js'
 
 export function startRelay(port = Number(process.env.PORT || 8787)) {
     const reg = newRegistry()
     const rooms = new Map()
     const wss = new WebSocketServer({ port })
 
-    const roomFor = (code) => {
+    const roomFor = (code, cap) => {
         let r = rooms.get(code)
         if (!r) {
-            r = { core: newRoom(code), socks: new Map(), idle: null }
+            r = { core: newRoom(code, cap), socks: new Map(), idle: null }
             rooms.set(code, r)
         }
         return r
@@ -36,14 +36,21 @@ export function startRelay(port = Number(process.env.PORT || 8787)) {
         registryRemove(reg, code)
     }
 
+    const broadcast = (r, obj) => {
+        const text = JSON.stringify(obj)
+        for (const ows of r.socks.values()) { try { ows.send(text) } catch { /* gone */ } }
+    }
+
     wss.on('connection', (ws, req) => {
-        const path = (req.url || '').split('?')[0]
+        const raw = req.url || ''
+        const path = raw.split('?')[0]
         const m = path.match(/^\/room\/([A-Za-z0-9]{4})$/)
         if (!m) { ws.close(1002, 'use /room/CODE'); return }
         const code = m[1].toUpperCase()
         if (!CODE_RE.test(code)) { ws.close(1002, 'bad code'); return }
         if (!registryAdd(reg, code, Date.now())) { ws.close(1013, 'rooms full'); return }
-        const r = roomFor(code)
+        const capParam = Number(new URL(raw, 'ws://x').searchParams.get('cap')) || 0
+        const r = roomFor(code, capParam > 0 ? capParam : undefined)
         const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
         ws.__id = id
         ws.__code = code
@@ -53,7 +60,8 @@ export function startRelay(port = Number(process.env.PORT || 8787)) {
         if (!res.ok) { registryRemove(reg, code); ws.close(1013, 'room full'); return }
         r.socks.set(id, ws)
         touch(r)
-        ws.send(JSON.stringify({ t: 'welcome', you: res.slot }))
+        ws.send(JSON.stringify({ t: 'welcome', you: res.slot, cap: r.core.max }))
+        broadcast(r, rosterOf(r.core))
         if (process.env.RELAY_DEBUG) console.log('[relay] join', code, id, 'slot', res.slot, 'peers', res.peers)
         if (res.peers === 2) {
             ws.send(JSON.stringify({ t: 'peer', n: 2 }))
@@ -75,7 +83,7 @@ export function startRelay(port = Number(process.env.PORT || 8787)) {
         const gone = () => {
             r.socks.delete(id)
             touch(r)
-            if (leave(r.core, id).gone) for (const ows of r.socks.values()) ows.send(JSON.stringify({ t: 'gone' }))
+            if (leave(r.core, id).gone) { broadcast(r, rosterOf(r.core)); for (const ows of r.socks.values()) ows.send(JSON.stringify({ t: 'gone' })) }
             if (r.socks.size === 0) closeRoom(r)
         }
         ws.on('close', (c) => { if (process.env.RELAY_DEBUG) console.log('[relay] ws close', code, id, 'socks', r.socks.size, 'core', r.core.members.length); gone() })
