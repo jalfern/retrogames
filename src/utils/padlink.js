@@ -68,7 +68,7 @@ export function encodePadPacket(seat, pad, raw, shoulder, rtt, seq, clock) {
     let sl = 0
     if (shoulder && shoulder.l) sl |= SHOULDER_L
     if (shoulder && shoulder.r) sl |= SHOULDER_R
-    const pkt = { t: 'p', k: 'p', s: seat, n: seq, c: clock, q: m }
+    const pkt = { t: 'pad', k: 'pad', s: seat, n: seq, c: clock, q: m }
     const x = q(rw.x), y = q(rw.y), u = q(rw.ax), v = q(rw.ay)
     if (x) pkt.x = x
     if (y) pkt.y = y
@@ -81,7 +81,7 @@ export function encodePadPacket(seat, pad, raw, shoulder, rtt, seq, clock) {
 
 // Wire -> plain fields (floats + booleans). Unknown/malformed -> null.
 export function decodePadPacket(pkt) {
-    if (!pkt || pkt.t !== 'p' || pkt.k !== 'p' || !clampSeat(pkt.s)) return null
+    if (!pkt || pkt.t !== 'pad' || pkt.k !== 'pad' || !clampSeat(pkt.s)) return null
     const m = pkt.q | 0
     const sl = pkt.sl | 0
     return {
@@ -97,7 +97,7 @@ export function decodePadPacket(pkt) {
 }
 
 function sigMsg(from, to, kind, data) {
-    return { t: 'p', k: 'sig', s: from, d: to, m: kind, p: data }
+    return { t: 'pad', k: 'sig', s: from, d: to, m: kind, p: data }
 }
 
 // --- host ---------------------------------------------------------------------
@@ -144,9 +144,9 @@ export function createPadHost(opts = {}) {
         const peer = pad.peer
         if (!peer) return
         peer.onOpen(() => { pad.chan = true; pad.mode = 'direct'; announce() })
-        peer.onMessage((str) => { let obj = null; try { obj = JSON.parse(str) } catch { return } if (obj && obj.k === 'sig') hostRecv(obj, true); else if (obj && obj.k === 'p') hostRecv(obj, true) })
+        peer.onMessage((str) => { let obj = null; try { obj = JSON.parse(str) } catch { return } if (obj && obj.k === 'sig') hostRecv(obj, true); else if (obj && obj.k === 'pad') hostRecv(obj, true) })
         peer.onState && peer.onState((s) => { if (s === 'failed' || s === 'closed') { pad.chan = null; pad.mode = 'relay'; announce() } })
-        peer.onIce && peer.onIce((c) => { room.send('p', { k: 'sig', d: pad.seat, m: 'ice', p: c }) })
+        peer.onIce && peer.onIce((c) => { room.send('pad', { k: 'sig', d: pad.seat, m: 'ice', p: c }) })
     }
 
     function dropPad(seat) {
@@ -219,8 +219,8 @@ export function createPadHost(opts = {}) {
         const t = now()
         if (t - pad.pingAt >= PING_EVERY_MS && typeof f.clock === 'number') {
             pad.pingAt = t
-            if (pad.chan && pad.peer) pad.peer.send(JSON.stringify({ t: 'p', k: 'q', d: pad.seat, c: f.clock }))
-            else room.send('p', { k: 'q', d: pad.seat, c: f.clock })
+            if (pad.chan && pad.peer) pad.peer.send(JSON.stringify({ t: 'pad', k: 'q', d: pad.seat, c: f.clock }))
+            else room.send('pad', { k: 'q', d: pad.seat, c: f.clock })
         }
     }
 
@@ -256,7 +256,7 @@ export function createPadHost(opts = {}) {
                 if (pad.needOffer && pad.peer) {
                     pad.needOffer = false
                     pad.offerAt = t
-                    Promise.resolve(pad.peer.offer()).then((sd) => { if (sd) room.send('p', { k: 'sig', d: pad.seat, m: 'offer', p: sd }) }).catch(() => { pad.peer = null })
+                    Promise.resolve(pad.peer.offer()).then((sd) => { if (sd) room.send('pad', { k: 'sig', d: pad.seat, m: 'offer', p: sd }) }).catch(() => { pad.peer = null })
                 }
                 if (!pad.chan && pad.peer && pad.offerAt && t - pad.offerAt > RTC_WAIT_MS) {
                     pad.offerAt = 0
@@ -331,11 +331,11 @@ export function createPadClient(opts = {}) {
             const pkt = encodePadPacket(client.seat, snap.pad || {}, snap.raw || {}, snap.shoulder || {}, client.rtt, ++client.seq, stamp)
             const str = JSON.stringify(pkt)
             if (client.chan && client.peer) client.peer.send(str)
-            else room.send('p', { k: 'p', n: pkt.n, c: stamp, q: pkt.q, x: pkt.x, y: pkt.y, u: pkt.u, v: pkt.v, sl: pkt.sl, r: pkt.r })
+            else room.send('pad', { k: 'pad', n: pkt.n, c: stamp, q: pkt.q, x: pkt.x, y: pkt.y, u: pkt.u, v: pkt.v, sl: pkt.sl, r: pkt.r })
         },
 
         recv(obj) {
-            if (!obj || obj.t !== 'p') return
+            if (!obj || obj.t !== 'pad') return
             if (obj.k === 'q') {
                 if ((obj.d | 0) !== client.seat) return
                 const sent = client.pending.get(obj.c)
@@ -353,7 +353,7 @@ export function createPadClient(opts = {}) {
                 if (!client.peer && makePeer) { client.peer = makePeer(); wirePeer(client.peer) }
                 if (obj.m === 'offer' && client.peer) {
                     Promise.resolve(client.peer.answer(obj.p)).then((sd) => {
-                        if (sd) room.send('p', { k: 'sig', d: 0, m: 'answer', p: sd })
+                        if (sd) room.send('pad', { k: 'sig', d: 0, m: 'answer', p: sd })
                     }).catch(() => { /* relay only */ })
                 } else if (obj.m === 'ice' && client.peer) client.peer.ice(obj.p)
                 return
@@ -369,7 +369,7 @@ export function createPadClient(opts = {}) {
         stop() {
             client.stopTimers()
             if (client.peer) { try { client.peer.close() } catch { /* gone */ } client.peer = null; client.chan = null }
-            room.send('p', { k: 'out' })
+            room.send('pad', { k: 'out' })
             room.reset()
             client.seat = 0
             client.setPhase('idle')
@@ -390,7 +390,7 @@ export function createPadClient(opts = {}) {
                 if (opts.onMode) opts.onMode('relay')
             }
         })
-        peer.onIce && peer.onIce((c) => room.send('p', { k: 'sig', d: 0, m: 'ice', p: c }))
+        peer.onIce && peer.onIce((c) => room.send('pad', { k: 'sig', d: 0, m: 'ice', p: c }))
     }
 
     const room = createRoom({
@@ -402,7 +402,7 @@ export function createPadClient(opts = {}) {
             client.setPhase(client.seat >= 1 ? 'live' : 'waiting')
         },
     })
-    room.on('p', (msg) => client.recv(msg))
+    room.on('pad', (msg) => client.recv(msg))
 
     const origRecv = room.recv
     room.recv = function (obj) {

@@ -1,9 +1,11 @@
 import { useState, useEffect, createContext, useContext, useCallback, useMemo, Suspense } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { GAMES } from './config/games'
 import GamesList from './components/GamesList'
 import GamepadBridge from './components/GamepadBridge'
 import GameChrome from './components/GameChrome'
+import LinkPads from './components/LinkPads'
+import PadLink from './pages/PadLink'
 import { PadContext } from './components/padContext'
 import { padButton, extraButtonsOf } from './components/gamepadMap'
 import { methodOf } from './utils/onePad'
@@ -89,6 +91,7 @@ function GameRoute({ game }) {
   return (
     <PadContext.Provider value={pad}>
       <GamepadBridge secondAction={padButton(pad)?.code} extraButtons={extraButtons} />
+      <LinkPads secondAction={padButton(pad)?.code} />
       <Suspense fallback={<LoadingCard />}>
         <Component />
       </Suspense>
@@ -220,26 +223,38 @@ function App() {
 
   return (
     <BrowserRouter basename="/retrogames">
-      <Layout>
-        <Routes>
-          <Route path="/" element={<RandomHome />} />
-          <Route path="/random" element={<RandomHome />} />
-          <Route path="/games" element={<ArcadeShowcase />} />
-          <Route path="/games-classic" element={<GamesList />} />
-          <Route path="/games-v2" element={<ArcadeShowcase />} />
-          <Route path="/forge" element={<div className="w-full h-full relative"><ForgeBoard /></div>} />
-          <Route path="/forge/log" element={<div className="w-full h-full relative"><ForgeLog /></div>} />
-          <Route path="/forge/report" element={<div className="w-full h-full relative bg-black"><ShiftReport /></div>} />
-          {GAMES.map(game => (
-            <Route
-              key={game.path}
-              path={game.path}
-              element={<GameRoute game={game} />}
-            />
-          ))}
-        </Routes>
-      </Layout>
+      {/* #893: the phone pad page is its own surface — chromeless, no footer,
+          no mute toggle; phones are controllers, not a browser window. */}
+      <Routes>
+        <Route path="/pad" element={<PadLink />} />
+        <Route path="/*" element={<AppShell />} />
+      </Routes>
     </BrowserRouter>
+  )
+}
+
+function AppShell() {
+  return (
+    <Layout>
+      <Routes>
+        <Route path="/" element={<RandomHome />} />
+        <Route path="/random" element={<RandomHome />} />
+        <Route path="/games" element={<ArcadeShowcase />} />
+        <Route path="/games-classic" element={<GamesList />} />
+        <Route path="/games-v2" element={<ArcadeShowcase />} />
+        <Route path="/forge" element={<div className="w-full h-full relative"><ForgeBoard /></div>} />
+        <Route path="/forge/log" element={<div className="w-full h-full relative"><ForgeLog /></div>} />
+        <Route path="/forge/report" element={<div className="w-full h-full relative bg-black"><ShiftReport /></div>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+        {GAMES.map(game => (
+          <Route
+            key={game.path}
+            path={game.path}
+            element={<GameRoute game={game} />}
+          />
+        ))}
+      </Routes>
+    </Layout>
   )
 }
 
