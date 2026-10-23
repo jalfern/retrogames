@@ -167,7 +167,7 @@ export const NODES = {
     spots: [
       { id: 'downGate', label: 'down the steps to the terraces', yaw: 180, w: 40, h: 36, to: 'selGate' },
       { id: 'takeGear', label: 'the brass gear in the stone slot', yaw: 0, w: 26, h: 26, act: 'takeGear', gone: 'gearSelenitic' },
-      { id: 'lookMoon', label: 'the moon, close enough to touch', yaw: 42, w: 46, h: 30, act: 'lookMoon' },
+      { id: 'lookMoon', label: 'the moon, close enough to touch', yaw: 62, w: 50, h: 34, act: 'lookMoon' },
     ],
   },
   stoneship: {

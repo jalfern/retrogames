@@ -97,14 +97,14 @@ const MystGame = () => {
           // throne swivels notch by notch, the sun appears only at the true
           // alignment, the mountain door slides aside, the gear lifts from its slot
           case 'selPathSlab': m.o.position.y += ((F.selPath ? m.y0 - 6.9 : m.y0) - m.o.position.y) * k; break
-          case 'selChair': m.o.rotation.y += (F.selChair * Math.PI / 4 - m.o.rotation.y) * k; break
+          case 'selChair': m.o.rotation.y += ((s.selChair || 0) * Math.PI / 4 - m.o.rotation.y) * k; break
           case 'selSun': m.o.visible = !!F.selAlign; break
           case 'selAlignDoor': m.o.position.z += ((F.selAlign ? m.z0 - 3.2 : m.z0) - m.o.position.z) * k; break
           case 'selGear': { const sc = F.gearSelenitic ? 0.001 : 1; m.o.scale.x += (sc - m.o.scale.x) * k; m.o.scale.y = m.o.scale.x; m.o.scale.z = m.o.scale.x; break }
           default: {
             if (m.kind.startsWith('selStone')) {
               const i = Number(m.kind.slice('selStone'.length))
-              m.o.position.y += ((F.selStone > i ? m.y0 - 0.1 : m.y0) - m.o.position.y) * k
+              m.o.position.y += (((s.selStone || 0) > i ? m.y0 - 0.1 : m.y0) - m.o.position.y) * k
             }
             break
           }
