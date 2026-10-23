@@ -12,7 +12,8 @@ import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.
 import { buildCourse, terrainY, slopePos, COURSE_COUNT, HEATS, tournament, gapAt, expressAt, GAP_X, EXPRESS, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 import { computeStandings } from '../src/games/SSX/net.js'
-import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD } from '../src/games/SSX/art.js'
+import * as THREE from 'three'
+import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD, makeRider, poseRider } from '../src/games/SSX/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -1234,6 +1235,40 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok(/e\.key === '\?' \? 'Question'/.test(src), '#828 "?" pauses by key, not only shift+Slash (layout-proof pause)')
     ok(/import \{ padState \}/.test(src) && /padState\.engaged \? padState\.x/.test(src),
         '#828 left stick analog steer: index.jsx reads padState.x on the steer line')
+}
+
+// ---- #904 (Jon, phone): flips somersault front/back, inverts/carves roll ----
+// The rig is root -> yaw -> roll (art.js); the board is built long-axis = local
+// x, up = +y. A FRONT/BACK somersault swings the nose into the vertical plane of
+// travel = a rotation about z; a board-roll (invert, rail-up carve) keeps the nose
+// level and tips the deck edge-first = about x. The old code had these swapped, so
+// committing a flip tipped the board left/right — Jon: "flips are around the wrong
+// axes — left/right instead of front/back." These gates read the posed board's real
+// world axes, so they go red if flip/invert ever trade places again.
+{
+    const q = new THREE.Quaternion()
+    const nose = new THREE.Vector3()
+    const up = new THREE.Vector3()
+    const posed = (r) => {
+        const rig = makeRider(0xffffff)
+        rig.userData.yaw.rotation.set(0, 0, 0)
+        poseRider(rig, r, 0)
+        rig.updateMatrixWorld(true)
+        const rot = rig.userData.roll.getWorldQuaternion(q)
+        nose.set(1, 0, 0).applyQuaternion(rot)
+        up.set(0, 1, 0).applyQuaternion(rot)
+        return { noseY: nose.y, noseZ: nose.z, upZ: up.z }
+    }
+    const AIR = { tumble: 0, crouch: false, tuck: false, grab: false, grabKind: 0, steerSm: 0 }
+    const f = posed({ ...AIR, air: true, flip: 90, invert: 0 })
+    ok('#904 a flip pitches the nose into the vertical plane — a FRONT/BACK somersault about z',
+        Math.abs(f.noseY) > 0.5 && Math.abs(f.noseZ) < 0.3)
+    const iv = posed({ ...AIR, air: true, flip: 0, invert: 90 })
+    ok('#904 an invert keeps the nose level and tips the deck on its edge — a board-roll about x',
+        Math.abs(iv.noseY) < 0.15 && Math.abs(iv.upZ) > 0.5)
+    const cv = posed({ ...AIR, air: false, flip: 0, invert: 0, steerSm: 1 })
+    ok('#904 carving lifts a rail while the nose stays down the fall line — tilt about x',
+        Math.abs(cv.noseY) < 0.1 && Math.abs(cv.upZ) > 0.1)
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)

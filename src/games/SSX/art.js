@@ -1371,11 +1371,16 @@ export function poseRider(root, r, tick, override) {
         return
     }
     if (r.air) {
-        roll.rotation.x = (r.flip * Math.PI) / 180 * (r.flip < 0 ? -1 : 1) * -1
+        // #904 (Jon, phone): flips are FRONT/BACK somersaults. The board is built
+        // long-axis = local x, up = +y, so the nose swings into the vertical
+        // plane of travel about z — that is the somersault axis. (It used to ride
+        // rotation.x, the deck's own long axis, which tipped the board left/right
+        // and read as a roll, not a flip.)
+        roll.rotation.z = (r.flip * Math.PI) / 180 * (r.flip < 0 ? -1 : 1) * -1
         // #791 slice 12: the invert — the grabbed board rolls about its long
-        // axis (z in rig space), nose past boot on positive (NIKE), tail over
+        // axis (x in rig space), nose past boot on positive (NIKE), tail over
         // on negative (SOLID). The hands hold the pose while the deck turns.
-        roll.rotation.z = (r.invert * Math.PI) / 180
+        roll.rotation.x = (r.invert * Math.PI) / 180
         root.scale.y = 1
         if (hero) blendHero(hero, pose, tick)
         else { armR.rotation.z = r.grab ? (r.grabKind === 0 || r.grabKind === 2 || r.grabKind === 5 ? 1.5 : 1.1) : 0.35; legs.scale.y = 0.9 }
@@ -1386,8 +1391,10 @@ export function poseRider(root, r, tick, override) {
     // #791: landing impact — the body compresses toward the deck for a beat
     // after touchdown, deeper the harder the drop (r.stomp/stompPow in sim).
     const stomp = !override && r.stomp > 0 ? Math.min(0.24, 0.05 + r.stompPow * 0.19) : 0
-    roll.rotation.x = 0
-    roll.rotation.z = r.steerSm * 0.28
+    // #904: a carve tips the deck onto its edge about the long axis (x); the
+    // nose stays down the fall line. The somersault axis (z) rests at 0.
+    roll.rotation.z = 0
+    roll.rotation.x = r.steerSm * 0.28
     root.scale.y = 1 - stomp
     if (hero) blendHero(hero, pose, tick)
     else {
