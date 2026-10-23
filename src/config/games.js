@@ -173,6 +173,8 @@ const BardsTaleGame = lazy(() => import('../games/BardsTale'))
 // ledger, boost economy, three proven heats, slack, determinism) ride in the
 // chunk; the harness imports course/sim/planner unchanged in Node.
 const SSXGame = lazy(() => import('../games/SSX'))
+// BLOB BATTLE: same lesson — planner + sim ride in its own chunk.
+const BlobBattleGame = lazy(() => import('../games/BlobBattle'))
 
 // PRINCE OF PERSIA: same lesson — the pure platform/duel sim and the autopilot
 // that wins all five screens (and scripts/popcheck.mjs audits: movement, traps,
@@ -1021,6 +1023,19 @@ export const GAMES = [
         theme: 'dark',
         description: "An original lane-defense game in the lineage of a certain 2009 lawn classic — its own autumn orchard, its own names and art. Goblins raid the cottage down five lanes at dusk; bank acorns (tap the ones that fall, or wait for them to bank), pick a card and plant the lawn. Gilded Daisies make acorns, Acorn Squirrels fire down their lane, Hedgerows stall a Grunt while it chews, Chili Bombs pop a cluster, Frostcaps slow the Brute and Pumpkin Cats arc over the wall. Each level wipes the lawn, hands you a sunlight cache and unlocks a new defender, waves build to a flagged FINAL WAVE, and a scarecrow-mower saves each lane exactly once before the gate falls. Made pointer- and touch-first, with a depth-first autopilot that lines every lane and nukes lone tanks — the attract demo and the gardencheck harness both drive that same bot, so it can never show a play you couldn't replay.",
         controls: ['Tap a card (or press 1–6) to pick a defender, then tap a tile to plant it', 'Arrows / WASD / d-pad: move the planter · SPACE / ✿ / tap the lawn: plant · B / ↻: cycle the hand', 'Tap a falling acorn to bank it early — or let it settle and bank itself', 'T / E: the trowel — tap a plant to dig it back up (resets that card a little)', 'Hold a lane: each lane has a scarecrow-mower that fires once, then the gate holds or falls', 'Clear a level to unlock the next defender — Frostcaps slow the Brute, then the Warlord', '?: pause and read the field guide'],
+    },
+    {
+        path: '/blob-battle',
+        tapStart: false,
+        pad: { layout: 'dpad', buttons: [{ label: 'ROT', code: 'Space' }, { label: 'DROP', code: 'KeyB' }], analog: false, reason: 'orb pair placement — slide/rotate/soft-drop/hard-drop, no analog' },
+        builtBy: 'forge',
+        added: '2026-10-23',
+        visibility: 'private',
+        component: BlobBattleGame,
+        label: 'BLOB BATTLE',
+        theme: 'dark',
+        description: "An original head-to-head chain battler in the spirit of the 1991 arcade classic: two glossy wells, falling pairs of enamel orbs in four colors, and the one rule that turns stacking into warfare — connect four or more of a color and they POP, the stack collapses, and anything that lines up again POPS AGAIN. That is a chain, and every chain step beyond the first rains grey rows into your rival's well; big groups push extra rows. Clear anything while garbage is queued against you and you COUNTER: the incoming nullifies and your attack still lands. First to two rounds takes the match, and gravity climbs every round. Fully deterministic — seed plus pad streams hash identically — so the CPU rival, the local 2P seat and the online match are the same sim: play solo against a chain-hungry CPU on your phone, share a keyboard (P1 arrows, P2 WASD+F), or duel a friend over room codes: open blob-battle?net=host, tell them the four letters, and both boxes run the identical match under lockstep with hash checks every half-second.",
+        controls: ['Arrow Left/Right: slide the pair · DOWN: soft drop', 'UP / X / SPACE / A: rotate clockwise about the pivot', 'B / C: HARD DROP — slam and lock now (this battler has it; the 1991 original did not)', 'Pop 4+ same color; chains send garbage, big groups send more', 'Pop while garbage is queued = COUNTER: incoming wiped, yours still goes', '1P vs CPU · KEY 2 on the title: local 2P (P2: WASD move, W rotate, S soft, F drop)', '?: pause and read the rules · gamepad: dpad + A rotate + B drop', 'Online: ?net=host to open a room, ?net=join&room=CODE to answer'],
     },
 
 ]

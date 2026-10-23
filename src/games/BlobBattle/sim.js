@@ -238,10 +238,11 @@ function finishCascade(w, seat, hadClears, ev) {
 function applyGarbage(w, seat, ev) {
     const shift = w.pending
     if (shift <= 0) return
-    for (let r = ROWS - 1; r >= shift; r--) {
-        for (let c = 0; c < COLS; c++) w.board[idx(r, c)] = w.board[idx(r - shift, c)]
+    // push the stack up by `shift`: new[r] = old[r + shift], walked bottom-up
+    for (let r = ROWS - 1 - shift; r >= 0; r--) {
+        for (let c = 0; c < COLS; c++) w.board[idx(r, c)] = w.board[idx(r + shift, c)]
     }
-    for (let r = 0; r < shift; r++) for (let c = 0; c < COLS; c++) w.board[idx(r, c)] = GARBAGE
+    for (let r = ROWS - shift; r < ROWS; r++) for (let c = 0; c < COLS; c++) w.board[idx(r, c)] = GARBAGE
     for (let i = 0; i < shift; i++) w.board[idx(ROWS - 1 - i, w.holes[i] || 0)] = 0
     ev.push({ t: 'garbage', seat, rows: shift })
     w.pending = 0

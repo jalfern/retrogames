@@ -70,8 +70,8 @@ function evaluate(board, x, y, rot, c1, c2) {
     }
     // setup value: same-color adjacencies of >=3 that could pop next pair
     let setup = 0
-    for (const g of findGroupsNear(after, pairCells(x, y, rot))) setup += g * 12
-    return total + setup - height * 6 - holes * 18 + (chain > 1 ? chain * 40 : 0)
+    for (const g of findGroupsNear(after, pairCells(x, y, rot))) setup += g * 30
+    return total + setup - height * 5 - holes * 16 + (chain > 1 ? chain * 40 : 0)
 }
 
 function findGroupsNear(board, cells) {
