@@ -455,9 +455,15 @@ name, direction, pay, the half-done bail, the grab requirement and determinism.
   touch is a discrete FLIP/FRNT tap, not stick tilt.
 - No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
   `ssxmodelcheck` covers the hero rider and the touch trick-pad in the browser.
-- Only the player's livery carries the bib + logo decal set; grab/boot weld
-  reach the board now (#615 — probe gates `grabReach`/`bootClear` in
-  `ssxmodelcheck`), but the offsets are static per pose, not IK.
+- Board decals reach every rider and the boot weld is solved, not posed
+  (#615/#620; #883: `weldBoots` in `art.js` pins each boot's underside to
+  the deck-top surface every frame after the pose blend — roll-space corner
+  scan, shallow press window, tumble exempt — and `ssxmodelcheck` gates the
+  weld in all eleven non-tumble hero poses; mutant: disable `weldBoots` →
+  11 FAIL). Still static: named-grab hand offsets are hand-tuned, not solved
+  — Indy/Method/Salis/Flat hands hover 0.44–0.68 m off the edge band rather
+  than touching it (arm IK is the next slice), and there is no physical
+  analogue stick (#873).
 
 ## Lateral sign and the tuck/scrub (#547)
 

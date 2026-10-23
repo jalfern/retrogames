@@ -1285,6 +1285,50 @@ export function heroPose(r, override) {
 
 const tmpQ = new THREE.Quaternion()
 const tmpV = new THREE.Vector3()
+const tmpV2 = new THREE.Vector3()
+
+// #883: the boot weld is solved, not posed. Static per-pose offsets let boots
+// float off the deck (air 0.07, the method/salis tilt 0.08) or sink into it
+// (crouch -0.23) because the ankle was hand-tuned once per pose. This is the
+// render-time half of the IK the gap asked for: after the pose blend, pin each
+// boot's underside onto the deck-top surface (the same `deckTop` the
+// grabReach/bootClear probes measure against) within a shallow press window.
+// Tumble is exempt — a crash peeling the feet off the deck is the point.
+const WELD_HI = 0
+const WELD_LO = -0.045
+function weldBoots(root, hero) {
+    const roll = root.userData.roll
+    root.updateMatrixWorld(true)
+    for (const side of ['l', 'r']) {
+        const foot = hero.bones[`foot${side}`]
+        const boot = foot && foot.children.find((c) => c.isMesh)
+        if (!boot) continue
+        if (!boot.geometry.boundingBox) boot.geometry.computeBoundingBox()
+        const gb = boot.geometry.boundingBox
+        let low = Infinity, xs = 0, n = 0
+        // the deck-side underside must be found in ROLL space: under grab/
+        // invert rotations the world AABB min corner maps to the wrong end of
+        // the boot and once fed back it diverges the clamp (#883)
+        for (let i = 0; i < 8; i++) {
+            tmpV.set(i & 1 ? gb.max.x : gb.min.x, i & 2 ? gb.max.y : gb.min.y, i & 4 ? gb.max.z : gb.min.z)
+            boot.localToWorld(tmpV)
+            roll.worldToLocal(tmpV)
+            if (tmpV.y < low) low = tmpV.y
+            xs += tmpV.x; n++
+        }
+        const cx = xs / n
+        const a = Math.abs(cx) / 0.89
+        const top = 0.115 + 0.16 * Math.pow(Math.max(0, a - 0.62) / 0.38, 2)
+        const gap = low - top
+        const target = Math.min(WELD_HI, Math.max(WELD_LO, gap))
+        const dy = target - gap
+        if (Math.abs(dy) < 2e-3 || !Number.isFinite(dy)) continue
+        const below = roll.localToWorld(tmpV.set(cx, low, 0))
+        const above = roll.localToWorld(tmpV2.set(cx, low + dy, 0))
+        const d = foot.parent.worldToLocal(above).sub(foot.parent.worldToLocal(below))
+        foot.position.add(d)
+    }
+}
 
 function blendHero(hero, pose, tick) {
     if (hero.pose !== pose) { hero.pose = pose; hero.cur = {} }
@@ -1331,6 +1375,7 @@ export function poseRider(root, r, tick, override) {
         root.scale.y = 1
         if (hero) blendHero(hero, pose, tick)
         else { armR.rotation.z = r.grab ? (r.grabKind === 0 || r.grabKind === 2 || r.grabKind === 5 ? 1.5 : 1.1) : 0.35; legs.scale.y = 0.9 }
+        if (hero) weldBoots(root, hero)
         return
     }
     const c = r.crouch ? 0.78 : r.tuck ? 0.66 : 1
@@ -1346,6 +1391,7 @@ export function poseRider(root, r, tick, override) {
         legs.position.y = 0.55 * c * (1 - stomp)
         armR.rotation.z = r.tuck ? 0.9 : 0.2
     }
+    if (hero) weldBoots(root, hero)
 }
 
 export function sprayField(lite) {
