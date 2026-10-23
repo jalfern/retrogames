@@ -21,7 +21,7 @@
 
 import { CODE_RE, newRoom, join, leave, relay, rosterOf, MAX_MSG } from '../relay/core.js'
 import { decodeCode, seatKinds, createRoom, HOST_SLOT } from '../src/utils/room.js'
-import { encodeState, decodeState, seatIds, resolveHeat, podiumSeats, computeStandings, FIELD } from '../src/games/SSX/net.js'
+import { encodeState, decodeState, seatIds, resolveHeat, podiumSeats, computeStandings, pruneGhosts, FIELD } from '../src/games/SSX/net.js'
 import { startRelay } from '../relay/server.mjs'
 import { WebSocket } from 'ws'
 
@@ -170,6 +170,24 @@ console.log('D. SSX online net.js (snapshots, seats, standings)')
     const guest = seatIds(3, [0, 1, 3], 4)
     ok(guest.seatToId[3] === 0 && guest.remoteSeats.join(',') === '0,1' && guest.cpuIds.length === 3,
         'guest seat3 maps itself to rider 0 and the other humans to ids 1,2', JSON.stringify({ remote: guest.remoteSeats, cpu: guest.cpuIds }))
+
+    // #858 #3 STALE GHOSTS: a friend who leaves mid-heat must have their ghost
+    // dropped, not left parked at their last position. Model host seat0's field:
+    // before the leave, seats 1 and 3 are live ghosts (rider ids 1,2).
+    const liveBefore = seatIds(0, [0, 1, 3], 4)
+    const ghosts = {}
+    ghosts[liveBefore.seatToId[1]] = { s: 100, heat: 0 }
+    ghosts[liveBefore.seatToId[3]] = { s: 200, heat: 0 }
+    const idsBefore = liveBefore.remoteSeats.map((s) => liveBefore.seatToId[s])
+    ok(pruneGhosts(ghosts, idsBefore).length === 0, 'pruneGhosts keeps every ghost while its seat is live', JSON.stringify(Object.keys(ghosts)))
+    // seat 3 leaves -> roster [0,1]; seat1's ghost (id1) stays, seat3's ghost is stale.
+    const liveAfter = seatIds(0, [0, 1], 4)
+    const idsAfter = liveAfter.remoteSeats.map((s) => liveAfter.seatToId[s])
+    const removed = pruneGhosts(ghosts, idsAfter)
+    ok(removed.length === 1 && ghosts[1] && !ghosts[2],
+        'a leaving seat drops exactly its own ghost; the live friend survives', JSON.stringify({ removed, keys: Object.keys(ghosts) }))
+    ok(pruneGhosts(ghosts, []).length === 1 && Object.keys(ghosts).length === 0,
+        'pruneGhosts clears ghosts when every remote seat is gone')
 
     // standings: the friends ranked by finish time; same finish table -> same podium
     const seats = [0, 1, 3]
