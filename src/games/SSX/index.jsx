@@ -18,16 +18,22 @@ import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateH
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
 import { padState } from '../../utils/padState'
-import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
+// #844: the harness forces the touch trick-pad on headless Chrome (no coarse
+// pointer there): ?touchpad=1 shows the pad exactly as a phone sees it.
+const TOUCH_PAD = TOUCH || (typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).has('touchpad'))
 
 const SSXGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [result, setResult] = useState(null)
+    const [trickHeld, setTrickHeld] = useState(() => new Set())
+    const trickApi = useRef(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const hudRef = useRef({})
@@ -68,6 +74,27 @@ const SSXGame = () => {
         scene.add(spray.pts)
         const sprayVel = new Float32Array(spray.n * 3)
         const sprayLife = new Float32Array(spray.n)
+
+        // #844 wipeout debris: the board flies off the rider on every crash —
+        // a tumbling, spinning deck that tumbles away through the snow cloud.
+        const debris = []
+        const disposeMesh = (mesh) => mesh.traverse((o) => {
+            if (o.geometry) o.geometry.dispose()
+            if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose())
+        })
+        const spawnDebris = (r) => {
+            if (debris.length >= 8) { const d0 = debris.shift(); scene.remove(d0.mesh); disposeMesh(d0.mesh) }
+            const rp = slopePos(g.course, r.s, r.x)
+            const mesh = makeBoard(RIDER_COLORS[r.id], r.id, r.id)
+            mesh.position.set(rp.x, rp.y + 0.45, rp.z)
+            mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3)
+            scene.add(mesh)
+            debris.push({
+                mesh, life: 1.15,
+                vx: (Math.random() - 0.5) * 5.5, vy: 3.5 + Math.random() * 3.2, vz: (Math.random() - 0.5) * 5.5,
+                wx: 7 + Math.random() * 9, wz: 5 + Math.random() * 7,
+            })
+        }
 
         // fake contact shadow keeps the pack readable mid-air (#548): a dark
         // ellipse pinned to the snow under the leader, fading as air grows;
@@ -149,10 +176,28 @@ const SSXGame = () => {
         let pop = '', popT = 0
         let poseOverride = null
         const keys = new Set()
+        // #844: the touch trick pad synthesises the same key codes the desktop
+        // reads (KeyX grab, KeyZ flip, KeyV invert) into the same held-key set,
+        // so phones get grab/flip/invert with no second code path.
+        const pressTrick = (code, down) => {
+            if (down) keys.add(code); else keys.delete(code)
+            setTrickHeld((prev) => {
+                const s = new Set(prev)
+                if (down) s.add(code); else s.delete(code)
+                return s
+            })
+        }
+        trickApi.current = pressTrick
         const disposables = []
         const keep = (o) => { disposables.push(o); return o }
 
+        const clearDebris = () => {
+            for (const d of debris) { scene.remove(d.mesh); disposeMesh(d.mesh) }
+            debris.length = 0
+        }
+
         const setCourseVisuals = () => {
+            clearDebris()
             if (world) {
                 scene.remove(world)
                 world.traverse((o) => { if (o.geometry && !o.userData.keepGeo) o.geometry.dispose() })
@@ -245,6 +290,24 @@ const SSXGame = () => {
                     audioController.playFilteredNoise(0.55, 0.16, 260)
                     audioController.duckMusic(0.2, 0.7)
                     shake = 0.7
+                }
+                // #844: a wipeout is a scene, not a pause — the whole field sees
+                // it: a wide snow blast and the board torn off, tumbling away.
+                if (e.type === 'crash') {
+                    const rr = g.riders[e.who] || g.riders[0]
+                    const rp = slopePos(g.course, rr.s, rr.x)
+                    const nb = 14 + Math.round(Math.min(10, rr.v))
+                    for (let k = 0; k < nb; k++) {
+                        const fan = (Math.random() - 0.5) * 2.6
+                        const up = 2.2 + Math.random() * 3.6
+                        putSpray(
+                            rp.x + Math.cos(rp.th) * fan, rp.y + 0.18, rp.z - Math.sin(rp.th) * fan,
+                            Math.cos(rp.th) * fan * 2.6 + (Math.random() - 0.5) * 3,
+                            up,
+                            -Math.sin(rp.th) * fan * 2.6 + (Math.random() - 0.5) * 2.5,
+                        )
+                    }
+                    spawnDebris(rr)
                 }
                 // #791 line-bobble: a rival clipping a line it should have dodged
                 // throws a rock-dust burst and a low thunk — the field is messy now,
@@ -439,6 +502,21 @@ const SSXGame = () => {
                     if (sprayLife[i] <= 0) spray.pos[i * 3 + 1] = -9999
                 }
                 spray.geo.attributes.position.needsUpdate = true
+                // #844: debris boards tumble away from the wipeout site
+                for (let i = debris.length - 1; i >= 0; i--) {
+                    const d = debris[i]
+                    d.life -= dt
+                    d.vy -= 9.8 * dt
+                    d.mesh.position.x += d.vx * dt
+                    d.mesh.position.y += d.vy * dt
+                    d.mesh.position.z += d.vz * dt
+                    d.mesh.rotation.x += d.wx * dt
+                    d.mesh.rotation.z += d.wz * dt
+                    if (d.life <= 0) {
+                        scene.remove(d.mesh); disposeMesh(d.mesh)
+                        debris.splice(i, 1)
+                    }
+                }
             }
 
             // #780 physical mix: wind rising with speed, a swish off the edge
@@ -588,6 +666,7 @@ const SSXGame = () => {
             shownHeat = g.heat
             setCourseVisuals()
             keys.clear()
+            setTrickHeld(new Set())
             poseOverride = null
             setResult(null)
             dragId = null
@@ -788,6 +867,13 @@ const SSXGame = () => {
                     return { hero: h ? 1 : h === false ? 2 : 0, pose: h ? h.pose : null, bones: h ? Object.keys(h.bones).length : 0 }
                 }),
                 fps: () => Math.round(fpsEMA),
+                // #844 QA probes: wipeout scene (flying board + live spray
+                // particles) and whether the touch trick-pad layer is mounted.
+                wipeout: () => ({
+                    debris: debris.length,
+                    spray: sprayLife.reduce((a, b) => a + (b > 0 ? 1 : 0), 0),
+                }),
+                touchpad: () => TOUCH_PAD,
                 // #780: what the chase/vista camera is doing + whether the bed
                 // is running — the headless drive proves summit-before-GO.
                 cam: () => {
@@ -804,6 +890,11 @@ const SSXGame = () => {
                 start: (m) => startPlay(m === 'showoff' ? 'showoff' : 'race'),
                 boostMeter: () => { g.riders[0].meter = 100; return g.riders[0].meter },
                 seek: (m) => { g.riders[0].s = m; camFresh = true; return g.riders[0].s },
+                // DEV QA (#844): shove the rider across the valley-wall line so
+                // the ground-step crash fires on the next tick, deterministically
+                // (curve push can outrun the pad on a random line — the wipeout
+                // gates must not depend on luck)
+                nudgeWall: () => { const p = g.riders[0]; p.x = (p.x >= 0 ? 1 : -1) * 1.78; camFresh = true; return p.x },
                 heat: (h) => { loadHeat(g, h); shownHeat = g.heat; setCourseVisuals(); return g.course.name },
                 toAttract: () => { g = makeGame('race'); shownHeat = 0; poseOverride = null; setCourseVisuals(); setMode('attract') },
                 prognose: () => {
@@ -836,6 +927,8 @@ const SSXGame = () => {
 
         return () => {
             if (import.meta.env.DEV) { delete window.__ssxTest; unmountDbg() }
+            trickApi.current = null
+            clearDebris()
             audioController.stopMusic()
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
@@ -914,6 +1007,27 @@ const SSXGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'SSX')} onResume={handleResume} />}
+            {/* #844: phone trick buttons — grab / flip / invert feed the same
+                key codes the desktop reads, so the trick economy works one-handed
+                on the slope (INV needs GRAB held, like on the keyboard). */}
+            {play && !paused && TOUCH_PAD && (
+                <div
+                    className="fixed z-50 right-0 flex gap-2 pointer-events-auto select-none"
+                    style={{ bottom: 'calc(9.5rem + env(safe-area-inset-bottom))', paddingRight: 'calc(2rem + env(safe-area-inset-right))' }}
+                >
+                    {[['GRAB', 'KeyX'], ['FLIP', 'KeyZ'], ['INV', 'KeyV']].map(([label, code]) => (
+                        <button
+                            key={code}
+                            data-ssx-trick={code}
+                            className={`rounded-full font-bold text-white border border-white/10 shadow-lg backdrop-blur-sm transition-transform ${trickHeld.has(code) ? 'bg-cyan-400/90 scale-95' : 'bg-cyan-600/50'}`}
+                            style={{ width: 52, height: 52, fontSize: 11, touchAction: 'none' }}
+                            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.setPointerCapture?.(e.pointerId); trickApi.current?.(code, true) }}
+                            onPointerUp={(e) => { e.preventDefault(); e.stopPropagation(); trickApi.current?.(code, false) }}
+                            onPointerCancel={() => trickApi.current?.(code, false)}
+                        >{label}</button>
+                    ))}
+                </div>
+            )}
             <VirtualControls visible={play && !paused && TOUCH} secondAction={{ label: 'BST', code: 'ShiftLeft' }} />
         </div>
     )

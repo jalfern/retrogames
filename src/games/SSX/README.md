@@ -410,6 +410,21 @@ grab does nothing: hands on the board are what turn it. `r.invert` rides the
 hash line (`iv…`), so replays roll identically; gates in `ssxcheck` pin the
 name, direction, pay, the half-done bail, the grab requirement and determinism.
 
+## Touch trick pad + real wipeouts (#844)
+
+- #844 touch trick pad + real wipeouts: phones get GRAB/FLIP/INV buttons
+  (`index.jsx`, shown with the pad) that feed the same held-key codes the
+  desktop reads (KeyX/KeyZ/KeyV) — the grab latches mid-air the instant the
+  pad button lands, and INV rolls the board after the finger lifts off GRAB
+  (single-thumb invert = GRAB-tap-then-INV mid-air), so the whole trick
+  economy works one-handed. `?touchpad=1` forces the pad on for the harness
+  (headless Chrome has no coarse pointer). A crash is now a scene: every
+  wipeout (player or field) throws a wide snow blast AND tears the board off
+  — a loose deck flies, spins and drops through the cloud (~1.1 s, renderer
+  cosmetic only, physics and the sim hash untouched). Probes:
+  `__ssxTest.touchpad()` / `.wipeout()` (debris + live spray counts); gates
+  in `ssxmodelcheck` (#844 section: pad mounts, three buttons, press reaches
+  the key set, mid-air grab, invert roll, crash ledger, debris, blast).
 ## Honest gaps (filed as the polish pass)
 
 - CPU riders wipe out on seeded landings (#791) and now *miss* lines too
@@ -417,10 +432,10 @@ name, direction, pay, the half-done bail, the grab requirement and determinism.
   line lost, off-balance wobble, dust burst — on a skill-scaled seeded roll, so
   places change hands even when nobody actually falls. A bad roll still goes over
   the bars; the player is never exempt (ground contact is a straight bailing).
-- Keyboard-only flips/grabs/inverts on desktop (V is the invert key — no second
-  touchpad, per platform law); phones get steer + A-jump + B-boost
-  (spins still work via the d-pad mid-air). Analogue depth is the #791 ramp +
-  canvas drag distance — not a physical analogue stick.
+- Trick verbs reach phones since #844 (GRAB/FLIP/INV buttons feeding the key
+  codes); still no physical analogue stick — flip direction on touch is
+  backflip only (KeyZ), front-flip is keyboard C. Analogue depth is the #791
+  ramp + canvas drag distance.
 - Snow tracks are now geometry: fading carve grooves under the board (#310),
   on top of the speed-scaled spray. Attract now runs the theme bed at low
   gain and a hot, OVER-happy demo (#791).

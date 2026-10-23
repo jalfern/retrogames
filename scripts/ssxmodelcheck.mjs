@@ -196,6 +196,99 @@ r.check('contact shadow colour is per-theme', new Set(['day', 'night', 'dusk'].m
 r.check('night contact shadow is darker than day', shadowBy.night.base > shadowBy.day.base,
     `night ${shadowBy.night.base} vs day ${shadowBy.day.base}`)
 
+// ---- #844: touch trick-pad + wipeout scene (fresh page, pad forced on) ----
+const page2 = await browser.newPage({ viewport: { width: 480, height: 800 } })
+page2.on('pageerror', () => { pageErrors++ })
+await page2.goto(`${URL}&touchpad=1`, { waitUntil: 'load' })
+await page2.waitForFunction(() => !!window.__ssxTest, null, { timeout: 15000 })
+r.check('touch trick-pad layer mounts (?touchpad=1)', await page2.evaluate(() => window.__ssxTest.touchpad()))
+await page2.keyboard.press('ArrowRight')
+await page2.waitForFunction(() => window.__ssxTest.cam().phase === 'run', null, { timeout: 10000 }).catch(() => {})
+await page2.waitForTimeout(1200)
+const trBtns = await page2.evaluate(() => Array.from(document.querySelectorAll('[data-ssx-trick]')).map((b) => b.dataset.ssxTrick))
+r.check('pad carries GRAB/FLIP/INV trick buttons', trBtns.join(',') === 'KeyX,KeyZ,KeyV', trBtns.join(','))
+
+const btnBox = async (code) => page2.evaluate((c) => {
+    const b = document.querySelector(`[data-ssx-trick="${c}"]`)
+    if (!b) return null
+    const r = b.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+}, code)
+
+const grabBtn = await btnBox('KeyX')
+const flipBtn = await btnBox('KeyZ')
+const invBtn = await btnBox('KeyV')
+r.check('trick buttons are on-screen', !!(grabBtn && flipBtn && invBtn),
+    JSON.stringify({ grabBtn, flipBtn, invBtn }))
+
+if (grabBtn) {
+    await page2.mouse.move(grabBtn.x, grabBtn.y)
+    await page2.mouse.down()
+    const held = await page2.evaluate(() => window.__ssxTest.keys.has('KeyX'))
+    await page2.mouse.up()
+    const rel = await page2.evaluate(() => window.__ssxTest.keys.has('KeyX'))
+    r.check('GRAB button press reaches the held-key set', held && !rel, `${held}/${rel}`)
+}
+if (flipBtn) {
+    await page2.mouse.move(flipBtn.x, flipBtn.y)
+    await page2.mouse.down()
+    const held = await page2.evaluate(() => window.__ssxTest.keys.has('KeyZ'))
+    await page2.mouse.up()
+    const rel = await page2.evaluate(() => window.__ssxTest.keys.has('KeyZ'))
+    r.check('FLIP button press reaches the held-key set', held && !rel, `${held}/${rel}`)
+}
+
+// mid-air: GRAB button latches a real grab in the sim; INV then rolls the
+// board (the grab stays latched after the button lifts, exactly as on keys).
+// NOTE the probe's grab field swap: p.grabKind carries the latch (r.grab),
+// p.grab carries the kind — read grabKind/grabName for "grabbed".
+const airTrick = async () => {
+    await page2.evaluate(() => { window.__ssxTest.keys.delete('KeyX'); window.__ssxTest.keys.delete('KeyV') })
+    await page2.keyboard.down('Space')
+    await page2.waitForTimeout(600)
+    await page2.keyboard.up('Space')
+    if (!grabBtn || !invBtn) return null
+    await page2.mouse.move(grabBtn.x, grabBtn.y)
+    await page2.mouse.down()
+    await page2.waitForTimeout(100)
+    const g1 = await page2.evaluate(() => window.__ssxTest.probe().p)
+    await page2.mouse.up()
+    await page2.mouse.move(invBtn.x, invBtn.y)
+    await page2.mouse.down()
+    await page2.waitForTimeout(150)
+    const g2 = await page2.evaluate(() => window.__ssxTest.probe().p)
+    await page2.mouse.up()
+    return { g1, g2 }
+}
+let air = null
+for (let i = 0; i < 3 && !(air && air.g1.air && air.g1.grabKind === 1 && Math.abs(air.g2.invert) > 1); i++) {
+    air = await airTrick()
+    if (!air) break
+    await page2.waitForTimeout(300)
+}
+r.check('mid-air GRAB button banks a grab in the sim', !!(air && air.g1.air && air.g1.grabKind === 1 && air.g1.grabName),
+    JSON.stringify(air && { air: air.g1.air, grabKind: air.g1.grabKind, grabName: air.g1.grabName }))
+r.check('INV button rolls the board (invert) after the grab', !!(air && Math.abs(air.g2.invert) > 1),
+    air ? String(air.g2.invert.toFixed(1)) : 'no air')
+
+// wipeout: shove the rider past the valley-wall line — the crash must throw a
+// spray blast and tear the board off (debris), not just freeze the rider.
+const crashes0 = await page2.evaluate(() => window.__ssxTest.probe().p.crashes)
+await page2.evaluate(() => window.__ssxTest.nudgeWall())
+let wDebris = 0; let wSpray = 0; let wCrashes = crashes0
+for (let i = 0; i < 12 && !(wDebris >= 1 && wCrashes > crashes0); i++) {
+    await page2.waitForTimeout(300)
+    const w = await page2.evaluate(() => ({ w: window.__ssxTest.wipeout(), c: window.__ssxTest.probe().p.crashes }))
+    wDebris = Math.max(wDebris, w.w.debris)
+    wSpray = Math.max(wSpray, w.w.spray)
+    wCrashes = Math.max(wCrashes, w.c)
+}
+r.check('wall crash bumps the crash ledger', wCrashes > crashes0, `${crashes0} -> ${wCrashes}`)
+r.check('wipeout tears the board off (debris flies)', wDebris >= 1, String(wDebris))
+r.check('wipeout throws a snow blast (live spray particles)', wSpray >= 12, String(wSpray))
+
 r.check('zero page errors', pageErrors === 0, String(pageErrors))
+await page.close()
+await page2.close()
 await browser.close()
 r.exit()
