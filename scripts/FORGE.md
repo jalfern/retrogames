@@ -57,10 +57,25 @@ AGENTS.md wins.
     it: claim `building-qa`, own `qa/<slug>` worktree, reproduce, fix, gate,
     ship with `Closes #<n>` in the PR body. You run the *procedure* on your
     own model; the mini stays out of it (you are the studio's only stream).
-    One ship per session still holds: a game if you claimed one, else this one
-    QA fix. Report it in STATE.md as `QA: fixed #<n> via PR #<m>`. If the QA
-    lane has nothing claimable either, STOP — nothing to forge; say so in
-    STATE.md and exit.
+    **One ship per session still holds:** a game if you claimed one, else this one
+    QA fix. Report it in STATE.md as `QA: fixed #<n> via PR #<m>`.
+    **Never idle the builder (#841).** If the QA lane has nothing claimable
+    (or a live QA session owns the borrow), do not STOP — run a flagship
+    polish stage instead. Pick one of Jon's flagship games in his order —
+    **SSX, Emberwood, COMET DRIFT HD, Myst** — skipping any game the QA lane
+    holds as `building-qa` (never touch a game QA is inside), and take the
+    oldest item in that game's README "Honest gaps" list that no open QA
+    issue already owns (an issue owns a gap when its title/body names the
+    game and repeats the gap's opening words; when unsure, treat it as owned
+    — this stage exists only for what QA has not reached). Use
+    `scripts/lib/idle.mjs` (`parseGaps` + `flagshipStage`) to derive the pick
+    honestly from the READMEs, not from memory. **File that stage as its own
+    issue first** (`gh issue create` with `game-queue` + `lane:games`, title
+    `POLISH — <GAME>: <gap summary>`, so it shows on the board and in the
+    shift report), **then claim it the normal way** (step 2's claim + worktree)
+    and build it as one stage: it is game code, so it counts for AGENTS.md
+    rule 4. Only when every flagship's every gap is owned may you STOP — say
+    so in STATE.md and exit.
 3. **Design in one paragraph.** Name the original (machine and year) and
    list its 5 signature features, mechanics AND look. Those five are the
    spec; respect anything extra the issue body asks for. **Where the issue
