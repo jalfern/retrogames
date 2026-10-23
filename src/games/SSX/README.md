@@ -314,6 +314,37 @@ it, a bail eats it, hash determinism, and the hot attract demo throws ≥2
 REVERTs with zero crashes. Mutation proof (done once, by hand):
 `revert = false` → 4 gates red; restore → green.
 
+## Flags flutter, grandstands hop (#791 slice 11)
+
+The face was frozen decor: slalom flags stood rigid and the finish grandstands
+were empty boxes. All new motion is pure functions of `(tick, s, seed)` in
+`art.js` — the sim is untouched, so nothing rides the sim hash; replays differ
+only in pixels.
+
+- **One wind field** `windAt(tick, s)` ∈ [0,1]: a slow gust (`sin(t·0.011 +
+  s·0.019)`) plus a faster ripple, clamped — the breeze travels down the face,
+  so flags at different heights disagree at the same tick.
+- **`flagSway`** bends the pole (≤0.15 rad lean) and snaps the banner out
+  along the breeze (stretch ±10%), both scaled by the local wind; a per-instance
+  phase (from the plan's s/x) staggers neighbours so the line never claps.
+- **`crowdPlan(seed)`** packs voxels on the three concrete tiers (7/6/5 seats,
+  some empty, kit colors from eight) under the roof line; `crowdHop` bounces
+  each block `|sin|` at its own rate/phase, and **`crowdHype(s, standS)`**
+  gates it: seated beyond ~280 m, full inside ~60 m, symmetric, so the crowd
+  is already up when the line comes into view and keeps roaring through it.
+- `attachShelf` tags every flag + spectator into `world.userData.anim` (and
+  records `standS`); `index.jsx` calls `animateDecor(world, g.tick, hype)` once
+  per frame — 0 touched when the shelf never attached (degrades whole). The
+  DEV probe `__ssxTest.decor()` reports tag counts + live y-samples.
+
+ssxcheck section 9g (+14 gates, 204 total): wind band/variance/determinism/
+travelling gust, lean bounds + wind-tracking + phase spread, seeded crowd size/
+rows/colors/replay-stability, hype 0 = seated, bounded hop, distinct beats,
+hype monotone/symmetric, animateDecor drives both lists and degrades whole.
+Mutation proofs (done once, by hand): constant wind → 3 gates red; `crowdHop`
+ignoring hype → the seated gate red; restore → green. Browser: 34 flags + 31
+spectators tagged, crowd hops at the stands, zero page errors.
+
 ## Hard-won verify notes
 
 
@@ -337,7 +368,7 @@ REVERTs with zero crashes. Mutation proof (done once, by hand):
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 173 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 204 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
 npm run ssxterraincheck                 # 50 checks: snow/rock surfaces (#669, #685)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,

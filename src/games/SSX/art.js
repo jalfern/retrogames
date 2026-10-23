@@ -608,6 +608,101 @@ export function peaksRing() {
     return ring
 }
 
+// ---- wind + crowd life (#791 slice 11) --------------------------------------
+// The original's course flags snapped in the breeze and the grandstands at
+// the line were a shimmer of spectators. All of it is pure functions of
+// (tick, position, seed) — no sim state, no Math.random — so ssxcheck pins
+// the field in Node and every client agrees, tick for tick.
+
+export const WIND = {
+    base: 0.55, gustK: 0.32, rippleK: 0.13,
+    tSlow: 0.011, tFast: 0.043, sK: 0.019,
+}
+
+// breeze strength 0..1 at sim-tick t on slope position s (metres): a slow
+// gust travelling down the face plus a faster ripple, clamped to the band.
+export function windAt(tick, s) {
+    const gust = Math.sin(tick * WIND.tSlow + s * WIND.sK)
+    const ripple = Math.sin(tick * WIND.tFast + s * WIND.sK * 2.7)
+    return Math.max(0, Math.min(1, WIND.base + WIND.gustK * gust + WIND.rippleK * ripple))
+}
+
+// how one flag reads the wind: `lean` bends the pole (rad), `stretch` snaps
+// the banner out along the breeze (x multiplier). phase staggers neighbouring
+// flags so the line never claps in unison.
+export function flagSway(tick, phase, s) {
+    const w = windAt(tick, s)
+    const lean = w * (0.10 * Math.sin(tick * 0.13 + phase) + 0.05 * Math.sin(tick * 0.31 + phase * 2.3))
+    const stretch = 1 + w * 0.10 * Math.sin(tick * 0.27 + phase * 1.7)
+    return { w, lean, stretch }
+}
+
+const CROWD_COLORS = [0xe8503c, 0x3c8fe8, 0xf0c040, 0x50c878, 0xb060d0, 0xf08030, 0xf2f2f5, 0x30b0a0]
+export const CROWD = { hop: 0.16, rateLo: 0.16, rateHi: 0.28 }
+
+// voxel spectators for one grandstand clone: three rows on the concrete tiers
+// (tier tops y = 0.8 + row, z walking back), seeded so two stands differ and
+// a replay hops identically. A seat stays empty sometimes — crowds aren't
+// grids. Blocks stand 0.22 m so the top row clears the roof (bottom 3.07).
+export function crowdPlan(seed = 0) {
+    const out = []
+    for (let row = 0; row < 3; row++) {
+        const n = 7 - row
+        const y = 0.91 + row
+        const z = 0.62 - row * 0.85
+        for (let i = 0; i < n; i++) {
+            const k = seed * 131 + row * 17 + i
+            if (hash(k) < 0.12) continue
+            out.push({
+                x: n > 1 ? -2.4 + (i + (row % 2 ? 0.5 : 0)) * (4.8 / (n - 1)) : 0,
+                y, z,
+                c: CROWD_COLORS[Math.floor(hash(k * 3.7) * CROWD_COLORS.length)],
+                rate: CROWD.rateLo + hash(k * 5.3) * (CROWD.rateHi - CROWD.rateLo),
+                ph: hash(k * 7.1) * Math.PI * 2,
+                amp: 0.6 + hash(k * 9.7) * 0.4,
+            })
+        }
+    }
+    return out
+}
+
+// how far one spectator hops for the frame. hype (0..1) is the grandstand's
+// excitement at the player's distance: far up the face the seats stay still,
+// as the line comes into view the crowd bounces.
+export function crowdHop(tick, b, hype = 1) {
+    return hype * b.amp * CROWD.hop * Math.abs(Math.sin(tick * b.rate + b.ph))
+}
+
+// finish-side excitement: full inside ~60 m of the stands, zero past ~280 m,
+// smooth between — and symmetric, so the crowd keeps roaring as you ride out.
+export function crowdHype(s, standS) {
+    const d = Math.abs(s - standS)
+    const u = (280 - d) / 220
+    const c = Math.max(0, Math.min(1, u))
+    return c * c * (3 - 2 * c)
+}
+
+// drive every tagged prop in a decor group for this tick. Returns the number
+// of nodes touched (0 when the shelf never attached — the look degrades whole,
+// exactly like the other shelf props).
+export function animateDecor(group, tick, hype = 1) {
+    const anim = group && group.userData && group.userData.anim
+    if (!anim) return 0
+    let n = 0
+    for (const f of anim.flags) {
+        const sw = flagSway(tick, f.phase, f.s)
+        f.m.rotation.z = f.baseZ + sw.lean
+        f.m.scale.x = f.baseS * sw.stretch
+        n++
+    }
+    for (const c of anim.crowd) {
+        c.m.position.y = c.y0 + crowdHop(tick, c.b, hype)
+        c.m.rotation.z = Math.sin(tick * c.b.rate * 1.35 + c.b.ph) * 0.14 * hype
+        n++
+    }
+    return n
+}
+
 // ---- summit horizon (#638) ---------------------------------------------------
 // A gradient sky dome, a sun and a ring of distant peaks, all centred on the
 // sky group's origin — index.jsx parks that origin on the camera every frame,
@@ -710,6 +805,14 @@ export async function attachShelf(course, group, alive = () => true) {
     for (const ch of [...group.children]) {
         if (ch.userData.ph) { group.remove(ch); ch.traverse((o) => { if (o.geometry) o.geometry.dispose() }) }
     }
+    // #791 slice 11: flags + spectators get tagged for the frame-loop animator;
+    // index.jsx drives animateDecor(world, tick, hype) every frame.
+    const anim = { flags: [], crowd: [] }
+    group.userData.anim = anim
+    const gs0 = plan.find((e) => e.id === 'grandstand')
+    group.userData.standS = gs0 ? gs0.s : Infinity
+    const crowdGeo = new THREE.BoxGeometry(0.26, 0.22, 0.22)
+    const nightTint = course.theme === 'night' ? 0.5 : course.theme === 'dusk' ? 0.82 : 1
     let n = 0
     for (const e of plan) {
         const src = models[e.id]
@@ -728,6 +831,23 @@ export async function attachShelf(course, group, alive = () => true) {
         m.position.set(p.x, p.y - 0.05, p.z)
         m.scale.setScalar(e.scale)
         m.rotation.y = e.orient === 'along' ? -p.th - Math.PI / 2 : e.orient === 'across' ? acrossYaw(e, p) : e.rot
+        if (e.id === 'flag') {
+            anim.flags.push({
+                m, s: e.s, phase: hash(e.s * 0.31 + e.x * 7.7) * Math.PI * 2,
+                baseZ: m.rotation.z, baseS: e.scale,
+            })
+        }
+        if (e.id === 'grandstand') {
+            const seed = Math.round(e.s * 7 + e.x * 13.1)
+            for (const b of crowdPlan(seed)) {
+                const c = new THREE.Mesh(crowdGeo, new THREE.MeshLambertMaterial({
+                    color: new THREE.Color(b.c).multiplyScalar(nightTint),
+                }))
+                c.position.set(b.x, b.y, b.z)
+                m.add(c)
+                anim.crowd.push({ m: c, y0: b.y, b })
+            }
+        }
         group.add(m)
         n++
     }
