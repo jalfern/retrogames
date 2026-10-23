@@ -9,18 +9,24 @@
 // Served at https://retrogames.jalfern.workers.dev/room/<CODE> (wss).
 
 import { DurableObject } from 'cloudflare:workers'
-import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue } from './core.js'
+import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders } from './core.js'
 
 const GH_API = 'https://api.github.com'
 
+// CORS (#886): the button on jalfern.com fetches /status and POSTs /feedback
+// cross-origin; every plain-HTTP answer here carries the allow headers (WS
+// upgrades are exempt — WebSocket traffic is not CORS-gated).
+const json = (obj, origin, status) => Response.json(obj, { status, headers: corsHeaders(origin) })
+
 async function handleFeedback(req, env) {
+    const origin = req.headers.get('origin')
     if (!env || !env.GITHUB_TOKEN || !env.GH_REPO) {
-        return Response.json({ ok: false, err: 'relay not configured' }, { status: 503 })
+        return json({ ok: false, err: 'relay not configured' }, origin, 503)
     }
     let body
-    try { body = await req.json() } catch { return Response.json({ ok: false, err: 'bad json' }, { status: 400 }) }
+    try { body = await req.json() } catch { return json({ ok: false, err: 'bad json' }, origin, 400) }
     const v = validateFeedback(body)
-    if (!v.ok) return Response.json({ ok: false, err: v.err }, { status: 400 })
+    if (!v.ok) return json({ ok: false, err: v.err }, origin, 400)
     const isJon = !!(env.JON_KEY && typeof body.key === 'string' && body.key === env.JON_KEY)
     const issue = buildFeedbackIssue(body, isJon)
     try {
@@ -33,11 +39,11 @@ async function handleFeedback(req, env) {
             },
             body: JSON.stringify(issue),
         })
-        if (!res.ok) return Response.json({ ok: false, err: `github ${res.status}` }, { status: 502 })
+        if (!res.ok) return json({ ok: false, err: `github ${res.status}` }, origin, 502)
         const j = await res.json()
-        return Response.json({ ok: true, issue: j.html_url, labels: issue.labels })
+        return json({ ok: true, issue: j.html_url, labels: issue.labels }, origin, 200)
     } catch {
-        return Response.json({ ok: false, err: 'github unreachable' }, { status: 502 })
+        return json({ ok: false, err: 'github unreachable' }, origin, 502)
     }
 }
 
@@ -187,6 +193,15 @@ export class Room extends DurableObject {
 export default {
     async fetch(req, env) {
         const url = new URL(req.url)
+        const origin = req.headers.get('origin')
+        // Browsers preflight the JSON POST (content-type is not a CORS-safelisted
+        // value); answer OPTIONS for the HTTP endpoints, never for room upgrades.
+        if (req.method === 'OPTIONS') {
+            if (url.pathname === '/status' || url.pathname === '/feedback') {
+                return new Response(null, { status: 204, headers: corsHeaders(origin) })
+            }
+            return new Response(null, { status: 405 })
+        }
         if (req.method === 'POST' && url.pathname === '/feedback') return handleFeedback(req, env)
         if (url.pathname === '/' || url.pathname === '/status') {
             let rooms = -1
@@ -195,7 +210,7 @@ export default {
             // the relay can actually file (deploy + GH secret present), so a PR that
             // ships the client before Jon's deploy never shows a button that 503s.
             const feedback = !!(env.GITHUB_TOKEN && env.GH_REPO)
-            return Response.json({ ok: true, service: 'retrogames-relay', rooms, feedback })
+            return json({ ok: true, service: 'retrogames-relay', rooms, feedback }, origin, 200)
         }
         const m = url.pathname.match(/^\/room\/([A-Za-z0-9]{4})$/)
         if (!m) return new Response('use /room/CODE', { status: 400 })

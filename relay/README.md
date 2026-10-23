@@ -33,6 +33,19 @@ after 1 h).
 `cloudflare` (`CLOUDFLARE_API_TOKEN` secret, Workers-deploy-only, expires
 2027-01-17; `CLOUDFLARE_ACCOUNT_ID` variable). `npx wrangler@4 deploy`.
 
+## HTTP endpoints (#737/#886)
+- `GET /status` → `{ok, rooms, feedback}` — the button self-hide probe
+  (`feedback:true` only once GH secrets are deployed).
+- `POST /feedback` → files a GitHub issue via the server-side token; the
+  payload gate is `validateFeedback` in `core.js`.
+- CORS (#886): both endpoints (plus `OPTIONS` preflight) send
+  `Access-Control-Allow-Origin` for the arcade origins only
+  (`jalfern.com`, `www.jalfern.com`, the workers.dev host, localhost:*).
+  Unknown origins get no ACAO — the browser blocks them, which is the point:
+  the allowlist is this endpoint's front door. Jon's reports skip the
+  needs-approval quarantine when the body carries his private `key`
+  (`src/utils/feedback.js` stores it from a one-time `?jonkey=…` link).
+
 ## Client
 `src/utils/lockstep.js` (pure) + the Gauntlet pilot
 (`src/games/Gauntlet/index.jsx`): `?net=host`, `?net=join&room=CODE`,
