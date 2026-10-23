@@ -21,7 +21,7 @@
 
 import { CODE_RE, newRoom, join, leave, relay, rosterOf, MAX_MSG } from '../relay/core.js'
 import { decodeCode, seatKinds, createRoom, HOST_SLOT } from '../src/utils/room.js'
-import { encodeState, decodeState, seatIds, resolveHeat, podiumSeats, FIELD } from '../src/games/SSX/net.js'
+import { encodeState, decodeState, seatIds, resolveHeat, podiumSeats, computeStandings, FIELD } from '../src/games/SSX/net.js'
 import { startRelay } from '../relay/server.mjs'
 import { WebSocket } from 'ws'
 
@@ -189,6 +189,16 @@ console.log('D. SSX online net.js (snapshots, seats, standings)')
     const other = resolveHeat(seats, finA, { 0: 0, 1: 0, 3: 0 })
     const other2 = resolveHeat(seats, finB, other.totals)
     ok(podiumSeats(seats, other2.totals).join(',') === pod.join(','), 'two boxes given the same finishes agree on the podium')
+
+    // the full online reducer: three heats of finish times -> points -> podium, done
+    const heats = { 0: [60, 55, 56], 1: [58, 57, 66], 3: [59, 70, 60] }
+    const st = computeStandings(seats, heats, 3)
+    ok(st.done === true, 'computeStandings flags the tournament complete when all seats finished all heats')
+    ok(st.totals[0] === 25 && st.totals[1] === 22 && st.totals[3] === 19, 'points accumulate across three heats by finish order', JSON.stringify(st.totals))
+    ok(st.podium.join(',') === '0,1,3', 'computeStandings ranks the friends onto the podium', st.podium.join(','))
+    // an unfinished seat is scored last for that heat, and the table is not "done"
+    const st2 = computeStandings(seats, { 0: [60, 55, 56], 1: [58, 57, null], 3: [59, 70, 60] }, 3)
+    ok(st2.done === false, 'a seat that has not finished every heat keeps the tournament open')
     void relay
 }
 function applyGhostSafe(r, gs) { r.s = gs.s; r.spin = gs.spin; r.finished = gs.finished }

@@ -166,6 +166,7 @@
     "netdrill": "node scripts/netdrill.mjs",
     "lint:room": "eslint src/utils/room.js src/games/SSX/net.js relay/core.js relay/worker.js scripts/roomcheck.mjs",
     "roomcheck": "node scripts/roomcheck.mjs",
+    "ssxdrill": "node scripts/ssxdrill.mjs",
     "gauntletplay": "node scripts/gauntletplay.mjs",
     "lint:slots": "eslint src/games/Gauntlet src/games/BubbleBobble src/utils scripts/slotcheck.mjs",
     "slotcheck": "node scripts/slotcheck.mjs",
