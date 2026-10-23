@@ -580,7 +580,7 @@ r.check('it did not abandon a non-empty frontier',
   frontierLeft && !checkBudget
     ? `the map still holds untried ground (${frontierLeft.room}) and the agent chose to stop: ${loop.reason}`
     : `frontier ${frontierLeft ? 'open — but only because the check ended the run' : 'exhausted'}`)
-if (frontierLeft === null) {
+if (frontierLeft === null && !checkBudget) {
   r.check('the exhaustion stop says which fallback ran out',
     sum.report.some((x) => /frontier exhausted: no untested way left/.test(x)),
     sum.report.slice(-2).join(' · ') || 'no report at all — it sat down without explaining')
