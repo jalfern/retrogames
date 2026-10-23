@@ -176,6 +176,7 @@ const BlobBattleGame = () => {
             gs._cpu1 = makeCpu(gs.seed)
             gs._cpu2 = makeCpu(gs.seed ^ 0xbeef)
             ls.reset()
+            padMirror[0].clear(); padMirror[1].clear()
             stalledTicks = 0
             desyncRef.current = false
             setDesync(false)
@@ -216,6 +217,19 @@ const BlobBattleGame = () => {
 
         const onlineStart = () => {
             if (!net.room || net.room.phase !== 'waiting') return
+            const seed = hostSeed()
+            net.room.send('go', { seed })
+            net.phase = 'racing'
+            pushNetUi()
+            startPlay('online', seed)
+        }
+
+        // re-join (#863): a desync froze the match; the host re-rolls the seed
+        // and re-kicks the pair. Both boxes restart clean on the fresh seed —
+        // the guest rides the existing 'go' handler — so a frozen online match
+        // no longer means "refresh to replay".
+        const rejoin = () => {
+            if (!net.room || net.role !== 'host') return
             const seed = hostSeed()
             net.room.send('go', { seed })
             net.phase = 'racing'
@@ -456,6 +470,7 @@ const BlobBattleGame = () => {
                 }
                 setSc('attract'); return
             }
+            if (desyncRef.current && net.active && net.role === 'host' && (code === 'Space' || code === 'Enter')) { rejoin(); return }
             if (pausedRef.current || desyncRef.current) return
             if (code === 'ArrowLeft') keys1.left = true
             else if (code === 'ArrowRight') keys1.right = true
@@ -474,6 +489,7 @@ const BlobBattleGame = () => {
         const onPointer = () => {
             const sc = screenRef.current
             if (sc === 'attract') { if (!net.active) startPlay('cpu'); else if (net.role === 'host' && net.phase === 'waiting') onlineStart(); return }
+            if (sc === 'play' && desyncRef.current && net.active && net.role === 'host') { rejoin(); return }
             if (sc === 'over' && performance.now() - overAtRef.current >= 800) startPlay(mode === 'online' ? 'cpu' : mode)
         }
 
@@ -617,9 +633,18 @@ const BlobBattleGame = () => {
             )}
 
             {desync && (
-                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-red-400 font-mono font-black text-3xl">
+                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-red-400 font-mono font-black text-3xl text-center px-6">
                     DESYNC &mdash; SIMS DISAGREED
-                    <p className="text-sm font-normal text-red-200/70 mt-2">a hash mismatch froze the match; refresh to rejoin</p>
+                    {netUi && netUi.role === 'host' ? (
+                        <p className="text-sm font-normal text-red-200/80 mt-3 leading-relaxed">
+                            a hash mismatch froze the match.<br />
+                            <span className="text-base text-pink-200 animate-pulse">PRESS SPACE / TAP TO REJOIN &mdash; YOUR RIVAL FOLLOWS</span>
+                        </p>
+                    ) : netUi ? (
+                        <p className="text-sm font-normal text-red-200/80 mt-3 animate-pulse">WAITING FOR THE HOST TO REJOIN&hellip;</p>
+                    ) : (
+                        <p className="text-sm font-normal text-red-200/70 mt-2">a hash mismatch froze the match; refresh to replay</p>
+                    )}
                 </div>
             )}
 

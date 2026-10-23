@@ -243,6 +243,62 @@ console.log('online — two boxes over an in-memory pipe')
     ok([...codes].every((c) => /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/.test(c)) && codes.size > 100, 'room codes avoid I/O/0/1 (the SSX lesson)')
 }
 
+console.log('online — re-join resyncs after a desync (#863)')
+{
+    // the re-join law: a frozen match is restarted clean on a FRESH seed with a
+    // reset lockstep and emptied pad mirrors — the host re-kicks 'go' and both
+    // boxes ride the same start path, so a desync no longer means "refresh".
+    const mkBox = (seat) => {
+        const pads = [new Map(), new Map()]
+        const b = {
+            seat, pads, gs: null, local: null, desync: false, ls: null,
+            receive(m) {
+                if (m.t === 'pad') { b.ls.gotPad(m.k | 0, m.p); pads[m.s | 0].set(m.k | 0, m.p) }
+                else if (m.t === 'hs') { const r = b.ls.gotHash(m.k | 0, m.h >>> 0); if (r && r.desync !== undefined) b.desync = true }
+            },
+        }
+        return b
+    }
+    const A = mkBox(0), B = mkBox(1)
+    const wire = () => {
+        A.ls = createLockStep({ delay: PAD_DELAY, hashEvery: HASH_EVERY, send: (m) => { if (m.t === 'pad') A.pads[0].set(m.k, m.p); B.receive(Object.assign({ s: 0 }, m)) } })
+        B.ls = createLockStep({ delay: PAD_DELAY, hashEvery: HASH_EVERY, send: (m) => { if (m.t === 'pad') B.pads[1].set(m.k, m.p); A.receive(Object.assign({ s: 1 }, m)) } })
+    }
+    const mkGs = (s) => { A.gs = newGame(s, 2); B.gs = newGame(s, 2); A.local = makeCpu(s ^ 1); B.local = makeCpu(s ^ 2); A.desync = false; B.desync = false }
+    // advance the locked pair from its current tick to `to`; freeze on the first
+    // desync (the on-screen law). returns { desyncAt, checked, ticks }.
+    const advance = (to) => {
+        let desyncAt = -1, checked = 0
+        for (let k = A.gs.tick; k < to && !A.gs.over; k++) {
+            for (const b of [A, B]) b.ls.pumpTo(k + PAD_DELAY, () => toWire(b.local(b.gs.wells[b.seat])))
+            if (!A.ls.ready(k) || !B.ls.ready(k)) continue
+            step(A.gs, assemblePads(A.pads[0], A.pads[1], k))
+            step(B.gs, assemblePads(B.pads[0], B.pads[1], k))
+            if (k % HASH_EVERY === 0) {
+                const ha = A.ls.hash(k, stateHash(A.gs))
+                const hb = B.ls.hash(k, stateHash(B.gs))
+                checked++
+                if ((ha && ha.desync !== undefined) || (hb && hb.desync !== undefined)) { desyncAt = k; break }
+                A.ls.prune(k); B.ls.prune(k)
+            }
+        }
+        return { desyncAt, checked, ticks: A.gs.tick }
+    }
+    const rejoin = (seed) => { wire(); A.pads[0].clear(); A.pads[1].clear(); B.pads[0].clear(); B.pads[1].clear(); mkGs(seed) }
+
+    wire(); mkGs(0xa11ce)
+    let r = advance(180)
+    ok(r.desyncAt === -1 && stateHash(A.gs) === stateHash(B.gs), `the pair runs clean to tick ${r.ticks} (${r.checked} checkpoints, no desync)`)
+    B.gs.wells[1].board[idx(11, 0)] = 3 // box B's board flips -> the two sims diverge
+    r = advance(240)
+    ok(r.desyncAt !== -1, `a diverged box is caught at the next hash checkpoint (tick ${r.desyncAt})`)
+    ok(A.gs.tick === B.gs.tick, 'both boxes froze on the same tick at the desync')
+    rejoin(0x5eed) // fresh seed + reset lockstep + emptied pad mirrors
+    ok(stateHash(A.gs) === stateHash(B.gs), 'the re-joined pair starts on an identical fresh state')
+    r = advance(1200)
+    ok(r.desyncAt === -1 && r.ticks > 300 && stateHash(A.gs) === stateHash(B.gs), `after re-join the pair resyncs, advances and holds (${r.ticks} ticks, ${r.checked} checkpoints, zero desyncs)`)
+}
+
 console.log('planner competence — the autopilot chains')
 {
     const s = newGame(0xbeef, 2)

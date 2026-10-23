@@ -33,7 +33,12 @@ while incoming rows are queued COUNTERS them. First to 2 rounds wins.
   canonically; pads ride `{t:'pad',s,k,p}` (a=rotate, s=hard drop);
   `assemblePads` builds `[well0, well1]` in seat order — pass the maps in SEAT
   order, mixing that up swaps the streams (a real desync this harness caught).
-  Codes use the relay alphabet (no I/O/0/1 — the SSX lesson).
+  Codes use the relay alphabet (no I/O/0/1 — the SSX lesson). Re-join (#863):
+  on an online desync the host re-rolls the seed and re-kicks `go`; both boxes
+  ride the SAME start path — fresh `newGame`, reset lockstep, emptied pad
+  mirrors — so a frozen match resyncs instead of "refresh to replay". The
+  sampling law keeps the restart clean: `go` precedes the fresh pads on the
+  wire, so the guest clears its mirrors before the host's new pads land.
 - `art.js` — glossy radial-gradient orbs with specular dots, riveted garbage
   slabs, dithered midnight stage, a 3x5 house font. Nothing borrowed.
 - `index.jsx` — shell: attract (live CPU-vs-CPU demo), 1P vs CPU (default,
@@ -57,15 +62,19 @@ P2 (local 2P): A/D slide · S soft · W rotate · F hard drop.
 ## Verify
 
 ```
-npm run blobcheck    # Node gate (static tier): 38 assertions — boot, group/chain
+npm run blobcheck    # Node gate (static tier): 43 assertions — boot, group/chain
                      # rules, counters, garbage landing, rounds, determinism
                      # (seed+pads replay hash-equal), the #863 theater block
                      # (next-pair preview legality, draw-at-lock swap, per-seed
                      # determinism of the preview stream, collapse slide math),
                      # a full ONLINE pair over an
                      # in-memory pipe (pad delay, hash checkpoints, zero desyncs),
+                     # and the #863 RE-JOIN block (a diverged box is caught at the
+                     # hash checkpoint, then a fresh-seed restart with a reset
+                     # lockstep + emptied pad mirrors resyncs the pair and holds),
                      # CPU competence. Can fail: mutant pop-threshold 4->5 reddens
-                     # it (verified by hand).
+                     # it (verified by hand); mutant dropping the re-join lockstep
+                     # reset stalls the pair at the first checkpoint (verified).
 npm run blobdrill    # advisory Chrome drill: real keys/taps, attract, rotate,
                      # slide, hard drop, drawn-pixels==board, defeat, rematch,
                      # pause, phone tap, zero page errors.
@@ -73,8 +82,6 @@ npm run blobdrill    # advisory Chrome drill: real keys/taps, attract, rotate,
 
 ## Known gaps (filed for QA polish)
 
-- Online desync freezes the screen (correct behavior) but there is no
-  re-join/resync — refresh to replay.
 - The relay worker's 4-seat roster is not required here (cap=2), but real
   internet play still depends on the worker redeploy noted in #825/STATE.
 - CPU personality is one tier; a harder "chain-hungry" tier is polish, not rules.
