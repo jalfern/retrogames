@@ -108,6 +108,8 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     let jump = 0
     const inStripe = (x) => Math.abs(Math.abs(x) - 0.99) < 0.16
     for (let s = 60; s < 700; s += DS) {
+        const gi = Math.floor(s / DS)
+        if (co.gaps && co.gaps.some((gp) => gi >= gp.i0 && gi <= gp.i1)) continue   // #889: crevasse rows are dark on purpose
         let prev = null
         for (let x = -1.6; x <= 1.6; x += 0.2) {
             if (inStripe(x)) { prev = null; continue }

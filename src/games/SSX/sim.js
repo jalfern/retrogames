@@ -15,7 +15,7 @@
 // - RACE: three heats, standings points, the mountain decides the champion.
 //   SHOWOFF: 90 seconds, pure trick points against the house target.
 
-import { buildCourse, terrainY, segAt, featureLift, COURSE_COUNT, WALL_X, DS } from './course.js'
+import { buildCourse, terrainY, segAt, featureLift, HEATS, WALL_X, tournament, gapAt, expressAt, GAP_X, DS } from './course.js'
 import { decide, PACE, SKILL, cpuMiss } from './planner.js'
 
 export const FIXED_DT = 1000 / 60
@@ -147,7 +147,7 @@ function newRider(i, isP, gridBack) {
 export function makeGame(mode = 'race', seed = 0) {
     const g = {
         mode, seed, tick: 0,
-        heat: 0, course: buildCourse(mode === 'showoff' ? 2 : 0),
+        heat: 0, course: buildCourse(mode === 'showoff' ? 2 : tournament(seed)[0]),
         phase: 'count', count: 180, runT: 0, heatT: 0,
         riders: Array.from({ length: 6 }, (_, i) => newRider(i, i === 0, mode === 'showoff' ? i * 2 : (i === 0 ? 2 : i - 1))),
         heatResults: [], standings: [0, 0, 0, 0, 0, 0],
@@ -162,7 +162,7 @@ export function makeGame(mode = 'race', seed = 0) {
 
 export function loadHeat(g, heat) {
     g.heat = heat
-    g.course = buildCourse(heat)
+    g.course = buildCourse(tournament(g.seed)[heat])
     g.phase = 'count'; g.count = 180; g.heatT = 0
     for (const r of g.riders) {
         Object.assign(r, newRider(r.id, r.isP, r.isP ? 2 : r.id - 1))
@@ -268,11 +268,12 @@ function riderStep(g, r, inp) {
         r.v = Math.max(r.v, 12)
         r.y = terrainY(c, r.s, rail.x) + 0.18
         r.s += r.v * dt
-        const gp = Math.round(90 * dt * 10) / 10
+        const rate = rail.high ? 180 : 90   // #889 high line: double trickle up in the powder band
+        const gp = Math.round(rate * dt * 10) / 10
         r.score += gp
         r.meter = Math.min(100, r.meter + gp * CFG.boostGain * (CFG.slack ? 0.75 : 1))
         if (r.s > rail.i1 * DS + 1) {
-            const tot = Math.round(60 + r.grindT * 90)
+            const tot = Math.round(60 + r.grindT * rate)
             push(g, { type: 'grind', who: r.id, pts: tot })
             r.grind = null
         }
@@ -303,6 +304,18 @@ function riderStep(g, r, inp) {
             r.invert += CFG.invertRate * dt * r.invertSign
         }
         const groundY = terrainY(c, r.s, r.x)
+        // #889 crevasse: below the rim over the hole is a gap crash — you get
+        // washed out onto the far side with the standard bail penalty.
+        if (Math.abs(r.x) < GAP_X) {
+            const gp = gapAt(c, r.s)
+            if (gp && r.y < gp.rim - 0.2) {
+                crash(g, r, 'gap')
+                r.s = gp.s1 + DS * 1.5
+                r.x = Math.max(-1.2, Math.min(1.2, r.x * 0.5))
+                r.y = terrainY(c, r.s, r.x); r.vy = 0
+                return
+            }
+        }
         if (r.vy < 0) {
             // rock tops are bounce pads (#731): descending onto one kicks you
             // back off with style points — a second contact is a crash, and a
@@ -407,7 +420,42 @@ function riderStep(g, r, inp) {
         crash(g, r, 'wall')
         return
     }
+    const sPrev = r.s
     r.s += r.v * dt
+    // #889 express chute: a carved trough carries you past the feature line —
+    // the shortcut trades the trick economy for raw mountain speed.
+    const ex = expressAt(c, r.s, r.x)
+    if (ex > 1) r.s += r.v * dt * (ex - 1)
+    // #889 crevasse: ground that gave way swallows a grounded board.
+    if (Math.abs(r.x) < GAP_X) {
+        const gp = gapAt(c, r.s)
+        if (gp) {
+            crash(g, r, 'gap')
+            r.s = gp.s1 + DS * 1.5
+            r.x = Math.max(-1.2, Math.min(1.2, r.x * 0.5))
+            r.y = terrainY(c, r.s, r.x)
+            return
+        }
+    }
+
+    // #889 crevasse lip: the crest throws you, deterministically — the wedge
+    // auto-launch below is a height lottery and would leave arc-short riders
+    // in the hole. Cross the crest at speed and you fly; crawl onto it and
+    // the ground-crash above eats you. That's the risky gap.
+    if (!r.air && r.v > 12) {
+        for (const gp of c.gaps) {
+            const crestS = gp.s0 - DS
+            if (sPrev < crestS && r.s >= crestS && Math.abs(r.x) < GAP_X) {
+                r.vy = 4.5 + r.v * 0.16 + r.crouchT * 2.5
+                r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0; r.invert = 0
+                r.over = r.meter >= 100
+                r.takeSpin = Math.abs(r.press) >= CFG.revertTake ? Math.sign(r.press) : 0
+                r.miss = !r.isP && cpuMiss(g, r)
+                push(g, { type: 'jump', who: r.id, power: r.vy, gap: true })
+                return
+            }
+        }
+    }
 
     // obstacles: only bite when you are on their level.
     // #791 line-bobble: the CPU field misses *lines*, not just landings. When a
@@ -439,7 +487,8 @@ function riderStep(g, r, inp) {
     const dAhead = r.v * 2 * dt + 0.6
     const ahead = terrainY(c, r.s + dAhead, r.x)
     const liftHere = featureLift(c, r.s, r.x)
-    if ((ahead - r.y > 0.55 || (liftHere > 0.8 && r.y - ahead > 0.3)) && r.v > 12) {
+    const gapLipAhead = c.gaps.some((gp) => r.s >= gp.s0 - 26 && r.s <= gp.s0)
+    if (!gapLipAhead && (ahead - r.y > 0.55 || (liftHere > 0.8 && r.y - ahead > 0.3)) && r.v > 12) {
         const lip = segAt(c, r.s)
         r.vy = Math.max(4.5, liftHere * 1.9) + r.v * 0.11 + r.crouchT * 2.5
         r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0; r.invert = 0
@@ -494,7 +543,7 @@ export function step(g, inp = {}) {
         g.heatT++
         for (const r of g.riders) { if (!r.isP) { riderStep(g, r, decide(g, r)); finishCheck(g, r) } }
         if (g.heatT > 240) {
-            if (g.heat >= COURSE_COUNT - 1) endHeatEnd(g)
+            if (g.heat >= HEATS - 1) endHeatEnd(g)
             else loadHeat(g, g.heat + 1)
         }
         return

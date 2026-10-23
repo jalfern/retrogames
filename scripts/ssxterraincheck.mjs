@@ -4,7 +4,7 @@
 // flat lit snow, detail UVs tile deterministically, painted==ridden untouched),
 // and the mountain is still winnable. Run: npm run ssxterraincheck
 
-import { buildCourse, terrainY, featureLift, openness, outcropAt, COURSE_COUNT, DS } from '../src/games/SSX/course.js'
+import { buildCourse, terrainY, featureLift, openness, outcropAt, gapAt, COURSE_COUNT, DS } from '../src/games/SSX/course.js'
 import { snowColor, surfaceInfo, slopeAt, sparkleMask, buildTerrain, buildSparkles, detailTexture, sparkleTexture, GRIDS, rockStrata, cpuSprayCount, landingSound, carveVoice, rimJagPlan, SPARKLE_PULSE, GROOVE } from '../src/games/SSX/art.js'
 import { makeGame, step } from '../src/games/SSX/sim.js'
 import { decide } from '../src/games/SSX/planner.js'
@@ -45,12 +45,14 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     }
     ok(`${co.name}: rock faces the gully walls (${rockOnWall} pts)`, rockOnWall >= 8)
     // and it is layered: colours along a wall column show several distinct bands
-    const gl = co.gullies[0]
-    const sm = (gl.s0 + gl.s1) / 2
+    // (#889: sweep every gully — six mountains carry more wall than the first)
     const hues = new Set()
-    for (let x = 2; x <= 6; x += 0.25) {
-        const rgb = snowColor(co, sm, x)
-        hues.add(`${Math.round(rgb[0] / 8)}:${Math.round(rgb[1] / 8)}`)
+    for (const gk of co.gullies) {
+        const sm2 = (gk.s0 + gk.s1) / 2
+        for (let x = 2; x <= 6; x += 0.25) {
+            const rgb = snowColor(co, sm2, x)
+            hues.add(`${Math.round(rgb[0] / 8)}:${Math.round(rgb[1] / 8)}`)
+        }
     }
     ok(`${co.name}: rock is layered, not one flat tint (${hues.size} bands)`, hues.size >= 5)
 }
@@ -113,6 +115,8 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     let jump = 0
     const inStripe = (x) => Math.abs(Math.abs(x) - 0.99) < 0.16
     for (let s = 60; s < 700; s += DS) {
+        const gi = Math.floor(s / DS)
+        if (gapAt(co, s) || co.gaps.some((gp) => gi >= gp.i0 && gi <= gp.i1)) continue   // #889: a crevasse row is dark on purpose
         let prev = null
         for (let x = -1.6; x <= 1.6; x += 0.2) {
             if (inStripe(x)) { prev = null; continue }
@@ -189,11 +193,17 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     const gaps = peaks.slice(1).map((p, i) => p - peaks[i])
     const meanGap = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : 0
     ok(`rock strata coarse: ${peaks.length} slabs, mean ${meanGap.toFixed(0)} m`, peaks.length >= 4 && meanGap >= 12)
-    const gl = co.gullies[0], sm = (gl.s0 + gl.s1) / 2
     const slabs = new Set()
     let rockPts = 0
-    for (let s = sm - 90; s <= sm + 90; s += 6) {
-        if (surfaceInfo(co, s, 4.5).rockT > 0.5) { rockPts++; slabs.add(Math.round(luma(snowColor(co, s, 4.5)) / 9)) }
+    // #889: the mountain is longer and carries more walls — sample every
+    // gully's cliff foot at two columns, not one lucky phase of the first.
+    for (const gl of co.gullies) {
+        const gm = (gl.s0 + gl.s1) / 2
+        for (const xw of [3.5, 4.5]) {
+            for (let s = gm - 90; s <= gm + 90; s += 6) {
+                if (surfaceInfo(co, s, xw).rockT > 0.5) { rockPts++; slabs.add(Math.round(luma(snowColor(co, s, xw)) / 9)) }
+            }
+        }
     }
     ok(`cliff keeps slab bands along the run (${slabs.size} tones / ${rockPts} pts)`, rockPts >= 10 && slabs.size >= 3)
 }
