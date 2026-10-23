@@ -338,36 +338,72 @@ export function makeTextures() {
         })(),
     ]
     T.tuskroot = [0, 1, 2, 3].map(f => {
-        const [c, g] = mk(16, 12)
-        g.clearRect(0, 0, 16, 12)
-        const low = f === 2 || f === 3
-        // log-body boarroot
-        g.fillStyle = '#5a3d24'; g.fillRect(2, low ? 5 : 3, 11, 6)
-        g.fillStyle = '#6e4c28'; g.fillRect(3, low ? 6 : 4, 9, 3)
-        g.fillStyle = '#422c1a'; g.fillRect(4, low ? 7 : 5, 1, 3); g.fillRect(8, low ? 6 : 4, 1, 4)
-        // legs
+        const [c, g] = mk(16, 16)
+        g.clearRect(0, 0, 16, 16)
+        // #877 repaint: a rooted log-boar at final aspect (no vertical stretch;
+        // body sits in rows 3..15 like its 12x10 sim footprint). Snout on the
+        // texture right = screen west, matching the billboard's mirror rule.
+        const tele = f === 2, charge = f === 3
+        const bob = f === 1 ? 1 : 0
+        const head = charge ? 11 : tele ? 10 : 8 // snout-top row: rage lowers it
+        // tail flick
+        g.fillStyle = '#5a3d24'; g.fillRect(1, 6 - (charge ? 1 : 0), 2, 2)
+        g.fillStyle = '#6e4c28'; g.fillRect(1, 5 - (charge ? 1 : 0), 1, 1)
+        // log body (rounded)
+        const by = 4 + (charge ? 1 : 0) + bob
+        g.fillStyle = '#5a3d24'; g.fillRect(2, by, 12, 9)
+        g.fillStyle = '#6e4c28'; g.fillRect(3, by - 1, 10, 1); g.fillRect(3, by + 9, 10, 1)
+        // bark grain + top light
+        g.fillStyle = '#82603a'; g.fillRect(4, by + 1, 8, 1)
         g.fillStyle = '#422c1a'
-        if (f === 0) { g.fillRect(3, 10, 2, 2); g.fillRect(9, 9, 2, 2) }
-        else if (f === 1) { g.fillRect(3, 9, 2, 2); g.fillRect(9, 10, 2, 2) }
-        else if (f === 2) { g.fillRect(3, 10, 2, 2); g.fillRect(9, 10, 2, 2); g.fillRect(12, 8, 3, 1) }
-        else { g.fillRect(4, 10, 2, 2); g.fillRect(10, 10, 2, 2); g.fillRect(13, 6, 2, 1) }
-        // snout + tusks
-        g.fillStyle = '#8a5c34'; g.fillRect(low ? 12 : 12, low ? 8 : 6, 3, 3)
-        g.fillStyle = '#f0e6cc'; g.fillRect(low ? 14 : 14, low ? 9 : 7, 2, 1)
+        g.fillRect(5, by + 2, 1, 6); g.fillRect(8, by + 1, 1, 5); g.fillRect(11, by + 3, 1, 4)
+        if (charge) g.fillRect(6, by + 5, 1, 3)
+        // knot
+        g.fillStyle = '#422c1a'; g.fillRect(9, by + 3, 2, 2)
+        g.fillStyle = '#6e4c28'; g.fillRect(10, by + 3, 1, 1)
+        // mossy mane (ruffles when it paws)
+        g.fillStyle = '#245c28'; g.fillRect(3, by, 9, 1)
+        g.fillStyle = '#3d8a3c'; g.fillRect(4, by - 1, 8, 1)
+        g.fillStyle = '#6fae4e'; g.fillRect(5, by - 2, 1, 1); g.fillRect(9, by - 2, 1, 1)
+        if (tele) { g.fillStyle = '#6fae4e'; g.fillRect(7, by - 3, 1, 1); g.fillRect(11, by - 2, 1, 1) }
+        // root-feet: two-beat gait, reach forward on the charge, paw when telegraphing
+        g.fillStyle = '#422c1a'
+        if (charge) { g.fillRect(11, 13, 2, 2); g.fillRect(2, 13, 2, 3); g.fillRect(6, 14, 2, 2) }
+        else if (tele) { g.fillRect(11, 13, 2, 1); g.fillRect(12, 14, 1, 1); g.fillRect(3, 13, 2, 3); g.fillRect(7, 13, 2, 2) }
+        else if (f === 0) { g.fillRect(3, 13, 2, 3); g.fillRect(7, 14, 2, 2); g.fillRect(10, 13, 2, 2) }
+        else { g.fillRect(3, 13, 2, 2); g.fillRect(7, 13, 2, 2); g.fillRect(10, 13, 2, 3) }
+        if (tele) { g.fillStyle = '#9b8254'; g.fillRect(12, 15, 1, 1); g.fillRect(14, 14, 1, 1) } // pawing dirt
+        if (charge) { g.fillStyle = '#8a714a'; g.fillRect(0, 7, 1, 1); g.fillRect(0, 10, 1, 1) } // speed streaks
+        // snout wedge + nostril (lowers with the rage)
+        g.fillStyle = '#8a5c34'; g.fillRect(13, head, 3, 3)
+        g.fillStyle = '#422c1a'; g.fillRect(15, head + 1, 1, 1)
+        // curved tusk, two-tone
+        g.fillStyle = '#f0e6cc'; g.fillRect(15, head - 2, 1, 1); g.fillRect(14, head - 1, 1, 1); g.fillRect(13, head, 1, 1)
+        g.fillStyle = '#c9bd9c'; g.fillRect(14, head, 1, 1)
         // eyes: calm amber -> telegraph white -> charge red
-        g.fillStyle = f === 3 ? '#ff5a2a' : f === 2 ? '#fff3cf' : '#ffb238'
-        g.fillRect(low ? 11 : 11, low ? 6 : 4, 2, 1)
+        g.fillStyle = charge ? '#ff5a2a' : tele ? '#fff3cf' : '#ffb238'
+        g.fillRect(11, by + 2, 2, 1)
         return c
     })
     T.pod = [0, 1].map(f => {
         const [c, g] = mk(12, 12)
         g.clearRect(0, 0, 12, 12)
-        g.fillStyle = '#5c2f2f'; g.beginPath(); g.arc(6, 7, 5, 0, 7); g.fill()
-        g.fillStyle = '#7c3d30'; g.beginPath(); g.arc(5, 6, 3, 0, 7); g.fill()
-        g.fillStyle = f ? '#ff9a3c' : '#c9613a'
-        g.fillRect(5, 2, 2, 3); g.fillRect(2, 6, 2, 1); g.fillRect(8, 7, 2, 1)
-        g.fillStyle = f ? '#ffd87a' : '#ff9a3c'; g.fillRect(5, 1, 2, 1)
-        g.fillStyle = '#2a1414'; g.fillRect(4, 7, 1, 1); g.fillRect(7, 7, 1, 1)
+        // #877 repaint: a seed-pod of embers — husk plates split by a glowing
+        // vein that pulses between the two frames.
+        g.fillStyle = '#5c2f2f'
+        g.fillRect(2, 4, 8, 7); g.fillRect(3, 3, 6, 1); g.fillRect(3, 11, 6, 1)
+        g.fillStyle = '#7c3d30'; g.fillRect(2, 5, 3, 5); g.fillRect(7, 5, 3, 5)
+        g.fillStyle = '#9c5238'; g.fillRect(2, 5, 3, 1); g.fillRect(7, 5, 3, 1)
+        g.fillStyle = '#3a1c1c'; g.fillRect(5, 3, 2, 9)
+        g.fillStyle = f ? '#ff9a3c' : '#c9613a'; g.fillRect(5, f ? 4 : 5, 1, f ? 5 : 4); g.fillRect(6, f ? 6 : 7, 1, 2)
+        if (f) { g.fillStyle = '#ffd87a'; g.fillRect(5, 6, 1, 1) }
+        // ember stem
+        g.fillStyle = '#5c3d2f'; g.fillRect(5, 1, 2, 2)
+        g.fillStyle = f ? '#ff9a3c' : '#c9613a'; g.fillRect(5, 0, 2, 1)
+        if (f) { g.fillStyle = '#ffd87a'; g.fillRect(5, 0, 1, 1) }
+        // dark eyes + root tendril
+        g.fillStyle = '#2a1414'; g.fillRect(3, 7, 1, 1); g.fillRect(8, 7, 1, 1)
+        g.fillStyle = '#422c1a'; g.fillRect(5, 11, 2, 1)
         return c
     })
     T.maw = {
@@ -501,4 +537,6 @@ export const JUICE = {
     boom: ['#ffd27a', '#ff9a3c', '#ff5a2a', '#ffe9c9'],
     coin: ['#ffe08a', '#ffb238'],
     magic: ['#8ce0ff', '#bff2ff', '#5d9cc4'],
+    dust: ['#9b8254', '#8a714a', '#6e5a3a', '#b09468'],
+    shard: ['#7c3d30', '#5c2f2f', '#c9613a'],
 }

@@ -128,20 +128,38 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   48-tick contact tail. Deterministic — the Ember Heart lands at tick 11233 on
   every seed.
 
+- **Charge-dust & split-pop (#877)**: the tuskroot kicks ground dust while
+  locked in its run — the sim emits `dust` every 6th *moving* charge frame at
+  `pos - ĉ·7` with the unit vector `dir = -ĉ` stored on the event, i.e. the
+  puff rides *behind* the heels along the very line the player sidesteps (a
+  deterministic `(e.t + e.seedOff) % 6` beat, no rng consumed, hash-neutral).
+  The telegraph paws one puff at `st === 34`. The pod's death `split` event
+  (old) now actually paints: bark shards + ember motes + a 3px shake. The
+  sprites got the matching repaint: the tuskroot is a 16x16 log-boar at final
+  aspect (bark grain, knot, mossy mane, root-feet gait, curved two-tone tusk;
+  eyes amber→white→red across walk/telegraph/charge, head lowering with the
+  rage) and the pod is a husked seed with a pulsing ember vein. The renderer
+  case sits in `onFx('dust'|'split')` — which **the shell was never calling**:
+  index.jsx drained `sim.fx` to sounds only, so the entire particle/shake juice
+  layer was dead code until #877 wired `rend.onFx(fx)` into the loop.
+  `emberwoodcheck` pins it from both sides: node gates (dust only while
+  charging, sign-checked opposite the locked line, telegraph puff, zero stray
+  dust, one pop per pod) and a live-page gate counting dust events through the
+  real drain via `__emberwoodTest.fxStats()`.
+
 ## Verify
 
 ```bash
 npm run dev
 npm run emberwoodcheck          # boots the page, drives the sim, proves dungeons + brightness + beds
                                 # + graceful-fight duel gates (tuskroot/husk/trash/Maw/Wyrm)
+                                # + #877 juice gates (charge-dust sign, telegraph puff, split-pop, live fxStats)
 node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>console.log(m.proveGame({bombs:true}).win))"   # true
 node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>console.log(m.proveGame({bombs:false}).bowGot))" # false — bombs gate the bow
 ```
 
 ## Honest gaps (QA polish pass will own these)
 
-- Tuskroot/pod sprites are first-pass 16x12 paintings; charge-dust and
-  split-pop FX are missing.
 - The Wyrm tail segments ride the drop-pool quads (visible but cheap).
 - No save system; no secret second shop; the elder hints but gives nothing.
 - Portrait is 4:3, not full-bleed: a taller window would crop the 16-tile
