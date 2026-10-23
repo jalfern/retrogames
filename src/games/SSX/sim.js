@@ -56,6 +56,12 @@ export const CFG = {
     bobbleKick: 0.55,          // lateral knock off the clip, piste fractions
     bobbleMeter: 12,           // meter scrubbed off by the obstacle
     bobbleT: 34,               // frames of off-balance wobble after a clip
+    invertRate: 420,           // #791 slice 12: deg/s the board rolls about its long
+                               // axis while an invert is held — one rotation in ~0.86 s,
+                               // arcade-fast like the flips so it fits normal air
+    invertPts: 400,            // per full invert rotation (a grab-turned board is worth
+                               // more than the grab alone)
+    invertCheck: true,         // half-done inverts crash you, same law as flips
     comboCap: 4,
     overDouble: true,
     flipCheck: true,           // half-done flips crash you
@@ -106,6 +112,7 @@ function newRider(i, isP, gridBack) {
         color: RIDER_COLORS[i],
         s: -gridBack * 7, x: ((i % 2) ? 1 : -1) * 0.3 + (i * 0.13), y: 0, vy: 0,
         v: 0, air: false, airT: 0, spin: 0, spinDir: 0, flip: 0, grab: 0, grabKind: 0, stance: i % 2,
+        invert: 0, invertSign: 1,
         crouch: false, crouchT: 0, boost: false, boostEdge: false, boostHum: 0,
         tuck: false, scrub: false,
         tumble: 0, stomp: 0, stompPow: 0, chain: 0, chainDisp: 0, chainDispT: 0,
@@ -156,16 +163,21 @@ function evalTrick(g, r, impact = 0) {
     const fl = Math.round(Math.abs(r.flip) / 360)
     const flOk = !CFG.flipCheck || Math.abs(Math.abs(r.flip) - fl * 360) <= 55 || Math.abs(r.flip) < 140
     if (fl > 0 && !flOk) return { crash: true }
+    // #791 slice 12: the invert ledger — full rolls bank, half-done ones eat it.
+    const iv = Math.round(Math.abs(r.invert) / 360)
+    const ivOk = !CFG.invertCheck || Math.abs(Math.abs(r.invert) - iv * 360) <= 55 || Math.abs(r.invert) < 140
+    if (iv > 0 && !ivOk) return { crash: true }
     const spinPts = sp * sp * 50
     const flipPts = fl * 350
     const grabPts = r.grab ? 150 : 0
+    const invertPts = iv * CFG.invertPts
     const airPts = r.airT > 1.1 ? 300 + Math.round(r.airT * 60) : Math.round(r.airT * 80)
     const pipeB = r.pipeAir ? 250 : 0
     // #791 revert: the board came off the lip carved one way and lands spun
     // the other way. Style bonus on the score — the meter keeps counting the
     // pre-revert base, so the boost economy stays exactly the trick economy.
     const revert = r.takeSpin !== 0 && r.spin * r.takeSpin < 0 && Math.abs(r.spin) >= CFG.revertSpin
-    let base = spinPts + flipPts + grabPts + airPts + pipeB
+    let base = spinPts + flipPts + grabPts + invertPts + airPts + pipeB
     if (base < 60) return { crash: false, pts: 0 }
     const mult = Math.min(CFG.comboCap, r.chain + 1)
     if (r.over && CFG.overDouble) base *= 2
@@ -174,14 +186,15 @@ function evalTrick(g, r, impact = 0) {
     const spinName = SPINS[sp] || ''
     const flipName = fl > 0 ? `${fl > 1 ? 'DOUBLE ' : ''}${r.flip < 0 ? 'FRONT' : 'BACK'}FLIP ` : ''
     const grabName = r.grab ? GRABS[r.grabKind].name + ' ' : ''
+    const invName = iv > 0 ? `${iv > 1 ? 'DOUBLE ' : ''}${r.invertSign < 0 ? 'SOLID' : 'NIKE'} INVERT ` : ''
     r.chain = Math.min(CFG.comboCap - 1, r.chain + 1)
     r.chainDisp = mult; r.chainDispT = 150
     r.score += pts + revertBonus; r.tricksLanded++
     if (r.airT > 1.2) r.bigAir++
     r.meter = Math.min(100, r.meter + pts * CFG.boostGain * (CFG.slack ? 0.75 : 1))
-    r.lastTrick = `${r.over ? 'OVER!! ' : ''}${revert ? 'REVERT ' : ''}${flipName}${grabName}${spinName}${spinName ? '' : 'AIR'}`.trim()
+    r.lastTrick = `${r.over ? 'OVER!! ' : ''}${revert ? 'REVERT ' : ''}${flipName}${grabName}${invName}${spinName}${spinName ? '' : 'AIR'}`.trim()
     r.lastTrickT = 150
-    push(g, { type: 'land', who: r.id, pts: pts + revertBonus, name: r.lastTrick, mult, over: !!r.over, revert, bigAir: r.airT > 1.2, impact })
+    push(g, { type: 'land', who: r.id, pts: pts + revertBonus, name: r.lastTrick, mult, over: !!r.over, revert, bigAir: r.airT > 1.2, impact, invert: iv })
     return { crash: false, pts: pts + revertBonus }
 }
 
@@ -193,7 +206,7 @@ function crash(g, r, what) {
     r.v *= 0.22
     r.meter *= 0.5
     r.over = false
-    r.spin = 0; r.flip = 0; r.grab = 0; r.air = false; r.grind = null
+    r.spin = 0; r.flip = 0; r.grab = 0; r.air = false; r.grind = null; r.invert = 0
     r.press = 0; r.takeSpin = 0
     r.stomp = 0; r.stompPow = 0
     r.bobble = 0
@@ -232,7 +245,7 @@ function riderStep(g, r, inp) {
         }
     }
     if (rail) {
-        if (!r.grind) { r.grind = rail; r.grindT = 0; r.spin = 0; r.flip = 0; push(g, { type: 'grindstart', who: r.id }) }
+        if (!r.grind) { r.grind = rail; r.grindT = 0; r.spin = 0; r.flip = 0; r.invert = 0; push(g, { type: 'grindstart', who: r.id }) }
         r.grindT += dt
         r.tuck = false; r.scrub = false
         r.x += (rail.x - r.x) * 0.4
@@ -265,6 +278,14 @@ function riderStep(g, r, inp) {
         const flipCap = (r.over || r.airT > 1.05) ? 720 : 360
         if (inp.flip && Math.abs(r.flip) < flipCap + 20) r.flip += CFG.flipRate * dt * (inp.flip === 2 ? -1 : 1)
         if (inp.grab && !r.grab) { r.grab = 1; r.grabKind = grabKindFor(steer, inp.flip, inp.scrub, r.stance === 0) }
+        // #791 slice 12: the invert — a grabbed board pushed over about its long
+        // axis. Hands on the board (a held grab) are what turn it, and the roll
+        // only advances while held, exactly like the flip ledger; steer sign at the
+        // first frame picks the direction (NIKE vs SOLID). Half-done rolls crash.
+        if (inp.invert && r.grab && Math.abs(r.invert) < 740) {
+            if (r.invert === 0) r.invertSign = steer < -0.05 ? -1 : 1
+            r.invert += CFG.invertRate * dt * r.invertSign
+        }
         const groundY = terrainY(c, r.s, r.x)
         if (r.vy < 0) {
             // rock tops are bounce pads (#731): descending onto one kicks you
@@ -306,7 +327,7 @@ function riderStep(g, r, inp) {
             const res = evalTrick(g, r, impact)
             r.pipeAir = false
             if (res.crash) { crash(g, r, 'bail'); return }
-            r.spin = 0; r.flip = 0; r.grab = 0; r.airT = 0; r.over = false; r.takeSpin = 0
+            r.spin = 0; r.flip = 0; r.grab = 0; r.airT = 0; r.over = false; r.takeSpin = 0; r.invert = 0
             if (res.pts > 0) { /* banked */ }
             // landing absorption: slope landings keep speed, flat landings shed a little
             const { seg } = segAt(c, r.s)
@@ -351,7 +372,7 @@ function riderStep(g, r, inp) {
         r.crouch = false
         const boostV = 3 + r.crouchT * 4
         r.vy = boostV
-        r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0
+        r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0; r.invert = 0
         r.over = r.meter >= 100
         r.takeSpin = Math.abs(r.press) >= CFG.revertTake ? Math.sign(r.press) : 0
         r.miss = !r.isP && cpuMiss(g, r)
@@ -405,7 +426,7 @@ function riderStep(g, r, inp) {
     if ((ahead - r.y > 0.55 || (liftHere > 0.8 && r.y - ahead > 0.3)) && r.v > 12) {
         const lip = segAt(c, r.s)
         r.vy = Math.max(4.5, liftHere * 1.9) + r.v * 0.11 + r.crouchT * 2.5
-        r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0
+        r.air = true; r.airT = 0; r.spin = 0; r.flip = 0; r.grab = 0; r.stomp = 0; r.invert = 0
         r.over = r.meter >= 100
         r.takeSpin = Math.abs(r.press) >= CFG.revertTake ? Math.sign(r.press) : 0
         r.miss = !r.isP && cpuMiss(g, r)
@@ -505,7 +526,7 @@ export function stateHash(g) {
     const add = (str) => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) } }
     add(`${g.tick}|${g.heat}|${g.phase}|${g.mode}|${g.end}|${g.showoffLeft.toFixed(2)}|${g.count}`)
     for (const r of g.riders) {
-        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)},ts${r.takeSpin},st${r.stomp}:${r.stompPow.toFixed(2)},bb${r.bobble}`)
+        add(`|${r.id}:${r.s.toFixed(2)},${r.x.toFixed(3)},${r.y.toFixed(2)},${r.v.toFixed(2)},${r.vy.toFixed(2)},${r.spin.toFixed(1)},${r.flip.toFixed(1)},${r.meter.toFixed(1)},${r.chain},${r.score},${r.tumble},${r.finished ? 1 : 0},${r.air ? 1 : 0},${r.tuck ? 1 : 0}${r.scrub ? 1 : 0},p${r.press.toFixed(3)},ts${r.takeSpin},st${r.stomp}:${r.stompPow.toFixed(2)},bb${r.bobble},iv${r.invert.toFixed(1)}`)
     }
     return (h >>> 0).toString(16)
 }

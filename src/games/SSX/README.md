@@ -397,6 +397,19 @@ continuity.
 Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
 `__ssxTest.seek(m)` / `.heat(n)` jump the rider/heat for screenshots and QA.
 
+## The invert — hands on, board over (#791 slice 12)
+
+Hold the grab (X) and shove the board past vertical with V: it rolls about its
+long axis at `invertRate` (420°/s, one turn in ~0.86 s) and only advances while
+held, exactly like the flip ledger. The steer sign at the first shove frame
+picks the direction — NIKE nose-over (right) or SOLID tail-over (left); the
+name reads `<GRAB> NIKE/SOLID INVERT` (DOUBLE past 720°). A full roll banks
+`invertPts` × chain on landing; `invertCheck` bails anything left between 140°
+and 305° — half an invert is no invert, the same law as flips. V without a
+grab does nothing: hands on the board are what turn it. `r.invert` rides the
+hash line (`iv…`), so replays roll identically; gates in `ssxcheck` pin the
+name, direction, pay, the half-done bail, the grab requirement and determinism.
+
 ## Honest gaps (filed as the polish pass)
 
 - CPU riders wipe out on seeded landings (#791) and now *miss* lines too
@@ -404,7 +417,8 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
   line lost, off-balance wobble, dust burst — on a skill-scaled seeded roll, so
   places change hands even when nobody actually falls. A bad roll still goes over
   the bars; the player is never exempt (ground contact is a straight bailing).
-- Keyboard-only flips/grabs on desktop; phones get steer + A-jump + B-boost
+- Keyboard-only flips/grabs/inverts on desktop (V is the invert key — no second
+  touchpad, per platform law); phones get steer + A-jump + B-boost
   (spins still work via the d-pad mid-air). Analogue depth is the #791 ramp +
   canvas drag distance — not a physical analogue stick.
 - Snow tracks are now geometry: fading carve grooves under the board (#310),
@@ -420,7 +434,7 @@ Live drive: `npm run dev`, open `/retrogames/ssx`, press any key.
   flip (weight fore/aft) at the grab frame — INDY/MUTE/METHOD/SALISBURY/
   NOSEGRAB/TAILGRAB, each with its own hero pose; the flip commit follows
   the reach — front hand to the nose, back hand to the tail. Reverts landed
-  in slice 9; still open for a later slice: inverts.
+  in slice 9; inverts landed in slice 12 (below).
 - Doubles (#791 slice 8): past a second of hang the flip ledger opens to a
   second rotation — a held flip through big normal air banks DOUBLE BACK/
   FRONTFLIP at full double pay, capped at 720+~20 so a clean landing still

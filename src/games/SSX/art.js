@@ -1306,7 +1306,10 @@ export function poseRider(root, r, tick, override) {
     }
     if (r.air) {
         roll.rotation.x = (r.flip * Math.PI) / 180 * (r.flip < 0 ? -1 : 1) * -1
-        roll.rotation.z = 0
+        // #791 slice 12: the invert — the grabbed board rolls about its long
+        // axis (z in rig space), nose past boot on positive (NIKE), tail over
+        // on negative (SOLID). The hands hold the pose while the deck turns.
+        roll.rotation.z = (r.invert * Math.PI) / 180
         root.scale.y = 1
         if (hero) blendHero(hero, pose, tick)
         else { armR.rotation.z = r.grab ? (r.grabKind === 0 || r.grabKind === 2 || r.grabKind === 5 ? 1.5 : 1.1) : 0.35; legs.scale.y = 0.9 }
