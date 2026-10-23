@@ -33,6 +33,7 @@ export const THEMES = {
         snowA: [248, 250, 255], snowB: [186, 206, 236],
         shadow: [150, 168, 212], edge: [70, 190, 240], rock: [42, 35, 31], rock2: [20, 17, 16],
         ice: [105, 165, 230],
+        lane: [97, 117, 173],
         capSnow: [252, 254, 255],
         peak: [148, 158, 186], peakSun: [225, 232, 245], peakRock: [104, 112, 138],
         shC: 0x0b1524, shO: 0.28,
@@ -43,6 +44,7 @@ export const THEMES = {
         snowA: [96, 110, 190], snowB: [56, 64, 140],
         shadow: [22, 28, 72], edge: [255, 60, 200], rock: [20, 14, 11], rock2: [8, 6, 5],
         ice: [88, 138, 220],
+        lane: [26, 48, 92],
         capSnow: [150, 160, 215],
         peak: [30, 34, 78], peakSun: [56, 62, 120], peakRock: [18, 20, 48],
         shC: 0x04050e, shO: 0.45,
@@ -53,6 +55,7 @@ export const THEMES = {
         snowA: [255, 224, 214], snowB: [206, 156, 186],
         shadow: [118, 88, 158], edge: [255, 90, 60], rock: [19, 10, 8], rock2: [7, 3, 4],
         ice: [128, 148, 224],
+        lane: [97, 117, 173],
         capSnow: [255, 238, 228],
         peak: [186, 126, 138], peakSun: [255, 200, 170], peakRock: [122, 74, 92],
         shC: 0x241226, shO: 0.34,
@@ -327,12 +330,15 @@ export function surfaceInfo(c, s, x) {
         }
     }
     // #911: the express trough is invisible once you're in it — a packed-snow
-    // albedo lane (the GROOVE lip's own colour) marks the fast line across
-    // the whole span, painted where featureLift actually carries the sink.
+    // albedo lane marks the fast line across the whole span, painted where
+    // featureLift actually carries the sink. Per theme: a cool blue-packed
+    // track by day, deep packed ice under moonlight (night snow is dark, so a
+    // light lip colour would vanish — the lane must stay darker than the
+    // surrounding snow in every theme).
     const chT = chuteAt(c, s, x)
     if (chT > 0.01) {
         const lane = 0.42 * chT
-        rgb = rgb.map((v, k) => v * (1 - lane) + GROOVE.lipColor[k] * 255 * lane)
+        rgb = rgb.map((v, k) => v * (1 - lane) + T.lane[k] * lane)
     }
     if (lift > 0.3) rgb = rgb.map((v) => Math.min(255, v * (1 + 0.15 * smooth01((lift - 0.3) / 2))))
     else if (lift < -0.3) rgb = rgb.map((v) => v * (1 + Math.max(-0.62, lift * 0.055)))

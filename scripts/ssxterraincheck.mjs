@@ -361,6 +361,19 @@ for (let c = 0; c < COURSE_COUNT; c++) {
 {
     const luma = (rgb) => rgb[0] * 0.3 + rgb[1] * 0.59 + rgb[2] * 0.11
     const blueR = (rgb) => rgb[2] - rgb[0]
+    // the canyon gaps ring rock walls and outcrops can sit beside a chute, so a
+    // single fixed reference offset lands on stone — the "surrounding snow"
+    // reference is the brightest open-snow sample in a small fan (rockT keeps
+    // the walls out). The property is unchanged: floor/lane vs the snow that
+    // actually borders them.
+    const snowRef = (co, s, xs) => {
+        let best = null
+        for (const x of xs) {
+            const o = surfaceInfo(co, s, x)
+            if (o.rockT < 0.5 && (!best || luma(o.rgb) > luma(best.rgb))) best = o
+        }
+        return best
+    }
     let wallIce = 0, crest = 0, fade = 0, icePin = 0, nGaps = 0
     for (let ci = 0; ci < COURSE_COUNT; ci++) {
         const co = buildCourse(ci)
@@ -372,9 +385,10 @@ for (let c = 0; c < COURSE_COUNT; c++) {
             const skirt = surfaceInfo(co, s, 1.30)    // wall easing to the rim
             const holeFloor = surfaceInfo(co, s, 0.4) // the sink floor
             const rim = surfaceInfo(co, s, 2.2)       // open snow beyond the gap
+            const ref = snowRef(co, s, [1.30, -1.30, 2.2, -2.2, 2.7, -2.7])
             if (blueR(wall.rgb) > blueR(rim.rgb) + 8) wallIce++
             if (luma(line.rgb) > luma(below.rgb) + 25 && luma(line.rgb) > luma(skirt.rgb) + 8) crest++
-            if (luma(holeFloor.rgb) < luma(line.rgb) - 20 && luma(holeFloor.rgb) < luma(rim.rgb) - 40) fade++
+            if (ref && luma(holeFloor.rgb) < luma(line.rgb) - 20 && luma(holeFloor.rgb) < luma(ref.rgb) - 40) fade++
             if (holeFloor.iceT > 0.1 && line.iceT > 0.9 && rim.iceT === 0) icePin++
             nGaps++
         }
@@ -390,8 +404,8 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         for (const ch of co.chutes) {
             const sMid = ((ch.i0 + ch.i1) / 2) * DS
             const laneC = surfaceInfo(co, sMid, ch.x).rgb
-            const side = surfaceInfo(co, sMid, ch.x > 0 ? ch.x + ch.w + 0.6 : ch.x - ch.w - 0.6).rgb
-            if (luma(laneC) < luma(side) - 10 && laneC[2] >= laneC[0]) laneOk++
+            const side = snowRef(co, sMid, [ch.x + ch.w + 0.6, ch.x + ch.w + 1.2, ch.x - ch.w - 0.6, ch.x - ch.w - 1.2])
+            if (side && luma(laneC) < luma(side.rgb) - 10 && laneC[2] >= laneC[0]) laneOk++
             nChutes++
         }
     }
