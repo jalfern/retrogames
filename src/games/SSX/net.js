@@ -63,6 +63,21 @@ export function decodeState(m) {
     }
 }
 
+// pruneGhosts drops ghosts whose local rider id is no longer a live remote seat
+// (#858 #3: a friend who leaves mid-heat leaves a ghost parked at their last
+// position — the roster already shed the seat, but the stale pose must go too,
+// or the renderer keeps drawing a ghost for a racer who is gone). Returns the
+// ids it removed so the caller can log/verify. Pure (mutates the given map).
+export function pruneGhosts(ghosts, liveIds) {
+    const live = new Set(liveIds)
+    const removed = []
+    for (const k of Object.keys(ghosts)) {
+        const id = k | 0
+        if (!live.has(id)) { delete ghosts[k]; removed.push(id) }
+    }
+    return removed
+}
+
 // applyGhost overwrites the LOCAL stand-in rider with a remote racer's snapshot so
 // the existing poseRider path draws them at the right place on the shared course.
 // The caller (index.jsx) must have already skipped sim-stepping this id.

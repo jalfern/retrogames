@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES } from './sim.js'
 import { decide } from './planner.js'
 import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
-import { seatIds, encodeState, decodeState, applyGhost, computeStandings } from './net.js'
+import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
 import { slopePos, terrainY, DS, COURSE_COUNT } from './course.js'
 import { padState } from '../../utils/padState'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype } from './art.js'
@@ -392,6 +392,7 @@ const SSXGame = () => {
             net.seatToId = ids.seatToId
             net.remoteIds = ids.remoteSeats.map((s) => ids.seatToId[s])
             net.cpuIds = ids.cpuIds
+            pruneGhosts(net.ghosts, net.remoteIds)
             for (const s of net.seats) if (!net.fin[s]) net.fin[s] = []
         }
 
@@ -1170,12 +1171,16 @@ const SSXGame = () => {
                         <div className="text-lg mb-3 animate-pulse">{netUi.phase === 'offline' ? 'RELAY OFFLINE' : 'CONNECTING…'}</div>
                     )}
                     <div className="flex gap-2 mb-4">
-                        {netUi.seats.map((k, i) => (
-                            <div key={i} className={`px-3 py-2 rounded border text-xs font-bold ${k === 'cpu' ? 'border-white/15 text-white/40' : 'border-cyan-300/40 text-cyan-100'} ${i === netUi.slot ? 'ring-2 ring-yellow-300' : ''}`}>
-                                <div className="text-[9px] opacity-70">{k === 'cpu' ? 'CPU' : k.toUpperCase()}</div>
-                                <div>{i === netUi.slot ? 'YOU' : (netUi.names[i] || ('P' + (i + 1)))}</div>
-                            </div>
-                        ))}
+                        {(() => { let cpu = 0; return netUi.seats.map((k, i) => {
+                            const isCpu = k === 'cpu'
+                            if (isCpu) cpu++
+                            return (
+                                <div key={i} className={`px-3 py-2 rounded border text-xs font-bold ${isCpu ? 'border-white/15 text-white/40' : 'border-cyan-300/40 text-cyan-100'} ${i === netUi.slot ? 'ring-2 ring-yellow-300' : ''}`}>
+                                    <div className="text-[9px] opacity-70">{isCpu ? 'CPU' : k.toUpperCase()}</div>
+                                    <div>{i === netUi.slot ? 'YOU' : (isCpu ? `CPU ${cpu}` : (netUi.names[i] || ('P' + (i + 1))))}</div>
+                                </div>
+                            )
+                        }) })()}
                     </div>
                     {netUi.role === 'host'
                         ? <p className="text-sm text-yellow-300 animate-pulse">{netUi.phase === 'racing' ? 'RACING…' : 'PRESS SPACE / TAP TO START · FRIENDS JOIN AT /retrogames/ssx?net=join&room=' + netUi.code}</p>
