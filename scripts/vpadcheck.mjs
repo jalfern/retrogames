@@ -17,6 +17,7 @@ import { steerPedals, steerResponse, STEER_GAIN } from '../src/utils/padState.js
 import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD, POINTER_HIT_PX, pointerTarget, pointerGesture, press, release, MAX_SLOTS, slotPad, pressSlot, setStickVecSlot, clearSlot, slotActive, setConnected, connectedSlots, clearAllSlots } from '../src/utils/onePad.js'
 import { p2From } from '../src/games/Gauntlet/p2input.js'
 import { actionCodeAt } from '../src/components/actionHit.js'
+import { vpadSize, vpadBtn, VPAD_BTN_FLOOR, VPAD_BTN_CAP, VPAD_BTN_FRAC } from '../src/components/vpadSize.js'
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error(`  FAIL: ${msg}`) } }
@@ -1165,6 +1166,65 @@ clearAllSlots()
     // neither select text nor scroll the page.
     const guarded = (vc.match(/touch-none select-none/g) || []).length
     ok(guarded >= 4, `#735 drag-select: >=4 interactive zones carry 'touch-none select-none' (got ${guarded})`)
+}
+
+// --- 37. #885: phones get a clearly-big glass pad, not 64px blobs ---
+// Jon on iPhone: the #735 floor was a lie on phones (390-wide sat at 64px
+// buttons and the stick had actually SHRUNK 150 → 147), and the pad row shared
+// the bottom band with the JALFERN.COM footer text. The law: btn = clamp(
+// 0.215 · min(w,h), 84, 96) with stick ≈ 2.14 · btn — 84px buttons / 180px
+// stick on an iPhone — and the whole row must still fit the 390px portrait
+// band (edge padding + stick + gap + two buttons + zone padding).
+{
+    const iPhone = vpadSize(390, 844)
+    ok(VPAD_BTN_FLOOR === 84 && VPAD_BTN_FRAC > 0.2 && VPAD_BTN_CAP === 96,
+        `#885 law: clamp(${VPAD_BTN_FRAC} · min, ${VPAD_BTN_FLOOR}, ${VPAD_BTN_CAP}) — phone floor is 84, not 64`)
+    ok(iPhone.btn === 84, `iPhone 390-wide gets ${iPhone.btn}px buttons (was 64 — the complaint)`)
+    ok(iPhone.stick >= 176, `iPhone stick is ${iPhone.stick}px (was 147 — the shrink bug)`)
+    ok(iPhone.knob < iPhone.stick && iPhone.knob >= 24, `knob ${iPhone.knob}px rides inside the ${iPhone.stick}px stick`)
+
+    // The row must physically fit the narrowest common phone (390), with the
+    // 12px edge padding and the tightened gap the component uses.
+    const rowWidth = 12 + iPhone.stick + iPhone.gap + 2 * iPhone.btn + Math.round(iPhone.gap * 0.5) + 12
+    ok(rowWidth <= 390, `pad row fits a 390px phone: ${rowWidth}px ≤ 390 (stick + gap + 2×84)`)
+
+    // #735 properties the #885 law must keep: orientation symmetry, the small-
+    // phone floor (a bigger button never shrinks), the iPad cap.
+    const land = vpadSize(844, 390)
+    ok(land.btn === iPhone.btn && land.stick === iPhone.stick && land.gap === iPhone.gap,
+        'orientation symmetry: 390x844 and 844x390 get the identical pad')
+    ok(vpadBtn(320, 568) === VPAD_BTN_FLOOR, 'SE-class 320-wide keeps the 84 floor (never shrinks)')
+    ok(vpadBtn(768, 1024) === VPAD_BTN_CAP, 'iPad 768 takes the 96 cap')
+
+    // Mutant: the old 64px law. It is exactly what shipped and what Jon called
+    // cheap — strictly smaller than the new law on a phone. If someone restores
+    // it, the floor/cap gate above fails; this pin records the delta.
+    const oldBtn = (w, h) => Math.round(Math.min(96, Math.max(64, 0.164 * Math.min(w, h))))
+    ok(oldBtn(390, 844) === 64 && iPhone.btn > oldBtn(390, 844),
+        'old-law mutant gives 64px on iPhone (< new 84) — the regression this gate exists to catch')
+
+    // The glass skin (#885): thin bright ring + faint fill + inner highlight, a
+    // pressed state that sinks/brightens and fades back, icon-over-verb labels,
+    // a visible bright travel ring, the FIRE default, and the per-game skin hook.
+    const vc = readFileSync(new URL('../src/components/VirtualControls.jsx', import.meta.url), 'utf8')
+    ok(/backdrop-blur-md/.test(vc) && /ring-1/.test(vc) && /inset_0_1px_2px_rgba\(255,255,255,0\.35\)/.test(vc),
+        '#885 glass: buttons carry ring + faint fill + inner top highlight')
+    ok(/scale-95 brightness-150/.test(vc) && /transition-all duration-150/.test(vc),
+        '#885 glass: pressed state sinks + brightens, fades back via a 150ms transition')
+    ok(/data-skin=\{skinId\}/.test(vc) && /skin = null/.test(vc),
+        '#885 skin hook: bar carries data-skin from an optional skin prop (themed skins later)')
+    ok(/IconFire/.test(vc) && /IconBolt/.test(vc) && /flex flex-col items-center justify-center gap-0\.5 rounded-full/.test(vc),
+        '#885 glass: face buttons stack an inline-SVG icon over the verb label')
+    ok(/\|\| 'FIRE'/.test(vc), '#885: A is labelled by what it does — registry aLabel wins, arcade default FIRE')
+    ok(/border-white\/40/.test(vc), '#885 glass: stick travel ring is a visible bright ring')
+    ok(/bottom: 'calc\(0\.5rem \+ env\(safe-area-inset-bottom\)\)'/.test(vc),
+        '#885: the pad sits low in the band below the play area (0.5rem + safe area)')
+
+    // The footer must dodge the pad row on phones (#885): on a coarse-pointer
+    // small screen the JALFERN.COM mark moves to the top band.
+    const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
+    ok(/max-width: 480px\) and \(pointer: coarse\)/.test(app) && /padBand \? \{ top:/.test(app),
+        '#885: on phones the footer moves to the top band so buttons never sit on it')
 }
 
 // --- Summary ---
