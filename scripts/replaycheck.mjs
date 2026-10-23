@@ -11,11 +11,16 @@
 //   node scripts/replaycheck.mjs              # green, (re)writes the example file
 //   node scripts/replaycheck.mjs --mutate   # RED by design: one pad dropped
 //                                            # mid-file must be caught at its tick
+//   node scripts/replaycheck.mjs --rebuild  # force the fresh build stamp onto the
+//                                            # file even when its bytes are unchanged —
+//                                            # run from a detached main tip to
+//                                            # regenerate the sample with a stamp
+//                                            # that survives the merge
 //
 // The example file ships at public/replays/gauntlet-2p.json and is the format's
 // reference (docs/GAME-SHELL.md points at it).
 
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -38,10 +43,23 @@ const ok = (cond, name, info = '') => {
     else { fail++; console.log(`FAIL   ${name}${info ? ` — ${info}` : ''}`) }
 }
 
-const build = (() => {
-    try { return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || 'unknown' }
-    catch { return 'unknown' }
+// #527 item 5 — the stamp must name a commit that survives the squash-merge. On a
+// feature branch the capture's own commit dies with the PR, so those runs stamp
+// `unknown` (honest); a regeneration from a detached main tip stamps the main
+// commit. `--rebuild` forces the fresh stamp even when the bytes are unchanged.
+const gitOut = (cmd) => {
+    try { return execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null }
+    catch { return null }
+}
+const onMainLine = (() => {
+    try { execSync('git merge-base --is-ancestor HEAD origin/main', { stdio: 'ignore' }); return true }
+    catch {
+        try { execSync('git merge-base --is-ancestor HEAD main', { stdio: 'ignore' }); return true }
+        catch { return false }
+    }
 })()
+const REBUILD = process.argv.includes('--rebuild')
+const build = onMainLine ? (gitOut('git rev-parse --short HEAD') || 'unknown') : 'unknown'
 
 // --- the seat-to-sim fold (mirrors the index.jsx pad path, slotcheck's shape) --
 const fold1 = (pad, prev) => ({
@@ -113,13 +131,24 @@ ok(nudges > 3, `sub-dead-zone nudges recorded in raw while the pad idled (${nudg
 // --- write + read back the example file -----------------------------------------
 if (!existsSync(dirname(REC_FILE))) throw new Error('missing public/replays')
 if (!MUTATE) {
-    const { writeFileSync } = await import('node:fs')
+    // Bytes unchanged: keep the committed stamp — a branch or CI run must never
+    // re-stamp the sample with a commit that won't survive the merge.
+    if (!REBUILD && existsSync(REC_FILE)) {
+        const prev = JSON.parse(readFileSync(REC_FILE, 'utf8'))
+        if (prev && JSON.stringify({ ...prev, build: file.build }) === JSON.stringify(file)) file.build = prev.build
+    }
     writeFileSync(REC_FILE, JSON.stringify(file) + '\n')
 }
 const onDisk = JSON.parse(readFileSync(REC_FILE, 'utf8'))
 // The build stamp is whatever commit generated the sample; everything else in
 // the file must be byte-identical to a fresh record at this commit.
 ok(JSON.stringify({ ...onDisk, build: file.build }) === JSON.stringify(file), 'example file round-trips through disk byte-identical (build stamp aside)', `disk=${onDisk.build} fresh=${file.build}`)
+// #527 item 5: the committed stamp is `unknown` or a commit this clone still
+// has — a dead pre-merge stamp (a branch tip that squashed away) means the
+// sample is stale: regenerate it from a detached main tip with --rebuild.
+ok(onDisk.build === 'unknown' || gitOut(`git rev-parse --verify '${onDisk.build}^{commit}'`) !== null,
+    `build stamp ${onDisk.build} is unknown or names a commit this clone has`,
+    'regenerate from a detached main tip: node scripts/replaycheck.mjs --rebuild')
 ok(onDisk.slots.every((s) => s.pads.every((p) => JSON.stringify(encodePad(decodePad(p, 'stick'))) === JSON.stringify(p))), 'stored pads are canonical (decode/encode stable)')
 
 // --- share/download (#527 item 6) ---------------------------------------------
