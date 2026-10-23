@@ -13,6 +13,9 @@
 //       core in x and z) and a far variant travels >2300m under the base (#747)
 //     · rain gusts: the squall-wave field varies over time, spreads cells across
 //       the whole field at every instant, and its crest sweeps downfield (#747)
+//     · #831: bolts render as thick bright branching ribbons; the flash lights
+//       the ground and glances brightest off the wet field at grazing angles;
+//       the field itself is a textured green/straw mix, not a flat olive slab
 //     · the storm rolls in: its distance shrinks over time
 //     · the camera pose moves the world
 //   3. LAW    — self-contained single file; NOT registered in games.js
@@ -25,7 +28,10 @@
 // back to the front (near=true always, driftZ 0) -> landings-spread and
 // far-travel gates go red. Freeze the gust-wave phase (`t * 0.35` / `t * 0.22`
 // -> 0 in both shader and the `gust` mirror) -> the gust-range and crest-sweep
-// gates go red (measured 0.00 and 0 m).
+// gates go red (measured 0.00 and 0 m). Flatten the grass palette (constant
+// olive) -> the textured-field gate goes red (straw share 0%). Drop the ground
+// flash + sheen terms -> the ground-light gate goes red (pre=flash=68). Single
+// unbranched bolt (`nb = 1`) -> the branching gate goes red (all forks 1).
 
 import { spawn } from 'node:child_process'
 import { inflateSync, deflateSync } from 'node:zlib'
@@ -226,6 +232,39 @@ async function main() {
       await page.waitForTimeout(900)
       const after = meanLum(decodePng(await page.screenshot()), 0, 0, W, Math.round(H * 0.45))
       ok('flash decays back to ambient', after - pre < 12, `after=${after.toFixed(0)} pre=${pre.toFixed(0)}`)
+
+      // #831: big bright branching bolts, flash lighting the field, textured wet ground
+      const boltsMain = countIn(flashImg, Math.round(W * 0.10), sky.y0, Math.round(W * 0.90), Math.round(H * 0.52), veryBright)
+      ok('bolt is a big bright core, not a thin squiggle', boltsMain > 1200, `${boltsMain} near-white px`)
+      const branchInfo = await page.evaluate(() => {
+        const D = window.__stormTest;
+        const br = [];
+        for (let i = 0; i < 24; i++) { D.flashNow(true, 'wide'); const s = D.state(); if (s.boltBranches > 0) br.push(s.boltBranches); }
+        return br;
+      });
+      ok('CG bolts branch (2+ forks each)', branchInfo.length >= 20 && Math.min(...branchInfo) >= 2,
+        `n=${branchInfo.length} branches=${branchInfo.join(',')}`);
+      const groundPre = meanLum(img, Math.round(W * 0.1), Math.round(H * 0.55), Math.round(W * 0.9), Math.round(H * 0.92))
+      const groundFlash = meanLum(flashImg, Math.round(W * 0.1), Math.round(H * 0.55), Math.round(W * 0.9), Math.round(H * 0.92))
+      ok('the flash lights the ground', groundFlash - groundPre > 8, `pre=${groundPre.toFixed(0)} flash=${groundFlash.toFixed(0)}`)
+      const hzBand = [Math.round(H * 0.46), Math.round(H * 0.52)]
+      const fgBand = [Math.round(H * 0.72), Math.round(H * 0.92)]
+      const hzD = meanLum(flashImg, Math.round(W * 0.1), hzBand[0], Math.round(W * 0.9), hzBand[1]) -
+        meanLum(img, Math.round(W * 0.1), hzBand[0], Math.round(W * 0.9), hzBand[1])
+      const fgD = meanLum(flashImg, Math.round(W * 0.1), fgBand[0], Math.round(W * 0.9), fgBand[1]) -
+        meanLum(img, Math.round(W * 0.1), fgBand[0], Math.round(W * 0.9), fgBand[1])
+      ok('flash glances brightest off the wet field at grazing distance', hzD > 4 && hzD > fgD * 1.05,
+        `horizonΔ=${hzD.toFixed(1)} foregroundΔ=${fgD.toFixed(1)}`)
+      let greenPx = 0, strawPx = 0, gTot = 0
+      for (let y = Math.round(H * 0.55); y < Math.round(H * 0.92); y += 2) for (let x = Math.round(W * 0.1); x < Math.round(W * 0.9); x += 2) {
+        const [r, g, b] = px(img, x, y)
+        if (g - r > 3) greenPx++
+        if (r - g > 3) strawPx++
+        gTot++
+      }
+      ok('field is a textured mix (green + straw patches), not a flat olive slab',
+        greenPx / gTot > 0.12 && strawPx / gTot > 0.04,
+        `green=${(greenPx / gTot * 100).toFixed(0)}% straw=${(strawPx / gTot * 100).toFixed(0)}%`)
 
       // #747: CG bolts land across the whole core projection, not one front quadrant
       const spread = await page.evaluate(() => {
