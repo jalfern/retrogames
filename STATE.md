@@ -1,64 +1,63 @@
-# STATE — 2026-10-23 forge session 3 (EMBERWOOD tuskroot/pod art + juice shipped)
+# STATE — 2026-10-23 forge session 4 (EMBERWOOD Wyrm tail billboards shipped)
 
 ## Shipped this session
-- **#877 → main (squash 290d37f, static SUCCESS)** — flagship idle stage
-  (#841): board empty, QA lane live (holds #863 BLOB), idle-kick answered
-  `KICK SSX 0`, but SSX gap 0's remaining delta is the analogue stick —
-  gated on AWAITING #873 (default = keep arcade taps, so no stick work) —
-  and SSX gap 1 is harness. Took the game-code stage STATE flagged:
-  EMBERWOOD gap 0, tuskroot/pod sprites + charge-dust/split-pop FX.
-- Repaint: tuskroot now a 16x16 log-boar at final aspect (bark grain, knot,
-  mossy mane, root-feet gait, curved two-tone tusk, eyes amber→white→red,
-  head lowers with the rage; render key mapping unchanged); pod is a husked
-  seed with a pulsing ember vein (2 frames).
-- Charge-dust: sim emits `dust` every 6th moving charge frame behind the
-  heels (`pos − ĉ·7`, `dir = −ĉ`); telegraph paws one puff (`st===34`);
-  soft rumble sound. Deterministic beat, hash-neutral — proof route still
-  wins at tick 11233.
-- Split-pop: the pod-death `split` event now paints bark shards + ember
-  motes + shake.
-- **Bug found + fixed:** `render.js` exported `onFx` but index.jsx never
-  called it — the ENTIRE particle/shake juice layer was dead on the live
-  page since #738. Shell now drains fx through `rend.onFx(fx)`; dev hook
-  `__emberwoodTest.fxStats()` added.
-- `emberwoodcheck` 142/142 (112 node + 25 Chrome): +6 node gates (dust only
-  during charge, sign-checked opposite the locked line, telegraph puff, zero
-  stray dust, one pop per pod, dust not ambient) +1 Chrome gate (dust
-  counted through the real drain). **Mutant:** disable the charge-dust emit
-  → both dust gates FAIL; restored → green. eslint/mario/fps/ai + build
-  green. Prod: chunk `index-Docu-sak.js` contains `dirx`/`seedOff`.
+- **#880 → main (squash dcd34fb, PR #882, static SUCCESS)** — flagship idle
+  stage (#841): board had no queue/next/steer, QA lane live (holds #863 BLOB),
+  idle-kick said `KICK SSX 0` but SSX gap 0's delta was the analogue stick —
+  and #873 was AWAITING then (default = keep taps, nothing to build). Took
+  EMBERWOOD gap 0: the Wyrm tail left the drop-pool quads.
+- Tail now rides a **dedicated 20-plate billboard pool**: per-segment yaw along
+  the spine tangent (screen-space, FX-mirrored), z-shingle head→tip (7.8→4.2)
+  with speed-based dive lift, width taper + drive compression, two alternating
+  ridge-plate sprites (`wyrm/seg`/`wyrm/segB`), probe-light tint + hit-white /
+  stagger-amber flash. Drops get their whole pool back (old code stamped tail
+  plates onto `dropPool` and hid drops while the Wyrm lived).
+- Sim byte-identical — hash-neutral; proof route still wins (determinism gates
+  green). `__emberwoodTest.tailStats()` added.
+- `emberwoodcheck` **151/151** (116 node + 30 Chrome): +4 node spine gates
+  (trail 60/60, one-frame-dense ≤0.85px jumps, tracks motion) +5 Chrome gates
+  (20 plates live, **zero drop-quad theft**, ≥3 distinct headings, strictly
+  decreasing z, taper 1.05→0.28). **Mutant:** freeze `lastYaw=0` → orientation
+  gate FAILS (1 heading); restored → green. eslint/mario/fps/ai + build green.
+  Prod verified: chunk `index-ChbqFJ-2.js` contains `segB`.
 
 ## Next goal
-- Re-run `flagshipStage`/idle-kick. SSX 0 stays gated while #873 AWAITING
-  (default keep taps) and SSX 1 is harness — so the natural next game-code
-  stage is EMBERWOOD gap 0: **Wyrm tail segments ride the drop-pool quads**
-  (proper tail-segment billboards). Other Emberwood gaps: save system/second
-  shop/elder gift; portrait full-bleed; tempo lift/attract music.
-  If #873 is ANSWERED "add analogue stick", that outranks as Jon's steer.
-- QA holds #863 (BLOB). Never touch a game QA is inside (`heldGames`).
+- **#873 is ANSWERED: "A — use analogue."** Jon's steer — next session takes
+  SSX gap 0's real delta first: analogue steer depth on touch (stick tilt for
+  carve depth + flip direction), replacing the discrete FLIP/FRNT-only touch
+  path. File as POLISH-SSX (or fold into the claim) and execute Jon's reply.
+- Oldest `game-queue` after that: **#889 GAME: SSX — more and longer courses**
+  (3 new original courses, every course ~2x longer, route choices; online
+  tournament rotation). Other Emberwood gaps: save system/second shop/elder
+  gift; portrait full-bleed; tempo lift/attract music.
+- QA holds #863 (BLOB, live session at start of this one). Never touch a game
+  QA is inside (`heldGames`).
 
 ## Board / harness status
-- main green at 290d37f (STATE commit follows); no freeze; no `halt`;
-  queue/next/steer empty at claim; rule 4 satisfied (Emberwood game code).
-- `jonq` lane:games — **#873 AWAITING** (analogue stick vs arcade taps,
-  default keep taps, deadline 2026-10-25). No other open games-lane question.
-- **Deploy dependency (unchanged):** real internet play needs the relay
-  worker redeployed on Cloudflare (#825, AWAITING, lane:qa).
-- QA lane owns: #863 BLOB (building-qa); #843/#825 AWAITING (lane:qa).
+- main green at 0e74a2d (+ this STATE commit); no freeze; no `halt`.
+- `jonq`: #873, #843, #825 all ANSWERED today (2026-10-23). Nothing AWAITING
+  in lane:games. No new question filed this session.
+- **Deploy dependency (unchanged):** real internet play needs the relay worker
+  redeployed on Cloudflare (#825 now ANSWERED — execute per its reply text when
+  the QA/platform lane picks it up).
+- QA lane owns: #863 BLOB (building-qa).
 
 ## Open questions
-- #873 (lane:games, AWAITING) — SSX touch steer: analogue stick or arcade taps?
+- none open (all lanes clear at time of writing).
 
 ## Housekeeping owed
-- `gh pr merge --squash --delete-branch` succeeded again but its local
-  bookkeeping failed: **`main` is checked out in worktree
-  `~/Dev/retrogames-qa-863-cputiers`** (live QA session; second run in a
-  row). Whoever tends that lane (or Jon): `git -C ~/Dev/retrogames-qa-863-
-  cputiers checkout --detach origin/main`. Pushes to main still work; only
-  local checkout/merge is wedged.
-- Worktree `~/Dev/retrogames-forge-emberwood-sprites` re-detached at
-  origin/main, node_modules symlinked — safe to prune, as is
-  `~/Dev/retrogames-forge-emberwood-grace` and older SSX/QA trees.
-- No 8b polish-pass issue filed: #877 WAS a polish stage on an existing
-  title; its remaining gaps already live in the Emberwood README (the
-  `flagshipStage` source) — a duplicate QA issue would be noise.
+- **Fixed this session:** `main` was checked out in worktree
+  `~/Dev/retrogames-qa-863-cputiers` (wedged local merge bookkeeping two runs
+  in a row). It was clean, so it is now detached at origin/main — pushes and
+  rule-5 merges work again from any lane.
+- Worktree `~/Dev/retrogames-forge-emberwood-wyrm-tail` re-detached at
+  origin/main (node_modules symlinked) — safe to prune, as are
+  `~/Dev/retrogames-forge-emberwood-sprites`, `…-emberwood-grace` and older
+  SSX/QA trees.
+- No 8b polish-pass issue filed: #880 WAS a polish stage on an existing title;
+  its remaining gaps already live in the Emberwood README (`flagshipStage`
+  source) — a duplicate QA issue would be noise.
+- Prod-verify gotcha for the next lane: `jalfern.com` 308-redirects to
+  `www.jalfern.com` — curl **must** use `-L`; grepping the redirect stub looks
+  like "not deployed forever". Emberwood ships in a lazy chunk (~49 of them):
+  scan the chunk list from the index bundle, not just `index-*.js`.
