@@ -205,6 +205,18 @@ export function feedbackLabels(isJon) {
     return isJon ? FB_LABELS.slice() : FB_LABELS.concat(FB_AWAIT_LABEL)
 }
 
+// #905: the filed issue used to SAY "data URL attached" and then attach nothing —
+// a screenshot QA could never view. The body now carries a placeholder instead;
+// the worker uploads the PNG as a real issue asset (uploads.github.com) and
+// patches the placeholder with the CDN markdown. If the upload fails the
+// placeholder becomes an honest note, never a fake claim.
+export const FB_SHOT_PLACEHOLDER = '{{SCREENSHOT}}'
+
+export function screenshotMarkdown(url) {
+    if (typeof url === 'string' && /^https:\/\//.test(url)) return `![feedback screenshot](${url})`
+    return 'Screenshot captured but the relay upload failed — ask the reporter to re-send.'
+}
+
 // GitHub issue payload from a validated report. No secrets, no network here — the
 // worker attaches the Authorization header. The token NEVER appears in the body.
 export function buildFeedbackIssue(body, isJon) {
@@ -219,7 +231,7 @@ export function buildFeedbackIssue(body, isJon) {
     if (body.input) {
         lines.push('', `Last ${body.input.durationSec || 30}s of input (seed ${body.input.seed ?? '?'}, retrogames-rec/v1):`, '```json', JSON.stringify(body.input), '```')
     }
-    if (body.screenshot) lines.push('', `Screenshot: data URL attached (${Math.round(body.screenshot.length / 1024)} KB base64)`)
+    if (body.screenshot) lines.push('', FB_SHOT_PLACEHOLDER)
     return { title, body: lines.join('\n'), labels: feedbackLabels(!!isJon) }
 }
 

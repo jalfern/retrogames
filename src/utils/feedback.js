@@ -39,6 +39,16 @@ export function readJonKey(storage) {
     try { return storage.getItem(JONKEY_STORE) } catch { return null }
 }
 
+// #905: the one-time link is invisible on a phone once used, so the panel also
+// offers a paste box — save the key once per device and every later report
+// files straight to `feedback` instead of the quarantine label.
+export function saveJonKey(value, storage) {
+    const key = String(value == null ? '' : value).trim()
+    if (!key || !storage) return null
+    try { storage.setItem(JONKEY_STORE, key) } catch { /* private mode: stay silent */ }
+    return key
+}
+
 function stripJonKey(loc) {
     const cleaned = (loc.search || '')
         .replace(new RegExp(`([?&])${JONKEY_PARAM}=[^&#]*`, 'g'), '$1')
@@ -80,8 +90,9 @@ export function makeRing(windowMs = FB_WINDOW_MS) {
 // Keyboard input logger: a global keydown/keyup bridge so EVERY game that answers
 // arrows/space banks real input with zero per-game wiring (VirtualControls already
 // dispatches these as KeyboardEvents). Returns a stop() that removes the listeners.
-export function startKeyboardRing(ring) {
-    if (!HAS_WIN) return () => {}
+// `win` is injectable so the harness can drive it against a fake window.
+export function startKeyboardRing(ring, win = HAS_WIN ? window : null) {
+    if (!win) return () => {}
     const held = new Set()
     const CODES = {
         ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
@@ -101,9 +112,33 @@ export function startKeyboardRing(ring) {
     const bank = () => ring.push(pad())
     const down = (e) => { const k = CODES[e.code]; if (k) { held.add(k); bank() } }
     const up = (e) => { const k = CODES[e.code]; if (k) { held.delete(k); bank() } }
-    window.addEventListener('keydown', down)
-    window.addEventListener('keyup', up)
-    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up) }
+    win.addEventListener('keydown', down)
+    win.addEventListener('keyup', up)
+    return () => { win.removeEventListener('keydown', down); win.removeEventListener('keyup', up) }
+}
+
+// #905: typing a report killed its own spaces — games preventDefault() Space (to
+// stop page scroll) and eat arrow keys as steer, and those handlers sit on window,
+// so every keystroke in the note hit the game too. While the panel is open this
+// capture-phase guard stops key events whose target is inside the panel before
+// they reach ANY bubble-phase listener: the game hears nothing, the replay ring
+// stays clean, and the browser's default action still writes the character
+// (nothing here calls preventDefault, so Space survives). `onKey` runs for
+// in-panel keys before stopping, so the panel can own Escape itself.
+export function installTypingGuard(panelEl, win = HAS_WIN ? window : null, onKey = null) {
+    if (!win || !panelEl) return () => {}
+    const shield = (e) => {
+        if (panelEl.contains && panelEl.contains(e.target)) {
+            if (onKey) { try { onKey(e) } catch { /* panel handler failed */ } }
+            e.stopPropagation()
+        }
+    }
+    win.addEventListener('keydown', shield, true)
+    win.addEventListener('keyup', shield, true)
+    return () => {
+        win.removeEventListener('keydown', shield, true)
+        win.removeEventListener('keyup', shield, true)
+    }
 }
 
 // Best-effort canvas grab. WebGL canvases without preserveDrawingBuffer return a
@@ -129,7 +164,7 @@ export function captureState() {
     const s = g && typeof g.state === 'function' ? g.state() : (window.__feedbackInfo && window.__feedbackInfo())
     if (!s || typeof s !== 'object') return null
     const out = {}
-    for (const k of ['tick', 'score', 'done', 'x', 'y', 'z', 'camera', 'players', 'lives']) {
+    for (const k of ['tick', 'score', 'done', 'seed', 'x', 'y', 'z', 'camera', 'players', 'lives']) {
         if (s[k] !== undefined) out[k] = s[k]
     }
     if (!Object.keys(out).length) return null
@@ -166,7 +201,10 @@ export function captureFeedback({ note = '', ring = null, seconds = 30, route = 
         const pads = ring.tail(seconds)
         if (pads.length) {
             payload.input = { format: REC_FORMAT, durationSec: seconds, pads }
-            const seed = HAS_WIN && window.__game && window.__game.state && window.__game.state().seed
+            // #905: seed was "?" on every filed report because it only looked at
+            // __game (DEV-only). The same state source the contract uses (and the
+            // production __feedbackInfo fallback) carries the seed when it exists.
+            const seed = (state && state.seed) ?? (HAS_WIN && window.__feedbackInfo ? window.__feedbackInfo().seed : undefined)
             if (Number.isInteger(seed)) payload.input.seed = seed
         }
     }

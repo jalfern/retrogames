@@ -12,11 +12,12 @@
 import { readFileSync } from 'node:fs'
 import {
     validateFeedback, feedbackLabels, buildFeedbackIssue, FB_MAX_PADS,
-    corsOrigin, corsHeaders, CORS_ALLOW_HEADERS,
+    corsOrigin, corsHeaders, CORS_ALLOW_HEADERS, FB_SHOT_PLACEHOLDER, screenshotMarkdown,
 } from '../relay/core.js'
 import {
     makeRing, captureFeedback, submitFeedback, probeFeedback, FB_RELAY,
-    storeJonKey, readJonKey, JONKEY_STORE,
+    storeJonKey, readJonKey, saveJonKey, JONKEY_STORE,
+    startKeyboardRing, installTypingGuard,
 } from '../src/utils/feedback.js'
 import { REC_FORMAT } from '../src/utils/recording.js'
 
@@ -60,6 +61,12 @@ ok('issue: title carries gameId', issueJon.title.startsWith('FEEDBACK emberwood:
 ok('issue: body carries seed + rec format', issueJon.body.includes('seed 42') && issueJon.body.includes(REC_FORMAT))
 ok('issue: body never leaks a token', !/ghp_|github_pat_|Authorization/i.test(issueJon.body))
 ok('issue: friend quarantined', issueFriend.labels.includes('needs-approval') && !issueJon.labels.includes('needs-approval'))
+
+// ── #905: the screenshot must be REAL (uploaded) or honestly absent ──────────
+ok('issue: screenshot becomes a placeholder, never a fake "attached" claim',
+    issueJon.body.includes(FB_SHOT_PLACEHOLDER) && !/data URL attached/.test(issueJon.body))
+ok('shot: uploaded asset renders as markdown', screenshotMarkdown('https://github.githubassets.com/x/shot.png') === '![feedback screenshot](https://github.githubassets.com/x/shot.png)')
+ok('shot: failed upload says so, no broken image tag', !screenshotMarkdown(null).includes('![') && !screenshotMarkdown('javascript:alert(1)').includes('!['))
 
 // ── client: the input ring trims to the last 30 s ────────────────────────────
 const ring = makeRing()
@@ -146,6 +153,61 @@ ok('jonkey: submit attaches the stored key', sentKey.ok === true && captured2.bo
 const sentNoKey = await submitFeedback(cap, { fetchImpl: fakeFetch2, storage: memStore() })
 ok('jonkey: anonymous submit sends no key field', sentNoKey.ok === true && captured2.body.key === undefined)
 ok('jonkey: the key never reaches the filed issue body', !buildFeedbackIssue({ ...cap, key: 'S3cretOneTime' }, true).body.includes('S3cretOneTime'))
+
+// ── #905: save the key from the panel (one-time link is invisible on a phone) ─
+const store2 = memStore()
+ok('jonkey: pasted key saved + read back', saveJonKey('Pasted-Device-Key', store2) === 'Pasted-Device-Key' && readJonKey(store2) === 'Pasted-Device-Key')
+ok('jonkey: blank paste refused (never clobbers)', saveJonKey('   ', store2) === null && readJonKey(store2) === 'Pasted-Device-Key'
+    && saveJonKey(null, memStore()) === null && saveJonKey('x', null) === null)
+
+// ── #905: typing the note must not drive the game or pollute the replay ring ──
+// Fake window: capture listeners run first, then bubble ones, unless stopped.
+const fakeWin = () => {
+    const L = { keydown: [], keyup: [] }
+    return {
+        addEventListener: (t, fn, cap) => { if (cap) L[t].unshift(fn); else L[t].push(fn) },
+        removeEventListener: (t, fn, cap) => { const a = L[t]; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1) },
+        dispatch(t, target, code, key) {
+            const e = { type: t, key: key || code || ' ', code: code || 'Space', target, stopped: false, stopPropagation() { this.stopped = true } }
+            for (const fn of [...L[t]]) { fn(e); if (e.stopped) break }
+            return e
+        },
+        listenerCount: (t) => L[t].length,
+    }
+}
+const noteEl = {}
+const panelEl = { contains: (n) => n === noteEl }
+
+const ringG = makeRing()
+const win1 = fakeWin()
+startKeyboardRing(ringG, win1)
+let escapeSeen = 0
+const stopGuard = installTypingGuard(panelEl, win1, (e) => { if (e.key === 'Escape') escapeSeen++ })
+const e1 = win1.dispatch('keydown', noteEl, 'Space')
+ok('guard: Space typed in the panel stops before the game listeners', e1.stopped === true)
+ok('guard: typing never banks into the replay ring', ringG.size() === 0)
+const e2 = win1.dispatch('keydown', {}, 'ArrowRight')
+ok('guard: keys outside the panel still reach the game', e2.stopped === false && ringG.size() === 1)
+win1.dispatch('keydown', noteEl, 'Escape')
+ok('guard: Escape inside the panel reaches the panel callback', escapeSeen === 1)
+stopGuard()
+const e3 = win1.dispatch('keydown', noteEl, 'Space')
+ok('guard: removing the shield hands keys back to the game', e3.stopped === false && ringG.size() === 2)
+ok('guard: stop() detaches both shields', win1.listenerCount('keydown') === 1 && win1.listenerCount('keyup') === 1)
+
+// ── #905: seed reaches the replay without DEV-only __game ────────────────────
+const feedbackSrc = readFileSync(new URL('../src/utils/feedback.js', import.meta.url), 'utf8')
+ok('capture: seed key survives the contract filter', /'seed'/.test(feedbackSrc))
+ok('capture: seed falls back to __feedbackInfo (production hook)', /__feedbackInfo\(\)\.seed/.test(feedbackSrc))
+
+// ── #905: panel UX — own screen, ESC, send returns to the game, key row ─────
+ok('panel: owns a full screen above every game overlay', /fixed inset-0 z-\[80\]/.test(chromeSrc))
+ok('panel: ESC closes and resumes the game', /e\.key === 'Escape'[\s\S]{0,60}closePanel\(\)/.test(chromeSrc))
+ok('panel: successful send goes straight back to the game', /if \(res\.ok\) \{[\s\S]{0,160}closePanel\(\)/.test(chromeSrc))
+ok('panel: a toast confirms the filed issue after the screen is gone', /data-feedback="toast"/.test(chromeSrc))
+ok('panel: typing is shielded by the capture guard', /installTypingGuard\(panelRef\.current/.test(chromeSrc))
+ok('panel: Jon key row saves to the device', /saveJonKey/.test(chromeSrc) && /data-feedback="keysave"/.test(chromeSrc))
+ok('wiring: worker uploads the screenshot as an issue asset', /uploads\.github\.com/.test(workerSrc) && /FB_SHOT_PLACEHOLDER/.test(workerSrc) && /screenshotMarkdown/.test(workerSrc))
 
 if (mutate) {
     // Mutant (nightly): tamper = a report one pad over the hard cap. A validator
