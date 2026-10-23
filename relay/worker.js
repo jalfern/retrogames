@@ -9,7 +9,37 @@
 // Served at https://retrogames.jalfern.workers.dev/room/<CODE> (wss).
 
 import { DurableObject } from 'cloudflare:workers'
-import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, relay } from './core.js'
+import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, relay, validateFeedback, buildFeedbackIssue } from './core.js'
+
+const GH_API = 'https://api.github.com'
+
+async function handleFeedback(req, env) {
+    if (!env || !env.GITHUB_TOKEN || !env.GH_REPO) {
+        return Response.json({ ok: false, err: 'relay not configured' }, { status: 503 })
+    }
+    let body
+    try { body = await req.json() } catch { return Response.json({ ok: false, err: 'bad json' }, { status: 400 }) }
+    const v = validateFeedback(body)
+    if (!v.ok) return Response.json({ ok: false, err: v.err }, { status: 400 })
+    const isJon = !!(env.JON_KEY && typeof body.key === 'string' && body.key === env.JON_KEY)
+    const issue = buildFeedbackIssue(body, isJon)
+    try {
+        const res = await fetch(`${GH_API}/repos/${env.GH_REPO}/issues`, {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                authorization: `Bearer ${env.GITHUB_TOKEN}`,
+                'user-agent': 'retrogames-relay',
+            },
+            body: JSON.stringify(issue),
+        })
+        if (!res.ok) return Response.json({ ok: false, err: `github ${res.status}` }, { status: 502 })
+        const j = await res.json()
+        return Response.json({ ok: true, issue: j.html_url, labels: issue.labels })
+    } catch {
+        return Response.json({ ok: false, err: 'github unreachable' }, { status: 502 })
+    }
+}
 
 export class Registry extends DurableObject {
     async tryAdd(code) {
@@ -145,10 +175,15 @@ export class Room extends DurableObject {
 export default {
     async fetch(req, env) {
         const url = new URL(req.url)
+        if (req.method === 'POST' && url.pathname === '/feedback') return handleFeedback(req, env)
         if (url.pathname === '/' || url.pathname === '/status') {
             let rooms = -1
             try { rooms = await env.REGISTRY.get(env.REGISTRY.idFromName('registry')).count() } catch { /* probe anyway */ }
-            return Response.json({ ok: true, service: 'retrogames-relay', rooms })
+            // Capability flag (#737): the in-game FEEDBACK button stays hidden until
+            // the relay can actually file (deploy + GH secret present), so a PR that
+            // ships the client before Jon's deploy never shows a button that 503s.
+            const feedback = !!(env.GITHUB_TOKEN && env.GH_REPO)
+            return Response.json({ ok: true, service: 'retrogames-relay', rooms, feedback })
         }
         const m = url.pathname.match(/^\/room\/([A-Za-z0-9]{4})$/)
         if (!m) return new Response('use /room/CODE', { status: 400 })

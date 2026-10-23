@@ -74,6 +74,105 @@ export function registryAdd(reg, code, now) {
     return true
 }
 
+// FEEDBACK (#737) — the in-game feedback button files GitHub issues THROUGH this
+// relay so the GitHub token stays server-side and never reaches the browser. The
+// payload is a game report: a note plus a screenshot, game/build/state metadata,
+// and — the core of it — the last 30 seconds of input in the SAME
+// retrogames-rec/v1 shape QA already replays. validateFeedback() is the single
+// gate on that payload (size caps so a tester can't POST a 10 MB screenshot); it
+// is pure so the token-free part of filing is provable in plain Node.
+
+export const FB_MAX_NOTE = 2000
+export const FB_MAX_SCREENSHOT = 1_500_000 // base64 data-url bytes
+export const FB_MAX_STATE = 4000
+export const FB_MAX_DIAG = 8000
+export const FB_MAX_INPUT = 200_000
+export const FB_MAX_PADS = 30 * 60 // hard ceiling: 30 s @ 60 fps
+export const FB_LABELS = ['feedback']
+export const FB_AWAIT_LABEL = 'needs-approval'
+
+const byteLen = (v) => {
+    try { return new TextEncoder().encode(JSON.stringify(v)).length } catch { return Infinity }
+}
+
+// validateFeedback returns { ok:true } or { ok:false, err }. Every cap is a
+// cheap type/size check — no game runs here, the relay only ever files text.
+export function validateFeedback(body) {
+    if (!body || typeof body !== 'object') return { ok: false, err: 'body must be an object' }
+    const note = typeof body.note === 'string' ? body.note.trim() : ''
+    if (!note) return { ok: false, err: 'note required' }
+    if (note.length > FB_MAX_NOTE) return { ok: false, err: `note too long (>${FB_MAX_NOTE})` }
+    if (typeof body.gameId !== 'string' || !body.gameId || body.gameId.length > 64) {
+        return { ok: false, err: 'gameId required' }
+    }
+    if (body.build !== undefined && (typeof body.build !== 'string' || body.build.length > 40)) {
+        return { ok: false, err: 'bad build' }
+    }
+    if (body.route !== undefined && (typeof body.route !== 'string' || body.route.length > 200)) {
+        return { ok: false, err: 'bad route' }
+    }
+    if (body.ua !== undefined && (typeof body.ua !== 'string' || body.ua.length > 200)) {
+        return { ok: false, err: 'bad ua' }
+    }
+    if (body.screenshot !== undefined) {
+        if (typeof body.screenshot !== 'string' || !body.screenshot.startsWith('data:image/')
+            || body.screenshot.length > FB_MAX_SCREENSHOT) {
+            return { ok: false, err: 'bad screenshot' }
+        }
+    }
+    if (body.state !== undefined) {
+        if (!body.state || typeof body.state !== 'object' || byteLen(body.state) > FB_MAX_STATE) {
+            return { ok: false, err: 'bad state' }
+        }
+    }
+    if (body.diag !== undefined) {
+        if (!body.diag || typeof body.diag !== 'object' || byteLen(body.diag) > FB_MAX_DIAG) {
+            return { ok: false, err: 'bad diag' }
+        }
+    }
+    if (body.input !== undefined) {
+        const inp = body.input
+        if (!inp || typeof inp !== 'object') return { ok: false, err: 'bad input' }
+        if (inp.seed !== undefined && !Number.isInteger(inp.seed)) return { ok: false, err: 'bad seed' }
+        if (!Array.isArray(inp.pads)) return { ok: false, err: 'input.pads must be an array' }
+        if (inp.pads.length > FB_MAX_PADS) return { ok: false, err: 'too many pads' }
+        for (const f of inp.pads) {
+            if (!f || typeof f !== 'object' || !Number.isInteger(f.t) || f.t < 1) {
+                return { ok: false, err: 'bad pad frame' }
+            }
+            if (f.pad !== undefined && typeof f.pad !== 'string' && typeof f.pad !== 'object') {
+                return { ok: false, err: 'bad pad codec' }
+            }
+        }
+        if (byteLen(inp) > FB_MAX_INPUT) return { ok: false, err: 'input too large' }
+    }
+    return { ok: true }
+}
+
+// A tester key other than Jon's quarantines the report behind needs-approval
+// "as today" (the phone-friend tier). Jon's key files straight into feedback.
+export function feedbackLabels(isJon) {
+    return isJon ? FB_LABELS.slice() : FB_LABELS.concat(FB_AWAIT_LABEL)
+}
+
+// GitHub issue payload from a validated report. No secrets, no network here — the
+// worker attaches the Authorization header. The token NEVER appears in the body.
+export function buildFeedbackIssue(body, isJon) {
+    const note = body.note.trim()
+    const title = `FEEDBACK ${body.gameId}: ${note.split('\n')[0].slice(0, 68)}`
+    const lines = [note, '']
+    lines.push('```', `game:  ${body.gameId}`, `build: ${body.build || '?'}`, `route: ${body.route || '?'}`)
+    if (body.ua) lines.push(`ua:    ${body.ua}`)
+    lines.push('```')
+    if (body.state) lines.push('', 'State:', '```json', JSON.stringify(body.state, null, 2), '```')
+    if (body.diag) lines.push('', 'Diagnostics:', '```json', JSON.stringify(body.diag, null, 2), '```')
+    if (body.input) {
+        lines.push('', `Last ${body.input.durationSec || 30}s of input (seed ${body.input.seed ?? '?'}, retrogames-rec/v1):`, '```json', JSON.stringify(body.input), '```')
+    }
+    if (body.screenshot) lines.push('', `Screenshot: data URL attached (${Math.round(body.screenshot.length / 1024)} KB base64)`)
+    return { title, body: lines.join('\n'), labels: feedbackLabels(!!isJon) }
+}
+
 export function registryRemove(reg, code) {
     reg.rooms.delete(code)
 }

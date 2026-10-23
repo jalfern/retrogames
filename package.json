@@ -169,6 +169,7 @@
     "lint:rec": "eslint src/utils scripts/replaycheck.mjs scripts/recmethods.mjs",
     "replaycheck": "node scripts/replaycheck.mjs",
     "recmethods": "node scripts/recmethods.mjs",
+    "feedbackcheck": "node scripts/feedbackcheck.mjs",
     "lint:smash": "eslint src/games/SmashTV src/components src/utils src/config src/main.jsx scripts/smashcheck.mjs scripts/smashplay.mjs scripts/lib",
     "smashcheck": "node scripts/smashcheck.mjs",
     "smashplay": "node scripts/smashplay.mjs",
