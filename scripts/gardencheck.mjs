@@ -20,6 +20,7 @@ import {
     LEVELS,
     newRun, advance, autoStep, plant, spawnEnemy,
     occupied, waveProgress, stateHash,
+    actAt, toggleTrowel, bankTap,
 } from '../src/games/GardenGuard/sim.js'
 
 const DT = FIXED_DT / 1000
@@ -168,6 +169,39 @@ section('WINNABLE (attract autopilot, several seeds)')
     const runTo = (seed) => { const g = play(seed); return stateHash(g) }
     check('determinism: seed 7 twice -> identical final hash', runTo(7) === runTo(7))
     check('different seeds -> different trajectories', runTo(7) !== runTo(8))
+}
+
+section('POLISH CONTRACT (juice events carry what the shell needs)')
+{
+    // The shell (#854 juice) reads coordinates + ids off these events. If a field
+    // is stripped the effects break silently — this gate turns that into a red run.
+    const g = newRun(31); g.level = 5
+    for (const k of Object.keys(g.cd)) g.cd[k] = 0
+    g.acorns = 9999
+    const seen = {}
+    const note = () => { for (const ev of g.events) if (!seen[ev.t]) seen[ev.t] = { ...ev } }
+    plant(g, 'squirrel', 2, 3)
+    spawnEnemy(g, 'grunt', 2); g.enemies[g.enemies.length - 1].x = colX(6)
+    for (let i = 0; i < 60 * 6 && !seen.shoot; i++) { advance(g, DT); note() }
+    check('shoot event carries muzzle x,y', !!(seen.shoot && seen.shoot.x != null && seen.shoot.y != null), JSON.stringify(seen.shoot))
+    for (let i = 0; i < 60 * 6 && !seen.kill; i++) { advance(g, DT); note() }
+    check('kill event carries id + x,y (death grunt + particles)', !!(seen.kill && seen.kill.id && seen.kill.x != null && seen.kill.y != null), JSON.stringify(seen.kill))
+    for (let i = 0; i < 60 * 14 && !seen.bank; i++) { advance(g, DT); note(); if (g.acornDrops.length) bankTap(g, g.acornDrops[0]) }
+    check('bank event carries drop x,y (fly-to-purse origin)', !!(seen.bank && seen.bank.x != null && seen.bank.y != null), JSON.stringify(seen.bank))
+    for (const k of Object.keys(g.cd)) g.cd[k] = 0
+    g.acorns = 9999
+    plant(g, 'daisy', 0, 0)
+    toggleTrowel(g); actAt(g, 0, 0); note()
+    check('dig event carries r,c (soil puff tile)', !!(seen.dig && seen.dig.r != null && seen.dig.c != null), JSON.stringify(seen.dig))
+    const gc = newRun(27)
+    for (let guard = 0; guard < 60 * 90 && gc.level === 1 && !gc.done; guard++) {
+        autoStep(gc, DT)
+        for (const e of gc.enemies) e.hp = 0
+        if (gc.waves[gc.waveIdx] && !gc.waves[gc.waveIdx].started) gc.nextWaveAt = gc.sec
+        else if (gc.waves[gc.waveIdx]) gc.waves[gc.waveIdx].i = gc.waves[gc.waveIdx].entries.length
+        for (const ev of gc.events) if (ev.t === 'clear') seen.clear = { ...ev }
+    }
+    check('clear event names the next level (unlock sting)', !!(seen.clear && seen.clear.next != null), JSON.stringify(seen.clear))
 }
 
 console.log(`\n=== gardencheck: ${pass} pass, ${fail} fail ===`)

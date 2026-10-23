@@ -19,14 +19,14 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
-    FIXED_DT, W, H, ROWS, TRAY_H, GLY, rowY, HOUSE_X,
-    tileOf,
+    FIXED_DT, W, H, ROWS, TRAY_H, GLY, rowY, colX, HOUSE_X,
+    tileOf, PLANTS,
     newRun, advance, autoStep, moveCursor, selectCard, cycleCard, toggleTrowel, actAt, bankTap,
     waveProgress, bigWaveUp, stateHash, bot,
 } from './sim.js'
 import {
     drawBackground, drawCottage, drawLawn, drawTray, drawPlant, drawEnemy, drawProj,
-    drawAcornDrop, drawMower, drawCursor, drawHud,
+    drawAcornDrop, drawAcornIcon, drawMower, drawCursor, drawHud,
 } from './art.js'
 
 const SIM_MS = FIXED_DT
@@ -99,16 +99,16 @@ const GardenGuardGame = () => {
             while (s.events.length) {
                 const e = s.events.shift()
                 switch (e.t) {
-                    case 'plant': audioController.playSweep(240, 540, 0.12, 'square', 0.05); break
-                    case 'dig': audioController.playSweep(420, 170, 0.12, 'square', 0.05); break
+                    case 'plant': audioController.playSweep(240, 540, 0.12, 'square', 0.05); if (live) burst(colX(e.c), rowY(e.r) + 16, 6, '#6b4a2a', 2.4, 'soil'); break
+                    case 'dig': audioController.playSweep(420, 170, 0.12, 'square', 0.05); if (live && e.r != null) burst(colX(e.c), rowY(e.r) + 16, 10, '#6b4a2a', 3, 'soil'); break
                     case 'make': audioController.playTone(720, 0.05, 'triangle', 0.04); break
                     case 'sky': audioController.playTone(600, 0.05, 'triangle', 0.035); break
-                    case 'bank': audioController.playSweep(680, 900, 0.08, 'triangle', 0.05); break
-                    case 'shoot': audioController.playTone(540, 0.04, 'square', 0.035); break
+                    case 'bank': audioController.playSweep(680, 900, 0.08, 'triangle', 0.05); if (live && e.x != null) particles.push({ x: e.x, y: e.y, vx: 0, vy: 0, life: 26, max: 26, col: '#c98a4b', size: 6, kind: 'fly', tx: 127, ty: 40 }); break
+                    case 'shoot': audioController.playTone(540, 0.04, 'square', 0.035); audioController.playTone(810, 0.03, 'triangle', 0.02); if (live) burst(e.x, e.y, 4, '#ffe6a8', 2.2, 'flash'); break
                     case 'hit': audioController.playTone(300, 0.03, 'square', 0.025); if (live) burst(e.x, e.y, 3, '#d8b98c', 2); break
-                    case 'frostshot': audioController.playSweep(760, 1050, 0.08, 'triangle', 0.04); break
+                    case 'frostshot': audioController.playSweep(760, 1050, 0.08, 'triangle', 0.04); if (live) burst(e.x, e.y, 4, '#bff0ff', 2, 'flash'); break
                     case 'frosthit': audioController.playTone(980, 0.05, 'triangle', 0.035); if (live) burst(e.x, e.y, 6, '#bff0ff', 2.4); break
-                    case 'lob': audioController.playSweep(200, 360, 0.14, 'triangle', 0.05); break
+                    case 'lob': audioController.playSweep(200, 360, 0.14, 'triangle', 0.05); if (live) burst(e.x, e.y, 3, '#e0a24b', 2, 'flash'); break
                     case 'splat': audioController.playNoise(0.12, 0.06); if (live) burst(e.x, e.y, 10, '#e0822b', 3); break
                     case 'boom': audioController.playNoise(0.42, 0.16); shake = 10; if (live) burst(e.x, e.y, 26, '#ff8a3a', 5); break
                     case 'mow': audioController.playNoise(0.5, 0.14); audioController.playSweep(160, 120, 0.4, 'sawtooth', 0.08); shake = 8; if (live) burst(HOUSE_X + 130, rowY(e.r), 14, '#c9c9d2', 4); break
@@ -116,8 +116,24 @@ const GardenGuardGame = () => {
                     case 'wave': audioController.playSweep(300, 520, 0.22, 'square', 0.06); if (live) say(`WAVE ${e.n}`); break
                     case 'bigwave': audioController.playSweep(220, 120, 0.5, 'sawtooth', 0.1); audioController.playNoise(0.5, 0.12); shake = 14; if (live) say('THE FINAL WAVE'); break
                     case 'level': if (live && e.level > 1) say(`LEVEL ${e.level} — the raid deepens`); break
-                    case 'clear': audioController.playSweep(440, 940, 0.5, 'square', 0.08); if (live) say('LANE HELD!'); break
-                    case 'kill': if (live) burst(e.x, e.y, 9, '#8fce5a', 3); break
+                    case 'clear': {
+                        audioController.playSweep(440, 940, 0.5, 'square', 0.08)
+                        if (live) {
+                            const nid = e.next != null ? Object.keys(PLANTS).find((k) => PLANTS[k].unlock === e.next) : null
+                            if (nid) {
+                                say(`NEW DEFENDER: ${PLANTS[nid].name.toUpperCase()}`)
+                                audioController.playSweep(520, 1180, 0.4, 'triangle', 0.07)
+                                burst(127, 40, 16, '#fff3cf', 4, 'flash')
+                            } else say('LANE HELD!')
+                        }
+                        break
+                    }
+                    case 'kill': {
+                        const gruntBase = { grunt: 220, sprinter: 300, pup: 360, brute: 120, warlord: 90 }[e.id] || 240
+                        audioController.playSweep(gruntBase, gruntBase * 0.5, 0.16, 'sawtooth', 0.05)
+                        if (live) burst(e.x, e.y, 9, '#8fce5a', 3)
+                        break
+                    }
                     default: break
                 }
             }
@@ -196,12 +212,14 @@ const GardenGuardGame = () => {
             // particles
             for (const p of particles) {
                 ctx.globalAlpha = Math.max(0, p.life / p.max)
+                if (p.kind === 'fly') { drawAcornIcon(ctx, p.x, p.y, p.size * 2.2); continue }
                 ctx.fillStyle = p.col
                 ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 7); ctx.fill()
             }
             ctx.globalAlpha = 1
             if (live && !g.done) drawCursor(ctx, g)
             ctx.restore()
+            if (!g.done && bigWaveUp(g)) { const a = 0.1 + Math.sin(g.sec * 6) * 0.05; ctx.fillStyle = `rgba(180,28,18,${a.toFixed(3)})`; ctx.fillRect(0, 0, W, H) }
             drawTray(ctx, g, null)
             drawHud(ctx, g, bigWaveUp(g))
             // banners
@@ -237,7 +255,16 @@ const GardenGuardGame = () => {
 
         // ------------------------------------------------------------ loop ----
         const stepParticles = () => {
-            for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.life-- }
+            for (const p of particles) {
+                if (p.kind === 'fly') {
+                    p.x += (p.tx - p.x) * 0.22; p.y += (p.ty - p.y) * 0.22 - 0.6
+                    p.size = Math.max(2, 6 * (p.life / p.max))
+                } else {
+                    p.x += p.vx; p.y += p.vy
+                    p.vy += p.kind === 'flash' ? 0.02 : p.kind === 'soil' ? 0.34 : 0.12
+                }
+                p.life--
+            }
             particles = particles.filter((p) => p.life > 0)
             if (shake > 0) shake = Math.max(0, shake - 0.6)
         }
