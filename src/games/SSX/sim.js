@@ -73,6 +73,22 @@ export const CFG = {
 
 export const PLACE_PTS = [10, 7, 5, 3, 2, 1]
 export const CARVE_FADE = 300
+
+// #894 (the #873 answer — Jon picked analogue): the touch pad's physical
+// stick tilts map onto the original's dual-stick verbs. `ty` is the stick's
+// vertical vector in screen space (-1 = pushed forward/up, +1 = pulled back).
+// Forward tilt tucks and commits a FRONT flip (the sim's negative ledger,
+// flip === 2); back tilt scrubs and keeps the back flip. A neutral tilt
+// commits nothing — the FLIP button alone still throws the default back flip.
+export const STICK_TILT = { flip: 0.5, body: 0.4 }
+export function flipDirFromTilt(ty) {
+    if (ty <= -STICK_TILT.flip) return 2
+    if (ty >= STICK_TILT.flip) return 1
+    return 0
+}
+export function bodyFromTilt(ty) {
+    return { tuck: ty <= -STICK_TILT.body, scrub: ty >= STICK_TILT.body }
+}
 const GRABS = [
     { name: 'INDY', back: 1, spot: 'toe' },
     { name: 'MUTE', back: 0, spot: 'toe' },

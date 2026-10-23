@@ -368,7 +368,7 @@ spectators tagged, crowd hops at the stands, zero page errors.
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 220 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 229 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
 npm run ssxterraincheck                 # 55 checks: snow/rock surfaces (#669, #685, #844)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
@@ -446,13 +446,42 @@ name, direction, pay, the half-done bail, the grab requirement and determinism.
   law → the facing + axis gates go red; restore → green. A second mutant,
   `ocBand = 0`, turns the three outcrop-exposure gates red.)
 
+## Analogue touch stick (#894 — Jon's #873 answer: "use analogue")
+
+Phones finally get the original's dual-stick feel as a physical control: the
+trick pad carries an always-visible stick (base + knob, `data-ssx-stick`,
+index.jsx). Its offset from the base centre is analog input on the same lines
+the keyboard/drag/gamepad paths already ride:
+
+- **x = carve depth.** Feeds the #791 press ahead of canvas-drag and padState
+  (priority `tiltActive → dragSteer → padState → keys`), so a shallow tilt is
+  a shallow carve and ±1 locks — saturating at 38 px of travel.
+- **y = body tilt** (`sim.js` pure law `bodyFromTilt`, dead band ±0.4):
+  forward tucks, back scrubs — steering stays live through both.
+- **y picks the flip direction** (`flipDirFromTilt`, commit at ±0.5): FLIP
+  alone throws the back flip (ledger +), FLIP held with a forward tilt commits
+  the FRONT flip (ledger −). The discrete FRNT touch button retires;
+  keyboard Z/C and gamepad L1/R1 keep both flips explicit.
+
+The law lives in `sim.js` as pure exports (`STICK_TILT` / `flipDirFromTilt` /
+`bodyFromTilt`) so the Node audit pins it; physics, scoring and `stateHash`
+are untouched (the helpers only shape the input before `step`). Probe
+`__ssxTest.stick()` reports live depth/tilt/verbs; `center()` parks the rider
+on the centreline for flip drives. ssxcheck section #894 (+9 gates, 229): the
+tilt law (signs, thresholds, symmetry, neutral band), the committed direction
+reaching the flip ledger (front −, back +), and source gates (stick mounts,
+FRNT gone, depth outranks drag, tilt feeds tuck/scrub). Browser
+(`ssxmodelcheck`, 70): mount + rest knob, depth 0.53 → 1.0 saturating,
+release-to-centre, right-carves-right with `press` ramped, fwd/back tilt verbs,
+and FLIP+tilt mid-air landing a negative ledger where FLIP alone goes
+positive. **Mutant proof (done once, by hand):** swap the two signs in
+`flipDirFromTilt` → 3 node gates go red; restore → 229 green.
+
 ## Honest gaps (filed as the polish pass)
 
-- Trick verbs reach phones (#844: GRAB/FLIP/INV). #871 adds FRNT so the
-  front-flip (formerly keyboard-C only) reaches touch, driving the sim's
-  negative flip ledger one-handed. Still no physical analogue stick: analogue
-  steer depth is the #791 ramp + canvas drag distance, and flip direction on
-  touch is a discrete FLIP/FRNT tap, not stick tilt.
+- #871 added FRNT so the front-flip (formerly keyboard-C only) reached touch;
+  #894 retires it — the analogue stick's forward tilt now commits the FRONT
+  flip and the pad carries one FLIP button (keyboard Z/C keep both).
 - No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
   `ssxmodelcheck` covers the hero rider and the touch trick-pad in the browser.
 - Board decals reach every rider and the boot weld is solved, not posed
@@ -462,8 +491,7 @@ name, direction, pay, the half-done bail, the grab requirement and determinism.
   weld in all eleven non-tumble hero poses; mutant: disable `weldBoots` →
   11 FAIL). Still static: named-grab hand offsets are hand-tuned, not solved
   — Indy/Method/Salis/Flat hands hover 0.44–0.68 m off the edge band rather
-  than touching it (arm IK is the next slice), and there is no physical
-  analogue stick (#873).
+  than touching it (arm IK is the next slice).
 
 ## Lateral sign and the tuck/scrub (#547)
 

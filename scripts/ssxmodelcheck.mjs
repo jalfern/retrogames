@@ -207,7 +207,61 @@ await page2.keyboard.press('ArrowRight')
 await page2.waitForFunction(() => window.__ssxTest.cam().phase === 'run', null, { timeout: 10000 }).catch(() => {})
 await page2.waitForTimeout(1200)
 const trBtns = await page2.evaluate(() => Array.from(document.querySelectorAll('[data-ssx-trick]')).map((b) => b.dataset.ssxTrick))
-r.check('pad carries GRAB/FLIP/FRNT/INV trick buttons', trBtns.join(',') === 'KeyX,KeyZ,KeyC,KeyV', trBtns.join(','))
+r.check('pad carries GRAB/FLIP/INV trick buttons (FRNT retired — #894 tilt steers flips)', trBtns.join(',') === 'KeyX,KeyZ,KeyV', trBtns.join(','))
+
+// #894: the physical analogue stick — always-visible base + knob; x is analog
+// steer depth (through the #791 press ramp), y tilt picks body verbs.
+const stickBox = await page2.evaluate(() => {
+    const b = document.querySelector('[data-ssx-stick]')
+    if (!b) return null
+    const r = b.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }
+})
+r.check('analog stick mounts on the touch pad (always-visible, ≥110px)', !!stickBox && stickBox.w >= 110, JSON.stringify(stickBox))
+if (stickBox) {
+    const knobAt = () => page2.evaluate(() => {
+        const k = document.querySelector('[data-ssx-stick-knob]')
+        return k ? getComputedStyle(k).transform : null
+    })
+    r.check('stick knob rests at the base centre', (await knobAt()) === 'none' || /matrix\(1, 0, 0, 1, -22, -22\)|matrix\(1, 0, 0, 1, -2[0-9](\.[0-9]+)?, -2[0-9](\.[0-9]+)?\)/.test(await knobAt() || ''), await knobAt())
+    // depth: shallow tilt ≠ deep tilt, and past the rim the input saturates
+    await page2.mouse.move(stickBox.x, stickBox.y)
+    await page2.mouse.down()
+    await page2.mouse.move(stickBox.x + 20, stickBox.y, { steps: 4 })
+    const shallow = await page2.evaluate(() => window.__ssxTest.stick())
+    await page2.mouse.move(stickBox.x + 60, stickBox.y, { steps: 4 })
+    const deep = await page2.evaluate(() => window.__ssxTest.stick())
+    await page2.mouse.move(stickBox.x + 140, stickBox.y, { steps: 4 })
+    const past = await page2.evaluate(() => window.__ssxTest.stick())
+    await page2.mouse.up()
+    const rest = await page2.evaluate(() => window.__ssxTest.stick())
+    r.check('stick depth is analog: shallow < deep, saturating at ±1',
+        shallow.active && deep.active && deep.x > shallow.x + 0.2 && shallow.x > 0.3 && shallow.x < 0.9 && past.x === 1,
+        JSON.stringify({ shallow: shallow.x, deep: deep.x, past: past.x }))
+    r.check('stick releases to center — depth clears', !rest.active && rest.x === 0, JSON.stringify(rest))
+    // steer sign: holding the stick right actually moves the rider +x
+    const x0 = await page2.evaluate(() => window.__ssxTest.probe().p.x)
+    await page2.mouse.move(stickBox.x, stickBox.y)
+    await page2.mouse.down()
+    await page2.mouse.move(stickBox.x + 40, stickBox.y, { steps: 6 })
+    await page2.waitForTimeout(700)
+    const steerNow = await page2.evaluate(() => ({ x: window.__ssxTest.probe().p.x, st: window.__ssxTest.stick(), press: window.__ssxTest.probe().p.press }))
+    await page2.mouse.up()
+    r.check('stick right carves right (+x) at depth — press ramps through the sim',
+        steerNow.st.x >= 0.9 && steerNow.x > x0 + 0.05 && Math.abs(steerNow.st.y) < 0.4 && steerNow.press > 0.5,
+        JSON.stringify({ dx: +(steerNow.x - x0).toFixed(3), st: steerNow.st, press: +steerNow.press.toFixed(2) }))
+    // body verbs: forward tilt tucks + arms a FRONT flip; back tilt scrubs
+    await page2.mouse.move(stickBox.x, stickBox.y)
+    await page2.mouse.down()
+    await page2.mouse.move(stickBox.x, stickBox.y - 26, { steps: 4 })
+    const fwd = await page2.evaluate(() => window.__ssxTest.stick())
+    await page2.mouse.move(stickBox.x, stickBox.y + 26, { steps: 4 })
+    const back = await page2.evaluate(() => window.__ssxTest.stick())
+    await page2.mouse.up()
+    r.check('tilt forward tucks + commits FRONT (dir 2); tilt back scrubs (dir 1)',
+        fwd.tuck && !fwd.scrub && fwd.flipDir === 2 && back.scrub && !back.tuck && back.flipDir === 1,
+        JSON.stringify({ fwd, back }))
+}
 
 const btnBox = async (code) => page2.evaluate((c) => {
     const b = document.querySelector(`[data-ssx-trick="${c}"]`)
@@ -218,10 +272,9 @@ const btnBox = async (code) => page2.evaluate((c) => {
 
 const grabBtn = await btnBox('KeyX')
 const flipBtn = await btnBox('KeyZ')
-const frontBtn = await btnBox('KeyC')
 const invBtn = await btnBox('KeyV')
-r.check('trick buttons are on-screen', !!(grabBtn && flipBtn && frontBtn && invBtn),
-    JSON.stringify({ grabBtn, flipBtn, frontBtn, invBtn }))
+r.check('trick buttons are on-screen', !!(grabBtn && flipBtn && invBtn),
+    JSON.stringify({ grabBtn, flipBtn, invBtn }))
 
 if (grabBtn) {
     await page2.mouse.move(grabBtn.x, grabBtn.y)
@@ -238,14 +291,6 @@ if (flipBtn) {
     await page2.mouse.up()
     const rel = await page2.evaluate(() => window.__ssxTest.keys.has('KeyZ'))
     r.check('FLIP button press reaches the held-key set', held && !rel, `${held}/${rel}`)
-}
-if (frontBtn) {
-    await page2.mouse.move(frontBtn.x, frontBtn.y)
-    await page2.mouse.down()
-    const held = await page2.evaluate(() => window.__ssxTest.keys.has('KeyC'))
-    await page2.mouse.up()
-    const rel = await page2.evaluate(() => window.__ssxTest.keys.has('KeyC'))
-    r.check('FRNT (front-flip) button press reaches the held-key set', held && !rel, `${held}/${rel}`)
 }
 
 // mid-air: GRAB button latches a real grab in the sim; INV then rolls the
@@ -281,31 +326,44 @@ r.check('mid-air GRAB button banks a grab in the sim', !!(air && air.g1.air && a
 r.check('INV button rolls the board (invert) after the grab', !!(air && Math.abs(air.g2.invert) > 1),
     air ? String(air.g2.invert.toFixed(1)) : 'no air')
 
-// #871: the FRNT touch button must drive a real FRONT-flip — the held-key set
-// is only half the proof; mid-air it must rotate the flip ledger NEGATIVE (the
-// sim's front direction, sim.js flip=2), where the backflip button gives positive.
-const frontFlip = async () => {
-    await page2.evaluate(() => { window.__ssxTest.keys.delete('KeyC'); window.__ssxTest.keys.delete('KeyZ') })
+// #894 (the #873 answer): the FLIP button ALONE throws the back flip (the
+// ledger goes positive); FLIP held WITH a forward stick tilt commits the FRONT
+// flip (ledger negative) — one button, the tilt steers the direction, so the
+// whole flip economy reaches touch without the retired FRNT key.
+const tiltFlip = async (tiltFwd) => {
+    await page2.evaluate(() => { window.__ssxTest.keys.delete('KeyZ'); window.__ssxTest.keys.delete('KeyC'); window.__ssxTest.center() })
     await page2.keyboard.down('Space')
     await page2.waitForTimeout(500)
     await page2.keyboard.up('Space')
-    if (!frontBtn) return null
-    await page2.mouse.move(frontBtn.x, frontBtn.y)
+    if (!stickBox) return null
+    await page2.mouse.move(stickBox.x, stickBox.y)
     await page2.mouse.down()
-    await page2.waitForTimeout(120)
+    if (tiltFwd) await page2.mouse.move(stickBox.x, stickBox.y - 26, { steps: 4 })
+    await page2.keyboard.down('KeyZ')
+    await page2.waitForTimeout(160)
     const f = await page2.evaluate(() => window.__ssxTest.probe().p)
+    await page2.keyboard.up('KeyZ')
     await page2.mouse.up()
     return f
 }
 let front = null
 for (let i = 0; i < 3 && !(front && front.air && front.flip < -20); i++) {
-    front = await frontFlip()
+    front = await tiltFlip(true)
     if (!front) break
     await page2.waitForTimeout(250)
 }
-r.check('FRNT button mid-air banks a FRONT-flip (flip ledger goes negative)',
+r.check('FLIP + forward stick tilt banks a FRONT-flip (flip ledger negative)',
     !!(front && front.air && front.flip < -20),
     front ? `air ${front.air} flip ${front.flip.toFixed(0)}` : 'no air')
+let backF = null
+for (let i = 0; i < 3 && !(backF && backF.air && backF.flip > 20); i++) {
+    backF = await tiltFlip(false)
+    if (!backF) break
+    await page2.waitForTimeout(250)
+}
+r.check('FLIP alone (neutral stick) still throws the BACK flip (ledger positive)',
+    !!(backF && backF.air && backF.flip > 20),
+    backF ? `air ${backF.air} flip ${backF.flip.toFixed(0)}` : 'no air')
 
 // wipeout: shove the rider past the valley-wall line — the crash must throw a
 // spray blast and tear the board off (debris), not just freeze the rider.
