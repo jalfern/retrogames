@@ -22,8 +22,13 @@
 //   node scripts/recmethods.mjs --mutate    # mutant detection for both files
 //                                           # (a dropped press / pad must be
 //                                           # caught at the next checkpoint)
+//   node scripts/recmethods.mjs --rebuild   # force the fresh build stamp onto the
+//                                           # files even when bytes are unchanged —
+//                                           # run from a detached main tip to
+//                                           # regenerate with a stamp that survives
+//                                           # the merge
 
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -46,22 +51,58 @@ const ok = (cond, name, info = '') => {
     else { fail++; console.log(`FAIL   ${name}${info ? ` — ${info}` : ''}`) }
 }
 
-const build = (() => {
-    try { return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || 'unknown' }
-    catch { return 'unknown' }
+// #527 item 5 — the stamp must name a commit that survives the squash-merge. On a
+// feature branch the capture's own commit dies with the PR, so those runs stamp
+// `unknown` (honest); a regeneration from a detached main tip stamps the main
+// commit (full sha, so a shallow checkout can fetch exactly that object).
+// `--rebuild` forces the fresh stamp even when the bytes are unchanged.
+const gitOut = (cmd) => {
+    try { return execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null }
+    catch { return null }
+}
+const onMainLine = (() => {
+    try { execSync('git merge-base --is-ancestor HEAD origin/main', { stdio: 'ignore' }); return true }
+    catch {
+        try { execSync('git merge-base --is-ancestor HEAD main', { stdio: 'ignore' }); return true }
+        catch { return false }
+    }
 })()
+const REBUILD = process.argv.includes('--rebuild')
+const build = onMainLine ? (gitOut('git rev-parse HEAD') || 'unknown') : 'unknown'
 
-// A recorded file must round-trip through disk byte-identically (the build
-// stamp is whatever commit generated it — #527 item 5 keeps that assertion
-// tolerant until the stamps are regenerated from main).
-const diskSample = (file, path) => {
-    if (!MUTATE) writeFileSync(path, JSON.stringify(file) + '\n')
+// A recorded file must round-trip through disk byte-identically. The build stamp
+// is preserved from disk when the bytes are unchanged (#527 item 5): a branch or
+// CI run must never re-stamp the sample with a commit that won't survive the
+// merge, and a committed stamp that names a dead commit is caught by stampGate.
+const commitSample = (file, path) => {
+    if (!MUTATE) {
+        if (!REBUILD && existsSync(path)) {
+            const prev = JSON.parse(readFileSync(path, 'utf8'))
+            if (prev && JSON.stringify({ ...prev, build: file.build }) === JSON.stringify(file)) file.build = prev.build
+        }
+        writeFileSync(path, JSON.stringify(file) + '\n')
+    }
     return JSON.parse(readFileSync(path, 'utf8'))
 }
 const roundTrip = (onDisk, fresh, label) => {
     ok(JSON.stringify({ ...onDisk, build: fresh.build }) === JSON.stringify(fresh),
         `${label}: on-disk file is byte-identical to a fresh record (build stamp aside)`,
         `disk=${onDisk.build} fresh=${fresh.build}`)
+}
+// #527 item 5: the committed stamp is `unknown` or a commit this clone has —
+// a dead pre-merge stamp means the sample is stale. A shallow checkout (CI)
+// lacks the object, so fetch exactly that commit first: GitHub serves any sha
+// reachable from a ref and refuses pruned ones, which is the distinction the
+// gate needs.
+const stampGate = (onDisk, label) => {
+    let alive = onDisk.build === 'unknown' || gitOut(`git rev-parse --verify '${onDisk.build}^{commit}'`) !== null
+    if (!alive && onDisk.build !== 'unknown') {
+        try { execSync(`git fetch --depth 1 origin '${onDisk.build}'`, { stdio: 'ignore' }) } catch { /* refused below */ }
+        alive = gitOut(`git rev-parse --verify '${onDisk.build}^{commit}'`) !== null
+    }
+    ok(alive,
+        `${label}: build stamp ${onDisk.build} is unknown or names a commit this clone has`,
+        'regenerate from a detached main tip: node scripts/recmethods.mjs --rebuild')
 }
 
 // =================================================================== BOBBLE ==
@@ -153,8 +194,9 @@ console.log('bubble-bobble 2P co-op (dpad)')
     const travel2 = Math.hypot(gs.players[1].x - home2.x, gs.players[1].y - home2.y)
     ok(travel1 > 0.5, `seat 1 traveled ${travel1.toFixed(2)} under its dpad`)
     ok(travel2 > 0.4, `cpu seat 2 traveled ${travel2.toFixed(2)} under decide()`)
-    const onDisk = diskSample(file, BOB_FILE)
+    const onDisk = commitSample(file, BOB_FILE)
     roundTrip(onDisk, file, 'bubble-bobble')
+    stampGate(onDisk, 'bubble-bobble')
     const res = replayBob(onDisk)
     ok(res.ok && !res.mismatch, `replay matches every checkpoint (${res.ticks} ticks)`,
         res.mismatch ? `diverged at tick ${res.mismatch.tick}: want ${res.mismatch.want} got ${res.mismatch.got}` : (res.error || ''))
@@ -366,8 +408,9 @@ console.log('lemmings pointer (THE SPIRE, solver script as finger taps)')
     ok(missNoop, 'the empty-air tap committed nothing')
     ok(g.end === 'clear' && g.win, `the pointer-only run clears THE SPIRE (${g.exited}/${g.level.need} out, ${g.dead} dead)`)
     ok(file.slots[0].raw.some((r) => r.px || r.py), 'the raw channel carries the pre-clamp pointer (px/py)')
-    const onDisk = diskSample(file, LEM_FILE)
+    const onDisk = commitSample(file, LEM_FILE)
     roundTrip(onDisk, file, 'lemmings')
+    stampGate(onDisk, 'lemmings')
     const res = replayLem(onDisk)
     ok(res.ok && !res.mismatch, `replay matches every checkpoint (${res.ticks} ticks)`,
         res.mismatch ? `diverged at tick ${res.mismatch.tick}: want ${res.mismatch.want} got ${res.mismatch.got}` : (res.error || ''))

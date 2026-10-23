@@ -3,7 +3,11 @@
 //
 //   {
 //     format: 'retrogames-rec/v1',
-//     build,            // git commit the capture ran on (Vite define, DEV stamp)
+//     build,            // commit (full sha) that generated the capture: a main
+//                       // commit when regenerated from a detached main tip
+//                       // (check scripts' --rebuild), `unknown` when the
+//                       // capture ran on a commit that won't survive its merge
+//                       // (feature branch / CI)
 //     game,             // registry id ('gauntlet')
 //     method,           // input method: 'dpad' | 'stick' | 'pointer' (#420)
 //     seed,             // the one integer the sim resets from
@@ -24,7 +28,9 @@
 // quantizer (onePad's rawPad holders, #495): a 0.08 nudge lives in `raw` while
 // the pad idles. Digital keys/buttons are already verbatim in the pad, so raw
 // carries only the analog nothing else keeps: pre-zone x/y + aim, pre-clamp
-// pointer. Cpu/model seats have no device — their raw is zeros, honestly.
+// pointer. Physical key scancodes (which key produced a digital bit) are a v2
+// candidate, deliberately not in v1 (#527 item 4). Cpu/model seats have no
+// device — their raw is zeros, honestly.
 //
 // Replay: verifyRecording drives a contract-shaped { reset, step, state } and
 // compares state.hash at every checkpoint — a bad file names its divergence

@@ -91,7 +91,7 @@ ONE JSON file for a recorded multiplayer run — replayable exactly, trainable o
 
 ```json
 {
-  "format": "retrogames-rec/v1", "build": "c80a6bb",
+  "format": "retrogames-rec/v1", "build": "cccccccccccccccccccccccccccccccccccccccc",
   "game": "gauntlet", "method": "stick", "seed": 42, "players": 2,
   "ticks": 900, "hashEvery": 30,
   "slots": [
@@ -102,9 +102,15 @@ ONE JSON file for a recorded multiplayer run — replayable exactly, trainable o
 }
 ```
 
-- **Header** — `build` is the git commit stamped by a Vite define (`__BUILD_COMMIT__`,
-  DEV); `game` the registry id; `method` the input method (#420); `seed` the one
-  integer the sim resets from.
+- **Header** — `build` is the commit (full sha) that generated the capture: a
+  main commit when the sample is regenerated from a detached main tip
+  (`replaycheck` / `recmethods` with `--rebuild`), or `unknown` when the capture
+  ran on a commit that will not survive its merge (feature branch / CI). The
+  check scripts refuse a committed stamp that names a commit no longer fetchable
+  — on a shallow checkout they fetch exactly that sha first (GitHub serves any
+  ref-reachable sha and refuses pruned ones), so a dead pre-merge stamp is red
+  and a stale sample must be regenerated. `game` the registry id; `method` the
+  input method (#420); `seed` the one integer the sim resets from.
 - **`slots[]`** — one entry per seat. `source.kind` is the #494 slot kind
   (`human`/`cpu`/`model`+`modelId`/`remote`/`off`) as it stood at capture time.
   `pads` holds THE one pad per tick (#420), compact: false/zero fields are
@@ -114,7 +120,9 @@ ONE JSON file for a recorded multiplayer run — replayable exactly, trainable o
   pre-zone stick `x/y` and aim `ax/ay`, pre-clamp pointer `px/py` (zeros omitted).
   Written by the onePad writers into per-slot holders (`rawPad(n)`, #495). A 0.08
   thumb nudge lives here while the pad idles — the analog nothing else keeps.
-  Keys/buttons are already verbatim in `pads`, so they need no raw mirror.
+  Keys/buttons are already verbatim in `pads`, so they need no raw mirror; the
+  physical scancode behind a digital bit is a v2 candidate, deliberately not in
+  v1 (#527 item 4).
   A seat driven through the contract has no live device: its raw mirrors the
   analog its stream asked for (pre-clamp x/y, aim, pointer); idle seats stay zeros.
 - **`hashes[]`** — the game's `state.hash` every `hashEvery` ticks (default 30)
