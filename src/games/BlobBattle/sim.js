@@ -377,6 +377,8 @@ export function step(s, pads = [{}, {}]) {
 function nextRound(s) {
     s.round++
     s.roundIdx++
+    // gravity tightens for the new round: the renderer plays a speed-up tick (#863)
+    s.events.push({ t: 'gravity', round: s.round })
     const [r0, r1] = [s.wells[0].rounds, s.wells[1].rounds]
     const [p0, p1] = [s.wells[0].score, s.wells[1].score]
     s.wells = [makeWell(), makeWell()]
@@ -404,4 +406,16 @@ export function stateHash(s) {
     mix(s.round); mix(s.roundIdx); mix(s.winner + 2); mix(s.over ? 1 : 0)
     mix(s.tick & 0xFF); mix(s.tick >>> 8); mix(s.tick >>> 16)
     return h >>> 0
+}
+
+// win-screen presentation (#863): the pure, testable script for the result
+// podium — who is crowned (winner), who spilled (loser), and the headline for
+// each mode. The renderer consumes this; the semantics live here so blobcheck
+// can audit a winner/loser swap or a wrong youWin in plain Node.
+export function winPresentation(s, mode, mySeat = 0) {
+    const winner = s.winner
+    const loser = 1 - winner
+    const youWin = mode === 'online' ? winner === mySeat : winner === 0
+    const title = mode === 'local' ? `P${winner + 1} WINS` : youWin ? 'YOU WIN' : 'YOU LOSE'
+    return { winner, loser, youWin, title, rounds: [s.wells[0].rounds, s.wells[1].rounds], scores: [s.wells[0].score, s.wells[1].score] }
 }
