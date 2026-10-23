@@ -463,6 +463,47 @@ function arcScript(seed) {
     const wy = duel('d2-f4', 'wyrm', 2000)
     ok(wy.left === 0 && wy.shots >= 2 && wy.staggers >= 1 && wy.clanks === 0, `Wyrm: kited volleys stagger the maw before steel ever touches the cloak (${wy.shots} shots, ${wy.staggers} staggers, clanks ${wy.clanks})`)
 }
+{
+    // #877 juice events: charge-dust rides behind the heels, the telegraph
+    // paws a puff, and a fallen pod pops exactly once.
+    const s = createSim(7)
+    spawnRoom(s, 'ow-01', [2, 5])
+    const t = s.enemies.find(e => e.type === 'tuskroot')
+    s.hero.x = t.x; s.hero.y = t.y + 40; s.hero.inv = 1e9
+    let dustInCharge = 0, behindOk = 0, dustTele = 0, dustElsewhere = 0, charges = 0
+    for (let i = 0; i < 400; i++) {
+        const wasCharge = t.charging > 0
+        stepSim(s, inp({}))
+        if (!wasCharge && t.charging > 0) charges++
+        for (const f of s.fx) {
+            if (f.k !== 'dust') continue
+            if (t.charging > 0) {
+                dustInCharge++
+                if (Math.abs(f.dirx) + Math.abs(f.diry) > 0.5 && f.dirx * t.chx + f.diry * t.chy <= 0.01) behindOk++
+            } else if (t.st > 0) dustTele++
+            else dustElsewhere++
+        }
+        s.fx.length = 0
+    }
+    ok(charges >= 1 && dustInCharge >= 3, `the charge kicks dust behind the heels (${dustInCharge} puffs across ${charges} charge(s))`)
+    ok(dustInCharge > 0 && behindOk === dustInCharge, `every charge puff sits opposite the locked line (${behindOk}/${dustInCharge})`)
+    ok(dustTele >= 1, `the telegraph paws up a puff before the run (${dustTele})`)
+    ok(dustElsewhere === 0, `no dust while calm or resting — it means the run (${dustElsewhere} stray)`)
+    const pod = createSim(7)
+    spawnRoom(pod, 'd2-f1', [7, 8])
+    const p = pod.enemies.find(e => e.type === 'pod'); p.hp = 1
+    pod.hero.x = p.x; pod.hero.y = p.y + 12; pod.hero.dir = 'up'; pod.cool = 0
+    let splits = 0
+    stepSim(pod, inp({ ap: true })); stepSim(pod, inp({ ar: true }))
+    for (let i = 0; i < 30; i++) { stepSim(pod, inp({})); splits += pod.fx.filter(f => f.k === 'split').length; pod.fx.length = 0 }
+    ok(splits === 1, `a bursting pod pops exactly once (${splits} split events)`)
+    const calm = createSim(7)
+    spawnRoom(calm, 'ow-01', [2, 5])
+    calm.enemies = calm.enemies.filter(e => e.type !== 'tuskroot')
+    let stray = 0
+    for (let i = 0; i < 300; i++) { stepSim(calm, inp({})); stray += calm.fx.filter(f => f.k === 'dust').length; calm.fx.length = 0 }
+    ok(stray === 0, `dust is the tuskroot's signature, not ambient (${stray} dust without one)`)
+}
 
 // ---- 6. state contract shape ----
 {
@@ -741,6 +782,22 @@ if (!SKIP_BROWSER) {
             return s.screen === 'd1-e0'
         })
         cok(fought, 'dev goto teleports the hero into dungeon 1')
+
+        // #877: the juice layer must actually run on the live page — the sim's
+        // dust events have to reach the renderer's drain (pre-fix, onFx was
+        // never called and the whole particle layer was dead code).
+        const juice = await page.evaluate(async () => {
+            const T = window.__emberwoodTest
+            T.reset(11)
+            T.goto('ow-01', 12, 5) // spawn in the fern hollow, 34px from the tuskroot
+            for (let i = 0; i < 7; i++) {
+                T.step(70, {})
+                await new Promise(r => setTimeout(r, 60))
+            }
+            const s = T.fxStats ? T.fxStats() : {}
+            return { dust: s.dust || 0, grunt: s.grunt || 0 }
+        })
+        cok(juice.dust > 0, `charge-dust reaches the live juice layer (${juice.dust} dust events, ${juice.grunt} grunts on the fern hollow run)`)
         const slay = await page.evaluate(async () => {
             const T = window.__emberwoodTest
             const st = T.state()

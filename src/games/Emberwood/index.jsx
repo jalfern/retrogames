@@ -55,6 +55,7 @@ const fxSound = (e) => {
             case 'stagger': ac.playSweep(400, 60, 0.5, 'sawtooth', 0.12); ac.duckMusic(0.25, 0.7); break
             case 'pop': ac.playTone(500, 0.05, 'triangle', 0.05); break
             case 'grunt': ac.playSweep(150, 85, 0.2, 'sawtooth', 0.07); break
+            case 'dust': ac.playFilteredNoise(0.05, 0.025, 420); break
             case 'split': ac.playTone(520, 0.05, 'square', 0.05); ac.playNoise(0.08, 0.06); break
             case 'read': ac.playTone(620, 0.05, 'triangle', 0.04); break
             case 'ui': ac.playTone(880, 0.04, 'square', 0.04); break
@@ -158,6 +159,7 @@ export default function Emberwood() {
         let last = performance.now()
         let acc = 0
         let hudTick = 0
+        const fxCounts = {}
 
         const loop = (now) => {
             raf = requestAnimationFrame(loop)
@@ -182,6 +184,8 @@ export default function Emberwood() {
 
             const fx = sim.fx.splice(0, sim.fx.length)
             if (sc !== 'pause') fx.forEach(fxSound)
+            fx.forEach(e => { fxCounts[e.k] = (fxCounts[e.k] || 0) + 1 })
+            if (sc !== 'pause') rend.onFx(fx)
             rend.sync(sim, now / 1000)
             rend.setFocus(sim.hero.x, sim.hero.y)
             rend.draw()
@@ -275,6 +279,7 @@ export default function Emberwood() {
                 screenAt: (x, y) => rend.screenPos(x, y),
                 foliage: () => rend.foliage(),
                 renderInfo: () => rend.renderInfo(),
+                fxStats: () => ({ ...fxCounts }),
                 win: () => { sim.flags.boss1 = true; sim.flags.boss2 = true; return true },
             }
             mountDbg({

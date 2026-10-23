@@ -431,8 +431,21 @@ void main(){
             p.life = 18 + Math.random() * 18
         }
     }
-    const JUICE = { hit: ['#ffd27a', '#ff9a3c'], blood: ['#8a4030', '#c96a4a'], cut: ['#8cc45f', '#b7e08a'], boom: ['#ffd27a', '#ff9a3c', '#ff5a2a'], coin: ['#ffe08a', '#ffb238'], magic: ['#8ce0ff', '#bff2ff'] }
+    const JUICE = { hit: ['#ffd27a', '#ff9a3c'], blood: ['#8a4030', '#c96a4a'], cut: ['#8cc45f', '#b7e08a'], boom: ['#ffd27a', '#ff9a3c', '#ff5a2a'], coin: ['#ffe08a', '#ffb238'], magic: ['#8ce0ff', '#bff2ff'], dust: ['#9b8254', '#8a714a', '#6e5a3a'], shard: ['#7c3d30', '#5c2f2f', '#c9613a'] }
 
+    function spawnDust(x, y, dirx, diry, n) {
+        // ground-hugging earth puffs that drift back along the charge line
+        for (let i = 0; i < n; i++) {
+            const p = parts[partIdx]; partIdx = (partIdx + 1) % PARTS
+            p.m.visible = true
+            p.m.material.color.set(JUICE.dust[Math.floor(Math.random() * JUICE.dust.length)])
+            p.m.position.set(FX(x + (Math.random() - 0.5) * 4), y + (Math.random() - 0.5) * 3, 1 + Math.random() * 2)
+            p.vx = dirx * 0.5 + (Math.random() - 0.5) * 0.7
+            p.vy = diry * 0.5 + (Math.random() - 0.5) * 0.7
+            p.vz = 0.15 + Math.random() * 0.35
+            p.life = 12 + Math.random() * 10
+        }
+    }
     let shake = 0
     function onFx(events) {
         if (!events || !events.length) return
@@ -454,6 +467,8 @@ void main(){
                 case 'clank': spawnParts(e.x, e.y, ['#ffffff', '#cfd6e6'], 5, 2, 1.2); break
                 case 'stagger': spawnParts(e.x, e.y, ['#ff9a3c', '#ffd27a', '#ffffff'], 22, 4, 3); shake = Math.max(shake, 8); break
                 case 'pop': spawnParts(e.x, e.y, JUICE.cut, 6, 2, 1.4); break
+                case 'dust': spawnDust(e.x, e.y + 3, e.dirx || 0, e.diry || 0, 3); break
+                case 'split': spawnParts(e.x, e.y, JUICE.shard, 10, 3.2, 2); spawnParts(e.x, e.y, ['#ff9a3c', '#ffd87a'], 6, 2, 2.4); shake = Math.max(shake, 3); break
                 case 'warp': spawnParts(e.x, e.y, ['#8ce0ff', '#bff2ff'], 12, 2.4, 2); break
                 case 'grant': spawnParts(e.x, e.y, ['#ffd27a', '#fff3cf', '#8ce0ff'], 14, 2.6, 2.2); break
             }

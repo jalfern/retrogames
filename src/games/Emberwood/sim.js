@@ -605,6 +605,7 @@ function stepEnemies(sim) {
                 if (e.st > 0) {
                     e.st--
                     if (e.st === 0) { const l = dist || 1; e.chx = dx / l; e.chy = dy / l; e.charging = 42 }
+                    else if (e.st === 34) emit(sim, 'dust', e.x - e.fx * 5, e.y - e.fy * 5 + 3, { dirx: -e.fx, diry: -e.fy }) // pawing puff
                     break
                 }
                 if (e.charging > 0) {
@@ -612,7 +613,12 @@ function stepEnemies(sim) {
                     const nx = e.x + e.chx * 2.7, ny = e.y + e.chy * 2.7
                     if (e.charging === 0 || blocked(sim, nx, e.y, e.w, e.h) || blocked(sim, e.x, ny, e.w, e.h)) {
                         e.charging = 0; e.rest = 55
-                    } else { e.fx = e.chx; e.fy = e.chy; e.x = nx; e.y = ny }
+                    } else {
+                        e.fx = e.chx; e.fy = e.chy; e.x = nx; e.y = ny
+                        // #877 charge-dust: earth kicked behind the heels, every
+                        // 6th moving frame, opposite the locked charge vector.
+                        if ((e.t + e.seedOff) % 6 === 0) emit(sim, 'dust', e.x - e.chx * 7, e.y - e.chy * 7, { dirx: -e.chx, diry: -e.chy })
+                    }
                     break
                 }
                 if (e.rest > 0) { e.rest--; break }
