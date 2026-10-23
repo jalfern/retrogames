@@ -24,6 +24,7 @@ export default function PadLink() {
     const [mode, setMode] = useState('relay')
     const [code, setCode] = useState(() => (new URLSearchParams(window.location.search).get('room') || '').toUpperCase())
     const [sz, setSz] = useState(() => vpadSize(window.innerWidth, window.innerHeight))
+    const [portrait, setPortrait] = useState(() => window.innerHeight > window.innerWidth)
     const [heldUI, setHeldUI] = useState({})
     const clientRef = useRef(null)
     const padRef = useRef({
@@ -33,7 +34,10 @@ export default function PadLink() {
     })
 
     useEffect(() => {
-        const onResize = () => setSz(vpadSize(window.innerWidth, window.innerHeight))
+        const onResize = () => {
+            setSz(vpadSize(window.innerWidth, window.innerHeight))
+            setPortrait(window.innerHeight > window.innerWidth)
+        }
         window.addEventListener('resize', onResize)
         return () => window.removeEventListener('resize', onResize)
     }, [])
@@ -126,8 +130,10 @@ export default function PadLink() {
         }
     }
 
+    const buzz = () => { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(8) }
+
     const holdKey = (field, codeLabel) => ({
-        onPointerDown: (e) => { e.preventDefault(); padRef.current[field] = true; setHeldUI((p) => ({ ...p, [codeLabel]: true })) },
+        onPointerDown: (e) => { e.preventDefault(); padRef.current[field] = true; setHeldUI((p) => ({ ...p, [codeLabel]: true })); buzz() },
         onPointerUp: () => { padRef.current[field] = false; setHeldUI((p) => ({ ...p, [codeLabel]: false })) },
         onPointerCancel: () => { padRef.current[field] = false; setHeldUI((p) => ({ ...p, [codeLabel]: false })) },
         onPointerLeave: () => { padRef.current[field] = false; setHeldUI((p) => ({ ...p, [codeLabel]: false })) },
@@ -216,6 +222,12 @@ export default function PadLink() {
                 </span>
                 <span className="text-[11px] tracking-[0.3em] text-white/50">{rtt ? `${rtt} MS` : '—'}</span>
             </div>
+
+            {portrait && (
+                <div data-pad="rotate-hint" className="absolute top-10 left-0 right-0 flex justify-center font-mono text-[10px] tracking-[0.3em] text-amber-300/70 animate-pulse">
+                    ROTATE THE PHONE LANDSCAPE FOR THE FULL PAD
+                </div>
+            )}
 
             {/* shoulders */}
             <div className="absolute left-0 top-1/4 pl-3" style={{ paddingLeft: 'calc(0.75rem + var(--sal, 0px))' }}>{shoulder('sl', 'L')}</div>

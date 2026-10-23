@@ -60,11 +60,24 @@ export function exposeGame(spec) {
         const st = spec.state()
         return typeof st.hash === 'number' || typeof st.hash === 'string' ? st.hash : null
     }
+    // #919: while a link-pad room is live, sample each seat's measured RTT so
+    // the recording carries a per-seat ping trace (metadata; replay ignores it).
+    const pingsNow = () => {
+        const lp = typeof window !== 'undefined' ? window.__padlink : null
+        const list = lp && lp.pads
+        if (!list || !list.length) return null
+        const out = new Array(seatCount).fill(0)
+        for (const p of list) {
+            const i = (p.seat | 0) - 1
+            if (i >= 0 && i < seatCount && p.rtt > 0) out[i] = p.rtt
+        }
+        return out
+    }
     // The loop-facing live bank (recordLiveTick): one addTick per rAF play
     // tick, mirroring the step() bank byte-for-byte so a live capture is the
     // same file the harness would record. rawsFor reads the live device; a
     // keyboard/dpad seat has no analog device so its raw mirrors the pad.
-    liveFeed = (pads) => { if (recorder) recorder.addTick(pads, rawsFor(pads), hashNow()) }
+    liveFeed = (pads) => { if (recorder) recorder.addTick(pads, rawsFor(pads), hashNow(), pingsNow()) }
     const api = {
         meta: {
             id: spec.id,
@@ -93,7 +106,7 @@ export function exposeGame(spec) {
                 const ones = pad.map((p) => normalizePad(p || {}, method))
                 if (!ones.length) ones.push(normalizePad({}, method))
                 spec.tick(ones[0], ones)
-                if (recorder) recorder.addTick(ones, rawsFor(ones), hashNow())
+                if (recorder) recorder.addTick(ones, rawsFor(ones), hashNow(), pingsNow())
             } else {
                 const one = normalizePad(pad || {}, method)
                 const len = n > 0 ? Math.ceil(n) : 0
@@ -101,7 +114,8 @@ export function exposeGame(spec) {
                 if (recorder) {
                     const h = len > 0 ? hashNow() : null
                     const raws = len > 0 ? rawsFor([one]) : null
-                    for (let i = 0; i < len; i++) recorder.addTick([one], raws, i === len - 1 ? h : null)
+                    const pings = len > 0 ? pingsNow() : null
+                    for (let i = 0; i < len; i++) recorder.addTick([one], raws, i === len - 1 ? h : null, pings)
                 }
             }
             return api.state()
