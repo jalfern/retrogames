@@ -110,7 +110,9 @@ jobs:
 
   report:
     needs: [full-static, full-smoke]
-    if: failure()
+    # #888: a red night on a branch must not open/freeze the merge tracker —
+    # only main drives the freeze signal.
+    if: failure() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Report a red night
@@ -126,3 +128,18 @@ jobs:
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
           fi
+
+  # #888: a green night on main closes any open "nightly is red" tracker so the
+  # board and scripts/main-ok.sh agree — a recovered streak shouldn't read as a
+  # live freeze. Selection logic is unit-tested (`npm run nightlyheal`); this job
+  # runs the live pass. Branch-dispatched green runs must leave it alone.
+  heal:
+    needs: [full-static, full-smoke]
+    if: success() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Close nightly-is-red on a green main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/nightly-heal.mjs
