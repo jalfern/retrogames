@@ -219,6 +219,24 @@ export function padButton(pad) {
     return pad.buttons[0]
 }
 
+// #906: which face buttons a game actually uses, and what they say. `reads`
+// (display-only, independent of `method`/input paths) restricts the touch pad
+// to the actions the game hears: Comet Drift's A key IS the drift, so it
+// declares reads without 'b' and the redundant second button disappears.
+// Without `reads` the legacy layout stands: A always shows, B shows when the
+// pad declares one. Labels are verbs, never letters (aLabel defaults FIRE).
+export function faceLayout(pad) {
+    const hasReads = !!(pad && Array.isArray(pad.reads))
+    const reads = hasReads ? pad.reads : []
+    const b = padButton(pad)
+    return {
+        showA: hasReads ? reads.includes('a') : true,
+        showB: hasReads ? reads.includes('b') : !!b,
+        aLabel: (pad && pad.aLabel) || 'FIRE',
+        bLabel: (b && b.label) || 'B',
+    }
+}
+
 // #828: per-game EXTRA face/shoulder buttons. A game may declare pad entries
 // beyond the reserved 0 (A -> Space) and 1 (B -> secondAction): square, triangle,
 // L1, R1 carry semantic codes the game already hears from the keyboard

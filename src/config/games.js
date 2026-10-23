@@ -306,7 +306,7 @@ export const GAMES = [
     },
     {
         path: '/momentum',
-        pad: { layout: 'stick', buttons: [], analog: false },
+        pad: { layout: 'stick', buttons: [], aLabel: 'JUMP', analog: false },
         builtBy: 'forge',
         added: '2026-10-10',
         component: MomentumRunnerGame,
@@ -470,7 +470,7 @@ export const GAMES = [
     },
     {
         path: '/comet-drift',
-        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], analog: true },
+        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias' },
         builtBy: 'forge',
         added: '2026-10-17',
         visibility: 'private',
@@ -482,7 +482,7 @@ export const GAMES = [
     },
     {
         path: '/comet-drift-hd',
-        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], analog: true },
+        pad: { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true, reason: '#906 — the A key IS the drift here, so the pad shows one DRIFT button; R stays the gamepad alias' },
         builtBy: 'forge',
         added: '2026-10-18',
         visibility: 'private',
@@ -563,7 +563,7 @@ export const GAMES = [
     {
         path: '/emberwood',
         tapStart: true,
-        pad: { layout: 'stick', buttons: [{ label: 'B', code: 'KeyX' }], analog: false },
+        pad: { layout: 'stick', buttons: [{ label: 'BOMB', code: 'KeyX' }], aLabel: 'ACT', analog: false },
         builtBy: 'forge',
         added: '2026-10-21',
         component: EmberwoodGame,

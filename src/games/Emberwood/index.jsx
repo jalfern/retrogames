@@ -392,7 +392,7 @@ export default function Emberwood() {
                 </div>
             )}
             {paused && <PauseOverlay game={EMBERWOOD_HELP} badge="THE CINDER VALE" onResume={() => { pausedRef.current = false; setPaused(false) }} />}
-            <VirtualControls visible={inGame && !paused && !hud.death} secondAction={{ label: 'B', code: 'KeyX' }} />
+            <VirtualControls visible={inGame && !paused && !hud.death} secondAction={{ label: 'BOMB', code: 'KeyX' }} />
         </div>
     )
 }

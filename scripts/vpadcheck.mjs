@@ -12,7 +12,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { dirsFrom, sectorFrom, SECTOR_DIRS, DEAD_ZONE, stickVec, STICK_TRAVEL, STICK_DEAD, dpadDirs, DPAD_SWAP_HI, DPAD_SWAP_LO } from '../src/components/virtualDir.js'
-import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, extraButtonsOf, stickFromAxes, triggersFromPad, shouldUseStick, waysOf, rumble, slotFieldsFrom } from '../src/components/gamepadMap.js'
+import { gamepadToCodes, stickDirections, GPAD_DEAD_ZONE, GPAD_RELEASE_ZONE, GPAD_DPAD, GPAD_FIXED, validPad, padButton, extraButtonsOf, stickFromAxes, triggersFromPad, shouldUseStick, waysOf, rumble, slotFieldsFrom, faceLayout } from '../src/components/gamepadMap.js'
 import { steerPedals, steerResponse, STEER_GAIN } from '../src/utils/padState.js'
 import { METHODS, blankPad, quantize, normalizePad, methodOf, DIR_DEAD, POINTER_HIT_PX, pointerTarget, pointerGesture, press, release, MAX_SLOTS, slotPad, pressSlot, setStickVecSlot, clearSlot, slotActive, setConnected, connectedSlots, clearAllSlots } from '../src/utils/onePad.js'
 import { p2From } from '../src/games/Gauntlet/p2input.js'
@@ -580,6 +580,31 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
             const b = padButton(g.pad)
             ok(!!b && b.code === code && nonEmpty(b.label), `games.js ${path} B button is ${code}, labelled '${b && b.label}'`)
         }
+    }
+    // #906: the games Jon plays most label their face buttons with verbs and
+    // show only what they use. A pinned registry read, not a source regex.
+    const verbs = {
+        '/momentum': { aLabel: 'JUMP', b: null },
+        '/comet-drift': { aLabel: 'DRIFT', bHidden: true },
+        '/comet-drift-hd': { aLabel: 'DRIFT', bHidden: true },
+        '/emberwood': { aLabel: 'ACT', bLabel: 'BOMB' },
+        '/mario-kart': { aLabel: 'ITEM', bLabel: 'DRIFT' },
+    }
+    for (const [path, want] of Object.entries(verbs)) {
+        const g = GAMES.find((e) => e.path === path)
+        ok(!!g && g.pad !== undefined, `#906 ${path} declares a pad`)
+        if (!g || g.pad === undefined) continue
+        ok(g.pad.aLabel === want.aLabel, `#906 ${path} labels its A button '${want.aLabel}', got '${g.pad.aLabel}'`)
+        const face = faceLayout(g.pad)
+        ok(face.showA === true, `#906 ${path} shows its A (${face.aLabel})`)
+        if (want.bHidden) {
+            ok(face.showB === false, `#906 ${path} hides the redundant second button (A is already ${want.aLabel})`)
+            ok(g.pad.buttons.length > 0 && g.pad.buttons[0].code === 'KeyR', `#906 ${path} keeps R as the gamepad drift alias`)
+        }
+        if (want.bLabel) {
+            ok(face.showB === true && face.bLabel === want.bLabel, `#906 ${path} shows its B as '${want.bLabel}', got '${face.bLabel}'`)
+        }
+        ok(face.aLabel === want.aLabel, `#906 ${path} faceLayout aLabel '${want.aLabel}'`)
     }
 }
 
@@ -1215,7 +1240,8 @@ clearAllSlots()
         '#885 skin hook: bar carries data-skin from an optional skin prop (themed skins later)')
     ok(/IconFire/.test(vc) && /IconBolt/.test(vc) && /flex flex-col items-center justify-center gap-0\.5 rounded-full/.test(vc),
         '#885 glass: face buttons stack an inline-SVG icon over the verb label')
-    ok(/\|\| 'FIRE'/.test(vc), '#885: A is labelled by what it does — registry aLabel wins, arcade default FIRE')
+    ok(/\|\| 'FIRE'/.test(readFileSync(new URL('../src/components/gamepadMap.js', import.meta.url), 'utf8')) && /faceLayout\(pad\)/.test(vc),
+        '#885: A is labelled by what it does — aLabel wins via faceLayout, arcade default FIRE')
     ok(/border-white\/40/.test(vc), '#885 glass: stick travel ring is a visible bright ring')
     ok(/bottom: 'calc\(0\.5rem \+ env\(safe-area-inset-bottom\)\)'/.test(vc),
         '#885: the pad sits low in the band below the play area (0.5rem + safe area)')
@@ -1225,6 +1251,34 @@ clearAllSlots()
     const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8')
     ok(/max-width: 480px\) and \(pointer: coarse\)/.test(app) && /padBand \? \{ top:/.test(app),
         '#885: on phones the footer moves to the top band so buttons never sit on it')
+}
+
+// --- 38. #906: faceLayout — the pure face-button law --------------------
+// Which buttons show and what they say, in one pure function the component and
+// this gate share. `reads` gates DISPLAY only (never the input path); without
+// reads the legacy shape stands: A always shows, B shows when declared.
+{
+    ok(faceLayout(undefined).showA === true && faceLayout(undefined).showB === false
+        && faceLayout(undefined).aLabel === 'FIRE',
+        'no pad: legacy default — one FIRE button')
+    ok(faceLayout({ layout: 'stick', buttons: [], analog: false }).showB === false,
+        'no second button declared: B hidden')
+    ok(faceLayout({ layout: 'stick', buttons: [{ label: 'BOMB', code: 'KeyB' }] }).showB === true,
+        'legacy pad with a B declared: B shows')
+    const drift = { layout: 'stick', buttons: [{ label: 'DRIFT', code: 'KeyR' }], aLabel: 'DRIFT', reads: ['x', 'y', 'a'], analog: true }
+    const dFace = faceLayout(drift)
+    ok(dFace.showA === true && dFace.showB === false && dFace.aLabel === 'DRIFT',
+        '#906 reads without b: A keeps its verb label, redundant B hidden (gamepad R alias untouched)')
+    ok(faceLayout({ layout: 'stick', buttons: [{ label: 'ITEM', code: 'KeyZ' }], reads: ['x', 'y', 'a', 'b'] }).showB === true,
+        '#906 reads with b: B shows')
+    ok(faceLayout({ layout: 'dpad', buttons: [], reads: ['up', 'down', 'left', 'right'] }).showA === false,
+        '#906 reads without a: A hidden (a game that takes no Space shows no Space button)')
+    const vc = readFileSync(new URL('../src/components/VirtualControls.jsx', import.meta.url), 'utf8')
+    ok(/face\.showB \? \(secondActionProp \|\| padButton\(pad\)\) : null/.test(vc),
+        '#906 VirtualControls routes the second button through the faceLayout gate')
+    const hd = readFileSync(new URL('../src/games/CometDriftHD/index.jsx', import.meta.url), 'utf8')
+    ok(!/VirtualControls secondAction=/.test(hd),
+        '#906 CometDriftHD no longer force-passes the redundant DRIFT prop')
 }
 
 // --- Summary ---
