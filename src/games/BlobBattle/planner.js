@@ -48,9 +48,9 @@ function cascadeScore(board, depth) {
     return { chain, total }
 }
 
-function evaluate(board, x, y, rot, c1, c2) {
+function evaluate(board, x, y, rot, c1, c2, depth = 4) {
     const after = place(board, x, y, rot, c1, c2)
-    const { chain, total } = cascadeScore(after, 4)
+    const { chain, total } = cascadeScore(after, depth)
     let height = 0, holes = 0
     for (let c = 0; c < COLS; c++) {
         let top = ROWS
@@ -101,7 +101,7 @@ function findGroupsNear(board, cells) {
 }
 
 // plan the best landing for the current pair -> { rot, x, score }
-export function choosePlacement(w) {
+export function choosePlacement(w, depth = 4) {
     if (!w.cur) return null
     const { c1, c2 } = w.cur
     let best = null
@@ -109,18 +109,56 @@ export function choosePlacement(w) {
         for (let x = 0; x < COLS; x++) {
             const y = dropY(w.board, x, rot)
             if (y < 0) continue
-            const sc = evaluate(w.board, x, y, rot, c1, c2)
+            const sc = evaluate(w.board, x, y, rot, c1, c2, depth)
             if (!best || sc > best.score) best = { rot, x, score: sc }
         }
     }
     return best
 }
 
-// one pad out. `mem` persists between ticks per seat { plan, wait }.
-export function cpuPad(w, mem, jitter = 0) {
+// the beginner's fallback when it "misses": a flat, hole-free landing that
+// ignores pops entirely — it keeps the well safe but lets the chain walk away.
+function chooseSafe(w) {
+    if (!w.cur) return null
+    const { c1, c2 } = w.cur
+    let best = null
+    for (let rot = 0; rot < 4; rot++) {
+        for (let x = 0; x < COLS; x++) {
+            const y = dropY(w.board, x, rot)
+            if (y < 0) continue
+            const after = place(w.board, x, y, rot, c1, c2)
+            let height = 0, holes = 0
+            for (let c = 0; c < COLS; c++) {
+                let top = ROWS
+                for (let r = 0; r < ROWS; r++) if (after[idx(r, c)]) { top = r; break }
+                if (ROWS - top > height) height = ROWS - top
+                let seenSolid = false
+                for (let r = 0; r < ROWS; r++) {
+                    const v = after[idx(r, c)]
+                    if (v) seenSolid = true
+                    else if (seenSolid) {
+                        let below = false
+                        for (let rr = r + 1; rr < ROWS; rr++) if (after[idx(rr, c)]) { below = true; break }
+                        if (below) holes++
+                    }
+                }
+            }
+            const sc = -(height * 5 + holes * 16)
+            if (!best || sc > best.score) best = { rot, x, score: sc }
+        }
+    }
+    return best
+}
+
+// one pad out. `mem` persists between ticks per seat { plan, wait }; `tier` is
+// the CPU's rung on the ladder and `rng` its seeded stream (jitter + miss rolls).
+export function cpuPad(w, mem, tier, rng) {
     const pad = { left: false, right: false, rot: false, down: false, drop: false }
     if (!w || w.over || !w.cur || w.phase !== 'fall') { mem.plan = null; return pad }
-    if (!mem.plan) mem.plan = choosePlacement(w)
+    if (!mem.plan) {
+        mem.plan = choosePlacement(w, tier.depth)
+        if (tier.miss && rng() < tier.miss) mem.plan = chooseSafe(w) // beginner misses the chain
+    }
     const p = mem.plan
     if (!p) return pad
     if (w.cur.rot !== p.rot) {
@@ -134,15 +172,26 @@ export function cpuPad(w, mem, jitter = 0) {
     else {
         // aligned: sit for a beat (jitter makes the CPU human, not metronomic),
         // then slam.
-        if (!mem.dropT) mem.dropT = 4 + Math.floor(jitter() * 8)
+        if (!mem.dropT) mem.dropT = 4 + Math.floor(tier.jitter(rng()) * 8)
         if (--mem.dropT > 0) pad.down = true
         else { pad.drop = true; mem.dropT = 0; mem.plan = null }
     }
     return pad
 }
 
-export function makeCpu(seed) {
+// the arcade ladder: each rung plans at a different chain depth, takes (or
+// misses) the same pops, and drops at its own pace — all from the same seeded
+// stream, so a given tier is reproducible on every box (the online law).
+// `normal` is exactly the pre-#863 CPU (depth 4, no miss, jitter = raw rng).
+export const TIERS = {
+    easy: { depth: 2, miss: 0.45, jitter: (r) => 0.5 + r * 0.5 },
+    normal: { depth: 4, miss: 0, jitter: (r) => r },
+    hard: { depth: 8, miss: 0, jitter: (r) => r * 0.3 },
+}
+
+export function makeCpu(seed, tierName = 'normal') {
+    const tier = TIERS[tierName] || TIERS.normal
     const rng = mulberry32((seed >>> 0) ^ 0xb0b1e5)
     const mem = {}
-    return (w) => cpuPad(w, mem, rng)
+    return (w) => cpuPad(w, mem, tier, rng)
 }

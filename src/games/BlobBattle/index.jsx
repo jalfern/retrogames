@@ -36,7 +36,7 @@ const MESSAGES = [
     'HARD DROP SLAMS THE STACK',
     'FIRST TO 2 ROUNDS WINS',
 ]
-const PRESS = 'PRESS ANY KEY  ·  KEY 2 FOR LOCAL 2P'
+const PRESS = 'PRESS ANY KEY  ·  1 EASY · 3 HARD CPU · 2 LOCAL 2P'
 const CHAIN_SCALE = [0, 4, 7, 12, 16, 19, 24, 28, 31, 36]
 
 const BlobBattleGame = () => {
@@ -69,6 +69,7 @@ const BlobBattleGame = () => {
 
         let gs = null, demo = null
         let mode = 'cpu'                      // cpu | local | online
+        let cpuTier = 'normal'                // easy | normal | hard — the arcade ladder (#863)
         let mySeat = 0
         let raf = 0, last = 0, acc = 0
         let seedCounter = (Date.now() >>> 0) ^ 0xb0b5
@@ -168,13 +169,14 @@ const BlobBattleGame = () => {
             setSc('over')
         }
 
-        const startPlay = (m, seed) => {
+        const startPlay = (m, seed, tier) => {
             mode = m
+            if (tier) cpuTier = tier
             mySeat = net.active ? net.slot : 0
             seedCounter = (seedCounter * 1103515245 + 12345) >>> 0
             gs = newGame(seed === undefined ? seedCounter : seed >>> 0, m === 'local' ? 2 : 1)
             gs._cpu1 = makeCpu(gs.seed)
-            gs._cpu2 = makeCpu(gs.seed ^ 0xbeef)
+            gs._cpu2 = makeCpu(gs.seed ^ 0xbeef, cpuTier)
             ls.reset()
             padMirror[0].clear(); padMirror[1].clear()
             stalledTicks = 0
@@ -448,7 +450,8 @@ const BlobBattleGame = () => {
                 if (net.role === 'host' && net.phase === 'waiting') onlineStart()
                 return
             }
-            startPlay(code === 'Digit2' ? 'local' : 'cpu')
+            if (code === 'Digit2') { startPlay('local'); return }
+            startPlay('cpu', undefined, code === 'Digit1' ? 'easy' : code === 'Digit3' ? 'hard' : 'normal')
         }
 
         const onDown = (e) => {
@@ -516,7 +519,7 @@ const BlobBattleGame = () => {
                 probe: () => {
                     const s = screenRef.current === 'attract' ? demo : gs
                     return {
-                        screen: screenRef.current, mode, over: s.over, winner: s.winner,
+                        screen: screenRef.current, mode, cpuTier, over: s.over, winner: s.winner,
                         tick: s.tick, round: s.round, rounds: [s.wells[0].rounds, s.wells[1].rounds],
                         scores: [s.wells[0].score, s.wells[1].score],
                         chains: [s.wells[0].chain, s.wells[1].chain],
@@ -527,7 +530,7 @@ const BlobBattleGame = () => {
                         hash: stateHash(s),
                     }
                 },
-                start: (m = 'cpu', sd) => startPlay(m, sd),
+                start: (m = 'cpu', sd, tier) => startPlay(m, sd, tier),
                 board: (seat) => Array.from((screenRef.current === 'attract' ? demo : gs).wells[seat].board),
                 hash: () => (gs ? stateHash(gs) : 0),
             }
@@ -569,6 +572,7 @@ const BlobBattleGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.wells[0].score, done: !!gs.over,
                     seed: gs.seed, round: gs.round, players: mode === 'local' ? 2 : 1,
+                    cpuTier,
                     winner: gs.winner, rounds: [gs.wells[0].rounds, gs.wells[1].rounds],
                     scores: [gs.wells[0].score, gs.wells[1].score],
                     hash: stateHash(gs),
