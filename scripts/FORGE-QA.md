@@ -75,11 +75,27 @@ confuse the two queues.
       audio, a broken mechanic. Detail is title/attract screens, wording,
       fonts, docs, and sweeps that make the same small edit across many games.
       Take detail only when no meat item is open.
-   c) most `+1` reactions; d) oldest.
-   Also honour `/priority` comments BY `jalfern` on `game-queue` issues: if one exists,
-   add label `next` to it (that is the forge lane's override) and say so —
-   then continue with your own lane.
-   No candidates → STOP (comment nothing; silence is the correct output).
+    c) most `+1` reactions; d) oldest.
+    Also honour `/priority` comments BY `jalfern` on `game-queue` issues: if one exists,
+    add label `next` to it (that is the forge lane's override) and say so —
+    then continue with your own lane.
+   e) **Unified queue — never idle a free lane (#878).** Builder and QA pull from
+      one claim order now: steer → next → oldest across `game-queue`, `feedback`
+      and the flagship polish stage. When this lane has NO claimable `feedback`
+      item but the warden kicked it anyway (the builder is busy on a queued title
+      and a flagship gap is unowned), do NOT idle: run
+      `node scripts/idle-kick.mjs qa` — it answers `KICK <GAME> <gapIndex>` for
+      the oldest unowned honest gap of SSX / Emberwood / COMET DRIFT HD / Myst
+      that no lane is inside (a `building` title or a `building-qa` title), or
+      `NONE` when every gap is owned. On KICK, file that stage as its own
+      feedback issue (`gh issue create` with `feedback` + `lane:qa`, title
+      `QA — <GAME>: <gap summary>`, body quoting the gap so it owns it), then
+      claim it with `scripts/qa-claim.sh` and run the normal reproduce → fix →
+      gate → ship on it — it is game code, so it counts for AGENTS.md rule 4.
+      One ship per session still holds.
+    No candidates and no flagship gap (`idle-kick.mjs qa` says NONE) → STOP
+    (comment nothing; silence is the correct output).
+
 3. **Claim:** run `scripts/qa-claim.sh <n> <your node> "<one-line plan>"`;
    never claim by hand. It reads the issue live, labels it `building-qa` and
    posts your claim. If it exits non-zero, another node holds the item: go

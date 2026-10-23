@@ -5,7 +5,8 @@
 // builder sat idle 02:28–08:00 on Oct 23. The warden asks this script and it
 // answers one line — `KICK <GAME> <gapIndex>` when flagshipStage() finds
 // unowned honest gaps, `NONE` when every gap is owned (STOP stays legal).
-// The warden kicks only on KICK.
+// The warden kicks only on KICK. With `qa` as argv[2] it answers for a free QA
+// lane instead (#878): the unowned flagship gap it may take when feedback is dry.
 //
 // It fetches the issues itself (gh api): warden.sh forbids stdin, and passing
 // 100 issue bodies as one argument rides the ARG_MAX line. READMEs come from
@@ -16,7 +17,7 @@ import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, flagshipStage, heldGames } from './lib/idle.mjs'
+import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, flagshipStage, heldGames, qaIdleStage } from './lib/idle.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -39,5 +40,11 @@ const gapsByGame = Object.fromEntries(FLAGSHIPS.map((g) => {
     return [g, parseGaps(md)]
 }))
 
-const stage = flagshipStage({ gapsByGame, qaIssues, buildingQa })
+// `idle-kick.mjs qa` (#878) answers for a free QA lane, not the builder: with no
+// claimable feedback the QA lane may take the unowned flagship gap itself, instead
+// of idling while the builder is busy on a queued title. Same NONE-on-failure rule.
+const qaMode = (process.argv[2] || '') === 'qa'
+const stage = qaMode
+    ? qaIdleStage({ issues, gapsByGame })
+    : flagshipStage({ gapsByGame, qaIssues, buildingQa })
 console.log(stage ? `KICK ${stage.game} ${stage.index}` : 'NONE')

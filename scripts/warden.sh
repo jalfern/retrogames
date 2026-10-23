@@ -264,6 +264,7 @@ main() {
            "studio 8000 UNCLAIMED 1 com.jalfern.forge-qa-studio")
     [[ "$ALIVE" == no && -z "$TARGET" ]] && LANES+=("builder 8000 UNCLAIMED 2 com.jalfern.forge-qa-builder")
     [[ "$HALTED" == yes ]] && LANES=()   # #605: halt freezes every lane, not just the builder
+    STUDIO_KICKED=0
     for spec in "${LANES[@]}"; do
         lane=(${=spec}); node=${lane[1]} port=${lane[2]} var=${lane[3]} need=${lane[4]} job=${lane[5]}
         have=${(P)var}
@@ -272,8 +273,30 @@ main() {
         (( have >= need )) || continue
         launchctl print "gui/$(id -u)/$job" >/dev/null 2>&1 || continue
         act launchctl kickstart "gui/$(id -u)/$job" >> "$LOG" 2>&1
+        [[ "$node" == studio ]] && STUDIO_KICKED=1
         ACTIONS+=("qa-kicked:$node"); log "kicked QA on $node ($have waiting)"
     done
+
+    # #878 — a free Studio must not idle while a flagship gap is unowned. The
+    # builder's flagship path (step 4b idle-kick) only runs when the builder is
+    # FREE; with the builder busy on a queued title and no claimable feedback,
+    # Studio idled for hours on Oct 23 while SSX's gaps sat unclaimed. So ask
+    # idle-kick.mjs in `qa` mode (unowned flagship gap the QA lane may take,
+    # skipping every game another lane is inside) and send Studio there. Only
+    # when the builder is busy (4b owns the flagship otherwise) and not halted;
+    # the builder and Studio can never be pointed at the same game (#878: one
+    # lane per game, enforced in qaIdleStage).
+    if [[ "$HALTED" != yes && "$ALIVE" == yes ]] && (( ! STUDIO_KICKED )); then
+        pgrep -f "opencode run.*QA MASTER on node studio\\." >/dev/null \
+            || ! curl -s -m 3 "http://127.0.0.1:8000/v1/models" >/dev/null 2>&1 \
+            || ! launchctl print "gui/$(id -u)/com.jalfern.forge-qa-studio" >/dev/null 2>&1 \
+            || { STAGE=$(node "$REPO/scripts/idle-kick.mjs" qa 2>>"$LOG" | tail -1)
+                 if [[ "$STAGE" == KICK* ]]; then
+                     act launchctl kickstart "gui/$(id -u)/com.jalfern.forge-qa-studio" >> "$LOG" 2>&1
+                     comment "$PULSE" "WARDEN: feedback empty, ${STAGE#KICK } unowned — kicked Studio QA to the flagship gap (#878)"
+                     ACTIONS+=("qa-flagship:studio"); log "kicked Studio QA to flagship ${STAGE#KICK }"
+                 fi; }
+    fi
 
     # ---- 6. FOLLOW-UP PULSE -----------------------------------------------
     if (( ${#ACTIONS[@]} > 0 )); then
