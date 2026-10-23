@@ -69,7 +69,11 @@ if (opt('--quiet-check-only', null) !== null) {
   process.exit(0)
 }
 if (!url.startsWith('http') && !existsSync(file)) { console.error(`missing ${file}`); process.exit(1) }
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const CHROME = process.env.SHOREPERF_CHROME || (() => {
+  const sys = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  if (existsSync(sys)) return sys
+  try { return chromium.executablePath() } catch { console.error('no Chrome found — install one or run `npx playwright-core install chromium`'); process.exit(1) }
+})()
 
 const PROFILES = {
   desktop: { viewport: { width: 1440, height: 900 }, dsf: 2, cpu: 1 },
@@ -151,11 +155,20 @@ async function main() {
   }
   console.log(`# box: ${noise.length ? `CONTENDED — ${noise.join('; ')} (numbers are context, not verdict)` : 'quiet'}`)
   const profDir = `/tmp/forge/shoreperf-profile-${PORT}`
-  const chrome = spawn(CHROME, [
+  const flags = [
     '--headless=new', '--enable-unsafe-swiftshader', `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
     `--user-data-dir=${profDir}`, 'about:blank',
-  ], { stdio: 'ignore', detached: true })
+  ]
+  // #680: on Linux CI there is no GPU and, unlike macOS, --enable-unsafe-
+  // swiftshader alone does NOT expose a WebGPU adapter — navigator.gpu exists
+  // but requestAdapter() returns null, so shore.html's boot() throws 'no
+  // WebGPU adapter' and __shoreTest.ready never flips. Linux headless Chrome
+  // needs the Dawn software backend opted in explicitly; this gives a slow but
+  // quiet, reproducible SwiftShader adapter — exactly the trend line #680 asks
+  // for. macOS (local/dev boxes) keeps Metal and ignores these.
+  if (process.platform !== 'darwin') flags.push('--no-sandbox', '--enable-unsafe-webgpu', '--use-angle=swiftshader')
+  const chrome = spawn(CHROME, flags, { stdio: 'ignore', detached: true })
   const killAll = () => {
     try { process.kill(-chrome.pid) } catch { /* gone */ }
     try { chrome.kill() } catch { /* gone */ }
@@ -185,6 +198,7 @@ async function main() {
     }
   } finally { killAll() }
   console.log(JSON.stringify(noise.length ? out.map(o => ({ ...o, contended: true })) : out))
+  if (!abQuery && out.length === 0) { console.error('no profile produced a measurement — demo failed to boot'); process.exit(1) }
 }
 
 main()
