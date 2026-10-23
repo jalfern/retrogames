@@ -181,8 +181,8 @@ const SSXGame = () => {
         let poseOverride = null
         const keys = new Set()
         // #844: the touch trick pad synthesises the same key codes the desktop
-        // reads (KeyX grab, KeyZ flip, KeyV invert) into the same held-key set,
-        // so phones get grab/flip/invert with no second code path.
+        // reads (KeyX grab, KeyZ flip, KeyC front-flip, KeyV invert) into the
+        // same held-key set, so phones get grab/flip/invert with no second path.
         const pressTrick = (code, down) => {
             if (down) keys.add(code); else keys.delete(code)
             setTrickHeld((prev) => {
@@ -1223,13 +1223,15 @@ const SSXGame = () => {
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'SSX')} onResume={handleResume} />}
             {/* #844: phone trick buttons — grab / flip / invert feed the same
                 key codes the desktop reads, so the trick economy works one-handed
-                on the slope (INV needs GRAB held, like on the keyboard). */}
+                on the slope (INV needs GRAB held, like on the keyboard). #871:
+                add FRNT (KeyC) so the front-flip reaches phones too — until now
+                touch could only backflip (FLIP→KeyZ); front-flip was keyboard-only. */}
             {play && !paused && TOUCH_PAD && (
                 <div
                     className="fixed z-50 right-0 flex gap-2 pointer-events-auto select-none"
                     style={{ bottom: 'calc(9.5rem + env(safe-area-inset-bottom))', paddingRight: 'calc(2rem + env(safe-area-inset-right))' }}
                 >
-                    {[['GRAB', 'KeyX'], ['FLIP', 'KeyZ'], ['INV', 'KeyV']].map(([label, code]) => (
+                    {[['GRAB', 'KeyX'], ['FLIP', 'KeyZ'], ['FRNT', 'KeyC'], ['INV', 'KeyV']].map(([label, code]) => (
                         <button
                             key={code}
                             data-ssx-trick={code}
