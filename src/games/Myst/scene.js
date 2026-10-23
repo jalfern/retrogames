@@ -24,6 +24,7 @@ const TX = {
   mech: texNoise(128, 4, 113, PAL.mech, { freq: 3, streak: 0.3 }),
   chand: texNoise(256, 4, 127, PAL.chand, { freq: 2 }),
   shelf: texNoise(128, 3, 131, PAL.shelf, { freq: 2, streak: 0.4 }),
+  strata: texNoise(256, 4, 137, PAL.grey, { freq: 2, strata: 0.55 }),
   pageR: texPages('red'),
   pageB: texPages('blue'),
 }
@@ -286,8 +287,9 @@ const BUILDERS = {
     const ground = mesh(new THREE.CircleGeometry(70, 26), mat(TX.selen), 0, 0, -46, g); ground.rotation.x = -Math.PI / 2
     seaPlane(g, 0.02, 300, 0.2)
     moon(g, 5, 24, 8, 5.5, null, 'lookMoon')
-    // the corridor walls: two green-black rock shoulders
-    rocks(g, TX.grey, [[-9, 3.4, -32, 8, 8, 14, 0.12], [9.5, 3.8, -33, 8, 9, 14, -0.12]])
+    // the corridor walls: two green-black rock shoulders, striated like the
+    // original's narrow fissure (vertical strata, not flat grey slabs)
+    rocks(g, TX.strata, [[-9, 3.4, -32, 8, 8, 14, 0.12], [9.5, 3.8, -33, 8, 9, 14, -0.12]])
     rocks(g, TX.selen, [[-9.4, 7.2, -33, 4, 1.6, 8, 0.1], [9.2, 8.2, -34, 3.4, 1.8, 8, -0.1]])
     // six stepping stones, biggest to smallest — the biggest sings the lowest
     const yaws = [-14, 10, -8, 14, -4, 8]
@@ -298,7 +300,7 @@ const BUILDERS = {
       const st = mesh(new THREE.CylinderGeometry(r, r * 1.12, 0.5, 12), mat(TX.stoneD, { metalness: 0.15, emissive: 0x16281c, emissiveIntensity: 0.35 }), Math.sin(a) * d, 0.25, -46 + Math.cos(a) * d, g)
       st.userData.spot = `stone${i}`; st.userData.landmark = 'selStones'; st.userData.mech = `selStone${i}`
       const rim = mesh(new THREE.TorusGeometry(r * 0.92, 0.05, 6, 18), new THREE.MeshStandardMaterial({ color: 0x9fe8b8, emissive: 0x3fd07a, emissiveIntensity: 0.9 }), Math.sin(a) * d, 0.51, -46 + Math.cos(a) * d, g)
-      rim.rotation.x = Math.PI / 2; rim.userData.noPick = true; rim.userData.mech = `selStone${i}`
+      rim.rotation.x = Math.PI / 2; rim.userData.noPick = true; rim.userData.mech = `selTell${i}`
     })
     // the sealed gate: slab of rock between cliff piers, grinds down when the path rings true
     rocks(g, TX.grey, [[-4.6, 3.4, -27, 5, 8, 4, 0], [4.6, 3.6, -27, 5, 8.4, 4, 0]])
@@ -323,7 +325,7 @@ const BUILDERS = {
     plaque.userData.spot = 'throneCarving'
     moon(g, -14.5, 2.6, 50, 3.4, 'selMoon', null)
     const sun = mesh(new THREE.SphereGeometry(2.6, 16, 12), new THREE.MeshStandardMaterial({ color: 0xffe9a0, emissive: 0xffb84a, emissiveIntensity: 1.1, fog: false }), 14.5, 2.1, 50, g)
-    sun.userData.noPick = true; sun.userData.mech = 'selSun'; sun.visible = false
+    sun.userData.noPick = true; sun.userData.mech = 'selSun'; sun.scale.setScalar(0.02)
     // the throne: bronze collar, stone seat, high back — it swivels on the
     // worn circle of eight notches
     const chair = new THREE.Group()
@@ -334,7 +336,7 @@ const BUILDERS = {
     chair.position.set(0, 0, 0.6)
     chair.userData.mech = 'selChair'
     g.add(chair)
-    for (let k = 0; k < 8; k++) { const a = k * 0.7854; mesh(new THREE.BoxGeometry(0.34, 0.06, 0.34), mat(TX.grey), Math.sin(a) * 1.6, 0.05, 0.6 + Math.cos(a) * 1.6, g).userData.noPick = true }
+    for (let k = 0; k < 8; k++) { const a = k * 0.7854; const n = mesh(new THREE.BoxGeometry(0.34, 0.06, 0.34), mat(TX.grey, { emissive: 0xffcf7a, emissiveIntensity: 0 }), Math.sin(a) * 1.6, 0.05, 0.6 + Math.cos(a) * 1.6, g); n.userData.noPick = true; n.userData.mech = 'selNotch'; n.userData.notch = k }
     // the high doorway in the right wall, sealed until sun and moon agree
     const door = mesh(new THREE.BoxGeometry(0.8, 3.4, 1.8), mat(TX.stoneD), 4.15, 1.7, -2.2, g)
     door.userData.spot = 'toSelGate'; door.userData.mech = 'selAlignDoor'

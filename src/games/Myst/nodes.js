@@ -123,7 +123,7 @@ export const NODES = {
     ],
   },
   selSound: {
-    pos: [0, 1.7, -46], yaw: 0, sky: 'selenitic', amb: 'wind',
+    pos: [0, 1.7, -46], yaw: 0, sky: 'selenitic', amb: 'stones',
     caption: 'The sounding path — six stones of decreasing size hum faintly in the moonlight',
     expect: ['selStones'],
     spots: [

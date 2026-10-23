@@ -44,6 +44,7 @@ export function texNoise(size, oct, seed, palette, opts = {}) {
       }
       v /= tot
       if (opts.streak !== undefined) v = v * (1 - opts.streak) + (Math.sin(y * 0.35 + v * 8) * 0.5 + 0.5) * opts.streak
+      if (opts.strata !== undefined) v = v * (1 - opts.strata) + (Math.sin(x * 0.42 + v * 7) * 0.5 + 0.5) * opts.strata
       if (opts.mortar) v = Math.min(1, v + (Math.abs(((x / size) * 8) % 1 - 0.5) > 0.44 || Math.abs(((y / size) * 5) % 1 - 0.5) > 0.42 ? opts.mortar : 0))
       const i = (y * size + x) * 4
       const p = palette(v)
