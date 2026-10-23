@@ -37,6 +37,12 @@ All synthesized at runtime (no assets) through the shared chiptune engine
   centre frequency track velocity past `RUN_TOP` (0 below the cap, full at
   `VMAX`); it is the engine note that tells you the slope is doing your work.
   Built lazily after the first gesture, muted-aware, stopped on unmount.
+- **Tempo lift (#833)** — the SSX seam, in `music.js` (pure): the bed's grid is
+  the resting tempo while you coast at `RUN_TOP` and tightens linearly to
+  `0.84x` at `VMAX`, so a downhill or boost pushes the music ahead of you.
+  `runnercheck` pins the resting grids, the band and monotonicity; `runnerplay`
+  proves the live engine step drops under speed (the probe carries `stepDur`,
+  now part of `_musicState`).
 - One-shot cues (ring, spring, loop, hit, save, goal…) in `handleEvents`.
 
 ## Gates

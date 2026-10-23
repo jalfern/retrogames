@@ -29,13 +29,15 @@
 
 import { spawnSync } from 'node:child_process'
 import * as s from '../src/games/MomentumRunner/sim.js'
+import { musicStep, LIFT } from '../src/games/MomentumRunner/music.js'
+import { MUSIC } from '../src/utils/AudioController.js'
 
 const args = process.argv.slice(2)
 const MUT = args.includes('--mutate')
 const MAP = args.includes('--map')
 const MUT_NAME = process.env.RUNNER_MUT || null
 
-const { ZONES, CFG, G, RUN_TOP, FIXED_DT, BODY_R, RING_R } = s
+const { ZONES, CFG, G, RUN_TOP, VMAX, FIXED_DT, BODY_R, RING_R } = s
 
 let pass = 0
 const fails = []
@@ -420,6 +422,34 @@ section('FORK (two routes: speed opens the high deck; the low line stays safe)')
             `${ZONES[zi].name}: a fast body did not commit, bank the deck and rejoin (${JSON.stringify(fast)})`)
         ok(!slow.high && slow.rings === 0,
             `${ZONES[zi].name}: a slow body reached the high route (${JSON.stringify(slow)}) — the fork is not speed-gated`)
+    }
+}
+
+// ---------------------------------------------------------------- music ----
+section('MUSIC (#833: the sector bed lifts its tempo with your speed, SSX-style)')
+{
+    const BED_STEP = { runnerCity: 0.105, runnerForge: 0.13, runnerOrbit: 0.17 }
+    const beds = ['runnerCity', 'runnerForge', 'runnerOrbit']
+    ok(LIFT === 0.16, `lift band moved (${LIFT}) — the reactive range is part of the feel contract`)
+    for (const b of beds) {
+        ok(MUSIC[b] && MUSIC[b].step === BED_STEP[b],
+            `${b}: resting step moved (grid ${MUSIC[b] && MUSIC[b].step}, pinned ${BED_STEP[b]})`)
+        const base = BED_STEP[b]
+        ok(musicStep(base, 0) === base && musicStep(base, RUN_TOP) === base,
+            `${b}: the bed lifts at/below the flat-run cap ${RUN_TOP} — coasting must sit at the resting tempo`)
+        ok(Math.abs(musicStep(base, VMAX) - base * (1 - LIFT)) < 1e-9,
+            `${b}: step at VMAX is ${musicStep(base, VMAX)}, not ${base}x${1 - LIFT}`)
+        ok(Math.abs(musicStep(base, VMAX + 400) - musicStep(base, VMAX)) < 1e-9,
+            `${b}: step does not clamp above VMAX`)
+        ok(Math.abs(musicStep(base, -200) - base) < 1e-9,
+            `${b}: rolling backwards speeds the music up (s=-200 -> ${musicStep(base, -200)})`)
+        let prev = musicStep(base, RUN_TOP), mono = true
+        for (let v = RUN_TOP; v <= VMAX; v += 50) {
+            const x = musicStep(base, v)
+            if (x > prev + 1e-12) mono = false
+            prev = x
+        }
+        ok(mono, `${b}: step is not monotonic in speed — the lift wobbles`)
     }
 }
 

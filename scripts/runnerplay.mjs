@@ -80,6 +80,20 @@ await wait(400)
     r.check('the sector bed is playing under the run (music engine state)',
         m && m.playing === true && m.track === 'runnerCity' && m.ctx === 'running',
         `playing=${m && m.playing} track=${m && m.track} ctx=${m && m.ctx}`)
+
+    // #833 TEMPO LIFT: the grid must follow speed SSX-style — the pinned resting
+    // step while coasting, tightening toward the 0.84 band at VMAX. The probe
+    // reads the engine's live stepDur, so a dead seam (step pinned to the grid)
+    // fails here even though the bed plays.
+    await page.evaluate(() => { window.__runnerTest.setSpeed(0) })
+    await wait(120)
+    const rest = (await probe()).music
+    await page.evaluate(() => { window.__runnerTest.setSpeed(1150) })
+    await wait(140)
+    const fast = (await probe()).music
+    r.check('#833 the bed lifts its grid with speed (0.105 rest, tighter at VMAX)',
+        rest && rest.stepDur === 0.105 && fast && fast.stepDur < rest.stepDur && fast.stepDur >= 0.105 * 0.84 - 1e-6,
+        `rest=${rest && rest.stepDur} fast=${fast && fast.stepDur}`)
     await page.keyboard.down('ArrowRight')
     await wait(900)
     const b = await probe()
