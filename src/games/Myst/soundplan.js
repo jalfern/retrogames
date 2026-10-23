@@ -11,6 +11,9 @@
 //   fnoise { dur, vol, freq }                 (lowpassed: paper, whoosh)
 
 export const TONES = [196, 262, 330, 392]
+// The sounding path of SELENITIC: six stones, biggest sings lowest. Strictly
+// ascending and distinct — the puzzle IS the pitch order.
+export const STONE_TONES = [110, 131, 147, 165, 196, 220]
 
 export function plan(ev) {
   // A linking-book leap is a whole other event than a walk: a long rising
@@ -21,6 +24,11 @@ export function plan(ev) {
       { type: 'sweep', f0: 90, f1: 1400, dur: 0.9, wave: 'sine', vol: 0.1 },
       { type: 'fnoise', dur: 0.5, vol: 0.12, freq: 600 },
     ]
+  }
+  // Stepping a sounding stone rings ITS tone: the pitch is the progress.
+  if (typeof ev === 'string' && ev.startsWith('stone:')) {
+    const i = Math.max(0, Math.min(STONE_TONES.length - 1, Number(ev.split(':')[1]) || 0))
+    return [{ type: 'tone', f: STONE_TONES[i], dur: 0.8, wave: 'sine', vol: 0.1 }, { type: 'tone', f: STONE_TONES[i] * 2, dur: 0.5, wave: 'sine', vol: 0.03, delay: 0.05 }]
   }
   const P = []
   switch (ev) {
@@ -57,6 +65,14 @@ export function plan(ev) {
     // The Selenitic sphere: when the panel opens the four ring posts sing their
     // tones in sequence, one after another — the player reads the code by ear.
     case 'sphereSing': TONES.forEach((f, i) => P.push({ type: 'tone', f, dur: 0.4, wave: 'sine', vol: 0.09, delay: i * 0.34 })); break
+    // SELENITIC: a wrong stone is a sour buzz — two detuned saws beating against
+    // each other, nothing sweet in it. The throne swivels on oiled bronze; the
+    // alignment rings a sun-moon fifth; the gear lifts free with a slot's hiss.
+    case 'buzz': P.push({ type: 'tone', f: 82, dur: 0.7, wave: 'sawtooth', vol: 0.09 }, { type: 'tone', f: 87, dur: 0.7, wave: 'sawtooth', vol: 0.07, delay: 0.02 }, { type: 'noise', dur: 0.4, vol: 0.06 }); break
+    case 'swivel': P.push({ type: 'sweep', f0: 120, f1: 190, dur: 0.28, wave: 'triangle', vol: 0.06 }, { type: 'tone', f: 96, dur: 0.08, wave: 'square', vol: 0.05, delay: 0.26 }); break
+    case 'alignOpen': P.push({ type: 'tone', f: 220, dur: 0.9, wave: 'sine', vol: 0.09 }, { type: 'tone', f: 330, dur: 0.9, wave: 'sine', vol: 0.08, delay: 0.12 }, { type: 'sweep', f0: 70, f1: 130, dur: 1.1, wave: 'sawtooth', vol: 0.06 }); break
+    case 'gateOpen': P.push({ type: 'sweep', f0: 60, f1: 110, dur: 1.2, wave: 'sawtooth', vol: 0.08 }, { type: 'noise', dur: 0.9, vol: 0.09 }); break
+    case 'gearTake': P.push({ type: 'fnoise', dur: 0.35, vol: 0.09, freq: 900 }, { type: 'tone', f: 440, dur: 0.25, wave: 'sine', vol: 0.07, delay: 0.18 }); break
     default: break
   }
   return P

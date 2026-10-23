@@ -3,9 +3,9 @@
 // trap you, and the white page brings Atrus home. Node-only, no browser.
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
-import { freshState, dispatch, solveScript, runSolver, isWin, SAFE_CODE, STAR_CODE, SPHERE_CODE } from '../src/games/Myst/state.js'
+import { freshState, dispatch, solveScript, runSolver, isWin, SAFE_CODE, STAR_CODE, SPHERE_CODE, STONE_SIZES, SUN_MOON } from '../src/games/Myst/state.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
-import { plan, TONES } from '../src/games/Myst/soundplan.js'
+import { plan, TONES, STONE_TONES } from '../src/games/Myst/soundplan.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
@@ -13,7 +13,7 @@ let pass = 0, fail = 0
 const ok = (cond, name) => { if (cond) { pass++; console.log(`  ok ${name}`) } else { fail++; console.error(`  FAIL ${name}`) } }
 
 console.log('MYST — graph')
-ok(Object.keys(NODES).length === 18, '18 nodes: island, tower, cave, cabin, four Ages, walkable Mechanical (4)')
+ok(Object.keys(NODES).length === 22, '22 nodes: island, tower, cave, cabin, four Ages, walkable Mechanical (4), walkable Selenitic (4)')
 ok(NODES.dock && NODES.dock.spots.some((s) => s.to === 'cliffPath'), 'the dock connects up the path')
 for (const [id, n] of Object.entries(NODES)) {
   for (const s of n.spots) {
@@ -152,6 +152,49 @@ console.log('MYST — gates hold')
   ok(!!s.flags.sphereSolved, 'the tone sequence opens the sphere')
 }
 
+console.log('MYST — SELENITIC walkable: sounding path, sun-and-moon throne, the gear')
+ok(['selSound', 'selThrone', 'selGate', 'selTop'].every((n) => !seen.has(n)), 'the Selenitic chain lives inside its Age, not on the island path')
+{
+  const seenS = new Set(['selenitic'])
+  const qs = ['selenitic']
+  while (qs.length) { const id = qs.shift(); for (const sp of NODES[id].spots) { const t = sp.to ? [sp.to] : sp.visits ? [].concat(sp.visits) : []; for (const v of t) if (!seenS.has(v)) { seenS.add(v); qs.push(v) } } }
+  ok(['selSound', 'selThrone', 'selGate', 'selTop'].every((n) => seenS.has(n)), 'Selenitic is walkable end to end once you are linked in')
+}
+{ // the sounding path: six stones, ascending, and wrong order resets
+  let s = { ...freshState(), node: 'selSound' }
+  ok(dispatch(s, { t: 'move', id: 'toSelThrone' }).events.includes('blocked'), 'the gate is sealed before the stones are rung')
+  let r = dispatch(s, { t: 'click', id: 'stone3' }); s = r.state
+  ok(s.selStone === 0 && r.events.includes('buzz'), 'the wrong first stone buzzes and stays home')
+  r = dispatch(s, { t: 'click', id: 'stone0' }); s = r.state
+  ok(s.selStone === 1 && r.events.includes('stone:0'), 'the biggest stone is first — it rings the lowest')
+  r = dispatch(s, { t: 'click', id: 'stone1' }); s = r.state
+  r = dispatch(s, { t: 'click', id: 'stone0' }); s = r.state
+  ok(s.selStone === 0 && r.events.includes('buzz'), 'stepping back onto a rung stone breaks the order — reset')
+  for (let i = 0; i < STONE_SIZES; i++) { r = dispatch(s, { t: 'click', id: `stone${i}` }); s = r.state }
+  ok(s.selStone === STONE_SIZES && !!s.flags.selPath && r.events.includes('gateOpen'), 'the full ascending route opens the gate in the cliff')
+  ok(dispatch(s, { t: 'move', id: 'toSelThrone' }).state.node === 'selThrone', 'with the path rung you may walk through the gate')
+}
+{ // the sun-and-moon throne: only the true detent opens the mountain
+  let s = { ...freshState(), node: 'selThrone' }
+  ok(dispatch(s, { t: 'move', id: 'toSelGate' }).events.includes('blocked'), 'the seamless rock keeps its counsel before the alignment')
+  let ev = []
+  for (let i = 0; i < SUN_MOON; i++) { const rr = dispatch(s, { t: 'click', id: 'selChair' }); s = rr.state; ev = rr.events }
+  ok(s.selChair === SUN_MOON && !!s.flags.selAlign && ev.includes('alignOpen'), 'swivel to the sun-and-moon detent and the mountain opens')
+  ok(dispatch(s, { t: 'move', id: 'toSelGate' }).state.node === 'selGate', 'through the opened doorway onto the terraces')
+  // a near-miss detent shows one light only and keeps the mountain shut
+  let w = { ...freshState(), node: 'selThrone', selChair: 6 }
+  const wr = dispatch(w, { t: 'click', id: 'selChair' })
+  ok(wr.state.selChair === 7 && !wr.state.flags.selAlign && !wr.events.includes('alignOpen'), 'a wrong detent: one light in the arch, the mountain stays shut')
+}
+{ // the summit gear, one of five
+  let s = { ...freshState(), node: 'selTop' }
+  const rg = dispatch(s, { t: 'click', id: 'takeGear' }); s = rg.state
+  ok(!!s.flags.gearSelenitic && rg.events.includes('gearTake'), 'the brass gear lifts from its slot')
+  const s2 = dispatch(s, { t: 'click', id: 'takeGear' })
+  ok(s2.events.length === 0 || !s2.events.includes('gearTake'), 'the empty slot gives nothing twice')
+  ok(NODES.selTop.spots.some((x) => x.act === 'takeGear' && x.gone === 'gearSelenitic'), 'the gear spot closes once taken')
+}
+
 console.log('MYST — pages, books, endings')
 {
   let s = runSolver()
@@ -228,6 +271,19 @@ console.log('MYST — sound plan (what each event schedules)')
   ok(plan('motor').length > 0 && JSON.stringify(plan('motor')) !== JSON.stringify(travel), 'the cage motor has its own sound, distinct from a walk')
   ok(plan('clank').length > 0 && plan('plate').length > 0 && plan('latch').length > 0, 'bolts, plates and the latch each schedule their own noise')
   ok(plan('spectator').length === 3, 'the SPECTATOR hums a three-note chord', String(plan('spectator').length))
+  // SELENITIC sound: the six stones must be six distinct ascending pitches, and
+  // each step its own event — if every stone rang the same, the puzzle would be
+  // unplayable blind. Buzz, swivel, alignment, gate and gear each get a cue too.
+  const stones = [...Array(STONE_SIZES).keys()].map((i) => plan(`stone:${i}`))
+  ok(stones.every((c) => c.length > 0), 'every sounding stone schedules a tone')
+  ok(new Set(stones.map((c) => c[0].f)).size === STONE_SIZES, 'the six stones ring six distinct pitches', stones.map((c) => c[0].f).join(','))
+  ok(stones.every((c, i) => i === 0 || c[0].f > stones[i - 1][0].f), 'the pitches climb as the route climbs', stones.map((c) => c[0].f).join(','))
+  ok(JSON.stringify(stones[0]) !== JSON.stringify(stones[5]), 'the smallest stone is not the biggest stone')
+  ok(plan('buzz').length > 0, 'a wrong stone has a sour buzz')
+  ok(plan('swivel').length > 0 && plan('alignOpen').length > 0, 'the throne swivels and the alignment rings')
+  ok(plan('gateOpen').length > 0 && plan('gearTake').length > 0, 'the gate grinds and the gear lifts with their own sounds')
+  const buzz = plan('buzz'), al = plan('alignOpen')
+  ok(JSON.stringify(buzz) !== JSON.stringify(al), 'the buzz never collapses into the alignment chord')
 }
 
 console.log('MYST — the walkable Mechanical gets played, not skipped')
@@ -244,6 +300,20 @@ console.log('MYST — the walkable Mechanical gets played, not skipped')
   ok(isWin(s), 'and still brings Atrus home')
 }
 
+console.log('MYST — the walkable Selenitic gets played, not skipped')
+{
+  let s = freshState()
+  const visited = new Set()
+  for (const a of solveScript()) {
+    const r = dispatch(s, a)
+    s = r.state
+    visited.add(s.node)
+  }
+  ok(['selSound', 'selThrone', 'selGate', 'selTop'].every((n) => visited.has(n)), 'the winning route walks every new Selenitic view')
+  ok(s.flags.selPath && s.flags.selAlign && s.flags.gearSelenitic, 'the solver rang the stones, aligned sun and moon, and took the gear')
+  ok(isWin(s), 'and the detour still brings Atrus home')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -251,6 +321,7 @@ if (process.argv.includes('--mutate')) {
   const JX = 'src/games/Myst/index.jsx'
   const SP = 'src/games/Myst/soundplan.js'
   const ST = 'src/games/Myst/state.js'
+  const ND = 'src/games/Myst/nodes.js'
   const MUTANTS = [
     ['attract never cycles (one message)', MF,
       `    'CYAN · 1993 · REBUILT IN CODE',\n    'Living books · two imprisoned brothers',\n    'Four Ages hidden in plain sight',\n    'No map. No hints. Take notes, as in 1993.',\n    'Click what you see · arrows step and turn',\n`,
@@ -294,6 +365,27 @@ if (process.argv.includes('--mutate')) {
     ['an un-latched plate stops releasing the door', ST,
       `else { if (!s.flags.mechLatchD) s.flags.mechDoorOpen = false; s.message = s.flags.mechLatchD`,
       `else { s.flags.mechDoorOpen = false; s.message = s.flags.mechLatchD`],
+    ['the sounding path accepts any stone in any order', ST,
+      `      if (i === s.selStone) {`,
+      `      if (true) {`],
+    ['the last stone stops opening the gate', ST,
+      `          s.flags.selPath = true`,
+      `          s.flags.selPathUnset = true`],
+    ['the throne aligns at every detent', ST,
+      `      if (s.selChair === SUN_MOON && !has(s, 'selAlign')) {`,
+      `      if (true) {`],
+    ['the mountain door stops needing the alignment', ND,
+      `to: 'selGate', need: 'selAlign', needMsg:`,
+      `to: 'selGate', needMsg:`],
+    ['the gear slot keeps giving gears', ST,
+      `      if (has(s, 'gearSelenitic')) return { state: s, events: [] }`,
+      `      if (false) return { state: s, events: [] }`],
+    ['the six stones collapse to one pitch', SP,
+      `export const STONE_TONES = [110, 131, 147, 165, 196, 220]`,
+      `export const STONE_TONES = [110, 110, 110, 110, 110, 110]`],
+    ['the wrong-stone buzz goes silent', SP,
+      `    case 'buzz': P.push(`,
+      `    case 'buzzz': P.push(`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
