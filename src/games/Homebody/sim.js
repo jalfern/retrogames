@@ -30,18 +30,18 @@ export const FAINT_SEC = 14        // how long a faint lasts
 // . grass   p path   F house floor   # wall   D door/gate (walkable)
 export const MAP = [
     '................',
-    '.###########...',
-    '.#FFFFFFFFF#...',
-    '.#FFFFFFFFF#...',
-    '.#FFFFFFFFF#...',
-    '.#F#####F###...',
-    '.#FFFFF#FFF#...',
-    '.#FFFFF#FFF#...',
-    '.####D######...',
-    '.....p.........',
-    '.....p.........',
-    '.....p.........',
-    '#####D#########',
+    '.###########....',
+    '.#FFFFFFFFF#....',
+    '.#FFFFFFFFF#....',
+    '.#FFFFFFFFF#....',
+    '.#F#####F###....',
+    '.#FFFFF#FFF#....',
+    '.#FFFFF#FFF#....',
+    '.####D######....',
+    '.....p..........',
+    '.....p..........',
+    '.....p..........',
+    '#####D##########',
 ]
 
 export const cellChar = (r, c) => (r < 0 || r >= ROWS || c < 0 || c >= COLS ? '#' : MAP[r][c])
@@ -254,7 +254,7 @@ export function cmdWalk(s, p, r, c) {
 }
 
 // the "A button" use: nearest usable object adjacent to the person
-export function useNearest(s, p) {
+export function tryUse(s, p) {
     let best = null, bd = 3
     for (const it of s.items) {
         if (it.id === 'mail') {
@@ -315,7 +315,14 @@ export function place(s, r, c) {
     s.money -= def.price
     s.items.push({ uid: s.nextUid++, id: def.id, r, c })
     s.events.push({ t: 'place', r, c, id: def.id })
-    reflow(s, r, c)
+    reflow(s)
+    return true
+}
+
+export function placeOk(s, r, c) {
+    const def = CATALOG[s.sel]
+    if (!def || s.money < def.price || !canPlace(s, def, r, c)) return false
+    if (def.solid && !keepsOpen(s, r, c)) return false
     return true
 }
 
@@ -326,12 +333,12 @@ export function sellAt(s, r, c) {
     s.items = s.items.filter((x) => x !== it)
     s.money += Math.floor(def.price / 2)
     s.events.push({ t: 'sell', r: it.r, c: it.c, id: it.id })
-    reflow(s, r, c)
+    reflow(s)
     return true
 }
 
 // if a person is standing on a just-placed solid, nudge them to a free neighbour
-function reflow(s, r, c) {
+function reflow(s) {
     for (const p of s.people) {
         if (solidAt(s, p.r, p.c)) {
             for (const [dr, dc] of [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1], [-1, -1]]) {
@@ -688,6 +695,32 @@ export function advance(s, dt) {
         s.done = 'win'
         s.endMsg = 'The lifetime wish comes true: a happy, humming little home.'
     }
+}
+
+// ---------------------------------------------------------- manual move ----
+// direct d-pad/stick control of one resident (pointer routes use cmdWalk).
+// Continuous pixels with tile permission — everything that moves asks first.
+export function manualMove(s, p, dx, dy, dt) {
+    if (p.faintT > 0 || p.working || p.use) return false
+    if (!dx && !dy) return false
+    p.path = null; p.goal = null
+    const spd = 52 * moodMul(p) * dt
+    if (dx) p.face = dx > 0 ? 1 : -1
+    const nx = p.x + (dx ? Math.sign(dx) * spd : 0)
+    const ny = p.y + (dy ? Math.sign(dy) * spd : 0)
+    const tileAt = (px, py) => ({ r: Math.floor((py - LOT_Y) / TILE), c: Math.floor((px - LOT_X) / TILE) })
+    if (dx) {
+        const t = tileAt(nx + Math.sign(dx) * 6, p.y)
+        if (walkable(s, t.r, t.c)) p.x = nx
+    }
+    if (dy) {
+        const t = tileAt(p.x, ny + Math.sign(dy) * 6)
+        if (walkable(s, t.r, t.c)) p.y = ny
+    }
+    const c = tileAt(p.x, p.y)
+    p.r = c.r; p.c = c.c
+    p.walkPhase += dt * 11
+    return true
 }
 
 // ------------------------------------------------------------- bot --------

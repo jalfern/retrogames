@@ -190,6 +190,7 @@ const CivilizationVGame = lazy(() => import('../games/CivilizationV'))
 // GARDEN GUARD: its own chunk — the autopilot scripts the attract demo and the
 // lane-defense sim audits in Node (gardencheck), so planner and sim ride together.
 const GardenGuardGame = lazy(() => import('../games/GardenGuard'))
+const HomebodyGame = lazy(() => import('../games/Homebody'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1038,4 +1039,16 @@ export const GAMES = [
         controls: ['Arrow Left/Right: slide the pair · DOWN: soft drop', 'UP / X / SPACE / A: rotate clockwise about the pivot', 'B / C: HARD DROP — slam and lock now (this battler has it; the 1991 original did not)', 'Pop 4+ same color; chains send garbage, big groups send more', 'Pop while garbage is queued = COUNTER: incoming wiped, yours still goes', '1P vs CPU · KEY 2 on the title: local 2P (P2: WASD move, W rotate, S soft, F drop)', '?: pause and read the rules · gamepad: dpad + A rotate + B drop', 'Online: ?net=host to open a room, ?net=join&room=CODE to answer'],
     },
 
+    {
+        path: '/homebody',
+        pad: { layout: 'stick', buttons: [{ label: '✓', code: 'Space' }, { label: '⚒', code: 'KeyB' }], analog: true, reason: 'walk the resident with the stick, ✓ uses whatever is in reach, ⚒ opens the buy catalog; tap-to-order on touch' },
+        builtBy: 'forge',
+        added: '2026-10-23',
+        visibility: 'private',
+        component: HomebodyGame,
+        label: 'HOMEBODY',
+        theme: 'dark',
+        description: "An original people sim in the spirit of a certain Maxish life classic (PC 2000) — its own IP, names and art, all synthesized. Two residents, five needs, one little suburban lot seen from above, and a clock that never stops: tap a fridge, a bed, the TV or the mailbox and your resident walks over (pathfinding around every sofa) and does the thing. Hunger, energy, fun, social and bladder drain all day; a kite-gem over their head spins green, amber or red, and unattended red needs end in a very embarrassing collapse. Work pays: whoever's rostered clocks out at five with § in pocket, and the career ladder climbs. B opens the buy mode — time stands still over a catalog of thirteen pieces, from a Puffed Sofa to a Shower Cubby — tap to place, tap again to sell half back; furniture raises the home's ambience, and ambience plus happy residents bank contentment hour by hour. Fern, the neighbour, drifts in through the gate on seeded schedules to talk about the weather, and a thought log narrates the little stories as they happen (dreams about cheese included). Bank 80 contentment and the lifetime wish is granted; let both residents fall at once and the household ends. Deterministic seed→hash, and the attract demo drives the same autopilot a QA harness runs.",
+        controls: ['Tap an object: your resident walks over and uses it — tap the floor to just walk', 'Tap a resident (or G): switch who you command', 'Stick / arrows: walk directly · ✓ / SPACE: use the nearest object', '⚒ / B: BUY MODE — time stops; arrows move the ghost, ✓ places', 'In buy mode: tap an owned piece to sell it back for half · 1-9 pick a catalog card', 'The mailbox = work: clock in between 08:00 and 16:00 on your resident\'s days', 'Watch the kite gem: amber means a need is close, red means minutes to collapse', '?: pause and read the house rules'],
+    },
 ]
