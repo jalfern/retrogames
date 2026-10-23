@@ -36,6 +36,9 @@ const SPINES = [
             { n: 24, curve: 0.000, drop: 0.055 },
         ],
         gullies: [{ f0: 0.30, f1: 0.41 }, { f0: 0.62, f1: 0.71 }],
+        // #844: authored stretches where the shoulder runs out in exposed rock
+        // faces instead of pure snow shoulders (f = fraction, side = which)
+        outcrops: [{ f0: 0.16, f1: 0.25, side: 1 }, { f0: 0.48, f1: 0.56, side: -1 }, { f0: 0.82, f1: 0.90, side: 1 }],
         // f = fraction of the run, x = lateral fraction of the piste
         kickers: [
             { f: 0.13, x: -0.25, power: 2.6, w: 0.22 },
@@ -68,6 +71,7 @@ const SPINES = [
             { n: 20, curve: 0.000, drop: 0.060 },
         ],
         gullies: [{ f0: 0.16, f1: 0.22 }, { f0: 0.46, f1: 0.52 }, { f0: 0.64, f1: 0.68 }],
+        outcrops: [{ f0: 0.28, f1: 0.38, side: -1 }, { f0: 0.74, f1: 0.86, side: 1 }],
         kickers: [
             { f: 0.11, x: 0.00, power: 3.0, w: 0.24 },
             { f: 0.28, x: -0.35, power: 2.4, w: 0.22 },
@@ -99,6 +103,7 @@ const SPINES = [
             { n: 22, curve: 0.000, drop: 0.080 },
         ],
         gullies: [{ f0: 0.40, f1: 0.50 }, { f0: 0.86, f1: 0.95 }],
+        outcrops: [{ f0: 0.56, f1: 0.66, side: -1 }],
         kickers: [
             { f: 0.30, x: 0.00, power: 4.2, w: 0.34 },
             { f: 0.52, x: 0.00, power: 4.6, w: 0.36 },
@@ -164,9 +169,10 @@ export function buildCourse(idx) {
     })
     const obstacles = placeObst(def, seed).map((o) => ({ ...o, i: Math.round(o.f * N) }))
     const gullies = (def.gullies || []).map((gl) => ({ s0: gl.f0 * N * DS, s1: gl.f1 * N * DS }))
+    const outcrops = (def.outcrops || []).map((o) => ({ s0: o.f0 * N * DS, s1: o.f1 * N * DS, side: o.side }))
     return {
         name: def.name, theme: def.theme, idx: ((idx % COURSE_COUNT) + COURSE_COUNT) % COURSE_COUNT,
-        segs, N, length: N * DS, kickers, rails, pipes, obstacles, gullies,
+        segs, N, length: N * DS, kickers, rails, pipes, obstacles, gullies, outcrops,
         rollPhase: idx * 1.7,
         finish: N - 4,
     }
@@ -219,6 +225,21 @@ export function openness(c, s) {
         }
     }
     return o
+}
+
+// #844 exposed rock faces: how strongly an authored outcrop is showing at s,
+// eased in/out over ~24 m so the rock band breathes like the gullies do.
+// Returns the weight plus the side it climbs on (0 when off-span).
+export function outcropAt(c, s) {
+    let side = 0, w = 0
+    for (const oc of c.outcrops) {
+        if (s > oc.s0 - 24 && s < oc.s1 + 24) {
+            const e = Math.min(s - (oc.s0 - 24), (oc.s1 + 24) - s) / 24
+            const ww = smooth01(e)
+            if (ww > w) { w = ww; side = oc.side }
+        }
+    }
+    return { side, w }
 }
 
 // Rollers and moguls down the face (never the centerline heights — segs stay
@@ -291,7 +312,7 @@ export const WALL_X = 1.75
 // pin it; art.js turns entries into real models (primitive fallback included).
 const shash = (n) => { const v = Math.sin(n * 78.233) * 43758.5453; return v - Math.floor(v) }
 
-export const SHELF_PROPS = ['tree_pine', 'tree_pine_snow', 'tree_pine_tall', 'tree_oak', 'rock', 'boulder', 'fence', 'flag', 'marshal_post', 'billboard', 'grandstand']
+export const SHELF_PROPS = ['tree_pine', 'tree_pine_snow', 'tree_pine_tall', 'tree_oak', 'rock', 'rock_snow', 'rock_angular', 'boulder', 'boulder_snow', 'fence', 'flag', 'marshal_post', 'billboard', 'grandstand']
 
 export function sceneryPlan(c) {
     const out = []
@@ -317,6 +338,18 @@ export function sceneryPlan(c) {
         if (openness(c, s) > 0.75) {
             push('fence', s, -(WALL_X + 0.3), 1.3, 'along')
             push('fence', s, WALL_X + 0.3, 1.3, 'along')
+        }
+    }
+    // #844: rock faces — a run of angular outcrops and snow-topped slabs down
+    // the authored side, shoulder-high relief to match the rock-band shading
+    for (const oc of c.outcrops) {
+        let k = 0
+        for (let s = oc.s0; s <= oc.s1; s += DS * 2.5) {
+            const r = shash(oc.s0 * 0.31 + k * 3.13)
+            const id = r < 0.5 ? 'rock_angular' : r < 0.78 ? 'rock_snow' : 'boulder_snow'
+            push(id, s, oc.side * (2.6 + shash(k * 1.7 + oc.s1 * 0.13) * 1.8),
+                1.4 + shash(k * 5.9 + oc.s0 * 0.07) * 1.2, 'rand')
+            k++
         }
     }
     // scatter the face: pines and oaks on the shoulders, rocks on the snow

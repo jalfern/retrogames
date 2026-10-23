@@ -9,9 +9,9 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabKindFor, GRAB_NAMES, GRAB_POSES } from '../src/games/SSX/sim.js'
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
-import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS } from '../src/games/SSX/course.js'
+import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
-import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, acrossYaw, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD } from '../src/games/SSX/art.js'
+import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD } from '../src/games/SSX/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -157,17 +157,20 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('#731 scale and rotation vary across trees', varietyOk)
     ok('#731 every plan id is a real shelf prop', shelfOk)
 }
-{ // #808 facing law: every 'across' prop shows its face to the racing line
-    // from whichever side it sits on — the front (local +z rotated by the
-    // yaw art.js applies) must look at the nearest centreline point.
+{ // #808 facing law (extended #844): every side-aware prop — 'across' stands
+    // AND 'along' fence panels — shows its face to the racing line from
+    // whichever side it sits on; the front (local +z rotated by the yaw
+    // art.js applies) must look at the nearest centreline point. The old
+    // 'along' yaw (-p.th - π/2) baked in a side: right-hand fences faced
+    // outbound and every fence skewed by 2θ on curves.
     let facingOk = true, facingN = 0
     for (let c = 0; c < COURSE_COUNT; c++) {
         const co = buildCourse(c)
         for (const e of sceneryPlan(co)) {
-            if (e.orient !== 'across') continue
+            if (e.orient !== 'across' && e.orient !== 'along') continue
             facingN++
             const p = slopePos(co, e.s, e.x)
-            const yaw = acrossYaw(e, p)
+            const yaw = propYaw(e, p)
             const fx = Math.sin(yaw), fz = Math.cos(yaw)
             let bx = 0, bz = 0, bd = Infinity
             for (let s = 0; s <= (co.N - 1) * DS; s += DS / 4) {
@@ -179,8 +182,57 @@ for (let c = 0; c < COURSE_COUNT; c++) {
             if ((fx * dx + fz * dz) / (Math.hypot(dx, dz) || 1) < 0.3) facingOk = false
         }
     }
-    ok(`#808 ${facingN} across props audited (≥ 8)`, facingN >= 8)
-    ok('#808 every across-facing prop looks at the racing line', facingOk)
+    ok(`#808 ${facingN} across/along props audited (≥ 20)`, facingN >= 20)
+    ok('#808 every facing prop looks at the racing line', facingOk)
+}
+{ // #844: 'along' fence panels lie lengthwise along the piste (long axis is
+    // the model's local x) — not broadside across the fall line
+    let axisOk = true, axisN = 0
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        for (const e of sceneryPlan(co)) {
+            if (e.orient !== 'along') continue
+            axisN++
+            const p = slopePos(co, e.s, e.x)
+            const yaw = propYaw(e, p)
+            const ax = Math.cos(yaw), az = -Math.sin(yaw)
+            const { seg } = { seg: co.segs[Math.min(co.N - 1, Math.round(e.s / DS))] }
+            const d = Math.abs(ax * Math.sin(seg.th) + az * Math.cos(seg.th))
+            if (d < 0.9) axisOk = false
+        }
+    }
+    ok(`#844 ${axisN} fence panels audited (≥ 20)`, axisN >= 20)
+    ok('#844 fence panels run along the piste, not broadside', axisOk)
+}
+{ // #844 exposed rock faces: authored outcrops per course, and the plan lays
+    // a run of angular/snow-topped rock on the authored side, clear of the
+    // fence line and of the gully walls; the piste itself stays snow
+    let spanN = 0, clusterOk = true, cleanOk = true, inSpanOk = true, idsOk = true
+    const ROCK_IDS = new Set(['rock', 'rock_angular', 'rock_snow', 'boulder', 'boulder_snow'])
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        spanN += co.outcrops.length
+        if (co.outcrops.length < 1) clusterOk = false
+        for (const oc of co.outcrops) {
+            for (const gl of co.gullies) {
+                if (oc.s0 < gl.s1 + 40 && oc.s1 > gl.s0 - 40) cleanOk = false
+            }
+            const props = sceneryPlan(co).filter((e) => ROCK_IDS.has(e.id)
+                && e.s >= oc.s0 - 1 && e.s <= oc.s1 + 1 && Math.sign(e.x) === oc.side && Math.abs(e.x) > WALL_X + 0.6)
+            if (props.length < 6) clusterOk = false
+        }
+        if (!sceneryPlan(co).every((e) => SHELF_PROPS.includes(e.id))) idsOk = false
+        for (let s = 60; s < co.N * DS - 40; s += DS) {
+            for (const x of [-1.4, -0.7, 0, 0.7, 1.4]) {
+                if (surfaceInfo(co, s, x).rockT > 0.05) inSpanOk = false
+            }
+        }
+    }
+    ok('#844 every course has ≥1 authored outcrop span, ≥5 total', clusterOk && spanN >= 5)
+    ok('#844 outcrops cluster ≥6 rock props on their side', clusterOk)
+    ok('#844 outcrops avoid the gully walls', cleanOk)
+    ok('#844 outcrop ids are real shelf props', idsOk)
+    ok('#844 outcrops never touch the piste (|x|<1.5 stays snow)', inSpanOk)
 }
 { // clean landing banks the trick; a half-finished flip eats it
     const g = makeGame('race'); run(g, 181); clear(g)

@@ -368,9 +368,9 @@ spectators tagged, crowd hops at the stands, zero page errors.
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 204 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 220 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 119 checks: mountain feel (#638, #665)
-npm run ssxterraincheck                 # 50 checks: snow/rock surfaces (#669, #685)
+npm run ssxterraincheck                 # 55 checks: snow/rock surfaces (#669, #685, #844)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
                                           #   keys drive poses, race still winnable,
                                           #   #615 rider polish (grab reach, boot weld,
@@ -425,6 +425,27 @@ name, direction, pay, the half-done bail, the grab requirement and determinism.
   `__ssxTest.touchpad()` / `.wipeout()` (debris + live spray counts); gates
   in `ssxmodelcheck` (#844 section: pad mounts, three buttons, press reaches
   the key set, mid-air grab, invert roll, crash ledger, debris, blast).
+## Rock faces + honest fence facing (#844 remainder)
+
+- **Exposed rock stretches**: each spine authors `outcrops` — spans
+  (`{f0, f1, side}`, 6 total across the three mountains, none touching a
+  gully). Inside a span the authored shoulder runs out in a wide banded rock
+  face: `surfaceInfo` lifts `rawRock` to an outcrop floor and kills most of
+  the ledge `relax` (weighted by `outcropAt`, eased ±24 m), so crag bands,
+  strata slabs and the rock palette carry the whole shoulder, sparkle dies
+  with the rock, and the mirrored side keeps its open snow. `sceneryPlan`
+  parks a matching run of `rock_angular` / `rock_snow` / `boulder_snow` on
+  the same side (x 2.6–4.4, clear of the fence line). Colour + decor only:
+  `terrainY` and physics untouched (painted==ridden gates stay green).
+- **Fences face the piste**: the #808 facing law now covers `'along'` props
+  via `propYaw` — a side-aware yaw (`th + sign(x)·π/2`, the panel's local x
+  being its long axis) points every fence face at the racing line and lays
+  its length along travel. The old `-th - π/2` baked in a side: every
+  right-hand fence showed the piste its back and both rows skewed by 2θ on
+  curves. (Mutant proof, done once, by hand: propYaw back to the old 'along'
+  law → the facing + axis gates go red; restore → green. A second mutant,
+  `ocBand = 0`, turns the three outcrop-exposure gates red.)
+
 ## Honest gaps (filed as the polish pass)
 
 - CPU riders wipe out on seeded landings (#791) and now *miss* lines too

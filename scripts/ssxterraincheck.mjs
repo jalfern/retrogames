@@ -4,7 +4,7 @@
 // flat lit snow, detail UVs tile deterministically, painted==ridden untouched),
 // and the mountain is still winnable. Run: npm run ssxterraincheck
 
-import { buildCourse, terrainY, featureLift, openness, COURSE_COUNT, DS } from '../src/games/SSX/course.js'
+import { buildCourse, terrainY, featureLift, openness, outcropAt, COURSE_COUNT, DS } from '../src/games/SSX/course.js'
 import { snowColor, surfaceInfo, slopeAt, sparkleMask, buildTerrain, buildSparkles, detailTexture, sparkleTexture, GRIDS, rockStrata, cpuSprayCount, landingSound, carveVoice, rimJagPlan, SPARKLE_PULSE, GROOVE } from '../src/games/SSX/art.js'
 import { makeGame, step } from '../src/games/SSX/sim.js'
 import { decide } from '../src/games/SSX/planner.js'
@@ -308,6 +308,43 @@ for (let c = 0; c < COURSE_COUNT; c++) {
 {
     ok('carve grooves carry a packed-snow albedo lip', GROOVE.lipAlpha > 0 && GROOVE.lipAlpha < GROOVE.alpha
         && GROOVE.lipColor.length === 3 && GROOVE.lipColor !== GROOVE.color)
+}
+
+// ---- 10b. #844 outcrops: authored stretches of exposed rock face ----------
+{
+    // inside a span the authored side carries a wide banded rock face — far
+    // more rock than the mirrored ground outside the spans, which keeps its
+    // open snow shoulder; the band eases, never snaps
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        let okAll = co.outcrops.length > 0
+        for (const oc of co.outcrops) {
+            let inRock = 0, n = 0, inSum = 0, outSum = 0
+            for (let s = oc.s0 + 30; s <= oc.s1 - 30; s += DS) {
+                for (let x = 2.2; x <= 5; x += 0.7) {
+                    n++
+                    const ri = surfaceInfo(co, s, oc.side * x).rockT
+                    inSum += ri; if (ri > 0.5) inRock++
+                    outSum += surfaceInfo(co, s, -oc.side * x).rockT
+                }
+            }
+            if (n === 0 || inRock < n * 0.35 || inSum / n < outSum / n + 0.15) okAll = false
+        }
+        ok(`${co.name}: outcrops expose a rock face on their side`, okAll)
+    }
+    const co = buildCourse(0)
+    let worstStep = 0
+    for (let s = 0; s < co.N * DS; s += 1) worstStep = Math.max(worstStep, Math.abs(outcropAt(co, s + 1).w - outcropAt(co, s).w))
+    ok('outcrop weight eases along the run (no hard edges)', worstStep <= 0.2)
+    let sparkKillOk = true
+    for (const oc of co.outcrops) {
+        for (let s = oc.s0 + 30; s <= oc.s1 - 30; s += DS) {
+            for (const x of [2.6, 3.3, 4]) {
+                if (surfaceInfo(co, s, oc.side * x).rockT > 0.6 && sparkleMask(co, s, oc.side * x) > 0.02) sparkKillOk = false
+            }
+        }
+    }
+    ok('outcrop rock kills the sparkle', sparkKillOk)
 }
 
 // ---- 11. still winnable --------------------------------------------------------

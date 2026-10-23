@@ -12,7 +12,7 @@
 // (#637) with primitive fallbacks so the game never waits on the network.
 
 import * as THREE from 'three'
-import { slopePos, terrainY, featureLift, sceneryPlan, DS } from './course.js'
+import { slopePos, terrainY, featureLift, sceneryPlan, outcropAt, DS } from './course.js'
 import { GRAB_POSES } from './sim.js'
 
 // wide grid: past the piste edge the slope keeps going — shoulders, ridges —
@@ -228,12 +228,22 @@ export function surfaceInfo(c, s, x) {
     const litFace = smooth01((-gx - 0.04) / 0.28)
     const slopeRock = smooth01((grad - 0.28) / 0.3)
     const cragRaw = smooth01((above - 2.4) / 5.5) * cragBands(s, x)
-    const rawRock = Math.max(slopeRock, cragRaw)
+    let rawRock = Math.max(slopeRock, cragRaw)
     // snow settles on ledges: gentle ground inside the rock zone keeps snow
     let relax = 0.8 * smooth01((0.45 - grad) / 0.3)
     // high up (bench, ridge) the relief is rock even when locally gentle; snow
     // caps stay where the face is both low and flat
     relax *= 1 - 0.55 * smooth01((above - 2) / 6)
+    // #844: authored outcrops run the shoulder out in a banded rock face —
+    // wide slab bands (not speckle) with ledges still holding some snow, so
+    // the stretch reads as exposed stone rather than one flat tint. Colour
+    // only: terrainY and the physics are untouched.
+    const oc = outcropAt(c, s)
+    const ocBand = oc.side !== 0 && Math.sign(x) === oc.side ? oc.w * smooth01((a - 1.6) / 0.5) : 0
+    if (ocBand > 0) {
+        rawRock = Math.max(rawRock, ocBand * (0.62 + 0.38 * cragBands(s, x)))
+        relax *= 1 - 0.9 * ocBand
+    }
     // rock only exists beyond the piste proper
     let rockT = rawRock * (1 - relax) * smooth01((a - 1.5) / 0.45)
     // #665 snow caps band the jagged canyon rim: only the teeth that both
@@ -794,6 +804,14 @@ async function shelfTemplate(id, theme) {
 // every pair showed the field its back.
 export const acrossYaw = (e, p) => p.th + Math.sign(e.x) * Math.PI / 2
 
+// #844: the facing law covers the whole line-up, not just 'across'. An 'along'
+// prop (track-side fences) is a panel whose long axis is its local x: the same
+// side-aware yaw points its face at the racing line AND lays its length along
+// the travel direction. The old `-p.th` was the #547 mirror with a side baked
+// in — every right-hand fence showed the piste its back and both sides skewed
+// by 2θ on curves.
+export const propYaw = (e, p) => e.orient === 'rand' ? e.rot : acrossYaw(e, p)
+
 export async function attachShelf(course, group, alive = () => true) {
     const plan = sceneryPlan(course)
     const ids = [...new Set(plan.map((p) => p.id))]
@@ -830,7 +848,7 @@ export async function attachShelf(course, group, alive = () => true) {
         const p = slopePos(course, e.s, e.x)
         m.position.set(p.x, p.y - 0.05, p.z)
         m.scale.setScalar(e.scale)
-        m.rotation.y = e.orient === 'along' ? -p.th - Math.PI / 2 : e.orient === 'across' ? acrossYaw(e, p) : e.rot
+        m.rotation.y = propYaw(e, p)
         if (e.id === 'flag') {
             anim.flags.push({
                 m, s: e.s, phase: hash(e.s * 0.31 + e.x * 7.7) * Math.PI * 2,
