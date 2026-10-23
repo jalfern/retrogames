@@ -17,6 +17,12 @@ while incoming rows are queued COUNTERS them. First to 2 rounds wins.
   both online boxes generate identical garbage. Counter: any clear in a cascade
   while `pending > 0` nullifies `pending`; your attack still goes. A blocked
   spawn, or a garbage shove the live pair cannot escape, tops the well out.
+  Next-pair preview (#863): each well draws its pair from a `next` pair drawn
+  one pair ahead — `spawnPair` consumes `next` and re-draws it, so the preview
+  on screen IS what spawns; `next` rides in `stateHash` (a divergent preview is
+  a desync). Collapse/garbage lifts record `w.slide` `{r,c,dy}` entries (the
+  orb at (r,c) came from row r+dy) for the renderer's fall animation; slide is
+  derived state and deliberately NOT hashed.
 - `planner.js` — the CPU. Seeded from the match seed (never `Math.random`), so
   its pad stream is reproducible on every box and recordable/replayable like a
   human's. It pops when it can, sets up three-in-a-rows, keeps the stack flat
@@ -34,6 +40,14 @@ while incoming rows are queued COUNTERS them. First to 2 rounds wins.
   phone-playable), local 2P (`2` on the title), online via `?net=host` /
   `?net=join&room=CODE` (`?relay=wss://...` to point elsewhere), pause `?`,
   VirtualControls (A=rotate, B=DROP), chain/garbage HUD, shake + flashes.
+  Chain theater (#863): pop cells emit expanding white sparks and the chain
+  digit scales down 5→4 as it lands; the collapse beat draws each moved orb in
+  its NEW cell while a fading ghost slides off the old one — never offset the
+  orb itself (blobdrill samples cell centers; an offset sprite reads as a
+  dark cell and fails pixels==board). Incoming garbage hovers as ghost slabs
+  (holes punched, bobbing, flickering) above the lip and slams home as the
+  warning beat ends. Chain pops walk a major arpeggio up per step
+  (`CHAIN_SCALE`); round win is a two-note call, match win a four-note fanfare.
 
 ## Controls
 
@@ -43,9 +57,12 @@ P2 (local 2P): A/D slide · S soft · W rotate · F hard drop.
 ## Verify
 
 ```
-npm run blobcheck    # Node gate (static tier): 31 assertions — boot, group/chain
+npm run blobcheck    # Node gate (static tier): 38 assertions — boot, group/chain
                      # rules, counters, garbage landing, rounds, determinism
-                     # (seed+pads replay hash-equal), a full ONLINE pair over an
+                     # (seed+pads replay hash-equal), the #863 theater block
+                     # (next-pair preview legality, draw-at-lock swap, per-seed
+                     # determinism of the preview stream, collapse slide math),
+                     # a full ONLINE pair over an
                      # in-memory pipe (pad delay, hash checkpoints, zero desyncs),
                      # CPU competence. Can fail: mutant pop-threshold 4->5 reddens
                      # it (verified by hand).

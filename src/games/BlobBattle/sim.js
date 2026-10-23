@@ -57,6 +57,8 @@ function makeWell() {
     return {
         board: new Uint8Array(ROWS * COLS),
         cur: null,            // { x, y, rot, c1, c2 }
+        next: null,           // previewed pair [c1, c2], drawn one pair ahead
+        slide: [],           // { r, c, dy }: orb at (r,c) came from r+dy; renderer animates it back during the collapse beat
         phase: 'fall',        // fall | pop | drop | land | over
         phaseT: 0,
         popping: null,        // [r,c] cells mid-pop
@@ -88,7 +90,7 @@ export function newGame(seed = 1, players = 1) {
         events: [],
     }
     s.rng = mulberry32(s.seed)
-    for (const w of s.wells) { w._rng = s.rng; spawnPair(w, 0, s.events) }
+    for (const w of s.wells) { w._rng = s.rng; w.next = drawPair(s.rng); spawnPair(w, 0, s.events) }
     return s
 }
 
@@ -108,9 +110,11 @@ export function fits(w, x, y, rot) {
 }
 
 function spawnPair(w, seat, ev) {
-    const [c1, c2] = drawPair(w._rng)
+    const [c1, c2] = w.next || drawPair(w._rng)
+    w.next = drawPair(w._rng)
     w.cur = { x: 2, y: 0, rot: 0, c1, c2 }
     w.g = 0; w.softF = 0; w.dasF = 0; w.dasDir = 0; w.prevDrop = false
+    w.slide = []
     w.phase = 'fall'
     if (!fits(w, w.cur.x, w.cur.y, w.cur.rot)) {
         w.over = true
@@ -165,12 +169,13 @@ export function findGroups(board) {
 }
 
 export function dropOrbs(w) {
+    w.slide = []
     for (let c = 0; c < COLS; c++) {
         let write = ROWS - 1
         for (let r = ROWS - 1; r >= 0; r--) {
             const v = w.board[idx(r, c)]
             if (v) {
-                if (write !== r) { w.board[idx(write, c)] = v; w.board[idx(r, c)] = 0 }
+                if (write !== r) { w.board[idx(write, c)] = v; w.board[idx(r, c)] = 0; w.slide.push({ r: write, c, dy: r - write }) }
                 write--
             }
         }
@@ -244,6 +249,10 @@ function applyGarbage(w, seat, ev) {
     }
     for (let r = ROWS - shift; r < ROWS; r++) for (let c = 0; c < COLS; c++) w.board[idx(r, c)] = GARBAGE
     for (let i = 0; i < shift; i++) w.board[idx(ROWS - 1 - i, w.holes[i] || 0)] = 0
+    w.slide = []
+    for (let r = ROWS - 1 - shift; r >= 0; r--) {
+        for (let c = 0; c < COLS; c++) if (w.board[idx(r, c)]) w.slide.push({ r, c, dy: shift })
+    }
     ev.push({ t: 'garbage', seat, rows: shift })
     w.pending = 0
     w.holes = []
@@ -381,6 +390,7 @@ export function stateHash(s) {
     for (const w of s.wells) {
         for (let i = 0; i < w.board.length; i++) mix(w.board[i])
         if (w.cur) { mix(w.cur.x + 8); mix(w.cur.y + 8); mix(w.cur.rot); mix(w.cur.c1); mix(w.cur.c2) }
+        mix(w.next ? w.next[0] + 8 : 0); mix(w.next ? w.next[1] + 8 : 0)
         mix(w.chain); mix(w.pending); mix(w.phase.length); mix(w.rounds)
         mix(w.score & 0xFF); mix(w.score >>> 8); mix(w.score >>> 16)
         mix(w.over ? 1 : 0)
