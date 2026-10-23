@@ -29,7 +29,13 @@ export const POP_FRAMES = 24  // pop animation window; the well freezes mid-pop
 export const DROP_BEAT = 6    // collapse beat before the next pair spawns
 export const LAND_FRAMES = 30 // warning beat before queued rows slam in
 
-export const DAS_DELAY = 12
+// DAS: the repeat-on-hold the slide uses. The delay was 12 (keyboard-tight,
+// #840) — a thumb holding the dpad waited 200 ms before the pair slid again,
+// sluggish in a fast-falling battler. #863 tunes it for thumbs: 8 frames (~133 ms)
+// to first repeat, same 4-frame repeat. Global on purpose: the sim is the one
+// deterministic DAS both online boxes apply to the same held pad stream, so the
+// values must be identical on both or the pair desyncs.
+export const DAS_DELAY = 8
 export const DAS_REPEAT = 4
 export const SOFT_FRAMES = 2
 

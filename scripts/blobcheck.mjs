@@ -197,6 +197,35 @@ console.log('theater (#863) — next-pair preview and collapse slide')
     ok(w.slide.length === 0, 'slide data clears when the next pair spawns')
 }
 
+console.log('DAS (#863) — repeat-on-hold tuned for thumbs')
+{
+    // The slide's repeat-on-hold, tick-for-tick. A tap is the press step (one
+    // cell); holding then auto-repeats after the tuned delay. The timing IS the
+    // gate: a keyboard-tight DAS_DELAY of 12 lands the first repeat on frame 13
+    // (a thumb waits 200 ms, sluggish in a fast-falling battler) and reddens the
+    // frame-9 assertion; the tuned 8 lands it on frame 9. Kept global on purpose
+    // — it is the one DAS both online boxes apply to the same held pad stream.
+    const s = newGame(41, 1)
+    const w = s.wells[0]
+    w.board.fill(0)
+    w.cur = { x: COLS - 2, y: 0, rot: 0, c1: 1, c2: 2 }
+    w.dasDir = 0; w.dasF = 0
+    step(s, [{ left: true }, {}])
+    ok(w.cur.x === COLS - 3, 'a tap slides the pair exactly one cell (the press step)')
+
+    w.cur.x = COLS - 2; w.dasDir = 0; w.dasF = 0
+    const moves = []
+    let prev = COLS - 2
+    for (let f = 1; f <= 24; f++) {
+        step(s, [{ left: true }, {}])
+        if (w.cur.x !== prev) { moves.push(f); prev = w.cur.x }
+    }
+    ok(moves[0] === 1, 'the press step moves on frame 1')
+    ok(moves[1] === 9, `the first auto-repeat is at frame 9 — the tuned 8-frame thumb delay (a keyboard-tight 12 would land at 13)`)
+    ok(moves[2] - moves[1] === 4 && moves[3] - moves[2] === 4, 'then it repeats every 4 frames')
+    ok(prev === 0 && moves.length === 4, `a held slide crosses the well (col ${COLS - 2} -> 0) in ${moves.length} moves by frame ${moves[moves.length - 1]}`)
+}
+
 console.log('online — two boxes over an in-memory pipe')
 {
     function box(seat) {
