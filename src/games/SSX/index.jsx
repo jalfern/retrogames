@@ -18,7 +18,7 @@ import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateH
 import { decide } from './planner.js'
 import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
 import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
-import { slopePos, terrainY, DS, COURSE_COUNT } from './course.js'
+import { slopePos, terrainY, DS, HEATS } from './course.js'
 import { padState } from '../../utils/padState'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype } from './art.js'
 
@@ -427,7 +427,7 @@ const SSXGame = () => {
 
         const recomputeStandings = () => {
             if (net.seats.length < 1) return
-            const st = computeStandings(net.seats, net.fin, COURSE_COUNT)
+            const st = computeStandings(net.seats, net.fin, HEATS)
             net.standings = st.totals
             net.standingsDone = st.done
             if (st.done) setPodium({ podium: st.podium, totals: st.totals, names: net.seats.map(nameFor) })

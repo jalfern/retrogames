@@ -11,6 +11,7 @@ import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabK
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
 import { buildCourse, terrainY, slopePos, COURSE_COUNT, HEATS, tournament, gapAt, expressAt, GAP_X, EXPRESS, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
+import { computeStandings } from '../src/games/SSX/net.js'
 import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD } from '../src/games/SSX/art.js'
 
 let pass = 0, fail = 0
@@ -91,6 +92,15 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     let highN = 0
     for (let c = 0; c < COURSE_COUNT; c++) highN += buildCourse(c).rails.filter((r) => r.high).length
     ok('#889 the high line exists on every rail course (BIG AIR BASIN is pipes-only by character)', highN === COURSE_COUNT - 1)
+}
+{ // #889 regression: the ONLINE tournament spans HEATS, not the course catalog —
+    // the cabinet scores heat idx 0..HEATS-1, so the standings reducer must say
+    // done there (with 6 courses in the catalog, COURSE_COUNT meant never).
+    const seats = [0, 1]
+    const fin = { 0: [40, 41, 42], 1: [43, 44, 45] }
+    const st = computeStandings(seats, fin, HEATS)
+    ok('#889 online standings close after HEATS heats', st.done && st.podium[0] === 0)
+    ok('#889 a 6-slot heats table is NOT done at HEATS=3 (the bug shape)', computeStandings(seats, { 0: [1, 1, 1, 1, null, null], 1: [2, 2, 2, 2, null, null] }, 6).done === false)
 }
 
 // ---- 3. rule pins -----------------------------------------------------------
