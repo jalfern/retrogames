@@ -120,6 +120,16 @@ export function makeTextures() {
         speckle(g, 16, 16, '#7a7688', 30, 24)
         return c
     })()
+    T.bush = (() => {
+        const [c, g] = mk(14, 10)
+        g.clearRect(0, 0, 14, 10)
+        g.fillStyle = '#245c28'; g.beginPath(); g.arc(9, 6, 4.5, 0, 7); g.fill()
+        g.fillStyle = '#2f7433'; g.beginPath(); g.arc(4, 6, 4, 0, 7); g.fill()
+        g.fillStyle = '#3d8a3c'; g.beginPath(); g.arc(6, 4, 3, 0, 7); g.fill()
+        g.fillStyle = '#6fae4e'; g.fillRect(5, 2, 1, 1); g.fillRect(9, 3, 1, 1)
+        g.fillStyle = '#1c4620'; g.fillRect(3, 8, 8, 1)
+        return c
+    })()
     T.tree = (() => {
         const [c, g] = mk(24, 30)
         g.clearRect(0, 0, 24, 30)

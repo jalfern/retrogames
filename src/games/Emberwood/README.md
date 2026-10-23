@@ -84,6 +84,18 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   asserts it spawns facing-correct, outlives the blade, clears, tracks facing, is
   seed-deterministic, and that a bomb blast never fakes one.
 
+- **Living foliage (#789)**: one deterministic wind field (`render.js WIND`)
+  sways tree canopies (slow + wide, ceil 0.05 rad), rustles bushes (fast +
+  tight, ceil 0.09 rad plus lateral jitter) and shivers tall grass (per-tile
+  texture-offset clone, `MirroredRepeatWrapping`, ceil 0.06 uv). Bushes are
+  derived from the tile legend only ('.' floor, orthogonally touching 'T',
+  `(x*7+y*13)%3`, never on entity/spawn/border tiles) — the sim, solver and
+  attract bot never see them, so gameplay determinism is untouched. Cut
+  tall-grass tiles swap to plain grass and stop rustling. `emberwoodcheck`
+  pins the curves (bounded, gusting, spatially phased, deterministic) and the
+  live motion via `__emberwoodTest.foliage()`; the deep screens have no
+  trees, so no brush blows underground.
+
 - **Composite encodes sRGB (#773)**: the scene RT samples back linear (sRGB
   RT + hardware decode), the canvas blit is raw, so `compMat` must run
   `lin2srgb` before output or the whole diorama ships near-black (measured:
