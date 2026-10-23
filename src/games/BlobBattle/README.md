@@ -23,11 +23,14 @@ while incoming rows are queued COUNTERS them. First to 2 rounds wins.
   a desync). Collapse/garbage lifts record `w.slide` `{r,c,dy}` entries (the
   orb at (r,c) came from row r+dy) for the renderer's fall animation; slide is
   derived state and deliberately NOT hashed.
-- `planner.js` — the CPU. Seeded from the match seed (never `Math.random`), so
-  its pad stream is reproducible on every box and recordable/replayable like a
-  human's. It pops when it can, sets up three-in-a-rows, keeps the stack flat
-  and hole-free, and jitters its drop timing so it reads as a person, not a
-  metronome.
+- `planner.js` — the CPU, on a three-rung arcade ladder (#863 `TIERS`). Each
+  rung plans at a different chain depth (`easy` 2, `normal` 4, `hard` 8), rolls
+  a seeded "miss" (the beginner lets a chain walk away and drops a flat safe
+  placement instead) and drops at its own jitter pace — all from the match
+  seed, so a given tier is reproducible on every box and recordable/replayable
+  like a human's. `normal` is the pre-#863 CPU. In a solo match the player picks
+  the opponent's rung from the title: `1` easy, `3` hard, any other key / tap =
+  normal (phone default).
 - `net.js` — online semantics on the reusable room layer (`src/utils/room.js`,
   #845) + lockstep (`src/utils/lockstep.js`, #531). Well index == seat index
   canonically; pads ride `{t:'pad',s,k,p}` (a=rotate, s=hard drop);
@@ -58,23 +61,30 @@ while incoming rows are queued COUNTERS them. First to 2 rounds wins.
 
 P1/arrows: ← → slide · ↓ soft drop · ↑/X/SPACE/A rotate · B/C hard drop.
 P2 (local 2P): A/D slide · S soft · W rotate · F hard drop.
+CPU tier (solo, from the title, desktop keyboard): `1` easy · `3` hard ·
+any other key normal.
 
 ## Verify
 
 ```
-npm run blobcheck    # Node gate (static tier): 43 assertions — boot, group/chain
-                     # rules, counters, garbage landing, rounds, determinism
-                     # (seed+pads replay hash-equal), the #863 theater block
-                     # (next-pair preview legality, draw-at-lock swap, per-seed
-                     # determinism of the preview stream, collapse slide math),
-                     # a full ONLINE pair over an
-                     # in-memory pipe (pad delay, hash checkpoints, zero desyncs),
-                     # and the #863 RE-JOIN block (a diverged box is caught at the
-                     # hash checkpoint, then a fresh-seed restart with a reset
-                     # lockstep + emptied pad mirrors resyncs the pair and holds),
-                     # CPU competence. Can fail: mutant pop-threshold 4->5 reddens
-                     # it (verified by hand); mutant dropping the re-join lockstep
-                     # reset stalls the pair at the first checkpoint (verified).
+npm run blobcheck    # Node gate (static tier): 49 assertions — boot, group/chain
+                      # rules, counters, garbage landing, rounds, determinism
+                      # (seed+pads replay hash-equal), the #863 theater block
+                      # (next-pair preview legality, draw-at-lock swap, per-seed
+                      # determinism of the preview stream, collapse slide math),
+                      # a full ONLINE pair over an
+                      # in-memory pipe (pad delay, hash checkpoints, zero desyncs),
+                      # the #863 RE-JOIN block (a diverged box is caught at the
+                      # hash checkpoint, then a fresh-seed restart with a reset
+                      # lockstep + emptied pad mirrors resyncs the pair and holds),
+                      # CPU competence, and the #863 CPU tiers block (per-tier
+                      # determinism, ladder rungs differ, expert out-chains
+                      # beginner, expert drops faster). Can fail: mutant
+                      # pop-threshold 4->5 reddens it (verified by hand); mutant
+                      # dropping the re-join lockstep reset stalls the pair at the
+                      # first checkpoint (verified); mutant collapsing all three
+                      # tiers to `normal` (depth 4 / no miss / raw jitter) reddens
+                      # the rungs-differ and drops-faster assertions (verified).
 npm run blobdrill    # advisory Chrome drill: real keys/taps, attract, rotate,
                      # slide, hard drop, drawn-pixels==board, defeat, rematch,
                      # pause, phone tap, zero page errors.
@@ -84,6 +94,7 @@ npm run blobdrill    # advisory Chrome drill: real keys/taps, attract, rotate,
 
 - The relay worker's 4-seat roster is not required here (cap=2), but real
   internet play still depends on the worker redeploy noted in #825/STATE.
-- CPU personality is one tier; a harder "chain-hungry" tier is polish, not rules.
+- CPU tier selection is desktop-keyboard (`1`/`3` from the title); the phone
+  default (tap) is `normal`. A thumb-reachable tier picker would be polish.
 - `snapshot`/`restore` intentionally omitted from the game contract: the sim's
   wells hold a live RNG closure that JSON cannot copy (#391 precedent).

@@ -319,5 +319,49 @@ console.log('planner competence — the autopilot chains')
     ok(p === null || Number.isFinite(p.score), 'choosePlacement answers a scored plan')
 }
 
+console.log('CPU tiers (#863) — the arcade ladder')
+{
+    // determinism per rung: same seed + same tier => identical hash stream
+    const stream = (seed, tier, ticks) => {
+        const s = newGame(seed, 2)
+        const c0 = makeCpu(seed ^ 0x1, tier), c1 = makeCpu(seed ^ 0x2, tier)
+        const h = []
+        for (let t = 0; t < ticks && !s.over; t++) { step(s, [c0(s.wells[0]), c1(s.wells[1])]); h.push(stateHash(s)) }
+        return h
+    }
+    for (const tier of ['easy', 'normal', 'hard']) {
+        const a = stream(0xc0de, tier, 1500), b = stream(0xc0de, tier, 1500)
+        ok(a.every((x, i) => x === b[i]), `${tier} tier is deterministic per seed (${a.length} ticks)`)
+    }
+    const hh = stream(0xc0de, 'hard', 1500), ee = stream(0xc0de, 'easy', 1500)
+    ok(hh.some((x, i) => x !== ee[i]) || hh.length !== ee.length, 'the ladder rungs differ (expert stream != beginner stream)')
+
+    // the expert plans deeper chains and out-chains the beginner (aggregate over
+    // fixed seeds — a beginner that stops missing or an expert that stops planning
+    // deeper reddens this)
+    const SEEDS = [0xbeef, 0xabcd, 0x1357, 0x2468, 0xdead]
+    let csH = 0, csE = 0
+    for (const sd of SEEDS) {
+        const s = newGame(sd, 2)
+        const c0 = makeCpu(sd ^ 0x1, 'hard'), c1 = makeCpu(sd ^ 0x2, 'easy')
+        for (let t = 0; t < 6000 && !s.over; t++) {
+            step(s, [c0(s.wells[0]), c1(s.wells[1])])
+            while (s.events.length) { const e = s.events.shift(); if (e.t === 'pop') { if (e.seat === 0) csH += e.chain; else csE += e.chain } }
+        }
+    }
+    ok(csH > csE, `the expert out-chains the beginner (${csH} vs ${csE} chain steps)`)
+
+    // the beginner is sluggish: vs an idle seat, over a fixed window it locks
+    // fewer pairs than the expert (its drops carry more human jitter)
+    const lockCount = (seed, tier, ticks) => {
+        const s = newGame(seed, 2); const c = makeCpu(seed ^ 0x7, tier); let locks = 0
+        for (let t = 0; t < ticks; t++) { step(s, [c(s.wells[0]), {}]); while (s.events.length) { const e = s.events.shift(); if (e.t === 'lock' && e.seat === 0) locks++ } }
+        return locks
+    }
+    let hardL = 0, easyL = 0
+    for (const sd of SEEDS) { hardL += lockCount(sd, 'hard', 900); easyL += lockCount(sd, 'easy', 900) }
+    ok(hardL > easyL, `the expert drops faster (${hardL} vs ${easyL} locks vs an idle seat)`)
+}
+
 console.log(`\nblobcheck: ${pass} pass, ${fail} fail`)
 process.exit(fail ? 1 : 0)
