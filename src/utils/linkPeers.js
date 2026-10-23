@@ -7,6 +7,17 @@
 
 export const RELAY_DEFAULT = 'wss://retrogames.jalfern.workers.dev'
 
+// room.js transport over a plain WebSocket (both halves, same contract).
+export function makeTransport(url) {
+    const ws = new WebSocket(url)
+    return {
+        send: (s) => ws.send(s),
+        onMessage: (cb) => { ws.onmessage = (e) => cb(e.data) },
+        onClose: (cb) => { ws.onclose = cb },
+        close: () => { try { ws.close() } catch { /* gone */ } },
+    }
+}
+
 export function makeHostPeer() {
     const pc = new RTCPeerConnection({ iceServers: [] })
     let chan = null
