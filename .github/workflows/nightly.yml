@@ -77,6 +77,13 @@ jobs:
     # for. Advisory: continue-on-error so a perf blip never freezes merges.
     continue-on-error: true
     runs-on: macos-14
+    env:
+      # A GitHub-hosted runner is a dedicated box: no local LLM inference and no
+      # foreign headless Chrome (the two things quietscan actually screens for).
+      # Its loadavg just after checkout/npm-ci reflects Spotlight indexing of the
+      # fresh clone + the build, not GPU contention, so the loadavg heuristic lies
+      # here — this is the documented "dedicated runners" case for the escape hatch.
+      SHOREPERF_ASSUME_QUIET: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
