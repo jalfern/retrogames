@@ -66,8 +66,11 @@ jobs:
         run: cat /tmp/vite.log
 
   shoreperf:
-    # #680: quiet-box qhd numbers land nightly on a dedicated runner. The dev
-    # boxes all run local LLM inference, so shoreperf's guard always says
+    # #680: quiet-box desktop/qhd/phone numbers land nightly on a dedicated
+    # runner — all three profiles shoreperf ships, not just qhd, so bullet 1's
+    # "desktop/qhd/phone averages vs origin/main" has a quiet home and the trend
+    # covers the 60fps-target retina desktop window too, not only the qhd cap.
+    # The dev boxes all run local LLM inference, so shoreperf's guard always says
     # CONTENDED there and the absolute fps is context, never verdict. The runner
     # must have a real GPU: qhd is 3200x2000 and the Linux CI SwiftShader path
     # boots WebGPU but cannot drive a single counted frame through the sim in the
@@ -94,16 +97,16 @@ jobs:
       - name: Install headless Chromium (Linux only)
         if: runner.os != 'macOS'
         run: npx playwright-core install --with-deps chromium
-      - name: shoreperf qhd
+      - name: shoreperf desktop/qhd/phone
         run: |
           set -o pipefail
-          node scripts/shoreperf.mjs --profile qhd --secs 6 2>&1 | tee /tmp/shoreperf-qhd.log
-          { echo "## shoreperf qhd (#680)"; echo '```'; cat /tmp/shoreperf-qhd.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          node scripts/shoreperf.mjs --profile desktop,qhd,phone --secs 6 2>&1 | tee /tmp/shoreperf.log
+          { echo "## shoreperf desktop/qhd/phone (#680)"; echo '```'; cat /tmp/shoreperf.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: shoreperf-qhd
-          path: /tmp/shoreperf-qhd.log
+          name: shoreperf
+          path: /tmp/shoreperf.log
 
   report:
     needs: [full-static, full-smoke]
