@@ -134,14 +134,58 @@ export const NODES = {
   },
   mechanical: {
     pos: [0, 1.7, -14], yaw: 0, sky: 'mechanical', amb: 'gears',
-    caption: 'MECHANICAL — a world of brass, steam and turning cogs',
-    expect: ['switchPanel'],
+    caption: 'MECHANICAL — the book rests on its pedestal; the tower looms to the north',
+    expect: ['mechBookStand'],
     spots: [
       { id: 'retMechanical', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'library' },
-      { id: 'switchPanel', label: 'a panel of iron switches', yaw: 0, w: 40, h: 30, act: 'switchPanel' },
-      { id: 'matchbook', label: 'a matchbook on a bracket', yaw: -50, w: 22, h: 22, act: 'takeMatch', gone: 'matchbook' },
-      { id: 'pageMechanicalRed', label: 'a red page under a gear', yaw: 60, w: 24, h: 24, act: 'takePage', page: 'red:mechanical', gone: 'pageRed_mechanical', need: 'switchPanel', needMsg: 'A heavy gear seals the alcove. The switches govern which gears turn.' },
+      { id: 'matchbook', label: 'a matchbook on the pedestal rail', yaw: -50, w: 22, h: 22, act: 'takeMatch', gone: 'matchbook' },
       { id: 'pageMechanicalBlue', label: 'a blue page by the steam vent', yaw: -70, w: 24, h: 24, act: 'takePage', page: 'blue:mechanical', gone: 'pageBlue_mechanical' },
+      { id: 'toTowerWalk', label: 'the path around the tower base', yaw: 55, w: 70, h: 40, to: 'mechWalk' },
+    ],
+  },
+  mechWalk: {
+    pos: [3.2, 1.7, -8.5], yaw: 25, sky: 'mechanical', amb: 'gears',
+    caption: 'The tower base — gears the size of houses, and a cage hanging high on its rails',
+    expect: ['mechCallLever'],
+    spots: [
+      { id: 'backLand', label: 'back to the landing', yaw: -140, w: 70, h: 40, to: 'mechanical' },
+      { id: 'switchPanel', label: 'a panel of iron switches', yaw: -35, w: 34, h: 30, act: 'switchPanel' },
+      { id: 'mechCall', label: 'the cage call lever', yaw: 20, w: 26, h: 34, act: 'mechCall' },
+      { id: 'boardCar', label: 'step into the cage', yaw: 20, w: 22, h: 30, to: 'mechCar', need: 'mechCarDown', needMsg: 'The cage hangs twenty metres up its rails. The call lever is bolted to the wall beside it.' },
+    ],
+  },
+  mechCar: {
+    pos: [0, 1.7, -6.4], yaw: 0, sky: 'mechanical', amb: 'gears',
+    caption: 'Inside the bronze cage — the deck grates over the drop',
+    expect: ['mechCageGrate'],
+    spots: [
+      { id: 'cageRaise', label: 'pull the cage up', yaw: 0, w: 26, h: 34, act: 'cageRaise' },
+      { id: 'cageDescend', label: 'send the cage down', yaw: 0, w: 26, h: 20, act: 'cageDescend' },
+      { id: 'cageOut', label: 'step out', yaw: 180, w: 40, h: 30, act: 'cageOut' },
+    ],
+  },
+  mechTop: {
+    pos: [0, 1.7, -6.0], yaw: 0, sky: 'mechanical', amb: 'gears',
+    caption: 'The gantry at the top of the tower — the control-room door, and a page glinting under a gear',
+    expect: ['mechDoorSteel'],
+    spots: [
+      { id: 'mechSendDown', label: 'the cage send-down lever', yaw: -55, w: 26, h: 30, act: 'mechSendDown' },
+      { id: 'mechDoorBtn', label: 'the door release button', yaw: 12, w: 20, h: 22, act: 'mechDoorBtn' },
+      { id: 'enterRoom', label: 'through the open door', yaw: 12, w: 24, h: 34, to: 'mechRoom', need: 'mechDoorOpen', needMsg: 'The steel door is shut. Its release jams — something heavy is in the way.' },
+      { id: 'cageBoardTop', label: 'step back into the cage', yaw: -30, w: 22, h: 30, act: 'cageBoardTop' },
+      { id: 'pageMechanicalRed', label: 'a red page under a great gear', yaw: 75, w: 24, h: 24, act: 'takePage', page: 'red:mechanical', gone: 'pageRed_mechanical', need: 'switchPanel', needMsg: 'A heavy gear seals the alcove. The switches govern which gears turn.' },
+    ],
+  },
+  mechRoom: {
+    pos: [0, 1.7, 1.2], yaw: 180, sky: 'mechanical', amb: 'sphere',
+    caption: 'The control room — two floor plates, a latch lever, and the SPECTATOR',
+    expect: ['mechSpectator'],
+    spots: [
+      { id: 'exitRoom', label: 'back out to the gantry', yaw: 0, w: 50, h: 36, to: 'mechTop', need: 'mechDoorOpen', needMsg: 'The door has shut behind you. The plates govern it now.' },
+      { id: 'stepPlateD', label: 'the plate beside the door', yaw: -35, w: 24, h: 16, act: 'stepPlateD' },
+      { id: 'stepPlateE', label: 'the plate by the cage shaft', yaw: 35, w: 24, h: 16, act: 'stepPlateE' },
+      { id: 'mechLatch', label: 'the latch lever between the plates', yaw: 0, w: 22, h: 24, act: 'mechLatch' },
+      { id: 'spectator', label: 'the great glass sphere', yaw: 180, w: 34, h: 30, act: 'spectator' },
     ],
   },
   channelwood: {
