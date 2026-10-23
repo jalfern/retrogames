@@ -382,6 +382,25 @@ function arcScript(seed) {
     ok(t.st === 0 && t.charging === 0 && t.rest >= 0, 'tuskroot rests after the run — the punish window')
 }
 {
+    // #888 wyrm spine: the tail billboards ride this chain — prove the data is
+    // a dense, continuous, moving trail before proving the renderer uses it.
+    const s = createSim(11)
+    spawnRoom(s, 'd2-f4', [7, 8])
+    const w = s.enemies.find(e => e.type === 'wyrm')
+    ok(!!w, 'the Cinder Wyrm lives in d2-f4')
+    for (let i = 0; i < 240; i++) stepSim(s, inp({}))
+    ok(w.seg.length >= 60, `wyrm spine records its full trail (${w.seg.length}/60 points)`)
+    let gaps = 0, dup = 0, mx = 0
+    for (let i = 1; i < w.seg.length; i++) {
+        const d = Math.hypot(w.seg[i].x - w.seg[i - 1].x, w.seg[i].y - w.seg[i - 1].y)
+        if (d > 3.5) gaps++
+        if (d < 1e-6) dup++
+        mx = Math.max(mx, d)
+    }
+    ok(gaps === 0, `spine is one-frame-dense, no teleport gaps to shred the tail (max jump ${mx.toFixed(2)}px)`)
+    ok(dup < w.seg.length / 2, `the spine tracks real motion (${dup}/${w.seg.length} stationary samples)`)
+}
+{
     // cinder pod: bursts into two sparks
     const s = createSim(7)
     spawnRoom(s, 'd2-f1', [7, 8])
@@ -811,6 +830,26 @@ if (!SKIP_BROWSER) {
             return { ticks: s.tick }
         })
         cok(slay.ticks > 40, `the harness bot drives real ticks through the contract (${slay.ticks})`)
+
+        // #888 the Wyrm tail: dedicated shingled billboards, never the drop pool
+        const tail = await page.evaluate(async () => {
+            const T = window.__emberwoodTest
+            T.reset(11)
+            T.goto('d2-f4', 7, 8)
+            for (let i = 0; i < 12; i++) { T.step(10, {}); await new Promise(r => setTimeout(r, 50)) }
+            return T.tailStats ? T.tailStats() : null
+        })
+        cok(!!tail && tail.n >= 12, `Wyrm tail renders its own segment billboards (${tail ? tail.n : 0} plates live)`)
+        cok(!!tail && tail.n >= 12 && tail.dropVis === 0, `the tail never rides the drop pool (${tail ? tail.dropVis : '-'} drop quads lit while the Wyrm drives over a drop-free floor)`)
+        {
+            const ys = (tail && tail.yaws) || []
+            const heads = new Set(ys.map(y => y.toFixed(1)))
+            cok(ys.length > 8 && ys.some(y => Math.abs(y) > 0.2) && heads.size >= 3, `segments orient along the spine tangent (${ys.length} plates, ${heads.size} distinct headings)`)
+            const zs = (tail && tail.zs) || []
+            cok(zs.length > 8 && zs.every((z, i) => i === 0 || z < zs[i - 1]), `plates shingle head→tail in depth (z ${zs[0]} → ${zs[zs.length - 1]})`)
+            const sc = (tail && tail.scales) || []
+            cok(sc.length > 8 && sc[0] > sc[sc.length - 1] + 0.15, `the tail tapers head→tip (${sc[0]} → ${sc[sc.length - 1]})`)
+        }
 
         // force death then restart with a keypress
         await page.evaluate(() => { const T = window.__emberwoodTest; T.win() }) // clears bosses flag (harmless)

@@ -388,6 +388,12 @@ void main(){
     for (let i = 0; i < 10; i++) projPool.push(mkBillboard(12, 8))
     const dropPool = []
     for (let i = 0; i < 14; i++) dropPool.push(mkBillboard(10, 10))
+    // #888 the Wyrm tail gets its own shingled segment billboards — never the
+    // drop pool. 20 plates sample the 60-point spine; each orients along the
+    // spine tangent, z-shingles head→tip, tapers, and lifts with the drive.
+    const tailPool = []
+    for (let i = 0; i < 20; i++) tailPool.push(Object.assign(mkBillboard(12, 12), { lastYaw: 0, yaw: 0, spd: 0, oriented: 0 }))
+    let tailLive = 0
     const bombPool = []
     for (let i = 0; i < 4; i++) bombPool.push(mkBillboard(10, 12))
     const blockBBs = []
@@ -590,18 +596,41 @@ void main(){
             b.shadow.scale.setScalar(e.boss ? 2 : 1)
         }
         const wyrm = sim.enemies.find(en => en.type === 'wyrm' && !en.dead)
+        tailLive = 0
+        for (let i = 0; i < tailPool.length; i++) {
+            const t = tailPool[i]
+            const si = wyrm && wyrm.seg ? i * 3 + 1 : -1
+            const p = si >= 0 && si < wyrm.seg.length ? wyrm.seg[si] : null
+            if (!p) { t.mesh.visible = false; t.shadow.visible = false; continue }
+            const pa = wyrm.seg[si - 1] || p
+            const pb = wyrm.seg[Math.min(wyrm.seg.length - 1, si + 1)] || p
+            tailLive++
+            t.mesh.visible = true
+            setTex(t, i % 2 ? 'wyrm/segB' : 'wyrm/seg')
+            // orient along the spine tangent in screen space (FX mirrors x);
+            // the plate is head-tail symmetric so the sign of the tangent is free
+            const tx = FX(pa.x) - FX(pb.x)
+            const ty = pa.y - pb.y
+            if (Math.abs(tx) + Math.abs(ty) > 0.01) { t.lastYaw = Math.atan2(ty, tx); t.oriented = 1 }
+            t.mesh.quaternion.copy(camera.quaternion)
+            t.mesh.rotateZ(t.lastYaw)
+            // drive lift: how fast this slice of the chain is moving (samples
+            // are 3 ticks apart); a diving wyrm presses the front plates down
+            // and the ripple runs back along the body
+            const spd = Math.hypot(p.x - pb.x, p.y - pb.y) / 3
+            const taper = 1 - i * 0.038
+            t.mesh.scale.set(taper * (1 + Math.min(0.16, spd * 0.16)), taper * (1 - Math.min(0.22, spd * 0.2)), 1)
+            t.mesh.position.set(FX(p.x), p.y, 7.4 - i * 0.17 + Math.min(1.1, spd * 1.3) * (1 - i / tailPool.length))
+            const wl = probeLight(p.x, p.y, dark)
+            if (wyrm.hitT > 0) t.mat.color.setRGB(1.7, 1.2, 1.2)
+            else if (wyrm.stagger > 0 && (i + Math.floor(tSec * 12)) % 3 === 0) t.mat.color.setRGB(1.5, 0.85, 0.4)
+            else t.mat.color.setRGB(wl, wl, wl)
+            t.shadow.visible = false
+            t.yaw = t.lastYaw
+            t.spd = spd
+        }
         for (let i = 0; i < dropPool.length; i++) {
             const d = dropPool[i]
-            if (wyrm && wyrm.seg && i < wyrm.seg.length && i * 3 < wyrm.seg.length) {
-                const p = wyrm.seg[i * 3 + 1]
-                if (p) {
-                    d.mesh.visible = true; setTex(d, 'wyrm/seg')
-                    d.mesh.position.set(FX(p.x), p.y, 6); d.mesh.scale.setScalar(1 - i * 0.06)
-                    const wl = probeLight(p.x, p.y, dark)
-                    d.mat.color.setRGB(wl, wl, wl); d.shadow.visible = false
-                    continue
-                }
-            }
             const dr = sim.drops[i]
             if (!dr) { d.mesh.visible = false; d.shadow.visible = false; continue }
             d.mesh.visible = true; d.shadow.visible = true
@@ -720,5 +749,16 @@ void main(){
             bushRot: bushes.slice(0, 5).map(b => b.mesh.rotation.z),
             grassOff: grassTiles.slice(0, 6).map(g => g.tex.offset.x),
         }),
+        tailStats: () => {
+            const live = tailPool.filter(t => t.mesh.visible)
+            return {
+                n: tailLive,
+                yaws: live.map(t => +t.yaw.toFixed(3)),
+                zs: live.map(t => +t.mesh.position.z.toFixed(2)),
+                scales: live.map(t => +t.mesh.scale.x.toFixed(3)),
+                oriented: live.filter(t => t.oriented).length,
+                dropVis: dropPool.filter(d => d.mesh.visible).length,
+            }
+        },
     }
 }
