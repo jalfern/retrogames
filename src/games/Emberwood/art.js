@@ -452,8 +452,25 @@ export function makeTextures() {
         seg: (() => {
             const [c, g] = mk(16, 16)
             g.clearRect(0, 0, 16, 16)
-            g.fillStyle = '#5c3122'; g.beginPath(); g.arc(8, 8, 6, 0, 7); g.fill()
-            g.fillStyle = '#7c4430'; g.beginPath(); g.arc(7, 7, 4, 0, 7); g.fill()
+            g.fillStyle = '#4a2418'; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill()
+            g.fillStyle = '#6e3a2a'; g.beginPath(); g.arc(8, 8, 6, 0, 7); g.fill()
+            g.fillStyle = '#8f4e33'; g.fillRect(7, 2, 2, 12)
+            g.fillStyle = '#5c2f1f'
+            g.fillRect(3, 5, 2, 2); g.fillRect(11, 5, 2, 2)
+            g.fillRect(3, 9, 2, 2); g.fillRect(11, 9, 2, 2)
+            g.fillStyle = '#b06a3e'; g.fillRect(7, 2, 1, 12)
+            return c
+        })(),
+        segB: (() => {
+            const [c, g] = mk(16, 16)
+            g.clearRect(0, 0, 16, 16)
+            g.fillStyle = '#4a2418'; g.beginPath(); g.arc(8, 8, 7, 0, 7); g.fill()
+            g.fillStyle = '#73402c'; g.beginPath(); g.arc(8, 8, 6, 0, 7); g.fill()
+            g.fillStyle = '#96543a'; g.fillRect(7, 3, 2, 10)
+            g.fillStyle = '#ff9a3c'; g.fillRect(7, 7, 2, 2)
+            g.fillStyle = '#5c2f1f'
+            g.fillRect(4, 4, 2, 2); g.fillRect(10, 4, 2, 2)
+            g.fillRect(4, 10, 2, 2); g.fillRect(10, 10, 2, 2)
             return c
         })(),
     }

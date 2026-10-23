@@ -280,6 +280,7 @@ export default function Emberwood() {
                 foliage: () => rend.foliage(),
                 renderInfo: () => rend.renderInfo(),
                 fxStats: () => ({ ...fxCounts }),
+                tailStats: () => rend.tailStats(),
                 win: () => { sim.flags.boss1 = true; sim.flags.boss2 = true; return true },
             }
             mountDbg({

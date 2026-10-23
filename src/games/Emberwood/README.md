@@ -31,6 +31,14 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   `up=(0,-1,0)` — north on top, but that mirrors X — so every view-space x
   passes through `FX(x) = SW*TS - x`. East then reads right, matching tile
   data (#772); sprites and the hero draw unmirrored.
+- **#888 the Cinder Wyrm's tail is a real body.** 20 dedicated billboard
+  plates sample the 60-point spine chain every 3rd point: each orients along
+  the spine tangent (screen-space, FX-mirrored), z-shingles head→tip, tapers
+  and compresses with the drive speed, alternates two ridge-plate sprites, and
+  takes the probe-light tint plus the hit-white / stagger-amber flash. The
+  tail never touches the drop pool (before this it rode `dropPool` quads flat
+  at fixed z and hid drops). `__emberwoodTest.tailStats()` reports plates,
+  yaws, z-order, taper and live drop quads for the gates.
 - `index.jsx` — the shell: fixed-timestep loop (GAME-SHELL), attract bot,
   pause, VirtualControls, HUD (hearts/embers/items/shop), audio map
   (every fx event has a synthesized sound), contract + DebugKit + `__emberwoodTest`.
@@ -160,7 +168,6 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
 
 ## Honest gaps (QA polish pass will own these)
 
-- The Wyrm tail segments ride the drop-pool quads (visible but cheap).
 - No save system; no secret second shop; the elder hints but gives nothing.
 - Portrait is 4:3, not full-bleed: a taller window would crop the 16-tile
   screen's east/west columns at viewH 210.
