@@ -206,7 +206,7 @@ await page2.keyboard.press('ArrowRight')
 await page2.waitForFunction(() => window.__ssxTest.cam().phase === 'run', null, { timeout: 10000 }).catch(() => {})
 await page2.waitForTimeout(1200)
 const trBtns = await page2.evaluate(() => Array.from(document.querySelectorAll('[data-ssx-trick]')).map((b) => b.dataset.ssxTrick))
-r.check('pad carries GRAB/FLIP/INV trick buttons', trBtns.join(',') === 'KeyX,KeyZ,KeyV', trBtns.join(','))
+r.check('pad carries GRAB/FLIP/FRNT/INV trick buttons', trBtns.join(',') === 'KeyX,KeyZ,KeyC,KeyV', trBtns.join(','))
 
 const btnBox = async (code) => page2.evaluate((c) => {
     const b = document.querySelector(`[data-ssx-trick="${c}"]`)
@@ -217,9 +217,10 @@ const btnBox = async (code) => page2.evaluate((c) => {
 
 const grabBtn = await btnBox('KeyX')
 const flipBtn = await btnBox('KeyZ')
+const frontBtn = await btnBox('KeyC')
 const invBtn = await btnBox('KeyV')
-r.check('trick buttons are on-screen', !!(grabBtn && flipBtn && invBtn),
-    JSON.stringify({ grabBtn, flipBtn, invBtn }))
+r.check('trick buttons are on-screen', !!(grabBtn && flipBtn && frontBtn && invBtn),
+    JSON.stringify({ grabBtn, flipBtn, frontBtn, invBtn }))
 
 if (grabBtn) {
     await page2.mouse.move(grabBtn.x, grabBtn.y)
@@ -236,6 +237,14 @@ if (flipBtn) {
     await page2.mouse.up()
     const rel = await page2.evaluate(() => window.__ssxTest.keys.has('KeyZ'))
     r.check('FLIP button press reaches the held-key set', held && !rel, `${held}/${rel}`)
+}
+if (frontBtn) {
+    await page2.mouse.move(frontBtn.x, frontBtn.y)
+    await page2.mouse.down()
+    const held = await page2.evaluate(() => window.__ssxTest.keys.has('KeyC'))
+    await page2.mouse.up()
+    const rel = await page2.evaluate(() => window.__ssxTest.keys.has('KeyC'))
+    r.check('FRNT (front-flip) button press reaches the held-key set', held && !rel, `${held}/${rel}`)
 }
 
 // mid-air: GRAB button latches a real grab in the sim; INV then rolls the
@@ -270,6 +279,32 @@ r.check('mid-air GRAB button banks a grab in the sim', !!(air && air.g1.air && a
     JSON.stringify(air && { air: air.g1.air, grabKind: air.g1.grabKind, grabName: air.g1.grabName }))
 r.check('INV button rolls the board (invert) after the grab', !!(air && Math.abs(air.g2.invert) > 1),
     air ? String(air.g2.invert.toFixed(1)) : 'no air')
+
+// #871: the FRNT touch button must drive a real FRONT-flip — the held-key set
+// is only half the proof; mid-air it must rotate the flip ledger NEGATIVE (the
+// sim's front direction, sim.js flip=2), where the backflip button gives positive.
+const frontFlip = async () => {
+    await page2.evaluate(() => { window.__ssxTest.keys.delete('KeyC'); window.__ssxTest.keys.delete('KeyZ') })
+    await page2.keyboard.down('Space')
+    await page2.waitForTimeout(500)
+    await page2.keyboard.up('Space')
+    if (!frontBtn) return null
+    await page2.mouse.move(frontBtn.x, frontBtn.y)
+    await page2.mouse.down()
+    await page2.waitForTimeout(120)
+    const f = await page2.evaluate(() => window.__ssxTest.probe().p)
+    await page2.mouse.up()
+    return f
+}
+let front = null
+for (let i = 0; i < 3 && !(front && front.air && front.flip < -20); i++) {
+    front = await frontFlip()
+    if (!front) break
+    await page2.waitForTimeout(250)
+}
+r.check('FRNT button mid-air banks a FRONT-flip (flip ledger goes negative)',
+    !!(front && front.air && front.flip < -20),
+    front ? `air ${front.air} flip ${front.flip.toFixed(0)}` : 'no air')
 
 // wipeout: shove the rider past the valley-wall line — the crash must throw a
 // spray blast and tear the board off (debris), not just freeze the rider.
