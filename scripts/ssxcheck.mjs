@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabKindFor, GRAB_NAMES, GRAB_POSES, flipDirFromTilt, bodyFromTilt, STICK_TILT } from '../src/games/SSX/sim.js'
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
-import { buildCourse, terrainY, slopePos, COURSE_COUNT, HEATS, tournament, gapAt, expressAt, GAP_X, EXPRESS, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt } from '../src/games/SSX/course.js'
+import { buildCourse, terrainY, slopePos, COURSE_COUNT, HEATS, tournament, rotationName, gapAt, expressAt, chuteAt, GAP_X, EXPRESS, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 import { computeStandings } from '../src/games/SSX/net.js'
 import * as THREE from 'three'
@@ -62,6 +62,33 @@ const clear = (g) => g.events.splice(0)
     ok('#889 seed 0 keeps the classic triple', JSON.stringify(tournament(0)) === '[0,1,2]')
     ok('#889 odd seeds rotate to the backcountry', JSON.stringify(tournament(1)) === '[3,4,5]' && JSON.stringify(tournament(7)) === '[3,4,5]')
     ok('#889 every seed rides three distinct mountains', [0, 1, 2, 3].every((s) => new Set(tournament(s)).size === 3))
+    // #911: the HUD ribbon names the tour — the same law the triple rotates on
+    ok('#911 ribbon names the classic side on even seeds', rotationName(0) === 'CLASSIC SIDE' && rotationName(4) === 'CLASSIC SIDE')
+    ok('#911 ribbon names the backcountry on odd seeds', rotationName(1) === 'BACKCOUNTRY' && rotationName(9) === 'BACKCOUNTRY')
+    ok('#911 rotation name and the triple agree for every seed',
+        [0, 1, 2, 3, 4, 5, 6, 7].every((s) => (tournament(s)[0] < 3) === (rotationName(s) === 'CLASSIC SIDE')))
+}
+
+// ---- #911 express chute envelope ---------------------------------------------
+{
+    let n = 0
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        for (const ch of co.chutes) {
+            const sMid = ((ch.i0 + ch.i1) / 2) * DS
+            ok(`${co.name} chute ${n}: envelope peaks at the lane centre`, chuteAt(co, sMid, ch.x) > 0.9)
+            ok(`${co.name} chute ${n}: envelope dies outside the trough`,
+                chuteAt(co, sMid, ch.x + ch.w + 0.3) === 0 && chuteAt(co, sMid, ch.x - ch.w - 0.3) === 0)
+            ok(`${co.name} chute ${n}: envelope and ridden law agree`,
+                [-1.6, -0.7, 0, 0.7, 1.6].every((dx) =>
+                    [0.02, 0.25, 0.5, 0.75, 0.98].every((f) => {
+                        const s = (ch.i0 + 0.5 + f * (ch.i1 - ch.i0 - 1)) * DS
+                        return (expressAt(co, s, ch.x + dx) > 1) === (chuteAt(co, s, ch.x + dx) > 0)
+                    })))
+            n++
+        }
+    }
+    ok('#911 every one of the six courses carries a chute', n >= 8)
 }
 
 // ---- 2. course integrity ----------------------------------------------------

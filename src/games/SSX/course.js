@@ -226,6 +226,7 @@ const SPINES = [
     {   // TIMBER LINE (#889) — the tight forest slalom: short alternating turns,
         // dense trees, gaps between the trunks and a boardwalk high line.
         name: 'TIMBER LINE', theme: 'dusk',
+        treeD: 0.52,
         chunks: [
             { n: 10, curve: 0.000, drop: 0.045 },   // ridge traverse
             { n: 14, curve: 0.000, drop: 0.115 },   // drop into the trees
@@ -329,6 +330,12 @@ export function tournament(seed) {
     return [0, 1, 2].map((h) => (base + h) % COURSE_COUNT)
 }
 
+// #911: the HUD ribbon names the tour the same way tournament() picks it —
+// even seeds the classic front face, odd seeds the backcountry side.
+export function rotationName(seed) {
+    return ((((seed | 0) % 2) + 2) % 2) ? 'BACKCOUNTRY' : 'CLASSIC SIDE'
+}
+
 const lcg = (s) => () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 }
 
 // deterministic side-placement for obstacles: pure function of index+seed
@@ -401,6 +408,7 @@ export function buildCourse(idx) {
     }))
     return {
         name: def.name, theme: def.theme, idx: ((idx % COURSE_COUNT) + COURSE_COUNT) % COURSE_COUNT,
+        treeD: def.treeD || 0.24,
         segs, N, length: N * DS, kickers, rails, pipes, obstacles, gullies, outcrops, gaps, chutes,
         rollPhase: idx * 1.7,
         finish: N - 4,
@@ -427,6 +435,23 @@ export function expressAt(c, s, x) {
         if (s > ch.i0 * DS && s < ch.i1 * DS && Math.abs(x - ch.x) < ch.w) return EXPRESS
     }
     return 1
+}
+
+// #911 express chute envelope at (s, x): 0 outside, 1 at the lane centre —
+// the exact profile featureLift's trough term rides, so the painted lane and
+// the ridden trough stay one surface.
+export function chuteAt(c, s, x) {
+    for (const ch of c.chutes) {
+        const i = s / DS
+        if (i >= ch.i0 && i <= ch.i1) {
+            const t = (i - ch.i0) / (ch.i1 - ch.i0)
+            const dx = Math.abs(x - ch.x)
+            const edge = dx < ch.w * 0.6 ? 1 : 1 - (dx - ch.w * 0.6) / (ch.w * 0.4)
+            const e = Math.sin(Math.PI * t) * Math.max(0, edge)
+            if (e > 0) return e
+        }
+    }
+    return 0
 }
 
 // feature lift at (s, x): kicker wedges ramp toward their lip, halfpipe walls
@@ -622,8 +647,8 @@ export function sceneryPlan(c) {
     for (let i = 5; i < c.N - 3; i++) {
         const s = i * DS
         const r1 = shash(i * 1.37 + 11.3)
-        if (r1 < 0.24) {
-            const side = r1 < 0.12 ? 1 : -1
+        if (r1 < c.treeD) {
+            const side = r1 < c.treeD * 0.5 ? 1 : -1
             const x = side * (2.5 + shash(i * 2.9) * 3.6)
             if (!overGap(s, x)) push(treeAt(i * 4.3), s, x, 1.35 + shash(i * 6.1) * 0.9, 'rand', 0.85 + shash(i * 5.3) * 0.3)
         }
