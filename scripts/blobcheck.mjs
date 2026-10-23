@@ -160,6 +160,43 @@ console.log('determinism — seed + pads => identical hashes')
     ok(hashes2.every((h, i) => h === a.hashes[i]), 'replaying the recorded pad stream reproduces every hash')
 }
 
+console.log('theater (#863) — next-pair preview and collapse slide')
+{
+    const s = newGame(21, 1)
+    const w = s.wells[0]
+    ok(Array.isArray(w.next) && w.next.length === 2 && w.next.every((c) => c >= 1 && c <= 4), 'the NEXT preview is drawn at game start')
+    const pre = [...w.next]
+    for (let t = 0; t < 300 && w.phase !== 'fall'; t++) step(s, [{ drop: t === 8 }])
+    ok(w.phase === 'fall' && w.cur && w.cur.c1 === pre[0] && w.cur.c2 === pre[1], 'the previewed pair is the pair that spawns')
+    ok(Array.isArray(w.next) && w.next.every((c) => c >= 1 && c <= 4), 'a fresh pair is drawn for the preview after the swap')
+    const sig = (seed) => {
+        const s2 = newGame(seed, 1)
+        const out = []
+        for (let t = 0; t < 600; t++) { step(s2, [{}]); out.push(s2.wells[0].next[0] * 8 + s2.wells[0].next[1], s2.wells[0].cur ? s2.wells[0].cur.c1 * 8 + s2.wells[0].cur.c2 : 0) }
+        return out.join(',')
+    }
+    ok(sig(555) === sig(555) && sig(555) !== sig(556), 'the preview stream is deterministic per seed')
+}
+{
+    const s = newGame(31, 1)
+    const w = s.wells[0]
+    w.board.fill(0)
+    for (let c = 0; c < 3; c++) w.board[idx(11, c)] = 1
+    w.board[idx(10, 2)] = 1
+    w.board[idx(7, 5)] = 2
+    w.cur = { x: 0, y: 0, rot: 0, c1: 1, c2: 1 }
+    for (let t = 0; t < 300; t++) {
+        step(s, [{ drop: t === 8 }])
+        while (s.events.length) s.events.shift()
+        if (w.phase === 'drop' && w.slide.length) break
+    }
+    ok(w.phase === 'drop' && w.slide.length === 1, 'the collapse records how far each orb fell')
+    const e = w.slide[0]
+    ok(e && e.c === 5 && e.r === 11 && e.dy === -4, 'the survivor at (11,5) fell exactly four rows')
+    while (w.phase !== 'fall') { step(s, [{}]); while (s.events.length) s.events.shift() }
+    ok(w.slide.length === 0, 'slide data clears when the next pair spawns')
+}
+
 console.log('online — two boxes over an in-memory pipe')
 {
     function box(seat) {

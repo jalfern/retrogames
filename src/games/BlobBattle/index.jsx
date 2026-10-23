@@ -18,7 +18,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../
 import { fitFill } from '../../utils/fitCanvas'
 import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
 import { createLockStep } from '../../utils/lockstep.js'
-import { newGame, step, pairCells, fits, ROWS, COLS, GARBAGE, FIXED_DT, POP_FRAMES, stateHash, idx } from './sim.js'
+import { newGame, step, pairCells, fits, ROWS, COLS, GARBAGE, FIXED_DT, POP_FRAMES, DROP_BEAT, LAND_FRAMES, stateHash, idx } from './sim.js'
 import { makeCpu, choosePlacement } from './planner.js'
 import { CANVAS, PALETTE, orbSprite, text, textWidth, stage, wellFrame } from './art.js'
 import { SEATS, PAD_DELAY, HASH_EVERY, randomCode, toWire, assemblePads, hostSeed } from './net.js'
@@ -37,6 +37,7 @@ const MESSAGES = [
     'FIRST TO 2 ROUNDS WINS',
 ]
 const PRESS = 'PRESS ANY KEY  ·  KEY 2 FOR LOCAL 2P'
+const CHAIN_SCALE = [0, 4, 7, 12, 16, 19, 24, 28, 31, 36]
 
 const BlobBattleGame = () => {
     const stageRef = useRef(null)
@@ -126,7 +127,11 @@ const BlobBattleGame = () => {
                 else if (e.t === 'lock') audioController.playTone(150, 0.03, 'square', 0.05)
                 else if (e.t === 'harddrop') audioController.playNoise(0.05, 0.12)
                 else if (e.t === 'pop') {
-                    audioController.playSweep(240 + e.chain * 110, 520 + e.chain * 150, 0.12, 'square', 0.09)
+                    // the original walks the pitch UP per chain step: one rising
+                    // note per rung of the ladder, not one flat sweep
+                    const semi = CHAIN_SCALE[Math.min(e.chain - 1, CHAIN_SCALE.length - 1)]
+                    const f = 240 * Math.pow(2, semi / 12)
+                    audioController.playSweep(f, f * 1.22, 0.09, 'square', 0.09)
                     chainFx[e.seat] = 40
                 } else if (e.t === 'send') {
                     audioController.playSweep(700, 240, 0.18, 'sawtooth', 0.07)
@@ -145,7 +150,7 @@ const BlobBattleGame = () => {
                     audioController.playTone(523, 0.09, 'square', 0.09)
                     setTimeout(() => audioController.playTone(784, 0.14, 'square', 0.09), 100)
                 } else if (e.t === 'match') {
-                    audioController.playSweep(300, 1200, 0.5, 'square', 0.1)
+                    [0, 4, 7, 12].forEach((semi, i) => setTimeout(() => audioController.playTone(523 * Math.pow(2, semi / 12), 0.16, 'square', 0.1), i * 110))
                 }
             }
         }
@@ -235,9 +240,13 @@ const BlobBattleGame = () => {
 
         // ------------------------------------------------------------- paint ----
         const orbs = orbSprite(CELL)
+        const orbsSmall = orbSprite(8)
 
         const paintWell = (s, w, x, seat) => {
             wellFrame(ctx, x, WELL_Y, COLS, ROWS, CELL)
+            const slide = w.phase === 'drop' && w.slide.length
+                ? new Map(w.slide.map((e) => [idx(e.r, e.c), e.dy * (w.phaseT / DROP_BEAT)]))
+                : null
             for (let r = 0; r < ROWS; r++) {
                 for (let c = 0; c < COLS; c++) {
                     const v = w.board[idx(r, c)]
@@ -247,6 +256,19 @@ const BlobBattleGame = () => {
                         const p = 1 - w.phaseT / POP_FRAMES
                         sc = 1 + Math.sin(p * Math.PI) * 0.18
                         alpha = p > 0.55 ? 1 - (p - 0.55) / 0.45 : 1
+                        ctx.strokeStyle = `rgba(255,255,255,${(0.85 * (1 - p)).toFixed(3)})`
+                        ctx.lineWidth = 2
+                        ctx.beginPath()
+                        ctx.arc(x + c * CELL + CELL / 2, WELL_Y + r * CELL + CELL / 2, CELL * 0.5 + p * CELL * 0.9, 0, Math.PI * 2)
+                        ctx.stroke()
+                        ctx.lineWidth = 1
+                    }
+                    const off = slide ? slide.get(idx(r, c)) : undefined
+                    if (off !== undefined && off !== 0) {
+                        // falling trail: the orb sits in its new cell while a ghost
+                        // slides off the old one — collapse reads as motion, pixels stay aligned
+                        ctx.globalAlpha = 0.5 * (w.phaseT / DROP_BEAT)
+                        ctx.drawImage(orbs[v], x + c * CELL, WELL_Y + (r + off) * CELL, CELL, CELL)
                     }
                     ctx.globalAlpha = Math.max(0, alpha)
                     const sz = CELL * sc
@@ -254,7 +276,24 @@ const BlobBattleGame = () => {
                     ctx.globalAlpha = 1
                 }
             }
-            if (w.pending > 0 && Math.floor(s.tick / 8) % 2 === 0) {
+            if (w.pending > 0) {
+                // ghost slabs hover at the lip and slam home as the warning beat ends
+                const n = Math.min(w.pending, ROWS)
+                const slam = w.phase === 'land' ? 1 - w.phaseT / LAND_FRAMES : 0
+                const bob = w.phase === 'land' ? 0 : Math.sin(s.tick / 5) * 1.5
+                const a = w.phase === 'land' ? 0.35 + 0.4 * slam : (Math.floor(s.tick / 8) % 2 ? 0.5 : 0.3)
+                ctx.globalAlpha = a
+                for (let rr = 0; rr < n; rr++) {
+                    const y = WELL_Y + rr * CELL - n * CELL - bob + slam * n * CELL
+                    const holeCol = w.holes[n - 1 - rr]
+                    for (let c = 0; c < COLS; c++) {
+                        if (slam > 0 && c === holeCol) continue
+                        ctx.drawImage(orbs[GARBAGE], x + c * CELL, y, CELL, CELL)
+                    }
+                }
+                ctx.globalAlpha = 1
+            }
+            if (w.pending > 0 && Math.floor(s.tick / 8) % 2 === 0 && w.phase !== 'land') {
                 text(ctx, '<' + w.pending, x + COLS * CELL + 3, WELL_Y + ROWS * CELL - 16, PALETTE.bad, 2)
             }
             if (w.cur && !w.over) {
@@ -277,11 +316,21 @@ const BlobBattleGame = () => {
             if (chainFx[seat] > 0) {
                 if (w.chain >= 2) {
                     const t = String(w.chain)
-                    const cx = x + (COLS * CELL) / 2 - textWidth(t, 4) / 2
-                    text(ctx, t, cx, WELL_Y + 60, seat === 0 ? PALETTE.gold : PALETTE.good, 4)
-                    text(ctx, 'CHAIN', cx, WELL_Y + 60 + 24, seat === 0 ? PALETTE.gold : PALETTE.good, 2)
+                    const big = chainFx[seat] > 32
+                    const sc = big ? 5 : 4
+                    const cx = x + (COLS * CELL) / 2 - textWidth(t, sc) / 2
+                    text(ctx, t, cx, WELL_Y + 60 - (big ? 4 : 0), seat === 0 ? PALETTE.gold : PALETTE.good, sc)
+                    text(ctx, 'CHAIN', x + (COLS * CELL) / 2 - textWidth('CHAIN', 2) / 2, WELL_Y + 60 + sc * 5 + 4, seat === 0 ? PALETTE.gold : PALETTE.good, 2)
                 }
                 chainFx[seat]--
+            }
+            if (w.next && !w.over) {
+                const px = seat === 0 ? x - 20 : x + COLS * CELL + 4
+                text(ctx, 'NEXT', px, WELL_Y, PALETTE.dim, 1)
+                ctx.globalAlpha = 0.9
+                ctx.drawImage(orbsSmall[w.next[0]], px, WELL_Y + 8, 8, 8)
+                ctx.drawImage(orbsSmall[w.next[1]], px + 8, WELL_Y + 8, 8, 8)
+                ctx.globalAlpha = 1
             }
         }
 
@@ -457,6 +506,7 @@ const BlobBattleGame = () => {
                         chains: [s.wells[0].chain, s.wells[1].chain],
                         pending: [s.wells[0].pending, s.wells[1].pending],
                         cur: s.wells[0].cur ? { x: s.wells[0].cur.x, y: s.wells[0].cur.y, rot: s.wells[0].cur.rot } : null,
+                        next: [s.wells[0].next, s.wells[1].next],
                         locks0: s.wells[0].locks, locks1: s.wells[1].locks,
                         hash: stateHash(s),
                     }
