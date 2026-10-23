@@ -26,6 +26,10 @@ fi
 
 cd "$REPO" || exit 1
 
+# #907 backstop: a killed session can orphan headless Chrome under launchd.
+# Sweep only Forge's own profiles (/tmp/forge/), never a normal Chrome.
+pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/" 2>/dev/null || true
+
 # halt (#605): a `halt` label on any open issue is Jon freezing the factory.
 # The warden already refuses to kick; this catches launchd's own timer and any
 # hand-start, so a frozen factory cannot start a new session by any door.

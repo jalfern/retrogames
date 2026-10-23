@@ -35,6 +35,7 @@
 // the uniform-stride check goes red (Chrome accepts it, Safari rejects it).
 
 import { spawn } from 'node:child_process'
+import { guardChrome } from './chromecleanup.mjs'
 import { inflateSync, deflateSync } from 'node:zlib'
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -185,6 +186,7 @@ async function main() {
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
     `--user-data-dir=/tmp/forge/shorecheck-profile`, 'about:blank',
   ], { stdio: 'ignore' })
+  const cleanup = guardChrome(chrome, '/tmp/forge/shorecheck-profile')
   let browser
   for (let i = 0; i < 40 && !browser; i++) {
     await new Promise(r => setTimeout(r, 500))
@@ -669,7 +671,7 @@ async function main() {
 
     ok('zero page/WGSL errors', errs.length === 0, errs.slice(0, 2).join(' | '))
   } finally {
-    chrome.kill()
+    cleanup()
   }
 
   if (asJson) console.log(JSON.stringify(results, null, 1))

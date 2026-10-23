@@ -22,6 +22,7 @@
 // and "index agrees with shore" both go red.
 
 import { spawn } from 'node:child_process'
+import { guardChrome } from './chromecleanup.mjs'
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -124,6 +125,7 @@ async function browserLayer() {
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
     '--user-data-dir=/tmp/forge/creditscheck-profile', 'about:blank',
   ], { stdio: 'ignore' })
+  const cleanup = guardChrome(chrome, '/tmp/forge/creditscheck-profile')
   let browser
   for (let i = 0; i < 40 && !browser; i++) {
     await new Promise(r => setTimeout(r, 500))
@@ -234,7 +236,7 @@ async function browserLayer() {
       getComputedStyle(document.querySelector('#credits-card .cc-box')).animationName === 'none'))
     await rctx.close()
   } finally {
-    chrome.kill()
+    cleanup()
   }
 }
 

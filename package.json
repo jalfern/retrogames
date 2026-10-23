@@ -229,7 +229,8 @@
     "ssxmountaincheck": "node scripts/ssxmountaincheck.mjs",
     "ssxterraincheck": "node scripts/ssxterraincheck.mjs",
     "shoreperf": "node scripts/shoreperf.mjs",
-    "shoreguard": "node scripts/shoreperf.mjs --quiet-check-only"
+    "shoreguard": "node scripts/shoreperf.mjs --quiet-check-only",
+    "chromeguardcheck": "node scripts/chromeguardcheck.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",
