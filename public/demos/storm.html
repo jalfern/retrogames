@@ -186,6 +186,13 @@ vec3 flashLight(vec3 p){
   return c;
 }
 
+vec3 groundFlash(vec3 p){
+  vec3 c = vec3(0.0);
+  if (uFlash0.w > 0.002) c += vec3(0.72, 0.80, 1.0) * uFlash0.w * exp(-length((p - uFlash0.xyz) * vec3(1.0, 0.55, 1.0)) * 0.00012);
+  if (uFlash1.w > 0.002) c += vec3(0.72, 0.80, 1.0) * uFlash1.w * exp(-length((p - uFlash1.xyz) * vec3(1.0, 0.55, 1.0)) * 0.00012);
+  return c;
+}
+
 vec3 skyBase(vec3 rd, vec3 sdir3, float toward){
   float up = clamp(rd.y, 0.0, 1.0);
   vec3 c = mix(vec3(0.60, 0.68, 0.75), vec3(0.16, 0.31, 0.53), pow(up, 0.55));
@@ -261,7 +268,7 @@ vec4 cloudMarch(vec3 ro, vec3 rd, float tEnd){
         vec3 c = vec3(1.0, 0.96, 0.86) * so * ph * bump * (0.42 + 1.9 * pow(hm, 1.15))
                + mix(ambBase, ambTop, pow(hm, 0.7))
                + vec3(1.0, 0.95, 0.88) * ph * 0.12 * sqrt(so) * bump;
-        c += flashLight(p);
+        c += flashLight(p) * 1.55 + vec3(0.20, 0.24, 0.34) * uSkyFlash * 1.8;
         float sig = d * 0.0013;
         col += T * c * sig * dt;
         T *= exp(-sig * dt * 1.35);
@@ -291,25 +298,32 @@ void main(){
     vec3 p = ro + rd * tGround;
     float sd2 = length(p.xz - uStorm);
     float rA = rainAt(p.xz) * gustWave(p.xz, uTime);
-    float grain = fbm2(p.xz * 0.0042);
-    float grain2 = fbm2(p.xz * 0.017 + 5.0);
-    float fine = fbm2(p.xz * 0.055);
-    vec3 grass = mix(vec3(0.240, 0.225, 0.125), vec3(0.125, 0.170, 0.078), clamp(grain * 1.4 - 0.18, 0.0, 1.0));
-    grass = mix(grass, grass * vec3(0.82, 0.90, 0.72), clamp(grain2 * 1.3 - 0.2, 0.0, 1.0));
-    grass *= 0.86 + 0.28 * fine;
+    float grain = fbm2(p.xz * 0.020);
+    float grain2 = fbm2(p.xz * 0.055 + 5.0);
+    float fine = fbm2(p.xz * 0.13);
     vec2 wd = normalize(vec2(0.75, 0.66));
-    float rows = sin(dot(p.xz, wd) * 0.028 + fbm2(p.xz * 0.0021) * 5.0 + uTime * 1.9);
-    grass *= 0.86 + 0.14 * rows * (0.3 + 0.7 * fbm2(p.xz * 0.0013 + 3.0));
-    float near = smoothstep(200.0, 20.0, length(p.xz - ro.xz));
+    vec2 wp = vec2(-wd.y, wd.x);
+    float hch = hash12(floor(p.xz * 0.12) + vec2(137.13, 71.77));
+    float tPatch = clamp(smoothstep(0.40, 0.47, grain) + (hch - 0.5) * 0.5, 0.0, 1.0);
+    vec3 grass = mix(vec3(0.420, 0.305, 0.115), vec3(0.080, 0.175, 0.045), tPatch);
+    grass = mix(grass, vec3(0.075, 0.068, 0.048), clamp(grain2 * 1.7 - 0.72, 0.0, 1.0) * 0.55);
+    grass = mix(grass, grass * vec3(0.80, 0.96, 0.64), clamp(fine * 1.5 - 0.35, 0.0, 1.0));
+    float blade = n2(vec2(dot(p.xz, wd) * 0.045, dot(p.xz, wp) * 0.42) + uTime * 0.05);
+    grass *= 0.78 + 0.44 * blade;
+    float rows = sin(dot(p.xz, wd) * 0.06 + fbm2(p.xz * 0.006) * 5.0 + uTime * 1.9 + blade * 3.0);
+    grass *= 0.84 + 0.20 * rows * (0.3 + 0.7 * fbm2(p.xz * 0.004 + 3.0));
+    float near = smoothstep(260.0, 18.0, length(p.xz - ro.xz));
     float flecks = fbm2(p.xz * 0.9 + vec2(uTime * 0.35, uTime * 0.2));
-    grass = mix(grass, grass * (0.72 + 0.62 * flecks), near * 0.85);
-    float sh = mix(1.0, 0.34, smoothstep(11000.0, 3500.0, sd2));
-    grass = mix(grass, grass * vec3(0.50, 0.54, 0.50), rA * 0.72);
+    grass = mix(grass, grass * (0.68 + 0.68 * flecks), near * 0.85);
+    float sh = mix(1.0, 0.30, smoothstep(11000.0, 3000.0, sd2));
+    grass = mix(grass, grass * vec3(0.66, 0.70, 0.62), rA * 0.45);
     float ndl = 0.34;
-    vec3 sunK = vec3(1.0, 0.80, 0.55);
+    vec3 sunK = vec3(1.0, 0.90, 0.60);
     bg = grass * (sunK * ndl * sh * 1.05 + vec3(0.10, 0.125, 0.16) * (0.6 + 0.4 * sh));
+    bg += grass * groundFlash(p) * 1.5 + vec3(0.09, 0.105, 0.15) * uSkyFlash * (0.35 + 0.45 * rA);
     float fres = pow(1.0 - max(-rd.y, 0.0), 4.0);
-    bg += vec3(0.42, 0.48, 0.58) * fres * rA * 0.10 * (1.0 + 3.0 * uSkyFlash);
+    vec3 sheen = mix(vec3(0.40, 0.46, 0.56), vec3(0.78, 0.85, 1.0), clamp(uSkyFlash * 1.4, 0.0, 1.0));
+    bg += sheen * fres * rA * (0.24 + 1.6 * uSkyFlash);
     float sp = step(0.9935, hash12(floor(p.xz * 110.0) + floor(uTime * 26.0) * 0.137));
     bg += vec3(0.55, 0.58, 0.62) * sp * rA * smoothstep(650.0, 120.0, length(p.xz - ro.xz)) * (0.35 + 1.3 * uSkyFlash);
     float sp2 = step(0.9955, hash12(floor(p.xz * 70.0) + floor(uTime * 21.0) * 0.311));
@@ -357,33 +371,61 @@ void main(){
 const VS_BOLT = `#version 300 es
 precision highp float;
 uniform mat4 uVP;
-uniform float uPxPerM;
-uniform float uSize;
-in vec3 aPos;
-out float vW;
+uniform vec3 uCam;
+in vec3 aA;
+in vec3 aB;
+in float aT;
+in float aSide;
+in float aW;
+in float aInt;
+out float vS;
+out float vI;
 void main(){
-  vec4 cp = uVP * vec4(aPos, 1.0);
-  vW = max(cp.w, 1.0);
-  gl_Position = cp;
-  gl_PointSize = clamp(uSize * uPxPerM / vW, 2.0, 900.0);
+  vec3 mid = mix(aA, aB, aT);
+  vec3 nrm = cross(aB - aA, uCam - mid);
+  float nl = length(nrm);
+  nrm = nl > 0.0001 ? nrm / nl : vec3(1.0, 0.0, 0.0);
+  vec3 pos = mid + nrm * (aW * aSide);
+  vS = aSide;
+  vI = aInt;
+  gl_Position = uVP * vec4(pos, 1.0);
 }`;
 
 const FS_BOLT = `#version 300 es
 precision highp float;
 uniform vec3 uColor;
 uniform float uEnergy;
-uniform float uSoft;
-in float vW;
+in float vS;
+in float vI;
 out vec4 o;
 void main(){
-  float a = uEnergy;
-  if (uSoft > 0.5){
-    vec2 q = gl_PointCoord * 2.0 - 1.0;
-    float r2 = dot(q, q);
-    if (r2 > 1.0) discard;
-    a *= exp(-r2 * 2.6);
-  }
-  o = vec4(uColor * a, 1.0);
+  float f = max(0.0, 1.0 - abs(vS));
+  float core = pow(f, 1.8);
+  o = vec4(uColor * uEnergy * vI * (0.22 + 1.35 * core), 1.0);
+}`;
+
+const VS_GLOW = `#version 300 es
+precision highp float;
+uniform mat4 uVP;
+uniform float uPxPerM;
+uniform float uSize;
+in vec3 aPos;
+void main(){
+  vec4 cp = uVP * vec4(aPos, 1.0);
+  gl_Position = cp;
+  gl_PointSize = clamp(uSize * uPxPerM / max(cp.w, 1.0), 8.0, 1400.0);
+}`;
+
+const FS_GLOW = `#version 300 es
+precision highp float;
+uniform vec3 uColor;
+uniform float uEnergy;
+out vec4 o;
+void main(){
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(q, q);
+  if (r2 > 1.0) discard;
+  o = vec4(uColor * uEnergy * exp(-r2 * 2.2), 1.0);
 }`;
 
 const FS_BRIGHT = `#version 300 es
@@ -459,22 +501,38 @@ function program(vs, fs){
 
 const progScene = program(VS_QUAD, FS_SCENE);
 const progBolt = program(VS_BOLT, FS_BOLT);
+const progGlow = program(VS_GLOW, FS_GLOW);
 const progBright = program(VS_QUAD, FS_BRIGHT);
 const progBlur = program(VS_QUAD, FS_BLUR);
 const progComp = program(VS_QUAD, FS_COMP);
 
 const vaoEmpty = gl.createVertexArray();
-const MAX_SEG = 64;
-const boltVerts = new Float32Array(MAX_SEG * 2 * 3);
+const MAX_SEG = 96;
+const STRIDE = 10;
+const boltVerts = new Float32Array(MAX_SEG * 6 * STRIDE);
 const boltPts = new Float32Array(MAX_SEG * 3);
 const vaoBolt = gl.createVertexArray();
 gl.bindVertexArray(vaoBolt);
 const boltBuf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, boltBuf);
 gl.bufferData(gl.ARRAY_BUFFER, boltVerts.byteLength, gl.DYNAMIC_DRAW);
-const locPosL = gl.getAttribLocation(progBolt, 'aPos');
-gl.enableVertexAttribArray(locPosL);
-gl.vertexAttribPointer(locPosL, 3, gl.FLOAT, false, 0, 0);
+const STRIDE_B = STRIDE * 4;
+for (const [nm, size, off] of [['aA', 3, 0], ['aB', 3, 12], ['aT', 1, 24], ['aSide', 1, 28], ['aW', 1, 32], ['aInt', 1, 36]]) {
+  const loc = gl.getAttribLocation(progBolt, nm);
+  if (loc >= 0) {
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, STRIDE_B, off);
+  }
+}
+gl.bindVertexArray(null);
+const vaoGlow = gl.createVertexArray();
+gl.bindVertexArray(vaoGlow);
+const glowBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, glowBuf);
+gl.bufferData(gl.ARRAY_BUFFER, boltPts.byteLength, gl.DYNAMIC_DRAW);
+const locPosG = gl.getAttribLocation(progGlow, 'aPos');
+gl.enableVertexAttribArray(locPosG);
+gl.vertexAttribPointer(locPosG, 3, gl.FLOAT, false, 0, 0);
 gl.bindVertexArray(null);
 
 const HDRF = HDR_OK ? gl.RGBA16F : gl.RGBA8;
@@ -593,6 +651,7 @@ let flashCount = 0;
 let nextFlashAt = 3.0 + Math.random() * 4.0;
 let flashes = [];   // { t0, pos:[x,y,z], main, double, bolt:{segs,pts} | null }
 let boltSegs = 0, boltPtsN = 0;
+let lastBolt = null;
 let skyFlash = 0;
 
 function rr(n){ const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
@@ -601,36 +660,43 @@ function makeBolt(sx, sy, sz, reach, far){
   const segs = [];
   const pts = [];
   let x = sx, y = sy, z = sz;
-  const n = 26 + Math.floor(Math.random() * 10);
+  const n = 28 + Math.floor(Math.random() * 10);
   const dy = -(y - 4) / n;
-  const driftX = far ? (Math.random() - 0.5) * 90 : 0;
-  const driftZ = far ? 100 + Math.random() * 60 : 0;
+  const driftX = far ? (Math.random() - 0.5) * 110 : 0;
+  const driftZ = far ? 140 + Math.random() * 80 : 0;
+  const mainW = 9 + Math.random() * 5;
   for (let i = 0; i < n && segs.length < MAX_SEG; i++){
-    const nx = x + (Math.random() - 0.5) * 300 * reach + driftX;
-    const nz = z + (Math.random() - 0.5) * 220 * reach + 40 + driftZ;
+    let jx = (Math.random() - 0.5) * 340 * reach + driftX;
+    if (Math.random() < 0.20) jx += (jx >= 0 ? 1 : -1) * (140 + Math.random() * 200) * reach;
+    const jz = (Math.random() - 0.5) * 240 * reach + 40 + driftZ;
     const ny = y + dy * (0.7 + Math.random() * 0.6);
-    segs.push([x, y, z, nx, Math.max(ny, 4), nz]);
-    pts.push([(x + nx) / 2, (y + Math.max(ny, 4)) / 2, (z + nz) / 2]);
-    x = nx; y = Math.max(ny, 4); z = nz;
+    segs.push({ a: [x, y, z], b: [x + jx, Math.max(ny, 4), z + jz], i: 1, w: mainW * (0.8 + Math.random() * 0.4) });
+    pts.push([(x + x + jx) / 2, (y + Math.max(ny, 4)) / 2, (z + z + jz) / 2]);
+    x = x + jx; y = Math.max(ny, 4); z = z + jz;
   }
   const land = [x, z];
-  // one branch
-  if (segs.length > 8){
-    const bi = 4 + Math.floor(Math.random() * (segs.length - 8));
-    const bp = segs[bi].slice(0, 3);
-    let bx = bp[0], by = bp[1], bz = bp[2];
-    const bn = 7 + Math.floor(Math.random() * 5);
-    const bdy = -(by - 4) / bn;
-    for (let i = 0; i < bn && segs.length < MAX_SEG; i++){
-      const nx = bx + (Math.random() - 0.5) * 340;
-      const nz = bz + (Math.random() - 0.5) * 200;
-      const ny = by + bdy * (0.7 + Math.random() * 0.6);
-      segs.push([bx, by, bz, nx, Math.max(ny, 4), nz]);
-      pts.push([(bx + nx) / 2, (by + Math.max(ny, 4)) / 2, (bz + nz) / 2]);
-      bx = nx; by = Math.max(ny, 4); bz = nz;
+  let branches = 0;
+  if (segs.length > 12){
+    const nb = 2 + Math.floor(Math.random() * 2);
+    for (let b = 0; b < nb; b++){
+      const bi = 3 + Math.floor(Math.random() * (segs.length - 9));
+      let bx = segs[bi].a[0], by = segs[bi].a[1], bz = segs[bi].a[2];
+      const dirSide = Math.random() < 0.5 ? -1 : 1;
+      const bn = 5 + Math.floor(Math.random() * 5);
+      const bdy = -(by - 4) / bn;
+      const bw = mainW * (0.45 + Math.random() * 0.25);
+      const bInt = 0.5 + Math.random() * 0.25;
+      for (let i = 0; i < bn && segs.length < MAX_SEG; i++){
+        const nx = bx + dirSide * (60 + Math.random() * 240) + (Math.random() - 0.5) * 140;
+        const nz = bz + (Math.random() - 0.5) * 220;
+        const ny = by + bdy * (0.7 + Math.random() * 0.6);
+        segs.push({ a: [bx, by, bz], b: [nx, Math.max(ny, 4), nz], i: bInt, w: bw });
+        bx = nx; by = Math.max(ny, 4); bz = nz;
+      }
+      branches++;
     }
   }
-  return { segs, pts, land };
+  return { segs, pts, land, branches };
 }
 
 function flashEnvelope(age){
@@ -664,18 +730,31 @@ function spawnFlash(t, cg, far, near){
   if (f.bolt){
     boltSegs = Math.min(f.bolt.segs.length, MAX_SEG);
     boltPtsN = Math.min(f.bolt.pts.length, MAX_SEG);
+    let vp = 0;
+    for (let i = 0; i < boltSegs; i++){
+      const s = f.bolt.segs[i];
+      const tri = [[0, -1], [0, 1], [1, -1], [0, 1], [1, 1], [1, -1]];
+      for (const [t, side] of tri){
+        const q = t ? s.b : s.a;
+        boltVerts[vp++] = s.a[0]; boltVerts[vp++] = s.a[1]; boltVerts[vp++] = s.a[2];
+        boltVerts[vp++] = s.b[0]; boltVerts[vp++] = s.b[1]; boltVerts[vp++] = s.b[2];
+        boltVerts[vp++] = t; boltVerts[vp++] = side; boltVerts[vp++] = s.w; boltVerts[vp++] = s.i;
+      }
+    }
     for (let i = 0; i < boltPtsN; i++){
       boltPts[i * 3] = f.bolt.pts[i][0];
       boltPts[i * 3 + 1] = f.bolt.pts[i][1];
       boltPts[i * 3 + 2] = f.bolt.pts[i][2];
     }
-    for (let i = 0; i < boltSegs; i++){
-      for (let k = 0; k < 6; k++) boltVerts[i * 6 + k] = f.bolt.segs[i][k];
-    }
     gl.bindVertexArray(vaoBolt);
     gl.bindBuffer(gl.ARRAY_BUFFER, boltBuf);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, boltVerts, 0, boltSegs * 6);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, boltVerts, 0, boltSegs * 6 * STRIDE);
     gl.bindVertexArray(null);
+    gl.bindVertexArray(vaoGlow);
+    gl.bindBuffer(gl.ARRAY_BUFFER, glowBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, boltPts, 0, boltPtsN * 3);
+    gl.bindVertexArray(null);
+    lastBolt = { segs: boltSegs, branches: f.bolt.branches, born: t };
     const land = f.bolt.land;
     cgTips.push([Math.round(land[0]), Math.round(land[1]), Math.round(land[1] - jz)]);
     if (cgTips.length > 64) cgTips.shift();
@@ -798,7 +877,7 @@ let readyFlag = false;
 const rot4 = new Float32Array(16);
 const vp4 = new Float32Array(16);
 const U = p => name => gl.getUniformLocation(p, name);
-const us = U(progScene), ub = U(progBolt), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
+const us = U(progScene), ub = U(progBolt), ug = U(progGlow), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
 
 let stormZ = -7000;
 
@@ -838,20 +917,23 @@ function frame(){
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   if (fs.boltE > 0.02 && boltSegs > 0){
-    gl.useProgram(progBolt);
-    gl.bindVertexArray(vaoBolt);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
-    gl.uniformMatrix4fv(ub('uVP'), false, vp4);
-    gl.uniform1f(ub('uPxPerM'), H * FOVZ);
-    gl.uniform1f(ub('uSoft'), 0.0);
-    gl.uniform3f(ub('uColor'), 0.85, 0.90, 1.0);
-    gl.uniform1f(ub('uEnergy'), fs.boltE * 1.6);
-    gl.drawArrays(gl.LINES, 0, boltSegs * 2);
-    gl.uniform1f(ub('uSoft'), 1.0);
-    gl.uniform1f(ub('uSize'), 60);
-    gl.uniform1f(ub('uEnergy'), fs.boltE * 0.5);
+    gl.useProgram(progGlow);
+    gl.bindVertexArray(vaoGlow);
+    gl.uniformMatrix4fv(ug('uVP'), false, vp4);
+    gl.uniform1f(ug('uPxPerM'), H * FOVZ);
+    gl.uniform1f(ug('uSize'), 150);
+    gl.uniform3f(ug('uColor'), 0.55, 0.68, 1.0);
+    gl.uniform1f(ug('uEnergy'), fs.boltE * 0.6);
     gl.drawArrays(gl.POINTS, 0, boltPtsN);
+    gl.useProgram(progBolt);
+    gl.bindVertexArray(vaoBolt);
+    gl.uniformMatrix4fv(ub('uVP'), false, vp4);
+    gl.uniform3f(ub('uCam'), cb.pos[0], cb.pos[1], cb.pos[2]);
+    gl.uniform3f(ub('uColor'), 0.80, 0.88, 1.0);
+    gl.uniform1f(ub('uEnergy'), fs.boltE * 2.6);
+    gl.drawArrays(gl.TRIANGLES, 0, boltSegs * 6);
     gl.disable(gl.BLEND);
   }
 
@@ -915,6 +997,8 @@ window.__stormTest = {
       rainAtCam: rainAtJS(0, 0),
       gustAtCam: +gustJS(0, 0, (performance.now() - t0) / 1000).toFixed(3),
       boltOn: flashes.some(f => f.bolt && (performance.now() - t0) / 1000 - f.t0 < 1.0),
+      boltSegs: lastBolt ? lastBolt.segs : 0,
+      boltBranches: lastBolt ? lastBolt.branches : 0,
     };
   },
   gust(x, z, t){ return +gustJS(x, z, t).toFixed(4); },
