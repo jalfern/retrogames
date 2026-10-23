@@ -49,7 +49,9 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 - `sound.js` — every action is synthesized via `audioController`; ambience
   (surf, wind, birds, fire, drips, gears, the sphere hum) is scheduled off the
   fixed-timestep loop, never `setTimeout`. The sounding stones each ring their
-  own pitch (`stone:0..5` events); a wrong stone is a detuned saw buzz.
+  own pitch (`stone:0..5` events); a wrong stone is a detuned saw buzz. The
+  sounding field (`selSound`) also drones a low approach hum (`hum`, `amb:'stones'`)
+  so the rock feels alive before you touch it.
 - One driver: the RAF loop owns the clock (`FIXED_DT 1000/60`, catch-up cap).
 
 ## Verify

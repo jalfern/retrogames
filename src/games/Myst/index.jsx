@@ -98,13 +98,19 @@ const MystGame = () => {
           // alignment, the mountain door slides aside, the gear lifts from its slot
           case 'selPathSlab': m.o.position.y += ((F.selPath ? m.y0 - 6.9 : m.y0) - m.o.position.y) * k; break
           case 'selChair': m.o.rotation.y += ((s.selChair || 0) * Math.PI / 4 - m.o.rotation.y) * k; break
-          case 'selSun': m.o.visible = !!F.selAlign; break
+          case 'selSun': { let p = m.o.userData.p || 0; p = Math.max(0, Math.min(1, p + (F.selAlign ? k : -k * 1.3))); m.o.userData.p = p; const rise = p * p * (3 - 2 * p); m.o.scale.setScalar(0.02 + 0.98 * rise); m.o.position.y = m.y0 - 2.4 * (1 - rise); m.o.material.emissiveIntensity = 1.1 * rise; m.o.visible = rise > 0.005; break }
+          case 'selNotch': { const tgt = F.selAlign ? 2.4 : (m.o.userData.notch === (s.selChair || 0) ? 1.5 : 0); m.o.material.emissiveIntensity += (tgt - m.o.material.emissiveIntensity) * k; break }
           case 'selAlignDoor': m.o.position.z += ((F.selAlign ? m.z0 - 3.2 : m.z0) - m.o.position.z) * k; break
           case 'selGear': { const sc = F.gearSelenitic ? 0.001 : 1; m.o.scale.x += (sc - m.o.scale.x) * k; m.o.scale.y = m.o.scale.x; m.o.scale.z = m.o.scale.x; break }
           default: {
             if (m.kind.startsWith('selStone')) {
               const i = Number(m.kind.slice('selStone'.length))
               m.o.position.y += (((s.selStone || 0) > i ? m.y0 - 0.1 : m.y0) - m.o.position.y) * k
+            } else if (m.kind.startsWith('selTell')) {
+              const i = Number(m.kind.slice('selTell'.length))
+              const next = !F.selPath && (s.selStone || 0) === i
+              const base = next ? 1.9 + 0.9 * Math.sin(performance.now() * 0.0065 - i) : 0.55
+              m.o.material.emissiveIntensity += (base - m.o.material.emissiveIntensity) * k
             }
             break
           }

@@ -73,6 +73,11 @@ export function plan(ev) {
     case 'alignOpen': P.push({ type: 'tone', f: 220, dur: 0.9, wave: 'sine', vol: 0.09 }, { type: 'tone', f: 330, dur: 0.9, wave: 'sine', vol: 0.08, delay: 0.12 }, { type: 'sweep', f0: 70, f1: 130, dur: 1.1, wave: 'sawtooth', vol: 0.06 }); break
     case 'gateOpen': P.push({ type: 'sweep', f0: 60, f1: 110, dur: 1.2, wave: 'sawtooth', vol: 0.08 }, { type: 'noise', dur: 0.9, vol: 0.09 }); break
     case 'gearTake': P.push({ type: 'fnoise', dur: 0.35, vol: 0.09, freq: 900 }, { type: 'tone', f: 440, dur: 0.25, wave: 'sine', vol: 0.07, delay: 0.18 }); break
+    // The field of stones hums before you touch it: a low drone under a soft
+    // fifth, so the corridor of rock feels alive as you cross it, not silent.
+    // Distinct from the sour buzz (detuned saws) and the gate grind — a sweet,
+    // sustained hum, which is the point of the tell.
+    case 'hum': P.push({ type: 'tone', f: 98, dur: 1.6, wave: 'sine', vol: 0.035 }, { type: 'tone', f: 147, dur: 1.2, wave: 'sine', vol: 0.02, delay: 0.25 }); break
     default: break
   }
   return P

@@ -284,6 +284,15 @@ console.log('MYST — sound plan (what each event schedules)')
   ok(plan('gateOpen').length > 0 && plan('gearTake').length > 0, 'the gate grinds and the gear lifts with their own sounds')
   const buzz = plan('buzz'), al = plan('alignOpen')
   ok(JSON.stringify(buzz) !== JSON.stringify(al), 'the buzz never collapses into the alignment chord')
+  // The field hums before it is touched: a low, sustained drone — the approach
+  // cue that tells you the stones are alive. It must sit BELOW the smallest rung
+  // (so it is heard as ambience, not a puzzle step) and never collapse into the
+  // sour buzz it shares the field with.
+  const hum = plan('hum')
+  ok(hum.length > 0, 'the sounding field schedules an approach hum')
+  ok(hum.every((c) => c.type === 'tone' && c.dur >= 1.0), 'the hum is a sustained drone, not a blip')
+  ok(Math.min(...hum.map((c) => c.f)) < Math.min(...stones.map((c) => c[0].f)), 'the hum drones below the lowest rung', `hum=${Math.min(...hum.map((c) => c.f))} stone=${Math.min(...stones.map((c) => c[0].f))}`)
+  ok(JSON.stringify(hum) !== JSON.stringify(buzz), 'the hum never collapses into the buzz')
 }
 
 console.log('MYST — the walkable Mechanical gets played, not skipped')

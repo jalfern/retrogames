@@ -29,6 +29,8 @@ const AMB = {
   gears: () => { A.playTone(90, 0.05, 'square', 0.05); A.playNoise(0.08, 0.04) },
   sphere: () => { A.playTone(174, 1.2, 'sine', 0.03) },
   falls: () => { A.playNoise(1.6, 0.07) },
+  // The sounding field: wind over grass, with the rock itself humming underneath.
+  stones: () => { A.playNoise(1.8, 0.035); sfx('hum') },
 }
 
 let ambT = 0
