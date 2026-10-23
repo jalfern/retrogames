@@ -93,7 +93,21 @@ const MystGame = () => {
           case 'plateE': m.o.position.y += ((F.mechPlateE ? m.y0 - 0.07 : m.y0) - m.o.position.y) * k; break
           case 'latch': m.o.rotation.z += ((F.mechLatchD || F.mechLatchE ? -0.5 : 0.55) - m.o.rotation.z) * k; break
           case 'topGear': { const open = !!F.switchPanel; m.o.position.z += (m.z0 - (open ? 1.5 : 0) - m.o.position.z) * k; m.o.rotation.z += dt * (open ? 1.4 : 0.3); break }
-          default: break
+          // SELENITIC: stones sink when rung, the gate slab grinds down, the
+          // throne swivels notch by notch, the sun appears only at the true
+          // alignment, the mountain door slides aside, the gear lifts from its slot
+          case 'selPathSlab': m.o.position.y += ((F.selPath ? m.y0 - 6.9 : m.y0) - m.o.position.y) * k; break
+          case 'selChair': m.o.rotation.y += ((s.selChair || 0) * Math.PI / 4 - m.o.rotation.y) * k; break
+          case 'selSun': m.o.visible = !!F.selAlign; break
+          case 'selAlignDoor': m.o.position.z += ((F.selAlign ? m.z0 - 3.2 : m.z0) - m.o.position.z) * k; break
+          case 'selGear': { const sc = F.gearSelenitic ? 0.001 : 1; m.o.scale.x += (sc - m.o.scale.x) * k; m.o.scale.y = m.o.scale.x; m.o.scale.z = m.o.scale.x; break }
+          default: {
+            if (m.kind.startsWith('selStone')) {
+              const i = Number(m.kind.slice('selStone'.length))
+              m.o.position.y += (((s.selStone || 0) > i ? m.y0 - 0.1 : m.y0) - m.o.position.y) * k
+            }
+            break
+          }
         }
       }
     }

@@ -59,6 +59,22 @@ function rocks(group, tex, list) {
   }
 }
 
+// The signature of SELENITIC: one huge cratered moon, low and green-white.
+// fog:false so the scene fog never swallows it.
+function moon(group, x, y, z, r, tag, spot) {
+  const m = new THREE.MeshStandardMaterial({ color: 0xdff0e0, emissive: 0x9fd8b0, emissiveIntensity: 0.85, fog: false, roughness: 1 })
+  const o = mesh(new THREE.SphereGeometry(r, 20, 16), m, x, y, z, group)
+  o.userData.noPick = !spot
+  if (spot) { o.userData.noPick = false; o.userData.spot = spot }
+  if (tag) o.userData.landmark = tag
+  for (let k = 0; k < 4; k++) {
+    const a = k * 1.7 + 0.4
+    const d = mesh(new THREE.SphereGeometry(r * (0.12 + 0.05 * (k % 2)), 8, 6), new THREE.MeshStandardMaterial({ color: 0xb9cfba, emissive: 0x6f9c7c, emissiveIntensity: 0.6, fog: false }), x + Math.sin(a) * r * 0.55, y + Math.cos(a * 1.3) * r * 0.45, z - r * 0.75, group)
+    d.userData.noPick = true
+  }
+  return o
+}
+
 function tree(group, x, y, z, s = 1, leaf = 0x2c5e2a, tag) {
   const trunk = mesh(new THREE.CylinderGeometry(0.12 * s, 0.2 * s, 1.6 * s), mat(TX.wood), x, y + 0.8 * s, z, group)
   const crown = mesh(new THREE.ConeGeometry(0.9 * s, 2.2 * s, 6), new THREE.MeshStandardMaterial({ color: leaf, roughness: 1 }), x, y + 2.4 * s, z, group)
@@ -75,6 +91,7 @@ function gear(group, tex, r, x, y, z, speed, tag) {
   c.userData.spin = speed
   c.userData.noPick = true
   if (tag) { o.userData.landmark = tag; c.userData.landmark = tag }
+  return o
 }
 
 const BUILDERS = {
@@ -241,6 +258,8 @@ const BUILDERS = {
   selenitic(g) {
     const ground = mesh(new THREE.CircleGeometry(60, 28), mat(TX.selen), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
     seaPlane(g, 0.02, 300, 0.25)
+    moon(g, 26, 22, 30, 8, null, null)
+    const glow0 = new THREE.PointLight(0x9fd8b0, 12, 70); glow0.position.set(0, 10, 0); g.add(glow0)
     for (let r = 0; r < 4; r++) { const ring = mesh(new THREE.TorusGeometry(8 + r * 5, 0.7, 8, 40), mat(TX.selen), 0, 0.4 + r * 0.25, 0, g); ring.rotation.x = Math.PI / 2; ring.userData.noPick = true }
     const sph = mesh(new THREE.SphereGeometry(1.4, 20, 16), mat(TX.stoneD, { metalness: 0.2 }), 0, 1.6, -3, g)
     sph.userData.spot = 'sphere'
@@ -253,6 +272,121 @@ const BUILDERS = {
       const bulb = mesh(new THREE.SphereGeometry(0.28, 8, 8), new THREE.MeshStandardMaterial({ color: 0x30ff90, emissive: 0x10cc60, emissiveIntensity: 0.6 }), Math.sin(a) * 6, 2.2, Math.cos(a) * 6 - 3, g)
       bulb.userData.tone = t; bulb.userData.noPick = true
     })
+    // the trailhead: an arch of standing stones off the left of the landing,
+    // mouth of the path down to the sounding field
+    const bear = THREE.MathUtils.degToRad(-118)
+    const ax = Math.sin(bear) * 11, az = Math.cos(bear) * 11 - 16
+    for (const s of [-1.4, 1.4]) mesh(new THREE.BoxGeometry(0.8, 3.4, 0.8), mat(TX.grey), ax + s, 1.7, az, g)
+    mesh(new THREE.BoxGeometry(3.8, 0.7, 0.9), mat(TX.grey), ax, 3.7, az, g).userData.spot = 'toSelSound'
+    for (let i = 0; i < 4; i++) mesh(new THREE.BoxGeometry(1.6, 0.18, 1), mat(TX.stoneD), ax - Math.sin(bear) * i * 1.2, 0.09 + i * 0.02, az - Math.cos(bear) * i * 1.2, g).userData.spot = 'toSelSound'
+  },
+  selSound(g) {
+    // camera at [0,1.7,-46], facing +z: the stone field recedes toward a
+    // sealed gate in the cliff, the moon low on the right shoulder
+    const ground = mesh(new THREE.CircleGeometry(70, 26), mat(TX.selen), 0, 0, -46, g); ground.rotation.x = -Math.PI / 2
+    seaPlane(g, 0.02, 300, 0.2)
+    moon(g, 5, 24, 8, 5.5, null, 'lookMoon')
+    // the corridor walls: two green-black rock shoulders
+    rocks(g, TX.grey, [[-9, 3.4, -32, 8, 8, 14, 0.12], [9.5, 3.8, -33, 8, 9, 14, -0.12]])
+    rocks(g, TX.selen, [[-9.4, 7.2, -33, 4, 1.6, 8, 0.1], [9.2, 8.2, -34, 3.4, 1.8, 8, -0.1]])
+    // six stepping stones, biggest to smallest — the biggest sings the lowest
+    const yaws = [-14, 10, -8, 14, -4, 8]
+    yaws.forEach((yd, i) => {
+      const a = THREE.MathUtils.degToRad(yd)
+      const d = 7.5 + i * 1.7
+      const r = 1.5 - i * 0.18
+      const st = mesh(new THREE.CylinderGeometry(r, r * 1.12, 0.5, 12), mat(TX.stoneD, { metalness: 0.15, emissive: 0x16281c, emissiveIntensity: 0.35 }), Math.sin(a) * d, 0.25, -46 + Math.cos(a) * d, g)
+      st.userData.spot = `stone${i}`; st.userData.landmark = 'selStones'; st.userData.mech = `selStone${i}`
+      const rim = mesh(new THREE.TorusGeometry(r * 0.92, 0.05, 6, 18), new THREE.MeshStandardMaterial({ color: 0x9fe8b8, emissive: 0x3fd07a, emissiveIntensity: 0.9 }), Math.sin(a) * d, 0.51, -46 + Math.cos(a) * d, g)
+      rim.rotation.x = Math.PI / 2; rim.userData.noPick = true; rim.userData.mech = `selStone${i}`
+    })
+    // the sealed gate: slab of rock between cliff piers, grinds down when the path rings true
+    rocks(g, TX.grey, [[-4.6, 3.4, -27, 5, 8, 4, 0], [4.6, 3.6, -27, 5, 8.4, 4, 0]])
+    rocks(g, TX.grey, [[0, 8.1, -27, 11, 1.6, 3.6, 0]])
+    const slab = mesh(new THREE.BoxGeometry(4.2, 6.4, 0.8), mat(TX.stoneD), 0, 3.2, -27.4, g)
+    slab.userData.spot = 'toSelThrone'; slab.userData.mech = 'selPathSlab'
+  },
+  selThrone(g) {
+    // camera at [0,1.5,-2]: a roofed chamber open to the night through a
+    // window arch ahead; the moon stands outside it, the sun only at one
+    // turn of the throne. Walls are piers and lintels, never a closed shell,
+    // so the arch is a real hole the landmark check can see through.
+    const fl = mesh(new THREE.CircleGeometry(6.5, 16), mat(TX.stoneD), 0, 0.02, -2, g); fl.rotation.x = -Math.PI / 2; fl.userData.noPick = true
+    mesh(new THREE.BoxGeometry(13, 5.4, 0.8), mat(TX.stoneD), 0, 2.7, -6.4, g).userData.noPick = true // back wall
+    for (const sx of [-5.4, 5.4]) mesh(new THREE.BoxGeometry(1.6, 5.4, 9), mat(TX.stoneD), sx, 2.7, -2, g).userData.noPick = true // side walls
+    mesh(new THREE.BoxGeometry(13, 1, 9.6), mat(TX.stoneD), 0, 5.9, -2, g).userData.noPick = true // roof
+    // the window arch ahead: piers + lintel, opening between them
+    mesh(new THREE.BoxGeometry(2, 5.2, 0.7), mat(TX.grey), -3.2, 2.6, 2.6, g).userData.noPick = true
+    mesh(new THREE.BoxGeometry(2, 5.2, 0.7), mat(TX.grey), 3.2, 2.6, 2.6, g).userData.noPick = true
+    mesh(new THREE.BoxGeometry(8.6, 1.1, 0.7), mat(TX.grey), 0, 4.6, 2.6, g).userData.noPick = true
+    const plaque = mesh(new THREE.BoxGeometry(2.6, 0.9, 0.24), mat(TX.brass, { metalness: 0.5 }), 0, 3.6, 2.9, g)
+    plaque.userData.spot = 'throneCarving'
+    moon(g, -14.5, 2.6, 50, 3.4, 'selMoon', null)
+    const sun = mesh(new THREE.SphereGeometry(2.6, 16, 12), new THREE.MeshStandardMaterial({ color: 0xffe9a0, emissive: 0xffb84a, emissiveIntensity: 1.1, fog: false }), 14.5, 2.1, 50, g)
+    sun.userData.noPick = true; sun.userData.mech = 'selSun'; sun.visible = false
+    // the throne: bronze collar, stone seat, high back — it swivels on the
+    // worn circle of eight notches
+    const chair = new THREE.Group()
+    mesh(new THREE.CylinderGeometry(0.55, 0.75, 0.9, 10), mat(TX.stoneD), 0, 0.45, 0, chair).userData.spot = 'selChair'
+    mesh(new THREE.BoxGeometry(1.1, 0.16, 1.1), mat(TX.stoneD), 0, 0.98, 0, chair).userData.spot = 'selChair'
+    const back = mesh(new THREE.BoxGeometry(1.1, 1.5, 0.25), mat(TX.stoneD), 0, 1.8, 0.5, chair); back.userData.landmark = 'selChair'; back.userData.spot = 'selChair'
+    mesh(new THREE.TorusGeometry(0.8, 0.09, 6, 16), mat(TX.brass, { metalness: 0.6 }), 0, 1.02, 0, chair).rotation.x = Math.PI / 2
+    chair.position.set(0, 0, 0.6)
+    chair.userData.mech = 'selChair'
+    g.add(chair)
+    for (let k = 0; k < 8; k++) { const a = k * 0.7854; mesh(new THREE.BoxGeometry(0.34, 0.06, 0.34), mat(TX.grey), Math.sin(a) * 1.6, 0.05, 0.6 + Math.cos(a) * 1.6, g).userData.noPick = true }
+    // the high doorway in the right wall, sealed until sun and moon agree
+    const door = mesh(new THREE.BoxGeometry(0.8, 3.4, 1.8), mat(TX.stoneD), 4.15, 1.7, -2.2, g)
+    door.userData.spot = 'toSelGate'; door.userData.mech = 'selAlignDoor'
+    mesh(new THREE.BoxGeometry(0.5, 4.4, 2.6), mat(TX.grey), 5.7, 2.2, -2.2, g).userData.noPick = true
+  },
+  selGate(g) {
+    // camera at [0,4.5,-10] on a cut terrace facing +z: the mountain wall
+    // ahead, switchback steps climbing to the right, the door behind
+    const floor = mesh(new THREE.BoxGeometry(24, 0.6, 20), mat(TX.grey), 0, 4, -5, g); floor.userData.noPick = true
+    const lip = mesh(new THREE.BoxGeometry(24, 0.5, 1), mat(TX.stoneD), 0, 4.55, 5.4, g); lip.userData.noPick = true
+    const wall = mesh(new THREE.BoxGeometry(50, 10, 6), mat(TX.selen), 0, 7, 9, g)
+    wall.userData.landmark = 'selMountain'; wall.userData.noPick = true
+    rocks(g, TX.selen, [[-14, 5.5, 4, 10, 11, 8, 0.2], [15, 6, 3, 9, 12, 7, -0.25], [-20, 9, 7, 8, 8, 6, 0.1]])
+    rocks(g, TX.grey, [[-6, 4.5, 5, 7, 7, 5, 0.15], [7, 5, 5, 6, 8, 5, -0.15]])
+    moon(g, -22, 24, 26, 7, null, 'lookMoon')
+    const glow = new THREE.PointLight(0x9fd8b0, 14, 70); glow.position.set(0, 12, 4); g.add(glow)
+    const moss = mesh(new THREE.BoxGeometry(23.4, 0.14, 19.4), mat(TX.selen), 0, 4.36, -5, g); moss.userData.noPick = true
+    // the switchback steps, cut against the grey rock at the right of the terrace
+    const steps = new THREE.Group()
+    for (let i = 0; i < 7; i++) mesh(new THREE.BoxGeometry(2.4, 0.55 + i * 0.3, 1.5), mat(TX.stoneD), 5.6 + (i % 2) * 1.5, 4.6 + i * 0.55, -3 + Math.floor(i / 2) * 2.1, steps)
+    steps.children[steps.children.length - 1].userData.spot = 'upTop'
+    g.add(steps)
+    // the doorway you came through, back in the rock behind you
+    mesh(new THREE.BoxGeometry(3.4, 4.6, 0.8), mat(TX.grey), 0, 6.6, -14.6, g).userData.noPick = true
+    const door = mesh(new THREE.BoxGeometry(2.2, 3.4, 0.5), mat(TX.stoneD), 0, 6.2, -14.2, g)
+    door.userData.spot = 'backThrone'
+  },
+  selTop(g) {
+    // camera at [0,9.5,-6] on the summit ledge facing +z: the rock wall with
+    // the gear dead ahead, the moon huge off the right shoulder, drop behind
+    const floor = mesh(new THREE.BoxGeometry(14, 0.6, 12), mat(TX.grey), 0, 9, -6, g); floor.userData.noPick = true
+    const wall = mesh(new THREE.BoxGeometry(12, 8, 2), mat(TX.selen), 0, 13, 2.5, g); wall.userData.noPick = true
+    rocks(g, TX.selen, [[-7.5, 9, 2, 4, 7, 5, 0.2], [7.6, 8.5, 2.5, 4, 7, 5, -0.2]])
+    for (let k = 0; k < 7; k++) mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.1), mat(TX.brass, { metalness: 0.7 }), -6 + k * 2, 9.85, -11.4, g).userData.noPick = true
+    mesh(new THREE.TorusGeometry(6.4, 0.07, 6, 20, Math.PI), mat(TX.brass, { metalness: 0.7 }), 0, 10.4, -11.4, g).userData.noPick = true
+    moon(g, 30, 17, 26, 8, null, 'lookMoon')
+    const glow2 = new THREE.PointLight(0xbfe8cc, 12, 60); glow2.position.set(4, 12, -2); g.add(glow2)
+    const moss2 = mesh(new THREE.BoxGeometry(13.4, 0.14, 11.4), mat(TX.selen), 0, 9.31, -6, g); moss2.userData.noPick = true
+    // the gear, brass against green-black rock, riding its sun-and-moon slot —
+    // everything mounted at z descending toward the camera so nothing buries
+    // the pickable torus behind its own backing slab
+    const slot = mesh(new THREE.BoxGeometry(2.6, 2.6, 0.4), mat(TX.stoneD), 0, 10.6, 1.4, g); slot.userData.noPick = true
+    const gearW = gear(g, TX.brass, 0.95, 0, 10.6, 1.05, 0)
+    gearW.userData.spot = 'takeGear'; gearW.userData.landmark = 'selGear'; gearW.userData.mech = 'selGear'; gearW.userData.noPick = false
+    g.children[g.children.length - 1].userData.mech = 'selGear'
+    g.children[g.children.length - 1].userData.landmark = 'selGear'
+    for (const p of [[-0.9, 10.2], [0.9, 10.2], [-0.9, 11], [0.9, 11]]) mesh(new THREE.BoxGeometry(0.14, 0.14, 0.5), mat(TX.brass, { metalness: 0.6 }), p[0], p[1], 1.3, g).userData.noPick = true
+    // the worn steps back down, over the lip behind the camera
+    const steps = new THREE.Group()
+    for (let i = 0; i < 6; i++) mesh(new THREE.BoxGeometry(2.4, 0.5, 1.3), mat(TX.stoneD), (i % 2) * 1.4, 9 - i * 0.55, -12.5 - i * 1.0, steps)
+    steps.children[0].userData.spot = 'downGate'
+    g.add(steps)
   },
   stoneship(g) {
     const ground = mesh(new THREE.CircleGeometry(70, 26), mat(TX.grey), 0, -0.05, 0, g); ground.rotation.x = -Math.PI / 2
@@ -472,7 +606,7 @@ function idSky(id) {
   const ext = ['dock', 'cliffPath', 'beach', 'landing', 'stairTop']
   if (ext.includes(id)) return id === 'dock' || id === 'cliffPath' || id === 'beach' ? 'dusk' : 'day'
   if (id === 'towerTop') return 'day'
-  if (id === 'selenitic') return 'selenitic'
+  if (id === 'selenitic' || id === 'selSound' || id === 'selThrone' || id === 'selGate' || id === 'selTop') return 'selenitic'
   if (id === 'stoneship') return 'stoneship'
   if (id === 'mechanical' || id === 'mechWalk' || id === 'mechCar' || id === 'mechTop' || id === 'mechRoom') return 'mechanical'
   if (id === 'channelwood') return 'channelwood'

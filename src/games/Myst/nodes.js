@@ -112,13 +112,62 @@ export const NODES = {
   // ---- Ages -------------------------------------------------------------
   selenitic: {
     pos: [0, 1.7, -16], yaw: 0, sky: 'selenitic', amb: 'sphere',
-    caption: 'SELENITIC — a green world of concentric rings and sound',
+    caption: 'SELENITIC — the moonlit landing: green rock under a huge moon',
     expect: ['sphere'],
     spots: [
       { id: 'retSelenitic', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'library' },
       { id: 'sphere', label: 'a stone sphere on a dial', yaw: 0, w: 40, h: 34, act: 'sphere' },
       { id: 'pageSeleniticRed', label: 'a red page pinned to the rock', yaw: -55, w: 24, h: 24, act: 'takePage', page: 'red:selenitic', gone: 'pageRed_selenitic' },
       { id: 'pageSeleniticBlue', label: 'a blue page beside the water', yaw: 70, w: 24, h: 24, act: 'takePage', page: 'blue:selenitic', gone: 'pageBlue_selenitic' },
+      { id: 'toSelSound', label: 'a path winding down to a field of stones', yaw: -118, w: 50, h: 40, to: 'selSound' },
+    ],
+  },
+  selSound: {
+    pos: [0, 1.7, -46], yaw: 0, sky: 'selenitic', amb: 'wind',
+    caption: 'The sounding path — six stones of decreasing size hum faintly in the moonlight',
+    expect: ['selStones'],
+    spots: [
+      { id: 'backSel', label: 'back to the landing', yaw: 180, w: 50, h: 36, to: 'selenitic' },
+      { id: 'stone0', label: 'the huge first stone', yaw: -14, w: 26, h: 12, act: 'toneStone', tone: 0 },
+      { id: 'stone1', label: 'a large stone', yaw: 10, w: 22, h: 12, act: 'toneStone', tone: 1 },
+      { id: 'stone2', label: 'a stone, smaller still', yaw: -8, w: 18, h: 12, act: 'toneStone', tone: 2 },
+      { id: 'stone3', label: 'a mid-sized stone', yaw: 14, w: 15, h: 12, act: 'toneStone', tone: 3 },
+      { id: 'stone4', label: 'a small stone', yaw: -4, w: 12, h: 12, act: 'toneStone', tone: 4 },
+      { id: 'stone5', label: 'the smallest stone', yaw: 8, w: 10, h: 12, act: 'toneStone', tone: 5 },
+      { id: 'lookMoon', label: 'the low moon over the field', yaw: 40, w: 40, h: 30, act: 'lookMoon' },
+      { id: 'toSelThrone', label: 'the opened gate in the cliff', yaw: 0, w: 30, h: 40, to: 'selThrone', need: 'selPath', needMsg: 'A solid slab of green-black rock seals the passage. The stones would know better than you what opens it.' },
+    ],
+  },
+  selThrone: {
+    pos: [0, 1.5, -2], yaw: 0, sky: 'selenitic', amb: 'wind',
+    caption: 'A stone chamber — a bronze-collared throne faces a window arch, worn with eight notches',
+    expect: ['selChair', 'selMoon'],
+    spots: [
+      { id: 'backSelSound', label: 'back out to the stones', yaw: 180, w: 50, h: 36, to: 'selSound' },
+      { id: 'selChair', label: 'swivel the great throne', yaw: 8, w: 30, h: 34, act: 'selChair' },
+      { id: 'throneCarving', label: 'a carving above the arch', yaw: 0, w: 26, h: 12, act: 'throneCarving' },
+      { id: 'lookMoon', label: 'the moon in the arch', yaw: -16, w: 24, h: 20, act: 'lookMoon' },
+      { id: 'toSelGate', label: 'the doorway high in the cliff', yaw: 90, w: 34, h: 40, to: 'selGate', need: 'selAlign', needMsg: 'A seamless wall of rock, cold and green-black. No seam, no handle — the mountain keeps its own counsel.' },
+    ],
+  },
+  selGate: {
+    pos: [0, 4.5, -10], yaw: 0, sky: 'selenitic', amb: 'wind',
+    caption: 'Terraces cut into the mountain flank — switchback steps climb toward the summit',
+    expect: ['selMountain'],
+    spots: [
+      { id: 'backThrone', label: 'the doorway back into the mountain', yaw: 180, w: 40, h: 36, to: 'selThrone' },
+      { id: 'upTop', label: 'the switchback steps', yaw: 24, w: 40, h: 40, to: 'selTop' },
+      { id: 'lookMoon', label: 'the moon above the peak', yaw: -30, w: 40, h: 26, act: 'lookMoon' },
+    ],
+  },
+  selTop: {
+    pos: [0, 9.5, -6], yaw: 0, sky: 'selenitic', amb: 'wind',
+    caption: 'The summit ledge — the moon huge overhead, and a brass gear in a wall slot',
+    expect: ['selGear'],
+    spots: [
+      { id: 'downGate', label: 'down the steps to the terraces', yaw: 180, w: 40, h: 36, to: 'selGate' },
+      { id: 'takeGear', label: 'the brass gear in the stone slot', yaw: 0, w: 26, h: 26, act: 'takeGear', gone: 'gearSelenitic' },
+      { id: 'lookMoon', label: 'the moon, close enough to touch', yaw: 62, w: 50, h: 34, act: 'lookMoon' },
     ],
   },
   stoneship: {

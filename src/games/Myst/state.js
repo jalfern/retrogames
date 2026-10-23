@@ -10,6 +10,8 @@ export const SPHERE_CODE = [2, 0, 3, 1]
 export const SWITCH_LINKS = [
   [0, 1], [1, 0, 2], [2, 1, 3], [3, 2, 4], [4, 3],
 ]
+export const STONE_SIZES = 6
+export const SUN_MOON = 5
 
 export const BROTHER_LINES = {
   red: [
@@ -37,6 +39,8 @@ export function freshState() {
     sphereDial: [-1, -1, -1, -1],
     starDial: [0, 0, 0, 0],
     switches: [0, 0, 0, 0, 0],
+    selStone: 0,
+    selChair: 0,
     ending: null,
     message: 'You fall through the starless dark — and land at the foot of a wooden dock.',
     bookOpen: null,
@@ -251,6 +255,50 @@ function act(s, spot, ev) {
       s.message = 'The SPECTATOR: a glass sphere full of slow-turning light. Three lights swim inside it — a world of green rings, a grey and glassy sea, a world of waterfalls.' + (known.length ? ` You have walked in ${known.map((a) => a.toUpperCase()).join(', ')}.` : ' Ages, all of them. Worlds inside books.')
       ev.push('panel', 'spectator'); break
     }
+    // ---- SELENITIC: the sounding path, the sun-and-moon throne, the gear ----
+    case 'toneStone': {
+      const i = spot.tone
+      if (i === s.selStone) {
+        s.selStone = i + 1
+        ev.push(`stone:${i}`)
+        if (s.selStone === STONE_SIZES) {
+          s.flags.selPath = true
+          s.message = 'The last stone rings out clear and high — and the whole corridor of rock answers. Deep in the cliff face a gate grinds open, tooth against tooth.'
+          ev.push('gateOpen')
+        } else {
+          s.message = `A pure tone, ${i + 1} of ${STONE_SIZES}. The stone sinks a finger's width and stays. ${STONE_SIZES - i - 1} to go — and the pitch climbs as you cross.`
+        }
+      } else {
+        s.selStone = 0
+        s.message = 'A sour buzz crawls across the field — wrong stone, or wrong order. The path falls silent, and every stone rises back to the dirt to start again.'
+        ev.push('buzz')
+      }
+      break
+    }
+    case 'selChair': {
+      s.selChair = (s.selChair + 1) % 8
+      ev.push('swivel')
+      if (s.selChair === SUN_MOON && !has(s, 'selAlign')) {
+        s.flags.selAlign = true
+        s.message = 'The chair locks into its detent. Through the window arch: the moon at the left jamb, the low sun at the right — sun AND moon, in one frame of stone. Something vast shifts inside the mountain; a door you have not seen opens above the terraces.'
+        ev.push('alignOpen')
+      } else if (s.selChair === SUN_MOON) {
+        s.message = 'Sun and moon again, framed together in the arch. The mountain has already opened for that sight.'
+      } else if (s.selChair === 2) {
+        s.message = 'You swivel the throne. The window takes the low sun full-on — gold on the green rock — but the moon has swung out of the arch. Only one light in the frame.'
+      } else {
+        s.message = 'You swivel the throne. The great moon hangs in the arch, fat and cratered — but the arch wants the sun beside it, and the sun is somewhere else.'
+      }
+      break
+    }
+    case 'takeGear': {
+      if (has(s, 'gearSelenitic')) return { state: s, events: [] }
+      s.flags.gearSelenitic = true
+      s.message = 'You lift the GEAR from its slot — brass the colour of old honey, stamped with the sun-and-moon sigil of this Age. One of five, it said on the tower of Mechanical. Five, to open something that should stay shut.'
+      ev.push('gearTake'); break
+    }
+    case 'throneCarving': s.message = 'A plaque carved above the window arch: "When sun and moon share the arch, the mountain opens." Below it, eight notches are worn into the floor around the throne.'; ev.push('look'); break
+    case 'lookMoon': s.message = 'The moon of SELENITIC: close enough to count its craters, green-white on a sky the colour of deep water. It does not move — nothing here does, except the light.'; ev.push('look'); break
     default: break
   }
   return { state: s, events: ev }
@@ -292,6 +340,14 @@ export function solveScript() {
     S('click', { id: 'fireplace' }), S('click', { id: 'fireplace' }),
     S('click', { id: 'pageSeleniticRed' }), S('click', { id: 'pageSeleniticBlue' }),
     S('click', { id: 'sphere' }), S('dial', { pad: 'sphere', i: 0, step: SPHERE_CODE[0] }), S('dial', { pad: 'sphere', i: 1, step: SPHERE_CODE[1] }), S('dial', { pad: 'sphere', i: 2, step: SPHERE_CODE[2] }), S('dial', { pad: 'sphere', i: 3, step: SPHERE_CODE[3] }), S('closePanel'),
+    S('move', { id: 'toSelSound' }),
+    ...[0, 1, 2, 3, 4, 5].map((i) => S('click', { id: `stone${i}` })),
+    S('move', { id: 'toSelThrone' }),
+    ...Array.from({ length: SUN_MOON }, () => S('click', { id: 'selChair' })),
+    S('move', { id: 'toSelGate' }),
+    S('move', { id: 'upTop' }),
+    S('click', { id: 'takeGear' }),
+    S('move', { id: 'downGate' }), S('move', { id: 'backThrone' }), S('move', { id: 'backSelSound' }), S('move', { id: 'backSel' }),
     S('move', { id: 'retSelenitic' }),
     S('click', { id: 'ladderDown' }),
     S('click', { id: 'starPanel' }), ...STAR_CODE.map((v, i) => S('dial', { pad: 'star', i, step: v })), S('closePanel'),
