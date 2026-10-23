@@ -43,7 +43,18 @@ const TOUCHED = [
     ['/adventure', 'stick'], ['/joust', 'stick'], ['/arkanoid', 'stick'],
     ['/missile-battle', 'stick'],
     ['/mario-kart', 'stick'], ['/comet-drift', 'stick'],
+    ['/comet-drift-hd', 'stick'], ['/emberwood', 'stick'],
 ]
+
+// #906: the drawn face buttons must say the game's verbs — the exact list of
+// labels, in draw order (B left, A right), for the games Jon plays most.
+const VERBS = {
+    '/momentum': ['JUMP'],
+    '/comet-drift': ['DRIFT'],
+    '/comet-drift-hd': ['DRIFT'],
+    '/emberwood': ['BOMB', 'ACT'],
+    '/mario-kart': ['DRIFT', 'ITEM'],
+}
 
 // The left control VirtualControls renders, tagged with data-vc (the
 // component's own testable-markup convention):
@@ -123,17 +134,21 @@ for (const [path, method] of TOUCHED) {
         // button's right edge: a tap on A muted the game instead of firing.)
         const tapOk = await page.evaluate(() => {
             const zone = document.querySelector('[data-vc="actzone"]')
-            if (!zone) return { pad: false, bad: [] }
+            if (!zone) return { pad: false, bad: [], labels: [] }
             const bad = []
             for (const btn of zone.children) {
                 const b = btn.getBoundingClientRect()
                 const el = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)
                 if (!zone.contains(el)) bad.push(btn.textContent.trim() + '->' + ((el && el.tagName) || 'null'))
             }
-            return { pad: true, bad }
+            return { pad: true, bad, labels: [...zone.children].map((b) => b.textContent.trim()) }
         })
         if (tapOk.pad)
             r.check(`${path} action buttons are tappable (no chrome overlap)`, tapOk.bad.length === 0, tapOk.bad.join(' '))
+        if (VERBS[path]) {
+            r.check(`${path} face buttons say the game's verbs`, JSON.stringify(tapOk.labels) === JSON.stringify(VERBS[path]),
+                `drawn ${JSON.stringify(tapOk.labels)}, want ${JSON.stringify(VERBS[path])}`)
+        }
     } catch (e) {
         r.check(`${path} boots with zero page errors`, false, String(e.message).slice(0, 200))
         r.check(`${path} pad is on screen`, false, 'boot failed')

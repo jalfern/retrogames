@@ -1605,7 +1605,7 @@ export default function CometDriftHD() {
         >
             <canvas ref={glRef} className="block absolute inset-0 w-full h-full" style={{ touchAction: 'none' }} />
             <canvas ref={hudRef} className="block absolute inset-0 w-full h-full pointer-events-none" />
-            <VirtualControls secondAction={{ label: 'DRIFT', code: 'KeyR' }} visible={padOn && !paused && TOUCH} />
+            <VirtualControls visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'COMET DRIFT HD')} badge={COURSE.name} onResume={handleResume} />}
         </div>
     )

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useContext } from 'react'
 import { dirsFrom, stickVec, STICK_TRAVEL, dpadDirs } from './virtualDir'
 import { PadContext } from './padContext'
-import { padButton, shouldUseStick, waysOf } from './gamepadMap'
+import { padButton, shouldUseStick, waysOf, faceLayout } from './gamepadMap'
 import { setStick, clearStick } from '../utils/padState'
 import { methodOf, press, release, setStickVec, clearHeld } from '../utils/onePad'
 import { actionCodeAt } from './actionHit'
@@ -38,10 +38,6 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     const [diagKeysState, setDiagKeysState] = useState(() => new Set())
 
     const pad = useContext(PadContext)
-    // An explicit secondAction prop still wins; otherwise read the game's `pad`
-    // declaration from the registry (the single source of truth for step 2).
-    const secondAction = secondActionProp || (pad ? padButton(pad) : null)
-
     // #420 — the three input methods. A game that declares `method` writes THE
     // one pad (the held holder) instead of firing synthetic KeyboardEvents, and
     // gets: dpad → the fixed d-pad, stick → a fixed always-visible stick,
@@ -50,13 +46,17 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
     // action. Games without `method` keep the legacy floating-stick / d-pad path.
     const method = methodOf(pad)
     const hasMethod = !!(pad && pad.method)
-    const reads = (pad && Array.isArray(pad.reads)) ? pad.reads : []
     const mStick = hasMethod && method === 'stick'
     const mPointer = hasMethod && method === 'pointer'
-    const showA = hasMethod ? reads.includes('a') : true
-    // #885: label the A button by what it does, not by its shell letter. Games
-    // declare the verb via pad.aLabel in the registry; the arcade default is FIRE.
-    const aLabel = (pad && pad.aLabel) || 'FIRE'
+    // #906: the face-button law lives in faceLayout (pure, vpadcheck-pinned):
+    // `reads` restricts the pad to the verbs the game hears, labels are verbs.
+    const face = faceLayout(pad)
+    const showA = face.showA
+    const aLabel = face.aLabel
+    // An explicit secondAction prop still wins; otherwise read the game's `pad`
+    // declaration from the registry (the single source of truth for step 2).
+    // A game that declares reads without 'b' hides B even if the prop is passed.
+    const secondAction = face.showB ? (secondActionProp || padButton(pad)) : null
     const toHolder = hasMethod
 
     // Step 1 (#384): the floating stick is the DEFAULT touch layout — it anchors
