@@ -13,7 +13,7 @@
 import { REC_FORMAT, encodePad } from './recording.js'
 
 export const FB_WINDOW_MS = 30_000
-export const FB_RELAY = 'https://retrogames-mutant.invalid'
+export const FB_RELAY = 'https://retrogames.jalfern.workers.dev'
 
 // JON'S KEY (#886) — reports without a key land quarantined behind
 // needs-approval, so Jon's own phone files the same way as a stranger's. He
