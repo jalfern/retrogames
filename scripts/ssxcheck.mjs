@@ -11,7 +11,7 @@ import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabK
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
 import { buildCourse, terrainY, slopePos, COURSE_COUNT, DS, WALL_X, sceneryPlan, SHELF_PROPS } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
-import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, acrossYaw } from '../src/games/SSX/art.js'
+import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, acrossYaw, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD } from '../src/games/SSX/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -886,6 +886,87 @@ for (let c = 0; c < COURSE_COUNT; c++) {
             t++
         }
         ok('#791 the hot attract demo throws REVERTs visibly — and lands them clean', reverts >= 2 && crashes === 0)
+    }
+}
+
+// ---- #791 slice 11: wind + crowd life ----------------------------------------
+// The face is never frozen: every flag rides one deterministic wind field, and
+// the finish grandstands hop as the line comes up. Pure art.js functions — the
+// sim is untouched — so the gates are pure too.
+{
+    let lo = 1, hi = 0, sum = 0, sum2 = 0, m = 0
+    for (let t = 0; t < 6000; t++) {
+        for (const s of [0, 37.3, 91.5, 240, 512]) {
+            const w = windAt(t, s)
+            lo = Math.min(lo, w); hi = Math.max(hi, w); sum += w; sum2 += w * w; m++
+        }
+    }
+    ok('#791 the wind field stays inside [0,1]', lo >= 0 && hi <= 1)
+    ok('#791 the wind actually breathes — gust + ripple give real variance',
+        Math.sqrt(sum2 / m - (sum / m) ** 2) > 0.12)
+    ok('#791 the wind is deterministic', windAt(1234, 88.25) === windAt(1234, 88.25))
+    ok('#791 the gust travels — far-apart points at one tick differ',
+        Math.abs(windAt(900, 0) - windAt(900, 160)) > 1e-3)
+
+    let lmax = 0, bounded = true
+    for (let t = 0; t < 3000; t++) {
+        const sw = flagSway(t, 0.7, 64)
+        lmax = Math.max(lmax, Math.abs(sw.lean))
+        if (sw.stretch < 0.85 || sw.stretch > 1.15 || Math.abs(sw.lean) > 0.16) bounded = false
+    }
+    ok('#791 flag lean is a bend, not a breakage (|lean| ≤ 0.16 rad, stretch ±15%)', bounded)
+    ok('#791 flags lean hard when the wind blows', lmax >= 0.05)
+    ok('#791 neighbouring flags are out of phase — the line never claps in unison',
+        flagSway(777, 0, 40).lean !== flagSway(777, 1.9, 40).lean)
+    {
+        const series = []
+        for (let t = 0; t < 2400; t++) series.push([windAt(t, 200), Math.abs(flagSway(t, 0.3, 200).lean)])
+        series.sort((a, b) => b[0] - a[0])
+        let hiSum = 0, loSum = 0
+        for (let i = 0; i < 240; i++) hiSum += series[i][1]
+        for (let i = series.length - 240; i < series.length; i++) loSum += series[i][1]
+        ok('#791 gustier ticks lean deeper on average — the flags read the wind', hiSum > loSum * 1.5)
+    }
+
+    const A = crowdPlan(3), B = crowdPlan(9)
+    ok('#791 every grandstand packs the tiers — 12+ spectators, three rows',
+        A.length >= 12 && new Set(A.map((b) => b.y.toFixed(2))).size === 3)
+    ok('#791 seats are seeded, not gridded — two stands differ',
+        A.length !== B.length || A.some((b, i) => b.x !== B[i].x || b.c !== B[i].c))
+    ok('#791 the crowd wears a kit, not one colour', new Set(A.map((b) => b.c)).size >= 4)
+    ok('#791 a stand rebuilds identically — replay-safe crowds',
+        JSON.stringify(crowdPlan(3)) === JSON.stringify(crowdPlan(3)))
+
+    let hopMax = 0, allZero = true
+    for (let t = 0; t < 3000; t++) {
+        if (crowdHop(t, A[0], 0) !== 0) allZero = false
+        hopMax = Math.max(hopMax, crowdHop(t, A[0], 1))
+    }
+    ok('#791 far up the face the seats stay still — hype 0 is seated', allZero)
+    ok('#791 hype has hop in it, bounded by the crowd constant',
+        hopMax > 0.08 && hopMax <= CROWD.hop + 1e-9)
+    ok('#791 no two spectators land on the same beat', crowdHop(512, A[0], 1) !== crowdHop(512, A[1], 1))
+    ok('#791 hype: full at the line, dead far up, monotone, symmetric through the finish',
+        crowdHype(500, 520) === 1 && crowdHype(0, 520) === 0 &&
+        crowdHype(520, 500) === crowdHype(500, 520) &&
+        crowdHype(420, 500) > crowdHype(320, 500))
+    {
+        const fm = { rotation: { z: 0 }, scale: { x: 1 } }
+        const cm = { position: { y: 0.91 }, rotation: { z: 0 } }
+        const grp = {
+            userData: {
+                anim: {
+                    flags: [{ m: fm, s: 120, phase: 0.4, baseZ: 0, baseS: 1 }],
+                    crowd: [{ m: cm, y0: 0.91, b: crowdPlan(3)[0] }],
+                },
+            },
+        }
+        const n1 = animateDecor(grp, 1234, 1)
+        const n2 = animateDecor(grp, 1290, 1)
+        ok('#791 the frame animator drives both tag lists and counts them',
+            n1 === 2 && n2 === 2 && (fm.rotation.z !== 0 || fm.scale.x !== 1) && cm.position.y >= 0.91)
+        ok('#791 a world with no shelf attached degrades whole — zero touched',
+            animateDecor({ userData: {} }, 10, 1) === 0)
     }
 }
 

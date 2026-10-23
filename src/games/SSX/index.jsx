@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES } from './sim.js'
 import { decide } from './planner.js'
 import { slopePos, terrainY, DS } from './course.js'
-import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -539,6 +539,9 @@ const SSXGame = () => {
             } else if (musicTrack) { audioController.stopMusic(); musicTrack = null }
 
             if (popT > 0) popT--
+            // #791 slice 11: the face is never frozen — flags ride the wind
+            // everywhere, and the finish grandstands hop as the line comes up.
+            animateDecor(world, g.tick, crowdHype(p.s, world.userData.standS ?? Infinity))
             syncHud()
             renderer.render(scene, camera)
         }
@@ -666,6 +669,16 @@ const SSXGame = () => {
                     }
                 },
                 keys,
+                // #791 slice 11: decor life probe — shelf tag counts + whether
+                // the crowd is actually moving (y samples across two frames).
+                decor: () => {
+                    const anim = world.userData.anim || { flags: [], crowd: [] }
+                    return {
+                        flags: anim.flags.length, crowd: anim.crowd.length,
+                        standS: Number.isFinite(world.userData.standS) ? world.userData.standS : -1,
+                        ys: anim.crowd.slice(0, 4).map((c) => +c.m.position.y.toFixed(3)),
+                    }
+                },
                 setPose: (n) => { poseOverride = n || null },
                 hero: () => {
                     const h = riders[0]?.userData?.hero
