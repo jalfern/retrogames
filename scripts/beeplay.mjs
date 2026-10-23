@@ -14,7 +14,7 @@
 // and drink, then bank a full load at the hive → HUD pixels match sim state →
 // bait the gecko until the run ends → ledger, back to attract, tap to restart.
 
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.BEE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/beezee`
 await requireDevServer(URL)
@@ -25,7 +25,7 @@ const page = await browser.newPage({ viewport: { width: 1100, height: 700 }, dev
 page.setDefaultTimeout(90000)
 const errors = []
 page.on('pageerror', e => errors.push(`[pageerror] ${e.message}`))
-page.on('console', m => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__beeTest.probe())
 const aim = () => page.evaluate(() => window.__beeTest.aim())

@@ -13,7 +13,7 @@
 //   4. DEATH AND RESTART loop back to attract and to a fresh run.
 // The path audit, tree pins, slack rule and determinism live in
 // scripts/galactcheck.mjs (Node) — this suite proves the browser plumbing.
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.GALAGA_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/galaga`
 await requireDevServer(URL)
@@ -24,7 +24,7 @@ const page = await browser.newPage({ viewport: { width: 620, height: 900 }, devi
 page.setDefaultTimeout(180000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__galagaTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)

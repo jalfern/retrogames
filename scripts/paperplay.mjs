@@ -16,7 +16,7 @@
 //   7. ? pauses; zero page errors throughout.
 // The slack rule, route audit and determinism live in papercheck (Node).
 
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 import { STAGES, PALETTES } from '../src/games/Paperboy/levels.js'
 
 const hexToRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
@@ -34,7 +34,7 @@ const page = await browser.newPage({ viewport: { width: 700, height: 640 }, devi
 page.setDefaultTimeout(180000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__paperTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)

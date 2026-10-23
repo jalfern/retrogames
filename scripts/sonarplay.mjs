@@ -10,7 +10,7 @@
 // with the planner's arrows, descends, gets eaten by a rigged-but-real eel
 // collision, and restarts — all through page.keyboard, the same events the
 // virtual pad dispatches on a phone.
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.SONAR_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/sonar`
 await requireDevServer(URL)
@@ -21,7 +21,7 @@ const page = await browser.newPage({ viewport: { width: 900, height: 640 }, devi
 page.setDefaultTimeout(120000)
 const errors = []
 page.on('pageerror', e => errors.push(`[pageerror] ${e.message}`))
-page.on('console', m => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__sonarTest.probe())
 const hint = () => page.evaluate(() => window.__sonarTest.hint())

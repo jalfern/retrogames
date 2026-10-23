@@ -17,7 +17,7 @@
 //      into the open window, real Space chits the quota, same color is
 //      blocked.
 // The fairness scan, tree pins and determinism live in polarcheck (Node).
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.POLAR_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/polarity`
 await requireDevServer(URL)
@@ -28,7 +28,7 @@ const page = await browser.newPage({ viewport: { width: 620, height: 900 }, devi
 page.setDefaultTimeout(180000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__polarTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)

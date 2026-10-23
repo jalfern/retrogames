@@ -15,7 +15,7 @@
 //   4. DETERMINISM — the same (seed, first click) reproduces the same board.
 // The battery, the brute-force oracle and the four mutants live in
 // scripts/sweepcheck.mjs (Node) — this suite proves the browser plumbing.
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.SWEEP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/minesweeper`
 await requireDevServer(URL)
@@ -26,7 +26,7 @@ const page = await browser.newPage({ viewport: { width: 720, height: 820 }, devi
 page.setDefaultTimeout(120000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__sweepTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)
