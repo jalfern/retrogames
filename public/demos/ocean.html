@@ -33,6 +33,8 @@
     width: 100%; height: 24px; margin-top: 7px; accent-color: #ffb060;
     touch-action: none; cursor: ew-resize;
   }
+  #sea input[type=checkbox] { width: 15px; height: 15px; accent-color: #ffb060; cursor: pointer; }
+  #sea label { cursor: pointer; user-select: none; }
 </style>
 </head>
 <body>
@@ -50,6 +52,7 @@
   <input id="shoot" type="range" min="0" max="100" step="1" value="0" aria-label="Shooting-star frequency, off to meteor shower">
   <div class="row" style="margin-top:7px"><b>Aurora</b><span id="auroraLbl">Off</span></div>
   <input id="aurora" type="range" min="0" max="100" step="1" value="0" aria-label="Aurora intensity, off to vivid">
+  <div class="row" style="margin-top:9px"><b>Rock</b><label style="display:flex;align-items:center;gap:7px"><input id="rock" type="checkbox" aria-label="Boat rocking: the eye couples to the swell"> <span id="rockLbl">Off</span></label></div>
 </div>
 <div id="fatal"></div>
 <script src="ocean.stars.js"></script>
@@ -105,8 +108,9 @@ function lstDeg(t) {
 }
 // #704 — phone-faithful night sky. Sizes are CSS-px radii; the vertex pass scales
 // them by the render dpr so a star reads the same on a DPR-1.75 phone (a 1.1-canvas-px
-// faint star is sub-pixel there — the field barely showed). The Milky Way is a field of
-// large, very dim, heavily overlapping soft billboards — a continuous glow, never dots.
+// faint star is sub-pixel there — the field barely showed). #832: the Milky Way is no
+// longer a field of billboards — it is a continuous dusty band in the sky shader
+// (milkyWay), so it has real structure and leaves no horizon-clipped crescent ghosts.
 const STAR_MIN = 1.5, STAR_RANGE = 3.2;   // CSS-px radius, faint (mag 5.5) → bright end
 const MW_SIZE = 24, MW_GAIN = 0.13;      // CSS-px blob radius + per-blob brightness (vs a star)
 const STAR_D = (() => {
@@ -120,7 +124,6 @@ const STAR_D = (() => {
     const c = SKY.STAR_PAL[s[3]] || [1, 1, 1];              // spectral color O..M
     out.push({ ra: s[0], dec: s[1], sizePx, br, c, tw: (i * 0.6180339887) % 1, gain: 1.0 });
   }
-  for (const m of SKY.MILKY) out.push({ ra: m[0], dec: m[1], sizePx: MW_SIZE, br: m[2] * 5.0, c: [0.56, 0.63, 0.80], tw: Math.random(), gain: MW_GAIN });
   return out;
 })();
 
@@ -167,6 +170,10 @@ let shoot = shootTarget;
 // byte-identical to the pre-#612 build (the shader skips the curtains entirely).
 let auroraTarget = Number.isFinite(parseFloat(qs.get('aurora'))) ? clamp01(parseFloat(qs.get('aurora'))) : 0;
 let aurora = auroraTarget;
+// #832 — boat rocking: the eye couples to the local swell (bob + pitch/roll). Jon's
+// seasick, so it is now an opt-IN, OFF by default (the eye sits fixed at camPos).
+// `?rock=1`/`?rock=on` or the panel checkbox enables it; absent/0 = fixed eye.
+let rock = qs.get('rock') === '1' || qs.get('rock') === 'on';
 const windU = (s = storm) => 3 + 21 * s;
 // #462 item 3 — gusts: a slow fbm over time breathes wind, wave height and foam
 // around the slider set point. Amplitude scales with sea state, so calm stays
@@ -201,6 +208,8 @@ const shootSl = document.getElementById('shoot');
 const shootLbl = document.getElementById('shootLbl');
 const auroraSl = document.getElementById('aurora');
 const auroraLbl = document.getElementById('auroraLbl');
+const rockCb = document.getElementById('rock');
+const rockLbl = document.getElementById('rockLbl');
 
 const SHOOT_NAMES = [[0.001, 'OFF'], [0.2, 'LOW'], [0.5, 'OCCASIONAL'], [0.8, 'ACTIVE'], [1.01, 'SHOWER']];
 const AURORA_NAMES = [[0.001, 'OFF'], [0.3, 'FAINT'], [0.65, 'ACTIVE'], [1.01, 'VIVID']];
@@ -217,6 +226,8 @@ function updateSeaUI() {
   shootSl.value = String(Math.round(shootTarget * 100));
   auroraLbl.textContent = AURORA_NAMES.find(x => auroraTarget < x[0])[1];
   auroraSl.value = String(Math.round(auroraTarget * 100));
+  rockLbl.textContent = rock ? 'On' : 'Off';
+  rockCb.checked = rock;
 }
 function setStorm(v) {
   stormTarget = Math.max(0, Math.min(1, v));
@@ -226,11 +237,13 @@ function setTod(v) { tod = clamp01(v); updateSeaUI(); }
 function setCloud(v) { cloud = clamp01(v); updateSeaUI(); }
 function setShoot(v) { shootTarget = clamp01(v); updateSeaUI(); }
 function setAurora(v) { auroraTarget = clamp01(v); updateSeaUI(); }
+function setRock(v) { rock = !!v; updateSeaUI(); }
 stormSl.addEventListener('input', () => setStorm(+stormSl.value / 100));
 todSl.addEventListener('input', () => setTod(+todSl.value / 100));
 cloudSl.addEventListener('input', () => setCloud(+cloudSl.value / 100));
 shootSl.addEventListener('input', () => setShoot(+shootSl.value / 100));
 auroraSl.addEventListener('input', () => setAurora(+auroraSl.value / 100));
+rockCb.addEventListener('change', () => setRock(rockCb.checked));
 stormSl.addEventListener('keydown', e => e.stopPropagation());
 todSl.addEventListener('keydown', e => e.stopPropagation());
 cloudSl.addEventListener('keydown', e => e.stopPropagation());
@@ -313,6 +326,10 @@ var<private> g_foamC: vec3f = vec3f(0.93, 0.90, 0.85);
 var<private> g_deepK: f32 = 0.85;
 var<private> g_sssK: f32 = 0.80;
 var<private> g_aurora: f32 = 0.0;
+// #832 — the Milky Way band: north-galactic-pole + galactic-centre directions in the
+// WORLD (ENU) frame, rotated by LST on the CPU (same transform as the star field).
+var<private> g_mwPole: vec3f = vec3f(0.0, 1.0, 0.0);
+var<private> g_mwCen: vec3f = vec3f(1.0, 0.0, 0.0);
 
 // night, sunrise, midday, sunset
 const P_ZEN: array<vec3f, 4> = array<vec3f, 4>(vec3f(0.010, 0.016, 0.048), vec3f(0.075, 0.130, 0.300), vec3f(0.085, 0.26, 0.60), vec3f(0.040, 0.070, 0.190));
@@ -363,7 +380,11 @@ fn skyColor(dirIn: vec3f, t: f32) -> vec3f {
   let moonVis = g_night * (1.0 - 0.90 * cc) * (1.0 - 0.55 * st);
   sky += vec3f(0.30, 0.40, 0.62) * (pow(mmu, 14.0) * 0.12 + pow(mmu, 300.0) * 0.9) * moonVis;
   sky += vec3f(0.95, 0.97, 1.0) * smoothstep(0.99963, 0.99980, mmu) * 1.6 * moonVis;
-  // real stars (Yale BSC) + Milky Way are drawn by a separate billboard pass, not here
+  // #832 — Milky Way: a continuous dusty band (see milkyWay), rendered in world space.
+  // Night-gated; overcast buries it and storm darkens it (same law as the moon glow).
+  // Added before the cloud mix so a thick deck occludes it. The point stars (Yale BSC)
+  // are still drawn by the separate billboard pass below — the band is no longer one.
+  sky += milkyWay(d) * 0.12 * g_night * (1.0 - 0.94 * cc) * (1.0 - 0.55 * st) * smoothstep(-0.06, 0.08, dy);
   let cloudY = max(dy, 0.004);
   let cp = d.xz / (cloudY + 0.10) * 1.35 + vec2f(t * (0.010 + 0.030 * st), t * (0.004 + 0.014 * st));
   var cld = fbm(cp, 5);
@@ -385,15 +406,21 @@ fn skyColor(dirIn: vec3f, t: f32) -> vec3f {
   return sky;
 }
 // #612 — the curtains. Three thin layers raymarched along the view ray between two
-// altitude planes; each layer samples an fbm once. The noise domain is sheared: fast
-// along a fixed horizontal axis, slow along d.y and the perpendicular axis, so the
-// iso-density features stretch into vertical ribbons. A second slow fbm folds the
-// axis (rippling folds) and every layer drifts at its own rate. Colour by height:
-// green at the hem fading to magenta/purple at the crown. Additive, hem-softened.
+// altitude planes; each layer samples an fbm once. The noise domain is sheared so the
+// iso-density features stretch into vertical ribbons; a second slow fbm folds the axis
+// (rippling folds) and every layer drifts at its own rate. Colour by height: green at
+// the hem fading to magenta/purple at the crown. Additive, hem-softened.
+// #832 — the along/perp axes are pinned to a FIXED world direction, not the ray's
+// own horizontal bearing. With ax = normalize(d.xz) the perpendicular term
+// (q.x*ax.y - q.z*ax.x) collapses to exactly 0 (q is a scalar multiple of d) and
+// along = |q.xz| (the slant range) is azimuth-invariant near the horizon, so the low
+// hem read as one even ring around the horizon. A fixed world axis makes both terms
+// swing with azimuth: the low bands break into curtains/folds that vary along their
+// length, while the high band (small slant range, fold/t dominated) is essentially
+// untouched — the undulations up high that were already right.
 fn auroraGlow(d: vec3f, t: f32) -> vec3f {
   if (d.y <= 0.015) { return vec3f(0.0); }
-  var ax = vec2f(1.0, 0.0);
-  if (abs(d.x) + abs(d.z) > 1e-4) { ax = normalize(vec2f(d.x, d.z)); }
+  var ax = vec2f(0.94, 0.34);
   var acc = vec3f(0.0);
   for (var i: i32 = 0; i < 3; i = i + 1) {
     let fi = f32(i);
@@ -423,6 +450,34 @@ fn auroraGlow(d: vec3f, t: f32) -> vec3f {
     acc += col * ribbon * (1.0 - 0.22 * fi);
   }
   return acc * 1.7;
+}
+// #832 — the Milky Way as a continuous dusty band (the galactic plane seen edge-on),
+// rendered in world space so it rotates with the star field's LST and reflects on the
+// sea via the same skyColor path. This replaces the old field of ~260 soft billboards,
+// which read as scattered blobs and left crescent ghosts where the sea depth-clipped a
+// large billboard straddling the horizon. The band is a smooth width-falloff around the
+// galactic plane, textured along its length by fbm (bright nebulous clumps + dark dust
+// lanes) and brightened toward the galactic centre. Night-gated: at day g_night ~ 0.
+fn milkyWay(d: vec3f) -> vec3f {
+  let p = dot(d, g_mwPole);            // sin of the (signed) angle to the galactic plane
+  let ap = abs(p);
+  if (ap > 0.42) { return vec3f(0.0); }        // ~24 deg from the plane: empty sky
+  let core = exp(-(ap * ap) / 0.0098);         // ~4 deg bright core
+  let halo = exp(-(ap * ap) / 0.0512);         // ~9 deg broad faint halo
+  let base = 0.60 * core + 0.55 * halo;
+  if (base < 0.012) { return vec3f(0.0); }
+  let dp = d - p * g_mwPole;                      // view direction projected onto the plane
+  let e1 = normalize(cross(g_mwPole, g_mwCen));   // along the band (toward the centre)
+  let e2 = cross(g_mwPole, e1);                   // across the band
+  let along = dot(dp, e1);
+  let across = dot(dp, e2);
+  let n = fbm(vec2f(along * 3.4, across * 6.5 + 41.0), 5);
+  let dust = 0.50 + 0.95 * smoothstep(0.32, 0.86, n);            // nebulous clumps
+  let lane = 1.0 - 0.52 * smoothstep(0.52, 0.82, fbm(vec2f(along * 1.15 + 11.0, across * 2.1), 4));
+  let toC = dot(d, g_mwCen);
+  let bulge = 1.0 + 1.1 * smoothstep(0.90, 1.0, toC);            // galactic-centre bulge
+  let col = mix(vec3f(0.60, 0.66, 0.80), vec3f(0.82, 0.75, 0.66), smoothstep(0.88, 1.0, toC));
+  return col * base * dust * lane * bulge;
 }
 fn tonemap(vIn: vec3f) -> vec3f {
   let v = max(vIn, vec3f(0.0));
@@ -652,6 +707,8 @@ async function boot() {
       sky: vec4f,
       sunD: vec4f,
       moonD: vec4f,
+      mwPole: vec4f,
+      mwCen: vec4f,
     };
     @group(0) @binding(0) var<uniform> su: SeaU;
     @group(0) @binding(1) var samp: sampler;
@@ -710,6 +767,7 @@ async function boot() {
       g_aurora = su.oct.w;
       g_sun = normalize(su.sunD.xyz);
       g_moon = normalize(su.moonD.xyz);
+      g_mwPole = normalize(su.mwPole.xyz); g_mwCen = normalize(su.mwCen.xyz);
       setupSkyPal(g_tod, g_storm);
       let cc = g_cloud;
       let V = normalize(su.camPos - in.world);
@@ -803,6 +861,8 @@ async function boot() {
       sky: vec4f,
       sunD: vec4f,
       moonD: vec4f,
+      mwPole: vec4f,
+      mwCen: vec4f,
     };
     @group(0) @binding(0) var<uniform> ku: SkyU;
     struct VOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
@@ -820,6 +880,7 @@ async function boot() {
       g_aurora = ku.p1;
       g_sun = normalize(ku.sunD.xyz);
       g_moon = normalize(ku.moonD.xyz);
+      g_mwPole = normalize(ku.mwPole.xyz); g_mwCen = normalize(ku.mwCen.xyz);
       setupSkyPal(g_tod, g_storm);
       let dir = normalize(ku.fwd + ku.right * (in.uv.x * ku.aspect * ku.tanF) + ku.up * (in.uv.y * ku.tanF));
       var c = skyColor(dir, ku.time);
@@ -839,7 +900,7 @@ async function boot() {
   const samp = device.createSampler({
     magFilter: filt, minFilter: filt, addressModeU: 'repeat', addressModeV: 'repeat',
   });
-  const uSea = device.createBuffer({ size: 208, usage: U });
+  const uSea = device.createBuffer({ size: 240, usage: U });
   const bgSea = device.createBindGroup({ layout: vpLayout, entries: [
     { binding: 0, resource: { buffer: uSea } },
     { binding: 1, resource: samp },
@@ -897,7 +958,7 @@ async function boot() {
   });
   const skyLayout = device.createBindGroupLayout({ entries: [
     { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }], });
-  const uSky = device.createBuffer({ size: 112, usage: U });
+  const uSky = device.createBuffer({ size: 144, usage: U });
   const bgSky = device.createBindGroup({ layout: skyLayout, entries: [{ binding: 0, resource: { buffer: uSky } }] });
   const skyPipeline = device.createRenderPipeline({
     layout: device.createPipelineLayout({ bindGroupLayouts: [skyLayout] }),
@@ -1122,7 +1183,7 @@ async function boot() {
   let t = qs.get('t0') ? parseFloat(qs.get('t0')) : 8.0;
   let last = performance.now();
   let frames = 0;
-  let vw = 0, vh = 0;
+  let vw = 0, vh = 0, lastVP = null;
   let dprCap = 1;   // #704: render dpr — star sizes are CSS-px, scaled by this at draw time
 
   function resize() {
@@ -1165,11 +1226,20 @@ async function boot() {
     // height, roll/pitch with the patch slope. The probe readback lags ~2 frames,
     // so smooth toward the newest sample; the rendered sea state (and hence the
     // wave amplitude) scales the motion — calm reads still, storm throws the eye.
-    if (swellTarget) {
+    // #832 — this coupling IS the boat rocking, now an opt-IN (off by default,
+    // seasick). Off: the eye stays fixed at camPos — the swell decays to 0 and the
+    // probe idles (see the rock-gated readback below). On: exactly the old coupling.
+    if (rock) {
+      if (swellTarget) {
+        const k = 1 - Math.exp(-dt / SWELL_TAU);
+        swell.h += (swellTarget.h - swell.h) * k;
+        swell.pitch += (swellTarget.pitch - swell.pitch) * k;
+        swell.roll += (swellTarget.roll - swell.roll) * k;
+        swellTarget = null;
+      }
+    } else {
       const k = 1 - Math.exp(-dt / SWELL_TAU);
-      swell.h += (swellTarget.h - swell.h) * k;
-      swell.pitch += (swellTarget.pitch - swell.pitch) * k;
-      swell.roll += (swellTarget.roll - swell.roll) * k;
+      swell.h *= (1 - k); swell.pitch *= (1 - k); swell.roll *= (1 - k);
       swellTarget = null;
     }
     eye[0] = cam.pos[0]; eye[1] = cam.pos[1] + swell.h; eye[2] = cam.pos[2];
@@ -1184,6 +1254,7 @@ async function boot() {
     ];
     const asp = vw / Math.max(1, vh);
     const vp = mul(persp(62 * Math.PI / 180, asp, 0.2, 2500), lookAt(eye, [eye[0] + vfwd[0], eye[1] + vfwd[1], eye[2] + vfwd[2]], vup));
+    lastVP = vp;
 
     // ease the rendered sea state toward the slider set point over ~1s (no hard
     // cut, #462 item 6); re-fill the spectra while it moves so wave amplitude tracks
@@ -1219,6 +1290,20 @@ async function boot() {
       }
     }
 
+    // #832 — galactic plane in the world (ENU) frame at the current LST (same transform
+    // as the star field, so the band and the stars rotate together).
+    const lstMw = lstDeg(tod) * Math.PI / 180;
+    const mwToDir = (ra, dec) => {
+      const a = ra * Math.PI / 180, dd = dec * Math.PI / 180, H = lstMw - a;
+      const cD = Math.cos(dd), sD = Math.sin(dd);
+      const E = -cD * Math.sin(H);
+      const N = sD * Math.cos(PHI) - cD * Math.sin(PHI) * Math.cos(H);
+      const Uu = sD * Math.sin(PHI) + cD * Math.cos(PHI) * Math.cos(H);
+      const inv = 1 / Math.hypot(E, N, Uu);
+      return [E * inv, Uu * inv, N * inv];
+    };
+    const mwCen = mwToDir(266.4168, -28.9361);    // galactic centre (l=b=0, J2000)
+    const mwPole = mwToDir(192.8595, 27.1284);    // north galactic pole
     device.queue.writeBuffer(uSea, 0, new Float32Array([
       ...vp,
       eye[0], eye[1], eye[2], t,
@@ -1230,6 +1315,8 @@ async function boot() {
       tod, cloud, dayness, nightness,
       sunDir[0], sunDir[1], sunDir[2], 0,
       moonDir[0], moonDir[1], moonDir[2], 0,
+      mwPole[0], mwPole[1], mwPole[2], 0,
+      mwCen[0], mwCen[1], mwCen[2], 0,
     ]));
     device.queue.writeBuffer(uSky, 0, new Float32Array([
       vfwd[0], vfwd[1], vfwd[2], asp,
@@ -1238,6 +1325,8 @@ async function boot() {
       tod, cloud, dayness, nightness,
       sunDir[0], sunDir[1], sunDir[2], 0,
       moonDir[0], moonDir[1], moonDir[2], 0,
+      mwPole[0], mwPole[1], mwPole[2], 0,
+      mwCen[0], mwCen[1], mwCen[2], 0,
     ]));
 
     // real stars: rebuild this frame's billboards from the catalog at LST(date, tod)
@@ -1282,7 +1371,8 @@ async function boot() {
 
     // #462 item 4 — feed the swell probe (camPos + view axes XZ in oct-0 domain,
     // sample radius PROBE_R); only written on a probe frame (see readback below).
-    if (!probeBusy) device.queue.writeBuffer(uProbe, 0, new Float32Array([
+    // #832 — rock-gated: with rocking off the eye is fixed, so the probe idles.
+    if (rock && !probeBusy) device.queue.writeBuffer(uProbe, 0, new Float32Array([
       cam.pos[0], cam.pos[2], fwd[0], fwd[2], right[0], right[2], PROBE_R, OCT[0].L,
     ]));
 
@@ -1317,7 +1407,7 @@ async function boot() {
     }
     // #462 item 4 — dispatch the swell probe + copy its 5 samples out, only on a
     // probe frame so the busy-flagged readback below stays in lockstep (~2-frame lag).
-    if (!probeBusy) {
+    if (rock && !probeBusy) {
       const ppProbe = enc.beginComputePass(); ppProbe.setPipeline(pProbe); ppProbe.setBindGroup(0, bgProbe); ppProbe.dispatchWorkgroups(1, 1, 1); ppProbe.end();
       enc.copyBufferToBuffer(probeBuf, 0, probeRead, 0, 20);
     }
@@ -1346,7 +1436,7 @@ async function boot() {
     device.queue.submit([enc.finish()]);
     // #462 item 4 — async readback (no fence, no stall): center height -> bob,
     // fwd slope -> pitch, right slope -> roll; the frame body smooths it into swell.
-    if (!probeBusy) {
+    if (rock && !probeBusy) {
       probeBusy = true;
       probeRead.mapAsync(GPUMapMode.READ).then(() => {
         const a = new Float32Array(probeRead.getMappedRange().slice(0, 20));
@@ -1399,6 +1489,8 @@ async function boot() {
     setCloud(v) { setCloud(v); },
     setShoot(v) { setShoot(v); },
     setAurora(v) { setAurora(v); },
+    get rock() { return rock; },
+    setRock(v) { setRock(v); },
     auroraState() {
       return { value: +aurora.toFixed(3), target: +auroraTarget.toFixed(3), night: +curNight.toFixed(3), cloud };
     },
@@ -1470,6 +1562,51 @@ async function boot() {
         pole: [0, +Math.sin(PHI).toFixed(4), +Math.cos(PHI).toFixed(4)],
         named,
       };
+    },
+    // #832 — Milky Way band: project well-placed on-band (A, B) and off-plane (C)
+    // directions to screen so the check can prove the band is a continuous, localized
+    // bright strip at night (on-band brighter + contiguous, off-band dim). A point at
+    // galactic longitude l is the centre rotated about the pole by l.
+    milkyWay() {
+      const lst = lstDeg(tod) * Math.PI / 180;
+      const sinP = Math.sin(PHI), cosP = Math.cos(PHI);
+      const toDir = (ra, dec) => {
+        const a = ra * Math.PI / 180, d = dec * Math.PI / 180, H = lst - a;
+        const cD = Math.cos(d);
+        const E = -cD * Math.sin(H);
+        const N = Math.sin(d) * cosP - cD * sinP * Math.cos(H);
+        const Uu = Math.sin(d) * sinP + cD * cosP * Math.cos(H);
+        const inv = 1 / Math.hypot(E, N, Uu);
+        return [E * inv, Uu * inv, N * inv];
+      };
+      const cen = toDir(266.4168, -28.9361);
+      const pole = toDir(192.8595, 27.1284);
+      const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+      const norm = a => { const L = Math.hypot(a[0], a[1], a[2]); return [a[0] / L, a[1] / L, a[2] / L]; };
+      const e1 = norm(cross(pole, cen));
+      const at = (l) => { const r = l * Math.PI / 180; return [cen[0] * Math.cos(r) + e1[0] * Math.sin(r), cen[1] * Math.cos(r) + e1[1] * Math.sin(r), cen[2] * Math.cos(r) + e1[2] * Math.sin(r)]; };
+      // sweep galactic longitude for an on-plane point high enough (15..60 deg) to be
+      // clear of the horizon so the gate never samples a horizon-clipped band.
+      let bestL = 0, bestAlt = -1;
+      for (let l = 0; l < 360; l += 5) {
+        const alt = Math.asin(Math.max(-1, Math.min(1, at(l)[1])));
+        if (alt > 0.26 && alt < 1.05 && alt > bestAlt) { bestAlt = alt; bestL = l; }
+      }
+      if (bestAlt < 0.24) return { night: +curNight.toFixed(3), visible: false };
+      const A = at(bestL), B = at(bestL + 18);
+      const rc = 25 * Math.PI / 180;
+      const C = [A[0] * Math.cos(rc) + pole[0] * Math.sin(rc), A[1] * Math.cos(rc) + pole[1] * Math.sin(rc), A[2] * Math.cos(rc) + pole[2] * Math.sin(rc)];
+      const proj = (d) => {
+        if (!lastVP || !vw) return null;
+        const s = 900, x = d[0] * s, y = d[1] * s, z = d[2] * s, m = lastVP;
+        const cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+        if (cw <= 0) return null;
+        const nx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / cw;
+        const ny = (m[1] * x + m[5] * y + m[9] * z + m[13]) / cw;
+        return [Math.round((nx * 0.5 + 0.5) * vw), Math.round((1 - (ny * 0.5 + 0.5)) * vh)];
+      };
+      const Apx = proj(A), Bpx = proj(B), Cpx = proj(C);
+      return { night: +curNight.toFixed(3), visible: true, alt: +(bestAlt * 180 / Math.PI).toFixed(1), A: Apx, B: Bpx, C: Cpx, onScreen: !!(Apx && Bpx && Cpx) };
     },
   };
 }
