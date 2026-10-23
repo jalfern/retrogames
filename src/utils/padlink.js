@@ -96,7 +96,39 @@ export function decodePadPacket(pkt) {
     }
 }
 
-// --- host ---------------------------------------------------------------------
+// Signaling payloads (SDP) routinely exceed the relay's 512-byte budget, so
+// sig messages are sliced into <=380-char fragments reassembled by the peer.
+const SIG_CHUNK = 380
+
+export function packSig(to, m, data) {
+    const str = JSON.stringify(data)
+    const out = []
+    for (let i = 0, n = Math.max(1, Math.ceil(str.length / SIG_CHUNK)); i < n; i++) {
+        out.push({ t: 'pad', k: 'sig', d: to, m, i, z: n, p: str.slice(i * SIG_CHUNK, (i + 1) * SIG_CHUNK) })
+    }
+    return out
+}
+
+// Receiver-side fragment buffer factory.
+export function makeSigInbox() {
+    const parts = new Map()
+    return {
+        // returns the parsed payload when the last fragment completes a message,
+        // null while still collecting (or on garbage).
+        push(msg) {
+            if (!msg || msg.k !== 'sig' || typeof msg.p !== 'string') return null
+            const key = `${msg.s || 0}:${msg.m}:${msg.d || 0}`
+            let buf = parts.get(key)
+            if (!buf) { buf = []; parts.set(key, buf) }
+            buf[msg.i | 0] = msg.p
+            const n = msg.z || 1
+            if (buf.filter(Boolean).length < n) return null
+            parts.delete(key)
+            try { return JSON.parse(buf.join('')) } catch { return null }
+        },
+    }
+}
+
 // createPadHost(opts):
 //   relay, makeTransport            room.js transport contract (WebSocket factory
 //                                 in the browser, in-memory pipes in the check)
@@ -113,6 +145,7 @@ export function createPadHost(opts = {}) {
     const dispatch = typeof opts.dispatch === 'function' ? opts.dispatch : () => {}
     const makePeer = typeof opts.makePeer === 'function' ? opts.makePeer : null
     let code = ''
+    const sigIn = makeSigInbox()
     let pads = new Map()   // seat -> { chan, peer, lastSeen, rtt, mode, keys:Set, lastKeys:Set }
 
     const room = createRoom({
@@ -142,7 +175,7 @@ export function createPadHost(opts = {}) {
         peer.onOpen(() => { pad.chan = true; pad.mode = 'direct'; announce() })
         peer.onMessage((str) => { let obj = null; try { obj = JSON.parse(str) } catch { return } if (obj && obj.k === 'sig') hostRecv(obj, true); else if (obj && obj.k === 'pad') hostRecv(obj, true) })
         peer.onState && peer.onState((s) => { if (s === 'failed' || s === 'closed') { pad.chan = null; pad.mode = 'relay'; announce() } })
-        peer.onIce && peer.onIce((c) => { room.send('pad', { k: 'sig', d: pad.seat, m: 'ice', p: c }) })
+        peer.onIce && peer.onIce((c) => { for (const f of packSig(pad.seat, 'ice', c)) room.send('pad', f) })
     }
 
     function dropPad(seat) {
@@ -191,13 +224,15 @@ export function createPadHost(opts = {}) {
     function hostRecv(msg, _viaPeer) {
         if (!msg) return
         if (msg.k === 'sig') {
-            // signaling for the host only (from a phone seat)
+            // signaling for the host only (from a phone seat); fragments first.
+            const data = sigIn.push(msg)
+            if (!data) return
             const seat = clampSeat(msg.s)
             if (!seat) return
             const pad = pads.get(seat)
             if (!pad || !pad.peer) return
-            if (msg.m === 'answer') pad.peer.answer(msg.p)
-            else if (msg.m === 'ice') pad.peer.ice(msg.p)
+            if (msg.m === 'answer') pad.peer.answer(data)
+            else if (msg.m === 'ice') pad.peer.ice(data)
             else if (msg.m === 'ready' && pad.peer.offer) {
                 Promise.resolve(pad.peer.offer()).catch(() => { /* relay only */ })
             }
@@ -252,7 +287,7 @@ export function createPadHost(opts = {}) {
                 if (pad.needOffer && pad.peer) {
                     pad.needOffer = false
                     pad.offerAt = t
-                    Promise.resolve(pad.peer.offer()).then((sd) => { if (sd) room.send('pad', { k: 'sig', d: pad.seat, m: 'offer', p: sd }) }).catch(() => { pad.peer = null })
+                    Promise.resolve(pad.peer.offer()).then((sd) => { if (sd) for (const f of packSig(pad.seat, 'offer', sd)) room.send('pad', f) }).catch(() => { pad.peer = null })
                 }
                 if (!pad.chan && pad.peer && pad.offerAt && t - pad.offerAt > RTC_WAIT_MS) {
                     pad.offerAt = 0
@@ -288,6 +323,7 @@ export function createPadHost(opts = {}) {
 export function createPadClient(opts = {}) {
     const now = opts.now || (() => Date.now())
     const makePeer = typeof opts.makePeer === 'function' ? opts.makePeer : null
+    const sigIn = makeSigInbox()
     const client = {
         seat: 0,
         mode: 'relay',
@@ -346,12 +382,14 @@ export function createPadClient(opts = {}) {
             if (obj.k === 'sig') {
                 const to = obj.d | 0
                 if (to !== client.seat && to !== 0) return
+                const data = sigIn.push(obj)
+                if (!data) return
                 if (!client.peer && makePeer) { client.peer = makePeer(); wirePeer(client.peer) }
                 if (obj.m === 'offer' && client.peer) {
-                    Promise.resolve(client.peer.answer(obj.p)).then((sd) => {
-                        if (sd) room.send('pad', { k: 'sig', d: 0, m: 'answer', p: sd })
+                    Promise.resolve(client.peer.answer(data)).then((sd) => {
+                        if (sd) for (const f of packSig(0, 'answer', sd)) room.send('pad', f)
                     }).catch(() => { /* relay only */ })
-                } else if (obj.m === 'ice' && client.peer) client.peer.ice(obj.p)
+                } else if (obj.m === 'ice' && client.peer) client.peer.ice(data)
                 return
             }
             if (obj.k === 'kicked') { client.setPhase('gone'); client.stop() }
@@ -386,7 +424,7 @@ export function createPadClient(opts = {}) {
                 if (opts.onMode) opts.onMode('relay')
             }
         })
-        peer.onIce && peer.onIce((c) => room.send('pad', { k: 'sig', d: 0, m: 'ice', p: c }))
+        peer.onIce && peer.onIce((c) => { for (const f of packSig(0, 'ice', c)) room.send('pad', f) })
     }
 
     const room = createRoom({

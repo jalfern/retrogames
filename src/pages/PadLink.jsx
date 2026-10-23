@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPadClient } from '../utils/padlink.js'
-import { makePadPeer, RELAY_DEFAULT } from '../utils/linkPeers.js'
+import { makePadPeer, makeTransport, RELAY_DEFAULT } from '../utils/linkPeers.js'
 import { quantize, DIR_DEAD } from '../utils/onePad.js'
 import { vpadSize } from '../components/vpadSize.js'
 
@@ -47,6 +47,7 @@ export default function PadLink() {
         const relay = (q.get('relay') || RELAY_DEFAULT).replace(/^http/, 'ws')
         const client = createPadClient({
             relay,
+            makeTransport,
             makePeer: typeof RTCPeerConnection !== 'undefined' ? makePadPeer : null,
             readPad: () => {
                 const p = padRef.current

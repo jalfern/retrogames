@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPadHost } from '../utils/padlink.js'
-import { makeHostPeer, RELAY_DEFAULT } from '../utils/linkPeers.js'
+import { makeHostPeer, makeTransport, RELAY_DEFAULT } from '../utils/linkPeers.js'
 
 // LINK PADS host glue (#893): the game screen half of iPhone-as-controller.
 // Opens a room over the relay, watches phones join at /retrogames/pad, and
@@ -31,6 +31,7 @@ const LinkPads = ({ secondAction }) => {
         const relay = (q.get('relay') || RELAY_DEFAULT).replace(/^http/, 'ws')
         const host = createPadHost({
             relay,
+            makeTransport,
             secondAction: secondRef.current,
             makePeer: typeof RTCPeerConnection !== 'undefined' ? makeHostPeer : null,
             dispatch: (code, type) => {

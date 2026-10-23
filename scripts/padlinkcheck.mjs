@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict'
 import { newRoom, join, leave, relay, rosterOf, MAX_MSG } from '../relay/core.js'
-import { createPadHost, createPadClient, encodePadPacket, decodePadPacket, STALE_MS, PING_EVERY_MS, LINK_CAP } from '../src/utils/padlink.js'
+import { createPadHost, createPadClient, encodePadPacket, decodePadPacket, packSig, makeSigInbox, STALE_MS, PING_EVERY_MS, LINK_CAP } from '../src/utils/padlink.js'
 import { slotPad, clearAllSlots } from '../src/utils/onePad.js'
 
 let pass = 0
