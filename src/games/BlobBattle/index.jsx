@@ -38,6 +38,7 @@ const MESSAGES = [
 ]
 const PRESS = 'PRESS ANY KEY  ·  1 EASY · 3 HARD CPU · 2 LOCAL 2P'
 const CHAIN_SCALE = [0, 4, 7, 12, 16, 19, 24, 28, 31, 36]
+const GO_FRAMES = 180 // 3 s of 3-2-1: both online boxes see the countdown before the board moves
 
 const BlobBattleGame = () => {
     const stageRef = useRef(null)
@@ -47,6 +48,8 @@ const BlobBattleGame = () => {
     const [netUi, setNetUi] = useState(null)
     const [desync, setDesync] = useState(false)
     const desyncRef = useRef(false)
+    const [rivalGone, setRivalGone] = useState(false)
+    const rivalGoneRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -83,8 +86,8 @@ const BlobBattleGame = () => {
         const nq = new URLSearchParams(window.location.search)
         const netRole = nq.get('net') === 'host' ? 'host' : nq.get('net') === 'join' ? 'guest' : null
         const relayUrl = (nq.get('relay') || 'wss://retrogames.jalfern.workers.dev').replace(/^http/, 'ws')
-        const net = { active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off', slot: netRole === 'host' ? 0 : 1, code: '', seats: [0, 1].slice(0, netRole ? 1 : 0) }
-        if (netRole === 'guest') net.code = decodeCode(nq.get('room'))
+        const hostCode = netRole === 'host' ? randomCode() : ''
+        const net = { active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off', slot: netRole === 'host' ? 0 : 1, code: netRole === 'guest' ? decodeCode(nq.get('room')) : hostCode, seats: [0, 1].slice(0, netRole ? 1 : 0) }
         let ws = null
         const makeTransport = (url) => {
             ws = new WebSocket(url)
@@ -108,11 +111,46 @@ const BlobBattleGame = () => {
             },
         })
         let stalledTicks = 0
+        let countdown = 0 // 3-2-1 go gate (online only): sim frames still counting
         const pushNetUi = () => setNetUi(net.active ? {
             role: net.role, phase: net.phase, code: net.code, slot: net.slot,
             seats: seatKinds(SEATS, net.room ? net.room.slots : [net.slot]),
             names: ['HOST', 'CHALLENGER'],
         } : null)
+
+        // rival left (#863): the rival's stream dies mid-match. Freeze the
+        // board and offer a Return — never a silent stall. The host learns via
+        // the roster delta / the relay's 'gone'; the guest whose HOST left only
+        // ever sees the socket close, so the transport close is wired too.
+        const rivalLeft = () => {
+            if (!net.active || screenRef.current !== 'play' || rivalGoneRef.current) return
+            rivalGoneRef.current = true
+            setRivalGone(true)
+            pausedRef.current = true
+            pushNetUi()
+        }
+
+        const returnToTitle = () => {
+            if (!rivalGoneRef.current) return
+            rivalGoneRef.current = false
+            setRivalGone(false)
+            pausedRef.current = false
+            setPaused(false)
+            countdown = 0
+            gs = null
+            setFinalInfo(null)
+            if (net.role === 'host') {
+                // the room lives on: re-open it so a new challenger can join
+                if (net.room) net.room.setPhase('waiting')
+            } else {
+                // the host took the room with them: drop the net, back to the
+                // solo cabinet
+                net.active = false
+                if (net.room) { try { net.room.reset() } catch { /* gone */ } }
+                pushNetUi()
+            }
+            setSc('attract')
+        }
 
         function buildDemo() {
             demo = newGame(0xa11ce, 2)
@@ -182,6 +220,11 @@ const BlobBattleGame = () => {
             stalledTicks = 0
             desyncRef.current = false
             setDesync(false)
+            // a fresh start must clear the desync freeze, or a re-joined match
+            // sits on the board forever (#863 re-join wedge)
+            pausedRef.current = false
+            setPaused(false)
+            countdown = m === 'online' ? GO_FRAMES : 0
             keys1.left = keys1.right = keys1.down = keys1.rot = keys1.drop = false
             keys2.left = keys2.right = keys2.down = keys2.rot = keys2.drop = false
             setFinalInfo(null)
@@ -197,7 +240,7 @@ const BlobBattleGame = () => {
                 onPhase: (p) => { net.phase = p; pushNetUi() },
                 onRoster: ({ slots }) => { net.seats = slots.slice(); pushNetUi() },
                 onJoin: () => pushNetUi(),
-                onLeave: () => { if (screenRef.current === 'play') say('RIVAL LEFT', PALETTE.bad); pushNetUi() },
+                onLeave: () => { rivalLeft(); pushNetUi() },
             })
             net.room.on('pad', (m) => {
                 ls.gotPad(m.k | 0, m.p)
@@ -207,13 +250,13 @@ const BlobBattleGame = () => {
                 const r = ls.gotHash(m.k | 0, m.h >>> 0)
                 if (r && r.desync !== undefined) { desyncRef.current = true; setDesync(true); pausedRef.current = true }
             })
-            net.room.on('gone', () => { if (screenRef.current === 'play') say('RIVAL LEFT', PALETTE.bad) })
+            net.room.on('gone', () => { rivalLeft() })
             net.room.on('go', (m) => {
                 net.phase = 'racing'
                 pushNetUi()
                 startPlay('online', m.seed >>> 0)
             })
-            net.room.connect(netRole === 'host' ? randomCode() : net.code, SEATS)
+            net.room.connect(net.code, SEATS)
             pushNetUi()
         }
 
@@ -395,6 +438,11 @@ const BlobBattleGame = () => {
                 ctx.globalAlpha = 1
                 toast--
             }
+            if (screenRef.current === 'play' && countdown > 0) {
+                // 3-2-1 on both boxes before the first blob moves (#863)
+                const n = String(Math.ceil(countdown / 60))
+                text(ctx, n, (W - textWidth(n, 6)) / 2, WELL_Y + 58, PALETTE.gold, 6)
+            }
             if (flash > 0) {
                 ctx.fillStyle = `rgba(255,80,110,${(flash / 20) * 0.35})`
                 ctx.fillRect(0, 0, W, H)
@@ -419,20 +467,24 @@ const BlobBattleGame = () => {
                         handleEvents(demo, false)
                         if (demo.over) buildDemo()
                     } else if (screenRef.current === 'play' && gs && !gs.over) {
-                        const pads = livePads()
-                        if (pads) {
-                            step(gs, pads)
-                            recordLiveTick([{ left: pads[0].left, right: pads[0].right, down: pads[0].down, a: pads[0].rot, b: pads[0].drop },
-                                { left: pads[1].left, right: pads[1].right, down: pads[1].down, a: pads[1].rot, b: pads[1].drop }])
-                            if (mode === 'online') {
-                                if (gs.tick % HASH_EVERY === 0) {
-                                    const r = ls.hash(gs.tick, stateHash(gs))
-                                    if (r && r.desync !== undefined) { desyncRef.current = true; setDesync(true); pausedRef.current = true }
+                        if (countdown > 0) {
+                            countdown--
+                        } else {
+                            const pads = livePads()
+                            if (pads) {
+                                step(gs, pads)
+                                recordLiveTick([{ left: pads[0].left, right: pads[0].right, down: pads[0].down, a: pads[0].rot, b: pads[0].drop },
+                                    { left: pads[1].left, right: pads[1].right, down: pads[1].down, a: pads[1].rot, b: pads[1].drop }])
+                                if (mode === 'online') {
+                                    if (gs.tick % HASH_EVERY === 0) {
+                                        const r = ls.hash(gs.tick, stateHash(gs))
+                                        if (r && r.desync !== undefined) { desyncRef.current = true; setDesync(true); pausedRef.current = true }
+                                    }
+                                    ls.prune(gs.tick)
                                 }
-                                ls.prune(gs.tick)
+                                handleEvents(gs, true)
+                                finish(gs)
                             }
-                            handleEvents(gs, true)
-                            finish(gs)
                         }
                     }
                 }
@@ -474,6 +526,7 @@ const BlobBattleGame = () => {
                 setSc('attract'); return
             }
             if (desyncRef.current && net.active && net.role === 'host' && (code === 'Space' || code === 'Enter')) { rejoin(); return }
+            if (rivalGoneRef.current && net.active && (code === 'Space' || code === 'Enter')) { returnToTitle(); return }
             if (pausedRef.current || desyncRef.current) return
             if (code === 'ArrowLeft') keys1.left = true
             else if (code === 'ArrowRight') keys1.right = true
@@ -493,6 +546,7 @@ const BlobBattleGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { if (!net.active) startPlay('cpu'); else if (net.role === 'host' && net.phase === 'waiting') onlineStart(); return }
             if (sc === 'play' && desyncRef.current && net.active && net.role === 'host') { rejoin(); return }
+            if (sc === 'play' && rivalGoneRef.current && net.active) { returnToTitle(); return }
             if (sc === 'over' && performance.now() - overAtRef.current >= 800) startPlay(mode === 'online' ? 'cpu' : mode)
         }
 
@@ -528,11 +582,23 @@ const BlobBattleGame = () => {
                         next: [s.wells[0].next, s.wells[1].next],
                         locks0: s.wells[0].locks, locks1: s.wells[1].locks,
                         hash: stateHash(s),
+                        countdown,
+                        desync: desyncRef.current,
+                        rivalGone: rivalGoneRef.current,
+                        netPhase: net.active ? net.phase : 'off',
+                        netCode: net.active ? net.code : '',
+                        seats: net.active && net.room ? net.room.slots.slice() : [],
                     }
                 },
                 start: (m = 'cpu', sd, tier) => startPlay(m, sd, tier),
                 board: (seat) => Array.from((screenRef.current === 'attract' ? demo : gs).wells[seat].board),
                 hash: () => (gs ? stateHash(gs) : 0),
+                // desync drill seam (blobnet): flip this box's well-0 board so
+                // the next hash checkpoint catches the divergence
+                corrupt: () => {
+                    if (gs && !gs.over) { gs.wells[0].board.fill(1); return 'well 0 flipped' }
+                    return 'no game'
+                },
             }
             mountDbg({
                 title: 'BLOB BATTLE',
@@ -573,6 +639,7 @@ const BlobBattleGame = () => {
                     tick: gs.tick, score: gs.wells[0].score, done: !!gs.over,
                     seed: gs.seed, round: gs.round, players: mode === 'local' ? 2 : 1,
                     cpuTier,
+                    countdown,
                     winner: gs.winner, rounds: [gs.wells[0].rounds, gs.wells[1].rounds],
                     scores: [gs.wells[0].score, gs.wells[1].score],
                     hash: stateHash(gs),
@@ -649,6 +716,16 @@ const BlobBattleGame = () => {
                     ) : (
                         <p className="text-sm font-normal text-red-200/70 mt-2">a hash mismatch froze the match; refresh to replay</p>
                     )}
+                </div>
+            )}
+
+            {rivalGone && (
+                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-red-400 font-mono font-black text-3xl text-center px-6">
+                    RIVAL LEFT
+                    <p className="text-sm font-normal text-red-200/80 mt-3 leading-relaxed">
+                        the board is frozen mid-match.<br />
+                        <span className="text-base text-pink-200 animate-pulse">PRESS SPACE / TAP TO RETURN</span>
+                    </p>
                 </div>
             )}
 
