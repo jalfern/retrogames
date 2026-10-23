@@ -112,19 +112,34 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   attract/pause/death/win; `duckMusic` on hits/booms/stagger/boss-die;
   fanfare on win, stop on unmount.
 
+- **Graceful attract combat (#874)**: `bot.js` grew a hit-and-run layer on top
+  of the proof route. A tuskroot telegraph or locked charge pre-empts the macro
+  (`dodgeTick` sidesteps perpendicular to the charge line, free-tile checked;
+  the 55-frame rest gets closed and swung at). The husk's frontal deflect
+  (`toward = d·(-f) > 0.5`) is respected geometrically: the pose freezes its
+  swing axis at engage and holds a steep diagonal (4px off the swing axis,
+  13.5px off the minor — outside the 12.5px contact band), so bites land and
+  the front never clanks. Trash mobs run close→slash→hop-back. The Maw gets two
+  strikes per thorn window then stands off outside 40px; the Wyrm takes an
+  align→face→draw→loose→retreat volley and is only carved while staggered (zero
+  clanks on both bosses). Safety rails keep the demo alive: fights only engage
+  along a BFS-reachable path, one honest attempt per monster (`black`), pin
+  detection, a 2400-tick budget, and a panic-break sprint that sheds a
+  48-tick contact tail. Deterministic — the Ember Heart lands at tick 11233 on
+  every seed.
+
 ## Verify
 
 ```bash
 npm run dev
 npm run emberwoodcheck          # boots the page, drives the sim, proves dungeons + brightness + beds
+                                # + graceful-fight duel gates (tuskroot/husk/trash/Maw/Wyrm)
 node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>console.log(m.proveGame({bombs:true}).win))"   # true
 node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>console.log(m.proveGame({bombs:false}).bowGot))" # false — bombs gate the bow
 ```
 
 ## Honest gaps (QA polish pass will own these)
 
-- The proof-route attract bot wins start-to-win but fights plainly (point-and-
-  shoot arrows, no hit-and-run); a *graceful* demo bot is polish-pass territory.
 - Tuskroot/pod sprites are first-pass 16x12 paintings; charge-dust and
   split-pop FX are missing.
 - The Wyrm tail segments ride the drop-pool quads (visible but cheap).
