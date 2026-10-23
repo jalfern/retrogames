@@ -12,13 +12,13 @@
 // (#637) with primitive fallbacks so the game never waits on the network.
 
 import * as THREE from 'three'
-import { slopePos, terrainY, featureLift, sceneryPlan, outcropAt, DS } from './course.js'
+import { slopePos, terrainY, featureLift, sceneryPlan, outcropAt, gapAt, GAP_DEPTH, GAP_X, chuteAt, DS } from './course.js'
 import { GRAB_POSES } from './sim.js'
 
 // wide grid: past the piste edge the slope keeps going — shoulders, ridges —
 // so the camera never sees the mesh end. Rows start behind the summit so the
 // start gate sits on painted snow too (the sim rides s<0; paint must match).
-const COLS = [-26, -22, -19, -16, -13, -11, -9, -7, -5.5, -4.2, -3.2, -2.75, -2.2, -1.75, -1.0, -0.5, 0, 0.5, 1.0, 1.75, 2.2, 2.75, 3.2, 4.2, 5.5, 7, 9, 11, 13, 16, 19, 22, 26]
+const COLS = [-26, -22, -19, -16, -13, -11, -9, -7, -5.5, -4.2, -3.2, -2.75, -2.2, -1.75, -1.3, -1.15, -1.05, -1.0, -0.5, 0, 0.5, 1.0, 1.05, 1.15, 1.3, 1.75, 2.2, 2.75, 3.2, 4.2, 5.5, 7, 9, 11, 13, 16, 19, 22, 26]
 const ROW_BACK = -12
 export const GRIDS = { COLS, ROW_BACK }
 
@@ -32,6 +32,7 @@ export const THEMES = {
         sun: 0xfff3d0, hemiSky: 0xbfd8f2, hemiGround: 0xdfe8f2,
         snowA: [248, 250, 255], snowB: [186, 206, 236],
         shadow: [150, 168, 212], edge: [70, 190, 240], rock: [42, 35, 31], rock2: [20, 17, 16],
+        ice: [105, 165, 230],
         capSnow: [252, 254, 255],
         peak: [148, 158, 186], peakSun: [225, 232, 245], peakRock: [104, 112, 138],
         shC: 0x0b1524, shO: 0.28,
@@ -41,6 +42,7 @@ export const THEMES = {
         sun: 0x8090ff, hemiSky: 0x2a3070, hemiGround: 0x141838,
         snowA: [96, 110, 190], snowB: [56, 64, 140],
         shadow: [22, 28, 72], edge: [255, 60, 200], rock: [20, 14, 11], rock2: [8, 6, 5],
+        ice: [88, 138, 220],
         capSnow: [150, 160, 215],
         peak: [30, 34, 78], peakSun: [56, 62, 120], peakRock: [18, 20, 48],
         shC: 0x04050e, shO: 0.45,
@@ -50,6 +52,7 @@ export const THEMES = {
         sun: 0xffd0a0, hemiSky: 0xffc8a0, hemiGround: 0xe0b0c0,
         snowA: [255, 224, 214], snowB: [206, 156, 186],
         shadow: [118, 88, 158], edge: [255, 90, 60], rock: [19, 10, 8], rock2: [7, 3, 4],
+        ice: [128, 148, 224],
         capSnow: [255, 238, 228],
         peak: [186, 126, 138], peakSun: [255, 200, 170], peakRock: [122, 74, 92],
         shC: 0x241226, shO: 0.34,
@@ -72,6 +75,28 @@ export const SUN = {
 // instead of an ink quad pasted on it.
 export const GROOVE = { color: [0.05, 0.07, 0.13], alpha: 0.66, lipColor: [0.38, 0.46, 0.68], lipAlpha: 0.30 }
 export const TRACK_DARKEN = 0.12
+
+// #911: crevasse interiors read as ice, not one flat dark ramp — the vertical
+// faces carry an ice-blue tint (per theme, so night ice stays moonlit), the
+// floor goes cold and dark with depth, and a bright crest line at the danger
+// edge marks both the hole mouth and the safe skirt beyond it. The sink is
+// featureLift-carried, so the whole read lives in surfaceInfo — pinned by
+// ssxterraincheck.
+export const CREVASSE = {
+    wallT: 0.52,      // how hard the wall columns pull to the ice blue
+    floorT: 0.20,     // cold cast riding the depth falloff
+    lipBoost: 1.6,    // crest-line lift — it must beat the sink luma ramp
+    lipIn: 0.10,      // crest falls away toward the floor over this x span
+    lipOut: 0.16,     // ...and toward the rim over this one
+    deep: [26, 48, 92],
+}
+
+// #911: the speed-streak intensity law. Past ~90 km/h streaks stream the
+// screen edges, a held boost lifts them, and an express chute lights them up
+// at far lower speed — the trough's own speed cue while expressAt > 1.
+export function speedStreakK(kmh, boost, inChute) {
+    return Math.max(0, (kmh - 90) / 35) + (boost ? 0.55 : 0) + (inChute ? 0.85 : 0)
+}
 
 // #685: which riders throw spray. The player always has; the CPU field used
 // to cut through snow silently. Carving hard on the snow kicks powder.
@@ -275,9 +300,43 @@ export function surfaceInfo(c, s, x) {
     // more sun angles; the old binary 1.18 pop was a hair over the continuity
     // guard's contrast budget). Sinks and troughs swallow it.
     const lift = featureLift(c, s, x)
+    // #911: the crevasse interior reads as ice, not one flat dark ramp — the
+    // vertical wall columns pull to the theme's ice blue, the floor goes cold
+    // and dark with depth, and a bright crest line at the danger edge
+    // (|x| = GAP_X) marks the hole mouth and the safe skirt beyond it in one
+    // stroke. The sink is featureLift-carried, so painted and ridden stay one
+    // surface (pinned by ssxterraincheck).
+    let iceT = 0
+    const gp = gapAt(c, s)
+    if (gp) {
+        const ax = Math.abs(x)
+        const fall = 1 - smooth01((ax - 1.0) / 0.4)
+        if (fall > 0.02) {
+            const depthT = Math.min(1, Math.max(0, -lift) / GAP_DEPTH)
+            const wallT = smooth01((ax - 1.0) / 0.12) * (1 - smooth01((ax - 1.32) / 0.1))
+            const it = (CREVASSE.wallT * wallT + 0.12 * fall) * (0.7 + 0.3 * depthT)
+            rgb = rgb.map((v, k) => v * (1 - it) + T.ice[k] * it)
+            const df = CREVASSE.floorT * depthT * (1 - wallT)
+            rgb = rgb.map((v, k) => v * (1 - df) + CREVASSE.deep[k] * df)
+            iceT = Math.max(it, df)
+        }
+        const lipT = (1 - smooth01((ax - GAP_X) / CREVASSE.lipOut)) * smooth01((ax - 1.02) / CREVASSE.lipIn)
+        if (lipT > 0.01) {
+            rgb = rgb.map((v) => v * (1 + CREVASSE.lipBoost * lipT))
+            iceT = Math.max(iceT, lipT)
+        }
+    }
+    // #911: the express trough is invisible once you're in it — a packed-snow
+    // albedo lane (the GROOVE lip's own colour) marks the fast line across
+    // the whole span, painted where featureLift actually carries the sink.
+    const chT = chuteAt(c, s, x)
+    if (chT > 0.01) {
+        const lane = 0.42 * chT
+        rgb = rgb.map((v, k) => v * (1 - lane) + GROOVE.lipColor[k] * 255 * lane)
+    }
     if (lift > 0.3) rgb = rgb.map((v) => Math.min(255, v * (1 + 0.15 * smooth01((lift - 0.3) / 2))))
     else if (lift < -0.3) rgb = rgb.map((v) => v * (1 + Math.max(-0.62, lift * 0.055)))
-    return { rgb: rgb.map(clamp255), rockT, rawRock, relax, grad, crest, hollow, above, litFace }
+    return { rgb: rgb.map(clamp255), rockT, rawRock, relax, grad, crest, hollow, above, litFace, iceT }
 }
 
 // Smooth snow shading for one grid point (#638, textured by #669). The base
@@ -449,14 +508,15 @@ export function buildTerrain(course) {
 // the sparkle dots through on flat, sunlit, snowy ground — never on rock or
 // steep faces. Shares the terrain geometry (userData.keepGeo guards disposal).
 export function sparkleMask(c, s, x, layer = 0) {
-    const { rockT, grad, crest } = surfaceInfo(c, s, x)
+    const { rockT, grad, crest, iceT } = surfaceInfo(c, s, x)
     const flat = 1 - smooth01(grad / 0.3)
     const rockKill = 1 - smooth01((rockT - 0.08) / 0.3)
+    const iceKill = 1 - Math.min(1, iceT * 2.5)
     const cell = hash(Math.floor(s / 1.7) * 17.3 + Math.floor(x * 2.3) * 5.7 + 9.2 + layer * 13.7)
     const patch = smooth01((cell - 0.55) / 0.3)
     const theme = c.theme === 'night' ? 0.5 : c.theme === 'dusk' ? 0.8 : 1
     const damp = layer ? 0.7 : 1
-    return (1 - rockT) * rockKill * flat * (0.35 + 0.65 * crest) * patch * theme * damp
+    return (1 - rockT) * rockKill * flat * iceKill * (0.35 + 0.65 * crest) * patch * theme * damp
 }
 
 export function buildSparkles(course, geo, layer = 0) {

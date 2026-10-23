@@ -4,8 +4,8 @@
 // flat lit snow, detail UVs tile deterministically, painted==ridden untouched),
 // and the mountain is still winnable. Run: npm run ssxterraincheck
 
-import { buildCourse, terrainY, featureLift, openness, outcropAt, gapAt, COURSE_COUNT, DS } from '../src/games/SSX/course.js'
-import { snowColor, surfaceInfo, slopeAt, sparkleMask, buildTerrain, buildSparkles, detailTexture, sparkleTexture, GRIDS, rockStrata, cpuSprayCount, landingSound, carveVoice, rimJagPlan, SPARKLE_PULSE, GROOVE } from '../src/games/SSX/art.js'
+import { buildCourse, terrainY, featureLift, openness, outcropAt, gapAt, GAP_DEPTH, GAP_X, chuteAt, COURSE_COUNT, DS } from '../src/games/SSX/course.js'
+import { snowColor, surfaceInfo, slopeAt, sparkleMask, buildTerrain, buildSparkles, detailTexture, sparkleTexture, GRIDS, rockStrata, cpuSprayCount, landingSound, carveVoice, rimJagPlan, SPARKLE_PULSE, GROOVE, speedStreakK } from '../src/games/SSX/art.js'
 import { makeGame, step } from '../src/games/SSX/sim.js'
 import { decide } from '../src/games/SSX/planner.js'
 
@@ -355,6 +355,55 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         }
     }
     ok('outcrop rock kills the sparkle', sparkKillOk)
+}
+
+// ---- 12. #911 crevasse ice + chute lane ---------------------------------------
+{
+    const luma = (rgb) => rgb[0] * 0.3 + rgb[1] * 0.59 + rgb[2] * 0.11
+    const blueR = (rgb) => rgb[2] - rgb[0]
+    let wallIce = 0, crest = 0, fade = 0, icePin = 0, nGaps = 0
+    for (let ci = 0; ci < COURSE_COUNT; ci++) {
+        const co = buildCourse(ci)
+        for (const gp of co.gaps) {
+            const s = ((gp.i0 + gp.i1) / 2) * DS
+            const wall = surfaceInfo(co, s, 1.07)      // wall column, under the crest line
+            const line = surfaceInfo(co, s, GAP_X)    // the danger-edge crest
+            const below = surfaceInfo(co, s, 1.02)    // wall falling into the floor
+            const skirt = surfaceInfo(co, s, 1.30)    // wall easing to the rim
+            const holeFloor = surfaceInfo(co, s, 0.4) // the sink floor
+            const rim = surfaceInfo(co, s, 2.2)       // open snow beyond the gap
+            if (blueR(wall.rgb) > blueR(rim.rgb) + 8) wallIce++
+            if (luma(line.rgb) > luma(below.rgb) + 25 && luma(line.rgb) > luma(skirt.rgb) + 8) crest++
+            if (luma(holeFloor.rgb) < luma(line.rgb) - 20 && luma(holeFloor.rgb) < luma(rim.rgb) - 40) fade++
+            if (holeFloor.iceT > 0.1 && line.iceT > 0.9 && rim.iceT === 0) icePin++
+            nGaps++
+        }
+    }
+    ok(`crevasse walls read as ice, not flat dark snow (${wallIce}/${nGaps})`, nGaps >= 5 && wallIce === nGaps)
+    ok(`the snow lip crests at the danger line (${crest}/${nGaps})`, nGaps >= 5 && crest === nGaps)
+    ok(`the hole floor fades cold-dark with depth (${fade}/${nGaps})`, nGaps >= 5 && fade === nGaps)
+    ok(`ice rides the sink, not the rim (${icePin}/${nGaps})`, nGaps >= 5 && icePin === nGaps)
+
+    let laneOk = 0, nChutes = 0
+    for (let ci = 0; ci < COURSE_COUNT; ci++) {
+        const co = buildCourse(ci)
+        for (const ch of co.chutes) {
+            const sMid = ((ch.i0 + ch.i1) / 2) * DS
+            const laneC = surfaceInfo(co, sMid, ch.x).rgb
+            const side = surfaceInfo(co, sMid, ch.x > 0 ? ch.x + ch.w + 0.6 : ch.x - ch.w - 0.6).rgb
+            if (luma(laneC) < luma(side) - 10 && laneC[2] >= laneC[0]) laneOk++
+            nChutes++
+        }
+    }
+    ok(`the express trough wears a packed-snow lane (${laneOk}/${nChutes})`, nChutes >= 8 && laneOk === nChutes)
+
+    const co = buildCourse(0)
+    const gp = co.gaps[0]
+    const s = ((gp.i0 + gp.i1) / 2) * DS
+    ok('sparkle dies in the crevasse ice', sparkleMask(co, s, 0.4) < 0.05 && sparkleMask(co, s, GAP_X) < 0.05)
+    ok('streak law: the chute lights streaks at pace where nothing else does',
+        speedStreakK(70, false, true) > 0.8 && speedStreakK(70, false, false) === 0 && speedStreakK(110, false, false) > 0)
+    ok('streak law: a held boost still lifts the field', speedStreakK(70, true, false) > speedStreakK(70, false, false))
 }
 
 // ---- 11. still winnable --------------------------------------------------------

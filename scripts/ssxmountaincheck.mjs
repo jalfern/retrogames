@@ -297,5 +297,26 @@ for (const f of ['course.js', 'sim.js', 'planner.js']) {
     }
 }
 
+// ---- #911 TIMBER LINE forest density -----------------------------------------
+{
+    const trees = (co) => sceneryPlan(co).filter((p) => p.id.startsWith('tree')).length
+    const timber = buildCourse(4)
+    const alpine = buildCourse(0)
+    const tTrees = trees(timber)
+    const aTrees = trees(alpine)
+    // density per km, not raw count — TIMBER is the short cruiser and the
+    // forest must read dense at chase-cam distance
+    const tPerKm = tTrees / (timber.N * DS)
+    const aPerKm = aTrees / (alpine.N * DS)
+    ok(`TIMBER LINE scatters a denser forest (${(tPerKm * 1000).toFixed(0)} vs ${(aPerKm * 1000).toFixed(0)} trees/km)`,
+        tPerKm >= aPerKm * 1.8)
+    ok('the density knob is the only thing that moved the scatter',
+        timber.treeD > alpine.treeD && alpine.treeD === 0.24)
+    const scatter = sceneryPlan(timber).filter((p) => p.id.startsWith('tree'))
+    const right = scatter.filter((p) => p.x > 0).length
+    ok(`TIMBER scatter stays side-balanced (${right}/${scatter.length} right)`,
+        right > scatter.length * 0.35 && right < scatter.length * 0.65)
+}
+
 console.log(`${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)

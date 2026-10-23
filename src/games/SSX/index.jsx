@@ -18,9 +18,9 @@ import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateH
 import { decide } from './planner.js'
 import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
 import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
-import { slopePos, terrainY, DS, HEATS } from './course.js'
+import { slopePos, terrainY, DS, HEATS, rotationName, expressAt } from './course.js'
 import { padState } from '../../utils/padState'
-import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype, speedStreakK } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -179,6 +179,7 @@ const SSXGame = () => {
         let musicTrack = null, musicStepT = 0
         let swishT = 0, windT = 0, boostT = 0
         let pop = '', popT = 0
+        let gapFlash = 0, wasChute = false
         let poseOverride = null
         const keys = new Set()
         // #844: the touch trick pad synthesises the same key codes the desktop
@@ -323,6 +324,13 @@ const SSXGame = () => {
                     audioController.playFilteredNoise(0.55, 0.16, 260)
                     audioController.duckMusic(0.2, 0.7)
                     shake = 0.7
+                    if (e.what === 'gap') {
+                        // #911: the crevasse callout — a distinct low rumble
+                        // under the generic crash noise, and a white flash so
+                        // the hole reads as an event, not a stumble.
+                        audioController.playSweep(72, 26, 0.6, 'sine', 0.2)
+                        gapFlash = 1
+                    }
                 }
                 // #844: a wipeout is a scene, not a pause — the whole field sees
                 // it: a wide snow blast and the board torn off, tumbling away.
@@ -371,7 +379,7 @@ const SSXGame = () => {
                 if (e.type === 'lose' || e.type === 'time') audioController.playDeath()
                 if (e.type === 'land' && mine && e.pts > 800) { pop = `${e.name} +${e.pts}`; popT = 140 }
                 else if (e.type === 'land' && mine && e.pts > 0) { pop = `${e.name} +${e.pts}`; popT = 110 }
-                if (e.type === 'crash' && mine) { pop = 'BAIL!'; popT = 90 }
+                if (e.type === 'crash' && mine) { pop = e.what === 'gap' ? 'CREVASS!' : 'BAIL!'; popT = e.what === 'gap' ? 110 : 90 }
                 if (e.type === 'heat') audioController.playTone(520, 0.12, 'square', 0.08)
             }
         }
@@ -531,7 +539,7 @@ const SSXGame = () => {
             step(g, inp)
             sfx(g.events.splice(0))
             if (net.active) onlineTick()
-            if (g.heat !== shownHeat) { shownHeat = g.heat; setCourseVisuals() }
+            if (g.heat !== shownHeat) { shownHeat = g.heat; setCourseVisuals(); wasChute = false }
             if (g.end && screenRef.current === 'play') {
                 setResult({ end: g.end, why: g.why, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, score: p.score, online: net.racing })
                 overAt = performance.now()
@@ -754,7 +762,9 @@ const SSXGame = () => {
             // speed streaks past the screen edges
             if (streaks) {
                 const kmh = p.v * 3.6
-                const k = Math.max(0, (kmh - 90) / 35) + (p.boost ? 0.55 : 0)
+                // #911: the express chute lights streaks up at far lower
+                // speed — the trough's own speed cue while expressAt > 1.
+                const k = speedStreakK(kmh, p.boost, !p.air && expressAt(g.course, p.s, p.x) > 1)
                 const target = p.air || screenRef.current !== 'play' ? 0 : Math.min(0.8, k * 0.85)
                 streaks.pts.material.opacity += (target - streaks.pts.material.opacity) * 0.22
                 if (target > 0.02) {
@@ -788,6 +798,16 @@ const SSXGame = () => {
             } else if (musicTrack) { audioController.stopMusic(); musicTrack = null }
 
             if (popT > 0) popT--
+            if (gapFlash > 0) gapFlash = Math.max(0, gapFlash - ft / 450)
+            // #911: the express boost kicks the moment you drop into the
+            // trough — a HUD tick says so, unless a trick pop already owns
+            // the line.
+            const inChute = !p.air && expressAt(g.course, p.s, p.x) > 1
+            if (inChute && !wasChute) {
+                audioController.playTone(980, 0.07, 'square', 0.06)
+                if (popT <= 0) { pop = 'EXPRESS'; popT = 70 }
+            }
+            wasChute = inChute
             // #791 slice 11: the face is never frozen — flags ride the wind
             // everywhere, and the finish grandstands hop as the line comes up.
             animateDecor(world, g.tick, crowdHype(p.s, world.userData.standS ?? Infinity))
@@ -808,9 +828,12 @@ const SSXGame = () => {
             if (h.meterFull) h.meterFull.style.opacity = p.meter >= 100 ? (Math.floor(now / 160) % 2 ? '1' : '0.3') : '0'
             if (h.speed) h.speed.textContent = String(Math.round(p.v * 3.6))
             if (h.rank) h.rank.textContent = g.mode === 'showoff' ? 'SHOWOFF' : `P${p.place}/6`
-            if (h.heat) h.heat.textContent = g.mode === 'showoff' ? `TARGET ${CFG.showoffTarget}` : `HEAT ${g.heat + 1}/3 · ${g.course.name}`
+            // #911: the ribbon names the tour the seed rotated to, not just
+            // the mountain, so the backcountry side is out in the open.
+            if (h.heat) h.heat.textContent = g.mode === 'showoff' ? `TARGET ${CFG.showoffTarget}` : `HEAT ${g.heat + 1}/3 · ${rotationName(g.seed)} · ${g.course.name}`
             if (h.clock) h.clock.textContent = g.mode === 'showoff' ? String(Math.max(0, Math.ceil(g.showoffLeft))) : fmtTime(g.heatT / 60)
             if (h.pop) { h.pop.textContent = pop; h.pop.style.opacity = popT > 0 ? '1' : '0' }
+            if (h.flash) h.flash.style.opacity = (gapFlash * 0.45).toFixed(3)
             if (h.aPop) {
                 const show = popT > 0 && pop.startsWith('OVER!!')
                 h.aPop.textContent = pop
@@ -1168,6 +1191,8 @@ const SSXGame = () => {
             <div ref={stageRef} className="absolute inset-0" />
 
             <div className={`absolute inset-0 pointer-events-none font-mono transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
+                {/* #911: the crevasse flash — the hole hits like an event */}
+                <div ref={setHud('flash')} className="absolute inset-0 bg-cyan-100" style={{ opacity: 0, mixBlendMode: 'screen' }} />
                 <div className="absolute top-2 left-3 bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5 text-cyan-50">
                     <div className="text-[9px] tracking-widest opacity-70">SCORE</div>
                     <div ref={setHud('score')} className="text-2xl font-black text-yellow-200 leading-6">0</div>
