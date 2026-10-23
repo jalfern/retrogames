@@ -5,7 +5,7 @@
 // wire), and proves a match can be WON. Proven to fail by mutant (see README).
 
 import {
-    newGame, step, stateHash, findGroups, idx, COLS, ROWS, GARBAGE, ROUNDS_TO_WIN, POP_FRAMES,
+    newGame, step, stateHash, findGroups, idx, COLS, ROWS, GARBAGE, ROUNDS_TO_WIN, POP_FRAMES, winPresentation,
 } from '../src/games/BlobBattle/sim.js'
 import { makeCpu, choosePlacement } from '../src/games/BlobBattle/planner.js'
 import { createLockStep } from '../src/utils/lockstep.js'
@@ -390,6 +390,37 @@ console.log('CPU tiers (#863) — the arcade ladder')
     let hardL = 0, easyL = 0
     for (const sd of SEEDS) { hardL += lockCount(sd, 'hard', 900); easyL += lockCount(sd, 'easy', 900) }
     ok(hardL > easyL, `the expert drops faster (${hardL} vs ${easyL} locks vs an idle seat)`)
+}
+
+console.log('win screen (#863) — the result podium script')
+{
+    // a finished match: seat 1 (the CPU) took it 2-0 against an idle seat 0.
+    // winPresentation is the single source the renderer uses for the podium, so
+    // a winner/loser swap or a wrong youWin/title reddens these in plain Node.
+    const s = newGame(5, 2)
+    s.wells[0].rounds = 0; s.wells[1].rounds = 2
+    s.wells[0].score = 240; s.wells[1].score = 980
+    s.over = true; s.winner = 1
+    const p = winPresentation(s, 'cpu')
+    ok(p.winner === 1 && p.loser === 0, 'the winner is crowned, the loser is on the spill side')
+    ok(p.youWin === false && p.title === 'YOU LOSE', 'solo: losing to the CPU reads YOU LOSE')
+    ok(p.rounds[0] === 0 && p.rounds[1] === 2 && p.scores[0] === 240 && p.scores[1] === 980, 'the podium carries the real rounds and points')
+    ok(winPresentation(s, 'online', 1).youWin === true && winPresentation(s, 'online', 1).title === 'YOU WIN', 'online: the winning seat reads YOU WIN')
+    ok(winPresentation(s, 'online', 0).youWin === false && winPresentation(s, 'online', 0).title === 'YOU LOSE', 'online: the losing seat reads YOU LOSE')
+    ok(winPresentation(s, 'local').title === 'P2 WINS', 'local 2P: the headline names the seat, not YOU')
+
+    // the gravity speed-up tick: a round that is NOT the last one tightens
+    // gravity (a tick) and continues; the final round does not tick (fanfare).
+    const g = newGame(17, 2)
+    g.wells[0].over = true // seat 0 tops out -> seat 1 wins a round
+    const b1 = g.events.length
+    step(g, [{}, {}])
+    const grav = g.events.slice(b1).filter((e) => e.t === 'gravity')
+    ok(g.wells[1].rounds === 1 && grav.length === 1 && !g.over, 'a round win tightens gravity (one speed-up tick) and continues')
+    g.wells[0].over = true // the next top-out is the match point
+    const b2 = g.events.length
+    step(g, [{}, {}])
+    ok(g.over && g.events.slice(b2).every((e) => e.t !== 'gravity'), 'the final round does not tick — the fanfare plays instead')
 }
 
 console.log(`\nblobcheck: ${pass} pass, ${fail} fail`)

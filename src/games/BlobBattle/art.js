@@ -68,6 +68,55 @@ export function orbSprite(size) {
     return out
 }
 
+// the champion (#863): a gold glossy orb wearing a three-point crown — the
+// crowned winner on the win-screen podium. The canvas is taller than the orb so
+// the crown clears the head. Cached by size like orbSprite.
+export function championOrb(size) {
+    const key = 'champ' + size
+    if (cache.has(key)) return cache.get(key)
+    const c = document.createElement('canvas')
+    const h = Math.ceil(size * 1.32)
+    c.width = size
+    c.height = h
+    const g = c.getContext('2d')
+    const cx = size / 2
+    const r = size / 2
+    const cy = h - r // orb sits at the bottom, crown above
+    const grd = g.createRadialGradient(cx - r * 0.32, cy - r * 0.3, size * 0.08, cx, cy, r * 1.04)
+    grd.addColorStop(0, '#fff3c8')
+    grd.addColorStop(0.45, PALETTE.gold)
+    grd.addColorStop(1, '#7a4e05')
+    g.fillStyle = grd
+    g.beginPath()
+    g.arc(cx, cy, r - 0.5, 0, Math.PI * 2)
+    g.fill()
+    g.strokeStyle = 'rgba(0,0,0,0.5)'
+    g.lineWidth = 1
+    g.stroke()
+    // specular dot
+    g.fillStyle = 'rgba(255,255,255,0.9)'
+    g.beginPath()
+    g.arc(size * 0.34, cy - r * 0.35, Math.max(1, size * 0.12), 0, Math.PI * 2)
+    g.fill()
+    // crown: a gold band + three points with bright tips, resting on the orb
+    const baseY = cy - r + 1
+    const cw = r * 1.5
+    g.fillStyle = PALETTE.gold
+    g.fillRect(cx - cw / 2, baseY - 3, cw, 3)
+    for (const dx of [-cw / 2, 0, cw / 2]) {
+        g.beginPath()
+        g.moveTo(cx + dx - r * 0.3, baseY - 2)
+        g.lineTo(cx + dx, baseY - size * 0.22)
+        g.lineTo(cx + dx + r * 0.3, baseY - 2)
+        g.closePath()
+        g.fill()
+    }
+    g.fillStyle = '#ffffff'
+    for (const dx of [-cw / 2, 0, cw / 2]) g.fillRect(cx + dx - 1, baseY - size * 0.22, 2, 2)
+    cache.set(key, c)
+    return c
+}
+
 // ---- 3x5 house font ---------------------------------------------------------
 const FONT = {
     ' ': ['...', '...', '...', '...', '...'],

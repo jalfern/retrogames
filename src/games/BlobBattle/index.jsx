@@ -18,9 +18,9 @@ import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../
 import { fitFill } from '../../utils/fitCanvas'
 import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
 import { createLockStep } from '../../utils/lockstep.js'
-import { newGame, step, pairCells, fits, ROWS, COLS, GARBAGE, FIXED_DT, POP_FRAMES, DROP_BEAT, LAND_FRAMES, stateHash, idx } from './sim.js'
+import { newGame, step, pairCells, fits, ROWS, COLS, GARBAGE, FIXED_DT, POP_FRAMES, DROP_BEAT, LAND_FRAMES, stateHash, idx, winPresentation } from './sim.js'
 import { makeCpu, choosePlacement } from './planner.js'
-import { CANVAS, PALETTE, orbSprite, text, textWidth, stage, wellFrame } from './art.js'
+import { CANVAS, PALETTE, orbSprite, championOrb, text, textWidth, stage, wellFrame } from './art.js'
 import { SEATS, PAD_DELAY, HASH_EVERY, randomCode, toWire, assemblePads, hostSeed } from './net.js'
 
 const W = CANVAS.W, H = CANVAS.H
@@ -44,7 +44,6 @@ const BlobBattleGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
-    const [finalInfo, setFinalInfo] = useState(null)
     const [netUi, setNetUi] = useState(null)
     const [desync, setDesync] = useState(false)
     const desyncRef = useRef(false)
@@ -138,7 +137,6 @@ const BlobBattleGame = () => {
             setPaused(false)
             countdown = 0
             gs = null
-            setFinalInfo(null)
             if (net.role === 'host') {
                 // the room lives on: re-open it so a new challenger can join
                 if (net.room) net.room.setPhase('waiting')
@@ -190,6 +188,10 @@ const BlobBattleGame = () => {
                     setTimeout(() => audioController.playTone(784, 0.14, 'square', 0.09), 100)
                 } else if (e.t === 'match') {
                     [0, 4, 7, 12].forEach((semi, i) => setTimeout(() => audioController.playTone(523 * Math.pow(2, semi / 12), 0.16, 'square', 0.1), i * 110))
+                } else if (e.t === 'gravity') {
+                    // gravity tightened for the next round — a quick, quiet tick
+                    // so the mounting pressure is felt, not just read
+                    audioController.playTone(1180, 0.03, 'square', 0.05)
                 }
             }
         }
@@ -197,13 +199,6 @@ const BlobBattleGame = () => {
         const finish = (s) => {
             if (!s.over) return
             overAtRef.current = performance.now()
-            setFinalInfo({
-                winner: s.winner,
-                rounds: [s.wells[0].rounds, s.wells[1].rounds],
-                scores: [s.wells[0].score, s.wells[1].score],
-                mode,
-                youWin: mode === 'online' ? s.winner === mySeat : s.winner === 0,
-            })
             setSc('over')
         }
 
@@ -227,7 +222,6 @@ const BlobBattleGame = () => {
             countdown = m === 'online' ? GO_FRAMES : 0
             keys1.left = keys1.right = keys1.down = keys1.rot = keys1.drop = false
             keys2.left = keys2.right = keys2.down = keys2.rot = keys2.drop = false
-            setFinalInfo(null)
             setSc('play')
         }
 
@@ -300,6 +294,7 @@ const BlobBattleGame = () => {
         // ------------------------------------------------------------- paint ----
         const orbs = orbSprite(CELL)
         const orbsSmall = orbSprite(8)
+        const champ = championOrb(34)
 
         const paintWell = (s, w, x, seat) => {
             wellFrame(ctx, x, WELL_Y, COLS, ROWS, CELL)
@@ -421,6 +416,54 @@ const BlobBattleGame = () => {
             }
         }
 
+        // the result podium (#863): the frozen board dims, the crowned winner
+        // rises on a gold block, the loser's well tips and spills garbage.
+        const paintWin = (s) => {
+            const p = winPresentation(s, mode, mySeat)
+            ctx.fillStyle = 'rgba(6,6,20,0.82)'
+            ctx.fillRect(0, 0, W, H)
+            // a clean panel behind the podium: the center (VS column) reads, the
+            // side wells stay visible as the final board
+            ctx.fillStyle = 'rgba(8,8,24,0.9)'
+            ctx.fillRect(116, 20, 136, 202)
+            const cx = W / 2
+            // winner: gold podium block, center; the crowned champion orb on top
+            const bw = 44, bh = 60, by = 118
+            const bx = cx - bw / 2
+            ctx.fillStyle = 'rgba(255,210,60,0.18)'
+            ctx.fillRect(bx, by, bw, bh)
+            ctx.strokeStyle = PALETTE.gold
+            ctx.lineWidth = 2
+            ctx.strokeRect(bx, by, bw, bh)
+            ctx.lineWidth = 1
+            text(ctx, '1', cx - textWidth('1', 2) / 2, by + 34, PALETTE.gold, 2)
+            ctx.drawImage(champ, cx - champ.width / 2, 75, champ.width, champ.height)
+            // loser: short block on their own side, tipped, the well spilled
+            const lbw = 40, lbh = 42
+            const loserLeft = p.loser === 0
+            const lbx = loserLeft ? cx - bw - 8 - lbw : cx + bw + 8
+            const lby = 178 - lbh
+            ctx.save()
+            ctx.translate(lbx + lbw / 2, lby + lbh / 2)
+            ctx.rotate(loserLeft ? 0.12 : -0.12)
+            ctx.fillStyle = 'rgba(90,100,120,0.22)'
+            ctx.fillRect(-lbw / 2, -lbh / 2, lbw, lbh)
+            ctx.strokeStyle = PALETTE.dim
+            ctx.strokeRect(-lbw / 2, -lbh / 2, lbw, lbh)
+            text(ctx, '2', -textWidth('2', 2) / 2, -lbh / 2 + 7, PALETTE.dim, 2)
+            ctx.restore()
+            // the spilled well: grey garbage orbs rolling out at the loser's base
+            const sx0 = loserLeft ? lbx - 2 : lbx + lbw - 26
+            for (let i = 0; i < 4; i++) ctx.drawImage(orbs[GARBAGE], sx0 + i * 9, 182 + (i % 2 ? 4 : 0), 14, 14)
+            // headline + the podium stats, in the house font
+            const col = p.youWin ? PALETTE.good : PALETTE.bad
+            text(ctx, p.title, cx - textWidth(p.title, 4) / 2, 34, col, 4)
+            const rr = `ROUNDS ${p.rounds[0]}-${p.rounds[1]}`
+            text(ctx, rr, cx - textWidth(rr, 1) / 2, 60, PALETTE.dim, 1)
+            text(ctx, 'ENTER / R REMATCH', cx - textWidth('ENTER / R REMATCH', 1) / 2, 184, PALETTE.dim, 1)
+            if (Math.floor(performance.now() / 420) % 2 === 0) text(ctx, 'TAP / ANY KEY', cx - textWidth('TAP / ANY KEY', 2) / 2, 194, PALETTE.ink, 2)
+        }
+
         const paint = () => {
             ctx.save()
             if (shake > 0) { ctx.translate((Math.random() * 2 - 1) * shake * 0.6, (Math.random() * 2 - 1) * shake * 0.6); shake-- }
@@ -430,6 +473,7 @@ const BlobBattleGame = () => {
                 paintWell(s, s.wells[0], WELL_X0, 0)
                 paintWell(s, s.wells[1], WELL_X1, 1)
                 paintCenter(s)
+                if (screenRef.current === 'over' && gs) paintWin(gs)
             }
             if (toast > 0) {
                 const a = Math.min(1, toast / 40)
@@ -599,6 +643,19 @@ const BlobBattleGame = () => {
                     if (gs && !gs.over) { gs.wells[0].board.fill(1); return 'well 0 flipped' }
                     return 'no game'
                 },
+                // win-screen seam (#863): force a seat to have taken the match so
+                // the result podium (crowned winner, spilled loser) can be
+                // photographed / drilled on demand
+                finish: (seat) => {
+                    if (!gs) return 'no game'
+                    seat = seat === 0 ? 0 : 1
+                    gs.over = true
+                    gs.winner = seat
+                    gs.wells[seat].rounds = 2
+                    overAtRef.current = performance.now()
+                    setSc('over')
+                    return 'forced seat ' + seat + ' to take the match'
+                },
             }
             mountDbg({
                 title: 'BLOB BATTLE',
@@ -688,18 +745,6 @@ const BlobBattleGame = () => {
                     </div>
                     <p className="animate-pulse font-bold">{netUi.role === 'host' ? 'PRESS SPACE TO DROP THE FIRST BLOB' : 'WAITING FOR THE HOST TO START'}</p>
                     <p className="text-xs text-pink-300/50 mt-3">share the code · a friend opens /retrogames/blob-battle?net=join&room=CODE</p>
-                </div>
-            )}
-
-            {screen === 'over' && finalInfo && (
-                <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-pink-100 font-mono px-6 text-center">
-                    <h2 className="text-4xl font-black mb-2" style={{ color: finalInfo.youWin ? '#4dff9a' : '#ff4d6d', textShadow: '3px 3px 0 #000' }}>
-                        {finalInfo.mode === 'cpu' || finalInfo.mode === 'online' ? (finalInfo.youWin ? 'YOU WIN' : 'YOU LOSE') : `P${finalInfo.winner + 1} WINS`}
-                    </h2>
-                    <p className="text-lg mb-1">ROUNDS {finalInfo.rounds[0]} &middot; {finalInfo.rounds[1]}</p>
-                    <p className="text-sm text-pink-300/80 mb-4">{finalInfo.scores[0]} &middot; {finalInfo.scores[1]} CHAIN POINTS</p>
-                    <p className="text-sm mb-2">ENTER / R REMATCHES</p>
-                    <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
             )}
 
