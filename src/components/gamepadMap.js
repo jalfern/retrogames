@@ -64,6 +64,7 @@ export function gamepadToCodes(pad, opts = {}, state = { engaged: false, lastCod
     for (const c of stickDirections(pad.axes, state)) codes.add(c)
     for (const idx of Object.keys(GPAD_FIXED)) if (pressed(+idx)) codes.add(GPAD_FIXED[+idx])
     if (pressed(1)) codes.add((opts && opts.secondAction) || GPAD_DEFAULT_SECOND)
+    for (const e of (opts && opts.extraButtons) || []) if (pressed(e.button)) codes.add(e.code)
 
     return { codes, state }
 }
@@ -194,6 +195,7 @@ export function validPad(pad) {
     if (!Array.isArray(pad.buttons)) return false
     for (const b of pad.buttons) {
         if (!b || typeof b.label !== 'string' || typeof b.code !== 'string') return false
+        if (b.pad !== undefined && (!Number.isInteger(b.pad) || b.pad < 2 || b.pad > 11)) return false
     }
     if (pad.analog !== undefined && typeof pad.analog !== 'boolean') return false
     if (pad.reads !== undefined && (!Array.isArray(pad.reads) || pad.reads.some((f) => typeof f !== 'string'))) return false
@@ -215,6 +217,18 @@ export function waysOf(pad) {
 export function padButton(pad) {
     if (!validPad(pad) || !pad.buttons.length) return null
     return pad.buttons[0]
+}
+
+// #828: per-game EXTRA face/shoulder buttons. A game may declare pad entries
+// beyond the reserved 0 (A -> Space) and 1 (B -> secondAction): square, triangle,
+// L1, R1 carry semantic codes the game already hears from the keyboard
+// (e.g. SSX: square grab KeyX, triangle invert KeyV, L1 front flip KeyZ,
+// R1 back flip KeyC). Returns [{ button, code }] for the bridge to synthesize.
+export function extraButtonsOf(pad) {
+    if (!pad || !Array.isArray(pad.buttons)) return []
+    return pad.buttons
+        .filter((b) => b && Number.isInteger(b.pad) && b.pad >= 2 && b.pad <= 11 && typeof b.code === 'string' && b.code)
+        .map((b) => ({ button: b.pad, code: b.code }))
 }
 
 // Step 1 (#384): the floating stick is the DEFAULT touch layout. A game keeps

@@ -18,7 +18,7 @@ import { setStickVec, setAimVec, setConnected, connectedSlots, pressSlot, releas
 // multiplayer games read it with slotPad(N, method). When the online count
 // changes the bridge publishes `retrogames:pads { count }` so a game can flip
 // to its two-player mode the moment a second pad wakes up.
-const GamepadBridge = ({ secondAction }) => {
+const GamepadBridge = ({ secondAction, extraButtons }) => {
     useEffect(() => {
         const supported = typeof navigator !== 'undefined' && 'getGamepads' in navigator
         if (!supported) return undefined
@@ -70,7 +70,7 @@ const GamepadBridge = ({ secondAction }) => {
             }
             const pad = live[0]
             if (!pad) return
-            const { codes, state } = gamepadToCodes(pad, { secondAction }, stickState)
+            const { codes, state } = gamepadToCodes(pad, { secondAction, extraButtons }, stickState)
             Object.assign(stickState, state)
             sync(codes)
             // Analog channel (#290 step 4): publish both sticks + the triggers so
@@ -118,7 +118,7 @@ const GamepadBridge = ({ secondAction }) => {
             releaseAll()
             clearAllSlots()
         }
-    }, [secondAction])
+    }, [secondAction, extraButtons])
 
     return null
 }
