@@ -6,7 +6,8 @@
 //   A. scripts/lib/jonq.mjs (pure) — the body format round-trips, a question
 //      only times out when it is genuinely past its deadline, Jon's word beats
 //      his own default, the lane cap bites at 3, `halt` freezes, `steer`
-//      ranks behind a corpse but ahead of `next`;
+//      ranks behind a corpse but ahead of `next`, and the idle order (#841)
+//      puts the flagship polish stage behind the queue and ahead of STOP;
 //   B. the wiring — warden.sh / forge.sh / forge-qa.sh / AGENTS.md /
 //      FORGE.md actually contain the gates the protocol promises (shell that
 //      cannot run offline still gets a source-level tripwire: delete the halt
@@ -22,6 +23,7 @@ import {
     claimOrder, decide, defaultComment, formatQuestion, halted, openQuestions,
     capReached, parseQuestion, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
+import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, ownsGap, flagshipStage } from './lib/idle.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(join(here, p), 'utf8')
@@ -104,6 +106,45 @@ ok(claimOrder([ST(47, 'jalfern', ['game-queue'], '2026-10-15T00:00:00Z'), ST(48,
 ok(claimOrder([ST(49, 'jalfern', ['game-queue', 'stalled'])]) === null, 'stalled items never claim themselves')
 ok(claimOrder([]) === null, 'empty board: nothing to claim')
 
+// --- idle: the flagship polish stage (#841) -----------------------------
+// claimOrder misses -> QA borrow (prose + pgrep, step B) -> flagship stage ->
+// only then STOP. A flagship stage is: first UNOWNED honest-gap of
+// SSX, Emberwood, COMET DRIFT HD, Myst — skipping games QA holds building-qa.
+const QA = (n, game, rest) => ({ number: n, title: `QA — ${game}: polish pass`, body: rest })
+const README = (g) => read(`../src/games/${FLAGSHIP_DIRS[g]}/README.md`)
+const REAL_GAPS = Object.fromEntries(FLAGSHIPS.map((g) => [g, parseGaps(README(g))]))
+for (const g of FLAGSHIPS) {
+    ok(REAL_GAPS[g].length >= 3, `${g}: README honest-gaps parses fewer than 3 items (parseGaps broken?)`)
+    ok(REAL_GAPS[g].every((s) => s.length > 10), `${g}: parseGaps produced an empty/junk gap`)
+}
+ok(REAL_GAPS['COMET DRIFT HD'].some((s) => s.includes('Sound is') && s.includes('Remainder')),
+    'parseGaps split a sub-bullet from its parent gap (CometDriftHD Remainder)')
+ok(parseGaps('## Something else\n- no\n') .length === 0, 'parseGaps reads gaps outside the Honest-gaps section')
+const firstGapOwned = (game) => QA(900, game, REAL_GAPS[game][0])
+ok(ownsGap([firstGapOwned('SSX')], 'SSX', REAL_GAPS.SSX[0]), 'ownsGap: an issue quoting the gap owns it')
+ok(!ownsGap([QA(901, 'Myst', 'totally unrelated text')], 'SSX', REAL_GAPS.SSX[0]), 'ownsGap: another game\'s issue owns nothing here')
+ok(!ownsGap([QA(902, 'SSX', 'general polish notes only')], 'SSX', REAL_GAPS.SSX[0]), 'ownsGap: naming the game without the gap does not own it')
+ok(flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: [] }).game === 'SSX',
+    'idle: flagship order must start at SSX (Jon\'s order, #841)')
+ok(flagshipStage({ gapsByGame: { 'SSX': ['a', 'b'], 'Emberwood': ['c'] }, qaIssues: [QA(903, 'SSX', 'a')], buildingQa: [] }).gap === 'b',
+    'idle: an owned gap is skipped for the next one in the same README')
+ok(flagshipStage({ gapsByGame: { 'SSX': ['a', 'b'], 'Emberwood': ['c'] }, qaIssues: [QA(904, 'SSX', 'a'), QA(905, 'SSX', 'b')], buildingQa: [] }).game === 'Emberwood',
+    'idle: all of SSX owned -> next flagship, in Jon\'s order')
+ok(flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: ['ssx', 'emberwood'] }).game === 'COMET DRIFT HD',
+    'idle: games QA holds building-qa are never touched (case-insensitive)')
+ok(flagshipStage({ gapsByGame: {}, qaIssues: [], buildingQa: FLAGSHIPS }) === null,
+    'idle: every flagship held still yields null — a held flagship is not an invitation')
+const allOwned = {
+    gapsByGame: { 'SSX': ['a'], 'Emberwood': ['b'], 'COMET DRIFT HD': ['c'], 'Myst': ['d'] },
+    qaIssues: [QA(906, 'SSX', 'a'), QA(907, 'Emberwood', 'b'), QA(908, 'COMET DRIFT HD', 'c'), QA(909, 'Myst', 'd')],
+    buildingQa: [],
+}
+ok(flagshipStage(allOwned) === null, 'idle: with EVERY gap owned, null — only now is STOP legal')
+ok(claimOrder([]) === null && flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: [] }) !== null,
+    'idle: an empty board claims nothing yet has forgeable work — the studio must not idle')
+ok(claimOrder([ST(51, 'jalfern', ['game-queue'])]) === 51,
+    'idle: a queued issue outranks the flagship stage (stage only runs on a claimOrder miss)')
+
 // --- B. the wiring says what the protocol promises --------------------
 const warden = read('warden.sh')
 ok(/HALTED=yes/.test(warden) && warden.includes('LANES=()'), 'warden: halt zeroes the QA lanes')
@@ -125,6 +166,19 @@ const playbook = read('FORGE.md')
 ok(playbook.includes('Halt first') && playbook.includes('steer') && playbook.includes('jonq.mjs list'), 'FORGE.md step 2: halt-first, steer-first, questions are not work items')
 ok(!playbook.includes('three questions for Jon') && playbook.includes('jonq.mjs ask'), 'FORGE.md step 9: STATE links questions, never carries them')
 ok(read('FORGE-QA.md').includes('jonq.mjs ask --lane qa'), 'FORGE-QA.md 5b: decisions ask decidable')
+
+// --- idle wiring: the playbook + the architecture map (#841) -------------
+ok(!playbook.includes('nothing to forge'), 'FORGE.md still carries the old idle STOP ("nothing to forge")')
+ok(playbook.includes('Never idle the builder') && playbook.includes('#841'),
+    'FORGE.md step 2: the flagship-polish idle clause is missing')
+for (const g of FLAGSHIPS) ok(playbook.includes(g), `FORGE.md idle clause does not name flagship ${g}`)
+ok(playbook.indexOf('borrow the QA') < playbook.indexOf('Never idle the builder'),
+    'FORGE.md: the QA-borrow step must stay ahead of the flagship stage')
+ok(playbook.includes('building-qa') && playbook.includes('then claim it the normal way') && playbook.includes('File that stage as its own'),
+    'FORGE.md idle clause: must skip QA-held games, file the stage as its own issue, then claim normally')
+const map = read('../docs/HARNESS.md')
+ok(map.includes('idle.mjs') && map.includes('SSX/Emberwood/COMET DRIFT HD/Myst') && map.includes('borrow ONE QA'),
+    'docs/HARNESS.md: the architecture map does not describe the idle order (borrow -> flagship -> STOP)')
 
 console.log(`jonqcheck: ${pass} passed, ${fails.length} failed`)
 for (const f of fails) console.log(`  FAIL  ${f}`)
