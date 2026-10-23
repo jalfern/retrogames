@@ -202,6 +202,8 @@
     "bardsplay": "node scripts/bardsplay.mjs",
     "lint:ssx": "eslint src/games/SSX src/components src/utils src/config src/main.jsx scripts/ssxcheck.mjs scripts/ssxmountaincheck.mjs scripts/ssxmodelcheck.mjs scripts/lib",
     "ssxcheck": "node scripts/ssxcheck.mjs",
+    "blobcheck": "node scripts/blobcheck.mjs",
+    "blobdrill": "node scripts/blobdrill.mjs",
     "lint:pop": "eslint src/games/PrinceOfPersia src/components src/utils src/config src/main.jsx scripts/popcheck.mjs scripts/lib",
     "lint:civ": "eslint src/games/CivilizationV src/components src/utils src/config src/main.jsx scripts/civcheck.mjs scripts/civplay.mjs scripts/civclock.mjs scripts/lib",
     "popcheck": "node scripts/popcheck.mjs",

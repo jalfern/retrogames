@@ -1,0 +1,582 @@
+// BLOB BATTLE — the cabinet. Rules live in ./sim.js (pure, audited by
+// `npm run blobcheck`), the CPU in ./planner.js, the online semantics in
+// ./net.js. 368x240 arcade frame: two glossy wells side by side, the VS
+// column between them carrying rounds, incoming-attack queues and chain
+// counters. Modes: 1P vs CPU (default, phone-playable), local 2P (desktop
+// keyboard, P1 arrows / P2 WASD+F), and online 2P over room codes
+// (?net=host / ?net=join&room=CODE) — lockstep pads on the shared seed, the
+// #531 law: both boxes run the SAME sim and hash-check every 30 ticks.
+
+import React, { useEffect, useRef, useState } from 'react'
+import PauseOverlay from '../../components/PauseOverlay'
+import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
+import { GAMES } from '../../config/games'
+import { audioController } from '../../utils/AudioController'
+import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
+import { fitFill } from '../../utils/fitCanvas'
+import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
+import { createLockStep } from '../../utils/lockstep.js'
+import { newGame, step, pairCells, fits, ROWS, COLS, GARBAGE, FIXED_DT, POP_FRAMES, stateHash, idx } from './sim.js'
+import { makeCpu, choosePlacement } from './planner.js'
+import { CANVAS, PALETTE, orbSprite, text, textWidth, stage, wellFrame } from './art.js'
+import { SEATS, PAD_DELAY, HASH_EVERY, randomCode, toWire, assemblePads, hostSeed } from './net.js'
+
+const W = CANVAS.W, H = CANVAS.H
+const SIM_MS = FIXED_DT
+const CELL = 16
+const WELL_Y = 26
+const WELL_X0 = 24
+const WELL_X1 = W - 24 - COLS * CELL
+const MESSAGES = [
+    'CHAIN POPS SEND GARBAGE',
+    'CLEAR WHILE INCOMING TO COUNTER',
+    '4+ SAME COLOR CONNECTS',
+    'HARD DROP SLAMS THE STACK',
+    'FIRST TO 2 ROUNDS WINS',
+]
+const PRESS = 'PRESS ANY KEY  ·  KEY 2 FOR LOCAL 2P'
+
+const BlobBattleGame = () => {
+    const stageRef = useRef(null)
+    const [screen, setScreen] = useState('attract')
+    const [paused, setPaused] = useState(false)
+    const [finalInfo, setFinalInfo] = useState(null)
+    const [netUi, setNetUi] = useState(null)
+    const [desync, setDesync] = useState(false)
+    const desyncRef = useRef(false)
+    const screenRef = useRef('attract')
+    const pausedRef = useRef(false)
+    const overAtRef = useRef(0)
+
+    useEffect(() => {
+        const wrap = stageRef.current
+        if (!wrap) return undefined
+        const setSc = (s) => { screenRef.current = s; setScreen(s) }
+
+        const canvas = document.createElement('canvas')
+        canvas.dataset.blobbattleStage = '1'
+        canvas.width = W
+        canvas.height = H
+        canvas.className = 'block'
+        canvas.style.imageRendering = 'pixelated'
+        canvas.style.touchAction = 'none'
+        wrap.appendChild(canvas)
+        const ctx = canvas.getContext('2d')
+        ctx.imageSmoothingEnabled = false
+
+        let gs = null, demo = null
+        let mode = 'cpu'                      // cpu | local | online
+        let mySeat = 0
+        let raf = 0, last = 0, acc = 0
+        let seedCounter = (Date.now() >>> 0) ^ 0xb0b5
+        const keys1 = { left: false, right: false, down: false, rot: false, drop: false }
+        const keys2 = { left: false, right: false, down: false, rot: false, drop: false }
+        let shake = 0, flash = 0, toast = 0, toastMsg = '', toastCol = PALETTE.gold
+        const chainFx = [0, 0]
+        const say = (m, col) => { toastMsg = m; toastCol = col || PALETTE.gold; toast = 110 }
+
+        // ------------------------------------------------------------ online ----
+        const nq = new URLSearchParams(window.location.search)
+        const netRole = nq.get('net') === 'host' ? 'host' : nq.get('net') === 'join' ? 'guest' : null
+        const relayUrl = (nq.get('relay') || 'wss://retrogames.jalfern.workers.dev').replace(/^http/, 'ws')
+        const net = { active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off', slot: netRole === 'host' ? 0 : 1, code: '', seats: [0, 1].slice(0, netRole ? 1 : 0) }
+        if (netRole === 'guest') net.code = decodeCode(nq.get('room'))
+        let ws = null
+        const makeTransport = (url) => {
+            ws = new WebSocket(url)
+            return {
+                send: (s) => { try { if (ws && ws.readyState === 1) ws.send(s) } catch { /* gone */ } },
+                onMessage: (cb) => { ws.onmessage = (ev) => cb(ev.data) },
+                onClose: (cb) => { ws.onclose = () => cb() },
+                close: () => { try { if (ws) ws.close() } catch { /* gone */ } },
+            }
+        }
+        // mirrors of the two pad streams keyed by tick — lockstep owns the wire
+        // law (sample once, D ahead, never resample); these hold EXACTLY the
+        // bytes each seat sent, so both boxes apply identical pads per well.
+        const padMirror = [new Map(), new Map()]
+        const ls = createLockStep({
+            delay: PAD_DELAY,
+            hashEvery: HASH_EVERY,
+            send: (m) => {
+                if (m.t === 'pad') padMirror[mySeat].set(m.k, m.p)
+                if (net.room) net.room.send(m.t, m)
+            },
+        })
+        let stalledTicks = 0
+        const pushNetUi = () => setNetUi(net.active ? {
+            role: net.role, phase: net.phase, code: net.code, slot: net.slot,
+            seats: seatKinds(SEATS, net.room ? net.room.slots : [net.slot]),
+            names: ['HOST', 'CHALLENGER'],
+        } : null)
+
+        function buildDemo() {
+            demo = newGame(0xa11ce, 2)
+            demo._cpu1 = makeCpu(0xa11ce)
+            demo._cpu2 = makeCpu(0x51d3)
+        }
+
+        const handleEvents = (s, audible) => {
+            while (s.events.length) {
+                const e = s.events.shift()
+                if (!audible) continue
+                if (e.t === 'rot') audioController.playTone(560, 0.03, 'square', 0.04)
+                else if (e.t === 'lock') audioController.playTone(150, 0.03, 'square', 0.05)
+                else if (e.t === 'harddrop') audioController.playNoise(0.05, 0.12)
+                else if (e.t === 'pop') {
+                    audioController.playSweep(240 + e.chain * 110, 520 + e.chain * 150, 0.12, 'square', 0.09)
+                    chainFx[e.seat] = 40
+                } else if (e.t === 'send') {
+                    audioController.playSweep(700, 240, 0.18, 'sawtooth', 0.07)
+                } else if (e.t === 'counter') {
+                    audioController.playTone(660, 0.06, 'square', 0.08)
+                    setTimeout(() => audioController.playTone(880, 0.06, 'square', 0.08), 70)
+                    setTimeout(() => audioController.playTone(1320, 0.1, 'square', 0.08), 140)
+                    say('COUNTER!', PALETTE.good)
+                } else if (e.t === 'garbage') {
+                    audioController.playNoise(0.12, 0.22)
+                    shake = 10
+                } else if (e.t === 'topout') {
+                    audioController.playNoise(0.3, 0.25)
+                    flash = 20
+                } else if (e.t === 'round') {
+                    audioController.playTone(523, 0.09, 'square', 0.09)
+                    setTimeout(() => audioController.playTone(784, 0.14, 'square', 0.09), 100)
+                } else if (e.t === 'match') {
+                    audioController.playSweep(300, 1200, 0.5, 'square', 0.1)
+                }
+            }
+        }
+
+        const finish = (s) => {
+            if (!s.over) return
+            overAtRef.current = performance.now()
+            setFinalInfo({
+                winner: s.winner,
+                rounds: [s.wells[0].rounds, s.wells[1].rounds],
+                scores: [s.wells[0].score, s.wells[1].score],
+                mode,
+                youWin: mode === 'online' ? s.winner === mySeat : s.winner === 0,
+            })
+            setSc('over')
+        }
+
+        const startPlay = (m, seed) => {
+            mode = m
+            mySeat = net.active ? net.slot : 0
+            seedCounter = (seedCounter * 1103515245 + 12345) >>> 0
+            gs = newGame(seed === undefined ? seedCounter : seed >>> 0, m === 'local' ? 2 : 1)
+            gs._cpu1 = makeCpu(gs.seed)
+            gs._cpu2 = makeCpu(gs.seed ^ 0xbeef)
+            ls.reset()
+            stalledTicks = 0
+            desyncRef.current = false
+            setDesync(false)
+            keys1.left = keys1.right = keys1.down = keys1.rot = keys1.drop = false
+            keys2.left = keys2.right = keys2.down = keys2.rot = keys2.drop = false
+            setFinalInfo(null)
+            setSc('play')
+        }
+
+        if (net.active) {
+            net.room = createRoom({
+                relay: relayUrl,
+                cap: SEATS,
+                makeTransport,
+                maxRetry: 6,
+                onPhase: (p) => { net.phase = p; pushNetUi() },
+                onRoster: ({ slots }) => { net.seats = slots.slice(); pushNetUi() },
+                onJoin: () => pushNetUi(),
+                onLeave: () => { if (screenRef.current === 'play') say('RIVAL LEFT', PALETTE.bad); pushNetUi() },
+            })
+            net.room.on('pad', (m) => {
+                ls.gotPad(m.k | 0, m.p)
+                padMirror[m.s | 0] && padMirror[m.s | 0].set(m.k | 0, m.p)
+            })
+            net.room.on('hs', (m) => {
+                const r = ls.gotHash(m.k | 0, m.h >>> 0)
+                if (r && r.desync !== undefined) { desyncRef.current = true; setDesync(true); pausedRef.current = true }
+            })
+            net.room.on('gone', () => { if (screenRef.current === 'play') say('RIVAL LEFT', PALETTE.bad) })
+            net.room.on('go', (m) => {
+                net.phase = 'racing'
+                pushNetUi()
+                startPlay('online', m.seed >>> 0)
+            })
+            net.room.connect(netRole === 'host' ? randomCode() : net.code, SEATS)
+            pushNetUi()
+        }
+
+        const onlineStart = () => {
+            if (!net.room || net.room.phase !== 'waiting') return
+            const seed = hostSeed()
+            net.room.send('go', { seed })
+            net.phase = 'racing'
+            pushNetUi()
+            startPlay('online', seed)
+        }
+
+        // per-tick pads for both wells, whatever the mode
+        const livePads = () => {
+            if (mode === 'online') {
+                const k = gs.tick
+                ls.pumpTo(k + PAD_DELAY, () => toWire(mySeat === 0 ? keys1 : keys2))
+                if (!ls.ready(k)) { stalledTicks++; return null }
+                stalledTicks = 0
+                const pads = assemblePads(padMirror[0], padMirror[1], k)
+                if (gs.tick % 120 === 0) { padMirror[0].forEach((_, t) => { if (t < gs.tick - 60) padMirror[0].delete(t) }); padMirror[1].forEach((_, t) => { if (t < gs.tick - 60) padMirror[1].delete(t) }) }
+                return pads
+            }
+            if (mode === 'local') return [{ ...keys1 }, { ...keys2 }]
+            return [{ ...keys1 }, gs._cpu2(gs.wells[1])]
+        }
+
+        // ------------------------------------------------------------- paint ----
+        const orbs = orbSprite(CELL)
+
+        const paintWell = (s, w, x, seat) => {
+            wellFrame(ctx, x, WELL_Y, COLS, ROWS, CELL)
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const v = w.board[idx(r, c)]
+                    if (!v) continue
+                    let sc = 1, alpha = 1
+                    if (w.popping && w.popping.some(([pr, pc]) => pr === r && pc === c)) {
+                        const p = 1 - w.phaseT / POP_FRAMES
+                        sc = 1 + Math.sin(p * Math.PI) * 0.18
+                        alpha = p > 0.55 ? 1 - (p - 0.55) / 0.45 : 1
+                    }
+                    ctx.globalAlpha = Math.max(0, alpha)
+                    const sz = CELL * sc
+                    ctx.drawImage(orbs[v], x + c * CELL - (sz - CELL) / 2, WELL_Y + r * CELL - (sz - CELL) / 2, sz, sz)
+                    ctx.globalAlpha = 1
+                }
+            }
+            if (w.pending > 0 && Math.floor(s.tick / 8) % 2 === 0) {
+                text(ctx, '<' + w.pending, x + COLS * CELL + 3, WELL_Y + ROWS * CELL - 16, PALETTE.bad, 2)
+            }
+            if (w.cur && !w.over) {
+                // landing ghost for the hard-drop feel
+                let gy = w.cur.y
+                while (fits(w, w.cur.x, gy + 1, w.cur.rot)) gy++
+                if (gy !== w.cur.y) {
+                    ctx.globalAlpha = 0.22
+                    for (const [r, c] of pairCells(w.cur.x, gy, w.cur.rot)) {
+                        if (r < 0 || r >= ROWS) continue
+                        ctx.fillStyle = '#ffffff'
+                        ctx.fillRect(x + c * CELL + 2, WELL_Y + r * CELL + 2, CELL - 4, CELL - 4)
+                    }
+                    ctx.globalAlpha = 1
+                }
+                const cells = pairCells(w.cur.x, w.cur.y, w.cur.rot)
+                ctx.drawImage(orbs[w.cur.c1], x + cells[0][1] * CELL, WELL_Y + cells[0][0] * CELL, CELL, CELL)
+                ctx.drawImage(orbs[w.cur.c2], x + cells[1][1] * CELL, WELL_Y + cells[1][0] * CELL, CELL, CELL)
+            }
+            if (chainFx[seat] > 0) {
+                if (w.chain >= 2) {
+                    const t = String(w.chain)
+                    const cx = x + (COLS * CELL) / 2 - textWidth(t, 4) / 2
+                    text(ctx, t, cx, WELL_Y + 60, seat === 0 ? PALETTE.gold : PALETTE.good, 4)
+                    text(ctx, 'CHAIN', cx, WELL_Y + 60 + 24, seat === 0 ? PALETTE.gold : PALETTE.good, 2)
+                }
+                chainFx[seat]--
+            }
+        }
+
+        const paintCenter = (s) => {
+            const cx = W / 2
+            text(ctx, 'BLOB BATTLE', (W - textWidth('BLOB BATTLE', 3)) / 2, 6, PALETTE.ink, 3)
+            text(ctx, 'VS', cx - textWidth('VS', 4) / 2, WELL_Y + 40, Math.floor(s.tick / 20) % 2 ? PALETTE.gold : PALETTE.bad, 4)
+            // round pips: best of 3
+            for (let i = 0; i < 2; i++) {
+                const px = cx + (i === 0 ? -26 : 12)
+                for (let k = 0; k < 2; k++) {
+                    ctx.fillStyle = s.wells[i].rounds > k ? PALETTE.gold : 'rgba(125,134,173,0.4)'
+                    ctx.beginPath()
+                    ctx.arc(px + k * 10, WELL_Y + 80, 3.5, 0, Math.PI * 2)
+                    ctx.fill()
+                }
+            }
+            const names = mode === 'online'
+                ? (mySeat === 0 ? ['YOU', 'RIVAL'] : ['RIVAL', 'YOU'])
+                : mode === 'local' ? ['P1', 'P2'] : ['YOU', 'CPU']
+            text(ctx, names[0], WELL_X0, WELL_Y + ROWS * CELL + 6, PALETTE.dim, 1)
+            text(ctx, names[1], WELL_X1, WELL_Y + ROWS * CELL + 6, PALETTE.dim, 1)
+            text(ctx, String(s.wells[0].score).padStart(6, '0'), WELL_X0 + 30, WELL_Y + ROWS * CELL + 4, PALETTE.ink, 2)
+            text(ctx, String(s.wells[1].score).padStart(6, '0'), WELL_X1 - textWidth(String(s.wells[1].score).padStart(6, '0'), 2), WELL_Y + ROWS * CELL + 4, PALETTE.ink, 2)
+            text(ctx, 'ROUND ' + s.round, cx - textWidth('ROUND ' + s.round, 1) / 2, WELL_Y + 96, PALETTE.dim, 1)
+            if (mode === 'online') {
+                text(ctx, 'ROOM ' + net.code, cx - textWidth('ROOM ' + net.code, 1) / 2, H - 12, PALETTE.dim, 1)
+                if (stalledTicks > 30) text(ctx, 'SYNC...', cx - textWidth('SYNC...', 2) / 2, WELL_Y + 116, PALETTE.bad, 2)
+            }
+        }
+
+        const paint = () => {
+            ctx.save()
+            if (shake > 0) { ctx.translate((Math.random() * 2 - 1) * shake * 0.6, (Math.random() * 2 - 1) * shake * 0.6); shake-- }
+            ctx.drawImage(stage(), 0, 0)
+            const s = screenRef.current === 'attract' ? demo : gs
+            if (s) {
+                paintWell(s, s.wells[0], WELL_X0, 0)
+                paintWell(s, s.wells[1], WELL_X1, 1)
+                paintCenter(s)
+            }
+            if (toast > 0) {
+                const a = Math.min(1, toast / 40)
+                ctx.globalAlpha = a
+                text(ctx, toastMsg, (W - textWidth(toastMsg, 3)) / 2, WELL_Y + 100, toastCol, 3)
+                ctx.globalAlpha = 1
+                toast--
+            }
+            if (flash > 0) {
+                ctx.fillStyle = `rgba(255,80,110,${(flash / 20) * 0.35})`
+                ctx.fillRect(0, 0, W, H)
+                flash--
+            }
+            ctx.restore()
+        }
+
+        // ------------------------------------------------------------- frame ----
+        const frame = (ts) => {
+            raf = requestAnimationFrame(frame)
+            if (!last) last = ts
+            const ft = Math.min(ts - last, 250)
+            last = ts
+            if (pausedRef.current) return
+            if (contractHoldsLoop()) { acc = 0 } else {
+                acc += ft
+                while (acc >= SIM_MS) {
+                    acc -= SIM_MS
+                    if (screenRef.current === 'attract' && demo) {
+                        step(demo, [demo._cpu1(demo.wells[0]), demo._cpu2(demo.wells[1])])
+                        handleEvents(demo, false)
+                        if (demo.over) buildDemo()
+                    } else if (screenRef.current === 'play' && gs && !gs.over) {
+                        const pads = livePads()
+                        if (pads) {
+                            step(gs, pads)
+                            recordLiveTick([{ left: pads[0].left, right: pads[0].right, down: pads[0].down, a: pads[0].rot, b: pads[0].drop },
+                                { left: pads[1].left, right: pads[1].right, down: pads[1].down, a: pads[1].rot, b: pads[1].drop }])
+                            if (mode === 'online') {
+                                if (gs.tick % HASH_EVERY === 0) {
+                                    const r = ls.hash(gs.tick, stateHash(gs))
+                                    if (r && r.desync !== undefined) { desyncRef.current = true; setDesync(true); pausedRef.current = true }
+                                }
+                                ls.prune(gs.tick)
+                            }
+                            handleEvents(gs, true)
+                            finish(gs)
+                        }
+                    }
+                }
+            }
+            paint()
+        }
+
+        // ------------------------------------------------------------- input ----
+        const ROT_KEYS = new Set(['ArrowUp', 'KeyX', 'Space'])
+        const DROP_KEYS = new Set(['KeyB', 'KeyC'])
+        const P2 = { KeyA: 'left', KeyD: 'right', KeyS: 'down', KeyW: 'rot', KeyF: 'drop' }
+
+        const startKey = (code) => {
+            if (net.active) {
+                if (net.role === 'host' && net.phase === 'waiting') onlineStart()
+                return
+            }
+            startPlay(code === 'Digit2' ? 'local' : 'cpu')
+        }
+
+        const onDown = (e) => {
+            const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
+            if (code === 'Question') {
+                if (screenRef.current === 'play') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current) }
+                return
+            }
+            if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', 'Space'].includes(e.code)) e.preventDefault()
+            if (P2[e.code] && screenRef.current === 'play' && mode === 'local') keys2[P2[e.code]] = true
+            const sc = screenRef.current
+            if (sc === 'attract') { startKey(code); return }
+            if (sc === 'over') {
+                if (performance.now() - overAtRef.current < 800) return
+                if (code === 'Enter' || code === 'KeyR' || code === 'Space') {
+                    if (net.active) { if (net.role === 'host') onlineStart(); return }
+                    startPlay(mode === 'local' ? 'local' : 'cpu')
+                    return
+                }
+                setSc('attract'); return
+            }
+            if (pausedRef.current || desyncRef.current) return
+            if (code === 'ArrowLeft') keys1.left = true
+            else if (code === 'ArrowRight') keys1.right = true
+            else if (code === 'ArrowDown') keys1.down = true
+            else if (ROT_KEYS.has(code)) keys1.rot = true
+            else if (DROP_KEYS.has(code)) keys1.drop = true
+        }
+        const onUp = (e) => {
+            if (e.code === 'ArrowLeft') keys1.left = false
+            else if (e.code === 'ArrowRight') keys1.right = false
+            else if (e.code === 'ArrowDown') keys1.down = false
+            else if (ROT_KEYS.has(e.code)) keys1.rot = false
+            else if (DROP_KEYS.has(e.code)) keys1.drop = false
+            if (P2[e.code]) keys2[P2[e.code]] = false
+        }
+        const onPointer = () => {
+            const sc = screenRef.current
+            if (sc === 'attract') { if (!net.active) startPlay('cpu'); else if (net.role === 'host' && net.phase === 'waiting') onlineStart(); return }
+            if (sc === 'over' && performance.now() - overAtRef.current >= 800) startPlay(mode === 'online' ? 'cpu' : mode)
+        }
+
+        window.addEventListener('keydown', onDown)
+        window.addEventListener('keyup', onUp)
+        window.addEventListener('pointerdown', onPointer)
+
+        const resize = () => {
+            const r = wrap.getBoundingClientRect()
+            if (!r.width || !r.height) return
+            const z = fitFill(W, H, r.width - 8, r.height - 60)
+            canvas.style.width = `${W * z}px`
+            canvas.style.height = `${H * z}px`
+        }
+        window.addEventListener('resize', resize)
+
+        buildDemo()
+        resize()
+        raf = requestAnimationFrame(frame)
+
+        // ---------------------------------------------------------- DEV hook ----
+        if (import.meta.env.DEV) {
+            window.__blobbattleTest = {
+                probe: () => {
+                    const s = screenRef.current === 'attract' ? demo : gs
+                    return {
+                        screen: screenRef.current, mode, over: s.over, winner: s.winner,
+                        tick: s.tick, round: s.round, rounds: [s.wells[0].rounds, s.wells[1].rounds],
+                        scores: [s.wells[0].score, s.wells[1].score],
+                        chains: [s.wells[0].chain, s.wells[1].chain],
+                        pending: [s.wells[0].pending, s.wells[1].pending],
+                        cur: s.wells[0].cur ? { x: s.wells[0].cur.x, y: s.wells[0].cur.y, rot: s.wells[0].cur.rot } : null,
+                        locks0: s.wells[0].locks, locks1: s.wells[1].locks,
+                        hash: stateHash(s),
+                    }
+                },
+                start: (m = 'cpu', sd) => startPlay(m, sd),
+                board: (seat) => Array.from((screenRef.current === 'attract' ? demo : gs).wells[seat].board),
+                hash: () => (gs ? stateHash(gs) : 0),
+            }
+            mountDbg({
+                title: 'BLOB BATTLE',
+                getState: () => gs ? [
+                    `mode=${mode} round=${gs.round} rounds=${gs.wells[0].rounds}-${gs.wells[1].rounds} tick=${gs.tick} over=${gs.over}`,
+                    `p1 ${gs.wells[0].score} chain=${gs.wells[0].chain} in=${gs.wells[0].pending} | p2 ${gs.wells[1].score} chain=${gs.wells[1].chain} in=${gs.wells[1].pending}`,
+                ] : ['no game'],
+                actions: [
+                    { label: 'GARBAGE +2 P1', run: () => { if (!gs) return 'no game'; gs.wells[0].pending += 2; gs.wells[0].holes.push(0, 1); return 'two rows queued against P1' } },
+                    { label: 'SEED POP P1', run: () => {
+                        if (!gs) return 'no game'
+                        const w = gs.wells[0]
+                        for (let c = 0; c < 4; c++) w.board[idx(ROWS - 1, c)] = 3
+                        return 'a four-pop seeded on the P1 floor'
+                    } },
+                    { label: 'PLAN P1', run: () => { if (!gs) return 'no game'; const p = choosePlacement(gs.wells[0]); return p ? `best: rot${p.rot} col${p.x} score ${Math.round(p.score)}` : 'no plan' } },
+                ],
+            })
+            exposeGame({
+                id: 'blob-battle',
+                players: 2,
+                buttons: ['left', 'right', 'down', 'a', 'b'],
+                reset: (seed, players) => {
+                    startPlay(players > 1 ? 'local' : 'cpu', seed >>> 0)
+                    if (import.meta.env.DEV) keys1.left = keys1.right = keys1.down = keys1.rot = keys1.drop = false
+                },
+                tick: (pad, pads) => {
+                    if (gs.over) { gs.tick += 1; return }
+                    const p1 = pads && pads[0] || pad || {}
+                    const p2 = pads && pads[1] || (mode === 'cpu' ? gs._cpu2(gs.wells[1]) : {})
+                    step(gs, [
+                        { left: !!p1.left, right: !!p1.right, down: !!p1.down, rot: !!p1.a, drop: !!p1.b },
+                        { left: !!p2.left, right: !!p2.right, down: !!p2.down, rot: !!p2.a, drop: !!p2.b },
+                    ])
+                    handleEvents(gs, false)
+                },
+                state: () => ({
+                    tick: gs.tick, score: gs.wells[0].score, done: !!gs.over,
+                    seed: gs.seed, round: gs.round, players: mode === 'local' ? 2 : 1,
+                    winner: gs.winner, rounds: [gs.wells[0].rounds, gs.wells[1].rounds],
+                    scores: [gs.wells[0].score, gs.wells[1].score],
+                    hash: stateHash(gs),
+                }),
+                canvas: () => canvas,
+            })
+        }
+
+        return () => {
+            if (import.meta.env.DEV) { if (window.__blobbattleTest) delete window.__blobbattleTest; unmountDbg(); unexposeGame() }
+            window.removeEventListener('keydown', onDown)
+            window.removeEventListener('keyup', onUp)
+            window.removeEventListener('pointerdown', onPointer)
+            window.removeEventListener('resize', resize)
+            cancelAnimationFrame(raf)
+            if (net.room) { try { net.room.reset() } catch { /* gone */ } }
+            audioController.stopMusic()
+            canvas.remove()
+        }
+    }, [])
+
+    const handleResume = () => { setPaused(false); pausedRef.current = false }
+    const play = screen === 'play'
+
+    return (
+        <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
+            <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
+
+            {screen === 'attract' && !netUi && (
+                <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
+                    <AttractMessage className="mb-6 text-pink-200/80" messages={MESSAGES} />
+                    <p className="text-lg font-mono font-bold animate-pulse text-pink-300">{PRESS}</p>
+                </div>
+            )}
+
+            {netUi && netUi.phase !== 'racing' && screen === 'attract' && (
+                <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center text-center font-mono text-pink-100 px-6">
+                    <p className="text-sm mb-2 text-pink-300/70">{netUi.role === 'host' ? 'OPEN A CHALLENGE' : 'JOIN A CHALLENGE'}</p>
+                    <p className="text-5xl font-black tracking-widest mb-4" style={{ textShadow: '3px 3px 0 #000' }}>{netUi.code || '····'}</p>
+                    <div className="mb-4 space-y-1 text-sm">
+                        {netUi.seats.map((k, i) => (
+                            <p key={i} className={k === 'cpu' ? 'text-slate-500' : 'text-pink-200'}>
+                                {netUi.names[i]}: {k === 'cpu' ? 'waiting...' : k === 'host' ? 'HOST (you)' : 'CHALLENGER (you)'}
+                            </p>
+                        ))}
+                    </div>
+                    <p className="animate-pulse font-bold">{netUi.role === 'host' ? 'PRESS SPACE TO DROP THE FIRST BLOB' : 'WAITING FOR THE HOST TO START'}</p>
+                    <p className="text-xs text-pink-300/50 mt-3">share the code · a friend opens /retrogames/blob-battle?net=join&room=CODE</p>
+                </div>
+            )}
+
+            {screen === 'over' && finalInfo && (
+                <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-pink-100 font-mono px-6 text-center">
+                    <h2 className="text-4xl font-black mb-2" style={{ color: finalInfo.youWin ? '#4dff9a' : '#ff4d6d', textShadow: '3px 3px 0 #000' }}>
+                        {finalInfo.mode === 'cpu' || finalInfo.mode === 'online' ? (finalInfo.youWin ? 'YOU WIN' : 'YOU LOSE') : `P${finalInfo.winner + 1} WINS`}
+                    </h2>
+                    <p className="text-lg mb-1">ROUNDS {finalInfo.rounds[0]} &middot; {finalInfo.rounds[1]}</p>
+                    <p className="text-sm text-pink-300/80 mb-4">{finalInfo.scores[0]} &middot; {finalInfo.scores[1]} CHAIN POINTS</p>
+                    <p className="text-sm mb-2">ENTER / R REMATCHES</p>
+                    <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
+                </div>
+            )}
+
+            {desync && (
+                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-red-400 font-mono font-black text-3xl">
+                    DESYNC &mdash; SIMS DISAGREED
+                    <p className="text-sm font-normal text-red-200/70 mt-2">a hash mismatch froze the match; refresh to rejoin</p>
+                </div>
+            )}
+
+            {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'BLOB BATTLE')} onResume={handleResume} />}
+            <VirtualControls visible={play && !paused && !netUi} secondAction={{ label: 'DROP', code: 'KeyB' }} />
+        </div>
+    )
+}
+
+export default BlobBattleGame
