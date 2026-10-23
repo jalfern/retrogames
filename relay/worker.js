@@ -9,7 +9,7 @@
 // Served at https://retrogames.jalfern.workers.dev/room/<CODE> (wss).
 
 import { DurableObject } from 'cloudflare:workers'
-import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, relay, validateFeedback, buildFeedbackIssue } from './core.js'
+import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue } from './core.js'
 
 const GH_API = 'https://api.github.com'
 
@@ -74,6 +74,12 @@ export class Room extends DurableObject {
         this.rate = 0
         this.win = 0
         this.code = null
+        this.cap = 2
+    }
+
+    rosterText(socks) {
+        const slots = socks.map((s) => (s.deserializeAttachment() || {}).slot | 0).sort((a, b) => a - b)
+        return JSON.stringify({ t: 'roster', n: slots.length, cap: this.cap, slots })
     }
 
     async fetch(req) {
@@ -84,7 +90,10 @@ export class Room extends DurableObject {
             return Response.json({ code, members: this.ctx.getWebSockets().length })
         }
         const existing = this.ctx.getWebSockets()
-        if (existing.length >= 2) return new Response('full', { status: 503 })
+        const storedCap = await this.ctx.storage.get('cap')
+        this.cap = storedCap && storedCap.cap ? storedCap.cap : (Number(url.searchParams.get('cap')) || 2)
+        this.cap = Math.max(1, Math.min(ROOM_CAP_MAX, this.cap))
+        if (existing.length >= this.cap) return new Response('full', { status: 503 })
         const id = crypto.randomUUID()
         const slot = existing.length
         this.code = code
@@ -92,14 +101,17 @@ export class Room extends DurableObject {
         this.win = Date.now()
         const pair = new WebSocketPair()
         const [client, server] = Object.values(pair)
-        server.serializeAttachment({ id, code })
+        server.serializeAttachment({ id, code, slot })
         this.ctx.acceptWebSocket(server, [code])
-        server.send(JSON.stringify({ t: 'welcome', you: slot }))
+        server.send(JSON.stringify({ t: 'welcome', you: slot, cap: this.cap }))
+        const all = this.ctx.getWebSockets()
+        const roster = this.rosterText(all)
+        for (const ws of all) { try { ws.send(roster) } catch { /* gone */ } }
         if (slot === 1) {
             server.send(JSON.stringify({ t: 'peer', n: 2 }))
-            for (const ws of existing) ws.send(JSON.stringify({ t: 'peer', n: 2 }))
+            for (const ws of existing) { try { ws.send(JSON.stringify({ t: 'peer', n: 2 })) } catch { /* gone */ } }
         }
-        await this.ctx.storage.put('meta', { code })
+        await this.ctx.storage.put({ meta: { code }, cap: { cap: this.cap } })
         await this.ctx.storage.setAlarm(Date.now() + IDLE_MS)
         return new Response(null, { status: 101, webSocket: client })
     }

@@ -496,3 +496,36 @@ Tuck and scrub are the original SSX stick verbs: ↑ aero-tucks (lower stance,
 proportional speed bite). Steering stays live through both — and through the
 crouch-charge (ssxcheck pins it). The rider pose drops to `legs.scale.y 0.66`
 while tucked. `__ssxTest.probe().p` carries `tuck`/`scrub` for QA.
+
+## ONLINE (#845) — friends race a tournament over the internet
+
+`?net=host` opens a room (4-letter code, up to 4 humans); friends join with
+`?net=join&room=CODE`. CPU riders fill the rest of the six-rider field, the host
+starts everyone on one seed, and the other racers ride as **live ghosts**. There is
+**no lockstep** — riders don't collide, so each browser runs the mountain locally and
+exchanges data instead of sharing a sim:
+
+- **Transport** — the reusable `src/utils/room.js` client over the relay
+  (`relay/core.js` + `worker.js`/`server.mjs`), which this issue generalised from
+  2P to up to 4 via an explicit `?cap=` and a `roster` presence broadcast on every
+  join/leave. Any future multiplayer title reuses `room.js` verbatim.
+- **Ghosts** — each racer broadcasts a quantised pose snapshot (`net.js`
+  `encodeState`, ~150 B, far under the relay's 512 B cap) every other tick; peers
+  apply it onto a stand-in rider id (`applyGhost`) so `poseRider` draws them on the
+  shared course. `seatIds` maps live seats to rider ids (you = rider 0, other humans
+  = ids 1..N, CPUs fill the field).
+- **Standings + podium** — finish is reported per heat (`fin`) and the relay forwards
+  it to EVERY member, so each box holds the same finish table and runs the same pure
+  reducer `computeStandings(seats, heats, COURSE_COUNT)` → an identical friends'
+  podium with no authority and no lockstep. Points are the original's `PLACE_PTS`.
+
+URL params: `?net=host`, `?net=join&room=CODE`, `?relay=wss://host` (default
+`wss://retrogames.jalfern.workers.dev` — until the 4-seat worker is redeployed,
+online pairs against the local test relay). Single-player is untouched: the online
+layer is additive and gated on `net.active` (ssxcheck still 213/213).
+
+Verify: `npm run roomcheck` (Node — relay N-cap + roster, room.js roster deltas,
+snapshot budget/round-trip, seat map, standings reducer; `--mutate` proves it can
+fail), `npm run ssxdrill` (two headless Chromes vs the local relay — needs
+`npm run dev`: host code, guest join, host-start, same seed, live ghosts, finish
+exchange lights standings on both).

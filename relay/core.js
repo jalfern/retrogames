@@ -17,7 +17,14 @@ export const IDLE_MS = 90000
 export const REG_TTL_MS = 3600000
 export const MAX_ROOMS = 120
 export const MAX_MEMBERS = 2
-export const FORWARD_TYPES = ['pad', 'hs', 'start']
+export const ROOM_CAP_MAX = 4
+// 'pad','hs','start' are the lockstep wire (#531, Gauntlet). The rest are the
+// reusable ROOM layer (#845): 'roster' is server->all presence, 'go' host->all
+// kickoff, 'st' every-racer->others live state, 'fin' racer->host finish report,
+// 'res' host->all per-heat results, 'pod' host->all final podium, 'bye' graceful
+// leave. Every room type is forwarded to ALL OTHER members (see relay()), which
+// is what makes the same relay serve a 2P lockstep AND a 4P ghost race.
+export const FORWARD_TYPES = ['pad', 'hs', 'start', 'roster', 'go', 'st', 'fin', 'res', 'pod', 'bye']
 
 export function makeCode(rand) {
     let s = ''
@@ -25,8 +32,15 @@ export function makeCode(rand) {
     return s
 }
 
-export function newRoom(code) {
-    return { code, members: [], rate: 0, win: 0 }
+export function newRoom(code, maxMembers = MAX_MEMBERS) {
+    const max = Math.max(1, Math.min(ROOM_CAP_MAX, maxMembers | 0 || MAX_MEMBERS))
+    return { code, members: [], rate: 0, win: 0, max }
+}
+
+// rosterOf builds the server->all presence broadcast: which seats are live and
+// the room's capacity, so every client can fill the remaining seats with CPUs.
+export function rosterOf(room) {
+    return { t: 'roster', n: room.members.length, cap: room.max, slots: room.members.map((m) => m.slot) }
 }
 
 // join returns { ok, slot, peers } or { ok:false, err }. A rejoin of the same
@@ -34,7 +48,7 @@ export function newRoom(code) {
 export function join(room, id) {
     const again = room.members.find((m) => m.id === id)
     if (again) return { ok: true, slot: again.slot, peers: room.members.length, rejoin: true }
-    if (room.members.length >= MAX_MEMBERS) return { ok: false, err: 'full' }
+    if (room.members.length >= room.max) return { ok: false, err: 'full' }
     room.members.push({ id, slot: room.members.length })
     return { ok: true, slot: room.members.length - 1, peers: room.members.length }
 }
