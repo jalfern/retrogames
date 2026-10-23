@@ -16,7 +16,9 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES } from './sim.js'
 import { decide } from './planner.js'
-import { slopePos, terrainY, DS } from './course.js'
+import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
+import { seatIds, encodeState, decodeState, applyGhost, computeStandings } from './net.js'
+import { slopePos, terrainY, DS, COURSE_COUNT } from './course.js'
 import { padState } from '../../utils/padState'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype } from './art.js'
 
@@ -32,6 +34,8 @@ const SSXGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [result, setResult] = useState(null)
+    const [netUi, setNetUi] = useState(null)   // #845 online lobby/standings overlay
+    const [podium, setPodium] = useState(null) // #845 final friends' podium
     const [trickHeld, setTrickHeld] = useState(() => new Set())
     const trickApi = useRef(null)
     const screenRef = useRef('attract')
@@ -343,6 +347,136 @@ const SSXGame = () => {
             }
         }
 
+        // ---- #845 ONLINE -----------------------------------------------------
+        // ?net=host / ?net=join&room=CODE / ?relay=wss://host. One racer hosts,
+        // friends join by code (up to 4), CPU riders fill the rest of the six-rider
+        // field, the host starts everyone on one seed, and the others ride as live
+        // ghosts. No lockstep (riders don't collide): everyone races the SAME three
+        // mountains locally and exchanges per-heat finish times; the relay forwards
+        // each racer's finish to all others so every box holds the same table and
+        // runs the same pure reducer -> an identical friends' podium.
+        const nq = new URLSearchParams(location.search)
+        const netRole = nq.get('net') === 'host' ? 'host' : nq.get('net') === 'join' ? 'guest' : null
+        const relayUrl = (nq.get('relay') || 'wss://retrogames.jalfern.workers.dev').replace(/^http/, 'ws')
+        const SEAT_NAMES = ['P1', 'P2', 'P3', 'P4']
+        const net = {
+            role: netRole, active: !!netRole, racing: false, phase: netRole ? 'idle' : 'off',
+            code: '', slot: -1, cap: 4, seed: 0,
+            seatToId: {}, remoteIds: [], cpuIds: [], seats: [],
+            ghosts: {}, fin: {}, reportedHeat: -1, lastSend: 0,
+            standings: null, standingsDone: false, reconnectTimer: 0, attempt: 0,
+        }
+        const nameFor = (seat) => (seat === net.slot ? 'YOU' : SEAT_NAMES[seat] || ('P' + (seat + 1)))
+        const pushNet = () => setNetUi(net.active ? {
+            role: net.role, phase: net.phase, code: net.code, cap: net.cap, slot: net.slot,
+            seats: seatKinds(net.cap, net.seats.length ? net.seats : [0]),
+            standings: net.standings, done: net.standingsDone, names: SEAT_NAMES.slice(0, net.cap),
+        } : null)
+
+        let ws = null
+        const makeTransport = (url) => {
+            ws = new WebSocket(url)
+            return {
+                send: (s) => { try { if (ws && ws.readyState === 1) ws.send(s) } catch { /* gone */ } },
+                onMessage: (cb) => { ws.onmessage = (ev) => cb(ev.data) },
+                onClose: (cb) => { ws.onclose = () => cb() },
+                close: () => { try { if (ws) ws.close() } catch { /* gone */ } },
+            }
+        }
+
+        const syncSeats = () => {
+            net.slot = room.yourSlot
+            net.cap = room.cap || 4
+            net.seats = (room.slots || []).slice()
+            const ids = seatIds(room.yourSlot, room.slots, net.cap)
+            net.seatToId = ids.seatToId
+            net.remoteIds = ids.remoteSeats.map((s) => ids.seatToId[s])
+            net.cpuIds = ids.cpuIds
+            for (const s of net.seats) if (!net.fin[s]) net.fin[s] = []
+        }
+
+        const recomputeStandings = () => {
+            if (net.seats.length < 1) return
+            const st = computeStandings(net.seats, net.fin, COURSE_COUNT)
+            net.standings = st.totals
+            net.standingsDone = st.done
+            if (st.done) setPodium({ podium: st.podium, totals: st.totals, names: net.seats.map(nameFor) })
+            pushNet()
+        }
+
+        const netStartRace = (seed) => {
+            net.seed = seed >>> 0
+            net.racing = true
+            net.phase = 'racing'
+            net.fin = {}
+            net.seats.forEach((s) => { net.fin[s] = [] })
+            net.reportedHeat = -1
+            net.ghosts = {}
+            net.standingsDone = false
+            g = makeGame('race', net.seed)
+            shownHeat = 0
+            setCourseVisuals()
+            keys.clear()
+            setResult(null)
+            setPodium(null)
+            setMode('play')
+            pushNet()
+            audioController.playSweep(220, 660, 0.3, 'square', 0.07)
+        }
+
+        const room = createRoom({
+            relay: relayUrl, makeTransport,
+            onPhase: (p) => { net.phase = p; pushNet() },
+            onRoster: () => { syncSeats(); pushNet() },
+            onJoin: () => audioController.playTone(660, 0.07, 'square', 0.05),
+            onLeave: () => audioController.playSweep(660, 200, 0.22, 'square', 0.05),
+            on: {
+                go: (m) => { if (net.role === 'guest') netStartRace(m.seed | 0) },
+                st: (m) => { const id = net.seatToId[m.s]; if (id != null) net.ghosts[id] = decodeState(m) },
+                fin: (m) => {
+                    if (m.s === net.slot) return
+                    if (!net.fin[m.s]) net.fin[m.s] = []
+                    net.fin[m.s][m.h | 0] = m.t
+                    recomputeStandings()
+                },
+            },
+        })
+
+        const netHostStart = () => {
+            if (net.role !== 'host' || net.racing) return
+            const seed = (Math.random() * 2147483647) >>> 0
+            room.send('go', { seed })
+            netStartRace(seed)
+        }
+
+        if (net.active) {
+            if (net.role === 'host') room.connect(net.code || (net.code = randomCode()), 4)
+            else net.code = decodeCode(nq.get('room')); if (net.code) room.connect(net.code, 0)
+            pushNet()
+        }
+
+        function randomCode() {
+            const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+            let s = ''
+            for (let i = 0; i < 4; i++) s += A[Math.floor(Math.random() * A.length)]
+            return s
+        }
+
+        // broadcast our hero pose a few times a second; park nothing, just report.
+        const onlineTick = () => {
+            const p = g.riders[0]
+            if (net.racing && g.phase === 'run' && g.tick % 2 === 0) room.send('st', encodeState(p, g.heat))
+            for (const id of net.remoteIds) { const gs = net.ghosts[id]; if (gs && gs.heat === g.heat) applyGhost(g.riders[id], gs) }
+            if (net.racing && p.finished && net.reportedHeat !== g.heat) {
+                net.reportedHeat = g.heat
+                const t = g.heatT / 60
+                if (!net.fin[net.slot]) net.fin[net.slot] = []
+                net.fin[net.slot][g.heat] = t
+                room.send('fin', { h: g.heat, t })
+                recomputeStandings()
+            }
+        }
+
         const doSim = () => {
             const p = g.riders[0]
             let inp
@@ -363,9 +497,10 @@ const SSXGame = () => {
             }
             step(g, inp)
             sfx(g.events.splice(0))
+            if (net.active) onlineTick()
             if (g.heat !== shownHeat) { shownHeat = g.heat; setCourseVisuals() }
             if (g.end && screenRef.current === 'play') {
-                setResult({ end: g.end, why: g.why, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, score: p.score })
+                setResult({ end: g.end, why: g.why, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, score: p.score, online: net.racing })
                 overAt = performance.now()
                 setMode('over')
             }
@@ -705,6 +840,10 @@ const SSXGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') {
                 audioController.init()
+                if (net.active) {
+                    if (net.role === 'host' && (e.code === 'Space' || e.code === 'Enter')) netHostStart()
+                    return
+                }
                 startPlay(e.code === 'Digit2' ? 'showoff' : 'race')
                 return
             }
@@ -720,7 +859,10 @@ const SSXGame = () => {
         const onBlur = () => keys.clear()
         const onPointer = () => {
             const sc = screenRef.current
-            if (sc === 'attract') { startPlay('race'); return }
+            if (sc === 'attract') {
+                if (net.active) { if (net.role === 'host') netHostStart(); return }
+                startPlay('race'); return
+            }
             if (sc === 'over' && performance.now() - overAt > 900) setMode('attract')
         }
         window.addEventListener('keydown', onDown)
@@ -753,6 +895,13 @@ const SSXGame = () => {
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },
+                netProbe: () => ({
+                    role: net.role, phase: net.phase, code: net.code, cap: net.cap, slot: net.slot,
+                    racing: net.racing, seed: net.seed, heat: g.heat, tick: g.tick,
+                    slots: net.seats.length, ghosts: net.remoteIds.filter((id) => net.ghosts[id]).length,
+                    standings: net.standings ? Object.assign({}, net.standings) : null, done: net.standingsDone,
+                }),
+                hostStart: () => netHostStart(),
                 keys,
                 // #791 slice 11: decor life probe — shelf tag counts + whether
                 // the crowd is actually moving (y samples across two frames).
@@ -927,6 +1076,8 @@ const SSXGame = () => {
 
         return () => {
             if (import.meta.env.DEV) { delete window.__ssxTest; unmountDbg() }
+            room.reset()
+            if (ws) { try { ws.close() } catch { /* gone */ } }
             trickApi.current = null
             clearDebris()
             audioController.stopMusic()
@@ -953,6 +1104,7 @@ const SSXGame = () => {
 
     const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
     const play = screen === 'play'
+    const seatName = (seat) => (netUi && netUi.slot === seat ? 'YOU' : 'P' + (seat + 1))
 
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
@@ -1002,6 +1154,63 @@ const SSXGame = () => {
                     </h2>
                     <p className="text-lg mb-3">{result.why}</p>
                     <p className="text-sm text-cyan-200/80 mb-4">tricks banked: {result.tricks} · bails: {result.crashes} · best finish P{result.place}</p>
+                    <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
+                </div>
+            )}
+
+            {/* #845 waiting room — host shows the code, seats fill as friends join. */}
+            {screen === 'attract' && netUi && netUi.role && (
+                <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-cyan-50 font-mono px-6">
+                    <div className="text-[10px] tracking-[0.3em] text-cyan-300/70 mb-1">{netUi.role === 'host' ? 'HOST A RACE' : 'JOINING RACE'}</div>
+                    {netUi.code ? (
+                        <div className="text-5xl font-black italic tracking-widest mb-3" style={{ color: '#fff', textShadow: '3px 0 0 #b0147a, -3px 0 0 #1490b0' }}>
+                            {netUi.code.split('').join(' ')}
+                        </div>
+                    ) : (
+                        <div className="text-lg mb-3 animate-pulse">{netUi.phase === 'offline' ? 'RELAY OFFLINE' : 'CONNECTING…'}</div>
+                    )}
+                    <div className="flex gap-2 mb-4">
+                        {netUi.seats.map((k, i) => (
+                            <div key={i} className={`px-3 py-2 rounded border text-xs font-bold ${k === 'cpu' ? 'border-white/15 text-white/40' : 'border-cyan-300/40 text-cyan-100'} ${i === netUi.slot ? 'ring-2 ring-yellow-300' : ''}`}>
+                                <div className="text-[9px] opacity-70">{k === 'cpu' ? 'CPU' : k.toUpperCase()}</div>
+                                <div>{i === netUi.slot ? 'YOU' : (netUi.names[i] || ('P' + (i + 1)))}</div>
+                            </div>
+                        ))}
+                    </div>
+                    {netUi.role === 'host'
+                        ? <p className="text-sm text-yellow-300 animate-pulse">{netUi.phase === 'racing' ? 'RACING…' : 'PRESS SPACE / TAP TO START · FRIENDS JOIN AT /retrogames/ssx?net=join&room=' + netUi.code}</p>
+                        : <p className="text-sm text-cyan-200/80 animate-pulse">waiting for the host to start…</p>}
+                </div>
+            )}
+
+            {/* #845 live friends' standings — shown while racing online. */}
+            {screen === 'play' && netUi && netUi.standings && (
+                <div className="absolute bottom-24 right-3 bg-black/45 border border-cyan-300/30 rounded px-3 py-1.5 font-mono text-cyan-50 pointer-events-none">
+                    <div className="text-[9px] tracking-widest opacity-70 mb-0.5">FRIENDS</div>
+                    {Object.keys(netUi.standings).map(Number).sort((a, b) => netUi.standings[b] - netUi.standings[a]).map((seat) => (
+                        <div key={seat} className="text-[11px] leading-4">
+                            <span className={seat === netUi.slot ? 'text-yellow-300 font-bold' : ''}>{seatName(seat)}</span>
+                            <span className="opacity-70"> · {netUi.standings[seat]}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* #845 final friends' podium. */}
+            {screen === 'over' && podium && (
+                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-cyan-50 font-mono px-6 pointer-events-none">
+                    <h2 className="text-3xl font-black italic mb-4" style={{ color: '#fff', textShadow: '3px 0 0 #b0147a, -3px 0 0 #1490b0' }}>FRIENDS PODIUM</h2>
+                    <div className="flex items-end gap-3 mb-5">
+                        {podium.podium.map((seat, i) => (
+                            <div key={seat} className="text-center" style={{ order: i === 0 ? 2 : i === 1 ? 1 : 3 }}>
+                                <div className="text-5xl mb-1">{['🥇', '🥈', '🥉'][i] || ''}</div>
+                                <div className={`font-black ${seat === netUi?.slot ? 'text-yellow-300' : 'text-cyan-100'}`}>{seatName(seat)}</div>
+                                <div className="text-xs opacity-70">{podium.totals[seat]} pts</div>
+                                <div className="mt-1 mx-auto bg-gradient-to-t from-cyan-500/40 to-fuchsia-500/40 rounded-t" style={{ width: 56, height: [64, 44, 30][i] || 22 }} />
+                            </div>
+                        ))}
+                    </div>
+                    {podium.podium.length > 3 && <p className="text-xs opacity-70 mb-3">{podium.podium.slice(3).map((s) => `${seatName(s)} ${podium.totals[s]}`).join('  ·  ')}</p>}
                     <p className="animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
             )}

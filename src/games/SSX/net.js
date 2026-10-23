@@ -148,3 +148,26 @@ export function podiumSeats(seats, totals) {
         return a - b
     })
 }
+
+// computeStandings is THE online standings reducer. `heats[seat]` is an array of
+// that racer's finish time per heat (null if not (yet) finished). It scores every
+// heat by finish order (missing = last, ties by seat), sums the place points, and
+// returns { totals, podium, done } where done = every seat finished every heat.
+// Pure + deterministic: the relay forwards each racer's finish to ALL others, so
+// every box holds the SAME heats table and lands on the SAME podium — the friends'
+// standings converge with no lockstep and no authority.
+export function computeStandings(seats, heats, heatCount) {
+    const totals = {}
+    seats.forEach((s) => { totals[s] = 0 })
+    const n = Math.max(1, heatCount)
+    for (let h = 0; h < n; h++) {
+        const fin = {}
+        for (const s of seats) fin[s] = heats[s] && heats[s][h] != null ? heats[s][h] : null
+        const order = heatOrder(seats, fin)
+        const pts = heatPoints(order)
+        for (const s of seats) totals[s] += pts[s]
+    }
+    let done = true
+    for (const s of seats) for (let h = 0; h < n; h++) if (!(heats[s] && heats[s][h] != null)) done = false
+    return { totals, podium: podiumSeats(seats, totals), done }
+}
