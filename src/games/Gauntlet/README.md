@@ -163,3 +163,32 @@ Verify: `npm run netcheck` (relay core + protocol + lockstep determinism +
 corrupted-sim IS caught + #546 backoff/age/stall pins) and `npm run netdrill`
 (two headless Chromes over real keys: pair, seed, play, desync, friend-left,
 dropped-socket auto-rejoin — needs `npm run dev`).
+
+## Link pads (#893) — iPhone as controller
+
+`?pads=1` on this game's URL opens a link-pad room (the PADS pill shows the
+4-letter code); phones join at `/retrogames/pad` (enter the code). Each phone
+takes the next generic pad slot (#494 rules, see `src/utils/padlink.js`):
+
+- Seat 1 (first phone) is the console-pad route: keyboard events (Arrows +
+  Space + B via this game's declared `pad.secondAction`) + analog stick —
+  exactly like gamepad #1, so P1 plays on the phone while the iPad is the
+  screen.
+- Seat 2 lands in onePad slot 2 — `pollP2Select` claims it at hero select
+  (press A on the phone), which is the "Gauntlet with two phones" pilot:
+  two humans, phones in hand, iPad shows FOUR HALLS.
+- Pad state streams ~120/s over a direct WebRTC data channel (unordered, no
+  retransmits) signaled through the relay room; if ICE can't pair the stream
+  falls back to the relay at ~50/s. The phone pad shows which path plus a
+  live ping. A silent phone releases its keys after 1s.
+
+Local test: `node relay/server.mjs 8787`, then `?pads=1&relay=ws://localhost:
+8787` on the game and `?relay=ws://localhost:8787` on the pad pages. Rules
+gate: `npm run padlinkcheck` (13 gates; mutates to red when the seat→slot
+routing breaks).
+
+Honest gaps: no QR code (code shown as text); ping not yet written into the
+`retrogames-rec/v1` file (kept live on `__padlink.pads()` instead); seat 1's
+keyboard route shares slot 1 with the screen's own touch (last writer wins,
+same as gamepad + keyboard); `jalfern.com/pad` site-root alias lives in the
+jalfern repo, here the pad is `/retrogames/pad`.
