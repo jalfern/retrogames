@@ -185,6 +185,9 @@ const PrinceOfPersiaGame = lazy(() => import('../games/PrinceOfPersia'))
 // capital (scripts/civcheck.mjs audits) ride in its own chunk; the harness
 // imports sim/planner unchanged in Node.
 const CivilizationVGame = lazy(() => import('../games/CivilizationV'))
+// GARDEN GUARD: its own chunk — the autopilot scripts the attract demo and the
+// lane-defense sim audits in Node (gardencheck), so planner and sim ride together.
+const GardenGuardGame = lazy(() => import('../games/GardenGuard'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1006,6 +1009,18 @@ export const GAMES = [
         theme: 'dark',
         description: "Bullfrog's 1994 DOS god-game, rebuilt whole in code. You fly a magic carpet in first person over a seeded, smooth rolling world — water to snow, drawn the original's way: per-column voxel terrain at 320x200 with checker dither and haze, sprite entities clipped by the hills, a gradient dusk sky. Mana pearls drift over the land; possessing them sends your balloons home to the castle — grow the castle to 180 stored mana and the world returns to EQUILIBRIUM. The 20-spell book is reduced to six signatures with the original's acquisition risk: fly through a grimoire and it may simply elude you. Left and right hands carry two spells at once — fireball homes like it means it, lightning chains, telekinesis lifts a wolf and hurls it back. A rival wizard orbits his tower hoarding 90 mana and hexing you with bolts; giants sling rocks, wolves hunt, and fire that touches the ground breeds more monsters. The carpet banks into turns and rises over ridges on its own — it cannot crash; dying while the castle stands returns you to its gates, dying with an empty store unravels the flight. The attract demo is the autopilot's own proven flight, and a Node harness (carpetcheck) audits mana conservation, spell risk, the wizard's hoard, and equilibrium itself.",
         controls: ['← →: turn the carpet (it banks and slows in the turn, then accelerates out)', '▲ ▼: climb and descend — the carpet auto-rises over ridges, it cannot crash', 'SHIFT (hold) / hold ▲: charge-glide — 1.6× speed with wider turns, costs no mana', 'SPACE / A: cast your LEFT hand · X / Z / B: cast your RIGHT hand', 'Fly through floating grimoires to learn spells — some elude you; try again', '1–6: put a learned spell in your left hand · Q: cycle your right hand', 'Mana pearls fly to your castle on their own — but casting SPENDS the stored mana', 'Kill the rival wizard and his hoard scatters into pearls · reach 180 mana to win', '?: pause and read the spellbook'],
+    },
+    {
+        path: '/garden-guard',
+        pad: { layout: 'dpad', buttons: [{ label: '✿', code: 'Space' }, { label: '↻', code: 'KeyB' }], analog: false, reason: 'pick a card then a tile — arrows move the planter, ✿ plants/digs, ↻ cycles the hand; tap the lawn directly on touch' },
+        builtBy: 'forge',
+        added: '2026-10-23',
+        visibility: 'private',
+        component: GardenGuardGame,
+        label: 'GARDEN GUARD',
+        theme: 'dark',
+        description: "An original lane-defense game in the lineage of a certain 2009 lawn classic — its own autumn orchard, its own names and art. Goblins raid the cottage down five lanes at dusk; bank acorns (tap the ones that fall, or wait for them to bank), pick a card and plant the lawn. Gilded Daisies make acorns, Acorn Squirrels fire down their lane, Hedgerows stall a Grunt while it chews, Chili Bombs pop a cluster, Frostcaps slow the Brute and Pumpkin Cats arc over the wall. Each level wipes the lawn, hands you a sunlight cache and unlocks a new defender, waves build to a flagged FINAL WAVE, and a scarecrow-mower saves each lane exactly once before the gate falls. Made pointer- and touch-first, with a depth-first autopilot that lines every lane and nukes lone tanks — the attract demo and the gardencheck harness both drive that same bot, so it can never show a play you couldn't replay.",
+        controls: ['Tap a card (or press 1–6) to pick a defender, then tap a tile to plant it', 'Arrows / WASD / d-pad: move the planter · SPACE / ✿ / tap the lawn: plant · B / ↻: cycle the hand', 'Tap a falling acorn to bank it early — or let it settle and bank itself', 'T / E: the trowel — tap a plant to dig it back up (resets that card a little)', 'Hold a lane: each lane has a scarecrow-mower that fires once, then the gate holds or falls', 'Clear a level to unlock the next defender — Frostcaps slow the Brute, then the Warlord', '?: pause and read the field guide'],
     },
 
 ]

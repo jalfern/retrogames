@@ -361,7 +361,7 @@ function defendersStep(g, dt) {
             p.fuse -= dt
             if (p.fuse <= 0) {
                 p.hp = 0
-                g.events.push({ t: 'boom' })
+                g.events.push({ t: 'boom', x: colX(p.c), y: rowY(p.r) })
                 for (const e of g.enemies) {
                     if (Math.abs(e.r - p.r) > 1) continue
                     const dx = e.x - colX(p.c), dy = (e.r - p.r) * CH
@@ -381,12 +381,12 @@ function projStep(g, dt) {
             if (e.r !== pr.r || e.hp <= 0) continue
             if (Math.abs(e.x - pr.x) <= ENEMIES[e.id].r + 6) {
                 if (pr.splash) {
-                    g.events.push({ t: 'splat' })
+                    g.events.push({ t: 'splat', x: pr.x, y: pr.y })
                     for (const e2 of g.enemies) { if (Math.abs(e2.r - pr.r) <= 0 && Math.abs(e2.x - pr.x) <= pr.splash) damage(g, e2, pr.dmg) }
                 } else {
                     damage(g, e, pr.dmg)
                     if (pr.kind === 'frost') { e.slow = pr.slow; e.slowT = pr.slowFor }
-                    g.events.push({ t: pr.kind === 'frost' ? 'frosthit' : 'hit' })
+                    g.events.push({ t: pr.kind === 'frost' ? 'frosthit' : 'hit', x: pr.x, y: pr.y })
                 }
                 pr.dead = true
                 break
@@ -397,7 +397,7 @@ function projStep(g, dt) {
     g.projs = g.projs.filter((p) => !p.dead)
 }
 
-function damage(g, e, dmg) { e.hp -= dmg; if (e.hp <= 0 && !e.dead) { e.dead = true; g.score += ENEMIES[e.id].score; g.events.push({ t: 'kill', id: e.id }) } }
+function damage(g, e, dmg) { e.hp -= dmg; if (e.hp <= 0 && !e.dead) { e.dead = true; g.score += ENEMIES[e.id].score; g.events.push({ t: 'kill', id: e.id, x: e.x, y: rowY(e.r) }) } }
 
 function cleanDead(g) {
     g.plants = g.plants.filter((p) => p.hp > 0)
