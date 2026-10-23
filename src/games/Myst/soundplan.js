@@ -46,6 +46,14 @@ export function plan(ev) {
     // it reads as paper rather than static. Fired on every open and close.
     case 'page': P.push({ type: 'fnoise', dur: 0.16, vol: 0.08, freq: 1400 }); break
     case 'panel': P.push({ type: 'fnoise', dur: 0.2, vol: 0.09, freq: 1100 }, { type: 'tone', f: 240, dur: 0.1, wave: 'sine', vol: 0.05, delay: 0.03 }); break
+    // The Mechanical cage and door: the cage motor is a low cable-hiss under a
+    // rising brake whine; bolts are a hard clank; the plates thud; the latch
+    // bites with a double click. Each distinct, so the harness can tell them.
+    case 'motor': P.push({ type: 'sweep', f0: 70, f1: 150, dur: 0.7, wave: 'sawtooth', vol: 0.07 }, { type: 'noise', dur: 0.6, vol: 0.05 }); break
+    case 'clank': P.push({ type: 'tone', f: 140, dur: 0.12, wave: 'square', vol: 0.08 }, { type: 'noise', dur: 0.18, vol: 0.1 }); break
+    case 'plate': P.push({ type: 'tone', f: 320, dur: 0.07, wave: 'triangle', vol: 0.05 }); break
+    case 'latch': P.push({ type: 'noise', dur: 0.1, vol: 0.1 }, { type: 'tone', f: 90, dur: 0.09, wave: 'square', vol: 0.07, delay: 0.07 }); break
+    case 'spectator': [330, 440, 550].forEach((f, i) => P.push({ type: 'tone', f, dur: 0.5, wave: 'sine', vol: 0.07, delay: i * 0.22 })); break
     // The Selenitic sphere: when the panel opens the four ring posts sing their
     // tones in sequence, one after another — the player reads the code by ear.
     case 'sphereSing': TONES.forEach((f, i) => P.push({ type: 'tone', f, dur: 0.4, wave: 'sine', vol: 0.09, delay: i * 0.34 })); break

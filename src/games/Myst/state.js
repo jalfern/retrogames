@@ -73,6 +73,11 @@ export function dispatch(st, a) {
       if (spot.gone && has(s, spot.gone)) { s.message = 'There is nothing there now.'; ev.push('blocked'); break }
       s.node = spot.to; s.turn = 0
       s.message = NODES[spot.to].caption
+      if (spot.to === 'mechRoom') {
+        s.flags.mechDoorOpen = false; s.flags.mechPlateD = false; s.flags.mechPlateE = false; s.flags.mechLatchD = false; s.flags.mechLatchE = false
+        s.message = 'You duck through the open steel door — and it bangs shut behind you. Two iron floor plates, a latch lever between them, and the great glass sphere watches from its cradle.'
+        ev.push('clank')
+      }
       ev.push('travel', `enter:${spot.to}`)
       break
     }
@@ -83,7 +88,15 @@ export function dispatch(st, a) {
       if (spot.msg) { s.message = spot.msg; ev.push('look'); if (spot.reveal && !has(s, spot.reveal)) { s.flags[spot.reveal] = true; ev.push('reveal') } break }
       if (spot.reveal && !has(s, spot.reveal)) { s.flags[spot.reveal] = true; s.message = 'Behind the flickering image your fingers find cold iron — a lever, set into the rock.'; ev.push('reveal'); break }
       if (spot.need && !has(s, spot.need)) { s.message = spot.needMsg || 'It will not move.'; ev.push('blocked'); break }
-      if (spot.to) { s.node = spot.to; s.turn = 0; s.message = NODES[spot.to].caption; ev.push('travel', `enter:${spot.to}`); break }
+      if (spot.to) {
+        s.node = spot.to; s.turn = 0; s.message = NODES[spot.to].caption
+        if (spot.to === 'mechRoom') {
+          s.flags.mechDoorOpen = false; s.flags.mechPlateD = false; s.flags.mechPlateE = false; s.flags.mechLatchD = false; s.flags.mechLatchE = false
+          s.message = 'You duck through the open steel door — and it bangs shut behind you. Two iron floor plates, a latch lever between them, and the great glass sphere watches from its cradle.'
+          ev.push('clank')
+        }
+        ev.push('travel', `enter:${spot.to}`); break
+      }
       if (spot.act) return act(s, spot, ev)
       return { state: st, events: [] }
     }
@@ -172,6 +185,72 @@ function act(s, spot, ev) {
       else { s.message = 'The observatory dome tracks a sun that never sets on this grey sea.'; ev.push('look') }
       break
     }
+    case 'mechCall': {
+      s.flags.mechCarDown = !s.flags.mechCarDown
+      s.message = s.flags.mechCarDown
+        ? 'The lever groans over. Somewhere above you the cage shudders and sinks down its rails, cables singing.'
+        : 'You shove the call lever back the other way; the cables go taut and the cage climbs empty to the gantry.'
+      ev.push('motor'); break
+    }
+    case 'cageRaise': {
+      if (s.flags.mechCageTop) { s.message = 'The cage is already at the top of its rails.'; ev.push('blocked'); break }
+      s.flags.mechCageTop = true; s.flags.mechCarDown = false; s.node = 'mechTop'; s.turn = 0
+      s.message = NODES.mechTop.caption
+      ev.push('motor', 'travel', 'enter:mechTop'); break
+    }
+    case 'cageDescend': {
+      if (!s.flags.mechCageTop) { s.message = 'You pull the chain and nothing answers — the cage is already on the deck.'; ev.push('blocked'); break }
+      s.flags.mechCageTop = false; s.flags.mechCarDown = true
+      s.message = 'The brake hisses; the deck drops under your feet as the cage slides down the tower face.'
+      ev.push('motor'); break
+    }
+    case 'cageOut': {
+      if (s.flags.mechCageTop) { s.node = 'mechTop'; s.turn = 0; s.message = NODES.mechTop.caption; ev.push('travel', 'enter:mechTop') }
+      else { s.node = 'mechanical'; s.turn = 0; s.message = NODES.mechanical.caption; ev.push('travel', 'enter:mechanical') }
+      break
+    }
+    case 'mechSendDown': {
+      if (s.flags.mechCarDown) { s.message = 'The cage is already down at the landing, swaying on its cables.'; ev.push('blocked'); break }
+      s.flags.mechCarDown = true
+      s.message = 'You throw the send-down lever; the cage glides off the gantry and the door slot stands clear.'
+      ev.push('motor'); break
+    }
+    case 'mechDoorBtn': {
+      if (!s.flags.mechCarDown) { s.message = 'The release button sinks and clicks — but the bronze cage is jammed in the door slot. Nothing moves but the cage.'; ev.push('blocked'); break }
+      s.flags.mechDoorOpen = true
+      s.message = 'The button sinks home. Bolts retract in sequence, and the steel door swings inward on counterweights.'
+      ev.push('clank'); break
+    }
+    case 'cageBoardTop': {
+      if (s.flags.mechCarDown) { s.message = 'The cage waits at the bottom of the shaft, twenty metres below the gantry.'; ev.push('blocked'); break }
+      s.flags.mechCageTop = true; s.node = 'mechCar'; s.turn = 0
+      s.message = NODES.mechCar.caption
+      ev.push('travel', 'enter:mechCar'); break
+    }
+    case 'stepPlateD': {
+      s.flags.mechPlateD = !s.flags.mechPlateD
+      if (s.flags.mechPlateD) { if (!s.flags.mechLatchD) s.flags.mechDoorOpen = true; s.message = 'You stand on the door plate. Cables tighten overhead; the steel door grinds open — but only while your weight holds the iron down.' }
+      else { if (!s.flags.mechLatchD) s.flags.mechDoorOpen = false; s.message = s.flags.mechLatchD ? 'You step off the plate — the latch holds it for you. The door stays open.' : 'You shift your weight off the plate and the door begins to swing shut.' }
+      ev.push('plate'); break
+    }
+    case 'stepPlateE': {
+      s.flags.mechPlateE = !s.flags.mechPlateE
+      if (s.flags.mechPlateE) { if (!s.flags.mechLatchE) s.flags.mechCarDown = false; s.message = 'You press the shaft plate. Far below, the cage jumps onto the lift cable and rises to the gantry.' }
+      else { if (!s.flags.mechLatchE) s.flags.mechCarDown = true; s.message = s.flags.mechLatchE ? 'You step off the shaft plate — the latch holds; the cage stays called.' : 'You leave the shaft plate and the cage sinks back to the landing below.' }
+      ev.push('motor'); break
+    }
+    case 'mechLatch': {
+      if (s.flags.mechPlateD && !s.flags.mechLatchD) { s.flags.mechLatchD = true; s.message = 'CLACK. The latch lever bites. Whatever the door plate is doing, it will keep doing it now — your feet are free.'; ev.push('latch') }
+      else if (s.flags.mechPlateE && !s.flags.mechLatchE) { s.flags.mechLatchE = true; s.message = 'CLACK. The latch bites again. The cage stays called even off the plate.'; ev.push('latch') }
+      else { s.message = 'The latch lever hunts for a pressed plate to hold and finds none — it works only on iron that is already down.'; ev.push('blocked') }
+      break
+    }
+    case 'spectator': {
+      s.flags.spectatorSeen = true; s.panelOpen = 'spectator'
+      const known = AGE_LIST.filter((a) => a !== 'mechanical' && has(s, `link_${a}`))
+      s.message = 'The SPECTATOR: a glass sphere full of slow-turning light. Three lights swim inside it — a world of green rings, a grey and glassy sea, a world of waterfalls.' + (known.length ? ` You have walked in ${known.map((a) => a.toUpperCase()).join(', ')}.` : ' Ages, all of them. Worlds inside books.')
+      ev.push('panel', 'spectator'); break
+    }
     default: break
   }
   return { state: s, events: ev }
@@ -195,8 +274,20 @@ export function solveScript() {
     S('move', { id: 'towerDoor' }), S('move', { id: 'towerClimb' }),
     S('click', { id: 'mechanicalBook' }),
     S('click', { id: 'matchbook' }),
+    S('click', { id: 'pageMechanicalBlue' }),
+    S('move', { id: 'toTowerWalk' }),
     S('toggle', { i: 0 }), S('toggle', { i: 3 }),
-    S('click', { id: 'pageMechanicalRed' }), S('click', { id: 'pageMechanicalBlue' }),
+    S('click', { id: 'mechCall' }),
+    S('move', { id: 'boardCar' }),
+    S('click', { id: 'cageRaise' }),
+    S('click', { id: 'pageMechanicalRed' }),
+    S('click', { id: 'mechSendDown' }), S('click', { id: 'mechDoorBtn' }),
+    S('move', { id: 'enterRoom' }),
+    S('click', { id: 'spectator' }), S('closePanel'),
+    S('click', { id: 'stepPlateD' }), S('click', { id: 'mechLatch' }), S('click', { id: 'stepPlateD' }),
+    S('click', { id: 'stepPlateE' }), S('click', { id: 'mechLatch' }), S('click', { id: 'stepPlateE' }),
+    S('move', { id: 'exitRoom' }),
+    S('click', { id: 'cageBoardTop' }), S('click', { id: 'cageDescend' }), S('click', { id: 'cageOut' }),
     S('move', { id: 'retMechanical' }),
     S('click', { id: 'fireplace' }), S('click', { id: 'fireplace' }),
     S('click', { id: 'pageSeleniticRed' }), S('click', { id: 'pageSeleniticBlue' }),
