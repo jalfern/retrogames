@@ -5,6 +5,7 @@ name: CI
 #   static  — REQUIRED check. Scoped lints/checks, no `--mutate` (those run
 #             nightly). Docs/scripts-only PRs: selftest + nothing else.
 #   smoke   — advisory browser steps, scoped the same way.
+#   prsmokes — #887 advisory: shared-code PRs run the nightly play-smoke set.
 # Push to main no longer re-runs the PR suite (the merge commit is the tree the
 # PR just proved); main gets the FULL suite with mutants every night in
 # nightly.yml, and scripts/main-ok.sh freezes merges while that is red.
@@ -23,6 +24,7 @@ jobs:
     outputs:
       docs: ${{ steps.scope.outputs.docs }}
       keys: ${{ steps.scope.outputs.keys }}
+      shared: ${{ steps.scope.outputs.shared }}
     steps:
       - uses: actions/checkout@v7
       - name: Changed files -> gate list
@@ -378,6 +380,45 @@ jobs:
       - name: Zelda smoke (real keys — a cell-for-cell walk on the world grid, "?" pause opens and the frozen world ignores a held key, play resumes)
         if: contains(fromJSON(env.KEYS), 'zelda')
         run: npm run zeldaplay
+      - name: Dev server log (on failure)
+        if: failure()
+        run: cat /tmp/vite.log
+
+  # #887 — ADVISORY, like `smoke` (branch protection still requires only
+  # `static`). A PR that touches code every game page loads (scripts/checks.mjs
+  # SHARED) pays the nightly play-smoke set right on the PR, so an off-prod
+  # break of the #868 kind (relay CORS logging console.error on every page, red
+  # three nights running before anyone saw it) shows here instead of freezing
+  # merges the next morning. Game-only PRs never see this job (shared=false).
+  prsmokes:
+    needs: scope
+    if: needs.scope.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    env:
+      SHOT_CHANNEL: chromium
+      HEIST_LITE: "1"
+      DOG_LITE: "1"
+      TAP_ONLY: "1"
+      TAP_CANVAS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # npm >=11, see the note in the static job
+          cache: npm
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - name: Start dev server
+        run: |
+          npm run dev > /tmp/vite.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:5173/retrogames/raccoon-heist > /dev/null; then
+              echo "dev server up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "dev server never came up"; cat /tmp/vite.log; exit 1
+      - run: npm run nightlysmokes
       - name: Dev server log (on failure)
         if: failure()
         run: cat /tmp/vite.log

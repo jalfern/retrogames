@@ -72,6 +72,22 @@ export const SCOPES = {
   comet: { dirs: ['src/games/CometDrift'], lint: ['lint:comet'], checks: ['cometcheck'], smoke: [] },
 };
 
+// #887: code that EVERY game page loads. A PR touching any of it pays the
+// nightly play-smoke set on the PR itself (ci.yml's `prsmokes` job, advisory),
+// so an off-prod break like #868's relay-CORS console.error is seen before
+// merge, not in the next morning's freeze. Deliberately NOT CORE.paths:
+// the lockfile and workflow files fan out the static gates but a game page
+// doesn't load them — game-only PRs keep paying nothing extra.
+export const SHARED = [
+  'src/components/', 'src/utils/', 'src/pages/', 'src/config/',
+  'src/App.jsx', 'src/main.jsx', 'index.html', 'vite.config.js',
+  'public/sw.js', 'relay/', 'scripts/lib/',
+];
+
+export function touchesShared(files) {
+  return files.some((f) => SHARED.some((p) => f === p || f.startsWith(p)));
+}
+
 // changed files -> { docs, keys } ; keys is the expanded gate list — 'all'
 // fans out to every scope so ci.yml's contains() conditions stay uniform.
 export function classify(files) {
