@@ -138,8 +138,7 @@ const BUILDERS = {
     const door = mesh(new THREE.BoxGeometry(1.8, 2.8, 0.3), mat(TX.wood), 0, 11.4, 12.1, g)
     door.userData.spot = 'libraryDoor'
     const tower = mesh(new THREE.CylinderGeometry(1.8, 2.1, 10, 10), mat(TX.stoneD), 8.5, 14.5, 8, g)
-    tower.userData.noPick = true
-    mesh(new THREE.ConeGeometry(2.4, 2, 10), mat(TX.stoneD), 8.5, 20.4, 8, g)
+    &    mesh(new THREE.ConeGeometry(2.4, 2, 10), mat(TX.stoneD), 8.5, 20.4, 8, g)
     const tdoor = mesh(new THREE.BoxGeometry(1.2, 2.2, 0.3), mat(TX.iron), 8.5, 11.1, 9.9, g)
     tdoor.userData.spot = 'towerDoor'
     const cab = new THREE.Group()
@@ -268,17 +267,130 @@ const BUILDERS = {
   },
   mechanical(g) {
     const ground = mesh(new THREE.CircleGeometry(60, 24), mat(TX.mech, { metalness: 0.3, roughness: 0.6 }), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
-    for (const [r, x, z, sp] of [[3, -6, -6, 0.5], [2, 5, -8, -0.8], [1.4, 8, -2, 1.2], [2.2, -9, 3, -0.4]]) gear(g, TX.mech, r, x, 1.5, z, sp)
-    const panel = mesh(new THREE.BoxGeometry(2, 1.4, 0.2), mat(TX.iron, { metalness: 0.6 }), 0, 1.4, -5, g)
-    panel.userData.spot = 'switchPanel'
-    panel.userData.landmark = 'switchPanel'
-    for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.16, 0.5, 0.16), mat(TX.iron, { metalness: 0.7 }), -0.7 + i * 0.35, 1.6, -4.85, g).userData.spot = 'switchPanel'
-    const alcove = mesh(new THREE.BoxGeometry(1.6, 1.4, 0.4), mat(TX.iron), 4.6, 0.7, -3.4, g)
-    alcove.userData.spot = 'pageMechanicalRed'
+    for (const [r, x, z, sp] of [[3, -9, -9, 0.5], [2, 11, -12, -0.8], [1.4, 14, -4, 1.2], [2.2, -12, 2, -0.4]]) gear(g, TX.mech, r, x, 1.5, z, sp)
+    // the tower itself: a bronze drum with a waterfall running its west face
+    const tower = mesh(new THREE.CylinderGeometry(7.5, 9, 34, 18), mat(TX.mech, { metalness: 0.45, roughness: 0.5 }), 2, 17, -34, g)
+    tower.userData.noPick = true
+    gear(g, TX.mech, 3.4, 2, 9, -24.6, 0.22)
+    gear(g, TX.mech, 2.2, 6.6, 12.5, -25.4, -0.34)
+    const fall = mesh(new THREE.PlaneGeometry(4, 16), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.7, side: THREE.DoubleSide }), -5.4, 12, -27.5, g)
+    fall.rotation.y = 0.5; fall.userData.fall = true
+    // the linking book on its bronze pedestal — the way home
+    const ped = mesh(new THREE.CylinderGeometry(0.55, 0.8, 1.15, 10), mat(TX.brass, { metalness: 0.6 }), 0, 0.57, -6.2, g)
+    ped.userData.landmark = 'mechBookStand'
+    const bk = mesh(new THREE.BoxGeometry(0.95, 0.14, 0.66), mat(TX.pageB), 0, 1.25, -6.2, g)
+    bk.rotation.set(-0.45, 0.4, 0); bk.userData.spot = 'retMechanical'; bk.userData.landmark = 'mechBookStand'
+    for (const [px, pz] of [[-1.1, -5.2], [1.1, -5.2]]) mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.9), mat(TX.brass, { metalness: 0.6 }), px, 0.9, pz, g).userData.spot = 'matchbook'
     const vent = mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 10), mat(TX.iron), -4.4, 0.2, 2.6, g)
     vent.userData.spot = 'pageMechanicalBlue'
     const steam = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-4.4, 0.6, 2.6, -4.2, 1.2, 2.7, -4.5, 1.8, 2.5, -4.3, 2.4, 2.6], 3)), new THREE.PointsMaterial({ color: 0xcfd2d8, size: 0.5, transparent: true, opacity: 0.5 }))
     steam.userData.steam = true; g.add(steam)
+  },
+  mechWalk(g) {
+    const ground = mesh(new THREE.CircleGeometry(40, 22), mat(TX.mech, { metalness: 0.3, roughness: 0.6 }), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
+    // the tower face, close enough that the cage on its rails fills the sky
+    const wall = mesh(new THREE.CylinderGeometry(8, 9.5, 34, 20, 1, true), mat(TX.mech, { side: THREE.DoubleSide, metalness: 0.45, roughness: 0.5 }), 0, 17, -16, g)
+    wall.userData.noPick = true
+    gear(g, TX.mech, 3.2, -4.2, 5.5, -8.4, 0.3)
+    gear(g, TX.mech, 1.8, -1.2, 8.4, -8.8, -0.53)
+    gear(g, TX.mech, 2.4, 4.8, 3.4, -8.6, 0.4)
+    // the cage, riding its rails: hangs high until the call lever brings it down
+    const cage = new THREE.Group()
+    for (const cx of [-0.9, 0.9]) for (const cz of [-0.9, 0.9]) mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2), mat(TX.brass, { metalness: 0.7 }), cx, 1.1, cz, cage)
+    for (const cy of [0.05, 2.15]) for (const cx of [-0.9, 0.9]) mesh(new THREE.BoxGeometry(0.08, 0.08, 1.9), mat(TX.brass, { metalness: 0.7 }), cx, cy, 0, cage)
+    const cf = mesh(new THREE.BoxGeometry(1.9, 0.12, 1.9), mat(TX.iron, { metalness: 0.5 }), 0, 0, 0, cage); cf.userData.spot = 'boardCar'
+    cage.position.set(4.4, 15, -9.2)
+    cage.userData.mech = 'cageWalk'
+    g.add(cage)
+    for (const ry of [-9, -6, -3, 0]) mesh(new THREE.BoxGeometry(0.12, 0.12, 1.2), mat(TX.brass, { metalness: 0.6 }), 5.6, ry + 15.6 - 15, -8, g).userData.noPick = true
+    // the call lever, bolted beside the shaft
+    const post = mesh(new THREE.BoxGeometry(0.3, 1.9, 0.3), mat(TX.iron, { metalness: 0.6 }), 5.6, 0.95, -5.6, g)
+    post.userData.landmark = 'mechCallLever'
+    const lv = mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.5), mat(TX.brass, { metalness: 0.7 }), 5.6, 1.6, -5.2, g)
+    lv.rotation.x = -0.55; lv.userData.spot = 'mechCall'; lv.userData.landmark = 'mechCallLever'
+    // the switch panel that governs the gear chain
+    const panel = mesh(new THREE.BoxGeometry(2, 1.4, 0.2), mat(TX.iron, { metalness: 0.6 }), -4.6, 1.4, -6.2, g)
+    panel.rotation.y = 0.5; panel.userData.spot = 'switchPanel'; panel.userData.landmark = 'mechCallLever'
+    for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.16, 0.5, 0.16), mat(TX.iron, { metalness: 0.7 }), -4.6 - 0.7 * Math.cos(0.5) + i * 0.35 * Math.cos(0.5), 1.6, -6.2 + 0.7 * Math.sin(0.5) + i * 0.35 * -Math.sin(0.5), g).userData.spot = 'switchPanel'
+  },
+  mechCar(g) {
+    const grate = mesh(new THREE.CircleGeometry(1.5, 14), mat(TX.iron, { metalness: 0.5, roughness: 0.4 }), 0, 0.02, -6.4, g)
+    grate.rotation.x = -Math.PI / 2; grate.userData.spot = 'cageOut'; grate.userData.landmark = 'mechCageGrate'
+    // the cage around the player: thin bars, all round, open at the gantry side
+    for (let k = 0; k < 14; k++) {
+      const a = k * (Math.PI * 2 / 14)
+      if (Math.abs(Math.cos(a) + 1) < 0.35) continue
+      mesh(new THREE.CylinderGeometry(0.045, 0.045, 2.2), mat(TX.brass, { metalness: 0.7 }), Math.sin(a) * 1.5, 1.1, -6.4 + Math.cos(a) * 1.5, g).userData.noPick = true
+    }
+    mesh(new THREE.CylinderGeometry(1.55, 1.55, 0.1, 14), mat(TX.brass, { metalness: 0.7 }), 0, 2.25, -6.4, g).userData.noPick = true
+    // rails dropping away, and the gear wall sliding past as the cage climbs
+    for (const rz of [-12, -18, -26]) for (const rx of [-1.6, 1.6]) mesh(new THREE.BoxGeometry(0.14, 30, 0.14), mat(TX.brass, { metalness: 0.6 }), rx, 4, rz - 6.4, g).userData.noPick = true
+    gear(g, TX.mech, 2.6, -3.6, 2.6, -12, 0.6)
+    gear(g, TX.mech, 1.6, 3.2, 5.5, -14, -0.9)
+    const pull = mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.4), mat(TX.iron, { metalness: 0.6 }), 0, 1.2, -7.6, g)
+    pull.userData.spot = 'cageRaise'; pull.userData.landmark = 'mechCageGrate'
+    mesh(new THREE.SphereGeometry(0.12, 8, 8), mat(TX.brass, { metalness: 0.7 }), 0, 1.9, -7.6, g).userData.spot = 'cageDescend'
+  },
+  mechTop(g) {
+    const floor = mesh(new THREE.CircleGeometry(9, 20), mat(TX.iron, { metalness: 0.4, roughness: 0.5 }), 0, 0.02, -6, g); floor.rotation.x = -Math.PI / 2
+    floor.userData.noPick = true
+    // the gantry railing over the drop
+    for (let k = 0; k < 16; k++) {
+      const a = k * (Math.PI * 2 / 16)
+      mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.1), mat(TX.brass, { metalness: 0.7 }), Math.sin(a) * 8.4, 0.55, -6 + Math.cos(a) * 8.4, g).userData.noPick = true
+    }
+    // the steel control-room door in its bronze frame
+    const frame = mesh(new THREE.BoxGeometry(2.4, 3.2, 0.5), mat(TX.brass, { metalness: 0.55 }), 0, 1.6, -14.4, g)
+    frame.userData.noPick = true
+    const door = mesh(new THREE.BoxGeometry(1.8, 2.7, 0.18), mat(TX.iron, { metalness: 0.65, roughness: 0.35 }), 0, 1.4, -14.1, g)
+    door.userData.spot = 'mechDoorBtn'; door.userData.landmark = 'mechDoorSteel'; door.userData.mech = 'doorTop'
+    const btn = mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.1, 12), new THREE.MeshStandardMaterial({ color: 0xc43a2a, emissive: 0x7a160c, roughness: 0.4 }), 1.35, 1.5, -14.1, g)
+    btn.rotation.x = Math.PI / 2; btn.userData.spot = 'mechDoorBtn'; btn.userData.landmark = 'mechDoorSteel'
+    // the send-down lever, and the cage when it is at the landing
+    const post = mesh(new THREE.BoxGeometry(0.3, 1.8, 0.3), mat(TX.iron, { metalness: 0.6 }), -3.4, 0.9, -13.6, g)
+    const lv = mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.4), mat(TX.brass, { metalness: 0.7 }), -3.4, 1.5, -13.2, g)
+    lv.rotation.x = -0.5; lv.userData.spot = 'mechSendDown'; lv.userData.landmark = 'mechDoorSteel'
+    const cage = new THREE.Group()
+    for (const cx of [-0.9, 0.9]) for (const cz of [-0.9, 0.9]) mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2), mat(TX.brass, { metalness: 0.7 }), cx, 1.1, cz, cage)
+    mesh(new THREE.BoxGeometry(1.9, 0.12, 1.9), mat(TX.iron, { metalness: 0.5 }), 0, 0, 0, cage).userData.spot = 'cageBoardTop'
+    cage.position.set(-5.6, 0.1, -11.4)
+    cage.userData.mech = 'cageTop'
+    g.add(cage)
+    // the gear-sealed alcove: the great gear only rolls aside when the chain is lit
+    const seal = mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.5, 12), mat(TX.mech, { metalness: 0.5, roughness: 0.45 }), 6.2, 1.2, -10.6, g)
+    seal.rotation.x = Math.PI / 2; seal.userData.spinSealed = 0.5; seal.userData.noPick = true; seal.userData.mech = 'topGear'
+    mesh(new THREE.BoxGeometry(1.6, 1.4, 0.4), mat(TX.iron), 6.4, 0.7, -12.4, g).userData.noPick = true
+  },
+  mechRoom(g) {
+    const shell = mesh(new THREE.CylinderGeometry(5.4, 5.4, 4.6, 16, 1, true), mat(TX.mech, { side: THREE.BackSide, metalness: 0.4 }), 0, 2.3, 0, g)
+    shell.userData.noPick = true
+    const fl = mesh(new THREE.CircleGeometry(5.4, 16), mat(TX.iron, { metalness: 0.4 }), 0, 0.02, 0, g); fl.rotation.x = -Math.PI / 2
+    fl.userData.noPick = true
+    // the door you came through, hanging open or shut with the latch
+    const door = mesh(new THREE.BoxGeometry(1.8, 2.7, 0.18), mat(TX.iron, { metalness: 0.65, roughness: 0.35 }), 0, 1.4, 5.0, g)
+    door.userData.spot = 'exitRoom'; door.userData.mech = 'doorTop'
+    // the two floor plates and the latch lever between them
+    const pd = mesh(new THREE.BoxGeometry(1.1, 0.12, 1.1), mat(TX.brass, { metalness: 0.6 }), -1.7, 0.08, 2.6, g)
+    pd.userData.spot = 'stepPlateD'; pd.userData.mech = 'plateD'
+    const pe = mesh(new THREE.BoxGeometry(1.1, 0.12, 1.1), mat(TX.brass, { metalness: 0.6 }), 1.7, 0.08, 2.6, g)
+    pe.userData.spot = 'stepPlateE'; pe.userData.mech = 'plateE'
+    const latch = mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.2), mat(TX.iron, { metalness: 0.7 }), 0, 0.9, 2.6, g)
+    latch.userData.spot = 'mechLatch'; latch.userData.mech = 'latch'; latch.userData.landmark = 'mechSpectator'
+    mesh(new THREE.BoxGeometry(0.24, 0.5, 0.24), mat(TX.iron, { metalness: 0.6 }), 0, 0.25, 2.6, g)
+    // the SPECTATOR: a glass sphere on a bronze cradle, slow light turning inside
+    const cradle = mesh(new THREE.CylinderGeometry(0.5, 0.9, 1.1, 10), mat(TX.brass, { metalness: 0.6 }), 0, 0.55, -4.4, g)
+    cradle.userData.noPick = true
+    const sph = mesh(new THREE.SphereGeometry(1.3, 22, 18), new THREE.MeshStandardMaterial({ color: 0x9fb6c8, metalness: 0.2, roughness: 0.15, transparent: true, opacity: 0.75 }), 0, 2.05, -4.4, g)
+    sph.userData.spot = 'spectator'; sph.userData.landmark = 'mechSpectator'
+    const core = mesh(new THREE.SphereGeometry(0.5, 12, 10), new THREE.MeshStandardMaterial({ color: 0xffd98a, emissive: 0xd98a2a, emissiveIntensity: 0.9 }), 0, 2.05, -4.4, g)
+    core.userData.spinY = 0.25; core.userData.noPick = true
+    const glow = new THREE.PointLight(0xffc878, 4, 12); glow.position.set(0, 2.4, -4.2); g.add(glow)
+    glow.userData.flicker = true
+    // the cage shaft window: watch the cage answer the shaft plate
+    const win = mesh(new THREE.BoxGeometry(1.6, 2.2, 0.12), new THREE.MeshStandardMaterial({ color: 0x1a1420, roughness: 0.9 }), 3.6, 1.6, -3.8, g)
+    win.rotation.y = -0.6; win.userData.noPick = true
+    const wcage = mesh(new THREE.BoxGeometry(1.3, 1.8, 0.1), mat(TX.brass, { metalness: 0.6 }), 3.6, -1.4, -3.8, g)
+    wcage.rotation.y = -0.6; wcage.userData.mech = 'cageShaft'; wcage.userData.noPick = true
   },
   channelwood(g) {
     const ground = mesh(new THREE.CircleGeometry(60, 24), mat(TX.chand), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
@@ -309,6 +421,7 @@ export function buildWorld(ids) {
   const root = new THREE.Group()
   const hot = []
   const anim = []
+  const mech = []
   ids.forEach((id, idx) => {
     const g = new THREE.Group()
     g.position.x = idx * GAP
@@ -331,6 +444,7 @@ export function buildWorld(ids) {
     root.add(g)
     g.traverse((o) => {
       if (o.userData.spot) hot.push({ mesh: o, id: o.userData.spot, node: id })
+      if (o.userData.mech) mech.push({ kind: o.userData.mech, o, x0: o.position.x, y0: o.position.y, z0: o.position.z })
       if (o.userData.spin) anim.push({ o, f: (t) => { o.rotation.z = t * o.userData.spin } })
       if (o.userData.spinY) anim.push({ o, f: (t) => { o.rotation.y = t * o.userData.spinY } })
       if (o.userData.flicker) anim.push({ o, f: (t) => { o.material && (o.material.opacity = 0.55 + 0.4 * Math.abs(Math.sin(t * 3.7))) ; if (!o.material) o.intensity = 6 + 4 * Math.sin(t * 9.1) + 2 * Math.sin(t * 23.3) } })
@@ -342,7 +456,7 @@ export function buildWorld(ids) {
     hot.push(...[])
   })
   hot.forEach((h) => { const o = h.mesh; if (!o.userData.noPick) o.userData.spot = h.id })
-  return { root, hot, anim }
+  return { root, hot, anim, mech }
 }
 
 function idSky(id) {
@@ -351,7 +465,7 @@ function idSky(id) {
   if (id === 'towerTop') return 'day'
   if (id === 'selenitic') return 'selenitic'
   if (id === 'stoneship') return 'stoneship'
-  if (id === 'mechanical') return 'mechanical'
+  if (id === 'mechanical' || id === 'mechWalk' || id === 'mechCar' || id === 'mechTop' || id === 'mechRoom') return 'mechanical'
   if (id === 'channelwood') return 'channelwood'
   return 'interior'
 }

@@ -60,7 +60,7 @@ const MystGame = () => {
     sun.position.set(-40, 60, 30)
     scene.add(sun)
 
-    const { root, hot, anim } = buildWorld(NODE_IDS)
+    const { root, hot, anim, mech } = buildWorld(NODE_IDS)
     scene.add(root)
 
     let gs = freshState()
@@ -186,7 +186,25 @@ const MystGame = () => {
 
     const startPlay = () => {
       gs = freshState()
-      gotoNode(gs.node); aim()
+    gotoNode(gs.node); aim()
+
+    const updateMech = (s, dt) => {
+      const k = Math.min(1, dt * 2.4)
+      const F = s.flags
+      for (const m of mech) {
+        switch (m.kind) {
+          case 'cageWalk': m.o.position.y += ((F.mechCarDown ? 0.6 : 15) - m.o.position.y) * k; break
+          case 'cageTop': m.o.position.y += ((F.mechCarDown ? m.y0 - 16 : m.y0) - m.o.position.y) * k; break
+          case 'cageShaft': m.o.position.y += ((F.mechCarDown ? m.y0 : m.y0 + 3.2) - m.o.position.y) * k; break
+          case 'doorTop': { const o = F.mechDoorOpen ? 1 : 0; m.o.position.x += (m.x0 + 1.95 * o - m.o.position.x) * k; m.o.rotation.y += (-0.9 * o - m.o.rotation.y) * k; break }
+          case 'plateD': m.o.position.y += ((F.mechPlateD ? m.y0 - 0.07 : m.y0) - m.o.position.y) * k; break
+          case 'plateE': m.o.position.y += ((F.mechPlateE ? m.y0 - 0.07 : m.y0) - m.o.position.y) * k; break
+          case 'latch': m.o.rotation.z += ((F.mechLatchD || F.mechLatchE ? -0.5 : 0.55) - m.o.rotation.z) * k; break
+          case 'topGear': { const open = !!F.switchPanel; m.o.position.z += (m.z0 - (open ? 1.5 : 0) - m.o.position.z) * k; m.o.rotation.z += dt * (open ? 1.4 : 0.3); break }
+          default: break
+        }
+      }
+    }
       setMode('play')
       hudStamp = -1
     }
@@ -202,6 +220,7 @@ const MystGame = () => {
       while (acc >= SIM_MS) {
         acc -= SIM_MS
         wt += SIM_MS / 1000
+        updateMech(gs, SIM_MS / 1000)
         fade = Math.max(0, Math.min(1, fade + fadeDir * (SIM_MS / 380)))
         if (fade >= 1 && fadeDir > 0) fadeDir = -1
         if (screenRef.current === 'attract') {
@@ -413,6 +432,17 @@ const MystGame = () => {
             ))}
           </div>
           <div className="text-xs text-amber-200/60">each lever throws its neighbours too — light them all</div>
+        </Panel>
+      )}
+      {hud.panel === 'spectator' && screen === 'play' && (
+        <Panel title="THE SPECTATOR — a sphere of other ages" onClose={() => closeHud(false)}>
+          <div className="my-2 text-sm min-h-[3rem] text-sky-200">{hud.message}</div>
+          <div className="flex gap-4 justify-center text-xs mb-1">
+            <span className="text-emerald-300">green rings</span>
+            <span className="text-zinc-300">grey sea</span>
+            <span className="text-cyan-300">waterfalls</span>
+          </div>
+          <div className="text-xs text-sky-200/60">ages, all of them — worlds inside books · A / Enter closes</div>
         </Panel>
       )}
       {hud.book && screen === 'play' && (

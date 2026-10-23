@@ -13,7 +13,7 @@ let pass = 0, fail = 0
 const ok = (cond, name) => { if (cond) { pass++; console.log(`  ok ${name}`) } else { fail++; console.error(`  FAIL ${name}`) } }
 
 console.log('MYST — graph')
-ok(Object.keys(NODES).length === 14, '14 nodes: island, tower, cave, cabin, four Ages')
+ok(Object.keys(NODES).length === 18, '18 nodes: island, tower, cave, cabin, four Ages, walkable Mechanical (4)')
 ok(NODES.dock && NODES.dock.spots.some((s) => s.to === 'cliffPath'), 'the dock connects up the path')
 for (const [id, n] of Object.entries(NODES)) {
   for (const s of n.spots) {
@@ -33,6 +33,14 @@ while (q.length) {
 const linkAges = ['selenitic', 'mechanical', 'stoneship']
 ok(['dock','cliffPath','beach','landing','stairTop','library','cave','towerBase','towerTop','cabin','channelwood'].every((n) => seen.has(n)), 'every walking node reachable from the dock')
 ok(linkAges.every((a) => !seen.has(a)), 'the three link-Ages are sealed behind books/puzzles, not walking')
+const mechSub = ['mechWalk', 'mechCar', 'mechTop', 'mechRoom']
+ok(mechSub.every((n) => !seen.has(n)), 'the Mechanical tower lives inside its Age, not on the island path')
+{
+  const seenA = new Set(['mechanical'])
+  const qa = ['mechanical']
+  while (qa.length) { const id = qa.shift(); for (const sp of NODES[id].spots) { const t = sp.to ? [sp.to] : sp.visits ? [].concat(sp.visits) : []; for (const v of t) if (!seenA.has(v)) { seenA.add(v); qa.push(v) } } }
+  ok(mechSub.every((n) => seenA.has(n)), 'Mechanical is walkable end to end once you are linked in')
+}
 const ageRet = AGE_LIST.every((a) => NODES[a].spots.some((s) => s.to))
 ok(ageRet, 'every Age has a way home')
 
@@ -79,14 +87,63 @@ console.log('MYST — gates hold')
   for (let i = 0; i < 3; i++) c = dispatch(c, { t: 'dial', pad: 'safe', i, v: Number(SAFE_CODE[i]) }).state
   ok(!!c.flags.safeOpen && !!c.flags.link_stoneship, `the safe code ${SAFE_CODE} opens the sea-world book`)
 }
-{ // mechanical red page sealed behind the switch linkage
-  let s = { ...freshState(), node: 'mechanical' }
+{ // mechanical red page sealed behind the switch linkage (the gear on the gantry)
+  let s = { ...freshState(), node: 'mechTop' }
   ok(dispatch(s, { t: 'click', id: 'pageMechanicalRed' }).events.includes('blocked'), 'gear-sealed alcove holds its page')
   s = dispatch(s, { t: 'toggle', i: 0 }).state
   s = dispatch(s, { t: 'toggle', i: 3 }).state
   ok(!!s.flags.switchPanel, 'levers 1 and 4 light the whole chain')
   s = dispatch(s, { t: 'click', id: 'pageMechanicalRed' }).state
   ok(!!s.flags.pageRed_mechanical, 'the alcove opens and the page comes free')
+}
+{ // the walkable Mechanical: cage interlock, auto-shut, plates and latch
+  let s = { ...freshState(), node: 'mechWalk' }
+  ok(dispatch(s, { t: 'move', id: 'boardCar' }).events.includes('blocked'), 'the cage hangs out of reach until called')
+  s = dispatch(s, { t: 'click', id: 'mechCall' }).state
+  ok(!!s.flags.mechCarDown, 'the call lever brings the cage down to the deck')
+  s = dispatch(s, { t: 'move', id: 'boardCar' }).state
+  ok(s.node === 'mechCar', 'with the cage called you can step in')
+  s = dispatch(s, { t: 'click', id: 'cageRaise' }).state
+  ok(s.node === 'mechTop' && !s.flags.mechCarDown, 'the cage tops out on the gantry')
+  ok(dispatch(s, { t: 'click', id: 'mechDoorBtn' }).events.includes('blocked'), 'the cage jams the door slot — the release is useless at the landing')
+  s = dispatch(s, { t: 'click', id: 'mechSendDown' }).state
+  ok(!!s.flags.mechCarDown, 'the send-down lever clears the door slot')
+  s = dispatch(s, { t: 'click', id: 'mechDoorBtn' }).state
+  ok(!!s.flags.mechDoorOpen, 'with the slot clear the door release opens the steel door')
+  const e = dispatch(s, { t: 'move', id: 'enterRoom' })
+  s = e.state
+  ok(s.node === 'mechRoom' && !s.flags.mechDoorOpen && e.events.includes('clank'), 'the door bangs shut behind you')
+  ok(dispatch(s, { t: 'move', id: 'exitRoom' }).events.includes('blocked'), 'you are shut in until the plates govern the door')
+  s = dispatch(s, { t: 'click', id: 'stepPlateD' }).state
+  ok(!!s.flags.mechDoorOpen, 'standing on the door plate grinds the door open')
+  ok(dispatch(s, { t: 'click', id: 'stepPlateD' }).state.flags.mechDoorOpen === false, 'step off the un-latched plate and the door closes again')
+  s = { ...s, flags: { ...s.flags, mechPlateD: true, mechDoorOpen: true } }
+  s = dispatch(s, { t: 'click', id: 'mechLatch' }).state
+  ok(!!s.flags.mechLatchD, 'the latch bites on the pressed door plate')
+  s = dispatch(s, { t: 'click', id: 'stepPlateD' }).state
+  ok(!!s.flags.mechDoorOpen, 'off the plate now — the latch holds the door open for you')
+  s = dispatch(s, { t: 'click', id: 'stepPlateE' }).state
+  s = dispatch(s, { t: 'click', id: 'mechLatch' }).state
+  ok(!!s.flags.mechLatchE, 'the latch catches the shaft plate too')
+  s = dispatch(s, { t: 'click', id: 'stepPlateE' }).state
+  ok(!s.flags.mechCarDown, 'the cage stays called off the plate — latched')
+  s = dispatch(s, { t: 'move', id: 'exitRoom' }).state
+  ok(s.node === 'mechTop', 'and the latched door lets you walk out')
+  s = dispatch(s, { t: 'click', id: 'cageBoardTop' }).state
+  ok(s.node === 'mechCar', 'the latched cage waits at the gantry so you can leave')
+  s = dispatch(s, { t: 'click', id: 'cageDescend' }).state
+  s = dispatch(s, { t: 'click', id: 'cageOut' }).state
+  ok(s.node === 'mechanical', 'the cage sets you back down at the landing')
+}
+{ // the latch lever only holds iron that is already down
+  let s = { ...freshState(), node: 'mechRoom' }
+  ok(dispatch(s, { t: 'click', id: 'mechLatch' }).events.includes('blocked'), 'the latch finds nothing to hold')
+}
+{ // the SPECTATOR shows the other Ages
+  let s = { ...freshState(), node: 'mechRoom' }
+  const r = dispatch(s, { t: 'click', id: 'spectator' })
+  ok(r.state.panelOpen === 'spectator' && r.events.includes('spectator'), 'the sphere opens its panel of other ages')
+  ok(!!r.state.flags.spectatorSeen && /green rings/.test(r.state.message), 'three lights swim inside the glass')
 }
 { // sphere puzzle
   let s = { ...freshState(), node: 'selenitic' }
@@ -168,6 +225,23 @@ console.log('MYST — sound plan (what each event schedules)')
   ok(r.events.includes('panel'), 'state still opens the sphere panel')
   const rb = dispatch({ ...freshState(), node: 'library' }, { t: 'click', id: 'redBook' })
   ok(rb.events.includes('page'), 'opening a book turns its page')
+  ok(plan('motor').length > 0 && JSON.stringify(plan('motor')) !== JSON.stringify(travel), 'the cage motor has its own sound, distinct from a walk')
+  ok(plan('clank').length > 0 && plan('plate').length > 0 && plan('latch').length > 0, 'bolts, plates and the latch each schedule their own noise')
+  ok(plan('spectator').length === 3, 'the SPECTATOR hums a three-note chord', String(plan('spectator').length))
+}
+
+console.log('MYST — the walkable Mechanical gets played, not skipped')
+{
+  let s = freshState()
+  const visited = new Set()
+  for (const a of solveScript()) {
+    const r = dispatch(s, a)
+    s = r.state
+    visited.add(s.node)
+  }
+  ok(['mechWalk', 'mechCar', 'mechTop', 'mechRoom'].every((n) => visited.has(n)), 'the winning route walks every new Mechanical view')
+  ok(s.flags.spectatorSeen && s.flags.mechLatchD && s.flags.mechLatchE, 'the solver used the Spectator and both latches')
+  ok(isWin(s), 'and still brings Atrus home')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -211,6 +285,15 @@ if (process.argv.includes('--mutate')) {
     ['a book opening stops turning its page', ST,
       `ev.push('page', 'bookVoice')`,
       `ev.push('bookVoice')`],
+    ['the cage stops jamming the door slot', ST,
+      `if (!s.flags.mechCarDown) { s.message = 'The release button sinks and clicks — but the bronze cage is jammed in the door slot. Nothing moves but the cage.'; ev.push('blocked'); break }`,
+      `if (false) { s.message = ''; ev.push('blocked'); break }`],
+    ['the control-room door stops shutting behind you', ST,
+      `s.flags.mechDoorOpen = false; s.flags.mechPlateD = false; s.flags.mechPlateE = false; s.flags.mechLatchD = false; s.flags.mechLatchE = false`,
+      `s.flags.mechPlateD = false; s.flags.mechPlateE = false; s.flags.mechLatchD = false; s.flags.mechLatchE = false`],
+    ['an un-latched plate stops releasing the door', ST,
+      `else { if (!s.flags.mechLatchD) s.flags.mechDoorOpen = false; s.message = s.flags.mechLatchD`,
+      `else { s.flags.mechDoorOpen = false; s.message = s.flags.mechLatchD`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

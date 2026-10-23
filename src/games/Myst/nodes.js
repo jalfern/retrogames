@@ -159,9 +159,9 @@ export const NODES = {
     caption: 'Inside the bronze cage — the deck grates over the drop',
     expect: ['mechCageGrate'],
     spots: [
-      { id: 'cageRaise', label: 'pull the cage up', yaw: 0, w: 26, h: 34, act: 'cageRaise' },
+      { id: 'cageRaise', label: 'pull the cage up', yaw: 0, w: 26, h: 34, act: 'cageRaise', visits: 'mechTop' },
       { id: 'cageDescend', label: 'send the cage down', yaw: 0, w: 26, h: 20, act: 'cageDescend' },
-      { id: 'cageOut', label: 'step out', yaw: 180, w: 40, h: 30, act: 'cageOut' },
+      { id: 'cageOut', label: 'step out', yaw: 180, w: 40, h: 30, act: 'cageOut', visits: ['mechTop', 'mechanical'] },
     ],
   },
   mechTop: {
@@ -172,7 +172,7 @@ export const NODES = {
       { id: 'mechSendDown', label: 'the cage send-down lever', yaw: -55, w: 26, h: 30, act: 'mechSendDown' },
       { id: 'mechDoorBtn', label: 'the door release button', yaw: 12, w: 20, h: 22, act: 'mechDoorBtn' },
       { id: 'enterRoom', label: 'through the open door', yaw: 12, w: 24, h: 34, to: 'mechRoom', need: 'mechDoorOpen', needMsg: 'The steel door is shut. Its release jams — something heavy is in the way.' },
-      { id: 'cageBoardTop', label: 'step back into the cage', yaw: -30, w: 22, h: 30, act: 'cageBoardTop' },
+      { id: 'cageBoardTop', label: 'step back into the cage', yaw: -30, w: 22, h: 30, act: 'cageBoardTop', visits: 'mechCar' },
       { id: 'pageMechanicalRed', label: 'a red page under a great gear', yaw: 75, w: 24, h: 24, act: 'takePage', page: 'red:mechanical', gone: 'pageRed_mechanical', need: 'switchPanel', needMsg: 'A heavy gear seals the alcove. The switches govern which gears turn.' },
     ],
   },
