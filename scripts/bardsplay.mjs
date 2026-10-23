@@ -12,7 +12,7 @@
 // Reachability, the ledger pins, locked-door chokepoints, slack and determinism
 // all live in bardscheck (Node); this only proves the browser wires it up.
 
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.BARDS_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/bards-tale`
 await requireDevServer(URL)
@@ -23,7 +23,7 @@ const page = await browser.newPage({ viewport: { width: 720, height: 720 }, devi
 page.setDefaultTimeout(180000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__bardsTest && window.__bardsTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)

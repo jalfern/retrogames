@@ -12,7 +12,7 @@
 //   5. THE MAP GOES DARK AND A KEY RESTARTS IT — lose, over screen, one
 //      press, attract again, zero page errors throughout.
 // The slack rule, script audit and determinism live in missilecheck (Node).
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.MB_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/missile-battle`
 await requireDevServer(URL)
@@ -23,7 +23,7 @@ const page = await browser.newPage({ viewport: { width: 620, height: 900 }, devi
 page.setDefaultTimeout(180000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__mbTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)

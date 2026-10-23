@@ -14,7 +14,7 @@
 // demo running in a real rAF tab, so the loop completion is real, not a Node
 // fixture. Every jump that must land on a tick is scheduled against gs.tick,
 // never the wall clock (the metroidplay lesson: CDP round-trips coalesce rAF).
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.RUNNER_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/momentum`
 await requireDevServer(URL)
@@ -25,7 +25,7 @@ const page = await browser.newPage({ viewport: { width: 900, height: 640 }, devi
 page.setDefaultTimeout(120000)
 const errors = []
 page.on('pageerror', e => errors.push(`[pageerror] ${e.message}`))
-page.on('console', m => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__runnerTest.probe())
 const tick = () => page.evaluate(() => window.__runnerTest.probe().tick)

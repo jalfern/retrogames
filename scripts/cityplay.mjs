@@ -12,7 +12,7 @@
 //   4. THE SCRIPT BURNS — on SMOKESTACK the scripted fire really ignites
 //      (event log + a fire-orange pixel), and the ledger still balances.
 //   5. ONE KEY LEAVES AND ONE KEY RETURNS — win screen, key, attract.
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.SC_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/simcity-min`
 await requireDevServer(URL)
@@ -23,7 +23,7 @@ const page = await browser.newPage({ viewport: { width: 720, height: 640 }, devi
 page.setDefaultTimeout(180000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' })
 for (let i = 0; i < 100; i++) {

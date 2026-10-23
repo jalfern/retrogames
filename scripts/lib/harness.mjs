@@ -19,6 +19,18 @@ export function opt(args, name, d) {
     return i >= 0 ? (args[i + 1] ?? true) : d
 }
 
+// #829/#836: the #737 feedback SDK (GameChrome's FeedbackButton) polls the relay's
+// /status on EVERY game page. Off jalfern.com origins that request is CORS-rejected
+// by design (the worker's Access-Control-Allow-Origin is prod-only), so a non-prod
+// origin — the CI localhost, any dev server — ALWAYS logs two console.error lines:
+// the CORS block (carries the relay URL in the message text) and "Failed to load
+// resource" (carries it only in the resource location). That noise is not a game
+// defect; a zero-page-error gate must not count it. Match it strictly on the relay
+// URL so a genuine console.error elsewhere still fails the gate.
+export const relayNoise = (text, loc) =>
+    String(text || '').includes('retrogames.jalfern.workers.dev/status') ||
+    (loc && String(loc.url || '').startsWith('https://retrogames.jalfern.workers.dev/'))
+
 let chromium
 try {
     ({ chromium } = await import('playwright-core'))

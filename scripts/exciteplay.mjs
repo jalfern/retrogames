@@ -15,7 +15,7 @@
 //   5. THE ENGINE BOILS off a held throttle, and a drained clock ends the race
 //      and loops back through the attract — which is the autopilot's proven lap.
 // The terrain, ledger, slack rule and nine mutants live in excitecheck.mjs.
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.EXCITE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/excitebike`
 await requireDevServer(URL)
@@ -30,7 +30,7 @@ const page = await browser.newPage({ viewport: { width: 620, height: 680 }, devi
 page.setDefaultTimeout(180000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__bikeTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)

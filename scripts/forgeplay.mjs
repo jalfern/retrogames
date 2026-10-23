@@ -10,14 +10,14 @@
 // cartridge lands in the arcade with zero page errors. Advisory tier: needs
 // network + dev server, like the other *-play suites.
 
-import { requireDevServer, launch } from './lib/harness.mjs'
+import { requireDevServer, launch, relayNoise } from './lib/harness.mjs'
 
 await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/forge`)
 const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 900, height: 900 } })
 const errors = []
 page.on('pageerror', e => errors.push(e.message))
-page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
+page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(m.text()) })
 
 let pass = 0
 const fails = []

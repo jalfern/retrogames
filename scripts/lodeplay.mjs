@@ -27,7 +27,7 @@
 //      (6b: runner and guard are distinct sprites, not one glyph in two colors.)
 //   7. THE PAGE ITSELF REPLAYS — replayCheck re-runs the recorded stream
 //      through the sim and compares state hashes mid-run.
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.LODE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/lode-runner`
 await requireDevServer(URL)
@@ -39,7 +39,7 @@ page.setDefaultTimeout(180000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
 page.on('pageerror', (e) => console.log('[pageerror]', e.message.slice(0, 200)))
-page.on('console', (m) => { if (m.type() === 'error') { errors.push(`[console.error] ${m.text()}`); console.log('[console.error]', m.text().slice(0, 200)) } })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) { errors.push(`[console.error] ${m.text()}`); console.log('[console.error]', m.text().slice(0, 200)) } })
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' })
 const waitHook = async (tries) => {

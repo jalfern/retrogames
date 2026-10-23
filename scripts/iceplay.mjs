@@ -15,7 +15,7 @@
 // The full three-mountain route is proven in Node by icecheck (the attract
 // demo is the same script, replayed live here too); this suite proves the
 // browser plumbing around it — keys, paint, HUD, pause — on real events.
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.ICE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/ice-climber`
 await requireDevServer(URL)
@@ -26,7 +26,7 @@ const page = await browser.newPage({ viewport: { width: 760, height: 900 }, devi
 page.setDefaultTimeout(120000)
 const errors = []
 page.on('pageerror', e => errors.push(`[pageerror] ${e.message}`))
-page.on('console', m => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__iceTest.probe())
 const wait = ms => page.waitForTimeout(ms)

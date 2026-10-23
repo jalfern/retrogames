@@ -23,7 +23,7 @@
 // blind full-lock drive to survive to the corner, but every consequence of a
 // seed still comes from the sim's own physics under real keys.
 // Geometry, reference-shape, determinism and mutants live in cometcheck.mjs.
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 import { selectCourse, TRACK } from '../src/games/CometDrift/track.js'
 
 const URL = process.env.COMET_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/comet-drift`
@@ -49,7 +49,7 @@ const page = await browser.newPage({ viewport: { width: 840, height: 420 }, devi
 page.setDefaultTimeout(240000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => {
     const t = window.__cometTest

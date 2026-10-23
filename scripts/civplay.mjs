@@ -21,7 +21,7 @@
 //   8b. THE FIRST-PLAY CAMERA (#535) — drag pans, right-drag orbits, arrows pan,
 //      Home re-centers on the unit, the settler opens framed at screen centre,
 //      and the next-step hint walks settle → build → end turn (desktop+phone).
-import { launch, requireDevServer, Report } from './lib/harness.mjs'
+import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
 const URL = process.env.CIV_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/civilization-v`
 await requireDevServer(URL)
@@ -32,7 +32,7 @@ const page = await browser.newPage({ viewport: { width: 760, height: 620 }, devi
 page.setDefaultTimeout(180000)
 const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`[console.error] ${m.text()}`) })
+page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const wait = (ms) => page.waitForTimeout(ms)
 await page.goto(URL, { waitUntil: 'domcontentloaded' })
