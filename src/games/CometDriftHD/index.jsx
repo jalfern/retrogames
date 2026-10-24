@@ -19,6 +19,7 @@ import {
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, roadRollYAt, roadRollAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
     hudScale, hudTop, tintFor, envWashFor, SKY_STOPS, refOverlayStats, attractLayout, attractSelectGeom, sunShadow,
+    buildKartGhost, GHOST, buildMesaShadows, MESA_SHADOW,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 import { makeWear, resetWear, stampKarts, decayWear, deformGeo, scarStats, SAND_WEAR } from './sand.js'
@@ -480,6 +481,22 @@ export default function CometDriftHD() {
             paintEnv(COURSE.palette)
             envMap.needsUpdate = true
         }
+        // #1002: the mesa shadow ring — one baked gradient (dark at the mesa,
+        // fading out along the sun line) shared by every quad; rebuilt per
+        // course by buildHorizon, the material itself lives for the session.
+        const mesaShadowCanvas = texCanvas(64, 8)
+        {
+            const x = mesaShadowCanvas.getContext('2d')
+            const gr = x.createLinearGradient(0, 0, 64, 0)
+            gr.addColorStop(0, 'rgba(0,0,0,1)')
+            gr.addColorStop(1, 'rgba(0,0,0,0)')
+            x.fillStyle = gr
+            x.fillRect(0, 0, 64, 8)
+        }
+        const mesaShadowTex = new THREE.CanvasTexture(mesaShadowCanvas)
+        const mesaShadowMat = new THREE.MeshBasicMaterial({
+            map: mesaShadowTex, transparent: true, opacity: MESA_SHADOW.opacity, depthWrite: false,
+        })
         const buildHorizon = () => {
             while (horizonGroup.children.length) {
                 const m = horizonGroup.children.pop()
@@ -494,6 +511,7 @@ export default function CometDriftHD() {
             floor.position.set(A.cx, floorY, A.cz)
             horizonGroup.add(floor)
             horizonGroup.add(buildMesas(t.mesa, floorY))
+            horizonGroup.add(buildMesaShadows(floorY, mesaShadowMat))
             horizonGroup.add(buildHills(t.hills, floorY))
             const dome = new THREE.Mesh(
                 new THREE.SphereGeometry(A.R + 130, 24, 16),
@@ -548,7 +566,11 @@ export default function CometDriftHD() {
             // with the kart, replacing the fixed-axis disc that dwarfed it.
             const shadow = makeBlobShadow()
             scene.add(shadow)
-            kartMeshes.push({ m, shadow, spinMats: view.userData.spinMats })
+            // #1002: the asphalt ghost — built from the primitive fallback now,
+            // rebuilt when the authored GLB lands below.
+            const gh = buildKartGhost(view)
+            scene.add(gh.group)
+            kartMeshes.push({ m, shadow, spinMats: view.userData.spinMats, ghost: gh.group, ghostMats: gh.mats })
         }
         // exhaust cones on the player's buggy (#481 item 4: aligned to the
         // model's measured chrome outlets, not eyeballed mid-air)
@@ -583,6 +605,13 @@ export default function CometDriftHD() {
                 m.userData.brakeMat = dec.brakeMat
                 m.userData.wheelDefs = dec.wheels
                 km.spinMats = dec.spinMats
+                // #1002: the ghost must mirror the AUTHORED body, not the
+                // primitive stand-in — rebuild it from the swapped group.
+                scene.remove(km.ghost)
+                const gh = buildKartGhost(dec.group)
+                scene.add(gh.group)
+                km.ghost = gh.group
+                km.ghostMats = gh.mats
             })
         })()
 
@@ -890,7 +919,7 @@ export default function CometDriftHD() {
         const syncMeshes = () => {
             for (let i = 0; i < g.karts.length; i++) {
                 const k = g.karts[i]
-                const { m, shadow, spinMats } = kartMeshes[i]
+                const { m, shadow, spinMats, ghost, ghostMats } = kartMeshes[i]
                 const hT = elevAt(k.idx); const pT = Math.atan(k.grade || 0)
                 const rT = roadRollYAt(k.idx, k.lat || 0); const bT = -roadRollAt(k.idx)
                 k.hSm = k.hSm === undefined ? hT : k.hSm + (hT - k.hSm) * 0.4
@@ -926,6 +955,17 @@ export default function CometDriftHD() {
                 haloN.scale.set(1, 1, ss.stretch)
                 haloN.material.opacity = ss.halo
                 coreN.material.opacity = ss.core
+                // #1002: the asphalt ghost rides the kart's pose, stretches
+                // along the nose with speed, and fades linearly out of range.
+                const gdist = Math.hypot(k.x * S - camera.position.x, k.y * S - camera.position.z)
+                ghost.visible = gdist < GHOST.range
+                if (ghost.visible) {
+                    ghost.position.set(k.x * S, h + GHOST.y, k.y * S)
+                    ghost.rotation.set(m.rotation.x, m.rotation.y, m.rotation.z)
+                    ghost.scale.set(1, GHOST.flatten, 1 + Math.min(GHOST.stretchMax, (k.v || 0) * GHOST.stretchK))
+                    const gop = GHOST.base * (1 - gdist / GHOST.range)
+                    for (const gm of ghostMats) gm.opacity = gop
+                }
                 // wheel rig (#477): steer the front pivots about vertical, roll all
                 // four about their axle. baseQuat keeps the model's baked right-side
                 // flip; steer/roll signs undo it so both sides turn/spin alike.
@@ -1599,6 +1639,25 @@ export default function CometDriftHD() {
                     core: Math.round(coreN.material.opacity * 1000) / 1000,
                     halo: Math.round(haloN.material.opacity * 1000) / 1000,
                 }
+            },
+            ghost: (i = 0) => {
+                const km = kartMeshes[i]
+                if (!km || !km.ghost) return null
+                const gN = km.ghost
+                return {
+                    visible: gN.visible,
+                    mats: km.ghostMats.length,
+                    pos: [gN.position.x.toFixed(2), gN.position.y.toFixed(3), gN.position.z.toFixed(2)],
+                    rot: [gN.rotation.x.toFixed(3), gN.rotation.y.toFixed(3), gN.rotation.z.toFixed(3)],
+                    scaleY: Math.round(gN.scale.y * 1000) / 1000,
+                    stretchZ: Math.round(gN.scale.z * 1000) / 1000,
+                    opacity: km.ghostMats.length ? Math.round(km.ghostMats[0].opacity * 1000) / 1000 : 0,
+                }
+            },
+            mesaShadows: () => {
+                const gN = horizonGroup.children.find((c) => c.name === 'mesaShadows')
+                if (!gN || !gN.children.length) return null
+                return { quads: gN.children.length, opacity: Math.round(gN.children[0].material.opacity * 1000) / 1000 }
             },
             sandState: () => (wear ? { ...scarStats(wear), sink: SAND_WEAR.sink, dark: SAND_WEAR.dark, decay: SAND_WEAR.decay, meshes: sandMeshes.length } : null),
             brakeGlow: () => Math.round((kartMeshes[0].m.userData.brakeMat?.emissiveIntensity ?? -1) * 100) / 100,
