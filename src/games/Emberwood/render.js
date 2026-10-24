@@ -41,6 +41,33 @@ export const SHELF_DECOR = {
     bush: 'bush',
 }
 
+// #968 NPC billboards, painted 14x18. The town keeper wears his red livery; the
+// elder, grey and ruddy-haired; the colporter is the *secret* travelling merchant
+// — hooded, face in shadow, a leather satchel — so he reads as no one's
+// shopkeeper. Keyed by id (the colporter is kind:'shop' too), so a new npc with
+// a fresh id falls through to the plain robe.
+export const NPC_LIVERY = {
+    keeper: { body: '#a04a3c', face: '#e8b48a', cap: '#3c2c1c' },
+    colporter: { robe: '#463a52', hood: '#5c4a6a', face: '#170f1b', satchel: '#8a6a44' },
+    plain: { body: '#7a6a8a', face: '#e8b48a', hair: '#cfc8dc' },
+}
+export function paintNpc(n) {
+    const cnv = document.createElement('canvas'); cnv.width = 14; cnv.height = 18
+    const g = cnv.getContext('2d')
+    const L = n.id === 'colporter' ? NPC_LIVERY.colporter : (n.kind === 'shop' ? NPC_LIVERY.keeper : NPC_LIVERY.plain)
+    if (n.id === 'colporter') {
+        g.fillStyle = L.robe; g.fillRect(3, 6, 8, 8)        // the hooded robe
+        g.fillStyle = L.hood; g.fillRect(3, 0, 8, 6)        // hood over the head
+        g.fillStyle = L.face; g.fillRect(4, 2, 6, 4)        // face in the hood's shadow
+        g.fillStyle = L.satchel; g.fillRect(8, 8, 3, 3)     // a leather satchel, slung at his hip
+    } else {
+        g.fillStyle = L.body; g.fillRect(3, 6, 8, 8)
+        g.fillStyle = L.face; g.fillRect(4, 1, 6, 5)
+        g.fillStyle = (n.kind === 'shop' ? L.cap : L.hair); g.fillRect(3, 0, 8, 2)
+    }
+    return cnv
+}
+
 // #829 crisp: full quality renders at device resolution (css px x dpr, capped)
 // so lighting, bloom, vignette and geometry edges read smooth on phone+desktop;
 // the sprite/tile textures stay NearestFilter, so the pixel art keeps its
@@ -412,11 +439,7 @@ void main(){
             dynamic.cracks.set(cr.id, box)
         }
         for (const n of s.npcs || []) {
-            const cnv = document.createElement('canvas'); cnv.width = 14; cnv.height = 18
-            const g = cnv.getContext('2d')
-            g.fillStyle = n.kind === 'shop' ? '#a04a3c' : '#7a6a8a'; g.fillRect(3, 6, 8, 8)
-            g.fillStyle = '#e8b48a'; g.fillRect(4, 1, 6, 5)
-            g.fillStyle = n.kind === 'shop' ? '#3c2c1c' : '#cfc8dc'; g.fillRect(3, 0, 8, 2)
+            const cnv = paintNpc(n)
             const nn = new THREE.Mesh(new THREE.PlaneGeometry(14, 18), new THREE.MeshLambertMaterial({ map: makeTex(cnv), transparent: true, alphaTest: 0.4 }))
             nn.quaternion.copy(camera.quaternion)
             nn.position.set(FX(n.x * TS + 8), n.y * TS + 8, 9)
@@ -875,6 +898,12 @@ void main(){
                 oriented: live.filter(t => t.oriented).length,
                 dropVis: dropPool.filter(d => d.mesh.visible).length,
             }
+        },
+        // #968 — paint a town NPC's billboard and hand back the pixels as a dataURL,
+        // so the audit can read exactly what the colporter/keeper/elder look like.
+        npcSprite: (id) => {
+            const n = (SCREENS['ow-11'].npcs || []).find(x => x.id === id)
+            return n ? paintNpc(n).toDataURL() : null
         },
     }
 }

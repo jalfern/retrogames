@@ -1015,6 +1015,37 @@ if (!SKIP_BROWSER) {
         })
         cok(sv.stored && sv.has && sv.cleared, `the shell persists the save to localStorage and can clear it (${sv.stored ? 'written' : 'missing'})`)
 
+        // #968 the colporter is the *secret* travelling merchant: hooded, face in
+        // shadow, his own livery — never the keeper's red. The audit paints each
+        // town npc and reads the exact pixels, so regressing him back to "another
+        // shopkeeper" (kind:'shop', red livery, open face) goes red.
+        const spritePx = await page.evaluate(async (ids) => {
+            const out = {}
+            for (const id of ids) {
+                const url = window.__emberwoodTest.npcSprite(id)
+                if (!url) { out[id] = null; continue }
+                const img = new Image()
+                await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url })
+                const d = document.createElement('canvas'); d.width = 14; d.height = 18
+                const c = d.getContext('2d'); c.drawImage(img, 0, 0)
+                const at = (x, y) => { const p = c.getImageData(x, y, 1, 1).data; return [p[0], p[1], p[2]] }
+                out[id] = { hood: at(7, 1), face: at(7, 4), body: at(7, 9) }
+            }
+            return out
+        }, ['colporter', 'shop'])
+        const cw = spritePx.colporter, kw = spritePx.shop
+        cok(!!cw && !!kw, `the town paints both the keeper and the colporter (colporter=${!!cw}, keeper=${!!kw})`)
+        if (cw && kw) {
+            const luma = (p) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]
+            const near = (a, b, t = 12) => Math.abs(a[0] - b[0]) <= t && Math.abs(a[1] - b[1]) <= t && Math.abs(a[2] - b[2]) <= t
+            const keeperRed = [160, 74, 60]
+            cok(!near(cw.body, keeperRed), `the colporter does NOT wear the keeper's red livery (body=${cw.body} vs red ${keeperRed})`)
+            cok(!near(cw.body, kw.body), `the colporter's livery differs from the keeper's (body ${cw.body} vs ${kw.body})`)
+            cok(cw.face[0] < 60 && cw.face[1] < 60 && cw.face[2] < 60, `the colporter keeps his hood up — face in shadow (face=${cw.face})`)
+            cok(luma(cw.hood) > luma(cw.body) && !near(cw.hood, cw.body, 8), `a hood reads above the robe (hood=${cw.hood}, robe=${cw.body})`)
+            cok(!near(cw.hood, kw.hood), `the colporter's head treatment differs from the keeper's (hood=${cw.hood} vs cap=${kw.hood})`)
+        }
+
         // #888 the Wyrm tail: dedicated shingled billboards, never the drop pool
         const tail = await page.evaluate(async () => {
             const T = window.__emberwoodTest
