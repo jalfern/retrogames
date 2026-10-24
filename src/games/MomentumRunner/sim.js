@@ -303,6 +303,7 @@ const beatSpringHigh = (x, y, pit = 420, h = 150, run = 780, plat = 560) => {
         springs: [[sx, y, -820]],
         rings: [[px0 + 140, py - 70], [px0 + 240, py - 14], [px0 + 340, py - 14], [px0 + 440, py - 14]],
         springHigh: true,
+        deck: { sx, pit, h, px0, py, plat },
         x1: ex + 300,
     }
 }
@@ -397,6 +398,7 @@ const TWEAKED = (fn, zi) => {
 // spends 60-90s in a sector on all-different terrain.
 for (const [zi, z] of ZONES.entries()) {
     if (!z.loops) z.loops = []
+    if (!z.springHighs) z.springHighs = []
     const last = z.segs[z.segs.length - 1]
     let x = last[2], y = last[3]
     const tailX = x, tailY = y
@@ -412,6 +414,7 @@ for (const [zi, z] of ZONES.entries()) {
         if (b.springs) z.springs.push(...b.springs)
         if (b.hover) z.drones.push(b.hover)
         if (b.loop) z.loops.push(b.loop)
+        if (b.springHigh) z.springHighs.push(b.deck)
         x = b.x1
     }
     z.goal = x - 20
