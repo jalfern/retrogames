@@ -211,3 +211,13 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
   start a fresh journey. `emberwoodcheck` gates it: no save → no control; save →
   ≥44x28px target; tapping it resumes the saved tick, not `createSim(11)`).
 - The colporter borrows the shopkeeper's red livery and needs his own sprite.
+  — **CLOSED by #968** (`paintNpc` in `render.js` keys each town npc by id: the
+  keeper keeps his red livery, the elder his grey + ruddy hair, and the colporter
+  gets the secret-merchant look — a muted-plum hood over a hood-shadowed face, a
+  darker robe, and a leather satchel. `emberwoodcheck` paints the sprites and reads
+  the pixels: the colporter's body is not the keeper's red, differs from the
+  keeper's, the face stays in shadow, and the hood reads above the robe).
+- The town NPCs (keeper, elder, colporter) are static single-pose billboards:
+  no idle bob, no facing toward the hero, no walk — each stands frozen at its
+  map tile. Owed: a light idle/facing animation so the vale's townsfolk read as
+  alive rather than props.
