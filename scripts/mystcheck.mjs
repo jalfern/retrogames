@@ -9,6 +9,7 @@ import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink } 
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/Myst/soundplan.js'
+import { domeHeight, SEL_CRESTS, DOME } from '../src/games/Myst/terrain.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
@@ -833,6 +834,30 @@ console.log('MYST — dome star silhouettes (#1008: shape varies alongside size)
   ok(new Set(STAR_SHAPES).size > 1, 'the true stars differ in shape, not only size')
 }
 
+console.log('MYST — Selenitic terrain sculpt (#1033: a dome, not rings on a disc)')
+{
+  ok(domeHeight(0, -16, 'selenitic') === 0 && domeHeight(0, 8, 'selenitic') === 0 &&
+     domeHeight(0, 23, 'selenitic') === 0 && domeHeight(4.2, -9, 'selenitic') === 0 &&
+     domeHeight(4.2, 3, 'selenitic') === 0,
+  'the landing pad stays level under the rings, posts and sphere')
+  ok(domeHeight(0, 95, 'selenitic') === SEL_CRESTS.selenitic.h &&
+     domeHeight(0, 95, 'selenitic') > 1.15,
+  'a crest rises on the sightline ahead, above the highest ring')
+  const climb = [60, 65, 70, 75, 80, 85, 90, 95].map((z) => domeHeight(0, z, 'selenitic'))
+  ok(climb.every((h, i) => i === 0 || h >= climb[i - 1]) && climb[climb.length - 1] - climb[0] > 8,
+  'the flank climbs smoothly from the coast to the crest')
+  let crossings = 0
+  for (let z = 0; z < 195; z += 1) { const a = domeHeight(0, z, 'selenitic'), b = domeHeight(0, z + 1, 'selenitic'); if (a >= 0 && b < 0) crossings++ }
+  ok(crossings === 1, 'the sightline meets the waterline exactly once — a coast, not an ocean under the world')
+  ok(domeHeight(0, 175, 'selenitic') < 0 && domeHeight(200, 200, 'selenitic') === DOME.seabed,
+  'the skirt dips below the sea so the shared plane ends at the shore')
+  ok(domeHeight(0, -46, 'selSound') === 0 && domeHeight(0, -30, 'selSound') === 0 &&
+     domeHeight(0, -27.4, 'selSound') === 0 && domeHeight(0, -18, 'selSound') >= 8,
+  'the sounding field stays level and the gate sits in a cliff that rises behind it')
+  ok(SEL_CRESTS.selenitic.z !== SEL_CRESTS.selSound.z && SEL_CRESTS.selenitic.h !== SEL_CRESTS.selSound.h,
+  'each Selenitic view carves its own crest — one dome seen from two poses')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -843,7 +868,22 @@ if (process.argv.includes('--mutate')) {
   const ND = 'src/games/Myst/nodes.js'
   const CD = 'src/games/Myst/codes.js'
   const VI = 'src/games/Myst/visions.js'
+  const TR = 'src/games/Myst/terrain.js'
   const MUTANTS = [
+    ['the dome has no coast (skirt sits at water level)', TR,
+      'seabed: -3.5', 'seabed: 0'],
+    ['the sculpt swallows the landing pad (no flat carve)', TR,
+      `export const SEL_FLATS = {
+  selenitic: [{ x0: -55, x1: 55, z0: -55, z1: 55, soft: 30 }],
+  selSound: [{ x0: -7, x1: 7, z0: -46, z1: -25, soft: 6 }],
+}`,
+      'export const SEL_FLATS = {}'],
+    ['Selenitic is flat again (crest sinks below the rings)', TR,
+      `selenitic: { x: 0, z: 95, h: 14 }`,
+      `selenitic: { x: 0, z: 95, h: 1 }`],
+    ['the two views share one crest (no per-pose sculpt)', TR,
+      `selSound: { x: 0, z: 0, h: 9 }`,
+      `selSound: { x: 0, z: 95, h: 14 }`],
     ['attract never cycles (one message)', MF,
       `    'CYAN · 1993 · REBUILT IN CODE',\n    'Living books · two imprisoned brothers',\n    'Four Ages hidden in plain sight',\n    'No map. No hints. Take notes, as in 1993.',\n    'Click what you see · arrows step and turn',\n`,
       `    'CLICK TO START',\n`],

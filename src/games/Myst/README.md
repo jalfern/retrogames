@@ -71,6 +71,10 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   linking book inside is the Age's way home (`hubBook` → cave); until then the
   hub cover and the landing return panel both refuse — as in 1993, the last
   Age found keeps its own exit.
+- `terrain.js` — the SELENITIC sculpt (#1033): pure `domeHeight(x, z, view)`
+  displaces a 400-unit heightfield in `scene.js`; per-view crests, smooth
+  falloff (rim/core), a below-sea skirt, and flat carves for the landing pad
+  and the sounding corridor.
 - `codes.js` — per-save codes (#1005), the original's per-copy combination
   stamps. One 32-bit seed per fresh game (pin with `?seed=N`; a fresh game
   without a pin draws a new one, so a restart is a new book of Myst).
@@ -234,5 +238,11 @@ through the leap — each turns the suite red.
   cover, seam of light, and ~2.9 s of swirling stars before the Age resolves
   (see `link.js`). Residual: the original also flew the starfield on the red
   and blue books' trap pulls — ours still cut to the ending screens.
-- The ocean is one shared plane. Selenitic's grass-covered grey dome shape is
-  suggested with rings and terraces, not the original's full terrain sculpt.
+- **CLOSED by #1033** — SELENITIC is sculpted ground: `terrain.js` is a pure
+  heightfield (`domeHeight`) — a grass-covered grey dome with a crest, smooth
+  flanks and a skirt that dips below the waterline, so the shared ocean meets a
+  real coast instead of running under a flat disc. The landing pad and the
+  sounding-path corridor are carved flat (rings, posts, stones and the gate keep
+  their level bed), and the two views carve their own crest, so the same dome
+  reads correctly from both poses. Residual: the other three Ages still sit on
+  flat ground discs, and the ocean elsewhere is still one tiled plane.
