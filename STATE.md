@@ -1,65 +1,67 @@
-# STATE — 2026-10-24 forge session 7 (MYST's rocket flies: the fourth ending)
+# STATE — 2026-10-24 forge session 8 (MYST's star-wheel keeps two locks)
 
 ## Shipped this session
-- **#1010 → main (PR #1011 squash 4bda8e5)** — **MYST: rocket ride + Selenitic
-  sound-book**, live at `https://www.jalfern.com/retrogames/myst`.
-  - Flagship stage (idle.mjs honest pick): Myst honest-gaps #0 — the only
-    unowned flagship gap at claim time (SSX 0, Emberwood/HD QA-held).
-  - Game code: `state.js` ride machine — the cave's metal seam opens only to the
-    AMATEM observatory note; saddle → ignition → tick-driven liftoff → ascent →
-    coast → reentry → splash; mid-flight every input but the loop's tick is
-    refused; splashdown is the **fourth ending `surface`** (escape Myst).
-    `soundBook` act + `echo` action replay the six true stone pitches via the
-    same `stone:<i>` events. `nodes.js` +27th view `rocketSilo`; `scene.js`
-    silver rocket (nose/fins/porthole/pad/console), breathing flame, stars that
-    fade in with height, new `silo` sky+fog (dusk's orange horizon painted a
-    lava pool on the pad); `index.jsx` rides the fixed-timestep tick with the
-    camera, fog and sun.
-  - Harness: mystcheck **292/0** (+13 gates: note-gated seam, mount, mid-flight
-    refusal incl. rideT freeze, stage order, determinism, surface ending, six
-    distinct book echoes, coast silence); `--mutate` **29/29 die** (+4).
-    mystplay **22/22** live (full ride in real time, zero page errors);
-    mystviewcheck **82/82** (27 views). lint myst/mario/fps/ai + build green.
-  - Prod content-verified through browser-UA: lazy chunk index-D0RVQqOy.js
-    contains `rocketSilo` + `endSurface`.
-  - Polish notes for the new surfaces added to **#1008** — since claimed by the
-    QA lane (`building-qa`).
+- **#1014 → main (PR #1020 squash 7d729a4)** — **MYST: star-wheel becomes
+  Channelwood's lock**, live at `https://www.jalfern.com/retrogames/myst`.
+  - Honest idle pick: Myst gaps #0 (residual of the #1010 bullet — the wheel
+    was still decorative after QA's mid-run #1019 axle lock).
+  - Game code: three symbol rings ride the wheel's face; alignment stamped per
+    save (`codes.wheel`, derived last so old pins don't move); new 28th view
+    `chanObs` — a bronze drum wearing three glowing clue-stars whose
+    point-counts are the alignment; rings true → hub cover slides and CHANNEL-
+    WOOD's linking book (`hubBook` → cave) frees; landing return panel thaws
+    with it. Ring ticks = three distinct pitches (`WHEEL_TONES`); opening =
+    three bolts + grind + bell. One-way, deterministic.
+  - **Race with QA**: #1017 (five-detent axle lock: spokes, notch, groove, bite
+    at detent 3 → brass gear) merged to main mid-PR. Resolution: **both locks
+    on one wheel** — spokes drive the falls (drive id `starWheel` →
+    `wheelTurn`), rings read the sky. QA's gates keep their teeth (drive id
+    renamed in mystcheck); mine added on top.
+  - Harness: mystcheck **358/0** (+51 gates over main), `--mutate` **42/42
+    die** (+5); mystviewcheck **85/85** (28 views); mystplay **29/29** live
+    (seed 42 rings + hub ride home, zero page errors); lint mario/fps/ai +
+    build green.
+  - Prod content-verified: lazy chunk index-DeV3DkqS.js carries `hubBook` +
+    `chanObs` on www.jalfern.com.
+- Closed #1014. Filed **#1022** (QA lane: feel pass on the merged wheel —
+  spokes vs rings legibility, drum readability, hub reveal, phone reach).
 
 ## Next goal
-- **STOP is legal**: idle.mjs re-pick at 4bda8e5 returns STAGE null — SSX 0
-  gaps, Emberwood 0 (walk gap CLOSED by QA's #1007), HD held (#1002), Myst
-  held (#1008). Both QA sessions are live and each holds a flagship.
-  Next session: re-run idle.mjs honestly first; anything new on
-  game-queue/steer/next, or a QA release, wakes the builder.
+- **Not a STOP**: idle.mjs re-pick at 7d729a4 returns **Myst gaps #0 — "The
+  Spectator is a still panel listing the Ages, not a rendered age-vision."**
+  (SSX 0, Emberwood 0, HD held; Myst not QA-held — #1022 is lane:qa but not
+  building-qa.) Next session: file it as `POLISH — MYST: ...` (game-queue +
+  lane:games), claim, build the Spectator as live age-vision windows.
 
 ## Board / harness status
-- main = 4bda8e5 (this ship, after QA's 4bda8e5-parent #1007 Emberwood walk).
-  main-ok green at merge; static SUCCESS; Vercel prod content-verified.
-- Worktrees: main checkout detached at origin/main ✓;
-  `retrogames-forge-myst-rocket` done, detached ✓.
+- main = 7d729a4; main-ok green; static SUCCESS (required check only); Vercel
+  prod verified.
+- Worktrees: main checkout detached at origin/main ✓; session worktree
+  `retrogames-forge-myst-star-wheel` removed ✓.
 
 ## New harness lessons (this session)
-- **A mystery "pool" of light can be the sky, not a mesh.** A huge flat orange
-  disc at the silo's feet was `SKIES.dusk`'s horizon rgb(214,96,52) seen
-  through the shaft — color-match stray pixels against sky gradients before
-  hunting geometry.
-- **New sky names need three tables**: `texSky` silently falls back to `day`
-  while `atmosphere()` returns an undefined `sun` and crashes — SKIES + FOG +
-  SUNSET must all learn the name together.
-- **Dark metal renders black at dusk** (metalness 0.72, no envmap): hero
-  objects need low metalness or an emissive tint to read against dark rock.
-- **A refusal gate must freeze progress, not just events**: a mutant that let
-  any input advance the sim-tick survived an `events.length === 0` gate —
-  assert the counters too (rideT before === after).
-- **A reveal-once spot eats the act's first click** (reveal breaks the click
-  branch): a reveal+need+act spot is a three-touch puzzle; write the gates
-  against the chained state, not one dispatch per touch.
+- **Two lanes can pick the same noun.** Star-wheel got designed twice in one
+  day (#1017 QA, #1014 forge). A collision is merged by keeping BOTH mechanics
+  and renaming the drive id, not by picking a winner — the classics really did
+  have a wheel that both turns by water and points by stars.
+- **Prod verification must grep the lazy chunk, not index.** Game code is
+  code-split; `index-*.js` has zero game strings by design. Enumerate chunk
+  names out of index and probe each for the new identifier.
+- **`jalfern.com` 308s to `www.jalfern.com`** — poll the www URL or the grep
+  silently reads a redirect body.
+- **One id, two acts breaks the pure dispatcher**: mystcheck drove both locks
+  through `click('starWheel')`. Node spot ids must be unique per act; give the
+  spokes their own spot (`wheelTurn`) instead of overloading the landmark.
+- **Camera-facing matters in +z worlds**: the camera sits at *smaller* z than
+  the scene, so "in front of" = more negative local z; face plates on a wheel
+  hidden behind spokes was a sign-flip, not a render bug.
 
 ## Housekeeping owed
-- Prune when idle: `retrogames-forge-myst-rocket`, plus standing list
-  (momentum-courses, iphone-controller, ssx-*, emberwood-*, comet-hd-*,
-  coral-reef, people-sim, campfire-670, forge-model-library, qa-863*,
-  qa-973*). qa-973 stays detached from `main` (worktrees-only law).
+- Prune when idle: standing list (momentum-courses, iphone-controller, ssx-*,
+  emberwood-*, comet-hd-*, coral-reef, people-sim, campfire-670,
+  forge-model-library, qa-863*, qa-973*) plus detached leftovers.
+- mystcheck QA-block drive ids changed (`starWheel`→`wheelTurn`) — replay files
+  recorded before #1020 that turn the wheel will refuse; re-record, don't edit.
 
 ## Open questions
 - None (#605: nothing filed this session).
