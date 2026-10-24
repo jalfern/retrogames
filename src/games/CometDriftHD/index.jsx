@@ -266,6 +266,13 @@ export default function CometDriftHD() {
         let ready = false
         let disposed = false
         let backendName = 'pending'
+        // #987: honest phone-fallback record — did the device ever advertise
+        // WebGPU, and is the webglcontextlost refuge armed? A phone has
+        // hadGpu=false and lands on three's getFallback -> 'webgl2'; a
+        // misclassified backend silently unarms the refuge, so the harness
+        // needs to see all three facts, not just backendName.
+        const bootHadGpu = typeof navigator !== 'undefined' && !!navigator.gpu
+        let glLostArmed = false
         const dpr = Math.min(window.devicePixelRatio || 1, lite ? 1 : 2)
 
         const scene = new THREE.Scene()
@@ -698,6 +705,7 @@ export default function CometDriftHD() {
                         e.preventDefault()
                         healIfNeeded('webglcontextlost')
                     })
+                    glLostArmed = true
                 }
                 renderer.setPixelRatio(dpr)
                 renderer.setSize(cssW, cssH, false)
@@ -1319,6 +1327,40 @@ export default function CometDriftHD() {
             if (import.meta.env.DEV) console.warn('CometDriftHD: backend rebuilt after ' + why)
         }
         const onRenderFail = () => { if (++renderFails >= 3) healIfNeeded('render failures') }
+        // #987: in-frame pixel probe. three's WebGLBackend creates its context
+        // WITHOUT preserveDrawingBuffer (its contextAttributes omit the flag —
+        // confirmed in three r180 build), so a harness drawImage/getImageData
+        // of the phone auto-fallback canvas answers solid BLACK outside the
+        // frame. The drawing buffer IS valid inside the rAF callback after
+        // render, so sample there: same call, same frame, real pixels. On a
+        // real WebGPU canvas getContext('webgl2') is null by spec — the probe
+        // reports readable:false honestly and the harness brings the
+        // compositor in instead.
+        const probeWant = { on: false }
+        let lastProbe = null
+        const frameProbeTick = () => {
+            try {
+                const gl = (renderer && ((renderer.getContext && renderer.getContext()) || (renderer.backend && renderer.backend.gl)))
+                    || glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
+                if (!gl || !gl.drawingBufferWidth || !gl.drawingBufferHeight) { lastProbe = { readable: false, backend: backendName }; return }
+                const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight
+                const bw = Math.min(48, w), bh = Math.min(48, h)
+                const buf = new Uint8Array(bw * bh * 4)
+                gl.readPixels((w - bw) >> 1, (h - bh) >> 1, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf)
+                let min = 255, max = 0, sum = 0
+                const uniq = new Set()
+                for (let i = 0; i < buf.length; i += 4) {
+                    const l = (buf[i] + buf[i + 1] + buf[i + 2]) / 3
+                    if (l < min) min = l
+                    if (l > max) max = l
+                    sum += l
+                    uniq.add(`${buf[i] >> 4},${buf[i + 1] >> 4},${buf[i + 2] >> 4}`)
+                }
+                lastProbe = { readable: true, backend: backendName, min, max, avg: sum / (bw * bh), uniq: uniq.size, tick: g.tick }
+            } catch {
+                lastProbe = { readable: false, backend: backendName }
+            }
+        }
         const pixelHeartbeat = () => {
             if (backendName !== 'webgl2' || g.tick % 120 !== 0) return
             try {
@@ -1360,6 +1402,7 @@ export default function CometDriftHD() {
                     else renderer.render(scene, camera)
                 } catch { onRenderFail() }
                 pixelHeartbeat()
+                if (probeWant.on) frameProbeTick()
             }
             drawHud()
             if (st.screen === 'attract') drawAttract()
@@ -1482,6 +1525,9 @@ export default function CometDriftHD() {
                 return true
             },
             hasNodeGL: () => !!nodeGL,
+            gpuProbe: () => ({ hadGpu: bootHadGpu, backend: backendName, nodeGL: !!nodeGL, lostArmed: glLostArmed }),
+            wantProbe: (v) => { probeWant.on = !!v; if (!v) lastProbe = null; return probeWant.on },
+            frameProbe: () => lastProbe,
             keys,
             screen: () => st.screen,
             ready: () => ready,

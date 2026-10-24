@@ -218,6 +218,12 @@ npm run cometdrifthdscenerycheck -- --mutate  # parks a barrier on the line, RED
 npm run cometdrifthdcheck -- --mutate     # kills particle spawning, demands RED
 npm run cometdrifthdcheck -- --mutate-spin  # freezes the wheel-blur law, demands RED
 npm run cometdrifthdcheck -- --mutate-heal # disarms device-loss self-heal, demands RED
+npm run cometdrifthdphonecheck    # #987 phone audit: navigator.gpu killed BEFORE page
+                                  # scripts — AUTO fallback engages unpinned, refuge armed,
+                                  # tap-to-start, in-frame pixels, mid-race loss heals on
+                                  # the AUTO path; where the box runs WebGPU for real the
+                                  # frame is proven by compositor PNG stats + motion
+npm run cometdrifthdphonecheck -- --mutate-classify  # backend claims webgpu always, RED
 npm run lint:hd                     # eslint gate for the game + harness
 CONTRACT_ONLY=comet-drift-hd npm run contractcheck   # window.__game (needs npm run dev)
 node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift-hd \
@@ -226,14 +232,30 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift-hd \
 ```
 
 Harness pixel checks auto-append `?gl=webgl2` (the game defaults to WebGPU;
-the compositor screenshot path covers WebGPU).
+the compositor screenshot path covers WebGPU). #987 hardened that story:
+three's WebGLBackend builds its context WITHOUT `preserveDrawingBuffer` (its
+contextAttributes omit the flag, r180), so the phone auto-fallback canvas
+answers solid BLACK to out-of-frame `drawImage`/`getImageData` — pixel truth
+on that path lives INSIDE the rAF callback, which is what
+`__cometHDTest.wantProbe(true)` + `frameProbe()` sample (48x48 center via the
+renderer's own context, never a stray canvas — a zero-sized `glCanvas` grab
+was a real flake caught while writing it). `gpuProbe()` reports the three
+honest facts a fallback needs: `hadGpu` (captured before init), `nodeGL`,
+and `lostArmed` (the `webglcontextlost` refuge — it keys off the node
+classification, so a misclassified backend silently unarms it, which is what
+`--mutate-classify` punishes).
 
 ## Honest gaps (filed to QA as the polish pass)
 
-- WebGPU is the default but the ONLY proof of WebGPU pixels is compositor
-  screenshots; three's WebGL-node-backend lost its device on the dev box
-  (that's why the self-heal exists) — phones on the auto-fallback are
-  untested here.
+- WebGPU is the default and its pixels are proven only at the compositor —
+  #987 turned that proof into numbers (`cometdrifthdphonecheck`: PNG luma
+  stats + frame-to-frame motion, not eyeballs) and pinned the phone
+  auto-fallback headlessly (no `navigator.gpu`, unpinned: honest `gpuProbe`,
+  armed refuge, tap-to-start, in-frame dusk pixels, mid-race device-loss
+  heal on the AUTO path). Residual: a real phone's real adapter — iOS Safari
+  WebGPU quirks, thermal backend flips, MMSAA on Adreno — cannot be
+  emulated here; three's WebGL-node-backend already lost its device once on
+  the dev box, which is why the self-heal exists.
 - The autopilot's ideal line rarely holds a drift charge long enough for a
   tier in a real race (same as the retro twin — the ladder is proven on the
   treadmill, and human corners still pay); rivals chain drifts only by
