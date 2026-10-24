@@ -249,6 +249,92 @@ console.log('walls')
     ok(w.mortarTones(M.red).recess !== w.mortarTones(M.blue).recess, 'walls: the mortar tone differs between materials')
 }
 
+// ------------------------------------------------------------------- fx ----
+// Hazard-furniture polish (#973): the arch breathes and bursts, the trap
+// floor blinks before it shuts, the swirl turns and the exit matches the pad,
+// stunned legs wear stars, false walls grind open, and a crumble drops debris.
+// The decisions are fx.js's; gauntletcheck proves them in plain Node.
+console.log('fx (#973)')
+{
+    const fx = await import('../src/games/Gauntlet/fx.js')
+    // the warp arch's slow green breath
+    ok(fx.warpGlow(0) === 0, 'fx: the arch glow starts dark', `${fx.warpGlow(0)}`)
+    ok([0, 7, 31].every((t) => fx.warpGlow(t) === fx.warpGlow(t + fx.WARP_PERIOD)), 'fx: the arch glow runs on a fixed slow period', `${fx.WARP_PERIOD}`)
+    const glows = Array.from({ length: fx.WARP_PERIOD }, (_, t) => fx.warpGlow(t))
+    ok(Math.max(...glows) > 0.9 && Math.min(...glows) < 0.1, 'fx: the glow breathes dark -> bright -> dark', `${Math.min(...glows)}..${Math.max(...glows)}`)
+    let jump = 0
+    for (let t = 0; t < fx.WARP_PERIOD; t++) jump = Math.max(jump, Math.abs(glows[(t + 1) % fx.WARP_PERIOD] - glows[t]))
+    ok(jump < 0.35, 'fx: the glow is a smooth pulse, not a flash', `${jump.toFixed(3)}`)
+    // living arches only: forward, inside the quest
+    const wgs = {
+        level: 4, levelCount: 10, hero: { x: 1, y: 1 },
+        levelData: { warps: [{ x: 3, y: 1, to: 6 }, { x: 1, y: 1, to: 99 }, { x: 1, y: 2, to: 2 }] },
+    }
+    ok(fx.liveWarps(wgs).length === 1, 'fx: dead (past-quest) and backwards arches are not offered', `${fx.liveWarps(wgs).length}`)
+    ok(fx.archNear(wgs) > 2 && fx.archNear(wgs) < 3, 'fx: the near distance is measured to the LIVE mouth', `${fx.archNear(wgs)}`)
+    ok(!fx.nearArch(wgs), 'fx: a bricked arch right on top of you is not near', `${fx.archNear(wgs)}`)
+    wgs.hero = { x: 3.5, y: 1.5 }
+    ok(fx.nearArch(wgs), 'fx: standing at the live mouth reads as near')
+    wgs.levelData.warps = []
+    ok(fx.archNear(wgs) === null && !fx.nearArch(wgs), 'fx: a floor without arches never sweeps')
+    ok(fx.ARCH_NEAR >= 1, 'fx: the approach sweep reaches across at least a tile', `${fx.ARCH_NEAR}`)
+    // the trap floor warns in the last slice of its open window
+    const trap = { period: 100, open: 40, phase: 0 }
+    const tgs = (playT) => ({ levelData: { trap }, playT })
+    ok(fx.trapWarn({ levelData: {} }, 0) === null, 'fx: no warning on a floor without traps')
+    ok(fx.trapWarn(tgs(0), 0) === null, 'fx: no warning while the open window has room left')
+    ok(fx.trapWarn(tgs(50), 0) === null, 'fx: no warning while the slabs are solid')
+    const late = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((t) => fx.trapWarn(tgs(35), t))
+    ok(late.every((v) => v === true || v === false), 'fx: the last slice blinks hard', late.join(','))
+    ok(late.some((v) => v) && late.some((v) => !v), 'fx: the warning blinks on and off')
+    ok(late[0] === late[fx.TRAP_BLINK * 2] && late[0] !== late[fx.TRAP_BLINK], 'fx: the blink runs on a fixed tempo', `${fx.TRAP_BLINK}`)
+    ok(fx.TRAP_WARN_FRAC > 0 && fx.TRAP_WARN_FRAC <= 0.5, 'fx: the warning is a slice, not the whole window', `${fx.TRAP_WARN_FRAC}`)
+    ok(fx.trapWarn(tgs(39), 3) !== null, 'fx: the warning is still up the last tick before solid', `${fx.trapWarn(tgs(39), 3)}`)
+    // stun stars
+    ok(fx.stunStars(0, 0) === null, 'fx: upright hero wears no stars')
+    const st = fx.stunStars(40, 8)
+    ok(!!st && st.n >= 2, 'fx: stunned legs wear orbiting stars', `${st && st.n}`)
+    const onFrames = Array.from({ length: 12 }, (_, t) => fx.stunStars(40, t).on)
+    ok(onFrames.some((v) => v) && onFrames.some((v) => !v), 'fx: the stars flicker', onFrames.map((v) => (v ? 1 : 0)).join(''))
+    ok(fx.stunStars(40, 10).spin > fx.stunStars(40, 4).spin, 'fx: the stars orbit', `${fx.stunStars(40, 4).spin}`)
+    // teleport pads: exit and entrance share a hue, the spiral turns
+    ok(fx.teleColor('P') !== fx.teleColor('p'), 'fx: the exit pad is not a clone of the entrance')
+    const hexN = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+    const pad = hexN(fx.teleColor('P')), exit = hexN(fx.teleColor('p'))
+    ok(pad[2] >= pad[0] && exit[2] >= exit[0], 'fx: both pads stay in the magenta family')
+    ok(exit.reduce((a, b) => a + b, 0) > pad.reduce((a, b) => a + b, 0), 'fx: the exit is the paler tint of the same hue')
+    ok([0, 2, 4].every((t) => fx.teleSpin(t + fx.TELE_SPIN * 2) === fx.teleSpin(t)), 'fx: the spiral spins on a fixed tempo', `${fx.TELE_SPIN}`)
+    ok(fx.teleSpin(6) !== fx.teleSpin(0), 'fx: the spiral actually turns', `${fx.teleSpin(0)} -> ${fx.teleSpin(6)}`)
+    // the false wall grinds open instead of popping
+    ok(fx.revealFade(0, -1) === 1, 'fx: unrevealed stone is solid')
+    ok(fx.revealFade(0, 0) < 1 && fx.revealFade(0, 0) > 0, 'fx: the grind starts with stone still on the tile', `${fx.revealFade(0, 0)}`)
+    const fades = Array.from({ length: fx.REVEAL_FRAMES }, (_, t) => fx.revealFade(0, t))
+    ok(fades.every((v, i) => i === 0 || v < fades[i - 1]) && fades[fades.length - 1] === 0, 'fx: the stone grinds away frame by frame', fades.join(','))
+    ok(fx.REVEAL_FRAMES >= 2 && fx.REVEAL_FRAMES <= 6, 'fx: the fade is a short grind, not a long dissolve', `${fx.REVEAL_FRAMES}`)
+    // debris falls from a crumbled block
+    ok(fx.DEBRIS_N >= 2, 'fx: a crumble throws more than one chip', `${fx.DEBRIS_N}`)
+    const vels = Array.from({ length: fx.DEBRIS_N }, (_, i) => fx.debrisVel(i))
+    ok(vels.every((v) => v.vy > 0 && v.g > 0), 'fx: every chip falls', vels.map((v) => v.vy).join(','))
+    ok(vels.some((v) => v.vx !== 0) || fx.DEBRIS_N > 2, 'fx: the chips scatter, they do not drop in a stack')
+    // the hazards own distinct voices
+    const sigs = Object.entries(fx.FX_TONES).map(([k, s]) => `${k}:${s.wave}:${s.notes.join(',')}`)
+    ok(new Set(sigs.map((s) => s.split(':')[1] + s.split(':')[2])).size === sigs.length, 'fx: every hazard tone is distinct', sigs.join(' | '))
+    ok(fx.FX_TONES.warpTake.notes.every((f, i) => i === 0 || f > fx.FX_TONES.warpTake.notes[i - 1]), 'fx: the arch take rises')
+    ok(fx.FX_TONES.grind.notes.every((f) => f < 160), 'fx: the grind sits below the door sweep', fx.FX_TONES.grind.notes.join(','))
+    // the shell renders exactly these decisions
+    const jsx = readFileSync('src/games/Gauntlet/index.jsx', 'utf8')
+    ok(jsx.includes("from './fx.js'"), 'fx: the shell draws through fx.js')
+    ok(/const glow = warpGlow\(gs\.tick\)[\s\S]*?rgba\(93,255,143,\$\{0\.2 \+ glow \* 0\.5\}\)/.test(jsx), 'fx: the arch paints its glow')
+    ok(jsx.includes('if (trapWarn(gs, gs.tick))'), 'fx: the trap floor paints its warning blink')
+    ok(/const stars = stunStars\(h\.stunT, gs\.tick\)[\s\S]*?stars\.on/.test(jsx), 'fx: the hero paints his stun stars')
+    ok(jsx.includes('const col = teleColor(ch)') && jsx.includes('const q = teleSpin(gs.tick)'), 'fx: the pads paint through teleColor/teleSpin')
+    ok(jsx.includes('revealFade(revealAt.get(rk), gs.tick)') && jsx.includes('FX_TONES.grind'), 'fx: the revealed wall grinds open with its own voice')
+    ok(/const na = nearArch\(gs\)[\s\S]*?if \(na && !naPrev\)[\s\S]*?FX_TONES\.warpNear/.test(jsx), 'fx: approaching a live arch sounds the sweep on the edge')
+    ok(/if \(e\.warp != null\) \{[\s\S]*?FX_TONES\.warpTake[\s\S]*?burst\(VW \/ 2, VH \/ 2, 14, '#5dff8f'\)/.test(jsx), 'fx: taking the arch bursts green')
+    ok(/for \(let i = 0; i < DEBRIS_N; i\+\+\)/.test(jsx) && jsx.includes('d.vy += d.g'), 'fx: the crumble spawns falling debris')
+    ok(/if \(wflash > 0\)/.test(jsx), 'fx: arrival flashes white')
+}
+
 // ----------------------------------------------------------------- hero ----
 // The hero reads as a living fighter (issue #302 item 2): he takes a step only
 // on the ticks he actually walks, flashes white the moment he is struck (full
@@ -1010,6 +1096,28 @@ if (process.argv.includes('--mutate')) {
         ['#950 trap walls never solidify', 'src/games/Gauntlet/sim.js', 'return ((gs.playT + t.phase) % t.period) < t.open', 'return true'],
         ['#950 the hammer never opens the breakable wall', 'src/games/Gauntlet/sim.js', 'gs.smashed.add(k)', 'if (false) gs.smashed.add(k)'],
         ['#950 hidden passages are painted open on the map', 'src/games/Gauntlet/sim.js', "if (base === 'h') return gs.revealed.has(r * W + c) ? '.' : '#'", "if (base === 'h') return '.'"],
+        ['#973 the arch never glows', 'src/games/Gauntlet/fx.js', 'return 0.5 - 0.5 * Math.cos(t * Math.PI * 2)', 'return 0'],
+        ['#973 the arch glow never dips', 'src/games/Gauntlet/fx.js', 'return 0.5 - 0.5 * Math.cos(t * Math.PI * 2)', 'return 1'],
+        ['#973 dead arches count as live', 'src/games/Gauntlet/fx.js', '.filter((w) => w.to > gs.level && w.to < gs.levelCount)', '.filter(() => true)'],
+        ['#973 the trap warns while solid', 'src/games/Gauntlet/fx.js', 'if (frac >= t.open) return null', 'if (false) return null'],
+        ['#973 the trap blinks the whole open window', 'src/games/Gauntlet/fx.js', 'if (t.open - frac > t.open * TRAP_WARN_FRAC) return null', 'if (false) return null'],
+        ['#973 trapless floors claim a warning', 'src/games/Gauntlet/fx.js', 'if (!t) return null', 'if (!t) return false'],
+        ['#973 stun stars never show', 'src/games/Gauntlet/fx.js', 'if (stunT <= 0) return null', 'return null'],
+        ['#973 the stun stars never flicker', 'src/games/Gauntlet/fx.js', 'on: (tick >> 2) % 3 !== 2,', 'on: true,'],
+        ['#973 the exit pad clones the entrance', 'src/games/Gauntlet/fx.js', "export const teleColor = (base) => (base === 'p' ? TELE_EXIT : TELE_PAD)", 'export const teleColor = () => TELE_PAD'],
+        ['#973 the spiral stands still', 'src/games/Gauntlet/fx.js', 'export const teleSpin = (tick) => Math.floor(tick / 2) % TELE_SPIN', 'export const teleSpin = () => 0'],
+        ['#973 the false wall pops open instantly', 'src/games/Gauntlet/fx.js', 'return Math.max(0, 1 - (age + 1) / REVEAL_FRAMES)', 'return 0'],
+        ['#973 the crumble throws no chips', 'src/games/Gauntlet/fx.js', 'export const DEBRIS_N = 3', 'export const DEBRIS_N = 0'],
+        ['#973 debris floats instead of falling', 'src/games/Gauntlet/fx.js', 'return { vx: (i - (DEBRIS_N - 1) / 2) * 0.8, vy: 0.4 + 0.35 * i, g: 0.18 }', 'return { vx: 0, vy: 0, g: 0 }'],
+        ['#973 the grind climbs into the door band', 'src/games/Gauntlet/fx.js', "grind: { wave: 'square', notes: [98, 82] },", "grind: { wave: 'square', notes: [220, 262] },"],
+        ['#973 the shell stops breathing the arch', 'src/games/Gauntlet/index.jsx', 'const glow = warpGlow(gs.tick)', 'const glow = 0'],
+        ['#973 the shell never blinks traps', 'src/games/Gauntlet/index.jsx', 'if (trapWarn(gs, gs.tick))', 'if (false)'],
+        ['#973 the shell drops the stun stars', 'src/games/Gauntlet/index.jsx', 'const stars = stunStars(h.stunT, gs.tick)', 'const stars = null'],
+        ['#973 the shell clones the exit pad', 'src/games/Gauntlet/index.jsx', 'const col = teleColor(ch)', "const col = '#e08fff'"],
+        ['#973 the approach sweep never fires', 'src/games/Gauntlet/index.jsx', 'if (na && !naPrev)', 'if (false)'],
+        ['#973 the warp take bursts nothing', 'src/games/Gauntlet/index.jsx', "if (e.warp != null) { FX_TONES.warpTake.notes.forEach((f, i) => audioController.playTone(f, 0.1, 'sine', 0.07, i * 0.06)); burst(VW / 2, VH / 2, 14, '#5dff8f'); wflash = 6 }", ''],
+        ['#973 the crumble spawns no debris in the shell', 'src/games/Gauntlet/index.jsx', 'for (let i = 0; i < DEBRIS_N; i++) {', 'for (let i = 0; i < 0; i++) {'],
+        ['#973 the white arrival flash is gone', 'src/games/Gauntlet/index.jsx', 'if (wflash > 0)', 'if (false)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
