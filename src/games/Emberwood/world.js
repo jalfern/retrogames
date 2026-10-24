@@ -5,7 +5,7 @@
 // Entity meta (all in tile coords):
 //   chests:[{id,x,y,item,after}]   doors:[{id,x,y,kind,switch,to,entry:[x,y]}]
 //   switches:[{id,x,y,via,opens}]  plates:[{id,x,y}]  cracks:[{id,x,y,reveal,amount}]
-//   enemies:[{type,x,y,i,drop,boss}]  npcs:[{id,kind,x,y,msg}]  signs:[{x,y,msg}]
+//   enemies:[{type,x,y,i,drop,boss}]  npcs:[{id,kind,x,y,msg,wander:[[x,y]..]}]  signs:[{x,y,msg}]
 //   warps:[{x,y,to,sx,sy}]  exits:{n/e/s/w:{to,x,y}}  spawn:[x,y] entry point
 // kind: 'key' | 'bigkey' | 'switch' (opens when linked switch fires).
 
@@ -109,9 +109,12 @@ export const SCREENS = {
         cracks: [],
         chests: [],
         npcs: [
-            { id: 'shop', kind: 'shop', x: 5, y: 1, msg: 'WELCOME TO THE EMBER SHOP, TRAVELER.' },
-            { id: 'colporter', kind: 'shop', x: 2, y: 9, requires: 'blade', msg: 'HMPH. THE BLADE SUITS YE. SO DO ME WARES.' },
-            { id: 'elder', kind: 'oldman', x: 12, y: 8, msg: 'THE CINDER WYRM SLEEPS BENEATH THE SHRINE. ITS SCALECLOAK SHRUGS OFF STEEL — FIRE AN ARROW INTO ITS OPENING MAW TO STAGGER IT, THEN STRIKE.' },
+            { id: 'shop', kind: 'shop', x: 5, y: 1, msg: 'WELCOME TO THE EMBER SHOP, TRAVELER.',
+                wander: [[5, 1], [6, 1], [7, 1], [8, 1], [8, 2], [9, 2], [9, 1]] },
+            { id: 'colporter', kind: 'shop', x: 2, y: 9, requires: 'blade', msg: 'HMPH. THE BLADE SUITS YE. SO DO ME WARES.',
+                wander: [[2, 9], [1, 9], [2, 9], [2, 8], [2, 9], [3, 9]] },
+            { id: 'elder', kind: 'oldman', x: 12, y: 8, msg: 'THE CINDER WYRM SLEEPS BENEATH THE SHRINE. ITS SCALECLOAK SHRUGS OFF STEEL — FIRE AN ARROW INTO ITS OPENING MAW TO STAGGER IT, THEN STRIKE.',
+                wander: [[12, 8], [11, 8], [11, 9], [12, 9]] },
         ],
         signs: [
             { x: 7, y: 2, msg: 'EMBER SHOP — STAND BY THE KEEPER AND PRESS A. POTION, ARROWS, BOMBS, SHIELD — AND, FOR 150 EMBERS, THE EMBER BLADE.' },

@@ -232,4 +232,18 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
   the bob moves, stays bounded, foot-anchor drift < 0.02, distinct rhythms,
   east/west lean+flip and the deadband hold.)
 - No walk: townsfolk are still rooted to their map tiles — wander paths are owed
-  if the vale ever grows daytime business.
+  if the vale ever grows daytime business. — **CLOSED by #994** (`sim.js`
+  `stepNpcs`: each town npc walks a hand-drawn `wander` loop from `world.js`
+  (walkable tiles only — the audit gate refuses any solid waypoint) at 0.45 px/tick,
+  dwelling 1.5–3.5 s per stop on a seed-derived schedule that consumes no rng, so
+  drop tables, the proof route and cross-seed determinism never move. He halts the
+  moment the hero is within 44px so talk/shop keep working; trade follows the
+  **live** position (`npcNear`: faced tile first, close-range hail second — the old
+  tile match could miss a strolling keeper). Movement asks `blocked()` like
+  everything that moves; `saveState`/`loadState` carry the stroll (old saves fall
+  back to the anchor); `hashState` mixes npc positions so a nudged townsman
+  changes the world hash. Renderer: billboards ride the sim position, face down the
+  road while walking, and the walk adds a ±4.5% step-bob above the #981 breath.
+  `emberwoodcheck` gates it in the sim (loop legality, halt+hold, personal halt,
+  off-tile hail, save roundtrip, hash, determinism) and live in Chrome (travel
+  distance, heading-true facing, gait above the idle band, ±9% bounds).)

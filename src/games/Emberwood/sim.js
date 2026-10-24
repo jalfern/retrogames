@@ -113,7 +113,26 @@ const crackAt = (s, tx, ty) => (s.cracks || []).find(c => c.x === tx && c.y === 
 const doorAt = (s, tx, ty) => (s.doors || []).find(d => d.x === tx && d.y === ty)
 const chestAt = (sim, tx, ty) => (scr(sim).chests || []).find(c => c.x === tx && c.y === ty && !sim.flags.chestsOpen[c.id] && (!c.after || sim.flags[c.after]))
 const plateAt = (s, tx, ty) => (s.plates || []).find(p => p.x === tx && p.y === ty)
-const npcAt = (sim, tx, ty) => (scr(sim).npcs || []).find(n => n.x === tx && n.y === ty && (!n.requires || !!sim.items[n.requires]))
+// townsfolk walk (#994), so interaction follows the LIVE position: tier 1 is
+// the tile the hero faces (the old rule), tier 2 a close-range catch so a
+// strolling npc can be hailed from any side. `requires` still gates the colporter.
+function npcNear(sim, tx, ty) {
+    const px = tx * TS + 8, py = ty * TS + 8
+    let best = null, bd = 14
+    for (const n of sim.npcs || []) {
+        if (n.requires && !sim.items[n.requires]) continue
+        const d = Math.hypot(n.x - px, n.y - py)
+        if (d < bd) { bd = d; best = n }
+    }
+    if (best) return best
+    bd = 24
+    for (const n of sim.npcs || []) {
+        if (n.requires && !sim.items[n.requires]) continue
+        const d = Math.hypot(n.x - sim.hero.x, n.y - sim.hero.y)
+        if (d < bd) { bd = d; best = n }
+    }
+    return best
+}
 const warpAt = (s, tx, ty) => (s.warps || []).find(w => w.x === tx && w.y === ty)
 
 export function doorOpen(sim, d) {
@@ -130,6 +149,7 @@ export function spawnRoom(sim, id, entry) {
     sim.drops = []
     sim.blocks = (s.blocks || []).map(b => ({ id: b.id, x: b.x, y: b.y, cool: 0 }))
     // push blocks may be defined via meta blocks[]; default from 'x' tiles? blocks live in meta only.
+    sim.npcs = (s.npcs || []).map(n => makeNpc(sim, n))
     const sp = entry || s.spawn || [5, 6]
     sim.hero.x = sp[0] * TS + TS / 2
     sim.hero.y = sp[1] * TS + TS / 2 + 4
@@ -151,6 +171,28 @@ function makeEnemy(e) {
         charging: 0, rest: 0, chx: 0, chy: 0, gen: 0,
         fx: 0, fy: 1, seedOff: (e.i || 0) * 37 + 11, dead: false,
         seg: [],
+    }
+}
+
+// ---- townsfolk wander (#994) ----
+// A townsman dwells at a waypoint, then walks the next one of his hand-drawn
+// loop (world.js `wander`: free floor tiles, unit steps, looping). He halts
+// the moment the hero is close, so talk and trade keep working; the schedule
+// is seed-derived (no rng consumed, so drop tables and the proof route never
+// move). Movement still asks blocked() like everything that moves.
+const NPC_SPEED = 0.45
+const NPC_HALT = 44
+const NPC_DWELL = 90
+
+function makeNpc(sim, n) {
+    const path = (n.wander && n.wander.length >= 2) ? n.wander.map(t => [t[0], t[1]]) : [[n.x, n.y]]
+    return {
+        id: n.id, kind: n.kind, requires: n.requires || null, msg: n.msg,
+        x: n.x * TS + 8, y: n.y * TS + 8,
+        wx: n.x * TS + 8, wy: n.y * TS + 8,
+        path, wi: 0,
+        dwell: NPC_DWELL + ((sim.seed + n.id.length * 131) % 4) * 40,
+        moving: false,
     }
 }
 
@@ -249,6 +291,7 @@ export function stepSim(sim, inp) {
 
     stepBombs(sim)
     stepProjectiles(sim)
+    stepNpcs(sim)
     stepEnemies(sim)
     stepPickups(sim)
     checkTransitions(sim)
@@ -268,7 +311,7 @@ function primaryAction(sim) {
     const tx = tileOf(h.x + dvx * (TS * 0.9))
     const ty = tileOf(h.y + dvy * (TS * 0.9))
     const s = scr(sim)
-    const npc = npcAt(sim, tx, ty)
+    const npc = npcNear(sim, tx, ty)
     if (npc) {
         if (npc.kind === 'shop') { sim.shop.open = true; sim.shop.sel = 0; sim.shop.id = npc.id; emit(sim, 'ui', 0, 0) }
         else if (npc.id === 'elder' && !sim.flags.elderGifted) {
@@ -563,6 +606,37 @@ function hurtHero(sim, dmg) {
     emit(sim, 'hurt', h.x, h.y)
 }
 
+function stepNpcs(sim) {
+    const h = sim.hero
+    for (const n of sim.npcs) {
+        if (n.path.length < 2) continue
+        if (Math.hypot(h.x - n.x, h.y - n.y) < NPC_HALT) { n.moving = false; continue }
+        if (!n.moving) {
+            if (--n.dwell > 0) continue
+            n.wi = (n.wi + 1) % n.path.length
+            const [tx, ty] = n.path[n.wi]
+            n.wx = tx * TS + 8; n.wy = ty * TS + 8
+            n.moving = true
+        }
+        const dx = n.wx - n.x, dy = n.wy - n.y
+        const d = Math.hypot(dx, dy)
+        if (d <= NPC_SPEED) {
+            n.x = n.wx; n.y = n.wy
+            n.moving = false
+            n.dwell = NPC_DWELL + ((n.wi * 97 + n.id.charCodeAt(0) * 31) % 3) * 40
+        } else {
+            const vx = (dx / d) * NPC_SPEED, vy = (dy / d) * NPC_SPEED
+            if (!blocked(sim, n.x + vx, n.y, 10, 10)) n.x += vx
+            if (!blocked(sim, n.x, n.y + vy, 10, 10)) n.y += vy
+            if (blocked(sim, n.x + dx * 0.1, n.y + dy * 0.1, 10, 10)) {
+                n.wi = (n.wi + 1) % n.path.length
+                const [tx, ty] = n.path[n.wi]
+                n.wx = tx * TS + 8; n.wy = ty * TS + 8
+            }
+        }
+    }
+}
+
 function stepEnemies(sim) {
     const h = sim.hero
     for (const e of sim.enemies) {
@@ -778,6 +852,7 @@ export function hashState(sim) {
     mix(sim.screen.split('').reduce((a, c) => a + c.charCodeAt(0), 0))
     mix(ITEM_BITS(sim)); mix(FLAG_BITS(sim))
     mix(sim.enemies.reduce((a, e) => a + (e.dead ? 1 : 0) * 7 + Math.round(e.x) + Math.round(e.y) * 3, 0))
+    mix(sim.npcs.reduce((a, n) => a + Math.round(n.x) + Math.round(n.y) * 3, 0))
     mix(sim.death ? 1 : 0); mix(sim.win ? 1 : 0)
     return h >>> 0
 }
@@ -832,6 +907,7 @@ export function saveState(sim) {
         cut: { ...sim.cut },
         lastDungeonEntry: { ...sim.lastDungeonEntry },
         blocks: sim.blocks.map(b => ({ id: b.id, x: b.x, y: b.y })),
+        npcs: sim.npcs.map(n => ({ id: n.id, x: n.x, y: n.y, wi: n.wi, dwell: n.dwell })),
         win: !!sim.win,
     }
 }
@@ -850,6 +926,12 @@ export function loadState(sim, d) {
     for (const sb of d.blocks || []) {
         const b = fresh.blocks.find(x => x.id === sb.id)
         if (b) { b.x = sb.x; b.y = sb.y }
+    }
+    // townsfolk resume their stroll mid-step (old saves without npcs fall back
+    // to the anchor — a harmless migration, #994)
+    for (const sn of d.npcs || []) {
+        const n = fresh.npcs.find(x => x.id === sn.id)
+        if (n) { n.x = sn.x; n.y = sn.y; n.wi = sn.wi; n.dwell = sn.dwell }
     }
     Object.assign(fresh.hero, d.hero)
     Object.assign(sim, fresh)

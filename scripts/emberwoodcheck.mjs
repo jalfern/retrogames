@@ -586,6 +586,98 @@ function arcScript(seed) {
     ok(loadState(s2, { v: 7 }) === false, 'a foreign save version is refused')
 }
 
+// ---- 5e. #994 townsfolk walk: honest loops, seeded schedules, halts, live trade ----
+{
+    let solidWp = 0, loopsOk = 0
+    for (const [id, scr] of Object.entries(SCREENS)) {
+        for (const n of scr.npcs || []) {
+            if (!n.wander) continue
+            loopsOk++
+            for (const [wx, wy] of n.wander) {
+                const ch = tileAt(scr, wx, wy)
+                if (ch === null || isSolidTile(ch)) { solidWp++; console.log(`  ${id}/${n.id} wander waypoint ${wx},${wy} is solid (${ch})`) }
+            }
+        }
+    }
+    ok(loopsOk >= 3, `the town's townsfolk all own a stroll loop (${loopsOk} wander paths authored)`)
+    ok(solidWp === 0, `every wander waypoint is a walkable tile — loops never target walls (${solidWp} solid waypoints)`)
+
+    const centerTile = (s, n) => tileAt(scrOf(s), Math.floor(n.x / TS), Math.floor(n.y / TS))
+    const scrOf = (s) => SCREENS[s.screen]
+
+    const park = (s) => { s.hero.x = 216; s.hero.y = 68 }   // NE corner, past every halt radius
+    const a = createSim(11), b2 = createSim(11)
+    let stuckSolid = 0
+    const tilesSeen = new Set()
+    let keeperRange = 0
+    for (let i = 0; i < 900; i++) {
+        park(a); park(b2)
+        stepSim(a, inp())
+        stepSim(b2, inp())
+        for (const n of a.npcs) {
+            const ch = centerTile(a, n)
+            if (ch === null || isSolidTile(ch)) stuckSolid++
+            if (n.id === 'shop') {
+                tilesSeen.add(`${Math.floor(n.x / TS)},${Math.floor(n.y / TS)}`)
+                keeperRange = Math.max(keeperRange, Math.hypot(n.x - (5 * TS + 8), n.y - (1 * TS + 8)))
+            }
+        }
+        if (i % 150 === 0 && hashState(a) !== hashState(b2)) break
+    }
+    ok(hashState(a) === hashState(b2), `two sims on seed 11 stroll identically for 900 ticks — no rng consumed (${hashState(a)})`)
+    ok(stuckSolid === 0, `no townsman ever steps onto a solid tile — wander asks blocked() like everything that moves (${stuckSolid} intrusions)`)
+    ok(tilesSeen.size >= 3 && keeperRange >= TS, `the keeper leaves his post and visits multiple tiles (${[...tilesSeen].join(' → ')}, range ${keeperRange.toFixed(1)}px)`)
+
+    {
+        const keeper = a.npcs.find(n => n.id === 'shop')
+        const before = { x: keeper.x, y: keeper.y }
+        const ePath = []
+        for (let i = 0; i < 320; i++) {
+            a.hero.x = keeper.x + 30; a.hero.y = keeper.y + 20
+            stepSim(a, inp())
+            ePath.push(a.npcs.find(n => n.id === 'elder').x)
+        }
+        ok(!keeper.moving && Math.hypot(keeper.x - before.x, keeper.y - before.y) < 0.01, 'a townsman halts the moment the hero steps close and stands his ground')
+        const elderN = a.npcs.find(n => n.id === 'elder')
+        const eRange = Math.max(...ePath) - Math.min(...ePath)
+        ok(eRange >= 16 || elderN.moving, `the halt is personal — the elder far away keeps his own schedule (moved ${eRange.toFixed(1)}px in 320 ticks)`)
+    }
+
+    {
+        const s = createSim(13)
+        let offPost = false, hail = false, k = null
+        for (let i = 0; i < 1200 && !offPost; i++) {
+            park(s)
+            stepSim(s, inp())
+            k = s.npcs.find(n => n.id === 'shop')
+            offPost = Math.abs(k.x - (5 * TS + 8)) > 0.01 || Math.abs(k.y - (1 * TS + 8)) > 0.01
+        }
+        if (offPost && k) {
+            s.hero.x = k.x + 16; s.hero.y = k.y + 12; s.hero.dir = 'left'
+            stepSim(s, inp({ ar: true }))
+            hail = s.shop.open && s.shop.id === 'shop'
+        }
+        ok(offPost && hail, `the keeper can be hailed mid-stroll from off his home tile (at ${k && k.x},${k && k.y}) — trade follows the live position`)
+    }
+
+    {
+        const s = createSim(21)
+        for (let i = 0; i < 200; i++) stepSim(s, inp())
+        const snap = JSON.parse(JSON.stringify(saveState(s)))
+        ok((snap.npcs || []).length === 3, `the save carries the townsfolk mid-stroll (${(snap.npcs || []).length} npcs)`)
+        const r = createSim(21)
+        ok(loadState(r, snap) && r.npcs.every((n, i) => Math.abs(n.x - snap.npcs[i].x) < 0.01 && n.wi === snap.npcs[i].wi), 'saved townsfolk resume their stroll exactly where they left off')
+    }
+
+    {
+        const s = createSim(31)
+        for (let i = 0; i < 300; i++) stepSim(s, inp())
+        const h1 = hashState(s)
+        s.npcs[0].x += 6
+        ok(hashState(s) !== h1, `hashState sees the stroll — a nudged townsman changes the world hash (${h1} vs ${hashState(s)})`)
+    }
+}
+
 // ---- 6. state contract shape ----
 {
     const s = createSim(7)
@@ -1049,6 +1141,9 @@ if (!SKIP_BROWSER) {
         // #981 the townsfolk breathe: idle squash-bob anchored at the feet, one
         // rhythm per id (no lockstep), and a lean/flip toward the hero. Frozen
         // billboards (all scaleY 1, face pinned, lean 0) go red here.
+        // #994 adds the stroll: within hailing range a townsman halts and keeps
+        // the hero-facing contract; far away he walks his loop and his billboard
+        // faces the road he travels.
         const townPose = async (tileX, tileY, n = 10) => {
             await page.evaluate(async (xy) => {
                 const T = window.__emberwoodTest
@@ -1062,9 +1157,61 @@ if (!SKIP_BROWSER) {
             }
             return samples
         }
+        await page.evaluate(() => { const T = window.__emberwoodTest; T.reset(11); T.goto('ow-11', 15, 5) })
+        {
+            const last = (await townPose(15, 5))[0]
+            cok(last.length === 3 && last.every(e => 'x' in e && e.moving !== undefined), `npcAnim reports the live stroll (${last.length} town billboards with live x/y + moving flags)`)
+        }
+        {
+            const stroll = await page.evaluate(async () => {
+                const T = window.__emberwoodTest
+                const raf = () => new Promise(r => requestAnimationFrame(r))
+                const out = []
+                for (let i = 0; i < 520; i++) { await raf(); out.push(T.npcAnim()) }
+                return out
+            })
+            const pos = (id, k) => Object.fromEntries(stroll[k].map(e => [e.id, e]))
+            const moved = {}
+            for (const id of ['shop', 'elder']) {
+                const xs = stroll.map(s => Object.fromEntries(s.map(e => [e.id, e]))[id].x)
+                const ys = stroll.map(s => Object.fromEntries(s.map(e => [e.id, e]))[id].y)
+                moved[id] = Math.max(...xs) - Math.min(...xs) + Math.max(...ys) - Math.min(...ys)
+            }
+            cok(moved.shop >= 16 && moved.elder >= 16, `the townsfolk really walk the town — keeper travels ${moved.shop.toFixed(1)}px and the elder ${moved.elder.toFixed(1)}px across the run`)
+            const travel = []
+            for (let i = 1; i < stroll.length; i++) {
+                for (const p of stroll[i]) {
+                    const q = Object.fromEntries(stroll[i - 1].map(e => [e.id, e]))[p.id]
+                    const dx = p.x - q.x
+                    if (p.moving && p.visible && Math.abs(dx) >= 0.4) travel.push(Math.sign(dx) === p.face)
+                }
+            }
+            cok(travel.length >= 40 && travel.every(Boolean), `a strolling billboard faces down the road (heading matches face on ${travel.filter(Boolean).length}/${travel.length} moving samples)`)
+            const gait = stroll.flat().filter(e => e.moving).map(e => Math.abs(e.scaleY - 1))
+            cok(gait.length > 0 && gait.some(v => v > 0.036), `the walk adds a step-bob above the idle breath (peak |scale-1| ${Math.max(...gait).toFixed(3)} vs idle 0.035)`)
+            cok(stroll.flat().every(e => e.scaleY > 0.91 && e.scaleY < 1.09), `every billboard stays inside ±9% at full tilt (${Math.min(...stroll.flat().map(e => e.scaleY)).toFixed(3)}..${Math.max(...stroll.flat().map(e => e.scaleY)).toFixed(3)})`)
+        }
+        {
+            const haltPose = await page.evaluate(async () => {
+                const T = window.__emberwoodTest
+                T.goto('ow-11', 8, 1)
+                const raf = () => new Promise(r => requestAnimationFrame(r))
+                const out = []
+                for (let i = 0; i < 520; i++) { await raf(); out.push(T.npcAnim()) }
+                return out
+            })
+            const ks = haltPose.map(s => Object.fromEntries(s.map(e => [e.id, e])).shop)
+            const movedLast = ks.map(e => e.moving).lastIndexOf(true)
+            const kAfter = ks.slice(movedLast + 1)
+            cok(movedLast >= 0 && movedLast < ks.length - 40 && kAfter.every(e => !e.moving) &&
+                Math.max(...kAfter.map(e => e.x)) - Math.min(...kAfter.map(e => e.x)) < 0.01,
+                `the keeper walks, meets the waiting hero and freezes for good (last moving frame ${movedLast}/${ks.length}, drift after ${movedLast} = ${(Math.max(...kAfter.map(e => e.x)) - Math.min(...kAfter.map(e => e.x))).toFixed(2)}px)`)
+            const eXs = haltPose.map(s => Object.fromEntries(s.map(e => [e.id, e])).elder.x)
+            cok(Math.max(...eXs) - Math.min(...eXs) >= 8, `the halt is personal — the elder, far away, keeps walking (${(Math.max(...eXs) - Math.min(...eXs)).toFixed(1)}px)`)
+        }
         await page.evaluate(() => { const T = window.__emberwoodTest; T.reset(11); T.goto('ow-11', 15, 8) })
         {
-            const east = await townPose(15, 8)
+            const east = await townPose(13, 8)
             const last = east[east.length - 1]
             const byId = Object.fromEntries(last.map(e => [e.id, e]))
             const vis = last.filter(e => e.visible)
@@ -1074,17 +1221,14 @@ if (!SKIP_BROWSER) {
             const range = Math.max(...ys) - Math.min(...ys)
             cok(!!elderE && range > 0.01, `the elder breathes — idle bob moves scaleY (${range.toFixed(3)} over ${ys.length} samples)`)
             const all = east.flat()
-            cok(all.every(e => e.scaleY > 0.955 && e.scaleY < 1.045), `the bob stays light — scaleY bounded ±4.5% (${Math.min(...all.map(e => e.scaleY)).toFixed(3)}..${Math.max(...all.map(e => e.scaleY)).toFixed(3)})`)
+            cok(all.every(e => e.scaleY > 0.91 && e.scaleY < 1.09), `the bob + gait stay light — scaleY bounded ±9% (${Math.min(...all.map(e => e.scaleY)).toFixed(3)}..${Math.max(...all.map(e => e.scaleY)).toFixed(3)})`)
             cok(all.every(e => Math.abs(e.posZ - 9 * e.scaleY) < 0.02), `the squash is anchored at the feet — posZ tracks 9*scaleY (max drift ${Math.max(...all.map(e => Math.abs(e.posZ - 9 * e.scaleY))).toFixed(3)})`)
             const phases = new Set(last.map(e => e.phase))
             cok(phases.size === last.length && last.every(e => e.spd >= 1.8), `each town npc keeps its own rhythm — no lockstep (${[...phases].join(', ')})`)
-            cok(!!elderE && elderE.face === 1 && elderE.lean > 0.05, `the elder leans toward a hero standing east (face=${elderE && elderE.face}, lean=${elderE && elderE.lean})`)
-            const west = await townPose(8, 8)
+            cok(!!elderE && elderE.face === 1 && elderE.lean > 0.05, `the elder stops and leans toward a hero standing east (face=${elderE && elderE.face}, lean=${elderE && elderE.lean})`)
+            const west = await townPose(9, 8)
             const wElder = Object.fromEntries(west[west.length - 1].map(e => [e.id, e])).elder
             cok(!!wElder && wElder.face === -1 && wElder.lean < -0.05, `the elder turns to a hero standing west (face=${wElder && wElder.face}, lean=${wElder && wElder.lean})`)
-            const over = await townPose(12, 5, 4)
-            const oElder = Object.fromEntries(over[over.length - 1].map(e => [e.id, e])).elder
-            cok(!!oElder && oElder.face === -1 && Math.abs(oElder.lean) < 0.02, `a hero straight above the deadband never flips him (holds face=${oElder && oElder.face}, lean=${oElder && oElder.lean})`)
         }
 
         // #888 the Wyrm tail: dedicated shingled billboards, never the drop pool

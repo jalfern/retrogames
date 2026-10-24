@@ -633,9 +633,11 @@ void main(){
 
     const simFocus = [128, 88]
     let waterTime = 0
+    let lastSim = null
 
     function sync(sim, tSec) {
         if (!TEX) return
+        lastSim = sim
         const dark = !!SCREENS[sim.screen]?.dark
         const sig = sim.screen + '|' + Object.keys(sim.flags.cracked).length + '|' + Object.keys(sim.flags.doorsOpen).length + '|' + Object.keys(sim.flags.chestsOpen).length
         if (sig !== structureSig || sim.screen !== currentScreen) {
@@ -654,14 +656,22 @@ void main(){
             mesh.visible = !open
         }
         const hx = sim.hero.x, hy = sim.hero.y
+        const nmap = new Map((sim.npcs || []).map(n => [n.id, n]))
         for (const [npcId, mesh] of dynamic.npcs) {
             if (mesh.userData.requires) mesh.visible = !!sim.items[mesh.userData.requires]
             if (!mesh.visible) continue
             const u = mesh.userData
+            const n = nmap.get(npcId)
+            // #994 the townsfolk stroll: the billboard rides the sim's live
+            // position; a walk adds a step-bob on top of the idle breath.
+            const bx = n ? n.x : u.nx * TS + 8
+            const by = n ? n.y : u.ny * TS + 8
             const breathe = Math.sin(tSec * u.spd + u.phase)
-            const s = 1 + breathe * NPC_IDLE.bob
-            const dxp = hx - (u.nx * TS + 8)
-            if (dxp > NPC_IDLE.deadband) u.face = 1
+            const gait = n && n.moving ? Math.sin(tSec * 11 + u.phase * 7) * 0.045 : 0
+            const s = 1 + breathe * NPC_IDLE.bob + gait
+            const dxp = hx - bx
+            if (n && n.moving && (n.wx - n.x) !== 0) u.face = n.wx > n.x ? 1 : -1
+            else if (dxp > NPC_IDLE.deadband) u.face = 1
             else if (dxp < -NPC_IDLE.deadband) u.face = -1
             npcFacing.set(npcId, u.face)
             const lean = Math.max(-NPC_IDLE.lean, Math.min(NPC_IDLE.lean, dxp * NPC_IDLE.leanK))
@@ -669,6 +679,8 @@ void main(){
             mesh.quaternion.copy(camera.quaternion)
             mesh.rotateZ(lean)
             mesh.scale.set(u.face, s, 1)
+            mesh.position.x = FX(bx)
+            mesh.position.y = by
             mesh.position.z = 9 * s
         }
         for (const cp of canopies) {
@@ -940,16 +952,22 @@ void main(){
             return n ? paintNpc(n).toDataURL() : null
         },
         // #981 — report each visible town npc's live pose so the gates can prove
-        // the idle breath, foot-anchored squash, rhythm spread and hero-facing.
+        // the idle breath, foot-anchored squash, rhythm spread and hero-facing;
+        // #994 adds the live walk position + flag.
         npcAnim: () => {
             const out = []
+            const nmap = lastSim ? new Map((lastSim.npcs || []).map(n => [n.id, n])) : null
             for (const [id, mesh] of dynamic.npcs) {
                 const u = mesh.userData
+                const n = nmap ? nmap.get(id) : null
                 out.push({
                     id, visible: mesh.visible, face: u.face,
                     scaleY: +mesh.scale.y.toFixed(3), posZ: +mesh.position.z.toFixed(2),
                     lean: +(u.lean || 0).toFixed(3),
                     phase: +u.phase.toFixed(3), spd: +u.spd.toFixed(2),
+                    x: +(n ? n.x : u.nx * TS + 8).toFixed(2),
+                    y: +(n ? n.y : u.ny * TS + 8).toFixed(2),
+                    moving: !!(n && n.moving),
                 })
             }
             return out
