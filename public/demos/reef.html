@@ -205,16 +205,26 @@ function layoutProps(){
 /* ---------------- fish school (boids) ---------------- */
 
 const NFISH = LITE ? 26 : 44;
+const SPECIES = [
+  { hue: 202, ar: 0.38, len: 7.0 },
+  { hue: 44, ar: 0.56, len: 5.6 },
+  { hue: 168, ar: 0.30, len: 8.6 },
+];
 let fish = [];
 function layoutFish(){
   const rnd = mulberry32(SEED * 104729 + 7);
   fish = [];
   for (let i = 0; i < NFISH; i++){
+    const sp = rnd();
+    const species = sp < 0.52 ? 0 : sp < 0.82 ? 1 : 2;
+    const cls = 0.75 + (rnd() < 0.35 ? 0 : rnd() < 0.6 ? 0.45 : 0.9);
     fish.push({
       x: rnd() * SPAN, y: cssH * (0.20 + rnd() * 0.42),
       vx: 55 + rnd() * 22, vy: (rnd() - 0.5) * 12,
-      d: 0.15 + rnd() * 0.75, size: 0.8 + rnd() * 0.9,
-      wob: rnd() * Math.PI * 2,
+      d: 0.15 + rnd() * 0.75,
+      size: cls * (0.85 + rnd() * 0.3),
+      wob: rnd() * Math.PI * 2, species,
+      hue: SPECIES[species].hue + (rnd() - 0.5) * 16,
     });
   }
 }
@@ -243,8 +253,9 @@ function stepFish(dt, t){
       ay += (avy / n - f.vy) * ALGN + (cy / n) * COH * 0.02;
     }
     ay += (Math.sin(t * 0.3 + i) * 6 - f.vy * 0.4) * 0.1;
+    const wheel = Math.sin(t * 0.14) * 0.55;
     f.vx += ax * dt * 60 * 0.016 + BIAS * dt * 8;
-    f.vy += ay * dt * 60 * 0.016;
+    f.vy += ay * dt * 60 * 0.016 + wheel * dt * 26;
     const sp = Math.hypot(f.vx, f.vy) || 1;
     const want = clamp(sp, 42, 78);
     f.vx = f.vx / sp * want; f.vy = f.vy / sp * want;
@@ -359,14 +370,16 @@ function drawRays(t){
   const n = 9;
   for (let i = 0; i < n; i++){
     const bx = cssW * (0.05 + 0.107 * i) + Math.sin(t * 0.11 + i * 1.7) * cssW * 0.02 - cam.look * 0.12;
-    const wTop = cssW * (0.006 + 0.005 * ((i * 7) % 3));
+    const wobble = 1 + 0.45 * Math.sin(t * 0.9 + i * 2.1) + 0.2 * Math.sin(t * 1.7 + i);
+    const wTop = cssW * (0.006 + 0.005 * ((i * 7) % 3)) * wobble;
     const wBot = wTop * 2.8;
     const tilt = cssW * 0.03 + Math.sin(t * 0.07 + i) * cssW * 0.012;
     const yTop = cssH * 0.02;
     const yBot = cssH * 0.78;
     const a = (0.22 + 0.055 * Math.sin(t * 0.23 + i * 2.4)) * mix(1.15, 0.55, smooth(0, cssH, yBot));
     const g = ctx.createLinearGradient(0, yTop, 0, yBot);
-    g.addColorStop(0, `rgba(175,240,230,${a.toFixed(3)})`);
+    g.addColorStop(0, `rgba(175,240,230,${Math.min(0.5, a * 1.25).toFixed(3)})`);
+    g.addColorStop(0.14, `rgba(160,235,225,${a.toFixed(3)})`);
     g.addColorStop(0.65, `rgba(120,215,205,${(a * 0.35).toFixed(3)})`);
     g.addColorStop(1, 'rgba(90,180,175,0)');
     ctx.fillStyle = g;
@@ -409,7 +422,7 @@ function drawProp(p, t){
   ctx.translate(px, baseY);
   ctx.scale(s, s);
   if (p.kind === 'branch'){
-    branch(0, 0, -54 * p.h, 9 * p.w, p.branches, sway, t, colS, cDark);
+    branch(0, 0, -54 * p.h, 9 * p.w, p.branches, sway, t, colS, cDark, p.phase);
   } else if (p.kind === 'fan'){
     fan(p, t, sway, colS);
   } else if (p.kind === 'brain'){
@@ -435,27 +448,32 @@ function t2(col, d, y, f){
   const c = tint(col, d, y);
   return `rgb(${Math.round(c[0] * f)},${Math.round(c[1] * f)},${Math.round(c[2] * f)})`;
 }
-function branch(x, y, len, w, depth, sway, t, colS, cDark){
+function branch(x, y, len, w, depth, sway, t, colS, cDark, ph){
   if (depth <= 0 || len < 4) return;
-  const a = -Math.PI / 2 + sway * (1.2 - depth * 0.2) + Math.sin(t * 1.7 + x * 0.3) * 0.02;
+  ph = (ph || 0) + 0.42;
+  const lag = 0.4 + depth * 0.28;
+  const curl = depth === 1 ? clamp(sway, -1, 1) * 0.3 : 0;
+  const a = -Math.PI / 2 + sway * lag + curl + Math.sin(t * 1.7 - ph) * 0.05;
   const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
   ctx.strokeStyle = depth % 2 ? colS : cDark;
   ctx.lineWidth = w; ctx.lineCap = 'round';
   ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x2, y2); ctx.stroke();
-  branch(x2, y2, len * 0.72, w * 0.62, depth - 1, sway * 1.25, t, colS, cDark);
-  branch(x2, y2, len * 0.66, w * 0.58, depth - 1, sway * 1.35 + 0.12, t, colS, cDark);
+  branch(x2, y2, len * 0.72, w * 0.62, depth - 1, sway * 1.25, t, colS, cDark, ph);
+  branch(x2, y2, len * 0.66, w * 0.58, depth - 1, sway * 1.35 + 0.12, t, colS, cDark, ph);
 }
 function fan(p, t, sway, colS){
   ctx.strokeStyle = colS; ctx.lineCap = 'round';
   const ribs = 9;
   for (let i = 0; i < ribs; i++){
-    const a = -Math.PI / 2 + (i - (ribs - 1) / 2) * 0.22 + sway;
-    const L = (26 + Math.abs(i - (ribs - 1) / 2) * -3.2 + 12) * p.h;
+    const u = i / (ribs - 1) - 0.5;
+    const a = -Math.PI / 2 + u * 0.92 + sway * 0.35;
+    const L = (38 - Math.abs(u) * 34) * p.h;
+    const flex = Math.sin(t * p.sway * 1.3 + i * 0.55 + p.phase);
     ctx.lineWidth = 2.2 * p.w;
     ctx.globalAlpha = 0.85;
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.quadraticCurveTo(Math.cos(a) * L * 0.5 - 4, -L * 0.55, Math.cos(a) * L, -L * 0.9);
+    ctx.quadraticCurveTo(Math.cos(a) * L * 0.5 + flex * 3, -L * 0.62, Math.cos(a) * L + flex * 9, -L * 0.9);
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
@@ -521,11 +539,14 @@ function drawSeabed(t){
 
   const tileW = cssW * 0.9, tileH = cssH * 0.30;
   const off = -(((cam.x + cam.look) * 0.9) % tileW);
+  const STEP = 18, CW = CAW * STEP / tileW;
   ctx.globalCompositeOperation = 'screen';
-  for (let k = 0; k < 3; k++){
-    const x = off + k * tileW;
-    ctx.globalAlpha = 0.85;
-    ctx.drawImage(causticCanvas, x, cssH * 0.745, tileW + 1, tileH);
+  for (let x = 0; x < cssW; x += STEP){
+    const gy = seabedY(0, x);
+    const sh = clamp((gy - cssH * 0.74) / (cssH * 0.20), 0, 1);
+    ctx.globalAlpha = 0.82 + 0.18 * sh;
+    const srcX = (((off + x) * CAW / tileW) % CAW + CAW) % CAW;
+    ctx.drawImage(causticCanvas, srcX, 0, Math.min(CW, CAW - 1), CAH, x, gy - cssH * 0.018, STEP + 1, cssH * 0.24);
   }
   ctx.globalAlpha = 0.16;
   ctx.drawImage(causticCanvas, off * 0.5, farY - 2, tileW, tileH * 0.5);
@@ -544,18 +565,20 @@ function drawFish(t){
     const s = pscale(f.d) * f.size * (cssH / 620);
     const ang = Math.atan2(f.vy, f.vx * par(f.d) * 0.6);
     const wag = Math.sin(t * 9 + f.wob) * 0.5;
-    const col = tint(hsl(205 + f.d * 40, 0.45, mix(0.55, 0.35, f.d)), f.d, f.y);
+    const sp = SPECIES[f.species];
+    const col = tint(hsl(f.hue, 0.45, mix(0.55, 0.35, f.d)), f.d, f.y);
     ctx.save();
     ctx.translate(px, f.y);
     ctx.rotate(ang);
     ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+    const ln = sp.len * s, hh = sp.len * sp.ar * s;
     ctx.beginPath();
-    ctx.ellipse(0, 0, 7 * s, 2.6 * s, 0, 0, 7);
+    ctx.ellipse(0, 0, ln, hh, 0, 0, 7);
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(-5.5 * s, 0);
-    ctx.lineTo(-9.5 * s, (-2.6 + wag * 2.4) * s);
-    ctx.lineTo(-9.5 * s, (2.6 + wag * 2.4) * s);
+    ctx.moveTo(-ln * 0.78, 0);
+    ctx.lineTo(-ln * 1.35, (-hh + wag * hh * 0.9) * 1.5);
+    ctx.lineTo(-ln * 1.35, (hh + wag * hh * 0.9) * 1.5);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -627,6 +650,7 @@ function unlockAudio(){
     running = true;
     scheduleBubbleSound();
     scheduleWhale();
+    scheduleCrackle();
     audioHint.textContent = 'reef ambience on';
     audioHint.classList.add('off');
   } catch (e) { /* audio unavailable */ }
@@ -668,6 +692,44 @@ function scheduleWhale(){
   o.start(t0); o.stop(t0 + 2.5);
   setTimeout(scheduleWhale, 9000 + Math.random() * 9000);
 }
+let crackleN = 0;
+function crackle(t0){
+  crackleN++;
+  if (!AC) return;
+  const dur = Math.ceil(AC.sampleRate * (0.015 + Math.random() * 0.03));
+  const buf = AC.createBuffer(1, dur, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < dur; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / dur, 3);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600 + Math.random() * 2400; bp.Q.value = 1.5;
+  const g = AC.createGain(); g.gain.value = 0.045 + Math.random() * 0.05;
+  src.connect(bp).connect(g).connect(master); src.start(t0);
+}
+function scheduleCrackle(){
+  if (!running) return;
+  const n = 2 + (Math.random() * 4 | 0);
+  for (let k = 0; k < n; k++) crackle(AC.currentTime + Math.random() * 1.2 + k * 0.04);
+  setTimeout(scheduleCrackle, 600 + Math.random() * 1400);
+}
+let whooshN = 0, lastWhoosh = 0;
+function fishWhoosh(t){
+  if (t - lastWhoosh < 3.5) return;
+  lastWhoosh = t; whooshN++;
+  if (!AC) return;
+  const t0 = AC.currentTime + 0.02, dur = Math.ceil(AC.sampleRate * 0.5);
+  const buf = AC.createBuffer(1, dur, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < dur; i++) d[i] = (Math.random() * 2 - 1) * Math.sin(i / dur * Math.PI);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(950, t0);
+  bp.frequency.exponentialRampToValueAtTime(320, t0 + 0.45);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.05, t0 + 0.14);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+  src.connect(bp).connect(g).connect(master); src.start(t0);
+}
 
 /* ---------------- frame loop ---------------- */
 
@@ -693,9 +755,28 @@ function frame(){
   cam.y += (cam.ty - cam.y) * 0.06;
   cam.x += cam.look * dt * 0.15;
 
+  let driftMul = 1;
+  if (!drag && performance.now() - cam.touched > 2500){
+    cam.ty = Math.sin(t * 0.32) * 16 + Math.sin(t * 0.13) * 9;
+    cam.tlook = Math.sin(t * 0.08) * 70;
+    for (const p of props){
+      if (p.kind !== 'branch' || p.d > 0.35) continue;
+      const hx = wrapX(p.u * SPAN - (cam.x + cam.look) * par(p.d));
+      if (Math.abs(hx - cssW * 0.5) < 110){ driftMul = 0.45; break; }
+    }
+    cam.x += Math.sin(t * 0.5) * dt * 5;
+  }
+  cam.x += (driftMul - 1) * DRIFT * dt;
+
   const frameStart = performance.now();
   if (!(degraded && (frames & 1))) caustics(t);
   stepFish(dt, t);
+  for (const f of fish){
+    if (f.d < 0.3){
+      const fx = wrapX(f.x - (cam.x + cam.look) * par(f.d) * 0.6);
+      if (fx > cssW * 0.42 && fx < cssW * 0.58){ fishWhoosh(t); break; }
+    }
+  }
   stepSnow(dt);
   maybeBubble(t);
 
@@ -732,7 +813,8 @@ window.__reefTest = {
     if (p.y !== undefined){ cam.ty = p.y; cam.y = p.y; }
     cam.touched = performance.now();
   },
-  fish(){ return { n: fish.length, order: +fishOrder().toFixed(3) }; },
+  fish(){ return { n: fish.length, order: +fishOrder().toFixed(3), species: new Set(fish.map(f => f.species)).size }; },
+  audio(){ return { crackles: crackleN, whooshes: whooshN }; },
   particles(){ return { snow: snow.length, bubbles: bubbles.length }; },
   corals(){ return { n: props.length }; },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, work: +ema.toFixed(1), cap: +qCap.toFixed(2) }; },
