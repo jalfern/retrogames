@@ -225,7 +225,7 @@
     "lint:pw": "eslint scripts/pwacheck.mjs scripts/gen-pwa-icons.mjs src/main.jsx src/config public/sw.js",
     "pwacheck": "node scripts/pwacheck.mjs",
     "lint:comet": "eslint src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometcheck.mjs scripts/extract-comet-references.mjs scripts/lib",
-    "lint:hd": "eslint src/games/CometDriftHD src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometdrifthdcheck.mjs scripts/cometdrifthdscenerycheck.mjs scripts/lib",
+    "lint:hd": "eslint src/games/CometDriftHD src/games/CometDrift src/components src/utils src/config src/main.jsx scripts/cometdrifthdcheck.mjs scripts/cometdrifthdphonecheck.mjs scripts/cometdrifthdscenerycheck.mjs scripts/lib",
     "lint:pacman": "eslint src/games/Pacman src/components src/utils src/config src/main.jsx scripts/pacmancheck.mjs scripts/lib",
     "lint:pong": "eslint src/games/Pong src/components src/utils src/config src/main.jsx scripts/pongcheck.mjs scripts/lib",
     "lint:frogger": "eslint src/games/Frogger src/components src/utils src/config src/main.jsx scripts/froggercheck.mjs scripts/lib",
