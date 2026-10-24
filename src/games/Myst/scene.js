@@ -571,6 +571,57 @@ const BUILDERS = {
     }
     boulder(g, TX.grey, -9, 5.6, -2, 1.4, 0.6); boulder(g, TX.grey, 9.4, 5.6, -3, 1.5, 1.1)
   },
+  rocketSilo(g) {
+    // #1010 — the rocket, standing in its shaft under the cliff. The floor is
+    // a ring, not a disc: the exhaust has to have somewhere to go. The shaft
+    // is a tall open-backed drum of dusk rock, roofless, so the ride climbs
+    // from stone into sky.
+    const fl = mesh(new THREE.RingGeometry(2.3, 12, 22), mat(TX.rock), 0, 0.02, 2, g); fl.rotation.x = -Math.PI / 2; fl.userData.noPick = true
+    const shell = mesh(new THREE.CylinderGeometry(12, 13, 46, 16, 1, true), mat(TX.strata, { side: THREE.BackSide }), 0, 23, 2, g); shell.userData.noPick = true
+    rocks(g, TX.rock, [[-9.5, 1.6, 6, 5, 3.2, 5, 0.3], [10, 1.9, 5, 5, 3.8, 5, -0.2], [-8, 1.2, -3, 4, 2.4, 4, 0.6], [9, 1.4, -4, 4, 2.8, 4, -0.5]])
+    for (const ry of [-4, 1.2, 6.4]) mesh(new THREE.BoxGeometry(0.5, 1.2, 0.5), mat(TX.stoneD), -10.6, 0.6 + ry * 0.2, 2 + ry, g).userData.noPick = true
+    // the pad ring
+    const pad = mesh(new THREE.TorusGeometry(2.2, 0.14, 8, 22), mat(TX.iron, { metalness: 0.6 }), 0, 0.14, 8, g); pad.rotation.x = Math.PI / 2; pad.userData.noPick = true
+    for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + 0.4; mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.1), mat(TX.iron, { metalness: 0.6 }), Math.sin(a) * 2, 0.55, 8 + Math.cos(a) * 2, g).userData.noPick = true }
+    // the rocket: riveted silver, grey fins, brass bands, one wide porthole
+    const rocket = new THREE.Group()
+    const silver = mat(TX.iron, { metalness: 0.72, roughness: 0.28, color: 0xc9cfd8 })
+    const body = mesh(new THREE.CylinderGeometry(0.95, 1.1, 5.2, 14), silver, 0, 3.6, 0, rocket)
+    body.userData.landmark = 'rocket'; body.userData.noPick = true
+    const nose = mesh(new THREE.ConeGeometry(0.95, 2.1, 14), silver, 0, 7.25, 0, rocket)
+    nose.userData.landmark = 'rocket'; nose.userData.noPick = true
+    for (const by of [2.1, 4.6]) mesh(new THREE.TorusGeometry(1.02 - (by - 2.1) * 0.02, 0.06, 6, 16), mat(TX.brass, { metalness: 0.7 }), 0, by, 0, rocket).rotation.x = Math.PI / 2
+    for (let k = 0; k < 3; k++) {
+      const a = k * 2.094
+      const fin = mesh(new THREE.BoxGeometry(0.14, 1.6, 1.15), mat(TX.grey), Math.sin(a) * 1.15, 1.0, Math.cos(a) * 1.15, rocket)
+      fin.rotation.y = a; fin.rotation.x = 0.28; fin.userData.noPick = true
+    }
+    const port = mesh(new THREE.CircleGeometry(0.42, 14), new THREE.MeshStandardMaterial({ color: 0x9fd0e8, emissive: 0x3a7a9a, emissiveIntensity: 0.7, metalness: 0.2, roughness: 0.1 }), 0, 4.4, -1.02, rocket)
+    port.rotation.y = Math.PI
+    port.userData.noPick = true; port.userData.porthole = true
+    mesh(new THREE.TorusGeometry(0.46, 0.05, 6, 14), mat(TX.brass, { metalness: 0.7 }), 0, 4.4, -1.05, rocket).userData.noPick = true
+    const saddle = mesh(new THREE.BoxGeometry(0.7, 0.24, 0.9), mat(TX.wood, { color: 0x6a4a30 }), 0, 1.55, -1.15, rocket)
+    saddle.userData.spot = 'boardRocket'; saddle.userData.landmark = 'rocket'
+    const flame = mesh(new THREE.ConeGeometry(0.8, 3.4, 10), new THREE.MeshStandardMaterial({ color: 0xffd8a0, emissive: 0xff8a30, emissiveIntensity: 1.8, transparent: true, opacity: 0.9, fog: false }), 0, -1.5, 0, rocket)
+    flame.userData.noPick = true; flame.userData.mech = 'rocketFlame'; flame.scale.setScalar(0.001)
+    rocket.position.set(0, 0.55, 8)
+    rocket.userData.mech = 'rocketBody'
+    g.add(rocket)
+    // the ignition console on the pad edge
+    mesh(new THREE.BoxGeometry(0.5, 1.2, 0.4), mat(TX.iron, { metalness: 0.6 }), -2.4, 0.6, 5.6, g)
+    const ign = mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.12, 10), new THREE.MeshStandardMaterial({ color: 0xc43a2a, emissive: 0x7a160c, roughness: 0.4 }), -2.4, 1.28, 5.45, g)
+    ign.rotation.x = Math.PI / 2.4; ign.userData.spot = 'igniteSwitch'
+    mesh(new THREE.BoxGeometry(0.34, 0.06, 0.26), mat(TX.brass, { metalness: 0.7 }), -2.4, 1.42, 5.5, g).rotation.x = -0.7
+    // the stars you meet on the way up — invisible in the silo, thickening as
+    // the sky runs out of dusk
+    const pts = []
+    for (let i = 0; i < 160; i++) { const a = i * 2.399, r = 14 + 30 * Math.sqrt(i / 160); pts.push(Math.sin(a) * r, 40 + i * 1.7 + (i % 7) * 4, 2 + Math.cos(a) * r) }
+    const stars = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)), new THREE.PointsMaterial({ color: 0xdfe8ff, size: 0.5, transparent: true, opacity: 0, fog: false }))
+    stars.userData.mech = 'rideStars'; stars.userData.noPick = true
+    g.add(stars)
+    crate(g, 3.6, 0.3, 3.4, 1, 0.4); barrel(g, -3.8, 0.4, 2.2, 0.8); crate(g, 4.4, 0.28, 0.8, 0.8, 1.2)
+    lantern(g, 4.8, 0, -1.6)
+  },
   mechanical(g) {
     const ground = mesh(new THREE.CircleGeometry(60, 24), mat(TX.mech, { metalness: 0.3, roughness: 0.6 }), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
     for (const [r, x, z, sp] of [[3, -9, -9, 0.5], [2, 11, -12, -0.8], [1.4, 14, -4, 1.2], [2.2, -12, 2, -0.4]]) gear(g, TX.mech, r, x, 1.5, z, sp)
@@ -870,7 +921,7 @@ export function buildWorld(ids) {
 function idSky(id) {
   const ext = ['dock', 'cliffPath', 'beach', 'landing', 'stairTop']
   if (ext.includes(id)) return id === 'dock' || id === 'cliffPath' || id === 'beach' ? 'dusk' : 'day'
-  if (id === 'towerTop') return 'day'
+  if (id === 'towerTop' || id === 'rocketSilo') return id === 'rocketSilo' ? 'dusk' : 'day'
   if (id === 'selenitic' || id === 'selSound' || id === 'selThrone' || id === 'selGate' || id === 'selTop') return 'selenitic'
   if (id === 'stoneship' || id === 'stoneDeck' || id === 'stoneObservatory') return 'stoneship'
   if (id === 'mechanical' || id === 'mechWalk' || id === 'mechCar' || id === 'mechTop' || id === 'mechRoom') return 'mechanical'

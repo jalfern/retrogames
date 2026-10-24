@@ -11,6 +11,12 @@ export const SWITCH_LINKS = [
 ]
 export const STONE_SIZES = 6
 export const SUN_MOON = 5
+// The rocket ride (#1010): ticks per stage at 60 fps — ignition builds, the
+// silo falls away, the sky runs out of blue, the dark holds you in silence,
+// then the world catches you again. ~10 s of ride, as close to the original's
+// FMV as a live scene gets.
+export const RIDE = { ignite: 50, liftoff: 100, ascent: 170, coast: 170, reentry: 140 }
+export const RIDE_STAGES = ['ignite', 'liftoff', 'ascent', 'coast', 'reentry']
 
 export const BROTHER_LINES = {
   red: [
@@ -43,6 +49,8 @@ export function freshState(seed) {
     switches: [0, 0, 0, 0, 0],
     selStone: 0,
     selChair: 0,
+    ride: null,
+    rideT: 0,
     ending: null,
     message: 'You fall through the starless dark — and land at the foot of a wooden dock.',
     bookOpen: null,
@@ -63,6 +71,26 @@ export function dispatch(st, a) {
   if (st.ending) {
     if (a.t === 'restart') return { state: freshState(), events: ['restart'] }
     return { state: st, events: [] }
+  }
+
+  // Mid-ride the rocket drives you, not the player: once the switch is
+  // thrown, every input but the loop's own tick is refused until the surface
+  // — or an ending — takes hold. In the saddle it is still your call.
+  if (st.ride && st.ride !== 'seated' && st.ride !== 'landed') {
+    if (a.t !== 'tick') return { state: st, events: [] }
+    const s = { ...st, flags: { ...st.flags }, pages: { ...st.pages }, placed: { ...st.placed } }
+    s.time += 1
+    s.rideT += 1
+    if (s.ride === 'ignite' && s.rideT >= RIDE.ignite) { s.ride = 'liftoff'; s.rideT = 0; s.message = 'IGNITION. The whole silo becomes a drum — flame pours down the shaft and the rocket rises, slowly at first, then all at once, dusk falling off you in sheets of fire.'; ev.push('rocketLift') }
+    else if (s.ride === 'liftoff' && s.rideT >= RIDE.liftoff) { s.ride = 'ascent'; s.rideT = 0; s.message = 'The shaft, the cliff, the whole grey coin of Myst shrinks under the roar. The dusk thickens above you — indigo, then a blue you have never seen, then none at all.'; ev.push('ascent') }
+    else if (s.ride === 'ascent' && s.rideT >= RIDE.ascent) { s.ride = 'coast'; s.rideT = 0; s.message = 'The motor burns out and the world goes silent. Stars, without twinkle, crowd the black. Far below, a small dark leaf with a pale ring of surf: the island, and everything on it, getting small.'; ev.push('coast') }
+    else if (s.ride === 'coast' && s.rideT >= RIDE.coast) { s.ride = 'reentry'; s.rideT = 0; s.message = 'The nose tips down. Air returns as a whisper, then a rush; the fins steady the long drop toward a wide, bright, water-covered world.'; ev.push('reentry') }
+    else if (s.ride === 'reentry' && s.rideT >= RIDE.reentry) {
+      s.ride = 'landed'; s.rideT = 0; s.ending = 'surface'
+      s.message = 'The chute cracks out, the sea rushes up — and lets you down gently. Sunrise gilds an empty ocean in every direction. You left MYST. Whatever it was keeping, it kept for itself.'
+      ev.push('splash', 'endSurface')
+    }
+    return { state: s, events: ev }
   }
 
   switch (a.t) {
@@ -122,6 +150,14 @@ export function dispatch(st, a) {
       break
     }
     case 'closeBook': s.bookOpen = null; ev.push('page'); break
+    case 'echo': {
+      // The Selenitic sound-book replays a sounding stone's pitch — the same
+      // `stone:<i>` event the real stones ring, so book and field never drift.
+      if (st.panelOpen !== 'soundbook') return { state: st, events: [] }
+      const i = Math.max(0, Math.min(STONE_SIZES - 1, Number(a.i) || 0))
+      ev.push(`stone:${i}`)
+      break
+    }
     default: return { state: st, events: [] }
   }
   return { state: s, events: ev }
@@ -199,6 +235,30 @@ function act(s, spot, ev) {
         ev.push('look') }
       else { s.message = 'The observatory dome tracks a sun that never sets on this grey sea.'; ev.push('look') }
       break
+    }
+    // ---- THE ROCKET (#1010): the Amatem note opens the seam; the ride opens ----
+    case 'rocketDoor': {
+      if (has(s, 'rocketOpen')) { s.node = 'rocketSilo'; s.turn = 0; s.message = NODES.rocketSilo.caption; ev.push('travel', 'enter:rocketSilo'); break }
+      s.flags.rocketOpen = true
+      s.message = 'You press the folded observatory note against the reader-plate. Water hisses aside the seam; something old and patient unlatches, and the metal door swings inward on a breath of cold, dry air.'
+      ev.push('rocketOpen'); break
+    }
+    case 'boardRocket': {
+      if (s.ride) { s.message = 'You are already astride the saddle.'; ev.push('blocked'); break }
+      s.ride = 'seated'; s.rideT = 0
+      s.message = 'You swing a leg over the saddle. It fits you like it was cast for you — and under your right hand, under a hinged guard, a single switch waits.'
+      ev.push('straddle'); break
+    }
+    case 'igniteRocket': {
+      if (s.ride !== 'seated') { s.message = 'The ignition switch sits under the saddle-guard — it means nothing to anybody not sitting on the rocket.'; ev.push('blocked'); break }
+      s.ride = 'ignite'; s.rideT = 0
+      s.message = 'You lift the guard and throw the switch. Below you the fuel lines wake with a deepening shudder; the porthole glows, and the whole silo starts to hum like a struck bell.'
+      ev.push('ignite'); break
+    }
+    case 'soundBook': {
+      s.panelOpen = 'soundbook'
+      s.message = 'A tree-stump book of six painted pages — each stone of the sounding path, biggest to smallest. Touch a page and the stone answers.'
+      ev.push('panel', 'soundbook'); break
     }
     case 'mechCall': {
       s.flags.mechCarDown = !s.flags.mechCarDown

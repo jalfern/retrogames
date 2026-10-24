@@ -76,7 +76,7 @@ export const NODES = {
       { id: 'ladderUp', label: 'up the ladder', yaw: 180, w: 80, h: 40, to: 'library' },
       { id: 'starPanel', label: 'a stone panel of star symbols', yaw: 0, w: 40, h: 30, act: 'starPanel' },
       { id: 'channelwoodDoor', label: 'a wooden door in the rock', yaw: 60, w: 34, h: 40, to: 'channelwood', need: 'starPanel', needMsg: 'The wood door will not budge. Something locks it from within the stone.' },
-      { id: 'rocketDoor', label: 'a seam of metal in the cliff wall', yaw: -60, w: 34, h: 40, msg: 'Water pours across a seam of metal — a hidden door, and no handle to be seen.', reveal: 'rocketSeen' },
+      { id: 'rocketDoor', label: 'a seam of metal in the cliff wall', yaw: -60, w: 34, h: 40, reveal: 'rocketSeen', need: 'obsNote', needMsg: 'Water pours across a seam of metal. Beside it, set into the rock, a reader-plate with a faded sketch: a dome on a ridge, and beneath it one word — AMATEM. The door reads what the observatory knows.', act: 'rocketDoor' },
     ],
   },
   towerBase: {
@@ -120,6 +120,7 @@ export const NODES = {
       { id: 'pageSeleniticRed', label: 'a red page pinned to the rock', yaw: -55, w: 24, h: 24, act: 'takePage', page: 'red:selenitic', gone: 'pageRed_selenitic' },
       { id: 'pageSeleniticBlue', label: 'a blue page beside the water', yaw: 70, w: 24, h: 24, act: 'takePage', page: 'blue:selenitic', gone: 'pageBlue_selenitic' },
       { id: 'toSelSound', label: 'a path winding down to a field of stones', yaw: -118, w: 50, h: 40, to: 'selSound' },
+      { id: 'soundBook', label: 'a book bound into a tree stump', yaw: 102, w: 30, h: 26, act: 'soundBook' },
     ],
   },
   selSound: {
@@ -198,6 +199,17 @@ export const NODES = {
     spots: [
       { id: 'retStoneObs', label: 'back down the rock stair', yaw: 180, w: 50, h: 36, to: 'stoneDeck' },
       { id: 'observatory', label: 'inside the observatory', yaw: 0, w: 40, h: 34, act: 'observatory' },
+    ],
+  },
+  rocketSilo: {
+    pos: [0, 1.7, 2], yaw: 0, sky: 'dusk', amb: 'drip',
+    caption: 'The rocket silo — a silver ship of an older dream, standing in its shaft of dusk',
+    expect: ['rocket'],
+    spots: [
+      { id: 'retCave', label: 'back through the seam', yaw: 180, w: 60, h: 36, to: 'cave' },
+      { id: 'boardRocket', label: 'the saddle astride the rocket', yaw: 0, w: 34, h: 26, act: 'boardRocket' },
+      { id: 'igniteSwitch', label: 'the ignition switch under the saddle', yaw: -40, w: 24, h: 22, act: 'igniteRocket' },
+      { id: 'lookRocket', label: 'the rocket itself', yaw: 20, w: 40, h: 40, msg: 'Riveted silver, three grey fins, a porthole like a wide unblinking eye. A caption on the fuel line, in Atrus\'s careful hand: "for the surface, if ever you need it."' },
     ],
   },
   mechanical: {

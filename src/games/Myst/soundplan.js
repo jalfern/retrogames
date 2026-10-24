@@ -83,6 +83,24 @@ export function plan(ev) {
     // sustained hum, which is the point of the tell.
     case 'flood': P.push({ type: 'sweep', f0: 90, f1: 240, dur: 1.2, wave: 'sine', vol: 0.06 }, { type: 'noise', dur: 1.1, vol: 0.05 }); break
     case 'hum': P.push({ type: 'tone', f: 98, dur: 1.6, wave: 'sine', vol: 0.035 }, { type: 'tone', f: 147, dur: 1.2, wave: 'sine', vol: 0.02, delay: 0.25 }); break
+    // THE ROCKET (#1010): each stage of the ride gets its own shape — the
+    // seam unseals with a hydraulic hiss and a clack; the saddle takes your
+    // weight with a leather creak; ignition is a rising sub-hum; liftoff is
+    // the loudest thing in the game (a saw climbing out of a roar); ascent
+    // thins to wind; the dark COAST is deliberately, provably silent (the
+    // harness asserts the silence — it is the point of the stage, not an
+    // accident); reentry rushes down; the splash closes; the surf at dawn is
+    // a slow major chord over a long shimmer, distinct from the atrus fanfare.
+    case 'rocketOpen': P.push({ type: 'fnoise', dur: 0.7, vol: 0.12, freq: 500 }, { type: 'tone', f: 96, dur: 0.14, wave: 'square', vol: 0.08, delay: 0.5 }, { type: 'noise', dur: 0.25, vol: 0.1, delay: 0.5 }); break
+    case 'straddle': P.push({ type: 'sweep', f0: 180, f1: 140, dur: 0.22, wave: 'triangle', vol: 0.05 }, { type: 'tone', f: 120, dur: 0.07, wave: 'square', vol: 0.04, delay: 0.2 }); break
+    case 'ignite': P.push({ type: 'sweep', f0: 38, f1: 120, dur: 1.6, wave: 'sawtooth', vol: 0.09 }, { type: 'noise', dur: 1.4, vol: 0.06 }); break
+    case 'rocketLift': P.push({ type: 'sweep', f0: 55, f1: 190, dur: 1.8, wave: 'sawtooth', vol: 0.14 }, { type: 'noise', dur: 1.8, vol: 0.16 }, { type: 'tone', f: 74, dur: 1.4, wave: 'square', vol: 0.07, delay: 0.15 }); break
+    case 'ascent': P.push({ type: 'fnoise', dur: 1.6, vol: 0.1, freq: 900 }, { type: 'sweep', f0: 240, f1: 820, dur: 1.5, wave: 'sine', vol: 0.06 }); break
+    case 'coast': break
+    case 'reentry': P.push({ type: 'fnoise', dur: 1.4, vol: 0.11, freq: 1200 }, { type: 'sweep', f0: 760, f1: 160, dur: 1.3, wave: 'sine', vol: 0.07 }); break
+    case 'splash': P.push({ type: 'noise', dur: 0.9, vol: 0.16 }, { type: 'fnoise', dur: 0.7, vol: 0.12, freq: 400 }, { type: 'sweep', f0: 300, f1: 80, dur: 0.8, wave: 'sine', vol: 0.06 }); break
+    case 'endSurface': [294, 370, 440, 587].forEach((f, i) => P.push({ type: 'tone', f, dur: 0.9, wave: 'sine', vol: 0.08, delay: i * 0.3 })); P.push({ type: 'fnoise', dur: 1.6, vol: 0.05, freq: 700 }); break
+    case 'soundbook': P.push({ type: 'fnoise', dur: 0.22, vol: 0.09, freq: 1300 }, { type: 'tone', f: 330, dur: 0.18, wave: 'sine', vol: 0.05, delay: 0.06 }, { type: 'tone', f: 440, dur: 0.18, wave: 'sine', vol: 0.04, delay: 0.18 }); break
     default: break
   }
   return P
