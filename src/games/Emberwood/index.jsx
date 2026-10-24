@@ -15,7 +15,7 @@ import { createRenderer } from './render.js'
 import { makeTextures, battleHeat, musicStepFor } from './art.js'
 import { proveGame } from './solver.js'
 import { attractBot } from './bot.js'
-import { SCREENS, TS, SHOP, SECRET_SHOP } from './world.js'
+import { SCREENS, SHOP, SECRET_SHOP } from './world.js'
 
 const FIXED_DT = 1000 / 60
 const W = 480
@@ -215,9 +215,10 @@ export default function Emberwood() {
 
             if (now - hudTick > 120) {
                 hudTick = now
-                const scr0 = SCREENS[sim.screen]
-                const shopNpc = scr0 ? (scr0.npcs || []).find(n => n.kind === 'shop' && (!n.requires || sim.items[n.requires]) &&
-                    Math.hypot(n.x * TS + TS / 2 - sim.hero.x, n.y * TS + TS / 2 - sim.hero.y) < 26) : null
+                // #994 the townsfolk stroll, so the trade hint tracks the
+                // keeper's live position, not his map tile.
+                const shopNpc = (sim.npcs || []).find(n => n.kind === 'shop' && (!n.requires || sim.items[n.requires]) &&
+                    Math.hypot(n.x - sim.hero.x, n.y - sim.hero.y) < 26) || null
                 setHud({
                     hp: sim.hero.hp, max: sim.hero.max, embers: sim.score,
                     items: { ...sim.items }, msg: sim.msgT > 0 ? sim.msg : null,
