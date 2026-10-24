@@ -1480,11 +1480,9 @@ function solveGrabHand(root, hero, side) {
     // #971: the back-cross grabs sit further across than the capped scapula-drop
     // can reach; a snowboarder closes that span with a SPINE SIDE-FLEX — the torso
     // bends toward the band, carrying the reach shoulder forward and inboard so
-    // FABRIK can finish. This lands Method (0.34 -> ~0.05). Salis is the mirrored
-    // cross and still misses (~0.41): its arm needs a shoulder relocation, not a
-    // spine bend, so it stays out of the gate and out of this claim's scope.
-    // Gated on a real miss (best > 0.2) so grab/Flat/Indy/Nose, which already
-    // land within 0.2 m on the drop alone, are untouched. Non-accumulating:
+    // FABRIK can finish. This lands Method (0.34 -> ~0.05). Salis — the mirrored
+    // cross — lands via the coordinate fix below (#980). Gated on a real miss (best > 0.2) so grab/Flat/Indy/Nose, which
+    // already land within 0.2 m on the drop alone, are untouched. Non-accumulating:
     // blendHero re-slams the spine/chest toward the posed target every frame (it
     // tracks the un-modified value), so the flex never walks the cycle.
     if (best > 0.2) {
@@ -1538,22 +1536,29 @@ function solveGrabHand(root, hero, side) {
         E.copy(E).sub(S).normalize().multiplyScalar(l1).add(S)
         W.copy(W).sub(E).normalize().multiplyScalar(l2).add(E)
     }
-    // bone quaternions live in the bone's PARENT space — solving in roll space
-    // and premultiplying directly would rotate about the wrong basis
+    // bone quaternions live in the bone's PARENT space, and the solved chain
+    // lives in ROLL space — both conversions are required before any
+    // worldToLocal. Feeding roll-space points straight into worldToLocal mixed
+    // them with true-world bones 100+ m down the mountain: the direction
+    // vectors collapsed to ~parallel, the fold guards read "nothing to do", and
+    // Salis (the mirrored cross, whose span closes entirely at the elbow) froze
+    // 0.41 m off the band (#980). Other poses hid the error in their shoulder
+    // term, which is why only the mirror exposed it.
     const upar = ua.parent
-    const Sp = upar.worldToLocal(S.clone())
-    const E0p = upar.worldToLocal(rp(la))
-    const Ep = upar.worldToLocal(E.clone())
+    const Sp = upar.worldToLocal(roll.localToWorld(S.clone()))
+    const E0p = upar.worldToLocal(la.getWorldPosition(new THREE.Vector3()))
+    const Ep = upar.worldToLocal(roll.localToWorld(E))
     const d0 = tmpV.copy(E0p).sub(Sp).normalize()
     const d1 = tmpV2.copy(Ep).sub(Sp).normalize()
-    if (d0.dot(d1) > 0.99995) return
-    tmpQ.setFromUnitVectors(d0, d1)
-    ua.quaternion.premultiply(tmpQ)
-    root.updateMatrixWorld(true)
+    if (d0.dot(d1) <= 0.99995) {
+        tmpQ.setFromUnitVectors(d0, d1)
+        ua.quaternion.premultiply(tmpQ)
+        root.updateMatrixWorld(true)
+    }
     const par = la.parent
-    const E2 = par.worldToLocal(E.clone())
-    const W2 = par.worldToLocal(wr.getWorldPosition(tmpV))
-    const T2 = par.worldToLocal(roll.localToWorld(T.clone()))
+    const E2 = par.worldToLocal(roll.localToWorld(E.clone()))
+    const W2 = par.worldToLocal(wr.getWorldPosition(new THREE.Vector3()))
+    const T2 = par.worldToLocal(roll.localToWorld(T))
     const a0 = tmpV.copy(W2).sub(E2).normalize()
     const a1 = tmpV2.copy(T2).sub(E2).normalize()
     if (a0.dot(a1) > 0.99995) return
