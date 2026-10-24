@@ -22,6 +22,7 @@ import { seedFromSearch, notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { MESSAGES, PRESS } from './attract.js'
 import { buildWorld, atmosphere, updateTrueStars, updateWheel } from './scene.js'
 import { drawVision } from './visions.js'
+import { drawLink, linkEnvelope, LINK_TICKS } from './link.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 import { singTicks } from './soundplan.js'
 
@@ -44,11 +45,12 @@ const MystGame = () => {
   const singRingRef = useRef(-1)
   const visionRefs = useRef({})
   const attractRefs = useRef({})
+  const linkRef = useRef(null)
   const screenRef = useRef('attract')
   const pausedRef = useRef(false)
   const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
   const ctl = useRef(null)
-  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), visions: spectatorViews(s), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], dial: s.safeDial })
+  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), visions: spectatorViews(s), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], dial: s.safeDial, link: s.link })
 
   useEffect(() => {
     const wrap = stageRef.current
@@ -267,6 +269,7 @@ const MystGame = () => {
         if (e.key === 'Escape' || e.code === 'Space' || e.key === 'Enter') doAction({ t: gs.bookOpen ? 'closeBook' : 'closePanel' })
         return
       }
+      if (gs.link) return
       switch (e.code) {
         case 'ArrowLeft': e.preventDefault(); doAction({ t: 'turn', dir: 3 }); break
         case 'ArrowRight': e.preventDefault(); doAction({ t: 'turn', dir: 1 }); break
@@ -291,6 +294,7 @@ const MystGame = () => {
       const c = e.detail?.code
       if (!c) return
       if (gs.panelOpen || gs.bookOpen) { doAction({ t: gs.bookOpen ? 'closeBook' : 'closePanel' }); return }
+      if (gs.link) return
       if (c === 'ArrowLeft') doAction({ t: 'turn', dir: 3 })
       else if (c === 'ArrowRight') doAction({ t: 'turn', dir: 1 })
       else if (c === 'ArrowUp') { const s = centerSpot(); if (s) doClick(s.id) }
@@ -313,13 +317,13 @@ const MystGame = () => {
       audioController.unlock?.()
       if (screenRef.current === 'attract') { startPlay(); return }
       if (screenRef.current === 'ending') { restart(); return }
-      if (pausedRef.current || gs.panelOpen || gs.bookOpen) return
+      if (pausedRef.current || gs.panelOpen || gs.bookOpen || gs.link) return
       const h = pick(ev)
       if (h) doClick(h.id)
       else sfx('look')
     }
     const onMove = (ev) => {
-      if (screenRef.current !== 'play' || gs.panelOpen || gs.bookOpen) { canvas.style.cursor = 'default'; return }
+      if (screenRef.current !== 'play' || gs.panelOpen || gs.bookOpen || gs.link) { canvas.style.cursor = 'default'; return }
       canvas.style.cursor = pick(ev) ? 'pointer' : 'default'
     }
     const onCloseEv = (ev) => doAction({ t: ev.detail?.book ? 'closeBook' : 'closePanel' })
@@ -357,6 +361,11 @@ const MystGame = () => {
         acc -= SIM_MS
         wt += SIM_MS / 1000
         updateMech(gs, SIM_MS / 1000)
+        if (screenRef.current === 'play' && gs.link && !gs.ride) {
+          const lr = dispatch(gs, { t: 'tick' })
+          gs = lr.state
+          hudStamp = -1
+        }
         if (screenRef.current === 'play' && gs.ride && gs.ride !== 'seated' && gs.ride !== 'landed') {
           const rr = dispatch(gs, { t: 'tick' })
           gs = rr.state
@@ -402,6 +411,13 @@ const MystGame = () => {
         if (screenRef.current === 'play' && !gs.panelOpen && !gs.bookOpen && !gs.ride) ambience(NODES[gs.node].amb, SIM_MS / 1000)
       }
       for (const a of anim) a.f(wt)
+      // #1031 — the linking-book starfield: while the sim flies, the overlay
+      // owns the screen (the node already swapped underneath the cover).
+      const lc = linkRef.current
+      if (lc && gs.link && !gs.ending) {
+        drawLink(lc.getContext('2d'), gs.link, Math.max(0, Math.min(1, 1 - gs.linkT / LINK_TICKS)), VW, VH)
+        lc.style.opacity = String(linkEnvelope(LINK_TICKS - gs.linkT))
+      }
       if (gs.panelOpen === 'spectator') {
         for (const v of spectatorViews(gs)) {
           const cv = visionRefs.current[v.age]
@@ -429,19 +445,19 @@ const MystGame = () => {
         state: () => gs,
         action: (a) => { doAction(a); return gs.message },
         click: (id) => doClick(id),
-        solve: () => { gs = runSolver(freshState(gs.seed)); syncStars(); gotoNode(gs.node); aim(); hudStamp = -1; if (gs.ending) setMode('ending'); return gs.ending },
+        solve: () => { gs = runSolver(freshState(gs.seed)); gs = { ...gs, link: null, linkT: 0 }; syncStars(); gotoNode(gs.node); aim(); hudStamp = -1; if (gs.ending) setMode('ending'); return gs.ending },
         script: () => solveScript(gs.codes),
         codes: () => ({ seed: gs.seed, ...gs.codes }),
         stars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.trueStar != null) out[o.userData.trueStar] = +o.scale.x.toFixed(3) }); return out },
         fresh: (seed) => { gs = freshState(seed); storeSeed(gs.seed); syncStars(); gotoNode('dock'); aim(); sing = null; singRingRef.current = -1; setSingRing(-1); return gs.seed },
-        goto: (id) => { gs.node = id; gs.turn = 0; gotoNode(id); aim(); hudStamp = -1; return gs.node },
+        goto: (id) => { gs.node = id; gs.turn = 0; gs.link = null; gs.linkT = 0; gotoNode(id); aim(); hudStamp = -1; return gs.node },
         notebook: () => ({ stored: loadSeed(), current: gs.seed }),
         sing: () => ({ ring: singRingRef.current, ticks: sing ? sing.ticks : null }),
         nearRocket: () => {
           let s = freshState(gs.seed)
           for (const a of solveScript(s.codes)) { s = dispatch(s, a).state; if (s.flags.obsNote) break }
           for (const a of [{ t: 'move', id: 'retStoneObs' }, { t: 'move', id: 'retStoneDeck' }, { t: 'move', id: 'retStoneship' }, { t: 'click', id: 'ladderDown' }]) s = dispatch(s, a).state
-          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          gs = { ...s, link: null, linkT: 0 }; gotoNode(gs.node); aim(); hudStamp = -1
           return { node: gs.node, obsNote: !!gs.flags.obsNote }
         },
         // #1014 — park on the star terrace with the wheel untouched, so the
@@ -450,7 +466,7 @@ const MystGame = () => {
           let s = freshState(gs.seed)
           for (const a of solveScript(s.codes)) { s = dispatch(s, a).state; if (s.node === 'chanWheel' && s.flags.pageRed_channelwood) break }
           s = { ...s, flags: { ...s.flags, chanFlood: true }, node: 'chanWheel', turn: 0 }
-          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          gs = { ...s, link: null, linkT: 0 }; gotoNode(gs.node); aim(); hudStamp = -1
           return { node: gs.node, target: [...gs.codes.wheel], dial: [...gs.wheelDial], open: !!gs.flags.wheelOpen }
         },
         wheel: () => ({ dial: [...gs.wheelDial], target: [...gs.codes.wheel], open: !!gs.flags.wheelOpen, panel: gs.panelOpen }),
@@ -467,7 +483,7 @@ const MystGame = () => {
           if (mode === 'all') {
             s = { ...s, flags: { ...s.flags, link_selenitic: true, link_stoneship: true, link_channelwood: true } }
           }
-          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          gs = { ...s, link: null, linkT: 0 }; gotoNode(gs.node); aim(); hudStamp = -1
           return { node: gs.node, views: spectatorViews(gs) }
         },
         visions: () => ({ panel: gs.panelOpen, clock: wt, views: spectatorViews(gs).map((v) => ({ ...v, live: !!visionRefs.current[v.age] })) }),
@@ -487,7 +503,7 @@ const MystGame = () => {
           return { sum, lit, t: wt }
         },
         clueStars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.clueStar != null) out[o.userData.clueStar] = o.geometry.attributes.position.count }); return out },
-        probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending, ride: gs.ride }),
+        probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending, ride: gs.ride, link: gs.link }),
         rocket: () => ({ ride: gs.ride, rideT: gs.rideT, h: rocketH(gs.ride, gs.rideT), dark: darkAt(gs.ride, gs.rideT) }),
         // Audit every node's framing against its caption: the camera must sit
         // OUTSIDE all solids, no single surface may fill >=80% of the view, and
@@ -602,6 +618,20 @@ const MystGame = () => {
   return (
     <div className="relative w-full h-full bg-black overflow-hidden font-mono select-none">
       <div ref={stageRef} className="absolute inset-0" />
+
+      {/* #1031 — the linking-book starfield: the page cover rushes up, the
+        seam of light opens, and the Ages wheel past until the destination
+        resolves. The node swaps underneath; the pad and keys are mute. */}
+      {hud.link && screen === 'play' && !hud.ending && (
+        <canvas
+          ref={linkRef}
+          data-linkfx={hud.link}
+          width={VW}
+          height={VH}
+          className="absolute inset-0 w-full h-full z-[45]"
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
 
       {screen === 'play' && !hud.ending && (
         <>
@@ -762,7 +792,7 @@ const MystGame = () => {
         </div>
       )}
 
-      <VirtualControls visible={screen === 'play' && !paused} secondAction={{ label: '↺', code: 'KeyX' }} />
+      <VirtualControls visible={screen === 'play' && !paused && !hud.link} secondAction={{ label: '↺', code: 'KeyX' }} />
 
       {paused && (
         <PauseOverlay

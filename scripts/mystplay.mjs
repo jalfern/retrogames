@@ -93,6 +93,23 @@ const cNew = await p2.evaluate(() => window.__mystTest.codes())
 const islandMoved = cNew.safe !== c42.safe || JSON.stringify(cNew.star) !== JSON.stringify(c42.star) || JSON.stringify(cNew.sphere) !== JSON.stringify(c42.sphere) || JSON.stringify(cNew.wheel) !== JSON.stringify(c42.wheel)
 r.check('a fresh unpinned save redraws the island', cNew.seed !== 42 && islandMoved, `${cNew.seed}/safe ${c42.safe}->${cNew.safe}`)
 
+// #1031 — a home-node book leap, live: the cogs book at the belfry takes the
+// explorer to Mechanical under the starfield, not a cut.
+{
+  await p2.evaluate(() => window.__mystTest.goto('towerTop'))
+  await p2.evaluate(() => window.__mystTest.click('mechanicalBook'))
+  await p2.waitForTimeout(300)
+  const ml = await p2.evaluate(() => {
+    const c = document.querySelector('canvas[data-linkfx]')
+    const p = window.__mystTest.probe()
+    return { attr: c ? c.dataset.linkfx : null, node: p.node, link: p.link }
+  })
+  r.check('the cogs book leaps to Mechanical under its starfield', ml.attr === 'mechanical' && ml.node === 'mechanical' && ml.link === 'mechanical', JSON.stringify(ml))
+  await p2.waitForTimeout(3000)
+  const mlDone = await p2.evaluate(() => ({ link: window.__mystTest.probe().link, gone: !document.querySelector('canvas[data-linkfx]') }))
+  r.check('the Mechanical leap resolves and clears', mlDone.link === null && mlDone.gone, JSON.stringify(mlDone))
+}
+
 // #1014 — drive the star-wheel live: park on the star terrace, open the rings,
 // stand this save's alignment notch by notch on the real state machine, and take
 // the hub book home. The hub must refuse an unaligned wheel with the page live.
@@ -117,9 +134,29 @@ r.check('a fresh unpinned save redraws the island', cNew.seed !== 42 && islandMo
   wv = await p4.evaluate(() => window.__mystTest.wheel())
   r.check('standing the seeded stars grinds the hub open', wv.open && JSON.stringify(wv.dial) === JSON.stringify(wv.target), JSON.stringify(wv))
   await p4.evaluate(() => window.__mystTest.click('hubBook'))
-  await p4.waitForTimeout(300)
+  await p4.waitForTimeout(350)
+  // #1031 — mid-flight: the starfield overlay is up, dense, and the explorer
+  // is mute until the Age resolves underneath the cover.
+  const lf = await p4.evaluate(() => {
+    const c = document.querySelector('canvas[data-linkfx]')
+    if (!c) return { present: false, lit: 0, attr: null }
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+    let lit = 0
+    for (let i = 0; i < d.length; i += 40) { const b = d[i] + d[i + 1] + d[i + 2]; if (b > 150) lit++ }
+    return { present: true, lit, attr: c.dataset.linkfx }
+  })
+  r.check('the hub book leaps under the Channelwood starfield', lf.present && lf.attr === 'channelwood' && lf.lit > 40, JSON.stringify(lf))
+  const ppMid = await p4.evaluate(() => window.__mystTest.probe())
+  r.check('mid-flight the sim still carries the flight', ppMid.link === 'channelwood' && ppMid.node === 'cave', JSON.stringify({ link: ppMid.link, node: ppMid.node }))
+  await p4.keyboard.press('ArrowRight')
+  await p4.waitForTimeout(200)
+  const ppMute = await p4.evaluate(() => window.__mystTest.state().turn)
+  r.check('the leap mutes the keys mid-flight', ppMute === 0, `turn ${ppMute}`)
+  await p4.waitForTimeout(3000)
   const pp4 = await p4.evaluate(() => window.__mystTest.probe())
-  r.check('the hub book carries the explorer home to the cave', pp4.node === 'cave', pp4.node)
+  const gone = await p4.evaluate(() => !document.querySelector('canvas[data-linkfx]'))
+  r.check('the hub book carries the explorer home to the cave', pp4.node === 'cave' && pp4.link === null, pp4.node)
+  r.check('the starfield clears when the flight ends', gone, 'overlay removed')
   const drum = await p4.evaluate(() => window.__mystTest.clueStars())
   r.check('the observatory drum wears three seeded silhouettes', drum.length === 3 && new Set(drum).size === 3, drum.join(','))
   r.check('the star-wheel ran with zero page errors', errs4.length === 0, errs4.join(' | '))
