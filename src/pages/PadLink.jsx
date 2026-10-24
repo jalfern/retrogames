@@ -3,6 +3,7 @@ import { createPadClient } from '../utils/padlink.js'
 import { makePadPeer, makeTransport, RELAY_DEFAULT } from '../utils/linkPeers.js'
 import { quantize, DIR_DEAD } from '../utils/onePad.js'
 import { vpadSize } from '../components/vpadSize.js'
+import { padLayout } from './padLayout.js'
 
 // /retrogames/pad — the PHONE half of link pads (#893). Full-screen
 // landscape controller: left stick (move), right stick (aim), four face
@@ -87,11 +88,11 @@ export default function PadLink() {
     }, [])
 
     // --- sticks ---------------------------------------------------------------
-    const useStickHandlers = (which) => {
+    const useStickHandlers = (which, size) => {
         const zone = useRef(null)
         const active = useRef(-1)
         const center = useRef({ x: 0, y: 0 })
-        const travel = sz.stick * 0.32
+        const travel = size * 0.32
         const set = (dx, dy) => {
             const len = Math.hypot(dx, dy) || 1
             const m = Math.min(1, len / travel)
@@ -139,45 +140,47 @@ export default function PadLink() {
         onPointerLeave: () => { padRef.current[field] = false; setHeldUI((p) => ({ ...p, [codeLabel]: false })) },
     })
 
-    const move = useStickHandlers('move')
-    const aim = useStickHandlers('aim')
+    const L = padLayout(window.innerWidth, window.innerHeight)
+    const move = useStickHandlers('move', L.stick)
+    const aim = useStickHandlers('aim', L.aim)
 
-    const stickEl = (handlers, label) => {
+    const stickEl = (handlers, label, size, knobSize) => {
         const { ref, ...rest } = handlers
         return (
             <div
                 ref={ref}
                 data-pad={label}
                 className="relative touch-none select-none rounded-full border-2 border-white/30 bg-white/5 shadow-[inset_0_0_18px_rgba(255,255,255,0.10)]"
-                style={{ width: sz.stick, height: sz.stick }}
+                style={{ width: size, height: size }}
                 {...rest}
             >
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-neutral-500/50 rounded-full" />
                 <div
                     className="absolute top-1/2 left-1/2 rounded-full bg-white/25 ring-1 ring-white/70 backdrop-blur-md shadow-[inset_0_1px_2px_rgba(255,255,255,0.4),0_2px_8px_rgba(0,0,0,0.4)]"
-                    style={{ width: sz.knob, height: sz.knob, transform: 'translate(-50%, -50%)' }}
+                    style={{ width: knobSize, height: knobSize, transform: 'translate(-50%, -50%)' }}
                 />
                 <span className="absolute top-1.5 left-1/2 -translate-x-1/2 font-mono text-[9px] tracking-[0.3em] text-white/35">{label}</span>
             </div>
         )
     }
 
-    const faceBtn = (field, label, tint) => (
+    const faceBtn = (field, label, tint, pos) => (
         <div
             data-btn={label}
             {...holdKey(field, label)}
-            className={`rounded-full flex items-center justify-center text-white font-bold backdrop-blur-sm ring-1 transition-all ${heldUI[label] ? 'ring-white/90 scale-95 brightness-150 ' : 'ring-white/50 '} ${tint}`}
-            style={{ width: sz.btn, height: sz.btn, fontSize: sz.font(label.length) }}
+            className={`absolute rounded-full flex items-center justify-center text-white font-bold backdrop-blur-sm ring-1 transition-all ${heldUI[label] ? 'ring-white/90 scale-95 brightness-150 ' : 'ring-white/50 '} ${tint}`}
+            style={{ width: L.btn, height: L.btn, fontSize: sz.font(label.length), ...pos }}
         >
             {label}
         </div>
     )
 
-    const shoulder = (field, label) => (
+    const shoulder = (field, label, pos) => (
         <div
             data-btn={label}
             {...holdKey(field, label)}
-            className={`rounded-xl px-4 py-2 font-mono text-xs tracking-widest text-white/90 border backdrop-blur-sm ${heldUI[label] ? 'bg-white/30 border-white/80' : 'bg-white/10 border-white/25'}`}
+            className={`absolute flex items-center justify-center font-mono text-xs tracking-widest text-white/90 border backdrop-blur-sm rounded-2xl ${heldUI[label] ? 'bg-white/30 border-white/80' : 'bg-white/10 border-white/25'}`}
+            style={{ width: L.sw, height: L.sh, ...pos }}
         >
             {label}
         </div>
@@ -211,10 +214,25 @@ export default function PadLink() {
         )
     }
 
+    const sat = 'calc(0.75rem + var(--sat, 0px))'
+    const sab = `calc(${L.pad}px + var(--sab, 0px))`
+    const sal = `calc(${L.pad}px + var(--sal, 0px))`
+    const sar = `calc(${L.pad}px + var(--sar, 0px))`
+    const D = L.r * 2 + L.btn
+
     return (
         <div className="fixed inset-0 bg-neutral-950 overflow-hidden touch-none select-none">
-            {/* HUD */}
-            <div className="absolute top-0 left-0 right-0 flex items-center justify-center gap-4 pt-2 font-mono text-white/80" style={{ paddingTop: 'calc(0.5rem + var(--sat, 0px))' }}>
+            {/* START: small, top-centre */}
+            <div
+                {...holdKey('start', 'START')}
+                className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center rounded-full font-mono text-[10px] tracking-[0.4em] border"
+                style={{ top: sat, width: L.startW, height: L.sh, ...(heldUI.START ? { background: 'rgba(255,255,255,0.3)', borderColor: 'rgba(255,255,255,0.8)', color: '#fff' } : { background: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.25)', color: 'rgba(255,255,255,0.5)' }) }}
+            >
+                START
+            </div>
+
+            {/* HUD status: centred below START so it never sits on the shoulders */}
+            <div className="absolute left-0 right-0 flex items-center justify-center gap-4 font-mono text-white/80" style={{ top: `calc(${sat} + ${L.sh}px + 6px)` }}>
                 <span className="text-[11px] tracking-[0.3em] text-sky-300">{code}</span>
                 <span className="text-[11px] tracking-[0.3em]">{seat ? `P${seat}` : '···'}</span>
                 <span className={`text-[11px] tracking-[0.3em] ${mode === 'direct' ? 'text-emerald-300' : 'text-amber-300'}`}>
@@ -224,30 +242,31 @@ export default function PadLink() {
             </div>
 
             {portrait && (
-                <div data-pad="rotate-hint" className="absolute top-10 left-0 right-0 flex justify-center font-mono text-[10px] tracking-[0.3em] text-amber-300/70 animate-pulse">
+                <div data-pad="rotate-hint" className="absolute left-0 right-0 flex justify-center font-mono text-[10px] tracking-[0.3em] text-amber-300/70 animate-pulse" style={{ top: `calc(${sat} + ${L.sh}px + 34px)` }}>
                     ROTATE THE PHONE LANDSCAPE FOR THE FULL PAD
                 </div>
             )}
 
-            {/* shoulders */}
-            <div className="absolute left-0 top-1/4 pl-3" style={{ paddingLeft: 'calc(0.75rem + var(--sal, 0px))' }}>{shoulder('sl', 'L')}</div>
-            <div className="absolute right-0 top-1/4 pr-3" style={{ paddingRight: 'calc(0.75rem + var(--sar, 0px))' }}>{shoulder('sr', 'R')}</div>
+            {/* shoulders: top corners, index fingers */}
+            {shoulder('sl', 'L', { left: sal, top: sat })}
+            {shoulder('sr', 'R', { right: sar, top: sat })}
 
-            {/* sticks */}
-            <div className="absolute bottom-0 flex items-end justify-between w-full px-2" style={{ paddingBottom: 'calc(1rem + var(--sab, 0px))' }}>
-                {stickEl(move, 'MOVE')}
-                <div className="flex items-end gap-3 mb-1">
-                    {faceBtn('a', 'A', 'bg-red-500/25')}
-                    {faceBtn('b', 'B', 'bg-orange-500/25')}
-                    {faceBtn('x', 'X', 'bg-sky-500/25')}
-                    {faceBtn('y', 'Y', 'bg-emerald-500/25')}
-                </div>
-                {stickEl(aim, 'AIM')}
+            {/* left stick: bottom-left, thumb */}
+            <div className="absolute" style={{ left: sal, bottom: sab }}>
+                {stickEl(move, 'MOVE', L.stick, L.knob)}
             </div>
 
-            {/* start: center-bottom tap strip */}
-            <div className="absolute bottom-1 left-1/2 -translate-x-1/2" style={{ bottom: 'calc(0.25rem + var(--sab, 0px))' }}>
-                <div {...holdKey('start', 'START')} className={`px-6 py-1 rounded-full font-mono text-[10px] tracking-[0.4em] border ${heldUI.START ? 'bg-white/30 border-white/80 text-white' : 'bg-white/5 border-white/25 text-white/50'}`}>START</div>
+            {/* right stick: smaller, lower-centre, clear of the diamond */}
+            <div className="absolute" style={{ left: L.aim.cx, bottom: `calc(${Math.round(L.pad * 0.3)}px + var(--sab, 0px))`, transform: 'translateX(-50%)' }}>
+                {stickEl(aim, 'AIM', L.aim.w, L.aimKnob)}
+            </div>
+
+            {/* face buttons: thumb diamond, bottom-right */}
+            <div className="absolute" style={{ right: sar, bottom: sab, width: D, height: D }}>
+                {faceBtn('y', 'Y', 'bg-emerald-500/25', { left: L.r, top: 0 })}
+                {faceBtn('x', 'X', 'bg-sky-500/25', { left: 0, top: L.r })}
+                {faceBtn('b', 'B', 'bg-orange-500/25', { left: L.r * 2, top: L.r })}
+                {faceBtn('a', 'A', 'bg-red-500/25', { left: L.r, top: L.r * 2 })}
             </div>
 
             {phase === 'connecting' && (

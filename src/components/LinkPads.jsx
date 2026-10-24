@@ -80,24 +80,41 @@ const LinkPads = ({ secondAction }) => {
                 data-nav="linkpads"
                 aria-label="Link phones as controllers"
                 className="fixed z-[60] font-mono text-[10px] tracking-[0.25em] text-white/50 hover:text-white transition-colors px-2 py-1 border border-white/20 rounded"
-                style={{ top: 'calc(0.75rem + var(--sat, 0px))', left: '50%', transform: 'translateX(-50%)' }}
+                style={{ top: 'calc(0.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}
             >
                 PADS
             </button>
         )
     }
 
+    if (ui.pads.length) {
+        // A phone is in — collapse to a small pill in the top-right corner so it
+        // never sits on a game's centred HUD text.
+        return (
+            <button
+                onClick={close}
+                data-nav="linkpads"
+                className="fixed z-[60] font-mono text-[10px] tracking-[0.25em] transition-colors px-2 py-1 border rounded"
+                style={{ top: 'calc(0.75rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))', color: '#7dd3fc', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)' }}
+            >
+                PADS {ui.code} · {ui.pads.map((p) => `P${p.seat}${p.mode === 'direct' ? '' : '~'}`).join(' ')}
+            </button>
+        )
+    }
+
+    // Waiting for a phone: one clear join card, centred, big room code + the URL,
+    // nothing else crowding it. Tap the ✕ to close.
     return (
-        <button
-            onClick={close}
+        <div
             data-nav="linkpads"
-            className="fixed z-[60] font-mono text-[10px] tracking-[0.25em] transition-colors px-2 py-1 border rounded"
-            style={{ top: 'calc(0.75rem + var(--sat, 0px))', left: '50%', transform: 'translateX(-50%)', color: ui.pads.length ? '#7dd3fc' : 'rgba(255,255,255,0.7)', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)' }}
+            className="fixed z-[60] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-3 px-8 py-6 rounded-2xl border border-white/25 bg-black/70 backdrop-blur-md font-mono text-white text-center select-none"
         >
-            {ui.pads.length
-                ? `PADS ${ui.code} · ${ui.pads.map((p) => `P${p.seat}${p.mode === 'direct' ? '' : '~'}`).join(' ')}`
-                : ui.phase === 'connecting' ? `LINK ${ui.code} · CONNECTING…` : `LINK ${ui.code} · OPEN jalfern.com/retrogames/pad`}
-        </button>
+            <p className="text-[10px] tracking-[0.4em] text-white/45">LINK PADS · {ui.phase === 'connecting' ? 'CONNECTING…' : 'OPEN'}</p>
+            <p className="text-5xl tracking-[0.35em] text-sky-300" style={{ textShadow: '0 0 18px rgba(125,211,252,0.35)' }}>{ui.code}</p>
+            <p className="text-[11px] tracking-[0.15em] text-white/70">open <span className="text-white">jalfern.com/retrogames/pad</span></p>
+            <p className="text-[10px] tracking-[0.2em] text-white/40">enter this code on your phone</p>
+            <button onClick={close} className="mt-1 px-4 py-1 rounded-full border border-white/25 text-[10px] tracking-[0.3em] text-white/70 hover:bg-white/10">CLOSE</button>
+        </div>
     )
 }
 
