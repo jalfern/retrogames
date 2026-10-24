@@ -6,9 +6,12 @@
 //   const scene = await loadModel('tree_pine')
 //   const shelf = await browse()                 // every entry + provenance
 //   const url = await modelUrl('grandstand')     // resolve a path by id
+//   const face = await facingOf('cottage')       // 'radial' | '+z' | 'rigged'
+//   const fronts = await directionalIds('vehicles')
 //
-// 1 unit = 1 metre, +Y up, origin on the ground. CC0 only — see each entry's
-// `license` in the index and the LICENSE.txt files beside the models.
+// 1 unit = 1 metre, +Y up, origin on the ground; forward = local +Z (#901).
+// CC0 only — see each entry's `license` in the index and the LICENSE.txt files
+// beside the models.
 
 const base = () => (import.meta.env && import.meta.env.BASE_URL) || '/'
 
@@ -49,4 +52,22 @@ export async function loadModel(id) {
 export async function idsByCategory(category) {
     const shelf = await browse()
     return shelf.entries.filter((e) => e.category === category).map((e) => e.id)
+}
+
+// Known forward (#901): the shelf convention is forward = local +Z, up = +Y.
+// facingOf returns 'radial' (no meaningful front — spin it freely), '+z'
+// (fronted — orient so +Z faces the player/track) or 'rigged' (facing lives in
+// the pose). Returns null for an unknown id.
+export async function facingOf(id) {
+    const e = await shelfEntry(id)
+    return e ? e.facing || null : null
+}
+
+// Fronted (+Z) ids, optionally scoped to one category — the models that have a
+// definite front a consumer must square with the view.
+export async function directionalIds(category) {
+    const shelf = await browse()
+    return shelf.entries
+        .filter((e) => e.facing === '+z' && (!category || e.category === category))
+        .map((e) => e.id)
 }
