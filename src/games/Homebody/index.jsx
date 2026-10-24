@@ -20,7 +20,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
     FIXED_DT, W, H, PANEL_X, TILE, LOT_X, LOT_Y, WIN_CONTENT,
-    tileOf, CATALOG, NEEDS,
+    tileOf, CATALOG, NEEDS, SFX,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk,
     stateHash,
@@ -94,12 +94,18 @@ const HomebodyGame = () => {
                 const e = s.events.shift()
                 switch (e.t) {
                     case 'satisfied': {
-                        const f = { hunger: 660, energy: 520, fun: 780, social: 700, bladder: 600 }[e.need] || 660
-                        audioController.playSweep(f, f * 1.4, 0.14, 'triangle', 0.05)
+                        const fx = SFX[e.need] || SFX.hunger
+                        fx.seq.forEach((m, i) => audioController.playTone(fx.f * m, 0.09, fx.type, 0.05, i * 0.07))
+                        if (fx.noise) audioController.playFilteredNoise(fx.noise, 0.08, 1400)
                         if (live) burst(e.x ?? W / 2, e.y ?? H / 2, 6, '#ffe6a8', 2.2, 'flash')
                         break
                     }
                     case 'content': audioController.playTone(880, 0.05, 'triangle', 0.03); if (live) sparkles(); break
+                    case 'redcross':
+                        audioController.playTone(300, 0.06, 'square', 0.05, 0)
+                        audioController.playTone(230, 0.1, 'square', 0.05, 0.08)
+                        if (live) say(`${e.name.toUpperCase()} NEEDS ${e.need.toUpperCase()}`)
+                        break
                     case 'place': audioController.playTone(200, 0.09, 'square', 0.06); if (live) burst(tilePx(e.c), tilePy(e.r) + 16, 8, '#c9b48a', 2.6); break
                     case 'sell': audioController.playSweep(420, 180, 0.12, 'square', 0.05); break
                     case 'work-go': audioController.playSweep(260, 620, 0.3, 'square', 0.06); if (live) say(`${e.name.toUpperCase()} LEAVES FOR WORK`); break

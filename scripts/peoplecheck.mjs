@@ -18,7 +18,7 @@
 
 import {
     FIXED_DT, W, H, COLS, ROWS, MAP, TILE, WIN_CONTENT, NEEDS,
-    CATALOG, DEF, tileOf, tileX, tileY,
+    CATALOG, DEF, tileOf, tileX, tileY, SFX, RED_AT,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, targetsOf, walkable, bfsPath, stateHash,
 } from '../src/games/Homebody/sim.js'
@@ -175,6 +175,28 @@ section('WINNABLE (attract autopilot, several seeds)')
     const h = (seed) => stateHash(play(seed))
     check('determinism: seed 7 twice -> identical final hash', h(7) === h(7))
     check('different seeds -> different trajectories', h(7) !== h(8))
+}
+
+section('POLISH (#929): distinct need SFX + red-cross alarm')
+{
+    const sigs = NEEDS.map((n) => `${SFX[n].type}:${SFX[n].seq.join(',')}:${SFX[n].f}`)
+    check('every need has a satisfaction signature', NEEDS.every((n) => SFX[n] && SFX[n].seq.length >= 2 && SFX[n].f > 0))
+    check('the five need SFX are all distinct', new Set(sigs).size === NEEDS.length, sigs.join(' | '))
+    check('crunch and splash carry a noise texture', SFX.hunger.noise > 0 && SFX.bladder.noise > 0)
+    check('snooze falls while giggle rises',
+        SFX.energy.seq[SFX.energy.seq.length - 1] < SFX.energy.seq[0]
+        && SFX.fun.seq[SFX.fun.seq.length - 1] > SFX.fun.seq[0])
+
+    // starve one physical need past RED_AT: a redcross event fires and the gem alarms
+    const g = newRun(53)
+    g.demo = false
+    let crossed = null
+    for (let i = 0; i < 60 * 60 * 3 && !crossed; i++) {
+        advance(g, DT)
+        crossed = drain(g).find((e) => e.t === 'redcross') || null
+    }
+    check('a need crossing red raises a redcross event', !!crossed, crossed ? crossed.need : '')
+    check('the crossing resident carries a gem-alarm timer', g.people.some((p) => p.alarmT > 0 || Object.values(p.wasRed).some(Boolean)))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
