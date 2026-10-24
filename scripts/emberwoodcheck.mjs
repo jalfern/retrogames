@@ -9,8 +9,9 @@ import { SCREENS, TS, SW, SH, tileAt, isSolidTile } from '../src/games/Emberwood
 import { createSim, stepSim, simState, hashState, spawnRoom } from '../src/games/Emberwood/sim.js'
 import { proveGame, tilePath } from '../src/games/Emberwood/solver.js'
 import { attractBot } from '../src/games/Emberwood/bot.js'
-import { WIND } from '../src/games/Emberwood/render.js'
+import { WIND, SHELF_DECOR } from '../src/games/Emberwood/render.js'
 import { MUSIC } from '../src/utils/AudioController.js'
+import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
 const ok = (c, m) => { if (c) { pass++; console.log('ok   ', m) } else { fail++; console.log('FAIL ', m) } }
@@ -634,6 +635,21 @@ const nodeResult = { pass, fail }
     ok(WIND.tree(24, 40, 5.1) !== WIND.tree(184, 96, 5.1) && WIND.tree(24, 40, 5.1) === WIND.tree(24, 40, 5.1), 'wind is spatially phased yet deterministic (same spot+time -> same sway)')
 }
 
+// ---- 6c. #939 shelf pull: the vale's decor plan is shelf-honest ----
+{
+    const shelf = JSON.parse(readFileSync(new URL('../public/models/shelf.json', import.meta.url), 'utf8'))
+    const byId = new Map(shelf.entries.map(e => [e.id, e]))
+    const plan = [...SHELF_DECOR.trees, SHELF_DECOR.bush]
+    for (const id of plan) ok(byId.has(id), `shelf carries the decor model ${id}`)
+    const facings = plan.map(id => byId.get(id)?.facing)
+    ok(facings.every(f => f === 'radial' || f === '+z' || f === 'rigged'), `every decor id declares a real facing (${facings.join(', ')})`)
+    const src = readFileSync(new URL('../src/games/Emberwood/render.js', import.meta.url), 'utf8')
+    ok(/import\('\.\.\/\.\.\/utils\/modelShelf\.js'\)/.test(src), 'Emberwood pulls the shelf through modelShelf.js')
+    ok(/facingOf\(/.test(src), 'the facing law is read via facingOf, not hardcoded')
+    ok(/putShelfProp\(SHELF_DECOR\.trees/.test(src) && /putShelfProp\(SHELF_DECOR\.bush/.test(src), 'tree and bush tiles route through the shelf first, sprite is the fallback')
+    ok(/shelfShared\.has\(o\.geometry\)/.test(src), 'shared shelf geometry survives screen rebuilds (dispose guard)')
+}
+
 // ---- 7. the Chrome leg: start, play, die, restart, zero page errors ----
 const SKIP_BROWSER = process.env.EMBERWOOD_NO_BROWSER === '1'
 let browser = null, page = null, chromePass = 0, chromeFail = 0
@@ -774,6 +790,10 @@ if (!SKIP_BROWSER) {
         })
         cok(fol0.trees > 8 && fol0.grass > 4 && fol0.bushes > 0,
             `THE WOOD is planted (trees=${fol0.trees}, tall grass=${fol0.grass}, bushes=${fol0.bushes})`)
+        // #939 shelf pull: on the vale the decor must be real shelf models, not
+        // fallback quads — the attach fires async at boot, fol0 is sampled after.
+        cok(fol0.shelfAttached === true && fol0.shelfTrees > 8 && fol0.shelfBushes > 0,
+            `the vale decor is on the shelf (attached=${fol0.shelfAttached}, shelf trees=${fol0.shelfTrees}/${fol0.trees}, shelf bushes=${fol0.shelfBushes}/${fol0.bushes})`)
         const fol1 = await page.evaluate(async () => {
             await new Promise(r => setTimeout(r, 450))
             return window.__emberwoodTest.foliage()

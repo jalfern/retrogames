@@ -109,6 +109,7 @@ export default function Emberwood() {
         window.addEventListener('resize', onWinResize)
         rend.loadTex(makeTextures())
         rend.buildScreen('ow-11', sim.flags, sim.cut)
+        rend.attachShelf()
 
         const keys = new Set()
         let prevA = false, prevB = false, prevUp = false, prevDn = false
