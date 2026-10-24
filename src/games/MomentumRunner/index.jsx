@@ -22,6 +22,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
     ZONES, groundY, maybeEnterLoop, makeGame, step, planRun, dronePos,
+    segAngle, segAtRoute,
     FIXED_DT, VIEW_W, VIEW_H, BODY_R, RUN_TOP, VMAX, DRONE_R,
 } from './sim.js'
 
@@ -255,7 +256,7 @@ const MomentumGame = () => {
 
         let gs = makeGame()
         let demoAt = 0, raf = 0, last = 0, acc = 0
-        let toast = 0, toastMsg = '', shake = 0, wheelAng = 0
+        let toast = 0, toastMsg = '', shake = 0, dip = 0, wheelAng = 0
         let tallyAnim = null   // the goal count-up: { time, rings, t }
         let musicOn = false, musicZone = -1
         let contractSeed = 0
@@ -312,13 +313,51 @@ const MomentumGame = () => {
             }
         }
 
+        // #934: the half-pipe ascent cue — the sink accumulates going down the
+        // near wall and pays out as a rising pitch sweep up the far wall, keyed
+        // to how deep the pipe actually dropped you. Fires once per climb.
+        let pipeSink = 0, pipeFired = false
+        const climbWatch = () => {
+            const p = gs.p
+            if (p.mode !== 'track') return
+            const sgm = segAtRoute(ZONES[gs.zone], p.x, p.route)
+            if (!sgm) return
+            const th = segAngle(sgm)
+            if (th > 0.3) {
+                pipeSink = Math.min(320, pipeSink + Math.abs(p.s) * FIXED_DT * Math.sin(th))
+                pipeFired = false
+            } else if (th < -0.3) {
+                if (!pipeFired && p.s > 150) {
+                    pipeFired = true
+                    audioController.playSweep(220, 220 + Math.min(760, 180 + pipeSink * 2.4), 0.34, 'triangle', 0.05)
+                }
+            } else { pipeSink = 0; pipeFired = false }
+        }
+
         const handleEvents = (evts) => {
             for (const e of evts) evLog.push({ ...e, tick: gs.tick })
             if (evLog.length > 240) evLog.splice(0, evLog.length - 240)
             for (const e of evts) {
                 if (e.type === 'ring') { audioController.playTone(1046 + Math.random() * 120, 0.06, 'square', 0.05); burst(e.x, gs.p.y - BODY_R, 3, '#ffd23f') }
                 else if (e.type === 'jump') audioController.playSweep(360, 620, 0.12, 'square', 0.05)
-                else if (e.type === 'land') { audioController.playNoise(0.06, 0.04); burst(gs.p.x, gs.p.y, 4, '#cfe0b0') }
+                else if (e.type === 'land') {
+                    audioController.playNoise(0.06, 0.04); burst(gs.p.x, gs.p.y, 4, '#cfe0b0')
+                    // #934: landing ON a spring-high deck is the sector's reward
+                    // moment — dust + sparks, camera dip, and a dedicated two-note
+                    // ding the ordinary ground landing never plays.
+                    const zc = ZONES[gs.zone]
+                    for (const d of (zc.springHighs || [])) {
+                        if (e.x >= d.px0 - 8 && e.x <= d.px0 + d.plat && Math.abs(gs.p.y - d.py) < 24) {
+                            dip = 5
+                            burst(gs.p.x, gs.p.y, 14, '#ffffff')
+                            burst(gs.p.x, gs.p.y + 2, 10, '#ffd23f')
+                            audioController.playTone(784, 0.09, 'square', 0.06)
+                            audioController.playTone(1176, 0.16, 'square', 0.05)
+                            say('DECK LANDED')
+                            break
+                        }
+                    }
+                }
                 else if (e.type === 'spring') { audioController.playSweep(300, 1100, 0.24, 'sawtooth', 0.08); burst(e.x, gs.p.y, 8, '#ff9f43') }
                 else if (e.type === 'loop') { audioController.playSweep(400, 1400, 0.5, 'square', 0.08); say('LOOP! +500') }
                 else if (e.type === 'hit') { audioController.playNoise(0.16, 0.09); audioController.playSweep(240, 90, 0.2, 'sawtooth', 0.07); shake = 8; burst(gs.p.x, gs.p.y - BODY_R, 10, '#ff5a5a') }
@@ -363,6 +402,7 @@ const MomentumGame = () => {
             step(gs, { right: keys.right, left: keys.left, jumpEdge, jumpCut })
             maybeEnterLoop(gs)
             handleEvents(gs.ev.slice(before))
+            climbWatch()
             jumpEdge = false; jumpCut = false
             hist.push([gs.tick, Math.round(gs.p.x), Math.round(gs.p.y), gs.p.mode, Math.round(gs.p.s), gs.rings, gs.deaths, gs.end ? 1 : 0])
             if (hist.length > 160) hist.shift()
@@ -451,7 +491,8 @@ const MomentumGame = () => {
             const sx = shake > 0 ? (Math.random() - 0.5) * shake : 0
             const sy = shake > 0 ? (Math.random() - 0.5) * shake : 0
             if (shake > 0) shake *= 0.85
-            const dx0 = c.x + sx, dy0 = c.y + sy
+            if (dip > 0.3) dip *= 0.8; else dip = 0
+            const dx0 = c.x + sx, dy0 = c.y + sy + Math.round(dip)
 
             const g = ctx.createLinearGradient(0, 0, 0, VIEW_H)
             g.addColorStop(0, P.sky0); g.addColorStop(1, P.sky1)
@@ -484,6 +525,26 @@ const MomentumGame = () => {
                 ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.stroke()
                 ctx.strokeStyle = P.glow + '0.14)'; ctx.lineWidth = 1
                 ctx.beginPath(); ctx.moveTo(px1, py1 + 9); ctx.lineTo(px2, py2 + 9); ctx.stroke()
+                // #934: steep faces read as PIPE WALLS — a dark inner face with a
+                // neon far-rim, so half-pipes/valleys look like volume, not a line.
+                // Ribs alternate by bend direction: dips glow, crests catch a cold
+                // highlight — cascades read as bends, zone to zone.
+                const thS = Math.atan2(y2 - y1, x2 - x1)
+                const steep = Math.abs(thS)
+                if (steep > 0.18) {
+                    const k = Math.min(1, (steep - 0.18) / 0.5)
+                    const off = 10 + 24 * k
+                    const wg = ctx.createLinearGradient(0, Math.min(py1, py2), 0, Math.min(py1, py2) + off)
+                    wg.addColorStop(0, P.glow + (0.10 + 0.14 * k).toFixed(3) + ')')
+                    wg.addColorStop(1, 'rgba(0,0,0,0.32)')
+                    ctx.fillStyle = wg
+                    ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2)
+                    ctx.lineTo(px2, py2 + off); ctx.lineTo(px1, py1 + off); ctx.closePath(); ctx.fill()
+                    ctx.strokeStyle = P.glow + (0.18 + 0.30 * k).toFixed(3) + ')'; ctx.lineWidth = 2
+                    ctx.beginPath(); ctx.moveTo(px1, py1 + off); ctx.lineTo(px2, py2 + off); ctx.stroke()
+                    ctx.strokeStyle = thS > 0 ? P.glow + '0.12)' : 'rgba(255,255,255,0.16)'; ctx.lineWidth = 1
+                    ctx.beginPath(); ctx.moveTo(px1, py1 + off * 0.55); ctx.lineTo(px2, py2 + off * 0.55); ctx.stroke()
+                }
             }
 
             // ---- the high deck (two-route fork): a suspended plate over the
@@ -605,6 +666,25 @@ const MomentumGame = () => {
                 ctx.beginPath(); ctx.moveTo(px - 5, py - 12 + lift); ctx.lineTo(px, py - 17 + lift); ctx.lineTo(px + 5, py - 12 + lift); ctx.stroke()
             }
 
+            // ---- spring-high route telegraph (#934): dashed chevrons arcing from
+            // the pad to the deck top, so the "this spring goes OVER there" read
+            // exists before the player is committed. Deterministic parabola, no RNG.
+            for (const d of (z.springHighs || [])) {
+                const padX = d.sx - dx0, padY = d.py + d.h - dy0 - 16
+                const landX = d.px0 + 180 - dx0, landY = d.py - dy0 - 12
+                if (landX < -40 || padX > VIEW_W + 120) continue
+                for (let i = 0; i < 5; i++) {
+                    const t = 0.14 + i * 0.19
+                    const cx2 = padX + (landX - padX) * t
+                    const cy2 = padY + (landY - padY) * t - (d.h * 0.9 + 46) * Math.sin(Math.PI * t)
+                    if (cx2 < -16 || cx2 > VIEW_W + 16) continue
+                    const puls = 0.35 + 0.3 * Math.sin(tick * 0.12 - i * 0.9)
+                    ctx.strokeStyle = `rgba(255,210,63,${(puls * (1 - i * 0.12)).toFixed(3)})`
+                    ctx.lineWidth = 1.8
+                    ctx.beginPath(); ctx.moveTo(cx2 - 4, cy2 - 4); ctx.lineTo(cx2 + 3, cy2); ctx.lineTo(cx2 - 4, cy2 + 4); ctx.stroke()
+                }
+            }
+
             // ---- boost pads: sprint strips that add speed along the slope ----
             for (const b of z.boosts) {
                 const [bx1, bx2] = b
@@ -614,17 +694,27 @@ const MomentumGame = () => {
                 if (gy1 === null || gy2 === null) continue
                 const py1 = gy1 - dy0, py2 = gy2 - dy0
                 const span = bx2 - bx1
-                ctx.fillStyle = P.glow + '0.16)'
+                // #934: the half-pipe's floor strip is a PIPE boost — it must read
+                // differently from the runway strips: hot white core, denser and
+                // faster chevrons, so terrain speed sources are told apart.
+                const pipe = span < 200
+                ctx.fillStyle = P.glow + (pipe ? '0.26)' : '0.16)')
                 ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.lineTo(px2, py2 + 6); ctx.lineTo(px1, py1 + 6); ctx.closePath(); ctx.fill()
-                ctx.strokeStyle = P.accent; ctx.lineWidth = 2
-                for (let i = 0; i < 3; i++) {
-                    const wx = bx1 + ((tick * 4 + i * (span / 3)) % span)
+                ctx.strokeStyle = pipe ? 'rgba(255,255,255,0.8)' : P.accent; ctx.lineWidth = 2
+                const nCh = pipe ? 4 : 3
+                for (let i = 0; i < nCh; i++) {
+                    const wx = bx1 + ((tick * (pipe ? 6 : 4) + i * (span / nCh)) % span)
                     const wy = groundY(z, wx); if (wy === null) continue
                     const ax = wx - dx0, ay = wy - dy0
-                    ctx.beginPath(); ctx.moveTo(ax - 5, ay - 5); ctx.lineTo(ax + 3, ay); ctx.lineTo(ax - 5, ay + 5); ctx.stroke()
+                    const cs = pipe ? 7 : 5
+                    ctx.beginPath(); ctx.moveTo(ax - cs, ay - cs); ctx.lineTo(ax + cs * 0.6, ay); ctx.lineTo(ax - cs, ay + cs); ctx.stroke()
                 }
                 ctx.strokeStyle = P.accent; ctx.lineWidth = 1.5
                 ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.stroke()
+                if (pipe) {
+                    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1
+                    ctx.beginPath(); ctx.moveTo(px1, py1 + 6); ctx.lineTo(px2, py2 + 6); ctx.stroke()
+                }
             }
 
             // ---- rings: spinning holo-rings that sparkle ----

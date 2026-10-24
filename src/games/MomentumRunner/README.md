@@ -88,6 +88,28 @@ All synthesized at runtime (no assets) through the shared chiptune engine
   slow body hits the wall and dies, autopilot banks >=1 deck ring/zone);
   the CURVES arc-steps floor rose 8 -> 24.
 
+## Curves-first polish pass (#934)
+Renderer + audio only; the sim is untouched except one derived-data field.
+- **Pipe walls:** segments steeper than ~0.18 rad get a dark inner face with a
+  neon far-rim line (offset scales with slope) and a rib whose colour alternates
+  by bend direction — dips glow, crests catch cold white. Half-pipes/valleys now
+  read as volume, and cascades read as alternating bends.
+- **Pipe-floor boost strips** (`span < 200`) render differently from runway
+  strips: hot white chevrons (4, faster, bigger) + a white under-line, so the
+  two terrain speed sources are told apart at a glance.
+- **Spring-high route telegraph:** `sim.js` now records each spring-high beat's
+  geometry on `z.springHighs` (`{sx,pit,h,px0,py,plat}`); the renderer draws a
+  deterministic dashed gold arc from pad to deck top so the "this spring goes
+  OVER there" read exists before commit. Pure data — no physics reads it.
+- **Deck-landing juice:** a `land` event inside a deck's x-range (and within
+  24px of its height) fires a white+gold spark burst, a 5px camera dip (a paint
+  offset like shake — `cam()` untouched, so the paint-follows-physics contract
+  holds), a two-note ding and a `DECK LANDED` toast.
+- **Half-pipe ascent sweep:** `climbWatch()` accumulates the sink going down a
+  steep face and pays out a rising triangle sweep at the far-wall climb edge,
+  keyed to how deep the pipe actually dropped you; fires once per climb,
+  play-screen only (attract stays silent).
+
 ## Per-zone beat programs (#642)
 - The tail is NO LONGER a 23-beat cycle: each zone gets a hand-authored
   `PROGRAMS` list of 20 beats (24 since #900), no two neighbours alike. Beats:
