@@ -769,6 +769,38 @@ if (!SKIP_BROWSER) {
         page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push('console.error: ' + m.text()) })
         cok(true, 'the page boots and __emberwoodTest answers')
 
+        // #965: the attract screen owes phones a CONTINUE affordance (the pad has
+        // no third button and tap-to-start means "new journey"). The control only
+        // exists when a save exists, and tapping it must load the save, not a
+        // fresh createSim(11) — the saved tick is the tell: fresh starts sit at 0.
+        await page.evaluate(() => localStorage.removeItem('emberwood.save.v1'))
+        const contNoSave = await page.evaluate(() => !!document.querySelector('[data-vc="continue"]'))
+        cok(!contNoSave, 'attract with no save shows no CONTINUE control')
+        await page.waitForTimeout(1500)
+        const savedTick = await page.evaluate(() => {
+            window.__emberwoodTest.saveNow()
+            return JSON.parse(localStorage.getItem('emberwood.save.v1')).tick
+        })
+        cok(savedTick > 60, `the attract demo accrued sim time before saving (tick=${savedTick}) — the resume tell`)
+        await page.waitForTimeout(300)
+        const contUi = await page.evaluate(() => {
+            const b = document.querySelector('[data-vc="continue"]')
+            if (!b) return null
+            const r = b.getBoundingClientRect()
+            return { text: b.textContent.trim(), w: r.width, h: r.height, x: r.x + r.width / 2, y: r.y + r.height / 2 }
+        })
+        cok(!!contUi && /CONTINUE/i.test(contUi.text), `attract with a save shows a CONTINUE control ("${contUi && contUi.text}")`)
+        cok(!!contUi && contUi.w >= 44 && contUi.h >= 28, `the CONTINUE control is a real touch target (${contUi && contUi.w.toFixed(0)}x${contUi && contUi.h.toFixed(0)}px)`)
+        if (contUi) {
+            await page.mouse.click(contUi.x, contUi.y)
+            await page.waitForTimeout(500)
+            const stC = await page.evaluate(() => window.__emberwoodTest.state())
+            cok(stC.tick >= savedTick && stC.tick < savedTick + 120,
+                `tapping CONTINUE resumed the saved journey (tick=${stC.tick} == saved ${savedTick}) — a fresh start would sit near 0`)
+        } else {
+            cok(false, 'tapping CONTINUE resumed the saved journey — control missing, cannot tap')
+        }
+
         // attract -> play (real key event)
         await page.keyboard.press('ArrowRight')
         await page.waitForTimeout(400)

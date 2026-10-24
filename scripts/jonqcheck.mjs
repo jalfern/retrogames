@@ -122,8 +122,10 @@ for (const g of FLAGSHIPS) {
     ok(REAL_GAPS[g].length >= 1, `${g}: README honest-gaps parses nothing (parseGaps broken?)`)
     ok(REAL_GAPS[g].every((s) => s.length > 10), `${g}: parseGaps produced an empty/junk gap`)
 }
-ok(REAL_GAPS.Emberwood.length === 2 && !REAL_GAPS.Emberwood.some(s => /CLOSED by/.test(s)),
-    'Emberwood keeps exactly the two still-open gaps after #959/#963 closed the first two (CLOSED bullets filtered, not forgotten)')
+ok(REAL_GAPS.Emberwood.length === 1 && !REAL_GAPS.Emberwood.some(s => /CLOSED by/.test(s)),
+    'Emberwood keeps exactly the one still-open gap after #959/#963/#965 closed the first three (CLOSED bullets filtered, not forgotten)')
+ok(!REAL_GAPS.Emberwood.some((s) => /continue is keyboard-only/i.test(s)),
+    '#965: Emberwood honest-gaps re-grew the shipped attract CONTINUE affordance — that work is gated, not open')
 ok(REAL_GAPS['COMET DRIFT HD'].some((s) => s.includes('Sound is') && s.includes('Remainder')),
     'parseGaps split a sub-bullet from its parent gap (CometDriftHD Remainder)')
 // #945: the SSX touch front-flip shipped with #894 and ssxmodelcheck gates it; the

@@ -448,7 +448,19 @@ export default function Emberwood() {
                     <div className="text-violet-300 text-sm tracking-widest mb-8">THE CINDER VALE</div>
                     <div className="text-emerald-200 text-base mb-2">{line}</div>
                     <div className="text-white/80 text-sm mt-6 animate-pulse">PRESS ANY KEY OR TAP TO BEGIN</div>
-                    {hasSave && <div className="text-amber-200/90 text-xs mt-2">PRESS L TO CONTINUE YOUR LAST JOURNEY</div>}
+                    {/* #965: phones have no third pad button and tap-to-start means
+                        "new journey" — the save needs its own tappable affordance
+                        here, or a phone can never continue. The tap dispatches the
+                        same KeyL the keyboard path uses; the shell's tap-to-start
+                        skips `button` targets so it cannot fire startPlay too. */}
+                    {hasSave && (
+                        <button
+                            data-vc="continue"
+                            className="pointer-events-auto mt-3 border border-amber-500/70 bg-amber-500/15 px-5 py-2 text-amber-200 text-sm tracking-widest backdrop-blur-sm transition-transform active:scale-95"
+                            onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyL', key: 'l', bubbles: true }))}
+                        >CONTINUE LAST JOURNEY</button>
+                    )}
+                    {hasSave && <div className="text-amber-200/60 text-xs mt-2">OR PRESS L</div>}
                 </div>
             )}
             {paused && <PauseOverlay game={EMBERWOOD_HELP} badge="THE CINDER VALE" onResume={() => { pausedRef.current = false; setPaused(false) }} />}
