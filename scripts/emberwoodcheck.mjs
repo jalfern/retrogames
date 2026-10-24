@@ -1046,6 +1046,47 @@ if (!SKIP_BROWSER) {
             cok(!near(cw.hood, kw.hood), `the colporter's head treatment differs from the keeper's (hood=${cw.hood} vs cap=${kw.hood})`)
         }
 
+        // #981 the townsfolk breathe: idle squash-bob anchored at the feet, one
+        // rhythm per id (no lockstep), and a lean/flip toward the hero. Frozen
+        // billboards (all scaleY 1, face pinned, lean 0) go red here.
+        const townPose = async (tileX, tileY, n = 10) => {
+            await page.evaluate(async (xy) => {
+                const T = window.__emberwoodTest
+                T.goto('ow-11', xy[0], xy[1])
+                await new Promise(r => setTimeout(r, 140))
+            }, [tileX, tileY])
+            const samples = []
+            for (let i = 0; i < n; i++) {
+                samples.push(await page.evaluate(() => window.__emberwoodTest.npcAnim()))
+                await new Promise(r => setTimeout(r, 80))
+            }
+            return samples
+        }
+        await page.evaluate(() => { const T = window.__emberwoodTest; T.reset(11); T.goto('ow-11', 15, 8) })
+        {
+            const east = await townPose(15, 8)
+            const last = east[east.length - 1]
+            const byId = Object.fromEntries(last.map(e => [e.id, e]))
+            const vis = last.filter(e => e.visible)
+            cok(vis.length === 2 && last.some(e => e.id === 'colporter' && !e.visible), `keeper and elder stand in the town, the colporter stays hooded-off without the blade (${vis.length}/${last.length} visible)`)
+            const elderE = byId.elder
+            const ys = east.map(s => Object.fromEntries(s.map(e => [e.id, e.scaleY]))).map(m => m.elder)
+            const range = Math.max(...ys) - Math.min(...ys)
+            cok(!!elderE && range > 0.01, `the elder breathes — idle bob moves scaleY (${range.toFixed(3)} over ${ys.length} samples)`)
+            const all = east.flat()
+            cok(all.every(e => e.scaleY > 0.955 && e.scaleY < 1.045), `the bob stays light — scaleY bounded ±4.5% (${Math.min(...all.map(e => e.scaleY)).toFixed(3)}..${Math.max(...all.map(e => e.scaleY)).toFixed(3)})`)
+            cok(all.every(e => Math.abs(e.posZ - 9 * e.scaleY) < 0.02), `the squash is anchored at the feet — posZ tracks 9*scaleY (max drift ${Math.max(...all.map(e => Math.abs(e.posZ - 9 * e.scaleY))).toFixed(3)})`)
+            const phases = new Set(last.map(e => e.phase))
+            cok(phases.size === last.length && last.every(e => e.spd >= 1.8), `each town npc keeps its own rhythm — no lockstep (${[...phases].join(', ')})`)
+            cok(!!elderE && elderE.face === 1 && elderE.lean > 0.05, `the elder leans toward a hero standing east (face=${elderE && elderE.face}, lean=${elderE && elderE.lean})`)
+            const west = await townPose(8, 8)
+            const wElder = Object.fromEntries(west[west.length - 1].map(e => [e.id, e])).elder
+            cok(!!wElder && wElder.face === -1 && wElder.lean < -0.05, `the elder turns to a hero standing west (face=${wElder && wElder.face}, lean=${wElder && wElder.lean})`)
+            const over = await townPose(12, 5, 4)
+            const oElder = Object.fromEntries(over[over.length - 1].map(e => [e.id, e])).elder
+            cok(!!oElder && oElder.face === -1 && Math.abs(oElder.lean) < 0.02, `a hero straight above the deadband never flips him (holds face=${oElder && oElder.face}, lean=${oElder && oElder.lean})`)
+        }
+
         // #888 the Wyrm tail: dedicated shingled billboards, never the drop pool
         const tail = await page.evaluate(async () => {
             const T = window.__emberwoodTest
