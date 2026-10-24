@@ -577,6 +577,13 @@ export function buildRails(course) {
     return g
 }
 
+// #975: the placeholder vocabulary — plan ids that get a primitive until their
+// shelf GLB lands. Everything else (flags, fences, stands) exists only as a
+// shelf model or not at all.
+export const PLACEHOLDER_IDS = ['tree_pine', 'tree_pine_snow', 'tree_pine_tall', 'tree_oak', 'rock', 'rock_snow', 'rock_angular', 'boulder', 'boulder_snow']
+const isPhTree = (id) => id.startsWith('tree')
+const isPhRock = (id) => id.startsWith('rock') || id.startsWith('boulder')
+
 export function buildScenery(course) {
     const g = new THREE.Group()
     const treeMat = course.theme === 'night'
@@ -584,22 +591,36 @@ export function buildScenery(course) {
         : new THREE.MeshLambertMaterial({ color: 0x2c6a3a })
     const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5a3d24 })
     const rockMat = new THREE.MeshLambertMaterial({ color: course.theme === 'night' ? 0x2c3054 : 0x8a8f9c })
-    // Primitive placeholders for the crash obstacles + day glade. Tagged `ph`
-    // so attachShelf() swaps them for the real shelf models when the GLBs
-    // arrive; if the network or shelf is missing, these carry the look.
-    const ph = (m) => { m.userData.ph = 1; return m }
-    for (const ob of course.obstacles) {
-        const p = slopePos(course, ob.i * 4, ob.x)
-        if (ob.kind === 'tree') {
-            const trunk = ph(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 6), trunkMat))
-            trunk.position.set(p.x, p.y + 0.6, p.z)
-            const canopy = ph(new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.4, 7), treeMat))
-            canopy.position.set(p.x, p.y + 2.6, p.z)
+    // #975: placeholders derive from sceneryPlan(), not a parallel loop — same
+    // ids, positions, scales and rot as the shelf models that will replace them,
+    // tagged `ph` with the plan index so attachShelf() can swap 1:1 and keep
+    // exactly the entries whose model failed to load. The day glade is plan
+    // entries now too, so it survives the swap instead of being deleted by it.
+    const ph = (m, k) => { m.userData.ph = k; return m }
+    const plan = sceneryPlan(course)
+    for (let k = 0; k < plan.length; k++) {
+        const e = plan[k]
+        const tree = isPhTree(e.id)
+        if (!tree && !isPhRock(e.id)) continue
+        const p = slopePos(course, e.s, e.x)
+        const tint = e.tint == null ? 1 : e.tint
+        if (tree) {
+            const bark = tint < 1 ? new THREE.MeshLambertMaterial({ color: trunkMat.color.clone().multiplyScalar(tint) }) : trunkMat
+            const leaf = tint < 1 ? new THREE.MeshLambertMaterial({ color: treeMat.color.clone().multiplyScalar(tint) }) : treeMat
+            const trunk = ph(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 6), bark), k)
+            trunk.position.set(p.x, p.y + 0.6 * e.scale, p.z)
+            trunk.scale.setScalar(e.scale)
+            const canopy = ph(new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.4, 7), leaf), k)
+            canopy.position.set(p.x, p.y + 2.6 * e.scale, p.z)
+            canopy.scale.setScalar(e.scale)
+            canopy.rotation.y = e.rot
             g.add(trunk, canopy)
         } else {
-            const rock = ph(new THREE.Mesh(new THREE.DodecahedronGeometry(0.75, 0), rockMat))
-            rock.position.set(p.x, p.y + 0.45, p.z)
-            rock.rotation.y = hash(ob.i) * 3
+            const stone = tint < 1 ? new THREE.MeshLambertMaterial({ color: rockMat.color.clone().multiplyScalar(tint) }) : rockMat
+            const rock = ph(new THREE.Mesh(new THREE.DodecahedronGeometry(0.75, 0), stone), k)
+            rock.position.set(p.x, p.y + 0.45 * e.scale, p.z)
+            rock.scale.setScalar(e.scale)
+            rock.rotation.y = e.rot
             g.add(rock)
         }
     }
@@ -625,16 +646,6 @@ export function buildScenery(course) {
                 sign.rotation.y = -bp.th
                 g.add(sign)
             }
-        }
-    }
-    if (course.theme === 'day') {
-        for (let i = 0; i < 26; i++) {
-            const s = 20 + (i * 71) % (course.N * 4)
-            const side = i % 2 ? 1 : -1
-            const p = slopePos(course, s, side * (2.6 + hash(i) * 1.6))
-            const canopy = ph(new THREE.Mesh(new THREE.ConeGeometry(1.4, 4.4, 7), treeMat))
-            canopy.position.set(p.x, p.y + 3, p.z)
-            g.add(canopy)
         }
     }
     return g
@@ -882,6 +893,19 @@ export const acrossYaw = (e, p) => p.th + Math.sign(e.x) * Math.PI / 2
 // by 2θ on curves.
 export const propYaw = (e, p) => e.orient === 'rand' ? e.rot : acrossYaw(e, p)
 
+// #975: honest degrade, per model. A placeholder survives exactly when its
+// plan entry's shelf model failed to load — every other one gives way to its
+// GLB. Pure, so the harness pins the rule without a fetch (the old code
+// deleted every primitive the moment *any* GLB arrived).
+export function primitivesToKeep(plan, models) {
+    const keep = new Set()
+    for (let k = 0; k < plan.length; k++) {
+        const id = plan[k].id
+        if ((isPhTree(id) || isPhRock(id)) && !models[id]) keep.add(k)
+    }
+    return keep
+}
+
 export async function attachShelf(course, group, alive = () => true) {
     const plan = sceneryPlan(course)
     const ids = [...new Set(plan.map((p) => p.id))]
@@ -890,8 +914,12 @@ export async function attachShelf(course, group, alive = () => true) {
         try { models[id] = await shelfTemplate(id, course.theme) } catch { models[id] = null }
     }))
     if (!alive()) return 0
+    const keep = primitivesToKeep(plan, models)
     for (const ch of [...group.children]) {
-        if (ch.userData.ph) { group.remove(ch); ch.traverse((o) => { if (o.geometry) o.geometry.dispose() }) }
+        const k = ch.userData.ph
+        if (k == null || keep.has(k)) continue
+        group.remove(ch)
+        ch.traverse((o) => { if (o.geometry) o.geometry.dispose() })
     }
     // #791 slice 11: flags + spectators get tagged for the frame-loop animator;
     // index.jsx drives animateDecor(world, tick, hype) every frame.
