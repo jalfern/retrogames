@@ -108,6 +108,17 @@
     <div class="meta"><span>WEBGL2 · VOLUMETRIC STORM + BOLTS</span><span>2026-10-21</span></div>
   </a>
 
+  <a class="card" id="reef" style="margin-top:18px">
+    <div class="row">
+      <span class="name">CORAL REEF</span>
+      <span class="play">OPEN ▸</span>
+    </div>
+    <p class="desc">A demoscene drift through a living coral reef: animated caustics ripple over sand, god rays slant down from the surface,
+      soft corals, sea fans and anemones sway in the current, a boids school wheels overhead, and marine snow twinkles past as colour fades
+      with depth — red absorbed first. Drag to look around; click for synthesized underwater ambience.</p>
+    <div class="meta"><span>CANVAS 2D · PARALLAX REEF + CAUSTICS</span><span>2026-10-23</span></div>
+  </a>
+
   <p class="more">MORE DEMOS COMING SOON</p>
 
   <footer>
@@ -124,14 +135,16 @@
   document.getElementById('campfire').href = base + 'campfire.html'
   document.getElementById('mountains').href = base + 'mountains.html'
   document.getElementById('storm').href = base + 'storm.html'
+  document.getElementById('reef').href = base + 'reef.html'
 </script>
 <script>
 window.DEMO_INDEX = { demos: [
   { el: 'ocean', issues: [451, 609, 611, 612], span: '~1 h', assist: 'guided' },
   { el: 'shore', issues: [521, 616], span: '~6 h', assist: 'guided' },
   { el: 'campfire', issues: [670], span: '~7 h', assist: 'solo' },
-  { el: 'mountains', issues: [671], span: '~13 h', assist: 'solo' },
+  { el: 'mountains', issues: [671, 736, 834], span: '~15 h', assist: 'solo' },
   { el: 'storm', issues: [672], span: '~3 h', assist: 'solo' },
+  { el: 'reef', issues: [902], span: '~3 h', assist: 'solo' },
 ]};
 </script>
 <script src="credits.js"></script>

@@ -38,7 +38,7 @@ try { ({ chromium } = require('playwright-core')) } catch {
 
 const PORT = process.argv.includes('--port') ? process.argv[process.argv.indexOf('--port') + 1] : '9381'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-const DEMOS = ['ocean', 'shore', 'campfire', 'mountains', 'storm']
+const DEMOS = ['ocean', 'shore', 'campfire', 'mountains', 'storm', 'reef']
 
 const results = []
 const ok = (name, pass, detail) => {
