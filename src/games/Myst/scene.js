@@ -6,6 +6,7 @@
 import * as THREE from 'three'
 import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
+import { STAR_SHAPES } from './state.js'
 
 const GAP = 4000
 
@@ -301,8 +302,9 @@ const BUILDERS = {
     // seed via updateTrueStars().
     const trueStars = new THREE.Group()
     for (let i = 0; i < 4; i++) {
-      const s = mesh(starGeometry(5), new THREE.MeshStandardMaterial({ color: 0xe8f0ff, emissive: 0x9db8ff, emissiveIntensity: 1.5, side: THREE.DoubleSide }), [-2.6, -0.9, 0.9, 2.6][i], [5.4, 6.1, 5.7, 4.9][i], -8.0, trueStars)
+      const s = mesh(starGeometry(STAR_SHAPES[i]), new THREE.MeshStandardMaterial({ color: 0xe8f0ff, emissive: 0x9db8ff, emissiveIntensity: 1.5, side: THREE.DoubleSide }), [-2.6, -0.9, 0.9, 2.6][i], [5.4, 6.1, 5.7, 4.9][i], -8.0, trueStars)
       s.userData.trueStar = i
+      s.userData.twinkleStar = i
       s.userData.noPick = true
     }
     g.add(trueStars)
@@ -915,6 +917,7 @@ export function buildWorld(ids) {
       if (o.isLight && o.userData.flicker) anim.push({ o, f: (t) => { o.intensity = 6 + 4 * Math.sin(t * 9.1) + 2 * Math.sin(t * 23.3) } })
       if (o.userData.fall) anim.push({ o, f: (t) => { if (o.material.map) { o.material.map.offset.y = (t * 0.8) % 1 } } })
       if (o.userData.twinkle) anim.push({ o, f: (t) => { o.material.size = 0.1 + 0.06 * Math.sin(t * 2.1) } })
+    if (o.userData.twinkleStar != null) anim.push({ o, f: (t) => { o.material.emissiveIntensity = 1.5 + 0.55 * Math.sin(t * 1.35 + o.userData.twinkleStar * 1.7) } })
       if (o.userData.steam) anim.push({ o, f: (t) => { o.position.y = 0.4 + ((t * 0.7) % 1) * 2 } })
     })
     hot.push(...[])

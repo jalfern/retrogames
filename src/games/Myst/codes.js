@@ -43,6 +43,30 @@ export function seedFromSearch(search) {
   return m ? (Number(m[1]) >>> 0) : null
 }
 
+// #1008 — the notebook. The original kept one copy's codes for the life of
+// its save file; we keep the seed in localStorage so a returning explorer
+// finds the same locks where they left them. A ?seed= pin always beats the
+// notebook; a blocked store (private mode) degrades to per-visit islands.
+const SEED_KEY = 'myst:save-seed'
+
+export function loadSeed() {
+  try {
+    const v = globalThis.localStorage.getItem(SEED_KEY)
+    return v == null ? null : Number(v) >>> 0
+  } catch { return null }
+}
+
+export function storeSeed(seed) {
+  try { globalThis.localStorage.setItem(SEED_KEY, String(seed >>> 0)) } catch { /* ephemeral island */ }
+}
+
+export function notebookSeed(search) {
+  const pinned = seedFromSearch(search)
+  if (pinned != null) return pinned
+  const saved = loadSeed()
+  return saved != null ? saved : freshSeed()
+}
+
 export function safeWords(safe) {
   return String(safe).split('').map((d) => NUMBER_WORDS[Number(d)]).join(', ')
 }
