@@ -304,6 +304,7 @@ const MystGame = () => {
         solve: () => { gs = runSolver(freshState(gs.seed)); syncStars(); gotoNode(gs.node); aim(); hudStamp = -1; if (gs.ending) setMode('ending'); return gs.ending },
         script: () => solveScript(gs.codes),
         codes: () => ({ seed: gs.seed, ...gs.codes }),
+        stars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.trueStar != null) out[o.userData.trueStar] = +o.scale.x.toFixed(3) }); return out },
         fresh: (seed) => { gs = freshState(seed); syncStars(); gotoNode('dock'); aim(); return gs.seed },
         probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending }),
         // Audit every node's framing against its caption: the camera must sit
