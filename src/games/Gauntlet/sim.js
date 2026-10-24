@@ -40,6 +40,10 @@ export const CFG = {
     slamClose: 40,
     slamForce: 2,
     lockForce: 1,
+    smashForce: 2,
+    trapDmg: 8,
+    stunTicks: 75,
+    stunFactor: 0.4,
     contactR: 0.52,
     monsterAtkCd: 90,
     castCd: 150,
@@ -59,10 +63,44 @@ function fnv(str) {
     return h.toString(16)
 }
 
+// the live cycle of a level's vanishing trap walls ('T'): solid while the
+// cycle is outside the open window (levels without traps are always "open",
+// which makes every trap query a no-op).
+export const trapOpen = (gs) => {
+    const t = gs.levelData && gs.levelData.trap
+    if (!t) return true
+    return ((gs.playT + t.phase) % t.period) < t.open
+}
+
+const resolveCell = (gs, base, c, r) => {
+    if (base === '#') return '#'
+    if (base === 'B') return gs.smashed.has(r * W + c) ? '.' : '#'
+    if (base === 'T') return trapOpen(gs) ? '.' : '#'
+    if (base === 'h') return '.' // walkable; the LOOK is solid until revealed
+    return base
+}
+
+// authoritative LOGICAL cell char: what the sim, monsters and arrows bump into
 const cellChar = (gs, x, y) => {
     const c = Math.floor(x), r = Math.floor(y)
     if (c < 0 || r < 0 || c >= W || r >= H || !gs.levelData) return '#'
-    return gs.levelData.grid[r][c]
+    return resolveCell(gs, gs.levelData.grid[r][c], c, r)
+}
+
+export const logicChar = (gs, c, r) => {
+    if (c < 0 || r < 0 || c >= W || r >= H || !gs.levelData) return '#'
+    return resolveCell(gs, gs.levelData.grid[r][c], c, r)
+}
+
+// what the CAMERA sees: hidden passages read as stone until you stand beside
+// one; an open trap wall shows as 't' (a floor with a ghost outline).
+export const visualChar = (gs, c, r) => {
+    if (c < 0 || r < 0 || c >= W || r >= H || !gs.levelData) return '#'
+    const base = gs.levelData.grid[r][c]
+    if (base === 'h') return gs.revealed.has(r * W + c) ? '.' : '#'
+    if (base === 'B') return gs.smashed.has(r * W + c) ? '.' : '#'
+    if (base === 'T') return trapOpen(gs) ? 't' : '#'
+    return base
 }
 
 export const doorAt = (gs, c, r) => gs.doors.find((d) => d.x === c && d.y === r)
@@ -93,10 +131,13 @@ export function makeGame(seed = 0, heroKey = 'warrior', opts = {}) {
     const gs = {
         seed, heroKey, partnerKey: opts.partnerKey, slack: !!opts.slack, partnerOn: !!opts.partner,
         topDown: !!opts.topDown, partnerHuman: false,
+        levelCount: opts.levelCount ?? LEVELS.length,
         rng: seed | 0, tick: 0, playT: 0, level: 0,
         lives: CFG.lives, score: 0, gold: 0, keys: 0,
         end: null, events: [], _nextId: 1, upTo: CFG.extraLife,
         hero: null, partner: null, monsters: [], shots: [], items: [], gens: [], doors: [],
+        smashed: new Set(), revealed: new Set(), _bHits: {}, tele: new Map(), trapCells: [],
+        _trapOpen: true, _trapInit: false, _hCell: null, _pCell: null,
         explored: LEVELS.map(() => new Uint8Array(W * H)),
         deathSpawned: false, foodWarnT: 0, deaths: 0, _fwd: false,
     }
@@ -104,10 +145,19 @@ export function makeGame(seed = 0, heroKey = 'warrior', opts = {}) {
     return gs
 }
 
-function loadLevel(gs, idx) {
+export function loadLevel(gs, idx) {
     const lv = LEVELS[idx]
     gs.level = idx
     gs.levelData = lv
+    gs.smashed = new Set()
+    gs._bHits = {}
+    gs._trapInit = true
+    gs.trapCells = []
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) if (lv.grid[r][c] === 'T') gs.trapCells.push([c, r])
+    gs.tele = new Map()
+    for (const [x1, y1, x2, y2] of lv.tele || []) gs.tele.set(y1 * W + x1, { x: x2 + 0.5, y: y2 + 0.5 })
+    gs._hCell = null; gs._pCell = null
+    gs._trapOpen = trapOpen(gs)
     gs.doors = lv.doors.map((d) => ({ x: d.x, y: d.y, locked: !!d.lock, open: false, broken: false, closeT: -1 }))
     gs.items = []
     gs.gens = []
@@ -129,7 +179,7 @@ function loadLevel(gs, idx) {
         x: lv.start.x, y: lv.start.y, a: lv.start.a,
         hp: gs.heroHpOverride ?? h.hp, maxHp: h.hp, speed: h.speed, power: h.power,
         arrowRange: h.arrow, name: h.name, who: h.who,
-        deadT: 0, atkT: 0, atkAnim: 0, arrowT: 0, swingId: 0, walk: 0, hitT: 0,
+        deadT: 0, atkT: 0, atkAnim: 0, arrowT: 0, swingId: 0, walk: 0, hitT: 0, stunT: 0,
     }
     if (gs.partnerOn && !gs.partnerDone) {
         const p = gs.partnerKey === 'valkyrie' && gs.heroKey === 'valkyrie' ? HEROES.warrior : HEROES[gs.partnerKey || 'valkyrie']
@@ -165,6 +215,10 @@ function markExplored(gs) {
         for (let c = hc - 2; c <= hc + 2; c++) {
             if (c < 0 || r < 0 || c >= W || r >= H) continue
             map[r * W + c] = 1
+            // a hidden passage gives itself away to whoever stands beside it
+            if (Math.abs(c - hc) <= 1 && Math.abs(r - hr) <= 1 && gs.levelData.grid[r][c] === 'h') {
+                gs.revealed.add(r * W + c)
+            }
         }
     }
 }
@@ -245,7 +299,30 @@ function heroHits(gs) {
         }
         hitAny = true
     }
+    smashWalls(gs, h, CFG.swordArc)
     gs.events.push({ type: 'sword', hit: hitAny })
+}
+
+// breakable walls ('B'): the sword arcs into the stone blocks beside you; two
+// blows and the course crumbles into a doorway (#950).
+const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]
+function smashWalls(gs, p, arc) {
+    const hc = Math.floor(p.x), hr = Math.floor(p.y)
+    for (const [dx, dy] of DIRS8) {
+        const c = hc + dx, r = hr + dy
+        if (c < 1 || r < 1 || c >= W - 1 || r >= H - 1) continue
+        if (gs.levelData.grid[r][c] !== 'B' || gs.smashed.has(r * W + c)) continue
+        const d = Math.hypot(dx, dy)
+        if ((dx * Math.cos(p.a) + dy * Math.sin(p.a)) / d < arc) continue
+        const k = r * W + c
+        gs._bHits[k] = (gs._bHits[k] || 0) + 1
+        gs.events.push({ type: 'wallHit', x: c, y: r })
+        if (gs._bHits[k] >= CFG.smashForce) {
+            gs.smashed.add(k)
+            gs.events.push({ type: 'wallBreak', x: c, y: r })
+            say(gs, 'THE WALL CRUMBLES')
+        }
+    }
 }
 
 function damageMonster(gs, m, dmg, via) {
@@ -588,7 +665,7 @@ function checkStairs(gs) {
     const pts = CFG.levelBonus * (gs.level + 1)
     addScore(gs, pts, { kind: 'levelBonus' })
     gs.events.push({ type: 'levelClear', level: gs.level, pts })
-    if (gs.level + 1 >= LEVELS.length) {
+    if (gs.level + 1 >= gs.levelCount) {
         gs.end = 'win'
         say(gs, 'THE GAUNTLET IS DONE!')
         gs.events.push({ type: 'win' })
@@ -598,6 +675,96 @@ function checkStairs(gs) {
     if (gs.partnerHuman) gs.partnerDone = false
     loadLevel(gs, gs.level + 1)
     gs.events.push({ type: 'level', level: gs.level })
+}
+
+// ---------------------------------------------------------------- hazards ----
+// Vanishing trap walls (#950): the whole field's 'T' blocks breathe on one
+// fixed cycle. The tick a wall turns solid, anything standing inside it takes
+// a bruise and is shoved out through the first free neighbour (a deterministic
+// compass order, so both net seats agree). Ghosts drift through — they always
+// have. Levels without traps skip this whole stage.
+const PUSH_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]
+function shoveOut(gs, p) {
+    const c = Math.floor(p.x), r = Math.floor(p.y)
+    for (const [dx, dy] of PUSH_DIRS) {
+        const nx = c + dx + 0.5, ny = r + dy + 0.5
+        if (!blocked(gs, nx, ny)) { p.x = nx; p.y = ny; return true }
+    }
+    return false
+}
+
+function updateTraps(gs) {
+    const lv = gs.levelData
+    if (!lv.trap) return
+    const open = trapOpen(gs)
+    if (gs._trapInit) { gs._trapInit = false; gs._trapOpen = open; return }
+    if (open === gs._trapOpen) return
+    gs._trapOpen = open
+    if (open) { gs.events.push({ type: 'trapOpen' }); return }
+    gs.events.push({ type: 'trapClose' })
+    for (const [c, r] of gs.trapCells) {
+        const h = gs.hero
+        if (h.deadT === 0 && Math.floor(h.x) === c && Math.floor(h.y) === r) {
+            h.hp -= CFG.trapDmg
+            h.hitT = CFG.hitFlash
+            shoveOut(gs, h)
+            gs.events.push({ type: 'hit', kind: 'trap', target: 'hero' })
+            if (h.hp <= 0) { killHero(gs, 'trap'); return }
+        }
+        const p = gs.partner
+        if (p && !p.down && Math.floor(p.x) === c && Math.floor(p.y) === r) {
+            p.hp -= CFG.trapDmg
+            shoveOut(gs, p)
+            gs.events.push({ type: 'hit', kind: 'trap', target: 'partner' })
+            if (p.hp <= 0) { p.down = true; gs.events.push({ type: 'partnerDown' }); gs.partnerDone = true }
+        }
+        for (const m of gs.monsters) {
+            if (MONSTERS[m.kind].ghost) continue
+            if (Math.floor(m.x) === c && Math.floor(m.y) === r) shoveOut(gs, m)
+        }
+    }
+}
+
+// entering a floor feature tile: stun tiles soften the legs, teleporter pads
+// swallow you and spit you onto their pair. Fires once per entered cell.
+function tileEffects(gs, p, isPartner) {
+    const c = Math.floor(p.x), r = Math.floor(p.y)
+    const k = r * W + c
+    const prev = isPartner ? gs._pCell : gs._hCell
+    if (prev === k) return
+    if (isPartner) gs._pCell = k; else gs._hCell = k
+    const base = gs.levelData.grid[r] ? gs.levelData.grid[r][c] : '#'
+    if (base === 'S') {
+        p.stunT = CFG.stunTicks
+        gs.events.push({ type: 'stun', target: isPartner ? 'partner' : 'hero' })
+        if (!isPartner) say(gs, 'THE FLOOR SPARKS — LEGS OF JELLY!')
+    } else if (base === 'P') {
+        const t = gs.tele.get(k)
+        if (t) {
+            p.x = t.x; p.y = t.y
+            gs.events.push({ type: 'teleport', target: isPartner ? 'partner' : 'hero' })
+            if (!isPartner) say(gs, 'THE STONE SWALLOWS YOU!')
+        }
+    }
+}
+
+// warp exits: the arched door skips ahead 2-3 mazes — the arcade's gamble.
+// You bank the current maze's bonus but skip whatever loot the bypassed
+// worlds held. A target beyond the quest's last hall never fires (the bricked
+// arches FOUR HALLS sees).
+function checkWarps(gs) {
+    for (const w of gs.levelData.warps || []) {
+        if (w.to >= gs.levelCount || w.to <= gs.level) continue
+        if (Math.floor(gs.hero.x) !== w.x || Math.floor(gs.hero.y) !== w.y) continue
+        const pts = CFG.levelBonus * (gs.level + 1)
+        addScore(gs, pts, { kind: 'levelBonus' })
+        gs.events.push({ type: 'levelClear', level: gs.level, pts, warp: w.to })
+        say(gs, `A WARP DOOR — ${LEVELS[w.to].name}!`)
+        if (gs.partnerHuman) gs.partnerDone = false
+        loadLevel(gs, w.to)
+        gs.events.push({ type: 'level', level: gs.level })
+        return
+    }
 }
 
 // ---------------------------------------------------------------- step ----
@@ -620,13 +787,15 @@ export function step(gs, inp, partnerInp = null) {
     }
 
     gs.playT++
+    if (h.stunT > 0) h.stunT--
+    const stunMul = h.stunT > 0 ? CFG.stunFactor : 1
     const wx0 = h.x, wy0 = h.y
     if (gs.topDown) {
         // overhead cabinet: each arrow sets facing AND moves (8-way); the pilot
         // may also aim absolutely (inp.aim) while it moves or holds ground.
         const vx = (inp.right ? 1 : 0) - (inp.left ? 1 : 0)
         const vy = (inp.back ? 1 : 0) - (inp.fwd ? 1 : 0)
-        const sp = CFG.walk * h.speed
+        const sp = CFG.walk * h.speed * stunMul
 if (typeof inp.aim === 'number') {
             // pilot lane: point absolutely, travel along the barrel (fwd/back)
             h.a = inp.aim
@@ -644,7 +813,7 @@ if (typeof inp.aim === 'number') {
         if (inp.fwd) mv = 1
         else if (inp.back) mv = -0.6
         if (mv !== 0) {
-            const sp = CFG.walk * h.speed * mv
+            const sp = CFG.walk * h.speed * mv * stunMul
             const nx = h.x + Math.cos(h.a) * sp
             const ny = h.y + Math.sin(h.a) * sp
             const R = CFG.radius
@@ -670,6 +839,7 @@ if (typeof inp.aim === 'number') {
     if (Math.hypot(h.x - wx0, h.y - wy0) > 1e-6) h.walk++
     gs._fwd = inp.fwd
     markExplored(gs)
+    tileEffects(gs, h, false)
 
     if (gs.tick % CFG.drainEvery === 0) {
         h.hp -= 1
@@ -688,15 +858,19 @@ if (typeof inp.aim === 'number') {
     if (inp.arrow && h.arrowT <= 0) { h.arrowT = CFG.arrowCool; fireArrow(gs) }
 
     updateSlamDoors(gs)
+    updateTraps(gs)
+    if (gs.end || gs.hero.deadT > 0) return gs
     updateMonsters(gs)
     if (gs.end || gs.hero.deadT > 0) return gs
     updateShots(gs)
     if (gs.end || gs.hero.deadT > 0) return gs
     updateGens(gs)
     updatePartner(gs, partnerInp)
+    if (gs.partner && !gs.partner.down) tileEffects(gs, gs.partner, true)
     clampToSharedView(gs)
     updateItems(gs)
     checkStairs(gs)
+    checkWarps(gs)
 
     if (!gs.deathSpawned && gs.playT >= gs.levelData.deathAt) {
         gs.deathSpawned = true
@@ -784,13 +958,15 @@ const closedDoorOnPath = (gs, x0, y0, x1, y1) => {
 function updatePartner(gs, partnerInp) {
     const p = gs.partner
     if (!p || p.down) return
+    if (p.stunT > 0) p.stunT--
+    const stunMul = p.stunT > 0 ? CFG.stunFactor : 1
     if (partnerInp) {
         // a PAD-DRIVEN second hero (#494): human or cpu, the sim cannot tell —
         // the same 8-way stick / turn + sword rules as the first player, and
         // nothing more: no trail, no speed bonus, no door favors. A partner
         // with no pad this tick falls back to the first-person follow used by
         // FOUR HALLS (its partner has no seat yet).
-        const sp = CFG.walk * p.speed
+        const sp = CFG.walk * p.speed * stunMul
         if (gs.topDown) {
             const vx = (partnerInp.right ? 1 : 0) - (partnerInp.left ? 1 : 0)
             const vy = (partnerInp.back ? 1 : 0) - (partnerInp.fwd ? 1 : 0)
@@ -822,6 +998,7 @@ function updatePartner(gs, partnerInp) {
                     break
                 }
             }
+            smashWalls(gs, p, 0)
         }
         return
     }
@@ -832,7 +1009,7 @@ function updatePartner(gs, partnerInp) {
     const d = Math.hypot(dx, dy)
     if (d > 1e-6) {
         const ux = dx / d, uy = dy / d
-        const sp = CFG.walk * p.speed * 1.15
+        const sp = CFG.walk * p.speed * 1.15 * stunMul
         const nx = p.x + ux * sp, ny = p.y + uy * sp
         // a slam door the partner walks into (or stands in) opens for it — the
         // hero's push-to-open (issue #275 item 6). It keeps stepping until it
@@ -861,8 +1038,11 @@ function updatePartner(gs, partnerInp) {
 export function stateHash(gs) {
     const h = gs.hero
     const parts = [
-        gs.tick, gs.level, gs.lives, gs.score, gs.keys, gs.gold, gs.end || '-',
-        h.x.toFixed(2), h.y.toFixed(2), h.a.toFixed(3), h.hp, h.deadT,
+        gs.tick, gs.level, gs.levelCount, gs.lives, gs.score, gs.keys, gs.gold, gs.end || '-', gs.playT,
+        h.x.toFixed(2), h.y.toFixed(2), h.a.toFixed(3), h.hp, h.deadT, h.stunT,
+        gs._trapOpen ? 1 : 0,
+        [...gs.smashed].sort((a, b) => a - b).join(','),
+        [...gs.revealed].sort((a, b) => a - b).join(','),
         gs.deathSpawned ? 1 : 0,
         gs.explored.map((m) => m.reduce((a, b) => a + b, 0)).join(','),
         ...gs.items.map((it) => `${it.t}${it.x.toFixed(1)},${it.y.toFixed(1)}${it.taken ? 'T' : ''}`),
@@ -877,5 +1057,9 @@ export function stateHash(gs) {
 export function clone(gs) {
     const c = JSON.parse(JSON.stringify(gs))
     c.explored = gs.explored.map((m) => Uint8Array.from(m))
+    c.smashed = new Set(gs.smashed)
+    c.revealed = new Set(gs.revealed)
+    c.tele = new Map(gs.tele)
+    c._bHits = { ...gs._bHits }
     return c
 }

@@ -1,9 +1,12 @@
 # GAUNTLET (Atari, 1985) — overhead
 
-The real cabinet view: a scrolling top-down camera above four pillar-hall
-mazes. 8-way stick, swarms from generators, slam/locked doors, food economy,
-potions, keys, stairs, and Death when the timer dies. Route `/gauntlet`.
-The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
+The real cabinet view: a scrolling top-down camera above ten hall mazes.
+8-way stick, swarms from generators, slam/locked doors, food economy,
+potions, keys, stairs, and Death when the timer dies. The deeper halls add
+arcade hazard furniture — warp arches, breakable blocks, vanishing floors,
+teleport swirls, stun sparks and hidden passages. Route `/gauntlet`.
+The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME
+engine, pinned to the original four mazes (`levelCount: 4`).
 
 ## What is where
 
@@ -56,7 +59,16 @@ The first-person sibling lives at `/four-halls` (FOUR HALLS) on the SAME engine.
    wind up with a visible pulse + flash (issue #275 item 3) before belching the
    level roster, until smashed, potion clearing every roamer but not
   Death, Death walking in on the treasure timer and draining point by point,
-  stairs up ending each world and the fourth ending the quest.
+  stairs up ending each world and the tenth ending the quest.
+- Hazard furniture (#950, mazes 5-10; the autopilot treats it all as provable):
+  green warp arches skip the quest two floors ahead (never offered on the last
+  mazes, never to an earlier one), crack-etched 'B' blocks crumble after two
+  sword blows, glowing 'T' trap floors cycle solid/open on a fixed period and
+  bruise + shove anyone caught inside when they close, 'P'/'p' swirl pads
+  teleport, 'S' sparks stun the legs (movement at `stunFactor` speed), and 'h'
+  false walls look solid until revealed. `visualChar`/`logicChar` split look
+  from walkability; the planner blocks 'B'/'T' so no route ever *needs* a
+  hammer swing or trap timing.
 - Simplifications (honest gaps): no shop, no Valkyrie resurrection, one potion
    effect (screen clear), no fire/water/bomb item variants, CPU partner follows
    and stabs but has no door/key logic of its own, two-player is desktop-only,

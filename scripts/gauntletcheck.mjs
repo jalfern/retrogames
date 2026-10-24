@@ -50,37 +50,61 @@ const { makeGame, step, stateHash } = S
 
 // ---------------------------------------------------------------- geometry ----
 console.log('geometry')
-const bfs = (lv, sr, sc, throughLocks) => {
+// three reach tiers (#950): strict = plain feet (locked doors, breakable and
+// trap walls all block); tools = a player with a sword and patience ('B' and
+// 'T' yield); keys = the same plus the keys the level carries ('L' opens).
+// The quest must be winnable on the KEYS tier alone: 'B'/'T' shortcuts are
+// loot gambles, never the only way out.
+const bfs = (lv, sr, sc, block) => {
     const seen = new Set()
     const q = [[sr, sc]]
     while (q.length) {
         const [r, c] = q.pop()
+        if (r < 1 || c < 1 || r >= H - 1 || c >= W - 1) continue
         const k = r * W + c
         if (seen.has(k)) continue
         const ch = lv.grid[r][c]
-        if (ch === '#' || (ch === 'L' && !throughLocks)) continue
+        if (ch === '#' || block.includes(ch)) continue
         seen.add(k)
         q.push([r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1])
     }
     return seen
 }
+ok(LEVELS.length >= 10, `the gauntlet is ${LEVELS.length} mazes deep (>= 10)`)
+{
+    const warps = LEVELS.flatMap((lv) => (lv.warps || []).map((w) => [lv.idx, w]))
+    ok(warps.length >= 3, `the dungeon has ${warps.length} warp exits (>= 3)`)
+    for (const [i, w] of warps) {
+        ok(w.to > i + 1 && w.to < LEVELS.length, `L${i + 1}: warp jumps ${w.to - i} mazes ahead (2-3, lands in quest)`, `to ${w.to + 1}`)
+    }
+    const used = new Set(LEVELS.flatMap((lv) => lv.grid.join('').split('')))
+    for (const ch of ['B', 'T', 'P', 'S', 'h', 'W']) {
+        ok(used.has(ch), `the tile alphabet carries '${ch}' somewhere in the ten`)
+    }
+    const mats = new Set(LEVELS.map((lv) => lv.material))
+    ok(mats.size >= 9, `each world reads as its own stone (${mats.size} materials)`)
+    const gridSigs = new Set(LEVELS.map((lv) => lv.grid.join('|')))
+    ok(gridSigs.size === LEVELS.length, 'no two mazes share a shape')
+}
 for (const lv of LEVELS) {
-    const sNoLock = bfs(lv, Math.floor(lv.start.y), Math.floor(lv.start.x), false)
-    const sAll = bfs(lv, Math.floor(lv.start.y), Math.floor(lv.start.x), true)
+    const strict = bfs(lv, Math.floor(lv.start.y), Math.floor(lv.start.x), 'LBT')
+    const keys = bfs(lv, Math.floor(lv.start.y), Math.floor(lv.start.x), 'BT')
+    const tools = bfs(lv, Math.floor(lv.start.y), Math.floor(lv.start.x), '')
     const [ex, ey] = lv.exit
-    ok(!sNoLock.has(ey * W + ex), `L${lv.idx + 1}: stairs are key-locked`)
-    ok(sAll.has(ey * W + ex), `L${lv.idx + 1}: stairs reachable with a key`)
-    const keys = lv.props.filter((p) => p[0] === 'key')
+    ok(!strict.has(ey * W + ex), `L${lv.idx + 1}: stairs are key-locked`)
+    ok(keys.has(ey * W + ex), `L${lv.idx + 1}: stairs reachable with a key`)
+    const keysPlaced = lv.props.filter((p) => p[0] === 'key')
     const locks = lv.doors.filter((d) => d.lock).length
-    ok(keys.length >= locks, `L${lv.idx + 1}: keys (${keys.length}) cover the locks (${locks})`)
+    ok(keysPlaced.length >= locks, `L${lv.idx + 1}: keys (${keysPlaced.length}) cover the locks (${locks})`)
     let keyReach = 0
     for (const [t, x, y] of lv.props) {
         const r = Math.floor(y), c = Math.floor(x)
         if (lv.grid[r][c] === '#') { ok(false, `L${lv.idx + 1}: ${t} sits in a wall`, `${c},${r}`); continue }
-        if (t === 'key' && sNoLock.has(r * W + c)) keyReach++
-        if (!sAll.has(r * W + c)) ok(false, `L${lv.idx + 1}: ${t} unreachable`, `${c},${r}`)
+        if (t === 'key' && strict.has(r * W + c)) keyReach++
+        if (!tools.has(r * W + c)) ok(false, `L${lv.idx + 1}: ${t} unreachable`, `${c},${r}`)
     }
     ok(keyReach >= locks, `L${lv.idx + 1}: ${keyReach} keys sit outside the locks`)
+    ok(!lv.warps || lv.warps.every((w) => strict.has(w.y * W + w.x)), `L${lv.idx + 1}: warp mouths stand in the open`)
 }
 
 // -------------------------------------------------------------------- art ----
@@ -392,7 +416,8 @@ console.log('rules')
     }
     ok(drained, 'Death drains health point by point')
 }
-// stairs clear the level, fourth ends the quest
+// stairs clear the level; the quest ends at the levelCount staircase, and
+// the count is what makes FOUR HALLS four and GAUNTLET ten (#950)
 {
     const gs = makeGame(0, 'warrior')
     const [ex, ey] = LEVELS[0].exit
@@ -407,9 +432,123 @@ console.log('rules')
     gs.hero.x = LEVELS[3].exit[0] + 0.5; gs.hero.y = LEVELS[3].exit[1] + 0.5
     gs.keys = 5
     gs.monsters = []
+    let next = false
+    for (let i = 0; i < 40 && !next; i++) { step(gs, { fwd: true }); next = gs.level === 4; gs.events.length = 0 }
+    ok(next && !gs.end, 'the fourth staircase leads onward in the ten-maze gauntlet')
+    const last = LEVELS.length - 1
+    gs.level = last
+    gs.levelData = LEVELS[last]
+    gs.hero.x = LEVELS[last].exit[0] + 0.5; gs.hero.y = LEVELS[last].exit[1] + 0.5
+    gs.keys = 5
+    gs.monsters = []
     let won = false
     for (let i = 0; i < 40 && !won; i++) { step(gs, { fwd: true }); won = gs.end === 'win'; gs.events.length = 0 }
-    ok(won, 'the fourth staircase ends the quest')
+    ok(won, `the staircase of maze ${last + 1} ends the quest`)
+    const fh = makeGame(0, 'warrior', { levelCount: 4 })
+    fh.level = 3; fh.levelData = LEVELS[3]
+    fh.hero.x = LEVELS[3].exit[0] + 0.5; fh.hero.y = LEVELS[3].exit[1] + 0.5
+    fh.keys = 5; fh.monsters = []
+    let won4 = false
+    for (let i = 0; i < 40 && !won4; i++) { step(fh, { fwd: true }); won4 = fh.end === 'win'; fh.events.length = 0 }
+    ok(won4, 'levelCount 4 keeps FOUR HALLS a four-maze quest')
+}
+
+// ------------------------------------------------- dungeon furniture (#950) ----
+console.log('dungeon furniture (#950)')
+{
+    // breakable walls: two blows to open, stone until then
+    const gs = makeGame(0, 'warrior', { topDown: true })
+    S.loadLevel(gs, 4)
+    gs.monsters = []; gs.gens.forEach((g) => { g.alive = false }); gs.hero.hp = 1e9; gs.deathSpawned = true
+    const bx = 16, by = 9 // L5's strongroom mouth
+    gs.hero.x = bx + 0.5; gs.hero.y = by + 1.5; gs.hero.a = -Math.PI / 2
+    ok(S.logicChar(gs, bx, by) === '#', 'a breakable wall is stone until it is smashed')
+    for (let i = 0; i < 60; i++) { step(gs, { sword: i % 20 === 0, aim: -Math.PI / 2 }); gs.events.length = 0 }
+    ok(gs.smashed.has(by * W + bx), 'the sword crumbles a breakable wall', `hits ${gs._bHits[by * W + bx]}`)
+    ok(S.logicChar(gs, bx, by) === '.', 'and the doorway stands open after')
+
+    // trap walls: the cycle solidifies, bruises and shoves; ghosts ignore it
+    const t = makeGame(0, 'warrior', { topDown: true })
+    S.loadLevel(t, 5)
+    t.monsters = []; t.gens.forEach((g) => { g.alive = false }); t.hero.hp = 1e9; t.deathSpawned = true
+    const [tcx, tcy] = LEVELS[5].trap ? LEVELS[5].grid.join('').split('').flatMap((ch, i) => ch === 'T' ? [[i % W, Math.floor(i / W)]] : [])[0] : [0, 0]
+    let closedSeen = false, openedSeen = false, bruised = false, shoved = false
+    for (let i = 0; i < LEVELS[5].trap.period + 10; i++) {
+        // stand in the gateway the whole cycle and wait for the stone to fall
+        t.hero.x = tcx + 0.5; t.hero.y = tcy + 0.5
+        const before = t.hero.hp
+        step(t, {})
+        if (S.trapOpen(t)) openedSeen = true
+        else closedSeen = true
+        if (t.events.some((e) => e.type === 'trapClose')) {
+            if (before > t.hero.hp) bruised = true
+            if (Math.floor(t.hero.x) !== tcx || Math.floor(t.hero.y) !== tcy) shoved = true
+        }
+        t.hero.hp = 1e9
+        t.events.length = 0
+    }
+    ok(bruised, 'a trap wall that shuts on you bruises you')
+    ok(shoved, 'and shoves you out of the stone')
+    ok(closedSeen && openedSeen, 'the trap walls breathe on a fixed cycle')
+    {
+        const hold = makeGame(0, 'warrior', { topDown: true })
+        S.loadLevel(hold, 5)
+        hold.monsters = []; hold.gens.forEach((g) => { g.alive = false }); hold.hero.hp = 1e9; hold.deathSpawned = true
+        hold._trapOpen = !S.trapOpen(hold)
+        const shut = !S.trapOpen(hold)
+        const solidIsWall = S.logicChar(hold, tcx, tcy) === (shut ? '#' : '.')
+        ok(solidIsWall, 'a shut trap wall blocks; an open one is floor')
+    }
+
+    // teleporter pads carry the hero to their pair
+    const p = makeGame(0, 'warrior', { topDown: true })
+    S.loadLevel(p, 4)
+    p.monsters = []; p.gens.forEach((g) => { g.alive = false }); p.hero.hp = 1e9; p.deathSpawned = true
+    const [tx, ty, tox, toy] = LEVELS[4].tele[0]
+    p.hero.x = tx + 0.5; p.hero.y = ty + 1.5; p._hCell = null
+    let warped = false
+    for (let i = 0; i < 80 && !warped; i++) { step(p, { aim: -Math.PI / 2, fwd: true }); warped = Math.floor(p.hero.x) === tox && Math.floor(p.hero.y) === toy; p.events.length = 0 }
+    ok(warped, 'the teleporter spits you onto its pair')
+
+    // stun tiles soften the legs
+    const st = makeGame(0, 'warrior', { topDown: true })
+    S.loadLevel(st, 4)
+    st.monsters = []; st.gens.forEach((g) => { g.alive = false }); st.hero.hp = 1e9; st.deathSpawned = true
+    st.hero.x = 13.5; st.hero.y = 14.5; st._hCell = null
+    let stunned = false
+    for (let i = 0; i < 60 && !stunned; i++) { step(st, { aim: Math.PI / 2, fwd: true }); stunned = st.hero.stunT > 0; st.events.length = 0 }
+    ok(stunned, "a stun tile drops the hero's speed")
+
+    // hidden passages: walkable, but the map keeps them stone until you're beside
+    const hp = makeGame(0, 'warrior', { topDown: true })
+    S.loadLevel(hp, 4)
+    hp.monsters = []; hp.gens.forEach((g) => { g.alive = false }); hp.hero.hp = 1e9; hp.deathSpawned = true
+    ok(S.logicChar(hp, 14, 4) === '.', 'the hidden passage is walkable stone-cold open to feet')
+    ok(S.visualChar(hp, 14, 4) === '#', 'and reads as solid wall to the camera')
+    hp.hero.x = 13.5; hp.hero.y = 4.5
+    step(hp, {})
+    ok(hp.revealed.has(4 * W + 14) && S.visualChar(hp, 14, 4) === '.', 'standing beside it gives it away')
+
+    // warp exits: the arch skips 2-3 mazes and banks the bonus; a target
+    // beyond levelCount never fires (FOUR HALLS sees bricked arches)
+    const wp = makeGame(0, 'warrior', { topDown: true })
+    S.loadLevel(wp, 4)
+    wp.monsters = []; wp.gens.forEach((g) => { g.alive = false }); wp.hero.hp = 1e9; wp.deathSpawned = true
+    const w5 = LEVELS[4].warps[0]
+    wp.hero.x = w5.x + 0.5; wp.hero.y = w5.y + 0.5
+    step(wp, {})
+    ok(wp.level === w5.to, 'a warp arch lands you 2-3 mazes deeper', `level ${wp.level + 1}`)
+    const w4 = makeGame(0, 'warrior', { topDown: true, levelCount: 4 })
+    // with the quest scoped to four, the deep arches stay bricked (targets past the end)
+    ok((LEVELS.slice(0, 4).flatMap((lv) => lv.warps || []).every((w) => w.to >= 4)), 'the four halls hold no live warp (the arcade starts warping deeper in)')
+    ok(w4.levelCount === 4, 'levelCount rides the game state for the HUD')
+    const w6 = makeGame(0, 'warrior', { topDown: true, levelCount: 6 })
+    S.loadLevel(w6, 4)
+    w6.monsters = []; w6.gens.forEach((g) => { g.alive = false }); w6.hero.hp = 1e9; w6.deathSpawned = true
+    ok(w5.to >= 6, 'the deep arch targets past a six-maze quest end', `to level ${w5.to + 1}`)
+    w6.hero.x = w5.x + 0.5; w6.hero.y = w5.y + 0.5
+    step(w6, {})
+    ok(w6.level === 4 && !w6.events.some((e) => e.type === 'levelClear' && e.warp !== undefined), 'an arch to a swallowed level stays bricked')
 }
 // sword cannot kill through stone
 {
@@ -715,38 +854,39 @@ console.log('partner')
 }
 
 // ----------------------------------------------------------------- pilot ----
-console.log('pilot')
+console.log('pilot (FOUR HALLS, first person, four halls)')
 for (const seed of [0, 1, 2, 3]) {
-    const r = S.plan(seed)
-    ok(r.won, `pilot clears all four mazes (seed ${seed})`, `deaths=${r.deaths} level=${r.gs.level}`)
+    const r = S.plan(seed, { levelCount: 4 })
+    ok(r.won, `the fp pilot clears all four halls (seed ${seed})`, `deaths=${r.deaths} level=${r.gs.level}`)
 }
 {
-    const a = S.plan(2), b = S.plan(3)
+    const a = S.plan(2, { levelCount: 4 }), b = S.plan(3, { levelCount: 4 })
     ok(a.deaths === 0 || b.deaths === 0, 'seeds 2/3 prove a deathless clear', `deaths ${a.deaths}/${b.deaths}`)
 }
-console.log('slack')
+console.log('slack (four halls)')
 {
-    const r = S.plan(2, { slack: true })
-    ok(r.won, 'the quest is still won with one fewer food AND potion per maze', `deaths=${r.deaths}`)
+    const r = S.plan(2, { slack: true, levelCount: 4 })
+    ok(r.won, 'the four-hall quest is still won with one fewer food AND potion per maze', `deaths=${r.deaths}`)
 }
 
 console.log('overhead pilot')
 {
     for (const seed of [0, 1, 2, 3]) {
         const r = S.plan(seed, { topDown: true })
-        ok(r.won, `overhead pilot clears all four mazes (seed ${seed})`, `deaths=${r.deaths} level=${r.gs.level}`)
+        ok(r.won, `overhead pilot clears all ten mazes (seed ${seed})`, `deaths=${r.deaths} level=${r.gs.level}`)
     }
     const t = [0, 1, 2, 3].map((s) => S.plan(s, { topDown: true }).deaths)
-    ok(t.some((d) => d === 0), 'the overhead pilot can run deathless', `deaths ${t.join('/')}`)
+    ok(t.filter((d) => d === 0).length >= 2, 'the overhead pilot can run deathless (>=2 seeds)', `deaths ${t.join('/')}`)
+    ok(t.every((d) => d <= 1), 'the ten-maze overhead quest costs the pilot at most one life per seed', `deaths ${t.join('/')}`)
     const r = S.plan(2, { topDown: true, slack: true })
-    ok(r.won, 'the overhead quest is still won with one fewer food AND potion per maze', `deaths=${r.deaths}`)
+    ok(r.won, 'the ten-maze overhead quest is still won with one fewer food AND potion per maze', `deaths=${r.deaths}`)
 }
 
 // ---------------------------------------------------------------- ledger ----
 console.log('ledger')
 {
-    const r = S.plan(2)
-    const gs = makeGame(2, 'warrior')
+    const r = S.plan(2, { levelCount: 4 })
+    const gs = makeGame(2, 'warrior', { levelCount: 4 })
     let ledger = 0, up = 20000
     for (const inp of r.script) {
         step(gs, inp)
@@ -851,7 +991,7 @@ if (process.argv.includes('--mutate')) {
         ['the hero never flashes on a strike', 'src/games/Gauntlet/sim.js', 'h.hp -= kind.dmg\n                h.hitT = CFG.hitFlash', 'h.hp -= kind.dmg'],
         ['the hero never collapses when dying', 'src/games/Gauntlet/hero.js', '(deadT <= 0 ? 0 : Math.min(1, (CFG.deathFreeze - deadT) / CFG.deathFreeze))', '(deadT <= 0 ? 0 : 0)'],
         ['the HUD-over attract caption returns', 'src/games/Gauntlet/attract.js', "        { text: PRESS,", "        { text: 'DEMO PLAYS THE PROVEN FULL QUEST', x: w / 2, y: h - 14, size: 7, col: '#5d7094', glow: 0 },\n        { text: PRESS,"],
-        ['an attract message leaks the harness', 'src/games/Gauntlet/attract.js', "'FOUR MAZES AWAITS',", "'gauntletcheck audits the HUD band',"],
+        ['an attract message leaks the harness', 'src/games/Gauntlet/attract.js', "'TEN MAZES AWAITS',", "'gauntletcheck audits the HUD band',"],
         ['#554 guest draws only the partner (host invisible)', 'src/games/Gauntlet/seat.js', 'selfHero(gs, role) === gs.hero ? gs.partner : gs.hero', 'gs.partner'],
         ['#554 guest self resolves to the hero', 'src/games/Gauntlet/seat.js', "role === 'guest' && gs.partner ? gs.partner : gs.hero", 'gs.hero'],
         ['#554 world reverts to the partner-only guard', 'src/games/Gauntlet/index.jsx', '            const other = otherEnt()\n            if (other && !other.down) sprite(other.name.toLowerCase(), sx(other.x), sy(other.y), 11)', '            if (gs.partner && !gs.partner.down && selfEnt() !== gs.partner) sprite(gs.partner.name.toLowerCase(), sx(gs.partner.x), sy(gs.partner.y), 11)'],
@@ -865,6 +1005,11 @@ if (process.argv.includes('--mutate')) {
         ['#505 seat 2 never gets slam-door push parity', 'src/games/Gauntlet/sim.js', 'openSlamInWay(gs, p, Math.cos(a), Math.sin(a))\n                moveHuman(gs, p, Math.cos(a) * sp, Math.sin(a) * sp)', 'moveHuman(gs, p, Math.cos(a) * sp, Math.sin(a) * sp)'],
         ['#505 hurt partners never break for food', 'src/games/Gauntlet/planner.js', 'if (p.hp < p.maxHp * 0.55) {', 'if (false) {'],
         ['#505 a sealed corridor is grinded, not waited at', 'src/games/Gauntlet/planner.js', 'const near = (gx, gy) => Math.floor(gy) === pr && Math.floor(gx) === pc', 'const near = () => true'],
+        ['#950 the warp arch never fires', 'src/games/Gauntlet/sim.js', 'if (w.to >= gs.levelCount || w.to <= gs.level) continue', 'if (true) continue'],
+        ['#950 warp swallows levels past the quest end too', 'src/games/Gauntlet/sim.js', 'if (w.to >= gs.levelCount || w.to <= gs.level) continue', 'if (w.to <= gs.level) continue'],
+        ['#950 trap walls never solidify', 'src/games/Gauntlet/sim.js', 'return ((gs.playT + t.phase) % t.period) < t.open', 'return true'],
+        ['#950 the hammer never opens the breakable wall', 'src/games/Gauntlet/sim.js', 'gs.smashed.add(k)', 'if (false) gs.smashed.add(k)'],
+        ['#950 hidden passages are painted open on the map', 'src/games/Gauntlet/sim.js', "if (base === 'h') return gs.revealed.has(r * W + c) ? '.' : '#'", "if (base === 'h') return '.'"],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
