@@ -5,12 +5,13 @@ live three.js world; travel is a fade, not a walk. Click/tap hot spots, or step
 and turn with the arrow keys. No inventory UI, no hints — take notes, as in 1993.
 
 ## Engine notes
-- `nodes.js` — the node graph: 26 camera poses (island, clock tower, cave,
+- `nodes.js` — the node graph: 28 camera poses (island, clock tower, cave,
   cabin, four Ages; Mechanical is a 5-node walkable set: landing, tower base,
   cage, gantry, control room; Selenitic is a 5-node walkable set: landing,
   sounding path, throne chamber, terraces, summit ledge; Channelwood is a
-  3-node walkable set: landing, channels, star terrace; Stoneship is a 3-node
-  walkable set: pier, ship's quarterdeck, ridge observatory) with hot spots.
+  4-node walkable set: landing, channels, star terrace, observatory;
+  Stoneship is a 3-node walkable set: pier, ship's quarterdeck, ridge
+  observatory) with hot spots.
   A spot with `to:` travels; `act:` runs a puzzle verb; `need:` gates it behind
   a flag; `reveal:` turns an illusion into a lever/door the first time you
   touch it; `visits:` hints the reachability audit about node changes an
@@ -47,16 +48,29 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   `surface`, escape. The SELENITIC SOUND-BOOK (tree stump by the landing)
   echoes any of the six stones' true pitches (`echo` action → the same
   `stone:<i>` events the field rings), so the path order is learnable in-world
-  like the original's pages.
+  like the original's pages. THE STAR-WHEEL (#1014): Channelwood's lock. The
+  great wheel carries three concentric rings of five star-symbols (4–8 points);
+  clicking a ring turns it one notch (`dial` pad `wheel`, wrapping mod 5) and
+  answers with its own weighted clunk. The alignment is stamped per save
+  (`codes.wheel`), and the observatory drum above the terrace wears the
+  answer — three glowing clue-stars left/crown/right for outer/middle/inner,
+  their points this island's, spelled in words on the rim (`starDrum`). When
+  the rings stand true, `wheelOpen` grinds the hub aside and the CHANNELWOOD
+  linking book inside is the Age's way home (`hubBook` → cave); until then the
+  hub cover and the landing return panel both refuse — as in 1993, the last
+  Age found keeps its own exit.
 - `codes.js` — per-save codes (#1005), the original's per-copy combination
   stamps. One 32-bit seed per fresh game (pin with `?seed=N`; a fresh game
   without a pin draws a new one, so a restart is a new book of Myst).
   mulberry32 derives: safe = 3 digits 1-9, star = permutation of sizes 1-4,
-  sphere = permutation of the four posts. Clues stay in-world: Atrus's shelf
+  sphere = permutation of the four posts, wheel = three distinct notch positions
+  0–4 for the star-wheel's outer/middle/inner rings (#1014). Clues stay in-world: Atrus's shelf
   note spells the safe digits in words, the cave dome grows four stars whose
   SIZE rank is the star code (rebuilt by `updateTrueStars` on every seed
-  change), and the sphere's posts sing the seeded ring order (`sing:<code>`
-  event → soundplan). Same seed, same island; different seed, different lock.
+  change), the sphere's posts sing the seeded ring order (`sing:<code>`
+  event → soundplan), and the observatory drum wears the wheel's seeded
+  point-counts (rebuilt by `updateWheel`). Same seed, same island; different
+  seed, different lock.
 - `scene.js` — builds all 27 views as sibling groups spaced `GAP` apart on X;
   the camera teleports. Conventions: a node's camera faces world +z at
   `yaw 0`; spot bearings are relative degrees from there. Sea, fire, gears,
@@ -65,7 +79,12 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   latch lever, gear seal) and Selenitic's (stones sinking when rung, cliff
   gate slab, swiveling throne, sun disc appearing only at the alignment,
   mountain door, gear lifting from its slot) are driven live from `state`
-   via `updateMech` (the Channelwood sluice gate, channel water and float ride `chanFlood`). Views face +z: put what the caption promises at
+   via `updateMech` (the Channelwood sluice gate, channel water and float ride `chanFlood`).
+   The star-wheel (#1014) is one `wheelAssembly` built twice (landing + terrace):
+   three symbol rings riding `state.wheelDial` (`chanRing0..2`, shortest way
+   round), a bronze mark at the crown, and a hub cover that slides clear on
+   `wheelOpen` (`chanHub`) to lay the linking book bare; the observatory drum
+   wears the seeded clue-stars (`clueStar`, rebuilt by `updateWheel`). Views face +z: put what the caption promises at
    greater z than the camera, and check the moon's ray — corridor walls,
    lintels and buttresses silently eat it. Stoneship (#996) is three static
    sibling views — pier, quarterdeck (the bare mast is the landmark) and the
@@ -90,10 +109,10 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 
 ## Verify
 ```bash
-npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride
-npm run mystcheck -- --mutate # the interlocks must be able to fail (29 mutants)
-npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up
-npm run mystviewcheck        # browser: every one of the 27 views framed
+npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel
+npm run mystcheck -- --mutate # the interlocks must be able to fail (38 mutants)
+npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel live
+npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
 ```
 `mystcheck` was proven to fail: forcing the tower-door gate open (deleting the
@@ -112,7 +131,10 @@ gate compared the seed FIELD, not the locks; compare locks, always). Four
 target the rocket (#1010): a seam that opens to a bare hand, a ride that never
 reaches the surface, mid-flight steering that is accepted (the rider rides
 instead of ticking — the gate checks rideT, not just the events), and a
-sound-book whose pages all echo one stone.
+sound-book whose pages all echo one stone. Five target the star-wheel (#1014):
+a wheel that opens at any alignment, a hub cover that stopped needing the stars,
+a landing panel that never sealed with the wheel, a drum that preaches one fixed
+sky to every island, and three rings collapsed to one clunk.
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:
@@ -136,16 +158,20 @@ sound-book whose pages all echo one stone.
   emissive cycle, separate from the background point field. The
   sounding-path order (biggest→smallest) and the sun-and-moon detent stay
   fixed — in the original they are world constants, not per-save rolls.
-- **CLOSED by #1010/#1017** — the Ages carry their named sub-puzzles: the
-  Selenitic sphere, sounding path, throne and gear; the Mechanical switch
-  chain, cage tower and control room; the Stoneship observatory note; the
-  cave's metal seam reads the AMATEM note and the ROCKET rides to a fourth,
-  escape ending; the Selenitic sound-book replays the sounding path's true
-  pitches. #1017 turned the Channelwood star-wheel from decoration into the
-  Age's last lock: five spokes, one worn notch, one groove cut in the housing
-  under the axle — at detent 3 the notch drops home, the falls catch the
-  vanes, and the grinding axle throws the wheel-shelter's stone lock over a
-  second brass gear (two of five, it said on the tower of Mechanical).
+- **CLOSED by #1010/#1014/#1017** — every Age now holds sub-puzzles beyond its
+  gate: Selenitic's sphere, sounding path, throne and gear; Mechanical's switch
+  chain, cage tower and control room; the Stoneship observatory note; the cave's
+  metal seam reads the AMATEM note and the ROCKET rides to a fourth, escape
+  ending; the Selenitic sound-book replays the sounding path's true pitches.
+  #1017 turned the Channelwood star-wheel from decoration into the Age's axle
+  lock: five spokes, one worn notch, one groove cut in the housing under the
+  axle — at detent 3 the notch drops home, the falls catch the vanes, and the
+  grinding axle throws the wheel-shelter's stone lock over a second brass gear
+  (two of five, it said on the tower of Mechanical). #1014 stacked the sky's
+  lock on the same wheel: three rings of star-symbols aligned by the
+  observatory drum's seeded sky (`codes.wheel`), the Age's linking book sealed
+  inside the hub until they stand true — as in the original, where Channelwood
+  kept its own way home.
 - The Spectator is a still panel listing the Ages, not a rendered age-vision.
 - Ages' books link straight from their home node; there is no linking-book
   animation with the starfield travel.

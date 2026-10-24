@@ -273,7 +273,7 @@ export const NODES = {
     caption: 'CHANNELWOOD — a world of waterfalls and slow stone stars',
     expect: ['starWheel'],
     spots: [
-      { id: 'retChannelwood', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'cave' },
+      { id: 'retChannelwood', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'cave', need: 'wheelOpen', needMsg: 'The landing panel is cold stone — its page will not turn from this side. CHANNELWOOD keeps its own way home, and every age says it lies inside the great wheel.' },
       { id: 'starWheel', label: 'a great stone star over the falls', yaw: 0, w: 40, h: 34, act: 'starWheel' },
       { id: 'toChanChannels', label: 'the cut stone channels', yaw: -55, w: 60, h: 40, to: 'chanChannels' },
     ],
@@ -292,14 +292,27 @@ export const NODES = {
   },
   chanWheel: {
     pos: [0, 3.6, -56], yaw: 0, sky: 'channelwood', amb: 'wind',
-    caption: 'The star terrace — the great stone wheel turns above the channels, its housing cut with a single groove',
+    caption: 'The star terrace — the great stone wheel stands above the channels, its housing cut with a single groove',
     expect: ['starWheel'],
     spots: [
       { id: 'retChanWheel', label: 'down off the float', yaw: 180, w: 50, h: 36, to: 'chanChannels' },
-      { id: 'starWheel', label: 'the great stone star — spoke handles within reach', yaw: 0, w: 40, h: 34, act: 'wheelTurn' },
+      { id: 'starWheel', label: 'the great stone star — rings and hub within reach', yaw: 0, w: 40, h: 34, act: 'starWheel' },
+      { id: 'wheelTurn', label: 'a spoke handle on the great wheel', yaw: 44, w: 26, h: 30, act: 'wheelTurn' },
+      { id: 'hubBook', label: 'the hub of the great wheel', yaw: -18, w: 22, h: 22, to: 'cave', need: 'wheelOpen', needMsg: 'The hub is shut fast — a seam of hair-width all round its bronze cover, and nothing to pull. It is keyed to the stars, and the stars are kept higher up.' },
       { id: 'gearChan', label: 'brass glinting inside the wheel-shelter', yaw: -32, w: 22, h: 22, act: 'takeGearChan', gone: 'gearChannelwood', need: 'wheelBite', needMsg: 'The shelter lid is shut; a stone lock keyed to the axle holds it thrown. The star-wheel above governs it.' },
+      { id: 'toChanObs', label: 'the stair to the observatory', yaw: 62, w: 40, h: 40, to: 'chanObs' },
       { id: 'pageChannelwoodRed', label: 'a red page in the wheel shelter', yaw: -50, w: 24, h: 24, act: 'takePage', page: 'red:channelwood', gone: 'pageRed_channelwood' },
       { id: 'lookFalls2', label: 'the falls, far below', yaw: 30, w: 40, h: 26, msg: 'From the terrace the channels are dark ribbons sewing the island shut, all of them running to the lip.' },
+    ],
+  },
+  chanObs: {
+    pos: [0, 5.2, -66], yaw: 0, sky: 'channelwood', amb: 'wind',
+    caption: "The Channelwood observatory — a bronze drum under the wheel's own sky",
+    expect: ['chanDome'],
+    spots: [
+      { id: 'retWheel', label: 'back down the stair to the terrace', yaw: 180, w: 60, h: 36, to: 'chanWheel' },
+      { id: 'starDrum', label: 'the star drum', yaw: 0, w: 44, h: 36, act: 'starDrum' },
+      { id: 'lookWheel', label: 'the great wheel, seen from above', yaw: -40, w: 34, h: 26, msg: 'From the observatory ledge the whole wheel lies below you, three rings of small patient stars around a shut hub. Someone carved the answers twice — once here in the sky, once down there in stone.' },
     ],
   },
 }
