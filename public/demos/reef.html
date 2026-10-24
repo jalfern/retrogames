@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>CORAL REEF — a drifting underwater light demo</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #04182a; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .14em;
+    color: rgba(214,236,232,.72); text-shadow: 0 1px 3px rgba(0,20,30,.8);
+    text-transform: uppercase;
+  }
+  #hud b { color: rgba(210,255,244,.95); font-weight: 700; }
+  #audiohint {
+    position: fixed; top: 12px; right: 14px; z-index: 2;
+    background: rgba(6,22,34,.5); border: 1px solid rgba(110,230,210,.26); border-radius: 8px;
+    padding: 7px 12px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase;
+    color: rgba(190,240,230,.85); text-shadow: 0 1px 3px rgba(0,20,30,.8); cursor: pointer;
+  }
+  #audiohint.off { color: rgba(160,180,180,.5); border-color: rgba(150,150,150,.2); }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 3;
+    font: 14px/1.6 ui-monospace, Menlo, monospace; color: #d2ece8; background: #04182a;
+    text-align: center; padding: 2em; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>CORAL REEF</b> · drifting through the shallows &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = ambience &amp; bubbles</div>
+<div id="audiohint">click for underwater ambience</div>
+<div id="fatal"></div>
+<script>
+'use strict';
+
+const qs = new URLSearchParams(location.search);
+const LITE = qs.get('lite') === '1';
+const SEED = (qs.get('seed') | 0) || 902;
+const RETINA = (window.devicePixelRatio || 1) >= 2;
+const RENDER_SCALE = LITE ? 0.55 : (RETINA ? 0.8 : 1);
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+if (!ctx) {
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'Canvas 2D required.';
+  throw new Error('no 2d');
+}
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const RND = mulberry32(SEED);
+const mix = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
+function hsl(h, s, l){
+  h = ((h % 360) + 360) % 360 / 360;
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = t => {
+    t = (t + 1) % 1;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  };
+  return [Math.round(f(h + 1/3) * 255), Math.round(f(h) * 255), Math.round(f(h - 1/3) * 255)];
+}
+
+/* water column colour: red absorbed fastest with depth (#902 colour-fade) */
+function waterCol(y, W, H){
+  const t = smooth(0, 1, y / H);
+  return [
+    mix(96, 8, Math.pow(t, 0.85)),
+    mix(200, 46, t),
+    mix(192, 92, Math.pow(t, 0.65)),
+  ];
+}
+const HAZE = () => waterCol(0.62, 1, 1);
+
+/* ---------------- layout / camera ---------------- */
+
+let cssW = 0, cssH = 0, W = 0, H = 0, SX = 1, SY = 1;
+let SPAN = 1200, MARGIN = 160;
+
+const cam = { x: 0, look: 0, tlook: 0, y: 0, ty: 0, touched: 0 };
+const DRIFT = 26;
+
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY };
+  canvas.setPointerCapture(e.pointerId);
+  cam.touched = performance.now();
+  unlockAudio();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  cam.tlook = clamp(cam.tlook - (e.clientX - drag.x) * 1.6, -420, 420);
+  cam.ty = clamp(cam.ty + (e.clientY - drag.y) * 0.9, -90, 90);
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('pointerup', () => { drag = null; });
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 1.5);
+  cssW = canvas.clientWidth; cssH = canvas.clientHeight;
+  W = Math.max(2, Math.floor(cssW * dpr * RENDER_SCALE));
+  H = Math.max(2, Math.floor(cssH * dpr * RENDER_SCALE));
+  if (canvas.width !== W || canvas.height !== H){
+    canvas.width = W; canvas.height = H;
+  }
+  SX = W / cssW; SY = H / cssH;
+  SPAN = cssW + MARGIN * 2;
+  layoutProps();
+  layoutFish();
+}
+addEventListener('resize', resize);
+
+const wrapX = x => ((x % SPAN) + SPAN) % SPAN - MARGIN;
+const par = d => mix(1.0, 0.34, d);
+const pscale = d => mix(1.0, 0.42, d);
+const haze = d => 0.14 + 0.78 * d;
+
+function seabedY(d, x){
+  const base = cssH * (0.80 - 0.205 * d);
+  const wx = x + (cam.x + cam.look) * par(d);
+  return base + Math.sin(wx * 0.006 + d * 7.3) * cssH * 0.014 * (1 - d * 0.5) - cam.y * par(d);
+}
+
+/* ---------------- reef props (generated once, fractions of SPAN) ----------- */
+
+const HUES = [332, 22, 280, 160, 48, 305, 8, 190];
+let props = [];
+function makeProps(n, d, kind){
+  const rnd = mulberry32(SEED * 7919 + n * 31 + Math.round(d * 100));
+  for (let i = 0; i < n; i++){
+    props.push({
+      u: rnd(), d: d + (rnd() - 0.5) * 0.10,
+      kind: kind || ['branch', 'fan', 'brain', 'anemone', 'tube'][Math.floor(rnd() * 5)],
+      hue: HUES[Math.floor(rnd() * HUES.length)] + (rnd() - 0.5) * 14,
+      h: 0.5 + rnd() * 0.9, w: 0.6 + rnd() * 0.8,
+      phase: rnd() * Math.PI * 2, sway: 0.55 + rnd() * 0.9,
+      branches: 3 + Math.floor(rnd() * 3),
+    });
+  }
+}
+function layoutProps(){
+  props = [];
+  makeProps(LITE ? 4 : 6, 0.86);
+  makeProps(LITE ? 3 : 5, 0.52);
+  makeProps(LITE ? 3 : 4, 0.12, null);
+  makeProps(LITE ? 2 : 3, 0.0, 'anemone');
+}
+
+/* ---------------- fish school (boids) ---------------- */
+
+const NFISH = LITE ? 26 : 44;
+let fish = [];
+function layoutFish(){
+  const rnd = mulberry32(SEED * 104729 + 7);
+  fish = [];
+  for (let i = 0; i < NFISH; i++){
+    fish.push({
+      x: rnd() * SPAN, y: cssH * (0.20 + rnd() * 0.42),
+      vx: 55 + rnd() * 22, vy: (rnd() - 0.5) * 12,
+      d: 0.15 + rnd() * 0.75, size: 0.8 + rnd() * 0.9,
+      wob: rnd() * Math.PI * 2,
+    });
+  }
+}
+function stepFish(dt, t){
+  const SEPR = 20, ALGN = 1.15, COH = 0.55, SEP = 1.7, BIAS = 0.9;
+  for (let i = 0; i < fish.length; i++){
+    const f = fish[i];
+    let ax = 0, ay = 0, cx = 0, cy = 0, avx = 0, avy = 0, n = 0;
+    for (let j = 0; j < fish.length; j++){
+      if (j === i) continue;
+      const o = fish[j];
+      let dx = o.x - f.x; if (dx > SPAN / 2) dx -= SPAN; if (dx < -SPAN / 2) dx += SPAN;
+      const dy = o.y - f.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 90 * 90){
+        n++;
+        cx += dx; cy += dy; avx += o.vx; avy += o.vy;
+        if (d2 < SEPR * SEPR && d2 > 0.01){
+          const inv = 1 / Math.sqrt(d2);
+          ax -= dx * inv * SEP; ay -= dy * inv * SEP;
+        }
+      }
+    }
+    if (n){
+      ax += (avx / n - f.vx) * ALGN + (cx / n) * COH * 0.02;
+      ay += (avy / n - f.vy) * ALGN + (cy / n) * COH * 0.02;
+    }
+    ay += (Math.sin(t * 0.3 + i) * 6 - f.vy * 0.4) * 0.1;
+    f.vx += ax * dt * 60 * 0.016 + BIAS * dt * 8;
+    f.vy += ay * dt * 60 * 0.016;
+    const sp = Math.hypot(f.vx, f.vy) || 1;
+    const want = clamp(sp, 42, 78);
+    f.vx = f.vx / sp * want; f.vy = f.vy / sp * want;
+    f.x = ((f.x + f.vx * dt * par(f.d) * 0.6) % SPAN + SPAN) % SPAN;
+    const ceil = cssH * 0.14, floor = seabedY(f.d, f.x) - 14;
+    f.y = clamp(f.y + f.vy * dt, ceil, floor);
+    if (f.y <= ceil) f.vy = Math.abs(f.vy) * 0.5;
+    if (f.y >= floor) f.vy = -Math.abs(f.vy) * 0.5;
+  }
+}
+function fishOrder(){
+  let sx = 0, sy = 0;
+  for (const f of fish){ const s = Math.hypot(f.vx, f.vy) || 1; sx += f.vx / s; sy += f.vy / s; }
+  return Math.hypot(sx, sy) / (fish.length || 1);
+}
+
+/* ---------------- marine snow + bubbles ---------------- */
+
+const NSNOW = LITE ? 48 : 150;
+let snow = [];
+function layoutSnow(){
+  const rnd = mulberry32(SEED * 15485863 + 3);
+  snow = [];
+  for (let i = 0; i < NSNOW; i++){
+    snow.push({
+      x: rnd() * SPAN, y: rnd() * cssH,
+      d: rnd(), r: 0.6 + rnd() * 1.5, tw: rnd() * Math.PI * 2,
+      vy: 3 + rnd() * 7, vx: -(2 + rnd() * 5),
+    });
+  }
+}
+let bubbles = [];
+function maybeBubble(t){
+  if (bubbles.length < 14 && Math.random() < (LITE ? 0.02 : 0.035)){
+    const x = Math.random() * SPAN;
+    bubbles.push({ x, y: seabedY(0.3, x) - 4, r: 1.4 + Math.random() * 2.6, ph: Math.random() * 6, born: t });
+  }
+  for (let i = bubbles.length - 1; i >= 0; i--){
+    const b = bubbles[i];
+    b.y -= (26 + b.r * 4) * (1 / 60);
+    b.x += Math.sin(t * 3 + b.ph) * 0.5;
+    if (b.y < cssH * 0.05) bubbles.splice(i, 1);
+  }
+}
+
+/* ---------------- caustics (small field, composited onto sand) ------------- */
+
+const CAW = LITE ? 128 : 192, CAH = LITE ? 72 : 108;
+const causticCanvas = document.createElement('canvas');
+causticCanvas.width = CAW; causticCanvas.height = CAH;
+const causticCtx = causticCanvas.getContext('2d');
+const causticImg = causticCtx.createImageData(CAW, CAH);
+
+function caustics(t){
+  const d = causticImg.data;
+  let p = 0;
+  for (let y = 0; y < CAH; y++){
+    for (let x = 0; x < CAW; x++){
+      let s = 0, a = 0.55, f = 0.052;
+      for (let o = 0; o < 3; o++){
+        const wu = x * f + Math.sin(y * f * 1.7 + t * (0.9 + o * 0.31)) * 1.15 + t * (0.42 + o * 0.18);
+        const wv = y * f + Math.sin(x * f * 1.3 - t * (0.7 + o * 0.22)) * 1.15;
+        s += a * Math.abs(Math.sin(wu) + Math.sin(wv));
+        a *= 0.58; f *= 2.05;
+      }
+      const c = Math.pow(Math.max(0, 1 - s * 0.72), 5) + Math.pow(Math.max(0, 1 - Math.abs(Math.sin(x * 0.09 + t * 0.8) + Math.sin(y * 0.11 - t * 0.6))), 9) * 0.5;
+      const v = clamp(c, 0, 1);
+      d[p] = 200; d[p + 1] = 255; d[p + 2] = 240; d[p + 3] = Math.round(v * v * 255);
+      p += 4;
+    }
+  }
+  causticCtx.putImageData(causticImg, 0, 0);
+}
+
+/* ---------------- drawing ---------------- */
+
+let skyGrad = null, skyGradH = 0;
+function drawBackground(){
+  if (!skyGrad || skyGradH !== H){
+    skyGrad = ctx.createLinearGradient(0, 0, 0, cssH);
+    const c0 = waterCol(0, 1, 1), c1 = waterCol(0.45, 1, 1), c2 = waterCol(0.75, 1, 1), c3 = waterCol(1, 1, 1);
+    skyGrad.addColorStop(0, `rgb(${c0.map(Math.round).join(',')})`);
+    skyGrad.addColorStop(0.42, `rgb(${c1.map(Math.round).join(',')})`);
+    skyGrad.addColorStop(0.75, `rgb(${c2.map(Math.round).join(',')})`);
+    skyGrad.addColorStop(1, `rgb(${c3.map(Math.round).join(',')})`);
+    skyGradH = H;
+  }
+  ctx.save();
+  ctx.setTransform(SX, 0, 0, SY, 0, 0);
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.restore();
+}
+
+function drawSurface(t){
+  ctx.save();
+  ctx.setTransform(SX, 0, 0, SY, 0, 0);
+  const yb = cssH * 0.05 - cam.y * 0.15;
+  const g = ctx.createLinearGradient(0, 0, 0, yb + cssH * 0.08);
+  g.addColorStop(0, 'rgba(190,255,240,.55)');
+  g.addColorStop(1, 'rgba(140,235,220,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, cssW, yb + cssH * 0.08);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.strokeStyle = 'rgba(210,255,245,.28)';
+  ctx.lineWidth = 1.6;
+  for (let k = 0; k < 3; k++){
+    ctx.beginPath();
+    for (let x = 0; x <= cssW; x += 8){
+      const y = yb + k * 7 + Math.sin(x * 0.03 + t * 1.3 + k * 2.1) * 2.4 + Math.sin(x * 0.011 - t * 0.7) * 1.6;
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawRays(t){
+  ctx.save();
+  ctx.setTransform(SX, 0, 0, SY, 0, 0);
+  ctx.globalCompositeOperation = 'lighter';
+  const n = 6;
+  for (let i = 0; i < n; i++){
+    const bx = cssW * (0.08 + 0.16 * i) + Math.sin(t * 0.11 + i * 1.7) * cssW * 0.02 - cam.look * 0.12;
+    const wTop = cssW * (0.012 + 0.006 * ((i * 7) % 3));
+    const wBot = wTop * 3.4;
+    const tilt = cssW * 0.10 + Math.sin(t * 0.07 + i) * cssW * 0.012;
+    const yTop = cssH * 0.02;
+    const yBot = cssH * 0.72;
+    const a = (0.085 + 0.03 * Math.sin(t * 0.23 + i * 2.4)) * mix(1.15, 0.55, smooth(0, cssH, yBot));
+    const g = ctx.createLinearGradient(0, yTop, 0, yBot);
+    g.addColorStop(0, `rgba(175,240,230,${a.toFixed(3)})`);
+    g.addColorStop(0.65, `rgba(120,215,205,${(a * 0.35).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(90,180,175,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(bx - wTop, yTop);
+    ctx.lineTo(bx + wTop, yTop);
+    ctx.lineTo(bx + tilt + wBot, yBot);
+    ctx.lineTo(bx + tilt - wBot, yBot);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function tint(col, dz, y){
+  const hz = HAZE();
+  const k = haze(dz);
+  const light = mix(1.12, 0.62, clamp(y / cssH, 0, 1));
+  return [
+    clamp(Math.round(mix(col[0] * light, hz[0], k)), 0, 255),
+    clamp(Math.round(mix(col[1] * light, hz[1], k)), 0, 255),
+    clamp(Math.round(mix(col[2] * light, hz[2], k)), 0, 255),
+  ];
+}
+
+function drawProp(p, t){
+  const d = clamp(p.d, 0, 1);
+  const px = wrapX(p.u * SPAN - (cam.x + cam.look) * par(d));
+  if (px < -MARGIN || px > cssW + MARGIN) return;
+  const baseY = seabedY(d, px);
+  const s = pscale(d) * (cssH / 620);
+  const sway = Math.sin(t * p.sway + p.phase) * 0.07 + Math.sin(t * 0.31 + p.phase * 2) * 0.02;
+  const col = hsl(p.hue, 0.62, mix(0.44, 0.30, d));
+  const c = tint(col, d, baseY);
+  const colS = `rgb(${c[0]},${c[1]},${c[2]})`;
+  const cDark = t2(col, d, baseY, 0.7);
+  ctx.save();
+  ctx.setTransform(SX, 0, 0, SY, 0, 0);
+  ctx.translate(px, baseY);
+  ctx.scale(s, s);
+  if (p.kind === 'branch'){
+    branch(0, 0, -44 * p.h, 9 * p.w, p.branches, sway, t, colS, cDark);
+  } else if (p.kind === 'fan'){
+    fan(p, t, sway, colS);
+  } else if (p.kind === 'brain'){
+    brain(p, colS, cDark);
+  } else if (p.kind === 'tube'){
+    for (let i = 0; i < 4; i++){
+      const bx = (i - 1.5) * 7 * p.w;
+      const bh = (18 + ((i * 13) % 11)) * p.h;
+      const bend = sway * (0.5 + i * 0.2);
+      ctx.strokeStyle = i % 2 ? colS : cDark;
+      ctx.lineWidth = 5.2 * p.w; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(bx, 0);
+      ctx.quadraticCurveTo(bx + bend * 40, -bh * 0.6, bx + bend * 90, -bh);
+      ctx.stroke();
+    }
+  } else {
+    anemone(p, t, sway, colS, cDark);
+  }
+  ctx.restore();
+}
+function t2(col, d, y, f){
+  const c = tint(col, d, y);
+  return `rgb(${Math.round(c[0] * f)},${Math.round(c[1] * f)},${Math.round(c[2] * f)})`;
+}
+function branch(x, y, len, w, depth, sway, t, colS, cDark){
+  if (depth <= 0 || len < 4) return;
+  const a = -Math.PI / 2 + sway * (1.2 - depth * 0.2) + Math.sin(t * 1.7 + x * 0.3) * 0.02;
+  const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+  ctx.strokeStyle = depth % 2 ? colS : cDark;
+  ctx.lineWidth = w; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x2, y2); ctx.stroke();
+  branch(x2, y2, len * 0.72, w * 0.62, depth - 1, sway * 1.25, t, colS, cDark);
+  branch(x2, y2, len * 0.66, w * 0.58, depth - 1, sway * 1.35 + 0.12, t, colS, cDark);
+}
+function fan(p, t, sway, colS){
+  ctx.strokeStyle = colS; ctx.lineCap = 'round';
+  const ribs = 9;
+  for (let i = 0; i < ribs; i++){
+    const a = -Math.PI / 2 + (i - (ribs - 1) / 2) * 0.22 + sway;
+    const L = (26 + Math.abs(i - (ribs - 1) / 2) * -3.2 + 12) * p.h;
+    ctx.lineWidth = 2.2 * p.w;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(Math.cos(a) * L * 0.5 - 4, -L * 0.55, Math.cos(a) * L, -L * 0.9);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 4 * p.w;
+  ctx.beginPath(); ctx.moveTo(-3, 2); ctx.lineTo(3, 2); ctx.lineTo(0, -8 * p.h); ctx.closePath();
+  ctx.fillStyle = colS; ctx.fill();
+}
+function brain(p, colS, cDark){
+  const rw = 26 * p.w, rh = 16 * p.h;
+  ctx.fillStyle = colS;
+  ctx.beginPath(); ctx.ellipse(0, -rh * 0.55, rw, rh, 0, Math.PI, 0); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = cDark; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.7;
+  for (let i = 1; i <= 3; i++){
+    ctx.beginPath();
+    ctx.ellipse(0, -rh * 0.55, rw * (i / 4), rh * (i / 4), 0, Math.PI, 0);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+function anemone(p, t, sway, colS, cDark){
+  const n = 14;
+  for (let i = 0; i < n; i++){
+    const a = -Math.PI / 2 + (i - (n - 1) / 2) * 0.16;
+    const L = (16 + ((i * 5) % 9)) * p.h;
+    const w = Math.sin(t * 2.1 + i * 0.7 + p.phase) * 0.20 + sway * 1.4;
+    const ex = Math.cos(a) * L + w * 14, ey = -Math.abs(Math.sin(a)) * L;
+    ctx.strokeStyle = i % 3 ? colS : cDark;
+    ctx.lineWidth = 2.6 * p.w; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, -2);
+    ctx.quadraticCurveTo(Math.cos(a) * L * 0.5 + w * 4, -L * 0.7, ex, ey - 2);
+    ctx.stroke();
+    ctx.fillStyle = cDark;
+    ctx.beginPath(); ctx.arc(ex, ey - 2, 1.8 * p.w, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = cDark;
+  ctx.beginPath(); ctx.ellipse(0, 0, 9 * p.w, 4 * p.w, 0, 0, 7); ctx.fill();
+}
+
+function drawSeabed(t){
+  ctx.save();
+  ctx.setTransform(SX, 0, 0, SY, 0, 0);
+  const farY = cssH * 0.585 - cam.y * par(0.9);
+  ctx.fillStyle = 'rgba(24,78,96,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(0, farY);
+  for (let x = 0; x <= cssW; x += 12) ctx.lineTo(x, farY + Math.sin((x + (cam.x + cam.look) * par(0.9)) * 0.008 + 4) * 4);
+  ctx.lineTo(cssW, cssH); ctx.lineTo(0, cssH); ctx.closePath(); ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(0, cssH);
+  for (let x = 0; x <= cssW; x += 10) ctx.lineTo(x, seabedY(0, x));
+  ctx.lineTo(cssW, cssH); ctx.closePath();
+  const sc = tint([196, 168, 118], 0.12, cssH * 0.86);
+  const g = ctx.createLinearGradient(0, cssH * 0.72, 0, cssH);
+  g.addColorStop(0, `rgb(${sc[0]},${sc[1]},${sc[2]})`);
+  g.addColorStop(1, `rgb(${Math.round(sc[0] * 0.55)},${Math.round(sc[1] * 0.5)},${Math.round(sc[2] * 0.5)})`);
+  ctx.fillStyle = g;
+  ctx.fill();
+
+  const tileW = cssW * 0.9, tileH = cssH * 0.30;
+  const off = -(((cam.x + cam.look) * 0.9) % tileW);
+  ctx.globalCompositeOperation = 'screen';
+  for (let k = 0; k < 3; k++){
+    const x = off + k * tileW;
+    ctx.globalAlpha = 0.75;
+    ctx.drawImage(causticCanvas, x, cssH * 0.745, tileW + 1, tileH);
+  }
+  ctx.globalAlpha = 0.16;
+  ctx.drawImage(causticCanvas, off * 0.5, farY - 2, tileW, tileH * 0.5);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.restore();
+}
+
+function drawFish(t){
+  ctx.save();
+  ctx.setTransform(SX, 0, 0, SY, 0, 0);
+  const sorted = fish.slice().sort((a, b) => b.d - a.d);
+  for (const f of sorted){
+    const px = wrapX(f.x - (cam.x + cam.look) * par(f.d) * 0.6);
+    if (px < -20 || px > cssW + 20) continue;
+    const s = pscale(f.d) * f.size * (cssH / 620);
+    const ang = Math.atan2(f.vy, f.vx * par(f.d) * 0.6);
+    const wag = Math.sin(t * 9 + f.wob) * 0.5;
+    const col = tint(hsl(205 + f.d * 40, 0.45, mix(0.55, 0.35, f.d)), f.d, f.y);
+    ctx.save();
+    ctx.translate(px, f.y);
+    ctx.rotate(ang);
+    ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 7 * s, 2.6 * s, 0, 0, 7);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-5.5 * s, 0);
+    ctx.lineTo(-9.5 * s, (-2.6 + wag * 2.4) * s);
+    ctx.lineTo(-9.5 * s, (2.6 + wag * 2.4) * s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawSnow(t){
+  ctx.save();
+  ctx.setTransform(SX, 0, 0, SY, 0, 0);
+  for (const s of snow){
+    const px = wrapX(s.x - (cam.x + cam.look) * par(s.d) * 0.5);
+    const tw = 0.35 + 0.3 * Math.sin(t * 1.6 + s.tw);
+    ctx.fillStyle = `rgba(215,245,240,${(tw * mix(0.55, 0.2, s.d)).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(px, s.y, s.r * pscale(s.d), 0, 7);
+    ctx.fill();
+  }
+  for (const b of bubbles){
+    const px = wrapX(b.x - (cam.x + cam.look) * par(0.3) * 0.6);
+    ctx.strokeStyle = 'rgba(200,245,240,.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(px, b.y, b.r, 0, 7); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function stepSnow(dt){
+  for (const s of snow){
+    s.x = ((s.x + s.vx * dt * par(s.d)) % SPAN + SPAN) % SPAN;
+    s.y += s.vy * dt;
+    if (s.y > cssH + 4){ s.y = -4; s.x = Math.random() * SPAN; }
+  }
+}
+
+function drawDepthOverlay(){
+  ctx.save();
+  ctx.setTransform(SX, 0, 0, SY, 0, 0);
+  const g = ctx.createLinearGradient(0, cssH * 0.5, 0, cssH);
+  g.addColorStop(0, 'rgba(6,40,74,0)');
+  g.addColorStop(1, 'rgba(4,28,58,0.42)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, cssH * 0.5, cssW, cssH * 0.5);
+  const r = ctx.createRadialGradient(cssW / 2, cssH * 0.45, Math.min(cssW, cssH) * 0.5, cssW / 2, cssH * 0.45, Math.max(cssW, cssH) * 0.82);
+  r.addColorStop(0, 'rgba(0,10,20,0)');
+  r.addColorStop(1, 'rgba(0,12,24,0.34)');
+  ctx.fillStyle = r;
+  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.restore();
+}
+
+/* ---------------- audio: muffled water + bubbles + distant whale ----------- */
+
+let AC = null, master = null, running = false;
+const audioHint = document.getElementById('audiohint');
+function unlockAudio(){
+  if (AC) return;
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.7; master.connect(AC.destination);
+    const len = Math.floor(AC.sampleRate * 3);
+    const buf = AC.createBuffer(1, len, AC.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++){
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.02 * w) / 1.02;
+      d[i] = last * 3.2;
+    }
+    const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 190; lp.Q.value = 0.6;
+    const g = AC.createGain(); g.gain.value = 0.075;
+    src.connect(lp).connect(g).connect(master);
+    src.start();
+    const lfo = AC.createOscillator(); lfo.frequency.value = 0.07;
+    const lg = AC.createGain(); lg.gain.value = 60;
+    lfo.connect(lg).connect(lp.frequency); lfo.start();
+    running = true;
+    scheduleBubbleSound();
+    scheduleWhale();
+    audioHint.textContent = 'reef ambience on';
+    audioHint.classList.add('off');
+  } catch (e) { /* audio unavailable */ }
+}
+audioHint.addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', unlockAudio);
+
+function bubbleSound(t0){
+  const o = AC.createOscillator(); o.type = 'sine';
+  const f = 700 + Math.random() * 900;
+  o.frequency.setValueAtTime(f, t0);
+  o.frequency.exponentialRampToValueAtTime(f * 0.35, t0 + 0.09);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.05 + Math.random() * 0.05, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.1);
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 2.5;
+  o.connect(bp).connect(g).connect(master);
+  o.start(t0); o.stop(t0 + 0.12);
+}
+function scheduleBubbleSound(){
+  if (!running || !AC) return;
+  const n = 1 + (Math.random() * 3 | 0);
+  for (let k = 0; k < n; k++) bubbleSound(AC.currentTime + 0.1 + Math.random() * 1.8 + k * 0.07);
+  setTimeout(scheduleBubbleSound, 1400 + Math.random() * 4200);
+}
+function scheduleWhale(){
+  if (!running || !AC) return;
+  const t0 = AC.currentTime + 1 + Math.random() * 6;
+  const o = AC.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(135, t0);
+  o.frequency.linearRampToValueAtTime(96, t0 + 2.2);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.028, t0 + 0.7);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.4);
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 400;
+  o.connect(lp).connect(g).connect(master);
+  o.start(t0); o.stop(t0 + 2.5);
+  setTimeout(scheduleWhale, 9000 + Math.random() * 9000);
+}
+
+/* ---------------- frame loop ---------------- */
+
+let t0 = performance.now();
+let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
+let readyFlag = false;
+resize();
+layoutSnow();
+let prev = t0;
+
+function frame(){
+  const now = performance.now();
+  const t = (now - t0) / 1000;
+  let dt = (now - prev) / 1000;
+  prev = now;
+  dt = Math.min(dt, 0.05);
+  if (lastFrame){ const dtms = now - lastFrame; perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; }
+  lastFrame = now;
+  frames++;
+
+  cam.x += (DRIFT + (drag ? 0 : 0)) * dt;
+  cam.look += (cam.tlook - cam.look) * 0.06;
+  cam.y += (cam.ty - cam.y) * 0.06;
+  cam.x += cam.look * dt * 0.15;
+
+  caustics(t);
+  stepFish(dt, t);
+  stepSnow(dt);
+  maybeBubble(t);
+
+  drawBackground();
+  drawSurface(t);
+  for (const p of props) if (p.d > 0.7) drawProp(p, t);
+  drawSeabed(t);
+  for (const p of props) if (p.d > 0.35 && p.d <= 0.7) drawProp(p, t);
+  drawFish(t);
+  for (const p of props) if (p.d <= 0.35) drawProp(p, t);
+  drawSnow(t);
+  drawRays(t);
+  drawDepthOverlay();
+
+  readyFlag = true;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- DEV hooks ---------------- */
+
+window.__reefTest = {
+  get ready(){ return readyFlag; },
+  get frames(){ return frames; },
+  mode(){ return { canvas: '2d', lite: LITE, retina: RETINA }; },
+  renderScale(){ return { scale: RENDER_SCALE, lite: LITE, retina: RETINA, w: W, h: H, css: cssW, dpr: window.devicePixelRatio || 1 }; },
+  pose(){ return { look: cam.look, y: cam.y }; },
+  setPose(p){
+    if (p.look !== undefined){ cam.tlook = p.look; cam.look = p.look; }
+    if (p.y !== undefined){ cam.ty = p.y; cam.y = p.y; }
+    cam.touched = performance.now();
+  },
+  fish(){ return { n: fish.length, order: +fishOrder().toFixed(3) }; },
+  particles(){ return { snow: snow.length, bubbles: bubbles.length }; },
+  corals(){ return { n: props.length }; },
+  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
+  resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
+};
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'CORAL REEF', accent: '#2ee6c8',
+  issues: [902], span: '~3 h', shipped: '2026-10-23',
+  assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
+};
+</script>
+<script src="credits.js"></script>
+</body>
+</html>
