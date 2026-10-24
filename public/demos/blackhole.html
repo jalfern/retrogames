@@ -118,12 +118,12 @@ vec3 blackbody(float t){
 }
 
 /* ---------- starfield: sparse bright stars + faint dust + milky way ---------- */
-vec3 starfield(vec3 rd){
+vec3 starfield(vec3 rd, float focus, vec2 sdir){
   vec3 c = vec3(0.0016, 0.0020, 0.0038);
   vec2 sv = vec2(atan(rd.z, rd.x), asin(clamp(rd.y, -1.0, 1.0)));
 
   // galactic band: dim great-circle haze with dust lanes
-  vec3 mw = normalize(vec3(0.30, 0.52, -0.80));
+  vec3 mw = normalize(vec3(0.55, 0.40, -0.73));
   float lat = acos(clamp(dot(rd, mw), -1.0, 1.0));
   float band = exp(-lat * lat * 6.5);
   float lon = atan(dot(rd, normalize(cross(vec3(0,1,0), mw))), dot(rd, normalize(vec3(1,0,0))));
@@ -143,10 +143,13 @@ vec3 starfield(vec3 rd){
       vec2 jit = vec2(hash12(cell + 3.1), hash12(cell + 7.7)) * 0.7 + 0.15;
       vec2 dd = fc - jit;
       dd.x *= max(cos(sv.y), 0.18);                       // round stars at high declination
-      float d2 = dot(dd, dd);
       float mag = (h - thresh) / (1.0 - thresh);
       float tw = 0.72 + 0.28 * sin(uTime * (1.3 + mag * 5.0) + h * 61.0);
-      float glow = exp(-d2 * (L == 0 ? 300.0 : 190.0));
+      float K = L == 0 ? 300.0 : 190.0;
+      // Jacobian focusing near the shadow limb: magnified stars stretch tangentially
+      float drp = dd.x * sdir.x + dd.y * sdir.y;
+      float dtp = dd.x * sdir.y - dd.y * sdir.x;
+      float glow = exp(-(drp * drp * K * 1.15 + dtp * dtp * K / focus));
       vec3 tint = mix(vec3(0.72, 0.80, 1.0), vec3(1.0, 0.82, 0.62), hash12(cell + 13.7));
       c += tint * glow * tw * (L == 0 ? (0.5 + mag * 2.6) : 0.28);
     }
@@ -176,6 +179,7 @@ vec3 diskEmission(vec3 q, vec3 towardCam, out float opacity){
   float dlt = 1.0 / (gam * (1.0 - beta * cs));          // Doppler factor
   float g = sqrt(max(1.0 - RS / r, 0.02));              // gravitational redshift
   float bright = pow(dlt, 3.0) * g * g;                  // relativistic beaming
+  bright = bright / (1.0 + max(bright - 3.0, 0.0) * 0.22);  // soft knee: turbulence survives the beamed core
   // observed colour temperature rides delta*g: approaching side whitens/blues,
   // receding side reddens — one physical colour law, not a painted tint
   float tobs = clamp((temp * 0.9 + 0.30) * dlt * g, 0.12, 1.9);
@@ -208,7 +212,7 @@ void main(){
     if (i >= uSteps || captured) break;
     float r = 1.0 / u;
     float dlam = clamp(0.06 * r, 0.015, 0.9);           // affine step ~ 6% of range
-    float dphi = min(0.2, b * u * u * dlam);            // true-anomaly advance
+    float dphi = min((r < 2.0 ? 0.055 : 0.2), b * u * u * dlam);   // finer near-critical steps: kills edge scalloping
     // RK4 on (u, w): Euler pumps orbital energy and over-bends near the hole
     float f1 = -u + 1.5 * RS * u * u;
     float uh1 = u + 0.5 * dphi * w,        wh1 = w + 0.5 * dphi * f1;
@@ -242,7 +246,9 @@ void main(){
   }
 
   vec3 v = normalize(-w * b * (cos(phi) * e1 + sin(phi) * e2) + b * u * (-sin(phi) * e1 + cos(phi) * e2));
-  vec3 bg = captured ? vec3(0.0) : starfield(v);
+  float focus = captured ? 1.0 : clamp(1.0 + 2.2 * exp(-max(b - B_CRIT, 0.0) * 2.2), 1.0, 3.4);
+  vec2 sdir = length(ndc) > 1e-4 ? normalize(ndc) : vec2(1.0, 0.0);
+  vec3 bg = captured ? vec3(0.0) : starfield(v, focus, sdir);
 
   // photon-ring hint: rays captured just inside the critical impact parameter
   // skim the last orbits before falling in — thin bright rim on the shadow edge
@@ -390,7 +396,7 @@ addEventListener('pointerup', () => { drag = null; });
 
 function flight(t){
   const th = t * 0.05 + Math.sin(t * 0.021 + 0.6) * 0.22 + cam.yaw;
-  const R = 18 + 7 * Math.sin(t * 0.045 + 1.9);
+  const R = 14.5 + 7 * Math.sin(t * 0.045 + 1.9);       // close pass to ~7.5 rs at mid-loop (#956)
   const el = 0.13 + 0.09 * Math.sin(t * 0.028 + 0.8) + cam.pitch * 0.55;
   const ce = Math.cos(el), se = Math.sin(el);
   const pos = [R * ce * Math.sin(th), R * se, R * ce * Math.cos(th)];
@@ -406,8 +412,8 @@ function flight(t){
   const cp = Math.cos(pitchTilt), sp = Math.sin(pitchTilt);
   const f2 = [f[0] * cp + u[0] * sp, f[1] * cp + u[1] * sp, f[2] * cp + u[2] * sp];
   const u2 = [u[0] * cp - f[0] * sp, u[1] * cp - f[1] * sp, u[2] * cp - f[2] * sp];
-  const prox = Math.max(0, Math.min(1, (24 - Math.hypot(pos[0], pos[1], pos[2]) - 11) / 13));
-  return { pos, f: f2, u: u2, r, prox, R };
+  const prox = Math.max(0, Math.min(1, (21.5 - Math.hypot(pos[0], pos[1], pos[2])) / 14));
+  return { pos, f: f2, u: u2, r, prox, R, th };
 }
 
 /* ---------------- JS mirror of the geodesic integrator (harness probes) ------- */
@@ -428,7 +434,7 @@ function traceRayJS(pIn, dIn, maxSteps){
     const r = 1 / u;
     rMin = Math.min(rMin, r);
     const dlam = Math.min(0.9, Math.max(0.015, 0.06 * r));
-    const dphi = Math.min(0.2, b * u * u * dlam);
+    const dphi = Math.min(r < 2 ? 0.055 : 0.2, b * u * u * dlam);
     const f1 = -u + 1.5 * RS * u * u;
     const uh1 = u + 0.5 * dphi * w, wh1 = w + 0.5 * dphi * f1;
     const f2 = -uh1 + 1.5 * RS * uh1 * uh1;
@@ -501,6 +507,7 @@ function probeHalo(){
 /* ---------------- audio: deep drone + proximity swell ---------------- */
 
 let AC = null, master = null, running = false, droneLP = null, droneGain = null;
+let whineOsc = null, whineGain = null, whinePan = null;
 const audioHint = document.getElementById('audiohint');
 function unlockAudio(){
   if (AC) return;
@@ -527,6 +534,12 @@ function unlockAudio(){
     const lfo = AC.createOscillator(); lfo.frequency.value = 0.05;
     const lg = AC.createGain(); lg.gain.value = 0.02;
     lfo.connect(lg).connect(droneGain.gain); lfo.start();
+    whineOsc = AC.createOscillator(); whineOsc.type = 'triangle'; whineOsc.frequency.value = 180;
+    whineGain = AC.createGain(); whineGain.gain.value = 0.004;
+    whinePan = AC.createStereoPanner ? AC.createStereoPanner() : null;
+    if (whinePan){ whineOsc.connect(whineGain).connect(whinePan).connect(master); whinePan.pan.value = 0; }
+    else whineOsc.connect(whineGain).connect(master);
+    whineOsc.start();
     running = true;
     scheduleShimmer();
     audioHint.textContent = 'gravitational drone on';
@@ -552,17 +565,23 @@ function scheduleShimmer(){
   }
   setTimeout(scheduleShimmer, 6000 + Math.random() * 8000);
 }
-function updateDrone(prox){
+function updateDrone(prox, R, th){
   if (!running || !AC) return;
   droneLP.frequency.setTargetAtTime(55 + prox * 90, AC.currentTime, 0.4);
   droneGain.gain.setTargetAtTime(0.10 + prox * 0.075, AC.currentTime, 0.4);
+  if (whineOsc){
+    const om = Math.sqrt(0.5 / (R * R * R));
+    whineOsc.frequency.setTargetAtTime(46 + om * 3200, AC.currentTime, 0.5);
+    whineGain.gain.setTargetAtTime(0.004 + prox * 0.016, AC.currentTime, 0.5);
+    if (whinePan) whinePan.pan.setTargetAtTime(Math.max(-1, Math.min(1, Math.sin(th) * prox)), AC.currentTime, 0.6);
+  }
 }
 
 /* ---------------- frame loop ---------------- */
 
 let t0 = performance.now();
 let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
-let ema = 0, busyEma = 0, workEma = 0, prevFence = null, proxNow = 0;
+let ema = 0, busyEma = 0, workEma = 0, prevFence = null, proxNow = 0, orbitR = 21.5;
 let readyFlag = false;
 
 const U = p => name => gl.getUniformLocation(p, name);
@@ -591,7 +610,8 @@ function frame(){
 
   const cb = flight(t);
   proxNow = cb.prox;
-  updateDrone(proxNow);
+  orbitR = cb.R;
+  updateDrone(proxNow, cb.R, cb.th);
   const basis = new Float32Array([
     cb.r[0], cb.r[1], cb.r[2],
     cb.u[0], cb.u[1], cb.u[2],
@@ -618,7 +638,7 @@ function frame(){
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
   gl.uniform1i(ubr('uTex'), 0);
-  gl.uniform1f(ubr('uThresh'), 0.5);
+  gl.uniform1f(ubr('uThresh'), 0.6);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   gl.useProgram(progBlur);
   gl.uniform1i(ubl('uTex'), 0);
@@ -676,6 +696,13 @@ window.__holeTest = {
   mode(){ return { gl2: true, lite: LITE, retina: RETINA }; },
   renderScale(){ return { scale: effScale(), base: RENDER_SCALE, cap: +qCap.toFixed(2), lite: LITE, retina: RETINA, steps: stepsFor(), w: W, h: H, css: canvas.clientWidth, dpr: window.devicePixelRatio || 1 }; },
   pose(){ return { yaw: +cam.yaw.toFixed(3), pitch: +cam.pitch.toFixed(3), prox: +proxNow.toFixed(2) }; },
+  get flightR(){ return +orbitR.toFixed(2); },
+  orbit(){
+    let mn = 1e9, mx = 0;
+    for (let t = 0; t <= 600; t += 0.1){ const rr = flight(t).R; if (rr < mn) mn = rr; if (rr > mx) mx = rr; }
+    return { min: +mn.toFixed(2), max: +mx.toFixed(2) };
+  },
+  starFocusAt(b){ return +Math.max(1, Math.min(3.4, 1 + 2.2 * Math.exp(-Math.max(b - B_CRIT, 0) * 2.2))).toFixed(2); },
   setPose(p){
     if (p.yaw !== undefined){ cam.tyaw = p.yaw; cam.yaw = p.yaw; }
     if (p.pitch !== undefined){ cam.tpitch = p.pitch; cam.pitch = p.pitch; }
@@ -692,7 +719,7 @@ window.__holeTest = {
 <script>
 window.DEMO_CREDITS = {
   name: 'BLACK HOLE', accent: '#ffb257',
-  issues: [903], span: '~3 h', shipped: '2026-10-23',
+  issues: [903, 956], span: '~3 h', shipped: '2026-10-23',
   assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
 };
 </script>

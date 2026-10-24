@@ -166,6 +166,12 @@ async function main() {
         halo.lifted === true && halo.hits >= 1, JSON.stringify(halo))
       const dop = await page.evaluate(() => window.__holeTest.doppler())
       ok('Doppler factor ratio (approaching/receding, beamed) > 2.5', dop.ratio > 2.5, JSON.stringify(dop))
+      const orb = await page.evaluate(() => window.__holeTest.orbit())
+      ok('close pass: trajectory plunges to ~7-8 rs mid-loop and recedes past 20 rs',
+        orb.min <= 8.2 && orb.max >= 20, JSON.stringify(orb))
+      const sf = await page.evaluate(() => ({ rim: window.__holeTest.starFocusAt(2.7), far: window.__holeTest.starFocusAt(9) }))
+      ok('Jacobian star magnification switches on at the limb (rim >2x far)',
+        sf.rim > 2 && sf.far < 1.2, `rim=${sf.rim} far=${sf.far}`)
 
       // --- pixels ---
       await page.waitForTimeout(1200)
