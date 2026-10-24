@@ -36,7 +36,6 @@ export const THEMES = {
         lane: [97, 117, 173],
         capSnow: [252, 254, 255],
         peak: [148, 158, 186], peakSun: [225, 232, 245], peakRock: [104, 112, 138],
-        shC: 0x0b1524, shO: 0.28,
     },
     night: {
         sky: 0x0a0c22, skyTop: 0x04051a, fog: 0x101436, fogD: 0.0016,
@@ -47,7 +46,6 @@ export const THEMES = {
         lane: [26, 48, 92],
         capSnow: [150, 160, 215],
         peak: [30, 34, 78], peakSun: [56, 62, 120], peakRock: [18, 20, 48],
-        shC: 0x04050e, shO: 0.45,
     },
     dusk: {
         sky: 0xff9a5c, skyTop: 0x6a4a9c, fog: 0xf2a878, fogD: 0.0012,
@@ -58,7 +56,6 @@ export const THEMES = {
         lane: [97, 117, 173],
         capSnow: [255, 238, 228],
         peak: [186, 126, 138], peakSun: [255, 200, 170], peakRock: [122, 74, 92],
-        shC: 0x241226, shO: 0.34,
     },
 }
 
