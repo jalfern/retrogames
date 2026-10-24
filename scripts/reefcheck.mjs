@@ -121,6 +121,22 @@ async function main() {
     /function anemone\(/.test(src) && /function fan\(/.test(src) && /function branch\(/.test(src) && /p\.sway/.test(src))
   ok('fish school runs boids rules (separation + alignment + cohesion)',
     /SEPR/.test(src) && /ALGN/.test(src) && /COH/.test(src) && /fishOrder/.test(src))
+  ok('fish vary by species (multiple silhouettes + size classes, #947)',
+    /SPECIES\s*=\s*\[/.test(src) && /species/.test(src) && /cls/.test(src))
+  ok('school wheels around a drifting heading (murmuration bias, #947)', /const wheel =/.test(src))
+  ok('caustics hug the seabed contour (height-aware strips, #947)',
+    /for \(let x = 0; x < cssW; x \+= STEP\)/.test(src) && /const gy = seabedY\(0, x\)/.test(src))
+  ok('caustics brighter on shallow floor than deep (#947)', /const sh = clamp\(\(gy - cssH \* 0\.74\)/.test(src))
+  ok('branch coral tips curl with phase lag down the branch (#947)',
+    /const curl = depth === 1/.test(src) && /Math\.sin\(t \* 1\.7 - ph\)/.test(src))
+  ok('sea fans flex, ribs bending with the current (#947)',
+    /const flex = Math\.sin\(t \* p\.sway/.test(src) && /flex \* 9, -L \* 0\.9/.test(src))
+  ok('god rays wobble in width and scatter at the surface line (#947)',
+    /const wobble = 1 \+ 0\.45/.test(src) && /rgba\(175,240,230,\$\{Math\.min\(0\.5, a \* 1\.25\)/.test(src))
+  ok('reef crackle + pass-by whoosh audio wired (#947)',
+    /function crackle\(/.test(src) && /function scheduleCrackle\(/.test(src) && /function fishWhoosh\(/.test(src) && /scheduleCrackle\(\);/.test(src))
+  ok('idle camera bobs and hovers near hero corals (#947)',
+    /cam\.touched > 2500/.test(src) && /driftMul = 0\.45/.test(src))
   ok('marine snow + bubbles particles live in the scene', /layoutSnow/.test(src) && /maybeBubble/.test(src))
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
 
@@ -219,6 +235,51 @@ async function main() {
       }
       ok('warm living coral colour across the reef bands', coral > 120 && coralCols.size >= 4,
         `${coral} warm coral px across ${coralCols.size}/10 sections`)
+
+      const tops = []
+      for (let x = 8; x < W - 8; x += 4) {
+        let found = -1
+        for (let y = Math.round(H * 0.70); y < Math.round(H * 0.97); y += 2) {
+          const [r, g, b] = px(img, x, y)
+          if (g > 120 && b > 110 && luma([r, g, b]) > 100) { found = y; break }
+        }
+        if (found >= 0) tops.push(found)
+      }
+      const tmed = tops.slice().sort((a, b) => a - b)[Math.floor(tops.length / 2)] || 0
+      const tdev = tops.length ? tops.reduce((s, y) => s + Math.abs(y - tmed), 0) / tops.length : 0
+      ok('caustic field follows the seabed contour (lit-band top undulates, #947)',
+        tops.length > 60 && tdev > 1.5, `${tops.length} columns, mean top deviation=${tdev.toFixed(1)}px`)
+
+      const bandLit = (y0, y1) => {
+        let s = 0, n = 0
+        for (let x = 8; x < W - 8; x += 2) for (let y = Math.round(H * y0); y < Math.round(H * y1); y += 2) {
+          const [r, g, b] = px(img, x, y)
+          if (g > 120 && b > 110 && luma([r, g, b]) > 100) { s += luma([r, g, b]); n++ }
+        }
+        return n > 20 ? s / n : -1
+      }
+      const litNear = bandLit(0.90, 0.97), litFar = bandLit(0.75, 0.82)
+      ok('shallow sand catches brighter caustics than deep sand (#947)',
+        litNear > 0 && litFar > 0 && litNear > litFar + 6, `near=${litNear.toFixed(0)} far=${litFar.toFixed(0)}`)
+
+      let rayShim = 0, rn = 0
+      for (let y = Math.round(H * 0.10); y < Math.round(H * 0.50); y += 3) for (let x = 4; x < W - 4; x += 2) {
+        rayShim += Math.abs(luma(px(img, x, y)) - luma(px(img2, x, y))); rn++
+      }
+      ok('god rays shimmer between frames (width wobble + drift, #947)',
+        rayShim / rn > 0.5, `mean|Δ|=${(rayShim / rn).toFixed(2)} in ray band`)
+
+      ok('fish school carries species variety and stays ordered (#947)',
+        await page.evaluate(() => { const f = window.__reefTest.fish(); return f.species >= 3 && f.order > 0.85 }),
+        JSON.stringify(await page.evaluate(() => window.__reefTest.fish())))
+
+      await page.evaluate(() => window.__reefTest.setPose({ look: 0, y: 0 }))
+      await page.waitForTimeout(3200)
+      const yA = await page.evaluate(() => window.__reefTest.pose().y)
+      await page.waitForTimeout(2000)
+      const yB = await page.evaluate(() => window.__reefTest.pose().y)
+      ok('idle camera bobs vertically without input (#947)', Math.abs(yB - yA) > 2, `y ${yA.toFixed(1)} -> ${yB.toFixed(1)}`)
+      await page.evaluate(() => window.__reefTest.setPose({ look: 260, y: 40 }))
 
       await page.evaluate(() => window.__reefTest.setPose({ look: 260, y: 40 }))
       await page.waitForTimeout(1400)
