@@ -533,8 +533,13 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
   the nose-edge band with a capped shoulder-drop, rebased from the posed
   shoulder each frame; grab/nose 0.18→0.04, Flat 0.44→0.14, Indy 0.45→0.18;
   `ssxmodelcheck` gates the band, mutant: disable `solveGrabHand` → 3 FAIL).
-  Method/Salis still miss (0.34/0.44) — the back-cross needs spine side-flex
-  beyond the shoulder-drop; that remains the gap.
+  Method now reaches too (#971: `flexBoneInRoll` in `art.js` adds a capped
+  SPINE SIDE-FLEX — spine+chest swing toward the band before the drop, so the
+  back-cross shoulder closes the last span and FABRIK lands Method 0.34→0.05;
+  `ssxmodelcheck` gates it, mutant: disable the side-flex block → Method red
+  ~0.34 while Indy/Flat stay green). Salis is the mirrored cross and still
+  misses (~0.41) — its arm needs a shoulder relocation past a spine bend; that
+  one remains the gap.
 - Crash obstacles + day glade are primitive placeholders, not shelf models
   (`art.js` `buildScenery` tags each tree/rock primitive `ph` so `attachShelf()`
   swaps in real GLBs when the model shelf ships them; today a tree is a cylinder
