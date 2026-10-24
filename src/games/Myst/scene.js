@@ -490,13 +490,51 @@ const BUILDERS = {
     const tower = mesh(new THREE.CylinderGeometry(1.8, 2.2, 3.8, 12), mat(TX.grey), 0, 5.9, -14, g)
     tower.userData.landmark = 'observatory'
     const dome = mesh(new THREE.SphereGeometry(2.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(TX.grey), 0, 7.8, -14, g)
-    dome.userData.spot = 'observatory'
     dome.userData.landmark = 'observatory'
     for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.6, 0.3, 1.6), mat(TX.plank), -2 + i * 1.2, 0.2, -4 + i * 0.9, g)
     crate(g, -3.4, 0.3, -1.4, 1, 0.4); barrel(g, 3.2, 0.4, -2, 0.8); crate(g, 4.4, 0.28, 0.4, 0.8, 1.1)
     lantern(g, -4.6, 0, -2.8)
     boulder(g, TX.grey, -13.5, 0.9, -4, 1.3, 0.7); boulder(g, TX.grey, 13.8, 1.1, -3, 1.5, 0.2)
     tuft(g, -8, 0.04, -2, 1.2); tuft(g, 8, 0.04, -1, 1)
+  },
+  stoneDeck(g) {
+    // the becalmed ship on its rock shelf, seen from the quarterdeck: the mast is the landmark
+    const rock = mesh(new THREE.CircleGeometry(46, 24), mat(TX.grey), 0, -0.05, -10, g); rock.rotation.x = -Math.PI / 2
+    seaPlane(g, 0.02, 400, 0.9)
+    rocks(g, TX.grey, [[0, 1.4, -16, 18, 3, 5, 0], [-11, 1.2, -4, 6, 3, 4, 0.3], [12, 1.5, -5, 5, 3.5, 4, -0.4]])
+    const ship = new THREE.Group()
+    const hull = mesh(new THREE.BoxGeometry(3.2, 2.4, 11), mat(TX.plank, { roughness: 0.85 }), 0, 0, 0, ship)
+    hull.userData.noPick = true
+    const bow = mesh(new THREE.ConeGeometry(1.6, 3.2, 4), mat(TX.plank, { roughness: 0.85 }), 0, 0, 7, ship)
+    bow.rotation.x = Math.PI / 2; bow.rotation.z = Math.PI / 4; bow.userData.noPick = true
+    const deckF = mesh(new THREE.BoxGeometry(3.0, 0.2, 10.6), mat(TX.plank, { roughness: 0.9 }), 0, 1.3, 0, ship); deckF.userData.noPick = true
+    const castle = mesh(new THREE.BoxGeometry(2.6, 1.3, 2.2), mat(TX.plank, { roughness: 0.85 }), 0, 2.0, -3.6, ship); castle.userData.noPick = true
+    const mast = mesh(new THREE.CylinderGeometry(0.16, 0.22, 9, 8), mat(TX.wood), 0, 5.6, 0.4, ship)
+    mast.userData.landmark = 'shipMast'
+    const yard = mesh(new THREE.BoxGeometry(4.6, 0.16, 0.16), mat(TX.wood), 0, 8.2, 0.4, ship); yard.userData.landmark = 'shipMast'; yard.userData.noPick = true
+    const yard2 = mesh(new THREE.BoxGeometry(3.2, 0.14, 0.14), mat(TX.wood), 0, 6.4, 0.4, ship); yard2.userData.landmark = 'shipMast'; yard2.userData.noPick = true
+    ship.position.set(0, 2.0, 2)
+    g.add(ship)
+    for (const [px, pz] of [[-1.3, 4.4], [1.3, 4.4]]) mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.4), mat(TX.wood), px, 3.6, pz, g).userData.noPick = true
+    crate(g, -3.6, 2.7, 0.4, 1, 0.3); barrel(g, 3.1, 2.8, -1, 0.8); crate(g, -2.6, 2.6, -2.6, 0.8, 0.9)
+    lantern(g, 2.4, 2.4, 2.4)
+    boulder(g, TX.grey, -6.5, 1.4, -8, 1.4, 0.5); boulder(g, TX.grey, 7, 1.6, -7, 1.5, 1.2)
+  },
+  stoneObservatory(g) {
+    // the dome on the ridge, reached by the rock stair off the ship's stern
+    const ledge = mesh(new THREE.CircleGeometry(34, 22), mat(TX.grey), 0, 5.1, -4, g); ledge.rotation.x = -Math.PI / 2
+    seaPlane(g, -1.5, 360, 0.9)
+    rocks(g, TX.grey, [[0, 3, -16, 20, 5, 6, 0], [-12, 4, -6, 7, 4, 5, 0.4], [12, 3.4, -7, 6, 5, 5, -0.5]])
+    const drum = mesh(new THREE.CylinderGeometry(2.2, 2.6, 3.8, 14), mat(TX.grey), 0, 7.2, 3, g)
+    drum.userData.landmark = 'observatory'
+    const cupola = mesh(new THREE.SphereGeometry(2.0, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(TX.grey), 0, 9.2, 3, g)
+    cupola.userData.spot = 'observatory'; cupola.userData.landmark = 'observatory'
+    const slit = mesh(new THREE.BoxGeometry(0.7, 1.6, 0.4), mat(TX.grey, { color: 0x3a4048 }), 0, 9.7, 1.6, g); slit.userData.noPick = true
+    for (let k = 0; k < 9; k++) {
+      const a = k * (Math.PI / 8) - Math.PI / 2
+      mesh(new THREE.BoxGeometry(0.5, 1, 0.5), mat(TX.grey), Math.sin(a) * 9.5, 5.6, -4 + Math.cos(a) * 9.5, g).userData.noPick = true
+    }
+    boulder(g, TX.grey, -9, 5.6, -2, 1.4, 0.6); boulder(g, TX.grey, 9.4, 5.6, -3, 1.5, 1.1)
   },
   mechanical(g) {
     const ground = mesh(new THREE.CircleGeometry(60, 24), mat(TX.mech, { metalness: 0.3, roughness: 0.6 }), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
@@ -799,7 +837,7 @@ function idSky(id) {
   if (ext.includes(id)) return id === 'dock' || id === 'cliffPath' || id === 'beach' ? 'dusk' : 'day'
   if (id === 'towerTop') return 'day'
   if (id === 'selenitic' || id === 'selSound' || id === 'selThrone' || id === 'selGate' || id === 'selTop') return 'selenitic'
-  if (id === 'stoneship') return 'stoneship'
+  if (id === 'stoneship' || id === 'stoneDeck' || id === 'stoneObservatory') return 'stoneship'
   if (id === 'mechanical' || id === 'mechWalk' || id === 'mechCar' || id === 'mechTop' || id === 'mechRoom') return 'mechanical'
   if (id === 'channelwood' || id === 'chanChannels' || id === 'chanWheel') return 'channelwood'
   return 'interior'

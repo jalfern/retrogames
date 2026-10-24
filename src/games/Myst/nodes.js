@@ -176,9 +176,28 @@ export const NODES = {
     expect: ['observatory'],
     spots: [
       { id: 'retStoneship', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'library' },
-      { id: 'observatory', label: 'a stone observatory on the ridge', yaw: 0, w: 44, h: 40, act: 'observatory' },
       { id: 'pageStoneshipRed', label: 'a red page caught in the rocks', yaw: -60, w: 24, h: 24, act: 'takePage', page: 'red:stoneship', gone: 'pageRed_stoneship' },
       { id: 'pageStoneshipBlue', label: 'a blue page on the pier', yaw: 55, w: 24, h: 24, act: 'takePage', page: 'blue:stoneship', gone: 'pageBlue_stoneship' },
+      { id: 'toShipDeck', label: 'climb aboard the becalmed ship', yaw: 40, w: 50, h: 40, to: 'stoneDeck' },
+    ],
+  },
+  stoneDeck: {
+    pos: [0, 2.6, -10], yaw: 0, sky: 'stoneship', amb: 'sea',
+    caption: "The ship's quarterdeck — becalmed hard against the rocks, its yards bare",
+    expect: ['shipMast'],
+    spots: [
+      { id: 'retStoneDeck', label: 'back down to the pier', yaw: 180, w: 50, h: 36, to: 'stoneship' },
+      { id: 'toObservatory', label: 'the rock stair up to the dome', yaw: 25, w: 44, h: 40, to: 'stoneObservatory' },
+      { id: 'lookShipRig', label: 'the bare rigging overhead', yaw: -28, w: 40, h: 30, msg: 'Ropes and empty yards creak against a sky with no wind in it. Nothing here has moved in a very long time.' },
+    ],
+  },
+  stoneObservatory: {
+    pos: [0, 6.0, -4], yaw: 0, sky: 'stoneship', amb: 'wind',
+    caption: 'The ridge above the ship — a stone observatory open to the grey sea',
+    expect: ['observatory'],
+    spots: [
+      { id: 'retStoneObs', label: 'back down the rock stair', yaw: 180, w: 50, h: 36, to: 'stoneDeck' },
+      { id: 'observatory', label: 'inside the observatory', yaw: 0, w: 40, h: 34, act: 'observatory' },
     ],
   },
   mechanical: {
