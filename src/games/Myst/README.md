@@ -79,9 +79,9 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 
 ## Verify
 ```bash
-npm run mystcheck            # Node: graph, every gate, all 8 pages, 3 endings
-npm run mystcheck -- --mutate # the interlocks must be able to fail (24 mutants)
-npm run mystplay             # browser (needs npm run dev): keys, travel, full win
+npm run mystcheck            # Node: graph, every gate, all 8 pages, 3 endings, seeded locks
+npm run mystcheck -- --mutate # the interlocks must be able to fail (25 mutants)
+npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up
 npm run mystviewcheck        # browser: every one of the 26 views framed
 npm run lint:myst
 ```
@@ -94,7 +94,10 @@ gate stuck shut, alignment at every detent, the mountain door ignoring the
 alignment, a gear slot that keeps giving, six stones collapsing to one pitch,
 and a silent buzz. Two more target the walkable Stoneship (#996): the rock stair
 that stops reaching the observatory, and an observatory that stops recording the
-note — each turns the suite red.
+note — each turns the suite red. One targets the seeded locks (#1005): an
+island that ignores its seed and stamps every save the same — the determinism
+and different-locks gates catch it (it survived its first draft because the
+gate compared the seed FIELD, not the locks; compare locks, always).
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:
