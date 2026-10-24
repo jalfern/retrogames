@@ -557,3 +557,28 @@ export const JUICE = {
     dust: ['#9b8254', '#8a714a', '#6e5a3a', '#b09468'],
     shard: ['#7c3d30', '#5c2f2f', '#c9613a'],
 }
+
+// #963 tempo seam (SSX #780's setMusicStep pattern): MUSIC_STEP is the resting
+// grid of each bed; battleHeat reads how hot a room is (0..1) and musicStepFor
+// turns that into a step duration — a packed, close-quarters room quickens the
+// bed by up to 12%. Pure, so emberwoodcheck can gate it without a browser.
+export const MUSIC_STEP = { emberwoodVale: 0.13, emberwoodDeep: 0.17 }
+
+export function battleHeat(s) {
+    const live = (s.enemies || []).filter(e => !e.dead)
+    if (live.some(e => e.boss)) return 1
+    if (!live.length) return 0
+    const h = s.hero || { x: 0, y: 0 }
+    let near = Infinity
+    for (const e of live) near = Math.min(near, Math.hypot(e.x - h.x, e.y - h.y))
+    const crowd = Math.min(1, live.length / 4)
+    const close = Math.max(0, 1 - Math.min(near, 96) / 96)
+    return Math.min(1, 0.35 * crowd + 0.75 * close)
+}
+
+export function musicStepFor(track, heat) {
+    const base = MUSIC_STEP[track]
+    if (!(base > 0)) return 0
+    const t = Math.max(0, Math.min(1, heat || 0))
+    return base * (1 - 0.12 * t)
+}

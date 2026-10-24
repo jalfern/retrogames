@@ -12,7 +12,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { audioController } from '../../utils/AudioController'
 import { createSim, stepSim, simState, spawnRoom, saveState, loadState } from './sim.js'
 import { createRenderer } from './render.js'
-import { makeTextures } from './art.js'
+import { makeTextures, battleHeat, musicStepFor } from './art.js'
 import { proveGame } from './solver.js'
 import { attractBot } from './bot.js'
 import { SCREENS, TS, SHOP, SECRET_SHOP } from './world.js'
@@ -166,6 +166,7 @@ export default function Emberwood() {
         let last = performance.now()
         let acc = 0
         let hudTick = 0
+        let musicStepT = 0
         let lastSaveScreen = null
         let lastSaveTick = 0
         const fxCounts = {}
@@ -226,10 +227,20 @@ export default function Emberwood() {
                 })
             }
 
-            // Music (#781): the vale sings above ground, the dungeons drone below;
-            // silent on attract/pause/death/win by contract, like every bed here.
-            if (sc === 'play' && !pausedRef.current && !sim.death && !sim.win) {
-                audioController.startMusic(SCREENS[sim.screen]?.dark ? 'emberwoodDeep' : 'emberwoodVale')
+            // Music (#781/#963): the vale sings above ground, the dungeons drone
+            // below; the attract screen runs the vale bed at low gain (SSX #791
+            // precedent — the AudioContext is locked before the first gesture
+            // anyway). Pause, death and win stay silent. The grid lifts with
+            // combat heat through setMusicStep: a hot room quickens the bed.
+            const bed = !pausedRef.current && sc === 'play' && !sim.death && !sim.win
+                ? (SCREENS[sim.screen]?.dark ? 'emberwoodDeep' : 'emberwoodVale')
+                : (!pausedRef.current && sc === 'attract' ? 'emberwoodVale' : null)
+            if (bed) {
+                audioController.startMusic(bed)
+                audioController.setMusicLevel(sc === 'attract' ? 0.45 : 1)
+                if ((musicStepT = (musicStepT + 1) % 24) === 0) {
+                    audioController.setMusicStep(musicStepFor(bed, sc === 'play' ? battleHeat(sim) : 0))
+                }
             } else {
                 audioController.stopMusic()
             }

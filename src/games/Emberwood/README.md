@@ -136,10 +136,14 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   instead of 480x288 — the ortho window (viewH 210 ⊃ the 11-row screen) is
   orientation-agnostic, so portrait just gets ~25% bigger pixels. The blur
   kernel normalizes by a `res` uniform for this reason.
-- **Music (#781)**: two ORIGINAL beds in `AudioController.MUSIC` —
+- **Music (#781/#963)**: two ORIGINAL beds in `AudioController.MUSIC` —
   `emberwoodVale` (D-major overworld) / `emberwoodDeep` (A-minor dungeon,
   slower grid) — switched per screen darkness from the shell loop; silent on
-  attract/pause/death/win; `duckMusic` on hits/booms/stagger/boss-die;
+  pause/death/win; the attract screen runs the vale bed at low gain (0.45,
+  SSX #791 precedent). The grid lifts with combat heat through `setMusicStep`
+  (`MUSIC_STEP`/`battleHeat`/`musicStepFor` in `art.js`): crowd size and
+  enemy proximity raise the tempo up to 12%, a boss pins it at 1; refreshed
+  every 24 loop frames. `duckMusic` on hits/booms/stagger/boss-die;
   fanfare on win, stop on unmount.
 
 - **Graceful attract combat (#874)**: `bot.js` grew a hit-and-run layer on top
@@ -194,7 +198,11 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
   screen's east/west columns at viewH 210. — **CLOSED by #959** (adaptive
   viewH, canvas fills the phone; see Portrait full-bleed above).
 - No tempo lift on the beds (SSX's `setMusicStep` seam is unused here); no
-  attract-mode music (contract keeps attract silent).
+  attract-mode music (contract keeps attract silent). — **CLOSED by #963**
+  (`battleHeat` + `musicStepFor` in art.js lift both beds up to 12% with
+  combat heat — crowd size and proximity, a boss pins it at 1; the attract
+  screen runs the vale bed at low gain, SSX #791 precedent; gates in
+  `emberwoodcheck` 6d).
 - Continue is keyboard-only (`L`): the touch pad has no third button, so phones
   start a new journey every visit — an attract-screen continue affordance is owed.
 - The colporter borrows the shopkeeper's red livery and needs his own sprite.
