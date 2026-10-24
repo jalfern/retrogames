@@ -5,7 +5,8 @@
 // wooden book, the clock tower behind the palm illusion, the star panel that
 // opens Channelwood, four Ages each hiding a red and a blue page, and three
 // endings. All art and audio generated in code; the sea, fire, gears,
-// illusions and starlight never stop moving.
+// illusions and starlight never stop moving. Four endings: Atrus, the two
+// brothers — and the rocket, if you find the note that opens its seam.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
@@ -16,7 +17,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
-import { freshState, dispatch, runSolver, solveScript } from './state.js'
+import { freshState, dispatch, runSolver, solveScript, RIDE } from './state.js'
 import { seedFromSearch } from './codes.js'
 import { MESSAGES, PRESS } from './attract.js'
 import { buildWorld, atmosphere, updateTrueStars } from './scene.js'
@@ -27,6 +28,8 @@ const SIM_MS = 1000 / 60
 const NODE_IDS = Object.keys(NODES)
 const NODE_IX = Object.fromEntries(NODE_IDS.map((id, i) => [id, i]))
 const GAP = 4000
+const SILO_FOG = new THREE.Color(0x241a28)
+const SPACE_FOG = new THREE.Color(0x05050f)
 const ATTRACT_WALK = ['dockBeach', 'toLanding', 'toStairs', 'libraryDoor', 'outLibrary', 'backLanding', 'backCliff', 'backDock']
 const attractSpots = () => ATTRACT_WALK
 
@@ -100,6 +103,23 @@ const MystGame = () => {
     }
     gotoNode(gs.node); aim()
 
+    const smooth = (x) => { const c = Math.max(0, Math.min(1, x)); return c * c * (3 - 2 * c) }
+    // saddle height above the pad, per ride stage+tick — up in quadratic, a
+    // held coast in the dark, and a long downhill home.
+    const rocketH = (ride, t) => {
+      if (!ride || ride === 'seated' || ride === 'ignite') return 0
+      if (ride === 'liftoff') return 34 * smooth(t / RIDE.liftoff) ** 1.4
+      if (ride === 'ascent') return 34 + 152 * smooth(t / RIDE.ascent)
+      if (ride === 'coast') return 186
+      if (ride === 'reentry') return 186 - 180 * smooth(t / RIDE.reentry)
+      return 6
+    }
+    const darkAt = (ride, t) => {
+      if (!ride || ride === 'seated' || ride === 'ignite') return 0
+      if (ride === 'coast') return 1
+      return Math.max(0, Math.min(1, (rocketH(ride, t) - 24) / 110))
+    }
+
     const updateMech = (s, dt) => {
       const k = Math.min(1, dt * 2.4)
       const F = s.flags
@@ -127,6 +147,29 @@ const MystGame = () => {
           case 'chanSluice': m.o.position.y += ((F.chanFlood ? m.y0 - 4.3 : m.y0) - m.o.position.y) * k; break
           case 'chanWater': m.o.position.y += ((F.chanFlood ? m.y0 + 0.62 : m.y0) - m.o.position.y) * k; break
           case 'chanFloat': m.o.position.y += ((F.chanFlood ? m.y0 + 0.58 : m.y0) - m.o.position.y) * k; break
+          // THE ROCKET (#1010): the silver climbs, the flame breathes, the
+          // high stars fade in — all driven from the pure ride state.
+          case 'rocketBody': {
+            const H = rocketH(s.ride, s.rideT)
+            const jt = s.ride === 'ignite' ? Math.sin(performance.now() * 0.055) * 0.02 : s.ride === 'liftoff' ? Math.sin(performance.now() * 0.09) * 0.012 : 0
+            m.o.position.y += (m.y0 + H + jt - m.o.position.y) * Math.min(1, dt * 8)
+            break
+          }
+          case 'rocketFlame': {
+            const on = s.ride === 'ignite' ? 0.3 + 0.12 * Math.sin(performance.now() * 0.05)
+              : s.ride === 'liftoff' || s.ride === 'ascent' ? 1.15
+                : s.ride === 'reentry' ? 0.7 : 0.001
+            const fx = on + 0.1 * Math.sin(performance.now() * 0.07)
+            m.o.scale.x += (fx - m.o.scale.x) * Math.min(1, dt * 5)
+            m.o.scale.z = m.o.scale.x
+            m.o.scale.y = m.o.scale.x * (1 + 0.14 * Math.sin(performance.now() * 0.083))
+            break
+          }
+          case 'rideStars': {
+            const t2 = darkAt(s.ride, s.rideT)
+            m.o.material.opacity += (t2 - m.o.material.opacity) * Math.min(1, dt * 1.5)
+            break
+          }
           default: {
             if (m.kind.startsWith('selStone')) {
               const i = Number(m.kind.slice('selStone'.length))
@@ -149,7 +192,7 @@ const MystGame = () => {
       gs = r.state
       syncStars()
       for (const e of r.events) {
-        if (e === 'travel' || e === 'restart') fadeDir = 1
+        if (e === 'travel' || e === 'restart' || e === 'endSurface') fadeDir = 1
         sfx(e)
       }
       if (gs.node !== prevNode) { gotoNode(gs.node); gs.turn === 0 && (lookYaw = 0) }
@@ -268,6 +311,21 @@ const MystGame = () => {
         acc -= SIM_MS
         wt += SIM_MS / 1000
         updateMech(gs, SIM_MS / 1000)
+        if (screenRef.current === 'play' && gs.ride && gs.ride !== 'seated' && gs.ride !== 'landed') {
+          const rr = dispatch(gs, { t: 'tick' })
+          gs = rr.state
+          for (const e of rr.events) { if (e === 'endSurface') fadeDir = 1; sfx(e) }
+          const yy = NODES[gs.node].pos[1] + rocketH(gs.ride, gs.rideT)
+          camera.position.y = yy
+          sun.position.copy(camera.position).add(SUN_OFF)
+          sun.target.position.copy(camera.position)
+          const dk = darkAt(gs.ride, gs.rideT)
+          scene.fog.color.copy(SILO_FOG.clone().lerp(SPACE_FOG, dk))
+          scene.fog.far = 640 - 380 * dk
+          sun.intensity = 1.15 * (1 - 0.88 * dk)
+          if (gs.ending) setMode('ending')
+          hudStamp = -1
+        }
         fade = Math.max(0, Math.min(1, fade + fadeDir * (SIM_MS / 380)))
         if (fade >= 1 && fadeDir > 0) fadeDir = -1
         if (screenRef.current === 'attract') {
@@ -285,7 +343,7 @@ const MystGame = () => {
             if (gs.node !== prev) { gotoNode(gs.node); lookYaw = 0; fadeDir = 1; aim(); sfx('travel') }
           }
         }
-        if (screenRef.current === 'play' && !gs.panelOpen && !gs.bookOpen) ambience(NODES[gs.node].amb, SIM_MS / 1000)
+        if (screenRef.current === 'play' && !gs.panelOpen && !gs.bookOpen && !gs.ride) ambience(NODES[gs.node].amb, SIM_MS / 1000)
       }
       for (const a of anim) a.f(wt)
       renderer.render(scene, camera)
@@ -306,7 +364,15 @@ const MystGame = () => {
         codes: () => ({ seed: gs.seed, ...gs.codes }),
         stars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.trueStar != null) out[o.userData.trueStar] = +o.scale.x.toFixed(3) }); return out },
         fresh: (seed) => { gs = freshState(seed); syncStars(); gotoNode('dock'); aim(); return gs.seed },
-        probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending }),
+        nearRocket: () => {
+          let s = freshState(gs.seed)
+          for (const a of solveScript(s.codes)) { s = dispatch(s, a).state; if (s.flags.obsNote) break }
+          for (const a of [{ t: 'move', id: 'retStoneObs' }, { t: 'move', id: 'retStoneDeck' }, { t: 'move', id: 'retStoneship' }, { t: 'click', id: 'ladderDown' }]) s = dispatch(s, a).state
+          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          return { node: gs.node, obsNote: !!gs.flags.obsNote }
+        },
+        probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending, ride: gs.ride }),
+        rocket: () => ({ ride: gs.ride, rideT: gs.rideT, h: rocketH(gs.ride, gs.rideT), dark: darkAt(gs.ride, gs.rideT) }),
         // Audit every node's framing against its caption: the camera must sit
         // OUTSIDE all solids, no single surface may fill >=80% of the view, and
         // the caption's landmark must be in frame (visible, not occluded).
@@ -494,6 +560,18 @@ const MystGame = () => {
           <div className="text-xs text-sky-200/60">ages, all of them — worlds inside books · A / Enter closes</div>
         </Panel>
       )}
+      {hud.panel === 'soundbook' && screen === 'play' && (
+        <Panel title="THE SOUND-BOOK — six painted pages" onClose={() => closeHud(false)}>
+          <div className="flex gap-3 justify-center my-2 items-baseline">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <button key={i} className="px-2 py-2 border border-emerald-600 text-emerald-200" style={{ fontSize: `${26 - i * 3}px` }} onClick={() => ctl.current?.action({ t: 'echo', i })}>
+                ●
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-emerald-200/60">biggest stone, lowest note — the path's order, page by page · A / Enter closes</div>
+        </Panel>
+      )}
       {hud.book && screen === 'play' && (
         <Panel title={hud.book === 'red' ? 'THE RED BOOK — Sirrus' : 'THE BLUE BOOK — Achenar'} onClose={() => closeHud(false)}>
           <div className={`my-2 text-sm min-h-[3rem] ${hud.book === 'red' ? 'text-red-300' : 'text-blue-200'}`} style={{ filter: `blur(${Math.max(0, (1 - (hud.placed[hud.book] || 0) / 4))}px)` }}>
@@ -513,8 +591,8 @@ const MystGame = () => {
 
       {screen === 'ending' && (
         <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center text-center p-8">
-          <h1 className={`text-3xl font-bold mb-4 ${hud.ending === 'atrus' ? 'text-emerald-300' : 'text-red-400'}`}>
-            {hud.ending === 'atrus' ? 'ATRUS COMES HOME' : hud.ending === 'sirrus' ? 'SIRRUUS IS FREE — AND YOU ARE NOT' : 'ACHENAR IS FREE — AND YOU ARE NOT'}
+          <h1 className={`text-3xl font-bold mb-4 ${hud.ending === 'atrus' || hud.ending === 'surface' ? 'text-emerald-300' : 'text-red-400'}`}>
+            {hud.ending === 'atrus' ? 'ATRUS COMES HOME' : hud.ending === 'surface' ? 'YOU LEAVE MYST' : hud.ending === 'sirrus' ? 'SIRRUUS IS FREE — AND YOU ARE NOT' : 'ACHENAR IS FREE — AND YOU ARE NOT'}
           </h1>
           <p className="text-amber-50/80 max-w-lg mb-8">{hud.message}</p>
           <p className="text-amber-300 animate-pulse">SPACE / TAP — LINK TO MYST AGAIN</p>

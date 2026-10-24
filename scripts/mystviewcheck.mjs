@@ -12,7 +12,7 @@ const r = new Report('mystviewcheck')
 const page = await openGame(browser, { url: URL, hook: '__mystTest', start: false, viewport: { width: 960, height: 540 } })
 
 const v = await page.evaluate(() => window.__mystTest.views())
-r.check('every node framed', v && Object.keys(v).length === 26, `${Object.keys(v || {}).length}/26`)
+r.check('every node framed', v && Object.keys(v).length === 27, `${Object.keys(v || {}).length}/27`)
 let worst = 0
 for (const [id, s] of Object.entries(v || {})) {
   r.check(`${id}: camera outside all solids`, !s.buried, s.buriedMesh || '')

@@ -87,6 +87,8 @@ export const SKIES = {
   stoneship: [[70, 76, 88], [168, 172, 180], [110, 116, 126]],
   mechanical: [[40, 22, 10], [200, 120, 40], [90, 50, 20]],
   channelwood: [[12, 44, 52], [140, 220, 210], [60, 110, 110]],
+  // the rocket shaft: a slit of dusk far overhead, no sunset floor wash
+  silo: [[14, 10, 22], [48, 30, 54], [22, 15, 28]],
 }
 
 export function texSky(name) {

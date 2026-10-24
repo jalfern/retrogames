@@ -37,6 +37,17 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   and then it traps you. Seating the white page brings Atrus home (`atrus`).
   `solveScript(codes)` is the canonical winning route — the attract tour and the
   harness share it; it reads the save's codes, so it solves any seeded island.
+  The ROCKET (#1010): the metal seam in the cave opens only after you read the
+  AMATEM observatory note to its reader-plate. Inside the silo: board the
+  saddle, throw the ignition, and the loop's `tick` action flies the rest —
+  ignite → liftoff → ascent → coast → reentry → splash, `RIDE` holding the
+  seconds per stage (~10 s, the original's FMV scaled down). Mid-flight every
+  input but the tick is refused (the rocket drives you); the coast stage is
+  deliberately, assertedly silent. Splashing down is the fourth ending:
+  `surface`, escape. The SELENITIC SOUND-BOOK (tree stump by the landing)
+  echoes any of the six stones' true pitches (`echo` action → the same
+  `stone:<i>` events the field rings), so the path order is learnable in-world
+  like the original's pages.
 - `codes.js` — per-save codes (#1005), the original's per-copy combination
   stamps. One 32-bit seed per fresh game (pin with `?seed=N`; a fresh game
   without a pin draws a new one, so a restart is a new book of Myst).
@@ -46,7 +57,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   SIZE rank is the star code (rebuilt by `updateTrueStars` on every seed
   change), and the sphere's posts sing the seeded ring order (`sing:<code>`
   event → soundplan). Same seed, same island; different seed, different lock.
-- `scene.js` — builds all 26 views as sibling groups spaced `GAP` apart on X;
+- `scene.js` — builds all 27 views as sibling groups spaced `GAP` apart on X;
   the camera teleports. Conventions: a node's camera faces world +z at
   `yaw 0`; spot bearings are relative degrees from there. Sea, fire, gears,
   waterfall offsets, steam and the illusion palm animate on every frame;
@@ -79,10 +90,10 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 
 ## Verify
 ```bash
-npm run mystcheck            # Node: graph, every gate, all 8 pages, 3 endings, seeded locks
-npm run mystcheck -- --mutate # the interlocks must be able to fail (25 mutants)
+npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride
+npm run mystcheck -- --mutate # the interlocks must be able to fail (29 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up
-npm run mystviewcheck        # browser: every one of the 26 views framed
+npm run mystviewcheck        # browser: every one of the 27 views framed
 npm run lint:myst
 ```
 `mystcheck` was proven to fail: forcing the tower-door gate open (deleting the
@@ -97,7 +108,11 @@ that stops reaching the observatory, and an observatory that stops recording the
 note — each turns the suite red. One targets the seeded locks (#1005): an
 island that ignores its seed and stamps every save the same — the determinism
 and different-locks gates catch it (it survived its first draft because the
-gate compared the seed FIELD, not the locks; compare locks, always).
+gate compared the seed FIELD, not the locks; compare locks, always). Four
+target the rocket (#1010): a seam that opens to a bare hand, a ride that never
+reaches the surface, mid-flight steering that is accepted (the rider rides
+instead of ticking — the gate checks rideT, not just the events), and a
+sound-book whose pages all echo one stone.
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:
@@ -111,9 +126,12 @@ gate compared the seed FIELD, not the locks; compare locks, always).
   an unpinned reload re-rolls the island (`?seed=N` pins it). The
   sounding-path order (biggest→smallest) and the sun-and-moon detent stay
   fixed — in the original they are world constants, not per-save rolls.
-- No teleporting sound-book pages, no age-specific sub-puzzles beyond each
-  Age's gate (Selenitic sphere + path/throne/gear, Mechanical switch chain +
-  tower, Channelwood star-wheel, Stoneship observatory note), no rocket ride.
+- No age-specific sub-puzzles beyond each Age's gate (Selenitic sphere +
+  path/throne/gear, Mechanical switch chain + tower, Channelwood star-wheel,
+  Stoneship observatory note) — the star-wheel is still decorative. #1010
+  closed this bullet's named features: the cave's metal seam now reads the
+  AMATEM note and the ROCKET rides to a fourth, escape ending, and the
+  Selenitic sound-book replays the sounding path's true pitches.
 - The Spectator is a still panel listing the Ages, not a rendered age-vision.
 - Ages' books link straight from their home node; there is no linking-book
   animation with the starfield travel.

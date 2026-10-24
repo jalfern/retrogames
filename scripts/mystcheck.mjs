@@ -3,7 +3,7 @@
 // trap you, and the white page brings Atrus home. Node-only, no browser.
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
-import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON } from '../src/games/Myst/state.js'
+import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE } from '../src/games/Myst/state.js'
 import { deriveCodes, safeWords, seedFromSearch } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES } from '../src/games/Myst/soundplan.js'
@@ -14,7 +14,7 @@ let pass = 0, fail = 0
 const ok = (cond, name) => { if (cond) { pass++; console.log(`  ok ${name}`) } else { fail++; console.error(`  FAIL ${name}`) } }
 
 console.log('MYST — graph')
-ok(Object.keys(NODES).length === 26, '26 nodes: island, tower, cave, cabin, four Ages, walkable Mechanical (4), walkable Selenitic (4), walkable Channelwood (2), walkable Stoneship (2)')
+ok(Object.keys(NODES).length === 27, '27 nodes: island, tower, cave, cabin, rocket silo, four Ages, walkable Mechanical (4), walkable Selenitic (4), walkable Channelwood (2), walkable Stoneship (2)')
 ok(NODES.dock && NODES.dock.spots.some((s) => s.to === 'cliffPath'), 'the dock connects up the path')
 for (const [id, n] of Object.entries(NODES)) {
   for (const s of n.spots) {
@@ -397,6 +397,83 @@ console.log('MYST — the walkable Stoneship gets played, not skipped')
   ok(isWin(s), 'and the detour still brings Atrus home')
 }
 
+console.log('MYST — the rocket (#1010): the seam, the saddle, the ride home')
+{
+  // the metal seam in the cave: revealed by touch, opened by the AMATEM note
+  let s = { ...freshState(), node: 'cave' }
+  const rv = dispatch(s, { t: 'click', id: 'rocketDoor' })
+  ok(!!rv.state.flags.rocketSeen && rv.events.includes('reveal'), 'the waterfall hides a metal seam (first touch reveals it)')
+  s = dispatch(rv.state, { t: 'click', id: 'rocketDoor' }).state
+  ok(!s.flags.rocketOpen && s.node === 'cave', 'a second touch without the observatory note still opens nothing')
+  let w = { ...freshState(), node: 'cave', flags: { obsNote: true } }
+  w = dispatch(w, { t: 'click', id: 'rocketDoor' }).state
+  ok(w.flags.rocketSeen && !w.flags.rocketOpen, 'a hand on the seam finds the metal before the note is read to it')
+  const op = dispatch(w, { t: 'click', id: 'rocketDoor' })
+  ok(op.state.flags.rocketOpen && op.events.includes('rocketOpen'), 'the Amatem note unseals the metal door')
+  const en = dispatch(op.state, { t: 'click', id: 'rocketDoor' })
+  ok(en.state.node === 'rocketSilo' && en.events.includes('travel'), 'through the open seam into the silo')
+  ok(!seen.has('rocketSilo'), 'the silo is not reachable by plain walking — it lives behind the note-gated seam')
+}
+{ // the ride itself: board, ignite, and let the machine fly you
+  let s = { ...freshState(), node: 'rocketSilo' }
+  ok(dispatch(s, { t: 'click', id: 'igniteSwitch' }).events.includes('blocked'), 'the ignition means nothing to a bystander')
+  const bd = dispatch(s, { t: 'click', id: 'boardRocket' })
+  s = bd.state
+  ok(s.ride === 'seated' && bd.events.includes('straddle'), 'the saddle takes you astride the rocket')
+  const ig = dispatch(s, { t: 'click', id: 'igniteSwitch' })
+  s = ig.state
+  ok(s.ride === 'ignite' && ig.events.includes('ignite'), 'throwing the switch wakes the fuel lines')
+  // mid-ride the rocket drives you: every input but the loop's tick is refused
+  const rej = dispatch(s, { t: 'turn', dir: 1 })
+  ok(rej.events.length === 0 && rej.state.ride === 'ignite' && rej.state.rideT === 0, 'a steering input mid-ride is refused — and does not even advance the ride')
+  const rej2 = dispatch(s, { t: 'click', id: 'retCave' })
+  ok(rej2.events.length === 0 && rej2.state.node === 'rocketSilo' && rej2.state.rideT === 0, 'you cannot bail out of the ride')
+  // the full ride, tick by tick, must reach the surface ending in order
+  const stages = []
+  let ticks = 0
+  const target = RIDE.ignite + RIDE.liftoff + RIDE.ascent + RIDE.coast + RIDE.reentry
+  const allEv = []
+  while (!s.ending && ticks < target + 30) {
+    const rr = dispatch(s, { t: 'tick' })
+    s = rr.state; ticks += 1
+    allEv.push(...rr.events)
+    if (s.ride && stages[stages.length - 1] !== s.ride) stages.push(s.ride)
+  }
+  ok(s.ending === 'surface', 'the ride lands you on the surface — the escape ending')
+  ok(ticks <= target + 5, 'the ride takes the scripted seconds, not longer', `${ticks} ticks`)
+  ok(JSON.stringify(stages) === JSON.stringify(['ignite', 'liftoff', 'ascent', 'coast', 'reentry', 'landed']), 'the stages run in order: ignite, liftoff, ascent, coast, reentry, splash', stages.join('>') )
+  ok(['rocketLift', 'ascent', 'coast', 'reentry', 'splash', 'endSurface'].every((e) => allEv.includes(e)), 'each stage announces itself in sound events')
+  // determinism: the same seed rides the same arc
+  const arc = (seed) => {
+    let d = { ...freshState(seed), node: 'rocketSilo' }
+    d = dispatch(d, { t: 'click', id: 'boardRocket' }).state
+    d = dispatch(d, { t: 'click', id: 'igniteSwitch' }).state
+    const seq = []
+    for (let i = 0; i < target; i++) { const rr = dispatch(d, { t: 'tick' }); d = rr.state; seq.push(d.ride + ':' + d.rideT) }
+    return { seq: seq.join('|'), end: d.ending }
+  }
+  const a1 = arc(4242), a2 = arc(4242)
+  ok(a1.end === 'surface' && a1.seq === a2.seq, 'two identical saves ride identical arcs (deterministic)')
+  // after the splash only restart moves you
+  ok(dispatch(s, { t: 'click', id: 'retCave' }).state.ending === 'surface', 'the surface holds; only space restarts')
+  ok(dispatch(s, { t: 'restart' }).state.ride === null, 'restart clears the ride')
+}
+{ // the Selenitic sound-book (#1010): six painted pages, six true pitches
+  let s = { ...freshState(), node: 'selenitic' }
+  const r = dispatch(s, { t: 'click', id: 'soundBook' })
+  ok(r.state.panelOpen === 'soundbook' && r.events.includes('soundbook'), 'the tree-stump book opens its six pages')
+  const echoed = []
+  for (let i = 0; i < STONE_SIZES; i++) { const rr = dispatch(r.state, { t: 'echo', i }); echoed.push(...rr.events) }
+  ok(echoed.length === STONE_SIZES && echoed.every((e, i) => e === `stone:${i}`), 'each page replays its own stone, biggest to smallest', echoed.join(','))
+  const fs = plan('stone:0'), ls = plan(`stone:${STONE_SIZES - 1}`)
+  ok(fs[0].f < ls[0].f, 'the book speaks the truth: biggest page, lowest note')
+  ok(dispatch({ ...freshState(), node: 'selenitic' }, { t: 'echo', i: 3 }).events.length === 0, 'no echo with the book shut')
+}
+{ // the canonical solve is untouched by the rocket: Atrus still comes home
+  const s = runSolver(freshState(8080))
+  ok(isWin(s) && s.ride === null, 'the white-page route never boards the rocket — the solver still ends at the pedestal')
+}
+
 console.log('MYST — per-save codes (#1005: the original stamped its locks per copy)')
 {
   const SEEDS = [1, 42, 555, 31415, 987654321, 0xffffffff]
@@ -428,6 +505,17 @@ console.log('MYST — per-save codes (#1005: the original stamped its locks per 
   ok(rs.seed !== 5150 && rs.node === 'dock', 'restart redraws the seed and returns to the dock')
   ok(JSON.stringify([rs.codes.safe, rs.codes.star, rs.codes.sphere]) !== JSON.stringify([deriveCodes(5150).safe, deriveCodes(5150).star, deriveCodes(5150).sphere]), 'the restarted island carries different locks')
   ok(seedFromSearch('?seed=42') === 42 && seedFromSearch('?lite=1&seed=777&x=1') === 777 && seedFromSearch('?x=1') === null, '?seed=N pins the island; unpinned stays random')
+}
+
+console.log('MYST — rocket sound (every stage of the ride is audible, and distinct)')
+{
+  const rideCues = ['rocketOpen', 'straddle', 'ignite', 'rocketLift', 'ascent', 'reentry', 'splash', 'endSurface', 'soundbook']
+  ok(rideCues.every((e) => plan(e).length > 0), 'every rocket stage schedules its own sound')
+  ok(new Set(rideCues.map((e) => JSON.stringify(plan(e)))).size === rideCues.length, 'no two rocket stages share a cue')
+  ok(plan('coast').length === 0, 'the coast is SILENT — the void takes the motor; the silence is the point, so it is asserted')
+  ok(JSON.stringify(plan('endSurface')) !== JSON.stringify(plan('endGood')), 'the surf at dawn is not the Atrus fanfare')
+  ok(JSON.stringify(plan('splash')) !== JSON.stringify(plan('gateOpen')), 'the splash is not the cliff gate re-used')
+  ok(JSON.stringify(plan('ignite')) !== JSON.stringify(plan('motor')), 'ignition is not the cage motor re-used')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -515,6 +603,18 @@ if (process.argv.includes('--mutate')) {
     ['every save stamps the same island (seed ignored)', CD,
       `  const rnd = mulberry32(seed >>> 0)`,
       `  const rnd = mulberry32(0)`],
+    ['the Amatem note stops opening the seam', ND,
+      `reveal: 'rocketSeen', need: 'obsNote', needMsg:`,
+      `reveal: 'rocketSeen', needMsg:`],
+    ['the ride never reaches the surface', ST,
+      `s.ride = 'landed'; s.rideT = 0; s.ending = 'surface'`,
+      `s.ride = 'landed'; s.rideT = 0`],
+    ['the ride accepts steering (inputs not refused mid-flight)', ST,
+      `if (a.t !== 'tick') return { state: st, events: [] }`,
+      `if (false) return { state: st, events: [] }`],
+    ['every sound-book page echoes the same stone', ST,
+      "ev.push(`stone:${i}`)\n      break",
+      `ev.push('stone:0')\n      break`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
