@@ -119,6 +119,10 @@ for (const g of FLAGSHIPS) {
 }
 ok(REAL_GAPS['COMET DRIFT HD'].some((s) => s.includes('Sound is') && s.includes('Remainder')),
     'parseGaps split a sub-bullet from its parent gap (CometDriftHD Remainder)')
+// #945: the SSX touch front-flip shipped with #894 and ssxmodelcheck gates it; the
+// stale bullet that kept it in the list re-kicked free QA lanes onto closed work.
+ok(!REAL_GAPS.SSX.some((s) => s.includes('added FRNT') || s.includes('retires it')),
+    'SSX honest-gaps re-grew the shipped #871/#894 touch-flip note — that work is gated, not open')
 ok(parseGaps('## Something else\n- no\n') .length === 0, 'parseGaps reads gaps outside the Honest-gaps section')
 const firstGapOwned = (game) => QA(900, game, REAL_GAPS[game][0])
 ok(ownsGap([firstGapOwned('SSX')], 'SSX', REAL_GAPS.SSX[0]), 'ownsGap: an issue quoting the gap owns it')

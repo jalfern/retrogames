@@ -518,19 +518,22 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
 
 ## Honest gaps (filed as the polish pass)
 
-- #871 added FRNT so the front-flip (formerly keyboard-C only) reached touch;
-  #894 retires it — the analogue stick's forward tilt now commits the FRONT
-  flip and the pad carries one FLIP button (keyboard Z/C keep both).
 - No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
   `ssxmodelcheck` covers the hero rider and the touch trick-pad in the browser.
+  (The touch front-flip path is NOT a gap — #894 shipped the tilt-committed FRONT
+  flip and one FLIP button, and `ssxmodelcheck` gates the button set, the tilt
+  directions and the stick+FLIP touch end-to-end; the stale bullet that used to
+  sit here re-kicked free lanes onto closed work, #945.)
 - Board decals reach every rider and the boot weld is solved, not posed
   (#615/#620; #883: `weldBoots` in `art.js` pins each boot's underside to
   the deck-top surface every frame after the pose blend — roll-space corner
   scan, shallow press window, tumble exempt — and `ssxmodelcheck` gates the
   weld in all eleven non-tumble hero poses; mutant: disable `weldBoots` →
-  11 FAIL). Still static: named-grab hand offsets are hand-tuned, not solved
-  — Indy/Method/Salis/Flat hands hover 0.44–0.68 m off the edge band rather
-  than touching it (arm IK is the next slice).
+  11 FAIL).
+- Named-grab hand offsets are still hand-tuned, not solved — Indy/Method/Salis/Flat
+  hands hover 0.44–0.68 m off the edge band rather than touching it (arm IK is the
+  next slice; the reach hand is the one that must land on the band `grabReach`
+  measures).
 
 ## Lateral sign and the tuck/scrub (#547)
 
