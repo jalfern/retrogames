@@ -1438,6 +1438,44 @@ function solveGrabHand(root, hero, side) {
     if (!T) return
     if (best <= 0.06) { ua.position.copy(ua.userData.grabBase); return }
     const maxR = (l1 + l2) * 0.99
+    // #971: the back-cross grabs sit further across than the capped scapula-drop
+    // can reach; a snowboarder closes that span with a SPINE SIDE-FLEX — the torso
+    // bends toward the band, carrying the reach shoulder forward and inboard so
+    // FABRIK can finish. This lands Method (0.34 -> ~0.05). Salis is the mirrored
+    // cross and still misses (~0.41): its arm needs a shoulder relocation, not a
+    // spine bend, so it stays out of the gate and out of this claim's scope.
+    // Gated on a real miss (best > 0.2) so grab/Flat/Indy/Nose, which already
+    // land within 0.2 m on the drop alone, are untouched. Non-accumulating:
+    // blendHero re-slams the spine/chest toward the posed target every frame (it
+    // tracks the un-modified value), so the flex never walks the cycle.
+    if (best > 0.2) {
+        const spineB = hero.bones.spine
+        const chestB = hero.bones.chest
+        if (spineB && chestB) {
+            const Os = rp(spineB)
+            const toS = S.clone().sub(Os)
+            const toT = T.clone().sub(Os)
+            const lenS = toS.length(), lenT = toT.length()
+            if (lenS > 1e-3 && lenT > 1e-3) {
+                const cosA = Math.max(-1, Math.min(1, toS.dot(toT) / (lenS * lenT)))
+                const ang = Math.min(1.0, Math.acos(cosA))
+                flexBoneInRoll(roll, spineB, toS, toT, ang * 0.42)
+                flexBoneInRoll(roll, chestB, toS, toT, ang * 0.58)
+                root.updateMatrixWorld(true)
+                S = rp(ua); E = rp(la); W = rp(wr)
+                let b2 = Infinity
+                for (let i = 0; i <= 10; i++) {
+                    const x = 0.45 + (i / 10) * 0.44
+                    const top = 0.115 + 0.16 * Math.pow(Math.max(0, x / 0.89 - 0.62) / 0.38, 2)
+                    for (const z of GRAB_BAND) {
+                        const d2 = Math.hypot(W.x - x, W.y - top, W.z - z)
+                        if (d2 < b2) { b2 = d2; T = new THREE.Vector3(x, top, z) }
+                    }
+                }
+                best = b2
+            }
+        }
+    }
     // a snowboarder reaches the nose by DROPPING the shoulder (the feet are
     // welded, so the scapula slides toward the band); the named-grab torso
     // sits ~0.1-0.25 m short of the band at plain extension, within a capped
@@ -1487,6 +1525,22 @@ function solveGrabHand(root, hero, side) {
 function uparDelta(ua, dest, origin) {
     const p = ua.parent
     return p.worldToLocal(dest).sub(p.worldToLocal(origin))
+}
+
+// #971: rotate a bone by a roll-space axis/angle, expressed in the bone's
+// parent space so the pivot sits where the roll-space math placed it.
+// The back-cross grabs bend the spine, not just the scapula, so the swing
+// must be a real torso rotation about the spine origin — a translation would
+// drag the hips and break the boot weld.
+function flexBoneInRoll(roll, node, fromV, toV, ang) {
+    const ax = new THREE.Vector3().crossVectors(fromV, toV)
+    if (ax.lengthSq() < 1e-9 || Math.abs(ang) < 1e-4) return
+    ax.normalize()
+    const qRoll = new THREE.Quaternion().setFromAxisAngle(ax, ang)
+    const rw = roll.getWorldQuaternion(new THREE.Quaternion())
+    const qw = new THREE.Quaternion().copy(rw).multiply(qRoll).multiply(rw.clone().invert())
+    const pw = node.parent.getWorldQuaternion(new THREE.Quaternion())
+    node.quaternion.premultiply(pw.clone().invert().multiply(qw).multiply(pw))
 }
 
 function blendHero(hero, pose, tick) {
