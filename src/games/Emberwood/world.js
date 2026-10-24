@@ -110,12 +110,14 @@ export const SCREENS = {
         chests: [],
         npcs: [
             { id: 'shop', kind: 'shop', x: 5, y: 1, msg: 'WELCOME TO THE EMBER SHOP, TRAVELER.' },
+            { id: 'colporter', kind: 'shop', x: 2, y: 9, requires: 'blade', msg: 'HMPH. THE BLADE SUITS YE. SO DO ME WARES.' },
             { id: 'elder', kind: 'oldman', x: 12, y: 8, msg: 'THE CINDER WYRM SLEEPS BENEATH THE SHRINE. ITS SCALECLOAK SHRUGS OFF STEEL — FIRE AN ARROW INTO ITS OPENING MAW TO STAGGER IT, THEN STRIKE.' },
         ],
         signs: [
             { x: 7, y: 2, msg: 'EMBER SHOP — STAND BY THE KEEPER AND PRESS A. POTION, ARROWS, BOMBS, SHIELD — AND, FOR 150 EMBERS, THE EMBER BLADE.' },
             { x: 2, y: 5, msg: 'WEST: FERN HOLLOW — A SHIELD WAITS BEYOND THE FERNS.' },
             { x: 13, y: 3, msg: 'EAST AND NORTH: THE SHRINE, THE WOOD, AND TWO DARK DOORS BELOW.' },
+            { x: 1, y: 8, msg: 'A COLPORTER HIDES IN THE SOUTHWEST CORNER — BUT ONLY FOR THOSE WHO CARRY THE EMBER BLADE.' },
         ],
         enemies: [{ type: 'cinderling', x: 13, y: 9, i: 0 }],
     }),
@@ -356,4 +358,11 @@ export const SHOP = [
     { item: 'bombs', label: 'BOMBS x4', price: 30 },
     { item: 'shield', label: 'SHIELD', price: 80 },
     { item: 'blade', label: 'EMBER BLADE', price: 150 },
+]
+
+export const SECRET_SHOP = [
+    { item: 'potion', label: 'POTION', price: 15 },
+    { item: 'arrows', label: 'ARROWS x20', price: 30 },
+    { item: 'key', label: 'BRASS KEY', price: 25 },
+    { item: 'heart', label: 'HEART CONTAINER', price: 400 },
 ]

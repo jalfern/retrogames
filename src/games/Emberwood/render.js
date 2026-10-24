@@ -65,7 +65,13 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
     scene.background = new THREE.Color('#1a1626')
 
     const aspect = width / height
-    const viewH = 210
+    // #959: full-bleed portrait. viewH grows on narrow aspects so the world
+    // width never drops below COVER_W — the 16-tile screen keeps its east/west
+    // columns (today's 4:3 portrait framed exactly 280 units) and the extra
+    // height lands in the diorama's dark ground instead of letterbox bars.
+    const BASE_VIEW_H = 210
+    const COVER_W = 280
+    let viewH = Math.max(BASE_VIEW_H, COVER_W / aspect)
     const camera = new THREE.OrthographicCamera(-viewH * aspect / 2, viewH * aspect / 2, viewH / 2, -viewH / 2, 1, 900)
     const CAM_Y = 88 + 120 // perch south of the screen centre
     camera.position.set(128, CAM_Y, 150)
@@ -135,7 +141,12 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
         const ch = canvas.clientHeight || height
         let bw, bh
         if (lite) {
-            bw = width; bh = height
+            // #959: lite follows the box aspect too — landscape stays pinned at
+            // the 480-wide CI buffer, portrait gets a 640-tall narrow buffer so a
+            // full-bleed phone never stretches the scene.
+            const bar = cw / ch
+            if (bar >= 1) { bw = width; bh = Math.round(width / bar) }
+            else { bh = 640; bw = Math.round(640 * bar) }
         } else {
             const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP)
             bw = Math.round(cw * dpr)
@@ -154,6 +165,7 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
         const hw = Math.max(1, Math.round(bw / 2)), hh = Math.max(1, Math.round(bh / 2))
         rtA.setSize(hw, hh); rtB.setSize(hw, hh); rtC.setSize(hw, hh); rtD.setSize(hw, hh)
         const ar = bw / bh
+        viewH = Math.max(BASE_VIEW_H, COVER_W / ar)
         camera.left = -viewH * ar / 2; camera.right = viewH * ar / 2
         camera.top = viewH / 2; camera.bottom = -viewH / 2
         camera.updateProjectionMatrix()
@@ -408,6 +420,7 @@ void main(){
             const nn = new THREE.Mesh(new THREE.PlaneGeometry(14, 18), new THREE.MeshLambertMaterial({ map: makeTex(cnv), transparent: true, alphaTest: 0.4 }))
             nn.quaternion.copy(camera.quaternion)
             nn.position.set(FX(n.x * TS + 8), n.y * TS + 8, 9)
+            if (n.requires) { nn.userData.requires = n.requires; nn.visible = false }
             screenGroup.add(nn); staticMeshes.push(nn)
             dynamic.npcs.set(n.id, nn)
         }
@@ -595,6 +608,9 @@ void main(){
             if (!mesh) continue
             const open = (d.kind === 'switch' ? !!sim.flags.switchesOn[d.switch] : !!sim.flags.doorsOpen[d.id])
             mesh.visible = !open
+        }
+        for (const [, mesh] of dynamic.npcs) {
+            if (mesh.userData.requires) mesh.visible = !!sim.items[mesh.userData.requires]
         }
 
         const hx = sim.hero.x, hy = sim.hero.y
@@ -833,6 +849,7 @@ void main(){
         renderInfo: () => ({
             bufferW: bufW, bufferH: bufH,
             cssW: canvas.clientWidth || width, cssH: canvas.clientHeight || height,
+            viewW: camera.right - camera.left, viewH,
             dpr: Math.min(window.devicePixelRatio || 1, DPR_CAP),
             samples, lite, gl2,
         }),

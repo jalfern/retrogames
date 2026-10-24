@@ -6,7 +6,7 @@
 //   npm run dev   (in another shell)   then   npm run emberwoodcheck
 //   EMBERWOOD_NO_BROWSER=1 npm run emberwoodcheck   # skip the Chrome leg
 import { SCREENS, TS, SW, SH, tileAt, isSolidTile } from '../src/games/Emberwood/world.js'
-import { createSim, stepSim, simState, hashState, spawnRoom } from '../src/games/Emberwood/sim.js'
+import { createSim, stepSim, simState, hashState, spawnRoom, saveState, loadState } from '../src/games/Emberwood/sim.js'
 import { proveGame, tilePath } from '../src/games/Emberwood/solver.js'
 import { attractBot } from '../src/games/Emberwood/bot.js'
 import { WIND, SHELF_DECOR } from '../src/games/Emberwood/render.js'
@@ -525,6 +525,66 @@ function arcScript(seed) {
     ok(stray === 0, `dust is the tuskroot's signature, not ambient (${stray} dust without one)`)
 }
 
+// ---- 5d. #952 gap 0: the vale remembers — save/continue, secret colporter, elder's gift ----
+{
+    const talk = (id, x, y, dir, seed = 3) => {
+        const s = createSim(seed)
+        spawnRoom(s, id, [x, y])
+        s.hero.dir = dir
+        stepSim(s, inp({ ap: true }))
+        stepSim(s, inp({ ar: true }))
+        return s
+    }
+    const e = talk('ow-11', 12, 9, 'up')
+    const gifted = !!e.flags.elderGifted
+    const pot1 = e.items.potions
+    const msg1 = e.msg
+    stepSim(e, inp({ ap: true }))
+    stepSim(e, inp({ ar: true }))
+    ok(gifted && pot1 === 1 && /POTION/.test(msg1 || ''), "the elder's first audience gifts a smouldering potion")
+    ok(/CINDER WYRM/.test(e.msg || '') && e.items.potions === 1, 'the second audience is the hint again — the gift never repeats')
+    const hooded = talk('ow-11', 1, 9, 'right')
+    ok(!hooded.shop.open, 'without the Ember Blade the colporter keeps his hood up (no shop opens)')
+    hooded.items.blade = true
+    for (let i = 0; i < 20; i++) stepSim(hooded, inp({}))
+    stepSim(hooded, inp({ ap: true }))
+    stepSim(hooded, inp({ ar: true }))
+    ok(hooded.shop.open && hooded.shop.id === 'colporter', 'the Ember Blade reveals the colporter')
+    hooded.score = 500
+    hooded.shop.sel = 3
+    stepSim(hooded, inp({ ap: true }))
+    ok(hooded.hero.max === 4 && hooded.score === 100, 'the colporter sells a heart container for 400 embers (+max heart, embers paid)')
+    hooded.score = 5
+    stepSim(hooded, inp({ ap: true }))
+    ok(hooded.msg === 'NOT ENOUGH EMBERS', 'the colporter refuses short coin')
+    const keeper = talk('ow-11', 5, 2, 'up')
+    ok(keeper.shop.open && keeper.shop.id === 'shop', 'the town keeper still runs the Ember Shop menu')
+    const s = createSim(5)
+    spawnRoom(s, 'd1-e0', [7, 8])
+    s.flags.cracked['ck-e1'] = true
+    s.items.bow = true
+    s.score = 42
+    s.hero.hp = 2
+    s.hero.inv = 99999
+    for (let i = 0; i < 60; i++) stepSim(s, inp({ lx: 1 }))
+    const saved = JSON.parse(JSON.stringify(saveState(s)))
+    ok(saved.tick === s.tick && s.tick > 40, `the save freezes the clock mid-run (tick ${saved.tick})`)
+    const s2 = createSim(999)
+    ok(loadState(s2, saved) === true, 'a save loads onto a fresh sim')
+    ok(s2.screen === 'd1-e0' && s2.items.bow === true && s2.score === 42 && s2.hero.hp === 2 && !!s2.flags.cracked['ck-e1'], 'the save carries screen, items, embers, hp and world flags')
+    ok(s2.tick === s.tick && Math.abs(s2.hero.x - s.hero.x) < 0.01 && Math.abs(s2.hero.y - s.hero.y) < 0.01, 'the restored hero stands exactly where the save left him')
+    // enemies respawn on load (that is what a save standing at a door means), so
+    // the full-hash identity holds at a transition boundary — where saves fire.
+    const b = createSim(5)
+    spawnRoom(b, 'd1-e0', [7, 8])
+    b.items.bow = true
+    b.score = 12
+    const hb = hashState(b)
+    const s3 = createSim(777)
+    ok(loadState(s3, JSON.parse(JSON.stringify(saveState(b)))) && hashState(s3) === hb, `a boundary save continues with the identical hash (${hb})`)
+    ok(loadState(s2, { v: 7 }) === false, 'a foreign save version is refused')
+}
+
 // ---- 6. state contract shape ----
 {
     const s = createSim(7)
@@ -782,6 +842,28 @@ if (!SKIP_BROWSER) {
         await page.goto(URL, { waitUntil: 'load' })
         await page.waitForFunction(() => window.__emberwoodTest && window.__emberwoodTest.state, null, { timeout: 15000 })
 
+        // #959 full-bleed portrait: the canvas fills a phone viewport and the
+        // ortho camera keeps 280 units of world width (viewH grows instead of
+        // cropping east/west). Pre-fix the 390x844 page got a 390x293 letterbox.
+        await page.setViewportSize({ width: 390, height: 844 })
+        await page.waitForTimeout(600)
+        const port = await page.evaluate(() => window.__emberwoodTest.renderInfo())
+        cok(port.cssH >= 800 && port.cssW >= 380,
+            `portrait canvas fills the phone viewport (css=${port.cssW}x${port.cssH} of 390x844)`)
+        cok(port.viewW >= 280 && port.viewH > 210,
+            `portrait keeps east/west coverage on full-bleed (viewW=${port.viewW.toFixed(1)}, viewH=${port.viewH.toFixed(1)}, floors 280/>210)`)
+        cok(Math.abs(port.bufferW / port.bufferH - port.cssW / port.cssH) < 0.02,
+            `portrait buffer follows the viewport aspect (buffer ${port.bufferW}x${port.bufferH} vs css ${port.cssW}x${port.cssH})`)
+        const portLite = await browser.newPage({ viewport: { width: 390, height: 844 } })
+        await portLite.goto(`${URL}?lite=1`, { waitUntil: 'load' })
+        await portLite.waitForFunction(() => window.__emberwoodTest, null, { timeout: 15000 })
+        const pl = await portLite.evaluate(() => window.__emberwoodTest.renderInfo())
+        cok(pl.lite && pl.bufferH === 640 && Math.abs(pl.bufferW / pl.bufferH - pl.cssW / pl.cssH) < 0.02 && pl.viewW >= 280,
+            `?lite=1 portrait follows the box aspect at 640 tall (buffer=${pl.bufferW}x${pl.bufferH}, viewW=${pl.viewW.toFixed(1)})`)
+        await portLite.close()
+        await page.setViewportSize({ width: 900, height: 760 })
+        await page.waitForTimeout(400)
+
         // #789 living foliage: vale screens carry plants, and the wind moves them.
         const fol0 = await page.evaluate(async () => {
             window.__emberwoodTest.goto('ow-00', 6, 5)
@@ -850,6 +932,18 @@ if (!SKIP_BROWSER) {
             return { ticks: s.tick }
         })
         cok(slay.ticks > 40, `the harness bot drives real ticks through the contract (${slay.ticks})`)
+
+        // #952 the shell persists the vale's memory
+        const sv = await page.evaluate(() => {
+            const T = window.__emberwoodTest
+            T.goto('d1-e0', 7, 8)
+            T.saveNow()
+            const stored = !!localStorage.getItem('emberwood.save.v1')
+            const has = T.hasSave()
+            T.clearSave()
+            return { stored, has, cleared: !T.hasSave() }
+        })
+        cok(sv.stored && sv.has && sv.cleared, `the shell persists the save to localStorage and can clear it (${sv.stored ? 'written' : 'missing'})`)
 
         // #888 the Wyrm tail: dedicated shingled billboards, never the drop pool
         const tail = await page.evaluate(async () => {

@@ -26,6 +26,8 @@
     "campfirecheck": "node scripts/campfirecheck.mjs",
     "mountainscheck": "node scripts/mountainscheck.mjs",
     "stormcheck": "node scripts/stormcheck.mjs",
+    "reefcheck": "node scripts/reefcheck.mjs",
+    "blackholecheck": "node scripts/blackholecheck.mjs",
     "creditscheck": "node scripts/creditscheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",

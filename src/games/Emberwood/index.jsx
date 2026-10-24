@@ -10,25 +10,30 @@ import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { audioController } from '../../utils/AudioController'
-import { createSim, stepSim, simState, spawnRoom } from './sim.js'
+import { createSim, stepSim, simState, spawnRoom, saveState, loadState } from './sim.js'
 import { createRenderer } from './render.js'
 import { makeTextures } from './art.js'
 import { proveGame } from './solver.js'
 import { attractBot } from './bot.js'
-import { SCREENS, TS, SHOP } from './world.js'
+import { SCREENS, TS, SHOP, SECRET_SHOP } from './world.js'
 
 const FIXED_DT = 1000 / 60
 const W = 480
 const H_LAND = 288
 const H_PORT = 360
 
+const SAVE_KEY = 'emberwood.save.v1'
+const readSave = () => { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || null } catch { return null } }
+const writeSave = (d) => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)) } catch { /* private mode */ } }
+const clearSave = () => { try { localStorage.removeItem(SAVE_KEY) } catch { /* private mode */ } }
+
 // #829: full quality renders at device resolution and the canvas is shown 1:1
 // (no CSS upscale); lite keeps the pixelated 480-wide CI buffer.
 const IS_LITE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite')
 
-// #773: portrait phones get a taller logical canvas (4:3 instead of 5:3) so the
-// diorama isn't a thin band on a tall screen — the ortho camera keeps its world
-// window (viewH covers the 11-row screen either way), the pixels just get bigger.
+// #959: portrait is full-bleed — the canvas fills the viewport and render.js
+// widens viewH so the ortho window keeps 280 units of world width (the east/west
+// columns never crop); the extra height reads as the diorama's dark ground.
 const readOrient = () => (typeof window !== 'undefined' && window.innerHeight > window.innerWidth ? 'port' : 'land')
 
 const fxSound = (e) => {
@@ -87,6 +92,7 @@ export default function Emberwood() {
     const pausedRef = useRef(false)
     const [hud, setHud] = useState({ hp: 3, max: 3, embers: 0, items: {}, msg: null, shop: false, sel: 0, death: false, win: false, room: '' })
     const [attractLine, setAttractLine] = useState(0)
+    const [hasSave, setHasSave] = useState(() => !!readSave())
     const [orient, setOrient] = useState(readOrient)
     useEffect(() => {
         const onR = () => setOrient(readOrient())
@@ -160,7 +166,21 @@ export default function Emberwood() {
         let last = performance.now()
         let acc = 0
         let hudTick = 0
+        let lastSaveScreen = null
+        let lastSaveTick = 0
         const fxCounts = {}
+
+        const autosave = () => {
+            if (screenRef.current !== 'play' || sim.death || sim.win) return
+            const moved = sim.screen !== lastSaveScreen
+            const boss = sim.flags.boss1 || sim.flags.boss2
+            if (moved || boss || sim.tick - lastSaveTick > 900) {
+                lastSaveScreen = sim.screen
+                lastSaveTick = sim.tick
+                writeSave(saveState(sim))
+                setHasSave(true)
+            }
+        }
 
         const loop = (now) => {
             raf = requestAnimationFrame(loop)
@@ -182,6 +202,7 @@ export default function Emberwood() {
                 }
             }
             if (contractHoldsLoop()) acc = 0
+            autosave()
 
             const fx = sim.fx.splice(0, sim.fx.length)
             if (sc !== 'pause') fx.forEach(fxSound)
@@ -194,13 +215,14 @@ export default function Emberwood() {
             if (now - hudTick > 120) {
                 hudTick = now
                 const scr0 = SCREENS[sim.screen]
-                const shopNpc = scr0 ? (scr0.npcs || []).find(n => n.kind === 'shop') : null
+                const shopNpc = scr0 ? (scr0.npcs || []).find(n => n.kind === 'shop' && (!n.requires || sim.items[n.requires]) &&
+                    Math.hypot(n.x * TS + TS / 2 - sim.hero.x, n.y * TS + TS / 2 - sim.hero.y) < 26) : null
                 setHud({
                     hp: sim.hero.hp, max: sim.hero.max, embers: sim.score,
                     items: { ...sim.items }, msg: sim.msgT > 0 ? sim.msg : null,
-                    shop: sim.shop.open, sel: sim.shop.sel, death: sim.death, win: sim.win,
+                    shop: sim.shop.open, sel: sim.shop.sel, shopId: sim.shop.id, death: sim.death, win: sim.win,
                     room: sim.roomName,
-                    nearShop: !!shopNpc && Math.hypot(shopNpc.x * TS + TS / 2 - sim.hero.x, shopNpc.y * TS + TS / 2 - sim.hero.y) < 26,
+                    nearShop: !!shopNpc, nearColporter: shopNpc?.id === 'colporter',
                 })
             }
 
@@ -214,6 +236,8 @@ export default function Emberwood() {
 
             if (sc === 'play' && sim.win && !sim._winSeen) {
                 sim._winSeen = true
+                clearSave()
+                setHasSave(false)
                 setMode('win')
                 try { audioController.playFanfare() } catch { /* audio locked */ }
             }
@@ -229,6 +253,18 @@ export default function Emberwood() {
             const fresh = createSim(11)
             Object.assign(sim, fresh)
             sim._winSeen = false
+            lastSaveScreen = sim.screen
+            lastSaveTick = sim.tick
+            rend.buildScreen(sim.screen, sim.flags, sim.cut)
+            setMode('play')
+        }
+
+        const startContinue = () => {
+            const d = readSave()
+            if (!d || !loadState(sim, d)) { startPlay(); return }
+            sim._winSeen = false
+            lastSaveScreen = sim.screen
+            lastSaveTick = sim.tick
             rend.buildScreen(sim.screen, sim.flags, sim.cut)
             setMode('play')
         }
@@ -242,7 +278,11 @@ export default function Emberwood() {
                 }
                 return
             }
-            if (screenRef.current === 'attract') { startPlay(); return }
+            if (screenRef.current === 'attract') {
+                if (e.code === 'KeyL' && readSave()) startContinue()
+                else startPlay()
+                return
+            }
             if (screenRef.current === 'win') { setMode('attract'); return }
             keys.add(e.code)
         }
@@ -282,6 +322,9 @@ export default function Emberwood() {
                 renderInfo: () => rend.renderInfo(),
                 fxStats: () => ({ ...fxCounts }),
                 tailStats: () => rend.tailStats(),
+                saveNow: () => { writeSave(saveState(sim)); setHasSave(true); return true },
+                hasSave: () => !!readSave(),
+                clearSave: () => { clearSave(); setHasSave(false); return true },
                 win: () => { sim.flags.boss1 = true; sim.flags.boss2 = true; return true },
             }
             mountDbg({
@@ -323,7 +366,9 @@ export default function Emberwood() {
                 width={W}
                 height={H}
                 className="max-w-full max-h-full"
-                style={{ imageRendering: IS_LITE ? 'pixelated' : 'auto', width: `min(100vw, calc((100dvh - ${orient === 'port' ? 150 : 140}px) * ${(W / H).toFixed(3)}))` }}
+                style={orient === 'port'
+                    ? { imageRendering: IS_LITE ? 'pixelated' : 'auto', width: '100%', height: '100%' }
+                    : { imageRendering: IS_LITE ? 'pixelated' : 'auto', width: `min(100vw, calc((100dvh - 140px) * ${(W / H).toFixed(3)}))` }}
             />
             {/* HUD — #773: clears the #437 chrome cluster (ARCADE left, PAUSE+mute
                 right sit at top 0.75rem), so the strip starts below both. */}
@@ -350,14 +395,16 @@ export default function Emberwood() {
             )}
             {inGame && hud.nearShop && !hud.shop && !hud.death && (
                 <div className="absolute bottom-40 left-1/2 -translate-x-1/2 bg-black/70 border border-amber-600 text-amber-200 font-mono text-xs px-3 py-1 rounded pointer-events-none animate-pulse">
-                    A — TRADE AT THE EMBER SHOP
+                    {hud.nearColporter ? 'A — TRADE WITH THE COLPORTER' : 'A — TRADE AT THE EMBER SHOP'}
                 </div>
             )}
             {inGame && hud.shop && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/60 pointer-events-none">
                     <div className="bg-stone-900 border-2 border-amber-600 p-4 font-mono text-sm w-64">
-                        <div className="text-amber-300 text-center mb-2">EMBER SHOP</div>
-                        {SHOP.map((o, i) => (
+                        <div className={`text-center mb-2 ${hud.shopId === 'colporter' ? 'text-fuchsia-300' : 'text-amber-300'}`}>
+                            {hud.shopId === 'colporter' ? 'THE COLPORTER' : 'EMBER SHOP'}
+                        </div>
+                        {(hud.shopId === 'colporter' ? SECRET_SHOP : SHOP).map((o, i) => (
                             <div key={o.item} className={`px-2 py-1 ${i === hud.sel ? 'bg-amber-600 text-black' : 'text-amber-100'}`}>
                                 {o.label} — {o.price}{(o.item === 'shield' && hud.items.shield) || (o.item === 'blade' && hud.items.blade) ? ' (OWNED)' : ''}
                             </div>
@@ -390,6 +437,7 @@ export default function Emberwood() {
                     <div className="text-violet-300 text-sm tracking-widest mb-8">THE CINDER VALE</div>
                     <div className="text-emerald-200 text-base mb-2">{line}</div>
                     <div className="text-white/80 text-sm mt-6 animate-pulse">PRESS ANY KEY OR TAP TO BEGIN</div>
+                    {hasSave && <div className="text-amber-200/90 text-xs mt-2">PRESS L TO CONTINUE YOUR LAST JOURNEY</div>}
                 </div>
             )}
             {paused && <PauseOverlay game={EMBERWOOD_HELP} badge="THE CINDER VALE" onResume={() => { pausedRef.current = false; setPaused(false) }} />}

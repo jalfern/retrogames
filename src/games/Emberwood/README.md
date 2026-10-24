@@ -92,6 +92,21 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   asserts it spawns facing-correct, outlives the blade, clears, tracks facing, is
   seed-deterministic, and that a bomb blast never fakes one.
 
+- **The vale remembers (#952)**: `saveState/loadState` in `sim.js` persist plain
+  fields only (`sim.rng` is a closure — rebuilt from the seed, #391) plus the
+  pushed-block positions. The shell auto-saves to localStorage on every room
+  transition, on a boss fall, and every 900 ticks; `L` at the attract screen
+  continues (tap = new game), and the save clears on the Ember Heart. Enemies
+  respawn on load exactly as they respawn on re-entry, so full-hash identity is
+  asserted at transition boundaries only. The **elder** gifts one smouldering
+  potion at the first audience (`flags.elderGifted`; repeat talks give only the
+  Wyrm hint). The **colporter** hides in the town's southwest corner
+  (`npcs[].requires: 'blade'` — `npcAt` refuses him without the Ember Blade,
+  `render.js` keeps his hood up): potions cheaper, arrows x20, a brass key, and
+  one HEART CONTAINER for 400 embers. `emberwoodcheck` gates the gift-once
+  rule, the blade gate + buy-through + short coin, the boundary-save hash
+  identity and the localStorage write.
+
 - **Living foliage (#789)**: one deterministic wind field (`render.js WIND`)
   sways tree canopies (slow + wide, ceil 0.05 rad), rustles bushes (fast +
   tight, ceil 0.09 rad plus lateral jitter) and shivers tall grass (per-tile
@@ -110,6 +125,13 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   town mean 15.8/255 pre-fix, ~55 post-fix, lite path 58). `emberwoodcheck`
   pins it: overworld mean ≥35/30, dark-pixel fraction ≤0.35, dungeon mean in
   8..0.8×town (moody by construction).
+- **Portrait full-bleed (#959)**: portrait viewports fill the phone (canvas
+  100% x 100%) and `viewH` grows to `max(210, 280/aspect)` so the ortho
+  window never drops below 280 world units — the 16-tile screen keeps its
+  east/west columns at any phone aspect; the extra height reads as the
+  diorama's dark ground (bg + vignette), not black bars. Lite follows the
+  box aspect at 640 tall (landscape stays pinned 480x288). `emberwoodcheck`
+  pins fill, coverage (viewW ≥ 280), and both buffer aspects.
 - **Portrait canvas (#773)**: portrait viewports render at 480x360 (4:3)
   instead of 480x288 — the ortho window (viewH 210 ⊃ the 11-row screen) is
   orientation-agnostic, so portrait just gets ~25% bigger pixels. The blur
@@ -168,8 +190,11 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
 
 ## Honest gaps (QA polish pass will own these)
 
-- No save system; no secret second shop; the elder hints but gives nothing.
 - Portrait is 4:3, not full-bleed: a taller window would crop the 16-tile
-  screen's east/west columns at viewH 210.
+  screen's east/west columns at viewH 210. — **CLOSED by #959** (adaptive
+  viewH, canvas fills the phone; see Portrait full-bleed above).
 - No tempo lift on the beds (SSX's `setMusicStep` seam is unused here); no
   attract-mode music (contract keeps attract silent).
+- Continue is keyboard-only (`L`): the touch pad has no third button, so phones
+  start a new journey every visit — an attract-screen continue affordance is owed.
+- The colporter borrows the shopkeeper's red livery and needs his own sprite.
