@@ -30,7 +30,10 @@ takeoff throws OVER.
   hollows darken blue, crests catch light, wind grain, groomed trail line), a
   sky-following horizon of distant peaks + sun (#638), shelf scenery models
   (`attachShelf`, tree_pine/oak, rock, boulder, fence, flag — primitive
-  fallback so nothing blocks), neon rails and city pylons, rigs
+  fallback so nothing blocks; #975: the plan is the single source — the day
+  glade and the crash-obstacle trees/rocks are plan entries, their primitives
+  derive from the plan, and the swap removes exactly the primitives whose GLB
+  landed), neon rails and city pylons, rigs
    that crouch/grab/spin/flip/tumble, spray sprites. `index.jsx` is paint,
    sound, HUD and input only. #731: trees span all four shelf species
    (`tree_pine`, `tree_pine_snow`, `tree_pine_tall`, `tree_oak`) picked per
@@ -369,7 +372,7 @@ spectators tagged, crowd hops at the stands, zero page errors.
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 283 checks, blocks merges (CI `static`)
+npm run lint:ssx && npm run ssxcheck     # 334 checks, blocks merges (CI `static`)
 npm run ssxmountaincheck                # 212 checks: mountain feel (#638, #665, #889)
 npm run ssxterraincheck                 # 76 checks: snow/rock surfaces (#669, #685, #844, #889)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
@@ -541,10 +544,16 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
   misses (~0.41) — its arm needs a shoulder relocation past a spine bend; that
   one remains the gap.
 - Crash obstacles + day glade are primitive placeholders, not shelf models
-  (`art.js` `buildScenery` tags each tree/rock primitive `ph` so `attachShelf()`
-  swaps in real GLBs when the model shelf ships them; today a tree is a cylinder
-  trunk + cone canopy and a rock is a dodecahedron — the placeholders carry the
-  look if the shelf or network is missing).
+  — **CLOSED by #975**: `gladeDefs`/`sceneryPlan` are now the single source for
+  the glade and the obstacle trees/rocks; `buildScenery` derives its `ph`
+  primitives straight from the plan (id/position/scale parity, tagged by plan
+  index), and `attachShelf`/`swapPlaceholders` walk *descendants* — the old
+  children-only scan never matched the nested scenery group, so every primitive
+  silently double-drew under its GLB. The swap is per-model: a placeholder
+  survives exactly when its own shelf GLB failed to load. TIMBER's treeD rose
+  0.52→0.58 so the forest stays ~1.9x denser than the glades (#911 law).
+  `__ssxTest.shelf()` reports live ph/glade/model counts; `ssxcheck` +3 and
+  `ssxmodelcheck` +3 prove ph→0 and the glade (18 big trees) lands as GLBs.
 - The pack's contact shadow is a fake blob ellipse, not real shadow casting:
   `index.jsx` pins a dark `CircleGeometry` to the snow under the leader and fades
   its opacity as air grows (#548 readability); there is no shadow-casting light,
