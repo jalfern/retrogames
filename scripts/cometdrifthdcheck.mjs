@@ -1205,7 +1205,10 @@ console.log('kart ghost + mesa shadows (#1002):')
     ok(new Set(meshes.map((m) => m.material)).size === gh.mats.length, 'ghost meshes share one material per livery (no per-mesh waste)')
     ok(gh.mats.every((m) => m.transparent && !m.depthWrite && m.opacity === 0), 'ghost materials are transparent, depth-free, and start at opacity 0 (the loop drives them)')
     ok(gh.mats.every((m) => m.color.r < 0.5 && m.color.g < 0.5), 'no ghost material exceeds half-livery brightness')
-    const bodyGh = gh.mats.find((m) => Math.abs(m.color.r - (0xff / 255) * GHOST.dark) < 1e-6 && Math.abs(m.color.g - (0x88 / 255) * GHOST.dark) < 1e-6)
+    // the expectation must take three's sRGB→linear hex pipeline (ColorManagement
+    // is on): a naive (byte/255)×dark misses the linearised g channel.
+    const wantBody = new THREE.Color(0xff8800).multiplyScalar(GHOST.dark)
+    const bodyGh = gh.mats.find((m) => Math.abs(m.color.r - wantBody.r) < 1e-6 && Math.abs(m.color.g - wantBody.g) < 1e-6 && Math.abs(m.color.b - wantBody.b) < 1e-6)
     ok(!!bodyGh, 'the ghost carries a livery-darkened body copy (colour = livery × GHOST.dark)')
     ok(!gh.mats.includes(kart.userData.body), 'the ghost never reuses the live kart material (the real livery must stay full-strength)')
     // the GLB path: decorateBuggy marks body + accent only — tires stay out
