@@ -531,6 +531,15 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
   11 FAIL). Still static: named-grab hand offsets are hand-tuned, not solved
   — Indy/Method/Salis/Flat hands hover 0.44–0.68 m off the edge band rather
   than touching it (arm IK is the next slice).
+- Crash obstacles + day glade are primitive placeholders, not shelf models
+  (`art.js` `buildScenery` tags each tree/rock primitive `ph` so `attachShelf()`
+  swaps in real GLBs when the model shelf ships them; today a tree is a cylinder
+  trunk + cone canopy and a rock is a dodecahedron — the placeholders carry the
+  look if the shelf or network is missing).
+- The pack's contact shadow is a fake blob ellipse, not real shadow casting:
+  `index.jsx` pins a dark `CircleGeometry` to the snow under the leader and fades
+  its opacity as air grows (#548 readability); there is no shadow-casting light,
+  so riders, obstacles and terrain cast no real shadows.
 
 ## Lateral sign and the tuck/scrub (#547)
 
