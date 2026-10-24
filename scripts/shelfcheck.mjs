@@ -8,6 +8,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { deriveFacing } from './_glb.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const MODELS = join(ROOT, 'public/models')
@@ -180,6 +181,46 @@ for (const e of sceneryWithColorways) {
     check(missingVar.length === 0, `${e.id}: variants resolve${missingVar.length ? ' — missing ' + missingVar.join(',') : ''}`)
 }
 check(shelf.entries.some((e) => (e.variants || []).length && (e.colorways || []).includes('snow')), 'snow colour family wired (base → *_snow sibling)')
+
+// ---- 6. Facing law (#901): every model has a KNOWN forward, and the ones with
+// a real front provably face +Z. The shelf declares the convention (forward +Z,
+// up +Y); each entry declares a facing; vertex-coloured kit pieces have it
+// re-derived from their GLB geometry and must agree (index honesty); nothing may
+// face -Z (a front facing backwards is a build error).
+const FACING_OK = new Set(['radial', '+z', '-z', 'rigged'])
+check(typeof shelf.facing === 'string' && /\+Z/i.test(shelf.facing) && /\+Y/i.test(shelf.facing),
+    `shelf declares the facing law: "${shelf.facing || '(none)'}"`)
+const VALID_FACING = ['radial', '+z', 'rigged'] // '-z' is never a legal DECLARED value
+for (const e of shelf.entries) {
+    if (!VALID_FACING.includes(e.facing)) bad(`${e.id}: facing "${e.facing}" not in ${VALID_FACING.join('/')}`)
+}
+check(shelf.entries.every((e) => VALID_FACING.includes(e.facing)),
+    `every entry declares a legal facing (${shelf.entries.length} entries)`)
+
+let derivedMismatch = 0, backward = 0, verified = 0
+for (const e of shelf.entries.filter((x) => BY_GLB[x.id] && existsSync(BY_GLB[x.id]))) {
+    if (e.facingVerified === false) continue // rigged/textured: facing lives in the pose, not geometry
+    const d = deriveFacing(BY_GLB[e.id])
+    verified++
+    if (d.facing !== e.facing) { derivedMismatch++; bad(`${e.id}: declared "${e.facing}" but geometry derives "${d.facing}"`) }
+    if (d.facing === '-z') { backward++; bad(`${e.id}: front faces -Z (must be +Z)`) }
+}
+check(derivedMismatch === 0, `${verified} vertex-coloured models: index facing matches geometry (honest index)`)
+check(backward === 0, `${verified} vertex-coloured models: none faces backwards (-Z forbidden)`)
+
+const fronted = shelf.entries.filter((e) => e.facing === '+z')
+check(fronted.length >= 5, `${fronted.length} fronted (+Z) models ship (≥ 5 — buildings/vehicles face their front)`)
+check(shelf.entries.some((e) => e.facing === 'radial'), 'radial (no-front) models classified')
+check(shelf.entries.some((e) => e.facing === 'rigged'), 'rigged characters tagged facing=rigged')
+for (const id of ['cottage', 'watchtower', 'windmill']) {
+    const e = shelf.entries.find((x) => x.id === id)
+    check(e && e.facing === '+z' && e.facingVerified !== false, `${id}: fronted building with a geometry-proven +Z front`)
+}
+// A radial prop must NOT secretly carry a one-sided dark front (else its label lies).
+for (const e of shelf.entries.filter((x) => x.facing === 'radial' && x.facingVerified !== false && BY_GLB[x.id])) {
+    const d = deriveFacing(BY_GLB[e.id])
+    check(d.facing === 'radial', `${e.id}: radial claim honest (geometry radial)`)
+}
 
 // index is internally consistent with the files on disk.
 for (const cat of ['characters', 'vehicles', 'scenery']) {
