@@ -1,59 +1,56 @@
-# STATE — 2026-10-24 forge session 9 (Momentum Runner #900 curves rework shipped)
+# STATE — 2026-10-23 forge session (MODEL SHELF #901 facing law + village kit shipped)
 
 ## Shipped this session
-- **#900 → main (PR #933 squash f60b420)** — MOMENTUM RUNNER courses
-  reworked curves-first: 3 new beats (`beatCascade` six chained arcs,
-  `beatHalfPipe` deep U w/ floor boost, `beatSpringHigh` spring over a 420px
-  pit onto a ringed hill-top deck — speed earned, slow springers die on the
-  pit wall). Flat expanse halved (56-63% -> 38-43% of sector ground as
-  >=400px slabs); S-curve flat tails removed, spikes moved into a dip,
-  valley/hill tails packed; programs 20->24 beats, sectors 62/63/66s.
-  New gates: FLATNESS (<45%/sector), SPRING-HIGH (fast lands deck / slow
-  dies / autopilot banks deck rings), arc-steps 8->24. runnercheck 191/191,
-  all 16 mutants + 2 manual (weak spring, re-flattened valley) proven red.
-- **#873 closed** — Jon's answer (analogue steer) was already shipped via
-  #894; the question issue just never got closed.
-- **Filed #934** `QA — MOMENTUM RUNNER: polish pass (curves-first round)`
-  (feedback label) — half-pipe volume shading, deck-landing juice + route
-  telegraph, cascade look variety, spring-high audio cue, runnerplay budget
-  flake note.
+- **#901 → main (PR #938 squash 84cdbde)** — shared 3D model library grown +
+  the missing **facing law** closed. Every `shelf.json` entry now declares a
+  `facing` (`radial` | `+z` | `rigged`); forward=+Z, up=+Y, declared in the
+  index. Vertex-coloured kit pieces have facing **proven from geometry**
+  (`facingVerified`): dark entry feature on +Z, nothing dark on −Z. Consumer
+  helpers `facingOf(id)` / `directionalIds(category)` in `modelShelf.js`.
+  Kit grown 27→45 (2214 KB ≤ 2.5 MB): village+fantasy scenery — cottage,
+  watchtower, windmill (fronted +Z), well, crate, barrel, campfire, signpost,
+  bench, lamp_post, bridge, statue, bush, stump, log_pile, mushroom,
+  flower_patch — + a forge market cart (fronted +Z, geometry-proven). All
+  original CC0, same KayKit voxel idiom, ≤40 KB / ≤400 tris, grounded-shaded.
+- **shelfcheck 189 → 354/0.** New facing gate: index honesty (declared ==
+  derived-from-GLB), **forbid any front at −Z**, radial claims re-checked honest.
+  **Proven red** once: cottage door flipped to −Z → "fronted building with a
+  geometry-proven +Z front" FAILS; restore → green.
+- **#901 closed** (its spec — all categories + proven scale + proven facing +
+  checker — is met). Filed **#939** `QA — MODEL SHELF: wire a consumer + …`
+  (feedback): wire Emberwood/other puller, textured-model facing, village-kit
+  rendered QC, more categories, slim runtime manifest.
 
 ## Next goal
-- Oldest `game-queue` then: #901 shared 3D model library (PLATFORM) /
-  #902 + #903 demos (coral reef, black hole — self-contained, /demos only).
-- QA holds #925 (link pads layout) and now #934. Never touch heldGames.
+- Oldest `game-queue`: **#902 coral-reef demo**, **#903 black-hole demo**
+  (self-contained, `/retrogames/demos/…` only — no registry, per Jon 2026-10-19).
+- QA holds #928 (MYST graphics), #891 (list hygiene), and now #939. Never touch heldGames.
 
 ## Board / harness status
-- main = f60b420 (this ship); nightly was green at claim and at merge
-  (`main-ok` ok, `static` pass, Vercel pass).
-- **runnerplay is flaky on this box**: main itself scores 17/22 here today
-  (attract-window checks assume pre-#550 short sectors + a hero-pixel probe
-  that misses on slopes). This session's branch scored 19/22 — better than
-  the baseline, zero page errors, every input-path check green. Left as
-  advisory per rule 3; budgets named in #934 for the QA lane.
-- `jonq`: nothing AWAITING in lane:games; nothing new filed.
-
-## Open questions
-- none open.
+- main = 84cdbde (this ship). `main-ok` green at claim + merge; `static` SUCCESS;
+  Vercel live — prod shelf.json serves count 45.
+- `lint:mario`/`lint:fps`/`lint:ai` clean; `npm run build` green; `dist/models/`
+  carries all 45 GLBs. `build-shelf` regen is deterministic (no diff on re-run).
+- `jonq`: nothing AWAITING/ANSWERED/DEFAULTED in lane:games; nothing filed.
 
 ## New harness lessons (this session)
-- **A spring's airtime is the real gate, not the pit.** A vy=-820 pad gives
-  ~0.86s of hang: any pit narrower than vx·0.86 is crossed at ANY speed.
-  The first spring-high (240px pit) let a 200px/s body onto the deck; the
-  SPRING-HIGH gate caught it red. Speed-gated crossings must size the gap to
-  the *slowest survivable* launch.
-- **FLATNESS gates need a width floor.** Counting every |dy|<2 segment scores
-  jump run-ups as "flat expanse"; >=400px separates verb architecture from
-  the vast dead ground the issue named. Pin the threshold ~5pp under measured
-  and the error message quotes the old (bad) baseline so a future session
-  sees the debt.
-- **Baseline runnerplay before blaming your branch** — main fails 5/22 on
-  this hardware; 19/22 with shared failure modes is a pass-with-note, not a
-  regression (rule 3, one PR never).
+- **Facing must be checked against the SHADED colour, not the raw one.**
+  `groundShade` multiplies the model's lower band by ~0.72; a "dark-ish" wheel
+  grey (lum 0.235) drops to ~0.17 there and leaked into the back slab, turning a
+  fronted cart `radial`. Reserve sub-threshold dark (<0.2) for the front feature
+  only and keep everything else ≥ ~0.28 pre-shade.
+- **Derive-in-build, re-derive-in-check = an honest index.** The generator WRITES
+  the facing it intends; the checker RE-derives it from the committed GLB and
+  refuses a mismatch and any −Z front. That asymmetry is what makes it load-bearing
+  (a future mirrored prop can't silently pass) — don't have both sides derive.
+- **Additive shelf fields are safe across siblings.** Nothing outside
+  `shelfcheck` asserts exact counts or rejects extra keys, so a new category/field
+  grows the library without breaking SSX/Comet consumers — verify by grep.
 
 ## Housekeeping owed
-- Prune worktrees: `retrogames-forge-momentum-courses` (detach done, remove
-  when idle) + old list unchanged (iphone-controller, ssx-courses,
-  ssx-analogue-stick, emberwood-*, qa-863*, people-sim).
-- STATE.md ships via its own PR (#920 convention) — this session merged, so
-  commit + PR + merge this file.
+- Prune worktrees when idle: `retrogames-forge-model-library` (this session; it
+  used a symlinked `node_modules` — worktree-only, never committed) plus the old
+  list (momentum-courses, iphone-controller, ssx-*, emberwood-*, qa-863*,
+  people-sim, campfire-670).
+- STATE.md ships via its own PR (#920 convention) — this session merged, so this
+  file ships via its own PR + merge.
