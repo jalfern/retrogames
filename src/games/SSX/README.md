@@ -528,10 +528,13 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
   the deck-top surface every frame after the pose blend — roll-space corner
   scan, shallow press window, tumble exempt — and `ssxmodelcheck` gates the
   weld in all eleven non-tumble hero poses; mutant: disable `weldBoots` →
-  11 FAIL). Still static: named-grab hand offsets are hand-tuned, not solved
-  — Indy/Method/Salis/Flat hands hover 0.44–0.68 m off the edge band rather
-  than touching it (arm IK is the next slice; the reach hand is the one that
-  must land on the band `grabReach` measures).
+  11 FAIL). Named-grab hands are now solved too (#967: `solveGrabHand` +
+  `REACH_ARM` in `art.js` — after the weld the reach arm FABRIK-solves onto
+  the nose-edge band with a capped shoulder-drop, rebased from the posed
+  shoulder each frame; grab/nose 0.18→0.04, Flat 0.44→0.14, Indy 0.45→0.18;
+  `ssxmodelcheck` gates the band, mutant: disable `solveGrabHand` → 3 FAIL).
+  Method/Salis still miss (0.34/0.44) — the back-cross needs spine side-flex
+  beyond the shoulder-drop; that remains the gap.
 - Crash obstacles + day glade are primitive placeholders, not shelf models
   (`art.js` `buildScenery` tags each tree/rock primitive `ph` so `attachShelf()`
   swaps in real GLBs when the model shelf ships them; today a tree is a cylinder

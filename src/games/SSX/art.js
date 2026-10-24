@@ -1400,6 +1400,95 @@ function weldBoots(root, hero) {
     }
 }
 
+// #967: named-grab hands are solved, not posed — the render-time arm IK the
+// honest-gaps entry asked for (the same class of fix as weldBoots). The named
+// grabs kept static reach-arm offsets, so Indy/Method/Salis/Flat hovered
+// 0.44–0.68 m off the nose-edge band. After the pose blend (and the boot
+// weld) the reach arm's wrist is FABRIK-solved onto the band the `grabReach`
+// probe measures: 2-bone chain (upperarm→lowerarm), bend-preserving, run in
+// ROLL space like the weld so grab/invert rotations can't map it to the wrong
+// side. When the band point is past full extension the arm points at it and
+// stops at the reachable sphere — no hyperextension. grabTail is exempt: its
+// hand holds the tail, not the nose band (like tumble in the weld).
+const REACH_ARM = { grab: 'l', grabFlat: 'l', grabNose: 'l', grabSalis: 'l', grabIndy: 'r', grabMethod: 'r' }
+const GRAB_BAND = [-0.19, -0.095, 0, 0.095, 0.19]
+
+function solveGrabHand(root, hero, side) {
+    const roll = root.userData.roll
+    const ua = hero.bones[`upperarm${side}`]
+    const la = hero.bones[`lowerarm${side}`]
+    const wr = hero.bones[`wrist${side}`]
+    if (!ua || !la || !wr) return
+    if (!ua.userData.grabBase) ua.userData.grabBase = ua.position.clone()
+    const rp = (o) => roll.worldToLocal(o.getWorldPosition(tmpV.clone()))
+    let S = rp(ua)
+    let E = rp(la)
+    let W = rp(wr)
+    const l1 = E.distanceTo(S), l2 = W.distanceTo(E)
+    if (l1 < 1e-3 || l2 < 1e-3) return
+    let T = null, best = Infinity
+    for (let i = 0; i <= 10; i++) {
+        const x = 0.45 + (i / 10) * 0.44
+        const top = 0.115 + 0.16 * Math.pow(Math.max(0, x / 0.89 - 0.62) / 0.38, 2)
+        for (const z of GRAB_BAND) {
+            const d = Math.hypot(W.x - x, W.y - top, W.z - z)
+            if (d < best) { best = d; T = new THREE.Vector3(x, top, z) }
+        }
+    }
+    if (!T) return
+    if (best <= 0.06) { ua.position.copy(ua.userData.grabBase); return }
+    const maxR = (l1 + l2) * 0.99
+    // a snowboarder reaches the nose by DROPPING the shoulder (the feet are
+    // welded, so the scapula slides toward the band); the named-grab torso
+    // sits ~0.1-0.25 m short of the band at plain extension, within a capped
+    // slide. Aim-only stops short at ~0.35. Rebased from the posed shoulder
+    // every frame so the slide can never accumulate.
+    const D0 = T.distanceTo(S)
+    if (D0 > maxR - 0.02) {
+        const drop = Math.min(0.24, D0 - maxR + 0.12)
+        if (drop > 1e-3) {
+            const dest = roll.localToWorld(T.clone().sub(S).normalize().multiplyScalar(drop).add(S))
+            const origin = roll.localToWorld(S.clone())
+            ua.position.copy(ua.userData.grabBase).add(uparDelta(ua, dest, origin))
+            root.updateMatrixWorld(true)
+            S = rp(ua); E = rp(la); W = rp(wr)
+        }
+    }
+    if (T.distanceTo(S) > maxR) T.sub(S).normalize().multiplyScalar(maxR).add(S)
+    for (let i = 0; i < 8; i++) {
+        W.copy(T)
+        E.copy(E).sub(W).normalize().multiplyScalar(l2).add(W)
+        E.copy(E).sub(S).normalize().multiplyScalar(l1).add(S)
+        W.copy(W).sub(E).normalize().multiplyScalar(l2).add(E)
+    }
+    // bone quaternions live in the bone's PARENT space — solving in roll space
+    // and premultiplying directly would rotate about the wrong basis
+    const upar = ua.parent
+    const Sp = upar.worldToLocal(S.clone())
+    const E0p = upar.worldToLocal(rp(la))
+    const Ep = upar.worldToLocal(E.clone())
+    const d0 = tmpV.copy(E0p).sub(Sp).normalize()
+    const d1 = tmpV2.copy(Ep).sub(Sp).normalize()
+    if (d0.dot(d1) > 0.99995) return
+    tmpQ.setFromUnitVectors(d0, d1)
+    ua.quaternion.premultiply(tmpQ)
+    root.updateMatrixWorld(true)
+    const par = la.parent
+    const E2 = par.worldToLocal(E.clone())
+    const W2 = par.worldToLocal(wr.getWorldPosition(tmpV))
+    const T2 = par.worldToLocal(roll.localToWorld(T.clone()))
+    const a0 = tmpV.copy(W2).sub(E2).normalize()
+    const a1 = tmpV2.copy(T2).sub(E2).normalize()
+    if (a0.dot(a1) > 0.99995) return
+    tmpQ.setFromUnitVectors(a0, a1)
+    la.quaternion.premultiply(tmpQ)
+}
+
+function uparDelta(ua, dest, origin) {
+    const p = ua.parent
+    return p.worldToLocal(dest).sub(p.worldToLocal(origin))
+}
+
 function blendHero(hero, pose, tick) {
     if (hero.pose !== pose) { hero.pose = pose; hero.cur = {} }
     let t = hero.targets[pose]
@@ -1451,6 +1540,7 @@ export function poseRider(root, r, tick, override) {
         if (hero) blendHero(hero, pose, tick)
         else { armR.rotation.z = r.grab ? (r.grabKind === 0 || r.grabKind === 2 || r.grabKind === 5 ? 1.5 : 1.1) : 0.35; legs.scale.y = 0.9 }
         if (hero) weldBoots(root, hero)
+        if (hero && REACH_ARM[pose]) solveGrabHand(root, hero, REACH_ARM[pose])
         return
     }
     const c = r.crouch ? 0.78 : r.tuck ? 0.66 : 1
@@ -1469,6 +1559,7 @@ export function poseRider(root, r, tick, override) {
         armR.rotation.z = r.tuck ? 0.9 : 0.2
     }
     if (hero) weldBoots(root, hero)
+    if (hero && REACH_ARM[pose]) solveGrabHand(root, hero, REACH_ARM[pose])
 }
 
 export function sprayField(lite) {
