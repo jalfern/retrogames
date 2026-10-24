@@ -31,9 +31,9 @@ const clearSave = () => { try { localStorage.removeItem(SAVE_KEY) } catch { /* p
 // (no CSS upscale); lite keeps the pixelated 480-wide CI buffer.
 const IS_LITE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite')
 
-// #773: portrait phones get a taller logical canvas (4:3 instead of 5:3) so the
-// diorama isn't a thin band on a tall screen — the ortho camera keeps its world
-// window (viewH covers the 11-row screen either way), the pixels just get bigger.
+// #959: portrait is full-bleed — the canvas fills the viewport and render.js
+// widens viewH so the ortho window keeps 280 units of world width (the east/west
+// columns never crop); the extra height reads as the diorama's dark ground.
 const readOrient = () => (typeof window !== 'undefined' && window.innerHeight > window.innerWidth ? 'port' : 'land')
 
 const fxSound = (e) => {
@@ -366,7 +366,9 @@ export default function Emberwood() {
                 width={W}
                 height={H}
                 className="max-w-full max-h-full"
-                style={{ imageRendering: IS_LITE ? 'pixelated' : 'auto', width: `min(100vw, calc((100dvh - ${orient === 'port' ? 150 : 140}px) * ${(W / H).toFixed(3)}))` }}
+                style={orient === 'port'
+                    ? { imageRendering: IS_LITE ? 'pixelated' : 'auto', width: '100%', height: '100%' }
+                    : { imageRendering: IS_LITE ? 'pixelated' : 'auto', width: `min(100vw, calc((100dvh - 140px) * ${(W / H).toFixed(3)}))` }}
             />
             {/* HUD — #773: clears the #437 chrome cluster (ARCADE left, PAUSE+mute
                 right sit at top 0.75rem), so the strip starts below both. */}
