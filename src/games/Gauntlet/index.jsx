@@ -23,6 +23,7 @@ import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
 import { selfHero, otherHero } from './seat.js'
 import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
+import { warpGlow, nearArch, trapWarn, stunStars, teleColor, teleSpin, revealFade, debrisVel, DEBRIS_N, FX_TONES } from './fx.js'
 import { walkFrame, hitFlashAlpha, deathProgress } from './hero.js'
 import { torch, litColor, mortarTones, css } from './walls.js'
 import { cardCenter, heroAt } from './select.js'
@@ -74,11 +75,13 @@ const GauntletGame = () => {
 
         let gs = makeGame(0, 'warrior', { topDown: true })
         let raf = 0, last = 0, acc = 0
-        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, selectHero = 0, selectHero2 = 1
+        let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, wflash = 0, naPrev = false, selectHero = 0, selectHero2 = 1
         const keys = { l: false, r: false, u: false, d: false, swordEdge: false, arrowEdge: false }
         const p2 = { l: false, r: false, u: false, d: false, swordEdge: false }
         const evLog = []
         const parts = []
+        const debris = []
+        const revealAt = new Map()
 
         // ------------------------------------------------------------ online ----
         // #531 pilot: ?net=host / ?net=join&room=CODE / ?relay=ws(s)://host.
@@ -267,10 +270,10 @@ const GauntletGame = () => {
                 else if (e.type === 'keyUsed') audioController.playSweep(660, 990, 0.12, 'triangle', 0.06)
                 else if (e.type === 'doorOpen') audioController.playSweep(160, 90, 0.12, 'sawtooth', 0.05)
                 else if (e.type === 'wallHit') audioController.playTone(150, 0.04, 'square', 0.05)
-                else if (e.type === 'wallBreak') { audioController.playNoise(0.2, 0.09); shake = 5 }
+                else if (e.type === 'wallBreak') { audioController.playNoise(0.2, 0.09); FX_TONES.debris.notes.forEach((f, i) => audioController.playTone(f, 0.07, 'triangle', 0.05, i * 0.05)); shake = 5; for (let i = 0; i < DEBRIS_N; i++) { const v = debrisVel(i); debris.push({ x: e.x + 0.5, y: e.y + 0.5, vx: v.vx * 0.05, vy: v.vy * 0.05, g: v.g * 0.05, t: 0 }) } }
                 else if (e.type === 'trapClose') { audioController.playTone(80, 0.14, 'square', 0.09); shake = 4 }
                 else if (e.type === 'trapOpen') audioController.playSweep(90, 160, 0.12, 'triangle', 0.04)
-                else if (e.type === 'teleport') audioController.playSweep(300, 1500, 0.22, 'sine', 0.07)
+                else if (e.type === 'teleport') { audioController.playSweep(300, 1500, 0.22, 'sine', 0.07); wflash = 5 }
                 else if (e.type === 'stun') audioController.playSweep(220, 90, 0.2, 'sawtooth', 0.06)
                 else if (e.type === 'slam') { audioController.playTone(70, 0.16, 'square', 0.1); shake = 6 }
                 else if (e.type === 'genHit') audioController.playTone(200, 0.05, 'square', 0.05)
@@ -278,7 +281,7 @@ const GauntletGame = () => {
                 else if (e.type === 'spawn') audioController.playSweep(80, 220, 0.14, 'triangle', 0.04)
                 else if (e.type === 'deathSpawn') { audioController.playSweep(220, 55, 0.8, 'sawtooth', 0.09) }
                 else if (e.type === 'death') { audioController.playDeath(); shake = 9; flash = 14 }
-                else if (e.type === 'levelClear') { STAIRS_FANFARE.forEach((f, i) => audioController.playTone(f, 0.13, 'square', 0.08, i * 0.11)); say(LEVELS[e.level].name.replace(/^LEVEL \d+ · /, '') + ' CLEARED') }
+                else if (e.type === 'levelClear') { if (e.warp != null) { FX_TONES.warpTake.notes.forEach((f, i) => audioController.playTone(f, 0.1, 'sine', 0.07, i * 0.06)); burst(VW / 2, VH / 2, 14, '#5dff8f'); wflash = 6 } STAIRS_FANFARE.forEach((f, i) => audioController.playTone(f, 0.13, 'square', 0.08, i * 0.11)); say(LEVELS[e.level].name.replace(/^LEVEL \d+ · /, '') + ' CLEARED') }
                 else if (e.type === 'level') audioController.playSweep(220, 440, 0.3, 'triangle', 0.07)
                 else if (e.type === '1up') audioController.playSweep(440, 1760, 0.5, 'square', 0.08)
                 else if (e.type === 'respawn') audioController.playSweep(110, 330, 0.3, 'triangle', 0.06)
@@ -297,6 +300,9 @@ const GauntletGame = () => {
         const doSim = (inp, pInp = null) => {
             step(gs, inp, pInp)
             handleEvents(gs.events.splice(0))
+            const na = nearArch(gs)
+            if (na && !naPrev) FX_TONES.warpNear.notes.forEach((f, i) => audioController.playTone(f, 0.09, 'triangle', 0.05, i * 0.07))
+            naPrev = na
             if (gs.end) finish(gs.end === 'win')
         }
 
@@ -401,6 +407,25 @@ const GauntletGame = () => {
                     ctx.fillStyle = 'rgba(255,255,255,0.035)'
                     ctx.fillRect(x + 2, y + 2, PX - 4, 1)
                     if (n > 0.82) { ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(x + 3 + Math.floor(n * 9), y + 6 + Math.floor(n * 7), 2, 1) }
+                    if (gs.levelData.grid[r][c] === 'h' && gs.revealed.has(r * W + c)) {
+                        // a revealed false wall grinds open over a few frames, with
+                        // a low stone-on-stone grind below the door tone (#973)
+                        const rk = gs.level * W * H + r * W + c
+                        if (!revealAt.has(rk)) {
+                            revealAt.set(rk, gs.tick)
+                            FX_TONES.grind.notes.forEach((f, i) => audioController.playTone(f, 0.12, 'square', 0.05, i * 0.06))
+                        }
+                        const op = revealFade(revealAt.get(rk), gs.tick)
+                        if (op > 0) {
+                            const L = torch(c + 0.5 - h.x, r + 0.5 - h.y)
+                            ctx.globalAlpha = op
+                            ctx.fillStyle = css(litColor((c + r) % 2 === 0 ? mat.dark : mat.base, L))
+                            ctx.fillRect(x, y, PX, PX)
+                            ctx.fillStyle = css(litColor(mat.mortar, L))
+                            ctx.fillRect(x, y + 8, PX, 1)
+                            ctx.globalAlpha = 1
+                        }
+                    }
                     if (ch === 'X') {
                         ctx.fillStyle = '#0e2e42'
                         ctx.fillRect(x + 2, y + 2, PX - 4, PX - 4)
@@ -411,29 +436,36 @@ const GauntletGame = () => {
                     }
                     if (ch === 'W') {
                         // warp arch: the jump is painted on the floor; a dead arch
-                        // (target beyond the quest) shows bricked and dark
+                        // (target beyond the quest) shows bricked and dark; a live
+                        // one breathes green on a slow pulse (#973)
                         const wd = (gs.levelData.warps || []).find((v) => v.x === c && v.y === r)
                         const live = wd && wd.to < gs.levelCount
+                        const glow = warpGlow(gs.tick)
                         ctx.fillStyle = live ? '#123528' : '#241d12'
                         ctx.fillRect(x + 1, y + 1, PX - 2, PX - 2)
-                        ctx.fillStyle = live ? ((gs.tick >> 4) % 2 === 0 ? '#5dff8f' : '#2f9d5f') : '#4a3f2a'
+                        ctx.fillStyle = live ? '#2f9d5f' : '#4a3f2a'
                         ctx.fillRect(x + 2, y + 2, PX - 4, 2)
                         ctx.fillRect(x + 2, y + 2, 2, PX - 4); ctx.fillRect(x + PX - 4, y + 2, 2, PX - 4)
                         if (live) {
                             ctx.fillStyle = '#05150c'
                             ctx.fillRect(x + 4, y + 5, PX - 8, PX - 8)
+                            ctx.fillStyle = `rgba(93,255,143,${0.2 + glow * 0.5})`
+                            ctx.fillRect(x + 4, y + 5, PX - 8, PX - 8)
                             ctx.fillStyle = '#5dff8f'
                             ctx.fillRect(x + 6, y + 7 + ((gs.tick >> 3) % 2), PX - 12, 2)
                         }
-                        if (wd && live) text(`${wd.to + 1}`, x + PX / 2, y - 2, 6, '#5dff8f', 3)
+                        if (wd && live) text(`${wd.to + 1}`, x + PX / 2, y - 2, 6, glow > 0.5 ? '#aaffc8' : '#5dff8f', 3)
                     }
                     if (ch === 'P' || ch === 'p') {
-                        const q = gs.tick >> 2
+                        // the swirl turns; the exit pad wears a paler tint of the
+                        // entrance's hue so the destination reads as related (#973)
+                        const q = teleSpin(gs.tick)
+                        const col = teleColor(ch)
                         ctx.save()
-                        ctx.shadowColor = '#e08fff'; ctx.shadowBlur = 4
+                        ctx.shadowColor = col; ctx.shadowBlur = 4
                         for (let k = 0; k < 4; k++) {
                             const a = (q + k * 2) * Math.PI / 4
-                            ctx.fillStyle = k % 2 ? '#e08fff' : '#7a3fb0'
+                            ctx.fillStyle = k % 2 ? col : '#7a3fb0'
                             ctx.fillRect(x + PX / 2 + Math.round(Math.cos(a) * 4) - 1, y + PX / 2 + Math.round(Math.sin(a) * 4) - 1, 2, 2)
                         }
                         ctx.restore()
@@ -446,6 +478,9 @@ const GauntletGame = () => {
                         ctx.fillRect(x + 2, y + 2, PX - 4, PX - 4)
                     }
                     if (ch === 't') {
+                        // an open trap floor blinks the whole cell in the last
+                        // slice of its open window, before it solidifies (#973)
+                        if (trapWarn(gs, gs.tick)) { ctx.fillStyle = 'rgba(255,150,70,0.4)'; ctx.fillRect(x, y, PX, PX) }
                         ctx.strokeStyle = 'rgba(255,150,70,0.5)'
                         ctx.strokeRect(x + 1.5, y + 1.5, PX - 3, PX - 3)
                     }
@@ -616,11 +651,29 @@ const GauntletGame = () => {
                     ctx.restore()
                 }
             }
+            const stars = stunStars(h.stunT, gs.tick)
+            if (stars && stars.on) {
+                // stunned legs wear a flicker of yellow stars orbiting the head (#973)
+                ctx.save()
+                ctx.shadowColor = '#ffe27a'; ctx.shadowBlur = 4
+                ctx.fillStyle = '#ffe27a'
+                for (let k = 0; k < stars.n; k++) {
+                    const a = stars.spin + (k * Math.PI * 2) / stars.n
+                    ctx.fillRect(hx + Math.round(Math.cos(a) * 6) - 1, hy - 7 + Math.round(Math.sin(a) * 2), 2, 2)
+                }
+                ctx.restore()
+            }
             for (const p of parts) {
                 p.x += p.vx; p.y += p.vy; p.t++
                 if (p.t < 18) { ctx.fillStyle = p.col; ctx.globalAlpha = 1 - p.t / 18; ctx.fillRect(VW / 2 + p.x, VH / 2 + p.y, 2, 2); ctx.globalAlpha = 1 }
             }
             while (parts.length && parts[0].t >= 18) parts.shift()
+            for (const d of debris) {
+                // rubble chips tumble down from a crumbled breakable (#973)
+                d.x += d.vx; d.y += d.vy; d.vy += d.g; d.t++
+                if (d.t < 18) { ctx.globalAlpha = 1 - d.t / 18; ctx.fillStyle = d.t % 2 ? '#9a94a8' : '#6f6a80'; ctx.fillRect(sx(d.x), sy(d.y), 2, 2); ctx.globalAlpha = 1 }
+            }
+            while (debris.length && debris[0].t >= 18) debris.shift()
             const vg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.34, VW / 2, VH / 2, VH * 0.72)
             vg.addColorStop(0, 'rgba(0,0,0,0)')
             vg.addColorStop(1, 'rgba(0,0,0,0.62)')
@@ -715,6 +768,7 @@ const GauntletGame = () => {
             drawView()
             ctx.restore()
             if (flash > 0) { ctx.fillStyle = `rgba(255,40,40,${flash * 0.03})`; ctx.fillRect(0, 0, VW, VH); flash -= 0.5 }
+            if (wflash > 0) { ctx.fillStyle = `rgba(255,255,255,${wflash * 0.028})`; ctx.fillRect(0, 0, VW, VH); wflash -= 0.5 }
             drawPanel()
 
             ctx.fillStyle = '#07070f'
