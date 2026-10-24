@@ -211,7 +211,7 @@ export function decide(gs) {
 export function plan(seed = 0, opts = {}) {    const gs = makeGame(seed, opts.hero || 'warrior', { slack: !!opts.slack, partner: !!opts.partner, topDown: !!opts.topDown, levelCount: opts.levelCount })
     const script = []
     let deaths = 0
-    const max = opts.maxTicks || 40000
+    const max = opts.maxTicks || 30000
     while (!gs.end && script.length < max) {
         const inp = decide(gs)
         script.push(inp)

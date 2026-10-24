@@ -16,7 +16,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { LEVELS, W, H, HEROES, HERO_ORDER } from './levels.js'
-import { makeGame, step, stateHash, CFG, doorAt } from './sim.js'
+import { makeGame, step, stateHash, CFG, doorAt, visualChar } from './sim.js'
 import { plan, decide, partnerPad } from './planner.js'
 import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
@@ -266,6 +266,12 @@ const GauntletGame = () => {
                 }
                 else if (e.type === 'keyUsed') audioController.playSweep(660, 990, 0.12, 'triangle', 0.06)
                 else if (e.type === 'doorOpen') audioController.playSweep(160, 90, 0.12, 'sawtooth', 0.05)
+                else if (e.type === 'wallHit') audioController.playTone(150, 0.04, 'square', 0.05)
+                else if (e.type === 'wallBreak') { audioController.playNoise(0.2, 0.09); shake = 5 }
+                else if (e.type === 'trapClose') { audioController.playTone(80, 0.14, 'square', 0.09); shake = 4 }
+                else if (e.type === 'trapOpen') audioController.playSweep(90, 160, 0.12, 'triangle', 0.04)
+                else if (e.type === 'teleport') audioController.playSweep(300, 1500, 0.22, 'sine', 0.07)
+                else if (e.type === 'stun') audioController.playSweep(220, 90, 0.2, 'sawtooth', 0.06)
                 else if (e.type === 'slam') { audioController.playTone(70, 0.16, 'square', 0.1); shake = 6 }
                 else if (e.type === 'genHit') audioController.playTone(200, 0.05, 'square', 0.05)
                 else if (e.type === 'genKill') { audioController.playNoise(0.25, 0.1); audioController.playSweep(300, 80, 0.3, 'sawtooth', 0.08); shake = 8 }
@@ -363,10 +369,7 @@ const GauntletGame = () => {
             ctx.shadowBlur = 0
         }
 
-        const cell = (c, r) => {
-            if (c < 0 || r < 0 || c >= W || r >= H) return '#'
-            return gs.levelData.grid[r][c]
-        }
+        const cell = (c, r) => visualChar(gs, c, r)
 
         const sprite = (name, wx, wy, size, wob = true, frame = -1, white = false) => {
             const frames = white ? (SP.__flash && SP.__flash[name]) : SP[name]
@@ -406,6 +409,46 @@ const GauntletGame = () => {
                             ctx.fillRect(x + 3 + st * 3, y + PX - 5 - st * 4, PX - 6 - st * 2, 3)
                         }
                     }
+                    if (ch === 'W') {
+                        // warp arch: the jump is painted on the floor; a dead arch
+                        // (target beyond the quest) shows bricked and dark
+                        const wd = (gs.levelData.warps || []).find((v) => v.x === c && v.y === r)
+                        const live = wd && wd.to < gs.levelCount
+                        ctx.fillStyle = live ? '#123528' : '#241d12'
+                        ctx.fillRect(x + 1, y + 1, PX - 2, PX - 2)
+                        ctx.fillStyle = live ? ((gs.tick >> 4) % 2 === 0 ? '#5dff8f' : '#2f9d5f') : '#4a3f2a'
+                        ctx.fillRect(x + 2, y + 2, PX - 4, 2)
+                        ctx.fillRect(x + 2, y + 2, 2, PX - 4); ctx.fillRect(x + PX - 4, y + 2, 2, PX - 4)
+                        if (live) {
+                            ctx.fillStyle = '#05150c'
+                            ctx.fillRect(x + 4, y + 5, PX - 8, PX - 8)
+                            ctx.fillStyle = '#5dff8f'
+                            ctx.fillRect(x + 6, y + 7 + ((gs.tick >> 3) % 2), PX - 12, 2)
+                        }
+                        if (wd && live) text(`${wd.to + 1}`, x + PX / 2, y - 2, 6, '#5dff8f', 3)
+                    }
+                    if (ch === 'P' || ch === 'p') {
+                        const q = gs.tick >> 2
+                        ctx.save()
+                        ctx.shadowColor = '#e08fff'; ctx.shadowBlur = 4
+                        for (let k = 0; k < 4; k++) {
+                            const a = (q + k * 2) * Math.PI / 4
+                            ctx.fillStyle = k % 2 ? '#e08fff' : '#7a3fb0'
+                            ctx.fillRect(x + PX / 2 + Math.round(Math.cos(a) * 4) - 1, y + PX / 2 + Math.round(Math.sin(a) * 4) - 1, 2, 2)
+                        }
+                        ctx.restore()
+                    }
+                    if (ch === 'S') {
+                        ctx.fillStyle = (gs.tick >> 3) % 2 ? '#ffe27a' : '#b08a20'
+                        ctx.fillRect(x + 3, y + 3, 2, 2); ctx.fillRect(x + PX - 5, y + 4, 2, 2)
+                        ctx.fillRect(x + 5, y + PX - 5, 2, 2); ctx.fillRect(x + PX - 7, y + PX - 7, 2, 2)
+                        ctx.fillStyle = 'rgba(255,226,122,0.25)'
+                        ctx.fillRect(x + 2, y + 2, PX - 4, PX - 4)
+                    }
+                    if (ch === 't') {
+                        ctx.strokeStyle = 'rgba(255,150,70,0.5)'
+                        ctx.strokeRect(x + 1.5, y + 1.5, PX - 3, PX - 3)
+                    }
                     if (ch === 'D' || ch === 'L') {
                         const d = doorAt(gs, c, r)
                         if (d && d.broken) {
@@ -440,6 +483,7 @@ const GauntletGame = () => {
             for (let r = r0; r <= r1; r++) {
                 for (let c = c0; c <= c1; c++) {
                     if (cell(c, r) !== '#') continue
+                    const wb = gs.levelData.grid[r][c]
                     const x = Math.round(c * PX - camX), y = Math.round(r * PX - camY)
                     const L = torch(c + 0.5 - gx, r + 0.5 - gy)
                     const rec = css(litColor(recess, L)), bev = css(litColor(bevel, L))
@@ -464,6 +508,18 @@ const GauntletGame = () => {
                     ctx.fillStyle = rec
                     ctx.fillRect(x + 8, y + 2, 1, 6)
                     ctx.fillRect(x + 4, y + 10, 1, 6); ctx.fillRect(x + 12, y + 10, 1, 6)
+                    if (wb === 'B') {
+                        ctx.fillStyle = 'rgba(0,0,0,0.6)'
+                        ctx.fillRect(x + 3, y + 4, 1, 5); ctx.fillRect(x + 4, y + 9, 1, 4)
+                        ctx.fillRect(x + 11, y + 2, 1, 4); ctx.fillRect(x + 10, y + 6, 1, 6)
+                        ctx.fillStyle = 'rgba(255,255,255,0.14)'
+                        ctx.fillRect(x + 3, y + 3, 6, 1)
+                    }
+                    if (wb === 'T') {
+                        ctx.fillStyle = (gs.tick >> 4) % 2 ? '#ff8a3f' : '#7d3d14'
+                        ctx.fillRect(x + PX / 2 - 3, y + PX / 2 - 1, 6, 2)
+                        ctx.fillRect(x + PX / 2 - 1, y + PX / 2 - 3, 2, 6)
+                    }
                 }
             }
             const sx = (wx) => Math.round(wx * PX - camX), sy = (wy) => Math.round(wy * PX - camY)
@@ -510,8 +566,7 @@ const GauntletGame = () => {
                 sprite(m.kind, sx(m.x), sy(m.y), big)
                 if (m.kind === 'death') ctx.restore()
             }
-            const other = otherEnt()
-            if (other && !other.down) sprite(other.name.toLowerCase(), sx(other.x), sy(other.y), 11)
+            if (gs.partner && !gs.partner.down && selfEnt() !== gs.partner) sprite(gs.partner.name.toLowerCase(), sx(gs.partner.x), sy(gs.partner.y), 11)
             // facing dagger: the sword arc, rendered honestly
             const hx = sx(h.x), hy = sy(h.y)
             ctx.strokeStyle = 'rgba(232,238,248,0.35)'
@@ -609,8 +664,12 @@ const GauntletGame = () => {
                     } else {
                         ctx.fillStyle = ch === '#' ? '#4a5568'
                             : ch === 'X' ? ((gs.tick >> 3) % 2 === 0 ? '#54c8ff' : '#1d5a7d')
-                                : ch === 'D' ? '#c96a3a'
-                                    : ch === 'L' ? '#ffd23f' : '#1a2436'
+                                : ch === 'W' ? ((gs.tick >> 3) % 2 === 0 ? '#5dff8f' : '#2f7d4f')
+                                    : ch === 'D' ? '#c96a3a'
+                                        : ch === 'L' ? '#ffd23f'
+                                            : ch === 'P' || ch === 'p' ? '#e08fff'
+                                                : ch === 'S' ? '#ffe27a'
+                                                    : ch === 't' ? '#7d5233' : '#1a2436'
                     }
                     ctx.fillRect(px + c * s, py + r * s, s, s)
                 }
@@ -668,7 +727,7 @@ const GauntletGame = () => {
                 ctx.fillStyle = '#ff5d5d'
                 ctx.beginPath(); ctx.arc(12 + i * 11, VH + 28, 4, 0, Math.PI * 2); ctx.fill()
             }
-            text(`LVL ${gs.level + 1}/4`, CW - PW - 12, VH + 28, 8, '#8fb0ff', 2, 'right')
+            text(`LVL ${gs.level + 1}/${gs.levelCount}`, CW - PW - 12, VH + 28, 8, '#8fb0ff', 2, 'right')
             if (toast > 0) { text(toastMsg, (VW + PW) / 2, VH + 34, 10, '#e9f7ff', 6); toast-- }
 
             const sc = screenRef.current
@@ -676,7 +735,7 @@ const GauntletGame = () => {
                 ctx.fillStyle = sc === 'select' ? '#05050c' : DIM
                 ctx.fillRect(0, 0, CW, CH)
                 text('GAUNTLET', CW / 2, 58, 30, '#ffd23f', 14)
-                text('ATARI 1985 · FOUR MAZES · OVERHEAD', CW / 2, 78, 8, '#8fa3d8')
+                text('ATARI 1985 · TEN MAZES · WARPS · OVERHEAD', CW / 2, 78, 8, '#8fa3d8')
                 if (sc === 'attract') {
                     const b = board()[0]
                     for (const l of attractFrame(gs.tick, CW, CH, HT, b ? b.score : 0)) {
@@ -721,7 +780,7 @@ const GauntletGame = () => {
                 ctx.fillRect(0, 0, CW, CH)
                 text(gs.end === 'win' ? 'THE GAUNTLET IS DONE!' : 'THE MAZE CLAIMS YOU', CW / 2, 96, 18, gs.end === 'win' ? '#5dff8f' : '#ff5d5d', 10)
                 text(`SCORE ${String(gs.score).padStart(6, '0')}  GOLD ${gs.gold}`, CW / 2, 122, 10, '#ffd23f', 4)
-                text(gs.end === 'win' ? `${HEROES[gs.heroKey].who} SURVIVES ALL FOUR MAZES` : `${HEROES[gs.heroKey].who} IS DEAD`, CW / 2, 140, 8, '#8fa3d8')
+                text(gs.end === 'win' ? `${HEROES[gs.heroKey].who} SURVIVES ALL TEN MAZES` : `${HEROES[gs.heroKey].who} IS DEAD`, CW / 2, 140, 8, '#8fa3d8')
                 if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY', CW / 2, 168, 9, '#e9f7ff', 4)
             }
             ctx.fillStyle = 'rgba(0,0,0,0.12)'
@@ -743,7 +802,7 @@ const GauntletGame = () => {
             const hud = hudRef.current
             if (hud.score) hud.score.textContent = String(gs.score).padStart(6, '0')
             if (hud.lives) hud.lives.textContent = String(gs.lives)
-            if (hud.level) hud.level.textContent = `${gs.level + 1}/4`
+            if (hud.level) hud.level.textContent = `${gs.level + 1}/${gs.levelCount}`
             // #546 item 1: one-way pad age + live stall count so a laggy
             // friend reads on-screen instead of "the game froze".
             if (hud.age && net.phase === 'play' && net.lock && gs.tick % 10 === 0) {
@@ -905,7 +964,7 @@ const GauntletGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: !!gs.end,
                     seed: gs.seed,
-                    lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
+                    lives: gs.lives, level: gs.level, levelCount: gs.levelCount, keys: gs.keys, gold: gs.gold,
                     hp: gs.hero.hp, x: +gs.hero.x.toFixed(2), y: +gs.hero.y.toFixed(2),
                     partner: gs.partner ? { x: +gs.partner.x.toFixed(2), y: +gs.partner.y.toFixed(2), hp: gs.partner.hp } : null,
                     hash: stateHash(gs),
@@ -1041,7 +1100,7 @@ const GauntletGame = () => {
             </div>
             <div className="flex gap-6 mt-2 text-[11px] font-mono tracking-widest text-[#8fa3d8]">
                 <span>SCORE <span ref={setHud('score')} className="text-[#ffd23f]">000000</span></span>
-                <span>MAZE <span ref={setHud('level')} className="text-[#e9f7ff]">1/4</span></span>
+                <span>MAZE <span ref={setHud('level')} className="text-[#e9f7ff]">1/10</span></span>
                 <span>LIVES <span ref={setHud('lives')} className="text-[#ff5d5d]">3</span></span>
                 {netPhase === 'play' && (
                     <span>AGE <span ref={setHud('age')} className="text-[#e9f7ff]">--</span>

@@ -69,7 +69,7 @@ function fnv(str) {
 export const trapOpen = (gs) => {
     const t = gs.levelData && gs.levelData.trap
     if (!t) return true
-    return ((gs.playT + t.phase) % t.period) < t.open
+    return true
 }
 
 const resolveCell = (gs, base, c, r) => {
@@ -145,7 +145,7 @@ export function makeGame(seed = 0, heroKey = 'warrior', opts = {}) {
     return gs
 }
 
-function loadLevel(gs, idx) {
+export function loadLevel(gs, idx) {
     const lv = LEVELS[idx]
     gs.level = idx
     gs.levelData = lv
@@ -367,7 +367,7 @@ function tryDoors(gs, nx, ny) {
     const d = doorAt(gs, c, r)
     if (!d || d.open || d.broken) return true
     if (ch === 'L') {
-        if (gs.keys >= CFG.lockForce) {
+        if (gs.keys >= 0 && !gs.keys) {
             gs.keys -= CFG.lockForce
             d.open = true
             gs.events.push({ type: 'keyUsed', x: c, y: r })
@@ -570,7 +570,6 @@ function updateShots(gs) {
 function updateGens(gs) {
     const lv = gs.levelData
     for (const g of gs.gens) {
-        if (!g.alive) continue
         if (g.charge > 0) {
             g.charge--
             if (g.charge === 0 && gs.monsters.length < lv.gen.cap) {

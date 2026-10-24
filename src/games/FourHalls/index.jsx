@@ -179,7 +179,7 @@ const FourHallsGame = () => {
                 while (!hit && guard++ < 48) {
                     if (sdX < sdY) { sdX += ddx; mapX += stepX; side = 0 } else { sdY += ddy; mapY += stepY; side = 1 }
                     ch = cell(mapX + 0.5, mapY + 0.5)
-                    if (ch === '#' || ch === 'D' || ch === 'L' || ch === 'X') hit = 1
+                    if ('#DLXBT'.includes(ch)) hit = 1
                 }
                 const dist = Math.max(0.05, side === 0 ? sdX - ddx : sdY - ddy)
                 zbuf[x] = dist
