@@ -247,22 +247,33 @@ classification, so a misclassified backend silently unarms it, which is what
 
 ## Honest gaps (filed to QA as the polish pass)
 
-- WebGPU is the default and its pixels are proven only at the compositor —
-  #987 turned that proof into numbers (`cometdrifthdphonecheck`: PNG luma
-  stats + frame-to-frame motion, not eyeballs) and pinned the phone
-  auto-fallback headlessly (no `navigator.gpu`, unpinned: honest `gpuProbe`,
-  armed refuge, tap-to-start, in-frame dusk pixels, mid-race device-loss
-  heal on the AUTO path). Residual: a real phone's real adapter — iOS Safari
-  WebGPU quirks, thermal backend flips, MMSAA on Adreno — cannot be
-  emulated here; three's WebGL-node-backend already lost its device once on
-  the dev box, which is why the self-heal exists.
-- The autopilot's ideal line rarely holds a drift charge long enough for a
-  tier in a real race (same as the retro twin — the ladder is proven on the
-  treadmill, and human corners still pay); rivals chain drifts only by
-  accident.
-- No bloom/post-processing chain yet (TSL postprocessing skipped for
-  stability): speed lines/vignette are 2D-overlay, not GPU.
-- No dynamic sand deformation, no kart reflections, blob shadows are discs.
+- **CLOSED by #987/#990:** WebGPU pixels proven at the compositor in numbers
+  (`cometdrifthdphonecheck`: PNG luma stats + frame-to-frame motion, not
+  eyeballs) and the phone auto-fallback pinned headlessly (no `navigator.gpu`,
+  unpinned: honest `gpuProbe`, armed refuge, tap-to-start, in-frame dusk
+  pixels, mid-race device-loss heal on the AUTO path). Residual: a real
+  phone's real adapter — iOS Safari WebGPU quirks, thermal backend flips,
+  MSAA on Adreno — cannot be emulated here; three's WebGL-node-backend
+  already lost its device once on the dev box, which is why the self-heal
+  exists.
+- **CLOSED by #471/#478, re-proven by #995:** the autopilot DOES hold drift
+  tiers in a real race — apex grace (#471) and bend-weighted charge (#478)
+  rewrote this note's premise before it was ever re-read. `cometcheck`'s
+  real-race gate banks blue/violet/gold on every course, and the #995 probe
+  numbers hold the fact down: seed 3 Gulch banks 5 blue / 3 violet / 8 gold,
+  rivals chain tiers on their own seeded mistakes.
+- **CLOSED by #658:** the earned-bloom + boost-radial TSL post chain ships on
+  both node backends (`fxChain`: `bloom-tsl-webgpu` / `bloom-tsl-webgl2`,
+  sun/flames/gold-sparks only — the sky never glows). The classic WebGL
+  refuge builds no chain, by design.
+- No kart reflections yet — a real probe mirror is still out of reach.
+  **The rest of this bullet CLOSED by #995:** dynamic sand scarification
+  (`sand.js` — a px wear field stamped by every sand-surfaced kart, decaying
+  over ~35 s of race clock, pushing the gutter ribbon down-and-dark) and
+  sun-fixed shadows (`sunShadow`: the halo holds the dusk-sun azimuth,
+  stretches along it, and dims as elevation lifts the kart off its shadow).
+  `cometdrifthdsandcheck`: 24 gates + `--mutate` (the desert-forgets
+  mutant must die).
 - Sound is the retro twin's synthesized law re-cut on sawtooth; no music.
   - **Remainder (#675, QA studio): skins, signage, bunting, hills.**
     `barrierSkin(seed)` picks a contrast pair from `SPONSOR_PAIRS` plus a
@@ -295,3 +306,26 @@ d-pad via Arrow keys; a press lights the box. Cycle sound 540±120 Hz.
 Harness: 8 Node + 10 browser gates in `cometdrifthdcheck` (real mouse
 clicks, stick flick steps exactly one, wrap over all 4 circuits, centre
 still launches); `--mutate-select` (offset collapse) dies.
+
+## Sand remembers the pack (#995)
+
+The desert used to be porcelain — a kart that left the asphalt left nothing
+behind. `sand.js` is a coarse wear field in px track-space (14px cells over
+the course bounds ±420px, a few thousand cells, cheap): every kart whose
+`surfaceAt` says `sand` and whose v > 1.5 stamps a soft 34px rut (falloff
+`1 − d²/r²`, additive, clamped at max), and the field fades linearly over
+~35 s of race clock. The renderer walks the two gutter ribbons every 4 ticks
+and pushes them down (`SINK` 0.11u) and dark (×0.58 at full wear) from
+captured base arrays — wear is an offset, never an accumulation, so decay
+returns the surface byte-exact and a fresh pass can never double the rut.
+Sim purity holds: stamping reads karts but writes only the field (finish
+times identical with and without the loop), and the sim's own surface hints
+ride a side table so `k.hint` is untouched. `sandState()` (DEV) exposes the
+honest state (`cells`, `depth`, `sum`, caps).
+
+Law the pack must obey: the field scars in a full race (Gulch ~74 cells,
+Sandbank ~367), but the certified autopilot skims (depth ≤ 0.6·max) — the
+ideal line grazes sand only in traffic nudges; it is the rivals' seeded
+mistakes that carve. The asphalt itself never wears (ruts live in the sand).
+`npm run cometdrifthdsandcheck` — 24 gates + `--mutate`, whose
+"desert-forgets" mutant (stamps become no-ops, the ribbon never sinks) dies.
