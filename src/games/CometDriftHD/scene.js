@@ -546,6 +546,7 @@ export function buildDriver(accentHex) {
 export function buildNoseArt(accentHex, variant) {
     const g = new THREE.Group()
     const m = new THREE.MeshStandardMaterial({ color: accentHex, metalness: 0.25, roughness: 0.35 })
+    m.userData.ghost = true
     const v = ((variant | 0) % 4 + 4) % 4
     if (v === 0) {
         for (let i = 0; i < 2; i++) {
@@ -573,6 +574,7 @@ export function buildNoseArt(accentHex, variant) {
 export function buildKart(hex, accentHex, variant = 0) {
     const g = new THREE.Group()
     const body = new THREE.MeshStandardMaterial({ color: hex, metalness: 0.3, roughness: 0.32 })
+    body.userData.ghost = true // #1002: the livery is what the asphalt mirrors
     const dark = new THREE.MeshStandardMaterial({ color: 0x1c161e, metalness: 0.2, roughness: 0.7 })
     const chassis = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 1.0), body)
     chassis.position.y = 0.3
@@ -597,6 +599,7 @@ export function buildKart(hex, accentHex, variant = 0) {
     cockpit.position.set(0, 0.36, 0.02)
     g.add(cockpit)
     const stripeMat = new THREE.MeshStandardMaterial({ color: accentHex, emissive: new THREE.Color(accentHex), emissiveIntensity: 0.18, metalness: 0.25, roughness: 0.35 })
+    stripeMat.userData.ghost = true
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.5), stripeMat)
     stripe.position.set(0, 0.41, 0.55)
     g.add(stripe)
@@ -686,6 +689,52 @@ export function makeBlobShadow() {
     return g
 }
 
+// #1002: kart reflections. A real probe mirror is out of reach on this
+// budget (the README's standing gap), so the asphalt gets the agreed cheap
+// version: a stretched, flattened, livery-darkened GHOST under each kart.
+// Only meshes whose material carries `userData.ghost` join the clone (body +
+// accent trim — the dark wheels are already owned by the blob shadow), the
+// clone shares geometry, and each ghost material is its own instance so the
+// per-kart opacity can ride distance and speed.
+export const GHOST = {
+    dark: 0.42,      // livery darken — a smear of the car, not a second car
+    emissive: 0.12,  // lamps do not glow in the reflection
+    flatten: 0.30,   // y squash: the smear lies on the road
+    stretchK: 0.035, // per speed unit the smear stretches along the nose
+    stretchMax: 0.45,
+    range: 34,       // world units from the camera — ghosts beyond this are gone
+    y: 0.03,         // just above the asphalt, under the blob shadow plane
+    base: 0.5,       // opacity at the camera, fading linearly to 0 at range
+}
+export function buildKartGhost(source) {
+    const g = new THREE.Group()
+    const mats = []
+    const cache = new Map()
+    const drop = []
+    const clone = source.clone(true)
+    clone.traverse((o) => {
+        if (!o.isMesh) return
+        const src = o.material
+        if (!src || !src.userData || !src.userData.ghost) { drop.push(o); return }
+        if (!cache.has(src)) {
+            const m = src.clone()
+            m.color.multiplyScalar(GHOST.dark)
+            if (m.emissive) { m.emissive.multiplyScalar(GHOST.emissive) }
+            m.transparent = true
+            m.opacity = 0
+            m.depthWrite = false
+            m.envMap = null
+            m.envMapIntensity = 0
+            cache.set(src, m)
+            mats.push(m)
+        }
+        o.material = cache.get(src)
+    })
+    for (const o of drop) { const p = o.parent; if (p) p.remove(o) }
+    g.add(clone)
+    return { group: g, mats }
+}
+
 // #995: the dusk sun hangs low at a fixed azimuth, so a shadow falls AWAY
 // from it, not under the kart's nose — the halo counter-rotates against the
 // yaw-steered group to hold the world-fixed sun line, stretches along it, and
@@ -753,8 +802,8 @@ export function decorateBuggy(root, hex, accentHex) {
         const m = matCache.get(o.material)
         o.material = m
         const nm = m.name || ''
-        if (nm === 'Paint_Orange') { m.color = new THREE.Color(hex); body = m }
-        else if (nm === 'Accent_Yellow') { m.color = new THREE.Color(accentHex); m.emissive = new THREE.Color(accentHex); m.emissiveIntensity = 0.22 }
+        if (nm === 'Paint_Orange') { m.color = new THREE.Color(hex); m.userData.ghost = true; body = m }
+        else if (nm === 'Accent_Yellow') { m.color = new THREE.Color(accentHex); m.emissive = new THREE.Color(accentHex); m.emissiveIntensity = 0.22; m.userData.ghost = true }
         else if (nm === 'Taillight_Red') { m.emissive = new THREE.Color(0xff2010); m.emissiveIntensity = BRAKE_IDLE; brakeMat = m }
     })
     const wheels = []
@@ -1321,6 +1370,43 @@ export function buildMesas(color = 0x4e222c, floorY = FLOOR_DUSK) {
         m.position.set(d.x, d.h / 2 + floorY + 0.1, d.z)
         m.rotation.y = d.ang
         g.add(m)
+    }
+    return g
+}
+
+// #1002: the mesas cast nothing — at a low dusk sun they should drag long
+// soft shadows across the sand. One baked gradient quad per mesa is the
+// honest cheap version: dark at the mesa, fading to nothing, oriented on the
+// same world shadow line the kart halos hold (SUN_SHADOW.az), and capped so
+// no shadow tip ever crosses into the track corridor (#542 law).
+export const MESA_SHADOW = {
+    az: 0.92,     // must equal SUN_SHADOW.az — one shadow line for the whole world
+    lenK: 2.6,    // shadow length per unit of mesa height (the low sun)
+    wK: 1.15,     // the penumbra widens the base
+    margin: 8,    // the far end stays this far past the outermost track point
+    minL: 3,      // shorter than this it cannot read — no quad
+    y: 0.02,      // just above the floor, under the mesa footing
+    opacity: 0.5,
+}
+export function buildMesaShadows(floorY = FLOOR_DUSK, mat) {
+    const g = new THREE.Group()
+    g.name = 'mesaShadows'
+    const { cx, cz, R } = worldAnchor()
+    const dx = Math.sin(MESA_SHADOW.az)
+    const dz = Math.cos(MESA_SHADOW.az)
+    const theta = Math.atan2(-dz, dx)
+    const m = mat || new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: MESA_SHADOW.opacity, depthWrite: false })
+    for (const d of mesaDefs()) {
+        const r = Math.hypot(d.x - cx, d.z - cz)
+        const L = Math.min(MESA_SHADOW.lenK * d.h, r - (R + MESA_SHADOW.margin))
+        if (L < MESA_SHADOW.minL) continue
+        const W = MESA_SHADOW.wK * d.w
+        const geo = new THREE.PlaneGeometry(L, W)
+        geo.rotateX(-Math.PI / 2)
+        const q = new THREE.Mesh(geo, m)
+        q.rotation.y = theta
+        q.position.set(d.x + dx * (L / 2), floorY + MESA_SHADOW.y, d.z + dz * (L / 2))
+        g.add(q)
     }
     return g
 }

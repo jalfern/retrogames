@@ -152,6 +152,44 @@ if (args.includes('--mutate-spin')) {
     })
 }
 
+// #1002 ghost mutant: silence the reflection — the smear-band / live-opacity
+// gates MUST go red under this run.
+const GHLINE = '    base: 0.5,       // opacity at the camera, fading linearly to 0 at range'
+const GHUTIL = '    base: 0,       // opacity at the camera, fading linearly to 0 at range /* ghostmut */'
+let ghostmutat = false
+if (args.includes('--mutate-ghost')) {
+    const gsrc = readFileSync(SCENE, 'utf8')
+    if (!gsrc.includes(GHLINE)) { console.error('MUTATE_GHOST: ghost base not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, gsrc.replace(GHLINE, GHUTIL))
+    ghostmutat = true
+    console.log('  ..    mutated: the ghost never gains opacity — the reflection gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (ghostmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(GHUTIL, GHLINE))
+            console.log('  ..    ghost mutation restored')
+        }
+    })
+}
+
+// #1002 mesa-shadow mutant: shorten the shadow law so no mesa clears the
+// min-length — the count / corridor gates MUST go red under this run.
+const MSLINE = '    lenK: 2.6,    // shadow length per unit of mesa height (the low sun)'
+const MSUTIL = '    lenK: 0.05,    // shadow length per unit of mesa height (the low sun) /* msmut */'
+let msmutat = false
+if (args.includes('--mutate-mesashadow')) {
+    const msrc = readFileSync(SCENE, 'utf8')
+    if (!msrc.includes(MSLINE)) { console.error('MUTATE_MESASHADOW: shadow law not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SCENE, msrc.replace(MSLINE, MSUTIL))
+    msmutat = true
+    console.log('  ..    mutated: mesa shadows cannot reach the min length — the mesa-shadow gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (msmutat) {
+            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(MSUTIL, MSLINE))
+            console.log('  ..    mesa-shadow mutation restored')
+        }
+    })
+}
+
 // #478 item 4 streak mutant: collapse the stretch law — the camera-aligned
 // dash gates MUST go red under this run.
 const SLAW = 'export const streakLen = (len, speed) => len * (0.3 + 0.7 * Math.min(1, speed / 0.05))'
@@ -1143,6 +1181,77 @@ console.log('per-course skin + engine register (#502 items 1+6):')
     ok(SRC7.includes('applyCourseTint()') && SRC7.includes('tintFor(COURSE.palette)'), 'index.jsx re-tints the scene from the selected course')
     ok((SRC7.match(/applyCourseTint\(\)/g) || []).length >= 3, 'the tint runs at boot AND on both course-swap paths')
     ok(SRC7.includes('engineRegister(COURSE.palette)'), 'the engine law multiplies by the course register')
+}
+
+// ------------------------------------------------- kart ghost + mesa shadows (#1002)
+// The asphalt never mirrored: karts read as painted onto the road. The fix is
+// the agreed cheap version — a stretched, flattened, livery-darkened GHOST of
+// the body under each kart (marked materials only, shared geometry, per-kart
+// opacity driven by the loop), plus one baked gradient shadow per mesa riding
+// the same world sun line the blob halos hold. The law is pure Node so a
+// mutant that breaks either dies here, not in the pixels.
+console.log('kart ghost + mesa shadows (#1002):')
+{
+    const CT = await import('file://' + SCENE + '?t=' + (Date.now() + 51))
+    const { GHOST, buildKartGhost, MESA_SHADOW, buildMesaShadows, buildKart, decorateBuggy, SUN_SHADOW, mesaDefs, worldAnchor } = CT
+    ok(GHOST.base > 0.3 && GHOST.base < 0.7 && GHOST.dark > 0.2 && GHOST.dark < 0.6,
+        `the ghost sits in the smear band (dark ${GHOST.dark}, base ${GHOST.base}) — a reflection, not a second kart`)
+    ok(GHOST.flatten < 0.5 && GHOST.stretchMax > 0, 'the ghost is flattened onto the road and stretches along the nose')
+    const kart = buildKart(0xff8800, 0xffff00, 0)
+    const gh = buildKartGhost(kart)
+    const meshes = []
+    gh.group.traverse((o) => { if (o.isMesh) meshes.push(o) })
+    ok(gh.mats.length === 3 && meshes.length >= 3, `the primitive ghost keeps body + stripe + nose art (${meshes.length} meshes, ${gh.mats.length} materials)`)
+    ok(new Set(meshes.map((m) => m.material)).size === gh.mats.length, 'ghost meshes share one material per livery (no per-mesh waste)')
+    ok(gh.mats.every((m) => m.transparent && !m.depthWrite && m.opacity === 0), 'ghost materials are transparent, depth-free, and start at opacity 0 (the loop drives them)')
+    ok(gh.mats.every((m) => m.color.r < 0.5 && m.color.g < 0.5), 'no ghost material exceeds half-livery brightness')
+    // the expectation must take three's sRGB→linear hex pipeline (ColorManagement
+    // is on): a naive (byte/255)×dark misses the linearised g channel.
+    const wantBody = new THREE.Color(0xff8800).multiplyScalar(GHOST.dark)
+    const bodyGh = gh.mats.find((m) => Math.abs(m.color.r - wantBody.r) < 1e-6 && Math.abs(m.color.g - wantBody.g) < 1e-6 && Math.abs(m.color.b - wantBody.b) < 1e-6)
+    ok(!!bodyGh, 'the ghost carries a livery-darkened body copy (colour = livery × GHOST.dark)')
+    ok(!gh.mats.includes(kart.userData.body), 'the ghost never reuses the live kart material (the real livery must stay full-strength)')
+    // the GLB path: decorateBuggy marks body + accent only — tires stay out
+    const fake = new THREE.Group()
+    for (const name of ['Paint_Orange', 'Accent_Yellow', 'Tire_Black']) {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xffffff, name }))
+        fake.add(mesh)
+    }
+    const dec = decorateBuggy(fake, 0x336699, 0xffcc00)
+    ok(dec.body.userData.ghost === true && fake.children[1].material.userData.ghost === true, 'decorateBuggy marks exactly body + accent for the ghost')
+    ok(fake.children[2].material.userData.ghost !== true, 'tires stay out of the ghost (the blob shadow owns the dark)')
+    const g2 = buildKartGhost(dec.group)
+    ok(g2.mats.length === 2, 'the GLB ghost keeps body + accent only')
+    // mesa shadows: one quad per mesa that clears the min length, all locked to
+    // the sun line, none of them crossing the track corridor.
+    ok(MESA_SHADOW.az === SUN_SHADOW.az, 'the mesa shadow line is the blob-halo line (one shadow direction for the world)')
+    const A = worldAnchor()
+    const casters = mesaDefs().filter((d) => {
+        const r = Math.hypot(d.x - A.cx, d.z - A.cz)
+        return Math.min(MESA_SHADOW.lenK * d.h, r - (A.R + MESA_SHADOW.margin)) >= MESA_SHADOW.minL
+    })
+    const gs = buildMesaShadows(-3.5)
+    ok(gs.children.length === casters.length && casters.length >= 10, `${gs.children.length}/${mesaDefs().length} mesas cast (the rest fail the min-length law)`)
+    const theta = Math.atan2(-Math.cos(MESA_SHADOW.az), Math.sin(MESA_SHADOW.az))
+    ok(gs.children.every((q) => Math.abs(q.rotation.y - theta) < 1e-9), 'every shadow quad rides the fixed sun line (rotation locked to MESA_SHADOW.az)')
+    ok(gs.children.every((q) => Math.abs(q.position.y - (-3.5 + MESA_SHADOW.y)) < 1e-9), 'the shadows sink with the course floor (floorY + 0.02)')
+    const dx = Math.sin(MESA_SHADOW.az); const dz = Math.cos(MESA_SHADOW.az)
+    let law = true; let tip = true
+    casters.forEach((d, i) => {
+        const r = Math.hypot(d.x - A.cx, d.z - A.cz)
+        const L = Math.min(MESA_SHADOW.lenK * d.h, r - (A.R + MESA_SHADOW.margin))
+        const q = gs.children[i]
+        if (Math.abs(q.geometry.parameters.width - L) > 1e-9 || Math.abs(q.geometry.parameters.height - MESA_SHADOW.wK * d.w) > 1e-9) law = false
+        if (Math.hypot(q.position.x - d.x - dx * (L / 2), q.position.z - d.z - dz * (L / 2)) > 1e-9) law = false
+        const tipR = Math.hypot(q.position.x + dx * (L / 2) - A.cx, q.position.z + dz * (L / 2) - A.cz)
+        if (tipR < A.R + MESA_SHADOW.margin - 1e-9) tip = false
+    })
+    ok(law, 'length = min(lenK·h, r − R − margin) and width = wK·w, near end rooted at the mesa base')
+    ok(tip, 'no shadow tip crosses the track corridor (the #542 margin holds at the far end)')
+    ok(gs.children.every((q) => q.material === gs.children[0].material), 'one shared gradient material for the whole ring (baked, not per-mesa)')
+    const SRC1002 = readFileSync(SHARD, 'utf8')
+    ok(/buildKartGhost\(view\)/.test(SRC1002) && /buildKartGhost\(dec\.group\)/.test(SRC1002), 'index builds the ghost from the primitive AND rebuilds it when the GLB lands')
+    ok(SRC1002.includes('buildMesaShadows(floorY, mesaShadowMat)'), 'buildHorizon drops the shadow ring on the course floor')
 }
 
 // --------------------------------------- per-course env wash on the liveries (#511 item 2)
