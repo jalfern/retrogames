@@ -122,8 +122,18 @@ sound-book whose pages all echo one stone.
 - **CLOSED by #1005** — the safe, star and sphere codes are seeded per save
   and every clue (note words, dome-star sizes, post sequence) rides the seed,
   as the original stamped them per game copy. Residual: the original kept a
-  code for the lifetime of a SAVE FILE; this arcade build has no save file, so
-  an unpinned reload re-rolls the island (`?seed=N` pins it). The
+  code for the lifetime of a SAVE FILE; an unpinned reload used to re-roll
+  the island (`?seed=N` pins it).
+- **CLOSED by #1008** — the seed notebook: the seed lives in localStorage
+  (`myst:save-seed`), so a returning explorer finds the same locks where
+  they left them; `?seed=N` still pins over the notebook, private-mode
+  storage degrades to per-visit islands, and a post-ending restart recasts a
+  new island (new stored seed + a one-line hint). Also #1008: while the
+  sphere's posts sing, slot *i* visibly ticks ring *i* (panel button amber +
+  the post bulb flashing `codes.sphere[i]`) via pure `singTicks()`; the four
+  dome stars carry distinct 4-/5-/6-point silhouettes (`STAR_SHAPES`, fixed
+  per slot — size stays the only clue) and twinkle on a slow phase-shifted
+  emissive cycle, separate from the background point field. The
   sounding-path order (biggest→smallest) and the sun-and-moon detent stay
   fixed — in the original they are world constants, not per-save rolls.
 - No age-specific sub-puzzles beyond each Age's gate (Selenitic sphere +

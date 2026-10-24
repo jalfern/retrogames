@@ -105,3 +105,11 @@ export function plan(ev) {
   }
   return P
 }
+
+// #1008 — while the posts sing, each slot also VISUALLY ticks the ring it
+// answers: slot i lights ring i and post `order[i]`. Pure, so the gate can
+// prove the tick carries the same seeded order the audio carries.
+export function singTicks(orderStr) {
+  const order = String(orderStr).split('').map(Number)
+  return plan(`sing:${orderStr}`).map((c, i) => ({ ring: i, tone: order[i], at: c.delay || 0 }))
+}

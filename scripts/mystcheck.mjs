@@ -3,10 +3,10 @@
 // trap you, and the white page brings Atrus home. Node-only, no browser.
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
-import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE } from '../src/games/Myst/state.js'
-import { deriveCodes, safeWords, seedFromSearch } from '../src/games/Myst/codes.js'
+import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES } from '../src/games/Myst/state.js'
+import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
-import { plan, TONES, STONE_TONES } from '../src/games/Myst/soundplan.js'
+import { plan, TONES, STONE_TONES, singTicks } from '../src/games/Myst/soundplan.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
@@ -518,6 +518,52 @@ console.log('MYST — rocket sound (every stage of the ride is audible, and dist
   ok(JSON.stringify(plan('ignite')) !== JSON.stringify(plan('motor')), 'ignition is not the cage motor re-used')
 }
 
+console.log('MYST — seed notebook (#1008: a save keeps its island across reloads)')
+{
+  const mem = new Map()
+  globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)) } }
+  ok(loadSeed() == null, 'a virgin machine has no notebook seed')
+  storeSeed(1234)
+  ok(loadSeed() === 1234, 'the notebook stores the seed and reads it back')
+  ok(notebookSeed(null) === 1234, 'a returning explorer finds the same locks')
+  ok(notebookSeed('?seed=99') === 99, 'a ?seed= pin beats the notebook')
+  storeSeed(0xffffffff)
+  ok(loadSeed() === 0xffffffff, 'the notebook survives the max unsigned seed')
+  const remembered = notebookSeed(null)
+  ok(deriveCodes(remembered).safe === deriveCodes(0xffffffff).safe, 'the remembered seed derives the remembered locks')
+  globalThis.localStorage = { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') } }
+  let threw = false
+  try { loadSeed(); storeSeed(7) } catch { threw = true }
+  ok(!threw && loadSeed() === null, 'blocked storage (private mode) neither throws nor lies')
+  globalThis.localStorage = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)) } }
+  mem.clear()
+  const rolled = notebookSeed(null)
+  ok(Number.isInteger(rolled) && rolled >= 0 && rolled <= 0xffffffff, 'no notebook yet: a legal fresh island is rolled')
+}
+
+console.log('MYST — ring ticks (#1008: each post visibly answers its ring)')
+{
+  const t = singTicks('2013')
+  ok(t.length === 4, 'four ticks, one per singing post')
+  ok(t.map((x) => x.ring).join('') === '0123', 'the ticks walk the rings in order')
+  ok(t.every((x, i) => x.tone === Number('2013'[i]) && x.at === i * 0.34), 'each tick carries its slot tone on the audio cue time')
+  const a = singTicks(deriveCodes(7).sphere.join(''))
+  const b = singTicks(deriveCodes(8).sphere.join(''))
+  ok(a.map((x) => x.ring).join('') === b.map((x) => x.ring).join('') &&
+     (a.map((x) => x.tone).join('') !== b.map((x) => x.tone).join('') || deriveCodes(7).sphere.join('') === deriveCodes(8).sphere.join('')),
+  'two islands tick the same rhythm but different posts')
+  const live = dispatch({ ...freshState(7), node: 'selenitic' }, { t: 'click', id: 'sphere' })
+  const digits = live.state.codes.sphere.join('')
+  ok(live.events.includes(`sing:${digits}`) && singTicks(digits).every((x, i) => x.tone === live.state.codes.sphere[i]), 'this save\'s sing lights this save\'s posts in ring order')
+}
+
+console.log('MYST — dome star silhouettes (#1008: shape varies alongside size)')
+{
+  ok(STAR_SHAPES.length === 4, 'one silhouette per true star')
+  ok(STAR_SHAPES.every((n) => Number.isInteger(n) && n >= 4 && n <= 6), 'silhouettes stay 4–6 points')
+  ok(new Set(STAR_SHAPES).size > 1, 'the true stars differ in shape, not only size')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -615,6 +661,18 @@ if (process.argv.includes('--mutate')) {
     ['every sound-book page echoes the same stone', ST,
       "ev.push(`stone:${i}`)\n      break",
       `ev.push('stone:0')\n      break`],
+    ['the notebook is ignored on return (island re-rolls each reload)', CD,
+      `  const saved = loadSeed()`,
+      `  const saved = null`],
+    ['the seed never reaches the notebook', CD,
+      `globalThis.localStorage.setItem(SEED_KEY, String(seed >>> 0))`,
+      `void seed`],
+    ['the dome stars collapse to one silhouette', ST,
+      `export const STAR_SHAPES = [4, 5, 6, 5]`,
+      `export const STAR_SHAPES = [5, 5, 5, 5]`],
+    ['ring ticks stop carrying the post tone', SP,
+      'return plan(`sing:${orderStr}`).map((c, i) => ({ ring: i, tone: order[i], at: c.delay || 0 }))',
+      'return plan(`sing:${orderStr}`).map((c, i) => ({ ring: i, tone: 0, at: c.delay || 0 }))'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

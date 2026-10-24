@@ -18,10 +18,11 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
 import { freshState, dispatch, runSolver, solveScript, RIDE } from './state.js'
-import { seedFromSearch } from './codes.js'
+import { seedFromSearch, notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { MESSAGES, PRESS } from './attract.js'
 import { buildWorld, atmosphere, updateTrueStars } from './scene.js'
 import { sfx, sfxTone, ambience } from './sound.js'
+import { singTicks } from './soundplan.js'
 
 const VW = 960, VH = 540
 const SIM_MS = 1000 / 60
@@ -38,6 +39,8 @@ const MystGame = () => {
   const [screen, setScreen] = useState('attract')
   const [paused, setPaused] = useState(false)
   const [hud, setHud] = useState(() => ({ message: '', caption: '', pages: {}, placed: { red: 0, blue: 0 }, panel: null, book: null, ending: null, links: {} }))
+  const [singRing, setSingRing] = useState(-1)
+  const singRingRef = useRef(-1)
   const screenRef = useRef('attract')
   const pausedRef = useRef(false)
   const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -82,6 +85,9 @@ const MystGame = () => {
     let seedStamp = -1
     const syncStars = () => { if (gs.seed !== seedStamp) { seedStamp = gs.seed; updateTrueStars(root, gs.codes.star) } }
     syncStars()
+    const toneBulbs = []
+    root.traverse((o) => { if (o.userData && o.userData.tone != null && o.material) toneBulbs.push(o) })
+    let sing = null
     let raf = 0, last = 0, acc = 0, wt = 0
     let fade = 1, fadeDir = -1
     let attractIx = 0, attractT = 0, hudStamp = -1
@@ -193,6 +199,7 @@ const MystGame = () => {
       syncStars()
       for (const e of r.events) {
         if (e === 'travel' || e === 'restart' || e === 'endSurface') fadeDir = 1
+        if (e.startsWith('sing:')) sing = { t0: wt, ticks: singTicks(e.slice(5)) }
         sfx(e)
       }
       if (gs.node !== prevNode) { gotoNode(gs.node); gs.turn === 0 && (lookYaw = 0) }
@@ -292,13 +299,21 @@ const MystGame = () => {
     canvas.addEventListener('pointermove', onMove)
 
     const startPlay = () => {
-      gs = freshState(seedFromSearch())
+      gs = freshState(notebookSeed())
+      storeSeed(gs.seed)
+      sing = null; singRingRef.current = -1; setSingRing(-1)
       syncStars()
       gotoNode(gs.node); aim()
       setMode('play')
       hudStamp = -1
     }
-    const restart = () => { doAction({ t: 'restart' }); setMode('play') }
+    const restart = () => {
+      doAction({ t: 'restart' })
+      storeSeed(gs.seed)
+      gs.message = 'A fresh link, a fresh island — the stone is the same, the locks are new. (seed ' + gs.seed + ')'
+      sing = null; singRingRef.current = -1; setSingRing(-1)
+      setMode('play')
+    }
 
     // -------------------------------------------------------------- loop ----
     const frame = (now) => {
@@ -325,6 +340,16 @@ const MystGame = () => {
           sun.intensity = 1.15 * (1 - 0.88 * dk)
           if (gs.ending) setMode('ending')
           hudStamp = -1
+        }
+        if (sing) {
+          const el = wt - sing.t0
+          let ring = -1, frac = 0, lit = -1
+          for (const k of sing.ticks) {
+            if (el >= k.at && el < k.at + 0.34) { ring = k.ring; lit = k.tone; frac = (el - k.at) / 0.34 }
+          }
+          if (el >= sing.ticks[sing.ticks.length - 1].at + 0.34) sing = null
+          if (ring !== singRingRef.current) { singRingRef.current = ring; setSingRing(ring) }
+          for (const b of toneBulbs) b.material.emissiveIntensity = 0.6 + (b.userData.tone === lit ? 2.6 * Math.max(0, 1 - frac * 1.3) : 0)
         }
         fade = Math.max(0, Math.min(1, fade + fadeDir * (SIM_MS / 380)))
         if (fade >= 1 && fadeDir > 0) fadeDir = -1
@@ -363,7 +388,10 @@ const MystGame = () => {
         script: () => solveScript(gs.codes),
         codes: () => ({ seed: gs.seed, ...gs.codes }),
         stars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.trueStar != null) out[o.userData.trueStar] = +o.scale.x.toFixed(3) }); return out },
-        fresh: (seed) => { gs = freshState(seed); syncStars(); gotoNode('dock'); aim(); return gs.seed },
+        fresh: (seed) => { gs = freshState(seed); storeSeed(gs.seed); syncStars(); gotoNode('dock'); aim(); sing = null; singRingRef.current = -1; setSingRing(-1); return gs.seed },
+        goto: (id) => { gs.node = id; gs.turn = 0; gotoNode(id); aim(); hudStamp = -1; return gs.node },
+        notebook: () => ({ stored: loadSeed(), current: gs.seed }),
+        sing: () => ({ ring: singRingRef.current, ticks: sing ? sing.ticks : null }),
         nearRocket: () => {
           let s = freshState(gs.seed)
           for (const a of solveScript(s.codes)) { s = dispatch(s, a).state; if (s.flags.obsNote) break }
@@ -517,12 +545,12 @@ const MystGame = () => {
         <Panel title="THE SPHERE — four ring dials" onClose={() => closeHud(false)}>
           <div className="flex gap-4 justify-center my-2 items-center">
             {(hud.sphere || []).map((v, i) => (
-              <button key={i} className="px-3 py-2 border border-emerald-500 text-emerald-200 text-xl" onClick={() => { sfxTone((v + 1) % 4); ctl.current?.action({ t: 'dial', pad: 'sphere', i }) }}>
+              <button key={i} className={`px-3 py-2 border text-xl ${singRing === i ? 'border-amber-300 bg-emerald-500/40 text-amber-100' : 'border-emerald-500 text-emerald-200'}`} onClick={() => { sfxTone((v + 1) % 4); ctl.current?.action({ t: 'dial', pad: 'sphere', i }) }}>
                 {v < 0 ? '·' : v + 1}
               </button>
             ))}
           </div>
-          <div className="text-xs text-emerald-200/60">listen to the four posts, set the rings to match</div>
+          <div className="text-xs text-emerald-200/60">listen to the four posts, set the rings to match · the ring that lights answers the post that sings</div>
         </Panel>
       )}
       {hud.panel === 'star' && screen === 'play' && (

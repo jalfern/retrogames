@@ -11,12 +11,12 @@ export const SWITCH_LINKS = [
 ]
 export const STONE_SIZES = 6
 export const SUN_MOON = 5
-// The rocket ride (#1010): ticks per stage at 60 fps — ignition builds, the
-// silo falls away, the sky runs out of blue, the dark holds you in silence,
-// then the world catches you again. ~10 s of ride, as close to the original's
-// FMV as a live scene gets.
 export const RIDE = { ignite: 50, liftoff: 100, ascent: 170, coast: 170, reentry: 140 }
 export const RIDE_STAGES = ['ignite', 'liftoff', 'ascent', 'coast', 'reentry']
+// #1008 — the dome reliefs differ in silhouette, not only size: four-, five-
+// and six-point stars. Fixed per slot (the SIZE is this save's clue; the
+// shape is carved decoration, so it never doubles as a second answer).
+export const STAR_SHAPES = [4, 5, 6, 5]
 
 export const BROTHER_LINES = {
   red: [
