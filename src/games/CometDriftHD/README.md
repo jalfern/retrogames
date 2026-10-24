@@ -218,6 +218,7 @@ npm run cometdrifthdscenerycheck -- --mutate  # parks a barrier on the line, RED
 npm run cometdrifthdcheck -- --mutate     # kills particle spawning, demands RED
 npm run cometdrifthdcheck -- --mutate-spin  # freezes the wheel-blur law, demands RED
 npm run cometdrifthdcheck -- --mutate-heal # disarms device-loss self-heal, demands RED
+npm run cometdrifthdcheck -- --mutate-bloom2d # refuge 2D bloom never paints, demands RED
 npm run cometdrifthdphonecheck    # #987 phone audit: navigator.gpu killed BEFORE page
                                   # scripts — AUTO fallback engages unpinned, refuge armed,
                                   # tap-to-start, in-frame pixels, mid-race loss heals on
@@ -262,10 +263,23 @@ classification, so a misclassified backend silently unarms it, which is what
   real-race gate banks blue/violet/gold on every course, and the #995 probe
   numbers hold the fact down: seed 3 Gulch banks 5 blue / 3 violet / 8 gold,
   rivals chain tiers on their own seeded mistakes.
-- **CLOSED by #658:** the earned-bloom + boost-radial TSL post chain ships on
+- **CLOSED by #658, refuge glow CLOSED by #1016:** the earned-bloom + boost-radial TSL post chain ships on
   both node backends (`fxChain`: `bloom-tsl-webgpu` / `bloom-tsl-webgl2`,
   sun/flames/gold-sparks only — the sky never glows). The classic WebGL
-  refuge builds no chain, by design.
+  refuge builds no chain — since #1016 it keeps the gold-spark payoff via the
+  **2D additive fallback** instead (`fxChain` mode `bloom-2d`): `bloomDiscs`
+  (scene.js) projects the pools' bright heads (`pool.glowEntries(luma)`) into
+  screen-space discs — same "gold only" law as the chain's luminance threshold
+  in three's linear space (gold ≈0.68 passes, blue 0.43 / violet 0.31 never
+  do; per-tick decay fades each disc as its spark dies), distance-scaled and
+  capped at 48 near-first discs. `index.jsx` splats them additively on a
+  dedicated overlay canvas (above the GL canvas, under the HUD) every frame the
+  refuge is live, and goes fully transparent when the gold runs out.
+  `bloom2d()` (DEV) reports `mode/on/discs/frames/minLuma/pixels`; gates:
+  11 Node law gates (projection, gold-only threshold, behind/off-frame cull,
+  48-disc budget, determinism, distance falloff) + browser refuge gates
+  (DOM z-order, mode, live discs, alpha-sum > 0 on the overlay, dark when dry);
+  `cometdrifthdcheck --mutate-bloom2d` (painting disabled) must die.
 - No kart reflections yet — a real probe mirror is still out of reach.
   **The rest of this bullet CLOSED by #995:** dynamic sand scarification
   (`sand.js` — a px wear field stamped by every sand-surfaced kart, decaying
