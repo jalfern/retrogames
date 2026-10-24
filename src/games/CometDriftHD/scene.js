@@ -681,7 +681,26 @@ export function makeBlobShadow() {
     const core = mk(0.8, 0.78, 0.32)
     g.add(halo, core)
     g.userData.parts = ['halo', 'core']
+    g.userData.halo = halo
+    g.userData.core = core
     return g
+}
+
+// #995: the dusk sun hangs low at a fixed azimuth, so a shadow falls AWAY
+// from it, not under the kart's nose — the halo counter-rotates against the
+// yaw-steered group to hold the world-fixed sun line, stretches along it, and
+// softens as the kart rides higher (crests and banked rims lift the body off
+// its own shadow). Pure so cometdrifthdsandcheck gates the law at Node.
+export const SUN_SHADOW = { az: 0.92, stretch: 1.7, core: 0.32, halo: 0.14, liftK: 0.3 }
+export function sunShadow(h) {
+    const lift = Math.max(0, h)
+    const soft = 1 - Math.min(0.5, lift * SUN_SHADOW.liftK)
+    return {
+        az: SUN_SHADOW.az,
+        stretch: SUN_SHADOW.stretch + Math.min(0.6, lift * 0.25),
+        core: +(SUN_SHADOW.core * soft).toFixed(3),
+        halo: +(SUN_SHADOW.halo * soft).toFixed(3),
+    }
 }
 
 // #481 item 4: exhaust outlets from the authored model, not guessed — the

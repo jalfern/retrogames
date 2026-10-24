@@ -18,9 +18,10 @@ import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, buildHills, wallTopYAt, worldAnchor, courseFloorY,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, roadRollYAt, roadRollAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
-    hudScale, hudTop, tintFor, envWashFor, SKY_STOPS, refOverlayStats, attractLayout, attractSelectGeom,
+    hudScale, hudTop, tintFor, envWashFor, SKY_STOPS, refOverlayStats, attractLayout, attractSelectGeom, sunShadow,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
+import { makeWear, resetWear, stampKarts, decayWear, deformGeo, scarStats, SAND_WEAR } from './sand.js'
 
 // =====================================================================
 // COMET DRIFT HD — SUNSET GULCH, same machine, modern renderer (#465).
@@ -339,6 +340,9 @@ export default function CometDriftHD() {
         // without touching karts, sky or lights.
         const trackGroup = new THREE.Group()
         scene.add(trackGroup)
+        let wear = null
+        let sandMeshes = []
+        const sandHints = {}
         // #639: trackside dressing lives in its own group so it can rebuild with
         // the circuit. Primitive stand-ins paint immediately; the real shelf GLBs
         // upgrade it asynchronously. propsRev guards the async attach against a
@@ -358,8 +362,17 @@ export default function CometDriftHD() {
             trackGroup.add(new THREE.Mesh(M.road, mat(tex(asphaltTex()), { roughness: 0.82, metalness: 0.05, vertexColors: true })))
             trackGroup.add(new THREE.Mesh(M.kerbL, kerbMat))
             trackGroup.add(new THREE.Mesh(M.kerbR, kerbMat))
-            trackGroup.add(new THREE.Mesh(M.gutterL, sandMat))
-            trackGroup.add(new THREE.Mesh(M.gutterR, sandMat))
+            const gutL = new THREE.Mesh(M.gutterL, sandMat)
+            const gutR = new THREE.Mesh(M.gutterR, sandMat)
+            trackGroup.add(gutL, gutR)
+            sandMeshes = [gutL, gutR]
+            let bminx = Infinity; let bminz = Infinity; let bmaxx = -Infinity; let bmaxz = -Infinity
+            for (const p of T.pts) {
+                if (p.x < bminx) bminx = p.x; if (p.x > bmaxx) bmaxx = p.x
+                if (p.y < bminz) bminz = p.y; if (p.y > bmaxz) bmaxz = p.y
+            }
+            wear = makeWear(bminx - 420, bminz - 420, bmaxx + 420, bmaxz + 420)
+            for (const key of Object.keys(sandHints)) delete sandHints[key]
             trackGroup.add(new THREE.Mesh(M.wallL, strataMat))
             trackGroup.add(new THREE.Mesh(M.wallR, strataMat))
             trackGroup.add(new THREE.Mesh(M.plateauL, plateauMat))
@@ -899,6 +912,16 @@ export default function CometDriftHD() {
                 m.scale.x = m.scale.z = 1 + squash * 0.6
                 shadow.position.set(k.x * S, h + 0.052, k.y * S)
                 shadow.rotation.y = kartYaw(k.a)
+                // #995: sun-fixed stretch — the halo holds the dusk-sun line in
+                // world space, stretches along it, and dims as elevation lifts
+                // the kart off its own shadow.
+                const ss = sunShadow(h)
+                const haloN = shadow.userData.halo
+                const coreN = shadow.userData.core
+                haloN.rotation.y = ss.az - kartYaw(k.a)
+                haloN.scale.set(1, 1, ss.stretch)
+                haloN.material.opacity = ss.halo
+                coreN.material.opacity = ss.core
                 // wheel rig (#477): steer the front pivots about vertical, roll all
                 // four about their axle. baseQuat keeps the model's baked right-side
                 // flip; steer/roll signs undo it so both sides turn/spin alike.
@@ -1283,6 +1306,11 @@ export default function CometDriftHD() {
                 inp = { u: !!(keys.KeyX || keys.ArrowUp), d: !!(keys.KeyS || keys.ArrowDown), l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.Space || keys.KeyZ || keys.KeyR || keys.KeyC) }
             }
             step(g, live ? inp : decide(g))
+            if (wear) {
+                stampKarts(wear, g.karts, sandHints)
+                decayWear(wear)
+                if ((g.tick & 3) === 0) for (const m of sandMeshes) deformGeo(m.geometry, wear)
+            }
             const evs = g.events.splice(0)
             if (import.meta.env.DEV) {
                 const log = (window.__cometHDLog ||= [])
@@ -1307,7 +1335,7 @@ export default function CometDriftHD() {
                     }
                 }
             }
-            if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame(0)); st.endT = 0; sparks.clear(); dust.clear(); streaks.clear() } }
+            if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame(0)); st.endT = 0; sparks.clear(); dust.clear(); streaks.clear(); if (wear) resetWear(wear) } }
             if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0; st.endAt = performance.now(); setPadOn(false) }
             spawnTick()
         }
@@ -1555,7 +1583,20 @@ export default function CometDriftHD() {
                 return { sparks: sparks.aliveCount, dust: dust.aliveCount, streaks: streaks.aliveCount, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
             fxChain: () => ({ mode: chainMode, pipeline: !!post, bloom: bloomGain.value, radial: Math.round(radialAmt.value * 1000) / 1000, backend: backendName }),
-            shadowBlob: () => ({ parts: kartMeshes[0].shadow.children.length, rotY: Math.round(kartMeshes[0].shadow.rotation.y * 1000) / 1000 }),
+            shadowBlob: () => {
+                const sh = kartMeshes[0].shadow
+                const haloN = sh.userData.halo
+                const coreN = sh.userData.core
+                const az = sh.rotation.y + haloN.rotation.y
+                return {
+                    parts: sh.children.length, rotY: Math.round(sh.rotation.y * 1000) / 1000,
+                    haloAz: Math.round(az * 1000) / 1000,
+                    stretch: Math.round(haloN.scale.z * 100) / 100,
+                    core: Math.round(coreN.material.opacity * 1000) / 1000,
+                    halo: Math.round(haloN.material.opacity * 1000) / 1000,
+                }
+            },
+            sandState: () => (wear ? { ...scarStats(wear), sink: SAND_WEAR.sink, dark: SAND_WEAR.dark, decay: SAND_WEAR.decay, meshes: sandMeshes.length } : null),
             brakeGlow: () => Math.round((kartMeshes[0].m.userData.brakeMat?.emissiveIntensity ?? -1) * 100) / 100,
             stars: () => {
                 const c = starMesh && starMesh.geometry.getAttribute('color')
@@ -1596,6 +1637,7 @@ export default function CometDriftHD() {
                 camA = g.karts[0].a
                 camLift = 0
                 sparks.clear(); dust.clear(); streaks.clear()
+                if (wear) resetWear(wear)
                 setPadOn(false)
             },
             tick: (pad) => {
@@ -1607,6 +1649,11 @@ export default function CometDriftHD() {
                     thr: typeof pad.rt === 'number' && pad.rt > 0.05 ? pad.rt : undefined,
                     brk: typeof pad.lt === 'number' && pad.lt > 0.05 ? pad.lt : undefined,
                 })
+                if (wear) {
+                    stampKarts(wear, g.karts, sandHints)
+                    decayWear(wear)
+                    if ((g.tick & 3) === 0) for (const m of sandMeshes) deformGeo(m.geometry, wear)
+                }
                 spawnTick()
             },
             state: () => {
