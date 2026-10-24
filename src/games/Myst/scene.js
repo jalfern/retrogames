@@ -29,7 +29,7 @@ const TX = {
   pageB: texPages('blue'),
 }
 
-function mat(tex, opts = {}) { return new THREE.MeshStandardMaterial({ map: tex, ...opts }) }
+function mat(tex, opts = {}) { return new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: opts.metalness !== undefined ? 0.08 : 0.32, ...opts }) }
 
 function mesh(g, m, x = 0, y = 0, z = 0, group) {
   const o = new THREE.Mesh(g, m)
@@ -82,6 +82,42 @@ function tree(group, x, y, z, s = 1, leaf = 0x2c5e2a, tag) {
   if (tag) { trunk.userData.landmark = tag; crown.userData.landmark = tag }
 }
 
+function tuft(group, x, y, z, s = 1, tint = 0x3f6b34) {
+  for (let k = 0; k < 3; k++) {
+    const b = mesh(new THREE.ConeGeometry(0.07 * s, 0.5 * s * (0.7 + 0.3 * k), 4),
+      new THREE.MeshStandardMaterial({ color: tint, roughness: 1 }), x + (k - 1) * 0.11 * s, y + 0.24 * s, z + (k % 2) * 0.07 * s, group)
+    b.rotation.z = (k - 1) * 0.22
+    b.userData.noPick = true
+  }
+}
+
+function boulder(group, tex, x, y, z, s, ry = 0) {
+  const o = mesh(new THREE.IcosahedronGeometry(s, 0), mat(tex), x, y, z, group)
+  o.rotation.set(ry, ry * 1.7, ry * 0.6)
+  o.userData.noPick = true
+  return o
+}
+
+function barrel(group, x, y, z, ry = 0) {
+  const b = mesh(new THREE.CylinderGeometry(0.34, 0.3, 0.8, 10), mat(TX.wood, { bumpScale: 0.5 }), x, y, z, group)
+  b.rotation.y = ry
+  b.userData.noPick = true
+  for (const yy of [-0.18, 0.18]) mesh(new THREE.TorusGeometry(0.33, 0.025, 6, 12), mat(TX.iron, { metalness: 0.6 }), x, y + yy, z, group).rotation.x = Math.PI / 2
+}
+
+function crate(group, x, y, z, s = 1, ry = 0) {
+  const c = mesh(new THREE.BoxGeometry(0.7 * s, 0.6 * s, 0.7 * s), mat(TX.plank), x, y, z, group)
+  c.rotation.y = ry
+  c.userData.noPick = true
+}
+
+function lantern(group, x, y, z) {
+  mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.7), mat(TX.wood), x, y + 0.85, z, group).userData.noPick = true
+  const lamp = mesh(new THREE.BoxGeometry(0.22, 0.3, 0.22), new THREE.MeshStandardMaterial({ color: 0xffe0a0, emissive: 0xff9a40, emissiveIntensity: 1.4, transparent: true, opacity: 0.92 }), x, y + 1.8, z, group)
+  lamp.userData.flicker = true
+  lamp.userData.noPick = true
+}
+
 function gear(group, tex, r, x, y, z, speed, tag) {
   const g = new THREE.TorusGeometry(r, r * 0.18, 8, 14)
   const o = mesh(g, mat(tex, { metalness: 0.5, roughness: 0.4 }), x, y, z, group)
@@ -103,6 +139,9 @@ const BUILDERS = {
     rocks(g, TX.rock, [[0, 2.4, 37.6, 6, 5, 2, 0], [-6, 4, 40, 8, 8, 4, 0.4], [7, 3.4, 40, 7, 7, 3, -0.3]])
     rocks(g, TX.moss, [[-2, 3.4, 38.4, 2, 1.4, 1.2, 0], [4, 4.4, 39, 2, 2, 1, 0.5]])
     tree(g, -5, 4.4, 39, 1.2); tree(g, 6, 4, 39.4, 1)
+    barrel(g, -1.2, 1.79, 31.6, 0.4); crate(g, 1.15, 1.69, 32.4, 0.9, 0.3)
+    lantern(g, 1.55, 1.39, 30.4)
+    tuft(g, -2.4, 2.9, 37.6, 1.1); tuft(g, 5.2, 3.2, 38.2, 0.9)
   },
   cliffPath(g) {
     const sea = seaPlane(g, -1)
@@ -114,6 +153,9 @@ const BUILDERS = {
     rocks(g, TX.moss, [[-6.5, 14, 13, 3, 1, 2, 0], [6.5, 13, 11, 2.6, 1.2, 1.8, 0], [2, 13.5, 4.5, 3, 1, 2, 0]])
     for (let i = 0; i < 4; i++) mesh(new THREE.BoxGeometry(2.4, 0.16, 1), mat(TX.stoneD), i % 2 * 0.6, 4.75 + i * 0.55, 16.8 - i * 1.2, g)
     tree(g, -7.5, 14, 12, 1.3); tree(g, 7.5, 13, 10.5, 1.2); tree(g, -2, 13.5, 4, 1.4)
+    boulder(g, TX.rock, -5.2, 13.6, 8, 0.9, 0.5); boulder(g, TX.moss, 5.6, 12.6, 7, 0.7, 1.2)
+    tuft(g, -4.4, 14.6, 10, 1.3); tuft(g, 4.8, 13.6, 9, 1.1); tuft(g, 1.8, 5.4, 17.4, 0.8)
+    mesh(new THREE.CylinderGeometry(0.28, 0.32, 2.6, 7), mat(TX.wood), -5.8, 14.8, 12, g).rotation.z = 1.35
   },
   beach(g) {
     seaPlane(g, 0, 1200)
@@ -125,6 +167,9 @@ const BUILDERS = {
     hull.userData.noPick = false
     hull.userData.landmark = 'boat'
     mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.6), mat(TX.wood), -14, 1.6, 24, g).rotation.z = 0.12
+    barrel(g, -12.2, 0.4, 26.2, 0.7); crate(g, -15.6, 0.3, 27, 0.9, 0.5); barrel(g, -16.4, 0.4, 24.6, 1.1)
+    tuft(g, -12.5, 0.06, 28.4, 1.2); tuft(g, -17, 0.06, 28.6, 1)
+    boulder(g, TX.rock, -9.5, 0.7, 27.5, 0.8, 0.7)
   },
   landing(g) {
     // the wooden landing the camera stands on (near end, z 11..15.3)
@@ -146,6 +191,9 @@ const BUILDERS = {
     palm.position.set(-7.5, 8.6, 4.5)
     palm.userData.flicker = true
     g.add(palm)
+    barrel(g, -1.7, 7.1, 14.6, 0.6); crate(g, 1.7, 7.0, 14.2, 0.8, 0.7)
+    tuft(g, -8, 13.1, 5.5, 1.2); tuft(g, 8.2, 13.1, 6.5, 1); tuft(g, 6.2, 9.4, 12.5, 0.9)
+    boulder(g, TX.stoneD, 11.5, 12.6, 11, 1.1, 0.4)
   },
   stairTop(g) {
     rocks(g, TX.stoneD, [[0, 6.2, 2.5, 18, 1.6, 4, 0], [-12, 8, 2, 8, 10, 6, 0.4], [12, 9, 1, 7, 9, 5, -0.4], [-7, 8.4, -1, 5, 5, 3, 0.3], [7, 8.4, -1, 5, 5, 3, -0.3]])
@@ -169,6 +217,10 @@ const BUILDERS = {
     cdoor.userData.spot = 'cabinDoor'
     seaPlane(g, -4, 1600, 0.9)
     tree(g, -4, 12, 4, 1.3); tree(g, 5, 12, 6, 1.1); tree(g, -13, 11, 4, 1.4)
+    lantern(g, -1.9, 7, 11.4); lantern(g, 1.9, 7, 11.4)
+    crate(g, -6.2, 7.3, 2.6, 0.9, 0.4); barrel(g, -7.4, 7.4, 3.6, 0.9)
+    boulder(g, TX.stoneD, -11.5, 14.1, 5, 1.1, 0.9); boulder(g, TX.stoneD, 11.8, 13.6, 9, 1, 0.2)
+    tuft(g, -5.4, 7.05, 3.4, 1.1); tuft(g, 6.4, 7.05, 2.4, 1)
   },
   library(g) {
     const room = mesh(new THREE.CylinderGeometry(7, 7, 5.6, 14, 1, true), mat(TX.shelf, { side: THREE.BackSide }), 0, 2.8, 0, g)
@@ -201,6 +253,15 @@ const BUILDERS = {
     ped.userData.spot = 'pedestal'
     const ladder = mesh(new THREE.BoxGeometry(1, 4.4, 0.12), mat(TX.wood), -6, 2.2, 0.5, g)
     ladder.rotation.y = 1.57; ladder.userData.spot = 'ladderDown'
+    const rug = mesh(new THREE.CircleGeometry(2.6, 16), new THREE.MeshStandardMaterial({ color: 0x5a1f1a, roughness: 1, map: TX.pageR }), 0, 0.03, 1.6, g)
+    rug.rotation.x = -Math.PI / 2; rug.userData.noPick = true
+    for (const [bx, bz] of [[2.2, 4.4], [2.6, 4.9]]) crate(g, bx, 0.3, bz, 0.9, 0.5)
+    barrel(g, -2.6, 0.4, 4.6, 0.8)
+    for (const cx of [-1.05, 1.05]) {
+      mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.34), mat(TX.brass, { metalness: 0.5 }), cx, 2.57, 6.45, g).userData.noPick = true
+      const flame = mesh(new THREE.SphereGeometry(0.05, 6, 6), new THREE.MeshStandardMaterial({ color: 0xffe9a0, emissive: 0xffb040, emissiveIntensity: 1.6 }), cx, 2.78, 6.45, g)
+      flame.userData.flicker = true; flame.userData.noPick = true
+    }
   },
   cave(g) {
     const shell = mesh(new THREE.SphereGeometry(9, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.72), mat(TX.rock, { side: THREE.BackSide }), 0, 0, 0, g)
@@ -220,6 +281,11 @@ const BUILDERS = {
     const fallTop = mesh(new THREE.PlaneGeometry(2, 3.4), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.7, side: THREE.DoubleSide }), -4.8, 2.4, -7.4, g)
     fallTop.userData.spot = 'rocketDoor'; fallTop.userData.fall = true
     const glow = new THREE.PointLight(0x6a86ff, 3, 18); glow.position.set(0, 4, -2); g.add(glow)
+    for (const [sx, sz, sh] of [[-2.6, -3.6, 1.6], [3.4, -3, 1.1], [-1.2, -6, 0.8], [2.2, 2.4, 1.3], [-3.6, 1.2, 1.8], [5.6, -1.6, 0.7]]) {
+      const spire = mesh(new THREE.ConeGeometry(0.22 + sh * 0.14, sh, 6), mat(TX.rock), sx, sh / 2, sz, g)
+      spire.userData.noPick = true
+    }
+    boulder(g, TX.rock, -6.4, 0.4, -1.5, 0.7, 0.6)
   },
   towerBase(g) {
     const shell = mesh(new THREE.CylinderGeometry(2.6, 3, 8, 12, 1, true), mat(TX.stoneD, { side: THREE.BackSide }), 0, 4, 0, g)
@@ -229,6 +295,10 @@ const BUILDERS = {
     gear(g, TX.brass, 0.8, 1.6, 3, -1.8, -0.75, 'towerGear')
     const ladder = mesh(new THREE.BoxGeometry(0.9, 7, 0.1), mat(TX.wood), -1.6, 3.6, 1.4, g)
     ladder.userData.spot = 'towerClimb'
+    const pipe = mesh(new THREE.CylinderGeometry(0.16, 0.16, 4.6, 8), mat(TX.iron, { metalness: 0.6 }), 0, 6.6, 0.6, g)
+    pipe.rotation.z = Math.PI / 2; pipe.userData.noPick = true
+    for (const px of [-1.6, 1.6]) mesh(new THREE.TorusGeometry(0.2, 0.05, 6, 10), mat(TX.brass, { metalness: 0.6 }), px, 6.6, 0.6, g).rotation.y = Math.PI / 2
+    boulder(g, TX.stoneD, 1.8, 0.35, -1.2, 0.6, 0.8)
   },
   towerTop(g) {
     const shell = mesh(new THREE.CylinderGeometry(2.6, 2.6, 4, 12, 1, true), mat(TX.stoneD, { side: THREE.BackSide }), 0, 2, 0, g)
@@ -255,6 +325,10 @@ const BUILDERS = {
       st.userData.spot = 'cabinShelf'
       st.userData.landmark = 'cabinShelf'
     }
+    crate(g, 1.9, 0.3, 1.2, 0.9, 0.5); barrel(g, -2.2, 0.4, -1.2, 0.6)
+    mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.3), mat(TX.wood, { color: 0xe8dcc0 }), 1.2, 1.95, -2.1, g).userData.noPick = true
+    const cflame = mesh(new THREE.SphereGeometry(0.05, 6, 6), new THREE.MeshStandardMaterial({ color: 0xffe9a0, emissive: 0xffb040, emissiveIntensity: 1.5 }), 1.2, 2.16, -2.1, g)
+    cflame.userData.flicker = true; cflame.userData.noPick = true
   },
   selenitic(g) {
     const ground = mesh(new THREE.CircleGeometry(60, 28), mat(TX.selen), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
@@ -280,6 +354,8 @@ const BUILDERS = {
     for (const s of [-1.4, 1.4]) mesh(new THREE.BoxGeometry(0.8, 3.4, 0.8), mat(TX.grey), ax + s, 1.7, az, g)
     mesh(new THREE.BoxGeometry(3.8, 0.7, 0.9), mat(TX.grey), ax, 3.7, az, g).userData.spot = 'toSelSound'
     for (let i = 0; i < 4; i++) mesh(new THREE.BoxGeometry(1.6, 0.18, 1), mat(TX.stoneD), ax - Math.sin(bear) * i * 1.2, 0.09 + i * 0.02, az - Math.cos(bear) * i * 1.2, g).userData.spot = 'toSelSound'
+    boulder(g, TX.selen, -18, 1.2, 10, 2.4, 0.6); boulder(g, TX.selen, 17, 0.9, 12, 1.8, 1.4); boulder(g, TX.selen, -13, 0.7, 22, 1.3, 0.3)
+    tuft(g, 6, 0.06, 14, 1.4, 0x2f6a44); tuft(g, -7, 0.06, 18, 1.2, 0x2f6a44)
   },
   selSound(g) {
     // camera at [0,1.7,-46], facing +z: the stone field recedes toward a
@@ -307,6 +383,8 @@ const BUILDERS = {
     rocks(g, TX.grey, [[0, 8.1, -27, 11, 1.6, 3.6, 0]])
     const slab = mesh(new THREE.BoxGeometry(4.2, 6.4, 0.8), mat(TX.stoneD), 0, 3.2, -27.4, g)
     slab.userData.spot = 'toSelThrone'; slab.userData.mech = 'selPathSlab'
+    boulder(g, TX.grey, -6.8, 0.5, -31, 1.1, 0.5); boulder(g, TX.selen, 7.2, 0.6, -30, 1.4, 1.1); boulder(g, TX.grey, 5.4, 0.4, -38, 0.9, 0.2)
+    tuft(g, -5.6, 0.04, -36, 1.1, 0x2f6a44); tuft(g, 6.2, 0.04, -41, 1.3, 0x2f6a44)
   },
   selThrone(g) {
     // camera at [0,1.5,-2]: a roofed chamber open to the night through a
@@ -341,6 +419,15 @@ const BUILDERS = {
     const door = mesh(new THREE.BoxGeometry(0.8, 3.4, 1.8), mat(TX.stoneD), 4.15, 1.7, -2.2, g)
     door.userData.spot = 'toSelGate'; door.userData.mech = 'selAlignDoor'
     mesh(new THREE.BoxGeometry(0.5, 4.4, 2.6), mat(TX.grey), 5.7, 2.2, -2.2, g).userData.noPick = true
+    for (const bx of [-4.3, 4.3]) {
+      mesh(new THREE.CylinderGeometry(0.09, 0.16, 1.5, 6), mat(TX.iron, { metalness: 0.6 }), bx, 0.75, 1.5, g).userData.noPick = true
+      const bowl = mesh(new THREE.CylinderGeometry(0.34, 0.2, 0.26, 8), mat(TX.brass, { metalness: 0.6 }), bx, 1.6, 1.5, g)
+      bowl.userData.noPick = true
+      const fl = mesh(new THREE.SphereGeometry(0.14, 8, 6), new THREE.MeshStandardMaterial({ color: 0xffe0a0, emissive: 0xff9030, emissiveIntensity: 1.6 }), bx, 1.85, 1.5, g)
+      fl.userData.flicker = true; fl.userData.noPick = true
+      const bt = new THREE.PointLight(0xff9040, 2.2, 9); bt.position.set(bx, 1.95, 1.5); g.add(bt)
+      bt.userData.flicker = true
+    }
   },
   selGate(g) {
     // camera at [0,4.5,-10] on a cut terrace facing +z: the mountain wall
@@ -363,6 +450,9 @@ const BUILDERS = {
     mesh(new THREE.BoxGeometry(3.4, 4.6, 0.8), mat(TX.grey), 0, 6.6, -14.6, g).userData.noPick = true
     const door = mesh(new THREE.BoxGeometry(2.2, 3.4, 0.5), mat(TX.stoneD), 0, 6.2, -14.2, g)
     door.userData.spot = 'backThrone'
+    mesh(new THREE.CylinderGeometry(0.3, 0.34, 3, 7), mat(TX.wood), -8, 4.65, 0, g).rotation.z = 1.5
+    boulder(g, TX.selen, -9.5, 4.9, 3, 1.4, 0.4); boulder(g, TX.grey, 9.8, 5.1, -8, 1.2, 1)
+    tuft(g, -7.5, 4.44, -4, 1.3, 0x2f6a44); tuft(g, -6.5, 4.44, -8, 1, 0x2f6a44); tuft(g, 8.8, 4.44, 1, 1.2, 0x2f6a44)
   },
   selTop(g) {
     // camera at [0,9.5,-6] on the summit ledge facing +z: the rock wall with
@@ -389,6 +479,8 @@ const BUILDERS = {
     for (let i = 0; i < 6; i++) mesh(new THREE.BoxGeometry(2.4, 0.5, 1.3), mat(TX.stoneD), (i % 2) * 1.4, 9 - i * 0.55, -12.5 - i * 1.0, steps)
     steps.children[0].userData.spot = 'downGate'
     g.add(steps)
+    boulder(g, TX.selen, -5.6, 9.7, -2, 1.1, 0.5); boulder(g, TX.grey, 5.8, 9.5, -4, 0.8, 1.2); boulder(g, TX.selen, 4.6, 9.6, 0.5, 0.9, 0.3)
+    tuft(g, -4.6, 9.38, -8, 1.2, 0x2f6a44); tuft(g, 3.6, 9.38, -9.5, 1, 0x2f6a44)
   },
   stoneship(g) {
     const ground = mesh(new THREE.CircleGeometry(70, 26), mat(TX.grey), 0, -0.05, 0, g); ground.rotation.x = -Math.PI / 2
@@ -401,6 +493,10 @@ const BUILDERS = {
     dome.userData.spot = 'observatory'
     dome.userData.landmark = 'observatory'
     for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.6, 0.3, 1.6), mat(TX.plank), -2 + i * 1.2, 0.2, -4 + i * 0.9, g)
+    crate(g, -3.4, 0.3, -1.4, 1, 0.4); barrel(g, 3.2, 0.4, -2, 0.8); crate(g, 4.4, 0.28, 0.4, 0.8, 1.1)
+    lantern(g, -4.6, 0, -2.8)
+    boulder(g, TX.grey, -13.5, 0.9, -4, 1.3, 0.7); boulder(g, TX.grey, 13.8, 1.1, -3, 1.5, 0.2)
+    tuft(g, -8, 0.04, -2, 1.2); tuft(g, 8, 0.04, -1, 1)
   },
   mechanical(g) {
     const ground = mesh(new THREE.CircleGeometry(60, 24), mat(TX.mech, { metalness: 0.3, roughness: 0.6 }), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
@@ -422,6 +518,12 @@ const BUILDERS = {
     vent.userData.spot = 'pageMechanicalBlue'
     const steam = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-4.4, 0.6, 2.6, -4.2, 1.2, 2.7, -4.5, 1.8, 2.5, -4.3, 2.4, 2.6], 3)), new THREE.PointsMaterial({ color: 0xcfd2d8, size: 0.5, transparent: true, opacity: 0.5 }))
     steam.userData.steam = true; g.add(steam)
+    for (const [px, pz, pl] of [[9, -2, 7], [-8.5, -4, 6], [11, 8, 5]]) {
+      const pipe = mesh(new THREE.CylinderGeometry(0.26, 0.26, pl, 8), mat(TX.mech, { metalness: 0.55, roughness: 0.5 }), px, 0.26, pz, g)
+      pipe.rotation.x = Math.PI / 2; pipe.userData.noPick = true
+      mesh(new THREE.TorusGeometry(0.3, 0.05, 6, 10), mat(TX.iron, { metalness: 0.6 }), px, 0.26, pz - pl / 2 + 0.3, g).rotation.y = Math.PI / 2
+    }
+    crate(g, -6.5, 0.35, -2, 1.1, 0.5); barrel(g, 7.4, 0.45, 4.4, 0.9)
   },
   mechWalk(g) {
     const ground = mesh(new THREE.CircleGeometry(40, 22), mat(TX.mech, { metalness: 0.3, roughness: 0.6 }), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
@@ -454,6 +556,14 @@ const BUILDERS = {
     const panel = mesh(new THREE.BoxGeometry(2, 1.4, 0.2), mat(TX.iron, { metalness: 0.6 }), -4.6, 1.4, 6.2, g)
     panel.rotation.y = -0.5; panel.userData.spot = 'switchPanel'; panel.userData.landmark = 'mechCallLever'
     for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.16, 0.5, 0.16), mat(TX.iron, { metalness: 0.7 }), -4.6 - 0.7 * Math.cos(0.5) + i * 0.35 * Math.cos(0.5), 1.6, 6.2 - 0.7 * Math.sin(0.5) + i * 0.35 * Math.sin(0.5), g).userData.spot = 'switchPanel'
+    for (const [px, pz, pl] of [[-8.5, -2, 6], [8.8, 2, 7]]) {
+      const pipe = mesh(new THREE.CylinderGeometry(0.24, 0.24, pl, 8), mat(TX.mech, { metalness: 0.55, roughness: 0.5 }), px, 0.24, pz, g)
+      pipe.rotation.x = Math.PI / 2; pipe.userData.noPick = true
+      mesh(new THREE.TorusGeometry(0.28, 0.05, 6, 10), mat(TX.iron, { metalness: 0.6 }), px, 0.24, pz + pl / 2 - 0.3, g).rotation.y = Math.PI / 2
+    }
+    barrel(g, 8.4, 0.45, -6, 0.7); crate(g, -8, 0.32, 4.5, 1, 0.8)
+    const valve = mesh(new THREE.TorusGeometry(0.4, 0.06, 6, 12), mat(TX.brass, { metalness: 0.7 }), -2.4, 0.7, 7.8, g)
+    valve.rotation.x = 1.3; valve.userData.spin = 0.15; valve.userData.noPick = true
   },
   mechCar(g) {
     const grate = mesh(new THREE.CircleGeometry(1.5, 14), mat(TX.iron, { metalness: 0.5, roughness: 0.4 }), 0, 0.02, -6.4, g)
@@ -505,6 +615,10 @@ const BUILDERS = {
     const seal = mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.5, 12), mat(TX.mech, { metalness: 0.5, roughness: 0.45 }), 6.2, 1.2, 10.6, g)
     seal.rotation.x = Math.PI / 2; seal.userData.spinSealed = 0.5; seal.userData.noPick = true; seal.userData.mech = 'topGear'
     mesh(new THREE.BoxGeometry(1.6, 1.4, 0.4), mat(TX.iron), 6.4, 0.7, 12.4, g).userData.noPick = true
+    const spool = mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.5, 10), mat(TX.wood), -7.4, 0.55, 2.4, g)
+    spool.rotation.z = Math.PI / 2; spool.userData.noPick = true
+    mesh(new THREE.TorusGeometry(0.5, 0.04, 6, 14), mat(TX.brass, { metalness: 0.6 }), -7.15, 0.55, 2.4, g).rotation.y = Math.PI / 2
+    crate(g, 7.6, 0.3, 5.2, 0.9, 0.6)
   },
   mechRoom(g) {
     const shell = mesh(new THREE.CylinderGeometry(5.4, 5.4, 4.6, 16, 1, true), mat(TX.mech, { side: THREE.BackSide, metalness: 0.4 }), 0, 2.3, 0, g)
@@ -536,6 +650,9 @@ const BUILDERS = {
     win.rotation.y = -0.6; win.userData.noPick = true
     const wcage = mesh(new THREE.BoxGeometry(1.3, 1.8, 0.1), mat(TX.brass, { metalness: 0.6 }), 3.6, -1.4, -3.8, g)
     wcage.rotation.y = -0.6; wcage.userData.mech = 'cageShaft'; wcage.userData.noPick = true
+    const rpipe = mesh(new THREE.CylinderGeometry(0.14, 0.14, 4.4, 8), mat(TX.mech, { metalness: 0.5 }), -3.6, 0.16, -1.5, g)
+    rpipe.rotation.z = Math.PI / 2; rpipe.userData.noPick = true
+    crate(g, -3.9, 0.3, -2.6, 0.7, 0.9); barrel(g, 3.2, 0.38, 1.6, 0.5)
   },
   channelwood(g) {
     const ground = mesh(new THREE.CircleGeometry(60, 24), mat(TX.chand), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
@@ -559,6 +676,12 @@ const BUILDERS = {
     bridge.rotation.y = 0.5; bridge.userData.spot = 'pageChannelwoodBlue'
     const pool = mesh(new THREE.CircleGeometry(2.4, 12), new THREE.MeshStandardMaterial({ color: 0x2a6a70, roughness: 0.2, metalness: 0.2 }), -3.4, 0.08, 2.6, g)
     pool.rotation.x = -Math.PI / 2; pool.userData.spot = 'pageChannelwoodRed'
+    for (const [lx, lz, lr] of [[-7, -4, 3.4], [7.5, 2, 2.8], [-5, 7, 2.4]]) {
+      const log = mesh(new THREE.CylinderGeometry(0.24, 0.28, lr, 7), mat(TX.wood), lx, 0.12, lz, g)
+      log.rotation.z = Math.PI / 2; log.rotation.y = lr; log.userData.noPick = true
+    }
+    tuft(g, -8.5, 0.06, 4, 1.3, 0x2f6a44); tuft(g, 8.6, 0.06, -6, 1.2, 0x2f6a44); tuft(g, 6, 0.06, 6, 1, 0x2f6a44)
+    boulder(g, TX.chand, -10, 0.8, -8, 1.4, 0.6); boulder(g, TX.chand, 11, 0.6, 8, 1.2, 1.3)
   },
 }
 
@@ -588,6 +711,11 @@ export function buildWorld(ids) {
     }
     root.add(g)
     g.traverse((o) => {
+      if (o.isMesh) {
+        const env = o.userData.sky || (o.material && o.material.side === THREE.BackSide) || o.geometry.type === 'PlaneGeometry' || o.geometry.type === 'CircleGeometry'
+        o.castShadow = !env
+        o.receiveShadow = !o.userData.sky
+      }
       if (o.userData.spot) hot.push({ mesh: o, id: o.userData.spot, node: id })
       if (o.userData.mech) mech.push({ kind: o.userData.mech, o, x0: o.position.x, y0: o.position.y, z0: o.position.z })
       if (o.userData.spin) anim.push({ o, f: (t) => { o.rotation.z = t * o.userData.spin } })
@@ -613,4 +741,29 @@ function idSky(id) {
   if (id === 'mechanical' || id === 'mechWalk' || id === 'mechCar' || id === 'mechTop' || id === 'mechRoom') return 'mechanical'
   if (id === 'channelwood') return 'channelwood'
   return 'interior'
+}
+
+const FOG = {
+  dusk: { color: 0x38263e, near: 55, far: 640 },
+  day: { color: 0xa8bed8, near: 80, far: 820 },
+  interior: { color: 0x14100b, near: 5, far: 44 },
+  selenitic: { color: 0x123a2a, near: 42, far: 520 },
+  stoneship: { color: 0x6c7482, near: 36, far: 400 },
+  mechanical: { color: 0x59301a, near: 42, far: 460 },
+  channelwood: { color: 0x265256, near: 36, far: 400 },
+}
+
+const SUNSET = {
+  dusk: { color: 0xffb07a, i: 1.15 },
+  day: { color: 0xffe8c8, i: 1.2 },
+  interior: { color: 0x8a7a68, i: 0.5 },
+  selenitic: { color: 0xbfe8cc, i: 0.75 },
+  stoneship: { color: 0xdfe4ea, i: 1.05 },
+  mechanical: { color: 0xffb060, i: 1.35 },
+  channelwood: { color: 0xcfeee6, i: 1.05 },
+}
+
+export function atmosphere(id) {
+  const s = idSky(id)
+  return { fog: FOG[s], sun: SUNSET[s] }
 }

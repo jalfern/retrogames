@@ -18,7 +18,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
 import { freshState, dispatch, runSolver, solveScript } from './state.js'
 import { MESSAGES, PRESS } from './attract.js'
-import { buildWorld } from './scene.js'
+import { buildWorld, atmosphere } from './scene.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 
 const VW = 960, VH = 540
@@ -46,6 +46,10 @@ const MystGame = () => {
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     renderer.setSize(VW, VH, false)
     renderer.setPixelRatio(1)
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.22
     const canvas = renderer.domElement
     canvas.dataset.mystStage = '1'
     canvas.id = 'myst-stage'
@@ -58,7 +62,14 @@ const MystGame = () => {
     scene.add(new THREE.HemisphereLight(0xcfd8e8, 0x2a2418, 0.9))
     const sun = new THREE.DirectionalLight(0xffe8c8, 1.1)
     sun.position.set(-40, 60, 30)
-    scene.add(sun)
+    sun.castShadow = true
+    sun.shadow.mapSize.set(1024, 1024)
+    sun.shadow.camera.left = -36; sun.shadow.camera.right = 36
+    sun.shadow.camera.top = 36; sun.shadow.camera.bottom = -36
+    sun.shadow.camera.near = 1; sun.shadow.camera.far = 200
+    sun.shadow.bias = -0.0007
+    scene.add(sun); scene.add(sun.target)
+    const SUN_OFF = new THREE.Vector3(-38, 54, 26)
 
     const { root, hot, anim, mech } = buildWorld(NODE_IDS)
     scene.add(root)
@@ -72,6 +83,11 @@ const MystGame = () => {
     const gotoNode = (id) => {
       const i = NODE_IX[id]
       camera.position.set(i * GAP + NODES[id].pos[0], NODES[id].pos[1], NODES[id].pos[2])
+      sun.position.copy(camera.position).add(SUN_OFF)
+      sun.target.position.copy(camera.position)
+      const at = atmosphere(id)
+      scene.fog.color.set(at.fog.color); scene.fog.near = at.fog.near; scene.fog.far = at.fog.far
+      sun.color.set(at.sun.color); sun.intensity = at.sun.i
     }
     const aim = () => {
       const n = NODES[gs.node]

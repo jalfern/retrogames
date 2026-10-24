@@ -92,13 +92,34 @@ export const SKIES = {
 export function texSky(name) {
   const [top, hor, low] = SKIES[name] || SKIES.day
   const c = document.createElement('canvas')
-  c.width = 8; c.height = 256
+  c.width = 256; c.height = 256
   const ctx = c.getContext('2d')
   const g = ctx.createLinearGradient(0, 0, 0, 256)
   g.addColorStop(0, `rgb(${top.join(',')})`)
   g.addColorStop(0.55, `rgb(${hor.join(',')})`)
   g.addColorStop(1, `rgb(${low.join(',')})`)
-  ctx.fillStyle = g; ctx.fillRect(0, 0, 8, 256)
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256)
+  const stars = { dusk: 150, selenitic: 220, mechanical: 70, stoneship: 50, day: 0, channelwood: 0, interior: 0 }[name] || 0
+  if (stars) {
+    const r = rng(name.length * 7919 + name.charCodeAt(0) * 131)
+    for (let i = 0; i < stars; i++) {
+      const x = r() * 256, y = r() * 130, a = 0.25 + r() * 0.75, s = r() < 0.12 ? 1.6 : 0.8
+      ctx.fillStyle = `rgba(255,250,240,${a.toFixed(2)})`
+      ctx.fillRect(x, y, s, s)
+    }
+  }
+  const clouds = { day: 14, stoneship: 16, dusk: 8 }[name] || 0
+  if (clouds) {
+    const r = rng(name.charCodeAt(1) * 31337)
+    for (let i = 0; i < clouds; i++) {
+      const x = r() * 256, y = 30 + r() * 90, w = 14 + r() * 34
+      const cg = ctx.createRadialGradient(x, y, 1, x, y, w)
+      cg.addColorStop(0, 'rgba(255,255,255,0.16)')
+      cg.addColorStop(1, 'rgba(255,255,255,0)')
+      ctx.fillStyle = cg
+      ctx.save(); ctx.translate(x, y); ctx.scale(1, 0.35); ctx.beginPath(); ctx.arc(0, 0, w, 0, Math.PI * 2); ctx.fill(); ctx.restore()
+    }
+  }
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   return t
