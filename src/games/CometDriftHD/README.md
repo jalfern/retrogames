@@ -274,7 +274,19 @@ classification, so a misclassified backend silently unarms it, which is what
   stretches along it, and dims as elevation lifts the kart off its shadow).
   `cometdrifthdsandcheck`: 24 gates + `--mutate` (the desert-forgets
   mutant must die).
-- Sound is the retro twin's synthesized law re-cut on sawtooth; no music.
+- **CLOSED by #1001 (+ #675/#997):** the desert now rides an ORIGINAL synthesized
+  music bed — `MUSIC.comet` in `AudioController.js`, a 32-step G-major I–vi–IV–V
+  arcade-kart loop (pumping octave bass, chord-tone hook, four-on-the-floor kick +
+  hats) composed for this build (our own melody, none from any cabinet). `index.jsx`
+  dispatches it: `startMusic('comet')` on the green, `setMusicLevel` by screen,
+  `duckMusic` under spins/bumps/gold so cues peak over the bed, and `setMusicStep`
+  tempo-lift with speed/turbo (the SSX/Out Run seam). Its scenery remainder
+  (skins, signage, bunting, hills) shipped in #675/#997.
+  - `cometdrifthdcheck` pins the bed in Node — 17 gates: registered, one shared
+    32-step grid (2 whole bars), every tone in G major, bass roots walking
+    G–Em–C–D, four-on-the-floor kick + hats, all four dispatch calls present in
+    `index.jsx`, and the step grid pinned to a deterministic `0.12s`.
+     `--mutate-music` pushes the hook an off-key semitone and must go red.
   - **Remainder (#675, QA studio): skins, signage, bunting, hills.**
     `barrierSkin(seed)` picks a contrast pair from `SPONSOR_PAIRS` plus a
     3/4-stripe count, so barriers read as different sponsors down the

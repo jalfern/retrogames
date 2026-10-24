@@ -24,6 +24,7 @@ const args = process.argv.slice(2)
 const MUTATE = args.includes('--mutate')
 const MUTATE_CHIME = args.includes('--mutate-chime')
 const MUTATE_BLOOM = args.includes('--mutate-bloom')
+const MUTATE_MUSIC = args.includes('--mutate-music')
 const SKIP_BROWSER = args.includes('--skip-browser')
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SHARD = resolve(HERE, '../src/games/CometDriftHD/index.jsx')
@@ -67,6 +68,26 @@ if (MUTATE_CHIME) {
         if (chimemutat) {
             writeFileSync(AUDIO, readFileSync(AUDIO, 'utf8').replace(CUTIL, CLINE))
             console.log('  ..    chime mutation restored')
+        }
+    })
+}
+
+// #1001 music mutant: push the comet bed's opening hook a semitone out of G
+// major — the in-key gate MUST go red under this run (the bed must stay musical).
+const ACMUS = resolve(HERE, '../src/utils/AudioController.js')
+const QLINE = '67, 0, 71, 0, 74, 0, 71, 0'
+const QUTIL = '68, 0, 71, 0, 74, 0, 71, 0'
+let musicmutat = false
+if (MUTATE_MUSIC) {
+    const msrc = readFileSync(ACMUS, 'utf8')
+    if (!msrc.includes(QLINE)) { console.error('MUTATE_MUSIC: comet lead not found — probing stale code.'); process.exit(2) }
+    writeFileSync(ACMUS, msrc.replace(QLINE, QUTIL))
+    musicmutat = true
+    console.log('  ..    mutated: the comet hook has an off-key tone — the in-key music gate MUST report a FAIL')
+    process.on('exit', () => {
+        if (musicmutat) {
+            writeFileSync(ACMUS, readFileSync(ACMUS, 'utf8').replace(QUTIL, QLINE))
+            console.log('  ..    music mutation restored')
         }
     })
 }
@@ -1042,6 +1063,41 @@ console.log('bank voices (#478 item 5 — gold bell chime):')
     ok(bankVoices(0).every((v) => v.t !== 'sine') && bankVoices(1).every((v) => v.t !== 'sine'), 'blue and violet have NO bell — the chime is GOLD-only')
     ok(GOLD_CHIME.every((c, i) => i === 0 || c[4] > GOLD_CHIME[i - 1][4]), 'chime notes arpeggiate (rising delays, not a chord stab)')
     ok(readFileSync(SHARD, 'utf8').includes('bankVoices(ev.tier)'), 'index.jsx drives the COMET bank voices from bankVoices(ev.tier)')
+}
+
+// ---------------------------------------------------------------- race music
+// #1001: the desert gets an ORIGINAL synthesized bed under the wheel — a driving
+// G-major racer loop registered in the shared MUSIC table and dispatched by
+// index.jsx. All Node (no AudioContext): the registry data is the spec, the
+// wiring is source-inspected, and a flat/off-key mutant must go red.
+console.log('race music (#1001 — original comet bed):')
+{
+    const AC = await import('file://' + resolve(HERE, '../src/utils/AudioController.js') + '?t=' + Date.now())
+    const { MUSIC } = AC
+    const M = MUSIC.comet
+    ok(!!M, 'MUSIC.comet is registered (the race has a track to start)')
+    const L = M ? M.lead.length : 0
+    ok(L > 0 && L === M.bass.length && L === M.perc.length, `lead/bass/perc share one grid (${L} steps)`)
+    ok(L % 16 === 0, `the loop is a whole number of bars (2 bars @ 16 steps = ${L})`)
+    ok(M.step > 0.1 && M.step < 0.2, `resting tempo is an arcade-kart cruise (step ${M.step}s ≈ ${(60 / M.step / 4).toFixed(0)} BPM quarter)`)
+    const GMAJOR = new Set([0, 2, 4, 6, 7, 9, 11])
+    const notes = [...M.lead, ...M.bass].filter((n) => n > 0)
+    ok(notes.every((n) => GMAJOR.has(n % 12)), `every note sits in G major (no out-of-key tones: ${notes.filter((n) => !GMAJOR.has(n % 12)).join(',') || 'none'})`)
+    ok(M.lead.some((n) => n > 0), 'the lead carries a melody (not an empty bed)')
+    ok(M.lead.filter((n) => n > 0).length >= L * 0.5, `the melody is dense enough to drive (${M.lead.filter((n) => n > 0).length}/${L} steps sounded)`)
+    const chordRoots = [0, 8, 16, 24].map((i) => M.bass[i] % 12)
+    ok(JSON.stringify(chordRoots) === JSON.stringify([7, 4, 0, 2]), `bass walks the I–vi–IV–V arcade progression G–Em–C–D (${chordRoots.join(',')})`)
+    ok(M.bass.some((n) => n > 0) && M.bass.filter((n) => n > 0).length >= L * 0.5, 'the bass pumps (a racing bed needs a driving low end)')
+    ok(M.perc.includes(1), 'the bed has a kick on the floor (four-on-the-floor)')
+    ok(M.perc.includes(2), 'the bed has hats for drive (not kickless)')
+    const kick = M.perc.filter((v) => v === 1).length
+    ok(kick >= 8, `kick lands on every beat (four-on-the-floor: ${kick} kicks across ${L} steps)`)
+    const src = readFileSync(SHARD, 'utf8')
+    ok(src.includes("startMusic('comet')"), "index.jsx starts the comet bed on the green ('comet' track)")
+    ok(src.includes('setMusicLevel'), 'index.jsx rides the music bus level by screen (attract bed / race full)')
+    ok(src.includes('duckMusic'), 'index.jsx ducks the bed under spins/bumps/gold so the cues peak over it')
+    ok(src.includes('setMusicStep'), 'index.jsx lifts the tempo with the player (setMusicStep seam, like SSX/Out Run)')
+    ok(M.step === 0.12, `comet step grid pinned to ${M.step}s (deterministic — a retune must be an intentional edit)`)
 }
 
 // --------------------------------------------- per-course skin + register (#502)
