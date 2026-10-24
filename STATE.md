@@ -1,56 +1,61 @@
-# STATE — 2026-10-23 forge session (MODEL SHELF #901 facing law + village kit shipped)
+# STATE — 2026-10-23 forge session (CORAL REEF demo shipped; reefcheck 29/29)
 
 ## Shipped this session
-- **#901 → main (PR #938 squash 84cdbde)** — shared 3D model library grown +
-  the missing **facing law** closed. Every `shelf.json` entry now declares a
-  `facing` (`radial` | `+z` | `rigged`); forward=+Z, up=+Y, declared in the
-  index. Vertex-coloured kit pieces have facing **proven from geometry**
-  (`facingVerified`): dark entry feature on +Z, nothing dark on −Z. Consumer
-  helpers `facingOf(id)` / `directionalIds(category)` in `modelShelf.js`.
-  Kit grown 27→45 (2214 KB ≤ 2.5 MB): village+fantasy scenery — cottage,
-  watchtower, windmill (fronted +Z), well, crate, barrel, campfire, signpost,
-  bench, lamp_post, bridge, statue, bush, stump, log_pile, mushroom,
-  flower_patch — + a forge market cart (fronted +Z, geometry-proven). All
-  original CC0, same KayKit voxel idiom, ≤40 KB / ≤400 tris, grounded-shaded.
-- **shelfcheck 189 → 354/0.** New facing gate: index honesty (declared ==
-  derived-from-GLB), **forbid any front at −Z**, radial claims re-checked honest.
-  **Proven red** once: cottage door flipped to −Z → "fronted building with a
-  geometry-proven +Z front" FAILS; restore → green.
-- **#901 closed** (its spec — all categories + proven scale + proven facing +
-  checker — is met). Filed **#939** `QA — MODEL SHELF: wire a consumer + …`
-  (feedback): wire Emberwood/other puller, textured-model facing, village-kit
-  rendered QC, more categories, slim runtime manifest.
+- **#902 → main (PR #944 squash 268e619)** — **CORAL REEF** demo, live at
+  `https://www.jalfern.com/retrogames/demos/reef.html`. Self-contained
+  Canvas2D parallax diorama (demos law: /retrogames/demos only, no registry).
+  Signature five from the brief, all in: caustics rippling over sand, god rays
+  from the surface, swaying corals/fans/anemones/tubes, boids fish school
+  (Vicsek order ~1.0), marine snow + bubbles, and depth colour-fade by real
+  absorption physics (r/g 0.60 surface → 0.36 floor; warm corals live shallow).
+  Synthesized ambience (water bed, bubbles, distant whale), drag-to-look,
+  credits card. Index card + DEMO_INDEX entry + reefcheck alias.
+- **reefcheck 29/29** (`npm run reefcheck`) — boots, colour-physics gates
+  (luma/b-r/r-g columns), rays as vertical contrast, lit + MOVING caustics,
+  warm-coral across sections, flock order, phone 390x844 lite, retina dpr2,
+  draw-cost budget. **Proven red**: zeroed caustic alpha → lit-sand + ripple
+  gates red; restored.
+- `npm run creditscheck` **69/69** — also fixed pre-existing main drift:
+  index `DEMO_INDEX` mountains entry said `[671]/~13 h` vs card's
+  `[671,736,834]/~15 h` (now aligned; was red on main before this PR).
+- Filed **#947** `QA — CORAL REEF: polish pass` (feedback).
 
 ## Next goal
-- Oldest `game-queue`: **#902 coral-reef demo**, **#903 black-hole demo**
-  (self-contained, `/retrogames/demos/…` only — no registry, per Jon 2026-10-19).
-- QA holds #928 (MYST graphics), #891 (list hygiene), and now #939. Never touch heldGames.
+- Oldest `game-queue`: **#903 black-hole demo** (self-contained
+  `/retrogames/demos/…` only — no registry, per Jon 2026-10-19).
+- QA holds #928 (MYST graphics), #891 (list hygiene), #939 (model shelf
+  consumers), and now #947. Never touch heldGames.
 
 ## Board / harness status
-- main = 84cdbde (this ship). `main-ok` green at claim + merge; `static` SUCCESS;
-  Vercel live — prod shelf.json serves count 45.
-- `lint:mario`/`lint:fps`/`lint:ai` clean; `npm run build` green; `dist/models/`
-  carries all 45 GLBs. `build-shelf` regen is deterministic (no diff on re-run).
+- main = 268e619 (this ship). `main-ok` green at claim + merge; `static`
+  SUCCESS; prod verified (reef.html + index card live on www.jalfern.com).
+- `lint:mario`/`lint:fps`/`lint:ai` clean; `npm run build` green.
 - `jonq`: nothing AWAITING/ANSWERED/DEFAULTED in lane:games; nothing filed.
 
 ## New harness lessons (this session)
-- **Facing must be checked against the SHADED colour, not the raw one.**
-  `groundShade` multiplies the model's lower band by ~0.72; a "dark-ish" wheel
-  grey (lum 0.235) drops to ~0.17 there and leaked into the back slab, turning a
-  fronted cart `radial`. Reserve sub-threshold dark (<0.2) for the front feature
-  only and keep everything else ≥ ~0.28 pre-shade.
-- **Derive-in-build, re-derive-in-check = an honest index.** The generator WRITES
-  the facing it intends; the checker RE-derives it from the committed GLB and
-  refuses a mismatch and any −Z front. That asymmetry is what makes it load-bearing
-  (a future mirrored prop can't silently pass) — don't have both sides derive.
-- **Additive shelf fields are safe across siblings.** Nothing outside
-  `shelfcheck` asserts exact counts or rejects extra keys, so a new category/field
-  grows the library without breaking SSX/Comet consumers — verify by grep.
+- **Headless Chrome rAF-dt is compositor delivery, not your cost.** A
+  canvas2d page measured 50–90 ms/frame (and *smaller* viewports were
+  *slower*) while our frame body did 5 ms of work. Gate the draw cost the
+  demo controls (time inside the frame body), never rAF deltas, in this
+  harness; keep the freeze gate on rAF (alive ≠ fast).
+- **GL renderer probes lie for canvas2d** — `WEBGL_debug_renderer_info`
+  says Metal while 2D compositing runs software. Calibrate by timing real
+  canvas fills and classify with the number.
+- **Warm colour at depth is depth-limited, not taste-limited**: veiling
+  mixes blue in, so pixel gates for "warm coral" must sample the shallow
+  band where red survives — which is also what a diver sees. Make the near
+  band genuinely warm (hero props) instead of loosening the gate.
+- **Adaptive quality needs the right lever**: shrinking the backing store
+  didn't help when the bottleneck was JS issue cost + compositor; halving
+  the noise-field update rate did. Measure work, pick the lever that moves it.
 
 ## Housekeeping owed
-- Prune worktrees when idle: `retrogames-forge-model-library` (this session; it
-  used a symlinked `node_modules` — worktree-only, never committed) plus the old
-  list (momentum-courses, iphone-controller, ssx-*, emberwood-*, qa-863*,
-  people-sim, campfire-670).
-- STATE.md ships via its own PR (#920 convention) — this session merged, so this
-  file ships via its own PR + merge.
+- Prune worktrees when idle: `retrogames-forge-coral-reef` (this session;
+  symlinked node_modules — worktree-only), plus the old list
+  (momentum-courses, iphone-controller, ssx-*, emberwood-*, qa-863*,
+  people-sim, campfire-670, forge-model-library).
+- STATE.md ships via its own PR (#920 convention) — this session merged, so
+  this file ships via its own PR + merge.
+
+## Open questions
+- None (#605: nothing filed this session).
