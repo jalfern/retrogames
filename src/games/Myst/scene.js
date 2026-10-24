@@ -99,9 +99,9 @@ function wheelAssembly(parent, x, y, z, s) {
   const frame = new THREE.Group()
   const mark = mesh(new THREE.ConeGeometry(0.09, 0.22, 4), mat(TX.brass, { metalness: 0.6 }), 0, RR[0] + 0.16, -0.06, frame)
   mark.rotation.z = Math.PI; mark.userData.noPick = true
-  const cover = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.12, 12), mat(TX.brass, { metalness: 0.65 }), 0, 0, -0.09, frame)
+  const cover = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.12, 12), mat(TX.brass, { metalness: 0.35, roughness: 0.5, emissive: 0x6b4f18, emissiveIntensity: 0.4 }), 0, 0, -0.09, frame)
   cover.rotation.x = Math.PI / 2; cover.userData.mech = 'chanHub'; cover.userData.landmark = 'starWheel'; cover.userData.noPick = true
-  const bk = mesh(new THREE.BoxGeometry(0.26, 0.05, 0.18), mat(TX.pageB), 0, 0, -0.02, frame)
+  const bk = mesh(new THREE.BoxGeometry(0.26, 0.05, 0.18), new THREE.MeshStandardMaterial({ map: TX.pageB, bumpMap: TX.pageB, bumpScale: 0.2, emissive: 0x1a1408, emissiveIntensity: 0.5 }), 0, 0, -0.16, frame)
   bk.rotation.set(-0.5, 0.4, 0); bk.userData.spot = 'hubBook'
   wheel.add(frame)
   wheel.position.set(x, y, z)
@@ -920,9 +920,11 @@ const BUILDERS = {
     star.position.set(0, 6.4, -53)
     star.userData.mech = 'starWheel'
     g.add(star)
-    wheelAssembly(g, 0, 6.4, -53.5, 2.4)
-    const pier2 = mesh(new THREE.BoxGeometry(0.9, 4.4, 0.9), mat(TX.grey), 0, 4.4, -53, g)
+    wheelAssembly(g, 0, 6.4, -52, 2.4)
+    const pier2 = mesh(new THREE.BoxGeometry(0.9, 3.5, 0.9), mat(TX.grey), 0, 3.95, -53, g)
     pier2.userData.noPick = true; pier2.userData.landmark = 'starWheel'
+    const axle = mesh(new THREE.BoxGeometry(0.26, 1.3, 0.26), mat(TX.iron, { metalness: 0.5 }), 0, 5.9, -53, g)
+    axle.userData.noPick = true; axle.userData.landmark = 'starWheel'
     const groove = mesh(new THREE.BoxGeometry(1.1, 0.7, 1.0), mat(TX.iron, { metalness: 0.6 }), 0, 3.1, -53, g)
     groove.userData.landmark = 'starWheel'; groove.userData.noPick = true
     // the wheel-shelter where the red page waits, the axle lock, and the gear
@@ -949,21 +951,21 @@ const BUILDERS = {
     const ledge = mesh(new THREE.CircleGeometry(30, 22), mat(TX.chand), 0, 4.4, -66, g); ledge.rotation.x = -Math.PI / 2
     seaPlane(g, -0.5, 200, 0.7)
     rocks(g, TX.chand, [[-6.2, 5.6, -62, 4, 4, 4, 0.4], [6.4, 5.2, -63, 4, 3.6, 4, -0.3], [-8.2, 4.2, -72, 5, 5, 5, 0.2], [8.4, 4.6, -74, 5, 4.4, 5, -0.2]])
-    const drum = mesh(new THREE.CylinderGeometry(1.5, 1.7, 3.2, 14), mat(TX.brass, { metalness: 0.5, roughness: 0.45 }), 0, 6.4, -70.5, g)
+    const drum = mesh(new THREE.CylinderGeometry(1.5, 1.7, 3.2, 14), mat(TX.brass, { metalness: 0.3, roughness: 0.55, emissive: 0x5f4715, emissiveIntensity: 0.35 }), 0, 6.4, -57, g)
     drum.userData.landmark = 'chanDome'; drum.userData.noPick = true
-    const dome = mesh(new THREE.SphereGeometry(1.55, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(TX.brass, { metalness: 0.5, roughness: 0.45 }), 0, 8.0, -70.5, g)
+    const dome = mesh(new THREE.SphereGeometry(1.55, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(TX.brass, { metalness: 0.3, roughness: 0.55, emissive: 0x5f4715, emissiveIntensity: 0.35 }), 0, 8.0, -57, g)
     dome.userData.landmark = 'chanDome'; dome.userData.noPick = true
-    mesh(new THREE.CylinderGeometry(0.14, 0.16, 1.0, 8), mat(TX.brass, { metalness: 0.7 }), 0, 9.3, -70.5, g).userData.noPick = true
+    mesh(new THREE.CylinderGeometry(0.14, 0.16, 1.0, 8), mat(TX.brass, { metalness: 0.7 }), 0, 9.3, -57, g).userData.noPick = true
     // the three clue-stars, left / crown / right across the drum's face —
     // their points are the wheel's answer, worn bright as the original's sky
-    const CSX = [-1.05, 0, 1.05], CSY = [6.0, 6.7, 6.0]
+    const CSX = [-2.4, 0, 2.4], CSY = [10.4, 11.6, 10.4]
     for (let i = 0; i < WHEEL_RINGS; i++) {
-      const st = mesh(starGeometry(WHEEL_POINTS[0]), new THREE.MeshStandardMaterial({ color: 0xf2f6e8, emissive: 0xcfe89a, emissiveIntensity: 1.3, side: THREE.DoubleSide }), CSX[i], CSY[i], -68.75, g)
-      st.scale.setScalar(0.5); st.userData.clueStar = i; st.userData.noPick = true
+      const st = mesh(starGeometry(WHEEL_POINTS[0]), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xbcff6a, emissiveIntensity: 1.8, side: THREE.DoubleSide }), CSX[i], CSY[i], -54.0, g)
+      st.scale.setScalar(1.0); st.userData.clueStar = i; st.userData.noPick = true
     }
-    const plaque = mesh(new THREE.BoxGeometry(1.9, 0.5, 0.12), mat(TX.iron, { metalness: 0.5 }), 0, 5.32, -69.0, g)
+    const plaque = mesh(new THREE.BoxGeometry(1.9, 0.5, 0.12), mat(TX.iron, { metalness: 0.5 }), 0, 5.32, -54.7, g)
     plaque.userData.spot = 'starDrum'
-    mesh(new THREE.TorusGeometry(0.42, 0.05, 6, 14), mat(TX.brass, { metalness: 0.7 }), 2.4, 5.6, -69.6, g).rotation.x = 1.2
+    mesh(new THREE.TorusGeometry(0.42, 0.05, 6, 14), mat(TX.brass, { metalness: 0.7 }), 2.4, 5.6, -56.1, g).rotation.x = 1.2
     for (const [rx, rz] of [[-3.4, 0.5], [3.6, -0.4]]) mesh(new THREE.BoxGeometry(2.2, 0.5, 1.6), mat(TX.stoneD), rx, 4.65, -63.5 + rz, g).userData.noPick = true
     for (let k = 0; k < 10; k++) { const a = k * (Math.PI / 9) + Math.PI / 2; mesh(new THREE.BoxGeometry(0.45, 0.9, 0.45), mat(TX.grey), Math.sin(a) * 9.5, 4.85, -66 + Math.cos(a) * 9.5, g).userData.noPick = true }
     tuft(g, -5.2, 4.46, -68, 1.2, 0x2f6a44); tuft(g, 5.6, 4.46, -66, 1, 0x2f6a44)
