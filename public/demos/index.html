@@ -119,6 +119,18 @@
     <div class="meta"><span>CANVAS 2D · PARALLAX REEF + CAUSTICS</span><span>2026-10-23</span></div>
   </a>
 
+  <a class="card" id="blackhole" style="margin-top:18px">
+    <div class="row">
+      <span class="name">BLACK HOLE</span>
+      <span class="play">OPEN ▸</span>
+    </div>
+    <p class="desc">A slow flight past an event horizon in WebGL2: every pixel is a null geodesic integrated around a Schwarzschild hole,
+      so the starfield bends and the thin Keplerian accretion disk wraps over and under the shadow — the Interstellar halo.
+      The approaching side of the disk runs brighter and bluer by relativistic Doppler beaming; a thin photon ring rims the black.
+      Drag to look around; click for a synthesized gravitational drone.</p>
+    <div class="meta"><span>WEBGL2 · GEODESIC LENSING + DOPPLER DISK</span><span>2026-10-23</span></div>
+  </a>
+
   <p class="more">MORE DEMOS COMING SOON</p>
 
   <footer>
@@ -136,6 +148,7 @@
   document.getElementById('mountains').href = base + 'mountains.html'
   document.getElementById('storm').href = base + 'storm.html'
   document.getElementById('reef').href = base + 'reef.html'
+  document.getElementById('blackhole').href = base + 'blackhole.html'
 </script>
 <script>
 window.DEMO_INDEX = { demos: [
@@ -145,6 +158,7 @@ window.DEMO_INDEX = { demos: [
   { el: 'mountains', issues: [671, 736, 834], span: '~15 h', assist: 'solo' },
   { el: 'storm', issues: [672], span: '~3 h', assist: 'solo' },
   { el: 'reef', issues: [902], span: '~3 h', assist: 'solo' },
+  { el: 'blackhole', issues: [903], span: '~3 h', assist: 'solo' },
 ]};
 </script>
 <script src="credits.js"></script>

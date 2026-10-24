@@ -154,13 +154,6 @@ vec3 starfield(vec3 rd){
   return c;
 }
 
-/* blackbody shift tint: blueshift warps colour toward blue-white, redshift toward ember */
-vec3 blackbodyTint(float s){
-  vec3 c = mix(vec3(0.75, 0.45, 0.28), vec3(1.0, 0.95, 0.85), smoothstep(0.55, 1.0, s));
-  c = mix(c, vec3(0.72, 0.82, 1.0), smoothstep(1.05, 1.7, s));
-  return c;
-}
-
 /* ---------- accretion disk sample at equatorial crossing q ---------- */
 vec3 diskEmission(vec3 q, vec3 towardCam, out float opacity){
   float r = length(q.xz);
@@ -182,9 +175,11 @@ vec3 diskEmission(vec3 q, vec3 towardCam, out float opacity){
   float cs = dot(vd, normalize(towardCam));
   float dlt = 1.0 / (gam * (1.0 - beta * cs));          // Doppler factor
   float g = sqrt(max(1.0 - RS / r, 0.02));              // gravitational redshift
-  float shift = clamp(dlt * g, 0.35, 2.2);
   float bright = pow(dlt, 3.0) * g * g;                  // relativistic beaming
-  return blackbody(temp * 0.85 + 0.28) * blackbodyTint(shift) * dens * bright * (1.25 + uProx * 0.45);
+  // observed colour temperature rides delta*g: approaching side whitens/blues,
+  // receding side reddens — one physical colour law, not a painted tint
+  float tobs = clamp((temp * 0.9 + 0.30) * dlt * g, 0.12, 1.9);
+  return blackbody(tobs) * dens * bright * (1.25 + uProx * 0.45);
 }
 
 void main(){
@@ -567,7 +562,7 @@ function updateDrone(prox){
 
 let t0 = performance.now();
 let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
-let ema = 0, busyEma = 0, prevFence = null, proxNow = 0;
+let ema = 0, busyEma = 0, workEma = 0, prevFence = null, proxNow = 0;
 let readyFlag = false;
 
 const U = p => name => gl.getUniformLocation(p, name);
@@ -664,6 +659,8 @@ function frame(){
   }
 
   prevFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  const workMs = performance.now() - now;
+  workEma = workEma ? workEma * 0.9 + workMs * 0.1 : workMs;
   readyFlag = true;
   requestAnimationFrame(frame);
 }
@@ -687,7 +684,7 @@ window.__holeTest = {
   bendAt(b){ return probeBend(b); },
   doppler(){ return probeDoppler(); },
   halo(){ return probeHalo(); },
-  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, busy: +busyEma.toFixed(1), steps: stepsFor(), cap: +qCap.toFixed(2) }; },
+  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, busy: +busyEma.toFixed(1), work: +workEma.toFixed(1), steps: stepsFor(), cap: +qCap.toFixed(2) }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; ema = 0; },
   physics(){ return { rs: RS, bCrit: B_CRIT, rIn: R_IN, rOut: R_OUT, escR: ESC_R }; },
 };
