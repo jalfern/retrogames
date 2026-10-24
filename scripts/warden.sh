@@ -99,13 +99,20 @@ main() {
     if pgrep -f "opencode run.*THE FORGE" >/dev/null; then ALIVE=yes; else ALIVE=no; fi
     if curl -s -m 3 http://127.0.0.1:18000/v1/models >/dev/null; then MINI=up; else MINI=down; fi
 
-    PULSE=$(print -r -- "$ISSUES" | jq -r '[.[] | select(.title == "FORGE PULSE")][0].number // empty')
-    if [[ -z "$PULSE" ]]; then
-        [[ "$DRY" == 1 ]] && { log "DRY: no FORGE PULSE issue, would create one"; return 0; }
-        PULSE=$(gh api "repos/$GH/issues" -f title="FORGE PULSE" \
-            -f body="Machine-updated status line for https://jalfern.com/retrogames/forge — do not close." \
-            --jq .number)
+    # #891: find the pulse by title SEARCH (open AND closed), never by paging
+    # the flat open list — that missed it past 100 issues or once it was
+    # closed, and the warden made a 2nd copy (8 dups). pulse.mjs keeps exactly
+    # ONE open pulse: reopens the newest if only closed ones exist, closes
+    # stray open dups, and creates only when none exist at all. Its decision
+    # (planPulse, scripts/lib/pulse.mjs) is pinned by pulsecheck. A failed
+    # lookup aborts (a non-numeric answer) rather than risk another duplicate.
+    PMDS=""; [[ "$DRY" == 1 ]] && PMDS="--dry"
+    PULSE=$(node "$REPO/scripts/pulse.mjs" $PMDS 2>>"$LOG" | tail -1)
+    if [[ "$DRY" == 1 && "$PULSE" == "0" ]]; then
+        log "DRY: no FORGE PULSE issue, would create one"
+        return 0
     fi
+    [[ "$PULSE" =~ ^[0-9]+$ ]] || { log "pulse lookup failed (got: ${PULSE:-empty}) — aborting, no duplicate"; return 1; }
 
     pulse_line() {   # $1 = alive word, $2 = actions
         echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE halted=$HALTED questions=$QWAIT actions=$2"
@@ -122,6 +129,22 @@ main() {
     log "pulse: $(pulse_line "$ALIVE" none)"
 
     ACTIONS=()
+
+    # ---- 2b. HYGIENE (#891): a `shipped` issue is done — close it ----------
+    # FORGE.md adds `shipped` at merge but leaves the issue open (#616 sat
+    # there for days). This is the backstop: whatever ships, the next tick
+    # closes it. Targeted query, so it is immune to open-list paging.
+    SHIPPED_OPEN=$(gh api "repos/$GH/issues?state=open&labels=shipped&per_page=100" \
+        --jq '[.[] | select(.pull_request | not) | .number]' 2>/dev/null)
+    SHIPPED_OPEN=${SHIPPED_OPEN:-[]}
+    SHIPPED_N=0
+    for n in $(print -r -- "$SHIPPED_OPEN" | jq -r '.[]'); do
+        [[ -z "$n" || "$n" == "null" ]] && continue
+        comment "$n" "WARDEN: this one shipped — closing it (the merged PR is the record)."
+        act gh api -X PATCH "repos/$GH/issues/$n" -f state=closed -f state_reason=completed --silent
+        SHIPPED_N=$((SHIPPED_N + 1))
+    done
+    (( SHIPPED_N > 0 )) && ACTIONS+=("closed-shipped:$SHIPPED_N")
 
     # ---- 3. TRIAGE ------------------------------------------------------
     # New = open, no labels at all, and not the pulse issue itself.
