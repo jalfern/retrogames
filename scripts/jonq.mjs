@@ -100,21 +100,39 @@ function cmdAsk(opts, now) {
 
 function cmdSweep(opts, now) {
     let actions = 0
-    for (const raw of openIssues(`${QUESTION_LABEL},${WAITING_LABEL}`)) {
+    // #891: a resolved question CLOSES — it does not just un-park and sit in
+    // the open list forever. Query every open `question` (not only the
+    // waiting-jon ones) so a question whose default was already taken by an
+    // earlier sweep — and whose waiting-jon label was dropped — still gets
+    // closed here instead of lingering as a DEFAULTED record.
+    const closeQuestion = (n, note) => {
+        if (opts.dry) { console.log(`DRY #${n} — would close: ${note}`); return }
+        gh(['repos/' + REPO + `/issues/${n}/comments`, '-f', `body=${note}`])
+        gh(['-X', 'PATCH', `repos/${REPO}/issues/${n}`, '-f', 'state=closed', '-f', 'state_reason=completed'])
+    }
+    for (const raw of openIssues(QUESTION_LABEL)) {
         const issue = { ...toIssue(raw), comments: commentsOf(raw.number) }
         const { state, defaultText } = decide(issue, now)
         if (opts.lane && opts.lane !== 'all' && !issue.labels.includes(laneLabel(opts.lane))) continue
         if (state === 'ANSWERED') {
-            if (opts.dry) { console.log(`DRY #${issue.number} answered — un-park`); actions++; continue }
+            // Jon's word beats the default — the question is resolved, close it.
+            if (opts.dry) { console.log(`DRY #${issue.number} answered — un-park + close`); actions++; continue }
             gh(['-X', 'DELETE', `repos/${REPO}/issues/${issue.number}/labels/${WAITING_LABEL}`])
-            console.log(`#${issue.number} ANSWERED — un-parked`)
+            closeQuestion(issue.number, "FORGE: answered — closing the question; Jon's reply above is the record.")
+            console.log(`#${issue.number} ANSWERED — un-parked + closed`)
             actions++
         } else if (state === 'OVERDUE') {
             const note = defaultComment(defaultText, now)
-            if (opts.dry) { console.log(`DRY #${issue.number} overdue — ${note}`); actions++; continue }
-            gh(['repos/' + REPO + `/issues/${issue.number}/comments`, '-f', `body=${note}`])
+            if (opts.dry) { console.log(`DRY #${issue.number} overdue — ${note} + close`); actions++; continue }
             gh(['-X', 'DELETE', `repos/${REPO}/issues/${issue.number}/labels/${WAITING_LABEL}`])
-            console.log(`#${issue.number} DEFAULTED — ${note}`)
+            closeQuestion(issue.number, `${note} — closing the question.`)
+            console.log(`#${issue.number} DEFAULTED — ${note} + closed`)
+            actions++
+        } else if (state === 'DEFAULTED') {
+            // default already recorded by a pre-#891 sweep but the issue was
+            // left open — close the record now.
+            closeQuestion(issue.number, 'FORGE: default already taken — closing the question.')
+            console.log(`#${issue.number} DEFAULTED (already recorded) — closed`)
             actions++
         } else if (state === 'MALFORMED' && !issue.comments.some((c) => c.body.trim().startsWith('FORGE: malformed'))) {
             const note = 'FORGE: malformed question — no **Default:** line, so this can never time out into a decision. Edit the body (see scripts/lib/jonq.mjs) or close it.'

@@ -80,6 +80,7 @@
     "forgecheck": "node scripts/forgecheck.mjs",
     "dailylogcheck": "node scripts/dailylogcheck.mjs",
     "jonqcheck": "node scripts/jonqcheck.mjs",
+    "pulsecheck": "node scripts/pulsecheck.mjs",
     "lint:galaga": "eslint src/games/Galaga src/components src/utils src/config src/main.jsx scripts",
     "galactcheck": "node scripts/galactcheck.mjs",
     "galactplay": "node scripts/galactplay.mjs",

@@ -129,6 +129,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run jonqcheck
         if: contains(fromJSON(env.KEYS), 'core')
+      - run: npm run pulsecheck
+        if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run nightlyheal
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run lint:polar
