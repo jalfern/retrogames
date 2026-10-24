@@ -9,11 +9,11 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabKindFor, GRAB_NAMES, GRAB_POSES, flipDirFromTilt, bodyFromTilt, STICK_TILT } from '../src/games/SSX/sim.js'
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
-import { buildCourse, terrainY, slopePos, COURSE_COUNT, HEATS, tournament, rotationName, gapAt, expressAt, chuteAt, GAP_X, EXPRESS, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt } from '../src/games/SSX/course.js'
+import { buildCourse, terrainY, slopePos, COURSE_COUNT, HEATS, tournament, rotationName, gapAt, expressAt, chuteAt, GAP_X, EXPRESS, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt, gladeDefs } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 import { computeStandings } from '../src/games/SSX/net.js'
 import * as THREE from 'three'
-import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD, makeRider, poseRider } from '../src/games/SSX/art.js'
+import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, buildScenery, PLACEHOLDER_IDS, primitivesToKeep, swapPlaceholders, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD, makeRider, poseRider } from '../src/games/SSX/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -291,6 +291,99 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     ok('#844 outcrops avoid the gully walls', cleanOk)
     ok('#844 outcrop ids are real shelf props', idsOk)
     ok('#844 outcrops never touch the piste (|x|<1.5 stays snow)', inSpanOk)
+}
+{ // #975 the day glade is plan data, the primitives mirror the plan 1:1, and
+    // the shelf swap degrades per model: a placeholder survives exactly when
+    // its own GLB failed to load. Nothing with legs (or a trunk) stands in a
+    // crevasse — painted == ridden from the very first frame.
+    const day = [], night = []
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        ;(co.theme === 'day' ? day : night).push(co)
+    }
+    ok('#975 the glade is day-only', day.length >= 2 && night.every((co) => gladeDefs(co).length === 0))
+    ok('#975 the day glade carries ≥14 big trees per course', day.every((co) => gladeDefs(co).length >= 14))
+    ok('#975 glade defs are deterministic', JSON.stringify(gladeDefs(day[0])) === JSON.stringify(gladeDefs(day[0])))
+    ok('#975 every glade tree is in the scenery plan (survives attachShelf)', day.every((co) => {
+        const plan = sceneryPlan(co)
+        return gladeDefs(co).every((d) => plan.some((e) => Math.abs(e.s - d.s) < 1 && Math.abs(e.x - d.x) < 0.01 && e.id.startsWith('tree') && e.scale >= 1.5))
+    }))
+    let gapClean = true
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        for (const e of sceneryPlan(co)) {
+            if (PLACEHOLDER_IDS.includes(e.id) && gapAt(co, e.s) !== null && Math.abs(e.x) < GAP_X) gapClean = false
+        }
+        const ph = buildScenery(co).children.filter((o) => o.userData.ph != null).length
+        const exp = sceneryPlan(co).reduce((n, e) => n + (PLACEHOLDER_IDS.includes(e.id) ? (e.id.startsWith('tree') ? 2 : 1) : 0), 0)
+        if (ph !== exp) gapClean = false
+    }
+    ok('#975 placeholder count mirrors the plan on every course', gapClean)
+    {
+        const co = buildCourse(0)
+        const plan = sceneryPlan(co)
+        let posOk = true
+        for (const ch of buildScenery(co).children) {
+            const k = ch.userData.ph
+            if (k == null) continue
+            const e = plan[k]
+            const p = slopePos(co, e.s, e.x)
+            if (Math.hypot(ch.position.x - p.x, ch.position.z - p.z) > 0.01) posOk = false
+            if (Math.abs(ch.scale.x - e.scale) > 1e-9) posOk = false
+        }
+        ok('#975 every primitive sits on its plan slot (id/pos/scale parity)', posOk)
+    }
+    ok('#975 no placeholder stands in a crevasse', (() => {
+        for (let c = 0; c < COURSE_COUNT; c++) {
+            const co = buildCourse(c)
+            const plan = sceneryPlan(co)
+            for (const ch of buildScenery(co).children) {
+                const k = ch.userData.ph
+                if (k == null) continue
+                const e = plan[k]
+                if (gapAt(co, e.s) !== null && Math.abs(e.x) < GAP_X) return false
+            }
+        }
+        return true
+    })())
+    {
+        const co = buildCourse(0)
+        const plan = sceneryPlan(co)
+        const loaded = {}
+        for (const id of new Set(plan.map((e) => e.id))) loaded[id] = {}
+        ok('#975 full shelf keeps zero primitives', primitivesToKeep(plan, loaded).size === 0)
+        const half = { ...loaded }
+        let pineN = 0
+        plan.forEach((e, k) => { if (e.id === 'tree_pine') pineN++ })
+        half.tree_pine = null
+        const keep = primitivesToKeep(plan, half)
+        ok('#975 a failed model keeps exactly its own primitives', keep.size === pineN
+            && [...keep].every((k) => plan[k].id === 'tree_pine'))
+        half.tree_pine = {}
+        { // #975: the removal walk reaches NESTED primitives — the scenery
+            // group lives a level below world; a children-only scan left all
+            // 360 placeholders double-drawing in the browser.
+            const THREE = await import('three')
+            const world2 = new THREE.Group()
+            world2.add(buildScenery(co))
+            const expN = plan.reduce((n, e) => n + (PLACEHOLDER_IDS.includes(e.id) ? (e.id.startsWith('tree') ? 2 : 1) : 0), 0)
+            const removed = swapPlaceholders(world2, plan, loaded)
+            let left = 0
+            world2.traverse((o) => { if (o.userData.ph != null) left++ })
+            ok('#975 swap removes nested placeholders (360 -> 0)', removed === expN && left === 0)
+            const world3 = new THREE.Group()
+            world3.add(buildScenery(co))
+            const halfModels = { ...loaded }
+            halfModels.tree_pine = null
+            swapPlaceholders(world3, plan, halfModels)
+            let leftPine = 0
+            world3.traverse((o) => { if (o.userData.ph != null) leftPine++ })
+            ok('#975 failed-model primitives survive the nested swap', leftPine === 2 * pineN)
+        }
+        const noFlag = { ...loaded }
+        noFlag.flag = null
+        ok('#975 non-placeholder ids never enter the keep set', primitivesToKeep(plan, noFlag).size === 0)
+    }
 }
 { // clean landing banks the trick; a half-finished flip eats it
     const g = makeGame('race'); run(g, 181); clear(g)

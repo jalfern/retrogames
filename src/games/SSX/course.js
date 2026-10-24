@@ -226,7 +226,7 @@ const SPINES = [
     {   // TIMBER LINE (#889) — the tight forest slalom: short alternating turns,
         // dense trees, gaps between the trunks and a boardwalk high line.
         name: 'TIMBER LINE', theme: 'dusk',
-        treeD: 0.52,
+        treeD: 0.58,
         chunks: [
             { n: 10, curve: 0.000, drop: 0.045 },   // ridge traverse
             { n: 14, curve: 0.000, drop: 0.115 },   // drop into the trees
@@ -600,6 +600,25 @@ const shash = (n) => { const v = Math.sin(n * 78.233) * 43758.5453; return v - M
 
 export const SHELF_PROPS = ['tree_pine', 'tree_pine_snow', 'tree_pine_tall', 'tree_oak', 'rock', 'rock_snow', 'rock_angular', 'boulder', 'boulder_snow', 'fence', 'flag', 'marshal_post', 'billboard', 'grandstand']
 
+// #975: the day glade — the big, old conifers that line ALPINE GLADE and
+// BACKCOUNTRY BOWL. Pure + deterministic, and PART OF THE PLAN: art.js derives
+// its placeholder primitives from these entries and attachShelf swaps the same
+// ones for shelf GLBs, so the glade survives the swap (it used to be a cone
+// loop only buildScenery knew about, and attaching the shelf deleted it).
+// Nothing with legs stands in a crevasse — same law as the scatter (#889).
+export function gladeDefs(c) {
+    const out = []
+    if (c.theme !== 'day') return out
+    for (let i = 0; i < 18; i++) {
+        const s = 24 + (i * 97) % (c.N * DS - 48)
+        const side = i % 2 ? 1 : -1
+        const x = side * (2.6 + shash(i * 1.7 + 3.3) * 1.6)
+        if (gapAt(c, s) !== null && Math.abs(x) < GAP_X) continue
+        out.push({ s, x })
+    }
+    return out
+}
+
 export function sceneryPlan(c) {
     const out = []
     let n = 0
@@ -656,6 +675,12 @@ export function sceneryPlan(c) {
             const x = (i % 2 ? 1 : -1) * (1.95 + shash(i * 7.7) * 1.1)
             if (!overGap(s, x)) push(shash(i * 9.1) < 0.5 ? 'rock' : 'boulder', s, x, 1.3, 'rand')
         }
+    }
+    // #975: fold the day glade into the plan — big older trees, taller than the
+    // scatter, so the same entries feed both the primitives and the shelf.
+    for (const gl of gladeDefs(c)) {
+        push(treeAt(gl.s * 0.017 + 40.7), gl.s, gl.x,
+            1.7 + shash(gl.s * 0.09) * 0.7, 'rand', 0.9 + shash(gl.s * 0.21) * 0.24)
     }
     // the summit gate and the finish banner
     push('flag', 2 * DS, -0.55, 1, 'rand')

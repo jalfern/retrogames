@@ -54,9 +54,24 @@ await page.keyboard.press('ArrowRight')
 // once the run phase has started and the swoop has landed, or the hero sits
 // 30 m away on the vista and pose diffs measure snow, not the rig.
 await page.waitForFunction(() => window.__ssxTest.cam().phase === 'run', null, { timeout: 8000 }).catch(() => {})
+// #975: the shelf swap is async and now visibly replaces primitives — settle
+// the world before any pixel signature, or the swap lands between two "same"
+// captures and reads as pose noise.
+await page.waitForFunction(() => window.__ssxTest.shelf().attached, null, { timeout: 25000 }).catch(() => {})
 await page.waitForTimeout(1600)
 
 r.check('hero GLB loads (>=40 bones)', await page.waitForFunction(() => window.__ssxTest.hero().ready, null, { timeout: 15000 }).then(() => page.evaluate(() => window.__ssxTest.hero().bones)).then((n) => n >= 40).catch(() => false))
+
+// #975: the shelf swap keeps its promises in a real browser — the day glade
+// lands as shelf GLBs (it used to be deleted by the swap), and once every
+// model arrives not a single primitive placeholder is left standing.
+let shelfSnap = null
+await page.waitForFunction(() => window.__ssxTest.shelf().attached, null, { timeout: 25000 }).catch(() => {})
+await page.waitForTimeout(1200)
+shelfSnap = await page.evaluate(() => window.__ssxTest.shelf())
+r.check('#975 shelf attached: >=60 GLB clones in the world', shelfSnap.attached && shelfSnap.models >= 60, JSON.stringify(shelfSnap))
+r.check('#975 the day glade is plan data: >=14 slots on the day course', shelfSnap.gladeN >= 14, JSON.stringify(shelfSnap))
+r.check('#975 full shelf leaves zero placeholders (glade included)', shelfSnap.ph === 0 && shelfSnap.gladePh === 0, JSON.stringify(shelfSnap))
 
 const pressQuestion = async () => {
     await page.keyboard.down('Shift')
