@@ -124,6 +124,14 @@ ok(REAL_GAPS['COMET DRIFT HD'].some((s) => s.includes('Sound is') && s.includes(
 ok(!REAL_GAPS.SSX.some((s) => s.includes('added FRNT') || s.includes('retires it')),
     'SSX honest-gaps re-grew the shipped #871/#894 touch-flip note — that work is gated, not open')
 ok(parseGaps('## Something else\n- no\n') .length === 0, 'parseGaps reads gaps outside the Honest-gaps section')
+// #961: "**CLOSED by #<n>**" is shipped work, not a gap — keeping it re-kicked
+// free QA lanes onto Emberwood's portrait note after #959/#960 shipped the fix.
+ok(parseGaps('## Honest gaps\n- live gap still open here\n- shipped gap — **CLOSED by #959** (it shipped).\n').length === 1,
+    '#961: parseGaps drops a CLOSED-marked bullet')
+ok(parseGaps('## Honest gaps\n- open one\n- shipped **CLOSED by 959** without a hash\n').length === 2,
+    '#961: only a "CLOSED by #<n>" marker closes a gap')
+ok(!REAL_GAPS.Emberwood.some((s) => /portrait/i.test(s)),
+    '#961: Emberwood honest-gaps re-grew the shipped #959/#960 portrait-full-bleed note')
 const firstGapOwned = (game) => QA(900, game, REAL_GAPS[game][0])
 ok(ownsGap([firstGapOwned('SSX')], 'SSX', REAL_GAPS.SSX[0]), 'ownsGap: an issue quoting the gap owns it')
 ok(!ownsGap([QA(901, 'Myst', 'totally unrelated text')], 'SSX', REAL_GAPS.SSX[0]), 'ownsGap: another game\'s issue owns nothing here')

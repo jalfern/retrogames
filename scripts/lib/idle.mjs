@@ -24,6 +24,9 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim()
 // Parse a game README's "## Honest gaps" section into ordered gap strings.
 // Top-level "- " bullets are gaps; indented continuation lines and sub-bullets
 // belong to the gap they follow ("oldest" = first in README order).
+// A bullet marked "**CLOSED by #<n>**" is shipped work, not a gap: keeping it
+// re-kicks free lanes onto closed work (#961: Emberwood's portrait gap #0,
+// closed by #959/#960, kept getting kicked because the marker was decorative).
 export function parseGaps(md) {
     const out = []
     let inSection = false
@@ -39,7 +42,7 @@ export function parseGaps(md) {
             out[out.length - 1] += ' ' + line.trim()
         }
     }
-    return out
+    return out.filter((g) => !/CLOSED by #\d+/i.test(g))
 }
 
 // A gap is OWNED when an open QA issue already says it: the issue names its
