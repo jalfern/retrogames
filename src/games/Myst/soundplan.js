@@ -23,11 +23,15 @@ export const WHEEL_TONES = [98, 131, 165]
 export const THAW_TONES = { selenitic: 262, stoneship: 330, mechanical: 392, channelwood: 494 }
 
 export function plan(ev) {
-  // A linking-book leap is a whole other event than a walk: a long rising
-  // whoosh under a soft page-rustle. It must never collapse into the plain
-  // travel sweep, so it is matched on its prefix before the switch below.
+  // A linking-book leap is a whole other event than a walk. #1035 splits it into
+  // two audible phases: first the page cover SNAPS up (a short, bright lowpass
+  // sheet — the book's face whipping over the view), then the long rising WHOOSH
+  // of the flight under a soft mid rumble. The snap must read apart from the
+  // whoosh (higher, drier, quicker), so the cover phase is never the same voice
+  // as the mid-flight rush — the harness proves they are distinct.
   if (typeof ev === 'string' && ev.startsWith('link:')) {
     return [
+      { type: 'fnoise', dur: 0.14, vol: 0.11, freq: 2200 },
       { type: 'sweep', f0: 90, f1: 1400, dur: 0.9, wave: 'sine', vol: 0.1 },
       { type: 'fnoise', dur: 0.5, vol: 0.12, freq: 600 },
     ]

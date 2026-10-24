@@ -23,6 +23,13 @@ const BOOKS = {
   'cave/channelwoodDoor': 'channelwood',
   'chanWheel/hubBook': 'channelwood',
   'channelwood/retChannelwood': 'myst',
+  // #1035 — every Age says goodbye through the starfield, not a cut: leaving
+  // Selenitic, Stoneship or Mechanical flies home to MYST the way Channelwood's
+  // landing panel already did (#1032). Intra-Age steps (pier↔deck, terrace↔wheel)
+  // stay plain walks — in 1993 only crossing between worlds folded space.
+  'selenitic/retSelenitic': 'myst',
+  'stoneship/retStoneship': 'myst',
+  'mechanical/retMechanical': 'myst',
 }
 
 export function linkingBook(node, id) {
@@ -86,6 +93,36 @@ export function linkStars(n = 240) {
 
 function lerp(a, b, k) { return a + (b - a) * k }
 
+// #1035 — arrival acceleration. The original's linking light did not wheel at a
+// constant rate: it gathered speed hard toward the moment the Age resolved, so the
+// last beat of the fade rushes and the arrival lands instead of petering out. A
+// pure, monotonic ramp of `prog` (calm at the start, ~3× pull at arrival) — no
+// clock, no random; the harness proves it never slows and ends steep.
+export function linkAccel(prog) {
+  const p = Math.max(0, Math.min(1, prog))
+  return 1 + 1.9 * p * p * p
+}
+
+// #1035 — the seam of light does not crack open stiff and straight; the 1993 rift
+// shimmered and wavered as it broke through the dark. Pure in `prog` (no Math.
+// random — replay determinism is the whole contract): three incommensurate sines
+// tilt the angle, breathe the thickness and rock the length, so the rift reads as
+// living light rather than a bar. Returns the open fraction too, so the painter
+// shares one source of truth.
+export function linkSeam(prog) {
+  const p = Math.max(0, Math.min(1, (prog - 0.10) / 0.22))
+  const e = p * p * (3 - 2 * p)
+  const wob = Math.sin(prog * 38.0) * 0.028 + Math.sin(prog * 71.0 + 1.3) * 0.016 + Math.sin(prog * 13.0) * 0.011
+  return {
+    p,
+    e,
+    angle: -0.35 + wob,
+    len: 0.72 * (1 + 0.06 * Math.sin(prog * 47.0 + 0.5)),
+    thick: 0.028 * (1 + 0.35 * Math.sin(prog * 53.0 + 2.1)),
+    waver: wob,
+  }
+}
+
 // Paint the linking animation at `prog` (0..1) across a w x h canvas.
 export function drawLink(ctx, age, prog, w, h) {
   const pal = LINK_PALETTE[age] || LINK_PALETTE.myst
@@ -114,14 +151,14 @@ export function drawLink(ctx, age, prog, w, h) {
   ctx.fillRect(0, 0, w, h)
 
   // the seam of light opens across the page as the starfield breaks through:
-  // a soft rift, brightest at its heart, not a hard bar
+  // a soft rift, brightest at its heart, not a hard bar — and it shimmers and
+  // wavers as it spreads (#1035 linkSeam).
   if (prog > 0.10 && prog < 0.42) {
-    const sp = Math.max(0, Math.min(1, (prog - 0.10) / 0.22))
-    const se = sp * sp * (3 - 2 * sp)
-    const len = w * 0.72 * se, thick = Math.max(1, h * 0.028 * (1 - se * 0.4))
+    const { e: se, angle, len: lenF, thick: thickF, waver } = linkSeam(prog)
+    const len = w * lenF * se, thick = Math.max(1, h * thickF * (1 - se * 0.4))
     ctx.save()
-    ctx.translate(cx, cy)
-    ctx.rotate(-0.35)
+    ctx.translate(cx, cy + h * waver * 0.6)
+    ctx.rotate(angle)
     const rg = ctx.createLinearGradient(-len / 2, 0, len / 2, 0)
     rg.addColorStop(0, 'rgba(210,228,255,0)')
     rg.addColorStop(0.5, `rgba(225,238,255,${(0.7 * se * (1 - se * 0.5)).toFixed(3)})`)
@@ -131,21 +168,23 @@ export function drawLink(ctx, age, prog, w, h) {
     ctx.ellipse(0, 0, len / 2, thick / 2, 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
-    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, h * 0.42 * se)
+    const cg = ctx.createRadialGradient(cx, cy + h * waver * 0.6, 0, cx, cy + h * waver * 0.6, h * 0.42 * se)
     cg.addColorStop(0, `rgba(215,232,255,${(0.34 * se * (1 - se * 0.35)).toFixed(3)})`)
     cg.addColorStop(1, 'rgba(215,232,255,0)')
     ctx.fillStyle = cg
     ctx.fillRect(0, 0, w, h)
   }
 
-  // the stars wheel outward on a slow swirl, accelerating like the original's
-  // hyperspace pull; each streak points home to the centre
+  // the stars wheel outward on a slow swirl that accelerates like the original's
+  // hyperspace pull (#1035 linkAccel: the field gathers speed toward arrival);
+  // each streak points home to the centre
+  const accel = linkAccel(prog)
   for (const st of linkStars()) {
-    const c = (prog * st.rate + st.ph) % 1
+    const c = (prog * st.rate * accel + st.ph) % 1
     const q = c * c
     const rr = (0.02 + q * 0.95) * R
     if (rr < 2) continue
-    const ang = st.a + q * st.swirl + prog * st.spin
+    const ang = st.a + q * st.swirl * accel + prog * st.spin
     const ca = Math.cos(ang), sa = Math.sin(ang)
     const tail = Math.min(rr, (0.02 + Math.max(0, q - 0.09) * 0.95) * R)
     const x0 = cx + ca * tail, y0 = cy + sa * tail

@@ -415,7 +415,14 @@ const MystGame = () => {
       // owns the screen (the node already swapped underneath the cover).
       const lc = linkRef.current
       if (lc && gs.link && !gs.ending) {
-        drawLink(lc.getContext('2d'), gs.link, Math.max(0, Math.min(1, 1 - gs.linkT / LINK_TICKS)), VW, VH)
+        // #1035 — crisp streaks at DPR>1: the Spectator lenses learned the 2×
+        // backing trick (#1027); the overlay now overdraws to the device pixel
+        // grid (capped at 2×) so a phone's thin stars stay hairlines, not mush.
+        const dpr = Math.min(2, (typeof devicePixelRatio === 'number' && devicePixelRatio > 1 ? devicePixelRatio : 1) || 1)
+        const pw = Math.round(VW * dpr), ph = Math.round(VH * dpr)
+        if (lc.width !== pw) lc.width = pw
+        if (lc.height !== ph) lc.height = ph
+        drawLink(lc.getContext('2d'), gs.link, Math.max(0, Math.min(1, 1 - gs.linkT / LINK_TICKS)), pw, ph)
         lc.style.opacity = String(linkEnvelope(LINK_TICKS - gs.linkT))
       }
       if (gs.panelOpen === 'spectator') {

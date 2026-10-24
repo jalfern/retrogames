@@ -5,7 +5,7 @@
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
 import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS, spectatorViews } from '../src/games/Myst/state.js'
 import { drawVision } from '../src/games/Myst/visions.js'
-import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink } from '../src/games/Myst/link.js'
+import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, linkAccel, linkSeam } from '../src/games/Myst/link.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/Myst/soundplan.js'
@@ -745,6 +745,10 @@ console.log('MYST — linking-book travel (#1031): the page cover, the seam, the
     ['cave', 'channelwoodDoor', 'both', 'channelwood', 'channelwood', { starPanel: true }],
     ['chanWheel', 'hubBook', 'both', 'channelwood', 'cave', { wheelOpen: true }],
     ['channelwood', 'retChannelwood', 'both', 'myst', 'cave', { wheelOpen: true }],
+    // #1035 — the other three Ages say goodbye through the starfield too
+    ['selenitic', 'retSelenitic', 'both', 'myst', 'library', null],
+    ['stoneship', 'retStoneship', 'both', 'myst', 'library', null],
+    ['mechanical', 'retMechanical', 'both', 'myst', 'library', null],
   ]
   for (const [node, id, how, age, dest, flags] of BOOKS) {
     const ways = how === 'both' ? ['move', 'click'] : [how]
@@ -759,6 +763,9 @@ console.log('MYST — linking-book travel (#1031): the page cover, the seam, the
   const walk = dispatch(at('dock'), { t: 'move', id: 'dockBeach' })
   ok(!walk.state.link, 'walking up the dock path is a step, not a linking-book leap')
   ok(!linkingBook('library', 'redBook') && !linkingBook('library', 'blueBook'), 'the brothers’ books are voices, not doors')
+  // #1035 — leaving an Age folds space (starfield home); stepping inside one does not
+  ok(['selenitic/retSelenitic', 'stoneship/retStoneship', 'mechanical/retMechanical'].every((k) => linkingBook(...k.split('/')) === 'myst'), 'every Age’s return panel flies home through the starfield (#1035)')
+  ok(!['stoneship/retStoneDeck', 'stoneObservatory/retStoneObs', 'chanChannels/retChanChannels', 'chanWheel/retChanWheel', 'rocketSilo/retCave'].some((k) => linkingBook(...k.split('/'))), 'walking between views of the SAME Age stays a step, not a leap')
   // the loop's tick drains the flight; it clears exactly on arrival
   let f = dispatch(at('chanWheel', { wheelOpen: true }), { t: 'move', id: 'hubBook' }).state
   for (let i = 0; i < LINK_TICKS - 1; i++) f = dispatch(f, { t: 'tick' }).state
@@ -773,6 +780,8 @@ console.log('MYST — linking-book travel (#1031): the page cover, the seam, the
   const jsx = readFileSync('src/games/Myst/index.jsx', 'utf8')
   ok((jsx.match(/if \(gs\.link\) return/g) || []).length >= 2, 'keys AND pad are muted through the leap', `${(jsx.match(/if \(gs\.link\) return/g) || []).length}`)
   ok(/data-linkfx=\{hud\.link\}/.test(jsx) && /drawLink\(/.test(jsx), 'the shell carries the starfield overlay and paints it from the sim', '')
+  // #1035 — crisp streaks on phones: the overlay overdraws on a DPR-aware backing
+  ok(/devicePixelRatio/.test(jsx) && /drawLink\([\s\S]*?pw,\s*ph\)/.test(jsx), 'the starfield overdraws on a DPR-aware backing (2× crisp on phones)', '')
 }
 { // the starfield painter: pure paint, alive on the clock, distinct per Age
   const OPS = ['save', 'restore', 'clip', 'beginPath', 'fill', 'stroke', 'closePath', 'fillRect', 'strokeRect', 'clearRect', 'arc', 'ellipse', 'moveTo', 'lineTo', 'quadraticCurveTo', 'translate', 'rotate']
@@ -809,6 +818,22 @@ console.log('MYST — linking-book travel (#1031): the page cover, the seam, the
   const sA = linkStars(), sB = linkStars()
   ok(sA.length === 240 && JSON.stringify(sA) === JSON.stringify(sB), 'the starfield is the same sky every leap (a world constant, no re-roll)')
   ok(sA.every((st) => st.rate > 0 && st.sz > 0 && st.cb >= 235 && st.cr <= 255), 'every star carries a legal speed, size and cool colour')
+  // #1035 — arrival acceleration: the pull is calm at the start and steepens hard
+  // toward arrival, monotonic so it never lurches backward.
+  ok(linkAccel(0) === 1, 'the leap starts at rest-pull 1×')
+  ok(linkAccel(1) > 2, `the field arrives at ${linkAccel(1).toFixed(2)}× — a real pull into the Age`)
+  ok([0.2, 0.4, 0.6, 0.8].every((p) => linkAccel(p + 0.05) > linkAccel(p)), 'the acceleration never reverses (strictly gathering speed)')
+  // #1035 — the seam shimmers and wavers (deterministic, no Math.random): two
+  // nearby instants inside the open window read different geometry, the same
+  // instant is identical, and the seam stays bounded so the rift never leaves the page.
+  ok(linkSeam(0.22).angle === linkSeam(0.22).angle, 'the seam wobble is deterministic (same instant, same tilt)')
+  ok(Math.abs(linkSeam(0.20).angle - linkSeam(0.26).angle) > 1e-3, 'the seam tilts between instants — it shimmers, it is not a stiff bar', `${linkSeam(0.20).angle.toFixed(4)} vs ${linkSeam(0.26).angle.toFixed(4)}`)
+  ok(Math.abs(linkSeam(0.25).angle + 0.35) < 0.12 && linkSeam(0.25).len < 0.85 && linkSeam(0.25).len > 0.6, 'the waver stays a shimmer, not a wild swing', `${linkSeam(0.25).angle.toFixed(3)}/${linkSeam(0.25).len.toFixed(3)}`)
+  // #1035 — the page cover snaps up as its own phase, distinct from the mid-flight whoosh
+  const lsn = plan('link:mechanical')
+  ok(lsn.length >= 3, 'a leap schedules both a cover snap and a flight whoosh', String(lsn.length))
+  ok(lsn[0].type === 'fnoise' && lsn[0].freq > 1500 && lsn[0].dur < 0.25, 'the cover snaps up bright and short (its own phase)', JSON.stringify(lsn[0]))
+  ok(JSON.stringify(lsn[0]) !== JSON.stringify(lsn[lsn.length - 1]), 'the cover snap never collapses into the whoosh rumble')
 }
 
 console.log('MYST — ring ticks (#1008: each post visibly answers its ring)')
@@ -1060,6 +1085,21 @@ if (process.argv.includes('--mutate')) {
       switch (e.code) {`,
       `      if (gs.linkNot) return
       switch (e.code) {`],
+    ['a return panel cuts straight home (Selenitic loses its farewell starfield)', 'src/games/Myst/link.js',
+      `  'selenitic/retSelenitic': 'myst',`,
+      ``],
+    ['the seam opens stiff (the shimmer/waver collapses to a fixed bar)', 'src/games/Myst/link.js',
+      `  const wob = Math.sin(prog * 38.0) * 0.028 + Math.sin(prog * 71.0 + 1.3) * 0.016 + Math.sin(prog * 13.0) * 0.011`,
+      `  const wob = 0`],
+    ['the arrival pull collapses to a constant swirl', 'src/games/Myst/link.js',
+      `  return 1 + 1.9 * p * p * p`,
+      `  return 1`],
+    ['the page-rush cover collapses into the whoosh (no distinct snap)', SP,
+      `      { type: 'fnoise', dur: 0.14, vol: 0.11, freq: 2200 },\n      { type: 'sweep', f0: 90, f1: 1400, dur: 0.9, wave: 'sine', vol: 0.1 },`,
+      `      { type: 'sweep', f0: 90, f1: 1400, dur: 0.9, wave: 'sine', vol: 0.1 },`],
+    ['the starfield overlay drops its DPR backing (soft streaks on phones)', JX,
+      `const dpr = Math.min(2, (typeof devicePixelRatio === 'number' && devicePixelRatio > 1 ? devicePixelRatio : 1) || 1)`,
+      `const dpr = 1`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
