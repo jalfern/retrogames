@@ -196,12 +196,14 @@ r.check('grab pose reaches the nose-edge band (both hands)', reachOk,
 // #967: named-grab reach hands are IK-solved onto the band, not hand-tuned.
 // Indy/Flat reach (and the generic grab) land on it via the scapula-drop;
 // #971 added the spine side-flex so Method (the one-arm back-cross) closes the
-// last span too. Salis is the mirrored cross and still misses (~0.41) — it
-// needs a shoulder relocation, not a spine bend, so it is NOT in this gate and
-// stays documented as the narrowed residual in the README. Mutants: drop
+// last span; #980 fixes the roll-space→parent-space conversion the solve's
+// final block was skipping — Salis, the mirrored cross whose span closes at
+// the elbow, was frozen 0.41 m out by the degenerate directions. Mutants: drop
 // solveGrabHand → all gated hands red (0.44–0.68 baseline); disable the
-// side-flex block → Method red (~0.34) while Indy/Flat stay green.
-const REACH_HAND = { grabFlat: 'l', grabIndy: 'r', grabMethod: 'r' }
+// side-flex block → Method red (~0.34) while Indy/Flat stay green; feed
+// roll-space points straight into worldToLocal (the pre-#980 block) → Salis
+// red ~0.41 while Method/Indy/Flat stay green.
+const REACH_HAND = { grabFlat: 'l', grabIndy: 'r', grabMethod: 'r', grabSalis: 'l' }
 for (const [p, side] of Object.entries(REACH_HAND)) {
     const { grab } = await poseProbe(p)
     const d = grab[side]?.d

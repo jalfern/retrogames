@@ -526,7 +526,7 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
 
 ## Honest gaps (filed as the polish pass)
 
-- Board decals reach every rider and the boot weld is solved, not posed
+- **CLOSED by #980**: Board decals reach every rider and the boot weld is solved, not posed
   (#615/#620; #883: `weldBoots` in `art.js` pins each boot's underside to
   the deck-top surface every frame after the pose blend — roll-space corner
   scan, shallow press window, tumble exempt — and `ssxmodelcheck` gates the
@@ -540,9 +540,14 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
   SPINE SIDE-FLEX — spine+chest swing toward the band before the drop, so the
   back-cross shoulder closes the last span and FABRIK lands Method 0.34→0.05;
   `ssxmodelcheck` gates it, mutant: disable the side-flex block → Method red
-  ~0.34 while Indy/Flat stay green). Salis is the mirrored cross and still
-  misses (~0.41) — its arm needs a shoulder relocation past a spine bend; that
-  one remains the gap.
+  ~0.34 while Indy/Flat stay green). Salis — the mirrored cross, last residual
+  at ~0.41 — was never a reach problem: `solveGrabHand`'s final quaternion block
+  fed roll-space points straight into the bone parent's `worldToLocal`, and 100+ m
+  down the mountain those fold directions collapse to parallel, freezing any
+  correction that lives in the elbow (which is the mirror cross's whole span).
+  Converting roll→world before the parent transforms lands Salis 0.41→0.13 and
+  tightens Indy/Method too; `ssxmodelcheck` gates the Salis band contact,
+  mutant: pre-#980 conversion → Salis red ~0.41 while the others stay green.
 - Crash obstacles + day glade are primitive placeholders, not shelf models
   — **CLOSED by #975**: `gladeDefs`/`sceneryPlan` are now the single source for
   the glade and the obstacle trees/rocks; `buildScenery` derives its `ph`
