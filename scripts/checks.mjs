@@ -59,7 +59,7 @@ export const SCOPES = {
   gauntlet: { dirs: ['src/games/Gauntlet', 'src/games/FourHalls'], lint: ['lint:gauntlet', 'lint:net', 'lint:rec'], checks: [['gauntletcheck', true], 'netcheck', 'replaycheck', ['replaycheck', true]], smoke: [] },
   myst: { dirs: ['src/games/Myst'], lint: ['lint:myst'], checks: [['mystcheck', true]], smoke: [] },
   bards: { dirs: ['src/games/BardsTale'], lint: ['lint:bards'], checks: ['bardscheck'], smoke: [] },
-  ssx: { dirs: ['src/games/SSX', 'public/models/ssx/'], lint: ['lint:ssx'], checks: ['ssxcheck'], smoke: [] },
+  ssx: { dirs: ['src/games/SSX', 'public/models/ssx/'], lint: ['lint:ssx'], checks: ['ssxcheck'], smoke: ['ssxplay'] },
   pop: { dirs: ['src/games/PrinceOfPersia'], lint: ['lint:pop'], checks: ['popcheck'], smoke: [] },
   smash: { dirs: ['src/games/SmashTV'], lint: ['lint:smash'], checks: [['smashcheck', true]], smoke: [] },
   outrun: { dirs: ['src/games/OutRun'], lint: ['lint:outrun'], checks: [['outruncheck', true]], smoke: [] },

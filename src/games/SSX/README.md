@@ -376,6 +376,11 @@ npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct
                                           #   keys drive poses, race still winnable,
                                           #   #615 rider polish (grab reach, boot weld,
                                           #   Idle breath, liveries, per-theme shadow)
+npm run ssxplay                          # browser: Chrome drives a real heat on real
+                                          #   keys only — attract live, key start, #791
+                                          #   analog press ramp, prognose WINNABLE,
+                                          #   ollie+grab banks, KeyZ flip, '?' pause
+                                          #   door, zero page errors (advisory smoke)
 ```
 
 The check proves the autopilot wins RACE (30/30 standings, zero bails) and
@@ -518,11 +523,6 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
 
 ## Honest gaps (filed as the polish pass)
 
-- #871 added FRNT so the front-flip (formerly keyboard-C only) reached touch;
-  #894 retires it — the analogue stick's forward tilt now commits the FRONT
-  flip and the pad carries one FLIP button (keyboard Z/C keep both).
-- No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
-  `ssxmodelcheck` covers the hero rider and the touch trick-pad in the browser.
 - Board decals reach every rider and the boot weld is solved, not posed
   (#615/#620; #883: `weldBoots` in `art.js` pins each boot's underside to
   the deck-top surface every frame after the pose blend — roll-space corner
