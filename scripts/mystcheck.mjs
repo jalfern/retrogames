@@ -138,7 +138,7 @@ console.log('MYST — the star-wheel bites (the Channelwood sub-puzzle, #1017)')
   const detents = []
   const biteAt = []
   for (let i = 0; i < WHEEL_SPOKES; i++) {
-    const r = dispatch(s, { t: 'click', id: 'starWheel' })
+    const r = dispatch(s, { t: 'click', id: 'wheelTurn' })
     s = r.state
     detents.push(s.wheel)
     if (r.events.includes('wheelBite')) biteAt.push(i + 1)
@@ -152,11 +152,11 @@ console.log('MYST — the star-wheel bites (the Channelwood sub-puzzle, #1017)')
   ok(rTwice.events.length === 0, 'the empty shelter gives nothing twice')
   let a = { ...freshState(), node: 'chanWheel' }
   let b = { ...freshState(), node: 'chanWheel' }
-  for (let i = 0; i < 4; i++) { a = dispatch(a, { t: 'click', id: 'starWheel' }).state; b = dispatch(b, { t: 'click', id: 'starWheel' }).state }
+  for (let i = 0; i < 4; i++) { a = dispatch(a, { t: 'click', id: 'wheelTurn' }).state; b = dispatch(b, { t: 'click', id: 'wheelTurn' }).state }
   ok(a.wheel === b.wheel && a.flags.wheelBite === b.flags.wheelBite, 'the wheel is deterministic across runs')
   ok(plan('wheel').length > 0 && plan('wheelBite').length > 0, 'the wheel grind and the bite each have their own sound')
   ok(JSON.stringify(plan('wheelBite')) !== JSON.stringify(plan('flood')), 'the bite is not just the flood lever sounding again')
-  const nd = NODES.chanWheel.spots.find((x) => x.id === 'starWheel')
+  const nd = NODES.chanWheel.spots.find((x) => x.id === 'wheelTurn')
   ok(nd && nd.act === 'wheelTurn', 'the terrace star is a handle you can turn, not a poster')
   const gnd = NODES.chanWheel.spots.find((x) => x.id === 'gearChan')
   ok(gnd && gnd.need === 'wheelBite' && gnd.gone === 'gearChannelwood', 'the gear spot is gated by the bite and emptied by the take')
