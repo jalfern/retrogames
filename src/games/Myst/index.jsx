@@ -149,10 +149,26 @@ const MystGame = () => {
           case 'selAlignDoor': m.o.position.z += ((F.selAlign ? m.z0 - 3.2 : m.z0) - m.o.position.z) * k; break
           case 'selGear': { const sc = F.gearSelenitic ? 0.001 : 1; m.o.scale.x += (sc - m.o.scale.x) * k; m.o.scale.y = m.o.scale.x; m.o.scale.z = m.o.scale.x; break }
           // CHANNELWOOD: the sluice gate drops to dam the channels, the water
-          // climbs the stone cuts, and the float lifts with it
+          // climbs the stone cuts, and the float lifts with it; the star-wheel
+          // holds its detent, and the shelter's gear lifts free once the bite
           case 'chanSluice': m.o.position.y += ((F.chanFlood ? m.y0 - 4.3 : m.y0) - m.o.position.y) * k; break
           case 'chanWater': m.o.position.y += ((F.chanFlood ? m.y0 + 0.62 : m.y0) - m.o.position.y) * k; break
           case 'chanFloat': m.o.position.y += ((F.chanFlood ? m.y0 + 0.58 : m.y0) - m.o.position.y) * k; break
+          case 'starWheel': {
+            const tgt = (s.wheel || 0) * (Math.PI * 2 / 5)
+            let d = tgt - m.o.rotation.z
+            d = Math.atan2(Math.sin(d), Math.cos(d))
+            m.o.rotation.z += d * Math.min(1, dt * 3.2)
+            break
+          }
+          case 'chanGear': {
+            const on = F.wheelBite && !F.gearChannelwood ? 1 : 0.001
+            m.o.scale.x += (on - m.o.scale.x) * k
+            m.o.scale.y = m.o.scale.z = m.o.scale.x
+            m.o.rotation.y += dt * (on > 0.5 ? 0.9 : 0)
+            m.o.visible = on > 0.02
+            break
+          }
           // THE ROCKET (#1010): the silver climbs, the flame breathes, the
           // high stars fade in — all driven from the pure ride state.
           case 'rocketBody': {

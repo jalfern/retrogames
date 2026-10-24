@@ -17,6 +17,12 @@ export const RIDE_STAGES = ['ignite', 'liftoff', 'ascent', 'coast', 'reentry']
 // and six-point stars. Fixed per slot (the SIZE is this save's clue; the
 // shape is carved decoration, so it never doubles as a second answer).
 export const STAR_SHAPES = [4, 5, 6, 5]
+// #1017 — the Channelwood star-wheel is a five-spoke lock: the notched ray
+// meets the housing groove (one notch in the stone) at detent 3; that is the
+// only position the falls can catch, and the caught axle throws the shelter's
+// lock over the brass gear. Fixed world constant, like the sun-and-moon detent.
+export const WHEEL_SPOKES = 5
+export const WHEEL_BITE = 3
 
 export const BROTHER_LINES = {
   red: [
@@ -46,6 +52,7 @@ export function freshState(seed) {
     safeDial: '000',
     sphereDial: [-1, -1, -1, -1],
     starDial: [0, 0, 0, 0],
+    wheel: 0,
     switches: [0, 0, 0, 0, 0],
     selStone: 0,
     selChair: 0,
@@ -218,7 +225,34 @@ function act(s, spot, ev) {
     case 'takeMatch': s.flags.matchbook = true; s.message = 'A matchbook, still dry after all these years. Fire belongs in a fireplace.'; ev.push('pickup'); break
     case 'sphere': s.panelOpen = 'sphere'; s.message = `The sphere ring-dials read ${s.sphereDial.map((v) => (v < 0 ? '·' : v)).join('-')} — four rings, and the posts sing in sequence.`; ev.push('panel', `sing:${s.codes.sphere.join('')}`); break
     case 'starPanel': s.panelOpen = 'star'; s.message = `Stone dials: ${s.starDial.join('-')} points of light each. The dome above shows the true stars.`; ev.push('panel'); break
-    case 'starWheel': s.message = 'The great star turns its patient circles above the falls — a symbol of Channelwood, mirrored on the panel below.'; ev.push('look'); break
+    case 'starWheel': s.message = 'The great star turns its patient circles above the falls. One ray wears a deep notch at its tip; below the axle, the stone housing is cut with a single groove — one notch, one groove, five spokes to choose from.'; ev.push('look'); break
+    case 'wheelTurn': {
+      s.wheel = (s.wheel + 1) % WHEEL_SPOKES
+      ev.push('wheel')
+      if (s.wheel === WHEEL_BITE && !has(s, 'wheelBite')) {
+        s.flags.wheelBite = true
+        s.message = 'The notched ray grinds down into the housing groove and the wheel BITES. Water finds the vanes below; the falls begin to drive the axle of their own weight — and far inside the wheel-shelter something old unlatches with a sound like a held breath let go.'
+        ev.push('wheelBite')
+      } else if (s.wheel === 1) {
+        s.message = 'You haul the spoke round a fifth of a turn. The wheel groans against its axle; the notched ray, which rested high above it, now hangs a thumb short of the groove in the housing.'
+      } else if (s.wheel === 2) {
+        s.message = 'A second fifth-turn. The notch nears the groove — close enough that the spray breaks over it — but there is no purchase yet, and the star slips past.'
+      } else if (s.wheel === 4) {
+        s.message = 'Past home and round the long way: the notch comes back up the far side, dry. Five spokes; the groove waits at the bottom for exactly one of them.'
+      } else {
+        s.message = has(s, 'wheelBite')
+          ? 'You turn it a fifth back against the water\u2019s hand. The shelter\u2019s lock stays thrown \u2014 what the falls unlatched, the star will not relatch.'
+          : 'The notched ray stands high over the axle again, and the groove below it gapes empty.'
+      }
+      break
+    }
+    case 'takeGearChan': {
+      if (has(s, 'gearChannelwood')) return { state: s, events: [] }
+      s.flags.gearChannelwood = true
+      s.message = 'You lift a brass gear from the opened shelter — the colour of old honey, its face stamped with a five-spoke star like the great stone wheel above the falls. Two of five, it said on the tower of Mechanical. Five, to open something that should stay shut.'
+      ev.push('gearTake')
+      break
+    }
     case 'chanFlood': {
       s.flags.chanFlood = !s.flags.chanFlood
       if (s.flags.chanFlood) {
@@ -432,7 +466,8 @@ export function solveScript(codes) {
     S('click', { id: 'chanFlood' }),
     S('move', { id: 'boardRaft' }),
     S('click', { id: 'pageChannelwoodRed' }),
-    S('click', { id: 'starWheel' }),
+    ...Array.from({ length: WHEEL_BITE }, () => S('click', { id: 'starWheel' })),
+    S('click', { id: 'gearChan' }),
     S('move', { id: 'retChanWheel' }), S('move', { id: 'retChanChannels' }),
     S('move', { id: 'retChannelwood' }), S('move', { id: 'ladderUp' }),
     S('move', { id: 'outLibrary' }), S('move', { id: 'cabinDoor' }),

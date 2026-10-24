@@ -136,12 +136,16 @@ sound-book whose pages all echo one stone.
   emissive cycle, separate from the background point field. The
   sounding-path order (biggest→smallest) and the sun-and-moon detent stay
   fixed — in the original they are world constants, not per-save rolls.
-- No age-specific sub-puzzles beyond each Age's gate (Selenitic sphere +
-  path/throne/gear, Mechanical switch chain + tower, Channelwood star-wheel,
-  Stoneship observatory note) — the star-wheel is still decorative. #1010
-  closed this bullet's named features: the cave's metal seam now reads the
-  AMATEM note and the ROCKET rides to a fourth, escape ending, and the
-  Selenitic sound-book replays the sounding path's true pitches.
+- **CLOSED by #1010/#1017** — the Ages carry their named sub-puzzles: the
+  Selenitic sphere, sounding path, throne and gear; the Mechanical switch
+  chain, cage tower and control room; the Stoneship observatory note; the
+  cave's metal seam reads the AMATEM note and the ROCKET rides to a fourth,
+  escape ending; the Selenitic sound-book replays the sounding path's true
+  pitches. #1017 turned the Channelwood star-wheel from decoration into the
+  Age's last lock: five spokes, one worn notch, one groove cut in the housing
+  under the axle — at detent 3 the notch drops home, the falls catch the
+  vanes, and the grinding axle throws the wheel-shelter's stone lock over a
+  second brass gear (two of five, it said on the tower of Mechanical).
 - The Spectator is a still panel listing the Ages, not a rendered age-vision.
 - Ages' books link straight from their home node; there is no linking-book
   animation with the starfield travel.

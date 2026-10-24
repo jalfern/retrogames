@@ -82,6 +82,11 @@ export function plan(ev) {
     // Distinct from the sour buzz (detuned saws) and the gate grind — a sweet,
     // sustained hum, which is the point of the tell.
     case 'flood': P.push({ type: 'sweep', f0: 90, f1: 240, dur: 1.2, wave: 'sine', vol: 0.06 }, { type: 'noise', dur: 1.1, vol: 0.05 }); break
+    // THE STAR-WHEEL (#1017): a fifth-turn of stone grinds low and gritty; the
+    // BITE is water catching the vanes under a rising hum, then the shelter's
+    // old lock dropping with a square clack — distinct from the flood sweep.
+    case 'wheel': P.push({ type: 'sweep', f0: 60, f1: 96, dur: 0.55, wave: 'sawtooth', vol: 0.05 }, { type: 'noise', dur: 0.5, vol: 0.045 }); break
+    case 'wheelBite': P.push({ type: 'sweep', f0: 70, f1: 210, dur: 0.9, wave: 'sawtooth', vol: 0.08 }, { type: 'noise', dur: 0.8, vol: 0.06 }, { type: 'tone', f: 88, dur: 0.18, wave: 'square', vol: 0.09, delay: 0.75 }, { type: 'noise', dur: 0.3, vol: 0.08, delay: 0.78 }); break
     case 'hum': P.push({ type: 'tone', f: 98, dur: 1.6, wave: 'sine', vol: 0.035 }, { type: 'tone', f: 147, dur: 1.2, wave: 'sine', vol: 0.02, delay: 0.25 }); break
     // THE ROCKET (#1010): each stage of the ride gets its own shape — the
     // seam unseals with a hydraulic hiss and a clack; the saddle takes your

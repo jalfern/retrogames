@@ -799,7 +799,7 @@ const BUILDERS = {
       arm.userData.landmark = 'starWheel'
     }
     star.position.set(0, 4, -16)
-    star.userData.spinY = 0.12
+    star.userData.mech = 'starWheel'
     star.userData.spot = 'starWheel'
     g.add(star)
     mesh(new THREE.BoxGeometry(0.7, 4.0, 0.7), mat(TX.grey), 0, 2, -16, g)
@@ -855,21 +855,31 @@ const BUILDERS = {
       const a = k * (Math.PI / 13) - Math.PI / 2
       mesh(new THREE.BoxGeometry(0.5, 1, 0.5), mat(TX.grey), Math.sin(a) * 10.5, 2.7, -56 + Math.cos(a) * 10.5, g).userData.noPick = true
     }
-    // the great stone star, close at hand on this terrace, turning
+    // the great stone star, close at hand on this terrace — a five-spoke lock,
+    // the notched ray tipped with iron, the housing below wearing its groove
     const star = new THREE.Group()
     for (let k = 0; k < 5; k++) {
       const arm = mesh(new THREE.BoxGeometry(0.8, 3.4, 0.5), mat(TX.grey), 0, 1.7, 0, star)
       arm.rotation.z = k * 1.2566
       arm.userData.landmark = 'starWheel'
+      if (k === 0) {
+        const notch = mesh(new THREE.BoxGeometry(0.5, 0.5, 0.62), mat(TX.iron, { metalness: 0.65 }), 0, 3.25, 0, star)
+        notch.userData.landmark = 'starWheel'; notch.userData.noPick = true
+      }
     }
     star.position.set(0, 6.4, -53)
-    star.userData.spinY = 0.12
+    star.userData.mech = 'starWheel'
     star.userData.spot = 'starWheel'
     g.add(star)
     mesh(new THREE.BoxGeometry(0.9, 4.4, 0.9), mat(TX.grey), 0, 4.4, -53, g).userData.noPick = true
-    // the wheel-shelter where the red page waits, and the float's landing rail
+    const groove = mesh(new THREE.BoxGeometry(1.1, 0.7, 1.0), mat(TX.iron, { metalness: 0.6 }), 0, 3.1, -53, g)
+    groove.userData.landmark = 'starWheel'; groove.userData.noPick = true
+    // the wheel-shelter where the red page waits, the axle lock, and the gear
     const shelter = mesh(new THREE.BoxGeometry(2.6, 2.2, 1.2), mat(TX.wood, { roughness: 0.85 }), -4.8, 3.3, -51.4, g)
     shelter.rotation.y = 0.4; shelter.userData.spot = 'pageChannelwoodRed'; shelter.userData.landmark = 'starWheel'
+    const gearChan = mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.22, 8), mat(TX.brass, { metalness: 0.6 }), -4.8, 3.7, -50.7, g)
+    gearChan.rotation.z = Math.PI / 2; gearChan.userData.mech = 'chanGear'; gearChan.userData.spot = 'gearChan'; gearChan.userData.landmark = 'starWheel'
+    gearChan.visible = false
     const rail = mesh(new THREE.BoxGeometry(3.4, 0.18, 0.18), mat(TX.iron, { metalness: 0.55 }), 2.6, 2.55, -54.2, g)
     rail.userData.noPick = true
     const rope = mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2), mat(TX.wood), 4.2, 3.4, -54.4, g); rope.userData.noPick = true

@@ -3,7 +3,7 @@
 // trap you, and the white page brings Atrus home. Node-only, no browser.
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
-import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES } from '../src/games/Myst/state.js'
+import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE } from '../src/games/Myst/state.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, singTicks } from '../src/games/Myst/soundplan.js'
@@ -97,6 +97,39 @@ console.log('MYST — gates hold')
   let c = { ...freshState(), node: 'chanChannels' }
   c = dispatch(c, { t: 'click', id: 'pageChannelwoodBlue' }).state
   ok(!!c.flags.pageBlue_channelwood, 'the blue page lies on the wood bridge')
+}
+
+console.log('MYST — the star-wheel bites (the Channelwood sub-puzzle, #1017)')
+{
+  let s = { ...freshState(), node: 'chanWheel' }
+  ok(s.wheel === 0, 'the wheel rests at detent zero')
+  const r0 = dispatch(s, { t: 'click', id: 'gearChan' })
+  ok(r0.events.includes('blocked') && !r0.state.flags.gearChannelwood, 'the shelter gear stays locked before the bite')
+  const detents = []
+  const biteAt = []
+  for (let i = 0; i < WHEEL_SPOKES; i++) {
+    const r = dispatch(s, { t: 'click', id: 'starWheel' })
+    s = r.state
+    detents.push(s.wheel)
+    if (r.events.includes('wheelBite')) biteAt.push(i + 1)
+  }
+  ok(detents.join(',') === '1,2,3,4,0', 'the wheel detents one fifth per turn and wraps through five spokes')
+  ok(biteAt.length === 1 && biteAt[0] === WHEEL_BITE, `the bite lands exactly at detent ${WHEEL_BITE}, nowhere else`)
+  ok(!!s.flags.wheelBite, 'once bitten, the falls hold the axle')
+  const rGear = dispatch(s, { t: 'click', id: 'gearChan' })
+  ok(!!rGear.state.flags.gearChannelwood && rGear.events.includes('gearTake'), 'the opened shelter yields its brass gear')
+  const rTwice = dispatch(rGear.state, { t: 'click', id: 'gearChan' })
+  ok(rTwice.events.length === 0, 'the empty shelter gives nothing twice')
+  let a = { ...freshState(), node: 'chanWheel' }
+  let b = { ...freshState(), node: 'chanWheel' }
+  for (let i = 0; i < 4; i++) { a = dispatch(a, { t: 'click', id: 'starWheel' }).state; b = dispatch(b, { t: 'click', id: 'starWheel' }).state }
+  ok(a.wheel === b.wheel && a.flags.wheelBite === b.flags.wheelBite, 'the wheel is deterministic across runs')
+  ok(plan('wheel').length > 0 && plan('wheelBite').length > 0, 'the wheel grind and the bite each have their own sound')
+  ok(JSON.stringify(plan('wheelBite')) !== JSON.stringify(plan('flood')), 'the bite is not just the flood lever sounding again')
+  const nd = NODES.chanWheel.spots.find((x) => x.id === 'starWheel')
+  ok(nd && nd.act === 'wheelTurn', 'the terrace star is a handle you can turn, not a poster')
+  const gnd = NODES.chanWheel.spots.find((x) => x.id === 'gearChan')
+  ok(gnd && gnd.need === 'wheelBite' && gnd.gone === 'gearChannelwood', 'the gear spot is gated by the bite and emptied by the take')
 }
 { // STONESHIP walk: the pier → the ship's deck → the ridge observatory, on foot, free
   let s = { ...freshState(), node: 'stoneship' }
@@ -380,6 +413,7 @@ console.log('MYST — the walkable Channelwood gets played, not skipped')
   }
   ok(['chanChannels', 'chanWheel'].every((n) => visited.has(n)), 'the winning route walks every new Channelwood view')
   ok(s.flags.chanFlood && s.flags.pageRed_channelwood && s.flags.pageBlue_channelwood, 'the solver flooded the channels and took both pages')
+  ok(s.flags.wheelBite && s.flags.gearChannelwood, 'the winning route also bites the star-wheel and lifts its gear')
   ok(isWin(s), 'and the detour still brings Atrus home')
 }
 
@@ -673,6 +707,18 @@ if (process.argv.includes('--mutate')) {
     ['ring ticks stop carrying the post tone', SP,
       'return plan(`sing:${orderStr}`).map((c, i) => ({ ring: i, tone: order[i], at: c.delay || 0 }))',
       'return plan(`sing:${orderStr}`).map((c, i) => ({ ring: i, tone: 0, at: c.delay || 0 }))'],
+    ['the star-wheel bites at every detent', ST,
+      `if (s.wheel === WHEEL_BITE && !has(s, 'wheelBite')) {`,
+      `if (!has(s, 'wheelBite')) {`],
+    ['the wheel free-spins past its spokes', ST,
+      `s.wheel = (s.wheel + 1) % WHEEL_SPOKES`,
+      `s.wheel = WHEEL_BITE`],
+    ['the shelter gear stops needing the bite', ND,
+      `act: 'takeGearChan', gone: 'gearChannelwood', need: 'wheelBite',`,
+      `act: 'takeGearChan', gone: 'gearChannelwood',`],
+    ['the bite-sound goes silent', SP,
+      `    case 'wheelBite': P.push({`,
+      `    case 'wheelBitez': P.push({`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
