@@ -135,6 +135,21 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   `mystcheck` replays `drawLink` through the recording ctx stub: same instant
   paints the same picture, two instants differ, no two Ages share a sky, and
   every sampled tick must lay ground AND >=100 streaks (no world mid-leap).
+  #1035 polished the feel: leaving ANY Age flies the starfield home (not just
+  Channelwood) — `selenitic/retSelenitic`, `stoneship/retStoneship` and
+  `mechanical/retMechanical` link to MYST — while intra-Age steps (pier↔deck,
+  terrace↔wheel, silo↔cave) stay plain walks. The seam of light no longer cracks
+  open stiff: pure `linkSeam(prog)` shimmers and wavers the rift's angle, length
+  and thickness on three incommensurate sines (deterministic — no `Math.random`).
+  The starfield now accelerates into arrival — pure `linkAccel(prog)` ramps the
+  swirl from 1× to ~2.9× so the fade lands instead of petering out. The leap has
+  two audible phases: the page cover SNAPS up (a bright, short lowpass sheet,
+  distinct from the rising flight whoosh). On phones the overlay overdraws on a
+  DPR-aware backing (capped at 2×, the Spectator lenses' trick) so thin streaks
+  stay hairlines. `mystcheck` proves the returns link, the wobble shimmers yet
+  stays bounded, the pull never reverses and ends steep, the snap is its own voice,
+  and the shell draws on a `devicePixelRatio` backing. Residual: the red and blue
+  brothers' trap pulls still cut to their ending screens (voices, not doors).
 - `textures.js` — fbm value noise per material palette; `SKIES` gradients with
   seeded starfields (dusk/selenitic) and soft cloud banks (day/stoneship/dusk).
 - Atmosphere (#928): the shared `DirectionalLight` rides the camera and casts a
@@ -191,7 +206,11 @@ suite red. Eight target the linking books (#1031): either travel branch
 skipping the starfield, the mechanical book's act cutting straight, a flight
 that never clears, a page cover that lets the world flash through, a starfield
 collapsed to one streak, every Age wearing the same sky, and keys staying live
-through the leap — each turns the suite red.
+through the leap — each turns the suite red. Five more target the linking polish
+(#1035): a return panel cutting straight home, a seam opening stiff with no
+shimmer, the arrival pull collapsing to a constant swirl, the page-rush cover
+collapsing into the whoosh, and a starfield overlay losing its DPR backing —
+each turns the suite red.
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:
@@ -234,10 +253,13 @@ through the leap — each turns the suite red.
   rocking ship, the forge with meshed gears and sparks, the cloud world
   with the wheel — every picture a pure function of the world clock, and
   each lens stays a sealed grey churn until you link that Age's book.
-- **CLOSED by #1031** — the Ages' books now link through the starfield: page
+- **CLOSED by #1031/#1035** — the Ages' books now link through the starfield: page
   cover, seam of light, and ~2.9 s of swirling stars before the Age resolves
-  (see `link.js`). Residual: the original also flew the starfield on the red
-  and blue books' trap pulls — ours still cut to the ending screens.
+  (see `link.js`). #1035 made every Age say goodbye through the field (not just
+  Channelwood), shimmered the seam, accelerated the pull into arrival, snapped the
+  page cover as its own sound phase, and crisped the streaks at DPR>1. Residual:
+  the original also flew the starfield on the red and blue books' trap pulls —
+  ours still cut to the ending screens.
 - **CLOSED by #1033** — SELENITIC is sculpted ground: `terrain.js` is a pure
   heightfield (`domeHeight`) — a grass-covered grey dome with a crest, smooth
   flanks and a skirt that dips below the waterline, so the shared ocean meets a
