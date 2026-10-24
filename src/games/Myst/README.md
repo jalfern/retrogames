@@ -45,7 +45,16 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   via `updateMech`. Views face +z: put what the caption promises at
   greater z than the camera, and check the moon's ray — corridor walls,
   lintels and buttresses silently eat it.
-- `textures.js` — fbm value noise per material palette; `SKIES` gradients.
+- `textures.js` — fbm value noise per material palette; `SKIES` gradients with
+  seeded starfields (dusk/selenitic) and soft cloud banks (day/stoneship/dusk).
+- Atmosphere (#928): the shared `DirectionalLight` rides the camera and casts a
+  1024² shadow map (solids cast, everything but the sky receives); ACES tone
+  mapping; `atmosphere(id)` (exported from `scene.js`) retints fog (per-Age color + range) and the
+  sun (hue + intensity) on every travel — dusk amber on the island, green
+  haze in Selenitic, forge-orange in Mechanical, near-dark in interiors.
+  All materials carry a self-bump (`bumpMap` = their own noise, softer on
+  metal); every view is dressed with props (crates, barrels, boulders, tufts,
+  braziers, pipes) placed clear of the caption's landmark sightlines.
 - `sound.js` — every action is synthesized via `audioController`; ambience
   (surf, wind, birds, fire, drips, gears, the sphere hum) is scheduled off the
   fixed-timestep loop, never `setTimeout`. The sounding stones each ring their
