@@ -1,73 +1,69 @@
-# STATE — 2026-10-24 forge session 4 (COMET DRIFT HD phone path proven; also fixed red main)
+# STATE — 2026-10-24 forge session 5 (CometDriftHD #995 shipped: the desert remembers the pack)
 
 ## Shipped this session
-- **#987 → main (PR #990 squash 2a85c5f)** — **COMET DRIFT HD phone
-  auto-fallback proven**, live at `https://www.jalfern.com/retrogames/comet-drift-hd`.
-  - Flagship idle stage (#841): queue empty, QA lane live (borrow forbidden);
-    `idle.mjs` pick: SSX+Emberwood QA-held (#986/#982, and #982 shipped as
-    #984/#988 en route) → oldest unowned gap = CometDriftHD honest gaps #0.
-  - Game code (DEV hooks): `gpuProbe()` = honest fallback facts (`hadGpu`
-    captured pre-init, `nodeGL`, `lostArmed`); `wantProbe/frameProbe` =
-    **in-frame** 48x48 pixel sample of the renderer's own GL context —
-    three's WebGLBackend omits `preserveDrawingBuffer` (r180
-    contextAttributes), so the phone canvas is BLACK to out-of-frame
-    readback; truth only exists inside the rAF callback.
-  - Harness `cometdrifthdphonecheck` (18 gates, alias, lint:hd): phone
-    390x844 coarse-pointer with `navigator.gpu` killed pre-page — AUTO
-    fallback engages unpinned, refuge armed, tap-to-start, dusk pixels real
-    in-frame, contract-driven race advances, no spurious heal, provoked
-    mid-race loss self-heals on the AUTO path and repaints. Where WebGPU is
-    real (this box): compositor PNG luma stats + frame-to-frame motion —
-    the "only proof is screenshots" half became computed gates.
-  - Mutant: `--mutate-classify` (backend always claims webgpu) → 9 gates
-    red (naming, blind heartbeat, unarmed refuge, dead probe, no heal);
-    restore green. `cometdrifthdcheck` 382/0 regression; lint
-    hd/mario/fps/ai + build green. Prod verified by content marker
-    (chunk index-B6qiEadE.js: gpuProbe=1, drawingBufferWidth 3/3).
-  - README honest gaps #0 rewritten honestly: residual = real-device
-    adapters (iOS Safari WebGPU quirks, thermal flips, Adreno MSAA) can't
-    be emulated headlessly.
-- **Red main fixed: #991 (PR #991 squash e3ab38e)** — jonqcheck assumed
-  every flagship always has an open gap; #980+#988 honestly emptied SSX's
-  list (parseGaps correctly filtered CLOSED bullets) → 7 static gates red on
-  every PR. Canary now: open-gap OR CLOSED-marker (broken-parse still red);
-  order/kick fixtures ride synthetic FIX_GAPS; new real-data gate names
-  today's stage (Emberwood). jonqcheck 112/0.
+- **#995 → main (PR #997 squash 8812ae6)** — **COMET DRIFT HD: dynamic sand
+  scarification + sun-fixed shadows**, live at
+  `https://www.jalfern.com/retrogames/comet-drift-hd`.
+  - Flagship stage (#841): queue empty, QA lane live (borrow forbidden),
+    Emberwood skipped (QA holds #994). Idle pick named HD gap #1 (autopilot
+    drift tiers); probe showed that premise is STALE — apex grace #471 +
+    bend-weighted charge #478 made tiers pay every lap on all four courses
+    (gulch seed 3: 5b/3v/8g). Stage honestly pivoted to HD gap #3.
+  - Game code: `sand.js` — px wear field (14px cells, 34px soft ruts,
+    clamped, ~35 s decay); every sand-surfaced kart >1.5v stamps; gutter
+    ribbons sink 0.11u and darken ×0.58 from captured base arrays (offset,
+    never accumulation; decay returns byte-exact). `scene.js:sunShadow` —
+    halo holds the dusk-sun azimuth (0.92), stretches along it, dims with
+    elevation; hooks `sandState()` + extended `shadowBlob()` (DEV).
+  - Harness `cometdrifthdsandcheck` (new alias, lint:hd): 29 gates — wear
+    laws, ribbon deform/base/return, pack-carves (369@0.95) vs pilot-skims
+    (147@0.32), asphalt never wears, sim purity (finish identical with/
+    without stamping; k.hint side-table), sun law monotonicity, live Chrome
+    wire-up (attract pack 78 cells, reset wipes, halo az 0.92 @ stretch 1.98,
+    contract driving deepens). `--mutate` (desert-forgets) dies.
+  - README honest gaps: #0 CLOSED by #987/#990 (residual = real-device
+    adapters), #1 CLOSED by #471/#478 with numbers, #2 CLOSED by #658
+    (TSL bloom/radial on both node backends); reflections stay open residual.
+  - Regression: cometdrifthdcheck 382/0, cometcheck GREEN, scenerycheck
+    133/0, jonqcheck 112/0, lint hd/mario/fps/ai + build green. Prod marker:
+    chunk index-BondcB6M.js carries sink 0.11 / dark 0.42 / az 0.92.
+  - QA polish pass filed: **#1002** (`feedback`) — reflections, rut lips/dust,
+    refuge bloom fallback, music, mesa ground shadow.
 
 ## Next goal
-- `game-queue` is EMPTY → #841 flagship stages again. Honest `idle.mjs` pick
-  after this ship: **COMET DRIFT HD honest gaps #1** (autopilot drift-charge
-  tiers in real races), unless a `steer`/`next` lands first.
-- Never touch QA-held issues; QA currently holds #928, #891, #939, #947, #956.
+- `game-queue` empty → flagship stages again. Honest idle pick now: **Myst
+  gap #0 — but that bullet is a stale roll-up** (#838/#989/#996 all shipped,
+  incl. #998 on main): next session should run the #961 honesty pass on
+  Myst's README first (CLOSED-mark the shipped stages), then re-pick — then
+  COMET DRIFT HD reflections (gap #0 now) is the live one.
+- Never touch QA-held issues; QA currently holds #994 (+ owns #1002 as fresh
+  feedback).
 
 ## Board / harness status
-- main = 2a85c5f (this ship). `main-ok` green at claim + both merges;
-  `static` SUCCESS; Vercel pass; prod content-verified.
-- First-run merge gotcha: rule-5's `s=$(gh pr checks ...)` dies quietly when
-  checks aren't reported yet (`s` empty → failed assignment kills the &&).
-  Pre-wait until static reports, then run rule 5 verbatim — done both times.
-- Advisory noise expected: ssxmodelcheck paused-stable / grab distinctness
-  flaps on software GL (pre-existing, rule 3).
+- main = 8812ae6 (this ship). `main-ok` green at claim + merge; `static`
+  SUCCESS; Vercel pass; prod content-verified.
+- Worktrees: `retrogames-forge-comet-hd-tiers` (done, detached main after
+  merge). Main checkout detached at origin/main ✓.
 
 ## New harness lessons (this session)
-- **A flagship shipping out of its gap list is a legal state** (#991):
-  harness fixtures that index `REAL_GAPS.<game>[0]` turn honest shipping into
-  red main. Order/ownership semantics belong in synthetic fixtures; README
-  ground truth keeps parse-quality + "what does the stage name today" gates.
-- **An out-of-frame BLACK canvas is a spec, not a bug** (three WebGLBackend
-  without preserveDrawingBuffer): in-frame readPixels is the phone-path pixel
-  oracle; anchor the probe to `renderer`'s context, never a stray canvas —
-  a zero-sized `glCanvas` grab was a self-inflicted flake.
-- **`Report.check(label, pass, detail)`** — misordered args print `PASS true`
-  and every gate silently passes; eyeball the labels once per new check.
+- **A gap can be answered before anyone claims it.** Idle picks read README
+  prose, not git: #471/#478 fixed HD gap #1 five ships ago; the bullet kept
+  re-kicking lanes. Probe the claim (numbers) before building against it;
+  close what shipped, keep the residual honest.
+- **Authored ≠ zero**: `rotateX(-π/2)` leaves 2.4e-14 floors — gates must
+  compare against captured authored values, never literal 0.
+- **Early-return before base capture strands sunk verts** (decay gate caught
+  it): capture base on first touch, then always run while a base exists.
+- Contract driving uses `__game.step(pad, n)` — the game's raw `tick` is not
+  on the contract surface; check `gameContract.js` before writing a driver.
 
 ## Housekeeping owed
-- Prune when idle: `retrogames-forge-comet-hd-fallback`,
-  `retrogames-fix-jonq-empty-flagship` (both done), plus standing list
+- Prune when idle: `retrogames-forge-comet-hd-tiers`, plus standing list
   (momentum-courses, iphone-controller, ssx-*, emberwood-*, qa-863*,
   people-sim, campfire-670, forge-model-library, coral-reef, qa-973*).
-  qa-973 was HOLDING `main` (violates worktrees-only); detached it this
-  session — keep it that way or the next lane's detach dies.
+  Keep qa-973 detached from `main` (worktrees-only law).
+- Myst README roll-up staleness → fold into the next flagship stage (#961
+  pattern); do not let idle.mjs re-kick closed walkable stages.
 
 ## Open questions
 - None (#605: nothing filed this session).
