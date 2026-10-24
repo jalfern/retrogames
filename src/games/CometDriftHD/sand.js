@@ -5,8 +5,11 @@
 // ribbons hold thousands of verts and the field holds a few thousand cells):
 // every kart whose surface is sand stamps a soft rut, the field fades over
 // ~35 s of race clock, and `deformGeo` pushes the gutter ribbon DOWN and
-// DARK where the field is scarred — real geometry, vertex-coloured, riding
-// the #530 easing so banking and elevation stay intact.
+// DARK where the field is scarred and raises a sand LIP (displaced stratum)
+// at the rut edge — real geometry, vertex-coloured, riding the #530 easing
+// so banking and elevation stay intact. `plumePuffs` sizes the dust a fresh
+// stamp kicks, and the field carries across re-races (the desert remembers
+// the session), resetting only on a course swap.
 //
 // Pure module: no DOM, no renderer, one import of the sim's own surface law,
 // so `cometdrifthdsandcheck` runs whole headless races through it.
@@ -22,6 +25,7 @@ export const SAND_WEAR = {
     sink: 0.11,
     dark: 0.42,
     minV: 1.5,
+    lip: 0.09,
 }
 
 export function makeWear(minx, minz, maxx, maxz) {
@@ -81,20 +85,52 @@ export function scarStats(w) {
 
 // The pack's law: any kart, any lap, any surface==sand deepens the rut.
 // Hints ride a side table so the sim's own search cache stays untouched.
+// Returns `{stamped, karts}`: the total cells deepened, and the karts that
+// actually carved this tick (their stamp points — where a fresh rut kicks dust).
 export function stampKarts(w, karts, hints = {}) {
     let stamped = 0
+    const plowers = []
     for (const k of karts) {
         if (k.finished || k.v < SAND_WEAR.minV) continue
         const s = surfaceAt(k.x, k.y, hints[k.name])
         hints[k.name] = s.i
-        if (s.surf === 'sand') stamped += stampWear(w, k.x, k.y)
+        if (s.surf === 'sand') {
+            const h = stampWear(w, k.x, k.y)
+            stamped += h
+            if (h > 0) plowers.push(k)
+        }
     }
-    return stamped
+    return { stamped, karts: plowers }
 }
 
-// Push the ribbon down and dark where the field is scarred. Base arrays are
-// captured once per geometry (course rebuilds call `clearGeoBase`), so every
-// update recomputes from scratch — wear is an offset, never an accumulation.
+// The plume a fresh stamp kicks off the sand: puffs per plowing kart. Pure so
+// the Node check pins the law; index.jsx maps the count onto the wheel dust
+// pool. The player plows full, rivals on alternate ticks (half rate).
+export const STAMP_PLUME = { perKart: 4, ttl: 20, col: 0xb08058 }
+
+export function plumePuffs(rep, player, tick) {
+    if (!STAMP_PLUME.perKart || !rep.karts.length) return 0
+    let n = 0
+    for (const k of rep.karts) {
+        if (k !== player && (tick & 1) !== 0) continue
+        n += STAMP_PLUME.perKart
+    }
+    return n
+}
+
+// The rut's vertical profile, in world units: sunk by `sink` at a full-depth
+// centre, a raised stratum (the `lip` berm) where the wear gradient peaks at
+// the worn edge, and 0 on untouched sand. gpc is the wear gained per cell
+// (0..~0.85) — the displaced sand that a rut pushes up to its rim.
+export function rutOffset(v, gpc) {
+    return -v * SAND_WEAR.sink + gpc * SAND_WEAR.lip
+}
+
+// Push the ribbon down-and-dark where the field is scarred, and raise the worn
+// edge into a berm. Base arrays are captured once per geometry (course rebuilds
+// call `clearGeoBase`), so every update recomputes from scratch — wear is an
+// offset, never an accumulation. The rim height follows the central-difference
+// wear gradient, which peaks at the patch edge and is zero at the centre.
 export function deformGeo(geo, w) {
     const pos = geo.getAttribute('position')
     const col = geo.getAttribute('color')
@@ -107,9 +143,14 @@ export function deformGeo(geo, w) {
         }
     }
     let touched = 0
+    const c = w.cell
     for (let i = 0; i < pos.count; i++) {
-        const v = wearAt(w, base.pos[i * 3], base.pos[i * 3 + 2])
-        pos.setY(i, base.pos[i * 3 + 1] - v * SAND_WEAR.sink)
+        const bx = base.pos[i * 3], by = base.pos[i * 3 + 1], bz = base.pos[i * 3 + 2]
+        const v = wearAt(w, bx, bz)
+        const gx = (wearAt(w, bx + c, bz) - wearAt(w, bx - c, bz)) / (2 * c)
+        const gz = (wearAt(w, bx, bz + c) - wearAt(w, bx, bz - c)) / (2 * c)
+        const gpc = Math.hypot(gx, gz) * c
+        pos.setY(i, by + rutOffset(v, gpc))
         if (col && base.col) {
             const d = 1 - v * SAND_WEAR.dark
             col.setXYZ(i, base.col[i * 3] * d, base.col[i * 3 + 1] * d, base.col[i * 3 + 2] * d)

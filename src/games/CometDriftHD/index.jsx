@@ -23,7 +23,7 @@ import {
     bloomDiscs, BLOOM2D_MIN_LUMA,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
-import { makeWear, resetWear, stampKarts, decayWear, deformGeo, scarStats, SAND_WEAR } from './sand.js'
+import { makeWear, stampKarts, decayWear, deformGeo, scarStats, SAND_WEAR, STAMP_PLUME } from './sand.js'
 
 // =====================================================================
 // COMET DRIFT HD — SUNSET GULCH, same machine, modern renderer (#465).
@@ -640,6 +640,7 @@ export default function CometDriftHD() {
         // points — the pool billboards each dash onto the camera plane.
         const streaks = makeStreakPool(lite ? 48 : 96, { width: lite ? 0.06 : 0.075 })
         scene.add(streaks.mesh)
+        let stampDustPuffs = 0
 
         // camera rig state (px-space chase like the retro twin, same lag law).
         // #471: the kart filled the bottom 40% of the frame — the cam sits
@@ -922,6 +923,29 @@ export default function CometDriftHD() {
             dust.step(-0.0004, liftAt(P) - 0.12)
             streaks.step(-0.001, liftAt(P) - 0.02, camera)
             twinkleStars(g.tick)
+        }
+
+        // The stamp plume: a fresh rut kicks displaced sand off the plowing
+        // kart's rear wheels. plumePuffs (the pure law) decides the count; this
+        // maps it onto the drift dust pool so the ploughing reads in the world,
+        // not just in the ribbon geometry. The player plows full, rivals half.
+        const plowDust = (rep) => {
+            if (!rep.karts.length) return
+            const perWheel = Math.floor(STAMP_PLUME.perKart / 2)
+            for (const k of rep.karts) {
+                if (k !== g.karts[0] && (g.tick & 1) !== 0) continue
+                for (const side of [-1, 1]) {
+                    const w = wheelWorld(k, side, 0.4)
+                    for (let i = 0; i < perWheel; i++) {
+                        dust.spawn(w.x, liftAt(k) + 0.12, w.z,
+                            -w.fx * 0.02 + (jit(g.tick * 2.7 + k.idx + side + i) - 0.5) * 0.02,
+                            0.014 + i * 0.005,
+                            -w.fz * 0.02 + (jit(g.tick * 1.9 + k.idx - side + i) - 0.5) * 0.02,
+                            STAMP_PLUME.ttl, STAMP_PLUME.col)
+                        stampDustPuffs++
+                    }
+                }
+            }
         }
 
         // ---- mesh sync: drawn state is the sim state, every frame ---------
@@ -1369,9 +1393,10 @@ export default function CometDriftHD() {
             }
             step(g, live ? inp : decide(g))
             if (wear) {
-                stampKarts(wear, g.karts, sandHints)
+                const rep = stampKarts(wear, g.karts, sandHints)
                 decayWear(wear)
                 if ((g.tick & 3) === 0) for (const m of sandMeshes) deformGeo(m.geometry, wear)
+                plowDust(rep)
             }
             const evs = g.events.splice(0)
             if (import.meta.env.DEV) {
@@ -1397,7 +1422,7 @@ export default function CometDriftHD() {
                     }
                 }
             }
-            if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame(0)); st.endT = 0; sparks.clear(); dust.clear(); streaks.clear(); if (wear) resetWear(wear) } }
+            if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame(0)); st.endT = 0; sparks.clear(); dust.clear(); streaks.clear() } }
             if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0; st.endAt = performance.now(); setPadOn(false) }
             spawnTick()
         }
@@ -1713,7 +1738,8 @@ export default function CometDriftHD() {
                 if (!gN || !gN.children.length) return null
                 return { quads: gN.children.length, opacity: Math.round(gN.children[0].material.opacity * 1000) / 1000 }
             },
-            sandState: () => (wear ? { ...scarStats(wear), sink: SAND_WEAR.sink, dark: SAND_WEAR.dark, decay: SAND_WEAR.decay, meshes: sandMeshes.length } : null),
+            sandState: () => (wear ? { ...scarStats(wear), sink: SAND_WEAR.sink, dark: SAND_WEAR.dark, decay: SAND_WEAR.decay, lip: SAND_WEAR.lip, meshes: sandMeshes.length } : null),
+            stampDust: () => { const c = stampDustPuffs; stampDustPuffs = 0; return c },
             brakeGlow: () => Math.round((kartMeshes[0].m.userData.brakeMat?.emissiveIntensity ?? -1) * 100) / 100,
             stars: () => {
                 const c = starMesh && starMesh.geometry.getAttribute('color')
@@ -1754,7 +1780,8 @@ export default function CometDriftHD() {
                 camA = g.karts[0].a
                 camLift = 0
                 sparks.clear(); dust.clear(); streaks.clear()
-                if (wear) resetWear(wear)
+                // the desert remembers the session: a re-race keeps the scars
+                // (they keep decaying); only a course swap rebuilds the field.
                 setPadOn(false)
             },
             tick: (pad) => {
@@ -1767,9 +1794,10 @@ export default function CometDriftHD() {
                     brk: typeof pad.lt === 'number' && pad.lt > 0.05 ? pad.lt : undefined,
                 })
                 if (wear) {
-                    stampKarts(wear, g.karts, sandHints)
+                    const rep = stampKarts(wear, g.karts, sandHints)
                     decayWear(wear)
                     if ((g.tick & 3) === 0) for (const m of sandMeshes) deformGeo(m.geometry, wear)
+                    plowDust(rep)
                 }
                 spawnTick()
             },
