@@ -82,9 +82,9 @@ function hsl(h, s, l){
 function waterCol(y, W, H){
   const t = smooth(0, 1, y / H);
   return [
-    mix(96, 8, Math.pow(t, 0.85)),
-    mix(200, 46, t),
-    mix(192, 92, Math.pow(t, 0.65)),
+    mix(125, 8, Math.pow(t, 0.8)),
+    mix(196, 50, t),
+    mix(178, 104, Math.pow(t, 0.6)),
   ];
 }
 const HAZE = () => waterCol(0.62, 1, 1);
@@ -115,22 +115,54 @@ addEventListener('pointerup', () => { drag = null; });
 function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 1.5);
   cssW = canvas.clientWidth; cssH = canvas.clientHeight;
-  W = Math.max(2, Math.floor(cssW * dpr * RENDER_SCALE));
-  H = Math.max(2, Math.floor(cssH * dpr * RENDER_SCALE));
+  W = Math.max(2, Math.floor(cssW * dpr * effScale()));
+  H = Math.max(2, Math.floor(cssH * dpr * effScale()));
   if (canvas.width !== W || canvas.height !== H){
     canvas.width = W; canvas.height = H;
   }
   SX = W / cssW; SY = H / cssH;
   SPAN = cssW + MARGIN * 2;
+  buildPlates();
   layoutProps();
   layoutFish();
 }
 addEventListener('resize', resize);
 
+let qCap = 1;
+function effScale(){ return RENDER_SCALE * qCap; }
+
+let bgPlate = null, ovPlate = null;
+function buildPlates(){
+  bgPlate = document.createElement('canvas'); bgPlate.width = W; bgPlate.height = H;
+  const b = bgPlate.getContext('2d');
+  b.setTransform(SX, 0, 0, SY, 0, 0);
+  const g = b.createLinearGradient(0, 0, 0, cssH);
+  const c0 = waterCol(0, 1, 1), c1 = waterCol(0.45, 1, 1), c2 = waterCol(0.75, 1, 1), c3 = waterCol(1, 1, 1);
+  g.addColorStop(0, `rgb(${c0.map(Math.round).join(',')})`);
+  g.addColorStop(0.42, `rgb(${c1.map(Math.round).join(',')})`);
+  g.addColorStop(0.75, `rgb(${c2.map(Math.round).join(',')})`);
+  g.addColorStop(1, `rgb(${c3.map(Math.round).join(',')})`);
+  b.fillStyle = g;
+  b.fillRect(0, 0, cssW, cssH);
+  ovPlate = document.createElement('canvas'); ovPlate.width = W; ovPlate.height = H;
+  const v = ovPlate.getContext('2d');
+  v.setTransform(SX, 0, 0, SY, 0, 0);
+  const dg = v.createLinearGradient(0, cssH * 0.62, 0, cssH);
+  dg.addColorStop(0, 'rgba(2,26,80,0)');
+  dg.addColorStop(1, 'rgba(2,24,78,0.32)');
+  v.fillStyle = dg;
+  v.fillRect(0, cssH * 0.62, cssW, cssH * 0.38);
+  const r = v.createRadialGradient(cssW / 2, cssH * 0.45, Math.min(cssW, cssH) * 0.5, cssW / 2, cssH * 0.45, Math.max(cssW, cssH) * 0.82);
+  r.addColorStop(0, 'rgba(0,10,20,0)');
+  r.addColorStop(1, 'rgba(0,12,24,0.34)');
+  v.fillStyle = r;
+  v.fillRect(0, 0, cssW, cssH);
+}
+
 const wrapX = x => ((x % SPAN) + SPAN) % SPAN - MARGIN;
 const par = d => mix(1.0, 0.34, d);
 const pscale = d => mix(1.0, 0.42, d);
-const haze = d => 0.14 + 0.78 * d;
+const haze = d => 0.05 + 0.80 * d;
 
 function seabedY(d, x){
   const base = cssH * (0.80 - 0.205 * d);
@@ -140,15 +172,17 @@ function seabedY(d, x){
 
 /* ---------------- reef props (generated once, fractions of SPAN) ----------- */
 
-const HUES = [332, 22, 280, 160, 48, 305, 8, 190];
+const HUES = [346, 22, 0, 48, 20, 8, 350, 30];
+const HUES_FAR = HUES.concat([160, 190]);
 let props = [];
 function makeProps(n, d, kind){
   const rnd = mulberry32(SEED * 7919 + n * 31 + Math.round(d * 100));
+  const pal = d > 0.45 ? HUES_FAR : HUES;
   for (let i = 0; i < n; i++){
     props.push({
       u: rnd(), d: d + (rnd() - 0.5) * 0.10,
       kind: kind || ['branch', 'fan', 'brain', 'anemone', 'tube'][Math.floor(rnd() * 5)],
-      hue: HUES[Math.floor(rnd() * HUES.length)] + (rnd() - 0.5) * 14,
+      hue: pal[Math.floor(rnd() * pal.length)] + (rnd() - 0.5) * 14,
       h: 0.5 + rnd() * 0.9, w: 0.6 + rnd() * 0.8,
       phase: rnd() * Math.PI * 2, sway: 0.55 + rnd() * 0.9,
       branches: 3 + Math.floor(rnd() * 3),
@@ -161,6 +195,11 @@ function layoutProps(){
   makeProps(LITE ? 3 : 5, 0.52);
   makeProps(LITE ? 3 : 4, 0.12, null);
   makeProps(LITE ? 2 : 3, 0.0, 'anemone');
+  props.push({ u: 0.20, d: 0.10, kind: 'branch', hue: 348, h: 1.7, w: 1.4, phase: 0.6, sway: 0.8, branches: 4 });
+  props.push({ u: 0.38, d: 0.16, kind: 'tube', hue: 8, h: 1.5, w: 1.3, phase: 3.1, sway: 0.7, branches: 4 });
+  props.push({ u: 0.52, d: 0.16, kind: 'tube', hue: 22, h: 1.5, w: 1.4, phase: 2.1, sway: 0.7, branches: 4 });
+  props.push({ u: 0.66, d: 0.12, kind: 'branch', hue: 40, h: 1.5, w: 1.2, phase: 5.2, sway: 0.85, branches: 3 });
+  props.push({ u: 0.80, d: 0.08, kind: 'branch', hue: 350, h: 1.6, w: 1.3, phase: 4.0, sway: 0.9, branches: 3 });
 }
 
 /* ---------------- fish school (boids) ---------------- */
@@ -271,9 +310,9 @@ function caustics(t){
         s += a * Math.abs(Math.sin(wu) + Math.sin(wv));
         a *= 0.58; f *= 2.05;
       }
-      const c = Math.pow(Math.max(0, 1 - s * 0.72), 5) + Math.pow(Math.max(0, 1 - Math.abs(Math.sin(x * 0.09 + t * 0.8) + Math.sin(y * 0.11 - t * 0.6))), 9) * 0.5;
+      const c = Math.pow(Math.max(0, 1 - s * 0.66), 4) + Math.pow(Math.max(0, 1 - Math.abs(Math.sin(x * 0.09 + t * 0.8) + Math.sin(y * 0.11 - t * 0.6))), 5) * 0.85;
       const v = clamp(c, 0, 1);
-      d[p] = 200; d[p + 1] = 255; d[p + 2] = 240; d[p + 3] = Math.round(v * v * 255);
+      d[p] = 80; d[p + 1] = 255; d[p + 2] = 250; d[p + 3] = Math.round(v * 235);
       p += 4;
     }
   }
@@ -284,19 +323,9 @@ function caustics(t){
 
 let skyGrad = null, skyGradH = 0;
 function drawBackground(){
-  if (!skyGrad || skyGradH !== H){
-    skyGrad = ctx.createLinearGradient(0, 0, 0, cssH);
-    const c0 = waterCol(0, 1, 1), c1 = waterCol(0.45, 1, 1), c2 = waterCol(0.75, 1, 1), c3 = waterCol(1, 1, 1);
-    skyGrad.addColorStop(0, `rgb(${c0.map(Math.round).join(',')})`);
-    skyGrad.addColorStop(0.42, `rgb(${c1.map(Math.round).join(',')})`);
-    skyGrad.addColorStop(0.75, `rgb(${c2.map(Math.round).join(',')})`);
-    skyGrad.addColorStop(1, `rgb(${c3.map(Math.round).join(',')})`);
-    skyGradH = H;
-  }
   ctx.save();
-  ctx.setTransform(SX, 0, 0, SY, 0, 0);
-  ctx.fillStyle = skyGrad;
-  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(bgPlate, 0, 0);
   ctx.restore();
 }
 
@@ -327,15 +356,15 @@ function drawRays(t){
   ctx.save();
   ctx.setTransform(SX, 0, 0, SY, 0, 0);
   ctx.globalCompositeOperation = 'lighter';
-  const n = 6;
+  const n = 9;
   for (let i = 0; i < n; i++){
-    const bx = cssW * (0.08 + 0.16 * i) + Math.sin(t * 0.11 + i * 1.7) * cssW * 0.02 - cam.look * 0.12;
-    const wTop = cssW * (0.012 + 0.006 * ((i * 7) % 3));
-    const wBot = wTop * 3.4;
-    const tilt = cssW * 0.10 + Math.sin(t * 0.07 + i) * cssW * 0.012;
+    const bx = cssW * (0.05 + 0.107 * i) + Math.sin(t * 0.11 + i * 1.7) * cssW * 0.02 - cam.look * 0.12;
+    const wTop = cssW * (0.006 + 0.005 * ((i * 7) % 3));
+    const wBot = wTop * 2.8;
+    const tilt = cssW * 0.03 + Math.sin(t * 0.07 + i) * cssW * 0.012;
     const yTop = cssH * 0.02;
-    const yBot = cssH * 0.72;
-    const a = (0.085 + 0.03 * Math.sin(t * 0.23 + i * 2.4)) * mix(1.15, 0.55, smooth(0, cssH, yBot));
+    const yBot = cssH * 0.78;
+    const a = (0.22 + 0.055 * Math.sin(t * 0.23 + i * 2.4)) * mix(1.15, 0.55, smooth(0, cssH, yBot));
     const g = ctx.createLinearGradient(0, yTop, 0, yBot);
     g.addColorStop(0, `rgba(175,240,230,${a.toFixed(3)})`);
     g.addColorStop(0.65, `rgba(120,215,205,${(a * 0.35).toFixed(3)})`);
@@ -355,9 +384,10 @@ function drawRays(t){
 function tint(col, dz, y){
   const hz = HAZE();
   const k = haze(dz);
-  const light = mix(1.12, 0.62, clamp(y / cssH, 0, 1));
+  const light = mix(1.32, 0.60, clamp(y / cssH, 0, 1));
+  const ra = mix(1.0, 0.55, dz);
   return [
-    clamp(Math.round(mix(col[0] * light, hz[0], k)), 0, 255),
+    clamp(Math.round(mix(col[0] * light * ra, hz[0], k)), 0, 255),
     clamp(Math.round(mix(col[1] * light, hz[1], k)), 0, 255),
     clamp(Math.round(mix(col[2] * light, hz[2], k)), 0, 255),
   ];
@@ -370,7 +400,7 @@ function drawProp(p, t){
   const baseY = seabedY(d, px);
   const s = pscale(d) * (cssH / 620);
   const sway = Math.sin(t * p.sway + p.phase) * 0.07 + Math.sin(t * 0.31 + p.phase * 2) * 0.02;
-  const col = hsl(p.hue, 0.62, mix(0.44, 0.30, d));
+  const col = hsl(p.hue, 0.66, mix(0.52, 0.34, d));
   const c = tint(col, d, baseY);
   const colS = `rgb(${c[0]},${c[1]},${c[2]})`;
   const cDark = t2(col, d, baseY, 0.7);
@@ -379,7 +409,7 @@ function drawProp(p, t){
   ctx.translate(px, baseY);
   ctx.scale(s, s);
   if (p.kind === 'branch'){
-    branch(0, 0, -44 * p.h, 9 * p.w, p.branches, sway, t, colS, cDark);
+    branch(0, 0, -54 * p.h, 9 * p.w, p.branches, sway, t, colS, cDark);
   } else if (p.kind === 'fan'){
     fan(p, t, sway, colS);
   } else if (p.kind === 'brain'){
@@ -480,6 +510,9 @@ function drawSeabed(t){
   for (let x = 0; x <= cssW; x += 10) ctx.lineTo(x, seabedY(0, x));
   ctx.lineTo(cssW, cssH); ctx.closePath();
   const sc = tint([196, 168, 118], 0.12, cssH * 0.86);
+  sc[0] = Math.round(sc[0] * 0.14);
+  sc[1] = Math.round(sc[1] * 0.45);
+  sc[2] = Math.round(sc[2] * 1.15);
   const g = ctx.createLinearGradient(0, cssH * 0.72, 0, cssH);
   g.addColorStop(0, `rgb(${sc[0]},${sc[1]},${sc[2]})`);
   g.addColorStop(1, `rgb(${Math.round(sc[0] * 0.55)},${Math.round(sc[1] * 0.5)},${Math.round(sc[2] * 0.5)})`);
@@ -491,7 +524,7 @@ function drawSeabed(t){
   ctx.globalCompositeOperation = 'screen';
   for (let k = 0; k < 3; k++){
     const x = off + k * tileW;
-    ctx.globalAlpha = 0.75;
+    ctx.globalAlpha = 0.85;
     ctx.drawImage(causticCanvas, x, cssH * 0.745, tileW + 1, tileH);
   }
   ctx.globalAlpha = 0.16;
@@ -560,17 +593,8 @@ function stepSnow(dt){
 
 function drawDepthOverlay(){
   ctx.save();
-  ctx.setTransform(SX, 0, 0, SY, 0, 0);
-  const g = ctx.createLinearGradient(0, cssH * 0.5, 0, cssH);
-  g.addColorStop(0, 'rgba(6,40,74,0)');
-  g.addColorStop(1, 'rgba(4,28,58,0.42)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, cssH * 0.5, cssW, cssH * 0.5);
-  const r = ctx.createRadialGradient(cssW / 2, cssH * 0.45, Math.min(cssW, cssH) * 0.5, cssW / 2, cssH * 0.45, Math.max(cssW, cssH) * 0.82);
-  r.addColorStop(0, 'rgba(0,10,20,0)');
-  r.addColorStop(1, 'rgba(0,12,24,0.34)');
-  ctx.fillStyle = r;
-  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(ovPlate, 0, 0);
   ctx.restore();
 }
 
@@ -648,7 +672,7 @@ function scheduleWhale(){
 /* ---------------- frame loop ---------------- */
 
 let t0 = performance.now();
-let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
+let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0, ema = 0, degraded = false;
 let readyFlag = false;
 resize();
 layoutSnow();
@@ -669,7 +693,8 @@ function frame(){
   cam.y += (cam.ty - cam.y) * 0.06;
   cam.x += cam.look * dt * 0.15;
 
-  caustics(t);
+  const frameStart = performance.now();
+  if (!(degraded && (frames & 1))) caustics(t);
   stepFish(dt, t);
   stepSnow(dt);
   maybeBubble(t);
@@ -684,6 +709,10 @@ function frame(){
   drawSnow(t);
   drawRays(t);
   drawDepthOverlay();
+  const workMs = performance.now() - frameStart;
+  ema = ema ? ema * 0.92 + workMs * 0.08 : workMs;
+  degraded = qCap < 0.95;
+  if (ema > 26 && qCap > 0.55){ qCap *= 0.8; resize(); ema = 0; }
 
   readyFlag = true;
   requestAnimationFrame(frame);
@@ -696,7 +725,7 @@ window.__reefTest = {
   get ready(){ return readyFlag; },
   get frames(){ return frames; },
   mode(){ return { canvas: '2d', lite: LITE, retina: RETINA }; },
-  renderScale(){ return { scale: RENDER_SCALE, lite: LITE, retina: RETINA, w: W, h: H, css: cssW, dpr: window.devicePixelRatio || 1 }; },
+  renderScale(){ return { scale: effScale(), base: RENDER_SCALE, cap: +qCap.toFixed(2), lite: LITE, retina: RETINA, w: W, h: H, css: cssW, dpr: window.devicePixelRatio || 1 }; },
   pose(){ return { look: cam.look, y: cam.y }; },
   setPose(p){
     if (p.look !== undefined){ cam.tlook = p.look; cam.look = p.look; }
@@ -706,7 +735,7 @@ window.__reefTest = {
   fish(){ return { n: fish.length, order: +fishOrder().toFixed(3) }; },
   particles(){ return { snow: snow.length, bubbles: bubbles.length }; },
   corals(){ return { n: props.length }; },
-  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
+  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, work: +ema.toFixed(1), cap: +qCap.toFixed(2) }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
 };
 </script>
