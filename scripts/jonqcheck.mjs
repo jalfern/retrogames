@@ -113,13 +113,28 @@ ok(claimOrder([]) === null, 'empty board: nothing to claim')
 const QA = (n, game, rest) => ({ number: n, title: `QA — ${game}: polish pass`, body: rest })
 const README = (g) => read(`../src/games/${FLAGSHIP_DIRS[g]}/README.md`)
 const REAL_GAPS = Object.fromEntries(FLAGSHIPS.map((g) => [g, parseGaps(README(g))]))
+// #991: a flagship can honestly SHIP OUT of its gap list — #980 + #988 closed
+// both open SSX notes, and parseGaps (correctly!) filtered the CLOSED-marked
+// corpses down to []. The canary must therefore distinguish a broken parse
+// (no section, no markers) from a finished list (CLOSED bullets present), and
+// the order/ownership/kick fixtures below must not index [0] of a legal [].
+// Synthetic FIX_GAPS carry the flagship-ORDER semantics; REAL_GAPS stay the
+// ground truth for parse quality and for "what does the stage name TODAY".
+const closedMarks = (md) => (((md.split(/^##\s+Honest gaps/im)[1] || '').split(/^##\s/m)[0]).match(/CLOSED by #\d+/g) || []).length
+const FIX_GAPS = {
+    'SSX': ['demo SSX gap: the pack contact shadow still reads flat'],
+    'Emberwood': ['demo Emberwood gap: townsfolk are rooted to their tiles'],
+    'COMET DRIFT HD': ['demo comet gap: phones on the auto-fallback untested'],
+    'Myst': ['demo Myst gap: the Spectator is a still panel'],
+}
 for (const g of FLAGSHIPS) {
     // #963: the floor guards against a broken parse (0 items), not against a
     // flagship running out of TODOs — closing gaps with **CLOSED by #n**
     // markers (#961) legitimately shrinks the list, and the next line still
     // catches empty/junk output. A fixed >= 3 would freeze the READMEs:
     // shipping honest work would be red.
-    ok(REAL_GAPS[g].length >= 1, `${g}: README honest-gaps parses nothing (parseGaps broken?)`)
+    ok(REAL_GAPS[g].length >= 1 || closedMarks(README(g)) >= 1,
+        `${g}: README honest-gaps parses nothing AND shows no CLOSED-by marker (parseGaps broken?)`)
     ok(REAL_GAPS[g].every((s) => s.length > 10), `${g}: parseGaps produced an empty/junk gap`)
 }
 ok(REAL_GAPS.Emberwood.length === 1 && !REAL_GAPS.Emberwood.some(s => /CLOSED by/.test(s)),
@@ -141,17 +156,19 @@ ok(parseGaps('## Honest gaps\n- open one\n- shipped **CLOSED by 959** without a 
     '#961: only a "CLOSED by #<n>" marker closes a gap')
 ok(!REAL_GAPS.Emberwood.some((s) => /portrait/i.test(s)),
     '#961: Emberwood honest-gaps re-grew the shipped #959/#960 portrait-full-bleed note')
-const firstGapOwned = (game) => QA(900, game, REAL_GAPS[game][0])
-ok(ownsGap([firstGapOwned('SSX')], 'SSX', REAL_GAPS.SSX[0]), 'ownsGap: an issue quoting the gap owns it')
-ok(!ownsGap([QA(901, 'Myst', 'totally unrelated text')], 'SSX', REAL_GAPS.SSX[0]), 'ownsGap: another game\'s issue owns nothing here')
-ok(!ownsGap([QA(902, 'SSX', 'general polish notes only')], 'SSX', REAL_GAPS.SSX[0]), 'ownsGap: naming the game without the gap does not own it')
-ok(flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: [] }).game === 'SSX',
+const firstGapOwned = (game) => QA(900, game, FIX_GAPS[game][0])
+ok(ownsGap([firstGapOwned('SSX')], 'SSX', FIX_GAPS.SSX[0]), 'ownsGap: an issue quoting the gap owns it')
+ok(!ownsGap([QA(901, 'Myst', 'totally unrelated text')], 'SSX', FIX_GAPS.SSX[0]), 'ownsGap: another game\'s issue owns nothing here')
+ok(!ownsGap([QA(902, 'SSX', 'general polish notes only')], 'SSX', FIX_GAPS.SSX[0]), 'ownsGap: naming the game without the gap does not own it')
+ok(flagshipStage({ gapsByGame: FIX_GAPS, qaIssues: [], buildingQa: [] }).game === 'SSX',
     'idle: flagship order must start at SSX (Jon\'s order, #841)')
+ok(flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: [] }).game === 'Emberwood',
+    '#991: SSX shipped its gap list empty (#980/#988) — on TODAY\'s READMEs the stage names the next flagship, no crash')
 ok(flagshipStage({ gapsByGame: { 'SSX': ['a', 'b'], 'Emberwood': ['c'] }, qaIssues: [QA(903, 'SSX', 'a')], buildingQa: [] }).gap === 'b',
     'idle: an owned gap is skipped for the next one in the same README')
 ok(flagshipStage({ gapsByGame: { 'SSX': ['a', 'b'], 'Emberwood': ['c'] }, qaIssues: [QA(904, 'SSX', 'a'), QA(905, 'SSX', 'b')], buildingQa: [] }).game === 'Emberwood',
     'idle: all of SSX owned -> next flagship, in Jon\'s order')
-ok(flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: ['ssx', 'emberwood'] }).game === 'COMET DRIFT HD',
+ok(flagshipStage({ gapsByGame: FIX_GAPS, qaIssues: [], buildingQa: ['ssx', 'emberwood'] }).game === 'COMET DRIFT HD',
     'idle: games QA holds building-qa are never touched (case-insensitive)')
 ok(flagshipStage({ gapsByGame: {}, qaIssues: [], buildingQa: FLAGSHIPS }) === null,
     'idle: every flagship held still yields null — a held flagship is not an invitation')
@@ -161,7 +178,7 @@ const allOwned = {
     buildingQa: [],
 }
 ok(flagshipStage(allOwned) === null, 'idle: with EVERY gap owned, null — only now is STOP legal')
-ok(claimOrder([]) === null && flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: [] }) !== null,
+ok(claimOrder([]) === null && flagshipStage({ gapsByGame: FIX_GAPS, qaIssues: [], buildingQa: [] }) !== null,
     'idle: an empty board claims nothing yet has forgeable work — the studio must not idle')
 ok(claimOrder([ST(51, 'jalfern', ['game-queue'])]) === 51,
     'idle: a queued issue outranks the flagship stage (stage only runs on a claimOrder miss)')
@@ -176,7 +193,7 @@ ok(heldGames([QA(911, 'BLOB BATTLE', 'polish pass')]).length === 0,
     'idle-kick: a non-flagship QA issue holds nothing')
 ok(heldGames([{ title: 'QA — comet drift hd polish', body: '' }]).join() === 'COMET DRIFT HD',
     'idle-kick: the held match is case-insensitive')
-ok(claimOrder([]) === null && flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [QA(913, 'BLOB BATTLE', 'polish pass')], buildingQa: [] }).game === 'SSX',
+ok(claimOrder([]) === null && flagshipStage({ gapsByGame: FIX_GAPS, qaIssues: [QA(913, 'BLOB BATTLE', 'polish pass')], buildingQa: [] }).game === 'SSX',
     '#869: empty queue + unowned gap -> KICK; QA noise on non-flagship games changes nothing')
 
 // --- the unified queue (#878): a free QA lane takes an unowned flagship gap ---
@@ -184,11 +201,11 @@ ok(claimOrder([]) === null && flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [
 // gaps were unowned — the builder's flagship path (#869) only fires when the
 // whole builder is free. qaIdleStage lets the QA lane claim that gap itself.
 const IQ = (n, labels, title = '', body = '') => ({ number: n, author: 'jalfern', state: 'open', labels, created_at: '2026-10-19T00:00:00Z', title, body, comments: [] })
-ok(qaIdleStage({ issues: [IQ(920, ['game-queue'])], gapsByGame: REAL_GAPS }).game === 'SSX',
+ok(qaIdleStage({ issues: [IQ(920, ['game-queue'])], gapsByGame: FIX_GAPS }).game === 'SSX',
     '#878: empty feedback + unowned flagship gap -> the Studio QA lane gets kicked to SSX')
 ok(qaIdleStage({ issues: [IQ(921, ['feedback'])], gapsByGame: REAL_GAPS }) === null,
     '#878: real feedback outranks the flagship stage — a claimable feedback item means no flagship kick')
-ok(qaIdleStage({ issues: [IQ(922, ['waiting-jon', 'question']), IQ(923, ['needs-approval', 'feedback'])], gapsByGame: REAL_GAPS }).game === 'SSX',
+ok(qaIdleStage({ issues: [IQ(922, ['waiting-jon', 'question']), IQ(923, ['needs-approval', 'feedback'])], gapsByGame: FIX_GAPS }).game === 'SSX',
     '#878: a parked question and an un-approved item are NOT claimable feedback — the stage still fires')
 ok(qaIdleStage({ issues: [IQ(924, ['building'], 'GAME — SSX: the deep pass')], gapsByGame: REAL_GAPS }).game === 'Emberwood',
     '#878: a game the builder is inside (building) is skipped — one lane per game')
