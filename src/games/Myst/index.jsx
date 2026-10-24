@@ -532,12 +532,14 @@ const MystGame = () => {
             const lm = meshes.filter((m) => m.userData.landmark && expect.includes(m.userData.landmark))
             let landmarkSeen = expect.length === 0
             let dbgFirst = null
+            const inFrustum = (c) => c.clone().applyMatrix4(cam.matrixWorldInverse).z < 0
             for (const m of lm) {
               m.updateWorldMatrix(true, false)
               const c = new THREE.Vector3()
               m.getWorldPosition(c)
               const dir = c.clone().sub(camPos)
               if (dir.lengthSq() < 1e-6) continue
+              if (!inFrustum(c)) continue
               dir.normalize()
               ray.set(camPos, dir)
               const h = ray.intersectObjects(meshes, false)[0]
