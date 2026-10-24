@@ -114,9 +114,16 @@ const QA = (n, game, rest) => ({ number: n, title: `QA — ${game}: polish pass`
 const README = (g) => read(`../src/games/${FLAGSHIP_DIRS[g]}/README.md`)
 const REAL_GAPS = Object.fromEntries(FLAGSHIPS.map((g) => [g, parseGaps(README(g))]))
 for (const g of FLAGSHIPS) {
-    ok(REAL_GAPS[g].length >= 3, `${g}: README honest-gaps parses fewer than 3 items (parseGaps broken?)`)
+    // #963: the floor guards against a broken parse (0 items), not against a
+    // flagship running out of TODOs — closing gaps with **CLOSED by #n**
+    // markers (#961) legitimately shrinks the list, and the next line still
+    // catches empty/junk output. A fixed >= 3 would freeze the READMEs:
+    // shipping honest work would be red.
+    ok(REAL_GAPS[g].length >= 1, `${g}: README honest-gaps parses nothing (parseGaps broken?)`)
     ok(REAL_GAPS[g].every((s) => s.length > 10), `${g}: parseGaps produced an empty/junk gap`)
 }
+ok(REAL_GAPS.Emberwood.length === 2 && !REAL_GAPS.Emberwood.some(s => /CLOSED by/.test(s)),
+    'Emberwood keeps exactly the two still-open gaps after #959/#963 closed the first two (CLOSED bullets filtered, not forgotten)')
 ok(REAL_GAPS['COMET DRIFT HD'].some((s) => s.includes('Sound is') && s.includes('Remainder')),
     'parseGaps split a sub-bullet from its parent gap (CometDriftHD Remainder)')
 // #945: the SSX touch front-flip shipped with #894 and ssxmodelcheck gates it; the
