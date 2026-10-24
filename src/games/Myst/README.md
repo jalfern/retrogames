@@ -101,8 +101,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
    lintels and buttresses silently eat it. Stoneship (#996) is three static
    sibling views — pier, quarterdeck (the bare mast is the landmark) and the
    ridge dome — joined by free `to:` travel, with no live mechanism to drive.
-- `visions.js` — the SPECTATOR's age-visions (#1024): a circular glass pane
-  painted on a 2D canvas per Age — green storm + dome + sounding rings + a
+- `visions.js` — the SPECTATOR's age-visions (#1024): a circular glass pane painted on a 2D canvas per Age — green storm + dome + sounding rings + a
   timed lightning flash (Selenitic), teal swell + low sun + rocking ship
   (Stoneship), forge glow + two meshed gears + rising sparks (Mechanical),
   drifting cloud banks + falls + the star-wheel in silhouette (Channelwood).
@@ -115,7 +114,23 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
    dim Selenitic keeps a clear green floor (a brighter, greener at-rest sky),
    and the Selenitic lightning stays a brief 160 ms window of its 6.4 s cycle —
    its flash colour lives only in the Selenitic painter so no second lens
-   strobes in step.
+    strobes in step.
+- `link.js` — the LINKING BOOKS (#1031): touching an Age's book no longer cuts.
+  The page cover rushes up (Age ink + double-rule border), a seam of light
+  opens across it, and a stable starfield wheels outward on a slow swirl until
+  the destination resolves — `LINK_TICKS` (175 ≈ 2.9 s) of flight, drained by
+  the loop's own `tick`. Six touch-points link (`linkingBook(node, id)`):
+  the tower's cogs book → Mechanical, the fireplace → Selenitic, the safe →
+  Stoneship, the cave's wood door → Channelwood, and Channelwood keeps its own
+  way home (hub book and landing panel) — the brothers' books are voices, not
+  doors. `state.link`/`state.linkT` are pure sim: the node swaps instantly
+  UNDER the cover (opaque envelope across the swap window, zero exactly on the
+  clearing tick), and the shell mutes keys and pad through the leap. The star
+  table is a deterministic hash (no `Math.random` — the linking light is a
+  world constant, not a per-seed roll); each Age wears its own floor/ink/tint.
+  `mystcheck` replays `drawLink` through the recording ctx stub: same instant
+  paints the same picture, two instants differ, no two Ages share a sky, and
+  every sampled tick must lay ground AND >=100 streaks (no world mid-leap).
 - `textures.js` — fbm value noise per material palette; `SKIES` gradients with
   seeded starfields (dusk/selenitic) and soft cloud banks (day/stoneship/dusk).
 - Atmosphere (#928): the shared `DirectionalLight` rides the camera and casts a
@@ -136,7 +151,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 
 ## Verify
 ```bash
-npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses
+npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses, the linking starfield
 npm run mystcheck -- --mutate # the interlocks must be able to fail (50 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
@@ -168,7 +183,11 @@ time. Five more target the Spectator polish (#1027): a set of thaw notes that
 collapse to one pitch, a sphere that never sings a thaw, a sealed pane that
 climbs back to a dim-storm brightness, a dim Selenitic storm painted as
 sealed grey, and an attract that loses its Spectator shot — each turns the
-suite red.
+suite red. Eight target the linking books (#1031): either travel branch
+skipping the starfield, the mechanical book's act cutting straight, a flight
+that never clears, a page cover that lets the world flash through, a starfield
+collapsed to one streak, every Age wearing the same sky, and keys staying live
+through the leap — each turns the suite red.
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:
@@ -211,7 +230,9 @@ suite red.
   rocking ship, the forge with meshed gears and sparks, the cloud world
   with the wheel — every picture a pure function of the world clock, and
   each lens stays a sealed grey churn until you link that Age's book.
-- Ages' books link straight from their home node; there is no linking-book
-  animation with the starfield travel.
+- **CLOSED by #1031** — the Ages' books now link through the starfield: page
+  cover, seam of light, and ~2.9 s of swirling stars before the Age resolves
+  (see `link.js`). Residual: the original also flew the starfield on the red
+  and blue books' trap pulls — ours still cut to the ending screens.
 - The ocean is one shared plane. Selenitic's grass-covered grey dome shape is
   suggested with rings and terraces, not the original's full terrain sculpt.

@@ -4,6 +4,7 @@
 
 import { NODES, AGE_LIST } from './nodes.js'
 import { deriveCodes, freshSeed, safeWords, NUMBER_WORDS } from './codes.js'
+import { linkingBook, LINK_TICKS } from './link.js'
 
 export const SAFE_LEN = 3
 export const SWITCH_LINKS = [
@@ -68,6 +69,8 @@ export function freshState(seed) {
     selChair: 0,
     ride: null,
     rideT: 0,
+    link: null,
+    linkT: 0,
     ending: null,
     message: 'You fall through the starless dark — and land at the foot of a wooden dock.',
     bookOpen: null,
@@ -124,6 +127,8 @@ export function dispatch(st, a) {
       if (spot.gone && has(s, spot.gone)) { s.message = 'There is nothing there now.'; ev.push('blocked'); break }
       s.node = spot.to; s.turn = 0
       s.message = NODES[spot.to].caption
+      const lk = linkingBook(st.node, spot.id)
+      if (lk) { s.link = lk; s.linkT = LINK_TICKS }
       if (spot.to === 'mechRoom') {
         s.flags.mechDoorOpen = false; s.flags.mechPlateD = false; s.flags.mechPlateE = false; s.flags.mechLatchD = false; s.flags.mechLatchE = false
         s.message = 'You duck through the open steel door — and it bangs shut behind you. Two iron floor plates, a latch lever between them, and the great glass sphere watches from its cradle.'
@@ -141,6 +146,8 @@ export function dispatch(st, a) {
       if (spot.need && !has(s, spot.need)) { s.message = spot.needMsg || 'It will not move.'; ev.push('blocked'); break }
       if (spot.to) {
         s.node = spot.to; s.turn = 0; s.message = NODES[spot.to].caption
+        const lk = linkingBook(st.node, spot.id)
+        if (lk) { s.link = lk; s.linkT = LINK_TICKS }
         if (spot.to === 'mechRoom') {
           s.flags.mechDoorOpen = false; s.flags.mechPlateD = false; s.flags.mechPlateE = false; s.flags.mechLatchD = false; s.flags.mechLatchE = false
           s.message = 'You duck through the open steel door — and it bangs shut behind you. Two iron floor plates, a latch lever between them, and the great glass sphere watches from its cradle.'
@@ -190,6 +197,15 @@ export function dispatch(st, a) {
       ev.push(`stone:${i}`)
       break
     }
+    case 'tick': {
+      // #1031 — the linking-book starfield: the loop's tick drains the flight
+      // and clears the link exactly when the overlay's opacity reaches zero.
+      if (st.link) {
+        if (st.linkT <= 1) { s.link = null; s.linkT = 0 }
+        else s.linkT = st.linkT - 1
+      }
+      break
+    }
     default: return { state: st, events: [] }
   }
   return { state: s, events: ev }
@@ -221,17 +237,18 @@ function act(s, spot, ev) {
     case 'fireplace': {
       if (!has(s, 'matchbook')) { s.message = 'Cold ash and birch logs. You have nothing to light them with.'; ev.push('blocked'); break }
       if (!has(s, 'burnedBook')) { s.flags.burnedBook = true; s.message = 'The wooden cover catches — the varnish melts away and the grain splits to show a link-panel behind the boards.'; ev.push('burn', 'link:selenitic'); s.flags.link_selenitic = true }
-      else if (has(s, 'link_selenitic')) { s.node = 'selenitic'; s.turn = 0; s.message = NODES.selenitic.caption; ev.push('travel', 'enter:selenitic') }
+      else if (has(s, 'link_selenitic')) { s.node = 'selenitic'; s.turn = 0; s.message = NODES.selenitic.caption; s.link = 'selenitic'; s.linkT = LINK_TICKS; ev.push('travel', 'enter:selenitic') }
       break
     }
     case 'mechanicalBook': {
       s.flags.link_mechanical = true
       s.node = 'mechanical'; s.turn = 0; s.message = NODES.mechanical.caption
+      s.link = 'mechanical'; s.linkT = LINK_TICKS
       ev.push('travel', 'link:mechanical', 'enter:mechanical')
       break
     }
     case 'safe': {
-      if (has(s, 'safeOpen')) { s.node = 'stoneship'; s.turn = 0; s.message = NODES.stoneship.caption; ev.push('travel', 'enter:stoneship') }
+      if (has(s, 'safeOpen')) { s.node = 'stoneship'; s.turn = 0; s.message = NODES.stoneship.caption; s.link = 'stoneship'; s.linkT = LINK_TICKS; ev.push('travel', 'enter:stoneship') }
       else { s.panelOpen = 'safe'; s.message = `A safe: three dials, now reading ${s.safeDial.split('').join('-')}. Three numbers, and no mercy.`; ev.push('panel') }
       break
     }

@@ -5,6 +5,7 @@
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
 import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS, spectatorViews } from '../src/games/Myst/state.js'
 import { drawVision } from '../src/games/Myst/visions.js'
+import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink } from '../src/games/Myst/link.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/Myst/soundplan.js'
@@ -731,6 +732,84 @@ console.log('MYST — seed notebook (#1008: a save keeps its island across reloa
   ok(Number.isInteger(rolled) && rolled >= 0 && rolled <= 0xffffffff, 'no notebook yet: a legal fresh island is rolled')
 }
 
+console.log('MYST — linking-book travel (#1031): the page cover, the seam, the starfield')
+{
+  ok(LINK_TICKS >= 120 && LINK_TICKS <= 240, `every leap takes ${LINK_TICKS} ticks (~${(LINK_TICKS / 60).toFixed(1)} s) — long enough to feel, short enough to keep`, String(LINK_TICKS))
+  const at = (node, flags) => ({ ...freshState(4242), node, flags: { ...(flags || {}) } })
+  // [node, spot, action, age, dest, flags] — action is how the real shell drives it
+  const BOOKS = [
+    ['towerTop', 'mechanicalBook', 'click', 'mechanical', 'mechanical', null],
+    ['library', 'fireplace', 'click', 'selenitic', 'selenitic', { matchbook: true, burnedBook: true, link_selenitic: true }],
+    ['cabin', 'safe', 'click', 'stoneship', 'stoneship', { safeOpen: true }],
+    ['cave', 'channelwoodDoor', 'both', 'channelwood', 'channelwood', { starPanel: true }],
+    ['chanWheel', 'hubBook', 'both', 'channelwood', 'cave', { wheelOpen: true }],
+    ['channelwood', 'retChannelwood', 'both', 'myst', 'cave', { wheelOpen: true }],
+  ]
+  for (const [node, id, how, age, dest, flags] of BOOKS) {
+    const ways = how === 'both' ? ['move', 'click'] : [how]
+    for (const t of ways) {
+      const r = dispatch(at(node, flags), { t, id })
+      ok(r.state.node === dest && r.state.link === age && r.state.linkT === LINK_TICKS, `${node}/${id} (${t}): leaps to ${dest} under the ${age} starfield`)
+      ok(r.events.includes('travel'), `${node}/${id} (${t}): the leap still announces the travel`)
+    }
+  }
+  const shut = dispatch(at('chanWheel'), { t: 'move', id: 'hubBook' })
+  ok(shut.events.includes('blocked') && !shut.state.link, 'a hub that refuses keeps you — and the starfield stays home')
+  const walk = dispatch(at('dock'), { t: 'move', id: 'dockBeach' })
+  ok(!walk.state.link, 'walking up the dock path is a step, not a linking-book leap')
+  ok(!linkingBook('library', 'redBook') && !linkingBook('library', 'blueBook'), 'the brothers’ books are voices, not doors')
+  // the loop's tick drains the flight; it clears exactly on arrival
+  let f = dispatch(at('chanWheel', { wheelOpen: true }), { t: 'move', id: 'hubBook' }).state
+  for (let i = 0; i < LINK_TICKS - 1; i++) f = dispatch(f, { t: 'tick' }).state
+  ok(f.link === 'channelwood' && f.linkT === 1, 'the flight holds right up to its last tick')
+  const done = dispatch(f, { t: 'tick' })
+  ok(done.state.link === null && done.state.linkT === 0 && done.state.node === 'cave', 'the starfield clears exactly when the Age has arrived')
+  // the page cover must be opaque across the swap window (the node changes
+  // underneath it) and gone by the tick the sim clears the link
+  ok(linkEnvelope(0) === 1 && linkEnvelope(Math.floor(LINK_TICKS * 0.25)) === 1, 'the page cover is opaque across the swap window')
+  ok(linkEnvelope(LINK_TICKS) === 0 && linkEnvelope(LINK_TICKS - 1) > 0, 'the overlay is gone by the last tick, and still flying one before')
+  ok(new Set(['selenitic', 'stoneship', 'mechanical', 'channelwood', 'myst'].map((a) => JSON.stringify(linkTint(a)))).size === 5, 'every Age’s starfield wears its own light')
+  const jsx = readFileSync('src/games/Myst/index.jsx', 'utf8')
+  ok((jsx.match(/if \(gs\.link\) return/g) || []).length >= 2, 'keys AND pad are muted through the leap', `${(jsx.match(/if \(gs\.link\) return/g) || []).length}`)
+  ok(/data-linkfx=\{hud\.link\}/.test(jsx) && /drawLink\(/.test(jsx), 'the shell carries the starfield overlay and paints it from the sim', '')
+}
+{ // the starfield painter: pure paint, alive on the clock, distinct per Age
+  const OPS = ['save', 'restore', 'clip', 'beginPath', 'fill', 'stroke', 'closePath', 'fillRect', 'strokeRect', 'clearRect', 'arc', 'ellipse', 'moveTo', 'lineTo', 'quadraticCurveTo', 'translate', 'rotate']
+  function recCtx() {
+    const ops = []
+    const num = (x) => (typeof x === 'number' ? x.toFixed(3) : String(x))
+    const grad = { addColorStop: (...a) => ops.push('stop:' + a.map(num).join(',')) }
+    const ctx = { ops }
+    for (const m of OPS) ctx[m] = (...a) => ops.push(m + ':' + a.map(num).join(','))
+    ctx.createLinearGradient = (...a) => { ops.push('lin:' + a.map(num).join(',')); return grad }
+    ctx.createRadialGradient = (...a) => { ops.push('rad:' + a.map(num).join(',')); return grad }
+    for (const p of ['fillStyle', 'strokeStyle']) {
+      let v = ''
+      Object.defineProperty(ctx, p, { get: () => v, set: (x) => { v = x; ops.push(p + ':' + x) } })
+    }
+    ctx.lineWidth = 0
+    return ctx
+  }
+  const runL = (age, p) => { const c = recCtx(); drawLink(c, age, p, 320, 180); return c.ops.join('|') }
+  ok(runL('mechanical', 0.5) === runL('mechanical', 0.5), 'the starfield paints the same picture at the same instant')
+  ok(runL('mechanical', 0.2) !== runL('mechanical', 0.62), 'the stars wheel between two instants')
+  for (const age of ['selenitic', 'stoneship', 'mechanical', 'channelwood', 'myst']) {
+    ok(runL(age, 0.15) !== runL(age, 0.55), `${age} starfield answers the flight clock`)
+  }
+  ok(runL('mechanical', 0.5) !== runL('selenitic', 0.5) && runL('stoneship', 0.75) !== runL('channelwood', 0.75), 'no two Ages share a linking sky')
+  const inkOf = (age, p) => (runL(age, p).match(/fillStyle:(#[0-9a-f]{6})/) || [])[1]
+  ok(new Set(['selenitic', 'stoneship', 'mechanical', 'channelwood', 'myst'].map((a) => inkOf(a, 0.15))).size === 5, 'each Age’s page cover carries its own ink', ['selenitic', 'stoneship', 'mechanical', 'channelwood', 'myst'].map(inkOf).join(','))
+  // full cover: every sampled tick of the held window must paint ground AND a
+  // sky full of streaks — a thin or empty frame would flash the world mid-leap
+  for (const p of [0.01, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 0.99]) {
+    const trace = runL('mechanical', p)
+    ok(trace.includes('fillRect:') && (trace.match(/lineTo:/g) || []).length >= 100, `the field fully covers the screen at ${Math.round(p * 100)}% of the flight`, `${(trace.match(/lineTo:/g) || []).length} streaks`)
+  }
+  const sA = linkStars(), sB = linkStars()
+  ok(sA.length === 240 && JSON.stringify(sA) === JSON.stringify(sB), 'the starfield is the same sky every leap (a world constant, no re-roll)')
+  ok(sA.every((st) => st.rate > 0 && st.sz > 0 && st.cb >= 235 && st.cr <= 255), 'every star carries a legal speed, size and cool colour')
+}
+
 console.log('MYST — ring ticks (#1008: each post visibly answers its ring)')
 {
   const t = singTicks('2013')
@@ -915,6 +994,32 @@ if (process.argv.includes('--mutate')) {
     ['the attract loses its Spectator shot', JX,
       `data-attract-vision={a}`,
       `data-attract-gone={a}`],
+    ['a linked Age cuts straight — the move branch skips the starfield', ST,
+      `      const lk = linkingBook(st.node, spot.id)\n      if (lk) { s.link = lk; s.linkT = LINK_TICKS }`,
+      `      const lk = null\n      if (lk) { s.link = lk; s.linkT = LINK_TICKS }`],
+    ['a linked Age cuts straight — the click branch skips the starfield', ST,
+      `        const lk = linkingBook(st.node, spot.id)\n        if (lk) { s.link = lk; s.linkT = LINK_TICKS }`,
+      `        const lk = null\n        if (lk) { s.link = lk; s.linkT = LINK_TICKS }`],
+    ['the mechanical book cuts straight (no starfield on its act)', ST,
+      `      s.link = 'mechanical'; s.linkT = LINK_TICKS`,
+      `      s.linkNot = 'mechanical'`],
+    ['the starfield never clears — the flight has no end', ST,
+      `        if (st.linkT <= 1) { s.link = null; s.linkT = 0 }`,
+      `        if (false) { s.link = null; s.linkT = 0 }`],
+    ['the page cover lets the world flash through mid-leap', 'src/games/Myst/link.js',
+      `  if (p < 0.30) return 1`,
+      `  if (false) return 1`],
+    ['the starfield collapses to one streak', 'src/games/Myst/link.js',
+      `  for (let i = 0; i < n; i++) {`,
+      `  for (let i = 0; i < 1; i++) {`],
+    ['every Age links through the same sky', 'src/games/Myst/link.js',
+      `  const pal = LINK_PALETTE[age] || LINK_PALETTE.myst`,
+      `  const pal = LINK_PALETTE.myst`],
+    ['the keys stay live through the leap', JX,
+      `      if (gs.link) return
+      switch (e.code) {`,
+      `      if (gs.linkNot) return
+      switch (e.code) {`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
